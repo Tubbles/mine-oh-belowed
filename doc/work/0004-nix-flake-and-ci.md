@@ -1,6 +1,6 @@
 # 0004 Nix flake and CI
 
-Status: implemented
+Status: verified
 Milestone: M0
 
 ## Goal
