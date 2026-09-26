@@ -1,6 +1,6 @@
 # 0001 Foundation: build script and skeleton
 
-Status: todo
+Status: implemented
 Milestone: M0
 
 ## Goal
@@ -23,3 +23,12 @@ A buildable `src/` skeleton and a `build.sh` so that CI, the Steam shortcut and 
 - `./build.sh` and `./build.sh release` produce `bin/mine-oh-belowed`.
 - CI green on the pushed commit.
 - User: launching the binary opens the window and the diagnostics screen shows stick and button values from any connected pad.
+
+## Notes
+
+- Bindings are hardcoded tables in `src/input_raylib.odin` following the layout in `doc/input.md`. Moving them to configuration is left for the configuration work. `Hotbar_Radial` has no gamepad binding because it needs the left trackpad (SDL3, work item 0002). Keyboard: WASD move, mouse look, Space jump, left and right mouse mine and place, R rotate, Q or middle mouse pipette, Tab radial, E inventory, M map, Escape pause, Enter confirm, Backspace back.
+- `Input_Frame` has a third vector, `look_delta`, for pointer style look in pixels (mouse now, trackpad and gyro later), because it cannot share units with the rate style stick `look`.
+- Escape is bound to Pause, so raylib's exit key is disabled. The window closes through the window manager or Steam, not a key.
+- `tick_rate` from `data/game.sjson` drives the tick accumulator, validated to 1 to 1000.
+- Extra test: `src/data_load_test.odin` parses the shipped `data/game.sjson` through `#load`, which proves the SJSON path without opening a window.
+- Not verified by the agent (headless session): opening the window, the diagnostics screen, gamepad values, text size at 1080p. Only `--version`, the unknown argument error and the missing data directory error were run.

@@ -7,20 +7,19 @@
 - Bazzite is an immutable image with runtime libraries but without development symlinks: `libX11.so.6` exists, `libX11.so` does not, so linking fails with `cannot find -lX11`. The fix that avoids layering packages onto the image is a shim directory of symlinks to the runtime libraries, passed with `-extra-linker-flags:"-L<dir>"`. `build.sh` creates `tmp/linker-shims/` with `libX11.so -> /usr/lib64/libX11.so.6` and `libSDL3.so -> /usr/lib64/libSDL3.so.0`. Verified 2026-09-26 by compiling and linking a raylib hello world.
 - SDL3: the host `libSDL3.so.0` is 3.4.16 (Fedora 44 package). `vendor:sdl3` links `system:SDL3`, so the same shim applies.
 
-Commands (they arrive with work item 0001):
+Commands (`build.sh` uses the toolchain at `${ODIN:-$HOME/opt/odin/odin}`):
 
 ```
-./build.sh            # debug build to bin/mine-oh-belowed
-./build.sh release    # optimised build (-o:speed)
-odin check src -vet -strict-style
-odin test src
+./build.sh            # debug build (-debug) to bin/mine-oh-belowed
+./build.sh debug      # same as above
+./build.sh release    # optimised build (-o:speed) to bin/mine-oh-belowed
+./build.sh check      # odin check src -vet -strict-style
+./build.sh test       # odin test src
 ```
 
-Until then, a manual build looks like this:
+Both build modes pass `-vet -strict-style` and `-extra-linker-flags:"-L<repository>/tmp/linker-shims"`, creating the shim directory first.
 
-```
-~/opt/odin/odin build src -out:bin/mine-oh-belowed -extra-linker-flags:"-L$PWD/tmp/linker-shims"
-```
+At run time the game looks for its data directory in this order: `$MINE_OH_BELOWED_DATA` if set, `./data`, then `<executable directory>/../share/mine-oh-belowed/data` (the layout the Nix package installs). `bin/mine-oh-belowed --version` prints the version without opening a window.
 
 ## Nix
 
@@ -28,4 +27,4 @@ Until then, a manual build looks like this:
 
 ## CI
 
-GitHub Actions (`.github/workflows/ci.yml`) runs on every push and pull request on `ubuntu-latest`: enters the development shell and prints the Odin version, then runs `nix build`. The build step is skipped while `src/` does not exist, so the workflow stays green until milestone M0 adds source.
+GitHub Actions (`.github/workflows/ci.yml`) runs on every push and pull request on `ubuntu-latest`: enters the development shell and prints the Odin version, then runs `nix build`, which compiles the game with `-vet -strict-style` and runs `odin test src` inside the build.
