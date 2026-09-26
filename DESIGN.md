@@ -95,7 +95,7 @@ Power is part of the logistics puzzle from the alpha on. Boilers need fuel, whic
 - Undiscovered recipes show in the recipe graph as silhouettes: name and category visible, ingredients revealed on discovery. A first playthrough is never faced with the whole tree at once. The world setting "all recipes unlocked at start" is there for repeat playthroughs.
 - Quests are data driven chapters over the gameplay phases. Objectives: craft, place, sustain a rate, research, ship. Contextual hints ("your drill ran out of fuel three times"). Rewards: items, unlocks, schematics. Mission Control is the voice. Quests replace the tutorial. They only ever guide and reward, a player who ignores the journal is never blocked.
 - A few main quest gates open the massive steps, on the order of one per gameplay phase, never hundreds of small ones. A gated technology waits for its main quest and for nothing else, and no other path waits for it.
-- Rockets close the loop in phase 8. A launch pad and rocket parts are the big sink. Shipments fulfil contracts and trade for returns. No building is mandatory, the pad included.
+- Rockets close the loop in phase 8. A launch pad and rocket parts are the big sink. Shipments fulfil contracts and trade for returns. Contracts carry soft deadlines: a late shipment pays less, nothing fails. No building is mandatory, the pad included.
 
 ## Lore and tone
 
