@@ -1,0 +1,18 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  nix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - name: Development shell
+        run: nix develop --command odin version
+      # Guard removed by work item 0001 once src/ exists.
+      - name: Build and test
+        if: hashFiles('src/**') != ''
+        run: nix build --print-build-logs
