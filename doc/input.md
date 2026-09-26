@@ -18,6 +18,43 @@ Chosen path, pending the spike in work item 0002: read the controller directly w
 
 Spike questions: does SDL3 see the controller while Steam is running with Steam Input disabled for the game, over puck and Bluetooth; poll rate and latency; gyro units and axis frame; trackpad coordinate range, pressure and click; grip sense; the haptics API for the pads; behaviour while the Steam overlay is open.
 
+### How SDL3 exposes the controller
+
+Read from the SDL `release-3.4.16` sources on 2026-09-27: `src/joystick/hidapi/SDL_hidapi_steam_triton.c` (the driver, line numbers below refer to it unless stated), `src/joystick/hidapi/steam/controller_structs.h`, the Triton mapping string in `src/joystick/SDL_gamepad.c` (branch `SDL_IsJoystickSteamTriton`) and `include/SDL3/SDL_sensor.h`. The host `/usr/lib64/libSDL3.so.0` contains both the driver (its rumble error string) and the Triton mapping string. Nothing below has been observed on hardware yet.
+
+- **Driver enable.** `HIDAPI_DriverSteamTriton_IsEnabled` (lines 427 to 431) reads `SDL_HINT_JOYSTICK_HIDAPI_STEAM` and falls back to the general HIDAPI default, so the driver is on without any hint. The header documents the hint's default as off, but that text describes the first Steam Controller over Bluetooth. The game sets the hint to `1` anyway so the two cannot disagree.
+- **Device.** Named "Steam Controller" (line 468). A wired controller connects at once. Through the puck (Proteus or Nereid dongle, interfaces 2 to 5) the gamepad only appears once the dongle reports a wireless connect or the first state packet arrives (lines 400 to 413, 530 to 554). While a gamepad is open the driver turns lizard mode (the controller's own keyboard and mouse emulation) off every 3 seconds (lines 499 to 503).
+- **Buttons.** The driver defines 22 joystick buttons (lines 46 to 60, 581). Buttons 0 to 10 follow SDL's standard order. The Triton mapping string turns the rest into gamepad buttons: QAM `MISC1`, R4 `RIGHT_PADDLE1`, L4 `LEFT_PADDLE1`, R5 `RIGHT_PADDLE2`, L5 `LEFT_PADDLE2`, left pad click `TOUCHPAD`, right pad click `MISC2`, left stick touch `MISC3`, right stick touch `MISC4`, left grip touch `MISC5`, right grip touch `MISC6`. Steam is `GUIDE`.
+- **Menu and View.** Lines 171 to 174 send the Menu bit to `BACK` and the View bit to `START`, the reverse of the usual convention (View as back, Menu as start). Whether the bit names or the SDL assignment are off is not visible from the source, so the couch test records which physical button lights up `BACK`.
+- **Sticks and triggers.** All six SDL axes (line 582). Stick y is negated to match the SDL convention of up as negative (lines 230 to 237). Triggers are rescaled from 0..32767 to the SDL range (lines 226 to 229). The report also carries trigger click bits (lines 93, 98) that the driver never forwards.
+- **Capacitive stick touch and grip sense.** Plain digital buttons, see the mapping above (lines 199 to 207). No analog value.
+- **Trackpads.** SDL touchpad API, two touchpads with one finger each (lines 588 to 589): index 0 is the left pad, index 1 the right pad (lines 253 to 276). Position is `raw / 65536 + 0.5` on x and `-raw / 65536 + 0.5` on y, so both run 0 to 1 with the origin at the top left, assuming the raw values span the full signed 16 bit range. Pressure is the unsigned 16 bit raw value divided by 32768, so the nominal range is 0 to 2; the source does not say how far the hardware goes. On lift the driver sends one update with `down` false and the last position. Touch without click comes only through the touchpad `down` flag; click comes only through the buttons above.
+- **Gyro and accelerometer.** SDL sensor API, `SDL_SENSOR_GYRO` and `SDL_SENSOR_ACCEL`, registered at 1000000 / 4032 ≈ 248 Hz (lines 40 to 41, 576, 585 to 586). They report nothing until enabled with `SDL_SetGamepadSensorEnabled`, which switches the controller's IMU mode (lines 652 to 676). Gyro is in radians per second with a ±2000 degrees per second full scale, accelerometer in metres per second squared with ±2 g full scale (lines 283 to 291). The driver remaps the raw axes into the SDL frame as `(x, z, -y)`. SDL's frame (`SDL_sensor.h`): x right, y up, z toward the player, rotation counter clockwise positive, `values[0]` pitch, `values[1]` yaw, `values[2]` roll. Whether the raw controller axes really match that remap is exactly what the couch test must confirm.
+- **Focus.** Without SDL video there are no SDL windows, so SDL never drops joystick events for lack of focus (`SDL_PrivateJoystickShouldIgnoreEvent` in `src/joystick/SDL_joystick.c`). Input keeps arriving while the raylib window is unfocused.
+- **Haptics.** Only `SDL_RumbleGamepad` (lines 594 to 623) and raw feature reports through `SDL_SendGamepadEffect` (lines 640 to 650). No per pad haptics API.
+
+### Couch test checklist
+
+1. Build with `./build.sh`. In desktop mode, from the repository root, run `./bin/mine-oh-belowed` once in a terminal. Expected on stderr: `input: sdl3 backend (default)`, then `input: opened gamepad <id> "Steam Controller" vendor 28de product <id>` once the controller is on. `--input=raylib` forces the old backend, `--input=sdl3` fails instead of falling back.
+2. Disable Steam Input for the shortcut: in the Steam library open the shortcut's Properties, Controller, and set the override to "Disable Steam Input". Then launch the game from Steam. Stderr is not visible there; the diagnostics screen shows `backend Sdl3` in the first column.
+3. Middle column: header `gamepad <id>: Steam Controller`. Right column: `touchpads 2`, `touch sense available`, both sensors `has yes on yes` near 248 Hz. `touchpads 0` or `touch sense not reported` means SDL sees Steam's virtual pad instead of the controller, so Steam Input is still on.
+4. Each input and what should light up:
+   - Left stick: `LEFTX`, `LEFTY`, `move`. Up is negative `LEFTY` and positive `move` y. Click: `LEFT_STICK`, `Sprint`.
+   - Right stick: `RIGHTX`, `RIGHTY`, `look`. Click: `RIGHT_STICK`.
+   - Resting a thumb on a stick without moving it: `MISC3 (L stick touch)` or `MISC4 (R stick touch)` and the matching `stick touched yes`.
+   - Holding each handle: `MISC5 (L grip touch)`, `MISC6 (R grip touch)`, `grip touched yes`.
+   - Triggers: `LEFT_TRIGGER`, `RIGHT_TRIGGER` from 0 to 1; past half, `Place` and `Mine`.
+   - A B X Y: `SOUTH EAST WEST NORTH`; actions Jump and Confirm, Sneak and Back, Open_Inventory, Rotate_Building.
+   - D-pad: `DPAD_*`; up also `Pipette`. L1 R1: `LEFT_SHOULDER`, `RIGHT_SHOULDER`.
+   - Grips: L4 `LEFT_PADDLE1 (L4)` with Jump and Confirm, R4 `RIGHT_PADDLE1 (R4)` with Sneak and Back, L5 `LEFT_PADDLE2 (L5)` with Rotate_Building, R5 `RIGHT_PADDLE2 (R5)` with Pipette.
+   - View and Menu: note which one lights `BACK` (Open_Map) and which `START` (Pause), see the swap above.
+   - Steam and QAM: `GUIDE`, `MISC1 (QAM)`, if Steam lets them through.
+   - Left pad: finger shows `touchpad 0 finger 0 down` with x and y from 0 at top left to 1 at bottom right, `p` pressure, and `Hotbar_Radial`. Note the highest pressure a hard press reaches. Click: `TOUCHPAD (L pad click)`.
+   - Right pad: `touchpad 1 finger 0`; sliding moves `look delta` (right is positive x, down positive y). Click: `MISC2 (R pad click)` and Confirm.
+   - Gyro: with a thumb on the right stick or right pad, turning the controller right should give positive `look delta` x and tilting its far end up negative y. At rest `gyro` shows near 0 on all three. Note the sign of each axis for yaw, pitch and roll.
+   - Accelerometer: flat on the table, about +9.8 on the second value (y up) and near 0 on the others.
+5. Repeat steps 2 to 4 over the puck and over Bluetooth, and once with the Steam overlay open.
+
 ## Layout proposal for the alpha
 
 Everything below is a binding table in configuration, not code. Same physical input, two contexts.

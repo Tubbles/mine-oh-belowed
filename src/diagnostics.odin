@@ -57,6 +57,8 @@ gamepad_axis_label :: proc(backend: Input_Backend, index: int) -> string {
 	switch backend {
 	case .Raylib:
 		return raylib_gamepad_axis_label(index)
+	case .Sdl3:
+		return sdl3_gamepad_axis_label(index)
 	}
 	return ""
 }
@@ -65,27 +67,22 @@ gamepad_button_label :: proc(backend: Input_Backend, index: int) -> string {
 	switch backend {
 	case .Raylib:
 		return raylib_gamepad_button_label(index)
+	case .Sdl3:
+		return sdl3_gamepad_button_label(index)
 	}
 	return ""
 }
 
-mouse_button_label :: proc(backend: Input_Backend, index: int) -> string {
-	switch backend {
-	case .Raylib:
-		return raylib_mouse_button_label(index)
-	}
-	return ""
+// Keyboard and mouse always come from raylib, which owns the window.
+mouse_button_label :: proc(index: int) -> string {
+	return raylib_mouse_button_label(index)
 }
 
-key_label :: proc(backend: Input_Backend, code: i32) -> string {
-	switch backend {
-	case .Raylib:
-		return raylib_key_label(code)
-	}
-	return ""
+key_label :: proc(code: i32) -> string {
+	return raylib_key_label(code)
 }
 
-gamepad_lines :: proc(raw: Raw_Input) -> []Diagnostics_Line {
+gamepad_button_lines :: proc(raw: Raw_Input) -> []Diagnostics_Line {
 	lines := make([dynamic]Diagnostics_Line, context.temp_allocator)
 	gamepad := raw.gamepad
 	if !gamepad.connected {
@@ -93,14 +90,55 @@ gamepad_lines :: proc(raw: Raw_Input) -> []Diagnostics_Line {
 		return lines[:]
 	}
 	append_line(&lines, false, "gamepad %d: %s", gamepad.index, gamepad.name)
-	for index in 0 ..< gamepad.axis_count {
-		value := gamepad.axis_values[index]
-		append_line(&lines, value != 0, "%-16s % .3f", gamepad_axis_label(raw.backend, index), value)
-	}
 	for index in 0 ..< gamepad.button_count {
 		down := gamepad.button_down[index]
 		append_line(&lines, down, "%-16s %s", gamepad_button_label(raw.backend, index), down ? "down" : "-")
 	}
+	return lines[:]
+}
+
+yes_no :: proc(value: bool) -> string {
+	return value ? "yes" : "no"
+}
+
+append_touchpad_lines :: proc(lines: ^[dynamic]Diagnostics_Line, touchpad_index: int, touchpad: Raw_Touchpad) {
+	for finger_index in 0 ..< touchpad.finger_count {
+		finger := touchpad.fingers[finger_index]
+		append_line(lines, finger.down, "touchpad %d finger %d %s", touchpad_index, finger_index, finger.down ? "down" : "up")
+		append_line(lines, finger.down, "  x %.3f y %.3f p %.2f", finger.position.x, finger.position.y, finger.pressure)
+	}
+}
+
+append_sensor_lines :: proc(lines: ^[dynamic]Diagnostics_Line, label: string, sensor: Raw_Sensor) {
+	append_line(lines, false, "%s has %s on %s %.0f Hz", label, yes_no(sensor.available), yes_no(sensor.enabled), sensor.data_rate)
+	append_line(lines, sensor.values != {}, "  % .2f % .2f % .2f", sensor.values.x, sensor.values.y, sensor.values.z)
+}
+
+append_touch_sense_lines :: proc(lines: ^[dynamic]Diagnostics_Line, touch_sense: Raw_Touch_Sense) {
+	append_line(lines, false, "touch sense %s", touch_sense.available ? "available" : "not reported")
+	append_line(lines, touch_sense.left_stick_touched, "left stick touched   %s", yes_no(touch_sense.left_stick_touched))
+	append_line(lines, touch_sense.right_stick_touched, "right stick touched  %s", yes_no(touch_sense.right_stick_touched))
+	append_line(lines, touch_sense.left_grip_touched, "left grip touched    %s", yes_no(touch_sense.left_grip_touched))
+	append_line(lines, touch_sense.right_grip_touched, "right grip touched   %s", yes_no(touch_sense.right_grip_touched))
+}
+
+gamepad_analog_lines :: proc(raw: Raw_Input) -> []Diagnostics_Line {
+	lines := make([dynamic]Diagnostics_Line, context.temp_allocator)
+	gamepad := raw.gamepad
+	if !gamepad.connected {
+		return lines[:]
+	}
+	for index in 0 ..< gamepad.axis_count {
+		value := gamepad.axis_values[index]
+		append_line(&lines, value != 0, "%-16s % .3f", gamepad_axis_label(raw.backend, index), value)
+	}
+	append_line(&lines, false, "touchpads %d", gamepad.touchpad_count)
+	for index in 0 ..< gamepad.touchpad_count {
+		append_touchpad_lines(&lines, index, gamepad.touchpads[index])
+	}
+	append_sensor_lines(&lines, "gyro rad/s", gamepad.motion.gyro)
+	append_sensor_lines(&lines, "accel m/s2", gamepad.motion.accelerometer)
+	append_touch_sense_lines(&lines, gamepad.touch_sense)
 	return lines[:]
 }
 
@@ -112,7 +150,7 @@ keyboard_mouse_lines :: proc(raw: Raw_Input) -> []Diagnostics_Line {
 	append_line(&lines, mouse.wheel != {}, "mouse wheel    % .1f % .1f", mouse.wheel.x, mouse.wheel.y)
 	for index in 0 ..< mouse.button_count {
 		if mouse.button_down[index] {
-			append_line(&lines, true, "mouse %s down", mouse_button_label(raw.backend, index))
+			append_line(&lines, true, "mouse %s down", mouse_button_label(index))
 		}
 	}
 	append_line(&lines, raw.keyboard.key_count > 0, "keys down: %s", keys_down_text(raw))
@@ -123,7 +161,7 @@ keys_down_text :: proc(raw: Raw_Input) -> string {
 	keyboard := raw.keyboard
 	labels := make([]string, keyboard.key_count, context.temp_allocator)
 	for index in 0 ..< keyboard.key_count {
-		labels[index] = key_label(raw.backend, keyboard.keys_down[index])
+		labels[index] = key_label(keyboard.keys_down[index])
 	}
 	text := strings.join(labels, " ", context.temp_allocator)
 	if keyboard.keys_truncated {
@@ -144,8 +182,11 @@ draw_lines :: proc(lines: []Diagnostics_Line, x, y, font_size: i32) -> i32 {
 
 draw_diagnostics :: proc(state: Frame_State, config: Game_Config) {
 	font_size := diagnostics_font_size(rl.GetScreenHeight())
-	right_column_x := rl.GetScreenWidth() / 2
+	screen_width := rl.GetScreenWidth()
+	button_column_x := screen_width * 35 / 100
+	analog_column_x := screen_width * 64 / 100
 	left_bottom := draw_lines(mapped_lines(state, config), DIAGNOSTICS_MARGIN, DIAGNOSTICS_MARGIN, font_size)
 	draw_lines(keyboard_mouse_lines(state.input.raw), DIAGNOSTICS_MARGIN, left_bottom + font_size, font_size)
-	draw_lines(gamepad_lines(state.input.raw), right_column_x, DIAGNOSTICS_MARGIN, font_size)
+	draw_lines(gamepad_button_lines(state.input.raw), button_column_x, DIAGNOSTICS_MARGIN, font_size)
+	draw_lines(gamepad_analog_lines(state.input.raw), analog_column_x, DIAGNOSTICS_MARGIN, font_size)
 }

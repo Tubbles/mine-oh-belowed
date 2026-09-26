@@ -16,9 +16,11 @@ Tick_Accumulator :: struct {
 }
 
 Frame_State :: struct {
-	simulation:  Simulation_State,
-	accumulator: Tick_Accumulator,
-	input:       Input_Frame,
+	simulation:    Simulation_State,
+	accumulator:   Tick_Accumulator,
+	input_backend: Input_Backend,
+	sdl3_input:    Sdl3_Input_State,
+	input:         Input_Frame,
 }
 
 simulation_tick :: proc(state: ^Simulation_State, input: Input_Frame) {
@@ -43,10 +45,21 @@ interpolation_alpha :: proc(accumulator: Tick_Accumulator) -> f64 {
 	return accumulator.accumulated_seconds / accumulator.seconds_per_tick
 }
 
+read_input_frame :: proc(state: ^Frame_State, frame_seconds: f32) -> Input_Frame {
+	switch state.input_backend {
+	case .Sdl3:
+		return read_sdl3_input_frame(&state.sdl3_input, state.input, frame_seconds)
+	case .Raylib:
+		return read_raylib_input_frame(state.input.pressed)
+	}
+	return {}
+}
+
 update_frame :: proc(state: ^Frame_State) {
-	state.input = read_raylib_input_frame(state.input.pressed)
+	frame_seconds := rl.GetFrameTime()
+	state.input = read_input_frame(state, frame_seconds)
 	tick_count: int
-	state.accumulator, tick_count = advance_tick_accumulator(state.accumulator, f64(rl.GetFrameTime()))
+	state.accumulator, tick_count = advance_tick_accumulator(state.accumulator, f64(frame_seconds))
 	for _ in 0 ..< tick_count {
 		simulation_tick(&state.simulation, state.input)
 	}
@@ -59,7 +72,7 @@ render_frame :: proc(state: Frame_State, config: Game_Config) {
 	draw_diagnostics(state, config)
 }
 
-run_game :: proc(config: Game_Config) {
+run_game :: proc(config: Game_Config, input_backend: Input_Backend) {
 	rl.SetTraceLogLevel(.WARNING)
 	rl.SetConfigFlags({.VSYNC_HINT, .WINDOW_RESIZABLE})
 	rl.InitWindow(1280, 720, "Mine oh Belowed")
@@ -68,7 +81,11 @@ run_game :: proc(config: Game_Config) {
 	rl.SetExitKey(.KEY_NULL)
 
 	state := Frame_State {
-		accumulator = make_tick_accumulator(config.tick_rate),
+		accumulator   = make_tick_accumulator(config.tick_rate),
+		input_backend = input_backend,
+	}
+	defer if input_backend == .Sdl3 {
+		shutdown_sdl3_input(&state.sdl3_input)
 	}
 	for !rl.WindowShouldClose() {
 		update_frame(&state)
