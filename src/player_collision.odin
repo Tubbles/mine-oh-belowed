@@ -102,6 +102,24 @@ box_intersects_solid :: proc(world: ^World, registry: Block_Registry, box: Box) 
 	return false
 }
 
+// Water counts in whole cells, whatever its level.
+box_touches_water :: proc(world: ^World, registry: Block_Registry, box: Box) -> bool {
+	first, last: [3]i32
+	for axis in 0 ..< 3 {
+		first[axis], last[axis] = overlapped_cells(box, axis)
+	}
+	for y in first.y ..= last.y {
+		for z in first.z ..= last.z {
+			for x in first.x ..= last.x {
+				if block_water_level(registry, world_get_block(world, {x, y, z})) > 0 {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 // Solid ground directly under any part of the box footprint. A 0.6 wide
 // box overlaps at most the four cells under its corners, so this is the
 // "a solid block under any corner" test.

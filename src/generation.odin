@@ -18,6 +18,8 @@ Generation_Blocks :: struct {
 Generator :: struct {
 	seed:                    u64,
 	seeds:                   Purpose_Seeds,
+	// For the opacity of blocks when generation computes sky light.
+	registry:                Block_Registry,
 	blocks:                  Generation_Blocks,
 	biomes:                  []Biome,
 	veins:                   Vein_Tables,
@@ -59,6 +61,7 @@ make_generator :: proc(
 ) {
 	generator.seed = seed
 	generator.seeds = derive_purpose_seeds(seed)
+	generator.registry = registry
 	if generator.blocks, problem = resolve_generation_blocks(registry); problem != "" {
 		return {}, problem
 	}

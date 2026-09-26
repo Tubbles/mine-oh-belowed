@@ -9,7 +9,6 @@ import "vendor:raylib/rlgl"
 CHUNK_VERTEX_SHADER_PATH :: "shaders/chunk.vs"
 CHUNK_FRAGMENT_SHADER_PATH :: "shaders/chunk.fs"
 
-SKY_COLOR :: rl.Color{150, 190, 230, 255}
 // The load radius reaches at least 192 blocks from the camera, so the fog
 // is complete before the load boundary.
 FOG_START :: 96.0
@@ -27,6 +26,8 @@ Chunk_Renderer :: struct {
 	atlas_layout:             Atlas_Layout,
 	material:                 rl.Material,
 	camera_position_location: i32,
+	day_factor_location:      i32,
+	fog_color_location:       i32,
 	chunk_meshes:             map[Chunk_Coordinate]Chunk_Render,
 	drawn_chunk_count:        int,
 	vertex_count:             int,
@@ -73,13 +74,15 @@ init_chunk_renderer :: proc(registry: Block_Registry, data_directory: string) ->
 	shader := load_chunk_shader(data_directory) or_return
 	renderer.atlas_layout = atlas_layout_for_block_count(len(registry.definitions))
 	set_shader_vector2(shader, "tile_size", atlas_tile_uv_size(renderer.atlas_layout))
-	set_shader_vector3(shader, "fog_color", color_to_vector3(SKY_COLOR))
 	set_shader_float(shader, "fog_start", FOG_START)
 	set_shader_float(shader, "fog_end", FOG_END)
 	renderer.camera_position_location = rl.GetShaderLocation(shader, "camera_position")
+	renderer.day_factor_location = rl.GetShaderLocation(shader, "day_factor")
+	renderer.fog_color_location = rl.GetShaderLocation(shader, "fog_color")
 	renderer.material = rl.LoadMaterialDefault()
 	renderer.material.shader = shader
 	rl.SetMaterialTexture(&renderer.material, .ALBEDO, upload_atlas(registry, renderer.atlas_layout))
+	apply_daylight(&renderer, 1)
 	return renderer, true
 }
 
@@ -163,6 +166,14 @@ chunk_in_frustum :: proc(frustum: Frustum, coordinate: Chunk_Coordinate) -> bool
 	origin := chunk_origin(coordinate)
 	minimum := [3]f32{f32(origin.x), f32(origin.y), f32(origin.z)}
 	return frustum_contains_box(frustum, minimum, minimum + CHUNK_SIZE)
+}
+
+// Sky light scale and fog colour for the time of day, once per frame.
+apply_daylight :: proc(renderer: ^Chunk_Renderer, blend: f32) {
+	factor := day_factor(blend)
+	fog := color_to_vector3(sky_color(blend))
+	rl.SetShaderValue(renderer.material.shader, renderer.day_factor_location, &factor, .FLOAT)
+	rl.SetShaderValue(renderer.material.shader, renderer.fog_color_location, &fog, .VEC3)
 }
 
 // Must run between BeginMode3D and EndMode3D, which sets the projection

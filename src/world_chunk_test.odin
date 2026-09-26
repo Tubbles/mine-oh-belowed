@@ -1,5 +1,6 @@
 package game
 
+import "core:container/queue"
 import "core:testing"
 
 @(test)
@@ -57,9 +58,16 @@ test_local_index_round_trip :: proc(t: ^testing.T) {
 	testing.expect_value(t, local_to_index({31, 31, 31}), CHUNK_BLOCK_COUNT - 1)
 }
 
+// Everything the world allocates comes from the temp allocator.
 make_test_world :: proc(coordinates: []Chunk_Coordinate) -> World {
 	world: World
 	world.chunks = make(map[Chunk_Coordinate]^Chunk, context.temp_allocator)
+	world.block_changes = make([dynamic]Block_Change, context.temp_allocator)
+	world.water.scheduled = make(map[World_Coordinate]struct{}, context.temp_allocator)
+	queue.init(&world.water.updates, allocator = context.temp_allocator)
+	queue.init(&world.lighting.removals, allocator = context.temp_allocator)
+	queue.init(&world.lighting.additions, allocator = context.temp_allocator)
+	queue.init(&world.lighting.arrived_chunks, allocator = context.temp_allocator)
 	for coordinate in coordinates {
 		chunk := new(Chunk, context.temp_allocator)
 		chunk.coordinate = coordinate
@@ -89,4 +97,16 @@ test_world_missing_chunk_reads_air :: proc(t: ^testing.T) {
 	world := make_test_world({{0, 0, 0}})
 	testing.expect_value(t, world_get_block(&world, {-1, 0, 0}), AIR_BLOCK)
 	testing.expect(t, !world_set_block(&world, {-1, 0, 0}, Block_Id(1)))
+}
+
+// An edit at a chunk corner changes the meshes of all eight chunks around it.
+@(test)
+test_world_set_block_marks_corner_neighbours_dirty :: proc(t: ^testing.T) {
+	world := make_test_world({{0, 0, 0}, {-1, -1, -1}, {-1, 0, 0}, {1, 1, 1}})
+	testing.expect(t, world_set_block(&world, {0, 0, 0}, Block_Id(1)))
+	testing.expect(t, world.chunks[{-1, -1, -1}].dirty)
+	testing.expect(t, world.chunks[{-1, 0, 0}].dirty)
+	testing.expect(t, !world.chunks[{1, 1, 1}].dirty)
+	testing.expect_value(t, len(world.block_changes), 1)
+	testing.expect_value(t, world.block_changes[0], Block_Change{position = {0, 0, 0}, previous = AIR_BLOCK})
 }

@@ -5,6 +5,11 @@ import "core:slice"
 import "core:testing"
 
 TEST_TICK_RATE :: 60
+
+test_game_config :: proc() -> Game_Config {
+	return Game_Config{name = "test", tick_rate = TEST_TICK_RATE, day_length_seconds = 1200}
+}
+
 // Test worlds span chunks -1 and 0 on every axis, so blocks -32 to 31.
 TEST_WORLD_CHUNKS :: [8]Chunk_Coordinate{{-1, -1, -1}, {0, -1, -1}, {-1, 0, -1}, {0, 0, -1}, {-1, -1, 0}, {0, -1, 0}, {-1, 0, 0}, {0, 0, 0}}
 
@@ -249,7 +254,7 @@ make_generated_world :: proc(generator: ^Generator, centre: Chunk_Coordinate) ->
 
 make_generated_simulation :: proc(generator: ^Generator, registry: Block_Registry) -> Simulation_State {
 	surface := World_Coordinate{8, terrain_height(generator.seeds, 8, 8), 8}
-	simulation := make_simulation(TEST_TICK_RATE, player_start_on(surface), len(registry.definitions))
+	simulation := make_simulation(test_game_config(), player_start_on(surface), registry)
 	simulation.world = make_generated_world(generator, world_to_chunk_coordinate(surface))
 	return simulation
 }
@@ -293,4 +298,33 @@ test_player_ticks_are_deterministic :: proc(t: ^testing.T) {
 	log.infof("after 1200 ticks: moved %v, placed %d, owned %v, selected %v", moved, placed_count, a.owned_blocks, a.selected_block)
 	testing.expectf(t, moved.x * moved.x + moved.z * moved.z > 1, "moved %v", moved)
 	testing.expectf(t, placed_count > 0, "nothing placed")
+}
+
+// Water above the floor from y 1 to 8 for x 0 to 15: the player sinks
+// slowly, walks at half speed and swims up while Jump is held.
+@(test)
+test_player_swims_in_water :: proc(t: ^testing.T) {
+	registry := make_test_registry()
+	world := make_floor_world(registry, 32)
+	water := test_block(registry, "water")
+	for y in i32(1) ..= 8 {
+		for z in i32(-4) ..= 4 {
+			for x in i32(0) ..< 16 {
+				world_set_block(&world, {x, y, z}, water)
+			}
+		}
+	}
+	player := make_test_player(registry, {2.5, 5, 0.5})
+	tick_test_player(&world, registry, &player, {}, 30)
+	testing.expectf(t, player.velocity.y >= -PLAYER_SINK_SPEED && player.velocity.y < 0, "sinking at %v", player.velocity.y)
+	testing.expect(t, player.position.y > 4)
+
+	start_x := player.position.x
+	tick_test_player(&world, registry, &player, WALK_FORWARD, 60)
+	walked := player.position.x - start_x
+	testing.expectf(t, abs(walked - PLAYER_WALK_SPEED * PLAYER_WATER_SPEED_FACTOR) < 0.05, "walked %v in one second", walked)
+
+	start_y := player.position.y
+	tick_test_player(&world, registry, &player, Input_Frame{pressed = {.Jump}}, 30)
+	testing.expectf(t, player.position.y - start_y > 1, "rose %v", player.position.y - start_y)
 }

@@ -219,9 +219,7 @@ chunk_boulders :: proc(generator: ^Generator, coordinate: Chunk_Coordinate, vein
 
 // Features only fill air, and the phases run in a fixed order, so a log
 // always wins over a boulder and both over leaves, whatever the visiting order.
-apply_features :: proc(generator: ^Generator, chunk: ^Chunk, veins: []Vein) {
-	trees := chunk_trees(generator, chunk.coordinate, veins, context.temp_allocator)
-	boulders := chunk_boulders(generator, chunk.coordinate, veins, context.temp_allocator)
+apply_features :: proc(generator: ^Generator, chunk: ^Chunk, trees: []Tree, boulders: []Boulder) {
 	for tree in trees {
 		place_feature(chunk, Feature{shape = .Log, tree = tree}, generator.blocks.log)
 	}

@@ -23,7 +23,11 @@ One `game` package under `src/`, split into files by concern: `world_*.odin`, `g
 
 ## World storage
 
-- A chunk is 32 by 32 by 32 blocks in flat arrays: block id (`u16`), light (`u8`, sky and block nibbles). Chunks live in a hash map keyed by chunk coordinate.
+- A chunk is 32 by 32 by 32 blocks in flat arrays: block id (`u16`), light (`u8`, sky light in the high nibble, block light in the low nibble). Chunks live in a hash map keyed by chunk coordinate.
+- Water levels are block ids: the source block plus seven flowing water ids marked by a `water_level` field in the block data. This keeps the chunk layout and serialisation unchanged and saves water levels for free.
+- Light: generation workers compute a chunk's initial sky light from its own columns. Everything that crosses chunk borders or follows an edit runs on the main thread inside the simulation tick through bounded queues (a removal queue and an addition queue, removals first), so the final values never depend on visiting order. Every `world_set_block` is recorded as a block change that the next tick turns into light updates and, next to water, water updates.
+- Water flow is Minecraft style cellular flow, scheduled per cell with a fixed delay, run in scheduling order and bounded per tick, on the main thread.
+- Mesh jobs copy the chunk plus a one cell shell of blocks and light from all 26 neighbours, because smooth lighting and ambient occlusion need edge and corner neighbours. The vertex colour packs sky light, block light and occlusion into red, green and blue; the fragment shader scales sky light by the day factor.
 - Entities (machines, belts, inserters, chests) are not blocks. They occupy block volumes and each occupied cell holds the entity handle, so a raycast hits the entity and placement checks are cell lookups.
 - Meshing: greedy meshing per chunk into a raylib `Mesh` with a texture atlas, uploaded with `UploadMesh`. Remesh on edit, frustum culling per chunk, fog hides the load boundary. A custom shader applies per vertex light and ambient occlusion.
 

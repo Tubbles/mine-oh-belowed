@@ -15,8 +15,10 @@ generate_chunk_blocks :: proc(generator: ^Generator, chunk: ^Chunk) {
 	runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
 	origin := chunk_origin(chunk.coordinate)
 	if origin.y > GENERATION_CEILING {
+		fill_chunk_light(chunk, pack_light(MAXIMUM_LIGHT, 0))
 		return
 	}
+	// Chunks below the terrain stay dark: caves never open to the surface.
 	if origin.y + CHUNK_SIZE <= CAVE_FLOOR {
 		fill_chunk_with(chunk, generator.blocks.deep_stone)
 		return
@@ -39,8 +41,46 @@ generate_chunk_blocks :: proc(generator: ^Generator, chunk: ^Chunk) {
 	}
 	minimum := [2]i32{origin.x, origin.z} - FEATURE_REACH
 	nearby_veins := veins_near_box(generator, minimum, minimum + CHUNK_SIZE - 1 + 2 * FEATURE_REACH, context.temp_allocator)
+	trees := chunk_trees(generator, chunk.coordinate, nearby_veins[:], context.temp_allocator)
+	boulders := chunk_boulders(generator, chunk.coordinate, nearby_veins[:], context.temp_allocator)
 	apply_outcrops(generator, chunk, columns, nearby_veins[:])
-	apply_features(generator, chunk, nearby_veins[:])
+	apply_features(generator, chunk, trees[:], boulders[:])
+	open := new(Open_Columns, context.temp_allocator)
+	find_open_columns(chunk.coordinate, columns, trees[:], boulders[:], open)
+	fill_chunk_sky_light(chunk, generator.registry, open)
+}
+
+box_covers_column :: proc(box: Block_Box, x, z: i32) -> bool {
+	return x >= box.minimum.x && x <= box.maximum.x && z >= box.minimum.z && z <= box.maximum.z
+}
+
+// The highest block of a column that can block light: its surface, or the
+// top of a tree or boulder box over it. Boxes are larger than the shapes
+// in them, so this may overestimate, which only leaves cells darker until
+// the chunk above lights them from the main thread.
+column_light_top :: proc(columns: ^Column_Grid, trees: []Tree, boulders: []Boulder, local_x, local_z: i32, x, z: i32) -> i32 {
+	top := grid_column(columns, local_x, local_z).height
+	for tree in trees {
+		if box := tree_box(tree); box_covers_column(box, x, z) {
+			top = max(top, box.maximum.y)
+		}
+	}
+	for boulder in boulders {
+		if box := boulder_box(boulder); box_covers_column(box, x, z) {
+			top = max(top, box.maximum.y)
+		}
+	}
+	return top
+}
+
+find_open_columns :: proc(coordinate: Chunk_Coordinate, columns: ^Column_Grid, trees: []Tree, boulders: []Boulder, open: ^Open_Columns) {
+	origin := chunk_origin(coordinate)
+	for z in i32(0) ..< CHUNK_SIZE {
+		for x in i32(0) ..< CHUNK_SIZE {
+			top := column_light_top(columns, trees, boulders, x, z, origin.x + x, origin.z + z)
+			open[column_index(x, z)] = top < origin.y + CHUNK_SIZE
+		}
+	}
 }
 
 // New chunks start dirty so that they are meshed once.

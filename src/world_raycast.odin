@@ -49,7 +49,8 @@ entered_face :: proc(axis: int, step: i32) -> Direction {
 	return faces[axis][step > 0 ? 1 : 0]
 }
 
-// Finds the first solid block along a normalised direction within reach.
+// Finds the first targetable block (solid or minable) along a normalised
+// direction within reach.
 // The cell holding the origin is never reported. Missing chunks read as
 // air, so rays pass through unloaded space.
 raycast_blocks :: proc(world: ^World, registry: Block_Registry, origin, direction: [3]f32, reach: f32) -> Raycast_Hit {
@@ -67,7 +68,7 @@ raycast_blocks :: proc(world: ^World, registry: Block_Registry, origin, directio
 		previous := cell
 		cell[axis] += axes[axis].step
 		axes[axis].distance_to_border += axes[axis].distance_per_cell
-		if block_is_solid(registry, world_get_block(world, cell)) {
+		if block_is_targetable(registry, world_get_block(world, cell)) {
 			return Raycast_Hit{hit = true, block = cell, face = entered_face(axis, axes[axis].step), adjacent = previous, distance = distance}
 		}
 	}

@@ -5,8 +5,9 @@ package game
 //   palette length times u16 block id (in order of first appearance),
 //   u32 run count, run count times (u16 palette index, u32 count).
 // The runs come from the run length codec over palette indices. Light and
-// the chunk coordinate are not stored: light is recomputed (work item 0008)
-// and the coordinate is the key of the container the bytes are stored in.
+// the chunk coordinate are not stored: light follows from the blocks
+// (world_light.odin) and the coordinate is the key of the container the
+// bytes are stored in. Water levels are block ids, so they are stored.
 
 CHUNK_FORMAT_VERSION :: 1
 RUN_BYTE_SIZE :: 6

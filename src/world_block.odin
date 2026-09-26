@@ -26,12 +26,17 @@ Block_Texture_Definition :: struct {
 	bottom: [3]u8,
 }
 
-// hardness_seconds is the hand mining time, 0 for blocks that cannot be mined.
+// hardness_seconds is the hand mining time, 0 for blocks that cannot be
+// mined. light_level is the block light emitted (0 to MAXIMUM_LIGHT).
+// water_level is 0 for everything but water, WATER_SOURCE_LEVEL for a
+// source and 1 to WATER_SOURCE_LEVEL - 1 for flowing water.
 Block_Definition :: struct {
 	id:               string,
 	name:             string,
 	solid:            bool,
 	hardness_seconds: f32,
+	light_level:      int,
+	water_level:      int,
 	texture:          Block_Texture_Definition,
 }
 
@@ -69,6 +74,30 @@ validate_block_definitions :: proc(definitions: []Block_Definition) -> string {
 		if definition.hardness_seconds < 0 {
 			return fmt.tprintf("block %q has a negative hardness_seconds", definition.id)
 		}
+		if definition.light_level < 0 || definition.light_level > MAXIMUM_LIGHT {
+			return fmt.tprintf("block %q has light_level %d outside 0 to %d", definition.id, definition.light_level, MAXIMUM_LIGHT)
+		}
+		if definition.water_level < 0 || definition.water_level > WATER_SOURCE_LEVEL {
+			return fmt.tprintf("block %q has water_level %d outside 0 to %d", definition.id, definition.water_level, WATER_SOURCE_LEVEL)
+		}
+	}
+	return validate_water_levels(definitions)
+}
+
+// Flow turns water of one level into another, so either every level has
+// exactly one block or there is no water at all.
+validate_water_levels :: proc(definitions: []Block_Definition) -> string {
+	counts: [WATER_SOURCE_LEVEL + 1]int
+	for definition in definitions {
+		counts[definition.water_level] += 1
+	}
+	if counts[0] == len(definitions) {
+		return ""
+	}
+	for level in 1 ..= WATER_SOURCE_LEVEL {
+		if counts[level] != 1 {
+			return fmt.tprintf("water_level %d needs exactly one block, found %d", level, counts[level])
+		}
 	}
 	return ""
 }
@@ -97,6 +126,41 @@ block_is_solid :: proc(registry: Block_Registry, block: Block_Id) -> bool {
 		return false
 	}
 	return registry.definitions[block].solid
+}
+
+// Light passes through every block that is not solid.
+block_is_opaque :: proc(registry: Block_Registry, block: Block_Id) -> bool {
+	return block_is_solid(registry, block)
+}
+
+block_light_emission :: proc(registry: Block_Registry, block: Block_Id) -> u8 {
+	if int(block) >= len(registry.definitions) {
+		return 0
+	}
+	return u8(registry.definitions[block].light_level)
+}
+
+block_water_level :: proc(registry: Block_Registry, block: Block_Id) -> int {
+	if int(block) >= len(registry.definitions) {
+		return 0
+	}
+	return registry.definitions[block].water_level
+}
+
+// The block holding water of this level, 1 to WATER_SOURCE_LEVEL.
+water_block_for_level :: proc(registry: Block_Registry, level: int) -> (block: Block_Id, found: bool) {
+	for definition, index in registry.definitions {
+		if definition.water_level == level {
+			return Block_Id(index), true
+		}
+	}
+	return AIR_BLOCK, false
+}
+
+// The raycast stops at solid blocks and at blocks that can be mined, so a
+// torch can be targeted and water cannot.
+block_is_targetable :: proc(registry: Block_Registry, block: Block_Id) -> bool {
+	return block_is_solid(registry, block) || block_is_minable(registry, block)
 }
 
 // Air and blocks without a hardness (water) cannot be mined.

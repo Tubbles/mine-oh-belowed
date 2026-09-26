@@ -149,6 +149,10 @@ main :: proc() {
 	if !registry_loaded {
 		os.exit(1)
 	}
+	if problem := validate_starting_blocks(config.starting_blocks, registry); problem != "" {
+		fmt.eprintfln("error: invalid %s: %s", GAME_CONFIG_FILE_NAME, problem)
+		os.exit(1)
+	}
 	generator, generator_loaded := load_generator(data_directory, registry, command_line.seed)
 	if !generator_loaded {
 		os.exit(1)

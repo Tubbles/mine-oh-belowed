@@ -144,14 +144,15 @@ test_report_generation_and_meshing_time :: proc(t: ^testing.T) {
 	quads := 0
 	for _, chunk in world.chunks {
 		input := Mesh_Input {
-			chunk      = chunk,
-			neighbours = chunk_neighbours(&world, chunk.coordinate),
-			registry   = registry,
-			atlas      = atlas_layout_for_block_count(len(registry.definitions)),
+			chunk    = chunk,
+			border   = gather_chunk_border(&world, chunk.coordinate),
+			registry = registry,
+			atlas    = atlas_layout_for_block_count(len(registry.definitions)),
 		}
 		data := mesh_chunk(input)
 		quads += data.quad_count
 		destroy_chunk_mesh_data(data)
+		free(input.border)
 	}
 	mesh_time := time.tick_since(mesh_start)
 	count := len(world.chunks)

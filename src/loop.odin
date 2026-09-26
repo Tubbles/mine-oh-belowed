@@ -11,10 +11,11 @@ MAXIMUM_FRAME_SECONDS :: 0.25
 // The simulation owns the world and the players. players[index] reads
 // inputs[index] in simulation_tick; the alpha has one player.
 Simulation_State :: struct {
-	tick:      u64,
-	tick_rate: int,
-	world:     World,
-	players:   [dynamic]Player,
+	tick:             u64,
+	tick_rate:        int,
+	day_length_ticks: u64,
+	world:            World,
+	players:          [dynamic]Player,
 }
 
 Tick_Accumulator :: struct {
@@ -45,11 +46,15 @@ INITIAL_FLY_CAMERA :: Fly_Camera {
 	pitch    = -30,
 }
 
-make_simulation :: proc(tick_rate: int, start: Player_Start, block_count: int) -> Simulation_State {
+// The config's starting blocks must have passed validate_starting_blocks.
+make_simulation :: proc(config: Game_Config, start: Player_Start, registry: Block_Registry) -> Simulation_State {
 	state := Simulation_State {
-		tick_rate = tick_rate,
+		tick_rate        = config.tick_rate,
+		day_length_ticks = u64(config.day_length_seconds) * u64(config.tick_rate),
 	}
-	append(&state.players, make_player(start, block_count))
+	player := make_player(start, len(registry.definitions))
+	give_starting_blocks(&player, registry, config.starting_blocks)
+	append(&state.players, player)
 	return state
 }
 
@@ -68,6 +73,7 @@ simulation_tick :: proc(state: ^Simulation_State, registry: Block_Registry, inpu
 		input := index < len(inputs) ? inputs[index] : Input_Frame{}
 		tick_player(&state.world, registry, state.players[:], index, input, state.tick_rate)
 	}
+	tick_world(&state.world, registry, state.tick)
 }
 
 make_tick_accumulator :: proc(tick_rate: int) -> Tick_Accumulator {
@@ -138,9 +144,11 @@ update_frame :: proc(state: ^Frame_State) {
 
 render_frame :: proc(state: ^Frame_State, config: Game_Config) {
 	upload_streamed_meshes(&state.renderer, &state.streaming)
+	blend := daylight_blend(state.simulation.tick, state.simulation.day_length_ticks)
+	apply_daylight(&state.renderer, blend)
 	rl.BeginDrawing()
 	defer rl.EndDrawing()
-	rl.ClearBackground(SKY_COLOR)
+	rl.ClearBackground(sky_color(blend))
 	player := state.simulation.players[0]
 	alpha := f32(interpolation_alpha(state.accumulator))
 	camera := fly_camera_to_raylib(player_view_camera(&state.simulation.world, state.registry, player, alpha))
@@ -181,7 +189,7 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, registry: Bl
 		registry      = registry,
 		generator     = generator,
 		renderer      = renderer,
-		simulation    = make_simulation(config.tick_rate, start.player, len(registry.definitions)),
+		simulation    = make_simulation(config, start.player, registry),
 	}
 	defer if input_backend == .Sdl3 {
 		shutdown_sdl3_input(&state.sdl3_input)
@@ -193,7 +201,7 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, registry: Bl
 		if !terrain_ok {
 			os.exit(1)
 		}
-		build_debug_terrain(&state.simulation.world, terrain_blocks)
+		build_debug_terrain(&state.simulation.world, registry, terrain_blocks)
 	}
 	// Workers read state.generator, so they stop before state goes away.
 	state.streaming = start_chunk_streaming(&state.generator, registry, !start.debug_terrain, default_worker_count())

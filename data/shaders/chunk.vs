@@ -1,7 +1,8 @@
 #version 330
 
 // Chunk vertex shader (work item 0005). Attribute and matrix names are the
-// raylib defaults, so DrawMesh binds them without extra code.
+// raylib defaults, so DrawMesh binds them without extra code. The vertex
+// colour carries light and occlusion (packing in chunk.fs).
 
 in vec3 vertexPosition;
 in vec2 vertexTexCoord;

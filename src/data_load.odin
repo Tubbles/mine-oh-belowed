@@ -10,9 +10,18 @@ INSTALLED_DATA_RELATIVE_TO_EXECUTABLE :: "../share/mine-oh-belowed/data"
 GAME_CONFIG_FILE_NAME :: "game.sjson"
 MAXIMUM_TICK_RATE :: 1000
 
+MAXIMUM_DAY_LENGTH_SECONDS :: 24 * 60 * 60
+
+Starting_Block :: struct {
+	block: string,
+	count: u32,
+}
+
 Game_Config :: struct {
-	name:      string,
-	tick_rate: int,
+	name:               string,
+	tick_rate:          int,
+	day_length_seconds: int,
+	starting_blocks:    []Starting_Block,
 }
 
 // An explicitly set environment variable wins even if the directory is
@@ -51,6 +60,23 @@ validate_game_config :: proc(config: Game_Config) -> string {
 	}
 	if config.tick_rate < 1 || config.tick_rate > MAXIMUM_TICK_RATE {
 		return fmt.tprintf("tick_rate %d is outside 1 to %d", config.tick_rate, MAXIMUM_TICK_RATE)
+	}
+	if config.day_length_seconds < 1 || config.day_length_seconds > MAXIMUM_DAY_LENGTH_SECONDS {
+		return fmt.tprintf("day_length_seconds %d is outside 1 to %d", config.day_length_seconds, MAXIMUM_DAY_LENGTH_SECONDS)
+	}
+	return ""
+}
+
+// Needs the block registry, so it runs after both files are loaded.
+validate_starting_blocks :: proc(starting_blocks: []Starting_Block, registry: Block_Registry) -> string {
+	for starting in starting_blocks {
+		block, found := find_block_id(registry, starting.block)
+		if !found {
+			return fmt.tprintf("starting block %q is not in %s", starting.block, BLOCKS_FILE_NAME)
+		}
+		if block == AIR_BLOCK {
+			return "air cannot be a starting block"
+		}
 	}
 	return ""
 }

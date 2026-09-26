@@ -21,6 +21,12 @@ PLAYER_TERMINAL_SPEED :: 50.0
 PLAYER_WALK_SPEED :: 4.3
 PLAYER_SPRINT_SPEED :: 5.6
 PLAYER_SNEAK_SPEED :: 1.3
+// In water: half the walking speed, a slow sink under weak gravity and a
+// small upward speed while Jump is held. No drowning.
+PLAYER_WATER_SPEED_FACTOR :: 0.5
+PLAYER_WATER_GRAVITY :: 4.0
+PLAYER_SINK_SPEED :: 1.5
+PLAYER_SWIM_SPEED :: 2.5
 
 Camera_Mode :: enum u8 {
 	First_Person,
@@ -68,6 +74,16 @@ make_player :: proc(start: Player_Start, block_count: int, allocator := context.
 	}
 }
 
+// Unknown names are skipped: validate_starting_blocks reports them at load.
+give_starting_blocks :: proc(player: ^Player, registry: Block_Registry, starting_blocks: []Starting_Block) {
+	for starting in starting_blocks {
+		if block, found := find_block_id(registry, starting.block); found && block != AIR_BLOCK {
+			player.owned_blocks[block] += starting.count
+		}
+	}
+	ensure_selected_block_owned(player)
+}
+
 destroy_player :: proc(player: Player) {
 	delete(player.owned_blocks)
 }
@@ -112,6 +128,13 @@ fall_velocity :: proc(vertical_velocity: f32, seconds: f32) -> f32 {
 	return max(vertical_velocity - PLAYER_GRAVITY * seconds, -PLAYER_TERMINAL_SPEED)
 }
 
+swim_velocity :: proc(vertical_velocity: f32, swimming_up: bool, seconds: f32) -> f32 {
+	if swimming_up {
+		return PLAYER_SWIM_SPEED
+	}
+	return max(vertical_velocity - PLAYER_WATER_GRAVITY * seconds, -PLAYER_SINK_SPEED)
+}
+
 // The chunk holding the block under the feet. While it is missing the
 // ground reads as air, so the player would fall through it.
 ground_chunk_loaded :: proc(world: ^World, position: [3]f32) -> bool {
@@ -128,12 +151,16 @@ step_keeps_ground :: proc(world: ^World, registry: Block_Registry, player: Playe
 	return box_has_ground(world, registry, player_box(position))
 }
 
-move_player_vertically :: proc(world: ^World, registry: Block_Registry, player: ^Player, seconds: f32) {
+move_player_vertically :: proc(world: ^World, registry: Block_Registry, player: ^Player, in_water, swimming_up: bool, seconds: f32) {
 	if !ground_chunk_loaded(world, player.position) {
 		player.velocity.y = 0
 		return
 	}
-	player.velocity.y = fall_velocity(player.velocity.y, seconds)
+	if in_water {
+		player.velocity.y = swim_velocity(player.velocity.y, swimming_up, seconds)
+	} else {
+		player.velocity.y = fall_velocity(player.velocity.y, seconds)
+	}
 	moved, blocked := sweep_box_axis(world, registry, player_box(player.position), 1, player.velocity.y * seconds)
 	player.position.y += moved
 	player.on_ground = blocked && player.velocity.y < 0
@@ -173,12 +200,16 @@ walk_player :: proc(world: ^World, registry: Block_Registry, player: ^Player, in
 	if lift_out_of_blocks(world, registry, player) {
 		return
 	}
-	if player.on_ground && .Jump in input.pressed {
+	in_water := box_touches_water(world, registry, player_box(player.position))
+	if player.on_ground && !in_water && .Jump in input.pressed {
 		player.velocity.y = PLAYER_JUMP_SPEED
 	}
 	horizontal := walk_velocity(player.yaw, input)
+	if in_water {
+		horizontal *= PLAYER_WATER_SPEED_FACTOR
+	}
 	player.velocity.x, player.velocity.z = horizontal.x, horizontal.y
-	move_player_vertically(world, registry, player, seconds)
+	move_player_vertically(world, registry, player, in_water, .Jump in input.pressed, seconds)
 	move_player_horizontally(world, registry, player, .Sneak in input.pressed, seconds)
 }
 

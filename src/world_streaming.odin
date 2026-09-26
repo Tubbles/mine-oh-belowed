@@ -9,8 +9,8 @@ import "core:thread"
 
 // Chunk streaming: worker threads generate and mesh chunks, the main thread
 // inserts, unloads and schedules. Workers never touch the World. A mesh job
-// carries private copies of the chunk and its neighbours, so edits and
-// unloads on the main thread cannot race with it.
+// carries a private copy of the chunk and of the cells around it (blocks
+// and light), so edits and unloads on the main thread cannot race with it.
 
 LOAD_RADIUS_HORIZONTAL :: 6
 LOAD_RADIUS_VERTICAL :: 3
@@ -21,8 +21,8 @@ UNLOAD_MARGIN :: 1
 // for far chunks do not pile up ahead of near ones when the camera moves.
 MAXIMUM_PENDING_JOBS :: 48
 MAXIMUM_GENERATED_PER_FRAME :: 16
-// A mesh job copies up to seven chunks on the main thread, so the copies
-// per frame stay bounded.
+// A mesh job copies a chunk and its border shell on the main thread, so
+// the copies per frame stay bounded.
 MAXIMUM_MESH_SUBMISSIONS_PER_FRAME :: 8
 // Uploads of non empty meshes per frame, against hitches.
 MAXIMUM_MESH_UPLOADS_PER_FRAME :: 6
@@ -33,13 +33,13 @@ Chunk_Job_Kind :: enum u8 {
 	Mesh,
 }
 
-// For Mesh jobs, chunk and neighbours are copies owned by the job.
+// For Mesh jobs, chunk and border are copies owned by the job.
 Chunk_Job :: struct {
 	kind:       Chunk_Job_Kind,
 	coordinate: Chunk_Coordinate,
 	revision:   u64,
 	chunk:      ^Chunk,
-	neighbours: [Direction]^Chunk,
+	border:     ^Chunk_Border,
 }
 
 // Generate results carry chunk and veins, Mesh results carry mesh.
@@ -151,9 +151,7 @@ stop_job_queue :: proc(jobs: ^Chunk_Job_Queue) {
 
 free_job_chunks :: proc(job: Chunk_Job) {
 	free(job.chunk)
-	for neighbour in job.neighbours {
-		free(neighbour)
-	}
+	free(job.border)
 }
 
 free_job_result :: proc(result: Chunk_Job_Result) {
@@ -174,10 +172,10 @@ run_chunk_job :: proc(shared: ^Worker_Shared, job: Chunk_Job) -> Chunk_Job_Resul
 		result.chunk, result.veins = generated.chunk, generated.veins
 	case .Mesh:
 		input := Mesh_Input {
-			chunk      = job.chunk,
-			neighbours = job.neighbours,
-			registry   = shared.registry,
-			atlas      = shared.atlas,
+			chunk    = job.chunk,
+			border   = job.border,
+			registry = shared.registry,
+			atlas    = shared.atlas,
 		}
 		result.mesh = mesh_chunk(input)
 		free_job_chunks(job)
@@ -294,12 +292,13 @@ stop_chunk_streaming :: proc(streaming: ^Chunk_Streaming) {
 	delete(streaming.unloaded)
 }
 
-// An all air chunk looks like a missing one to the mesher, so its arrival
-// changes no neighbour's mesh.
+// An all air chunk under open sky looks like a missing one to the mesher,
+// so its arrival changes no neighbour's mesh.
 insert_generated_chunk :: proc(world: ^World, result: Chunk_Job_Result) {
 	world.chunks[result.coordinate] = result.chunk
 	register_column_veins(world, chunk_column_of(result.coordinate), result.veins[:])
-	if chunk_is_all_air(result.chunk) {
+	queue.push_back(&world.lighting.arrived_chunks, result.coordinate)
+	if chunk_is_all_air(result.chunk) && chunk_is_open_sky(result.chunk) {
 		return
 	}
 	for direction in Direction {
@@ -349,13 +348,11 @@ neighbours_settled :: proc(streaming: ^Chunk_Streaming, world: ^World, camera_ch
 	return true
 }
 
-copy_chunk_blocks :: proc(chunk: ^Chunk) -> ^Chunk {
-	if chunk == nil {
-		return nil
-	}
+copy_chunk_contents :: proc(chunk: ^Chunk) -> ^Chunk {
 	copied := new(Chunk)
 	copied.coordinate = chunk.coordinate
 	copied.blocks = chunk.blocks
+	copied.light = chunk.light
 	return copied
 }
 
@@ -366,10 +363,8 @@ submit_mesh_job :: proc(streaming: ^Chunk_Streaming, world: ^World, chunk: ^Chun
 		kind       = .Mesh,
 		coordinate = chunk.coordinate,
 		revision   = streaming.next_revision,
-		chunk      = copy_chunk_blocks(chunk),
-	}
-	for neighbour, direction in chunk_neighbours(world, chunk.coordinate) {
-		job.neighbours[direction] = copy_chunk_blocks(neighbour)
+		chunk      = copy_chunk_contents(chunk),
+		border     = gather_chunk_border(world, chunk.coordinate),
 	}
 	chunk.dirty = false
 	submit_job(&streaming.shared.jobs, job)

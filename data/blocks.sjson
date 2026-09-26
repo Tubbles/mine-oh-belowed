@@ -1,11 +1,18 @@
-// Block prototypes (work items 0005 and 0006). The first entry must be air:
-// its dense index is 0, the value every new chunk is filled with.
-// A block that is not solid (water) is drawn only where it touches air,
-// and solid blocks show their faces against it.
+// Block prototypes (work items 0005, 0006 and 0008). The first entry must be
+// air: its dense index is 0, the value every new chunk is filled with.
+// A block that is not solid (water, torch) is drawn where it touches a
+// different block that is not solid, and solid blocks show their faces
+// against it. Water shows against other water only where the other
+// surface is lower.
 // hardness_seconds is the time to break the block by hand. 0 means the
 // block cannot be mined (air, water).
 // texture holds one base colour (red, green, blue) per face group. The atlas
 // generator turns each into a 16 by 16 tile with a little per texel noise.
+// Solid blocks are opaque to light, every other block lets light through.
+// light_level (0 to 15, default 0) is the block light the block emits.
+// water_level (default 0) marks water: 8 is a source block, 7 to 1 are
+// flowing water, 7 next to a source and 1 at the far end of a spread.
+// Water needs one block for every level from 1 to 8 or none at all.
 blocks = [
 	{
 		id = "air"
@@ -54,6 +61,7 @@ blocks = [
 		name = "Water"
 		solid = false
 		hardness_seconds = 0
+		water_level = 8
 		texture = {top = [52, 98, 186], side = [48, 90, 172], bottom = [44, 82, 160]}
 	}
 	{
@@ -111,5 +119,69 @@ blocks = [
 		solid = true
 		hardness_seconds = 1.5
 		texture = {top = [150, 140, 128], side = [150, 140, 128], bottom = [150, 140, 128]}
+	}
+	{
+		id = "flowing_water_7"
+		name = "Flowing Water"
+		solid = false
+		hardness_seconds = 0
+		water_level = 7
+		texture = {top = [52, 98, 186], side = [48, 90, 172], bottom = [44, 82, 160]}
+	}
+	{
+		id = "flowing_water_6"
+		name = "Flowing Water"
+		solid = false
+		hardness_seconds = 0
+		water_level = 6
+		texture = {top = [52, 98, 186], side = [48, 90, 172], bottom = [44, 82, 160]}
+	}
+	{
+		id = "flowing_water_5"
+		name = "Flowing Water"
+		solid = false
+		hardness_seconds = 0
+		water_level = 5
+		texture = {top = [52, 98, 186], side = [48, 90, 172], bottom = [44, 82, 160]}
+	}
+	{
+		id = "flowing_water_4"
+		name = "Flowing Water"
+		solid = false
+		hardness_seconds = 0
+		water_level = 4
+		texture = {top = [52, 98, 186], side = [48, 90, 172], bottom = [44, 82, 160]}
+	}
+	{
+		id = "flowing_water_3"
+		name = "Flowing Water"
+		solid = false
+		hardness_seconds = 0
+		water_level = 3
+		texture = {top = [52, 98, 186], side = [48, 90, 172], bottom = [44, 82, 160]}
+	}
+	{
+		id = "flowing_water_2"
+		name = "Flowing Water"
+		solid = false
+		hardness_seconds = 0
+		water_level = 2
+		texture = {top = [52, 98, 186], side = [48, 90, 172], bottom = [44, 82, 160]}
+	}
+	{
+		id = "flowing_water_1"
+		name = "Flowing Water"
+		solid = false
+		hardness_seconds = 0
+		water_level = 1
+		texture = {top = [52, 98, 186], side = [48, 90, 172], bottom = [44, 82, 160]}
+	}
+	{
+		id = "torch"
+		name = "Torch"
+		solid = false
+		hardness_seconds = 0.1
+		light_level = 14
+		texture = {top = [255, 200, 80], side = [150, 110, 60], bottom = [120, 90, 50]}
 	}
 ]

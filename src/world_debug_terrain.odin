@@ -1,5 +1,6 @@
 package game
 
+import "core:container/queue"
 import "core:fmt"
 import "core:math"
 
@@ -82,13 +83,30 @@ fill_debug_terrain_chunk :: proc(chunk: ^Chunk, blocks: Debug_Terrain_Blocks) {
 	}
 }
 
+// The terrain has nothing over its surface, so a column is open to the sky
+// above a chunk when its surface lies below the chunk's top.
+debug_terrain_sky_light :: proc(chunk: ^Chunk, registry: Block_Registry) {
+	origin := chunk_origin(chunk.coordinate)
+	open: Open_Columns
+	for z in i32(0) ..< CHUNK_SIZE {
+		for x in i32(0) ..< CHUNK_SIZE {
+			open[column_index(x, z)] = debug_terrain_height(origin.x + x, origin.z + z) < origin.y + CHUNK_SIZE
+		}
+	}
+	fill_chunk_sky_light(chunk, registry, &open)
+}
+
 // Chunks x and z run from -4 to 3, so negative coordinates are exercised.
-build_debug_terrain :: proc(world: ^World, blocks: Debug_Terrain_Blocks) {
+// Light across chunk borders follows in the first ticks, like streamed chunks.
+build_debug_terrain :: proc(world: ^World, registry: Block_Registry, blocks: Debug_Terrain_Blocks) {
 	for y in i32(0) ..< DEBUG_TERRAIN_CHUNKS_Y {
 		for z in i32(0) ..< DEBUG_TERRAIN_CHUNKS_Z {
 			for x in i32(0) ..< DEBUG_TERRAIN_CHUNKS_X {
 				coordinate := Chunk_Coordinate{x - DEBUG_TERRAIN_CHUNKS_X / 2, y, z - DEBUG_TERRAIN_CHUNKS_Z / 2}
-				fill_debug_terrain_chunk(world_create_chunk(world, coordinate), blocks)
+				chunk := world_create_chunk(world, coordinate)
+				fill_debug_terrain_chunk(chunk, blocks)
+				debug_terrain_sky_light(chunk, registry)
+				queue.push_back(&world.lighting.arrived_chunks, coordinate)
 			}
 		}
 	}

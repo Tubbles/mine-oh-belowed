@@ -10,8 +10,8 @@ World_Coordinate :: distinct [3]i32
 // Block position inside a chunk, each component 0 to CHUNK_SIZE - 1.
 Local_Coordinate :: distinct [3]i32
 
-// Light is unused until work item 0008 but lives here now so that the
-// layout does not change when it arrives.
+// light holds sky light in the high nibble and block light in the low
+// nibble, 0 to MAXIMUM_LIGHT each (world_light.odin).
 Chunk :: struct {
 	coordinate: Chunk_Coordinate,
 	blocks:     [CHUNK_BLOCK_COUNT]Block_Id,
@@ -23,11 +23,21 @@ Chunk :: struct {
 // never moves a 96 KiB chunk and pointers held across a frame stay valid.
 // Veins are entities registered once, when the first chunk of a chunk
 // column they overlap is loaded, and they stay when chunks unload.
+// Every world_set_block is recorded in block_changes, and the next
+// simulation tick turns the changes into light and water updates.
 World :: struct {
-	chunks:       map[Chunk_Coordinate]^Chunk,
-	veins:        [dynamic]Vein,
-	vein_indices: map[Vein_Id]int,
-	column_veins: map[Chunk_Column][dynamic]Vein_Id,
+	chunks:        map[Chunk_Coordinate]^Chunk,
+	veins:         [dynamic]Vein,
+	vein_indices:  map[Vein_Id]int,
+	column_veins:  map[Chunk_Column][dynamic]Vein_Id,
+	block_changes: [dynamic]Block_Change,
+	lighting:      Lighting,
+	water:         Water_Flow,
+}
+
+Block_Change :: struct {
+	position: World_Coordinate,
+	previous: Block_Id,
 }
 
 Direction :: enum u8 {
@@ -100,23 +110,49 @@ world_get_block :: proc(world: ^World, position: World_Coordinate) -> Block_Id {
 	return chunk_get_block(chunk, world_to_local_coordinate(position))
 }
 
-// Sets a block in a loaded chunk and marks every chunk whose mesh can see
-// the change dirty: the owner, and the neighbour across each border the
-// block touches. Returns false when the chunk is not loaded.
+// Sets a block in a loaded chunk, records the change for the next tick and
+// marks every chunk whose mesh can see the change dirty. Returns false
+// when the chunk is not loaded.
 world_set_block :: proc(world: ^World, position: World_Coordinate, block: Block_Id) -> bool {
-	coordinate := world_to_chunk_coordinate(position)
-	chunk := world.chunks[coordinate] or_else nil
+	chunk := world.chunks[world_to_chunk_coordinate(position)] or_else nil
 	if chunk == nil {
 		return false
 	}
 	local := world_to_local_coordinate(position)
+	append(&world.block_changes, Block_Change{position = position, previous = chunk_get_block(chunk, local)})
 	chunk_set_block(chunk, local, block)
-	for direction in Direction {
-		if !local_in_bounds(local + Local_Coordinate(direction_offsets[direction])) {
-			mark_chunk_dirty(world, coordinate + Chunk_Coordinate(direction_offsets[direction]))
+	mark_chunks_around_cell_dirty(world, chunk, position)
+	return true
+}
+
+// The neighbour chunk offset a local component reaches at the border: -1
+// at 0, +1 at CHUNK_SIZE - 1, none inside.
+border_reach :: proc(value: i32) -> (low, high: i32) {
+	return value == 0 ? -1 : 0, value == CHUNK_SIZE - 1 ? 1 : 0
+}
+
+// Smooth lighting and ambient occlusion read the 26 cells around a face's
+// front cell, so a change at a border cell also changes the meshes of the
+// face, edge and corner neighbour chunks next to it.
+mark_chunks_around_cell_dirty :: proc(world: ^World, chunk: ^Chunk, position: World_Coordinate) {
+	chunk.dirty = true
+	local := world_to_local_coordinate(position)
+	low, high: [3]i32
+	for axis in 0 ..< 3 {
+		low[axis], high[axis] = border_reach(local[axis])
+	}
+	if low == {} && high == {} {
+		return
+	}
+	for y in low.y ..= high.y {
+		for z in low.z ..= high.z {
+			for x in low.x ..= high.x {
+				if x != 0 || y != 0 || z != 0 {
+					mark_chunk_dirty(world, chunk.coordinate + {x, y, z})
+				}
+			}
 		}
 	}
-	return true
 }
 
 mark_chunk_dirty :: proc(world: ^World, coordinate: Chunk_Coordinate) {
@@ -145,6 +181,9 @@ destroy_world :: proc(world: ^World) {
 	delete(world.column_veins)
 	delete(world.vein_indices)
 	delete(world.veins)
+	delete(world.block_changes)
+	destroy_lighting(&world.lighting)
+	destroy_water_flow(&world.water)
 }
 
 chunk_is_all_air :: proc(chunk: ^Chunk) -> bool {

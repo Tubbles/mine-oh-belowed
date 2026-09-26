@@ -1,5 +1,6 @@
 package game
 
+import "core:container/queue"
 import "core:fmt"
 import "core:strings"
 import rl "vendor:raylib"
@@ -35,6 +36,7 @@ mapped_lines :: proc(state: Frame_State, config: Game_Config) -> []Diagnostics_L
 	append_line(&lines, false, "backend %v", input.raw.backend)
 	append_line(&lines, false, "%s", world_statistics_text(state))
 	append_line(&lines, false, "%s", streaming_statistics_text(state))
+	append_line(&lines, false, "%s", light_statistics_text(state))
 	append_player_lines(&lines, state)
 	append_line(&lines, false, "")
 	append_line(&lines, input.move != {}, "move        % .3f % .3f", input.move.x, input.move.y)
@@ -204,6 +206,24 @@ world_statistics_text :: proc(state: Frame_State) -> string {
 	)
 }
 
+// Light of the cell in front of the targeted face: the targeted block
+// itself is usually opaque and holds no light.
+light_statistics_text :: proc(state: Frame_State) -> string {
+	simulation := state.simulation
+	world := simulation.world
+	player := simulation.players[0]
+	light := player.target.hit ? world_get_light(&world, player.target.adjacent) : 0
+	return fmt.tprintf(
+		"light sky %d block %d  day %.2f  queued light %d chunks %d water %d",
+		light_level(light, .Sky),
+		light_level(light, .Block),
+		day_factor(daylight_blend(simulation.tick, simulation.day_length_ticks)),
+		pending_light_nodes(world.lighting),
+		queue.len(world.lighting.arrived_chunks),
+		queue.len(world.water.updates),
+	)
+}
+
 streaming_statistics_text :: proc(state: Frame_State) -> string {
 	return fmt.tprintf("pending jobs %d  veins %d  seed %d", state.streaming.pending_jobs, len(state.simulation.world.veins), state.generator.seed)
 }
@@ -219,6 +239,7 @@ draw_world_overlay :: proc(state: Frame_State) {
 	append_line(&lines, false, "fps %d  tick %d", rl.GetFPS(), state.simulation.tick)
 	append_line(&lines, false, "%s", world_statistics_text(state))
 	append_line(&lines, false, "%s", streaming_statistics_text(state))
+	append_line(&lines, false, "%s", light_statistics_text(state))
 	append_player_lines(&lines, state)
 	append_line(&lines, false, "F3 diagnostics  F5 remove block  F6 fly  V camera")
 	font_size := diagnostics_font_size(rl.GetScreenHeight())
