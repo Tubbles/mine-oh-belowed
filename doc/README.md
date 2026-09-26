@@ -4,6 +4,7 @@ Progressive disclosure: [DESIGN.md](../DESIGN.md) and [PLAN.md](../PLAN.md) at t
 
 - [architecture.md](architecture.md): code structure, world storage, simulation, data, save format, input abstraction, configuration, testing.
 - [build.md](build.md): host toolchain, linker shim, nix flake, CI.
+- [content.md](content.md): living catalogue of items, machines, recipes, technologies and veins with their values, the rules behind the values, phase budgets and ratio checks.
 - [input.md](input.md): Steam Controller facts, technical path options, layout proposal.
 - [inspiration.md](inspiration.md): lessons taken from Factorio, Satisfactory, Dyson Sphere Program, the voxel factory games and the mod ecosystem, with sources.
 - [log/](log/): dated decision logs, write once.
