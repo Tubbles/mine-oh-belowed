@@ -13,18 +13,18 @@ Mine oh Belowed is a voxel automation game. This document is the map. Details li
 
 ## The world
 
-- Blocks are one metre cubes. The world is stored in cubic chunks of 32 by 32 by 32 blocks, loaded around each player. Cubic chunks keep depth unbounded in principle. The alpha world uses a fixed vertical range (proposal: 64 blocks above sea level, 192 below), set in data.
+- Blocks are one metre cubes. The world is stored in cubic chunks of 32 by 32 by 32 blocks, loaded around each player. Cubic chunks make the world unbounded in every direction, depth included, and generation is lazy, so there is no world height constant.
 - Procedural generation uses layered OpenSimplex noise for height and moisture, a small set of biomes (plains, forest, hills, desert, lake), trees, boulders and caves.
 - Strata: the ground is layered. Topsoil, stone, deep stone, bedrock. Each stratum has a hardness that sets mining speed, and its own ore table. Alpha ores: coal, copper and iron near the surface, richer and larger veins deeper. Stone and sand are everywhere. Wood comes from trees.
 - Ore veins are three dimensional blobs, not surface patches. A vein usually shows an outcrop at the surface or in a cave wall, so scouting works without x-ray vision.
-- Water is static. Lakes have a fixed level and blocks do not flow. Digging under a lake does not flood the shaft. Water is infinite for pumps.
+- Water flows, Minecraft style: source blocks spread into neighbouring air and drain when the source is removed. Lakes and oceans are infinite for pumps. Digging under a lake floods the hole, which is a puzzle rather than a punishment, since nothing hurts the player.
 - Lighting is Minecraft style: 16 level sky light and block light propagation, so underground bases need torches and lamps. The day and night cycle is cosmetic in alpha.
 - Nothing falls. There are no gravity blocks in alpha.
 
 ## The player
 
 - First person by default, with a third person camera as a toggle. The player is one block wide and two blocks tall, reaches five blocks, jumps one block, sneaks and sprints. Gyro aim gives fine pointing for block placement in both camera modes.
-- Hand mining is fast and kid friendly: seconds per block, not tens of seconds. Tools multiply speed and gate hardness (wood, stone, iron).
+- Hand mining is fast and kid friendly: one to three seconds per block by hand, not tens of seconds. Tools multiply speed and gate hardness (wood, stone, iron).
 - Inventory is a grid of 36 slots plus an 8 slot hotbar. The hotbar doubles as the radial menu on the left trackpad.
 - No health, hunger, weight or drowning in the peaceful alpha.
 - A flying and instant-mining toggle exists as a developer tool and as a mode for the youngest players.
@@ -41,7 +41,7 @@ Later tiers (oil, rails, robots, deeper ores) come after the alpha.
 
 ## Automation and logistics
 
-- Machines are multi block entities placed on a flat footprint. Footprints are defined in data. The intent is small, even sizes so rotation and alignment are easy on a gamepad.
+- Machines are multi block entities placed on a flat footprint. Footprints are defined in data and vary on purpose, odd shapes included: fitting a 3 by 2 boiler next to a 2 by 2 drill is part of the puzzle. Snapping and the rotation preview carry the gamepad ergonomics, not uniform sizes.
 - Mining drills consume the blocks beneath them. A drill mines a column downward, turning ore blocks into items and leaving air. The factory literally carves the world. When the column is exhausted the drill reports it and can be picked up and moved.
 - Belts come in three shapes: flat, ramp (one block of rise per block of run) and lift (a vertical belt block that stacks). Two lanes per belt, as in Factorio. Items on belts are simulated per belt line, not as individual entities, so thousands of belts stay cheap.
 - Inserters reach one block in four horizontal directions and move items between belts, machines and chests. Vertical movement is the lift's job.
