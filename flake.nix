@@ -9,6 +9,21 @@
       systems = [ "x86_64-linux" ];
       forAllSystems =
         function: nixpkgs.lib.genAttrs systems (system: function nixpkgs.legacyPackages.${system});
+      # nixpkgs deletes the bundled raylib libraries from Odin's vendor
+      # directory and points vendor:raylib at the system raylib, but leaves
+      # the rlgl sub package pointing at the deleted ../linux/libraylib.a.
+      # Importing vendor:raylib/rlgl then fails to link. This override gives
+      # rlgl the same treatment.
+      odinForNix =
+        pkgs:
+        pkgs.odin.overrideAttrs (previous: {
+          postPatch =
+            (previous.postPatch or "")
+            + ''
+              substituteInPlace vendor/raylib/rlgl/rlgl.odin \
+                --replace-fail '"../linux/libraylib.so.600" when RAYLIB_SHARED else "../linux/libraylib.a",' '"system:raylib",'
+            '';
+        });
     in
     {
       packages = forAllSystems (pkgs: {
@@ -17,12 +32,14 @@
           version = "0.0.0";
           src = self;
 
-          nativeBuildInputs = [ pkgs.odin ];
+          nativeBuildInputs = [ (odinForNix pkgs) ];
           # The nixpkgs Odin package patches vendor:raylib to link the system
           # raylib instead of the bundled static library, hence raylib here.
+          # libX11 is for the rlgl sub package, see odinForNix.
           buildInputs = [
             pkgs.raylib
             pkgs.sdl3
+            pkgs.xorg.libX11
           ];
 
           buildPhase = ''
@@ -59,9 +76,10 @@
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
           packages = [
-            pkgs.odin
+            (odinForNix pkgs)
             pkgs.raylib
             pkgs.sdl3
+            pkgs.xorg.libX11
           ];
         };
       });

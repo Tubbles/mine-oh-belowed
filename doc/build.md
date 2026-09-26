@@ -27,7 +27,7 @@ At run time the game looks for its data directory in this order: `$MINE_OH_BELOW
 
 ## Nix
 
-`flake.nix` provides `packages.default` (the game), `devShells.default` (odin, raylib, sdl3) and `checks`. nixpkgs unstable ships odin dev-2026-09, raylib 6.0 and sdl3 3.4.16, matching the host. The nixpkgs Odin package patches `vendor:raylib` to link the system raylib, which is why raylib is a build input. Nix is not installed on the couch machine, so the flake is validated by CI, not locally.
+`flake.nix` provides `packages.default` (the game), `devShells.default` (odin, raylib, sdl3) and `checks`. nixpkgs unstable ships odin dev-2026-09, raylib 6.0 and sdl3 3.4.16, matching the host. The nixpkgs Odin package deletes the bundled raylib libraries and patches `vendor:raylib` to link the system raylib, which is why raylib is a build input. It does not patch the `vendor:raylib/rlgl` sub package, which still names the deleted `../linux/libraylib.a`, so importing rlgl fails to link under nix. The flake overrides the Odin package with the same substitution for rlgl and adds libX11, which rlgl's import block still links. Nix is not installed on the couch machine, so the flake is validated by CI, not locally.
 
 ## CI
 
