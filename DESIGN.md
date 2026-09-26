@@ -96,10 +96,15 @@ Power is part of the logistics puzzle from the alpha on. Boilers need fuel, whic
 - Quests are data driven chapters over the gameplay phases. Objectives: craft, place, sustain a rate, research, ship. Contextual hints ("your drill ran out of fuel three times"). Rewards: items, unlocks, schematics. Mission Control is the voice. Quests replace the tutorial. They only ever guide and reward, a player who ignores the journal is never blocked.
 - A few main quest gates open the massive steps, on the order of one per gameplay phase, never hundreds of small ones. A gated technology waits for its main quest and for nothing else, and no other path waits for it.
 - Rockets close the loop in phase 8. A launch pad and rocket parts are the big sink. Shipments fulfil contracts and trade for returns. Contracts carry soft deadlines: a late shipment pays less, nothing fails. No building is mandatory, the pad included.
+- The ending is soft. After the first shipment the venture declares the outpost self sufficient in one message. Contracts and infinite research continue. There is no victory screen.
 
 ## Lore and tone
 
 Realistic rather than cartoonish. The player is a contractor establishing an industrial outpost on an uninhabited planet for a venture that holds the planet's exploitation lease and stays in contact through Mission Control, its orbital station. The venture sets the contracts, the prices and the targets, and the cynical hand of capitalism is felt through its messages and its demands. Spoil heaps, spent veins and flare stacks are what the outpost does to the planet, and the game shows it without a pollution mechanic in the alpha. Materials, processes and machines carry their real names and real units: hematite and chalcopyrite, smelting and cracking, kilowatts and items per minute. The planet's geology is plausible. There are no aliens, no magic and no mascots. Humour lives in Mission Control's corporate messages, not in the world.
+
+## Sound
+
+Sparse. A handful of quiet, positional machine loops with a hard cap on simultaneous voices, so a large base is a hum rather than a choir. Distinct sounds are reserved for state changes: a machine stopping, a brownout starting, a quest completing, a capsule landing. The visual layer (bottleneck overlay, HUD warnings) is the primary feedback and sound only confirms it. In the placeholder era that means one hum, a few soft clicks, or silence. No synthesised tone per machine type.
 
 ## World settings
 

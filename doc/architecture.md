@@ -10,6 +10,7 @@
 
 - Main loop: render at vsync, simulate at a fixed 60 ticks per second with an accumulator. Only the camera interpolates between ticks.
 - The simulation never reads the wall clock. Random numbers come from generators seeded by world seed, chunk coordinate or tick.
+- Fixed point everywhere a simulation quantity accumulates: belt positions, fluid volumes, energy buffers, crafting progress, vein reservoirs are integers with a fixed scale. Floats stay in rendering and input. Debug builds hash the simulation state every tick, and a test runs two simulations from one seed and compares the hashes.
 - Players are an array in the world state, each with its own camera and input frame. The alpha runs one player. Split screen co-op adds more without a redesign.
 - Chunk generation and meshing run on worker threads (`core:thread`) and hand results to the main thread through queues. The simulation is single threaded in the alpha.
 
@@ -38,6 +39,10 @@ One `game` package under `src/`, split into files by concern: `world_*.odin`, `g
 ## Data driven content
 
 `data/*.sjson` holds blocks, items, recipes, machines, technologies, vein types and ore tables, biomes, quest chapters. Files are parsed with `core:encoding/json` (`Specification.SJSON`) into prototype tables at startup. String ids are resolved to dense integer indices once. In development builds the data directory is watched and reloaded.
+
+## Strings and units
+
+Every player facing string lives in `data/strings/en.sjson` and is referenced by key, from the first screen that shows text. One procedure formats quantities with their units (per minute, kW, MW, L), so the realism units stay consistent and localisation later is a data change. The developer diagnostics screen is the one exception and may use literal strings.
 
 ## Save format
 
