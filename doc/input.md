@@ -43,6 +43,10 @@ Everything below is a binding table in configuration, not code. Same physical in
 | Menu | Pause menu | Pause menu |
 | Steam, Quick Access | Reserved by Steam | Reserved by Steam |
 
+Selection assist: the reticle snaps to the nearest entity in the aim direction, the bumpers cycle between overlapping candidates when several small entities sit under the reticle, and holding Y names everything under it. Factorio's Switch port shows that picking one building among dense neighbours is the remaining weak spot of pad play even after every widget was made stick navigable (see `inspiration.md`). The third person toggle exists for the same reason: a console review of Satisfactory found first person placement harder than it needs to be.
+
+Distribute gesture: holding L2 while sweeping the reticle across machines spreads the held stack evenly over them. Hand feeding is the whole early game and Even Distribution is one of the most installed Factorio mods for exactly this.
+
 R2 to mine and L2 to place mirrors Minecraft Bedrock's controller defaults, so habits transfer for players who know it. The grip buttons duplicate face buttons on purpose: they are the expert copy that keeps the thumbs on the sticks.
 
 ## Generic gamepads

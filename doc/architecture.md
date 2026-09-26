@@ -28,15 +28,20 @@ One `game` package under `src/`, split into files by concern: `world_*.odin`, `g
 - Entity pools per type (`[dynamic]Mining_Drill`, `[dynamic]Inserter`, and so on) with generational handles. Each type has its own update procedure over its own array. No general entity component system.
 - Belts follow the transport line model: items are fixed point offsets along a line, lines merge and split at belt junctions. Ramps and lifts are lines with a different geometry, not special cases in the item logic.
 - Fluid and electric networks are rebuilt on topology change and evaluated per tick in fixed point.
+- Recipes have any number of inputs and any number of outputs, each an item or a fluid, from the very first recipe. Machines have typed slots. There is no single output fast path to retrofit later.
 - Crafting machines hold a recipe id and a progress counter. Recipes are prototypes resolved to dense indices at load time.
+- Veins are entities, not block data: a reservoir struct with per ore amounts, the outcrop cells, and the attached drills. Drills hold a vein handle. There are no per block ore counters.
+- Fluids use one network model with a phase per fluid. A liquid network tracks its fill level and pumps decide whether an outlet above the level receives anything. Gas networks ignore height.
+- Production statistics counters (produced, consumed, per item, per network) are a day one system. The quest runtime, the statistics screen and the bottleneck overlay all read them.
+- Quests are data: chapters of objectives whose predicates are evaluated against the statistics counters, placed entity counts and research state every tick. The journal reads the same state.
 
 ## Data driven content
 
-`data/*.sjson` holds blocks, items, recipes, machines, technologies, strata and ore tables, biomes. Files are parsed with `core:encoding/json` (`Specification.SJSON`) into prototype tables at startup. String ids are resolved to dense integer indices once. In development builds the data directory is watched and reloaded.
+`data/*.sjson` holds blocks, items, recipes, machines, technologies, vein types and ore tables, biomes, quest chapters. Files are parsed with `core:encoding/json` (`Specification.SJSON`) into prototype tables at startup. String ids are resolved to dense integer indices once. In development builds the data directory is watched and reloaded.
 
 ## Save format
 
-Worlds live under `$XDG_DATA_HOME/mine-oh-belowed/saves/<world>/`: a `world.sjson` with seed, settings and tick, region files holding chunks as a per chunk palette plus run length encoded indices, and entities serialised per chunk. Odin's `core:compress/zlib` only inflates, so there is no zlib compressor in the standard library. Palette plus run length encoding suits voxel data and needs no dependency. Autosave pauses the simulation, writes dirty chunks, and resumes.
+Worlds live under `$XDG_DATA_HOME/mine-oh-belowed/saves/<world>/`: a `world.sjson` with seed, world settings (vein finiteness, richness, research cost, byproduct strictness, day length) and tick, region files holding chunks as a per chunk palette plus run length encoded indices, and entities serialised per chunk. Odin's `core:compress/zlib` only inflates, so there is no zlib compressor in the standard library. Palette plus run length encoding suits voxel data and needs no dependency. Autosave pauses the simulation, writes dirty chunks, and resumes.
 
 ## Input abstraction
 
