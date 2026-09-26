@@ -12,7 +12,5 @@ jobs:
       - uses: cachix/install-nix-action@v31
       - name: Development shell
         run: nix develop --command odin version
-      # Guard removed by work item 0001 once src/ exists.
       - name: Build and test
-        if: hashFiles('src/**') != ''
         run: nix build --print-build-logs
