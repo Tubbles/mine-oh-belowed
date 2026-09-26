@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+import "core:os"
 import rl "vendor:raylib"
 
 // Longest frame the accumulator accepts, so that a stall (debugger, window
@@ -76,6 +78,12 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend) {
 	rl.SetTraceLogLevel(.WARNING)
 	rl.SetConfigFlags({.VSYNC_HINT, .WINDOW_RESIZABLE})
 	rl.InitWindow(1280, 720, "Mine oh Belowed")
+	// raylib returns from a failed InitWindow instead of reporting it, and
+	// the first draw call would then crash. A missing display is the usual cause.
+	if !rl.IsWindowReady() {
+		fmt.eprintln("error: could not open a window (is a display available?)")
+		os.exit(1)
+	}
 	defer rl.CloseWindow()
 	// Escape is bound to the Pause action, so it must not close the window.
 	rl.SetExitKey(.KEY_NULL)
