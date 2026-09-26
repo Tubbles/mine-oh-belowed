@@ -31,6 +31,10 @@ gamepad_button_bindings := [?]Gamepad_Button_Binding {
 	{.RIGHT_FACE_LEFT, .Open_Inventory},
 	{.RIGHT_FACE_UP, .Rotate_Building},
 	{.LEFT_FACE_UP, .Pipette},
+	{.LEFT_FACE_LEFT, .Hotbar_Previous},
+	{.LEFT_FACE_RIGHT, .Hotbar_Next},
+	{.LEFT_TRIGGER_1, .Hotbar_Previous},
+	{.RIGHT_TRIGGER_1, .Hotbar_Next},
 	{.RIGHT_TRIGGER_2, .Mine},
 	{.LEFT_TRIGGER_2, .Place},
 	{.MIDDLE_LEFT, .Open_Map},
@@ -50,8 +54,12 @@ key_bindings := [?]Key_Binding {
 	{.BACKSPACE, .Back},
 	{.LEFT_SHIFT, .Sneak},
 	{.LEFT_CONTROL, .Sprint},
+	{.LEFT_BRACKET, .Hotbar_Previous},
+	{.RIGHT_BRACKET, .Hotbar_Next},
+	{.V, .Toggle_Camera_Mode},
 	{.F3, .Toggle_Diagnostics},
 	{.F5, .Debug_Remove_Block},
+	{.F6, .Toggle_Fly_Mode},
 }
 
 @(rodata)
@@ -184,13 +192,14 @@ read_raylib_input_frame :: proc(previous_pressed: Action_Set) -> Input_Frame {
 	move := clamp_to_unit_length(gamepad_stick(raw.gamepad, .LEFT_X, .LEFT_Y) + keyboard_move())
 	look := gamepad_stick(raw.gamepad, .RIGHT_X, .RIGHT_Y)
 	look_delta := raw.mouse.delta
-	pressed := gamepad_button_actions(raw.gamepad) + keyboard_mouse_actions() + analog_actions(move, look, look_delta)
+	wheel_actions := mouse_wheel_actions(raw.mouse.wheel)
+	pressed := gamepad_button_actions(raw.gamepad) + keyboard_mouse_actions() + analog_actions(move, look, look_delta) + wheel_actions
 	return Input_Frame {
 		move = move,
 		look = look,
 		look_delta = look_delta,
 		pressed = pressed,
-		just_pressed = actions_just_pressed(previous_pressed, pressed),
+		just_pressed = actions_just_pressed(previous_pressed, pressed) + wheel_actions,
 		raw = raw,
 	}
 }

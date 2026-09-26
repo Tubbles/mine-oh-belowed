@@ -19,9 +19,14 @@ Action :: enum u8 {
 	Back,
 	Sneak,
 	Sprint,
+	Hotbar_Previous,
+	Hotbar_Next,
+	// Keyboard only: the gamepad View button is taken by the map.
+	Toggle_Camera_Mode,
 	// Developer actions, keyboard only.
 	Toggle_Diagnostics,
 	Debug_Remove_Block,
+	Toggle_Fly_Mode,
 }
 
 Action_Set :: bit_set[Action]
@@ -123,6 +128,44 @@ Input_Frame :: struct {
 }
 
 STICK_DEADZONE :: 0.15
+
+// A wheel notch is an event, not a held button, so it goes straight into
+// just_pressed as well. Scrolling down selects the next slot.
+mouse_wheel_actions :: proc(wheel: [2]f32) -> Action_Set {
+	switch {
+	case wheel.y < 0:
+		return {.Hotbar_Next}
+	case wheel.y > 0:
+		return {.Hotbar_Previous}
+	}
+	return {}
+}
+
+// What frames collect between two simulation ticks. Frames and ticks run
+// at different rates: a 144 Hz display sees two or three frames per tick,
+// and a slow frame runs two ticks. look_delta (pixels) and just_pressed
+// (edges) are events, so each frame adds to the pending sum and the first
+// tick after them takes it all. Held state (move, look, pressed) is a level
+// and every tick reads the latest frame.
+Tick_Input_Accumulator :: struct {
+	look_delta:   [2]f32,
+	just_pressed: Action_Set,
+}
+
+accumulate_frame_input :: proc(accumulator: Tick_Input_Accumulator, frame: Input_Frame) -> Tick_Input_Accumulator {
+	return Tick_Input_Accumulator {
+		look_delta = accumulator.look_delta + frame.look_delta,
+		just_pressed = accumulator.just_pressed + frame.just_pressed,
+	}
+}
+
+// The input one tick sees, and the emptied accumulator for the next tick.
+take_tick_input :: proc(accumulator: Tick_Input_Accumulator, frame: Input_Frame) -> (Input_Frame, Tick_Input_Accumulator) {
+	tick_input := frame
+	tick_input.look_delta = accumulator.look_delta
+	tick_input.just_pressed = accumulator.just_pressed
+	return tick_input, {}
+}
 
 apply_radial_deadzone :: proc(vector: [2]f32, deadzone: f32) -> [2]f32 {
 	if linalg.length(vector) < deadzone {

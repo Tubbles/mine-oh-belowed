@@ -8,8 +8,13 @@ import rl "vendor:raylib"
 // drag) does not trigger a burst of catch up ticks.
 MAXIMUM_FRAME_SECONDS :: 0.25
 
+// The simulation owns the world and the players. players[index] reads
+// inputs[index] in simulation_tick; the alpha has one player.
 Simulation_State :: struct {
-	tick: u64,
+	tick:      u64,
+	tick_rate: int,
+	world:     World,
+	players:   [dynamic]Player,
 }
 
 Tick_Accumulator :: struct {
@@ -17,44 +22,52 @@ Tick_Accumulator :: struct {
 	accumulated_seconds: f64,
 }
 
-// The world lives here until the simulation owns world state (work item
-// 0007). The fly camera and debug edits are render side developer tools.
 Frame_State :: struct {
 	simulation:         Simulation_State,
 	accumulator:        Tick_Accumulator,
 	input_backend:      Input_Backend,
 	sdl3_input:         Sdl3_Input_State,
 	input:              Input_Frame,
+	tick_input:         Tick_Input_Accumulator,
 	registry:           Block_Registry,
 	generator:          Generator,
-	world:              World,
 	streaming:          Chunk_Streaming,
 	renderer:           Chunk_Renderer,
-	camera:             Fly_Camera,
 	show_diagnostics:   bool,
 	debug_edit_counter: u64,
 }
 
-// Above the middle of the debug terrain, looking down at an angle.
+// Above the middle of the debug terrain, looking down at an angle. The
+// player starts here in fly mode on the debug terrain.
 INITIAL_FLY_CAMERA :: Fly_Camera {
 	position = {-40, 80, -40},
 	yaw      = 45,
 	pitch    = -30,
 }
 
-SPAWN_CAMERA_HEIGHT :: 12
-
-// Above the spawn block, looking down at an angle.
-fly_camera_above :: proc(spawn: World_Coordinate) -> Fly_Camera {
-	return Fly_Camera {
-		position = {f32(spawn.x) + 0.5, f32(spawn.y + SPAWN_CAMERA_HEIGHT), f32(spawn.z) + 0.5},
-		yaw = 45,
-		pitch = -30,
+make_simulation :: proc(tick_rate: int, start: Player_Start, block_count: int) -> Simulation_State {
+	state := Simulation_State {
+		tick_rate = tick_rate,
 	}
+	append(&state.players, make_player(start, block_count))
+	return state
 }
 
-simulation_tick :: proc(state: ^Simulation_State, input: Input_Frame) {
+destroy_simulation :: proc(state: ^Simulation_State) {
+	for player in state.players {
+		destroy_player(player)
+	}
+	delete(state.players)
+	destroy_world(&state.world)
+}
+
+// A player without an input entry gets an empty one.
+simulation_tick :: proc(state: ^Simulation_State, registry: Block_Registry, inputs: []Input_Frame) {
 	state.tick += 1
+	for index in 0 ..< len(state.players) {
+		input := index < len(inputs) ? inputs[index] : Input_Frame{}
+		tick_player(&state.world, registry, state.players[:], index, input, state.tick_rate)
+	}
 }
 
 make_tick_accumulator :: proc(tick_rate: int) -> Tick_Accumulator {
@@ -85,7 +98,7 @@ read_input_frame :: proc(state: ^Frame_State, frame_seconds: f32) -> Input_Frame
 	return {}
 }
 
-// The mouse steers the fly camera while the world is shown and is free
+// The mouse steers the view while the world is shown and is free
 // for the diagnostics screen.
 apply_cursor_mode :: proc(show_diagnostics: bool) {
 	if show_diagnostics {
@@ -102,7 +115,8 @@ apply_debug_actions :: proc(state: ^Frame_State) {
 	}
 	if .Debug_Remove_Block in state.input.just_pressed {
 		state.debug_edit_counter += 1
-		debug_remove_block(&state.world, state.registry, state.camera.position, state.debug_edit_counter)
+		eye := player_eye(state.simulation.players[0].position)
+		debug_remove_block(&state.simulation.world, state.registry, eye, state.debug_edit_counter)
 	}
 }
 
@@ -110,14 +124,16 @@ update_frame :: proc(state: ^Frame_State) {
 	frame_seconds := rl.GetFrameTime()
 	state.input = read_input_frame(state, frame_seconds)
 	apply_debug_actions(state)
-	state.camera = update_fly_camera(state.camera, state.input, min(frame_seconds, MAXIMUM_FRAME_SECONDS))
-	camera_chunk := world_to_chunk_coordinate(camera_world_coordinate(state.camera.position))
-	update_chunk_streaming(&state.streaming, &state.world, camera_chunk)
+	state.tick_input = accumulate_frame_input(state.tick_input, state.input)
 	tick_count: int
 	state.accumulator, tick_count = advance_tick_accumulator(state.accumulator, f64(frame_seconds))
 	for _ in 0 ..< tick_count {
-		simulation_tick(&state.simulation, state.input)
+		tick_input: Input_Frame
+		tick_input, state.tick_input = take_tick_input(state.tick_input, state.input)
+		simulation_tick(&state.simulation, state.registry, {tick_input})
 	}
+	player_chunk := world_to_chunk_coordinate(camera_world_coordinate(state.simulation.players[0].position))
+	update_chunk_streaming(&state.streaming, &state.simulation.world, player_chunk)
 }
 
 render_frame :: proc(state: ^Frame_State, config: Game_Config) {
@@ -125,9 +141,14 @@ render_frame :: proc(state: ^Frame_State, config: Game_Config) {
 	rl.BeginDrawing()
 	defer rl.EndDrawing()
 	rl.ClearBackground(SKY_COLOR)
-	rl.BeginMode3D(fly_camera_to_raylib(state.camera))
-	draw_chunks(&state.renderer, fly_camera_to_raylib(state.camera))
+	player := state.simulation.players[0]
+	alpha := f32(interpolation_alpha(state.accumulator))
+	camera := fly_camera_to_raylib(player_view_camera(&state.simulation.world, state.registry, player, alpha))
+	rl.BeginMode3D(camera)
+	draw_chunks(&state.renderer, camera)
+	draw_player_world_overlay(player, alpha)
 	rl.EndMode3D()
+	draw_crosshair()
 	if state.show_diagnostics {
 		draw_diagnostics_backdrop()
 		draw_diagnostics(state^, config)
@@ -160,19 +181,19 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, registry: Bl
 		registry      = registry,
 		generator     = generator,
 		renderer      = renderer,
-		camera        = start.camera,
+		simulation    = make_simulation(config.tick_rate, start.player, len(registry.definitions)),
 	}
 	defer if input_backend == .Sdl3 {
 		shutdown_sdl3_input(&state.sdl3_input)
 	}
-	defer destroy_world(&state.world)
+	defer destroy_simulation(&state.simulation)
 	defer destroy_chunk_renderer(&state.renderer)
 	if start.debug_terrain {
 		terrain_blocks, terrain_ok := resolve_debug_terrain_blocks(registry)
 		if !terrain_ok {
 			os.exit(1)
 		}
-		build_debug_terrain(&state.world, terrain_blocks)
+		build_debug_terrain(&state.simulation.world, terrain_blocks)
 	}
 	// Workers read state.generator, so they stop before state goes away.
 	state.streaming = start_chunk_streaming(&state.generator, registry, !start.debug_terrain, default_worker_count())

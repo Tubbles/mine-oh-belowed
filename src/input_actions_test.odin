@@ -118,3 +118,38 @@ test_normalize_sdl_axis :: proc(t: ^testing.T) {
 	testing.expect_value(t, normalize_sdl_axis(32767), 1)
 	testing.expect_value(t, normalize_sdl_axis(-32768), -1)
 }
+
+@(test)
+test_tick_input_sums_look_delta_of_frames_between_ticks :: proc(t: ^testing.T) {
+	accumulator: Tick_Input_Accumulator
+	first := Input_Frame {
+		look_delta   = {3, 0},
+		just_pressed = {.Place},
+		pressed      = {.Place},
+	}
+	second := Input_Frame {
+		look_delta = {4, 1},
+		move       = {0, 1},
+	}
+	accumulator = accumulate_frame_input(accumulator, first)
+	accumulator = accumulate_frame_input(accumulator, second)
+	tick_input: Input_Frame
+	tick_input, accumulator = take_tick_input(accumulator, second)
+	testing.expect_value(t, tick_input.look_delta, [2]f32{7, 1})
+	testing.expect_value(t, tick_input.just_pressed, Action_Set{.Place})
+	testing.expect_value(t, tick_input.pressed, Action_Set{})
+	testing.expect_value(t, tick_input.move, [2]f32{0, 1})
+	// A second tick in the same frame gets no look delta and no edges again,
+	// but still the held state.
+	tick_input, accumulator = take_tick_input(accumulator, second)
+	testing.expect_value(t, tick_input.look_delta, [2]f32{0, 0})
+	testing.expect_value(t, tick_input.just_pressed, Action_Set{})
+	testing.expect_value(t, tick_input.move, [2]f32{0, 1})
+}
+
+@(test)
+test_mouse_wheel_actions :: proc(t: ^testing.T) {
+	testing.expect_value(t, mouse_wheel_actions({0, -1}), Action_Set{.Hotbar_Next})
+	testing.expect_value(t, mouse_wheel_actions({0, 2}), Action_Set{.Hotbar_Previous})
+	testing.expect_value(t, mouse_wheel_actions({0, 0}), Action_Set{})
+}

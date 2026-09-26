@@ -3,8 +3,9 @@ package game
 import "core:math"
 import "core:math/linalg"
 
-// Debug fly camera, render side: it advances with the frame time, not the
-// simulation tick. The player controller replaces it in work item 0007.
+// The view (position, yaw, pitch) and the fly mode speeds. The player tick
+// turns and flies through these procedures, the renderer draws from a
+// Fly_Camera interpolated between ticks.
 
 FLY_CAMERA_SPEED :: 12.0
 FLY_CAMERA_SPRINT_FACTOR :: 3.0
@@ -55,12 +56,6 @@ fly_camera_velocity :: proc(camera: Fly_Camera, input: Input_Frame) -> [3]f32 {
 		speed *= FLY_CAMERA_SPRINT_FACTOR
 	}
 	return velocity * speed
-}
-
-update_fly_camera :: proc(camera: Fly_Camera, input: Input_Frame, frame_seconds: f32) -> Fly_Camera {
-	result := turn_fly_camera(camera, input, frame_seconds)
-	result.position += fly_camera_velocity(result, input) * frame_seconds
-	return result
 }
 
 fly_camera_target :: proc(camera: Fly_Camera) -> [3]f32 {

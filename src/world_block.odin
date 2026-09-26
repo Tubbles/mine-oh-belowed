@@ -26,11 +26,13 @@ Block_Texture_Definition :: struct {
 	bottom: [3]u8,
 }
 
+// hardness_seconds is the hand mining time, 0 for blocks that cannot be mined.
 Block_Definition :: struct {
-	id:      string,
-	name:    string,
-	solid:   bool,
-	texture: Block_Texture_Definition,
+	id:               string,
+	name:             string,
+	solid:            bool,
+	hardness_seconds: f32,
+	texture:          Block_Texture_Definition,
 }
 
 Blocks_File :: struct {
@@ -64,6 +66,9 @@ validate_block_definitions :: proc(definitions: []Block_Definition) -> string {
 		if first := find_definition_index(definitions, definition.id); first != index {
 			return fmt.tprintf("block id %q is defined twice", definition.id)
 		}
+		if definition.hardness_seconds < 0 {
+			return fmt.tprintf("block %q has a negative hardness_seconds", definition.id)
+		}
 	}
 	return ""
 }
@@ -92,6 +97,14 @@ block_is_solid :: proc(registry: Block_Registry, block: Block_Id) -> bool {
 		return false
 	}
 	return registry.definitions[block].solid
+}
+
+// Air and blocks without a hardness (water) cannot be mined.
+block_is_minable :: proc(registry: Block_Registry, block: Block_Id) -> bool {
+	if int(block) >= len(registry.definitions) {
+		return false
+	}
+	return registry.definitions[block].hardness_seconds > 0
 }
 
 face_group_color :: proc(texture: Block_Texture_Definition, group: Face_Group) -> [3]u8 {

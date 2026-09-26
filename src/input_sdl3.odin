@@ -50,6 +50,10 @@ sdl3_button_bindings := [?]Sdl3_Button_Binding {
 	{.WEST, .Open_Inventory},
 	{.NORTH, .Rotate_Building},
 	{.DPAD_UP, .Pipette},
+	{.DPAD_LEFT, .Hotbar_Previous},
+	{.DPAD_RIGHT, .Hotbar_Next},
+	{.LEFT_SHOULDER, .Hotbar_Previous},
+	{.RIGHT_SHOULDER, .Hotbar_Next},
 	{.LEFT_STICK, .Sprint},
 	{.BACK, .Open_Map},
 	{.START, .Pause},
@@ -285,18 +289,20 @@ read_sdl3_input_frame :: proc(state: ^Sdl3_Input_State, previous: Input_Frame, f
 	move := clamp_to_unit_length(sdl3_stick(raw.gamepad, .LEFTX, .LEFTY) + keyboard_move())
 	look := sdl3_stick(raw.gamepad, .RIGHTX, .RIGHTY)
 	look_delta := raw.mouse.delta + sdl3_look_delta(previous.raw.gamepad, raw.gamepad, frame_seconds)
+	wheel_actions := mouse_wheel_actions(raw.mouse.wheel)
 	pressed :=
 		sdl3_button_actions(raw.gamepad) +
 		sdl3_trigger_actions(raw.gamepad) +
 		sdl3_touchpad_actions(raw.gamepad) +
 		keyboard_mouse_actions() +
-		analog_actions(move, look, look_delta)
+		analog_actions(move, look, look_delta) +
+		wheel_actions
 	return Input_Frame {
 		move = move,
 		look = look,
 		look_delta = look_delta,
 		pressed = pressed,
-		just_pressed = actions_just_pressed(previous.pressed, pressed),
+		just_pressed = actions_just_pressed(previous.pressed, pressed) + wheel_actions,
 		raw = raw,
 	}
 }

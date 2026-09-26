@@ -86,6 +86,10 @@ Distribute gesture: holding L2 while sweeping the reticle across machines spread
 
 R2 to mine and L2 to place mirrors Minecraft Bedrock's controller defaults, so habits transfer for players who know it. The grip buttons duplicate face buttons on purpose: they are the expert copy that keeps the thumbs on the sticks.
 
+## Bindings implemented so far
+
+The tables live in `src/input_raylib.odin` and `src/input_sdl3.odin` until bindings move to configuration. Beyond the layout table above: d-pad left and right and L1 and R1 cycle the selected block (`Hotbar_Previous`, `Hotbar_Next`) on both backends, as do the mouse wheel and the bracket keys. Keyboard only developer actions: F3 diagnostics, F5 remove a block, F6 fly mode, V camera mode, WASD move, Space jump, Left Shift sneak, Left Control sprint, Escape pause, E inventory, M map, R rotate, Q or middle mouse pipette, Tab radial. Not yet bound anywhere: Interact, Sort, Info panel, Drop, Close all, the L2 secondary action and list scrolling.
+
 ## Generic gamepads
 
 Post alpha. The action layer supports any pad, but the trackpad only actions (radial hotbar, letter wheel) need stick and button equivalents before an Xbox style controller is fully usable.

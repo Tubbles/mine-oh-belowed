@@ -35,6 +35,7 @@ mapped_lines :: proc(state: Frame_State, config: Game_Config) -> []Diagnostics_L
 	append_line(&lines, false, "backend %v", input.raw.backend)
 	append_line(&lines, false, "%s", world_statistics_text(state))
 	append_line(&lines, false, "%s", streaming_statistics_text(state))
+	append_player_lines(&lines, state)
 	append_line(&lines, false, "")
 	append_line(&lines, input.move != {}, "move        % .3f % .3f", input.move.x, input.move.y)
 	append_line(&lines, input.look != {}, "look        % .3f % .3f", input.look.x, input.look.y)
@@ -197,14 +198,14 @@ draw_diagnostics :: proc(state: Frame_State, config: Game_Config) {
 world_statistics_text :: proc(state: Frame_State) -> string {
 	return fmt.tprintf(
 		"chunks %d  drawn %d  vertices %d",
-		len(state.world.chunks),
+		len(state.simulation.world.chunks),
 		state.renderer.drawn_chunk_count,
 		state.renderer.vertex_count,
 	)
 }
 
 streaming_statistics_text :: proc(state: Frame_State) -> string {
-	return fmt.tprintf("pending jobs %d  veins %d  seed %d", state.streaming.pending_jobs, len(state.world.veins), state.generator.seed)
+	return fmt.tprintf("pending jobs %d  veins %d  seed %d", state.streaming.pending_jobs, len(state.simulation.world.veins), state.generator.seed)
 }
 
 // Keeps the diagnostics readable over the bright sky.
@@ -218,9 +219,45 @@ draw_world_overlay :: proc(state: Frame_State) {
 	append_line(&lines, false, "fps %d  tick %d", rl.GetFPS(), state.simulation.tick)
 	append_line(&lines, false, "%s", world_statistics_text(state))
 	append_line(&lines, false, "%s", streaming_statistics_text(state))
-	append_line(&lines, false, "F3 diagnostics  F5 remove block")
+	append_player_lines(&lines, state)
+	append_line(&lines, false, "F3 diagnostics  F5 remove block  F6 fly  V camera")
 	font_size := diagnostics_font_size(rl.GetScreenHeight())
 	backdrop_height := i32(len(lines)) * (font_size + font_size / 5) + DIAGNOSTICS_MARGIN
-	rl.DrawRectangle(0, 0, font_size * 18, backdrop_height + DIAGNOSTICS_MARGIN, DIAGNOSTICS_BACKDROP_COLOR)
+	rl.DrawRectangle(0, 0, font_size * 24, backdrop_height + DIAGNOSTICS_MARGIN, DIAGNOSTICS_BACKDROP_COLOR)
 	draw_lines(lines[:], DIAGNOSTICS_MARGIN, DIAGNOSTICS_MARGIN, font_size)
+}
+
+block_name :: proc(registry: Block_Registry, block: Block_Id) -> string {
+	if int(block) >= len(registry.definitions) {
+		return "?"
+	}
+	return registry.definitions[block].id
+}
+
+target_text :: proc(registry: Block_Registry, world: ^World, target: Raycast_Hit) -> string {
+	if !target.hit {
+		return "target none"
+	}
+	block := target.block
+	return fmt.tprintf("target %s at %d %d %d face %v", block_name(registry, world_get_block(world, block)), block.x, block.y, block.z, target.face)
+}
+
+owned_blocks_text :: proc(registry: Block_Registry, owned_blocks: []u32) -> string {
+	builder := strings.builder_make(context.temp_allocator)
+	strings.write_string(&builder, "owned")
+	for count, block in owned_blocks {
+		if count > 0 {
+			fmt.sbprintf(&builder, " %s %d", block_name(registry, Block_Id(block)), count)
+		}
+	}
+	return strings.to_string(builder)
+}
+
+append_player_lines :: proc(lines: ^[dynamic]Diagnostics_Line, state: Frame_State) {
+	player, registry, world := state.simulation.players[0], state.registry, state.simulation.world
+	position, velocity := player.position, player.velocity
+	append_line(lines, false, "player % .2f % .2f % .2f  velocity % .2f % .2f % .2f", position.x, position.y, position.z, velocity.x, velocity.y, velocity.z)
+	append_line(lines, false, "on ground %s  camera %v  flying %s", yes_no(player.on_ground), player.camera_mode, yes_no(player.flying))
+	append_line(lines, player.mining.active, "%s  mining %.0f%%", target_text(registry, &world, player.target), mining_fraction(player.mining) * 100)
+	append_line(lines, false, "selected %s  %s", block_name(registry, player.selected_block), owned_blocks_text(registry, player.owned_blocks))
 }

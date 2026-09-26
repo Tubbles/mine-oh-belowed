@@ -163,7 +163,14 @@ main :: proc() {
 
 World_Start :: struct {
 	debug_terrain: bool,
-	camera:        Fly_Camera,
+	player:        Player_Start,
+}
+
+// The debug terrain has no spawn search, so the player starts flying from
+// the old fly camera start.
+debug_terrain_player_start :: proc() -> Player_Start {
+	camera := INITIAL_FLY_CAMERA
+	return Player_Start{position = camera.position - {0, PLAYER_EYE_HEIGHT, 0}, yaw = camera.yaw, pitch = camera.pitch, flying = true}
 }
 
 // Runs the spawn search before the window opens, so its result (or failure)
@@ -171,7 +178,7 @@ World_Start :: struct {
 choose_world_start :: proc(generator: ^Generator, debug_terrain: bool) -> World_Start {
 	if debug_terrain {
 		fmt.eprintfln("world: debug terrain (seed %d unused)", generator.seed)
-		return World_Start{debug_terrain = true, camera = INITIAL_FLY_CAMERA}
+		return World_Start{debug_terrain = true, player = debug_terrain_player_start()}
 	}
 	spawn, found := find_spawn(generator)
 	if found {
@@ -180,5 +187,5 @@ choose_world_start :: proc(generator: ^Generator, debug_terrain: bool) -> World_
 		fmt.eprintfln("world: seed %d, no spawn meets the requirements, starting at the origin", generator.seed)
 		spawn = {0, terrain_height(generator.seeds, 0, 0), 0}
 	}
-	return World_Start{camera = fly_camera_above(spawn)}
+	return World_Start{player = player_start_on(spawn)}
 }

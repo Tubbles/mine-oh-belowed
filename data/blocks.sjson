@@ -2,6 +2,8 @@
 // its dense index is 0, the value every new chunk is filled with.
 // A block that is not solid (water) is drawn only where it touches air,
 // and solid blocks show their faces against it.
+// hardness_seconds is the time to break the block by hand. 0 means the
+// block cannot be mined (air, water).
 // texture holds one base colour (red, green, blue) per face group. The atlas
 // generator turns each into a 16 by 16 tile with a little per texel noise.
 blocks = [
@@ -9,90 +11,105 @@ blocks = [
 		id = "air"
 		name = "Air"
 		solid = false
+		hardness_seconds = 0
 		texture = {top = [0, 0, 0], side = [0, 0, 0], bottom = [0, 0, 0]}
 	}
 	{
 		id = "stone"
 		name = "Stone"
 		solid = true
+		hardness_seconds = 1.5
 		texture = {top = [128, 128, 128], side = [128, 128, 128], bottom = [128, 128, 128]}
 	}
 	{
 		id = "dirt"
 		name = "Dirt"
 		solid = true
+		hardness_seconds = 0.75
 		texture = {top = [134, 96, 67], side = [134, 96, 67], bottom = [134, 96, 67]}
 	}
 	{
 		id = "grass"
 		name = "Grass"
 		solid = true
+		hardness_seconds = 0.75
 		texture = {top = [106, 170, 64], side = [120, 110, 70], bottom = [134, 96, 67]}
 	}
 	{
 		id = "sand"
 		name = "Sand"
 		solid = true
+		hardness_seconds = 0.75
 		texture = {top = [219, 207, 163], side = [219, 207, 163], bottom = [219, 207, 163]}
 	}
 	{
 		id = "hematite_ore"
 		name = "Hematite Ore"
 		solid = true
+		hardness_seconds = 2.5
 		texture = {top = [150, 70, 60], side = [150, 70, 60], bottom = [150, 70, 60]}
 	}
 	{
 		id = "water"
 		name = "Water"
 		solid = false
+		hardness_seconds = 0
 		texture = {top = [52, 98, 186], side = [48, 90, 172], bottom = [44, 82, 160]}
 	}
 	{
 		id = "log"
 		name = "Log"
 		solid = true
+		hardness_seconds = 1.5
 		texture = {top = [160, 130, 82], side = [104, 78, 48], bottom = [160, 130, 82]}
 	}
 	{
 		id = "leaves"
 		name = "Leaves"
 		solid = true
+		hardness_seconds = 0.3
 		texture = {top = [58, 122, 44], side = [54, 114, 40], bottom = [50, 104, 36]}
 	}
 	{
 		id = "tar"
 		name = "Tar"
 		solid = true
+		hardness_seconds = 2
 		texture = {top = [34, 30, 28], side = [44, 40, 36], bottom = [44, 40, 36]}
 	}
 	{
 		id = "deep_stone"
 		name = "Deep Stone"
 		solid = true
+		hardness_seconds = 6
 		texture = {top = [72, 72, 82], side = [72, 72, 82], bottom = [72, 72, 82]}
 	}
 	{
 		id = "coal_ore"
 		name = "Coal Ore"
 		solid = true
+		hardness_seconds = 2.5
 		texture = {top = [52, 52, 52], side = [52, 52, 52], bottom = [52, 52, 52]}
 	}
 	{
 		id = "chalcopyrite_ore"
 		name = "Chalcopyrite Ore"
 		solid = true
+		hardness_seconds = 2.5
 		texture = {top = [176, 148, 60], side = [176, 148, 60], bottom = [176, 148, 60]}
 	}
 	{
 		id = "cassiterite_ore"
 		name = "Cassiterite Ore"
 		solid = true
+		hardness_seconds = 2.5
 		texture = {top = [96, 80, 72], side = [96, 80, 72], bottom = [96, 80, 72]}
 	}
 	{
 		id = "spent_rock"
 		name = "Spent Rock"
 		solid = true
+		hardness_seconds = 1.5
 		texture = {top = [150, 140, 128], side = [150, 140, 128], bottom = [150, 140, 128]}
 	}
 ]
