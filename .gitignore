@@ -1,0 +1,12 @@
+# Throwaway and scratch files at the repository root (see CLAUDE.md,
+# "Project structure"). Anchored so that doc/work/ stays tracked.
+/tmp/
+/work/
+
+# Build output
+/bin/
+/result
+/result-*
+
+# Nix direnv
+/.direnv/
