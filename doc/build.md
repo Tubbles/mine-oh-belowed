@@ -21,6 +21,10 @@ Both build modes pass `-vet -strict-style` and `-extra-linker-flags:"-L<reposito
 
 At run time the game looks for its data directory in this order: `$MINE_OH_BELOWED_DATA` if set, `./data`, then `<executable directory>/../share/mine-oh-belowed/data` (the layout the Nix package installs). `bin/mine-oh-belowed --version` prints the version without opening a window.
 
+## Steam library shortcut
+
+`tools/add_steam_shortcut.py` adds or updates the "Mine oh Belowed" non-Steam shortcut in `~/.steam/steam/userdata/<user>/config/shortcuts.vdf`, pointing at `bin/mine-oh-belowed` with the repository root as the start directory so `./data` resolves. It parses the binary VDF, refuses to write unless the existing file round trips through its parser byte for byte, and keeps the other shortcuts untouched. Steam must be closed while it runs (check with `pgrep -x steam`), otherwise Steam overwrites the file on exit. `--dry-run` shows what would be written. Steam Input for the shortcut is disabled by hand in Steam's controller settings for the game, see `input.md`.
+
 ## Nix
 
 `flake.nix` provides `packages.default` (the game), `devShells.default` (odin, raylib, sdl3) and `checks`. nixpkgs unstable ships odin dev-2026-09, raylib 6.0 and sdl3 3.4.16, matching the host. The nixpkgs Odin package patches `vendor:raylib` to link the system raylib, which is why raylib is a build input. Nix is not installed on the couch machine, so the flake is validated by CI, not locally.

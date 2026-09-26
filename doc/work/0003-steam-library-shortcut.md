@@ -21,3 +21,7 @@ The game starts from the Steam library on the couch machine.
 ## Verify
 
 - User: the game appears in the Steam library and launches into the diagnostics screen from 0001.
+
+## Notes
+
+- 2026-09-26: `tools/add_steam_shortcut.py` written and validated with `--dry-run` against the existing file. Not run for real because the Steam client was running (gamepad UI) at the time. Run it once Steam is closed, then disable Steam Input for the shortcut in Steam's controller settings.
