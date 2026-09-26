@@ -17,12 +17,27 @@ Tick_Accumulator :: struct {
 	accumulated_seconds: f64,
 }
 
+// The world lives here until the simulation owns world state (work item
+// 0007). The fly camera and debug edits are render side developer tools.
 Frame_State :: struct {
-	simulation:    Simulation_State,
-	accumulator:   Tick_Accumulator,
-	input_backend: Input_Backend,
-	sdl3_input:    Sdl3_Input_State,
-	input:         Input_Frame,
+	simulation:         Simulation_State,
+	accumulator:        Tick_Accumulator,
+	input_backend:      Input_Backend,
+	sdl3_input:         Sdl3_Input_State,
+	input:              Input_Frame,
+	registry:           Block_Registry,
+	world:              World,
+	renderer:           Chunk_Renderer,
+	camera:             Fly_Camera,
+	show_diagnostics:   bool,
+	debug_edit_counter: u64,
+}
+
+// Above the middle of the debug terrain, looking down at an angle.
+INITIAL_FLY_CAMERA :: Fly_Camera {
+	position = {-40, 80, -40},
+	yaw      = 45,
+	pitch    = -30,
 }
 
 simulation_tick :: proc(state: ^Simulation_State, input: Input_Frame) {
@@ -57,9 +72,32 @@ read_input_frame :: proc(state: ^Frame_State, frame_seconds: f32) -> Input_Frame
 	return {}
 }
 
+// The mouse steers the fly camera while the world is shown and is free
+// for the diagnostics screen.
+apply_cursor_mode :: proc(show_diagnostics: bool) {
+	if show_diagnostics {
+		rl.EnableCursor()
+	} else {
+		rl.DisableCursor()
+	}
+}
+
+apply_debug_actions :: proc(state: ^Frame_State) {
+	if .Toggle_Diagnostics in state.input.just_pressed {
+		state.show_diagnostics = !state.show_diagnostics
+		apply_cursor_mode(state.show_diagnostics)
+	}
+	if .Debug_Remove_Block in state.input.just_pressed {
+		state.debug_edit_counter += 1
+		debug_remove_block(&state.world, state.registry, state.camera.position, state.debug_edit_counter)
+	}
+}
+
 update_frame :: proc(state: ^Frame_State) {
 	frame_seconds := rl.GetFrameTime()
 	state.input = read_input_frame(state, frame_seconds)
+	apply_debug_actions(state)
+	state.camera = update_fly_camera(state.camera, state.input, min(frame_seconds, MAXIMUM_FRAME_SECONDS))
 	tick_count: int
 	state.accumulator, tick_count = advance_tick_accumulator(state.accumulator, f64(frame_seconds))
 	for _ in 0 ..< tick_count {
@@ -67,14 +105,25 @@ update_frame :: proc(state: ^Frame_State) {
 	}
 }
 
-render_frame :: proc(state: Frame_State, config: Game_Config) {
+// Dirty chunks, including those an edit in update_frame just marked, are
+// remeshed before drawing.
+render_frame :: proc(state: ^Frame_State, config: Game_Config) {
+	remesh_dirty_chunks(&state.renderer, &state.world, state.registry)
 	rl.BeginDrawing()
 	defer rl.EndDrawing()
-	rl.ClearBackground(rl.Color{24, 24, 32, 255})
-	draw_diagnostics(state, config)
+	rl.ClearBackground(SKY_COLOR)
+	rl.BeginMode3D(fly_camera_to_raylib(state.camera))
+	draw_chunks(&state.renderer, fly_camera_to_raylib(state.camera))
+	rl.EndMode3D()
+	if state.show_diagnostics {
+		draw_diagnostics_backdrop()
+		draw_diagnostics(state^, config)
+	} else {
+		draw_world_overlay(state^)
+	}
 }
 
-run_game :: proc(config: Game_Config, input_backend: Input_Backend) {
+run_game :: proc(config: Game_Config, input_backend: Input_Backend, registry: Block_Registry, data_directory: string) {
 	rl.SetTraceLogLevel(.WARNING)
 	rl.SetConfigFlags({.VSYNC_HINT, .WINDOW_RESIZABLE})
 	rl.InitWindow(1280, 720, "Mine oh Belowed")
@@ -88,16 +137,28 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend) {
 	// Escape is bound to the Pause action, so it must not close the window.
 	rl.SetExitKey(.KEY_NULL)
 
+	terrain_blocks, terrain_ok := resolve_debug_terrain_blocks(registry)
+	renderer, renderer_ok := init_chunk_renderer(registry, data_directory)
+	if !terrain_ok || !renderer_ok {
+		os.exit(1)
+	}
 	state := Frame_State {
 		accumulator   = make_tick_accumulator(config.tick_rate),
 		input_backend = input_backend,
+		registry      = registry,
+		renderer      = renderer,
+		camera        = INITIAL_FLY_CAMERA,
 	}
 	defer if input_backend == .Sdl3 {
 		shutdown_sdl3_input(&state.sdl3_input)
 	}
+	defer destroy_world(&state.world)
+	defer destroy_chunk_renderer(&state.renderer)
+	build_debug_terrain(&state.world, terrain_blocks)
+	apply_cursor_mode(state.show_diagnostics)
 	for !rl.WindowShouldClose() {
 		update_frame(&state)
-		render_frame(state, config)
+		render_frame(&state, config)
 		free_all(context.temp_allocator)
 	}
 }

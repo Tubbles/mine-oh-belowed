@@ -1,0 +1,42 @@
+// Block prototypes (work item 0005). The first entry must be air: its dense
+// index is 0, the value every new chunk is filled with.
+// texture holds one base colour (red, green, blue) per face group. The atlas
+// generator turns each into a 16 by 16 tile with a little per texel noise.
+blocks = [
+	{
+		id = "air"
+		name = "Air"
+		solid = false
+		texture = {top = [0, 0, 0], side = [0, 0, 0], bottom = [0, 0, 0]}
+	}
+	{
+		id = "stone"
+		name = "Stone"
+		solid = true
+		texture = {top = [128, 128, 128], side = [128, 128, 128], bottom = [128, 128, 128]}
+	}
+	{
+		id = "dirt"
+		name = "Dirt"
+		solid = true
+		texture = {top = [134, 96, 67], side = [134, 96, 67], bottom = [134, 96, 67]}
+	}
+	{
+		id = "grass"
+		name = "Grass"
+		solid = true
+		texture = {top = [106, 170, 64], side = [120, 110, 70], bottom = [134, 96, 67]}
+	}
+	{
+		id = "sand"
+		name = "Sand"
+		solid = true
+		texture = {top = [219, 207, 163], side = [219, 207, 163], bottom = [219, 207, 163]}
+	}
+	{
+		id = "hematite_ore"
+		name = "Hematite Ore"
+		solid = true
+		texture = {top = [150, 70, 60], side = [150, 70, 60], bottom = [150, 70, 60]}
+	}
+]

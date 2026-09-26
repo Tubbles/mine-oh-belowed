@@ -19,6 +19,9 @@ Action :: enum u8 {
 	Back,
 	Sneak,
 	Sprint,
+	// Developer actions, keyboard only.
+	Toggle_Diagnostics,
+	Debug_Remove_Block,
 }
 
 Action_Set :: bit_set[Action]

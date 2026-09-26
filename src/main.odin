@@ -103,9 +103,13 @@ main :: proc() {
 	if !loaded {
 		os.exit(1)
 	}
+	registry, registry_loaded := load_block_registry(data_directory)
+	if !registry_loaded {
+		os.exit(1)
+	}
 	input_backend, input_started := start_input_backend(command_line.input_request)
 	if !input_started {
 		os.exit(1)
 	}
-	run_game(config, input_backend)
+	run_game(config, input_backend, registry, data_directory)
 }

@@ -48,6 +48,10 @@ key_bindings := [?]Key_Binding {
 	{.ESCAPE, .Pause},
 	{.ENTER, .Confirm},
 	{.BACKSPACE, .Back},
+	{.LEFT_SHIFT, .Sneak},
+	{.LEFT_CONTROL, .Sprint},
+	{.F3, .Toggle_Diagnostics},
+	{.F5, .Debug_Remove_Block},
 }
 
 @(rodata)

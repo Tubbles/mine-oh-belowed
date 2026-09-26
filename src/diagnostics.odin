@@ -7,6 +7,7 @@ import rl "vendor:raylib"
 DIAGNOSTICS_MARGIN :: 16
 DIAGNOSTICS_TEXT_COLOR :: rl.Color{230, 230, 230, 255}
 DIAGNOSTICS_ACTIVE_COLOR :: rl.Color{120, 230, 120, 255}
+DIAGNOSTICS_BACKDROP_COLOR :: rl.Color{24, 24, 32, 220}
 
 Diagnostics_Line :: struct {
 	text:   string,
@@ -32,6 +33,7 @@ mapped_lines :: proc(state: Frame_State, config: Game_Config) -> []Diagnostics_L
 	append_line(&lines, false, "%s  controller diagnostics", config.name)
 	append_line(&lines, false, "tick %d  fps %d  alpha %.2f", state.simulation.tick, rl.GetFPS(), interpolation_alpha(state.accumulator))
 	append_line(&lines, false, "backend %v", input.raw.backend)
+	append_line(&lines, false, "%s", world_statistics_text(state))
 	append_line(&lines, false, "")
 	append_line(&lines, input.move != {}, "move        % .3f % .3f", input.move.x, input.move.y)
 	append_line(&lines, input.look != {}, "look        % .3f % .3f", input.look.x, input.look.y)
@@ -189,4 +191,30 @@ draw_diagnostics :: proc(state: Frame_State, config: Game_Config) {
 	draw_lines(keyboard_mouse_lines(state.input.raw), DIAGNOSTICS_MARGIN, left_bottom + font_size, font_size)
 	draw_lines(gamepad_button_lines(state.input.raw), button_column_x, DIAGNOSTICS_MARGIN, font_size)
 	draw_lines(gamepad_analog_lines(state.input.raw), analog_column_x, DIAGNOSTICS_MARGIN, font_size)
+}
+
+world_statistics_text :: proc(state: Frame_State) -> string {
+	return fmt.tprintf(
+		"chunks %d  drawn %d  vertices %d",
+		len(state.world.chunks),
+		state.renderer.drawn_chunk_count,
+		state.renderer.vertex_count,
+	)
+}
+
+// Keeps the diagnostics readable over the bright sky.
+draw_diagnostics_backdrop :: proc() {
+	rl.DrawRectangle(0, 0, rl.GetScreenWidth(), rl.GetScreenHeight(), DIAGNOSTICS_BACKDROP_COLOR)
+}
+
+// Shown while the diagnostics screen is off.
+draw_world_overlay :: proc(state: Frame_State) {
+	lines := make([dynamic]Diagnostics_Line, context.temp_allocator)
+	append_line(&lines, false, "fps %d  tick %d", rl.GetFPS(), state.simulation.tick)
+	append_line(&lines, false, "%s", world_statistics_text(state))
+	append_line(&lines, false, "F3 diagnostics  F5 remove block")
+	font_size := diagnostics_font_size(rl.GetScreenHeight())
+	backdrop_height := i32(len(lines)) * (font_size + font_size / 5) + DIAGNOSTICS_MARGIN
+	rl.DrawRectangle(0, 0, font_size * 18, backdrop_height + DIAGNOSTICS_MARGIN, DIAGNOSTICS_BACKDROP_COLOR)
+	draw_lines(lines[:], DIAGNOSTICS_MARGIN, DIAGNOSTICS_MARGIN, font_size)
 }
