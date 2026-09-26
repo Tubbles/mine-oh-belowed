@@ -1,0 +1,83 @@
+// Biomes (work item 0006). A column takes the first biome whose ranges
+// contain its surface height and its moisture, so the last entry should
+// accept everything.
+// minimum_height and maximum_height are inclusive, in blocks relative to
+// sea level. Moisture comes from noise and lies between -1 and 1.
+// top_block is the surface block, filler_block the topsoil below it (three
+// to five blocks, stone below that).
+// tree_density and boulder_density are the chance, 0 to 1, that a feature
+// cell holds a tree or a boulder rooted in this biome.
+biomes = [
+	{
+		id = "lake"
+		name = "Lake"
+		minimum_height = -1000
+		maximum_height = -1
+		minimum_moisture = -1
+		maximum_moisture = 1
+		top_block = "sand"
+		filler_block = "sand"
+		tree_density = 0
+		boulder_density = 0
+	}
+	{
+		id = "hills"
+		name = "Hills"
+		minimum_height = 24
+		maximum_height = 1000
+		minimum_moisture = -1
+		maximum_moisture = 1
+		top_block = "stone"
+		filler_block = "stone"
+		tree_density = 0.05
+		boulder_density = 0.5
+	}
+	{
+		id = "tar_flats"
+		name = "Tar Flats"
+		minimum_height = 0
+		maximum_height = 5
+		minimum_moisture = -1
+		maximum_moisture = -0.45
+		top_block = "tar"
+		filler_block = "dirt"
+		tree_density = 0
+		boulder_density = 0.1
+	}
+	{
+		id = "desert"
+		name = "Desert"
+		minimum_height = 0
+		maximum_height = 1000
+		minimum_moisture = -1
+		maximum_moisture = -0.35
+		top_block = "sand"
+		filler_block = "sand"
+		tree_density = 0
+		boulder_density = 0.15
+	}
+	{
+		id = "forest"
+		name = "Forest"
+		minimum_height = 0
+		maximum_height = 1000
+		minimum_moisture = 0.3
+		maximum_moisture = 1
+		top_block = "grass"
+		filler_block = "dirt"
+		tree_density = 0.7
+		boulder_density = 0.05
+	}
+	{
+		id = "plains"
+		name = "Plains"
+		minimum_height = -1000
+		maximum_height = 1000
+		minimum_moisture = -1
+		maximum_moisture = 1
+		top_block = "grass"
+		filler_block = "dirt"
+		tree_density = 0.06
+		boulder_density = 0.2
+	}
+]

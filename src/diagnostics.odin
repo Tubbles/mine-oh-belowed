@@ -34,6 +34,7 @@ mapped_lines :: proc(state: Frame_State, config: Game_Config) -> []Diagnostics_L
 	append_line(&lines, false, "tick %d  fps %d  alpha %.2f", state.simulation.tick, rl.GetFPS(), interpolation_alpha(state.accumulator))
 	append_line(&lines, false, "backend %v", input.raw.backend)
 	append_line(&lines, false, "%s", world_statistics_text(state))
+	append_line(&lines, false, "%s", streaming_statistics_text(state))
 	append_line(&lines, false, "")
 	append_line(&lines, input.move != {}, "move        % .3f % .3f", input.move.x, input.move.y)
 	append_line(&lines, input.look != {}, "look        % .3f % .3f", input.look.x, input.look.y)
@@ -202,6 +203,10 @@ world_statistics_text :: proc(state: Frame_State) -> string {
 	)
 }
 
+streaming_statistics_text :: proc(state: Frame_State) -> string {
+	return fmt.tprintf("pending jobs %d  veins %d  seed %d", state.streaming.pending_jobs, len(state.world.veins), state.generator.seed)
+}
+
 // Keeps the diagnostics readable over the bright sky.
 draw_diagnostics_backdrop :: proc() {
 	rl.DrawRectangle(0, 0, rl.GetScreenWidth(), rl.GetScreenHeight(), DIAGNOSTICS_BACKDROP_COLOR)
@@ -212,6 +217,7 @@ draw_world_overlay :: proc(state: Frame_State) {
 	lines := make([dynamic]Diagnostics_Line, context.temp_allocator)
 	append_line(&lines, false, "fps %d  tick %d", rl.GetFPS(), state.simulation.tick)
 	append_line(&lines, false, "%s", world_statistics_text(state))
+	append_line(&lines, false, "%s", streaming_statistics_text(state))
 	append_line(&lines, false, "F3 diagnostics  F5 remove block")
 	font_size := diagnostics_font_size(rl.GetScreenHeight())
 	backdrop_height := i32(len(lines)) * (font_size + font_size / 5) + DIAGNOSTICS_MARGIN

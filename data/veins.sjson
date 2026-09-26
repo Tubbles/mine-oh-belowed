@@ -1,0 +1,94 @@
+// Surface veins (work item 0006), numbers from doc/content.md "Veins
+// (phases 1 to 4)". Veins are placed per region of 8 by 8 chunk columns
+// (256 by 256 blocks). Every footprint lies wholly inside its region.
+//
+// size_classes: units are the vein's total output before the richness
+// factor, split over the vein type's outputs by percent. Each region holds
+// minimum_per_region to maximum_per_region veins of the class, and none at
+// all when the region centre is closer than minimum_distance blocks to the
+// world origin. radius is the footprint disc on the surface, in blocks.
+//
+// Richer and larger farther from spawn: at a distance d from the world
+// origin, units are multiplied by 1 + d / richness_distance and the radius
+// grows by one block per richness_distance, at most maximum_radius_growth.
+richness_distance = 2048
+maximum_radius_growth = 3
+
+size_classes = [
+	{
+		id = "scattering"
+		minimum_units = 2000
+		maximum_units = 5000
+		minimum_radius = 3
+		maximum_radius = 5
+		minimum_per_region = 3
+		maximum_per_region = 6
+		minimum_distance = 0
+	}
+	{
+		id = "deposit"
+		minimum_units = 20000
+		maximum_units = 60000
+		minimum_radius = 6
+		maximum_radius = 9
+		minimum_per_region = 0
+		maximum_per_region = 2
+		minimum_distance = 0
+	}
+	{
+		id = "concentration"
+		minimum_units = 100000
+		maximum_units = 300000
+		minimum_radius = 10
+		maximum_radius = 14
+		minimum_per_region = 0
+		maximum_per_region = 1
+		minimum_distance = 1024
+	}
+]
+
+// weight: relative chance among the types allowed in the biome at the vein
+// centre. biomes: biome ids the type may appear in, empty for everywhere.
+// outcrop_blocks: the surface blocks of the footprint, alternating in a
+// checkerboard when there are several.
+vein_types = [
+	{
+		id = "iron"
+		weight = 30
+		biomes = []
+		outcrop_blocks = ["hematite_ore"]
+		outputs = [{ore = "hematite", percent = 80}, {ore = "gravel", percent = 20}]
+	}
+	{
+		id = "copper"
+		weight = 25
+		biomes = []
+		outcrop_blocks = ["chalcopyrite_ore"]
+		outputs = [{ore = "chalcopyrite", percent = 70}, {ore = "cassiterite", percent = 10}, {ore = "sand", percent = 20}]
+	}
+	{
+		id = "coal"
+		weight = 25
+		biomes = ["plains", "hills"]
+		outcrop_blocks = ["coal_ore"]
+		outputs = [{ore = "coal", percent = 90}, {ore = "gravel", percent = 10}]
+	}
+	{
+		id = "mixed"
+		weight = 10
+		biomes = ["hills"]
+		outcrop_blocks = ["hematite_ore", "chalcopyrite_ore"]
+		outputs = [{ore = "hematite", percent = 40}, {ore = "chalcopyrite", percent = 40}, {ore = "gravel", percent = 20}]
+	}
+	{
+		id = "quarry"
+		weight = 10
+		biomes = []
+		outcrop_blocks = ["stone"]
+		outputs = [{ore = "stone", percent = 60}, {ore = "sand", percent = 20}, {ore = "gravel", percent = 20}]
+	}
+]
+
+// The spawn search (doc/quests.md "Spawn requirements") needs one vein of
+// each of these types within about 150 blocks.
+spawn_vein_types = ["iron", "copper", "coal"]

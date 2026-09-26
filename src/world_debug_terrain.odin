@@ -3,8 +3,8 @@ package game
 import "core:fmt"
 import "core:math"
 
-// Fixed terrain built in code so the mesher has something to draw until
-// world generation lands (work item 0006).
+// Fixed terrain built in code, shown with --debug-terrain instead of the
+// generated world, for comparing the mesher against a known scene.
 
 DEBUG_TERRAIN_CHUNKS_X :: 8
 DEBUG_TERRAIN_CHUNKS_Y :: 2

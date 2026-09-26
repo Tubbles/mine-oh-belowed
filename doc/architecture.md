@@ -12,7 +12,8 @@
 - The simulation never reads the wall clock. Random numbers come from generators seeded by world seed, chunk coordinate or tick.
 - Fixed point everywhere a simulation quantity accumulates: belt positions, fluid volumes, energy buffers, crafting progress, vein reservoirs are integers with a fixed scale. Floats stay in rendering and input. Debug builds hash the simulation state every tick, and a test runs two simulations from one seed and compares the hashes.
 - Players are an array in the world state, each with its own camera and input frame. The alpha runs one player. Split screen co-op adds more without a redesign.
-- Chunk generation and meshing run on worker threads (`core:thread`) and hand results to the main thread through queues. The simulation is single threaded in the alpha.
+- Chunk generation and meshing run on worker threads (`core:thread`, processor cores minus one, at most six) and hand results to the main thread through mutex protected queues. Workers never touch the `World`: a generate job carries only a coordinate, a mesh job carries private copies of the chunk and its six neighbours. Per frame limits keep the main thread smooth (16 generated chunks inserted, 8 mesh jobs submitted, 6 non empty mesh uploads, 48 jobs pending). A chunk is meshed once all neighbours inside the load volume are loaded, and stale mesh results are dropped by revision. The simulation is single threaded in the alpha.
+- Generation is a pure function of the world seed and the chunk coordinate. Features that cross chunk borders (trees, vein outcrops) come from per column and per region hashes any chunk can recompute, so load order and thread count never change the world. Each purpose (height, moisture, caves, trees, veins) has its own sub seed derived from the world seed.
 
 ## Packages
 
@@ -31,7 +32,7 @@ One `game` package under `src/`, split into files by concern: `world_*.odin`, `g
 - Fluid and electric networks are rebuilt on topology change and evaluated per tick in fixed point.
 - Recipes have any number of inputs and any number of outputs, each an item or a fluid, from the very first recipe. Machines have typed slots. There is no single output fast path to retrofit later.
 - Crafting machines hold a recipe id and a progress counter. Recipes are prototypes resolved to dense indices at load time.
-- Veins are entities, not block data: a reservoir struct with per ore amounts, the outcrop cells, and the attached drills. Drills hold a vein handle. There are no per block ore counters.
+- Veins are entities, not block data: a reservoir struct with per ore amounts, centre, radius and size class, placed per region of 8 by 8 chunk columns so that every footprint lies inside its region. Generation threads compute footprints, the main thread registers each vein once when the first chunk of an overlapping column loads. Drills will hold a vein handle. There are no per block ore counters.
 - Fluids use one network model with a phase per fluid. A liquid network tracks its fill level and pumps decide whether an outlet above the level receives anything. Gas networks ignore height.
 - Production statistics counters (produced, consumed, per item, per network) are a day one system. The quest runtime, the statistics screen and the bottleneck overlay all read them.
 - Quests are data: chapters of objectives whose predicates are evaluated against the statistics counters, placed entity counts and research state every tick. The journal reads the same state.

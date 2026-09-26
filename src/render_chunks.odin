@@ -1,6 +1,5 @@
 package game
 
-import "base:runtime"
 import "core:fmt"
 import "core:os"
 import "core:strings"
@@ -11,8 +10,8 @@ CHUNK_VERTEX_SHADER_PATH :: "shaders/chunk.vs"
 CHUNK_FRAGMENT_SHADER_PATH :: "shaders/chunk.fs"
 
 SKY_COLOR :: rl.Color{150, 190, 230, 255}
-// The debug terrain is 256 blocks across, so the fog reaches its far side
-// from the middle.
+// The load radius reaches at least 192 blocks from the camera, so the fog
+// is complete before the load boundary.
 FOG_START :: 96.0
 FOG_END :: 160.0
 CAMERA_FIELD_OF_VIEW_DEGREES :: 70.0
@@ -113,20 +112,19 @@ unload_chunk_render :: proc(chunk_render: Chunk_Render) {
 	delete(chunk_render.meshes)
 }
 
-remesh_chunk :: proc(renderer: ^Chunk_Renderer, world: ^World, registry: Block_Registry, chunk: ^Chunk) {
-	// Mesh data only lives until the upload, so hand the scratch memory back
-	// per chunk instead of holding every chunk's data until the frame ends.
-	runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
-	input := Mesh_Input {
-		chunk      = chunk,
-		neighbours = chunk_neighbours(world, chunk.coordinate),
-		registry   = registry,
-		atlas      = renderer.atlas_layout,
-	}
-	data := mesh_chunk(input, context.temp_allocator)
-	if previous, found := renderer.chunk_meshes[chunk.coordinate]; found {
+unload_chunk_mesh :: proc(renderer: ^Chunk_Renderer, coordinate: Chunk_Coordinate) {
+	if previous, found := renderer.chunk_meshes[coordinate]; found {
 		renderer.vertex_count -= previous.vertex_count
 		unload_chunk_render(previous)
+		delete_key(&renderer.chunk_meshes, coordinate)
+	}
+}
+
+// Replaces the chunk's mesh. An empty mesh only removes the old one.
+apply_chunk_mesh :: proc(renderer: ^Chunk_Renderer, coordinate: Chunk_Coordinate, data: Chunk_Mesh_Data) {
+	unload_chunk_mesh(renderer, coordinate)
+	if len(data.parts) == 0 {
+		return
 	}
 	chunk_render := Chunk_Render {
 		meshes       = make([dynamic]rl.Mesh, 0, len(data.parts)),
@@ -135,16 +133,19 @@ remesh_chunk :: proc(renderer: ^Chunk_Renderer, world: ^World, registry: Block_R
 	for part in data.parts {
 		append(&chunk_render.meshes, upload_mesh_part(part))
 	}
-	renderer.chunk_meshes[chunk.coordinate] = chunk_render
+	renderer.chunk_meshes[coordinate] = chunk_render
 	renderer.vertex_count += chunk_render.vertex_count
-	chunk.dirty = false
 }
 
-remesh_dirty_chunks :: proc(renderer: ^Chunk_Renderer, world: ^World, registry: Block_Registry) {
-	for _, chunk in world.chunks {
-		if chunk.dirty {
-			remesh_chunk(renderer, world, registry, chunk)
-		}
+// Drops the meshes of chunks unloaded this frame and uploads a few of the
+// meshes the workers finished.
+upload_streamed_meshes :: proc(renderer: ^Chunk_Renderer, streaming: ^Chunk_Streaming) {
+	for coordinate in streaming.unloaded {
+		unload_chunk_mesh(renderer, coordinate)
+	}
+	for result in take_current_meshes(streaming, MAXIMUM_MESH_UPLOADS_PER_FRAME, context.temp_allocator) {
+		apply_chunk_mesh(renderer, result.coordinate, result.mesh)
+		destroy_chunk_mesh_data(result.mesh)
 	}
 }
 

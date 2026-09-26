@@ -99,13 +99,15 @@ slice_local :: proc(axis, slice, u, v: int) -> Local_Coordinate {
 }
 
 // The block whose face is visible at this cell, or air when there is none.
+// A face shows against any different block that is not solid, so solid
+// blocks show against air and water, and water shows against air only.
 visible_face :: proc(input: Mesh_Input, local: Local_Coordinate, direction: Direction) -> Block_Id {
 	block := chunk_get_block(input.chunk, local)
-	if !block_is_solid(input.registry, block) {
+	if block == AIR_BLOCK {
 		return AIR_BLOCK
 	}
 	neighbour := neighbourhood_block(input, local + Local_Coordinate(direction_offsets[direction]))
-	if block_is_solid(input.registry, neighbour) {
+	if neighbour == block || block_is_solid(input.registry, neighbour) {
 		return AIR_BLOCK
 	}
 	return block
@@ -240,6 +242,10 @@ mesh_slice :: proc(data: ^Chunk_Mesh_Data, input: Mesh_Input, direction: Directi
 mesh_chunk :: proc(input: Mesh_Input, allocator := context.allocator) -> Chunk_Mesh_Data {
 	data := Chunk_Mesh_Data {
 		parts = make([dynamic]Mesh_Part, allocator),
+	}
+	// About half of the streamed chunks are sky.
+	if chunk_is_all_air(input.chunk) {
+		return data
 	}
 	for direction in Direction {
 		for slice in 0 ..< CHUNK_SIZE {

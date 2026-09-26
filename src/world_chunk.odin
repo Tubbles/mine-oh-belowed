@@ -21,8 +21,13 @@ Chunk :: struct {
 
 // Chunks are heap allocated and referenced by pointer, so growing the map
 // never moves a 96 KiB chunk and pointers held across a frame stay valid.
+// Veins are entities registered once, when the first chunk of a chunk
+// column they overlap is loaded, and they stay when chunks unload.
 World :: struct {
-	chunks: map[Chunk_Coordinate]^Chunk,
+	chunks:       map[Chunk_Coordinate]^Chunk,
+	veins:        [dynamic]Vein,
+	vein_indices: map[Vein_Id]int,
+	column_veins: map[Chunk_Column][dynamic]Vein_Id,
 }
 
 Direction :: enum u8 {
@@ -134,6 +139,21 @@ destroy_world :: proc(world: ^World) {
 		free(chunk)
 	}
 	delete(world.chunks)
+	for _, ids in world.column_veins {
+		delete(ids)
+	}
+	delete(world.column_veins)
+	delete(world.vein_indices)
+	delete(world.veins)
+}
+
+chunk_is_all_air :: proc(chunk: ^Chunk) -> bool {
+	for block in chunk.blocks {
+		if block != AIR_BLOCK {
+			return false
+		}
+	}
+	return true
 }
 
 // The six face adjacent chunks, nil where not loaded.
