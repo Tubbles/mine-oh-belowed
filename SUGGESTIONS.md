@@ -12,7 +12,7 @@ Open questions that need the user's decision, each with the lead architect's rec
 ## Next steps
 
 1. Settle the decisions above, then update `DESIGN.md` and log them.
-2. Continue the design topic list top down: review the first cut of `doc/content.md`, then onboarding, sound, the ending, strings and units, determinism.
+2. Continue the design topic list top down: review `doc/content.md` and `doc/quests.md`, then sound as feedback, the ending, strings and units in data, determinism and fixed point.
 3. Work item 0002, the Steam Controller input spike, before anything else in code. It decides whether the SDL3 direct path works on this machine with Steam running.
 4. Work item 0001, toolchain skeleton and `build.sh`, so CI turns green and the Steam shortcut (0003) has something to launch.
-5. Write `doc/world.md` (generation, strata, vein reservoirs, prospecting, water), `doc/logistics.md` (belt lines, ramps, lifts, inserters, splitters), `doc/fluids.md` (network model, phases, gravity), `doc/quests.md` (objective types, chapter outline) and `doc/lore.md` (the venture, Mission Control, naming glossary) before their milestones start.
+5. Write `doc/world.md` (generation, strata, vein reservoirs, prospecting, water, spawn requirements), `doc/logistics.md` (belt lines, ramps, lifts, inserters, splitters), `doc/fluids.md` (network model, phases, gravity) and `doc/lore.md` (the venture, Mission Control, naming glossary) before their milestones start.

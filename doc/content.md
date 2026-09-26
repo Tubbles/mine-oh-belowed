@@ -23,7 +23,7 @@ Target playtime and what the player owns at the end of each phase. These drive r
 | 3 Automation | 45 min | One self feeding coal drill, 4 drills feeding 3 furnaces, inserters, chests, ten unattended minutes |
 | 4 Power | 75 min | 1 offshore pump, 1 boiler, 2 steam engines, 10 poles, 4 electric drills, 4 assemblers, 2 labs, 5 technologies |
 
-Phases 1 to 4 together are about two hours forty minutes, spread over two or three sittings. Budgets for phases 5 to 8 follow when their content is listed.
+Phases 1 to 4 together are about two hours forty minutes, spread over two or three sittings. Budgets for phases 5 to 8 follow when their content is listed. The user suspects this pacing is on the quick side; couch test 1 checks it first.
 
 ## Raw materials (phases 1 to 4)
 
@@ -83,7 +83,7 @@ Footprint is width by depth by height in blocks. Power is electric unless marked
 
 | Machine | Footprint | Recipe | Rate | Power | Channel |
 | --- | --- | --- | --- | --- | --- |
-| Stone furnace | 2×2×2 | 5 stone brick | Speed 1 (one plate per 3.2 s, 18.75 per min) | 90 kW fuel | Start |
+| Stone furnace | 2×2×2 | 5 stone | Speed 1 (one plate per 3.2 s, 18.75 per min) | 90 kW fuel | Start |
 | Steel furnace | 2×2×2 | 6 steel, 10 stone brick | Speed 2 | 90 kW fuel | Research: steel processing |
 | Burner mining drill | 2×2×2 | 3 iron gear, 3 iron plate, 1 stone furnace | 15 ore per min plus 3 spoil | 150 kW fuel | Start |
 | Electric mining drill | 3×3×3 | 3 circuit, 5 iron gear, 10 iron plate | 30 ore per min plus 6 spoil | 90 kW | Research: electric mining |
@@ -128,7 +128,7 @@ Costs are packs times seconds per pack in a speed 1 lab. About ten technologies 
 | Logistics science | Science pack 2 recipe | 75 × 15 s |
 | Fast belts | Belt 2 (1800 per min) | 100 × 30 s, phase 5 |
 
-Main quest gate for phase 4: the venture ships the steam engine schematics once the outpost has delivered its first 200 iron plates to the landing pad. Until then the player has boilers and no way to use the steam. One gate for the phase, nothing else waits on it.
+Main quest gate for phase 4: the venture releases the steam engine schematics once the outpost has run unattended, sustaining 10 iron plates per minute for ten minutes (chapter 3's main quest in `quests.md`). Until then the player has boilers and no way to use the steam. One gate for the phase, nothing else waits on it.
 
 ## Veins (phases 1 to 4)
 
