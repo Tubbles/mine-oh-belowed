@@ -39,6 +39,15 @@ gamepad_button_bindings := [?]Gamepad_Button_Binding {
 	{.LEFT_TRIGGER_2, .Place},
 	{.MIDDLE_LEFT, .Open_Map},
 	{.MIDDLE_RIGHT, .Pause},
+	{.RIGHT_TRIGGER_2, .Confirm},
+	{.LEFT_FACE_UP, .Navigate_Up},
+	{.LEFT_FACE_DOWN, .Navigate_Down},
+	{.LEFT_FACE_LEFT, .Navigate_Left},
+	{.LEFT_FACE_RIGHT, .Navigate_Right},
+	{.LEFT_TRIGGER_1, .Tab_Previous},
+	{.RIGHT_TRIGGER_1, .Tab_Next},
+	{.RIGHT_FACE_UP, .Info_Panel},
+	{.RIGHT_FACE_LEFT, .Context_Action},
 }
 
 @(rodata)
@@ -60,6 +69,14 @@ key_bindings := [?]Key_Binding {
 	{.F3, .Toggle_Diagnostics},
 	{.F5, .Debug_Remove_Block},
 	{.F6, .Toggle_Fly_Mode},
+	{.UP, .Navigate_Up},
+	{.DOWN, .Navigate_Down},
+	{.LEFT, .Navigate_Left},
+	{.RIGHT, .Navigate_Right},
+	{.Q, .Tab_Previous},
+	{.E, .Tab_Next},
+	{.R, .Info_Panel},
+	{.F, .Context_Action},
 }
 
 @(rodata)

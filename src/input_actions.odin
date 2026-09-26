@@ -21,6 +21,15 @@ Action :: enum u8 {
 	Sprint,
 	Hotbar_Previous,
 	Hotbar_Next,
+	// Menu actions, bound next to the world actions on the same buttons.
+	Navigate_Up,
+	Navigate_Down,
+	Navigate_Left,
+	Navigate_Right,
+	Tab_Previous,
+	Tab_Next,
+	Info_Panel,
+	Context_Action,
 	// Keyboard only: the gamepad View button is taken by the map.
 	Toggle_Camera_Mode,
 	// Developer actions, keyboard only.
@@ -128,6 +137,59 @@ Input_Frame :: struct {
 }
 
 STICK_DEADZONE :: 0.15
+
+// What the player's body and hands react to. While a screen is open the
+// world gets none of these; the menu meanings of the same buttons belong to
+// the UI.
+WORLD_ACTIONS :: Action_Set {
+	.Move,
+	.Look,
+	.Jump,
+	.Mine,
+	.Place,
+	.Rotate_Building,
+	.Pipette,
+	.Hotbar_Radial,
+	.Open_Inventory,
+	.Open_Map,
+	.Sneak,
+	.Sprint,
+	.Hotbar_Previous,
+	.Hotbar_Next,
+	.Toggle_Camera_Mode,
+	.Toggle_Fly_Mode,
+}
+
+without_actions :: proc(frame: Input_Frame, removed: Action_Set) -> Input_Frame {
+	result := frame
+	result.pressed -= removed
+	result.just_pressed -= removed
+	if .Move in removed {
+		result.move = {}
+	}
+	if .Look in removed {
+		result.look, result.look_delta = {}, {}
+	}
+	return result
+}
+
+// While a screen is open, every held world action joins the guard. After it
+// closes, a guarded action stays hidden from the world until released, so
+// the A press that picked Resume does not also jump.
+update_world_action_guard :: proc(guard: Action_Set, world_blocked: bool, pressed: Action_Set) -> Action_Set {
+	if world_blocked {
+		return pressed & WORLD_ACTIONS
+	}
+	return guard & pressed
+}
+
+// The frame the simulation sees.
+world_input :: proc(frame: Input_Frame, world_blocked: bool, guard: Action_Set, settings: Settings) -> Input_Frame {
+	if world_blocked {
+		return without_actions(frame, WORLD_ACTIONS)
+	}
+	return apply_look_settings(without_actions(frame, guard), settings)
+}
 
 // A wheel notch is an event, not a held button, so it goes straight into
 // just_pressed as well. Scrolling down selects the next slot.

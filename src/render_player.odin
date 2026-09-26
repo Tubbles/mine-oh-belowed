@@ -12,7 +12,6 @@ TARGET_OUTLINE_COLOR :: rl.Color{20, 20, 20, 255}
 MINING_OUTLINE_COLOR :: rl.Color{240, 240, 240, 255}
 PLACEMENT_PREVIEW_COLOR :: rl.Color{255, 255, 255, 70}
 PLAYER_BODY_COLOR :: rl.Color{60, 110, 200, 255}
-CROSSHAIR_COLOR :: rl.Color{255, 255, 255, 200}
 // Outlines sit slightly outside the block so the block faces do not hide them.
 OUTLINE_SCALE :: 1.004
 
@@ -110,12 +109,4 @@ draw_player_world_overlay :: proc(player: Player, alpha: f32) {
 	}
 	draw_target_outline(player)
 	draw_placement_preview(player)
-}
-
-draw_crosshair :: proc() {
-	centre_x, centre_y := rl.GetScreenWidth() / 2, rl.GetScreenHeight() / 2
-	size := max(rl.GetScreenHeight() / 60, 8)
-	thickness := max(size / 6, 2)
-	rl.DrawRectangle(centre_x - size, centre_y - thickness / 2, 2 * size, thickness, CROSSHAIR_COLOR)
-	rl.DrawRectangle(centre_x - thickness / 2, centre_y - size, thickness, 2 * size, CROSSHAIR_COLOR)
 }

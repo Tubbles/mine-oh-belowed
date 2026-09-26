@@ -1,0 +1,45 @@
+package game
+
+// Player settings, in memory until configuration files arrive. The
+// settings screen edits them live; the input layer applies them to each
+// frame before the simulation sees it, so the simulation keeps its fixed
+// base rates and only ever reads input.
+
+Settings :: struct {
+	ui_scale:                  f32,
+	// Gyro aiming in the world (SDL3 backend only).
+	gyro_enabled:              bool,
+	// Multipliers on the base look rates.
+	stick_look_sensitivity:    f32,
+	gyro_look_sensitivity:     f32,
+	trackpad_look_sensitivity: f32,
+	invert_pitch:              bool,
+	// Screen heights the UI pointer crosses per right trackpad width.
+	pointer_speed:             f32,
+}
+
+DEFAULT_SETTINGS :: Settings {
+	ui_scale                  = 1,
+	gyro_enabled              = true,
+	stick_look_sensitivity    = 1,
+	gyro_look_sensitivity     = 1,
+	trackpad_look_sensitivity = 1,
+	invert_pitch              = false,
+	pointer_speed             = 1.5,
+}
+
+UI_SCALE_RANGE :: Slider_Range{0.75, 1.5, 0.05}
+LOOK_SENSITIVITY_RANGE :: Slider_Range{0.25, 3, 0.05}
+POINTER_SPEED_RANGE :: Slider_Range{0.5, 3, 0.1}
+
+// Stick sensitivity and pitch inversion. Gyro and trackpad sensitivity are
+// applied by the SDL3 backend, where those deltas are still separate.
+apply_look_settings :: proc(frame: Input_Frame, settings: Settings) -> Input_Frame {
+	result := frame
+	result.look *= settings.stick_look_sensitivity
+	if settings.invert_pitch {
+		result.look.y = -result.look.y
+		result.look_delta.y = -result.look_delta.y
+	}
+	return result
+}

@@ -17,7 +17,7 @@ LEFT_TOUCHPAD_INDEX :: 0
 RIGHT_TOUCHPAD_INDEX :: 1
 
 TRIGGER_PRESS_THRESHOLD :: 0.5
-// Look sensitivities, placeholders until they move to configuration.
+// Base look rates, scaled by the sensitivities in Settings.
 TOUCHPAD_LOOK_PIXELS_PER_PAD_WIDTH :: 1200
 GYRO_LOOK_PIXELS_PER_DEGREE :: 20
 
@@ -64,6 +64,16 @@ sdl3_button_bindings := [?]Sdl3_Button_Binding {
 	{.LEFT_PADDLE2, .Rotate_Building},
 	{.RIGHT_PADDLE2, .Pipette},
 	{STEAM_CONTROLLER_RIGHT_PAD_CLICK, .Confirm},
+	{.DPAD_UP, .Navigate_Up},
+	{.DPAD_DOWN, .Navigate_Down},
+	{.DPAD_LEFT, .Navigate_Left},
+	{.DPAD_RIGHT, .Navigate_Right},
+	{.LEFT_SHOULDER, .Tab_Previous},
+	{.RIGHT_SHOULDER, .Tab_Next},
+	{.NORTH, .Info_Panel},
+	{.WEST, .Context_Action},
+	{.LEFT_PADDLE2, .Info_Panel},
+	{.RIGHT_PADDLE2, .Navigate_Up},
 }
 
 // Returns an SDL error message when initialisation fails.
@@ -230,7 +240,7 @@ sdl3_button_actions :: proc(gamepad: Raw_Gamepad) -> Action_Set {
 sdl3_trigger_actions :: proc(gamepad: Raw_Gamepad) -> Action_Set {
 	actions: Action_Set
 	if gamepad.axis_values[int(sdl.GamepadAxis.RIGHT_TRIGGER)] > TRIGGER_PRESS_THRESHOLD {
-		actions += {.Mine}
+		actions += {.Mine, .Confirm}
 	}
 	if gamepad.axis_values[int(sdl.GamepadAxis.LEFT_TRIGGER)] > TRIGGER_PRESS_THRESHOLD {
 		actions += {.Place}
@@ -267,18 +277,20 @@ gyro_look_active :: proc(touch_sense: Raw_Touch_Sense, right_finger: Touchpad_Fi
 	return touch_sense.right_stick_touched || right_finger.down
 }
 
-sdl3_look_delta :: proc(previous, current: Raw_Gamepad, frame_seconds: f32) -> [2]f32 {
+// The gyro setting only stops the gyro from aiming; the sensor stays on so
+// the diagnostics screen still shows it.
+sdl3_look_delta :: proc(previous, current: Raw_Gamepad, frame_seconds: f32, settings: Settings) -> [2]f32 {
 	right_finger := touchpad_finger(current, RIGHT_TOUCHPAD_INDEX)
 	pad_delta := touchpad_delta(touchpad_finger(previous, RIGHT_TOUCHPAD_INDEX), right_finger)
-	look_delta := pad_delta * TOUCHPAD_LOOK_PIXELS_PER_PAD_WIDTH
+	look_delta := pad_delta * TOUCHPAD_LOOK_PIXELS_PER_PAD_WIDTH * settings.trackpad_look_sensitivity
 	gyro := current.motion.gyro
-	if gyro.enabled && gyro_look_active(current.touch_sense, right_finger) {
-		look_delta += gyro_to_look_delta(gyro.values, frame_seconds) * GYRO_LOOK_PIXELS_PER_DEGREE
+	if settings.gyro_enabled && gyro.enabled && gyro_look_active(current.touch_sense, right_finger) {
+		look_delta += gyro_to_look_delta(gyro.values, frame_seconds) * GYRO_LOOK_PIXELS_PER_DEGREE * settings.gyro_look_sensitivity
 	}
 	return look_delta
 }
 
-read_sdl3_input_frame :: proc(state: ^Sdl3_Input_State, previous: Input_Frame, frame_seconds: f32) -> Input_Frame {
+read_sdl3_input_frame :: proc(state: ^Sdl3_Input_State, previous: Input_Frame, frame_seconds: f32, settings: Settings) -> Input_Frame {
 	poll_sdl3_events(state)
 	raw := Raw_Input {
 		backend  = .Sdl3,
@@ -288,7 +300,7 @@ read_sdl3_input_frame :: proc(state: ^Sdl3_Input_State, previous: Input_Frame, f
 	}
 	move := clamp_to_unit_length(sdl3_stick(raw.gamepad, .LEFTX, .LEFTY) + keyboard_move())
 	look := sdl3_stick(raw.gamepad, .RIGHTX, .RIGHTY)
-	look_delta := raw.mouse.delta + sdl3_look_delta(previous.raw.gamepad, raw.gamepad, frame_seconds)
+	look_delta := raw.mouse.delta + sdl3_look_delta(previous.raw.gamepad, raw.gamepad, frame_seconds, settings)
 	wheel_actions := mouse_wheel_actions(raw.mouse.wheel)
 	pressed :=
 		sdl3_button_actions(raw.gamepad) +
@@ -305,6 +317,12 @@ read_sdl3_input_frame :: proc(state: ^Sdl3_Input_State, previous: Input_Frame, f
 		just_pressed = actions_just_pressed(previous.pressed, pressed) + wheel_actions,
 		raw = raw,
 	}
+}
+
+// The right pad click as a pointer click, separate from the Confirm it is
+// also bound to.
+right_pad_click_down :: proc(raw: Raw_Input) -> bool {
+	return raw.backend == .Sdl3 && raw.gamepad.button_down[int(STEAM_CONTROLLER_RIGHT_PAD_CLICK)]
 }
 
 // Physical names on the Steam Controller (2026) for the buttons SDL only

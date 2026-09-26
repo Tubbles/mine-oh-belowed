@@ -29,7 +29,15 @@ Frame_State :: struct {
 	input_backend:      Input_Backend,
 	sdl3_input:         Sdl3_Input_State,
 	input:              Input_Frame,
+	previous_input:     Input_Frame,
+	frame_seconds:      f32,
 	tick_input:         Tick_Input_Accumulator,
+	// World actions still held since a screen closed, see update_world_action_guard.
+	world_action_guard: Action_Set,
+	settings:           Settings,
+	ui:                 Ui_State,
+	cursor_enabled:     bool,
+	quit_requested:     bool,
 	registry:           Block_Registry,
 	generator:          Generator,
 	streaming:          Chunk_Streaming,
@@ -89,6 +97,15 @@ advance_tick_accumulator :: proc(accumulator: Tick_Accumulator, frame_seconds: f
 	return result, tick_count
 }
 
+// While a pausing screen is open the accumulator stays frozen, so the
+// frame time of the paused period never turns into catch up ticks.
+advance_simulation_clock :: proc(accumulator: Tick_Accumulator, frame_seconds: f64, paused: bool) -> (Tick_Accumulator, int) {
+	if paused {
+		return accumulator, 0
+	}
+	return advance_tick_accumulator(accumulator, frame_seconds)
+}
+
 // Fraction of the next tick already elapsed, for camera interpolation.
 interpolation_alpha :: proc(accumulator: Tick_Accumulator) -> f64 {
 	return accumulator.accumulated_seconds / accumulator.seconds_per_tick
@@ -97,17 +114,22 @@ interpolation_alpha :: proc(accumulator: Tick_Accumulator) -> f64 {
 read_input_frame :: proc(state: ^Frame_State, frame_seconds: f32) -> Input_Frame {
 	switch state.input_backend {
 	case .Sdl3:
-		return read_sdl3_input_frame(&state.sdl3_input, state.input, frame_seconds)
+		return read_sdl3_input_frame(&state.sdl3_input, state.input, frame_seconds, state.settings)
 	case .Raylib:
 		return read_raylib_input_frame(state.input.pressed)
 	}
 	return {}
 }
 
-// The mouse steers the view while the world is shown and is free
-// for the diagnostics screen.
-apply_cursor_mode :: proc(show_diagnostics: bool) {
-	if show_diagnostics {
+// The mouse steers the view while the world is shown and is free for the
+// diagnostics screen and the menus.
+apply_cursor_mode :: proc(state: ^Frame_State) {
+	wanted := state.show_diagnostics || state.ui.screens.count > 0
+	if wanted == state.cursor_enabled {
+		return
+	}
+	state.cursor_enabled = wanted
+	if wanted {
 		rl.EnableCursor()
 	} else {
 		rl.DisableCursor()
@@ -117,7 +139,6 @@ apply_cursor_mode :: proc(show_diagnostics: bool) {
 apply_debug_actions :: proc(state: ^Frame_State) {
 	if .Toggle_Diagnostics in state.input.just_pressed {
 		state.show_diagnostics = !state.show_diagnostics
-		apply_cursor_mode(state.show_diagnostics)
 	}
 	if .Debug_Remove_Block in state.input.just_pressed {
 		state.debug_edit_counter += 1
@@ -126,16 +147,24 @@ apply_debug_actions :: proc(state: ^Frame_State) {
 	}
 }
 
+// The UI runs in render_frame, so the screen stack read here is the one the
+// previous frame left: a screen opened or closed takes effect on the world
+// one frame later.
 update_frame :: proc(state: ^Frame_State) {
-	frame_seconds := rl.GetFrameTime()
-	state.input = read_input_frame(state, frame_seconds)
+	state.frame_seconds = rl.GetFrameTime()
+	state.previous_input = state.input
+	state.input = read_input_frame(state, state.frame_seconds)
 	apply_debug_actions(state)
-	state.tick_input = accumulate_frame_input(state.tick_input, state.input)
+	world_blocked := ui_blocks_world(state.ui.screens)
+	paused := ui_pauses_simulation(state.ui.screens)
+	state.world_action_guard = update_world_action_guard(state.world_action_guard, world_blocked, state.input.pressed)
+	frame_for_world := world_input(state.input, world_blocked, state.world_action_guard, state.settings)
+	state.tick_input = paused ? {} : accumulate_frame_input(state.tick_input, frame_for_world)
 	tick_count: int
-	state.accumulator, tick_count = advance_tick_accumulator(state.accumulator, f64(frame_seconds))
+	state.accumulator, tick_count = advance_simulation_clock(state.accumulator, f64(state.frame_seconds), paused)
 	for _ in 0 ..< tick_count {
 		tick_input: Input_Frame
-		tick_input, state.tick_input = take_tick_input(state.tick_input, state.input)
+		tick_input, state.tick_input = take_tick_input(state.tick_input, frame_for_world)
 		simulation_tick(&state.simulation, state.registry, {tick_input})
 	}
 	player_chunk := world_to_chunk_coordinate(camera_world_coordinate(state.simulation.players[0].position))
@@ -156,13 +185,23 @@ render_frame :: proc(state: ^Frame_State, config: Game_Config) {
 	draw_chunks(&state.renderer, camera)
 	draw_player_world_overlay(player, alpha)
 	rl.EndMode3D()
-	draw_crosshair()
 	if state.show_diagnostics {
 		draw_diagnostics_backdrop()
 		draw_diagnostics(state^, config)
 	} else {
 		draw_world_overlay(state^)
 	}
+	run_ui_frame(state)
+}
+
+run_ui_frame :: proc(state: ^Frame_State) {
+	screen_pixels := [2]f32{f32(rl.GetScreenWidth()), f32(rl.GetScreenHeight())}
+	input := make_ui_input(state.previous_input, state.input)
+	ui_begin(&state.ui, input, screen_pixels, state.frame_seconds, state.settings.ui_scale, state.settings.pointer_speed)
+	draw_hud(&state.ui)
+	run_screens(&state.ui, Screen_Context{settings = &state.settings, quit_requested = &state.quit_requested})
+	ui_end(&state.ui)
+	apply_cursor_mode(state)
 }
 
 run_game :: proc(config: Game_Config, input_backend: Input_Backend, registry: Block_Registry, generator: Generator, start: World_Start, data_directory: string) {
@@ -190,7 +229,12 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, registry: Bl
 		generator     = generator,
 		renderer      = renderer,
 		simulation    = make_simulation(config, start.player, registry),
+		settings      = DEFAULT_SETTINGS,
+		ui            = Ui_State{measure_text = raylib_measure_text},
+		// raylib starts with the cursor shown; the first apply hides it.
+		cursor_enabled = true,
 	}
+	defer destroy_ui_state(&state.ui)
 	defer if input_backend == .Sdl3 {
 		shutdown_sdl3_input(&state.sdl3_input)
 	}
@@ -206,8 +250,8 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, registry: Bl
 	// Workers read state.generator, so they stop before state goes away.
 	state.streaming = start_chunk_streaming(&state.generator, registry, !start.debug_terrain, default_worker_count())
 	defer stop_chunk_streaming(&state.streaming)
-	apply_cursor_mode(state.show_diagnostics)
-	for !rl.WindowShouldClose() {
+	apply_cursor_mode(&state)
+	for !rl.WindowShouldClose() && !state.quit_requested {
 		update_frame(&state)
 		render_frame(&state, config)
 		free_all(context.temp_allocator)

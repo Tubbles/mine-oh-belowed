@@ -145,6 +145,11 @@ main :: proc() {
 	if !loaded {
 		os.exit(1)
 	}
+	string_table, strings_loaded := load_string_table(data_directory)
+	if !strings_loaded {
+		os.exit(1)
+	}
+	global_string_table = string_table
 	registry, registry_loaded := load_block_registry(data_directory)
 	if !registry_loaded {
 		os.exit(1)

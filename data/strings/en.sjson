@@ -1,0 +1,54 @@
+// Player facing English text, looked up by key with text(key) in
+// src/data_strings.odin. A missing key shows as the key itself.
+
+// Pause menu
+pause_title = "Paused"
+pause_resume = "Resume"
+pause_settings = "Settings"
+pause_quit = "Quit to desktop"
+
+// Settings
+settings_title = "Settings"
+settings_tab_display = "Display"
+settings_tab_controls = "Controls"
+settings_back = "Back"
+settings_ui_scale = "Interface scale"
+settings_ui_scale_tooltip = "Size of all menus and text"
+settings_pointer_speed = "Pointer speed"
+settings_pointer_speed_tooltip = "Right trackpad pointer in menus"
+settings_gyro = "Gyro aiming"
+settings_gyro_tooltip = "Aim by tilting the controller"
+settings_stick_sensitivity = "Stick look sensitivity"
+settings_gyro_sensitivity = "Gyro look sensitivity"
+settings_trackpad_sensitivity = "Trackpad look sensitivity"
+settings_sensitivity_tooltip = "How fast the view turns"
+settings_invert_pitch = "Invert vertical look"
+settings_invert_pitch_tooltip = "Push up to look down"
+
+// Glyph bar labels
+hint_select = "Select"
+hint_back = "Back"
+hint_resume = "Resume"
+hint_tabs = "Tabs"
+hint_info = "Info"
+hint_pause = "Pause"
+
+// Button glyphs per device (text placeholders until glyph icons exist)
+glyph_gamepad_confirm = "A"
+glyph_gamepad_back = "B"
+glyph_gamepad_tab_previous = "LB"
+glyph_gamepad_tab_next = "RB"
+glyph_gamepad_info = "Y"
+glyph_gamepad_context_action = "X"
+glyph_gamepad_pause = "Menu"
+glyph_keyboard_confirm = "Enter"
+glyph_keyboard_back = "Esc"
+glyph_keyboard_tab_previous = "Q"
+glyph_keyboard_tab_next = "E"
+glyph_keyboard_info = "R"
+glyph_keyboard_context_action = "F"
+glyph_keyboard_pause = "Esc"
+
+// Units
+unit_block = "block"
+unit_blocks = "blocks"
