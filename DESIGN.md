@@ -20,6 +20,7 @@ Mine oh Belowed is a factory game in a voxel world. This document is the map. De
 - Vein sizes follow the Manufactio scale: common scatterings of a few thousand units, regular deposits of tens of thousands, rare concentrations of hundreds of thousands, richer and larger farther from spawn. The numbers live in data and a richness world setting multiplies them.
 - Vein finiteness is a world setting: finite (default) or infinite. The finite default also gets a late game revival route: a bore drill supplied with a mining fluid keeps an exhausted vein producing at a cost, so the world never runs dry, only expensive.
 - Deep veins lie below the surface veins, richer and with the rarer ores. They are reached from the surface by bore drills in the late tiers, never by digging. Caves hold small rare deposits and schematics for players who like to explore. Underground time is optional and meant to stay around a tenth of play.
+- Prospecting is its own tool tier ladder, and the tools complement each other because each reveals a different attribute (location, composition, size, depth). See the prospecting section below.
 - Strata are topsoil, stone and deep stone. Dug blocks become items (dirt, sand, clay, gravel, stone) and the factory uses all of them, for glass, bricks, concrete and paving. Terrain is a raw material.
 - Water flows, Minecraft style: source blocks spread into neighbouring air and drain when the source is removed. Rivers and lakes are infinite for pumps. Digging under a lake floods the hole, which is a puzzle rather than a punishment, since nothing hurts the player. Flowing water is also a power source later (hydro turbines, dams).
 - Lighting is Minecraft style: 16 level sky light and block light propagation, so nights and interiors need lamps. The day and night cycle is cosmetic in alpha.
@@ -48,10 +49,26 @@ One long progression from bare hands to a rocket program. Each phase ends when t
 
 Alpha 1 covers all eight phases. Couch tests along the way let the core loop be played long before that, see [PLAN.md](PLAN.md).
 
+## Prospecting
+
+Surface veins show as outcrops, so the early game needs no tool. Everything below is data, and each tool reveals one attribute, so the ladder complements itself instead of replacing itself.
+
+1. Eyes. Outcrops on the ground, in cliff faces and cave walls. Vegetation and soil colour hint at what lies below (sparse grass over copper, red soil over bauxite), which is how real prospectors start.
+2. Geologist's hammer. Strike an outcrop block to assay the vein: its ore mix and its size class (scattering, deposit, concentration). The assay marks the vein's footprint on the map. One vein at a time, on foot.
+3. Magnetometer. A handheld that reads iron bearing veins at range, including buried ones, through the trackpad haptics: the pad buzzes harder the closer you get. Location only, iron only.
+4. Core sample drill. A powered machine that drills a core over time and reports the strata and any vein below its position, with composition and depth. Confirms one column, finds deep veins where you already suspect them.
+5. Seismic survey. Thumper charges placed in a pattern, each shot images a radius, several shots together outline deep veins over a wide area on the map. Location and shape of deep veins, not their composition. Consumes charges and power.
+6. Orbital survey. Bought from the venture with a shipment: one satellite pass reveals surface veins with size classes over a large radius. Late, expensive, and a reason to ship.
+
+Rarer ores are tied to strata and biomes with plausible geology (gold in quartz veins in hills, sulfur near tar flats, bauxite under red laterite soil), so knowing the world is prospecting too.
+
 ## Automation and logistics
 
 - Machines are multi block entities placed on a flat footprint. Footprints are defined in data and vary on purpose, odd shapes included: fitting a 3 by 2 boiler next to a 2 by 2 drill is part of the puzzle. Snapping and the rotation preview carry the gamepad ergonomics, not uniform sizes.
 - Drills tap the vein reservoir under their outcrop. Drill tiers raise the rate and the power draw. Bore drills reach deep veins and revive exhausted ones.
+- Drills output what the vein holds: the ore mix and the spoils (gravel, sand, mud). Sorting and spoil disposal are the first logistics problems a drill creates, and spoil heaps are the visible cost of mining.
+- Ore comes in two grades. High grade ore smelts directly, low grade ore needs crushing and washing first, and the share of low grade rises as a finite vein depletes. The problem changes over the life of a vein.
+- Outcrops under water or in a hillside are ordinary veins with a terrain problem attached: drain the lake, dam the river, or cut the platform. Flowing water and dig anywhere exist for this.
 - Belts come in three shapes: flat, ramp (one block of rise per block of run) and lift (a vertical belt block that stacks). Two lanes per belt, as in Factorio. Splitters with priority and filters. Items on belts are simulated per belt line, not as individual entities, so thousands of belts stay cheap. Underground and elevated belts are emergent: dig a tunnel or place a floor.
 - Inserters reach one block in four horizontal directions and move items between belts, machines and chests. Filter inserters exist. Vertical movement is the lift's job.
 - Pipes connect in six directions and carry liquids and gases in one network model with a phase per fluid. Liquids obey gravity: they run downhill for free and need pumps to climb. Gases fill any connected volume regardless of height. Tanks, overflow and top up valves, powered pumps. Pipe crossings are emergent: go over or under.
@@ -74,18 +91,19 @@ Power is part of the logistics puzzle from the alpha on. Boilers need fuel, whic
 
 ## Research, quests and rockets
 
-- Research: labs consume research inputs to unlock technologies. The tree lives in data and ends in infinite research. How recipes and technologies become available (discovery on first production, lab research, home world breakthroughs) is being decided, see [SUGGESTIONS.md](SUGGESTIONS.md).
+- Three progression channels. Small steps are discovered: a recipe becomes available the first time all of its ingredients have been produced. Bigger steps are researched: labs consume science packs (coloured bottles, the abstraction is good) to unlock machine tiers and new processes such as electrolysis, cracking and fracking. Massive steps come from a few main quest gates. The tree lives in data and ends in infinite research.
+- Undiscovered recipes show in the recipe graph as silhouettes: name and category visible, ingredients revealed on discovery. A first playthrough is never faced with the whole tree at once. The world setting "all recipes unlocked at start" is there for repeat playthroughs.
 - Quests are data driven chapters over the gameplay phases. Objectives: craft, place, sustain a rate, research, ship. Contextual hints ("your drill ran out of fuel three times"). Rewards: items, unlocks, schematics. Mission Control is the voice. Quests replace the tutorial. They only ever guide and reward, a player who ignores the journal is never blocked.
-- Main quests deliver home world breakthroughs: a technology that becomes available because the home world discovered it, for example a new material process that makes a fusion generator viable. Such a technology is gated by its main quest and by nothing else, and no other path waits for it.
+- A few main quest gates open the massive steps, on the order of one per gameplay phase, never hundreds of small ones. A gated technology waits for its main quest and for nothing else, and no other path waits for it.
 - Rockets close the loop in phase 8. A launch pad and rocket parts are the big sink. Shipments fulfil contracts and trade for returns. No building is mandatory, the pad included.
 
 ## Lore and tone
 
-Realistic rather than cartoonish. The player is an engineer establishing an industrial outpost on an uninhabited planet for a home world that stays in contact through Mission Control, an orbital station. Materials, processes and machines carry their real names and real units: hematite and chalcopyrite, smelting and cracking, kilowatts and items per minute. The planet's geology is plausible. There are no aliens, no magic and no mascots. Humour lives in Mission Control's messages, not in the world.
+Realistic rather than cartoonish. The player is a contractor establishing an industrial outpost on an uninhabited planet for a venture that holds the planet's exploitation lease and stays in contact through Mission Control, its orbital station. The venture sets the contracts, the prices and the targets, and the cynical hand of capitalism is felt through its messages and its demands. Spoil heaps, spent veins and flare stacks are what the outpost does to the planet, and the game shows it without a pollution mechanic in the alpha. Materials, processes and machines carry their real names and real units: hematite and chalcopyrite, smelting and cracking, kilowatts and items per minute. The planet's geology is plausible. There are no aliens, no magic and no mascots. Humour lives in Mission Control's corporate messages, not in the world.
 
 ## World settings
 
-Chosen at world creation: seed, name, vein finiteness, vein richness, research cost multiplier, byproduct strictness, day length.
+Chosen at world creation: seed, name, vein finiteness, vein richness, research cost multiplier, byproduct strictness, all recipes unlocked at start, day length.
 
 ## User interface
 
@@ -101,6 +119,10 @@ Chosen at world creation: seed, name, vein finiteness, vein richness, research c
 ## Input
 
 Steam Controller (2026) first. The layout proposal and the technical path are in [doc/input.md](doc/input.md).
+
+## Art direction
+
+Placeholder art first. The intermediate target after placeholders is Minecraft flatness: small textures, flat shading, per vertex light and ambient occlusion. That fixes the texture atlas, the lighting model and the shaders for M1 and it is achievable without an artist. Realism is carried by the lore and the numbers, not the rendering.
 
 ## Technical
 
