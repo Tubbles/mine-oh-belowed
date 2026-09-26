@@ -9,6 +9,20 @@ Open questions that need the user's decision, each with the lead architect's rec
 3. Vein numbers for the data files. Proposal, before the richness multiplier: scatterings 2k to 5k units, deposits 20k to 60k, concentrations 100k to 300k, deep veins five times their surface counterpart. Approve or adjust.
 4. Byproduct strictness default. Strict by default, byproducts must be handled (recommended: it is the puzzle the user asked for), or lenient by default.
 
+## Follow ups from the M1 implementation
+
+Raised by the work item notes (0005 to 0008), to be turned into work items when they matter:
+
+- Water and light that reach an unloaded chunk stop at the border and do not resume when the chunk loads.
+- A saved chunk has no relight path: only generation computes sky light, so save and load (M5) needs a stored height map per column or a relight pass.
+- Greedy meshing no longer merges faces with different corner light, doubling mesh time. A light aware merge or a coarser light quantisation would win it back if meshing shows up in profiles.
+- All air and all solid chunks are stored in full; a single block id representation would roughly halve memory.
+- Water covers about 29 percent of the surface, hills are capped at sea level plus 64, leaves are opaque. All one number each, waiting for the couch impression.
+- Data files are not strict about unknown keys yet (`json.unmarshal` ignores them); the configuration strictness rule needs a custom check.
+- Bindings are hardcoded tables until configuration lands. The raylib gamepad table lacks Sneak on B. Fly mode does not mine instantly yet.
+- The third person camera can still clip into walls at steep angles, and the targeting ray starts at the eye in third person.
+- Diagnostics overlay backdrop is narrower than its longest lines.
+
 ## Next steps
 
 1. Settle the decisions above, then update `DESIGN.md` and log them.
