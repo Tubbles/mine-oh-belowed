@@ -6,11 +6,12 @@ Status: pre-alpha, design phase. Nothing playable yet. Milestones are in [PLAN.m
 
 ## What it is
 
-- Open world where every block can be dug, placed, or built on.
-- Ore lies in veins by depth, and depth is the progression axis. Vertical logistics (ramps, lifts) bring material back up, or you build the factory down there.
-- Factorio loop: mine and craft by hand once, then automate with drills, belts, inserters, assemblers, steam power and research.
+- A factory game first: the Factorio loop of mining and crafting by hand once, then automating with drills, belts, inserters, assemblers, power and research, guided by quests from landing to a rocket program.
+- In an open voxel world where every block can be dug, placed or built on. Foundations, floors and tunnels are just blocks. Digging is never required for ore.
+- Ore comes from surface veins at Factorio scale, tens of thousands of units and more, finite or infinite as a world setting. The underground is optional.
+- Deep recipes: many ores and alloys, byproducts that must go somewhere, recycling, liquids and gases in pipes, plastics, and power as part of the puzzle.
 - Peaceful by default: no enemies and no pollution in the first alpha. Built to be played while the kids watch.
-- Written in Odin with raylib. Content (blocks, items, recipes, machines, technologies) is data driven in SJSON.
+- Written in Odin with raylib. Content (blocks, items, recipes, machines, technologies, quests) is data driven in SJSON.
 
 ## Building
 
