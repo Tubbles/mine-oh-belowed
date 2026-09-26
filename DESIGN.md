@@ -8,7 +8,7 @@ Mine oh Belowed is a voxel automation game. This document is the map. Details li
 2. Automate everything. The loop is Factorio's: do it by hand once, build the machine that does it, then build the machine that feeds that machine. Manual labour is the bootstrap, never the endgame.
 3. Down is forward. Depth is the progression axis. Better ore lies deeper in harder rock, and hauling it back up (or building the factory down there) is the logistics puzzle neither parent game has.
 4. Couch first. Every interaction is designed for the Steam Controller from the start. Text entry is limited to naming things.
-5. Peaceful and kid friendly. No enemies, no violence, no pollution in the first alpha. Failure is a stalled belt, never a death screen.
+5. Peaceful. No enemies, no violence, no pollution in the first alpha. Failure is a stalled belt, never a death screen. It is not a children's game, it is a game that can be played while children watch, so nothing else is simplified for them.
 6. One coherent game. One art style, one UI language, one rule set. No mod seams.
 
 ## The world
@@ -24,10 +24,10 @@ Mine oh Belowed is a voxel automation game. This document is the map. Details li
 ## The player
 
 - First person by default, with a third person camera as a toggle. The player is one block wide and two blocks tall, reaches five blocks, jumps one block, sneaks and sprints. Gyro aim gives fine pointing for block placement in both camera modes.
-- Hand mining is fast and kid friendly: one to three seconds per block by hand, not tens of seconds. Tools multiply speed and gate hardness (wood, stone, iron).
+- Hand mining is fast: one to three seconds per block by hand, not tens of seconds. Tools multiply speed and gate hardness (wood, stone, iron).
 - Inventory is a grid of 36 slots plus an 8 slot hotbar. The hotbar doubles as the radial menu on the left trackpad.
 - No health, hunger, weight or drowning in the peaceful alpha.
-- A flying and instant-mining toggle exists as a developer tool and as a mode for the youngest players.
+- A flying and instant mining toggle exists as a developer and creative tool.
 
 ## Progression
 

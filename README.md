@@ -9,7 +9,7 @@ Status: pre-alpha, design phase. Nothing playable yet. Milestones are in [PLAN.m
 - Open world where every block can be dug, placed, or built on.
 - Ore lies in veins by depth, and depth is the progression axis. Vertical logistics (ramps, lifts) bring material back up, or you build the factory down there.
 - Factorio loop: mine and craft by hand once, then automate with drills, belts, inserters, assemblers, steam power and research.
-- Peaceful by default: no enemies and no pollution in the first alpha. Built to be played with kids.
+- Peaceful by default: no enemies and no pollution in the first alpha. Built to be played while the kids watch.
 - Written in Odin with raylib. Content (blocks, items, recipes, machines, technologies) is data driven in SJSON.
 
 ## Building
