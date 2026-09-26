@@ -26,3 +26,7 @@ The game is launched from Steam as a non-Steam game with Steam Input disabled fo
 - [DESIGN.md](DESIGN.md): game design overview.
 - [doc/](doc/README.md): detail documents, decision log (`doc/log/`), work items (`doc/work/`).
 - [SUGGESTIONS.md](SUGGESTIONS.md): open questions and proposed next steps.
+
+## License
+
+AGPL-3.0-only, see [LICENSE](LICENSE).

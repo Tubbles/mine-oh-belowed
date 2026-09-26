@@ -47,6 +47,12 @@
             fi
             runHook postInstall
           '';
+
+          meta = {
+            description = "Voxel automation game, Minecraft's world with Factorio's loop";
+            license = pkgs.lib.licenses.agpl3Only;
+            mainProgram = "mine-oh-belowed";
+          };
         };
       });
 
