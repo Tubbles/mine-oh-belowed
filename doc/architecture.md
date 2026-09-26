@@ -10,6 +10,7 @@
 
 - Main loop: render at vsync, simulate at a fixed 60 ticks per second with an accumulator. Only the camera interpolates between ticks.
 - The simulation never reads the wall clock. Random numbers come from generators seeded by world seed, chunk coordinate or tick.
+- Players are an array in the world state, each with its own camera and input frame. The alpha runs one player. Split screen co-op adds more without a redesign.
 - Chunk generation and meshing run on worker threads (`core:thread`) and hand results to the main thread through queues. The simulation is single threaded in the alpha.
 
 ## Packages

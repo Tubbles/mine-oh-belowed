@@ -23,7 +23,7 @@ Mine oh Belowed is a voxel automation game. This document is the map. Details li
 
 ## The player
 
-- First person. The player is one block wide and two blocks tall, reaches five blocks, jumps one block, sneaks and sprints. Gyro aim gives fine pointing for block placement.
+- First person by default, with a third person camera as a toggle. The player is one block wide and two blocks tall, reaches five blocks, jumps one block, sneaks and sprints. Gyro aim gives fine pointing for block placement in both camera modes.
 - Hand mining is fast and kid friendly: seconds per block, not tens of seconds. Tools multiply speed and gate hardness (wood, stone, iron).
 - Inventory is a grid of 36 slots plus an 8 slot hotbar. The hotbar doubles as the radial menu on the left trackpad.
 - No health, hunger, weight or drowning in the peaceful alpha.
@@ -68,7 +68,7 @@ Steam Controller (2026) first. The layout proposal and the technical path are in
 
 ## Technical
 
-Odin with raylib for windowing and rendering and SDL3 for controller input. Deterministic fixed step simulation decoupled from rendering, typed entity pools, data driven prototypes in SJSON. See [doc/architecture.md](doc/architecture.md).
+Odin with raylib for windowing and rendering and SDL3 for controller input. Deterministic fixed step simulation decoupled from rendering, typed entity pools, data driven prototypes in SJSON. The simulation holds an array of players from the start, so local co-op later needs no redesign. See [doc/architecture.md](doc/architecture.md).
 
 ## Out of scope for alpha 1
 
