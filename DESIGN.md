@@ -46,7 +46,7 @@ One long progression from bare hands to a rocket program. Each phase ends when t
 7. Scale. Several veins, bore drills, factory floors, grid management, production statistics as a daily tool, cave schematics for alternate recipes.
 8. Rocket program. Launch pad and rocket parts as the big sink, regular shipments as the trade loop, infinite research.
 
-Alpha 1 covers phases 1 to 4, see [PLAN.md](PLAN.md).
+Alpha 1 covers all eight phases. Couch tests along the way let the core loop be played long before that, see [PLAN.md](PLAN.md).
 
 ## Automation and logistics
 
@@ -74,9 +74,14 @@ Power is part of the logistics puzzle from the alpha on. Boilers need fuel, whic
 
 ## Research, quests and rockets
 
-- Research: labs consume science packs to unlock technologies. The tree lives in data and ends in infinite research.
-- Quests are data driven chapters over the gameplay phases. Objectives: craft, place, sustain a rate, research, ship. Contextual hints ("your drill ran out of fuel three times"). Rewards: items, unlocks, schematics. Mission Control is the voice. Quests replace the tutorial. They guide and reward; whether they also gate research is open (see [SUGGESTIONS.md](SUGGESTIONS.md)).
-- Rockets are post alpha. A launch pad and rocket parts are the big sink. Shipments fulfil contracts and trade for returns. No building is mandatory, the pad included.
+- Research: labs consume research inputs to unlock technologies. The tree lives in data and ends in infinite research. How recipes and technologies become available (discovery on first production, lab research, home world breakthroughs) is being decided, see [SUGGESTIONS.md](SUGGESTIONS.md).
+- Quests are data driven chapters over the gameplay phases. Objectives: craft, place, sustain a rate, research, ship. Contextual hints ("your drill ran out of fuel three times"). Rewards: items, unlocks, schematics. Mission Control is the voice. Quests replace the tutorial. They only ever guide and reward, a player who ignores the journal is never blocked.
+- Main quests deliver home world breakthroughs: a technology that becomes available because the home world discovered it, for example a new material process that makes a fusion generator viable. Such a technology is gated by its main quest and by nothing else, and no other path waits for it.
+- Rockets close the loop in phase 8. A launch pad and rocket parts are the big sink. Shipments fulfil contracts and trade for returns. No building is mandatory, the pad included.
+
+## Lore and tone
+
+Realistic rather than cartoonish. The player is an engineer establishing an industrial outpost on an uninhabited planet for a home world that stays in contact through Mission Control, an orbital station. Materials, processes and machines carry their real names and real units: hematite and chalcopyrite, smelting and cracking, kilowatts and items per minute. The planet's geology is plausible. There are no aliens, no magic and no mascots. Humour lives in Mission Control's messages, not in the world.
 
 ## World settings
 
@@ -103,7 +108,7 @@ Odin with raylib for windowing and rendering and SDL3 for controller input. Dete
 
 ## Out of scope for alpha 1
 
-Enemies, pollution, combat, health and hunger, gravity blocks, multiplayer, rails, blueprints, oil and plastics, bore drills, caves content, rockets, polished Xbox-style controller support, achievements, localisation.
+Enemies, pollution, combat, health and hunger, gravity blocks, multiplayer, rails, blueprints, polished Xbox-style controller support, achievements, localisation.
 
 ## Open questions
 
