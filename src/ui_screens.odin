@@ -9,7 +9,7 @@ import "core:math"
 PAUSE_PANEL_WIDTH :: 560
 SETTINGS_PANEL_WIDTH :: 960
 // Title, tabs, the longest tab's rows and the back button.
-SETTINGS_ROW_COUNT :: 8
+SETTINGS_ROW_COUNT :: 9
 
 Screen_Context :: struct {
 	settings:        ^Settings,
@@ -43,7 +43,8 @@ Screen_Context :: struct {
 	technology_browser: ^Technology_Browser,
 	statistics_view:    ^Statistics_View,
 	map_view:           ^Map_View,
-	// --dev: the pause menu shows the Developer entry (ui_developer.odin).
+	// --dev: the pause menu shows the Developer entry (ui_developer.odin);
+	// the developer_mode setting shows it too.
 	developer_mode:     bool,
 	show_diagnostics:   ^bool,
 	// Nil without a world.
@@ -196,7 +197,8 @@ panel_height :: proc(row_count: int, extra: f32) -> f32 {
 pause_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	ui_backdrop(state)
 	area := ui_safe_area(state)
-	button_count := screen_context.developer_mode ? 11 : 10
+	developer := screen_context.developer_mode || (screen_context.settings != nil && screen_context.settings.developer_mode)
+	button_count := developer ? 11 : 10
 	// The title row and the build stamp row besides the buttons.
 	panel := centred_rectangle(area, PAUSE_PANEL_WIDTH, panel_height(button_count, 2 * (UI_ROW_HEIGHT + UI_GAP)))
 	ui_panel_begin(state, "pause", panel)
@@ -246,7 +248,7 @@ pause_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		push_screen(&state.screens, .Settings)
 	}
 	cut_top(&content, UI_GAP)
-	if screen_context.developer_mode {
+	if developer {
 		if ui_button(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_developer")) {
 			push_screen(&state.screens, .Developer)
 		}
@@ -339,6 +341,7 @@ display_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Se
 	if ui_slider(state, settings_row(content), text("settings_autosave"), &autosave, AUTOSAVE_MINUTES_RANGE, autosave_minutes_text(settings.autosave_minutes), text("settings_autosave_tooltip")) {
 		settings.autosave_minutes = int(math.round(autosave))
 	}
+	ui_toggle(state, settings_row(content), text("settings_developer_mode"), &settings.developer_mode, text("settings_developer_mode_tooltip"))
 }
 
 autosave_minutes_text :: proc(minutes: int) -> string {

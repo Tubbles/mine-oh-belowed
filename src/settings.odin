@@ -22,6 +22,9 @@ Settings :: struct {
 	// Machine state markers in the world (work item 0028), also toggled
 	// with Toggle_Bottleneck_Overlay.
 	bottleneck_overlay:        bool,
+	// The Developer entry in the pause menu (ui_developer.odin, work item
+	// 0043), so a tester needs no launch options; --dev shows it too.
+	developer_mode:            bool,
 }
 
 DEFAULT_SETTINGS :: Settings {
@@ -34,6 +37,7 @@ DEFAULT_SETTINGS :: Settings {
 	pointer_speed             = 1.5,
 	autosave_minutes          = 5,
 	bottleneck_overlay        = false,
+	developer_mode            = false,
 }
 
 UI_SCALE_RANGE :: Slider_Range{0.75, 1.5, 0.05}
