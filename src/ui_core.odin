@@ -148,6 +148,12 @@ Text_Alignment :: enum u8 {
 	Right,
 }
 
+// Headings and emphasised lines use the family's bold file (ui_font.odin).
+Font_Weight :: enum u8 {
+	Regular,
+	Bold,
+}
+
 Draw_Command :: struct {
 	kind:      Draw_Command_Kind,
 	rectangle: Ui_Rectangle,
@@ -155,6 +161,7 @@ Draw_Command :: struct {
 	thickness: f32,
 	text:      string,
 	text_size: f32,
+	weight:    Font_Weight,
 	alignment: Text_Alignment,
 	widget:    Ui_Id,
 	// The panel open when the command was pushed (0 outside panels), so
@@ -213,19 +220,24 @@ Radial_Source :: enum u8 {
 	Held_Button,
 }
 
+// Width in UI units of a text at a size in UI units, measured with the
+// fonts (measure_font_text in the game).
+Measure_Text_Proc :: #type proc(fonts: ^Font_Cache, text: string, size: f32, weight: Font_Weight, pixels_per_unit: f32) -> f32
+
 Radial_State :: struct {
 	open:      bool,
 	highlight: int,
 }
-
-// Width of a text in UI units at a size in UI units.
-Measure_Text_Proc :: #type proc(text: string, size: f32) -> f32
 
 Ui_State :: struct {
 	input:            Ui_Input,
 	frame_seconds:    f32,
 	pixels_per_unit:  f32,
 	screen_units:     [2]f32,
+	// The fonts text is measured and drawn with (ui_font.odin). Both are
+	// nil in headless tests, which measure with approximate_text_width
+	// and so never link raylib.
+	fonts:            ^Font_Cache,
 	measure_text:     Measure_Text_Proc,
 	// Screen heights the pointer crosses per trackpad width.
 	pointer_speed:    f32,
@@ -592,16 +604,33 @@ column :: proc(rectangle: Ui_Rectangle, count, index: int, gap: f32) -> Ui_Recta
 	return {rectangle.x + f32(index) * (width + gap), rectangle.y, width, rectangle.height}
 }
 
-// Rough width of the default font, for tests and before a window exists.
+// Average advance of the default family (Exo 2, one variable file for
+// both weights) as a fraction of the text size: 0.362 over a sample
+// sentence (test_approximate_width_follows_the_default_font). Michroma,
+// Orbitron and Oxanium run up to 0.44, so the headless audit does not
+// cover the widest choices; the game measures with the real font.
+APPROXIMATE_ADVANCE_FACTOR :: 0.37
+
+// Rough width of the default family, for tests and before a window exists.
 approximate_text_width :: proc(text: string, size: f32) -> f32 {
-	return f32(strings.rune_count(text)) * size * 0.55
+	return f32(strings.rune_count(text)) * size * APPROXIMATE_ADVANCE_FACTOR
 }
 
-ui_text_width :: proc(state: ^Ui_State, text: string, size: f32) -> f32 {
-	if state.measure_text == nil {
+// Headings (UI_HEADING_TEXT_SIZE and larger) and emphasised lines are bold.
+text_weight :: proc(size: f32, emphasis := false) -> Font_Weight {
+	return emphasis || size >= UI_HEADING_TEXT_SIZE ? .Bold : .Regular
+}
+
+ui_text_width :: proc(state: ^Ui_State, text: string, size: f32, emphasis := false) -> f32 {
+	return ui_text_width_in_weight(state, text, size, text_weight(size, emphasis))
+}
+
+// Measured with the font the text is drawn with, so layout matches it.
+ui_text_width_in_weight :: proc(state: ^Ui_State, text: string, size: f32, weight: Font_Weight) -> f32 {
+	if state.measure_text == nil || state.fonts == nil || len(state.fonts.families) == 0 {
 		return approximate_text_width(text, size)
 	}
-	return state.measure_text(text, size)
+	return state.measure_text(state.fonts, text, size, weight, state.pixels_per_unit)
 }
 
 // Screen stack.

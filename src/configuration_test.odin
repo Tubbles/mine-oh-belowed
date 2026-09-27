@@ -230,6 +230,8 @@ test_settings_file_round_trip :: proc(t: ^testing.T) {
 	settings.ui_scale = 1.15
 	settings.pointer_speed = 0.7
 	settings.gyro_enabled = false
+	settings.font = "rajdhani"
+	settings.monospace_font = "share_tech_mono"
 	testing.expect_value(t, write_settings_file(environment, settings), "")
 
 	loaded, problem := load_configuration(environment, {})

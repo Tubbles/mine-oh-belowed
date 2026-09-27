@@ -180,7 +180,7 @@ draw_quest_objective :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	progress := quest_state.progress[quest_state.active]
 	area := hud_objective_area(state)
 	width := area.width
-	draw_text_fitted(state, cut_top(&area, UI_ROW_HEIGHT), text(quest.title_key), UI_BODY_TEXT_SIZE, .Right, UI_ACCENT_COLOR)
+	draw_text_fitted(state, cut_top(&area, UI_ROW_HEIGHT), text(quest.title_key), UI_BODY_TEXT_SIZE, .Right, UI_ACCENT_COLOR, emphasis = true)
 	for line in wrap_text(state, text(quest.text_key), UI_BODY_TEXT_SIZE, width) {
 		draw_text(state, cut_top(&area, UI_LINE_HEIGHT), line, UI_BODY_TEXT_SIZE, .Right)
 	}

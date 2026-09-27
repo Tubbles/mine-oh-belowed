@@ -53,6 +53,10 @@ Hotbar of eight slots bottom centre with the selected slot enlarged, the held it
 
 Under the crosshair (0052) up to three lines stack with no gaps: the targeted block's name in dim text, or an entity's name and state; the pickaxe the block needs (0051); the vein line. Nothing shows when the ray hits nothing. A discoverable ore block reads "Unknown ore" until its drop item was obtained once, and the vein line replaces the vein type's name with "Unknown ore" (size and units left stay) until one of its discoverable ores is obtained; a vein type with no discoverable output (a quarry, the deep bauxite vein) is always named.
 
+## Text
+
+Text is drawn with TrueType fonts (0077) rasterised at `round(text_size * pixels_per_unit)` pixels for each size in use and drawn at whole pixel positions, so stems are even at every UI scale (raylib's 10 pixel bitmap font scaled up gave one and two pixel stems, couch test 1). Headings and the HUD quest title use the bold weight. The families live in `data/fonts/<id>/` with their licences and are listed in `data/fonts/fonts.sjson`: technical faces first (Exo 2 the default, Titillium Web, Rajdhani, Oxanium, Chakra Petch, Jura, Electrolize, Play, Quantico, Orbitron, Michroma), then plain faces for comparison, then the monospace families for the diagnostics overlay. The Display tab has a Font choice and a Diagnostics font choice, applied at once and saved; `settings.font` and `settings.monospace_font` in the configuration take the ids. Font files are presentation data for hot reload.
+
 ## Icons
 
 Placeholder icons are the block's atlas tile for blocks, and a coloured square with two letters for items and machines. Real icons come with the art pass.

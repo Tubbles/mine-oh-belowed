@@ -29,6 +29,11 @@ Settings :: struct {
 	// work item 0054): default, off, presentation or all. --watch-data
 	// overrides it for one run.
 	watch_data:                Watch_Data_Mode,
+	// Font family ids from data/fonts/fonts.sjson (ui_font.odin, work item
+	// 0077): the UI's, and the diagnostics overlay's among the monospace
+	// families. main refuses an id the file does not list.
+	font:                      string,
+	monospace_font:            string,
 }
 
 DEFAULT_SETTINGS :: Settings {
@@ -43,6 +48,8 @@ DEFAULT_SETTINGS :: Settings {
 	bottleneck_overlay        = false,
 	developer_mode            = false,
 	watch_data                = .Default,
+	font                      = "exo_2",
+	monospace_font            = "jetbrains_mono",
 }
 
 UI_SCALE_RANGE :: Slider_Range{0.75, 1.5, 0.05}

@@ -201,6 +201,11 @@ main :: proc() {
 		os.exit(1)
 	}
 	data_directory := require_data_directory()
+	fonts, fonts_problem := load_checked_fonts(data_directory, loaded_configuration)
+	if fonts_problem != "" {
+		log_printf("error: %s", fonts_problem)
+		os.exit(1)
+	}
 	binding_overrides, overrides_problem := resolve_bindings(loaded_configuration.configuration.bindings, loaded_configuration.provenance)
 	if overrides_problem != "" {
 		log_printf("error: %s", overrides_problem)
@@ -252,7 +257,19 @@ main :: proc() {
 		input_bindings    = make_backend_bindings(bindings, input_backend),
 		watch_data        = watch_data,
 	}
-	run_game(config, input_backend, game_data, data_directory, session, make_title_state(config, saves_directory, saves_found, make_save_header()), player_configuration)
+	run_game(config, input_backend, game_data, data_directory, fonts, session, make_title_state(config, saves_directory, saves_found, make_save_header()), player_configuration)
+}
+
+// data/fonts/fonts.sjson, and the font settings checked against it.
+load_checked_fonts :: proc(data_directory: string, loaded: Loaded_Configuration) -> (fonts: Loaded_Fonts, problem: string) {
+	if fonts, problem = load_fonts(data_directory); problem != "" {
+		return {}, problem
+	}
+	if problem = font_settings_problem(loaded.configuration.settings, fonts.families, loaded.provenance); problem != "" {
+		destroy_arena(fonts.arena)
+		return {}, problem
+	}
+	return fonts, ""
 }
 
 // Builds the backend's tables and reports once what it cannot express.
@@ -298,9 +315,15 @@ print_configuration :: proc(assignments: []string) {
 		os.exit(1)
 	}
 	overrides, bindings: []Binding
-	overrides, problem = resolve_bindings(loaded.configuration.bindings, loaded.provenance)
+	fonts: Loaded_Fonts
+	data_directory := require_data_directory()
+	fonts, problem = load_checked_fonts(data_directory, loaded)
+	defer destroy_arena(fonts.arena)
 	if problem == "" {
-		bindings, problem = load_bindings(require_data_directory(), overrides)
+		overrides, problem = resolve_bindings(loaded.configuration.bindings, loaded.provenance)
+	}
+	if problem == "" {
+		bindings, problem = load_bindings(data_directory, overrides)
 	}
 	if problem != "" {
 		log_printf("error: %s", problem)

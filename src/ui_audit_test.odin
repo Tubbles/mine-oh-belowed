@@ -73,6 +73,7 @@ Ui_Audit :: struct {
 	content:            Simulation_Content,
 	simulation:         Simulation_State,
 	settings:           Settings,
+	fonts:              Loaded_Fonts,
 	bindings:           []Binding,
 	title:              Title_State,
 	browser:            Recipe_Browser,
@@ -137,7 +138,7 @@ audit_command :: proc(state: ^Ui_State, command: Draw_Command, clip: Ui_Rectangl
 		problems += {.Outside_Panel}
 	}
 	if command.kind == .Text && command.text != "" {
-		if ui_text_width(state, command.text, command.text_size) > command.rectangle.width + UI_AUDIT_TOLERANCE {
+		if ui_text_width_in_weight(state, command.text, command.text_size, command.weight) > command.rectangle.width + UI_AUDIT_TOLERANCE {
 			problems += {.Text_Too_Wide}
 		}
 		if command.rectangle.height + UI_AUDIT_TOLERANCE < command.text_size {
@@ -205,6 +206,7 @@ audit_screen_context :: proc(audit: ^Ui_Audit) -> Screen_Context {
 	simulation := &audit.simulation
 	return Screen_Context {
 		settings = &audit.settings,
+		font_families = audit.fonts.families,
 		bindings = audit.bindings,
 		quit_requested = &audit.quit_requested,
 		save_requested = &audit.save_requested,
@@ -395,6 +397,9 @@ make_ui_audit :: proc() -> ^Ui_Audit {
 	}
 	audit.settings = DEFAULT_SETTINGS
 	audit.settings.developer_mode = true
+	fonts_problem: string
+	audit.fonts, fonts_problem = load_fonts(test_data_directory())
+	assert(fonts_problem == "", fonts_problem)
 	bindings, problem := parse_bindings_file(#load("../data/bindings.sjson"), "data/bindings.sjson", context.temp_allocator)
 	assert(problem == "", problem)
 	audit.bindings = bindings
@@ -411,6 +416,7 @@ destroy_ui_audit :: proc(audit: ^Ui_Audit) {
 	thread_string_table = nil
 	destroy_simulation(&audit.simulation)
 	destroy_string_table(&audit.strings)
+	destroy_arena(audit.fonts.arena)
 	destroy_save_summaries(&audit.title.saves)
 	delete(audit.title.saves)
 	destroy_map_view(&audit.map_view)

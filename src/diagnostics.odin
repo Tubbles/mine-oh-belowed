@@ -179,11 +179,12 @@ keys_down_text :: proc(raw: Raw_Input) -> string {
 	return text
 }
 
-draw_lines :: proc(lines: []Diagnostics_Line, x, y, font_size: i32) -> i32 {
+// In the monospace family (ui_font.odin).
+draw_lines :: proc(fonts: ^Font_Cache, lines: []Diagnostics_Line, x, y, font_size: i32) -> i32 {
 	line_y := y
 	for line in lines {
 		color := line.active ? DIAGNOSTICS_ACTIVE_COLOR : DIAGNOSTICS_TEXT_COLOR
-		rl.DrawText(strings.clone_to_cstring(line.text, context.temp_allocator), x, line_y, font_size, color)
+		draw_monospace_text(fonts, line.text, x, line_y, font_size, color)
 		line_y += font_size + font_size / 5
 	}
 	return line_y
@@ -194,10 +195,11 @@ draw_diagnostics :: proc(state: Frame_State, config: Game_Config) {
 	screen_width := rl.GetScreenWidth()
 	button_column_x := screen_width * 35 / 100
 	analog_column_x := screen_width * 64 / 100
-	left_bottom := draw_lines(mapped_lines(state, config), DIAGNOSTICS_MARGIN, DIAGNOSTICS_MARGIN, font_size)
-	draw_lines(keyboard_mouse_lines(state.input.raw), DIAGNOSTICS_MARGIN, left_bottom + font_size, font_size)
-	draw_lines(gamepad_button_lines(state.input.raw), button_column_x, DIAGNOSTICS_MARGIN, font_size)
-	draw_lines(gamepad_analog_lines(state.input.raw), analog_column_x, DIAGNOSTICS_MARGIN, font_size)
+	fonts := state.ui.fonts
+	left_bottom := draw_lines(fonts, mapped_lines(state, config), DIAGNOSTICS_MARGIN, DIAGNOSTICS_MARGIN, font_size)
+	draw_lines(fonts, keyboard_mouse_lines(state.input.raw), DIAGNOSTICS_MARGIN, left_bottom + font_size, font_size)
+	draw_lines(fonts, gamepad_button_lines(state.input.raw), button_column_x, DIAGNOSTICS_MARGIN, font_size)
+	draw_lines(fonts, gamepad_analog_lines(state.input.raw), analog_column_x, DIAGNOSTICS_MARGIN, font_size)
 }
 
 world_statistics_text :: proc(state: Frame_State) -> string {
@@ -250,7 +252,7 @@ draw_world_overlay :: proc(state: Frame_State) {
 	font_size := diagnostics_font_size(rl.GetScreenHeight())
 	backdrop_height := i32(len(lines)) * (font_size + font_size / 5) + DIAGNOSTICS_MARGIN
 	rl.DrawRectangle(0, 0, font_size * 24, backdrop_height + DIAGNOSTICS_MARGIN, DIAGNOSTICS_BACKDROP_COLOR)
-	draw_lines(lines[:], DIAGNOSTICS_MARGIN, DIAGNOSTICS_MARGIN, font_size)
+	draw_lines(state.ui.fonts, lines[:], DIAGNOSTICS_MARGIN, DIAGNOSTICS_MARGIN, font_size)
 }
 
 block_name :: proc(registry: Block_Registry, block: Block_Id) -> string {

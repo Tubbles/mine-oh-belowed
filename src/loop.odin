@@ -88,6 +88,12 @@ Frame_State :: struct {
 	ui:                 Ui_State,
 	// The map's texture (ui_draw.odin).
 	ui_images:          Ui_Image_Cache,
+	// The font families and the fonts loaded from them (ui_font.odin, work
+	// item 0077); ui.fonts points at font_cache. A fonts reload retires
+	// the old families' arena until exit, settings.font may point into it.
+	fonts:              Loaded_Fonts,
+	font_cache:         Font_Cache,
+	retired_font_arenas: [dynamic]^virtual.Arena,
 	cursor_enabled:     bool,
 	quit_requested:     bool,
 	renderer:           Chunk_Renderer,
@@ -437,6 +443,7 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 	content := state.content
 	screen_context := Screen_Context {
 		settings        = &state.settings,
+		font_families   = state.fonts.families,
 		screenshot_requested = &state.screenshot_requested,
 		bindings        = state.bindings,
 		quit_requested  = &state.quit_requested,
@@ -488,6 +495,7 @@ run_ui_frame :: proc(state: ^Frame_State) {
 	screen_pixels := [2]f32{f32(rl.GetScreenWidth()), f32(rl.GetScreenHeight())}
 	input := make_ui_input(state.previous_input, state.input)
 	ui_begin(&state.ui, input, screen_pixels, state.frame_seconds, state.settings.ui_scale, state.settings.pointer_speed)
+	sync_font_cache(&state.font_cache, state.settings, state.ui.pixels_per_unit)
 	screen_context := make_screen_context(state)
 	if state.session != nil {
 		show_simulation_events(&state.ui, &state.session.simulation.events)
@@ -656,7 +664,7 @@ show_title :: proc(state: ^Frame_State) {
 
 // Takes ownership of the session, or shows the title when there is none.
 // Saves on quit when the world saves.
-run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: Game_Data, data_directory: string, session: ^Session, title: Title_State, player_configuration: Player_Configuration) {
+run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: Game_Data, data_directory: string, fonts: Loaded_Fonts, session: ^Session, title: Title_State, player_configuration: Player_Configuration) {
 	content := game_data.content
 	rl.SetTraceLogLevel(.WARNING)
 	rl.SetConfigFlags({.VSYNC_HINT, .WINDOW_RESIZABLE})
@@ -691,7 +699,7 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 		environment     = player_configuration.environment,
 		bindings        = player_configuration.bindings,
 		input_bindings  = player_configuration.input_bindings,
-		ui              = Ui_State{measure_text = raylib_measure_text},
+		fonts           = fonts,
 		// raylib starts with the cursor shown; the first apply hides it.
 		cursor_enabled  = true,
 	}
@@ -699,6 +707,10 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	defer destroy_hot_reload_state(&state)
 	defer destroy_ui_state(&state.ui)
 	defer release_ui_images(&state.ui_images)
+	strings_text, _ := read_strings_file(data_directory)
+	init_font_cache(&state.font_cache, data_directory, state.fonts.families, string(strings_text), state.settings)
+	state.ui.fonts, state.ui.measure_text = &state.font_cache, measure_font_text
+	defer destroy_font_cache(&state.font_cache)
 	defer destroy_title_state(&state.title)
 	defer write_changed_settings(&state)
 	defer if input_backend == .Sdl3 {

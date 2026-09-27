@@ -1,13 +1,10 @@
 package game
 
-import "core:strings"
 import rl "vendor:raylib"
 
-// The only UI file that calls raylib: it turns the draw list into pixels.
-// raylib's default font is a 10 pixel bitmap scaled up; a TTF from
-// data/fonts/ replaces it once one is chosen.
-
-DEFAULT_FONT_SPACING_FACTOR :: 0.1
+// The only UI file that calls raylib, with ui_font.odin for the text: it
+// turns the draw list into pixels. Text comes from the TrueType families
+// in data/fonts/, rasterised at the exact pixel size it is drawn at.
 
 to_pixels :: proc(rectangle: Ui_Rectangle, pixels_per_unit: f32) -> rl.Rectangle {
 	return {rectangle.x * pixels_per_unit, rectangle.y * pixels_per_unit, rectangle.width * pixels_per_unit, rectangle.height * pixels_per_unit}
@@ -17,29 +14,10 @@ to_raylib_color :: proc(color: Ui_Color) -> rl.Color {
 	return rl.Color(color)
 }
 
-// Text width scales linearly with the size, so measuring at the size in
-// units gives the width in units.
-raylib_measure_text :: proc(text: string, size: f32) -> f32 {
-	text_c := strings.clone_to_cstring(text, context.temp_allocator)
-	return rl.MeasureTextEx(rl.GetFontDefault(), text_c, size, size * DEFAULT_FONT_SPACING_FACTOR).x
-}
-
-execute_text_command :: proc(command: Draw_Command, pixels_per_unit: f32) {
-	box := to_pixels(command.rectangle, pixels_per_unit)
-	size := command.text_size * pixels_per_unit
-	spacing := size * DEFAULT_FONT_SPACING_FACTOR
-	text_c := strings.clone_to_cstring(command.text, context.temp_allocator)
-	width := rl.MeasureTextEx(rl.GetFontDefault(), text_c, size, spacing).x
-	x := box.x
-	switch command.alignment {
-	case .Left:
-	case .Centre:
-		x += (box.width - width) / 2
-	case .Right:
-		x += box.width - width
+execute_text_command :: proc(command: Draw_Command, fonts: ^Font_Cache, pixels_per_unit: f32) {
+	if fonts != nil && len(fonts.families) > 0 {
+		draw_ui_text(fonts, command, to_pixels(command.rectangle, pixels_per_unit), pixels_per_unit)
 	}
-	y := box.y + (box.height - size) / 2
-	rl.DrawTextEx(rl.GetFontDefault(), text_c, {x, y}, size, spacing, to_raylib_color(command.color))
 }
 
 // The block atlas, for placeholder item icons.
@@ -100,7 +78,7 @@ execute_image_command :: proc(command: Draw_Command, images: ^Ui_Image_Cache, pi
 	rl.DrawTexturePro(images.texture, source, to_pixels(command.rectangle, pixels_per_unit), {}, 0, rl.WHITE)
 }
 
-execute_draw_command :: proc(command: Draw_Command, focus: Ui_Id, atlas: Icon_Atlas, images: ^Ui_Image_Cache, pixels_per_unit: f32) {
+execute_draw_command :: proc(command: Draw_Command, focus: Ui_Id, atlas: Icon_Atlas, images: ^Ui_Image_Cache, fonts: ^Font_Cache, pixels_per_unit: f32) {
 	switch command.kind {
 	case .Fill:
 		rl.DrawRectangleRec(to_pixels(command.rectangle, pixels_per_unit), to_raylib_color(command.color))
@@ -111,7 +89,7 @@ execute_draw_command :: proc(command: Draw_Command, focus: Ui_Id, atlas: Icon_At
 			rl.DrawRectangleLinesEx(to_pixels(command.rectangle, pixels_per_unit), command.thickness * pixels_per_unit, to_raylib_color(command.color))
 		}
 	case .Text:
-		execute_text_command(command, pixels_per_unit)
+		execute_text_command(command, fonts, pixels_per_unit)
 	case .Clip_Begin:
 		box := to_pixels(command.rectangle, pixels_per_unit)
 		rl.BeginScissorMode(i32(box.x), i32(box.y), i32(box.width), i32(box.height))
@@ -126,6 +104,6 @@ execute_draw_command :: proc(command: Draw_Command, focus: Ui_Id, atlas: Icon_At
 
 execute_draw_list :: proc(state: Ui_State, atlas: Icon_Atlas, images: ^Ui_Image_Cache) {
 	for command in state.draw_list {
-		execute_draw_command(command, state.focus, atlas, images, state.pixels_per_unit)
+		execute_draw_command(command, state.focus, atlas, images, state.fonts, state.pixels_per_unit)
 	}
 }

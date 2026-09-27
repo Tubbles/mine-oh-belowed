@@ -20,6 +20,11 @@ developer_mode_on :: proc(state: ^Frame_State) -> bool {
 // At exit, after the session left.
 destroy_hot_reload_state :: proc(state: ^Frame_State) {
 	destroy_data_watch(&state.data_watch)
+	for arena in state.retired_font_arenas {
+		destroy_arena(arena)
+	}
+	delete(state.retired_font_arenas)
+	destroy_arena(state.fonts.arena)
 	for entries in state.retired_strings {
 		destroy_string_entries(entries)
 	}
@@ -55,6 +60,22 @@ reload_strings :: proc(state: ^Frame_State) -> string {
 	}
 	append(&state.retired_strings, old_entries)
 	refresh_content_names(&state.content, virtual.arena_allocator(state.content_arena))
+	// New text may need glyphs the fonts were not loaded with.
+	replace_font_cache_sources(&state.font_cache, state.fonts.families, string(data), state.settings)
+	return ""
+}
+
+// The cache drops every font; they load again from the new files. An id
+// the new file lacks falls back to the first family of its kind.
+reload_fonts :: proc(state: ^Frame_State) -> string {
+	fonts, problem := load_fonts(state.data_directory)
+	if problem != "" {
+		return problem
+	}
+	append(&state.retired_font_arenas, state.fonts.arena)
+	state.fonts = fonts
+	strings_text, _ := read_strings_file(state.data_directory)
+	replace_font_cache_sources(&state.font_cache, fonts.families, string(strings_text), state.settings)
 	return ""
 }
 
@@ -105,6 +126,7 @@ presentation_reload_keys := [Data_File_Category]string {
 	.Bindings       = "reload_bindings_done",
 	.Developer_Kits = "reload_developer_kits_done",
 	.Shaders        = "reload_shaders_done",
+	.Fonts          = "reload_fonts_done",
 	.Content        = "",
 }
 
@@ -117,6 +139,7 @@ presentation_file_names := [Data_File_Category]string {
 	.Bindings       = BINDINGS_FILE_NAME,
 	.Developer_Kits = DEVELOPER_KITS_FILE_NAME,
 	.Shaders        = CHUNK_SHADER_DIRECTORY,
+	.Fonts          = FONTS_DIRECTORY,
 	.Content        = "",
 }
 
@@ -130,6 +153,8 @@ reload_presentation :: proc(state: ^Frame_State, category: Data_File_Category) -
 		return reload_developer_kits(state)
 	case .Shaders:
 		return reload_shaders(state)
+	case .Fonts:
+		return reload_fonts(state)
 	}
 	return ""
 }

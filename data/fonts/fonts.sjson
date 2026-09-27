@@ -1,0 +1,41 @@
+// Font families (work item 0077, src/ui_font.odin). Each family lives in
+// the directory named by its id, next to its licence. regular and bold
+// name the files of the two weights; name_key is the family's name in
+// strings/en.sjson. The settings screen's Font choice cycles through the
+// families without monospace and its Diagnostics font choice through
+// those with monospace = true, both in this order. Every key but
+// monospace is required and every file must exist, or the game refuses
+// to start.
+//
+// A family with one file names it for both weights: static families
+// with only a Regular (Electrolize, Michroma, Share Tech Mono) and the
+// variable fonts (Orbitron, IBM Plex Sans, Inter, Lexend, JetBrains
+// Mono). raylib's stb_truetype renders a variable font's default instance
+// only, weight 400 for these, so headings in them are not bold. Exo 2,
+// Oxanium and Jura ship static Regular and SemiBold files from their
+// upstream repositories instead, since their variable defaults are thin.
+families = [
+	// Technical faces.
+	{id = "exo_2", name_key = "font_exo_2", regular = "Exo2-Regular.ttf", bold = "Exo2-SemiBold.ttf"}
+	{id = "titillium_web", name_key = "font_titillium_web", regular = "TitilliumWeb-Regular.ttf", bold = "TitilliumWeb-SemiBold.ttf"}
+	{id = "rajdhani", name_key = "font_rajdhani", regular = "Rajdhani-Regular.ttf", bold = "Rajdhani-SemiBold.ttf"}
+	{id = "oxanium", name_key = "font_oxanium", regular = "Oxanium-Regular.ttf", bold = "Oxanium-SemiBold.ttf"}
+	{id = "chakra_petch", name_key = "font_chakra_petch", regular = "ChakraPetch-Regular.ttf", bold = "ChakraPetch-SemiBold.ttf"}
+	{id = "jura", name_key = "font_jura", regular = "Jura-Regular.ttf", bold = "Jura-SemiBold.ttf"}
+	{id = "electrolize", name_key = "font_electrolize", regular = "Electrolize-Regular.ttf", bold = "Electrolize-Regular.ttf"}
+	{id = "play", name_key = "font_play", regular = "Play-Regular.ttf", bold = "Play-Bold.ttf"}
+	{id = "quantico", name_key = "font_quantico", regular = "Quantico-Regular.ttf", bold = "Quantico-Bold.ttf"}
+	{id = "orbitron", name_key = "font_orbitron", regular = "Orbitron[wght].ttf", bold = "Orbitron[wght].ttf"}
+	{id = "michroma", name_key = "font_michroma", regular = "Michroma-Regular.ttf", bold = "Michroma-Regular.ttf"}
+	// Plain faces, for comparison.
+	{id = "atkinson_hyperlegible", name_key = "font_atkinson_hyperlegible", regular = "AtkinsonHyperlegible-Regular.ttf", bold = "AtkinsonHyperlegible-Bold.ttf"}
+	{id = "ibm_plex_sans", name_key = "font_ibm_plex_sans", regular = "IBMPlexSans[wdth,wght].ttf", bold = "IBMPlexSans[wdth,wght].ttf"}
+	{id = "fira_sans", name_key = "font_fira_sans", regular = "FiraSans-Regular.ttf", bold = "FiraSans-SemiBold.ttf"}
+	{id = "ubuntu", name_key = "font_ubuntu", regular = "Ubuntu-Regular.ttf", bold = "Ubuntu-Medium.ttf"}
+	{id = "cantarell", name_key = "font_cantarell", regular = "Cantarell-Regular.ttf", bold = "Cantarell-Bold.ttf"}
+	{id = "inter", name_key = "font_inter", regular = "Inter[opsz,wght].ttf", bold = "Inter[opsz,wght].ttf"}
+	{id = "lexend", name_key = "font_lexend", regular = "Lexend[wght].ttf", bold = "Lexend[wght].ttf"}
+	// Monospace, for the diagnostics overlay.
+	{id = "jetbrains_mono", name_key = "font_jetbrains_mono", regular = "JetBrainsMono[wght].ttf", bold = "JetBrainsMono[wght].ttf", monospace = true}
+	{id = "share_tech_mono", name_key = "font_share_tech_mono", regular = "ShareTechMono-Regular.ttf", bold = "ShareTechMono-Regular.ttf", monospace = true}
+]

@@ -8,11 +8,16 @@ import "core:math"
 
 PAUSE_PANEL_WIDTH :: 560
 SETTINGS_PANEL_WIDTH :: 960
-// Title, tabs, the longest tab's rows and the back button.
-SETTINGS_ROW_COUNT :: 9
+// Title, tabs, the longest tab's rows and the back button. The tabs
+// scroll where the panel is shorter (UI scale 1.5).
+SETTINGS_ROW_COUNT :: 10
+DISPLAY_SETTINGS_ROW_COUNT :: 7
+CONTROL_SETTINGS_ROW_COUNT :: 5
 
 Screen_Context :: struct {
 	settings:        ^Settings,
+	// The Font choices cycle through them (data/fonts/fonts.sjson).
+	font_families:   []Font_Family,
 	// The effective bindings, shown read only.
 	bindings:        []Binding,
 	quit_requested:  ^bool,
@@ -305,9 +310,13 @@ settings_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	back_row := cut_bottom(&content, UI_ROW_HEIGHT)
 	switch tab {
 	case 0:
-		display_settings(state, &content, settings)
+		region, rows := scroll_region_begin(state, "display_settings", content, settings_rows_height(DISPLAY_SETTINGS_ROW_COUNT))
+		display_settings(state, &rows, settings, screen_context.font_families)
+		scroll_region_end(state, region)
 	case 1:
-		control_settings(state, &content, settings)
+		region, rows := scroll_region_begin(state, "control_settings", content, settings_rows_height(CONTROL_SETTINGS_ROW_COUNT))
+		control_settings(state, &rows, settings)
+		scroll_region_end(state, region)
 	case:
 		// Read only for now; activating a row does nothing.
 		ui_list(state, content, "bindings", binding_rows(screen_context.bindings, context.temp_allocator), text("settings_bindings_tooltip"))
@@ -326,13 +335,17 @@ settings_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	ui_glyph_bar(state, hints[:])
 }
 
+settings_rows_height :: proc(row_count: int) -> f32 {
+	return f32(row_count) * (UI_ROW_HEIGHT + UI_GAP)
+}
+
 settings_row :: proc(content: ^Ui_Rectangle) -> Ui_Rectangle {
 	row := cut_top(content, UI_ROW_HEIGHT)
 	cut_top(content, UI_GAP)
 	return row
 }
 
-display_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Settings) {
+display_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Settings, font_families: []Font_Family) {
 	ui_slider(
 		state,
 		settings_row(content),
@@ -357,6 +370,19 @@ display_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Se
 		settings.autosave_minutes = int(math.round(autosave))
 	}
 	ui_toggle(state, settings_row(content), text("settings_developer_mode"), &settings.developer_mode, text("settings_developer_mode_tooltip"))
+	font_choice(state, settings_row(content), "settings_font", &settings.font, font_families, false)
+	font_choice(state, settings_row(content), "settings_monospace_font", &settings.monospace_font, font_families, true)
+}
+
+// Applied at once: the font cache follows the setting from the next frame.
+font_choice :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, key: string, font: ^string, families: []Font_Family, monospace: bool) {
+	if len(families) == 0 {
+		return
+	}
+	family := families[font_family_index(families, font^, monospace)]
+	if ui_choice(state, rectangle, text(key), text(family.name_key), text(fmt.tprintf("%s_tooltip", key))) {
+		font^ = next_font_family(families, family.id, monospace)
+	}
 }
 
 autosave_minutes_text :: proc(minutes: int) -> string {

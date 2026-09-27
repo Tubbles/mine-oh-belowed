@@ -8,11 +8,12 @@ import "core:time"
 // a second the main thread stats every file under the data directory and
 // compares modification time and size with the previous scan; a file
 // added, changed or removed marks its category. Presentation files
-// (strings, bindings, developer kits, shaders) reload in place at once
-// (hot_reload.odin). Content files only mark the data as changed, shown on
-// the Developer screen and in the log, until a reload is asked for (the
-// reload command, the Developer screen, F8), or, with watch_data all, once
-// a poll finds them unchanged again, so a half saved file is not loaded.
+// (strings, bindings, developer kits, shaders, fonts) reload in place at
+// once (hot_reload.odin). Content files only mark the data as changed,
+// shown on the Developer screen and in the log, until a reload is asked
+// for (the reload command, the Developer screen, F8), or, with watch_data
+// all, once a poll finds them unchanged again, so a half saved file is
+// not loaded.
 // The simulation never sees the watcher: reloads run between frames.
 
 DATA_WATCH_INTERVAL :: 1 * time.Second
@@ -37,12 +38,14 @@ Data_File_Category :: enum u8 {
 	Bindings,
 	Developer_Kits,
 	Shaders,
+	// fonts/fonts.sjson and the font files under fonts/ (ui_font.odin).
+	Fonts,
 	Content,
 }
 
 Data_File_Categories :: bit_set[Data_File_Category]
 
-PRESENTATION_CATEGORIES :: Data_File_Categories{.Strings, .Bindings, .Developer_Kits, .Shaders}
+PRESENTATION_CATEGORIES :: Data_File_Categories{.Strings, .Bindings, .Developer_Kits, .Shaders, .Fonts}
 
 Data_File_Stamp :: struct {
 	modification_time: time.Time,
@@ -100,8 +103,17 @@ data_file_category :: proc(relative_path: string) -> Data_File_Category {
 		return strings.has_suffix(name, QUEST_FILE_EXTENSION) && !strings.has_prefix(name, ".") ? .Content : .Ignored
 	case CHUNK_SHADER_DIRECTORY:
 		return name == "chunk.vs" || name == "chunk.fs" ? .Shaders : .Ignored
+	case FONTS_DIRECTORY:
+		return name == FONTS_FILE_NAME ? .Fonts : .Ignored
+	}
+	if strings.has_prefix(directory, FONTS_DIRECTORY + "/") {
+		return is_font_file_name(name) ? .Fonts : .Ignored
 	}
 	return .Ignored
+}
+
+is_font_file_name :: proc(name: string) -> bool {
+	return !strings.has_prefix(name, ".") && (strings.has_suffix(name, ".ttf") || strings.has_suffix(name, ".otf"))
 }
 
 top_level_data_file_category :: proc(name: string) -> Data_File_Category {

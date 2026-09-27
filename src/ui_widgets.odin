@@ -97,14 +97,15 @@ draw_outline :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, color: Ui_Color,
 	push_command(state, {kind = .Outline, rectangle = rectangle, color = color, thickness = thickness})
 }
 
-draw_text :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, text: string, size: f32, alignment: Text_Alignment, color := UI_TEXT_COLOR) {
-	push_command(state, {kind = .Text, rectangle = rectangle, text = text, text_size = size, alignment = alignment, color = color})
+// emphasis draws body sized text bold, like a heading (text_weight).
+draw_text :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, text: string, size: f32, alignment: Text_Alignment, color := UI_TEXT_COLOR, emphasis := false) {
+	push_command(state, {kind = .Text, rectangle = rectangle, text = text, text_size = size, weight = text_weight(size, emphasis), alignment = alignment, color = color})
 }
 
 // The text, or its longest start that fits the width followed by an
 // ellipsis ("" when not even the ellipsis fits). In the temp allocator.
-fit_text :: proc(state: ^Ui_State, value: string, size, width: f32) -> string {
-	if ui_text_width(state, value, size) <= width {
+fit_text :: proc(state: ^Ui_State, value: string, size, width: f32, emphasis := false) -> string {
+	if ui_text_width(state, value, size, emphasis) <= width {
 		return value
 	}
 	// Byte offsets of the rune starts; the longest fitting start is found
@@ -118,7 +119,7 @@ fit_text :: proc(state: ^Ui_State, value: string, size, width: f32) -> string {
 	for low <= high {
 		middle := (low + high) / 2
 		candidate := strings.concatenate({strings.trim_right_space(value[:starts[middle]]), UI_ELLIPSIS}, context.temp_allocator)
-		if ui_text_width(state, candidate, size) <= width {
+		if ui_text_width(state, candidate, size, emphasis) <= width {
 			fitting, low = candidate, middle + 1
 		} else {
 			high = middle - 1
@@ -128,8 +129,8 @@ fit_text :: proc(state: ^Ui_State, value: string, size, width: f32) -> string {
 }
 
 // Single line text that ends with an ellipsis where it does not fit.
-draw_text_fitted :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, value: string, size: f32, alignment: Text_Alignment, color := UI_TEXT_COLOR) {
-	draw_text(state, rectangle, fit_text(state, value, size, rectangle.width), size, alignment, color)
+draw_text_fitted :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, value: string, size: f32, alignment: Text_Alignment, color := UI_TEXT_COLOR, emphasis := false) {
+	draw_text(state, rectangle, fit_text(state, value, size, rectangle.width, emphasis), size, alignment, color, emphasis)
 }
 
 // Wrapped to at most maximum_lines lines; the last line ends with an
