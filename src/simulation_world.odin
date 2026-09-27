@@ -6,6 +6,9 @@ package game
 // this tick are recorded and reach light and water scheduling next tick.
 
 // The prototype tables the simulation reads, loaded once at startup.
+// generator, when set, is the session's world generator, which the
+// orbital survey asks for veins in chunks never loaded (venture.odin); it
+// is only read.
 Simulation_Content :: struct {
 	blocks:       Block_Registry,
 	items:        Item_Registry,
@@ -15,6 +18,8 @@ Simulation_Content :: struct {
 	technologies: Technology_Registry,
 	quests:       Quest_Registry,
 	veins:        Vein_Content,
+	contracts:    Contract_Registry,
+	generator:    ^Generator,
 }
 
 apply_block_changes :: proc(world: ^World, registry: Block_Registry, tick: u64) {

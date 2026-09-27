@@ -63,15 +63,17 @@ test_item_loading_rejects_bad_tables :: proc(t: ^testing.T) {
 	valid := items_file.items
 	testing.expect_value(t, resolve_test_items(valid), "")
 	cases := [?]Item_Definition {
-		{id = "x", name_key = "k", category = "gadget", stack_size = 1},
-		{id = "x", name_key = "k", category = "raw", stack_size = 0},
-		{id = "x", name_key = "", category = "raw", stack_size = 1},
-		{id = "x", name_key = "k", category = "raw", stack_size = 1, places_block = "no_such_block"},
-		{id = "x", name_key = "k", category = "raw", stack_size = 1, places_block = "air"},
-		{id = "x", name_key = "k", category = "raw", stack_size = 1, mined_from = {"water"}},
+		{id = "x", name_key = "k", category = "gadget", stack_size = 1, price = 1},
+		{id = "x", name_key = "k", category = "raw", stack_size = 0, price = 1},
+		{id = "x", name_key = "", category = "raw", stack_size = 1, price = 1},
+		{id = "x", name_key = "k", category = "raw", stack_size = 1, places_block = "no_such_block", price = 1},
+		{id = "x", name_key = "k", category = "raw", stack_size = 1, places_block = "air", price = 1},
+		{id = "x", name_key = "k", category = "raw", stack_size = 1, mined_from = {"water"}, price = 1},
 		// Stone already yields the stone item.
-		{id = "x", name_key = "k", category = "raw", stack_size = 1, mined_from = {"stone"}},
-		{id = "stone", name_key = "k", category = "raw", stack_size = 1},
+		{id = "x", name_key = "k", category = "raw", stack_size = 1, mined_from = {"stone"}, price = 1},
+		{id = "stone", name_key = "k", category = "raw", stack_size = 1, price = 1},
+		// Every item needs a price (work item 0041).
+		{id = "x", name_key = "k", category = "raw", stack_size = 1, price = 0},
 	}
 	for bad in cases {
 		definitions := make([dynamic]Item_Definition, context.temp_allocator)

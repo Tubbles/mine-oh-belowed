@@ -153,6 +153,13 @@ Statistics :: struct {
 	// launched (launch_pad.odin).
 	shipped:                     []u64,
 	rockets_launched:            u64,
+	// Contracts and trade (venture.odin): contracts fulfilled, those of
+	// them fulfilled after their deadline, venture credit earned by free
+	// trade, and orbital surveys bought from the catalogue.
+	contracts_completed:         u64,
+	contracts_late:              u64,
+	credit_earned:               u64,
+	surveys_bought:              u64,
 	// Mining, placing, picking up and opening a machine. hands_off
 	// sustain objectives break when this changes.
 	world_actions:               u64,

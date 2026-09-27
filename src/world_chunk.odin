@@ -69,6 +69,11 @@ World :: struct {
 	seismic_outlines:      [dynamic]Seismic_Outline,
 	// Every rocket launched, oldest first (launch_pad.odin). Saved.
 	shipments:             [dynamic]Shipment,
+	// The open contracts, the venture credit and the catalogue orders
+	// waiting for the next tick (venture.odin). Saved.
+	contracts:             Contract_State,
+	venture_credit:        u64,
+	catalogue_orders:      [dynamic]Catalogue_Order,
 }
 
 Block_Change :: struct {
@@ -232,6 +237,7 @@ destroy_world :: proc(world: ^World) {
 	delete(world.seismic_shots)
 	delete(world.seismic_outlines)
 	delete(world.shipments)
+	delete(world.catalogue_orders)
 	delete(world.block_changes)
 	destroy_lighting(&world.lighting)
 	delete(world.entity_lights)

@@ -33,6 +33,9 @@ Screen_Context :: struct {
 	unlocks:         ^Recipe_Unlocks,
 	quests:          Quest_Registry,
 	quest_state:     ^Quest_State,
+	contracts:       Contract_Registry,
+	// The simulation's tick, for the contracts' time left.
+	tick:            u64,
 	recipe_names:    []string,
 	recipe_order:    []int,
 	browser:         ^Recipe_Browser,

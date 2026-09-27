@@ -14,6 +14,10 @@ package game
 // bores that long, in ticks of work, before its first cycle. A drill with
 // a revival port keeps an exhausted finite vein producing at half rate
 // while the port holds mining fluid (vein revival, DESIGN.md The world).
+// Mining productivity levels (work item 0041) add their effect per mille
+// to a drill's productivity credit for every unit drawn; each full 1000
+// is one extra unit of the same item that costs the vein nothing and goes
+// out after the drawn one.
 
 DRILL_SLOT_COUNT :: 1
 DRILL_FUEL_SLOT :: 0
@@ -64,22 +68,26 @@ drill_state_keys := [Drill_State]string {
 // burner drill (its fuel slot) and 0 for an electric one. bored_ticks
 // counts a bore drill's ticks of boring. buffers and closed are per fluid
 // port like a fluid machine's; only the revival port is used.
+// productivity_credit is the per mille credit of mining productivity,
+// bonus_units the extra units still to go out after held.
 Drill :: struct {
-	using common:     Entity_Common,
-	slot_count:       int,
-	slots:            [DRILL_SLOT_COUNT]Item_Stack,
-	fuel_joules:      u32,
-	fuel_item_joules: u32,
-	vein:             Vein_Id,
-	progress_ticks:   u32,
-	held:             Item_Stack,
-	state:            Drill_State,
-	power:            Power_State,
+	using common:        Entity_Common,
+	slot_count:          int,
+	slots:               [DRILL_SLOT_COUNT]Item_Stack,
+	fuel_joules:         u32,
+	fuel_item_joules:    u32,
+	vein:                Vein_Id,
+	progress_ticks:      u32,
+	held:                Item_Stack,
+	state:               Drill_State,
+	power:               Power_State,
 	// Units output over the last minute, for the panel (statistics.odin).
-	output_rate:      Machine_Output_Rate,
-	bored_ticks:      u32,
-	buffers:          [MAXIMUM_FLUID_PORTS]Fluid_Buffer,
-	closed:           [MAXIMUM_FLUID_PORTS]bool,
+	output_rate:         Machine_Output_Rate,
+	bored_ticks:         u32,
+	buffers:             [MAXIMUM_FLUID_PORTS]Fluid_Buffer,
+	closed:              [MAXIMUM_FLUID_PORTS]bool,
+	productivity_credit: u32,
+	bonus_units:         u16,
 }
 
 make_drill :: proc(common: Entity_Common, vein: Vein_Id, slot_count: int) -> Drill {
@@ -330,8 +338,25 @@ output_drill_item :: proc(world: ^World, content: Simulation_Content, drill: ^Dr
 		world.statistics.bore_drill_units += u64(drill.held.count)
 	}
 	record_machine_output(&drill.output_rate, world.statistics.current_second, int(drill.held.count))
-	drill.held = EMPTY_STACK
+	drill.held = next_held_unit(drill, drill.held.item)
 	return true
+}
+
+// After a unit went out: the next bonus unit of the same item, if any.
+next_held_unit :: proc(drill: ^Drill, item: Item_Id) -> Item_Stack {
+	if drill.bonus_units == 0 {
+		return EMPTY_STACK
+	}
+	drill.bonus_units -= 1
+	return Item_Stack{item = item, count = 1}
+}
+
+// Adds the mining productivity of one drawn unit to the credit and turns
+// every full 1000 into a bonus unit.
+add_productivity :: proc(drill: ^Drill, bonus_per_mille: u32) {
+	drill.productivity_credit += bonus_per_mille
+	drill.bonus_units += u16(drill.productivity_credit / 1000)
+	drill.productivity_credit %= 1000
 }
 
 // One tick. A held unit has to go out before anything else happens; fuel
@@ -367,6 +392,7 @@ advance_drill :: proc(world: ^World, content: Simulation_Content, drill: ^Drill,
 		return
 	}
 	drill.held = Item_Stack{item = item, count = 1}
+	add_productivity(drill, technology_effect_per_mille(content.technologies, world.research.levels, .Mining_Productivity))
 	if !output_drill_item(world, content, drill, machine) {
 		drill.state = .Waiting_For_Room
 	}
@@ -387,13 +413,14 @@ drill_burn_fraction :: proc(drill: Drill) -> f32 {
 	return f32(drill.fuel_joules) / f32(drill.fuel_item_joules)
 }
 
-// What picking the drill up returns besides its fuel: the unit it holds.
+// What picking the drill up returns besides its fuel: the unit it holds
+// and the bonus units after it.
 drill_held_stacks :: proc(entities: ^Entities, handle: Entity_Handle) -> []Item_Stack {
 	drill := pool_get(&entities.drills, handle)
 	if drill == nil || stack_is_empty(drill.held) {
 		return nil
 	}
-	return slice_of_one(drill.held)
+	return slice_of_one(Item_Stack{item = drill.held.item, count = drill.held.count + drill.bonus_units})
 }
 
 // A drill needs a vein outcrop under at least one footprint cell. The

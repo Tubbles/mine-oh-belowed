@@ -47,142 +47,147 @@
 // Rocket program (work item 0040): the launch pad, and the rocket parts
 // it assembles a rocket from (rocket fuel is a fluid). A part stacks to
 // 10, which also caps what one pad slot holds.
+// price (required, positive, work item 0041) is the venture credit one
+// item fetches when a shipment sells it as free trade. The values are
+// guesses from the recipe depth: raw material and ore 1, plates 2, steel
+// 12, a crafted item about the sum of its inputs, the rare phase 7
+// materials (aluminium, silicon, gold) well above their inputs.
 items = [
 	// Raw materials
-	{id = "log", name_key = "item_log", category = "raw", stack_size = 50, places_block = "log", fuel_megajoules = 2, cannot_recycle = true}
-	{id = "stone", name_key = "item_stone", category = "raw", stack_size = 50, places_block = "stone", cannot_recycle = true}
-	{id = "dirt", name_key = "item_dirt", category = "raw", stack_size = 50, places_block = "dirt", mined_from = ["grass"], cannot_recycle = true}
-	{id = "sand", name_key = "item_sand", category = "raw", stack_size = 50, places_block = "sand", cannot_recycle = true}
-	{id = "clay", name_key = "item_clay", category = "raw", stack_size = 50, cannot_recycle = true}
-	{id = "gravel", name_key = "item_gravel", category = "raw", stack_size = 50, cannot_recycle = true}
-	{id = "coal", name_key = "item_coal", category = "raw", stack_size = 50, mined_from = ["coal_ore"], fuel_megajoules = 4, cannot_recycle = true}
-	{id = "hematite", name_key = "item_hematite", category = "raw", stack_size = 50, mined_from = ["hematite_ore"], cannot_recycle = true}
-	{id = "chalcopyrite", name_key = "item_chalcopyrite", category = "raw", stack_size = 50, mined_from = ["chalcopyrite_ore"], cannot_recycle = true}
-	{id = "cassiterite", name_key = "item_cassiterite", category = "raw", stack_size = 50, mined_from = ["cassiterite_ore"], cannot_recycle = true}
-	{id = "galena", name_key = "item_galena", category = "raw", stack_size = 50, mined_from = ["galena_ore"], cannot_recycle = true}
-	{id = "sphalerite", name_key = "item_sphalerite", category = "raw", stack_size = 50, mined_from = ["sphalerite_ore"], cannot_recycle = true}
-	{id = "pentlandite", name_key = "item_pentlandite", category = "raw", stack_size = 50, mined_from = ["pentlandite_ore"], cannot_recycle = true}
-	{id = "hematite_low_grade", name_key = "item_hematite_low_grade", category = "raw", stack_size = 50, cannot_recycle = true}
-	{id = "chalcopyrite_low_grade", name_key = "item_chalcopyrite_low_grade", category = "raw", stack_size = 50, cannot_recycle = true}
-	{id = "cassiterite_low_grade", name_key = "item_cassiterite_low_grade", category = "raw", stack_size = 50, cannot_recycle = true}
-	{id = "galena_low_grade", name_key = "item_galena_low_grade", category = "raw", stack_size = 50, cannot_recycle = true}
-	{id = "sphalerite_low_grade", name_key = "item_sphalerite_low_grade", category = "raw", stack_size = 50, cannot_recycle = true}
-	{id = "pentlandite_low_grade", name_key = "item_pentlandite_low_grade", category = "raw", stack_size = 50, cannot_recycle = true}
-	{id = "bauxite", name_key = "item_bauxite", category = "raw", stack_size = 50, cannot_recycle = true}
-	{id = "bauxite_low_grade", name_key = "item_bauxite_low_grade", category = "raw", stack_size = 50, cannot_recycle = true}
-	{id = "gold_ore", name_key = "item_gold_ore", category = "raw", stack_size = 50, also_mined_from = ["gold_quartz"], cannot_recycle = true}
-	{id = "quartz", name_key = "item_quartz", category = "raw", stack_size = 50, mined_from = ["gold_quartz"], cannot_recycle = true}
-	{id = "mud", name_key = "item_mud", category = "raw", stack_size = 50, cannot_recycle = true}
-	{id = "slag", name_key = "item_slag", category = "raw", stack_size = 100, places_block = "slag_heap", cannot_recycle = true}
+	{id = "log", name_key = "item_log", category = "raw", stack_size = 50, places_block = "log", fuel_megajoules = 2, cannot_recycle = true, price = 1}
+	{id = "stone", name_key = "item_stone", category = "raw", stack_size = 50, places_block = "stone", cannot_recycle = true, price = 1}
+	{id = "dirt", name_key = "item_dirt", category = "raw", stack_size = 50, places_block = "dirt", mined_from = ["grass"], cannot_recycle = true, price = 1}
+	{id = "sand", name_key = "item_sand", category = "raw", stack_size = 50, places_block = "sand", cannot_recycle = true, price = 1}
+	{id = "clay", name_key = "item_clay", category = "raw", stack_size = 50, cannot_recycle = true, price = 1}
+	{id = "gravel", name_key = "item_gravel", category = "raw", stack_size = 50, cannot_recycle = true, price = 1}
+	{id = "coal", name_key = "item_coal", category = "raw", stack_size = 50, mined_from = ["coal_ore"], fuel_megajoules = 4, cannot_recycle = true, price = 2}
+	{id = "hematite", name_key = "item_hematite", category = "raw", stack_size = 50, mined_from = ["hematite_ore"], cannot_recycle = true, price = 1}
+	{id = "chalcopyrite", name_key = "item_chalcopyrite", category = "raw", stack_size = 50, mined_from = ["chalcopyrite_ore"], cannot_recycle = true, price = 1}
+	{id = "cassiterite", name_key = "item_cassiterite", category = "raw", stack_size = 50, mined_from = ["cassiterite_ore"], cannot_recycle = true, price = 1}
+	{id = "galena", name_key = "item_galena", category = "raw", stack_size = 50, mined_from = ["galena_ore"], cannot_recycle = true, price = 1}
+	{id = "sphalerite", name_key = "item_sphalerite", category = "raw", stack_size = 50, mined_from = ["sphalerite_ore"], cannot_recycle = true, price = 1}
+	{id = "pentlandite", name_key = "item_pentlandite", category = "raw", stack_size = 50, mined_from = ["pentlandite_ore"], cannot_recycle = true, price = 1}
+	{id = "hematite_low_grade", name_key = "item_hematite_low_grade", category = "raw", stack_size = 50, cannot_recycle = true, price = 1}
+	{id = "chalcopyrite_low_grade", name_key = "item_chalcopyrite_low_grade", category = "raw", stack_size = 50, cannot_recycle = true, price = 1}
+	{id = "cassiterite_low_grade", name_key = "item_cassiterite_low_grade", category = "raw", stack_size = 50, cannot_recycle = true, price = 1}
+	{id = "galena_low_grade", name_key = "item_galena_low_grade", category = "raw", stack_size = 50, cannot_recycle = true, price = 1}
+	{id = "sphalerite_low_grade", name_key = "item_sphalerite_low_grade", category = "raw", stack_size = 50, cannot_recycle = true, price = 1}
+	{id = "pentlandite_low_grade", name_key = "item_pentlandite_low_grade", category = "raw", stack_size = 50, cannot_recycle = true, price = 1}
+	{id = "bauxite", name_key = "item_bauxite", category = "raw", stack_size = 50, cannot_recycle = true, price = 2}
+	{id = "bauxite_low_grade", name_key = "item_bauxite_low_grade", category = "raw", stack_size = 50, cannot_recycle = true, price = 1}
+	{id = "gold_ore", name_key = "item_gold_ore", category = "raw", stack_size = 50, also_mined_from = ["gold_quartz"], cannot_recycle = true, price = 8}
+	{id = "quartz", name_key = "item_quartz", category = "raw", stack_size = 50, mined_from = ["gold_quartz"], cannot_recycle = true, price = 3}
+	{id = "mud", name_key = "item_mud", category = "raw", stack_size = 50, cannot_recycle = true, price = 1}
+	{id = "slag", name_key = "item_slag", category = "raw", stack_size = 100, places_block = "slag_heap", cannot_recycle = true, price = 1}
 	// Processed materials and intermediates
-	{id = "plank", name_key = "item_plank", category = "intermediate", stack_size = 100, fuel_megajoules = 1}
-	{id = "stick", name_key = "item_stick", category = "intermediate", stack_size = 100, fuel_megajoules = 0.5}
-	{id = "stone_brick", name_key = "item_stone_brick", category = "intermediate", stack_size = 100, cannot_recycle = true}
-	{id = "charcoal", name_key = "item_charcoal", category = "intermediate", stack_size = 100, fuel_megajoules = 3}
-	{id = "iron_plate", name_key = "item_iron_plate", category = "intermediate", stack_size = 50}
-	{id = "copper_plate", name_key = "item_copper_plate", category = "intermediate", stack_size = 50}
-	{id = "tin_plate", name_key = "item_tin_plate", category = "intermediate", stack_size = 50}
-	{id = "bronze_plate", name_key = "item_bronze_plate", category = "intermediate", stack_size = 50}
-	{id = "glass", name_key = "item_glass", category = "intermediate", stack_size = 100}
-	{id = "steel", name_key = "item_steel", category = "intermediate", stack_size = 50}
-	{id = "crushed_hematite", name_key = "item_crushed_hematite", category = "intermediate", stack_size = 50, cannot_recycle = true}
-	{id = "crushed_chalcopyrite", name_key = "item_crushed_chalcopyrite", category = "intermediate", stack_size = 50, cannot_recycle = true}
-	{id = "crushed_cassiterite", name_key = "item_crushed_cassiterite", category = "intermediate", stack_size = 50, cannot_recycle = true}
-	{id = "crushed_galena", name_key = "item_crushed_galena", category = "intermediate", stack_size = 50, cannot_recycle = true}
-	{id = "crushed_sphalerite", name_key = "item_crushed_sphalerite", category = "intermediate", stack_size = 50, cannot_recycle = true}
-	{id = "crushed_pentlandite", name_key = "item_crushed_pentlandite", category = "intermediate", stack_size = 50, cannot_recycle = true}
-	{id = "lead_plate", name_key = "item_lead_plate", category = "intermediate", stack_size = 50}
-	{id = "zinc_plate", name_key = "item_zinc_plate", category = "intermediate", stack_size = 50}
-	{id = "nickel_plate", name_key = "item_nickel_plate", category = "intermediate", stack_size = 50}
-	{id = "brass_plate", name_key = "item_brass_plate", category = "intermediate", stack_size = 50}
-	{id = "crushed_bauxite", name_key = "item_crushed_bauxite", category = "intermediate", stack_size = 50, cannot_recycle = true}
-	{id = "alumina", name_key = "item_alumina", category = "intermediate", stack_size = 50, cannot_recycle = true}
-	{id = "aluminium_plate", name_key = "item_aluminium_plate", category = "intermediate", stack_size = 50}
-	{id = "gold_plate", name_key = "item_gold_plate", category = "intermediate", stack_size = 50}
-	{id = "silicon", name_key = "item_silicon", category = "intermediate", stack_size = 100, cannot_recycle = true}
-	{id = "iron_gear", name_key = "item_iron_gear", category = "intermediate", stack_size = 100}
-	{id = "iron_rod", name_key = "item_iron_rod", category = "intermediate", stack_size = 100}
-	{id = "copper_wire", name_key = "item_copper_wire", category = "intermediate", stack_size = 100}
-	{id = "electronic_circuit", name_key = "item_electronic_circuit", category = "intermediate", stack_size = 100}
-	{id = "pipe", name_key = "item_pipe", category = "intermediate", stack_size = 100}
-	{id = "science_pack_1", name_key = "item_science_pack_1", category = "intermediate", stack_size = 100}
-	{id = "plastic_bar", name_key = "item_plastic_bar", category = "intermediate", stack_size = 100, cannot_recycle = true}
-	{id = "sulfur", name_key = "item_sulfur", category = "intermediate", stack_size = 50, cannot_recycle = true}
-	{id = "bitumen", name_key = "item_bitumen", category = "intermediate", stack_size = 50, cannot_recycle = true}
-	{id = "science_pack_2", name_key = "item_science_pack_2", category = "intermediate", stack_size = 100}
+	{id = "plank", name_key = "item_plank", category = "intermediate", stack_size = 100, fuel_megajoules = 1, price = 1}
+	{id = "stick", name_key = "item_stick", category = "intermediate", stack_size = 100, fuel_megajoules = 0.5, price = 1}
+	{id = "stone_brick", name_key = "item_stone_brick", category = "intermediate", stack_size = 100, cannot_recycle = true, price = 2}
+	{id = "charcoal", name_key = "item_charcoal", category = "intermediate", stack_size = 100, fuel_megajoules = 3, price = 2}
+	{id = "iron_plate", name_key = "item_iron_plate", category = "intermediate", stack_size = 50, price = 2}
+	{id = "copper_plate", name_key = "item_copper_plate", category = "intermediate", stack_size = 50, price = 2}
+	{id = "tin_plate", name_key = "item_tin_plate", category = "intermediate", stack_size = 50, price = 2}
+	{id = "bronze_plate", name_key = "item_bronze_plate", category = "intermediate", stack_size = 50, price = 3}
+	{id = "glass", name_key = "item_glass", category = "intermediate", stack_size = 100, price = 2}
+	{id = "steel", name_key = "item_steel", category = "intermediate", stack_size = 50, price = 12}
+	{id = "crushed_hematite", name_key = "item_crushed_hematite", category = "intermediate", stack_size = 50, cannot_recycle = true, price = 1}
+	{id = "crushed_chalcopyrite", name_key = "item_crushed_chalcopyrite", category = "intermediate", stack_size = 50, cannot_recycle = true, price = 1}
+	{id = "crushed_cassiterite", name_key = "item_crushed_cassiterite", category = "intermediate", stack_size = 50, cannot_recycle = true, price = 1}
+	{id = "crushed_galena", name_key = "item_crushed_galena", category = "intermediate", stack_size = 50, cannot_recycle = true, price = 1}
+	{id = "crushed_sphalerite", name_key = "item_crushed_sphalerite", category = "intermediate", stack_size = 50, cannot_recycle = true, price = 1}
+	{id = "crushed_pentlandite", name_key = "item_crushed_pentlandite", category = "intermediate", stack_size = 50, cannot_recycle = true, price = 1}
+	{id = "lead_plate", name_key = "item_lead_plate", category = "intermediate", stack_size = 50, price = 2}
+	{id = "zinc_plate", name_key = "item_zinc_plate", category = "intermediate", stack_size = 50, price = 2}
+	{id = "nickel_plate", name_key = "item_nickel_plate", category = "intermediate", stack_size = 50, price = 3}
+	{id = "brass_plate", name_key = "item_brass_plate", category = "intermediate", stack_size = 50, price = 3}
+	{id = "crushed_bauxite", name_key = "item_crushed_bauxite", category = "intermediate", stack_size = 50, cannot_recycle = true, price = 2}
+	{id = "alumina", name_key = "item_alumina", category = "intermediate", stack_size = 50, cannot_recycle = true, price = 4}
+	{id = "aluminium_plate", name_key = "item_aluminium_plate", category = "intermediate", stack_size = 50, price = 10}
+	{id = "gold_plate", name_key = "item_gold_plate", category = "intermediate", stack_size = 50, price = 20}
+	{id = "silicon", name_key = "item_silicon", category = "intermediate", stack_size = 100, cannot_recycle = true, price = 8}
+	{id = "iron_gear", name_key = "item_iron_gear", category = "intermediate", stack_size = 100, price = 4}
+	{id = "iron_rod", name_key = "item_iron_rod", category = "intermediate", stack_size = 100, price = 1}
+	{id = "copper_wire", name_key = "item_copper_wire", category = "intermediate", stack_size = 100, price = 1}
+	{id = "electronic_circuit", name_key = "item_electronic_circuit", category = "intermediate", stack_size = 100, price = 6}
+	{id = "pipe", name_key = "item_pipe", category = "intermediate", stack_size = 100, price = 2}
+	{id = "science_pack_1", name_key = "item_science_pack_1", category = "intermediate", stack_size = 100, price = 7}
+	{id = "plastic_bar", name_key = "item_plastic_bar", category = "intermediate", stack_size = 100, cannot_recycle = true, price = 5}
+	{id = "sulfur", name_key = "item_sulfur", category = "intermediate", stack_size = 50, cannot_recycle = true, price = 3}
+	{id = "bitumen", name_key = "item_bitumen", category = "intermediate", stack_size = 50, cannot_recycle = true, price = 3}
+	{id = "science_pack_2", name_key = "item_science_pack_2", category = "intermediate", stack_size = 100, price = 15}
 	// Tools
-	{id = "wooden_pickaxe", name_key = "item_wooden_pickaxe", category = "tool", stack_size = 10}
-	{id = "stone_pickaxe", name_key = "item_stone_pickaxe", category = "tool", stack_size = 10}
-	{id = "iron_pickaxe", name_key = "item_iron_pickaxe", category = "tool", stack_size = 10}
-	{id = "geologists_hammer", name_key = "item_geologists_hammer", category = "tool", stack_size = 10, usable = true, use = "assay"}
-	{id = "magnetometer", name_key = "item_magnetometer", category = "tool", stack_size = 10, usable = true, use = "magnetometer", detects = "hematite", use_range = 30}
-	{id = "thumper_charge", name_key = "item_thumper_charge", category = "tool", stack_size = 50, usable = true, use = "seismic_shot", use_range = 32, cannot_recycle = true}
+	{id = "wooden_pickaxe", name_key = "item_wooden_pickaxe", category = "tool", stack_size = 10, price = 5}
+	{id = "stone_pickaxe", name_key = "item_stone_pickaxe", category = "tool", stack_size = 10, price = 5}
+	{id = "iron_pickaxe", name_key = "item_iron_pickaxe", category = "tool", stack_size = 10, price = 8}
+	{id = "geologists_hammer", name_key = "item_geologists_hammer", category = "tool", stack_size = 10, usable = true, use = "assay", price = 6}
+	{id = "magnetometer", name_key = "item_magnetometer", category = "tool", stack_size = 10, usable = true, use = "magnetometer", detects = "hematite", use_range = 30, price = 35}
+	{id = "thumper_charge", name_key = "item_thumper_charge", category = "tool", stack_size = 50, usable = true, use = "seismic_shot", use_range = 32, cannot_recycle = true, price = 5}
 	// Machines
-	{id = "stone_furnace", name_key = "item_stone_furnace", category = "machine", stack_size = 10}
-	{id = "steel_furnace", name_key = "item_steel_furnace", category = "machine", stack_size = 10}
-	{id = "burner_mining_drill", name_key = "item_burner_mining_drill", category = "machine", stack_size = 10}
-	{id = "electric_mining_drill", name_key = "item_electric_mining_drill", category = "machine", stack_size = 10}
-	{id = "burner_inserter", name_key = "item_burner_inserter", category = "machine", stack_size = 10}
-	{id = "inserter", name_key = "item_inserter", category = "machine", stack_size = 10}
-	{id = "filter_inserter", name_key = "item_filter_inserter", category = "machine", stack_size = 10}
-	{id = "fast_inserter", name_key = "item_fast_inserter", category = "machine", stack_size = 10}
-	{id = "long_inserter", name_key = "item_long_inserter", category = "machine", stack_size = 10}
-	{id = "belt", name_key = "item_belt", category = "machine", stack_size = 10}
-	{id = "belt_ramp", name_key = "item_belt_ramp", category = "machine", stack_size = 10}
-	{id = "belt_lift", name_key = "item_belt_lift", category = "machine", stack_size = 10}
-	{id = "belt_2", name_key = "item_belt_2", category = "machine", stack_size = 10}
-	{id = "belt_ramp_2", name_key = "item_belt_ramp_2", category = "machine", stack_size = 10}
-	{id = "belt_lift_2", name_key = "item_belt_lift_2", category = "machine", stack_size = 10}
-	{id = "splitter", name_key = "item_splitter", category = "machine", stack_size = 10}
-	{id = "wooden_chest", name_key = "item_wooden_chest", category = "machine", stack_size = 10}
-	{id = "iron_chest", name_key = "item_iron_chest", category = "machine", stack_size = 10}
-	{id = "offshore_pump", name_key = "item_offshore_pump", category = "machine", stack_size = 10}
-	{id = "pump", name_key = "item_pump", category = "machine", stack_size = 10}
-	{id = "storage_tank", name_key = "item_storage_tank", category = "machine", stack_size = 10}
-	{id = "boiler", name_key = "item_boiler", category = "machine", stack_size = 10}
-	{id = "steam_engine", name_key = "item_steam_engine", category = "machine", stack_size = 10}
-	{id = "small_pole", name_key = "item_small_pole", category = "machine", stack_size = 10}
-	{id = "big_pole", name_key = "item_big_pole", category = "machine", stack_size = 10}
-	{id = "substation", name_key = "item_substation", category = "machine", stack_size = 10}
-	{id = "lamp", name_key = "item_lamp", category = "machine", stack_size = 10}
-	{id = "power_switch", name_key = "item_power_switch", category = "machine", stack_size = 10}
-	{id = "assembler_1", name_key = "item_assembler_1", category = "machine", stack_size = 10}
-	{id = "lab", name_key = "item_lab", category = "machine", stack_size = 10}
-	{id = "core_sample_drill", name_key = "item_core_sample_drill", category = "machine", stack_size = 10}
-	{id = "crusher", name_key = "item_crusher", category = "machine", stack_size = 10}
-	{id = "washer", name_key = "item_washer", category = "machine", stack_size = 10}
-	{id = "alloy_furnace", name_key = "item_alloy_furnace", category = "machine", stack_size = 10}
-	{id = "recycler", name_key = "item_recycler", category = "machine", stack_size = 10}
-	{id = "tar_pit_pump", name_key = "item_tar_pit_pump", category = "machine", stack_size = 10}
-	{id = "refinery", name_key = "item_refinery", category = "machine", stack_size = 10}
-	{id = "cracking_unit", name_key = "item_cracking_unit", category = "machine", stack_size = 10}
-	{id = "flare_stack", name_key = "item_flare_stack", category = "machine", stack_size = 10}
-	{id = "combustion_generator", name_key = "item_combustion_generator", category = "machine", stack_size = 10}
-	{id = "hydro_turbine", name_key = "item_hydro_turbine", category = "machine", stack_size = 10}
-	{id = "chemical_plant", name_key = "item_chemical_plant", category = "machine", stack_size = 10}
-	{id = "wood_gasifier", name_key = "item_wood_gasifier", category = "machine", stack_size = 10}
-	{id = "bore_drill", name_key = "item_bore_drill", category = "machine", stack_size = 10}
-	{id = "electrolyser", name_key = "item_electrolyser", category = "machine", stack_size = 10}
+	{id = "stone_furnace", name_key = "item_stone_furnace", category = "machine", stack_size = 10, price = 5}
+	{id = "steel_furnace", name_key = "item_steel_furnace", category = "machine", stack_size = 10, price = 90}
+	{id = "burner_mining_drill", name_key = "item_burner_mining_drill", category = "machine", stack_size = 10, price = 25}
+	{id = "electric_mining_drill", name_key = "item_electric_mining_drill", category = "machine", stack_size = 10, price = 60}
+	{id = "burner_inserter", name_key = "item_burner_inserter", category = "machine", stack_size = 10, price = 6}
+	{id = "inserter", name_key = "item_inserter", category = "machine", stack_size = 10, price = 12}
+	{id = "filter_inserter", name_key = "item_filter_inserter", category = "machine", stack_size = 10, price = 25}
+	{id = "fast_inserter", name_key = "item_fast_inserter", category = "machine", stack_size = 10, price = 30}
+	{id = "long_inserter", name_key = "item_long_inserter", category = "machine", stack_size = 10, price = 18}
+	{id = "belt", name_key = "item_belt", category = "machine", stack_size = 10, price = 4}
+	{id = "belt_ramp", name_key = "item_belt_ramp", category = "machine", stack_size = 10, price = 6}
+	{id = "belt_lift", name_key = "item_belt_lift", category = "machine", stack_size = 10, price = 16}
+	{id = "belt_2", name_key = "item_belt_2", category = "machine", stack_size = 10, price = 20}
+	{id = "belt_ramp_2", name_key = "item_belt_ramp_2", category = "machine", stack_size = 10, price = 22}
+	{id = "belt_lift_2", name_key = "item_belt_lift_2", category = "machine", stack_size = 10, price = 50}
+	{id = "splitter", name_key = "item_splitter", category = "machine", stack_size = 10, price = 55}
+	{id = "wooden_chest", name_key = "item_wooden_chest", category = "machine", stack_size = 10, price = 4}
+	{id = "iron_chest", name_key = "item_iron_chest", category = "machine", stack_size = 10, price = 16}
+	{id = "offshore_pump", name_key = "item_offshore_pump", category = "machine", stack_size = 10, price = 20}
+	{id = "pump", name_key = "item_pump", category = "machine", stack_size = 10, price = 20}
+	{id = "storage_tank", name_key = "item_storage_tank", category = "machine", stack_size = 10, price = 250}
+	{id = "boiler", name_key = "item_boiler", category = "machine", stack_size = 10, price = 13}
+	{id = "steam_engine", name_key = "item_steam_engine", category = "machine", stack_size = 10, price = 62}
+	{id = "small_pole", name_key = "item_small_pole", category = "machine", stack_size = 10, price = 3}
+	{id = "big_pole", name_key = "item_big_pole", category = "machine", stack_size = 10, price = 28}
+	{id = "substation", name_key = "item_substation", category = "machine", stack_size = 10, price = 160}
+	{id = "lamp", name_key = "item_lamp", category = "machine", stack_size = 10, price = 12}
+	{id = "power_switch", name_key = "item_power_switch", category = "machine", stack_size = 10, price = 22}
+	{id = "assembler_1", name_key = "item_assembler_1", category = "machine", stack_size = 10, price = 56}
+	{id = "lab", name_key = "item_lab", category = "machine", stack_size = 10, price = 120}
+	{id = "core_sample_drill", name_key = "item_core_sample_drill", category = "machine", stack_size = 10, price = 100}
+	{id = "crusher", name_key = "item_crusher", category = "machine", stack_size = 10, price = 80}
+	{id = "washer", name_key = "item_washer", category = "machine", stack_size = 10, price = 60}
+	{id = "alloy_furnace", name_key = "item_alloy_furnace", category = "machine", stack_size = 10, price = 46}
+	{id = "recycler", name_key = "item_recycler", category = "machine", stack_size = 10, price = 130}
+	{id = "tar_pit_pump", name_key = "item_tar_pit_pump", category = "machine", stack_size = 10, price = 90}
+	{id = "refinery", name_key = "item_refinery", category = "machine", stack_size = 10, price = 320}
+	{id = "cracking_unit", name_key = "item_cracking_unit", category = "machine", stack_size = 10, price = 210}
+	{id = "flare_stack", name_key = "item_flare_stack", category = "machine", stack_size = 10, price = 85}
+	{id = "combustion_generator", name_key = "item_combustion_generator", category = "machine", stack_size = 10, price = 210}
+	{id = "hydro_turbine", name_key = "item_hydro_turbine", category = "machine", stack_size = 10, price = 200}
+	{id = "chemical_plant", name_key = "item_chemical_plant", category = "machine", stack_size = 10, price = 120}
+	{id = "wood_gasifier", name_key = "item_wood_gasifier", category = "machine", stack_size = 10, price = 60}
+	{id = "bore_drill", name_key = "item_bore_drill", category = "machine", stack_size = 10, price = 460}
+	{id = "electrolyser", name_key = "item_electrolyser", category = "machine", stack_size = 10, price = 230}
 	// Blocks that drop themselves
-	{id = "leaves", name_key = "item_leaves", category = "block", stack_size = 50, places_block = "leaves"}
-	{id = "tar", name_key = "item_tar", category = "block", stack_size = 50, places_block = "tar"}
-	{id = "deep_stone", name_key = "item_deep_stone", category = "block", stack_size = 50, places_block = "deep_stone"}
-	{id = "spent_rock", name_key = "item_spent_rock", category = "block", stack_size = 50, places_block = "spent_rock"}
-	{id = "torch", name_key = "item_torch", category = "block", stack_size = 50, places_block = "torch"}
-	{id = "concrete", name_key = "item_concrete", category = "block", stack_size = 50, places_block = "concrete", cannot_recycle = true}
-	{id = "brick", name_key = "item_brick", category = "block", stack_size = 50, places_block = "brick", cannot_recycle = true}
-	{id = "asphalt", name_key = "item_asphalt", category = "block", stack_size = 50, places_block = "asphalt", cannot_recycle = true}
+	{id = "leaves", name_key = "item_leaves", category = "block", stack_size = 50, places_block = "leaves", price = 1}
+	{id = "tar", name_key = "item_tar", category = "block", stack_size = 50, places_block = "tar", price = 1}
+	{id = "deep_stone", name_key = "item_deep_stone", category = "block", stack_size = 50, places_block = "deep_stone", price = 1}
+	{id = "spent_rock", name_key = "item_spent_rock", category = "block", stack_size = 50, places_block = "spent_rock", price = 1}
+	{id = "torch", name_key = "item_torch", category = "block", stack_size = 50, places_block = "torch", price = 1}
+	{id = "concrete", name_key = "item_concrete", category = "block", stack_size = 50, places_block = "concrete", cannot_recycle = true, price = 3}
+	{id = "brick", name_key = "item_brick", category = "block", stack_size = 50, places_block = "brick", cannot_recycle = true, price = 2}
+	{id = "asphalt", name_key = "item_asphalt", category = "block", stack_size = 50, places_block = "asphalt", cannot_recycle = true, price = 3}
 
 	// Schematics (work item 0036), read with Use_Item.
-	{id = "schematic_low_grade_iron_plate", name_key = "item_schematic_low_grade_iron_plate", category = "tool", stack_size = 1, usable = true, cannot_recycle = true}
-	{id = "schematic_charcoal_steel", name_key = "item_schematic_charcoal_steel", category = "tool", stack_size = 1, usable = true, cannot_recycle = true}
-	{id = "schematic_wood_gas_plastic", name_key = "item_schematic_wood_gas_plastic", category = "tool", stack_size = 1, usable = true, cannot_recycle = true}
-	{id = "schematic_slag_concrete", name_key = "item_schematic_slag_concrete", category = "tool", stack_size = 1, usable = true, cannot_recycle = true}
-	{id = "schematic_wood_gas_rocket_fuel", name_key = "item_schematic_wood_gas_rocket_fuel", category = "tool", stack_size = 1, usable = true, cannot_recycle = true}
+	{id = "schematic_low_grade_iron_plate", name_key = "item_schematic_low_grade_iron_plate", category = "tool", stack_size = 1, usable = true, cannot_recycle = true, price = 50}
+	{id = "schematic_charcoal_steel", name_key = "item_schematic_charcoal_steel", category = "tool", stack_size = 1, usable = true, cannot_recycle = true, price = 50}
+	{id = "schematic_wood_gas_plastic", name_key = "item_schematic_wood_gas_plastic", category = "tool", stack_size = 1, usable = true, cannot_recycle = true, price = 50}
+	{id = "schematic_slag_concrete", name_key = "item_schematic_slag_concrete", category = "tool", stack_size = 1, usable = true, cannot_recycle = true, price = 50}
+	{id = "schematic_wood_gas_rocket_fuel", name_key = "item_schematic_wood_gas_rocket_fuel", category = "tool", stack_size = 1, usable = true, cannot_recycle = true, price = 50}
 
 	// Rocket program (work item 0040).
-	{id = "launch_pad", name_key = "item_launch_pad", category = "machine", stack_size = 10}
-	{id = "rocket_structure", name_key = "item_rocket_structure", category = "intermediate", stack_size = 10}
-	{id = "guidance_unit", name_key = "item_guidance_unit", category = "intermediate", stack_size = 10}
-	{id = "cargo_capsule", name_key = "item_cargo_capsule", category = "intermediate", stack_size = 10}
+	{id = "launch_pad", name_key = "item_launch_pad", category = "machine", stack_size = 10, price = 1800}
+	{id = "rocket_structure", name_key = "item_rocket_structure", category = "intermediate", stack_size = 10, price = 160}
+	{id = "guidance_unit", name_key = "item_guidance_unit", category = "intermediate", stack_size = 10, price = 80}
+	{id = "cargo_capsule", name_key = "item_cargo_capsule", category = "intermediate", stack_size = 10, price = 290}
 ]

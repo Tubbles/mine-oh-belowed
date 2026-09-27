@@ -219,6 +219,10 @@ main :: proc() {
 	if !quests_loaded {
 		os.exit(1)
 	}
+	contracts, contracts_loaded := load_contract_registry(data_directory, items, global_string_table.entries)
+	if !contracts_loaded {
+		os.exit(1)
+	}
 	if problem := validate_starting_items(config.starting_items, items); problem != "" {
 		log_printf("error: invalid %s: %s", GAME_CONFIG_FILE_NAME, problem)
 		os.exit(1)
@@ -232,6 +236,7 @@ main :: proc() {
 		recipes         = recipes,
 		technologies    = technologies,
 		quests          = quests,
+		contracts       = contracts,
 		item_sort_ranks = item_sort_ranks(items, item_display_names(items, context.temp_allocator)),
 		recipe_names    = recipe_names,
 		recipe_order    = recipe_name_order(recipe_names),

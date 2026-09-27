@@ -50,6 +50,13 @@
 // are guesses. Since work item 0040 it unlocks the launch pad, the rocket
 // structure and the guidance unit. rocketry (work item 0040, science
 // packs 1 and 2) unlocks rocket fuel and the cargo capsule.
+// mining_productivity and research_speed (work item 0041) are infinite:
+// infinite = true lets the labs research them level after level, level n
+// costing packs times level_cost_growth_percent to the power n minus one
+// (integer arithmetic), and effect names what each level improves by
+// effect_percent: every drill's output (mining_productivity) or every
+// lab's speed (research_speed). An infinite technology needs no unlocks.
+// Their seconds per pack are guesses.
 // placeholder = true marks a technology that unlocks nothing yet, and
 // quest_gate = true one only a main quest reward researches; labs refuse
 // both.
@@ -79,4 +86,6 @@ technologies = [
 	{id = "electrolysis", name_key = "technology_electrolysis", unlocks = ["electrolyser", "alumina", "aluminium_plate", "silicon"], packs = 150, seconds = 30, science_packs = ["science_pack_1", "science_pack_2"], prerequisites = ["deep_mining"]}
 	{id = "rocket_program", name_key = "technology_rocket_program", unlocks = ["launch_pad", "rocket_structure", "guidance_unit"], packs = 300, seconds = 30, science_packs = ["science_pack_1", "science_pack_2"], prerequisites = ["electrolysis"], quest_gate = true}
 	{id = "rocketry", name_key = "technology_rocketry", unlocks = ["rocket_fuel", "cargo_capsule"], packs = 200, seconds = 30, science_packs = ["science_pack_1", "science_pack_2"], prerequisites = ["rocket_program"]}
+	{id = "mining_productivity", name_key = "technology_mining_productivity", packs = 100, seconds = 30, science_packs = ["science_pack_1", "science_pack_2"], prerequisites = ["rocket_program"], infinite = true, level_cost_growth_percent = 150, effect = "mining_productivity", effect_percent = 10}
+	{id = "research_speed", name_key = "technology_research_speed", packs = 100, seconds = 30, science_packs = ["science_pack_1", "science_pack_2"], prerequisites = ["rocket_program"], infinite = true, level_cost_growth_percent = 150, effect = "research_speed", effect_percent = 10}
 ]

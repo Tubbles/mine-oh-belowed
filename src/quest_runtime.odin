@@ -1,5 +1,6 @@
 package game
 
+import "core:fmt"
 import "core:strings"
 
 // The quest runtime, ticked in the simulation. One quest is active at a
@@ -21,8 +22,11 @@ import "core:strings"
 
 CAPSULE_LANDED_KEY :: "capsule_landed"
 RESEARCH_COMPLETE_KEY :: "research_complete"
-// Where a message's argument text goes in its text.
+// Where a message's argument text goes in its text, its value, and the
+// cargo of its shipment.
 MESSAGE_ARGUMENT_MARK :: "{name}"
+MESSAGE_VALUE_MARK :: "{value}"
+MESSAGE_CARGO_MARK :: "{cargo}"
 
 Quest_Status :: enum u8 {
 	Locked,
@@ -48,10 +52,15 @@ Quest_Progress :: struct {
 }
 
 // argument_key, when set, is the text that replaces MESSAGE_ARGUMENT_MARK.
+// value replaces MESSAGE_VALUE_MARK. shipment, when not 0, is one more
+// than the index into World.shipments whose cargo replaces
+// MESSAGE_CARGO_MARK (work item 0041).
 Quest_Message :: struct {
 	tick:         u64,
 	text_key:     string,
 	argument_key: string,
+	value:        u64,
+	shipment:     u32,
 }
 
 Quest_State :: struct {
@@ -159,6 +168,14 @@ hint_counter_value :: proc(statistics: Statistics, hint: Hint) -> u64 {
 		return statistics.turbine_still_water_ticks
 	case .Rockets_Launched:
 		return statistics.rockets_launched
+	case .Contracts_Completed:
+		return statistics.contracts_completed
+	case .Contracts_Late:
+		return statistics.contracts_late
+	case .Credit_Earned:
+		return statistics.credit_earned
+	case .Surveys_Bought:
+		return statistics.surveys_bought
 	}
 	return 0
 }
@@ -279,10 +296,14 @@ advance_sustains :: proc(progress: ^Quest_Progress, quest: Quest, statistics: St
 }
 
 log_quest_message :: proc(state: ^Quest_State, tick: u64, key: string, argument_key := "") {
-	if key == "" {
+	log_message(state, Quest_Message{tick = tick, text_key = key, argument_key = argument_key})
+}
+
+// Into the message log and the toasts.
+log_message :: proc(state: ^Quest_State, message: Quest_Message) {
+	if message.text_key == "" {
 		return
 	}
-	message := Quest_Message{tick = tick, text_key = key, argument_key = argument_key}
 	append(&state.messages, message)
 	append(&state.notices, message)
 }
@@ -292,11 +313,23 @@ log_research_complete :: proc(state: ^Quest_State, tick: u64, technology_name_ke
 	log_quest_message(state, tick, RESEARCH_COMPLETE_KEY, technology_name_key)
 }
 
-quest_message_text :: proc(message: Quest_Message) -> string {
-	if message.argument_key == "" {
-		return text(message.text_key)
+// The shipments and items fill in a shipment's cargo.
+quest_message_text :: proc(message: Quest_Message, shipments: []Shipment, items: Item_Registry) -> string {
+	result := text(message.text_key)
+	if message.argument_key != "" {
+		result = format_message_text(result, text(message.argument_key))
 	}
-	return format_message_text(text(message.text_key), text(message.argument_key))
+	result = replace_message_mark(result, MESSAGE_VALUE_MARK, fmt.tprintf("%d", message.value))
+	if message.shipment > 0 && int(message.shipment) <= len(shipments) {
+		result = replace_message_mark(result, MESSAGE_CARGO_MARK, shipment_cargo_text(shipments[message.shipment - 1], items))
+	}
+	return result
+}
+
+// In the temp allocator.
+replace_message_mark :: proc(template, mark, value: string) -> string {
+	result, _ := strings.replace_all(template, mark, value, context.temp_allocator)
+	return result
 }
 
 // In the temp allocator.

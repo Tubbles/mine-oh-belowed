@@ -182,6 +182,14 @@ lay_save_test_launch_pad :: proc(world: ^World, content: Simulation_Content) {
 	shipment := make_shipment([]Item_Stack{{test_item(content.items, "iron_plate"), 40}}, 77)
 	append(&world.shipments, shipment)
 	record_shipment(&world.statistics, shipment)
+	// The venture (work item 0041): offers fill the slots on the first
+	// tick, a catalogue order is served then, and two mining productivity
+	// levels make every drill put out more.
+	world.statistics.placed[pad.machine] += 1
+	world.venture_credit = 2000
+	ordered := order_from_catalogue(world, content.contracts, 0, launch_pad_centre(pad^))
+	assert(ordered)
+	world.research.levels[test_technology(content.technologies, "mining_productivity")] = 2
 }
 
 // The pad kept its assembly and cargo, the shipment and its statistics
@@ -193,6 +201,14 @@ launch_pad_loaded :: proc(loaded, original: ^World) -> bool {
 	}
 	assembling := pad.state == .Assembling && pad.stages_taken == 1 && !stack_is_empty(pad.slots[pad.part_count])
 	return assembling && loaded.shipments[0] == original.shipments[0] && loaded.statistics.rockets_launched == 1
+}
+
+// Open contracts, the credit left after the order and the levels came
+// through.
+venture_loaded :: proc(loaded, original: ^World, technologies: Technology_Registry) -> bool {
+	contracts := loaded.contracts.open_count == MAXIMUM_OPEN_CONTRACTS && loaded.contracts == original.contracts
+	credit := loaded.venture_credit == original.venture_credit && loaded.venture_credit < 2000
+	return contracts && credit && loaded.research.levels[test_technology(technologies, "mining_productivity")] == 2
 }
 
 // Every entity kind with contents: the power plant (offshore pump, pipes,
@@ -351,6 +367,7 @@ test_save_load_run_matches_the_original :: proc(t: ^testing.T) {
 	testing.expect(t, schematics_loaded(&loaded, content))
 	testing.expect(t, prospecting_loaded(&loaded.world, &original.world))
 	testing.expect(t, launch_pad_loaded(&loaded.world, &original.world))
+	testing.expect(t, venture_loaded(&loaded.world, &original.world, content.technologies))
 	testing.expect_value(t, len(loaded.world.entities.fluid_networks.networks), len(original.world.entities.fluid_networks.networks))
 	testing.expect_value(t, len(loaded.world.entities.electric_networks.networks), len(original.world.entities.electric_networks.networks))
 	testing.expect_value(t, len(loaded.world.entities.belt_network.lines), len(original.world.entities.belt_network.lines))

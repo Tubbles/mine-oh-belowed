@@ -57,9 +57,10 @@ test_lab_and_technology_data_load :: proc(t: ^testing.T) {
 	optics := technologies.technologies[test_technology(technologies, "optics")]
 	testing.expect(t, slice.equal(optics.prerequisites, []int{test_technology(technologies, "electric_mining")}))
 	// Every technology with recipes in the data unlocks them; since the
-	// launch pad arrived (work item 0040) none is a placeholder.
+	// launch pad arrived (work item 0040) none is a placeholder. Infinite
+	// technologies (work item 0041) unlock nothing.
 	for technology in technologies.technologies {
-		testing.expectf(t, technology.placeholder == (len(technology.unlocks) == 0), "%s", technology.id)
+		testing.expectf(t, (technology.placeholder || technology.infinite) == (len(technology.unlocks) == 0), "%s", technology.id)
 	}
 	testing.expect(t, !technologies.technologies[test_technology(technologies, "fast_belts")].placeholder)
 }
@@ -273,7 +274,7 @@ test_technology_screen_filters_and_orders :: proc(t: ^testing.T) {
 	for technology, index in visible {
 		ids[index] = names[technology]
 	}
-	expected := []string{"automation", "bitumen_paving", "combustion_power", "cracking", "deep_mining", "electric_grid", "electric_mining", "electrolysis", "fast_belts", "fast_inserters", "fluid_handling", "hydro_power", "logistics", "logistics_science", "oil_processing", "optics", "ore_processing", "plastics", "prospecting", "recycling", "renewable_plastics", "rocket_program", "rocketry", "seismic_survey", "steel_processing"}
+	expected := []string{"automation", "bitumen_paving", "combustion_power", "cracking", "deep_mining", "electric_grid", "electric_mining", "electrolysis", "fast_belts", "fast_inserters", "fluid_handling", "hydro_power", "logistics", "logistics_science", "mining_productivity", "oil_processing", "optics", "ore_processing", "plastics", "prospecting", "recycling", "renewable_plastics", "research_speed", "rocket_program", "rocketry", "seismic_survey", "steel_processing"}
 	testing.expect(t, slice.equal(ids, expected))
 	testing.expect_value(t, names[visible[recipe_position_for_letter(names, visible, 'l')]], "logistics")
 	// No technology starts with g: the next letter, h, is taken.

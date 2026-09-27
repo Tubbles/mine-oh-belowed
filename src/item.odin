@@ -70,6 +70,7 @@ Item_Definition :: struct {
 	use:             string,
 	detects:         string,
 	use_range:       int,
+	price:           int,
 }
 
 Items_File :: struct {
@@ -82,7 +83,8 @@ Items_File :: struct {
 // A usable item is read with the Use_Item action (schematics, work item
 // 0036) and never places anything. use says what Use_Item does with it;
 // a magnetometer finds veins yielding detects within use_range blocks, a
-// seismic shot images deep veins within use_range blocks.
+// seismic shot images deep veins within use_range blocks. price is the
+// venture credit one item fetches as free trade (work item 0041).
 Item :: struct {
 	id:              string,
 	name_key:        string,
@@ -95,6 +97,7 @@ Item :: struct {
 	use:             Item_Use,
 	detects:         Item_Id,
 	use_range:       i32,
+	price:           u64,
 }
 
 Item_Registry :: struct {
@@ -149,6 +152,9 @@ validate_item_definition :: proc(definitions: []Item_Definition, index: int) -> 
 	}
 	if definition.fuel_megajoules < 0 {
 		return fmt.tprintf("item %q has a negative fuel_megajoules", definition.id)
+	}
+	if definition.price < 1 {
+		return fmt.tprintf("item %q needs a positive price", definition.id)
 	}
 	if definition.usable && definition.places_block != "" {
 		return fmt.tprintf("usable item %q cannot place a block", definition.id)
@@ -221,6 +227,7 @@ resolve_item :: proc(definition: Item_Definition, blocks: Block_Registry) -> (it
 		use             = use,
 		detects         = NO_ITEM,
 		use_range       = i32(definition.use_range),
+		price           = u64(definition.price),
 	}
 	return item, ""
 }
@@ -509,4 +516,12 @@ item_name :: proc(registry: Item_Registry, item: Item_Id) -> string {
 		return ""
 	}
 	return text(registry.items[item].name_key)
+}
+
+// The venture credit one item fetches, 0 outside the table.
+item_price :: proc(registry: Item_Registry, item: Item_Id) -> u64 {
+	if int(item) >= len(registry.items) {
+		return 0
+	}
+	return registry.items[item].price
 }

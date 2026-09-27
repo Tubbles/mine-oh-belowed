@@ -30,9 +30,9 @@ test_prospecting_data_loads :: proc(t: ^testing.T) {
 	testing.expect_value(t, drill.electric_power_watts, 40_000)
 	testing.expect_value(t, core_sample_ticks(drill, TEST_TICK_RATE), 3600)
 	// A use needs a usable item, and a magnetometer what it detects.
-	definitions := []Item_Definition{{id = "tool", name_key = "k", category = "tool", stack_size = 1, use = "assay"}}
+	definitions := []Item_Definition{{id = "tool", name_key = "k", category = "tool", stack_size = 1, use = "assay", price = 1}}
 	testing.expect(t, validate_item_definition(definitions, 0) != "")
-	definitions[0] = {id = "tool", name_key = "k", category = "tool", stack_size = 1, usable = true, use = "magnetometer", use_range = 5}
+	definitions[0] = {id = "tool", name_key = "k", category = "tool", stack_size = 1, usable = true, use = "magnetometer", use_range = 5, price = 1}
 	testing.expect(t, validate_item_definition(definitions, 0) != "")
 	definitions[0].detects = "hematite"
 	testing.expect_value(t, validate_item_definition(definitions, 0), "")

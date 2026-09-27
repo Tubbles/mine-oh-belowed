@@ -8,6 +8,7 @@ import "core:strings"
 // then done, then locked ones as silhouettes with only the title), the
 // focused quest's objectives with their progress on the right, and Mission
 // Control's lines below, newest first, with the game time they arrived.
+// A last tab shows the venture's contracts (ui_contracts.odin).
 
 JOURNAL_LIST_COLUMN_WIDTH :: 560
 JOURNAL_LOG_HEIGHT_FRACTION :: 0.45
@@ -165,12 +166,14 @@ draw_quest_objective :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 }
 
+// One tab per chapter and a last one for the contracts (work item 0041).
 chapter_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, screen_context: Screen_Context) -> int {
 	chapters := screen_context.quests.chapters
-	labels := make([]string, len(chapters), context.temp_allocator)
+	labels := make([]string, len(chapters) + 1, context.temp_allocator)
 	for chapter, index in chapters {
 		labels[index] = text(chapter.title_key)
 	}
+	labels[len(chapters)] = text("journal_contracts")
 	return ui_tabs(state, rectangle, "journal_chapters", labels)
 }
 
@@ -261,7 +264,7 @@ journal_message_log :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("journal_messages"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	messages := screen_context.quest_state.messages[:]
 	#reverse for message in messages {
-		line := fmt.tprintf("%s  %s", format_game_time(message.tick, screen_context.tick_rate), quest_message_text(message))
+		line := fmt.tprintf("%s  %s", format_game_time(message.tick, screen_context.tick_rate), quest_message_text(message, screen_context.world.shipments[:], screen_context.items))
 		wrapped := wrap_text(state, line, UI_BODY_TEXT_SIZE, content.width)
 		if f32(len(wrapped)) * UI_ROW_HEIGHT * 0.6 > content.height {
 			return
@@ -282,11 +285,19 @@ journal_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		ui_panel_end(state)
 		return
 	}
-	chapter := screen_context.quests.chapters[chapter_tabs(state, cut_top(&content, UI_ROW_HEIGHT), screen_context)]
+	tab := chapter_tabs(state, cut_top(&content, UI_ROW_HEIGHT), screen_context)
 	cut_top(&content, UI_GAP)
 	list_area := cut_left(&content, JOURNAL_LIST_COLUMN_WIDTH)
 	cut_left(&content, 2 * UI_PADDING)
 	log_area := cut_bottom(&content, content.height * JOURNAL_LOG_HEIGHT_FRACTION)
+	if tab == len(screen_context.quests.chapters) {
+		journal_contracts_section(state, list_area, screen_context)
+		journal_message_log(state, log_area, screen_context)
+		ui_panel_end(state)
+		journal_glyph_bar(state)
+		return
+	}
+	chapter := screen_context.quests.chapters[tab]
 	order := journal_quest_order(screen_context.quest_state^, chapter)
 	focused := journal_quest_list(state, list_area, screen_context, order)
 	if focused == NO_QUEST && len(order) > 0 {
@@ -295,6 +306,10 @@ journal_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	journal_quest_detail(state, content, screen_context, focused)
 	journal_message_log(state, log_area, screen_context)
 	ui_panel_end(state)
+	journal_glyph_bar(state)
+}
+
+journal_glyph_bar :: proc(state: ^Ui_State) {
 	hints := [?]Glyph_Hint{{.Tab_Previous, ""}, {.Tab_Next, text("hint_chapters")}, {.Back, text("hint_close")}}
 	ui_glyph_bar(state, hints[:])
 }

@@ -45,7 +45,16 @@ draw_technology_row :: proc(state: ^Ui_State, row: Ui_Rectangle, screen_context:
 	status := technology_status(screen_context.technologies, screen_context.unlocks^, technology)
 	content := Ui_Rectangle{row.x + UI_PADDING, row.y, max(row.width - 2 * UI_PADDING, 0), row.height}
 	draw_text(state, content, names[technology], UI_BODY_TEXT_SIZE, .Left, status == .Locked ? UI_DIM_TEXT_COLOR : UI_TEXT_COLOR)
-	draw_text(state, content, text(technology_status_keys[status]), UI_BODY_TEXT_SIZE, .Right, status_color(status))
+	level := technology_level_text(screen_context.technologies.technologies[technology], research.levels[technology])
+	draw_text(state, content, level != "" ? level : text(technology_status_keys[status]), UI_BODY_TEXT_SIZE, .Right, status_color(status))
+}
+
+// What each level of an infinite technology does, for the detail panel.
+@(rodata)
+technology_effect_keys := [Technology_Effect]string {
+	.None                = "",
+	.Mining_Productivity = "technologies_effect_mining_productivity",
+	.Research_Speed      = "technologies_effect_research_speed",
 }
 
 // Returns the activated technology or NO_TECHNOLOGY.
@@ -115,13 +124,19 @@ technology_detail_panel :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_con
 	status := technology_status(screen_context.technologies, screen_context.unlocks^, technology)
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), names[technology], UI_HEADING_TEXT_SIZE, .Left)
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text(technology_status_keys[status]), UI_BODY_TEXT_SIZE, .Left, status_color(status))
-	cost := fmt.tprintf("%s %s", text("technologies_cost"), technology_cost_text(definition, screen_context.items))
+	levels := screen_context.world.research.levels
+	if definition.infinite {
+		level := fmt.tprintf("%s %d", text("technologies_level"), levels[technology])
+		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), level, UI_BODY_TEXT_SIZE, .Left, UI_ACCENT_COLOR)
+	}
+	units := technology_next_cost(definition, levels, technology)
+	cost := fmt.tprintf("%s %s", text(definition.infinite ? "technologies_next_level_cost" : "technologies_cost"), technology_cost_text(definition, units, screen_context.items))
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), cost, UI_BODY_TEXT_SIZE, .Left)
 	prerequisites := fmt.tprintf("%s %s", text("technologies_prerequisites"), technology_names_text(screen_context.technologies, definition.prerequisites))
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), prerequisites, UI_BODY_TEXT_SIZE, .Left)
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("technologies_unlocks"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	if len(definition.unlocks) == 0 {
-		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("technologies_unlocks_later"), UI_BODY_TEXT_SIZE, .Left)
+		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text(definition.infinite ? technology_effect_keys[definition.effect] : "technologies_unlocks_later"), UI_BODY_TEXT_SIZE, .Left)
 	}
 	for recipe in definition.unlocks {
 		if content.height >= UI_ROW_HEIGHT {

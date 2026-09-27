@@ -78,11 +78,13 @@ Shipped_Item :: struct {
 }
 
 // cargo[:cargo_count] holds each shipped item once, in the order it first
-// appeared in the cargo slots.
+// appeared in the cargo slots. pad_centre is the launching pad's centre,
+// where an orbital survey the shipment pays for looks (venture.odin).
 Shipment :: struct {
 	tick:        u64,
 	cargo:       [LAUNCH_PAD_CARGO_SLOTS]Shipped_Item,
 	cargo_count: i32,
+	pad_centre:  World_Coordinate,
 }
 
 // Loading.
@@ -376,6 +378,8 @@ shipped_item_index :: proc(shipment: Shipment, item: Item_Id) -> int {
 	return -1
 }
 
+// Shipped cargo also counts as consumed, so the production statistics
+// see where it went.
 record_shipment :: proc(statistics: ^Statistics, shipment: Shipment) {
 	statistics.rockets_launched += 1
 	for index in 0 ..< int(shipment.cargo_count) {
@@ -383,6 +387,7 @@ record_shipment :: proc(statistics: ^Statistics, shipment: Shipment) {
 		if int(shipped.item) < len(statistics.shipped) {
 			statistics.shipped[shipped.item] += u64(shipped.count)
 		}
+		record_consumed(statistics, shipped.item, int(shipped.count))
 	}
 }
 
@@ -393,6 +398,7 @@ launch_rocket :: proc(world: ^World, pad: ^Launch_Pad, tick: u64) -> bool {
 		return false
 	}
 	shipment := make_shipment(launch_pad_cargo(pad), tick)
+	shipment.pad_centre = launch_pad_centre(pad^)
 	append(&world.shipments, shipment)
 	record_shipment(&world.statistics, shipment)
 	for &slot in launch_pad_cargo(pad) {
@@ -401,6 +407,11 @@ launch_rocket :: proc(world: ^World, pad: ^Launch_Pad, tick: u64) -> bool {
 	pad.state = .Launching
 	pad.launch_ticks, pad.work_ticks, pad.stages_taken = 0, 0, 0
 	return true
+}
+
+// The middle column of the footprint at the pad's height.
+launch_pad_centre :: proc(pad: Launch_Pad) -> World_Coordinate {
+	return pad.origin + {pad.size.x / 2, 0, pad.size.z / 2}
 }
 
 // The Launch button and Interact: served by apply_launch_requests.

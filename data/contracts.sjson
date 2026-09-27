@@ -1,0 +1,49 @@
+// Contracts and the catalogue (work item 0041, DESIGN.md Research, quests
+// and rockets). The runtime is src/venture.odin.
+//
+// tier_shipments: three rocket counts. Tier 1 contracts are offered from
+// the first launch pad placed (and at least tier_shipments[0] launches),
+// tier 2 from tier_shipments[1] launches, tier 3 from tier_shipments[2].
+//
+// contracts: id, name_key (shown in the pad panel and the journal),
+// message_key (Mission Control's line when the venture offers it), tier
+// (1 to 3), deadline_minutes (game minutes from the offer), late_percent
+// (the share of the reward paid past the deadline, rounded down, at least
+// one of each item), requests (1 to 4 items with counts; deliveries add
+// up over several launches), and either rewards (1 to 4 items with counts
+// landing in the drop capsule) or orbital_survey = true. A late survey
+// still runs in full. The venture keeps up to three contracts open and
+// cycles through the pool.
+//
+// catalogue: what venture credit buys from the pad panel, an item with a
+// count or orbital_survey = true, each with a price in credit. Credit
+// comes from cargo no contract takes, sold at the items' price in
+// items.sjson.
+//
+// Every number here is a guess for playtesting.
+tier_shipments = [0, 3, 10]
+
+contracts = [
+	// Tier 1
+	{id = "control_boards", name_key = "contract_control_boards", message_key = "mc_contract_control_boards", tier = 1, deadline_minutes = 30, late_percent = 50, requests = [{item = "electronic_circuit", count = 300}], rewards = [{item = "silicon", count = 60}, {item = "aluminium_plate", count = 40}]}
+	{id = "station_girders", name_key = "contract_station_girders", message_key = "mc_contract_station_girders", tier = 1, deadline_minutes = 30, late_percent = 50, requests = [{item = "steel", count = 200}], rewards = [{item = "aluminium_plate", count = 60}]}
+	{id = "plastic_quota", name_key = "contract_plastic_quota", message_key = "mc_contract_plastic_quota", tier = 1, deadline_minutes = 40, late_percent = 50, requests = [{item = "plastic_bar", count = 300}], rewards = [{item = "gold_plate", count = 20}]}
+	{id = "survey_fee", name_key = "contract_survey_fee", message_key = "mc_contract_survey_fee", tier = 1, deadline_minutes = 30, late_percent = 50, requests = [{item = "concrete", count = 200}, {item = "iron_plate", count = 100}], orbital_survey = true}
+	// Tier 2
+	{id = "lab_supplies", name_key = "contract_lab_supplies", message_key = "mc_contract_lab_supplies", tier = 2, deadline_minutes = 45, late_percent = 50, requests = [{item = "science_pack_1", count = 400}], rewards = [{item = "science_pack_2", count = 100}]}
+	{id = "hull_plating", name_key = "contract_hull_plating", message_key = "mc_contract_hull_plating", tier = 2, deadline_minutes = 45, late_percent = 40, requests = [{item = "aluminium_plate", count = 300}], rewards = [{item = "gold_plate", count = 40}]}
+	{id = "brass_fittings", name_key = "contract_brass_fittings", message_key = "mc_contract_brass_fittings", tier = 2, deadline_minutes = 40, late_percent = 50, requests = [{item = "brass_plate", count = 300}, {item = "pipe", count = 100}], rewards = [{item = "silicon", count = 100}]}
+	{id = "wafer_stock", name_key = "contract_wafer_stock", message_key = "mc_contract_wafer_stock", tier = 2, deadline_minutes = 45, late_percent = 50, requests = [{item = "silicon", count = 200}], rewards = [{item = "science_pack_2", count = 150}]}
+	// Tier 3
+	{id = "station_expansion", name_key = "contract_station_expansion", message_key = "mc_contract_station_expansion", tier = 3, deadline_minutes = 60, late_percent = 30, requests = [{item = "steel", count = 400}, {item = "concrete", count = 400}], rewards = [{item = "gold_plate", count = 60}, {item = "aluminium_plate", count = 100}]}
+	{id = "research_consortium", name_key = "contract_research_consortium", message_key = "mc_contract_research_consortium", tier = 3, deadline_minutes = 60, late_percent = 50, requests = [{item = "science_pack_2", count = 300}], orbital_survey = true}
+	{id = "guidance_spares", name_key = "contract_guidance_spares", message_key = "mc_contract_guidance_spares", tier = 3, deadline_minutes = 60, late_percent = 30, requests = [{item = "guidance_unit", count = 20}, {item = "electronic_circuit", count = 400}], rewards = [{item = "science_pack_2", count = 200}]}
+]
+
+catalogue = [
+	{item = "silicon", count = 50, price = 600}
+	{item = "aluminium_plate", count = 50, price = 750}
+	{item = "gold_plate", count = 20, price = 600}
+	{item = "science_pack_2", count = 100, price = 2250}
+	{orbital_survey = true, price = 3000}
+]

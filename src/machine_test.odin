@@ -36,6 +36,7 @@ make_test_content :: proc() -> Simulation_Content {
 		recipes = recipes,
 		technologies = technologies,
 		veins = veins,
+		contracts = make_test_contracts(items),
 	}
 }
 

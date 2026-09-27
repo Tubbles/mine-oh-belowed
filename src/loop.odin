@@ -142,7 +142,9 @@ simulation_tick :: proc(state: ^Simulation_State, content_tables: Simulation_Con
 	}
 	update_recipe_unlocks(&state.unlocks, content.recipes, state.players[:])
 	tick_entities(&state.world, content, state.tick_rate)
+	shipments_before := len(state.world.shipments)
 	apply_launch_requests(&state.world, state.tick)
+	tick_venture(state, content, shipments_before)
 	apply_research_result(state, content)
 	observe_player_holdings(&state.world.statistics, state.players[:], true)
 	observe_full_inventories(&state.world.statistics, state.players[:])
@@ -170,8 +172,11 @@ simulation_quest_context :: proc(state: ^Simulation_State, content: Simulation_C
 	}
 }
 
+// With the session's generator, for the orbital survey.
 frame_simulation_content :: proc(state: ^Frame_State) -> Simulation_Content {
-	return session_simulation_content(state.content, state.session.technologies)
+	content := session_simulation_content(state.content, state.session.technologies)
+	content.generator = &state.session.generator
+	return content
 }
 
 make_tick_accumulator :: proc(tick_rate: int) -> Tick_Accumulator {
@@ -377,6 +382,7 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 		recipes         = content.recipes,
 		technologies    = content.technologies,
 		quests          = content.quests,
+		contracts       = content.contracts,
 		recipe_names    = content.recipe_names,
 		recipe_order    = content.recipe_order,
 	}
@@ -387,6 +393,7 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 	screen_context.save_requested = &session.save_requested
 	screen_context.player = &session.simulation.players[0]
 	screen_context.world = &session.simulation.world
+	screen_context.tick = session.simulation.tick
 	screen_context.tick_rate = session.simulation.tick_rate
 	screen_context.technologies = session.technologies
 	screen_context.unlocks = &session.simulation.unlocks
@@ -406,7 +413,7 @@ run_ui_frame :: proc(state: ^Frame_State) {
 	screen_context := make_screen_context(state)
 	if state.session != nil {
 		show_simulation_events(&state.ui, &state.session.simulation.events)
-		show_quest_notices(&state.ui, &state.session.simulation.quests.notices)
+		show_quest_notices(&state.ui, &state.session.simulation.quests.notices, state.session.simulation.world.shipments[:], state.content.items)
 		draw_hud(&state.ui, screen_context)
 	}
 	run_screens(&state.ui, screen_context)
@@ -440,9 +447,9 @@ show_simulation_events :: proc(state: ^Ui_State, events: ^[dynamic]Simulation_Ev
 
 // Mission Control's lines, finished research and the capsule landing, as
 // toasts.
-show_quest_notices :: proc(state: ^Ui_State, notices: ^[dynamic]Quest_Message) {
+show_quest_notices :: proc(state: ^Ui_State, notices: ^[dynamic]Quest_Message, shipments: []Shipment, items: Item_Registry) {
 	for notice in notices {
-		ui_toast(state, quest_message_text(notice))
+		ui_toast(state, quest_message_text(notice, shipments, items))
 	}
 	clear(notices)
 }
@@ -456,6 +463,7 @@ Game_Content :: struct {
 	technologies:    Technology_Registry,
 	quests:          Quest_Registry,
 	veins:           Vein_Content,
+	contracts:       Contract_Registry,
 	item_sort_ranks: []u16,
 	recipe_names:    []string,
 	recipe_order:    []int,
@@ -472,6 +480,7 @@ game_simulation_content :: proc(content: Game_Content) -> Simulation_Content {
 		technologies = content.technologies,
 		quests = content.quests,
 		veins = content.veins,
+		contracts = content.contracts,
 	}
 }
 

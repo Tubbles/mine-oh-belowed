@@ -330,7 +330,7 @@ research_diagnostics_text :: proc(state: Frame_State) -> string {
 		return fmt.tprintf("research none queued  labs %d", labs)
 	}
 	technology := state.session.technologies.technologies[research.technology]
-	return fmt.tprintf("research %s %d of %d units  labs %d", technology.id, research.units_done, technology.pack_count, labs)
+	return fmt.tprintf("research %s %d of %d units  labs %d", technology.id, research.units_done, queued_research_cost(research, state.session.technologies), labs)
 }
 
 quest_diagnostics_text :: proc(state: Frame_State) -> string {

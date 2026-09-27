@@ -6,7 +6,8 @@ import "core:fmt"
 // the Shipments tab of the statistics screen (work item 0040). Panel: the
 // part slots with a line per part, the fuel port's level and flow, the
 // cargo slots, the progress bar (assembly or ascent), the state, the
-// Assemble and Launch buttons and the power line. Shipments: the
+// Assemble and Launch buttons and the power line, on the Rocket tab; the
+// Contracts and Catalogue tabs are in ui_contracts.odin. Shipments: the
 // launches newest first with their game time and cargo, and the totals
 // shipped per item.
 
@@ -15,11 +16,22 @@ launch_pad_text_rows :: proc(machine: Machine) -> int {
 	return 1 + machine.launch_part_count + FLUID_ROWS_PER_BUFFER + 1 + 3
 }
 
+// The Rocket tab's rows below the tab row, which the other tabs share.
 launch_pad_area_size :: proc(machine: Machine) -> [2]f32 {
 	width := max(slot_grid_width(LAUNCH_PAD_CARGO_SLOTS), FLUID_AREA_WIDTH)
 	slot_rows := 2 * f32(UI_SLOT_SIZE + UI_GAP)
 	button_rows := 2 * f32(UI_ROW_HEIGHT + UI_GAP)
-	return {width, UI_ROW_HEIGHT + f32(launch_pad_text_rows(machine)) * UI_ROW_HEIGHT + slot_rows + button_rows}
+	tab_row := f32(UI_ROW_HEIGHT + UI_GAP)
+	return {width, UI_ROW_HEIGHT + tab_row + f32(launch_pad_text_rows(machine)) * UI_ROW_HEIGHT + slot_rows + button_rows}
+}
+
+// Rocket, Contracts and Catalogue (work item 0041), switched with the
+// bumpers or a click.
+launch_pad_tab :: proc(state: ^Ui_State, content: ^Ui_Rectangle) -> int {
+	labels := [?]string{text("launch_pad_tab_rocket"), text("launch_pad_tab_contracts"), text("launch_pad_tab_catalogue")}
+	tab := ui_tabs(state, cut_top(content, UI_ROW_HEIGHT), "launch_pad_tabs", labels[:])
+	cut_top(content, UI_GAP)
+	return tab
 }
 
 // "Rocket structure: 7 / 10"
@@ -41,10 +53,18 @@ launch_pad_state_text :: proc(pad: ^Launch_Pad) -> string {
 
 launch_pad_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, pad: ^Launch_Pad, screen_context: Screen_Context) -> Slot_Grid_Result {
 	result := Slot_Grid_Result{activated = -1, focused = -1}
+	content := area
+	switch launch_pad_tab(state, &content) {
+	case 1:
+		launch_pad_contracts_tab(state, content, screen_context)
+		return result
+	case 2:
+		launch_pad_catalogue_tab(state, content, pad, screen_context)
+		return result
+	}
 	machine := screen_context.machines.machines[pad.machine]
 	items := screen_context.items
 	slots := pad.slots[:launch_pad_slot_count(pad^)]
-	content := area
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("launch_pad_parts"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	machine_slot_row(state, cut_top(&content, UI_SLOT_SIZE + UI_GAP), 0, pad.part_count, slots, items, &result)
 	for index in 0 ..< machine.launch_part_count {

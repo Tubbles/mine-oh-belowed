@@ -225,6 +225,10 @@ test_launch_consumes_rocket_and_cargo :: proc(t: ^testing.T) {
 	testing.expect_value(t, statistics.rockets_launched, 1)
 	testing.expect_value(t, statistics.shipped[plate], 80)
 	testing.expect_value(t, statistics.shipped[steel], 20)
+	// Shipped cargo counts as consumed (work item 0041).
+	testing.expect_value(t, statistics.consumed[plate], 80)
+	testing.expect_value(t, statistics.consumed[steel], 20)
+	testing.expect_value(t, shipment.pad_centre, LAUNCH_PAD_TEST_ORIGIN + {4, 0, 4})
 	testing.expect_value(t, hint_counter_value(statistics, Hint{counter = .Rockets_Launched}), 1)
 	tick_launch_pad_test(&test, 5 * TEST_TICK_RATE - 1)
 	testing.expect_value(t, pad.state, Launch_Pad_State.Launching)

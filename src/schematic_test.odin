@@ -381,7 +381,7 @@ test_schematic_data_is_validated :: proc(t: ^testing.T) {
 	twice.id = "b"
 	_, problem = resolve_recipe_registry(Recipes_File{recipes = {usable, twice}}, items, make_test_fluids(), context.temp_allocator)
 	testing.expect(t, problem != "")
-	placing := Item_Definition{id = "x", name_key = "x", category = "tool", stack_size = 1, usable = true, places_block = "stone"}
+	placing := Item_Definition{id = "x", name_key = "x", category = "tool", stack_size = 1, usable = true, places_block = "stone", price = 1}
 	_, problem = resolve_item_registry(Items_File{items = {placing}}, make_test_registry(), context.temp_allocator)
 	testing.expect(t, problem != "")
 	crate := Machine_Definition{id = "crate", name_key = "crate", kind = "schematic_crate", footprint = {1, 1, 1}, slots = 2}

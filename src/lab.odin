@@ -15,6 +15,11 @@ package game
 // resumes the new one where it was left, as Factorio does. It bumps
 // serial, so a unit in progress for the old queue is dropped with its
 // packs.
+//
+// Infinite technologies (work item 0041) count levels in levels: a
+// finished level adds one and the technology stays queued for the next,
+// which costs more (technology_level_cost). Every level of research_speed
+// makes every lab faster by its effect percent.
 
 MAXIMUM_LAB_SLOTS :: 8
 
@@ -49,6 +54,8 @@ Lab :: struct {
 // finished is set on the tick a technology completes, until the
 // simulation applies it. units_done is the queued technology's progress;
 // units_kept holds every other technology's, indexed by technology.
+// levels counts the finished levels of every infinite technology, indexed
+// by technology.
 Research_State :: struct {
 	queued:              bool,
 	technology:          int,
@@ -57,6 +64,7 @@ Research_State :: struct {
 	serial:              u32,
 	finished:            bool,
 	finished_technology: int,
+	levels:              [MAXIMUM_TECHNOLOGIES]u32,
 }
 
 make_lab :: proc(common: Entity_Common, slot_count: int) -> Lab {
@@ -78,9 +86,10 @@ Technology_Status :: enum u8 {
 }
 
 // A placeholder opens recipes that do not exist yet, and a quest gate
-// waits for its main quest, so both stay locked.
+// waits for its main quest, so both stay locked. An infinite technology is
+// never done.
 technology_status :: proc(technologies: Technology_Registry, unlocks: Recipe_Unlocks, technology: int) -> Technology_Status {
-	if unlocks.researched[technology] {
+	if unlocks.researched[technology] && !technologies.technologies[technology].infinite {
 		return .Researched
 	}
 	if technologies.technologies[technology].placeholder || technologies.technologies[technology].quest_gate {
@@ -172,6 +181,21 @@ take_pack_set :: proc(lab: ^Lab, technology: Technology, lab_packs: []Item_Id) {
 	}
 }
 
+// The units the queued technology takes: its cost, or the next level's.
+queued_research_cost :: proc(research: Research_State, technologies: Technology_Registry) -> int {
+	return technology_next_cost(technologies.technologies[research.technology], research.levels, research.technology)
+}
+
+// A lab's speed with the research speed levels: the speed times one plus
+// the effect, in integer per mille.
+boosted_speed_percent :: proc(speed_percent, bonus_per_mille: u32) -> u32 {
+	return u32(u64(speed_percent) * u64(1000 + bonus_per_mille) / 1000)
+}
+
+lab_speed_percent :: proc(machine: Machine, research: Research_State, technologies: Technology_Registry) -> u32 {
+	return boosted_speed_percent(machine.speed_percent, technology_effect_per_mille(technologies, research.levels, .Research_Speed))
+}
+
 // Ticks per unit at the lab's speed, at least one, like recipe_ticks.
 technology_unit_ticks :: proc(technology: Technology, speed_percent: u32, tick_rate: int) -> u32 {
 	ticks := u64(technology.milliseconds_per_pack) * u64(tick_rate) * 100 / (1000 * u64(max(speed_percent, 1)))
@@ -207,7 +231,7 @@ lab_start_state :: proc(lab: Lab, research: Research_State, technologies: Techno
 	}
 	technology := technologies.technologies[research.technology]
 	switch {
-	case research.units_done + in_progress >= technology.pack_count:
+	case research.units_done + in_progress >= queued_research_cost(research, technologies):
 		return .No_Research, true
 	case !lab_has_packs(lab, technology, lab_packs):
 		return .No_Packs, true
@@ -215,14 +239,20 @@ lab_start_state :: proc(lab: Lab, research: Research_State, technologies: Techno
 	return .Researching, false
 }
 
+// An infinite technology gains a level and stays queued for the next one.
 finish_research_unit :: proc(research: ^Research_State, technologies: Technology_Registry) {
 	research.units_done += 1
-	if research.units_done < technologies.technologies[research.technology].pack_count {
+	if research.units_done < queued_research_cost(research^, technologies) {
 		return
 	}
 	research.finished, research.finished_technology = true, research.technology
 	research.units_kept[research.technology] = 0
-	research.queued, research.units_done = false, 0
+	research.units_done = 0
+	if technologies.technologies[research.technology].infinite {
+		research.levels[research.technology] += 1
+		return
+	}
+	research.queued = false
 }
 
 // One tick of a lab. in_progress counts the units under way in every lab
@@ -252,7 +282,7 @@ advance_lab :: proc(lab: ^Lab, machine: Machine, research: ^Research_State, in_p
 	if take_power_step(&lab.power) {
 		lab.progress_ticks += 1
 	}
-	if lab.progress_ticks < technology_unit_ticks(technology, machine.speed_percent, tick_rate) {
+	if lab.progress_ticks < technology_unit_ticks(technology, lab_speed_percent(machine, research^, technologies), tick_rate) {
 		return
 	}
 	lab.working, lab.progress_ticks = false, 0
@@ -289,14 +319,14 @@ lab_progress_fraction :: proc(lab: Lab, machine: Machine, research: Research_Sta
 		return 0
 	}
 	technology := technologies.technologies[research.technology]
-	return f32(lab.progress_ticks) / f32(technology_unit_ticks(technology, machine.speed_percent, tick_rate))
+	return f32(lab.progress_ticks) / f32(technology_unit_ticks(technology, lab_speed_percent(machine, research, technologies), tick_rate))
 }
 
 research_progress_fraction :: proc(research: Research_State, technologies: Technology_Registry) -> f32 {
 	if !research.queued {
 		return 0
 	}
-	return f32(research.units_done) / f32(technologies.technologies[research.technology].pack_count)
+	return f32(research.units_done) / f32(queued_research_cost(research, technologies))
 }
 
 // Each lab slot takes only its science pack. In the temp allocator.

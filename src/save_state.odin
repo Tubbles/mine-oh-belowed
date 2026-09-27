@@ -2,6 +2,7 @@ package game
 
 import "base:runtime"
 import "core:container/queue"
+import "core:fmt"
 import "core:slice"
 
 // The simulation state of a save (entities.bin): every entity pool as
@@ -41,6 +42,8 @@ save_layout_fingerprint :: proc() -> u64 {
 		type_info_of(Core_Sample_Drill),
 		type_info_of(Launch_Pad),
 		type_info_of(Shipment),
+		type_info_of(Contract_State),
+		type_info_of(Catalogue_Order),
 		type_info_of(Explored_Column),
 		type_info_of(Assayed_Vein),
 		type_info_of(Magnetometer_Reading),
@@ -106,6 +109,10 @@ content_fingerprint :: proc(content: Simulation_Content) -> u64 {
 	for vein_type in content.veins.types {
 		append(&ids, vein_type.name_key)
 	}
+	for contract in content.contracts.contracts {
+		append(&ids, contract.id)
+	}
+	append(&ids, fmt.tprintf("catalogue %d", len(content.contracts.catalogue)))
 	return hash_id_list(FINGERPRINT_START, ids[:])
 }
 
@@ -207,6 +214,9 @@ write_world_state :: proc(bytes: ^[dynamic]byte, world: ^World) {
 	write_value_of(bytes, &world.statistics)
 	write_value_of(bytes, &world.research)
 	write_list(bytes, world.shipments[:])
+	write_value_of(bytes, &world.contracts)
+	append_u64(bytes, world.venture_credit)
+	write_list(bytes, world.catalogue_orders[:])
 }
 
 // The explored map and the prospecting records (work item 0038).
@@ -230,6 +240,8 @@ write_quest_state :: proc(bytes: ^[dynamic]byte, quests: ^Quest_State) {
 		append_u64(bytes, message.tick)
 		append_string(bytes, message.text_key)
 		append_string(bytes, message.argument_key)
+		append_u64(bytes, message.value)
+		append_u32(bytes, message.shipment)
 	}
 }
 
@@ -343,6 +355,9 @@ read_world_state :: proc(reader: ^Byte_Reader, world: ^World, machines: Machine_
 	read_value_of(reader, &world.statistics) or_return
 	read_value_of(reader, &world.research) or_return
 	read_list(reader, &world.shipments) or_return
+	read_value_of(reader, &world.contracts) or_return
+	world.venture_credit = read_u64(reader) or_return
+	read_list(reader, &world.catalogue_orders) or_return
 	return true
 }
 
@@ -358,6 +373,9 @@ known_message_key :: proc(content: Simulation_Content, key: string) -> (known: s
 		return RESEARCH_COMPLETE_KEY, true
 	case SCHEMATIC_READ_KEY:
 		return SCHEMATIC_READ_KEY, true
+	}
+	if venture_key, venture_found := known_venture_message_key(content, key); venture_found {
+		return venture_key, true
 	}
 	for recipe in content.recipes.recipes {
 		if recipe.channel == .Schematic && recipe.name_key == key {
@@ -388,6 +406,8 @@ read_quest_message :: proc(reader: ^Byte_Reader, content: Simulation_Content) ->
 	message.tick = read_u64(reader) or_return
 	text_key := read_string(reader) or_return
 	argument_key := read_string(reader) or_return
+	message.value = read_u64(reader) or_return
+	message.shipment = read_u32(reader) or_return
 	text_found, argument_found: bool
 	message.text_key, text_found = known_message_key(content, text_key)
 	message.argument_key, argument_found = known_message_key(content, argument_key)
@@ -443,7 +463,7 @@ read_simulation_state :: proc(reader: ^Byte_Reader, state: ^Simulation_State, co
 	read_value_of(reader, &state.unlocks) or_return
 	read_quest_state(reader, &state.quests, content) or_return
 	read_players(reader, &state.players) or_return
-	if bytes_left(reader^) != 0 {
+	if bytes_left(reader^) != 0 || !venture_state_is_consistent(&state.world, content.contracts) {
 		return false
 	}
 	rebuild_loaded_world(&state.world, content.machines, derived)

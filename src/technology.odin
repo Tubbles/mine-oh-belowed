@@ -17,15 +17,20 @@ TECHNOLOGIES_FILE_NAME :: "technologies.sjson"
 MAXIMUM_TECHNOLOGIES :: 64
 
 Technology_Definition :: struct {
-	id:            string,
-	name_key:      string,
-	unlocks:       []string,
-	packs:         int,
-	seconds:       f32,
-	science_packs: []string,
-	prerequisites: []string,
-	placeholder:   bool,
-	quest_gate:    bool,
+	id:                        string,
+	name_key:                  string,
+	unlocks:                   []string,
+	packs:                     int,
+	seconds:                   f32,
+	science_packs:             []string,
+	prerequisites:             []string,
+	placeholder:               bool,
+	quest_gate:                bool,
+	// Work item 0041: a repeatable technology with an effect per level.
+	infinite:                  bool,
+	level_cost_growth_percent: int,
+	effect:                    string,
+	effect_percent:            int,
 }
 
 Technologies_File :: struct {
@@ -36,18 +41,45 @@ Technologies_File :: struct {
 // lower than this one's). A unit consumes one of each science pack item
 // and takes milliseconds_per_pack in a speed 1 lab; pack_count units
 // complete the technology. A quest_gate technology is only ever marked
-// researched by a main quest reward; labs refuse it.
+// researched by a main quest reward; labs refuse it. An infinite
+// technology is researched level after level (Research_State.levels):
+// level n costs pack_count times level_cost_growth_percent to the power n
+// minus one, and every level adds effect_percent to its effect.
 Technology :: struct {
-	id:                    string,
-	name_key:              string,
-	unlocks:               []int,
-	pack_count:            int,
-	milliseconds_per_pack: u32,
-	science_packs:         []Item_Id,
-	prerequisites:         []int,
-	placeholder:           bool,
-	quest_gate:            bool,
+	id:                        string,
+	name_key:                  string,
+	unlocks:                   []int,
+	pack_count:                int,
+	milliseconds_per_pack:     u32,
+	science_packs:             []Item_Id,
+	prerequisites:             []int,
+	placeholder:               bool,
+	quest_gate:                bool,
+	infinite:                  bool,
+	level_cost_growth_percent: u32,
+	effect:                    Technology_Effect,
+	effect_percent:            u32,
 }
+
+// What a level of an infinite technology improves: every drill's output
+// (drill.odin) or every lab's speed (lab.odin).
+Technology_Effect :: enum u8 {
+	None,
+	Mining_Productivity,
+	Research_Speed,
+}
+
+@(rodata)
+technology_effect_names := [Technology_Effect]string {
+	.None                = "",
+	.Mining_Productivity = "mining_productivity",
+	.Research_Speed      = "research_speed",
+}
+
+// A level cost stops growing here, so the arithmetic never overflows.
+MAXIMUM_LEVEL_COST :: 1_000_000_000
+LEVEL_COST_RESCALE :: u128(1) << 64
+LEVEL_COST_RESCALE_STEP :: u128(1) << 32
 
 // science_packs is every distinct pack item any technology consumes, in
 // order of first appearance: the lab's slots.
@@ -81,12 +113,38 @@ validate_technology_definition :: proc(definitions: []Technology_Definition, ind
 		return fmt.tprintf("technology %q has no name_key", definition.id)
 	case definition.packs < 1 || definition.seconds <= 0:
 		return fmt.tprintf("technology %q needs positive packs and seconds", definition.id)
-	case len(definition.unlocks) == 0 && !definition.placeholder:
+	case len(definition.unlocks) == 0 && !definition.placeholder && !definition.infinite:
 		return fmt.tprintf("technology %q unlocks nothing; mark it placeholder = true if that is intended", definition.id)
 	case len(definition.science_packs) == 0:
 		return fmt.tprintf("technology %q names no science_packs", definition.id)
 	}
+	if problem := validate_technology_levels(definition); problem != "" {
+		return problem
+	}
 	return validate_technology_prerequisites(definitions, index)
+}
+
+// An infinite technology grows its cost by at least 100 percent a level
+// and has an effect; any other names neither.
+validate_technology_levels :: proc(definition: Technology_Definition) -> string {
+	effect, found := parse_named_enum(technology_effect_names, definition.effect)
+	if !definition.infinite {
+		if definition.level_cost_growth_percent != 0 || definition.effect != "" || definition.effect_percent != 0 {
+			return fmt.tprintf("technology %q is not infinite and may not name level_cost_growth_percent, effect or effect_percent", definition.id)
+		}
+		return ""
+	}
+	switch {
+	case definition.placeholder || definition.quest_gate:
+		return fmt.tprintf("infinite technology %q cannot be a placeholder or a quest gate", definition.id)
+	case definition.level_cost_growth_percent < 100:
+		return fmt.tprintf("infinite technology %q needs level_cost_growth_percent of at least 100", definition.id)
+	case !found || effect == .None:
+		return fmt.tprintf("infinite technology %q has unknown effect %q", definition.id, definition.effect)
+	case definition.effect_percent < 1:
+		return fmt.tprintf("infinite technology %q needs a positive effect_percent", definition.id)
+	}
+	return ""
 }
 
 // Every prerequisite is listed earlier in the file, so the graph has no
@@ -194,13 +252,17 @@ resolve_technology :: proc(definitions: []Technology_Definition, index: int, ite
 		return {}, problem
 	}
 	technology = Technology {
-		id                    = definition.id,
-		name_key              = definition.name_key,
-		pack_count            = definition.packs,
-		milliseconds_per_pack = u32(math.round(definition.seconds * 1000)),
-		placeholder           = definition.placeholder,
-		quest_gate            = definition.quest_gate,
+		id                        = definition.id,
+		name_key                  = definition.name_key,
+		pack_count                = definition.packs,
+		milliseconds_per_pack     = u32(math.round(definition.seconds * 1000)),
+		placeholder               = definition.placeholder,
+		quest_gate                = definition.quest_gate,
+		infinite                  = definition.infinite,
+		level_cost_growth_percent = u32(definition.level_cost_growth_percent),
+		effect_percent            = u32(definition.effect_percent),
 	}
+	technology.effect, _ = parse_named_enum(technology_effect_names, definition.effect)
 	if technology.unlocks, problem = resolve_technology_unlocks(definition, recipes, allocator); problem != "" {
 		return {}, problem
 	}
@@ -293,4 +355,57 @@ scaled_technology_registry :: proc(base: Technology_Registry, percent: int, allo
 		technology.pack_count = scaled_pack_count(technology.pack_count, percent)
 	}
 	return registry
+}
+
+greatest_common_divisor :: proc(first, second: u64) -> u64 {
+	a, b := first, second
+	for b != 0 {
+		a, b = b, a % b
+	}
+	return a
+}
+
+// Level n of an infinite technology costs pack_count times the growth to
+// the power n minus one, rounded down and capped at MAXIMUM_LEVEL_COST.
+// The growth is reduced to a fraction first (150 percent is 3 over 2), so
+// the powers stay small; the result is exact while the denominator's
+// power fits 64 bits and approximate beyond, which only a growth with a
+// large reduced denominator reaches before the cap. A technology that is
+// not infinite always costs pack_count.
+technology_level_cost :: proc(technology: Technology, level: u32) -> int {
+	if !technology.infinite || level <= 1 {
+		return technology.pack_count
+	}
+	divisor := greatest_common_divisor(u64(technology.level_cost_growth_percent), 100)
+	numerator, denominator := u128(technology.level_cost_growth_percent) / u128(divisor), u128(100) / u128(divisor)
+	cost, scale := u128(technology.pack_count), u128(1)
+	for _ in 1 ..< level {
+		cost *= numerator
+		scale *= denominator
+		if scale > LEVEL_COST_RESCALE {
+			cost, scale = cost / LEVEL_COST_RESCALE_STEP, scale / LEVEL_COST_RESCALE_STEP
+		}
+		if cost / scale >= MAXIMUM_LEVEL_COST {
+			return MAXIMUM_LEVEL_COST
+		}
+	}
+	return int(cost / scale)
+}
+
+// The units the next research of a technology takes: its cost, or for an
+// infinite one the cost of the level after those done.
+technology_next_cost :: proc(technology: Technology, levels: [MAXIMUM_TECHNOLOGIES]u32, index: int) -> int {
+	return technology_level_cost(technology, levels[index] + 1)
+}
+
+// The sum of every infinite technology's effect per level times its
+// levels, in per mille (10 percent is 100).
+technology_effect_per_mille :: proc(technologies: Technology_Registry, levels: [MAXIMUM_TECHNOLOGIES]u32, effect: Technology_Effect) -> u32 {
+	total: u32
+	for technology, index in technologies.technologies {
+		if technology.infinite && technology.effect == effect {
+			total += levels[index] * technology.effect_percent * 10
+		}
+	}
+	return total
 }

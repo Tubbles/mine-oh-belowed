@@ -29,6 +29,8 @@ How every screen in the game is built, so that the pillars "couch first" and "on
 
 - The launch pad panel (0040) has part slots, a cargo section, an Assemble button and a Launch button; Interact on the pad launches when the rocket is ready and Sneak plus Interact opens the panel. The statistics screen has a Shipments tab listing launches newest first with their cargo.
 
+- The launch pad panel (0041) has Rocket, Contracts and Catalogue tabs switched with the bumpers or a click. Contracts shows the venture credit and the open contracts oldest first, each with its deliveries per request, time left or Late, late share and reward. Catalogue is one button per entry with its price; an order the credit does not cover (counting orders not served yet) is refused with a toast. The journal has a last tab, Contracts, with the credit, the fulfilled and late tally and the open contracts above the message log. The technology screen shows "Level n" in place of a status for an infinite technology, the next level's cost, and the effect per level where unlocks would be.
+
 ## Widgets
 
 Label, button, toggle, slider, tabs, vertical list with letter jump, grid of slots, item slot (icon, count, highlight), progress bar, tooltip panel, radial menu, text field (opens the on-screen keyboard), glyph bar, toast.

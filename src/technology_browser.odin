@@ -43,10 +43,19 @@ technology_status_keys := [Technology_Status]string {
 	.Locked     = "technologies_status_locked",
 }
 
-// "10 × 10 s" per the content tables, and the pack items.
-technology_cost_text :: proc(technology: Technology, items: Item_Registry) -> string {
+// "10 × 10 s" per the content tables, and the pack items. units is the
+// cost of the next research (technology_next_cost).
+technology_cost_text :: proc(technology: Technology, units: int, items: Item_Registry) -> string {
 	seconds := f32(technology.milliseconds_per_pack) / 1000
-	return fmt.tprintf("%d × %.0f s  (%s)", technology.pack_count, seconds, pack_names_text(technology.science_packs, items))
+	return fmt.tprintf("%d × %.0f s  (%s)", units, seconds, pack_names_text(technology.science_packs, items))
+}
+
+// "Level 2" for an infinite technology with levels done, else "".
+technology_level_text :: proc(technology: Technology, level: u32) -> string {
+	if !technology.infinite || level == 0 {
+		return ""
+	}
+	return fmt.tprintf("%s %d", text("technologies_level"), level)
 }
 
 pack_names_text :: proc(packs: []Item_Id, items: Item_Registry) -> string {
@@ -61,5 +70,5 @@ research_progress_text :: proc(research: Research_State, technologies: Technolog
 	if !research.queued {
 		return ""
 	}
-	return fmt.tprintf("%d / %d", research.units_done, technologies.technologies[research.technology].pack_count)
+	return fmt.tprintf("%d / %d", research.units_done, queued_research_cost(research, technologies))
 }
