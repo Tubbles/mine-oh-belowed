@@ -25,6 +25,7 @@ Technology_Definition :: struct {
 	science_packs: []string,
 	prerequisites: []string,
 	placeholder:   bool,
+	quest_gate:    bool,
 }
 
 Technologies_File :: struct {
@@ -34,7 +35,8 @@ Technologies_File :: struct {
 // unlocks holds recipe indices, prerequisites technology indices (all
 // lower than this one's). A unit consumes one of each science pack item
 // and takes milliseconds_per_pack in a speed 1 lab; pack_count units
-// complete the technology.
+// complete the technology. A quest_gate technology is only ever marked
+// researched by a main quest reward; labs refuse it.
 Technology :: struct {
 	id:                    string,
 	name_key:              string,
@@ -44,6 +46,7 @@ Technology :: struct {
 	science_packs:         []Item_Id,
 	prerequisites:         []int,
 	placeholder:           bool,
+	quest_gate:            bool,
 }
 
 // science_packs is every distinct pack item any technology consumes, in
@@ -196,6 +199,7 @@ resolve_technology :: proc(definitions: []Technology_Definition, index: int, ite
 		pack_count            = definition.packs,
 		milliseconds_per_pack = u32(math.round(definition.seconds * 1000)),
 		placeholder           = definition.placeholder,
+		quest_gate            = definition.quest_gate,
 	}
 	if technology.unlocks, problem = resolve_technology_unlocks(definition, recipes, allocator); problem != "" {
 		return {}, problem

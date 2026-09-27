@@ -1,7 +1,8 @@
 package game
 
 // Pipes and the fluid machines of doc/fluids.md: offshore pump, boiler,
-// steam engine, storage tank and pump. They share one pool; the machine's
+// steam engine, storage tank, pump, tar pit pump and flare stack. They
+// share one pool; the machine's
 // kind decides what the tick does. Each fluid port has its own litre
 // buffer, which is a segment of the fluid network on its side
 // (fluid_network.odin). Picking a machine up loses the fluid in it.
@@ -36,6 +37,7 @@ Fluid_Machine_State :: enum u8 {
 	Unpowered,
 	Pumping,
 	No_Steam,
+	Flaring,
 }
 
 @(rodata)
@@ -48,13 +50,16 @@ fluid_machine_state_keys := [Fluid_Machine_State]string {
 	.Unpowered   = "machine_state_unpowered",
 	.Pumping     = "machine_state_pumping",
 	.No_Steam    = "machine_state_no_steam",
+	.Flaring     = "machine_state_flaring",
 }
 
 // buffers and closed are per fluid port. closed marks a port the network
 // shut because it would mix two fluids. power is a pump's share of its
 // network (power_machine.odin). A steam engine keeps the energy of steam
 // already drawn from its buffers in fuel_joules, and generated_joules is
-// what it gave its network in the last tick.
+// what it gave its network in the last tick. A tar pit pump keeps the
+// part of a litre it has pumped so far in litre_remainder, in litres per
+// minute times ticks (accumulate_litres).
 Fluid_Machine :: struct {
 	using common:     Entity_Common,
 	buffers:          [MAXIMUM_FLUID_PORTS]Fluid_Buffer,
@@ -66,6 +71,7 @@ Fluid_Machine :: struct {
 	power:            Power_State,
 	generated_joules: u32,
 	state:            Fluid_Machine_State,
+	litre_remainder:  u32,
 }
 
 make_pipe :: proc(common: Entity_Common) -> Pipe {
@@ -81,7 +87,7 @@ make_fluid_machine :: proc(common: Entity_Common, machine: Machine) -> Fluid_Mac
 	for &buffer in result.buffers {
 		buffer = EMPTY_FLUID_BUFFER
 	}
-	if machine.kind == .Pump {
+	if machine.kind == .Pump || machine.kind == .Tar_Pit_Pump || machine.kind == .Flare_Stack {
 		result.state = .Unpowered
 	}
 	return result
@@ -183,31 +189,110 @@ advance_pump :: proc(pump: ^Fluid_Machine, machine: Machine, tick_rate: int) {
 	pump.state = .Pumping
 }
 
-advance_fluid_machine :: proc(fluid_machine: ^Fluid_Machine, machine: Machine, items: Item_Registry, tick_rate: int) {
+// Whole litres due this tick at a rate in litres per minute: the rate
+// adds up in remainder, and every full minute's worth of ticks is a litre.
+// Integers only, so a pump yields exactly its rate over a minute.
+accumulate_litres :: proc(remainder: ^u32, litres_per_minute: u32, tick_rate: int) -> i32 {
+	ticks_per_minute := u32(max(tick_rate, 1) * 60)
+	remainder^ += litres_per_minute
+	litres := remainder^ / ticks_per_minute
+	remainder^ %= ticks_per_minute
+	return i32(litres)
+}
+
+// Crude oil from the tar pit in front of its intake while powered and
+// there is room: one tick of pumping per power credit step.
+advance_tar_pit_pump :: proc(pump: ^Fluid_Machine, machine: Machine, tick_rate: int) {
+	port := machine.fluid_ports[0]
+	buffer := &pump.buffers[0]
+	switch {
+	case !power_is_on(pump.power):
+		pump.state = .Unpowered
+	case !source_pump_has_room(pump^, machine):
+		pump.state = .Output_Full
+	case:
+		pump.state = .Producing
+		if take_power_step(&pump.power) {
+			litres := accumulate_litres(&pump.litre_remainder, machine.fluid_litres_per_minute, tick_rate)
+			add_to_buffer(buffer, port.filter, min(litres, buffer_room(buffer^, port.capacity)))
+		}
+	}
+}
+
+// The output port takes the pump's fluid and has room for it.
+source_pump_has_room :: proc(pump: Fluid_Machine, machine: Machine) -> bool {
+	port := machine.fluid_ports[0]
+	return buffer_takes_fluid(pump.buffers[0], port.filter) && buffer_room(pump.buffers[0], port.capacity) > 0
+}
+
+// Whether the flare stack holds gas to burn. Its port admits gases only,
+// so a liquid never reaches the buffer; one that did would stay.
+flare_stack_has_gas :: proc(flare: Fluid_Machine, fluids: Fluid_Registry) -> bool {
+	return flare.buffers[0].level > 0 && fluid_is_gas(fluids, flare.buffers[0].fluid)
+}
+
+// Destroys up to its rate of gas per tick of power credit.
+advance_flare_stack :: proc(flare: ^Fluid_Machine, machine: Machine, fluids: Fluid_Registry, tick_rate: int) {
+	switch {
+	case !flare_stack_has_gas(flare^, fluids):
+		flare.state = .Idle
+	case !power_is_on(flare.power):
+		flare.state = .Unpowered
+	case:
+		flare.state = .Flaring
+		if take_power_step(&flare.power) {
+			buffer := &flare.buffers[0]
+			buffer.level -= min(buffer.level, litres_per_tick(machine.fluid_litres_per_second, tick_rate))
+		}
+	}
+}
+
+advance_fluid_machine :: proc(fluid_machine: ^Fluid_Machine, machine: Machine, content: Simulation_Content, tick_rate: int) {
 	#partial switch machine.kind {
 	case .Offshore_Pump:
 		advance_offshore_pump(fluid_machine, machine, tick_rate)
 	case .Boiler:
-		advance_boiler(fluid_machine, machine, items, tick_rate)
+		advance_boiler(fluid_machine, machine, content.items, tick_rate)
 	case .Pump:
 		advance_pump(fluid_machine, machine, tick_rate)
+	case .Tar_Pit_Pump:
+		advance_tar_pit_pump(fluid_machine, machine, tick_rate)
+	case .Flare_Stack:
+		advance_flare_stack(fluid_machine, machine, content.fluids, tick_rate)
 	}
 }
 
 // Machines first, so what they make this tick flows on in the same tick.
 // Boiler fuel only leaves its slot here, so what the slot lost was
-// consumed. A nil statistics (tests) records nothing.
+// consumed. Port buffers change here only by what the machine drew or
+// made (the network moves fluid afterwards), except in a pump, which only
+// moves it. A nil statistics (tests) records nothing.
 tick_fluids :: proc(entities: ^Entities, content: Simulation_Content, tick_rate: int, statistics: ^Statistics = nil) {
 	for &fluid_machine in entities.fluid_machines.entries {
 		if fluid_machine.alive {
 			before := fluid_machine
-			advance_fluid_machine(&fluid_machine, content.machines.machines[fluid_machine.machine], content.items, tick_rate)
+			machine := content.machines.machines[fluid_machine.machine]
+			advance_fluid_machine(&fluid_machine, machine, content, tick_rate)
 			if statistics != nil {
-				record_slot_consumption(statistics, before.slots[:before.slot_count], fluid_machine.slots[:fluid_machine.slot_count])
+				record_fluid_machine_tick(statistics, machine, before, fluid_machine)
 			}
 		}
 	}
 	tick_fluid_networks(entities, content.fluids, pipe_flow_per_tick(content.machines, tick_rate))
+}
+
+// Fuel burned, fluids drawn and made, and the flare stack's gas as voided.
+record_fluid_machine_tick :: proc(statistics: ^Statistics, machine: Machine, before, after: Fluid_Machine) {
+	slots_before, slots_after := before.slots, after.slots
+	record_slot_consumption(statistics, slots_before[:before.slot_count], slots_after[:after.slot_count])
+	if machine.kind == .Pump {
+		return
+	}
+	buffers_before, buffers_after := before.buffers, after.buffers
+	record_buffer_changes(statistics, buffers_before[:], buffers_after[:])
+	if machine.kind == .Flare_Stack {
+		record_fluid_voided(statistics, before.buffers[0].fluid, int(before.buffers[0].level - after.buffers[0].level))
+	}
 }
 
 // The per connection flow limit comes from the pipe prototype.
@@ -243,6 +328,22 @@ pipe_cell_is_placeable :: proc(world: ^World, registry: Block_Registry, players:
 offshore_pump_intake_cell :: proc(origin: World_Coordinate, machine: Machine, rotation: u8) -> World_Coordinate {
 	offset := rotate_footprint_cell({machine.footprint.x, 0}, machine.footprint.x, machine.footprint.z, rotation)
 	return origin + {offset.x, 0, offset.y}
+}
+
+// A tar pit pump stands like an offshore pump, with a block whose
+// fluid_source is the pump's fluid in front of its intake.
+tar_pit_pump_has_source :: proc(world: ^World, blocks: Block_Registry, fluids: Fluid_Registry, origin: World_Coordinate, machine: Machine, rotation: u8) -> bool {
+	fluid := machine.fluid_ports[0].filter
+	if int(fluid) >= len(fluids.fluids) {
+		return false
+	}
+	intake := offshore_pump_intake_cell(origin, machine, rotation)
+	for below in i32(0) ..= 1 {
+		if block_fluid_source(blocks, world_get_block(world, intake - {0, below, 0})) == fluids.fluids[fluid].id {
+			return true
+		}
+	}
+	return false
 }
 
 offshore_pump_has_water :: proc(world: ^World, registry: Block_Registry, origin: World_Coordinate, machine: Machine, rotation: u8) -> bool {

@@ -5,7 +5,13 @@
 // height or lower unless a pump pushes them, gases ignore height.
 // color is red, green, blue from 0 to 255, for the level band in pipes
 // and the port squares on machines.
+// The oil products (work item 0030): crude oil from tar pits, split by the
+// refinery into petroleum gas and the light and heavy fractions.
 fluids = [
 	{id = "water", name_key = "fluid_water", phase = "liquid", color = [60, 110, 220]}
 	{id = "steam", name_key = "fluid_steam", phase = "gas", color = [215, 218, 224]}
+	{id = "crude_oil", name_key = "fluid_crude_oil", phase = "liquid", color = [48, 38, 32]}
+	{id = "petroleum_gas", name_key = "fluid_petroleum_gas", phase = "gas", color = [196, 160, 206]}
+	{id = "light_oil", name_key = "fluid_light_oil", phase = "liquid", color = [222, 180, 70]}
+	{id = "heavy_oil", name_key = "fluid_heavy_oil", phase = "liquid", color = [130, 66, 30]}
 ]

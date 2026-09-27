@@ -13,6 +13,9 @@
 // water_level (default 0) marks water: 8 is a source block, 7 to 1 are
 // flowing water, 7 next to a source and 1 at the far end of a spread.
 // Water needs one block for every level from 1 to 8 or none at all.
+// fluid_source (optional) is a fluids.sjson id: a source pump standing in
+// front of the block draws that fluid (the tar pit and crude oil, work
+// item 0030). Tar pits are infinite in the alpha.
 blocks = [
 	{
 		id = "air"
@@ -237,5 +240,15 @@ blocks = [
 		solid = true
 		hardness_seconds = 1.5
 		texture = {top = [58, 54, 52], side = [48, 44, 43], bottom = [40, 37, 36]}
+	}
+	{
+		// A pool of crude oil in the low spots of the tar flats (work item
+		// 0030). Not minable, so the source stays; placeholder colour.
+		id = "tar_pit"
+		name = "Tar Pit"
+		solid = true
+		hardness_seconds = 0
+		fluid_source = "crude_oil"
+		texture = {top = [18, 16, 16], side = [30, 26, 24], bottom = [30, 26, 24]}
 	}
 ]

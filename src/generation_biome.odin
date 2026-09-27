@@ -5,7 +5,9 @@ import "core:fmt"
 
 BIOMES_FILE_NAME :: "biomes.sjson"
 
-// Heights are relative to sea level, see data/biomes.sjson.
+// Heights are relative to sea level, see data/biomes.sjson. pit_block
+// (optional) replaces the top block in low spots: columns no higher than
+// pit_maximum_height and no higher than any face neighbour (tar pits).
 Biome_Definition :: struct {
 	id:               string,
 	name:             string,
@@ -17,16 +19,20 @@ Biome_Definition :: struct {
 	filler_block:     string,
 	tree_density:     f32,
 	boulder_density:  f32,
+	pit_block:          string,
+	pit_maximum_height: i32,
 }
 
 Biomes_File :: struct {
 	biomes: []Biome_Definition,
 }
 
+// pit_block is AIR_BLOCK for a biome without pits.
 Biome :: struct {
 	definition:   Biome_Definition,
 	top_block:    Block_Id,
 	filler_block: Block_Id,
+	pit_block:    Block_Id,
 }
 
 parse_biomes_file :: proc(data: []byte, allocator := context.allocator) -> (file: Biomes_File, error: json.Unmarshal_Error) {
@@ -63,6 +69,12 @@ resolve_biome :: proc(definition: Biome_Definition, registry: Block_Registry) ->
 	biome.filler_block, filler_found = find_block_id(registry, definition.filler_block)
 	if !top_found || !filler_found {
 		return {}, fmt.tprintf("biome %q names an unknown block", definition.id)
+	}
+	if definition.pit_block != "" {
+		pit_found: bool
+		if biome.pit_block, pit_found = find_block_id(registry, definition.pit_block); !pit_found {
+			return {}, fmt.tprintf("biome %q names an unknown pit_block", definition.id)
+		}
 	}
 	return biome, ""
 }

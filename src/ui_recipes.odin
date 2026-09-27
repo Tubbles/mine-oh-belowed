@@ -95,7 +95,22 @@ recipe_icon :: proc(screen_context: Screen_Context, recipe: int) -> Item_Icon {
 	if !recipe_is_available(screen_context.unlocks^, recipe) {
 		return silhouette_icon()
 	}
-	return item_icon(screen_context.items, screen_context.recipes.recipes[recipe].outputs[0].item)
+	definition := screen_context.recipes.recipes[recipe]
+	if len(definition.outputs) == 0 {
+		return fluid_recipe_icon(screen_context.fluids, definition)
+	}
+	return item_icon(screen_context.items, definition.outputs[0].item)
+}
+
+// A recipe with fluid outputs only (refining, cracking): its letters in
+// the colour of its first fluid output.
+fluid_recipe_icon :: proc(fluids: Fluid_Registry, recipe: Recipe) -> Item_Icon {
+	color := UI_WIDGET_COLOR
+	if len(recipe.fluid_outputs) > 0 && int(recipe.fluid_outputs[0].fluid) < len(fluids.fluids) {
+		rgb := fluids.fluids[recipe.fluid_outputs[0].fluid].color
+		color = {rgb.r, rgb.g, rgb.b, 255}
+	}
+	return Item_Icon{kind = .Lettered, color = color, letters = item_letters(recipe.id)}
 }
 
 icon_rectangle :: proc(row: Ui_Rectangle) -> Ui_Rectangle {

@@ -52,7 +52,7 @@ test_chapter_05_loads :: proc(t: ^testing.T) {
 	testing.expect(t, rights.main)
 	testing.expect_value(t, len(rights.reward_technologies), 1)
 	testing.expect_value(t, rights.reward_technologies[0], test_technology(technologies, "oil_processing"))
-	testing.expect(t, technologies.technologies[rights.reward_technologies[0]].placeholder)
+	testing.expect(t, technologies.technologies[rights.reward_technologies[0]].quest_gate)
 	testing.expect_value(t, rights.reward_items[0], Item_Stack{test_item(items, "steel"), 50})
 	testing.expect_value(t, rights.reward_items[1], Item_Stack{test_item(items, "electronic_circuit"), 100})
 }

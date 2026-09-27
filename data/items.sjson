@@ -109,6 +109,10 @@ items = [
 	{id = "washer", name_key = "item_washer", category = "machine", stack_size = 10}
 	{id = "alloy_furnace", name_key = "item_alloy_furnace", category = "machine", stack_size = 10}
 	{id = "recycler", name_key = "item_recycler", category = "machine", stack_size = 10}
+	{id = "tar_pit_pump", name_key = "item_tar_pit_pump", category = "machine", stack_size = 10}
+	{id = "refinery", name_key = "item_refinery", category = "machine", stack_size = 10}
+	{id = "cracking_unit", name_key = "item_cracking_unit", category = "machine", stack_size = 10}
+	{id = "flare_stack", name_key = "item_flare_stack", category = "machine", stack_size = 10}
 	// Blocks that drop themselves
 	{id = "leaves", name_key = "item_leaves", category = "block", stack_size = 50, places_block = "leaves"}
 	{id = "tar", name_key = "item_tar", category = "block", stack_size = 50, places_block = "tar"}

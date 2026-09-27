@@ -19,8 +19,9 @@ import "core:math"
 // call site, because the UI moves stacks between ticks: obtained (what
 // players hold grew) and delivered (what the capsule holds grew).
 //
-// Arrays are sized by make_statistics. A World made without it (tests)
-// has empty arrays, and recording into them does nothing.
+// Arrays are sized by make_statistics, the fluid part by
+// make_fluid_statistics. A World made without them (tests) has empty
+// arrays, and recording into them does nothing.
 
 // Buckets per item in every rate ring.
 RATE_BUCKET_COUNT :: 60
@@ -132,6 +133,42 @@ Statistics :: struct {
 	// What players held and the capsule held after the previous tick.
 	held_totals:                 []u32,
 	capsule_totals:              []u32,
+	fluids:                      Fluid_Statistics,
+}
+
+// Litres per fluid (work item 0030), indexed by Fluid_Id, with rings like
+// the items' (the ring procedures take the fluid id as an index). produced
+// counts what pumps, boilers and crafting machines put into their ports,
+// consumed what machines drew from theirs (boilers, crafting machines,
+// steam engines, flare stacks), voided what flare stacks burned and what
+// a lenient world dropped of fluid byproducts that had no room.
+Fluid_Statistics :: struct {
+	produced:       []u64,
+	consumed:       []u64,
+	voided:         []u64,
+	produced_rates: Item_Rate_Rings,
+	consumed_rates: Item_Rate_Rings,
+	voided_rates:   Item_Rate_Rings,
+}
+
+make_fluid_statistics :: proc(fluid_count: int, allocator := context.allocator) -> Fluid_Statistics {
+	return Fluid_Statistics {
+		produced = make([]u64, fluid_count, allocator),
+		consumed = make([]u64, fluid_count, allocator),
+		voided = make([]u64, fluid_count, allocator),
+		produced_rates = make_item_rate_rings(fluid_count, allocator),
+		consumed_rates = make_item_rate_rings(fluid_count, allocator),
+		voided_rates = make_item_rate_rings(fluid_count, allocator),
+	}
+}
+
+destroy_fluid_statistics :: proc(statistics: Fluid_Statistics, allocator := context.allocator) {
+	delete(statistics.produced, allocator)
+	delete(statistics.consumed, allocator)
+	delete(statistics.voided, allocator)
+	destroy_item_rate_rings(statistics.produced_rates, allocator)
+	destroy_item_rate_rings(statistics.consumed_rates, allocator)
+	destroy_item_rate_rings(statistics.voided_rates, allocator)
 }
 
 make_statistics :: proc(item_count, machine_count, block_count: int, allocator := context.allocator) -> Statistics {
@@ -164,6 +201,7 @@ destroy_statistics :: proc(statistics: Statistics, allocator := context.allocato
 	destroy_item_rate_rings(statistics.consumed_rates, allocator)
 	delete(statistics.held_totals, allocator)
 	delete(statistics.capsule_totals, allocator)
+	destroy_fluid_statistics(statistics.fluids, allocator)
 }
 
 make_item_rate_rings :: proc(item_count: int, allocator := context.allocator) -> Item_Rate_Rings {
@@ -199,6 +237,9 @@ advance_statistics_clock :: proc(statistics: ^Statistics, tick: u64, tick_rate: 
 	}
 	advance_rate_rings(statistics.produced_rates, statistics.current_second, second)
 	advance_rate_rings(statistics.consumed_rates, statistics.current_second, second)
+	advance_rate_rings(statistics.fluids.produced_rates, statistics.current_second, second)
+	advance_rate_rings(statistics.fluids.consumed_rates, statistics.current_second, second)
+	advance_rate_rings(statistics.fluids.voided_rates, statistics.current_second, second)
 	statistics.current_second = second
 }
 
@@ -345,6 +386,51 @@ record_produced_stacks :: proc(statistics: ^Statistics, stacks: []Item_Stack) {
 	}
 }
 
+// Litres into a fluid counter and its ring; the rings index fluids like
+// items.
+add_fluid_litres :: proc(counters: []u64, rings: Item_Rate_Rings, fluid: Fluid_Id, second: u64, litres: int) {
+	if int(fluid) >= len(counters) || litres <= 0 {
+		return
+	}
+	counters[fluid] += u64(litres)
+	add_to_rate_ring(rings.per_second, Item_Id(fluid), second, litres)
+}
+
+record_fluid_produced :: proc(statistics: ^Statistics, fluid: Fluid_Id, litres: int) {
+	add_fluid_litres(statistics.fluids.produced, statistics.fluids.produced_rates, fluid, statistics.current_second, litres)
+}
+
+record_fluid_consumed :: proc(statistics: ^Statistics, fluid: Fluid_Id, litres: int) {
+	add_fluid_litres(statistics.fluids.consumed, statistics.fluids.consumed_rates, fluid, statistics.current_second, litres)
+}
+
+record_fluid_voided :: proc(statistics: ^Statistics, fluid: Fluid_Id, litres: int) {
+	add_fluid_litres(statistics.fluids.voided, statistics.fluids.voided_rates, fluid, statistics.current_second, litres)
+}
+
+// Port buffers across a machine's own step, where the network does not
+// move fluid: what a buffer lost was drawn (consumed), what it gained was
+// made (produced).
+record_buffer_changes :: proc(statistics: ^Statistics, before, after: []Fluid_Buffer) {
+	for buffer, index in before {
+		change := int(after[index].level) - int(buffer.level)
+		if change < 0 {
+			record_fluid_consumed(statistics, buffer.fluid, -change)
+		} else {
+			record_fluid_produced(statistics, after[index].fluid, change)
+		}
+	}
+}
+
+// Litres of a fluid over a window ending at `second`, like window_total.
+fluid_window_total :: proc(rings: Item_Rate_Rings, fluid: Fluid_Id, window: Rate_Window, second: u64) -> u64 {
+	return window_total(rings, Item_Id(fluid), window, second)
+}
+
+fluid_counter :: proc(counters: []u64, fluid: Fluid_Id) -> u64 {
+	return int(fluid) < len(counters) ? counters[fluid] : 0
+}
+
 record_voided :: proc(statistics: ^Statistics, item: Item_Id, count: int) {
 	if int(item) < len(statistics.voided) && count > 0 {
 		statistics.voided[item] += u64(count)
@@ -425,6 +511,17 @@ record_craft_outputs :: proc(statistics: ^Statistics, craft: Craft, before, afte
 	first := assembler_first_output(after)
 	for product, index in craft.outputs {
 		record_product(statistics, product, before.slots[first + index], after.slots[first + index])
+	}
+}
+
+// What of a finished craft's fluid outputs did not reach its port: only
+// a lenient byproduct can lack room. The part that did is counted
+// produced by record_buffer_changes.
+record_voided_fluid_outputs :: proc(statistics: ^Statistics, machine: Machine, craft: Craft, before, after: Assembler) {
+	for output, position in craft.fluid_outputs {
+		index := output_port_index(machine, position)
+		kept := int(after.buffers[index].level) - int(before.buffers[index].level)
+		record_fluid_voided(statistics, output.fluid, int(output.litres) - max(kept, 0))
 	}
 }
 

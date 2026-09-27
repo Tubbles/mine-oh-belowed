@@ -7,7 +7,7 @@
 // crushed hematite, which only the crusher makes. No counter tells gravel
 // from slag apart from gravel from ore, so "slag" asks for slag heaps (the
 // sink) and concrete blocks (the use of gravel), both counted as blocks
-// placed. The main quest grants the oil_processing placeholder technology
+// placed. The main quest grants the oil_processing quest_gate technology
 // through the quest channel, the phase 6 gate.
 id = "chapter_05"
 title_key = "chapter_05_title"

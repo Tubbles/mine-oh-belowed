@@ -72,7 +72,7 @@ test_furnace_recipes_with_two_inputs_are_refused :: proc(t: ^testing.T) {
 	washing := test_recipe_definition()
 	washing.fluid_inputs = {{fluid = "water", litres = 30}}
 	washing.made_in = {"hand"}
-	testing.expect(t, strings.contains(resolve_test_recipes({washing}), "fluid inputs"))
+	testing.expect(t, strings.contains(resolve_test_recipes({washing}), "made by hand or in a furnace"))
 }
 
 @(test)

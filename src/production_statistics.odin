@@ -50,6 +50,50 @@ item_rate_row_before :: proc(first, second: Item_Rate_Row) -> bool {
 	return first.item < second.item
 }
 
+// One fluid of the statistics list, in litres over the chosen window
+// (work item 0030).
+Fluid_Rate_Row :: struct {
+	fluid:    Fluid_Id,
+	produced: u64,
+	consumed: u64,
+	voided:   u64,
+}
+
+// Every fluid ever produced, consumed or voided, sorted like the items.
+fluid_statistics_rows :: proc(statistics: Statistics, window: Rate_Window, allocator := context.allocator) -> []Fluid_Rate_Row {
+	rows := make([dynamic]Fluid_Rate_Row, allocator)
+	fluids := statistics.fluids
+	for index in 0 ..< len(fluids.produced) {
+		fluid := Fluid_Id(index)
+		if fluid_counter(fluids.produced, fluid) + fluid_counter(fluids.consumed, fluid) + fluid_counter(fluids.voided, fluid) == 0 {
+			continue
+		}
+		append(&rows, fluid_rate_row(statistics, fluid, window))
+	}
+	slice.sort_by(rows[:], fluid_rate_row_before)
+	return rows[:]
+}
+
+fluid_rate_row :: proc(statistics: Statistics, fluid: Fluid_Id, window: Rate_Window) -> Fluid_Rate_Row {
+	second := statistics.current_second
+	return Fluid_Rate_Row {
+		fluid = fluid,
+		produced = fluid_window_total(statistics.fluids.produced_rates, fluid, window, second),
+		consumed = fluid_window_total(statistics.fluids.consumed_rates, fluid, window, second),
+		voided = fluid_window_total(statistics.fluids.voided_rates, fluid, window, second),
+	}
+}
+
+fluid_rate_row_before :: proc(first, second: Fluid_Rate_Row) -> bool {
+	if first.produced != second.produced {
+		return first.produced > second.produced
+	}
+	if first.consumed != second.consumed {
+		return first.consumed > second.consumed
+	}
+	return first.fluid < second.fluid
+}
+
 // The first row whose item name starts with the letter, or -1. The list
 // is sorted by rate, not by name, so only an exact first letter jumps.
 row_position_for_letter :: proc(names: []string, rows: []Item_Rate_Row, letter: rune) -> int {
@@ -236,7 +280,7 @@ lab_marker_colour :: proc(state: Lab_State, connected: bool) -> Marker_Colour {
 
 fluid_machine_marker_colour :: proc(state: Fluid_Machine_State, connected: bool) -> Marker_Colour {
 	switch state {
-	case .Producing, .Pumping:
+	case .Producing, .Pumping, .Flaring:
 		return .Green
 	case .Output_Full:
 		return .Yellow
@@ -261,7 +305,7 @@ machine_marker_colour :: proc {
 // Storage tanks hold fluid and do no work, so they get no marker.
 fluid_machine_has_marker :: proc(kind: Machine_Kind) -> bool {
 	#partial switch kind {
-	case .Offshore_Pump, .Boiler, .Steam_Engine, .Pump:
+	case .Offshore_Pump, .Boiler, .Steam_Engine, .Pump, .Tar_Pit_Pump, .Flare_Stack:
 		return true
 	}
 	return false

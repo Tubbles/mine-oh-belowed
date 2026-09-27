@@ -312,6 +312,20 @@ pump_wants_power :: proc(pump: Fluid_Machine, machine: Machine) -> bool {
 	return input.level > 0 && buffer_room(pump.buffers[output_index], machine.fluid_ports[output_index].capacity) > 0
 }
 
+// Pumps while they can move fluid, tar pit pumps while there is room,
+// flare stacks while they hold gas.
+fluid_machine_wants_power :: proc(fluid_machine: Fluid_Machine, machine: Machine, fluids: Fluid_Registry) -> bool {
+	#partial switch machine.kind {
+	case .Pump:
+		return pump_wants_power(fluid_machine, machine)
+	case .Tar_Pit_Pump:
+		return source_pump_has_room(fluid_machine, machine)
+	case .Flare_Stack:
+		return flare_stack_has_gas(fluid_machine, fluids)
+	}
+	return false
+}
+
 make_participant :: proc(networks: ^Electric_Networks, common: Entity_Common, generator: bool, offered: u64) -> Electric_Participant {
 	return Electric_Participant{handle = common.handle, machine = common.machine, network = entity_network(networks, common.handle), generator = generator, offered = offered}
 }
@@ -344,7 +358,7 @@ collect_electric_participants :: proc(world: ^World, content: Simulation_Content
 			offer := steam_engine_available_joules(fluid_machine, machine, tick_rate)
 			append(&networks.participants, make_participant(networks, fluid_machine.common, true, offer))
 		case machine_is_electric_consumer(machine):
-			demand := pump_wants_power(fluid_machine, machine) ? electric_joules_per_tick(machine.electric_power_watts, tick_rate) : 0
+			demand := fluid_machine_wants_power(fluid_machine, machine, content.fluids) ? electric_joules_per_tick(machine.electric_power_watts, tick_rate) : 0
 			append(&networks.participants, make_participant(networks, fluid_machine.common, false, demand))
 		}
 	}
@@ -398,7 +412,8 @@ participant_power :: proc(entities: ^Entities, handle: Entity_Handle) -> ^Power_
 	return nil
 }
 
-apply_electric_balance :: proc(entities: ^Entities, machines: Machine_Registry) {
+// Steam engines draw their steam here, so it is counted consumed here.
+apply_electric_balance :: proc(entities: ^Entities, machines: Machine_Registry, statistics: ^Statistics) {
 	networks := &entities.electric_networks
 	for participant in networks.participants {
 		network := participant.network >= 0 ? networks.networks[participant.network] : Electric_Network{}
@@ -408,7 +423,10 @@ apply_electric_balance :: proc(entities: ^Entities, machines: Machine_Registry) 
 		}
 		engine := pool_get(&entities.fluid_machines, participant.handle)
 		machine := machines.machines[engine.machine]
+		before := engine.buffers
 		deliver_steam_engine_energy(engine, machine, participant.delivered)
+		after := engine.buffers
+		record_buffer_changes(statistics, before[:], after[:])
 		engine.state = steam_engine_state(participant.delivered, participant.offered, network.demand)
 	}
 }
@@ -454,6 +472,6 @@ tick_electric_networks :: proc(world: ^World, content: Simulation_Content, tick_
 	set_electric_allocators(networks)
 	collect_electric_participants(world, content, tick_rate)
 	balance_electric_energy(networks.participants[:], networks.networks[:])
-	apply_electric_balance(&world.entities, machines)
+	apply_electric_balance(&world.entities, machines, &world.statistics)
 	record_electric_tick(&world.statistics, networks)
 }

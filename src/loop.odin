@@ -91,6 +91,7 @@ make_simulation :: proc(config: Game_Config, start: Player_Start, content: Simul
 		unlocks          = make_recipe_unlocks(len(content.items.items), content.recipes, technologies, unlock_all),
 	}
 	state.world.statistics = make_statistics(len(content.items.items), len(content.machines.machines), len(content.blocks.definitions))
+	state.world.statistics.fluids = make_fluid_statistics(len(content.fluids.fluids))
 	capsule := place_capsule(&state.world.entities, content.machines, landing_pad)
 	state.quests = make_quest_state(content.quests, capsule)
 	player := make_player(start)

@@ -104,7 +104,7 @@ placement_for_player :: proc(world: ^World, content: Simulation_Content, players
 	}
 	kind := content.machines.machines[machine].kind
 	rotation := player.placement_rotation
-	if kind == .Inserter || kind == .Drill || kind == .Splitter || kind == .Offshore_Pump || kind == .Pump {
+	if kind == .Inserter || kind == .Drill || kind == .Splitter || kind == .Offshore_Pump || kind == .Pump || kind == .Tar_Pit_Pump {
 		rotation = inserter_placement_direction(player.yaw, player.placement_rotation)
 	}
 	if kind == .Splitter {
@@ -118,7 +118,8 @@ placement_for_player :: proc(world: ^World, content: Simulation_Content, players
 
 // The placement of a machine with its rotated minimum corner at origin.
 // A drill is valid only over a vein outcrop, an offshore pump only with
-// water in front of its intake. A pipe may also stand on a pipe.
+// water in front of its intake, a tar pit pump only with a tar pit there.
+// A pipe may also stand on a pipe.
 placement_at :: proc(world: ^World, content: Simulation_Content, players: []Player, machine: Machine_Id, origin: World_Coordinate, rotation: u8) -> Placement {
 	footprint := content.machines.machines[machine].footprint
 	kind := content.machines.machines[machine].kind
@@ -144,6 +145,9 @@ placement_at :: proc(world: ^World, content: Simulation_Content, players: []Play
 	}
 	if kind == .Offshore_Pump {
 		placement.valid = placement.valid && offshore_pump_has_water(world, content.blocks, origin, content.machines.machines[machine], rotation)
+	}
+	if kind == .Tar_Pit_Pump {
+		placement.valid = placement.valid && tar_pit_pump_has_source(world, content.blocks, content.fluids, origin, content.machines.machines[machine], rotation)
 	}
 	return placement
 }

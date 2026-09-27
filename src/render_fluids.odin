@@ -7,9 +7,11 @@ import rl "vendor:raylib"
 // whose height follows the level. Fluid machines are coloured boxes with
 // their single face ports drawn as squares on the footprint faces, in the
 // colour of the fluid held or taken (every face ports, the tank's, get
-// none). Offshore pumps and pumps show their direction with an arrow.
+// none). Offshore pumps, pumps and tar pit pumps show their direction with
+// an arrow. A flare stack's top glows while it burns gas.
 
 PIPE_COLOR :: rl.Color{110, 112, 118, 255}
+FLARE_BURNING_TOP_COLOR :: rl.Color{255, 170, 60, 255}
 PIPE_CORE_SIZE :: 0.36
 PIPE_STUB_SIZE :: 0.24
 PIPE_BAND_MARGIN :: 0.02
@@ -33,6 +35,8 @@ fluid_machine_colors := [Machine_Kind]rl.Color {
 	.Steam_Engine  = {90, 110, 90, 255},
 	.Storage_Tank  = {140, 140, 150, 255},
 	.Pump          = {80, 130, 170, 255},
+	.Tar_Pit_Pump  = {70, 64, 60, 255},
+	.Flare_Stack   = {120, 110, 100, 255},
 	.Pole          = {},
 	.Power_Switch  = {},
 	.Lamp          = {},
@@ -123,13 +127,17 @@ draw_fluid_ports :: proc(common: Entity_Common, machine: Machine, buffers: []Flu
 }
 
 fluid_machine_has_arrow :: proc(kind: Machine_Kind) -> bool {
-	return kind == .Offshore_Pump || kind == .Pump
+	return kind == .Offshore_Pump || kind == .Pump || kind == .Tar_Pit_Pump
 }
 
 draw_fluid_machine :: proc(fluid_machine: Fluid_Machine, machines: Machine_Registry, fluids: Fluid_Registry) {
 	machine := machines.machines[fluid_machine.machine]
 	color := fluid_machine_colors[machine.kind]
-	draw_entity_cells(fluid_machine.common, machines, color, color)
+	top_color := color
+	if machine.kind == .Flare_Stack && fluid_machine.state == .Flaring {
+		top_color = FLARE_BURNING_TOP_COLOR
+	}
+	draw_entity_cells(fluid_machine.common, machines, color, top_color)
 	buffers := fluid_machine.buffers
 	draw_fluid_ports(fluid_machine.common, machine, buffers[:], fluids)
 	if fluid_machine_has_arrow(machine.kind) {

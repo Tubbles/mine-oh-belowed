@@ -51,7 +51,7 @@
 //
 // A reward is {item, count}, landing in the capsule, {unlocks_recipe}
 // for a recipe of the quest channel, or {unlocks_technology}, which marks
-// the technology researched (the quest gates of placeholder technologies
+// the technology researched (the quest_gate technologies
 // the labs refuse).
 id = "chapter_01"
 title_key = "chapter_01_title"

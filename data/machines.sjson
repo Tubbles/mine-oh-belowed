@@ -7,8 +7,8 @@
 // rotation; a quarter turn swaps width and depth.
 // kind selects the panel and the simulation: chest, furnace, capsule,
 // belt, inserter, drill, splitter, pipe, offshore_pump, boiler,
-// steam_engine, storage_tank, pump, pole, power_switch, lamp,
-// crafting_machine or lab.
+// steam_engine, storage_tank, pump, tar_pit_pump, flare_stack, pole,
+// power_switch, lamp, crafting_machine or lab.
 // The capsule (work item 0013) stands on the landing pad from the start:
 // it has no item, cannot be picked up, and holds 8 slots for quest
 // rewards and deliveries.
@@ -50,7 +50,9 @@
 // pointing out of the footprint, or "all" for every outward face of the
 // footprint), direction (input takes from the network, output gives to
 // it, both does either), fluid (optional, a fluids.sjson id the port only
-// ever holds) and buffer_litres. Ports turn with the footprint.
+// ever holds), phase (optional, liquid or gas: the only phase the port
+// admits, work item 0030) and buffer_litres. Ports turn with the
+// footprint.
 // Pipes: buffer_litres per block and flow_litres_per_second, the most a
 // connection between two segments moves (1200 is 20 litres per tick).
 // Offshore pump: fluid_litres_per_second into its one output port while
@@ -67,6 +69,13 @@
 // Storage tank: one port on every face, its buffer is the tank.
 // Pump: moves fluid_litres_per_second from its input to its output port
 // whatever the heights, and only with electric_power_kilowatts.
+// Tar pit pump (work item 0030): placed like the offshore pump, with a
+// block whose fluid_source is its port's fluid (a tar pit) in front of its
+// intake. Pumps fluid_litres_per_minute into its one output port while it
+// has electric_power_kilowatts, whole litres as the minute adds up.
+// Flare stack (work item 0030): one input port with phase = "gas"; while
+// powered it destroys up to fluid_litres_per_second of the gas in it,
+// counted as voided in the statistics. The power is the price of the sink.
 // Power (work item 0020, doc/fluids.md): electric machines (any with
 // electric_power_kilowatts: electric inserters, electric drills, pumps,
 // lamps) and generators (steam engines) belong to the network of a pole
@@ -91,7 +100,17 @@
 // the recipe of its category whose input items are exactly the loaded
 // ones (the loader refuses a category where one recipe's input items are
 // a subset of another's). Optional input fluid_ports feed recipes with
-// fluid_inputs. Recipes of the category must fit the slots.
+// fluid_inputs; optional output fluid_ports take fluid_outputs, the first
+// fluid output into the first output port in port order and so on (work
+// item 0030). A fixed machine with fluid ports may have no item slots:
+// its recipes are then told apart by the fluids in its input ports.
+// Recipes of the category must fit the slots and ports.
+// Refinery (work item 0030): ports in port order crude oil in on the
+// -z face, then petroleum gas out on -x, light oil out on +z and heavy oil
+// out on +x (faces of the unrotated footprint, all on the bottom layer),
+// each fixed to its fluid, so each fraction always leaves by the same face.
+// Cracking unit: oil in on -z (heavy or light oil, whichever it holds
+// picks the recipe), water in on -x, product out on +z.
 // The recycler (work item 0027) is recipe_maker recycler, fixed: no
 // recipe is made in it. It takes any item a recipe makes that items.sjson
 // does not flag cannot_recycle, reverses the first recipe making it (one
@@ -306,6 +325,30 @@ machines = [
 		]
 	}
 	{
+		id = "tar_pit_pump"
+		name_key = "machine_tar_pit_pump"
+		item = "tar_pit_pump"
+		kind = "tar_pit_pump"
+		footprint = {width = 2, depth = 1, height = 1}
+		fluid_litres_per_minute = 200
+		electric_power_kilowatts = 60
+		fluid_ports = [
+			{cell = {x = 0, y = 0, z = 0}, face = "negative_x", direction = "output", fluid = "crude_oil", buffer_litres = 200}
+		]
+	}
+	{
+		id = "flare_stack"
+		name_key = "machine_flare_stack"
+		item = "flare_stack"
+		kind = "flare_stack"
+		footprint = {width = 1, depth = 1, height = 3}
+		fluid_litres_per_second = 60
+		electric_power_kilowatts = 10
+		fluid_ports = [
+			{face = "all", direction = "input", phase = "gas", buffer_litres = 200}
+		]
+	}
+	{
 		id = "small_pole"
 		name_key = "machine_small_pole"
 		item = "small_pole"
@@ -397,6 +440,39 @@ machines = [
 		recipe_choice = "fixed"
 		input_slots = 1
 		output_slots = 4
+	}
+	{
+		id = "refinery"
+		name_key = "machine_refinery"
+		item = "refinery"
+		kind = "crafting_machine"
+		footprint = {width = 5, depth = 5, height = 3}
+		speed = 1
+		electric_power_kilowatts = 400
+		recipe_maker = "refinery"
+		recipe_choice = "fixed"
+		fluid_ports = [
+			{cell = {x = 2, y = 0, z = 0}, face = "negative_z", direction = "input", fluid = "crude_oil", buffer_litres = 200}
+			{cell = {x = 0, y = 0, z = 2}, face = "negative_x", direction = "output", fluid = "petroleum_gas", buffer_litres = 200}
+			{cell = {x = 2, y = 0, z = 4}, face = "positive_z", direction = "output", fluid = "light_oil", buffer_litres = 200}
+			{cell = {x = 4, y = 0, z = 2}, face = "positive_x", direction = "output", fluid = "heavy_oil", buffer_litres = 200}
+		]
+	}
+	{
+		id = "cracking_unit"
+		name_key = "machine_cracking_unit"
+		item = "cracking_unit"
+		kind = "crafting_machine"
+		footprint = {width = 3, depth = 3, height = 3}
+		speed = 1
+		electric_power_kilowatts = 200
+		recipe_maker = "cracking"
+		recipe_choice = "fixed"
+		fluid_ports = [
+			{cell = {x = 1, y = 0, z = 0}, face = "negative_z", direction = "input", buffer_litres = 200}
+			{cell = {x = 0, y = 0, z = 1}, face = "negative_x", direction = "input", fluid = "water", buffer_litres = 200}
+			{cell = {x = 1, y = 0, z = 2}, face = "positive_z", direction = "output", buffer_litres = 200}
+		]
 	}
 	{
 		id = "lab"

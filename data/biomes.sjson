@@ -7,6 +7,9 @@
 // to five blocks, stone below that).
 // tree_density and boulder_density are the chance, 0 to 1, that a feature
 // cell holds a tree or a boulder rooted in this biome.
+// pit_block (optional, work item 0030) replaces top_block in the low spots
+// of the biome: columns at most pit_maximum_height above sea level whose
+// four neighbours stand no lower. The tar flats get tar pits.
 biomes = [
 	{
 		id = "lake"
@@ -43,6 +46,8 @@ biomes = [
 		filler_block = "dirt"
 		tree_density = 0
 		boulder_density = 0.1
+		pit_block = "tar_pit"
+		pit_maximum_height = 1
 	}
 	{
 		id = "desert"

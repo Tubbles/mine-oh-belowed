@@ -77,12 +77,13 @@ Technology_Status :: enum u8 {
 	Locked,
 }
 
-// A placeholder opens recipes that do not exist yet, so it stays locked.
+// A placeholder opens recipes that do not exist yet, and a quest gate
+// waits for its main quest, so both stay locked.
 technology_status :: proc(technologies: Technology_Registry, unlocks: Recipe_Unlocks, technology: int) -> Technology_Status {
 	if unlocks.researched[technology] {
 		return .Researched
 	}
-	if technologies.technologies[technology].placeholder {
+	if technologies.technologies[technology].placeholder || technologies.technologies[technology].quest_gate {
 		return .Locked
 	}
 	for prerequisite in technologies.technologies[technology].prerequisites {
@@ -98,6 +99,7 @@ Research_Refusal :: enum u8 {
 	Researched,
 	Locked,
 	Placeholder,
+	Quest_Gate,
 }
 
 @(rodata)
@@ -106,6 +108,7 @@ research_refusal_keys := [Research_Refusal]string {
 	.Researched  = "research_refused_researched",
 	.Locked      = "research_refused_locked",
 	.Placeholder = "research_refused_placeholder",
+	.Quest_Gate  = "research_refused_quest_gate",
 }
 
 research_refusal :: proc(technologies: Technology_Registry, unlocks: Recipe_Unlocks, technology: int) -> Research_Refusal {
@@ -113,7 +116,13 @@ research_refusal :: proc(technologies: Technology_Registry, unlocks: Recipe_Unlo
 	case .Researched:
 		return .Researched
 	case .Locked:
-		return technologies.technologies[technology].placeholder ? .Placeholder : .Locked
+		switch {
+		case technologies.technologies[technology].placeholder:
+			return .Placeholder
+		case technologies.technologies[technology].quest_gate:
+			return .Quest_Gate
+		}
+		return .Locked
 	case .Available:
 	}
 	return .None

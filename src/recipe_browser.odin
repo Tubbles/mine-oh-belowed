@@ -104,12 +104,15 @@ Recipe_Detail :: struct {
 }
 
 // made_by lists the recipes producing the first output, used_in those
-// consuming it.
+// consuming it; a recipe with fluid outputs only has neither.
 recipe_detail :: proc(recipes: Recipe_Registry, unlocks: Recipe_Unlocks, recipe: int, allocator := context.allocator) -> Recipe_Detail {
 	if !recipe_is_available(unlocks, recipe) {
 		return {}
 	}
 	definition := recipes.recipes[recipe]
+	if len(definition.outputs) == 0 {
+		return Recipe_Detail{revealed = true, inputs = definition.inputs}
+	}
 	product := definition.outputs[0].item
 	return Recipe_Detail {
 		revealed = true,

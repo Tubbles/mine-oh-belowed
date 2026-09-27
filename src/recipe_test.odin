@@ -25,8 +25,8 @@ test_recipe :: proc(recipes: Recipe_Registry, id: string) -> int {
 test_shipped_recipes_resolve :: proc(t: ^testing.T) {
 	items := make_test_items()
 	recipes, technologies := make_test_recipes(items)
-	testing.expect_value(t, len(recipes.recipes), 69)
-	testing.expect_value(t, len(technologies.technologies), 12)
+	testing.expect_value(t, len(recipes.recipes), 76)
+	testing.expect_value(t, len(technologies.technologies), 13)
 	plank := recipes.recipes[test_recipe(recipes, "plank")]
 	testing.expect_value(t, plank.outputs[0], Item_Stack{test_item(items, "plank"), 4})
 	testing.expect_value(t, plank.milliseconds, 500)

@@ -43,22 +43,25 @@ Fluid_Port_Cell_Definition :: struct {
 
 // cell is x along the width, y up, z along the depth of the unrotated
 // footprint. fluid is optional: a port with one only ever holds it.
+// phase is optional too: liquid or gas, the only phase the port admits.
 Fluid_Port_Definition :: struct {
 	cell:          Fluid_Port_Cell_Definition,
 	face:          string,
 	direction:     string,
 	fluid:         string,
+	phase:         string,
 	buffer_litres: int,
 }
 
 // every_face ports ignore cell and face.
 Fluid_Port :: struct {
-	cell:       [3]i32,
-	face:       Direction,
-	every_face: bool,
-	direction:  Fluid_Port_Direction,
-	filter:     Fluid_Id,
-	capacity:   i32,
+	cell:         [3]i32,
+	face:         Direction,
+	every_face:   bool,
+	direction:    Fluid_Port_Direction,
+	filter:       Fluid_Id,
+	phase_filter: Fluid_Phase_Filter,
+	capacity:     i32,
 }
 
 parse_direction_name :: proc(name: string) -> (direction: Direction, found: bool) {
@@ -104,6 +107,10 @@ resolve_fluid_port :: proc(definition: Fluid_Port_Definition, footprint: [3]i32,
 		return {}, "a port needs a positive buffer_litres"
 	}
 	port = Fluid_Port{direction = direction, filter = NO_FLUID, capacity = i32(definition.buffer_litres)}
+	phase_found: bool
+	if port.phase_filter, phase_found = parse_named_enum(fluid_phase_filter_names, definition.phase); !phase_found {
+		return {}, fmt.tprintf("unknown port phase %q", definition.phase)
+	}
 	if definition.fluid != "" {
 		found: bool
 		if port.filter, found = find_fluid_id(fluids, definition.fluid); !found {
@@ -187,10 +194,18 @@ validate_fluid_port_layout :: proc(machine: Machine) -> string {
 		if len(ports) != 2 || inputs != 1 || outputs != 1 {
 			return fmt.tprintf("pump %q needs one input and one output port", machine.id)
 		}
+	case .Tar_Pit_Pump:
+		if len(ports) != 1 || outputs != 1 || ports[0].filter == NO_FLUID {
+			return fmt.tprintf("tar pit pump %q needs one output port with a fluid", machine.id)
+		}
+	case .Flare_Stack:
+		if len(ports) != 1 || inputs != 1 || ports[0].phase_filter != .Gas {
+			return fmt.tprintf("flare stack %q needs one input port admitting gases only", machine.id)
+		}
 	case .Crafting_Machine:
-		// Fluid outputs of recipes do not exist yet.
-		if inputs != len(ports) {
-			return fmt.tprintf("crafting machine %q may only have input ports", machine.id)
+		// Recipes take from input ports and give into output ports.
+		if inputs + outputs != len(ports) {
+			return fmt.tprintf("crafting machine %q may only have input and output ports", machine.id)
 		}
 	case:
 		if len(ports) != 0 {
@@ -223,9 +238,13 @@ validate_fluid_machine_definition :: proc(definition: Machine_Definition, kind: 
 		if definition.fluid_litres_per_second <= 0 || definition.electric_output_kilowatts <= 0 {
 			return fmt.tprintf("steam engine %q needs a positive fluid_litres_per_second and electric_output_kilowatts", definition.id)
 		}
-	case .Pump:
+	case .Pump, .Flare_Stack:
 		if definition.fluid_litres_per_second <= 0 || definition.electric_power_kilowatts <= 0 {
-			return fmt.tprintf("pump %q needs a positive fluid_litres_per_second and electric_power_kilowatts", definition.id)
+			return fmt.tprintf("machine %q needs a positive fluid_litres_per_second and electric_power_kilowatts", definition.id)
+		}
+	case .Tar_Pit_Pump:
+		if definition.fluid_litres_per_minute <= 0 || definition.electric_power_kilowatts <= 0 {
+			return fmt.tprintf("tar pit pump %q needs a positive fluid_litres_per_minute and electric_power_kilowatts", definition.id)
 		}
 	}
 	return ""

@@ -29,7 +29,9 @@ Block_Texture_Definition :: struct {
 // hardness_seconds is the hand mining time, 0 for blocks that cannot be
 // mined. light_level is the block light emitted (0 to MAXIMUM_LIGHT).
 // water_level is 0 for everything but water, WATER_SOURCE_LEVEL for a
-// source and 1 to WATER_SOURCE_LEVEL - 1 for flowing water.
+// source and 1 to WATER_SOURCE_LEVEL - 1 for flowing water. fluid_source
+// names the fluid a source pump draws from the block (a tar pit gives
+// crude oil), as a fluids.sjson id, or is empty.
 Block_Definition :: struct {
 	id:               string,
 	name:             string,
@@ -37,6 +39,7 @@ Block_Definition :: struct {
 	hardness_seconds: f32,
 	light_level:      int,
 	water_level:      int,
+	fluid_source:     string,
 	texture:          Block_Texture_Definition,
 }
 
@@ -145,6 +148,13 @@ block_water_level :: proc(registry: Block_Registry, block: Block_Id) -> int {
 		return 0
 	}
 	return registry.definitions[block].water_level
+}
+
+block_fluid_source :: proc(registry: Block_Registry, block: Block_Id) -> string {
+	if int(block) >= len(registry.definitions) {
+		return ""
+	}
+	return registry.definitions[block].fluid_source
 }
 
 // The block holding water of this level, 1 to WATER_SOURCE_LEVEL.

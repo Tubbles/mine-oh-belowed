@@ -27,6 +27,8 @@ Recipe_Maker :: enum u8 {
 	Crusher,
 	Washer,
 	Alloy_Furnace,
+	Refinery,
+	Cracking,
 	Recycler,
 }
 
@@ -40,6 +42,8 @@ recipe_maker_names := [Recipe_Maker]string {
 	.Crusher       = "crusher",
 	.Washer        = "washer",
 	.Alloy_Furnace = "alloy_furnace",
+	.Refinery      = "refinery",
+	.Cracking      = "cracking",
 	.Recycler      = "recycler",
 }
 
@@ -96,10 +100,13 @@ Recipe_Ingredient_Definition :: struct {
 	byproduct: bool,
 }
 
-// litres over the whole craft, drawn from the machine's input ports.
+// litres over the whole craft: fluid inputs are drawn from the machine's
+// input ports as the craft runs, fluid outputs delivered into its output
+// ports when it completes. byproduct only on fluid outputs.
 Recipe_Fluid_Definition :: struct {
-	fluid:  string,
-	litres: int,
+	fluid:     string,
+	litres:    int,
+	byproduct: bool,
 }
 
 Recipe_Fluid :: struct {
@@ -114,6 +121,7 @@ Recipe_Definition :: struct {
 	inputs:     []Recipe_Ingredient_Definition,
 	outputs:      []Recipe_Ingredient_Definition,
 	fluid_inputs: []Recipe_Fluid_Definition,
+	fluid_outputs: []Recipe_Fluid_Definition,
 	seconds:      f32,
 	made_in:    []string,
 	category:   string,
@@ -130,7 +138,8 @@ Recipes_File :: struct {
 // is kept in milliseconds so machines count ticks in integers.
 // technology_id is the file's reference, technology its index once the
 // technologies are resolved (NO_TECHNOLOGY otherwise). byproducts marks
-// the outputs a lenient world voids when they do not fit.
+// the outputs a lenient world voids when they do not fit, fluid_byproducts
+// the fluid outputs.
 Recipe :: struct {
 	id:            string,
 	name_key:      string,
@@ -138,6 +147,8 @@ Recipe :: struct {
 	outputs:       []Item_Stack,
 	byproducts:    Recipe_Output_Set,
 	fluid_inputs:  []Recipe_Fluid,
+	fluid_outputs: []Recipe_Fluid,
+	fluid_byproducts: Recipe_Output_Set,
 	milliseconds:  u32,
 	made_in:       Recipe_Makers,
 	category:      Recipe_Category,
@@ -191,14 +202,25 @@ validate_recipe_makers :: proc(definition: Recipe_Definition) -> string {
 	return ""
 }
 
-// Byproduct flags only on outputs, and at least one main output.
+// Byproduct flags only on outputs, and at least one main output, an item
+// or a fluid.
 validate_recipe_byproducts :: proc(definition: Recipe_Definition) -> string {
 	for input in definition.inputs {
 		if input.byproduct {
 			return fmt.tprintf("recipe %q flags an input as a byproduct", definition.id)
 		}
 	}
+	for input in definition.fluid_inputs {
+		if input.byproduct {
+			return fmt.tprintf("recipe %q flags a fluid input as a byproduct", definition.id)
+		}
+	}
 	for output in definition.outputs {
+		if !output.byproduct {
+			return ""
+		}
+	}
+	for output in definition.fluid_outputs {
 		if !output.byproduct {
 			return ""
 		}
@@ -228,10 +250,12 @@ validate_recipe_definition :: proc(definitions: []Recipe_Definition, index: int)
 		return fmt.tprintf("recipe %d has no id", index)
 	case find_recipe_definition_index(definitions, definition.id) != index:
 		return fmt.tprintf("recipe id %q is defined twice", definition.id)
-	case len(definition.inputs) == 0:
+	case len(definition.inputs) == 0 && len(definition.fluid_inputs) == 0:
 		return fmt.tprintf("recipe %q has no inputs", definition.id)
-	case len(definition.outputs) == 0 || len(definition.outputs) > MAXIMUM_RECIPE_OUTPUTS:
+	case len(definition.outputs) + len(definition.fluid_outputs) == 0 || len(definition.outputs) > MAXIMUM_RECIPE_OUTPUTS:
 		return fmt.tprintf("recipe %q needs 1 to %d outputs", definition.id, MAXIMUM_RECIPE_OUTPUTS)
+	case len(definition.outputs) == 0 && definition.name_key == "":
+		return fmt.tprintf("recipe %q has no item output to be named after and needs a name_key", definition.id)
 	case definition.seconds <= 0:
 		return fmt.tprintf("recipe %q needs positive seconds", definition.id)
 	}
@@ -331,29 +355,49 @@ resolve_recipe_makers :: proc(names: []string) -> Recipe_Makers {
 	return makers
 }
 
-// Fluids come from a machine's ports, so neither the hand nor the stone
-// furnace, which has none, makes a recipe with fluid inputs.
-resolve_recipe_fluids :: proc(definition: Recipe_Definition, fluids: Fluid_Registry, allocator := context.allocator) -> (resolved: []Recipe_Fluid, problem: string) {
-	if len(definition.fluid_inputs) == 0 {
+// Fluids come from and go to a machine's ports, so neither the hand nor
+// the stone furnace, which has none, makes a recipe with fluids. A fluid
+// appears once per list.
+resolve_recipe_fluids :: proc(definition: Recipe_Definition, list: []Recipe_Fluid_Definition, fluids: Fluid_Registry, allocator := context.allocator) -> (resolved: []Recipe_Fluid, problem: string) {
+	if len(list) == 0 {
 		return nil, ""
 	}
 	makers := resolve_recipe_makers(definition.made_in)
 	if .Hand in makers || .Furnace in makers {
-		return nil, fmt.tprintf("recipe %q has fluid inputs but is made by hand or in a furnace", definition.id)
+		return nil, fmt.tprintf("recipe %q has fluids but is made by hand or in a furnace", definition.id)
 	}
-	if len(definition.fluid_inputs) > MAXIMUM_FLUID_PORTS {
-		return nil, fmt.tprintf("recipe %q has more than %d fluid inputs", definition.id, MAXIMUM_FLUID_PORTS)
+	if len(list) > MAXIMUM_FLUID_PORTS {
+		return nil, fmt.tprintf("recipe %q has more than %d fluid inputs or outputs", definition.id, MAXIMUM_FLUID_PORTS)
 	}
-	resolved = make([]Recipe_Fluid, len(definition.fluid_inputs), allocator)
-	for fluid_input, index in definition.fluid_inputs {
-		fluid, found := find_fluid_id(fluids, fluid_input.fluid)
-		if !found || fluid_input.litres < 1 {
+	resolved = make([]Recipe_Fluid, len(list), allocator)
+	for entry, index in list {
+		fluid, found := find_fluid_id(fluids, entry.fluid)
+		if !found || entry.litres < 1 || recipe_fluids_contain(resolved[:index], fluid) {
 			delete(resolved, allocator)
-			return nil, fmt.tprintf("recipe %q has fluid input %q that is unknown or not a positive amount", definition.id, fluid_input.fluid)
+			return nil, fmt.tprintf("recipe %q has fluid %q that is unknown, listed twice or not a positive amount", definition.id, entry.fluid)
 		}
-		resolved[index] = {fluid = fluid, litres = i32(fluid_input.litres)}
+		resolved[index] = {fluid = fluid, litres = i32(entry.litres)}
 	}
 	return resolved, ""
+}
+
+recipe_fluids_contain :: proc(list: []Recipe_Fluid, fluid: Fluid_Id) -> bool {
+	for entry in list {
+		if entry.fluid == fluid {
+			return true
+		}
+	}
+	return false
+}
+
+resolve_fluid_byproducts :: proc(outputs: []Recipe_Fluid_Definition) -> Recipe_Output_Set {
+	byproducts: Recipe_Output_Set
+	for output, index in outputs {
+		if output.byproduct {
+			byproducts += {index}
+		}
+	}
+	return byproducts
 }
 
 resolve_recipe :: proc(definition: Recipe_Definition, items: Item_Registry, fluids: Fluid_Registry, tag_names: ^[dynamic]string, allocator := context.allocator) -> (recipe: Recipe, problem: string) {
@@ -363,6 +407,7 @@ resolve_recipe :: proc(definition: Recipe_Definition, items: Item_Registry, flui
 		milliseconds  = u32(math.round(definition.seconds * 1000)),
 		made_in       = resolve_recipe_makers(definition.made_in),
 		byproducts    = resolve_recipe_byproducts(definition.outputs),
+		fluid_byproducts = resolve_fluid_byproducts(definition.fluid_outputs),
 		technology_id = definition.technology,
 		technology    = NO_TECHNOLOGY,
 	}
@@ -378,9 +423,15 @@ resolve_recipe :: proc(definition: Recipe_Definition, items: Item_Registry, flui
 		delete(recipe.inputs, allocator)
 		return {}, problem
 	}
-	if recipe.fluid_inputs, problem = resolve_recipe_fluids(definition, fluids, allocator); problem != "" {
+	if recipe.fluid_inputs, problem = resolve_recipe_fluids(definition, definition.fluid_inputs, fluids, allocator); problem != "" {
 		delete(recipe.inputs, allocator)
 		delete(recipe.outputs, allocator)
+		return {}, problem
+	}
+	if recipe.fluid_outputs, problem = resolve_recipe_fluids(definition, definition.fluid_outputs, fluids, allocator); problem != "" {
+		delete(recipe.inputs, allocator)
+		delete(recipe.outputs, allocator)
+		delete(recipe.fluid_inputs, allocator)
 		return {}, problem
 	}
 	if recipe.name_key == "" {
@@ -454,6 +505,7 @@ destroy_recipe_registry :: proc(registry: Recipe_Registry, allocator := context.
 		delete(recipe.inputs, allocator)
 		delete(recipe.outputs, allocator)
 		delete(recipe.fluid_inputs, allocator)
+		delete(recipe.fluid_outputs, allocator)
 	}
 	delete(registry.recipes, allocator)
 	delete(registry.tag_names, allocator)

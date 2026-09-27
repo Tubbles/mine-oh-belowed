@@ -27,6 +27,21 @@ fluid_phase_names := [Fluid_Phase]string {
 	.Gas    = "gas",
 }
 
+// What a port admits beside its fluid filter: any fluid, or only one phase
+// (the flare stack takes gases only).
+Fluid_Phase_Filter :: enum u8 {
+	Any,
+	Liquid,
+	Gas,
+}
+
+@(rodata)
+fluid_phase_filter_names := [Fluid_Phase_Filter]string {
+	.Any    = "",
+	.Liquid = "liquid",
+	.Gas    = "gas",
+}
+
 // As written in the file, before validation.
 Fluid_Definition :: struct {
 	id:       string,
@@ -125,6 +140,17 @@ find_fluid_id :: proc(registry: Fluid_Registry, id: string) -> (fluid: Fluid_Id,
 // matters: a network without a fluid moves nothing.
 fluid_is_gas :: proc(registry: Fluid_Registry, fluid: Fluid_Id) -> bool {
 	return int(fluid) < len(registry.fluids) && registry.fluids[fluid].phase == .Gas
+}
+
+phase_filter_admits :: proc(filter: Fluid_Phase_Filter, registry: Fluid_Registry, fluid: Fluid_Id) -> bool {
+	switch filter {
+	case .Liquid:
+		return !fluid_is_gas(registry, fluid)
+	case .Gas:
+		return fluid_is_gas(registry, fluid)
+	case .Any:
+	}
+	return true
 }
 
 fluid_name :: proc(registry: Fluid_Registry, fluid: Fluid_Id) -> string {

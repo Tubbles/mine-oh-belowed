@@ -46,6 +46,8 @@ crafting_machine_colors := [Recipe_Maker]rl.Color {
 	.Crusher       = {130, 100, 70, 255},
 	.Washer        = {70, 110, 160, 255},
 	.Alloy_Furnace = {100, 96, 104, 255},
+	.Refinery      = {150, 130, 90, 255},
+	.Cracking      = {130, 90, 110, 255},
 	.Recycler      = {90, 120, 70, 255},
 }
 LAB_COLOR :: rl.Color{200, 204, 210, 255}

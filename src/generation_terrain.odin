@@ -231,14 +231,34 @@ carved_by_cave :: proc(input: Terrain_Input, local: Local_Coordinate, y, ceiling
 	return cave_density(input.caves, local) > CAVE_THRESHOLD
 }
 
+// A low spot of a biome with pits: low enough, and no face neighbour
+// lower. Pure in the column grid, so neighbouring chunks agree.
+column_is_pit :: proc(generator: ^Generator, grid: ^Column_Grid, x, z: i32) -> bool {
+	column := grid_column(grid, x, z)
+	biome := column_biome(generator, column)
+	if biome.pit_block == AIR_BLOCK || column.height - SEA_LEVEL > biome.definition.pit_maximum_height {
+		return false
+	}
+	for offset in ([4][2]i32{{-1, 0}, {1, 0}, {0, -1}, {0, 1}}) {
+		if grid_column(grid, x + offset.x, z + offset.y).height < column.height {
+			return false
+		}
+	}
+	return true
+}
+
 fill_terrain_column :: proc(chunk: ^Chunk, input: Terrain_Input, x, z: i32) {
 	column := grid_column(input.columns, x, z)
 	ceiling := cave_ceiling(input.columns, x, z)
 	origin_y := chunk_origin(chunk.coordinate).y
+	pit := column_is_pit(input.generator, input.columns, x, z)
 	for local_y in i32(0) ..< CHUNK_SIZE {
 		local := Local_Coordinate{x, local_y, z}
 		y := origin_y + local_y
 		block := terrain_block(input.generator, column, y)
+		if pit && y == column.height {
+			block = column_biome(input.generator, column).pit_block
+		}
 		if carved_by_cave(input, local, y, ceiling) {
 			block = AIR_BLOCK
 		}

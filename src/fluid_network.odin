@@ -24,8 +24,8 @@ import "core:slice"
 // A liquid moves only to a segment at the same height or lower, unless
 // the network is pressurised by the output of a running pump. Gases
 // ignore height. A network holds one fluid: the first that enters it, kept
-// until it is empty. A port holding or only taking another fluid is
-// closed and moves nothing.
+// until it is empty. A port holding or only taking another fluid, or only
+// admitting the other phase, is closed and moves nothing.
 
 Fluid_Segment :: struct {
 	owner:        Entity_Handle,
@@ -35,6 +35,7 @@ Fluid_Segment :: struct {
 	capacity:     i32,
 	direction:    Fluid_Port_Direction,
 	filter:       Fluid_Id,
+	phase_filter: Fluid_Phase_Filter,
 	// The output port of a pump.
 	pressurising:    bool,
 	network:         int,
@@ -125,6 +126,7 @@ append_port_segments :: proc(segments: ^[dynamic]Fluid_Segment, common: Entity_C
 			capacity     = port.capacity,
 			direction    = port.direction,
 			filter       = port.filter,
+			phase_filter = port.phase_filter,
 			pressurising = machine.kind == .Pump && port.direction == .Output,
 		}
 		append(segments, segment)
@@ -406,11 +408,14 @@ segment_takes :: proc(segment: Fluid_Segment) -> bool {
 	return segment.direction != .Output
 }
 
-// A port holding another fluid, or empty but only taking another fluid,
-// would mix. Pipes always hold the network's fluid.
-segment_is_closed :: proc(segment: Fluid_Segment, buffer: Fluid_Buffer, fluid: Fluid_Id) -> bool {
+// A port holding another fluid, or empty but only taking another fluid
+// or another phase, would mix. Pipes always hold the network's fluid.
+segment_is_closed :: proc(segment: Fluid_Segment, buffer: Fluid_Buffer, fluid: Fluid_Id, fluids: Fluid_Registry) -> bool {
 	if segment.port < 0 {
 		return false
+	}
+	if !phase_filter_admits(segment.phase_filter, fluids, fluid) {
+		return true
 	}
 	if buffer.level > 0 {
 		return buffer.fluid != fluid
@@ -510,10 +515,10 @@ move_along_connection :: proc(entities: ^Entities, networks: ^Fluid_Networks, co
 }
 
 // Closes the ports that would mix, and tells their machines for the panel.
-mark_closed_ports :: proc(entities: ^Entities, networks: ^Fluid_Networks, members: []int, fluid: Fluid_Id, closed: []bool) {
+mark_closed_ports :: proc(entities: ^Entities, networks: ^Fluid_Networks, members: []int, fluid: Fluid_Id, fluids: Fluid_Registry, closed: []bool) {
 	for member in members {
 		segment := networks.segments[member]
-		closed[member] = fluid != NO_FLUID && segment_is_closed(segment, segment_buffer(entities, segment)^, fluid)
+		closed[member] = fluid != NO_FLUID && segment_is_closed(segment, segment_buffer(entities, segment)^, fluid, fluids)
 		if segment.port >= 0 {
 			_, port_closed := entity_port_buffers(entities, segment.owner)
 			port_closed[segment.port] = closed[member]
@@ -536,7 +541,7 @@ tick_fluid_network :: proc(entities: ^Entities, networks: ^Fluid_Networks, netwo
 	if network.fluid == NO_FLUID {
 		network.fluid = first_giving_fluid(entities, networks, members)
 	}
-	mark_closed_ports(entities, networks, members, network.fluid, closed)
+	mark_closed_ports(entities, networks, members, network.fluid, fluids, closed)
 	if network.fluid == NO_FLUID {
 		return
 	}

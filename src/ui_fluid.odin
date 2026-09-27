@@ -18,14 +18,14 @@ fluid_buffer_count :: proc(machine: Machine) -> int {
 
 // Whether the panel shows a state line.
 fluid_machine_shows_state :: proc(kind: Machine_Kind) -> bool {
-	return kind == .Offshore_Pump || kind == .Boiler || kind == .Pump || kind == .Steam_Engine
+	return kind == .Offshore_Pump || kind == .Boiler || kind == .Pump || kind == .Steam_Engine || kind == .Tar_Pit_Pump || kind == .Flare_Stack
 }
 
-// Pumps and steam engines show their power network; steam engines their
-// output too.
+// Pumps, tar pit pumps, flare stacks and steam engines show their power
+// network; steam engines their output too.
 fluid_machine_power_rows :: proc(kind: Machine_Kind) -> int {
 	#partial switch kind {
-	case .Pump:
+	case .Pump, .Tar_Pit_Pump, .Flare_Stack:
 		return 1
 	case .Steam_Engine:
 		return 2

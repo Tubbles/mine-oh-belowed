@@ -5,20 +5,23 @@ import "core:fmt"
 // The production statistics screen (work item 0028), opened with
 // Open_Statistics or from the pause menu; it does not pause. Two tabs:
 // Production (the window choice and the item list sorted by produced over
-// the window on the left, the focused item's detail on the right) and
-// Power (the power overview's body). The pure parts are in
-// production_statistics.odin.
+// the window on the left, the fluids below the items in litres per minute,
+// the focused row's detail on the right) and Power (the power overview's
+// body). The pure parts are in production_statistics.odin.
 
 STATISTICS_LIST_COLUMN_WIDTH :: 900
 STATISTICS_RATE_COLUMN_WIDTH :: 200
 
 // window is the chosen rate window; focused the item whose detail shows,
-// valid while has_focus.
+// valid while has_focus, or focused_fluid the fluid's, valid while
+// fluid_has_focus.
 Statistics_View :: struct {
-	window:        Rate_Window,
-	focused:       Item_Id,
-	has_focus:     bool,
-	letter_radial: Radial_State,
+	window:          Rate_Window,
+	focused:         Item_Id,
+	has_focus:       bool,
+	focused_fluid:   Fluid_Id,
+	fluid_has_focus: bool,
+	letter_radial:   Radial_State,
 }
 
 statistics_row_id :: proc(list_id: Ui_Id, item: Item_Id) -> Ui_Id {
@@ -34,6 +37,10 @@ rate_window_keys := [Rate_Window]string {
 	.One_Minute    = "statistics_window_1",
 	.Ten_Minutes   = "statistics_window_10",
 	.Sixty_Minutes = "statistics_window_60",
+}
+
+format_fluid_window_rate :: proc(total: u64, window: Rate_Window) -> string {
+	return fmt.tprintf("%s/min", format_volume(f32(total) / f32(rate_window_minutes[window])))
 }
 
 next_rate_window :: proc(window: Rate_Window) -> Rate_Window {
@@ -58,24 +65,56 @@ draw_statistics_row :: proc(state: ^Ui_State, row: Ui_Rectangle, screen_context:
 	draw_rate_columns(state, row, format_window_rate(rate.produced, window), format_window_rate(rate.consumed, window), UI_TEXT_COLOR)
 }
 
-statistics_item_list :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context, names: []string, rows: []Item_Rate_Row) {
+draw_fluid_statistics_row :: proc(state: ^Ui_State, row: Ui_Rectangle, screen_context: Screen_Context, rate: Fluid_Rate_Row, window: Rate_Window) {
+	fluid := screen_context.fluids.fluids[rate.fluid]
+	icon := Item_Icon{kind = .Lettered, color = {fluid.color.r, fluid.color.g, fluid.color.b, 255}, letters = item_letters(fluid.id)}
+	draw_item_icon(state, icon_rectangle(row), icon)
+	draw_text(state, text_after_icon(row), fluid_name(screen_context.fluids, rate.fluid), UI_BODY_TEXT_SIZE, .Left)
+	draw_rate_columns(state, row, format_fluid_window_rate(rate.produced, window), format_fluid_window_rate(rate.consumed, window), UI_TEXT_COLOR)
+}
+
+// Item rows, then fluid rows, in one scrolled list.
+statistics_item_list :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context, names: []string, rows: []Item_Rate_Row, fluid_rows: []Fluid_Rate_Row) {
 	view := screen_context.statistics_view
-	if len(rows) == 0 {
+	if len(rows) + len(fluid_rows) == 0 {
 		ui_label(state, {area.x, area.y, area.width, UI_ROW_HEIGHT}, text("statistics_nothing_yet"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	}
-	list := scroll_list_begin(state, "statistics_list", area, len(rows))
+	list := scroll_list_begin(state, "statistics_list", area, len(rows) + len(fluid_rows))
 	for rate, position in rows {
 		row := scroll_list_row(list, position)
 		id := ui_id(state, "row", int(rate.item))
 		interaction := ui_interact(state, id, row)
 		if interaction.focused {
 			scroll_list_keep_visible(&list, position)
-			view.focused, view.has_focus = rate.item, true
+			view.focused, view.has_focus, view.fluid_has_focus = rate.item, true, false
 		}
 		widget_background(state, row, id, interaction)
 		draw_statistics_row(state, row, screen_context, names, rate, view.window)
 	}
+	for rate, index in fluid_rows {
+		position := len(rows) + index
+		row := scroll_list_row(list, position)
+		id := ui_id(state, "fluid_row", int(rate.fluid))
+		interaction := ui_interact(state, id, row)
+		if interaction.focused {
+			scroll_list_keep_visible(&list, position)
+			view.focused_fluid, view.fluid_has_focus, view.has_focus = rate.fluid, true, false
+		}
+		widget_background(state, row, id, interaction)
+		draw_fluid_statistics_row(state, row, screen_context, rate, view.window)
+	}
 	scroll_list_end(state, &list)
+}
+
+// The focused fluid's litres per minute over the window, voided included.
+statistics_fluid_detail :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context) {
+	view := screen_context.statistics_view
+	content := area
+	rate := fluid_rate_row(screen_context.world.statistics, view.focused_fluid, view.window)
+	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), fluid_name(screen_context.fluids, view.focused_fluid), UI_HEADING_TEXT_SIZE, .Left)
+	detail_line(state, &content, fmt.tprintf("%s: %s", text("statistics_produced"), format_fluid_window_rate(rate.produced, view.window)))
+	detail_line(state, &content, fmt.tprintf("%s: %s", text("statistics_consumed"), format_fluid_window_rate(rate.consumed, view.window)))
+	detail_line(state, &content, fmt.tprintf("%s: %s", text("statistics_voided_rate"), format_fluid_window_rate(rate.voided, view.window)), UI_DIM_TEXT_COLOR)
 }
 
 statistics_simulation_content :: proc(screen_context: Screen_Context) -> Simulation_Content {
@@ -92,6 +131,10 @@ statistics_simulation_content :: proc(screen_context: Screen_Context) -> Simulat
 // what a lenient world voided of it.
 statistics_detail :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context, names: []string) {
 	view := screen_context.statistics_view
+	if view.fluid_has_focus {
+		statistics_fluid_detail(state, area, screen_context)
+		return
+	}
 	if !view.has_focus {
 		return
 	}
@@ -113,7 +156,7 @@ focus_statistics_row :: proc(state: ^Ui_State, view: ^Statistics_View, list_id: 
 		return false
 	}
 	state.requested_focus = id
-	view.focused, view.has_focus = item, true
+	view.focused, view.has_focus, view.fluid_has_focus = item, true, false
 	return true
 }
 
@@ -133,6 +176,7 @@ production_tab :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Scr
 	content := area
 	names := item_display_names(screen_context.items, context.temp_allocator)
 	rows := statistics_rows(screen_context.world.statistics, view.window, context.temp_allocator)
+	fluid_rows := fluid_statistics_rows(screen_context.world.statistics, view.window, context.temp_allocator)
 	list_area := cut_left(&content, STATISTICS_LIST_COLUMN_WIDTH)
 	cut_left(&content, 2 * UI_PADDING)
 	if ui_choice(state, settings_row(&list_area), text("statistics_window"), text(rate_window_keys[view.window])) {
@@ -143,7 +187,7 @@ production_tab :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Scr
 	draw_rate_columns(state, header, text("statistics_produced"), text("statistics_consumed"), UI_DIM_TEXT_COLOR)
 	list_id := ui_id(state, "statistics_list")
 	letter := letter_input(state, &view.letter_radial)
-	statistics_item_list(state, list_area, screen_context, names, rows)
+	statistics_item_list(state, list_area, screen_context, names, rows, fluid_rows)
 	statistics_detail(state, content, screen_context, names)
 	settle_statistics_focus(state, view, list_id, rows)
 	if position := row_position_for_letter(names, rows, letter); letter != 0 && position >= 0 {

@@ -44,6 +44,10 @@ Machine_Kind :: enum u8 {
 	Steam_Engine,
 	Storage_Tank,
 	Pump,
+	// Draws crude oil from a tar pit block in front of it, with power.
+	Tar_Pit_Pump,
+	// Burns the gas in its input port, with power (the paid gas sink).
+	Flare_Stack,
 	// Power (power_network.odin): a pole carries wires to other poles
 	// within reach and powers the machines in its supply volume, a power
 	// switch is a pole without a supply volume that can be turned off,
@@ -52,7 +56,8 @@ Machine_Kind :: enum u8 {
 	Power_Switch,
 	Lamp,
 	// Crafting machines (assembler.odin): assemblers, crushers, washers,
-	// alloy furnaces and recyclers, told apart by their recipe_maker.
+	// alloy furnaces, recyclers, refineries and cracking units, told apart
+	// by their recipe_maker.
 	// Research (lab.odin).
 	Crafting_Machine,
 	Lab,
@@ -73,6 +78,8 @@ machine_kind_names := [Machine_Kind]string {
 	.Steam_Engine  = "steam_engine",
 	.Storage_Tank  = "storage_tank",
 	.Pump          = "pump",
+	.Tar_Pit_Pump  = "tar_pit_pump",
+	.Flare_Stack   = "flare_stack",
 	.Pole          = "pole",
 	.Power_Switch  = "power_switch",
 	.Lamp          = "lamp",
@@ -127,6 +134,7 @@ Machine_Definition :: struct {
 	buffer_litres:                int,
 	flow_litres_per_second:       int,
 	fluid_litres_per_second:      int,
+	fluid_litres_per_minute:      int,
 	supply_volume:                Machine_Footprint_Definition,
 	wire_reach:                   int,
 	electric_output_kilowatts:    f32,
@@ -171,6 +179,9 @@ Machine :: struct {
 	// of steam made per second from as much water. Steam engines: litres
 	// of steam used per second at full output.
 	fluid_litres_per_second:     u32,
+	// Tar pit pumps: litres per minute, a whole litre whenever enough
+	// ticks have added up (accumulate_litres).
+	fluid_litres_per_minute:     u32,
 	// Poles: the box of cells powered, x y z like footprint, centred on
 	// the pole across and starting at its bottom. Zero for a power switch.
 	supply_volume:               [3]i32,
@@ -251,7 +262,7 @@ validate_machine_kind_fields :: proc(definition: Machine_Definition, kind: Machi
 		return validate_drill_definition(definition)
 	case .Splitter:
 		return validate_splitter_definition(definition)
-	case .Pipe, .Offshore_Pump, .Boiler, .Steam_Engine, .Storage_Tank, .Pump:
+	case .Pipe, .Offshore_Pump, .Boiler, .Steam_Engine, .Storage_Tank, .Pump, .Tar_Pit_Pump, .Flare_Stack:
 		return validate_fluid_machine_definition(definition, kind)
 	case .Pole, .Power_Switch, .Lamp:
 		return validate_power_machine_definition(definition, kind)
@@ -430,6 +441,7 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 		buffer_litres = i32(max(definition.buffer_litres, 0)),
 		flow_litres_per_second = u32(max(definition.flow_litres_per_second, 0)),
 		fluid_litres_per_second = u32(max(definition.fluid_litres_per_second, 0)),
+		fluid_litres_per_minute = u32(max(definition.fluid_litres_per_minute, 0)),
 		supply_volume = {i32(definition.supply_volume.width), i32(definition.supply_volume.height), i32(definition.supply_volume.depth)},
 		wire_reach = i32(max(definition.wire_reach, 0)),
 		electric_output_watts = u32(math.round(definition.electric_output_kilowatts * 1000)),
