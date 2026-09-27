@@ -97,11 +97,17 @@ Raw_Touchpad :: struct {
 
 // Values use the SDL sensor frame: x right, y up, z toward the player.
 // Gyro in radians per second, accelerometer in metres per second squared.
+// values are what the sensor reported this frame; for the gyro, bias and
+// corrected come from calibrate_gyro (bias learned at rest, corrected the
+// rate the look uses).
 Raw_Sensor :: struct {
 	available: bool,
 	enabled:   bool,
 	data_rate: f32,
 	values:    [3]f32,
+	bias:      [3]f32,
+	corrected: [3]f32,
+	settled:   bool,
 }
 
 Raw_Motion :: struct {
@@ -302,6 +308,73 @@ analog_actions :: proc(move, look, look_delta: [2]f32) -> Action_Set {
 // clockwise positive, so turning the controller left is positive yaw
 // (values[1]) and tilting its far end up is positive pitch (values[0]).
 // Both map to negative look_delta. Roll (values[2]) is ignored.
+// Gyro bias (couch test 1, 2026-09-27): the controller reported a constant
+// rate at rest that turned the view on its own while a thumb rested on the
+// right stick. The bias is learned while the gyro is not aiming and the
+// controller is still (consecutive samples within GYRO_STILL_TOLERANCE of
+// each other for GYRO_STILL_SAMPLES samples) and subtracted from every
+// reading; what is left under GYRO_DEADZONE counts as rest. A sample past
+// the sensor's full scale is a misread and reads as zero. Until the first
+// still period the raw rate is used as it is.
+GYRO_STILL_TOLERANCE :: 0.02
+GYRO_STILL_SAMPLES :: 90
+GYRO_DEADZONE :: 0.01
+// 2000 degrees per second, the gyro's full scale (doc/input.md).
+GYRO_FULL_SCALE :: 35.0
+
+Gyro_Calibration :: struct {
+	bias:        [3]f32,
+	settled:     bool,
+	previous:    [3]f32,
+	still_count: int,
+	still_sum:   [3]f32,
+}
+
+gyro_sample_plausible :: proc(sample: [3]f32) -> bool {
+	return abs(sample.x) <= GYRO_FULL_SCALE && abs(sample.y) <= GYRO_FULL_SCALE && abs(sample.z) <= GYRO_FULL_SCALE
+}
+
+gyro_samples_agree :: proc(first, second: [3]f32) -> bool {
+	difference := first - second
+	return abs(difference.x) <= GYRO_STILL_TOLERANCE && abs(difference.y) <= GYRO_STILL_TOLERANCE && abs(difference.z) <= GYRO_STILL_TOLERANCE
+}
+
+apply_gyro_deadzone :: proc(rate: [3]f32) -> [3]f32 {
+	result := rate
+	for &axis in result {
+		if abs(axis) < GYRO_DEADZONE {
+			axis = 0
+		}
+	}
+	return result
+}
+
+reset_gyro_stillness :: proc(calibration: ^Gyro_Calibration) {
+	calibration.still_count, calibration.still_sum = 0, {}
+}
+
+// One raw sample per frame. aiming is true while the gyro steers the view,
+// when a steady turn must not be learned as bias.
+calibrate_gyro :: proc(calibration: ^Gyro_Calibration, sample: [3]f32, aiming: bool) -> (corrected: [3]f32) {
+	if !gyro_sample_plausible(sample) {
+		reset_gyro_stillness(calibration)
+		return {}
+	}
+	if aiming || !gyro_samples_agree(calibration.previous, sample) {
+		reset_gyro_stillness(calibration)
+	} else {
+		calibration.still_count += 1
+		calibration.still_sum += sample
+		if calibration.still_count >= GYRO_STILL_SAMPLES {
+			calibration.bias = calibration.still_sum / f32(calibration.still_count)
+			calibration.settled = true
+			reset_gyro_stillness(calibration)
+		}
+	}
+	calibration.previous = sample
+	return apply_gyro_deadzone(sample - calibration.bias)
+}
+
 gyro_to_look_delta :: proc(angular_velocity: [3]f32, seconds: f32) -> [2]f32 {
 	yaw_degrees := angular_velocity[1] * math.DEG_PER_RAD * seconds
 	pitch_degrees := angular_velocity[0] * math.DEG_PER_RAD * seconds

@@ -15,6 +15,48 @@ pad_point :: proc(degrees_from_up: f32, radius: f32) -> [2]f32 {
 	return {0.5 + radius * math.sin(radians), 0.5 - radius * math.cos(radians)}
 }
 
+rates_close :: proc(first, second: [3]f32) -> bool {
+	difference := first - second
+	return abs(difference.x) < 0.0001 && abs(difference.y) < 0.0001 && abs(difference.z) < 0.0001
+}
+
+@(test)
+test_gyro_bias_is_learned_at_rest_and_subtracted :: proc(t: ^testing.T) {
+	calibration: Gyro_Calibration
+	// A constant offset, as the couch saw: after the still window (the
+	// first sample only starts it) the offset is the bias and the corrected
+	// rate is zero.
+	offset := [3]f32{0.4, -1.2, 0.05}
+	for _ in 0 ..= GYRO_STILL_SAMPLES {
+		calibrate_gyro(&calibration, offset, false)
+	}
+	testing.expect(t, calibration.settled)
+	testing.expect(t, rates_close(calibration.bias, offset))
+	testing.expect_value(t, calibrate_gyro(&calibration, offset, false), [3]f32{})
+	// A real turn on top of the bias comes through.
+	testing.expect(t, rates_close(calibrate_gyro(&calibration, offset + {0, 1, 0}, true), {0, 1, 0}))
+	// Noise under the deadzone reads as rest.
+	testing.expect_value(t, calibrate_gyro(&calibration, offset + {0.005, 0, 0}, false), [3]f32{})
+}
+
+@(test)
+test_gyro_bias_is_not_learned_while_aiming_or_moving :: proc(t: ^testing.T) {
+	calibration: Gyro_Calibration
+	offset := [3]f32{0.4, -1.2, 0.05}
+	for _ in 0 ..< GYRO_STILL_SAMPLES {
+		calibrate_gyro(&calibration, offset, true)
+	}
+	testing.expect(t, !calibration.settled)
+	// Samples that jump reset the still window.
+	for index in 0 ..< GYRO_STILL_SAMPLES {
+		calibrate_gyro(&calibration, index % 2 == 0 ? offset : offset + {0.5, 0, 0}, false)
+	}
+	testing.expect(t, !calibration.settled)
+	// A sample past the full scale is a misread: zero, and the window resets.
+	testing.expect_value(t, calibrate_gyro(&calibration, {100, 0, 0}, false), [3]f32{})
+	testing.expect_value(t, calibration.still_count, 0)
+}
+
 @(test)
 test_gyro_to_look_delta_zero :: proc(t: ^testing.T) {
 	testing.expect_value(t, gyro_to_look_delta({0, 0, 0}, 1.0 / 60), [2]f32{0, 0})

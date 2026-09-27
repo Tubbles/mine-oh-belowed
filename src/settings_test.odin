@@ -62,7 +62,8 @@ test_look_settings :: proc(t: ^testing.T) {
 test_gyro_setting_and_sensitivities :: proc(t: ^testing.T) {
 	gamepad := Raw_Gamepad {
 		connected = true,
-		motion = {gyro = {available = true, enabled = true, values = {0, 1, 0}}},
+		// The look reads the calibrated rate (calibrate_frame_gyro).
+		motion = {gyro = {available = true, enabled = true, values = {0, 1, 0}, corrected = {0, 1, 0}}},
 	}
 	settings := DEFAULT_SETTINGS
 	base := sdl3_look_delta(gamepad, gamepad, 1.0 / 60, settings)

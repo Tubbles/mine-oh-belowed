@@ -36,9 +36,10 @@ STEAM_CONTROLLER_RIGHT_PAD_CLICK :: sdl.GamepadButton.MISC2
 HAPTIC_RUMBLE_MILLISECONDS :: 100
 
 Sdl3_Input_State :: struct {
-	gamepad:  ^sdl.Gamepad,
+	gamepad:          ^sdl.Gamepad,
 	// A rumble was started and not yet stopped.
-	rumbling: bool,
+	rumbling:         bool,
+	gyro_calibration: Gyro_Calibration,
 }
 
 // Returns an SDL error message when initialisation fails.
@@ -228,6 +229,18 @@ sdl3_stick :: proc(gamepad: Raw_Gamepad, x_axis, y_axis: sdl.GamepadAxis) -> [2]
 	return apply_radial_deadzone(stick, STICK_DEADZONE)
 }
 
+// Runs the gyro sample of the frame through the calibration and leaves the
+// corrected rate, the bias and whether it settled on the sensor.
+calibrate_frame_gyro :: proc(calibration: ^Gyro_Calibration, gamepad: ^Raw_Gamepad) {
+	gyro := &gamepad.motion.gyro
+	if !gyro.enabled {
+		return
+	}
+	aiming := gyro_look_active(gamepad.touch_sense, touchpad_finger(gamepad^, RIGHT_TOUCHPAD_INDEX))
+	gyro.corrected = calibrate_gyro(calibration, gyro.values, aiming)
+	gyro.bias, gyro.settled = calibration.bias, calibration.settled
+}
+
 // doc/input.md: the gyro aims while the right stick or right pad is touched.
 // Pads without touch sense keep it always on.
 gyro_look_active :: proc(touch_sense: Raw_Touch_Sense, right_finger: Touchpad_Finger) -> bool {
@@ -245,7 +258,7 @@ sdl3_look_delta :: proc(previous, current: Raw_Gamepad, frame_seconds: f32, sett
 	look_delta := pad_delta * TOUCHPAD_LOOK_PIXELS_PER_PAD_WIDTH * settings.trackpad_look_sensitivity
 	gyro := current.motion.gyro
 	if settings.gyro_enabled && gyro.enabled && gyro_look_active(current.touch_sense, right_finger) {
-		look_delta += gyro_to_look_delta(gyro.values, frame_seconds) * GYRO_LOOK_PIXELS_PER_DEGREE * settings.gyro_look_sensitivity
+		look_delta += gyro_to_look_delta(gyro.corrected, frame_seconds) * GYRO_LOOK_PIXELS_PER_DEGREE * settings.gyro_look_sensitivity
 	}
 	return look_delta
 }
@@ -258,6 +271,7 @@ read_sdl3_input_frame :: proc(state: ^Sdl3_Input_State, previous: Input_Frame, f
 		mouse    = read_raylib_mouse(),
 		keyboard = read_raylib_keyboard(),
 	}
+	calibrate_frame_gyro(&state.gyro_calibration, &raw.gamepad)
 	move := clamp_to_unit_length(sdl3_stick(raw.gamepad, .LEFTX, .LEFTY) + keyboard_move())
 	look := sdl3_stick(raw.gamepad, .RIGHTX, .RIGHTY)
 	look_delta := raw.mouse.delta + sdl3_look_delta(previous.raw.gamepad, raw.gamepad, frame_seconds, settings)

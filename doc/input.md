@@ -63,7 +63,7 @@ Everything below is a binding table in configuration, not code. Same physical in
 | --- | --- | --- |
 | Left stick | Move. Click: sprint toggle | Focus navigation |
 | Right stick | Camera, coarse | Scroll lists |
-| Gyro | Camera, fine aim. Active while the right stick or right pad is touched; always on and grip sense are settings | Off |
+| Gyro | Camera, fine aim. Active while the right stick or right pad is touched; always on and grip sense are settings. The bias is learned while the controller is still and the thumb is off (about a second and a half), subtracted, and a small deadzone counts as rest, since couch test 1 saw a constant rate turn the view (`calibrate_gyro`); the diagnostics show the raw rate, the bias and the corrected rate | Off |
 | Right trackpad | Camera as a mouse surface. Click: interact | Pointer. Click: confirm |
 | Left trackpad | Radial hotbar: touch shows the wheel, slide to a slot, release selects | Radial letter wheel (first letter jump), radial category wheel |
 | R2 trigger | Mine, break | Confirm |
