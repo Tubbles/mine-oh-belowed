@@ -80,6 +80,10 @@ update_water_cell :: proc(world: ^World, registry: Block_Registry, position: Wor
 	if world_to_chunk_coordinate(position) not_in world.chunks {
 		return
 	}
+	// Entity cells are air in the chunk data but a machine stands there.
+	if position in world.entities.cells {
+		return
+	}
 	block := world_get_block(world, position)
 	level := block_water_level(registry, block)
 	if level == WATER_SOURCE_LEVEL || block != AIR_BLOCK && level == 0 {

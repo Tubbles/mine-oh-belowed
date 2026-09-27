@@ -37,6 +37,18 @@ test_water_spreads_seven_blocks_from_source :: proc(t: ^testing.T) {
 	testing.expect_value(t, world_get_block(&world, {10, 2, 10}), AIR_BLOCK)
 }
 
+// A machine's cells are air in the chunk, but water must not flow into them.
+@(test)
+test_water_stays_out_of_entity_cells :: proc(t: ^testing.T) {
+	registry := make_test_registry()
+	world := make_water_world(registry, 0)
+	world.entities.cells[{11, 1, 10}] = Entity_Handle{kind = .Chest, index = 0, generation = 1}
+	world_set_block(&world, {10, 1, 10}, test_block(registry, "water"))
+	settle_world(t, &world, registry, 0)
+	testing.expect_value(t, water_level_at(&world, registry, {11, 1, 10}), 0)
+	testing.expect_value(t, water_level_at(&world, registry, {9, 1, 10}), WATER_SOURCE_LEVEL - 1)
+}
+
 @(test)
 test_water_drains_when_source_is_removed :: proc(t: ^testing.T) {
 	registry := make_test_registry()
