@@ -84,6 +84,15 @@ newly_pressed_letter :: proc(previous, current: Raw_Keyboard) -> rune {
 	return 0
 }
 
+// raylib's key codes, which both backends report.
+KEY_CODE_ENTER :: 257
+KEY_CODE_BACKSPACE :: 259
+KEY_CODE_KEYPAD_ENTER :: 335
+
+key_newly_pressed :: proc(previous, current: Raw_Keyboard, key: i32) -> bool {
+	return keyboard_holds_key(current, key) && !keyboard_holds_key(previous, key)
+}
+
 make_ui_input :: proc(previous, current: Input_Frame) -> Ui_Input {
 	just := current.just_pressed
 	pad_down := right_pad_click_down(current.raw)
@@ -108,6 +117,10 @@ make_ui_input :: proc(previous, current: Input_Frame) -> Ui_Input {
 		open_power = .Open_Power_Overview in just,
 		open_technologies = .Open_Technologies in just,
 		typed_letter = newly_pressed_letter(previous.raw.keyboard, current.raw.keyboard),
+		typed_text = current.raw.keyboard.text,
+		typed_text_length = current.raw.keyboard.text_length,
+		backspace_key = key_newly_pressed(previous.raw.keyboard, current.raw.keyboard, KEY_CODE_BACKSPACE),
+		enter_key = key_newly_pressed(previous.raw.keyboard, current.raw.keyboard, KEY_CODE_ENTER) || key_newly_pressed(previous.raw.keyboard, current.raw.keyboard, KEY_CODE_KEYPAD_ENTER),
 		hotbar_radial_down = .Hotbar_Radial in current.pressed,
 		mouse_position = current.raw.mouse.position,
 		mouse_moved = current.raw.mouse.delta != {},

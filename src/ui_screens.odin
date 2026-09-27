@@ -13,7 +13,10 @@ SETTINGS_ROW_COUNT :: 8
 Screen_Context :: struct {
 	settings:        ^Settings,
 	quit_requested:  ^bool,
+	// Nil without a world.
 	save_requested:  ^bool,
+	// The title screens' state and the requests to start or leave a world.
+	title:           ^Title_State,
 	player:          ^Player,
 	items:           Item_Registry,
 	item_sort_ranks: []u16,
@@ -62,6 +65,10 @@ handle_screen_keys :: proc(state: ^Ui_State) {
 		return
 	}
 	top := top_screen(state.screens)
+	// The title is the bottom screen while no world is played.
+	if top == .Title {
+		return
+	}
 	closes_inventory := (top == .Inventory || top == .Machine) && input.open_inventory && !input.context_action
 	closes_recipes := top == .Recipes && input.open_recipes
 	closes_journal := top == .Journal && input.open_journal
@@ -80,6 +87,9 @@ handle_screen_keys :: proc(state: ^Ui_State) {
 
 run_screens :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	screen := top_screen(state.screens)
+	// Read before the screen runs: the B press that closes the keyboard
+	// must not also close the screen.
+	typing := state.keyboard.field != 0
 	switch screen {
 	case .None:
 	case .Pause:
@@ -98,10 +108,21 @@ run_screens :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		power_overview_screen(state, screen_context)
 	case .Technologies:
 		technology_screen(state, screen_context)
+	case .Title:
+		title_screen(state, screen_context)
+	case .New_World:
+		new_world_screen(state, screen_context)
+	case .Load_World:
+		load_world_screen(state, screen_context)
+	case .Confirm_Delete:
+		confirm_delete_screen(state, screen_context)
 	}
 	// After the screen, so that the Back press a screen consumed this frame
-	// and the screen change land in the same frame.
-	handle_screen_keys(state)
+	// and the screen change land in the same frame. While the keyboard is
+	// open, Back and Pause belong to it.
+	if !typing {
+		handle_screen_keys(state)
+	}
 	if screen_context.player != nil {
 		close_slot_screens(state, screen_context.player, screen_context.items)
 	}
@@ -141,7 +162,7 @@ panel_height :: proc(row_count: int, extra: f32) -> f32 {
 pause_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	ui_backdrop(state)
 	area := ui_safe_area(state)
-	panel := centred_rectangle(area, PAUSE_PANEL_WIDTH, panel_height(8, UI_ROW_HEIGHT + UI_GAP))
+	panel := centred_rectangle(area, PAUSE_PANEL_WIDTH, panel_height(9, UI_ROW_HEIGHT + UI_GAP))
 	ui_panel_begin(state, "pause", panel)
 	content := inset(panel, UI_PADDING)
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_title"), UI_HEADING_TEXT_SIZE, .Centre)
@@ -181,6 +202,12 @@ pause_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	cut_top(&content, UI_GAP)
 	if ui_button(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_settings")) {
 		push_screen(&state.screens, .Settings)
+	}
+	cut_top(&content, UI_GAP)
+	// Both quits save first: the frame loop after this frame, the exit
+	// path in run_game.
+	if ui_button(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_quit_title")) {
+		screen_context.title.request = {kind = .Quit_To_Title}
 	}
 	cut_top(&content, UI_GAP)
 	if ui_button(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_quit")) {

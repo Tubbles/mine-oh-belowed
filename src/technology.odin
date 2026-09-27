@@ -4,6 +4,7 @@ import "core:encoding/json"
 import "core:fmt"
 import "core:math"
 import "core:os"
+import "core:slice"
 
 // Technologies from data/technologies.sjson, resolved after the recipes:
 // an id, a name, a cost in units of science packs, the research recipes it
@@ -270,4 +271,22 @@ load_technology_registry :: proc(data_directory: string, items: Item_Registry, r
 		return {}, false
 	}
 	return registry, true
+}
+
+// The world setting "research cost multiplier": a pack count times the
+// percent, rounded up, and at least one.
+scaled_pack_count :: proc(pack_count, percent: int) -> int {
+	return max((pack_count * percent + 99) / 100, 1)
+}
+
+// A copy of the registry with every pack count scaled, for one world. The
+// other slices are shared with the base registry; only the technologies
+// slice is new.
+scaled_technology_registry :: proc(base: Technology_Registry, percent: int, allocator := context.allocator) -> Technology_Registry {
+	registry := base
+	registry.technologies = slice.clone(base.technologies, allocator)
+	for &technology in registry.technologies {
+		technology.pack_count = scaled_pack_count(technology.pack_count, percent)
+	}
+	return registry
 }

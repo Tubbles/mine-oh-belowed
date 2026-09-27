@@ -17,6 +17,10 @@
 - Chunk generation and meshing run on worker threads (`core:thread`, processor cores minus one, at most six) and hand results to the main thread through mutex protected queues. Workers never touch the `World`: a generate job carries only a coordinate, a mesh job carries private copies of the chunk and its six neighbours. Per frame limits keep the main thread smooth (16 generated chunks inserted, 8 mesh jobs submitted, 6 non empty mesh uploads, 48 jobs pending). A chunk is meshed once all neighbours inside the load volume are loaded, and stale mesh results are dropped by revision. The simulation is single threaded in the alpha.
 - Generation is a pure function of the world seed and the chunk coordinate. Features that cross chunk borders (trees, vein outcrops) come from per column and per region hashes any chunk can recompute, so load order and thread count never change the world. Each purpose (height, moisture, caves, trees, veins) has its own sub seed derived from the world seed.
 
+## Sessions
+
+The window, renderer, UI and input backend are created once per process. A `Session` holds one world: the simulation, a copy of the generator with the world's seed and richness, the streaming state, the save location and the tick accumulator. The title state has no session; starting or loading a world creates one, quit to title saves and destroys it and drops the chunk meshes. Menus request session changes on the title state and the frame loop applies them after the frame, so a failed start shows a toast and leaves the menus in place. Biomes and vein tables load once and are copied per session; the research cost setting is a per session scaled copy of the technology registry.
+
 ## Packages
 
 One `game` package under `src/`, split into files by concern: `world_*.odin`, `generation_*.odin`, `simulation_*.odin`, `render_*.odin`, `input_*.odin`, `ui_*.odin`, `data_*.odin`, `save_*.odin`. Odin forbids import cycles and a game's concerns are tightly coupled, so packages are only split off for leaf utilities with no back references (configuration loading, noise helpers). `odin test src` runs the tests of the package.

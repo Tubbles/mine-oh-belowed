@@ -6,8 +6,14 @@ import "core:slice"
 // Chosen at world creation (DESIGN.md, World settings). The seed also
 // seeds the drills' reservoir draws (drill.odin).
 World_Settings :: struct {
-	seed:           u64,
-	veins_infinite: bool,
+	seed:                  u64,
+	veins_infinite:        bool,
+	// Written to world.sjson here; the generator and the technology
+	// registry of the session apply them (session.odin).
+	vein_richness_percent: int,
+	research_cost_percent: int,
+	// Stored for the byproduct rules to come, no effect yet.
+	byproducts_lenient:    bool,
 }
 
 // What the simulation needs of a vein type: its name, its outcrop blocks

@@ -152,7 +152,19 @@ read_raylib_keyboard :: proc() -> Raw_Keyboard {
 		keyboard.keys_down[keyboard.key_count] = i32(key)
 		keyboard.key_count += 1
 	}
+	read_raylib_typed_text(&keyboard)
 	return keyboard
+}
+
+// Drains raylib's character queue every frame, so no stale characters
+// reach a text field opened later.
+read_raylib_typed_text :: proc(keyboard: ^Raw_Keyboard) {
+	for character := rl.GetCharPressed(); character != 0; character = rl.GetCharPressed() {
+		if character >= ' ' && character <= '~' && keyboard.text_length < RAW_TEXT_CAPACITY {
+			keyboard.text[keyboard.text_length] = u8(character)
+			keyboard.text_length += 1
+		}
+	}
 }
 
 read_raylib_raw_input :: proc() -> Raw_Input {

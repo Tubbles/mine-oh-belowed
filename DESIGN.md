@@ -108,7 +108,7 @@ Sparse. A handful of quiet, positional machine loops with a hard cap on simultan
 
 ## World settings
 
-Chosen at world creation: seed, name, vein finiteness, vein richness, research cost multiplier, byproduct strictness, all recipes unlocked at start, day length.
+Chosen at world creation: seed, name, vein finiteness, vein richness (50, 100, 200 or 400 percent), research cost multiplier (the same steps), byproduct strictness (stored, no effect until phase 5), all recipes unlocked at start, day length (5, 10, 20 or 40 minutes). `data/game.sjson` holds only the defaults for the new world screen.
 
 ## User interface
 

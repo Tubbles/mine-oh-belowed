@@ -65,6 +65,7 @@ RAW_GAMEPAD_AXIS_CAPACITY :: 16
 RAW_GAMEPAD_BUTTON_CAPACITY :: 32
 RAW_MOUSE_BUTTON_CAPACITY :: 8
 RAW_KEYS_DOWN_CAPACITY :: 16
+RAW_TEXT_CAPACITY :: 16
 RAW_TOUCHPAD_CAPACITY :: 2
 RAW_TOUCHPAD_FINGER_CAPACITY :: 2
 
@@ -130,6 +131,10 @@ Raw_Keyboard :: struct {
 	key_count:      int,
 	keys_down:      [RAW_KEYS_DOWN_CAPACITY]i32,
 	keys_truncated: bool,
+	// Printable ASCII characters typed this frame, with shift and layout
+	// applied, for text fields.
+	text:           [RAW_TEXT_CAPACITY]u8,
+	text_length:    int,
 }
 
 Raw_Input :: struct {

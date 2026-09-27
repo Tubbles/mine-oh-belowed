@@ -32,7 +32,7 @@ mapped_lines :: proc(state: Frame_State, config: Game_Config) -> []Diagnostics_L
 	lines := make([dynamic]Diagnostics_Line, context.temp_allocator)
 	input := state.input
 	append_line(&lines, false, "%s  controller diagnostics", config.name)
-	append_line(&lines, false, "tick %d  fps %d  alpha %.2f", state.simulation.tick, rl.GetFPS(), interpolation_alpha(state.accumulator))
+	append_line(&lines, false, "tick %d  fps %d  alpha %.2f", state.session.simulation.tick, rl.GetFPS(), interpolation_alpha(state.session.accumulator))
 	append_line(&lines, false, "backend %v", input.raw.backend)
 	append_line(&lines, false, "%s", world_statistics_text(state))
 	append_line(&lines, false, "%s", streaming_statistics_text(state))
@@ -200,7 +200,7 @@ draw_diagnostics :: proc(state: Frame_State, config: Game_Config) {
 world_statistics_text :: proc(state: Frame_State) -> string {
 	return fmt.tprintf(
 		"chunks %d  drawn %d  vertices %d",
-		len(state.simulation.world.chunks),
+		len(state.session.simulation.world.chunks),
 		state.renderer.drawn_chunk_count,
 		state.renderer.vertex_count,
 	)
@@ -209,7 +209,7 @@ world_statistics_text :: proc(state: Frame_State) -> string {
 // Light of the cell in front of the targeted face: the targeted block
 // itself is usually opaque and holds no light.
 light_statistics_text :: proc(state: Frame_State) -> string {
-	simulation := state.simulation
+	simulation := state.session.simulation
 	world := simulation.world
 	player := simulation.players[0]
 	light := player.target.hit ? world_get_light(&world, player.target.adjacent) : 0
@@ -225,7 +225,7 @@ light_statistics_text :: proc(state: Frame_State) -> string {
 }
 
 streaming_statistics_text :: proc(state: Frame_State) -> string {
-	return fmt.tprintf("pending jobs %d  veins %d  seed %d", state.streaming.pending_jobs, len(state.simulation.world.veins), state.generator.seed)
+	return fmt.tprintf("pending jobs %d  veins %d  seed %d", state.session.streaming.pending_jobs, len(state.session.simulation.world.veins), state.session.generator.seed)
 }
 
 // Keeps the diagnostics readable over the bright sky.
@@ -236,7 +236,7 @@ draw_diagnostics_backdrop :: proc() {
 // Shown while the diagnostics screen is off.
 draw_world_overlay :: proc(state: Frame_State) {
 	lines := make([dynamic]Diagnostics_Line, context.temp_allocator)
-	append_line(&lines, false, "fps %d  tick %d", rl.GetFPS(), state.simulation.tick)
+	append_line(&lines, false, "fps %d  tick %d", rl.GetFPS(), state.session.simulation.tick)
 	append_line(&lines, false, "%s", world_statistics_text(state))
 	append_line(&lines, false, "%s", streaming_statistics_text(state))
 	append_line(&lines, false, "%s", light_statistics_text(state))
@@ -289,12 +289,12 @@ occupied_slot_count :: proc(inventory: Inventory) -> int {
 }
 
 append_player_lines :: proc(lines: ^[dynamic]Diagnostics_Line, state: Frame_State) {
-	player, registry, world := state.simulation.players[0], state.registry, state.simulation.world
+	player, registry, world := state.session.simulation.players[0], state.content.blocks, state.session.simulation.world
 	position, velocity := player.position, player.velocity
 	append_line(lines, false, "player % .2f % .2f % .2f  velocity % .2f % .2f % .2f", position.x, position.y, position.z, velocity.x, velocity.y, velocity.z)
 	append_line(lines, false, "on ground %s  camera %v  flying %s", yes_no(player.on_ground), player.camera_mode, yes_no(player.flying))
 	append_line(lines, player.mining.active, "%s  mining %.0f%%", target_text(registry, &world, player.target), mining_fraction(player.mining) * 100)
-	items := state.items
+	items := state.content.items
 	append_line(
 		lines,
 		false,
@@ -306,7 +306,7 @@ append_player_lines :: proc(lines: ^[dynamic]Diagnostics_Line, state: Frame_Stat
 		occupied_slot_count(player.inventory),
 		len(player.inventory.slots),
 	)
-	unlocks := state.simulation.unlocks
+	unlocks := state.session.simulation.unlocks
 	append_line(
 		lines,
 		player.crafting.count > 0,
@@ -323,25 +323,25 @@ append_player_lines :: proc(lines: ^[dynamic]Diagnostics_Line, state: Frame_Stat
 }
 
 research_diagnostics_text :: proc(state: Frame_State) -> string {
-	research := state.simulation.world.research
-	labs := len(state.simulation.world.entities.labs.entries) - len(state.simulation.world.entities.labs.free)
+	research := state.session.simulation.world.research
+	labs := len(state.session.simulation.world.entities.labs.entries) - len(state.session.simulation.world.entities.labs.free)
 	if !research.queued {
 		return fmt.tprintf("research none queued  labs %d", labs)
 	}
-	technology := state.technologies.technologies[research.technology]
+	technology := state.session.technologies.technologies[research.technology]
 	return fmt.tprintf("research %s %d of %d units  labs %d", technology.id, research.units_done, technology.pack_count, labs)
 }
 
 quest_diagnostics_text :: proc(state: Frame_State) -> string {
-	quests := state.simulation.quests
+	quests := state.session.simulation.quests
 	if quests.active == NO_QUEST {
 		return fmt.tprintf("quest none active  hints fired %d  rewards waiting %d", quests.hints_fired, len(quests.pending_rewards))
 	}
 	return fmt.tprintf(
 		"quest %s (%d of %d)  hints fired %d  rewards waiting %d",
-		state.quests.quests[quests.active].id,
+		state.content.quests.quests[quests.active].id,
 		quests.active + 1,
-		len(state.quests.quests),
+		len(state.content.quests.quests),
 		quests.hints_fired,
 		len(quests.pending_rewards),
 	)
@@ -349,17 +349,17 @@ quest_diagnostics_text :: proc(state: Frame_State) -> string {
 
 // The counters of the active quest's first item objective.
 objective_counters_text :: proc(state: Frame_State) -> string {
-	quests := state.simulation.quests
-	statistics := state.simulation.world.statistics
+	quests := state.session.simulation.quests
+	statistics := state.session.simulation.world.statistics
 	if quests.active == NO_QUEST {
 		return fmt.tprintf("walked %d mm  world actions %d", statistics.distance_walked_millimetres, statistics.world_actions)
 	}
-	for objective in state.quests.quests[quests.active].objectives {
+	for objective in state.content.quests.quests[quests.active].objectives {
 		if objective.item != NO_ITEM {
 			item := objective.item
 			return fmt.tprintf(
 				"%s produced %d obtained %d delivered %d rate %d/min",
-				item_id_text(state.items, item),
+				item_id_text(state.content.items, item),
 				item_counter(statistics.produced, item),
 				item_counter(statistics.obtained, item),
 				item_counter(statistics.delivered, item),

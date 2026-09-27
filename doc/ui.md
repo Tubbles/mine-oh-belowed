@@ -41,4 +41,4 @@ Placeholder icons are the block's atlas tile for blocks, and a coloured square w
 
 ## On-screen keyboard
 
-A QWERTY grid under the text field, driven by focus navigation and the pointer, with shift, space, backspace and done as large keys. A physical keyboard types into the same field when present.
+A QWERTY grid under the text field, driven by focus navigation and the pointer, with shift, space, backspace and done as large keys. While typing, A types the focused key, X is backspace, Y is shift (a caps lock style toggle) and B is done, so the common keys are one press away; the panel shows only the edited field and the keys. A physical keyboard types into the same field when present, and Enter or Escape finishes. Names are capped at 32 characters, seeds at 20 digits, ASCII only (0024). The title screen is a plain sky coloured backdrop with the name and version, since a world view would need a session.

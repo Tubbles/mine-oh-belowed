@@ -2,7 +2,7 @@ package game
 
 import "core:fmt"
 import "core:os"
-import "core:time"
+import "core:strings"
 import rl "vendor:raylib"
 
 // Longest frame the accumulator accepts, so that a stall (debugger, window
@@ -40,48 +40,30 @@ Tick_Accumulator :: struct {
 	accumulated_seconds: f64,
 }
 
+// The process: window, renderer, UI and input live for the whole run, the
+// session only while a world is played. Without a session the title
+// screen shows.
 Frame_State :: struct {
-	simulation:         Simulation_State,
-	accumulator:        Tick_Accumulator,
+	config:             Game_Config,
+	content:            Game_Content,
+	// The generator data every session copies (session_generator).
+	base_generator:     Generator,
+	session:            ^Session,
+	title:              Title_State,
 	input_backend:      Input_Backend,
 	sdl3_input:         Sdl3_Input_State,
 	input:              Input_Frame,
 	previous_input:     Input_Frame,
 	frame_seconds:      f32,
-	tick_input:         Tick_Input_Accumulator,
 	// World actions still held since a screen closed, see update_world_action_guard.
 	world_action_guard: Action_Set,
 	settings:           Settings,
 	ui:                 Ui_State,
 	cursor_enabled:     bool,
 	quit_requested:     bool,
-	// Where the world saves; saving is off for the debug terrain and when
-	// no saves directory could be found.
-	save:               Save_Setup,
-	// Set by the pause menu's Save button, handled after the ticks.
-	save_requested:     bool,
-	ticks_since_save:   u64,
-	registry:           Block_Registry,
-	items:              Item_Registry,
-	machines:           Machine_Registry,
-	fluids:             Fluid_Registry,
-	recipes:            Recipe_Registry,
-	technologies:       Technology_Registry,
-	quests:             Quest_Registry,
-	veins:              Vein_Content,
-	// Inventory sort order, from item_sort_ranks.
-	item_sort_ranks:    []u16,
-	// Recipe display names and the recipe indices sorted by them.
-	recipe_names:       []string,
-	recipe_order:       []int,
-	recipe_browser:     Recipe_Browser,
-	technology_browser: Technology_Browser,
-	generator:          Generator,
-	streaming:          Chunk_Streaming,
 	renderer:           Chunk_Renderer,
 	belt_renderer:      Belt_Renderer,
 	show_diagnostics:   bool,
-	debug_edit_counter: u64,
 }
 
 // Above the middle of the debug terrain, looking down at an angle. The
@@ -167,16 +149,7 @@ simulation_quest_context :: proc(state: ^Simulation_State, content: Simulation_C
 }
 
 frame_simulation_content :: proc(state: ^Frame_State) -> Simulation_Content {
-	return Simulation_Content {
-		blocks = state.registry,
-		items = state.items,
-		machines = state.machines,
-		fluids = state.fluids,
-		recipes = state.recipes,
-		technologies = state.technologies,
-		quests = state.quests,
-		veins = state.veins,
-	}
+	return session_simulation_content(state.content, state.session.technologies)
 }
 
 make_tick_accumulator :: proc(tick_rate: int) -> Tick_Accumulator {
@@ -235,13 +208,14 @@ apply_debug_actions :: proc(state: ^Frame_State) {
 	if .Toggle_Diagnostics in state.input.just_pressed {
 		state.show_diagnostics = !state.show_diagnostics
 	}
+	session := state.session
 	if .Debug_Remove_Block in state.input.just_pressed {
-		state.debug_edit_counter += 1
-		eye := player_eye(state.simulation.players[0].position)
-		debug_remove_block(&state.simulation.world, state.registry, eye, state.debug_edit_counter)
+		session.debug_edit_counter += 1
+		eye := player_eye(session.simulation.players[0].position)
+		debug_remove_block(&session.simulation.world, state.content.blocks, eye, session.debug_edit_counter)
 	}
 	if .Debug_Drop_Item in state.input.just_pressed {
-		debug_drop_item_on_belt(&state.simulation.world, frame_simulation_content(state), state.simulation.players[0])
+		debug_drop_item_on_belt(&session.simulation.world, frame_simulation_content(state), session.simulation.players[0])
 	}
 }
 
@@ -252,120 +226,144 @@ update_frame :: proc(state: ^Frame_State) {
 	state.frame_seconds = rl.GetFrameTime()
 	state.previous_input = state.input
 	state.input = read_input_frame(state, state.frame_seconds)
-	apply_debug_actions(state)
 	world_blocked := ui_blocks_world(state.ui.screens)
-	paused := ui_pauses_simulation(state.ui.screens)
 	state.world_action_guard = update_world_action_guard(state.world_action_guard, world_blocked, state.input.pressed)
+	if state.session != nil {
+		apply_debug_actions(state)
+		update_session(state, world_blocked)
+	}
+}
+
+update_session :: proc(state: ^Frame_State, world_blocked: bool) {
+	session := state.session
+	paused := ui_pauses_simulation(state.ui.screens)
 	frame_for_world := world_input(state.input, world_blocked, state.world_action_guard, state.settings)
 	// The right stick drives an open hotbar radial instead of the camera.
 	if state.ui.radial.open {
 		frame_for_world = without_actions(frame_for_world, {.Look})
 	}
-	state.tick_input = paused ? {} : accumulate_frame_input(state.tick_input, frame_for_world)
+	session.tick_input = paused ? {} : accumulate_frame_input(session.tick_input, frame_for_world)
 	tick_count: int
-	state.accumulator, tick_count = advance_simulation_clock(state.accumulator, f64(state.frame_seconds), paused)
+	session.accumulator, tick_count = advance_simulation_clock(session.accumulator, f64(state.frame_seconds), paused)
 	for _ in 0 ..< tick_count {
 		tick_input: Input_Frame
-		tick_input, state.tick_input = take_tick_input(state.tick_input, frame_for_world)
-		simulation_tick(&state.simulation, frame_simulation_content(state), {tick_input})
+		tick_input, session.tick_input = take_tick_input(session.tick_input, frame_for_world)
+		simulation_tick(&session.simulation, frame_simulation_content(state), {tick_input})
 	}
-	state.ticks_since_save += u64(tick_count)
+	session.ticks_since_save += u64(tick_count)
 	save_when_due(state)
-	player_chunk := world_to_chunk_coordinate(camera_world_coordinate(state.simulation.players[0].position))
-	update_chunk_streaming(&state.streaming, &state.simulation.world, player_chunk)
+	player_chunk := world_to_chunk_coordinate(camera_world_coordinate(session.simulation.players[0].position))
+	update_chunk_streaming(&session.streaming, &session.simulation.world, player_chunk)
 }
 
 autosave_due :: proc(ticks_since_save: u64, autosave_minutes, tick_rate: int) -> bool {
 	return autosave_minutes > 0 && ticks_since_save >= u64(autosave_minutes) * 60 * u64(tick_rate)
 }
 
-// Between ticks, so the simulation stands still while the save is written.
-// Returns the problem, empty on success.
-save_frame_world :: proc(state: ^Frame_State) -> string {
-	if !state.save.enabled {
-		return "saving is off for this world"
-	}
-	problem := save_world(&state.simulation, frame_simulation_content(state), state.save.location, time.to_unix_seconds(time.now()))
-	if problem == "" {
-		state.ticks_since_save = 0
-	} else {
-		fmt.eprintfln("error: saving %q failed: %s", state.save.location.display_name, problem)
-	}
-	return problem
-}
-
 // The pause menu's Save and the autosave interval, each with a toast.
 save_when_due :: proc(state: ^Frame_State) {
-	requested := state.save_requested
-	state.save_requested = false
-	autosave := state.save.enabled && autosave_due(state.ticks_since_save, state.settings.autosave_minutes, state.simulation.tick_rate)
+	session := state.session
+	requested := session.save_requested
+	session.save_requested = false
+	autosave := session.save.enabled && autosave_due(session.ticks_since_save, state.settings.autosave_minutes, session.simulation.tick_rate)
 	if !requested && !autosave {
 		return
 	}
-	if save_frame_world(state) != "" {
+	if save_session(session, state.content) != "" {
 		ui_toast(&state.ui, text("save_failed"))
 	} else {
 		ui_toast(&state.ui, text(requested ? "save_done" : "autosave_done"))
 	}
 }
 
-render_frame :: proc(state: ^Frame_State, config: Game_Config) {
-	upload_streamed_meshes(&state.renderer, &state.streaming)
-	blend := daylight_blend(state.simulation.tick, state.simulation.day_length_ticks)
+render_frame :: proc(state: ^Frame_State) {
+	if state.session == nil {
+		rl.BeginDrawing()
+		defer rl.EndDrawing()
+		rl.ClearBackground(DAY_SKY_COLOR)
+		run_ui_frame(state)
+		return
+	}
+	session := state.session
+	upload_streamed_meshes(&state.renderer, &session.streaming)
+	blend := daylight_blend(session.simulation.tick, session.simulation.day_length_ticks)
 	apply_daylight(&state.renderer, blend)
 	rl.BeginDrawing()
 	defer rl.EndDrawing()
 	rl.ClearBackground(sky_color(blend))
-	player := state.simulation.players[0]
-	alpha := f32(interpolation_alpha(state.accumulator))
-	camera := fly_camera_to_raylib(player_view_camera(&state.simulation.world, state.registry, player, alpha))
-	rl.BeginMode3D(camera)
-	draw_chunks(&state.renderer, camera)
-	draw_entities(&state.simulation.world, state.machines, state.items, state.simulation.tick_rate)
-	draw_fluid_entities(&state.simulation.world, state.machines, state.fluids)
-	draw_power_entities(&state.simulation.world, state.machines)
-	draw_belts(&state.belt_renderer, &state.simulation.world, state.items, state.machines, state.simulation.tick, alpha, state.simulation.tick_rate)
-	draw_player_world_overlay(&state.simulation.world, frame_simulation_content(state), state.simulation.players[:], 0, alpha)
-	rl.EndMode3D()
+	draw_session_world(state, session)
 	if state.show_diagnostics {
 		draw_diagnostics_backdrop()
-		draw_diagnostics(state^, config)
+		draw_diagnostics(state^, state.config)
 	} else {
 		draw_world_overlay(state^)
 	}
 	run_ui_frame(state)
 }
 
+draw_session_world :: proc(state: ^Frame_State, session: ^Session) {
+	content := state.content
+	world := &session.simulation.world
+	tick_rate := session.simulation.tick_rate
+	player := session.simulation.players[0]
+	alpha := f32(interpolation_alpha(session.accumulator))
+	camera := fly_camera_to_raylib(player_view_camera(world, content.blocks, player, alpha))
+	rl.BeginMode3D(camera)
+	defer rl.EndMode3D()
+	draw_chunks(&state.renderer, camera)
+	draw_entities(world, content.machines, content.items, tick_rate)
+	draw_fluid_entities(world, content.machines, content.fluids)
+	draw_power_entities(world, content.machines)
+	draw_belts(&state.belt_renderer, world, content.items, content.machines, session.simulation.tick, alpha, tick_rate)
+	draw_player_world_overlay(world, frame_simulation_content(state), session.simulation.players[:], 0, alpha)
+}
+
+// The context every screen gets. Without a session the world fields stay
+// empty; only the title screens and settings run then.
+make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
+	content := state.content
+	screen_context := Screen_Context {
+		settings        = &state.settings,
+		quit_requested  = &state.quit_requested,
+		title           = &state.title,
+		items           = content.items,
+		item_sort_ranks = content.item_sort_ranks,
+		machines        = content.machines,
+		fluids          = content.fluids,
+		veins           = content.veins,
+		tick_rate       = state.config.tick_rate,
+		recipes         = content.recipes,
+		technologies    = content.technologies,
+		quests          = content.quests,
+		recipe_names    = content.recipe_names,
+		recipe_order    = content.recipe_order,
+	}
+	session := state.session
+	if session == nil {
+		return screen_context
+	}
+	screen_context.save_requested = &session.save_requested
+	screen_context.player = &session.simulation.players[0]
+	screen_context.world = &session.simulation.world
+	screen_context.tick_rate = session.simulation.tick_rate
+	screen_context.technologies = session.technologies
+	screen_context.unlocks = &session.simulation.unlocks
+	screen_context.quest_state = &session.simulation.quests
+	screen_context.browser = &session.recipe_browser
+	screen_context.technology_browser = &session.technology_browser
+	return screen_context
+}
+
 run_ui_frame :: proc(state: ^Frame_State) {
 	screen_pixels := [2]f32{f32(rl.GetScreenWidth()), f32(rl.GetScreenHeight())}
 	input := make_ui_input(state.previous_input, state.input)
 	ui_begin(&state.ui, input, screen_pixels, state.frame_seconds, state.settings.ui_scale, state.settings.pointer_speed)
-	show_simulation_events(&state.ui, &state.simulation.events)
-	show_quest_notices(&state.ui, &state.simulation.quests.notices)
-	player := &state.simulation.players[0]
-	screen_context := Screen_Context {
-		settings        = &state.settings,
-		quit_requested  = &state.quit_requested,
-		save_requested  = &state.save_requested,
-		player          = player,
-		items           = state.items,
-		item_sort_ranks = state.item_sort_ranks,
-		world           = &state.simulation.world,
-		machines        = state.machines,
-		fluids          = state.fluids,
-		veins           = state.veins,
-		tick_rate       = state.simulation.tick_rate,
-		recipes         = state.recipes,
-		technologies    = state.technologies,
-		unlocks         = &state.simulation.unlocks,
-		quests          = state.quests,
-		quest_state     = &state.simulation.quests,
-		recipe_names    = state.recipe_names,
-		recipe_order    = state.recipe_order,
-		browser         = &state.recipe_browser,
-		technology_browser = &state.technology_browser,
+	screen_context := make_screen_context(state)
+	if state.session != nil {
+		show_simulation_events(&state.ui, &state.session.simulation.events)
+		show_quest_notices(&state.ui, &state.session.simulation.quests.notices)
+		draw_hud(&state.ui, screen_context)
 	}
-	draw_hud(&state.ui, screen_context)
 	run_screens(&state.ui, screen_context)
 	ui_end(&state.ui, Icon_Atlas{texture = chunk_atlas_texture(state.renderer), layout = state.renderer.atlas_layout})
 	apply_cursor_mode(state)
@@ -424,10 +422,82 @@ game_simulation_content :: proc(content: Game_Content) -> Simulation_Content {
 	}
 }
 
-// Takes ownership of the simulation (a new world or a loaded save). Saves
-// on quit when saving is enabled.
-run_game :: proc(config: Game_Config, input_backend: Input_Backend, content: Game_Content, generator: Generator, start: World_Start, data_directory: string, simulation: Simulation_State, save: Save_Setup) {
-	registry := content.blocks
+// Between frames: starts, loads or leaves a world as the menus asked. A
+// world that cannot be made or loaded leaves the title showing with a
+// toast.
+apply_session_request :: proc(state: ^Frame_State) {
+	request := state.title.request
+	state.title.request = {}
+	switch request.kind {
+	case .None:
+	case .New_World:
+		setup := &state.title.setup
+		seed, _ := world_setup_seed(setup)
+		plan := new_world_plan(strings.trim_space(text_field_text(&setup.name)), seed, world_file_settings_from_setup(setup^), state.title.saves_directory, state.title.saves_found, false)
+		enter_planned_session(state, plan)
+	case .Load:
+		plan, problem := saved_world_plan(state.title.saves_directory, request.directory_name)
+		if problem != "" {
+			report_session_problem(state, problem)
+			return
+		}
+		enter_planned_session(state, plan)
+	case .Quit_To_Title:
+		leave_session(state)
+		show_title(state)
+	}
+}
+
+report_session_problem :: proc(state: ^Frame_State, problem: string) {
+	fmt.eprintfln("error: %s", problem)
+	ui_toast(&state.ui, fmt.tprintf("%s: %s", text("title_world_failed"), problem))
+}
+
+// A new world saves at once, so it exists on disk from the start.
+enter_planned_session :: proc(state: ^Frame_State, plan: Session_Plan) {
+	session, problem := start_session(plan, state.config, state.content, state.base_generator)
+	if problem != "" {
+		report_session_problem(state, problem)
+		return
+	}
+	if !plan.loading && session.save.enabled {
+		save_session(session, state.content)
+	}
+	enter_session(state, session)
+}
+
+enter_session :: proc(state: ^Frame_State, session: ^Session) {
+	state.session = session
+	state.ui.screens = {}
+	state.ui.keyboard = {}
+	state.ui.tooltip_open = false
+}
+
+// Saves first when the world saves.
+leave_session :: proc(state: ^Frame_State) {
+	session := state.session
+	if session == nil {
+		return
+	}
+	if session.save.enabled && save_session(session, state.content) == "" {
+		fmt.eprintfln("world: saved %q", session.save.location.display_name)
+	}
+	unload_all_chunk_meshes(&state.renderer)
+	end_session(session)
+	state.session = nil
+	state.show_diagnostics = false
+}
+
+show_title :: proc(state: ^Frame_State) {
+	state.ui.screens = {}
+	state.ui.keyboard = {}
+	push_screen(&state.ui.screens, .Title)
+	refresh_title_saves(&state.title)
+}
+
+// Takes ownership of the session, or shows the title when there is none.
+// Saves on quit when the world saves.
+run_game :: proc(config: Game_Config, input_backend: Input_Backend, content: Game_Content, base_generator: Generator, data_directory: string, session: ^Session, title: Title_State) {
 	rl.SetTraceLogLevel(.WARNING)
 	rl.SetConfigFlags({.VSYNC_HINT, .WINDOW_RESIZABLE})
 	rl.InitWindow(1280, 720, "Mine oh Belowed")
@@ -441,60 +511,41 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, content: Gam
 	// Escape is bound to the Pause action, so it must not close the window.
 	rl.SetExitKey(.KEY_NULL)
 
-	renderer, renderer_ok := init_chunk_renderer(registry, data_directory)
+	renderer, renderer_ok := init_chunk_renderer(content.blocks, data_directory)
 	if !renderer_ok {
 		os.exit(1)
 	}
 	state := Frame_State {
-		accumulator     = make_tick_accumulator(config.tick_rate),
-		input_backend   = input_backend,
-		registry        = registry,
-		items           = content.items,
-		machines        = content.machines,
-		fluids          = content.fluids,
-		recipes         = content.recipes,
-		technologies    = content.technologies,
-		quests          = content.quests,
-		veins           = content.veins,
-		item_sort_ranks = content.item_sort_ranks,
-		recipe_names    = content.recipe_names,
-		recipe_order    = content.recipe_order,
-		recipe_browser  = make_recipe_browser(),
-		technology_browser = make_technology_browser(),
-		generator       = generator,
-		renderer        = renderer,
-		simulation      = simulation,
-		save            = save,
-		settings        = DEFAULT_SETTINGS,
-		ui              = Ui_State{measure_text = raylib_measure_text},
+		config         = config,
+		content        = content,
+		base_generator = base_generator,
+		title          = title,
+		input_backend  = input_backend,
+		renderer       = renderer,
+		settings       = DEFAULT_SETTINGS,
+		ui             = Ui_State{measure_text = raylib_measure_text},
 		// raylib starts with the cursor shown; the first apply hides it.
-		cursor_enabled  = true,
+		cursor_enabled = true,
 	}
 	defer destroy_ui_state(&state.ui)
+	defer destroy_title_state(&state.title)
 	defer if input_backend == .Sdl3 {
 		shutdown_sdl3_input(&state.sdl3_input)
 	}
-	defer destroy_simulation(&state.simulation)
 	defer destroy_chunk_renderer(&state.renderer)
 	state.belt_renderer = init_belt_renderer(content.machines)
 	defer destroy_belt_renderer(&state.belt_renderer)
-	if start.debug_terrain {
-		terrain_blocks, terrain_ok := resolve_debug_terrain_blocks(registry)
-		if !terrain_ok {
-			os.exit(1)
-		}
-		build_debug_terrain(&state.simulation.world, registry, terrain_blocks)
+	if session != nil {
+		enter_session(&state, session)
+	} else {
+		show_title(&state)
 	}
-	// Workers read state.generator, so they stop before state goes away.
-	state.streaming = start_chunk_streaming(&state.generator, registry, !start.debug_terrain, default_worker_count())
-	defer stop_chunk_streaming(&state.streaming)
+	defer leave_session(&state)
 	apply_cursor_mode(&state)
 	for !rl.WindowShouldClose() && !state.quit_requested {
 		update_frame(&state)
-		render_frame(&state, config)
+		render_frame(&state)
+		apply_session_request(&state)
 		free_all(context.temp_allocator)
-	}
-	if state.save.enabled && save_frame_world(&state) == "" {
-		fmt.eprintfln("world: saved %q on quit", state.save.location.display_name)
 	}
 }

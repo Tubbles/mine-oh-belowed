@@ -159,7 +159,7 @@ place_vein :: proc(generator: ^Generator, veins: []Vein, region: Region_Coordina
 		}
 		type_index := choose_vein_type(generator.veins.types, column.biome, hash_combine(hash, 100))
 		base_units := hash_to_range(hash_combine(hash, 101), size_class.minimum_units, size_class.maximum_units)
-		units := i64(f64(base_units) * richness.units_factor)
+		units := i64(f64(base_units) * richness.units_factor) * i64(generator.vein_richness_percent) / 100
 		vein = Vein {
 			type       = type_index,
 			size_class = size_class_index,

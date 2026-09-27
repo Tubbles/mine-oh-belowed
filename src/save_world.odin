@@ -32,11 +32,17 @@ STAGING_DIRECTORY_SUFFIX :: ".saving"
 PREVIOUS_DIRECTORY_SUFFIX :: ".previous"
 DEFAULT_WORLD_NAME :: "world"
 MAXIMUM_WORLD_DIRECTORY_NAME_LENGTH :: 64
+MAXIMUM_SETTING_PERCENT :: 1000
 
 World_File_Settings :: struct {
-	veins_infinite:       bool,
-	all_recipes_unlocked: bool,
-	day_length_seconds:   int,
+	veins_infinite:        bool,
+	all_recipes_unlocked:  bool,
+	day_length_seconds:    int,
+	// Percent of the size class units every vein holds.
+	vein_richness_percent: int,
+	// Percent of every technology's pack count.
+	research_cost_percent: int,
+	byproducts_lenient:    bool,
 }
 
 World_File :: struct {
@@ -152,6 +158,9 @@ make_world_file :: proc(state: ^Simulation_State, display_name: string, last_pla
 			veins_infinite = state.world.settings.veins_infinite,
 			all_recipes_unlocked = state.unlocks.unlock_all,
 			day_length_seconds = int(state.day_length_ticks / u64(max(state.tick_rate, 1))),
+			vein_richness_percent = state.world.settings.vein_richness_percent,
+			research_cost_percent = state.world.settings.research_cost_percent,
+			byproducts_lenient = state.world.settings.byproducts_lenient,
 		},
 		tick = state.tick,
 		day_time_ticks = state.tick % day_length_ticks,
@@ -170,6 +179,7 @@ parse_world_file :: proc(data: []byte, allocator := context.allocator) -> (file:
 	if error := json.unmarshal(data, &file, .SJSON, allocator); error != nil {
 		return {}, fmt.tprintf("cannot parse %s: %v", WORLD_FILE_NAME, error)
 	}
+	file.settings = with_percent_defaults(file.settings)
 	switch {
 	case file.format_version > SAVE_FORMAT_VERSION:
 		return file, fmt.tprintf("the save has format version %d, newer than this build reads (%d); update the game", file.format_version, SAVE_FORMAT_VERSION)
@@ -177,8 +187,29 @@ parse_world_file :: proc(data: []byte, allocator := context.allocator) -> (file:
 		return file, fmt.tprintf("the save has format version %d, older than this build reads (%d); older saves are not converted yet", file.format_version, SAVE_FORMAT_VERSION)
 	case file.settings.day_length_seconds < 1 || file.settings.day_length_seconds > MAXIMUM_DAY_LENGTH_SECONDS:
 		return file, fmt.tprintf("day_length_seconds %d is outside 1 to %d", file.settings.day_length_seconds, MAXIMUM_DAY_LENGTH_SECONDS)
+	case !setting_percent_valid(file.settings.vein_richness_percent):
+		return file, fmt.tprintf("vein_richness_percent %d is outside 1 to %d", file.settings.vein_richness_percent, MAXIMUM_SETTING_PERCENT)
+	case !setting_percent_valid(file.settings.research_cost_percent):
+		return file, fmt.tprintf("research_cost_percent %d is outside 1 to %d", file.settings.research_cost_percent, MAXIMUM_SETTING_PERCENT)
 	}
 	return file, ""
+}
+
+// Worlds saved before the percent settings existed, and simulations made
+// without them, count as 100 percent.
+with_percent_defaults :: proc(settings: World_File_Settings) -> World_File_Settings {
+	result := settings
+	if result.vein_richness_percent == 0 {
+		result.vein_richness_percent = 100
+	}
+	if result.research_cost_percent == 0 {
+		result.research_cost_percent = 100
+	}
+	return result
+}
+
+setting_percent_valid :: proc(percent: int) -> bool {
+	return percent >= 1 && percent <= MAXIMUM_SETTING_PERCENT
 }
 
 read_world_file :: proc(directory: string, allocator := context.allocator) -> (file: World_File, problem: string) {
@@ -467,7 +498,7 @@ load_world :: proc(state: ^Simulation_State, content: Simulation_Content, direct
 	expected := make_save_header(content)
 	state.tick = file.tick
 	state.day_length_ticks = u64(file.settings.day_length_seconds) * u64(max(state.tick_rate, 1))
-	state.world.settings = World_Settings{seed = file.seed, veins_infinite = file.settings.veins_infinite}
+	state.world.settings = world_settings_from_file(file.seed, file.settings)
 	if problem := load_entities_file(state, content, directory, expected); problem != "" {
 		return problem
 	}

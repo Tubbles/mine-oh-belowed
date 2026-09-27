@@ -202,6 +202,16 @@ draw_chunks :: proc(renderer: ^Chunk_Renderer, camera: rl.Camera3D) {
 	}
 }
 
+// When a world ends, so the next one starts without its meshes.
+unload_all_chunk_meshes :: proc(renderer: ^Chunk_Renderer) {
+	for _, chunk_render in renderer.chunk_meshes {
+		unload_chunk_render(chunk_render)
+	}
+	clear(&renderer.chunk_meshes)
+	renderer.vertex_count = 0
+	renderer.drawn_chunk_count = 0
+}
+
 // UnloadMaterial also unloads the shader and the atlas texture.
 destroy_chunk_renderer :: proc(renderer: ^Chunk_Renderer) {
 	for _, chunk_render in renderer.chunk_meshes {

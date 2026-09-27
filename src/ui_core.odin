@@ -96,6 +96,12 @@ Ui_Input :: struct {
 	open_technologies: bool,
 	// A letter key pressed this frame (lower case), 0 for none.
 	typed_letter:   rune,
+	// Printable characters a physical keyboard typed this frame, and the
+	// Backspace and Enter keys, for text fields.
+	typed_text:        [RAW_TEXT_CAPACITY]u8,
+	typed_text_length: int,
+	backspace_key:     bool,
+	enter_key:         bool,
 	// Held, not an edge: Confirm without the pad click, for the distribute gesture.
 	confirm_down:   bool,
 	// Held, not an edge: the keyboard radial shows while Tab is down.
@@ -169,6 +175,11 @@ Screen :: enum u8 {
 	Journal,
 	Power,
 	Technologies,
+	// The title and its screens, shown while no world is played.
+	Title,
+	New_World,
+	Load_World,
+	Confirm_Delete,
 }
 
 Screen_Stack :: struct {
@@ -214,6 +225,8 @@ Ui_State :: struct {
 	letter_jump:      rune,
 	screens:          Screen_Stack,
 	radial:           Radial_State,
+	// The on-screen keyboard. While it is open, B, X and Y belong to it.
+	keyboard:         Keyboard_State,
 	distribute:       Distribute_Gesture,
 	toasts:           [dynamic]Toast,
 	scroll_offsets:   map[Ui_Id]f32,
@@ -457,7 +470,7 @@ ui_begin :: proc(state: ^Ui_State, input: Ui_Input, screen_pixels: [2]f32, frame
 	// only on a screen.
 	if state.screens.count == 0 {
 		state.tooltip_open = false
-	} else if input.info {
+	} else if input.info && state.keyboard.field == 0 {
 		state.tooltip_open = !state.tooltip_open
 	}
 	advance_toasts(state, frame_seconds)
@@ -581,7 +594,7 @@ screen_pauses_simulation :: proc(screen: Screen) -> bool {
 	switch screen {
 	case .None, .Inventory, .Machine, .Recipes, .Journal, .Power, .Technologies:
 		return false
-	case .Pause, .Settings:
+	case .Pause, .Settings, .Title, .New_World, .Load_World, .Confirm_Delete:
 		return true
 	}
 	return false

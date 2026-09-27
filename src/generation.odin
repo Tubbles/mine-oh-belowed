@@ -30,6 +30,9 @@ Generator :: struct {
 	maximum_boulder_density: f64,
 	// Set once the spawn is known, before any chunk is generated.
 	landing_pad:             Landing_Pad_Site,
+	// The world setting "vein richness": percent of the size class units
+	// every vein holds.
+	vein_richness_percent:   int,
 }
 
 resolve_generation_blocks :: proc(registry: Block_Registry) -> (blocks: Generation_Blocks, problem: string) {
@@ -64,6 +67,7 @@ make_generator :: proc(
 ) {
 	generator.seed = seed
 	generator.seeds = derive_purpose_seeds(seed)
+	generator.vein_richness_percent = 100
 	generator.registry = registry
 	if generator.blocks, problem = resolve_generation_blocks(registry); problem != "" {
 		return {}, problem
