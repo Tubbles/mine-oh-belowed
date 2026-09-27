@@ -507,10 +507,10 @@ test_region_grouping :: proc(t: ^testing.T) {
 	testing.expect_value(t, len(regions[{-1, 0}]), 1)
 	testing.expect_value(t, len(regions[{1, 0}]), 1)
 
-	header := Save_Header{version = SAVE_FORMAT_VERSION, layout_fingerprint = 1, content_fingerprint = 2}
+	header := make_save_header()
 	encoded := encode_region(header, {0, 0}, origin[:], context.temp_allocator)
 	decoded := make(map[Chunk_Coordinate][]byte, context.temp_allocator)
-	read_header, ok := decode_region(encoded, {0, 0}, &decoded)
+	read_header, ok := decode_region(encoded, {0, 0}, &decoded, nil)
 	testing.expect(t, ok)
 	testing.expect_value(t, read_header, header)
 	testing.expect_value(t, len(decoded), 3)
@@ -520,9 +520,9 @@ test_region_grouping :: proc(t: ^testing.T) {
 	}
 
 	wrong := make(map[Chunk_Coordinate][]byte, context.temp_allocator)
-	_, ok = decode_region(encoded, {1, 0}, &wrong)
+	_, ok = decode_region(encoded, {1, 0}, &wrong, nil)
 	testing.expect(t, !ok, "region coordinate mismatch")
-	_, ok = decode_region(encoded[:len(encoded) - 1], {0, 0}, &wrong)
+	_, ok = decode_region(encoded[:len(encoded) - 1], {0, 0}, &wrong, nil)
 	testing.expect(t, !ok, "truncated")
 	for _, copied in wrong {
 		delete(copied)
@@ -547,7 +547,12 @@ Save_Test_Value :: struct {
 	stacks:   [2]Item_Stack,
 	per_lane: [Belt_Lane]i64,
 	hints:    Quest_Hint_Set,
+	events:   Player_Events,
 	slots:    []Item_Stack,
+}
+
+Save_Test_Flag :: struct {
+	flag: bool,
 }
 
 @(test)
@@ -562,13 +567,11 @@ test_value_codec_round_trip_and_refusals :: proc(t: ^testing.T) {
 		stacks   = {{7, 8}, {9, 10}},
 		per_lane = {.Left = -1, .Right = max(i64)},
 		hints    = {0, 3},
+		events   = {.Inventory_Full, .Seismic_Shot_Fired},
 		slots    = slots[:],
 	}
 	bytes := make([dynamic]byte, context.temp_allocator)
 	write_value_of(&bytes, &value)
-	testing.expect_value(t, len(bytes), 2 + 4 + 1 + 1 + 12 + 8 + 16 + size_of(Quest_Hint_Set) + 4 + 12)
-	testing.expect_value(t, bytes[0], 1)
-	testing.expect_value(t, bytes[1], 2)
 
 	read_slots: [3]Item_Stack
 	restored := Save_Test_Value {
@@ -579,23 +582,26 @@ test_value_codec_round_trip_and_refusals :: proc(t: ^testing.T) {
 	}
 	testing.expect(t, read_value_of(&reader, &restored))
 	testing.expect_value(t, bytes_left(reader), 0)
+	testing.expect_value(t, restored.count, value.count)
+	testing.expect_value(t, restored.signed, value.signed)
+	testing.expect_value(t, restored.lane, value.lane)
 	testing.expect_value(t, restored.position, value.position)
+	testing.expect_value(t, restored.stacks, value.stacks)
 	testing.expect_value(t, restored.per_lane, value.per_lane)
 	testing.expect_value(t, restored.hints, value.hints)
+	testing.expect_value(t, restored.events, value.events)
 	testing.expect(t, slice.equal(read_slots[:], slots[:]))
 
-	bad_bool := slice.clone(bytes[:], context.temp_allocator)
-	bad_bool[6] = 2
-	reader = Byte_Reader {
-		data = bad_bool,
+	flag := Save_Test_Flag {
+		flag = true,
 	}
-	testing.expect(t, !read_value_of(&reader, &restored), "boolean out of range")
-	bad_enum := slice.clone(bytes[:], context.temp_allocator)
-	bad_enum[7] = 9
+	flag_bytes := make([dynamic]byte, context.temp_allocator)
+	write_value_of(&flag_bytes, &flag)
+	flag_bytes[len(flag_bytes) - 1] = 2
 	reader = Byte_Reader {
-		data = bad_enum,
+		data = flag_bytes[:],
 	}
-	testing.expect(t, !read_value_of(&reader, &restored), "enum value without a name")
+	testing.expect(t, !read_value_of(&reader, &flag), "boolean out of range")
 	short_slots: [2]Item_Stack
 	restored.slots = short_slots[:]
 	reader = Byte_Reader {
@@ -637,16 +643,11 @@ test_newer_and_older_formats_are_refused :: proc(t: ^testing.T) {
 	testing.expect_value(t, parsed.seed, max(u64))
 	testing.expect_value(t, parsed.name, "future")
 
-	expected := Save_Header{version = SAVE_FORMAT_VERSION, layout_fingerprint = 1, content_fingerprint = 2}
+	expected := make_save_header()
 	newer := expected
 	newer.version += 1
 	testing.expect(t, header_problem(newer, expected, "entities.bin") != "")
-	other_layout := expected
-	other_layout.layout_fingerprint = 3
-	testing.expect(t, strings.contains(header_problem(other_layout, expected, "entities.bin"), "layout"))
-	other_content := expected
-	other_content.content_fingerprint = 3
-	testing.expect(t, strings.contains(header_problem(other_content, expected, "entities.bin"), "game data"))
+	testing.expect(t, strings.contains(header_problem(Save_Header{version = 1}, expected, "entities.bin"), "format version 1"))
 	testing.expect_value(t, header_problem(expected, expected, "entities.bin"), "")
 }
 

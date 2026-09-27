@@ -12,9 +12,14 @@ package game
 CHUNK_FORMAT_VERSION :: 1
 RUN_BYTE_SIZE :: 6
 
+// remap and problem serve the save codec (save_binary.odin): the content
+// remap of the file being read, nil to read ids as written, and why a read
+// was refused when the bytes themselves are fine.
 Byte_Reader :: struct {
-	data:   []byte,
-	offset: int,
+	data:    []byte,
+	offset:  int,
+	remap:   ^Content_Remap,
+	problem: string,
 }
 
 append_u16 :: proc(bytes: ^[dynamic]byte, value: u16) {

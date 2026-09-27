@@ -324,9 +324,10 @@ read_saved_chunk :: proc(reader: ^Byte_Reader) -> (chunk: Saved_Chunk, ok: bool)
 }
 
 // Checks every chunk (its region, that it decodes, that it appears once)
-// and adds copies of the bytes to chunks. Header problems are reported by
-// the caller.
-decode_region :: proc(data: []byte, region: Region_Coordinate, chunks: ^map[Chunk_Coordinate][]byte) -> (header: Save_Header, ok: bool) {
+// and adds copies of the bytes to chunks, their palettes remapped to this
+// build's block ids (nil remap: as written). Header problems are reported
+// by the caller, a vanished block through remap.gone_chunk_block.
+decode_region :: proc(data: []byte, region: Region_Coordinate, chunks: ^map[Chunk_Coordinate][]byte, remap: ^Content_Remap) -> (header: Save_Header, ok: bool) {
 	reader := Byte_Reader {
 		data = data,
 	}
@@ -342,7 +343,12 @@ decode_region :: proc(data: []byte, region: Region_Coordinate, chunks: ^map[Chun
 		if chunk_region(chunk.coordinate) != region || chunk.coordinate in chunks || !deserialize_chunk_blocks(chunk.bytes, scratch) {
 			return header, false
 		}
-		chunks[chunk.coordinate] = slice.clone(chunk.bytes)
+		bytes := slice.clone(chunk.bytes)
+		if !remap_chunk_palette(bytes, remap) {
+			delete(bytes)
+			return header, false
+		}
+		chunks[chunk.coordinate] = bytes
 	}
 	return header, bytes_left(reader) == 0
 }
@@ -362,9 +368,10 @@ Save_Files :: struct {
 }
 
 encode_save_files :: proc(state: ^Simulation_State, content: Simulation_Content, display_name: string, last_played_unix_seconds: i64) -> Save_Files {
-	header := make_save_header(content)
+	header := make_save_header()
 	entities := make([dynamic]byte, context.temp_allocator)
 	append_save_header(&entities, ENTITIES_FILE_MAGIC, header)
+	append_content_tables(&entities, content_tables(content))
 	write_simulation_state(&entities, state)
 	files := Save_Files {
 		world    = encode_world_file(make_world_file(state, display_name, last_played_unix_seconds), context.temp_allocator),
@@ -428,19 +435,15 @@ save_world :: proc(state: ^Simulation_State, content: Simulation_Content, locati
 // Loading.
 
 header_problem :: proc(header, expected: Save_Header, file: string) -> string {
-	switch {
-	case header.version != expected.version:
+	if header.version != expected.version {
 		return fmt.tprintf("%s has format version %d, this build reads %d", file, header.version, expected.version)
-	case header.layout_fingerprint != expected.layout_fingerprint:
-		return fmt.tprintf("%s was written by a build that saves a different layout", file)
-	case header.content_fingerprint != expected.content_fingerprint:
-		return fmt.tprintf("%s was written with different game data (blocks, items, machines, recipes, technologies or quests changed)", file)
 	}
 	return ""
 }
 
-// Reads only the header of the entities file, for the save list: the
-// problem load_entities_file would report for it, or an empty string.
+// Reads only the header and the content tables of the entities file, for
+// the save list: the problem load_entities_file would report for them, or
+// an empty string.
 entities_header_problem :: proc(directory: string, expected: Save_Header) -> string {
 	path := join_save_path(directory, ENTITIES_FILE_NAME)
 	file, open_error := os.open(path)
@@ -448,7 +451,7 @@ entities_header_problem :: proc(directory: string, expected: Save_Header) -> str
 		return fmt.tprintf("cannot read %s: %v", path, open_error)
 	}
 	defer os.close(file)
-	buffer: [len(ENTITIES_FILE_MAGIC) + SAVE_HEADER_FIELDS_SIZE]byte
+	buffer: [len(ENTITIES_FILE_MAGIC) + SAVE_HEADER_FIELDS_SIZE + size_of(u32)]byte
 	count, _ := os.read_full(file, buffer[:])
 	reader := Byte_Reader {
 		data = buffer[:count],
@@ -457,10 +460,42 @@ entities_header_problem :: proc(directory: string, expected: Save_Header) -> str
 	if !header_ok {
 		return fmt.tprintf("%s is not an entities file", path)
 	}
-	return header_problem(header, expected, path)
+	if problem := header_problem(header, expected, path); problem != "" {
+		return problem
+	}
+	if !entities_tables_parse(file, buffer[count - bytes_left(reader):count]) {
+		return fmt.tprintf("%s is malformed or truncated", path)
+	}
+	return ""
 }
 
-load_entities_file :: proc(state: ^Simulation_State, content: Simulation_Content, directory: string, expected: Save_Header) -> string {
+// length_bytes is the tables' u32 length, read already; the file stands
+// right after it.
+entities_tables_parse :: proc(file: ^os.File, length_bytes: []byte) -> bool {
+	length_reader := Byte_Reader {
+		data = length_bytes,
+	}
+	length := int(read_u32(&length_reader) or_return)
+	if length > MAXIMUM_CONTENT_TABLES_BYTES {
+		return false
+	}
+	section := make([dynamic]byte, 0, size_of(u32) + length, context.temp_allocator)
+	append(&section, ..length_bytes)
+	resize(&section, size_of(u32) + length)
+	count, _ := os.read_full(file, section[size_of(u32):])
+	if count != length {
+		return false
+	}
+	reader := Byte_Reader {
+		data = section[:],
+	}
+	_, ok := read_content_tables(&reader)
+	return ok
+}
+
+// remap receives the content remap of the file, which the region files
+// need.
+load_entities_file :: proc(state: ^Simulation_State, content: Simulation_Content, directory: string, expected: Save_Header, remap: ^Content_Remap) -> string {
 	path := join_save_path(directory, ENTITIES_FILE_NAME)
 	data, error := os.read_entire_file(path, context.temp_allocator)
 	if error != nil {
@@ -476,13 +511,22 @@ load_entities_file :: proc(state: ^Simulation_State, content: Simulation_Content
 	if problem := header_problem(header, expected, path); problem != "" {
 		return problem
 	}
+	saved_tables, tables_ok := read_content_tables(&reader)
+	if !tables_ok {
+		return fmt.tprintf("%s is malformed or truncated", path)
+	}
+	remap^ = make_content_remap(saved_tables, content_tables(content))
+	reader.remap = remap
 	if !read_simulation_state(&reader, state, content) {
+		if reader.problem != "" {
+			return fmt.tprintf("%s cannot be loaded: %s", path, reader.problem)
+		}
 		return fmt.tprintf("%s is malformed or truncated", path)
 	}
 	return ""
 }
 
-load_region_file :: proc(world: ^World, path, name: string, expected: Save_Header) -> string {
+load_region_file :: proc(world: ^World, path, name: string, expected: Save_Header, remap: ^Content_Remap) -> string {
 	region, named := parse_region_file_name(name)
 	if !named {
 		return fmt.tprintf("unexpected file %s", path)
@@ -491,9 +535,12 @@ load_region_file :: proc(world: ^World, path, name: string, expected: Save_Heade
 	if error != nil {
 		return fmt.tprintf("cannot read %s: %v", path, error)
 	}
-	header, ok := decode_region(data, region, &world.saved_chunks)
+	header, ok := decode_region(data, region, &world.saved_chunks, remap)
 	if problem := header_problem(header, expected, path); problem != "" {
 		return problem
+	}
+	if remap.gone_chunk_block != "" {
+		return fmt.tprintf("%s cannot be loaded: a saved chunk holds the block %s, which this build's game data no longer has", path, remap.gone_chunk_block)
 	}
 	if !ok {
 		return fmt.tprintf("%s is malformed or truncated", path)
@@ -501,7 +548,7 @@ load_region_file :: proc(world: ^World, path, name: string, expected: Save_Heade
 	return ""
 }
 
-load_region_files :: proc(world: ^World, directory: string, expected: Save_Header) -> string {
+load_region_files :: proc(world: ^World, directory: string, expected: Save_Header, remap: ^Content_Remap) -> string {
 	regions := join_save_path(directory, REGIONS_DIRECTORY_NAME)
 	if !os.exists(regions) {
 		return ""
@@ -511,7 +558,7 @@ load_region_files :: proc(world: ^World, directory: string, expected: Save_Heade
 		return fmt.tprintf("cannot list %s: %v", regions, error)
 	}
 	for entry in entries {
-		if problem := load_region_file(world, entry.fullpath, entry.name, expected); problem != "" {
+		if problem := load_region_file(world, entry.fullpath, entry.name, expected, remap); problem != "" {
 			return problem
 		}
 	}
@@ -523,15 +570,16 @@ load_region_files :: proc(world: ^World, directory: string, expected: Save_Heade
 // to World.saved_chunks, where streaming picks them up. Returns an empty
 // string on success, otherwise the problem.
 load_world :: proc(state: ^Simulation_State, content: Simulation_Content, directory: string, file: World_File) -> string {
-	expected := make_save_header(content)
+	expected := make_save_header()
 	state.tick = file.tick
 	state.day_length_ticks = u64(file.settings.day_length_seconds) * u64(max(state.tick_rate, 1))
 	state.day_offset_ticks = day_offset_for(file.tick, file.day_time_ticks, state.day_length_ticks)
 	state.world.settings = world_settings_from_file(file.seed, file.settings)
-	if problem := load_entities_file(state, content, directory, expected); problem != "" {
+	remap: Content_Remap
+	if problem := load_entities_file(state, content, directory, expected, &remap); problem != "" {
 		return problem
 	}
-	return load_region_files(&state.world, directory, expected)
+	return load_region_files(&state.world, directory, expected, &remap)
 }
 
 // A simulation made the way a new world is made (make_simulation with the

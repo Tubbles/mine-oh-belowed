@@ -9,8 +9,8 @@ import "core:time/datetime"
 import "core:time/timezone"
 
 // The saved worlds the title screen and the Load screen list, read from
-// each save's world.sjson. The entities file's header says whether this
-// build can load the save (0044).
+// each save's world.sjson. The format versions and the entities file's
+// content tables say whether this build can load the save (0044, 0047).
 
 Save_Summary :: struct {
 	directory_name:           string,
@@ -18,8 +18,8 @@ Save_Summary :: struct {
 	seed:                     u64,
 	tick:                     u64,
 	last_played_unix_seconds: i64,
-	// False when the entities file is missing or its header does not match
-	// this build; load_problem says why.
+	// False when the save has another format version or its entities file
+	// is missing or its tables do not parse; load_problem says why.
 	loadable:                 bool,
 	load_problem:             string,
 }
@@ -70,15 +70,16 @@ contains_directory_name :: proc(saves: []Save_Summary, directory_name: string) -
 	return false
 }
 
-// A save whose world.sjson cannot be read is left out. expected is this
-// build's header (make_save_header).
+// A save whose world.sjson cannot be read is left out; one of another
+// format version is listed with that problem. expected is this build's
+// header (make_save_header).
 read_save_summary :: proc(saves_directory, directory_name: string, expected: Save_Header) -> (summary: Save_Summary, ok: bool) {
 	directory := existing_save_directory(Save_Location{saves_directory = saves_directory, directory_name = directory_name}) or_return
 	file, problem := read_world_file(directory, context.temp_allocator)
-	if problem != "" {
+	if file.format_version == 0 || (problem != "" && file.format_version == SAVE_FORMAT_VERSION) {
 		return {}, false
 	}
-	load_problem := entities_header_problem(directory, expected)
+	load_problem := problem != "" ? problem : entities_header_problem(directory, expected)
 	return Save_Summary {
 			directory_name = strings.clone(directory_name),
 			name = strings.clone(file.name),

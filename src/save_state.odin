@@ -1,8 +1,6 @@
 package game
 
-import "base:runtime"
 import "core:container/queue"
-import "core:fmt"
 import "core:slice"
 
 // The simulation state of a save (entities.bin): every entity pool as
@@ -11,123 +9,31 @@ import "core:slice"
 // shipments, recipe unlocks, quest state and players. Derived data (belt
 // lines, fluid and electric networks, the entity cell map, vein lookups,
 // entity lights) is rebuilt after reading. The same bytes feed simulation_state_hash.
+//
+// The file is the magic, the header, the content tables of the game data
+// it was written with (save_remap.odin) and the state. Loading remaps the
+// state's content ids to this build's game data.
 
-SAVE_FORMAT_VERSION :: 1
+SAVE_FORMAT_VERSION :: 2
 ENTITIES_FILE_MAGIC :: "MOBE"
 
+// Structs describe their fields (save_binary.odin) and content ids are
+// remapped by the tables, so the version only changes when the framing
+// changes.
 Save_Header :: struct {
-	version:             u32,
-	layout_fingerprint:  u64,
-	content_fingerprint: u64,
+	version: u32,
 }
 
-// Every type written through write_value, so that a change to any of them
-// changes the layout fingerprint.
-save_layout_fingerprint :: proc() -> u64 {
-	infos := [?]^runtime.Type_Info {
-		type_info_of(Chest),
-		type_info_of(Furnace),
-		type_info_of(Capsule),
-		type_info_of(Belt),
-		type_info_of(Inserter),
-		type_info_of(Drill),
-		type_info_of(Splitter),
-		type_info_of(Pipe),
-		type_info_of(Fluid_Machine),
-		type_info_of(Pole),
-		type_info_of(Lamp),
-		type_info_of(Assembler),
-		type_info_of(Lab),
-		type_info_of(Schematic_Crate),
-		type_info_of(Core_Sample_Drill),
-		type_info_of(Launch_Pad),
-		type_info_of(Shipment),
-		type_info_of(Contract_State),
-		type_info_of(Catalogue_Order),
-		type_info_of(Explored_Column),
-		type_info_of(Assayed_Vein),
-		type_info_of(Magnetometer_Reading),
-		type_info_of(Core_Sample),
-		type_info_of(Seismic_Shot),
-		type_info_of(Seismic_Outline),
-		type_info_of(Crate_Site),
-		type_info_of(Vein),
-		type_info_of(Outcrop_Cell),
-		type_info_of(Block_Change),
-		type_info_of(Water_Update),
-		type_info_of(Belt_Cell_Item),
-		type_info_of(Fluid_Id),
-		type_info_of(Statistics),
-		type_info_of(Research_State),
-		type_info_of(Recipe_Unlocks),
-		type_info_of(Quest_Progress),
-		type_info_of(Item_Stack),
-		type_info_of(Entity_Handle),
-		type_info_of(Player),
-	}
-	result := FINGERPRINT_START
-	for info in infos {
-		result = layout_fingerprint(result, info)
-	}
-	return result
-}
+// The version after the magic.
+SAVE_HEADER_FIELDS_SIZE :: size_of(u32)
 
-hash_id_list :: proc(state: u64, ids: []string) -> u64 {
-	result := fingerprint_u64(state, u64(len(ids)))
-	for id in ids {
-		result = fingerprint_string(result, id)
-	}
-	return result
-}
-
-// Saved ids are dense indices into the game data (blocks in chunks, items
-// in stacks, machines, recipes, technologies, quests), so a save only
-// loads with the data it was written with.
-content_fingerprint :: proc(content: Simulation_Content) -> u64 {
-	ids := make([dynamic]string, context.temp_allocator)
-	for definition in content.blocks.definitions {
-		append(&ids, definition.id)
-	}
-	for item in content.items.items {
-		append(&ids, item.id)
-	}
-	for machine in content.machines.machines {
-		append(&ids, machine.id)
-	}
-	for fluid in content.fluids.fluids {
-		append(&ids, fluid.id)
-	}
-	for recipe in content.recipes.recipes {
-		append(&ids, recipe.id)
-	}
-	for technology in content.technologies.technologies {
-		append(&ids, technology.id)
-	}
-	for quest in content.quests.quests {
-		append(&ids, quest.id)
-	}
-	for vein_type in content.veins.types {
-		append(&ids, vein_type.name_key)
-	}
-	for contract in content.contracts.contracts {
-		append(&ids, contract.id)
-	}
-	append(&ids, fmt.tprintf("catalogue %d", len(content.contracts.catalogue)))
-	return hash_id_list(FINGERPRINT_START, ids[:])
-}
-
-// The version and the two fingerprints after the magic.
-SAVE_HEADER_FIELDS_SIZE :: size_of(u32) + 2 * size_of(u64)
-
-make_save_header :: proc(content: Simulation_Content) -> Save_Header {
-	return Save_Header{version = SAVE_FORMAT_VERSION, layout_fingerprint = save_layout_fingerprint(), content_fingerprint = content_fingerprint(content)}
+make_save_header :: proc() -> Save_Header {
+	return Save_Header{version = SAVE_FORMAT_VERSION}
 }
 
 append_save_header :: proc(bytes: ^[dynamic]byte, magic: string, header: Save_Header) {
 	append(bytes, ..transmute([]byte)magic)
 	append_u32(bytes, header.version)
-	append_u64(bytes, header.layout_fingerprint)
-	append_u64(bytes, header.content_fingerprint)
 }
 
 read_save_header :: proc(reader: ^Byte_Reader, magic: string) -> (header: Save_Header, ok: bool) {
@@ -136,8 +42,6 @@ read_save_header :: proc(reader: ^Byte_Reader, magic: string) -> (header: Save_H
 	}
 	reader.offset += len(magic)
 	header.version = read_u32(reader) or_return
-	header.layout_fingerprint = read_u64(reader) or_return
-	header.content_fingerprint = read_u64(reader) or_return
 	return header, true
 }
 
@@ -261,6 +165,7 @@ write_simulation_state :: proc(bytes: ^[dynamic]byte, state: ^Simulation_State) 
 
 // Reading.
 
+// Fields the file lacks keep what value held.
 read_value_of :: proc(reader: ^Byte_Reader, value: ^$T) -> bool {
 	return read_value(reader, value, type_info_of(T))
 }
@@ -284,6 +189,7 @@ pool_is_consistent :: proc(pool: Entity_Pool($T), kind: Entity_Kind, machines: M
 read_pool :: proc(reader: ^Byte_Reader, pool: ^Entity_Pool($T), kind: Entity_Kind, machines: Machine_Registry) -> bool {
 	read_list(reader, &pool.entries) or_return
 	read_list(reader, &pool.free) or_return
+	settle_gone_machines(pool, reader) or_return
 	return pool_is_consistent(pool^, kind, machines)
 }
 
@@ -350,18 +256,32 @@ read_prospecting_records :: proc(reader: ^Byte_Reader, world: ^World) -> bool {
 	return true
 }
 
-read_world_state :: proc(reader: ^Byte_Reader, world: ^World, machines: Machine_Registry, derived: ^Loaded_Derived_State) -> bool {
+read_world_state :: proc(reader: ^Byte_Reader, world: ^World, content: Simulation_Content, derived: ^Loaded_Derived_State) -> bool {
+	remap := reader.remap
 	read_world_lists(reader, world) or_return
-	read_entity_pools(reader, &world.entities, machines) or_return
+	if problem, ok := remap_vein_types(world, remap^); !ok {
+		reader.problem = problem
+		return false
+	}
+	read_entity_pools(reader, &world.entities, content.machines) or_return
+	remap_machine_recipes(&world.entities, remap^, content.recipes) or_return
 	read_list(reader, &derived.belt_items) or_return
+	drop_gone_belt_items(&derived.belt_items)
 	read_list(reader, &derived.network_fluids) or_return
-	read_value_of(reader, &world.statistics) or_return
-	read_value_of(reader, &world.research) or_return
+	statistics := saved_statistics(remap^)
+	read_value_of(reader, &statistics) or_return
+	remap_statistics(&world.statistics, statistics, remap^)
+	research: Research_State
+	read_value_of(reader, &research) or_return
+	world.research = remapped_research(research, remap^)
 	read_list(reader, &world.shipments) or_return
-	read_value_of(reader, &world.contracts) or_return
+	remap_shipments(world.shipments[:])
+	contracts: Contract_State
+	read_value_of(reader, &contracts) or_return
+	world.contracts = remapped_contracts(contracts, remap^) or_return
 	world.venture_credit = read_u64(reader) or_return
 	read_list(reader, &world.catalogue_orders) or_return
-	return true
+	return remap_catalogue_orders(&world.catalogue_orders, remap^)
 }
 
 // The key strings of the message log point into the game data; a key the
@@ -417,15 +337,20 @@ read_quest_message :: proc(reader: ^Byte_Reader, content: Simulation_Content) ->
 	return message, text_found && argument_found, true
 }
 
-read_quest_state :: proc(reader: ^Byte_Reader, quests: ^Quest_State, content: Simulation_Content) -> bool {
-	read_value_of(reader, &quests.progress) or_return
-	quests.active = int(i64(read_u64(reader) or_return))
+// Progress is read into a copy sized by the file's quest table and
+// remapped; the active quest settles once the messages are in, since
+// activating one logs its message.
+read_quest_state :: proc(reader: ^Byte_Reader, state: ^Simulation_State, content: Simulation_Content) -> bool {
+	quests, remap := &state.quests, reader.remap
+	progress := make([]Quest_Progress, len(remap.saved[.Quests]), context.temp_allocator)
+	read_value_of(reader, &progress) or_return
+	reindexed(quests.progress, progress, remap.new_indices[.Quests], 1)
+	saved_active := int(i64(read_u64(reader) or_return))
+	quests.capsule = {}
 	read_value_of(reader, &quests.capsule) or_return
 	quests.hints_fired = int(read_u64(reader) or_return)
 	read_list(reader, &quests.pending_rewards) or_return
-	if quests.active != NO_QUEST && (quests.active < 0 || quests.active >= len(quests.progress)) {
-		return false
-	}
+	drop_gone_item_stacks(&quests.pending_rewards)
 	count := int(read_u32(reader) or_return)
 	clear(&quests.messages)
 	clear(&quests.notices)
@@ -435,9 +360,11 @@ read_quest_state :: proc(reader: ^Byte_Reader, quests: ^Quest_State, content: Si
 			append(&quests.messages, message)
 		}
 	}
-	return true
+	return settle_active_quest(quests, saved_active, remap^, content.quests, state.world.statistics, state.tick)
 }
 
+// Players read into fresh ones (make_player), so fields the file lacks
+// take a new player's values.
 read_players :: proc(reader: ^Byte_Reader, players: ^[dynamic]Player) -> bool {
 	count := int(read_u32(reader) or_return)
 	if count == 0 || count > bytes_left(reader^) {
@@ -455,17 +382,25 @@ read_players :: proc(reader: ^Byte_Reader, players: ^[dynamic]Player) -> bool {
 }
 
 // Reads the body of entities.bin into a simulation made for the world
-// (make_simulation with the saved seed and settings) and rebuilds the
-// derived data. False for malformed or truncated bytes.
+// (make_simulation with the saved seed and settings), remapping content
+// ids through reader.remap, and rebuilds the derived data. False for
+// malformed or truncated bytes, or with reader.problem set for a file
+// this build cannot load.
 read_simulation_state :: proc(reader: ^Byte_Reader, state: ^Simulation_State, content: Simulation_Content) -> bool {
+	assert(reader.remap != nil, "save: reading the state needs the content remap")
 	derived := Loaded_Derived_State {
 		belt_items     = make([dynamic]Belt_Cell_Item, context.temp_allocator),
 		network_fluids = make([dynamic]Fluid_Id, context.temp_allocator),
 	}
-	read_world_state(reader, &state.world, content.machines, &derived) or_return
-	read_value_of(reader, &state.unlocks) or_return
-	read_quest_state(reader, &state.quests, content) or_return
+	read_world_state(reader, &state.world, content, &derived) or_return
+	unlocks := saved_recipe_unlocks(reader.remap^)
+	read_value_of(reader, &unlocks) or_return
+	remap_recipe_unlocks(&state.unlocks, unlocks, reader.remap^, content.recipes)
+	read_quest_state(reader, state, content) or_return
 	read_players(reader, &state.players) or_return
+	for &player in state.players {
+		remap_craft_queue(&player.crafting, reader.remap^) or_return
+	}
 	if bytes_left(reader^) != 0 || !venture_state_is_consistent(&state.world, content.contracts) {
 		return false
 	}

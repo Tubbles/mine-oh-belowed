@@ -17,10 +17,11 @@ World_Settings :: struct {
 	byproducts_lenient:    bool,
 }
 
-// What the simulation needs of a vein type: its name, its outcrop blocks
-// and its outputs as items with their percent weights, and per output the
-// low grade twin or NO_ITEM.
+// What the simulation needs of a vein type: its id (for saves), its name,
+// its outcrop blocks and its outputs as items with their percent weights,
+// and per output the low grade twin or NO_ITEM.
 Vein_Type_Content :: struct {
+	id:             string,
 	name_key:       string,
 	outcrop_blocks: []Block_Id,
 	output_count:   int,
@@ -41,6 +42,7 @@ Vein_Content :: struct {
 resolve_vein_type_content :: proc(vein_type: Vein_Type, items: Item_Registry) -> (content: Vein_Type_Content, problem: string) {
 	definition := vein_type.definition
 	content = Vein_Type_Content {
+		id             = definition.id,
 		name_key       = definition.name_key,
 		outcrop_blocks = vein_type.outcrop_blocks,
 		output_count   = len(definition.outputs),
