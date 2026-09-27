@@ -7,7 +7,7 @@
 // rotation; a quarter turn swaps width and depth.
 // kind selects the panel and the simulation: chest, furnace, capsule,
 // belt, inserter, drill, splitter, pipe, offshore_pump, boiler,
-// steam_engine, storage_tank or pump.
+// steam_engine, storage_tank, pump, pole, power_switch or lamp.
 // The capsule (work item 0013) stands on the landing pad from the start:
 // it has no item, cannot be picked up, and holds 8 slots for quest
 // rewards and deliveries.
@@ -25,8 +25,8 @@
 // 60 * tick rate / items_per_minute ticks (100 at 36 per minute), half a
 // swing to the drop side and half back. A burner inserter has fuel_slots
 // = 1 and fuel_power_kilowatts, burned only while the arm moves. Electric
-// inserters have electric_power_kilowatts and stay unpowered until power
-// arrives in M4. filter_slots = 1 makes a filter inserter.
+// inserters have electric_power_kilowatts, drawn only while the arm
+// moves (work item 0020). filter_slots = 1 makes a filter inserter.
 // Drills (work item 0016): placed with at least one footprint cell on a
 // vein outcrop, they draw one unit per cycle from the vein's reservoir,
 // picked by the vein type's output mix, and drop it into the cell in
@@ -57,10 +57,28 @@
 // Boiler: turns fluid_litres_per_second of its input port's fluid into as
 // much of its output port's fluid, burning fuel_power_kilowatts from its
 // fuel slot only while it does.
-// Steam engine: input ports only; it draws nothing until power networks.
+// Steam engine: input ports only. A generator (work item 0020): gives up
+// to electric_output_kilowatts to its power network, burning
+// fluid_litres_per_second of steam at full output, so a litre of steam is
+// electric_output_kilowatts * 1000 / fluid_litres_per_second joules
+// (30 kJ), drawn only for the energy delivered.
 // Storage tank: one port on every face, its buffer is the tank.
 // Pump: moves fluid_litres_per_second from its input to its output port
 // whatever the heights, and only with electric_power_kilowatts.
+// Power (work item 0020, doc/fluids.md): electric machines (any with
+// electric_power_kilowatts: electric inserters, electric drills, pumps,
+// lamps) and generators (steam engines) belong to the network of a pole
+// whose supply_volume covers one of their cells. A drill without a fuel
+// slot and with electric_power_kilowatts is an electric drill.
+// Poles: supply_volume is width (x), depth (z) and height (y) of the box
+// of cells powered, centred across on the pole (odd width and depth) and
+// starting at the pole's bottom. wire_reach connects it to every pole or
+// power switch whose origin is at most that far away (straight line, the
+// shorter reach of the two counts).
+// Power switch: a 1 by 1 by 1 pole without a supply volume that joins the
+// networks it wires while on and splits them while off.
+// Lamp: electric_power_kilowatts and light_level, the block light it
+// gives while its network is satisfied above half.
 machines = [
 	{
 		id = "wooden_chest"
@@ -165,6 +183,16 @@ machines = [
 		fuel_power_kilowatts = 150
 	}
 	{
+		id = "electric_mining_drill"
+		name_key = "machine_electric_mining_drill"
+		item = "electric_mining_drill"
+		kind = "drill"
+		footprint = {width = 3, depth = 3, height = 3}
+		items_per_minute = 30
+		rate_reference_ore_percent = 80
+		electric_power_kilowatts = 90
+	}
+	{
 		id = "splitter"
 		name_key = "machine_splitter"
 		item = "splitter"
@@ -212,6 +240,8 @@ machines = [
 		item = "steam_engine"
 		kind = "steam_engine"
 		footprint = {width = 3, depth = 5, height = 2}
+		electric_output_kilowatts = 900
+		fluid_litres_per_second = 30
 		fluid_ports = [
 			{cell = {x = 1, y = 0, z = 0}, face = "negative_z", direction = "input", fluid = "steam", buffer_litres = 200}
 			{cell = {x = 1, y = 0, z = 4}, face = "positive_z", direction = "input", fluid = "steam", buffer_litres = 200}
@@ -239,5 +269,31 @@ machines = [
 			{cell = {x = 0, y = 0, z = 0}, face = "negative_x", direction = "input", buffer_litres = 200}
 			{cell = {x = 1, y = 0, z = 0}, face = "positive_x", direction = "output", buffer_litres = 200}
 		]
+	}
+	{
+		id = "small_pole"
+		name_key = "machine_small_pole"
+		item = "small_pole"
+		kind = "pole"
+		footprint = {width = 1, depth = 1, height = 3}
+		supply_volume = {width = 5, depth = 5, height = 4}
+		wire_reach = 7
+	}
+	{
+		id = "power_switch"
+		name_key = "machine_power_switch"
+		item = "power_switch"
+		kind = "power_switch"
+		footprint = {width = 1, depth = 1, height = 1}
+		wire_reach = 7
+	}
+	{
+		id = "lamp"
+		name_key = "machine_lamp"
+		item = "lamp"
+		kind = "lamp"
+		footprint = {width = 1, depth = 1, height = 1}
+		electric_power_kilowatts = 5
+		light_level = 14
 	}
 ]

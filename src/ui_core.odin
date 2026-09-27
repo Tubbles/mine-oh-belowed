@@ -92,6 +92,7 @@ Ui_Input :: struct {
 	open_inventory: bool,
 	open_recipes:   bool,
 	open_journal:   bool,
+	open_power:     bool,
 	// A letter key pressed this frame (lower case), 0 for none.
 	typed_letter:   rune,
 	// Held, not an edge: Confirm without the pad click, for the distribute gesture.
@@ -165,6 +166,7 @@ Screen :: enum u8 {
 	Machine,
 	Recipes,
 	Journal,
+	Power,
 }
 
 Screen_Stack :: struct {
@@ -575,7 +577,7 @@ top_screen :: proc(stack: Screen_Stack) -> Screen {
 
 screen_pauses_simulation :: proc(screen: Screen) -> bool {
 	switch screen {
-	case .None, .Inventory, .Machine, .Recipes, .Journal:
+	case .None, .Inventory, .Machine, .Recipes, .Journal, .Power:
 		return false
 	case .Pause, .Settings:
 		return true

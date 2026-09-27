@@ -18,11 +18,23 @@ fluid_buffer_count :: proc(machine: Machine) -> int {
 
 // Whether the panel shows a state line.
 fluid_machine_shows_state :: proc(kind: Machine_Kind) -> bool {
-	return kind == .Offshore_Pump || kind == .Boiler || kind == .Pump
+	return kind == .Offshore_Pump || kind == .Boiler || kind == .Pump || kind == .Steam_Engine
+}
+
+// Pumps and steam engines show their power network; steam engines their
+// output too.
+fluid_machine_power_rows :: proc(kind: Machine_Kind) -> int {
+	#partial switch kind {
+	case .Pump:
+		return 1
+	case .Steam_Engine:
+		return 2
+	}
+	return 0
 }
 
 fluid_area_size :: proc(machine: Machine) -> [2]f32 {
-	rows := 1 + FLUID_ROWS_PER_BUFFER * fluid_buffer_count(machine)
+	rows := 1 + FLUID_ROWS_PER_BUFFER * fluid_buffer_count(machine) + fluid_machine_power_rows(machine.kind)
 	if fluid_machine_shows_state(machine.kind) {
 		rows += 1
 	}
@@ -77,6 +89,13 @@ fluid_machine_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, fluid_ma
 	}
 	if fluid_machine_shows_state(machine.kind) {
 		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text(fluid_machine_state_keys[fluid_machine.state]), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	}
+	if machine.kind == .Steam_Engine {
+		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), generator_output_line(fluid_machine, screen_context.tick_rate), UI_BODY_TEXT_SIZE, .Left)
+	}
+	if fluid_machine_power_rows(machine.kind) > 0 {
+		power_line := power_status_line(&screen_context.world.entities.electric_networks, fluid_machine.handle)
+		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), power_line, UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	}
 	return result
 }

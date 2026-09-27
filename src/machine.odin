@@ -44,6 +44,13 @@ Machine_Kind :: enum u8 {
 	Steam_Engine,
 	Storage_Tank,
 	Pump,
+	// Power (power_network.odin): a pole carries wires to other poles
+	// within reach and powers the machines in its supply volume, a power
+	// switch is a pole without a supply volume that can be turned off,
+	// and a lamp lights its surroundings while powered.
+	Pole,
+	Power_Switch,
+	Lamp,
 }
 
 @(rodata)
@@ -61,6 +68,9 @@ machine_kind_names := [Machine_Kind]string {
 	.Steam_Engine  = "steam_engine",
 	.Storage_Tank  = "storage_tank",
 	.Pump          = "pump",
+	.Pole          = "pole",
+	.Power_Switch  = "power_switch",
+	.Lamp          = "lamp",
 }
 
 // The shape family a belt item places. Ramps become up or down and lifts
@@ -110,6 +120,10 @@ Machine_Definition :: struct {
 	buffer_litres:                int,
 	flow_litres_per_second:       int,
 	fluid_litres_per_second:      int,
+	supply_volume:                Machine_Footprint_Definition,
+	wire_reach:                   int,
+	electric_output_kilowatts:    f32,
+	light_level:                  int,
 }
 
 Machines_File :: struct {
@@ -145,8 +159,18 @@ Machine :: struct {
 	buffer_litres:               i32,
 	flow_litres_per_second:      u32,
 	// Offshore pumps and pumps: litres moved per second. Boilers: litres
-	// of steam made per second from as much water.
+	// of steam made per second from as much water. Steam engines: litres
+	// of steam used per second at full output.
 	fluid_litres_per_second:     u32,
+	// Poles: the box of cells powered, x y z like footprint, centred on
+	// the pole across and starting at its bottom. Zero for a power switch.
+	supply_volume:               [3]i32,
+	// Poles and power switches: the longest wire, in blocks.
+	wire_reach:                  i32,
+	// Generators: the most power they give.
+	electric_output_watts:       u32,
+	// Lamps: the block light level while lit.
+	light_level:                 u8,
 }
 
 Machine_Registry :: struct {
@@ -211,6 +235,8 @@ validate_machine_kind_fields :: proc(definition: Machine_Definition, kind: Machi
 		return validate_splitter_definition(definition)
 	case .Pipe, .Offshore_Pump, .Boiler, .Steam_Engine, .Storage_Tank, .Pump:
 		return validate_fluid_machine_definition(definition, kind)
+	case .Pole, .Power_Switch, .Lamp:
+		return validate_power_machine_definition(definition, kind)
 	case .Capsule:
 		if definition.slots != CAPSULE_SLOT_COUNT {
 			return fmt.tprintf("capsule %q must have %d slots", definition.id, CAPSULE_SLOT_COUNT)
@@ -273,8 +299,8 @@ validate_inserter_definition :: proc(definition: Machine_Definition) -> string {
 	return ""
 }
 
-// Square, so turning a placed drill moves no cell, with one fuel slot,
-// fuel power and a rate.
+// Square, so turning a placed drill moves no cell, with a rate and
+// either one fuel slot with fuel power or electric power.
 validate_drill_definition :: proc(definition: Machine_Definition) -> string {
 	footprint := definition.footprint
 	if footprint.width != footprint.depth {
@@ -283,8 +309,10 @@ validate_drill_definition :: proc(definition: Machine_Definition) -> string {
 	if definition.items_per_minute <= 0 || definition.rate_reference_ore_percent < 1 || definition.rate_reference_ore_percent > 100 {
 		return fmt.tprintf("drill %q needs a positive items_per_minute and rate_reference_ore_percent from 1 to 100", definition.id)
 	}
-	if definition.fuel_slots != 1 || definition.fuel_power_kilowatts <= 0 {
-		return fmt.tprintf("drill %q needs one fuel slot and a positive fuel_power_kilowatts", definition.id)
+	burner := definition.fuel_slots == 1 && definition.fuel_power_kilowatts > 0 && definition.electric_power_kilowatts == 0
+	electric := definition.fuel_slots == 0 && definition.fuel_power_kilowatts == 0 && definition.electric_power_kilowatts > 0
+	if !burner && !electric {
+		return fmt.tprintf("drill %q needs either one fuel slot and fuel_power_kilowatts or electric_power_kilowatts", definition.id)
 	}
 	if definition.slots != 0 || definition.input_slots != 0 || definition.output_slots != 0 || definition.filter_slots != 0 {
 		return fmt.tprintf("drill %q may only have a fuel slot", definition.id)
@@ -366,6 +394,10 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 		buffer_litres = i32(max(definition.buffer_litres, 0)),
 		flow_litres_per_second = u32(max(definition.flow_litres_per_second, 0)),
 		fluid_litres_per_second = u32(max(definition.fluid_litres_per_second, 0)),
+		supply_volume = {i32(definition.supply_volume.width), i32(definition.supply_volume.height), i32(definition.supply_volume.depth)},
+		wire_reach = i32(max(definition.wire_reach, 0)),
+		electric_output_watts = u32(math.round(definition.electric_output_kilowatts * 1000)),
+		light_level = u8(clamp(definition.light_level, 0, MAXIMUM_LIGHT)),
 	}
 }
 

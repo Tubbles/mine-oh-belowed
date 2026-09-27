@@ -22,6 +22,8 @@ Raised by the work item notes (0005 to 0008), to be turned into work items when 
 - Bindings are hardcoded tables until configuration lands. The raylib gamepad table lacks Sneak on B. Fly mode does not mine instantly yet.
 - The third person camera can still clip into walls at steep angles, and the targeting ray starts at the eye in third person.
 - Diagnostics overlay backdrop is narrower than its longest lines.
+- Fluid branches are served in coordinate order (0020), so a tank on one branch can starve a consumer on another until the tank's fill fraction passes the junction's. Proportional sharing at junctions would fix it.
+- Quest chapters measure placements and production, not layout (0018); an entity graph query would let quests check that pieces are actually connected.
 
 ## Next steps
 

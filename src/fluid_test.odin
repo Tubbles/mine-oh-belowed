@@ -238,7 +238,7 @@ test_pump_moves_water_uphill_only_with_power :: proc(t: ^testing.T) {
 	testing.expect_value(t, pipe_levels(&world, column)[2], 0)
 	testing.expect_value(t, test_fluid_machine(&world, pump).buffers[1].level, 0)
 	world, pump, source, column = make_pump_world(content)
-	test_fluid_machine(&world, pump).powered = true
+	test_fluid_machine(&world, pump).power.satisfaction = POWER_FULL
 	tick_test_fluids(&world, content, 200)
 	levels := pipe_levels(&world, column)
 	testing.expect(t, levels[2] > 0)
@@ -435,4 +435,37 @@ test_fluid_simulation_is_deterministic :: proc(t: ^testing.T) {
 	burned := i64(20 - burner.slots[BOILER_FUEL_SLOT].count) * 4_000_000 - i64(burner.fuel_joules)
 	testing.expect_value(t, i64(steam_litres(world, content)), burned / 30_000)
 	testing.expect_value(t, burned % 30_000, 0)
+}
+
+// Ticks until the tank holds at least 99 percent, or -1.
+ticks_to_fill_tank :: proc(world: ^World, content: Simulation_Content, tank: Entity_Handle, maximum_ticks: int) -> int {
+	for tick in 1 ..= maximum_ticks {
+		tick_test_fluids(world, content, 1)
+		if test_fluid_machine(world, tank).buffers[0].level >= 24_750 {
+			return tick
+		}
+	}
+	return -1
+}
+
+// An offshore pump, three pipes and a tank towards -x, and the mirror
+// image towards +x, fill in the same number of ticks at close to the
+// pump's 20 litres per tick.
+@(test)
+test_fluid_throughput_does_not_depend_on_direction :: proc(t: ^testing.T) {
+	content := make_test_content()
+	towards_negative := make_floor_world(content.blocks, 32)
+	place_test_fluid_entity(&towards_negative, content, "offshore_pump", {0, 1, 0})
+	lay_pipes(&towards_negative, content, {-1, 1, 0}, {-2, 1, 0}, {-3, 1, 0})
+	negative_tank := place_test_fluid_entity(&towards_negative, content, "storage_tank", {-6, 1, -1})
+	towards_positive := make_floor_world(content.blocks, 32)
+	place_test_fluid_entity(&towards_positive, content, "offshore_pump", {0, 1, 0}, 2)
+	lay_pipes(&towards_positive, content, {2, 1, 0}, {3, 1, 0}, {4, 1, 0})
+	positive_tank := place_test_fluid_entity(&towards_positive, content, "storage_tank", {5, 1, -1})
+	negative_ticks := ticks_to_fill_tank(&towards_negative, content, negative_tank, 3000)
+	positive_ticks := ticks_to_fill_tank(&towards_positive, content, positive_tank, 3000)
+	testing.expect_value(t, negative_ticks, positive_ticks)
+	// 24,750 L at 20 L per tick is 1238 ticks; the pump, the pipes and
+	// the first tick take the rest.
+	testing.expect_value(t, negative_ticks, 1258)
 }

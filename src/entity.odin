@@ -26,6 +26,9 @@ Entity_Kind :: enum u8 {
 	// Offshore pumps, boilers, steam engines, storage tanks and pumps
 	// (fluid_machine.odin).
 	Fluid_Machine,
+	// Small poles and power switches (power_machine.odin).
+	Pole,
+	Lamp,
 }
 
 // index is into the pool of `kind`. Generations start at 1, so the zero
@@ -79,10 +82,14 @@ Entities :: struct {
 	splitters:      Entity_Pool(Splitter),
 	pipes:          Entity_Pool(Pipe),
 	fluid_machines: Entity_Pool(Fluid_Machine),
+	poles:          Entity_Pool(Pole),
+	lamps:          Entity_Pool(Lamp),
 	// Transport lines derived from the belts and splitters (belt.odin).
 	belt_network:   Belt_Network,
 	// Derived from the pipes and fluid ports (fluid_network.odin).
 	fluid_networks: Fluid_Networks,
+	// Derived from the poles and electric machines (power_network.odin).
+	electric_networks: Electric_Networks,
 	cells:          map[World_Coordinate]Entity_Handle,
 }
 
@@ -139,8 +146,11 @@ destroy_entities :: proc(entities: ^Entities) {
 	destroy_pool(&entities.splitters)
 	destroy_pool(&entities.pipes)
 	destroy_pool(&entities.fluid_machines)
+	destroy_pool(&entities.poles)
+	destroy_pool(&entities.lamps)
 	destroy_belt_network(&entities.belt_network)
 	destroy_fluid_networks(&entities.fluid_networks)
+	destroy_electric_networks(&entities.electric_networks)
 	delete(entities.cells)
 }
 
@@ -184,6 +194,14 @@ entity_common :: proc(entities: ^Entities, handle: Entity_Handle) -> ^Entity_Com
 		if fluid_machine := pool_get(&entities.fluid_machines, handle); fluid_machine != nil {
 			return &fluid_machine.common
 		}
+	case .Pole:
+		if pole := pool_get(&entities.poles, handle); pole != nil {
+			return &pole.common
+		}
+	case .Lamp:
+		if lamp := pool_get(&entities.lamps, handle); lamp != nil {
+			return &lamp.common
+		}
 	}
 	return nil
 }
@@ -219,7 +237,7 @@ entity_slots :: proc(entities: ^Entities, handle: Entity_Handle) -> []Item_Stack
 		}
 	case .Drill:
 		if drill := pool_get(&entities.drills, handle); drill != nil {
-			return drill.slots[:]
+			return drill.slots[:drill.slot_count]
 		}
 	case .Fluid_Machine:
 		if fluid_machine := pool_get(&entities.fluid_machines, handle); fluid_machine != nil {
@@ -312,19 +330,26 @@ add_entity :: proc(entities: ^Entities, machines: Machine_Registry, machine: Mac
 	case .Inserter:
 		handle = pool_add(&entities.inserters, .Inserter, make_inserter(common, machines.machines[machine]))
 	case .Drill:
-		handle = pool_add(&entities.drills, .Drill, make_drill(common, {}))
+		handle = pool_add(&entities.drills, .Drill, make_drill(common, {}, machines.machines[machine].slot_count))
 	case .Splitter:
 		return add_splitter(entities, machines, machine, origin, rotation)
 	case .Pipe:
 		handle = pool_add(&entities.pipes, .Pipe, make_pipe(common))
 	case .Offshore_Pump, .Boiler, .Steam_Engine, .Storage_Tank, .Pump:
 		handle = pool_add(&entities.fluid_machines, .Fluid_Machine, make_fluid_machine(common, machines.machines[machine]))
+	case .Pole, .Power_Switch:
+		handle = pool_add(&entities.poles, .Pole, make_pole(common))
+	case .Lamp:
+		handle = pool_add(&entities.lamps, .Lamp, make_lamp(common))
 	}
 	for cell in footprint_cells(origin, machines.machines[machine].footprint, rotation) {
 		entities.cells[cell] = handle
 	}
 	if handle.kind == .Pipe || handle.kind == .Fluid_Machine {
 		rebuild_fluid_networks(entities, machines)
+	}
+	if machine_touches_power(machines.machines[machine]) {
+		rebuild_electric_networks(entities, machines)
 	}
 	return handle
 }
@@ -342,6 +367,10 @@ remove_entity :: proc(entities: ^Entities, machines: Machine_Registry, handle: E
 	}
 	for cell in common_cells(common^, machines) {
 		delete_key(&entities.cells, cell)
+	}
+	touches_power := machine_touches_power(machines.machines[common.machine])
+	defer if touches_power {
+		rebuild_electric_networks(entities, machines)
 	}
 	switch handle.kind {
 	case .None:
@@ -364,6 +393,10 @@ remove_entity :: proc(entities: ^Entities, machines: Machine_Registry, handle: E
 		pool_remove(&entities.fluid_machines, handle)
 		rebuild_fluid_networks(entities, machines)
 		return true
+	case .Pole:
+		return pool_remove(&entities.poles, handle)
+	case .Lamp:
+		return pool_remove(&entities.lamps, handle)
 	case .Belt, .Splitter:
 		// Handled by remove_belt and remove_splitter above.
 		return false
@@ -386,15 +419,18 @@ cell_blocks_movement :: proc(world: ^World, registry: Block_Registry, cell: Worl
 	return occupied && handle.kind != .Belt && handle.kind != .Splitter
 }
 
-// Belts and splitters, then drills, then inserters, then furnaces, so a furnace sees an
-// item an inserter took off a belt in the same tick. Fluids come last, so
-// a boiler burns fuel an inserter put in this tick. Drills and inserters
+// Belts and splitters, then the power balance, then drills, then
+// inserters, then furnaces, so a furnace sees an item an inserter took off
+// a belt in the same tick, and every electric machine works at this
+// tick's satisfaction. Fluids come after, so a boiler burns fuel an
+// inserter put in this tick, then lamps follow their power. Drills and inserters
 // run in pool order, which keeps two of them sharing a vein or a chest
 // deterministic. Outcrops of veins exhausted in this tick turn to spent
 // rock at the end.
 tick_entities :: proc(world: ^World, content: Simulation_Content, tick_rate: int) {
 	tick_belt_network(&world.entities.belt_network, tick_rate, world.entities.splitters.entries[:])
 	record_belt_dead_ends(&world.statistics, &world.entities)
+	tick_electric_networks(world, content.machines, tick_rate)
 	for &drill in world.entities.drills.entries {
 		if drill.alive {
 			before := drill
@@ -418,5 +454,6 @@ tick_entities :: proc(world: ^World, content: Simulation_Content, tick_rate: int
 		}
 	}
 	tick_fluids(&world.entities, content, tick_rate)
+	tick_lamps(world, content.machines)
 	apply_spent_outcrops(world, content.veins)
 }

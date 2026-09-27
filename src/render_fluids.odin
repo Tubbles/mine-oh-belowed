@@ -33,6 +33,9 @@ fluid_machine_colors := [Machine_Kind]rl.Color {
 	.Steam_Engine  = {90, 110, 90, 255},
 	.Storage_Tank  = {140, 140, 150, 255},
 	.Pump          = {80, 130, 170, 255},
+	.Pole          = {},
+	.Power_Switch  = {},
+	.Lamp          = {},
 }
 
 fluid_color :: proc(fluids: Fluid_Registry, fluid: Fluid_Id) -> rl.Color {

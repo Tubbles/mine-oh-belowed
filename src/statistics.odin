@@ -61,6 +61,17 @@ Statistics :: struct {
 	drill_fuel_burned:           u64,
 	// Finite veins drills drained to the last unit.
 	veins_exhausted:             u64,
+	// Electric energy all networks delivered, in joules; produced and
+	// consumed are equal, generators give only what consumers receive.
+	energy_produced_joules:      u64,
+	energy_consumed_joules:      u64,
+	// Ticks in which some network was below full satisfaction while
+	// something asked for power.
+	brownout_ticks:              u64,
+	// Electric machines outside every network in the last tick, and that
+	// count summed over ticks for the quest hints.
+	unpowered_machines:          u64,
+	unpowered_machine_ticks:     u64,
 	// Mining, placing, picking up and opening a machine. hands_off
 	// sustain objectives break when this changes.
 	world_actions:               u64,

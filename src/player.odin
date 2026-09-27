@@ -69,6 +69,8 @@ Player_Event :: enum u8 {
 	Inventory_Full,
 	// Interact on an entity: the UI opens player.open_machine's panel.
 	Open_Machine,
+	// Interact turned a power switch.
+	Toggled_Switch,
 }
 
 Player_Events :: bit_set[Player_Event]
@@ -250,8 +252,10 @@ apply_player_toggles :: proc(player: ^Player, just_pressed: Action_Set) {
 }
 
 // A gamepad's A is both Jump and Interact. Looking at an entity it opens
-// the entity instead of jumping; keyboard Space never interacts.
-resolve_interact :: proc(player: ^Player, entities: ^Entities, input: Input_Frame) -> (Input_Frame, Player_Events) {
+// the entity instead of jumping; keyboard Space never interacts. On a
+// power switch Interact turns the switch like a lever, and Sneak with
+// Interact opens its panel.
+resolve_interact :: proc(player: ^Player, entities: ^Entities, machines: Machine_Registry, input: Input_Frame) -> (Input_Frame, Player_Events) {
 	result := input
 	if .Interact not_in input.pressed || !entity_has_panel(entities, player.target.entity) {
 		return result, {}
@@ -260,6 +264,9 @@ resolve_interact :: proc(player: ^Player, entities: ^Entities, input: Input_Fram
 	result.just_pressed -= {.Jump}
 	if .Interact not_in input.just_pressed {
 		return result, {}
+	}
+	if .Sneak not_in input.pressed && toggle_power_switch(entities, machines, player.target.entity) {
+		return result, {.Toggled_Switch}
 	}
 	player.open_machine = player.target.entity
 	return result, {.Open_Machine}
@@ -285,7 +292,7 @@ carry_player_on_belt :: proc(world: ^World, content: Simulation_Content, player:
 tick_player :: proc(world: ^World, content: Simulation_Content, players: []Player, index: int, frame: Input_Frame, tick_rate: int) -> Player_Events {
 	player := &players[index]
 	seconds := 1 / f32(tick_rate)
-	input, events := resolve_interact(player, &world.entities, frame)
+	input, events := resolve_interact(player, &world.entities, content.machines, frame)
 	player.previous_position, player.previous_yaw, player.previous_pitch = player.position, player.yaw, player.pitch
 	apply_player_toggles(player, input.just_pressed)
 	turn_player(player, input, seconds)
@@ -299,7 +306,7 @@ tick_player :: proc(world: ^World, content: Simulation_Content, players: []Playe
 	if !player.flying {
 		record_walked(&world.statistics, walk_start, player.position)
 	}
-	if .Open_Machine in events {
+	if .Open_Machine in events || .Toggled_Switch in events {
 		record_world_action(&world.statistics)
 	}
 	player.target = raycast_blocks(world, content.blocks, player_eye(player.position), player_look_direction(player^), PLAYER_REACH)

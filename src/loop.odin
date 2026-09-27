@@ -256,6 +256,7 @@ render_frame :: proc(state: ^Frame_State, config: Game_Config) {
 	draw_chunks(&state.renderer, camera)
 	draw_entities(&state.simulation.world, state.machines, state.items, state.simulation.tick_rate)
 	draw_fluid_entities(&state.simulation.world, state.machines, state.fluids)
+	draw_power_entities(&state.simulation.world, state.machines)
 	draw_belts(&state.belt_renderer, &state.simulation.world, state.items, state.machines, state.simulation.tick, alpha, state.simulation.tick_rate)
 	draw_player_world_overlay(&state.simulation.world, frame_simulation_content(state), state.simulation.players[:], 0, alpha)
 	rl.EndMode3D()
@@ -310,6 +311,8 @@ show_simulation_events :: proc(state: ^Ui_State, events: ^[dynamic]Simulation_Ev
 			if state.screens.count == 0 {
 				push_screen(&state.screens, .Machine)
 			}
+		case .Toggled_Switch:
+		// The switch's colour shows the change.
 		}
 	}
 	clear(events)

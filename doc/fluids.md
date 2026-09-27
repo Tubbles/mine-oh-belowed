@@ -23,6 +23,11 @@ The M4 model: pipes with liquids and gases, steam power, electric networks, and 
 - Consumers in M4: electric mining drill 90 kW, inserter and filter inserter 13 kW, assembler 75 kW, lab 60 kW, lamp 5 kW, pump 30 kW. Generators: the steam engine.
 - The power overview screen lists each network with supply, demand, satisfaction, its generators and its largest consumers. The HUD shows a brownout warning while any network is below full satisfaction, and machines outside any network say so in their panel.
 
+### As implemented in 0020
+
+- Fluid flow now runs outwards from the network's output ports, and a connection leading away from them pushes everything the fuller side holds within the flow cap; other connections balance by fill fraction. Throughput no longer depends on direction (19.7 L per tick either way), at the cost of a known fairness gap: at a branch the first downstream neighbour by coordinate is served first, so a tank on one branch can starve an engine on the other until the tank's fill fraction passes the junction's. Recorded as a follow up.
+- Brownout slowdown is a per machine power credit in per mille, one tick of work per thousand, so existing tick counts stay exact. Generators share only the energy consumers received, so produced always equals consumed; steam converts at 30 kJ per litre, whole litres at a time. The supply volume starts at the pole's bottom and reaches four blocks up. Wire reach is straight line distance between origins using the shorter of the two reaches. Lamps are entity light sources read by the light code next to block emission, cleared through the removal queue when dark. The power switch is a lever: Interact turns it, Sneak plus Interact opens its panel. The electric drill draws 37.5 vein units per minute (30 ore on an 80 percent vein).
+
 ## Assembler, lab and research
 
 - The assembler makes recipes with `assembler` in `made_in` at speed 0.5. Its recipe is chosen in the machine panel through the recipe browser filtered to assembler recipes and available ones. It has an input slot per ingredient and an output slot per output, and the slot rules feed the transfer interface so inserters put each ingredient in the right slot.

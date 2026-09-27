@@ -10,8 +10,9 @@ package game
 // machine's items per minute, so with a source and a sink always ready an
 // inserter moves exactly its rate. An arm that arrives at the drop and
 // finds no room waits there with the item in hand. A burner inserter
-// burns fuel only on the ticks its arm moves; electric ones stay
-// unpowered until power exists (M4). A burner with an empty buffer and an
+// burns fuel only on the ticks its arm moves; an electric one asks its
+// power network for power only then, and in a brownout its arm moves on
+// the ticks its power credit pays for (power_machine.odin). A burner with an empty buffer and an
 // empty fuel slot feeds itself: fuel it is about to pick, or fuel in its
 // hand, goes into its own fuel slot instead of on to the target.
 
@@ -47,7 +48,7 @@ Inserter :: struct {
 	phase:            Inserter_Phase,
 	phase_ticks:      u32,
 	state:            Inserter_State,
-	powered:          bool,
+	power:            Power_State,
 	// Uninterrupted ticks in the Idle state, for the idle minute counter.
 	idle_streak:      u32,
 }
@@ -125,7 +126,7 @@ inserter_pickable_item :: proc(entities: ^Entities, content: Simulation_Content,
 // Fuel for one more tick of movement is in the buffer or the slot.
 inserter_can_move :: proc(inserter: Inserter, machine: Machine, items: Item_Registry, tick_rate: int) -> bool {
 	if inserter_is_electric(machine) {
-		return inserter.powered
+		return power_is_on(inserter.power)
 	}
 	if inserter.fuel_joules >= fuel_joules_per_tick(machine, tick_rate) {
 		return true
@@ -136,7 +137,7 @@ inserter_can_move :: proc(inserter: Inserter, machine: Machine, items: Item_Regi
 
 burn_inserter_fuel :: proc(inserter: ^Inserter, machine: Machine, items: Item_Registry, tick_rate: int) -> bool {
 	if inserter_is_electric(machine) {
-		return inserter.powered
+		return power_is_on(inserter.power)
 	}
 	per_tick := fuel_joules_per_tick(machine, tick_rate)
 	if !refuel_from_slot(&inserter.fuel_joules, &inserter.fuel_item_joules, &inserter.slots[INSERTER_FUEL_SLOT], items, per_tick) {
@@ -211,9 +212,14 @@ drop_with_inserter :: proc(entities: ^Entities, content: Simulation_Content, ins
 	inserter.phase, inserter.phase_ticks, inserter.state = .Swinging_Back, 0, .Moving
 }
 
-// One tick of movement; out of fuel the arm stops where it is. Arriving
-// at either end picks or drops in the same tick.
+// One tick of movement; out of fuel the arm stops where it is, and an
+// electric arm in a brownout skips the ticks its power does not pay for.
+// Arriving at either end picks or drops in the same tick.
 swing_inserter :: proc(entities: ^Entities, content: Simulation_Content, inserter: ^Inserter, machine: Machine, tick_rate: int) {
+	if inserter_is_electric(machine) && !take_power_step(&inserter.power) {
+		inserter.state = .Moving
+		return
+	}
 	burned := burn_inserter_fuel(inserter, machine, content.items, tick_rate)
 	if !burned && feed_inserter_from_hand(inserter, content.items) {
 		burned = burn_inserter_fuel(inserter, machine, content.items, tick_rate)
@@ -239,7 +245,7 @@ swing_inserter :: proc(entities: ^Entities, content: Simulation_Content, inserte
 
 advance_inserter :: proc(entities: ^Entities, content: Simulation_Content, inserter: ^Inserter, tick_rate: int) {
 	machine := content.machines.machines[inserter.machine]
-	if inserter_is_electric(machine) && !inserter.powered {
+	if inserter_is_electric(machine) && !power_is_on(inserter.power) {
 		inserter.state = .Unpowered
 		return
 	}

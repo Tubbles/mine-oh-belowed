@@ -214,6 +214,10 @@ validate_fluid_machine_definition :: proc(definition: Machine_Definition, kind: 
 		if definition.fuel_slots != 1 || definition.fuel_power_kilowatts <= 0 || definition.fluid_litres_per_second <= 0 {
 			return fmt.tprintf("boiler %q needs one fuel slot, fuel_power_kilowatts and fluid_litres_per_second", definition.id)
 		}
+	case .Steam_Engine:
+		if definition.fluid_litres_per_second <= 0 || definition.electric_output_kilowatts <= 0 {
+			return fmt.tprintf("steam engine %q needs a positive fluid_litres_per_second and electric_output_kilowatts", definition.id)
+		}
 	case .Pump:
 		if definition.fluid_litres_per_second <= 0 || definition.electric_power_kilowatts <= 0 {
 			return fmt.tprintf("pump %q needs a positive fluid_litres_per_second and electric_power_kilowatts", definition.id)

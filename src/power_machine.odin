@@ -1,0 +1,228 @@
+package game
+
+import "core:fmt"
+import "core:slice"
+
+// The entities of the power grid (doc/fluids.md, Power): small poles and
+// power switches in one pool (the machine kind tells them apart), lamps,
+// and the power side of the machines that already exist: electric
+// inserters, electric drills, pumps and steam engines. Networks and the
+// energy balance are in power_network.odin.
+//
+// A consumer's Power_State holds what its network gave it this tick. A
+// brownout slows machines through power credit: every tick adds the
+// satisfaction in per mille, and a machine takes one tick of work for
+// every POWER_FULL collected, so at 50 percent it works every other tick.
+
+// Satisfaction and power credit are in per mille.
+POWER_FULL :: 1000
+// A lamp shines only while its network gives more than half.
+LAMP_ON_ABOVE :: 500
+
+Power_State :: struct {
+	satisfaction: u32,
+	credit:       u32,
+}
+
+// on only matters for a power switch; a small pole is always on.
+Pole :: struct {
+	using common: Entity_Common,
+	on:           bool,
+}
+
+Lamp :: struct {
+	using common: Entity_Common,
+	power:        Power_State,
+	lit:          bool,
+}
+
+make_pole :: proc(common: Entity_Common) -> Pole {
+	return Pole{common = common, on = true}
+}
+
+make_lamp :: proc(common: Entity_Common) -> Lamp {
+	return Lamp{common = common}
+}
+
+// Poles: 1 by 1 across, an odd supply volume so it centres on the pole,
+// and a wire reach. Power switches: 1 by 1 by 1 with a reach and no
+// volume. Lamps: 1 by 1 by 1, electric power and a light level.
+validate_power_machine_definition :: proc(definition: Machine_Definition, kind: Machine_Kind) -> string {
+	footprint, volume := definition.footprint, definition.supply_volume
+	#partial switch kind {
+	case .Pole:
+		if footprint.width != 1 || footprint.depth != 1 || definition.wire_reach <= 0 {
+			return fmt.tprintf("pole %q must be 1 by 1 across with a positive wire_reach", definition.id)
+		}
+		if volume.width < 1 || volume.depth < 1 || volume.height < 1 || volume.width % 2 == 0 || volume.depth % 2 == 0 {
+			return fmt.tprintf("pole %q needs a supply_volume with odd width and depth and a positive height", definition.id)
+		}
+	case .Power_Switch:
+		if footprint.width != 1 || footprint.depth != 1 || footprint.height != 1 || definition.wire_reach <= 0 {
+			return fmt.tprintf("power switch %q must be 1 by 1 by 1 with a positive wire_reach", definition.id)
+		}
+	case .Lamp:
+		if footprint.width != 1 || footprint.depth != 1 || footprint.height != 1 || definition.electric_power_kilowatts <= 0 {
+			return fmt.tprintf("lamp %q must be 1 by 1 by 1 with a positive electric_power_kilowatts", definition.id)
+		}
+		if definition.light_level < 1 || definition.light_level > MAXIMUM_LIGHT {
+			return fmt.tprintf("lamp %q needs a light_level from 1 to %d", definition.id, MAXIMUM_LIGHT)
+		}
+	}
+	return ""
+}
+
+machine_is_electric_consumer :: proc(machine: Machine) -> bool {
+	return machine.electric_power_watts > 0
+}
+
+machine_is_generator :: proc(machine: Machine) -> bool {
+	return machine.electric_output_watts > 0
+}
+
+// Placing or removing it changes the networks or who belongs to them.
+machine_touches_power :: proc(machine: Machine) -> bool {
+	return machine.kind == .Pole || machine.kind == .Power_Switch || machine_is_electric_consumer(machine) || machine_is_generator(machine)
+}
+
+// Integer division like fuel: 13 kW at 60 ticks per second is 216 J.
+electric_joules_per_tick :: proc(watts: u32, tick_rate: int) -> u64 {
+	return u64(watts) / u64(max(tick_rate, 1))
+}
+
+power_is_on :: proc(power: Power_State) -> bool {
+	return power.satisfaction > 0
+}
+
+// Adds the tick's satisfaction to the credit; true when a whole tick of
+// work is paid for.
+take_power_step :: proc(power: ^Power_State) -> bool {
+	power.credit += power.satisfaction
+	if power.credit < POWER_FULL {
+		return false
+	}
+	power.credit -= POWER_FULL
+	return true
+}
+
+// Steam engines.
+
+steam_joules_per_litre :: proc(machine: Machine) -> u64 {
+	return u64(machine.electric_output_watts) / u64(max(machine.fluid_litres_per_second, 1))
+}
+
+steam_engine_litres :: proc(engine: Fluid_Machine, machine: Machine) -> u64 {
+	total: u64
+	for port, index in fluid_ports_of(machine) {
+		if engine.buffers[index].level > 0 && engine.buffers[index].fluid == port.filter {
+			total += u64(engine.buffers[index].level)
+		}
+	}
+	return total
+}
+
+// Up to its output over the tick, and no more than the steam it holds
+// (drawn already or still in its buffers) is worth.
+steam_engine_available_joules :: proc(engine: Fluid_Machine, machine: Machine, tick_rate: int) -> u64 {
+	stored := u64(engine.fuel_joules) + steam_engine_litres(engine, machine) * steam_joules_per_litre(machine)
+	return min(electric_joules_per_tick(machine.electric_output_watts, tick_rate), stored)
+}
+
+// Takes whole litres from the input buffers in port order.
+draw_steam_litres :: proc(engine: ^Fluid_Machine, machine: Machine, litres: u64) {
+	remaining := litres
+	for port, index in fluid_ports_of(machine) {
+		buffer := &engine.buffers[index]
+		if remaining == 0 || buffer.level <= 0 || buffer.fluid != port.filter {
+			continue
+		}
+		taken := min(u64(buffer.level), remaining)
+		buffer.level -= i32(taken)
+		remaining -= taken
+	}
+}
+
+// Steam turns into joules a whole litre at a time, only as the delivered
+// energy needs it; the rest waits in fuel_joules for the next tick.
+deliver_steam_engine_energy :: proc(engine: ^Fluid_Machine, machine: Machine, joules: u64) {
+	per_litre := steam_joules_per_litre(machine)
+	if u64(engine.fuel_joules) < joules && per_litre > 0 {
+		litres := (joules - u64(engine.fuel_joules) + per_litre - 1) / per_litre
+		draw_steam_litres(engine, machine, litres)
+		engine.fuel_joules += u32(litres * per_litre)
+	}
+	engine.fuel_joules -= u32(min(joules, u64(engine.fuel_joules)))
+	engine.generated_joules = u32(joules)
+}
+
+steam_engine_state :: proc(delivered, available: u64, network_demand: u64) -> Fluid_Machine_State {
+	switch {
+	case delivered > 0:
+		return .Producing
+	case available == 0 && network_demand > 0:
+		return .No_Steam
+	}
+	return .Idle
+}
+
+// Lamps: an entity light source (World.entity_lights) in the lamp's cell
+// while lit, through the block light queues of world_light.odin.
+
+tick_lamps :: proc(world: ^World, machines: Machine_Registry) {
+	for &lamp in world.entities.lamps.entries {
+		if lamp.alive {
+			lamp.lit = lamp.power.satisfaction > LAMP_ON_ABOVE
+		}
+	}
+	sync_entity_lights(world, lit_lamp_lights(&world.entities, machines))
+}
+
+// Cell and level of every lit lamp, in the temp allocator.
+lit_lamp_lights :: proc(entities: ^Entities, machines: Machine_Registry) -> map[World_Coordinate]u8 {
+	lights := make(map[World_Coordinate]u8, context.temp_allocator)
+	for lamp in entities.lamps.entries {
+		if lamp.alive && lamp.lit {
+			lights[lamp.origin] = machines.machines[lamp.machine].light_level
+		}
+	}
+	return lights
+}
+
+// Makes World.entity_lights match wanted: sources that went out or were
+// picked up go through the removal queue, new ones through the addition
+// queue. Cells are visited in coordinate order.
+sync_entity_lights :: proc(world: ^World, wanted: map[World_Coordinate]u8) {
+	changed := make([dynamic]World_Coordinate, context.temp_allocator)
+	for cell, level in world.entity_lights {
+		if wanted[cell] != level {
+			append(&changed, cell)
+		}
+	}
+	for cell in wanted {
+		if cell not_in world.entity_lights {
+			append(&changed, cell)
+		}
+	}
+	slice.sort_by(changed[:], coordinate_before)
+	for cell in changed {
+		set_entity_light(world, cell, wanted[cell])
+	}
+}
+
+// Power switches.
+
+// Interact on a power switch turns it (the panel has a button too).
+toggle_power_switch :: proc(entities: ^Entities, machines: Machine_Registry, handle: Entity_Handle) -> bool {
+	pole := pool_get(&entities.poles, handle)
+	if pole == nil || machines.machines[pole.machine].kind != .Power_Switch {
+		return false
+	}
+	pole.on = !pole.on
+	rebuild_electric_networks(entities, machines)
+	return true
+}
+
+entity_is_power_switch :: proc(entities: ^Entities, machines: Machine_Registry, handle: Entity_Handle) -> bool {
+	pole := pool_get(&entities.poles, handle)
+	return pole != nil && machines.machines[pole.machine].kind == .Power_Switch
+}

@@ -1,12 +1,14 @@
 package game
 
-// The burner mining drill (doc/logistics.md): a square entity placed with
+// Mining drills (doc/logistics.md): a square entity placed with
 // at least one footprint cell on a vein outcrop. It taps the vein's
 // reservoir, not the blocks: every cycle it draws one unit, picked by the
 // vein type's output mix, and drops it into the cell in front of its
 // arrow through the item transfer interface. With nowhere to drop it the
 // drill holds the unit and waits, since there are no items on the ground.
-// The direction is Entity_Common.rotation (0 is +x, like belts).
+// The direction is Entity_Common.rotation (0 is +x, like belts). A burner
+// drill has a fuel slot; an electric drill (no fuel slot) mines at its
+// power network's satisfaction through power credit (power_machine.odin).
 
 DRILL_SLOT_COUNT :: 1
 DRILL_FUEL_SLOT :: 0
@@ -20,6 +22,7 @@ Drill_State :: enum u8 {
 	Mining,
 	Waiting_For_Room,
 	Vein_Exhausted,
+	Unpowered,
 }
 
 @(rodata)
@@ -28,11 +31,14 @@ drill_state_keys := [Drill_State]string {
 	.Mining           = "machine_state_mining",
 	.Waiting_For_Room = "machine_state_waiting_for_room",
 	.Vein_Exhausted   = "machine_state_vein_exhausted",
+	.Unpowered        = "machine_state_unpowered",
 }
 
-// held is a drawn unit that found no room yet.
+// held is a drawn unit that found no room yet. slot_count is 1 for a
+// burner drill (its fuel slot) and 0 for an electric one.
 Drill :: struct {
 	using common:     Entity_Common,
+	slot_count:       int,
 	slots:            [DRILL_SLOT_COUNT]Item_Stack,
 	fuel_joules:      u32,
 	fuel_item_joules: u32,
@@ -40,10 +46,37 @@ Drill :: struct {
 	progress_ticks:   u32,
 	held:             Item_Stack,
 	state:            Drill_State,
+	power:            Power_State,
 }
 
-make_drill :: proc(common: Entity_Common, vein: Vein_Id) -> Drill {
-	return Drill{common = common, slots = {EMPTY_STACK}, vein = vein, held = EMPTY_STACK}
+make_drill :: proc(common: Entity_Common, vein: Vein_Id, slot_count: int) -> Drill {
+	return Drill{common = common, slot_count = min(slot_count, DRILL_SLOT_COUNT), slots = {EMPTY_STACK}, vein = vein, held = EMPTY_STACK}
+}
+
+drill_is_electric :: proc(drill: Drill) -> bool {
+	return drill.slot_count == 0
+}
+
+// Pays for one tick of mining: a tick of fuel, or a step of power
+// credit. False with the state set when it cannot mine this tick; an
+// electric drill in a brownout keeps mining, only on fewer ticks.
+drill_draws_energy :: proc(drill: ^Drill, machine: Machine, items: Item_Registry, tick_rate: int) -> bool {
+	if drill_is_electric(drill^) {
+		if !power_is_on(drill.power) {
+			drill.state = .Unpowered
+			return false
+		}
+		drill.state = .Mining
+		return take_power_step(&drill.power)
+	}
+	per_tick := fuel_joules_per_tick(machine, tick_rate)
+	if !refuel_from_slot(&drill.fuel_joules, &drill.fuel_item_joules, &drill.slots[DRILL_FUEL_SLOT], items, per_tick) {
+		drill.state = .No_Fuel
+		return false
+	}
+	drill.fuel_joules -= per_tick
+	drill.state = .Mining
+	return true
 }
 
 // 60 s times the tick rate times the reference ore share over the ore
@@ -165,7 +198,7 @@ output_drill_item :: proc(world: ^World, content: Simulation_Content, drill: ^Dr
 }
 
 // One tick. A held unit has to go out before anything else happens; fuel
-// burns and progress counts only while the drill mines. Veins are never
+// burns (or power is drawn) and progress counts only while the drill mines. Veins are never
 // unregistered, so a missing vein only happens to a drill placed without
 // one, and it reads as exhausted.
 advance_drill :: proc(world: ^World, content: Simulation_Content, drill: ^Drill, tick_rate: int) {
@@ -179,13 +212,9 @@ advance_drill :: proc(world: ^World, content: Simulation_Content, drill: ^Drill,
 		drill.state = .Vein_Exhausted
 		return
 	}
-	per_tick := fuel_joules_per_tick(machine, tick_rate)
-	if !refuel_from_slot(&drill.fuel_joules, &drill.fuel_item_joules, &drill.slots[DRILL_FUEL_SLOT], content.items, per_tick) {
-		drill.state = .No_Fuel
+	if !drill_draws_energy(drill, machine, content.items, tick_rate) {
 		return
 	}
-	drill.fuel_joules -= per_tick
-	drill.state = .Mining
 	drill.progress_ticks += 1
 	if drill.progress_ticks < drill_cycle_ticks(machine, tick_rate) {
 		return

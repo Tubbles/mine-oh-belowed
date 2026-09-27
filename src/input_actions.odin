@@ -17,6 +17,8 @@ Action :: enum u8 {
 	Open_Recipes,
 	// The quest journal: keyboard J, and from the pause menu.
 	Open_Journal,
+	// The power overview: keyboard P, and from the pause menu.
+	Open_Power_Overview,
 	Open_Map,
 	Pause,
 	Confirm,
@@ -164,6 +166,7 @@ WORLD_ACTIONS :: Action_Set {
 	.Open_Inventory,
 	.Open_Recipes,
 	.Open_Journal,
+	.Open_Power_Overview,
 	.Open_Map,
 	.Sneak,
 	.Sprint,

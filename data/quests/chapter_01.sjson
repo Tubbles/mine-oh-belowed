@@ -40,7 +40,9 @@
 // belt_dead_end_ticks (ticks a line's front item stood at a dead end no
 // inserter picks from, summed over lines), inserter_idle_a_minute (times
 // an inserter reached a minute of uninterrupted idling),
-// drill_fuel_burned (fuel items lit by drills).
+// drill_fuel_burned (fuel items lit by drills), brownout_ticks (ticks
+// some power network was below full satisfaction), unpowered_machine_ticks
+// (electric machines outside every power network, summed over ticks).
 //
 // A reward is {item, count}, landing in the capsule, or {unlocks_recipe}
 // for a recipe of the quest channel.

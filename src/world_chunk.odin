@@ -38,6 +38,8 @@ World :: struct {
 	spent_outcrops: [dynamic]World_Coordinate,
 	block_changes:  [dynamic]Block_Change,
 	lighting:       Lighting,
+	// Block light sources that are entities, by cell (world_light.odin).
+	entity_lights:  map[World_Coordinate]u8,
 	water:          Water_Flow,
 	entities:       Entities,
 	// Production statistics (statistics.odin), here like the entities so
@@ -195,6 +197,7 @@ destroy_world :: proc(world: ^World) {
 	delete(world.spent_outcrops)
 	delete(world.block_changes)
 	destroy_lighting(&world.lighting)
+	delete(world.entity_lights)
 	destroy_water_flow(&world.water)
 	destroy_entities(&world.entities)
 	destroy_statistics(world.statistics)

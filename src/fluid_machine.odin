@@ -35,6 +35,7 @@ Fluid_Machine_State :: enum u8 {
 	Producing,
 	Unpowered,
 	Pumping,
+	No_Steam,
 }
 
 @(rodata)
@@ -46,11 +47,14 @@ fluid_machine_state_keys := [Fluid_Machine_State]string {
 	.Producing   = "machine_state_producing",
 	.Unpowered   = "machine_state_unpowered",
 	.Pumping     = "machine_state_pumping",
+	.No_Steam    = "machine_state_no_steam",
 }
 
 // buffers and closed are per fluid port. closed marks a port the network
-// shut because it would mix two fluids. powered stays false until
-// electric networks arrive (work item 0020), so a pump does nothing yet.
+// shut because it would mix two fluids. power is a pump's share of its
+// network (power_machine.odin). A steam engine keeps the energy of steam
+// already drawn from its buffers in fuel_joules, and generated_joules is
+// what it gave its network in the last tick.
 Fluid_Machine :: struct {
 	using common:     Entity_Common,
 	buffers:          [MAXIMUM_FLUID_PORTS]Fluid_Buffer,
@@ -59,7 +63,8 @@ Fluid_Machine :: struct {
 	slots:            [FLUID_MACHINE_SLOT_COUNT]Item_Stack,
 	fuel_joules:      u32,
 	fuel_item_joules: u32,
-	powered:          bool,
+	power:            Power_State,
+	generated_joules: u32,
 	state:            Fluid_Machine_State,
 }
 
@@ -156,18 +161,19 @@ advance_boiler :: proc(boiler: ^Fluid_Machine, machine: Machine, items: Item_Reg
 	}
 }
 
-// Moves its rate from the input port to the output port whatever the
-// heights, and only with power. Its output network ignores gravity while
-// it runs (fluid_network.odin).
+// Moves its rate times its network's satisfaction from the input port to
+// the output port whatever the heights, and only with power. Its output
+// network ignores gravity while it runs (fluid_network.odin).
 advance_pump :: proc(pump: ^Fluid_Machine, machine: Machine, tick_rate: int) {
-	if !pump.powered {
+	if !power_is_on(pump.power) {
 		pump.state = .Unpowered
 		return
 	}
 	input := &pump.buffers[port_index_of_direction(machine, .Input)]
 	output_index := port_index_of_direction(machine, .Output)
 	output := &pump.buffers[output_index]
-	amount := min(litres_per_tick(machine.fluid_litres_per_second, tick_rate), input.level, buffer_room(output^, machine.fluid_ports[output_index].capacity))
+	rate := litres_per_tick(machine.fluid_litres_per_second, tick_rate) * i32(pump.power.satisfaction) / POWER_FULL
+	amount := min(rate, input.level, buffer_room(output^, machine.fluid_ports[output_index].capacity))
 	if amount <= 0 || !buffer_takes_fluid(output^, input.fluid) {
 		pump.state = .Idle
 		return

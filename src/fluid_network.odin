@@ -9,16 +9,17 @@ import "core:slice"
 // placed or removed; the litres live on the entities, so a rebuild keeps
 // them.
 //
-// Per tick each network walks its connections in coordinate order and
-// moves litres from the fuller segment (by fill fraction) to the emptier
-// one, towards equal fill fractions, capped by the flow limit per
-// connection and by room. Between two segments of one capacity that is
-// half the level difference. Integer division leaves up to a litre per
-// connection unmoved, which along a chain of pipes would add up. So the
-// amount is rounded up when it moves away from the network's output ports
-// (by connection count, source_distance) and down otherwise: a source
-// fills everything downstream to the brim, and since the way back always
-// rounds down, no litre moves back and forth between two segments.
+// Per tick each network walks its connections outwards from its output
+// ports (breadth first by source_distance, ties and networks without an
+// output port in coordinate order). Along a connection that leads away
+// from the output ports, the fuller segment (by fill fraction) pushes as
+// much as the flow limit, its level and the room allow, so fluid crosses a
+// whole run of connections in one tick whichever way the run points and
+// a pump's rate reaches the far end of a run intact. Every other
+// connection moves litres towards equal fill fractions, rounded down;
+// between two segments of one capacity that is half the level difference.
+// Rounding down keeps a litre from moving back and forth between two
+// segments once a run is full.
 //
 // A liquid moves only to a segment at the same height or lower, unless
 // the network is pressurised by the output of a running pump. Gases
@@ -44,8 +45,8 @@ Fluid_Segment :: struct {
 
 UNREACHABLE_DISTANCE :: max(i32)
 
-// cell is the lower of the two cells along a positive face, which sorts
-// the connections by coordinate.
+// cell is the lower of the two cells along a positive face, which breaks
+// ties in the connection order by coordinate.
 Fluid_Connection :: struct {
 	first:  int,
 	second: int,
@@ -66,7 +67,8 @@ Fluid_Networks :: struct {
 	segments:    [dynamic]Fluid_Segment,
 	// Segment indices grouped by network, in segment order.
 	members:     [dynamic]int,
-	// Grouped by network, each group in coordinate order.
+	// Grouped by network, each group outwards from the output ports
+	// (connection_before).
 	connections: [dynamic]Fluid_Connection,
 	networks:    [dynamic]Fluid_Network,
 	// Zero means context.allocator; tests use the temp allocator.
@@ -240,21 +242,36 @@ coordinate_before :: proc(first, second: World_Coordinate) -> bool {
 	return first.x < second.x
 }
 
+// The nearer end's distance from an output port: running connections in
+// this order is a breadth first walk from the output ports.
+connection_source_distance :: proc(segments: []Fluid_Segment, connection: Fluid_Connection) -> i32 {
+	return min(segments[connection.first].source_distance, segments[connection.second].source_distance)
+}
+
+// By network, then outwards from the output ports, then by coordinate.
+connection_before :: proc(segments: []Fluid_Segment, first, second: Fluid_Connection) -> bool {
+	first_network, second_network := segments[first.first].network, segments[second.first].network
+	if first_network != second_network {
+		return first_network < second_network
+	}
+	first_distance, second_distance := connection_source_distance(segments, first), connection_source_distance(segments, second)
+	if first_distance != second_distance {
+		return first_distance < second_distance
+	}
+	if first.cell != second.cell {
+		return coordinate_before(first.cell, second.cell)
+	}
+	return first.face < second.face
+}
+
+// Needs the source distances measured.
 group_fluid_connections :: proc(networks: ^Fluid_Networks, connections: []Fluid_Connection) {
 	Sort_Context :: struct {
 		segments: []Fluid_Segment,
 	}
 	sort_context := Sort_Context{networks.segments[:]}
 	slice.sort_by_with_data(connections, proc(first, second: Fluid_Connection, data: rawptr) -> bool {
-		segments := (^Sort_Context)(data).segments
-		first_network, second_network := segments[first.first].network, segments[second.first].network
-		if first_network != second_network {
-			return first_network < second_network
-		}
-		if first.cell != second.cell {
-			return coordinate_before(first.cell, second.cell)
-		}
-		return first.face < second.face
+		return connection_before((^Sort_Context)(data).segments, first, second)
 	}, &sort_context)
 	for connection in connections {
 		network := &networks.networks[networks.segments[connection.first].network]
@@ -349,8 +366,8 @@ rebuild_fluid_networks :: proc(entities: ^Entities, machines: Machine_Registry) 
 		network = Fluid_Network{fluid = NO_FLUID}
 	}
 	group_fluid_members(networks)
-	group_fluid_connections(networks, connections)
 	measure_source_distances(networks.segments[:], connections)
+	group_fluid_connections(networks, connections)
 	for &network in networks.networks {
 		settle_rebuilt_network_fluid(entities, networks, &network)
 	}
@@ -393,27 +410,38 @@ first_giving_fluid :: proc(entities: ^Entities, networks: ^Fluid_Networks, membe
 network_is_pressurised :: proc(entities: ^Entities, networks: ^Fluid_Networks, members: []int) -> bool {
 	for member in members {
 		segment := networks.segments[member]
-		if segment.pressurising && pool_get(&entities.fluid_machines, segment.owner).powered {
+		if segment.pressurising && power_is_on(pool_get(&entities.fluid_machines, segment.owner).power) {
 			return true
 		}
 	}
 	return false
 }
 
-// Litres that bring the two fill fractions together, rounded up or down,
+// How much fuller `from` is than `to` by fill fraction, scaled by both
+// capacities; positive when `from` is the fuller one.
+fill_fraction_difference :: proc(from_level, from_capacity, to_level, to_capacity: i32) -> i64 {
+	return i64(from_level) * i64(to_capacity) - i64(to_level) * i64(from_capacity)
+}
+
+// Litres that bring the two fill fractions together, rounded down,
 // capped by the limit and by the room in `to`. Zero when `from` is not
 // the fuller one.
-fluid_transfer_amount :: proc(from_level, from_capacity, to_level, to_capacity, limit: i32, round_up: bool) -> i32 {
-	numerator := i64(from_level) * i64(to_capacity) - i64(to_level) * i64(from_capacity)
+fluid_transfer_amount :: proc(from_level, from_capacity, to_level, to_capacity, limit: i32) -> i32 {
+	numerator := fill_fraction_difference(from_level, from_capacity, to_level, to_capacity)
 	if numerator <= 0 {
 		return 0
 	}
-	denominator := i64(from_capacity) + i64(to_capacity)
-	amount := numerator / denominator
-	if round_up {
-		amount = (numerator + denominator - 1) / denominator
-	}
+	amount := numerator / (i64(from_capacity) + i64(to_capacity))
 	return i32(min(amount, i64(limit), i64(to_capacity - to_level)))
+}
+
+// Away from the output ports: all `from` holds, capped by the limit and
+// by the room in `to`. Zero when `from` is not the fuller one.
+fluid_push_amount :: proc(from_level, from_capacity, to_level, to_capacity, limit: i32) -> i32 {
+	if fill_fraction_difference(from_level, from_capacity, to_level, to_capacity) <= 0 {
+		return 0
+	}
+	return min(from_level, limit, to_capacity - to_level)
 }
 
 // The fuller of the two by fill fraction first.
@@ -443,8 +471,12 @@ move_along_connection :: proc(entities: ^Entities, networks: ^Fluid_Networks, co
 	if rules.gravity && pair[from].height < pair[to].height {
 		return
 	}
-	round_up := pair[to].source_distance > pair[from].source_distance
-	amount := fluid_transfer_amount(buffers[from].level, pair[from].capacity, buffers[to].level, pair[to].capacity, rules.limit, round_up)
+	amount: i32
+	if pair[to].source_distance > pair[from].source_distance {
+		amount = fluid_push_amount(buffers[from].level, pair[from].capacity, buffers[to].level, pair[to].capacity, rules.limit)
+	} else {
+		amount = fluid_transfer_amount(buffers[from].level, pair[from].capacity, buffers[to].level, pair[to].capacity, rules.limit)
+	}
 	if amount <= 0 {
 		return
 	}

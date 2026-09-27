@@ -33,7 +33,8 @@ Screen_Context :: struct {
 
 // Pause opens the pause menu from the world, Open_Inventory the inventory,
 // Open_Recipes the recipe browser, Open_Journal the journal (which it also
-// closes). With a screen open, Back and Pause both
+// closes), Open_Power_Overview the power overview (likewise). With a
+// screen open, Back and Pause both
 // step back one screen (the first press closes an open tooltip).
 // Open_Inventory closes the inventory and a machine panel too, except on
 // the gamepad, where the same X press is the context action; Open_Recipes
@@ -50,6 +51,8 @@ handle_screen_keys :: proc(state: ^Ui_State) {
 			push_screen(&state.screens, .Recipes)
 		case input.open_journal:
 			push_screen(&state.screens, .Journal)
+		case input.open_power:
+			push_screen(&state.screens, .Power)
 		}
 		return
 	}
@@ -57,7 +60,8 @@ handle_screen_keys :: proc(state: ^Ui_State) {
 	closes_inventory := (top == .Inventory || top == .Machine) && input.open_inventory && !input.context_action
 	closes_recipes := top == .Recipes && input.open_recipes
 	closes_journal := top == .Journal && input.open_journal
-	if !input.back && !input.pause && !closes_inventory && !closes_recipes && !closes_journal {
+	closes_power := top == .Power && input.open_power
+	if !input.back && !input.pause && !closes_inventory && !closes_recipes && !closes_journal && !closes_power {
 		return
 	}
 	if state.tooltip_open {
@@ -83,6 +87,8 @@ run_screens :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		recipe_screen(state, screen_context)
 	case .Journal:
 		journal_screen(state, screen_context)
+	case .Power:
+		power_overview_screen(state, screen_context)
 	}
 	// After the screen, so that the Back press a screen consumed this frame
 	// and the screen change land in the same frame.
@@ -112,7 +118,7 @@ panel_height :: proc(row_count: int, extra: f32) -> f32 {
 pause_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	ui_backdrop(state)
 	area := ui_safe_area(state)
-	panel := centred_rectangle(area, PAUSE_PANEL_WIDTH, panel_height(5, UI_ROW_HEIGHT + UI_GAP))
+	panel := centred_rectangle(area, PAUSE_PANEL_WIDTH, panel_height(6, UI_ROW_HEIGHT + UI_GAP))
 	ui_panel_begin(state, "pause", panel)
 	content := inset(panel, UI_PADDING)
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_title"), UI_HEADING_TEXT_SIZE, .Centre)
@@ -131,6 +137,12 @@ pause_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	if ui_button(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_journal")) {
 		state.screens.count = 0
 		push_screen(&state.screens, .Journal)
+	}
+	cut_top(&content, UI_GAP)
+	// Nor does the power overview.
+	if ui_button(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_power")) {
+		state.screens.count = 0
+		push_screen(&state.screens, .Power)
 	}
 	cut_top(&content, UI_GAP)
 	if ui_button(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_settings")) {

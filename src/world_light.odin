@@ -14,6 +14,10 @@ import "core:container/queue"
 // new opaque block used to light, and an addition queue that spreads light
 // from its nodes. Removals run before additions, and the final values do
 // not depend on the order the nodes are visited in.
+//
+// Besides blocks, entities can emit block light: World.entity_lights maps
+// a cell to its level (a lit lamp, power_machine.odin). A cell emits the
+// brighter of its block and its entity light.
 
 MAXIMUM_LIGHT :: 15
 // Nodes taken from the removal and addition queues per tick together.
@@ -166,9 +170,37 @@ light_block_changed :: proc(world: ^World, registry: Block_Registry, position: W
 	queue_lit_neighbours(world, position, .Sky)
 }
 
+cell_emission :: proc(world: ^World, registry: Block_Registry, position: World_Coordinate, cell: World_Cell) -> u8 {
+	return max(block_light_emission(registry, cell_block(cell)), world.entity_lights[position] or_else 0)
+}
+
+// Turns an entity light source at position on (level above 0), off or to
+// another level: what it lit goes through the removal queue, and the
+// cell's own emission comes back through the addition queue.
+set_entity_light :: proc(world: ^World, position: World_Coordinate, level: u8) {
+	if (world.entity_lights[position] or_else 0) == level {
+		return
+	}
+	if level == 0 {
+		delete_key(&world.entity_lights, position)
+	} else {
+		world.entity_lights[position] = level
+	}
+	cell, loaded := world_cell(world, position)
+	if !loaded {
+		return
+	}
+	remove_cell_light(world, position, cell, .Block)
+	if level > 0 {
+		set_cell_light(world, position, cell, .Block, level)
+		push_addition(&world.lighting, position, .Block)
+	}
+	queue_lit_neighbours(world, position, .Block)
+}
+
 // A cleared cell that emits light gets its own light back and spreads it.
 restore_emission :: proc(world: ^World, registry: Block_Registry, position: World_Coordinate, cell: World_Cell, channel: Light_Channel) {
-	emission := block_light_emission(registry, cell_block(cell))
+	emission := cell_emission(world, registry, position, cell)
 	if channel == .Block && emission > 0 {
 		set_cell_light(world, position, cell, .Block, emission)
 		push_addition(&world.lighting, position, .Block)

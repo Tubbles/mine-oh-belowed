@@ -217,10 +217,10 @@ test_filter_inserter_moves_only_its_filter_item :: proc(t: ^testing.T) {
 	entity_insert(&world.entities, content, pair.source, Item_Stack{coal, 3})
 	entity_insert(&world.entities, content, pair.source, Item_Stack{plate, 3})
 	inserter := test_inserter(&world, pair.inserter)
-	// Electric inserters are unpowered until M4.
+	// Outside every power network it stays unpowered.
 	tick_test_entities(&world, content, 100)
 	testing.expect_value(t, inserter.state, Inserter_State.Unpowered)
-	inserter.powered = true
+	add_test_power_plant(&world, content, {1, 1, 2}, {3, 1, 0})
 	tick_test_entities(&world, content, 100)
 	testing.expect_value(t, inserter.state, Inserter_State.No_Filter)
 	testing.expect_value(t, inserter.held, EMPTY_STACK)

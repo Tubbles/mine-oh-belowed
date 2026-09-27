@@ -120,13 +120,15 @@ machine_area_size :: proc(machine: Machine, slot_count: int) -> [2]f32 {
 	case .Furnace:
 		return {FURNACE_AREA_WIDTH, UI_ROW_HEIGHT + 2 * (UI_SLOT_SIZE + UI_GAP) + UI_ROW_HEIGHT}
 	case .Inserter:
-		return {FURNACE_AREA_WIDTH, UI_ROW_HEIGHT + (UI_SLOT_SIZE + UI_GAP) + 2 * UI_ROW_HEIGHT}
+		return {FURNACE_AREA_WIDTH, UI_ROW_HEIGHT + (UI_SLOT_SIZE + UI_GAP) + 3 * UI_ROW_HEIGHT}
 	case .Drill:
 		return {DRILL_AREA_WIDTH, UI_ROW_HEIGHT + (UI_SLOT_SIZE + UI_GAP) + (1 + DRILL_TEXT_ROWS) * UI_ROW_HEIGHT}
 	case .Splitter:
 		return {SPLITTER_AREA_WIDTH, UI_ROW_HEIGHT + SPLITTER_CHOICE_ROWS * (UI_ROW_HEIGHT + UI_GAP) + (UI_SLOT_SIZE + UI_GAP)}
 	case .Pipe, .Offshore_Pump, .Boiler, .Steam_Engine, .Storage_Tank, .Pump:
 		return fluid_area_size(machine)
+	case .Pole, .Power_Switch, .Lamp:
+		return power_area_size(machine)
 	case .Belt:
 	}
 	return {}
@@ -191,19 +193,28 @@ inserter_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, inserter: Ins
 	}
 	machine_bar(state, cut_top(&content, UI_ROW_HEIGHT), inserter_cycle_fraction(inserter, machine, screen_context.tick_rate))
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text(inserter_state_keys[inserter.state]), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	if inserter_is_electric(machine) {
+		power_line := power_status_line(&screen_context.world.entities.electric_networks, inserter.handle)
+		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), power_line, UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	}
 	return result
 }
 
-// The fuel slot and burn bar on the first row, the cycle bar, then the
-// vein's lines, the rate and the state.
+// The fuel slot and burn bar (or the power line of an electric drill) on
+// the first row, the cycle bar, then the vein's lines, the rate and the
+// state.
 drill_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, drill: Drill, screen_context: Screen_Context) -> Slot_Grid_Result {
 	result := Slot_Grid_Result{activated = -1, focused = -1}
 	machine := screen_context.machines.machines[drill.machine]
 	content := area
 	first := cut_top(&content, UI_SLOT_SIZE + UI_GAP)
-	slots := drill.slots
-	machine_slot(state, {first.x, first.y, UI_SLOT_SIZE, UI_SLOT_SIZE}, DRILL_FUEL_SLOT, slots[:], screen_context.items, &result)
-	machine_bar(state, {first.x + UI_SLOT_SIZE + UI_GAP, first.y, MACHINE_BAR_WIDTH, UI_SLOT_SIZE}, drill_burn_fraction(drill))
+	if drill_is_electric(drill) {
+		ui_label(state, first, power_status_line(&screen_context.world.entities.electric_networks, drill.handle), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	} else {
+		slots := drill.slots
+		machine_slot(state, {first.x, first.y, UI_SLOT_SIZE, UI_SLOT_SIZE}, DRILL_FUEL_SLOT, slots[:], screen_context.items, &result)
+		machine_bar(state, {first.x + UI_SLOT_SIZE + UI_GAP, first.y, MACHINE_BAR_WIDTH, UI_SLOT_SIZE}, drill_burn_fraction(drill))
+	}
 	machine_bar(state, cut_top(&content, UI_ROW_HEIGHT), drill_progress_fraction(drill, machine, screen_context.tick_rate))
 	for line in drill_vein_lines(screen_context.world, screen_context.veins, screen_context.items, drill) {
 		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), line, UI_BODY_TEXT_SIZE, .Left)
@@ -311,6 +322,9 @@ machine_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, handle: Entity
 		return {grid = {activated = -1, focused = -1}}
 	case .Fluid_Machine:
 		return {grid = fluid_machine_slot_region(state, content, pool_get(&screen_context.world.entities.fluid_machines, handle)^, screen_context)}
+	case .Pole, .Lamp:
+		power_panel_region(state, content, handle, screen_context)
+		return {grid = {activated = -1, focused = -1}}
 	}
 	return {grid = ui_slot_grid(state, {content.x, content.y}, "chest", MACHINE_CHEST_COLUMNS, slots, screen_context.items)}
 }
@@ -422,6 +436,8 @@ entity_status_text :: proc(world: ^World, machines: Machine_Registry, fluids: Fl
 		return fmt.tprintf("%s  %s", name, text(drill_state_keys[drill.state]))
 	case .Pipe, .Fluid_Machine:
 		return fluid_status_text(world, machines, fluids, handle, name)
+	case .Pole, .Lamp:
+		return power_entity_status_text(world, machines, handle, name)
 	}
 	return name
 }

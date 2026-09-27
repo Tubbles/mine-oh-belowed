@@ -6,7 +6,7 @@ import rl "vendor:raylib"
 // Placeholder entity models: a coloured cube per footprint cell, with a
 // brighter top layer on a burning furnace, for inserters a post with an
 // arm that turns with the cycle, and for drills a darker top with a
-// turning bar and the output arrow. Real models come with the art pass.
+// turning bar and the output arrow (brown burner, blue electric). Real models come with the art pass.
 
 CHEST_COLOR :: rl.Color{130, 88, 48, 255}
 FURNACE_COLOR :: rl.Color{120, 120, 124, 255}
@@ -25,6 +25,8 @@ INSERTER_ARM_RADIUS :: 0.05
 INSERTER_HELD_ITEM_SIZE :: 0.2
 DRILL_COLOR :: rl.Color{150, 120, 70, 255}
 DRILL_TOP_COLOR :: rl.Color{95, 75, 45, 255}
+ELECTRIC_DRILL_COLOR :: rl.Color{80, 120, 150, 255}
+ELECTRIC_DRILL_TOP_COLOR :: rl.Color{50, 75, 95, 255}
 DRILL_BIT_COLOR :: rl.Color{200, 200, 205, 255}
 DRILL_ARROW_COLOR :: rl.Color{240, 220, 80, 255}
 DRILL_BIT_LENGTH :: 0.8
@@ -80,7 +82,11 @@ draw_inserter :: proc(inserter: Inserter, machine: Machine, items: Item_Registry
 // A bar across the top that turns with the cycle while the drill mines,
 // and the output arrow on the top face.
 draw_drill :: proc(drill: Drill, machine: Machine, machines: Machine_Registry, tick_rate: int) {
-	draw_entity_cells(drill.common, machines, DRILL_COLOR, DRILL_TOP_COLOR)
+	if drill_is_electric(drill) {
+		draw_entity_cells(drill.common, machines, ELECTRIC_DRILL_COLOR, ELECTRIC_DRILL_TOP_COLOR)
+	} else {
+		draw_entity_cells(drill.common, machines, DRILL_COLOR, DRILL_TOP_COLOR)
+	}
 	centre := box_centre(drill.origin, drill.size)
 	top := centre + {0, f32(drill.size.y) / 2 + 0.02, 0}
 	angle := drill_progress_fraction(drill, machine, tick_rate) * DRILL_BIT_TURNS_PER_CYCLE * 2 * math.PI

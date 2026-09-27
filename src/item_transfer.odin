@@ -9,10 +9,11 @@ package game
 // and only gives from its output slot. A belt works on one lane of its
 // block: it takes one item at a time mid block and gives the item nearest
 // the middle of the block from either lane; `slot` is the lane. A burner
-// inserter and a drill take fuel into their fuel slot and give nothing
+// inserter and a burner drill take fuel into their fuel slot and give nothing
 // (a drill drops its output itself, drill.odin). A boiler takes fuel into
-// its fuel slot and gives nothing. A splitter, a pipe and the other fluid
-// machines have no item slots and neither take nor give.
+// its fuel slot and gives nothing. A splitter, a pipe, the other fluid
+// machines, an electric drill, poles, switches and lamps have no item
+// slots and neither take nor give.
 //
 // Inserters peek with entity_offered_items and entity_takes_item_kind
 // before they pick, so they never pick an item the target can never take.
@@ -179,7 +180,7 @@ entity_takes_item_kind :: proc(entities: ^Entities, content: Simulation_Content,
 		return slot_accepts(.Smeltable, item, content.items, content.recipes) || slot_accepts(.Fuel, item, content.items, content.recipes)
 	case .Inserter, .Drill, .Fluid_Machine:
 		return len(entity_slots(entities, handle)) == 1 && item_is_fuel(content.items, item)
-	case .Splitter, .Pipe:
+	case .Splitter, .Pipe, .Pole, .Lamp:
 		return false
 	}
 	return false

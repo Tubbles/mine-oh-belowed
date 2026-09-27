@@ -62,6 +62,8 @@ Hint_Counter :: enum u8 {
 	Belt_Dead_End_Ticks,
 	Inserter_Idle_A_Minute,
 	Drill_Fuel_Burned,
+	Brownout_Ticks,
+	Unpowered_Machine_Ticks,
 }
 
 @(rodata)
@@ -82,6 +84,8 @@ hint_counter_names := [Hint_Counter]string {
 	.Belt_Dead_End_Ticks       = "belt_dead_end_ticks",
 	.Inserter_Idle_A_Minute    = "inserter_idle_a_minute",
 	.Drill_Fuel_Burned         = "drill_fuel_burned",
+	.Brownout_Ticks            = "brownout_ticks",
+	.Unpowered_Machine_Ticks   = "unpowered_machine_ticks",
 }
 
 // As written in the files, before references are resolved.

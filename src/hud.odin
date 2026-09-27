@@ -4,7 +4,8 @@ package game
 // crosshair, the targeted entity's name and state (and the vein of a
 // targeted drill or outcrop block), hotbar with the held
 // item's name, the hotbar radial, the active quest objective (top right,
-// ui_journal.odin) and the glyph bar. Targeted block names come later.
+// ui_journal.odin), the brownout warning (top centre, ui_power.odin) and
+// the glyph bar. Targeted block names come later.
 
 CROSSHAIR_SIZE :: 18.0
 CROSSHAIR_THICKNESS :: 3.0
@@ -146,12 +147,15 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		return
 	}
 	draw_quest_objective(state, screen_context)
+	draw_brownout_warning(state, screen_context.world)
 	status, vein_status := target_status_lines(screen_context.world, screen_context.machines, screen_context.fluids, screen_context.veins, player.target)
 	draw_target_status(state, status)
 	draw_target_status(state, vein_status, status == "" ? 0 : 1)
 	hotbar_radial(state, player, items)
 	if entity_has_panel(&screen_context.world.entities, player.target.entity) {
-		hints := [?]Glyph_Hint{{.Interact, text("hint_open")}, {.Inventory, text("hint_inventory")}, {.Pause, text("hint_pause")}}
+		// Interact turns a power switch; Sneak with Interact opens it.
+		switch_targeted := entity_is_power_switch(&screen_context.world.entities, screen_context.machines, player.target.entity)
+		hints := [?]Glyph_Hint{{.Interact, text(switch_targeted ? "hint_toggle" : "hint_open")}, {.Inventory, text("hint_inventory")}, {.Pause, text("hint_pause")}}
 		ui_glyph_bar(state, hints[:])
 		return
 	}

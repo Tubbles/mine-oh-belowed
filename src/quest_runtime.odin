@@ -119,6 +119,10 @@ hint_counter_value :: proc(statistics: Statistics, hint: Hint) -> u64 {
 		return statistics.inserters_idle_a_minute
 	case .Drill_Fuel_Burned:
 		return statistics.drill_fuel_burned
+	case .Brownout_Ticks:
+		return statistics.brownout_ticks
+	case .Unpowered_Machine_Ticks:
+		return statistics.unpowered_machine_ticks
 	}
 	return 0
 }
