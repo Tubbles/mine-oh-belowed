@@ -439,6 +439,27 @@ header_problem :: proc(header, expected: Save_Header, file: string) -> string {
 	return ""
 }
 
+// Reads only the header of the entities file, for the save list: the
+// problem load_entities_file would report for it, or an empty string.
+entities_header_problem :: proc(directory: string, expected: Save_Header) -> string {
+	path := join_save_path(directory, ENTITIES_FILE_NAME)
+	file, open_error := os.open(path)
+	if open_error != nil {
+		return fmt.tprintf("cannot read %s: %v", path, open_error)
+	}
+	defer os.close(file)
+	buffer: [len(ENTITIES_FILE_MAGIC) + SAVE_HEADER_FIELDS_SIZE]byte
+	count, _ := os.read_full(file, buffer[:])
+	reader := Byte_Reader {
+		data = buffer[:count],
+	}
+	header, header_ok := read_save_header(&reader, ENTITIES_FILE_MAGIC)
+	if !header_ok {
+		return fmt.tprintf("%s is not an entities file", path)
+	}
+	return header_problem(header, expected, path)
+}
+
 load_entities_file :: proc(state: ^Simulation_State, content: Simulation_Content, directory: string, expected: Save_Header) -> string {
 	path := join_save_path(directory, ENTITIES_FILE_NAME)
 	data, error := os.read_entire_file(path, context.temp_allocator)

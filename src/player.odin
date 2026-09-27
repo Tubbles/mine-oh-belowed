@@ -27,6 +27,9 @@ PLAYER_WATER_SPEED_FACTOR :: 0.5
 PLAYER_WATER_GRAVITY :: 4.0
 PLAYER_SINK_SPEED :: 1.5
 PLAYER_SWIM_SPEED :: 2.5
+// The developer cheat speed (0044) multiplies walking, sprinting and
+// flying speeds.
+CHEAT_SPEED_FACTOR :: 3.0
 
 Camera_Mode :: enum u8 {
 	First_Person,
@@ -46,6 +49,9 @@ Player :: struct {
 	previous_pitch:       f32,
 	on_ground:            bool,
 	flying:               bool,
+	// Toggled by Sprint, cleared by a tick without movement
+	// (update_sprinting).
+	sprinting:            bool,
 	camera_mode:          Camera_Mode,
 	target:               Raycast_Hit,
 	mining:               Mining_State,
@@ -136,22 +142,44 @@ turn_player :: proc(player: ^Player, input: Input_Frame, seconds: f32) {
 	player.yaw, player.pitch = view.yaw, view.pitch
 }
 
-player_walk_speed :: proc(pressed: Action_Set) -> f32 {
+// A Sprint press toggles sprinting while moving; a tick without movement
+// input ends it, so a press while standing still does nothing.
+update_sprinting :: proc(sprinting: bool, input: Input_Frame) -> bool {
+	if input.move == {} {
+		return false
+	}
+	if .Sprint in input.just_pressed {
+		return !sprinting
+	}
+	return sprinting
+}
+
+// The toggled sprint, or Sprint_Hold held (Left Control).
+player_sprints :: proc(player: Player, pressed: Action_Set) -> bool {
+	return player.sprinting || .Sprint_Hold in pressed
+}
+
+player_walk_speed :: proc(pressed: Action_Set, sprinting: bool) -> f32 {
 	switch {
 	case .Sneak in pressed:
 		return PLAYER_SNEAK_SPEED
-	case .Sprint in pressed:
+	case sprinting:
 		return PLAYER_SPRINT_SPEED
 	}
 	return PLAYER_WALK_SPEED
 }
 
+cheat_speed_factor :: proc(cheat_speed: bool) -> f32 {
+	return cheat_speed ? CHEAT_SPEED_FACTOR : 1
+}
+
 // Horizontal velocity follows the input directly, without acceleration.
-walk_velocity :: proc(yaw: f32, input: Input_Frame) -> [2]f32 {
+// speed is in blocks per second at full stick.
+walk_velocity :: proc(yaw: f32, input: Input_Frame, speed: f32) -> [2]f32 {
 	radians := yaw * math.RAD_PER_DEG
 	forward := [2]f32{math.cos(radians), math.sin(radians)}
 	right := [2]f32{-math.sin(radians), math.cos(radians)}
-	return (forward * input.move.y + right * input.move.x) * player_walk_speed(input.pressed)
+	return (forward * input.move.y + right * input.move.x) * speed
 }
 
 fall_velocity :: proc(vertical_velocity: f32, seconds: f32) -> f32 {
@@ -226,7 +254,7 @@ lift_out_of_blocks :: proc(world: ^World, registry: Block_Registry, player: ^Pla
 	return true
 }
 
-walk_player :: proc(world: ^World, registry: Block_Registry, player: ^Player, input: Input_Frame, seconds: f32) {
+walk_player :: proc(world: ^World, registry: Block_Registry, player: ^Player, input: Input_Frame, speed: f32, seconds: f32) {
 	if lift_out_of_blocks(world, registry, player) {
 		return
 	}
@@ -234,7 +262,7 @@ walk_player :: proc(world: ^World, registry: Block_Registry, player: ^Player, in
 	if player.on_ground && !in_water && .Jump in input.pressed {
 		player.velocity.y = PLAYER_JUMP_SPEED
 	}
-	horizontal := walk_velocity(player.yaw, input)
+	horizontal := walk_velocity(player.yaw, input, speed)
 	if in_water {
 		horizontal *= PLAYER_WATER_SPEED_FACTOR
 	}
@@ -244,8 +272,8 @@ walk_player :: proc(world: ^World, registry: Block_Registry, player: ^Player, in
 }
 
 // The developer fly mode: fly camera speeds, no gravity and no collision.
-fly_player :: proc(player: ^Player, input: Input_Frame, seconds: f32) {
-	player.velocity = fly_camera_velocity(Fly_Camera{yaw = player.yaw}, input)
+fly_player :: proc(player: ^Player, input: Input_Frame, sprinting: bool, speed_factor: f32, seconds: f32) {
+	player.velocity = fly_camera_velocity(Fly_Camera{yaw = player.yaw}, input, sprinting) * speed_factor
 	player.position += player.velocity * seconds
 	player.on_ground = false
 }
@@ -302,19 +330,22 @@ carry_player_on_belt :: proc(world: ^World, content: Simulation_Content, player:
 	}
 }
 
-tick_player :: proc(world: ^World, content: Simulation_Content, players: []Player, index: int, frame: Input_Frame, tick_rate: int) -> Player_Events {
+// cheat_speed is the developer flag on the simulation (0044).
+tick_player :: proc(world: ^World, content: Simulation_Content, players: []Player, index: int, frame: Input_Frame, tick_rate: int, cheat_speed := false) -> Player_Events {
 	player := &players[index]
 	seconds := 1 / f32(tick_rate)
 	input, events := resolve_interact(player, &world.entities, content.machines, frame)
 	player.previous_position, player.previous_yaw, player.previous_pitch = player.position, player.yaw, player.pitch
 	apply_player_toggles(player, input.just_pressed)
+	player.sprinting = update_sprinting(player.sprinting, input)
+	sprinting := player_sprints(player^, input.pressed)
 	turn_player(player, input, seconds)
 	carry_player_on_belt(world, content, player, tick_rate)
 	walk_start := player.position
 	if player.flying {
-		fly_player(player, input, seconds)
+		fly_player(player, input, sprinting, cheat_speed_factor(cheat_speed), seconds)
 	} else {
-		walk_player(world, content.blocks, player, input, seconds)
+		walk_player(world, content.blocks, player, input, player_walk_speed(input.pressed, sprinting) * cheat_speed_factor(cheat_speed), seconds)
 	}
 	if !player.flying {
 		record_walked(&world.statistics, walk_start, player.position)
@@ -323,7 +354,7 @@ tick_player :: proc(world: ^World, content: Simulation_Content, players: []Playe
 		record_world_action(&world.statistics)
 	}
 	player.target = raycast_blocks(world, content.blocks, player_eye(player.position), player_look_direction(player^), PLAYER_REACH)
-	events += mine_with_player(world, content, player, .Mine in input.pressed, tick_rate)
+	events += mine_with_player(world, content, player, .Mine in input.pressed, tick_rate, cheat_speed)
 	place_with_player(world, content, players, index, input.just_pressed, input.pressed)
 	player.selected_hotbar_slot = cycle_hotbar_slot(player.selected_hotbar_slot, input.just_pressed)
 	if finished := advance_crafting(&player.crafting, player.inventory, content.recipes, content.items, tick_rate); finished != NO_RECIPE {

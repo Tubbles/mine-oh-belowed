@@ -53,6 +53,8 @@ Developer_Action :: enum u8 {
 	Unlock_All,
 	Set_Time_Of_Day,
 	Teleport,
+	// Flips Simulation_State.cheat_speed (0044).
+	Toggle_Cheat_Speed,
 }
 
 // The sun rises at dawn, peaks at noon, sets at dusk and is lowest at
@@ -330,6 +332,8 @@ serve_developer_request :: proc(state: ^Simulation_State, content: Simulation_Co
 		state.day_offset_ticks = day_offset_for(state.tick, time_of_day_day_ticks(request.time_of_day, state.day_length_ticks), state.day_length_ticks)
 	case .Teleport:
 		teleport_player(player, request.position)
+	case .Toggle_Cheat_Speed:
+		state.cheat_speed = !state.cheat_speed
 	}
 }
 

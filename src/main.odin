@@ -314,7 +314,7 @@ main :: proc() {
 		// Before the window opens, so the report shows without a display.
 		input_bindings = make_backend_bindings(bindings, input_backend),
 	}
-	run_game(config, input_backend, content, base_generator, data_directory, session, make_title_state(config, saves_directory, saves_found), player_configuration)
+	run_game(config, input_backend, content, base_generator, data_directory, session, make_title_state(config, saves_directory, saves_found, make_save_header(game_simulation_content(content))), player_configuration)
 }
 
 // Builds the backend's tables and reports once what it cannot express.

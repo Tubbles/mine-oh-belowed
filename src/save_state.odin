@@ -116,6 +116,9 @@ content_fingerprint :: proc(content: Simulation_Content) -> u64 {
 	return hash_id_list(FINGERPRINT_START, ids[:])
 }
 
+// The version and the two fingerprints after the magic.
+SAVE_HEADER_FIELDS_SIZE :: size_of(u32) + 2 * size_of(u64)
+
 make_save_header :: proc(content: Simulation_Content) -> Save_Header {
 	return Save_Header{version = SAVE_FORMAT_VERSION, layout_fingerprint = save_layout_fingerprint(), content_fingerprint = content_fingerprint(content)}
 }

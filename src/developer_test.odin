@@ -197,8 +197,8 @@ test_developer_toggles_teleport_and_unlock :: proc(t: ^testing.T) {
 	simulation, content := make_developer_test_simulation()
 	defer destroy_simulation(&simulation)
 	requests := [?]Developer_Request{{action = .Toggle_Fly_Mode}}
-	testing.expect(t, pending_fly_mode(false, requests[:]))
-	testing.expect(t, !pending_fly_mode(true, requests[:]))
+	testing.expect(t, pending_toggle(false, requests[:], .Toggle_Fly_Mode))
+	testing.expect(t, !pending_toggle(true, requests[:], .Toggle_Fly_Mode))
 
 	position := landing_pad_standing_position(TEST_LANDING_PAD)
 	testing.expect_value(t, position, [3]f32{0.5, 11, 0.5})
@@ -250,4 +250,32 @@ test_assertion_failure_text :: proc(t: ^testing.T) {
 	testing.expect_value(t, assertion_failure_text("Panic", "", location), "crash: /src/game/belt.odin(12:3) in move_items: Panic")
 	frames := [?]runtime.Source_Code_Location{{procedure = "game.move_items", file_path = "/src/game/belt.odin", line = 12}, {procedure = "0x1234", file_path = "/bin/game"}}
 	testing.expect_value(t, back_trace_text(frames[:]), "back trace:\n\t#0 game.move_items at /src/game/belt.odin(12)\n\t#1 0x1234 at /bin/game\n")
+}
+
+// 0044: the statistics overlay is off in a fresh frame state and its key
+// toggles it.
+@(test)
+test_world_overlay_starts_off_and_toggles :: proc(t: ^testing.T) {
+	state: Frame_State
+	testing.expect(t, !state.show_world_overlay)
+	state.show_world_overlay = toggle_on_press(state.show_world_overlay, {.Toggle_World_Overlay}, .Toggle_World_Overlay)
+	testing.expect(t, state.show_world_overlay)
+	testing.expect(t, toggle_on_press(true, {.Toggle_Diagnostics}, .Toggle_World_Overlay))
+	testing.expect(t, !toggle_on_press(true, {.Toggle_World_Overlay}, .Toggle_World_Overlay))
+}
+
+@(test)
+test_developer_toggles_cheat_speed :: proc(t: ^testing.T) {
+	simulation, content := make_developer_test_simulation()
+	defer destroy_simulation(&simulation)
+	testing.expect(t, !simulation.cheat_speed)
+	requests := [?]Developer_Request{{action = .Toggle_Cheat_Speed}}
+	testing.expect(t, pending_toggle(false, requests[:], .Toggle_Cheat_Speed))
+	testing.expect(t, !pending_toggle(false, requests[:], .Toggle_Fly_Mode))
+	append(&simulation.developer_requests, Developer_Request{action = .Toggle_Cheat_Speed})
+	serve_developer_requests(&simulation, content)
+	testing.expect(t, simulation.cheat_speed)
+	append(&simulation.developer_requests, Developer_Request{action = .Toggle_Cheat_Speed})
+	serve_developer_requests(&simulation, content)
+	testing.expect(t, !simulation.cheat_speed)
 }

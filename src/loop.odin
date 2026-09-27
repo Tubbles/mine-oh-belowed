@@ -30,6 +30,9 @@ Simulation_State :: struct {
 	// Filled by the developer menu and the command line, served and
 	// emptied at the start of the next tick (developer.odin).
 	developer_requests: [dynamic]Developer_Request,
+	// Developer cheat speed (0044): faster movement and hand mining. Not
+	// saved.
+	cheat_speed:        bool,
 }
 
 Simulation_Event :: struct {
@@ -81,6 +84,8 @@ Frame_State :: struct {
 	renderer:           Chunk_Renderer,
 	belt_renderer:      Belt_Renderer,
 	show_diagnostics:   bool,
+	// The world statistics overlay (draw_world_overlay), off by default.
+	show_world_overlay: bool,
 }
 
 // Above the middle of the debug terrain, looking down at an angle. The
@@ -143,7 +148,7 @@ simulation_tick :: proc(state: ^Simulation_State, content_tables: Simulation_Con
 				append(&state.events, Simulation_Event{player = index, kind = event})
 			}
 		}
-		events := tick_player(&state.world, content, state.players[:], index, input, state.tick_rate)
+		events := tick_player(&state.world, content, state.players[:], index, input, state.tick_rate, state.cheat_speed)
 		update_magnetometer(&state.world, content, &state.players[index])
 		for kind in events {
 			append(&state.events, Simulation_Event{player = index, kind = kind})
@@ -245,10 +250,13 @@ apply_cursor_mode :: proc(state: ^Frame_State) {
 	}
 }
 
+toggle_on_press :: proc(value: bool, just_pressed: Action_Set, action: Action) -> bool {
+	return action in just_pressed ? !value : value
+}
+
 apply_debug_actions :: proc(state: ^Frame_State) {
-	if .Toggle_Diagnostics in state.input.just_pressed {
-		state.show_diagnostics = !state.show_diagnostics
-	}
+	state.show_diagnostics = toggle_on_press(state.show_diagnostics, state.input.just_pressed, .Toggle_Diagnostics)
+	state.show_world_overlay = toggle_on_press(state.show_world_overlay, state.input.just_pressed, .Toggle_World_Overlay)
 	session := state.session
 	if .Debug_Remove_Block in state.input.just_pressed {
 		session.debug_edit_counter += 1
@@ -351,7 +359,7 @@ render_frame :: proc(state: ^Frame_State) {
 	if state.show_diagnostics {
 		draw_diagnostics_backdrop()
 		draw_diagnostics(state^, state.config)
-	} else {
+	} else if state.show_world_overlay {
 		draw_world_overlay(state^)
 	}
 	run_ui_frame(state)
@@ -401,6 +409,7 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 		recipe_order    = content.recipe_order,
 		developer_mode  = content.developer_mode,
 		show_diagnostics = &state.show_diagnostics,
+		show_world_overlay = &state.show_world_overlay,
 		developer_chapter_count = len(content.developer_kits.kits),
 	}
 	session := state.session
@@ -421,6 +430,7 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 	screen_context.statistics_view = &session.statistics_view
 	screen_context.map_view = &session.map_view
 	screen_context.developer_requests = &session.simulation.developer_requests
+	screen_context.cheat_speed = session.simulation.cheat_speed
 	screen_context.landing_pad = session.start.landing_pad
 	return screen_context
 }
@@ -571,6 +581,7 @@ leave_session :: proc(state: ^Frame_State) {
 	end_session(session)
 	state.session = nil
 	state.show_diagnostics = false
+	state.show_world_overlay = false
 }
 
 // Once the settings screen is closed (and on exit), changed settings go to

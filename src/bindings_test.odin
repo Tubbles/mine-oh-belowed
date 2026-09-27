@@ -78,12 +78,13 @@ reference_keys := [?]Reference_Key {
 	{.LEFT_SHIFT, .Sneak},
 	{.LEFT_SHIFT, .Menu_Secondary},
 	{.F, .Interact},
-	{.LEFT_CONTROL, .Sprint},
+	{.LEFT_CONTROL, .Sprint_Hold},
 	{.LEFT_BRACKET, .Hotbar_Previous},
 	{.RIGHT_BRACKET, .Hotbar_Next},
 	{.V, .Toggle_Camera_Mode},
 	{.O, .Toggle_Bottleneck_Overlay},
 	{.F3, .Toggle_Diagnostics},
+	{.F4, .Toggle_World_Overlay},
 	{.F5, .Debug_Remove_Block},
 	{.F7, .Debug_Drop_Item},
 	{.F6, .Toggle_Fly_Mode},
@@ -269,13 +270,18 @@ test_binding_rows :: proc(t: ^testing.T) {
 	context.allocator = context.temp_allocator
 	rows := binding_rows(shipped_default_bindings(t))
 	testing.expect_value(t, rows[0], "Jump: gamepad SOUTH, gamepad LEFT_PADDLE1, keyboard SPACE")
-	found_sprint := false
+	found_sprint, found_sprint_hold := false, false
 	for row in rows {
 		if strings.has_prefix(row, "Sprint:") {
 			found_sprint = true
-			testing.expect_value(t, row, "Sprint: gamepad LEFT_STICK (sdl3 only), keyboard LEFT_CONTROL")
+			testing.expect_value(t, row, "Sprint: gamepad LEFT_STICK (sdl3 only)")
+		}
+		if strings.has_prefix(row, "Sprint Hold:") {
+			found_sprint_hold = true
+			testing.expect_value(t, row, "Sprint Hold: keyboard LEFT_CONTROL")
 		}
 	}
 	testing.expect(t, found_sprint)
+	testing.expect(t, found_sprint_hold)
 	testing.expect_value(t, unsupported_bindings_report({}, .Raylib), "input: the raylib backend cannot express 0 bindings:")
 }

@@ -47,6 +47,9 @@ Screen_Context :: struct {
 	// the developer_mode setting shows it too.
 	developer_mode:     bool,
 	show_diagnostics:   ^bool,
+	show_world_overlay: ^bool,
+	// The simulation's developer cheat speed, before pending requests.
+	cheat_speed:        bool,
 	// Nil without a world.
 	developer_requests: ^[dynamic]Developer_Request,
 	// The chapters the developer screen offers: one per kit.

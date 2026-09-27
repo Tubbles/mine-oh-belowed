@@ -39,8 +39,9 @@ turn_fly_camera :: proc(camera: Fly_Camera, input: Input_Frame, frame_seconds: f
 }
 
 // Horizontal movement follows the yaw only, so looking down does not slow
-// the camera. Jump rises, Sneak descends.
-fly_camera_velocity :: proc(camera: Fly_Camera, input: Input_Frame) -> [3]f32 {
+// the camera. Jump rises, Sneak descends, sprinting (player_sprints) is
+// faster.
+fly_camera_velocity :: proc(camera: Fly_Camera, input: Input_Frame, sprinting: bool) -> [3]f32 {
 	yaw := camera.yaw * math.RAD_PER_DEG
 	forward := [3]f32{math.cos(yaw), 0, math.sin(yaw)}
 	right := [3]f32{-math.sin(yaw), 0, math.cos(yaw)}
@@ -52,7 +53,7 @@ fly_camera_velocity :: proc(camera: Fly_Camera, input: Input_Frame) -> [3]f32 {
 		velocity.y -= 1
 	}
 	speed := f32(FLY_CAMERA_SPEED)
-	if .Sprint in input.pressed {
+	if sprinting {
 		speed *= FLY_CAMERA_SPRINT_FACTOR
 	}
 	return velocity * speed

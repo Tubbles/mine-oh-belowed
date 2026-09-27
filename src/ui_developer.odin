@@ -5,22 +5,23 @@ import "core:fmt"
 // The Developer screen (work item 0043), opened from the pause menu when
 // the game runs with --dev. Every entry is a button or a toggle, so the
 // focus cursor and the trackpad pointer reach all of them. The
-// diagnostics and bottleneck overlay toggles are frame state and change
-// at once; everything else queues a Developer_Request that the next
+// diagnostics, statistics overlay and bottleneck overlay toggles are
+// frame state and change at once; everything else (fly mode and cheat
+// speed among them) queues a Developer_Request that the next
 // simulation tick serves (developer.odin). The pause menu below keeps the
 // simulation paused, so those apply once the game resumes.
 
 DEVELOPER_PANEL_WIDTH :: 1000
-// Title, toggles, kit label and buttons, quest label and buttons, time
-// label and buttons, unlock and teleport, back.
-DEVELOPER_ROW_COUNT :: 10
+// Title, two toggle rows, kit label and buttons, quest label and
+// buttons, time label and buttons, unlock and teleport, back.
+DEVELOPER_ROW_COUNT :: 11
 
-// Pending fly mode toggles flip the shown state, so the check box shows
-// what the player will be once the requests are served.
-pending_fly_mode :: proc(flying: bool, requests: []Developer_Request) -> bool {
-	result := flying
+// Pending toggle requests (fly mode, cheat speed) flip the shown state, so
+// the check box shows the state once the requests are served.
+pending_toggle :: proc(value: bool, requests: []Developer_Request, action: Developer_Action) -> bool {
+	result := value
 	for request in requests {
-		if request.action == .Toggle_Fly_Mode {
+		if request.action == action {
 			result = !result
 		}
 	}
@@ -41,13 +42,21 @@ developer_row :: proc(content: ^Ui_Rectangle) -> Ui_Rectangle {
 	return row
 }
 
-developer_toggles :: proc(state: ^Ui_State, row: Ui_Rectangle, screen_context: Screen_Context) {
-	flying := pending_fly_mode(screen_context.player.flying, screen_context.developer_requests[:])
-	if ui_toggle(state, column(row, 3, 0, UI_GAP), text("developer_fly_mode"), &flying) {
+// The queued toggles on the first row, the frame state overlays on the
+// second.
+developer_toggles :: proc(state: ^Ui_State, first_row, second_row: Ui_Rectangle, screen_context: Screen_Context) {
+	requests := screen_context.developer_requests[:]
+	flying := pending_toggle(screen_context.player.flying, requests, .Toggle_Fly_Mode)
+	if ui_toggle(state, column(first_row, 2, 0, UI_GAP), text("developer_fly_mode"), &flying) {
 		queue_developer_request(state, screen_context, Developer_Request{action = .Toggle_Fly_Mode})
 	}
-	ui_toggle(state, column(row, 3, 1, UI_GAP), text("developer_diagnostics"), screen_context.show_diagnostics)
-	ui_toggle(state, column(row, 3, 2, UI_GAP), text("developer_bottleneck_overlay"), &screen_context.settings.bottleneck_overlay)
+	cheat_speed := pending_toggle(screen_context.cheat_speed, requests, .Toggle_Cheat_Speed)
+	if ui_toggle(state, column(first_row, 2, 1, UI_GAP), text("developer_cheat_speed"), &cheat_speed) {
+		queue_developer_request(state, screen_context, Developer_Request{action = .Toggle_Cheat_Speed})
+	}
+	ui_toggle(state, column(second_row, 3, 0, UI_GAP), text("developer_diagnostics"), screen_context.show_diagnostics)
+	ui_toggle(state, column(second_row, 3, 1, UI_GAP), text("developer_world_overlay"), screen_context.show_world_overlay)
+	ui_toggle(state, column(second_row, 3, 2, UI_GAP), text("developer_bottleneck_overlay"), &screen_context.settings.bottleneck_overlay)
 }
 
 // One numbered button per chapter; returns the chapter pressed, or 0.
@@ -98,7 +107,7 @@ developer_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 }
 
 developer_actions :: proc(state: ^Ui_State, content: ^Ui_Rectangle, screen_context: Screen_Context) {
-	developer_toggles(state, developer_row(content), screen_context)
+	developer_toggles(state, developer_row(content), developer_row(content), screen_context)
 	ui_label(state, developer_row(content), text("developer_give_kit"))
 	if chapter := chapter_buttons(state, developer_row(content), "kit", screen_context.developer_chapter_count); chapter > 0 {
 		queue_developer_request(state, screen_context, Developer_Request{action = .Give_Kit, chapter = chapter})

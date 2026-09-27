@@ -233,7 +233,7 @@ recorded_input :: proc(tick: int) -> Input_Frame {
 		input.pressed += {.Mine}
 	}
 	if random / 30996 % 2 == 0 {
-		input.pressed += {.Sprint}
+		input.pressed += {.Sprint_Hold}
 	}
 	if tick % 20 == 0 && random / 61992 % 2 == 0 {
 		input.just_pressed += {.Place, .Hotbar_Next}
@@ -335,4 +335,55 @@ test_player_swims_in_water :: proc(t: ^testing.T) {
 	start_y := player.position.y
 	tick_test_player(&world, registry, &player, Input_Frame{pressed = {.Jump}}, 30)
 	testing.expectf(t, player.position.y - start_y > 1, "rose %v", player.position.y - start_y)
+}
+
+// 0044: Sprint toggles while moving, a tick without movement ends it, and
+// Sprint_Hold (Left Control) sprints while held regardless of the toggle.
+@(test)
+test_sprint_toggles_and_stops_with_movement :: proc(t: ^testing.T) {
+	moving_press := Input_Frame{move = {0, 1}, just_pressed = {.Sprint}}
+	moving := Input_Frame{move = {0, 1}}
+	testing.expect(t, update_sprinting(false, moving_press))
+	testing.expect(t, update_sprinting(true, moving))
+	testing.expect(t, !update_sprinting(true, moving_press))
+	testing.expect(t, !update_sprinting(true, Input_Frame{}))
+	testing.expect(t, !update_sprinting(false, Input_Frame{just_pressed = {.Sprint}}))
+	testing.expect(t, !update_sprinting(false, Input_Frame{move = {0, 1}, pressed = {.Sprint}}))
+	testing.expect(t, player_sprints(Player{}, {.Sprint_Hold}))
+	testing.expect(t, player_sprints(Player{sprinting = true}, {}))
+	testing.expect(t, !player_sprints(Player{}, {.Sprint}))
+	testing.expect_value(t, player_walk_speed({}, true), PLAYER_SPRINT_SPEED)
+	testing.expect_value(t, player_walk_speed({.Sneak}, true), PLAYER_SNEAK_SPEED)
+	testing.expect_value(t, player_walk_speed({}, false), PLAYER_WALK_SPEED)
+}
+
+@(test)
+test_sprint_press_keeps_the_player_sprinting :: proc(t: ^testing.T) {
+	registry := make_test_registry()
+	world := make_floor_world(registry, 32)
+	player := make_test_player(registry, {0.5, 1, 0.5})
+	tick_test_player(&world, registry, &player, Input_Frame{move = {0, 1}, just_pressed = {.Sprint}}, 1)
+	testing.expect(t, player.sprinting)
+	tick_test_player(&world, registry, &player, WALK_FORWARD, 1)
+	testing.expect(t, player.sprinting)
+	testing.expect(t, abs(player.velocity.x - PLAYER_SPRINT_SPEED) < TEST_TOLERANCE)
+	tick_test_player(&world, registry, &player, Input_Frame{}, 1)
+	testing.expect(t, !player.sprinting)
+}
+
+// 0044: cheat speed triples walking, sprinting and flying.
+@(test)
+test_cheat_speed_multiplies_movement :: proc(t: ^testing.T) {
+	testing.expect_value(t, cheat_speed_factor(false), 1)
+	testing.expect_value(t, cheat_speed_factor(true), CHEAT_SPEED_FACTOR)
+	registry := make_test_registry()
+	world := make_floor_world(registry, 32)
+	content := make_test_content()
+	content.blocks = registry
+	player := make_test_player(registry, {0.5, 1, 0.5})
+	tick_player(&world, content, slice.from_ptr(&player, 1), 0, WALK_FORWARD, TEST_TICK_RATE, true)
+	testing.expect(t, abs(player.velocity.x - PLAYER_WALK_SPEED * CHEAT_SPEED_FACTOR) < TEST_TOLERANCE)
+	player.flying = true
+	tick_player(&world, content, slice.from_ptr(&player, 1), 0, Input_Frame{move = {0, 1}, pressed = {.Sprint_Hold}}, TEST_TICK_RATE, true)
+	testing.expect(t, abs(player.velocity.x - FLY_CAMERA_SPEED * FLY_CAMERA_SPRINT_FACTOR * CHEAT_SPEED_FACTOR) < TEST_TOLERANCE)
 }

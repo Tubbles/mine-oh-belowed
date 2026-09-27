@@ -50,12 +50,23 @@ Title_State :: struct {
 	local_zone:       ^datetime.TZ_Region,
 	// The save the delete confirmation is about.
 	delete_index:     int,
+	// The save row that last held the focus on the Load screen, for its
+	// Delete button.
+	load_selection:   int,
+	// This build's save header, to mark saves it cannot load.
+	expected_header:  Save_Header,
 	request:          Session_Request,
 }
 
-make_title_state :: proc(config: Game_Config, saves_directory: string, saves_found: bool) -> Title_State {
+make_title_state :: proc(config: Game_Config, saves_directory: string, saves_found: bool, expected_header: Save_Header) -> Title_State {
 	zone, _ := timezone.region_load("local")
-	return Title_State{saves_directory = saves_directory, saves_found = saves_found, default_settings = default_world_file_settings(config), local_zone = zone}
+	return Title_State {
+		saves_directory = saves_directory,
+		saves_found = saves_found,
+		default_settings = default_world_file_settings(config),
+		local_zone = zone,
+		expected_header = expected_header,
+	}
 }
 
 destroy_title_state :: proc(title: ^Title_State) {
@@ -66,7 +77,7 @@ destroy_title_state :: proc(title: ^Title_State) {
 
 refresh_title_saves :: proc(title: ^Title_State) {
 	if title.saves_found {
-		list_saves(&title.saves, title.saves_directory)
+		list_saves(&title.saves, title.saves_directory, title.expected_header)
 	}
 }
 
@@ -207,10 +218,12 @@ new_world_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	ui_glyph_bar(state, hints[:])
 }
 
+// A save this build cannot load carries a marker after its name.
 save_row_text :: proc(save: Save_Summary, zone: ^datetime.TZ_Region, tick_rate: int) -> string {
 	return fmt.tprintf(
-		"%s     %s %d     %s %s     %s %s",
+		"%s%s     %s %d     %s %s     %s %s",
 		save.name,
+		save.loadable ? "" : fmt.tprintf("  %s", text("load_incompatible")),
 		text("load_seed"),
 		save.seed,
 		text("load_play_time"),
@@ -231,7 +244,18 @@ focused_list_row :: proc(state: ^Ui_State, list_id: Ui_Id, count: int) -> int {
 	return -1
 }
 
-// Confirm loads the focused save, the context action asks to delete it.
+// Opens the delete confirmation for the save at index, if there is one.
+confirm_save_deletion :: proc(state: ^Ui_State, title: ^Title_State, index: int) {
+	if index < 0 || index >= len(title.saves) {
+		return
+	}
+	title.delete_index = index
+	push_screen(&state.screens, .Confirm_Delete)
+}
+
+// Confirm loads the focused save, the context action or the Delete button
+// asks to delete it. The Delete button acts on the row that held the
+// focus last, since pressing it moves the focus off the list.
 load_world_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	title := screen_context.title
 	ui_backdrop(state)
@@ -253,11 +277,17 @@ load_world_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	if activated := ui_list(state, content, "saves", rows); activated >= 0 {
 		title.request = {kind = .Load, directory_name = title.saves[activated].directory_name}
 	}
-	if focused := focused_list_row(state, list_id, len(rows)); focused >= 0 && state.input.context_action {
-		title.delete_index = focused
-		push_screen(&state.screens, .Confirm_Delete)
+	focused := focused_list_row(state, list_id, len(rows))
+	if focused >= 0 {
+		title.load_selection = focused
 	}
-	if ui_button(state, back_row, text("load_back")) {
+	if focused >= 0 && state.input.context_action {
+		confirm_save_deletion(state, title, focused)
+	}
+	if ui_button(state, column(back_row, 2, 0, UI_GAP), text("load_delete")) {
+		confirm_save_deletion(state, title, title.load_selection)
+	}
+	if ui_button(state, column(back_row, 2, 1, UI_GAP), text("load_back")) {
 		pop_screen(&state.screens)
 	}
 	ui_panel_end(state)

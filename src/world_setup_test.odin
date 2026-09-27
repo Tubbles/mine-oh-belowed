@@ -1,6 +1,7 @@
 package game
 
 import "core:os"
+import "core:strings"
 import "core:testing"
 
 non_default_world_setup :: proc() -> World_Setup {
@@ -143,7 +144,7 @@ test_save_listing_is_newest_first :: proc(t: ^testing.T) {
 	saves: [dynamic]Save_Summary
 	defer delete(saves)
 	defer destroy_save_summaries(&saves)
-	list_saves(&saves, directory)
+	list_saves(&saves, directory, {})
 	names := [?]string{"Newest", "Middle", "Crashed", "Oldest"}
 	testing.expect_value(t, len(saves), len(names))
 	for name, index in names {
@@ -156,8 +157,49 @@ test_save_listing_is_newest_first :: proc(t: ^testing.T) {
 		testing.expect_value(t, play_time_text(saves[0].tick, 60), "1:30")
 	}
 	testing.expect(t, delete_save(directory, "newest") == nil)
-	list_saves(&saves, directory)
+	list_saves(&saves, directory, {})
 	testing.expect_value(t, len(saves), len(names) - 1)
+}
+
+write_test_entities_header :: proc(saves_directory, directory_name: string, header: Save_Header) {
+	bytes := make([dynamic]byte, context.temp_allocator)
+	append_save_header(&bytes, ENTITIES_FILE_MAGIC, header)
+	error := os.write_entire_file(join_save_path(saves_directory, directory_name, ENTITIES_FILE_NAME), bytes[:])
+	assert(error == nil)
+}
+
+// 0044: a save whose entities header does not match this build, or that
+// has no entities file, is listed but marked, and can be deleted.
+@(test)
+test_save_listing_marks_saves_this_build_cannot_load :: proc(t: ^testing.T) {
+	directory := make_save_test_directory()
+	defer remove_save_test_directory(directory)
+	expected := Save_Header{version = SAVE_FORMAT_VERSION, layout_fingerprint = 11, content_fingerprint = 22}
+	write_test_world_file(directory, "current", "Current", 3000)
+	write_test_entities_header(directory, "current", expected)
+	write_test_world_file(directory, "older", "Older", 2000)
+	older := expected
+	older.layout_fingerprint = 12
+	write_test_entities_header(directory, "older", older)
+	write_test_world_file(directory, "empty", "Empty", 1000)
+	saves: [dynamic]Save_Summary
+	defer delete(saves)
+	defer destroy_save_summaries(&saves)
+	list_saves(&saves, directory, expected)
+	testing.expect_value(t, len(saves), 3)
+	if len(saves) != 3 {
+		return
+	}
+	testing.expect(t, saves[0].loadable)
+	testing.expect_value(t, saves[0].load_problem, "")
+	testing.expect(t, !saves[1].loadable)
+	testing.expect(t, strings.contains(saves[1].load_problem, "different layout"))
+	testing.expect(t, !saves[2].loadable)
+	testing.expect(t, strings.contains(save_row_text(saves[1], nil, 60), text("load_incompatible")))
+	testing.expect(t, !strings.contains(save_row_text(saves[0], nil, 60), text("load_incompatible")))
+	testing.expect(t, delete_save(directory, "older") == nil)
+	list_saves(&saves, directory, expected)
+	testing.expect_value(t, len(saves), 2)
 }
 
 @(test)

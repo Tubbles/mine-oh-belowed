@@ -32,7 +32,11 @@ Action :: enum u8 {
 	Confirm,
 	Back,
 	Sneak,
+	// Toggles sprinting (the stick click, 0044); a tick without movement
+	// ends it (update_sprinting).
 	Sprint,
+	// Sprints while held: Left Control on the keyboard.
+	Sprint_Hold,
 	Hotbar_Previous,
 	Hotbar_Next,
 	// Opens the targeted entity's panel. A on a gamepad, which is Jump
@@ -56,6 +60,8 @@ Action :: enum u8 {
 	Toggle_Bottleneck_Overlay,
 	// Developer actions, keyboard only.
 	Toggle_Diagnostics,
+	// The world statistics overlay (draw_world_overlay).
+	Toggle_World_Overlay,
 	Debug_Remove_Block,
 	// F7: one iron plate onto the targeted belt.
 	Debug_Drop_Item,
@@ -196,6 +202,7 @@ WORLD_ACTIONS :: Action_Set {
 	.Open_Map,
 	.Sneak,
 	.Sprint,
+	.Sprint_Hold,
 	.Hotbar_Previous,
 	.Hotbar_Next,
 	.Interact,

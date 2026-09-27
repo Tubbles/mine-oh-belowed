@@ -9,7 +9,8 @@ import "core:time/datetime"
 import "core:time/timezone"
 
 // The saved worlds the title screen and the Load screen list, read from
-// each save's world.sjson.
+// each save's world.sjson. The entities file's header says whether this
+// build can load the save (0044).
 
 Save_Summary :: struct {
 	directory_name:           string,
@@ -17,12 +18,17 @@ Save_Summary :: struct {
 	seed:                     u64,
 	tick:                     u64,
 	last_played_unix_seconds: i64,
+	// False when the entities file is missing or its header does not match
+	// this build; load_problem says why.
+	loadable:                 bool,
+	load_problem:             string,
 }
 
 destroy_save_summaries :: proc(saves: ^[dynamic]Save_Summary) {
 	for save in saves {
 		delete(save.directory_name)
 		delete(save.name)
+		delete(save.load_problem)
 	}
 	clear(saves)
 }
@@ -64,25 +70,29 @@ contains_directory_name :: proc(saves: []Save_Summary, directory_name: string) -
 	return false
 }
 
-// A save whose world.sjson cannot be read is left out.
-read_save_summary :: proc(saves_directory, directory_name: string) -> (summary: Save_Summary, ok: bool) {
+// A save whose world.sjson cannot be read is left out. expected is this
+// build's header (make_save_header).
+read_save_summary :: proc(saves_directory, directory_name: string, expected: Save_Header) -> (summary: Save_Summary, ok: bool) {
 	directory := existing_save_directory(Save_Location{saves_directory = saves_directory, directory_name = directory_name}) or_return
 	file, problem := read_world_file(directory, context.temp_allocator)
 	if problem != "" {
 		return {}, false
 	}
+	load_problem := entities_header_problem(directory, expected)
 	return Save_Summary {
 			directory_name = strings.clone(directory_name),
 			name = strings.clone(file.name),
 			seed = file.seed,
 			tick = file.tick,
 			last_played_unix_seconds = file.last_played_unix_seconds,
+			loadable = load_problem == "",
+			load_problem = strings.clone(load_problem),
 		},
 		true
 }
 
 // Replaces the list with the saves in the directory, newest first.
-list_saves :: proc(saves: ^[dynamic]Save_Summary, saves_directory: string) {
+list_saves :: proc(saves: ^[dynamic]Save_Summary, saves_directory: string, expected: Save_Header) {
 	destroy_save_summaries(saves)
 	entries, error := os.read_all_directory_by_path(saves_directory, context.temp_allocator)
 	if error != nil {
@@ -93,7 +103,7 @@ list_saves :: proc(saves: ^[dynamic]Save_Summary, saves_directory: string) {
 		if entry.type != .Directory || !is_save || contains_directory_name(saves[:], directory_name) {
 			continue
 		}
-		if summary, ok := read_save_summary(saves_directory, directory_name); ok {
+		if summary, ok := read_save_summary(saves_directory, directory_name, expected); ok {
 			append(saves, summary)
 		}
 	}

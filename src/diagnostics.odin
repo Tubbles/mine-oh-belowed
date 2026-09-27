@@ -233,7 +233,8 @@ draw_diagnostics_backdrop :: proc() {
 	rl.DrawRectangle(0, 0, rl.GetScreenWidth(), rl.GetScreenHeight(), DIAGNOSTICS_BACKDROP_COLOR)
 }
 
-// Shown while the diagnostics screen is off.
+// Shown while the diagnostics screen is off and the overlay is on (F4 or
+// the Developer screen).
 draw_world_overlay :: proc(state: Frame_State) {
 	lines := make([dynamic]Diagnostics_Line, context.temp_allocator)
 	append_line(&lines, false, "fps %d  tick %d", rl.GetFPS(), state.session.simulation.tick)
@@ -242,7 +243,7 @@ draw_world_overlay :: proc(state: Frame_State) {
 	append_line(&lines, false, "%s", light_statistics_text(state))
 	append_player_lines(&lines, state)
 	append_line(&lines, state.settings.bottleneck_overlay, "bottleneck overlay %s", yes_no(state.settings.bottleneck_overlay))
-	append_line(&lines, false, "F3 diagnostics  F5 remove block  F6 fly  V camera  O overlay")
+	append_line(&lines, false, "F3 diagnostics  F4 statistics  F5 remove block  F6 fly  V camera  O bottlenecks")
 	font_size := diagnostics_font_size(rl.GetScreenHeight())
 	backdrop_height := i32(len(lines)) * (font_size + font_size / 5) + DIAGNOSTICS_MARGIN
 	rl.DrawRectangle(0, 0, font_size * 24, backdrop_height + DIAGNOSTICS_MARGIN, DIAGNOSTICS_BACKDROP_COLOR)
@@ -293,7 +294,8 @@ append_player_lines :: proc(lines: ^[dynamic]Diagnostics_Line, state: Frame_Stat
 	player, registry, world := state.session.simulation.players[0], state.content.blocks, state.session.simulation.world
 	position, velocity := player.position, player.velocity
 	append_line(lines, false, "player % .2f % .2f % .2f  velocity % .2f % .2f % .2f", position.x, position.y, position.z, velocity.x, velocity.y, velocity.z)
-	append_line(lines, false, "on ground %s  camera %v  flying %s", yes_no(player.on_ground), player.camera_mode, yes_no(player.flying))
+	cheat_speed := state.session.simulation.cheat_speed
+	append_line(lines, cheat_speed, "on ground %s  camera %v  flying %s  sprinting %s%s", yes_no(player.on_ground), player.camera_mode, yes_no(player.flying), yes_no(player.sprinting), cheat_speed ? "  cheat speed" : "")
 	append_line(lines, player.mining.active, "%s  mining %.0f%%", target_text(registry, &world, player.target), mining_fraction(player.mining) * 100)
 	items := state.content.items
 	append_line(

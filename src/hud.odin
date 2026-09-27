@@ -159,6 +159,11 @@ draw_target_status :: proc(state: ^Ui_State, status: string, line: int = 0) {
 	draw_text(state, area, status, UI_BODY_TEXT_SIZE, .Centre)
 }
 
+// Walking on the ground without sprinting: the glyph bar offers Sprint.
+sprint_hint_shown :: proc(player: Player) -> bool {
+	return !player.flying && !player.sprinting && player.on_ground && (player.velocity.x != 0 || player.velocity.z != 0)
+}
+
 draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	player, items := screen_context.player, screen_context.items
 	draw_crosshair(state)
@@ -188,6 +193,11 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		// Interact turns a power switch; Sneak with Interact opens it.
 		switch_targeted := entity_is_power_switch(&screen_context.world.entities, screen_context.machines, player.target.entity)
 		hints := [?]Glyph_Hint{{.Interact, text(switch_targeted ? "hint_toggle" : "hint_open")}, {.Inventory, text("hint_inventory")}, {.Pause, text("hint_pause")}}
+		ui_glyph_bar(state, hints[:])
+		return
+	}
+	if sprint_hint_shown(player^) {
+		hints := [?]Glyph_Hint{{.Sprint, text("hint_sprint")}, {.Inventory, text("hint_inventory")}, {.Pause, text("hint_pause")}}
 		ui_glyph_bar(state, hints[:])
 		return
 	}

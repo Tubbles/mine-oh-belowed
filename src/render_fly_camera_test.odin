@@ -27,11 +27,11 @@ test_fly_camera_moves_and_sprints :: proc(t: ^testing.T) {
 	forward := Input_Frame {
 		move = {0, 1},
 	}
-	walked := fly_camera_velocity({}, forward)
+	walked := fly_camera_velocity({}, forward, false)
 	testing.expect(t, abs(walked.x - FLY_CAMERA_SPEED) < TEST_TOLERANCE)
-	sprinting := forward
-	sprinting.pressed = {.Sprint, .Jump}
-	sprinted := fly_camera_velocity({}, sprinting)
+	rising := forward
+	rising.pressed = {.Jump}
+	sprinted := fly_camera_velocity({}, rising, true)
 	testing.expect(t, abs(sprinted.x - FLY_CAMERA_SPEED * FLY_CAMERA_SPRINT_FACTOR) < TEST_TOLERANCE)
 	testing.expect(t, sprinted.y > 0)
 }

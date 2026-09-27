@@ -175,3 +175,15 @@ test_hotbar_cycle_wraps :: proc(t: ^testing.T) {
 	testing.expect_value(t, cycle_hotbar_slot(3, {.Hotbar_Next}), 4)
 	testing.expect_value(t, cycle_hotbar_slot(3, {}), 3)
 }
+
+// 0044: cheat speed digs in a tenth of the ticks, at least one, and a
+// block that cannot be mined stays unminable.
+@(test)
+test_cheat_mining_ticks :: proc(t: ^testing.T) {
+	testing.expect_value(t, cheat_mining_ticks(90, false), 90)
+	testing.expect_value(t, cheat_mining_ticks(90, true), 9)
+	testing.expect_value(t, cheat_mining_ticks(360, true), 36)
+	testing.expect_value(t, cheat_mining_ticks(5, true), 1)
+	testing.expect_value(t, cheat_mining_ticks(1, true), 1)
+	testing.expect_value(t, cheat_mining_ticks(0, true), 0)
+}

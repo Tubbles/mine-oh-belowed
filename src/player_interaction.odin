@@ -27,6 +27,18 @@ mining_required_ticks :: proc(hardness_seconds: f32, tick_rate: int) -> u32 {
 	return max(u32(math.round(hardness_seconds * f32(tick_rate))), 1)
 }
 
+// The developer cheat speed (0044) divides hand mining ticks.
+CHEAT_MINING_TICK_DIVISOR :: 10
+
+// A tenth of the ticks, at least one, under cheat speed. Zero (a block
+// that cannot be mined) stays zero.
+cheat_mining_ticks :: proc(required_ticks: u32, cheat_speed: bool) -> u32 {
+	if !cheat_speed || required_ticks == 0 {
+		return required_ticks
+	}
+	return max(required_ticks / CHEAT_MINING_TICK_DIVISOR, 1)
+}
+
 // Progress starts over whenever the button is up or the target changes,
 // including a different block appearing at the same position. It stops at
 // the required ticks, where the dig is finished; the caller clears it once
@@ -69,12 +81,12 @@ refuse_mining :: proc(player: ^Player, next: Mining_State) -> Player_Events {
 // The block's items go into the inventory, hotbar first: its drop and an
 // extra drop (gold quartz gives quartz and gold ore). A block whose items
 // do not fit is not broken.
-mine_block :: proc(world: ^World, registry: Block_Registry, items: Item_Registry, player: ^Player, holding: bool, tick_rate: int) -> Player_Events {
+mine_block :: proc(world: ^World, registry: Block_Registry, items: Item_Registry, player: ^Player, holding: bool, tick_rate: int, cheat_speed: bool) -> Player_Events {
 	block_id := world_get_block(world, player.target.block)
 	if holding && player.target.hit {
 		record_mining_tick(&world.statistics, block_id)
 	}
-	next, finished := advance_mining(player.mining, holding, player.target, block_id, required_ticks_for(registry, block_id, tick_rate))
+	next, finished := advance_mining(player.mining, holding, player.target, block_id, cheat_mining_ticks(required_ticks_for(registry, block_id, tick_rate), cheat_speed))
 	if !finished {
 		player.mining = next
 		return {}
@@ -126,11 +138,12 @@ mine_entity :: proc(world: ^World, content: Simulation_Content, player: ^Player,
 	return {}
 }
 
-mine_with_player :: proc(world: ^World, content: Simulation_Content, player: ^Player, holding: bool, tick_rate: int) -> Player_Events {
+// cheat_speed shortens digging blocks, not picking up entities.
+mine_with_player :: proc(world: ^World, content: Simulation_Content, player: ^Player, holding: bool, tick_rate: int, cheat_speed: bool) -> Player_Events {
 	if player.target.entity != NO_ENTITY {
 		return mine_entity(world, content, player, holding, tick_rate)
 	}
-	return mine_block(world, content.blocks, content.items, player, holding, tick_rate)
+	return mine_block(world, content.blocks, content.items, player, holding, tick_rate, cheat_speed)
 }
 
 // A block may go into a cell that is not solid, holds no entity and that
