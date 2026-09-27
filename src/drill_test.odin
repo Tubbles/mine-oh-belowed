@@ -113,10 +113,11 @@ test_drill_placement_needs_a_vein_outcrop :: proc(t: ^testing.T) {
 	testing.expect(t, edge.valid)
 	testing.expect_value(t, edge.vein, vein)
 	testing.expect(t, !placement_at(&world, content, nil, machine, {10, 1, 10}, 0).valid)
-	// Inside the disc but no outcrop block left under the footprint.
+	// Inside the disc with no outcrop block left under the footprint: the
+	// footprint decides, not the blocks (work item 0048).
 	stone := test_block(content.blocks, "stone")
 	set_blocks(&world, stone, {0, 0, 0}, {1, 0, 0}, {0, 0, 1}, {1, 0, 1})
-	testing.expect(t, !placement_at(&world, content, nil, machine, {0, 1, 0}, 0).valid)
+	testing.expect(t, placement_at(&world, content, nil, machine, {0, 1, 0}, 0).valid)
 	// The ordinary rules still hold: the footprint must be free.
 	place_test_entity(&world, content, "wooden_chest", {-1, 2, 2})
 	testing.expect(t, !placement_at(&world, content, nil, machine, {-2, 1, 1}, 0).valid)
@@ -486,4 +487,63 @@ test_drill_mining_line_is_deterministic :: proc(t: ^testing.T) {
 	testing.expect_value(t, first.veins[0].draws, 6)
 	testing.expect_value(t, first.statistics.produced[hematite], second.statistics.produced[hematite])
 	testing.expect_value(t, first.statistics.stalls, second.statistics.stalls)
+}
+
+// Couch test 1 (work item 0048): the outcrop blocks were mined by hand,
+// yet a drill placed on the same spot is valid and mines.
+@(test)
+test_drill_mines_a_footprint_whose_outcrop_was_mined :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_drill_world(content)
+	vein := add_test_vein(&world, content, "iron", {1, 1}, 2, IRON_TEST_VEIN)
+	stone := test_block(content.blocks, "stone")
+	set_blocks(&world, stone, {0, 0, 0}, {1, 0, 0}, {0, 0, 1}, {1, 0, 1})
+	placement := placement_at(&world, content, nil, test_machine(content.machines, "burner_mining_drill"), {0, 1, 0}, 0)
+	testing.expect(t, placement.valid)
+	testing.expect_value(t, placement.vein, vein)
+	place_test_drill(&world, content, {0, 1, 0}, 0, placement.vein)
+	chest := place_test_entity(&world, content, "wooden_chest", {2, 1, 0})
+	tick_test_entities(&world, content, 192)
+	testing.expect_value(t, chest_total(&world, chest), 1)
+}
+
+@(test)
+test_hud_names_the_vein_under_a_plain_block_in_its_footprint :: proc(t: ^testing.T) {
+	defer clear_missing_reports(&global_string_table)
+	content := make_test_content()
+	world := make_drill_world(content)
+	add_test_vein(&world, content, "iron", {1, 1}, 2, {300, 50, 0, 0})
+	world_set_block(&world, {1, 0, 1}, test_block(content.blocks, "stone"))
+	_, vein_line := target_status_lines(&world, content.machines, content.fluids, content.veins, Raycast_Hit{hit = true, block = {1, 0, 1}})
+	testing.expect_value(t, vein_line, fmt.tprintf("%s  350 %s", text("vein_type_iron"), text("drill_remaining")))
+	_, vein_line = target_status_lines(&world, content.machines, content.fluids, content.veins, Raycast_Hit{hit = true, block = {4, 0, 4}})
+	testing.expect_value(t, vein_line, "")
+}
+
+// Footprints are discs, so two veins may reach into one chunk and each
+// takes a drill on its own disc.
+@(test)
+test_two_veins_in_one_chunk_both_take_a_drill :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_drill_world(content)
+	iron := add_test_vein(&world, content, "iron", {4, 4}, 2, IRON_TEST_VEIN)
+	lead := add_test_vein(&world, content, "lead", {20, 20}, 3, {1000, 1000, 1000, 1000}, 1)
+	testing.expect_value(t, len(veins_of_column(&world, {0, 0}, context.temp_allocator)), 2)
+	machine := test_machine(content.machines, "burner_mining_drill")
+	expected := [2]struct {
+		origin: World_Coordinate,
+		vein:   Vein_Id,
+	}{{{3, 1, 3}, iron}, {{19, 1, 19}, lead}}
+	chests: [2]Entity_Handle
+	for entry, index in expected {
+		placement := placement_at(&world, content, nil, machine, entry.origin, 0)
+		testing.expect(t, placement.valid)
+		testing.expect_value(t, placement.vein, entry.vein)
+		place_test_drill(&world, content, entry.origin, 0, placement.vein)
+		chests[index] = place_test_entity(&world, content, "wooden_chest", entry.origin + {2, 0, 0})
+	}
+	tick_test_entities(&world, content, 192)
+	for chest in chests {
+		testing.expect_value(t, chest_total(&world, chest), 1)
+	}
 }

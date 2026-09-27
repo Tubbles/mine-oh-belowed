@@ -129,6 +129,19 @@ deep_vein_at_column :: proc(world: ^World, x, z: i32) -> (id: Vein_Id, found: bo
 	return {}, false
 }
 
+// The registered surface vein whose disc holds the column (the first in
+// placement order), whatever block is on the surface: the reservoir lies
+// under the whole footprint, so a mined or built over outcrop still counts.
+vein_at_column :: proc(world: ^World, x, z: i32) -> (id: Vein_Id, found: bool) {
+	column := chunk_column_of(world_to_chunk_coordinate({x, 0, z}))
+	for vein in veins_of_column(world, column, context.temp_allocator) {
+		if !vein_is_deep(vein) && column_in_disc(vein.centre, vein.radius, x, z) {
+			return vein.id, true
+		}
+	}
+	return {}, false
+}
+
 // Nil for an id no chunk registered. Valid until the next vein registers.
 registered_vein :: proc(world: ^World, id: Vein_Id) -> ^Vein {
 	index, found := world.vein_indices[id]
@@ -151,7 +164,8 @@ block_is_outcrop_of :: proc(vein_type: Vein_Type_Content, block: Block_Id) -> bo
 
 // The registered vein whose outcrop the cell is part of: the cell's column
 // lies in the vein's footprint disc and its block is one of the vein
-// type's outcrop blocks.
+// type's outcrop blocks. Only the geologist's hammer asks for the block;
+// drills and the HUD go by the footprint (vein_at_column).
 outcrop_vein_at :: proc(world: ^World, veins: Vein_Content, cell: World_Coordinate) -> (id: Vein_Id, found: bool) {
 	block := world_get_block(world, cell)
 	for vein in veins_of_column(world, chunk_column_of(world_to_chunk_coordinate(cell)), context.temp_allocator) {

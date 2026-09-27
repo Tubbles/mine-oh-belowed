@@ -119,7 +119,7 @@ placement_for_player :: proc(world: ^World, content: Simulation_Content, players
 }
 
 // The placement of a machine with its rotated minimum corner at origin.
-// A drill is valid only over a vein outcrop (a bore drill over a deep
+// A drill is valid only over a surface vein's footprint (a bore drill over a deep
 // vein's disc, work item 0035), an offshore pump only with
 // water in front of its intake, a tar pit pump only with a tar pit there,
 // a hydro turbine only in flowing water (work item 0037).
@@ -144,7 +144,7 @@ placement_at :: proc(world: ^World, content: Simulation_Content, players: []Play
 		if drill_is_bore(content.machines.machines[machine]) {
 			placement.vein, vein_found = bore_drill_vein_under(world, origin, placement.size)
 		} else {
-			placement.vein, vein_found = drill_vein_under(world, content.veins, cells, origin.y)
+			placement.vein, vein_found = drill_vein_under(world, cells, origin.y)
 		}
 		placement.no_deep_vein = placement.valid && !vein_found && drill_is_bore(content.machines.machines[machine])
 		placement.valid = placement.valid && vein_found

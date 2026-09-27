@@ -1,7 +1,8 @@
 package game
 
 // Mining drills (doc/logistics.md): a square entity placed with
-// at least one footprint cell on a vein outcrop. It taps the vein's
+// at least one footprint cell over a surface vein's footprint disc, mined
+// outcrop or not (work item 0048). It taps the vein's
 // reservoir, not the blocks: every cycle it draws one unit, picked by the
 // vein type's output mix, and drops it into the cell in front of its
 // arrow through the item transfer interface. With nowhere to drop it the
@@ -10,7 +11,7 @@ package game
 // drill has a fuel slot; an electric drill (no fuel slot) mines at its
 // power network's satisfaction through power credit (power_machine.odin).
 // A bore drill (work item 0035, a machine with boring_seconds) taps a deep
-// vein under its footprint's centre column instead of an outcrop, and
+// vein under its footprint's centre column instead of a surface one, and
 // bores that long, in ticks of work, before its first cycle. A drill with
 // a revival port keeps an exhausted finite vein producing at half rate
 // while the port holds mining fluid (vein revival, DESIGN.md The world).
@@ -439,14 +440,15 @@ drill_held_stacks :: proc(entities: ^Entities, handle: Entity_Handle) -> []Item_
 	return slice_of_one(Item_Stack{item = drill.held.item, count = drill.held.count + drill.bonus_units})
 }
 
-// A drill needs a vein outcrop under at least one footprint cell. The
+// A drill needs at least one footprint cell over a surface vein's
+// footprint disc, whatever block is left there (work item 0048). The
 // first found, in footprint order, is the vein it taps.
-drill_vein_under :: proc(world: ^World, veins: Vein_Content, cells: []World_Coordinate, bottom: i32) -> (vein: Vein_Id, found: bool) {
+drill_vein_under :: proc(world: ^World, cells: []World_Coordinate, bottom: i32) -> (vein: Vein_Id, found: bool) {
 	for cell in cells {
 		if cell.y != bottom {
 			continue
 		}
-		if vein, found = outcrop_vein_at(world, veins, cell + {0, -1, 0}); found {
+		if vein, found = vein_at_column(world, cell.x, cell.z); found {
 			return
 		}
 	}

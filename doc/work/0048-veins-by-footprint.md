@@ -1,6 +1,6 @@
 # 0048 Drills tap the vein footprint, not the outcrop blocks
 
-Status: todo
+Status: implemented
 Milestone: M10
 
 ## Goal
@@ -18,3 +18,12 @@ Couch test 1: the player mined every outcrop block near the pad by hand, after w
 
 - Builds and tests pass.
 - User: mine the outcrop blocks, place a burner drill on the same spot, ore flows.
+
+## Notes
+
+`vein_at_column` (`src/world_vein.odin`) returns the registered surface vein whose disc holds a column, deep veins excluded. `drill_vein_under` and the HUD vein line use it; `outcrop_vein_at` is left to the geologist's hammer. Tests: `test_drill_mines_a_footprint_whose_outcrop_was_mined`, `test_hud_names_the_vein_under_a_plain_block_in_its_footprint`, `test_two_veins_in_one_chunk_both_take_a_drill`; `test_drill_placement_needs_a_vein_outcrop` now expects a footprint with its outcrop replaced by stone to be valid.
+
+### Side effects
+
+- A surface drill can now be placed over an exhausted vein (its outcrop is spent rock, but the footprint remains). It reads as exhausted, and a drill with a revival port revives it.
+- The footprint is a column rule, so a drill standing at any height in the column (a cave, a built platform) finds the vein, and the HUD names the vein for any block in the column, above or below ground.

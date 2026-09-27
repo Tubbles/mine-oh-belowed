@@ -7,7 +7,8 @@ import "core:math"
 // by generating the veins of that column's region alone. Two layers are
 // placed independently (work item 0035): surface veins with an outcrop,
 // and deep veins below them, from their own seed and their own vein types,
-// reached by bore drills.
+// reached by bore drills. Footprints are discs, not whole chunks, so one
+// chunk may hold parts of several veins, each drillable on its own disc.
 
 REGION_SIZE_IN_CHUNKS :: 8
 REGION_SIZE :: REGION_SIZE_IN_CHUNKS * CHUNK_SIZE

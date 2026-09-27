@@ -574,7 +574,8 @@ bore_drill_ghost_line :: proc(world: ^World, machines: Machine_Registry, veins: 
 }
 
 // What the HUD shows under the crosshair: the targeted entity's name and
-// state, and for a drill or an outcrop block the vein and what is left.
+// state, and for a drill or any block over a surface vein's footprint
+// (mined outcrop or not) the vein and what is left.
 target_status_lines :: proc(world: ^World, machines: Machine_Registry, fluids: Fluid_Registry, veins: Vein_Content, target: Raycast_Hit) -> (entity_line, vein_line: string) {
 	if drill := pool_get(&world.entities.drills, target.entity); drill != nil {
 		return entity_status_text(world, machines, fluids, target.entity), vein_status_text(world, veins, drill.vein)
@@ -585,7 +586,7 @@ target_status_lines :: proc(world: ^World, machines: Machine_Registry, fluids: F
 	if !target.hit {
 		return "", ""
 	}
-	if vein, found := outcrop_vein_at(world, veins, target.block); found {
+	if vein, found := vein_at_column(world, target.block.x, target.block.z); found {
 		return "", vein_status_text(world, veins, vein)
 	}
 	return "", ""

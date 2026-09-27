@@ -2,7 +2,7 @@ package game
 
 // The world HUD, drawn through the UI draw list under any open screen:
 // crosshair, the targeted entity's name and state (and the vein of a
-// targeted drill or outcrop block, or the deep vein under a bore drill
+// targeted drill or of a block over a vein footprint, or the deep vein under a bore drill
 // ghost), hotbar with the held
 // item's name, the hotbar radial, the active quest objective (top right,
 // ui_journal.odin) or, once every quest is done, the oldest open contract

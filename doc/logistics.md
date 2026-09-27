@@ -40,7 +40,7 @@ How items move without hands: belts, inserters, splitters and the burner mining 
 ## Burner mining drill
 
 - A 2 by 2 by 2 entity with a fuel slot and an output arrow. It is valid on a vein outcrop: at least one footprint cell stands on an outcrop block of a vein. It taps that vein's reservoir, not the blocks: every cycle it takes one unit from the vein, chosen by the vein type's output mix with a random generator seeded by tick and vein id (deterministic), and produces the ore or spoil item into the cell in front of the arrow, onto a belt or into a chest or machine that accepts it. It stalls when the output is blocked or fuel is out, and both stalls are counted for hints.
-- Several drills share one vein and drain it together. When a finite vein is exhausted the drill reports it, and the outcrop blocks turn to spent rock through the ordinary block change path so light and remeshing follow.
+- A drill is valid when at least one footprint cell stands over a surface vein's footprint disc, whatever block is left there (0048): mining the outcrop by hand does not stop drilling, and the HUD names the vein under any block in a footprint. Footprints are discs, not whole chunks, so one chunk can hold parts of several veins, each drillable on its own disc. Several drills share one vein and drain it together. When a finite vein is exhausted the drill reports it, and the outcrop blocks turn to spent rock through the ordinary block change path so light and remeshing follow.
 - Ore grades (high and low) are phase 5 content; in M3 a drill produces plain ore items.
 
 ### As implemented in 0016
