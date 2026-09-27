@@ -66,7 +66,7 @@ test_target_lines_name_blocks_and_hide_unknown_ores :: proc(t: ^testing.T) {
 	testing.expect_value(t, name, "Hematite ore")
 	chest := place_test_entity(&world, content, "wooden_chest", {0, 1, 0})
 	name, tool, vein = target_status_lines(&world, content.machines, content.fluids, content.veins, content.blocks, content.items, obtained, tier, Raycast_Hit{hit = true, block = {0, 1, 0}, entity = chest})
-	testing.expect_value(t, name, entity_status_text(&world, content.machines, content.fluids, chest))
+	testing.expect_value(t, name, entity_status_text(&world, content.machines, content.fluids, content.items, chest))
 	testing.expect(t, name != "")
 	testing.expect_value(t, tool, "")
 	name, tool, vein = target_status_lines(&world, content.machines, content.fluids, content.veins, content.blocks, content.items, obtained, tier, Raycast_Hit{})

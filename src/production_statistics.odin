@@ -254,7 +254,7 @@ drill_marker_colour :: proc(state: Drill_State, connected: bool) -> Marker_Colou
 	switch state {
 	case .Mining, .Boring, .Revived:
 		return .Green
-	case .Waiting_For_Room, .No_Output:
+	case .Waiting_For_Room, .No_Output, .Output_Refused:
 		return .Yellow
 	case .No_Fuel, .Vein_Exhausted:
 		return .Red

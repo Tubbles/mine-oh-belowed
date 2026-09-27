@@ -55,6 +55,18 @@ Drill_State :: enum u8 {
 	// Nothing stands in the drop cell to take the held unit (couch test 1:
 	// "waiting for room" hid that the cell was empty).
 	No_Output,
+	// What stands in the drop cell never takes the held unit's kind (a
+	// drill fed gravel, couch test 1): waits like a full target, but says
+	// which item is refused.
+	Output_Refused,
+}
+
+// The state line of a drill: the refused item's name fills in the Output_Refused text.
+drill_state_text :: proc(drill: Drill, items: Item_Registry) -> string {
+	if drill.state == .Output_Refused {
+		return format_message_text(text(drill_state_keys[drill.state]), item_name(items, drill.held.item))
+	}
+	return text(drill_state_keys[drill.state])
 }
 
 @(rodata)
@@ -67,6 +79,7 @@ drill_state_keys := [Drill_State]string {
 	.Boring           = "machine_state_boring",
 	.Revived          = "machine_state_revived",
 	.No_Output        = "machine_state_no_output",
+	.Output_Refused   = "machine_state_output_refused",
 }
 
 // held is a drawn unit that found no room yet. slot_count is 1 for a
@@ -200,10 +213,17 @@ drill_drop_cell_at :: proc(origin: World_Coordinate, rotation: u8, machine: Mach
 	return origin + {offset.x, 0, offset.y}
 }
 
-// Why a held unit did not go out: nothing stands in the drop cell, or what
-// stands there has no room for the item.
-drill_blocked_state :: proc(entities: ^Entities, drill: Drill, machine: Machine) -> Drill_State {
-	return entity_at(entities, drill_drop_cell(drill, machine)) == NO_ENTITY ? .No_Output : .Waiting_For_Room
+// Why a held unit did not go out: nothing stands in the drop cell, what
+// stands there never takes the item's kind, or it has no room right now.
+drill_blocked_state :: proc(entities: ^Entities, content: Simulation_Content, drill: Drill, machine: Machine) -> Drill_State {
+	target := entity_at(entities, drill_drop_cell(drill, machine))
+	switch {
+	case target == NO_ENTITY:
+		return .No_Output
+	case !entity_takes_item_kind(entities, content, target, drill.held.item):
+		return .Output_Refused
+	}
+	return .Waiting_For_Room
 }
 
 // The lane on the belt's side facing the drill. A belt running in line
@@ -383,7 +403,7 @@ add_productivity :: proc(drill: ^Drill, bonus_per_mille: u32) {
 advance_drill :: proc(world: ^World, content: Simulation_Content, drill: ^Drill, tick_rate: int) {
 	machine := content.machines.machines[drill.machine]
 	if !stack_is_empty(drill.held) && !output_drill_item(world, content, drill, machine) {
-		drill.state = drill_blocked_state(&world.entities, drill^, machine)
+		drill.state = drill_blocked_state(&world.entities, content, drill^, machine)
 		return
 	}
 	vein := registered_vein(world, drill.vein)
@@ -411,7 +431,7 @@ advance_drill :: proc(world: ^World, content: Simulation_Content, drill: ^Drill,
 	drill.held = Item_Stack{item = item, count = 1}
 	add_productivity(drill, technology_effect_per_mille(content.technologies, world.research.levels, .Mining_Productivity))
 	if !output_drill_item(world, content, drill, machine) {
-		drill.state = drill_blocked_state(&world.entities, drill^, machine)
+		drill.state = drill_blocked_state(&world.entities, content, drill^, machine)
 	}
 }
 

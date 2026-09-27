@@ -304,7 +304,7 @@ drill_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, drill: Drill, sc
 	rate := fmt.tprintf("%s: %s", text("drill_rate"), format_per_minute(units))
 	detail_line(state, &content, rate)
 	output_rate_label(state, &content, drill.output_rate, screen_context)
-	detail_line(state, &content, text(drill_state_keys[drill.state]), UI_DIM_TEXT_COLOR)
+	detail_line(state, &content, drill_state_text(drill, screen_context.items), UI_DIM_TEXT_COLOR)
 	return result
 }
 
@@ -582,7 +582,7 @@ machine_glyph_bar :: proc(state: ^Ui_State, held, focused: Item_Stack) {
 }
 
 // The name and state of an entity for the HUD, "" when it has none.
-entity_status_text :: proc(world: ^World, machines: Machine_Registry, fluids: Fluid_Registry, handle: Entity_Handle) -> string {
+entity_status_text :: proc(world: ^World, machines: Machine_Registry, fluids: Fluid_Registry, items: Item_Registry, handle: Entity_Handle) -> string {
 	common := entity_common(&world.entities, handle)
 	if common == nil {
 		return ""
@@ -597,7 +597,7 @@ entity_status_text :: proc(world: ^World, machines: Machine_Registry, fluids: Fl
 		return fmt.tprintf("%s  %s", name, text(inserter_state_keys[inserter.state]))
 	case .Drill:
 		drill := pool_get(&world.entities.drills, handle)
-		return fmt.tprintf("%s  %s", name, text(drill_state_keys[drill.state]))
+		return fmt.tprintf("%s  %s", name, drill_state_text(drill^, items))
 	case .Pipe, .Fluid_Machine:
 		return fluid_status_text(world, machines, fluids, handle, name)
 	case .Pole, .Lamp:
@@ -640,10 +640,10 @@ bore_drill_ghost_line :: proc(world: ^World, machines: Machine_Registry, veins: 
 // vein and what is left. obtained is Recipe_Unlocks.obtained.
 target_status_lines :: proc(world: ^World, machines: Machine_Registry, fluids: Fluid_Registry, veins: Vein_Content, blocks: Block_Registry, items: Item_Registry, obtained: []bool, tool_tier: int, target: Raycast_Hit) -> (name_line, tool_line, vein_line: string) {
 	if drill := pool_get(&world.entities.drills, target.entity); drill != nil {
-		return entity_status_text(world, machines, fluids, target.entity), "", vein_status_text(world, veins, blocks, items, obtained, drill.vein)
+		return entity_status_text(world, machines, fluids, items, target.entity), "", vein_status_text(world, veins, blocks, items, obtained, drill.vein)
 	}
 	if target.entity != NO_ENTITY {
-		return entity_status_text(world, machines, fluids, target.entity), "", ""
+		return entity_status_text(world, machines, fluids, items, target.entity), "", ""
 	}
 	if !target.hit {
 		return "", "", ""

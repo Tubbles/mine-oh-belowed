@@ -547,3 +547,80 @@ test_two_veins_in_one_chunk_both_take_a_drill :: proc(t: ^testing.T) {
 		testing.expect_value(t, chest_total(&world, chest), 1)
 	}
 }
+
+// Two burner drills on a coal vein facing each other feed each other's
+// fuel slot through the ordinary drop cell rule (couch question,
+// 2026-09-27): the drop cell of each lies inside the other's footprint.
+// On a pure coal vein both keep mining.
+@(test)
+test_two_drills_facing_each_other_fuel_each_other :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_drill_world(content)
+	vein := add_test_vein(&world, content, "coal", {2, 1}, 3, {10_000, 0, 0, 0})
+	coal := test_item(content.items, "coal")
+	first := place_test_drill(&world, content, {0, 1, 0}, 0, vein)
+	second := place_test_drill(&world, content, {2, 1, 0}, 2, vein)
+	testing.expect_value(t, drill_drop_cell(test_drill(&world, first)^, test_drill_machine(content)), World_Coordinate{2, 1, 0})
+	testing.expect_value(t, drill_drop_cell(test_drill(&world, second)^, test_drill_machine(content)), World_Coordinate{1, 1, 1})
+	tick_test_entities(&world, content, 3600)
+	for handle in ([2]Entity_Handle{first, second}) {
+		drill := test_drill(&world, handle)
+		testing.expect_value(t, drill.state, Drill_State.Mining)
+		testing.expect_value(t, drill.slots[DRILL_FUEL_SLOT].item, coal)
+		testing.expectf(t, drill.slots[DRILL_FUEL_SLOT].count >= 15, "fuel slot holds %d coal", drill.slots[DRILL_FUEL_SLOT].count)
+	}
+}
+
+// A real coal vein yields gravel too, which a fuel slot never takes: the
+// drill that draws it stops and says so, rather than waiting for room.
+@(test)
+test_drill_feeding_a_drill_stops_on_gravel_and_names_it :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_drill_world(content)
+	vein := add_test_vein(&world, content, "coal", {2, 1}, 3, {9_000, 1_000, 0, 0})
+	first := place_test_drill(&world, content, {0, 1, 0}, 0, vein)
+	second := place_test_drill(&world, content, {2, 1, 0}, 2, vein)
+	tick_test_entities(&world, content, 3600)
+	gravel := test_item(content.items, "gravel")
+	// The shipped strings, so the state line reads as the player sees it.
+	table, table_error := parse_string_table(#load("../data/strings/en.sjson"), context.temp_allocator)
+	testing.expect(t, table_error == nil)
+	thread_string_table = &table
+	defer thread_string_table = nil
+	refused := 0
+	for handle in ([2]Entity_Handle{first, second}) {
+		drill := test_drill(&world, handle)
+		if drill.state == .Output_Refused {
+			refused += 1
+			testing.expect_value(t, drill.held.item, gravel)
+			testing.expect_value(t, drill_state_text(drill^, content.items), "Output refused: Gravel")
+		}
+	}
+	testing.expect(t, refused >= 1)
+}
+
+// A coal line with a dead end (couch report, 2026-09-27): the inserter
+// picks only what the furnace takes, so the vein's gravel stays on the
+// belt, piles up at the dead end in front of the inserter, and the coal
+// behind it never reaches the pickup cell again. The line starves.
+@(test)
+test_coal_line_dead_end_clogs_with_gravel :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_drill_world(content)
+	vein := add_test_vein(&world, content, "coal", {1, 1}, 2, {9_000, 1_000, 0, 0})
+	place_test_drill(&world, content, {0, 1, 0}, 0, vein)
+	place_test_entity(&world, content, "belt", {2, 1, 0}, 0)
+	place_test_entity(&world, content, "belt", {3, 1, 0}, 0)
+	inserter := place_fuelled_inserter(&world, content, {4, 1, 0}, 0)
+	furnace := place_test_entity(&world, content, "stone_furnace", {5, 1, 0}, 0)
+	coal, gravel := test_item(content.items, "coal"), test_item(content.items, "gravel")
+	tick_test_entities(&world, content, 9000)
+	fuel_after_two_and_a_half_minutes := entity_slots(&world.entities, furnace)[FURNACE_FUEL_SLOT].count
+	tick_test_entities(&world, content, 9000)
+	fuel_after_five_minutes := entity_slots(&world.entities, furnace)[FURNACE_FUEL_SLOT].count
+	offered := belt_offered_items(&world.entities, entity_at(&world.entities, {3, 1, 0}), NO_ITEM)
+	testing.expectf(t, slice.contains(offered, gravel) && !slice.contains(offered, coal), "belt end offers %v", offered)
+	testing.expect_value(t, fuel_after_five_minutes, fuel_after_two_and_a_half_minutes)
+	testing.expect(t, fuel_after_five_minutes > 0)
+	testing.expect_value(t, pool_get(&world.entities.inserters, inserter).state, Inserter_State.Idle)
+}

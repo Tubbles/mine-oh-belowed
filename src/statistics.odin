@@ -835,7 +835,7 @@ record_drill_tick :: proc(statistics: ^Statistics, before, after: Drill) {
 	#partial switch after.state {
 	case .No_Fuel:
 		statistics.stalls[.Drill_Out_Of_Fuel] += 1
-	case .Waiting_For_Room, .No_Output:
+	case .Waiting_For_Room, .No_Output, .Output_Refused:
 		statistics.stalls[.Drill_Waiting_For_Room] += 1
 	}
 }
