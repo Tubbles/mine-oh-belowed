@@ -1,6 +1,8 @@
 package game
 
 import "core:fmt"
+import "core:os"
+import "core:strings"
 import sdl "vendor:sdl3"
 
 // Reads the Steam Controller (2026) through SDL3's HIDAPI driver
@@ -47,7 +49,26 @@ init_sdl3_input :: proc() -> (ok: bool, error_message: string) {
 	if !sdl.Init({.JOYSTICK, .GAMEPAD}) {
 		return false, string(sdl.GetError())
 	}
+	log_printf("input: %s", steam_input_environment_text(os.get_env(sdl.HINT_GAMECONTROLLER_IGNORE_DEVICES, context.temp_allocator), os.get_env("SteamVirtualGamepadInfo", context.temp_allocator)))
 	return true, ""
+}
+
+// What Steam's environment says about Steam Input for this launch. With
+// Steam Input on, Steam lists the physical controller in SDL's ignore
+// list and points SDL at its virtual gamepad info file, which relabels
+// the virtual pad with the real controller's name and ids; the log line
+// after this one then shows a pad without touchpads or sensors.
+steam_input_environment_text :: proc(ignore_devices, virtual_gamepad_info: string) -> string {
+	ignores_valve := strings.contains(strings.to_lower(ignore_devices, context.temp_allocator), "0x28de/")
+	switch {
+	case ignores_valve && virtual_gamepad_info != "":
+		return "Steam Input is on for this launch: SDL is told to ignore Valve controllers and given Steam's virtual gamepad"
+	case ignores_valve:
+		return "SDL is told to ignore Valve controllers (SDL_GAMECONTROLLER_IGNORE_DEVICES)"
+	case virtual_gamepad_info != "":
+		return "Steam's virtual gamepad info is set, Valve controllers are not ignored"
+	}
+	return "Steam Input is off for this launch (no ignore list, no virtual gamepad info)"
 }
 
 shutdown_sdl3_input :: proc(state: ^Sdl3_Input_State) {
@@ -62,12 +83,17 @@ open_sdl3_gamepad :: proc(state: ^Sdl3_Input_State, id: sdl.JoystickID) {
 		return
 	}
 	state.gamepad = gamepad
+	// The path tells the device apart: /dev/hidraw* is the controller read
+	// through HIDAPI, /dev/input/event* an evdev device such as Steam's
+	// virtual pad. The controller itself has two touchpads.
 	log_printf(
-		"input: opened gamepad %d %q vendor %04x product %04x",
+		"input: opened gamepad %d %q vendor %04x product %04x path %s touchpads %d",
 		id,
 		sdl.GetGamepadName(gamepad),
 		sdl.GetGamepadVendor(gamepad),
 		sdl.GetGamepadProduct(gamepad),
+		sdl.GetGamepadPath(gamepad),
+		sdl.GetNumGamepadTouchpads(gamepad),
 	)
 	enable_sdl3_sensor(gamepad, .GYRO)
 	enable_sdl3_sensor(gamepad, .ACCEL)
