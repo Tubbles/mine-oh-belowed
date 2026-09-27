@@ -52,7 +52,7 @@ test_machine :: proc(machines: Machine_Registry, id: string) -> Machine_Id {
 test_machine_data_loads :: proc(t: ^testing.T) {
 	items := make_test_items()
 	machines := make_test_machines()
-	testing.expect_value(t, len(machines.machines), 27)
+	testing.expect_value(t, len(machines.machines), 29)
 	wooden := machines.machines[test_machine(machines, "wooden_chest")]
 	testing.expect_value(t, wooden.kind, Machine_Kind.Chest)
 	testing.expect_value(t, wooden.slot_count, 16)
@@ -179,11 +179,14 @@ test_machine_data_rejects_bad_definitions :: proc(t: ^testing.T) {
 		footprint = {2, 2, 2},
 		fuel_slots = 1,
 		input_slots = 1,
-		output_slots = 1,
+		output_slots = 2,
 		speed = 1,
 		fuel_power_kilowatts = 90,
 	}
 	testing.expect_value(t, resolve_test_machines({furnace}), "")
+	no_byproduct_slot := furnace
+	no_byproduct_slot.output_slots = 1
+	testing.expect(t, resolve_test_machines({no_byproduct_slot}) != "")
 	unpowered := furnace
 	unpowered.fuel_power_kilowatts = 0
 	testing.expect(t, resolve_test_machines({unpowered}) != "")

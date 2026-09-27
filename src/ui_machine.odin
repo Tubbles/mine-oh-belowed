@@ -55,6 +55,7 @@ machine_slot_filters :: proc(kind: Machine_Kind, slot_count: int) -> []Slot_Filt
 		filters[FURNACE_FUEL_SLOT] = {kind = .Fuel}
 		filters[FURNACE_INPUT_SLOT] = {kind = .Smeltable}
 		filters[FURNACE_OUTPUT_SLOT] = {kind = .Output}
+		filters[FURNACE_BYPRODUCT_SLOT] = {kind = .Output}
 	case .Inserter, .Drill, .Boiler:
 		for &filter in filters {
 			filter = {kind = .Fuel}
@@ -152,8 +153,8 @@ machine_slot :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, index: int, slot
 	}
 }
 
-// Input, progress, output on the first row; fuel and the burn bar on the
-// second; the state below.
+// Input, progress, output on the first row; fuel, the burn bar and the
+// byproduct slot under the output on the second; the state below.
 furnace_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, furnace: Furnace, screen_context: Screen_Context) -> Slot_Grid_Result {
 	result := Slot_Grid_Result{activated = -1, focused = -1}
 	slots, items := furnace.slots, screen_context.items
@@ -169,6 +170,7 @@ furnace_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, furnace: Furna
 	second := cut_top(&content, UI_SLOT_SIZE + UI_GAP)
 	machine_slot(state, {second.x, second.y, UI_SLOT_SIZE, UI_SLOT_SIZE}, FURNACE_FUEL_SLOT, slots[:], items, &result)
 	machine_bar(state, {second.x + UI_SLOT_SIZE + UI_GAP, second.y, MACHINE_BAR_WIDTH, UI_SLOT_SIZE}, furnace_burn_fraction(furnace))
+	machine_slot(state, {output.x, second.y, UI_SLOT_SIZE, UI_SLOT_SIZE}, FURNACE_BYPRODUCT_SLOT, slots[:], items, &result)
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text(furnace_state_keys[furnace.state]), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	return result
 }

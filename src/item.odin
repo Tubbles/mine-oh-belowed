@@ -46,6 +46,7 @@ Item_Definition :: struct {
 	places_block:    string,
 	mined_from:      []string,
 	fuel_megajoules: f32,
+	cannot_recycle:  bool,
 }
 
 Items_File :: struct {
@@ -54,6 +55,7 @@ Items_File :: struct {
 
 // places_block is AIR_BLOCK for items that place nothing. Fuel is kept in
 // whole kilojoules so machines burn it with integer arithmetic.
+// cannot_recycle keeps the recycler from taking the item (recycler.odin).
 Item :: struct {
 	id:              string,
 	name_key:        string,
@@ -61,6 +63,7 @@ Item :: struct {
 	stack_size:      u16,
 	places_block:    Block_Id,
 	fuel_kilojoules: u32,
+	cannot_recycle:  bool,
 }
 
 Item_Registry :: struct {
@@ -155,6 +158,7 @@ resolve_item :: proc(definition: Item_Definition, blocks: Block_Registry) -> (it
 		stack_size      = u16(definition.stack_size),
 		places_block    = placed_block,
 		fuel_kilojoules = u32(math.round(definition.fuel_megajoules * 1000)),
+		cannot_recycle  = definition.cannot_recycle,
 	}
 	return item, ""
 }

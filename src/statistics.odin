@@ -19,7 +19,8 @@ RATE_BUCKET_COUNT :: 60
 INSERTER_IDLE_MINUTE_SECONDS :: 60
 MILLIMETRES_PER_BLOCK :: 1000
 
-// Out_Of_Fuel and Output_Full are furnace stalls.
+// Out_Of_Fuel and Output_Full are furnace stalls. Crafting_Missing_Input
+// counts missing ingredients and missing fluid.
 Machine_Stall :: enum u8 {
 	Out_Of_Fuel,
 	Output_Full,
@@ -27,6 +28,10 @@ Machine_Stall :: enum u8 {
 	Inserter_Waiting_For_Room,
 	Drill_Out_Of_Fuel,
 	Drill_Waiting_For_Room,
+	Crafting_Output_Full,
+	Crafting_Missing_Input,
+	Crafting_No_Power,
+	Crafting_No_Fuel,
 }
 
 Statistics :: struct {
@@ -37,6 +42,8 @@ Statistics :: struct {
 	produced:                    []u64,
 	obtained:                    []u64,
 	delivered:                   []u64,
+	// Byproducts a lenient world voided because they had no room.
+	voided:                      []u64,
 	// Indexed by Machine_Id: how often a player placed one.
 	placed:                      []u64,
 	// Indexed by Block_Id: ticks spent holding Mine on a block of the type.
@@ -89,6 +96,7 @@ make_statistics :: proc(item_count, machine_count, block_count: int, allocator :
 		produced = make([]u64, item_count, allocator),
 		obtained = make([]u64, item_count, allocator),
 		delivered = make([]u64, item_count, allocator),
+		voided = make([]u64, item_count, allocator),
 		placed = make([]u64, machine_count, allocator),
 		mining_ticks = make([]u64, block_count, allocator),
 		produced_per_second = make([]u32, item_count * RATE_BUCKET_COUNT, allocator),
@@ -101,6 +109,7 @@ destroy_statistics :: proc(statistics: Statistics, allocator := context.allocato
 	delete(statistics.produced, allocator)
 	delete(statistics.obtained, allocator)
 	delete(statistics.delivered, allocator)
+	delete(statistics.voided, allocator)
 	delete(statistics.placed, allocator)
 	delete(statistics.mining_ticks, allocator)
 	delete(statistics.produced_per_second, allocator)
@@ -147,6 +156,64 @@ record_produced_stacks :: proc(statistics: ^Statistics, stacks: []Item_Stack) {
 	}
 }
 
+record_voided :: proc(statistics: ^Statistics, item: Item_Id, count: int) {
+	if int(item) < len(statistics.voided) && count > 0 {
+		statistics.voided[item] += u64(count)
+	}
+}
+
+// How much of after's item the slot gained.
+stack_growth :: proc(before, after: Item_Stack) -> int {
+	if stack_is_empty(after) {
+		return 0
+	}
+	if stack_is_empty(before) || before.item != after.item {
+		return int(after.count)
+	}
+	return max(int(after.count) - int(before.count), 0)
+}
+
+// A product the craft made: what its slot gained is produced, the rest was
+// voided (lenient byproducts). Output slots only grow inside a machine
+// tick.
+record_product :: proc(statistics: ^Statistics, product: Item_Stack, before, after: Item_Stack) {
+	kept := min(stack_growth(before, after), int(product.count))
+	record_produced(statistics, product.item, kept)
+	record_voided(statistics, product.item, int(product.count) - kept)
+}
+
+// A finished crafting machine craft. The recycler's returns always fit.
+record_craft_outputs :: proc(statistics: ^Statistics, craft: Craft, before, after: Assembler) {
+	if craft.returns {
+		record_produced_stacks(statistics, craft.outputs)
+		return
+	}
+	first := assembler_first_output(after)
+	for product, index in craft.outputs {
+		record_product(statistics, product, before.slots[first + index], after.slots[first + index])
+	}
+}
+
+// Fuel items lit, and a stall when the machine enters it.
+record_crafting_machine_tick :: proc(statistics: ^Statistics, before, after: Assembler) {
+	if fuel_item_lit(before.fuel_joules, after.fuel_joules) {
+		statistics.fuel_burned += 1
+	}
+	if after.state == before.state {
+		return
+	}
+	#partial switch after.state {
+	case .Output_Full:
+		statistics.stalls[.Crafting_Output_Full] += 1
+	case .Missing_Ingredients, .No_Fluid:
+		statistics.stalls[.Crafting_Missing_Input] += 1
+	case .No_Power:
+		statistics.stalls[.Crafting_No_Power] += 1
+	case .No_Fuel:
+		statistics.stalls[.Crafting_No_Fuel] += 1
+	}
+}
+
 // Items produced over the last minute: the current second so far plus
 // the 59 before it.
 production_rate_per_minute :: proc(statistics: Statistics, item: Item_Id) -> u64 {
@@ -190,13 +257,15 @@ record_walked :: proc(statistics: ^Statistics, from, to: [3]f32) {
 }
 
 // Output slots only grow and fuel slots only shrink inside a furnace
-// tick, so the differences are what it smelted and burned. A stall counts
-// when the furnace enters the state, not for every tick it stays there.
-record_furnace_tick :: proc(statistics: ^Statistics, before, after: Furnace) {
-	output_before, output_after := before.slots[FURNACE_OUTPUT_SLOT], after.slots[FURNACE_OUTPUT_SLOT]
-	if !stack_is_empty(output_after) && output_after.count > output_before.count {
-		grown := int(output_after.count) - (output_before.item == output_after.item ? int(output_before.count) : 0)
-		record_produced(statistics, output_after.item, grown)
+// tick, so the differences are what it smelted and burned. The main
+// output grows exactly when a smelt finishes, and then the byproduct slot
+// shows what of the recipe's byproduct was kept. A stall counts when the
+// furnace enters the state, not for every tick it stays there.
+record_furnace_tick :: proc(statistics: ^Statistics, before, after: Furnace, recipes: Recipe_Registry) {
+	grown := stack_growth(before.slots[FURNACE_OUTPUT_SLOT], after.slots[FURNACE_OUTPUT_SLOT])
+	if grown > 0 {
+		record_produced(statistics, after.slots[FURNACE_OUTPUT_SLOT].item, grown)
+		record_furnace_byproduct(statistics, before, after, recipes)
 	}
 	fuel_before, fuel_after := before.slots[FURNACE_FUEL_SLOT], after.slots[FURNACE_FUEL_SLOT]
 	if fuel_after.count < fuel_before.count {
@@ -211,6 +280,14 @@ record_furnace_tick :: proc(statistics: ^Statistics, before, after: Furnace) {
 	case .Output_Full:
 		statistics.stalls[.Output_Full] += 1
 	}
+}
+
+record_furnace_byproduct :: proc(statistics: ^Statistics, before, after: Furnace, recipes: Recipe_Registry) {
+	if after.recipe < 0 || after.recipe >= len(recipes.recipes) || len(recipes.recipes[after.recipe].outputs) < 2 {
+		return
+	}
+	product := recipes.recipes[after.recipe].outputs[1]
+	record_product(statistics, product, before.slots[FURNACE_BYPRODUCT_SLOT], after.slots[FURNACE_BYPRODUCT_SLOT])
 }
 
 // A fuel item was lit when the buffer grew: lighting adds a whole item's

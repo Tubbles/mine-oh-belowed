@@ -227,7 +227,7 @@ pick_up_entity :: proc(world: ^World, content: Simulation_Content, player: ^Play
 	append(&returned, ..drill_held_stacks(&world.entities, handle))
 	append(&returned, ..splitter_held_stacks(&world.entities, handle))
 	if assembler := pool_get(&world.entities.assemblers, handle); assembler != nil {
-		append(&returned, ..assembler_held_stacks(assembler^, content.recipes))
+		append(&returned, ..assembler_held_stacks(assembler^, content.machines.machines[assembler.machine], content.recipes))
 	}
 	append(&returned, Item_Stack{item = machine_item, count = 1})
 	if !inventory_fits_all(player.inventory, content.items, returned[:]) {

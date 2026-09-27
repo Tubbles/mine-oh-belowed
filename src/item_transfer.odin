@@ -6,7 +6,7 @@ package game
 //
 // Chests and the capsule take anything into any slot. A furnace takes
 // smeltable items into its input slot first and fuel into its fuel slot,
-// and only gives from its output slot. A belt works on one lane of its
+// and only gives from its output and byproduct slots. A belt works on one lane of its
 // block: it takes one item at a time mid block and gives the item nearest
 // the middle of the block from either lane; `slot` is the lane. A burner
 // inserter and a burner drill take fuel into their fuel slot and give nothing
@@ -144,14 +144,14 @@ furnace_accepting_slot :: proc(slots: []Item_Stack, item: Item_Id, content: Simu
 	return -1, false
 }
 
-// The slots entity_extract may take from: a furnace's or an assembler's
-// outputs, nothing of an inserter, a drill, a boiler or a lab, every slot
+// The slots entity_extract may take from: a furnace's (main output, then
+// byproduct) or an assembler's outputs, nothing of an inserter, a drill, a boiler or a lab, every slot
 // of a chest or the capsule.
 giving_slots :: proc(entities: ^Entities, handle: Entity_Handle) -> []Item_Stack {
 	slots := entity_slots(entities, handle)
 	#partial switch handle.kind {
 	case .Furnace:
-		return slots[FURNACE_OUTPUT_SLOT:FURNACE_OUTPUT_SLOT + 1]
+		return slots[FURNACE_OUTPUT_SLOT:FURNACE_BYPRODUCT_SLOT + 1]
 	case .Assembler:
 		return assembler_output_slots(pool_get(&entities.assemblers, handle))
 	case .Inserter, .Drill, .Fluid_Machine, .Lab:

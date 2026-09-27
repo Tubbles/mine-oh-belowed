@@ -484,8 +484,8 @@ tick_entities :: proc(world: ^World, content: Simulation_Content, tick_rate: int
 	for &furnace in world.entities.furnaces.entries {
 		if furnace.alive {
 			before := furnace
-			furnace = advance_furnace(furnace, content.machines.machines[furnace.machine], content.items, content.recipes, tick_rate)
-			record_furnace_tick(&world.statistics, before, furnace)
+			furnace = advance_furnace(furnace, content.machines.machines[furnace.machine], content.items, content.recipes, tick_rate, world.settings.byproducts_lenient)
+			record_furnace_tick(&world.statistics, before, furnace, content.recipes)
 		}
 	}
 	tick_assemblers(world, content, tick_rate)

@@ -13,8 +13,9 @@
 // it has no item, cannot be picked up, and holds 8 slots for quest
 // rewards and deliveries.
 // Chests: slots is the number of item slots.
-// Furnaces: fuel_slots, input_slots and output_slots must be 1 each for
-// now. speed multiplies the recipe rate (1 is the listed recipe time).
+// Furnaces: fuel_slots and input_slots must be 1 and output_slots 2: the
+// main output and the byproduct (slag) slot of work item 0027. speed
+// multiplies the recipe rate (1 is the listed recipe time).
 // fuel_power_kilowatts is the power drawn from the fuel while working.
 // Belts (work item 0014): belt_shape is flat, ramp or lift (the item
 // placed decides the shape; a ramp's up or down and a lift's direction
@@ -91,6 +92,13 @@
 // ones (the loader refuses a category where one recipe's input items are
 // a subset of another's). Optional input fluid_ports feed recipes with
 // fluid_inputs. Recipes of the category must fit the slots.
+// The recycler (work item 0027) is recipe_maker recycler, fixed: no
+// recipe is made in it. It takes any item a recipe makes that items.sjson
+// does not flag cannot_recycle, reverses the first recipe making it (one
+// craft takes that recipe's count of the item and gives back 25 percent
+// of each input count rounded down, at the recipe's time), and puts the
+// returns into any output slot holding their item or an empty one. Every
+// recyclable item's returns must fit the output slots.
 // Lab (work item 0021): speed and electric_power_kilowatts, no slot
 // fields. A lab has one slot per science pack item any technology in
 // technologies.sjson consumes.
@@ -119,8 +127,20 @@ machines = [
 		footprint = {width = 2, depth = 2, height = 2}
 		fuel_slots = 1
 		input_slots = 1
-		output_slots = 1
+		output_slots = 2
 		speed = 1
+		fuel_power_kilowatts = 90
+	}
+	{
+		id = "steel_furnace"
+		name_key = "machine_steel_furnace"
+		item = "steel_furnace"
+		kind = "furnace"
+		footprint = {width = 2, depth = 2, height = 2}
+		fuel_slots = 1
+		input_slots = 1
+		output_slots = 2
+		speed = 2
 		fuel_power_kilowatts = 90
 	}
 	{
@@ -363,7 +383,20 @@ machines = [
 		recipe_maker = "alloy_furnace"
 		recipe_choice = "fixed"
 		input_slots = 2
-		output_slots = 1
+		output_slots = 2
+	}
+	{
+		id = "recycler"
+		name_key = "machine_recycler"
+		item = "recycler"
+		kind = "crafting_machine"
+		footprint = {width = 2, depth = 2, height = 2}
+		speed = 1
+		electric_power_kilowatts = 100
+		recipe_maker = "recycler"
+		recipe_choice = "fixed"
+		input_slots = 1
+		output_slots = 4
 	}
 	{
 		id = "lab"

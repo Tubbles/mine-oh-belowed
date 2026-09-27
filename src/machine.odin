@@ -51,9 +51,9 @@ Machine_Kind :: enum u8 {
 	Pole,
 	Power_Switch,
 	Lamp,
-	// Crafting machines (assembler.odin): assemblers, crushers, washers
-	// and alloy furnaces, told apart by their recipe_maker. Research
-	// (lab.odin).
+	// Crafting machines (assembler.odin): assemblers, crushers, washers,
+	// alloy furnaces and recyclers, told apart by their recipe_maker.
+	// Research (lab.odin).
 	Crafting_Machine,
 	Lab,
 }
@@ -237,8 +237,8 @@ validate_machine_kind_fields :: proc(definition: Machine_Definition, kind: Machi
 			return fmt.tprintf("chest %q has slots %d outside 1 to %d", definition.id, definition.slots, MAXIMUM_CHEST_SLOTS)
 		}
 	case .Furnace:
-		if definition.fuel_slots != 1 || definition.input_slots != 1 || definition.output_slots != 1 {
-			return fmt.tprintf("furnace %q must have one fuel, one input and one output slot", definition.id)
+		if definition.fuel_slots != 1 || definition.input_slots != 1 || definition.output_slots != 2 {
+			return fmt.tprintf("furnace %q must have one fuel, one input and two output slots (main and byproduct)", definition.id)
 		}
 		if definition.speed <= 0 || definition.fuel_power_kilowatts <= 0 {
 			return fmt.tprintf("furnace %q needs a positive speed and fuel_power_kilowatts", definition.id)

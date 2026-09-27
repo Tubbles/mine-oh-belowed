@@ -1,14 +1,19 @@
 package game
 
-// The fuel burning furnace, ticked in the simulation with integer
-// arithmetic. It burns only while it has work: a recipe for the input and
-// room in the output. Fuel energy is kept in joules, because 90 kW at 60
-// ticks per second is 1.5 kJ per tick.
+// The fuel burning furnace (stone and steel furnace), ticked in the
+// simulation with integer arithmetic. It burns only while it has work: a
+// recipe for the input and room in the output. Fuel energy is kept in
+// joules, because 90 kW at 60 ticks per second is 1.5 kJ per tick.
+// A recipe's byproduct (slag, work item 0027) goes to its own slot. With
+// strict byproducts the furnace waits for room there like for the main
+// output; with lenient byproducts it smelts on and voids what does not
+// fit.
 
 FURNACE_FUEL_SLOT :: 0
 FURNACE_INPUT_SLOT :: 1
 FURNACE_OUTPUT_SLOT :: 2
-FURNACE_SLOT_COUNT :: 3
+FURNACE_BYPRODUCT_SLOT :: 3
+FURNACE_SLOT_COUNT :: 4
 
 Furnace_State :: enum u8 {
 	Idle,
@@ -31,7 +36,7 @@ Furnace :: struct {
 }
 
 make_furnace :: proc(common: Entity_Common) -> Furnace {
-	return Furnace{common = common, slots = {EMPTY_STACK, EMPTY_STACK, EMPTY_STACK}, recipe = NO_RECIPE}
+	return Furnace{common = common, slots = {EMPTY_STACK, EMPTY_STACK, EMPTY_STACK, EMPTY_STACK}, recipe = NO_RECIPE}
 }
 
 item_is_fuel :: proc(items: Item_Registry, item: Item_Id) -> bool {
@@ -51,12 +56,13 @@ furnace_recipe :: proc(recipes: Recipe_Registry, input: Item_Stack) -> int {
 	return recipe
 }
 
-output_has_room :: proc(output: Item_Stack, recipe: Recipe, items: Item_Registry) -> bool {
-	if stack_is_empty(output) {
-		return true
+// Room for the main output, and for the byproduct unless a lenient world
+// voids it.
+furnace_has_room :: proc(slots: [FURNACE_SLOT_COUNT]Item_Stack, recipe: Recipe, items: Item_Registry, byproducts_lenient: bool) -> bool {
+	if !stack_fits_slot(slots[FURNACE_OUTPUT_SLOT], recipe.outputs[0], items) {
+		return false
 	}
-	product := recipe.outputs[0]
-	return output.item == product.item && int(output.count) + int(product.count) <= int(item_stack_size(items, product.item))
+	return len(recipe.outputs) < 2 || byproducts_lenient || stack_fits_slot(slots[FURNACE_BYPRODUCT_SLOT], recipe.outputs[1], items)
 }
 
 fuel_joules_per_tick :: proc(machine: Machine, tick_rate: int) -> u32 {
@@ -85,18 +91,21 @@ refuel_from_slot :: proc(fuel_joules, fuel_item_joules: ^u32, fuel: ^Item_Stack,
 	return true
 }
 
-finish_smelting :: proc(furnace: ^Furnace, recipe: Recipe) {
+// The byproduct goes in as far as there is room; the rest is voided,
+// which only a lenient world gets to (strict waited for room).
+finish_smelting :: proc(furnace: ^Furnace, recipe: Recipe, items: Item_Registry) {
 	take_from_slot(&furnace.slots[FURNACE_INPUT_SLOT], int(recipe.inputs[0].count))
-	output := &furnace.slots[FURNACE_OUTPUT_SLOT]
-	output.item = recipe.outputs[0].item
-	output.count += recipe.outputs[0].count
+	for product, index in recipe.outputs {
+		fill_slot(&furnace.slots[FURNACE_OUTPUT_SLOT + index], product.item, int(product.count), item_stack_size(items, product.item))
+	}
 	furnace.progress_ticks = 0
 }
 
 // One tick of the furnace. It smelts every furnace recipe whether or not
 // the recipe is unlocked: today every one of them is a start recipe or is
-// discovered by obtaining its only input.
-advance_furnace :: proc(furnace: Furnace, machine: Machine, items: Item_Registry, recipes: Recipe_Registry, tick_rate: int) -> Furnace {
+// discovered by obtaining its only input. byproducts_lenient is the world
+// setting, read on every tick including the one a smelt completes on.
+advance_furnace :: proc(furnace: Furnace, machine: Machine, items: Item_Registry, recipes: Recipe_Registry, tick_rate: int, byproducts_lenient := false) -> Furnace {
 	result := furnace
 	recipe_index := furnace_recipe(recipes, result.slots[FURNACE_INPUT_SLOT])
 	if recipe_index != result.recipe {
@@ -107,7 +116,7 @@ advance_furnace :: proc(furnace: Furnace, machine: Machine, items: Item_Registry
 		return result
 	}
 	recipe := recipes.recipes[recipe_index]
-	if !output_has_room(result.slots[FURNACE_OUTPUT_SLOT], recipe, items) {
+	if !furnace_has_room(result.slots, recipe, items, byproducts_lenient) {
 		result.state = .Output_Full
 		return result
 	}
@@ -120,7 +129,7 @@ advance_furnace :: proc(furnace: Furnace, machine: Machine, items: Item_Registry
 	result.progress_ticks += 1
 	result.state = .Burning
 	if result.progress_ticks >= recipe_ticks(recipe, machine.speed_percent, tick_rate) {
-		finish_smelting(&result, recipe)
+		finish_smelting(&result, recipe, items)
 	}
 	return result
 }

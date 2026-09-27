@@ -50,18 +50,18 @@ test_furnace_tick_counts_output_fuel_and_stalls :: proc(t: ^testing.T) {
 	after := before
 	after.slots[FURNACE_FUEL_SLOT] = {Item_Id(0), 2}
 	after.slots[FURNACE_OUTPUT_SLOT] = {Item_Id(2), 1}
-	record_furnace_tick(&statistics, before, after)
+	record_furnace_tick(&statistics, before, after, {})
 	testing.expect_value(t, statistics.produced[2], 1)
 	testing.expect_value(t, statistics.fuel_burned, 1)
 	testing.expect_value(t, statistics.stalls[.Out_Of_Fuel], 0)
 	stalled := after
 	stalled.state = .No_Fuel
-	record_furnace_tick(&statistics, after, stalled)
-	record_furnace_tick(&statistics, stalled, stalled)
+	record_furnace_tick(&statistics, after, stalled, {})
+	record_furnace_tick(&statistics, stalled, stalled, {})
 	testing.expect_value(t, statistics.stalls[.Out_Of_Fuel], 1)
 	full := after
 	full.state = .Output_Full
-	record_furnace_tick(&statistics, after, full)
+	record_furnace_tick(&statistics, after, full, {})
 	testing.expect_value(t, statistics.stalls[.Output_Full], 1)
 	testing.expect_value(t, statistics.produced[2], 1)
 }

@@ -46,7 +46,7 @@ test_ore_processing_data_loads :: proc(t: ^testing.T) {
 	testing.expect_value(t, alloy.fuel_power_watts, 180_000)
 	testing.expect_value(t, alloy.slot_count, 1)
 	testing.expect_value(t, alloy.input_slot_count, 2)
-	testing.expect_value(t, alloy.output_slot_count, 1)
+	testing.expect_value(t, alloy.output_slot_count, 2)
 	testing.expect_value(t, test_crafting_machine(content, "assembler_1").recipe_choice, Recipe_Choice.Chosen)
 	// Two input alloys left the stone furnace.
 	for id in ([?]string{"bronze_plate", "steel", "brass_plate"}) {
@@ -219,7 +219,8 @@ test_crusher_turns_low_grade_into_crushed_ore_and_gravel :: proc(t: ^testing.T) 
 	testing.expect_value(t, ticks_until_crafted(&crusher, machine, content, 1000), 120)
 	testing.expect_value(t, crusher.recipe, test_recipe(content.recipes, "crush_chalcopyrite"))
 	testing.expect_value(t, crusher.slots[0], Item_Stack{low_grade, 3})
-	testing.expect_value(t, crusher.slots[1], Item_Stack{test_item(content.items, "crushed_chalcopyrite"), 1})
+	// Crushing recovers the ore: 2 low grade give 2 crushed.
+	testing.expect_value(t, crusher.slots[1], Item_Stack{test_item(content.items, "crushed_chalcopyrite"), 2})
 	testing.expect_value(t, crusher.slots[2], Item_Stack{test_item(content.items, "gravel"), 1})
 	testing.expect_value(t, ticks_until_crafted(&crusher, machine, content, 1000), 120)
 	// One left is not a craft.
@@ -326,9 +327,10 @@ test_alloy_furnace_crafts_from_two_inputs :: proc(t: ^testing.T) {
 	// 6.4 s at speed 1 and 180 kW of coal.
 	testing.expect_value(t, ticks_until_crafted(furnace, machine, content, 1000), 384)
 	testing.expect_value(t, furnace.slots[3], Item_Stack{bronze, 4})
+	testing.expect_value(t, furnace.slots[4], Item_Stack{test_item(items, "slag"), 1})
 	testing.expect_value(t, furnace.slots[1], Item_Stack{copper, 3})
 	testing.expect_value(t, furnace.slots[2], EMPTY_STACK)
-	testing.expect_value(t, len(entity_offered_items(&world.entities, handle, NO_ITEM)), 1)
+	testing.expect_value(t, len(entity_offered_items(&world.entities, handle, NO_ITEM)), 2)
 	// Out of fuel.
 	furnace.slots[0], furnace.fuel_joules = EMPTY_STACK, 0
 	furnace.slots[2] = {tin, 1}
@@ -378,11 +380,12 @@ test_fixed_recipe_choice_picks_by_inputs :: proc(t: ^testing.T) {
 	testing.expect_value(t, refusal, Recipe_Change_Refusal.Not_For_Assembler)
 	// The slot filters of a fixed choice take any input of the category.
 	filters := assembler_slot_filters(furnace, machine, recipes)
-	testing.expect_value(t, len(filters), 4)
+	testing.expect_value(t, len(filters), 5)
 	testing.expect_value(t, filters[0].kind, Slot_Filter_Kind.Fuel)
 	testing.expect(t, slot_accepts(filters[1], zinc, items, recipes))
 	testing.expect(t, !slot_accepts(filters[2], test_item(items, "stone"), items, recipes))
 	testing.expect_value(t, filters[3].kind, Slot_Filter_Kind.Output)
+	testing.expect_value(t, filters[4].kind, Slot_Filter_Kind.Output)
 }
 
 // A fixed category where one recipe's input items are a subset of
@@ -429,7 +432,7 @@ test_ore_processing_is_researched :: proc(t: ^testing.T) {
 	testing.expect_value(t, technology.pack_count, 50)
 	testing.expect_value(t, len(technology.prerequisites), 1)
 	testing.expect_value(t, technology.prerequisites[0], test_technology(test.technologies, "steel_processing"))
-	gated := [?]string{"crusher", "washer", "alloy_furnace", "crush_hematite", "wash_pentlandite"}
+	gated := [?]string{"crusher", "washer", "crush_hematite", "wash_pentlandite"}
 	for id in gated {
 		testing.expectf(t, !test_available(test, id), "%s is open before research", id)
 	}
@@ -437,6 +440,35 @@ test_ore_processing_is_researched :: proc(t: ^testing.T) {
 	for id in gated {
 		testing.expectf(t, test_available(test, id), "%s is closed after research", id)
 	}
+	// Only the crusher, the washer and the six crushing and six washing
+	// recipes (work item 0027).
+	testing.expect_value(t, len(technology.unlocks), 14)
+	for recipe in technology.unlocks {
+		made_in := test.recipes.recipes[recipe].made_in
+		testing.expect(t, made_in == {.Crusher} || made_in == {.Washer} || made_in == {.Hand, .Assembler})
+	}
+}
+
+// Carry over from work item 0026: the alloy furnace is a stone and brick
+// building on the start channel, so bronze is reachable in phase 2; steel
+// stays under steel processing, and the steel furnace has a machine.
+@(test)
+test_alloy_furnace_is_a_start_recipe :: proc(t: ^testing.T) {
+	test := make_crafting_test()
+	testing.expect_value(t, test.recipes.recipes[test_recipe(test.recipes, "alloy_furnace")].channel, Recipe_Channel.Start)
+	testing.expect(t, test_available(test, "alloy_furnace"))
+	bronze := test.recipes.recipes[test_recipe(test.recipes, "bronze_plate")]
+	testing.expect_value(t, bronze.channel, Recipe_Channel.Discovery)
+	steel := test.recipes.recipes[test_recipe(test.recipes, "steel")]
+	testing.expect_value(t, test.technologies.technologies[steel.technology].id, "steel_processing")
+	steel_furnace := test.recipes.recipes[test_recipe(test.recipes, "steel_furnace")]
+	testing.expect_value(t, test.technologies.technologies[steel_furnace.technology].id, "steel_processing")
+	content := make_test_content()
+	machine := content.machines.machines[test_machine(content.machines, "steel_furnace")]
+	testing.expect_value(t, machine.kind, Machine_Kind.Furnace)
+	testing.expect_value(t, machine.speed_percent, 200)
+	testing.expect_value(t, machine.fuel_power_watts, 90_000)
+	testing.expect_value(t, machine.item, test_item(content.items, "steel_furnace"))
 }
 
 // Low grade ore from a chest through a crusher into a washer fed by a

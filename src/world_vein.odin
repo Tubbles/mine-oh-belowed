@@ -12,7 +12,8 @@ World_Settings :: struct {
 	// registry of the session apply them (session.odin).
 	vein_richness_percent: int,
 	research_cost_percent: int,
-	// Stored for the byproduct rules to come, no effect yet.
+	// Lenient: byproducts without room are voided instead of stalling the
+	// machine (furnace.odin, assembler.odin).
 	byproducts_lenient:    bool,
 }
 

@@ -14,10 +14,12 @@ RECIPES_FILE_NAME :: "recipes.sjson"
 NO_RECIPE :: -1
 NO_TECHNOLOGY :: -1
 MAXIMUM_RECIPE_TAGS :: 128
+MAXIMUM_RECIPE_OUTPUTS :: 16
 
 // What can make a recipe. Every maker after the furnace is a crafting
 // machine category (assembler.odin): a machine entry names the one it
-// makes.
+// makes. No recipe is made in the recycler, which reverses recipes
+// (recycler.odin).
 Recipe_Maker :: enum u8 {
 	Hand,
 	Furnace,
@@ -25,6 +27,7 @@ Recipe_Maker :: enum u8 {
 	Crusher,
 	Washer,
 	Alloy_Furnace,
+	Recycler,
 }
 
 Recipe_Makers :: bit_set[Recipe_Maker]
@@ -37,6 +40,7 @@ recipe_maker_names := [Recipe_Maker]string {
 	.Crusher       = "crusher",
 	.Washer        = "washer",
 	.Alloy_Furnace = "alloy_furnace",
+	.Recycler      = "recycler",
 }
 
 // The recipe browser tabs, in tab order.
@@ -80,11 +84,16 @@ recipe_channel_names := [Recipe_Channel]string {
 // Indices into Recipe_Registry.tag_names.
 Recipe_Tag_Set :: bit_set[0 ..< MAXIMUM_RECIPE_TAGS;u128]
 
-// fluid is not allowed here: fluids go in fluid_inputs.
+// Indices into Recipe.outputs.
+Recipe_Output_Set :: bit_set[0 ..< MAXIMUM_RECIPE_OUTPUTS;u16]
+
+// fluid is not allowed here: fluids go in fluid_inputs. byproduct only
+// on outputs.
 Recipe_Ingredient_Definition :: struct {
-	item:  string,
-	fluid: string,
-	count: int,
+	item:      string,
+	fluid:     string,
+	count:     int,
+	byproduct: bool,
 }
 
 // litres over the whole craft, drawn from the machine's input ports.
@@ -120,12 +129,14 @@ Recipes_File :: struct {
 // name_key is the first output's name key when the file gives none. Time
 // is kept in milliseconds so machines count ticks in integers.
 // technology_id is the file's reference, technology its index once the
-// technologies are resolved (NO_TECHNOLOGY otherwise).
+// technologies are resolved (NO_TECHNOLOGY otherwise). byproducts marks
+// the outputs a lenient world voids when they do not fit.
 Recipe :: struct {
 	id:            string,
 	name_key:      string,
 	inputs:        []Item_Stack,
 	outputs:       []Item_Stack,
+	byproducts:    Recipe_Output_Set,
 	fluid_inputs:  []Recipe_Fluid,
 	milliseconds:  u32,
 	made_in:       Recipe_Makers,
@@ -137,8 +148,11 @@ Recipe :: struct {
 }
 
 Recipe_Registry :: struct {
-	recipes:   []Recipe,
-	tag_names: []string,
+	recipes:         []Recipe,
+	tag_names:       []string,
+	// Indexed by Item_Id: the recipe the recycler reverses for the item,
+	// or NO_RECIPE (recycler.odin).
+	recycle_recipes: []int,
 }
 
 parse_recipes_file :: proc(data: []byte, allocator := context.allocator) -> (file: Recipes_File, error: json.Unmarshal_Error) {
@@ -169,11 +183,27 @@ validate_recipe_makers :: proc(definition: Recipe_Definition) -> string {
 		return fmt.tprintf("recipe %q has no made_in", definition.id)
 	}
 	for name in definition.made_in {
-		if _, found := parse_named_enum(recipe_maker_names, name); !found {
+		maker, found := parse_named_enum(recipe_maker_names, name)
+		if !found || maker == .Recycler {
 			return fmt.tprintf("recipe %q is made in unknown %q", definition.id, name)
 		}
 	}
 	return ""
+}
+
+// Byproduct flags only on outputs, and at least one main output.
+validate_recipe_byproducts :: proc(definition: Recipe_Definition) -> string {
+	for input in definition.inputs {
+		if input.byproduct {
+			return fmt.tprintf("recipe %q flags an input as a byproduct", definition.id)
+		}
+	}
+	for output in definition.outputs {
+		if !output.byproduct {
+			return ""
+		}
+	}
+	return fmt.tprintf("recipe %q has only byproduct outputs", definition.id)
 }
 
 validate_recipe_channel :: proc(definition: Recipe_Definition) -> string {
@@ -200,8 +230,8 @@ validate_recipe_definition :: proc(definitions: []Recipe_Definition, index: int)
 		return fmt.tprintf("recipe id %q is defined twice", definition.id)
 	case len(definition.inputs) == 0:
 		return fmt.tprintf("recipe %q has no inputs", definition.id)
-	case len(definition.outputs) == 0:
-		return fmt.tprintf("recipe %q has no outputs", definition.id)
+	case len(definition.outputs) == 0 || len(definition.outputs) > MAXIMUM_RECIPE_OUTPUTS:
+		return fmt.tprintf("recipe %q needs 1 to %d outputs", definition.id, MAXIMUM_RECIPE_OUTPUTS)
 	case definition.seconds <= 0:
 		return fmt.tprintf("recipe %q needs positive seconds", definition.id)
 	}
@@ -209,6 +239,9 @@ validate_recipe_definition :: proc(definitions: []Recipe_Definition, index: int)
 		return fmt.tprintf("recipe %q has unknown category %q", definition.id, definition.category)
 	}
 	if problem := validate_recipe_makers(definition); problem != "" {
+		return problem
+	}
+	if problem := validate_recipe_byproducts(definition); problem != "" {
 		return problem
 	}
 	return validate_recipe_channel(definition)
@@ -279,6 +312,16 @@ resolve_recipe_tags :: proc(tags: []string, tag_names: ^[dynamic]string) -> (set
 	return set, ""
 }
 
+resolve_recipe_byproducts :: proc(outputs: []Recipe_Ingredient_Definition) -> Recipe_Output_Set {
+	byproducts: Recipe_Output_Set
+	for output, index in outputs {
+		if output.byproduct {
+			byproducts += {index}
+		}
+	}
+	return byproducts
+}
+
 resolve_recipe_makers :: proc(names: []string) -> Recipe_Makers {
 	makers: Recipe_Makers
 	for name in names {
@@ -319,6 +362,7 @@ resolve_recipe :: proc(definition: Recipe_Definition, items: Item_Registry, flui
 		name_key      = definition.name_key,
 		milliseconds  = u32(math.round(definition.seconds * 1000)),
 		made_in       = resolve_recipe_makers(definition.made_in),
+		byproducts    = resolve_recipe_byproducts(definition.outputs),
 		technology_id = definition.technology,
 		technology    = NO_TECHNOLOGY,
 	}
@@ -345,10 +389,13 @@ resolve_recipe :: proc(definition: Recipe_Definition, items: Item_Registry, flui
 	return recipe, ""
 }
 
-// The furnace has one input and one output slot, so it makes only recipes
-// of that shape.
+// The furnace has one input slot, one output slot and a byproduct slot
+// for slag, so it makes only recipes of that shape.
 recipe_fits_furnace :: proc(recipe: Recipe) -> bool {
-	return .Furnace in recipe.made_in && len(recipe.inputs) == 1 && len(recipe.outputs) == 1
+	if .Furnace not_in recipe.made_in || len(recipe.inputs) != 1 || 0 in recipe.byproducts {
+		return false
+	}
+	return len(recipe.outputs) == 1 || len(recipe.outputs) == 2 && 1 in recipe.byproducts
 }
 
 // A furnace picks its recipe by the input item, which must be unambiguous.
@@ -357,7 +404,7 @@ recipe_fits_furnace :: proc(recipe: Recipe) -> bool {
 validate_furnace_recipes :: proc(recipes: []Recipe) -> string {
 	for recipe, index in recipes {
 		if .Furnace in recipe.made_in && !recipe_fits_furnace(recipe) {
-			return fmt.tprintf("furnace recipe %q needs exactly one input and one output", recipe.id)
+			return fmt.tprintf("furnace recipe %q needs exactly one input, one main output and at most one byproduct", recipe.id)
 		}
 		if !recipe_fits_furnace(recipe) {
 			continue
@@ -389,6 +436,7 @@ resolve_recipe_registry :: proc(file: Recipes_File, items: Item_Registry, fluids
 		}
 	}
 	registry.tag_names = tag_names[:]
+	registry.recycle_recipes = resolve_recycle_recipes(registry.recipes, items, allocator)
 	if problem = validate_furnace_recipes(registry.recipes); problem != "" {
 		destroy_recipe_registry(registry, allocator)
 		return {}, problem
@@ -409,6 +457,7 @@ destroy_recipe_registry :: proc(registry: Recipe_Registry, allocator := context.
 	}
 	delete(registry.recipes, allocator)
 	delete(registry.tag_names, allocator)
+	delete(registry.recycle_recipes, allocator)
 }
 
 find_recipe :: proc(registry: Recipe_Registry, id: string) -> int {

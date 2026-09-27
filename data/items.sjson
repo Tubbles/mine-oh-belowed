@@ -16,34 +16,39 @@
 // (id ending in _low_grade) that veins yield more of as they deplete. Low
 // grade ore does not smelt: the crusher turns it into crushed ore and the
 // washer crushed ore into ore. Coal stays single grade, since it is
-// burned rather than refined. Mud and gravel are byproducts without a
-// sink yet (work item 0027).
+// burned rather than refined.
+// Byproducts (work item 0027): slag from smelting stacks to 100, gravel
+// and mud as before; each has a use (gravel, concrete, clay, brick).
+// cannot_recycle (optional) keeps the recycler from taking the item even
+// when a recipe makes it: raw materials, ore, spoils, slag, mud, crushed
+// ore, bricks and concrete.
 items = [
 	// Raw materials
-	{id = "log", name_key = "item_log", category = "raw", stack_size = 50, places_block = "log", fuel_megajoules = 2}
-	{id = "stone", name_key = "item_stone", category = "raw", stack_size = 50, places_block = "stone"}
-	{id = "dirt", name_key = "item_dirt", category = "raw", stack_size = 50, places_block = "dirt", mined_from = ["grass"]}
-	{id = "sand", name_key = "item_sand", category = "raw", stack_size = 50, places_block = "sand"}
-	{id = "clay", name_key = "item_clay", category = "raw", stack_size = 50}
-	{id = "gravel", name_key = "item_gravel", category = "raw", stack_size = 50}
-	{id = "coal", name_key = "item_coal", category = "raw", stack_size = 50, mined_from = ["coal_ore"], fuel_megajoules = 4}
-	{id = "hematite", name_key = "item_hematite", category = "raw", stack_size = 50, mined_from = ["hematite_ore"]}
-	{id = "chalcopyrite", name_key = "item_chalcopyrite", category = "raw", stack_size = 50, mined_from = ["chalcopyrite_ore"]}
-	{id = "cassiterite", name_key = "item_cassiterite", category = "raw", stack_size = 50, mined_from = ["cassiterite_ore"]}
-	{id = "galena", name_key = "item_galena", category = "raw", stack_size = 50, mined_from = ["galena_ore"]}
-	{id = "sphalerite", name_key = "item_sphalerite", category = "raw", stack_size = 50, mined_from = ["sphalerite_ore"]}
-	{id = "pentlandite", name_key = "item_pentlandite", category = "raw", stack_size = 50, mined_from = ["pentlandite_ore"]}
-	{id = "hematite_low_grade", name_key = "item_hematite_low_grade", category = "raw", stack_size = 50}
-	{id = "chalcopyrite_low_grade", name_key = "item_chalcopyrite_low_grade", category = "raw", stack_size = 50}
-	{id = "cassiterite_low_grade", name_key = "item_cassiterite_low_grade", category = "raw", stack_size = 50}
-	{id = "galena_low_grade", name_key = "item_galena_low_grade", category = "raw", stack_size = 50}
-	{id = "sphalerite_low_grade", name_key = "item_sphalerite_low_grade", category = "raw", stack_size = 50}
-	{id = "pentlandite_low_grade", name_key = "item_pentlandite_low_grade", category = "raw", stack_size = 50}
-	{id = "mud", name_key = "item_mud", category = "raw", stack_size = 50}
+	{id = "log", name_key = "item_log", category = "raw", stack_size = 50, places_block = "log", fuel_megajoules = 2, cannot_recycle = true}
+	{id = "stone", name_key = "item_stone", category = "raw", stack_size = 50, places_block = "stone", cannot_recycle = true}
+	{id = "dirt", name_key = "item_dirt", category = "raw", stack_size = 50, places_block = "dirt", mined_from = ["grass"], cannot_recycle = true}
+	{id = "sand", name_key = "item_sand", category = "raw", stack_size = 50, places_block = "sand", cannot_recycle = true}
+	{id = "clay", name_key = "item_clay", category = "raw", stack_size = 50, cannot_recycle = true}
+	{id = "gravel", name_key = "item_gravel", category = "raw", stack_size = 50, cannot_recycle = true}
+	{id = "coal", name_key = "item_coal", category = "raw", stack_size = 50, mined_from = ["coal_ore"], fuel_megajoules = 4, cannot_recycle = true}
+	{id = "hematite", name_key = "item_hematite", category = "raw", stack_size = 50, mined_from = ["hematite_ore"], cannot_recycle = true}
+	{id = "chalcopyrite", name_key = "item_chalcopyrite", category = "raw", stack_size = 50, mined_from = ["chalcopyrite_ore"], cannot_recycle = true}
+	{id = "cassiterite", name_key = "item_cassiterite", category = "raw", stack_size = 50, mined_from = ["cassiterite_ore"], cannot_recycle = true}
+	{id = "galena", name_key = "item_galena", category = "raw", stack_size = 50, mined_from = ["galena_ore"], cannot_recycle = true}
+	{id = "sphalerite", name_key = "item_sphalerite", category = "raw", stack_size = 50, mined_from = ["sphalerite_ore"], cannot_recycle = true}
+	{id = "pentlandite", name_key = "item_pentlandite", category = "raw", stack_size = 50, mined_from = ["pentlandite_ore"], cannot_recycle = true}
+	{id = "hematite_low_grade", name_key = "item_hematite_low_grade", category = "raw", stack_size = 50, cannot_recycle = true}
+	{id = "chalcopyrite_low_grade", name_key = "item_chalcopyrite_low_grade", category = "raw", stack_size = 50, cannot_recycle = true}
+	{id = "cassiterite_low_grade", name_key = "item_cassiterite_low_grade", category = "raw", stack_size = 50, cannot_recycle = true}
+	{id = "galena_low_grade", name_key = "item_galena_low_grade", category = "raw", stack_size = 50, cannot_recycle = true}
+	{id = "sphalerite_low_grade", name_key = "item_sphalerite_low_grade", category = "raw", stack_size = 50, cannot_recycle = true}
+	{id = "pentlandite_low_grade", name_key = "item_pentlandite_low_grade", category = "raw", stack_size = 50, cannot_recycle = true}
+	{id = "mud", name_key = "item_mud", category = "raw", stack_size = 50, cannot_recycle = true}
+	{id = "slag", name_key = "item_slag", category = "raw", stack_size = 100, cannot_recycle = true}
 	// Processed materials and intermediates
 	{id = "plank", name_key = "item_plank", category = "intermediate", stack_size = 100, fuel_megajoules = 1}
 	{id = "stick", name_key = "item_stick", category = "intermediate", stack_size = 100, fuel_megajoules = 0.5}
-	{id = "stone_brick", name_key = "item_stone_brick", category = "intermediate", stack_size = 100}
+	{id = "stone_brick", name_key = "item_stone_brick", category = "intermediate", stack_size = 100, cannot_recycle = true}
 	{id = "charcoal", name_key = "item_charcoal", category = "intermediate", stack_size = 100, fuel_megajoules = 3}
 	{id = "iron_plate", name_key = "item_iron_plate", category = "intermediate", stack_size = 50}
 	{id = "copper_plate", name_key = "item_copper_plate", category = "intermediate", stack_size = 50}
@@ -51,12 +56,12 @@ items = [
 	{id = "bronze_plate", name_key = "item_bronze_plate", category = "intermediate", stack_size = 50}
 	{id = "glass", name_key = "item_glass", category = "intermediate", stack_size = 100}
 	{id = "steel", name_key = "item_steel", category = "intermediate", stack_size = 50}
-	{id = "crushed_hematite", name_key = "item_crushed_hematite", category = "intermediate", stack_size = 50}
-	{id = "crushed_chalcopyrite", name_key = "item_crushed_chalcopyrite", category = "intermediate", stack_size = 50}
-	{id = "crushed_cassiterite", name_key = "item_crushed_cassiterite", category = "intermediate", stack_size = 50}
-	{id = "crushed_galena", name_key = "item_crushed_galena", category = "intermediate", stack_size = 50}
-	{id = "crushed_sphalerite", name_key = "item_crushed_sphalerite", category = "intermediate", stack_size = 50}
-	{id = "crushed_pentlandite", name_key = "item_crushed_pentlandite", category = "intermediate", stack_size = 50}
+	{id = "crushed_hematite", name_key = "item_crushed_hematite", category = "intermediate", stack_size = 50, cannot_recycle = true}
+	{id = "crushed_chalcopyrite", name_key = "item_crushed_chalcopyrite", category = "intermediate", stack_size = 50, cannot_recycle = true}
+	{id = "crushed_cassiterite", name_key = "item_crushed_cassiterite", category = "intermediate", stack_size = 50, cannot_recycle = true}
+	{id = "crushed_galena", name_key = "item_crushed_galena", category = "intermediate", stack_size = 50, cannot_recycle = true}
+	{id = "crushed_sphalerite", name_key = "item_crushed_sphalerite", category = "intermediate", stack_size = 50, cannot_recycle = true}
+	{id = "crushed_pentlandite", name_key = "item_crushed_pentlandite", category = "intermediate", stack_size = 50, cannot_recycle = true}
 	{id = "lead_plate", name_key = "item_lead_plate", category = "intermediate", stack_size = 50}
 	{id = "zinc_plate", name_key = "item_zinc_plate", category = "intermediate", stack_size = 50}
 	{id = "nickel_plate", name_key = "item_nickel_plate", category = "intermediate", stack_size = 50}
@@ -101,10 +106,13 @@ items = [
 	{id = "crusher", name_key = "item_crusher", category = "machine", stack_size = 10}
 	{id = "washer", name_key = "item_washer", category = "machine", stack_size = 10}
 	{id = "alloy_furnace", name_key = "item_alloy_furnace", category = "machine", stack_size = 10}
+	{id = "recycler", name_key = "item_recycler", category = "machine", stack_size = 10}
 	// Blocks that drop themselves
 	{id = "leaves", name_key = "item_leaves", category = "block", stack_size = 50, places_block = "leaves"}
 	{id = "tar", name_key = "item_tar", category = "block", stack_size = 50, places_block = "tar"}
 	{id = "deep_stone", name_key = "item_deep_stone", category = "block", stack_size = 50, places_block = "deep_stone"}
 	{id = "spent_rock", name_key = "item_spent_rock", category = "block", stack_size = 50, places_block = "spent_rock"}
 	{id = "torch", name_key = "item_torch", category = "block", stack_size = 50, places_block = "torch"}
+	{id = "concrete", name_key = "item_concrete", category = "block", stack_size = 50, places_block = "concrete", cannot_recycle = true}
+	{id = "brick", name_key = "item_brick", category = "block", stack_size = 50, places_block = "brick", cannot_recycle = true}
 ]

@@ -20,7 +20,7 @@ test_item :: proc(items: Item_Registry, id: string) -> Item_Id {
 test_shipped_items_resolve :: proc(t: ^testing.T) {
 	items := make_test_items()
 	blocks := make_test_registry()
-	testing.expect_value(t, len(items.items), 83)
+	testing.expect_value(t, len(items.items), 87)
 	iron_plate := items.items[test_item(items, "iron_plate")]
 	testing.expect_value(t, iron_plate.category, Item_Category.Intermediate)
 	testing.expect_value(t, iron_plate.stack_size, 50)

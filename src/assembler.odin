@@ -18,9 +18,15 @@ import "core:fmt"
 //   slots, like the stone furnace picks by its input. The loader refuses
 //   a category where that could be ambiguous.
 //
+// - the recycler (recycler.odin): fixed, reversing the recipe that makes
+//   the loaded item.
+//
 // Slots are laid out fuel slot (if any), inputs, outputs. A craft takes
 // its ingredients when it starts, and starts only when every product
-// would fit, so a finished craft always has room. Fluid inputs are drawn
+// would fit, so a finished craft always has room. In a world with lenient
+// byproducts (World_Settings.byproducts_lenient) outputs a recipe flags
+// as byproducts are left out of that check, and at completion what does
+// not fit is voided. Fluid inputs are drawn
 // from the input port buffers a share per progress tick, so a craft stalls
 // (No_Fluid) rather than starts short. An electric machine works one tick
 // per power credit step (power_machine.odin); a fuel burning one burns its
@@ -143,8 +149,8 @@ validate_crafting_machine_definition :: proc(definition: Machine_Definition) -> 
 		return fmt.tprintf("crafting machine %q needs a recipe_maker of a crafting machine category", definition.id)
 	}
 	choice, choice_found := parse_named_enum(recipe_choice_names, definition.recipe_choice)
-	if !choice_found {
-		return fmt.tprintf("crafting machine %q needs recipe_choice chosen or fixed", definition.id)
+	if !choice_found || maker == .Recycler && choice != .Fixed {
+		return fmt.tprintf("crafting machine %q needs recipe_choice chosen or fixed (fixed for the recycler)", definition.id)
 	}
 	burner := definition.fuel_slots == 1 && definition.fuel_power_kilowatts > 0 && definition.electric_power_kilowatts == 0
 	electric := definition.fuel_slots == 0 && definition.fuel_power_kilowatts == 0 && definition.electric_power_kilowatts > 0
@@ -233,6 +239,11 @@ validate_crafting_machine_recipes :: proc(machines: Machine_Registry, recipes: R
 				return problem
 			}
 		}
+		if machine.recipe_maker == .Recycler {
+			if problem := validate_recycler_returns(machine, recipes); problem != "" {
+				return problem
+			}
+		}
 	}
 	return ""
 }
@@ -307,8 +318,12 @@ assembler_input_slot_of :: proc(assembler: Assembler, machine: Machine, recipes:
 	return -1
 }
 
-// Some recipe of the category takes the item and every item loaded.
+// Some recipe of the category takes the item and every item loaded. The
+// recycler takes any recyclable item into its one input slot.
 category_recipe_accepts :: proc(recipes: Recipe_Registry, maker: Recipe_Maker, loaded: []Item_Stack, item: Item_Id) -> bool {
+	if maker == .Recycler {
+		return item_is_recyclable(recipes, item)
+	}
 	for recipe in recipes.recipes {
 		if maker in recipe.made_in && stacks_contain_item(recipe.inputs, item) && loaded_items_within(loaded, recipe) {
 			return true
@@ -329,6 +344,10 @@ loaded_items_within :: proc(loaded: []Item_Stack, recipe: Recipe) -> bool {
 // Whether any recipe of the category uses the item, and the most of it
 // one craft takes.
 category_input_count :: proc(recipes: Recipe_Registry, maker: Recipe_Maker, item: Item_Id) -> int {
+	if maker == .Recycler {
+		recipe := recycle_recipe_of(recipes, item)
+		return recipe == NO_RECIPE ? 0 : int(recycled_stack(recipes, recipe).count)
+	}
 	most := 0
 	for recipe in recipes.recipes {
 		if maker not_in recipe.made_in {
@@ -375,20 +394,21 @@ loaded_count :: proc(loaded: []Item_Stack, item: Item_Id) -> int {
 
 // Everything the player gets back on a recipe change: inputs, outputs and
 // the ingredients of a craft in progress, in the temp allocator.
-assembler_contents :: proc(assembler: ^Assembler, recipes: Recipe_Registry) -> []Item_Stack {
+assembler_contents :: proc(assembler: ^Assembler, machine: Machine, recipes: Recipe_Registry) -> []Item_Stack {
 	contents := make([dynamic]Item_Stack, context.temp_allocator)
 	append(&contents, ..assembler_material_slots(assembler))
-	append(&contents, ..assembler_held_stacks(assembler^, recipes))
+	append(&contents, ..assembler_held_stacks(assembler^, machine, recipes))
 	return contents[:]
 }
 
-// The ingredients of the craft in progress, which come back on pick up
-// and on a recipe change. In the temp allocator.
-assembler_held_stacks :: proc(assembler: Assembler, recipes: Recipe_Registry) -> []Item_Stack {
+// The ingredients of the craft in progress (for the recycler the item it
+// took), which come back on pick up and on a recipe change. In the temp
+// allocator.
+assembler_held_stacks :: proc(assembler: Assembler, machine: Machine, recipes: Recipe_Registry) -> []Item_Stack {
 	if !assembler.working || assembler.recipe == NO_RECIPE {
 		return nil
 	}
-	inputs := recipes.recipes[assembler.recipe].inputs
+	inputs := machine_craft(machine, recipes, assembler.recipe).inputs
 	held := make([]Item_Stack, len(inputs), context.temp_allocator)
 	copy(held, inputs)
 	return held
@@ -427,7 +447,7 @@ change_assembler_recipe :: proc(assembler: ^Assembler, machine: Machine, invento
 	if machine.recipe_choice == .Fixed || recipe != NO_RECIPE && !recipe_fits_crafting_machine(recipes.recipes[recipe], machine) {
 		return .Not_For_Assembler
 	}
-	contents := assembler_contents(assembler, recipes)
+	contents := assembler_contents(assembler, machine, recipes)
 	if !inventory_fits_all(inventory, items, contents) {
 		return .Contents_Do_Not_Fit
 	}
@@ -442,9 +462,30 @@ change_assembler_recipe :: proc(assembler: ^Assembler, machine: Machine, invento
 
 // Crafting.
 
-assembler_inputs_ready :: proc(assembler: Assembler, recipe: Recipe) -> bool {
+// What one craft of a machine takes and gives: the recipe as written, or
+// for the recycler the recipe reversed (recycler.odin), whose returns go
+// into any fitting output slot instead of one slot per product.
+Craft :: struct {
+	inputs:       []Item_Stack,
+	outputs:      []Item_Stack,
+	byproducts:   Recipe_Output_Set,
+	fluid_inputs: []Recipe_Fluid,
+	returns:      bool,
+}
+
+machine_craft :: proc(machine: Machine, recipes: Recipe_Registry, recipe: int) -> Craft {
+	definition := recipes.recipes[recipe]
+	if machine.recipe_maker != .Recycler {
+		return Craft{inputs = definition.inputs, outputs = definition.outputs, byproducts = definition.byproducts, fluid_inputs = definition.fluid_inputs}
+	}
+	inputs := make([]Item_Stack, 1, context.temp_allocator)
+	inputs[0] = recycled_stack(recipes, recipe)
+	return Craft{inputs = inputs, outputs = recycling_returns(definition), returns = true}
+}
+
+assembler_inputs_ready :: proc(assembler: Assembler, craft: Craft) -> bool {
 	inputs := assembler_input_copy(assembler)
-	for input in recipe.inputs {
+	for input in craft.inputs {
 		if loaded_count(inputs, input.item) < int(input.count) {
 			return false
 		}
@@ -452,37 +493,55 @@ assembler_inputs_ready :: proc(assembler: Assembler, recipe: Recipe) -> bool {
 	return true
 }
 
-assembler_outputs_fit :: proc(assembler: Assembler, recipe: Recipe, items: Item_Registry) -> bool {
-	for output, index in recipe.outputs {
-		slot := assembler.slots[assembler_first_output(assembler) + index]
-		if stack_is_empty(slot) {
+stack_fits_slot :: proc(slot, product: Item_Stack, items: Item_Registry) -> bool {
+	if stack_is_empty(slot) {
+		return true
+	}
+	return slot.item == product.item && int(slot.count) + int(product.count) <= int(item_stack_size(items, product.item))
+}
+
+// Room for every product, byproducts left out when a lenient world voids
+// them.
+assembler_outputs_fit :: proc(assembler: Assembler, craft: Craft, items: Item_Registry, byproducts_lenient: bool) -> bool {
+	probe := assembler
+	outputs := assembler_output_slots(&probe)
+	if craft.returns {
+		return returns_fit(outputs, craft.outputs, items)
+	}
+	for output, index in craft.outputs {
+		if byproducts_lenient && index in craft.byproducts {
 			continue
 		}
-		if slot.item != output.item || int(slot.count) + int(output.count) > int(item_stack_size(items, output.item)) {
+		if !stack_fits_slot(outputs[index], output, items) {
 			return false
 		}
 	}
 	return true
 }
 
-// The recipe the next craft would make: the chosen one, or the one the
-// loaded inputs match.
+// The recipe the next craft would make: the chosen one, the one the
+// loaded inputs match, or for the recycler the one it reverses.
 assembler_next_recipe :: proc(assembler: Assembler, machine: Machine, recipes: Recipe_Registry) -> int {
-	if machine.recipe_choice == .Chosen {
+	switch {
+	case machine.recipe_choice == .Chosen:
 		return assembler.recipe
+	case machine.recipe_maker == .Recycler:
+		return recycler_recipe_for_inputs(recipes, assembler_input_copy(assembler))
 	}
 	return fixed_recipe_for_inputs(recipes, machine.recipe_maker, assembler_input_copy(assembler))
 }
 
 // The recipe a craft would start with, or why none can start.
-assembler_start_state :: proc(assembler: Assembler, machine: Machine, recipes: Recipe_Registry, items: Item_Registry) -> (recipe: int, state: Assembler_State, blocked: bool) {
+assembler_start_state :: proc(assembler: Assembler, machine: Machine, recipes: Recipe_Registry, items: Item_Registry, byproducts_lenient: bool) -> (recipe: int, state: Assembler_State, blocked: bool) {
 	recipe = assembler_next_recipe(assembler, machine, recipes)
+	if recipe == NO_RECIPE {
+		return recipe, machine.recipe_choice == .Chosen ? .No_Recipe : .Missing_Ingredients, true
+	}
+	craft := machine_craft(machine, recipes, recipe)
 	switch {
-	case recipe == NO_RECIPE && machine.recipe_choice == .Chosen:
-		return recipe, .No_Recipe, true
-	case recipe == NO_RECIPE || !assembler_inputs_ready(assembler, recipes.recipes[recipe]):
+	case !assembler_inputs_ready(assembler, craft):
 		return recipe, .Missing_Ingredients, true
-	case !assembler_outputs_fit(assembler, recipes.recipes[recipe], items):
+	case !assembler_outputs_fit(assembler, craft, items, byproducts_lenient):
 		return recipe, .Output_Full, true
 	}
 	return recipe, .Working, false
@@ -508,8 +567,8 @@ assembler_fluid_buffer_of :: proc(assembler: ^Assembler, fluid: Fluid_Id) -> int
 
 // A step due no litre still needs the fluid present, so a craft never
 // starts dry.
-assembler_fluid_ready :: proc(assembler: ^Assembler, recipe: Recipe, progress, total: u32) -> bool {
-	for fluid_input in recipe.fluid_inputs {
+assembler_fluid_ready :: proc(assembler: ^Assembler, fluid_inputs: []Recipe_Fluid, progress, total: u32) -> bool {
+	for fluid_input in fluid_inputs {
 		needed := max(fluid_litres_for_step(fluid_input.litres, progress, total), 1)
 		index := assembler_fluid_buffer_of(assembler, fluid_input.fluid)
 		if index < 0 || assembler.buffers[index].level < needed {
@@ -519,8 +578,8 @@ assembler_fluid_ready :: proc(assembler: ^Assembler, recipe: Recipe, progress, t
 	return true
 }
 
-draw_assembler_fluids :: proc(assembler: ^Assembler, recipe: Recipe, progress, total: u32) {
-	for fluid_input in recipe.fluid_inputs {
+draw_assembler_fluids :: proc(assembler: ^Assembler, fluid_inputs: []Recipe_Fluid, progress, total: u32) {
+	for fluid_input in fluid_inputs {
 		needed := fluid_litres_for_step(fluid_input.litres, progress, total)
 		if index := assembler_fluid_buffer_of(assembler, fluid_input.fluid); index >= 0 && needed > 0 {
 			assembler.buffers[index].level -= needed
@@ -557,27 +616,28 @@ pay_assembler_energy :: proc(assembler: ^Assembler, machine: Machine, items: Ite
 
 // Ingredients present, room for the products, and the fluid for the
 // first step.
-assembler_can_start :: proc(assembler: ^Assembler, machine: Machine, recipes: Recipe_Registry, items: Item_Registry, tick_rate: int) -> bool {
-	recipe, _, blocked := assembler_start_state(assembler^, machine, recipes, items)
+assembler_can_start :: proc(assembler: ^Assembler, machine: Machine, recipes: Recipe_Registry, items: Item_Registry, tick_rate: int, byproducts_lenient: bool) -> bool {
+	recipe, _, blocked := assembler_start_state(assembler^, machine, recipes, items, byproducts_lenient)
 	if blocked {
 		return false
 	}
-	return assembler_fluid_ready(assembler, recipes.recipes[recipe], 0, recipe_ticks(recipes.recipes[recipe], machine.speed_percent, tick_rate))
+	fluid_inputs := machine_craft(machine, recipes, recipe).fluid_inputs
+	return assembler_fluid_ready(assembler, fluid_inputs, 0, recipe_ticks(recipes.recipes[recipe], machine.speed_percent, tick_rate))
 }
 
 // An electric machine asks its network for power only while it can work.
-assembler_wants_power :: proc(assembler: Assembler, machine: Machine, recipes: Recipe_Registry, items: Item_Registry, tick_rate: int) -> bool {
+assembler_wants_power :: proc(assembler: Assembler, machine: Machine, recipes: Recipe_Registry, items: Item_Registry, tick_rate: int, byproducts_lenient := false) -> bool {
 	probe := assembler
 	if !assembler.working {
-		return assembler_can_start(&probe, machine, recipes, items, tick_rate)
+		return assembler_can_start(&probe, machine, recipes, items, tick_rate, byproducts_lenient)
 	}
-	recipe := recipes.recipes[assembler.recipe]
-	return assembler_fluid_ready(&probe, recipe, assembler.progress_ticks, recipe_ticks(recipe, machine.speed_percent, tick_rate))
+	fluid_inputs := machine_craft(machine, recipes, assembler.recipe).fluid_inputs
+	return assembler_fluid_ready(&probe, fluid_inputs, assembler.progress_ticks, recipe_ticks(recipes.recipes[assembler.recipe], machine.speed_percent, tick_rate))
 }
 
-start_assembler_craft :: proc(assembler: ^Assembler, recipe: Recipe) {
+start_assembler_craft :: proc(assembler: ^Assembler, craft: Craft) {
 	inputs := assembler_input_slots(assembler)
-	for input in recipe.inputs {
+	for input in craft.inputs {
 		remaining := int(input.count)
 		for &slot in inputs {
 			if remaining > 0 && !stack_is_empty(slot) && slot.item == input.item {
@@ -588,19 +648,25 @@ start_assembler_craft :: proc(assembler: ^Assembler, recipe: Recipe) {
 	assembler.working, assembler.progress_ticks = true, 0
 }
 
-finish_assembler_craft :: proc(assembler: ^Assembler, recipe: Recipe) {
-	for output, index in recipe.outputs {
-		slot := &assembler.slots[assembler_first_output(assembler^) + index]
-		slot.item = output.item
-		slot.count += output.count
+// Products go into their slots as far as there is room: a strict craft
+// only started with room for everything, and what does not fit under
+// lenient byproducts is voided (tick_assemblers counts it).
+finish_assembler_craft :: proc(assembler: ^Assembler, craft: Craft, items: Item_Registry) {
+	outputs := assembler_output_slots(assembler)
+	if craft.returns {
+		place_returns(outputs, craft.outputs, items)
+	} else {
+		for output, index in craft.outputs {
+			fill_slot(&outputs[index], output.item, int(output.count), item_stack_size(items, output.item))
+		}
 	}
 	assembler.working, assembler.progress_ticks = false, 0
 }
 
 // Picks the recipe and checks the ingredients and the room for a new
 // craft. False with the state set when none can start.
-prepare_assembler_craft :: proc(assembler: ^Assembler, machine: Machine, recipes: Recipe_Registry, items: Item_Registry) -> bool {
-	recipe, state, blocked := assembler_start_state(assembler^, machine, recipes, items)
+prepare_assembler_craft :: proc(assembler: ^Assembler, machine: Machine, recipes: Recipe_Registry, items: Item_Registry, byproducts_lenient: bool) -> bool {
+	recipe, state, blocked := assembler_start_state(assembler^, machine, recipes, items, byproducts_lenient)
 	if machine.recipe_choice == .Fixed {
 		assembler.recipe = recipe
 	}
@@ -609,32 +675,34 @@ prepare_assembler_craft :: proc(assembler: ^Assembler, machine: Machine, recipes
 }
 
 // One tick. Returns whether a craft finished, for the statistics.
-advance_assembler :: proc(assembler: ^Assembler, machine: Machine, items: Item_Registry, recipes: Recipe_Registry, tick_rate: int) -> (crafted: bool) {
-	if !assembler.working && !prepare_assembler_craft(assembler, machine, recipes, items) {
+// byproducts_lenient is the world setting, read at every start and
+// completion.
+advance_assembler :: proc(assembler: ^Assembler, machine: Machine, items: Item_Registry, recipes: Recipe_Registry, tick_rate: int, byproducts_lenient := false) -> (crafted: bool) {
+	if !assembler.working && !prepare_assembler_craft(assembler, machine, recipes, items, byproducts_lenient) {
 		return false
 	}
 	if state, ready := assembler_energy_state(assembler^, machine, items, tick_rate); !ready {
 		assembler.state = state
 		return false
 	}
-	recipe := recipes.recipes[assembler.recipe]
-	total := recipe_ticks(recipe, machine.speed_percent, tick_rate)
-	if !assembler_fluid_ready(assembler, recipe, assembler.progress_ticks, total) {
+	craft := machine_craft(machine, recipes, assembler.recipe)
+	total := recipe_ticks(recipes.recipes[assembler.recipe], machine.speed_percent, tick_rate)
+	if !assembler_fluid_ready(assembler, craft.fluid_inputs, assembler.progress_ticks, total) {
 		assembler.state = .No_Fluid
 		return false
 	}
 	if !assembler.working {
-		start_assembler_craft(assembler, recipe)
+		start_assembler_craft(assembler, craft)
 	}
 	assembler.state = .Working
 	if pay_assembler_energy(assembler, machine, items, tick_rate) {
-		draw_assembler_fluids(assembler, recipe, assembler.progress_ticks, total)
+		draw_assembler_fluids(assembler, craft.fluid_inputs, assembler.progress_ticks, total)
 		assembler.progress_ticks += 1
 	}
 	if assembler.progress_ticks < total {
 		return false
 	}
-	finish_assembler_craft(assembler, recipe)
+	finish_assembler_craft(assembler, craft, items)
 	return true
 }
 
@@ -652,16 +720,20 @@ assembler_burn_fraction :: proc(assembler: Assembler) -> f32 {
 	return f32(assembler.fuel_joules) / f32(assembler.fuel_item_joules)
 }
 
-// Pool order; products count as produced.
+// Pool order; products that reach their slots count as produced, the
+// rest as voided, and stalls and fuel like the furnace's.
 tick_assemblers :: proc(world: ^World, content: Simulation_Content, tick_rate: int) {
+	lenient := world.settings.byproducts_lenient
 	for &assembler in world.entities.assemblers.entries {
 		if !assembler.alive {
 			continue
 		}
 		machine := content.machines.machines[assembler.machine]
-		if advance_assembler(&assembler, machine, content.items, content.recipes, tick_rate) {
-			record_produced_stacks(&world.statistics, content.recipes.recipes[assembler.recipe].outputs)
+		before := assembler
+		if advance_assembler(&assembler, machine, content.items, content.recipes, tick_rate, lenient) {
+			record_craft_outputs(&world.statistics, machine_craft(machine, content.recipes, assembler.recipe), before, assembler)
 		}
+		record_crafting_machine_tick(&world.statistics, before, assembler)
 	}
 }
 
@@ -687,15 +759,16 @@ assembler_slot_filters :: proc(assembler: Assembler, machine: Machine, recipes: 
 }
 
 // The slot an inserter puts an item into, or none. A fuel item goes into
-// an input slot of a fixed choice only while another ingredient it
-// completes a recipe with is loaded (coal with iron plate for steel), and
-// otherwise into the fuel slot, so coal meant as fuel never blocks the
-// inputs of an alloy furnace making bronze.
+// an input slot of a fixed choice fuel burner only while another
+// ingredient it completes a recipe with is loaded (coal with iron plate
+// for steel), and otherwise into the fuel slot, so coal meant as fuel
+// never blocks the inputs of an alloy furnace making bronze. An electric
+// machine (the recycler taking planks) has no fuel slot to prefer.
 assembler_accepting_slot :: proc(assembler: ^Assembler, machine: Machine, content: Simulation_Content, item: Item_Id) -> (slot: int, ok: bool) {
 	slots := assembler.slots[:assembler_slot_count(assembler^)]
 	fuel := item_is_fuel(content.items, item)
 	input := assembler_input_slot_of(assembler^, machine, content.recipes, item)
-	if input >= 0 && fuel && machine.recipe_choice == .Fixed && !other_input_loaded(assembler, item) {
+	if input >= 0 && fuel && assembler.fuel_count > 0 && machine.recipe_choice == .Fixed && !other_input_loaded(assembler, item) {
 		input = -1
 	}
 	if input >= 0 {

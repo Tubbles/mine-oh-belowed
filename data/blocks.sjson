@@ -213,4 +213,20 @@ blocks = [
 		hardness_seconds = 0
 		texture = {top = [96, 100, 108], side = [72, 74, 80], bottom = [72, 74, 80]}
 	}
+	{
+		// Paving from gravel and water (work item 0027), placeholder colour.
+		id = "concrete"
+		name = "Concrete"
+		solid = true
+		hardness_seconds = 3
+		texture = {top = [176, 174, 168], side = [164, 162, 156], bottom = [164, 162, 156]}
+	}
+	{
+		// Fired clay (work item 0027), placeholder colour.
+		id = "brick"
+		name = "Brick"
+		solid = true
+		hardness_seconds = 2
+		texture = {top = [168, 80, 60], side = [156, 72, 54], bottom = [156, 72, 54]}
+	}
 ]
