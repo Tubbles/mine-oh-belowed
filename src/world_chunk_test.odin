@@ -79,6 +79,8 @@ make_test_world :: proc(coordinates: []Chunk_Coordinate) -> World {
 	world.entities.inserters.free = make([dynamic]u32, context.temp_allocator)
 	world.entities.drills.entries = make([dynamic]Drill, context.temp_allocator)
 	world.entities.drills.free = make([dynamic]u32, context.temp_allocator)
+	world.entities.splitters.entries = make([dynamic]Splitter, context.temp_allocator)
+	world.entities.splitters.free = make([dynamic]u32, context.temp_allocator)
 	world.veins = make([dynamic]Vein, context.temp_allocator)
 	world.vein_indices = make(map[Vein_Id]int, context.temp_allocator)
 	world.column_veins = make(map[Chunk_Column][dynamic]Vein_Id, context.temp_allocator)

@@ -6,7 +6,7 @@
 // footprint is width (x), depth (z) and height (y) in blocks before
 // rotation; a quarter turn swaps width and depth.
 // kind selects the panel and the simulation: chest, furnace, capsule,
-// belt, inserter or drill.
+// belt, inserter, drill or splitter.
 // The capsule (work item 0013) stands on the landing pad from the start:
 // it has no item, cannot be picked up, and holds 8 slots for quest
 // rewards and deliveries.
@@ -36,6 +36,10 @@
 // ticks (192 at 15 per minute and 80 percent), and the spoil comes on top.
 // The footprint must be square, so turning a placed drill moves no cell.
 // fuel_power_kilowatts is burned only on the ticks the drill works.
+// Splitters (work item 0017): stand across two belt cells, so the
+// footprint is 1 along the flow (width) and 2 across it (depth);
+// belt_speed_blocks_per_second is the speed of items inside it, like the
+// belt it joins.
 machines = [
 	{
 		id = "wooden_chest"
@@ -138,5 +142,13 @@ machines = [
 		rate_reference_ore_percent = 80
 		fuel_slots = 1
 		fuel_power_kilowatts = 150
+	}
+	{
+		id = "splitter"
+		name_key = "machine_splitter"
+		item = "splitter"
+		kind = "splitter"
+		footprint = {width = 1, depth = 2, height = 1}
+		belt_speed_blocks_per_second = 1.875
 	}
 ]

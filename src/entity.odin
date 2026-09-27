@@ -21,6 +21,7 @@ Entity_Kind :: enum u8 {
 	Belt,
 	Inserter,
 	Drill,
+	Splitter,
 }
 
 // index is into the pool of `kind`. Generations start at 1, so the zero
@@ -71,7 +72,8 @@ Entities :: struct {
 	belts:        Entity_Pool(Belt),
 	inserters:    Entity_Pool(Inserter),
 	drills:       Entity_Pool(Drill),
-	// Transport lines derived from the belts (belt.odin).
+	splitters:    Entity_Pool(Splitter),
+	// Transport lines derived from the belts and splitters (belt.odin).
 	belt_network: Belt_Network,
 	cells:        map[World_Coordinate]Entity_Handle,
 }
@@ -126,6 +128,7 @@ destroy_entities :: proc(entities: ^Entities) {
 	destroy_pool(&entities.belts)
 	destroy_pool(&entities.inserters)
 	destroy_pool(&entities.drills)
+	destroy_pool(&entities.splitters)
 	destroy_belt_network(&entities.belt_network)
 	delete(entities.cells)
 }
@@ -157,6 +160,10 @@ entity_common :: proc(entities: ^Entities, handle: Entity_Handle) -> ^Entity_Com
 	case .Drill:
 		if drill := pool_get(&entities.drills, handle); drill != nil {
 			return &drill.common
+		}
+	case .Splitter:
+		if splitter := pool_get(&entities.splitters, handle); splitter != nil {
+			return &splitter.common
 		}
 	}
 	return nil
@@ -283,6 +290,8 @@ add_entity :: proc(entities: ^Entities, machines: Machine_Registry, machine: Mac
 		handle = pool_add(&entities.inserters, .Inserter, make_inserter(common, machines.machines[machine]))
 	case .Drill:
 		handle = pool_add(&entities.drills, .Drill, make_drill(common, {}))
+	case .Splitter:
+		return add_splitter(entities, machines, machine, origin, rotation)
 	}
 	for cell in footprint_cells(origin, machines.machines[machine].footprint, rotation) {
 		entities.cells[cell] = handle
@@ -293,6 +302,9 @@ add_entity :: proc(entities: ^Entities, machines: Machine_Registry, machine: Mac
 remove_entity :: proc(entities: ^Entities, machines: Machine_Registry, handle: Entity_Handle) -> bool {
 	if handle.kind == .Belt {
 		return remove_belt(entities, machines, handle)
+	}
+	if handle.kind == .Splitter {
+		return remove_splitter(entities, machines, handle)
 	}
 	common := entity_common(entities, handle)
 	if common == nil {
@@ -314,8 +326,8 @@ remove_entity :: proc(entities: ^Entities, machines: Machine_Registry, handle: E
 		return pool_remove(&entities.inserters, handle)
 	case .Drill:
 		return pool_remove(&entities.drills, handle)
-	case .Belt:
-		// Handled by remove_belt above.
+	case .Belt, .Splitter:
+		// Handled by remove_belt and remove_splitter above.
 		return false
 	}
 	return false
@@ -326,22 +338,23 @@ cell_is_solid_or_entity :: proc(world: ^World, registry: Block_Registry, cell: W
 	return block_is_solid(registry, world_get_block(world, cell)) || cell in world.entities.cells
 }
 
-// What the player collides with: belts are walked over, not into.
+// What the player collides with: belts and splitters are walked over,
+// not into.
 cell_blocks_movement :: proc(world: ^World, registry: Block_Registry, cell: World_Coordinate) -> bool {
 	if block_is_solid(registry, world_get_block(world, cell)) {
 		return true
 	}
 	handle, occupied := world.entities.cells[cell]
-	return occupied && handle.kind != .Belt
+	return occupied && handle.kind != .Belt && handle.kind != .Splitter
 }
 
-// Belts, then drills, then inserters, then furnaces, so a furnace sees an
+// Belts and splitters, then drills, then inserters, then furnaces, so a furnace sees an
 // item an inserter took off a belt in the same tick. Drills and inserters
 // run in pool order, which keeps two of them sharing a vein or a chest
 // deterministic. Outcrops of veins exhausted in this tick turn to spent
 // rock at the end.
 tick_entities :: proc(world: ^World, content: Simulation_Content, tick_rate: int) {
-	tick_belt_network(&world.entities.belt_network, tick_rate)
+	tick_belt_network(&world.entities.belt_network, tick_rate, world.entities.splitters.entries[:])
 	for &drill in world.entities.drills.entries {
 		if drill.alive {
 			before := drill

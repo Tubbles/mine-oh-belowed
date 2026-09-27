@@ -29,6 +29,10 @@ How items move without hands: belts, inserters, splitters and the burner mining 
 
 - A 2 by 1 by 1 entity across two adjacent belts, with a direction. Two inputs feed two outputs round robin per item, so an uneven pair of inputs still fills both outputs. Input priority and output priority flags, and one output filter, are data fields on the same entity and appear in its panel; the alpha implements them because they are the difference between spaghetti and a bus.
 
+### As implemented in 0017
+
+- Each splitter half is its own one block line, so a splitter is two line ends and two line starts; the tick order walks splitters after their output lines and before their input lines. The targeted cell becomes the left half and the right half extends to the right of the flow. Both cells must be free, so belts are picked up before a splitter goes down; a splitter does not carry the player and Rotate turns it half way round since a quarter turn would move a cell. With a filter set there is no round robin: the filter item goes only to its side and everything else only to the other, each stalling when its side is full. Input priority takes every tick it has items, the other input fills gaps. Items routed to the other half jump sideways at the entry edge without animation. Inserters and drills neither take from nor give to splitters.
+
 ## Burner mining drill
 
 - A 2 by 2 by 2 entity with a fuel slot and an output arrow. It is valid on a vein outcrop: at least one footprint cell stands on an outcrop block of a vein. It taps that vein's reservoir, not the blocks: every cycle it takes one unit from the vein, chosen by the vein type's output mix with a random generator seeded by tick and vein id (deterministic), and produces the ore or spoil item into the cell in front of the arrow, onto a belt or into a chest or machine that accepts it. It stalls when the output is blocked or fuel is out, and both stalls are counted for hints.

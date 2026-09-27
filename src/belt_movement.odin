@@ -5,6 +5,8 @@ package game
 // a spacing behind the item ahead. The front item stops at the line end
 // (dead end or side load) or, when the line continues straight, a spacing
 // behind the back item of the next line. Items past the end are handed on.
+// A line into a splitter leaves the hand off to the splitter's node, which
+// runs just before it (splitter.odin).
 // Cost is proportional to the items, not to the belt length.
 
 belt_line_length :: proc(line: Belt_Line) -> i32 {
@@ -15,9 +17,14 @@ belt_units_per_tick :: proc(line: Belt_Line, tick_rate: int) -> i32 {
 	return i32(line.speed_units_per_second / u32(max(tick_rate, 1)))
 }
 
-// How far the front item of a lane may go this tick.
-lane_front_limit :: proc(network: ^Belt_Network, line: Belt_Line, lane: Belt_Lane, speed: i32) -> i32 {
+// How far the front item of a lane may go this tick. Into a splitter it
+// is the limit of an item the splitter did not take (splitter.odin).
+lane_front_limit :: proc(network: ^Belt_Network, line: Belt_Line, lane: Belt_Lane, speed: i32, splitters: []Splitter) -> i32 {
 	length := belt_line_length(line)
+	items := line.lanes[lane]
+	if line.end.kind == .Splitter && len(items) > 0 && int(line.end.splitter.index) < len(splitters) {
+		return splitter_input_front_limit(network^, splitters[line.end.splitter.index], items[len(items) - 1].item, lane, length)
+	}
 	if line.end.kind != .Straight {
 		return length - BELT_END_MARGIN
 	}
@@ -146,17 +153,17 @@ belt_line_is_loop :: proc(line: Belt_Line, line_index: i32) -> bool {
 	return line.end.kind == .Straight && line.end.line == line_index
 }
 
-advance_belt_line :: proc(network: ^Belt_Network, line_index: i32, tick_rate: int) {
+advance_belt_line :: proc(network: ^Belt_Network, line_index: i32, tick_rate: int, splitters: []Splitter) {
 	speed := belt_units_per_tick(network.lines[line_index], tick_rate)
 	for lane in Belt_Lane {
 		if belt_line_is_loop(network.lines[line_index], line_index) {
 			advance_loop_lane(network.lines[line_index].lanes[lane][:], speed, belt_line_length(network.lines[line_index]))
 		} else {
-			limit := lane_front_limit(network, network.lines[line_index], lane, speed)
+			limit := lane_front_limit(network, network.lines[line_index], lane, speed, splitters)
 			advance_lane_items(network.lines[line_index].lanes[lane][:], speed, limit)
 		}
 		switch network.lines[line_index].end.kind {
-		case .Dead_End:
+		case .Dead_End, .Splitter:
 		case .Straight:
 			hand_off_straight(network, line_index, lane)
 		case .Side_Load:
@@ -165,9 +172,14 @@ advance_belt_line :: proc(network: ^Belt_Network, line_index: i32, tick_rate: in
 	}
 }
 
-tick_belt_network :: proc(network: ^Belt_Network, tick_rate: int) {
-	for line_index in network.order {
-		advance_belt_line(network, line_index, tick_rate)
+// splitters is the splitter pool the network's splitter nodes index.
+tick_belt_network :: proc(network: ^Belt_Network, tick_rate: int, splitters: []Splitter = nil) {
+	for node in network.order {
+		if node < 0 {
+			advance_splitter(network, &splitters[-node - 1], tick_rate)
+		} else {
+			advance_belt_line(network, node, tick_rate, splitters)
+		}
 	}
 }
 

@@ -14,9 +14,25 @@ FURNACE_AREA_WIDTH :: 2 * UI_SLOT_SIZE + MACHINE_BAR_WIDTH + 2 * UI_GAP
 DRILL_AREA_WIDTH :: 480
 // The vein's name, a line per output, the rate and the state.
 DRILL_TEXT_ROWS :: 3 + MAXIMUM_VEIN_OUTPUTS
+SPLITTER_AREA_WIDTH :: 480
+// Input priority, output priority and the filter's side.
+SPLITTER_CHOICE_ROWS :: 3
 
-// The machine's slot indices plus the filter slot of a filter inserter,
-// which is not one of the slots.
+@(rodata)
+splitter_priority_keys := [Splitter_Priority]string {
+	.None  = "splitter_priority_none",
+	.Left  = "splitter_side_left",
+	.Right = "splitter_side_right",
+}
+
+@(rodata)
+splitter_side_keys := [Splitter_Side]string {
+	.Left  = "splitter_side_left",
+	.Right = "splitter_side_right",
+}
+
+// The machine's slot indices plus the filter slot of a filter inserter
+// or a splitter, which is not one of the slots.
 Machine_Slot_Result :: struct {
 	using grid:       Slot_Grid_Result,
 	filter_activated: bool,
@@ -107,6 +123,8 @@ machine_area_size :: proc(kind: Machine_Kind, slot_count: int) -> [2]f32 {
 		return {FURNACE_AREA_WIDTH, UI_ROW_HEIGHT + (UI_SLOT_SIZE + UI_GAP) + 2 * UI_ROW_HEIGHT}
 	case .Drill:
 		return {DRILL_AREA_WIDTH, UI_ROW_HEIGHT + (UI_SLOT_SIZE + UI_GAP) + (1 + DRILL_TEXT_ROWS) * UI_ROW_HEIGHT}
+	case .Splitter:
+		return {SPLITTER_AREA_WIDTH, UI_ROW_HEIGHT + SPLITTER_CHOICE_ROWS * (UI_ROW_HEIGHT + UI_GAP) + (UI_SLOT_SIZE + UI_GAP)}
 	case .Belt:
 	}
 	return {}
@@ -194,6 +212,36 @@ drill_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, drill: Drill, sc
 	return result
 }
 
+choice_row :: proc(content: ^Ui_Rectangle) -> Ui_Rectangle {
+	row := cut_top(content, UI_ROW_HEIGHT)
+	cut_top(content, UI_GAP)
+	return row
+}
+
+// The input and output priority toggles, the filter slot and the side the
+// filter item goes to. The toggles change the splitter directly.
+splitter_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, splitter: ^Splitter, screen_context: Screen_Context) -> Machine_Slot_Result {
+	result := Machine_Slot_Result {
+		grid = {activated = -1, focused = -1},
+	}
+	content := area
+	if ui_choice(state, choice_row(&content), text("splitter_input_priority"), text(splitter_priority_keys[splitter.input_priority])) {
+		splitter.input_priority = next_splitter_priority(splitter.input_priority)
+	}
+	if ui_choice(state, choice_row(&content), text("splitter_output_priority"), text(splitter_priority_keys[splitter.output_priority])) {
+		splitter.output_priority = next_splitter_priority(splitter.output_priority)
+	}
+	first := cut_top(&content, UI_SLOT_SIZE + UI_GAP)
+	shown := splitter.filter == NO_ITEM ? EMPTY_STACK : Item_Stack{item = splitter.filter, count = 1}
+	interaction := ui_item_slot(state, {first.x, first.y, UI_SLOT_SIZE, UI_SLOT_SIZE}, ui_id(state, "filter", 0), shown, screen_context.items)
+	result.filter_activated, result.filter_focused = interaction.activated, interaction.focused
+	ui_label(state, {first.x + UI_SLOT_SIZE + UI_GAP, first.y, MACHINE_BAR_WIDTH, UI_SLOT_SIZE}, text("inserter_filter"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	if ui_choice(state, choice_row(&content), text("splitter_filter_side"), text(splitter_side_keys[splitter.filter_side])) {
+		splitter.filter_side = other_side(splitter.filter_side)
+	}
+	return result
+}
+
 // The vein type's name, then what is left of each output, or one line
 // saying the vein is infinite. Empty for a drill without a vein.
 drill_vein_lines :: proc(world: ^World, veins: Vein_Content, items: Item_Registry, drill: Drill) -> []string {
@@ -254,6 +302,8 @@ machine_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, handle: Entity
 		return inserter_slot_region(state, content, pool_get(&screen_context.world.entities.inserters, handle)^, screen_context)
 	case .Drill:
 		return {grid = drill_slot_region(state, content, pool_get(&screen_context.world.entities.drills, handle)^, screen_context)}
+	case .Splitter:
+		return splitter_slot_region(state, content, pool_get(&screen_context.world.entities.splitters, handle), screen_context)
 	}
 	return {grid = ui_slot_grid(state, {content.x, content.y}, "chest", MACHINE_CHEST_COLUMNS, slots, screen_context.items)}
 }
@@ -284,6 +334,10 @@ machine_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	if inserter := pool_get(&screen_context.world.entities.inserters, handle); inserter != nil {
 		clear_filter := machine_slots.filter_focused && state.input.context_action
 		inserter.filter = inserter_filter_after_input(inserter.filter, player.held.stack, machine_slots.filter_activated, clear_filter)
+	}
+	if splitter := pool_get(&screen_context.world.entities.splitters, handle); splitter != nil {
+		clear_filter := machine_slots.filter_focused && state.input.context_action
+		splitter.filter = inserter_filter_after_input(splitter.filter, player.held.stack, machine_slots.filter_activated, clear_filter)
 	}
 	draw_held_stack(state, player.held.stack, items)
 	if machine_slots.filter_focused {

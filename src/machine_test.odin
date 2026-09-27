@@ -32,7 +32,7 @@ test_machine :: proc(machines: Machine_Registry, id: string) -> Machine_Id {
 test_machine_data_loads :: proc(t: ^testing.T) {
 	items := make_test_items()
 	machines := make_test_machines()
-	testing.expect_value(t, len(machines.machines), 11)
+	testing.expect_value(t, len(machines.machines), 12)
 	wooden := machines.machines[test_machine(machines, "wooden_chest")]
 	testing.expect_value(t, wooden.kind, Machine_Kind.Chest)
 	testing.expect_value(t, wooden.slot_count, 16)
@@ -65,6 +65,11 @@ test_machine_data_loads :: proc(t: ^testing.T) {
 	testing.expect_value(t, drill.rate_reference_ore_percent, 80)
 	testing.expect_value(t, drill.fuel_power_watts, 150_000)
 	testing.expect_value(t, drill.item, test_item(items, "burner_mining_drill"))
+	splitter := machines.machines[test_machine(machines, "splitter")]
+	testing.expect_value(t, splitter.kind, Machine_Kind.Splitter)
+	testing.expect_value(t, splitter.footprint, [3]i32{1, 1, 2})
+	testing.expect_value(t, splitter.belt_speed_units_per_second, 480)
+	testing.expect_value(t, splitter.item, test_item(items, "splitter"))
 }
 
 @(test)
@@ -87,6 +92,15 @@ test_machine_strings_exist :: proc(t: ^testing.T) {
 		testing.expectf(t, vein_type.name_key in table.entries, "missing string %q", vein_type.name_key)
 	}
 	for key in ([?]string{"inserter_filter", "hint_set_filter", "hint_clear_filter", "drill_remaining", "drill_infinite", "drill_rate"}) {
+		testing.expectf(t, key in table.entries, "missing string %q", key)
+	}
+	for key in ([?]string{"splitter_input_priority", "splitter_output_priority", "splitter_filter_side"}) {
+		testing.expectf(t, key in table.entries, "missing string %q", key)
+	}
+	for key in splitter_priority_keys {
+		testing.expectf(t, key in table.entries, "missing string %q", key)
+	}
+	for key in splitter_side_keys {
 		testing.expectf(t, key in table.entries, "missing string %q", key)
 	}
 }

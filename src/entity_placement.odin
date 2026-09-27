@@ -21,6 +21,8 @@ Placement :: struct {
 	// A drill: rotation is its output direction, vein the vein it taps.
 	drill:      bool,
 	vein:       Vein_Id,
+	// A splitter: rotation is its direction.
+	splitter:   bool,
 }
 
 // The footprint's minimum corner, so that it starts at the cell in front
@@ -102,8 +104,12 @@ placement_for_player :: proc(world: ^World, content: Simulation_Content, players
 	}
 	kind := content.machines.machines[machine].kind
 	rotation := player.placement_rotation
-	if kind == .Inserter || kind == .Drill {
+	if kind == .Inserter || kind == .Drill || kind == .Splitter {
 		rotation = inserter_placement_direction(player.yaw, player.placement_rotation)
+	}
+	if kind == .Splitter {
+		// Walked over like belts, so the player may stand in the way.
+		return placement_at(world, content, players[:0], machine, splitter_origin(player.target.adjacent, rotation), rotation)
 	}
 	size := rotated_footprint_size(content.machines.machines[machine].footprint, rotation)
 	origin := footprint_origin(player.target.adjacent, player.target.face, size)
@@ -125,6 +131,7 @@ placement_at :: proc(world: ^World, content: Simulation_Content, players: []Play
 		size     = rotated_footprint_size(footprint, rotation),
 		inserter = kind == .Inserter,
 		drill    = kind == .Drill,
+		splitter = kind == .Splitter,
 	}
 	if placement.drill {
 		vein_found: bool
@@ -136,7 +143,7 @@ placement_at :: proc(world: ^World, content: Simulation_Content, players: []Play
 
 // Like belts: the player's facing turned by the rotation, so rotation 0
 // drops away from the player and picks up from the player's side. Drills
-// use it for their output arrow too.
+// use it for their output arrow and splitters for their direction too.
 inserter_placement_direction :: proc(yaw: f32, rotation: u8) -> u8 {
 	return turn_right(yaw_direction(yaw), rotation % 4)
 }
@@ -169,10 +176,15 @@ place_entity_with_player :: proc(world: ^World, content: Simulation_Content, pla
 
 // Rotate with no machine item selected turns the targeted belt, inserter
 // or drill a quarter turn. A drill's footprint is square, so no cell moves.
+// A splitter turns half way round on its two cells.
 rotate_targeted_entity :: proc(world: ^World, content: Simulation_Content, player: ^Player) -> bool {
 	#partial switch player.target.entity.kind {
 	case .Belt:
 		rotate_targeted_belt(world, content, player)
+		return true
+	case .Splitter:
+		rotate_splitter(&world.entities, content.machines, player.target.entity)
+		record_world_action(&world.statistics)
 		return true
 	case .Inserter, .Drill:
 		common := entity_common(&world.entities, player.target.entity)
@@ -205,6 +217,7 @@ pick_up_entity :: proc(world: ^World, content: Simulation_Content, player: ^Play
 	append(&returned, ..belt_block_stacks(&world.entities, handle))
 	append(&returned, ..inserter_held_stacks(&world.entities, handle))
 	append(&returned, ..drill_held_stacks(&world.entities, handle))
+	append(&returned, ..splitter_held_stacks(&world.entities, handle))
 	append(&returned, Item_Stack{item = machine_item, count = 1})
 	if !inventory_fits_all(player.inventory, content.items, returned[:]) {
 		return false

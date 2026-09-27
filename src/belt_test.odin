@@ -36,7 +36,7 @@ expect_positions :: proc(t: ^testing.T, actual, expected: []i32, location := #ca
 
 tick_belts :: proc(world: ^World, ticks: int) {
 	for _ in 0 ..< ticks {
-		tick_belt_network(&world.entities.belt_network, TEST_TICK_RATE)
+		tick_belt_network(&world.entities.belt_network, TEST_TICK_RATE, world.entities.splitters.entries[:])
 	}
 }
 

@@ -7,6 +7,8 @@ import rl "vendor:raylib"
 // animates every shape by rewriting four texture coordinates per mesh per
 // frame. Items are small cubes coloured like their placeholder icon,
 // drawn one DrawCube each (no instancing yet), at most eight per block.
+// A splitter is the flat surface on both halves inside a wire frame, with
+// an arrow along its direction.
 
 BELT_SURFACE_HEIGHT :: 0.03
 BELT_ITEM_SIZE :: 0.2
@@ -19,6 +21,10 @@ BELT_BASE_COLOR :: rl.Color{58, 58, 64, 255}
 BELT_STRIPE_COLOR :: rl.Color{104, 104, 112, 255}
 BELT_EDGE_COLOR :: rl.Color{200, 160, 40, 255}
 BELT_GHOST_ARROW_COLOR :: rl.Color{255, 255, 255, 200}
+SPLITTER_FRAME_COLOR :: rl.Color{200, 160, 40, 255}
+SPLITTER_ARROW_COLOR :: rl.Color{240, 220, 80, 255}
+SPLITTER_FRAME_HEIGHT :: 0.4
+SPLITTER_ARROW_HEIGHT :: 0.42
 
 // Back left, back right, front right, front left, with back at v 0.
 BELT_QUAD_TEXCOORDS :: [4][2]f32{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
@@ -174,6 +180,24 @@ item_cube_color :: proc(items: Item_Registry, item: Item_Id) -> rl.Color {
 	return rl.Color{color.r, color.g, color.b, color.a}
 }
 
+// The belt of a line block, or the flat belt standing in for the half of
+// a splitter's output line.
+line_block_belt :: proc(entities: ^Entities, line: Belt_Line, block: i32) -> (belt: Belt, found: bool) {
+	handle := line.belts[block]
+	if handle.kind == .Splitter {
+		splitter := pool_get(&entities.splitters, handle)
+		if splitter == nil {
+			return {}, false
+		}
+		return splitter_half_belt(splitter^, line.side), true
+	}
+	pointer := pool_get(&entities.belts, handle)
+	if pointer == nil {
+		return {}, false
+	}
+	return pointer^, true
+}
+
 draw_belt_line_items :: proc(world: ^World, items: Item_Registry, line: Belt_Line) {
 	drawn := make([]u8, len(line.belts), context.temp_allocator)
 	for lane in Belt_Lane {
@@ -182,12 +206,12 @@ draw_belt_line_items :: proc(world: ^World, items: Item_Registry, line: Belt_Lin
 			if drawn[block] >= MAXIMUM_BELT_ITEMS_DRAWN_PER_BLOCK {
 				continue
 			}
-			belt := pool_get(&world.entities.belts, line.belts[block])
-			if belt == nil {
+			belt, found := line_block_belt(&world.entities, line, block)
+			if !found {
 				continue
 			}
 			drawn[block] += 1
-			point := belt_item_point(belt^, lane, entry.position % BELT_UNITS_PER_BLOCK)
+			point := belt_item_point(belt, lane, entry.position % BELT_UNITS_PER_BLOCK)
 			rl.DrawCube(point + {0, BELT_ITEM_SIZE / 2, 0}, BELT_ITEM_SIZE, BELT_ITEM_SIZE, BELT_ITEM_SIZE, item_cube_color(items, entry.item))
 		}
 	}
@@ -207,9 +231,37 @@ draw_belts :: proc(renderer: ^Belt_Renderer, world: ^World, items: Item_Registry
 			rl.DrawModelEx(renderer.models[belt.shape], position, {0, 1, 0}, -90 * f32(belt.rotation), {1, 1, 1}, rl.WHITE)
 		}
 	}
+	for splitter in world.entities.splitters.entries {
+		if splitter.alive {
+			draw_splitter(renderer, splitter)
+		}
+	}
 	for line in world.entities.belt_network.lines {
 		draw_belt_line_items(world, items, line)
 	}
+}
+
+draw_splitter :: proc(renderer: ^Belt_Renderer, splitter: Splitter) {
+	for side in Splitter_Side {
+		cell := splitter_half_cell(splitter.origin, splitter.rotation, side)
+		position := [3]f32{f32(cell.x) + 0.5, f32(cell.y), f32(cell.z) + 0.5}
+		rl.DrawModelEx(renderer.models[.Flat], position, {0, 1, 0}, -90 * f32(splitter.rotation), {1, 1, 1}, rl.WHITE)
+	}
+	centre := box_centre(splitter.origin, splitter.size)
+	centre.y = f32(splitter.origin.y) + SPLITTER_FRAME_HEIGHT / 2
+	extent := [3]f32{f32(splitter.size.x), SPLITTER_FRAME_HEIGHT, f32(splitter.size.z)}
+	rl.DrawCubeWiresV(centre, extent, SPLITTER_FRAME_COLOR)
+	draw_splitter_arrow(splitter.origin, splitter.size, splitter.rotation, SPLITTER_ARROW_COLOR)
+}
+
+// Across the middle of the footprint from its back edge to its front
+// edge, with a small cube at the front.
+draw_splitter_arrow :: proc(origin: World_Coordinate, size: [3]i32, rotation: u8, color: rl.Color) {
+	centre := box_centre(origin, size)
+	centre.y = f32(origin.y) + SPLITTER_ARROW_HEIGHT
+	forward := belt_direction_vector(rotation)
+	rl.DrawLine3D(centre - forward * 0.5, centre + forward * 0.5, color)
+	rl.DrawCubeV(centre + forward * 0.45, {0.1, 0.1, 0.1}, color)
 }
 
 // The ghost of a belt: a thin slab and an arrow along the flow.

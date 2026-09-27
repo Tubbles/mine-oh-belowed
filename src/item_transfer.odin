@@ -10,7 +10,8 @@ package game
 // block: it takes one item at a time mid block and gives the item nearest
 // the middle of the block from either lane; `slot` is the lane. A burner
 // inserter and a drill take fuel into their fuel slot and give nothing
-// (a drill drops its output itself, drill.odin).
+// (a drill drops its output itself, drill.odin). A splitter has no slots
+// and neither takes nor gives.
 //
 // Inserters peek with entity_offered_items and entity_takes_item_kind
 // before they pick, so they never pick an item the target can never take.
@@ -177,6 +178,8 @@ entity_takes_item_kind :: proc(entities: ^Entities, content: Simulation_Content,
 		return slot_accepts(.Smeltable, item, content.items, content.recipes) || slot_accepts(.Fuel, item, content.items, content.recipes)
 	case .Inserter, .Drill:
 		return len(entity_slots(entities, handle)) == 1 && item_is_fuel(content.items, item)
+	case .Splitter:
+		return false
 	}
 	return false
 }

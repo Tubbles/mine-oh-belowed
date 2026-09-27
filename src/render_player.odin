@@ -115,6 +115,9 @@ draw_placement_preview :: proc(world: ^World, content: Simulation_Content, playe
 			top := f32(placement.origin.y + placement.size.y) + 0.02
 			draw_drill_arrow(placement.origin, placement.size, placement.rotation, top, BELT_GHOST_ARROW_COLOR)
 		}
+		if placement.splitter {
+			draw_splitter_arrow(placement.origin, placement.size, placement.rotation, BELT_GHOST_ARROW_COLOR)
+		}
 		return
 	}
 	if selected_placed_block(players[index], content.items) == AIR_BLOCK {

@@ -93,7 +93,7 @@ Footprint is width by depth by height in blocks. Power is electric unless marked
 | Belt ×2 | 1×1×1 | 1 iron plate, 1 iron gear | 900 items per min, two lanes | | Start |
 | Belt ramp | 1×1×1 | 1 belt, 1 iron plate | As belt, one block of rise | | Start |
 | Belt lift | 1×1×1 per block | 2 belt, 2 iron gear | As belt, vertical | | Start |
-| Splitter | 2×1×1 | 5 circuit, 5 iron plate, 4 belt | Splits or merges two belts, priority | | Research: logistics |
+| Splitter | 1×2×1 across the flow | 5 circuit, 5 iron plate, 4 belt | Splits or merges two belts, priority and filter | | Research: logistics |
 | Wooden chest | 1×1×1 | 4 plank | 16 slots | | Start |
 | Iron chest | 1×1×1 | 8 iron plate | 32 slots | | Start |
 | Offshore pump | 1×2×1 | 2 circuit, 1 pipe, 1 iron gear | 1200 L per s | | Start |

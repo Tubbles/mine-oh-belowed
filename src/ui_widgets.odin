@@ -162,6 +162,18 @@ ui_toggle :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, valu
 	return interaction.activated
 }
 
+// Label on the left, the current value on the right. Returns true when
+// activated; the caller steps the value, so the id stays with the label.
+ui_choice :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label, value: string, tooltip := "") -> bool {
+	id := ui_id(state, label)
+	interaction := ui_interact(state, id, rectangle, {}, tooltip)
+	widget_background(state, rectangle, id, interaction)
+	content := inset(rectangle, UI_PADDING)
+	draw_text(state, content, label, UI_BODY_TEXT_SIZE, .Left)
+	draw_text(state, content, value, UI_BODY_TEXT_SIZE, .Right)
+	return interaction.activated
+}
+
 slider_fraction :: proc(value: f32, range: Slider_Range) -> f32 {
 	if range.maximum <= range.minimum {
 		return 0

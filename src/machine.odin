@@ -32,6 +32,9 @@ Machine_Kind :: enum u8 {
 	Inserter,
 	// Taps the reservoir of the vein under it (drill.odin).
 	Drill,
+	// Stands across two belt cells and shares items between them
+	// (splitter.odin).
+	Splitter,
 }
 
 @(rodata)
@@ -42,6 +45,7 @@ machine_kind_names := [Machine_Kind]string {
 	.Belt     = "belt",
 	.Inserter = "inserter",
 	.Drill    = "drill",
+	.Splitter = "splitter",
 }
 
 // The shape family a belt item places. Ramps become up or down and lifts
@@ -105,7 +109,8 @@ Machine :: struct {
 	speed_percent:               u32,
 	fuel_power_watts:            u32,
 	belt_shape:                  Belt_Item_Shape,
-	// In 1/256 block per second; the belt tick divides by the tick rate.
+	// Belts and splitters, in 1/256 block per second; the belt tick
+	// divides by the tick rate.
 	belt_speed_units_per_second: u32,
 	// Inserters: the rate sets the cycle length (inserter_cycle_ticks).
 	// Drills: the ore rate on a vein of rate_reference_ore_percent ore
@@ -174,6 +179,8 @@ validate_machine_kind_fields :: proc(definition: Machine_Definition, kind: Machi
 		return validate_inserter_definition(definition)
 	case .Drill:
 		return validate_drill_definition(definition)
+	case .Splitter:
+		return validate_splitter_definition(definition)
 	case .Capsule:
 		if definition.slots != CAPSULE_SLOT_COUNT {
 			return fmt.tprintf("capsule %q must have %d slots", definition.id, CAPSULE_SLOT_COUNT)
@@ -251,6 +258,19 @@ validate_drill_definition :: proc(definition: Machine_Definition) -> string {
 	}
 	if definition.slots != 0 || definition.input_slots != 0 || definition.output_slots != 0 || definition.filter_slots != 0 {
 		return fmt.tprintf("drill %q may only have a fuel slot", definition.id)
+	}
+	return ""
+}
+
+// One along its flow and two across it, so each half stands where a belt
+// block would, and a positive item speed.
+validate_splitter_definition :: proc(definition: Machine_Definition) -> string {
+	footprint := definition.footprint
+	if footprint.width != 1 || footprint.depth != 2 || footprint.height != 1 {
+		return fmt.tprintf("splitter %q must have a footprint of width 1, depth 2 and height 1", definition.id)
+	}
+	if definition.belt_speed_blocks_per_second <= 0 {
+		return fmt.tprintf("splitter %q needs a positive belt_speed_blocks_per_second", definition.id)
 	}
 	return ""
 }
