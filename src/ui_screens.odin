@@ -16,12 +16,16 @@ Screen_Context :: struct {
 	player:          ^Player,
 	items:           Item_Registry,
 	item_sort_ranks: []u16,
+	world:           ^World,
+	machines:        Machine_Registry,
+	tick_rate:       int,
 }
 
 // Pause opens the pause menu from the world, Open_Inventory the inventory.
 // With a screen open, Back and Pause both step back one screen (the first
-// press closes an open tooltip). Open_Inventory closes the inventory too,
-// except on the gamepad, where the same X press is the context action.
+// press closes an open tooltip). Open_Inventory closes the inventory and
+// a machine panel too, except on the gamepad, where the same X press is the
+// context action.
 handle_screen_keys :: proc(state: ^Ui_State) {
 	input := state.input
 	if state.screens.count == 0 {
@@ -32,7 +36,8 @@ handle_screen_keys :: proc(state: ^Ui_State) {
 		}
 		return
 	}
-	closes_inventory := top_screen(state.screens) == .Inventory && input.open_inventory && !input.context_action
+	top := top_screen(state.screens)
+	closes_inventory := (top == .Inventory || top == .Machine) && input.open_inventory && !input.context_action
 	if !input.back && !input.pause && !closes_inventory {
 		return
 	}
@@ -53,14 +58,27 @@ run_screens :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		settings_screen(state, screen_context)
 	case .Inventory:
 		inventory_screen(state, screen_context)
+	case .Machine:
+		machine_screen(state, screen_context)
 	}
 	// After the screen, so that the Back press a screen consumed this frame
 	// and the screen change land in the same frame.
 	handle_screen_keys(state)
-	// A stack still on the cursor goes back once the inventory is closed.
-	if top_screen(state.screens) != .Inventory && screen_context.player != nil {
-		player := screen_context.player
-		player.held = return_held_stack(player.inventory, player.held, screen_context.items)
+	if screen_context.player != nil {
+		close_slot_screens(state, screen_context.player, screen_context.items)
+	}
+}
+
+// A stack still on the cursor goes back once the inventory or machine panel
+// is closed, and a closed machine panel forgets its entity.
+close_slot_screens :: proc(state: ^Ui_State, player: ^Player, items: Item_Registry) {
+	top := top_screen(state.screens)
+	if top != .Inventory && top != .Machine {
+		player.held = return_held_stack(player.inventory, player.held, items)
+	}
+	if top != .Machine {
+		player.open_machine = NO_ENTITY
+		state.distribute = {}
 	}
 }
 

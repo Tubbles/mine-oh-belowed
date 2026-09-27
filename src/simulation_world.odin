@@ -5,6 +5,13 @@ package game
 // amounts of water flow and light propagation run. Water changes made in
 // this tick are recorded and reach light and water scheduling next tick.
 
+// The prototype tables the simulation reads, loaded once at startup.
+Simulation_Content :: struct {
+	blocks:   Block_Registry,
+	items:    Item_Registry,
+	machines: Machine_Registry,
+}
+
 apply_block_changes :: proc(world: ^World, registry: Block_Registry, tick: u64) {
 	for change in world.block_changes {
 		light_block_changed(world, registry, change.position, change.previous)

@@ -4,7 +4,10 @@ tick_rate = 60
 // Length of one cosmetic day and night cycle.
 day_length_seconds = 1200
 // Items every player starts with, by item id from items.sjson. Torches
-// cannot be crafted yet.
+// and machines cannot be crafted yet (work item 0012).
 starting_items = [
 	{item = "torch", count = 64}
+	{item = "stone_furnace", count = 2}
+	{item = "wooden_chest", count = 2}
+	{item = "iron_chest", count = 1}
 ]

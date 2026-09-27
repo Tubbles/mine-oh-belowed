@@ -11,6 +11,8 @@ THIRD_PERSON_WALL_MARGIN :: 0.2
 TARGET_OUTLINE_COLOR :: rl.Color{20, 20, 20, 255}
 MINING_OUTLINE_COLOR :: rl.Color{240, 240, 240, 255}
 PLACEMENT_PREVIEW_COLOR :: rl.Color{255, 255, 255, 70}
+GHOST_VALID_COLOR :: rl.Color{60, 220, 90, 90}
+GHOST_INVALID_COLOR :: rl.Color{230, 60, 50, 90}
 PLAYER_BODY_COLOR :: rl.Color{60, 110, 200, 255}
 // Outlines sit slightly outside the block so the block faces do not hide them.
 OUTLINE_SCALE :: 1.004
@@ -72,23 +74,42 @@ block_centre :: proc(block: World_Coordinate) -> [3]f32 {
 	return {f32(block.x), f32(block.y), f32(block.z)} + 0.5
 }
 
-// The outline of the targeted block, and inside it a second outline that
-// shrinks as mining progresses.
-draw_target_outline :: proc(player: Player) {
-	centre := block_centre(player.target.block)
-	rl.DrawCubeWires(centre, OUTLINE_SCALE, OUTLINE_SCALE, OUTLINE_SCALE, TARGET_OUTLINE_COLOR)
+// The outline of the targeted block or the whole footprint of the
+// targeted entity, and inside it a second outline that shrinks as mining
+// (or picking up) progresses.
+draw_target_outline :: proc(world: ^World, player: Player) {
+	minimum, size := player.target.block, [3]i32{1, 1, 1}
+	if common := entity_common(&world.entities, player.target.entity); common != nil {
+		minimum, size = common.origin, common.size
+	}
+	centre := box_centre(minimum, size)
+	extent := [3]f32{f32(size.x), f32(size.y), f32(size.z)}
+	rl.DrawCubeWiresV(centre, extent * OUTLINE_SCALE, TARGET_OUTLINE_COLOR)
 	fraction := mining_fraction(player.mining)
-	if fraction > 0 && player.mining.block == player.target.block {
-		size := 1 - fraction
-		rl.DrawCubeWires(centre, size, size, size, MINING_OUTLINE_COLOR)
+	if fraction > 0 && mining_matches_target(player.mining, player.target) {
+		rl.DrawCubeWiresV(centre, extent * (1 - fraction), MINING_OUTLINE_COLOR)
 	}
 }
 
-draw_placement_preview :: proc(player: Player, items: Item_Registry) {
-	if selected_placed_block(player, items) == AIR_BLOCK {
+mining_matches_target :: proc(mining: Mining_State, target: Raycast_Hit) -> bool {
+	if target.entity != NO_ENTITY {
+		return mining.entity == target.entity
+	}
+	return mining.entity == NO_ENTITY && mining.block == target.block
+}
+
+// A translucent box for a machine ghost, one cube for a block.
+draw_placement_preview :: proc(world: ^World, content: Simulation_Content, players: []Player, index: int) {
+	placement := placement_for_player(world, content, players, index)
+	if placement.shown {
+		extent := [3]f32{f32(placement.size.x), f32(placement.size.y), f32(placement.size.z)}
+		rl.DrawCubeV(box_centre(placement.origin, placement.size), extent, placement.valid ? GHOST_VALID_COLOR : GHOST_INVALID_COLOR)
 		return
 	}
-	rl.DrawCube(block_centre(player.target.adjacent), 1, 1, 1, PLACEMENT_PREVIEW_COLOR)
+	if selected_placed_block(players[index], content.items) == AIR_BLOCK {
+		return
+	}
+	rl.DrawCube(block_centre(players[index].target.adjacent), 1, 1, 1, PLACEMENT_PREVIEW_COLOR)
 }
 
 // Placeholder body, a capsule over the collision box.
@@ -100,13 +121,14 @@ draw_player_body :: proc(position: [3]f32) {
 }
 
 // Between BeginMode3D and EndMode3D, after the chunks.
-draw_player_world_overlay :: proc(player: Player, items: Item_Registry, alpha: f32) {
+draw_player_world_overlay :: proc(world: ^World, content: Simulation_Content, players: []Player, index: int, alpha: f32) {
+	player := players[index]
 	if player.camera_mode == .Third_Person {
 		draw_player_body(interpolate_player_pose(player, alpha).position)
 	}
 	if !player.target.hit {
 		return
 	}
-	draw_target_outline(player)
-	draw_placement_preview(player, items)
+	draw_target_outline(world, player)
+	draw_placement_preview(world, content, players, index)
 }

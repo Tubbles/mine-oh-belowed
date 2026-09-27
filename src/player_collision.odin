@@ -47,7 +47,7 @@ overlapped_cells :: proc(box: Box, axis: int) -> (first, last: i32) {
 	return
 }
 
-// Whether any solid block lies in the cell layer `layer` of `axis`,
+// Whether any solid block or entity lies in the cell layer `layer` of `axis`,
 // within the cells the box overlaps on the other two axes.
 layer_has_solid :: proc(world: ^World, registry: Block_Registry, box: Box, axis: int, layer: i32) -> bool {
 	first_axis, second_axis := (axis + 1) % 3, (axis + 2) % 3
@@ -59,7 +59,7 @@ layer_has_solid :: proc(world: ^World, registry: Block_Registry, box: Box, axis:
 			cell[axis] = layer
 			cell[first_axis] = first_cell
 			cell[second_axis] = second_cell
-			if block_is_solid(registry, world_get_block(world, cell)) {
+			if cell_is_solid_or_entity(world, registry, cell) {
 				return true
 			}
 		}

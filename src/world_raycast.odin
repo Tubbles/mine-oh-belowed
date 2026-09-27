@@ -14,6 +14,8 @@ Raycast_Hit :: struct {
 	// The cell in front of that face, where a placed block goes.
 	adjacent: World_Coordinate,
 	distance: f32,
+	// The entity occupying the hit cell, or NO_ENTITY for a block.
+	entity:   Entity_Handle,
 }
 
 Raycast_Axis :: struct {
@@ -49,8 +51,8 @@ entered_face :: proc(axis: int, step: i32) -> Direction {
 	return faces[axis][step > 0 ? 1 : 0]
 }
 
-// Finds the first targetable block (solid or minable) along a normalised
-// direction within reach.
+// Finds the first targetable block (solid or minable) or entity cell along
+// a normalised direction within reach.
 // The cell holding the origin is never reported. Missing chunks read as
 // air, so rays pass through unloaded space.
 raycast_blocks :: proc(world: ^World, registry: Block_Registry, origin, direction: [3]f32, reach: f32) -> Raycast_Hit {
@@ -68,8 +70,9 @@ raycast_blocks :: proc(world: ^World, registry: Block_Registry, origin, directio
 		previous := cell
 		cell[axis] += axes[axis].step
 		axes[axis].distance_to_border += axes[axis].distance_per_cell
-		if block_is_targetable(registry, world_get_block(world, cell)) {
-			return Raycast_Hit{hit = true, block = cell, face = entered_face(axis, axes[axis].step), adjacent = previous, distance = distance}
+		entity := entity_at(&world.entities, cell)
+		if entity != NO_ENTITY || block_is_targetable(registry, world_get_block(world, cell)) {
+			return Raycast_Hit{hit = true, block = cell, face = entered_face(axis, axes[axis].step), adjacent = previous, distance = distance, entity = entity}
 		}
 	}
 }

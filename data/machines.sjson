@@ -1,0 +1,42 @@
+// Machine prototypes (work item 0011): entities placed in the world by an
+// item, loaded after items.sjson and resolved to a dense Machine_Id.
+// item is the item that places the machine; picking the machine up gives
+// it back. Each item places at most one machine.
+// name_key is a key into data/strings/en.sjson.
+// footprint is width (x), depth (z) and height (y) in blocks before
+// rotation; a quarter turn swaps width and depth.
+// kind selects the panel and the simulation: chest or furnace.
+// Chests: slots is the number of item slots.
+// Furnaces: fuel_slots, input_slots and output_slots must be 1 each for
+// now. speed multiplies the recipe rate (1 is the listed recipe time).
+// fuel_power_kilowatts is the power drawn from the fuel while working.
+machines = [
+	{
+		id = "wooden_chest"
+		name_key = "machine_wooden_chest"
+		item = "wooden_chest"
+		kind = "chest"
+		footprint = {width = 1, depth = 1, height = 1}
+		slots = 16
+	}
+	{
+		id = "iron_chest"
+		name_key = "machine_iron_chest"
+		item = "iron_chest"
+		kind = "chest"
+		footprint = {width = 1, depth = 1, height = 1}
+		slots = 32
+	}
+	{
+		id = "stone_furnace"
+		name_key = "machine_stone_furnace"
+		item = "stone_furnace"
+		kind = "furnace"
+		footprint = {width = 2, depth = 2, height = 2}
+		fuel_slots = 1
+		input_slots = 1
+		output_slots = 1
+		speed = 1
+		fuel_power_kilowatts = 90
+	}
+]

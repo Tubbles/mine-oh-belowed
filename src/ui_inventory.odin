@@ -14,17 +14,21 @@ HELD_STACK_FOCUS_OFFSET :: [2]f32{UI_SLOT_SIZE * 0.4, -UI_SLOT_SIZE * 0.4}
 Inventory_Slot_Input :: struct {
 	activated:      int,
 	focused:        int,
+	secondary:      bool,
 	context_action: bool,
 }
 
-// A on a slot first, then X on the focused slot.
+// A on a slot first, then L2 (split) on the focused slot, then X (sort).
 apply_inventory_slot_input :: proc(inventory: Inventory, held: Held_Stack, input: Inventory_Slot_Input, items: Item_Registry, ranks: []u16) -> Held_Stack {
 	result := held
 	if input.activated >= 0 {
 		result = apply_slot_primary(inventory, result, input.activated, items)
 	}
+	if input.secondary {
+		result = apply_slot_split(inventory, result, input.focused)
+	}
 	if input.context_action {
-		result = apply_slot_context(inventory, result, input.focused, items, ranks)
+		result = apply_slot_context(inventory, result, items, ranks)
 	}
 	return result
 }
@@ -52,10 +56,16 @@ inventory_panel_height :: proc() -> f32 {
 	)
 }
 
-// Hook for work item 0011: a machine panel's slots (chest, furnace) go
-// into this region next to the player's slots and use the same
-// interaction. Nothing to show until machines exist.
-machine_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context) {
+// The player's grid and hotbar with the hotbar label between them, from
+// the top of the area. Results are inventory slot indices.
+player_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, player: ^Player, items: Item_Registry) -> Slot_Grid_Result {
+	content := area
+	grid_area := cut_top(&content, slot_grid_height(INVENTORY_ROWS) + UI_GAP)
+	grid := ui_slot_grid(state, {grid_area.x, grid_area.y}, "grid", INVENTORY_COLUMNS, inventory_grid(player.inventory), items)
+	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("inventory_hotbar"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	hotbar := ui_slot_grid(state, {content.x, content.y}, "hotbar", HOTBAR_SLOT_COUNT, inventory_hotbar(player.inventory), items)
+	draw_outline(state, slot_grid_rectangle({content.x, content.y}, HOTBAR_SLOT_COUNT, player.selected_hotbar_slot), UI_ACCENT_COLOR)
+	return merge_grid_results(grid_result_to_inventory(grid, HOTBAR_SLOT_COUNT), grid_result_to_inventory(hotbar, 0))
 }
 
 inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
@@ -65,17 +75,12 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	ui_panel_begin(state, "inventory", panel)
 	content := inset(panel, UI_PADDING)
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("inventory_title"), UI_HEADING_TEXT_SIZE, .Centre)
-	machine_slot_region(state, {}, screen_context)
-	grid_area := cut_top(&content, slot_grid_height(INVENTORY_ROWS) + UI_GAP)
-	grid := ui_slot_grid(state, {grid_area.x, grid_area.y}, "grid", INVENTORY_COLUMNS, inventory_grid(player.inventory), items)
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("inventory_hotbar"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
-	hotbar := ui_slot_grid(state, {content.x, content.y}, "hotbar", HOTBAR_SLOT_COUNT, inventory_hotbar(player.inventory), items)
-	draw_outline(state, slot_grid_rectangle({content.x, content.y}, HOTBAR_SLOT_COUNT, player.selected_hotbar_slot), UI_ACCENT_COLOR)
+	slots := player_slot_region(state, content, player, items)
 	ui_panel_end(state)
-	slots := merge_grid_results(grid_result_to_inventory(grid, HOTBAR_SLOT_COUNT), grid_result_to_inventory(hotbar, 0))
 	slot_input := Inventory_Slot_Input {
 		activated      = slots.activated,
 		focused        = slots.focused,
+		secondary      = state.input.secondary,
 		context_action = state.input.context_action,
 	}
 	player.held = apply_inventory_slot_input(player.inventory, player.held, slot_input, items, screen_context.item_sort_ranks)
@@ -109,13 +114,16 @@ draw_held_stack :: proc(state: ^Ui_State, stack: Item_Stack, items: Item_Registr
 }
 
 inventory_glyph_bar :: proc(state: ^Ui_State, held, focused: Item_Stack) {
-	confirm := stack_is_empty(held) ? text("hint_pick_up") : text("hint_place_stack")
-	context_action := focused.count >= 2 ? text("hint_split") : text("hint_sort")
 	if !stack_is_empty(held) {
-		hints := [?]Glyph_Hint{{.Confirm, confirm}, {.Back, text("hint_close")}}
+		hints := [?]Glyph_Hint{{.Confirm, text("hint_place_stack")}, {.Back, text("hint_close")}}
 		ui_glyph_bar(state, hints[:])
 		return
 	}
-	hints := [?]Glyph_Hint{{.Confirm, confirm}, {.Context_Action, context_action}, {.Info, text("hint_info")}, {.Back, text("hint_close")}}
+	hints := make([dynamic]Glyph_Hint, context.temp_allocator)
+	append(&hints, Glyph_Hint{.Confirm, text("hint_pick_up")})
+	if focused.count >= 2 {
+		append(&hints, Glyph_Hint{.Secondary, text("hint_split")})
+	}
+	append(&hints, Glyph_Hint{.Context_Action, text("hint_sort")}, Glyph_Hint{.Info, text("hint_info")}, Glyph_Hint{.Back, text("hint_close")})
 	ui_glyph_bar(state, hints[:])
 }

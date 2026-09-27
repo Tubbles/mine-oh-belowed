@@ -85,6 +85,18 @@ inventory_add :: proc(inventory: Inventory, registry: Item_Registry, item: Item_
 	return add_to_slots(inventory.slots, item, count, stack_size)
 }
 
+// Whether all the stacks fit at once, tried on a copy of the slots.
+inventory_fits_all :: proc(inventory: Inventory, registry: Item_Registry, stacks: []Item_Stack) -> bool {
+	trial := make([]Item_Stack, len(inventory.slots), context.temp_allocator)
+	copy(trial, inventory.slots)
+	for stack in stacks {
+		if !stack_is_empty(stack) && add_to_slots(trial, stack.item, int(stack.count), item_stack_size(registry, stack.item)) > 0 {
+			return false
+		}
+	}
+	return true
+}
+
 // Takes up to count from the slot and returns how many were taken.
 take_from_slot :: proc(slot: ^Item_Stack, count: int) -> int {
 	taken := min(count, int(slot.count))

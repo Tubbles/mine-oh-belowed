@@ -27,7 +27,7 @@ Label, button, toggle, slider, tabs, vertical list with letter jump, grid of slo
 
 ## Item slots on a gamepad
 
-A picks up the focused stack, A on another slot drops it or swaps, X splits the stack in half, Y shows the item's info panel, holding A while moving the focus across machine slots distributes the held stack evenly (the Even Distribution gesture from `input.md`). The pointer does the same with clicks. A held stack follows the focus and the pointer.
+A picks up the focused stack, A on another slot drops it or swaps, L2 splits the stack in half, X sorts the focused container, Y shows the item's info panel, holding A with a stack in hand while moving the focus across machine slots distributes it evenly over the visited slots on release (the Even Distribution gesture from `input.md`). The pointer does the same with clicks. A held stack follows the focus and the pointer, and goes back to its slot when the screen closes. Machine input slots accept only what the machine can use, and a rejected drop stays in hand.
 
 ## HUD
 

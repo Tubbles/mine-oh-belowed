@@ -68,6 +68,11 @@ make_test_world :: proc(coordinates: []Chunk_Coordinate) -> World {
 	queue.init(&world.lighting.removals, allocator = context.temp_allocator)
 	queue.init(&world.lighting.additions, allocator = context.temp_allocator)
 	queue.init(&world.lighting.arrived_chunks, allocator = context.temp_allocator)
+	world.entities.cells = make(map[World_Coordinate]Entity_Handle, context.temp_allocator)
+	world.entities.chests.entries = make([dynamic]Chest, context.temp_allocator)
+	world.entities.chests.free = make([dynamic]u32, context.temp_allocator)
+	world.entities.furnaces.entries = make([dynamic]Furnace, context.temp_allocator)
+	world.entities.furnaces.free = make([dynamic]u32, context.temp_allocator)
 	for coordinate in coordinates {
 		chunk := new(Chunk, context.temp_allocator)
 		chunk.coordinate = coordinate

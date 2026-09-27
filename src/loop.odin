@@ -48,6 +48,7 @@ Frame_State :: struct {
 	quit_requested:     bool,
 	registry:           Block_Registry,
 	items:              Item_Registry,
+	machines:           Machine_Registry,
 	// Inventory sort order, from item_sort_ranks.
 	item_sort_ranks:    []u16,
 	generator:          Generator,
@@ -86,17 +87,23 @@ destroy_simulation :: proc(state: ^Simulation_State) {
 	destroy_world(&state.world)
 }
 
-// A player without an input entry gets an empty one.
-simulation_tick :: proc(state: ^Simulation_State, registry: Block_Registry, items: Item_Registry, inputs: []Input_Frame) {
+// A player without an input entry gets an empty one. Entities tick after
+// the players, so a stack dropped into a furnace this tick is seen at once.
+simulation_tick :: proc(state: ^Simulation_State, content: Simulation_Content, inputs: []Input_Frame) {
 	state.tick += 1
 	for index in 0 ..< len(state.players) {
 		input := index < len(inputs) ? inputs[index] : Input_Frame{}
-		events := tick_player(&state.world, registry, items, state.players[:], index, input, state.tick_rate)
+		events := tick_player(&state.world, content, state.players[:], index, input, state.tick_rate)
 		for kind in events {
 			append(&state.events, Simulation_Event{player = index, kind = kind})
 		}
 	}
-	tick_world(&state.world, registry, state.tick)
+	tick_entities(&state.world, content.machines, content.items, state.tick_rate)
+	tick_world(&state.world, content.blocks, state.tick)
+}
+
+frame_simulation_content :: proc(state: ^Frame_State) -> Simulation_Content {
+	return Simulation_Content{blocks = state.registry, items = state.items, machines = state.machines}
 }
 
 make_tick_accumulator :: proc(tick_rate: int) -> Tick_Accumulator {
@@ -184,7 +191,7 @@ update_frame :: proc(state: ^Frame_State) {
 	for _ in 0 ..< tick_count {
 		tick_input: Input_Frame
 		tick_input, state.tick_input = take_tick_input(state.tick_input, frame_for_world)
-		simulation_tick(&state.simulation, state.registry, state.items, {tick_input})
+		simulation_tick(&state.simulation, frame_simulation_content(state), {tick_input})
 	}
 	player_chunk := world_to_chunk_coordinate(camera_world_coordinate(state.simulation.players[0].position))
 	update_chunk_streaming(&state.streaming, &state.simulation.world, player_chunk)
@@ -202,7 +209,8 @@ render_frame :: proc(state: ^Frame_State, config: Game_Config) {
 	camera := fly_camera_to_raylib(player_view_camera(&state.simulation.world, state.registry, player, alpha))
 	rl.BeginMode3D(camera)
 	draw_chunks(&state.renderer, camera)
-	draw_player_world_overlay(player, state.items, alpha)
+	draw_entities(&state.simulation.world, state.machines)
+	draw_player_world_overlay(&state.simulation.world, frame_simulation_content(state), state.simulation.players[:], 0, alpha)
 	rl.EndMode3D()
 	if state.show_diagnostics {
 		draw_diagnostics_backdrop()
@@ -219,14 +227,17 @@ run_ui_frame :: proc(state: ^Frame_State) {
 	ui_begin(&state.ui, input, screen_pixels, state.frame_seconds, state.settings.ui_scale, state.settings.pointer_speed)
 	show_simulation_events(&state.ui, &state.simulation.events)
 	player := &state.simulation.players[0]
-	draw_hud(&state.ui, player, state.items)
 	screen_context := Screen_Context {
 		settings        = &state.settings,
 		quit_requested  = &state.quit_requested,
 		player          = player,
 		items           = state.items,
 		item_sort_ranks = state.item_sort_ranks,
+		world           = &state.simulation.world,
+		machines        = state.machines,
+		tick_rate       = state.simulation.tick_rate,
 	}
+	draw_hud(&state.ui, screen_context)
 	run_screens(&state.ui, screen_context)
 	ui_end(&state.ui, Icon_Atlas{texture = chunk_atlas_texture(state.renderer), layout = state.renderer.atlas_layout})
 	apply_cursor_mode(state)
@@ -237,6 +248,10 @@ show_simulation_events :: proc(state: ^Ui_State, events: ^[dynamic]Simulation_Ev
 		switch event.kind {
 		case .Inventory_Full:
 			ui_toast(state, text("inventory_full"))
+		case .Open_Machine:
+			if state.screens.count == 0 {
+				push_screen(&state.screens, .Machine)
+			}
 		}
 	}
 	clear(events)
@@ -245,6 +260,7 @@ show_simulation_events :: proc(state: ^Ui_State, events: ^[dynamic]Simulation_Ev
 Game_Content :: struct {
 	blocks:          Block_Registry,
 	items:           Item_Registry,
+	machines:        Machine_Registry,
 	item_sort_ranks: []u16,
 }
 
@@ -272,6 +288,7 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, content: Gam
 		input_backend   = input_backend,
 		registry        = registry,
 		items           = content.items,
+		machines        = content.machines,
 		item_sort_ranks = content.item_sort_ranks,
 		generator       = generator,
 		renderer        = renderer,

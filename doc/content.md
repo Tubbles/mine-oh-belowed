@@ -110,7 +110,7 @@ Footprint is width by depth by height in blocks. Power is electric unless marked
 | Core sample drill | 1×1×2 | 2 circuit, 5 steel, 5 iron gear | One column per 60 s | 40 kW | Research: prospecting |
 | Magnetometer | Handheld | 5 circuit, 2 copper wire, 1 iron plate | Iron veins within 30 blocks | | Research: prospecting |
 
-Machine recipes take 2 s each by hand, 0.5 s for inserters, belts, pipes, poles and chests.
+Machine recipes take 2 s each by hand, 0.5 s for inserters, belts, pipes, poles and chests. Machine values live in `data/machines.sjson` from work item 0011 on (footprint, kind, slots, speed in percent, fuel power in watts); this table stays the design intent.
 
 ## Technologies (phase 4, science pack 1)
 

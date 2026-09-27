@@ -54,11 +54,17 @@ Player :: struct {
 	selected_hotbar_slot: int,
 	// The stack on the cursor of the inventory screen.
 	held:                 Held_Stack,
+	// Quarter turns of the machine ghost, changed with Rotate_Building.
+	placement_rotation:   u8,
+	// The entity whose panel Interact opened; the UI clears it on close.
+	open_machine:         Entity_Handle,
 }
 
 // What a player tick reports to the UI, which turns it into toasts.
 Player_Event :: enum u8 {
 	Inventory_Full,
+	// Interact on an entity: the UI opens player.open_machine's panel.
+	Open_Machine,
 }
 
 Player_Events :: bit_set[Player_Event]
@@ -239,20 +245,37 @@ apply_player_toggles :: proc(player: ^Player, just_pressed: Action_Set) {
 	}
 }
 
-tick_player :: proc(world: ^World, registry: Block_Registry, items: Item_Registry, players: []Player, index: int, input: Input_Frame, tick_rate: int) -> Player_Events {
+// A gamepad's A is both Jump and Interact. Looking at an entity it opens
+// the entity instead of jumping; keyboard Space never interacts.
+resolve_interact :: proc(player: ^Player, entities: ^Entities, input: Input_Frame) -> (Input_Frame, Player_Events) {
+	result := input
+	if .Interact not_in input.pressed || !entity_is_alive(entities, player.target.entity) {
+		return result, {}
+	}
+	result.pressed -= {.Jump}
+	result.just_pressed -= {.Jump}
+	if .Interact not_in input.just_pressed {
+		return result, {}
+	}
+	player.open_machine = player.target.entity
+	return result, {.Open_Machine}
+}
+
+tick_player :: proc(world: ^World, content: Simulation_Content, players: []Player, index: int, frame: Input_Frame, tick_rate: int) -> Player_Events {
 	player := &players[index]
 	seconds := 1 / f32(tick_rate)
+	input, events := resolve_interact(player, &world.entities, frame)
 	player.previous_position, player.previous_yaw, player.previous_pitch = player.position, player.yaw, player.pitch
 	apply_player_toggles(player, input.just_pressed)
 	turn_player(player, input, seconds)
 	if player.flying {
 		fly_player(player, input, seconds)
 	} else {
-		walk_player(world, registry, player, input, seconds)
+		walk_player(world, content.blocks, player, input, seconds)
 	}
-	player.target = raycast_blocks(world, registry, player_eye(player.position), player_look_direction(player^), PLAYER_REACH)
-	events := mine_with_player(world, registry, items, player, .Mine in input.pressed, tick_rate)
-	place_with_player(world, registry, items, players, index, input.just_pressed)
+	player.target = raycast_blocks(world, content.blocks, player_eye(player.position), player_look_direction(player^), PLAYER_REACH)
+	events += mine_with_player(world, content, player, .Mine in input.pressed, tick_rate)
+	place_with_player(world, content, players, index, input.just_pressed)
 	player.selected_hotbar_slot = cycle_hotbar_slot(player.selected_hotbar_slot, input.just_pressed)
 	return events
 }

@@ -55,6 +55,8 @@ Glyph_Button :: enum u8 {
 	Context_Action,
 	Pause,
 	Inventory,
+	Secondary,
+	Interact,
 }
 
 Glyph_Hint :: struct {
@@ -425,6 +427,10 @@ glyph_key :: proc(device: Input_Device, button: Glyph_Button) -> string {
 			return "glyph_gamepad_pause"
 		case .Inventory:
 			return "glyph_gamepad_inventory"
+		case .Secondary:
+			return "glyph_gamepad_secondary"
+		case .Interact:
+			return "glyph_gamepad_interact"
 		}
 	case .Keyboard_Mouse:
 		switch button {
@@ -444,6 +450,10 @@ glyph_key :: proc(device: Input_Device, button: Glyph_Button) -> string {
 			return "glyph_keyboard_pause"
 		case .Inventory:
 			return "glyph_keyboard_inventory"
+		case .Secondary:
+			return "glyph_keyboard_secondary"
+		case .Interact:
+			return "glyph_keyboard_interact"
 		}
 	}
 	return ""

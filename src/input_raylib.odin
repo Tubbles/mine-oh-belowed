@@ -27,6 +27,7 @@ Mouse_Button_Binding :: struct {
 @(rodata)
 gamepad_button_bindings := [?]Gamepad_Button_Binding {
 	{.RIGHT_FACE_DOWN, .Jump},
+	{.RIGHT_FACE_DOWN, .Interact},
 	{.RIGHT_FACE_DOWN, .Confirm},
 	{.RIGHT_FACE_RIGHT, .Back},
 	{.RIGHT_FACE_LEFT, .Open_Inventory},
@@ -38,6 +39,7 @@ gamepad_button_bindings := [?]Gamepad_Button_Binding {
 	{.RIGHT_TRIGGER_1, .Hotbar_Next},
 	{.RIGHT_TRIGGER_2, .Mine},
 	{.LEFT_TRIGGER_2, .Place},
+	{.LEFT_TRIGGER_2, .Menu_Secondary},
 	{.MIDDLE_LEFT, .Open_Map},
 	{.MIDDLE_RIGHT, .Pause},
 	{.RIGHT_TRIGGER_2, .Confirm},
@@ -63,6 +65,8 @@ key_bindings := [?]Key_Binding {
 	{.ENTER, .Confirm},
 	{.BACKSPACE, .Back},
 	{.LEFT_SHIFT, .Sneak},
+	{.LEFT_SHIFT, .Menu_Secondary},
+	{.F, .Interact},
 	{.LEFT_CONTROL, .Sprint},
 	{.LEFT_BRACKET, .Hotbar_Previous},
 	{.RIGHT_BRACKET, .Hotbar_Next},

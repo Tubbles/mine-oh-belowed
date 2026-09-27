@@ -1,0 +1,144 @@
+package game
+
+// Placing machines from the hotbar with a rotated footprint, and picking
+// them up again. The ghost the renderer shows is the same Placement the
+// place action checks, so what is shown valid is what places.
+
+Placement :: struct {
+	// A machine is selected and the ray hit something to place it against.
+	shown:    bool,
+	valid:    bool,
+	machine:  Machine_Id,
+	origin:   World_Coordinate,
+	rotation: u8,
+	// Rotated footprint, x y z.
+	size:     [3]i32,
+}
+
+// The footprint's minimum corner, so that it starts at the cell in front
+// of the targeted face and extends away from it. On a top face it stands
+// on the face; on a side face its bottom is level with the adjacent cell;
+// across the face it is centred on the adjacent cell.
+footprint_origin :: proc(adjacent: World_Coordinate, face: Direction, size: [3]i32) -> World_Coordinate {
+	normal := direction_offsets[face]
+	origin := adjacent
+	for axis in 0 ..< 3 {
+		switch {
+		case normal[axis] < 0:
+			origin[axis] = adjacent[axis] - (size[axis] - 1)
+		case normal[axis] > 0 || axis == 1:
+			origin[axis] = adjacent[axis]
+		case:
+			origin[axis] = adjacent[axis] - (size[axis] - 1) / 2
+		}
+	}
+	return origin
+}
+
+// Air in a loaded chunk, with no entity in it.
+cell_is_free :: proc(world: ^World, cell: World_Coordinate) -> bool {
+	if world_to_chunk_coordinate(cell) not_in world.chunks {
+		return false
+	}
+	return world_get_block(world, cell) == AIR_BLOCK && cell not_in world.entities.cells
+}
+
+// Every cell of the bottom layer rests on a solid block. Entities do not
+// count as support, so picking one up never leaves another floating.
+footprint_is_supported :: proc(world: ^World, registry: Block_Registry, cells: []World_Coordinate, bottom: i32) -> bool {
+	for cell in cells {
+		if cell.y == bottom && !block_is_solid(registry, world_get_block(world, cell + {0, -1, 0})) {
+			return false
+		}
+	}
+	return true
+}
+
+footprint_hits_player :: proc(players: []Player, cells: []World_Coordinate) -> bool {
+	for player in players {
+		for cell in cells {
+			if boxes_overlap(player_box(player.position), block_box(cell)) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+footprint_is_valid :: proc(world: ^World, registry: Block_Registry, players: []Player, cells: []World_Coordinate, bottom: i32) -> bool {
+	for cell in cells {
+		if !cell_is_free(world, cell) {
+			return false
+		}
+	}
+	return footprint_is_supported(world, registry, cells, bottom) && !footprint_hits_player(players, cells)
+}
+
+selected_placed_machine :: proc(player: Player, machines: Machine_Registry) -> Machine_Id {
+	stack := selected_hotbar_stack(player)
+	if stack_is_empty(stack) {
+		return NO_MACHINE
+	}
+	return item_places_machine(machines, stack.item)
+}
+
+// The ghost for the player's selected hotbar item and current target.
+placement_for_player :: proc(world: ^World, content: Simulation_Content, players: []Player, index: int) -> Placement {
+	player := players[index]
+	machine := selected_placed_machine(player, content.machines)
+	if machine == NO_MACHINE || !player.target.hit {
+		return {}
+	}
+	footprint := content.machines.machines[machine].footprint
+	size := rotated_footprint_size(footprint, player.placement_rotation)
+	origin := footprint_origin(player.target.adjacent, player.target.face, size)
+	cells := footprint_cells(origin, footprint, player.placement_rotation)
+	return Placement {
+		shown = true,
+		valid = footprint_is_valid(world, content.blocks, players, cells, origin.y),
+		machine = machine,
+		origin = origin,
+		rotation = player.placement_rotation,
+		size = size,
+	}
+}
+
+// Rotate_Building turns the ghost a quarter turn; Place puts the machine
+// down and uses up one item.
+place_entity_with_player :: proc(world: ^World, content: Simulation_Content, players: []Player, index: int, just_pressed: Action_Set) {
+	player := &players[index]
+	if .Rotate_Building in just_pressed {
+		player.placement_rotation = (player.placement_rotation + 1) % 4
+	}
+	if .Place not_in just_pressed {
+		return
+	}
+	placement := placement_for_player(world, content, players, index)
+	if !placement.valid {
+		return
+	}
+	add_entity(&world.entities, content.machines, placement.machine, placement.origin, placement.rotation)
+	take_from_slot(&inventory_hotbar(player.inventory)[player.selected_hotbar_slot], 1)
+}
+
+// The entity's contents and then its item go into the inventory. When not
+// everything fits nothing moves and the entity stays.
+pick_up_entity :: proc(world: ^World, content: Simulation_Content, player: ^Player, handle: Entity_Handle) -> bool {
+	common := entity_common(&world.entities, handle)
+	if common == nil {
+		return false
+	}
+	machine_item := content.machines.machines[common.machine].item
+	returned := make([dynamic]Item_Stack, context.temp_allocator)
+	append(&returned, ..entity_slots(&world.entities, handle))
+	append(&returned, Item_Stack{item = machine_item, count = 1})
+	if !inventory_fits_all(player.inventory, content.items, returned[:]) {
+		return false
+	}
+	for stack in returned {
+		if !stack_is_empty(stack) {
+			inventory_add(player.inventory, content.items, stack.item, int(stack.count))
+		}
+	}
+	return remove_entity(&world.entities, content.machines, handle)
+}

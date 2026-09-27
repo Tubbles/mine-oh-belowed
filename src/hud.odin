@@ -1,8 +1,9 @@
 package game
 
 // The world HUD, drawn through the UI draw list under any open screen:
-// crosshair, hotbar with the held item's name, the hotbar radial and the
-// glyph bar. The targeted block name comes later.
+// crosshair, the targeted entity's name and state, hotbar with the held
+// item's name, the hotbar radial and the glyph bar. Targeted block names
+// come later.
 
 CROSSHAIR_SIZE :: 18.0
 CROSSHAIR_THICKNESS :: 3.0
@@ -91,14 +92,32 @@ draw_hotbar_radial :: proc(state: ^Ui_State, hotbar: []Item_Stack, items: Item_R
 	}
 }
 
-draw_hud :: proc(state: ^Ui_State, player: ^Player, items: Item_Registry) {
+// Below the crosshair.
+draw_target_status :: proc(state: ^Ui_State, status: string) {
+	if status == "" {
+		return
+	}
+	centre := state.screen_units / 2
+	area := Ui_Rectangle{0, centre.y + CROSSHAIR_SIZE + UI_GAP, state.screen_units.x, UI_ROW_HEIGHT}
+	draw_text(state, area, status, UI_BODY_TEXT_SIZE, .Centre)
+}
+
+draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context) {
+	player, items := screen_context.player, screen_context.items
 	draw_crosshair(state)
 	draw_hud_hotbar(state, player^, items)
 	if state.screens.count > 0 {
 		state.radial = {}
 		return
 	}
+	status := entity_status_text(screen_context.world, screen_context.machines, player.target.entity)
+	draw_target_status(state, status)
 	hotbar_radial(state, player, items)
+	if status != "" {
+		hints := [?]Glyph_Hint{{.Interact, text("hint_open")}, {.Inventory, text("hint_inventory")}, {.Pause, text("hint_pause")}}
+		ui_glyph_bar(state, hints[:])
+		return
+	}
 	hints := [?]Glyph_Hint{{.Inventory, text("hint_inventory")}, {.Pause, text("hint_pause")}}
 	ui_glyph_bar(state, hints[:])
 }

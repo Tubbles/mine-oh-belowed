@@ -25,6 +25,7 @@ Chunk :: struct {
 // column they overlap is loaded, and they stay when chunks unload.
 // Every world_set_block is recorded in block_changes, and the next
 // simulation tick turns the changes into light and water updates.
+// Entities keep their cells in entities.cells; those cells stay air here.
 World :: struct {
 	chunks:        map[Chunk_Coordinate]^Chunk,
 	veins:         [dynamic]Vein,
@@ -33,6 +34,7 @@ World :: struct {
 	block_changes: [dynamic]Block_Change,
 	lighting:      Lighting,
 	water:         Water_Flow,
+	entities:      Entities,
 }
 
 Block_Change :: struct {
@@ -184,6 +186,7 @@ destroy_world :: proc(world: ^World) {
 	delete(world.block_changes)
 	destroy_lighting(&world.lighting)
 	destroy_water_flow(&world.water)
+	destroy_entities(&world.entities)
 }
 
 chunk_is_all_air :: proc(chunk: ^Chunk) -> bool {

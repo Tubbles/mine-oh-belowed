@@ -43,9 +43,10 @@ make_test_player :: proc(registry: Block_Registry, position: [3]f32) -> Player {
 }
 
 tick_test_player :: proc(world: ^World, registry: Block_Registry, player: ^Player, input: Input_Frame, ticks: int) -> (events: Player_Events) {
-	items := make_test_items()
+	content := make_test_content()
+	content.blocks = registry
 	for _ in 0 ..< ticks {
-		events += tick_player(world, registry, items, slice.from_ptr(player, 1), 0, input, TEST_TICK_RATE)
+		events += tick_player(world, content, slice.from_ptr(player, 1), 0, input, TEST_TICK_RATE)
 	}
 	return events
 }
@@ -271,8 +272,8 @@ owned_total :: proc(player: Player) -> int {
 
 @(test)
 test_player_ticks_are_deterministic :: proc(t: ^testing.T) {
-	registry := make_test_registry()
-	items := make_test_items()
+	content := make_test_content()
+	items := content.items
 	first_generator := make_test_generator(DEFAULT_WORLD_SEED)
 	second_generator := make_test_generator(DEFAULT_WORLD_SEED)
 	first := make_generated_simulation(&first_generator, items)
@@ -284,8 +285,8 @@ test_player_ticks_are_deterministic :: proc(t: ^testing.T) {
 	for tick in 0 ..< 1200 {
 		input := recorded_input(tick)
 		owned_before := owned_total(first.players[0])
-		simulation_tick(&first, registry, items, {input})
-		simulation_tick(&second, registry, items, {input})
+		simulation_tick(&first, content, {input})
+		simulation_tick(&second, content, {input})
 		placed_count += owned_total(first.players[0]) < owned_before ? 1 : 0
 	}
 	a, b := first.players[0], second.players[0]

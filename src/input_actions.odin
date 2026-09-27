@@ -21,6 +21,9 @@ Action :: enum u8 {
 	Sprint,
 	Hotbar_Previous,
 	Hotbar_Next,
+	// Opens the targeted entity's panel. A on a gamepad, which is Jump
+	// unless an entity is targeted (resolve_interact).
+	Interact,
 	// Menu actions, bound next to the world actions on the same buttons.
 	Navigate_Up,
 	Navigate_Down,
@@ -30,6 +33,8 @@ Action :: enum u8 {
 	Tab_Next,
 	Info_Panel,
 	Context_Action,
+	// L2 (or Left Shift) in menus: split the focused stack.
+	Menu_Secondary,
 	// Keyboard only: the gamepad View button is taken by the map.
 	Toggle_Camera_Mode,
 	// Developer actions, keyboard only.
@@ -156,6 +161,7 @@ WORLD_ACTIONS :: Action_Set {
 	.Sprint,
 	.Hotbar_Previous,
 	.Hotbar_Next,
+	.Interact,
 	.Toggle_Camera_Mode,
 	.Toggle_Fly_Mode,
 }

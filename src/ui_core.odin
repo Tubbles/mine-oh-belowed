@@ -87,7 +87,11 @@ Ui_Input :: struct {
 	tab_next:       bool,
 	info:           bool,
 	context_action: bool,
+	// L2 or Left Shift: split the focused stack.
+	secondary:      bool,
 	open_inventory: bool,
+	// Held, not an edge: Confirm without the pad click, for the distribute gesture.
+	confirm_down:   bool,
 	// Held, not an edge: the keyboard radial shows while Tab is down.
 	hotbar_radial_down: bool,
 	mouse_position: [2]f32,
@@ -153,6 +157,8 @@ Screen :: enum u8 {
 	Pause,
 	Settings,
 	Inventory,
+	// The panel of the player's open_machine.
+	Machine,
 }
 
 Screen_Stack :: struct {
@@ -198,6 +204,7 @@ Ui_State :: struct {
 	letter_jump:      rune,
 	screens:          Screen_Stack,
 	radial:           Radial_State,
+	distribute:       Distribute_Gesture,
 	toasts:           [dynamic]Toast,
 	scroll_offsets:   map[Ui_Id]f32,
 	selections:       map[Ui_Id]int,
@@ -554,7 +561,7 @@ top_screen :: proc(stack: Screen_Stack) -> Screen {
 
 screen_pauses_simulation :: proc(screen: Screen) -> bool {
 	switch screen {
-	case .None, .Inventory:
+	case .None, .Inventory, .Machine:
 		return false
 	case .Pause, .Settings:
 		return true

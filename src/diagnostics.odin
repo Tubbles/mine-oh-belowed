@@ -260,6 +260,9 @@ target_text :: proc(registry: Block_Registry, world: ^World, target: Raycast_Hit
 		return "target none"
 	}
 	block := target.block
+	if target.entity != NO_ENTITY {
+		return fmt.tprintf("target entity %v %d gen %d at %d %d %d face %v", target.entity.kind, target.entity.index, target.entity.generation, block.x, block.y, block.z, target.face)
+	}
 	return fmt.tprintf("target %s at %d %d %d face %v", block_name(registry, world_get_block(world, block)), block.x, block.y, block.z, target.face)
 }
 

@@ -158,6 +158,10 @@ main :: proc() {
 	if !items_loaded {
 		os.exit(1)
 	}
+	machines, machines_loaded := load_machine_registry(data_directory, items)
+	if !machines_loaded {
+		os.exit(1)
+	}
 	if problem := validate_starting_items(config.starting_items, items); problem != "" {
 		fmt.eprintfln("error: invalid %s: %s", GAME_CONFIG_FILE_NAME, problem)
 		os.exit(1)
@@ -165,6 +169,7 @@ main :: proc() {
 	content := Game_Content {
 		blocks          = registry,
 		items           = items,
+		machines        = machines,
 		item_sort_ranks = item_sort_ranks(items, item_display_names(items, context.temp_allocator)),
 	}
 	generator, generator_loaded := load_generator(data_directory, registry, command_line.seed)

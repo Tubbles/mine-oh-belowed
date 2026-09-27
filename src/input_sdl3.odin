@@ -40,10 +40,12 @@ Sdl3_Button_Binding :: struct {
 
 // Hardcoded until bindings move to configuration, following doc/input.md.
 // B and R4 carry both the world meaning (Sneak) and the menu meaning (Back),
-// the same way A carries Jump and Confirm.
+// the same way A carries Jump and Confirm. A and L4 also carry Interact,
+// which wins over Jump while an entity is targeted (resolve_interact).
 @(rodata)
 sdl3_button_bindings := [?]Sdl3_Button_Binding {
 	{.SOUTH, .Jump},
+	{.SOUTH, .Interact},
 	{.SOUTH, .Confirm},
 	{.EAST, .Sneak},
 	{.EAST, .Back},
@@ -58,12 +60,14 @@ sdl3_button_bindings := [?]Sdl3_Button_Binding {
 	{.BACK, .Open_Map},
 	{.START, .Pause},
 	{.LEFT_PADDLE1, .Jump},
+	{.LEFT_PADDLE1, .Interact},
 	{.LEFT_PADDLE1, .Confirm},
 	{.RIGHT_PADDLE1, .Sneak},
 	{.RIGHT_PADDLE1, .Back},
 	{.LEFT_PADDLE2, .Rotate_Building},
 	{.RIGHT_PADDLE2, .Pipette},
 	{STEAM_CONTROLLER_RIGHT_PAD_CLICK, .Confirm},
+	{STEAM_CONTROLLER_RIGHT_PAD_CLICK, .Interact},
 	{.DPAD_UP, .Navigate_Up},
 	{.DPAD_DOWN, .Navigate_Down},
 	{.DPAD_LEFT, .Navigate_Left},
@@ -243,7 +247,7 @@ sdl3_trigger_actions :: proc(gamepad: Raw_Gamepad) -> Action_Set {
 		actions += {.Mine, .Confirm}
 	}
 	if gamepad.axis_values[int(sdl.GamepadAxis.LEFT_TRIGGER)] > TRIGGER_PRESS_THRESHOLD {
-		actions += {.Place}
+		actions += {.Place, .Menu_Secondary}
 	}
 	return actions
 }
