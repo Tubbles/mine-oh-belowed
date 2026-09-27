@@ -175,4 +175,6 @@ Listed for planning, values follow with their milestones.
 
 ## Learned from couch tests
 
-Empty until the first couch test. Each entry: date, what was played, what the numbers did wrong, what changed.
+Each entry: date, what was played, what the numbers did wrong, what changed.
+
+- 2026-09-27, couch test 1, chapter 1 on the M8 build. The hematite outcrop required within 150 blocks of the spawn was minutes of flying away and under trees; the spawn search accepted a river gorge next to the pad. Change (0045): three starter veins stamped 24 to 40 blocks from the pad, outcrops generated after trees and boulders with the column above cleared, and a flatness requirement on the spawn. Mining under a lake crashed the mesher (fixed). The statistics overlay was always on (0044).

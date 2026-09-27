@@ -80,7 +80,7 @@ Verify: couch test 5. The first rocket shipment leaves and the returns arrive.
 
 ### M10 Alpha polish and release
 
-Art consistency pass, performance pass, 10 foot UI pass, full playthrough on the couch. Tag `alpha-1` and publish a GitHub release.
+Art consistency pass, performance pass, 10 foot UI pass, full playthrough on the couch. Tag `alpha-1` and publish a GitHub release. Couch test findings become work items here: 0043 developer mode, 0044 quick fixes (overlay, sprint, cheat speed, world deletion), 0045 landing site (starter outcrops, flat ground), 0046 UI bounds pass.
 
 Verify: the alpha verify statement above.
 
