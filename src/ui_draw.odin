@@ -42,7 +42,21 @@ execute_text_command :: proc(command: Draw_Command, pixels_per_unit: f32) {
 	rl.DrawTextEx(rl.GetFontDefault(), text_c, {x, y}, size, spacing, to_raylib_color(command.color))
 }
 
-execute_draw_command :: proc(command: Draw_Command, focus: Ui_Id, pixels_per_unit: f32) {
+// The block atlas, for placeholder item icons.
+Icon_Atlas :: struct {
+	texture: rl.Texture2D,
+	layout:  Atlas_Layout,
+}
+
+execute_atlas_tile_command :: proc(command: Draw_Command, atlas: Icon_Atlas, pixels_per_unit: f32) {
+	origin := atlas_tile_origin(atlas.layout, command.tile)
+	width, height := f32(atlas.texture.width), f32(atlas.texture.height)
+	uv_size := atlas_tile_uv_size(atlas.layout)
+	source := rl.Rectangle{origin.x * width, origin.y * height, uv_size.x * width, uv_size.y * height}
+	rl.DrawTexturePro(atlas.texture, source, to_pixels(command.rectangle, pixels_per_unit), {}, 0, rl.WHITE)
+}
+
+execute_draw_command :: proc(command: Draw_Command, focus: Ui_Id, atlas: Icon_Atlas, pixels_per_unit: f32) {
 	switch command.kind {
 	case .Fill:
 		rl.DrawRectangleRec(to_pixels(command.rectangle, pixels_per_unit), to_raylib_color(command.color))
@@ -59,11 +73,13 @@ execute_draw_command :: proc(command: Draw_Command, focus: Ui_Id, pixels_per_uni
 		rl.BeginScissorMode(i32(box.x), i32(box.y), i32(box.width), i32(box.height))
 	case .Clip_End:
 		rl.EndScissorMode()
+	case .Atlas_Tile:
+		execute_atlas_tile_command(command, atlas, pixels_per_unit)
 	}
 }
 
-execute_draw_list :: proc(state: Ui_State) {
+execute_draw_list :: proc(state: Ui_State, atlas: Icon_Atlas) {
 	for command in state.draw_list {
-		execute_draw_command(command, state.focus, state.pixels_per_unit)
+		execute_draw_command(command, state.focus, atlas, state.pixels_per_unit)
 	}
 }

@@ -1,6 +1,8 @@
 package game
 
+import "core:fmt"
 import "core:math"
+import "core:strings"
 import "core:unicode"
 
 // Sizes in UI units (1080 per screen height). Text sizes follow doc/ui.md.
@@ -14,6 +16,8 @@ UI_BORDER :: 2
 UI_FOCUS_BORDER :: 4
 UI_CHECKBOX_SIZE :: 32
 UI_SLOT_SIZE :: 80
+UI_SLOT_ICON_INSET :: 12
+UI_SLOT_COUNT_TEXT_SIZE :: 24
 UI_TOOLTIP_WIDTH :: 420
 UI_POINTER_SIZE :: 14
 // Rows per second at full right stick deflection.
@@ -50,6 +54,7 @@ Glyph_Button :: enum u8 {
 	Info,
 	Context_Action,
 	Pause,
+	Inventory,
 }
 
 Glyph_Hint :: struct {
@@ -308,28 +313,87 @@ ui_request_letter_jump :: proc(state: ^Ui_State, letter: rune) {
 	state.letter_jump = letter
 }
 
-// Empty slots for now; item slots come with the inventory. Returns the
-// activated slot or -1.
-ui_slot_grid :: proc(state: ^Ui_State, origin: [2]f32, label: string, columns, rows: int) -> int {
+// Placeholder icon: the atlas tile, or a coloured square with two letters.
+draw_item_icon :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, icon: Item_Icon) {
+	switch icon.kind {
+	case .Block_Tile:
+		push_command(state, {kind = .Atlas_Tile, rectangle = rectangle, tile = icon.tile})
+	case .Lettered:
+		letters := icon.letters
+		draw_fill(state, rectangle, icon.color)
+		draw_outline(state, rectangle, UI_PANEL_COLOR)
+		draw_text(state, rectangle, strings.clone_from_bytes(letters[:], context.temp_allocator), rectangle.height * 0.45, .Centre)
+	}
+}
+
+// Icon with the count in the bottom right corner; nothing for an empty stack.
+draw_item_stack :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, stack: Item_Stack, items: Item_Registry) {
+	if stack_is_empty(stack) {
+		return
+	}
+	draw_item_icon(state, inset(rectangle, UI_SLOT_ICON_INSET * rectangle.height / UI_SLOT_SIZE), item_icon(items, stack.item))
+	if stack.count > 1 {
+		count_area := inset(rectangle, 4)
+		count_area = cut_bottom(&count_area, UI_SLOT_COUNT_TEXT_SIZE)
+		draw_text(state, count_area, fmt.tprint(stack.count), UI_SLOT_COUNT_TEXT_SIZE, .Right)
+	}
+}
+
+// Info panel text of a stack: name, category and how full it is.
+item_stack_tooltip :: proc(stack: Item_Stack, items: Item_Registry) -> string {
+	if stack_is_empty(stack) {
+		return ""
+	}
+	category := text(item_category_key(items.items[stack.item].category))
+	return fmt.tprintf("%s  %s  %d / %d", item_name(items, stack.item), category, stack.count, item_stack_size(items, stack.item))
+}
+
+ui_item_slot :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, id: Ui_Id, stack: Item_Stack, items: Item_Registry) -> Ui_Interaction {
+	interaction := ui_interact(state, id, rectangle, {}, item_stack_tooltip(stack, items))
+	widget_background(state, rectangle, id, interaction)
+	draw_outline(state, rectangle, UI_PANEL_BORDER_COLOR)
+	draw_item_stack(state, rectangle, stack, items)
+	return interaction
+}
+
+slot_grid_width :: proc(columns: int) -> f32 {
+	return f32(columns) * (UI_SLOT_SIZE + UI_GAP) - UI_GAP
+}
+
+slot_grid_height :: proc(rows: int) -> f32 {
+	return slot_grid_width(rows)
+}
+
+slot_grid_rectangle :: proc(origin: [2]f32, columns, index: int) -> Ui_Rectangle {
+	return {
+		origin.x + f32(index % columns) * (UI_SLOT_SIZE + UI_GAP),
+		origin.y + f32(index / columns) * (UI_SLOT_SIZE + UI_GAP),
+		UI_SLOT_SIZE,
+		UI_SLOT_SIZE,
+	}
+}
+
+// Indices into the grid's slots, -1 for none.
+Slot_Grid_Result :: struct {
+	activated: int,
+	focused:   int,
+}
+
+// A grid of item slots, row by row from the origin.
+ui_slot_grid :: proc(state: ^Ui_State, origin: [2]f32, label: string, columns: int, slots: []Item_Stack, items: Item_Registry) -> Slot_Grid_Result {
 	ui_push_id(state, label)
 	defer ui_pop_id(state)
-	activated := -1
-	for index in 0 ..< columns * rows {
-		slot := Ui_Rectangle {
-			origin.x + f32(index % columns) * (UI_SLOT_SIZE + UI_GAP),
-			origin.y + f32(index / columns) * (UI_SLOT_SIZE + UI_GAP),
-			UI_SLOT_SIZE,
-			UI_SLOT_SIZE,
-		}
-		id := ui_id(state, "slot", index)
-		interaction := ui_interact(state, id, slot)
+	result := Slot_Grid_Result{activated = -1, focused = -1}
+	for stack, index in slots {
+		interaction := ui_item_slot(state, slot_grid_rectangle(origin, columns, index), ui_id(state, "slot", index), stack, items)
 		if interaction.activated {
-			activated = index
+			result.activated = index
 		}
-		widget_background(state, slot, id, interaction)
-		draw_outline(state, slot, UI_PANEL_BORDER_COLOR)
+		if interaction.focused {
+			result.focused = index
+		}
 	}
-	return activated
+	return result
 }
 
 ui_progress_bar :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, fraction: f32) {
@@ -359,6 +423,8 @@ glyph_key :: proc(device: Input_Device, button: Glyph_Button) -> string {
 			return "glyph_gamepad_context_action"
 		case .Pause:
 			return "glyph_gamepad_pause"
+		case .Inventory:
+			return "glyph_gamepad_inventory"
 		}
 	case .Keyboard_Mouse:
 		switch button {
@@ -376,6 +442,8 @@ glyph_key :: proc(device: Input_Device, button: Glyph_Button) -> string {
 			return "glyph_keyboard_context_action"
 		case .Pause:
 			return "glyph_keyboard_pause"
+		case .Inventory:
+			return "glyph_keyboard_inventory"
 		}
 	}
 	return ""
@@ -498,6 +566,8 @@ radial_input :: proc(input: Ui_Input, source: Radial_Source) -> (touching: bool,
 		position = stick_to_pad_position(input.right_stick)
 		offset := position - 0.5
 		return offset.x * offset.x + offset.y * offset.y > RADIAL_CENTER_RADIUS * RADIAL_CENTER_RADIUS, position
+	case .Held_Button:
+		return input.hotbar_radial_down, stick_to_pad_position(input.right_stick)
 	}
 	return false, {}
 }

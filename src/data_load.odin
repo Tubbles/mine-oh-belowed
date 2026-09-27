@@ -12,16 +12,16 @@ MAXIMUM_TICK_RATE :: 1000
 
 MAXIMUM_DAY_LENGTH_SECONDS :: 24 * 60 * 60
 
-Starting_Block :: struct {
-	block: string,
-	count: u32,
+Starting_Item :: struct {
+	item:  string,
+	count: int,
 }
 
 Game_Config :: struct {
 	name:               string,
 	tick_rate:          int,
 	day_length_seconds: int,
-	starting_blocks:    []Starting_Block,
+	starting_items:     []Starting_Item,
 }
 
 // An explicitly set environment variable wins even if the directory is
@@ -67,15 +67,14 @@ validate_game_config :: proc(config: Game_Config) -> string {
 	return ""
 }
 
-// Needs the block registry, so it runs after both files are loaded.
-validate_starting_blocks :: proc(starting_blocks: []Starting_Block, registry: Block_Registry) -> string {
-	for starting in starting_blocks {
-		block, found := find_block_id(registry, starting.block)
-		if !found {
-			return fmt.tprintf("starting block %q is not in %s", starting.block, BLOCKS_FILE_NAME)
+// Needs the item registry, so it runs after both files are loaded.
+validate_starting_items :: proc(starting_items: []Starting_Item, items: Item_Registry) -> string {
+	for starting in starting_items {
+		if _, found := find_item_id(items, starting.item); !found {
+			return fmt.tprintf("starting item %q is not in %s", starting.item, ITEMS_FILE_NAME)
 		}
-		if block == AIR_BLOCK {
-			return "air cannot be a starting block"
+		if starting.count < 1 {
+			return fmt.tprintf("starting item %q has count %d", starting.item, starting.count)
 		}
 	}
 	return ""

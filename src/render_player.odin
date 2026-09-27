@@ -84,8 +84,8 @@ draw_target_outline :: proc(player: Player) {
 	}
 }
 
-draw_placement_preview :: proc(player: Player) {
-	if !player_owns(player, player.selected_block) {
+draw_placement_preview :: proc(player: Player, items: Item_Registry) {
+	if selected_placed_block(player, items) == AIR_BLOCK {
 		return
 	}
 	rl.DrawCube(block_centre(player.target.adjacent), 1, 1, 1, PLACEMENT_PREVIEW_COLOR)
@@ -100,7 +100,7 @@ draw_player_body :: proc(position: [3]f32) {
 }
 
 // Between BeginMode3D and EndMode3D, after the chunks.
-draw_player_world_overlay :: proc(player: Player, alpha: f32) {
+draw_player_world_overlay :: proc(player: Player, items: Item_Registry, alpha: f32) {
 	if player.camera_mode == .Third_Person {
 		draw_player_body(interpolate_player_pose(player, alpha).position)
 	}
@@ -108,5 +108,5 @@ draw_player_world_overlay :: proc(player: Player, alpha: f32) {
 		return
 	}
 	draw_target_outline(player)
-	draw_placement_preview(player)
+	draw_placement_preview(player, items)
 }

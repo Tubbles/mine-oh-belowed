@@ -79,6 +79,8 @@ make_ui_input :: proc(previous, current: Input_Frame) -> Ui_Input {
 		tab_next = .Tab_Next in just,
 		info = .Info_Panel in just,
 		context_action = .Context_Action in just,
+		open_inventory = .Open_Inventory in just,
+		hotbar_radial_down = .Hotbar_Radial in current.pressed,
 		mouse_position = current.raw.mouse.position,
 		mouse_moved = current.raw.mouse.delta != {},
 		mouse_pressed = mouse_down && !previous.raw.mouse.button_down[0],

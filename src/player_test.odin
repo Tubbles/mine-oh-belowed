@@ -39,13 +39,15 @@ set_blocks :: proc(world: ^World, block: Block_Id, positions: ..World_Coordinate
 }
 
 make_test_player :: proc(registry: Block_Registry, position: [3]f32) -> Player {
-	return make_player(Player_Start{position = position}, len(registry.definitions), context.temp_allocator)
+	return make_player(Player_Start{position = position}, context.temp_allocator)
 }
 
-tick_test_player :: proc(world: ^World, registry: Block_Registry, player: ^Player, input: Input_Frame, ticks: int) {
+tick_test_player :: proc(world: ^World, registry: Block_Registry, player: ^Player, input: Input_Frame, ticks: int) -> (events: Player_Events) {
+	items := make_test_items()
 	for _ in 0 ..< ticks {
-		tick_player(world, registry, slice.from_ptr(player, 1), 0, input, TEST_TICK_RATE)
+		events += tick_player(world, registry, items, slice.from_ptr(player, 1), 0, input, TEST_TICK_RATE)
 	}
+	return events
 }
 
 WALK_FORWARD :: Input_Frame {
@@ -252,17 +254,17 @@ make_generated_world :: proc(generator: ^Generator, centre: Chunk_Coordinate) ->
 	return world
 }
 
-make_generated_simulation :: proc(generator: ^Generator, registry: Block_Registry) -> Simulation_State {
+make_generated_simulation :: proc(generator: ^Generator, items: Item_Registry) -> Simulation_State {
 	surface := World_Coordinate{8, terrain_height(generator.seeds, 8, 8), 8}
-	simulation := make_simulation(test_game_config(), player_start_on(surface), registry)
+	simulation := make_simulation(test_game_config(), player_start_on(surface), items)
 	simulation.world = make_generated_world(generator, world_to_chunk_coordinate(surface))
 	return simulation
 }
 
-owned_total :: proc(player: Player) -> u32 {
-	total: u32
-	for count in player.owned_blocks {
-		total += count
+owned_total :: proc(player: Player) -> int {
+	total := 0
+	for slot in player.inventory.slots {
+		total += int(slot.count)
 	}
 	return total
 }
@@ -270,19 +272,20 @@ owned_total :: proc(player: Player) -> u32 {
 @(test)
 test_player_ticks_are_deterministic :: proc(t: ^testing.T) {
 	registry := make_test_registry()
+	items := make_test_items()
 	first_generator := make_test_generator(DEFAULT_WORLD_SEED)
 	second_generator := make_test_generator(DEFAULT_WORLD_SEED)
-	first := make_generated_simulation(&first_generator, registry)
+	first := make_generated_simulation(&first_generator, items)
 	defer destroy_simulation(&first)
-	second := make_generated_simulation(&second_generator, registry)
+	second := make_generated_simulation(&second_generator, items)
 	defer destroy_simulation(&second)
 	start := first.players[0].position
 	placed_count := 0
 	for tick in 0 ..< 1200 {
 		input := recorded_input(tick)
 		owned_before := owned_total(first.players[0])
-		simulation_tick(&first, registry, {input})
-		simulation_tick(&second, registry, {input})
+		simulation_tick(&first, registry, items, {input})
+		simulation_tick(&second, registry, items, {input})
 		placed_count += owned_total(first.players[0]) < owned_before ? 1 : 0
 	}
 	a, b := first.players[0], second.players[0]
@@ -290,12 +293,12 @@ test_player_ticks_are_deterministic :: proc(t: ^testing.T) {
 	testing.expect_value(t, transmute([3]u32)a.velocity, transmute([3]u32)b.velocity)
 	testing.expect_value(t, transmute(u32)a.yaw, transmute(u32)b.yaw)
 	testing.expect_value(t, transmute(u32)a.pitch, transmute(u32)b.pitch)
-	testing.expect_value(t, a.selected_block, b.selected_block)
-	for count, block in a.owned_blocks {
-		testing.expect_value(t, count, b.owned_blocks[block])
+	testing.expect_value(t, a.selected_hotbar_slot, b.selected_hotbar_slot)
+	for slot, index in a.inventory.slots {
+		testing.expect_value(t, slot, b.inventory.slots[index])
 	}
 	moved := a.position - start
-	log.infof("after 1200 ticks: moved %v, placed %d, owned %v, selected %v", moved, placed_count, a.owned_blocks, a.selected_block)
+	log.infof("after 1200 ticks: moved %v, placed %d, hotbar %v, selected %v", moved, placed_count, inventory_hotbar(a.inventory), a.selected_hotbar_slot)
 	testing.expectf(t, moved.x * moved.x + moved.z * moved.z > 1, "moved %v", moved)
 	testing.expectf(t, placed_count > 0, "nothing placed")
 }

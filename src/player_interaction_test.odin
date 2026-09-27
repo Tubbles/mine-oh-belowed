@@ -52,8 +52,9 @@ test_mining_progress_resets :: proc(t: ^testing.T) {
 }
 
 @(test)
-test_player_mines_block_into_owned_count :: proc(t: ^testing.T) {
+test_player_mines_block_into_hotbar :: proc(t: ^testing.T) {
 	registry := make_test_registry()
+	items := make_test_items()
 	world := make_floor_world(registry, 32)
 	stone := test_block(registry, "stone")
 	player := make_test_player(registry, {0.5, 1, 0.5})
@@ -63,8 +64,34 @@ test_player_mines_block_into_owned_count :: proc(t: ^testing.T) {
 	testing.expect_value(t, world_get_block(&world, {0, 0, 0}), stone)
 	tick_test_player(&world, registry, &player, Input_Frame{pressed = {.Mine}}, 1)
 	testing.expect_value(t, world_get_block(&world, {0, 0, 0}), AIR_BLOCK)
-	testing.expect_value(t, player.owned_blocks[stone], 1)
-	testing.expect_value(t, player.selected_block, stone)
+	stone_item := test_item(items, "stone")
+	testing.expect_value(t, player.inventory.slots[0], Item_Stack{item = stone_item, count = 1})
+	testing.expect_value(t, selected_placed_block(player, items), stone)
+}
+
+@(test)
+test_mining_drops_the_mapped_item :: proc(t: ^testing.T) {
+	registry := make_test_registry()
+	items := make_test_items()
+	testing.expect_value(t, block_drop(items, test_block(registry, "grass")), test_item(items, "dirt"))
+	testing.expect_value(t, block_drop(items, test_block(registry, "hematite_ore")), test_item(items, "hematite"))
+	testing.expect_value(t, block_drop(items, test_block(registry, "log")), test_item(items, "log"))
+	testing.expect_value(t, block_drop(items, AIR_BLOCK), NO_ITEM)
+	testing.expect_value(t, item_places_block(items, test_item(items, "hematite")), AIR_BLOCK)
+}
+
+@(test)
+test_mining_with_a_full_inventory_reports_it :: proc(t: ^testing.T) {
+	registry := make_test_registry()
+	world := make_floor_world(registry, 32)
+	player := make_test_player(registry, {0.5, 1, 0.5})
+	player.pitch = -89
+	for &slot in player.inventory.slots {
+		slot = Item_Stack{item = test_item(make_test_items(), "coal"), count = 50}
+	}
+	events := tick_test_player(&world, registry, &player, Input_Frame{pressed = {.Mine}}, 90)
+	testing.expect_value(t, world_get_block(&world, {0, 0, 0}), AIR_BLOCK)
+	testing.expect_value(t, events, Player_Events{.Inventory_Full})
 }
 
 @(test)
@@ -90,41 +117,43 @@ test_placement_rejects_cells_inside_a_player :: proc(t: ^testing.T) {
 }
 
 @(test)
-test_place_uses_owned_block_and_respects_player_box :: proc(t: ^testing.T) {
+test_place_uses_selected_hotbar_slot_and_respects_player_box :: proc(t: ^testing.T) {
 	registry := make_test_registry()
+	items := make_test_items()
 	world := make_floor_world(registry, 32)
 	dirt := test_block(registry, "dirt")
 	players := []Player{make_test_player(registry, {0.5, 1, 0.5})}
 	player := &players[0]
-	player.owned_blocks[dirt] = 2
-	player.selected_block = dirt
+	player.inventory.slots[2] = Item_Stack{item = test_item(items, "dirt"), count = 2}
+	player.inventory.slots[3] = Item_Stack{item = test_item(items, "hematite"), count = 5}
+	player.selected_hotbar_slot = 2
 	player.target = Raycast_Hit{hit = true, block = {0, 0, 0}, face = .Positive_Y, adjacent = {0, 1, 0}}
-	place_with_player(&world, registry, players, 0, {.Place})
+	place_with_player(&world, registry, items, players, 0, {.Place})
 	testing.expect_value(t, world_get_block(&world, {0, 1, 0}), AIR_BLOCK)
-	testing.expect_value(t, player.owned_blocks[dirt], 2)
+	testing.expect_value(t, player.inventory.slots[2].count, 2)
 	player.target = Raycast_Hit{hit = true, block = {2, 0, 0}, face = .Positive_Y, adjacent = {2, 1, 0}}
-	place_with_player(&world, registry, players, 0, {})
+	place_with_player(&world, registry, items, players, 0, {})
 	testing.expect_value(t, world_get_block(&world, {2, 1, 0}), AIR_BLOCK)
-	place_with_player(&world, registry, players, 0, {.Place})
+	place_with_player(&world, registry, items, players, 0, {.Place})
 	testing.expect_value(t, world_get_block(&world, {2, 1, 0}), dirt)
-	testing.expect_value(t, player.owned_blocks[dirt], 1)
+	testing.expect_value(t, player.inventory.slots[2].count, 1)
 	testing.expect(t, world.chunks[{0, 0, 0}].dirty)
+	// An item that places nothing is not consumed.
+	player.selected_hotbar_slot = 3
+	player.target = Raycast_Hit{hit = true, block = {4, 0, 0}, face = .Positive_Y, adjacent = {4, 1, 0}}
+	place_with_player(&world, registry, items, players, 0, {.Place})
+	testing.expect_value(t, world_get_block(&world, {4, 1, 0}), AIR_BLOCK)
+	testing.expect_value(t, player.inventory.slots[3].count, 5)
+	// The last one empties the slot.
+	player.selected_hotbar_slot = 2
+	place_with_player(&world, registry, items, players, 0, {.Place})
+	testing.expect_value(t, player.inventory.slots[2], EMPTY_STACK)
 }
 
 @(test)
-test_selection_cycles_owned_blocks :: proc(t: ^testing.T) {
-	owned := []u32{0, 3, 0, 1, 0, 2}
-	testing.expect_value(t, next_owned_block(owned, AIR_BLOCK, 1), Block_Id(1))
-	testing.expect_value(t, next_owned_block(owned, Block_Id(1), 1), Block_Id(3))
-	testing.expect_value(t, next_owned_block(owned, Block_Id(5), 1), Block_Id(1))
-	testing.expect_value(t, next_owned_block(owned, Block_Id(1), -1), Block_Id(5))
-	testing.expect_value(t, next_owned_block([]u32{0, 0}, AIR_BLOCK, 1), AIR_BLOCK)
-	player := Player {
-		owned_blocks   = owned,
-		selected_block = Block_Id(3),
-	}
-	cycle_selected_block(&player, {.Hotbar_Previous})
-	testing.expect_value(t, player.selected_block, Block_Id(1))
-	cycle_selected_block(&player, {.Hotbar_Next})
-	testing.expect_value(t, player.selected_block, Block_Id(3))
+test_hotbar_cycle_wraps :: proc(t: ^testing.T) {
+	testing.expect_value(t, cycle_hotbar_slot(0, {.Hotbar_Previous}), HOTBAR_SLOT_COUNT - 1)
+	testing.expect_value(t, cycle_hotbar_slot(HOTBAR_SLOT_COUNT - 1, {.Hotbar_Next}), 0)
+	testing.expect_value(t, cycle_hotbar_slot(3, {.Hotbar_Next}), 4)
+	testing.expect_value(t, cycle_hotbar_slot(3, {}), 3)
 }

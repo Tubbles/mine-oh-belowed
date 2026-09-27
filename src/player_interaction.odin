@@ -2,7 +2,7 @@ package game
 
 import "core:math"
 
-// Hand mining, placing and the selected block. Progress counts whole ticks,
+// Hand mining, placing and the selected hotbar slot. Progress counts whole ticks,
 // so it stays integer like every accumulating simulation quantity.
 
 Mining_State :: struct {
@@ -49,15 +49,22 @@ required_ticks_for :: proc(registry: Block_Registry, block_id: Block_Id, tick_ra
 	return mining_required_ticks(registry.definitions[block_id].hardness_seconds, tick_rate)
 }
 
-mine_with_player :: proc(world: ^World, registry: Block_Registry, player: ^Player, holding: bool, tick_rate: int) {
+// The block's item goes into the inventory, hotbar first. With no room
+// the block still breaks and the item is lost: there are no item drops in
+// the world yet.
+mine_with_player :: proc(world: ^World, registry: Block_Registry, items: Item_Registry, player: ^Player, holding: bool, tick_rate: int) -> Player_Events {
 	block_id := world_get_block(world, player.target.block)
 	required := required_ticks_for(registry, block_id, tick_rate)
 	broken: bool
 	player.mining, broken = advance_mining(player.mining, holding, player.target, block_id, required)
-	if broken && world_set_block(world, player.target.block, AIR_BLOCK) {
-		player.owned_blocks[block_id] += 1
-		ensure_selected_block_owned(player)
+	if !broken || !world_set_block(world, player.target.block, AIR_BLOCK) {
+		return {}
 	}
+	drop := block_drop(items, block_id)
+	if drop != NO_ITEM && inventory_add(player.inventory, items, drop, 1) > 0 {
+		return {.Inventory_Full}
+	}
+	return {}
 }
 
 // A block may go into a cell that is not solid and that no player's body
@@ -74,50 +81,41 @@ placement_allowed :: proc(world: ^World, registry: Block_Registry, players: []Pl
 	return true
 }
 
-player_owns :: proc(player: Player, block_id: Block_Id) -> bool {
-	return block_id != AIR_BLOCK && int(block_id) < len(player.owned_blocks) && player.owned_blocks[block_id] > 0
+selected_hotbar_stack :: proc(player: Player) -> Item_Stack {
+	return inventory_hotbar(player.inventory)[player.selected_hotbar_slot]
 }
 
-place_with_player :: proc(world: ^World, registry: Block_Registry, players: []Player, index: int, just_pressed: Action_Set) {
+// The block the selected hotbar slot would place, or air.
+selected_placed_block :: proc(player: Player, items: Item_Registry) -> Block_Id {
+	stack := selected_hotbar_stack(player)
+	if stack_is_empty(stack) {
+		return AIR_BLOCK
+	}
+	return item_places_block(items, stack.item)
+}
+
+place_with_player :: proc(world: ^World, registry: Block_Registry, items: Item_Registry, players: []Player, index: int, just_pressed: Action_Set) {
 	player := &players[index]
-	if .Place not_in just_pressed || !player.target.hit || !player_owns(player^, player.selected_block) {
+	block := selected_placed_block(player^, items)
+	if .Place not_in just_pressed || !player.target.hit || block == AIR_BLOCK {
 		return
 	}
 	if !placement_allowed(world, registry, players, player.target.adjacent) {
 		return
 	}
-	if world_set_block(world, player.target.adjacent, player.selected_block) {
-		player.owned_blocks[player.selected_block] -= 1
-		ensure_selected_block_owned(player)
+	if world_set_block(world, player.target.adjacent, block) {
+		take_from_slot(&inventory_hotbar(player.inventory)[player.selected_hotbar_slot], 1)
 	}
 }
 
-// The next owned block id after `from` in direction +1 or -1, wrapping,
-// or air when nothing is owned. Air (id 0) is never selected.
-next_owned_block :: proc(owned_blocks: []u32, from: Block_Id, direction: int) -> Block_Id {
-	count := len(owned_blocks)
-	for step in 1 ..= count {
-		candidate := ((int(from) + direction * step) % count + count) % count
-		if candidate != int(AIR_BLOCK) && owned_blocks[candidate] > 0 {
-			return Block_Id(candidate)
-		}
-	}
-	return AIR_BLOCK
-}
-
-// Keeps the selection on an owned block: the first block mined gets
-// selected, and running out of one moves on to the next.
-ensure_selected_block_owned :: proc(player: ^Player) {
-	if !player_owns(player^, player.selected_block) {
-		player.selected_block = next_owned_block(player.owned_blocks, player.selected_block, 1)
-	}
-}
-
-cycle_selected_block :: proc(player: ^Player, just_pressed: Action_Set) {
+// Steps through the hotbar slots, wrapping, empty slots included.
+cycle_hotbar_slot :: proc(selected: int, just_pressed: Action_Set) -> int {
+	result := selected
 	if .Hotbar_Next in just_pressed {
-		player.selected_block = next_owned_block(player.owned_blocks, player.selected_block, 1)
+		result += 1
 	}
 	if .Hotbar_Previous in just_pressed {
-		player.selected_block = next_owned_block(player.owned_blocks, player.selected_block, -1)
+		result -= 1
 	}
+	return (result % HOTBAR_SLOT_COUNT + HOTBAR_SLOT_COUNT) % HOTBAR_SLOT_COUNT
 }

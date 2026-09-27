@@ -154,9 +154,18 @@ main :: proc() {
 	if !registry_loaded {
 		os.exit(1)
 	}
-	if problem := validate_starting_blocks(config.starting_blocks, registry); problem != "" {
+	items, items_loaded := load_item_registry(data_directory, registry)
+	if !items_loaded {
+		os.exit(1)
+	}
+	if problem := validate_starting_items(config.starting_items, items); problem != "" {
 		fmt.eprintfln("error: invalid %s: %s", GAME_CONFIG_FILE_NAME, problem)
 		os.exit(1)
+	}
+	content := Game_Content {
+		blocks          = registry,
+		items           = items,
+		item_sort_ranks = item_sort_ranks(items, item_display_names(items, context.temp_allocator)),
 	}
 	generator, generator_loaded := load_generator(data_directory, registry, command_line.seed)
 	if !generator_loaded {
@@ -167,7 +176,7 @@ main :: proc() {
 	if !input_started {
 		os.exit(1)
 	}
-	run_game(config, input_backend, registry, generator, start, data_directory)
+	run_game(config, input_backend, content, generator, start, data_directory)
 }
 
 World_Start :: struct {

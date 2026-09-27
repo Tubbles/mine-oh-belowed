@@ -8,7 +8,7 @@ Living document. Every item, machine, recipe and technology, the values that con
 - Power is in kilowatts and megawatts, energy in megajoules. A fuel item's value is the energy a machine extracts from it, no efficiency factor.
 - Fluids are in litres. One water unit is one litre.
 - Factorio's proportions are the anchor, its absolute values are not. Where a ratio below matches Factorio it is on purpose: a decade of players proved those ratios produce interesting math.
-- Stack sizes are small so pockets fill fast in phase 2 and belts win early: ore, plates and spoils 50, intermediates 100, machines 10, fluids do not stack.
+- Stack sizes are small so pockets fill fast in phase 2 and belts win early: ore, plates, steel and spoils 50, other intermediates 100, machines and tools 10, blocks 50, fluids are not items. Mining a block yields exactly one item: the item that places it, or for grass and the ore blocks the item listed as mined from them (dirt, hematite, coal, chalcopyrite, cassiterite).
 - Hand crafting has speed 1. A hand crafted recipe takes its listed time.
 - When a phase runs long in a couch test the fix is lower cost, not fewer steps.
 

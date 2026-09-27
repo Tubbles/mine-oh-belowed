@@ -37,22 +37,31 @@ Camera_Mode :: enum u8 {
 // turns towards +z, positive pitch looks up. The previous_ fields hold the
 // state before the latest tick, for render interpolation.
 Player :: struct {
-	position:          [3]f32,
-	velocity:          [3]f32,
-	yaw:               f32,
-	pitch:             f32,
-	previous_position: [3]f32,
-	previous_yaw:      f32,
-	previous_pitch:    f32,
-	on_ground:         bool,
-	flying:            bool,
-	camera_mode:       Camera_Mode,
-	target:            Raycast_Hit,
-	mining:            Mining_State,
-	selected_block:    Block_Id,
-	// Blocks owned, indexed by block id. The real inventory is M2.
-	owned_blocks:      []u32,
+	position:             [3]f32,
+	velocity:             [3]f32,
+	yaw:                  f32,
+	pitch:                f32,
+	previous_position:    [3]f32,
+	previous_yaw:         f32,
+	previous_pitch:       f32,
+	on_ground:            bool,
+	flying:               bool,
+	camera_mode:          Camera_Mode,
+	target:               Raycast_Hit,
+	mining:               Mining_State,
+	// The hotbar is the first HOTBAR_SLOT_COUNT slots.
+	inventory:            Inventory,
+	selected_hotbar_slot: int,
+	// The stack on the cursor of the inventory screen.
+	held:                 Held_Stack,
 }
+
+// What a player tick reports to the UI, which turns it into toasts.
+Player_Event :: enum u8 {
+	Inventory_Full,
+}
+
+Player_Events :: bit_set[Player_Event]
 
 Player_Start :: struct {
 	position: [3]f32,
@@ -61,7 +70,7 @@ Player_Start :: struct {
 	flying:   bool,
 }
 
-make_player :: proc(start: Player_Start, block_count: int, allocator := context.allocator) -> Player {
+make_player :: proc(start: Player_Start, allocator := context.allocator) -> Player {
 	return Player {
 		position = start.position,
 		previous_position = start.position,
@@ -70,22 +79,22 @@ make_player :: proc(start: Player_Start, block_count: int, allocator := context.
 		pitch = start.pitch,
 		previous_pitch = start.pitch,
 		flying = start.flying,
-		owned_blocks = make([]u32, block_count, allocator),
+		inventory = make_inventory(PLAYER_INVENTORY_SLOT_COUNT, allocator),
+		held = EMPTY_HELD_STACK,
 	}
 }
 
-// Unknown names are skipped: validate_starting_blocks reports them at load.
-give_starting_blocks :: proc(player: ^Player, registry: Block_Registry, starting_blocks: []Starting_Block) {
-	for starting in starting_blocks {
-		if block, found := find_block_id(registry, starting.block); found && block != AIR_BLOCK {
-			player.owned_blocks[block] += starting.count
+// Unknown names are skipped: validate_starting_items reports them at load.
+give_starting_items :: proc(player: ^Player, items: Item_Registry, starting_items: []Starting_Item) {
+	for starting in starting_items {
+		if item, found := find_item_id(items, starting.item); found {
+			inventory_add(player.inventory, items, item, starting.count)
 		}
 	}
-	ensure_selected_block_owned(player)
 }
 
-destroy_player :: proc(player: Player) {
-	delete(player.owned_blocks)
+destroy_player :: proc(player: Player, allocator := context.allocator) {
+	destroy_inventory(player.inventory, allocator)
 }
 
 // Standing on top of the given surface block.
@@ -230,7 +239,7 @@ apply_player_toggles :: proc(player: ^Player, just_pressed: Action_Set) {
 	}
 }
 
-tick_player :: proc(world: ^World, registry: Block_Registry, players: []Player, index: int, input: Input_Frame, tick_rate: int) {
+tick_player :: proc(world: ^World, registry: Block_Registry, items: Item_Registry, players: []Player, index: int, input: Input_Frame, tick_rate: int) -> Player_Events {
 	player := &players[index]
 	seconds := 1 / f32(tick_rate)
 	player.previous_position, player.previous_yaw, player.previous_pitch = player.position, player.yaw, player.pitch
@@ -242,7 +251,8 @@ tick_player :: proc(world: ^World, registry: Block_Registry, players: []Player, 
 		walk_player(world, registry, player, input, seconds)
 	}
 	player.target = raycast_blocks(world, registry, player_eye(player.position), player_look_direction(player^), PLAYER_REACH)
-	mine_with_player(world, registry, player, .Mine in input.pressed, tick_rate)
-	place_with_player(world, registry, players, index, input.just_pressed)
-	cycle_selected_block(player, input.just_pressed)
+	events := mine_with_player(world, registry, items, player, .Mine in input.pressed, tick_rate)
+	place_with_player(world, registry, items, players, index, input.just_pressed)
+	player.selected_hotbar_slot = cycle_hotbar_slot(player.selected_hotbar_slot, input.just_pressed)
+	return events
 }

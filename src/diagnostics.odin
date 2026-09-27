@@ -263,15 +263,26 @@ target_text :: proc(registry: Block_Registry, world: ^World, target: Raycast_Hit
 	return fmt.tprintf("target %s at %d %d %d face %v", block_name(registry, world_get_block(world, block)), block.x, block.y, block.z, target.face)
 }
 
-owned_blocks_text :: proc(registry: Block_Registry, owned_blocks: []u32) -> string {
-	builder := strings.builder_make(context.temp_allocator)
-	strings.write_string(&builder, "owned")
-	for count, block in owned_blocks {
-		if count > 0 {
-			fmt.sbprintf(&builder, " %s %d", block_name(registry, Block_Id(block)), count)
-		}
+item_id_text :: proc(items: Item_Registry, item: Item_Id) -> string {
+	if int(item) >= len(items.items) {
+		return "?"
 	}
-	return strings.to_string(builder)
+	return items.items[item].id
+}
+
+stack_text :: proc(items: Item_Registry, stack: Item_Stack) -> string {
+	if stack_is_empty(stack) {
+		return "empty"
+	}
+	return fmt.tprintf("%s %d", item_id_text(items, stack.item), stack.count)
+}
+
+occupied_slot_count :: proc(inventory: Inventory) -> int {
+	count := 0
+	for slot in inventory.slots {
+		count += stack_is_empty(slot) ? 0 : 1
+	}
+	return count
 }
 
 append_player_lines :: proc(lines: ^[dynamic]Diagnostics_Line, state: Frame_State) {
@@ -280,5 +291,16 @@ append_player_lines :: proc(lines: ^[dynamic]Diagnostics_Line, state: Frame_Stat
 	append_line(lines, false, "player % .2f % .2f % .2f  velocity % .2f % .2f % .2f", position.x, position.y, position.z, velocity.x, velocity.y, velocity.z)
 	append_line(lines, false, "on ground %s  camera %v  flying %s", yes_no(player.on_ground), player.camera_mode, yes_no(player.flying))
 	append_line(lines, player.mining.active, "%s  mining %.0f%%", target_text(registry, &world, player.target), mining_fraction(player.mining) * 100)
-	append_line(lines, false, "selected %s  %s", block_name(registry, player.selected_block), owned_blocks_text(registry, player.owned_blocks))
+	items := state.items
+	append_line(
+		lines,
+		false,
+		"hotbar slot %d %s  places %s  held %s  slots used %d of %d",
+		player.selected_hotbar_slot,
+		stack_text(items, selected_hotbar_stack(player)),
+		block_name(registry, selected_placed_block(player, items)),
+		stack_text(items, player.held.stack),
+		occupied_slot_count(player.inventory),
+		len(player.inventory.slots),
+	)
 }

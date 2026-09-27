@@ -1,0 +1,81 @@
+// Item prototypes (work item 0010): every item of doc/content.md phases 1
+// to 4 plus the blocks that drop themselves, in one table. Loaded and
+// resolved to a dense Item_Id at startup, like the blocks.
+// name_key is a key into data/strings/en.sjson.
+// category is raw, intermediate, tool, machine or block; the inventory
+// sorts by category in that order, then by name.
+// stack_size follows doc/content.md: ore, plates and spoils 50,
+// intermediates 100, machines and tools 10. Blocks stack like raw material.
+// places_block (optional) is the block the item places, and mining that
+// block yields the item. mined_from (optional) lists further blocks whose
+// mining yields the item (grass gives dirt, ore blocks give the ore).
+// Every block that can be mined must yield exactly one item.
+// fuel_megajoules (optional) is the energy a machine extracts from the item.
+// Fluids (water, steam) are not items: fluids do not stack.
+items = [
+	// Raw materials
+	{id = "log", name_key = "item_log", category = "raw", stack_size = 50, places_block = "log", fuel_megajoules = 2}
+	{id = "stone", name_key = "item_stone", category = "raw", stack_size = 50, places_block = "stone"}
+	{id = "dirt", name_key = "item_dirt", category = "raw", stack_size = 50, places_block = "dirt", mined_from = ["grass"]}
+	{id = "sand", name_key = "item_sand", category = "raw", stack_size = 50, places_block = "sand"}
+	{id = "clay", name_key = "item_clay", category = "raw", stack_size = 50}
+	{id = "gravel", name_key = "item_gravel", category = "raw", stack_size = 50}
+	{id = "coal", name_key = "item_coal", category = "raw", stack_size = 50, mined_from = ["coal_ore"], fuel_megajoules = 4}
+	{id = "hematite", name_key = "item_hematite", category = "raw", stack_size = 50, mined_from = ["hematite_ore"]}
+	{id = "chalcopyrite", name_key = "item_chalcopyrite", category = "raw", stack_size = 50, mined_from = ["chalcopyrite_ore"]}
+	{id = "cassiterite", name_key = "item_cassiterite", category = "raw", stack_size = 50, mined_from = ["cassiterite_ore"]}
+	// Processed materials and intermediates
+	{id = "plank", name_key = "item_plank", category = "intermediate", stack_size = 100, fuel_megajoules = 1}
+	{id = "stick", name_key = "item_stick", category = "intermediate", stack_size = 100, fuel_megajoules = 0.5}
+	{id = "stone_brick", name_key = "item_stone_brick", category = "intermediate", stack_size = 100}
+	{id = "charcoal", name_key = "item_charcoal", category = "intermediate", stack_size = 100, fuel_megajoules = 3}
+	{id = "iron_plate", name_key = "item_iron_plate", category = "intermediate", stack_size = 50}
+	{id = "copper_plate", name_key = "item_copper_plate", category = "intermediate", stack_size = 50}
+	{id = "tin_plate", name_key = "item_tin_plate", category = "intermediate", stack_size = 50}
+	{id = "bronze_plate", name_key = "item_bronze_plate", category = "intermediate", stack_size = 50}
+	{id = "glass", name_key = "item_glass", category = "intermediate", stack_size = 100}
+	{id = "steel", name_key = "item_steel", category = "intermediate", stack_size = 50}
+	{id = "iron_gear", name_key = "item_iron_gear", category = "intermediate", stack_size = 100}
+	{id = "iron_rod", name_key = "item_iron_rod", category = "intermediate", stack_size = 100}
+	{id = "copper_wire", name_key = "item_copper_wire", category = "intermediate", stack_size = 100}
+	{id = "electronic_circuit", name_key = "item_electronic_circuit", category = "intermediate", stack_size = 100}
+	{id = "pipe", name_key = "item_pipe", category = "intermediate", stack_size = 100}
+	{id = "science_pack_1", name_key = "item_science_pack_1", category = "intermediate", stack_size = 100}
+	// Tools
+	{id = "wooden_pickaxe", name_key = "item_wooden_pickaxe", category = "tool", stack_size = 10}
+	{id = "stone_pickaxe", name_key = "item_stone_pickaxe", category = "tool", stack_size = 10}
+	{id = "iron_pickaxe", name_key = "item_iron_pickaxe", category = "tool", stack_size = 10}
+	{id = "geologists_hammer", name_key = "item_geologists_hammer", category = "tool", stack_size = 10}
+	{id = "magnetometer", name_key = "item_magnetometer", category = "tool", stack_size = 10}
+	// Machines
+	{id = "stone_furnace", name_key = "item_stone_furnace", category = "machine", stack_size = 10}
+	{id = "steel_furnace", name_key = "item_steel_furnace", category = "machine", stack_size = 10}
+	{id = "burner_mining_drill", name_key = "item_burner_mining_drill", category = "machine", stack_size = 10}
+	{id = "electric_mining_drill", name_key = "item_electric_mining_drill", category = "machine", stack_size = 10}
+	{id = "burner_inserter", name_key = "item_burner_inserter", category = "machine", stack_size = 10}
+	{id = "inserter", name_key = "item_inserter", category = "machine", stack_size = 10}
+	{id = "filter_inserter", name_key = "item_filter_inserter", category = "machine", stack_size = 10}
+	{id = "belt", name_key = "item_belt", category = "machine", stack_size = 10}
+	{id = "belt_ramp", name_key = "item_belt_ramp", category = "machine", stack_size = 10}
+	{id = "belt_lift", name_key = "item_belt_lift", category = "machine", stack_size = 10}
+	{id = "splitter", name_key = "item_splitter", category = "machine", stack_size = 10}
+	{id = "wooden_chest", name_key = "item_wooden_chest", category = "machine", stack_size = 10}
+	{id = "iron_chest", name_key = "item_iron_chest", category = "machine", stack_size = 10}
+	{id = "offshore_pump", name_key = "item_offshore_pump", category = "machine", stack_size = 10}
+	{id = "pump", name_key = "item_pump", category = "machine", stack_size = 10}
+	{id = "storage_tank", name_key = "item_storage_tank", category = "machine", stack_size = 10}
+	{id = "boiler", name_key = "item_boiler", category = "machine", stack_size = 10}
+	{id = "steam_engine", name_key = "item_steam_engine", category = "machine", stack_size = 10}
+	{id = "small_pole", name_key = "item_small_pole", category = "machine", stack_size = 10}
+	{id = "lamp", name_key = "item_lamp", category = "machine", stack_size = 10}
+	{id = "power_switch", name_key = "item_power_switch", category = "machine", stack_size = 10}
+	{id = "assembler_1", name_key = "item_assembler_1", category = "machine", stack_size = 10}
+	{id = "lab", name_key = "item_lab", category = "machine", stack_size = 10}
+	{id = "core_sample_drill", name_key = "item_core_sample_drill", category = "machine", stack_size = 10}
+	// Blocks that drop themselves
+	{id = "leaves", name_key = "item_leaves", category = "block", stack_size = 50, places_block = "leaves"}
+	{id = "tar", name_key = "item_tar", category = "block", stack_size = 50, places_block = "tar"}
+	{id = "deep_stone", name_key = "item_deep_stone", category = "block", stack_size = 50, places_block = "deep_stone"}
+	{id = "spent_rock", name_key = "item_spent_rock", category = "block", stack_size = 50, places_block = "spent_rock"}
+	{id = "torch", name_key = "item_torch", category = "block", stack_size = 50, places_block = "torch"}
+]

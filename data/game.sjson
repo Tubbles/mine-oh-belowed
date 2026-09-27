@@ -3,7 +3,8 @@ name = "Mine oh Belowed"
 tick_rate = 60
 // Length of one cosmetic day and night cycle.
 day_length_seconds = 1200
-// Blocks every player owns at the start. Torches cannot be crafted yet.
-starting_blocks = [
-	{block = "torch", count = 64}
+// Items every player starts with, by item id from items.sjson. Torches
+// cannot be crafted yet.
+starting_items = [
+	{item = "torch", count = 64}
 ]

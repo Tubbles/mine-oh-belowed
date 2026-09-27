@@ -11,21 +11,29 @@ SETTINGS_PANEL_WIDTH :: 960
 SETTINGS_ROW_COUNT :: 8
 
 Screen_Context :: struct {
-	settings:       ^Settings,
-	quit_requested: ^bool,
+	settings:        ^Settings,
+	quit_requested:  ^bool,
+	player:          ^Player,
+	items:           Item_Registry,
+	item_sort_ranks: []u16,
 }
 
-// Pause opens the pause menu from the world. With a screen open, Back and
-// Pause both step back one screen (the first press closes an open tooltip).
+// Pause opens the pause menu from the world, Open_Inventory the inventory.
+// With a screen open, Back and Pause both step back one screen (the first
+// press closes an open tooltip). Open_Inventory closes the inventory too,
+// except on the gamepad, where the same X press is the context action.
 handle_screen_keys :: proc(state: ^Ui_State) {
 	input := state.input
 	if state.screens.count == 0 {
 		if input.pause {
 			push_screen(&state.screens, .Pause)
+		} else if input.open_inventory {
+			push_screen(&state.screens, .Inventory)
 		}
 		return
 	}
-	if !input.back && !input.pause {
+	closes_inventory := top_screen(state.screens) == .Inventory && input.open_inventory && !input.context_action
+	if !input.back && !input.pause && !closes_inventory {
 		return
 	}
 	if state.tooltip_open {
@@ -43,10 +51,17 @@ run_screens :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		pause_screen(state, screen_context)
 	case .Settings:
 		settings_screen(state, screen_context)
+	case .Inventory:
+		inventory_screen(state, screen_context)
 	}
 	// After the screen, so that the Back press a screen consumed this frame
 	// and the screen change land in the same frame.
 	handle_screen_keys(state)
+	// A stack still on the cursor goes back once the inventory is closed.
+	if top_screen(state.screens) != .Inventory && screen_context.player != nil {
+		player := screen_context.player
+		player.held = return_held_stack(player.inventory, player.held, screen_context.items)
+	}
 }
 
 panel_height :: proc(row_count: int, extra: f32) -> f32 {

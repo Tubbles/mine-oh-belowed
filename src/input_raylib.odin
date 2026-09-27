@@ -5,6 +5,7 @@ import rl "vendor:raylib"
 // Hardcoded until bindings move to configuration. The layout follows
 // doc/input.md. Hotbar_Radial has no gamepad binding here because it needs
 // the left trackpad, which only the SDL3 backend (work item 0002) exposes.
+// Holding Tab shows the hotbar radial instead, driven by the right stick.
 
 RAYLIB_GAMEPAD_SLOTS :: 4
 

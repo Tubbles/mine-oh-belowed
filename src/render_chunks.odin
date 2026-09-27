@@ -70,6 +70,11 @@ color_to_vector3 :: proc(color: rl.Color) -> [3]f32 {
 	return {f32(color.r), f32(color.g), f32(color.b)} / 255
 }
 
+// The block atlas also serves as the placeholder item icons.
+chunk_atlas_texture :: proc(renderer: Chunk_Renderer) -> rl.Texture2D {
+	return renderer.material.maps[rl.MaterialMapIndex.ALBEDO].texture
+}
+
 init_chunk_renderer :: proc(registry: Block_Registry, data_directory: string) -> (renderer: Chunk_Renderer, ok: bool) {
 	shader := load_chunk_shader(data_directory) or_return
 	renderer.atlas_layout = atlas_layout_for_block_count(len(registry.definitions))

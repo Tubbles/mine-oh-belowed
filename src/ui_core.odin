@@ -87,6 +87,9 @@ Ui_Input :: struct {
 	tab_next:       bool,
 	info:           bool,
 	context_action: bool,
+	open_inventory: bool,
+	// Held, not an edge: the keyboard radial shows while Tab is down.
+	hotbar_radial_down: bool,
 	mouse_position: [2]f32,
 	mouse_moved:    bool,
 	mouse_pressed:  bool,
@@ -112,6 +115,8 @@ Draw_Command_Kind :: enum u8 {
 	Focus_Outline,
 	Clip_Begin,
 	Clip_End,
+	// The block atlas tile `tile`, stretched over the rectangle.
+	Atlas_Tile,
 }
 
 Text_Alignment :: enum u8 {
@@ -129,6 +134,7 @@ Draw_Command :: struct {
 	text_size: f32,
 	alignment: Text_Alignment,
 	widget:    Ui_Id,
+	tile:      int,
 }
 
 Repeat_State :: struct {
@@ -146,6 +152,7 @@ Screen :: enum u8 {
 	None,
 	Pause,
 	Settings,
+	Inventory,
 }
 
 Screen_Stack :: struct {
@@ -156,6 +163,9 @@ Screen_Stack :: struct {
 Radial_Source :: enum u8 {
 	Touchpad,
 	Stick,
+	// Shown while a button is held, the right stick moves the highlight,
+	// releasing the button selects.
+	Held_Button,
 }
 
 Radial_State :: struct {
@@ -473,10 +483,10 @@ focus_step_allowed :: proc(focused: Ui_Widget, step: Ui_Direction) -> bool {
 	return false
 }
 
-ui_end :: proc(state: ^Ui_State) {
+ui_end :: proc(state: ^Ui_State, atlas: Icon_Atlas) {
 	ui_resolve(state)
 	ui_append_overlays(state)
-	execute_draw_list(state^)
+	execute_draw_list(state^, atlas)
 }
 
 // Layout helpers.
@@ -544,7 +554,7 @@ top_screen :: proc(stack: Screen_Stack) -> Screen {
 
 screen_pauses_simulation :: proc(screen: Screen) -> bool {
 	switch screen {
-	case .None:
+	case .None, .Inventory:
 		return false
 	case .Pause, .Settings:
 		return true

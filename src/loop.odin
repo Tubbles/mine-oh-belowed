@@ -16,6 +16,14 @@ Simulation_State :: struct {
 	day_length_ticks: u64,
 	world:            World,
 	players:          [dynamic]Player,
+	// Filled by ticks, emptied by the UI each frame (toasts). The
+	// simulation never calls the UI itself.
+	events:           [dynamic]Simulation_Event,
+}
+
+Simulation_Event :: struct {
+	player: int,
+	kind:   Player_Event,
 }
 
 Tick_Accumulator :: struct {
@@ -39,6 +47,9 @@ Frame_State :: struct {
 	cursor_enabled:     bool,
 	quit_requested:     bool,
 	registry:           Block_Registry,
+	items:              Item_Registry,
+	// Inventory sort order, from item_sort_ranks.
+	item_sort_ranks:    []u16,
 	generator:          Generator,
 	streaming:          Chunk_Streaming,
 	renderer:           Chunk_Renderer,
@@ -54,14 +65,14 @@ INITIAL_FLY_CAMERA :: Fly_Camera {
 	pitch    = -30,
 }
 
-// The config's starting blocks must have passed validate_starting_blocks.
-make_simulation :: proc(config: Game_Config, start: Player_Start, registry: Block_Registry) -> Simulation_State {
+// The config's starting items must have passed validate_starting_items.
+make_simulation :: proc(config: Game_Config, start: Player_Start, items: Item_Registry) -> Simulation_State {
 	state := Simulation_State {
 		tick_rate        = config.tick_rate,
 		day_length_ticks = u64(config.day_length_seconds) * u64(config.tick_rate),
 	}
-	player := make_player(start, len(registry.definitions))
-	give_starting_blocks(&player, registry, config.starting_blocks)
+	player := make_player(start)
+	give_starting_items(&player, items, config.starting_items)
 	append(&state.players, player)
 	return state
 }
@@ -71,15 +82,19 @@ destroy_simulation :: proc(state: ^Simulation_State) {
 		destroy_player(player)
 	}
 	delete(state.players)
+	delete(state.events)
 	destroy_world(&state.world)
 }
 
 // A player without an input entry gets an empty one.
-simulation_tick :: proc(state: ^Simulation_State, registry: Block_Registry, inputs: []Input_Frame) {
+simulation_tick :: proc(state: ^Simulation_State, registry: Block_Registry, items: Item_Registry, inputs: []Input_Frame) {
 	state.tick += 1
 	for index in 0 ..< len(state.players) {
 		input := index < len(inputs) ? inputs[index] : Input_Frame{}
-		tick_player(&state.world, registry, state.players[:], index, input, state.tick_rate)
+		events := tick_player(&state.world, registry, items, state.players[:], index, input, state.tick_rate)
+		for kind in events {
+			append(&state.events, Simulation_Event{player = index, kind = kind})
+		}
 	}
 	tick_world(&state.world, registry, state.tick)
 }
@@ -159,13 +174,17 @@ update_frame :: proc(state: ^Frame_State) {
 	paused := ui_pauses_simulation(state.ui.screens)
 	state.world_action_guard = update_world_action_guard(state.world_action_guard, world_blocked, state.input.pressed)
 	frame_for_world := world_input(state.input, world_blocked, state.world_action_guard, state.settings)
+	// The right stick drives an open hotbar radial instead of the camera.
+	if state.ui.radial.open {
+		frame_for_world = without_actions(frame_for_world, {.Look})
+	}
 	state.tick_input = paused ? {} : accumulate_frame_input(state.tick_input, frame_for_world)
 	tick_count: int
 	state.accumulator, tick_count = advance_simulation_clock(state.accumulator, f64(state.frame_seconds), paused)
 	for _ in 0 ..< tick_count {
 		tick_input: Input_Frame
 		tick_input, state.tick_input = take_tick_input(state.tick_input, frame_for_world)
-		simulation_tick(&state.simulation, state.registry, {tick_input})
+		simulation_tick(&state.simulation, state.registry, state.items, {tick_input})
 	}
 	player_chunk := world_to_chunk_coordinate(camera_world_coordinate(state.simulation.players[0].position))
 	update_chunk_streaming(&state.streaming, &state.simulation.world, player_chunk)
@@ -183,7 +202,7 @@ render_frame :: proc(state: ^Frame_State, config: Game_Config) {
 	camera := fly_camera_to_raylib(player_view_camera(&state.simulation.world, state.registry, player, alpha))
 	rl.BeginMode3D(camera)
 	draw_chunks(&state.renderer, camera)
-	draw_player_world_overlay(player, alpha)
+	draw_player_world_overlay(player, state.items, alpha)
 	rl.EndMode3D()
 	if state.show_diagnostics {
 		draw_diagnostics_backdrop()
@@ -198,13 +217,39 @@ run_ui_frame :: proc(state: ^Frame_State) {
 	screen_pixels := [2]f32{f32(rl.GetScreenWidth()), f32(rl.GetScreenHeight())}
 	input := make_ui_input(state.previous_input, state.input)
 	ui_begin(&state.ui, input, screen_pixels, state.frame_seconds, state.settings.ui_scale, state.settings.pointer_speed)
-	draw_hud(&state.ui)
-	run_screens(&state.ui, Screen_Context{settings = &state.settings, quit_requested = &state.quit_requested})
-	ui_end(&state.ui)
+	show_simulation_events(&state.ui, &state.simulation.events)
+	player := &state.simulation.players[0]
+	draw_hud(&state.ui, player, state.items)
+	screen_context := Screen_Context {
+		settings        = &state.settings,
+		quit_requested  = &state.quit_requested,
+		player          = player,
+		items           = state.items,
+		item_sort_ranks = state.item_sort_ranks,
+	}
+	run_screens(&state.ui, screen_context)
+	ui_end(&state.ui, Icon_Atlas{texture = chunk_atlas_texture(state.renderer), layout = state.renderer.atlas_layout})
 	apply_cursor_mode(state)
 }
 
-run_game :: proc(config: Game_Config, input_backend: Input_Backend, registry: Block_Registry, generator: Generator, start: World_Start, data_directory: string) {
+show_simulation_events :: proc(state: ^Ui_State, events: ^[dynamic]Simulation_Event) {
+	for event in events {
+		switch event.kind {
+		case .Inventory_Full:
+			ui_toast(state, text("inventory_full"))
+		}
+	}
+	clear(events)
+}
+
+Game_Content :: struct {
+	blocks:          Block_Registry,
+	items:           Item_Registry,
+	item_sort_ranks: []u16,
+}
+
+run_game :: proc(config: Game_Config, input_backend: Input_Backend, content: Game_Content, generator: Generator, start: World_Start, data_directory: string) {
+	registry := content.blocks
 	rl.SetTraceLogLevel(.WARNING)
 	rl.SetConfigFlags({.VSYNC_HINT, .WINDOW_RESIZABLE})
 	rl.InitWindow(1280, 720, "Mine oh Belowed")
@@ -223,16 +268,18 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, registry: Bl
 		os.exit(1)
 	}
 	state := Frame_State {
-		accumulator   = make_tick_accumulator(config.tick_rate),
-		input_backend = input_backend,
-		registry      = registry,
-		generator     = generator,
-		renderer      = renderer,
-		simulation    = make_simulation(config, start.player, registry),
-		settings      = DEFAULT_SETTINGS,
-		ui            = Ui_State{measure_text = raylib_measure_text},
+		accumulator     = make_tick_accumulator(config.tick_rate),
+		input_backend   = input_backend,
+		registry        = registry,
+		items           = content.items,
+		item_sort_ranks = content.item_sort_ranks,
+		generator       = generator,
+		renderer        = renderer,
+		simulation      = make_simulation(config, start.player, content.items),
+		settings        = DEFAULT_SETTINGS,
+		ui              = Ui_State{measure_text = raylib_measure_text},
 		// raylib starts with the cursor shown; the first apply hides it.
-		cursor_enabled = true,
+		cursor_enabled  = true,
 	}
 	defer destroy_ui_state(&state.ui)
 	defer if input_backend == .Sdl3 {
