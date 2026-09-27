@@ -76,7 +76,7 @@ Verify: couch test 4. A base with several veins, a deep vein tapped from the sur
 
 Launch pad, rocket parts, contracts and trade with Mission Control, infinite research, chapter 8.
 
-Verify: couch test 5. The first rocket shipment leaves and the returns arrive.
+Verify: couch test 5. The first rocket shipment leaves and the returns arrive. Implemented with 0040 to 0042 (2026-09-27): the alpha's content is complete in code, M10 is the whole job.
 
 ### M10 Alpha polish and release
 

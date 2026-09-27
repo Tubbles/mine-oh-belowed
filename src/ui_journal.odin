@@ -8,7 +8,10 @@ import "core:strings"
 // then done, then locked ones as silhouettes with only the title), the
 // focused quest's objectives with their progress on the right, and Mission
 // Control's lines below, newest first, with the game time they arrived.
-// A last tab shows the venture's contracts (ui_contracts.odin).
+// A last tab shows the venture's contracts (ui_contracts.odin). Once every
+// quest is done the last chapter's list starts with "Contracts continue",
+// where the active quest would be, and the HUD shows the oldest open
+// contract instead (hud.odin).
 
 JOURNAL_LIST_COLUMN_WIDTH :: 560
 // The list column's most share of the panel on a narrow screen.
@@ -33,6 +36,7 @@ objective_verb_keys := [Objective_Type]string {
 	.Walk          = "objective_walk",
 	.Counter       = "objective_counter",
 	.Produce_Fluid = "objective_produce_fluid",
+	.Ship          = "objective_ship",
 }
 
 @(rodata)
@@ -84,6 +88,12 @@ journal_quest_order :: proc(quest_state: Quest_State, chapter: Chapter, allocato
 	return order[:]
 }
 
+// Every quest is done and the tab is the last chapter's, where the
+// active quest would have been.
+journal_shows_contracts_continue :: proc(quest_state: Quest_State, tab, chapter_count: int) -> bool {
+	return quest_state.active == NO_QUEST && chapter_count > 0 && tab == chapter_count - 1
+}
+
 journal_quest_view :: proc(screen_context: Screen_Context) -> Quest_View {
 	return Quest_View {
 		statistics = screen_context.world.statistics,
@@ -108,6 +118,8 @@ objective_subject :: proc(objective: Objective, screen_context: Screen_Context) 
 		return recipe_name(screen_context.recipes, objective.recipe)
 	case .Produce_Fluid:
 		return fluid_name(screen_context.fluids, objective.fluid)
+	case .Ship:
+		return objective.item == NO_ITEM ? text("objective_ship_any_item") : item_name(screen_context.items, objective.item)
 	case .Walk, .Counter:
 		return ""
 	}
@@ -150,6 +162,13 @@ objective_line :: proc(quest: Quest, index: int, progress: Quest_Progress, scree
 	return objective_label(objective, screen_context), objective_progress_text(objective, value, screen_context), objective_done(value)
 }
 
+// The top right column the HUD objective is drawn in.
+hud_objective_area :: proc(state: ^Ui_State) -> Ui_Rectangle {
+	safe := ui_safe_area(state)
+	width := min(f32(HUD_OBJECTIVE_WIDTH), safe.width * HUD_OBJECTIVE_WIDTH_FRACTION)
+	return Ui_Rectangle{safe.x + safe.width - width, safe.y, width, safe.height}
+}
+
 // The active objective, top right: the quest title, its objective text
 // and one progress line per objective.
 draw_quest_objective :: proc(state: ^Ui_State, screen_context: Screen_Context) {
@@ -159,9 +178,8 @@ draw_quest_objective :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 	quest := screen_context.quests.quests[quest_state.active]
 	progress := quest_state.progress[quest_state.active]
-	safe := ui_safe_area(state)
-	width := min(f32(HUD_OBJECTIVE_WIDTH), safe.width * HUD_OBJECTIVE_WIDTH_FRACTION)
-	area := Ui_Rectangle{safe.x + safe.width - width, safe.y, width, safe.height}
+	area := hud_objective_area(state)
+	width := area.width
 	draw_text_fitted(state, cut_top(&area, UI_ROW_HEIGHT), text(quest.title_key), UI_BODY_TEXT_SIZE, .Right, UI_ACCENT_COLOR)
 	for line in wrap_text(state, text(quest.text_key), UI_BODY_TEXT_SIZE, width) {
 		draw_text(state, cut_top(&area, UI_LINE_HEIGHT), line, UI_BODY_TEXT_SIZE, .Right)
@@ -326,6 +344,10 @@ journal_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 	list_area := cut_left(&content, min(f32(JOURNAL_LIST_COLUMN_WIDTH), content.width * JOURNAL_LIST_COLUMN_FRACTION))
 	cut_left(&content, 2 * UI_PADDING)
+	if journal_shows_contracts_continue(screen_context.quest_state^, tab, len(screen_context.quests.chapters)) {
+		row := inset(cut_top(&list_area, UI_ROW_HEIGHT), UI_PADDING)
+		draw_text_fitted(state, row, text("journal_contracts_continue"), UI_BODY_TEXT_SIZE, .Left, UI_ACCENT_COLOR)
+	}
 	chapter := screen_context.quests.chapters[tab]
 	order := journal_quest_order(screen_context.quest_state^, chapter)
 	focused := journal_quest_list(state, list_area, screen_context, order)

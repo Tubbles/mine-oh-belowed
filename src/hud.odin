@@ -5,7 +5,8 @@ package game
 // targeted drill or outcrop block, or the deep vein under a bore drill
 // ghost), hotbar with the held
 // item's name, the hotbar radial, the active quest objective (top right,
-// ui_journal.odin), the brownout warning (top centre, ui_power.odin) and
+// ui_journal.odin) or, once every quest is done, the oldest open contract
+// (ui_contracts.odin), the brownout warning (top centre, ui_power.odin) and
 // the glyph bar, and the magnetometer's dial while one is selected
 // (ui_prospecting.odin). Targeted block names come later.
 
@@ -176,6 +177,41 @@ sprint_hint_shown :: proc(player: Player) -> bool {
 	return !player.flying && !player.sprinting && player.on_ground && (player.velocity.x != 0 || player.velocity.z != 0)
 }
 
+// What the HUD's objective column shows.
+Hud_Objective_Source :: enum u8 {
+	None,
+	Quest,
+	Contract,
+}
+
+// The active quest, else after the last quest the oldest open contract,
+// else nothing.
+hud_objective_source :: proc(quest_state: ^Quest_State, open_contract_count: i32) -> Hud_Objective_Source {
+	switch {
+	case quest_state == nil:
+		return .None
+	case quest_state.active != NO_QUEST:
+		return .Quest
+	case open_contract_count > 0:
+		return .Contract
+	}
+	return .None
+}
+
+// The oldest open contract where the quest objective was: its name and
+// one wrapped line of requests and time left.
+draw_contract_objective :: proc(state: ^Ui_State, screen_context: Screen_Context) {
+	title, detail, found := contract_objective_lines(screen_context.world, screen_context.contracts, screen_context.items, screen_context.tick, screen_context.tick_rate)
+	if !found {
+		return
+	}
+	area := hud_objective_area(state)
+	draw_text_fitted(state, cut_top(&area, UI_ROW_HEIGHT), title, UI_BODY_TEXT_SIZE, .Right, UI_ACCENT_COLOR)
+	for line in wrap_text(state, detail, UI_BODY_TEXT_SIZE, area.width) {
+		draw_text(state, cut_top(&area, UI_LINE_HEIGHT), line, UI_BODY_TEXT_SIZE, .Right)
+	}
+}
+
 draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	player, items := screen_context.player, screen_context.items
 	draw_crosshair(state)
@@ -185,7 +221,13 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		state.radial = {}
 		return
 	}
-	draw_quest_objective(state, screen_context)
+	switch hud_objective_source(screen_context.quest_state, screen_context.world.contracts.open_count) {
+	case .Quest:
+		draw_quest_objective(state, screen_context)
+	case .Contract:
+		draw_contract_objective(state, screen_context)
+	case .None:
+	}
 	draw_brownout_warning(state, screen_context.world)
 	status, vein_status := target_status_lines(screen_context.world, screen_context.machines, screen_context.fluids, screen_context.veins, player.target)
 	if ghost_line, shown := bore_drill_ghost_line(screen_context.world, screen_context.machines, screen_context.veins, player^); shown {

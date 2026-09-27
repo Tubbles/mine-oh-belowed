@@ -149,10 +149,16 @@ Statistics :: struct {
 	// count summed over ticks for the quest hints.
 	unpowered_machines:          u64,
 	unpowered_machine_ticks:     u64,
-	// Indexed by Item_Id: items rockets carried away, and the rockets
-	// launched (launch_pad.odin).
+	// Indexed by Item_Id: items rockets carried away, their sum over
+	// every item, and the rockets launched (launch_pad.odin).
 	shipped:                     []u64,
+	items_shipped:               u64,
 	rockets_launched:            u64,
+	// Launch pad panel requests refused (launch_pad.odin): Assemble or
+	// Launch with rocket parts or fuel missing, and Launch with a rocket
+	// ready but no cargo.
+	launch_parts_missing:        u64,
+	launch_cargo_empty:          u64,
 	// Contracts and trade (venture.odin): contracts fulfilled, those of
 	// them fulfilled after their deadline, venture credit earned by free
 	// trade, and orbital surveys bought from the catalogue.

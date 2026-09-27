@@ -81,10 +81,13 @@ launch_pad_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, pad: ^Launc
 	machine_slot_rows(state, &content, pad.part_count, LAUNCH_PAD_CARGO_SLOTS, slots, items, &result)
 	machine_bar(state, cut_top(&content, UI_ROW_HEIGHT), launch_pad_progress(pad^, machine, screen_context.tick_rate))
 	detail_line(state, &content, launch_pad_state_text(pad), UI_DIM_TEXT_COLOR)
+	statistics := &screen_context.world.statistics
 	if ui_button(state, choice_row(&content), text("launch_pad_assemble")) {
+		record_launch_refusal(statistics, assembly_refusal(pad^, machine))
 		start_assembly(pad, machine)
 	}
 	if ui_button(state, choice_row(&content), text("launch_pad_launch")) {
+		record_launch_refusal(statistics, launch_refusal(pad, machine))
 		request_launch(&screen_context.world.entities, pad.handle)
 	}
 	power_line := power_status_line(&screen_context.world.entities.electric_networks, pad.handle)

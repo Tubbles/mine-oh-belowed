@@ -37,6 +37,8 @@ How every screen in the game is built, so that the pillars "couch first" and "on
 
 - UI bounds pass (0046): every screen is audited headless by `test_every_screen_stays_inside_the_screen` at 1920 by 1080 and 1280 by 800, UI scales 1.0, 1.2 and 1.5, keyboard and gamepad glyphs, and every draw command must lie inside the screen and its panel. Panels sit in the safe area above the glyph bar; a panel larger than that is clamped and its rows scroll (right stick or wheel, the focused widget stays in view): the pause menu, new world, developer, and the machine side of machine panels, which takes the width the player's slots leave and wraps its slot rows. Single line labels end in an ellipsis where they do not fit, descriptions and tooltips wrap, toasts wrap to three lines within 0.55 of the safe width, the HUD objective takes at most 0.4 of it. The glyph bar drops hints from the end (keeping Back) when they do not fit. The load list shows columns (name with the cannot load marker, seed, played, last saved). Tooltips dock beside the panel, or below or above the focused widget when neither side has room, always inside the safe area.
 
+- After the last quest (0042) the HUD objective column shows the oldest open contract's name, requests and time left, or nothing without an open contract, and the last chapter's journal tab starts with a "Contracts continue" line where the active quest would be.
+
 ## Widgets
 
 Label, button, toggle, slider, tabs, vertical list with letter jump, grid of slots, item slot (icon, count, highlight), progress bar, tooltip panel, radial menu, text field (opens the on-screen keyboard), glyph bar, toast.

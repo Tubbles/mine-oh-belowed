@@ -157,15 +157,15 @@ test_complete_quests_to_chapter_delivers_rewards :: proc(t: ^testing.T) {
 	testing.expect_value(t, test.state.progress[first].activated_tick, 5)
 }
 
-// Chapter 8 has no quests: every quest is done, the quest gate
-// technologies of the rewards are researched.
+// Chapter 9 is past the last (chapter 8): every quest is done, the quest
+// gate technologies of the rewards are researched.
 @(test)
 test_complete_quests_past_the_last_chapter :: proc(t: ^testing.T) {
 	references := make_test_quest_references()
 	registry := make_test_quests(references)
 	test := make_quest_test(registry.quests, registry.chapters)
 	defer destroy_quest_test(&test)
-	complete_quests_to_chapter(&test.state, test.registry, &test.unlocks, test.recipes, test.statistics, 1, 8)
+	complete_quests_to_chapter(&test.state, test.registry, &test.unlocks, test.recipes, test.statistics, 1, 9)
 	testing.expect_value(t, test.state.active, NO_QUEST)
 	testing.expect(t, chapter_done(test.state, registry.chapters[len(registry.chapters) - 1]))
 	technologies := references.technologies

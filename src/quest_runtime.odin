@@ -12,13 +12,16 @@ import "core:strings"
 // quest channel recipes and technologies and activates the next quest in
 // the same tick.
 //
-// obtain, craft, place and walk count everything since the game began,
-// so work done ahead of the journal counts ("quests guide, never block"),
-// except a craft objective with produced_since_active. That one, counter
-// and produce_fluid objectives count from activation. deliver counts what players
-// put into the capsule since the quest became active and is still in it.
-// sustain counts consecutive ticks at the rate, and with hands_off also
-// without a world action.
+// obtain, craft, place, walk and ship count everything since the game
+// began, so work done ahead of the journal counts ("quests guide, never
+// block"), except a craft objective with produced_since_active. That one,
+// counter and produce_fluid objectives count from activation. deliver
+// counts what players put into the capsule since the quest became active
+// and is still in it. sustain counts consecutive ticks at the rate, and
+// with hands_off also without a world action. research is done once the
+// technology is marked researched; for an infinite technology that
+// happens when its first level finishes (apply_finished_research), even
+// though technology_status never calls an infinite technology researched.
 
 CAPSULE_LANDED_KEY :: "capsule_landed"
 RESEARCH_COMPLETE_KEY :: "research_complete"
@@ -176,6 +179,12 @@ hint_counter_value :: proc(statistics: Statistics, hint: Hint) -> u64 {
 		return statistics.credit_earned
 	case .Surveys_Bought:
 		return statistics.surveys_bought
+	case .Items_Shipped:
+		return statistics.items_shipped
+	case .Launch_Parts_Missing:
+		return statistics.launch_parts_missing
+	case .Launch_Cargo_Empty:
+		return statistics.launch_cargo_empty
 	}
 	return 0
 }
@@ -232,8 +241,18 @@ objective_progress :: proc(objective: Objective, index: int, progress: Quest_Pro
 		return {objective_counter_value(statistics, objective) - progress.activation_baselines[index], objective.count}
 	case .Produce_Fluid:
 		return {fluid_counter(statistics.fluids.produced, objective.fluid) - progress.activation_baselines[index], objective.count}
+	case .Ship:
+		return {shipped_count(statistics, objective.item), objective.count}
 	}
 	return {}
+}
+
+// Items of one kind shipped, or with NO_ITEM every item shipped.
+shipped_count :: proc(statistics: Statistics, item: Item_Id) -> u64 {
+	if item == NO_ITEM {
+		return statistics.items_shipped
+	}
+	return item_counter(statistics.shipped, item)
 }
 
 // Machines placed, or blocks placed with the objective's item.

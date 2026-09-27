@@ -22,6 +22,10 @@ import "core:slice"
 //
 // A launch is requested (launch_requested) and served after the entity
 // tick by apply_launch_requests, which knows the tick for the shipment.
+// The panel's Assemble and Launch buttons count a refusal for parts
+// missing or cargo empty in the statistics (launch_refusal), which
+// chapter 8's hints watch. Interact on a pad that cannot launch opens its
+// panel instead and counts nothing.
 // Inserters put parts into their slots and anything else into the cargo
 // section, never parts into the cargo; nothing is ever taken out by them.
 
@@ -387,6 +391,7 @@ record_shipment :: proc(statistics: ^Statistics, shipment: Shipment) {
 		if int(shipped.item) < len(statistics.shipped) {
 			statistics.shipped[shipped.item] += u64(shipped.count)
 		}
+		statistics.items_shipped += u64(shipped.count)
 		record_consumed(statistics, shipped.item, int(shipped.count))
 	}
 }
@@ -422,6 +427,58 @@ request_launch :: proc(entities: ^Entities, handle: Entity_Handle) -> bool {
 	}
 	pad.launch_requested = true
 	return true
+}
+
+// Why the panel's Assemble or Launch button did nothing. Not_Ready covers
+// a rocket being assembled or in the air.
+Launch_Refusal :: enum u8 {
+	None,
+	Parts_Missing,
+	Cargo_Empty,
+	Not_Ready,
+}
+
+// Waiting with a part or the fuel short of a rocket, or assembling while
+// the next stage's share is missing.
+launch_pad_parts_missing :: proc(pad: Launch_Pad, machine: Machine) -> bool {
+	switch pad.state {
+	case .Waiting_For_Parts, .Ready_To_Assemble:
+		return !launch_parts_present(pad, machine)
+	case .Assembling:
+		return pad.missing_parts
+	case .Rocket_Ready, .Launching:
+	}
+	return false
+}
+
+// For the Launch button.
+launch_refusal :: proc(pad: ^Launch_Pad, machine: Machine) -> Launch_Refusal {
+	switch {
+	case launch_pad_can_launch(pad):
+		return .None
+	case pad.state == .Rocket_Ready:
+		return .Cargo_Empty
+	case launch_pad_parts_missing(pad^, machine):
+		return .Parts_Missing
+	}
+	return .Not_Ready
+}
+
+// For the Assemble button, before it is pressed.
+assembly_refusal :: proc(pad: Launch_Pad, machine: Machine) -> Launch_Refusal {
+	if pad.state != .Waiting_For_Parts && pad.state != .Ready_To_Assemble {
+		return .Not_Ready
+	}
+	return launch_parts_present(pad, machine) ? .None : .Parts_Missing
+}
+
+record_launch_refusal :: proc(statistics: ^Statistics, refusal: Launch_Refusal) {
+	#partial switch refusal {
+	case .Parts_Missing:
+		statistics.launch_parts_missing += 1
+	case .Cargo_Empty:
+		statistics.launch_cargo_empty += 1
+	}
 }
 
 apply_launch_requests :: proc(world: ^World, tick: u64) {

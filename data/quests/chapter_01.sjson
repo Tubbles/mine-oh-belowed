@@ -18,7 +18,8 @@
 //   sustain   item, rate_per_minute, minutes, hands_off
 //                              produced at the rate for that long without a
 //                              break (and, hands_off, without a world action)
-//   research  technology
+//   research  technology      marked researched; an infinite technology
+//                              counts once its first level is done
 //   deliver   item, count      put into the capsule on the landing pad; the
 //                              capsule keeps them when the quest completes
 //   discover  recipe           the recipe is available
@@ -29,7 +30,9 @@
 //   produce_fluid  fluid, litres
 //                              litres of a fluid put into machine ports by
 //                              pumps, boilers and crafting machines
-// obtain, craft, place and walk count since the game began; deliver,
+//   ship      item, count      items rockets carried away; without an item
+//             or count         every item shipped counts
+// obtain, craft, place, walk and ship count since the game began; deliver,
 // counter, produce_fluid and craft with produced_since_active count from
 // the moment the quest became active.
 //

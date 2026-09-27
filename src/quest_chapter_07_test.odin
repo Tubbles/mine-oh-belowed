@@ -33,8 +33,9 @@ test_chapter_07_loads :: proc(t: ^testing.T) {
 	items, technologies := references.items, references.technologies
 	testing.expect_value(t, registry.quests[0].objectives[1].counter, Hint_Counter.Veins_Assayed)
 	deep_permit := registry.quests[1]
-	testing.expect_value(t, deep_permit.objectives[3].counter, Hint_Counter.Bore_Drill_Units)
-	testing.expect_value(t, deep_permit.objectives[3].count, 200)
+	testing.expect_value(t, deep_permit.objectives[1].technology, test_technology(technologies, "logistics_science"))
+	testing.expect_value(t, deep_permit.objectives[5].counter, Hint_Counter.Bore_Drill_Units)
+	testing.expect_value(t, deep_permit.objectives[5].count, 200)
 	testing.expect_value(t, deep_permit.hints[0], Hint{counter = .Bore_Drill_No_Vein_Attempts, threshold = 3, text_key = "mc_hint_bore_drill_no_vein"})
 	two_floors := registry.quests[3]
 	testing.expect_value(t, two_floors.objectives[1].machine, NO_MACHINE)
@@ -166,6 +167,8 @@ complete_second_vein_to_aluminium :: proc(t: ^testing.T, test: ^Quest_Test) {
 	test.statistics.veins_assayed += 1
 	run_quest_tick(test)
 	testing.expect_value(t, active_quest_id(test), "deep_permit")
+	research_test_technology(test, "logistics")
+	research_test_technology(test, "logistics_science")
 	research_test_technology(test, "electrolysis")
 	test.statistics.core_samples_taken += 1
 	set_placed(test, "bore_drill", 1)
@@ -310,6 +313,8 @@ test_chapter_07_hints_fire_once :: proc(t: ^testing.T) {
 }
 
 complete_deep_permit :: proc(test: ^Quest_Test) {
+	research_test_technology(test, "logistics")
+	research_test_technology(test, "logistics_science")
 	research_test_technology(test, "electrolysis")
 	test.statistics.core_samples_taken += 1
 	set_placed(test, "bore_drill", 1)

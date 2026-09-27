@@ -19,7 +19,9 @@ NO_QUEST :: -1
 // walk and counter are not in doc/quests.md's table: chapter 1's "get
 // your bearings" needs walk, chapter 3's coal loop needs counter (the
 // growth of a hint counter since the quest became active). produce_fluid
-// (chapter 6) counts litres of a fluid produced since activation.
+// (chapter 6) counts litres of a fluid produced since activation. ship
+// (chapter 8) counts items rockets carried away since the game began, of
+// one item or, without an item, of every item.
 Objective_Type :: enum u8 {
 	Obtain,
 	Craft,
@@ -31,6 +33,7 @@ Objective_Type :: enum u8 {
 	Walk,
 	Counter,
 	Produce_Fluid,
+	Ship,
 }
 
 @(rodata)
@@ -45,6 +48,7 @@ objective_type_names := [Objective_Type]string {
 	.Walk          = "walk",
 	.Counter       = "counter",
 	.Produce_Fluid = "produce_fluid",
+	.Ship          = "ship",
 }
 
 // The counters a hint can watch. Mining_Ticks is per block type.
@@ -85,6 +89,9 @@ Hint_Counter :: enum u8 {
 	Contracts_Late,
 	Credit_Earned,
 	Surveys_Bought,
+	Items_Shipped,
+	Launch_Parts_Missing,
+	Launch_Cargo_Empty,
 }
 
 @(rodata)
@@ -125,6 +132,9 @@ hint_counter_names := [Hint_Counter]string {
 	.Contracts_Late              = "contracts_late",
 	.Credit_Earned               = "credit_earned",
 	.Surveys_Bought              = "surveys_bought",
+	.Items_Shipped               = "items_shipped",
+	.Launch_Parts_Missing        = "launch_parts_missing",
+	.Launch_Cargo_Empty          = "launch_cargo_empty",
 }
 
 // As written in the files, before references are resolved.
@@ -186,7 +196,7 @@ Chapter_File :: struct {
 // fluid. Unused references are NO_ITEM, NO_MACHINE, NO_RECIPE,
 // NO_TECHNOLOGY, NO_FLUID. A place
 // objective has a machine, or with NO_MACHINE the item whose blocks are
-// counted. counter and label_key (the journal's text for it) belong to
+// counted. A ship objective with NO_ITEM counts every item shipped. counter and label_key (the journal's text for it) belong to
 // counter objectives; produced_since_active makes a craft objective count
 // from activation.
 Objective :: struct {
@@ -304,6 +314,10 @@ resolve_objective_reference :: proc(objective: ^Objective, definition: Objective
 		return resolve_objective_counter(objective, definition, references, quest_id)
 	case .Produce_Fluid:
 		return resolve_objective_fluid(objective, definition, references, quest_id)
+	case .Ship:
+		if definition.item != "" {
+			return resolve_objective_item(objective, definition, references, quest_id)
+		}
 	case .Walk:
 	}
 	return ""

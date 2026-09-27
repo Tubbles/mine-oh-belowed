@@ -1,0 +1,111 @@
+// Chapter 8, Rocket program (doc/quests.md outline). The format is
+// described in chapter_01.sjson. This chapter uses the venture's counters
+// (rockets_launched, contracts_completed, surveys_bought, work item 0041)
+// and adds three: items_shipped (items rockets carried away, every item
+// summed), launch_parts_missing (times the launch pad's Assemble or Launch
+// was refused with rocket parts or fuel missing) and launch_cargo_empty
+// (times Launch was refused with a rocket ready and no cargo).
+//
+// The part counts are one rocket's, from the launch pad's launch_parts in
+// machines.sjson. rocketry comes first, since it unlocks the cargo
+// capsule; both rocketry and mining_productivity need rocket_program,
+// chapter 7's reward. mining_productivity is infinite: the objective is
+// done with its first level. Counter objectives count from activation, so
+// a contract fulfilled by the first launch does not count for "contract";
+// the venture keeps offering them. The main quest's complete line is the
+// soft ending. After it the journal says the contracts continue and the
+// HUD shows the oldest open contract.
+id = "chapter_08"
+title_key = "chapter_08_title"
+quests = [
+	{
+		id = "rocketry"
+		title_key = "quest_rocketry_title"
+		text_key = "quest_rocketry_text"
+		objectives = [
+			{type = "research", technology = "rocketry"}
+		]
+		message_key = "mc_rocketry"
+		complete_key = "mc_rocketry_done"
+	}
+	{
+		id = "launch_pad"
+		title_key = "quest_launch_pad_title"
+		text_key = "quest_launch_pad_text"
+		objectives = [
+			{type = "place", entity = "launch_pad", count = 1}
+		]
+		message_key = "mc_launch_pad"
+		complete_key = "mc_launch_pad_done"
+	}
+	{
+		id = "rocket_parts"
+		title_key = "quest_rocket_parts_title"
+		text_key = "quest_rocket_parts_text"
+		objectives = [
+			{type = "craft", item = "rocket_structure", count = 10}
+			{type = "craft", item = "guidance_unit", count = 2}
+			{type = "craft", item = "cargo_capsule", count = 1}
+		]
+		message_key = "mc_rocket_parts"
+		complete_key = "mc_rocket_parts_done"
+	}
+	{
+		id = "first_launch"
+		title_key = "quest_first_launch_title"
+		text_key = "quest_first_launch_text"
+		objectives = [
+			{type = "counter", counter = "rockets_launched", label_key = "objective_rockets_launched", count = 1}
+		]
+		message_key = "mc_first_launch"
+		complete_key = "mc_first_launch_done"
+		hints = [
+			{counter = "launch_parts_missing", threshold = 1, text_key = "mc_hint_launch_parts_missing"}
+			{counter = "launch_cargo_empty", threshold = 1, text_key = "mc_hint_launch_cargo_empty"}
+		]
+	}
+	{
+		id = "contract"
+		title_key = "quest_contract_title"
+		text_key = "quest_contract_text"
+		objectives = [
+			{type = "counter", counter = "contracts_completed", label_key = "objective_contracts_completed", count = 1}
+		]
+		message_key = "mc_contract"
+		complete_key = "mc_contract_done"
+	}
+	{
+		id = "orbital_survey"
+		title_key = "quest_orbital_survey_title"
+		text_key = "quest_orbital_survey_text"
+		objectives = [
+			{type = "counter", counter = "surveys_bought", label_key = "objective_surveys_bought", count = 1}
+		]
+		message_key = "mc_orbital_survey"
+		complete_key = "mc_orbital_survey_done"
+	}
+	{
+		id = "productivity"
+		title_key = "quest_productivity_title"
+		text_key = "quest_productivity_text"
+		objectives = [
+			{type = "research", technology = "mining_productivity"}
+		]
+		message_key = "mc_productivity"
+		complete_key = "mc_productivity_done"
+	}
+	{
+		id = "self_sufficient"
+		title_key = "quest_self_sufficient_title"
+		text_key = "quest_self_sufficient_text"
+		objectives = [
+			{type = "ship", count = 1000}
+		]
+		message_key = "mc_self_sufficient"
+		complete_key = "mc_self_sufficient_done"
+		rewards = [
+			{item = "rocket_structure", count = 10}
+		]
+		main = true
+	}
+]

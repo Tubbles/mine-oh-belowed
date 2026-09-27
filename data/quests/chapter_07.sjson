@@ -12,8 +12,10 @@
 // belt lifts and floor blocks instead. The floor blocks are concrete only:
 // a place objective names one item, and asphalt needs bitumen paving,
 // which no quest researches. Research follows the tree: prospecting needs
-// steel_processing (chapter 5), electrolysis needs deep_mining (chapter
-// 6's reward), hydro_power needs fluid_handling (chapter 6), electric_grid
+// steel_processing (chapter 5), logistics_science (science pack 2, which
+// electrolysis and every later research needs) needs logistics (after
+// automation, chapter 4) and plastics (chapter 6), electrolysis needs
+// deep_mining (chapter 6's reward), hydro_power needs fluid_handling (chapter 6), electric_grid
 // needs electric_mining (chapter 4). The main quest grants the
 // rocket_program placeholder, a quest_gate technology that unlocks nothing
 // until the launch pad and the rocket parts exist.
@@ -37,6 +39,8 @@ quests = [
 		title_key = "quest_deep_permit_title"
 		text_key = "quest_deep_permit_text"
 		objectives = [
+			{type = "research", technology = "logistics"}
+			{type = "research", technology = "logistics_science"}
 			{type = "research", technology = "electrolysis"}
 			{type = "counter", counter = "core_samples_taken", label_key = "objective_core_samples", count = 1}
 			{type = "place", entity = "bore_drill", count = 1}
