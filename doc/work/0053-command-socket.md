@@ -1,0 +1,22 @@
+# 0053 Command socket: cheat mode through the assistant
+
+Status: todo
+Milestone: M11
+
+## Goal
+
+User request (2026-09-27): the assistant must be able to inject commands into the running game while the user plays on the couch: "advance me to blue science", "build me a full tier 1 factory", "spawn another ore vein at this chunk". A local command socket the game listens on in developer mode, a line protocol, and a small command line client the assistant runs from the repository.
+
+## Deliverables
+
+- Transport: a Unix domain socket at `$XDG_RUNTIME_DIR/mine-oh-belowed/command.sock` (fallback `$XDG_STATE_HOME/mine-oh-belowed/command.sock`), directory mode 0700, opened only when developer mode is on (the setting or `--dev`), through `core:sys/posix` (`sys_socket.odin`, `sys_un.odin`, non blocking accept with `fcntl`). The frame loop polls it once per frame: complete lines are parsed into requests and served on the main thread between ticks, like developer requests today, so the simulation stays deterministic; each request gets one response, `ok <text>` or `error <text>`, terminated by a newline. Several clients may connect in turn; a client may send several lines.
+- Protocol: one command per line, words separated by spaces, SJSON-like quoting for strings with spaces. Commands, each mapped onto existing procedures where they exist (developer.odin, quest_runtime.odin, venture.odin, generation_starter_veins.odin, entity_placement.odin): `give <item> <count>`, `take <item> <count>`, `kit <chapter>`, `chapter <n>` (complete quests up to n), `research <technology>` (mark researched, or add a level for an infinite one), `unlock_all`, `teleport <x> <y> <z>` and `teleport pad`, `time <dawn|noon|dusk|midnight>`, `fly <on|off>`, `cheat_speed <on|off>`, `vein <type> <x> <z> [size_class]` (register a new surface vein with its footprint at the column, stamping outcrops into loaded chunks and remembering it so chunks loaded later get them; saved like a starter vein), `place <machine> <x> <y> <z> <rotation>` (through the placement rules, refusing what a player could not place), `remove <x> <y> <z>`, `block <block> <x> <y> <z>`, `blueprint <path>` (an SJSON file of place and block commands relative to a given origin, so "a full tier 1 factory" is one file), `tick <n>` (run n ticks as fast as possible, rendering paused, then resume), `pause` and `resume`, `save`, `reload` (0054 when it exists; until then `error`), `screenshot [name]` (`rl.TakeScreenshot` into `$XDG_STATE_HOME/mine-oh-belowed/screenshots/<name or timestamp>.png`, the response names the path), `query player` (position, yaw, pitch, flying, inventory as item counts), `query world` (seed, tick, day time, pad, loaded chunk count), `query veins [radius]`, `query entities [kind] [radius]`, `query quests`, `query contracts`, `query stats <item>`, `help`. Every command is also reachable from a Developer screen button where it makes sense (screenshot).
+- Client: `tools/moc` (Python, standard library only): `tools/moc give iron_plate 50` connects, sends the line, prints the response and exits non zero on `error`; `tools/moc -` reads commands from stdin; `tools/moc blueprint work/factory.sjson` sends the file's commands. A `doc/commands.md` documents the protocol and every command with an example; the assistant reads it before driving a session.
+- Blueprints: `data/blueprints/tier1_factory.sjson` as the first example: a burner mining line into furnaces with belts and inserters that works when placed next to the starter veins (the file names positions relative to the pad and the vein), so "build me a full tier 1 factory" is `tools/moc blueprint data/blueprints/tier1_factory.sjson`.
+- Safety: the socket exists only with developer mode on, only local users can connect, commands never touch files outside the game's own directories, and the log records every command with its response.
+- Tests: protocol parsing and quoting, each command as a pure request applied to a test simulation (give, chapter, research, vein registration with outcrops, place refused and accepted, blueprint expansion, tick count), query formatting, and the socket path resolution from the environment.
+
+## Verify
+
+- Builds and tests pass; `tools/moc help` against a running dev build lists the commands.
+- User: while playing, the assistant runs `tools/moc chapter 5` and `tools/moc blueprint data/blueprints/tier1_factory.sjson` and the world changes on the next tick.
