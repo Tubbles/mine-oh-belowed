@@ -20,9 +20,12 @@ Vein_Size_Class :: struct {
 	minimum_distance:   i32,
 }
 
+// low_grade (optional) is the ore's low grade twin (work item 0026),
+// which a drill draws instead of ore by the vein's grade share.
 Vein_Output :: struct {
-	ore:     string,
-	percent: i64,
+	ore:       string,
+	low_grade: string,
+	percent:   i64,
 }
 
 Vein_Type_Definition :: struct {

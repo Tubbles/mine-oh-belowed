@@ -187,6 +187,11 @@ validate_fluid_port_layout :: proc(machine: Machine) -> string {
 		if len(ports) != 2 || inputs != 1 || outputs != 1 {
 			return fmt.tprintf("pump %q needs one input and one output port", machine.id)
 		}
+	case .Crafting_Machine:
+		// Fluid outputs of recipes do not exist yet.
+		if inputs != len(ports) {
+			return fmt.tprintf("crafting machine %q may only have input ports", machine.id)
+		}
 	case:
 		if len(ports) != 0 {
 			return fmt.tprintf("machine %q cannot have fluid ports", machine.id)

@@ -357,14 +357,15 @@ collect_electric_participants :: proc(world: ^World, content: Simulation_Content
 	collect_crafting_participants(world, content, tick_rate)
 }
 
-// Assemblers and labs, while they have work.
+// Electric crafting machines and labs, while they have work.
 collect_crafting_participants :: proc(world: ^World, content: Simulation_Content, tick_rate: int) {
 	entities := &world.entities
 	networks := &entities.electric_networks
 	for assembler in entities.assemblers.entries {
-		if assembler.alive {
-			watts := content.machines.machines[assembler.machine].electric_power_watts
-			demand := assembler_wants_power(assembler, content.recipes, content.items) ? electric_joules_per_tick(watts, tick_rate) : 0
+		machine := content.machines.machines[assembler.machine]
+		if assembler.alive && crafting_machine_is_electric(machine) {
+			watts := machine.electric_power_watts
+			demand := assembler_wants_power(assembler, machine, content.recipes, content.items, tick_rate) ? electric_joules_per_tick(watts, tick_rate) : 0
 			append(&networks.participants, make_participant(networks, assembler.common, false, demand))
 		}
 	}

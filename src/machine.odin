@@ -51,8 +51,10 @@ Machine_Kind :: enum u8 {
 	Pole,
 	Power_Switch,
 	Lamp,
-	// Electric crafting (assembler.odin) and research (lab.odin).
-	Assembler,
+	// Crafting machines (assembler.odin): assemblers, crushers, washers
+	// and alloy furnaces, told apart by their recipe_maker. Research
+	// (lab.odin).
+	Crafting_Machine,
 	Lab,
 }
 
@@ -74,7 +76,7 @@ machine_kind_names := [Machine_Kind]string {
 	.Pole          = "pole",
 	.Power_Switch  = "power_switch",
 	.Lamp          = "lamp",
-	.Assembler     = "assembler",
+	.Crafting_Machine = "crafting_machine",
 	.Lab           = "lab",
 }
 
@@ -129,6 +131,8 @@ Machine_Definition :: struct {
 	wire_reach:                   int,
 	electric_output_kilowatts:    f32,
 	light_level:                  int,
+	recipe_maker:                 string,
+	recipe_choice:                string,
 }
 
 Machines_File :: struct {
@@ -176,6 +180,12 @@ Machine :: struct {
 	electric_output_watts:       u32,
 	// Lamps: the block light level while lit.
 	light_level:                 u8,
+	// Crafting machines: the recipes they make, whether the player picks
+	// the recipe, and for a fixed choice the input and output slot counts.
+	recipe_maker:                Recipe_Maker,
+	recipe_choice:               Recipe_Choice,
+	input_slot_count:            int,
+	output_slot_count:           int,
 }
 
 Machine_Registry :: struct {
@@ -245,8 +255,10 @@ validate_machine_kind_fields :: proc(definition: Machine_Definition, kind: Machi
 		return validate_fluid_machine_definition(definition, kind)
 	case .Pole, .Power_Switch, .Lamp:
 		return validate_power_machine_definition(definition, kind)
-	case .Assembler, .Lab:
+	case .Crafting_Machine:
 		return validate_crafting_machine_definition(definition)
+	case .Lab:
+		return validate_lab_definition(definition)
 	case .Capsule:
 		if definition.slots != CAPSULE_SLOT_COUNT {
 			return fmt.tprintf("capsule %q must have %d slots", definition.id, CAPSULE_SLOT_COUNT)
@@ -343,9 +355,9 @@ validate_splitter_definition :: proc(definition: Machine_Definition) -> string {
 	return ""
 }
 
-// Assemblers and labs: a speed and electric power. Their slots come from
-// the recipe or the technologies, never from the file.
-validate_crafting_machine_definition :: proc(definition: Machine_Definition) -> string {
+// Labs: a speed and electric power. Their slots come from the
+// technologies, never from the file.
+validate_lab_definition :: proc(definition: Machine_Definition) -> string {
 	if definition.speed <= 0 || definition.electric_power_kilowatts <= 0 {
 		return fmt.tprintf("machine %q needs a positive speed and electric_power_kilowatts", definition.id)
 	}
@@ -397,7 +409,9 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 	kind, _ := parse_machine_kind(definition.kind)
 	belt_shape, _ := parse_belt_item_shape(definition.belt_shape)
 	footprint := definition.footprint
-	slot_count := kind == .Inserter || kind == .Drill || kind == .Boiler ? definition.fuel_slots : definition.slots
+	slot_count := kind == .Inserter || kind == .Drill || kind == .Boiler || kind == .Crafting_Machine ? definition.fuel_slots : definition.slots
+	recipe_maker, _ := parse_named_enum(recipe_maker_names, definition.recipe_maker)
+	recipe_choice, _ := parse_named_enum(recipe_choice_names, definition.recipe_choice)
 	return Machine {
 		id = definition.id,
 		name_key = definition.name_key,
@@ -420,6 +434,10 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 		wire_reach = i32(max(definition.wire_reach, 0)),
 		electric_output_watts = u32(math.round(definition.electric_output_kilowatts * 1000)),
 		light_level = u8(clamp(definition.light_level, 0, MAXIMUM_LIGHT)),
+		recipe_maker = recipe_maker,
+		recipe_choice = recipe_choice,
+		input_slot_count = definition.input_slots,
+		output_slot_count = definition.output_slots,
 	}
 }
 

@@ -54,6 +54,12 @@ size_classes = [
 // outcrop_blocks: the surface blocks of the footprint, alternating in a
 // checkerboard when there are several. name_key: the vein type's name in
 // data/strings/en.sjson. outputs: the ore items a drill draws, by percent.
+// low_grade (work item 0026, optional) names the ore's low grade twin: a
+// drawn ore unit comes out low grade with a share that rises from 10
+// percent at a full reservoir to 60 percent with 5 percent left (10
+// percent throughout on infinite veins). Spoils and coal have none.
+// Lead, zinc and nickel (phase 5) keep to the hills, desert and forest
+// with lower weights, a guess pending the couch tests.
 vein_types = [
 	{
 		id = "iron"
@@ -61,7 +67,7 @@ vein_types = [
 		weight = 30
 		biomes = []
 		outcrop_blocks = ["hematite_ore"]
-		outputs = [{ore = "hematite", percent = 80}, {ore = "gravel", percent = 20}]
+		outputs = [{ore = "hematite", low_grade = "hematite_low_grade", percent = 80}, {ore = "gravel", percent = 20}]
 	}
 	{
 		id = "copper"
@@ -69,7 +75,7 @@ vein_types = [
 		weight = 25
 		biomes = []
 		outcrop_blocks = ["chalcopyrite_ore"]
-		outputs = [{ore = "chalcopyrite", percent = 70}, {ore = "cassiterite", percent = 10}, {ore = "sand", percent = 20}]
+		outputs = [{ore = "chalcopyrite", low_grade = "chalcopyrite_low_grade", percent = 70}, {ore = "cassiterite", low_grade = "cassiterite_low_grade", percent = 10}, {ore = "sand", percent = 20}]
 	}
 	{
 		id = "coal"
@@ -85,7 +91,7 @@ vein_types = [
 		weight = 10
 		biomes = ["hills"]
 		outcrop_blocks = ["hematite_ore", "chalcopyrite_ore"]
-		outputs = [{ore = "hematite", percent = 40}, {ore = "chalcopyrite", percent = 40}, {ore = "gravel", percent = 20}]
+		outputs = [{ore = "hematite", low_grade = "hematite_low_grade", percent = 40}, {ore = "chalcopyrite", low_grade = "chalcopyrite_low_grade", percent = 40}, {ore = "gravel", percent = 20}]
 	}
 	{
 		id = "quarry"
@@ -94,6 +100,30 @@ vein_types = [
 		biomes = []
 		outcrop_blocks = ["stone"]
 		outputs = [{ore = "stone", percent = 60}, {ore = "sand", percent = 20}, {ore = "gravel", percent = 20}]
+	}
+	{
+		id = "lead"
+		name_key = "vein_type_lead"
+		weight = 8
+		biomes = ["hills", "forest"]
+		outcrop_blocks = ["galena_ore"]
+		outputs = [{ore = "galena", low_grade = "galena_low_grade", percent = 70}, {ore = "sphalerite", low_grade = "sphalerite_low_grade", percent = 10}, {ore = "gravel", percent = 20}]
+	}
+	{
+		id = "zinc"
+		name_key = "vein_type_zinc"
+		weight = 8
+		biomes = ["hills", "desert"]
+		outcrop_blocks = ["sphalerite_ore"]
+		outputs = [{ore = "sphalerite", low_grade = "sphalerite_low_grade", percent = 70}, {ore = "galena", low_grade = "galena_low_grade", percent = 10}, {ore = "gravel", percent = 20}]
+	}
+	{
+		id = "nickel"
+		name_key = "vein_type_nickel"
+		weight = 6
+		biomes = ["desert", "plains"]
+		outcrop_blocks = ["pentlandite_ore"]
+		outputs = [{ore = "pentlandite", low_grade = "pentlandite_low_grade", percent = 60}, {ore = "chalcopyrite", low_grade = "chalcopyrite_low_grade", percent = 20}, {ore = "sand", percent = 20}]
 	}
 ]
 

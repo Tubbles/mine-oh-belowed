@@ -151,11 +151,15 @@ Slot_Filter_Kind :: enum u8 {
 	Output,
 	// Only Slot_Filter.item (assembler inputs, lab slots).
 	Item,
+	// Any input of a recipe of Slot_Filter.maker (the inputs of a fixed
+	// recipe crafting machine).
+	Crafting_Input,
 }
 
 Slot_Filter :: struct {
-	kind: Slot_Filter_Kind,
-	item: Item_Id,
+	kind:  Slot_Filter_Kind,
+	item:  Item_Id,
+	maker: Recipe_Maker,
 }
 
 slot_accepts :: proc(filter: Slot_Filter, item: Item_Id, items: Item_Registry, recipes: Recipe_Registry) -> bool {
@@ -170,6 +174,8 @@ slot_accepts :: proc(filter: Slot_Filter, item: Item_Id, items: Item_Registry, r
 		return false
 	case .Item:
 		return item == filter.item
+	case .Crafting_Input:
+		return category_input_count(recipes, filter.maker, item) > 0
 	}
 	return false
 }

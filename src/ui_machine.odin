@@ -129,8 +129,8 @@ machine_area_size :: proc(machine: Machine, slot_count: int) -> [2]f32 {
 		return fluid_area_size(machine)
 	case .Pole, .Power_Switch, .Lamp:
 		return power_area_size(machine)
-	case .Assembler, .Lab:
-		return crafting_machine_area_size(machine.kind)
+	case .Crafting_Machine, .Lab:
+		return crafting_machine_area_size(machine)
 	case .Belt:
 	}
 	return {}

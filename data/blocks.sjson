@@ -114,6 +114,27 @@ blocks = [
 		texture = {top = [96, 80, 72], side = [96, 80, 72], bottom = [96, 80, 72]}
 	}
 	{
+		id = "galena_ore"
+		name = "Galena Ore"
+		solid = true
+		hardness_seconds = 2.5
+		texture = {top = [100, 110, 150], side = [100, 110, 150], bottom = [100, 110, 150]}
+	}
+	{
+		id = "sphalerite_ore"
+		name = "Sphalerite Ore"
+		solid = true
+		hardness_seconds = 2.5
+		texture = {top = [92, 70, 40], side = [92, 70, 40], bottom = [92, 70, 40]}
+	}
+	{
+		id = "pentlandite_ore"
+		name = "Pentlandite Ore"
+		solid = true
+		hardness_seconds = 2.5
+		texture = {top = [140, 160, 110], side = [140, 160, 110], bottom = [140, 160, 110]}
+	}
+	{
 		id = "spent_rock"
 		name = "Spent Rock"
 		solid = true

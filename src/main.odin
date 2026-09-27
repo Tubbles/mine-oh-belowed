@@ -210,8 +210,12 @@ main :: proc() {
 	if !machines_loaded {
 		os.exit(1)
 	}
-	recipes, recipes_loaded := load_recipe_registry(data_directory, items)
+	recipes, recipes_loaded := load_recipe_registry(data_directory, items, fluids)
 	if !recipes_loaded {
+		os.exit(1)
+	}
+	if problem := validate_crafting_machine_recipes(machines, recipes); problem != "" {
+		log_printf("error: invalid %s: %s", MACHINES_FILE_NAME, problem)
 		os.exit(1)
 	}
 	technologies, technologies_loaded := load_technology_registry(data_directory, items, recipes)

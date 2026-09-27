@@ -15,7 +15,7 @@ make_byproduct_recipes :: proc() -> Recipe_Registry {
 	definition.outputs = {{item = "iron_gear", count = 1}, {item = "gravel", count = 1}}
 	definition.made_in = {"assembler"}
 	definition.seconds = 1
-	registry, problem := resolve_recipe_registry(Recipes_File{recipes = {definition}}, make_test_items(), context.temp_allocator)
+	registry, problem := resolve_recipe_registry(Recipes_File{recipes = {definition}}, make_test_items(), make_test_fluids(), context.temp_allocator)
 	assert(problem == "", problem)
 	return registry
 }
@@ -32,7 +32,7 @@ make_powered_assembler :: proc(recipes: Recipe_Registry, recipe: int) -> Assembl
 test_assembler_data_loads :: proc(t: ^testing.T) {
 	content := make_test_content()
 	assembler := content.machines.machines[test_machine(content.machines, "assembler_1")]
-	testing.expect_value(t, assembler.kind, Machine_Kind.Assembler)
+	testing.expect_value(t, assembler.kind, Machine_Kind.Crafting_Machine)
 	testing.expect_value(t, assembler.footprint, [3]i32{3, 2, 3})
 	testing.expect_value(t, assembler.speed_percent, 50)
 	testing.expect_value(t, assembler.electric_power_watts, 75_000)
@@ -56,10 +56,10 @@ test_assembler_slots_follow_the_recipe :: proc(t: ^testing.T) {
 	testing.expect_value(t, assembler.input_count, 2)
 	testing.expect_value(t, assembler.output_count, 2)
 	plate, copper, gravel := test_item(items, "iron_plate"), test_item(items, "copper_plate"), test_item(items, "gravel")
-	testing.expect_value(t, assembler_input_slot_of(assembler, recipes, plate), 0)
-	testing.expect_value(t, assembler_input_slot_of(assembler, recipes, copper), 1)
-	testing.expect_value(t, assembler_input_slot_of(assembler, recipes, gravel), -1)
-	filters := assembler_slot_filters(assembler, recipes)
+	testing.expect_value(t, assembler_input_slot_of(assembler, {}, recipes, plate), 0)
+	testing.expect_value(t, assembler_input_slot_of(assembler, {}, recipes, copper), 1)
+	testing.expect_value(t, assembler_input_slot_of(assembler, {}, recipes, gravel), -1)
+	filters := assembler_slot_filters(assembler, {}, recipes)
 	testing.expect_value(t, len(filters), 4)
 	testing.expect_value(t, filters[0], Slot_Filter{kind = .Item, item = plate})
 	testing.expect_value(t, filters[1], Slot_Filter{kind = .Item, item = copper})
@@ -135,7 +135,7 @@ test_assembler_waits_for_power_and_room :: proc(t: ^testing.T) {
 	set_assembler_recipe(&assembler, recipes, NO_RECIPE)
 	advance_assembler(&assembler, machine, items, recipes, TEST_TICK_RATE)
 	testing.expect_value(t, assembler.state, Assembler_State.No_Recipe)
-	testing.expect(t, !assembler_wants_power(assembler, recipes, items))
+	testing.expect(t, !assembler_wants_power(assembler, machine, recipes, items, TEST_TICK_RATE))
 }
 
 @(test)
@@ -153,9 +153,9 @@ test_assembler_recipe_change_returns_contents :: proc(t: ^testing.T) {
 	advance_assembler(&assembler, machine, items, recipes, TEST_TICK_RATE)
 	testing.expect(t, assembler.working)
 	// A furnace recipe is refused.
-	testing.expect_value(t, change_assembler_recipe(&assembler, inventory, items, recipes, test_recipe(recipes, "iron_plate")), Recipe_Change_Refusal.Not_For_Assembler)
+	testing.expect_value(t, change_assembler_recipe(&assembler, machine, inventory, items, recipes, test_recipe(recipes, "iron_plate")), Recipe_Change_Refusal.Not_For_Assembler)
 	// The slots and the craft in progress come back.
-	testing.expect_value(t, change_assembler_recipe(&assembler, inventory, items, recipes, gear_recipe), Recipe_Change_Refusal.None)
+	testing.expect_value(t, change_assembler_recipe(&assembler, machine, inventory, items, recipes, gear_recipe), Recipe_Change_Refusal.None)
 	testing.expect_value(t, inventory_count(inventory, copper), 3)
 	testing.expect_value(t, inventory_count(inventory, gear), 2)
 	testing.expect_value(t, assembler.recipe, gear_recipe)
@@ -166,7 +166,7 @@ test_assembler_recipe_change_returns_contents :: proc(t: ^testing.T) {
 	for &slot in inventory.slots {
 		slot = {test_item(items, "stone"), item_stack_size(items, test_item(items, "stone"))}
 	}
-	testing.expect_value(t, change_assembler_recipe(&assembler, inventory, items, recipes, science), Recipe_Change_Refusal.Contents_Do_Not_Fit)
+	testing.expect_value(t, change_assembler_recipe(&assembler, machine, inventory, items, recipes, science), Recipe_Change_Refusal.Contents_Do_Not_Fit)
 	testing.expect_value(t, assembler.recipe, gear_recipe)
 	testing.expect_value(t, assembler.slots[0], Item_Stack{plate, 10})
 }

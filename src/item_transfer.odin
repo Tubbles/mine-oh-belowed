@@ -13,12 +13,13 @@ package game
 // (a drill drops its output itself, drill.odin). A boiler takes fuel into
 // its fuel slot and gives nothing. A splitter, a pipe, the other fluid
 // machines, an electric drill, poles, switches and lamps have no item
-// slots and neither take nor give. An assembler takes each ingredient of
-// its recipe into that ingredient's slot only and gives from its output
+// slots and neither take nor give. A crafting machine (assembler.odin)
+// takes each ingredient into its input slot (assembler_accepting_slot)
+// and fuel into its fuel slot if it burns fuel, and gives from its output
 // slots; a lab takes each science pack into its slot and gives nothing.
-// Both take only while the slot holds less than two crafts' worth (two
-// pack sets for a lab), so an inserter does not pour a whole belt into
-// one machine. The player's panel is not limited: it does not come
+// Both take ingredients only while the slot holds less than two crafts'
+// worth (two pack sets for a lab), so an inserter does not pour a whole
+// belt into one machine. The player's panel is not limited: it does not come
 // through here.
 //
 // Inserters peek with entity_offered_items and entity_takes_item_kind
@@ -39,8 +40,8 @@ entity_accepts :: proc(entities: ^Entities, content: Simulation_Content, handle:
 	case .Inserter, .Drill, .Fluid_Machine:
 		return fuel_accepting_slot(slots, item, content.items)
 	case .Assembler:
-		input_slot := entity_slot_for_item(entities, content, handle, item)
-		return limited_accepting_slot(slots, input_slot, item, content.items, assembler_insertion_limit(entities, content.recipes, handle, input_slot))
+		assembler := pool_get(&entities.assemblers, handle)
+		return assembler_accepting_slot(assembler, content.machines.machines[assembler.machine], content, item)
 	case .Lab:
 		pack_slot := lab_slot_of(content.machines.lab_packs, item)
 		return limited_accepting_slot(slots, pack_slot, item, content.items, INSERTION_LIMIT_CRAFTS)
@@ -51,15 +52,6 @@ entity_accepts :: proc(entities: ^Entities, content: Simulation_Content, handle:
 // Crafts (or lab pack sets) an input slot may hold before automated
 // insertion stops.
 INSERTION_LIMIT_CRAFTS :: 2
-
-// Twice the ingredient count of the recipe for an assembler input slot.
-assembler_insertion_limit :: proc(entities: ^Entities, recipes: Recipe_Registry, handle: Entity_Handle, slot: int) -> int {
-	assembler := pool_get(&entities.assemblers, handle)
-	if assembler == nil || assembler.recipe == NO_RECIPE || slot < 0 {
-		return 0
-	}
-	return INSERTION_LIMIT_CRAFTS * int(recipes.recipes[assembler.recipe].inputs[slot].count)
-}
 
 // fixed_accepting_slot, and only while the slot holds fewer than limit.
 limited_accepting_slot :: proc(slots: []Item_Stack, slot: int, item: Item_Id, items: Item_Registry, limit: int) -> (index: int, ok: bool) {
@@ -176,15 +168,6 @@ fixed_accepting_slot :: proc(slots: []Item_Stack, slot: int, item: Item_Id, item
 	return slot, true
 }
 
-// An assembler's input slot for the item, or -1.
-entity_slot_for_item :: proc(entities: ^Entities, content: Simulation_Content, handle: Entity_Handle, item: Item_Id) -> int {
-	assembler := pool_get(&entities.assemblers, handle)
-	if assembler == nil {
-		return -1
-	}
-	return assembler_input_slot_of(assembler^, content.recipes, item)
-}
-
 // The single fuel slot of a burner inserter, a drill or a boiler.
 fuel_accepting_slot :: proc(slots: []Item_Stack, item: Item_Id, items: Item_Registry) -> (slot: int, ok: bool) {
 	if len(slots) != 1 || !item_is_fuel(items, item) || !slot_has_room_for(slots[0], item, item_stack_size(items, item)) {
@@ -234,7 +217,8 @@ entity_takes_item_kind :: proc(entities: ^Entities, content: Simulation_Content,
 	case .Inserter, .Drill, .Fluid_Machine:
 		return len(entity_slots(entities, handle)) == 1 && item_is_fuel(content.items, item)
 	case .Assembler:
-		return entity_slot_for_item(entities, content, handle, item) >= 0
+		assembler := pool_get(&entities.assemblers, handle)
+		return assembler_takes_item_kind(assembler^, content.machines.machines[assembler.machine], content, item)
 	case .Lab:
 		slot := lab_slot_of(content.machines.lab_packs, item)
 		return slot >= 0 && slot < len(entity_slots(entities, handle))

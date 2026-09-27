@@ -7,8 +7,9 @@ import rl "vendor:raylib"
 // brighter top layer on a burning furnace, for inserters a post with an
 // arm that turns with the cycle, and for drills a darker top with a
 // turning bar and the output arrow (brown burner, blue electric), for
-// assemblers a teal body with a bright top while working, and for labs a
-// white body with a blue top while researching. Real models come with the
+// crafting machines a body in their category's colour (teal assembler,
+// brown crusher, blue washer, grey alloy furnace) with a bright top while
+// working, and for labs a white body with a blue top while researching. Real models come with the
 // art pass.
 
 CHEST_COLOR :: rl.Color{130, 88, 48, 255}
@@ -34,8 +35,17 @@ DRILL_BIT_COLOR :: rl.Color{200, 200, 205, 255}
 DRILL_ARROW_COLOR :: rl.Color{240, 220, 80, 255}
 DRILL_BIT_LENGTH :: 0.8
 DRILL_BIT_RADIUS :: 0.08
-ASSEMBLER_COLOR :: rl.Color{70, 130, 130, 255}
 ASSEMBLER_WORKING_TOP_COLOR :: rl.Color{120, 220, 200, 255}
+
+@(rodata)
+crafting_machine_colors := [Recipe_Maker]rl.Color {
+	.Hand          = {},
+	.Furnace       = {},
+	.Assembler     = {70, 130, 130, 255},
+	.Crusher       = {130, 100, 70, 255},
+	.Washer        = {70, 110, 160, 255},
+	.Alloy_Furnace = {100, 96, 104, 255},
+}
 LAB_COLOR :: rl.Color{200, 204, 210, 255}
 LAB_RESEARCHING_TOP_COLOR :: rl.Color{90, 150, 240, 255}
 // Turns of the bit per drill cycle.
@@ -143,8 +153,9 @@ draw_entities :: proc(world: ^World, machines: Machine_Registry, items: Item_Reg
 	}
 	for assembler in world.entities.assemblers.entries {
 		if assembler.alive {
-			top := assembler.state == .Working ? ASSEMBLER_WORKING_TOP_COLOR : ASSEMBLER_COLOR
-			draw_entity_cells(assembler.common, machines, ASSEMBLER_COLOR, top)
+			color := crafting_machine_colors[machines.machines[assembler.machine].recipe_maker]
+			top := assembler.state == .Working ? ASSEMBLER_WORKING_TOP_COLOR : color
+			draw_entity_cells(assembler.common, machines, color, top)
 		}
 	}
 	for lab in world.entities.labs.entries {

@@ -14,6 +14,17 @@ DRILL_SLOT_COUNT :: 1
 DRILL_FUEL_SLOT :: 0
 // Keeps the draw stream apart from the generation purposes of the seed.
 VEIN_DRAW_SALT :: u64(0x6472_696c_6c5f_7631)
+// The grade roll hashes the draw hash once more, so it is independent of
+// the output roll.
+VEIN_GRADE_SALT :: u64(0x6772_6164_655f_7631)
+// Ore grades (DESIGN.md, Automation and logistics): the low grade share in
+// parts per million rises linearly from 10 percent at a full reservoir to
+// 60 percent with 5 percent left, and stays there. Infinite veins stay at
+// the start.
+LOW_GRADE_START_PPM :: 100_000
+LOW_GRADE_END_PPM :: 600_000
+LOW_GRADE_END_REMAINING_PERCENT :: 5
+PARTS_PER_MILLION :: 1_000_000
 
 // No_Fuel first, so a freshly placed drill without fuel does not count as
 // entering a stall.
@@ -141,6 +152,32 @@ choose_vein_output :: proc(vein: Vein, vein_type: Vein_Type_Content, infinite: b
 	return -1
 }
 
+// The low grade share of the next draw in parts per million. A finite
+// vein's size at generation is what is left plus what was drawn, since
+// every draw takes one unit.
+low_grade_share_ppm :: proc(vein: Vein, infinite: bool) -> i64 {
+	remaining := vein_remaining_total(vein)
+	initial := remaining + i64(vein.draws)
+	if infinite || initial <= 0 {
+		return LOW_GRADE_START_PPM
+	}
+	depleted := initial - remaining
+	span := initial * (100 - LOW_GRADE_END_REMAINING_PERCENT)
+	rise := i64(LOW_GRADE_END_PPM - LOW_GRADE_START_PPM) * depleted * 100 / span
+	return min(LOW_GRADE_START_PPM + rise, LOW_GRADE_END_PPM)
+}
+
+// The item a drawn output yields: its low grade twin when the grade roll
+// falls under the share, otherwise the ore itself.
+graded_output :: proc(vein: Vein, vein_type: Vein_Type_Content, output: int, infinite: bool, draw_hash: u64) -> Item_Id {
+	low_grade := vein_type.low_grades[output]
+	if low_grade == NO_ITEM {
+		return vein_type.outputs[output]
+	}
+	roll := hash_to_range(hash_combine(draw_hash, VEIN_GRADE_SALT), 0, PARTS_PER_MILLION - 1)
+	return roll < low_grade_share_ppm(vein, infinite) ? low_grade : vein_type.outputs[output]
+}
+
 vein_is_exhausted :: proc(vein: Vein, infinite: bool) -> bool {
 	if infinite {
 		return false
@@ -167,10 +204,12 @@ draw_from_vein :: proc(world: ^World, veins: Vein_Content, vein: ^Vein) -> Item_
 	}
 	vein_type := veins.types[vein.type]
 	infinite := world.settings.veins_infinite
-	output := choose_vein_output(vein^, vein_type, infinite, vein_draw_hash(world.settings.seed, vein^))
+	draw_hash := vein_draw_hash(world.settings.seed, vein^)
+	output := choose_vein_output(vein^, vein_type, infinite, draw_hash)
 	if output < 0 {
 		return NO_ITEM
 	}
+	item := graded_output(vein^, vein_type, output, infinite, draw_hash)
 	vein.draws += 1
 	if !infinite {
 		vein.remaining[output] -= 1
@@ -178,7 +217,7 @@ draw_from_vein :: proc(world: ^World, veins: Vein_Content, vein: ^Vein) -> Item_
 			exhaust_vein(world, vein)
 		}
 	}
-	return vein_type.outputs[output]
+	return item
 }
 
 // Into whatever entity stands in the drop cell. Nothing there, or no room,

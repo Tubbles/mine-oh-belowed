@@ -36,7 +36,7 @@ fluid_machine_colors := [Machine_Kind]rl.Color {
 	.Pole          = {},
 	.Power_Switch  = {},
 	.Lamp          = {},
-	.Assembler     = {},
+	.Crafting_Machine = {},
 	.Lab           = {},
 }
 
@@ -56,9 +56,9 @@ pipe_connects_through :: proc(entities: ^Entities, machines: Machine_Registry, c
 	#partial switch handle.kind {
 	case .Pipe:
 		return true
-	case .Fluid_Machine:
-		fluid_machine := pool_get(&entities.fluid_machines, handle)
-		return port_at_face(fluid_machine.common, machines.machines[fluid_machine.machine], neighbour, opposite_directions[face]) >= 0
+	case .Fluid_Machine, .Assembler:
+		common := entity_common(entities, handle)
+		return port_at_face(common^, machines.machines[common.machine], neighbour, opposite_directions[face]) >= 0
 	}
 	return false
 }
@@ -158,6 +158,12 @@ draw_fluid_entities :: proc(world: ^World, machines: Machine_Registry, fluids: F
 	for fluid_machine in world.entities.fluid_machines.entries {
 		if fluid_machine.alive {
 			draw_fluid_machine(fluid_machine, machines, fluids)
+		}
+	}
+	for assembler in world.entities.assemblers.entries {
+		if assembler.alive {
+			buffers := assembler.buffers
+			draw_fluid_ports(assembler.common, machines.machines[assembler.machine], buffers[:], fluids)
 		}
 	}
 }

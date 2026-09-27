@@ -1,5 +1,6 @@
 package game
 
+import "core:slice"
 import "core:testing"
 
 // Chapter 4 (data/quests/chapter_04.sjson), the power hint counters
@@ -64,8 +65,12 @@ recipe_reachable :: proc(recipe: Recipe, index: int, gates: Quest_Gates) -> bool
 	return false
 }
 
-// An item no recipe makes (ore, logs) is reachable by mining.
-item_reachable :: proc(recipes: Recipe_Registry, item: Item_Id, gates: Quest_Gates) -> bool {
+// An item mined from a block (ore, logs), or that no recipe makes, is
+// reachable by mining; ore is also made by the washer (work item 0026).
+item_reachable :: proc(items: Item_Registry, recipes: Recipe_Registry, item: Item_Id, gates: Quest_Gates) -> bool {
+	if slice.contains(items.drop_for_block, item) {
+		return true
+	}
 	made := false
 	for recipe, index in recipes.recipes {
 		for output in recipe.outputs {
@@ -119,7 +124,7 @@ test_shipped_quests_never_need_a_locked_recipe :: proc(t: ^testing.T) {
 		for objective in quest.objectives {
 			item := objective_item(objective, references.machines)
 			if item != NO_ITEM {
-				testing.expectf(t, item_reachable(references.recipes, item, gates), "quest %s needs %s", quest.id, references.items.items[item].id)
+				testing.expectf(t, item_reachable(references.items, references.recipes, item, gates), "quest %s needs %s", quest.id, references.items.items[item].id)
 			}
 		}
 		for recipe in quest.reward_recipes {

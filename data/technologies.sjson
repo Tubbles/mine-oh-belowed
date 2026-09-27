@@ -14,7 +14,9 @@
 // prerequisites lists technology ids that must be researched first; each
 // must be listed earlier in this file, which also rules out cycles.
 // logistics_science and fast_belts unlock phase 5 recipes that do not
-// exist yet, so they are placeholders with empty lists.
+// exist yet, so they are placeholders with empty lists. ore_processing
+// (work item 0026) unlocks the crusher, washer and alloy furnace and the
+// crushing and washing recipes; 15 s per pack is a guess.
 technologies = [
 	{id = "automation", name_key = "technology_automation", unlocks = ["assembler_1"], packs = 10, seconds = 10, science_packs = ["science_pack_1"]}
 	{id = "logistics", name_key = "technology_logistics", unlocks = ["splitter", "filter_inserter"], packs = 20, seconds = 15, science_packs = ["science_pack_1"], prerequisites = ["automation"]}
@@ -23,6 +25,7 @@ technologies = [
 	{id = "steel_processing", name_key = "technology_steel_processing", unlocks = ["steel", "steel_furnace"], packs = 50, seconds = 15, science_packs = ["science_pack_1"], prerequisites = ["automation"]}
 	{id = "fluid_handling", name_key = "technology_fluid_handling", unlocks = ["pump", "storage_tank"], packs = 50, seconds = 15, science_packs = ["science_pack_1"], prerequisites = ["steel_processing"]}
 	{id = "prospecting", name_key = "technology_prospecting", unlocks = ["core_sample_drill", "magnetometer"], packs = 50, seconds = 15, science_packs = ["science_pack_1"], prerequisites = ["steel_processing"]}
+	{id = "ore_processing", name_key = "technology_ore_processing", unlocks = ["crusher", "washer", "alloy_furnace", "crush_hematite", "crush_chalcopyrite", "crush_cassiterite", "crush_galena", "crush_sphalerite", "crush_pentlandite", "wash_hematite", "wash_chalcopyrite", "wash_cassiterite", "wash_galena", "wash_sphalerite", "wash_pentlandite"], packs = 50, seconds = 15, science_packs = ["science_pack_1"], prerequisites = ["steel_processing"]}
 	{id = "logistics_science", name_key = "technology_logistics_science", unlocks = [], packs = 75, seconds = 15, science_packs = ["science_pack_1"], prerequisites = ["logistics"], placeholder = true}
 	{id = "fast_belts", name_key = "technology_fast_belts", unlocks = [], packs = 100, seconds = 30, science_packs = ["science_pack_1"], prerequisites = ["logistics_science"], placeholder = true}
 ]

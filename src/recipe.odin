@@ -15,20 +15,28 @@ NO_RECIPE :: -1
 NO_TECHNOLOGY :: -1
 MAXIMUM_RECIPE_TAGS :: 128
 
-// What can make a recipe.
+// What can make a recipe. Every maker after the furnace is a crafting
+// machine category (assembler.odin): a machine entry names the one it
+// makes.
 Recipe_Maker :: enum u8 {
 	Hand,
 	Furnace,
 	Assembler,
+	Crusher,
+	Washer,
+	Alloy_Furnace,
 }
 
 Recipe_Makers :: bit_set[Recipe_Maker]
 
 @(rodata)
 recipe_maker_names := [Recipe_Maker]string {
-	.Hand      = "hand",
-	.Furnace   = "furnace",
-	.Assembler = "assembler",
+	.Hand          = "hand",
+	.Furnace       = "furnace",
+	.Assembler     = "assembler",
+	.Crusher       = "crusher",
+	.Washer        = "washer",
+	.Alloy_Furnace = "alloy_furnace",
 }
 
 // The recipe browser tabs, in tab order.
@@ -72,11 +80,22 @@ recipe_channel_names := [Recipe_Channel]string {
 // Indices into Recipe_Registry.tag_names.
 Recipe_Tag_Set :: bit_set[0 ..< MAXIMUM_RECIPE_TAGS;u128]
 
-// fluid is reserved for fluid ingredients, which are not supported yet.
+// fluid is not allowed here: fluids go in fluid_inputs.
 Recipe_Ingredient_Definition :: struct {
 	item:  string,
 	fluid: string,
 	count: int,
+}
+
+// litres over the whole craft, drawn from the machine's input ports.
+Recipe_Fluid_Definition :: struct {
+	fluid:  string,
+	litres: int,
+}
+
+Recipe_Fluid :: struct {
+	fluid:  Fluid_Id,
+	litres: i32,
 }
 
 // As written in the file, before references are resolved.
@@ -84,8 +103,9 @@ Recipe_Definition :: struct {
 	id:         string,
 	name_key:   string,
 	inputs:     []Recipe_Ingredient_Definition,
-	outputs:    []Recipe_Ingredient_Definition,
-	seconds:    f32,
+	outputs:      []Recipe_Ingredient_Definition,
+	fluid_inputs: []Recipe_Fluid_Definition,
+	seconds:      f32,
 	made_in:    []string,
 	category:   string,
 	tags:       []string,
@@ -106,6 +126,7 @@ Recipe :: struct {
 	name_key:      string,
 	inputs:        []Item_Stack,
 	outputs:       []Item_Stack,
+	fluid_inputs:  []Recipe_Fluid,
 	milliseconds:  u32,
 	made_in:       Recipe_Makers,
 	category:      Recipe_Category,
@@ -195,7 +216,7 @@ validate_recipe_definition :: proc(definitions: []Recipe_Definition, index: int)
 
 resolve_ingredient :: proc(recipe_id: string, ingredient: Recipe_Ingredient_Definition, items: Item_Registry) -> (stack: Item_Stack, problem: string) {
 	if ingredient.fluid != "" {
-		return EMPTY_STACK, fmt.tprintf("recipe %q uses fluid %q, fluids are not supported yet", recipe_id, ingredient.fluid)
+		return EMPTY_STACK, fmt.tprintf("recipe %q lists fluid %q as an item, fluids go in fluid_inputs", recipe_id, ingredient.fluid)
 	}
 	item, found := find_item_id(items, ingredient.item)
 	if !found {
@@ -267,7 +288,32 @@ resolve_recipe_makers :: proc(names: []string) -> Recipe_Makers {
 	return makers
 }
 
-resolve_recipe :: proc(definition: Recipe_Definition, items: Item_Registry, tag_names: ^[dynamic]string, allocator := context.allocator) -> (recipe: Recipe, problem: string) {
+// Fluids come from a machine's ports, so neither the hand nor the stone
+// furnace, which has none, makes a recipe with fluid inputs.
+resolve_recipe_fluids :: proc(definition: Recipe_Definition, fluids: Fluid_Registry, allocator := context.allocator) -> (resolved: []Recipe_Fluid, problem: string) {
+	if len(definition.fluid_inputs) == 0 {
+		return nil, ""
+	}
+	makers := resolve_recipe_makers(definition.made_in)
+	if .Hand in makers || .Furnace in makers {
+		return nil, fmt.tprintf("recipe %q has fluid inputs but is made by hand or in a furnace", definition.id)
+	}
+	if len(definition.fluid_inputs) > MAXIMUM_FLUID_PORTS {
+		return nil, fmt.tprintf("recipe %q has more than %d fluid inputs", definition.id, MAXIMUM_FLUID_PORTS)
+	}
+	resolved = make([]Recipe_Fluid, len(definition.fluid_inputs), allocator)
+	for fluid_input, index in definition.fluid_inputs {
+		fluid, found := find_fluid_id(fluids, fluid_input.fluid)
+		if !found || fluid_input.litres < 1 {
+			delete(resolved, allocator)
+			return nil, fmt.tprintf("recipe %q has fluid input %q that is unknown or not a positive amount", definition.id, fluid_input.fluid)
+		}
+		resolved[index] = {fluid = fluid, litres = i32(fluid_input.litres)}
+	}
+	return resolved, ""
+}
+
+resolve_recipe :: proc(definition: Recipe_Definition, items: Item_Registry, fluids: Fluid_Registry, tag_names: ^[dynamic]string, allocator := context.allocator) -> (recipe: Recipe, problem: string) {
 	recipe = Recipe {
 		id            = definition.id,
 		name_key      = definition.name_key,
@@ -288,6 +334,11 @@ resolve_recipe :: proc(definition: Recipe_Definition, items: Item_Registry, tag_
 		delete(recipe.inputs, allocator)
 		return {}, problem
 	}
+	if recipe.fluid_inputs, problem = resolve_recipe_fluids(definition, fluids, allocator); problem != "" {
+		delete(recipe.inputs, allocator)
+		delete(recipe.outputs, allocator)
+		return {}, problem
+	}
 	if recipe.name_key == "" {
 		recipe.name_key = items.items[recipe.outputs[0].item].name_key
 	}
@@ -301,8 +352,13 @@ recipe_fits_furnace :: proc(recipe: Recipe) -> bool {
 }
 
 // A furnace picks its recipe by the input item, which must be unambiguous.
+// A furnace recipe of another shape is an error: two input alloys belong
+// to the alloy furnace.
 validate_furnace_recipes :: proc(recipes: []Recipe) -> string {
 	for recipe, index in recipes {
+		if .Furnace in recipe.made_in && !recipe_fits_furnace(recipe) {
+			return fmt.tprintf("furnace recipe %q needs exactly one input and one output", recipe.id)
+		}
 		if !recipe_fits_furnace(recipe) {
 			continue
 		}
@@ -318,13 +374,13 @@ validate_furnace_recipes :: proc(recipes: []Recipe) -> string {
 // Validates the file against the item registry and resolves every item
 // reference. Technology references are resolved by
 // resolve_technology_registry.
-resolve_recipe_registry :: proc(file: Recipes_File, items: Item_Registry, allocator := context.allocator) -> (registry: Recipe_Registry, problem: string) {
+resolve_recipe_registry :: proc(file: Recipes_File, items: Item_Registry, fluids: Fluid_Registry, allocator := context.allocator) -> (registry: Recipe_Registry, problem: string) {
 	registry.recipes = make([]Recipe, len(file.recipes), allocator)
 	tag_names := make([dynamic]string, 0, 16, allocator)
 	for definition, index in file.recipes {
 		problem = validate_recipe_definition(file.recipes, index)
 		if problem == "" {
-			registry.recipes[index], problem = resolve_recipe(definition, items, &tag_names, allocator)
+			registry.recipes[index], problem = resolve_recipe(definition, items, fluids, &tag_names, allocator)
 		}
 		if problem != "" {
 			registry.tag_names = tag_names[:]
@@ -349,6 +405,7 @@ destroy_recipe_registry :: proc(registry: Recipe_Registry, allocator := context.
 	for recipe in registry.recipes {
 		delete(recipe.inputs, allocator)
 		delete(recipe.outputs, allocator)
+		delete(recipe.fluid_inputs, allocator)
 	}
 	delete(registry.recipes, allocator)
 	delete(registry.tag_names, allocator)
@@ -455,7 +512,7 @@ recipe_maker_key :: proc(maker: Recipe_Maker) -> string {
 	return fmt.tprintf("recipe_maker_%s", recipe_maker_names[maker])
 }
 
-load_recipe_registry :: proc(data_directory: string, items: Item_Registry, allocator := context.allocator) -> (registry: Recipe_Registry, ok: bool) {
+load_recipe_registry :: proc(data_directory: string, items: Item_Registry, fluids: Fluid_Registry, allocator := context.allocator) -> (registry: Recipe_Registry, ok: bool) {
 	path, join_error := os.join_path({data_directory, RECIPES_FILE_NAME}, context.temp_allocator)
 	if join_error != nil {
 		return {}, false
@@ -471,7 +528,7 @@ load_recipe_registry :: proc(data_directory: string, items: Item_Registry, alloc
 		return {}, false
 	}
 	problem: string
-	registry, problem = resolve_recipe_registry(file, items, allocator)
+	registry, problem = resolve_recipe_registry(file, items, fluids, allocator)
 	if problem != "" {
 		log_printf("error: invalid %s: %s", path, problem)
 		return {}, false

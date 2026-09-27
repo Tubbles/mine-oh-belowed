@@ -135,7 +135,7 @@ expect_draw_mix :: proc(t: ^testing.T, type_id: string, location := #caller_loca
 	for _ in 0 ..< draws {
 		item := draw_from_vein(&world, content.veins, registered_vein(&world, id))
 		for index in 0 ..< vein_type.output_count {
-			if vein_type.outputs[index] == item {
+			if vein_type.outputs[index] == item || vein_type.low_grades[index] == item {
 				counts[index] += 1
 			}
 		}
@@ -304,11 +304,15 @@ test_two_drills_share_one_vein :: proc(t: ^testing.T) {
 	first_chest := place_test_entity(&world, content, "wooden_chest", {2, 1, 0})
 	second_chest := place_test_entity(&world, content, "wooden_chest", {2, 1, 3})
 	hematite, gravel := test_item(content.items, "hematite"), test_item(content.items, "gravel")
+	low_grade := test_item(content.items, "hematite_low_grade")
 	// Both draw on the same tick, so four cycles drain eight units.
 	tick_test_entities(&world, content, 4 * 192 + 1)
-	testing.expect_value(t, chest_count_of(&world, first_chest, hematite) + chest_count_of(&world, second_chest, hematite), 6)
+	ore_in :: proc(world: ^World, chest: Entity_Handle, hematite, low_grade: Item_Id) -> int {
+		return chest_count_of(world, chest, hematite) + chest_count_of(world, chest, low_grade)
+	}
+	testing.expect_value(t, ore_in(&world, first_chest, hematite, low_grade) + ore_in(&world, second_chest, hematite, low_grade), 6)
 	testing.expect_value(t, chest_count_of(&world, first_chest, gravel) + chest_count_of(&world, second_chest, gravel), 2)
-	testing.expect_value(t, chest_count_of(&world, first_chest, hematite) + chest_count_of(&world, first_chest, gravel), 4)
+	testing.expect_value(t, ore_in(&world, first_chest, hematite, low_grade) + chest_count_of(&world, first_chest, gravel), 4)
 	testing.expect_value(t, test_drill(&world, first).state, Drill_State.Vein_Exhausted)
 	testing.expect_value(t, test_drill(&world, second).state, Drill_State.Vein_Exhausted)
 	testing.expect_value(t, registered_vein(&world, vein).draws, 8)

@@ -94,8 +94,8 @@ clear_fluid_networks :: proc(networks: ^Fluid_Networks) {
 	clear(&networks.networks)
 }
 
-// Pipes in pool order, then every port of every fluid machine in pool
-// and port order.
+// Pipes in pool order, then every port of every fluid machine, then of
+// every crafting machine with ports (a washer), in pool and port order.
 collect_fluid_segments :: proc(entities: ^Entities, machines: Machine_Registry) {
 	segments := &entities.fluid_networks.segments
 	for pipe in entities.pipes.entries {
@@ -105,23 +105,45 @@ collect_fluid_segments :: proc(entities: ^Entities, machines: Machine_Registry) 
 		}
 	}
 	for fluid_machine in entities.fluid_machines.entries {
-		if !fluid_machine.alive {
-			continue
-		}
-		machine := machines.machines[fluid_machine.machine]
-		for port, index in fluid_ports_of(machine) {
-			segment := Fluid_Segment {
-				owner        = fluid_machine.handle,
-				port         = index,
-				height       = placed_port_height(fluid_machine.common, machine, port),
-				capacity     = port.capacity,
-				direction    = port.direction,
-				filter       = port.filter,
-				pressurising = machine.kind == .Pump && port.direction == .Output,
-			}
-			append(segments, segment)
+		if fluid_machine.alive {
+			append_port_segments(segments, fluid_machine.common, machines.machines[fluid_machine.machine])
 		}
 	}
+	for assembler in entities.assemblers.entries {
+		if assembler.alive {
+			append_port_segments(segments, assembler.common, machines.machines[assembler.machine])
+		}
+	}
+}
+
+append_port_segments :: proc(segments: ^[dynamic]Fluid_Segment, common: Entity_Common, machine: Machine) {
+	for port, index in fluid_ports_of(machine) {
+		segment := Fluid_Segment {
+			owner        = common.handle,
+			port         = index,
+			height       = placed_port_height(common, machine, port),
+			capacity     = port.capacity,
+			direction    = port.direction,
+			filter       = port.filter,
+			pressurising = machine.kind == .Pump && port.direction == .Output,
+		}
+		append(segments, segment)
+	}
+}
+
+// The port buffers and closed flags of an entity with fluid ports, or nil.
+entity_port_buffers :: proc(entities: ^Entities, handle: Entity_Handle) -> (buffers: ^[MAXIMUM_FLUID_PORTS]Fluid_Buffer, closed: ^[MAXIMUM_FLUID_PORTS]bool) {
+	#partial switch handle.kind {
+	case .Fluid_Machine:
+		if fluid_machine := pool_get(&entities.fluid_machines, handle); fluid_machine != nil {
+			return &fluid_machine.buffers, &fluid_machine.closed
+		}
+	case .Assembler:
+		if assembler := pool_get(&entities.assemblers, handle); assembler != nil {
+			return &assembler.buffers, &assembler.closed
+		}
+	}
+	return nil, nil
 }
 
 // Where each pipe cell's segment and each fluid machine's first port
@@ -157,8 +179,8 @@ segment_at_face :: proc(entities: ^Entities, machines: Machine_Registry, lookup:
 	if !found {
 		return -1
 	}
-	fluid_machine := pool_get(&entities.fluid_machines, handle)
-	port := port_at_face(fluid_machine.common, machines.machines[fluid_machine.machine], cell, face)
+	common := entity_common(entities, handle)
+	port := port_at_face(common^, machines.machines[common.machine], cell, face)
 	return port < 0 ? -1 : first + port
 }
 
@@ -176,9 +198,9 @@ segment_faces :: proc(entities: ^Entities, machines: Machine_Registry, segment: 
 		}
 		return faces
 	}
-	fluid_machine := pool_get(&entities.fluid_machines, segment.owner)
-	machine := machines.machines[fluid_machine.machine]
-	return placed_port_faces(fluid_machine.common, machine, machine.fluid_ports[segment.port])
+	common := entity_common(entities, segment.owner)
+	machine := machines.machines[common.machine]
+	return placed_port_faces(common^, machine, machine.fluid_ports[segment.port])
 }
 
 // Every connection once: only through positive faces, since the partner
@@ -305,7 +327,8 @@ segment_buffer :: proc(entities: ^Entities, segment: Fluid_Segment) -> ^Fluid_Bu
 	if segment.port < 0 {
 		return &pool_get(&entities.pipes, segment.owner).buffer
 	}
-	return &pool_get(&entities.fluid_machines, segment.owner).buffers[segment.port]
+	buffers, _ := entity_port_buffers(entities, segment.owner)
+	return &buffers[segment.port]
 }
 
 // A rebuilt network takes the fluid of its first pipe holding any. Pipes
@@ -492,7 +515,8 @@ mark_closed_ports :: proc(entities: ^Entities, networks: ^Fluid_Networks, member
 		segment := networks.segments[member]
 		closed[member] = fluid != NO_FLUID && segment_is_closed(segment, segment_buffer(entities, segment)^, fluid)
 		if segment.port >= 0 {
-			pool_get(&entities.fluid_machines, segment.owner).closed[segment.port] = closed[member]
+			_, port_closed := entity_port_buffers(entities, segment.owner)
+			port_closed[segment.port] = closed[member]
 		}
 	}
 }
@@ -535,6 +559,11 @@ reset_fluid_flows :: proc(entities: ^Entities) {
 	}
 	for &fluid_machine in entities.fluid_machines.entries {
 		for &buffer in fluid_machine.buffers {
+			buffer.flow_in, buffer.flow_out = 0, 0
+		}
+	}
+	for &assembler in entities.assemblers.entries {
+		for &buffer in assembler.buffers {
 			buffer.flow_in, buffer.flow_out = 0, 0
 		}
 	}

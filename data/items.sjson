@@ -12,6 +12,12 @@
 // Every block that can be mined must yield exactly one item.
 // fuel_megajoules (optional) is the energy a machine extracts from the item.
 // Fluids (water, steam) are not items: fluids do not stack.
+// Ore grades (work item 0026): every ore except coal has a low grade twin
+// (id ending in _low_grade) that veins yield more of as they deplete. Low
+// grade ore does not smelt: the crusher turns it into crushed ore and the
+// washer crushed ore into ore. Coal stays single grade, since it is
+// burned rather than refined. Mud and gravel are byproducts without a
+// sink yet (work item 0027).
 items = [
 	// Raw materials
 	{id = "log", name_key = "item_log", category = "raw", stack_size = 50, places_block = "log", fuel_megajoules = 2}
@@ -24,6 +30,16 @@ items = [
 	{id = "hematite", name_key = "item_hematite", category = "raw", stack_size = 50, mined_from = ["hematite_ore"]}
 	{id = "chalcopyrite", name_key = "item_chalcopyrite", category = "raw", stack_size = 50, mined_from = ["chalcopyrite_ore"]}
 	{id = "cassiterite", name_key = "item_cassiterite", category = "raw", stack_size = 50, mined_from = ["cassiterite_ore"]}
+	{id = "galena", name_key = "item_galena", category = "raw", stack_size = 50, mined_from = ["galena_ore"]}
+	{id = "sphalerite", name_key = "item_sphalerite", category = "raw", stack_size = 50, mined_from = ["sphalerite_ore"]}
+	{id = "pentlandite", name_key = "item_pentlandite", category = "raw", stack_size = 50, mined_from = ["pentlandite_ore"]}
+	{id = "hematite_low_grade", name_key = "item_hematite_low_grade", category = "raw", stack_size = 50}
+	{id = "chalcopyrite_low_grade", name_key = "item_chalcopyrite_low_grade", category = "raw", stack_size = 50}
+	{id = "cassiterite_low_grade", name_key = "item_cassiterite_low_grade", category = "raw", stack_size = 50}
+	{id = "galena_low_grade", name_key = "item_galena_low_grade", category = "raw", stack_size = 50}
+	{id = "sphalerite_low_grade", name_key = "item_sphalerite_low_grade", category = "raw", stack_size = 50}
+	{id = "pentlandite_low_grade", name_key = "item_pentlandite_low_grade", category = "raw", stack_size = 50}
+	{id = "mud", name_key = "item_mud", category = "raw", stack_size = 50}
 	// Processed materials and intermediates
 	{id = "plank", name_key = "item_plank", category = "intermediate", stack_size = 100, fuel_megajoules = 1}
 	{id = "stick", name_key = "item_stick", category = "intermediate", stack_size = 100, fuel_megajoules = 0.5}
@@ -35,6 +51,16 @@ items = [
 	{id = "bronze_plate", name_key = "item_bronze_plate", category = "intermediate", stack_size = 50}
 	{id = "glass", name_key = "item_glass", category = "intermediate", stack_size = 100}
 	{id = "steel", name_key = "item_steel", category = "intermediate", stack_size = 50}
+	{id = "crushed_hematite", name_key = "item_crushed_hematite", category = "intermediate", stack_size = 50}
+	{id = "crushed_chalcopyrite", name_key = "item_crushed_chalcopyrite", category = "intermediate", stack_size = 50}
+	{id = "crushed_cassiterite", name_key = "item_crushed_cassiterite", category = "intermediate", stack_size = 50}
+	{id = "crushed_galena", name_key = "item_crushed_galena", category = "intermediate", stack_size = 50}
+	{id = "crushed_sphalerite", name_key = "item_crushed_sphalerite", category = "intermediate", stack_size = 50}
+	{id = "crushed_pentlandite", name_key = "item_crushed_pentlandite", category = "intermediate", stack_size = 50}
+	{id = "lead_plate", name_key = "item_lead_plate", category = "intermediate", stack_size = 50}
+	{id = "zinc_plate", name_key = "item_zinc_plate", category = "intermediate", stack_size = 50}
+	{id = "nickel_plate", name_key = "item_nickel_plate", category = "intermediate", stack_size = 50}
+	{id = "brass_plate", name_key = "item_brass_plate", category = "intermediate", stack_size = 50}
 	{id = "iron_gear", name_key = "item_iron_gear", category = "intermediate", stack_size = 100}
 	{id = "iron_rod", name_key = "item_iron_rod", category = "intermediate", stack_size = 100}
 	{id = "copper_wire", name_key = "item_copper_wire", category = "intermediate", stack_size = 100}
@@ -72,6 +98,9 @@ items = [
 	{id = "assembler_1", name_key = "item_assembler_1", category = "machine", stack_size = 10}
 	{id = "lab", name_key = "item_lab", category = "machine", stack_size = 10}
 	{id = "core_sample_drill", name_key = "item_core_sample_drill", category = "machine", stack_size = 10}
+	{id = "crusher", name_key = "item_crusher", category = "machine", stack_size = 10}
+	{id = "washer", name_key = "item_washer", category = "machine", stack_size = 10}
+	{id = "alloy_furnace", name_key = "item_alloy_furnace", category = "machine", stack_size = 10}
 	// Blocks that drop themselves
 	{id = "leaves", name_key = "item_leaves", category = "block", stack_size = 50, places_block = "leaves"}
 	{id = "tar", name_key = "item_tar", category = "block", stack_size = 50, places_block = "tar"}

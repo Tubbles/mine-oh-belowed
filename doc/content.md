@@ -151,7 +151,7 @@ Vein sizes before the richness multiplier, pending SUGGESTIONS.md item 3.
 | Mixed | 40% hematite, 40% chalcopyrite, 20% spoil | Hills |
 | Quarry | 60% stone, 20% sand, 20% gravel | Everywhere |
 
-High grade ore smelts directly. Low grade ore needs crushing and washing (phase 5). A finite vein outputs 10% low grade at the start and 60% at the end.
+High grade ore smelts directly. Low grade ore needs crushing and washing (phase 5, work item 0026): the share of low grade rises linearly from 10% at a full reservoir to 60% at 5% remaining, infinite veins stay at 10%. Crushers, washers, the alloy furnace and the assembler are one data kind, `crafting_machine`, with a recipe category and either a player chosen or a fixed recipe picked by the loaded inputs (a fixed category refuses recipes whose inputs are a subset of another's). Steel, bronze and brass are alloy furnace recipes; the stone furnace only makes one input, one output recipes.
 
 ## Ratio checks
 
@@ -168,7 +168,7 @@ High grade ore smelts directly. Low grade ore needs crushing and washing (phase 
 
 Listed for planning, values follow with their milestones.
 
-- Phase 5: crusher, washer (consumes water, outputs mud), alloy furnace, recycler, assembler 2, fast belt, fast inserter, long inserter, steel chest, medium pole, science pack 2, lead, zinc, nickel, brass.
+- Phase 5: crusher, washer (consumes water, outputs mud), alloy furnace, recycler, assembler 2, fast belt, fast inserter, long inserter, steel chest, medium pole, science pack 2, lead, zinc, nickel, brass. Crusher, washer, alloy furnace, galena, sphalerite and pentlandite veins, lead, zinc and nickel plates and brass landed with 0026; guessed times and costs are listed in its work item.
 - Phase 6: tar pit pump, refinery, cracking unit, chemical plant, gas tank, flare stack, combustion generator, wood gasifier, plastics, sulfur, bitumen, asphalt, science pack 3.
 - Phase 7: bore drill, mining fluid, seismic thumper, hydro turbine, big pole, substation, assembler 3, express belt, stack inserter, bauxite, gold, quartz, silicon, science pack 4.
 - Phase 8: launch pad, rocket assembly, rocket parts, cargo capsule, orbital survey, infinite research, science pack 5.

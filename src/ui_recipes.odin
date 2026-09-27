@@ -384,7 +384,8 @@ choose_assembler_recipe :: proc(state: ^Ui_State, screen_context: Screen_Context
 		return
 	}
 	inventory := screen_context.player.inventory
-	refusal := change_assembler_recipe(assembler, inventory, screen_context.items, screen_context.recipes, recipe)
+	machine := screen_context.machines.machines[assembler.machine]
+	refusal := change_assembler_recipe(assembler, machine, inventory, screen_context.items, screen_context.recipes, recipe)
 	if refusal != .None {
 		ui_toast(state, text(recipe_change_refusal_keys[refusal]))
 		return

@@ -29,7 +29,7 @@ Entity_Kind :: enum u8 {
 	// Small poles and power switches (power_machine.odin).
 	Pole,
 	Lamp,
-	// assembler.odin and lab.odin.
+	// Crafting machines (assembler.odin) and labs (lab.odin).
 	Assembler,
 	Lab,
 }
@@ -364,15 +364,15 @@ add_entity :: proc(entities: ^Entities, machines: Machine_Registry, machine: Mac
 		handle = pool_add(&entities.poles, .Pole, make_pole(common))
 	case .Lamp:
 		handle = pool_add(&entities.lamps, .Lamp, make_lamp(common))
-	case .Assembler:
-		handle = pool_add(&entities.assemblers, .Assembler, make_assembler(common))
+	case .Crafting_Machine:
+		handle = pool_add(&entities.assemblers, .Assembler, make_assembler(common, machines.machines[machine]))
 	case .Lab:
 		handle = pool_add(&entities.labs, .Lab, make_lab(common, len(machines.lab_packs)))
 	}
 	for cell in footprint_cells(origin, machines.machines[machine].footprint, rotation) {
 		entities.cells[cell] = handle
 	}
-	if handle.kind == .Pipe || handle.kind == .Fluid_Machine {
+	if handle.kind == .Pipe || machines.machines[machine].fluid_port_count > 0 {
 		rebuild_fluid_networks(entities, machines)
 	}
 	if machine_touches_power(machines.machines[machine]) {
@@ -425,7 +425,11 @@ remove_entity :: proc(entities: ^Entities, machines: Machine_Registry, handle: E
 	case .Lamp:
 		return pool_remove(&entities.lamps, handle)
 	case .Assembler:
-		return pool_remove(&entities.assemblers, handle)
+		pool_remove(&entities.assemblers, handle)
+		if machines.machines[common.machine].fluid_port_count > 0 {
+			rebuild_fluid_networks(entities, machines)
+		}
+		return true
 	case .Lab:
 		return pool_remove(&entities.labs, handle)
 	case .Belt, .Splitter:

@@ -6,7 +6,7 @@ import "core:testing"
 make_test_recipes :: proc(items: Item_Registry) -> (Recipe_Registry, Technology_Registry) {
 	file, error := parse_recipes_file(#load("../data/recipes.sjson"), context.temp_allocator)
 	assert(error == nil)
-	recipes, problem := resolve_recipe_registry(file, items, context.temp_allocator)
+	recipes, problem := resolve_recipe_registry(file, items, make_test_fluids(), context.temp_allocator)
 	assert(problem == "", problem)
 	technology_file, technology_error := parse_technologies_file(#load("../data/technologies.sjson"), context.temp_allocator)
 	assert(technology_error == nil)
@@ -25,8 +25,8 @@ test_recipe :: proc(recipes: Recipe_Registry, id: string) -> int {
 test_shipped_recipes_resolve :: proc(t: ^testing.T) {
 	items := make_test_items()
 	recipes, technologies := make_test_recipes(items)
-	testing.expect_value(t, len(recipes.recipes), 45)
-	testing.expect_value(t, len(technologies.technologies), 9)
+	testing.expect_value(t, len(recipes.recipes), 64)
+	testing.expect_value(t, len(technologies.technologies), 10)
 	plank := recipes.recipes[test_recipe(recipes, "plank")]
 	testing.expect_value(t, plank.outputs[0], Item_Stack{test_item(items, "plank"), 4})
 	testing.expect_value(t, plank.milliseconds, 500)
@@ -111,7 +111,7 @@ test_recipe_definition :: proc() -> Recipe_Definition {
 }
 
 resolve_test_recipes :: proc(definitions: []Recipe_Definition) -> string {
-	registry, problem := resolve_recipe_registry(Recipes_File{recipes = definitions}, make_test_items(), context.temp_allocator)
+	registry, problem := resolve_recipe_registry(Recipes_File{recipes = definitions}, make_test_items(), make_test_fluids(), context.temp_allocator)
 	if problem == "" {
 		destroy_recipe_registry(registry, context.temp_allocator)
 	}
@@ -168,7 +168,7 @@ test_technology_data_rejects_bad_links :: proc(t: ^testing.T) {
 	research.technology = "tech"
 	definitions := []Recipe_Definition{research, base}
 	definitions[1].id = "plain"
-	recipes, problem := resolve_recipe_registry(Recipes_File{recipes = definitions}, items, context.temp_allocator)
+	recipes, problem := resolve_recipe_registry(Recipes_File{recipes = definitions}, items, make_test_fluids(), context.temp_allocator)
 	testing.expect_value(t, problem, "")
 	resolve :: proc(technologies: []Technology_Definition, recipes: Recipe_Registry) -> string {
 		_, problem := resolve_technology_registry(Technologies_File{technologies = technologies}, make_test_items(), recipes, context.temp_allocator)

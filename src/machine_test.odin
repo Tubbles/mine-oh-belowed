@@ -26,6 +26,8 @@ make_test_content :: proc() -> Simulation_Content {
 	assert(problem == "", problem)
 	machines := make_test_machines()
 	machines.lab_packs = technologies.science_packs
+	crafting_problem := validate_crafting_machine_recipes(machines, recipes)
+	assert(crafting_problem == "", crafting_problem)
 	return Simulation_Content {
 		blocks = make_test_registry(),
 		items = items,
@@ -50,7 +52,7 @@ test_machine :: proc(machines: Machine_Registry, id: string) -> Machine_Id {
 test_machine_data_loads :: proc(t: ^testing.T) {
 	items := make_test_items()
 	machines := make_test_machines()
-	testing.expect_value(t, len(machines.machines), 24)
+	testing.expect_value(t, len(machines.machines), 27)
 	wooden := machines.machines[test_machine(machines, "wooden_chest")]
 	testing.expect_value(t, wooden.kind, Machine_Kind.Chest)
 	testing.expect_value(t, wooden.slot_count, 16)

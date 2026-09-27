@@ -17,12 +17,14 @@ World_Settings :: struct {
 }
 
 // What the simulation needs of a vein type: its name, its outcrop blocks
-// and its outputs as items with their percent weights.
+// and its outputs as items with their percent weights, and per output the
+// low grade twin or NO_ITEM.
 Vein_Type_Content :: struct {
 	name_key:       string,
 	outcrop_blocks: []Block_Id,
 	output_count:   int,
 	outputs:        [MAXIMUM_VEIN_OUTPUTS]Item_Id,
+	low_grades:     [MAXIMUM_VEIN_OUTPUTS]Item_Id,
 	percents:       [MAXIMUM_VEIN_OUTPUTS]i64,
 }
 
@@ -45,6 +47,12 @@ resolve_vein_type_content :: proc(vein_type: Vein_Type, items: Item_Registry) ->
 			return {}, fmt.tprintf("vein type %q outputs unknown item %q", definition.id, output.ore)
 		}
 		content.outputs[index], content.percents[index] = item, output.percent
+		content.low_grades[index] = NO_ITEM
+		if output.low_grade != "" {
+			if content.low_grades[index], found = find_item_id(items, output.low_grade); !found {
+				return {}, fmt.tprintf("vein type %q names unknown low grade item %q", definition.id, output.low_grade)
+			}
+		}
 	}
 	return content, ""
 }
