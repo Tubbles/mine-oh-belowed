@@ -452,6 +452,18 @@ debug_terrain_landing_pad :: proc() -> Landing_Pad_Site {
 	return Landing_Pad_Site{present = true, centre = {0, debug_terrain_height(capsule_column.x, capsule_column.y), 0}}
 }
 
+// A loaded world keeps the pad it was created with (world.sjson, 0049), so
+// a change to the spawn rules never moves it. A file without a pad (saved
+// before 0049) falls back to the search.
+saved_world_start :: proc(generator: ^Generator, loading: bool, file: World_File) -> (start: World_Start, found: bool) {
+	if !loading || !file.landing_pad_present {
+		return {}, false
+	}
+	centre := World_Coordinate(file.landing_pad)
+	generator.landing_pad = Landing_Pad_Site{present = true, centre = centre}
+	return World_Start{player = player_start_on(centre), landing_pad = generator.landing_pad}, true
+}
+
 // Runs the spawn search before the window opens, so its result (or failure)
 // shows on stderr even without a display. The landing pad goes where the
 // player spawns; the generator stamps it, so it is set before streaming.

@@ -55,6 +55,10 @@ World_File :: struct {
 	// world list to show and to restore the time of day a developer set.
 	day_time_ticks:           u64,
 	last_played_unix_seconds: i64,
+	// The landing pad's centre (0049), so a loaded world keeps its pad when
+	// the spawn rules change; a file without one falls back to the search.
+	landing_pad_present:      bool,
+	landing_pad:              [3]i32,
 }
 
 // Where one world's save lives. The display name goes into world.sjson,
@@ -171,6 +175,8 @@ make_world_file :: proc(state: ^Simulation_State, display_name: string, last_pla
 		tick = state.tick,
 		day_time_ticks = simulation_day_ticks(state^) % day_length_ticks,
 		last_played_unix_seconds = last_played_unix_seconds,
+		landing_pad_present = state.landing_pad.present,
+		landing_pad = cast([3]i32)state.landing_pad.centre,
 	}
 }
 

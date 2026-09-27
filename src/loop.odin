@@ -33,6 +33,9 @@ Simulation_State :: struct {
 	// Developer cheat speed (0044): faster movement and hand mining. Not
 	// saved.
 	cheat_speed:        bool,
+	// The pad the world was created with, written to world.sjson so a loaded
+	// world keeps it whatever the spawn rules do later (0049).
+	landing_pad:        Landing_Pad_Site,
 }
 
 Simulation_Event :: struct {
@@ -105,6 +108,7 @@ make_simulation :: proc(config: Game_Config, start: Player_Start, content: Simul
 		tick_rate        = config.tick_rate,
 		day_length_ticks = u64(config.day_length_seconds) * u64(config.tick_rate),
 		unlocks          = make_recipe_unlocks(len(content.items.items), content.recipes, technologies, unlock_all),
+		landing_pad      = landing_pad,
 	}
 	state.world.statistics = make_statistics(len(content.items.items), len(content.machines.machines), len(content.blocks.definitions))
 	state.world.statistics.fluids = make_fluid_statistics(len(content.fluids.fluids))

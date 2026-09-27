@@ -92,7 +92,11 @@ start_session :: proc(plan: Session_Plan, config: Game_Config, content: Game_Con
 	session = new(Session)
 	session.generator = session_generator(base_generator, plan.seed, plan.settings.vein_richness_percent)
 	session.technologies = scaled_technology_registry(content.technologies, plan.settings.research_cost_percent)
-	session.start = choose_world_start(&session.generator, plan.debug_terrain)
+	if start, saved := saved_world_start(&session.generator, plan.loading, plan.file); saved {
+		session.start = start
+	} else {
+		session.start = choose_world_start(&session.generator, plan.debug_terrain)
+	}
 	session.simulation, problem = make_session_simulation(plan, config, content, session)
 	if problem == "" && plan.debug_terrain {
 		problem = build_session_debug_terrain(&session.simulation.world, content.blocks)

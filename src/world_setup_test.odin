@@ -50,6 +50,29 @@ test_world_settings_round_trip_through_world_file :: proc(t: ^testing.T) {
 	testing.expect_value(t, parsed.seed, 99)
 	testing.expect_value(t, parsed.settings, settings)
 	testing.expect_value(t, world_settings_from_file(parsed.seed, parsed.settings), simulation.world.settings)
+	// The pad travels with the file (0049).
+	testing.expect(t, parsed.landing_pad_present)
+	testing.expect_value(t, parsed.landing_pad, cast([3]i32)SAVE_TEST_LANDING_PAD.centre)
+}
+
+// A loaded world starts on the pad its file names, without a spawn search;
+// a file without a pad, or a new world, goes through the search.
+@(test)
+test_saved_world_keeps_its_landing_pad :: proc(t: ^testing.T) {
+	generator := make_test_generator(DEFAULT_WORLD_SEED)
+	file := World_File{landing_pad_present = true, landing_pad = {10, 40, -20}}
+	start, found := saved_world_start(&generator, true, file)
+	testing.expect(t, found)
+	testing.expect(t, generator.landing_pad.present)
+	testing.expect_value(t, generator.landing_pad.centre, World_Coordinate{10, 40, -20})
+	testing.expect_value(t, start.landing_pad, generator.landing_pad)
+	testing.expect_value(t, start.player, player_start_on({10, 40, -20}))
+	fresh := make_test_generator(DEFAULT_WORLD_SEED)
+	_, found = saved_world_start(&fresh, true, World_File{})
+	testing.expect(t, !found)
+	testing.expect(t, !fresh.landing_pad.present)
+	_, found = saved_world_start(&fresh, false, file)
+	testing.expect(t, !found)
 }
 
 // A world.sjson written before the percent settings existed loads at 100
