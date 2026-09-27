@@ -33,20 +33,24 @@ Chunk_Job_Kind :: enum u8 {
 	Mesh,
 }
 
-// For Mesh jobs, chunk and border are copies owned by the job.
+// For Mesh jobs, chunk and border are copies owned by the job. For
+// Generate jobs of a saved chunk, saved is a copy of its bytes.
 Chunk_Job :: struct {
 	kind:       Chunk_Job_Kind,
 	coordinate: Chunk_Coordinate,
 	revision:   u64,
 	chunk:      ^Chunk,
 	border:     ^Chunk_Border,
+	saved:      []byte,
 }
 
 // Generate results carry chunk and veins, Mesh results carry mesh.
+// restored marks a chunk that holds saved blocks.
 Chunk_Job_Result :: struct {
 	kind:       Chunk_Job_Kind,
 	coordinate: Chunk_Coordinate,
 	revision:   u64,
+	restored:   bool,
 	chunk:      ^Chunk,
 	veins:      [dynamic]Vein,
 	outcrops:   [dynamic]Outcrop_Cell,
@@ -153,6 +157,7 @@ stop_job_queue :: proc(jobs: ^Chunk_Job_Queue) {
 free_job_chunks :: proc(job: Chunk_Job) {
 	free(job.chunk)
 	free(job.border)
+	delete(job.saved)
 }
 
 free_job_result :: proc(result: Chunk_Job_Result) {
@@ -170,7 +175,13 @@ run_chunk_job :: proc(shared: ^Worker_Shared, job: Chunk_Job) -> Chunk_Job_Resul
 	}
 	switch job.kind {
 	case .Generate:
-		generated := generate_chunk(shared.generator, job.coordinate)
+		generated: Generated_Chunk
+		if job.saved != nil {
+			generated, result.restored = generate_saved_chunk(shared.generator, job.coordinate, job.saved)
+			delete(job.saved)
+		} else {
+			generated = generate_chunk(shared.generator, job.coordinate)
+		}
 		result.chunk, result.veins, result.outcrops = generated.chunk, generated.veins, generated.outcrops
 	case .Mesh:
 		input := Mesh_Input {
@@ -301,12 +312,59 @@ insert_generated_chunk :: proc(world: ^World, result: Chunk_Job_Result) {
 	register_column_veins(world, chunk_column_of(result.coordinate), result.veins[:])
 	register_outcrop_cells(world, result.outcrops[:])
 	queue.push_back(&world.lighting.arrived_chunks, result.coordinate)
+	seed_entity_lights_in_chunk(world, result.chunk)
 	if chunk_is_all_air(result.chunk) && chunk_is_open_sky(result.chunk) {
 		return
 	}
 	for direction in Direction {
 		mark_chunk_dirty(world, result.coordinate + Chunk_Coordinate(direction_offsets[direction]))
 	}
+}
+
+// A chunk with saved blocks leaves World.saved_chunks while it is loaded,
+// stays modified, and its light emitting blocks light up again.
+insert_saved_chunk :: proc(world: ^World, registry: Block_Registry, result: Chunk_Job_Result) {
+	insert_generated_chunk(world, result)
+	if saved, found := world.saved_chunks[result.coordinate]; found {
+		delete(saved)
+		delete_key(&world.saved_chunks, result.coordinate)
+	}
+	seed_block_emitters_in_chunk(world, registry, result.chunk)
+}
+
+// Generation and insertion of one chunk on the calling thread, the way
+// streaming does it on a worker and the main thread. For tests and tools.
+load_chunk_now :: proc(world: ^World, generator: ^Generator, coordinate: Chunk_Coordinate) {
+	result := Chunk_Job_Result {
+		kind       = .Generate,
+		coordinate = coordinate,
+	}
+	generated: Generated_Chunk
+	if saved, found := world.saved_chunks[coordinate]; found {
+		generated, result.restored = generate_saved_chunk(generator, coordinate, saved)
+	} else {
+		generated = generate_chunk(generator, coordinate)
+	}
+	result.chunk, result.veins, result.outcrops = generated.chunk, generated.veins, generated.outcrops
+	if result.restored {
+		insert_saved_chunk(world, generator.registry, result)
+	} else {
+		insert_generated_chunk(world, result)
+	}
+	delete(result.veins)
+	delete(result.outcrops)
+}
+
+// A modified chunk going out of range keeps its blocks in
+// World.saved_chunks, so the edits come back with it and reach the save.
+store_modified_chunk :: proc(world: ^World, chunk: ^Chunk) {
+	if !chunk.modified {
+		return
+	}
+	if previous, found := world.saved_chunks[chunk.coordinate]; found {
+		delete(previous)
+	}
+	world.saved_chunks[chunk.coordinate] = serialize_chunk(chunk)
 }
 
 receive_generated_chunks :: proc(streaming: ^Chunk_Streaming, world: ^World, camera_chunk: Chunk_Coordinate) {
@@ -318,7 +376,11 @@ receive_generated_chunks :: proc(streaming: ^Chunk_Streaming, world: ^World, cam
 			free_job_result(result)
 			continue
 		}
-		insert_generated_chunk(world, result)
+		if result.restored {
+			insert_saved_chunk(world, streaming.shared.registry, result)
+		} else {
+			insert_generated_chunk(world, result)
+		}
 		delete(result.veins)
 		delete(result.outcrops)
 	}
@@ -331,6 +393,7 @@ unload_distant_chunks :: proc(streaming: ^Chunk_Streaming, world: ^World, camera
 		}
 	}
 	for coordinate in streaming.unloaded {
+		store_modified_chunk(world, world.chunks[coordinate])
 		free(world.chunks[coordinate])
 		delete_key(&world.chunks, coordinate)
 		delete_key(&streaming.mesh_revisions, coordinate)
@@ -375,9 +438,13 @@ submit_mesh_job :: proc(streaming: ^Chunk_Streaming, world: ^World, chunk: ^Chun
 	streaming.pending_jobs += 1
 }
 
-submit_generate_job :: proc(streaming: ^Chunk_Streaming, coordinate: Chunk_Coordinate) {
+submit_generate_job :: proc(streaming: ^Chunk_Streaming, world: ^World, coordinate: Chunk_Coordinate) {
 	streaming.generating[coordinate] = {}
-	submit_job(&streaming.shared.jobs, Chunk_Job{kind = .Generate, coordinate = coordinate})
+	saved: []byte
+	if bytes, found := world.saved_chunks[coordinate]; found {
+		saved = slice.clone(bytes)
+	}
+	submit_job(&streaming.shared.jobs, Chunk_Job{kind = .Generate, coordinate = coordinate, saved = saved})
 	streaming.pending_jobs += 1
 }
 
@@ -393,7 +460,7 @@ schedule_chunk_jobs :: proc(streaming: ^Chunk_Streaming, world: ^World, camera_c
 		switch {
 		case chunk == nil:
 			if streaming.load_around_camera && coordinate not_in streaming.generating {
-				submit_generate_job(streaming, coordinate)
+				submit_generate_job(streaming, world, coordinate)
 			}
 		case chunk.dirty && mesh_submissions < MAXIMUM_MESH_SUBMISSIONS_PER_FRAME && neighbours_settled(streaming, world, camera_chunk, coordinate):
 			submit_mesh_job(streaming, world, chunk)

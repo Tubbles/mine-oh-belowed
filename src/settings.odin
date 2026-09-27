@@ -16,6 +16,8 @@ Settings :: struct {
 	invert_pitch:              bool,
 	// Screen heights the UI pointer crosses per right trackpad width.
 	pointer_speed:             f32,
+	// Minutes of simulated time between autosaves.
+	autosave_minutes:          int,
 }
 
 DEFAULT_SETTINGS :: Settings {
@@ -26,6 +28,7 @@ DEFAULT_SETTINGS :: Settings {
 	trackpad_look_sensitivity = 1,
 	invert_pitch              = false,
 	pointer_speed             = 1.5,
+	autosave_minutes          = 5,
 }
 
 UI_SCALE_RANGE :: Slider_Range{0.75, 1.5, 0.05}

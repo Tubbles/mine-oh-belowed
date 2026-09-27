@@ -12,12 +12,16 @@ Generated_Chunk :: struct {
 }
 
 // The whole generation of one chunk: a pure function of the generator (its
-// seed and tables) and the chunk coordinate. Safe on any thread.
-generate_chunk_blocks :: proc(generator: ^Generator, chunk: ^Chunk, outcrops: ^[dynamic]Outcrop_Cell) {
+// seed and tables) and the chunk coordinate. Safe on any thread. open, when
+// given, receives the columns generation lit from the sky.
+generate_chunk_blocks :: proc(generator: ^Generator, chunk: ^Chunk, outcrops: ^[dynamic]Outcrop_Cell, open_columns: ^Open_Columns = nil) {
 	runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
 	origin := chunk_origin(chunk.coordinate)
 	if origin.y > GENERATION_CEILING {
 		fill_chunk_light(chunk, pack_light(MAXIMUM_LIGHT, 0))
+		if open_columns != nil {
+			fill_open_columns(open_columns, true)
+		}
 		return
 	}
 	// Chunks below the terrain stay dark: caves never open to the surface.
@@ -52,6 +56,15 @@ generate_chunk_blocks :: proc(generator: ^Generator, chunk: ^Chunk, outcrops: ^[
 	find_open_columns(chunk.coordinate, columns, trees[:], boulders[:], open)
 	close_landing_pad_columns(generator.landing_pad, chunk.coordinate, open)
 	fill_chunk_sky_light(chunk, generator.registry, open)
+	if open_columns != nil {
+		open_columns^ = open^
+	}
+}
+
+fill_open_columns :: proc(open: ^Open_Columns, value: bool) {
+	for &column in open {
+		column = value
+	}
 }
 
 box_covers_column :: proc(box: Block_Box, x, z: i32) -> bool {
@@ -95,4 +108,26 @@ generate_chunk :: proc(generator: ^Generator, coordinate: Chunk_Coordinate, allo
 	outcrops := make([dynamic]Outcrop_Cell, allocator)
 	generate_chunk_blocks(generator, chunk, &outcrops)
 	return Generated_Chunk{chunk = chunk, veins = column_veins(generator, chunk_column_of(coordinate), allocator), outcrops = outcrops}
+}
+
+// A chunk of a save: generated for its veins, outcrop cells and open
+// columns, then given the saved blocks. Light is not saved, so the sky
+// light is computed again from the saved blocks with the columns
+// generation found open (a roof the player built in a chunk above is not
+// seen here, as for generated chunks). ok is false for malformed bytes.
+generate_saved_chunk :: proc(generator: ^Generator, coordinate: Chunk_Coordinate, saved: []byte, allocator := context.allocator) -> (generated: Generated_Chunk, ok: bool) {
+	chunk := new(Chunk, allocator)
+	chunk.coordinate = coordinate
+	chunk.dirty = true
+	outcrops := make([dynamic]Outcrop_Cell, allocator)
+	open: Open_Columns
+	generate_chunk_blocks(generator, chunk, &outcrops, &open)
+	generated = Generated_Chunk{chunk = chunk, veins = column_veins(generator, chunk_column_of(coordinate), allocator), outcrops = outcrops}
+	if !deserialize_chunk_blocks(saved, &chunk.blocks) {
+		return generated, false
+	}
+	chunk.modified = true
+	fill_chunk_light(chunk, 0)
+	fill_chunk_sky_light(chunk, generator.registry, &open)
+	return generated, true
 }

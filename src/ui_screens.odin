@@ -13,6 +13,7 @@ SETTINGS_ROW_COUNT :: 8
 Screen_Context :: struct {
 	settings:        ^Settings,
 	quit_requested:  ^bool,
+	save_requested:  ^bool,
 	player:          ^Player,
 	items:           Item_Registry,
 	item_sort_ranks: []u16,
@@ -140,7 +141,7 @@ panel_height :: proc(row_count: int, extra: f32) -> f32 {
 pause_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	ui_backdrop(state)
 	area := ui_safe_area(state)
-	panel := centred_rectangle(area, PAUSE_PANEL_WIDTH, panel_height(7, UI_ROW_HEIGHT + UI_GAP))
+	panel := centred_rectangle(area, PAUSE_PANEL_WIDTH, panel_height(8, UI_ROW_HEIGHT + UI_GAP))
 	ui_panel_begin(state, "pause", panel)
 	content := inset(panel, UI_PADDING)
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_title"), UI_HEADING_TEXT_SIZE, .Centre)
@@ -171,6 +172,11 @@ pause_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	if ui_button(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_technologies")) {
 		state.screens.count = 0
 		push_screen(&state.screens, .Technologies)
+	}
+	cut_top(&content, UI_GAP)
+	// The frame loop writes the save after this frame's ticks and toasts.
+	if ui_button(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_save")) && screen_context.save_requested != nil {
+		screen_context.save_requested^ = true
 	}
 	cut_top(&content, UI_GAP)
 	if ui_button(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_settings")) {

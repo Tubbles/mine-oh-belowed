@@ -17,6 +17,8 @@ Chunk :: struct {
 	blocks:     [CHUNK_BLOCK_COUNT]Block_Id,
 	light:      [CHUNK_BLOCK_COUNT]u8,
 	dirty:      bool,
+	// Differs from what generation makes, so a save stores it (save_world.odin).
+	modified:   bool,
 }
 
 // Chunks are heap allocated and referenced by pointer, so growing the map
@@ -42,6 +44,10 @@ World :: struct {
 	entity_lights:  map[World_Coordinate]u8,
 	water:          Water_Flow,
 	entities:       Entities,
+	// Modified chunks that are not loaded, serialised (world_serialize.odin):
+	// unloaded ones and those read from a save. Streaming inserts these
+	// blocks instead of generated ones (world_streaming.odin).
+	saved_chunks:   map[Chunk_Coordinate][]byte,
 	// Production statistics (statistics.odin), here like the entities so
 	// that the player and entity ticks reach them through the world.
 	statistics:     Statistics,
@@ -136,6 +142,7 @@ world_set_block :: proc(world: ^World, position: World_Coordinate, block: Block_
 	local := world_to_local_coordinate(position)
 	append(&world.block_changes, Block_Change{position = position, previous = chunk_get_block(chunk, local)})
 	chunk_set_block(chunk, local, block)
+	chunk.modified = true
 	mark_chunks_around_cell_dirty(world, chunk, position)
 	return true
 }
@@ -190,6 +197,10 @@ destroy_world :: proc(world: ^World) {
 		free(chunk)
 	}
 	delete(world.chunks)
+	for _, bytes in world.saved_chunks {
+		delete(bytes)
+	}
+	delete(world.saved_chunks)
 	for _, ids in world.column_veins {
 		delete(ids)
 	}

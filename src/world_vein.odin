@@ -1,6 +1,7 @@
 package game
 
 import "core:fmt"
+import "core:slice"
 
 // Chosen at world creation (DESIGN.md, World settings). The seed also
 // seeds the drills' reservoir draws (drill.odin).
@@ -135,13 +136,16 @@ register_outcrop_cells :: proc(world: ^World, cells: []Outcrop_Cell) {
 
 // The outcrop cells of loaded (and earlier loaded) chunks. Those whose
 // chunk is gone drop out in apply_spent_outcrops and come back through
-// register_outcrop_cells when the chunk loads again.
+// register_outcrop_cells when the chunk loads again. Queued in coordinate
+// order, since map order differs between a world and its loaded save.
 queue_spent_outcrops :: proc(world: ^World, id: Vein_Id) {
+	first := len(world.spent_outcrops)
 	for position, vein in world.outcrop_cells {
 		if vein == id {
 			append(&world.spent_outcrops, position)
 		}
 	}
+	slice.sort_by(world.spent_outcrops[first:], coordinate_before)
 }
 
 // Through world_set_block, so light and remeshing follow. A cell the

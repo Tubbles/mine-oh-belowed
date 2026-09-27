@@ -8,7 +8,7 @@ package game
 // water still treat those cells as air.
 //
 // Entity data is plain values (no pointers into chunks or other entities),
-// so it can be serialised per chunk later (M5).
+// so the pools are saved as they are (save_state.odin).
 
 MAXIMUM_CHEST_SLOTS :: 48
 CAPSULE_SLOT_COUNT :: 8

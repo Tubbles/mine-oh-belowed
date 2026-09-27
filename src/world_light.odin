@@ -312,3 +312,36 @@ seed_arrived_chunks :: proc(world: ^World, registry: Block_Registry, maximum_chu
 pending_light_nodes :: proc(lighting: Lighting) -> int {
 	return queue.len(lighting.removals) + queue.len(lighting.additions)
 }
+
+// A cell that emits light gets its emission and spreads it, like a torch
+// placed there. For chunks that arrive with emitters in them.
+seed_emitter :: proc(world: ^World, registry: Block_Registry, position: World_Coordinate) {
+	cell, loaded := world_cell(world, position)
+	emission := loaded ? cell_emission(world, registry, position, cell) : 0
+	if emission == 0 || emission <= cell_light(cell, .Block) {
+		return
+	}
+	set_cell_light(world, position, cell, .Block, emission)
+	push_addition(&world.lighting, position, .Block)
+}
+
+// Light is not saved, so a chunk with saved blocks relights its light
+// emitting blocks when it arrives.
+seed_block_emitters_in_chunk :: proc(world: ^World, registry: Block_Registry, chunk: ^Chunk) {
+	for block, index in chunk.blocks {
+		if block_light_emission(registry, block) > 0 {
+			seed_emitter(world, registry, local_to_world_coordinate(chunk.coordinate, index_to_local(index)))
+		}
+	}
+}
+
+// Entity lights (lit lamps) stay registered while their chunk is away and
+// shine again when it arrives. Emission does not depend on the registry
+// for entity light, so an empty one is fine here.
+seed_entity_lights_in_chunk :: proc(world: ^World, chunk: ^Chunk) {
+	for position in world.entity_lights {
+		if world_to_chunk_coordinate(position) == chunk.coordinate {
+			seed_emitter(world, {}, position)
+		}
+	}
+}

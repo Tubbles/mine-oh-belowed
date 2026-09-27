@@ -106,17 +106,24 @@ read_runs :: proc(reader: ^Byte_Reader, palette_length: int, allocator := contex
 }
 
 deserialize_chunk :: proc(data: []byte) -> (chunk: Chunk, ok: bool) {
+	ok = deserialize_chunk_blocks(data, &chunk.blocks)
+	return chunk, ok
+}
+
+// Leaves blocks untouched when the data is malformed. Takes the blocks by
+// pointer so that worker threads keep a chunk off their stack.
+deserialize_chunk_blocks :: proc(data: []byte, blocks: ^[CHUNK_BLOCK_COUNT]Block_Id) -> bool {
 	reader := Byte_Reader {
 		data = data,
 	}
 	palette := read_palette(&reader, context.temp_allocator) or_return
 	runs := read_runs(&reader, len(palette), context.temp_allocator) or_return
 	if run_length_decoded_length(runs) != CHUNK_BLOCK_COUNT {
-		return {}, false
+		return false
 	}
 	indices := run_length_decode(runs, context.temp_allocator)
 	for palette_index, index in indices {
-		chunk.blocks[index] = palette[palette_index]
+		blocks[index] = palette[palette_index]
 	}
-	return chunk, true
+	return true
 }

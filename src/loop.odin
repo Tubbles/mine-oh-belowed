@@ -2,6 +2,7 @@ package game
 
 import "core:fmt"
 import "core:os"
+import "core:time"
 import rl "vendor:raylib"
 
 // Longest frame the accumulator accepts, so that a stall (debugger, window
@@ -29,6 +30,11 @@ Simulation_Event :: struct {
 	kind:   Player_Event,
 }
 
+Save_Setup :: struct {
+	location: Save_Location,
+	enabled:  bool,
+}
+
 Tick_Accumulator :: struct {
 	seconds_per_tick:    f64,
 	accumulated_seconds: f64,
@@ -49,6 +55,12 @@ Frame_State :: struct {
 	ui:                 Ui_State,
 	cursor_enabled:     bool,
 	quit_requested:     bool,
+	// Where the world saves; saving is off for the debug terrain and when
+	// no saves directory could be found.
+	save:               Save_Setup,
+	// Set by the pause menu's Save button, handled after the ticks.
+	save_requested:     bool,
+	ticks_since_save:   u64,
 	registry:           Block_Registry,
 	items:              Item_Registry,
 	machines:           Machine_Registry,
@@ -257,8 +269,44 @@ update_frame :: proc(state: ^Frame_State) {
 		tick_input, state.tick_input = take_tick_input(state.tick_input, frame_for_world)
 		simulation_tick(&state.simulation, frame_simulation_content(state), {tick_input})
 	}
+	state.ticks_since_save += u64(tick_count)
+	save_when_due(state)
 	player_chunk := world_to_chunk_coordinate(camera_world_coordinate(state.simulation.players[0].position))
 	update_chunk_streaming(&state.streaming, &state.simulation.world, player_chunk)
+}
+
+autosave_due :: proc(ticks_since_save: u64, autosave_minutes, tick_rate: int) -> bool {
+	return autosave_minutes > 0 && ticks_since_save >= u64(autosave_minutes) * 60 * u64(tick_rate)
+}
+
+// Between ticks, so the simulation stands still while the save is written.
+// Returns the problem, empty on success.
+save_frame_world :: proc(state: ^Frame_State) -> string {
+	if !state.save.enabled {
+		return "saving is off for this world"
+	}
+	problem := save_world(&state.simulation, frame_simulation_content(state), state.save.location, time.to_unix_seconds(time.now()))
+	if problem == "" {
+		state.ticks_since_save = 0
+	} else {
+		fmt.eprintfln("error: saving %q failed: %s", state.save.location.display_name, problem)
+	}
+	return problem
+}
+
+// The pause menu's Save and the autosave interval, each with a toast.
+save_when_due :: proc(state: ^Frame_State) {
+	requested := state.save_requested
+	state.save_requested = false
+	autosave := state.save.enabled && autosave_due(state.ticks_since_save, state.settings.autosave_minutes, state.simulation.tick_rate)
+	if !requested && !autosave {
+		return
+	}
+	if save_frame_world(state) != "" {
+		ui_toast(&state.ui, text("save_failed"))
+	} else {
+		ui_toast(&state.ui, text(requested ? "save_done" : "autosave_done"))
+	}
 }
 
 render_frame :: proc(state: ^Frame_State, config: Game_Config) {
@@ -298,6 +346,7 @@ run_ui_frame :: proc(state: ^Frame_State) {
 	screen_context := Screen_Context {
 		settings        = &state.settings,
 		quit_requested  = &state.quit_requested,
+		save_requested  = &state.save_requested,
 		player          = player,
 		items           = state.items,
 		item_sort_ranks = state.item_sort_ranks,
@@ -375,7 +424,9 @@ game_simulation_content :: proc(content: Game_Content) -> Simulation_Content {
 	}
 }
 
-run_game :: proc(config: Game_Config, input_backend: Input_Backend, content: Game_Content, generator: Generator, start: World_Start, data_directory: string) {
+// Takes ownership of the simulation (a new world or a loaded save). Saves
+// on quit when saving is enabled.
+run_game :: proc(config: Game_Config, input_backend: Input_Backend, content: Game_Content, generator: Generator, start: World_Start, data_directory: string, simulation: Simulation_State, save: Save_Setup) {
 	registry := content.blocks
 	rl.SetTraceLogLevel(.WARNING)
 	rl.SetConfigFlags({.VSYNC_HINT, .WINDOW_RESIZABLE})
@@ -412,13 +463,13 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, content: Gam
 		technology_browser = make_technology_browser(),
 		generator       = generator,
 		renderer        = renderer,
-		simulation      = make_simulation(config, start.player, game_simulation_content(content), content.technologies, content.unlock_all, start.landing_pad),
+		simulation      = simulation,
+		save            = save,
 		settings        = DEFAULT_SETTINGS,
 		ui              = Ui_State{measure_text = raylib_measure_text},
 		// raylib starts with the cursor shown; the first apply hides it.
 		cursor_enabled  = true,
 	}
-	state.simulation.world.settings = World_Settings{seed = generator.seed, veins_infinite = config.veins_infinite}
 	defer destroy_ui_state(&state.ui)
 	defer if input_backend == .Sdl3 {
 		shutdown_sdl3_input(&state.sdl3_input)
@@ -442,5 +493,8 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, content: Gam
 		update_frame(&state)
 		render_frame(&state, config)
 		free_all(context.temp_allocator)
+	}
+	if state.save.enabled && save_frame_world(&state) == "" {
+		fmt.eprintfln("world: saved %q on quit", state.save.location.display_name)
 	}
 }
