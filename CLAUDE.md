@@ -27,3 +27,5 @@ Follows the project structure from the global preferences: `doc/` (detail docs),
 ## Work flow
 
 Work items live in `doc/work/NNNN-slug.md` with a `Status` line and a `Verify` section. Subagents get one item at a time with the files they may touch and the verify commands. The main agent reviews the diff and commits.
+
+The couch always runs the latest build. After every commit that lands on `main`, run `tools/install_play_build.sh` (wait while the game is running: `pgrep -f bin/play/mine-oh-belowed`). A work item or a bug fix is not done until the play build is installed, and the wrap-up names the installed commit. The user reads the build stamp (commit and build time) from the title screen or the pause menu when reporting a bug.

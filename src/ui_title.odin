@@ -82,7 +82,7 @@ title_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	area := ui_safe_area(state)
 	heading := cut_top(&area, area.height * 0.3)
 	ui_label(state, cut_top(&heading, heading.height * 0.7), text("title_game_name"), TITLE_NAME_TEXT_SIZE, .Centre)
-	ui_label(state, heading, format_message_text(text("title_version"), GAME_VERSION), UI_BODY_TEXT_SIZE, .Centre, UI_DIM_TEXT_COLOR)
+	ui_label(state, heading, format_message_text(text("title_version"), BUILD_STAMP), UI_BODY_TEXT_SIZE, .Centre, UI_DIM_TEXT_COLOR)
 	newest, has_save := newest_save(title.saves[:])
 	button_count := has_save ? 5 : 4
 	panel := centred_rectangle(area, TITLE_PANEL_WIDTH, panel_height(button_count, -UI_GAP))

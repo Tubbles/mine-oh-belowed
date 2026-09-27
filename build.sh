@@ -23,10 +23,29 @@ create_linker_shims() {
 	ln -sfn /usr/lib64/libSDL3.so.0 "$shim_directory/libSDL3.so"
 }
 
+# The build stamp the game shows (title screen, pause menu, log header,
+# --version): the short commit, "+dirty" with uncommitted changes, and the
+# UTC build time. tools/install_play_build.sh builds from a git archive
+# without .git and passes the commit in MINE_OH_BELOWED_COMMIT.
+build_commit() {
+	if [ -n "${MINE_OH_BELOWED_COMMIT:-}" ]; then
+		printf '%s' "$MINE_OH_BELOWED_COMMIT"
+		return
+	fi
+	local commit
+	commit="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+	if [ "$commit" != unknown ] && [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+		commit="$commit+dirty"
+	fi
+	printf '%s' "$commit"
+}
+
 build() {
 	create_linker_shims
 	mkdir -p "$(dirname "$output")"
 	"$odin" build src -out:"$output" -vet -strict-style \
+		-define:BUILD_COMMIT="$(build_commit)" \
+		-define:BUILD_TIME="$(date -u +%Y-%m-%dT%H:%MZ)" \
 		-extra-linker-flags:"-L$shim_directory" "$@"
 }
 

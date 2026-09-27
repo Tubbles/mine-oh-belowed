@@ -62,7 +62,7 @@ log_session_header :: proc(now: time.Time) -> string {
 	date_time, _ := time.time_to_datetime(now)
 	return fmt.tprintf(
 		"--- Mine oh Belowed %s started %04d-%02d-%02d %02d:%02d:%02d UTC ---",
-		GAME_VERSION,
+		BUILD_STAMP,
 		date_time.year,
 		date_time.month,
 		date_time.day,

@@ -15,6 +15,8 @@ staging="$(mktemp -d "${TMPDIR:-/tmp}/mine-oh-belowed-play.XXXXXX")"
 trap 'rm -rf "$staging"' EXIT
 
 git -C "$repository_root" archive --format=tar "$ref" | tar -x -C "$staging"
+# The archive has no .git, so the stamp gets the commit from here.
+export MINE_OH_BELOWED_COMMIT="$commit"
 "$staging/build.sh" release
 
 built="$staging/build/mine-oh-belowed"

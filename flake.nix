@@ -44,7 +44,7 @@
 
           buildPhase = ''
             runHook preBuild
-            odin build src -out:mine-oh-belowed -o:speed -vet -strict-style
+            odin build src -out:mine-oh-belowed -o:speed -vet -strict-style -define:BUILD_COMMIT=${self.shortRev or self.dirtyShortRev or "unknown"} -define:BUILD_TIME=${self.lastModifiedDate or "unknown"}
             runHook postBuild
           '';
 

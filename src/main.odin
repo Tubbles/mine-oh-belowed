@@ -6,6 +6,13 @@ import "core:io"
 import "core:os"
 
 GAME_VERSION :: "0.0.0"
+// From build.sh through -define: the short commit ("+dirty" with
+// uncommitted changes) and the UTC build time; "unknown" when built any
+// other way. The stamp is what the title screen, the pause menu, the log
+// header and --version show, so a bug report can name the build.
+BUILD_COMMIT :: #config(BUILD_COMMIT, "unknown")
+BUILD_TIME :: #config(BUILD_TIME, "unknown")
+BUILD_STAMP :: GAME_VERSION + " " + BUILD_COMMIT + " " + BUILD_TIME
 
 // The name the usage page shows, whatever the binary is called.
 PROGRAM_NAME :: "mine-oh-belowed"
@@ -166,7 +173,7 @@ main :: proc() {
 		os.exit(2)
 	}
 	if command_line.show_version {
-		fmt.printfln("Mine oh Belowed %s", GAME_VERSION)
+		fmt.printfln("Mine oh Belowed %s", BUILD_STAMP)
 		return
 	}
 	if problem := command_line_conflict(command_line); problem != "" {

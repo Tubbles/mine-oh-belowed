@@ -197,7 +197,8 @@ pause_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	ui_backdrop(state)
 	area := ui_safe_area(state)
 	button_count := screen_context.developer_mode ? 11 : 10
-	panel := centred_rectangle(area, PAUSE_PANEL_WIDTH, panel_height(button_count, UI_ROW_HEIGHT + UI_GAP))
+	// The title row and the build stamp row besides the buttons.
+	panel := centred_rectangle(area, PAUSE_PANEL_WIDTH, panel_height(button_count, 2 * (UI_ROW_HEIGHT + UI_GAP)))
 	ui_panel_begin(state, "pause", panel)
 	content := inset(panel, UI_PADDING)
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_title"), UI_HEADING_TEXT_SIZE, .Centre)
@@ -260,6 +261,9 @@ pause_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	if ui_button(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_quit")) {
 		screen_context.quit_requested^ = true
 	}
+	cut_top(&content, UI_GAP)
+	// Which build this is, for bug reports from the couch.
+	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), BUILD_STAMP, UI_BODY_TEXT_SIZE, .Centre, UI_DIM_TEXT_COLOR)
 	ui_panel_end(state)
 	hints := [?]Glyph_Hint{{.Confirm, text("hint_select")}, {.Back, text("hint_resume")}}
 	ui_glyph_bar(state, hints[:])
