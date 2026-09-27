@@ -33,6 +33,8 @@ Furnace :: struct {
 	recipe:           int,
 	progress_ticks:   u32,
 	state:            Furnace_State,
+	// Main output over the last minute, for the panel (statistics.odin).
+	output_rate:      Machine_Output_Rate,
 }
 
 make_furnace :: proc(common: Entity_Common) -> Furnace {

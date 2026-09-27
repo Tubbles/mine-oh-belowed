@@ -87,6 +87,8 @@ Assembler :: struct {
 	fuel_item_joules: u32,
 	buffers:          [MAXIMUM_FLUID_PORTS]Fluid_Buffer,
 	closed:           [MAXIMUM_FLUID_PORTS]bool,
+	// Main output over the last minute, for the panel (statistics.odin).
+	output_rate:      Machine_Output_Rate,
 }
 
 // The zero machine is an electric assembler with a chosen recipe, which
@@ -721,7 +723,8 @@ assembler_burn_fraction :: proc(assembler: Assembler) -> f32 {
 }
 
 // Pool order; products that reach their slots count as produced, the
-// rest as voided, and stalls and fuel like the furnace's.
+// rest as voided, ingredients and fuel as consumed, and stalls and fuel
+// like the furnace's.
 tick_assemblers :: proc(world: ^World, content: Simulation_Content, tick_rate: int) {
 	lenient := world.settings.byproducts_lenient
 	for &assembler in world.entities.assemblers.entries {
@@ -731,7 +734,9 @@ tick_assemblers :: proc(world: ^World, content: Simulation_Content, tick_rate: i
 		machine := content.machines.machines[assembler.machine]
 		before := assembler
 		if advance_assembler(&assembler, machine, content.items, content.recipes, tick_rate, lenient) {
-			record_craft_outputs(&world.statistics, machine_craft(machine, content.recipes, assembler.recipe), before, assembler)
+			craft := machine_craft(machine, content.recipes, assembler.recipe)
+			record_craft_outputs(&world.statistics, craft, before, assembler)
+			record_machine_output(&assembler.output_rate, world.statistics.current_second, craft_main_output_count(craft))
 		}
 		record_crafting_machine_tick(&world.statistics, before, assembler)
 	}

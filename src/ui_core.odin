@@ -93,6 +93,7 @@ Ui_Input :: struct {
 	open_recipes:   bool,
 	open_journal:   bool,
 	open_power:     bool,
+	open_statistics: bool,
 	open_technologies: bool,
 	// A letter key pressed this frame (lower case), 0 for none.
 	typed_letter:   rune,
@@ -174,6 +175,7 @@ Screen :: enum u8 {
 	Recipes,
 	Journal,
 	Power,
+	Statistics,
 	Technologies,
 	// The title and its screens, shown while no world is played.
 	Title,
@@ -592,7 +594,7 @@ top_screen :: proc(stack: Screen_Stack) -> Screen {
 
 screen_pauses_simulation :: proc(screen: Screen) -> bool {
 	switch screen {
-	case .None, .Inventory, .Machine, .Recipes, .Journal, .Power, .Technologies:
+	case .None, .Inventory, .Machine, .Recipes, .Journal, .Power, .Statistics, .Technologies:
 		return false
 	case .Pause, .Settings, .Title, .New_World, .Load_World, .Confirm_Delete:
 		return true

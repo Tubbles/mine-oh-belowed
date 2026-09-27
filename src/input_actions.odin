@@ -19,6 +19,8 @@ Action :: enum u8 {
 	Open_Journal,
 	// The power overview: keyboard P, and from the pause menu.
 	Open_Power_Overview,
+	// The production statistics: keyboard N, and from the pause menu.
+	Open_Statistics,
 	// The technology screen: keyboard T, and from the pause menu, the
 	// inventory tabs and the lab panel.
 	Open_Technologies,
@@ -46,6 +48,9 @@ Action :: enum u8 {
 	Menu_Secondary,
 	// Keyboard only: the gamepad View button is taken by the map.
 	Toggle_Camera_Mode,
+	// Keyboard O, and the Display settings: machine state markers in the
+	// world. No gamepad button yet.
+	Toggle_Bottleneck_Overlay,
 	// Developer actions, keyboard only.
 	Toggle_Diagnostics,
 	Debug_Remove_Block,
@@ -175,6 +180,7 @@ WORLD_ACTIONS :: Action_Set {
 	.Open_Recipes,
 	.Open_Journal,
 	.Open_Power_Overview,
+	.Open_Statistics,
 	.Open_Technologies,
 	.Open_Map,
 	.Sneak,

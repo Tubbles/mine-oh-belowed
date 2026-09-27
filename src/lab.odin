@@ -257,7 +257,9 @@ tick_labs :: proc(world: ^World, content: Simulation_Content, tick_rate: int) {
 	for &lab in labs {
 		if lab.alive {
 			machine := content.machines.machines[lab.machine]
+			before := lab
 			advance_lab(&lab, machine, &world.research, &in_progress, content.technologies, content.machines.lab_packs, tick_rate)
+			record_slot_consumption(&world.statistics, before.slots[:lab.slot_count], lab.slots[:lab.slot_count])
 		}
 	}
 }

@@ -1,6 +1,7 @@
 package game
 
 import "core:math"
+import "core:math/linalg"
 import rl "vendor:raylib"
 
 // Placeholder entity models: a coloured cube per footprint cell, with a
@@ -162,6 +163,78 @@ draw_entities :: proc(world: ^World, machines: Machine_Registry, items: Item_Reg
 	for lab in world.entities.labs.entries {
 		if lab.alive {
 			draw_entity_cells(lab.common, machines, LAB_COLOR, lab.state == .Researching ? LAB_RESEARCHING_TOP_COLOR : LAB_COLOR)
+		}
+	}
+}
+
+// Bottleneck overlay markers (work item 0028): a cube above each machine
+// in its state's colour. Its size grows with the distance from the eye,
+// so it covers about the same part of the screen near and far, and never
+// shrinks below a small world size up close.
+MARKER_MINIMUM_SIZE :: 0.3
+MARKER_SIZE_PER_DISTANCE :: 0.02
+MARKER_GAP :: 0.25
+
+@(rodata)
+marker_colors := [Marker_Colour]rl.Color {
+	.Green  = {60, 200, 80, 255},
+	.Yellow = {240, 200, 40, 255},
+	.Red    = {225, 55, 45, 255},
+	.Grey   = {140, 140, 145, 255},
+}
+
+marker_size :: proc(distance: f32) -> f32 {
+	return max(MARKER_MINIMUM_SIZE, distance * MARKER_SIZE_PER_DISTANCE)
+}
+
+// Centred over the footprint, one gap above its top.
+marker_position :: proc(common: Entity_Common, size: f32) -> [3]f32 {
+	centre := box_centre(common.origin, common.size)
+	return {centre.x, f32(common.origin.y + common.size.y) + MARKER_GAP + size / 2, centre.z}
+}
+
+draw_marker :: proc(common: Entity_Common, colour: Marker_Colour, eye: [3]f32) {
+	size := marker_size(linalg.length(box_centre(common.origin, common.size) - eye))
+	position := marker_position(common, size)
+	rl.DrawCubeV(position, {size, size, size}, marker_colors[colour])
+	rl.DrawCubeWiresV(position, {size, size, size}, ENTITY_EDGE_COLOR)
+}
+
+machine_is_connected :: proc(entities: ^Entities, handle: Entity_Handle) -> bool {
+	return entity_network(&entities.electric_networks, handle) >= 0
+}
+
+furnace_has_fuel :: proc(furnace: Furnace) -> bool {
+	return furnace.fuel_joules > 0 || !stack_is_empty(furnace.slots[FURNACE_FUEL_SLOT])
+}
+
+// Between BeginMode3D and EndMode3D, after the entities.
+draw_machine_markers :: proc(world: ^World, machines: Machine_Registry, eye: [3]f32) {
+	entities := &world.entities
+	for furnace in entities.furnaces.entries {
+		if furnace.alive {
+			draw_marker(furnace.common, machine_marker_colour(furnace.state, furnace_has_fuel(furnace)), eye)
+		}
+	}
+	for assembler in entities.assemblers.entries {
+		if assembler.alive {
+			draw_marker(assembler.common, machine_marker_colour(assembler.state, machine_is_connected(entities, assembler.handle)), eye)
+		}
+	}
+	for drill in entities.drills.entries {
+		if drill.alive {
+			draw_marker(drill.common, machine_marker_colour(drill.state, machine_is_connected(entities, drill.handle)), eye)
+		}
+	}
+	for lab in entities.labs.entries {
+		if lab.alive {
+			draw_marker(lab.common, machine_marker_colour(lab.state, machine_is_connected(entities, lab.handle)), eye)
+		}
+	}
+	for fluid_machine in entities.fluid_machines.entries {
+		if fluid_machine.alive && fluid_machine_has_marker(machines.machines[fluid_machine.machine].kind) {
+			connected := machine_is_connected(entities, fluid_machine.handle)
+			draw_marker(fluid_machine.common, machine_marker_colour(fluid_machine.state, connected), eye)
 		}
 	}
 }

@@ -345,14 +345,17 @@ test_recycler_is_validated :: proc(t: ^testing.T) {
 	testing.expect_value(t, validate_crafting_machine_definition(file.machines[index]), "")
 }
 
-// Concrete and brick place as blocks and mine back into their items.
+// Concrete, brick and slag (as slag heaps, work item 0028) place as
+// blocks and mine back into their items. Slag stays out of the recycler.
 @(test)
-test_concrete_and_brick_place_and_mine :: proc(t: ^testing.T) {
+test_concrete_brick_and_slag_place_and_mine :: proc(t: ^testing.T) {
 	registry := make_test_registry()
 	items := make_test_items()
-	hardness := [?]f32{3, 2}
-	for id, index in ([?]string{"concrete", "brick"}) {
-		block, item := test_block(registry, id), test_item(items, id)
+	hardness := [?]f32{3, 2, 1.5}
+	block_ids := [?]string{"concrete", "brick", "slag_heap"}
+	testing.expect(t, items.items[test_item(items, "slag")].cannot_recycle)
+	for id, index in ([?]string{"concrete", "brick", "slag"}) {
+		block, item := test_block(registry, block_ids[index]), test_item(items, id)
 		testing.expect_value(t, registry.definitions[block].hardness_seconds, hardness[index])
 		testing.expect_value(t, item_places_block(items, item), block)
 		testing.expect_value(t, block_drop(items, block), item)

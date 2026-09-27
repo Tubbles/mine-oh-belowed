@@ -23,6 +23,8 @@ How every screen in the game is built, so that the pillars "couch first" and "on
 
 - The recipe browser has a selection mode: opened from an assembler's panel it lists only the recipes that machine can make, and confirming one sets it on the machine and returns to the panel, which stays open underneath. The technology screen follows the browser's shape: a name sorted list with a letter wheel, a detail panel with status, cost, prerequisites and unlocks, Confirm queues research.
 
+- The statistics screen (0028) has a Production tab (window of 1, 10 or 60 minutes, items sorted by produced per minute with consumed beside it, a detail row with the machines making and using the focused item and the voided total) and a Power tab that reuses the power overview. The bottleneck overlay draws a marker above every machine: green working, yellow output full, red starved of input, fuel or power, grey idle; markers keep a roughly constant screen size beyond fifteen blocks.
+
 ## Widgets
 
 Label, button, toggle, slider, tabs, vertical list with letter jump, grid of slots, item slot (icon, count, highlight), progress bar, tooltip panel, radial menu, text field (opens the on-screen keyboard), glyph bar, toast.

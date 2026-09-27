@@ -36,12 +36,14 @@ Screen_Context :: struct {
 	recipe_order:    []int,
 	browser:         ^Recipe_Browser,
 	technology_browser: ^Technology_Browser,
+	statistics_view:    ^Statistics_View,
 }
 
 // Pause opens the pause menu from the world, Open_Inventory the inventory,
 // Open_Recipes the recipe browser, Open_Journal the journal (which it also
-// closes), Open_Power_Overview the power overview and Open_Technologies
-// the technology screen (likewise). With a
+// closes), Open_Power_Overview the power overview, Open_Statistics the
+// production statistics and Open_Technologies the technology screen
+// (likewise). With a
 // screen open, Back and Pause both
 // step back one screen (the first press closes an open tooltip).
 // Open_Inventory closes the inventory and a machine panel too, except on
@@ -61,6 +63,8 @@ handle_screen_keys :: proc(state: ^Ui_State) {
 			push_screen(&state.screens, .Journal)
 		case input.open_power:
 			push_screen(&state.screens, .Power)
+		case input.open_statistics:
+			push_screen(&state.screens, .Statistics)
 		case input.open_technologies:
 			push_screen(&state.screens, .Technologies)
 		}
@@ -76,7 +80,8 @@ handle_screen_keys :: proc(state: ^Ui_State) {
 	closes_journal := top == .Journal && input.open_journal
 	closes_power := top == .Power && input.open_power
 	closes_technologies := top == .Technologies && input.open_technologies
-	closes_screen := closes_inventory || closes_recipes || closes_journal || closes_power || closes_technologies
+	closes_statistics := top == .Statistics && input.open_statistics
+	closes_screen := closes_inventory || closes_recipes || closes_journal || closes_power || closes_technologies || closes_statistics
 	if !input.back && !input.pause && !closes_screen {
 		return
 	}
@@ -108,6 +113,8 @@ run_screens :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		journal_screen(state, screen_context)
 	case .Power:
 		power_overview_screen(state, screen_context)
+	case .Statistics:
+		statistics_screen(state, screen_context)
 	case .Technologies:
 		technology_screen(state, screen_context)
 	case .Title:
@@ -164,7 +171,7 @@ panel_height :: proc(row_count: int, extra: f32) -> f32 {
 pause_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	ui_backdrop(state)
 	area := ui_safe_area(state)
-	panel := centred_rectangle(area, PAUSE_PANEL_WIDTH, panel_height(9, UI_ROW_HEIGHT + UI_GAP))
+	panel := centred_rectangle(area, PAUSE_PANEL_WIDTH, panel_height(10, UI_ROW_HEIGHT + UI_GAP))
 	ui_panel_begin(state, "pause", panel)
 	content := inset(panel, UI_PADDING)
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_title"), UI_HEADING_TEXT_SIZE, .Centre)
@@ -189,6 +196,12 @@ pause_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	if ui_button(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_power")) {
 		state.screens.count = 0
 		push_screen(&state.screens, .Power)
+	}
+	cut_top(&content, UI_GAP)
+	// Nor do the production statistics.
+	if ui_button(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_statistics")) {
+		state.screens.count = 0
+		push_screen(&state.screens, .Statistics)
 	}
 	cut_top(&content, UI_GAP)
 	// Nor does the technology screen.
@@ -285,6 +298,7 @@ display_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Se
 		multiplier_text(settings.pointer_speed),
 		text("settings_pointer_speed_tooltip"),
 	)
+	ui_toggle(state, settings_row(content), text("settings_bottleneck_overlay"), &settings.bottleneck_overlay, text("settings_bottleneck_overlay_tooltip"))
 }
 
 control_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Settings) {

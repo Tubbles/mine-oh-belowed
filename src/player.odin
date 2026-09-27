@@ -315,6 +315,7 @@ tick_player :: proc(world: ^World, content: Simulation_Content, players: []Playe
 	player.selected_hotbar_slot = cycle_hotbar_slot(player.selected_hotbar_slot, input.just_pressed)
 	if finished := advance_crafting(&player.crafting, player.inventory, content.recipes, content.items, tick_rate); finished != NO_RECIPE {
 		record_produced_stacks(&world.statistics, content.recipes.recipes[finished].outputs)
+		record_consumed_stacks(&world.statistics, content.recipes.recipes[finished].inputs)
 	}
 	return events
 }

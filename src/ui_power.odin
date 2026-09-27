@@ -154,18 +154,25 @@ power_overview_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) 
 	content := inset(panel, UI_PADDING)
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("power_overview_title"), UI_HEADING_TEXT_SIZE, .Centre)
 	cut_top(&content, UI_GAP)
-	networks := &screen_context.world.entities.electric_networks
-	if len(networks.networks) == 0 {
-		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("power_no_networks"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
-	} else {
-		list_area := cut_left(&content, POWER_LIST_COLUMN_WIDTH)
-		cut_left(&content, 2 * UI_PADDING)
-		focused := power_network_list(state, list_area, networks)
-		power_network_detail(state, content, screen_context, max(focused, 0))
-	}
+	power_overview_body(state, content, screen_context)
 	ui_panel_end(state)
 	hints := [?]Glyph_Hint{{.Back, text("hint_close")}}
 	ui_glyph_bar(state, hints[:])
+}
+
+// The network list and the focused network's detail, also the Power tab
+// of the statistics screen.
+power_overview_body :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context) {
+	content := area
+	networks := &screen_context.world.entities.electric_networks
+	if len(networks.networks) == 0 {
+		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("power_no_networks"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+		return
+	}
+	list_area := cut_left(&content, POWER_LIST_COLUMN_WIDTH)
+	cut_left(&content, 2 * UI_PADDING)
+	focused := power_network_list(state, list_area, networks)
+	power_network_detail(state, content, screen_context, max(focused, 0))
 }
 
 // Returns the focused network, or -1.

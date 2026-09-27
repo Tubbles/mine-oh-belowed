@@ -7,7 +7,8 @@ import "core:fmt"
 // opens the recipe browser in its selection mode when the player chooses
 // it, the fuel slot and burn bar of a fuel burner, the input slots, the
 // progress bar, the output slots, a level and a flow line per fluid port,
-// the state and the power line of an electric one. Lab: the pack slots, the unit's
+// the output rate over the last minute, the state and the power line of
+// an electric one. Lab: the pack slots, the unit's
 // progress bar, the queued technology with its progress, a button to the
 // technology screen, the state and the power line.
 
@@ -16,10 +17,10 @@ CRAFTING_MACHINE_AREA_WIDTH :: 6 * (UI_SLOT_SIZE + UI_GAP)
 crafting_machine_area_size :: proc(machine: Machine) -> [2]f32 {
 	slot_row := f32(UI_SLOT_SIZE + UI_GAP)
 	if machine.kind == .Crafting_Machine {
-		// Name, recipe row, fuel, inputs, bar, outputs, fluid rows, state,
-		// power.
+		// Name, recipe row, fuel, inputs, bar, outputs, fluid rows, output
+		// rate, state, power.
 		fuel_rows := f32(min(machine.slot_count, 1))
-		text_rows := f32(2 + FLUID_ROWS_PER_BUFFER * machine.fluid_port_count)
+		text_rows := f32(3 + FLUID_ROWS_PER_BUFFER * machine.fluid_port_count)
 		if crafting_machine_is_electric(machine) {
 			text_rows += 1
 		}
@@ -78,6 +79,7 @@ assembler_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, assembler: A
 	for port, index in fluid_ports_of(machine) {
 		fluid_buffer_rows(state, &content, screen_context.fluids, assembler.buffers[index], port.filter, port.capacity, assembler.closed[index], screen_context.tick_rate)
 	}
+	output_rate_label(state, &content, assembler.output_rate, screen_context)
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text(assembler_state_keys[assembler.state]), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	if crafting_machine_is_electric(machine) {
 		power_line := power_status_line(&screen_context.world.entities.electric_networks, assembler.handle)

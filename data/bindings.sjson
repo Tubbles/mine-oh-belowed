@@ -75,6 +75,7 @@ bindings = [
 	{action = "Open_Recipes" device = "keyboard" control = "C" context = "both"}
 	{action = "Open_Journal" device = "keyboard" control = "J" context = "both"}
 	{action = "Open_Power_Overview" device = "keyboard" control = "P" context = "both"}
+	{action = "Open_Statistics" device = "keyboard" control = "N" context = "both"}
 	{action = "Open_Technologies" device = "keyboard" control = "T" context = "both"}
 	{action = "Open_Map" device = "keyboard" control = "M" context = "world"}
 	{action = "Pause" device = "keyboard" control = "ESCAPE" context = "both"}
@@ -84,6 +85,8 @@ bindings = [
 	{action = "Hotbar_Previous" device = "keyboard" control = "LEFT_BRACKET" context = "world"}
 	{action = "Hotbar_Next" device = "keyboard" control = "RIGHT_BRACKET" context = "world"}
 	{action = "Toggle_Camera_Mode" device = "keyboard" control = "V" context = "world"}
+	// No gamepad button for the overlay yet; the Display settings toggle it too.
+	{action = "Toggle_Bottleneck_Overlay" device = "keyboard" control = "O" context = "world"}
 	{action = "Toggle_Diagnostics" device = "keyboard" control = "F3" context = "both"}
 	{action = "Debug_Remove_Block" device = "keyboard" control = "F5" context = "world"}
 	{action = "Toggle_Fly_Mode" device = "keyboard" control = "F6" context = "world"}

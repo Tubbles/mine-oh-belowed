@@ -26,6 +26,7 @@ Session :: struct {
 	tick_input:         Tick_Input_Accumulator,
 	recipe_browser:     Recipe_Browser,
 	technology_browser: Technology_Browser,
+	statistics_view:    Statistics_View,
 	debug_edit_counter: u64,
 }
 

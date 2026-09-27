@@ -246,6 +246,13 @@ test_save_load_run_matches_the_original :: proc(t: ^testing.T) {
 		testing.expectf(t, simulation_state_hash(&loaded) == simulation_state_hash(&original), "state differs after tick %d", first + 100)
 	}
 	testing.expect(t, simulation_state_hash(&loaded) != before_running, "the simulation moved on")
+	// The rate rings (work item 0028) came through and closed a ten
+	// second span after loading, the same in both.
+	statistics, original_statistics := loaded.world.statistics, original.world.statistics
+	testing.expect(t, slice.any_of_proc(statistics.produced_rates.per_ten_seconds, proc(count: u32) -> bool {return count > 0}))
+	testing.expect(t, slice.equal(statistics.produced_rates.per_ten_seconds, original_statistics.produced_rates.per_ten_seconds))
+	testing.expect(t, slice.equal(statistics.consumed_rates.per_second, original_statistics.consumed_rates.per_second))
+	testing.expect(t, slice.any_of_proc(statistics.consumed, proc(count: u64) -> bool {return count > 0}))
 }
 
 // A torch in a cave dug into an underground chunk lights the cave the

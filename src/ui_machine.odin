@@ -12,8 +12,9 @@ MACHINE_BAR_WIDTH :: 160
 MACHINE_BAR_HEIGHT :: 20
 FURNACE_AREA_WIDTH :: 2 * UI_SLOT_SIZE + MACHINE_BAR_WIDTH + 2 * UI_GAP
 DRILL_AREA_WIDTH :: 480
-// The vein's name, a line per output, the rate and the state.
-DRILL_TEXT_ROWS :: 3 + MAXIMUM_VEIN_OUTPUTS
+// The vein's name, a line per output, the rate, the output rate and the
+// state.
+DRILL_TEXT_ROWS :: 4 + MAXIMUM_VEIN_OUTPUTS
 SPLITTER_AREA_WIDTH :: 480
 // Input priority, output priority and the filter's side.
 SPLITTER_CHOICE_ROWS :: 3
@@ -119,7 +120,7 @@ machine_area_size :: proc(machine: Machine, slot_count: int) -> [2]f32 {
 	case .Chest, .Capsule:
 		return {slot_grid_width(MACHINE_CHEST_COLUMNS), UI_ROW_HEIGHT + slot_grid_height(chest_rows(slot_count))}
 	case .Furnace:
-		return {FURNACE_AREA_WIDTH, UI_ROW_HEIGHT + 2 * (UI_SLOT_SIZE + UI_GAP) + UI_ROW_HEIGHT}
+		return {FURNACE_AREA_WIDTH, UI_ROW_HEIGHT + 2 * (UI_SLOT_SIZE + UI_GAP) + 2 * UI_ROW_HEIGHT}
 	case .Inserter:
 		return {FURNACE_AREA_WIDTH, UI_ROW_HEIGHT + (UI_SLOT_SIZE + UI_GAP) + 3 * UI_ROW_HEIGHT}
 	case .Drill:
@@ -172,7 +173,18 @@ furnace_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, furnace: Furna
 	machine_bar(state, {second.x + UI_SLOT_SIZE + UI_GAP, second.y, MACHINE_BAR_WIDTH, UI_SLOT_SIZE}, furnace_burn_fraction(furnace))
 	machine_slot(state, {output.x, second.y, UI_SLOT_SIZE, UI_SLOT_SIZE}, FURNACE_BYPRODUCT_SLOT, slots[:], items, &result)
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text(furnace_state_keys[furnace.state]), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	output_rate_label(state, &content, furnace.output_rate, screen_context)
 	return result
+}
+
+// The rate readout of a machine panel: its main output over the last
+// minute, from the machine's own ring (statistics.odin).
+output_rate_line :: proc(rate: Machine_Output_Rate, second: u64) -> string {
+	return fmt.tprintf("%s: %s", text("machine_output_rate"), format_per_minute(f32(machine_output_per_minute(rate, second))))
+}
+
+output_rate_label :: proc(state: ^Ui_State, content: ^Ui_Rectangle, rate: Machine_Output_Rate, screen_context: Screen_Context) {
+	ui_label(state, cut_top(content, UI_ROW_HEIGHT), output_rate_line(rate, screen_context.world.statistics.current_second), UI_BODY_TEXT_SIZE, .Left)
 }
 
 // The fuel slot and burn bar of a burner, or the filter slot of a filter
@@ -225,6 +237,7 @@ drill_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, drill: Drill, sc
 	}
 	rate := fmt.tprintf("%s: %s", text("drill_rate"), format_per_minute(drill_units_per_minute(machine, screen_context.tick_rate)))
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), rate, UI_BODY_TEXT_SIZE, .Left)
+	output_rate_label(state, &content, drill.output_rate, screen_context)
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text(drill_state_keys[drill.state]), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	return result
 }

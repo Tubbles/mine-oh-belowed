@@ -58,6 +58,8 @@ Drill :: struct {
 	held:             Item_Stack,
 	state:            Drill_State,
 	power:            Power_State,
+	// Units output over the last minute, for the panel (statistics.odin).
+	output_rate:      Machine_Output_Rate,
 }
 
 make_drill :: proc(common: Entity_Common, vein: Vein_Id, slot_count: int) -> Drill {
@@ -232,6 +234,7 @@ output_drill_item :: proc(world: ^World, content: Simulation_Content, drill: ^Dr
 		return false
 	}
 	record_produced(&world.statistics, drill.held.item, int(drill.held.count))
+	record_machine_output(&drill.output_rate, world.statistics.current_second, int(drill.held.count))
 	drill.held = EMPTY_STACK
 	return true
 }

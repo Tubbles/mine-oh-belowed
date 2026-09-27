@@ -7,6 +7,14 @@ import "core:math"
 // crafting completion, furnace output, mining, placement. The quest
 // runtime, the journal and later the statistics screen read them.
 //
+// Rates (work item 0028): per item rings of produced and consumed
+// counts at three resolutions, RATE_BUCKET_COUNT buckets each. The fine
+// ring holds per second buckets (one minute), the ten second ring is fed
+// from the fine ring whenever a ten second span ends (ten minutes), and the
+// minute ring from the ten second ring whenever a minute ends (sixty
+// minutes). All integers, advanced only by the simulation clock, and saved
+// with the rest of the statistics.
+//
 // Two counters are measured as differences across a tick instead of at a
 // call site, because the UI moves stacks between ticks: obtained (what
 // players hold grew) and delivered (what the capsule holds grew).
@@ -14,8 +22,9 @@ import "core:math"
 // Arrays are sized by make_statistics. A World made without it (tests)
 // has empty arrays, and recording into them does nothing.
 
-// The rolling rate per item is a ring of per second buckets.
+// Buckets per item in every rate ring.
 RATE_BUCKET_COUNT :: 60
+RATE_LEVEL_COUNT :: 3
 INSERTER_IDLE_MINUTE_SECONDS :: 60
 MILLIMETRES_PER_BLOCK :: 1000
 
@@ -34,6 +43,33 @@ Machine_Stall :: enum u8 {
 	Crafting_No_Fuel,
 }
 
+// The rate windows of the statistics screen, one per ring level.
+Rate_Window :: enum u8 {
+	One_Minute,
+	Ten_Minutes,
+	Sixty_Minutes,
+}
+
+// Seconds per bucket of each ring level.
+@(rodata)
+rate_level_seconds := [RATE_LEVEL_COUNT]u64{1, 10, 60}
+
+@(rodata)
+rate_window_minutes := [Rate_Window]u64 {
+	.One_Minute    = 1,
+	.Ten_Minutes   = 10,
+	.Sixty_Minutes = 60,
+}
+
+// Indexed by item, RATE_BUCKET_COUNT buckets per item in each ring; the
+// bucket of unit u (seconds, ten second spans or minutes since the
+// start) at u % RATE_BUCKET_COUNT.
+Item_Rate_Rings :: struct {
+	per_second:      []u32,
+	per_ten_seconds: []u32,
+	per_minute:      []u32,
+}
+
 Statistics :: struct {
 	// Indexed by Item_Id. produced counts crafted and smelted outputs,
 	// obtained counts growth of what players hold (mined, taken from a
@@ -44,6 +80,9 @@ Statistics :: struct {
 	delivered:                   []u64,
 	// Byproducts a lenient world voided because they had no room.
 	voided:                      []u64,
+	// Items used up: ingredients of crafts (hand, machines, the
+	// recycler), science packs and fuel items burned.
+	consumed:                    []u64,
 	// Indexed by Machine_Id: how often a player placed one.
 	placed:                      []u64,
 	// Indexed by Block_Id: ticks spent holding Mine on a block of the type.
@@ -82,9 +121,8 @@ Statistics :: struct {
 	// Mining, placing, picking up and opening a machine. hands_off
 	// sustain objectives break when this changes.
 	world_actions:               u64,
-	// Items produced per second, RATE_BUCKET_COUNT buckets per item, the
-	// bucket of a second at second % RATE_BUCKET_COUNT.
-	produced_per_second:         []u32,
+	produced_rates:              Item_Rate_Rings,
+	consumed_rates:              Item_Rate_Rings,
 	current_second:              u64,
 	// What players held and the capsule held after the previous tick.
 	held_totals:                 []u32,
@@ -97,9 +135,11 @@ make_statistics :: proc(item_count, machine_count, block_count: int, allocator :
 		obtained = make([]u64, item_count, allocator),
 		delivered = make([]u64, item_count, allocator),
 		voided = make([]u64, item_count, allocator),
+		consumed = make([]u64, item_count, allocator),
 		placed = make([]u64, machine_count, allocator),
 		mining_ticks = make([]u64, block_count, allocator),
-		produced_per_second = make([]u32, item_count * RATE_BUCKET_COUNT, allocator),
+		produced_rates = make_item_rate_rings(item_count, allocator),
+		consumed_rates = make_item_rate_rings(item_count, allocator),
 		held_totals = make([]u32, item_count, allocator),
 		capsule_totals = make([]u32, item_count, allocator),
 	}
@@ -110,34 +150,144 @@ destroy_statistics :: proc(statistics: Statistics, allocator := context.allocato
 	delete(statistics.obtained, allocator)
 	delete(statistics.delivered, allocator)
 	delete(statistics.voided, allocator)
+	delete(statistics.consumed, allocator)
 	delete(statistics.placed, allocator)
 	delete(statistics.mining_ticks, allocator)
-	delete(statistics.produced_per_second, allocator)
+	destroy_item_rate_rings(statistics.produced_rates, allocator)
+	destroy_item_rate_rings(statistics.consumed_rates, allocator)
 	delete(statistics.held_totals, allocator)
 	delete(statistics.capsule_totals, allocator)
+}
+
+make_item_rate_rings :: proc(item_count: int, allocator := context.allocator) -> Item_Rate_Rings {
+	return Item_Rate_Rings {
+		per_second = make([]u32, item_count * RATE_BUCKET_COUNT, allocator),
+		per_ten_seconds = make([]u32, item_count * RATE_BUCKET_COUNT, allocator),
+		per_minute = make([]u32, item_count * RATE_BUCKET_COUNT, allocator),
+	}
+}
+
+destroy_item_rate_rings :: proc(rings: Item_Rate_Rings, allocator := context.allocator) {
+	delete(rings.per_second, allocator)
+	delete(rings.per_ten_seconds, allocator)
+	delete(rings.per_minute, allocator)
+}
+
+rate_ring_levels :: proc(rings: Item_Rate_Rings) -> [RATE_LEVEL_COUNT][]u32 {
+	return {rings.per_second, rings.per_ten_seconds, rings.per_minute}
 }
 
 item_counter :: proc(counters: []u64, item: Item_Id) -> u64 {
 	return int(item) < len(counters) ? counters[item] : 0
 }
 
-// The rate ring. The bucket of the current second is cleared when the
-// second begins; seconds skipped without a tick are cleared too.
+// The rate rings. When the clock enters a new second, every coarser
+// bucket whose span ended is closed from the finer ring, buckets of spans
+// skipped without a tick are cleared, and the fine buckets of the seconds
+// entered are cleared.
 advance_statistics_clock :: proc(statistics: ^Statistics, tick: u64, tick_rate: int) {
 	second := tick / u64(max(tick_rate, 1))
 	if second == statistics.current_second {
 		return
 	}
-	cleared := min(second - statistics.current_second, RATE_BUCKET_COUNT)
-	for offset in 0 ..< cleared {
-		clear_rate_bucket(statistics, int((second - offset) % RATE_BUCKET_COUNT))
-	}
+	advance_rate_rings(statistics.produced_rates, statistics.current_second, second)
+	advance_rate_rings(statistics.consumed_rates, statistics.current_second, second)
 	statistics.current_second = second
 }
 
-clear_rate_bucket :: proc(statistics: ^Statistics, bucket: int) {
-	for item_start := 0; item_start < len(statistics.produced_per_second); item_start += RATE_BUCKET_COUNT {
-		statistics.produced_per_second[item_start + bucket] = 0
+// from is the second the clock was in, to the one it enters. A clock
+// that went back clears everything, like a gap longer than the rings.
+advance_rate_rings :: proc(rings: Item_Rate_Rings, from, to: u64) {
+	levels := rate_ring_levels(rings)
+	for level in 1 ..< RATE_LEVEL_COUNT {
+		close_rate_level(levels[level - 1], levels[level], level, from, to)
+	}
+	cleared := to > from ? min(to - from, RATE_BUCKET_COUNT) : RATE_BUCKET_COUNT
+	for offset in 0 ..< cleared {
+		clear_rate_bucket(rings.per_second, int((to - offset) % RATE_BUCKET_COUNT))
+	}
+}
+
+// When second `to` lies in a later span of the level than second `from`,
+// the span `from` was in is closed: its bucket gets the finer units it
+// spans up to `from` (later ones had no tick), and the spans skipped in
+// between are cleared. The span `to` is in stays open and is not read
+// from this level until it closes.
+close_rate_level :: proc(finer, coarser: []u32, level: int, from, to: u64) {
+	span_seconds, finer_seconds := rate_level_seconds[level], rate_level_seconds[level - 1]
+	from_span, to_span := from / span_seconds, to / span_seconds
+	if from_span == to_span {
+		return
+	}
+	first_finer, last_finer := from_span * span_seconds / finer_seconds, from / finer_seconds
+	skipped := to_span > from_span ? min(to_span - from_span - 1, RATE_BUCKET_COUNT) : RATE_BUCKET_COUNT
+	for item_start := 0; item_start < len(coarser); item_start += RATE_BUCKET_COUNT {
+		item := item_start / RATE_BUCKET_COUNT
+		coarser[item_start + int(from_span % RATE_BUCKET_COUNT)] = u32(sum_ring_units(finer, item, first_finer, last_finer))
+		for offset in 1 ..= skipped {
+			coarser[item_start + int((from_span + offset) % RATE_BUCKET_COUNT)] = 0
+		}
+	}
+}
+
+// The item's buckets for units first through last of one ring.
+sum_ring_units :: proc(ring: []u32, item: int, first, last: u64) -> u64 {
+	total: u64
+	for unit := first; unit <= last; unit += 1 {
+		total += u64(ring[item * RATE_BUCKET_COUNT + int(unit % RATE_BUCKET_COUNT)])
+	}
+	return total
+}
+
+clear_rate_bucket :: proc(ring: []u32, bucket: int) {
+	for item_start := 0; item_start < len(ring); item_start += RATE_BUCKET_COUNT {
+		ring[item_start + bucket] = 0
+	}
+}
+
+// Items counted in the window ending at `second`: the open bucket of the
+// window's level so far (taken from the finer rings) and the
+// RATE_BUCKET_COUNT - 1 closed ones before it.
+window_total :: proc(rings: Item_Rate_Rings, item: Item_Id, window: Rate_Window, second: u64) -> u64 {
+	levels := rate_ring_levels(rings)
+	level := int(window)
+	if (int(item) + 1) * RATE_BUCKET_COUNT > len(levels[level]) {
+		return 0
+	}
+	span := second / rate_level_seconds[level]
+	total := open_span_total(levels, int(item), level, second)
+	if span > 0 {
+		first := span >= RATE_BUCKET_COUNT - 1 ? span - (RATE_BUCKET_COUNT - 1) : 0
+		total += sum_ring_units(levels[level], int(item), first, span - 1)
+	}
+	return total
+}
+
+// What the level's span holding `second` has counted so far: its closed
+// finer units plus the open finer unit, down to the current second.
+open_span_total :: proc(levels: [RATE_LEVEL_COUNT][]u32, item, level: int, second: u64) -> u64 {
+	if level == 0 {
+		return u64(levels[0][item * RATE_BUCKET_COUNT + int(second % RATE_BUCKET_COUNT)])
+	}
+	finer_seconds := rate_level_seconds[level - 1]
+	first_finer := second / rate_level_seconds[level] * rate_level_seconds[level] / finer_seconds
+	current_finer := second / finer_seconds
+	total := open_span_total(levels, item, level - 1, second)
+	if current_finer > first_finer {
+		total += sum_ring_units(levels[level - 1], item, first_finer, current_finer - 1)
+	}
+	return total
+}
+
+// A window's total as items per minute in tenths, rounded down.
+window_rate_tenths_per_minute :: proc(total: u64, window: Rate_Window) -> u64 {
+	return total * 10 / rate_window_minutes[window]
+}
+
+add_to_rate_ring :: proc(ring: []u32, item: Item_Id, second: u64, count: int) {
+	bucket := int(item) * RATE_BUCKET_COUNT + int(second % RATE_BUCKET_COUNT)
+	if bucket < len(ring) {
+		ring[bucket] += u32(count)
 	}
 }
 
@@ -146,8 +296,40 @@ record_produced :: proc(statistics: ^Statistics, item: Item_Id, count: int) {
 		return
 	}
 	statistics.produced[item] += u64(count)
-	bucket := int(item) * RATE_BUCKET_COUNT + int(statistics.current_second % RATE_BUCKET_COUNT)
-	statistics.produced_per_second[bucket] += u32(count)
+	add_to_rate_ring(statistics.produced_rates.per_second, item, statistics.current_second, count)
+}
+
+record_consumed :: proc(statistics: ^Statistics, item: Item_Id, count: int) {
+	if int(item) >= len(statistics.consumed) || count <= 0 {
+		return
+	}
+	statistics.consumed[item] += u64(count)
+	add_to_rate_ring(statistics.consumed_rates.per_second, item, statistics.current_second, count)
+}
+
+record_consumed_stacks :: proc(statistics: ^Statistics, stacks: []Item_Stack) {
+	for stack in stacks {
+		record_consumed(statistics, stack.item, int(stack.count))
+	}
+}
+
+// How much of before's item the slot lost.
+stack_shrink :: proc(before, after: Item_Stack) -> int {
+	if stack_is_empty(before) {
+		return 0
+	}
+	if stack_is_empty(after) || before.item != after.item {
+		return int(before.count)
+	}
+	return max(int(before.count) - int(after.count), 0)
+}
+
+// Slots that only shrink inside a machine tick (fuel, inputs, lab packs):
+// what they lost was consumed.
+record_slot_consumption :: proc(statistics: ^Statistics, before, after: []Item_Stack) {
+	for slot, index in before {
+		record_consumed(statistics, slot.item, stack_shrink(slot, after[index]))
+	}
 }
 
 record_produced_stacks :: proc(statistics: ^Statistics, stacks: []Item_Stack) {
@@ -173,6 +355,50 @@ stack_growth :: proc(before, after: Item_Stack) -> int {
 	return max(int(after.count) - int(before.count), 0)
 }
 
+// A machine's own main output over the last minute (work item 0028), for
+// the rate readout of its panel: a ring of per second buckets on the
+// entity, saved with it. It is kept lazily, a record first clears the
+// seconds that passed since the last record, so idle machines cost
+// nothing per tick.
+Machine_Output_Rate :: struct {
+	counts:      [RATE_BUCKET_COUNT]u16,
+	last_second: u64,
+}
+
+forget_machine_output :: proc(rate: ^Machine_Output_Rate, second: u64) {
+	if second == rate.last_second {
+		return
+	}
+	cleared := second > rate.last_second ? min(second - rate.last_second, RATE_BUCKET_COUNT) : RATE_BUCKET_COUNT
+	for offset in 0 ..< cleared {
+		rate.counts[(second - offset) % RATE_BUCKET_COUNT] = 0
+	}
+	rate.last_second = second
+}
+
+record_machine_output :: proc(rate: ^Machine_Output_Rate, second: u64, count: int) {
+	if count <= 0 {
+		return
+	}
+	forget_machine_output(rate, second)
+	bucket := &rate.counts[second % RATE_BUCKET_COUNT]
+	bucket^ = u16(min(int(bucket^) + count, int(max(u16))))
+}
+
+// Items over the minute ending at `second`: the buckets of the seconds up
+// to the last record that still lie inside it.
+machine_output_per_minute :: proc(rate: Machine_Output_Rate, second: u64) -> u64 {
+	if second < rate.last_second || second - rate.last_second >= RATE_BUCKET_COUNT {
+		return 0
+	}
+	first := second >= RATE_BUCKET_COUNT - 1 ? second - (RATE_BUCKET_COUNT - 1) : 0
+	total: u64
+	for unit := first; unit <= rate.last_second; unit += 1 {
+		total += u64(rate.counts[unit % RATE_BUCKET_COUNT])
+	}
+	return total
+}
+
 // A product the craft made: what its slot gained is produced, the rest was
 // voided (lenient byproducts). Output slots only grow inside a machine
 // tick.
@@ -194,11 +420,35 @@ record_craft_outputs :: proc(statistics: ^Statistics, craft: Craft, before, afte
 	}
 }
 
-// Fuel items lit, and a stall when the machine enters it.
+// The main output of a finished craft: every return of the recycler,
+// otherwise the first product that is not a byproduct (main outputs
+// always fit, since a craft waits for their room).
+craft_main_output_count :: proc(craft: Craft) -> int {
+	if craft.returns {
+		total := 0
+		for stack in craft.outputs {
+			total += int(stack.count)
+		}
+		return total
+	}
+	for product, index in craft.outputs {
+		if index not_in craft.byproducts {
+			return int(product.count)
+		}
+	}
+	return 0
+}
+
+// Fuel items lit, fuel and ingredients used up, and a stall when the
+// machine enters it. The fuel and input slots only shrink inside the
+// machine's tick.
 record_crafting_machine_tick :: proc(statistics: ^Statistics, before, after: Assembler) {
 	if fuel_item_lit(before.fuel_joules, after.fuel_joules) {
 		statistics.fuel_burned += 1
 	}
+	last := assembler_first_output(before)
+	slots_before, slots_after := before.slots, after.slots
+	record_slot_consumption(statistics, slots_before[:last], slots_after[:last])
 	if after.state == before.state {
 		return
 	}
@@ -217,15 +467,7 @@ record_crafting_machine_tick :: proc(statistics: ^Statistics, before, after: Ass
 // Items produced over the last minute: the current second so far plus
 // the 59 before it.
 production_rate_per_minute :: proc(statistics: Statistics, item: Item_Id) -> u64 {
-	start := int(item) * RATE_BUCKET_COUNT
-	if start + RATE_BUCKET_COUNT > len(statistics.produced_per_second) {
-		return 0
-	}
-	total: u64
-	for count in statistics.produced_per_second[start:start + RATE_BUCKET_COUNT] {
-		total += u64(count)
-	}
-	return total
+	return window_total(statistics.produced_rates, item, .One_Minute, statistics.current_second)
 }
 
 record_placed :: proc(statistics: ^Statistics, machine: Machine_Id) {
@@ -271,6 +513,8 @@ record_furnace_tick :: proc(statistics: ^Statistics, before, after: Furnace, rec
 	if fuel_after.count < fuel_before.count {
 		statistics.fuel_burned += u64(fuel_before.count - fuel_after.count)
 	}
+	slots_before, slots_after := before.slots, after.slots
+	record_slot_consumption(statistics, slots_before[:FURNACE_OUTPUT_SLOT], slots_after[:FURNACE_OUTPUT_SLOT])
 	if after.state == before.state {
 		return
 	}
@@ -297,6 +541,15 @@ fuel_item_lit :: proc(joules_before, joules_after: u32) -> bool {
 	return joules_after > joules_before
 }
 
+// The item an inserter lit: from its fuel slot, or with the slot empty
+// the fuel item in its hand (feed_inserter_from_hand burns it in the same
+// tick). A fuel item taken from the source waits in the slot until the
+// next tick.
+inserter_lit_fuel_item :: proc(before: Inserter) -> Item_Id {
+	fuel := before.slots[INSERTER_FUEL_SLOT]
+	return stack_is_empty(fuel) ? before.held.item : fuel.item
+}
+
 // Uninterrupted idle ticks after a tick that ended in `state`.
 next_idle_streak :: proc(streak: u32, state: Inserter_State) -> u32 {
 	return state == .Idle ? streak + 1 : 0
@@ -307,6 +560,7 @@ next_idle_streak :: proc(streak: u32, state: Inserter_State) -> u32 {
 record_inserter_tick :: proc(statistics: ^Statistics, before, after: Inserter, tick_rate: int) {
 	if fuel_item_lit(before.fuel_joules, after.fuel_joules) {
 		statistics.fuel_burned += 1
+		record_consumed(statistics, inserter_lit_fuel_item(before), 1)
 	}
 	if after.state == .Idle {
 		statistics.inserter_idle_ticks += 1
@@ -407,6 +661,7 @@ record_drill_tick :: proc(statistics: ^Statistics, before, after: Drill) {
 	if fuel_item_lit(before.fuel_joules, after.fuel_joules) {
 		statistics.fuel_burned += 1
 		statistics.drill_fuel_burned += 1
+		record_consumed(statistics, before.slots[DRILL_FUEL_SLOT].item, 1)
 	}
 	if after.state == before.state {
 		return

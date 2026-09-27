@@ -19,6 +19,8 @@
 // burned rather than refined.
 // Byproducts (work item 0027): slag from smelting stacks to 100, gravel
 // and mud as before; each has a use (gravel, concrete, clay, brick).
+// Slag also places as a slag heap block (work item 0028), the early sink
+// before the crusher exists; mining a heap gives the slag back.
 // cannot_recycle (optional) keeps the recycler from taking the item even
 // when a recipe makes it: raw materials, ore, spoils, slag, mud, crushed
 // ore, bricks and concrete.
@@ -44,7 +46,7 @@ items = [
 	{id = "sphalerite_low_grade", name_key = "item_sphalerite_low_grade", category = "raw", stack_size = 50, cannot_recycle = true}
 	{id = "pentlandite_low_grade", name_key = "item_pentlandite_low_grade", category = "raw", stack_size = 50, cannot_recycle = true}
 	{id = "mud", name_key = "item_mud", category = "raw", stack_size = 50, cannot_recycle = true}
-	{id = "slag", name_key = "item_slag", category = "raw", stack_size = 100, cannot_recycle = true}
+	{id = "slag", name_key = "item_slag", category = "raw", stack_size = 100, places_block = "slag_heap", cannot_recycle = true}
 	// Processed materials and intermediates
 	{id = "plank", name_key = "item_plank", category = "intermediate", stack_size = 100, fuel_megajoules = 1}
 	{id = "stick", name_key = "item_stick", category = "intermediate", stack_size = 100, fuel_megajoules = 0.5}

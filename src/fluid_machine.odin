@@ -195,10 +195,16 @@ advance_fluid_machine :: proc(fluid_machine: ^Fluid_Machine, machine: Machine, i
 }
 
 // Machines first, so what they make this tick flows on in the same tick.
-tick_fluids :: proc(entities: ^Entities, content: Simulation_Content, tick_rate: int) {
+// Boiler fuel only leaves its slot here, so what the slot lost was
+// consumed. A nil statistics (tests) records nothing.
+tick_fluids :: proc(entities: ^Entities, content: Simulation_Content, tick_rate: int, statistics: ^Statistics = nil) {
 	for &fluid_machine in entities.fluid_machines.entries {
 		if fluid_machine.alive {
+			before := fluid_machine
 			advance_fluid_machine(&fluid_machine, content.machines.machines[fluid_machine.machine], content.items, tick_rate)
+			if statistics != nil {
+				record_slot_consumption(statistics, before.slots[:before.slot_count], fluid_machine.slots[:fluid_machine.slot_count])
+			}
 		}
 	}
 	tick_fluid_networks(entities, content.fluids, pipe_flow_per_tick(content.machines, tick_rate))

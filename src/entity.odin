@@ -486,11 +486,13 @@ tick_entities :: proc(world: ^World, content: Simulation_Content, tick_rate: int
 			before := furnace
 			furnace = advance_furnace(furnace, content.machines.machines[furnace.machine], content.items, content.recipes, tick_rate, world.settings.byproducts_lenient)
 			record_furnace_tick(&world.statistics, before, furnace, content.recipes)
+			grown := stack_growth(before.slots[FURNACE_OUTPUT_SLOT], furnace.slots[FURNACE_OUTPUT_SLOT])
+			record_machine_output(&furnace.output_rate, world.statistics.current_second, grown)
 		}
 	}
 	tick_assemblers(world, content, tick_rate)
 	tick_labs(world, content, tick_rate)
-	tick_fluids(&world.entities, content, tick_rate)
+	tick_fluids(&world.entities, content, tick_rate, &world.statistics)
 	tick_lamps(world, content.machines)
 	apply_spent_outcrops(world, content.veins)
 }

@@ -229,4 +229,13 @@ blocks = [
 		hardness_seconds = 2
 		texture = {top = [168, 80, 60], side = [156, 72, 54], bottom = [156, 72, 54]}
 	}
+	{
+		// A dumped pile of slag (work item 0028): the visible cost of
+		// smelting before the crusher exists. Placeholder colour.
+		id = "slag_heap"
+		name = "Slag Heap"
+		solid = true
+		hardness_seconds = 1.5
+		texture = {top = [58, 54, 52], side = [48, 44, 43], bottom = [40, 37, 36]}
+	}
 ]

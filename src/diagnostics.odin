@@ -241,7 +241,8 @@ draw_world_overlay :: proc(state: Frame_State) {
 	append_line(&lines, false, "%s", streaming_statistics_text(state))
 	append_line(&lines, false, "%s", light_statistics_text(state))
 	append_player_lines(&lines, state)
-	append_line(&lines, false, "F3 diagnostics  F5 remove block  F6 fly  V camera")
+	append_line(&lines, state.settings.bottleneck_overlay, "bottleneck overlay %s", yes_no(state.settings.bottleneck_overlay))
+	append_line(&lines, false, "F3 diagnostics  F5 remove block  F6 fly  V camera  O overlay")
 	font_size := diagnostics_font_size(rl.GetScreenHeight())
 	backdrop_height := i32(len(lines)) * (font_size + font_size / 5) + DIAGNOSTICS_MARGIN
 	rl.DrawRectangle(0, 0, font_size * 24, backdrop_height + DIAGNOSTICS_MARGIN, DIAGNOSTICS_BACKDROP_COLOR)

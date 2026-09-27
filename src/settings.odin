@@ -19,6 +19,9 @@ Settings :: struct {
 	pointer_speed:             f32,
 	// Minutes of simulated time between autosaves.
 	autosave_minutes:          int,
+	// Machine state markers in the world (work item 0028), also toggled
+	// with Toggle_Bottleneck_Overlay.
+	bottleneck_overlay:        bool,
 }
 
 DEFAULT_SETTINGS :: Settings {
@@ -30,6 +33,7 @@ DEFAULT_SETTINGS :: Settings {
 	invert_pitch              = false,
 	pointer_speed             = 1.5,
 	autosave_minutes          = 5,
+	bottleneck_overlay        = false,
 }
 
 UI_SCALE_RANGE :: Slider_Range{0.75, 1.5, 0.05}

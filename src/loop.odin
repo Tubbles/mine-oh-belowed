@@ -236,7 +236,17 @@ update_frame :: proc(state: ^Frame_State) {
 	state.world_action_guard = update_world_action_guard(state.world_action_guard, world_blocked, state.input.pressed)
 	if state.session != nil {
 		apply_debug_actions(state)
+		apply_overlay_toggle(state, world_blocked)
 		update_session(state, world_blocked)
+	}
+}
+
+// Only while no screen is open, so O typed into a text field or pressed
+// in a menu does nothing. The setting is written like any other changed
+// setting.
+apply_overlay_toggle :: proc(state: ^Frame_State, world_blocked: bool) {
+	if .Toggle_Bottleneck_Overlay in state.input.just_pressed && !world_blocked {
+		state.settings.bottleneck_overlay = !state.settings.bottleneck_overlay
 	}
 }
 
@@ -318,6 +328,9 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session) {
 	defer rl.EndMode3D()
 	draw_chunks(&state.renderer, camera)
 	draw_entities(world, content.machines, content.items, tick_rate)
+	if state.settings.bottleneck_overlay {
+		draw_machine_markers(world, content.machines, camera.position)
+	}
 	draw_fluid_entities(world, content.machines, content.fluids)
 	draw_power_entities(world, content.machines)
 	draw_belts(&state.belt_renderer, world, content.items, content.machines, session.simulation.tick, alpha, tick_rate)
@@ -358,6 +371,7 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 	screen_context.quest_state = &session.simulation.quests
 	screen_context.browser = &session.recipe_browser
 	screen_context.technology_browser = &session.technology_browser
+	screen_context.statistics_view = &session.statistics_view
 	return screen_context
 }
 
