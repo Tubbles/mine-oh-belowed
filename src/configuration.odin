@@ -27,7 +27,6 @@ DEFAULT_CONFIG_DIRS :: "/etc/xdg"
 CONFIG_HOME_UNDER_HOME :: ".config"
 COMMAND_LINE_SOURCE :: "command line"
 DEFAULT_SOURCE :: "default"
-SET_ARGUMENT_PREFIX :: "--set="
 MAXIMUM_AUTOSAVE_MINUTES :: 24 * 60
 
 Configuration_Paths :: struct {

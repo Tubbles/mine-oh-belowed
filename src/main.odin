@@ -1,16 +1,14 @@
 package game
 
+import "core:flags"
 import "core:fmt"
+import "core:io"
 import "core:os"
-import "core:strings"
 
 GAME_VERSION :: "0.0.0"
 
-INPUT_ARGUMENT_PREFIX :: "--input="
-SEED_ARGUMENT_PREFIX :: "--seed="
-LOAD_ARGUMENT_PREFIX :: "--load="
-NAME_ARGUMENT_PREFIX :: "--name="
-SUPPORTED_ARGUMENTS :: "config, --version, --input=sdl3, --input=raylib, --seed=<number>, --name=<world name>, --load=<world name>, --debug-terrain, --unlock-all, --set=<key>=<value>"
+// The name the usage page shows, whatever the binary is called.
+PROGRAM_NAME :: "mine-oh-belowed"
 // The subcommand that prints the configuration files and effective values.
 CONFIG_SUBCOMMAND :: "config"
 
@@ -20,29 +18,47 @@ Input_Backend_Request :: enum u8 {
 	Raylib,
 }
 
+// Every field is a flag. core:flags turns underscores into dashes; the name
+// subtag keeps the documented spelling where the field name differs. The seed
+// and the input backend stay strings so the game, not strconv or the enum
+// names, decides what is valid.
 Command_Line :: struct {
-	show_version:        bool,
-	// The config subcommand.
-	show_configuration:  bool,
-	// --set=<key>=<value>, the last configuration layer.
-	set_assignments:     [dynamic]string,
-	input_request:       Input_Backend_Request,
-	seed:                u64,
-	seed_given:          bool,
-	// The saved world to load (--load), or empty for a new world.
-	load_name:           string,
-	// The name of a new world (--name), DEFAULT_WORLD_NAME when empty.
-	world_name:          string,
-	debug_terrain:       bool,
-	// Developer flag: every technology researched and every item discovered.
-	unlock_all:          bool,
-	unknown_argument:    string,
-	unknown_input_value: string,
-	invalid_seed_value:  string,
+	subcommand:      string `args:"pos=0" usage:"config: print the configuration files found and the effective values, then exit"`,
+	show_version:    bool `args:"name=version" usage:"print the version and exit"`,
+	set_assignments: [dynamic]string `args:"name=set" usage:"<key>=<value>, the last configuration layer, repeatable (--set=settings.ui_scale=1.25)"`,
+	input:           string `usage:"input backend: sdl3 or raylib (default: SDL3 with raylib fallback)"`,
+	seed:            string `usage:"seed of a new world, an unsigned 64 bit decimal"`,
+	load_name:       string `args:"name=load" usage:"load the saved world with this name"`,
+	world_name:      string `args:"name=name" usage:"name of a new world"`,
+	debug_terrain:   bool `usage:"the fixed 8 by 2 by 8 chunk test terrain instead of the generated world"`,
+	// Developer flag.
+	unlock_all:      bool `usage:"every technology researched and every item discovered"`,
+}
+
+// Unix style keeps the documented spellings: --seed=42, --set=<key>=<value>.
+parse_command_line :: proc(arguments: []string) -> (command_line: Command_Line, error: flags.Error) {
+	error = flags.parse(&command_line, arguments, .Unix)
+	return
+}
+
+write_command_line_usage :: proc(writer: io.Writer) {
+	flags.write_usage(writer, Command_Line, PROGRAM_NAME, .Unix)
+}
+
+flags_error_message :: proc(error: flags.Error) -> string {
+	#partial switch specific_error in error {
+	case flags.Parse_Error:
+		return specific_error.message
+	case flags.Validation_Error:
+		return specific_error.message
+	}
+	return fmt.tprint(error)
 }
 
 parse_input_request :: proc(value: string) -> (request: Input_Backend_Request, ok: bool) {
 	switch value {
+	case "":
+		return .Automatic, true
 	case "sdl3":
 		return .Sdl3, true
 	case "raylib":
@@ -70,60 +86,27 @@ parse_seed :: proc(value: string) -> (seed: u64, ok: bool) {
 	return seed, true
 }
 
-parse_command_line :: proc(arguments: []string) -> Command_Line {
-	command_line := Command_Line {
-		seed = DEFAULT_WORLD_SEED,
+command_line_seed :: proc(command_line: Command_Line) -> (seed: u64, ok: bool) {
+	if command_line.seed == "" {
+		return DEFAULT_WORLD_SEED, true
 	}
-	for argument in arguments {
-		if strings.has_prefix(argument, SEED_ARGUMENT_PREFIX) {
-			value := argument[len(SEED_ARGUMENT_PREFIX):]
-			seed, ok := parse_seed(value)
-			if !ok {
-				command_line.invalid_seed_value = value
-				return command_line
-			}
-			command_line.seed = seed
-			command_line.seed_given = true
-			continue
-		}
-		if strings.has_prefix(argument, LOAD_ARGUMENT_PREFIX) {
-			command_line.load_name = argument[len(LOAD_ARGUMENT_PREFIX):]
-			continue
-		}
-		if strings.has_prefix(argument, NAME_ARGUMENT_PREFIX) {
-			command_line.world_name = argument[len(NAME_ARGUMENT_PREFIX):]
-			continue
-		}
-		if strings.has_prefix(argument, SET_ARGUMENT_PREFIX) {
-			append(&command_line.set_assignments, argument[len(SET_ARGUMENT_PREFIX):])
-			continue
-		}
-		if strings.has_prefix(argument, INPUT_ARGUMENT_PREFIX) {
-			value := argument[len(INPUT_ARGUMENT_PREFIX):]
-			request, ok := parse_input_request(value)
-			if !ok {
-				command_line.unknown_input_value = value
-				return command_line
-			}
-			command_line.input_request = request
-			continue
-		}
-		switch argument {
-		case "--version":
-			command_line.show_version = true
-		case CONFIG_SUBCOMMAND:
-			command_line.show_configuration = true
-		case "--debug-terrain":
-			command_line.debug_terrain = true
-		case "--unlock-all":
-			command_line.unlock_all = true
-		case:
-			command_line.unknown_argument = argument
-			return command_line
-		}
-	}
-	return command_line
+	return parse_seed(command_line.seed)
 }
+
+// The values core:flags accepts as plain strings but the game does not.
+command_line_value_problem :: proc(command_line: Command_Line) -> string {
+	if _, ok := command_line_seed(command_line); !ok {
+		return fmt.tprintf("invalid seed %q (expected an unsigned 64 bit integer, for example --seed=12345)", command_line.seed)
+	}
+	if _, ok := parse_input_request(command_line.input); !ok {
+		return fmt.tprintf("unknown input backend %q (supported: --input=sdl3, --input=raylib)", command_line.input)
+	}
+	if command_line.subcommand != "" && command_line.subcommand != CONFIG_SUBCOMMAND {
+		return fmt.tprintf("unknown command %q (supported: %s)", command_line.subcommand, CONFIG_SUBCOMMAND)
+	}
+	return ""
+}
+
 
 // Prints which backend is active and why. Fails only when SDL3 was asked for
 // explicitly, so that a broken SDL setup cannot hide behind the fallback.
@@ -146,17 +129,17 @@ start_input_backend :: proc(request: Input_Backend_Request) -> (backend: Input_B
 }
 
 main :: proc() {
-	command_line := parse_command_line(os.args[1:])
-	if command_line.unknown_argument != "" {
-		log_printf("error: unknown argument %q (supported: %s)", command_line.unknown_argument, SUPPORTED_ARGUMENTS)
+	command_line, parse_error := parse_command_line(os.args[1:])
+	if _, is_help := parse_error.(flags.Help_Request); is_help {
+		write_command_line_usage(os.to_stream(os.stdout))
+		return
+	}
+	if parse_error != nil {
+		log_printf("error: %s (see --help)", flags_error_message(parse_error))
 		os.exit(2)
 	}
-	if command_line.invalid_seed_value != "" {
-		log_printf("error: invalid seed %q (expected an unsigned 64 bit integer, for example --seed=12345)", command_line.invalid_seed_value)
-		os.exit(2)
-	}
-	if command_line.unknown_input_value != "" {
-		log_printf("error: unknown input backend %q (supported: --input=sdl3, --input=raylib)", command_line.unknown_input_value)
+	if problem := command_line_value_problem(command_line); problem != "" {
+		log_printf("error: %s", problem)
 		os.exit(2)
 	}
 	if command_line.show_version {
@@ -167,7 +150,7 @@ main :: proc() {
 		log_printf("error: %s", problem)
 		os.exit(2)
 	}
-	if command_line.show_configuration {
+	if command_line.subcommand == CONFIG_SUBCOMMAND {
 		print_configuration(command_line.set_assignments[:])
 		return
 	}
@@ -266,7 +249,8 @@ main :: proc() {
 	content.veins = veins
 	saves_directory, saves_found := resolve_saves_directory(loaded_configuration.configuration.paths.saves)
 	session := start_command_line_session(command_line, config, content, base_generator, saves_directory, saves_found)
-	input_backend, input_started := start_input_backend(command_line.input_request)
+	input_request, _ := parse_input_request(command_line.input)
+	input_backend, input_started := start_input_backend(input_request)
 	if !input_started {
 		os.exit(1)
 	}
@@ -337,7 +321,7 @@ print_configuration :: proc(assignments: []string) {
 // --seed, --name, --load and --debug-terrain start a world directly;
 // without them the title shows.
 command_line_starts_world :: proc(command_line: Command_Line) -> bool {
-	return command_line.seed_given || command_line.world_name != "" || command_line.load_name != "" || command_line.debug_terrain
+	return command_line.seed != "" || command_line.world_name != "" || command_line.load_name != "" || command_line.debug_terrain
 }
 
 // Runs before the window opens, so the spawn search and load problems show
@@ -372,7 +356,9 @@ command_line_plan :: proc(command_line: Command_Line, config: Game_Config, saves
 	}
 	display_name := command_line.world_name != "" ? command_line.world_name : DEFAULT_WORLD_NAME
 	settings := default_world_file_settings(config)
-	return new_world_plan(display_name, command_line.seed, settings, saves_directory, saves_found, command_line.debug_terrain), ""
+	// Validated before any data loads.
+	seed, _ := command_line_seed(command_line)
+	return new_world_plan(display_name, seed, settings, saves_directory, saves_found, command_line.debug_terrain), ""
 }
 
 command_line_conflict :: proc(command_line: Command_Line) -> string {
@@ -380,7 +366,7 @@ command_line_conflict :: proc(command_line: Command_Line) -> string {
 		return ""
 	}
 	switch {
-	case command_line.seed_given:
+	case command_line.seed != "":
 		return "--load and --seed cannot be combined (a saved world keeps its seed)"
 	case command_line.world_name != "":
 		return "--load and --name cannot be combined"

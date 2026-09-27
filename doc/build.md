@@ -19,7 +19,7 @@ Commands (`build.sh` uses the toolchain at `${ODIN:-$HOME/opt/odin/odin}`):
 
 Both build modes pass `-vet -strict-style` and `-extra-linker-flags:"-L<repository>/tmp/linker-shims"`, creating the shim directory first.
 
-Command line: `config` (prints the configuration files found and the effective values, no window), `--set=<key>=<value>`, `--load=<world>`, `--name=<world>`, `--unlock-all`, `--version`, `--input=sdl3` or `--input=raylib` (default: SDL3 with raylib fallback), `--seed=<unsigned 64 bit decimal>` (default a fixed constant so runs are reproducible), `--debug-terrain` (the fixed 8 by 2 by 8 chunk test terrain instead of the generated world, nothing streams).
+Command line (parsed with `core:flags` in Unix style, `--help` or `-h` prints the usage page and exits): `config` (prints the configuration files found and the effective values, no window), `--set=<key>=<value>`, `--load=<world>`, `--name=<world>`, `--unlock-all`, `--version`, `--input=sdl3` or `--input=raylib` (default: SDL3 with raylib fallback), `--seed=<unsigned 64 bit decimal>` (default a fixed constant so runs are reproducible), `--debug-terrain` (the fixed 8 by 2 by 8 chunk test terrain instead of the generated world, nothing streams). A bad command line exits with status 2, a failed start with status 1.
 
 At run time the game looks for its data directory in this order: `$MINE_OH_BELOWED_DATA` if set, `./data`, then `<executable directory>/../share/mine-oh-belowed/data` (the layout the Nix package installs). `bin/mine-oh-belowed --version` prints the version without opening a window.
 
