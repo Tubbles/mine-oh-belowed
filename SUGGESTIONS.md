@@ -29,7 +29,7 @@ Raised by the work item notes (0005 to 0008), to be turned into work items when 
 - Quest chapters measure placements and production, not layout (0018); an entity graph query would let quests check that pieces are actually connected.
 - Bindings are a list overridden per action (0025); an object keyed by action would merge better across layered files, and there is no way to unbind an action (a `none` control). The `context` field is displayed but does not gate actions.
 - The log file grows without limit and argument errors before the log opens reach stderr only.
-- Saves refuse any change to data ids or struct layout (0023). A remap by string id would let saves survive content changes once the content settles.
+- Saves refuse any change to data ids or struct layout (0023); work item 0047 makes them survive additive changes.
 - The load screen shows one long string per world; columns would read better on the couch. World setting choices step forward only; left and right should step back.
 - A player built roof over a saved chunk does not darken it on reload (0023), the same gap as generation under a roof.
 - The set of found schematics rides on the recipe registry value (0036) so fixed recipe machines can check it without a new parameter through every machine path; session state on a data table is a smell worth removing with an explicit availability parameter once the machine paths settle.
