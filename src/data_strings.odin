@@ -1,5 +1,6 @@
 package game
 
+import "base:runtime"
 import "core:encoding/json"
 import "core:os"
 import "core:strings"
@@ -12,6 +13,9 @@ import "core:sync"
 STRINGS_DIRECTORY :: "strings"
 STRINGS_FILE_NAME :: "en.sjson"
 
+// reported_missing and its keys live on the heap allocator whatever the
+// caller's allocator is: text() is called from tests on several threads,
+// each with its own allocator, and the records outlive any one caller.
 String_Table :: struct {
 	entries:          map[string]string,
 	reported_missing: map[string]bool,
@@ -33,10 +37,7 @@ destroy_string_table :: proc(table: ^String_Table) {
 		delete(value)
 	}
 	delete(table.entries)
-	for key in table.reported_missing {
-		delete(key)
-	}
-	delete(table.reported_missing)
+	clear_missing_reports(table)
 }
 
 // Frees the recorded missing keys. For tests that call text() without a
@@ -45,7 +46,7 @@ clear_missing_reports :: proc(table: ^String_Table) {
 	sync.mutex_lock(&table.mutex)
 	defer sync.mutex_unlock(&table.mutex)
 	for key in table.reported_missing {
-		delete(key)
+		delete(key, runtime.heap_allocator())
 	}
 	delete(table.reported_missing)
 	table.reported_missing = {}
@@ -77,7 +78,10 @@ lookup_text :: proc(table: ^String_Table, key: string) -> string {
 	sync.mutex_lock(&table.mutex)
 	defer sync.mutex_unlock(&table.mutex)
 	if key not_in table.reported_missing {
-		table.reported_missing[strings.clone(key)] = true
+		if table.reported_missing == nil {
+			table.reported_missing = make(map[string]bool, runtime.heap_allocator())
+		}
+		table.reported_missing[strings.clone(key, runtime.heap_allocator())] = true
 		log_printf("strings: missing key %q in %s", key, STRINGS_FILE_NAME)
 	}
 	return key
