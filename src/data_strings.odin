@@ -40,6 +40,18 @@ destroy_string_table :: proc(table: ^String_Table) {
 	delete(table.reported_missing)
 }
 
+// Frees the recorded missing keys. For tests that call text() without a
+// loaded table, so the once per key records do not show up as leaks.
+clear_missing_reports :: proc(table: ^String_Table) {
+	sync.mutex_lock(&table.mutex)
+	defer sync.mutex_unlock(&table.mutex)
+	for key in table.reported_missing {
+		delete(key)
+	}
+	delete(table.reported_missing)
+	table.reported_missing = {}
+}
+
 load_string_table :: proc(data_directory: string, allocator := context.allocator) -> (table: String_Table, ok: bool) {
 	path, join_error := os.join_path({data_directory, STRINGS_DIRECTORY, STRINGS_FILE_NAME}, context.temp_allocator)
 	if join_error != nil {

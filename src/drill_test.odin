@@ -420,6 +420,8 @@ test_drill_hint_counters :: proc(t: ^testing.T) {
 
 @(test)
 test_hud_names_the_vein_of_a_drill_or_outcrop :: proc(t: ^testing.T) {
+	// No string table is loaded in tests, so text() records missing keys.
+	defer clear_missing_reports(&global_string_table)
 	content := make_test_content()
 	world := make_drill_world(content)
 	vein := add_test_vein(&world, content, "iron", {1, 1}, 2, {300, 50, 0, 0})
