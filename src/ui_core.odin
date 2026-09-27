@@ -178,6 +178,8 @@ Screen :: enum u8 {
 	None,
 	Pause,
 	Settings,
+	// Developer mode's shortcuts (ui_developer.odin), above the pause menu.
+	Developer,
 	Inventory,
 	// The panel of the player's open_machine.
 	Machine,
@@ -607,7 +609,7 @@ screen_pauses_simulation :: proc(screen: Screen) -> bool {
 	switch screen {
 	case .None, .Inventory, .Machine, .Recipes, .Journal, .Power, .Statistics, .Technologies, .Map:
 		return false
-	case .Pause, .Settings, .Title, .New_World, .Load_World, .Confirm_Delete:
+	case .Pause, .Settings, .Developer, .Title, .New_World, .Load_World, .Confirm_Delete:
 		return true
 	}
 	return false

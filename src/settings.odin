@@ -39,6 +39,10 @@ DEFAULT_SETTINGS :: Settings {
 UI_SCALE_RANGE :: Slider_Range{0.75, 1.5, 0.05}
 LOOK_SENSITIVITY_RANGE :: Slider_Range{0.25, 3, 0.05}
 POINTER_SPEED_RANGE :: Slider_Range{0.5, 3, 0.1}
+// 0 turns autosave off. The configuration accepts up to
+// MAXIMUM_AUTOSAVE_MINUTES; the slider stops at an hour so a stick can
+// walk it.
+AUTOSAVE_MINUTES_RANGE :: Slider_Range{0, 60, 1}
 
 // Stick sensitivity and pitch inversion. Gyro and trackpad sensitivity are
 // applied by the SDL3 backend, where those deltas are still separate.

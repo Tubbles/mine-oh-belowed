@@ -1,6 +1,7 @@
 package game
 
 import "core:fmt"
+import "core:math"
 
 // The screens on the stack over the world and its HUD. Only the top screen
 // is drawn and interactive.
@@ -42,6 +43,14 @@ Screen_Context :: struct {
 	technology_browser: ^Technology_Browser,
 	statistics_view:    ^Statistics_View,
 	map_view:           ^Map_View,
+	// --dev: the pause menu shows the Developer entry (ui_developer.odin).
+	developer_mode:     bool,
+	show_diagnostics:   ^bool,
+	// Nil without a world.
+	developer_requests: ^[dynamic]Developer_Request,
+	// The chapters the developer screen offers: one per kit.
+	developer_chapter_count: int,
+	landing_pad:        Landing_Pad_Site,
 }
 
 // Pause opens the pause menu from the world, Open_Inventory the inventory,
@@ -111,6 +120,8 @@ run_screens :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		pause_screen(state, screen_context)
 	case .Settings:
 		settings_screen(state, screen_context)
+	case .Developer:
+		developer_screen(state, screen_context)
 	case .Inventory:
 		inventory_screen(state, screen_context)
 	case .Machine:
@@ -185,7 +196,8 @@ panel_height :: proc(row_count: int, extra: f32) -> f32 {
 pause_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	ui_backdrop(state)
 	area := ui_safe_area(state)
-	panel := centred_rectangle(area, PAUSE_PANEL_WIDTH, panel_height(10, UI_ROW_HEIGHT + UI_GAP))
+	button_count := screen_context.developer_mode ? 11 : 10
+	panel := centred_rectangle(area, PAUSE_PANEL_WIDTH, panel_height(button_count, UI_ROW_HEIGHT + UI_GAP))
 	ui_panel_begin(state, "pause", panel)
 	content := inset(panel, UI_PADDING)
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_title"), UI_HEADING_TEXT_SIZE, .Centre)
@@ -233,6 +245,12 @@ pause_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		push_screen(&state.screens, .Settings)
 	}
 	cut_top(&content, UI_GAP)
+	if screen_context.developer_mode {
+		if ui_button(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_developer")) {
+			push_screen(&state.screens, .Developer)
+		}
+		cut_top(&content, UI_GAP)
+	}
 	// Both quits save first: the frame loop after this frame, the exit
 	// path in run_game.
 	if ui_button(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_quit_title")) {
@@ -313,6 +331,14 @@ display_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Se
 		text("settings_pointer_speed_tooltip"),
 	)
 	ui_toggle(state, settings_row(content), text("settings_bottleneck_overlay"), &settings.bottleneck_overlay, text("settings_bottleneck_overlay_tooltip"))
+	autosave := f32(settings.autosave_minutes)
+	if ui_slider(state, settings_row(content), text("settings_autosave"), &autosave, AUTOSAVE_MINUTES_RANGE, autosave_minutes_text(settings.autosave_minutes), text("settings_autosave_tooltip")) {
+		settings.autosave_minutes = int(math.round(autosave))
+	}
+}
+
+autosave_minutes_text :: proc(minutes: int) -> string {
+	return minutes == 0 ? text("settings_autosave_off") : fmt.tprintf("%d", minutes)
 }
 
 control_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Settings) {

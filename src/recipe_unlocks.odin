@@ -5,8 +5,9 @@ package game
 // player; a research recipe once its technology is researched; a quest
 // recipe once a quest reward unlocks it (quest_runtime.odin); a schematic
 // recipe once its schematic was read (schematic.odin). Unlocking
-// everything (the --unlock-all flag or the world setting) marks every item
-// obtained, every technology researched and every schematic found.
+// everything (the --unlock-all flag, the world setting or the developer
+// menu) marks every item obtained, every technology researched and every
+// schematic found.
 //
 // An item counts as obtained once it has been in a player's inventory or
 // on a player's cursor. That covers mining, crafting and taking from a
@@ -39,12 +40,19 @@ make_recipe_unlocks :: proc(item_count: int, recipes: Recipe_Registry, technolog
 		unlock_all = unlock_all,
 	}
 	if unlock_all {
-		fill_bools(unlocks.obtained, true)
-		fill_bools(unlocks.researched, true)
-		fill_bools(unlocks.schematics_found, true)
+		mark_everything_unlocked(&unlocks)
 	}
 	refresh_available_recipes(&unlocks, recipes)
 	return unlocks
+}
+
+// Every item obtained, every technology researched and every schematic
+// found. The caller refreshes the available recipes.
+mark_everything_unlocked :: proc(unlocks: ^Recipe_Unlocks) {
+	unlocks.unlock_all = true
+	fill_bools(unlocks.obtained, true)
+	fill_bools(unlocks.researched, true)
+	fill_bools(unlocks.schematics_found, true)
 }
 
 destroy_recipe_unlocks :: proc(unlocks: Recipe_Unlocks, allocator := context.allocator) {

@@ -31,8 +31,11 @@ Command_Line :: struct {
 	load_name:       string `args:"name=load" usage:"load the saved world with this name"`,
 	world_name:      string `args:"name=name" usage:"name of a new world"`,
 	debug_terrain:   bool `usage:"the fixed 8 by 2 by 8 chunk test terrain instead of the generated world"`,
-	// Developer flag.
+	// Developer flags (work item 0043).
 	unlock_all:      bool `usage:"every technology researched and every item discovered"`,
+	developer_mode:  bool `args:"name=dev" usage:"developer mode: a Developer entry in the pause menu"`,
+	chapter:         int `usage:"start a new world at chapter n: the earlier chapters' quests completed with their rewards, and chapter n's kit from data/dev_kits.sjson"`,
+	give_arguments:  [dynamic]string `args:"name=give" usage:"<item>:<count>, items into the inventory on the first tick (the rest into the drop capsule), repeatable (--give=iron_plate:50)"`,
 }
 
 // Unix style keeps the documented spellings: --seed=42, --set=<key>=<value>.
@@ -104,7 +107,27 @@ command_line_value_problem :: proc(command_line: Command_Line) -> string {
 	if command_line.subcommand != "" && command_line.subcommand != CONFIG_SUBCOMMAND {
 		return fmt.tprintf("unknown command %q (supported: %s)", command_line.subcommand, CONFIG_SUBCOMMAND)
 	}
-	return ""
+	if command_line.chapter < 0 {
+		return fmt.tprintf("invalid --chapter=%d (expected a chapter from 1)", command_line.chapter)
+	}
+	return give_arguments_problem(command_line.give_arguments[:])
+}
+
+// The developer flags checked against the loaded data: --chapter needs a
+// kit, --give known items. The grants are in the temp allocator.
+command_line_data_problem :: proc(command_line: Command_Line, items: Item_Registry, kits: Developer_Kits) -> (grants: []Developer_Grant, problem: string) {
+	if command_line.chapter > len(kits.kits) {
+		return nil, fmt.tprintf("invalid --chapter=%d (%s has kits for chapters 1 to %d)", command_line.chapter, DEVELOPER_KITS_FILE_NAME, len(kits.kits))
+	}
+	return resolve_give_arguments(command_line.give_arguments[:], items)
+}
+
+// --chapter first, so its rewards come before the --give items.
+command_line_developer_requests :: proc(requests: ^[dynamic]Developer_Request, chapter: int, grants: []Developer_Grant) {
+	if chapter > 0 {
+		chapter_requests(requests, chapter)
+	}
+	give_requests(requests, grants)
 }
 
 
@@ -156,6 +179,9 @@ main :: proc() {
 	}
 	open_log_file()
 	defer close_log_file()
+	// Crash traces into the log (logging.odin).
+	context.assertion_failure_proc = log_assertion_failure
+	install_crash_handlers()
 	environment := read_configuration_environment()
 	loaded_configuration, configuration_problem := load_configuration(environment, command_line.set_assignments[:])
 	if configuration_problem != "" {
@@ -227,6 +253,15 @@ main :: proc() {
 		log_printf("error: invalid %s: %s", GAME_CONFIG_FILE_NAME, problem)
 		os.exit(1)
 	}
+	developer_kits, developer_kits_loaded := load_developer_kits(data_directory, items)
+	if !developer_kits_loaded {
+		os.exit(1)
+	}
+	developer_grants, developer_problem := command_line_data_problem(command_line, items, developer_kits)
+	if developer_problem != "" {
+		log_printf("error: %s", developer_problem)
+		os.exit(2)
+	}
 	recipe_names := recipe_display_names(recipes)
 	content := Game_Content {
 		blocks          = registry,
@@ -237,10 +272,12 @@ main :: proc() {
 		technologies    = technologies,
 		quests          = quests,
 		contracts       = contracts,
+		developer_kits  = developer_kits,
 		item_sort_ranks = item_sort_ranks(items, item_display_names(items, context.temp_allocator)),
 		recipe_names    = recipe_names,
 		recipe_order    = recipe_name_order(recipe_names),
 		unlock_all      = command_line.unlock_all,
+		developer_mode  = command_line.developer_mode,
 	}
 	// Every world copies the generator data; only the seed differs.
 	base_generator, generator_loaded := load_generator(data_directory, registry, DEFAULT_WORLD_SEED)
@@ -255,6 +292,9 @@ main :: proc() {
 	content.veins = veins
 	saves_directory, saves_found := resolve_saves_directory(loaded_configuration.configuration.paths.saves)
 	session := start_command_line_session(command_line, config, content, base_generator, saves_directory, saves_found)
+	if session != nil {
+		command_line_developer_requests(&session.simulation.developer_requests, command_line.chapter, developer_grants)
+	}
 	input_request, _ := parse_input_request(command_line.input)
 	input_backend, input_started := start_input_backend(input_request)
 	if !input_started {
@@ -324,10 +364,11 @@ print_configuration :: proc(assignments: []string) {
 	fmt.print(configuration_dump(loaded, bindings))
 }
 
-// --seed, --name, --load and --debug-terrain start a world directly;
-// without them the title shows.
+// --seed, --name, --load, --debug-terrain, --chapter and --give start a
+// world directly; without them the title shows.
 command_line_starts_world :: proc(command_line: Command_Line) -> bool {
-	return command_line.seed != "" || command_line.world_name != "" || command_line.load_name != "" || command_line.debug_terrain
+	starts := command_line.seed != "" || command_line.world_name != "" || command_line.load_name != "" || command_line.debug_terrain
+	return starts || command_line.chapter > 0 || len(command_line.give_arguments) > 0
 }
 
 // Runs before the window opens, so the spawn search and load problems show
@@ -378,6 +419,8 @@ command_line_conflict :: proc(command_line: Command_Line) -> string {
 		return "--load and --name cannot be combined"
 	case command_line.debug_terrain:
 		return "--load and --debug-terrain cannot be combined"
+	case command_line.chapter > 0:
+		return "--load and --chapter cannot be combined (--chapter starts a new world)"
 	}
 	return ""
 }

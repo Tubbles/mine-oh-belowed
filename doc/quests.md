@@ -47,6 +47,8 @@ Defined in data, evaluated every tick against the statistics counters, placed en
 
 - Contracts and trade (0041) add to the message log: `{value}` in a message text is replaced by the message's number and `{cargo}` by the cargo of the shipment it names, so "Shipment launched: {cargo}" lists the items. The venture's lines (contract offered, fulfilled on time or late, cargo sold, survey charted, catalogue order) go through the same log and toasts as Mission Control's. New counters for chapter 8: `contracts_completed`, `contracts_late`, `credit_earned` (venture credit from free trade) and `surveys_bought` (every orbital survey run, contract rewards included). The HUD line for the oldest open contract exists (`contract_objective_lines`) but nothing draws it until chapter 8 shows it after the last quest.
 
+- Developer mode (0043) completes quests up to a chapter by walking the active quest forward through the runtime's own completion path: each earlier quest is marked done and its rewards queued (items to the capsule, recipes and technologies unlocked), deliveries are not taken from the capsule, and only the final activation's message stays in the log. Chapter kits, what a player typically holds at a chapter's start, live in `data/dev_kits.sjson`, one per chapter in order.
+
 ## Spawn requirements
 
 Chapter 1 only works if the world guarantees, within about 150 blocks of the landing pad: trees, surface stone, sand, water, one iron outcrop, one copper outcrop and one coal outcrop. World generation searches for a spawn that satisfies this. It belongs to `doc/world.md` once written.

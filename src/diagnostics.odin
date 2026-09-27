@@ -217,7 +217,7 @@ light_statistics_text :: proc(state: Frame_State) -> string {
 		"light sky %d block %d  day %.2f  queued light %d chunks %d water %d",
 		light_level(light, .Sky),
 		light_level(light, .Block),
-		day_factor(daylight_blend(simulation.tick, simulation.day_length_ticks)),
+		day_factor(daylight_blend(simulation_day_ticks(simulation), simulation.day_length_ticks)),
 		pending_light_nodes(world.lighting),
 		queue.len(world.lighting.arrived_chunks),
 		queue.len(world.water.updates),

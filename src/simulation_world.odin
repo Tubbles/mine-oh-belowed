@@ -19,6 +19,8 @@ Simulation_Content :: struct {
 	quests:       Quest_Registry,
 	veins:        Vein_Content,
 	contracts:    Contract_Registry,
+	// Chapter kits for the developer menu and --chapter.
+	developer_kits: Developer_Kits,
 	generator:    ^Generator,
 }
 

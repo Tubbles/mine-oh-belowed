@@ -51,7 +51,8 @@ World_File :: struct {
 	seed:                     u64,
 	settings:                 World_File_Settings,
 	tick:                     u64,
-	// Ticks into the current day, for a world list to show.
+	// Ticks into the current day (the tick plus the day offset), for a
+	// world list to show and to restore the time of day a developer set.
 	day_time_ticks:           u64,
 	last_played_unix_seconds: i64,
 }
@@ -168,7 +169,7 @@ make_world_file :: proc(state: ^Simulation_State, display_name: string, last_pla
 			byproducts_lenient = state.world.settings.byproducts_lenient,
 		},
 		tick = state.tick,
-		day_time_ticks = state.tick % day_length_ticks,
+		day_time_ticks = simulation_day_ticks(state^) % day_length_ticks,
 		last_played_unix_seconds = last_played_unix_seconds,
 	}
 }
@@ -504,6 +505,7 @@ load_world :: proc(state: ^Simulation_State, content: Simulation_Content, direct
 	expected := make_save_header(content)
 	state.tick = file.tick
 	state.day_length_ticks = u64(file.settings.day_length_seconds) * u64(max(state.tick_rate, 1))
+	state.day_offset_ticks = day_offset_for(file.tick, file.day_time_ticks, state.day_length_ticks)
 	state.world.settings = world_settings_from_file(file.seed, file.settings)
 	if problem := load_entities_file(state, content, directory, expected); problem != "" {
 		return problem

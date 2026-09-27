@@ -15,6 +15,10 @@ Simulation_State :: struct {
 	tick:             u64,
 	tick_rate:        int,
 	day_length_ticks: u64,
+	// Added to the tick for the day cycle, so the developer menu can set
+	// the time of day without moving the tick every counter reads. Saved
+	// through world.sjson's day_time_ticks.
+	day_offset_ticks: u64,
 	world:            World,
 	players:          [dynamic]Player,
 	// Items obtained, technologies researched and the recipes they unlock.
@@ -23,6 +27,9 @@ Simulation_State :: struct {
 	// Filled by ticks, emptied by the UI each frame (toasts). The
 	// simulation never calls the UI itself.
 	events:           [dynamic]Simulation_Event,
+	// Filled by the developer menu and the command line, served and
+	// emptied at the start of the next tick (developer.odin).
+	developer_requests: [dynamic]Developer_Request,
 }
 
 Simulation_Event :: struct {
@@ -113,6 +120,7 @@ destroy_simulation :: proc(state: ^Simulation_State) {
 	}
 	delete(state.players)
 	delete(state.events)
+	delete(state.developer_requests)
 	destroy_recipe_unlocks(state.unlocks)
 	destroy_quest_state(state.quests)
 	destroy_world(&state.world)
@@ -127,6 +135,7 @@ simulation_tick :: proc(state: ^Simulation_State, content_tables: Simulation_Con
 	content.recipes = with_schematics_found(content.recipes, state.unlocks.schematics_found)
 	state.tick += 1
 	advance_statistics_clock(&state.world.statistics, state.tick, state.tick_rate)
+	serve_developer_requests(state, content)
 	for index in 0 ..< len(state.players) {
 		input, used := resolve_use_item(&state.players[index], &state.world.entities, content.items, index < len(inputs) ? inputs[index] : Input_Frame{})
 		if used != NO_ITEM {
@@ -177,6 +186,11 @@ frame_simulation_content :: proc(state: ^Frame_State) -> Simulation_Content {
 	content := session_simulation_content(state.content, state.session.technologies)
 	content.generator = &state.session.generator
 	return content
+}
+
+// The tick the day cycle shows.
+simulation_day_ticks :: proc(state: Simulation_State) -> u64 {
+	return state.tick + state.day_offset_ticks
 }
 
 make_tick_accumulator :: proc(tick_rate: int) -> Tick_Accumulator {
@@ -328,7 +342,7 @@ render_frame :: proc(state: ^Frame_State) {
 	}
 	session := state.session
 	upload_streamed_meshes(&state.renderer, &session.streaming)
-	blend := daylight_blend(session.simulation.tick, session.simulation.day_length_ticks)
+	blend := daylight_blend(simulation_day_ticks(session.simulation), session.simulation.day_length_ticks)
 	apply_daylight(&state.renderer, blend)
 	rl.BeginDrawing()
 	defer rl.EndDrawing()
@@ -385,6 +399,9 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 		contracts       = content.contracts,
 		recipe_names    = content.recipe_names,
 		recipe_order    = content.recipe_order,
+		developer_mode  = content.developer_mode,
+		show_diagnostics = &state.show_diagnostics,
+		developer_chapter_count = len(content.developer_kits.kits),
 	}
 	session := state.session
 	if session == nil {
@@ -403,6 +420,8 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 	screen_context.technology_browser = &session.technology_browser
 	screen_context.statistics_view = &session.statistics_view
 	screen_context.map_view = &session.map_view
+	screen_context.developer_requests = &session.simulation.developer_requests
+	screen_context.landing_pad = session.start.landing_pad
 	return screen_context
 }
 
@@ -464,10 +483,13 @@ Game_Content :: struct {
 	quests:          Quest_Registry,
 	veins:           Vein_Content,
 	contracts:       Contract_Registry,
+	developer_kits:  Developer_Kits,
 	item_sort_ranks: []u16,
 	recipe_names:    []string,
 	recipe_order:    []int,
 	unlock_all:      bool,
+	// --dev: the pause menu shows the Developer entry.
+	developer_mode:  bool,
 }
 
 game_simulation_content :: proc(content: Game_Content) -> Simulation_Content {
@@ -481,6 +503,7 @@ game_simulation_content :: proc(content: Game_Content) -> Simulation_Content {
 		quests = content.quests,
 		veins = content.veins,
 		contracts = content.contracts,
+		developer_kits = content.developer_kits,
 	}
 }
 

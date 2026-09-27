@@ -1,0 +1,170 @@
+// Developer chapter kits (work item 0043, src/developer.odin): what a
+// player typically holds at the start of each chapter, handed out by the
+// Developer screen's "Give the kit of chapter" buttons and by
+// --chapter=<n>. One kit per chapter, in chapter order, so every chapter
+// in data/quests has one; chapter 8 has no quest file yet. Items come
+// from items.sjson (an unknown item stops the game at load), counts from
+// 1 to 10000. What does not fit into the inventory waits for the drop
+// capsule like a quest reward.
+//
+// Guessed generously from doc/quests.md and the chapter files, not
+// balanced: each kit stays under about 40 inventory slots (machines
+// stack 10, plates 50, intermediates 100).
+kits = [
+	{
+		chapter = 1
+		items = [
+			{item = "log", count = 20}
+			{item = "wooden_pickaxe", count = 1}
+		]
+	}
+	{
+		chapter = 2
+		items = [
+			{item = "stone_pickaxe", count = 1}
+			{item = "stone_furnace", count = 3}
+			{item = "iron_plate", count = 50}
+			{item = "coal", count = 100}
+			{item = "stone", count = 50}
+			{item = "log", count = 50}
+			{item = "hematite", count = 50}
+			{item = "chalcopyrite", count = 50}
+		]
+	}
+	{
+		chapter = 3
+		items = [
+			{item = "iron_pickaxe", count = 1}
+			{item = "stone_furnace", count = 10}
+			{item = "burner_mining_drill", count = 10}
+			{item = "belt", count = 50}
+			{item = "burner_inserter", count = 10}
+			{item = "iron_chest", count = 5}
+			{item = "wooden_chest", count = 5}
+			{item = "iron_plate", count = 100}
+			{item = "copper_plate", count = 50}
+			{item = "iron_gear", count = 50}
+			{item = "coal", count = 100}
+			{item = "stone", count = 50}
+		]
+	}
+	{
+		chapter = 4
+		items = [
+			{item = "iron_pickaxe", count = 1}
+			{item = "burner_mining_drill", count = 10}
+			{item = "stone_furnace", count = 10}
+			{item = "belt", count = 60}
+			{item = "burner_inserter", count = 20}
+			{item = "iron_chest", count = 10}
+			{item = "offshore_pump", count = 1}
+			{item = "boiler", count = 2}
+			{item = "steam_engine", count = 2}
+			{item = "pipe", count = 20}
+			{item = "small_pole", count = 20}
+			{item = "iron_plate", count = 200}
+			{item = "copper_plate", count = 100}
+			{item = "iron_gear", count = 100}
+			{item = "coal", count = 200}
+		]
+	}
+	{
+		chapter = 5
+		items = [
+			{item = "iron_pickaxe", count = 1}
+			{item = "electric_mining_drill", count = 10}
+			{item = "stone_furnace", count = 20}
+			{item = "assembler_1", count = 10}
+			{item = "lab", count = 4}
+			{item = "inserter", count = 20}
+			{item = "belt", count = 60}
+			{item = "small_pole", count = 30}
+			{item = "steam_engine", count = 5}
+			{item = "boiler", count = 3}
+			{item = "offshore_pump", count = 2}
+			{item = "pipe", count = 50}
+			{item = "iron_chest", count = 10}
+			{item = "iron_plate", count = 200}
+			{item = "copper_plate", count = 100}
+			{item = "electronic_circuit", count = 100}
+			{item = "science_pack_1", count = 100}
+			{item = "coal", count = 100}
+		]
+	}
+	{
+		chapter = 6
+		items = [
+			{item = "iron_pickaxe", count = 1}
+			{item = "geologists_hammer", count = 1}
+			{item = "electric_mining_drill", count = 10}
+			{item = "steel_furnace", count = 10}
+			{item = "alloy_furnace", count = 4}
+			{item = "assembler_1", count = 10}
+			{item = "lab", count = 4}
+			{item = "inserter", count = 30}
+			{item = "fast_inserter", count = 10}
+			{item = "belt", count = 60}
+			{item = "small_pole", count = 30}
+			{item = "pipe", count = 100}
+			{item = "pump", count = 2}
+			{item = "storage_tank", count = 2}
+			{item = "steel", count = 100}
+			{item = "iron_plate", count = 200}
+			{item = "copper_plate", count = 100}
+			{item = "electronic_circuit", count = 100}
+			{item = "science_pack_1", count = 100}
+			{item = "science_pack_2", count = 50}
+			{item = "coal", count = 100}
+			{item = "concrete", count = 50}
+		]
+	}
+	{
+		chapter = 7
+		items = [
+			{item = "geologists_hammer", count = 1}
+			{item = "magnetometer", count = 1}
+			{item = "electric_mining_drill", count = 20}
+			{item = "steel_furnace", count = 10}
+			{item = "assembler_1", count = 10}
+			{item = "inserter", count = 30}
+			{item = "fast_inserter", count = 20}
+			{item = "belt_2", count = 60}
+			{item = "splitter", count = 10}
+			{item = "small_pole", count = 20}
+			{item = "big_pole", count = 10}
+			{item = "pipe", count = 100}
+			{item = "pump", count = 4}
+			{item = "storage_tank", count = 4}
+			{item = "refinery", count = 2}
+			{item = "chemical_plant", count = 4}
+			{item = "steel", count = 100}
+			{item = "plastic_bar", count = 100}
+			{item = "electronic_circuit", count = 200}
+			{item = "iron_plate", count = 200}
+			{item = "science_pack_2", count = 100}
+		]
+	}
+	{
+		chapter = 8
+		items = [
+			{item = "electric_mining_drill", count = 20}
+			{item = "bore_drill", count = 4}
+			{item = "assembler_1", count = 10}
+			{item = "fast_inserter", count = 30}
+			{item = "belt_2", count = 60}
+			{item = "belt_lift_2", count = 10}
+			{item = "substation", count = 10}
+			{item = "hydro_turbine", count = 4}
+			{item = "electrolyser", count = 2}
+			{item = "chemical_plant", count = 4}
+			{item = "steel", count = 200}
+			{item = "plastic_bar", count = 100}
+			{item = "electronic_circuit", count = 200}
+			{item = "aluminium_plate", count = 100}
+			{item = "silicon", count = 100}
+			{item = "concrete", count = 100}
+			{item = "iron_plate", count = 200}
+			{item = "science_pack_2", count = 100}
+		]
+	}
+]
