@@ -52,12 +52,12 @@ machine_slot_filters :: proc(kind: Machine_Kind, slot_count: int) -> []Slot_Filt
 	filters := make([]Slot_Filter, slot_count, context.temp_allocator)
 	#partial switch kind {
 	case .Furnace:
-		filters[FURNACE_FUEL_SLOT] = .Fuel
-		filters[FURNACE_INPUT_SLOT] = .Smeltable
-		filters[FURNACE_OUTPUT_SLOT] = .Output
+		filters[FURNACE_FUEL_SLOT] = {kind = .Fuel}
+		filters[FURNACE_INPUT_SLOT] = {kind = .Smeltable}
+		filters[FURNACE_OUTPUT_SLOT] = {kind = .Output}
 	case .Inserter, .Drill, .Boiler:
 		for &filter in filters {
-			filter = .Fuel
+			filter = {kind = .Fuel}
 		}
 	}
 	return filters
@@ -129,6 +129,8 @@ machine_area_size :: proc(machine: Machine, slot_count: int) -> [2]f32 {
 		return fluid_area_size(machine)
 	case .Pole, .Power_Switch, .Lamp:
 		return power_area_size(machine)
+	case .Assembler, .Lab:
+		return crafting_machine_area_size(machine.kind)
 	case .Belt:
 	}
 	return {}
@@ -325,6 +327,10 @@ machine_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, handle: Entity
 	case .Pole, .Lamp:
 		power_panel_region(state, content, handle, screen_context)
 		return {grid = {activated = -1, focused = -1}}
+	case .Assembler:
+		return {grid = assembler_slot_region(state, content, pool_get(&screen_context.world.entities.assemblers, handle)^, screen_context)}
+	case .Lab:
+		return {grid = lab_slot_region(state, content, pool_get(&screen_context.world.entities.labs, handle)^, screen_context)}
 	}
 	return {grid = ui_slot_grid(state, {content.x, content.y}, "chest", MACHINE_CHEST_COLUMNS, slots, screen_context.items)}
 }
@@ -351,7 +357,7 @@ machine_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	machine_area := Ui_Rectangle{panel.x + UI_PADDING + player_width + 2 * UI_PADDING, panel.y + UI_PADDING, machine_size.x, machine_size.y}
 	machine_slots := machine_slot_region(state, machine_area, handle, slots, screen_context)
 	ui_panel_end(state)
-	apply_machine_screen_input(state, screen_context, machine.kind, slots, player_slots, machine_slots)
+	apply_machine_screen_input(state, screen_context, handle, machine.kind, slots, player_slots, machine_slots)
 	if inserter := pool_get(&screen_context.world.entities.inserters, handle); inserter != nil {
 		clear_filter := machine_slots.filter_focused && state.input.context_action
 		inserter.filter = inserter_filter_after_input(inserter.filter, player.held.stack, machine_slots.filter_activated, clear_filter)
@@ -373,7 +379,7 @@ filter_glyph_bar :: proc(state: ^Ui_State) {
 	ui_glyph_bar(state, hints[:])
 }
 
-apply_machine_screen_input :: proc(state: ^Ui_State, screen_context: Screen_Context, kind: Machine_Kind, slots: []Item_Stack, player_slots: Slot_Grid_Result, machine_slots: Machine_Slot_Result) {
+apply_machine_screen_input :: proc(state: ^Ui_State, screen_context: Screen_Context, handle: Entity_Handle, kind: Machine_Kind, slots: []Item_Stack, player_slots: Slot_Grid_Result, machine_slots: Machine_Slot_Result) {
 	player, items := screen_context.player, screen_context.items
 	recipes := screen_context.recipes
 	input := state.input
@@ -393,7 +399,7 @@ apply_machine_screen_input :: proc(state: ^Ui_State, screen_context: Screen_Cont
 		secondary      = input.secondary,
 		context_action = input.context_action,
 	}
-	filters := machine_slot_filters(kind, len(slots))
+	filters := open_machine_slot_filters(screen_context, handle, kind, len(slots))
 	player.held = apply_machine_slot_input(&state.distribute, slots, filters, player.held, machine_input, items, recipes)
 	player.held = apply_machine_slot_secondary(slots, kind, player.held, machine_input, items, screen_context.item_sort_ranks)
 }
@@ -438,6 +444,12 @@ entity_status_text :: proc(world: ^World, machines: Machine_Registry, fluids: Fl
 		return fluid_status_text(world, machines, fluids, handle, name)
 	case .Pole, .Lamp:
 		return power_entity_status_text(world, machines, handle, name)
+	case .Assembler:
+		assembler := pool_get(&world.entities.assemblers, handle)
+		return fmt.tprintf("%s  %s", name, text(assembler_state_keys[assembler.state]))
+	case .Lab:
+		lab := pool_get(&world.entities.labs, handle)
+		return fmt.tprintf("%s  %s", name, text(lab_state_keys[lab.state]))
 	}
 	return name
 }

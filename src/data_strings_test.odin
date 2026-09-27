@@ -36,7 +36,16 @@ test_shipped_strings_cover_the_ui :: proc(t: ^testing.T) {
 	table, error := parse_string_table(#load("../data/strings/en.sjson"))
 	defer destroy_string_table(&table)
 	testing.expect_value(t, error, nil)
-	sources := [?]string{#load("ui_screens.odin", string), #load("hud.odin", string), #load("ui_journal.odin", string)}
+	sources := [?]string {
+		#load("ui_screens.odin", string),
+		#load("hud.odin", string),
+		#load("ui_journal.odin", string),
+		#load("ui_technologies.odin", string),
+		#load("ui_crafting_machines.odin", string),
+		#load("ui_recipes.odin", string),
+		#load("ui_inventory.odin", string),
+		#load("ui_machine.odin", string),
+	}
 	key_count := 0
 	for source in sources {
 		for key in text_keys_in_source(source) {
@@ -50,6 +59,25 @@ test_shipped_strings_cover_the_ui :: proc(t: ^testing.T) {
 			key := glyph_key(device, button)
 			testing.expectf(t, key in table.entries, "glyph key %q is not in en.sjson", key)
 		}
+	}
+	state_keys := make([dynamic]string, context.temp_allocator)
+	for key in assembler_state_keys {
+		append(&state_keys, key)
+	}
+	for key in lab_state_keys {
+		append(&state_keys, key)
+	}
+	for key in technology_status_keys {
+		append(&state_keys, key)
+	}
+	for key in research_refusal_keys {
+		append(&state_keys, key)
+	}
+	for key in recipe_change_refusal_keys {
+		append(&state_keys, key)
+	}
+	for key in state_keys {
+		testing.expectf(t, key == "" || key in table.entries, "key %q is not in en.sjson", key)
 	}
 	for key in ([?]string{"settings_stick_sensitivity", "settings_gyro_sensitivity", "settings_trackpad_sensitivity", "unit_block", "unit_blocks"}) {
 		testing.expectf(t, key in table.entries, "key %q is not in en.sjson", key)

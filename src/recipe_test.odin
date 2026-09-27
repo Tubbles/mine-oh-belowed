@@ -10,7 +10,7 @@ make_test_recipes :: proc(items: Item_Registry) -> (Recipe_Registry, Technology_
 	assert(problem == "", problem)
 	technology_file, technology_error := parse_technologies_file(#load("../data/technologies.sjson"), context.temp_allocator)
 	assert(technology_error == nil)
-	technologies, technology_problem := resolve_technology_registry(technology_file, recipes, context.temp_allocator)
+	technologies, technology_problem := resolve_technology_registry(technology_file, items, recipes, context.temp_allocator)
 	assert(technology_problem == "", technology_problem)
 	return recipes, technologies
 }
@@ -171,10 +171,10 @@ test_technology_data_rejects_bad_links :: proc(t: ^testing.T) {
 	recipes, problem := resolve_recipe_registry(Recipes_File{recipes = definitions}, items, context.temp_allocator)
 	testing.expect_value(t, problem, "")
 	resolve :: proc(technologies: []Technology_Definition, recipes: Recipe_Registry) -> string {
-		_, problem := resolve_technology_registry(Technologies_File{technologies = technologies}, recipes, context.temp_allocator)
+		_, problem := resolve_technology_registry(Technologies_File{technologies = technologies}, make_test_items(), recipes, context.temp_allocator)
 		return problem
 	}
-	good := Technology_Definition{id = "tech", name_key = "technology_optics", unlocks = {"test"}, packs = 10, seconds = 10}
+	good := Technology_Definition{id = "tech", name_key = "technology_optics", unlocks = {"test"}, packs = 10, seconds = 10, science_packs = {"science_pack_1"}}
 	testing.expect_value(t, resolve({good}, recipes), "")
 	testing.expect_value(t, recipes.recipes[0].technology, 0)
 	unknown := good

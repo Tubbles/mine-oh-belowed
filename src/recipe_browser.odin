@@ -7,29 +7,48 @@ import "core:unicode/utf8"
 // the detail panel may show. ui_recipes.odin draws it.
 
 // The recipe list shows the recipes of one category that carry every
-// selected tag, and with craftable_only only those craftable now.
+// selected tag, and with craftable_only only those craftable now. The
+// selection mode (choosing an assembler's recipe) adds makers, which the
+// recipe must be made in, and available_only.
 Recipe_Filter :: struct {
 	category:       Recipe_Category,
 	tags:           Recipe_Tag_Set,
 	craftable_only: bool,
+	makers:         Recipe_Makers,
+	available_only: bool,
 }
 
-recipe_matches_filter :: proc(recipe: Recipe, filter: Recipe_Filter, craftable: bool) -> bool {
+recipe_matches_filter :: proc(recipe: Recipe, filter: Recipe_Filter, craftable, available: bool) -> bool {
 	if recipe.category != filter.category || filter.tags & recipe.tags != filter.tags {
+		return false
+	}
+	if filter.makers & recipe.made_in != filter.makers || (filter.available_only && !available) {
 		return false
 	}
 	return craftable || !filter.craftable_only
 }
 
-// The recipes of the filter in the given order (by name).
-filter_recipes :: proc(recipes: Recipe_Registry, order: []int, filter: Recipe_Filter, craftable: []bool, allocator := context.allocator) -> []int {
+// The recipes of the filter in the given order (by name). available is
+// per recipe; nil counts every recipe as available.
+filter_recipes :: proc(recipes: Recipe_Registry, order: []int, filter: Recipe_Filter, craftable: []bool, available: []bool = nil, allocator := context.allocator) -> []int {
 	visible := make([dynamic]int, 0, len(order), allocator)
 	for recipe in order {
-		if recipe_matches_filter(recipes.recipes[recipe], filter, craftable[recipe]) {
+		is_available := available == nil || available[recipe]
+		if recipe_matches_filter(recipes.recipes[recipe], filter, craftable[recipe], is_available) {
 			append(&visible, recipe)
 		}
 	}
 	return visible[:]
+}
+
+// The browser choosing a recipe for a machine: the recipes the maker makes
+// that are available, whether or not they can be hand crafted now.
+selection_filter :: proc(filter: Recipe_Filter, maker: Recipe_Maker) -> Recipe_Filter {
+	result := filter
+	result.craftable_only = false
+	result.makers = {maker}
+	result.available_only = true
+	return result
 }
 
 // Craftable now, per recipe.

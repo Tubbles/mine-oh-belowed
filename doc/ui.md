@@ -21,6 +21,8 @@ How every screen in the game is built, so that the pillars "couch first" and "on
 - Look sensitivities and the gyro toggle from the settings are applied in the input layer, not in the simulation, so the simulation only ever reads its input. Pause acts as Back while a screen is open, and Back first closes an open tooltip. Tabs are not focus targets, the bumpers switch them.
 - Screens form a stack over the world and its HUD. Panels such as the inventory, machine panels, the recipe browser and the journal do not pause the simulation, the factory keeps running behind them. The pause menu, settings and world setup do pause.
 
+- The recipe browser has a selection mode: opened from an assembler's panel it lists only the recipes that machine can make, and confirming one sets it on the machine and returns to the panel, which stays open underneath. The technology screen follows the browser's shape: a name sorted list with a letter wheel, a detail panel with status, cost, prerequisites and unlocks, Confirm queues research.
+
 ## Widgets
 
 Label, button, toggle, slider, tabs, vertical list with letter jump, grid of slots, item slot (icon, count, highlight), progress bar, tooltip panel, radial menu, text field (opens the on-screen keyboard), glyph bar, toast.

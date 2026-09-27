@@ -337,6 +337,10 @@ resolve_recipe_registry :: proc(file: Recipes_File, items: Item_Registry, alloca
 		destroy_recipe_registry(registry, allocator)
 		return {}, problem
 	}
+	if problem = validate_assembler_recipes(registry.recipes); problem != "" {
+		destroy_recipe_registry(registry, allocator)
+		return {}, problem
+	}
 	return registry, ""
 }
 

@@ -96,6 +96,10 @@ make_test_world :: proc(coordinates: []Chunk_Coordinate) -> World {
 	world.entities.poles.free = make([dynamic]u32, context.temp_allocator)
 	world.entities.lamps.entries = make([dynamic]Lamp, context.temp_allocator)
 	world.entities.lamps.free = make([dynamic]u32, context.temp_allocator)
+	world.entities.assemblers.entries = make([dynamic]Assembler, context.temp_allocator)
+	world.entities.assemblers.free = make([dynamic]u32, context.temp_allocator)
+	world.entities.labs.entries = make([dynamic]Lab, context.temp_allocator)
+	world.entities.labs.free = make([dynamic]u32, context.temp_allocator)
 	world.entities.electric_networks.allocator = context.temp_allocator
 	world.entity_lights = make(map[World_Coordinate]u8, context.temp_allocator)
 	for coordinate in coordinates {

@@ -128,6 +128,8 @@ Costs are packs times seconds per pack in a speed 1 lab. About ten technologies 
 | Logistics science | Science pack 2 recipe | 75 × 15 s |
 | Fast belts | Belt 2 (1800 per min) | 100 × 30 s, phase 5 |
 
+Prerequisites (added by 0021, in `data/technologies.sjson`): logistics, electric mining and steel processing need automation; optics needs electric mining; fluid handling and prospecting need steel processing; logistics science needs logistics; fast belts need logistics science.
+
 Main quest gate for phase 4: the venture releases the steam engine schematics once the outpost has run unattended, sustaining 10 iron plates per minute for ten minutes (chapter 3's main quest in `quests.md`). Until then the player has boilers and no way to use the steam. One gate for the phase, nothing else waits on it.
 
 ## Veins (phases 1 to 4)

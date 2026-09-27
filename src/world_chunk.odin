@@ -45,6 +45,9 @@ World :: struct {
 	// Production statistics (statistics.odin), here like the entities so
 	// that the player and entity ticks reach them through the world.
 	statistics:     Statistics,
+	// The queued technology and its progress (lab.odin), here so the lab
+	// tick reaches it through the world.
+	research:       Research_State,
 }
 
 Block_Change :: struct {

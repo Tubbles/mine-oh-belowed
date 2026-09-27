@@ -106,6 +106,7 @@ make_ui_input :: proc(previous, current: Input_Frame) -> Ui_Input {
 		open_recipes = .Open_Recipes in just,
 		open_journal = .Open_Journal in just,
 		open_power = .Open_Power_Overview in just,
+		open_technologies = .Open_Technologies in just,
 		typed_letter = newly_pressed_letter(previous.raw.keyboard, current.raw.keyboard),
 		hotbar_radial_down = .Hotbar_Radial in current.pressed,
 		mouse_position = current.raw.mouse.position,

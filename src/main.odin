@@ -174,10 +174,11 @@ main :: proc() {
 	if !recipes_loaded {
 		os.exit(1)
 	}
-	technologies, technologies_loaded := load_technology_registry(data_directory, recipes)
+	technologies, technologies_loaded := load_technology_registry(data_directory, items, recipes)
 	if !technologies_loaded {
 		os.exit(1)
 	}
+	machines.lab_packs = technologies.science_packs
 	quest_references := Quest_References {
 		blocks       = registry,
 		items        = items,

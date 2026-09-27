@@ -1,23 +1,28 @@
-// Technologies (work item 0012) from doc/content.md, science pack 1 tier.
-// Labs come with M4; until then nothing researches these, and the research
-// recipes stay locked unless every recipe is unlocked (--unlock-all or the
-// all_recipes_unlocked setting in game.sjson).
+// Technologies (work items 0012 and 0021) from doc/content.md, science
+// pack 1 tier. Labs research them one at a time (lab.odin); the research
+// recipes stay locked until then unless every recipe is unlocked
+// (--unlock-all or the all_recipes_unlocked setting in game.sjson).
 // name_key is a key into data/strings/en.sjson.
 // unlocks lists recipe ids from recipes.sjson. Each of those recipes must
 // have channel research and name this technology, and every research
-// recipe must be listed by its technology.
-// packs is the number of science packs, seconds the time per pack in a
-// speed 1 lab.
+// recipe must be listed by its technology. The list may be empty only
+// with placeholder = true.
+// packs is the number of units, seconds the time per unit in a speed 1
+// lab. science_packs lists the items a unit consumes, one of each; the lab
+// has one slot per distinct item any technology names, in order of first
+// appearance.
+// prerequisites lists technology ids that must be researched first; each
+// must be listed earlier in this file, which also rules out cycles.
 // logistics_science and fast_belts unlock phase 5 recipes that do not
-// exist yet, so their lists are empty.
+// exist yet, so they are placeholders with empty lists.
 technologies = [
-	{id = "automation", name_key = "technology_automation", unlocks = ["assembler_1"], packs = 10, seconds = 10}
-	{id = "logistics", name_key = "technology_logistics", unlocks = ["splitter", "filter_inserter"], packs = 20, seconds = 15}
-	{id = "electric_mining", name_key = "technology_electric_mining", unlocks = ["electric_mining_drill", "power_switch"], packs = 25, seconds = 15}
-	{id = "optics", name_key = "technology_optics", unlocks = ["lamp"], packs = 10, seconds = 15}
-	{id = "steel_processing", name_key = "technology_steel_processing", unlocks = ["steel", "steel_furnace"], packs = 50, seconds = 15}
-	{id = "fluid_handling", name_key = "technology_fluid_handling", unlocks = ["pump", "storage_tank"], packs = 50, seconds = 15}
-	{id = "prospecting", name_key = "technology_prospecting", unlocks = ["core_sample_drill", "magnetometer"], packs = 50, seconds = 15}
-	{id = "logistics_science", name_key = "technology_logistics_science", unlocks = [], packs = 75, seconds = 15}
-	{id = "fast_belts", name_key = "technology_fast_belts", unlocks = [], packs = 100, seconds = 30}
+	{id = "automation", name_key = "technology_automation", unlocks = ["assembler_1"], packs = 10, seconds = 10, science_packs = ["science_pack_1"]}
+	{id = "logistics", name_key = "technology_logistics", unlocks = ["splitter", "filter_inserter"], packs = 20, seconds = 15, science_packs = ["science_pack_1"], prerequisites = ["automation"]}
+	{id = "electric_mining", name_key = "technology_electric_mining", unlocks = ["electric_mining_drill", "power_switch"], packs = 25, seconds = 15, science_packs = ["science_pack_1"], prerequisites = ["automation"]}
+	{id = "optics", name_key = "technology_optics", unlocks = ["lamp"], packs = 10, seconds = 15, science_packs = ["science_pack_1"], prerequisites = ["electric_mining"]}
+	{id = "steel_processing", name_key = "technology_steel_processing", unlocks = ["steel", "steel_furnace"], packs = 50, seconds = 15, science_packs = ["science_pack_1"], prerequisites = ["automation"]}
+	{id = "fluid_handling", name_key = "technology_fluid_handling", unlocks = ["pump", "storage_tank"], packs = 50, seconds = 15, science_packs = ["science_pack_1"], prerequisites = ["steel_processing"]}
+	{id = "prospecting", name_key = "technology_prospecting", unlocks = ["core_sample_drill", "magnetometer"], packs = 50, seconds = 15, science_packs = ["science_pack_1"], prerequisites = ["steel_processing"]}
+	{id = "logistics_science", name_key = "technology_logistics_science", unlocks = [], packs = 75, seconds = 15, science_packs = ["science_pack_1"], prerequisites = ["logistics"], placeholder = true}
+	{id = "fast_belts", name_key = "technology_fast_belts", unlocks = [], packs = 100, seconds = 30, science_packs = ["science_pack_1"], prerequisites = ["logistics_science"], placeholder = true}
 ]

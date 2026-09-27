@@ -13,7 +13,9 @@ package game
 // (a drill drops its output itself, drill.odin). A boiler takes fuel into
 // its fuel slot and gives nothing. A splitter, a pipe, the other fluid
 // machines, an electric drill, poles, switches and lamps have no item
-// slots and neither take nor give.
+// slots and neither take nor give. An assembler takes each ingredient of
+// its recipe into that ingredient's slot only and gives from its output
+// slots; a lab takes each science pack into its slot and gives nothing.
 //
 // Inserters peek with entity_offered_items and entity_takes_item_kind
 // before they pick, so they never pick an item the target can never take.
@@ -32,6 +34,10 @@ entity_accepts :: proc(entities: ^Entities, content: Simulation_Content, handle:
 		return furnace_accepting_slot(slots, item, content)
 	case .Inserter, .Drill, .Fluid_Machine:
 		return fuel_accepting_slot(slots, item, content.items)
+	case .Assembler:
+		return fixed_accepting_slot(slots, entity_slot_for_item(entities, content, handle, item), item, content.items)
+	case .Lab:
+		return fixed_accepting_slot(slots, lab_slot_of(content.machines.lab_packs, item), item, content.items)
 	}
 	return first_accepting_slot(slots, item, item_stack_size(content.items, item))
 }
@@ -50,7 +56,7 @@ entity_insert :: proc(entities: ^Entities, content: Simulation_Content, handle: 
 	}
 	slots := entity_slots(entities, handle)
 	stack_size := item_stack_size(content.items, stack.item)
-	if handle.kind == .Furnace || handle.kind == .Inserter || handle.kind == .Drill || handle.kind == .Fluid_Machine {
+	if handle.kind != .Chest && handle.kind != .Capsule {
 		slot, ok := entity_accepts(entities, content, handle, stack.item)
 		if ok {
 			leftover.count = u16(fill_slot(&slots[slot], stack.item, int(stack.count), stack_size))
@@ -110,26 +116,46 @@ furnace_accepting_slot :: proc(slots: []Item_Stack, item: Item_Id, content: Simu
 		return -1, false
 	}
 	stack_size := item_stack_size(content.items, item)
-	if slot_accepts(.Smeltable, item, content.items, content.recipes) && slot_has_room_for(slots[FURNACE_INPUT_SLOT], item, stack_size) {
+	if slot_accepts({kind = .Smeltable}, item, content.items, content.recipes) && slot_has_room_for(slots[FURNACE_INPUT_SLOT], item, stack_size) {
 		return FURNACE_INPUT_SLOT, true
 	}
-	if slot_accepts(.Fuel, item, content.items, content.recipes) && slot_has_room_for(slots[FURNACE_FUEL_SLOT], item, stack_size) {
+	if slot_accepts({kind = .Fuel}, item, content.items, content.recipes) && slot_has_room_for(slots[FURNACE_FUEL_SLOT], item, stack_size) {
 		return FURNACE_FUEL_SLOT, true
 	}
 	return -1, false
 }
 
-// The slots entity_extract may take from: a furnace's output, nothing of
-// an inserter, a drill or a boiler, every slot of a chest or the capsule.
+// The slots entity_extract may take from: a furnace's or an assembler's
+// outputs, nothing of an inserter, a drill, a boiler or a lab, every slot
+// of a chest or the capsule.
 giving_slots :: proc(entities: ^Entities, handle: Entity_Handle) -> []Item_Stack {
 	slots := entity_slots(entities, handle)
 	#partial switch handle.kind {
 	case .Furnace:
 		return slots[FURNACE_OUTPUT_SLOT:FURNACE_OUTPUT_SLOT + 1]
-	case .Inserter, .Drill, .Fluid_Machine:
+	case .Assembler:
+		return assembler_output_slots(pool_get(&entities.assemblers, handle))
+	case .Inserter, .Drill, .Fluid_Machine, .Lab:
 		return nil
 	}
 	return slots
+}
+
+// The one slot an item may go to (-1 for none), when it has room.
+fixed_accepting_slot :: proc(slots: []Item_Stack, slot: int, item: Item_Id, items: Item_Registry) -> (index: int, ok: bool) {
+	if slot < 0 || slot >= len(slots) || !slot_has_room_for(slots[slot], item, item_stack_size(items, item)) {
+		return -1, false
+	}
+	return slot, true
+}
+
+// An assembler's input slot for the item, or -1.
+entity_slot_for_item :: proc(entities: ^Entities, content: Simulation_Content, handle: Entity_Handle, item: Item_Id) -> int {
+	assembler := pool_get(&entities.assemblers, handle)
+	if assembler == nil {
+		return -1
+	}
+	return assembler_input_slot_of(assembler^, content.recipes, item)
 }
 
 // The single fuel slot of a burner inserter, a drill or a boiler.
@@ -177,9 +203,14 @@ entity_takes_item_kind :: proc(entities: ^Entities, content: Simulation_Content,
 	case .Chest, .Capsule, .Belt:
 		return true
 	case .Furnace:
-		return slot_accepts(.Smeltable, item, content.items, content.recipes) || slot_accepts(.Fuel, item, content.items, content.recipes)
+		return slot_accepts({kind = .Smeltable}, item, content.items, content.recipes) || slot_accepts({kind = .Fuel}, item, content.items, content.recipes)
 	case .Inserter, .Drill, .Fluid_Machine:
 		return len(entity_slots(entities, handle)) == 1 && item_is_fuel(content.items, item)
+	case .Assembler:
+		return entity_slot_for_item(entities, content, handle, item) >= 0
+	case .Lab:
+		slot := lab_slot_of(content.machines.lab_packs, item)
+		return slot >= 0 && slot < len(entity_slots(entities, handle))
 	case .Splitter, .Pipe, .Pole, .Lamp:
 		return false
 	}

@@ -51,6 +51,9 @@ Machine_Kind :: enum u8 {
 	Pole,
 	Power_Switch,
 	Lamp,
+	// Electric crafting (assembler.odin) and research (lab.odin).
+	Assembler,
+	Lab,
 }
 
 @(rodata)
@@ -71,6 +74,8 @@ machine_kind_names := [Machine_Kind]string {
 	.Pole          = "pole",
 	.Power_Switch  = "power_switch",
 	.Lamp          = "lamp",
+	.Assembler     = "assembler",
+	.Lab           = "lab",
 }
 
 // The shape family a belt item places. Ramps become up or down and lifts
@@ -177,6 +182,9 @@ Machine_Registry :: struct {
 	machines:         []Machine,
 	// Indexed by Item_Id: the machine the item places, or NO_MACHINE.
 	machine_for_item: []Machine_Id,
+	// The item each lab slot holds: Technology_Registry.science_packs, set
+	// once the technologies are loaded, since the machines load first.
+	lab_packs:        []Item_Id,
 }
 
 parse_machines_file :: proc(data: []byte, allocator := context.allocator) -> (file: Machines_File, error: json.Unmarshal_Error) {
@@ -237,6 +245,8 @@ validate_machine_kind_fields :: proc(definition: Machine_Definition, kind: Machi
 		return validate_fluid_machine_definition(definition, kind)
 	case .Pole, .Power_Switch, .Lamp:
 		return validate_power_machine_definition(definition, kind)
+	case .Assembler, .Lab:
+		return validate_crafting_machine_definition(definition)
 	case .Capsule:
 		if definition.slots != CAPSULE_SLOT_COUNT {
 			return fmt.tprintf("capsule %q must have %d slots", definition.id, CAPSULE_SLOT_COUNT)
@@ -329,6 +339,18 @@ validate_splitter_definition :: proc(definition: Machine_Definition) -> string {
 	}
 	if definition.belt_speed_blocks_per_second <= 0 {
 		return fmt.tprintf("splitter %q needs a positive belt_speed_blocks_per_second", definition.id)
+	}
+	return ""
+}
+
+// Assemblers and labs: a speed and electric power. Their slots come from
+// the recipe or the technologies, never from the file.
+validate_crafting_machine_definition :: proc(definition: Machine_Definition) -> string {
+	if definition.speed <= 0 || definition.electric_power_kilowatts <= 0 {
+		return fmt.tprintf("machine %q needs a positive speed and electric_power_kilowatts", definition.id)
+	}
+	if definition.slots != 0 || definition.fuel_slots != 0 || definition.input_slots != 0 || definition.output_slots != 0 {
+		return fmt.tprintf("machine %q may not list slots", definition.id)
 	}
 	return ""
 }

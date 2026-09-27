@@ -20,11 +20,21 @@ make_test_fluids :: proc() -> Fluid_Registry {
 
 make_test_content :: proc() -> Simulation_Content {
 	items := make_test_items()
-	recipes, _ := make_test_recipes(items)
+	recipes, technologies := make_test_recipes(items)
 	generator := make_test_generator(DEFAULT_WORLD_SEED)
 	veins, problem := resolve_vein_content(generator.veins, items, context.temp_allocator)
 	assert(problem == "", problem)
-	return Simulation_Content{blocks = make_test_registry(), items = items, machines = make_test_machines(), fluids = make_test_fluids(), recipes = recipes, veins = veins}
+	machines := make_test_machines()
+	machines.lab_packs = technologies.science_packs
+	return Simulation_Content {
+		blocks = make_test_registry(),
+		items = items,
+		machines = machines,
+		fluids = make_test_fluids(),
+		recipes = recipes,
+		technologies = technologies,
+		veins = veins,
+	}
 }
 
 test_machine :: proc(machines: Machine_Registry, id: string) -> Machine_Id {
@@ -40,7 +50,7 @@ test_machine :: proc(machines: Machine_Registry, id: string) -> Machine_Id {
 test_machine_data_loads :: proc(t: ^testing.T) {
 	items := make_test_items()
 	machines := make_test_machines()
-	testing.expect_value(t, len(machines.machines), 22)
+	testing.expect_value(t, len(machines.machines), 24)
 	wooden := machines.machines[test_machine(machines, "wooden_chest")]
 	testing.expect_value(t, wooden.kind, Machine_Kind.Chest)
 	testing.expect_value(t, wooden.slot_count, 16)

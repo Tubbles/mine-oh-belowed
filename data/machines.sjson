@@ -7,7 +7,8 @@
 // rotation; a quarter turn swaps width and depth.
 // kind selects the panel and the simulation: chest, furnace, capsule,
 // belt, inserter, drill, splitter, pipe, offshore_pump, boiler,
-// steam_engine, storage_tank, pump, pole, power_switch or lamp.
+// steam_engine, storage_tank, pump, pole, power_switch, lamp, assembler
+// or lab.
 // The capsule (work item 0013) stands on the landing pad from the start:
 // it has no item, cannot be picked up, and holds 8 slots for quest
 // rewards and deliveries.
@@ -79,6 +80,11 @@
 // networks it wires while on and splits them while off.
 // Lamp: electric_power_kilowatts and light_level, the block light it
 // gives while its network is satisfied above half.
+// Assembler and lab (work item 0021): speed and electric_power_kilowatts,
+// no slot fields. An assembler makes recipes with assembler in made_in,
+// with one input slot per ingredient and one output slot per product of
+// the chosen recipe. A lab has one slot per science pack item any
+// technology in technologies.sjson consumes.
 machines = [
 	{
 		id = "wooden_chest"
@@ -295,5 +301,23 @@ machines = [
 		footprint = {width = 1, depth = 1, height = 1}
 		electric_power_kilowatts = 5
 		light_level = 14
+	}
+	{
+		id = "assembler_1"
+		name_key = "machine_assembler_1"
+		item = "assembler_1"
+		kind = "assembler"
+		footprint = {width = 3, depth = 3, height = 2}
+		speed = 0.5
+		electric_power_kilowatts = 75
+	}
+	{
+		id = "lab"
+		name_key = "machine_lab"
+		item = "lab"
+		kind = "lab"
+		footprint = {width = 3, depth = 3, height = 2}
+		speed = 1
+		electric_power_kilowatts = 60
 	}
 ]

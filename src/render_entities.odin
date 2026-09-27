@@ -6,7 +6,10 @@ import rl "vendor:raylib"
 // Placeholder entity models: a coloured cube per footprint cell, with a
 // brighter top layer on a burning furnace, for inserters a post with an
 // arm that turns with the cycle, and for drills a darker top with a
-// turning bar and the output arrow (brown burner, blue electric). Real models come with the art pass.
+// turning bar and the output arrow (brown burner, blue electric), for
+// assemblers a teal body with a bright top while working, and for labs a
+// white body with a blue top while researching. Real models come with the
+// art pass.
 
 CHEST_COLOR :: rl.Color{130, 88, 48, 255}
 FURNACE_COLOR :: rl.Color{120, 120, 124, 255}
@@ -31,6 +34,10 @@ DRILL_BIT_COLOR :: rl.Color{200, 200, 205, 255}
 DRILL_ARROW_COLOR :: rl.Color{240, 220, 80, 255}
 DRILL_BIT_LENGTH :: 0.8
 DRILL_BIT_RADIUS :: 0.08
+ASSEMBLER_COLOR :: rl.Color{70, 130, 130, 255}
+ASSEMBLER_WORKING_TOP_COLOR :: rl.Color{120, 220, 200, 255}
+LAB_COLOR :: rl.Color{200, 204, 210, 255}
+LAB_RESEARCHING_TOP_COLOR :: rl.Color{90, 150, 240, 255}
 // Turns of the bit per drill cycle.
 DRILL_BIT_TURNS_PER_CYCLE :: 4
 
@@ -132,6 +139,17 @@ draw_entities :: proc(world: ^World, machines: Machine_Registry, items: Item_Reg
 	for drill in world.entities.drills.entries {
 		if drill.alive {
 			draw_drill(drill, machines.machines[drill.machine], machines, tick_rate)
+		}
+	}
+	for assembler in world.entities.assemblers.entries {
+		if assembler.alive {
+			top := assembler.state == .Working ? ASSEMBLER_WORKING_TOP_COLOR : ASSEMBLER_COLOR
+			draw_entity_cells(assembler.common, machines, ASSEMBLER_COLOR, top)
+		}
+	}
+	for lab in world.entities.labs.entries {
+		if lab.alive {
+			draw_entity_cells(lab.common, machines, LAB_COLOR, lab.state == .Researching ? LAB_RESEARCHING_TOP_COLOR : LAB_COLOR)
 		}
 	}
 }

@@ -19,6 +19,9 @@ Action :: enum u8 {
 	Open_Journal,
 	// The power overview: keyboard P, and from the pause menu.
 	Open_Power_Overview,
+	// The technology screen: keyboard T, and from the pause menu, the
+	// inventory tabs and the lab panel.
+	Open_Technologies,
 	Open_Map,
 	Pause,
 	Confirm,
@@ -167,6 +170,7 @@ WORLD_ACTIONS :: Action_Set {
 	.Open_Recipes,
 	.Open_Journal,
 	.Open_Power_Overview,
+	.Open_Technologies,
 	.Open_Map,
 	.Sneak,
 	.Sprint,

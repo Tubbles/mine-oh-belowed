@@ -63,6 +63,7 @@ Frame_State :: struct {
 	recipe_names:       []string,
 	recipe_order:       []int,
 	recipe_browser:     Recipe_Browser,
+	technology_browser: Technology_Browser,
 	generator:          Generator,
 	streaming:          Chunk_Streaming,
 	renderer:           Chunk_Renderer,
@@ -126,6 +127,7 @@ simulation_tick :: proc(state: ^Simulation_State, content: Simulation_Content, i
 	}
 	update_recipe_unlocks(&state.unlocks, content.recipes, state.players[:])
 	tick_entities(&state.world, content, state.tick_rate)
+	apply_finished_research(&state.world.research, &state.unlocks, content.recipes)
 	observe_player_holdings(&state.world.statistics, state.players[:], true)
 	observe_full_inventories(&state.world.statistics, state.players[:])
 	tick_quests(&state.quests, simulation_quest_context(state, content), &state.world.entities)
@@ -145,7 +147,16 @@ simulation_quest_context :: proc(state: ^Simulation_State, content: Simulation_C
 }
 
 frame_simulation_content :: proc(state: ^Frame_State) -> Simulation_Content {
-	return Simulation_Content{blocks = state.registry, items = state.items, machines = state.machines, fluids = state.fluids, recipes = state.recipes, quests = state.quests, veins = state.veins}
+	return Simulation_Content {
+		blocks = state.registry,
+		items = state.items,
+		machines = state.machines,
+		fluids = state.fluids,
+		recipes = state.recipes,
+		technologies = state.technologies,
+		quests = state.quests,
+		veins = state.veins,
+	}
 }
 
 make_tick_accumulator :: proc(tick_rate: int) -> Tick_Accumulator {
@@ -295,6 +306,7 @@ run_ui_frame :: proc(state: ^Frame_State) {
 		recipe_names    = state.recipe_names,
 		recipe_order    = state.recipe_order,
 		browser         = &state.recipe_browser,
+		technology_browser = &state.technology_browser,
 	}
 	draw_hud(&state.ui, screen_context)
 	run_screens(&state.ui, screen_context)
@@ -342,7 +354,16 @@ Game_Content :: struct {
 }
 
 game_simulation_content :: proc(content: Game_Content) -> Simulation_Content {
-	return Simulation_Content{blocks = content.blocks, items = content.items, machines = content.machines, fluids = content.fluids, recipes = content.recipes, quests = content.quests, veins = content.veins}
+	return Simulation_Content {
+		blocks = content.blocks,
+		items = content.items,
+		machines = content.machines,
+		fluids = content.fluids,
+		recipes = content.recipes,
+		technologies = content.technologies,
+		quests = content.quests,
+		veins = content.veins,
+	}
 }
 
 run_game :: proc(config: Game_Config, input_backend: Input_Backend, content: Game_Content, generator: Generator, start: World_Start, data_directory: string) {
@@ -379,6 +400,7 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, content: Gam
 		recipe_names    = content.recipe_names,
 		recipe_order    = content.recipe_order,
 		recipe_browser  = make_recipe_browser(),
+		technology_browser = make_technology_browser(),
 		generator       = generator,
 		renderer        = renderer,
 		simulation      = make_simulation(config, start.player, game_simulation_content(content), content.technologies, content.unlock_all, start.landing_pad),

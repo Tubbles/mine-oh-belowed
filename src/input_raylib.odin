@@ -63,6 +63,7 @@ key_bindings := [?]Key_Binding {
 	{.C, .Open_Recipes},
 	{.J, .Open_Journal},
 	{.P, .Open_Power_Overview},
+	{.T, .Open_Technologies},
 	{.M, .Open_Map},
 	{.ESCAPE, .Pause},
 	{.ENTER, .Confirm},

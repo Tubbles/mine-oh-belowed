@@ -317,8 +317,19 @@ append_player_lines :: proc(lines: ^[dynamic]Diagnostics_Line, state: Frame_Stat
 		player.crafting.count,
 		player.crafting.waiting ? " waiting" : "",
 	)
+	append_line(lines, false, "%s", research_diagnostics_text(state))
 	append_line(lines, false, "%s", quest_diagnostics_text(state))
 	append_line(lines, false, "%s", objective_counters_text(state))
+}
+
+research_diagnostics_text :: proc(state: Frame_State) -> string {
+	research := state.simulation.world.research
+	labs := len(state.simulation.world.entities.labs.entries) - len(state.simulation.world.entities.labs.free)
+	if !research.queued {
+		return fmt.tprintf("research none queued  labs %d", labs)
+	}
+	technology := state.technologies.technologies[research.technology]
+	return fmt.tprintf("research %s %d of %d units  labs %d", technology.id, research.units_done, technology.pack_count, labs)
 }
 
 quest_diagnostics_text :: proc(state: Frame_State) -> string {

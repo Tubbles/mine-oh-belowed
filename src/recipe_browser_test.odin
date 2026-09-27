@@ -24,7 +24,7 @@ make_browser_test :: proc(unlock_all := false) -> Browser_Test {
 
 visible_ids :: proc(test: Browser_Test, filter: Recipe_Filter) -> []string {
 	craftable := craftable_recipes(test.recipes, test.unlocks, test.inventory, context.temp_allocator)
-	visible := filter_recipes(test.recipes, test.order, filter, craftable, context.temp_allocator)
+	visible := filter_recipes(test.recipes, test.order, filter, craftable, nil, context.temp_allocator)
 	ids := make([]string, len(visible), context.temp_allocator)
 	for recipe, index in visible {
 		ids[index] = test.names[recipe]
@@ -63,7 +63,7 @@ test_browser_filters_by_tab_tag_and_craftable :: proc(t: ^testing.T) {
 test_browser_letter_jump :: proc(t: ^testing.T) {
 	test := make_browser_test()
 	craftable := craftable_recipes(test.recipes, test.unlocks, test.inventory, context.temp_allocator)
-	visible := filter_recipes(test.recipes, test.order, {category = .Logistics}, craftable, context.temp_allocator)
+	visible := filter_recipes(test.recipes, test.order, {category = .Logistics}, craftable, nil, context.temp_allocator)
 	// belt, belt_lift, belt_ramp, burner_inserter, filter_inserter, inserter, iron_chest, ...
 	testing.expect_value(t, test.names[visible[recipe_position_for_letter(test.names, visible, 'f')]], "filter_inserter")
 	testing.expect_value(t, test.names[visible[recipe_position_for_letter(test.names, visible, 'I')]], "inserter")
@@ -123,4 +123,27 @@ test_newly_pressed_letter :: proc(t: ^testing.T) {
 	current.keys_down[2] = 'K'
 	testing.expect_value(t, newly_pressed_letter(previous, current), 'k')
 	testing.expect_value(t, newly_pressed_letter(current, current), 0)
+}
+
+// Choosing an assembler's recipe: available assembler recipes only,
+// whatever the craftable toggle says.
+@(test)
+test_browser_selection_mode_lists_assembler_recipes :: proc(t: ^testing.T) {
+	test := make_browser_test()
+	craftable := craftable_recipes(test.recipes, test.unlocks, test.inventory, context.temp_allocator)
+	selection := selection_filter({category = .Materials, craftable_only = true}, .Assembler)
+	visible := filter_recipes(test.recipes, test.order, selection, craftable, test.unlocks.available, context.temp_allocator)
+	ids := make([]string, len(visible), context.temp_allocator)
+	for recipe, index in visible {
+		ids[index] = test.names[recipe]
+	}
+	// Plank and stick are start recipes; the furnace recipes are left out.
+	testing.expect(t, slice.equal(ids, []string{"plank", "stick"}))
+	// Science pack 1 is a discovery recipe: listed once discovered.
+	science := selection_filter({category = .Science}, .Assembler)
+	testing.expect_value(t, len(filter_recipes(test.recipes, test.order, science, craftable, test.unlocks.available, context.temp_allocator)), 0)
+	record_obtained_item(&test.unlocks, test_item(test.items, "copper_plate"))
+	record_obtained_item(&test.unlocks, test_item(test.items, "iron_gear"))
+	refresh_available_recipes(&test.unlocks, test.recipes)
+	testing.expect_value(t, len(filter_recipes(test.recipes, test.order, science, craftable, test.unlocks.available, context.temp_allocator)), 1)
 }

@@ -90,21 +90,22 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	inventory_glyph_bar(state, player.held.stack, slots.focused >= 0 ? player.inventory.slots[slots.focused] : EMPTY_STACK)
 }
 
-// The context tab: the bumpers (or a click) on the recipes tab open the
-// recipe browser over the inventory, and Back returns here. On the
+// The context tabs: the bumpers (or a click) on the recipes or
+// technologies tab open that screen over the inventory, and Back returns
+// here. On the
 // keyboard E is both Open_Inventory and Tab_Next, and there it closes the
 // inventory instead.
 inventory_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle) {
-	labels := [?]string{text("inventory_tab_inventory"), text("inventory_tab_recipes")}
+	labels := [?]string{text("inventory_tab_inventory"), text("inventory_tab_recipes"), text("inventory_tab_technologies")}
 	input := state.input
 	if input.open_inventory {
 		state.input.tab_previous, state.input.tab_next = false, false
 	}
 	tab := ui_tabs(state, rectangle, "inventory_tabs", labels[:])
 	state.input = input
-	if tab == 1 {
+	if tab != 0 {
 		state.selections[ui_id(state, "inventory_tabs")] = 0
-		push_screen(&state.screens, .Recipes)
+		push_screen(&state.screens, tab == 1 ? .Recipes : .Technologies)
 	}
 }
 

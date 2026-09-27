@@ -10,6 +10,10 @@ import "core:strings"
 // the right, whose "made by" and "used in" lists walk the recipe graph.
 // Confirm on a recipe queues one hand craft, the context action five, the
 // secondary action cancels the newest queued craft. There is no search box.
+//
+// In the selection mode, opened from an assembler's panel, the list holds
+// the available recipes an assembler makes, and Confirm sets the focused
+// one on the assembler and goes back to its panel.
 
 RECIPE_FILTER_COLUMN_WIDTH :: 380
 RECIPE_LIST_COLUMN_WIDTH :: 560
@@ -21,12 +25,21 @@ RECIPE_LETTER_BOX_SIZE :: 52
 
 // State of the browser across frames and openings. pending_focus is a
 // recipe reached through the graph whose list row takes the focus on the
-// next frame, once the filter shows it.
+// next frame, once the filter shows it. selecting_for is the assembler
+// whose recipe is being chosen, NO_ENTITY outside the selection mode.
 Recipe_Browser :: struct {
 	filter:         Recipe_Filter,
 	focused_recipe: int,
 	pending_focus:  int,
 	letter_radial:  Radial_State,
+	selecting_for:  Entity_Handle,
+}
+
+@(rodata)
+recipe_change_refusal_keys := [Recipe_Change_Refusal]string {
+	.None                = "",
+	.Not_For_Assembler   = "recipe_change_refused_maker",
+	.Contents_Do_Not_Fit = "recipe_change_refused_contents",
 }
 
 make_recipe_browser :: proc() -> Recipe_Browser {
@@ -185,10 +198,12 @@ queue_summary_text :: proc(queue: Craft_Queue) -> string {
 recipe_filter_column :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context) {
 	browser := screen_context.browser
 	content := area
-	queue := screen_context.player.crafting
-	queue_row := cut_bottom(&content, UI_ROW_HEIGHT)
-	ui_label(state, queue_row, queue_summary_text(queue), UI_BODY_TEXT_SIZE, .Left, queue.waiting ? UI_ACCENT_COLOR : UI_DIM_TEXT_COLOR)
-	ui_toggle(state, settings_row(&content), text("recipes_can_craft"), &browser.filter.craftable_only)
+	if browser.selecting_for == NO_ENTITY {
+		queue := screen_context.player.crafting
+		queue_row := cut_bottom(&content, UI_ROW_HEIGHT)
+		ui_label(state, queue_row, queue_summary_text(queue), UI_BODY_TEXT_SIZE, .Left, queue.waiting ? UI_ACCENT_COLOR : UI_DIM_TEXT_COLOR)
+		ui_toggle(state, settings_row(&content), text("recipes_can_craft"), &browser.filter.craftable_only)
+	}
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("recipes_tags"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	tags := category_tags(screen_context.recipes, browser.filter.category)
 	for name, index in screen_context.recipes.tag_names {
@@ -294,11 +309,11 @@ letter_radial_source :: proc(input: Ui_Input) -> Radial_Source {
 }
 
 // The letter chosen this frame on the wheel or the keyboard, 0 for none.
-letter_input :: proc(state: ^Ui_State, browser: ^Recipe_Browser) -> rune {
+letter_input :: proc(state: ^Ui_State, radial: ^Radial_State) -> rune {
 	source := letter_radial_source(state.input)
 	touching, position := radial_input(state.input, source)
 	result: Radial_Result
-	browser.letter_radial, result = advance_radial(browser.letter_radial, touching, position, source, LETTER_WHEEL_COUNT)
+	radial^, result = advance_radial(radial^, touching, position, source, LETTER_WHEEL_COUNT)
 	if result.closed && result.selected >= 0 {
 		return letter_for_wheel_slot(result.selected)
 	}
@@ -359,24 +374,52 @@ navigate_to_recipe :: proc(browser: ^Recipe_Browser, recipes: Recipe_Registry, r
 	browser.focused_recipe = recipe
 }
 
+// Selection mode: sets the chosen recipe on the assembler, handing its
+// contents to the player, and goes back to its panel.
+choose_assembler_recipe :: proc(state: ^Ui_State, screen_context: Screen_Context, recipe: int) {
+	browser := screen_context.browser
+	assembler := pool_get(&screen_context.world.entities.assemblers, browser.selecting_for)
+	if assembler == nil {
+		pop_screen(&state.screens)
+		return
+	}
+	inventory := screen_context.player.inventory
+	refusal := change_assembler_recipe(assembler, inventory, screen_context.items, screen_context.recipes, recipe)
+	if refusal != .None {
+		ui_toast(state, text(recipe_change_refusal_keys[refusal]))
+		return
+	}
+	browser.selecting_for = NO_ENTITY
+	pop_screen(&state.screens)
+}
+
+// Opens the browser in the selection mode for an assembler.
+open_recipe_selection :: proc(state: ^Ui_State, browser: ^Recipe_Browser, assembler: Entity_Handle) {
+	browser.selecting_for = assembler
+	browser.filter.tags = {}
+	push_screen(&state.screens, .Recipes)
+}
+
 recipe_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	browser := screen_context.browser
+	selecting := browser.selecting_for != NO_ENTITY
 	craftable := craftable_recipes(screen_context.recipes, screen_context.unlocks^, screen_context.player.inventory, context.temp_allocator)
 	ui_backdrop(state)
 	panel := ui_safe_area(state)
 	cut_bottom(&panel, UI_GLYPH_TEXT_SIZE + 4 * UI_GAP)
 	ui_panel_begin(state, "recipes", panel)
 	content := inset(panel, UI_PADDING)
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("recipes_title"), UI_HEADING_TEXT_SIZE, .Centre)
+	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text(selecting ? "recipes_choose_title" : "recipes_title"), UI_HEADING_TEXT_SIZE, .Centre)
 	recipe_category_tabs(state, cut_top(&content, UI_ROW_HEIGHT), browser)
 	cut_top(&content, UI_GAP)
 	recipe_filter_column(state, cut_left(&content, RECIPE_FILTER_COLUMN_WIDTH), screen_context)
 	cut_left(&content, 2 * UI_PADDING)
 	list_area := cut_left(&content, RECIPE_LIST_COLUMN_WIDTH)
 	cut_left(&content, 2 * UI_PADDING)
-	visible := filter_recipes(screen_context.recipes, screen_context.recipe_order, browser.filter, craftable, context.temp_allocator)
+	filter := selecting ? selection_filter(browser.filter, .Assembler) : browser.filter
+	visible := filter_recipes(screen_context.recipes, screen_context.recipe_order, filter, craftable, screen_context.unlocks.available, context.temp_allocator)
 	list_id := ui_id(state, "recipe_list")
-	letter := letter_input(state, browser)
+	letter := letter_input(state, &browser.letter_radial)
 	activated, list_focused := recipe_list(state, list_area, screen_context, visible, craftable)
 	reached := recipe_detail_panel(state, content, screen_context, craftable)
 	ui_panel_end(state)
@@ -387,9 +430,21 @@ recipe_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	if reached != NO_RECIPE {
 		navigate_to_recipe(browser, screen_context.recipes, reached, craftable)
 	}
-	apply_recipe_craft_input(state, screen_context, activated, list_focused)
 	draw_letter_wheel(state, browser.letter_radial)
+	if selecting {
+		if activated != NO_RECIPE {
+			choose_assembler_recipe(state, screen_context, activated)
+		}
+		recipe_selection_glyph_bar(state)
+		return
+	}
+	apply_recipe_craft_input(state, screen_context, activated, list_focused)
 	recipe_glyph_bar(state)
+}
+
+recipe_selection_glyph_bar :: proc(state: ^Ui_State) {
+	hints := [?]Glyph_Hint{{.Confirm, text("hint_choose_recipe")}, {.Tab_Previous, ""}, {.Tab_Next, text("hint_categories")}, {.Back, text("hint_back")}}
+	ui_glyph_bar(state, hints[:])
 }
 
 recipe_glyph_bar :: proc(state: ^Ui_State) {

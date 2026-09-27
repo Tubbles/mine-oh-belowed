@@ -143,16 +143,23 @@ gesture_visit :: proc(gesture: Distribute_Gesture, index: int) -> Distribute_Ges
 }
 
 // What a machine slot takes from the player.
-Slot_Filter :: enum u8 {
+Slot_Filter_Kind :: enum u8 {
 	Any,
 	Fuel,
 	Smeltable,
 	// Output slots only give.
 	Output,
+	// Only Slot_Filter.item (assembler inputs, lab slots).
+	Item,
+}
+
+Slot_Filter :: struct {
+	kind: Slot_Filter_Kind,
+	item: Item_Id,
 }
 
 slot_accepts :: proc(filter: Slot_Filter, item: Item_Id, items: Item_Registry, recipes: Recipe_Registry) -> bool {
-	switch filter {
+	switch filter.kind {
 	case .Any:
 		return true
 	case .Fuel:
@@ -161,6 +168,8 @@ slot_accepts :: proc(filter: Slot_Filter, item: Item_Id, items: Item_Registry, r
 		return item_is_smeltable(recipes, item)
 	case .Output:
 		return false
+	case .Item:
+		return item == filter.item
 	}
 	return false
 }

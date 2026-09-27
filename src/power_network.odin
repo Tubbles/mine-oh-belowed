@@ -196,6 +196,8 @@ assign_electric_memberships :: proc(entities: ^Entities, machines: Machine_Regis
 	append_electric_members(networks, &entities.drills, machines)
 	append_electric_members(networks, &entities.fluid_machines, machines)
 	append_electric_members(networks, &entities.lamps, machines)
+	append_electric_members(networks, &entities.assemblers, machines)
+	append_electric_members(networks, &entities.labs, machines)
 }
 
 rebuild_electric_networks :: proc(entities: ^Entities, machines: Machine_Registry) {
@@ -315,7 +317,8 @@ make_participant :: proc(networks: ^Electric_Networks, common: Entity_Common, ge
 }
 
 // What every electric entity asks for or offers this tick, in pool order.
-collect_electric_participants :: proc(world: ^World, machines: Machine_Registry, tick_rate: int) {
+collect_electric_participants :: proc(world: ^World, content: Simulation_Content, tick_rate: int) {
+	machines := content.machines
 	entities := &world.entities
 	networks := &entities.electric_networks
 	clear(&networks.participants)
@@ -351,6 +354,27 @@ collect_electric_participants :: proc(world: ^World, machines: Machine_Registry,
 			append(&networks.participants, make_participant(networks, lamp.common, false, demand))
 		}
 	}
+	collect_crafting_participants(world, content, tick_rate)
+}
+
+// Assemblers and labs, while they have work.
+collect_crafting_participants :: proc(world: ^World, content: Simulation_Content, tick_rate: int) {
+	entities := &world.entities
+	networks := &entities.electric_networks
+	for assembler in entities.assemblers.entries {
+		if assembler.alive {
+			watts := content.machines.machines[assembler.machine].electric_power_watts
+			demand := assembler_wants_power(assembler, content.recipes, content.items) ? electric_joules_per_tick(watts, tick_rate) : 0
+			append(&networks.participants, make_participant(networks, assembler.common, false, demand))
+		}
+	}
+	for lab in entities.labs.entries {
+		if lab.alive {
+			watts := content.machines.machines[lab.machine].electric_power_watts
+			wants := lab_wants_power(lab, world.research, content.technologies, content.machines.lab_packs)
+			append(&networks.participants, make_participant(networks, lab.common, false, wants ? electric_joules_per_tick(watts, tick_rate) : 0))
+		}
+	}
 }
 
 // The consumer's Power_State, or nil for a generator.
@@ -364,6 +388,10 @@ participant_power :: proc(entities: ^Entities, handle: Entity_Handle) -> ^Power_
 		return &pool_get(&entities.fluid_machines, handle).power
 	case .Lamp:
 		return &pool_get(&entities.lamps, handle).power
+	case .Assembler:
+		return &pool_get(&entities.assemblers, handle).power
+	case .Lab:
+		return &pool_get(&entities.labs, handle).power
 	}
 	return nil
 }
@@ -418,10 +446,11 @@ any_network_in_brownout :: proc(networks: ^Electric_Networks) -> bool {
 }
 
 // Before the machines tick, so they work at this tick's satisfaction.
-tick_electric_networks :: proc(world: ^World, machines: Machine_Registry, tick_rate: int) {
+tick_electric_networks :: proc(world: ^World, content: Simulation_Content, tick_rate: int) {
+	machines := content.machines
 	networks := &world.entities.electric_networks
 	set_electric_allocators(networks)
-	collect_electric_participants(world, machines, tick_rate)
+	collect_electric_participants(world, content, tick_rate)
 	balance_electric_energy(networks.participants[:], networks.networks[:])
 	apply_electric_balance(&world.entities, machines)
 	record_electric_tick(&world.statistics, networks)
