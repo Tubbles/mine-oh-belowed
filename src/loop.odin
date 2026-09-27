@@ -151,6 +151,7 @@ make_simulation :: proc(config: Game_Config, start: Player_Start, content: Simul
 	}
 	state.world.statistics = make_statistics(len(content.items.items), len(content.machines.machines), len(content.blocks.definitions))
 	state.world.statistics.fluids = make_fluid_statistics(len(content.fluids.fluids))
+	state.world.entities.loose_items.despawn_ticks = loose_item_despawn_ticks(config.loose_item_despawn_minutes, config.tick_rate)
 	capsule := place_capsule(&state.world.entities, content.machines, landing_pad)
 	state.quests = make_quest_state(content.quests, capsule)
 	player := make_player(start)
@@ -441,6 +442,7 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session) {
 	draw_fluid_entities(world, content.machines, state.model_renderer, content.fluids, frame)
 	draw_power_entities(world, content.machines, state.model_renderer, frame)
 	draw_belts(&state.belt_renderer, world, content.items, content.machines, state.model_renderer, frame)
+	draw_loose_items(world, content.items, frame)
 	draw_player_world_overlay(world, frame_simulation_content(state), state.model_renderer, &state.belt_renderer, session.simulation.players[:], 0, alpha)
 }
 

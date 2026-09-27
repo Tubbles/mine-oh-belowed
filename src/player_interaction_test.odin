@@ -86,12 +86,14 @@ test_mining_drops_the_mapped_item :: proc(t: ^testing.T) {
 	testing.expect_value(t, item_places_block(items, test_item(items, "hematite")), AIR_BLOCK)
 }
 
-// A block whose item does not fit stays, the toast shows once, and the
-// progress is kept so that freeing a slot lets the dig finish at once.
+// A block whose item does not fit still breaks: the item spills at the
+// block's cell, the toast shows once, and walking over the item with a
+// free slot picks it up.
 @(test)
-test_mining_with_a_full_inventory_is_refused :: proc(t: ^testing.T) {
+test_mining_with_a_full_inventory_spills :: proc(t: ^testing.T) {
 	registry := make_test_registry()
 	world := make_floor_world(registry, 32)
+	use_temporary_loose_items(&world)
 	player := make_test_player(registry, {0.5, 1, 0.5})
 	player.pitch = -89
 	for &slot in player.inventory.slots {
@@ -99,20 +101,23 @@ test_mining_with_a_full_inventory_is_refused :: proc(t: ^testing.T) {
 	}
 	player.held.stack = Item_Stack{test_item(make_test_items(), "wooden_pickaxe"), 1}
 	stone := test_block(registry, "stone")
+	stone_item := test_item(make_test_items(), "stone")
 	required := int(mining_required_ticks(registry.definitions[stone].hardness_seconds, TEST_TICK_RATE))
 	events := tick_test_player(&world, registry, &player, Input_Frame{pressed = {.Mine}}, required)
-	testing.expect_value(t, world_get_block(&world, {0, 0, 0}), stone)
-	testing.expect_value(t, events, Player_Events{.Inventory_Full})
-	testing.expect(t, player.mining.refused)
-	testing.expect_value(t, player.mining.progress_ticks, u32(required))
-	events = tick_test_player(&world, registry, &player, Input_Frame{pressed = {.Mine}}, 30)
-	testing.expect_value(t, events, Player_Events{})
-	testing.expect_value(t, world_get_block(&world, {0, 0, 0}), stone)
-	player.inventory.slots[5] = EMPTY_STACK
-	tick_test_player(&world, registry, &player, Input_Frame{pressed = {.Mine}}, 1)
 	testing.expect_value(t, world_get_block(&world, {0, 0, 0}), AIR_BLOCK)
-	testing.expect_value(t, player.inventory.slots[5], Item_Stack{item = test_item(make_test_items(), "stone"), count = 1})
+	testing.expect_value(t, events, Player_Events{.Inventory_Full})
 	testing.expect_value(t, player.mining, Mining_State{})
+	testing.expect_value(t, len(world.entities.loose_items.items), 1)
+	testing.expect_value(t, world.entities.loose_items.items[0].item, stone_item)
+	testing.expect_value(t, world.entities.loose_items.items[0].count, 1)
+	testing.expect_value(t, world.entities.loose_items.items[0].cell, World_Coordinate{0, 0, 0})
+	// Still full: the stone stays where the player stands.
+	tick_test_player(&world, registry, &player, {}, 1)
+	testing.expect_value(t, len(world.entities.loose_items.items), 1)
+	player.inventory.slots[5] = EMPTY_STACK
+	tick_test_player(&world, registry, &player, {}, 1)
+	testing.expect_value(t, len(world.entities.loose_items.items), 0)
+	testing.expect_value(t, player.inventory.slots[5], Item_Stack{item = stone_item, count = 1})
 }
 
 @(test)

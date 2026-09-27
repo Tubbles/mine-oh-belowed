@@ -7,8 +7,7 @@ import "core:math"
 // placement and pick up are in entity_placement.odin.
 
 // block is the mined cell, or the entity's origin while picking up an
-// entity. refused is set once a finished dig could not go into the
-// inventory, so the toast shows once and progress stays full.
+// entity.
 Mining_State :: struct {
 	active:         bool,
 	block:          World_Coordinate,
@@ -16,7 +15,6 @@ Mining_State :: struct {
 	entity:         Entity_Handle,
 	progress_ticks: u32,
 	required_ticks: u32,
-	refused:        bool,
 }
 
 // Holding Mine this long on an entity picks it up.
@@ -105,18 +103,10 @@ mining_tool_line :: proc(blocks: Block_Registry, items: Item_Registry, block: Bl
 	return format_message_text(text("mining_needs_tool"), item_name(items, tool_item_for_tier(items, needed)))
 }
 
-// A finished dig whose result does not fit keeps its full progress and
-// reports the full inventory once, so freeing a slot lets it finish.
-refuse_mining :: proc(player: ^Player, next: Mining_State) -> Player_Events {
-	already_refused := player.mining.refused && player.mining.active && player.mining.block == next.block && player.mining.entity == next.entity
-	player.mining = next
-	player.mining.refused = true
-	return already_refused ? {} : {.Inventory_Full}
-}
-
 // The block's items go into the inventory, hotbar first: its drop and an
-// extra drop (gold quartz gives quartz and gold ore). A block whose items
-// do not fit is not broken.
+// extra drop (gold quartz gives quartz and gold ore). What does not fit
+// spills at the block's cell as loose items (loose_item.odin), and the
+// full inventory is reported once for the block.
 mine_block :: proc(world: ^World, registry: Block_Registry, items: Item_Registry, player: ^Player, holding: bool, tick_rate: int, cheat_speed: bool) -> Player_Events {
 	block_id := world_get_block(world, player.target.block)
 	if holding && player.target.hit {
@@ -127,19 +117,19 @@ mine_block :: proc(world: ^World, registry: Block_Registry, items: Item_Registry
 		player.mining = next
 		return {}
 	}
-	drops := block_drop_stacks(items, block_id)
-	if !inventory_fits_all(player.inventory, items, drops) {
-		return refuse_mining(player, next)
-	}
 	player.mining = {}
 	if !world_set_block(world, player.target.block, AIR_BLOCK) {
 		return {}
 	}
 	record_block_mined(&world.statistics)
-	for drop in drops {
-		inventory_add(player.inventory, items, drop.item, 1)
+	spilled := false
+	for drop in block_drop_stacks(items, block_id) {
+		if leftover := inventory_add(player.inventory, items, drop.item, 1); leftover > 0 {
+			spill_stack(world, registry, player.target.block, Item_Stack{item = drop.item, count = u16(leftover)})
+			spilled = true
+		}
 	}
-	return {}
+	return spilled ? {.Inventory_Full} : {}
 }
 
 // One of each item mining the block yields, in the temp allocator.
@@ -153,7 +143,8 @@ block_drop_stacks :: proc(items: Item_Registry, block: Block_Id) -> []Item_Stack
 	return stacks[:]
 }
 
-// A long press of Mine on an entity picks it up with its contents.
+// A long press of Mine on an entity picks it up with its contents; what
+// does not fit spills (pick_up_entity) and reports the full inventory.
 mine_entity :: proc(world: ^World, content: Simulation_Content, player: ^Player, holding: bool, tick_rate: int) -> Player_Events {
 	if !entity_can_be_picked_up(world, content.machines, player.target.entity) {
 		player.mining = {}
@@ -167,11 +158,12 @@ mine_entity :: proc(world: ^World, content: Simulation_Content, player: ^Player,
 		player.mining = next
 		return {}
 	}
-	if !pick_up_entity(world, content, player, player.target.entity) {
-		return refuse_mining(player, next)
-	}
 	player.mining = {}
-	return {}
+	spills := !inventory_fits_all(player.inventory, content.items, entity_pickup_stacks(world, content, player.target.entity))
+	if !pick_up_entity(world, content, player, player.target.entity) || !spills {
+		return {}
+	}
+	return {.Inventory_Full}
 }
 
 // cheat_speed shortens digging blocks, not picking up entities.

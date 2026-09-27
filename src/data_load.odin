@@ -11,6 +11,8 @@ GAME_CONFIG_FILE_NAME :: "game.sjson"
 MAXIMUM_TICK_RATE :: 1000
 
 MAXIMUM_DAY_LENGTH_SECONDS :: 24 * 60 * 60
+// A week, which keeps the age in ticks far inside a u32 at any tick rate.
+MAXIMUM_LOOSE_ITEM_DESPAWN_MINUTES :: 7 * 24 * 60
 
 Starting_Item :: struct {
 	item:  string,
@@ -26,6 +28,9 @@ Game_Config :: struct {
 	all_recipes_unlocked: bool,
 	// The world setting "vein finiteness": true lets veins never run dry.
 	veins_infinite:       bool,
+	// Loose items vanish after lying this long, 0 for never
+	// (loose_item.odin).
+	loose_item_despawn_minutes: int,
 }
 
 // An explicitly set environment variable wins even if the directory is
@@ -67,6 +72,9 @@ validate_game_config :: proc(config: Game_Config) -> string {
 	}
 	if config.day_length_seconds < 1 || config.day_length_seconds > MAXIMUM_DAY_LENGTH_SECONDS {
 		return fmt.tprintf("day_length_seconds %d is outside 1 to %d", config.day_length_seconds, MAXIMUM_DAY_LENGTH_SECONDS)
+	}
+	if config.loose_item_despawn_minutes < 0 || config.loose_item_despawn_minutes > MAXIMUM_LOOSE_ITEM_DESPAWN_MINUTES {
+		return fmt.tprintf("loose_item_despawn_minutes %d is outside 0 to %d", config.loose_item_despawn_minutes, MAXIMUM_LOOSE_ITEM_DESPAWN_MINUTES)
 	}
 	return ""
 }

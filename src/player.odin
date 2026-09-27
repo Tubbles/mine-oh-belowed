@@ -330,7 +330,8 @@ carry_player_on_belt :: proc(world: ^World, content: Simulation_Content, player:
 	}
 }
 
-// cheat_speed is the developer flag on the simulation (0044).
+// cheat_speed is the developer flag on the simulation (0044). Walking
+// over loose items picks them up (pick_up_loose_items).
 tick_player :: proc(world: ^World, content: Simulation_Content, players: []Player, index: int, frame: Input_Frame, tick_rate: int, cheat_speed := false) -> Player_Events {
 	player := &players[index]
 	seconds := 1 / f32(tick_rate)
@@ -350,6 +351,7 @@ tick_player :: proc(world: ^World, content: Simulation_Content, players: []Playe
 	if !player.flying {
 		record_walked(&world.statistics, walk_start, player.position)
 	}
+	pick_up_loose_items(world, content.items, player)
 	if .Open_Machine in events || .Toggled_Switch in events || .Launch_Requested in events {
 		record_world_action(&world.statistics)
 	}

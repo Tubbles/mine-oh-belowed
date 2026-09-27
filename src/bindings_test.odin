@@ -58,6 +58,7 @@ reference_raylib_buttons := [?]Reference_Raylib_Button {
 	{.RIGHT_TRIGGER_1, .Tab_Next},
 	{.RIGHT_FACE_UP, .Info_Panel},
 	{.RIGHT_FACE_LEFT, .Context_Action},
+	{.RIGHT_THUMB, .Menu_Drop},
 }
 
 @(rodata)
@@ -108,6 +109,7 @@ reference_keys := [?]Reference_Key {
 	{.F, .Context_Action},
 	{.Q, .Menu_Quick_Move},
 	{.LEFT_CONTROL, .Menu_Quick_Move_Modifier},
+	{.X, .Menu_Drop},
 }
 
 @(rodata)
@@ -149,6 +151,7 @@ reference_sdl3_buttons := [?]Reference_Sdl3_Button {
 	{.WEST, .Context_Action},
 	{.LEFT_PADDLE2, .Info_Panel},
 	{.RIGHT_PADDLE2, .Navigate_Up},
+	{.RIGHT_STICK, .Menu_Drop},
 }
 
 // Keyboard, mouse and wheel were shared by both backends.

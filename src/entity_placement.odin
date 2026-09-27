@@ -234,14 +234,17 @@ place_entity_with_player :: proc(world: ^World, content: Simulation_Content, pla
 	record_placed(&world.statistics, placement.machine)
 }
 
-// Puts a valid placement's machine down: a belt with its planned shape, a
-// drill tapping the vein under it. The player's Place and the developer
+// Puts a valid placement's machine down: a belt with its planned shape
+// (loose items in its cell go onto it), a drill tapping the vein under
+// it, any other machine lifting loose items in its cells onto its top. The player's Place and the developer
 // command `place` (work item 0053) both end here.
 commit_placement :: proc(world: ^World, machines: Machine_Registry, placement: Placement) -> Entity_Handle {
 	if placement.belt {
 		return add_belt(&world.entities, machines, placement.machine, placement.origin, placement.rotation, placement.belt_shape)
 	}
 	handle := add_entity(&world.entities, machines, placement.machine, placement.origin, placement.rotation)
+	cells := footprint_cells(placement.origin, machines.machines[placement.machine].footprint, placement.rotation)
+	lift_loose_items_out_of(&world.entities.loose_items, cells, placement.origin.y + placement.size.y)
 	if drill := pool_get(&world.entities.drills, handle); drill != nil {
 		drill.vein = placement.vein
 	}
@@ -326,15 +329,14 @@ entity_can_be_picked_up :: proc(world: ^World, machines: Machine_Registry, handl
 	return common != nil && machines.machines[common.machine].item != NO_ITEM
 }
 
-// The entity's contents and then its item go into the inventory. When not
-// everything fits nothing moves and the entity stays.
-pick_up_entity :: proc(world: ^World, content: Simulation_Content, player: ^Player, handle: Entity_Handle) -> bool {
-	if !entity_can_be_picked_up(world, content.machines, handle) {
-		return false
-	}
-	common := entity_common(&world.entities, handle)
-	machine_item := content.machines.machines[common.machine].item
+// The entity's contents and then its item, in the temp allocator.
+entity_pickup_stacks :: proc(world: ^World, content: Simulation_Content, handle: Entity_Handle) -> []Item_Stack {
 	returned := make([dynamic]Item_Stack, context.temp_allocator)
+	common := entity_common(&world.entities, handle)
+	if common == nil {
+		return returned[:]
+	}
+	machine_item := content.machines.machines[common.machine].item
 	append(&returned, ..entity_slots(&world.entities, handle))
 	append(&returned, ..belt_block_stacks(&world.entities, handle))
 	append(&returned, ..inserter_held_stacks(&world.entities, handle))
@@ -347,14 +349,29 @@ pick_up_entity :: proc(world: ^World, content: Simulation_Content, player: ^Play
 		append(&returned, ..launch_pad_held_stacks(pad^, content.machines.machines[pad.machine]))
 	}
 	append(&returned, Item_Stack{item = machine_item, count = 1})
-	if !inventory_fits_all(player.inventory, content.items, returned[:]) {
+	return returned[:]
+}
+
+// The entity's contents and then its item go into the inventory as far
+// as they fit; the rest spills at the entity's origin once it is gone
+// (loose_item.odin), so a full inventory never keeps an entity in place.
+pick_up_entity :: proc(world: ^World, content: Simulation_Content, player: ^Player, handle: Entity_Handle) -> bool {
+	if !entity_can_be_picked_up(world, content.machines, handle) {
 		return false
 	}
-	for stack in returned {
-		if !stack_is_empty(stack) {
-			inventory_add(player.inventory, content.items, stack.item, int(stack.count))
-		}
+	origin := entity_common(&world.entities, handle).origin
+	returned := entity_pickup_stacks(world, content, handle)
+	if !remove_entity(&world.entities, content.machines, handle) {
+		return false
 	}
 	record_world_action(&world.statistics)
-	return remove_entity(&world.entities, content.machines, handle)
+	for stack in returned {
+		if stack_is_empty(stack) {
+			continue
+		}
+		if leftover := inventory_add(player.inventory, content.items, stack.item, int(stack.count)); leftover > 0 {
+			spill_stack(world, content.blocks, origin, Item_Stack{item = stack.item, count = u16(leftover)})
+		}
+	}
+	return true
 }

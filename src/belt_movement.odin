@@ -5,6 +5,8 @@ package game
 // a spacing behind the item ahead. The front item stops at the line end
 // (dead end or side load) or, when the line continues straight, a spacing
 // behind the back item of the next line. Items past the end are handed on.
+// A dead end over a drop lets its front items fall off as loose items
+// (drop_items_off_belt_ends).
 // A line into a splitter leaves the hand off to the splitter's node, which
 // runs just before it (splitter.odin).
 // Cost is proportional to the items, not to the belt length.
@@ -177,6 +179,56 @@ advance_belt_line :: proc(network: ^Belt_Network, line_index: i32, tick_rate: in
 			hand_off_side_load(network, line_index, lane)
 		}
 		network.lines[line_index].front_held_at_dead_end ||= lane_front_at_dead_end(network.lines[line_index], lane)
+	}
+}
+
+// The cell a dead end's front items fall into: the cell in front of the
+// last belt at its height, when it is loaded, holds no block and no
+// entity, and a stack there can fall (loose_item_can_fall). A dead end
+// against a wall, a machine or level ground holds its items.
+belt_end_drop_cell :: proc(world: ^World, registry: Block_Registry, line: Belt_Line) -> (cell: World_Coordinate, drops: bool) {
+	if line.end.kind != .Dead_End || len(line.belts) == 0 {
+		return {}, false
+	}
+	belt, found := line_block_belt(&world.entities, line, i32(len(line.belts) - 1))
+	if !found {
+		return {}, false
+	}
+	cell = belt_output_cell(belt)
+	if world_to_chunk_coordinate(cell) not_in world.chunks || cell in world.entities.cells || block_is_solid(registry, world_get_block(world, cell)) {
+		return cell, false
+	}
+	return cell, loose_item_can_fall(world, registry, cell)
+}
+
+// Quarter blocks from the cell centre towards the lane's side of the belt.
+lane_side_offset :: proc(belt: Belt, lane: Belt_Lane) -> [2]i8 {
+	right := belt_direction_offset(turn_right(belt.rotation))
+	side := lane == .Right ? i8(1) : i8(-1)
+	return {i8(right.x) * side, i8(right.z) * side}
+}
+
+// Runs after the belt network's tick: a front item standing at a dead end
+// over a drop leaves its lane as a loose item in the cell in front,
+// which then falls (loose_item.odin). The line no longer holds anything
+// at its end.
+drop_items_off_belt_ends :: proc(world: ^World, registry: Block_Registry) {
+	for &line in world.entities.belt_network.lines {
+		if !line.front_held_at_dead_end {
+			continue
+		}
+		cell, drops := belt_end_drop_cell(world, registry, line)
+		if !drops {
+			continue
+		}
+		belt, _ := line_block_belt(&world.entities, line, i32(len(line.belts) - 1))
+		for lane in Belt_Lane {
+			if lane_front_at_dead_end(line, lane) {
+				front := pop(&line.lanes[lane])
+				spill_stack(world, registry, cell, Item_Stack{item = front.item, count = 1}, lane_side_offset(belt, lane))
+			}
+		}
+		line.front_held_at_dead_end = false
 	}
 }
 

@@ -16,3 +16,7 @@ all_recipes_unlocked = false
 // so drills drain them and an exhausted outcrop turns to spent rock; true
 // lets drills draw from every vein forever.
 veins_infinite = false
+// Minutes a loose item (a stack spilled by mining or a pickup that did
+// not fit, dropped from the inventory, or fallen off a belt end) lies on
+// the ground before it vanishes; 0 keeps loose items forever.
+loose_item_despawn_minutes = 15

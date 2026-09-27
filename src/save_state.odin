@@ -4,7 +4,7 @@ import "core:container/queue"
 import "core:slice"
 
 // The simulation state of a save (entities.bin): every entity pool as
-// plain values, the belt items per cell, the vein records and outcrop
+// plain values, the belt items per cell, the loose items, the vein records and outcrop
 // cells, pending block changes and water updates, statistics, research,
 // shipments, recipe unlocks, quest state and players. Derived data (belt
 // lines, fluid and electric networks, the entity cell map, vein lookups,
@@ -152,7 +152,8 @@ write_quest_state :: proc(bytes: ^[dynamic]byte, quests: ^Quest_State) {
 	}
 }
 
-// The body of entities.bin, without the header.
+// The body of entities.bin, without the header. Tables added since
+// format version 2 follow the players (write_later_tables).
 write_simulation_state :: proc(bytes: ^[dynamic]byte, state: ^Simulation_State) {
 	write_world_state(bytes, &state.world)
 	write_value_of(bytes, &state.unlocks)
@@ -161,6 +162,16 @@ write_simulation_state :: proc(bytes: ^[dynamic]byte, state: ^Simulation_State) 
 	for &player in state.players {
 		write_value_of(bytes, &player)
 	}
+	write_later_tables(bytes, &state.world)
+}
+
+// Tables added after format version 2, in the order they were added. A
+// file ends where its build's tables ended, so each is read only while
+// bytes are left (read_later_tables) and an older save loads with the
+// newer tables empty, without a format version step. The loose items
+// (work item 0062) are the first.
+write_later_tables :: proc(bytes: ^[dynamic]byte, world: ^World) {
+	write_list(bytes, world.entities.loose_items.items[:])
 }
 
 // Reading.
@@ -363,6 +374,16 @@ read_quest_state :: proc(reader: ^Byte_Reader, state: ^Simulation_State, content
 	return settle_active_quest(quests, saved_active, remap^, content.quests, state.world.statistics, state.tick)
 }
 
+// See write_later_tables. A table the file ends before stays empty.
+read_later_tables :: proc(reader: ^Byte_Reader, world: ^World) -> bool {
+	clear(&world.entities.loose_items.items)
+	if bytes_left(reader^) > 0 {
+		read_list(reader, &world.entities.loose_items.items) or_return
+		drop_gone_loose_items(&world.entities.loose_items.items)
+	}
+	return true
+}
+
 // Players read into fresh ones (make_player), so fields the file lacks
 // take a new player's values.
 read_players :: proc(reader: ^Byte_Reader, players: ^[dynamic]Player) -> bool {
@@ -401,6 +422,7 @@ read_simulation_state :: proc(reader: ^Byte_Reader, state: ^Simulation_State, co
 	for &player in state.players {
 		remap_craft_queue(&player.crafting, reader.remap^) or_return
 	}
+	read_later_tables(reader, &state.world) or_return
 	if bytes_left(reader^) != 0 || !venture_state_is_consistent(&state.world, content.contracts) {
 		return false
 	}

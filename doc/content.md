@@ -11,6 +11,7 @@ Living document. Every item, machine, recipe and technology, the values that con
 - Stack sizes are small so pockets fill fast in phase 2 and belts win early: ore, plates, steel and spoils 50, other intermediates 100, machines and tools 10, blocks 50, fluids are not items. Mining a block yields exactly one item: the item that places it, or for grass and the ore blocks the item listed as mined from them (dirt, hematite, coal, chalcopyrite, cassiterite).
 - Hand crafting has speed 1. A hand crafted recipe takes its listed time.
 - When a phase runs long in a couch test the fix is lower cost, not fewer steps.
+- Loose items (spilled, dropped, fallen off a belt end) vanish after `loose_item_despawn_minutes` in `data/game.sjson`: 15, generous on purpose so a spill can be walked back to; 0 keeps them forever, a week is the maximum (0062).
 
 ## Phase budgets
 

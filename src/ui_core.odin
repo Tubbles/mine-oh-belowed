@@ -91,6 +91,9 @@ Ui_Input :: struct {
 	secondary:      bool,
 	// R2 or Q: quick move the focused stack in a machine panel (0078).
 	quick_move:     bool,
+	// Right stick click or X in the inventory: drop the held or focused
+	// stack on the ground (Menu_Drop, 0062).
+	drop:           bool,
 	// Held, not an edge: holding the quick move moves every stack.
 	quick_move_down: bool,
 	// Held, not an edge: Left Control, which makes a click a quick move.

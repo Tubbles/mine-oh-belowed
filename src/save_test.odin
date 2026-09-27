@@ -218,6 +218,13 @@ venture_loaded :: proc(loaded, original: ^World, technologies: Technology_Regist
 // to a deep vein, mining fluid in the electric drill's revival port, a
 // schematic crate, a core sample drill with the prospecting records, a
 // launch pad assembling with a shipment, and the capsule of the pad.
+// One stack resting on the floor, one high up that falls while the test
+// runs.
+lay_save_test_loose_items :: proc(world: ^World, content: Simulation_Content) {
+	spill_stack(world, content.blocks, {2, 1, 28}, {test_item(content.items, "iron_plate"), 12})
+	spill_stack(world, content.blocks, {3, 30, 28}, {test_item(content.items, "coal"), 3}, {1, -1})
+}
+
 build_save_test_site :: proc(simulation: ^Simulation_State, content: Simulation_Content) {
 	world := &simulation.world
 	carve_save_test_floor(world, test_block(content.blocks, "stone"))
@@ -237,6 +244,7 @@ build_save_test_site :: proc(simulation: ^Simulation_State, content: Simulation_
 	lay_save_test_schematics(simulation, content)
 	lay_save_test_prospecting(world, content)
 	lay_save_test_launch_pad(world, content)
+	lay_save_test_loose_items(world, content)
 	technology := test_technology(content.technologies, "automation")
 	testing_refusal := queue_research(&world.research, content.technologies, simulation.unlocks, technology)
 	assert(testing_refusal == .None)
@@ -368,6 +376,8 @@ test_save_load_run_matches_the_original :: proc(t: ^testing.T) {
 	testing.expect(t, prospecting_loaded(&loaded.world, &original.world))
 	testing.expect(t, launch_pad_loaded(&loaded.world, &original.world))
 	testing.expect(t, venture_loaded(&loaded.world, &original.world, content.technologies))
+	testing.expect(t, len(loaded.world.entities.loose_items.items) > 0)
+	testing.expect(t, slice.equal(loaded.world.entities.loose_items.items[:], original.world.entities.loose_items.items[:]))
 	testing.expect_value(t, len(loaded.world.entities.fluid_networks.networks), len(original.world.entities.fluid_networks.networks))
 	testing.expect_value(t, len(loaded.world.entities.electric_networks.networks), len(original.world.entities.electric_networks.networks))
 	testing.expect_value(t, len(loaded.world.entities.belt_network.lines), len(original.world.entities.belt_network.lines))
@@ -649,6 +659,42 @@ test_newer_and_older_formats_are_refused :: proc(t: ^testing.T) {
 	testing.expect(t, header_problem(newer, expected, "entities.bin") != "")
 	testing.expect(t, strings.contains(header_problem(Save_Header{version = 1}, expected, "entities.bin"), "format version 1"))
 	testing.expect_value(t, header_problem(expected, expected, "entities.bin"), "")
+}
+
+// A save written before the loose item table existed ends after the
+// players; it loads with no loose items, and one with the table loads
+// them back.
+@(test)
+test_a_save_without_the_loose_item_table_loads :: proc(t: ^testing.T) {
+	content := make_save_test_content()
+	generator := make_test_generator(DEFAULT_WORLD_SEED)
+	original := make_save_test_simulation(&generator, content)
+	defer destroy_simulation(&original)
+	header := make_save_header()
+	without_table := encode_entities(&original, content, header)
+	// The empty table (a count and the schema) ends the file.
+	table := make([dynamic]byte, context.temp_allocator)
+	write_later_tables(&table, &original.world)
+	without_table = without_table[:len(without_table) - len(table)]
+	spill_stack(&original.world, content.blocks, {2, 1, 2}, {test_item(content.items, "coal"), 5}, {-1, 1})
+	with_table := encode_entities(&original, content, header)
+
+	remap: Content_Remap
+	older := make_save_test_simulation(&generator, content)
+	defer destroy_simulation(&older)
+	testing.expect_value(t, decode_entities(&older, content, without_table, "entities.bin", header, &remap), "")
+	testing.expect_value(t, len(older.world.entities.loose_items.items), 0)
+	testing.expect_value(t, older.world.entities.loose_items.despawn_ticks, original.world.entities.loose_items.despawn_ticks)
+
+	newer := make_save_test_simulation(&generator, content)
+	defer destroy_simulation(&newer)
+	testing.expect_value(t, decode_entities(&newer, content, with_table, "entities.bin", header, &remap), "")
+	testing.expect(t, slice.equal(newer.world.entities.loose_items.items[:], original.world.entities.loose_items.items[:]))
+	// Bytes after the tables this build knows are still malformed.
+	extra := make([dynamic]byte, context.temp_allocator)
+	append(&extra, ..with_table)
+	append(&extra, 0)
+	testing.expect(t, decode_entities(&newer, content, extra[:], "entities.bin", header, &remap) != "")
 }
 
 // Saving writes into a staging directory and swaps it in; nothing is left

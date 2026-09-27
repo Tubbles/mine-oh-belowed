@@ -67,6 +67,9 @@ Action :: enum u8 {
 	Menu_Quick_Move,
 	// Held with a click, a quick move with the mouse: Left Control.
 	Menu_Quick_Move_Modifier,
+	// The right stick click (or X) in the inventory: drop the held or
+	// focused stack on the ground (0062).
+	Menu_Drop,
 	// Keyboard only: the gamepad View button is taken by the map.
 	Toggle_Camera_Mode,
 	// Keyboard O, and the Display settings: machine state markers in the

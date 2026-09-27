@@ -361,3 +361,42 @@ test_player_walks_over_and_rides_a_belt :: proc(t: ^testing.T) {
 	testing.expect_value(t, players[0].position.x, 4.5)
 	_ = belts
 }
+
+// A dead end over a drop lets the front items fall off into the cell in
+// front, keeping their lane when they land on a belt below; a dead end
+// on level ground holds them.
+@(test)
+test_belt_end_over_a_ledge_drops_and_a_level_dead_end_holds :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 3)
+	use_temporary_loose_items(&world)
+	plate := test_item(content.items, "iron_plate")
+	set_blocks(&world, test_block(content.blocks, "stone"), {3, -3, 0}, {4, -3, 0}, {0, 0, 4}, {1, 0, 4}, {2, 0, 4}, {3, 0, 4})
+	ledge := lay_belt_row(&world, content, {0, 1, 0}, 3, 0)
+	below := lay_belt(&world, content, {3, -2, 0}, 0)
+	level := lay_belt_row(&world, content, {0, 1, 4}, 3, 0)
+	testing.expect(t, belt_insert_item(&world.entities, ledge[0], .Left, plate))
+	testing.expect(t, belt_insert_item(&world.entities, ledge[0], .Right, plate))
+	testing.expect(t, belt_insert_item(&world.entities, level[0], .Left, plate))
+	cell, drops := belt_end_drop_cell(&world, content.blocks, line_of(&world, ledge[0])^)
+	testing.expect(t, drops)
+	testing.expect_value(t, cell, World_Coordinate{3, 1, 0})
+	_, drops = belt_end_drop_cell(&world, content.blocks, line_of(&world, level[0])^)
+	testing.expect(t, !drops)
+	// 76 ticks to the end, then one falling cell per period from y 1 to
+	// the belt at y -2.
+	tick_loose_item_test(&world, content, 76)
+	testing.expect_value(t, len(line_of(&world, ledge[0]).lanes[.Left]), 0)
+	testing.expect_value(t, len(world.entities.loose_items.items), 2)
+	testing.expect_value(t, world.entities.loose_items.items[0].offset, [2]i8{0, -1})
+	testing.expect_value(t, world.entities.loose_items.items[1].offset, [2]i8{0, 1})
+	tick_loose_item_test(&world, content, 3 * LOOSE_ITEM_FALL_TICKS + 1)
+	testing.expect_value(t, len(world.entities.loose_items.items), 0)
+	lower := line_of(&world, below)
+	testing.expect_value(t, len(lower.lanes[.Left]), 1)
+	testing.expect_value(t, len(lower.lanes[.Right]), 1)
+	// The level line still holds its plate at the end.
+	expect_positions(t, lane_positions(line_of(&world, level[0])^, .Left), {736})
+	testing.expect(t, line_of(&world, level[0]).front_held_at_dead_end)
+	testing.expect(t, !line_of(&world, ledge[0]).front_held_at_dead_end)
+}

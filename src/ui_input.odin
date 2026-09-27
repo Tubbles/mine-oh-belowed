@@ -111,6 +111,7 @@ make_ui_input :: proc(previous, current: Input_Frame) -> Ui_Input {
 		context_action = .Context_Action in just,
 		secondary = .Menu_Secondary in just,
 		quick_move = .Menu_Quick_Move in just,
+		drop = .Menu_Drop in just,
 		quick_move_down = .Menu_Quick_Move in current.pressed,
 		quick_move_modifier = .Menu_Quick_Move_Modifier in current.pressed,
 		confirm_down = .Confirm in current.pressed && !pad_down,

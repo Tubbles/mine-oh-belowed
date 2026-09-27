@@ -1,7 +1,10 @@
 package game
 
 // The inventory screen: the 36 slot grid and the hotbar as slot grids, with
-// the slot interaction from doc/ui.md. It does not pause the simulation.
+// the slot interaction from doc/ui.md, and a Drop button under them (also
+// Menu_Drop): the cursor's stack, or the focused one with nothing held,
+// goes onto the ground in front of the player (loose_item.odin). It does
+// not pause the simulation.
 
 INVENTORY_COLUMNS :: 9
 INVENTORY_ROWS :: PLAYER_GRID_SLOT_COUNT / INVENTORY_COLUMNS
@@ -68,6 +71,9 @@ player_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, player: ^Player
 	return merge_grid_results(grid_result_to_inventory(grid, HOTBAR_SLOT_COUNT), grid_result_to_inventory(hotbar, 0))
 }
 
+// The Drop button's row under the hotbar.
+INVENTORY_DROP_ROW_HEIGHT :: UI_GAP + UI_ROW_HEIGHT
+
 inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	player, items := screen_context.player, screen_context.items
 	ui_backdrop(state)
@@ -75,8 +81,9 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	// would not fit the area.
 	area := ui_panel_area(state)
 	tabs_height := f32(UI_ROW_HEIGHT + UI_GAP)
-	shows_heading := inventory_panel_height() + tabs_height <= area.height
-	panel := fitted_panel(area, slot_grid_width(INVENTORY_COLUMNS) + 2 * UI_PADDING, inventory_panel_height() + (shows_heading ? tabs_height : tabs_height - UI_ROW_HEIGHT))
+	panel_height := inventory_panel_height() + INVENTORY_DROP_ROW_HEIGHT
+	shows_heading := panel_height + tabs_height <= area.height
+	panel := fitted_panel(area, slot_grid_width(INVENTORY_COLUMNS) + 2 * UI_PADDING, panel_height + (shows_heading ? tabs_height : tabs_height - UI_ROW_HEIGHT))
 	ui_panel_begin(state, "inventory", panel)
 	content := inset(panel, UI_PADDING)
 	inventory_tabs(state, cut_top(&content, UI_ROW_HEIGHT))
@@ -84,7 +91,9 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	if shows_heading {
 		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("inventory_title"), UI_HEADING_TEXT_SIZE, .Centre)
 	}
+	drop_row := cut_bottom(&content, UI_ROW_HEIGHT)
 	slots := player_slot_region(state, content, player, items)
+	drop_clicked := ui_button(state, drop_row, text("inventory_drop"))
 	ui_panel_end(state)
 	slot_input := Inventory_Slot_Input {
 		activated      = slots.activated,
@@ -93,6 +102,9 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		context_action = state.input.context_action,
 	}
 	player.held = apply_inventory_slot_input(player.inventory, player.held, slot_input, items, screen_context.item_sort_ranks)
+	if (drop_clicked || state.input.drop) && screen_context.world != nil {
+		drop_player_stack(screen_context.world, screen_context.blocks, player, slots.focused)
+	}
 	draw_held_stack(state, player.held.stack, items)
 	inventory_glyph_bar(state, player.held.stack, slots.focused >= 0 ? player.inventory.slots[slots.focused] : EMPTY_STACK)
 }

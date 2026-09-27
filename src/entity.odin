@@ -105,6 +105,9 @@ Entities :: struct {
 	// Derived from the poles and electric machines (power_network.odin).
 	electric_networks: Electric_Networks,
 	cells:          map[World_Coordinate]Entity_Handle,
+	// Stacks lying in the world (loose_item.odin). Not machines: never in
+	// cells, so they block nothing.
+	loose_items:    Loose_Items,
 }
 
 pool_add :: proc(pool: ^Entity_Pool($T), kind: Entity_Kind, value: T) -> Entity_Handle {
@@ -171,6 +174,7 @@ destroy_entities :: proc(entities: ^Entities) {
 	destroy_fluid_networks(&entities.fluid_networks)
 	destroy_electric_networks(&entities.electric_networks)
 	delete(entities.cells)
+	delete(entities.loose_items.items)
 }
 
 entity_common :: proc(entities: ^Entities, handle: Entity_Handle) -> ^Entity_Common {
@@ -505,7 +509,8 @@ cell_blocks_movement :: proc(world: ^World, registry: Block_Registry, cell: Worl
 	return occupied && handle.kind != .Belt && handle.kind != .Splitter
 }
 
-// Belts and splitters, then the power balance, then drills, then
+// Belts and splitters, then items falling off belt ends over a drop and
+// the loose items, then the power balance, then drills, then
 // inserters, then furnaces, assemblers and labs, so a furnace sees an item
 // an inserter took off a belt in the same tick, and every electric machine
 // works at this tick's satisfaction. Fluids come after, so a boiler burns fuel an
@@ -516,6 +521,8 @@ cell_blocks_movement :: proc(world: ^World, registry: Block_Registry, cell: Worl
 // rock at the end, and crates of newly loaded cave sites appear.
 tick_entities :: proc(world: ^World, content: Simulation_Content, tick_rate: int) {
 	tick_belt_network(&world.entities.belt_network, tick_rate, world.entities.splitters.entries[:])
+	drop_items_off_belt_ends(world, content.blocks)
+	tick_loose_items(world, content)
 	record_belt_dead_ends(&world.statistics, &world.entities)
 	tick_electric_networks(world, content, tick_rate)
 	for &drill in world.entities.drills.entries {

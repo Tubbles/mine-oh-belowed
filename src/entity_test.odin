@@ -175,34 +175,6 @@ test_player_places_rotates_and_picks_up_a_machine :: proc(t: ^testing.T) {
 }
 
 @(test)
-test_pick_up_is_refused_when_it_does_not_fit :: proc(t: ^testing.T) {
-	content := make_test_content()
-	world := make_floor_world(content.blocks, 32)
-	player := make_test_player(content.blocks, {0.5, 1, 0.5})
-	coal := test_item(content.items, "coal")
-	for &slot in player.inventory.slots {
-		slot = Item_Stack{coal, 50}
-	}
-	handle := add_entity(&world.entities, content.machines, test_machine(content.machines, "wooden_chest"), {4, 1, 4}, 0)
-	testing.expect(t, !pick_up_entity(&world, content, &player, handle))
-	testing.expect(t, entity_is_alive(&world.entities, handle))
-	// Long press of Mine on the entity: refused with one toast, then taken once a slot is free.
-	player.position, player.pitch, player.yaw = {4.5, 1, 1.5}, -30, 90
-	players := []Player{player}
-	events: Player_Events
-	for _ in 0 ..< 60 {
-		events += tick_player(&world, content, players, 0, Input_Frame{pressed = {.Mine}}, TEST_TICK_RATE)
-	}
-	testing.expect_value(t, players[0].target.entity, handle)
-	testing.expect_value(t, events, Player_Events{.Inventory_Full})
-	testing.expect(t, entity_is_alive(&world.entities, handle))
-	players[0].inventory.slots[9] = EMPTY_STACK
-	tick_player(&world, content, players, 0, Input_Frame{pressed = {.Mine}}, TEST_TICK_RATE)
-	testing.expect(t, !entity_is_alive(&world.entities, handle))
-	testing.expect_value(t, players[0].inventory.slots[9], Item_Stack{test_item(content.items, "wooden_chest"), 1})
-}
-
-@(test)
 test_interact_opens_an_entity_instead_of_jumping :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)

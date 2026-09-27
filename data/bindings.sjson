@@ -71,6 +71,8 @@ bindings = [
 	// R2 stays Confirm too: on a slot of a machine panel it quick moves
 	// instead (work item 0078), elsewhere it confirms.
 	{action = "Menu_Quick_Move" device = "gamepad" control = "RIGHT_TRIGGER" context = "menu"}
+	// The inventory's Drop (work item 0062).
+	{action = "Menu_Drop" device = "gamepad" control = "RIGHT_STICK" context = "menu"}
 
 	// Keyboard, in the world.
 	{action = "Jump" device = "keyboard" control = "SPACE" context = "world"}
@@ -126,6 +128,7 @@ bindings = [
 	{action = "Menu_Quick_Move" device = "keyboard" control = "Q" context = "menu"}
 	// Held with a left click: a quick move with the mouse.
 	{action = "Menu_Quick_Move_Modifier" device = "keyboard" control = "LEFT_CONTROL" context = "menu"}
+	{action = "Menu_Drop" device = "keyboard" control = "X" context = "menu"}
 
 	// Mouse.
 	{action = "Mine" device = "mouse" control = "LEFT" context = "world"}
