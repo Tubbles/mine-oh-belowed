@@ -12,7 +12,9 @@
 //   craft     item, count      crafted by hand or smelted; with
 //             produced_since_active = true only what was made after the
 //             quest became active counts
-//   place     entity, count    placements of a machine from machines.sjson
+//   place     entity, count    placements of a machine from machines.sjson;
+//             or item, count   blocks placed with an item that places one
+//                              (concrete, slag heaps)
 //   sustain   item, rate_per_minute, minutes, hands_off
 //                              produced at the rate for that long without a
 //                              break (and, hands_off, without a world action)
@@ -42,10 +44,15 @@
 // an inserter reached a minute of uninterrupted idling),
 // drill_fuel_burned (fuel items lit by drills), brownout_ticks (ticks
 // some power network was below full satisfaction), unpowered_machine_ticks
-// (electric machines outside every power network, summed over ticks).
+// (electric machines outside every power network, summed over ticks),
+// recycled (items recyclers took, counted when a recycling craft ends).
+// A hint with on_activation = true and no counter or threshold fires as
+// soon as its quest becomes active.
 //
-// A reward is {item, count}, landing in the capsule, or {unlocks_recipe}
-// for a recipe of the quest channel.
+// A reward is {item, count}, landing in the capsule, {unlocks_recipe}
+// for a recipe of the quest channel, or {unlocks_technology}, which marks
+// the technology researched (the quest gates of placeholder technologies
+// the labs refuse).
 id = "chapter_01"
 title_key = "chapter_01_title"
 quests = [

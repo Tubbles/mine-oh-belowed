@@ -91,6 +91,9 @@ objective_subject :: proc(objective: Objective, screen_context: Screen_Context) 
 	case .Obtain, .Craft, .Deliver, .Sustain:
 		return item_name(screen_context.items, objective.item)
 	case .Place:
+		if objective.machine == NO_MACHINE {
+			return item_name(screen_context.items, objective.item)
+		}
 		return machine_name(screen_context.machines, objective.machine)
 	case .Research:
 		return technology_name(screen_context.technologies, objective.technology)
@@ -210,6 +213,9 @@ rewards_text :: proc(quest: Quest, screen_context: Screen_Context) -> string {
 	}
 	for recipe in quest.reward_recipes {
 		append(&parts, recipe_name(screen_context.recipes, recipe))
+	}
+	for technology in quest.reward_technologies {
+		append(&parts, technology_name(screen_context.technologies, technology))
 	}
 	return strings.join(parts[:], ", ", context.temp_allocator)
 }

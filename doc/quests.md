@@ -38,6 +38,8 @@ Defined in data, evaluated every tick against the statistics counters, placed en
 
 - Chapter 4 (0022) runs steam, first pole (two poles and five glass, since the lamp is behind optics), first research (automation, carrying the brownout and unpowered hints), assembly, electric drill, second engine, and the main quest "The first contract" (100 electronic circuits delivered), which pays copper and iron plates until the phase 5 machines exist. A test plays every shipped chapter in order and checks that no objective needs a locked recipe and that research objectives follow their prerequisites.
 
+- Chapter 5 (0029) runs low grade (steel and ore processing research, then low grade hematite), the processing line (crusher, washer, crushed hematite), slag (20 slag heaps placed and 10 concrete blocks, a place objective may now name a block placing item through a per item blocks placed counter), alloys, recycling (a new `recycled` counter), a statistics contract (sustain 30 plates per minute, with a hint that fires on activation through the new `on_activation` hint form), and the main quest "extraction rights" (200 concrete and 100 brass delivered) whose reward marks the placeholder `oil_processing` technology researched through the new `unlocks_technology` reward. Chapter 4's first contract now pays a crusher and a washer.
+
 ## Spawn requirements
 
 Chapter 1 only works if the world guarantees, within about 150 blocks of the landing pad: trees, surface stone, sand, water, one iron outcrop, one copper outcrop and one coal outcrop. World generation searches for a spawn that satisfies this. It belongs to `doc/world.md` once written.

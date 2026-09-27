@@ -1,0 +1,109 @@
+// Chapter 5, Contracts (doc/quests.md outline). The format is described
+// in chapter_01.sjson. Research gates the order: ore_processing needs
+// steel_processing, so "low_grade" researches both and "alloys" needs no
+// research of its own. obtain names one item, so "low_grade" asks for low
+// grade hematite rather than low grade ore of any kind. The produced
+// counter cannot tell a washer from a drill, so "processing_line" counts
+// crushed hematite, which only the crusher makes. No counter tells gravel
+// from slag apart from gravel from ore, so "slag" asks for slag heaps (the
+// sink) and concrete blocks (the use of gravel), both counted as blocks
+// placed. The main quest grants the oil_processing placeholder technology
+// through the quest channel, the phase 6 gate.
+id = "chapter_05"
+title_key = "chapter_05_title"
+quests = [
+	{
+		id = "low_grade"
+		title_key = "quest_low_grade_title"
+		text_key = "quest_low_grade_text"
+		objectives = [
+			{type = "research", technology = "steel_processing"}
+			{type = "research", technology = "ore_processing"}
+			{type = "obtain", item = "hematite_low_grade", count = 20}
+		]
+		message_key = "mc_low_grade"
+		complete_key = "mc_low_grade_done"
+	}
+	{
+		id = "processing_line"
+		title_key = "quest_processing_line_title"
+		text_key = "quest_processing_line_text"
+		objectives = [
+			{type = "place", entity = "crusher", count = 1}
+			{type = "place", entity = "washer", count = 1}
+			{type = "craft", item = "crushed_hematite", count = 50, produced_since_active = true}
+		]
+		message_key = "mc_processing_line"
+		complete_key = "mc_processing_line_done"
+	}
+	{
+		id = "slag"
+		title_key = "quest_slag_title"
+		text_key = "quest_slag_text"
+		objectives = [
+			{type = "place", item = "slag", count = 20}
+			{type = "place", item = "concrete", count = 10}
+		]
+		message_key = "mc_slag"
+		complete_key = "mc_slag_done"
+		hints = [
+			{counter = "furnace_output_full", threshold = 3, text_key = "mc_hint_slag"}
+		]
+	}
+	{
+		id = "alloys"
+		title_key = "quest_alloys_title"
+		text_key = "quest_alloys_text"
+		objectives = [
+			{type = "craft", item = "bronze_plate", count = 40, produced_since_active = true}
+			{type = "craft", item = "steel", count = 20, produced_since_active = true}
+		]
+		message_key = "mc_alloys"
+		complete_key = "mc_alloys_done"
+	}
+	{
+		id = "recycling"
+		title_key = "quest_recycling_title"
+		text_key = "quest_recycling_text"
+		objectives = [
+			{type = "research", technology = "recycling"}
+			{type = "place", entity = "recycler", count = 1}
+			{type = "counter", counter = "recycled", label_key = "objective_recycled", count = 20}
+		]
+		message_key = "mc_recycling"
+		complete_key = "mc_recycling_done"
+		hints = [
+			{counter = "inventory_full_ticks", threshold = 1800, text_key = "mc_hint_recycler"}
+		]
+	}
+	{
+		id = "statistics"
+		title_key = "quest_statistics_title"
+		text_key = "quest_statistics_text"
+		objectives = [
+			{type = "sustain", item = "iron_plate", rate_per_minute = 30, minutes = 5}
+		]
+		message_key = "mc_statistics"
+		complete_key = "mc_statistics_done"
+		hints = [
+			{on_activation = true, text_key = "mc_hint_statistics"}
+		]
+	}
+	{
+		id = "extraction_rights"
+		title_key = "quest_extraction_rights_title"
+		text_key = "quest_extraction_rights_text"
+		objectives = [
+			{type = "deliver", item = "concrete", count = 200}
+			{type = "deliver", item = "brass_plate", count = 100}
+		]
+		message_key = "mc_extraction_rights"
+		complete_key = "mc_extraction_rights_done"
+		rewards = [
+			{unlocks_technology = "oil_processing"}
+			{item = "steel", count = 50}
+			{item = "electronic_circuit", count = 100}
+		]
+		main = true
+	}
+]

@@ -18,7 +18,10 @@
 // (work item 0026) unlocks the crusher and washer and the crushing and
 // washing recipes; the alloy furnace is a start recipe since 0027, so
 // bronze is reachable in phase 2. recycling (work item 0027) unlocks the
-// recycler. 15 s per pack is a guess for both.
+// recycler. 15 s per pack is a guess for both. oil_processing (work item
+// 0029) is the phase 6 gate: chapter 5's main quest grants it through the
+// quest channel, and as a placeholder the labs refuse it. Its recipes do
+// not exist yet; its cost only shows in the technology screen.
 technologies = [
 	{id = "automation", name_key = "technology_automation", unlocks = ["assembler_1"], packs = 10, seconds = 10, science_packs = ["science_pack_1"]}
 	{id = "logistics", name_key = "technology_logistics", unlocks = ["splitter", "filter_inserter"], packs = 20, seconds = 15, science_packs = ["science_pack_1"], prerequisites = ["automation"]}
@@ -31,4 +34,5 @@ technologies = [
 	{id = "recycling", name_key = "technology_recycling", unlocks = ["recycler"], packs = 50, seconds = 15, science_packs = ["science_pack_1"], prerequisites = ["ore_processing"]}
 	{id = "logistics_science", name_key = "technology_logistics_science", unlocks = [], packs = 75, seconds = 15, science_packs = ["science_pack_1"], prerequisites = ["logistics"], placeholder = true}
 	{id = "fast_belts", name_key = "technology_fast_belts", unlocks = [], packs = 100, seconds = 30, science_packs = ["science_pack_1"], prerequisites = ["logistics_science"], placeholder = true}
+	{id = "oil_processing", name_key = "technology_oil_processing", unlocks = [], packs = 100, seconds = 30, science_packs = ["science_pack_1"], prerequisites = ["ore_processing"], placeholder = true}
 ]

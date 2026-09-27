@@ -40,10 +40,10 @@ test_chapter_04_loads :: proc(t: ^testing.T) {
 	testing.expect(t, contract.main)
 	testing.expect_value(t, contract.objectives[0].type, Objective_Type.Deliver)
 	testing.expect_value(t, contract.objectives[0].count, 100)
-	copper, iron := test_item(references.items, "copper_plate"), test_item(references.items, "iron_plate")
+	crusher, washer := test_item(references.items, "crusher"), test_item(references.items, "washer")
 	testing.expect_value(t, len(contract.reward_items), 2)
-	testing.expect_value(t, contract.reward_items[0], Item_Stack{copper, 50})
-	testing.expect_value(t, contract.reward_items[1], Item_Stack{iron, 50})
+	testing.expect_value(t, contract.reward_items[0], Item_Stack{crusher, 1})
+	testing.expect_value(t, contract.reward_items[1], Item_Stack{washer, 1})
 }
 
 // What the quests so far have opened: technologies researched by research
@@ -88,7 +88,7 @@ item_reachable :: proc(items: Item_Registry, recipes: Recipe_Registry, item: Ite
 objective_item :: proc(objective: Objective, machines: Machine_Registry) -> Item_Id {
 	#partial switch objective.type {
 	case .Place:
-		return machines.machines[objective.machine].item
+		return objective.machine == NO_MACHINE ? objective.item : machines.machines[objective.machine].item
 	case .Obtain, .Craft, .Deliver, .Sustain:
 		return objective.item
 	}
@@ -110,7 +110,8 @@ open_quest_research :: proc(t: ^testing.T, quest: Quest, technologies: Technolog
 }
 
 // Played in order, no quest asks for an item whose every recipe is still
-// locked, and research objectives come after their prerequisites.
+// locked, and research objectives come after their prerequisites. Reward
+// technologies count as researched from the next quest on.
 @(test)
 test_shipped_quests_never_need_a_locked_recipe :: proc(t: ^testing.T) {
 	references := make_test_quest_references()
@@ -129,6 +130,9 @@ test_shipped_quests_never_need_a_locked_recipe :: proc(t: ^testing.T) {
 		}
 		for recipe in quest.reward_recipes {
 			gates.quest_unlocked[recipe] = true
+		}
+		for technology in quest.reward_technologies {
+			gates.researched[technology] = true
 		}
 	}
 }
@@ -253,8 +257,8 @@ test_chapter_04_completes_in_order :: proc(t: ^testing.T) {
 	testing.expect(t, chapter_done(test.state, test.registry.chapters[0]))
 	testing.expect(t, has_message(&test, "mc_first_contract_done"))
 	testing.expect_value(t, slots_item_count(slots, circuit), 0)
-	testing.expect_value(t, slots_item_count(slots, test_item(test.items, "copper_plate")), 50)
-	testing.expect_value(t, slots_item_count(slots, test_item(test.items, "iron_plate")), 50)
+	testing.expect_value(t, slots_item_count(slots, test_item(test.items, "crusher")), 1)
+	testing.expect_value(t, slots_item_count(slots, test_item(test.items, "washer")), 1)
 	testing.expect_value(t, test.state.notices[len(test.state.notices) - 1].text_key, CAPSULE_LANDED_KEY)
 }
 

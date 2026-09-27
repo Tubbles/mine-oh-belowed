@@ -85,6 +85,9 @@ Statistics :: struct {
 	consumed:                    []u64,
 	// Indexed by Machine_Id: how often a player placed one.
 	placed:                      []u64,
+	// Indexed by Item_Id: blocks a player placed with the item (concrete,
+	// slag heaps).
+	blocks_placed:               []u64,
 	// Indexed by Block_Id: ticks spent holding Mine on a block of the type.
 	mining_ticks:                []u64,
 	stalls:                      [Machine_Stall]u64,
@@ -105,6 +108,8 @@ Statistics :: struct {
 	belt_dead_end_ticks:         u64,
 	// Fuel items lit by drills, a part of fuel_burned.
 	drill_fuel_burned:           u64,
+	// Items recyclers took, counted when a recycling craft finishes.
+	recycled:                    u64,
 	// Finite veins drills drained to the last unit.
 	veins_exhausted:             u64,
 	// Electric energy all networks delivered, in joules; produced and
@@ -137,6 +142,7 @@ make_statistics :: proc(item_count, machine_count, block_count: int, allocator :
 		voided = make([]u64, item_count, allocator),
 		consumed = make([]u64, item_count, allocator),
 		placed = make([]u64, machine_count, allocator),
+		blocks_placed = make([]u64, item_count, allocator),
 		mining_ticks = make([]u64, block_count, allocator),
 		produced_rates = make_item_rate_rings(item_count, allocator),
 		consumed_rates = make_item_rate_rings(item_count, allocator),
@@ -152,6 +158,7 @@ destroy_statistics :: proc(statistics: Statistics, allocator := context.allocato
 	delete(statistics.voided, allocator)
 	delete(statistics.consumed, allocator)
 	delete(statistics.placed, allocator)
+	delete(statistics.blocks_placed, allocator)
 	delete(statistics.mining_ticks, allocator)
 	destroy_item_rate_rings(statistics.produced_rates, allocator)
 	destroy_item_rate_rings(statistics.consumed_rates, allocator)
@@ -412,11 +419,18 @@ record_product :: proc(statistics: ^Statistics, product: Item_Stack, before, aft
 record_craft_outputs :: proc(statistics: ^Statistics, craft: Craft, before, after: Assembler) {
 	if craft.returns {
 		record_produced_stacks(statistics, craft.outputs)
+		record_recycled(statistics, craft.inputs)
 		return
 	}
 	first := assembler_first_output(after)
 	for product, index in craft.outputs {
 		record_product(statistics, product, before.slots[first + index], after.slots[first + index])
+	}
+}
+
+record_recycled :: proc(statistics: ^Statistics, taken: []Item_Stack) {
+	for stack in taken {
+		statistics.recycled += u64(stack.count)
 	}
 }
 
@@ -473,6 +487,13 @@ production_rate_per_minute :: proc(statistics: Statistics, item: Item_Id) -> u64
 record_placed :: proc(statistics: ^Statistics, machine: Machine_Id) {
 	if int(machine) < len(statistics.placed) {
 		statistics.placed[machine] += 1
+	}
+	statistics.world_actions += 1
+}
+
+record_block_placed :: proc(statistics: ^Statistics, item: Item_Id) {
+	if int(item) < len(statistics.blocks_placed) {
+		statistics.blocks_placed[item] += 1
 	}
 	statistics.world_actions += 1
 }

@@ -8,7 +8,8 @@ import "core:strings"
 // recipe unlocks and the capsule; hints fire once when their counter has
 // grown by the threshold since the quest became active. Completion logs
 // Mission Control's line, queues the rewards for the capsule, unlocks
-// quest channel recipes and activates the next quest in the same tick.
+// quest channel recipes and technologies and activates the next quest in
+// the same tick.
 //
 // obtain, craft, place and walk count everything since the game began,
 // so work done ahead of the journal counts ("quests guide, never block"),
@@ -130,6 +131,8 @@ hint_counter_value :: proc(statistics: Statistics, hint: Hint) -> u64 {
 		return statistics.brownout_ticks
 	case .Unpowered_Machine_Ticks:
 		return statistics.unpowered_machine_ticks
+	case .Recycled:
+		return statistics.recycled
 	}
 	return 0
 }
@@ -171,8 +174,7 @@ objective_progress :: proc(objective: Objective, index: int, progress: Quest_Pro
 		baseline := objective.produced_since_active ? progress.activation_baselines[index] : 0
 		return {item_counter(statistics.produced, objective.item) - baseline, objective.count}
 	case .Place:
-		placed := int(objective.machine) < len(statistics.placed) ? statistics.placed[objective.machine] : 0
-		return {placed, objective.count}
+		return {placed_count(statistics, objective), objective.count}
 	case .Walk:
 		return {statistics.distance_walked_millimetres / MILLIMETRES_PER_BLOCK, objective.count}
 	case .Research:
@@ -187,6 +189,14 @@ objective_progress :: proc(objective: Objective, index: int, progress: Quest_Pro
 		return {objective_counter_value(statistics, objective) - progress.activation_baselines[index], objective.count}
 	}
 	return {}
+}
+
+// Machines placed, or blocks placed with the objective's item.
+placed_count :: proc(statistics: Statistics, objective: Objective) -> u64 {
+	if objective.machine == NO_MACHINE {
+		return item_counter(statistics.blocks_placed, objective.item)
+	}
+	return int(objective.machine) < len(statistics.placed) ? statistics.placed[objective.machine] : 0
 }
 
 objective_counter_value :: proc(statistics: Statistics, objective: Objective) -> u64 {
@@ -329,6 +339,9 @@ queue_rewards :: proc(state: ^Quest_State, quest: Quest, unlocks: ^Recipe_Unlock
 	append(&state.pending_rewards, ..quest.reward_items)
 	for recipe in quest.reward_recipes {
 		unlock_quest_recipe(unlocks, recipes, recipe)
+	}
+	for technology in quest.reward_technologies {
+		mark_technology_researched(unlocks, recipes, technology)
 	}
 }
 

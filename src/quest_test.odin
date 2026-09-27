@@ -17,13 +17,14 @@ make_test_quest_references :: proc() -> Quest_References {
 	}
 }
 
-shipped_chapter_files :: proc() -> [4]Chapter_File {
+shipped_chapter_files :: proc() -> [5]Chapter_File {
 	first, first_error := parse_chapter_file(#load("../data/quests/chapter_01.sjson"), context.temp_allocator)
 	second, second_error := parse_chapter_file(#load("../data/quests/chapter_02.sjson"), context.temp_allocator)
 	third, third_error := parse_chapter_file(#load("../data/quests/chapter_03.sjson"), context.temp_allocator)
 	fourth, fourth_error := parse_chapter_file(#load("../data/quests/chapter_04.sjson"), context.temp_allocator)
-	assert(first_error == nil && second_error == nil && third_error == nil && fourth_error == nil)
-	return {first, second, third, fourth}
+	fifth, fifth_error := parse_chapter_file(#load("../data/quests/chapter_05.sjson"), context.temp_allocator)
+	assert(first_error == nil && second_error == nil && third_error == nil && fourth_error == nil && fifth_error == nil)
+	return {first, second, third, fourth, fifth}
 }
 
 make_test_quests :: proc(references: Quest_References) -> Quest_Registry {
@@ -46,7 +47,7 @@ test_quest_index :: proc(registry: Quest_Registry, id: string) -> int {
 test_shipped_quest_chapters_load :: proc(t: ^testing.T) {
 	references := make_test_quest_references()
 	registry := make_test_quests(references)
-	testing.expect_value(t, len(registry.chapters), 4)
+	testing.expect_value(t, len(registry.chapters), 5)
 	testing.expect_value(t, registry.chapters[0].quest_count, 9)
 	testing.expect_value(t, registry.chapters[1].first_quest, 9)
 	testing.expect_value(t, registry.chapters[1].quest_count, 8)
@@ -152,6 +153,17 @@ test_quest_data_rejects_bad_definitions :: proc(t: ^testing.T) {
 		with_objective(quest, {type = "counter", counter = "drill_fuel_burned", count = 1}),
 		with_objective(quest, {type = "counter", counter = "drill_fuel_burned", label_key = "objective_drill_fuel"}),
 		with_objective(quest, {type = "obtain", item = "log", count = 1, produced_since_active = true}),
+		// A place objective names exactly one of entity or item, and the
+		// item must place a block.
+		with_objective(quest, {type = "place", count = 1}),
+		with_objective(quest, {type = "place", entity = "stone_furnace", item = "concrete", count = 1}),
+		with_objective(quest, {type = "place", item = "iron_plate", count = 1}),
+		with_hint(quest, {on_activation = true, counter = "blocks_mined", text_key = "mc_hint_grass"}),
+		with_hint(quest, {on_activation = true, threshold = 1, text_key = "mc_hint_grass"}),
+		with_hint(quest, {on_activation = true, text_key = "no_such_key"}),
+		with_hint(quest, {counter = "blocks_mined", text_key = "mc_hint_grass"}),
+		with_reward(quest, {unlocks_technology = "no_such_technology"}),
+		with_reward(quest, {unlocks_recipe = "steam_engine", unlocks_technology = "oil_processing"}),
 	}
 	for bad in cases {
 		testing.expectf(t, resolve_test_chapter(chapter_with(bad), references) != "", "accepted %v", bad)
@@ -165,6 +177,12 @@ test_quest_data_rejects_bad_definitions :: proc(t: ^testing.T) {
 	testing.expect(t, resolve_test_chapter(chapter_with(missing_message), references) != "")
 	unlocking := with_reward(quest, {unlocks_recipe = "steam_engine"})
 	testing.expect_value(t, resolve_test_chapter(chapter_with(unlocking), references), "")
+	licensing := with_reward(quest, {unlocks_technology = "oil_processing"})
+	testing.expect_value(t, resolve_test_chapter(chapter_with(licensing), references), "")
+	paving := with_objective(quest, {type = "place", item = "concrete", count = 1})
+	testing.expect_value(t, resolve_test_chapter(chapter_with(paving), references), "")
+	announced := with_hint(quest, {on_activation = true, text_key = "mc_hint_grass"})
+	testing.expect_value(t, resolve_test_chapter(chapter_with(announced), references), "")
 	twice := []Chapter_File{good, good}
 	_, twice_problem := resolve_quest_registry(twice, references, context.temp_allocator)
 	testing.expect_value(t, twice_problem, `quest id "timber" is defined twice`)

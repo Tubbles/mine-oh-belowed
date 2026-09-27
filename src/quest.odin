@@ -64,6 +64,7 @@ Hint_Counter :: enum u8 {
 	Drill_Fuel_Burned,
 	Brownout_Ticks,
 	Unpowered_Machine_Ticks,
+	Recycled,
 }
 
 @(rodata)
@@ -86,6 +87,7 @@ hint_counter_names := [Hint_Counter]string {
 	.Drill_Fuel_Burned         = "drill_fuel_burned",
 	.Brownout_Ticks            = "brownout_ticks",
 	.Unpowered_Machine_Ticks   = "unpowered_machine_ticks",
+	.Recycled                  = "recycled",
 }
 
 // As written in the files, before references are resolved.
@@ -104,18 +106,23 @@ Objective_Definition :: struct {
 	produced_since_active: bool,
 }
 
+// on_activation hints fire when their quest becomes active and name no
+// counter or threshold.
 Hint_Definition :: struct {
-	counter:   string,
-	block:     string,
-	threshold: int,
-	text_key:  string,
+	counter:       string,
+	block:         string,
+	threshold:     int,
+	text_key:      string,
+	on_activation: bool,
 }
 
-// Either an item and a count, or unlocks_recipe.
+// Exactly one of an item and a count, unlocks_recipe or
+// unlocks_technology.
 Reward_Definition :: struct {
-	item:           string,
-	count:          int,
-	unlocks_recipe: string,
+	item:               string,
+	count:              int,
+	unlocks_recipe:     string,
+	unlocks_technology: string,
 }
 
 Quest_Definition :: struct {
@@ -137,10 +144,11 @@ Chapter_File :: struct {
 }
 
 // count is items, placements, blocks walked or counter growth. Unused
-// references are NO_ITEM, NO_MACHINE, NO_RECIPE, NO_TECHNOLOGY. counter
-// and label_key (the journal's text for it) belong to counter
-// objectives; produced_since_active makes a craft objective count from
-// activation.
+// references are NO_ITEM, NO_MACHINE, NO_RECIPE, NO_TECHNOLOGY. A place
+// objective has a machine, or with NO_MACHINE the item whose blocks are
+// counted. counter and label_key (the journal's text for it) belong to
+// counter objectives; produced_since_active makes a craft objective count
+// from activation.
 Objective :: struct {
 	type:                  Objective_Type,
 	item:                  Item_Id,
@@ -156,7 +164,8 @@ Objective :: struct {
 	produced_since_active: bool,
 }
 
-// threshold counts from the value when the quest became active.
+// threshold counts from the value when the quest became active; 0 fires
+// on activation.
 Hint :: struct {
 	counter:   Hint_Counter,
 	block:     Block_Id,
@@ -165,17 +174,18 @@ Hint :: struct {
 }
 
 Quest :: struct {
-	id:             string,
-	chapter:        int,
-	title_key:      string,
-	text_key:       string,
-	message_key:    string,
-	complete_key:   string,
-	objectives:     []Objective,
-	hints:          []Hint,
-	reward_items:   []Item_Stack,
-	reward_recipes: []int,
-	main:           bool,
+	id:                  string,
+	chapter:             int,
+	title_key:           string,
+	text_key:            string,
+	message_key:         string,
+	complete_key:        string,
+	objectives:          []Objective,
+	hints:               []Hint,
+	reward_items:        []Item_Stack,
+	reward_recipes:      []int,
+	reward_technologies: []int,
+	main:                bool,
 }
 
 // A chapter's quests are quests[first_quest:][:quest_count].
@@ -239,10 +249,7 @@ resolve_objective_reference :: proc(objective: ^Objective, definition: Objective
 	case .Obtain, .Craft, .Deliver, .Sustain:
 		return resolve_objective_item(objective, definition, references, quest_id)
 	case .Place:
-		found: bool
-		if objective.machine, found = find_machine_id(references.machines, definition.entity); !found {
-			return fmt.tprintf("quest %q names unknown entity %q", quest_id, definition.entity)
-		}
+		return resolve_objective_placement(objective, definition, references, quest_id)
 	case .Research:
 		if objective.technology = find_technology(references.technologies, definition.technology); objective.technology == NO_TECHNOLOGY {
 			return fmt.tprintf("quest %q names unknown technology %q", quest_id, definition.technology)
@@ -254,6 +261,27 @@ resolve_objective_reference :: proc(objective: ^Objective, definition: Objective
 	case .Counter:
 		return resolve_objective_counter(objective, definition, references, quest_id)
 	case .Walk:
+	}
+	return ""
+}
+
+// A machine (entity), or an item that places a block (item).
+resolve_objective_placement :: proc(objective: ^Objective, definition: Objective_Definition, references: Quest_References, quest_id: string) -> string {
+	if (definition.entity == "") == (definition.item == "") {
+		return fmt.tprintf("quest %q has a place objective that is not exactly one of entity or item", quest_id)
+	}
+	if definition.item != "" {
+		if problem := resolve_objective_item(objective, definition, references, quest_id); problem != "" {
+			return problem
+		}
+		if item_places_block(references.items, objective.item) == AIR_BLOCK {
+			return fmt.tprintf("quest %q places item %q, which places no block", quest_id, definition.item)
+		}
+		return ""
+	}
+	found: bool
+	if objective.machine, found = find_machine_id(references.machines, definition.entity); !found {
+		return fmt.tprintf("quest %q names unknown entity %q", quest_id, definition.entity)
 	}
 	return ""
 }
@@ -303,7 +331,21 @@ resolve_objective :: proc(definition: Objective_Definition, references: Quest_Re
 	return objective, ""
 }
 
+// Any counter works for a threshold of 0, since counters never shrink.
+resolve_activation_hint :: proc(definition: Hint_Definition, references: Quest_References, quest_id: string) -> (hint: Hint, problem: string) {
+	if definition.counter != "" || definition.threshold != 0 {
+		return {}, fmt.tprintf("quest %q has an on_activation hint with a counter or threshold", quest_id)
+	}
+	if problem = check_string_key(references, quest_id, "hint text_key", definition.text_key, true); problem != "" {
+		return {}, problem
+	}
+	return Hint{counter = .Blocks_Mined, text_key = definition.text_key}, ""
+}
+
 resolve_hint :: proc(definition: Hint_Definition, references: Quest_References, quest_id: string) -> (hint: Hint, problem: string) {
+	if definition.on_activation {
+		return resolve_activation_hint(definition, references, quest_id)
+	}
 	found: bool
 	if hint.counter, found = parse_named_enum(hint_counter_names, definition.counter); !found {
 		return {}, fmt.tprintf("quest %q has a hint on unknown counter %q", quest_id, definition.counter)
@@ -345,28 +387,63 @@ resolve_reward_item :: proc(definition: Reward_Definition, references: Quest_Ref
 	return Item_Stack{item = item, count = u16(definition.count)}, ""
 }
 
+resolve_reward_technology :: proc(name: string, references: Quest_References, quest_id: string) -> (technology: int, problem: string) {
+	technology = find_technology(references.technologies, name)
+	if technology == NO_TECHNOLOGY {
+		return NO_TECHNOLOGY, fmt.tprintf("quest %q unlocks unknown technology %q", quest_id, name)
+	}
+	return technology, ""
+}
+
+reward_kind_count :: proc(definition: Reward_Definition) -> int {
+	count := 0
+	for field in ([3]string{definition.item, definition.unlocks_recipe, definition.unlocks_technology}) {
+		count += field != "" ? 1 : 0
+	}
+	return count
+}
+
+Reward_Lists :: struct {
+	items:        [dynamic]Item_Stack,
+	recipes:      [dynamic]int,
+	technologies: [dynamic]int,
+}
+
+append_reward :: proc(lists: ^Reward_Lists, definition: Reward_Definition, references: Quest_References, quest_id: string) -> (problem: string) {
+	switch {
+	case definition.item != "":
+		stack: Item_Stack
+		if stack, problem = resolve_reward_item(definition, references, quest_id); problem == "" {
+			append(&lists.items, stack)
+		}
+	case definition.unlocks_recipe != "":
+		recipe: int
+		if recipe, problem = resolve_reward_recipe(definition.unlocks_recipe, references, quest_id); problem == "" {
+			append(&lists.recipes, recipe)
+		}
+	case:
+		technology: int
+		if technology, problem = resolve_reward_technology(definition.unlocks_technology, references, quest_id); problem == "" {
+			append(&lists.technologies, technology)
+		}
+	}
+	return problem
+}
+
 resolve_rewards :: proc(quest: ^Quest, definitions: []Reward_Definition, references: Quest_References, allocator := context.allocator) -> string {
-	items := make([dynamic]Item_Stack, allocator)
-	recipes := make([dynamic]int, allocator)
-	quest.reward_items, quest.reward_recipes = items[:], recipes[:]
+	lists := Reward_Lists {
+		items        = make([dynamic]Item_Stack, allocator),
+		recipes      = make([dynamic]int, allocator),
+		technologies = make([dynamic]int, allocator),
+	}
+	defer quest.reward_items, quest.reward_recipes, quest.reward_technologies = lists.items[:], lists.recipes[:], lists.technologies[:]
 	for definition in definitions {
-		if (definition.item == "") == (definition.unlocks_recipe == "") {
-			return fmt.tprintf("quest %q has a reward that is not exactly one of item or unlocks_recipe", quest.id)
+		if reward_kind_count(definition) != 1 {
+			return fmt.tprintf("quest %q has a reward that is not exactly one of item, unlocks_recipe or unlocks_technology", quest.id)
 		}
-		if definition.item != "" {
-			stack, problem := resolve_reward_item(definition, references, quest.id)
-			if problem != "" {
-				return problem
-			}
-			append(&items, stack)
-		} else {
-			recipe, problem := resolve_reward_recipe(definition.unlocks_recipe, references, quest.id)
-			if problem != "" {
-				return problem
-			}
-			append(&recipes, recipe)
+		if problem := append_reward(&lists, definition, references, quest.id); problem != "" {
+			return problem
 		}
-		quest.reward_items, quest.reward_recipes = items[:], recipes[:]
 	}
 	return ""
 }

@@ -170,9 +170,10 @@ place_block_with_player :: proc(world: ^World, registry: Block_Registry, items: 
 	if !placement_allowed(world, registry, players, player.target.adjacent) {
 		return
 	}
+	item := selected_hotbar_stack(player^).item
 	if world_set_block(world, player.target.adjacent, block) {
 		take_from_slot(&inventory_hotbar(player.inventory)[player.selected_hotbar_slot], 1)
-		record_world_action(&world.statistics)
+		record_block_placed(&world.statistics, item)
 	}
 }
 

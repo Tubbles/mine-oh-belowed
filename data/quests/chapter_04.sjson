@@ -5,8 +5,8 @@
 // drill. The lamp needs optics, so "first_pole" asks for glass instead of
 // a lamp. Placement and output are measured, not the layout: nothing
 // checks that the poles reach the engine or that the gears come from the
-// assembler (gears crafted by hand count too). The main quest rewards
-// plates: the crusher and washer of phase 5 are not items yet.
+// assembler (gears crafted by hand count too). The main quest pays a
+// crusher and a washer for chapter 5.
 id = "chapter_04"
 title_key = "chapter_04_title"
 quests = [
@@ -88,8 +88,8 @@ quests = [
 		message_key = "mc_first_contract"
 		complete_key = "mc_first_contract_done"
 		rewards = [
-			{item = "copper_plate", count = 50}
-			{item = "iron_plate", count = 50}
+			{item = "crusher", count = 1}
+			{item = "washer", count = 1}
 		]
 		main = true
 	}
