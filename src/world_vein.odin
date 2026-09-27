@@ -93,8 +93,8 @@ register_column_veins :: proc(world: ^World, column: Chunk_Column, veins: []Vein
 	world.column_veins[column] = ids
 }
 
-// The registered veins overlapping a chunk column, empty when no chunk of
-// the column was loaded yet.
+// The registered veins of both layers overlapping a chunk column, empty
+// when no chunk of the column was loaded yet.
 veins_of_column :: proc(world: ^World, column: Chunk_Column, allocator := context.allocator) -> []Vein {
 	ids := world.column_veins[column] or_else nil
 	veins := make([]Vein, len(ids), allocator)
@@ -102,6 +102,22 @@ veins_of_column :: proc(world: ^World, column: Chunk_Column, allocator := contex
 		veins[index] = world.veins[world.vein_indices[id]]
 	}
 	return veins
+}
+
+vein_is_deep :: proc(vein: Vein) -> bool {
+	return vein.id.layer == .Deep
+}
+
+// The registered deep vein whose disc holds the column (the first in
+// placement order), for a bore drill standing over it.
+deep_vein_at_column :: proc(world: ^World, x, z: i32) -> (id: Vein_Id, found: bool) {
+	column := chunk_column_of(world_to_chunk_coordinate({x, 0, z}))
+	for vein in veins_of_column(world, column, context.temp_allocator) {
+		if vein_is_deep(vein) && column_in_disc(vein.centre, vein.radius, x, z) {
+			return vein.id, true
+		}
+	}
+	return {}, false
 }
 
 // Nil for an id no chunk registered. Valid until the next vein registers.

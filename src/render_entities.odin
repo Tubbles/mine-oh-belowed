@@ -32,6 +32,8 @@ DRILL_COLOR :: rl.Color{150, 120, 70, 255}
 DRILL_TOP_COLOR :: rl.Color{95, 75, 45, 255}
 ELECTRIC_DRILL_COLOR :: rl.Color{80, 120, 150, 255}
 ELECTRIC_DRILL_TOP_COLOR :: rl.Color{50, 75, 95, 255}
+BORE_DRILL_COLOR :: rl.Color{110, 90, 130, 255}
+BORE_DRILL_TOP_COLOR :: rl.Color{70, 55, 85, 255}
 DRILL_BIT_COLOR :: rl.Color{200, 200, 205, 255}
 DRILL_ARROW_COLOR :: rl.Color{240, 220, 80, 255}
 DRILL_BIT_LENGTH :: 0.8
@@ -50,6 +52,7 @@ crafting_machine_colors := [Recipe_Maker]rl.Color {
 	.Cracking      = {130, 90, 110, 255},
 	.Chemistry     = {110, 150, 110, 255},
 	.Gasifier      = {120, 100, 80, 255},
+	.Electrolysis  = {170, 150, 60, 255},
 	.Recycler      = {90, 120, 70, 255},
 }
 LAB_COLOR :: rl.Color{200, 204, 210, 255}
@@ -105,7 +108,9 @@ draw_inserter :: proc(inserter: Inserter, machine: Machine, items: Item_Registry
 // A bar across the top that turns with the cycle while the drill mines,
 // and the output arrow on the top face.
 draw_drill :: proc(drill: Drill, machine: Machine, machines: Machine_Registry, tick_rate: int) {
-	if drill_is_electric(drill) {
+	if drill_is_bore(machine) {
+		draw_entity_cells(drill.common, machines, BORE_DRILL_COLOR, BORE_DRILL_TOP_COLOR)
+	} else if drill_is_electric(drill) {
 		draw_entity_cells(drill.common, machines, ELECTRIC_DRILL_COLOR, ELECTRIC_DRILL_TOP_COLOR)
 	} else {
 		draw_entity_cells(drill.common, machines, DRILL_COLOR, DRILL_TOP_COLOR)

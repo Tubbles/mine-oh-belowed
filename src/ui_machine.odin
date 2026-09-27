@@ -124,7 +124,8 @@ machine_area_size :: proc(machine: Machine, slot_count: int) -> [2]f32 {
 	case .Inserter:
 		return {FURNACE_AREA_WIDTH, UI_ROW_HEIGHT + (UI_SLOT_SIZE + UI_GAP) + 3 * UI_ROW_HEIGHT}
 	case .Drill:
-		return {DRILL_AREA_WIDTH, UI_ROW_HEIGHT + (UI_SLOT_SIZE + UI_GAP) + (1 + DRILL_TEXT_ROWS) * UI_ROW_HEIGHT}
+		rows := 1 + DRILL_TEXT_ROWS + drill_extra_rows(machine)
+		return {DRILL_AREA_WIDTH, UI_ROW_HEIGHT + (UI_SLOT_SIZE + UI_GAP) + f32(rows) * UI_ROW_HEIGHT}
 	case .Splitter:
 		return {SPLITTER_AREA_WIDTH, UI_ROW_HEIGHT + SPLITTER_CHOICE_ROWS * (UI_ROW_HEIGHT + UI_GAP) + (UI_SLOT_SIZE + UI_GAP)}
 	case .Pipe, .Offshore_Pump, .Boiler, .Steam_Engine, .Storage_Tank, .Pump, .Tar_Pit_Pump, .Flare_Stack, .Combustion_Generator:
@@ -216,9 +217,16 @@ inserter_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, inserter: Ins
 	return result
 }
 
+// A bore drill's depth line, and a level and a flow line per fluid port
+// (the revival port).
+drill_extra_rows :: proc(machine: Machine) -> int {
+	return (drill_is_bore(machine) ? 1 : 0) + FLUID_ROWS_PER_BUFFER * machine.fluid_port_count
+}
+
 // The fuel slot and burn bar (or the power line of an electric drill) on
-// the first row, the cycle bar, then the vein's lines, the rate and the
-// state.
+// the first row, the cycle bar (the boring bar while a bore drill bores),
+// then the vein's lines, a bore drill's depth, the revival port, the rate
+// (halved while revived) and the state.
 drill_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, drill: Drill, screen_context: Screen_Context) -> Slot_Grid_Result {
 	result := Slot_Grid_Result{activated = -1, focused = -1}
 	machine := screen_context.machines.machines[drill.machine]
@@ -235,7 +243,14 @@ drill_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, drill: Drill, sc
 	for line in drill_vein_lines(screen_context.world, screen_context.veins, screen_context.items, drill) {
 		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), line, UI_BODY_TEXT_SIZE, .Left)
 	}
-	rate := fmt.tprintf("%s: %s", text("drill_rate"), format_per_minute(drill_units_per_minute(machine, screen_context.tick_rate)))
+	if drill_is_bore(machine) {
+		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), drill_depth_line(screen_context.world, drill), UI_BODY_TEXT_SIZE, .Left)
+	}
+	for port, index in fluid_ports_of(machine) {
+		fluid_buffer_rows(state, &content, screen_context.fluids, drill.buffers[index], port.filter, port.capacity, drill.closed[index], screen_context.tick_rate)
+	}
+	units := drill_units_per_minute(machine, screen_context.tick_rate, drill.state == .Revived)
+	rate := fmt.tprintf("%s: %s", text("drill_rate"), format_per_minute(units))
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), rate, UI_BODY_TEXT_SIZE, .Left)
 	output_rate_label(state, &content, drill.output_rate, screen_context)
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text(drill_state_keys[drill.state]), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
@@ -291,6 +306,14 @@ drill_vein_lines :: proc(world: ^World, veins: Vein_Content, items: Item_Registr
 		append(&lines, fmt.tprintf("%s: %d %s", name, vein.remaining[index], text("drill_remaining")))
 	}
 	return lines[:]
+}
+
+// "Depth: 64 blocks", how far below the surface the tapped vein's centre
+// lies.
+drill_depth_line :: proc(world: ^World, drill: Drill) -> string {
+	vein := registered_vein(world, drill.vein)
+	depth := vein == nil ? 0 : vein.depth
+	return fmt.tprintf("%s: %d %s", text("drill_depth"), depth, text("drill_blocks"))
 }
 
 // The vein's name and what is left of it in total, for the HUD.

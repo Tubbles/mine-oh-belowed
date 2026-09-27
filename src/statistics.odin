@@ -780,9 +780,13 @@ snapshot_capsule :: proc(statistics: ^Statistics, slots: []Item_Stack) {
 	total_stacks(statistics.capsule_totals, slots)
 }
 
-// Fuel burned, and a stall when the drill enters it. What the drill
-// produces is recorded where it leaves the drill (output_drill_item).
+// Fuel burned, mining fluid a revived drill took from its port, and a
+// stall when the drill enters it. What the drill produces is recorded
+// where it leaves the drill (output_drill_item). Networks move fluid only
+// after the drills, so a port change here is the drill's own.
 record_drill_tick :: proc(statistics: ^Statistics, before, after: Drill) {
+	buffers_before, buffers_after := before.buffers, after.buffers
+	record_buffer_changes(statistics, buffers_before[:], buffers_after[:])
 	if fuel_item_lit(before.fuel_joules, after.fuel_joules) {
 		statistics.fuel_burned += 1
 		statistics.drill_fuel_burned += 1

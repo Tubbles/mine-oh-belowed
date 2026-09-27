@@ -9,6 +9,11 @@ package game
 // The direction is Entity_Common.rotation (0 is +x, like belts). A burner
 // drill has a fuel slot; an electric drill (no fuel slot) mines at its
 // power network's satisfaction through power credit (power_machine.odin).
+// A bore drill (work item 0035, a machine with boring_seconds) taps a deep
+// vein under its footprint's centre column instead of an outcrop, and
+// bores that long, in ticks of work, before its first cycle. A drill with
+// a revival port keeps an exhausted finite vein producing at half rate
+// while the port holds mining fluid (vein revival, DESIGN.md The world).
 
 DRILL_SLOT_COUNT :: 1
 DRILL_FUEL_SLOT :: 0
@@ -25,6 +30,12 @@ LOW_GRADE_START_PPM :: 100_000
 LOW_GRADE_END_PPM :: 600_000
 LOW_GRADE_END_REMAINING_PERCENT :: 5
 PARTS_PER_MILLION :: 1_000_000
+// Vein revival: a revived drill takes this many cycles per unit and this
+// many litres of its revival port's fluid.
+REVIVAL_CYCLE_FACTOR :: 2
+REVIVAL_LITRES_PER_UNIT :: 10
+// The revival port is a drill's only fluid port (machine_fluid_ports.odin).
+REVIVAL_PORT :: 0
 
 // No_Fuel first, so a freshly placed drill without fuel does not count as
 // entering a stall.
@@ -34,6 +45,8 @@ Drill_State :: enum u8 {
 	Waiting_For_Room,
 	Vein_Exhausted,
 	Unpowered,
+	Boring,
+	Revived,
 }
 
 @(rodata)
@@ -43,10 +56,14 @@ drill_state_keys := [Drill_State]string {
 	.Waiting_For_Room = "machine_state_waiting_for_room",
 	.Vein_Exhausted   = "machine_state_vein_exhausted",
 	.Unpowered        = "machine_state_unpowered",
+	.Boring           = "machine_state_boring",
+	.Revived          = "machine_state_revived",
 }
 
 // held is a drawn unit that found no room yet. slot_count is 1 for a
-// burner drill (its fuel slot) and 0 for an electric one.
+// burner drill (its fuel slot) and 0 for an electric one. bored_ticks
+// counts a bore drill's ticks of boring. buffers and closed are per fluid
+// port like a fluid machine's; only the revival port is used.
 Drill :: struct {
 	using common:     Entity_Common,
 	slot_count:       int,
@@ -60,26 +77,34 @@ Drill :: struct {
 	power:            Power_State,
 	// Units output over the last minute, for the panel (statistics.odin).
 	output_rate:      Machine_Output_Rate,
+	bored_ticks:      u32,
+	buffers:          [MAXIMUM_FLUID_PORTS]Fluid_Buffer,
+	closed:           [MAXIMUM_FLUID_PORTS]bool,
 }
 
 make_drill :: proc(common: Entity_Common, vein: Vein_Id, slot_count: int) -> Drill {
-	return Drill{common = common, slot_count = min(slot_count, DRILL_SLOT_COUNT), slots = {EMPTY_STACK}, vein = vein, held = EMPTY_STACK}
+	drill := Drill{common = common, slot_count = min(slot_count, DRILL_SLOT_COUNT), slots = {EMPTY_STACK}, vein = vein, held = EMPTY_STACK}
+	for &buffer in drill.buffers {
+		buffer = EMPTY_FLUID_BUFFER
+	}
+	return drill
 }
 
 drill_is_electric :: proc(drill: Drill) -> bool {
 	return drill.slot_count == 0
 }
 
-// Pays for one tick of mining: a tick of fuel, or a step of power
-// credit. False with the state set when it cannot mine this tick; an
-// electric drill in a brownout keeps mining, only on fewer ticks.
-drill_draws_energy :: proc(drill: ^Drill, machine: Machine, items: Item_Registry, tick_rate: int) -> bool {
+// Pays for one tick of work (mining, boring or revived mining): a tick of
+// fuel, or a step of power credit. False with the state set when it cannot
+// work this tick; an electric drill in a brownout keeps working, only on
+// fewer ticks.
+drill_draws_energy :: proc(drill: ^Drill, machine: Machine, items: Item_Registry, tick_rate: int, working: Drill_State) -> bool {
 	if drill_is_electric(drill^) {
 		if !power_is_on(drill.power) {
 			drill.state = .Unpowered
 			return false
 		}
-		drill.state = .Mining
+		drill.state = working
 		return take_power_step(&drill.power)
 	}
 	per_tick := fuel_joules_per_tick(machine, tick_rate)
@@ -88,8 +113,46 @@ drill_draws_energy :: proc(drill: ^Drill, machine: Machine, items: Item_Registry
 		return false
 	}
 	drill.fuel_joules -= per_tick
-	drill.state = .Mining
+	drill.state = working
 	return true
+}
+
+drill_is_bore :: proc(machine: Machine) -> bool {
+	return machine.boring_seconds > 0
+}
+
+drill_boring_ticks :: proc(machine: Machine, tick_rate: int) -> u32 {
+	return machine.boring_seconds * u32(tick_rate)
+}
+
+drill_is_boring :: proc(drill: Drill, machine: Machine, tick_rate: int) -> bool {
+	return drill.bored_ticks < drill_boring_ticks(machine, tick_rate)
+}
+
+// The revival port holds at least a unit's worth of its fluid.
+drill_can_revive :: proc(drill: Drill, machine: Machine) -> bool {
+	if !machine.revival_port {
+		return false
+	}
+	buffer := drill.buffers[REVIVAL_PORT]
+	return buffer.fluid == machine.fluid_ports[REVIVAL_PORT].filter && buffer.level >= REVIVAL_LITRES_PER_UNIT
+}
+
+// What the drill would do this tick given energy: bore, mine, mine an
+// exhausted vein through its revival port, or nothing (Vein_Exhausted,
+// also for a drill without a registered vein).
+drill_activity :: proc(drill: Drill, machine: Machine, vein: ^Vein, infinite: bool, tick_rate: int) -> Drill_State {
+	switch {
+	case vein == nil:
+		return .Vein_Exhausted
+	case drill_is_boring(drill, machine, tick_rate):
+		return .Boring
+	case !vein_is_exhausted(vein^, infinite):
+		return .Mining
+	case drill_can_revive(drill, machine):
+		return .Revived
+	}
+	return .Vein_Exhausted
 }
 
 // 60 s times the tick rate times the reference ore share over the ore
@@ -99,8 +162,14 @@ drill_cycle_ticks :: proc(machine: Machine, tick_rate: int) -> u32 {
 	return max(u32(units / (100 * u64(max(machine.items_per_minute, 1)))), 1)
 }
 
-drill_units_per_minute :: proc(machine: Machine, tick_rate: int) -> f32 {
-	return f32(tick_rate) * 60 / f32(drill_cycle_ticks(machine, tick_rate))
+// A revived drill takes REVIVAL_CYCLE_FACTOR cycles per unit.
+drill_active_cycle_ticks :: proc(machine: Machine, revived: bool, tick_rate: int) -> u32 {
+	ticks := drill_cycle_ticks(machine, tick_rate)
+	return revived ? ticks * REVIVAL_CYCLE_FACTOR : ticks
+}
+
+drill_units_per_minute :: proc(machine: Machine, tick_rate: int, revived := false) -> f32 {
+	return f32(tick_rate) * 60 / f32(drill_active_cycle_ticks(machine, revived, tick_rate))
 }
 
 // The cell in front of the footprint's middle on the arrow side, at
@@ -124,10 +193,16 @@ drill_drop_lane :: proc(entities: ^Entities, drill: Drill, target: Entity_Handle
 }
 
 // Seeded by the world seed, the vein and its draw count, so a draw never
-// depends on which drill or which tick takes it.
+// depends on which drill or which tick takes it. A deep vein mixes in its
+// layer, so it never shares a stream with the surface vein of the same
+// region and index; surface veins keep the stream of work item 0016.
 vein_draw_hash :: proc(seed: u64, vein: Vein) -> u64 {
 	hash := hash_combine(hash_combine(seed, VEIN_DRAW_SALT), pack_pair(vein.id.region.x, vein.id.region.y))
-	return hash_combine(hash_combine(hash, u64(vein.id.index)), vein.draws)
+	hash = hash_combine(hash_combine(hash, u64(vein.id.index)), vein.draws)
+	if vein_is_deep(vein) {
+		hash = hash_combine(hash, u64(vein.id.layer))
+	}
+	return hash
 }
 
 // Each output weighs its percent while it has units left; in an infinite
@@ -201,19 +276,33 @@ exhaust_vein :: proc(world: ^World, vein: ^Vein) {
 // Takes one unit from the vein. The last unit of a finite vein exhausts
 // it, and its outcrop turns to spent rock at the end of the tick.
 draw_from_vein :: proc(world: ^World, veins: Vein_Content, vein: ^Vein) -> Item_Id {
+	return draw_vein_unit(world, veins, vein, world.settings.veins_infinite)
+}
+
+// A unit of an exhausted vein through a drill's revival port: by the vein
+// type's mix as if the reservoir were full, taking nothing from it, for
+// REVIVAL_LITRES_PER_UNIT of the port's fluid.
+draw_revived_unit :: proc(world: ^World, veins: Vein_Content, vein: ^Vein, port: ^Fluid_Buffer) -> Item_Id {
+	port.level -= REVIVAL_LITRES_PER_UNIT
+	return draw_vein_unit(world, veins, vein, true)
+}
+
+// full draws as if the reservoir were full and takes nothing from it (an
+// infinite or a revived vein). The draw count always grows, since it
+// seeds the next draw.
+draw_vein_unit :: proc(world: ^World, veins: Vein_Content, vein: ^Vein, full: bool) -> Item_Id {
 	if vein.type >= len(veins.types) {
 		return NO_ITEM
 	}
 	vein_type := veins.types[vein.type]
-	infinite := world.settings.veins_infinite
 	draw_hash := vein_draw_hash(world.settings.seed, vein^)
-	output := choose_vein_output(vein^, vein_type, infinite, draw_hash)
+	output := choose_vein_output(vein^, vein_type, full, draw_hash)
 	if output < 0 {
 		return NO_ITEM
 	}
-	item := graded_output(vein^, vein_type, output, infinite, draw_hash)
+	item := graded_output(vein^, vein_type, output, full, draw_hash)
 	vein.draws += 1
-	if !infinite {
+	if !full {
 		vein.remaining[output] -= 1
 		if vein_is_exhausted(vein^, false) {
 			exhaust_vein(world, vein)
@@ -240,9 +329,9 @@ output_drill_item :: proc(world: ^World, content: Simulation_Content, drill: ^Dr
 }
 
 // One tick. A held unit has to go out before anything else happens; fuel
-// burns (or power is drawn) and progress counts only while the drill mines. Veins are never
-// unregistered, so a missing vein only happens to a drill placed without
-// one, and it reads as exhausted.
+// burns (or power is drawn) and progress counts only while the drill
+// works. Veins are never unregistered, so a missing vein only happens to
+// a drill placed without one, and it reads as exhausted.
 advance_drill :: proc(world: ^World, content: Simulation_Content, drill: ^Drill, tick_rate: int) {
 	machine := content.machines.machines[drill.machine]
 	if !stack_is_empty(drill.held) && !output_drill_item(world, content, drill, machine) {
@@ -250,19 +339,24 @@ advance_drill :: proc(world: ^World, content: Simulation_Content, drill: ^Drill,
 		return
 	}
 	vein := registered_vein(world, drill.vein)
-	if vein == nil || vein_is_exhausted(vein^, world.settings.veins_infinite) {
-		drill.state = .Vein_Exhausted
+	activity := drill_activity(drill^, machine, vein, world.settings.veins_infinite, tick_rate)
+	if activity == .Vein_Exhausted {
+		drill.state = activity
 		return
 	}
-	if !drill_draws_energy(drill, machine, content.items, tick_rate) {
+	if !drill_draws_energy(drill, machine, content.items, tick_rate, activity) {
+		return
+	}
+	if activity == .Boring {
+		drill.bored_ticks += 1
 		return
 	}
 	drill.progress_ticks += 1
-	if drill.progress_ticks < drill_cycle_ticks(machine, tick_rate) {
+	if drill.progress_ticks < drill_active_cycle_ticks(machine, activity == .Revived, tick_rate) {
 		return
 	}
 	drill.progress_ticks = 0
-	item := draw_from_vein(world, content.veins, vein)
+	item := activity == .Revived ? draw_revived_unit(world, content.veins, vein, &drill.buffers[REVIVAL_PORT]) : draw_from_vein(world, content.veins, vein)
 	if item == NO_ITEM {
 		return
 	}
@@ -272,8 +366,12 @@ advance_drill :: proc(world: ^World, content: Simulation_Content, drill: ^Drill,
 	}
 }
 
+// The boring progress while a bore drill bores, else the cycle's.
 drill_progress_fraction :: proc(drill: Drill, machine: Machine, tick_rate: int) -> f32 {
-	return f32(drill.progress_ticks) / f32(drill_cycle_ticks(machine, tick_rate))
+	if drill_is_boring(drill, machine, tick_rate) {
+		return f32(drill.bored_ticks) / f32(drill_boring_ticks(machine, tick_rate))
+	}
+	return f32(drill.progress_ticks) / f32(drill_active_cycle_ticks(machine, drill.state == .Revived, tick_rate))
 }
 
 drill_burn_fraction :: proc(drill: Drill) -> f32 {
@@ -304,6 +402,12 @@ drill_vein_under :: proc(world: ^World, veins: Vein_Content, cells: []World_Coor
 		}
 	}
 	return {}, false
+}
+
+// A bore drill taps the deep vein whose disc holds its footprint's centre
+// column (for an even side, the column just past the middle).
+bore_drill_vein_under :: proc(world: ^World, origin: World_Coordinate, size: [3]i32) -> (vein: Vein_Id, found: bool) {
+	return deep_vein_at_column(world, origin.x + size.x / 2, origin.z + size.z / 2)
 }
 
 vein_remaining_total :: proc(vein: Vein) -> i64 {

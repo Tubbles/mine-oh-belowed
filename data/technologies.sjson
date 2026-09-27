@@ -34,9 +34,13 @@
 // exists. combustion_power (work item 0032, science pack 1) unlocks the
 // combustion generator; 30 s per pack is a guess.
 // deep_mining (work item 0033) is the phase 7 gate: chapter 6's main
-// quest grants it through the quest channel. It is a placeholder until the
-// bore drill and the seismic survey exist (M8), and a quest_gate so it
-// stays one afterwards; its cost only shows in the technology screen.
+// quest grants it through the quest channel, and as a quest_gate the labs
+// refuse it; its cost only shows in the technology screen. Since work
+// item 0035 it unlocks the bore drill, the mining fluid and the bauxite
+// crushing and washing (the revival ports come with the drills).
+// electrolysis (work item 0035, science packs 1 and 2) unlocks the
+// electrolyser, alumina, aluminium plate and silicon; 30 s per pack is a
+// guess.
 // placeholder = true marks a technology that unlocks nothing yet, and
 // quest_gate = true one only a main quest reward researches; labs refuse
 // both.
@@ -58,5 +62,6 @@ technologies = [
 	{id = "renewable_plastics", name_key = "technology_renewable_plastics", unlocks = ["wood_gasifier", "wood_gasification", "syngas_plastic"], packs = 75, seconds = 30, science_packs = ["science_pack_1"], prerequisites = ["plastics"]}
 	{id = "bitumen_paving", name_key = "technology_bitumen_paving", unlocks = ["bitumen", "asphalt"], packs = 50, seconds = 30, science_packs = ["science_pack_1"], prerequisites = ["plastics"]}
 	{id = "combustion_power", name_key = "technology_combustion_power", unlocks = ["combustion_generator"], packs = 75, seconds = 30, science_packs = ["science_pack_1"], prerequisites = ["oil_processing"]}
-	{id = "deep_mining", name_key = "technology_deep_mining", unlocks = [], packs = 200, seconds = 30, science_packs = ["science_pack_1", "science_pack_2"], prerequisites = ["plastics"], placeholder = true, quest_gate = true}
+	{id = "deep_mining", name_key = "technology_deep_mining", unlocks = ["bore_drill", "mining_fluid", "crush_bauxite", "wash_bauxite"], packs = 200, seconds = 30, science_packs = ["science_pack_1", "science_pack_2"], prerequisites = ["plastics"], quest_gate = true}
+	{id = "electrolysis", name_key = "technology_electrolysis", unlocks = ["electrolyser", "alumina", "aluminium_plate", "silicon"], packs = 150, seconds = 30, science_packs = ["science_pack_1", "science_pack_2"], prerequisites = ["deep_mining"]}
 ]

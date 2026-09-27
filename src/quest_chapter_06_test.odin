@@ -1,5 +1,6 @@
 package game
 
+import "core:slice"
 import "core:testing"
 
 // Chapter 6 (data/quests/chapter_06.sjson): produce_fluid objectives, the
@@ -51,16 +52,18 @@ test_chapter_06_loads :: proc(t: ^testing.T) {
 	testing.expect_value(t, permit.reward_items[1], Item_Stack{test_item(items, "electronic_circuit"), 50})
 }
 
-// deep_mining unlocks nothing yet and the labs refuse it.
+// deep_mining unlocks the bore drill and the mining fluid since work item
+// 0035, and the labs still refuse it.
 @(test)
-test_deep_mining_is_a_quest_gate_placeholder :: proc(t: ^testing.T) {
+test_deep_mining_is_a_quest_gate :: proc(t: ^testing.T) {
 	test := make_crafting_test()
 	technologies := test.technologies
 	deep_mining := test_technology(technologies, "deep_mining")
 	technology := technologies.technologies[deep_mining]
-	testing.expect(t, technology.placeholder)
+	testing.expect(t, !technology.placeholder)
 	testing.expect(t, technology.quest_gate)
-	testing.expect_value(t, len(technology.unlocks), 0)
+	testing.expect(t, slice.contains(technology.unlocks, find_recipe(test.recipes, "bore_drill")))
+	testing.expect(t, slice.contains(technology.unlocks, find_recipe(test.recipes, "mining_fluid")))
 	for id in ([?]string{"automation", "logistics", "steel_processing", "ore_processing", "oil_processing", "plastics"}) {
 		mark_technology_researched(&test.unlocks, test.recipes, test_technology(technologies, id))
 	}

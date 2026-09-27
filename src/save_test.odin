@@ -117,7 +117,9 @@ lay_save_test_oil :: proc(world: ^World, content: Simulation_Content, offset: Wo
 // Every entity kind with contents: the power plant (offshore pump, pipes,
 // boiler, steam engine, poles, electric drill, lamp, electric inserter), a
 // power switch, an assembler line, labs, a furnace line with belts, a
-// splitter, a burner drill on a finite vein, and the capsule of the pad.
+// splitter, a burner drill on a finite vein, a bore drill part way down
+// to a deep vein, mining fluid in the electric drill's revival port, and
+// the capsule of the pad.
 build_save_test_site :: proc(simulation: ^Simulation_State, content: Simulation_Content) {
 	world := &simulation.world
 	carve_save_test_floor(world, test_block(content.blocks, "stone"))
@@ -130,6 +132,10 @@ build_save_test_site :: proc(simulation: ^Simulation_State, content: Simulation_
 	vein := add_test_vein(world, content, "iron", {-19, 21}, 1, IRON_TEST_VEIN, 1000)
 	place_test_drill(world, content, {-20, 1, 20}, 0, vein)
 	lay_belt_row(world, content, {-18, 1, 20}, 4, 0)
+	world.entities.drills.entries[0].buffers[REVIVAL_PORT] = {fluid = test_fluid(content, "mining_fluid"), level = 120}
+	deep := add_test_deep_vein(world, content, "gold_quartz", {21, -10}, 3, {20_000, 70_000, 10_000, 0}, 1000)
+	bore := test_drill(world, place_test_entity(world, content, "bore_drill", {20, 1, -12}))
+	bore.vein, bore.bored_ticks = deep, 1234
 	technology := test_technology(content.technologies, "automation")
 	testing_refusal := queue_research(&world.research, content.technologies, simulation.unlocks, technology)
 	assert(testing_refusal == .None)
@@ -167,6 +173,18 @@ pipes_holding_fluid :: proc(entities: ^Entities) -> int {
 		count += pipe.alive && pipe.buffer.level > 0 ? 1 : 0
 	}
 	return count
+}
+
+// A registered deep vein, a bore drill bored part way and a revival port
+// holding fluid (work item 0035).
+deep_veins_and_bore_drill_loaded :: proc(world: ^World) -> bool {
+	bored, holding := false, false
+	for drill in world.entities.drills.entries {
+		vein := registered_vein(world, drill.vein)
+		bored ||= drill.alive && drill.bored_ticks > 0 && vein != nil && vein_is_deep(vein^)
+		holding ||= drill.alive && drill.buffers[REVIVAL_PORT].level > 0
+	}
+	return bored && holding
 }
 
 labs_in_progress :: proc(entities: ^Entities) -> int {
@@ -244,6 +262,7 @@ test_save_load_run_matches_the_original :: proc(t: ^testing.T) {
 	testing.expect(t, loaded.world.research.queued && labs_in_progress(&loaded.world.entities) > 0)
 	testing.expect(t, len(loaded.quests.messages) > 0)
 	testing.expect(t, pipes_holding_fluid(&loaded.world.entities) > 0)
+	testing.expect(t, deep_veins_and_bore_drill_loaded(&loaded.world))
 	testing.expect_value(t, len(loaded.world.entities.fluid_networks.networks), len(original.world.entities.fluid_networks.networks))
 	testing.expect_value(t, len(loaded.world.entities.electric_networks.networks), len(original.world.entities.electric_networks.networks))
 	testing.expect_value(t, len(loaded.world.entities.belt_network.lines), len(original.world.entities.belt_network.lines))

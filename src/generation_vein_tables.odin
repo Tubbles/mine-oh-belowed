@@ -28,9 +28,11 @@ Vein_Output :: struct {
 	percent:   i64,
 }
 
+// deep (work item 0035): placed by the deep pass only, without an outcrop.
 Vein_Type_Definition :: struct {
 	id:             string,
 	name_key:       string,
+	deep:           bool,
 	weight:         i32,
 	biomes:         []string,
 	outcrop_blocks: []string,
@@ -41,6 +43,9 @@ Veins_File :: struct {
 	richness_distance:     i32,
 	maximum_radius_growth: i32,
 	spent_block:           string,
+	deep_units_factor:     i64,
+	deep_minimum_depth:    i32,
+	deep_maximum_depth:    i32,
 	size_classes:          []Vein_Size_Class,
 	vein_types:            []Vein_Type_Definition,
 	spawn_vein_types:      []string,
@@ -58,6 +63,11 @@ Vein_Tables :: struct {
 	maximum_radius_growth: i32,
 	// The block an exhausted vein's outcrop turns into.
 	spent_block:           Block_Id,
+	// Deep veins hold deep_units_factor times the units of their size
+	// class, and their centre lies this many blocks below the surface.
+	deep_units_factor:     i64,
+	deep_minimum_depth:    i32,
+	deep_maximum_depth:    i32,
 	size_classes:          []Vein_Size_Class,
 	types:                 []Vein_Type,
 	spawn_types:           []int,
@@ -101,8 +111,10 @@ validate_vein_type_definition :: proc(definition: Vein_Type_Definition) -> strin
 		return fmt.tprintf("vein type %q has no name_key", definition.id)
 	case definition.weight < 1:
 		return fmt.tprintf("vein type %q needs a positive weight", definition.id)
-	case len(definition.outcrop_blocks) == 0:
+	case !definition.deep && len(definition.outcrop_blocks) == 0:
 		return fmt.tprintf("vein type %q has no outcrop block", definition.id)
+	case definition.deep && len(definition.outcrop_blocks) != 0:
+		return fmt.tprintf("deep vein type %q cannot have an outcrop", definition.id)
 	case len(definition.outputs) == 0 || len(definition.outputs) > MAXIMUM_VEIN_OUTPUTS:
 		return fmt.tprintf("vein type %q needs 1 to %d outputs", definition.id, MAXIMUM_VEIN_OUTPUTS)
 	case total_percent != 100:
@@ -121,6 +133,10 @@ validate_veins_file :: proc(file: Veins_File) -> string {
 		return fmt.tprintf("need 1 to %d vein types", MAXIMUM_VEIN_TYPES)
 	case largest_possible_radius(file) * 2 + 2 >= REGION_SIZE:
 		return "a vein footprint could exceed its region"
+	case file.deep_units_factor < 1:
+		return "deep_units_factor must be positive"
+	case file.deep_minimum_depth < 1 || file.deep_minimum_depth > file.deep_maximum_depth:
+		return "deep_minimum_depth and deep_maximum_depth need 1 <= minimum <= maximum"
 	}
 	for size_class in file.size_classes {
 		if problem := validate_size_class(size_class); problem != "" {
@@ -176,8 +192,8 @@ resolve_spawn_types :: proc(names: []string, types: []Vein_Type, allocator := co
 	indices = make([]int, len(names), allocator)
 	for name, index in names {
 		indices[index] = find_vein_type_index(types, name)
-		if indices[index] < 0 {
-			return nil, fmt.tprintf("spawn_vein_types names unknown vein type %q", name)
+		if indices[index] < 0 || types[indices[index]].definition.deep {
+			return nil, fmt.tprintf("spawn_vein_types names unknown or deep vein type %q", name)
 		}
 	}
 	return indices, ""
@@ -190,6 +206,9 @@ resolve_vein_tables :: proc(file: Veins_File, registry: Block_Registry, biomes: 
 	tables = Vein_Tables {
 		richness_distance     = file.richness_distance,
 		maximum_radius_growth = file.maximum_radius_growth,
+		deep_units_factor     = file.deep_units_factor,
+		deep_minimum_depth    = file.deep_minimum_depth,
+		deep_maximum_depth    = file.deep_maximum_depth,
 		size_classes          = file.size_classes,
 		types                 = make([]Vein_Type, len(file.vein_types), allocator),
 	}

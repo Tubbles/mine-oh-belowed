@@ -30,7 +30,7 @@ make_test_generator :: proc(seed: u64) -> Generator {
 test_shipped_generation_data_resolves :: proc(t: ^testing.T) {
 	generator := make_test_generator(DEFAULT_WORLD_SEED)
 	testing.expect_value(t, len(generator.biomes), 6)
-	testing.expect_value(t, len(generator.veins.types), 8)
+	testing.expect_value(t, len(generator.veins.types), 13)
 	testing.expect_value(t, len(generator.veins.size_classes), 3)
 	testing.expect_value(t, len(generator.veins.spawn_types), 3)
 	testing.expect(t, generator.blocks.water != generator.blocks.stone)

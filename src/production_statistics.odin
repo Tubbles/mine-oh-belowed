@@ -252,7 +252,7 @@ crafting_machine_marker_colour :: proc(state: Assembler_State, connected: bool) 
 
 drill_marker_colour :: proc(state: Drill_State, connected: bool) -> Marker_Colour {
 	switch state {
-	case .Mining:
+	case .Mining, .Boring, .Revived:
 		return .Green
 	case .Waiting_For_Room:
 		return .Yellow

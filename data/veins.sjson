@@ -15,6 +15,16 @@ richness_distance = 2048
 maximum_radius_growth = 3
 // What the outcrop of an exhausted finite vein turns into (work item 0016).
 spent_block = "spent_rock"
+// Deep veins (work item 0035): a second placement pass per region with its
+// own seed, using the size classes above with deep_units_factor times the
+// units (doc/content.md: five times the surface class) and the vein types
+// flagged deep = true. A deep vein has no outcrop; its centre lies
+// deep_minimum_depth to deep_maximum_depth blocks below the surface at the
+// disc centre, and a bore drill standing on the surface over its disc taps
+// it.
+deep_units_factor = 5
+deep_minimum_depth = 40
+deep_maximum_depth = 120
 
 size_classes = [
 	{
@@ -60,6 +70,10 @@ size_classes = [
 // percent throughout on infinite veins). Spoils and coal have none.
 // Lead, zinc and nickel (phase 5) keep to the hills, desert and forest
 // with lower weights, a guess pending the couch tests.
+// deep = true (work item 0035) makes a deep vein type: placed only by the
+// deep pass, never by the surface one, with no outcrop_blocks. Deep types
+// are richer and carry the rarer ores (bauxite, gold in quartz); their
+// mixes and weights are guesses pending the couch tests.
 vein_types = [
 	{
 		id = "iron"
@@ -124,6 +138,51 @@ vein_types = [
 		biomes = ["desert", "plains"]
 		outcrop_blocks = ["pentlandite_ore"]
 		outputs = [{ore = "pentlandite", low_grade = "pentlandite_low_grade", percent = 60}, {ore = "chalcopyrite", low_grade = "chalcopyrite_low_grade", percent = 20}, {ore = "sand", percent = 20}]
+	}
+	{
+		id = "deep_iron"
+		name_key = "vein_type_deep_iron"
+		deep = true
+		weight = 25
+		biomes = []
+		outcrop_blocks = []
+		outputs = [{ore = "hematite", low_grade = "hematite_low_grade", percent = 90}, {ore = "gravel", percent = 10}]
+	}
+	{
+		id = "deep_copper"
+		name_key = "vein_type_deep_copper"
+		deep = true
+		weight = 20
+		biomes = []
+		outcrop_blocks = []
+		outputs = [{ore = "chalcopyrite", low_grade = "chalcopyrite_low_grade", percent = 75}, {ore = "cassiterite", low_grade = "cassiterite_low_grade", percent = 15}, {ore = "sand", percent = 10}]
+	}
+	{
+		id = "bauxite"
+		name_key = "vein_type_bauxite"
+		deep = true
+		weight = 25
+		biomes = []
+		outcrop_blocks = []
+		outputs = [{ore = "bauxite", low_grade = "bauxite_low_grade", percent = 85}, {ore = "gravel", percent = 15}]
+	}
+	{
+		id = "gold_quartz"
+		name_key = "vein_type_gold_quartz"
+		deep = true
+		weight = 10
+		biomes = []
+		outcrop_blocks = []
+		outputs = [{ore = "gold_ore", percent = 20}, {ore = "quartz", percent = 70}, {ore = "gravel", percent = 10}]
+	}
+	{
+		id = "deep_pentlandite"
+		name_key = "vein_type_deep_pentlandite"
+		deep = true
+		weight = 15
+		biomes = []
+		outcrop_blocks = []
+		outputs = [{ore = "pentlandite", low_grade = "pentlandite_low_grade", percent = 75}, {ore = "chalcopyrite", low_grade = "chalcopyrite_low_grade", percent = 15}, {ore = "sand", percent = 10}]
 	}
 ]
 

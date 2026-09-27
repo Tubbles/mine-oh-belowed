@@ -411,7 +411,11 @@ remove_entity :: proc(entities: ^Entities, machines: Machine_Registry, handle: E
 	case .Inserter:
 		return pool_remove(&entities.inserters, handle)
 	case .Drill:
-		return pool_remove(&entities.drills, handle)
+		pool_remove(&entities.drills, handle)
+		if machines.machines[common.machine].fluid_port_count > 0 {
+			rebuild_fluid_networks(entities, machines)
+		}
+		return true
 	case .Pipe:
 		pool_remove(&entities.pipes, handle)
 		rebuild_fluid_networks(entities, machines)

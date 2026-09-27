@@ -31,6 +31,7 @@ Recipe_Maker :: enum u8 {
 	Cracking,
 	Chemistry,
 	Gasifier,
+	Electrolysis,
 	Recycler,
 }
 
@@ -48,6 +49,7 @@ recipe_maker_names := [Recipe_Maker]string {
 	.Cracking      = "cracking",
 	.Chemistry     = "chemistry",
 	.Gasifier      = "gasifier",
+	.Electrolysis  = "electrolysis",
 	.Recycler      = "recycler",
 }
 

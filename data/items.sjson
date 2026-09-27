@@ -27,6 +27,11 @@
 // Chemistry (work item 0031): plastic bar, sulfur and bitumen from the
 // chemical plant, asphalt paving from bitumen and gravel, and science
 // pack 2, which needs plastic. The chemical products do not recycle.
+// Deep veins (work item 0035): bauxite (with a low grade twin and its
+// crushed form), gold ore and quartz come only from deep veins through
+// bore drills, so they have no ore blocks. Bauxite washes into alumina,
+// the electrolyser turns alumina into aluminium plate and quartz into
+// silicon, and the furnace smelts gold ore into gold plate.
 items = [
 	// Raw materials
 	{id = "log", name_key = "item_log", category = "raw", stack_size = 50, places_block = "log", fuel_megajoules = 2, cannot_recycle = true}
@@ -48,6 +53,10 @@ items = [
 	{id = "galena_low_grade", name_key = "item_galena_low_grade", category = "raw", stack_size = 50, cannot_recycle = true}
 	{id = "sphalerite_low_grade", name_key = "item_sphalerite_low_grade", category = "raw", stack_size = 50, cannot_recycle = true}
 	{id = "pentlandite_low_grade", name_key = "item_pentlandite_low_grade", category = "raw", stack_size = 50, cannot_recycle = true}
+	{id = "bauxite", name_key = "item_bauxite", category = "raw", stack_size = 50, cannot_recycle = true}
+	{id = "bauxite_low_grade", name_key = "item_bauxite_low_grade", category = "raw", stack_size = 50, cannot_recycle = true}
+	{id = "gold_ore", name_key = "item_gold_ore", category = "raw", stack_size = 50, cannot_recycle = true}
+	{id = "quartz", name_key = "item_quartz", category = "raw", stack_size = 50, cannot_recycle = true}
 	{id = "mud", name_key = "item_mud", category = "raw", stack_size = 50, cannot_recycle = true}
 	{id = "slag", name_key = "item_slag", category = "raw", stack_size = 100, places_block = "slag_heap", cannot_recycle = true}
 	// Processed materials and intermediates
@@ -71,6 +80,11 @@ items = [
 	{id = "zinc_plate", name_key = "item_zinc_plate", category = "intermediate", stack_size = 50}
 	{id = "nickel_plate", name_key = "item_nickel_plate", category = "intermediate", stack_size = 50}
 	{id = "brass_plate", name_key = "item_brass_plate", category = "intermediate", stack_size = 50}
+	{id = "crushed_bauxite", name_key = "item_crushed_bauxite", category = "intermediate", stack_size = 50, cannot_recycle = true}
+	{id = "alumina", name_key = "item_alumina", category = "intermediate", stack_size = 50, cannot_recycle = true}
+	{id = "aluminium_plate", name_key = "item_aluminium_plate", category = "intermediate", stack_size = 50}
+	{id = "gold_plate", name_key = "item_gold_plate", category = "intermediate", stack_size = 50}
+	{id = "silicon", name_key = "item_silicon", category = "intermediate", stack_size = 100, cannot_recycle = true}
 	{id = "iron_gear", name_key = "item_iron_gear", category = "intermediate", stack_size = 100}
 	{id = "iron_rod", name_key = "item_iron_rod", category = "intermediate", stack_size = 100}
 	{id = "copper_wire", name_key = "item_copper_wire", category = "intermediate", stack_size = 100}
@@ -123,6 +137,8 @@ items = [
 	{id = "combustion_generator", name_key = "item_combustion_generator", category = "machine", stack_size = 10}
 	{id = "chemical_plant", name_key = "item_chemical_plant", category = "machine", stack_size = 10}
 	{id = "wood_gasifier", name_key = "item_wood_gasifier", category = "machine", stack_size = 10}
+	{id = "bore_drill", name_key = "item_bore_drill", category = "machine", stack_size = 10}
+	{id = "electrolyser", name_key = "item_electrolyser", category = "machine", stack_size = 10}
 	// Blocks that drop themselves
 	{id = "leaves", name_key = "item_leaves", category = "block", stack_size = 50, places_block = "leaves"}
 	{id = "tar", name_key = "item_tar", category = "block", stack_size = 50, places_block = "tar"}

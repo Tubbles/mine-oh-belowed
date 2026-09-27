@@ -117,7 +117,8 @@ placement_for_player :: proc(world: ^World, content: Simulation_Content, players
 }
 
 // The placement of a machine with its rotated minimum corner at origin.
-// A drill is valid only over a vein outcrop, an offshore pump only with
+// A drill is valid only over a vein outcrop (a bore drill over a deep
+// vein's disc, work item 0035), an offshore pump only with
 // water in front of its intake, a tar pit pump only with a tar pit there.
 // A pipe may also stand on a pipe.
 placement_at :: proc(world: ^World, content: Simulation_Content, players: []Player, machine: Machine_Id, origin: World_Coordinate, rotation: u8) -> Placement {
@@ -137,7 +138,11 @@ placement_at :: proc(world: ^World, content: Simulation_Content, players: []Play
 	}
 	if placement.drill {
 		vein_found: bool
-		placement.vein, vein_found = drill_vein_under(world, content.veins, cells, origin.y)
+		if drill_is_bore(content.machines.machines[machine]) {
+			placement.vein, vein_found = bore_drill_vein_under(world, origin, placement.size)
+		} else {
+			placement.vein, vein_found = drill_vein_under(world, content.veins, cells, origin.y)
+		}
 		placement.valid = placement.valid && vein_found
 	}
 	if kind == .Pipe {
@@ -187,7 +192,8 @@ place_entity_with_player :: proc(world: ^World, content: Simulation_Content, pla
 }
 
 // Rotate with no machine item selected turns the targeted belt, inserter
-// or drill a quarter turn. A drill's footprint is square, so no cell moves.
+// or drill a quarter turn. A drill's footprint is square, so no cell moves,
+// but its revival port does, so its fluid networks are rebuilt.
 // A splitter turns half way round on its two cells.
 rotate_targeted_entity :: proc(world: ^World, content: Simulation_Content, player: ^Player) -> bool {
 	#partial switch player.target.entity.kind {
@@ -204,6 +210,9 @@ rotate_targeted_entity :: proc(world: ^World, content: Simulation_Content, playe
 			return false
 		}
 		common.rotation = turn_right(common.rotation)
+		if content.machines.machines[common.machine].fluid_port_count > 0 {
+			rebuild_fluid_networks(&world.entities, content.machines)
+		}
 		record_world_action(&world.statistics)
 		return true
 	}

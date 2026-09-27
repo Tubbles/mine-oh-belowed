@@ -207,6 +207,12 @@ validate_fluid_port_layout :: proc(machine: Machine) -> string {
 		if len(ports) != 1 || inputs != 1 || ports[0].phase_filter != .Burnable_Gas {
 			return fmt.tprintf("combustion generator %q needs one input port admitting burnable gases only", machine.id)
 		}
+	case .Drill:
+		// A revival port: one input port holding one fluid (drill.odin).
+		revival := len(ports) == 1 && inputs == 1 && ports[0].filter != NO_FLUID && !ports[0].every_face
+		if machine.revival_port != revival {
+			return fmt.tprintf("drill %q needs revival_port with exactly one single face input port with a fluid, or neither", machine.id)
+		}
 	case .Crafting_Machine:
 		// Recipes take from input ports and give into output ports.
 		if inputs + outputs != len(ports) {

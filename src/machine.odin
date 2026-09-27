@@ -30,7 +30,8 @@ Machine_Kind :: enum u8 {
 	// Moves one item at a time from the cell behind it to the cell in
 	// front (inserter.odin).
 	Inserter,
-	// Taps the reservoir of the vein under it (drill.odin).
+	// Taps the reservoir of the vein under it (drill.odin), or of the deep
+	// vein below it for a bore drill.
 	Drill,
 	// Stands across two belt cells and shares items between them
 	// (splitter.odin).
@@ -145,6 +146,8 @@ Machine_Definition :: struct {
 	light_level:                  int,
 	recipe_maker:                 string,
 	recipe_choice:                string,
+	boring_seconds:               int,
+	revival_port:                 bool,
 }
 
 Machines_File :: struct {
@@ -201,6 +204,10 @@ Machine :: struct {
 	recipe_choice:               Recipe_Choice,
 	input_slot_count:            int,
 	output_slot_count:           int,
+	// Bore drills: the time spent reaching the deep vein (drill.odin).
+	boring_seconds:              u32,
+	// Drills: the only fluid port is a revival port.
+	revival_port:                bool,
 }
 
 Machine_Registry :: struct {
@@ -354,6 +361,9 @@ validate_drill_definition :: proc(definition: Machine_Definition) -> string {
 	if definition.slots != 0 || definition.input_slots != 0 || definition.output_slots != 0 || definition.filter_slots != 0 {
 		return fmt.tprintf("drill %q may only have a fuel slot", definition.id)
 	}
+	if definition.boring_seconds < 0 {
+		return fmt.tprintf("drill %q has a negative boring_seconds", definition.id)
+	}
 	return ""
 }
 
@@ -455,6 +465,8 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 		recipe_choice = recipe_choice,
 		input_slot_count = definition.input_slots,
 		output_slot_count = definition.output_slots,
+		boring_seconds = u32(max(definition.boring_seconds, 0)),
+		revival_port = definition.revival_port,
 	}
 }
 

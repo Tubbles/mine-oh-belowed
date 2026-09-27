@@ -296,9 +296,10 @@ share_generator_energy :: proc(participants: []Electric_Participant, networks: [
 
 // The tick.
 
-drill_wants_power :: proc(world: ^World, drill: Drill) -> bool {
+// While it has room and something to do: bore, mine, or mine a revived vein.
+drill_wants_power :: proc(world: ^World, drill: Drill, machine: Machine, tick_rate: int) -> bool {
 	vein := registered_vein(world, drill.vein)
-	return stack_is_empty(drill.held) && vein != nil && !vein_is_exhausted(vein^, world.settings.veins_infinite)
+	return stack_is_empty(drill.held) && drill_activity(drill, machine, vein, world.settings.veins_infinite, tick_rate) != .Vein_Exhausted
 }
 
 // Only while the arm swings, like a burner burns fuel.
@@ -346,7 +347,7 @@ collect_electric_participants :: proc(world: ^World, content: Simulation_Content
 	for drill in entities.drills.entries {
 		machine := machines.machines[drill.machine]
 		if drill.alive && machine_is_electric_consumer(machine) {
-			demand := drill_wants_power(world, drill) ? electric_joules_per_tick(machine.electric_power_watts, tick_rate) : 0
+			demand := drill_wants_power(world, drill, machine, tick_rate) ? electric_joules_per_tick(machine.electric_power_watts, tick_rate) : 0
 			append(&networks.participants, make_participant(networks, drill.common, false, demand))
 		}
 	}

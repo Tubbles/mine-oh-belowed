@@ -63,7 +63,7 @@ pipe_connects_through :: proc(entities: ^Entities, machines: Machine_Registry, c
 	#partial switch handle.kind {
 	case .Pipe:
 		return true
-	case .Fluid_Machine, .Assembler:
+	case .Fluid_Machine, .Assembler, .Drill:
 		common := entity_common(entities, handle)
 		return port_at_face(common^, machines.machines[common.machine], neighbour, opposite_directions[face]) >= 0
 	}
@@ -178,6 +178,12 @@ draw_fluid_entities :: proc(world: ^World, machines: Machine_Registry, fluids: F
 		if assembler.alive {
 			buffers := assembler.buffers
 			draw_fluid_ports(assembler.common, machines.machines[assembler.machine], buffers[:], fluids)
+		}
+	}
+	for drill in world.entities.drills.entries {
+		if drill.alive {
+			buffers := drill.buffers
+			draw_fluid_ports(drill.common, machines.machines[drill.machine], buffers[:], fluids)
 		}
 	}
 }

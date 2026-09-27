@@ -39,6 +39,16 @@
 // ticks (192 at 15 per minute and 80 percent), and the spoil comes on top.
 // The footprint must be square, so turning a placed drill moves no cell.
 // fuel_power_kilowatts is burned only on the ticks the drill works.
+// Bore drills (work item 0035): a drill with boring_seconds taps a deep
+// vein instead of an outcrop. It is placed on solid ground with the centre
+// column of its footprint inside a deep vein's disc, then bores for
+// boring_seconds (ticks of work, so a brownout lengthens it) before its
+// first cycle. The rate rule is the surface drill's.
+// revival_port = true (work item 0035) gives a drill one input fluid port
+// with a fluid filter (the mining fluid): once its finite vein is
+// exhausted, the drill keeps producing at half rate while the port holds
+// enough, taking 10 litres per unit, drawing by the vein type's mix as if
+// the reservoir were full. It has no effect on infinite veins.
 // Splitters (work item 0017): stand across two belt cells, so the
 // footprint is 1 along the flow (width) and 2 across it (depth);
 // belt_speed_blocks_per_second is the speed of items inside it, like the
@@ -104,7 +114,7 @@
 // gives while its network is satisfied above half.
 // Crafting machines (work items 0021 and 0026): speed, recipe_maker (the
 // made_in category of recipes.sjson it makes: assembler, crusher, washer,
-// alloy_furnace, refinery, cracking, chemistry or gasifier) and either
+// alloy_furnace, refinery, cracking, chemistry, gasifier or electrolysis) and either
 // electric_power_kilowatts or fuel_slots = 1 with fuel_power_kilowatts.
 // recipe_choice chosen: the player picks the
 // recipe in the panel, with one input slot per ingredient and one output
@@ -128,7 +138,8 @@
 // or wood gas), a second input on -x without a filter (water, heavy oil or
 // wood gas), so the fluids present together with the loaded item (coal,
 // charcoal or none) pick plastic bar, sulfur, bitumen or syngas plastic.
-// One item output slot shared by every product.
+// One item output slot shared by every product. The output port on +z
+// (work item 0035) takes the mining fluid made from sulfur and water.
 // Wood gasifier (work item 0031): logs in, charcoal out, wood gas out on
 // +z; electric, no fuel slot.
 // The recycler (work item 0027) is recipe_maker recycler, fixed: no
@@ -138,6 +149,8 @@
 // of each input count rounded down, at the recipe's time), and puts the
 // returns into any output slot holding their item or an empty one. Every
 // recyclable item's returns must fit the output slots.
+// Electrolyser (work item 0035): fixed, one input and one output slot,
+// alumina to aluminium plate and quartz to silicon.
 // Lab (work item 0021): speed and electric_power_kilowatts, no slot
 // fields. A lab has one slot per science pack item any technology in
 // technologies.sjson consumes.
@@ -265,6 +278,25 @@ machines = [
 		items_per_minute = 30
 		rate_reference_ore_percent = 80
 		electric_power_kilowatts = 90
+		revival_port = true
+		fluid_ports = [
+			{cell = {x = 0, y = 0, z = 1}, face = "negative_x", direction = "input", fluid = "mining_fluid", buffer_litres = 200}
+		]
+	}
+	{
+		id = "bore_drill"
+		name_key = "machine_bore_drill"
+		item = "bore_drill"
+		kind = "drill"
+		footprint = {width = 4, depth = 4, height = 4}
+		items_per_minute = 48
+		rate_reference_ore_percent = 80
+		electric_power_kilowatts = 300
+		boring_seconds = 180
+		revival_port = true
+		fluid_ports = [
+			{cell = {x = 0, y = 0, z = 1}, face = "negative_x", direction = "input", fluid = "mining_fluid", buffer_litres = 200}
+		]
 	}
 	{
 		id = "splitter"
@@ -521,6 +553,7 @@ machines = [
 		fluid_ports = [
 			{cell = {x = 1, y = 0, z = 0}, face = "negative_z", direction = "input", phase = "gas", buffer_litres = 200}
 			{cell = {x = 0, y = 0, z = 1}, face = "negative_x", direction = "input", buffer_litres = 200}
+			{cell = {x = 1, y = 0, z = 2}, face = "positive_z", direction = "output", fluid = "mining_fluid", buffer_litres = 200}
 		]
 	}
 	{
@@ -538,6 +571,19 @@ machines = [
 		fluid_ports = [
 			{cell = {x = 0, y = 0, z = 1}, face = "positive_z", direction = "output", fluid = "wood_gas", buffer_litres = 200}
 		]
+	}
+	{
+		id = "electrolyser"
+		name_key = "machine_electrolyser"
+		item = "electrolyser"
+		kind = "crafting_machine"
+		footprint = {width = 3, depth = 3, height = 3}
+		speed = 1
+		electric_power_kilowatts = 500
+		recipe_maker = "electrolysis"
+		recipe_choice = "fixed"
+		input_slots = 1
+		output_slots = 1
 	}
 	{
 		id = "lab"
