@@ -118,6 +118,12 @@ reload_shaders :: proc(state: ^Frame_State) -> string {
 	return reloaded ? "" : problem
 }
 
+// Every machine's mesh is made again from the files. A model that does
+// not load keeps every old mesh.
+reload_models :: proc(state: ^Frame_State) -> string {
+	return replace_machine_models(&state.model_renderer, state.content.machines, state.data_directory)
+}
+
 @(rodata)
 presentation_reload_keys := [Data_File_Category]string {
 	.Ignored        = "",
@@ -127,6 +133,7 @@ presentation_reload_keys := [Data_File_Category]string {
 	.Developer_Kits = "reload_developer_kits_done",
 	.Shaders        = "reload_shaders_done",
 	.Fonts          = "reload_fonts_done",
+	.Models         = "reload_models_done",
 	.Content        = "",
 }
 
@@ -140,6 +147,7 @@ presentation_file_names := [Data_File_Category]string {
 	.Developer_Kits = DEVELOPER_KITS_FILE_NAME,
 	.Shaders        = CHUNK_SHADER_DIRECTORY,
 	.Fonts          = FONTS_DIRECTORY,
+	.Models         = MODELS_DIRECTORY,
 	.Content        = "",
 }
 
@@ -155,6 +163,8 @@ reload_presentation :: proc(state: ^Frame_State, category: Data_File_Category) -
 		return reload_shaders(state)
 	case .Fonts:
 		return reload_fonts(state)
+	case .Models:
+		return reload_models(state)
 	}
 	return ""
 }
@@ -209,7 +219,8 @@ update_data_watch :: proc(state: ^Frame_State) {
 
 // The new content replaces the frame's; the old arena goes once nothing
 // points into it: the session was rebuilt already, and the renderers
-// that were made from the content are made again.
+// that were made from the content (chunk atlas, belts, machine models)
+// are made again.
 replace_frame_content :: proc(state: ^Frame_State, data: Game_Data) {
 	old_arena := state.content_arena
 	state.content = data.content
@@ -218,6 +229,7 @@ replace_frame_content :: proc(state: ^Frame_State, data: Game_Data) {
 	replace_chunk_atlas(&state.renderer, state.content.blocks)
 	destroy_belt_renderer(&state.belt_renderer)
 	state.belt_renderer = init_belt_renderer(state.content.machines)
+	use_machine_models(&state.model_renderer, state.content.machines, state.data_directory)
 	destroy_arena(old_arena)
 	state.data_watch.content_changed = false
 	state.data_watch.content_settling = false

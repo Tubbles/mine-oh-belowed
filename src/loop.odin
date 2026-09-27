@@ -98,6 +98,7 @@ Frame_State :: struct {
 	quit_requested:     bool,
 	renderer:           Chunk_Renderer,
 	belt_renderer:      Belt_Renderer,
+	model_renderer:     Model_Renderer,
 	show_diagnostics:   bool,
 	// The world statistics overlay (draw_world_overlay), off by default.
 	show_world_overlay: bool,
@@ -427,11 +428,11 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session) {
 	rl.BeginMode3D(camera)
 	defer rl.EndMode3D()
 	draw_chunks(&state.renderer, camera)
-	draw_entities(world, content.machines, content.items, tick_rate)
+	draw_entities(world, content.machines, state.model_renderer, content.items, tick_rate)
 	if state.settings.bottleneck_overlay {
 		draw_machine_markers(world, content.machines, camera.position)
 	}
-	draw_fluid_entities(world, content.machines, content.fluids)
+	draw_fluid_entities(world, content.machines, state.model_renderer, content.fluids)
 	draw_power_entities(world, content.machines)
 	draw_belts(&state.belt_renderer, world, content.items, content.machines, session.simulation.tick, alpha, tick_rate)
 	draw_player_world_overlay(world, frame_simulation_content(state), session.simulation.players[:], 0, alpha)
@@ -719,6 +720,8 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	defer destroy_chunk_renderer(&state.renderer)
 	state.belt_renderer = init_belt_renderer(content.machines)
 	defer destroy_belt_renderer(&state.belt_renderer)
+	state.model_renderer = init_model_renderer(content.machines, data_directory)
+	defer destroy_model_renderer(&state.model_renderer)
 	start_command_frame_state(&state)
 	defer destroy_command_frame_state(&state)
 	if session != nil {

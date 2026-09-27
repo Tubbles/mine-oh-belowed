@@ -5,6 +5,12 @@
 // name_key is a key into data/strings/en.sjson.
 // footprint is width (x), depth (z) and height (y) in blocks before
 // rotation, each from 1 to 9; a quarter turn swaps width and depth.
+// model (optional, work item 0055) names data/models/<model>.vox, a
+// MagicaVoxel model drawn in place of the coloured box, scaled to the
+// footprint (8 or 16 voxels per block) and turned with the machine. Its
+// +x side is the front, the side the rotation points at. A named file
+// must exist and load. tools/make_placeholder_models.py writes the
+// placeholders.
 // kind selects the panel and the simulation: chest, furnace, capsule,
 // belt, inserter, drill, splitter, pipe, offshore_pump, boiler,
 // steam_engine, storage_tank, pump, tar_pit_pump, flare_stack,
@@ -189,6 +195,7 @@ machines = [
 	{
 		id = "wooden_chest"
 		name_key = "machine_wooden_chest"
+		model = "wooden_chest"
 		item = "wooden_chest"
 		kind = "chest"
 		footprint = {width = 1, depth = 1, height = 1}
@@ -205,6 +212,7 @@ machines = [
 	{
 		id = "stone_furnace"
 		name_key = "machine_stone_furnace"
+		model = "stone_furnace"
 		item = "stone_furnace"
 		kind = "furnace"
 		footprint = {width = 2, depth = 2, height = 2}
@@ -345,6 +353,7 @@ machines = [
 	{
 		id = "burner_mining_drill"
 		name_key = "machine_burner_mining_drill"
+		model = "burner_mining_drill"
 		item = "burner_mining_drill"
 		kind = "drill"
 		footprint = {width = 2, depth = 2, height = 2}

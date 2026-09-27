@@ -30,7 +30,8 @@ test_a_bad_strings_file_is_refused_and_the_old_table_kept :: proc(t: ^testing.T)
 	destroy_string_entries(old_entries)
 }
 
-// The shipped data files, with items.sjson and recipes.sjson as given.
+// The shipped data files and models, with items.sjson and recipes.sjson
+// as given.
 write_test_data_directory :: proc(directory, items, recipes: string) {
 	files := [?]struct {
 		name: string,
@@ -57,6 +58,19 @@ write_test_data_directory :: proc(directory, items, recipes: string) {
 	}
 	for file in files {
 		write_test_file(join_save_path(directory, file.name), file.text)
+	}
+	copy_test_models(directory)
+}
+
+// The machines name the shipped model files, which must load.
+copy_test_models :: proc(directory: string) {
+	models_directory := join_save_path(test_data_directory(), MODELS_DIRECTORY)
+	entries, error := os.read_all_directory_by_path(models_directory, context.temp_allocator)
+	assert(error == nil)
+	for entry in entries {
+		data, read_error := os.read_entire_file(entry.fullpath, context.temp_allocator)
+		assert(read_error == nil)
+		write_test_file(join_save_path(directory, MODELS_DIRECTORY, entry.name), string(data))
 	}
 }
 

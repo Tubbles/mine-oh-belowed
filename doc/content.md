@@ -81,6 +81,8 @@ Pending the decision on whether tools gate anything (SUGGESTIONS.md). Listed as 
 
 ## Machines (phases 1 to 4)
 
+A machine's `model` key (0055) names a `.vox` file in `data/models`, authored in MagicaVoxel at 8 or 16 voxels per block with z up and the model's +x side as its front; the mesh is scaled to the footprint. Placeholders come from `tools/make_placeholder_models.py` until an artist replaces them; the burner mining drill, the stone furnace and the wooden chest have one.
+
 Footprint is width by depth by height in blocks. Power is electric unless marked fuel.
 
 | Machine | Footprint | Recipe | Rate | Power | Channel |

@@ -137,7 +137,7 @@ fluid_machine_has_arrow :: proc(kind: Machine_Kind) -> bool {
 	return kind == .Offshore_Pump || kind == .Pump || kind == .Tar_Pit_Pump
 }
 
-draw_fluid_machine :: proc(fluid_machine: Fluid_Machine, machines: Machine_Registry, fluids: Fluid_Registry) {
+draw_fluid_machine :: proc(fluid_machine: Fluid_Machine, machines: Machine_Registry, models: Model_Renderer, fluids: Fluid_Registry) {
 	machine := machines.machines[fluid_machine.machine]
 	color := fluid_machine_colors[machine.kind]
 	top_color := color
@@ -147,7 +147,7 @@ draw_fluid_machine :: proc(fluid_machine: Fluid_Machine, machines: Machine_Regis
 	if (machine.kind == .Combustion_Generator || machine.kind == .Hydro_Turbine) && fluid_machine.state == .Generating {
 		top_color = GENERATING_TOP_COLOR
 	}
-	draw_entity_cells(fluid_machine.common, machines, color, top_color)
+	draw_entity_cells(fluid_machine.common, machines, models, color, top_color)
 	buffers := fluid_machine.buffers
 	draw_fluid_ports(fluid_machine.common, machine, buffers[:], fluids)
 	if fluid_machine_has_arrow(machine.kind) {
@@ -167,7 +167,7 @@ draw_direction_arrow :: proc(origin: World_Coordinate, size: [3]i32, rotation: u
 }
 
 // Between BeginMode3D and EndMode3D, after the chunks.
-draw_fluid_entities :: proc(world: ^World, machines: Machine_Registry, fluids: Fluid_Registry) {
+draw_fluid_entities :: proc(world: ^World, machines: Machine_Registry, models: Model_Renderer, fluids: Fluid_Registry) {
 	for pipe in world.entities.pipes.entries {
 		if pipe.alive {
 			draw_pipe(world, pipe, machines, fluids)
@@ -175,7 +175,7 @@ draw_fluid_entities :: proc(world: ^World, machines: Machine_Registry, fluids: F
 	}
 	for fluid_machine in world.entities.fluid_machines.entries {
 		if fluid_machine.alive {
-			draw_fluid_machine(fluid_machine, machines, fluids)
+			draw_fluid_machine(fluid_machine, machines, models, fluids)
 		}
 	}
 	for assembler in world.entities.assemblers.entries {

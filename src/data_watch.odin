@@ -8,7 +8,7 @@ import "core:time"
 // a second the main thread stats every file under the data directory and
 // compares modification time and size with the previous scan; a file
 // added, changed or removed marks its category. Presentation files
-// (strings, bindings, developer kits, shaders, fonts) reload in place at
+// (strings, bindings, developer kits, shaders, fonts, models) reload in place at
 // once (hot_reload.odin). Content files only mark the data as changed,
 // shown on the Developer screen and in the log, until a reload is asked
 // for (the reload command, the Developer screen, F8), or, with watch_data
@@ -40,12 +40,14 @@ Data_File_Category :: enum u8 {
 	Shaders,
 	// fonts/fonts.sjson and the font files under fonts/ (ui_font.odin).
 	Fonts,
+	// The .vox files under models/ (model_vox.odin).
+	Models,
 	Content,
 }
 
 Data_File_Categories :: bit_set[Data_File_Category]
 
-PRESENTATION_CATEGORIES :: Data_File_Categories{.Strings, .Bindings, .Developer_Kits, .Shaders, .Fonts}
+PRESENTATION_CATEGORIES :: Data_File_Categories{.Strings, .Bindings, .Developer_Kits, .Shaders, .Fonts, .Models}
 
 Data_File_Stamp :: struct {
 	modification_time: time.Time,
@@ -105,6 +107,8 @@ data_file_category :: proc(relative_path: string) -> Data_File_Category {
 		return name == "chunk.vs" || name == "chunk.fs" ? .Shaders : .Ignored
 	case FONTS_DIRECTORY:
 		return name == FONTS_FILE_NAME ? .Fonts : .Ignored
+	case MODELS_DIRECTORY:
+		return strings.has_suffix(name, MODEL_FILE_EXTENSION) && !strings.has_prefix(name, ".") ? .Models : .Ignored
 	}
 	if strings.has_prefix(directory, FONTS_DIRECTORY + "/") {
 		return is_font_file_name(name) ? .Fonts : .Ignored

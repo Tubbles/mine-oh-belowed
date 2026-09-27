@@ -172,6 +172,7 @@ Machine_Definition :: struct {
 	launch_fuel_litres:           int,
 	assembly_seconds:             int,
 	launch_seconds:               int,
+	model:                        string,
 }
 
 Machines_File :: struct {
@@ -248,6 +249,9 @@ Machine :: struct {
 	launch_fuel_litres:          i32,
 	assembly_seconds:            u32,
 	launch_seconds:              u32,
+	// The id of data/models/<model>.vox (model_vox.odin), or "" for the
+	// placeholder box.
+	model:                       string,
 }
 
 Machine_Registry :: struct {
@@ -460,7 +464,35 @@ validate_machine_definition :: proc(definitions: []Machine_Definition, index: in
 	if problem := validate_footprint(definition); problem != "" {
 		return problem
 	}
+	if definition.model != "" && !is_model_id(definition.model) {
+		return fmt.tprintf("machine %q has model %q, which is not lowercase letters, digits and underscores", definition.id, definition.model)
+	}
 	return validate_machine_kind_fields(definition, kind)
+}
+
+// A model id names a file under data/models, so it stays a plain name.
+is_model_id :: proc(id: string) -> bool {
+	for character in id {
+		if !(character >= 'a' && character <= 'z' || character >= '0' && character <= '9' || character == '_') {
+			return false
+		}
+	}
+	return id != ""
+}
+
+// Every named model file exists, parses and meshes (model_mesh.odin).
+validate_machine_models :: proc(registry: Machine_Registry, data_directory: string) -> string {
+	for machine in registry.machines {
+		if machine.model == "" {
+			continue
+		}
+		mesh, problem := load_machine_model_mesh(data_directory, machine, context.temp_allocator)
+		if problem != "" {
+			return problem
+		}
+		destroy_model_mesh(mesh)
+	}
+	return ""
 }
 
 // The capsule and schematic crates have no item.
@@ -544,6 +576,7 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 		launch_fuel_litres = i32(max(definition.launch_fuel_litres, 0)),
 		assembly_seconds = u32(max(definition.assembly_seconds, 0)),
 		launch_seconds = u32(max(definition.launch_seconds, 0)),
+		model = definition.model,
 	}
 }
 
@@ -635,6 +668,11 @@ load_machine_registry :: proc(data_directory: string, items: Item_Registry, flui
 	}
 	problem: string
 	registry, problem = resolve_machine_registry(file, items, fluids, allocator)
+	if problem == "" {
+		if problem = validate_machine_models(registry, data_directory); problem != "" {
+			destroy_machine_registry(registry, allocator)
+		}
+	}
 	if problem != "" {
 		log_printf("error: invalid %s: %s", path, problem)
 		return {}, false

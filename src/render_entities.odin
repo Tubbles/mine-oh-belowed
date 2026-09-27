@@ -82,7 +82,12 @@ box_centre :: proc(minimum: World_Coordinate, size: [3]i32) -> [3]f32 {
 	return {f32(minimum.x) + f32(size.x) / 2, f32(minimum.y) + f32(size.y) / 2, f32(minimum.z) + f32(size.z) / 2}
 }
 
-draw_entity_cells :: proc(common: Entity_Common, machines: Machine_Registry, color, top_color: rl.Color) {
+// The machine's model (render_models.odin) when it has one, else a cube
+// per footprint cell in the colours with an edge frame.
+draw_entity_cells :: proc(common: Entity_Common, machines: Machine_Registry, models: Model_Renderer, color, top_color: rl.Color) {
+	if draw_machine_model(models, common) {
+		return
+	}
 	top := common.origin.y + common.size.y - 1
 	for cell in common_cells(common, machines) {
 		rl.DrawCube(block_centre(cell), 1, 1, 1, cell.y == top ? top_color : color)
@@ -126,13 +131,13 @@ draw_inserter :: proc(inserter: Inserter, machine: Machine, items: Item_Registry
 
 // A bar across the top that turns with the cycle while the drill mines,
 // and the output arrow on the top face.
-draw_drill :: proc(drill: Drill, machine: Machine, machines: Machine_Registry, tick_rate: int) {
+draw_drill :: proc(drill: Drill, machine: Machine, machines: Machine_Registry, models: Model_Renderer, tick_rate: int) {
 	if drill_is_bore(machine) {
-		draw_entity_cells(drill.common, machines, BORE_DRILL_COLOR, BORE_DRILL_TOP_COLOR)
+		draw_entity_cells(drill.common, machines, models, BORE_DRILL_COLOR, BORE_DRILL_TOP_COLOR)
 	} else if drill_is_electric(drill) {
-		draw_entity_cells(drill.common, machines, ELECTRIC_DRILL_COLOR, ELECTRIC_DRILL_TOP_COLOR)
+		draw_entity_cells(drill.common, machines, models, ELECTRIC_DRILL_COLOR, ELECTRIC_DRILL_TOP_COLOR)
 	} else {
-		draw_entity_cells(drill.common, machines, DRILL_COLOR, DRILL_TOP_COLOR)
+		draw_entity_cells(drill.common, machines, models, DRILL_COLOR, DRILL_TOP_COLOR)
 	}
 	centre := box_centre(drill.origin, drill.size)
 	top := centre + {0, f32(drill.size.y) / 2 + 0.02, 0}
@@ -154,27 +159,27 @@ draw_drill_arrow :: proc(origin: World_Coordinate, size: [3]i32, rotation: u8, h
 }
 
 // Between BeginMode3D and EndMode3D, after the chunks.
-draw_entities :: proc(world: ^World, machines: Machine_Registry, items: Item_Registry, tick_rate: int) {
+draw_entities :: proc(world: ^World, machines: Machine_Registry, models: Model_Renderer, items: Item_Registry, tick_rate: int) {
 	for chest in world.entities.chests.entries {
 		if chest.alive {
-			draw_entity_cells(chest.common, machines, CHEST_COLOR, CHEST_COLOR)
+			draw_entity_cells(chest.common, machines, models, CHEST_COLOR, CHEST_COLOR)
 		}
 	}
 	for furnace in world.entities.furnaces.entries {
 		if furnace.alive {
 			top := furnace.state == .Burning ? FURNACE_BURNING_TOP_COLOR : FURNACE_COLOR
-			draw_entity_cells(furnace.common, machines, FURNACE_COLOR, top)
+			draw_entity_cells(furnace.common, machines, models, FURNACE_COLOR, top)
 		}
 	}
 	for capsule in world.entities.capsules.entries {
 		if capsule.alive {
-			draw_entity_cells(capsule.common, machines, CAPSULE_COLOR, CAPSULE_TOP_COLOR)
+			draw_entity_cells(capsule.common, machines, models, CAPSULE_COLOR, CAPSULE_TOP_COLOR)
 		}
 	}
 	for crate in world.entities.schematic_crates.entries {
 		if crate.alive {
 			top := stack_is_empty(crate.slots[0]) ? SCHEMATIC_CRATE_COLOR : SCHEMATIC_CRATE_FULL_TOP_COLOR
-			draw_entity_cells(crate.common, machines, SCHEMATIC_CRATE_COLOR, top)
+			draw_entity_cells(crate.common, machines, models, SCHEMATIC_CRATE_COLOR, top)
 		}
 	}
 	for inserter in world.entities.inserters.entries {
@@ -184,25 +189,25 @@ draw_entities :: proc(world: ^World, machines: Machine_Registry, items: Item_Reg
 	}
 	for drill in world.entities.drills.entries {
 		if drill.alive {
-			draw_drill(drill, machines.machines[drill.machine], machines, tick_rate)
+			draw_drill(drill, machines.machines[drill.machine], machines, models, tick_rate)
 		}
 	}
 	for assembler in world.entities.assemblers.entries {
 		if assembler.alive {
 			color := crafting_machine_colors[machines.machines[assembler.machine].recipe_maker]
 			top := assembler.state == .Working ? ASSEMBLER_WORKING_TOP_COLOR : color
-			draw_entity_cells(assembler.common, machines, color, top)
+			draw_entity_cells(assembler.common, machines, models, color, top)
 		}
 	}
 	for lab in world.entities.labs.entries {
 		if lab.alive {
-			draw_entity_cells(lab.common, machines, LAB_COLOR, lab.state == .Researching ? LAB_RESEARCHING_TOP_COLOR : LAB_COLOR)
+			draw_entity_cells(lab.common, machines, models, LAB_COLOR, lab.state == .Researching ? LAB_RESEARCHING_TOP_COLOR : LAB_COLOR)
 		}
 	}
 	for drill in world.entities.core_sample_drills.entries {
 		if drill.alive {
 			top := drill.sample >= 0 ? CORE_SAMPLE_DRILL_REPORTED_TOP_COLOR : CORE_SAMPLE_DRILL_COLOR
-			draw_entity_cells(drill.common, machines, CORE_SAMPLE_DRILL_COLOR, top)
+			draw_entity_cells(drill.common, machines, models, CORE_SAMPLE_DRILL_COLOR, top)
 		}
 	}
 	for pad in world.entities.launch_pads.entries {
