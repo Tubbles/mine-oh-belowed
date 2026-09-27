@@ -52,11 +52,12 @@ generate_chunk_blocks :: proc(generator: ^Generator, chunk: ^Chunk, outcrops: ^[
 	nearby_veins := veins_near_box(generator, minimum, minimum + CHUNK_SIZE - 1 + 2 * FEATURE_REACH, context.temp_allocator)
 	trees := chunk_trees(generator, chunk.coordinate, nearby_veins[:], context.temp_allocator)
 	boulders := chunk_boulders(generator, chunk.coordinate, nearby_veins[:], context.temp_allocator)
-	apply_outcrops(generator, chunk, columns, nearby_veins[:], outcrops)
 	apply_features(generator, chunk, trees[:], boulders[:])
+	apply_outcrops(generator, chunk, columns, nearby_veins[:], outcrops)
+	clear_above_outcrops(generator, chunk, columns, nearby_veins[:], trees[:], boulders[:])
 	apply_landing_pad(generator.landing_pad, generator.blocks.landing_pad, chunk)
 	open := new(Open_Columns, context.temp_allocator)
-	find_open_columns(chunk.coordinate, columns, trees[:], boulders[:], open)
+	find_open_columns(chunk.coordinate, columns, nearby_veins[:], trees[:], boulders[:], open)
 	close_landing_pad_columns(generator.landing_pad, chunk.coordinate, open)
 	fill_chunk_sky_light(chunk, generator.registry, open)
 	if open_columns != nil {
@@ -93,11 +94,47 @@ column_light_top :: proc(columns: ^Column_Grid, trees: []Tree, boulders: []Bould
 	return top
 }
 
-find_open_columns :: proc(coordinate: Chunk_Coordinate, columns: ^Column_Grid, trees: []Tree, boulders: []Boulder, open: ^Open_Columns) {
+// Air, except water, in the chunk's part of a column from local height
+// first to last inclusive.
+clear_column_to_air :: proc(chunk: ^Chunk, water: Block_Id, x, z: i32, first, last: i32) {
+	for y in max(first, 0) ..= min(last, CHUNK_SIZE - 1) {
+		index := local_to_index({x, y, z})
+		if chunk.blocks[index] != water {
+			chunk.blocks[index] = AIR_BLOCK
+		}
+	}
+}
+
+// Features never root on a vein footprint, but leaves and boulders rooted
+// next to one can reach over it. Every footprint column is cleared of them
+// up to the highest feature box over it, so each outcrop is open to the
+// sky. Water above an outcrop stays.
+clear_above_outcrops :: proc(generator: ^Generator, chunk: ^Chunk, columns: ^Column_Grid, veins: []Vein, trees: []Tree, boulders: []Boulder) {
+	origin := chunk_origin(chunk.coordinate)
+	for z in i32(0) ..< CHUNK_SIZE {
+		for x in i32(0) ..< CHUNK_SIZE {
+			world_x, world_z := origin.x + x, origin.z + z
+			if !column_in_vein_footprint(veins, world_x, world_z) {
+				continue
+			}
+			surface := grid_column(columns, x, z).height
+			top := column_light_top(columns, trees, boulders, x, z, world_x, world_z)
+			clear_column_to_air(chunk, generator.blocks.water, x, z, surface + 1 - origin.y, top - origin.y)
+		}
+	}
+}
+
+// A vein footprint column is open above its surface, since
+// clear_above_outcrops removed the features over it.
+find_open_columns :: proc(coordinate: Chunk_Coordinate, columns: ^Column_Grid, veins: []Vein, trees: []Tree, boulders: []Boulder, open: ^Open_Columns) {
 	origin := chunk_origin(coordinate)
 	for z in i32(0) ..< CHUNK_SIZE {
 		for x in i32(0) ..< CHUNK_SIZE {
-			top := column_light_top(columns, trees, boulders, x, z, origin.x + x, origin.z + z)
+			world_x, world_z := origin.x + x, origin.z + z
+			top := grid_column(columns, x, z).height
+			if !column_in_vein_footprint(veins, world_x, world_z) {
+				top = column_light_top(columns, trees, boulders, x, z, world_x, world_z)
+			}
 			open[column_index(x, z)] = top < origin.y + CHUNK_SIZE
 		}
 	}

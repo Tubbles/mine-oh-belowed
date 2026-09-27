@@ -321,7 +321,7 @@ test_spawn_finder_meets_requirements :: proc(t: ^testing.T) {
 		testing.expect(t, spawn.y > SEA_LEVEL)
 		testing.expect_value(t, spawn.y, terrain_height(generator.seeds, spawn.x, spawn.z))
 		findings := evaluate_spawn(&generator, {spawn.x, spawn.z})
-		testing.expectf(t, spawn_satisfied(&generator, findings), "seed %d spawn %v findings %v", seed, spawn, findings)
+		testing.expectf(t, spawn_satisfied(findings), "seed %d spawn %v findings %v", seed, spawn, findings)
 	}
 }
 

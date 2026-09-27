@@ -16,10 +16,11 @@ Generation_Purpose :: enum u8 {
 	Trees,
 	Boulders,
 	Veins,
-	// Appended last (work items 0035 and 0036), so adding them left the
-	// other seeds unchanged.
+	// Appended last (work items 0035, 0036 and 0045), so adding them left
+	// the other seeds unchanged.
 	Deep_Veins,
 	Cave_Crates,
+	Starter_Veins,
 }
 
 Purpose_Seeds :: [Generation_Purpose]u64

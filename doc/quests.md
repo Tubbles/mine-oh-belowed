@@ -51,7 +51,7 @@ Defined in data, evaluated every tick against the statistics counters, placed en
 
 ## Spawn requirements
 
-Chapter 1 only works if the world guarantees, within about 150 blocks of the landing pad: trees, surface stone, sand, water, one iron outcrop, one copper outcrop and one coal outcrop. World generation searches for a spawn that satisfies this. It belongs to `doc/world.md` once written.
+Chapter 1 only works if the world guarantees, within about 150 blocks of the landing pad: trees, surface stone, sand and water. The iron, copper and coal outcrops are starter veins (0045): one small vein of each spawn type stamped 24 to 40 blocks from the pad in directions spread around it, generated after trees and boulders with the column above every outcrop cleared, so they are in sight of the pad. The site is flat: within 24 blocks the surface height range is at most 5 with no water, within 64 blocks at most 12, which keeps river gorges and lakes off the pad (a range of 3 left no site on any seed, the detail noise alone moves the surface by about 5). World generation searches for a spawn that satisfies this, in 1 to 50 milliseconds for most seeds. It belongs to `doc/world.md` once written.
 
 ## Chapter 1: Arrival
 

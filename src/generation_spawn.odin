@@ -3,23 +3,40 @@ package game
 import "base:runtime"
 
 // Spawn search per doc/quests.md "Spawn requirements": trees, exposed
-// stone, sand, water and one vein of each spawn vein type within about 150
-// blocks. It queries the generator's column, feature and vein functions
-// directly, so no chunk is generated.
+// stone, sand and water within about 150 blocks, on flat ground (work item
+// 0045). The iron, copper and coal outcrops are the starter veins placed
+// around the landing pad (generation_starter_veins.odin), so the search
+// needs no natural vein. It queries the generator's column and feature
+// functions directly, so no chunk is generated.
 
 SPAWN_REQUIREMENT_RADIUS :: 150
 // Candidates lie on square rings around the origin, this far apart.
 SPAWN_SEARCH_STEP :: 32
-SPAWN_SEARCH_RING_COUNT :: 64
+SPAWN_SEARCH_RING_COUNT :: 96
 // Terrain around a candidate is sampled on a grid with this spacing.
 SPAWN_SAMPLE_STEP :: 4
+// Within LANDING_SITE_FLAT_RADIUS blocks of the pad the sampled surface
+// heights differ by at most LANDING_SITE_FLAT_HEIGHT_RANGE and no column is
+// water. Within LANDING_SITE_SURROUNDINGS_RADIUS they differ by at most
+// LANDING_SITE_SURROUNDINGS_HEIGHT_RANGE, which keeps river gorges and
+// cliffs away from the pad. The detail noise alone (DETAIL_AMPLITUDE)
+// varies the surface by about 5 blocks, so a flat range of 3 left no site
+// on any seed tried (work item 0045 notes).
+LANDING_SITE_FLAT_RADIUS :: 24
+LANDING_SITE_FLAT_HEIGHT_RANGE :: 5
+LANDING_SITE_SURROUNDINGS_RADIUS :: 64
+LANDING_SITE_SURROUNDINGS_HEIGHT_RANGE :: 12
+// Starter vein centres lie this many blocks from the pad centre: past the
+// flat ring, and close enough to be seen from the pad.
+STARTER_VEIN_MINIMUM_DISTANCE :: 24
+STARTER_VEIN_MAXIMUM_DISTANCE :: 40
 
 Spawn_Findings :: struct {
-	trees:      bool,
-	stone:      bool,
-	sand:       bool,
-	water:      bool,
-	vein_types: u64,
+	flat:  bool,
+	trees: bool,
+	stone: bool,
+	sand:  bool,
+	water: bool,
 }
 
 within_spawn_radius :: proc(centre: [2]i32, x, z: i32) -> bool {
@@ -28,22 +45,36 @@ within_spawn_radius :: proc(centre: [2]i32, x, z: i32) -> bool {
 	return dx * dx + dz * dz <= SPAWN_REQUIREMENT_RADIUS * SPAWN_REQUIREMENT_RADIUS
 }
 
-spawn_vein_types_found :: proc(veins: []Vein, centre: [2]i32) -> u64 {
-	found: u64 = 0
-	for vein in veins {
-		if within_spawn_radius(centre, vein.centre.x, vein.centre.z) {
-			found |= u64(1) << u64(vein.type)
-		}
-	}
-	return found
+Height_Range :: struct {
+	lowest:  i32,
+	highest: i32,
+	water:   bool,
 }
 
-required_vein_mask :: proc(generator: ^Generator) -> u64 {
-	mask: u64 = 0
-	for type_index in generator.veins.spawn_types {
-		mask |= u64(1) << u64(type_index)
+// Surface heights on the sample grid within radius of the centre.
+sample_height_range :: proc(generator: ^Generator, centre: [2]i32, radius: i32) -> Height_Range {
+	heights := Height_Range{lowest = max(i32), highest = min(i32)}
+	for dz := -radius; dz <= radius; dz += SPAWN_SAMPLE_STEP {
+		for dx := -radius; dx <= radius; dx += SPAWN_SAMPLE_STEP {
+			if dx * dx + dz * dz > radius * radius {
+				continue
+			}
+			height := terrain_height(generator.seeds, centre.x + dx, centre.y + dz)
+			heights.lowest = min(heights.lowest, height)
+			heights.highest = max(heights.highest, height)
+			heights.water ||= height < SEA_LEVEL
+		}
 	}
-	return mask
+	return heights
+}
+
+landing_site_is_flat :: proc(generator: ^Generator, centre: [2]i32) -> bool {
+	near := sample_height_range(generator, centre, LANDING_SITE_FLAT_RADIUS)
+	if near.water || near.highest - near.lowest > LANDING_SITE_FLAT_HEIGHT_RANGE {
+		return false
+	}
+	surroundings := sample_height_range(generator, centre, LANDING_SITE_SURROUNDINGS_RADIUS)
+	return surroundings.highest - surroundings.lowest <= LANDING_SITE_SURROUNDINGS_HEIGHT_RANGE
 }
 
 record_column :: proc(generator: ^Generator, findings: ^Spawn_Findings, column: Column_Sample) {
@@ -86,30 +117,28 @@ feature_near_spawn :: proc(generator: ^Generator, kind: Feature_Kind, centre: [2
 	return false
 }
 
-// Cheapest checks first: dry ground, then veins, then the terrain scan,
-// then trees and boulders.
+// Cheapest checks first: flat ground, then the terrain scan, then trees
+// and boulders.
 evaluate_spawn :: proc(generator: ^Generator, centre: [2]i32) -> Spawn_Findings {
 	runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
 	findings: Spawn_Findings
-	minimum := centre - SPAWN_REQUIREMENT_RADIUS
-	veins := veins_near_box(generator, minimum, centre + SPAWN_REQUIREMENT_RADIUS, context.temp_allocator)
-	findings.vein_types = spawn_vein_types_found(veins[:], centre)
-	required := required_vein_mask(generator)
-	if findings.vein_types & required != required {
+	findings.flat = landing_site_is_flat(generator, centre)
+	if !findings.flat {
 		return findings
 	}
 	scan_spawn_terrain(generator, centre, &findings)
 	if !findings.water || !findings.sand {
 		return findings
 	}
+	minimum := centre - SPAWN_REQUIREMENT_RADIUS
+	veins := veins_near_box(generator, minimum, centre + SPAWN_REQUIREMENT_RADIUS, context.temp_allocator)
 	findings.stone ||= feature_near_spawn(generator, .Boulder, centre, veins[:])
 	findings.trees = feature_near_spawn(generator, .Tree, centre, veins[:])
 	return findings
 }
 
-spawn_satisfied :: proc(generator: ^Generator, findings: Spawn_Findings) -> bool {
-	required := required_vein_mask(generator)
-	return terrain_findings_complete(findings) && findings.trees && findings.vein_types & required == required
+spawn_satisfied :: proc(findings: Spawn_Findings) -> bool {
+	return findings.flat && terrain_findings_complete(findings) && findings.trees
 }
 
 // Candidates of ring r are the grid points on the square of half width r,
@@ -133,7 +162,7 @@ spawn_ring_candidate :: proc(ring, index: i32) -> [2]i32 {
 
 spawn_candidate_ok :: proc(generator: ^Generator, centre: [2]i32) -> (spawn: World_Coordinate, ok: bool) {
 	column := sample_column(generator, centre.x, centre.y)
-	if column.height <= SEA_LEVEL || !spawn_satisfied(generator, evaluate_spawn(generator, centre)) {
+	if column.height <= SEA_LEVEL || !spawn_satisfied(evaluate_spawn(generator, centre)) {
 		return {}, false
 	}
 	return World_Coordinate{centre.x, column.height, centre.y}, true

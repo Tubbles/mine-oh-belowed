@@ -175,12 +175,22 @@ vein_units_factor :: proc(tables: Vein_Tables, layer: Vein_Layer) -> i64 {
 	return layer == .Deep ? tables.deep_units_factor : 1
 }
 
+vein_radius :: proc(size_class: Vein_Size_Class, richness: Region_Richness, hash: u64) -> i32 {
+	return i32(hash_to_range(hash, i64(size_class.minimum_radius), i64(size_class.maximum_radius))) + richness.radius_growth
+}
+
+// Ore units of a surface vein, before the layer factor.
+vein_units :: proc(generator: ^Generator, size_class: Vein_Size_Class, richness: Region_Richness, hash: u64) -> i64 {
+	base_units := hash_to_range(hash, size_class.minimum_units, size_class.maximum_units)
+	return i64(f64(base_units) * richness.units_factor) * i64(generator.vein_richness_percent) / 100
+}
+
 // Tries to place one vein of a size class in a layer. The hash decides
 // everything. Only veins of the same layer keep their discs apart.
 place_vein :: proc(generator: ^Generator, veins: []Vein, region: Region_Coordinate, size_class_index: int, layer: Vein_Layer, hash: u64) -> (vein: Vein, placed: bool) {
 	size_class := generator.veins.size_classes[size_class_index]
 	richness := region_richness(generator.veins, region)
-	radius := i32(hash_to_range(hash, i64(size_class.minimum_radius), i64(size_class.maximum_radius))) + richness.radius_growth
+	radius := vein_radius(size_class, richness, hash)
 	depth := vein_depth(generator.veins, layer, hash_combine(hash, 102))
 	for attempt in 0 ..< VEIN_PLACEMENT_ATTEMPTS {
 		position := candidate_vein_centre(hash_combine(hash, u64(attempt) + 2), region, radius)
@@ -193,8 +203,7 @@ place_vein :: proc(generator: ^Generator, veins: []Vein, region: Region_Coordina
 		if type_index < 0 {
 			return {}, false
 		}
-		base_units := hash_to_range(hash_combine(hash, 101), size_class.minimum_units, size_class.maximum_units)
-		units := i64(f64(base_units) * richness.units_factor) * i64(generator.vein_richness_percent) / 100
+		units := vein_units(generator, size_class, richness, hash_combine(hash, 101))
 		vein = Vein {
 			type       = type_index,
 			size_class = size_class_index,
@@ -222,7 +231,9 @@ vein_layer_purposes := [Vein_Layer]Generation_Purpose {
 }
 
 // All veins of one layer of a region, largest classes last, ids in
-// placement order.
+// placement order. While the landing pad is present, the starter veins
+// whose centre lies in the region follow the natural ones
+// (generation_starter_veins.odin).
 layer_veins :: proc(generator: ^Generator, region: Region_Coordinate, layer: Vein_Layer, allocator := context.allocator) -> [dynamic]Vein {
 	veins := make([dynamic]Vein, allocator)
 	region_hash := hash_combine(generator.seeds[vein_layer_purposes[layer]], pack_pair(region.x, region.y))
@@ -236,6 +247,9 @@ layer_veins :: proc(generator: ^Generator, region: Region_Coordinate, layer: Vei
 				append(&veins, vein)
 			}
 		}
+	}
+	if layer == .Surface && generator.landing_pad.present {
+		add_starter_veins(generator, region, &veins)
 	}
 	return veins
 }
