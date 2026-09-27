@@ -110,9 +110,17 @@ Raw_Sensor :: struct {
 	settled:   bool,
 }
 
+// Where the view's gyro rotation comes from: SDL's sensor, or Steam's layer
+// as mouse movement when Steam Input runs beside the game (input_sdl3.odin).
+Gyro_Source :: enum u8 {
+	Sdl,
+	Steam,
+}
+
 Raw_Motion :: struct {
 	gyro:          Raw_Sensor,
 	accelerometer: Raw_Sensor,
+	gyro_source:   Gyro_Source,
 }
 
 // Capacitive sensing on the Steam Controller (2026) sticks and handles.

@@ -145,6 +145,7 @@ gamepad_analog_lines :: proc(raw: Raw_Input) -> []Diagnostics_Line {
 	append_sensor_lines(&lines, "gyro rad/s", gamepad.motion.gyro)
 	gyro := gamepad.motion.gyro
 	append_line(&lines, gyro.settled, "  bias % .2f % .2f % .2f %s  corrected % .2f % .2f % .2f", gyro.bias.x, gyro.bias.y, gyro.bias.z, gyro.settled ? "settled" : "learning", gyro.corrected.x, gyro.corrected.y, gyro.corrected.z)
+	append_line(&lines, gamepad.motion.gyro_source == .Steam, "  view gyro from %s", gamepad.motion.gyro_source == .Steam ? "Steam's layout (mouse)" : "SDL")
 	append_sensor_lines(&lines, "accel m/s2", gamepad.motion.accelerometer)
 	append_touch_sense_lines(&lines, gamepad.touch_sense)
 	return lines[:]

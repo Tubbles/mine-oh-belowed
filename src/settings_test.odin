@@ -73,4 +73,7 @@ test_gyro_setting_and_sensitivities :: proc(t: ^testing.T) {
 	testing.expect(t, nearly_equal(doubled, base * 2))
 	settings.gyro_enabled = false
 	testing.expect_value(t, sdl3_look_delta(gamepad, gamepad, 1.0 / 60, settings), [2]f32{})
+	// Under Steam's layer SDL's gyro never turns the view.
+	settings.gyro_enabled = true
+	testing.expect_value(t, sdl3_look_delta(gamepad, gamepad, 1.0 / 60, settings, false), [2]f32{})
 }

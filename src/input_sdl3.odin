@@ -40,6 +40,11 @@ Sdl3_Input_State :: struct {
 	// A rumble was started and not yet stopped.
 	rumbling:         bool,
 	gyro_calibration: Gyro_Calibration,
+	// Steam Input runs beside the game (Game Mode): Steam and SDL both set
+	// the controller's IMU mode with no arbitration, so SDL's gyro reads
+	// whatever layout Steam left. The view then takes the gyro from Steam's
+	// layout as mouse movement and ignores SDL's (couch test 1).
+	steam_layer:      bool,
 }
 
 // Returns an SDL error message when initialisation fails.
@@ -84,6 +89,10 @@ open_sdl3_gamepad :: proc(state: ^Sdl3_Input_State, id: sdl.JoystickID) {
 		return
 	}
 	state.gamepad = gamepad
+	state.steam_layer = os.get_env("SteamVirtualGamepadInfo", context.temp_allocator) != ""
+	if state.steam_layer {
+		log_printf("input: Steam's layer runs beside the game, the gyro comes from its layout as mouse movement, SDL's gyro is ignored")
+	}
 	// The path tells the device apart: /dev/hidraw* is the controller read
 	// through HIDAPI, /dev/input/event* an evdev device such as Steam's
 	// virtual pad. The controller itself has two touchpads.
@@ -251,13 +260,15 @@ gyro_look_active :: proc(touch_sense: Raw_Touch_Sense, right_finger: Touchpad_Fi
 }
 
 // The gyro setting only stops the gyro from aiming; the sensor stays on so
-// the diagnostics screen still shows it.
-sdl3_look_delta :: proc(previous, current: Raw_Gamepad, frame_seconds: f32, settings: Settings) -> [2]f32 {
+// the diagnostics screen still shows it. With gyro_from_sdl false (Steam's
+// layer present) SDL's gyro never turns the view; Steam's mouse movement,
+// added by the caller, carries the gyro instead.
+sdl3_look_delta :: proc(previous, current: Raw_Gamepad, frame_seconds: f32, settings: Settings, gyro_from_sdl := true) -> [2]f32 {
 	right_finger := touchpad_finger(current, RIGHT_TOUCHPAD_INDEX)
 	pad_delta := touchpad_delta(touchpad_finger(previous, RIGHT_TOUCHPAD_INDEX), right_finger)
 	look_delta := pad_delta * TOUCHPAD_LOOK_PIXELS_PER_PAD_WIDTH * settings.trackpad_look_sensitivity
 	gyro := current.motion.gyro
-	if settings.gyro_enabled && gyro.enabled && gyro_look_active(current.touch_sense, right_finger) {
+	if gyro_from_sdl && settings.gyro_enabled && gyro.enabled && gyro_look_active(current.touch_sense, right_finger) {
 		look_delta += gyro_to_look_delta(gyro.corrected, frame_seconds) * GYRO_LOOK_PIXELS_PER_DEGREE * settings.gyro_look_sensitivity
 	}
 	return look_delta
@@ -272,9 +283,10 @@ read_sdl3_input_frame :: proc(state: ^Sdl3_Input_State, previous: Input_Frame, f
 		keyboard = read_raylib_keyboard(),
 	}
 	calibrate_frame_gyro(&state.gyro_calibration, &raw.gamepad)
+	raw.gamepad.motion.gyro_source = state.steam_layer ? .Steam : .Sdl
 	move := clamp_to_unit_length(sdl3_stick(raw.gamepad, .LEFTX, .LEFTY) + keyboard_move())
 	look := sdl3_stick(raw.gamepad, .RIGHTX, .RIGHTY)
-	look_delta := raw.mouse.delta + sdl3_look_delta(previous.raw.gamepad, raw.gamepad, frame_seconds, settings)
+	look_delta := raw.mouse.delta + sdl3_look_delta(previous.raw.gamepad, raw.gamepad, frame_seconds, settings, !state.steam_layer)
 	wheel_actions := mouse_wheel_actions(raw.mouse.wheel, bindings)
 	pressed :=
 		gamepad_button_actions(raw.gamepad, bindings) +
