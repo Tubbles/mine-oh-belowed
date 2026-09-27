@@ -13,7 +13,7 @@ import "core:fmt"
 
 DEVELOPER_PANEL_WIDTH :: 1000
 // Title, two toggle rows, kit label and buttons, quest label and
-// buttons, time label and buttons, unlock and teleport, back.
+// buttons, time label and buttons, unlock, teleport and screenshot, back.
 DEVELOPER_ROW_COUNT :: 11
 
 // Pending toggle requests (fly mode, cheat speed) flip the shown state, so
@@ -125,11 +125,16 @@ developer_actions :: proc(state: ^Ui_State, content: ^Ui_Rectangle, screen_conte
 	ui_label(state, developer_row(content), text("developer_time_of_day"))
 	time_of_day_buttons(state, developer_row(content), screen_context)
 	last_row := developer_row(content)
-	if ui_button(state, column(last_row, 2, 0, UI_GAP), text("developer_unlock_all")) {
+	if ui_button(state, column(last_row, 3, 0, UI_GAP), text("developer_unlock_all")) {
 		queue_developer_request(state, screen_context, Developer_Request{action = .Unlock_All})
 	}
-	if ui_button(state, column(last_row, 2, 1, UI_GAP), text("developer_teleport")) {
+	if ui_button(state, column(last_row, 3, 1, UI_GAP), text("developer_teleport")) {
 		position := landing_pad_standing_position(screen_context.landing_pad)
 		queue_developer_request(state, screen_context, Developer_Request{action = .Teleport, position = position})
+	}
+	// Like the screenshot command: the frame loop writes the PNG to the
+	// state directory's screenshots and toasts the path (work item 0053).
+	if ui_button(state, column(last_row, 3, 2, UI_GAP), text("developer_screenshot")) && screen_context.screenshot_requested != nil {
+		screen_context.screenshot_requested^ = true
 	}
 }

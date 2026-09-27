@@ -42,7 +42,9 @@ Vein_Id :: struct {
 // a finite vein reached zero. depth is how far below the surface the
 // centre lies: 0 for a surface vein (centre on the surface), and for a
 // deep vein the blocks from the surface height at its centre down to
-// centre.y.
+// centre.y. added marks a vein the developer command added (work item
+// 0053, world_vein.odin): generation does not know it, so the world
+// stamps its outcrop into chunks as they arrive.
 Vein :: struct {
 	id:         Vein_Id,
 	type:       int,
@@ -53,6 +55,7 @@ Vein :: struct {
 	remaining:  [MAXIMUM_VEIN_OUTPUTS]i64,
 	draws:      u64,
 	exhausted:  bool,
+	added:      bool,
 }
 
 // A surface block generation turned into a vein's outcrop block. The main

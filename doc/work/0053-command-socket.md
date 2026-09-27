@@ -1,6 +1,6 @@
 # 0053 Command socket: cheat mode through the assistant
 
-Status: todo
+Status: implemented
 Milestone: M11
 
 ## Goal
@@ -20,3 +20,32 @@ User request (2026-09-27): the assistant must be able to inject commands into th
 
 - Builds and tests pass; `tools/moc help` against a running dev build lists the commands.
 - User: while playing, the assistant runs `tools/moc chapter 5` and `tools/moc blueprint data/blueprints/tier1_factory.sjson` and the world changes on the next tick.
+
+## Notes
+
+Implemented by a subagent (2026-09-27). Verified headless only: `odin check src -vet -strict-style`, `./build.sh test` (15 new tests in `src/command_test.odin`, among them a real socket round trip and the shipped blueprint placing on a floor with an iron vein and producing iron plates within 3600 ticks), `./build.sh`, `./build.sh release`, `python3 -m py_compile tools/moc`, `tools/moc help` without a game (exit 2 with the hint). Protocol and commands: `doc/commands.md`.
+
+Files: new `src/command.odin` (words, commands, blueprints, queries), `src/command_socket.odin` (path, listening, polling, per client buffers), `src/command_test.odin`, `tools/moc`, `data/blueprints/tier1_factory.sjson`, `doc/commands.md`; changes to `src/developer.odin` (seven new actions, `serve_developer_request` returns why a request was refused), `src/loop.odin` (frame state, serving after the frame's ticks, fast ticks, pause, screenshots), `src/world_vein.odin` and `src/world_streaming.odin` (added veins), `src/entity_placement.odin` (`commit_placement` shared with the player, `command_placement`), `src/generation_veins.odin` (`Vein.added`), the Developer screen and strings.
+
+### Model and deviations
+
+- Serving: the commands build `Developer_Request`s and call `serve_developer_request` directly on the main thread after the frame's ticks, instead of queueing them for the next tick, so each answer can say whether it was refused. The simulation never reads the socket. Queued lines run in arrival order, all in one frame, until a `tick` command; later lines wait for its answer.
+- Responses always end with a line holding only `.`, for `ok` and `error` alike, so a client reads up to it.
+- `insert <item> <count> <x> <y> <z>` is an extra command: burner drills and inserters need fuel, and without it the tier 1 blueprint could not run by itself.
+- `chapter <n>` completes the quests before chapter n only (as the doc of this item says), no kit; `kit` is separate.
+- `place` takes no item and does not count as a placement in the statistics (quest objectives on placed machines do not advance). Machines no item places (the capsule, crates) are refused.
+- Added veins: the vein is kept in `World.veins` with `added` set (saved through the existing vein list, no format change). Its id is the region's next index after the generated veins and earlier added veins. Its centre and outcrop cells use the generated surface height; only solid cells are stamped. Loaded chunks are stamped through `world_set_block`, stored (modified, unloaded) chunks are rewritten, later chunks get it on arrival (`apply_added_veins_to_chunk`). It may reach past its region's border. The map survey and the orbital survey ask the generator and do not see added veins. The overlap check covers registered veins and the generated surface veins of the regions around the disc.
+- Blueprint origin `{vein = "<type>"}` is the registered surface vein of that type nearest the landing pad, not the generator's starter vein list, so it needs the vein's chunks loaded (they are, near the pad). The origin is the cell above the pad or vein centre, so relative y 0 stands on the surface.
+- Screenshots use `LoadImageFromScreen` and `ExportImage` at the end of the frame (after the UI, before `EndDrawing`): `TakeScreenshot` strips the directory and writes into the working directory. The command answers with the path at once; the file appears at the end of that frame.
+- `tick <n>` answers when done; up to one second of wall time per frame, with the frame's normal ticks replaced; the window still draws once per frame. At most 1000000 ticks.
+- Developer mode switched off closes the socket; switched on opens it. A socket another running game listens on is left alone.
+
+### Not verified
+
+The socket against a running game with a window: the frame loop integration, fast ticks, screenshots (the `LoadImageFromScreen` read back and the PNG), the Developer screen's third button in the last row (three buttons in 1000 units), and the blueprint on the real starter vein terrain (it needs flat ground over about 12 by 11 blocks).
+
+### Open questions
+
+- Should `place` count as a player placement for quests?
+- Should the blueprint's `{vein}` origin come from the generator's starter veins, so it works before the chunks load?
+

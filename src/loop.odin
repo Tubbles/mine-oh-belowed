@@ -3,11 +3,16 @@ package game
 import "core:fmt"
 import "core:os"
 import "core:strings"
+import "core:time"
 import rl "vendor:raylib"
+import rlgl "vendor:raylib/rlgl"
 
 // Longest frame the accumulator accepts, so that a stall (debugger, window
 // drag) does not trigger a burst of catch up ticks.
 MAXIMUM_FRAME_SECONDS :: 0.25
+// Wall time a tick command (work item 0053) may spend per frame, so the
+// window keeps drawing and answering while it runs.
+COMMAND_TICK_WALL_BUDGET :: 1 * time.Second
 
 // The simulation owns the world and the players. players[index] reads
 // inputs[index] in simulation_tick; the alpha has one player.
@@ -89,6 +94,15 @@ Frame_State :: struct {
 	show_diagnostics:   bool,
 	// The world statistics overlay (draw_world_overlay), off by default.
 	show_world_overlay: bool,
+	// The command socket (work item 0053): open while developer mode is
+	// on, served between ticks (serve_command_socket). The paths are
+	// owned, empty when the environment names no directory.
+	command_server:       Command_Server,
+	command_control:      Command_Control,
+	command_socket_path:  string,
+	screenshot_directory: string,
+	// The Developer screen's Screenshot button.
+	screenshot_requested: bool,
 }
 
 // Above the middle of the debug terrain, looking down at an angle. The
@@ -289,6 +303,7 @@ update_frame :: proc(state: ^Frame_State) {
 		update_session(state, world_blocked)
 		state.haptic = haptic_request_for(state.session.simulation.players[0], !world_blocked)
 	}
+	serve_command_socket(state)
 	if state.input_backend == .Sdl3 {
 		apply_sdl3_haptics(&state.sdl3_input, state.haptic)
 	}
@@ -303,9 +318,12 @@ apply_overlay_toggle :: proc(state: ^Frame_State, world_blocked: bool) {
 	}
 }
 
+// A pause command holds the ticks like a pausing screen; a tick command
+// replaces the frame's ticks with its own (run_command_ticks).
 update_session :: proc(state: ^Frame_State, world_blocked: bool) {
 	session := state.session
-	paused := ui_pauses_simulation(state.ui.screens)
+	paused := ui_pauses_simulation(state.ui.screens) || state.command_control.paused
+	fast := state.command_control.pending_ticks > 0
 	frame_for_world := world_input(state.input, world_blocked, state.world_action_guard, state.settings)
 	// The right stick drives an open hotbar radial instead of the camera.
 	if state.ui.radial.open {
@@ -313,11 +331,14 @@ update_session :: proc(state: ^Frame_State, world_blocked: bool) {
 	}
 	session.tick_input = paused ? {} : accumulate_frame_input(session.tick_input, frame_for_world)
 	tick_count: int
-	session.accumulator, tick_count = advance_simulation_clock(session.accumulator, f64(state.frame_seconds), paused)
+	session.accumulator, tick_count = advance_simulation_clock(session.accumulator, f64(state.frame_seconds), paused || fast)
 	for _ in 0 ..< tick_count {
 		tick_input: Input_Frame
 		tick_input, session.tick_input = take_tick_input(session.tick_input, frame_for_world)
 		simulation_tick(&session.simulation, frame_simulation_content(state), {tick_input})
+	}
+	if fast {
+		tick_count = run_command_ticks(state)
 	}
 	session.ticks_since_save += u64(tick_count)
 	save_when_due(state)
@@ -351,6 +372,7 @@ render_frame :: proc(state: ^Frame_State) {
 		defer rl.EndDrawing()
 		rl.ClearBackground(DAY_SKY_COLOR)
 		run_ui_frame(state)
+		capture_pending_screenshot(state)
 		return
 	}
 	session := state.session
@@ -368,6 +390,8 @@ render_frame :: proc(state: ^Frame_State) {
 		draw_world_overlay(state^)
 	}
 	run_ui_frame(state)
+	queue_requested_screenshot(state)
+	capture_pending_screenshot(state)
 }
 
 draw_session_world :: proc(state: ^Frame_State, session: ^Session) {
@@ -396,6 +420,7 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 	content := state.content
 	screen_context := Screen_Context {
 		settings        = &state.settings,
+		screenshot_requested = &state.screenshot_requested,
 		bindings        = state.bindings,
 		quit_requested  = &state.quit_requested,
 		title           = &state.title,
@@ -587,6 +612,8 @@ leave_session :: proc(state: ^Frame_State) {
 	state.session = nil
 	state.show_diagnostics = false
 	state.show_world_overlay = false
+	// A pause command holds only the world it was given in.
+	state.command_control.paused = false
 }
 
 // Once the settings screen is closed (and on exit), changed settings go to
@@ -654,6 +681,8 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, content: Gam
 	defer destroy_chunk_renderer(&state.renderer)
 	state.belt_renderer = init_belt_renderer(content.machines)
 	defer destroy_belt_renderer(&state.belt_renderer)
+	start_command_frame_state(&state)
+	defer destroy_command_frame_state(&state)
 	if session != nil {
 		enter_session(&state, session)
 	} else {
@@ -669,5 +698,179 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, content: Gam
 			write_changed_settings(&state)
 		}
 		free_all(context.temp_allocator)
+	}
+}
+
+// Command socket (work item 0053, command_socket.odin, command.odin).
+
+start_command_frame_state :: proc(state: ^Frame_State) {
+	state.command_server = make_command_server()
+	runtime_directory := os.get_env("XDG_RUNTIME_DIR", context.temp_allocator)
+	state_home := os.get_env("XDG_STATE_HOME", context.temp_allocator)
+	home := os.get_env("HOME", context.temp_allocator)
+	state.command_socket_path, _ = command_socket_path_from_environment(runtime_directory, state_home, home)
+	state.screenshot_directory, _ = screenshot_directory_from_environment(state_home, home)
+}
+
+destroy_command_frame_state :: proc(state: ^Frame_State) {
+	destroy_command_server(&state.command_server)
+	delete(state.command_socket_path)
+	delete(state.screenshot_directory)
+	delete(state.command_control.screenshot_path)
+}
+
+// Listens while developer mode is on (--dev or the setting), and stops
+// when the setting is switched off. A failure to listen is logged once.
+update_command_server_open :: proc(state: ^Frame_State) {
+	server := &state.command_server
+	wanted := state.content.developer_mode || state.settings.developer_mode
+	switch {
+	case wanted && server.listening == -1 && !server.open_failed:
+		problem := state.command_socket_path == "" ? "no directory for it (set XDG_RUNTIME_DIR, XDG_STATE_HOME or HOME)" : open_command_server(server, state.command_socket_path)
+		if problem != "" {
+			log_printf("error: command socket: %s", problem)
+			server.open_failed = true
+		} else {
+			log_printf("command: listening on %s", server.path)
+		}
+	case !wanted && server.listening != -1:
+		close_command_server(server)
+		log_printf("command: socket closed")
+	case !wanted:
+		server.open_failed = false
+	}
+}
+
+// After the frame's ticks: answers a tick command whose ticks ran, then
+// executes the queued lines in order until one starts a tick command.
+serve_command_socket :: proc(state: ^Frame_State) {
+	update_command_server_open(state)
+	server := &state.command_server
+	if server.listening == -1 {
+		return
+	}
+	poll_command_server(server)
+	answer_command_ticks(state)
+	for !state.command_control.ticks_waiting {
+		queued := take_command_line(server) or_break
+		execute_queued_command(state, queued)
+		delete(queued.line)
+	}
+	flush_command_server(server)
+}
+
+answer_command_ticks :: proc(state: ^Frame_State) {
+	control := &state.command_control
+	if control.ticks_waiting && state.session == nil {
+		control.pending_ticks, control.ticks_waiting = 0, false
+		send_logged_response(state, state.command_server.tick_client, "tick", command_error("the world was closed"))
+		state.command_server.tick_client = 0
+		return
+	}
+	if state.session == nil {
+		return
+	}
+	if response, finished := finish_command_ticks(control, state.session.simulation.tick); finished {
+		send_logged_response(state, state.command_server.tick_client, "tick", response)
+		state.command_server.tick_client = 0
+	}
+}
+
+send_logged_response :: proc(state: ^Frame_State, client: u64, line: string, response: Command_Response) {
+	text := format_command_response(response)
+	log_command_exchange(line, text)
+	send_command_response(&state.command_server, client, text)
+}
+
+frame_command_context :: proc(state: ^Frame_State) -> Command_Context {
+	command_context := Command_Context {
+		content              = game_simulation_content(state.content),
+		control              = &state.command_control,
+		screenshot_directory = state.screenshot_directory,
+		now                  = time.now(),
+	}
+	if state.session != nil {
+		command_context.simulation = &state.session.simulation
+		command_context.content = frame_simulation_content(state)
+	}
+	return command_context
+}
+
+// save needs the session and the game content, the rest runs in
+// command.odin. A tick command answers later (answer_command_ticks).
+execute_queued_command :: proc(state: ^Frame_State, queued: Queued_Command_Line) {
+	words, _ := split_command_words(queued.line)
+	response: Command_Response
+	if len(words) > 0 && words[0] == "save" {
+		response = command_save(state)
+	} else {
+		empty: bool
+		if response, empty = execute_command_line(frame_command_context(state), queued.line); empty {
+			return
+		}
+	}
+	if response.deferred {
+		log_printf("command: %s", queued.line)
+		state.command_server.tick_client = queued.client
+		return
+	}
+	send_logged_response(state, queued.client, queued.line, response)
+}
+
+command_save :: proc(state: ^Frame_State) -> Command_Response {
+	if state.session == nil {
+		return command_error("no world is loaded")
+	}
+	if problem := save_session(state.session, state.content); problem != "" {
+		return command_error("%s", problem)
+	}
+	return command_ok("saved %s", state.session.save.location.display_name)
+}
+
+// Ticks of a tick command with no player input, as many as fit in
+// COMMAND_TICK_WALL_BUDGET. Returns how many ran.
+run_command_ticks :: proc(state: ^Frame_State) -> int {
+	start := time.tick_now()
+	content := frame_simulation_content(state)
+	count := 0
+	for state.command_control.pending_ticks > 0 && time.tick_since(start) < COMMAND_TICK_WALL_BUDGET {
+		run_command_tick(&state.session.simulation, content, &state.command_control)
+		count += 1
+	}
+	return count
+}
+
+// The Developer screen's button, queued like the screenshot command.
+queue_requested_screenshot :: proc(state: ^Frame_State) {
+	if !state.screenshot_requested {
+		return
+	}
+	state.screenshot_requested = false
+	path, problem := queue_screenshot(&state.command_control, state.screenshot_directory, "", time.now())
+	if problem != "" {
+		log_printf("error: screenshot: %s", problem)
+		ui_toast(&state.ui, fmt.tprintf("%s: %s", text("developer_screenshot_failed"), problem))
+		return
+	}
+	ui_toast(&state.ui, fmt.tprintf("%s %s", text("developer_screenshot_saved"), path))
+}
+
+// At the end of the frame, before EndDrawing shows it: the drawn frame
+// read back and written as PNG. ExportImage takes the absolute path as
+// given (TakeScreenshot would put the file in the working directory).
+capture_pending_screenshot :: proc(state: ^Frame_State) {
+	path := state.command_control.screenshot_path
+	if path == "" {
+		return
+	}
+	state.command_control.screenshot_path = ""
+	defer delete(path)
+	rlgl.DrawRenderBatchActive()
+	image := rl.LoadImageFromScreen()
+	defer rl.UnloadImage(image)
+	if rl.ExportImage(image, strings.clone_to_cstring(path, context.temp_allocator)) {
+		log_printf("command: screenshot %s", path)
+	} else {
+		log_printf("error: screenshot: cannot write %s", path)
 	}
 }

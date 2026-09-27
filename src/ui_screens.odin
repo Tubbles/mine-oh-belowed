@@ -55,6 +55,9 @@ Screen_Context :: struct {
 	// The chapters the developer screen offers: one per kit.
 	developer_chapter_count: int,
 	landing_pad:        Landing_Pad_Site,
+	// The Developer screen's Screenshot button sets it; the frame loop
+	// takes the picture (work item 0053).
+	screenshot_requested: ^bool,
 }
 
 // Pause opens the pause menu from the world, Open_Inventory the inventory,

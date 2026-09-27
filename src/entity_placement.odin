@@ -229,12 +229,67 @@ place_entity_with_player :: proc(world: ^World, content: Simulation_Content, pla
 	if !placement.valid {
 		return
 	}
-	handle := add_entity(&world.entities, content.machines, placement.machine, placement.origin, placement.rotation)
+	commit_placement(world, content.machines, placement)
+	take_from_slot(&inventory_hotbar(player.inventory)[player.selected_hotbar_slot], 1)
+	record_placed(&world.statistics, placement.machine)
+}
+
+// Puts a valid placement's machine down: a belt with its planned shape, a
+// drill tapping the vein under it. The player's Place and the developer
+// command `place` (work item 0053) both end here.
+commit_placement :: proc(world: ^World, machines: Machine_Registry, placement: Placement) -> Entity_Handle {
+	if placement.belt {
+		return add_belt(&world.entities, machines, placement.machine, placement.origin, placement.rotation, placement.belt_shape)
+	}
+	handle := add_entity(&world.entities, machines, placement.machine, placement.origin, placement.rotation)
 	if drill := pool_get(&world.entities.drills, handle); drill != nil {
 		drill.vein = placement.vein
 	}
-	take_from_slot(&inventory_hotbar(player.inventory)[player.selected_hotbar_slot], 1)
-	record_placed(&world.statistics, placement.machine)
+	return handle
+}
+
+// The placement of a machine given by its minimum corner and rotation,
+// as the developer command `place` asks for it: the rules of the
+// player's ghost, with the rotation as the direction where the player's
+// facing would set it (belts, inserters, drills, splitters, pumps).
+command_placement :: proc(world: ^World, content: Simulation_Content, players: []Player, machine: Machine_Id, origin: World_Coordinate, rotation: u8) -> Placement {
+	definition := content.machines.machines[machine]
+	#partial switch definition.kind {
+	case .Belt:
+		return command_belt_placement(world, content, machine, origin, rotation)
+	case .Splitter:
+		// Walked over like belts, so the player may stand in the way.
+		return placement_at(world, content, players[:0], machine, origin, rotation)
+	}
+	return placement_at(world, content, players, machine, origin, rotation)
+}
+
+// A belt of the machine's shape family pointing in the rotation; a lift
+// with a rotation from 4 goes down, a ramp descends away from a block
+// behind it like a placed one.
+command_belt_placement :: proc(world: ^World, content: Simulation_Content, machine: Machine_Id, cell: World_Coordinate, rotation: u8) -> Placement {
+	item_shape := content.machines.machines[machine].belt_shape
+	shape := default_belt_shape(item_shape)
+	direction := rotation % 4
+	switch item_shape {
+	case .Flat:
+	case .Ramp:
+		shape = single_ramp_shape(world, content.blocks, cell, direction)
+	case .Lift:
+		if rotation >= 4 {
+			shape = .Lift_Down
+		}
+	}
+	return Placement {
+		shown = true,
+		valid = cell_is_free(world, cell) && belt_cell_supported(world, content.blocks, cell, shape),
+		machine = machine,
+		origin = cell,
+		rotation = direction,
+		size = {1, 1, 1},
+		belt = true,
+		belt_shape = shape,
+	}
 }
 
 // Rotate with no machine item selected turns the targeted belt, inserter

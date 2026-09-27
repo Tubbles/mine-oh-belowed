@@ -355,6 +355,7 @@ load_chunk_now :: proc(world: ^World, generator: ^Generator, coordinate: Chunk_C
 	} else {
 		insert_generated_chunk(world, result)
 	}
+	apply_added_veins_to_chunk(world, generator, coordinate, result.restored)
 	delete(result.veins)
 	delete(result.outcrops)
 	delete(result.crates)
@@ -386,6 +387,7 @@ receive_generated_chunks :: proc(streaming: ^Chunk_Streaming, world: ^World, cam
 		} else {
 			insert_generated_chunk(world, result)
 		}
+		apply_added_veins_to_chunk(world, streaming.shared.generator, result.coordinate, result.restored)
 		delete(result.veins)
 		delete(result.outcrops)
 		delete(result.crates)

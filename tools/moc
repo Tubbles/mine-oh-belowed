@@ -1,0 +1,119 @@
+#!/usr/bin/env python3
+"""Send commands to a running Mine oh Belowed through its command socket.
+
+Work item 0053, protocol in doc/commands.md. The game listens only in
+developer mode (--dev or the developer_mode setting).
+
+  tools/moc <words...>          one command, prints the response
+  tools/moc -                   one command per stdin line, each response printed
+  tools/moc blueprint <path>    the blueprint command with an absolute path
+
+Exit status: 0 when every response is ok, 1 when one is an error, 2 when
+the socket is missing or refuses the connection.
+"""
+
+import os
+import shlex
+import socket
+import sys
+
+GAME_DIRECTORY_NAME = "mine-oh-belowed"
+SOCKET_FILE_NAME = "command.sock"
+TERMINATOR = "."
+
+
+def socket_path(environment):
+    """$XDG_RUNTIME_DIR/mine-oh-belowed/command.sock when the runtime
+    directory is absolute, else the state directory's (as the game picks)."""
+    runtime_directory = environment.get("XDG_RUNTIME_DIR", "")
+    if os.path.isabs(runtime_directory):
+        return os.path.join(runtime_directory, GAME_DIRECTORY_NAME, SOCKET_FILE_NAME)
+    state_home = environment.get("XDG_STATE_HOME", "")
+    if os.path.isabs(state_home):
+        return os.path.join(state_home, GAME_DIRECTORY_NAME, SOCKET_FILE_NAME)
+    home = environment.get("HOME", "")
+    if home:
+        return os.path.join(home, ".local", "state", GAME_DIRECTORY_NAME, SOCKET_FILE_NAME)
+    return None
+
+
+def quote_word(word):
+    """A word with spaces, quotes or a # goes in double quotes."""
+    if word and not any(character in word for character in ' \t"#\\'):
+        return word
+    return '"' + word.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def command_line(words):
+    if len(words) == 2 and words[0] == "blueprint":
+        words = ["blueprint", os.path.abspath(words[1])]
+    return " ".join(quote_word(word) for word in words)
+
+
+def connect(path):
+    if path is None or not os.path.exists(path):
+        raise ConnectionError(f"no command socket at {path}")
+    client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    client.connect(path)
+    return client
+
+
+class Response_Reader:
+    """Reads responses: lines up to one holding only the terminator."""
+
+    def __init__(self, client):
+        self.stream = client.makefile("r", encoding="utf-8", newline="\n")
+
+    def read(self):
+        lines = []
+        for line in self.stream:
+            line = line.rstrip("\n")
+            if line == TERMINATOR:
+                return "\n".join(lines)
+            lines.append(line)
+        raise ConnectionError("the game closed the connection")
+
+
+def is_blank(line):
+    """Blank and comment lines get no response from the game."""
+    try:
+        return not shlex.split(line, comments=True)
+    except ValueError:
+        return False
+
+
+def send_lines(path, lines):
+    status = 0
+    client = connect(path)
+    with client:
+        reader = Response_Reader(client)
+        for line in lines:
+            if is_blank(line):
+                continue
+            client.sendall((line + "\n").encode("utf-8"))
+            response = reader.read()
+            print(response, flush=True)
+            if not response.startswith("ok"):
+                status = 1
+    return status
+
+
+def main(arguments):
+    if not arguments or arguments[0] in ("-h", "--help"):
+        print(__doc__.strip())
+        return 0 if arguments else 2
+    path = socket_path(os.environ)
+    if arguments == ["-"]:
+        lines = [line.rstrip("\n") for line in sys.stdin]
+    else:
+        lines = [command_line(arguments)]
+    try:
+        return send_lines(path, lines)
+    except (ConnectionError, OSError) as error:
+        print(f"moc: {error}", file=sys.stderr)
+        print("moc: is the game running with developer mode on (--dev or the developer_mode setting)?", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

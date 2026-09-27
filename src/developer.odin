@@ -11,6 +11,9 @@ import "core:strings"
 // only with --dev) and the command line (--chapter, --give) queue
 // Developer_Requests on the simulation; simulation_tick serves them before
 // the players move, so the UI frame never changes simulation state itself.
+// The command socket (work item 0053, command.odin) builds the same
+// requests and serves them itself between two ticks, so its answer can
+// say whether a request was refused.
 //
 // Chapter kits come from data/dev_kits.sjson: one kit per chapter, in
 // chapter order, with the items a player typically holds at that
@@ -55,6 +58,14 @@ Developer_Action :: enum u8 {
 	Teleport,
 	// Flips Simulation_State.cheat_speed (0044).
 	Toggle_Cheat_Speed,
+	// The command socket's actions (work item 0053, command.odin).
+	Take_Item,
+	Research_Technology,
+	Add_Vein,
+	Place_Machine,
+	Remove_At,
+	Set_Block,
+	Insert_Items,
 }
 
 // The sun rises at dawn, peaks at noon, sets at dusk and is lowest at
@@ -67,14 +78,25 @@ Time_Of_Day :: enum u8 {
 }
 
 // chapter counts from 1 (Give_Kit, Complete_Quests_To_Chapter); grant is
-// for Give_Item, time_of_day for Set_Time_Of_Day, position (the player's
-// feet) for Teleport.
+// for Give_Item, Take_Item and Insert_Items, time_of_day for
+// Set_Time_Of_Day, position (the player's feet) for Teleport. technology
+// indexes the technologies (Research_Technology). cell is the column of
+// Add_Vein (x and z), the minimum corner of Place_Machine and the cell of
+// Remove_At, Set_Block and Insert_Items. vein_type and size_class index
+// the generator's vein tables (Add_Vein).
 Developer_Request :: struct {
 	action:      Developer_Action,
 	chapter:     int,
 	grant:       Developer_Grant,
 	time_of_day: Time_Of_Day,
 	position:    [3]f32,
+	technology:  int,
+	machine:     Machine_Id,
+	rotation:    u8,
+	block:       Block_Id,
+	cell:        World_Coordinate,
+	vein_type:   int,
+	size_class:  int,
 }
 
 // Kits file.
@@ -315,7 +337,10 @@ landing_pad_standing_position :: proc(site: Landing_Pad_Site) -> [3]f32 {
 	return player_start_on(site.centre).position
 }
 
-serve_developer_request :: proc(state: ^Simulation_State, content: Simulation_Content, request: Developer_Request) {
+// Returns why the request changed nothing, empty when it was served.
+// The requests the menu and the command line queue always succeed; the
+// command socket's may be refused (a placement a player could not make).
+serve_developer_request :: proc(state: ^Simulation_State, content: Simulation_Content, request: Developer_Request) -> (problem: string) {
 	player := &state.players[0]
 	switch request.action {
 	case .Toggle_Fly_Mode:
@@ -334,7 +359,22 @@ serve_developer_request :: proc(state: ^Simulation_State, content: Simulation_Co
 		teleport_player(player, request.position)
 	case .Toggle_Cheat_Speed:
 		state.cheat_speed = !state.cheat_speed
+	case .Take_Item:
+		inventory_remove(player.inventory, request.grant.item, request.grant.count)
+	case .Research_Technology:
+		research_for_developer(state, content, request.technology)
+	case .Add_Vein:
+		return add_vein_for_developer(&state.world, content.generator, request.vein_type, request.size_class, request.cell.xz)
+	case .Place_Machine:
+		return place_for_developer(state, content, request.machine, request.cell, request.rotation)
+	case .Remove_At:
+		return remove_for_developer(&state.world, content, request.cell)
+	case .Set_Block:
+		return set_block_for_developer(&state.world, request.block, request.cell)
+	case .Insert_Items:
+		return insert_for_developer(&state.world, content, request.cell, request.grant)
 	}
+	return ""
 }
 
 // At the start of a tick, oldest first. Without a player nothing is
@@ -342,8 +382,103 @@ serve_developer_request :: proc(state: ^Simulation_State, content: Simulation_Co
 serve_developer_requests :: proc(state: ^Simulation_State, content: Simulation_Content) {
 	if len(state.players) > 0 {
 		for request in state.developer_requests {
-			serve_developer_request(state, content, request)
+			if problem := serve_developer_request(state, content, request); problem != "" {
+				log_printf("developer: %v refused: %s", request.action, problem)
+			}
 		}
 	}
 	clear(&state.developer_requests)
+}
+
+// Through the path of a quest reward (mark_technology_researched); an
+// infinite technology gains a level like a finished lab research.
+research_for_developer :: proc(state: ^Simulation_State, content: Simulation_Content, technology: int) {
+	if content.technologies.technologies[technology].infinite {
+		state.world.research.levels[technology] += 1
+	}
+	mark_technology_researched(&state.unlocks, content.recipes, technology)
+}
+
+// A surface vein of the type centred on the column (world_vein.odin),
+// refused where its disc would reach another vein.
+add_vein_for_developer :: proc(world: ^World, generator: ^Generator, type_index, size_class: int, column: [2]i32) -> string {
+	switch {
+	case generator == nil:
+		return "no world generator"
+	case type_index < 0 || type_index >= len(generator.veins.types) || generator.veins.types[type_index].definition.deep:
+		return "not a surface vein type"
+	case size_class < 0 || size_class >= len(generator.veins.size_classes):
+		return "unknown size class"
+	}
+	vein := make_added_vein(generator, type_index, size_class, column)
+	if added_vein_overlaps(world, generator, vein.centre, vein.radius) {
+		return fmt.tprintf("a vein of radius %d at %d %d would overlap another vein", vein.radius, column.x, column.y)
+	}
+	add_vein(world, generator, vein)
+	return ""
+}
+
+// By the rules of the player's ghost and through the player's commit,
+// without taking an item or counting a placement.
+place_for_developer :: proc(state: ^Simulation_State, content: Simulation_Content, machine: Machine_Id, origin: World_Coordinate, rotation: u8) -> string {
+	if content.machines.machines[machine].item == NO_ITEM {
+		return "no item places this machine"
+	}
+	placement := command_placement(&state.world, content, state.players[:], machine, origin, rotation)
+	if !placement.valid {
+		return "a player could not place it there (the cells must be free air in loaded chunks on solid ground, clear of the player, a drill over a vein)"
+	}
+	commit_placement(&state.world, content.machines, placement)
+	return ""
+}
+
+// The entity covering the cell, its contents discarded, or else the
+// block there.
+remove_for_developer :: proc(world: ^World, content: Simulation_Content, cell: World_Coordinate) -> string {
+	if world_to_chunk_coordinate(cell) not_in world.chunks {
+		return "the chunk is not loaded"
+	}
+	if handle := entity_at(&world.entities, cell); handle != NO_ENTITY {
+		if !entity_can_be_picked_up(world, content.machines, handle) {
+			return "this entity cannot be picked up"
+		}
+		remove_entity(&world.entities, content.machines, handle)
+		return ""
+	}
+	if world_get_block(world, cell) == AIR_BLOCK {
+		return "nothing there"
+	}
+	world_set_block(world, cell, AIR_BLOCK)
+	return ""
+}
+
+set_block_for_developer :: proc(world: ^World, block: Block_Id, cell: World_Coordinate) -> string {
+	switch {
+	case world_to_chunk_coordinate(cell) not_in world.chunks:
+		return "the chunk is not loaded"
+	case cell in world.entities.cells:
+		return "an entity stands there"
+	}
+	world_set_block(world, cell, block)
+	return ""
+}
+
+// Stack by stack, as an inserter would put them in; what does not fit is
+// discarded.
+insert_for_developer :: proc(world: ^World, content: Simulation_Content, cell: World_Coordinate, grant: Developer_Grant) -> string {
+	handle := entity_at(&world.entities, cell)
+	if handle == NO_ENTITY {
+		return "no entity there"
+	}
+	stack_size := max(int(item_stack_size(content.items, grant.item)), 1)
+	for left := grant.count; left > 0; {
+		count := min(left, stack_size)
+		leftover := entity_insert(&world.entities, content, handle, Item_Stack{item = grant.item, count = u16(count)})
+		inserted := stack_is_empty(leftover) ? count : count - int(leftover.count)
+		if inserted == 0 {
+			return left == grant.count ? "the entity takes none of it" : ""
+		}
+		left -= inserted
+	}
+	return ""
 }
