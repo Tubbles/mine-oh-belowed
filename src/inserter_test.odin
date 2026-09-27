@@ -368,3 +368,87 @@ test_inserter_smelting_line_is_deterministic :: proc(t: ^testing.T) {
 	testing.expect_value(t, worlds[0].statistics.stalls, worlds[1].statistics.stalls)
 	testing.expect_value(t, worlds[0].statistics.inserter_idle_ticks, worlds[1].statistics.inserter_idle_ticks)
 }
+
+// Work item 0079: the player takes the item from the inserter's hand
+// slot; the arm, waiting for room at the drop, swings back and picks again.
+@(test)
+test_taking_the_hand_lets_a_waiting_inserter_swing_back :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	pair := make_chest_pair(&world, content)
+	gravel, stone := test_item(content.items, "gravel"), test_item(content.items, "stone")
+	entity_insert(&world.entities, content, pair.source, Item_Stack{gravel, 5})
+	target := entity_slots(&world.entities, pair.target)
+	for &slot in target {
+		slot = Item_Stack{stone, item_stack_size(content.items, stone)}
+	}
+	tick_test_entities(&world, content, 80)
+	inserter := test_inserter(&world, pair.inserter)
+	testing.expect_value(t, inserter.state, Inserter_State.Waiting_For_Room)
+	cursor: Held_Stack
+	inserter.held, cursor = inserter_hand_after_input(inserter.held, EMPTY_HELD_STACK, true)
+	testing.expect_value(t, inserter.held, EMPTY_STACK)
+	testing.expect_value(t, cursor, Held_Stack{Item_Stack{gravel, 1}, MACHINE_SLOT_ORIGIN})
+	// The empty hand drops nothing and swings back on the next tick.
+	tick_test_entities(&world, content, 1)
+	testing.expect_value(t, inserter.phase, Inserter_Phase.Swinging_Back)
+	testing.expect_value(t, inserter.state, Inserter_State.Moving)
+	testing.expect_value(t, chest_count_of(&world, pair.target, gravel), 0)
+	// Back over the pickup cell 50 ticks later, it picks the next gravel.
+	tick_test_entities(&world, content, 50)
+	testing.expect_value(t, inserter.held, Item_Stack{gravel, 1})
+	testing.expect_value(t, chest_count_of(&world, pair.source, gravel), 3)
+}
+
+// A hand emptied during the swing to the drop arrives empty and swings
+// back without a drop.
+@(test)
+test_inserter_hand_emptied_mid_swing_swings_back :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	pair := make_chest_pair(&world, content)
+	plate := test_item(content.items, "iron_plate")
+	entity_insert(&world.entities, content, pair.source, Item_Stack{plate, 5})
+	tick_test_entities(&world, content, 10)
+	inserter := test_inserter(&world, pair.inserter)
+	testing.expect_value(t, inserter.phase, Inserter_Phase.Swinging_To_Drop)
+	inserter.held = EMPTY_STACK
+	tick_test_entities(&world, content, 41)
+	testing.expect_value(t, inserter.phase, Inserter_Phase.Swinging_Back)
+	testing.expect_value(t, inserter.state, Inserter_State.Moving)
+	testing.expect_value(t, chest_count_of(&world, pair.target, plate), 0)
+}
+
+@(test)
+test_inserter_hand_takes_nothing_from_the_cursor :: proc(t: ^testing.T) {
+	content := make_test_content()
+	coal, gravel := test_item(content.items, "coal"), test_item(content.items, "gravel")
+	cursor := Held_Stack{Item_Stack{coal, 5}, 3}
+	hand, held := inserter_hand_after_input(EMPTY_STACK, cursor, true)
+	testing.expect_value(t, hand, EMPTY_STACK)
+	testing.expect_value(t, held, cursor)
+	hand, held = inserter_hand_after_input(Item_Stack{gravel, 1}, cursor, true)
+	testing.expect_value(t, hand, Item_Stack{gravel, 1})
+	testing.expect_value(t, held, cursor)
+	// Without an activation nothing moves.
+	hand, held = inserter_hand_after_input(Item_Stack{gravel, 1}, EMPTY_HELD_STACK, false)
+	testing.expect_value(t, hand, Item_Stack{gravel, 1})
+	testing.expect_value(t, held, EMPTY_HELD_STACK)
+}
+
+@(test)
+test_inserter_state_text_names_the_held_item :: proc(t: ^testing.T) {
+	content := make_test_content()
+	gravel := test_item(content.items, "gravel")
+	// The shipped strings, so the state line reads as the player sees it.
+	table, table_error := parse_string_table(#load("../data/strings/en.sjson"), context.temp_allocator)
+	testing.expect(t, table_error == nil)
+	thread_string_table = &table
+	defer thread_string_table = nil
+	inserter := Inserter{state = .Waiting_For_Room, held = Item_Stack{gravel, 1}}
+	testing.expect_value(t, inserter_state_text(inserter, content.items), "Waiting for room: Gravel")
+	inserter.held = EMPTY_STACK
+	testing.expect_value(t, inserter_state_text(inserter, content.items), "Waiting for room")
+	inserter.state = .Moving
+	testing.expect_value(t, inserter_state_text(inserter, content.items), "Moving")
+}

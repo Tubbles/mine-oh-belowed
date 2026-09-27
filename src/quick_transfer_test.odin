@@ -272,3 +272,31 @@ test_transfer_buttons_per_machine :: proc(t: ^testing.T) {
 	testing.expect_value(t, transfer_rows_height(machine(content, "wooden_chest"), 400), f32(UI_ROW_HEIGHT + UI_GAP))
 	testing.expect_value(t, transfer_rows_height(machine(content, "wooden_chest"), 200), f32(2 * (UI_ROW_HEIGHT + UI_GAP)))
 }
+
+// Work item 0079: the quick move on an inserter's hand slot.
+@(test)
+test_quick_move_takes_the_inserter_hand :: proc(t: ^testing.T) {
+	test := make_quick_transfer_test()
+	handle := quick_transfer_entity(test, "burner_inserter")
+	inserter := pool_get(&test.world.entities.inserters, handle)
+	gravel, stone := test_item(test.content.items, "gravel"), test_item(test.content.items, "stone")
+	inserter.held = Item_Stack{gravel, 1}
+	for &slot in test.inventory.slots {
+		slot = Item_Stack{stone, item_stack_size(test.content.items, stone)}
+	}
+	// A full inventory leaves the item in the hand.
+	take_inserter_hand(&test.world.entities, test.content.items, handle, test.inventory)
+	testing.expect_value(t, inserter.held, Item_Stack{gravel, 1})
+	test.inventory.slots[12] = EMPTY_STACK
+	take_inserter_hand(&test.world.entities, test.content.items, handle, test.inventory)
+	testing.expect_value(t, inserter.held, EMPTY_STACK)
+	testing.expect_value(t, test.inventory.slots[12], Item_Stack{gravel, 1})
+}
+
+@(test)
+test_quick_move_targets_the_hand_slot :: proc(t: ^testing.T) {
+	testing.expect(t, quick_move_targets_hand({grid = {activated = -1, focused = -1}, hand_activated = true}, false))
+	testing.expect(t, quick_move_targets_hand({grid = {activated = -1, focused = -1}, hand_focused = true}, false))
+	testing.expect(t, !quick_move_targets_hand({grid = {activated = -1, focused = -1}, hand_focused = true}, true))
+	testing.expect(t, !quick_move_targets_hand({grid = {activated = -1, focused = 0}}, true))
+}

@@ -33,12 +33,14 @@ splitter_side_keys := [Splitter_Side]string {
 }
 
 // The machine's slot indices plus the filter slot of a filter inserter
-// or a splitter, which is not one of the slots, and the transfer button
-// activated this frame (quick_transfer.odin).
+// or a splitter and an inserter's hand slot, which are not among the
+// slots, and the transfer button activated this frame (quick_transfer.odin).
 Machine_Slot_Result :: struct {
 	using grid:       Slot_Grid_Result,
 	filter_activated: bool,
 	filter_focused:   bool,
+	hand_activated:   bool,
+	hand_focused:     bool,
 	transfer:         Transfer_Button,
 }
 
@@ -148,7 +150,7 @@ machine_area_height :: proc(machine: Machine, slot_count: int, width: f32) -> f3
 	case .Furnace:
 		return UI_ROW_HEIGHT + 2 * (UI_SLOT_SIZE + UI_GAP) + 2 * UI_ROW_HEIGHT
 	case .Inserter:
-		return UI_ROW_HEIGHT + (UI_SLOT_SIZE + UI_GAP) + 3 * UI_ROW_HEIGHT
+		return UI_ROW_HEIGHT + 2 * (UI_SLOT_SIZE + UI_GAP) + 3 * UI_ROW_HEIGHT
 	case .Drill:
 		rows := 1 + DRILL_TEXT_ROWS + drill_extra_rows(machine)
 		return UI_ROW_HEIGHT + (UI_SLOT_SIZE + UI_GAP) + f32(rows) * UI_ROW_HEIGHT
@@ -234,7 +236,8 @@ output_rate_label :: proc(state: ^Ui_State, content: ^Ui_Rectangle, rate: Machin
 }
 
 // The fuel slot and burn bar of a burner, or the filter slot of a filter
-// inserter, on the first row; a burner's Fill button, the cycle bar and
+// inserter, on the first row; the hand slot on the second, always drawn
+// so the layout does not jump; a burner's Fill button, the cycle bar and
 // the state below.
 inserter_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, inserter: Inserter, screen_context: Screen_Context) -> Machine_Slot_Result {
 	result := Machine_Slot_Result {
@@ -254,9 +257,13 @@ inserter_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, inserter: Ins
 		result.filter_activated, result.filter_focused = interaction.activated, interaction.focused
 		draw_text_fitted(state, {first.x + UI_SLOT_SIZE + UI_GAP, first.y, MACHINE_BAR_WIDTH, UI_SLOT_SIZE}, text("inserter_filter"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	}
+	second := cut_top(&content, UI_SLOT_SIZE + UI_GAP)
+	hand := ui_item_slot(state, {second.x, second.y, UI_SLOT_SIZE, UI_SLOT_SIZE}, ui_id(state, "hand", 0), inserter.held, screen_context.items)
+	result.hand_activated, result.hand_focused = hand.activated, hand.focused
+	draw_text_fitted(state, {second.x + UI_SLOT_SIZE + UI_GAP, second.y, MACHINE_BAR_WIDTH, UI_SLOT_SIZE}, text("inserter_hand"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	result.transfer = transfer_button_rows(state, &content, machine)
 	machine_bar(state, cut_top(&content, UI_ROW_HEIGHT), inserter_cycle_fraction(inserter, machine, screen_context.tick_rate))
-	detail_line(state, &content, text(inserter_state_keys[inserter.state]), UI_DIM_TEXT_COLOR)
+	detail_line(state, &content, inserter_state_text(inserter, screen_context.items), UI_DIM_TEXT_COLOR)
 	if inserter_is_electric(machine) {
 		power_line := power_status_line(&screen_context.world.entities.electric_networks, inserter.handle)
 		detail_line(state, &content, power_line, UI_DIM_TEXT_COLOR)
@@ -405,6 +412,15 @@ inserter_filter_after_input :: proc(filter: Item_Id, held: Item_Stack, activated
 	return filter
 }
 
+// A or a click with nothing on the cursor lifts the inserter's hand onto
+// it. The hand takes nothing in: a stack on the cursor stays there.
+inserter_hand_after_input :: proc(hand: Item_Stack, held: Held_Stack, activated: bool) -> (Item_Stack, Held_Stack) {
+	if !activated || !stack_is_empty(held.stack) || stack_is_empty(hand) {
+		return hand, held
+	}
+	return EMPTY_STACK, Held_Stack{stack = hand, origin_slot = MACHINE_SLOT_ORIGIN}
+}
+
 // The machine's name and slots. Results are indices into the machine's slots.
 machine_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, handle: Entity_Handle, slots: []Item_Stack, screen_context: Screen_Context) -> Machine_Slot_Result {
 	content := area
@@ -483,12 +499,13 @@ machine_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	machine_slots := machine_slot_region(state, machine_area, handle, slots, screen_context)
 	scroll_region_end(state, region)
 	ui_panel_end(state)
-	player_slots.activated, machine_slots.activated = apply_quick_move_input(state, screen_context, handle, slots, player_slots, machine_slots)
+	player_slots.activated, machine_slots.activated, machine_slots.hand_activated = apply_quick_move_input(state, screen_context, handle, slots, player_slots, machine_slots)
 	apply_machine_screen_input(state, screen_context, handle, machine.kind, slots, player_slots, machine_slots)
 	apply_transfer_button(&screen_context.world.entities, statistics_simulation_content(screen_context), handle, player.inventory, machine_slots.transfer)
 	if inserter := pool_get(&screen_context.world.entities.inserters, handle); inserter != nil {
 		clear_filter := machine_slots.filter_focused && state.input.context_action
 		inserter.filter = inserter_filter_after_input(inserter.filter, player.held.stack, machine_slots.filter_activated, clear_filter)
+		inserter.held, player.held = inserter_hand_after_input(inserter.held, player.held, machine_slots.hand_activated)
 	}
 	if splitter := pool_get(&screen_context.world.entities.splitters, handle); splitter != nil {
 		clear_filter := machine_slots.filter_focused && state.input.context_action
@@ -499,17 +516,24 @@ machine_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		filter_glyph_bar(state)
 		return
 	}
-	machine_glyph_bar(state, player.held.stack, focused_stack(player.inventory.slots, player_slots.focused, slots, machine_slots.focused))
+	focused := focused_stack(player.inventory.slots, player_slots.focused, slots, machine_slots.focused)
+	if inserter := pool_get(&screen_context.world.entities.inserters, handle); inserter != nil && machine_slots.hand_focused {
+		focused = inserter.held
+	}
+	machine_glyph_bar(state, player.held.stack, focused)
 }
 
 // The quick move (quick_transfer.odin): R2 or Q on a slot, or Left
 // Control with a click. Its press takes the slot's activation, since R2
 // is Confirm too and a click picks up, so the stack is not also picked
-// up; returns the activations left for the ordinary slot input.
-apply_quick_move_input :: proc(state: ^Ui_State, screen_context: Screen_Context, handle: Entity_Handle, slots: []Item_Stack, player_slots: Slot_Grid_Result, machine_slots: Machine_Slot_Result) -> (player_activated, machine_activated: int) {
+// up; returns the activations left for the ordinary slot input. On an
+// inserter's hand slot it moves the hand into the inventory.
+apply_quick_move_input :: proc(state: ^Ui_State, screen_context: Screen_Context, handle: Entity_Handle, slots: []Item_Stack, player_slots: Slot_Grid_Result, machine_slots: Machine_Slot_Result) -> (player_activated, machine_activated: int, hand_activated: bool) {
 	input := state.input
 	modifier_click := input.quick_move_modifier && state.click
 	target, found := quick_move_target(player_slots, machine_slots.grid)
+	on_hand := quick_move_targets_hand(machine_slots, found)
+	found = found && !on_hand
 	stack := EMPTY_STACK
 	if found {
 		stack = target.side == .Machine ? slots[target.slot] : screen_context.player.inventory.slots[target.slot]
@@ -526,10 +550,13 @@ apply_quick_move_input :: proc(state: ^Ui_State, screen_context: Screen_Context,
 	step: Quick_Move_Step
 	state.quick_move, step = advance_quick_move(state.quick_move, quick_input)
 	apply_quick_move(&screen_context.world.entities, statistics_simulation_content(screen_context), handle, screen_context.player.inventory, step)
-	if quick_input.pressed {
-		return -1, -1
+	if quick_input.pressed && on_hand {
+		take_inserter_hand(&screen_context.world.entities, screen_context.items, handle, screen_context.player.inventory)
 	}
-	return player_slots.activated, machine_slots.activated
+	if quick_input.pressed {
+		return -1, -1, false
+	}
+	return player_slots.activated, machine_slots.activated, machine_slots.hand_activated
 }
 
 filter_glyph_bar :: proc(state: ^Ui_State) {
@@ -594,7 +621,7 @@ entity_status_text :: proc(world: ^World, machines: Machine_Registry, fluids: Fl
 		return fmt.tprintf("%s  %s", name, text(furnace_state_keys[furnace.state]))
 	case .Inserter:
 		inserter := pool_get(&world.entities.inserters, handle)
-		return fmt.tprintf("%s  %s", name, text(inserter_state_keys[inserter.state]))
+		return fmt.tprintf("%s  %s", name, inserter_state_text(inserter^, items))
 	case .Drill:
 		drill := pool_get(&world.entities.drills, handle)
 		return fmt.tprintf("%s  %s", name, drill_state_text(drill^, items))

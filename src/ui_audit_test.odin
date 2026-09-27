@@ -428,6 +428,36 @@ destroy_ui_audit :: proc(audit: ^Ui_Audit) {
 	free(audit)
 }
 
+// The item with the longest name in the shipped strings.
+longest_named_item :: proc(items: Item_Registry) -> Item_Id {
+	longest := Item_Id(0)
+	for _, index in items.items {
+		if len(item_name(items, Item_Id(index))) > len(item_name(items, longest)) {
+			longest = Item_Id(index)
+		}
+	}
+	return longest
+}
+
+// An inserter waiting for room with the longest item name in its hand
+// (work item 0079): the hand slot, and the state line naming the item in
+// the panel and in the HUD. The inserter and the target are restored.
+audit_waiting_inserter :: proc(audit: ^Ui_Audit) {
+	simulation := &audit.simulation
+	player := &simulation.players[0]
+	for &inserter in simulation.world.entities.inserters.entries {
+		if !inserter.alive {
+			continue
+		}
+		held, inserter_state, target := inserter.held, inserter.state, player.target
+		inserter.held, inserter.state = Item_Stack{longest_named_item(audit.content.items), 1}, .Waiting_For_Room
+		player.target = Raycast_Hit{hit = true, entity = inserter.handle}
+		audit_case(audit, {name = "inserter waiting with an item in hand", screens = {.Machine}, hud = true, machine = inserter.handle, walk_focus = true})
+		inserter.held, inserter.state, player.target = held, inserter_state, target
+		return
+	}
+}
+
 UI_AUDIT_TOASTS :: [?]string{"mc_extraction_rights_done", "inventory_full", "developer_applies_on_resume"}
 
 audit_every_case :: proc(audit: ^Ui_Audit) {
@@ -454,6 +484,7 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 			audit_case(audit, {name = name, screens = {.Machine}, machine = handle, tab_next = tab, walk_focus = true})
 		}
 	}
+	audit_waiting_inserter(audit)
 	audit_case(audit, {name = "recipes", screens = {.Recipes}, walk_focus = true})
 	for &assembler in simulation.world.entities.assemblers.entries {
 		if assembler.alive && audit.content.machines.machines[assembler.machine].recipe_choice != .Fixed {

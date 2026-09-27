@@ -25,6 +25,10 @@ How items move without hands: belts, inserters, splitters and the burner mining 
 
 - Two read only calls joined the transfer interface: a peek at what a source offers and whether a target would ever take an item kind, so an inserter only picks what its target can take and never holds something undroppable. A full target does not stop the pick: the arm carries the item and waits at the drop. A belt running straight towards or away from the inserter has no far side and takes items on its right lane. Check order at pickup: no filter, then nothing to pick (idle), then no fuel. Inserter stalls have their own counters so furnace hints do not fire on inserters. Placement direction is relative to the player's facing like belts; rotating a placed inserter and burner inserters feeding themselves from carried fuel come with 0016.
 
+### As implemented in 0079
+
+- The inserter panel shows the arm's hand in an "In hand" slot under the fuel or filter row, empty when the hand is. A or a click with an empty cursor lifts the item onto the cursor, a quick move puts it into the inventory (what does not fit stays in the hand), and the slot takes nothing in. An arm whose hand the player emptied drops nothing and swings back to pick again. This is the way out of the gravel stall: an inserter that picked an item its target stopped taking waits at the drop, reads "Waiting for room: Gravel" in its panel and in the HUD, and the player takes the item from its hand. Sorting the gravel off the line (a chest at the belt's end) remains the lasting answer.
+
 ## Splitters
 
 - A 2 by 1 by 1 entity across two adjacent belts, with a direction. Two inputs feed two outputs round robin per item, so an uneven pair of inputs still fills both outputs. Input priority and output priority flags, and one output filter, are data fields on the same entity and appear in its panel; the alpha implements them because they are the difference between spaghetti and a bus.

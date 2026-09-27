@@ -10,10 +10,12 @@ package game
 // dropping are instant; each swing takes half the cycle derived from the
 // machine's items per minute, so with a source and a sink always ready an
 // inserter moves exactly its rate. An arm that arrives at the drop and
-// finds no room waits there with the item in hand. A burner inserter
-// burns fuel only on the ticks its arm moves; an electric one asks its
-// power network for power only then, and in a brownout its arm moves on
-// the ticks its power credit pays for (power_machine.odin). A burner with an empty buffer and an
+// finds no room waits there with the item in hand; the player can take
+// that item from the panel's hand slot, and an empty hand swings back.
+// A burner inserter burns fuel only on the ticks its arm moves; an
+// electric one asks its power network for power only then, and in a
+// brownout its arm moves on the ticks its power credit pays for
+// (power_machine.odin). A burner with an empty buffer and an
 // empty fuel slot feeds itself: fuel it is about to pick, or fuel in its
 // hand, goes into its own fuel slot instead of on to the target.
 
@@ -66,6 +68,15 @@ inserter_state_keys := [Inserter_State]string {
 	.Waiting_For_Room = "machine_state_waiting_for_room",
 	.Unpowered        = "machine_state_unpowered",
 	.No_Filter        = "machine_state_no_filter",
+}
+
+// Waiting for room names the item in hand, like the drill's Output
+// refused.
+inserter_state_text :: proc(inserter: Inserter, items: Item_Registry) -> string {
+	if inserter.state == .Waiting_For_Room && !stack_is_empty(inserter.held) {
+		return format_message_text(text("machine_state_waiting_for_room_item"), item_name(items, inserter.held.item))
+	}
+	return text(inserter_state_keys[inserter.state])
 }
 
 make_inserter :: proc(common: Entity_Common, machine: Machine) -> Inserter {
@@ -206,12 +217,16 @@ pick_with_inserter :: proc(entities: ^Entities, content: Simulation_Content, ins
 	inserter.phase, inserter.phase_ticks, inserter.state = .Swinging_To_Drop, 0, .Moving
 }
 
+// A hand the player emptied from the panel (work item 0079) drops
+// nothing and swings back.
 drop_with_inserter :: proc(entities: ^Entities, content: Simulation_Content, inserter: ^Inserter) {
-	target := entity_at(entities, inserter_drop_cell(inserter^))
-	leftover := entity_insert(entities, content, target, inserter.held, inserter_drop_lane(entities, inserter^, target))
-	if !stack_is_empty(leftover) {
-		inserter.state = .Waiting_For_Room
-		return
+	if !stack_is_empty(inserter.held) {
+		target := entity_at(entities, inserter_drop_cell(inserter^))
+		leftover := entity_insert(entities, content, target, inserter.held, inserter_drop_lane(entities, inserter^, target))
+		if !stack_is_empty(leftover) {
+			inserter.state = .Waiting_For_Room
+			return
+		}
 	}
 	inserter.held = EMPTY_STACK
 	inserter.phase, inserter.phase_ticks, inserter.state = .Swinging_Back, 0, .Moving

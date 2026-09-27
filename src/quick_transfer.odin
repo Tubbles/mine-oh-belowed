@@ -5,7 +5,8 @@ package game
 // side: from the inventory into the machine the way an inserter would put
 // it (entity_accepts routes fuel to the fuel slot, ore to the input, and
 // the insertion limits hold), from a machine slot into the inventory with
-// inventory_add. A second press on the same side within
+// inventory_add, and from an inserter's hand slot into the inventory
+// (work item 0079). A second press on the same side within
 // QUICK_MOVE_REPEAT_SECONDS, or holding the action that long, moves every
 // stack of that item on that side. The transfer buttons: Take all (a
 // chest's or the capsule's slots, the output slots of a furnace or a
@@ -125,6 +126,21 @@ quick_move_target :: proc(player_slots, machine_slots: Slot_Grid_Result) -> (tar
 		return {.Machine, machine_slots.focused}, true
 	}
 	return {}, false
+}
+
+// The hand slot of an inserter (work item 0079) is not one of the
+// machine's slots: the quick move aims at it when it was clicked or
+// confirmed, or when it holds the focus and no slot was found.
+quick_move_targets_hand :: proc(machine_slots: Machine_Slot_Result, slot_found: bool) -> bool {
+	return machine_slots.hand_activated || (machine_slots.hand_focused && !slot_found)
+}
+
+// The inserter's hand into the inventory; what does not fit stays in the
+// hand.
+take_inserter_hand :: proc(entities: ^Entities, items: Item_Registry, handle: Entity_Handle, inventory: Inventory) {
+	if inserter := pool_get(&entities.inserters, handle); inserter != nil {
+		take_slot(inventory, items, &inserter.held)
+	}
 }
 
 slot_indices_contain :: proc(indices: []int, index: int) -> bool {
