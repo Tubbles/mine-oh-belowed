@@ -4,6 +4,7 @@ Progressive disclosure: [DESIGN.md](../DESIGN.md) and [PLAN.md](../PLAN.md) at t
 
 - [architecture.md](architecture.md): code structure, world storage, simulation, data, save format, input abstraction, configuration, testing.
 - [build.md](build.md): host toolchain, linker shim, nix flake, CI.
+- [logistics.md](logistics.md): belts as transport lines, ramps and lifts, inserters, splitters, the burner mining drill on veins, the item transfer interface.
 - [ui.md](ui.md): the immediate mode UI, focus and pointer as one model, widgets, HUD, slot interaction on a gamepad, strings from data.
 - [quests.md](quests.md): quest principles, objective types, chapter 1 beat by beat, chapters 2 to 8 in outline, Mission Control's tone.
 - [content.md](content.md): living catalogue of items, machines, recipes, technologies and veins with their values, the rules behind the values, phase budgets and ratio checks.
@@ -12,4 +13,4 @@ Progressive disclosure: [DESIGN.md](../DESIGN.md) and [PLAN.md](../PLAN.md) at t
 - [log/](log/): dated decision logs, write once.
 - [work/](work/): work items with status.
 
-Planned before their milestones start: `world.md`, `logistics.md`, `fluids.md`, `lore.md`.
+Planned before their milestones start: `world.md`, `fluids.md`, `lore.md`.
