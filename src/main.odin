@@ -210,7 +210,7 @@ main :: proc() {
 		os.exit(1)
 	}
 	global_string_table = string_table
-	registry, registry_loaded := load_block_registry(data_directory)
+	registry, registry_loaded := load_block_registry(data_directory, global_string_table.entries)
 	if !registry_loaded {
 		os.exit(1)
 	}

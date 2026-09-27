@@ -1,14 +1,15 @@
 package game
 
 // The world HUD, drawn through the UI draw list under any open screen:
-// crosshair, the targeted entity's name and state (and the vein of a
-// targeted drill or of a block over a vein footprint, or the deep vein under a bore drill
-// ghost), hotbar with the held
-// item's name, the hotbar radial, the active quest objective (top right,
+// crosshair, under it the targeted entity's name and state or the
+// targeted block's name (dim, "Unknown ore" for an ore not discovered
+// yet), the pickaxe the block needs and the vein of a targeted drill or of
+// a block over a vein footprint (or the deep vein under a bore drill
+// ghost), hotbar with the held item's name, the hotbar radial, the active quest objective (top right,
 // ui_journal.odin) or, once every quest is done, the oldest open contract
 // (ui_contracts.odin), the brownout warning (top centre, ui_power.odin) and
 // the glyph bar, and the magnetometer's dial while one is selected
-// (ui_prospecting.odin). Targeted block names come later.
+// (ui_prospecting.odin).
 
 CROSSHAIR_SIZE :: 18.0
 CROSSHAIR_THICKNESS :: 3.0
@@ -161,15 +162,17 @@ schematic_glyph_hints :: proc(world: ^World, player: Player, items: Item_Registr
 	return list[:], true
 }
 
-// Below the crosshair, the second line under the first.
-draw_target_status :: proc(state: ^Ui_State, status: string, line: int = 0) {
+// Below the crosshair on the line after the last one drawn; an empty
+// status takes no line. Returns the next line.
+draw_target_status :: proc(state: ^Ui_State, status: string, line: int, color := UI_TEXT_COLOR) -> int {
 	if status == "" {
-		return
+		return line
 	}
 	centre := state.screen_units / 2
 	top := centre.y + CROSSHAIR_SIZE + UI_GAP + f32(line) * UI_ROW_HEIGHT
 	area := Ui_Rectangle{0, top, state.screen_units.x, UI_ROW_HEIGHT}
-	draw_text(state, area, status, UI_BODY_TEXT_SIZE, .Centre)
+	draw_text(state, area, status, UI_BODY_TEXT_SIZE, .Centre, color)
+	return line + 1
 }
 
 // Walking on the ground without sprinting: the glyph bar offers Sprint.
@@ -229,12 +232,16 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	case .None:
 	}
 	draw_brownout_warning(state, screen_context.world)
-	status, vein_status := target_status_lines(screen_context.world, screen_context.machines, screen_context.fluids, screen_context.veins, screen_context.blocks, items, effective_tool_tier(player^, items, screen_context.cheat_speed), player.target)
-	if ghost_line, shown := bore_drill_ghost_line(screen_context.world, screen_context.machines, screen_context.veins, player^); shown {
+	obtained := screen_context.unlocks.obtained
+	name_status, tool_status, vein_status := target_status_lines(screen_context.world, screen_context.machines, screen_context.fluids, screen_context.veins, screen_context.blocks, items, obtained, effective_tool_tier(player^, items, screen_context.cheat_speed), player.target)
+	if ghost_line, shown := bore_drill_ghost_line(screen_context.world, screen_context.machines, screen_context.veins, screen_context.blocks, items, obtained, player^); shown {
 		vein_status = ghost_line
 	}
-	draw_target_status(state, status)
-	draw_target_status(state, vein_status, status == "" ? 0 : 1)
+	// An entity's line is its state, a block's only says what it is.
+	name_color := player.target.entity == NO_ENTITY ? UI_DIM_TEXT_COLOR : UI_TEXT_COLOR
+	line := draw_target_status(state, name_status, 0, name_color)
+	line = draw_target_status(state, tool_status, line)
+	draw_target_status(state, vein_status, line)
 	if selected := selected_hotbar_stack(player^); !stack_is_empty(selected) && item_has_use(items, selected.item, .Magnetometer) {
 		draw_magnetometer(state, player^)
 	}

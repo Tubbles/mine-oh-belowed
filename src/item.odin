@@ -300,6 +300,17 @@ resolve_item_drops :: proc(definitions: []Item_Definition, items: []Item, blocks
 	return ""
 }
 
+// A discoverable block reads "Unknown ore" until its drop is obtained, so
+// it needs one (work item 0052).
+validate_discoverable_drops :: proc(drops: []Item_Id, blocks: Block_Registry) -> string {
+	for drop, block in drops {
+		if drop == NO_ITEM && block_is_discoverable(blocks, Block_Id(block)) {
+			return fmt.tprintf("block %q is discoverable but yields no item", blocks.definitions[block].id)
+		}
+	}
+	return ""
+}
+
 highest_tool_tier :: proc(items: []Item) -> int {
 	highest := 0
 	for item in items {
@@ -346,6 +357,10 @@ resolve_item_registry :: proc(file: Items_File, blocks: Block_Registry, allocato
 		return {}, problem
 	}
 	if problem = resolve_extra_drops(file.items, registry, blocks); problem != "" {
+		destroy_item_registry(registry, allocator)
+		return {}, problem
+	}
+	if problem = validate_discoverable_drops(drops, blocks); problem != "" {
 		destroy_item_registry(registry, allocator)
 		return {}, problem
 	}

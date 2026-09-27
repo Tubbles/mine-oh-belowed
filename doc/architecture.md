@@ -54,7 +54,7 @@ One `game` package under `src/`, split into files by concern: `world_*.odin`, `g
 
 ## Data driven content
 
-`data/*.sjson` holds blocks, items, recipes, machines, technologies, vein types and ore tables, biomes, quest chapters. Files are parsed with `core:encoding/json` (`Specification.SJSON`) into prototype tables at startup. String ids are resolved to dense integer indices once. In development builds the data directory is watched and reloaded.
+`data/*.sjson` holds blocks (each with a `name_key`, `discoverable` marking an ore that reads "Unknown ore" until its drop was obtained, 0052), items, recipes, machines, technologies, vein types and ore tables, biomes, quest chapters. Files are parsed with `core:encoding/json` (`Specification.SJSON`) into prototype tables at startup. String ids are resolved to dense integer indices once. In development builds the data directory is watched and reloaded.
 
 ## Strings and units
 

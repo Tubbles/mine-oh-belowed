@@ -112,28 +112,29 @@ record_obtained_item :: proc(unlocks: ^Recipe_Unlocks, item: Item_Id) -> bool {
 	return true
 }
 
-record_obtained_slots :: proc(unlocks: ^Recipe_Unlocks, slots: []Item_Stack) -> bool {
-	changed := false
+// Appends each item seen for the first time to found.
+record_obtained_slots :: proc(unlocks: ^Recipe_Unlocks, slots: []Item_Stack, found: ^[dynamic]Item_Id) {
 	for slot in slots {
 		if !stack_is_empty(slot) && record_obtained_item(unlocks, slot.item) {
-			changed = true
+			append(found, slot.item)
 		}
 	}
-	return changed
 }
 
 // Scans every player's inventory and cursor, and recomputes availability
-// when something new turned up.
-update_recipe_unlocks :: proc(unlocks: ^Recipe_Unlocks, recipes: Recipe_Registry, players: []Player) {
-	changed := false
+// when something new turned up. Returns the newly obtained items in the
+// temp allocator, for the discovery messages (discovery.odin).
+update_recipe_unlocks :: proc(unlocks: ^Recipe_Unlocks, recipes: Recipe_Registry, players: []Player) -> []Item_Id {
+	found := make([dynamic]Item_Id, context.temp_allocator)
 	for player in players {
 		held := [1]Item_Stack{player.held.stack}
-		changed = record_obtained_slots(unlocks, player.inventory.slots) || changed
-		changed = record_obtained_slots(unlocks, held[:]) || changed
+		record_obtained_slots(unlocks, player.inventory.slots, &found)
+		record_obtained_slots(unlocks, held[:], &found)
 	}
-	if changed {
+	if len(found) > 0 {
 		refresh_available_recipes(unlocks, recipes)
 	}
+	return found[:]
 }
 
 // The quest channel: a quest reward's unlocks_recipe.

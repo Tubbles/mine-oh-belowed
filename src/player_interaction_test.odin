@@ -250,12 +250,12 @@ test_hud_names_the_pickaxe_a_block_needs :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
 	target := Raycast_Hit{hit = true, block = {0, 0, 0}}
-	line, _ := target_status_lines(&world, content.machines, content.fluids, content.veins, content.blocks, content.items, 0, target)
+	_, line, _ := target_status_lines(&world, content.machines, content.fluids, content.veins, content.blocks, content.items, nil, 0, target)
 	testing.expect_value(t, line, "Needs a tool: Wooden pickaxe")
-	line, _ = target_status_lines(&world, content.machines, content.fluids, content.veins, content.blocks, content.items, 1, target)
+	_, line, _ = target_status_lines(&world, content.machines, content.fluids, content.veins, content.blocks, content.items, nil, 1, target)
 	testing.expect_value(t, line, "")
 	world_set_block(&world, {0, 0, 0}, test_block(content.blocks, "deep_stone"))
-	line, _ = target_status_lines(&world, content.machines, content.fluids, content.veins, content.blocks, content.items, 1, target)
+	_, line, _ = target_status_lines(&world, content.machines, content.fluids, content.veins, content.blocks, content.items, nil, 1, target)
 	testing.expect_value(t, line, "Needs a tool: Iron pickaxe")
 }
 

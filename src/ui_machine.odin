@@ -363,12 +363,15 @@ vein_size_class_name :: proc(veins: Vein_Content, size_class: int) -> string {
 	return text(fmt.tprintf("vein_size_%s", veins.size_class_ids[size_class]))
 }
 
-vein_status_text :: proc(world: ^World, veins: Vein_Content, id: Vein_Id) -> string {
+// The vein's type reads "Unknown ore" until one of its ores was obtained
+// (discovery.odin); the size and what is left show either way.
+vein_status_text :: proc(world: ^World, veins: Vein_Content, blocks: Block_Registry, items: Item_Registry, obtained: []bool, id: Vein_Id) -> string {
 	vein := registered_vein(world, id)
 	if vein == nil || vein.type >= len(veins.types) {
 		return ""
 	}
-	name := text(veins.types[vein.type].name_key)
+	vein_type := veins.types[vein.type]
+	name := text(vein_type_is_discovered(vein_type, blocks, items, obtained) ? vein_type.name_key : UNKNOWN_ORE_KEY)
 	if vein_is_assayed(world, id) {
 		name = fmt.tprintf("%s  %s  %s", name, vein_size_class_name(veins, vein.size_class), text("vein_assayed"))
 	}
@@ -562,7 +565,7 @@ entity_status_text :: proc(world: ^World, machines: Machine_Registry, fluids: Fl
 
 // While a bore drill is being placed, the HUD's vein line names the deep
 // vein its ghost would tap, since nothing on the surface marks deep veins.
-bore_drill_ghost_line :: proc(world: ^World, machines: Machine_Registry, veins: Vein_Content, player: Player) -> (line: string, shown: bool) {
+bore_drill_ghost_line :: proc(world: ^World, machines: Machine_Registry, veins: Vein_Content, blocks: Block_Registry, items: Item_Registry, obtained: []bool, player: Player) -> (line: string, shown: bool) {
 	vein, found, selected := bore_drill_ghost_vein(world, machines, player)
 	if !selected {
 		return "", false
@@ -570,26 +573,30 @@ bore_drill_ghost_line :: proc(world: ^World, machines: Machine_Registry, veins: 
 	if !found {
 		return text("bore_drill_no_deep_vein"), true
 	}
-	return vein_status_text(world, veins, vein), true
+	return vein_status_text(world, veins, blocks, items, obtained, vein), true
 }
 
-// What the HUD shows under the crosshair: the targeted entity's name and
-// state, and for a drill or any block over a surface vein's footprint
-// (mined outcrop or not) the vein and what is left. A targeted block above
-// the player's tool_tier names the pickaxe it needs in the first line.
-target_status_lines :: proc(world: ^World, machines: Machine_Registry, fluids: Fluid_Registry, veins: Vein_Content, blocks: Block_Registry, items: Item_Registry, tool_tier: int, target: Raycast_Hit) -> (entity_line, vein_line: string) {
+// What the HUD shows under the crosshair, one line each and "" where
+// nothing applies: the targeted entity's name and state, else the block's
+// name ("Unknown ore" for an ore not discovered yet, discovery.odin); the
+// pickaxe a block above the player's tool_tier needs; and for a drill or
+// any block over a surface vein's footprint (mined outcrop or not) the
+// vein and what is left. obtained is Recipe_Unlocks.obtained.
+target_status_lines :: proc(world: ^World, machines: Machine_Registry, fluids: Fluid_Registry, veins: Vein_Content, blocks: Block_Registry, items: Item_Registry, obtained: []bool, tool_tier: int, target: Raycast_Hit) -> (name_line, tool_line, vein_line: string) {
 	if drill := pool_get(&world.entities.drills, target.entity); drill != nil {
-		return entity_status_text(world, machines, fluids, target.entity), vein_status_text(world, veins, drill.vein)
+		return entity_status_text(world, machines, fluids, target.entity), "", vein_status_text(world, veins, blocks, items, obtained, drill.vein)
 	}
 	if target.entity != NO_ENTITY {
-		return entity_status_text(world, machines, fluids, target.entity), ""
+		return entity_status_text(world, machines, fluids, target.entity), "", ""
 	}
 	if !target.hit {
-		return "", ""
+		return "", "", ""
 	}
-	tool_line := mining_tool_line(blocks, items, world_get_block(world, target.block), tool_tier)
+	block := world_get_block(world, target.block)
+	name_line = target_block_name(blocks, items, obtained, block)
+	tool_line = mining_tool_line(blocks, items, block, tool_tier)
 	if vein, found := vein_at_column(world, target.block.x, target.block.z); found {
-		return tool_line, vein_status_text(world, veins, vein)
+		vein_line = vein_status_text(world, veins, blocks, items, obtained, vein)
 	}
-	return tool_line, ""
+	return
 }

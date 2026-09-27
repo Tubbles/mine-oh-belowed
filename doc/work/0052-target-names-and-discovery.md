@@ -1,6 +1,6 @@
 # 0052 What am I looking at: block names and ore discovery
 
-Status: todo
+Status: implemented
 Milestone: M10
 
 ## Goal
@@ -18,3 +18,11 @@ User request (2026-09-27): a small help text under the crosshair says what the p
 
 - Builds and tests pass.
 - User: look at grass, stone and an outcrop; the outcrop reads "Unknown ore" until mined once, then the toast, then its name.
+
+## Notes
+
+Implemented by a subagent (2026-09-27). Every block but air has a `name_key` (`block_<id>`, the flowing water levels share `block_flowing_water`); the unused `name` field is gone, and the core sample band line now reads the name through the string table too. `load_block_registry` checks the keys against the loaded string table (`validate_block_name_keys` in `src/world_block.odin`). `discoverable = true` sits on the eight ore blocks (hematite, coal, chalcopyrite, cassiterite, galena, sphalerite and pentlandite ore, gold quartz); `resolve_item_registry` refuses a discoverable block without a drop (`validate_discoverable_drops`). The HUD helper is `block_display_name`, since `block_name` already exists in the diagnostics overlay (it shows the id).
+
+Discovery lives in `src/discovery.odin`. `update_recipe_unlocks` returns the items it saw for the first time and `simulation_tick` passes them to `log_discoveries`, which logs `item_discovered` for items that are the drop of a discoverable block. Starting items are recorded in `make_simulation` before any tick and unlock all marks everything obtained, so neither is announced; developer kit grants and `--give` land during a tick and are announced. Gold quartz is discovered through its drop, quartz; gold ore (its extra drop) is not announced.
+
+A vein type counts as discovered once any of its outputs that some discoverable block drops is obtained. Outputs no discoverable block drops (gravel, sand, stone, bauxite) are ignored, otherwise the first gravel would name every vein; a type with no such output (the quarry, the deep bauxite vein) is always named. The HUD draws the target lines compacted: block or entity line, tool line, vein line, empty lines take no room. The block name is dim, an entity's name and state keep the normal colour.

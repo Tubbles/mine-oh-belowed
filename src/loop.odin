@@ -158,7 +158,8 @@ simulation_tick :: proc(state: ^Simulation_State, content_tables: Simulation_Con
 			append(&state.events, Simulation_Event{player = index, kind = kind})
 		}
 	}
-	update_recipe_unlocks(&state.unlocks, content.recipes, state.players[:])
+	newly_obtained := update_recipe_unlocks(&state.unlocks, content.recipes, state.players[:])
+	log_discoveries(&state.quests, content.blocks, content.items, newly_obtained, state.tick)
 	tick_entities(&state.world, content, state.tick_rate)
 	shipments_before := len(state.world.shipments)
 	apply_launch_requests(&state.world, state.tick)

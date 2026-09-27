@@ -33,9 +33,14 @@ Block_Texture_Definition :: struct {
 // names the fluid a source pump draws from the block (a tar pit gives
 // crude oil), as a fluids.sjson id, or is empty. tool_tier is the
 // pickaxe tier hand mining needs, 0 for hands (work item 0051).
+// name_key is the display name in data/strings/en.sjson, required on
+// every block but air. A discoverable block (the ores) reads "Unknown ore"
+// until its drop item was obtained once (work item 0052); it must have a
+// drop, which item_registry validation checks.
 Block_Definition :: struct {
 	id:               string,
-	name:             string,
+	name_key:         string,
+	discoverable:     bool,
 	solid:            bool,
 	hardness_seconds: f32,
 	light_level:      int,
@@ -110,6 +115,19 @@ validate_water_levels :: proc(definitions: []Block_Definition) -> string {
 	return ""
 }
 
+// Every block but air names itself through a key of the string table.
+validate_block_name_keys :: proc(definitions: []Block_Definition, strings: map[string]string) -> string {
+	for definition in definitions[1:] {
+		if definition.name_key == "" {
+			return fmt.tprintf("block %q has no name_key", definition.id)
+		}
+		if definition.name_key not_in strings {
+			return fmt.tprintf("block %q: name_key %q is not in the string table", definition.id, definition.name_key)
+		}
+	}
+	return ""
+}
+
 find_definition_index :: proc(definitions: []Block_Definition, id: string) -> int {
 	for definition, index in definitions {
 		if definition.id == id {
@@ -125,6 +143,19 @@ find_block_id :: proc(registry: Block_Registry, id: string) -> (block: Block_Id,
 		return AIR_BLOCK, false
 	}
 	return Block_Id(index), true
+}
+
+// The display name, "" for air and ids outside the registry. (The
+// diagnostics overlay's block_name shows the id.)
+block_display_name :: proc(registry: Block_Registry, block: Block_Id) -> string {
+	if int(block) >= len(registry.definitions) || registry.definitions[block].name_key == "" {
+		return ""
+	}
+	return text(registry.definitions[block].name_key)
+}
+
+block_is_discoverable :: proc(registry: Block_Registry, block: Block_Id) -> bool {
+	return int(block) < len(registry.definitions) && registry.definitions[block].discoverable
 }
 
 // Ids outside the registry count as not solid, so a malformed chunk cannot
@@ -206,7 +237,8 @@ face_group_color :: proc(texture: Block_Texture_Definition, group: Face_Group) -
 	return {}
 }
 
-load_block_registry :: proc(data_directory: string, allocator := context.allocator) -> (registry: Block_Registry, ok: bool) {
+// strings is the loaded string table the name keys are checked against.
+load_block_registry :: proc(data_directory: string, strings: map[string]string, allocator := context.allocator) -> (registry: Block_Registry, ok: bool) {
 	path, join_error := os.join_path({data_directory, BLOCKS_FILE_NAME}, context.temp_allocator)
 	if join_error != nil {
 		return {}, false
@@ -222,6 +254,10 @@ load_block_registry :: proc(data_directory: string, allocator := context.allocat
 		return {}, false
 	}
 	if problem := validate_block_definitions(file.blocks); problem != "" {
+		log_printf("error: invalid %s: %s", path, problem)
+		return {}, false
+	}
+	if problem := validate_block_name_keys(file.blocks, strings); problem != "" {
 		log_printf("error: invalid %s: %s", path, problem)
 		return {}, false
 	}

@@ -38,10 +38,6 @@ core_sample_fraction :: proc(drill: Core_Sample_Drill, machine: Machine, tick_ra
 	return f32(drill.work_ticks) / f32(total)
 }
 
-block_display_name :: proc(blocks: Block_Registry, block: Block_Id) -> string {
-	return int(block) < len(blocks.definitions) ? blocks.definitions[block].name : ""
-}
-
 // "16 to 32: Stone"
 core_sample_band_line :: proc(blocks: Block_Registry, sample: Core_Sample, band: int) -> string {
 	top := band * CORE_SAMPLE_BAND_DEPTH

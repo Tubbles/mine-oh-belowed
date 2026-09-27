@@ -1,5 +1,10 @@
 // Block prototypes (work items 0005, 0006 and 0008). The first entry must be
 // air: its dense index is 0, the value every new chunk is filled with.
+// name_key (every block but air, work item 0052) is the display name under
+// the crosshair, in data/strings/en.sjson. discoverable = true (default
+// false) marks an ore: it reads "Unknown ore" until the player has held
+// its drop item once, and that first time is announced. A discoverable
+// block must yield an item.
 // A block that is not solid (water, torch) is drawn where it touches a
 // different block that is not solid, and solid blocks show their faces
 // against it. Water shows against other water only where the other
@@ -24,14 +29,13 @@
 blocks = [
 	{
 		id = "air"
-		name = "Air"
 		solid = false
 		hardness_seconds = 0
 		texture = {top = [0, 0, 0], side = [0, 0, 0], bottom = [0, 0, 0]}
 	}
 	{
 		id = "stone"
-		name = "Stone"
+		name_key = "block_stone"
 		solid = true
 		hardness_seconds = 1.5
 		tool_tier = 1
@@ -39,7 +43,7 @@ blocks = [
 	}
 	{
 		id = "dirt"
-		name = "Dirt"
+		name_key = "block_dirt"
 		solid = true
 		hardness_seconds = 0.75
 		tool_tier = 0
@@ -47,7 +51,7 @@ blocks = [
 	}
 	{
 		id = "grass"
-		name = "Grass"
+		name_key = "block_grass"
 		solid = true
 		hardness_seconds = 0.75
 		tool_tier = 0
@@ -55,7 +59,7 @@ blocks = [
 	}
 	{
 		id = "sand"
-		name = "Sand"
+		name_key = "block_sand"
 		solid = true
 		hardness_seconds = 0.75
 		tool_tier = 0
@@ -63,7 +67,8 @@ blocks = [
 	}
 	{
 		id = "hematite_ore"
-		name = "Hematite Ore"
+		name_key = "block_hematite_ore"
+		discoverable = true
 		solid = true
 		hardness_seconds = 2.5
 		tool_tier = 1
@@ -71,7 +76,7 @@ blocks = [
 	}
 	{
 		id = "water"
-		name = "Water"
+		name_key = "block_water"
 		solid = false
 		hardness_seconds = 0
 		water_level = 8
@@ -79,7 +84,7 @@ blocks = [
 	}
 	{
 		id = "log"
-		name = "Log"
+		name_key = "block_log"
 		solid = true
 		hardness_seconds = 1.5
 		tool_tier = 0
@@ -87,7 +92,7 @@ blocks = [
 	}
 	{
 		id = "leaves"
-		name = "Leaves"
+		name_key = "block_leaves"
 		solid = true
 		hardness_seconds = 0.3
 		tool_tier = 0
@@ -95,7 +100,7 @@ blocks = [
 	}
 	{
 		id = "tar"
-		name = "Tar"
+		name_key = "block_tar"
 		solid = true
 		hardness_seconds = 2
 		tool_tier = 0
@@ -103,7 +108,7 @@ blocks = [
 	}
 	{
 		id = "deep_stone"
-		name = "Deep Stone"
+		name_key = "block_deep_stone"
 		solid = true
 		hardness_seconds = 6
 		tool_tier = 3
@@ -111,7 +116,8 @@ blocks = [
 	}
 	{
 		id = "coal_ore"
-		name = "Coal Ore"
+		name_key = "block_coal_ore"
+		discoverable = true
 		solid = true
 		hardness_seconds = 2.5
 		tool_tier = 1
@@ -119,7 +125,8 @@ blocks = [
 	}
 	{
 		id = "chalcopyrite_ore"
-		name = "Chalcopyrite Ore"
+		name_key = "block_chalcopyrite_ore"
+		discoverable = true
 		solid = true
 		hardness_seconds = 2.5
 		tool_tier = 1
@@ -127,7 +134,8 @@ blocks = [
 	}
 	{
 		id = "cassiterite_ore"
-		name = "Cassiterite Ore"
+		name_key = "block_cassiterite_ore"
+		discoverable = true
 		solid = true
 		hardness_seconds = 2.5
 		tool_tier = 2
@@ -135,7 +143,8 @@ blocks = [
 	}
 	{
 		id = "galena_ore"
-		name = "Galena Ore"
+		name_key = "block_galena_ore"
+		discoverable = true
 		solid = true
 		hardness_seconds = 2.5
 		tool_tier = 2
@@ -143,7 +152,8 @@ blocks = [
 	}
 	{
 		id = "sphalerite_ore"
-		name = "Sphalerite Ore"
+		name_key = "block_sphalerite_ore"
+		discoverable = true
 		solid = true
 		hardness_seconds = 2.5
 		tool_tier = 2
@@ -151,7 +161,8 @@ blocks = [
 	}
 	{
 		id = "pentlandite_ore"
-		name = "Pentlandite Ore"
+		name_key = "block_pentlandite_ore"
+		discoverable = true
 		solid = true
 		hardness_seconds = 2.5
 		tool_tier = 2
@@ -159,7 +170,7 @@ blocks = [
 	}
 	{
 		id = "spent_rock"
-		name = "Spent Rock"
+		name_key = "block_spent_rock"
 		solid = true
 		hardness_seconds = 1.5
 		tool_tier = 1
@@ -167,7 +178,7 @@ blocks = [
 	}
 	{
 		id = "flowing_water_7"
-		name = "Flowing Water"
+		name_key = "block_flowing_water"
 		solid = false
 		hardness_seconds = 0
 		water_level = 7
@@ -175,7 +186,7 @@ blocks = [
 	}
 	{
 		id = "flowing_water_6"
-		name = "Flowing Water"
+		name_key = "block_flowing_water"
 		solid = false
 		hardness_seconds = 0
 		water_level = 6
@@ -183,7 +194,7 @@ blocks = [
 	}
 	{
 		id = "flowing_water_5"
-		name = "Flowing Water"
+		name_key = "block_flowing_water"
 		solid = false
 		hardness_seconds = 0
 		water_level = 5
@@ -191,7 +202,7 @@ blocks = [
 	}
 	{
 		id = "flowing_water_4"
-		name = "Flowing Water"
+		name_key = "block_flowing_water"
 		solid = false
 		hardness_seconds = 0
 		water_level = 4
@@ -199,7 +210,7 @@ blocks = [
 	}
 	{
 		id = "flowing_water_3"
-		name = "Flowing Water"
+		name_key = "block_flowing_water"
 		solid = false
 		hardness_seconds = 0
 		water_level = 3
@@ -207,7 +218,7 @@ blocks = [
 	}
 	{
 		id = "flowing_water_2"
-		name = "Flowing Water"
+		name_key = "block_flowing_water"
 		solid = false
 		hardness_seconds = 0
 		water_level = 2
@@ -215,7 +226,7 @@ blocks = [
 	}
 	{
 		id = "flowing_water_1"
-		name = "Flowing Water"
+		name_key = "block_flowing_water"
 		solid = false
 		hardness_seconds = 0
 		water_level = 1
@@ -223,7 +234,7 @@ blocks = [
 	}
 	{
 		id = "torch"
-		name = "Torch"
+		name_key = "block_torch"
 		solid = false
 		hardness_seconds = 0.1
 		tool_tier = 0
@@ -232,7 +243,7 @@ blocks = [
 	}
 	{
 		id = "landing_pad"
-		name = "Landing Pad"
+		name_key = "block_landing_pad"
 		solid = true
 		// Not minable: the pad under the drop capsule (work item 0013).
 		hardness_seconds = 0
@@ -241,7 +252,7 @@ blocks = [
 	{
 		// Paving from gravel and water (work item 0027), placeholder colour.
 		id = "concrete"
-		name = "Concrete"
+		name_key = "block_concrete"
 		solid = true
 		hardness_seconds = 3
 		tool_tier = 1
@@ -250,7 +261,7 @@ blocks = [
 	{
 		// Fired clay (work item 0027), placeholder colour.
 		id = "brick"
-		name = "Brick"
+		name_key = "block_brick"
 		solid = true
 		hardness_seconds = 2
 		tool_tier = 1
@@ -260,7 +271,7 @@ blocks = [
 		// A dumped pile of slag (work item 0028): the visible cost of
 		// smelting before the crusher exists. Placeholder colour.
 		id = "slag_heap"
-		name = "Slag Heap"
+		name_key = "block_slag_heap"
 		solid = true
 		hardness_seconds = 1.5
 		tool_tier = 0
@@ -270,7 +281,7 @@ blocks = [
 		// A pool of crude oil in the low spots of the tar flats (work item
 		// 0030). Not minable, so the source stays; placeholder colour.
 		id = "tar_pit"
-		name = "Tar Pit"
+		name_key = "block_tar_pit"
 		solid = true
 		hardness_seconds = 0
 		fluid_source = "crude_oil"
@@ -279,7 +290,7 @@ blocks = [
 	{
 		// Paving from bitumen and gravel (work item 0031), placeholder colour.
 		id = "asphalt"
-		name = "Asphalt"
+		name_key = "block_asphalt"
 		solid = true
 		hardness_seconds = 3
 		tool_tier = 1
@@ -290,7 +301,8 @@ blocks = [
 		// item 0036). Mining it yields quartz and gold ore both (items.sjson,
 		// also_mined_from). Placeholder colour.
 		id = "gold_quartz"
-		name = "Gold Quartz"
+		name_key = "block_gold_quartz"
+		discoverable = true
 		solid = true
 		hardness_seconds = 3
 		tool_tier = 3

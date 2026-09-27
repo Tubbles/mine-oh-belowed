@@ -397,18 +397,18 @@ test_bore_drill_ghost_names_the_deep_vein :: proc(t: ^testing.T) {
 	testing.expect(t, selected && found && placement.valid)
 	testing.expect_value(t, ghost_vein, vein)
 	testing.expect_value(t, placement.vein, vein)
-	line, shown := bore_drill_ghost_line(&world, content.machines, content.veins, player^)
+	line, shown := bore_drill_ghost_line(&world, content.machines, content.veins, content.blocks, content.items, nil, player^)
 	testing.expect(t, shown)
-	testing.expect_value(t, line, vein_status_text(&world, content.veins, vein))
+	testing.expect_value(t, line, vein_status_text(&world, content.veins, content.blocks, content.items, nil, vein))
 	testing.expect_value(t, line, fmt.tprintf("%s  120 %s", text("vein_type_bauxite"), text("drill_remaining")))
 	player.target = Raycast_Hit{hit = true, block = {20, 0, 20}, face = .Positive_Y, adjacent = {20, 1, 20}}
-	line, shown = bore_drill_ghost_line(&world, content.machines, content.veins, player^)
+	line, shown = bore_drill_ghost_line(&world, content.machines, content.veins, content.blocks, content.items, nil, player^)
 	testing.expect(t, shown)
 	testing.expect_value(t, line, text("bore_drill_no_deep_vein"))
 	testing.expect(t, !placement_for_player(&world, content, players, 0).valid)
 	// Any other selection leaves the line alone.
 	player.selected_hotbar_slot = 1
-	_, shown = bore_drill_ghost_line(&world, content.machines, content.veins, player^)
+	_, shown = bore_drill_ghost_line(&world, content.machines, content.veins, content.blocks, content.items, nil, player^)
 	testing.expect(t, !shown)
 }
 
