@@ -358,7 +358,7 @@ add_entity :: proc(entities: ^Entities, machines: Machine_Registry, machine: Mac
 		return add_splitter(entities, machines, machine, origin, rotation)
 	case .Pipe:
 		handle = pool_add(&entities.pipes, .Pipe, make_pipe(common))
-	case .Offshore_Pump, .Boiler, .Steam_Engine, .Storage_Tank, .Pump, .Tar_Pit_Pump, .Flare_Stack:
+	case .Offshore_Pump, .Boiler, .Steam_Engine, .Storage_Tank, .Pump, .Tar_Pit_Pump, .Flare_Stack, .Combustion_Generator:
 		handle = pool_add(&entities.fluid_machines, .Fluid_Machine, make_fluid_machine(common, machines.machines[machine]))
 	case .Pole, .Power_Switch:
 		handle = pool_add(&entities.poles, .Pole, make_pole(common))

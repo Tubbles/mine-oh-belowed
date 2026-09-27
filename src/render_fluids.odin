@@ -8,10 +8,12 @@ import rl "vendor:raylib"
 // their single face ports drawn as squares on the footprint faces, in the
 // colour of the fluid held or taken (every face ports, the tank's, get
 // none). Offshore pumps, pumps and tar pit pumps show their direction with
-// an arrow. A flare stack's top glows while it burns gas.
+// an arrow. A flare stack's top glows while it burns gas, a combustion
+// generator's top is brighter while it generates.
 
 PIPE_COLOR :: rl.Color{110, 112, 118, 255}
 FLARE_BURNING_TOP_COLOR :: rl.Color{255, 170, 60, 255}
+GENERATING_TOP_COLOR :: rl.Color{200, 185, 140, 255}
 PIPE_CORE_SIZE :: 0.36
 PIPE_STUB_SIZE :: 0.24
 PIPE_BAND_MARGIN :: 0.02
@@ -37,6 +39,7 @@ fluid_machine_colors := [Machine_Kind]rl.Color {
 	.Pump          = {80, 130, 170, 255},
 	.Tar_Pit_Pump  = {70, 64, 60, 255},
 	.Flare_Stack   = {120, 110, 100, 255},
+	.Combustion_Generator = {110, 100, 80, 255},
 	.Pole          = {},
 	.Power_Switch  = {},
 	.Lamp          = {},
@@ -136,6 +139,9 @@ draw_fluid_machine :: proc(fluid_machine: Fluid_Machine, machines: Machine_Regis
 	top_color := color
 	if machine.kind == .Flare_Stack && fluid_machine.state == .Flaring {
 		top_color = FLARE_BURNING_TOP_COLOR
+	}
+	if machine.kind == .Combustion_Generator && fluid_machine.state == .Generating {
+		top_color = GENERATING_TOP_COLOR
 	}
 	draw_entity_cells(fluid_machine.common, machines, color, top_color)
 	buffers := fluid_machine.buffers

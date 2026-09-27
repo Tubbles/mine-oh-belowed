@@ -51,3 +51,7 @@ The M4 model: pipes with liquids and gases, steam power, electric networks, and 
 
 - A craft with fluid inputs starts only when every fluid input is fully present and takes them at the start like items; the tar pit pump gives 600 litres per minute so two feed a refinery. The chemical plant (gas port by phase, second input unfiltered, fixed choice by fluids) makes plastic from petroleum gas and coal, sulfur from gas and water, bitumen from heavy oil, and syngas plastic from wood gas and charcoal; the wood gasifier turns logs into wood gas plus charcoal as a byproduct; asphalt is an assembler recipe from bitumen and gravel. Science pack 2 is plastic based and labs have two pack slots. Fast belts stay a placeholder because a second belt speed is not a data only change. Sulfur has no consumer yet.
 
+### As implemented in 0032
+
+- The combustion generator offers up to 600 kW capped by the gas in its port and the fuel in its slot, draws gas first in whole litres and then burns fuel items, and subtracts exactly the energy delivered so produced equals consumed. Petroleum gas is worth 200 kJ per litre and wood gas 100. The power overview and the statistics Power tab list generators by type. Science pack 2 now requires plastics research. Handed to 0033: the flare stack has no lower priority than a generator on the same gas network, and a gas without fuel value (steam) is accepted by the generator's port and sits there.
+

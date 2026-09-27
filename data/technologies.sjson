@@ -28,9 +28,11 @@
 // both cracking recipes; 30 s per pack is a guess.
 // plastics, renewable_plastics and bitumen_paving (work item 0031, science
 // pack 1) unlock the two plastic routes and the bitumen and asphalt
-// recipes. logistics_science unlocks science pack 2 since 0031; fast belts
+// recipes. logistics_science unlocks science pack 2 since 0031 and needs
+// plastics since 0032, since the pack is made from plastic; fast belts
 // cost science packs 1 and 2 and stay a placeholder until a fast belt
-// exists.
+// exists. combustion_power (work item 0032, science pack 1) unlocks the
+// combustion generator; 30 s per pack is a guess.
 // placeholder = true marks a technology that unlocks nothing yet, and
 // quest_gate = true one only a main quest reward researches; labs refuse
 // both.
@@ -44,11 +46,12 @@ technologies = [
 	{id = "prospecting", name_key = "technology_prospecting", unlocks = ["core_sample_drill", "magnetometer"], packs = 50, seconds = 15, science_packs = ["science_pack_1"], prerequisites = ["steel_processing"]}
 	{id = "ore_processing", name_key = "technology_ore_processing", unlocks = ["crusher", "washer", "crush_hematite", "crush_chalcopyrite", "crush_cassiterite", "crush_galena", "crush_sphalerite", "crush_pentlandite", "wash_hematite", "wash_chalcopyrite", "wash_cassiterite", "wash_galena", "wash_sphalerite", "wash_pentlandite"], packs = 50, seconds = 15, science_packs = ["science_pack_1"], prerequisites = ["steel_processing"]}
 	{id = "recycling", name_key = "technology_recycling", unlocks = ["recycler"], packs = 50, seconds = 15, science_packs = ["science_pack_1"], prerequisites = ["ore_processing"]}
-	{id = "logistics_science", name_key = "technology_logistics_science", unlocks = ["science_pack_2"], packs = 75, seconds = 15, science_packs = ["science_pack_1"], prerequisites = ["logistics"]}
-	{id = "fast_belts", name_key = "technology_fast_belts", unlocks = [], packs = 100, seconds = 30, science_packs = ["science_pack_1", "science_pack_2"], prerequisites = ["logistics_science"], placeholder = true}
 	{id = "oil_processing", name_key = "technology_oil_processing", unlocks = ["tar_pit_pump", "refinery", "flare_stack", "refining"], packs = 100, seconds = 30, science_packs = ["science_pack_1"], prerequisites = ["ore_processing"], quest_gate = true}
 	{id = "cracking", name_key = "technology_cracking", unlocks = ["cracking_unit", "heavy_oil_cracking", "light_oil_cracking"], packs = 75, seconds = 30, science_packs = ["science_pack_1"], prerequisites = ["oil_processing"]}
 	{id = "plastics", name_key = "technology_plastics", unlocks = ["chemical_plant", "plastic_bar", "sulfur"], packs = 100, seconds = 30, science_packs = ["science_pack_1"], prerequisites = ["oil_processing"]}
+	{id = "logistics_science", name_key = "technology_logistics_science", unlocks = ["science_pack_2"], packs = 75, seconds = 15, science_packs = ["science_pack_1"], prerequisites = ["logistics", "plastics"]}
+	{id = "fast_belts", name_key = "technology_fast_belts", unlocks = [], packs = 100, seconds = 30, science_packs = ["science_pack_1", "science_pack_2"], prerequisites = ["logistics_science"], placeholder = true}
 	{id = "renewable_plastics", name_key = "technology_renewable_plastics", unlocks = ["wood_gasifier", "wood_gasification", "syngas_plastic"], packs = 75, seconds = 30, science_packs = ["science_pack_1"], prerequisites = ["plastics"]}
 	{id = "bitumen_paving", name_key = "technology_bitumen_paving", unlocks = ["bitumen", "asphalt"], packs = 50, seconds = 30, science_packs = ["science_pack_1"], prerequisites = ["plastics"]}
+	{id = "combustion_power", name_key = "technology_combustion_power", unlocks = ["combustion_generator"], packs = 75, seconds = 30, science_packs = ["science_pack_1"], prerequisites = ["oil_processing"]}
 ]

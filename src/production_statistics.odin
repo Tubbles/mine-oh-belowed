@@ -280,7 +280,7 @@ lab_marker_colour :: proc(state: Lab_State, connected: bool) -> Marker_Colour {
 
 fluid_machine_marker_colour :: proc(state: Fluid_Machine_State, connected: bool) -> Marker_Colour {
 	switch state {
-	case .Producing, .Pumping, .Flaring:
+	case .Producing, .Pumping, .Flaring, .Generating:
 		return .Green
 	case .Output_Full:
 		return .Yellow
@@ -305,7 +305,7 @@ machine_marker_colour :: proc {
 // Storage tanks hold fluid and do no work, so they get no marker.
 fluid_machine_has_marker :: proc(kind: Machine_Kind) -> bool {
 	#partial switch kind {
-	case .Offshore_Pump, .Boiler, .Steam_Engine, .Pump, .Tar_Pit_Pump, .Flare_Stack:
+	case .Offshore_Pump, .Boiler, .Steam_Engine, .Pump, .Tar_Pit_Pump, .Flare_Stack, .Combustion_Generator:
 		return true
 	}
 	return false

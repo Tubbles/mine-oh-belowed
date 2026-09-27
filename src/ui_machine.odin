@@ -57,7 +57,7 @@ machine_slot_filters :: proc(kind: Machine_Kind, slot_count: int) -> []Slot_Filt
 		filters[FURNACE_INPUT_SLOT] = {kind = .Smeltable}
 		filters[FURNACE_OUTPUT_SLOT] = {kind = .Output}
 		filters[FURNACE_BYPRODUCT_SLOT] = {kind = .Output}
-	case .Inserter, .Drill, .Boiler:
+	case .Inserter, .Drill, .Boiler, .Combustion_Generator:
 		for &filter in filters {
 			filter = {kind = .Fuel}
 		}
@@ -127,7 +127,7 @@ machine_area_size :: proc(machine: Machine, slot_count: int) -> [2]f32 {
 		return {DRILL_AREA_WIDTH, UI_ROW_HEIGHT + (UI_SLOT_SIZE + UI_GAP) + (1 + DRILL_TEXT_ROWS) * UI_ROW_HEIGHT}
 	case .Splitter:
 		return {SPLITTER_AREA_WIDTH, UI_ROW_HEIGHT + SPLITTER_CHOICE_ROWS * (UI_ROW_HEIGHT + UI_GAP) + (UI_SLOT_SIZE + UI_GAP)}
-	case .Pipe, .Offshore_Pump, .Boiler, .Steam_Engine, .Storage_Tank, .Pump, .Tar_Pit_Pump, .Flare_Stack:
+	case .Pipe, .Offshore_Pump, .Boiler, .Steam_Engine, .Storage_Tank, .Pump, .Tar_Pit_Pump, .Flare_Stack, .Combustion_Generator:
 		return fluid_area_size(machine)
 	case .Pole, .Power_Switch, .Lamp:
 		return power_area_size(machine)

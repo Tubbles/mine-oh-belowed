@@ -11,9 +11,10 @@ POWER_AREA_WIDTH :: 480
 POWER_LIST_COLUMN_WIDTH :: 560
 POWER_OVERVIEW_WIDTH :: 1400
 POWER_TOP_CONSUMER_COUNT :: 5
-// Network, supply, demand, satisfaction, generators, the consumers'
-// heading and its lines.
-POWER_DETAIL_ROWS :: 6 + POWER_TOP_CONSUMER_COUNT
+POWER_GENERATOR_TYPE_COUNT :: 3
+// Network, supply, demand, satisfaction, the generators' heading and its
+// lines, the consumers' heading and its lines.
+POWER_DETAIL_ROWS :: 6 + POWER_GENERATOR_TYPE_COUNT + POWER_TOP_CONSUMER_COUNT
 
 // Joules per tick as kW.
 joules_per_tick_kilowatts :: proc(joules: u64, tick_rate: int) -> f32 {
@@ -41,7 +42,7 @@ power_status_line :: proc(networks: ^Electric_Networks, handle: Entity_Handle) -
 	return fmt.tprintf("%s: %s", text("power_satisfaction"), format_satisfaction(networks.networks[network].satisfaction))
 }
 
-// A steam engine's output over the last tick.
+// A generator's output over the last tick.
 generator_output_line :: proc(engine: Fluid_Machine, tick_rate: int) -> string {
 	return fmt.tprintf("%s: %s", text("power_output"), format_joules_per_tick(u64(engine.generated_joules), tick_rate))
 }
@@ -103,39 +104,48 @@ power_entity_status_text :: proc(world: ^World, machines: Machine_Registry, hand
 	return fmt.tprintf("%s  %s", name, network_name(entity_network(&entities.electric_networks, handle)))
 }
 
-// Consumers of one machine type in a network, for the overview.
-Consumer_Group :: struct {
+// Consumers or generators of one machine type in a network, for the
+// overview: joules is the consumers' demand or the generators' output in
+// the last tick.
+Participant_Group :: struct {
 	machine: Machine_Id,
 	count:   int,
-	demand:  u64,
+	joules:  u64,
 }
 
-// The consumers of a network grouped by machine, largest demand first
-// (ties by machine id), at most `limit`. In the temp allocator.
-largest_consumer_groups :: proc(participants: []Electric_Participant, network, limit: int) -> []Consumer_Group {
-	groups := make([dynamic]Consumer_Group, context.temp_allocator)
+// What a participant adds to its group: a consumer's demand, a
+// generator's delivered energy.
+participant_group_joules :: proc(participant: Electric_Participant) -> u64 {
+	return participant.generator ? participant.delivered : participant.offered
+}
+
+// The consumers (or the generators) of a network grouped by machine,
+// largest first (ties by machine id), at most `limit`. In the temp
+// allocator.
+largest_participant_groups :: proc(participants: []Electric_Participant, network: int, generators: bool, limit: int) -> []Participant_Group {
+	groups := make([dynamic]Participant_Group, context.temp_allocator)
 	for participant in participants {
-		if participant.network != network || participant.generator {
+		if participant.network != network || participant.generator != generators {
 			continue
 		}
-		index := consumer_group_index(groups[:], participant.machine)
+		index := participant_group_index(groups[:], participant.machine)
 		if index < 0 {
-			append(&groups, Consumer_Group{machine = participant.machine})
+			append(&groups, Participant_Group{machine = participant.machine})
 			index = len(groups) - 1
 		}
 		groups[index].count += 1
-		groups[index].demand += participant.offered
+		groups[index].joules += participant_group_joules(participant)
 	}
-	slice.sort_by(groups[:], proc(first, second: Consumer_Group) -> bool {
-		if first.demand != second.demand {
-			return first.demand > second.demand
+	slice.sort_by(groups[:], proc(first, second: Participant_Group) -> bool {
+		if first.joules != second.joules {
+			return first.joules > second.joules
 		}
 		return first.machine < second.machine
 	})
 	return groups[:min(limit, len(groups))]
 }
 
-consumer_group_index :: proc(groups: []Consumer_Group, machine: Machine_Id) -> int {
+participant_group_index :: proc(groups: []Participant_Group, machine: Machine_Id) -> int {
 	for group, index in groups {
 		if group.machine == machine {
 			return index
@@ -206,11 +216,17 @@ power_network_detail :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_contex
 	detail_line(state, &content, fmt.tprintf("%s: %s", text("power_supply"), format_joules_per_tick(network.supply, tick_rate)))
 	detail_line(state, &content, fmt.tprintf("%s: %s", text("power_demand"), format_joules_per_tick(network.demand, tick_rate)))
 	detail_line(state, &content, fmt.tprintf("%s: %s", text("power_satisfaction"), format_satisfaction(network.satisfaction)))
-	detail_line(state, &content, fmt.tprintf("%s: %d", text("power_generators"), network.generator_count))
+	detail_line(state, &content, fmt.tprintf("%s: %d", text("power_generators"), network.generator_count), UI_DIM_TEXT_COLOR)
+	participant_group_lines(state, &content, screen_context, index, true, POWER_GENERATOR_TYPE_COUNT)
 	detail_line(state, &content, text("power_largest_consumers"), UI_DIM_TEXT_COLOR)
-	for group in largest_consumer_groups(networks.participants[:], index, POWER_TOP_CONSUMER_COUNT) {
+	participant_group_lines(state, &content, screen_context, index, false, POWER_TOP_CONSUMER_COUNT)
+}
+
+participant_group_lines :: proc(state: ^Ui_State, content: ^Ui_Rectangle, screen_context: Screen_Context, network: int, generators: bool, limit: int) {
+	participants := screen_context.world.entities.electric_networks.participants[:]
+	for group in largest_participant_groups(participants, network, generators, limit) {
 		name := machine_name(screen_context.machines, group.machine)
-		detail_line(state, &content, fmt.tprintf("%s x%d  %s", name, group.count, format_joules_per_tick(group.demand, tick_rate)))
+		detail_line(state, content, fmt.tprintf("%s x%d  %s", name, group.count, format_joules_per_tick(group.joules, screen_context.tick_rate)))
 	}
 }
 

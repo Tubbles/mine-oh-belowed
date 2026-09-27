@@ -354,8 +354,8 @@ test_largest_consumers_group_by_machine :: proc(t: ^testing.T) {
 		{machine = 7, network = 0, generator = true, offered = 15_000},
 		{machine = 2, network = 1, offered = 9000},
 	}
-	groups := largest_consumer_groups(participants, 0, 5)
+	groups := largest_participant_groups(participants, 0, false, 5)
 	testing.expect_value(t, len(groups), 2)
-	testing.expect_value(t, groups[0], Consumer_Group{machine = 5, count = 1, demand = 1500})
-	testing.expect_value(t, groups[1], Consumer_Group{machine = 3, count = 2, demand = 432})
+	testing.expect_value(t, groups[0], Participant_Group{machine = 5, count = 1, joules = 1500})
+	testing.expect_value(t, groups[1], Participant_Group{machine = 3, count = 2, joules = 432})
 }

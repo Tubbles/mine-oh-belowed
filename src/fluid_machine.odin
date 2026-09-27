@@ -1,9 +1,9 @@
 package game
 
 // Pipes and the fluid machines of doc/fluids.md: offshore pump, boiler,
-// steam engine, storage tank, pump, tar pit pump and flare stack. They
-// share one pool; the machine's
-// kind decides what the tick does. Each fluid port has its own litre
+// steam engine, storage tank, pump, tar pit pump, flare stack and
+// combustion generator. They share one pool; the machine's kind decides
+// what the tick does. Each fluid port has its own litre
 // buffer, which is a segment of the fluid network on its side
 // (fluid_network.odin). Picking a machine up loses the fluid in it.
 
@@ -38,6 +38,7 @@ Fluid_Machine_State :: enum u8 {
 	Pumping,
 	No_Steam,
 	Flaring,
+	Generating,
 }
 
 @(rodata)
@@ -51,13 +52,15 @@ fluid_machine_state_keys := [Fluid_Machine_State]string {
 	.Pumping     = "machine_state_pumping",
 	.No_Steam    = "machine_state_no_steam",
 	.Flaring     = "machine_state_flaring",
+	.Generating  = "machine_state_generating",
 }
 
 // buffers and closed are per fluid port. closed marks a port the network
 // shut because it would mix two fluids. power is a pump's share of its
 // network (power_machine.odin). A steam engine keeps the energy of steam
-// already drawn from its buffers in fuel_joules, and generated_joules is
-// what it gave its network in the last tick. A tar pit pump keeps the
+// already drawn from its buffers in fuel_joules, a combustion generator
+// that of gas and fuel items, and generated_joules is what either gave
+// its network in the last tick. A tar pit pump keeps the
 // part of a litre it has pumped so far in litre_remainder, in litres per
 // minute times ticks (accumulate_litres).
 Fluid_Machine :: struct {

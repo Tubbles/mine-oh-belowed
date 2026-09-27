@@ -11,12 +11,13 @@
 // route to plastic.
 // fuel_kilojoules_per_litre (optional, default 0) is the energy a
 // generator gets from burning a litre (the combustion generator, work item
-// 0032); 0 means the fluid does not burn.
+// 0032); 0 means the fluid does not burn. Petroleum gas 200 (2 MJ per
+// 10 litres), wood gas 100 (1 MJ per 10 litres).
 fluids = [
 	{id = "water", name_key = "fluid_water", phase = "liquid", color = [60, 110, 220]}
 	{id = "steam", name_key = "fluid_steam", phase = "gas", color = [215, 218, 224]}
 	{id = "crude_oil", name_key = "fluid_crude_oil", phase = "liquid", color = [48, 38, 32]}
-	{id = "petroleum_gas", name_key = "fluid_petroleum_gas", phase = "gas", color = [196, 160, 206]}
+	{id = "petroleum_gas", name_key = "fluid_petroleum_gas", phase = "gas", color = [196, 160, 206], fuel_kilojoules_per_litre = 200}
 	{id = "light_oil", name_key = "fluid_light_oil", phase = "liquid", color = [222, 180, 70]}
 	{id = "heavy_oil", name_key = "fluid_heavy_oil", phase = "liquid", color = [130, 66, 30]}
 	{id = "wood_gas", name_key = "fluid_wood_gas", phase = "gas", color = [168, 150, 112], fuel_kilojoules_per_litre = 100}

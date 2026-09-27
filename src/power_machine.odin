@@ -6,7 +6,8 @@ import "core:slice"
 // The entities of the power grid (doc/fluids.md, Power): small poles and
 // power switches in one pool (the machine kind tells them apart), lamps,
 // and the power side of the machines that already exist: electric
-// inserters, electric drills, pumps and steam engines. Networks and the
+// inserters, electric drills, pumps, steam engines and combustion
+// generators. Networks and the
 // energy balance are in power_network.odin.
 //
 // A consumer's Power_State holds what its network gave it this tick. A
@@ -163,6 +164,100 @@ steam_engine_state :: proc(delivered, available: u64, network_demand: u64) -> Fl
 		return .No_Steam
 	}
 	return .Idle
+}
+
+// Combustion generators: like a steam engine, but the energy comes from
+// the gas in its one port (whole litres at the gas's
+// fuel_kilojoules_per_litre) and, with no burnable gas left, from fuel
+// items in its slot, lit whole like a furnace's. What was drawn and not
+// yet delivered waits in fuel_joules.
+
+COMBUSTION_FUEL_SLOT :: 0
+
+// Zero for an empty port or a gas that does not burn.
+combustion_gas_joules_per_litre :: proc(generator: Fluid_Machine, fluids: Fluid_Registry) -> u64 {
+	buffer := generator.buffers[0]
+	if buffer.level <= 0 || int(buffer.fluid) >= len(fluids.fluids) {
+		return 0
+	}
+	return u64(fluids.fluids[buffer.fluid].fuel_kilojoules_per_litre) * 1000
+}
+
+combustion_gas_joules :: proc(generator: Fluid_Machine, fluids: Fluid_Registry) -> u64 {
+	return u64(max(generator.buffers[0].level, 0)) * combustion_gas_joules_per_litre(generator, fluids)
+}
+
+combustion_slot_joules :: proc(generator: Fluid_Machine, items: Item_Registry) -> u64 {
+	fuel := generator.slots[COMBUSTION_FUEL_SLOT]
+	if stack_is_empty(fuel) || !item_is_fuel(items, fuel.item) {
+		return 0
+	}
+	return u64(fuel.count) * u64(items.items[fuel.item].fuel_kilojoules) * 1000
+}
+
+// Up to its output over the tick, and no more than its gas, its fuel
+// items and what it drew already are worth.
+combustion_generator_available_joules :: proc(generator: Fluid_Machine, machine: Machine, fluids: Fluid_Registry, items: Item_Registry, tick_rate: int) -> u64 {
+	stored := u64(generator.fuel_joules) + combustion_gas_joules(generator, fluids) + combustion_slot_joules(generator, items)
+	return min(electric_joules_per_tick(machine.electric_output_watts, tick_rate), stored)
+}
+
+// Whole litres, as few as cover what fuel_joules lacks.
+draw_combustion_gas :: proc(generator: ^Fluid_Machine, fluids: Fluid_Registry, joules: u64) {
+	per_litre := combustion_gas_joules_per_litre(generator^, fluids)
+	if u64(generator.fuel_joules) >= joules || per_litre == 0 {
+		return
+	}
+	buffer := &generator.buffers[0]
+	litres := min((joules - u64(generator.fuel_joules) + per_litre - 1) / per_litre, u64(buffer.level))
+	buffer.level -= i32(litres)
+	generator.fuel_joules += u32(litres * per_litre)
+}
+
+// Gas first, then fuel items one at a time, only as the delivered energy
+// needs them.
+deliver_combustion_generator_energy :: proc(generator: ^Fluid_Machine, fluids: Fluid_Registry, items: Item_Registry, joules: u64) {
+	draw_combustion_gas(generator, fluids, joules)
+	needed := u32(joules)
+	fuel := &generator.slots[COMBUSTION_FUEL_SLOT]
+	for generator.fuel_joules < needed && refuel_from_slot(&generator.fuel_joules, &generator.fuel_item_joules, fuel, items, needed) {
+	}
+	generator.fuel_joules -= min(needed, generator.fuel_joules)
+	generator.generated_joules = needed
+}
+
+combustion_generator_state :: proc(delivered, available: u64, network_demand: u64) -> Fluid_Machine_State {
+	switch {
+	case delivered > 0:
+		return .Generating
+	case available == 0 && network_demand > 0:
+		return .No_Fuel
+	}
+	return .Idle
+}
+
+// Generators of either kind.
+
+generator_available_joules :: proc(generator: Fluid_Machine, machine: Machine, content: Simulation_Content, tick_rate: int) -> u64 {
+	if machine.kind == .Combustion_Generator {
+		return combustion_generator_available_joules(generator, machine, content.fluids, content.items, tick_rate)
+	}
+	return steam_engine_available_joules(generator, machine, tick_rate)
+}
+
+deliver_generator_energy :: proc(generator: ^Fluid_Machine, machine: Machine, content: Simulation_Content, joules: u64) {
+	if machine.kind == .Combustion_Generator {
+		deliver_combustion_generator_energy(generator, content.fluids, content.items, joules)
+		return
+	}
+	deliver_steam_engine_energy(generator, machine, joules)
+}
+
+generator_state :: proc(kind: Machine_Kind, delivered, available: u64, network_demand: u64) -> Fluid_Machine_State {
+	if kind == .Combustion_Generator {
+		return combustion_generator_state(delivered, available, network_demand)
+	}
+	return steam_engine_state(delivered, available, network_demand)
 }
 
 // Lamps: an entity light source (World.entity_lights) in the lamp's cell

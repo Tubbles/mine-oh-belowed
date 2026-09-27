@@ -355,7 +355,7 @@ collect_electric_participants :: proc(world: ^World, content: Simulation_Content
 		switch {
 		case !fluid_machine.alive:
 		case machine_is_generator(machine):
-			offer := steam_engine_available_joules(fluid_machine, machine, tick_rate)
+			offer := generator_available_joules(fluid_machine, machine, content, tick_rate)
 			append(&networks.participants, make_participant(networks, fluid_machine.common, true, offer))
 		case machine_is_electric_consumer(machine):
 			demand := fluid_machine_wants_power(fluid_machine, machine, content.fluids) ? electric_joules_per_tick(machine.electric_power_watts, tick_rate) : 0
@@ -412,8 +412,9 @@ participant_power :: proc(entities: ^Entities, handle: Entity_Handle) -> ^Power_
 	return nil
 }
 
-// Steam engines draw their steam here, so it is counted consumed here.
-apply_electric_balance :: proc(entities: ^Entities, machines: Machine_Registry, statistics: ^Statistics) {
+// Generators draw their steam, gas and fuel items here, so they are
+// counted consumed here.
+apply_electric_balance :: proc(entities: ^Entities, content: Simulation_Content, statistics: ^Statistics) {
 	networks := &entities.electric_networks
 	for participant in networks.participants {
 		network := participant.network >= 0 ? networks.networks[participant.network] : Electric_Network{}
@@ -421,14 +422,24 @@ apply_electric_balance :: proc(entities: ^Entities, machines: Machine_Registry, 
 			participant_power(entities, participant.handle).satisfaction = network.satisfaction
 			continue
 		}
-		engine := pool_get(&entities.fluid_machines, participant.handle)
-		machine := machines.machines[engine.machine]
-		before := engine.buffers
-		deliver_steam_engine_energy(engine, machine, participant.delivered)
-		after := engine.buffers
-		record_buffer_changes(statistics, before[:], after[:])
-		engine.state = steam_engine_state(participant.delivered, participant.offered, network.demand)
+		generator := pool_get(&entities.fluid_machines, participant.handle)
+		machine := content.machines.machines[generator.machine]
+		before := generator^
+		deliver_generator_energy(generator, machine, content, participant.delivered)
+		record_generator_tick(statistics, before, generator^)
+		generator.state = generator_state(machine.kind, participant.delivered, participant.offered, network.demand)
 	}
+}
+
+// Fluids drawn, and fuel items lit from the slot as burned and consumed.
+record_generator_tick :: proc(statistics: ^Statistics, before, after: Fluid_Machine) {
+	buffers_before, buffers_after := before.buffers, after.buffers
+	record_buffer_changes(statistics, buffers_before[:], buffers_after[:])
+	slots_before, slots_after := before.slots, after.slots
+	for slot, index in slots_before[:before.slot_count] {
+		statistics.fuel_burned += u64(stack_shrink(slot, slots_after[index]))
+	}
+	record_slot_consumption(statistics, slots_before[:before.slot_count], slots_after[:after.slot_count])
 }
 
 // Energy and brownouts for the overview and the quest hints.
@@ -467,11 +478,10 @@ any_network_in_brownout :: proc(networks: ^Electric_Networks) -> bool {
 
 // Before the machines tick, so they work at this tick's satisfaction.
 tick_electric_networks :: proc(world: ^World, content: Simulation_Content, tick_rate: int) {
-	machines := content.machines
 	networks := &world.entities.electric_networks
 	set_electric_allocators(networks)
 	collect_electric_participants(world, content, tick_rate)
 	balance_electric_energy(networks.participants[:], networks.networks[:])
-	apply_electric_balance(&world.entities, machines, &world.statistics)
+	apply_electric_balance(&world.entities, content, &world.statistics)
 	record_electric_tick(&world.statistics, networks)
 }

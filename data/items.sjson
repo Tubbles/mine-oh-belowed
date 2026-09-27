@@ -120,6 +120,7 @@ items = [
 	{id = "refinery", name_key = "item_refinery", category = "machine", stack_size = 10}
 	{id = "cracking_unit", name_key = "item_cracking_unit", category = "machine", stack_size = 10}
 	{id = "flare_stack", name_key = "item_flare_stack", category = "machine", stack_size = 10}
+	{id = "combustion_generator", name_key = "item_combustion_generator", category = "machine", stack_size = 10}
 	{id = "chemical_plant", name_key = "item_chemical_plant", category = "machine", stack_size = 10}
 	{id = "wood_gasifier", name_key = "item_wood_gasifier", category = "machine", stack_size = 10}
 	// Blocks that drop themselves

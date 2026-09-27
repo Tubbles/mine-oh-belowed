@@ -7,8 +7,8 @@
 // rotation; a quarter turn swaps width and depth.
 // kind selects the panel and the simulation: chest, furnace, capsule,
 // belt, inserter, drill, splitter, pipe, offshore_pump, boiler,
-// steam_engine, storage_tank, pump, tar_pit_pump, flare_stack, pole,
-// power_switch, lamp, crafting_machine or lab.
+// steam_engine, storage_tank, pump, tar_pit_pump, flare_stack,
+// combustion_generator, pole, power_switch, lamp, crafting_machine or lab.
 // The capsule (work item 0013) stands on the landing pad from the start:
 // it has no item, cannot be picked up, and holds 8 slots for quest
 // rewards and deliveries.
@@ -77,11 +77,17 @@
 // Flare stack (work item 0030): one input port with phase = "gas"; while
 // powered it destroys up to fluid_litres_per_second of the gas in it,
 // counted as voided in the statistics. The power is the price of the sink.
+// Combustion generator (work item 0032): one input port with phase = "gas"
+// and fuel_slots = 1. A generator like the steam engine: gives up to
+// electric_output_kilowatts to its power network, burning the gas in its
+// port first, whole litres of fuel_kilojoules_per_litre (fluids.sjson),
+// then solid fuel from its slot, only for the energy delivered.
 // Power (work item 0020, doc/fluids.md): electric machines (any with
 // electric_power_kilowatts: electric inserters, electric drills, pumps,
-// lamps) and generators (steam engines) belong to the network of a pole
-// whose supply_volume covers one of their cells. A drill without a fuel
-// slot and with electric_power_kilowatts is an electric drill.
+// lamps) and generators (steam engines, combustion generators) belong to
+// the network of a pole whose supply_volume covers one of their cells. A
+// drill without a fuel slot and with electric_power_kilowatts is an
+// electric drill.
 // Poles: supply_volume is width (x), depth (z) and height (y) of the box
 // of cells powered, centred across on the pole (odd width and depth) and
 // starting at the pole's bottom. wire_reach connects it to every pole or
@@ -355,6 +361,18 @@ machines = [
 		electric_power_kilowatts = 10
 		fluid_ports = [
 			{face = "all", direction = "input", phase = "gas", buffer_litres = 200}
+		]
+	}
+	{
+		id = "combustion_generator"
+		name_key = "machine_combustion_generator"
+		item = "combustion_generator"
+		kind = "combustion_generator"
+		footprint = {width = 3, depth = 2, height = 2}
+		fuel_slots = 1
+		electric_output_kilowatts = 600
+		fluid_ports = [
+			{cell = {x = 1, y = 0, z = 0}, face = "negative_z", direction = "input", phase = "gas", buffer_litres = 200}
 		]
 	}
 	{

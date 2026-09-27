@@ -48,6 +48,9 @@ Machine_Kind :: enum u8 {
 	Tar_Pit_Pump,
 	// Burns the gas in its input port, with power (the paid gas sink).
 	Flare_Stack,
+	// A generator burning the gas in its input port or solid fuel from
+	// its fuel slot (power_machine.odin).
+	Combustion_Generator,
 	// Power (power_network.odin): a pole carries wires to other poles
 	// within reach and powers the machines in its supply volume, a power
 	// switch is a pole without a supply volume that can be turned off,
@@ -80,6 +83,7 @@ machine_kind_names := [Machine_Kind]string {
 	.Pump          = "pump",
 	.Tar_Pit_Pump  = "tar_pit_pump",
 	.Flare_Stack   = "flare_stack",
+	.Combustion_Generator = "combustion_generator",
 	.Pole          = "pole",
 	.Power_Switch  = "power_switch",
 	.Lamp          = "lamp",
@@ -187,7 +191,7 @@ Machine :: struct {
 	supply_volume:               [3]i32,
 	// Poles and power switches: the longest wire, in blocks.
 	wire_reach:                  i32,
-	// Generators: the most power they give.
+	// Generators (steam and combustion): the most power they give.
 	electric_output_watts:       u32,
 	// Lamps: the block light level while lit.
 	light_level:                 u8,
@@ -262,7 +266,7 @@ validate_machine_kind_fields :: proc(definition: Machine_Definition, kind: Machi
 		return validate_drill_definition(definition)
 	case .Splitter:
 		return validate_splitter_definition(definition)
-	case .Pipe, .Offshore_Pump, .Boiler, .Steam_Engine, .Storage_Tank, .Pump, .Tar_Pit_Pump, .Flare_Stack:
+	case .Pipe, .Offshore_Pump, .Boiler, .Steam_Engine, .Storage_Tank, .Pump, .Tar_Pit_Pump, .Flare_Stack, .Combustion_Generator:
 		return validate_fluid_machine_definition(definition, kind)
 	case .Pole, .Power_Switch, .Lamp:
 		return validate_power_machine_definition(definition, kind)
@@ -420,7 +424,8 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 	kind, _ := parse_machine_kind(definition.kind)
 	belt_shape, _ := parse_belt_item_shape(definition.belt_shape)
 	footprint := definition.footprint
-	slot_count := kind == .Inserter || kind == .Drill || kind == .Boiler || kind == .Crafting_Machine ? definition.fuel_slots : definition.slots
+	fuel_slotted := kind == .Inserter || kind == .Drill || kind == .Boiler || kind == .Combustion_Generator || kind == .Crafting_Machine
+	slot_count := fuel_slotted ? definition.fuel_slots : definition.slots
 	recipe_maker, _ := parse_named_enum(recipe_maker_names, definition.recipe_maker)
 	recipe_choice, _ := parse_named_enum(recipe_choice_names, definition.recipe_choice)
 	return Machine {

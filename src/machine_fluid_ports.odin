@@ -202,6 +202,10 @@ validate_fluid_port_layout :: proc(machine: Machine) -> string {
 		if len(ports) != 1 || inputs != 1 || ports[0].phase_filter != .Gas {
 			return fmt.tprintf("flare stack %q needs one input port admitting gases only", machine.id)
 		}
+	case .Combustion_Generator:
+		if len(ports) != 1 || inputs != 1 || ports[0].phase_filter != .Gas {
+			return fmt.tprintf("combustion generator %q needs one input port admitting gases only", machine.id)
+		}
 	case .Crafting_Machine:
 		// Recipes take from input ports and give into output ports.
 		if inputs + outputs != len(ports) {
@@ -241,6 +245,10 @@ validate_fluid_machine_definition :: proc(definition: Machine_Definition, kind: 
 	case .Pump, .Flare_Stack:
 		if definition.fluid_litres_per_second <= 0 || definition.electric_power_kilowatts <= 0 {
 			return fmt.tprintf("machine %q needs a positive fluid_litres_per_second and electric_power_kilowatts", definition.id)
+		}
+	case .Combustion_Generator:
+		if definition.fuel_slots != 1 || definition.electric_output_kilowatts <= 0 {
+			return fmt.tprintf("combustion generator %q needs one fuel slot and a positive electric_output_kilowatts", definition.id)
 		}
 	case .Tar_Pit_Pump:
 		if definition.fluid_litres_per_minute <= 0 || definition.electric_power_kilowatts <= 0 {
