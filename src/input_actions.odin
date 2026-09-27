@@ -217,18 +217,6 @@ world_input :: proc(frame: Input_Frame, world_blocked: bool, guard: Action_Set, 
 	return apply_look_settings(without_actions(frame, guard), settings)
 }
 
-// A wheel notch is an event, not a held button, so it goes straight into
-// just_pressed as well. Scrolling down selects the next slot.
-mouse_wheel_actions :: proc(wheel: [2]f32) -> Action_Set {
-	switch {
-	case wheel.y < 0:
-		return {.Hotbar_Next}
-	case wheel.y > 0:
-		return {.Hotbar_Previous}
-	}
-	return {}
-}
-
 // What frames collect between two simulation ticks. Frames and ticks run
 // at different rates: a 144 Hz display sees two or three frames per tick,
 // and a slow frame runs two ticks. look_delta (pixels) and just_pressed

@@ -293,7 +293,7 @@ confirm_delete_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) 
 
 delete_title_save :: proc(state: ^Ui_State, title: ^Title_State, directory_name: string) {
 	if error := delete_save(title.saves_directory, directory_name); error != nil {
-		fmt.eprintfln("error: cannot delete the save %q: %v", directory_name, error)
+		log_printf("error: cannot delete the save %q: %v", directory_name, error)
 		ui_toast(state, text("load_delete_failed"))
 	}
 	refresh_title_saves(title)

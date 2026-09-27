@@ -33,53 +33,6 @@ Sdl3_Input_State :: struct {
 	gamepad: ^sdl.Gamepad,
 }
 
-Sdl3_Button_Binding :: struct {
-	button: sdl.GamepadButton,
-	action: Action,
-}
-
-// Hardcoded until bindings move to configuration, following doc/input.md.
-// B and R4 carry both the world meaning (Sneak) and the menu meaning (Back),
-// the same way A carries Jump and Confirm. A and L4 also carry Interact,
-// which wins over Jump while an entity is targeted (resolve_interact).
-@(rodata)
-sdl3_button_bindings := [?]Sdl3_Button_Binding {
-	{.SOUTH, .Jump},
-	{.SOUTH, .Interact},
-	{.SOUTH, .Confirm},
-	{.EAST, .Sneak},
-	{.EAST, .Back},
-	{.WEST, .Open_Inventory},
-	{.NORTH, .Rotate_Building},
-	{.DPAD_UP, .Pipette},
-	{.DPAD_LEFT, .Hotbar_Previous},
-	{.DPAD_RIGHT, .Hotbar_Next},
-	{.LEFT_SHOULDER, .Hotbar_Previous},
-	{.RIGHT_SHOULDER, .Hotbar_Next},
-	{.LEFT_STICK, .Sprint},
-	{.BACK, .Open_Map},
-	{.START, .Pause},
-	{.LEFT_PADDLE1, .Jump},
-	{.LEFT_PADDLE1, .Interact},
-	{.LEFT_PADDLE1, .Confirm},
-	{.RIGHT_PADDLE1, .Sneak},
-	{.RIGHT_PADDLE1, .Back},
-	{.LEFT_PADDLE2, .Rotate_Building},
-	{.RIGHT_PADDLE2, .Pipette},
-	{STEAM_CONTROLLER_RIGHT_PAD_CLICK, .Confirm},
-	{STEAM_CONTROLLER_RIGHT_PAD_CLICK, .Interact},
-	{.DPAD_UP, .Navigate_Up},
-	{.DPAD_DOWN, .Navigate_Down},
-	{.DPAD_LEFT, .Navigate_Left},
-	{.DPAD_RIGHT, .Navigate_Right},
-	{.LEFT_SHOULDER, .Tab_Previous},
-	{.RIGHT_SHOULDER, .Tab_Next},
-	{.NORTH, .Info_Panel},
-	{.WEST, .Context_Action},
-	{.LEFT_PADDLE2, .Info_Panel},
-	{.RIGHT_PADDLE2, .Navigate_Up},
-}
-
 // Returns an SDL error message when initialisation fails.
 init_sdl3_input :: proc() -> (ok: bool, error_message: string) {
 	// The Triton driver defaults to on, but the hint's documented default
@@ -99,11 +52,11 @@ shutdown_sdl3_input :: proc(state: ^Sdl3_Input_State) {
 open_sdl3_gamepad :: proc(state: ^Sdl3_Input_State, id: sdl.JoystickID) {
 	gamepad := sdl.OpenGamepad(id)
 	if gamepad == nil {
-		fmt.eprintfln("input: cannot open gamepad %d: %s", id, sdl.GetError())
+		log_printf("input: cannot open gamepad %d: %s", id, sdl.GetError())
 		return
 	}
 	state.gamepad = gamepad
-	fmt.eprintfln(
+	log_printf(
 		"input: opened gamepad %d %q vendor %04x product %04x",
 		id,
 		sdl.GetGamepadName(gamepad),
@@ -116,11 +69,11 @@ open_sdl3_gamepad :: proc(state: ^Sdl3_Input_State, id: sdl.JoystickID) {
 
 enable_sdl3_sensor :: proc(gamepad: ^sdl.Gamepad, type: sdl.SensorType) {
 	if !sdl.GamepadHasSensor(gamepad, type) {
-		fmt.eprintfln("input: gamepad has no %v sensor", type)
+		log_printf("input: gamepad has no %v sensor", type)
 		return
 	}
 	if !sdl.SetGamepadSensorEnabled(gamepad, type, true) {
-		fmt.eprintfln("input: cannot enable %v sensor: %s", type, sdl.GetError())
+		log_printf("input: cannot enable %v sensor: %s", type, sdl.GetError())
 	}
 }
 
@@ -142,7 +95,7 @@ poll_sdl3_events :: proc(state: ^Sdl3_Input_State) {
 			}
 		case .GAMEPAD_REMOVED:
 			if state.gamepad != nil && sdl.GetGamepadID(state.gamepad) == event.gdevice.which {
-				fmt.eprintfln("input: gamepad %d removed", event.gdevice.which)
+				log_printf("input: gamepad %d removed", event.gdevice.which)
 				close_sdl3_gamepad(state)
 			}
 		}
@@ -230,40 +183,11 @@ read_sdl3_gamepad :: proc(gamepad: ^sdl.Gamepad) -> Raw_Gamepad {
 	return raw
 }
 
-sdl3_button_actions :: proc(gamepad: Raw_Gamepad) -> Action_Set {
-	actions: Action_Set
-	for binding in sdl3_button_bindings {
-		button_index := int(binding.button)
-		if button_index < gamepad.button_count && gamepad.button_down[button_index] {
-			actions += {binding.action}
-		}
-	}
-	return actions
-}
-
-sdl3_trigger_actions :: proc(gamepad: Raw_Gamepad) -> Action_Set {
-	actions: Action_Set
-	if gamepad.axis_values[int(sdl.GamepadAxis.RIGHT_TRIGGER)] > TRIGGER_PRESS_THRESHOLD {
-		actions += {.Mine, .Confirm}
-	}
-	if gamepad.axis_values[int(sdl.GamepadAxis.LEFT_TRIGGER)] > TRIGGER_PRESS_THRESHOLD {
-		actions += {.Place, .Menu_Secondary}
-	}
-	return actions
-}
-
 touchpad_finger :: proc(gamepad: Raw_Gamepad, touchpad_index: int) -> Touchpad_Finger {
 	if touchpad_index >= gamepad.touchpad_count {
 		return {}
 	}
 	return gamepad.touchpads[touchpad_index].fingers[0]
-}
-
-sdl3_touchpad_actions :: proc(gamepad: Raw_Gamepad) -> Action_Set {
-	if touchpad_finger(gamepad, LEFT_TOUCHPAD_INDEX).down {
-		return {.Hotbar_Radial}
-	}
-	return {}
 }
 
 sdl3_stick :: proc(gamepad: Raw_Gamepad, x_axis, y_axis: sdl.GamepadAxis) -> [2]f32 {
@@ -294,7 +218,7 @@ sdl3_look_delta :: proc(previous, current: Raw_Gamepad, frame_seconds: f32, sett
 	return look_delta
 }
 
-read_sdl3_input_frame :: proc(state: ^Sdl3_Input_State, previous: Input_Frame, frame_seconds: f32, settings: Settings) -> Input_Frame {
+read_sdl3_input_frame :: proc(state: ^Sdl3_Input_State, previous: Input_Frame, frame_seconds: f32, settings: Settings, bindings: Input_Bindings) -> Input_Frame {
 	poll_sdl3_events(state)
 	raw := Raw_Input {
 		backend  = .Sdl3,
@@ -305,12 +229,12 @@ read_sdl3_input_frame :: proc(state: ^Sdl3_Input_State, previous: Input_Frame, f
 	move := clamp_to_unit_length(sdl3_stick(raw.gamepad, .LEFTX, .LEFTY) + keyboard_move())
 	look := sdl3_stick(raw.gamepad, .RIGHTX, .RIGHTY)
 	look_delta := raw.mouse.delta + sdl3_look_delta(previous.raw.gamepad, raw.gamepad, frame_seconds, settings)
-	wheel_actions := mouse_wheel_actions(raw.mouse.wheel)
+	wheel_actions := mouse_wheel_actions(raw.mouse.wheel, bindings)
 	pressed :=
-		sdl3_button_actions(raw.gamepad) +
-		sdl3_trigger_actions(raw.gamepad) +
-		sdl3_touchpad_actions(raw.gamepad) +
-		keyboard_mouse_actions() +
+		gamepad_button_actions(raw.gamepad, bindings) +
+		gamepad_trigger_actions(raw.gamepad, bindings) +
+		trackpad_actions(raw.gamepad, bindings) +
+		keyboard_mouse_actions(bindings) +
 		analog_actions(move, look, look_delta) +
 		wheel_actions
 	return Input_Frame {
@@ -323,8 +247,8 @@ read_sdl3_input_frame :: proc(state: ^Sdl3_Input_State, previous: Input_Frame, f
 	}
 }
 
-// The right pad click as a pointer click, separate from the Confirm it is
-// also bound to.
+// The right pad click as a pointer click, separate from the actions it is
+// bound to.
 right_pad_click_down :: proc(raw: Raw_Input) -> bool {
 	return raw.backend == .Sdl3 && raw.gamepad.button_down[int(STEAM_CONTROLLER_RIGHT_PAD_CLICK)]
 }

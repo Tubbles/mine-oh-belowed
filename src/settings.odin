@@ -1,9 +1,10 @@
 package game
 
-// Player settings, in memory until configuration files arrive. The
-// settings screen edits them live; the input layer applies them to each
-// frame before the simulation sees it, so the simulation keeps its fixed
-// base rates and only ever reads input.
+// Player settings, read from the configuration (configuration.odin) and
+// written back to config.d/90-settings.sjson after the settings screen
+// changed them. The settings screen edits them live; the input layer
+// applies them to each frame before the simulation sees it, so the
+// simulation keeps its fixed base rates and only ever reads input.
 
 Settings :: struct {
 	ui_scale:                  f32,

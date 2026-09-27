@@ -65,7 +65,7 @@ Actions, not buttons. An `Action` enum (move, look, jump, mine, place, rotate, p
 
 ## Configuration
 
-SJSON with the layering from the global preference: `$XDG_CONFIG_DIRS`, `$XDG_CONFIG_HOME/mine-oh-belowed/config.sjson`, `config.d/*.sjson`, command line flags. No per project layer, the game has no project dimension. Unknown keys and wrong types are errors. A `config` subcommand dumps the files found and the effective values. Saves go to `$XDG_DATA_HOME`, logs to `$XDG_STATE_HOME`.
+SJSON with the layering from the global preference: `$XDG_CONFIG_DIRS`, `$XDG_CONFIG_HOME/mine-oh-belowed/config.sjson`, `config.d/*.sjson`, then `--set=<key>=<value>` flags. No per project layer, the game has no project dimension. Files are parsed as generic SJSON trees and merged with provenance per key (objects merge, scalars and arrays replace), then mapped onto the typed `Configuration` (settings, bindings, paths) with strict checks: an unknown key, a wrong type or an out of range value is an error naming the file. `mine-oh-belowed config` prints the files in precedence order and the effective values with their source. The settings screen writes `config.d/90-settings.sjson`. Saves go to `$XDG_DATA_HOME`, the log to `$XDG_STATE_HOME/mine-oh-belowed/log.txt` through one logging procedure that also prints to stderr.
 
 ## Testing
 

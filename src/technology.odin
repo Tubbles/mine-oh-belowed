@@ -256,18 +256,18 @@ load_technology_registry :: proc(data_directory: string, items: Item_Registry, r
 	}
 	data, read_error := os.read_entire_file(path, context.temp_allocator)
 	if read_error != nil {
-		fmt.eprintfln("error: cannot read %s: %v", path, read_error)
+		log_printf("error: cannot read %s: %v", path, read_error)
 		return {}, false
 	}
 	file, parse_error := parse_technologies_file(data, allocator)
 	if parse_error != nil {
-		fmt.eprintfln("error: cannot parse %s: %v", path, parse_error)
+		log_printf("error: cannot parse %s: %v", path, parse_error)
 		return {}, false
 	}
 	problem: string
 	registry, problem = resolve_technology_registry(file, items, recipes, allocator)
 	if problem != "" {
-		fmt.eprintfln("error: invalid %s: %s", path, problem)
+		log_printf("error: invalid %s: %s", path, problem)
 		return {}, false
 	}
 	return registry, true

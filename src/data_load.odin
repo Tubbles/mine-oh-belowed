@@ -91,17 +91,17 @@ load_game_config :: proc(data_directory: string, allocator := context.allocator)
 	}
 	data, read_error := os.read_entire_file(path, context.temp_allocator)
 	if read_error != nil {
-		fmt.eprintfln("error: cannot read %s: %v", path, read_error)
+		log_printf("error: cannot read %s: %v", path, read_error)
 		return {}, false
 	}
 	parse_error: json.Unmarshal_Error
 	config, parse_error = parse_game_config(data, allocator)
 	if parse_error != nil {
-		fmt.eprintfln("error: cannot parse %s: %v", path, parse_error)
+		log_printf("error: cannot parse %s: %v", path, parse_error)
 		return {}, false
 	}
 	if problem := validate_game_config(config); problem != "" {
-		fmt.eprintfln("error: invalid %s: %s", path, problem)
+		log_printf("error: invalid %s: %s", path, problem)
 		return {}, false
 	}
 	return config, true

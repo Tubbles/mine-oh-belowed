@@ -293,18 +293,18 @@ load_item_registry :: proc(data_directory: string, blocks: Block_Registry, alloc
 	}
 	data, read_error := os.read_entire_file(path, context.temp_allocator)
 	if read_error != nil {
-		fmt.eprintfln("error: cannot read %s: %v", path, read_error)
+		log_printf("error: cannot read %s: %v", path, read_error)
 		return {}, false
 	}
 	file, parse_error := parse_items_file(data, allocator)
 	if parse_error != nil {
-		fmt.eprintfln("error: cannot parse %s: %v", path, parse_error)
+		log_printf("error: cannot parse %s: %v", path, parse_error)
 		return {}, false
 	}
 	problem: string
 	registry, problem = resolve_item_registry(file, blocks, allocator)
 	if problem != "" {
-		fmt.eprintfln("error: invalid %s: %s", path, problem)
+		log_printf("error: invalid %s: %s", path, problem)
 		return {}, false
 	}
 	return registry, true

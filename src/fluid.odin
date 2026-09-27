@@ -141,18 +141,18 @@ load_fluid_registry :: proc(data_directory: string, allocator := context.allocat
 	}
 	data, read_error := os.read_entire_file(path, context.temp_allocator)
 	if read_error != nil {
-		fmt.eprintfln("error: cannot read %s: %v", path, read_error)
+		log_printf("error: cannot read %s: %v", path, read_error)
 		return {}, false
 	}
 	file, parse_error := parse_fluids_file(data, allocator)
 	if parse_error != nil {
-		fmt.eprintfln("error: cannot parse %s: %v", path, parse_error)
+		log_printf("error: cannot parse %s: %v", path, parse_error)
 		return {}, false
 	}
 	problem: string
 	registry, problem = resolve_fluid_registry(file, allocator)
 	if problem != "" {
-		fmt.eprintfln("error: invalid %s: %s", path, problem)
+		log_printf("error: invalid %s: %s", path, problem)
 		return {}, false
 	}
 	return registry, true

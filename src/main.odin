@@ -10,7 +10,9 @@ INPUT_ARGUMENT_PREFIX :: "--input="
 SEED_ARGUMENT_PREFIX :: "--seed="
 LOAD_ARGUMENT_PREFIX :: "--load="
 NAME_ARGUMENT_PREFIX :: "--name="
-SUPPORTED_ARGUMENTS :: "--version, --input=sdl3, --input=raylib, --seed=<number>, --name=<world name>, --load=<world name>, --debug-terrain, --unlock-all"
+SUPPORTED_ARGUMENTS :: "config, --version, --input=sdl3, --input=raylib, --seed=<number>, --name=<world name>, --load=<world name>, --debug-terrain, --unlock-all, --set=<key>=<value>"
+// The subcommand that prints the configuration files and effective values.
+CONFIG_SUBCOMMAND :: "config"
 
 Input_Backend_Request :: enum u8 {
 	Automatic,
@@ -20,6 +22,10 @@ Input_Backend_Request :: enum u8 {
 
 Command_Line :: struct {
 	show_version:        bool,
+	// The config subcommand.
+	show_configuration:  bool,
+	// --set=<key>=<value>, the last configuration layer.
+	set_assignments:     [dynamic]string,
 	input_request:       Input_Backend_Request,
 	seed:                u64,
 	seed_given:          bool,
@@ -88,6 +94,10 @@ parse_command_line :: proc(arguments: []string) -> Command_Line {
 			command_line.world_name = argument[len(NAME_ARGUMENT_PREFIX):]
 			continue
 		}
+		if strings.has_prefix(argument, SET_ARGUMENT_PREFIX) {
+			append(&command_line.set_assignments, argument[len(SET_ARGUMENT_PREFIX):])
+			continue
+		}
 		if strings.has_prefix(argument, INPUT_ARGUMENT_PREFIX) {
 			value := argument[len(INPUT_ARGUMENT_PREFIX):]
 			request, ok := parse_input_request(value)
@@ -101,6 +111,8 @@ parse_command_line :: proc(arguments: []string) -> Command_Line {
 		switch argument {
 		case "--version":
 			command_line.show_version = true
+		case CONFIG_SUBCOMMAND:
+			command_line.show_configuration = true
 		case "--debug-terrain":
 			command_line.debug_terrain = true
 		case "--unlock-all":
@@ -117,34 +129,34 @@ parse_command_line :: proc(arguments: []string) -> Command_Line {
 // explicitly, so that a broken SDL setup cannot hide behind the fallback.
 start_input_backend :: proc(request: Input_Backend_Request) -> (backend: Input_Backend, ok: bool) {
 	if request == .Raylib {
-		fmt.eprintln("input: raylib backend (requested with --input=raylib)")
+		log_printf("input: raylib backend (requested with --input=raylib)")
 		return .Raylib, true
 	}
 	sdl3_ready, error_message := init_sdl3_input()
 	switch {
 	case sdl3_ready:
-		fmt.eprintfln("input: sdl3 backend (%s)", request == .Sdl3 ? "requested with --input=sdl3" : "default")
+		log_printf("input: sdl3 backend (%s)", request == .Sdl3 ? "requested with --input=sdl3" : "default")
 		return .Sdl3, true
 	case request == .Sdl3:
-		fmt.eprintfln("error: --input=sdl3 but SDL failed to initialise: %s", error_message)
+		log_printf("error: --input=sdl3 but SDL failed to initialise: %s", error_message)
 		return .Raylib, false
 	}
-	fmt.eprintfln("input: raylib backend (SDL3 failed to initialise: %s)", error_message)
+	log_printf("input: raylib backend (SDL3 failed to initialise: %s)", error_message)
 	return .Raylib, true
 }
 
 main :: proc() {
 	command_line := parse_command_line(os.args[1:])
 	if command_line.unknown_argument != "" {
-		fmt.eprintfln("error: unknown argument %q (supported: %s)", command_line.unknown_argument, SUPPORTED_ARGUMENTS)
+		log_printf("error: unknown argument %q (supported: %s)", command_line.unknown_argument, SUPPORTED_ARGUMENTS)
 		os.exit(2)
 	}
 	if command_line.invalid_seed_value != "" {
-		fmt.eprintfln("error: invalid seed %q (expected an unsigned 64 bit integer, for example --seed=12345)", command_line.invalid_seed_value)
+		log_printf("error: invalid seed %q (expected an unsigned 64 bit integer, for example --seed=12345)", command_line.invalid_seed_value)
 		os.exit(2)
 	}
 	if command_line.unknown_input_value != "" {
-		fmt.eprintfln("error: unknown input backend %q (supported: --input=sdl3, --input=raylib)", command_line.unknown_input_value)
+		log_printf("error: unknown input backend %q (supported: --input=sdl3, --input=raylib)", command_line.unknown_input_value)
 		os.exit(2)
 	}
 	if command_line.show_version {
@@ -152,17 +164,25 @@ main :: proc() {
 		return
 	}
 	if problem := command_line_conflict(command_line); problem != "" {
-		fmt.eprintfln("error: %s", problem)
+		log_printf("error: %s", problem)
 		os.exit(2)
 	}
-	data_directory, found := resolve_data_directory()
-	if !found {
-		fmt.eprintfln(
-			"error: no data directory found. Set %s, run from the repository root (./%s), or install to <executable directory>/%s",
-			DATA_DIRECTORY_ENVIRONMENT_VARIABLE,
-			WORKING_DIRECTORY_DATA,
-			INSTALLED_DATA_RELATIVE_TO_EXECUTABLE,
-		)
+	if command_line.show_configuration {
+		print_configuration(command_line.set_assignments[:])
+		return
+	}
+	open_log_file()
+	defer close_log_file()
+	environment := read_configuration_environment()
+	loaded_configuration, configuration_problem := load_configuration(environment, command_line.set_assignments[:])
+	if configuration_problem != "" {
+		log_printf("error: %s", configuration_problem)
+		os.exit(1)
+	}
+	data_directory := require_data_directory()
+	bindings, bindings_problem := load_bindings(data_directory, loaded_configuration)
+	if bindings_problem != "" {
+		log_printf("error: %s", bindings_problem)
 		os.exit(1)
 	}
 	config, loaded := load_game_config(data_directory)
@@ -212,7 +232,7 @@ main :: proc() {
 		os.exit(1)
 	}
 	if problem := validate_starting_items(config.starting_items, items); problem != "" {
-		fmt.eprintfln("error: invalid %s: %s", GAME_CONFIG_FILE_NAME, problem)
+		log_printf("error: invalid %s: %s", GAME_CONFIG_FILE_NAME, problem)
 		os.exit(1)
 	}
 	recipe_names := recipe_display_names(recipes)
@@ -236,17 +256,78 @@ main :: proc() {
 	}
 	veins, problem := resolve_vein_content(base_generator.veins, items)
 	if problem != "" {
-		fmt.eprintfln("error: invalid %s: %s", VEINS_FILE_NAME, problem)
+		log_printf("error: invalid %s: %s", VEINS_FILE_NAME, problem)
 		os.exit(1)
 	}
 	content.veins = veins
-	saves_directory, saves_found := resolve_saves_directory()
+	saves_directory, saves_found := resolve_saves_directory(loaded_configuration.configuration.paths.saves)
 	session := start_command_line_session(command_line, config, content, base_generator, saves_directory, saves_found)
 	input_backend, input_started := start_input_backend(command_line.input_request)
 	if !input_started {
 		os.exit(1)
 	}
-	run_game(config, input_backend, content, base_generator, data_directory, session, make_title_state(config, saves_directory, saves_found))
+	player_configuration := Player_Configuration {
+		environment    = environment,
+		settings       = loaded_configuration.configuration.settings,
+		bindings       = bindings,
+		// Before the window opens, so the report shows without a display.
+		input_bindings = make_backend_bindings(bindings, input_backend),
+	}
+	run_game(config, input_backend, content, base_generator, data_directory, session, make_title_state(config, saves_directory, saves_found), player_configuration)
+}
+
+// Builds the backend's tables and reports once what it cannot express.
+make_backend_bindings :: proc(bindings: []Binding, backend: Input_Backend) -> Input_Bindings {
+	tables, unsupported := build_input_bindings(bindings, backend, context.temp_allocator)
+	if len(unsupported) > 0 {
+		log_printf("%s", unsupported_bindings_report(unsupported, backend))
+	}
+	return tables
+}
+
+require_data_directory :: proc() -> string {
+	data_directory, found := resolve_data_directory()
+	if !found {
+		log_printf(
+			"error: no data directory found. Set %s, run from the repository root (./%s), or install to <executable directory>/%s",
+			DATA_DIRECTORY_ENVIRONMENT_VARIABLE,
+			WORKING_DIRECTORY_DATA,
+			INSTALLED_DATA_RELATIVE_TO_EXECUTABLE,
+		)
+		os.exit(1)
+	}
+	return data_directory
+}
+
+// The defaults from data/bindings.sjson with the configuration's overrides.
+load_bindings :: proc(data_directory: string, loaded: Loaded_Configuration) -> (bindings: []Binding, problem: string) {
+	defaults: []Binding
+	defaults, problem = load_default_bindings(data_directory)
+	if problem != "" {
+		return nil, problem
+	}
+	overrides: []Binding
+	overrides, problem = resolve_bindings(loaded.configuration.bindings, loaded.provenance)
+	if problem != "" {
+		return nil, problem
+	}
+	return effective_bindings(defaults, overrides), ""
+}
+
+// The config subcommand: no window, no log, exit 1 on a configuration error.
+print_configuration :: proc(assignments: []string) {
+	loaded, problem := load_configuration(read_configuration_environment(), assignments)
+	if problem != "" {
+		log_printf("error: %s", problem)
+		os.exit(1)
+	}
+	bindings: []Binding
+	bindings, problem = load_bindings(require_data_directory(), loaded)
+	if problem != "" {
+		log_printf("error: %s", problem)
+		os.exit(1)
+	}
+	fmt.print(configuration_dump(loaded, bindings))
 }
 
 // --seed, --name, --load and --debug-terrain start a world directly;
@@ -263,13 +344,13 @@ start_command_line_session :: proc(command_line: Command_Line, config: Game_Conf
 	}
 	plan, problem := command_line_plan(command_line, config, saves_directory, saves_found)
 	if problem != "" {
-		fmt.eprintfln("error: %s", problem)
+		log_printf("error: %s", problem)
 		os.exit(1)
 	}
 	session: ^Session
 	session, problem = start_session(plan, config, content, base_generator)
 	if problem != "" {
-		fmt.eprintfln("error: cannot start the world: %s", problem)
+		log_printf("error: cannot start the world: %s", problem)
 		os.exit(1)
 	}
 	if !plan.loading && session.save.enabled {
@@ -330,14 +411,14 @@ debug_terrain_landing_pad :: proc() -> Landing_Pad_Site {
 // player spawns; the generator stamps it, so it is set before streaming.
 choose_world_start :: proc(generator: ^Generator, debug_terrain: bool) -> World_Start {
 	if debug_terrain {
-		fmt.eprintfln("world: debug terrain (seed %d unused)", generator.seed)
+		log_printf("world: debug terrain (seed %d unused)", generator.seed)
 		return World_Start{debug_terrain = true, player = debug_terrain_player_start(), landing_pad = debug_terrain_landing_pad()}
 	}
 	spawn, found := find_spawn(generator)
 	if found {
-		fmt.eprintfln("world: seed %d, spawn at %d %d %d", generator.seed, spawn.x, spawn.y, spawn.z)
+		log_printf("world: seed %d, spawn at %d %d %d", generator.seed, spawn.x, spawn.y, spawn.z)
 	} else {
-		fmt.eprintfln("world: seed %d, no spawn meets the requirements, starting at the origin", generator.seed)
+		log_printf("world: seed %d, no spawn meets the requirements, starting at the origin", generator.seed)
 		spawn = {0, terrain_height(generator.seeds, 0, 0), 0}
 	}
 	generator.landing_pad = Landing_Pad_Site{present = true, centre = spawn}

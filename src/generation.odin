@@ -91,7 +91,7 @@ read_data_file :: proc(data_directory, file_name: string) -> (data: []byte, path
 	read_error: os.Error
 	data, read_error = os.read_entire_file(path, context.temp_allocator)
 	if read_error != nil {
-		fmt.eprintfln("error: cannot read %s: %v", path, read_error)
+		log_printf("error: cannot read %s: %v", path, read_error)
 		return nil, path, false
 	}
 	return data, path, true
@@ -102,7 +102,7 @@ load_biomes_file :: proc(data_directory: string, allocator := context.allocator)
 	parse_error: json.Unmarshal_Error
 	file, parse_error = parse_biomes_file(data, allocator)
 	if parse_error != nil {
-		fmt.eprintfln("error: cannot parse %s: %v", path, parse_error)
+		log_printf("error: cannot parse %s: %v", path, parse_error)
 		return {}, false
 	}
 	return file, true
@@ -113,7 +113,7 @@ load_veins_file :: proc(data_directory: string, allocator := context.allocator) 
 	parse_error: json.Unmarshal_Error
 	file, parse_error = parse_veins_file(data, allocator)
 	if parse_error != nil {
-		fmt.eprintfln("error: cannot parse %s: %v", path, parse_error)
+		log_printf("error: cannot parse %s: %v", path, parse_error)
 		return {}, false
 	}
 	return file, true
@@ -125,7 +125,7 @@ load_generator :: proc(data_directory: string, registry: Block_Registry, seed: u
 	problem: string
 	generator, problem = make_generator(seed, registry, biomes_file, veins_file, allocator)
 	if problem != "" {
-		fmt.eprintfln("error: invalid world generation data in %s: %s", data_directory, problem)
+		log_printf("error: invalid world generation data in %s: %s", data_directory, problem)
 		return {}, false
 	}
 	return generator, true

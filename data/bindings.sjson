@@ -1,0 +1,111 @@
+// Default input bindings (work item 0025, doc/input.md). Each entry binds
+// an action (the Action enum in src/input_actions.odin) to a control:
+//   device   gamepad, keyboard, mouse or trackpad
+//   control  gamepad: SDL gamepad button names (SOUTH, EAST, WEST, NORTH,
+//            BACK, GUIDE, START, LEFT_STICK, RIGHT_STICK, LEFT_SHOULDER,
+//            RIGHT_SHOULDER, DPAD_UP, DPAD_DOWN, DPAD_LEFT, DPAD_RIGHT,
+//            MISC1 to MISC6, LEFT_PADDLE1, RIGHT_PADDLE1, LEFT_PADDLE2,
+//            RIGHT_PADDLE2, TOUCHPAD) and the trigger axes LEFT_TRIGGER and
+//            RIGHT_TRIGGER. keyboard: raylib key names (SPACE, LEFT_SHIFT,
+//            F3, ...). mouse: LEFT, RIGHT, MIDDLE, SIDE, EXTRA, FORWARD,
+//            BACK, WHEEL_UP, WHEEL_DOWN. trackpad: LEFT, RIGHT (a finger on
+//            the pad).
+//   context  world, menu or both: where the binding is meant to act. It
+//            documents the layout; it does not switch anything.
+//   backend  optional, sdl3 or raylib: only on that input backend.
+// On the Steam Controller: L4 is LEFT_PADDLE1, R4 RIGHT_PADDLE1, L5
+// LEFT_PADDLE2, R5 RIGHT_PADDLE2, the right pad click MISC2. The raylib
+// backend has no paddles, MISC buttons or trackpads and reports those
+// bindings once at start. The sticks (move, look) and WASD are not bindings.
+// One control may carry several actions, a world and a menu meaning: A is
+// Jump, Interact and Confirm, and Interact wins over Jump while an entity
+// is targeted (resolve_interact in src/player.odin).
+// A configuration file may list bindings in the same shape under
+// `bindings`; every action it lists loses all of its defaults.
+bindings = [
+	// Gamepad, in the world.
+	{action = "Jump" device = "gamepad" control = "SOUTH" context = "world"}
+	{action = "Jump" device = "gamepad" control = "LEFT_PADDLE1" context = "world"}
+	{action = "Interact" device = "gamepad" control = "SOUTH" context = "world"}
+	{action = "Interact" device = "gamepad" control = "LEFT_PADDLE1" context = "world"}
+	{action = "Interact" device = "gamepad" control = "MISC2" context = "world"}
+	{action = "Sneak" device = "gamepad" control = "EAST" context = "world" backend = "sdl3"}
+	{action = "Sneak" device = "gamepad" control = "RIGHT_PADDLE1" context = "world"}
+	{action = "Open_Inventory" device = "gamepad" control = "WEST" context = "both"}
+	{action = "Rotate_Building" device = "gamepad" control = "NORTH" context = "world"}
+	{action = "Rotate_Building" device = "gamepad" control = "LEFT_PADDLE2" context = "world"}
+	{action = "Pipette" device = "gamepad" control = "DPAD_UP" context = "world"}
+	{action = "Pipette" device = "gamepad" control = "RIGHT_PADDLE2" context = "world"}
+	{action = "Hotbar_Previous" device = "gamepad" control = "DPAD_LEFT" context = "world"}
+	{action = "Hotbar_Previous" device = "gamepad" control = "LEFT_SHOULDER" context = "world"}
+	{action = "Hotbar_Next" device = "gamepad" control = "DPAD_RIGHT" context = "world"}
+	{action = "Hotbar_Next" device = "gamepad" control = "RIGHT_SHOULDER" context = "world"}
+	{action = "Sprint" device = "gamepad" control = "LEFT_STICK" context = "world" backend = "sdl3"}
+	{action = "Open_Map" device = "gamepad" control = "BACK" context = "world"}
+	{action = "Pause" device = "gamepad" control = "START" context = "both"}
+	{action = "Mine" device = "gamepad" control = "RIGHT_TRIGGER" context = "world"}
+	{action = "Place" device = "gamepad" control = "LEFT_TRIGGER" context = "world"}
+	{action = "Hotbar_Radial" device = "trackpad" control = "LEFT" context = "world"}
+
+	// Gamepad, in menus.
+	{action = "Confirm" device = "gamepad" control = "SOUTH" context = "menu"}
+	{action = "Confirm" device = "gamepad" control = "LEFT_PADDLE1" context = "menu"}
+	{action = "Confirm" device = "gamepad" control = "MISC2" context = "menu"}
+	{action = "Confirm" device = "gamepad" control = "RIGHT_TRIGGER" context = "menu"}
+	{action = "Back" device = "gamepad" control = "EAST" context = "menu"}
+	{action = "Back" device = "gamepad" control = "RIGHT_PADDLE1" context = "menu"}
+	{action = "Context_Action" device = "gamepad" control = "WEST" context = "menu"}
+	{action = "Info_Panel" device = "gamepad" control = "NORTH" context = "menu"}
+	{action = "Info_Panel" device = "gamepad" control = "LEFT_PADDLE2" context = "menu"}
+	{action = "Navigate_Up" device = "gamepad" control = "DPAD_UP" context = "menu"}
+	{action = "Navigate_Up" device = "gamepad" control = "RIGHT_PADDLE2" context = "menu"}
+	{action = "Navigate_Down" device = "gamepad" control = "DPAD_DOWN" context = "menu"}
+	{action = "Navigate_Left" device = "gamepad" control = "DPAD_LEFT" context = "menu"}
+	{action = "Navigate_Right" device = "gamepad" control = "DPAD_RIGHT" context = "menu"}
+	{action = "Tab_Previous" device = "gamepad" control = "LEFT_SHOULDER" context = "menu"}
+	{action = "Tab_Next" device = "gamepad" control = "RIGHT_SHOULDER" context = "menu"}
+	{action = "Menu_Secondary" device = "gamepad" control = "LEFT_TRIGGER" context = "menu"}
+
+	// Keyboard, in the world.
+	{action = "Jump" device = "keyboard" control = "SPACE" context = "world"}
+	{action = "Rotate_Building" device = "keyboard" control = "R" context = "world"}
+	{action = "Pipette" device = "keyboard" control = "Q" context = "world"}
+	{action = "Hotbar_Radial" device = "keyboard" control = "TAB" context = "world"}
+	{action = "Open_Inventory" device = "keyboard" control = "E" context = "both"}
+	{action = "Open_Recipes" device = "keyboard" control = "C" context = "both"}
+	{action = "Open_Journal" device = "keyboard" control = "J" context = "both"}
+	{action = "Open_Power_Overview" device = "keyboard" control = "P" context = "both"}
+	{action = "Open_Technologies" device = "keyboard" control = "T" context = "both"}
+	{action = "Open_Map" device = "keyboard" control = "M" context = "world"}
+	{action = "Pause" device = "keyboard" control = "ESCAPE" context = "both"}
+	{action = "Sneak" device = "keyboard" control = "LEFT_SHIFT" context = "world"}
+	{action = "Interact" device = "keyboard" control = "F" context = "world"}
+	{action = "Sprint" device = "keyboard" control = "LEFT_CONTROL" context = "world"}
+	{action = "Hotbar_Previous" device = "keyboard" control = "LEFT_BRACKET" context = "world"}
+	{action = "Hotbar_Next" device = "keyboard" control = "RIGHT_BRACKET" context = "world"}
+	{action = "Toggle_Camera_Mode" device = "keyboard" control = "V" context = "world"}
+	{action = "Toggle_Diagnostics" device = "keyboard" control = "F3" context = "both"}
+	{action = "Debug_Remove_Block" device = "keyboard" control = "F5" context = "world"}
+	{action = "Toggle_Fly_Mode" device = "keyboard" control = "F6" context = "world"}
+	{action = "Debug_Drop_Item" device = "keyboard" control = "F7" context = "world"}
+
+	// Keyboard, in menus.
+	{action = "Confirm" device = "keyboard" control = "ENTER" context = "menu"}
+	{action = "Back" device = "keyboard" control = "BACKSPACE" context = "menu"}
+	{action = "Menu_Secondary" device = "keyboard" control = "LEFT_SHIFT" context = "menu"}
+	{action = "Navigate_Up" device = "keyboard" control = "UP" context = "menu"}
+	{action = "Navigate_Down" device = "keyboard" control = "DOWN" context = "menu"}
+	{action = "Navigate_Left" device = "keyboard" control = "LEFT" context = "menu"}
+	{action = "Navigate_Right" device = "keyboard" control = "RIGHT" context = "menu"}
+	{action = "Tab_Previous" device = "keyboard" control = "Q" context = "menu"}
+	{action = "Tab_Next" device = "keyboard" control = "E" context = "menu"}
+	{action = "Info_Panel" device = "keyboard" control = "R" context = "menu"}
+	{action = "Context_Action" device = "keyboard" control = "F" context = "menu"}
+
+	// Mouse.
+	{action = "Mine" device = "mouse" control = "LEFT" context = "world"}
+	{action = "Place" device = "mouse" control = "RIGHT" context = "world"}
+	{action = "Pipette" device = "mouse" control = "MIDDLE" context = "world"}
+	{action = "Hotbar_Previous" device = "mouse" control = "WHEEL_UP" context = "world"}
+	{action = "Hotbar_Next" device = "mouse" control = "WHEEL_DOWN" context = "world"}
+]

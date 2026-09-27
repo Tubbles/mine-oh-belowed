@@ -149,7 +149,10 @@ test_tick_input_sums_look_delta_of_frames_between_ticks :: proc(t: ^testing.T) {
 
 @(test)
 test_mouse_wheel_actions :: proc(t: ^testing.T) {
-	testing.expect_value(t, mouse_wheel_actions({0, -1}), Action_Set{.Hotbar_Next})
-	testing.expect_value(t, mouse_wheel_actions({0, 2}), Action_Set{.Hotbar_Previous})
-	testing.expect_value(t, mouse_wheel_actions({0, 0}), Action_Set{})
+	bindings := Input_Bindings {
+		mouse_wheel = {.Up = {.Hotbar_Previous}, .Down = {.Hotbar_Next}},
+	}
+	testing.expect_value(t, mouse_wheel_actions({0, -1}, bindings), Action_Set{.Hotbar_Next})
+	testing.expect_value(t, mouse_wheel_actions({0, 2}, bindings), Action_Set{.Hotbar_Previous})
+	testing.expect_value(t, mouse_wheel_actions({0, 0}, bindings), Action_Set{})
 }

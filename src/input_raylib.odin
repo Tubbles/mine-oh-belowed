@@ -2,99 +2,12 @@ package game
 
 import rl "vendor:raylib"
 
-// Hardcoded until bindings move to configuration. The layout follows
-// doc/input.md. Hotbar_Radial has no gamepad binding here because it needs
-// the left trackpad, which only the SDL3 backend (work item 0002) exposes.
-// Holding Tab shows the hotbar radial instead, driven by the right stick.
+// Bindings come from data/bindings.sjson and the configuration
+// (bindings.odin). The left trackpad is not readable here, so Hotbar_Radial
+// has no gamepad control on this backend; holding Tab shows the hotbar
+// radial instead, driven by the right stick.
 
 RAYLIB_GAMEPAD_SLOTS :: 4
-
-Gamepad_Button_Binding :: struct {
-	button: rl.GamepadButton,
-	action: Action,
-}
-
-Key_Binding :: struct {
-	key:    rl.KeyboardKey,
-	action: Action,
-}
-
-Mouse_Button_Binding :: struct {
-	button: rl.MouseButton,
-	action: Action,
-}
-
-@(rodata)
-gamepad_button_bindings := [?]Gamepad_Button_Binding {
-	{.RIGHT_FACE_DOWN, .Jump},
-	{.RIGHT_FACE_DOWN, .Interact},
-	{.RIGHT_FACE_DOWN, .Confirm},
-	{.RIGHT_FACE_RIGHT, .Back},
-	{.RIGHT_FACE_LEFT, .Open_Inventory},
-	{.RIGHT_FACE_UP, .Rotate_Building},
-	{.LEFT_FACE_UP, .Pipette},
-	{.LEFT_FACE_LEFT, .Hotbar_Previous},
-	{.LEFT_FACE_RIGHT, .Hotbar_Next},
-	{.LEFT_TRIGGER_1, .Hotbar_Previous},
-	{.RIGHT_TRIGGER_1, .Hotbar_Next},
-	{.RIGHT_TRIGGER_2, .Mine},
-	{.LEFT_TRIGGER_2, .Place},
-	{.LEFT_TRIGGER_2, .Menu_Secondary},
-	{.MIDDLE_LEFT, .Open_Map},
-	{.MIDDLE_RIGHT, .Pause},
-	{.RIGHT_TRIGGER_2, .Confirm},
-	{.LEFT_FACE_UP, .Navigate_Up},
-	{.LEFT_FACE_DOWN, .Navigate_Down},
-	{.LEFT_FACE_LEFT, .Navigate_Left},
-	{.LEFT_FACE_RIGHT, .Navigate_Right},
-	{.LEFT_TRIGGER_1, .Tab_Previous},
-	{.RIGHT_TRIGGER_1, .Tab_Next},
-	{.RIGHT_FACE_UP, .Info_Panel},
-	{.RIGHT_FACE_LEFT, .Context_Action},
-}
-
-@(rodata)
-key_bindings := [?]Key_Binding {
-	{.SPACE, .Jump},
-	{.R, .Rotate_Building},
-	{.Q, .Pipette},
-	{.TAB, .Hotbar_Radial},
-	{.E, .Open_Inventory},
-	{.C, .Open_Recipes},
-	{.J, .Open_Journal},
-	{.P, .Open_Power_Overview},
-	{.T, .Open_Technologies},
-	{.M, .Open_Map},
-	{.ESCAPE, .Pause},
-	{.ENTER, .Confirm},
-	{.BACKSPACE, .Back},
-	{.LEFT_SHIFT, .Sneak},
-	{.LEFT_SHIFT, .Menu_Secondary},
-	{.F, .Interact},
-	{.LEFT_CONTROL, .Sprint},
-	{.LEFT_BRACKET, .Hotbar_Previous},
-	{.RIGHT_BRACKET, .Hotbar_Next},
-	{.V, .Toggle_Camera_Mode},
-	{.F3, .Toggle_Diagnostics},
-	{.F5, .Debug_Remove_Block},
-	{.F7, .Debug_Drop_Item},
-	{.F6, .Toggle_Fly_Mode},
-	{.UP, .Navigate_Up},
-	{.DOWN, .Navigate_Down},
-	{.LEFT, .Navigate_Left},
-	{.RIGHT, .Navigate_Right},
-	{.Q, .Tab_Previous},
-	{.E, .Tab_Next},
-	{.R, .Info_Panel},
-	{.F, .Context_Action},
-}
-
-@(rodata)
-mouse_button_bindings := [?]Mouse_Button_Binding {
-	{.LEFT, .Mine},
-	{.RIGHT, .Place},
-	{.MIDDLE, .Pipette},
-}
 
 first_available_gamepad :: proc() -> (index: int, found: bool) {
 	for slot in 0 ..< RAYLIB_GAMEPAD_SLOTS {
@@ -176,27 +89,17 @@ read_raylib_raw_input :: proc() -> Raw_Input {
 	}
 }
 
-gamepad_button_actions :: proc(gamepad: Raw_Gamepad) -> Action_Set {
+// Keyboard and mouse come from raylib on both backends.
+keyboard_mouse_actions :: proc(bindings: Input_Bindings) -> Action_Set {
 	actions: Action_Set
-	for binding in gamepad_button_bindings {
-		button_index := int(binding.button)
-		if button_index < gamepad.button_count && gamepad.button_down[button_index] {
-			actions += {binding.action}
+	for key_actions, code in bindings.keys {
+		if key_actions != {} && rl.IsKeyDown(rl.KeyboardKey(code)) {
+			actions += key_actions
 		}
 	}
-	return actions
-}
-
-keyboard_mouse_actions :: proc() -> Action_Set {
-	actions: Action_Set
-	for binding in key_bindings {
-		if rl.IsKeyDown(binding.key) {
-			actions += {binding.action}
-		}
-	}
-	for binding in mouse_button_bindings {
-		if rl.IsMouseButtonDown(binding.button) {
-			actions += {binding.action}
+	for button_actions, button in bindings.mouse_buttons {
+		if button_actions != {} && rl.IsMouseButtonDown(rl.MouseButton(button)) {
+			actions += button_actions
 		}
 	}
 	return actions
@@ -226,13 +129,13 @@ keyboard_move :: proc() -> [2]f32 {
 	return {key_axis(.A, .D), key_axis(.S, .W)}
 }
 
-read_raylib_input_frame :: proc(previous_pressed: Action_Set) -> Input_Frame {
+read_raylib_input_frame :: proc(previous_pressed: Action_Set, bindings: Input_Bindings) -> Input_Frame {
 	raw := read_raylib_raw_input()
 	move := clamp_to_unit_length(gamepad_stick(raw.gamepad, .LEFT_X, .LEFT_Y) + keyboard_move())
 	look := gamepad_stick(raw.gamepad, .RIGHT_X, .RIGHT_Y)
 	look_delta := raw.mouse.delta
-	wheel_actions := mouse_wheel_actions(raw.mouse.wheel)
-	pressed := gamepad_button_actions(raw.gamepad) + keyboard_mouse_actions() + analog_actions(move, look, look_delta) + wheel_actions
+	wheel_actions := mouse_wheel_actions(raw.mouse.wheel, bindings)
+	pressed := gamepad_button_actions(raw.gamepad, bindings) + keyboard_mouse_actions(bindings) + analog_actions(move, look, look_delta) + wheel_actions
 	return Input_Frame {
 		move = move,
 		look = look,

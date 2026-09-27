@@ -1,7 +1,6 @@
 package game
 
 import "core:encoding/json"
-import "core:fmt"
 import "core:os"
 import "core:strings"
 import "core:sync"
@@ -59,13 +58,13 @@ load_string_table :: proc(data_directory: string, allocator := context.allocator
 	}
 	data, read_error := os.read_entire_file(path, context.temp_allocator)
 	if read_error != nil {
-		fmt.eprintfln("error: cannot read %s: %v", path, read_error)
+		log_printf("error: cannot read %s: %v", path, read_error)
 		return {}, false
 	}
 	parse_error: json.Unmarshal_Error
 	table, parse_error = parse_string_table(data, allocator)
 	if parse_error != nil {
-		fmt.eprintfln("error: cannot parse %s: %v", path, parse_error)
+		log_printf("error: cannot parse %s: %v", path, parse_error)
 		return {}, false
 	}
 	return table, true
@@ -79,7 +78,7 @@ lookup_text :: proc(table: ^String_Table, key: string) -> string {
 	defer sync.mutex_unlock(&table.mutex)
 	if key not_in table.reported_missing {
 		table.reported_missing[strings.clone(key)] = true
-		fmt.eprintfln("strings: missing key %q in %s", key, STRINGS_FILE_NAME)
+		log_printf("strings: missing key %q in %s", key, STRINGS_FILE_NAME)
 	}
 	return key
 }

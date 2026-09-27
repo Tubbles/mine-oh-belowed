@@ -12,6 +12,8 @@ SETTINGS_ROW_COUNT :: 8
 
 Screen_Context :: struct {
 	settings:        ^Settings,
+	// The effective bindings, shown read only.
+	bindings:        []Binding,
 	quit_requested:  ^bool,
 	// Nil without a world.
 	save_requested:  ^bool,
@@ -231,15 +233,18 @@ settings_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	content := inset(panel, UI_PADDING)
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("settings_title"), UI_HEADING_TEXT_SIZE, .Centre)
 	cut_top(&content, UI_GAP)
-	tab_labels := [?]string{text("settings_tab_display"), text("settings_tab_controls")}
+	tab_labels := [?]string{text("settings_tab_display"), text("settings_tab_controls"), text("settings_tab_bindings")}
 	tab := ui_tabs(state, cut_top(&content, UI_ROW_HEIGHT), "settings_tabs", tab_labels[:])
 	cut_top(&content, UI_GAP)
 	back_row := cut_bottom(&content, UI_ROW_HEIGHT)
 	switch tab {
 	case 0:
 		display_settings(state, &content, settings)
-	case:
+	case 1:
 		control_settings(state, &content, settings)
+	case:
+		// Read only for now; activating a row does nothing.
+		ui_list(state, content, "bindings", binding_rows(screen_context.bindings, context.temp_allocator), text("settings_bindings_tooltip"))
 	}
 	if ui_button(state, back_row, text("settings_back")) {
 		pop_screen(&state.screens)

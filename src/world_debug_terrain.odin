@@ -1,7 +1,6 @@
 package game
 
 import "core:container/queue"
-import "core:fmt"
 import "core:math"
 
 // Fixed terrain built in code, shown with --debug-terrain instead of the
@@ -32,7 +31,7 @@ resolve_debug_terrain_blocks :: proc(registry: Block_Registry) -> (blocks: Debug
 		found: bool
 		targets[index]^, found = find_block_id(registry, name)
 		if !found {
-			fmt.eprintfln("error: the debug terrain needs block %q in %s", name, BLOCKS_FILE_NAME)
+			log_printf("error: the debug terrain needs block %q in %s", name, BLOCKS_FILE_NAME)
 			return {}, false
 		}
 	}

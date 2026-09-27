@@ -1,6 +1,5 @@
 package game
 
-import "core:fmt"
 import "core:os"
 import "core:strings"
 import rl "vendor:raylib"
@@ -45,7 +44,7 @@ load_chunk_shader :: proc(data_directory: string) -> (shader: rl.Shader, ok: boo
 	)
 	// raylib falls back to its default shader when loading or compiling fails.
 	if !rl.IsShaderValid(shader) || shader.id == rlgl.GetShaderIdDefault() {
-		fmt.eprintfln("error: cannot load the chunk shader from %s and %s", vertex_path, fragment_path)
+		log_printf("error: cannot load the chunk shader from %s and %s", vertex_path, fragment_path)
 		return {}, false
 	}
 	return shader, true

@@ -75,7 +75,7 @@ make_session_simulation :: proc(plan: Session_Plan, config: Game_Config, content
 	if plan.loading {
 		simulation, problem = make_simulation_from_save(world_config, start.player, simulation_content, start.landing_pad, plan.directory, plan.file)
 		if problem == "" {
-			fmt.eprintfln("world: loaded %q at tick %d from %s", plan.file.name, plan.file.tick, plan.directory)
+			log_printf("world: loaded %q at tick %d from %s", plan.file.name, plan.file.tick, plan.directory)
 		}
 		return simulation, problem
 	}
@@ -139,7 +139,7 @@ save_session :: proc(session: ^Session, content: Game_Content) -> string {
 	if problem == "" {
 		session.ticks_since_save = 0
 	} else {
-		fmt.eprintfln("error: saving %q failed: %s", session.save.location.display_name, problem)
+		log_printf("error: saving %q failed: %s", session.save.location.display_name, problem)
 	}
 	return problem
 }
@@ -150,14 +150,14 @@ save_session :: proc(session: ^Session, content: Game_Content) -> string {
 new_world_save_setup :: proc(display_name, saves_directory: string, saves_found, debug_terrain: bool) -> Save_Setup {
 	switch {
 	case debug_terrain:
-		fmt.eprintln("world: saving is off for the debug terrain")
+		log_printf("world: saving is off for the debug terrain")
 		return {}
 	case !saves_found:
-		fmt.eprintfln("world: saving is off (set %s, XDG_DATA_HOME or HOME)", SAVES_DIRECTORY_ENVIRONMENT_VARIABLE)
+		log_printf("world: saving is off (set %s, XDG_DATA_HOME or HOME)", SAVES_DIRECTORY_ENVIRONMENT_VARIABLE)
 		return {}
 	}
 	directory_name := unused_world_directory_name(saves_directory, sanitize_world_name(display_name, context.temp_allocator), context.temp_allocator)
-	fmt.eprintfln("world: new world %q, saves to %s", display_name, join_save_path(saves_directory, directory_name))
+	log_printf("world: new world %q, saves to %s", display_name, join_save_path(saves_directory, directory_name))
 	location := Save_Location {
 		saves_directory = saves_directory,
 		directory_name  = directory_name,

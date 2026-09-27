@@ -58,6 +58,12 @@ Frame_State :: struct {
 	// World actions still held since a screen closed, see update_world_action_guard.
 	world_action_guard: Action_Set,
 	settings:           Settings,
+	// The settings as last read or written, see write_changed_settings.
+	stored_settings:    Settings,
+	environment:        Configuration_Environment,
+	// The effective bindings, for the settings screen's Controls list.
+	bindings:           []Binding,
+	input_bindings:     Input_Bindings,
 	ui:                 Ui_State,
 	cursor_enabled:     bool,
 	quit_requested:     bool,
@@ -182,9 +188,9 @@ interpolation_alpha :: proc(accumulator: Tick_Accumulator) -> f64 {
 read_input_frame :: proc(state: ^Frame_State, frame_seconds: f32) -> Input_Frame {
 	switch state.input_backend {
 	case .Sdl3:
-		return read_sdl3_input_frame(&state.sdl3_input, state.input, frame_seconds, state.settings)
+		return read_sdl3_input_frame(&state.sdl3_input, state.input, frame_seconds, state.settings, state.input_bindings)
 	case .Raylib:
-		return read_raylib_input_frame(state.input.pressed)
+		return read_raylib_input_frame(state.input.pressed, state.input_bindings)
 	}
 	return {}
 }
@@ -324,6 +330,7 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 	content := state.content
 	screen_context := Screen_Context {
 		settings        = &state.settings,
+		bindings        = state.bindings,
 		quit_requested  = &state.quit_requested,
 		title           = &state.title,
 		items           = content.items,
@@ -449,7 +456,7 @@ apply_session_request :: proc(state: ^Frame_State) {
 }
 
 report_session_problem :: proc(state: ^Frame_State, problem: string) {
-	fmt.eprintfln("error: %s", problem)
+	log_printf("error: %s", problem)
 	ui_toast(&state.ui, fmt.tprintf("%s: %s", text("title_world_failed"), problem))
 }
 
@@ -480,12 +487,24 @@ leave_session :: proc(state: ^Frame_State) {
 		return
 	}
 	if session.save.enabled && save_session(session, state.content) == "" {
-		fmt.eprintfln("world: saved %q", session.save.location.display_name)
+		log_printf("world: saved %q", session.save.location.display_name)
 	}
 	unload_all_chunk_meshes(&state.renderer)
 	end_session(session)
 	state.session = nil
 	state.show_diagnostics = false
+}
+
+// Once the settings screen is closed (and on exit), changed settings go to
+// config.d/90-settings.sjson. A failed write is reported once, not retried.
+write_changed_settings :: proc(state: ^Frame_State) {
+	if state.settings == state.stored_settings {
+		return
+	}
+	state.stored_settings = state.settings
+	if problem := write_settings_file(state.environment, state.settings); problem != "" {
+		log_printf("error: cannot save the settings: %s", problem)
+	}
 }
 
 show_title :: proc(state: ^Frame_State) {
@@ -497,14 +516,14 @@ show_title :: proc(state: ^Frame_State) {
 
 // Takes ownership of the session, or shows the title when there is none.
 // Saves on quit when the world saves.
-run_game :: proc(config: Game_Config, input_backend: Input_Backend, content: Game_Content, base_generator: Generator, data_directory: string, session: ^Session, title: Title_State) {
+run_game :: proc(config: Game_Config, input_backend: Input_Backend, content: Game_Content, base_generator: Generator, data_directory: string, session: ^Session, title: Title_State, player_configuration: Player_Configuration) {
 	rl.SetTraceLogLevel(.WARNING)
 	rl.SetConfigFlags({.VSYNC_HINT, .WINDOW_RESIZABLE})
 	rl.InitWindow(1280, 720, "Mine oh Belowed")
 	// raylib returns from a failed InitWindow instead of reporting it, and
 	// the first draw call would then crash. A missing display is the usual cause.
 	if !rl.IsWindowReady() {
-		fmt.eprintln("error: could not open a window (is a display available?)")
+		log_printf("error: could not open a window (is a display available?)")
 		os.exit(1)
 	}
 	defer rl.CloseWindow()
@@ -516,19 +535,24 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, content: Gam
 		os.exit(1)
 	}
 	state := Frame_State {
-		config         = config,
-		content        = content,
-		base_generator = base_generator,
-		title          = title,
-		input_backend  = input_backend,
-		renderer       = renderer,
-		settings       = DEFAULT_SETTINGS,
-		ui             = Ui_State{measure_text = raylib_measure_text},
+		config          = config,
+		content         = content,
+		base_generator  = base_generator,
+		title           = title,
+		input_backend   = input_backend,
+		renderer        = renderer,
+		settings        = player_configuration.settings,
+		stored_settings = player_configuration.settings,
+		environment     = player_configuration.environment,
+		bindings        = player_configuration.bindings,
+		input_bindings  = player_configuration.input_bindings,
+		ui              = Ui_State{measure_text = raylib_measure_text},
 		// raylib starts with the cursor shown; the first apply hides it.
-		cursor_enabled = true,
+		cursor_enabled  = true,
 	}
 	defer destroy_ui_state(&state.ui)
 	defer destroy_title_state(&state.title)
+	defer write_changed_settings(&state)
 	defer if input_backend == .Sdl3 {
 		shutdown_sdl3_input(&state.sdl3_input)
 	}
@@ -546,6 +570,9 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, content: Gam
 		update_frame(&state)
 		render_frame(&state)
 		apply_session_request(&state)
+		if !screen_stack_contains(state.ui.screens, .Settings) {
+			write_changed_settings(&state)
+		}
 		free_all(context.temp_allocator)
 	}
 }

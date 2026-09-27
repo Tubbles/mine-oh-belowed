@@ -82,8 +82,13 @@ saves_directory_from_environment :: proc(saves, data_home, home: string, allocat
 	return "", false
 }
 
-resolve_saves_directory :: proc(allocator := context.allocator) -> (directory: string, ok: bool) {
+// configured is paths.saves from the configuration, which the environment
+// variable overrides.
+resolve_saves_directory :: proc(configured: string, allocator := context.allocator) -> (directory: string, ok: bool) {
 	saves := os.get_env(SAVES_DIRECTORY_ENVIRONMENT_VARIABLE, context.temp_allocator)
+	if saves == "" {
+		saves = configured
+	}
 	data_home := os.get_env("XDG_DATA_HOME", context.temp_allocator)
 	home := os.get_env("HOME", context.temp_allocator)
 	return saves_directory_from_environment(saves, data_home, home, allocator)
