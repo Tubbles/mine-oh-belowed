@@ -20,11 +20,26 @@ HUD_QUEUE_SLOT_SIZE :: 56
 HUD_WAITING_MAXIMUM_LINES :: 2
 // Distance of the radial's slot centres from the screen centre.
 HUD_RADIAL_RADIUS :: UI_SLOT_SIZE * 2.5
+// The mining progress bar above the crosshair.
+HUD_MINING_BAR_WIDTH :: 4 * CROSSHAIR_SIZE
+HUD_MINING_BAR_HEIGHT :: 6.0
 
 draw_crosshair :: proc(state: ^Ui_State) {
 	centre := state.screen_units / 2
 	draw_fill(state, {centre.x - CROSSHAIR_SIZE, centre.y - CROSSHAIR_THICKNESS / 2, 2 * CROSSHAIR_SIZE, CROSSHAIR_THICKNESS}, CROSSHAIR_COLOR)
 	draw_fill(state, {centre.x - CROSSHAIR_THICKNESS / 2, centre.y - CROSSHAIR_SIZE, CROSSHAIR_THICKNESS, 2 * CROSSHAIR_SIZE}, CROSSHAIR_COLOR)
+}
+
+// A bar above the crosshair that fills while a block is being dug; gone
+// the moment the dig stops or finishes.
+draw_mining_progress :: proc(state: ^Ui_State, mining: Mining_State) {
+	fraction := mining_fraction(mining)
+	if fraction <= 0 {
+		return
+	}
+	centre := state.screen_units / 2
+	bar := Ui_Rectangle{centre.x - HUD_MINING_BAR_WIDTH / 2, centre.y - CROSSHAIR_SIZE - 2 * UI_GAP - HUD_MINING_BAR_HEIGHT, HUD_MINING_BAR_WIDTH, HUD_MINING_BAR_HEIGHT}
+	ui_progress_bar(state, bar, fraction)
 }
 
 hud_slot_size :: proc(index, selected: int) -> f32 {
@@ -218,6 +233,7 @@ draw_contract_objective :: proc(state: ^Ui_State, screen_context: Screen_Context
 draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	player, items := screen_context.player, screen_context.items
 	draw_crosshair(state)
+	draw_mining_progress(state, player.mining)
 	draw_hud_hotbar(state, player^, items)
 	draw_craft_queue(state, player^, screen_context)
 	if state.screens.count > 0 {

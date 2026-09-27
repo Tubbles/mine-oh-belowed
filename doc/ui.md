@@ -51,7 +51,7 @@ A picks up the focused stack, A on another slot drops it or swaps, L2 splits the
 
 Hotbar of eight slots bottom centre with the selected slot enlarged, the held item name above it, the name and state of the targeted block or entity near the crosshair, the current quest objective top right, toasts top left, the glyph bar bottom right, the compass strip top centre.
 
-Under the crosshair (0052) up to three lines stack with no gaps: the targeted block's name in dim text, or an entity's name and state; the pickaxe the block needs (0051); the vein line. Nothing shows when the ray hits nothing. A discoverable ore block reads "Unknown ore" until its drop item was obtained once, and the vein line replaces the vein type's name with "Unknown ore" (size and units left stay) until one of its discoverable ores is obtained; a vein type with no discoverable output (a quarry, the deep bauxite vein) is always named.
+A small bar above the crosshair fills while a block is being dug (2026-09-27); a block being placed has no preview cube, the target outline says where it goes, while machine ghosts keep their translucent box with footprint and direction. Under the crosshair (0052) up to three lines stack with no gaps: the targeted block's name in dim text, or an entity's name and state; the pickaxe the block needs (0051); the vein line. Nothing shows when the ray hits nothing. A discoverable ore block reads "Unknown ore" until its drop item was obtained once, and the vein line replaces the vein type's name with "Unknown ore" (size and units left stay) until one of its discoverable ores is obtained; a vein type with no discoverable output (a quarry, the deep bauxite vein) is always named.
 
 ## Text
 

@@ -10,7 +10,6 @@ THIRD_PERSON_HEIGHT :: 0.75
 THIRD_PERSON_WALL_MARGIN :: 0.2
 TARGET_OUTLINE_COLOR :: rl.Color{20, 20, 20, 255}
 MINING_OUTLINE_COLOR :: rl.Color{240, 240, 240, 255}
-PLACEMENT_PREVIEW_COLOR :: rl.Color{255, 255, 255, 70}
 GHOST_VALID_COLOR :: rl.Color{60, 220, 90, 90}
 GHOST_INVALID_COLOR :: rl.Color{230, 60, 50, 90}
 PLAYER_BODY_COLOR :: rl.Color{60, 110, 200, 255}
@@ -98,7 +97,9 @@ mining_matches_target :: proc(mining: Mining_State, target: Raycast_Hit) -> bool
 	return mining.entity == NO_ENTITY && mining.block == target.block
 }
 
-// A translucent box for a machine ghost, one cube for a block.
+// A translucent box for a machine ghost with its footprint and direction.
+// A block gets no preview cube: the target outline already says where it
+// goes, and the couch found the cube distracting (2026-09-27).
 draw_placement_preview :: proc(world: ^World, content: Simulation_Content, players: []Player, index: int) {
 	placement := placement_for_player(world, content, players, index)
 	if placement.shown && placement.belt {
@@ -121,12 +122,7 @@ draw_placement_preview :: proc(world: ^World, content: Simulation_Content, playe
 		}
 		draw_fluid_machine_ghost(placement, content.machines, content.fluids)
 		draw_supply_volume_ghost(placement, content.machines)
-		return
 	}
-	if selected_placed_block(players[index], content.items) == AIR_BLOCK {
-		return
-	}
-	rl.DrawCube(block_centre(players[index].target.adjacent), 1, 1, 1, PLACEMENT_PREVIEW_COLOR)
 }
 
 // The cell the drill's ore goes to, outlined: whatever stands there
