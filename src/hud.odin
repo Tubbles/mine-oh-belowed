@@ -147,7 +147,7 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	status := entity_status_text(screen_context.world, screen_context.machines, player.target.entity)
 	draw_target_status(state, status)
 	hotbar_radial(state, player, items)
-	if status != "" {
+	if entity_has_panel(&screen_context.world.entities, player.target.entity) {
 		hints := [?]Glyph_Hint{{.Interact, text("hint_open")}, {.Inventory, text("hint_inventory")}, {.Pause, text("hint_pause")}}
 		ui_glyph_bar(state, hints[:])
 		return

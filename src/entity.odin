@@ -18,6 +18,7 @@ Entity_Kind :: enum u8 {
 	Chest,
 	Furnace,
 	Capsule,
+	Belt,
 }
 
 // index is into the pool of `kind`. Generations start at 1, so the zero
@@ -62,10 +63,13 @@ Entity_Pool :: struct($T: typeid) {
 }
 
 Entities :: struct {
-	chests:   Entity_Pool(Chest),
-	furnaces: Entity_Pool(Furnace),
-	capsules: Entity_Pool(Capsule),
-	cells:    map[World_Coordinate]Entity_Handle,
+	chests:       Entity_Pool(Chest),
+	furnaces:     Entity_Pool(Furnace),
+	capsules:     Entity_Pool(Capsule),
+	belts:        Entity_Pool(Belt),
+	// Transport lines derived from the belts (belt.odin).
+	belt_network: Belt_Network,
+	cells:        map[World_Coordinate]Entity_Handle,
 }
 
 pool_add :: proc(pool: ^Entity_Pool($T), kind: Entity_Kind, value: T) -> Entity_Handle {
@@ -115,6 +119,8 @@ destroy_entities :: proc(entities: ^Entities) {
 	destroy_pool(&entities.chests)
 	destroy_pool(&entities.furnaces)
 	destroy_pool(&entities.capsules)
+	destroy_pool(&entities.belts)
+	destroy_belt_network(&entities.belt_network)
 	delete(entities.cells)
 }
 
@@ -134,8 +140,17 @@ entity_common :: proc(entities: ^Entities, handle: Entity_Handle) -> ^Entity_Com
 		if capsule := pool_get(&entities.capsules, handle); capsule != nil {
 			return &capsule.common
 		}
+	case .Belt:
+		if belt := pool_get(&entities.belts, handle); belt != nil {
+			return &belt.common
+		}
 	}
 	return nil
+}
+
+// Belts have no panel: Interact does nothing on them.
+entity_has_panel :: proc(entities: ^Entities, handle: Entity_Handle) -> bool {
+	return handle.kind != .Belt && entity_is_alive(entities, handle)
 }
 
 entity_is_alive :: proc(entities: ^Entities, handle: Entity_Handle) -> bool {
@@ -219,11 +234,14 @@ make_entity_common :: proc(machines: Machine_Registry, machine: Machine_Id, orig
 	}
 }
 
-// The caller has checked that the footprint is free.
+// The caller has checked that the footprint is free. A belt gets the
+// default shape of its item (belt_placement.odin picks others).
 add_entity :: proc(entities: ^Entities, machines: Machine_Registry, machine: Machine_Id, origin: World_Coordinate, rotation: u8) -> Entity_Handle {
 	common := make_entity_common(machines, machine, origin, rotation)
 	handle: Entity_Handle
 	switch machines.machines[machine].kind {
+	case .Belt:
+		return add_belt(entities, machines, machine, origin, rotation, default_belt_shape(machines.machines[machine].belt_shape))
 	case .Chest:
 		chest := Chest{common = common, slot_count = machines.machines[machine].slot_count}
 		for &slot in chest.slots {
@@ -246,6 +264,9 @@ add_entity :: proc(entities: ^Entities, machines: Machine_Registry, machine: Mac
 }
 
 remove_entity :: proc(entities: ^Entities, machines: Machine_Registry, handle: Entity_Handle) -> bool {
+	if handle.kind == .Belt {
+		return remove_belt(entities, machines, handle)
+	}
 	common := entity_common(entities, handle)
 	if common == nil {
 		return false
@@ -262,16 +283,31 @@ remove_entity :: proc(entities: ^Entities, machines: Machine_Registry, handle: E
 		return pool_remove(&entities.furnaces, handle)
 	case .Capsule:
 		return pool_remove(&entities.capsules, handle)
+	case .Belt:
+		// Handled by remove_belt above.
+		return false
 	}
 	return false
 }
 
-// A solid block or an entity: what the player collides with and the ray stops at.
+// A solid block or an entity: what the ray stops at and blocks cannot go into.
 cell_is_solid_or_entity :: proc(world: ^World, registry: Block_Registry, cell: World_Coordinate) -> bool {
 	return block_is_solid(registry, world_get_block(world, cell)) || cell in world.entities.cells
 }
 
+// What the player collides with: belts are walked over, not into.
+cell_blocks_movement :: proc(world: ^World, registry: Block_Registry, cell: World_Coordinate) -> bool {
+	if block_is_solid(registry, world_get_block(world, cell)) {
+		return true
+	}
+	handle, occupied := world.entities.cells[cell]
+	return occupied && handle.kind != .Belt
+}
+
+// Belts first, so a furnace sees items an inserter (0015) takes off a
+// belt in the same tick.
 tick_entities :: proc(world: ^World, content: Simulation_Content, tick_rate: int) {
+	tick_belt_network(&world.entities.belt_network, tick_rate)
 	for &furnace in world.entities.furnaces.entries {
 		if furnace.alive {
 			before := furnace

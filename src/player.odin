@@ -56,6 +56,8 @@ Player :: struct {
 	held:                 Held_Stack,
 	// Quarter turns of the machine ghost, changed with Rotate_Building.
 	placement_rotation:   u8,
+	// The belt run being dragged while Place is held.
+	belt_drag:            Belt_Drag,
 	// The entity whose panel Interact opened; the UI clears it on close.
 	open_machine:         Entity_Handle,
 	// Hand crafting. The UI queues and cancels between ticks.
@@ -251,7 +253,7 @@ apply_player_toggles :: proc(player: ^Player, just_pressed: Action_Set) {
 // the entity instead of jumping; keyboard Space never interacts.
 resolve_interact :: proc(player: ^Player, entities: ^Entities, input: Input_Frame) -> (Input_Frame, Player_Events) {
 	result := input
-	if .Interact not_in input.pressed || !entity_is_alive(entities, player.target.entity) {
+	if .Interact not_in input.pressed || !entity_has_panel(entities, player.target.entity) {
 		return result, {}
 	}
 	result.pressed -= {.Jump}
@@ -263,6 +265,23 @@ resolve_interact :: proc(player: ^Player, entities: ^Entities, input: Input_Fram
 	return result, {.Open_Machine}
 }
 
+// Standing on a flat belt or a ramp moves the body with the belt before
+// its own movement, swept like any other move so walls still stop it.
+carry_player_on_belt :: proc(world: ^World, content: Simulation_Content, player: ^Player, tick_rate: int) {
+	if player.flying || !player.on_ground {
+		return
+	}
+	belt := belt_at(&world.entities, camera_world_coordinate(player.position + {0, COLLISION_EPSILON, 0}))
+	if belt == nil {
+		return
+	}
+	offset := belt_carry_offset(belt^, content.machines, tick_rate)
+	for axis in ([2]int{0, 2}) {
+		moved, _ := sweep_box_axis(world, content.blocks, player_box(player.position), axis, offset[axis])
+		player.position[axis] += moved
+	}
+}
+
 tick_player :: proc(world: ^World, content: Simulation_Content, players: []Player, index: int, frame: Input_Frame, tick_rate: int) -> Player_Events {
 	player := &players[index]
 	seconds := 1 / f32(tick_rate)
@@ -270,20 +289,22 @@ tick_player :: proc(world: ^World, content: Simulation_Content, players: []Playe
 	player.previous_position, player.previous_yaw, player.previous_pitch = player.position, player.yaw, player.pitch
 	apply_player_toggles(player, input.just_pressed)
 	turn_player(player, input, seconds)
+	carry_player_on_belt(world, content, player, tick_rate)
+	walk_start := player.position
 	if player.flying {
 		fly_player(player, input, seconds)
 	} else {
 		walk_player(world, content.blocks, player, input, seconds)
 	}
 	if !player.flying {
-		record_walked(&world.statistics, player.previous_position, player.position)
+		record_walked(&world.statistics, walk_start, player.position)
 	}
 	if .Open_Machine in events {
 		record_world_action(&world.statistics)
 	}
 	player.target = raycast_blocks(world, content.blocks, player_eye(player.position), player_look_direction(player^), PLAYER_REACH)
 	events += mine_with_player(world, content, player, .Mine in input.pressed, tick_rate)
-	place_with_player(world, content, players, index, input.just_pressed)
+	place_with_player(world, content, players, index, input.just_pressed, input.pressed)
 	player.selected_hotbar_slot = cycle_hotbar_slot(player.selected_hotbar_slot, input.just_pressed)
 	if finished := advance_crafting(&player.crafting, player.inventory, content.recipes, content.items, tick_rate); finished != NO_RECIPE {
 		record_produced_stacks(&world.statistics, content.recipes.recipes[finished].outputs)

@@ -13,6 +13,12 @@
 // Furnaces: fuel_slots, input_slots and output_slots must be 1 each for
 // now. speed multiplies the recipe rate (1 is the listed recipe time).
 // fuel_power_kilowatts is the power drawn from the fuel while working.
+// Belts (work item 0014): belt_shape is flat, ramp or lift (the item
+// placed decides the shape; a ramp's up or down and a lift's direction
+// are chosen at placement). belt_speed_blocks_per_second is the item speed
+// along the belt; it becomes a whole number of 1/256 block units per tick,
+// so pick values where speed * 256 / tick rate is an integer (1.875 at
+// 60 ticks per second is 8 units).
 machines = [
 	{
 		id = "wooden_chest"
@@ -48,5 +54,32 @@ machines = [
 		kind = "capsule"
 		footprint = {width = 1, depth = 1, height = 2}
 		slots = 8
+	}
+	{
+		id = "belt"
+		name_key = "machine_belt"
+		item = "belt"
+		kind = "belt"
+		footprint = {width = 1, depth = 1, height = 1}
+		belt_shape = "flat"
+		belt_speed_blocks_per_second = 1.875
+	}
+	{
+		id = "belt_ramp"
+		name_key = "machine_belt_ramp"
+		item = "belt_ramp"
+		kind = "belt"
+		footprint = {width = 1, depth = 1, height = 1}
+		belt_shape = "ramp"
+		belt_speed_blocks_per_second = 1.875
+	}
+	{
+		id = "belt_lift"
+		name_key = "machine_belt_lift"
+		item = "belt_lift"
+		kind = "belt"
+		footprint = {width = 1, depth = 1, height = 1}
+		belt_shape = "lift"
+		belt_speed_blocks_per_second = 1.875
 	}
 ]

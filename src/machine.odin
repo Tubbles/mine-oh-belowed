@@ -25,6 +25,8 @@ Machine_Kind :: enum u8 {
 	// The drop capsule on the landing pad: placed by the world, never by
 	// an item, and never picked up.
 	Capsule,
+	// A belt block of one shape (belt.odin).
+	Belt,
 }
 
 @(rodata)
@@ -32,7 +34,26 @@ machine_kind_names := [Machine_Kind]string {
 	.Chest   = "chest",
 	.Furnace = "furnace",
 	.Capsule = "capsule",
+	.Belt    = "belt",
 }
+
+// The shape family a belt item places. Ramps become up or down and lifts
+// get their direction at placement (belt_placement.odin).
+Belt_Item_Shape :: enum u8 {
+	Flat,
+	Ramp,
+	Lift,
+}
+
+@(rodata)
+belt_item_shape_names := [Belt_Item_Shape]string {
+	.Flat = "flat",
+	.Ramp = "ramp",
+	.Lift = "lift",
+}
+
+// Line positions are in 1/256 block.
+BELT_UNITS_PER_BLOCK :: 256
 
 Machine_Footprint_Definition :: struct {
 	width:  int,
@@ -42,17 +63,19 @@ Machine_Footprint_Definition :: struct {
 
 // As written in the file, before references are resolved.
 Machine_Definition :: struct {
-	id:                   string,
-	name_key:             string,
-	item:                 string,
-	kind:                 string,
-	footprint:            Machine_Footprint_Definition,
-	slots:                int,
-	fuel_slots:           int,
-	input_slots:          int,
-	output_slots:         int,
-	speed:                f32,
-	fuel_power_kilowatts: f32,
+	id:                           string,
+	name_key:                     string,
+	item:                         string,
+	kind:                         string,
+	footprint:                    Machine_Footprint_Definition,
+	slots:                        int,
+	fuel_slots:                   int,
+	input_slots:                  int,
+	output_slots:                 int,
+	speed:                        f32,
+	fuel_power_kilowatts:         f32,
+	belt_shape:                   string,
+	belt_speed_blocks_per_second: f32,
 }
 
 Machines_File :: struct {
@@ -62,14 +85,17 @@ Machines_File :: struct {
 // footprint is x (width), y (height), z (depth) before rotation. Speed is
 // kept in percent and power in watts, so the tick works in integers.
 Machine :: struct {
-	id:               string,
-	name_key:         string,
-	item:             Item_Id,
-	kind:             Machine_Kind,
-	footprint:        [3]i32,
-	slot_count:       int,
-	speed_percent:    u32,
-	fuel_power_watts: u32,
+	id:                          string,
+	name_key:                    string,
+	item:                        Item_Id,
+	kind:                        Machine_Kind,
+	footprint:                   [3]i32,
+	slot_count:                  int,
+	speed_percent:               u32,
+	fuel_power_watts:            u32,
+	belt_shape:                  Belt_Item_Shape,
+	// In 1/256 block per second; the belt tick divides by the tick rate.
+	belt_speed_units_per_second: u32,
 }
 
 Machine_Registry :: struct {
@@ -124,6 +150,8 @@ validate_machine_kind_fields :: proc(definition: Machine_Definition, kind: Machi
 		if definition.speed <= 0 || definition.fuel_power_kilowatts <= 0 {
 			return fmt.tprintf("furnace %q needs a positive speed and fuel_power_kilowatts", definition.id)
 		}
+	case .Belt:
+		return validate_belt_definition(definition)
 	case .Capsule:
 		if definition.slots != CAPSULE_SLOT_COUNT {
 			return fmt.tprintf("capsule %q must have %d slots", definition.id, CAPSULE_SLOT_COUNT)
@@ -131,6 +159,29 @@ validate_machine_kind_fields :: proc(definition: Machine_Definition, kind: Machi
 		if definition.item != "" {
 			return fmt.tprintf("capsule %q cannot be placed by an item", definition.id)
 		}
+	}
+	return ""
+}
+
+parse_belt_item_shape :: proc(name: string) -> (shape: Belt_Item_Shape, found: bool) {
+	for candidate in Belt_Item_Shape {
+		if belt_item_shape_names[candidate] == name {
+			return candidate, true
+		}
+	}
+	return .Flat, false
+}
+
+validate_belt_definition :: proc(definition: Machine_Definition) -> string {
+	footprint := definition.footprint
+	if footprint.width != 1 || footprint.depth != 1 || footprint.height != 1 {
+		return fmt.tprintf("belt %q must have a 1 by 1 by 1 footprint", definition.id)
+	}
+	if _, found := parse_belt_item_shape(definition.belt_shape); !found {
+		return fmt.tprintf("belt %q has unknown belt_shape %q", definition.id, definition.belt_shape)
+	}
+	if definition.belt_speed_blocks_per_second <= 0 {
+		return fmt.tprintf("belt %q needs a positive belt_speed_blocks_per_second", definition.id)
 	}
 	return ""
 }
@@ -175,6 +226,7 @@ resolve_machine_item :: proc(definition: Machine_Definition, items: Item_Registr
 
 resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machine {
 	kind, _ := parse_machine_kind(definition.kind)
+	belt_shape, _ := parse_belt_item_shape(definition.belt_shape)
 	footprint := definition.footprint
 	return Machine {
 		id = definition.id,
@@ -185,6 +237,8 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 		slot_count = definition.slots,
 		speed_percent = u32(math.round(definition.speed * 100)),
 		fuel_power_watts = u32(math.round(definition.fuel_power_kilowatts * 1000)),
+		belt_shape = belt_shape,
+		belt_speed_units_per_second = u32(math.round(definition.belt_speed_blocks_per_second * BELT_UNITS_PER_BLOCK)),
 	}
 }
 

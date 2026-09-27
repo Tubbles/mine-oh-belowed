@@ -6,13 +6,16 @@ package game
 
 Placement :: struct {
 	// A machine is selected and the ray hit something to place it against.
-	shown:    bool,
-	valid:    bool,
-	machine:  Machine_Id,
-	origin:   World_Coordinate,
-	rotation: u8,
+	shown:      bool,
+	valid:      bool,
+	machine:    Machine_Id,
+	origin:     World_Coordinate,
+	rotation:   u8,
 	// Rotated footprint, x y z.
-	size:     [3]i32,
+	size:       [3]i32,
+	// A belt: rotation is its direction (belt_placement.odin).
+	belt:       bool,
+	belt_shape: Belt_Shape,
 }
 
 // The footprint's minimum corner, so that it starts at the cell in front
@@ -89,6 +92,9 @@ placement_for_player :: proc(world: ^World, content: Simulation_Content, players
 	if machine == NO_MACHINE || !player.target.hit {
 		return {}
 	}
+	if content.machines.machines[machine].kind == .Belt {
+		return belt_placement_for_player(world, content, player, machine)
+	}
 	footprint := content.machines.machines[machine].footprint
 	size := rotated_footprint_size(footprint, player.placement_rotation)
 	origin := footprint_origin(player.target.adjacent, player.target.face, size)
@@ -104,9 +110,13 @@ placement_for_player :: proc(world: ^World, content: Simulation_Content, players
 }
 
 // Rotate_Building turns the ghost a quarter turn; Place puts the machine
-// down and uses up one item.
-place_entity_with_player :: proc(world: ^World, content: Simulation_Content, players: []Player, index: int, just_pressed: Action_Set) {
+// down and uses up one item. Belts also follow the held Place.
+place_entity_with_player :: proc(world: ^World, content: Simulation_Content, players: []Player, index: int, just_pressed, pressed: Action_Set) {
 	player := &players[index]
+	if machine := selected_placed_machine(player^, content.machines); content.machines.machines[machine].kind == .Belt {
+		place_belt_with_player(world, content, players, index, machine, just_pressed, pressed)
+		return
+	}
 	if .Rotate_Building in just_pressed {
 		player.placement_rotation = (player.placement_rotation + 1) % 4
 	}
@@ -138,6 +148,7 @@ pick_up_entity :: proc(world: ^World, content: Simulation_Content, player: ^Play
 	machine_item := content.machines.machines[common.machine].item
 	returned := make([dynamic]Item_Stack, context.temp_allocator)
 	append(&returned, ..entity_slots(&world.entities, handle))
+	append(&returned, ..belt_block_stacks(&world.entities, handle))
 	append(&returned, Item_Stack{item = machine_item, count = 1})
 	if !inventory_fits_all(player.inventory, content.items, returned[:]) {
 		return false

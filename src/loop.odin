@@ -64,6 +64,7 @@ Frame_State :: struct {
 	generator:          Generator,
 	streaming:          Chunk_Streaming,
 	renderer:           Chunk_Renderer,
+	belt_renderer:      Belt_Renderer,
 	show_diagnostics:   bool,
 	debug_edit_counter: u64,
 }
@@ -206,6 +207,9 @@ apply_debug_actions :: proc(state: ^Frame_State) {
 		eye := player_eye(state.simulation.players[0].position)
 		debug_remove_block(&state.simulation.world, state.registry, eye, state.debug_edit_counter)
 	}
+	if .Debug_Drop_Item in state.input.just_pressed {
+		debug_drop_item_on_belt(&state.simulation.world, frame_simulation_content(state), state.simulation.players[0])
+	}
 }
 
 // The UI runs in render_frame, so the screen stack read here is the one the
@@ -249,6 +253,7 @@ render_frame :: proc(state: ^Frame_State, config: Game_Config) {
 	rl.BeginMode3D(camera)
 	draw_chunks(&state.renderer, camera)
 	draw_entities(&state.simulation.world, state.machines)
+	draw_belts(&state.belt_renderer, &state.simulation.world, state.items, state.machines, state.simulation.tick, alpha, state.simulation.tick_rate)
 	draw_player_world_overlay(&state.simulation.world, frame_simulation_content(state), state.simulation.players[:], 0, alpha)
 	rl.EndMode3D()
 	if state.show_diagnostics {
@@ -376,6 +381,8 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, content: Gam
 	}
 	defer destroy_simulation(&state.simulation)
 	defer destroy_chunk_renderer(&state.renderer)
+	state.belt_renderer = init_belt_renderer(content.machines)
+	defer destroy_belt_renderer(&state.belt_renderer)
 	if start.debug_terrain {
 		terrain_blocks, terrain_ok := resolve_debug_terrain_blocks(registry)
 		if !terrain_ok {

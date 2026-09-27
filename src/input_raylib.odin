@@ -75,6 +75,7 @@ key_bindings := [?]Key_Binding {
 	{.V, .Toggle_Camera_Mode},
 	{.F3, .Toggle_Diagnostics},
 	{.F5, .Debug_Remove_Block},
+	{.F7, .Debug_Drop_Item},
 	{.F6, .Toggle_Fly_Mode},
 	{.UP, .Navigate_Up},
 	{.DOWN, .Navigate_Down},

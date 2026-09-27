@@ -11,6 +11,10 @@ How items move without hands: belts, inserters, splitters and the burner mining 
 - Placement: rotation sets the direction, and holding Place while moving the reticle drags a run of belts along the path with automatic turns and ramps where the ground steps by one, so long runs do not cost one button press per block on a gamepad. A belt placed into an existing run re orients to continue it.
 - Rendering: one mesh per belt shape with a scrolling texture for the surface, items drawn as small instanced cubes at their line positions, at most eight per belt block.
 
+### As implemented in 0014
+
+- Belt direction on placement is relative to the player's facing turned by the rotation (rotation 0 points away from the player). Lifts have eight rotations, four to seven placing a down lift; an up lift exits forward and one block up. Ramps and lifts accept items straight on only. Only the flat belt drags; automatic ramps consume a ramp item from the inventory and without one the run breaks at the step. A placed belt rotates with Rotate while no machine item is selected. Loop lanes are advanced as a whole so a full loop keeps moving. Lifts do not carry the player and ramps are not walkable slopes yet. All lines are rebuilt on any belt change, from per cell item records that double as the save form. Items are drawn one cube each, not instanced.
+
 ## Inserters
 
 - A 1 by 1 by 1 entity with a direction. It picks up from the cell behind it and drops into the cell in front of it, with the arrow showing the drop side. One item at a time in the alpha.

@@ -101,6 +101,10 @@ mining_matches_target :: proc(mining: Mining_State, target: Raycast_Hit) -> bool
 // A translucent box for a machine ghost, one cube for a block.
 draw_placement_preview :: proc(world: ^World, content: Simulation_Content, players: []Player, index: int) {
 	placement := placement_for_player(world, content, players, index)
+	if placement.shown && placement.belt {
+		draw_belt_ghost(placement, placement.valid ? GHOST_VALID_COLOR : GHOST_INVALID_COLOR)
+		return
+	}
 	if placement.shown {
 		extent := [3]f32{f32(placement.size.x), f32(placement.size.y), f32(placement.size.z)}
 		rl.DrawCubeV(box_centre(placement.origin, placement.size), extent, placement.valid ? GHOST_VALID_COLOR : GHOST_INVALID_COLOR)

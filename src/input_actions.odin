@@ -44,6 +44,8 @@ Action :: enum u8 {
 	// Developer actions, keyboard only.
 	Toggle_Diagnostics,
 	Debug_Remove_Block,
+	// F7: one iron plate onto the targeted belt.
+	Debug_Drop_Item,
 	Toggle_Fly_Mode,
 }
 

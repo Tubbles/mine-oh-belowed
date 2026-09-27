@@ -148,9 +148,15 @@ selected_placed_block :: proc(player: Player, items: Item_Registry) -> Block_Id 
 	return item_places_block(items, stack.item)
 }
 
-place_with_player :: proc(world: ^World, content: Simulation_Content, players: []Player, index: int, just_pressed: Action_Set) {
+// pressed is the held state, for dragging belts.
+place_with_player :: proc(world: ^World, content: Simulation_Content, players: []Player, index: int, just_pressed: Action_Set, pressed := Action_Set{}) {
 	if selected_placed_machine(players[index], content.machines) != NO_MACHINE {
-		place_entity_with_player(world, content, players, index, just_pressed)
+		place_entity_with_player(world, content, players, index, just_pressed, pressed)
+		return
+	}
+	players[index].belt_drag = {}
+	if .Rotate_Building in just_pressed && players[index].target.entity.kind == .Belt {
+		rotate_targeted_belt(world, content, &players[index])
 		return
 	}
 	place_block_with_player(world, content.blocks, content.items, players, index, just_pressed)
