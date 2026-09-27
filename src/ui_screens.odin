@@ -18,6 +18,7 @@ Screen_Context :: struct {
 	item_sort_ranks: []u16,
 	world:           ^World,
 	machines:        Machine_Registry,
+	veins:           Vein_Content,
 	tick_rate:       int,
 	recipes:         Recipe_Registry,
 	technologies:    Technology_Registry,

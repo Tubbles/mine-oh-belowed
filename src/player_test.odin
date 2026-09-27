@@ -249,6 +249,7 @@ make_generated_world :: proc(generator: ^Generator, centre: Chunk_Coordinate) ->
 				generated := generate_chunk(generator, centre + {x, y, z})
 				world.chunks[generated.chunk.coordinate] = generated.chunk
 				delete(generated.veins)
+				delete(generated.outcrops)
 			}
 		}
 	}

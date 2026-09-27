@@ -4,8 +4,9 @@ import "core:math"
 import rl "vendor:raylib"
 
 // Placeholder entity models: a coloured cube per footprint cell, with a
-// brighter top layer on a burning furnace, and for inserters a post with an
-// arm that turns with the cycle. Real models come with the art pass.
+// brighter top layer on a burning furnace, for inserters a post with an
+// arm that turns with the cycle, and for drills a darker top with a
+// turning bar and the output arrow. Real models come with the art pass.
 
 CHEST_COLOR :: rl.Color{130, 88, 48, 255}
 FURNACE_COLOR :: rl.Color{120, 120, 124, 255}
@@ -22,6 +23,14 @@ INSERTER_PIVOT_HEIGHT :: 0.45
 INSERTER_ARM_LENGTH :: 0.7
 INSERTER_ARM_RADIUS :: 0.05
 INSERTER_HELD_ITEM_SIZE :: 0.2
+DRILL_COLOR :: rl.Color{150, 120, 70, 255}
+DRILL_TOP_COLOR :: rl.Color{95, 75, 45, 255}
+DRILL_BIT_COLOR :: rl.Color{200, 200, 205, 255}
+DRILL_ARROW_COLOR :: rl.Color{240, 220, 80, 255}
+DRILL_BIT_LENGTH :: 0.8
+DRILL_BIT_RADIUS :: 0.08
+// Turns of the bit per drill cycle.
+DRILL_BIT_TURNS_PER_CYCLE :: 4
 
 box_centre :: proc(minimum: World_Coordinate, size: [3]i32) -> [3]f32 {
 	return {f32(minimum.x) + f32(size.x) / 2, f32(minimum.y) + f32(size.y) / 2, f32(minimum.z) + f32(size.z) / 2}
@@ -68,6 +77,29 @@ draw_inserter :: proc(inserter: Inserter, machine: Machine, items: Item_Registry
 	}
 }
 
+// A bar across the top that turns with the cycle while the drill mines,
+// and the output arrow on the top face.
+draw_drill :: proc(drill: Drill, machine: Machine, machines: Machine_Registry, tick_rate: int) {
+	draw_entity_cells(drill.common, machines, DRILL_COLOR, DRILL_TOP_COLOR)
+	centre := box_centre(drill.origin, drill.size)
+	top := centre + {0, f32(drill.size.y) / 2 + 0.02, 0}
+	angle := drill_progress_fraction(drill, machine, tick_rate) * DRILL_BIT_TURNS_PER_CYCLE * 2 * math.PI
+	half := [3]f32{math.cos(angle), 0, math.sin(angle)} * DRILL_BIT_LENGTH / 2
+	rl.DrawCylinderEx(top - half, top + half, DRILL_BIT_RADIUS, DRILL_BIT_RADIUS, 6, DRILL_BIT_COLOR)
+	draw_drill_arrow(drill.origin, drill.size, drill.rotation, top.y, DRILL_ARROW_COLOR)
+}
+
+// From the footprint's centre to the side the output drops from, with a
+// small cube at the tip.
+draw_drill_arrow :: proc(origin: World_Coordinate, size: [3]i32, rotation: u8, height: f32, color: rl.Color) {
+	centre := box_centre(origin, size)
+	centre.y = height
+	forward := belt_direction_vector(rotation)
+	tip := centre + forward * (f32(size.x) / 2)
+	rl.DrawLine3D(centre, tip, color)
+	rl.DrawCubeV(tip, {0.12, 0.12, 0.12}, color)
+}
+
 // Between BeginMode3D and EndMode3D, after the chunks.
 draw_entities :: proc(world: ^World, machines: Machine_Registry, items: Item_Registry, tick_rate: int) {
 	for chest in world.entities.chests.entries {
@@ -89,6 +121,11 @@ draw_entities :: proc(world: ^World, machines: Machine_Registry, items: Item_Reg
 	for inserter in world.entities.inserters.entries {
 		if inserter.alive {
 			draw_inserter(inserter, machines.machines[inserter.machine], items, tick_rate)
+		}
+	}
+	for drill in world.entities.drills.entries {
+		if drill.alive {
+			draw_drill(drill, machines.machines[drill.machine], machines, tick_rate)
 		}
 	}
 }

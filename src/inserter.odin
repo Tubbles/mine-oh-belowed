@@ -11,7 +11,9 @@ package game
 // inserter moves exactly its rate. An arm that arrives at the drop and
 // finds no room waits there with the item in hand. A burner inserter
 // burns fuel only on the ticks its arm moves; electric ones stay
-// unpowered until power exists (M4).
+// unpowered until power exists (M4). A burner with an empty buffer and an
+// empty fuel slot feeds itself: fuel it is about to pick, or fuel in its
+// hand, goes into its own fuel slot instead of on to the target.
 
 INSERTER_SLOT_COUNT :: 1
 INSERTER_FUEL_SLOT :: 0
@@ -142,8 +144,34 @@ burn_inserter_fuel :: proc(inserter: ^Inserter, machine: Machine, items: Item_Re
 	return true
 }
 
+// A burner out of fuel with an empty fuel slot may take a fuel item for
+// itself.
+inserter_can_feed_itself :: proc(inserter: Inserter, item: Item_Id, items: Item_Registry) -> bool {
+	return inserter.slot_count > 0 && stack_is_empty(inserter.slots[INSERTER_FUEL_SLOT]) && item_is_fuel(items, item)
+}
+
+// The fuel item it was about to pick goes into its fuel slot.
+feed_inserter_from_source :: proc(entities: ^Entities, content: Simulation_Content, inserter: ^Inserter, source: Entity_Handle, item: Item_Id) -> bool {
+	if !inserter_can_feed_itself(inserter^, item, content.items) {
+		return false
+	}
+	inserter.slots[INSERTER_FUEL_SLOT] = entity_extract(entities, content, source, item, 1)
+	return !stack_is_empty(inserter.slots[INSERTER_FUEL_SLOT])
+}
+
+// The fuel item in its hand goes into its fuel slot; the arm then swings
+// on empty handed.
+feed_inserter_from_hand :: proc(inserter: ^Inserter, items: Item_Registry) -> bool {
+	if stack_is_empty(inserter.held) || !inserter_can_feed_itself(inserter^, inserter.held.item, items) {
+		return false
+	}
+	inserter.slots[INSERTER_FUEL_SLOT] = inserter.held
+	inserter.held = EMPTY_STACK
+	return true
+}
+
 // Nothing to pick leaves the arm idle over the pickup cell; with an item
-// but no fuel it does not pick at all.
+// but no fuel it does not pick at all, unless it can feed itself.
 pick_with_inserter :: proc(entities: ^Entities, content: Simulation_Content, inserter: ^Inserter, machine: Machine, tick_rate: int) {
 	if inserter_has_filter(machine) && inserter.filter == NO_ITEM {
 		inserter.state = .No_Filter
@@ -157,8 +185,14 @@ pick_with_inserter :: proc(entities: ^Entities, content: Simulation_Content, ins
 		return
 	}
 	if !inserter_can_move(inserter^, machine, content.items, tick_rate) {
-		inserter.state = .No_Fuel
-		return
+		if !feed_inserter_from_source(entities, content, inserter, source, item) {
+			inserter.state = .No_Fuel
+			return
+		}
+		if item = inserter_pickable_item(entities, content, source, target, inserter.filter); item == NO_ITEM {
+			inserter.state = .Idle
+			return
+		}
 	}
 	inserter.held = entity_extract(entities, content, source, item, 1)
 	inserter.phase, inserter.phase_ticks, inserter.state = .Swinging_To_Drop, 0, .Moving
@@ -178,7 +212,11 @@ drop_with_inserter :: proc(entities: ^Entities, content: Simulation_Content, ins
 // One tick of movement; out of fuel the arm stops where it is. Arriving
 // at either end picks or drops in the same tick.
 swing_inserter :: proc(entities: ^Entities, content: Simulation_Content, inserter: ^Inserter, machine: Machine, tick_rate: int) {
-	if !burn_inserter_fuel(inserter, machine, content.items, tick_rate) {
+	burned := burn_inserter_fuel(inserter, machine, content.items, tick_rate)
+	if !burned && feed_inserter_from_hand(inserter, content.items) {
+		burned = burn_inserter_fuel(inserter, machine, content.items, tick_rate)
+	}
+	if !burned {
 		inserter.state = .No_Fuel
 		return
 	}

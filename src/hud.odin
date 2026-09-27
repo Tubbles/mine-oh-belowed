@@ -1,7 +1,8 @@
 package game
 
 // The world HUD, drawn through the UI draw list under any open screen:
-// crosshair, the targeted entity's name and state, hotbar with the held
+// crosshair, the targeted entity's name and state (and the vein of a
+// targeted drill or outcrop block), hotbar with the held
 // item's name, the hotbar radial, the active quest objective (top right,
 // ui_journal.odin) and the glyph bar. Targeted block names come later.
 
@@ -124,13 +125,14 @@ draw_hotbar_radial :: proc(state: ^Ui_State, hotbar: []Item_Stack, items: Item_R
 	}
 }
 
-// Below the crosshair.
-draw_target_status :: proc(state: ^Ui_State, status: string) {
+// Below the crosshair, the second line under the first.
+draw_target_status :: proc(state: ^Ui_State, status: string, line: int = 0) {
 	if status == "" {
 		return
 	}
 	centre := state.screen_units / 2
-	area := Ui_Rectangle{0, centre.y + CROSSHAIR_SIZE + UI_GAP, state.screen_units.x, UI_ROW_HEIGHT}
+	top := centre.y + CROSSHAIR_SIZE + UI_GAP + f32(line) * UI_ROW_HEIGHT
+	area := Ui_Rectangle{0, top, state.screen_units.x, UI_ROW_HEIGHT}
 	draw_text(state, area, status, UI_BODY_TEXT_SIZE, .Centre)
 }
 
@@ -144,8 +146,9 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		return
 	}
 	draw_quest_objective(state, screen_context)
-	status := entity_status_text(screen_context.world, screen_context.machines, player.target.entity)
+	status, vein_status := target_status_lines(screen_context.world, screen_context.machines, screen_context.veins, player.target)
 	draw_target_status(state, status)
+	draw_target_status(state, vein_status, status == "" ? 0 : 1)
 	hotbar_radial(state, player, items)
 	if entity_has_panel(&screen_context.world.entities, player.target.entity) {
 		hints := [?]Glyph_Hint{{.Interact, text("hint_open")}, {.Inventory, text("hint_inventory")}, {.Pause, text("hint_pause")}}

@@ -2,16 +2,18 @@ package game
 
 import "base:runtime"
 
-// A generated chunk and the veins whose footprint overlaps its chunk
-// column. The main thread registers the veins when it inserts the chunk.
+// A generated chunk, the veins whose footprint overlaps its chunk column
+// and the outcrop cells inside the chunk. The main thread registers the
+// veins and the outcrop cells when it inserts the chunk.
 Generated_Chunk :: struct {
-	chunk: ^Chunk,
-	veins: [dynamic]Vein,
+	chunk:    ^Chunk,
+	veins:    [dynamic]Vein,
+	outcrops: [dynamic]Outcrop_Cell,
 }
 
 // The whole generation of one chunk: a pure function of the generator (its
 // seed and tables) and the chunk coordinate. Safe on any thread.
-generate_chunk_blocks :: proc(generator: ^Generator, chunk: ^Chunk) {
+generate_chunk_blocks :: proc(generator: ^Generator, chunk: ^Chunk, outcrops: ^[dynamic]Outcrop_Cell) {
 	runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
 	origin := chunk_origin(chunk.coordinate)
 	if origin.y > GENERATION_CEILING {
@@ -43,7 +45,7 @@ generate_chunk_blocks :: proc(generator: ^Generator, chunk: ^Chunk) {
 	nearby_veins := veins_near_box(generator, minimum, minimum + CHUNK_SIZE - 1 + 2 * FEATURE_REACH, context.temp_allocator)
 	trees := chunk_trees(generator, chunk.coordinate, nearby_veins[:], context.temp_allocator)
 	boulders := chunk_boulders(generator, chunk.coordinate, nearby_veins[:], context.temp_allocator)
-	apply_outcrops(generator, chunk, columns, nearby_veins[:])
+	apply_outcrops(generator, chunk, columns, nearby_veins[:], outcrops)
 	apply_features(generator, chunk, trees[:], boulders[:])
 	apply_landing_pad(generator.landing_pad, generator.blocks.landing_pad, chunk)
 	open := new(Open_Columns, context.temp_allocator)
@@ -90,6 +92,7 @@ generate_chunk :: proc(generator: ^Generator, coordinate: Chunk_Coordinate, allo
 	chunk := new(Chunk, allocator)
 	chunk.coordinate = coordinate
 	chunk.dirty = true
-	generate_chunk_blocks(generator, chunk)
-	return Generated_Chunk{chunk = chunk, veins = column_veins(generator, chunk_column_of(coordinate), allocator)}
+	outcrops := make([dynamic]Outcrop_Cell, allocator)
+	generate_chunk_blocks(generator, chunk, &outcrops)
+	return Generated_Chunk{chunk = chunk, veins = column_veins(generator, chunk_column_of(coordinate), allocator), outcrops = outcrops}
 }

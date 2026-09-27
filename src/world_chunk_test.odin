@@ -77,6 +77,13 @@ make_test_world :: proc(coordinates: []Chunk_Coordinate) -> World {
 	world.entities.belts.free = make([dynamic]u32, context.temp_allocator)
 	world.entities.inserters.entries = make([dynamic]Inserter, context.temp_allocator)
 	world.entities.inserters.free = make([dynamic]u32, context.temp_allocator)
+	world.entities.drills.entries = make([dynamic]Drill, context.temp_allocator)
+	world.entities.drills.free = make([dynamic]u32, context.temp_allocator)
+	world.veins = make([dynamic]Vein, context.temp_allocator)
+	world.vein_indices = make(map[Vein_Id]int, context.temp_allocator)
+	world.column_veins = make(map[Chunk_Column][dynamic]Vein_Id, context.temp_allocator)
+	world.outcrop_cells = make(map[World_Coordinate]Vein_Id, context.temp_allocator)
+	world.spent_outcrops = make([dynamic]World_Coordinate, context.temp_allocator)
 	world.entities.belt_network.allocator = context.temp_allocator
 	for coordinate in coordinates {
 		chunk := new(Chunk, context.temp_allocator)

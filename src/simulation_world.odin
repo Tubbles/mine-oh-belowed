@@ -12,6 +12,7 @@ Simulation_Content :: struct {
 	machines: Machine_Registry,
 	recipes:  Recipe_Registry,
 	quests:   Quest_Registry,
+	veins:    Vein_Content,
 }
 
 apply_block_changes :: proc(world: ^World, registry: Block_Registry, tick: u64) {

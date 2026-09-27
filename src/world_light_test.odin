@@ -225,8 +225,9 @@ test_report_light_settling_on_generated_terrain :: proc(t: ^testing.T) {
 		for x in i32(-2) ..= 2 {
 			for y in i32(-1) ..= 2 {
 				generated := generate_chunk(&generator, {x, y, z})
-				insert_generated_chunk(&world, Chunk_Job_Result{kind = .Generate, coordinate = {x, y, z}, chunk = generated.chunk, veins = generated.veins})
+				insert_generated_chunk(&world, Chunk_Job_Result{kind = .Generate, coordinate = {x, y, z}, chunk = generated.chunk, veins = generated.veins, outcrops = generated.outcrops})
 				delete(generated.veins)
+				delete(generated.outcrops)
 			}
 		}
 	}

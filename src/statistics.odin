@@ -24,6 +24,8 @@ Machine_Stall :: enum u8 {
 	Output_Full,
 	Inserter_Out_Of_Fuel,
 	Inserter_Waiting_For_Room,
+	Drill_Out_Of_Fuel,
+	Drill_Waiting_For_Room,
 }
 
 Statistics :: struct {
@@ -47,6 +49,8 @@ Statistics :: struct {
 	// Summed over inserters: ticks one stood at its pickup cell with
 	// nothing it could pick.
 	inserter_idle_ticks:         u64,
+	// Finite veins drills drained to the last unit.
+	veins_exhausted:             u64,
 	// Mining, placing, picking up and opening a machine. hands_off
 	// sustain objectives break when this changes.
 	world_actions:               u64,
@@ -188,12 +192,18 @@ record_furnace_tick :: proc(statistics: ^Statistics, before, after: Furnace) {
 	}
 }
 
-// Like record_furnace_tick: fuel burned from the slot, idle ticks, and a
-// stall when the inserter enters it.
+// A fuel item was lit when the buffer grew: lighting adds a whole item's
+// joules, far more than one tick burns. Unlike a slot count difference
+// this also sees an item an inserter fed itself and burned in one tick.
+fuel_item_lit :: proc(joules_before, joules_after: u32) -> bool {
+	return joules_after > joules_before
+}
+
+// Like record_furnace_tick: fuel burned, idle ticks, and a stall when the
+// inserter enters it.
 record_inserter_tick :: proc(statistics: ^Statistics, before, after: Inserter) {
-	fuel_before, fuel_after := before.slots[INSERTER_FUEL_SLOT], after.slots[INSERTER_FUEL_SLOT]
-	if fuel_after.count < fuel_before.count {
-		statistics.fuel_burned += u64(fuel_before.count - fuel_after.count)
+	if fuel_item_lit(before.fuel_joules, after.fuel_joules) {
+		statistics.fuel_burned += 1
 	}
 	if after.state == .Idle {
 		statistics.inserter_idle_ticks += 1
@@ -283,4 +293,21 @@ snapshot_capsule :: proc(statistics: ^Statistics, slots: []Item_Stack) {
 		total = 0
 	}
 	total_stacks(statistics.capsule_totals, slots)
+}
+
+// Fuel burned, and a stall when the drill enters it. What the drill
+// produces is recorded where it leaves the drill (output_drill_item).
+record_drill_tick :: proc(statistics: ^Statistics, before, after: Drill) {
+	if fuel_item_lit(before.fuel_joules, after.fuel_joules) {
+		statistics.fuel_burned += 1
+	}
+	if after.state == before.state {
+		return
+	}
+	#partial switch after.state {
+	case .No_Fuel:
+		statistics.stalls[.Drill_Out_Of_Fuel] += 1
+	case .Waiting_For_Room:
+		statistics.stalls[.Drill_Waiting_For_Room] += 1
+	}
 }

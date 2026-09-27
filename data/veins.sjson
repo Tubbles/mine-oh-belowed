@@ -13,6 +13,8 @@
 // grows by one block per richness_distance, at most maximum_radius_growth.
 richness_distance = 2048
 maximum_radius_growth = 3
+// What the outcrop of an exhausted finite vein turns into (work item 0016).
+spent_block = "spent_rock"
 
 size_classes = [
 	{
@@ -50,10 +52,12 @@ size_classes = [
 // weight: relative chance among the types allowed in the biome at the vein
 // centre. biomes: biome ids the type may appear in, empty for everywhere.
 // outcrop_blocks: the surface blocks of the footprint, alternating in a
-// checkerboard when there are several.
+// checkerboard when there are several. name_key: the vein type's name in
+// data/strings/en.sjson. outputs: the ore items a drill draws, by percent.
 vein_types = [
 	{
 		id = "iron"
+		name_key = "vein_type_iron"
 		weight = 30
 		biomes = []
 		outcrop_blocks = ["hematite_ore"]
@@ -61,6 +65,7 @@ vein_types = [
 	}
 	{
 		id = "copper"
+		name_key = "vein_type_copper"
 		weight = 25
 		biomes = []
 		outcrop_blocks = ["chalcopyrite_ore"]
@@ -68,6 +73,7 @@ vein_types = [
 	}
 	{
 		id = "coal"
+		name_key = "vein_type_coal"
 		weight = 25
 		biomes = ["plains", "hills"]
 		outcrop_blocks = ["coal_ore"]
@@ -75,6 +81,7 @@ vein_types = [
 	}
 	{
 		id = "mixed"
+		name_key = "vein_type_mixed"
 		weight = 10
 		biomes = ["hills"]
 		outcrop_blocks = ["hematite_ore", "chalcopyrite_ore"]
@@ -82,6 +89,7 @@ vein_types = [
 	}
 	{
 		id = "quarry"
+		name_key = "vein_type_quarry"
 		weight = 10
 		biomes = []
 		outcrop_blocks = ["stone"]

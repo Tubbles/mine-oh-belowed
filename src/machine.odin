@@ -30,6 +30,8 @@ Machine_Kind :: enum u8 {
 	// Moves one item at a time from the cell behind it to the cell in
 	// front (inserter.odin).
 	Inserter,
+	// Taps the reservoir of the vein under it (drill.odin).
+	Drill,
 }
 
 @(rodata)
@@ -39,6 +41,7 @@ machine_kind_names := [Machine_Kind]string {
 	.Capsule  = "capsule",
 	.Belt     = "belt",
 	.Inserter = "inserter",
+	.Drill    = "drill",
 }
 
 // The shape family a belt item places. Ramps become up or down and lifts
@@ -83,6 +86,7 @@ Machine_Definition :: struct {
 	items_per_minute:             int,
 	electric_power_kilowatts:     f32,
 	filter_slots:                 int,
+	rate_reference_ore_percent:   int,
 }
 
 Machines_File :: struct {
@@ -104,9 +108,12 @@ Machine :: struct {
 	// In 1/256 block per second; the belt tick divides by the tick rate.
 	belt_speed_units_per_second: u32,
 	// Inserters: the rate sets the cycle length (inserter_cycle_ticks).
+	// Drills: the ore rate on a vein of rate_reference_ore_percent ore
+	// (drill_cycle_ticks).
 	items_per_minute:            u32,
 	electric_power_watts:        u32,
 	filter_slot_count:           int,
+	rate_reference_ore_percent:  u32,
 }
 
 Machine_Registry :: struct {
@@ -165,6 +172,8 @@ validate_machine_kind_fields :: proc(definition: Machine_Definition, kind: Machi
 		return validate_belt_definition(definition)
 	case .Inserter:
 		return validate_inserter_definition(definition)
+	case .Drill:
+		return validate_drill_definition(definition)
 	case .Capsule:
 		if definition.slots != CAPSULE_SLOT_COUNT {
 			return fmt.tprintf("capsule %q must have %d slots", definition.id, CAPSULE_SLOT_COUNT)
@@ -227,6 +236,25 @@ validate_inserter_definition :: proc(definition: Machine_Definition) -> string {
 	return ""
 }
 
+// Square, so turning a placed drill moves no cell, with one fuel slot,
+// fuel power and a rate.
+validate_drill_definition :: proc(definition: Machine_Definition) -> string {
+	footprint := definition.footprint
+	if footprint.width != footprint.depth {
+		return fmt.tprintf("drill %q must have a square footprint", definition.id)
+	}
+	if definition.items_per_minute <= 0 || definition.rate_reference_ore_percent < 1 || definition.rate_reference_ore_percent > 100 {
+		return fmt.tprintf("drill %q needs a positive items_per_minute and rate_reference_ore_percent from 1 to 100", definition.id)
+	}
+	if definition.fuel_slots != 1 || definition.fuel_power_kilowatts <= 0 {
+		return fmt.tprintf("drill %q needs one fuel slot and a positive fuel_power_kilowatts", definition.id)
+	}
+	if definition.slots != 0 || definition.input_slots != 0 || definition.output_slots != 0 || definition.filter_slots != 0 {
+		return fmt.tprintf("drill %q may only have a fuel slot", definition.id)
+	}
+	return ""
+}
+
 // Checks the fields that need no item registry.
 validate_machine_definition :: proc(definitions: []Machine_Definition, index: int) -> string {
 	definition := definitions[index]
@@ -269,7 +297,7 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 	kind, _ := parse_machine_kind(definition.kind)
 	belt_shape, _ := parse_belt_item_shape(definition.belt_shape)
 	footprint := definition.footprint
-	slot_count := kind == .Inserter ? definition.fuel_slots : definition.slots
+	slot_count := kind == .Inserter || kind == .Drill ? definition.fuel_slots : definition.slots
 	return Machine {
 		id = definition.id,
 		name_key = definition.name_key,
@@ -284,6 +312,7 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 		items_per_minute = u32(max(definition.items_per_minute, 0)),
 		electric_power_watts = u32(math.round(definition.electric_power_kilowatts * 1000)),
 		filter_slot_count = definition.filter_slots,
+		rate_reference_ore_percent = u32(max(definition.rate_reference_ore_percent, 0)),
 	}
 }
 

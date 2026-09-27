@@ -35,6 +35,10 @@ How items move without hands: belts, inserters, splitters and the burner mining 
 - Several drills share one vein and drain it together. When a finite vein is exhausted the drill reports it, and the outcrop blocks turn to spent rock through the ordinary block change path so light and remeshing follow.
 - Ore grades (high and low) are phase 5 content; in M3 a drill produces plain ore items.
 
+### As implemented in 0016
+
+- The drill draws one unit per cycle. The cycle is tuned so an 80 percent ore vein yields 15 ore per minute (18.75 units per minute), so other vein types yield their own mix at the same unit rate. The draw is seeded by world seed, vein id and the vein's draw counter, independent of tick timing and of which drill draws. The drop cell is at ground level in front of the arrow side, on the arrow's left where a two wide side has no middle; a belt there receives on the lane facing the drill. Anything in the drop cell is a target, including another machine's fuel slot. Exhaustion turns the vein's recorded outcrop cells to spent rock one tick after they are loaded, so chunks loaded later follow. Burner inserters feed themselves from the fuel they are about to pick or already hold, and Rotate turns a placed inserter or drill.
+
 ## Item transfer
 
 One small interface per entity kind, so inserters and drills never know what they talk to: `entity_accepts(handle, item) -> (slot, ok)`, `entity_insert(handle, stack) -> leftover`, `entity_extract(handle, filter) -> Item_Stack`. Belts implement the same three against a lane position instead of a slot. Chests, furnaces and the capsule implement them over their slots with the slot filters from 0011.

@@ -11,6 +11,9 @@ MACHINE_CHEST_COLUMNS :: 8
 MACHINE_BAR_WIDTH :: 160
 MACHINE_BAR_HEIGHT :: 20
 FURNACE_AREA_WIDTH :: 2 * UI_SLOT_SIZE + MACHINE_BAR_WIDTH + 2 * UI_GAP
+DRILL_AREA_WIDTH :: 480
+// The vein's name, a line per output, the rate and the state.
+DRILL_TEXT_ROWS :: 3 + MAXIMUM_VEIN_OUTPUTS
 
 // The machine's slot indices plus the filter slot of a filter inserter,
 // which is not one of the slots.
@@ -36,7 +39,7 @@ machine_slot_filters :: proc(kind: Machine_Kind, slot_count: int) -> []Slot_Filt
 		filters[FURNACE_FUEL_SLOT] = .Fuel
 		filters[FURNACE_INPUT_SLOT] = .Smeltable
 		filters[FURNACE_OUTPUT_SLOT] = .Output
-	case .Inserter:
+	case .Inserter, .Drill:
 		for &filter in filters {
 			filter = .Fuel
 		}
@@ -102,6 +105,8 @@ machine_area_size :: proc(kind: Machine_Kind, slot_count: int) -> [2]f32 {
 		return {FURNACE_AREA_WIDTH, UI_ROW_HEIGHT + 2 * (UI_SLOT_SIZE + UI_GAP) + UI_ROW_HEIGHT}
 	case .Inserter:
 		return {FURNACE_AREA_WIDTH, UI_ROW_HEIGHT + (UI_SLOT_SIZE + UI_GAP) + 2 * UI_ROW_HEIGHT}
+	case .Drill:
+		return {DRILL_AREA_WIDTH, UI_ROW_HEIGHT + (UI_SLOT_SIZE + UI_GAP) + (1 + DRILL_TEXT_ROWS) * UI_ROW_HEIGHT}
 	case .Belt:
 	}
 	return {}
@@ -169,6 +174,60 @@ inserter_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, inserter: Ins
 	return result
 }
 
+// The fuel slot and burn bar on the first row, the cycle bar, then the
+// vein's lines, the rate and the state.
+drill_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, drill: Drill, screen_context: Screen_Context) -> Slot_Grid_Result {
+	result := Slot_Grid_Result{activated = -1, focused = -1}
+	machine := screen_context.machines.machines[drill.machine]
+	content := area
+	first := cut_top(&content, UI_SLOT_SIZE + UI_GAP)
+	slots := drill.slots
+	machine_slot(state, {first.x, first.y, UI_SLOT_SIZE, UI_SLOT_SIZE}, DRILL_FUEL_SLOT, slots[:], screen_context.items, &result)
+	machine_bar(state, {first.x + UI_SLOT_SIZE + UI_GAP, first.y, MACHINE_BAR_WIDTH, UI_SLOT_SIZE}, drill_burn_fraction(drill))
+	machine_bar(state, cut_top(&content, UI_ROW_HEIGHT), drill_progress_fraction(drill, machine, screen_context.tick_rate))
+	for line in drill_vein_lines(screen_context.world, screen_context.veins, screen_context.items, drill) {
+		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), line, UI_BODY_TEXT_SIZE, .Left)
+	}
+	rate := fmt.tprintf("%s: %s", text("drill_rate"), format_per_minute(drill_units_per_minute(machine, screen_context.tick_rate)))
+	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), rate, UI_BODY_TEXT_SIZE, .Left)
+	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text(drill_state_keys[drill.state]), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	return result
+}
+
+// The vein type's name, then what is left of each output, or one line
+// saying the vein is infinite. Empty for a drill without a vein.
+drill_vein_lines :: proc(world: ^World, veins: Vein_Content, items: Item_Registry, drill: Drill) -> []string {
+	lines := make([dynamic]string, context.temp_allocator)
+	vein := registered_vein(world, drill.vein)
+	if vein == nil || vein.type >= len(veins.types) {
+		return lines[:]
+	}
+	vein_type := veins.types[vein.type]
+	append(&lines, text(vein_type.name_key))
+	if world.settings.veins_infinite {
+		append(&lines, text("drill_infinite"))
+		return lines[:]
+	}
+	for index in 0 ..< vein_type.output_count {
+		name := item_name(items, vein_type.outputs[index])
+		append(&lines, fmt.tprintf("%s: %d %s", name, vein.remaining[index], text("drill_remaining")))
+	}
+	return lines[:]
+}
+
+// The vein's name and what is left of it in total, for the HUD.
+vein_status_text :: proc(world: ^World, veins: Vein_Content, id: Vein_Id) -> string {
+	vein := registered_vein(world, id)
+	if vein == nil || vein.type >= len(veins.types) {
+		return ""
+	}
+	name := text(veins.types[vein.type].name_key)
+	if world.settings.veins_infinite {
+		return fmt.tprintf("%s  %s", name, text("drill_infinite"))
+	}
+	return fmt.tprintf("%s  %d %s", name, vein_remaining_total(vein^), text("drill_remaining"))
+}
+
 // A with a stack held copies its item into the filter and the stack stays
 // held (a ghost); the context action clears it.
 inserter_filter_after_input :: proc(filter: Item_Id, held: Item_Stack, activated, clear: bool) -> Item_Id {
@@ -193,6 +252,8 @@ machine_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, handle: Entity
 		return {grid = furnace_slot_region(state, content, pool_get(&screen_context.world.entities.furnaces, handle)^, screen_context)}
 	case .Inserter:
 		return inserter_slot_region(state, content, pool_get(&screen_context.world.entities.inserters, handle)^, screen_context)
+	case .Drill:
+		return {grid = drill_slot_region(state, content, pool_get(&screen_context.world.entities.drills, handle)^, screen_context)}
 	}
 	return {grid = ui_slot_grid(state, {content.x, content.y}, "chest", MACHINE_CHEST_COLUMNS, slots, screen_context.items)}
 }
@@ -295,6 +356,27 @@ entity_status_text :: proc(world: ^World, machines: Machine_Registry, handle: En
 	case .Inserter:
 		inserter := pool_get(&world.entities.inserters, handle)
 		return fmt.tprintf("%s  %s", name, text(inserter_state_keys[inserter.state]))
+	case .Drill:
+		drill := pool_get(&world.entities.drills, handle)
+		return fmt.tprintf("%s  %s", name, text(drill_state_keys[drill.state]))
 	}
 	return name
+}
+
+// What the HUD shows under the crosshair: the targeted entity's name and
+// state, and for a drill or an outcrop block the vein and what is left.
+target_status_lines :: proc(world: ^World, machines: Machine_Registry, veins: Vein_Content, target: Raycast_Hit) -> (entity_line, vein_line: string) {
+	if drill := pool_get(&world.entities.drills, target.entity); drill != nil {
+		return entity_status_text(world, machines, target.entity), vein_status_text(world, veins, drill.vein)
+	}
+	if target.entity != NO_ENTITY {
+		return entity_status_text(world, machines, target.entity), ""
+	}
+	if !target.hit {
+		return "", ""
+	}
+	if vein, found := outcrop_vein_at(world, veins, target.block); found {
+		return "", vein_status_text(world, veins, vein)
+	}
+	return "", ""
 }

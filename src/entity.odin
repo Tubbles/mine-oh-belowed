@@ -20,6 +20,7 @@ Entity_Kind :: enum u8 {
 	Capsule,
 	Belt,
 	Inserter,
+	Drill,
 }
 
 // index is into the pool of `kind`. Generations start at 1, so the zero
@@ -69,6 +70,7 @@ Entities :: struct {
 	capsules:     Entity_Pool(Capsule),
 	belts:        Entity_Pool(Belt),
 	inserters:    Entity_Pool(Inserter),
+	drills:       Entity_Pool(Drill),
 	// Transport lines derived from the belts (belt.odin).
 	belt_network: Belt_Network,
 	cells:        map[World_Coordinate]Entity_Handle,
@@ -123,6 +125,7 @@ destroy_entities :: proc(entities: ^Entities) {
 	destroy_pool(&entities.capsules)
 	destroy_pool(&entities.belts)
 	destroy_pool(&entities.inserters)
+	destroy_pool(&entities.drills)
 	destroy_belt_network(&entities.belt_network)
 	delete(entities.cells)
 }
@@ -150,6 +153,10 @@ entity_common :: proc(entities: ^Entities, handle: Entity_Handle) -> ^Entity_Com
 	case .Inserter:
 		if inserter := pool_get(&entities.inserters, handle); inserter != nil {
 			return &inserter.common
+		}
+	case .Drill:
+		if drill := pool_get(&entities.drills, handle); drill != nil {
+			return &drill.common
 		}
 	}
 	return nil
@@ -183,6 +190,10 @@ entity_slots :: proc(entities: ^Entities, handle: Entity_Handle) -> []Item_Stack
 	case .Inserter:
 		if inserter := pool_get(&entities.inserters, handle); inserter != nil {
 			return inserter.slots[:inserter.slot_count]
+		}
+	case .Drill:
+		if drill := pool_get(&entities.drills, handle); drill != nil {
+			return drill.slots[:]
 		}
 	}
 	return nil
@@ -246,7 +257,8 @@ make_entity_common :: proc(machines: Machine_Registry, machine: Machine_Id, orig
 }
 
 // The caller has checked that the footprint is free. A belt gets the
-// default shape of its item (belt_placement.odin picks others).
+// default shape of its item (belt_placement.odin picks others), a drill
+// no vein (place_entity_with_player sets the one under it).
 add_entity :: proc(entities: ^Entities, machines: Machine_Registry, machine: Machine_Id, origin: World_Coordinate, rotation: u8) -> Entity_Handle {
 	common := make_entity_common(machines, machine, origin, rotation)
 	handle: Entity_Handle
@@ -269,6 +281,8 @@ add_entity :: proc(entities: ^Entities, machines: Machine_Registry, machine: Mac
 		handle = pool_add(&entities.capsules, .Capsule, capsule)
 	case .Inserter:
 		handle = pool_add(&entities.inserters, .Inserter, make_inserter(common, machines.machines[machine]))
+	case .Drill:
+		handle = pool_add(&entities.drills, .Drill, make_drill(common, {}))
 	}
 	for cell in footprint_cells(origin, machines.machines[machine].footprint, rotation) {
 		entities.cells[cell] = handle
@@ -298,6 +312,8 @@ remove_entity :: proc(entities: ^Entities, machines: Machine_Registry, handle: E
 		return pool_remove(&entities.capsules, handle)
 	case .Inserter:
 		return pool_remove(&entities.inserters, handle)
+	case .Drill:
+		return pool_remove(&entities.drills, handle)
 	case .Belt:
 		// Handled by remove_belt above.
 		return false
@@ -319,11 +335,20 @@ cell_blocks_movement :: proc(world: ^World, registry: Block_Registry, cell: Worl
 	return occupied && handle.kind != .Belt
 }
 
-// Belts, then inserters, then furnaces, so a furnace sees an item an
-// inserter took off a belt in the same tick. Inserters run in pool order,
-// which keeps two inserters sharing a chest deterministic.
+// Belts, then drills, then inserters, then furnaces, so a furnace sees an
+// item an inserter took off a belt in the same tick. Drills and inserters
+// run in pool order, which keeps two of them sharing a vein or a chest
+// deterministic. Outcrops of veins exhausted in this tick turn to spent
+// rock at the end.
 tick_entities :: proc(world: ^World, content: Simulation_Content, tick_rate: int) {
 	tick_belt_network(&world.entities.belt_network, tick_rate)
+	for &drill in world.entities.drills.entries {
+		if drill.alive {
+			before := drill
+			advance_drill(world, content, &drill, tick_rate)
+			record_drill_tick(&world.statistics, before, drill)
+		}
+	}
 	for &inserter in world.entities.inserters.entries {
 		if inserter.alive {
 			before := inserter
@@ -338,4 +363,5 @@ tick_entities :: proc(world: ^World, content: Simulation_Content, tick_rate: int
 			record_furnace_tick(&world.statistics, before, furnace)
 		}
 	}
+	apply_spent_outcrops(world, content.veins)
 }

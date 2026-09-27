@@ -85,7 +85,7 @@ Footprint is width by depth by height in blocks. Power is electric unless marked
 | --- | --- | --- | --- | --- | --- |
 | Stone furnace | 2×2×2 | 5 stone | Speed 1 (one plate per 3.2 s, 18.75 per min) | 90 kW fuel | Start |
 | Steel furnace | 2×2×2 | 6 steel, 10 stone brick | Speed 2 | 90 kW fuel | Research: steel processing |
-| Burner mining drill | 2×2×2 | 3 iron gear, 3 iron plate, 1 stone furnace | 15 ore per min plus 3 spoil | 150 kW fuel | Start |
+| Burner mining drill | 2×2×2 | 3 iron gear, 3 iron plate, 1 stone furnace | 18.75 vein units per min, 15 ore on an 80% vein | 150 kW fuel | Start |
 | Electric mining drill | 3×3×3 | 3 circuit, 5 iron gear, 10 iron plate | 30 ore per min plus 6 spoil | 90 kW | Research: electric mining |
 | Burner inserter | 1×1×1 | 1 iron plate, 1 iron gear | 36 items per min | 94 kW fuel | Start |
 | Inserter | 1×1×1 | 1 iron plate, 1 iron gear, 1 circuit | 50 items per min | 13 kW | Discovery (circuit produced) |
@@ -153,7 +153,7 @@ High grade ore smelts directly. Low grade ore needs crushing and washing (phase 
 
 ## Ratio checks
 
-- Five burner drills (75 ore per min) feed four stone furnaces (75 plates per min).
+- Five burner drills on iron veins (75 hematite per min) feed four stone furnaces (75 plates per min). Spoil comes out of the same unit stream, so a drill's total output is 18.75 units per minute.
 - Five electric drills (150 ore per min) feed eight stone furnaces or four steel furnaces.
 - A yellow belt carries the output of sixty burner drills or thirty electric drills.
 - One boiler feeds two steam engines. One offshore pump feeds twenty boilers, so forty engines and 36 MW.

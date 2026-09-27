@@ -27,17 +27,22 @@ Chunk :: struct {
 // simulation tick turns the changes into light and water updates.
 // Entities keep their cells in entities.cells; those cells stay air here.
 World :: struct {
-	chunks:        map[Chunk_Coordinate]^Chunk,
-	veins:         [dynamic]Vein,
-	vein_indices:  map[Vein_Id]int,
-	column_veins:  map[Chunk_Column][dynamic]Vein_Id,
-	block_changes: [dynamic]Block_Change,
-	lighting:      Lighting,
-	water:         Water_Flow,
-	entities:      Entities,
+	chunks:         map[Chunk_Coordinate]^Chunk,
+	settings:       World_Settings,
+	veins:          [dynamic]Vein,
+	vein_indices:   map[Vein_Id]int,
+	column_veins:   map[Chunk_Column][dynamic]Vein_Id,
+	// Every outcrop cell of every loaded chunk so far (world_vein.odin).
+	outcrop_cells:  map[World_Coordinate]Vein_Id,
+	// Outcrop cells of exhausted veins still to turn into spent rock.
+	spent_outcrops: [dynamic]World_Coordinate,
+	block_changes:  [dynamic]Block_Change,
+	lighting:       Lighting,
+	water:          Water_Flow,
+	entities:       Entities,
 	// Production statistics (statistics.odin), here like the entities so
 	// that the player and entity ticks reach them through the world.
-	statistics:    Statistics,
+	statistics:     Statistics,
 }
 
 Block_Change :: struct {
@@ -186,6 +191,8 @@ destroy_world :: proc(world: ^World) {
 	delete(world.column_veins)
 	delete(world.vein_indices)
 	delete(world.veins)
+	delete(world.outcrop_cells)
+	delete(world.spent_outcrops)
 	delete(world.block_changes)
 	destroy_lighting(&world.lighting)
 	destroy_water_flow(&world.water)

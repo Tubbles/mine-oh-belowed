@@ -29,7 +29,8 @@
 // inventory_full_ticks (ticks with no empty inventory slot),
 // inserter_out_of_fuel and inserter_waiting_for_room (times an inserter
 // stalled), inserter_idle_ticks (ticks an inserter had nothing to pick,
-// summed over inserters).
+// summed over inserters), drill_out_of_fuel and drill_waiting_for_room
+// (times a drill stalled), vein_exhausted (veins drained by drills).
 //
 // A reward is {item, count}, landing in the capsule, or {unlocks_recipe}
 // for a recipe of the quest channel.

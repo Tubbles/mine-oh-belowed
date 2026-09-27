@@ -155,8 +155,7 @@ place_with_player :: proc(world: ^World, content: Simulation_Content, players: [
 		return
 	}
 	players[index].belt_drag = {}
-	if .Rotate_Building in just_pressed && players[index].target.entity.kind == .Belt {
-		rotate_targeted_belt(world, content, &players[index])
+	if .Rotate_Building in just_pressed && rotate_targeted_entity(world, content, &players[index]) {
 		return
 	}
 	place_block_with_player(world, content.blocks, content.items, players, index, just_pressed)

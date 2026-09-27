@@ -24,6 +24,8 @@ Game_Config :: struct {
 	starting_items:       []Starting_Item,
 	// The world setting "all recipes unlocked at start".
 	all_recipes_unlocked: bool,
+	// The world setting "vein finiteness": true lets veins never run dry.
+	veins_infinite:       bool,
 }
 
 // An explicitly set environment variable wins even if the directory is

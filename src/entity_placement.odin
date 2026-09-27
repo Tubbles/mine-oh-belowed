@@ -18,6 +18,9 @@ Placement :: struct {
 	belt_shape: Belt_Shape,
 	// An inserter: rotation is its drop direction.
 	inserter:   bool,
+	// A drill: rotation is its output direction, vein the vein it taps.
+	drill:      bool,
+	vein:       Vein_Id,
 }
 
 // The footprint's minimum corner, so that it starts at the cell in front
@@ -97,28 +100,43 @@ placement_for_player :: proc(world: ^World, content: Simulation_Content, players
 	if content.machines.machines[machine].kind == .Belt {
 		return belt_placement_for_player(world, content, player, machine)
 	}
-	footprint := content.machines.machines[machine].footprint
-	inserter := content.machines.machines[machine].kind == .Inserter
+	kind := content.machines.machines[machine].kind
 	rotation := player.placement_rotation
-	if inserter {
+	if kind == .Inserter || kind == .Drill {
 		rotation = inserter_placement_direction(player.yaw, player.placement_rotation)
 	}
-	size := rotated_footprint_size(footprint, rotation)
+	size := rotated_footprint_size(content.machines.machines[machine].footprint, rotation)
 	origin := footprint_origin(player.target.adjacent, player.target.face, size)
+	return placement_at(world, content, players, machine, origin, rotation)
+}
+
+// The placement of a machine with its rotated minimum corner at origin.
+// A drill is valid only over a vein outcrop.
+placement_at :: proc(world: ^World, content: Simulation_Content, players: []Player, machine: Machine_Id, origin: World_Coordinate, rotation: u8) -> Placement {
+	footprint := content.machines.machines[machine].footprint
+	kind := content.machines.machines[machine].kind
 	cells := footprint_cells(origin, footprint, rotation)
-	return Placement {
-		shown = true,
-		valid = footprint_is_valid(world, content.blocks, players, cells, origin.y),
-		machine = machine,
-		origin = origin,
+	placement := Placement {
+		shown    = true,
+		valid    = footprint_is_valid(world, content.blocks, players, cells, origin.y),
+		machine  = machine,
+		origin   = origin,
 		rotation = rotation,
-		size = size,
-		inserter = inserter,
+		size     = rotated_footprint_size(footprint, rotation),
+		inserter = kind == .Inserter,
+		drill    = kind == .Drill,
 	}
+	if placement.drill {
+		vein_found: bool
+		placement.vein, vein_found = drill_vein_under(world, content.veins, cells, origin.y)
+		placement.valid = placement.valid && vein_found
+	}
+	return placement
 }
 
 // Like belts: the player's facing turned by the rotation, so rotation 0
-// drops away from the player and picks up from the player's side.
+// drops away from the player and picks up from the player's side. Drills
+// use it for their output arrow too.
 inserter_placement_direction :: proc(yaw: f32, rotation: u8) -> u8 {
 	return turn_right(yaw_direction(yaw), rotation % 4)
 }
@@ -141,9 +159,31 @@ place_entity_with_player :: proc(world: ^World, content: Simulation_Content, pla
 	if !placement.valid {
 		return
 	}
-	add_entity(&world.entities, content.machines, placement.machine, placement.origin, placement.rotation)
+	handle := add_entity(&world.entities, content.machines, placement.machine, placement.origin, placement.rotation)
+	if drill := pool_get(&world.entities.drills, handle); drill != nil {
+		drill.vein = placement.vein
+	}
 	take_from_slot(&inventory_hotbar(player.inventory)[player.selected_hotbar_slot], 1)
 	record_placed(&world.statistics, placement.machine)
+}
+
+// Rotate with no machine item selected turns the targeted belt, inserter
+// or drill a quarter turn. A drill's footprint is square, so no cell moves.
+rotate_targeted_entity :: proc(world: ^World, content: Simulation_Content, player: ^Player) -> bool {
+	#partial switch player.target.entity.kind {
+	case .Belt:
+		rotate_targeted_belt(world, content, player)
+		return true
+	case .Inserter, .Drill:
+		common := entity_common(&world.entities, player.target.entity)
+		if common == nil {
+			return false
+		}
+		common.rotation = turn_right(common.rotation)
+		record_world_action(&world.statistics)
+		return true
+	}
+	return false
 }
 
 // Only entities placed by an item can be picked up (not the capsule).
@@ -164,6 +204,7 @@ pick_up_entity :: proc(world: ^World, content: Simulation_Content, player: ^Play
 	append(&returned, ..entity_slots(&world.entities, handle))
 	append(&returned, ..belt_block_stacks(&world.entities, handle))
 	append(&returned, ..inserter_held_stacks(&world.entities, handle))
+	append(&returned, ..drill_held_stacks(&world.entities, handle))
 	append(&returned, Item_Stack{item = machine_item, count = 1})
 	if !inventory_fits_all(player.inventory, content.items, returned[:]) {
 		return false

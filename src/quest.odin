@@ -53,6 +53,9 @@ Hint_Counter :: enum u8 {
 	Inserter_Out_Of_Fuel,
 	Inserter_Waiting_For_Room,
 	Inserter_Idle_Ticks,
+	Drill_Out_Of_Fuel,
+	Drill_Waiting_For_Room,
+	Vein_Exhausted,
 }
 
 @(rodata)
@@ -67,6 +70,9 @@ hint_counter_names := [Hint_Counter]string {
 	.Inserter_Out_Of_Fuel      = "inserter_out_of_fuel",
 	.Inserter_Waiting_For_Room = "inserter_waiting_for_room",
 	.Inserter_Idle_Ticks       = "inserter_idle_ticks",
+	.Drill_Out_Of_Fuel         = "drill_out_of_fuel",
+	.Drill_Waiting_For_Room    = "drill_waiting_for_room",
+	.Vein_Exhausted            = "vein_exhausted",
 }
 
 // As written in the files, before references are resolved.

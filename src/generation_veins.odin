@@ -25,7 +25,9 @@ Vein_Id :: struct {
 }
 
 // Remaining amounts are ore units, one per output of the vein type, in the
-// type's output order.
+// type's output order. draws counts the units drills took, and seeds the
+// next draw (drill.odin). exhausted is set once every remaining amount of
+// a finite vein reached zero.
 Vein :: struct {
 	id:         Vein_Id,
 	type:       int,
@@ -33,6 +35,15 @@ Vein :: struct {
 	centre:     World_Coordinate,
 	radius:     i32,
 	remaining:  [MAXIMUM_VEIN_OUTPUTS]i64,
+	draws:      u64,
+	exhausted:  bool,
+}
+
+// A surface block generation turned into a vein's outcrop block. The main
+// thread keeps these, so an exhausted vein finds its outcrop again.
+Outcrop_Cell :: struct {
+	position: World_Coordinate,
+	vein:     Vein_Id,
 }
 
 block_to_region :: proc(x, z: i32) -> Region_Coordinate {
@@ -242,8 +253,8 @@ outcrop_block :: proc(generator: ^Generator, vein: Vein, x, z: i32) -> Block_Id 
 }
 
 // Turns the surface block of every footprint column inside the chunk into
-// the vein's outcrop block, under water as well.
-apply_outcrops :: proc(generator: ^Generator, chunk: ^Chunk, columns: ^Column_Grid, veins: []Vein) {
+// the vein's outcrop block, under water as well, and lists those cells.
+apply_outcrops :: proc(generator: ^Generator, chunk: ^Chunk, columns: ^Column_Grid, veins: []Vein, outcrops: ^[dynamic]Outcrop_Cell) {
 	origin := chunk_origin(chunk.coordinate)
 	for z in i32(0) ..< CHUNK_SIZE {
 		for x in i32(0) ..< CHUNK_SIZE {
@@ -252,6 +263,7 @@ apply_outcrops :: proc(generator: ^Generator, chunk: ^Chunk, columns: ^Column_Gr
 				local_y := grid_column(columns, x, z).height - origin.y
 				if column_in_disc(vein.centre, vein.radius, world_x, world_z) && local_y >= 0 && local_y < CHUNK_SIZE {
 					chunk.blocks[local_to_index({x, local_y, z})] = outcrop_block(generator, vein, world_x, world_z)
+					append(outcrops, Outcrop_Cell{position = origin + {x, local_y, z}, vein = vein.id})
 				}
 			}
 		}

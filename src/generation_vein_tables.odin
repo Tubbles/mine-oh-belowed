@@ -27,6 +27,7 @@ Vein_Output :: struct {
 
 Vein_Type_Definition :: struct {
 	id:             string,
+	name_key:       string,
 	weight:         i32,
 	biomes:         []string,
 	outcrop_blocks: []string,
@@ -36,6 +37,7 @@ Vein_Type_Definition :: struct {
 Veins_File :: struct {
 	richness_distance:     i32,
 	maximum_radius_growth: i32,
+	spent_block:           string,
 	size_classes:          []Vein_Size_Class,
 	vein_types:            []Vein_Type_Definition,
 	spawn_vein_types:      []string,
@@ -51,6 +53,8 @@ Vein_Type :: struct {
 Vein_Tables :: struct {
 	richness_distance:     i32,
 	maximum_radius_growth: i32,
+	// The block an exhausted vein's outcrop turns into.
+	spent_block:           Block_Id,
 	size_classes:          []Vein_Size_Class,
 	types:                 []Vein_Type,
 	spawn_types:           []int,
@@ -90,6 +94,8 @@ validate_vein_type_definition :: proc(definition: Vein_Type_Definition) -> strin
 	switch {
 	case definition.id == "":
 		return "a vein type has no id"
+	case definition.name_key == "":
+		return fmt.tprintf("vein type %q has no name_key", definition.id)
 	case definition.weight < 1:
 		return fmt.tprintf("vein type %q needs a positive weight", definition.id)
 	case len(definition.outcrop_blocks) == 0:
@@ -183,6 +189,10 @@ resolve_vein_tables :: proc(file: Veins_File, registry: Block_Registry, biomes: 
 		maximum_radius_growth = file.maximum_radius_growth,
 		size_classes          = file.size_classes,
 		types                 = make([]Vein_Type, len(file.vein_types), allocator),
+	}
+	spent_found: bool
+	if tables.spent_block, spent_found = find_block_id(registry, file.spent_block); !spent_found {
+		return {}, fmt.tprintf("spent_block names unknown block %q", file.spent_block)
 	}
 	for definition, index in file.vein_types {
 		if tables.types[index], problem = resolve_vein_type(definition, registry, biomes, allocator); problem != "" {

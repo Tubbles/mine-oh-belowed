@@ -207,6 +207,12 @@ main :: proc() {
 	if !generator_loaded {
 		os.exit(1)
 	}
+	veins, problem := resolve_vein_content(generator.veins, items)
+	if problem != "" {
+		fmt.eprintfln("error: invalid %s: %s", VEINS_FILE_NAME, problem)
+		os.exit(1)
+	}
+	content.veins = veins
 	start := choose_world_start(&generator, command_line.debug_terrain)
 	input_backend, input_started := start_input_backend(command_line.input_request)
 	if !input_started {

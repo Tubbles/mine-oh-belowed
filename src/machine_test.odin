@@ -13,7 +13,10 @@ make_test_machines :: proc() -> Machine_Registry {
 make_test_content :: proc() -> Simulation_Content {
 	items := make_test_items()
 	recipes, _ := make_test_recipes(items)
-	return Simulation_Content{blocks = make_test_registry(), items = items, machines = make_test_machines(), recipes = recipes}
+	generator := make_test_generator(DEFAULT_WORLD_SEED)
+	veins, problem := resolve_vein_content(generator.veins, items, context.temp_allocator)
+	assert(problem == "", problem)
+	return Simulation_Content{blocks = make_test_registry(), items = items, machines = make_test_machines(), recipes = recipes, veins = veins}
 }
 
 test_machine :: proc(machines: Machine_Registry, id: string) -> Machine_Id {
@@ -29,7 +32,7 @@ test_machine :: proc(machines: Machine_Registry, id: string) -> Machine_Id {
 test_machine_data_loads :: proc(t: ^testing.T) {
 	items := make_test_items()
 	machines := make_test_machines()
-	testing.expect_value(t, len(machines.machines), 10)
+	testing.expect_value(t, len(machines.machines), 11)
 	wooden := machines.machines[test_machine(machines, "wooden_chest")]
 	testing.expect_value(t, wooden.kind, Machine_Kind.Chest)
 	testing.expect_value(t, wooden.slot_count, 16)
@@ -54,6 +57,14 @@ test_machine_data_loads :: proc(t: ^testing.T) {
 	testing.expect_value(t, electric.electric_power_watts, 13_000)
 	testing.expect_value(t, electric.filter_slot_count, 0)
 	testing.expect_value(t, machines.machines[test_machine(machines, "filter_inserter")].filter_slot_count, 1)
+	drill := machines.machines[test_machine(machines, "burner_mining_drill")]
+	testing.expect_value(t, drill.kind, Machine_Kind.Drill)
+	testing.expect_value(t, drill.footprint, [3]i32{2, 2, 2})
+	testing.expect_value(t, drill.slot_count, 1)
+	testing.expect_value(t, drill.items_per_minute, 15)
+	testing.expect_value(t, drill.rate_reference_ore_percent, 80)
+	testing.expect_value(t, drill.fuel_power_watts, 150_000)
+	testing.expect_value(t, drill.item, test_item(items, "burner_mining_drill"))
 }
 
 @(test)
@@ -69,7 +80,13 @@ test_machine_strings_exist :: proc(t: ^testing.T) {
 	for key in inserter_state_keys {
 		testing.expectf(t, key in table.entries, "missing string %q", key)
 	}
-	for key in ([?]string{"inserter_filter", "hint_set_filter", "hint_clear_filter"}) {
+	for key in drill_state_keys {
+		testing.expectf(t, key in table.entries, "missing string %q", key)
+	}
+	for vein_type in make_test_content().veins.types {
+		testing.expectf(t, vein_type.name_key in table.entries, "missing string %q", vein_type.name_key)
+	}
+	for key in ([?]string{"inserter_filter", "hint_set_filter", "hint_clear_filter", "drill_remaining", "drill_infinite", "drill_rate"}) {
 		testing.expectf(t, key in table.entries, "missing string %q", key)
 	}
 }

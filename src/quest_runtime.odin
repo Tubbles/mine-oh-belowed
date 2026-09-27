@@ -102,6 +102,12 @@ hint_counter_value :: proc(statistics: Statistics, hint: Hint) -> u64 {
 		return statistics.stalls[.Inserter_Waiting_For_Room]
 	case .Inserter_Idle_Ticks:
 		return statistics.inserter_idle_ticks
+	case .Drill_Out_Of_Fuel:
+		return statistics.stalls[.Drill_Out_Of_Fuel]
+	case .Drill_Waiting_For_Room:
+		return statistics.stalls[.Drill_Waiting_For_Room]
+	case .Vein_Exhausted:
+		return statistics.veins_exhausted
 	}
 	return 0
 }

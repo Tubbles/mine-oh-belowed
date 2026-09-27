@@ -12,3 +12,7 @@ starting_items = [
 // every technology counts as researched and every item as discovered.
 // The --unlock-all command line flag does the same.
 all_recipes_unlocked = false
+// World setting "vein finiteness": false keeps veins finite (the default),
+// so drills drain them and an exhausted outcrop turns to spent rock; true
+// lets drills draw from every vein forever.
+veins_infinite = false

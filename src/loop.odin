@@ -55,6 +55,7 @@ Frame_State :: struct {
 	recipes:            Recipe_Registry,
 	technologies:       Technology_Registry,
 	quests:             Quest_Registry,
+	veins:              Vein_Content,
 	// Inventory sort order, from item_sort_ranks.
 	item_sort_ranks:    []u16,
 	// Recipe display names and the recipe indices sorted by them.
@@ -143,7 +144,7 @@ simulation_quest_context :: proc(state: ^Simulation_State, content: Simulation_C
 }
 
 frame_simulation_content :: proc(state: ^Frame_State) -> Simulation_Content {
-	return Simulation_Content{blocks = state.registry, items = state.items, machines = state.machines, recipes = state.recipes, quests = state.quests}
+	return Simulation_Content{blocks = state.registry, items = state.items, machines = state.machines, recipes = state.recipes, quests = state.quests, veins = state.veins}
 }
 
 make_tick_accumulator :: proc(tick_rate: int) -> Tick_Accumulator {
@@ -280,6 +281,7 @@ run_ui_frame :: proc(state: ^Frame_State) {
 		item_sort_ranks = state.item_sort_ranks,
 		world           = &state.simulation.world,
 		machines        = state.machines,
+		veins           = state.veins,
 		tick_rate       = state.simulation.tick_rate,
 		recipes         = state.recipes,
 		technologies    = state.technologies,
@@ -325,6 +327,7 @@ Game_Content :: struct {
 	recipes:         Recipe_Registry,
 	technologies:    Technology_Registry,
 	quests:          Quest_Registry,
+	veins:           Vein_Content,
 	item_sort_ranks: []u16,
 	recipe_names:    []string,
 	recipe_order:    []int,
@@ -332,7 +335,7 @@ Game_Content :: struct {
 }
 
 game_simulation_content :: proc(content: Game_Content) -> Simulation_Content {
-	return Simulation_Content{blocks = content.blocks, items = content.items, machines = content.machines, recipes = content.recipes, quests = content.quests}
+	return Simulation_Content{blocks = content.blocks, items = content.items, machines = content.machines, recipes = content.recipes, quests = content.quests, veins = content.veins}
 }
 
 run_game :: proc(config: Game_Config, input_backend: Input_Backend, content: Game_Content, generator: Generator, start: World_Start, data_directory: string) {
@@ -363,6 +366,7 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, content: Gam
 		recipes         = content.recipes,
 		technologies    = content.technologies,
 		quests          = content.quests,
+		veins           = content.veins,
 		item_sort_ranks = content.item_sort_ranks,
 		recipe_names    = content.recipe_names,
 		recipe_order    = content.recipe_order,
@@ -375,6 +379,7 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, content: Gam
 		// raylib starts with the cursor shown; the first apply hides it.
 		cursor_enabled  = true,
 	}
+	state.simulation.world.settings = World_Settings{seed = generator.seed, veins_infinite = config.veins_infinite}
 	defer destroy_ui_state(&state.ui)
 	defer if input_backend == .Sdl3 {
 		shutdown_sdl3_input(&state.sdl3_input)

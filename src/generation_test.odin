@@ -91,6 +91,7 @@ test_generation_ignores_loaded_neighbours :: proc(t: ^testing.T) {
 					generated := generate_chunk(&generator, coordinate)
 					world.chunks[coordinate] = generated.chunk
 					delete(generated.veins)
+					delete(generated.outcrops)
 				}
 			}
 		}

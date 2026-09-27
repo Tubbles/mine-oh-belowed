@@ -49,6 +49,7 @@ Chunk_Job_Result :: struct {
 	revision:   u64,
 	chunk:      ^Chunk,
 	veins:      [dynamic]Vein,
+	outcrops:   [dynamic]Outcrop_Cell,
 	mesh:       Chunk_Mesh_Data,
 }
 
@@ -157,6 +158,7 @@ free_job_chunks :: proc(job: Chunk_Job) {
 free_job_result :: proc(result: Chunk_Job_Result) {
 	free(result.chunk)
 	delete(result.veins)
+	delete(result.outcrops)
 	destroy_chunk_mesh_data(result.mesh)
 }
 
@@ -169,7 +171,7 @@ run_chunk_job :: proc(shared: ^Worker_Shared, job: Chunk_Job) -> Chunk_Job_Resul
 	switch job.kind {
 	case .Generate:
 		generated := generate_chunk(shared.generator, job.coordinate)
-		result.chunk, result.veins = generated.chunk, generated.veins
+		result.chunk, result.veins, result.outcrops = generated.chunk, generated.veins, generated.outcrops
 	case .Mesh:
 		input := Mesh_Input {
 			chunk    = job.chunk,
@@ -297,6 +299,7 @@ stop_chunk_streaming :: proc(streaming: ^Chunk_Streaming) {
 insert_generated_chunk :: proc(world: ^World, result: Chunk_Job_Result) {
 	world.chunks[result.coordinate] = result.chunk
 	register_column_veins(world, chunk_column_of(result.coordinate), result.veins[:])
+	register_outcrop_cells(world, result.outcrops[:])
 	queue.push_back(&world.lighting.arrived_chunks, result.coordinate)
 	if chunk_is_all_air(result.chunk) && chunk_is_open_sky(result.chunk) {
 		return
@@ -317,6 +320,7 @@ receive_generated_chunks :: proc(streaming: ^Chunk_Streaming, world: ^World, cam
 		}
 		insert_generated_chunk(world, result)
 		delete(result.veins)
+		delete(result.outcrops)
 	}
 }
 
