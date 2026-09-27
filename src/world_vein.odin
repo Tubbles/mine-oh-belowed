@@ -30,9 +30,12 @@ Vein_Type_Content :: struct {
 }
 
 // Indexed like Vein_Tables.types, so Vein.type indexes both.
+// size_class_ids is indexed by Vein.size_class; each has a string
+// vein_size_<id> (work item 0038, the assay names the class).
 Vein_Content :: struct {
-	types:       []Vein_Type_Content,
-	spent_block: Block_Id,
+	types:          []Vein_Type_Content,
+	spent_block:    Block_Id,
+	size_class_ids: []string,
 }
 
 resolve_vein_type_content :: proc(vein_type: Vein_Type, items: Item_Registry) -> (content: Vein_Type_Content, problem: string) {
@@ -66,6 +69,10 @@ resolve_vein_content :: proc(tables: Vein_Tables, items: Item_Registry, allocato
 			delete(content.types, allocator)
 			return {}, problem
 		}
+	}
+	content.size_class_ids = make([]string, len(tables.size_classes), allocator)
+	for size_class, index in tables.size_classes {
+		content.size_class_ids[index] = size_class.id
 	}
 	return content, ""
 }

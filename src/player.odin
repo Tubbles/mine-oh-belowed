@@ -62,6 +62,9 @@ Player :: struct {
 	open_machine:         Entity_Handle,
 	// Hand crafting. The UI queues and cancels between ticks.
 	crafting:             Craft_Queue,
+	// The selected magnetometer's reading this tick, empty while none is
+	// selected (prospecting.odin).
+	magnetometer:         Magnetometer_Reading,
 }
 
 // What a player tick reports to the UI, which turns it into toasts.
@@ -71,6 +74,10 @@ Player_Event :: enum u8 {
 	Open_Machine,
 	// Interact turned a power switch.
 	Toggled_Switch,
+	// Use_Item with a prospecting tool (prospecting.odin).
+	Vein_Assayed,
+	Magnetometer_Recorded,
+	Seismic_Shot_Fired,
 }
 
 Player_Events :: bit_set[Player_Event]

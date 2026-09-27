@@ -61,5 +61,5 @@ The M4 model: pipes with liquids and gases, steam power, electric networks, and 
 
 ### As implemented in 0037
 
-- The hydro turbine is a fuel free generator giving 10 kW per level of flowing water in its eight cells, capped at 400 kW, read from the blocks every tick; water flows on through it; it needs solid ground and at least one cell of flowing water at level 3 or more (source water does not count, and since the water model has no velocity every flowing block counts as moving). Big pole and substation come from the pole code with reach and volume from data; wide footprints centre their supply volume, but wire reach still measures from a corner (handed to 0038). No placeholder technology remains.
+- The hydro turbine is a fuel free generator giving 10 kW per level of flowing water in its eight cells, capped at 400 kW, read from the blocks every tick; water flows on through it; it needs solid ground and at least one cell of flowing water at level 3 or more (source water does not count, and since the water model has no velocity every flowing block counts as moving). Big pole and substation come from the pole code with reach and volume from data; wide footprints centre their supply volume, and since 0038 wire reach measures between footprint centres. No placeholder technology remains.
 

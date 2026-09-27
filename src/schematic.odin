@@ -63,11 +63,13 @@ place_pending_crates :: proc(world: ^World, content: Simulation_Content) {
 	}
 }
 
-// The selected hotbar item is read with Use_Item, which shares Place's
+// The selected hotbar item is used with Use_Item, which shares Place's
 // control: a usable item never places, and anything else never uses.
 // Interact on a schematic crate takes its schematic, and never jumps.
-// Returns the input the rest of the tick sees and the item read, or
-// NO_ITEM. Like resolve_interact, it acts on the previous tick's target.
+// Returns the input the rest of the tick sees and the item used, or
+// NO_ITEM; the item is taken from the slot when its use consumes it
+// (use_consumes_item). Like resolve_interact, it acts on the previous
+// tick's target.
 resolve_use_item :: proc(player: ^Player, entities: ^Entities, items: Item_Registry, input: Input_Frame) -> (result: Input_Frame, used: Item_Id) {
 	result, used = input, NO_ITEM
 	selected := &inventory_hotbar(player.inventory)[player.selected_hotbar_slot]
@@ -76,7 +78,9 @@ resolve_use_item :: proc(player: ^Player, entities: ^Entities, items: Item_Regis
 		result.just_pressed -= {.Place}
 		if .Use_Item in input.just_pressed {
 			used = selected.item
-			take_from_slot(selected, 1)
+			if use_consumes_item(items.items[used].use, player.target.hit) {
+				take_from_slot(selected, 1)
+			}
 		}
 	} else {
 		result.pressed -= {.Use_Item}

@@ -21,6 +21,7 @@ Screen_Context :: struct {
 	title:           ^Title_State,
 	player:          ^Player,
 	items:           Item_Registry,
+	blocks:          Block_Registry,
 	item_sort_ranks: []u16,
 	world:           ^World,
 	machines:        Machine_Registry,
@@ -37,13 +38,14 @@ Screen_Context :: struct {
 	browser:         ^Recipe_Browser,
 	technology_browser: ^Technology_Browser,
 	statistics_view:    ^Statistics_View,
+	map_view:           ^Map_View,
 }
 
 // Pause opens the pause menu from the world, Open_Inventory the inventory,
 // Open_Recipes the recipe browser, Open_Journal the journal (which it also
 // closes), Open_Power_Overview the power overview, Open_Statistics the
-// production statistics and Open_Technologies the technology screen
-// (likewise). With a
+// production statistics, Open_Technologies the technology screen and
+// Open_Map the map (likewise). With a
 // screen open, Back and Pause both
 // step back one screen (the first press closes an open tooltip).
 // Open_Inventory closes the inventory and a machine panel too, except on
@@ -67,6 +69,8 @@ handle_screen_keys :: proc(state: ^Ui_State) {
 			push_screen(&state.screens, .Statistics)
 		case input.open_technologies:
 			push_screen(&state.screens, .Technologies)
+		case input.open_map:
+			push_screen(&state.screens, .Map)
 		}
 		return
 	}
@@ -81,7 +85,8 @@ handle_screen_keys :: proc(state: ^Ui_State) {
 	closes_power := top == .Power && input.open_power
 	closes_technologies := top == .Technologies && input.open_technologies
 	closes_statistics := top == .Statistics && input.open_statistics
-	closes_screen := closes_inventory || closes_recipes || closes_journal || closes_power || closes_technologies || closes_statistics
+	closes_map := top == .Map && input.open_map
+	closes_screen := closes_inventory || closes_recipes || closes_journal || closes_power || closes_technologies || closes_statistics || closes_map
 	if !input.back && !input.pause && !closes_screen {
 		return
 	}
@@ -117,6 +122,8 @@ run_screens :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		statistics_screen(state, screen_context)
 	case .Technologies:
 		technology_screen(state, screen_context)
+	case .Map:
+		map_screen(state, screen_context)
 	case .Title:
 		title_screen(state, screen_context)
 	case .New_World:
@@ -137,6 +144,10 @@ run_screens :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 	if screen_context.browser != nil && top_screen(state.screens) != .Recipes {
 		screen_context.browser.selecting_for = NO_ENTITY
+	}
+	// The next opening centres on the player and reads the surfaces anew.
+	if screen_context.map_view != nil && top_screen(state.screens) != .Map {
+		screen_context.map_view.active = false
 	}
 }
 

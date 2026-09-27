@@ -88,6 +88,11 @@ draw_text :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, text: string, size:
 	push_command(state, {kind = .Text, rectangle = rectangle, text = text, text_size = size, alignment = alignment, color = color})
 }
 
+// The pixels must stay valid until the frame is drawn.
+draw_image :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, pixels: []Ui_Color, size: [2]i32, revision: u64) {
+	push_command(state, {kind = .Image, rectangle = rectangle, pixels = pixels, image_size = size, image_revision = revision})
+}
+
 draw_focus_outline :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, id: Ui_Id) {
 	push_command(state, {kind = .Focus_Outline, rectangle = rectangle, color = UI_ACCENT_COLOR, thickness = UI_FOCUS_BORDER, widget = id})
 }

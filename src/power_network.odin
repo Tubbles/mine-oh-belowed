@@ -3,8 +3,9 @@ package game
 import "base:runtime"
 
 // Electric networks (doc/fluids.md, Power). Poles and power switches are
-// the nodes. Two nodes are wired when their origins are at most the
-// shorter of their two wire reaches apart (straight line). A network is a
+// the nodes. Two nodes are wired when the centres of their footprints
+// (across, at the bottom) are at most the shorter of their two wire
+// reaches apart (straight line). A network is a
 // connected set of nodes over the wires, where a power switch that is off
 // takes part in no network, so the wires through it carry nothing. An
 // electric machine or generator belongs to the network of the first pole
@@ -23,6 +24,7 @@ import "base:runtime"
 Electric_Node :: struct {
 	handle:        Entity_Handle,
 	origin:        World_Coordinate,
+	footprint:     [3]i32,
 	reach:         i32,
 	// The cells the node powers; size zero for a power switch.
 	supply_origin: World_Coordinate,
@@ -112,6 +114,7 @@ make_electric_node :: proc(pole: Pole, machine: Machine) -> Electric_Node {
 	return Electric_Node {
 		handle = pole.handle,
 		origin = pole.origin,
+		footprint = pole.size,
 		reach = machine.wire_reach,
 		supply_origin = supply_volume_origin(pole.origin, pole.size, machine.supply_volume),
 		supply_size = machine.kind == .Pole ? machine.supply_volume : {},
@@ -120,10 +123,16 @@ make_electric_node :: proc(pole: Pole, machine: Machine) -> Electric_Node {
 	}
 }
 
+// Twice the centre of the footprint across and its bottom, so that the
+// centre of an even footprint stays an integer.
+doubled_footprint_centre :: proc(node: Electric_Node) -> [3]i64 {
+	return {2 * i64(node.origin.x) + i64(node.footprint.x), 2 * i64(node.origin.y), 2 * i64(node.origin.z) + i64(node.footprint.z)}
+}
+
 nodes_are_within_reach :: proc(first, second: Electric_Node) -> bool {
-	offset := second.origin - first.origin
-	reach := i64(min(first.reach, second.reach))
-	return i64(offset.x) * i64(offset.x) + i64(offset.y) * i64(offset.y) + i64(offset.z) * i64(offset.z) <= reach * reach
+	offset := doubled_footprint_centre(second) - doubled_footprint_centre(first)
+	doubled_reach := 2 * i64(min(first.reach, second.reach))
+	return offset.x * offset.x + offset.y * offset.y + offset.z * offset.z <= doubled_reach * doubled_reach
 }
 
 find_electric_wires :: proc(networks: ^Electric_Networks) {
@@ -198,6 +207,7 @@ assign_electric_memberships :: proc(entities: ^Entities, machines: Machine_Regis
 	append_electric_members(networks, &entities.lamps, machines)
 	append_electric_members(networks, &entities.assemblers, machines)
 	append_electric_members(networks, &entities.labs, machines)
+	append_electric_members(networks, &entities.core_sample_drills, machines)
 }
 
 rebuild_electric_networks :: proc(entities: ^Entities, machines: Machine_Registry) {
@@ -372,7 +382,8 @@ collect_electric_participants :: proc(world: ^World, content: Simulation_Content
 	collect_crafting_participants(world, content, tick_rate)
 }
 
-// Electric crafting machines and labs, while they have work.
+// Electric crafting machines, labs and core sample drills, while they
+// have work.
 collect_crafting_participants :: proc(world: ^World, content: Simulation_Content, tick_rate: int) {
 	entities := &world.entities
 	networks := &entities.electric_networks
@@ -392,6 +403,13 @@ collect_crafting_participants :: proc(world: ^World, content: Simulation_Content
 			append(&networks.participants, make_participant(networks, lab.common, false, wants ? electric_joules_per_tick(watts, tick_rate) : 0))
 		}
 	}
+	for drill in entities.core_sample_drills.entries {
+		if drill.alive {
+			watts := content.machines.machines[drill.machine].electric_power_watts
+			wants := core_sample_drill_wants_power(drill)
+			append(&networks.participants, make_participant(networks, drill.common, false, wants ? electric_joules_per_tick(watts, tick_rate) : 0))
+		}
+	}
 }
 
 // The consumer's Power_State, or nil for a generator.
@@ -409,6 +427,8 @@ participant_power :: proc(entities: ^Entities, handle: Entity_Handle) -> ^Power_
 		return &pool_get(&entities.assemblers, handle).power
 	case .Lab:
 		return &pool_get(&entities.labs, handle).power
+	case .Core_Sample_Drill:
+		return &pool_get(&entities.core_sample_drills, handle).power
 	}
 	return nil
 }

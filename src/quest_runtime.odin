@@ -141,6 +141,14 @@ hint_counter_value :: proc(statistics: Statistics, hint: Hint) -> u64 {
 		return statistics.generator_gas_litres
 	case .Schematics_Found:
 		return statistics.schematics_found
+	case .Veins_Assayed:
+		return statistics.veins_assayed
+	case .Core_Samples_Taken:
+		return statistics.core_samples_taken
+	case .Seismic_Shots:
+		return statistics.seismic_shots
+	case .Veins_Resolved:
+		return statistics.veins_resolved
 	}
 	return 0
 }

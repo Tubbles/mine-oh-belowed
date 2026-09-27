@@ -141,12 +141,38 @@ schematics_loaded :: proc(simulation: ^Simulation_State, content: Simulation_Con
 	return crate != nil && !stack_is_empty(crate.slots[0]) && found && sites_kept && gold_quartz && world.statistics.schematics_found == 1
 }
 
+SAVE_TEST_CORE_SAMPLE_DRILL :: World_Coordinate{-28, 1, 28}
+
+// Prospecting (work item 0038): an assayed vein, a magnetometer reading, a
+// core sample over the deep vein, a seismic shot imaging it, and a core
+// sample drill part way through its sampling.
+lay_save_test_prospecting :: proc(world: ^World, content: Simulation_Content) {
+	assayed := assay_vein(world, content.veins, {-19, 0, 21})
+	assert(assayed)
+	hematite := test_item(content.items, "hematite")
+	append(&world.magnetometer_readings, magnetometer_reading(world.veins[:], content.veins, hematite, 30, {-10, 1, 18}))
+	append(&world.core_samples, take_core_sample(world, len(content.blocks.definitions), {21, 1, -10}))
+	fire_seismic_shot(world, {10, 0, -10}, 32)
+	drill := pool_get(&world.entities.core_sample_drills, place_test_entity(world, content, "core_sample_drill", SAVE_TEST_CORE_SAMPLE_DRILL))
+	drill.work_ticks = 77
+}
+
+// The prospecting records, the drill and the explored set came through.
+prospecting_loaded :: proc(loaded, original: ^World) -> bool {
+	drill := pool_get(&loaded.entities.core_sample_drills, entity_at(&loaded.entities, SAVE_TEST_CORE_SAMPLE_DRILL))
+	records := len(loaded.assayed_veins) == 1 && len(loaded.magnetometer_readings) == 1 && loaded.magnetometer_readings[0].found
+	records &&= len(loaded.core_samples) == 1 && loaded.core_samples[0].vein_found && len(loaded.seismic_shots) == 1 && len(loaded.seismic_outlines) == 1
+	counters := loaded.statistics.veins_assayed == 1 && loaded.statistics.seismic_shots == 1
+	return drill != nil && drill.work_ticks == 77 && records && counters && len(loaded.explored) == len(original.explored) && len(loaded.explored) > 0
+}
+
 // Every entity kind with contents: the power plant (offshore pump, pipes,
 // boiler, steam engine, poles, electric drill, lamp, electric inserter), a
 // power switch, an assembler line, labs, a furnace line with belts, a
 // splitter, a burner drill on a finite vein, a bore drill part way down
 // to a deep vein, mining fluid in the electric drill's revival port, a
-// schematic crate, and the capsule of the pad.
+// schematic crate, a core sample drill with the prospecting records, and
+// the capsule of the pad.
 build_save_test_site :: proc(simulation: ^Simulation_State, content: Simulation_Content) {
 	world := &simulation.world
 	carve_save_test_floor(world, test_block(content.blocks, "stone"))
@@ -164,6 +190,7 @@ build_save_test_site :: proc(simulation: ^Simulation_State, content: Simulation_
 	bore := test_drill(world, place_test_entity(world, content, "bore_drill", {20, 1, -12}))
 	bore.vein, bore.bored_ticks = deep, 1234
 	lay_save_test_schematics(simulation, content)
+	lay_save_test_prospecting(world, content)
 	technology := test_technology(content.technologies, "automation")
 	testing_refusal := queue_research(&world.research, content.technologies, simulation.unlocks, technology)
 	assert(testing_refusal == .None)
@@ -292,6 +319,7 @@ test_save_load_run_matches_the_original :: proc(t: ^testing.T) {
 	testing.expect(t, pipes_holding_fluid(&loaded.world.entities) > 0)
 	testing.expect(t, deep_veins_and_bore_drill_loaded(&loaded.world))
 	testing.expect(t, schematics_loaded(&loaded, content))
+	testing.expect(t, prospecting_loaded(&loaded.world, &original.world))
 	testing.expect_value(t, len(loaded.world.entities.fluid_networks.networks), len(original.world.entities.fluid_networks.networks))
 	testing.expect_value(t, len(loaded.world.entities.electric_networks.networks), len(original.world.entities.electric_networks.networks))
 	testing.expect_value(t, len(loaded.world.entities.belt_network.lines), len(original.world.entities.belt_network.lines))

@@ -311,6 +311,7 @@ stop_chunk_streaming :: proc(streaming: ^Chunk_Streaming) {
 // so its arrival changes no neighbour's mesh.
 insert_generated_chunk :: proc(world: ^World, result: Chunk_Job_Result) {
 	world.chunks[result.coordinate] = result.chunk
+	mark_column_explored(world, chunk_column_of(result.coordinate))
 	register_column_veins(world, chunk_column_of(result.coordinate), result.veins[:])
 	register_outcrop_cells(world, result.outcrops[:])
 	register_crate_sites(world, result.crates[:])
@@ -397,6 +398,7 @@ unload_distant_chunks :: proc(streaming: ^Chunk_Streaming, world: ^World, camera
 			append(&streaming.unloaded, coordinate)
 		}
 	}
+	refresh_unloading_surfaces(world, streaming.unloaded[:])
 	for coordinate in streaming.unloaded {
 		store_modified_chunk(world, world.chunks[coordinate])
 		free(world.chunks[coordinate])

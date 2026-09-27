@@ -165,6 +165,13 @@ Input_Frame :: struct {
 	raw:          Raw_Input,
 }
 
+// What the backend plays on the controller this frame (work item 0038),
+// strength 0 to 1. Only the SDL3 backend rumbles; SDL exposes no haptics
+// per trackpad for the Steam Controller, only whole controller rumble.
+Haptic_Request :: struct {
+	strength: f32,
+}
+
 STICK_DEADZONE :: 0.15
 
 // What the player's body and hands react to. While a screen is open the

@@ -34,6 +34,8 @@ Entity_Kind :: enum u8 {
 	Lab,
 	// Cave crates holding a schematic (schematic.odin).
 	Schematic_Crate,
+	// Core sample drills (prospecting.odin).
+	Core_Sample_Drill,
 }
 
 // index is into the pool of `kind`. Generations start at 1, so the zero
@@ -92,6 +94,7 @@ Entities :: struct {
 	assemblers:     Entity_Pool(Assembler),
 	labs:           Entity_Pool(Lab),
 	schematic_crates: Entity_Pool(Schematic_Crate),
+	core_sample_drills: Entity_Pool(Core_Sample_Drill),
 	// Transport lines derived from the belts and splitters (belt.odin).
 	belt_network:   Belt_Network,
 	// Derived from the pipes and fluid ports (fluid_network.odin).
@@ -159,6 +162,7 @@ destroy_entities :: proc(entities: ^Entities) {
 	destroy_pool(&entities.assemblers)
 	destroy_pool(&entities.labs)
 	destroy_pool(&entities.schematic_crates)
+	destroy_pool(&entities.core_sample_drills)
 	destroy_belt_network(&entities.belt_network)
 	destroy_fluid_networks(&entities.fluid_networks)
 	destroy_electric_networks(&entities.electric_networks)
@@ -224,6 +228,10 @@ entity_common :: proc(entities: ^Entities, handle: Entity_Handle) -> ^Entity_Com
 	case .Schematic_Crate:
 		if crate := pool_get(&entities.schematic_crates, handle); crate != nil {
 			return &crate.common
+		}
+	case .Core_Sample_Drill:
+		if drill := pool_get(&entities.core_sample_drills, handle); drill != nil {
+			return &drill.common
 		}
 	}
 	return nil
@@ -383,6 +391,8 @@ add_entity :: proc(entities: ^Entities, machines: Machine_Registry, machine: Mac
 		handle = pool_add(&entities.labs, .Lab, make_lab(common, len(machines.lab_packs)))
 	case .Schematic_Crate:
 		handle = pool_add(&entities.schematic_crates, .Schematic_Crate, Schematic_Crate{common = common, slots = {EMPTY_STACK}})
+	case .Core_Sample_Drill:
+		handle = pool_add(&entities.core_sample_drills, .Core_Sample_Drill, make_core_sample_drill(common))
 	}
 	for cell in footprint_cells(origin, machines.machines[machine].footprint, rotation) {
 		entities.cells[cell] = handle
@@ -453,6 +463,8 @@ remove_entity :: proc(entities: ^Entities, machines: Machine_Registry, handle: E
 		return pool_remove(&entities.labs, handle)
 	case .Schematic_Crate:
 		return pool_remove(&entities.schematic_crates, handle)
+	case .Core_Sample_Drill:
+		return pool_remove(&entities.core_sample_drills, handle)
 	case .Belt, .Splitter:
 		// Handled by remove_belt and remove_splitter above.
 		return false
@@ -513,6 +525,7 @@ tick_entities :: proc(world: ^World, content: Simulation_Content, tick_rate: int
 	}
 	tick_assemblers(world, content, tick_rate)
 	tick_labs(world, content, tick_rate)
+	tick_core_sample_drills(world, content, tick_rate)
 	tick_fluids(&world.entities, content, tick_rate, &world.statistics)
 	tick_lamps(world, content.machines)
 	apply_spent_outcrops(world, content.veins)

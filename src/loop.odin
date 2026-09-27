@@ -53,6 +53,8 @@ Frame_State :: struct {
 	input_backend:      Input_Backend,
 	sdl3_input:         Sdl3_Input_State,
 	input:              Input_Frame,
+	// The rumble for this frame, applied by the SDL3 backend.
+	haptic:             Haptic_Request,
 	previous_input:     Input_Frame,
 	frame_seconds:      f32,
 	// World actions still held since a screen closed, see update_world_action_guard.
@@ -65,6 +67,8 @@ Frame_State :: struct {
 	bindings:           []Binding,
 	input_bindings:     Input_Bindings,
 	ui:                 Ui_State,
+	// The map's texture (ui_draw.odin).
+	ui_images:          Ui_Image_Cache,
 	cursor_enabled:     bool,
 	quit_requested:     bool,
 	renderer:           Chunk_Renderer,
@@ -126,9 +130,12 @@ simulation_tick :: proc(state: ^Simulation_State, content_tables: Simulation_Con
 	for index in 0 ..< len(state.players) {
 		input, used := resolve_use_item(&state.players[index], &state.world.entities, content.items, index < len(inputs) ? inputs[index] : Input_Frame{})
 		if used != NO_ITEM {
-			read_schematic(&state.unlocks, &state.quests, &state.world.statistics, content.recipes, used, state.tick)
+			if event, happened := apply_item_use(state, content, index, used); happened {
+				append(&state.events, Simulation_Event{player = index, kind = event})
+			}
 		}
 		events := tick_player(&state.world, content, state.players[:], index, input, state.tick_rate)
+		update_magnetometer(&state.world, content, &state.players[index])
 		for kind in events {
 			append(&state.events, Simulation_Event{player = index, kind = kind})
 		}
@@ -242,10 +249,15 @@ update_frame :: proc(state: ^Frame_State) {
 	state.input = read_input_frame(state, state.frame_seconds)
 	world_blocked := ui_blocks_world(state.ui.screens)
 	state.world_action_guard = update_world_action_guard(state.world_action_guard, world_blocked, state.input.pressed)
+	state.haptic = {}
 	if state.session != nil {
 		apply_debug_actions(state)
 		apply_overlay_toggle(state, world_blocked)
 		update_session(state, world_blocked)
+		state.haptic = haptic_request_for(state.session.simulation.players[0], !world_blocked)
+	}
+	if state.input_backend == .Sdl3 {
+		apply_sdl3_haptics(&state.sdl3_input, state.haptic)
 	}
 }
 
@@ -355,6 +367,7 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 		quit_requested  = &state.quit_requested,
 		title           = &state.title,
 		items           = content.items,
+		blocks          = content.blocks,
 		item_sort_ranks = content.item_sort_ranks,
 		machines        = content.machines,
 		fluids          = content.fluids,
@@ -381,6 +394,7 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 	screen_context.browser = &session.recipe_browser
 	screen_context.technology_browser = &session.technology_browser
 	screen_context.statistics_view = &session.statistics_view
+	screen_context.map_view = &session.map_view
 	return screen_context
 }
 
@@ -395,7 +409,7 @@ run_ui_frame :: proc(state: ^Frame_State) {
 		draw_hud(&state.ui, screen_context)
 	}
 	run_screens(&state.ui, screen_context)
-	ui_end(&state.ui, Icon_Atlas{texture = chunk_atlas_texture(state.renderer), layout = state.renderer.atlas_layout})
+	ui_end(&state.ui, Icon_Atlas{texture = chunk_atlas_texture(state.renderer), layout = state.renderer.atlas_layout}, &state.ui_images)
 	apply_cursor_mode(state)
 }
 
@@ -410,6 +424,12 @@ show_simulation_events :: proc(state: ^Ui_State, events: ^[dynamic]Simulation_Ev
 			}
 		case .Toggled_Switch:
 		// The switch's colour shows the change.
+		case .Vein_Assayed:
+			ui_toast(state, text("toast_vein_assayed"))
+		case .Magnetometer_Recorded:
+			ui_toast(state, text("toast_magnetometer_recorded"))
+		case .Seismic_Shot_Fired:
+			ui_toast(state, text("toast_seismic_shot"))
 		}
 	}
 	clear(events)
@@ -574,6 +594,7 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, content: Gam
 		cursor_enabled  = true,
 	}
 	defer destroy_ui_state(&state.ui)
+	defer release_ui_images(&state.ui_images)
 	defer destroy_title_state(&state.title)
 	defer write_changed_settings(&state)
 	defer if input_backend == .Sdl3 {

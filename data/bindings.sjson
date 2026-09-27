@@ -41,7 +41,7 @@ bindings = [
 	{action = "Hotbar_Next" device = "gamepad" control = "DPAD_RIGHT" context = "world"}
 	{action = "Hotbar_Next" device = "gamepad" control = "RIGHT_SHOULDER" context = "world"}
 	{action = "Sprint" device = "gamepad" control = "LEFT_STICK" context = "world" backend = "sdl3"}
-	{action = "Open_Map" device = "gamepad" control = "BACK" context = "world"}
+	{action = "Open_Map" device = "gamepad" control = "BACK" context = "both"}
 	{action = "Pause" device = "gamepad" control = "START" context = "both"}
 	{action = "Mine" device = "gamepad" control = "RIGHT_TRIGGER" context = "world"}
 	{action = "Place" device = "gamepad" control = "LEFT_TRIGGER" context = "world"}
@@ -80,7 +80,7 @@ bindings = [
 	{action = "Open_Power_Overview" device = "keyboard" control = "P" context = "both"}
 	{action = "Open_Statistics" device = "keyboard" control = "N" context = "both"}
 	{action = "Open_Technologies" device = "keyboard" control = "T" context = "both"}
-	{action = "Open_Map" device = "keyboard" control = "M" context = "world"}
+	{action = "Open_Map" device = "keyboard" control = "M" context = "both"}
 	{action = "Pause" device = "keyboard" control = "ESCAPE" context = "both"}
 	{action = "Sneak" device = "keyboard" control = "LEFT_SHIFT" context = "world"}
 	{action = "Interact" device = "keyboard" control = "F" context = "world"}

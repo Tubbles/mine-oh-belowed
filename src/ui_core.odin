@@ -95,6 +95,9 @@ Ui_Input :: struct {
 	open_power:     bool,
 	open_statistics: bool,
 	open_technologies: bool,
+	open_map:       bool,
+	// The left stick (or the movement keys), for panning the map.
+	move:           [2]f32,
 	// A letter key pressed this frame (lower case), 0 for none.
 	typed_letter:   rune,
 	// Printable characters a physical keyboard typed this frame, and the
@@ -134,6 +137,9 @@ Draw_Command_Kind :: enum u8 {
 	Clip_End,
 	// The block atlas tile `tile`, stretched over the rectangle.
 	Atlas_Tile,
+	// An RGBA image of image_size pixels, stretched over the rectangle;
+	// the draw layer uploads it again whenever image_revision changes.
+	Image,
 }
 
 Text_Alignment :: enum u8 {
@@ -152,6 +158,9 @@ Draw_Command :: struct {
 	alignment: Text_Alignment,
 	widget:    Ui_Id,
 	tile:      int,
+	pixels:         []Ui_Color,
+	image_size:     [2]i32,
+	image_revision: u64,
 }
 
 Repeat_State :: struct {
@@ -177,6 +186,8 @@ Screen :: enum u8 {
 	Power,
 	Statistics,
 	Technologies,
+	// The top down map (ui_map.odin).
+	Map,
 	// The title and its screens, shown while no world is played.
 	Title,
 	New_World,
@@ -515,10 +526,10 @@ focus_step_allowed :: proc(focused: Ui_Widget, step: Ui_Direction) -> bool {
 	return false
 }
 
-ui_end :: proc(state: ^Ui_State, atlas: Icon_Atlas) {
+ui_end :: proc(state: ^Ui_State, atlas: Icon_Atlas, images: ^Ui_Image_Cache) {
 	ui_resolve(state)
 	ui_append_overlays(state)
-	execute_draw_list(state^, atlas)
+	execute_draw_list(state^, atlas, images)
 }
 
 // Layout helpers.
@@ -594,7 +605,7 @@ top_screen :: proc(stack: Screen_Stack) -> Screen {
 
 screen_pauses_simulation :: proc(screen: Screen) -> bool {
 	switch screen {
-	case .None, .Inventory, .Machine, .Recipes, .Journal, .Power, .Statistics, .Technologies:
+	case .None, .Inventory, .Machine, .Recipes, .Journal, .Power, .Statistics, .Technologies, .Map:
 		return false
 	case .Pause, .Settings, .Title, .New_World, .Load_World, .Confirm_Delete:
 		return true

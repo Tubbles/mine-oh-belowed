@@ -38,6 +38,13 @@ save_layout_fingerprint :: proc() -> u64 {
 		type_info_of(Assembler),
 		type_info_of(Lab),
 		type_info_of(Schematic_Crate),
+		type_info_of(Core_Sample_Drill),
+		type_info_of(Explored_Column),
+		type_info_of(Assayed_Vein),
+		type_info_of(Magnetometer_Reading),
+		type_info_of(Core_Sample),
+		type_info_of(Seismic_Shot),
+		type_info_of(Seismic_Outline),
 		type_info_of(Crate_Site),
 		type_info_of(Vein),
 		type_info_of(Outcrop_Cell),
@@ -148,6 +155,7 @@ write_entity_pools :: proc(bytes: ^[dynamic]byte, entities: ^Entities) {
 	write_pool(bytes, &entities.assemblers)
 	write_pool(bytes, &entities.labs)
 	write_pool(bytes, &entities.schematic_crates)
+	write_pool(bytes, &entities.core_sample_drills)
 }
 
 outcrop_before :: proc(first, second: Outcrop_Cell) -> bool {
@@ -187,6 +195,7 @@ write_world_state :: proc(bytes: ^[dynamic]byte, world: ^World) {
 	write_list(bytes, sorted_outcrop_cells(world))
 	write_list(bytes, world.spent_outcrops[:])
 	write_list(bytes, world.crate_sites[:])
+	write_prospecting_records(bytes, world)
 	write_list(bytes, world.block_changes[:])
 	write_list(bytes, water_update_list(&world.water))
 	write_entity_pools(bytes, &world.entities)
@@ -194,6 +203,16 @@ write_world_state :: proc(bytes: ^[dynamic]byte, world: ^World) {
 	write_list(bytes, fluid_network_fluids(world.entities.fluid_networks))
 	write_value_of(bytes, &world.statistics)
 	write_value_of(bytes, &world.research)
+}
+
+// The explored map and the prospecting records (work item 0038).
+write_prospecting_records :: proc(bytes: ^[dynamic]byte, world: ^World) {
+	write_list(bytes, sorted_explored_columns(world))
+	write_list(bytes, world.assayed_veins[:])
+	write_list(bytes, world.magnetometer_readings[:])
+	write_list(bytes, world.core_samples[:])
+	write_list(bytes, world.seismic_shots[:])
+	write_list(bytes, world.seismic_outlines[:])
 }
 
 write_quest_state :: proc(bytes: ^[dynamic]byte, quests: ^Quest_State) {
@@ -264,6 +283,7 @@ read_entity_pools :: proc(reader: ^Byte_Reader, entities: ^Entities, machines: M
 	read_pool(reader, &entities.assemblers, .Assembler, machines) or_return
 	read_pool(reader, &entities.labs, .Lab, machines) or_return
 	read_pool(reader, &entities.schematic_crates, .Schematic_Crate, machines) or_return
+	read_pool(reader, &entities.core_sample_drills, .Core_Sample_Drill, machines) or_return
 	return true
 }
 
@@ -283,6 +303,7 @@ read_world_lists :: proc(reader: ^Byte_Reader, world: ^World) -> bool {
 	}
 	read_list(reader, &world.spent_outcrops) or_return
 	read_list(reader, &world.crate_sites) or_return
+	read_prospecting_records(reader, world) or_return
 	read_list(reader, &world.block_changes) or_return
 	updates := make([dynamic]Water_Update, context.temp_allocator)
 	read_list(reader, &updates) or_return
@@ -291,6 +312,21 @@ read_world_lists :: proc(reader: ^Byte_Reader, world: ^World) -> bool {
 	for update in updates {
 		schedule_water_update(&world.water, update.position, update.due_tick)
 	}
+	return true
+}
+
+read_prospecting_records :: proc(reader: ^Byte_Reader, world: ^World) -> bool {
+	explored := make([dynamic]Explored_Column, context.temp_allocator)
+	read_list(reader, &explored) or_return
+	clear(&world.explored)
+	for column in explored {
+		world.explored[column.column] = column.surface
+	}
+	read_list(reader, &world.assayed_veins) or_return
+	read_list(reader, &world.magnetometer_readings) or_return
+	read_list(reader, &world.core_samples) or_return
+	read_list(reader, &world.seismic_shots) or_return
+	read_list(reader, &world.seismic_outlines) or_return
 	return true
 }
 
@@ -455,6 +491,8 @@ entity_pool_length :: proc(entities: ^Entities, kind: Entity_Kind) -> int {
 		return len(entities.labs.entries)
 	case .Schematic_Crate:
 		return len(entities.schematic_crates.entries)
+	case .Core_Sample_Drill:
+		return len(entities.core_sample_drills.entries)
 	}
 	return 0
 }
@@ -492,6 +530,8 @@ entity_common_at :: proc(entities: ^Entities, kind: Entity_Kind, index: int) -> 
 		return &entities.labs.entries[index].common
 	case .Schematic_Crate:
 		return &entities.schematic_crates.entries[index].common
+	case .Core_Sample_Drill:
+		return &entities.core_sample_drills.entries[index].common
 	}
 	return nil
 }

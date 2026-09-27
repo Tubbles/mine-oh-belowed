@@ -25,6 +25,8 @@ How every screen in the game is built, so that the pillars "couch first" and "on
 
 - The statistics screen (0028) has a Production tab (window of 1, 10 or 60 minutes, items sorted by produced per minute with consumed beside it, a detail row with the machines making and using the focused item and the voided total) and a Power tab that reuses the power overview. The bottleneck overlay draws a marker above every machine: green working, yellow output full, red starved of input, fuel or power, grey idle; markers keep a roughly constant screen size beyond fifteen blocks.
 
+- The map screen (0038, View or M) draws the explored area top down as one 256 by 256 image at 1 to 16 blocks per pixel, coloured by the surface block, with the player, machines and the prospecting layers: assayed vein footprints, magnetometer readings, core sample columns and seismic circles. Bumpers or the right stick zoom, the left stick or pointer drag pans. The magnetometer shows a dial with a needle and strength on the HUD while selected.
+
 ## Widgets
 
 Label, button, toggle, slider, tabs, vertical list with letter jump, grid of slots, item slot (icon, count, highlight), progress bar, tooltip panel, radial menu, text field (opens the on-screen keyboard), glyph bar, toast.

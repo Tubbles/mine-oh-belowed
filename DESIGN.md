@@ -57,7 +57,7 @@ Surface veins show as outcrops, so the early game needs no tool. Everything belo
 2. Geologist's hammer. Strike an outcrop block to assay the vein: its ore mix and its size class (scattering, deposit, concentration). The assay marks the vein's footprint on the map. One vein at a time, on foot.
 3. Magnetometer. A handheld that reads iron bearing veins at range, including buried ones, through the trackpad haptics: the pad buzzes harder the closer you get. Location only, iron only.
 4. Core sample drill. A powered machine that drills a core over time and reports the strata and any vein below its position, with composition and depth. Confirms one column, finds deep veins where you already suspect them.
-5. Seismic survey. Thumper charges placed in a pattern, each shot images a radius, several shots together outline deep veins over a wide area on the map. Location and shape of deep veins, not their composition. Consumes charges and power.
+5. Seismic survey. Thumper charges placed in a pattern, each shot images a radius, several shots together outline deep veins over a wide area on the map. Location and shape of deep veins, not their composition. Consumes charges. (0038 draws each shot's veins as their true circles; a coarser outline for unresolved veins is a follow up.)
 6. Orbital survey. Bought from the venture with a shipment: one satellite pass reveals surface veins with size classes over a large radius. Late, expensive, and a reason to ship.
 
 Rarer ores are tied to strata and biomes with plausible geology (gold in quartz veins in hills, sulfur near tar flats, bauxite under red laterite soil), so knowing the world is prospecting too.

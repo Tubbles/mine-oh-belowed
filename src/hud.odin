@@ -6,7 +6,8 @@ package game
 // ghost), hotbar with the held
 // item's name, the hotbar radial, the active quest objective (top right,
 // ui_journal.odin), the brownout warning (top centre, ui_power.odin) and
-// the glyph bar. Targeted block names come later.
+// the glyph bar, and the magnetometer's dial while one is selected
+// (ui_prospecting.odin). Targeted block names come later.
 
 CROSSHAIR_SIZE :: 18.0
 CROSSHAIR_THICKNESS :: 3.0
@@ -127,8 +128,9 @@ draw_hotbar_radial :: proc(state: ^Ui_State, hotbar: []Item_Stack, items: Item_R
 	}
 }
 
-// A full schematic crate in view takes Interact; a selected schematic is
-// read with the Place control (Use_Item). In the temp allocator.
+// A full schematic crate in view takes Interact; a selected usable item
+// (a schematic, a prospecting tool) is used with the Place control
+// (Use_Item). In the temp allocator.
 schematic_glyph_hints :: proc(world: ^World, player: Player, items: Item_Registry) -> (hints: []Glyph_Hint, shown: bool) {
 	list := make([dynamic]Glyph_Hint, context.temp_allocator)
 	crate := pool_get(&world.entities.schematic_crates, player.target.entity)
@@ -137,7 +139,7 @@ schematic_glyph_hints :: proc(world: ^World, player: Player, items: Item_Registr
 	}
 	selected := selected_hotbar_stack(player)
 	if !stack_is_empty(selected) && item_is_usable(items, selected.item) {
-		append(&list, Glyph_Hint{.Use_Item, text("hint_read_schematic")})
+		append(&list, Glyph_Hint{.Use_Item, text(item_use_hint_keys[items.items[selected.item].use])})
 	}
 	if len(list) == 0 {
 		return nil, false
@@ -174,6 +176,9 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 	draw_target_status(state, status)
 	draw_target_status(state, vein_status, status == "" ? 0 : 1)
+	if selected := selected_hotbar_stack(player^); !stack_is_empty(selected) && item_has_use(items, selected.item, .Magnetometer) {
+		draw_magnetometer(state, player^)
+	}
 	hotbar_radial(state, player, items)
 	if hints, shown := schematic_glyph_hints(screen_context.world, player^, items); shown {
 		ui_glyph_bar(state, hints)

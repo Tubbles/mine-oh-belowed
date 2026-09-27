@@ -29,8 +29,14 @@ STEAM_CONTROLLER_LEFT_GRIP_TOUCH :: sdl.GamepadButton.MISC5
 STEAM_CONTROLLER_RIGHT_GRIP_TOUCH :: sdl.GamepadButton.MISC6
 STEAM_CONTROLLER_RIGHT_PAD_CLICK :: sdl.GamepadButton.MISC2
 
+// A rumble lasts this long unless the next frame renews it, so it stops
+// by itself when frames stop.
+HAPTIC_RUMBLE_MILLISECONDS :: 100
+
 Sdl3_Input_State :: struct {
-	gamepad: ^sdl.Gamepad,
+	gamepad:  ^sdl.Gamepad,
+	// A rumble was started and not yet stopped.
+	rumbling: bool,
 }
 
 // Returns an SDL error message when initialisation fails.
@@ -245,6 +251,29 @@ read_sdl3_input_frame :: proc(state: ^Sdl3_Input_State, previous: Input_Frame, f
 		just_pressed = actions_just_pressed(previous.pressed, pressed) + wheel_actions,
 		raw = raw,
 	}
+}
+
+rumble_level :: proc(strength: f32) -> u16 {
+	return u16(clamp(strength, 0, 1) * f32(max(u16)))
+}
+
+// Both motors at the requested strength, renewed every frame; a request
+// of 0 stops a running rumble once.
+apply_sdl3_haptics :: proc(state: ^Sdl3_Input_State, request: Haptic_Request) {
+	if state.gamepad == nil {
+		state.rumbling = false
+		return
+	}
+	if request.strength <= 0 {
+		if state.rumbling {
+			sdl.RumbleGamepad(state.gamepad, 0, 0, 0)
+			state.rumbling = false
+		}
+		return
+	}
+	level := rumble_level(request.strength)
+	sdl.RumbleGamepad(state.gamepad, level, level, HAPTIC_RUMBLE_MILLISECONDS)
+	state.rumbling = true
 }
 
 // The right pad click as a pointer click, separate from the actions it is

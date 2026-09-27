@@ -224,7 +224,7 @@ entity_takes_item_kind :: proc(entities: ^Entities, content: Simulation_Content,
 	case .Lab:
 		slot := lab_slot_of(content.machines.lab_packs, item)
 		return slot >= 0 && slot < len(entity_slots(entities, handle))
-	case .Splitter, .Pipe, .Pole, .Lamp, .Schematic_Crate:
+	case .Splitter, .Pipe, .Pole, .Lamp, .Schematic_Crate, .Core_Sample_Drill:
 		return false
 	}
 	return false

@@ -117,6 +117,8 @@ make_ui_input :: proc(previous, current: Input_Frame) -> Ui_Input {
 		open_power = .Open_Power_Overview in just,
 		open_statistics = .Open_Statistics in just,
 		open_technologies = .Open_Technologies in just,
+		open_map = .Open_Map in just,
+		move = current.move,
 		typed_letter = newly_pressed_letter(previous.raw.keyboard, current.raw.keyboard),
 		typed_text = current.raw.keyboard.text,
 		typed_text_length = current.raw.keyboard.text_length,

@@ -60,6 +60,8 @@ crafting_machine_colors := [Recipe_Maker]rl.Color {
 }
 LAB_COLOR :: rl.Color{200, 204, 210, 255}
 LAB_RESEARCHING_TOP_COLOR :: rl.Color{90, 150, 240, 255}
+CORE_SAMPLE_DRILL_COLOR :: rl.Color{150, 120, 90, 255}
+CORE_SAMPLE_DRILL_REPORTED_TOP_COLOR :: rl.Color{80, 200, 200, 255}
 // Turns of the bit per drill cycle.
 DRILL_BIT_TURNS_PER_CYCLE :: 4
 
@@ -182,6 +184,12 @@ draw_entities :: proc(world: ^World, machines: Machine_Registry, items: Item_Reg
 	for lab in world.entities.labs.entries {
 		if lab.alive {
 			draw_entity_cells(lab.common, machines, LAB_COLOR, lab.state == .Researching ? LAB_RESEARCHING_TOP_COLOR : LAB_COLOR)
+		}
+	}
+	for drill in world.entities.core_sample_drills.entries {
+		if drill.alive {
+			top := drill.sample >= 0 ? CORE_SAMPLE_DRILL_REPORTED_TOP_COLOR : CORE_SAMPLE_DRILL_COLOR
+			draw_entity_cells(drill.common, machines, CORE_SAMPLE_DRILL_COLOR, top)
 		}
 	}
 }

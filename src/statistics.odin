@@ -122,6 +122,13 @@ Statistics :: struct {
 	veins_exhausted:             u64,
 	// Schematics read whose recipe was not found before (schematic.odin).
 	schematics_found:            u64,
+	// Prospecting (prospecting.odin): veins assayed for the first time,
+	// core samples reported, seismic shots fired, and deep veins three
+	// shots have covered.
+	veins_assayed:               u64,
+	core_samples_taken:          u64,
+	seismic_shots:               u64,
+	veins_resolved:              u64,
 	// Electric energy all networks delivered, in joules; produced and
 	// consumed are equal, generators give only what consumers receive.
 	energy_produced_joules:      u64,

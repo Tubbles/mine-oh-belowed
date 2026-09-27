@@ -38,6 +38,12 @@
 // usable (optional, work item 0036) marks an item the Use_Item action
 // reads: the schematics found in cave crates, one per schematic channel
 // recipe (recipes.sjson). A usable item places nothing.
+// use (optional, work item 0038, default read) is what Use_Item does with
+// a usable item: read (a schematic, consumed), assay (the geologist's
+// hammer on an outcrop, kept), magnetometer (records the reading, kept;
+// detects is the ore item it finds, use_range the blocks it reaches) or
+// seismic_shot (a thumper charge fired at the targeted ground, consumed;
+// use_range is the radius it images).
 items = [
 	// Raw materials
 	{id = "log", name_key = "item_log", category = "raw", stack_size = 50, places_block = "log", fuel_megajoules = 2, cannot_recycle = true}
@@ -105,8 +111,9 @@ items = [
 	{id = "wooden_pickaxe", name_key = "item_wooden_pickaxe", category = "tool", stack_size = 10}
 	{id = "stone_pickaxe", name_key = "item_stone_pickaxe", category = "tool", stack_size = 10}
 	{id = "iron_pickaxe", name_key = "item_iron_pickaxe", category = "tool", stack_size = 10}
-	{id = "geologists_hammer", name_key = "item_geologists_hammer", category = "tool", stack_size = 10}
-	{id = "magnetometer", name_key = "item_magnetometer", category = "tool", stack_size = 10}
+	{id = "geologists_hammer", name_key = "item_geologists_hammer", category = "tool", stack_size = 10, usable = true, use = "assay"}
+	{id = "magnetometer", name_key = "item_magnetometer", category = "tool", stack_size = 10, usable = true, use = "magnetometer", detects = "hematite", use_range = 30}
+	{id = "thumper_charge", name_key = "item_thumper_charge", category = "tool", stack_size = 50, usable = true, use = "seismic_shot", use_range = 32, cannot_recycle = true}
 	// Machines
 	{id = "stone_furnace", name_key = "item_stone_furnace", category = "machine", stack_size = 10}
 	{id = "steel_furnace", name_key = "item_steel_furnace", category = "machine", stack_size = 10}

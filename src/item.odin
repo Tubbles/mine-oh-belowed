@@ -37,6 +37,24 @@ item_category_names := [Item_Category]string {
 	.Block        = "block",
 }
 
+// What Use_Item does with a usable item (work item 0038): read a
+// schematic, assay the targeted outcrop's vein, record a magnetometer
+// reading, or fire a seismic shot at the targeted ground.
+Item_Use :: enum u8 {
+	Read,
+	Assay,
+	Magnetometer,
+	Seismic_Shot,
+}
+
+@(rodata)
+item_use_names := [Item_Use]string {
+	.Read         = "read",
+	.Assay        = "assay",
+	.Magnetometer = "magnetometer",
+	.Seismic_Shot = "seismic_shot",
+}
+
 // As written in the file, before references are resolved.
 Item_Definition :: struct {
 	id:              string,
@@ -49,6 +67,9 @@ Item_Definition :: struct {
 	cannot_recycle:  bool,
 	also_mined_from: []string,
 	usable:          bool,
+	use:             string,
+	detects:         string,
+	use_range:       int,
 }
 
 Items_File :: struct {
@@ -59,7 +80,9 @@ Items_File :: struct {
 // whole kilojoules so machines burn it with integer arithmetic.
 // cannot_recycle keeps the recycler from taking the item (recycler.odin).
 // A usable item is read with the Use_Item action (schematics, work item
-// 0036) and never places anything.
+// 0036) and never places anything. use says what Use_Item does with it;
+// a magnetometer finds veins yielding detects within use_range blocks, a
+// seismic shot images deep veins within use_range blocks.
 Item :: struct {
 	id:              string,
 	name_key:        string,
@@ -69,6 +92,9 @@ Item :: struct {
 	fuel_kilojoules: u32,
 	cannot_recycle:  bool,
 	usable:          bool,
+	use:             Item_Use,
+	detects:         Item_Id,
+	use_range:       i32,
 }
 
 Item_Registry :: struct {
@@ -127,6 +153,26 @@ validate_item_definition :: proc(definitions: []Item_Definition, index: int) -> 
 	if definition.usable && definition.places_block != "" {
 		return fmt.tprintf("usable item %q cannot place a block", definition.id)
 	}
+	return validate_item_use(definition)
+}
+
+// A use needs a usable item; a magnetometer names what it detects and
+// both range uses a positive range.
+validate_item_use :: proc(definition: Item_Definition) -> string {
+	if definition.use == "" {
+		return definition.detects == "" && definition.use_range == 0 ? "" : fmt.tprintf("item %q has detects or use_range without a use", definition.id)
+	}
+	use, found := parse_named_enum(item_use_names, definition.use)
+	switch {
+	case !found:
+		return fmt.tprintf("item %q has unknown use %q", definition.id, definition.use)
+	case !definition.usable:
+		return fmt.tprintf("item %q has a use but is not usable", definition.id)
+	case use == .Magnetometer && definition.detects == "":
+		return fmt.tprintf("magnetometer %q needs detects", definition.id)
+	case (use == .Magnetometer || use == .Seismic_Shot) && definition.use_range <= 0:
+		return fmt.tprintf("item %q needs a positive use_range", definition.id)
+	}
 	return ""
 }
 
@@ -158,6 +204,7 @@ assign_drop :: proc(drops: []Item_Id, blocks: Block_Registry, block_name: string
 
 resolve_item :: proc(definition: Item_Definition, blocks: Block_Registry) -> (item: Item, problem: string) {
 	category, _ := parse_item_category(definition.category)
+	use, _ := parse_named_enum(item_use_names, definition.use)
 	placed_block: Block_Id
 	if placed_block, problem = resolve_placed_block(definition, blocks); problem != "" {
 		return {}, problem
@@ -171,8 +218,26 @@ resolve_item :: proc(definition: Item_Definition, blocks: Block_Registry) -> (it
 		fuel_kilojoules = u32(math.round(definition.fuel_megajoules * 1000)),
 		cannot_recycle  = definition.cannot_recycle,
 		usable          = definition.usable,
+		use             = use,
+		detects         = NO_ITEM,
+		use_range       = i32(definition.use_range),
 	}
 	return item, ""
+}
+
+// The item a magnetometer detects must exist.
+resolve_item_detects :: proc(definitions: []Item_Definition, registry: Item_Registry) -> string {
+	for definition, index in definitions {
+		if definition.detects == "" {
+			continue
+		}
+		item, found := find_item_id(registry, definition.detects)
+		if !found {
+			return fmt.tprintf("item %q detects unknown item %q", definition.id, definition.detects)
+		}
+		registry.items[index].detects = item
+	}
+	return ""
 }
 
 // A block yields at most one extra item, and only besides a main drop.
@@ -250,6 +315,10 @@ resolve_item_registry :: proc(file: Items_File, blocks: Block_Registry, allocato
 		destroy_item_registry(registry, allocator)
 		return {}, problem
 	}
+	if problem = resolve_item_detects(file.items, registry); problem != "" {
+		destroy_item_registry(registry, allocator)
+		return {}, problem
+	}
 	return registry, ""
 }
 
@@ -299,6 +368,11 @@ block_extra_drop :: proc(registry: Item_Registry, block: Block_Id) -> Item_Id {
 
 item_is_usable :: proc(registry: Item_Registry, item: Item_Id) -> bool {
 	return int(item) < len(registry.items) && registry.items[item].usable
+}
+
+// False for an item that is not usable.
+item_has_use :: proc(registry: Item_Registry, item: Item_Id, use: Item_Use) -> bool {
+	return item_is_usable(registry, item) && registry.items[item].use == use
 }
 
 Item_Sort_Context :: struct {

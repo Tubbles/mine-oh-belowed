@@ -134,6 +134,8 @@ machine_area_size :: proc(machine: Machine, slot_count: int) -> [2]f32 {
 		return power_area_size(machine)
 	case .Crafting_Machine, .Lab:
 		return crafting_machine_area_size(machine)
+	case .Core_Sample_Drill:
+		return core_sample_area_size()
 	case .Belt, .Schematic_Crate:
 	}
 	return {}
@@ -317,12 +319,22 @@ drill_depth_line :: proc(world: ^World, drill: Drill) -> string {
 }
 
 // The vein's name and what is left of it in total, for the HUD.
+vein_size_class_name :: proc(veins: Vein_Content, size_class: int) -> string {
+	if size_class < 0 || size_class >= len(veins.size_class_ids) {
+		return ""
+	}
+	return text(fmt.tprintf("vein_size_%s", veins.size_class_ids[size_class]))
+}
+
 vein_status_text :: proc(world: ^World, veins: Vein_Content, id: Vein_Id) -> string {
 	vein := registered_vein(world, id)
 	if vein == nil || vein.type >= len(veins.types) {
 		return ""
 	}
 	name := text(veins.types[vein.type].name_key)
+	if vein_is_assayed(world, id) {
+		name = fmt.tprintf("%s  %s  %s", name, vein_size_class_name(veins, vein.size_class), text("vein_assayed"))
+	}
 	if world.settings.veins_infinite {
 		return fmt.tprintf("%s  %s", name, text("drill_infinite"))
 	}
@@ -369,6 +381,9 @@ machine_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, handle: Entity
 		return {grid = assembler_slot_region(state, content, pool_get(&screen_context.world.entities.assemblers, handle)^, screen_context)}
 	case .Lab:
 		return {grid = lab_slot_region(state, content, pool_get(&screen_context.world.entities.labs, handle)^, screen_context)}
+	case .Core_Sample_Drill:
+		core_sample_panel_region(state, content, pool_get(&screen_context.world.entities.core_sample_drills, handle)^, screen_context)
+		return {grid = {activated = -1, focused = -1}}
 	}
 	return {grid = ui_slot_grid(state, {content.x, content.y}, "chest", MACHINE_CHEST_COLUMNS, slots, screen_context.items)}
 }
@@ -491,6 +506,8 @@ entity_status_text :: proc(world: ^World, machines: Machine_Registry, fluids: Fl
 	case .Schematic_Crate:
 		crate := pool_get(&world.entities.schematic_crates, handle)
 		return stack_is_empty(crate.slots[0]) ? fmt.tprintf("%s  %s", name, text("schematic_crate_empty")) : name
+	case .Core_Sample_Drill:
+		return fmt.tprintf("%s  %s", name, core_sample_state_text(world, pool_get(&world.entities.core_sample_drills, handle)^))
 	}
 	return name
 }

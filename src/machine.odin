@@ -71,6 +71,9 @@ Machine_Kind :: enum u8 {
 	// A cave crate holding one schematic (schematic.odin): placed by world
 	// generation, never by an item, and never picked up.
 	Schematic_Crate,
+	// Reports the strata and the deep vein below its column after a
+	// powered while (prospecting.odin).
+	Core_Sample_Drill,
 }
 
 @(rodata)
@@ -98,6 +101,7 @@ machine_kind_names := [Machine_Kind]string {
 	.Crafting_Machine = "crafting_machine",
 	.Lab           = "lab",
 	.Schematic_Crate = "schematic_crate",
+	.Core_Sample_Drill = "core_sample_drill",
 }
 
 // The shape family a belt item places. Ramps become up or down and lifts
@@ -159,6 +163,7 @@ Machine_Definition :: struct {
 	inserter_reach:               int,
 	hydro_kilowatts_per_water_level: f32,
 	hydro_minimum_water_level:    int,
+	sampling_seconds:             int,
 }
 
 Machines_File :: struct {
@@ -226,6 +231,8 @@ Machine :: struct {
 	// footprint, and the level one footprint cell needs at placement.
 	hydro_watts_per_water_level: u32,
 	hydro_minimum_water_level:   int,
+	// Core sample drills: the powered work before the report.
+	sampling_seconds:            u32,
 }
 
 Machine_Registry :: struct {
@@ -308,6 +315,8 @@ validate_machine_kind_fields :: proc(definition: Machine_Definition, kind: Machi
 		}
 	case .Schematic_Crate:
 		return validate_schematic_crate_definition(definition)
+	case .Core_Sample_Drill:
+		return validate_core_sample_drill_definition(definition)
 	}
 	return ""
 }
@@ -514,6 +523,7 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 		inserter_reach = i32(max(definition.inserter_reach, 1)),
 		hydro_watts_per_water_level = u32(math.round(definition.hydro_kilowatts_per_water_level * 1000)),
 		hydro_minimum_water_level = definition.hydro_minimum_water_level,
+		sampling_seconds = u32(max(definition.sampling_seconds, 0)),
 	}
 }
 

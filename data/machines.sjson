@@ -123,8 +123,9 @@
 // of cells powered, centred across on the pole's square footprint (so the
 // volume's width and depth differ from the footprint's by an even count,
 // work item 0037) and starting at the pole's bottom. wire_reach connects it to every pole or
-// power switch whose origin is at most that far away (straight line, the
-// shorter reach of the two counts).
+// power switch whose footprint centre (across, at the bottom) is at most
+// that far from its own (straight line, the shorter reach of the two
+// counts; work item 0038 moved this from the origin corner).
 // Power switch: a 1 by 1 by 1 pole without a supply volume that joins the
 // networks it wires while on and splits them while off.
 // Lamp: electric_power_kilowatts and light_level, the block light it
@@ -168,6 +169,10 @@
 // recyclable item's returns must fit the output slots.
 // Electrolyser (work item 0035): fixed, one input and one output slot,
 // alumina to aluminium plate and quartz to silicon.
+// Core sample drill (work item 0038, kind core_sample_drill): 1 by 1 by
+// 2, electric_power_kilowatts, no slots. After sampling_seconds of
+// powered work it records the strata below its column and the deep vein
+// under it, once; picked up and placed again it samples anew.
 // Lab (work item 0021): speed and electric_power_kilowatts, no slot
 // fields. A lab has one slot per science pack item any technology in
 // technologies.sjson consumes.
@@ -682,6 +687,15 @@ machines = [
 		recipe_choice = "fixed"
 		input_slots = 1
 		output_slots = 1
+	}
+	{
+		id = "core_sample_drill"
+		name_key = "machine_core_sample_drill"
+		item = "core_sample_drill"
+		kind = "core_sample_drill"
+		footprint = {width = 1, depth = 1, height = 2}
+		electric_power_kilowatts = 40
+		sampling_seconds = 60
 	}
 	{
 		id = "lab"

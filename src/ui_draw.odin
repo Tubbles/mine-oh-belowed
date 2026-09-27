@@ -56,7 +56,51 @@ execute_atlas_tile_command :: proc(command: Draw_Command, atlas: Icon_Atlas, pix
 	rl.DrawTexturePro(atlas.texture, source, to_pixels(command.rectangle, pixels_per_unit), {}, 0, rl.WHITE)
 }
 
-execute_draw_command :: proc(command: Draw_Command, focus: Ui_Id, atlas: Icon_Atlas, pixels_per_unit: f32) {
+// The texture of the last drawn image (the map), uploaded again when the
+// command's revision or size changes.
+Ui_Image_Cache :: struct {
+	texture:  rl.Texture2D,
+	size:     [2]i32,
+	revision: u64,
+}
+
+release_ui_images :: proc(images: ^Ui_Image_Cache) {
+	if images.texture.id != 0 {
+		rl.UnloadTexture(images.texture)
+	}
+	images^ = {}
+}
+
+upload_ui_image :: proc(images: ^Ui_Image_Cache, command: Draw_Command) {
+	if images.texture.id != 0 && images.size == command.image_size && images.revision == command.image_revision {
+		return
+	}
+	if images.texture.id == 0 || images.size != command.image_size {
+		release_ui_images(images)
+		image := rl.Image {
+			data    = raw_data(command.pixels),
+			width   = command.image_size.x,
+			height  = command.image_size.y,
+			mipmaps = 1,
+			format  = .UNCOMPRESSED_R8G8B8A8,
+		}
+		images.texture = rl.LoadTextureFromImage(image)
+	} else {
+		rl.UpdateTexture(images.texture, raw_data(command.pixels))
+	}
+	images.size, images.revision = command.image_size, command.image_revision
+}
+
+execute_image_command :: proc(command: Draw_Command, images: ^Ui_Image_Cache, pixels_per_unit: f32) {
+	if images == nil || len(command.pixels) != int(command.image_size.x * command.image_size.y) || len(command.pixels) == 0 {
+		return
+	}
+	upload_ui_image(images, command)
+	source := rl.Rectangle{0, 0, f32(command.image_size.x), f32(command.image_size.y)}
+	rl.DrawTexturePro(images.texture, source, to_pixels(command.rectangle, pixels_per_unit), {}, 0, rl.WHITE)
+}
+
+execute_draw_command :: proc(command: Draw_Command, focus: Ui_Id, atlas: Icon_Atlas, images: ^Ui_Image_Cache, pixels_per_unit: f32) {
 	switch command.kind {
 	case .Fill:
 		rl.DrawRectangleRec(to_pixels(command.rectangle, pixels_per_unit), to_raylib_color(command.color))
@@ -75,11 +119,13 @@ execute_draw_command :: proc(command: Draw_Command, focus: Ui_Id, atlas: Icon_At
 		rl.EndScissorMode()
 	case .Atlas_Tile:
 		execute_atlas_tile_command(command, atlas, pixels_per_unit)
+	case .Image:
+		execute_image_command(command, images, pixels_per_unit)
 	}
 }
 
-execute_draw_list :: proc(state: Ui_State, atlas: Icon_Atlas) {
+execute_draw_list :: proc(state: Ui_State, atlas: Icon_Atlas, images: ^Ui_Image_Cache) {
 	for command in state.draw_list {
-		execute_draw_command(command, state.focus, atlas, state.pixels_per_unit)
+		execute_draw_command(command, state.focus, atlas, images, state.pixels_per_unit)
 	}
 }

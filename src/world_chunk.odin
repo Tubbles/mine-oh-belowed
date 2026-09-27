@@ -58,6 +58,15 @@ World :: struct {
 	// The queued technology and its progress (lab.odin), here so the lab
 	// tick reaches it through the world.
 	research:       Research_State,
+	// Every chunk column loaded at least once, with the surface seen there
+	// (world_explored.odin), and the prospecting records drawn on the map
+	// (prospecting.odin). All saved.
+	explored:              map[Chunk_Column]Column_Surface,
+	assayed_veins:         [dynamic]Assayed_Vein,
+	magnetometer_readings: [dynamic]Magnetometer_Reading,
+	core_samples:          [dynamic]Core_Sample,
+	seismic_shots:         [dynamic]Seismic_Shot,
+	seismic_outlines:      [dynamic]Seismic_Outline,
 }
 
 Block_Change :: struct {
@@ -214,6 +223,12 @@ destroy_world :: proc(world: ^World) {
 	delete(world.outcrop_cells)
 	delete(world.spent_outcrops)
 	delete(world.crate_sites)
+	delete(world.explored)
+	delete(world.assayed_veins)
+	delete(world.magnetometer_readings)
+	delete(world.core_samples)
+	delete(world.seismic_shots)
+	delete(world.seismic_outlines)
 	delete(world.block_changes)
 	destroy_lighting(&world.lighting)
 	delete(world.entity_lights)

@@ -173,6 +173,22 @@ test_big_poles_and_substations_connect_by_reach :: proc(t: ^testing.T) {
 	testing.expect(t, entity_network(networks, far) != entity_network(networks, middle))
 }
 
+// Wire reach measures between footprint centres: a substation's centre
+// sits one block in from its origin corner on x and z.
+@(test)
+test_substation_wire_reach_measures_from_the_footprint_centre :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	networks := &world.entities.electric_networks
+	substation := place_test_entity(&world, content, "substation", {0, 1, 0})
+	// Corner to corner 7.07, centre to centre 6.52: connects.
+	east := place_test_entity(&world, content, "small_pole", {7, 1, 1})
+	// Corner to corner 7, centre to centre 7.5: does not.
+	west := place_test_entity(&world, content, "small_pole", {-7, 1, 0})
+	testing.expect_value(t, entity_network(networks, east), entity_network(networks, substation))
+	testing.expect(t, entity_network(networks, west) != entity_network(networks, substation))
+}
+
 @(test)
 test_supply_volumes_of_big_poles_and_substations :: proc(t: ^testing.T) {
 	content := make_test_content()

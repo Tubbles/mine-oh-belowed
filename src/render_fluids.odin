@@ -47,6 +47,7 @@ fluid_machine_colors := [Machine_Kind]rl.Color {
 	.Crafting_Machine = {},
 	.Lab           = {},
 	.Schematic_Crate = {},
+	.Core_Sample_Drill = {},
 }
 
 fluid_color :: proc(fluids: Fluid_Registry, fluid: Fluid_Id) -> rl.Color {
