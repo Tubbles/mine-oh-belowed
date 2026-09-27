@@ -52,7 +52,7 @@ test_oil_data_loads :: proc(t: ^testing.T) {
 	testing.expect_value(t, flare.fluid_ports[0].phase_filter, Fluid_Phase_Filter.Gas)
 	testing.expect(t, flare.fluid_ports[0].every_face)
 	pump := content.machines.machines[test_machine(content.machines, "tar_pit_pump")]
-	testing.expect_value(t, pump.fluid_litres_per_minute, 200)
+	testing.expect_value(t, pump.fluid_litres_per_minute, 600)
 	testing.expect_value(t, pump.electric_power_watts, 60_000)
 	testing.expect_value(t, pump.fluid_ports[0].filter, crude)
 	testing.expect_value(t, content.machines.machines[test_machine(content.machines, "cracking_unit")].electric_power_watts, 200_000)
@@ -291,7 +291,8 @@ test_tar_pit_pump_placement :: proc(t: ^testing.T) {
 	testing.expect(t, !placement_at(&world, content, nil, test_machine(content.machines, "offshore_pump"), {0, 1, 0}, 0).valid)
 }
 
-// 200 L per minute: a litre every 18 ticks, only with power.
+// 600 L per minute, so two pumps feed one refinery: a litre every 6
+// ticks, only with power.
 @(test)
 test_tar_pit_pump_pumps_crude_oil :: proc(t: ^testing.T) {
 	content := make_test_content()
@@ -301,13 +302,13 @@ test_tar_pit_pump_pumps_crude_oil :: proc(t: ^testing.T) {
 	testing.expect_value(t, test_fluid_machine(&world, pump).state, Fluid_Machine_State.Unpowered)
 	testing.expect_value(t, test_fluid_machine(&world, pump).buffers[0].level, 0)
 	test_fluid_machine(&world, pump).power.satisfaction = POWER_FULL
-	tick_test_fluids_with_statistics(&world, content, 1800)
+	tick_test_fluids_with_statistics(&world, content, 600)
 	crude := test_fluid(content, "crude_oil")
 	testing.expect_value(t, test_fluid_machine(&world, pump).buffers[0], Fluid_Buffer{fluid = crude, level = 100})
 	testing.expect_value(t, fluid_counter(world.statistics.fluids.produced, crude), 100)
 	// At half power it pumps every other tick.
 	test_fluid_machine(&world, pump).power.satisfaction = POWER_FULL / 2
-	tick_test_fluids_with_statistics(&world, content, 3600)
+	tick_test_fluids_with_statistics(&world, content, 1200)
 	testing.expect_value(t, test_fluid_machine(&world, pump).buffers[0].level, 200)
 	tick_test_fluids_with_statistics(&world, content, 100)
 	testing.expect_value(t, test_fluid_machine(&world, pump).state, Fluid_Machine_State.Output_Full)
@@ -458,12 +459,13 @@ test_oil_simulation_is_deterministic :: proc(t: ^testing.T) {
 	gas := test_fluid(content, "petroleum_gas")
 	testing.expectf(t, fluid_counter(fluids.produced, gas) == 90, "gas produced %d", fluid_counter(fluids.produced, gas))
 	testing.expectf(t, fluid_counter(fluids.voided, gas) == 90, "gas voided %d", fluid_counter(fluids.voided, gas))
-	// One crack done and a second one drawing the last 10 L of heavy oil.
-	testing.expectf(t, fluid_counter(fluids.consumed, test_fluid(content, "heavy_oil")) == 50, "heavy consumed %d", fluid_counter(fluids.consumed, test_fluid(content, "heavy_oil")))
+	// One crack done; the second waits for its full 40 L of heavy oil
+	// instead of starting on the 10 L left.
+	testing.expectf(t, fluid_counter(fluids.consumed, test_fluid(content, "heavy_oil")) == 40, "heavy consumed %d", fluid_counter(fluids.consumed, test_fluid(content, "heavy_oil")))
 	testing.expect(t, fluid_counter(fluids.consumed, test_fluid(content, "steam")) > 0)
 	testing.expectf(t, pool_get(&world.entities.assemblers, unit).buffers[2].level == 30, "light oil from cracking %d", pool_get(&world.entities.assemblers, unit).buffers[2].level)
 	testing.expectf(t, pool_get(&world.entities.fluid_machines, flare).state == .Idle, "flare %v", pool_get(&world.entities.fluid_machines, flare).state)
-	// The pump's 200 L per minute cannot keep up with a refinery's 1200.
+	// One pump's 600 L per minute is half of a refinery's 1200.
 	testing.expectf(t, pool_get(&world.entities.assemblers, refinery).state == .No_Fluid, "refinery %v", pool_get(&world.entities.assemblers, refinery).state)
 }
 

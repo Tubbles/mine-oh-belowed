@@ -42,7 +42,7 @@ tag_index :: proc(recipes: Recipe_Registry, tag: string) -> int {
 test_browser_filters_by_tab_tag_and_craftable :: proc(t: ^testing.T) {
 	test := make_browser_test()
 	science := visible_ids(test, {category = .Science})
-	testing.expect(t, slice.equal(science, []string{"science_pack_1"}))
+	testing.expect(t, slice.equal(science, []string{"science_pack_1", "science_pack_2"}))
 	tools := visible_ids(test, {category = .Tools})
 	testing.expect(t, slice.equal(tools, []string{"geologists_hammer", "iron_pickaxe", "magnetometer", "stone_pickaxe", "wooden_pickaxe"}))
 	// Tags narrow: every selected tag must be present.

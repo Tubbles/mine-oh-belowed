@@ -13,8 +13,8 @@
 // appearance.
 // prerequisites lists technology ids that must be researched first; each
 // must be listed earlier in this file, which also rules out cycles.
-// logistics_science and fast_belts unlock phase 5 recipes that do not
-// exist yet, so they are placeholders with empty lists. ore_processing
+// fast_belts unlocks a phase 5 recipe that does not exist yet, so it is a
+// placeholder with an empty list. ore_processing
 // (work item 0026) unlocks the crusher and washer and the crushing and
 // washing recipes; the alloy furnace is a start recipe since 0027, so
 // bronze is reachable in phase 2. recycling (work item 0027) unlocks the
@@ -26,6 +26,11 @@
 // the refinery, the flare stack and refining. cracking (work item 0030,
 // science pack 1 until later packs exist) unlocks the cracking unit and
 // both cracking recipes; 30 s per pack is a guess.
+// plastics, renewable_plastics and bitumen_paving (work item 0031, science
+// pack 1) unlock the two plastic routes and the bitumen and asphalt
+// recipes. logistics_science unlocks science pack 2 since 0031; fast belts
+// cost science packs 1 and 2 and stay a placeholder until a fast belt
+// exists.
 // placeholder = true marks a technology that unlocks nothing yet, and
 // quest_gate = true one only a main quest reward researches; labs refuse
 // both.
@@ -39,8 +44,11 @@ technologies = [
 	{id = "prospecting", name_key = "technology_prospecting", unlocks = ["core_sample_drill", "magnetometer"], packs = 50, seconds = 15, science_packs = ["science_pack_1"], prerequisites = ["steel_processing"]}
 	{id = "ore_processing", name_key = "technology_ore_processing", unlocks = ["crusher", "washer", "crush_hematite", "crush_chalcopyrite", "crush_cassiterite", "crush_galena", "crush_sphalerite", "crush_pentlandite", "wash_hematite", "wash_chalcopyrite", "wash_cassiterite", "wash_galena", "wash_sphalerite", "wash_pentlandite"], packs = 50, seconds = 15, science_packs = ["science_pack_1"], prerequisites = ["steel_processing"]}
 	{id = "recycling", name_key = "technology_recycling", unlocks = ["recycler"], packs = 50, seconds = 15, science_packs = ["science_pack_1"], prerequisites = ["ore_processing"]}
-	{id = "logistics_science", name_key = "technology_logistics_science", unlocks = [], packs = 75, seconds = 15, science_packs = ["science_pack_1"], prerequisites = ["logistics"], placeholder = true}
-	{id = "fast_belts", name_key = "technology_fast_belts", unlocks = [], packs = 100, seconds = 30, science_packs = ["science_pack_1"], prerequisites = ["logistics_science"], placeholder = true}
+	{id = "logistics_science", name_key = "technology_logistics_science", unlocks = ["science_pack_2"], packs = 75, seconds = 15, science_packs = ["science_pack_1"], prerequisites = ["logistics"]}
+	{id = "fast_belts", name_key = "technology_fast_belts", unlocks = [], packs = 100, seconds = 30, science_packs = ["science_pack_1", "science_pack_2"], prerequisites = ["logistics_science"], placeholder = true}
 	{id = "oil_processing", name_key = "technology_oil_processing", unlocks = ["tar_pit_pump", "refinery", "flare_stack", "refining"], packs = 100, seconds = 30, science_packs = ["science_pack_1"], prerequisites = ["ore_processing"], quest_gate = true}
 	{id = "cracking", name_key = "technology_cracking", unlocks = ["cracking_unit", "heavy_oil_cracking", "light_oil_cracking"], packs = 75, seconds = 30, science_packs = ["science_pack_1"], prerequisites = ["oil_processing"]}
+	{id = "plastics", name_key = "technology_plastics", unlocks = ["chemical_plant", "plastic_bar", "sulfur"], packs = 100, seconds = 30, science_packs = ["science_pack_1"], prerequisites = ["oil_processing"]}
+	{id = "renewable_plastics", name_key = "technology_renewable_plastics", unlocks = ["wood_gasifier", "wood_gasification", "syngas_plastic"], packs = 75, seconds = 30, science_packs = ["science_pack_1"], prerequisites = ["plastics"]}
+	{id = "bitumen_paving", name_key = "technology_bitumen_paving", unlocks = ["bitumen", "asphalt"], packs = 50, seconds = 30, science_packs = ["science_pack_1"], prerequisites = ["plastics"]}
 ]

@@ -24,6 +24,9 @@
 // cannot_recycle (optional) keeps the recycler from taking the item even
 // when a recipe makes it: raw materials, ore, spoils, slag, mud, crushed
 // ore, bricks and concrete.
+// Chemistry (work item 0031): plastic bar, sulfur and bitumen from the
+// chemical plant, asphalt paving from bitumen and gravel, and science
+// pack 2, which needs plastic. The chemical products do not recycle.
 items = [
 	// Raw materials
 	{id = "log", name_key = "item_log", category = "raw", stack_size = 50, places_block = "log", fuel_megajoules = 2, cannot_recycle = true}
@@ -74,6 +77,10 @@ items = [
 	{id = "electronic_circuit", name_key = "item_electronic_circuit", category = "intermediate", stack_size = 100}
 	{id = "pipe", name_key = "item_pipe", category = "intermediate", stack_size = 100}
 	{id = "science_pack_1", name_key = "item_science_pack_1", category = "intermediate", stack_size = 100}
+	{id = "plastic_bar", name_key = "item_plastic_bar", category = "intermediate", stack_size = 100, cannot_recycle = true}
+	{id = "sulfur", name_key = "item_sulfur", category = "intermediate", stack_size = 50, cannot_recycle = true}
+	{id = "bitumen", name_key = "item_bitumen", category = "intermediate", stack_size = 50, cannot_recycle = true}
+	{id = "science_pack_2", name_key = "item_science_pack_2", category = "intermediate", stack_size = 100}
 	// Tools
 	{id = "wooden_pickaxe", name_key = "item_wooden_pickaxe", category = "tool", stack_size = 10}
 	{id = "stone_pickaxe", name_key = "item_stone_pickaxe", category = "tool", stack_size = 10}
@@ -113,6 +120,8 @@ items = [
 	{id = "refinery", name_key = "item_refinery", category = "machine", stack_size = 10}
 	{id = "cracking_unit", name_key = "item_cracking_unit", category = "machine", stack_size = 10}
 	{id = "flare_stack", name_key = "item_flare_stack", category = "machine", stack_size = 10}
+	{id = "chemical_plant", name_key = "item_chemical_plant", category = "machine", stack_size = 10}
+	{id = "wood_gasifier", name_key = "item_wood_gasifier", category = "machine", stack_size = 10}
 	// Blocks that drop themselves
 	{id = "leaves", name_key = "item_leaves", category = "block", stack_size = 50, places_block = "leaves"}
 	{id = "tar", name_key = "item_tar", category = "block", stack_size = 50, places_block = "tar"}
@@ -121,4 +130,5 @@ items = [
 	{id = "torch", name_key = "item_torch", category = "block", stack_size = 50, places_block = "torch"}
 	{id = "concrete", name_key = "item_concrete", category = "block", stack_size = 50, places_block = "concrete", cannot_recycle = true}
 	{id = "brick", name_key = "item_brick", category = "block", stack_size = 50, places_block = "brick", cannot_recycle = true}
+	{id = "asphalt", name_key = "item_asphalt", category = "block", stack_size = 50, places_block = "asphalt", cannot_recycle = true}
 ]

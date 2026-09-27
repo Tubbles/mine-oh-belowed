@@ -251,4 +251,12 @@ blocks = [
 		fluid_source = "crude_oil"
 		texture = {top = [18, 16, 16], side = [30, 26, 24], bottom = [30, 26, 24]}
 	}
+	{
+		// Paving from bitumen and gravel (work item 0031), placeholder colour.
+		id = "asphalt"
+		name = "Asphalt"
+		solid = true
+		hardness_seconds = 3
+		texture = {top = [44, 44, 46], side = [52, 52, 54], bottom = [52, 52, 54]}
+	}
 ]

@@ -72,7 +72,8 @@
 // Tar pit pump (work item 0030): placed like the offshore pump, with a
 // block whose fluid_source is its port's fluid (a tar pit) in front of its
 // intake. Pumps fluid_litres_per_minute into its one output port while it
-// has electric_power_kilowatts, whole litres as the minute adds up.
+// has electric_power_kilowatts, whole litres as the minute adds up. 600 L
+// per minute (work item 0031) lets two pumps feed one refinery.
 // Flare stack (work item 0030): one input port with phase = "gas"; while
 // powered it destroys up to fluid_litres_per_second of the gas in it,
 // counted as voided in the statistics. The power is the price of the sink.
@@ -91,9 +92,10 @@
 // Lamp: electric_power_kilowatts and light_level, the block light it
 // gives while its network is satisfied above half.
 // Crafting machines (work items 0021 and 0026): speed, recipe_maker (the
-// made_in category of recipes.sjson it makes: assembler, crusher, washer
-// or alloy_furnace) and either electric_power_kilowatts or fuel_slots = 1
-// with fuel_power_kilowatts. recipe_choice chosen: the player picks the
+// made_in category of recipes.sjson it makes: assembler, crusher, washer,
+// alloy_furnace, refinery, cracking, chemistry or gasifier) and either
+// electric_power_kilowatts or fuel_slots = 1 with fuel_power_kilowatts.
+// recipe_choice chosen: the player picks the
 // recipe in the panel, with one input slot per ingredient and one output
 // slot per product of that recipe, and no slot fields here. recipe_choice
 // fixed: input_slots and output_slots are set here, and the machine makes
@@ -111,6 +113,13 @@
 // each fixed to its fluid, so each fraction always leaves by the same face.
 // Cracking unit: oil in on -z (heavy or light oil, whichever it holds
 // picks the recipe), water in on -x, product out on +z.
+// Chemical plant (work item 0031): gas in on -z (phase gas: petroleum gas
+// or wood gas), a second input on -x without a filter (water, heavy oil or
+// wood gas), so the fluids present together with the loaded item (coal,
+// charcoal or none) pick plastic bar, sulfur, bitumen or syngas plastic.
+// One item output slot shared by every product.
+// Wood gasifier (work item 0031): logs in, charcoal out, wood gas out on
+// +z; electric, no fuel slot.
 // The recycler (work item 0027) is recipe_maker recycler, fixed: no
 // recipe is made in it. It takes any item a recipe makes that items.sjson
 // does not flag cannot_recycle, reverses the first recipe making it (one
@@ -330,7 +339,7 @@ machines = [
 		item = "tar_pit_pump"
 		kind = "tar_pit_pump"
 		footprint = {width = 2, depth = 1, height = 1}
-		fluid_litres_per_minute = 200
+		fluid_litres_per_minute = 600
 		electric_power_kilowatts = 60
 		fluid_ports = [
 			{cell = {x = 0, y = 0, z = 0}, face = "negative_x", direction = "output", fluid = "crude_oil", buffer_litres = 200}
@@ -472,6 +481,39 @@ machines = [
 			{cell = {x = 1, y = 0, z = 0}, face = "negative_z", direction = "input", buffer_litres = 200}
 			{cell = {x = 0, y = 0, z = 1}, face = "negative_x", direction = "input", fluid = "water", buffer_litres = 200}
 			{cell = {x = 1, y = 0, z = 2}, face = "positive_z", direction = "output", buffer_litres = 200}
+		]
+	}
+	{
+		id = "chemical_plant"
+		name_key = "machine_chemical_plant"
+		item = "chemical_plant"
+		kind = "crafting_machine"
+		footprint = {width = 3, depth = 3, height = 3}
+		speed = 1
+		electric_power_kilowatts = 210
+		recipe_maker = "chemistry"
+		recipe_choice = "fixed"
+		input_slots = 1
+		output_slots = 1
+		fluid_ports = [
+			{cell = {x = 1, y = 0, z = 0}, face = "negative_z", direction = "input", phase = "gas", buffer_litres = 200}
+			{cell = {x = 0, y = 0, z = 1}, face = "negative_x", direction = "input", buffer_litres = 200}
+		]
+	}
+	{
+		id = "wood_gasifier"
+		name_key = "machine_wood_gasifier"
+		item = "wood_gasifier"
+		kind = "crafting_machine"
+		footprint = {width = 2, depth = 2, height = 3}
+		speed = 1
+		electric_power_kilowatts = 90
+		recipe_maker = "gasifier"
+		recipe_choice = "fixed"
+		input_slots = 1
+		output_slots = 1
+		fluid_ports = [
+			{cell = {x = 0, y = 0, z = 1}, face = "positive_z", direction = "output", fluid = "wood_gas", buffer_litres = 200}
 		]
 	}
 	{

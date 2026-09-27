@@ -46,8 +46,9 @@ test_lab_and_technology_data_load :: proc(t: ^testing.T) {
 	testing.expect_value(t, lab.speed_percent, 100)
 	testing.expect_value(t, lab.electric_power_watts, 60_000)
 	pack := test_item(content.items, "science_pack_1")
-	testing.expect(t, slice.equal(content.technologies.science_packs, []Item_Id{pack}))
-	testing.expect(t, slice.equal(content.machines.lab_packs, []Item_Id{pack}))
+	second_pack := test_item(content.items, "science_pack_2")
+	testing.expect(t, slice.equal(content.technologies.science_packs, []Item_Id{pack, second_pack}))
+	testing.expect(t, slice.equal(content.machines.lab_packs, []Item_Id{pack, second_pack}))
 	technologies := content.technologies
 	automation := technologies.technologies[test_technology(technologies, "automation")]
 	testing.expect_value(t, automation.pack_count, 10)
@@ -60,7 +61,7 @@ test_lab_and_technology_data_load :: proc(t: ^testing.T) {
 	for technology in technologies.technologies {
 		testing.expectf(t, technology.placeholder == (len(technology.unlocks) == 0), "%s", technology.id)
 	}
-	testing.expect(t, technologies.technologies[test_technology(technologies, "logistics_science")].placeholder)
+	testing.expect(t, technologies.technologies[test_technology(technologies, "fast_belts")].placeholder)
 }
 
 @(test)
@@ -267,7 +268,7 @@ test_technology_screen_filters_and_orders :: proc(t: ^testing.T) {
 	for technology, index in visible {
 		ids[index] = names[technology]
 	}
-	expected := []string{"automation", "cracking", "electric_mining", "fast_belts", "fluid_handling", "logistics", "logistics_science", "oil_processing", "optics", "ore_processing", "prospecting", "recycling", "steel_processing"}
+	expected := []string{"automation", "bitumen_paving", "cracking", "electric_mining", "fast_belts", "fluid_handling", "logistics", "logistics_science", "oil_processing", "optics", "ore_processing", "plastics", "prospecting", "recycling", "renewable_plastics", "steel_processing"}
 	testing.expect(t, slice.equal(ids, expected))
 	testing.expect_value(t, names[visible[recipe_position_for_letter(names, visible, 'l')]], "logistics")
 	testing.expect_value(t, names[visible[recipe_position_for_letter(names, visible, 'g')]], "logistics")
@@ -336,7 +337,8 @@ test_placeholder_technologies_are_locked :: proc(t: ^testing.T) {
 	unlocks := make_recipe_unlocks(len(content.items.items), content.recipes, technologies, false, context.temp_allocator)
 	mark_technology_researched(&unlocks, content.recipes, test_technology(technologies, "automation"))
 	mark_technology_researched(&unlocks, content.recipes, test_technology(technologies, "logistics"))
-	placeholder := test_technology(technologies, "logistics_science")
+	mark_technology_researched(&unlocks, content.recipes, test_technology(technologies, "logistics_science"))
+	placeholder := test_technology(technologies, "fast_belts")
 	testing.expect_value(t, technology_status(technologies, unlocks, placeholder), Technology_Status.Locked)
 	research: Research_State
 	testing.expect_value(t, queue_research(&research, technologies, unlocks, placeholder), Research_Refusal.Placeholder)

@@ -44,21 +44,26 @@ fluid_phase_filter_names := [Fluid_Phase_Filter]string {
 
 // As written in the file, before validation.
 Fluid_Definition :: struct {
-	id:       string,
-	name_key: string,
-	phase:    string,
-	color:    [3]int,
+	id:                        string,
+	name_key:                  string,
+	phase:                     string,
+	color:                     [3]int,
+	fuel_kilojoules_per_litre: int,
 }
 
 Fluids_File :: struct {
 	fluids: []Fluid_Definition,
 }
 
+// fuel_kilojoules_per_litre is the energy a generator gets from burning a
+// litre, 0 for a fluid that does not burn (work item 0031 sets it, the
+// combustion generator of 0032 reads it).
 Fluid :: struct {
-	id:       string,
-	name_key: string,
-	phase:    Fluid_Phase,
-	color:    [3]u8,
+	id:                        string,
+	name_key:                  string,
+	phase:                     Fluid_Phase,
+	color:                     [3]u8,
+	fuel_kilojoules_per_litre: u32,
 }
 
 Fluid_Registry :: struct {
@@ -97,6 +102,9 @@ validate_fluid_definition :: proc(definitions: []Fluid_Definition, index: int) -
 			return fmt.tprintf("fluid %q has a colour channel outside 0 to 255", definition.id)
 		}
 	}
+	if definition.fuel_kilojoules_per_litre < 0 {
+		return fmt.tprintf("fluid %q has a negative fuel_kilojoules_per_litre", definition.id)
+	}
 	return ""
 }
 
@@ -114,10 +122,11 @@ resolve_fluid_registry :: proc(file: Fluids_File, allocator := context.allocator
 		phase, _ := parse_fluid_phase(definition.phase)
 		color := definition.color
 		registry.fluids[index] = Fluid {
-			id       = definition.id,
-			name_key = definition.name_key,
-			phase    = phase,
-			color    = {u8(color.r), u8(color.g), u8(color.b)},
+			id                        = definition.id,
+			name_key                  = definition.name_key,
+			phase                     = phase,
+			color                     = {u8(color.r), u8(color.g), u8(color.b)},
+			fuel_kilojoules_per_litre = u32(definition.fuel_kilojoules_per_litre),
 		}
 	}
 	return registry, ""

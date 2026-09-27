@@ -85,7 +85,7 @@ Power is part of the logistics puzzle from the alpha on. Boilers need fuel, whic
 - The recycler turns any item back into a fraction of its ingredients. It is the universal sink and the fix for overproduction.
 - Ore processing: crushing and washing raise the yield per ore and create spoils.
 - The ore set grows in data. Alpha: iron, copper, tin, coal, stone, sand, wood. Later: lead, zinc, nickel, bauxite, gold, quartz, sulfur, oil from tar flats and deep wells. Alloys: bronze and steel in alpha, brass and more later.
-- Plastics have two routes. Fossil: oil from tar flats early and bore drills later, refinery into gas, light and heavy fractions, cracking to plastic, sulfur and bitumen as byproducts. Renewable: wood to charcoal and wood gas, syngas, plastic, slower and land hungry with tree farms and automated harvesters.
+- Plastics have two routes. Fossil: oil from tar flats early and bore drills later, refinery into gas, light and heavy fractions, cracking of the heavier fractions towards gas, and a chemical plant making plastic from gas and coal, sulfur from gas and water, and bitumen from heavy oil, with bitumen becoming asphalt paving blocks. Renewable: wood to wood gas and charcoal in a gasifier, syngas plastic in the chemical plant, slower and land hungry with tree farms and automated harvesters.
 - Most products have more than one route. Alternate recipes come from research or from cave schematics and trade fewer byproducts, cheaper inputs, or a byproduct turned into a product.
 - Byproduct strictness is a world setting: byproducts must be handled (default) or may be voided.
 

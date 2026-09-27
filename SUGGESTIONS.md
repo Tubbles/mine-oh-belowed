@@ -29,6 +29,7 @@ Raised by the work item notes (0005 to 0008), to be turned into work items when 
 - Saves refuse any change to data ids or struct layout (0023). A remap by string id would let saves survive content changes once the content settles.
 - The load screen shows one long string per world; columns would read better on the couch. World setting choices step forward only; left and right should step back.
 - A player built roof over a saved chunk does not darken it on reload (0023), the same gap as generation under a roof.
+- Sulfur has no consumer yet (0031); sulfuric acid and batteries in phase 7 are the natural users. Fast belts remain a placeholder technology until a second belt speed exists, which needs belt placement and rendering to read the speed from the machine.
 
 ## Next steps
 

@@ -135,7 +135,7 @@ test_assembler_waits_for_power_and_room :: proc(t: ^testing.T) {
 	set_assembler_recipe(&assembler, recipes, NO_RECIPE)
 	advance_assembler(&assembler, machine, items, recipes, TEST_TICK_RATE)
 	testing.expect_value(t, assembler.state, Assembler_State.No_Recipe)
-	testing.expect(t, !assembler_wants_power(assembler, machine, recipes, items, TEST_TICK_RATE))
+	testing.expect(t, !assembler_wants_power(assembler, machine, recipes, items))
 }
 
 @(test)

@@ -379,7 +379,7 @@ collect_crafting_participants :: proc(world: ^World, content: Simulation_Content
 		machine := content.machines.machines[assembler.machine]
 		if assembler.alive && crafting_machine_is_electric(machine) {
 			watts := machine.electric_power_watts
-			wants := assembler_wants_power(assembler, machine, content.recipes, content.items, tick_rate, world.settings.byproducts_lenient)
+			wants := assembler_wants_power(assembler, machine, content.recipes, content.items, world.settings.byproducts_lenient)
 			demand := wants ? electric_joules_per_tick(watts, tick_rate) : 0
 			append(&networks.participants, make_participant(networks, assembler.common, false, demand))
 		}

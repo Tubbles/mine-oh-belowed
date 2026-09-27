@@ -29,6 +29,8 @@ Recipe_Maker :: enum u8 {
 	Alloy_Furnace,
 	Refinery,
 	Cracking,
+	Chemistry,
+	Gasifier,
 	Recycler,
 }
 
@@ -44,6 +46,8 @@ recipe_maker_names := [Recipe_Maker]string {
 	.Alloy_Furnace = "alloy_furnace",
 	.Refinery      = "refinery",
 	.Cracking      = "cracking",
+	.Chemistry     = "chemistry",
+	.Gasifier      = "gasifier",
 	.Recycler      = "recycler",
 }
 
@@ -100,9 +104,9 @@ Recipe_Ingredient_Definition :: struct {
 	byproduct: bool,
 }
 
-// litres over the whole craft: fluid inputs are drawn from the machine's
-// input ports as the craft runs, fluid outputs delivered into its output
-// ports when it completes. byproduct only on fluid outputs.
+// litres over the whole craft: fluid inputs are taken from the machine's
+// input ports when the craft starts (all of them present, work item 0031),
+// fluid outputs delivered into its output ports when it completes. byproduct only on fluid outputs.
 Recipe_Fluid_Definition :: struct {
 	fluid:     string,
 	litres:    int,

@@ -240,7 +240,7 @@ test_crusher_turns_low_grade_into_crushed_ore_and_gravel :: proc(t: ^testing.T) 
 }
 
 @(test)
-test_washer_draws_water_over_the_craft :: proc(t: ^testing.T) {
+test_washer_takes_water_at_the_start :: proc(t: ^testing.T) {
 	content := make_test_content()
 	machine := test_crafting_machine(content, "washer")
 	washer := make_test_crafting_machine(machine)
@@ -252,31 +252,33 @@ test_washer_draws_water_over_the_craft :: proc(t: ^testing.T) {
 	testing.expect_value(t, washer.state, Assembler_State.No_Fluid)
 	testing.expect(t, !washer.working)
 	testing.expect_value(t, washer.slots[0].count, 3)
-	testing.expect(t, !assembler_wants_power(washer, machine, content.recipes, content.items, TEST_TICK_RATE))
-	// 1 s at speed 1 and 30 L a craft, drawn half a litre a tick.
-	washer.buffers[0] = {fluid = water, level = 200}
-	testing.expect(t, assembler_wants_power(washer, machine, content.recipes, content.items, TEST_TICK_RATE))
-	for _ in 0 ..< 30 {
-		advance_assembler(&washer, machine, content.items, content.recipes, TEST_TICK_RATE)
-	}
-	testing.expect_value(t, washer.buffers[0].level, 185)
-	testing.expect_value(t, ticks_until_crafted(&washer, machine, content, 100), 30)
-	testing.expect_value(t, washer.buffers[0].level, 170)
-	testing.expect_value(t, washer.slots[1], Item_Stack{test_item(content.items, "hematite"), 1})
-	testing.expect_value(t, washer.slots[2], Item_Stack{test_item(content.items, "mud"), 1})
-	// Running dry mid craft stalls without losing progress.
-	washer.buffers[0].level = 10
-	for _ in 0 ..< 40 {
+	testing.expect(t, !assembler_wants_power(washer, machine, content.recipes, content.items))
+	// 29 L is short of a craft's 30 L: still nothing starts, nothing is taken.
+	washer.buffers[0] = {fluid = water, level = 29}
+	for _ in 0 ..< 10 {
 		advance_assembler(&washer, machine, content.items, content.recipes, TEST_TICK_RATE)
 	}
 	testing.expect_value(t, washer.state, Assembler_State.No_Fluid)
+	testing.expect_value(t, washer.buffers[0].level, 29)
+	testing.expect(t, !assembler_wants_power(washer, machine, content.recipes, content.items))
+	// With 30 L the craft takes all of it at the start, with its item, and
+	// finishes without more water: 1 s at speed 1.
+	washer.buffers[0].level = 30
+	testing.expect(t, assembler_wants_power(washer, machine, content.recipes, content.items))
+	advance_assembler(&washer, machine, content.items, content.recipes, TEST_TICK_RATE)
 	testing.expect(t, washer.working)
 	testing.expect_value(t, washer.buffers[0].level, 0)
-	progress := washer.progress_ticks
-	testing.expect(t, progress > 0 && progress < 60)
-	washer.buffers[0] = {fluid = water, level = 100}
-	testing.expect_value(t, ticks_until_crafted(&washer, machine, content, 100), int(60 - progress))
-	testing.expect_value(t, washer.buffers[0].level, 100 - (30 - 10))
+	testing.expect_value(t, washer.slots[0].count, 2)
+	testing.expect(t, assembler_wants_power(washer, machine, content.recipes, content.items))
+	testing.expect_value(t, ticks_until_crafted(&washer, machine, content, 100), 59)
+	testing.expect_value(t, washer.slots[1], Item_Stack{test_item(content.items, "hematite"), 1})
+	testing.expect_value(t, washer.slots[2], Item_Stack{test_item(content.items, "mud"), 1})
+	// The next craft waits for its full 30 L again.
+	advance_assembler(&washer, machine, content.items, content.recipes, TEST_TICK_RATE)
+	testing.expect_value(t, washer.state, Assembler_State.No_Fluid)
+	washer.buffers[0] = {fluid = water, level = 200}
+	testing.expect_value(t, ticks_until_crafted(&washer, machine, content, 100), 60)
+	testing.expect_value(t, washer.buffers[0].level, 170)
 }
 
 // The washer's port joins the pipe network like a fluid machine's, and

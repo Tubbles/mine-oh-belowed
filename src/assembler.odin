@@ -5,9 +5,9 @@ import "core:fmt"
 // Crafting machines (work items 0021, 0026 and 0030): one entity kind,
 // the assembler pool, for every machine that makes recipes of one maker
 // category. The machine entry names the category (assembler, crusher,
-// washer, alloy furnace, refinery, cracking), the power (electric through
-// power credit, or a fuel slot burning fuel power), optional fluid input
-// and output ports, and the recipe choice:
+// washer, alloy furnace, refinery, cracking, chemistry, gasifier), the
+// power (electric through power credit, or a fuel slot burning fuel
+// power), optional fluid input and output ports, and the recipe choice:
 //
 // - chosen (the assembler): the player picks the recipe in the panel, and
 //   the slots follow it, one input slot per ingredient in ingredient
@@ -26,9 +26,10 @@ import "core:fmt"
 // would fit, so a finished craft always has room. In a world with lenient
 // byproducts (World_Settings.byproducts_lenient) outputs a recipe flags
 // as byproducts are left out of that check, and at completion what does
-// not fit is voided. Fluid inputs are drawn
-// from the input port buffers a share per progress tick, so a craft stalls
-// (No_Fluid) rather than starts short. Fluid outputs go into the output
+// not fit is voided. A craft with fluid inputs starts only when every
+// fluid input is fully present in the input port buffers (No_Fluid until
+// then) and takes them at the start like its items (work item 0031), so
+// it never stalls part way. Fluid outputs go into the output
 // ports in port order when the craft completes (the first fluid output
 // into the first output port), and a craft starts only when they fit, with
 // the same byproduct rule as items. An electric machine works one tick
@@ -658,23 +659,17 @@ assembler_start_state :: proc(assembler: Assembler, machine: Machine, recipes: R
 	switch {
 	case !assembler_inputs_ready(assembler, craft):
 		return recipe, .Missing_Ingredients, true
+	case !assembler_fluids_present(assembler, machine, craft.fluid_inputs):
+		return recipe, .No_Fluid, true
 	case !assembler_outputs_fit(assembler, craft, items, byproducts_lenient), !assembler_fluid_outputs_fit(assembler, machine, craft, byproducts_lenient):
 		return recipe, .Output_Full, true
 	}
 	return recipe, .Working, false
 }
 
-// Litres of a fluid input due on the progress tick after `progress`, so
-// the craft's draws add up to exactly its litres.
-fluid_litres_for_step :: proc(litres: i32, progress, total: u32) -> i32 {
-	due_after := i64(litres) * i64(progress + 1) / i64(max(total, 1))
-	due_before := i64(litres) * i64(progress) / i64(max(total, 1))
-	return i32(due_after - due_before)
-}
-
 // The input port buffer holding the fluid, or -1. Output ports are left
 // out: a cracking unit's output may hold what another recipe takes.
-assembler_fluid_buffer_of :: proc(assembler: ^Assembler, machine: Machine, fluid: Fluid_Id) -> int {
+assembler_fluid_buffer_of :: proc(assembler: Assembler, machine: Machine, fluid: Fluid_Id) -> int {
 	for port, index in fluid_ports_of(machine) {
 		buffer := assembler.buffers[index]
 		if port.direction != .Output && buffer.level > 0 && buffer.fluid == fluid {
@@ -684,24 +679,21 @@ assembler_fluid_buffer_of :: proc(assembler: ^Assembler, machine: Machine, fluid
 	return -1
 }
 
-// A step due no litre still needs the fluid present, so a craft never
-// starts dry.
-assembler_fluid_ready :: proc(assembler: ^Assembler, machine: Machine, fluid_inputs: []Recipe_Fluid, progress, total: u32) -> bool {
+// Every fluid input's full litres wait in an input port.
+assembler_fluids_present :: proc(assembler: Assembler, machine: Machine, fluid_inputs: []Recipe_Fluid) -> bool {
 	for fluid_input in fluid_inputs {
-		needed := max(fluid_litres_for_step(fluid_input.litres, progress, total), 1)
 		index := assembler_fluid_buffer_of(assembler, machine, fluid_input.fluid)
-		if index < 0 || assembler.buffers[index].level < needed {
+		if index < 0 || assembler.buffers[index].level < fluid_input.litres {
 			return false
 		}
 	}
 	return true
 }
 
-draw_assembler_fluids :: proc(assembler: ^Assembler, machine: Machine, fluid_inputs: []Recipe_Fluid, progress, total: u32) {
+take_assembler_fluids :: proc(assembler: ^Assembler, machine: Machine, fluid_inputs: []Recipe_Fluid) {
 	for fluid_input in fluid_inputs {
-		needed := fluid_litres_for_step(fluid_input.litres, progress, total)
-		if index := assembler_fluid_buffer_of(assembler, machine, fluid_input.fluid); index >= 0 && needed > 0 {
-			assembler.buffers[index].level -= needed
+		if index := assembler_fluid_buffer_of(assembler^, machine, fluid_input.fluid); index >= 0 {
+			assembler.buffers[index].level -= fluid_input.litres
 		}
 	}
 }
@@ -733,28 +725,18 @@ pay_assembler_energy :: proc(assembler: ^Assembler, machine: Machine, items: Ite
 	return true
 }
 
-// Ingredients present, room for the products, and the fluid for the
-// first step.
-assembler_can_start :: proc(assembler: ^Assembler, machine: Machine, recipes: Recipe_Registry, items: Item_Registry, tick_rate: int, byproducts_lenient: bool) -> bool {
-	recipe, _, blocked := assembler_start_state(assembler^, machine, recipes, items, byproducts_lenient)
-	if blocked {
-		return false
+// An electric machine asks its network for power only while it can work:
+// a craft runs once started, since it took its fluids with its items.
+assembler_wants_power :: proc(assembler: Assembler, machine: Machine, recipes: Recipe_Registry, items: Item_Registry, byproducts_lenient := false) -> bool {
+	if assembler.working {
+		return true
 	}
-	fluid_inputs := machine_craft(machine, recipes, recipe).fluid_inputs
-	return assembler_fluid_ready(assembler, machine, fluid_inputs, 0, recipe_ticks(recipes.recipes[recipe], machine.speed_percent, tick_rate))
+	_, _, blocked := assembler_start_state(assembler, machine, recipes, items, byproducts_lenient)
+	return !blocked
 }
 
-// An electric machine asks its network for power only while it can work.
-assembler_wants_power :: proc(assembler: Assembler, machine: Machine, recipes: Recipe_Registry, items: Item_Registry, tick_rate: int, byproducts_lenient := false) -> bool {
-	probe := assembler
-	if !assembler.working {
-		return assembler_can_start(&probe, machine, recipes, items, tick_rate, byproducts_lenient)
-	}
-	fluid_inputs := machine_craft(machine, recipes, assembler.recipe).fluid_inputs
-	return assembler_fluid_ready(&probe, machine, fluid_inputs, assembler.progress_ticks, recipe_ticks(recipes.recipes[assembler.recipe], machine.speed_percent, tick_rate))
-}
-
-start_assembler_craft :: proc(assembler: ^Assembler, craft: Craft) {
+start_assembler_craft :: proc(assembler: ^Assembler, machine: Machine, craft: Craft) {
+	take_assembler_fluids(assembler, machine, craft.fluid_inputs)
 	inputs := assembler_input_slots(assembler)
 	for input in craft.inputs {
 		remaining := int(input.count)
@@ -807,16 +789,11 @@ advance_assembler :: proc(assembler: ^Assembler, machine: Machine, items: Item_R
 	}
 	craft := machine_craft(machine, recipes, assembler.recipe)
 	total := recipe_ticks(recipes.recipes[assembler.recipe], machine.speed_percent, tick_rate)
-	if !assembler_fluid_ready(assembler, machine, craft.fluid_inputs, assembler.progress_ticks, total) {
-		assembler.state = .No_Fluid
-		return false
-	}
 	if !assembler.working {
-		start_assembler_craft(assembler, craft)
+		start_assembler_craft(assembler, machine, craft)
 	}
 	assembler.state = .Working
 	if pay_assembler_energy(assembler, machine, items, tick_rate) {
-		draw_assembler_fluids(assembler, machine, craft.fluid_inputs, assembler.progress_ticks, total)
 		assembler.progress_ticks += 1
 	}
 	if assembler.progress_ticks < total {
