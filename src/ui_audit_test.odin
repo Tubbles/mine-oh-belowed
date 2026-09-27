@@ -82,6 +82,8 @@ Ui_Audit :: struct {
 	technology_browser: Technology_Browser,
 	statistics_view:    Statistics_View,
 	map_view:           Map_View,
+	generator:          Generator,
+	biome_banner:       Biome_Banner,
 	recipe_names:       []string,
 	recipe_order:       []int,
 	item_sort_ranks:    []u16,
@@ -236,6 +238,8 @@ audit_screen_context :: proc(audit: ^Ui_Audit) -> Screen_Context {
 		technology_browser = &audit.technology_browser,
 		statistics_view = &audit.statistics_view,
 		map_view = &audit.map_view,
+		generator = &audit.generator,
+		biome_banner = &audit.biome_banner,
 		developer_mode = true,
 		show_diagnostics = &audit.show_diagnostics,
 		show_world_overlay = &audit.show_world_overlay,
@@ -379,10 +383,14 @@ make_ui_audit :: proc() -> ^Ui_Audit {
 	audit.strings = table
 	thread_string_table = &audit.strings
 	audit.content = make_save_test_content()
-	generator := make_test_generator(DEFAULT_WORLD_SEED)
-	audit.simulation = make_save_test_simulation(&generator, audit.content)
+	audit.generator = make_test_generator(DEFAULT_WORLD_SEED)
+	generator := &audit.generator
+	audit.simulation = make_save_test_simulation(generator, audit.content)
 	simulation := &audit.simulation
-	load_save_test_chunks(&simulation.world, &generator)
+	load_save_test_chunks(&simulation.world, generator)
+	// The HUD cases show the biome banner at full strength.
+	plains := find_biome_index(generator.biomes, "plains")
+	audit.biome_banner = Biome_Banner{settled = plains, candidate = plains, shown = plains, shown_seconds = 1, showing = true}
 	build_save_test_site(simulation, audit.content)
 	run_save_test_ticks(simulation, audit.content, 0, 120)
 	place_missing_machines(&simulation.world, audit.content)

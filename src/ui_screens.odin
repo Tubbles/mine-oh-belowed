@@ -51,6 +51,12 @@ Screen_Context :: struct {
 	technology_browser: ^Technology_Browser,
 	statistics_view:    ^Statistics_View,
 	map_view:           ^Map_View,
+	// The session's generator, for the biomes on the map and the HUD
+	// banner. Nil without a world.
+	generator:          ^Generator,
+	// Kept by the frame loop across frames (biome_banner.odin). Nil in
+	// tests that draw no HUD.
+	biome_banner:       ^Biome_Banner,
 	// --dev: the pause menu shows the Developer entry (ui_developer.odin);
 	// the developer_mode setting shows it too.
 	developer_mode:     bool,

@@ -45,6 +45,19 @@ test_landing_site_is_flat :: proc(t: ^testing.T) {
 		testing.expectf(t, landing_site_is_flat(&generator, {centre.x, centre.z}), "seed %d spawn %v not flat", seed, centre)
 		findings := evaluate_spawn(&generator, {centre.x, centre.z})
 		testing.expectf(t, spawn_satisfied(findings), "seed %d findings %v", seed, findings)
+		temperature := terrain_temperature(generator.seeds, centre.x, centre.z, centre.y)
+		testing.expectf(t, temperature >= SPAWN_MINIMUM_TEMPERATURE && temperature <= SPAWN_MAXIMUM_TEMPERATURE, "seed %d pad temperature %v", seed, temperature)
+	}
+}
+
+// A candidate outside the temperate range fails before any terrain scan.
+@(test)
+test_spawn_rejects_cold_and_hot_sites :: proc(t: ^testing.T) {
+	generator := make_test_generator(DEFAULT_WORLD_SEED)
+	for z in ([2]i32{-1500, 1500}) {
+		findings := evaluate_spawn(&generator, {0, z})
+		testing.expectf(t, !findings.temperate && !findings.flat, "site at z %d findings %v", z, findings)
+		testing.expect(t, !spawn_satisfied(findings))
 	}
 }
 

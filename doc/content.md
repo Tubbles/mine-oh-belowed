@@ -139,18 +139,26 @@ Main quest gate for phase 4: the venture releases the steam engine schematics on
 
 ## Biomes
 
-A column takes the first biome in `data/biomes.sjson` whose height (relative to sea level) and moisture ranges contain it.
+A column takes the first biome in `data/biomes.sjson` whose height (relative to sea level), moisture and temperature ranges contain it. Temperature (0058) runs from -1 to 1: a latitude band along z (0.1 at the origin, cold about 1500 blocks north, towards -z, and hot about 1500 blocks south), noise of amplitude 0.35 at a wavelength of 600 blocks, minus 0.006 per block above sea level. Moisture is noise from -1 to 1.
 
-| Biome | Height | Moisture | Surface |
-| --- | --- | --- | --- |
-| Lake | below sea level | any | Sand |
-| Mountains | 48 and up | any | Stone, boulders, no trees |
-| Hills | 24 to 47 | any | Stone, few trees, boulders |
-| Tar flats | 0 to 5 | dry | Tar over dirt, tar pits in low spots |
-| Desert | 0 and up | dry | Sand |
-| Beach | 0 to 1 | any | Sand, no trees |
-| Forest | 0 and up | wet | Grass, dense trees |
-| Plains | any | any | Grass, scattered trees |
+| Biome | Height | Moisture | Temperature | Surface |
+| --- | --- | --- | --- | --- |
+| Lake | below sea level | any | any | Sand |
+| Mountains | 48 and up | any | any | Stone, boulders, no trees |
+| Cold barrens | 0 and up | any | -0.45 and below | Snow over frozen dirt, boulders, no trees |
+| Highland | 24 to 47 | 0 and up | any | Grass over stone, few trees, boulders |
+| Badlands | 6 to 47 | -0.2 and below | 0.3 and up | Red rock layered with pale rock every 4 blocks, no trees |
+| Steppe | 0 to 23 | -0.35 to 0.1 | 0.2 and up | Dry grass over dirt, rare trees |
+| Wetland | 0 to 3 | 0.6 and up | -0.2 and up | Mud over dirt, few trees |
+| Hills | 24 to 47 | any (dry side, the highland takes the wet) | any | Stone, few trees, boulders |
+| Tar flats | 0 to 5 | -0.45 and below | 0.1 and up | Tar over dirt, tar pits in low spots |
+| Desert | 0 and up | -0.35 and below | 0.1 and up | Sand |
+| Beach | 0 to 1 | any | any | Sand, no trees |
+| Coastal dunes | 1 to 3 | 0.3 and below | -0.2 and up | Sand, no trees |
+| Forest | 0 and up | 0.3 and up | -0.45 to 0.6 | Grass, dense trees |
+| Plains | any | any | any | Grass, scattered trees |
+
+The climate biome blocks drop dirt (frozen dirt, dry grass) or stone (red and pale rock); snow drops itself and mud gives the mud item, which places it again.
 
 ## Veins (phases 1 to 4)
 
@@ -167,7 +175,7 @@ Vein sizes before the richness multiplier, pending SUGGESTIONS.md item 3.
 | --- | --- | --- |
 | Iron | 80% hematite, 20% spoil (gravel) | Everywhere |
 | Copper | 70% chalcopyrite, 10% cassiterite, 20% spoil (sand) | Everywhere |
-| Coal | 90% coal, 10% spoil (gravel) | Plains, hills |
+| Coal | 90% coal, 10% spoil (gravel) | Plains, hills, steppe, wetland |
 | Mixed | 40% hematite, 40% chalcopyrite, 20% spoil | Hills |
 | Quarry | 60% stone, 20% sand, 20% gravel | Everywhere |
 

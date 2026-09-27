@@ -13,6 +13,7 @@ Torches, slabs, stairs, pipes and poles are full cubes. Shapes for what should b
 - Torches with a flame quad, flicker, and their light; slabs and stairs for factory floors placed with rotation; pipes and poles drawn thin with connections to neighbours.
 - Collision and raycasting respect shapes; outcrops get an ore texture and spent rock a cracked look.
 - Tests: shape collision boxes, connection resolution for pipes and poles.
+- Moved here from 0058: ground cover decoration per biome (grass tufts, flowers, dead wood), which needs blocks that are not cubes.
 
 ## Verify
 

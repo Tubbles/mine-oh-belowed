@@ -69,7 +69,10 @@ size_classes = [
 // percent at a full reservoir to 60 percent with 5 percent left (10
 // percent throughout on infinite veins). Spoils and coal have none.
 // Lead, zinc and nickel (phase 5) keep to the hills, desert and forest
-// with lower weights, a guess pending the couch tests.
+// with lower weights, a guess pending the couch tests. The climate biomes
+// (work item 0058) each lean to at least one type: coal in the steppe and
+// the wetland, lead in the highland, zinc and nickel in the badlands,
+// nickel in the cold barrens and the coastal dunes.
 // deep = true (work item 0035) makes a deep vein type: placed only by the
 // deep pass, never by the surface one, with no outcrop_blocks. Deep types
 // are richer and carry the rarer ores (bauxite, gold in quartz); their
@@ -95,7 +98,7 @@ vein_types = [
 		id = "coal"
 		name_key = "vein_type_coal"
 		weight = 25
-		biomes = ["plains", "hills"]
+		biomes = ["plains", "hills", "steppe", "wetland"]
 		outcrop_blocks = ["coal_ore"]
 		outputs = [{ore = "coal", percent = 90}, {ore = "gravel", percent = 10}]
 	}
@@ -119,7 +122,7 @@ vein_types = [
 		id = "lead"
 		name_key = "vein_type_lead"
 		weight = 8
-		biomes = ["hills", "forest"]
+		biomes = ["hills", "forest", "highland"]
 		outcrop_blocks = ["galena_ore"]
 		outputs = [{ore = "galena", low_grade = "galena_low_grade", percent = 70}, {ore = "sphalerite", low_grade = "sphalerite_low_grade", percent = 10}, {ore = "gravel", percent = 20}]
 	}
@@ -127,7 +130,7 @@ vein_types = [
 		id = "zinc"
 		name_key = "vein_type_zinc"
 		weight = 8
-		biomes = ["hills", "desert"]
+		biomes = ["hills", "desert", "badlands"]
 		outcrop_blocks = ["sphalerite_ore"]
 		outputs = [{ore = "sphalerite", low_grade = "sphalerite_low_grade", percent = 70}, {ore = "galena", low_grade = "galena_low_grade", percent = 10}, {ore = "gravel", percent = 20}]
 	}
@@ -135,7 +138,7 @@ vein_types = [
 		id = "nickel"
 		name_key = "vein_type_nickel"
 		weight = 6
-		biomes = ["desert", "plains"]
+		biomes = ["desert", "plains", "badlands", "cold_barrens", "coastal_dunes"]
 		outcrop_blocks = ["pentlandite_ore"]
 		outputs = [{ore = "pentlandite", low_grade = "pentlandite_low_grade", percent = 60}, {ore = "chalcopyrite", low_grade = "chalcopyrite_low_grade", percent = 20}, {ore = "sand", percent = 20}]
 	}

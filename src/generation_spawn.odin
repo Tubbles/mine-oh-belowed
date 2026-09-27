@@ -4,7 +4,7 @@ import "base:runtime"
 
 // Spawn search per doc/quests.md "Spawn requirements": trees, exposed
 // stone, sand and water within about 150 blocks, on flat ground (work item
-// 0045). The iron, copper and coal outcrops are the starter veins placed
+// 0045), in a temperate climate (work item 0058). The iron, copper and coal outcrops are the starter veins placed
 // around the landing pad (generation_starter_veins.odin), so the search
 // needs no natural vein. It queries the generator's column and feature
 // functions directly, so no chunk is generated.
@@ -30,13 +30,19 @@ LANDING_SITE_SURROUNDINGS_HEIGHT_RANGE :: 12
 // flat ring, and close enough to be seen from the pad.
 STARTER_VEIN_MINIMUM_DISTANCE :: 24
 STARTER_VEIN_MAXIMUM_DISTANCE :: 40
+// The pad's column lies in this temperature range (terrain_temperature),
+// so chapter 1 starts on grass rather than snow or red rock. The origin
+// is temperate by construction (ORIGIN_TEMPERATURE).
+SPAWN_MINIMUM_TEMPERATURE :: -0.2
+SPAWN_MAXIMUM_TEMPERATURE :: 0.5
 
 Spawn_Findings :: struct {
-	flat:  bool,
-	trees: bool,
-	stone: bool,
-	sand:  bool,
-	water: bool,
+	temperate: bool,
+	flat:      bool,
+	trees:     bool,
+	stone:     bool,
+	sand:      bool,
+	water:     bool,
 }
 
 within_spawn_radius :: proc(centre: [2]i32, x, z: i32) -> bool {
@@ -117,11 +123,21 @@ feature_near_spawn :: proc(generator: ^Generator, kind: Feature_Kind, centre: [2
 	return false
 }
 
-// Cheapest checks first: flat ground, then the terrain scan, then trees
-// and boulders.
+spawn_is_temperate :: proc(generator: ^Generator, centre: [2]i32) -> bool {
+	height := terrain_height(generator.seeds, centre.x, centre.y)
+	temperature := terrain_temperature(generator.seeds, centre.x, centre.y, height)
+	return temperature >= SPAWN_MINIMUM_TEMPERATURE && temperature <= SPAWN_MAXIMUM_TEMPERATURE
+}
+
+// Cheapest checks first: the climate of the pad's column, flat ground,
+// then the terrain scan, then trees and boulders.
 evaluate_spawn :: proc(generator: ^Generator, centre: [2]i32) -> Spawn_Findings {
 	runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
 	findings: Spawn_Findings
+	findings.temperate = spawn_is_temperate(generator, centre)
+	if !findings.temperate {
+		return findings
+	}
 	findings.flat = landing_site_is_flat(generator, centre)
 	if !findings.flat {
 		return findings
@@ -138,7 +154,7 @@ evaluate_spawn :: proc(generator: ^Generator, centre: [2]i32) -> Spawn_Findings 
 }
 
 spawn_satisfied :: proc(findings: Spawn_Findings) -> bool {
-	return findings.flat && terrain_findings_complete(findings) && findings.trees
+	return findings.temperate && findings.flat && terrain_findings_complete(findings) && findings.trees
 }
 
 // Candidates of ring r are the grid points on the square of half width r,

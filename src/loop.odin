@@ -68,6 +68,8 @@ Frame_State :: struct {
 	// The generator data every session copies (session_generator).
 	base_generator:     Generator,
 	session:            ^Session,
+	// The HUD's biome banner, rendering state across frames.
+	biome_banner:       Biome_Banner,
 	title:              Title_State,
 	input_backend:      Input_Backend,
 	sdl3_input:         Sdl3_Input_State,
@@ -493,6 +495,8 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 	screen_context.technology_browser = &session.technology_browser
 	screen_context.statistics_view = &session.statistics_view
 	screen_context.map_view = &session.map_view
+	screen_context.generator = &session.generator
+	screen_context.biome_banner = &state.biome_banner
 	screen_context.developer_requests = &session.simulation.developer_requests
 	screen_context.cheat_speed = session.simulation.cheat_speed
 	screen_context.landing_pad = session.start.landing_pad

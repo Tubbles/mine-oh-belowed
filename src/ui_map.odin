@@ -2,16 +2,21 @@ package game
 
 import "core:fmt"
 import "core:math"
+import "core:slice"
 
 // The top down map (work item 0038): the explored columns coloured by
-// their surface block and shaded by height, entities as dots, the player
+// their surface block tinted with their biome's map colour (work item
+// 0058) and shaded by height, entities as dots, the player
 // as a marker, and the prospecting records on top. The map is one image of
 // MAP_IMAGE_SIZE pixels square, one pixel per block at the finest zoom
 // and 2, 4, 8 or 16 blocks per pixel coarser, painted here and uploaded by
 // the draw layer whenever it changes. Opening it reads the surfaces of the
 // explored columns once (live for loaded columns); while it is open the
 // image is repainted when the view moves and every MAP_REPAINT_SECONDS
-// for the entities and records. Bumpers, the mouse wheel or the right
+// for the entities and records. The biome of every pixel comes from the
+// generator (sample_column, pure), sampled only when the frame changes and
+// reused for the pixels a pan keeps; the legend lists the biomes shown
+// and marks the player's. Bumpers, the mouse wheel or the right
 // stick zoom, the left stick, the movement keys or a pointer drag pan, B
 // or Open_Map closes.
 
@@ -40,11 +45,18 @@ MAP_RESOLVED_COLOR :: Ui_Color{255, 170, 255, 255}
 MAP_PLAYER_COLOR :: Ui_Color{255, 255, 255, 255}
 // How far the assayed colour covers the ground inside a footprint.
 MAP_ASSAYED_BLEND :: 0.45
+// How far the biome's map colour tints the surface block's colour.
+MAP_BIOME_BLEND :: 0.5
+MAP_LEGEND_SWATCH_SIZE :: 20
+// The scale line and the eight marker entries.
+MAP_LEGEND_FIXED_ROWS :: 9
 // Pixels of the direction line of a magnetometer reading at full strength.
 MAP_READING_LINE_PIXELS :: 10
 
-// The map screen's state, kept by the session. surfaces and pixels are
-// owned here.
+// The map screen's state, kept by the session. surfaces, pixels and
+// biomes are owned here. biomes holds the biome index of every pixel of
+// biome_frame; biomes_shown is indexed by biome and marks those on an
+// explored pixel of the last painted image.
 Map_View :: struct {
 	active:            bool,
 	// Block x and z at the centre of the image.
@@ -52,6 +64,9 @@ Map_View :: struct {
 	zoom:              int,
 	surfaces:          map[Chunk_Column]Column_Surface,
 	pixels:            [dynamic]Ui_Color,
+	biomes:            [dynamic]int,
+	biome_frame:       Map_Frame,
+	biomes_shown:      [dynamic]bool,
 	revision:          u64,
 	painted_frame:     Map_Frame,
 	repaint_seconds:   f32,
@@ -71,6 +86,8 @@ Map_Frame :: struct {
 destroy_map_view :: proc(view: ^Map_View) {
 	delete(view.surfaces)
 	delete(view.pixels)
+	delete(view.biomes)
+	delete(view.biomes_shown)
 	view^ = {}
 }
 
@@ -137,19 +154,86 @@ map_block_colors :: proc(blocks: Block_Registry) -> []Ui_Color {
 }
 
 surface_color :: proc(cell: Surface_Cell, colors: []Ui_Color) -> Ui_Color {
+	return tinted_surface_color(cell, colors, {}, 0)
+}
+
+// The block's colour blended with the tint by amount, then shaded by
+// height.
+tinted_surface_color :: proc(cell: Surface_Cell, colors: []Ui_Color, tint: Ui_Color, amount: f32) -> Ui_Color {
 	if !surface_cell_is_known(cell) || int(cell.block) >= len(colors) {
 		return MAP_UNEXPLORED_COLOR
 	}
-	return shade_by_height(colors[cell.block], cell.height)
+	return shade_by_height(blend_color(colors[cell.block], tint, amount), cell.height)
 }
 
-paint_map_surface :: proc(pixels: []Ui_Color, frame: Map_Frame, surfaces: map[Chunk_Column]Column_Surface, colors: []Ui_Color) {
+map_biome_color :: proc(biome: Biome) -> Ui_Color {
+	color := biome.definition.map_color
+	return {color[0], color[1], color[2], 255}
+}
+
+// The biome of every pixel with the biome colours, and which biomes an
+// explored pixel shows. Empty biomes paint without a tint.
+Map_Biome_Layer :: struct {
+	biomes: []int,
+	colors: []Ui_Color,
+	shown:  []bool,
+}
+
+// The map colour of every biome, in the temp allocator.
+map_biome_colors :: proc(biomes: []Biome) -> []Ui_Color {
+	colors := make([]Ui_Color, len(biomes), context.temp_allocator)
+	for biome, index in biomes {
+		colors[index] = map_biome_color(biome)
+	}
+	return colors
+}
+
+paint_map_surface :: proc(pixels: []Ui_Color, frame: Map_Frame, surfaces: map[Chunk_Column]Column_Surface, colors: []Ui_Color, layer: Map_Biome_Layer) {
 	for z in 0 ..< frame.size {
 		for x in 0 ..< frame.size {
+			index := z * frame.size + x
 			block := map_block_of(frame, {x, z})
-			pixels[z * frame.size + x] = surface_color(surface_at(surfaces, block.x, block.y), colors)
+			cell := surface_at(surfaces, block.x, block.y)
+			if len(layer.biomes) == 0 {
+				pixels[index] = surface_color(cell, colors)
+				continue
+			}
+			biome := layer.biomes[index]
+			pixels[index] = tinted_surface_color(cell, colors, layer.colors[biome], MAP_BIOME_BLEND)
+			layer.shown[biome] ||= surface_cell_is_known(cell)
 		}
 	}
+}
+
+// The biome of a pixel: kept from the previous frame when that frame, at
+// the same zoom, covered the pixel's middle column, sampled otherwise.
+map_pixel_biome :: proc(generator: ^Generator, previous: []int, previous_frame, frame: Map_Frame, pixel: [2]i32) -> int {
+	block := map_block_of(frame, pixel)
+	reusable := previous_frame.blocks_per_pixel == frame.blocks_per_pixel && len(previous) == int(previous_frame.size * previous_frame.size)
+	if !reusable {
+		return sample_column(generator, block.x, block.y).biome
+	}
+	if old_pixel, inside := map_pixel_of(previous_frame, block.x, block.y); inside {
+		return previous[old_pixel.y * previous_frame.size + old_pixel.x]
+	}
+	return sample_column(generator, block.x, block.y).biome
+}
+
+// Only when the frame changed: a full image is about 65 thousand column
+// samples, a pan by a pixel only a row or a column of them.
+update_map_biomes :: proc(view: ^Map_View, frame: Map_Frame, generator: ^Generator) {
+	if frame == view.biome_frame && len(view.biomes) == int(frame.size * frame.size) {
+		return
+	}
+	previous := make([]int, len(view.biomes), context.temp_allocator)
+	copy(previous, view.biomes[:])
+	resize(&view.biomes, int(frame.size * frame.size))
+	for z in 0 ..< frame.size {
+		for x in 0 ..< frame.size {
+			view.biomes[z * frame.size + x] = map_pixel_biome(generator, previous, view.biome_frame, frame, {x, z})
+		}
+	}
+	view.biome_frame = frame
 }
 
 // Every pixel whose middle column lies in the disc.
@@ -236,9 +320,17 @@ paint_map_records :: proc(pixels: []Ui_Color, frame: Map_Frame, world: ^World) {
 	}
 }
 
-paint_map :: proc(view: ^Map_View, frame: Map_Frame, world: ^World, blocks: Block_Registry) {
+// Without a generator the surface has no biome tint.
+paint_map :: proc(view: ^Map_View, frame: Map_Frame, world: ^World, blocks: Block_Registry, generator: ^Generator) {
 	resize(&view.pixels, int(frame.size * frame.size))
-	paint_map_surface(view.pixels[:], frame, view.surfaces, map_block_colors(blocks))
+	layer: Map_Biome_Layer
+	if generator != nil {
+		update_map_biomes(view, frame, generator)
+		resize(&view.biomes_shown, len(generator.biomes))
+		slice.fill(view.biomes_shown[:], false)
+		layer = {biomes = view.biomes[:], colors = map_biome_colors(generator.biomes), shown = view.biomes_shown[:]}
+	}
+	paint_map_surface(view.pixels[:], frame, view.surfaces, map_block_colors(blocks), layer)
 	paint_map_entities(view.pixels[:], frame, world.entities.cells)
 	paint_map_records(view.pixels[:], frame, world)
 	view.painted_frame = frame
@@ -296,6 +388,8 @@ activate_map_view :: proc(view: ^Map_View, world: ^World, player: Player) {
 	view.dragging = false
 	collect_explored_surfaces(world, &view.surfaces)
 	view.painted_frame = {}
+	// The biome table may have been reloaded since the map was last open.
+	view.biome_frame = {}
 }
 
 // Drawing.
@@ -319,8 +413,58 @@ draw_map_player :: proc(state: ^Ui_State, image: Ui_Rectangle, frame: Map_Frame,
 	draw_fill(state, {facing.x - half / 2, facing.y - half / 2, half, half}, MAP_PLAYER_COLOR)
 }
 
-draw_map_legend :: proc(state: ^Ui_State, area: Ui_Rectangle, view: ^Map_View) {
+draw_map_legend_row :: proc(state: ^Ui_State, content: ^Ui_Rectangle, color: Ui_Color, label: string, label_color := UI_TEXT_COLOR) {
+	row := cut_top(content, UI_ROW_HEIGHT)
+	swatch := Ui_Rectangle{row.x, row.y + (row.height - MAP_LEGEND_SWATCH_SIZE) / 2, MAP_LEGEND_SWATCH_SIZE, MAP_LEGEND_SWATCH_SIZE}
+	draw_fill(state, swatch, color)
+	draw_text_fitted(state, {row.x + 32, row.y, row.width - 32, row.height}, label, UI_BODY_TEXT_SIZE, .Left, label_color)
+}
+
+// The biome rows the legend needs: a heading and one per biome shown.
+map_biome_legend_rows :: proc(view: ^Map_View, generator: ^Generator) -> int {
+	if generator == nil || len(view.biomes_shown) != len(generator.biomes) {
+		return 0
+	}
+	rows := 1
+	for shown in view.biomes_shown {
+		rows += shown ? 1 : 0
+	}
+	return rows
+}
+
+// The biomes an explored pixel shows, the player's in the accent colour
+// and marked, as long as rows fit.
+draw_map_biome_legend :: proc(state: ^Ui_State, content: ^Ui_Rectangle, view: ^Map_View, generator: ^Generator, player: Player) {
+	if map_biome_legend_rows(view, generator) == 0 || content.height < 2 * UI_ROW_HEIGHT {
+		return
+	}
+	here := sample_column(generator, i32(math.floor(player.position.x)), i32(math.floor(player.position.z))).biome
+	draw_text_fitted(state, cut_top(content, UI_ROW_HEIGHT), text("map_legend_biomes"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	for biome, index in generator.biomes {
+		if !view.biomes_shown[index] || content.height < UI_ROW_HEIGHT {
+			continue
+		}
+		name := text(biome.definition.name_key)
+		if index == here {
+			draw_map_legend_row(state, content, map_biome_color(biome), format_message_text(text("map_legend_here"), name), UI_ACCENT_COLOR)
+		} else {
+			draw_map_legend_row(state, content, map_biome_color(biome), name)
+		}
+	}
+}
+
+// The biomes go below the other entries, or in a second column when the
+// height does not hold both (large UI scales).
+draw_map_legend :: proc(state: ^Ui_State, area: Ui_Rectangle, view: ^Map_View, generator: ^Generator, player: Player) {
 	content := area
+	biome_content := &content
+	second_column: Ui_Rectangle
+	if f32(MAP_LEGEND_FIXED_ROWS + map_biome_legend_rows(view, generator)) * UI_ROW_HEIGHT > area.height {
+		second_column = content
+		content = cut_left(&second_column, (area.width - UI_GAP) / 2)
+		cut_left(&second_column, UI_GAP)
+		biome_content = &second_column
+	}
 	scale := fmt.tprintf("%s: %d %s", text("map_scale"), map_blocks_per_pixel(view.zoom), text("map_blocks_per_pixel"))
 	draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), scale, UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	entries := [?]struct {
@@ -337,11 +481,9 @@ draw_map_legend :: proc(state: ^Ui_State, area: Ui_Rectangle, view: ^Map_View) {
 		{MAP_RESOLVED_COLOR, "map_legend_resolved"},
 	}
 	for entry in entries {
-		row := cut_top(&content, UI_ROW_HEIGHT)
-		swatch := Ui_Rectangle{row.x, row.y + (row.height - 20) / 2, 20, 20}
-		draw_fill(state, swatch, entry.color)
-		draw_text_fitted(state, {row.x + 32, row.y, row.width - 32, row.height}, text(entry.key), UI_BODY_TEXT_SIZE, .Left)
+		draw_map_legend_row(state, &content, entry.color, text(entry.key))
 	}
+	draw_map_biome_legend(state, biome_content, view, generator, player)
 }
 
 map_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
@@ -367,12 +509,12 @@ map_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	frame := map_frame_for(view.centre, view.zoom)
 	view.repaint_seconds += state.frame_seconds
 	if frame != view.painted_frame || view.repaint_seconds >= MAP_REPAINT_SECONDS {
-		paint_map(view, frame, world, screen_context.blocks)
+		paint_map(view, frame, world, screen_context.blocks, screen_context.generator)
 	}
 	draw_image(state, image, view.pixels[:], {frame.size, frame.size}, view.revision)
 	draw_outline(state, image, UI_PANEL_BORDER_COLOR)
 	draw_map_player(state, image, frame, screen_context.player^)
-	draw_map_legend(state, legend, view)
+	draw_map_legend(state, legend, view, screen_context.generator, screen_context.player^)
 	ui_panel_end(state)
 	hints := [?]Glyph_Hint{{.Tab_Previous, ""}, {.Tab_Next, text("hint_zoom")}, {.Back, text("hint_close")}}
 	ui_glyph_bar(state, hints[:])

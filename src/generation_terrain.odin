@@ -23,9 +23,11 @@ GENERATION_CEILING :: TERRAIN_MAXIMUM_HEIGHT + FEATURE_MAXIMUM_HEIGHT
 MINIMUM_TOPSOIL_DEPTH :: 3
 MAXIMUM_TOPSOIL_DEPTH :: 5
 
-// The terrain before work item 0057 was version 1. A world saved by an
-// older generator regenerates its unmodified chunks with this one.
-GENERATOR_VERSION :: 2
+// The terrain before work item 0057 was version 1, the shaped terrain
+// with the height and moisture biomes version 2, the climate biomes of
+// work item 0058 version 3. A world saved by an older generator
+// regenerates its unmodified chunks with this one.
+GENERATOR_VERSION :: 3
 
 // Continental swell: broad lowlands near sea level, and raised masses
 // where the continental noise lies above RAISED_START, fully raised from
@@ -64,6 +66,18 @@ DETAIL_AMPLITUDE :: 2.5
 // common.
 LOWLAND_DETAIL_SHARE :: 0.6
 MOISTURE_WAVELENGTH :: 400.0
+// Climate (work item 0058): temperature runs from -1 (cold) to 1 (hot).
+// It is a latitude band along z, plus noise, minus a lapse with height.
+// The band is a cosine over TEMPERATURE_PERIOD blocks with its phase set
+// so that the origin sits at ORIGIN_TEMPERATURE: a quarter period north
+// (towards -z) it is cold, a quarter period south hot.
+TEMPERATURE_PERIOD :: 6000.0
+LATITUDE_AMPLITUDE :: 0.9
+ORIGIN_TEMPERATURE :: 0.1
+TEMPERATURE_WAVELENGTH :: 600.0
+TEMPERATURE_NOISE_AMPLITUDE :: 0.35
+// Per block of surface above sea level.
+TEMPERATURE_LAPSE :: 0.006
 // Rivers follow the zero line of a noise field: where its absolute value is
 // small the surface is pulled down to the river bed. A wider band around
 // it lowers the banks by up to VALLEY_DEPTH, so the valley slopes down to
@@ -92,6 +106,7 @@ CAVE_GRID_POINTS :: CHUNK_SIZE / CAVE_GRID_STEP + 1
 Column_Sample :: struct {
 	height:        i32,
 	topsoil_depth: i32,
+	temperature:   f32,
 	biome:         int,
 }
 
@@ -200,17 +215,36 @@ terrain_moisture :: proc(seeds: Purpose_Seeds, x, z: i32) -> f32 {
 	return f32(noise_2d_at(seeds[.Moisture], x, z, MOISTURE_WAVELENGTH))
 }
 
+// The latitude band alone: ORIGIN_TEMPERATURE at z = 0, falling towards
+// -z and rising towards +z.
+latitude_temperature :: proc(z: i32) -> f64 {
+	phase := math.acos(ORIGIN_TEMPERATURE / LATITUDE_AMPLITUDE)
+	return LATITUDE_AMPLITUDE * math.cos(2 * math.PI * f64(z) / TEMPERATURE_PERIOD - phase)
+}
+
+// height is the column's surface height.
+terrain_temperature :: proc(seeds: Purpose_Seeds, x, z, height: i32) -> f32 {
+	noise_part := noise_2d_at(seeds[.Temperature], x, z, TEMPERATURE_WAVELENGTH) * TEMPERATURE_NOISE_AMPLITUDE
+	lapse := f64(max(height - SEA_LEVEL, 0)) * TEMPERATURE_LAPSE
+	return f32(clamp(latitude_temperature(z) + noise_part - lapse, -1, 1))
+}
+
 topsoil_depth :: proc(seeds: Purpose_Seeds, x, z: i32) -> i32 {
 	return i32(hash_to_range(hash_column(seeds[.Topsoil], x, z), MINIMUM_TOPSOIL_DEPTH, MAXIMUM_TOPSOIL_DEPTH))
 }
 
 sample_column :: proc(generator: ^Generator, x, z: i32) -> Column_Sample {
 	height := terrain_height(generator.seeds, x, z)
-	moisture := terrain_moisture(generator.seeds, x, z)
+	climate := Climate {
+		relative_height = height - SEA_LEVEL,
+		moisture        = terrain_moisture(generator.seeds, x, z),
+		temperature     = terrain_temperature(generator.seeds, x, z, height),
+	}
 	return Column_Sample {
 		height = height,
 		topsoil_depth = topsoil_depth(generator.seeds, x, z),
-		biome = select_biome(generator.biomes, height - SEA_LEVEL, moisture),
+		temperature = climate.temperature,
+		biome = select_biome(generator.biomes, climate),
 	}
 }
 
@@ -226,11 +260,20 @@ terrain_block :: proc(generator: ^Generator, column: Column_Sample, y: i32) -> B
 	case y == column.height:
 		return column_biome(generator, column).top_block
 	case y > column.height - column.topsoil_depth:
-		return column_biome(generator, column).filler_block
+		return filler_block_at(column_biome(generator, column), y)
 	case y < DEEP_STONE_LEVEL:
 		return generator.blocks.deep_stone
 	}
 	return generator.blocks.stone
+}
+
+// The filler, or with a layer block the filler and the layer block in
+// bands of layer_thickness blocks of absolute height (badlands).
+filler_block_at :: proc(biome: Biome, y: i32) -> Block_Id {
+	if biome.layer_block == AIR_BLOCK || floor_divide(y, biome.definition.layer_thickness) %% 2 == 0 {
+		return biome.filler_block
+	}
+	return biome.layer_block
 }
 
 column_grid_index :: proc(x, z: i32) -> int {

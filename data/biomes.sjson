@@ -1,10 +1,20 @@
-// Biomes (work item 0006). A column takes the first biome whose ranges
-// contain its surface height and its moisture, so the last entry should
-// accept everything.
+// Biomes (work items 0006 and 0058). A column takes the first biome whose
+// ranges contain its surface height, its moisture and its temperature, so
+// the order of the entries is the rule and the last entry should accept
+// everything.
 // minimum_height and maximum_height are inclusive, in blocks relative to
 // sea level. Moisture comes from noise and lies between -1 and 1.
+// Temperature lies between -1 (cold) and 1 (hot): a latitude band along z
+// (cold towards -z, hot towards +z, temperate at the origin), noise, and a
+// lapse with height (src/generation_terrain.odin). minimum_temperature and
+// maximum_temperature are each optional: a missing bound accepts every
+// temperature on its side.
+// name_key names the biome on the map and the HUD banner, in
+// data/strings/en.sjson. map_color tints the biome on the map.
 // top_block is the surface block, filler_block the topsoil below it (three
-// to five blocks, stone below that).
+// to five blocks, stone below that). layer_block (optional) alternates
+// with the filler every layer_thickness blocks of absolute height, so
+// cliffs show bands (badlands).
 // tree_density and boulder_density are the chance, 0 to 1, that a feature
 // cell holds a tree or a boulder rooted in this biome.
 // pit_block (optional, work item 0030) replaces top_block in the low spots
@@ -12,11 +22,15 @@
 // four neighbours stand no lower. The tar flats get tar pits.
 // Work item 0057 added the mountains above the hills and the beaches at
 // the shore. Beaches come after the tar flats and the desert, so tar pits
-// and dry sand keep their shores.
+// and dry sand keep their shores. Work item 0058 added the climate biomes
+// after the lake and the mountains. Highland comes before the hills and
+// takes their wetter side; badlands take hot dry hills. Coastal dunes come
+// after the beach, so the beach keeps the shore line and tar pits keep
+// their low spots.
 biomes = [
 	{
 		id = "lake"
-		name = "Lake"
+		name_key = "biome_lake"
 		minimum_height = -1000
 		maximum_height = -1
 		minimum_moisture = -1
@@ -25,10 +39,11 @@ biomes = [
 		filler_block = "sand"
 		tree_density = 0
 		boulder_density = 0
+		map_color = [52, 98, 186]
 	}
 	{
 		id = "mountains"
-		name = "Mountains"
+		name_key = "biome_mountains"
 		minimum_height = 48
 		maximum_height = 1000
 		minimum_moisture = -1
@@ -37,10 +52,82 @@ biomes = [
 		filler_block = "stone"
 		tree_density = 0
 		boulder_density = 0.3
+		map_color = [150, 150, 160]
+	}
+	{
+		id = "cold_barrens"
+		name_key = "biome_cold_barrens"
+		minimum_height = 0
+		maximum_height = 1000
+		minimum_moisture = -1
+		maximum_moisture = 1
+		maximum_temperature = -0.45
+		top_block = "snow"
+		filler_block = "frozen_dirt"
+		tree_density = 0
+		boulder_density = 0.2
+		map_color = [235, 240, 250]
+	}
+	{
+		id = "highland"
+		name_key = "biome_highland"
+		minimum_height = 24
+		maximum_height = 47
+		minimum_moisture = 0
+		maximum_moisture = 1
+		top_block = "grass"
+		filler_block = "stone"
+		tree_density = 0.02
+		boulder_density = 0.3
+		map_color = [96, 150, 96]
+	}
+	{
+		id = "badlands"
+		name_key = "biome_badlands"
+		minimum_height = 6
+		maximum_height = 47
+		minimum_moisture = -1
+		maximum_moisture = -0.2
+		minimum_temperature = 0.3
+		top_block = "red_rock"
+		filler_block = "red_rock"
+		layer_block = "pale_rock"
+		layer_thickness = 4
+		tree_density = 0
+		boulder_density = 0.2
+		map_color = [204, 96, 56]
+	}
+	{
+		id = "steppe"
+		name_key = "biome_steppe"
+		minimum_height = 0
+		maximum_height = 23
+		minimum_moisture = -0.35
+		maximum_moisture = 0.1
+		minimum_temperature = 0.2
+		top_block = "dry_grass"
+		filler_block = "dirt"
+		tree_density = 0.005
+		boulder_density = 0.05
+		map_color = [196, 184, 96]
+	}
+	{
+		id = "wetland"
+		name_key = "biome_wetland"
+		minimum_height = 0
+		maximum_height = 3
+		minimum_moisture = 0.6
+		maximum_moisture = 1
+		minimum_temperature = -0.2
+		top_block = "mud"
+		filler_block = "dirt"
+		tree_density = 0.03
+		boulder_density = 0
+		map_color = [56, 124, 112]
 	}
 	{
 		id = "hills"
-		name = "Hills"
+		name_key = "biome_hills"
 		minimum_height = 24
 		maximum_height = 47
 		minimum_moisture = -1
@@ -49,36 +136,41 @@ biomes = [
 		filler_block = "stone"
 		tree_density = 0.05
 		boulder_density = 0.5
+		map_color = [128, 116, 96]
 	}
 	{
 		id = "tar_flats"
-		name = "Tar Flats"
+		name_key = "biome_tar_flats"
 		minimum_height = 0
 		maximum_height = 5
 		minimum_moisture = -1
 		maximum_moisture = -0.45
+		minimum_temperature = 0.1
 		top_block = "tar"
 		filler_block = "dirt"
 		tree_density = 0
 		boulder_density = 0.1
 		pit_block = "tar_pit"
 		pit_maximum_height = 1
+		map_color = [48, 42, 38]
 	}
 	{
 		id = "desert"
-		name = "Desert"
+		name_key = "biome_desert"
 		minimum_height = 0
 		maximum_height = 1000
 		minimum_moisture = -1
 		maximum_moisture = -0.35
+		minimum_temperature = 0.1
 		top_block = "sand"
 		filler_block = "sand"
 		tree_density = 0
 		boulder_density = 0.15
+		map_color = [232, 184, 100]
 	}
 	{
 		id = "beach"
-		name = "Beach"
+		name_key = "biome_beach"
 		minimum_height = 0
 		maximum_height = 1
 		minimum_moisture = -1
@@ -87,22 +179,40 @@ biomes = [
 		filler_block = "sand"
 		tree_density = 0
 		boulder_density = 0
+		map_color = [246, 232, 186]
+	}
+	{
+		id = "coastal_dunes"
+		name_key = "biome_coastal_dunes"
+		minimum_height = 1
+		maximum_height = 3
+		minimum_moisture = -1
+		maximum_moisture = 0.3
+		minimum_temperature = -0.2
+		top_block = "sand"
+		filler_block = "sand"
+		tree_density = 0
+		boulder_density = 0
+		map_color = [224, 208, 150]
 	}
 	{
 		id = "forest"
-		name = "Forest"
+		name_key = "biome_forest"
 		minimum_height = 0
 		maximum_height = 1000
 		minimum_moisture = 0.3
 		maximum_moisture = 1
+		minimum_temperature = -0.45
+		maximum_temperature = 0.6
 		top_block = "grass"
 		filler_block = "dirt"
 		tree_density = 0.7
 		boulder_density = 0.05
+		map_color = [32, 112, 44]
 	}
 	{
 		id = "plains"
-		name = "Plains"
+		name_key = "biome_plains"
 		minimum_height = -1000
 		maximum_height = 1000
 		minimum_moisture = -1
@@ -111,5 +221,6 @@ biomes = [
 		filler_block = "dirt"
 		tree_density = 0.06
 		boulder_density = 0.2
+		map_color = [124, 190, 80]
 	}
 ]

@@ -26,6 +26,8 @@ Generation_Purpose :: enum u8 {
 	Plateau_Mask,
 	Warp_X,
 	Warp_Z,
+	// The climate of work item 0058.
+	Temperature,
 }
 
 Purpose_Seeds :: [Generation_Purpose]u64

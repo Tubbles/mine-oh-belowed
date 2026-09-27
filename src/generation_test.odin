@@ -6,6 +6,8 @@ import "core:testing"
 
 // Seeds besides the default that every generation test also runs on.
 TEST_SEEDS :: [3]u64{DEFAULT_WORLD_SEED, 1, 987654321}
+// The entries of data/biomes.sjson.
+SHIPPED_BIOME_COUNT :: 14
 
 // The largest height step allowed between two neighbouring columns.
 // Plateau cliffs and terraces (PLATEAU_STEP plus detail) are the steepest
@@ -30,7 +32,7 @@ make_test_generator :: proc(seed: u64) -> Generator {
 @(test)
 test_shipped_generation_data_resolves :: proc(t: ^testing.T) {
 	generator := make_test_generator(DEFAULT_WORLD_SEED)
-	testing.expect_value(t, len(generator.biomes), 8)
+	testing.expect_value(t, len(generator.biomes), SHIPPED_BIOME_COUNT)
 	testing.expect_value(t, len(generator.veins.types), 13)
 	testing.expect_value(t, len(generator.veins.size_classes), 3)
 	testing.expect_value(t, len(generator.veins.spawn_types), 3)
@@ -55,7 +57,7 @@ Terrain_Statistics :: struct {
 	river_bed_reached: bool,
 	lowest:            i32,
 	highest:           i32,
-	biome_columns:     [8]int,
+	biome_columns:     [SHIPPED_BIOME_COUNT]int,
 }
 
 record_neighbour_pair :: proc(statistics: ^Terrain_Statistics, height, neighbour: i32) {
@@ -116,20 +118,26 @@ test_terrain_has_lowlands_slopes_cliffs_and_rivers :: proc(t: ^testing.T) {
 	}
 }
 
+temperate_climate :: proc(relative_height: i32, moisture: f32) -> Climate {
+	return Climate{relative_height = relative_height, moisture = moisture, temperature = ORIGIN_TEMPERATURE}
+}
+
 @(test)
 test_beach_and_mountain_biomes_cover_their_heights :: proc(t: ^testing.T) {
 	generator := make_test_generator(DEFAULT_WORLD_SEED)
 	beach := find_biome_index(generator.biomes, "beach")
 	mountains := find_biome_index(generator.biomes, "mountains")
 	hills := find_biome_index(generator.biomes, "hills")
-	for moisture in ([3]f32{-0.3, 0, 0.8}) {
-		testing.expect_value(t, select_biome(generator.biomes, 0, moisture), beach)
-		testing.expect_value(t, select_biome(generator.biomes, 1, moisture), beach)
-		testing.expect(t, select_biome(generator.biomes, 2, moisture) != beach)
-		testing.expect(t, select_biome(generator.biomes, -1, moisture) != beach)
-		testing.expect_value(t, select_biome(generator.biomes, 47, moisture), hills)
-		testing.expect_value(t, select_biome(generator.biomes, 48, moisture), mountains)
-		testing.expect_value(t, select_biome(generator.biomes, TERRAIN_MAXIMUM_HEIGHT - SEA_LEVEL, moisture), mountains)
+	highland := find_biome_index(generator.biomes, "highland")
+	// Temperate, and short of the wetland's moisture.
+	for moisture in ([3]f32{-0.3, 0, 0.5}) {
+		testing.expect_value(t, select_biome(generator.biomes, temperate_climate(0, moisture)), beach)
+		testing.expect_value(t, select_biome(generator.biomes, temperate_climate(1, moisture)), beach)
+		testing.expect(t, select_biome(generator.biomes, temperate_climate(2, moisture)) != beach)
+		testing.expect(t, select_biome(generator.biomes, temperate_climate(-1, moisture)) != beach)
+		testing.expect_value(t, select_biome(generator.biomes, temperate_climate(47, moisture)), moisture < 0 ? hills : highland)
+		testing.expect_value(t, select_biome(generator.biomes, temperate_climate(48, moisture)), mountains)
+		testing.expect_value(t, select_biome(generator.biomes, temperate_climate(TERRAIN_MAXIMUM_HEIGHT - SEA_LEVEL, moisture)), mountains)
 	}
 	testing.expect_value(t, generator.biomes[beach].top_block, generator.blocks.sand)
 	testing.expect_value(t, generator.biomes[mountains].top_block, generator.blocks.stone)

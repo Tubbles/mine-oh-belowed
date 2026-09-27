@@ -7,8 +7,8 @@ package game
 // a block over a vein footprint (or the deep vein under a bore drill
 // ghost), hotbar with the held item's name, the hotbar radial, the active quest objective (top right,
 // ui_journal.odin) or, once every quest is done, the oldest open contract
-// (ui_contracts.odin), the brownout warning (top centre, ui_power.odin) and
-// the glyph bar, and the magnetometer's dial while one is selected
+// (ui_contracts.odin), the brownout warning (top centre, ui_power.odin),
+// the biome banner below it (biome_banner.odin) and the glyph bar, and the magnetometer's dial while one is selected
 // (ui_prospecting.odin).
 
 CROSSHAIR_SIZE :: 18.0
@@ -248,6 +248,7 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	case .None:
 	}
 	draw_brownout_warning(state, screen_context.world)
+	draw_biome_banner(state, screen_context)
 	obtained := screen_context.unlocks.obtained
 	name_status, tool_status, vein_status := target_status_lines(screen_context.world, screen_context.machines, screen_context.fluids, screen_context.veins, screen_context.blocks, items, obtained, effective_tool_tier(player^, items, screen_context.cheat_speed), player.target)
 	if ghost_line, shown := bore_drill_ghost_line(screen_context.world, screen_context.machines, screen_context.veins, screen_context.blocks, items, obtained, player^); shown {

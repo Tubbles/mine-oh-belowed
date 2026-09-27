@@ -20,7 +20,10 @@
 // Byproducts (work item 0027): slag from smelting stacks to 100, gravel
 // and mud as before; each has a use (gravel, concrete, clay, brick).
 // Slag also places as a slag heap block (work item 0028), the early sink
-// before the crusher exists; mining a heap gives the slag back.
+// before the crusher exists; mining a heap gives the slag back. Mud places
+// as the wetland's mud block and mining that gives the mud back (work item
+// 0058). The other climate biome blocks give dirt (frozen dirt, dry grass)
+// or stone (red and pale rock); snow drops itself.
 // cannot_recycle (optional) keeps the recycler from taking the item even
 // when a recipe makes it: raw materials, ore, spoils, slag, mud, crushed
 // ore, bricks and concrete.
@@ -58,8 +61,8 @@
 items = [
 	// Raw materials
 	{id = "log", name_key = "item_log", category = "raw", stack_size = 50, places_block = "log", fuel_megajoules = 2, cannot_recycle = true, price = 1}
-	{id = "stone", name_key = "item_stone", category = "raw", stack_size = 50, places_block = "stone", cannot_recycle = true, price = 1}
-	{id = "dirt", name_key = "item_dirt", category = "raw", stack_size = 50, places_block = "dirt", mined_from = ["grass"], cannot_recycle = true, price = 1}
+	{id = "stone", name_key = "item_stone", category = "raw", stack_size = 50, places_block = "stone", mined_from = ["red_rock", "pale_rock"], cannot_recycle = true, price = 1}
+	{id = "dirt", name_key = "item_dirt", category = "raw", stack_size = 50, places_block = "dirt", mined_from = ["grass", "frozen_dirt", "dry_grass"], cannot_recycle = true, price = 1}
 	{id = "sand", name_key = "item_sand", category = "raw", stack_size = 50, places_block = "sand", cannot_recycle = true, price = 1}
 	{id = "clay", name_key = "item_clay", category = "raw", stack_size = 50, cannot_recycle = true, price = 1}
 	{id = "gravel", name_key = "item_gravel", category = "raw", stack_size = 50, cannot_recycle = true, price = 1}
@@ -80,7 +83,7 @@ items = [
 	{id = "bauxite_low_grade", name_key = "item_bauxite_low_grade", category = "raw", stack_size = 50, cannot_recycle = true, price = 1}
 	{id = "gold_ore", name_key = "item_gold_ore", category = "raw", stack_size = 50, also_mined_from = ["gold_quartz"], cannot_recycle = true, price = 8}
 	{id = "quartz", name_key = "item_quartz", category = "raw", stack_size = 50, mined_from = ["gold_quartz"], cannot_recycle = true, price = 3}
-	{id = "mud", name_key = "item_mud", category = "raw", stack_size = 50, cannot_recycle = true, price = 1}
+	{id = "mud", name_key = "item_mud", category = "raw", stack_size = 50, places_block = "mud", cannot_recycle = true, price = 1}
 	{id = "slag", name_key = "item_slag", category = "raw", stack_size = 100, places_block = "slag_heap", cannot_recycle = true, price = 1}
 	// Processed materials and intermediates
 	{id = "plank", name_key = "item_plank", category = "intermediate", stack_size = 100, fuel_megajoules = 1, price = 1}
@@ -180,6 +183,7 @@ items = [
 	{id = "concrete", name_key = "item_concrete", category = "block", stack_size = 50, places_block = "concrete", cannot_recycle = true, price = 3}
 	{id = "brick", name_key = "item_brick", category = "block", stack_size = 50, places_block = "brick", cannot_recycle = true, price = 2}
 	{id = "asphalt", name_key = "item_asphalt", category = "block", stack_size = 50, places_block = "asphalt", cannot_recycle = true, price = 3}
+	{id = "snow", name_key = "item_snow", category = "block", stack_size = 50, places_block = "snow", cannot_recycle = true, price = 1}
 
 	// Schematics (work item 0036), read with Use_Item.
 	{id = "schematic_low_grade_iron_plate", name_key = "item_schematic_low_grade_iron_plate", category = "tool", stack_size = 1, usable = true, cannot_recycle = true, price = 50}

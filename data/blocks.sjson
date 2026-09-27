@@ -308,4 +308,55 @@ blocks = [
 		tool_tier = 3
 		texture = {top = [214, 206, 180], side = [222, 196, 120], bottom = [214, 206, 180]}
 	}
+	{
+		// Climate biome ground (work item 0058), placeholder colours. Snow
+		// and frozen dirt cover the cold barrens, dry grass the steppe, mud
+		// the wetland, red rock layered with pale rock the badlands.
+		id = "snow"
+		name_key = "block_snow"
+		solid = true
+		hardness_seconds = 0.75
+		tool_tier = 0
+		texture = {top = [240, 244, 250], side = [232, 236, 244], bottom = [232, 236, 244]}
+	}
+	{
+		id = "frozen_dirt"
+		name_key = "block_frozen_dirt"
+		solid = true
+		hardness_seconds = 0.75
+		tool_tier = 0
+		texture = {top = [118, 106, 98], side = [118, 106, 98], bottom = [118, 106, 98]}
+	}
+	{
+		id = "dry_grass"
+		name_key = "block_dry_grass"
+		solid = true
+		hardness_seconds = 0.75
+		tool_tier = 0
+		texture = {top = [176, 164, 86], side = [140, 116, 72], bottom = [134, 96, 67]}
+	}
+	{
+		id = "mud"
+		name_key = "block_mud"
+		solid = true
+		hardness_seconds = 0.75
+		tool_tier = 0
+		texture = {top = [88, 72, 52], side = [96, 78, 56], bottom = [96, 78, 56]}
+	}
+	{
+		id = "red_rock"
+		name_key = "block_red_rock"
+		solid = true
+		hardness_seconds = 1.5
+		tool_tier = 1
+		texture = {top = [172, 84, 56], side = [172, 84, 56], bottom = [172, 84, 56]}
+	}
+	{
+		id = "pale_rock"
+		name_key = "block_pale_rock"
+		solid = true
+		hardness_seconds = 1.5
+		tool_tier = 1
+		texture = {top = [216, 192, 160], side = [216, 192, 160], bottom = [216, 192, 160]}
+	}
 ]
