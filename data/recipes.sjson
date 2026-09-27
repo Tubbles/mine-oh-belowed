@@ -1,0 +1,76 @@
+// Recipes (work item 0012): every recipe of doc/content.md phases 1 to 4,
+// loaded after items.sjson and resolved to a dense recipe index.
+// id is unique. name_key (optional) is a key into data/strings/en.sjson;
+// without it the recipe is named after its first output item.
+// inputs and outputs are lists of {item, count}. Byproducts are ordinary
+// outputs. Fluids are not items yet: an entry will later be written as
+// {fluid = "water", count = 100} (count in litres), and loading rejects
+// the fluid field until fluids exist.
+// seconds is the time at speed 1 (a hand crafts at speed 1).
+// made_in lists what can make the recipe: hand, furnace, assembler. The
+// furnace makes recipes with one input and one output; two such furnace
+// recipes may not share an input item.
+// category is the recipe browser tab: materials, components, tools,
+// machines, logistics, power, science.
+// tags are free words for the browser's tag filter, each with a string
+// recipe_tag_<tag>.
+// channel is how the recipe becomes available: start (always), discovery
+// (once every input item has been obtained), research (once technology,
+// an id from technologies.sjson, is researched) or quest (a main quest
+// gate, work item 0013; locked until then).
+// Machine recipes take 2 s, inserters, belts, pipes, poles and chests
+// 0.5 s (doc/content.md). Tools take 1 s.
+recipes = [
+	// Materials
+	{id = "plank", inputs = [{item = "log", count = 1}], outputs = [{item = "plank", count = 4}], seconds = 0.5, made_in = ["hand", "assembler"], category = "materials", tags = ["wood"], channel = "start"}
+	{id = "stick", inputs = [{item = "plank", count = 1}], outputs = [{item = "stick", count = 4}], seconds = 0.5, made_in = ["hand", "assembler"], category = "materials", tags = ["wood"], channel = "start"}
+	{id = "stone_brick", inputs = [{item = "stone", count = 2}], outputs = [{item = "stone_brick", count = 1}], seconds = 3.2, made_in = ["furnace"], category = "materials", tags = ["smelting", "stone"], channel = "start"}
+	{id = "charcoal", inputs = [{item = "log", count = 2}], outputs = [{item = "charcoal", count = 1}], seconds = 3.2, made_in = ["furnace"], category = "materials", tags = ["smelting", "wood", "fuel"], channel = "discovery"}
+	{id = "iron_plate", inputs = [{item = "hematite", count = 1}], outputs = [{item = "iron_plate", count = 1}], seconds = 3.2, made_in = ["furnace"], category = "materials", tags = ["smelting", "iron"], channel = "start"}
+	{id = "copper_plate", inputs = [{item = "chalcopyrite", count = 1}], outputs = [{item = "copper_plate", count = 1}], seconds = 3.2, made_in = ["furnace"], category = "materials", tags = ["smelting", "copper"], channel = "start"}
+	{id = "tin_plate", inputs = [{item = "cassiterite", count = 1}], outputs = [{item = "tin_plate", count = 1}], seconds = 3.2, made_in = ["furnace"], category = "materials", tags = ["smelting", "tin"], channel = "discovery"}
+	{id = "bronze_plate", inputs = [{item = "copper_plate", count = 3}, {item = "tin_plate", count = 1}], outputs = [{item = "bronze_plate", count = 4}], seconds = 6.4, made_in = ["furnace"], category = "materials", tags = ["smelting", "alloy", "copper", "tin"], channel = "discovery"}
+	{id = "glass", inputs = [{item = "sand", count = 2}], outputs = [{item = "glass", count = 1}], seconds = 3.2, made_in = ["furnace"], category = "materials", tags = ["smelting", "sand"], channel = "discovery"}
+	{id = "steel", inputs = [{item = "iron_plate", count = 5}, {item = "coal", count = 1}], outputs = [{item = "steel", count = 1}], seconds = 16, made_in = ["furnace"], category = "materials", tags = ["smelting", "alloy", "iron"], channel = "research", technology = "steel_processing"}
+	// Components
+	{id = "iron_gear", inputs = [{item = "iron_plate", count = 2}], outputs = [{item = "iron_gear", count = 1}], seconds = 0.5, made_in = ["hand", "assembler"], category = "components", tags = ["iron"], channel = "start"}
+	{id = "iron_rod", inputs = [{item = "iron_plate", count = 1}], outputs = [{item = "iron_rod", count = 2}], seconds = 0.5, made_in = ["hand", "assembler"], category = "components", tags = ["iron"], channel = "start"}
+	{id = "copper_wire", inputs = [{item = "copper_plate", count = 1}], outputs = [{item = "copper_wire", count = 2}], seconds = 0.5, made_in = ["hand", "assembler"], category = "components", tags = ["copper", "electric"], channel = "start"}
+	{id = "electronic_circuit", inputs = [{item = "iron_plate", count = 1}, {item = "copper_wire", count = 3}], outputs = [{item = "electronic_circuit", count = 1}], seconds = 0.5, made_in = ["hand", "assembler"], category = "components", tags = ["electric", "iron", "copper"], channel = "discovery"}
+	{id = "pipe", inputs = [{item = "iron_plate", count = 1}], outputs = [{item = "pipe", count = 1}], seconds = 0.5, made_in = ["hand", "assembler"], category = "components", tags = ["iron", "fluid"], channel = "start"}
+	// Science
+	{id = "science_pack_1", inputs = [{item = "copper_plate", count = 1}, {item = "iron_gear", count = 1}], outputs = [{item = "science_pack_1", count = 1}], seconds = 5, made_in = ["hand", "assembler"], category = "science", tags = ["research"], channel = "discovery"}
+	// Tools
+	{id = "wooden_pickaxe", inputs = [{item = "plank", count = 3}, {item = "stick", count = 2}], outputs = [{item = "wooden_pickaxe", count = 1}], seconds = 1, made_in = ["hand", "assembler"], category = "tools", tags = ["mining", "wood"], channel = "start"}
+	{id = "stone_pickaxe", inputs = [{item = "stone", count = 3}, {item = "stick", count = 2}], outputs = [{item = "stone_pickaxe", count = 1}], seconds = 1, made_in = ["hand", "assembler"], category = "tools", tags = ["mining", "stone"], channel = "start"}
+	{id = "iron_pickaxe", inputs = [{item = "iron_plate", count = 3}, {item = "stick", count = 2}], outputs = [{item = "iron_pickaxe", count = 1}], seconds = 1, made_in = ["hand", "assembler"], category = "tools", tags = ["mining", "iron"], channel = "start"}
+	{id = "geologists_hammer", inputs = [{item = "iron_plate", count = 2}, {item = "stick", count = 1}], outputs = [{item = "geologists_hammer", count = 1}], seconds = 1, made_in = ["hand", "assembler"], category = "tools", tags = ["prospecting", "iron"], channel = "start"}
+	{id = "magnetometer", inputs = [{item = "electronic_circuit", count = 5}, {item = "copper_wire", count = 2}, {item = "iron_plate", count = 1}], outputs = [{item = "magnetometer", count = 1}], seconds = 1, made_in = ["hand", "assembler"], category = "tools", tags = ["prospecting", "electric"], channel = "research", technology = "prospecting"}
+	// Machines
+	{id = "stone_furnace", inputs = [{item = "stone", count = 5}], outputs = [{item = "stone_furnace", count = 1}], seconds = 2, made_in = ["hand", "assembler"], category = "machines", tags = ["smelting", "stone"], channel = "start"}
+	{id = "steel_furnace", inputs = [{item = "steel", count = 6}, {item = "stone_brick", count = 10}], outputs = [{item = "steel_furnace", count = 1}], seconds = 2, made_in = ["hand", "assembler"], category = "machines", tags = ["smelting", "steel"], channel = "research", technology = "steel_processing"}
+	{id = "burner_mining_drill", inputs = [{item = "iron_gear", count = 3}, {item = "iron_plate", count = 3}, {item = "stone_furnace", count = 1}], outputs = [{item = "burner_mining_drill", count = 1}], seconds = 2, made_in = ["hand", "assembler"], category = "machines", tags = ["mining", "iron"], channel = "start"}
+	{id = "electric_mining_drill", inputs = [{item = "electronic_circuit", count = 3}, {item = "iron_gear", count = 5}, {item = "iron_plate", count = 10}], outputs = [{item = "electric_mining_drill", count = 1}], seconds = 2, made_in = ["hand", "assembler"], category = "machines", tags = ["mining", "electric"], channel = "research", technology = "electric_mining"}
+	{id = "assembler_1", inputs = [{item = "electronic_circuit", count = 3}, {item = "iron_gear", count = 5}, {item = "iron_plate", count = 9}], outputs = [{item = "assembler_1", count = 1}], seconds = 2, made_in = ["hand", "assembler"], category = "machines", tags = ["crafting", "electric"], channel = "research", technology = "automation"}
+	{id = "lab", inputs = [{item = "electronic_circuit", count = 10}, {item = "iron_gear", count = 10}, {item = "belt", count = 4}], outputs = [{item = "lab", count = 1}], seconds = 2, made_in = ["hand", "assembler"], category = "machines", tags = ["research", "electric"], channel = "start"}
+	{id = "core_sample_drill", inputs = [{item = "electronic_circuit", count = 2}, {item = "steel", count = 5}, {item = "iron_gear", count = 5}], outputs = [{item = "core_sample_drill", count = 1}], seconds = 2, made_in = ["hand", "assembler"], category = "machines", tags = ["prospecting", "electric"], channel = "research", technology = "prospecting"}
+	// Logistics
+	{id = "burner_inserter", inputs = [{item = "iron_plate", count = 1}, {item = "iron_gear", count = 1}], outputs = [{item = "burner_inserter", count = 1}], seconds = 0.5, made_in = ["hand", "assembler"], category = "logistics", tags = ["inserter"], channel = "start"}
+	{id = "inserter", inputs = [{item = "iron_plate", count = 1}, {item = "iron_gear", count = 1}, {item = "electronic_circuit", count = 1}], outputs = [{item = "inserter", count = 1}], seconds = 0.5, made_in = ["hand", "assembler"], category = "logistics", tags = ["inserter", "electric"], channel = "discovery"}
+	{id = "filter_inserter", inputs = [{item = "inserter", count = 1}, {item = "electronic_circuit", count = 2}], outputs = [{item = "filter_inserter", count = 1}], seconds = 0.5, made_in = ["hand", "assembler"], category = "logistics", tags = ["inserter", "electric"], channel = "research", technology = "logistics"}
+	{id = "belt", inputs = [{item = "iron_plate", count = 1}, {item = "iron_gear", count = 1}], outputs = [{item = "belt", count = 2}], seconds = 0.5, made_in = ["hand", "assembler"], category = "logistics", tags = ["belt"], channel = "start"}
+	{id = "belt_ramp", inputs = [{item = "belt", count = 1}, {item = "iron_plate", count = 1}], outputs = [{item = "belt_ramp", count = 1}], seconds = 0.5, made_in = ["hand", "assembler"], category = "logistics", tags = ["belt"], channel = "start"}
+	{id = "belt_lift", inputs = [{item = "belt", count = 2}, {item = "iron_gear", count = 2}], outputs = [{item = "belt_lift", count = 1}], seconds = 0.5, made_in = ["hand", "assembler"], category = "logistics", tags = ["belt"], channel = "start"}
+	{id = "splitter", inputs = [{item = "electronic_circuit", count = 5}, {item = "iron_plate", count = 5}, {item = "belt", count = 4}], outputs = [{item = "splitter", count = 1}], seconds = 2, made_in = ["hand", "assembler"], category = "logistics", tags = ["belt", "electric"], channel = "research", technology = "logistics"}
+	{id = "wooden_chest", inputs = [{item = "plank", count = 4}], outputs = [{item = "wooden_chest", count = 1}], seconds = 0.5, made_in = ["hand", "assembler"], category = "logistics", tags = ["storage", "wood"], channel = "start"}
+	{id = "iron_chest", inputs = [{item = "iron_plate", count = 8}], outputs = [{item = "iron_chest", count = 1}], seconds = 0.5, made_in = ["hand", "assembler"], category = "logistics", tags = ["storage", "iron"], channel = "start"}
+	{id = "offshore_pump", inputs = [{item = "electronic_circuit", count = 2}, {item = "pipe", count = 1}, {item = "iron_gear", count = 1}], outputs = [{item = "offshore_pump", count = 1}], seconds = 2, made_in = ["hand", "assembler"], category = "logistics", tags = ["fluid"], channel = "start"}
+	{id = "pump", inputs = [{item = "steel", count = 1}, {item = "iron_gear", count = 1}, {item = "pipe", count = 1}], outputs = [{item = "pump", count = 1}], seconds = 2, made_in = ["hand", "assembler"], category = "logistics", tags = ["fluid"], channel = "research", technology = "fluid_handling"}
+	{id = "storage_tank", inputs = [{item = "steel", count = 20}, {item = "iron_plate", count = 5}], outputs = [{item = "storage_tank", count = 1}], seconds = 2, made_in = ["hand", "assembler"], category = "logistics", tags = ["fluid", "storage"], channel = "research", technology = "fluid_handling"}
+	// Power
+	{id = "boiler", inputs = [{item = "stone_furnace", count = 1}, {item = "pipe", count = 4}], outputs = [{item = "boiler", count = 1}], seconds = 2, made_in = ["hand", "assembler"], category = "power", tags = ["steam"], channel = "start"}
+	{id = "steam_engine", inputs = [{item = "iron_gear", count = 8}, {item = "pipe", count = 5}, {item = "iron_plate", count = 10}], outputs = [{item = "steam_engine", count = 1}], seconds = 2, made_in = ["hand", "assembler"], category = "power", tags = ["steam", "electric"], channel = "quest"}
+	{id = "small_pole", inputs = [{item = "log", count = 1}, {item = "copper_wire", count = 2}], outputs = [{item = "small_pole", count = 1}], seconds = 0.5, made_in = ["hand", "assembler"], category = "power", tags = ["electric", "wood"], channel = "start"}
+	{id = "lamp", inputs = [{item = "electronic_circuit", count = 1}, {item = "copper_wire", count = 3}, {item = "iron_plate", count = 1}, {item = "glass", count = 1}], outputs = [{item = "lamp", count = 1}], seconds = 2, made_in = ["hand", "assembler"], category = "power", tags = ["light", "electric"], channel = "research", technology = "optics"}
+	{id = "power_switch", inputs = [{item = "electronic_circuit", count = 2}, {item = "iron_plate", count = 5}], outputs = [{item = "power_switch", count = 1}], seconds = 2, made_in = ["hand", "assembler"], category = "power", tags = ["electric"], channel = "research", technology = "electric_mining"}
+]

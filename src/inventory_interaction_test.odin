@@ -174,14 +174,14 @@ test_distribute_gesture_over_machine_slots :: proc(t: ^testing.T) {
 	gesture: Distribute_Gesture
 	held := Held_Stack{Item_Stack{TEST_ORE, 9}, 2}
 	// A pressed on slot 0, held while the focus crosses 1 (twice) and 3, released.
-	held = apply_machine_slot_input(&gesture, slots, filters, held, {activated = 0, focused = 0, confirm_down = true}, items, nil)
+	held = apply_machine_slot_input(&gesture, slots, filters, held, {activated = 0, focused = 0, confirm_down = true}, items, {})
 	testing.expect(t, gesture.active)
 	testing.expect_value(t, slots[0], EMPTY_STACK)
 	for focused in ([?]int{0, 1, 1, 3}) {
-		held = apply_machine_slot_input(&gesture, slots, filters, held, {activated = -1, focused = focused, confirm_down = true}, items, nil)
+		held = apply_machine_slot_input(&gesture, slots, filters, held, {activated = -1, focused = focused, confirm_down = true}, items, {})
 	}
 	testing.expect_value(t, gesture.count, 3)
-	held = apply_machine_slot_input(&gesture, slots, filters, held, {activated = -1, focused = 3}, items, nil)
+	held = apply_machine_slot_input(&gesture, slots, filters, held, {activated = -1, focused = 3}, items, {})
 	testing.expect(t, !gesture.active)
 	testing.expect_value(t, slots[0], Item_Stack{TEST_ORE, 3})
 	testing.expect_value(t, slots[1], Item_Stack{TEST_ORE, 3})
@@ -189,11 +189,11 @@ test_distribute_gesture_over_machine_slots :: proc(t: ^testing.T) {
 	testing.expect_value(t, slots[3], Item_Stack{TEST_ORE, 3})
 	testing.expect_value(t, held.stack, EMPTY_STACK)
 	// A press and release on one slot is the ordinary pick up and drop.
-	held = apply_machine_slot_input(&gesture, slots, filters, EMPTY_HELD_STACK, {activated = 1, focused = 1, confirm_down = true}, items, nil)
+	held = apply_machine_slot_input(&gesture, slots, filters, EMPTY_HELD_STACK, {activated = 1, focused = 1, confirm_down = true}, items, {})
 	testing.expect_value(t, held, Held_Stack{Item_Stack{TEST_ORE, 3}, MACHINE_SLOT_ORIGIN})
 	testing.expect(t, !gesture.active)
-	held = apply_machine_slot_input(&gesture, slots, filters, held, {activated = 2, focused = 2, confirm_down = true}, items, nil)
-	held = apply_machine_slot_input(&gesture, slots, filters, held, {activated = -1, focused = 2}, items, nil)
+	held = apply_machine_slot_input(&gesture, slots, filters, held, {activated = 2, focused = 2, confirm_down = true}, items, {})
+	held = apply_machine_slot_input(&gesture, slots, filters, held, {activated = -1, focused = 2}, items, {})
 	testing.expect_value(t, slots[2], Item_Stack{TEST_ORE, 3})
 	testing.expect_value(t, held.stack, EMPTY_STACK)
 }
@@ -201,7 +201,7 @@ test_distribute_gesture_over_machine_slots :: proc(t: ^testing.T) {
 @(test)
 test_machine_slots_filter_what_the_player_drops :: proc(t: ^testing.T) {
 	items := make_test_items()
-	recipes := make_test_machines().smelting
+	recipes, _ := make_test_recipes(items)
 	coal := test_item(items, "coal")
 	hematite := test_item(items, "hematite")
 	filters := machine_slot_filters(.Furnace, FURNACE_SLOT_COUNT)

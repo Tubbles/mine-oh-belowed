@@ -63,6 +63,27 @@ detect_input_device :: proc(previous, current: Raw_Input) -> (device: Input_Devi
 	return .Keyboard_Mouse, false
 }
 
+keyboard_holds_key :: proc(keyboard: Raw_Keyboard, key: i32) -> bool {
+	for index in 0 ..< keyboard.key_count {
+		if keyboard.keys_down[index] == key {
+			return true
+		}
+	}
+	return false
+}
+
+// Keyboard key codes are raylib's on both backends, where the letter keys
+// are their upper case ASCII codes.
+newly_pressed_letter :: proc(previous, current: Raw_Keyboard) -> rune {
+	for index in 0 ..< current.key_count {
+		key := current.keys_down[index]
+		if key >= 'A' && key <= 'Z' && !keyboard_holds_key(previous, key) {
+			return rune(key - 'A' + 'a')
+		}
+	}
+	return 0
+}
+
 make_ui_input :: proc(previous, current: Input_Frame) -> Ui_Input {
 	just := current.just_pressed
 	pad_down := right_pad_click_down(current.raw)
@@ -82,6 +103,8 @@ make_ui_input :: proc(previous, current: Input_Frame) -> Ui_Input {
 		secondary = .Menu_Secondary in just,
 		confirm_down = .Confirm in current.pressed && !pad_down,
 		open_inventory = .Open_Inventory in just,
+		open_recipes = .Open_Recipes in just,
+		typed_letter = newly_pressed_letter(previous.raw.keyboard, current.raw.keyboard),
 		hotbar_radial_down = .Hotbar_Radial in current.pressed,
 		mouse_position = current.raw.mouse.position,
 		mouse_moved = current.raw.mouse.delta != {},

@@ -58,6 +58,8 @@ Player :: struct {
 	placement_rotation:   u8,
 	// The entity whose panel Interact opened; the UI clears it on close.
 	open_machine:         Entity_Handle,
+	// Hand crafting. The UI queues and cancels between ticks.
+	crafting:             Craft_Queue,
 }
 
 // What a player tick reports to the UI, which turns it into toasts.
@@ -277,5 +279,6 @@ tick_player :: proc(world: ^World, content: Simulation_Content, players: []Playe
 	events += mine_with_player(world, content, player, .Mine in input.pressed, tick_rate)
 	place_with_player(world, content, players, index, input.just_pressed)
 	player.selected_hotbar_slot = cycle_hotbar_slot(player.selected_hotbar_slot, input.just_pressed)
+	advance_crafting(&player.crafting, player.inventory, content.recipes, content.items, tick_rate)
 	return events
 }

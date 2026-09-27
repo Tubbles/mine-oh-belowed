@@ -11,7 +11,9 @@ make_test_machines :: proc() -> Machine_Registry {
 }
 
 make_test_content :: proc() -> Simulation_Content {
-	return Simulation_Content{blocks = make_test_registry(), items = make_test_items(), machines = make_test_machines()}
+	items := make_test_items()
+	recipes, _ := make_test_recipes(items)
+	return Simulation_Content{blocks = make_test_registry(), items = items, machines = make_test_machines(), recipes = recipes}
 }
 
 test_machine :: proc(machines: Machine_Registry, id: string) -> Machine_Id {
@@ -42,7 +44,6 @@ test_machine_data_loads :: proc(t: ^testing.T) {
 	testing.expect_value(t, item_places_machine(machines, test_item(items, "stone_furnace")), test_machine(machines, "stone_furnace"))
 	testing.expect_value(t, item_places_machine(machines, test_item(items, "stone")), NO_MACHINE)
 	testing.expect_value(t, item_places_machine(machines, NO_ITEM), NO_MACHINE)
-	testing.expect_value(t, len(machines.smelting), len(HARDCODED_SMELTING_TABLE))
 }
 
 @(test)

@@ -90,6 +90,9 @@ Ui_Input :: struct {
 	// L2 or Left Shift: split the focused stack.
 	secondary:      bool,
 	open_inventory: bool,
+	open_recipes:   bool,
+	// A letter key pressed this frame (lower case), 0 for none.
+	typed_letter:   rune,
 	// Held, not an edge: Confirm without the pad click, for the distribute gesture.
 	confirm_down:   bool,
 	// Held, not an edge: the keyboard radial shows while Tab is down.
@@ -159,6 +162,7 @@ Screen :: enum u8 {
 	Inventory,
 	// The panel of the player's open_machine.
 	Machine,
+	Recipes,
 }
 
 Screen_Stack :: struct {
@@ -521,6 +525,14 @@ cut_bottom :: proc(area: ^Ui_Rectangle, height: f32) -> Ui_Rectangle {
 	return {area.x, area.y + area.height, area.width, strip_height}
 }
 
+// Takes a strip off the left of the area and returns it.
+cut_left :: proc(area: ^Ui_Rectangle, width: f32) -> Ui_Rectangle {
+	strip := Ui_Rectangle{area.x, area.y, min(width, area.width), area.height}
+	area.x += strip.width
+	area.width -= strip.width
+	return strip
+}
+
 inset :: proc(rectangle: Ui_Rectangle, margin: f32) -> Ui_Rectangle {
 	return {rectangle.x + margin, rectangle.y + margin, max(rectangle.width - 2 * margin, 0), max(rectangle.height - 2 * margin, 0)}
 }
@@ -561,7 +573,7 @@ top_screen :: proc(stack: Screen_Stack) -> Screen {
 
 screen_pauses_simulation :: proc(screen: Screen) -> bool {
 	switch screen {
-	case .None, .Inventory, .Machine:
+	case .None, .Inventory, .Machine, .Recipes:
 		return false
 	case .Pause, .Settings:
 		return true

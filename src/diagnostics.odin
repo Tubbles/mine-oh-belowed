@@ -306,4 +306,15 @@ append_player_lines :: proc(lines: ^[dynamic]Diagnostics_Line, state: Frame_Stat
 		occupied_slot_count(player.inventory),
 		len(player.inventory.slots),
 	)
+	unlocks := state.simulation.unlocks
+	append_line(
+		lines,
+		player.crafting.count > 0,
+		"recipes available %d of %d  items discovered %d  craft queue %d%s",
+		available_recipe_count(unlocks),
+		len(unlocks.available),
+		obtained_item_count(unlocks),
+		player.crafting.count,
+		player.crafting.waiting ? " waiting" : "",
+	)
 }

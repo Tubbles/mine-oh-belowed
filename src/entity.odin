@@ -245,10 +245,10 @@ cell_is_solid_or_entity :: proc(world: ^World, registry: Block_Registry, cell: W
 	return block_is_solid(registry, world_get_block(world, cell)) || cell in world.entities.cells
 }
 
-tick_entities :: proc(world: ^World, machines: Machine_Registry, items: Item_Registry, tick_rate: int) {
+tick_entities :: proc(world: ^World, content: Simulation_Content, tick_rate: int) {
 	for &furnace in world.entities.furnaces.entries {
 		if furnace.alive {
-			furnace = advance_furnace(furnace, machines.machines[furnace.machine], items, machines.smelting, tick_rate)
+			furnace = advance_furnace(furnace, content.machines.machines[furnace.machine], content.items, content.recipes, tick_rate)
 		}
 	}
 }

@@ -101,7 +101,7 @@ Footprint is width by depth by height in blocks. Power is electric unless marked
 | Pump | 1×2×1 | 1 steel, 1 iron gear, 1 pipe | 1200 L per s, lifts liquid | 30 kW | Research: fluid handling |
 | Storage tank | 3×3×3 | 20 steel, 5 iron plate | 25,000 L | | Research: fluid handling |
 | Boiler | 3×2×2 | 1 stone furnace, 4 pipe | 60 L steam per s from 60 L water | 1.8 MW fuel | Start |
-| Steam engine | 3×5×2 | 8 iron gear, 5 pipe, 10 iron plate | 900 kW from 30 L steam per s | | Main quest gate, phase 4 |
+| Steam engine | 3×5×2 | 8 iron gear, 5 pipe, 10 iron plate | 900 kW from 30 L steam per s | | Main quest gate, phase 4 (channel quest in the data) |
 | Small pole | 1×1×3 | 1 log, 2 copper wire | Supply volume 5×5 footprint, 4 high. Reach 7 | | Start |
 | Lamp | 1×1×1 | 1 circuit, 3 copper wire, 1 iron plate, 1 glass | Light level 14 | 5 kW | Research: optics |
 | Power switch | 1×1×1 | 2 circuit, 5 iron plate | Splits a network | | Research: electric mining |
@@ -110,7 +110,7 @@ Footprint is width by depth by height in blocks. Power is electric unless marked
 | Core sample drill | 1×1×2 | 2 circuit, 5 steel, 5 iron gear | One column per 60 s | 40 kW | Research: prospecting |
 | Magnetometer | Handheld | 5 circuit, 2 copper wire, 1 iron plate | Iron veins within 30 blocks | | Research: prospecting |
 
-Machine recipes take 2 s each by hand, 0.5 s for inserters, belts, pipes, poles and chests. Machine values live in `data/machines.sjson` from work item 0011 on (footprint, kind, slots, speed in percent, fuel power in watts); this table stays the design intent.
+Machine recipes take 2 s each by hand, 0.5 s for inserters, belts, pipes, poles and chests, tools 1 s. Recipes live in `data/recipes.sjson` and technologies in `data/technologies.sjson` from work item 0012 on. Machine values live in `data/machines.sjson` from work item 0011 on (footprint, kind, slots, speed in percent, fuel power in watts); this table stays the design intent.
 
 ## Technologies (phase 4, science pack 1)
 

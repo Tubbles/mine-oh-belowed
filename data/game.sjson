@@ -4,10 +4,11 @@ tick_rate = 60
 // Length of one cosmetic day and night cycle.
 day_length_seconds = 1200
 // Items every player starts with, by item id from items.sjson. Torches
-// and machines cannot be crafted yet (work item 0012).
+// have no recipe yet; machines are crafted by hand (work item 0012).
 starting_items = [
 	{item = "torch", count = 64}
-	{item = "stone_furnace", count = 2}
-	{item = "wooden_chest", count = 2}
-	{item = "iron_chest", count = 1}
 ]
+// World setting "all recipes unlocked at start", for repeat playthroughs:
+// every technology counts as researched and every item as discovered.
+// The --unlock-all command line flag does the same.
+all_recipes_unlocked = false

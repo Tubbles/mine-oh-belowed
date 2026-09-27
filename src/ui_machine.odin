@@ -32,7 +32,7 @@ machine_slot_filters :: proc(kind: Machine_Kind, slot_count: int) -> []Slot_Filt
 }
 
 // A slot joins the gesture when it takes the held item and has it or nothing.
-slot_takes_distribution :: proc(slot: Item_Stack, filter: Slot_Filter, held: Held_Stack, items: Item_Registry, recipes: []Smelting_Recipe) -> bool {
+slot_takes_distribution :: proc(slot: Item_Stack, filter: Slot_Filter, held: Held_Stack, items: Item_Registry, recipes: Recipe_Registry) -> bool {
 	if stack_is_empty(held.stack) || !slot_accepts(filter, held.stack.item, items, recipes) {
 		return false
 	}
@@ -41,7 +41,7 @@ slot_takes_distribution :: proc(slot: Item_Stack, filter: Slot_Filter, held: Hel
 
 // A with a stack held starts the gesture instead of dropping at once; the
 // drop or the spread happens on release (finish_distribute).
-apply_machine_slot_input :: proc(gesture: ^Distribute_Gesture, slots: []Item_Stack, filters: []Slot_Filter, held: Held_Stack, input: Machine_Slot_Input, items: Item_Registry, recipes: []Smelting_Recipe) -> Held_Stack {
+apply_machine_slot_input :: proc(gesture: ^Distribute_Gesture, slots: []Item_Stack, filters: []Slot_Filter, held: Held_Stack, input: Machine_Slot_Input, items: Item_Registry, recipes: Recipe_Registry) -> Held_Stack {
 	result := held
 	if gesture.active {
 		if !input.confirm_down {
@@ -113,7 +113,7 @@ furnace_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, furnace: Furna
 	result := Slot_Grid_Result{activated = -1, focused = -1}
 	slots, items := furnace.slots, screen_context.items
 	machine := screen_context.machines.machines[furnace.machine]
-	recipes := screen_context.machines.smelting
+	recipes := screen_context.recipes
 	content := area
 	first := cut_top(&content, UI_SLOT_SIZE + UI_GAP)
 	machine_slot(state, {first.x, first.y, UI_SLOT_SIZE, UI_SLOT_SIZE}, FURNACE_INPUT_SLOT, slots[:], items, &result)
@@ -170,7 +170,7 @@ machine_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 
 apply_machine_screen_input :: proc(state: ^Ui_State, screen_context: Screen_Context, kind: Machine_Kind, slots: []Item_Stack, player_slots, machine_slots: Slot_Grid_Result) {
 	player, items := screen_context.player, screen_context.items
-	recipes := screen_context.machines.smelting
+	recipes := screen_context.recipes
 	input := state.input
 	if !state.distribute.active {
 		player_input := Inventory_Slot_Input {

@@ -18,10 +18,12 @@ Starting_Item :: struct {
 }
 
 Game_Config :: struct {
-	name:               string,
-	tick_rate:          int,
-	day_length_seconds: int,
-	starting_items:     []Starting_Item,
+	name:                 string,
+	tick_rate:            int,
+	day_length_seconds:   int,
+	starting_items:       []Starting_Item,
+	// The world setting "all recipes unlocked at start".
+	all_recipes_unlocked: bool,
 }
 
 // An explicitly set environment variable wins even if the directory is

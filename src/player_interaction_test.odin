@@ -146,25 +146,25 @@ test_place_uses_selected_hotbar_slot_and_respects_player_box :: proc(t: ^testing
 	player.inventory.slots[3] = Item_Stack{item = test_item(items, "hematite"), count = 5}
 	player.selected_hotbar_slot = 2
 	player.target = Raycast_Hit{hit = true, block = {0, 0, 0}, face = .Positive_Y, adjacent = {0, 1, 0}}
-	place_with_player(&world, Simulation_Content{registry, items, make_test_machines()}, players, 0, {.Place})
+	place_with_player(&world, Simulation_Content{registry, items, make_test_machines(), {}}, players, 0, {.Place})
 	testing.expect_value(t, world_get_block(&world, {0, 1, 0}), AIR_BLOCK)
 	testing.expect_value(t, player.inventory.slots[2].count, 2)
 	player.target = Raycast_Hit{hit = true, block = {2, 0, 0}, face = .Positive_Y, adjacent = {2, 1, 0}}
-	place_with_player(&world, Simulation_Content{registry, items, make_test_machines()}, players, 0, {})
+	place_with_player(&world, Simulation_Content{registry, items, make_test_machines(), {}}, players, 0, {})
 	testing.expect_value(t, world_get_block(&world, {2, 1, 0}), AIR_BLOCK)
-	place_with_player(&world, Simulation_Content{registry, items, make_test_machines()}, players, 0, {.Place})
+	place_with_player(&world, Simulation_Content{registry, items, make_test_machines(), {}}, players, 0, {.Place})
 	testing.expect_value(t, world_get_block(&world, {2, 1, 0}), dirt)
 	testing.expect_value(t, player.inventory.slots[2].count, 1)
 	testing.expect(t, world.chunks[{0, 0, 0}].dirty)
 	// An item that places nothing is not consumed.
 	player.selected_hotbar_slot = 3
 	player.target = Raycast_Hit{hit = true, block = {4, 0, 0}, face = .Positive_Y, adjacent = {4, 1, 0}}
-	place_with_player(&world, Simulation_Content{registry, items, make_test_machines()}, players, 0, {.Place})
+	place_with_player(&world, Simulation_Content{registry, items, make_test_machines(), {}}, players, 0, {.Place})
 	testing.expect_value(t, world_get_block(&world, {4, 1, 0}), AIR_BLOCK)
 	testing.expect_value(t, player.inventory.slots[3].count, 5)
 	// The last one empties the slot.
 	player.selected_hotbar_slot = 2
-	place_with_player(&world, Simulation_Content{registry, items, make_test_machines()}, players, 0, {.Place})
+	place_with_player(&world, Simulation_Content{registry, items, make_test_machines(), {}}, players, 0, {.Place})
 	testing.expect_value(t, player.inventory.slots[2], EMPTY_STACK)
 }
 

@@ -255,9 +255,10 @@ make_generated_world :: proc(generator: ^Generator, centre: Chunk_Coordinate) ->
 	return world
 }
 
-make_generated_simulation :: proc(generator: ^Generator, items: Item_Registry) -> Simulation_State {
+make_generated_simulation :: proc(generator: ^Generator, content: Simulation_Content) -> Simulation_State {
 	surface := World_Coordinate{8, terrain_height(generator.seeds, 8, 8), 8}
-	simulation := make_simulation(test_game_config(), player_start_on(surface), items)
+	_, technologies := make_test_recipes(content.items)
+	simulation := make_simulation(test_game_config(), player_start_on(surface), content, technologies, false)
 	simulation.world = make_generated_world(generator, world_to_chunk_coordinate(surface))
 	return simulation
 }
@@ -273,12 +274,11 @@ owned_total :: proc(player: Player) -> int {
 @(test)
 test_player_ticks_are_deterministic :: proc(t: ^testing.T) {
 	content := make_test_content()
-	items := content.items
 	first_generator := make_test_generator(DEFAULT_WORLD_SEED)
 	second_generator := make_test_generator(DEFAULT_WORLD_SEED)
-	first := make_generated_simulation(&first_generator, items)
+	first := make_generated_simulation(&first_generator, content)
 	defer destroy_simulation(&first)
-	second := make_generated_simulation(&second_generator, items)
+	second := make_generated_simulation(&second_generator, content)
 	defer destroy_simulation(&second)
 	start := first.players[0].position
 	placed_count := 0

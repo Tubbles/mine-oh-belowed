@@ -71,9 +71,11 @@ player_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, player: ^Player
 inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	player, items := screen_context.player, screen_context.items
 	ui_backdrop(state)
-	panel := centred_rectangle(ui_safe_area(state), slot_grid_width(INVENTORY_COLUMNS) + 2 * UI_PADDING, inventory_panel_height())
+	panel := centred_rectangle(ui_safe_area(state), slot_grid_width(INVENTORY_COLUMNS) + 2 * UI_PADDING, inventory_panel_height() + UI_ROW_HEIGHT + UI_GAP)
 	ui_panel_begin(state, "inventory", panel)
 	content := inset(panel, UI_PADDING)
+	inventory_tabs(state, cut_top(&content, UI_ROW_HEIGHT))
+	cut_top(&content, UI_GAP)
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("inventory_title"), UI_HEADING_TEXT_SIZE, .Centre)
 	slots := player_slot_region(state, content, player, items)
 	ui_panel_end(state)
@@ -86,6 +88,24 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	player.held = apply_inventory_slot_input(player.inventory, player.held, slot_input, items, screen_context.item_sort_ranks)
 	draw_held_stack(state, player.held.stack, items)
 	inventory_glyph_bar(state, player.held.stack, slots.focused >= 0 ? player.inventory.slots[slots.focused] : EMPTY_STACK)
+}
+
+// The context tab: the bumpers (or a click) on the recipes tab open the
+// recipe browser over the inventory, and Back returns here. On the
+// keyboard E is both Open_Inventory and Tab_Next, and there it closes the
+// inventory instead.
+inventory_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle) {
+	labels := [?]string{text("inventory_tab_inventory"), text("inventory_tab_recipes")}
+	input := state.input
+	if input.open_inventory {
+		state.input.tab_previous, state.input.tab_next = false, false
+	}
+	tab := ui_tabs(state, rectangle, "inventory_tabs", labels[:])
+	state.input = input
+	if tab == 1 {
+		state.selections[ui_id(state, "inventory_tabs")] = 0
+		push_screen(&state.screens, .Recipes)
+	}
 }
 
 // Follows the pointer while it is shown, otherwise the focused widget.

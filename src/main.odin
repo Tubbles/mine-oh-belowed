@@ -8,7 +8,7 @@ GAME_VERSION :: "0.0.0"
 
 INPUT_ARGUMENT_PREFIX :: "--input="
 SEED_ARGUMENT_PREFIX :: "--seed="
-SUPPORTED_ARGUMENTS :: "--version, --input=sdl3, --input=raylib, --seed=<number>, --debug-terrain"
+SUPPORTED_ARGUMENTS :: "--version, --input=sdl3, --input=raylib, --seed=<number>, --debug-terrain, --unlock-all"
 
 Input_Backend_Request :: enum u8 {
 	Automatic,
@@ -21,6 +21,8 @@ Command_Line :: struct {
 	input_request:       Input_Backend_Request,
 	seed:                u64,
 	debug_terrain:       bool,
+	// Developer flag: every technology researched and every item discovered.
+	unlock_all:          bool,
 	unknown_argument:    string,
 	unknown_input_value: string,
 	invalid_seed_value:  string,
@@ -85,6 +87,8 @@ parse_command_line :: proc(arguments: []string) -> Command_Line {
 			command_line.show_version = true
 		case "--debug-terrain":
 			command_line.debug_terrain = true
+		case "--unlock-all":
+			command_line.unlock_all = true
 		case:
 			command_line.unknown_argument = argument
 			return command_line
@@ -162,15 +166,29 @@ main :: proc() {
 	if !machines_loaded {
 		os.exit(1)
 	}
+	recipes, recipes_loaded := load_recipe_registry(data_directory, items)
+	if !recipes_loaded {
+		os.exit(1)
+	}
+	technologies, technologies_loaded := load_technology_registry(data_directory, recipes)
+	if !technologies_loaded {
+		os.exit(1)
+	}
 	if problem := validate_starting_items(config.starting_items, items); problem != "" {
 		fmt.eprintfln("error: invalid %s: %s", GAME_CONFIG_FILE_NAME, problem)
 		os.exit(1)
 	}
+	recipe_names := recipe_display_names(recipes)
 	content := Game_Content {
 		blocks          = registry,
 		items           = items,
 		machines        = machines,
+		recipes         = recipes,
+		technologies    = technologies,
 		item_sort_ranks = item_sort_ranks(items, item_display_names(items, context.temp_allocator)),
+		recipe_names    = recipe_names,
+		recipe_order    = recipe_name_order(recipe_names),
+		unlock_all      = command_line.unlock_all || config.all_recipes_unlocked,
 	}
 	generator, generator_loaded := load_generator(data_directory, registry, command_line.seed)
 	if !generator_loaded {

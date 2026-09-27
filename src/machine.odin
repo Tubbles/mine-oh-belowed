@@ -72,8 +72,6 @@ Machine_Registry :: struct {
 	machines:         []Machine,
 	// Indexed by Item_Id: the machine the item places, or NO_MACHINE.
 	machine_for_item: []Machine_Id,
-	// The furnace recipes, until work item 0012 brings recipes as data.
-	smelting:         []Smelting_Recipe,
 }
 
 parse_machines_file :: proc(data: []byte, allocator := context.allocator) -> (file: Machines_File, error: json.Unmarshal_Error) {
@@ -180,7 +178,7 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 }
 
 // Validates the file against the item registry and resolves every
-// reference, including the hardcoded smelting table.
+// reference.
 resolve_machine_registry :: proc(file: Machines_File, items: Item_Registry, allocator := context.allocator) -> (registry: Machine_Registry, problem: string) {
 	if len(file.machines) >= int(NO_MACHINE) {
 		return {}, fmt.tprintf("%d machines exceed the limit of %d", len(file.machines), int(NO_MACHINE) - 1)
@@ -200,17 +198,12 @@ resolve_machine_registry :: proc(file: Machines_File, items: Item_Registry, allo
 		}
 		registry.machines[index] = resolve_machine(definition, item)
 	}
-	if registry.smelting, problem = resolve_smelting_table(items, allocator); problem != "" {
-		destroy_machine_registry(registry, allocator)
-		return {}, problem
-	}
 	return registry, ""
 }
 
 destroy_machine_registry :: proc(registry: Machine_Registry, allocator := context.allocator) {
 	delete(registry.machines, allocator)
 	delete(registry.machine_for_item, allocator)
-	delete(registry.smelting, allocator)
 }
 
 // Ids outside the table (NO_ITEM included) place nothing.

@@ -5,6 +5,7 @@ import "core:testing"
 Furnace_Test :: struct {
 	items:    Item_Registry,
 	machines: Machine_Registry,
+	recipes:  Recipe_Registry,
 	machine:  Machine,
 	furnace:  Furnace,
 }
@@ -12,9 +13,12 @@ Furnace_Test :: struct {
 make_furnace_test :: proc() -> Furnace_Test {
 	machines := make_test_machines()
 	machine := test_machine(machines, "stone_furnace")
+	items := make_test_items()
+	recipes, _ := make_test_recipes(items)
 	return Furnace_Test {
-		items = make_test_items(),
+		items = items,
 		machines = machines,
+		recipes = recipes,
 		machine = machines.machines[machine],
 		furnace = make_furnace(Entity_Common{machine = machine}),
 	}
@@ -22,7 +26,7 @@ make_furnace_test :: proc() -> Furnace_Test {
 
 run_furnace :: proc(test: ^Furnace_Test, ticks: int) {
 	for _ in 0 ..< ticks {
-		test.furnace = advance_furnace(test.furnace, test.machine, test.items, test.machines.smelting, TEST_TICK_RATE)
+		test.furnace = advance_furnace(test.furnace, test.machine, test.items, test.recipes, TEST_TICK_RATE)
 	}
 }
 
@@ -35,7 +39,7 @@ test_furnace_smelts_and_burns_fuel_per_tick :: proc(t: ^testing.T) {
 	test.furnace.slots[FURNACE_INPUT_SLOT] = Item_Stack{test_item(test.items, "hematite"), 3}
 	// 90 kW at 60 ticks per second is 1500 J per tick; 3.2 s is 192 ticks.
 	testing.expect_value(t, fuel_joules_per_tick(test.machine, TEST_TICK_RATE), 1500)
-	testing.expect_value(t, recipe_ticks(test.machines.smelting[0], 100, TEST_TICK_RATE), 192)
+	testing.expect_value(t, recipe_ticks(test.recipes.recipes[test_recipe(test.recipes, "iron_plate")], 100, TEST_TICK_RATE), 192)
 	run_furnace(&test, 1)
 	testing.expect_value(t, test.furnace.state, Furnace_State.Burning)
 	testing.expect_value(t, test.furnace.slots[FURNACE_FUEL_SLOT].count, 1)
@@ -127,7 +131,7 @@ test_furnaces_tick_in_the_simulation :: proc(t: ^testing.T) {
 	furnace.slots[FURNACE_FUEL_SLOT] = Item_Stack{test_item(content.items, "log"), 1}
 	furnace.slots[FURNACE_INPUT_SLOT] = Item_Stack{test_item(content.items, "log"), 4}
 	for _ in 0 ..< 2 * 192 {
-		tick_entities(&world, content.machines, content.items, TEST_TICK_RATE)
+		tick_entities(&world, content, TEST_TICK_RATE)
 	}
 	furnace = pool_get(&world.entities.furnaces, handle)
 	testing.expect_value(t, furnace.slots[FURNACE_OUTPUT_SLOT], Item_Stack{test_item(content.items, "charcoal"), 2})

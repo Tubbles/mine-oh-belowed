@@ -151,7 +151,7 @@ Slot_Filter :: enum u8 {
 	Output,
 }
 
-slot_accepts :: proc(filter: Slot_Filter, item: Item_Id, items: Item_Registry, recipes: []Smelting_Recipe) -> bool {
+slot_accepts :: proc(filter: Slot_Filter, item: Item_Id, items: Item_Registry, recipes: Recipe_Registry) -> bool {
 	switch filter {
 	case .Any:
 		return true
@@ -168,7 +168,7 @@ slot_accepts :: proc(filter: Slot_Filter, item: Item_Id, items: Item_Registry, r
 // A on a machine slot: a held item the slot does not accept stays held,
 // otherwise the ordinary pick up, drop, merge or swap. A stack taken from
 // the machine has no player slot to return to.
-apply_machine_slot_primary :: proc(slots: []Item_Stack, index: int, filter: Slot_Filter, held: Held_Stack, items: Item_Registry, recipes: []Smelting_Recipe) -> Held_Stack {
+apply_machine_slot_primary :: proc(slots: []Item_Stack, index: int, filter: Slot_Filter, held: Held_Stack, items: Item_Registry, recipes: Recipe_Registry) -> Held_Stack {
 	if !stack_is_empty(held.stack) && !slot_accepts(filter, held.stack.item, items, recipes) {
 		return held
 	}
@@ -183,7 +183,7 @@ apply_machine_slot_primary :: proc(slots: []Item_Stack, index: int, filter: Slot
 
 // Ends the gesture: one slot gets the ordinary drop, several share the
 // held stack.
-finish_distribute :: proc(gesture: Distribute_Gesture, slots: []Item_Stack, filters: []Slot_Filter, held: Held_Stack, items: Item_Registry, recipes: []Smelting_Recipe) -> Held_Stack {
+finish_distribute :: proc(gesture: Distribute_Gesture, slots: []Item_Stack, filters: []Slot_Filter, held: Held_Stack, items: Item_Registry, recipes: Recipe_Registry) -> Held_Stack {
 	if gesture.count == 1 {
 		index := gesture.visited[0]
 		return apply_machine_slot_primary(slots, index, filters[index], held, items, recipes)

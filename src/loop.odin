@@ -16,6 +16,8 @@ Simulation_State :: struct {
 	day_length_ticks: u64,
 	world:            World,
 	players:          [dynamic]Player,
+	// Items obtained, technologies researched and the recipes they unlock.
+	unlocks:          Recipe_Unlocks,
 	// Filled by ticks, emptied by the UI each frame (toasts). The
 	// simulation never calls the UI itself.
 	events:           [dynamic]Simulation_Event,
@@ -49,8 +51,14 @@ Frame_State :: struct {
 	registry:           Block_Registry,
 	items:              Item_Registry,
 	machines:           Machine_Registry,
+	recipes:            Recipe_Registry,
+	technologies:       Technology_Registry,
 	// Inventory sort order, from item_sort_ranks.
 	item_sort_ranks:    []u16,
+	// Recipe display names and the recipe indices sorted by them.
+	recipe_names:       []string,
+	recipe_order:       []int,
+	recipe_browser:     Recipe_Browser,
 	generator:          Generator,
 	streaming:          Chunk_Streaming,
 	renderer:           Chunk_Renderer,
@@ -67,14 +75,17 @@ INITIAL_FLY_CAMERA :: Fly_Camera {
 }
 
 // The config's starting items must have passed validate_starting_items.
-make_simulation :: proc(config: Game_Config, start: Player_Start, items: Item_Registry) -> Simulation_State {
+// unlock_all makes every recipe available (--unlock-all or the setting).
+make_simulation :: proc(config: Game_Config, start: Player_Start, content: Simulation_Content, technologies: Technology_Registry, unlock_all: bool) -> Simulation_State {
 	state := Simulation_State {
 		tick_rate        = config.tick_rate,
 		day_length_ticks = u64(config.day_length_seconds) * u64(config.tick_rate),
+		unlocks          = make_recipe_unlocks(len(content.items.items), content.recipes, technologies, unlock_all),
 	}
 	player := make_player(start)
-	give_starting_items(&player, items, config.starting_items)
+	give_starting_items(&player, content.items, config.starting_items)
 	append(&state.players, player)
+	update_recipe_unlocks(&state.unlocks, content.recipes, state.players[:])
 	return state
 }
 
@@ -84,6 +95,7 @@ destroy_simulation :: proc(state: ^Simulation_State) {
 	}
 	delete(state.players)
 	delete(state.events)
+	destroy_recipe_unlocks(state.unlocks)
 	destroy_world(&state.world)
 }
 
@@ -98,12 +110,13 @@ simulation_tick :: proc(state: ^Simulation_State, content: Simulation_Content, i
 			append(&state.events, Simulation_Event{player = index, kind = kind})
 		}
 	}
-	tick_entities(&state.world, content.machines, content.items, state.tick_rate)
+	update_recipe_unlocks(&state.unlocks, content.recipes, state.players[:])
+	tick_entities(&state.world, content, state.tick_rate)
 	tick_world(&state.world, content.blocks, state.tick)
 }
 
 frame_simulation_content :: proc(state: ^Frame_State) -> Simulation_Content {
-	return Simulation_Content{blocks = state.registry, items = state.items, machines = state.machines}
+	return Simulation_Content{blocks = state.registry, items = state.items, machines = state.machines, recipes = state.recipes}
 }
 
 make_tick_accumulator :: proc(tick_rate: int) -> Tick_Accumulator {
@@ -236,6 +249,12 @@ run_ui_frame :: proc(state: ^Frame_State) {
 		world           = &state.simulation.world,
 		machines        = state.machines,
 		tick_rate       = state.simulation.tick_rate,
+		recipes         = state.recipes,
+		technologies    = state.technologies,
+		unlocks         = &state.simulation.unlocks,
+		recipe_names    = state.recipe_names,
+		recipe_order    = state.recipe_order,
+		browser         = &state.recipe_browser,
 	}
 	draw_hud(&state.ui, screen_context)
 	run_screens(&state.ui, screen_context)
@@ -261,7 +280,16 @@ Game_Content :: struct {
 	blocks:          Block_Registry,
 	items:           Item_Registry,
 	machines:        Machine_Registry,
+	recipes:         Recipe_Registry,
+	technologies:    Technology_Registry,
 	item_sort_ranks: []u16,
+	recipe_names:    []string,
+	recipe_order:    []int,
+	unlock_all:      bool,
+}
+
+game_simulation_content :: proc(content: Game_Content) -> Simulation_Content {
+	return Simulation_Content{blocks = content.blocks, items = content.items, machines = content.machines, recipes = content.recipes}
 }
 
 run_game :: proc(config: Game_Config, input_backend: Input_Backend, content: Game_Content, generator: Generator, start: World_Start, data_directory: string) {
@@ -289,10 +317,15 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, content: Gam
 		registry        = registry,
 		items           = content.items,
 		machines        = content.machines,
+		recipes         = content.recipes,
+		technologies    = content.technologies,
 		item_sort_ranks = content.item_sort_ranks,
+		recipe_names    = content.recipe_names,
+		recipe_order    = content.recipe_order,
+		recipe_browser  = make_recipe_browser(),
 		generator       = generator,
 		renderer        = renderer,
-		simulation      = make_simulation(config, start.player, content.items),
+		simulation      = make_simulation(config, start.player, game_simulation_content(content), content.technologies, content.unlock_all),
 		settings        = DEFAULT_SETTINGS,
 		ui              = Ui_State{measure_text = raylib_measure_text},
 		// raylib starts with the cursor shown; the first apply hides it.

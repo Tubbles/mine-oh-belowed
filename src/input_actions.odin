@@ -13,6 +13,8 @@ Action :: enum u8 {
 	Pipette,
 	Hotbar_Radial,
 	Open_Inventory,
+	// The recipe browser: keyboard C, and from the inventory and pause menu.
+	Open_Recipes,
 	Open_Map,
 	Pause,
 	Confirm,
@@ -156,6 +158,7 @@ WORLD_ACTIONS :: Action_Set {
 	.Pipette,
 	.Hotbar_Radial,
 	.Open_Inventory,
+	.Open_Recipes,
 	.Open_Map,
 	.Sneak,
 	.Sprint,

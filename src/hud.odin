@@ -10,6 +10,7 @@ CROSSHAIR_THICKNESS :: 3.0
 CROSSHAIR_COLOR :: Ui_Color{255, 255, 255, 200}
 HUD_SELECTED_SLOT_SCALE :: 1.25
 HUD_SLOT_COLOR :: Ui_Color{24, 26, 34, 180}
+HUD_QUEUE_SLOT_SIZE :: 56
 // Distance of the radial's slot centres from the screen centre.
 HUD_RADIAL_RADIUS :: UI_SLOT_SIZE * 2.5
 
@@ -53,6 +54,37 @@ draw_hud_hotbar :: proc(state: ^Ui_State, player: Player, items: Item_Registry) 
 	selected_rectangle := rectangles[player.selected_hotbar_slot]
 	name_area := Ui_Rectangle{0, selected_rectangle.y - UI_GAP - UI_ROW_HEIGHT, state.screen_units.x, UI_ROW_HEIGHT}
 	draw_text(state, name_area, item_name(items, held.item), UI_BODY_TEXT_SIZE, .Centre)
+}
+
+// Left of the hotbar, newest entry nearest to it: the recipe's first
+// output per entry, a progress bar under the one in progress, and why it
+// waits when its outputs do not fit.
+draw_craft_queue :: proc(state: ^Ui_State, player: Player, screen_context: Screen_Context) {
+	queue := player.crafting
+	if queue.count == 0 {
+		return
+	}
+	hotbar := hud_hotbar_rectangles(ui_safe_area(state), player.selected_hotbar_slot)
+	bottom := hotbar[0].y + hotbar[0].height
+	right := hotbar[0].x - 3 * UI_GAP
+	first: Ui_Rectangle
+	for index in 0 ..< queue.count {
+		x := right - f32(queue.count - index) * (HUD_QUEUE_SLOT_SIZE + UI_GAP)
+		box := Ui_Rectangle{x, bottom - HUD_QUEUE_SLOT_SIZE, HUD_QUEUE_SLOT_SIZE, HUD_QUEUE_SLOT_SIZE}
+		if index == 0 {
+			first = box
+		}
+		draw_fill(state, box, HUD_SLOT_COLOR)
+		draw_outline(state, box, index == 0 ? UI_ACCENT_COLOR : UI_PANEL_BORDER_COLOR)
+		recipe := screen_context.recipes.recipes[queue.recipes[index]]
+		draw_item_stack(state, box, recipe.outputs[0], screen_context.items)
+	}
+	bar := Ui_Rectangle{first.x, first.y - UI_GAP - 8, first.width, 8}
+	ui_progress_bar(state, bar, craft_progress_fraction(queue, screen_context.recipes, screen_context.tick_rate))
+	if queue.waiting {
+		width := ui_text_width(state, text("crafting_waiting"), UI_BODY_TEXT_SIZE)
+		draw_text(state, {right - width, bar.y - UI_GAP - UI_ROW_HEIGHT, width, UI_ROW_HEIGHT}, text("crafting_waiting"), UI_BODY_TEXT_SIZE, .Right, UI_ACCENT_COLOR)
+	}
 }
 
 hotbar_radial_source :: proc(input: Ui_Input) -> Radial_Source {
@@ -106,6 +138,7 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	player, items := screen_context.player, screen_context.items
 	draw_crosshair(state)
 	draw_hud_hotbar(state, player^, items)
+	draw_craft_queue(state, player^, screen_context)
 	if state.screens.count > 0 {
 		state.radial = {}
 		return
