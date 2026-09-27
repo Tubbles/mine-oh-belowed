@@ -9,7 +9,9 @@
 //
 // Objective types and their parameters:
 //   obtain    item, count      what players came to hold (mined, taken, crafted)
-//   craft     item, count      crafted by hand or smelted
+//   craft     item, count      crafted by hand or smelted; with
+//             produced_since_active = true only what was made after the
+//             quest became active counts
 //   place     entity, count    placements of a machine from machines.sjson
 //   sustain   item, rate_per_minute, minutes, hands_off
 //                              produced at the rate for that long without a
@@ -19,8 +21,12 @@
 //                              capsule keeps them when the quest completes
 //   discover  recipe           the recipe is available
 //   walk      count            blocks walked on foot
-// obtain, craft, place and walk count since the game began; deliver
-// counts from the moment the quest became active.
+//   counter   counter, label_key, count
+//                              growth of a hint counter (below, except
+//                              mining_ticks); label_key is the journal text
+// obtain, craft, place and walk count since the game began; deliver,
+// counter and craft with produced_since_active count from the moment the
+// quest became active.
 //
 // A hint fires once, when its counter has grown by threshold since its
 // quest became active: blocks_mined, mining_ticks (with block, in ticks
@@ -30,7 +36,11 @@
 // inserter_out_of_fuel and inserter_waiting_for_room (times an inserter
 // stalled), inserter_idle_ticks (ticks an inserter had nothing to pick,
 // summed over inserters), drill_out_of_fuel and drill_waiting_for_room
-// (times a drill stalled), vein_exhausted (veins drained by drills).
+// (times a drill stalled), vein_exhausted (veins drained by drills),
+// belt_dead_end_ticks (ticks a line's front item stood at a dead end no
+// inserter picks from, summed over lines), inserter_idle_a_minute (times
+// an inserter reached a minute of uninterrupted idling),
+// drill_fuel_burned (fuel items lit by drills).
 //
 // A reward is {item, count}, landing in the capsule, or {unlocks_recipe}
 // for a recipe of the quest channel.

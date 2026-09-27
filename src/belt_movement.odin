@@ -153,8 +153,15 @@ belt_line_is_loop :: proc(line: Belt_Line, line_index: i32) -> bool {
 	return line.end.kind == .Straight && line.end.line == line_index
 }
 
+// Whether the lane's front item stands at the line's dead end.
+lane_front_at_dead_end :: proc(line: Belt_Line, lane: Belt_Lane) -> bool {
+	items := line.lanes[lane]
+	return line.end.kind == .Dead_End && len(items) > 0 && items[len(items) - 1].position >= belt_line_length(line) - BELT_END_MARGIN
+}
+
 advance_belt_line :: proc(network: ^Belt_Network, line_index: i32, tick_rate: int, splitters: []Splitter) {
 	speed := belt_units_per_tick(network.lines[line_index], tick_rate)
+	network.lines[line_index].front_held_at_dead_end = false
 	for lane in Belt_Lane {
 		if belt_line_is_loop(network.lines[line_index], line_index) {
 			advance_loop_lane(network.lines[line_index].lanes[lane][:], speed, belt_line_length(network.lines[line_index]))
@@ -169,6 +176,7 @@ advance_belt_line :: proc(network: ^Belt_Network, line_index: i32, tick_rate: in
 		case .Side_Load:
 			hand_off_side_load(network, line_index, lane)
 		}
+		network.lines[line_index].front_held_at_dead_end ||= lane_front_at_dead_end(network.lines[line_index], lane)
 	}
 }
 

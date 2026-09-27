@@ -16,8 +16,9 @@ MAXIMUM_QUEST_OBJECTIVES :: 8
 MAXIMUM_QUEST_HINTS :: 8
 NO_QUEST :: -1
 
-// walk is not in doc/quests.md's table; chapter 1's "get your bearings"
-// needs it.
+// walk and counter are not in doc/quests.md's table: chapter 1's "get
+// your bearings" needs walk, chapter 3's coal loop needs counter (the
+// growth of a hint counter since the quest became active).
 Objective_Type :: enum u8 {
 	Obtain,
 	Craft,
@@ -27,6 +28,7 @@ Objective_Type :: enum u8 {
 	Deliver,
 	Discover,
 	Walk,
+	Counter,
 }
 
 @(rodata)
@@ -39,6 +41,7 @@ objective_type_names := [Objective_Type]string {
 	.Deliver  = "deliver",
 	.Discover = "discover",
 	.Walk     = "walk",
+	.Counter  = "counter",
 }
 
 // The counters a hint can watch. Mining_Ticks is per block type.
@@ -56,6 +59,9 @@ Hint_Counter :: enum u8 {
 	Drill_Out_Of_Fuel,
 	Drill_Waiting_For_Room,
 	Vein_Exhausted,
+	Belt_Dead_End_Ticks,
+	Inserter_Idle_A_Minute,
+	Drill_Fuel_Burned,
 }
 
 @(rodata)
@@ -73,19 +79,25 @@ hint_counter_names := [Hint_Counter]string {
 	.Drill_Out_Of_Fuel         = "drill_out_of_fuel",
 	.Drill_Waiting_For_Room    = "drill_waiting_for_room",
 	.Vein_Exhausted            = "vein_exhausted",
+	.Belt_Dead_End_Ticks       = "belt_dead_end_ticks",
+	.Inserter_Idle_A_Minute    = "inserter_idle_a_minute",
+	.Drill_Fuel_Burned         = "drill_fuel_burned",
 }
 
 // As written in the files, before references are resolved.
 Objective_Definition :: struct {
-	type:            string,
-	item:            string,
-	entity:          string,
-	recipe:          string,
-	technology:      string,
-	count:           int,
-	rate_per_minute: int,
-	minutes:         int,
-	hands_off:       bool,
+	type:                  string,
+	item:                  string,
+	entity:                string,
+	recipe:                string,
+	technology:            string,
+	counter:               string,
+	label_key:             string,
+	count:                 int,
+	rate_per_minute:       int,
+	minutes:               int,
+	hands_off:             bool,
+	produced_since_active: bool,
 }
 
 Hint_Definition :: struct {
@@ -120,18 +132,24 @@ Chapter_File :: struct {
 	quests:    []Quest_Definition,
 }
 
-// count is items, placements or blocks walked. Unused references are
-// NO_ITEM, NO_MACHINE, NO_RECIPE, NO_TECHNOLOGY.
+// count is items, placements, blocks walked or counter growth. Unused
+// references are NO_ITEM, NO_MACHINE, NO_RECIPE, NO_TECHNOLOGY. counter
+// and label_key (the journal's text for it) belong to counter
+// objectives; produced_since_active makes a craft objective count from
+// activation.
 Objective :: struct {
-	type:            Objective_Type,
-	item:            Item_Id,
-	machine:         Machine_Id,
-	recipe:          int,
-	technology:      int,
-	count:           u64,
-	rate_per_minute: u64,
-	minutes:         u64,
-	hands_off:       bool,
+	type:                  Objective_Type,
+	item:                  Item_Id,
+	machine:               Machine_Id,
+	recipe:                int,
+	technology:            int,
+	counter:               Hint_Counter,
+	label_key:             string,
+	count:                 u64,
+	rate_per_minute:       u64,
+	minutes:               u64,
+	hands_off:             bool,
+	produced_since_active: bool,
 }
 
 // threshold counts from the value when the quest became active.
@@ -229,9 +247,21 @@ resolve_objective_reference :: proc(objective: ^Objective, definition: Objective
 		if objective.recipe = find_recipe(references.recipes, definition.recipe); objective.recipe == NO_RECIPE {
 			return fmt.tprintf("quest %q names unknown recipe %q", quest_id, definition.recipe)
 		}
+	case .Counter:
+		return resolve_objective_counter(objective, definition, references, quest_id)
 	case .Walk:
 	}
 	return ""
+}
+
+// mining_ticks needs a block, which objectives do not name.
+resolve_objective_counter :: proc(objective: ^Objective, definition: Objective_Definition, references: Quest_References, quest_id: string) -> string {
+	found: bool
+	if objective.counter, found = parse_named_enum(hint_counter_names, definition.counter); !found || objective.counter == .Mining_Ticks {
+		return fmt.tprintf("quest %q has a counter objective on unsupported counter %q", quest_id, definition.counter)
+	}
+	objective.label_key = definition.label_key
+	return check_string_key(references, quest_id, "objective label_key", definition.label_key, true)
 }
 
 objective_needs_count :: proc(type: Objective_Type) -> bool {
@@ -258,10 +288,14 @@ resolve_objective :: proc(definition: Objective_Definition, references: Quest_Re
 	if objective.type == .Sustain && (definition.rate_per_minute < 1 || definition.minutes < 1) {
 		return {}, fmt.tprintf("quest %q has a sustain objective without a positive rate_per_minute and minutes", quest_id)
 	}
+	if definition.produced_since_active && objective.type != .Craft {
+		return {}, fmt.tprintf("quest %q sets produced_since_active on a %s objective", quest_id, definition.type)
+	}
 	objective.count = u64(max(definition.count, 0))
 	objective.rate_per_minute = u64(max(definition.rate_per_minute, 0))
 	objective.minutes = u64(max(definition.minutes, 0))
 	objective.hands_off = definition.hands_off
+	objective.produced_since_active = definition.produced_since_active
 	return objective, ""
 }
 

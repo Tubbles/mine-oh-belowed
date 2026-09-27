@@ -88,6 +88,8 @@ Belt_Line :: struct {
 	end:                    Belt_Line_End,
 	// A splitter's output line holds just the splitter; side is its half.
 	side:                   Splitter_Side,
+	// Set by each tick: a lane's front item stands at the dead end.
+	front_held_at_dead_end: bool,
 }
 
 Belt_Network :: struct {

@@ -1,0 +1,89 @@
+// Chapter 3, Belts (doc/quests.md outline). The format is described in
+// chapter_01.sjson. Placement, counters and output are measured, not the
+// layout: nothing checks that the drill, belt and inserter of "connect"
+// feed the same furnace, that the coal drill feeds itself, or that the
+// plates of "plate_line" reach the chest. produced_since_active on a craft
+// objective counts from activation, so plates smelted before the quest
+// do not count. The coal loop counts coal lit by drills (counter
+// drill_fuel_burned) since the quest became active.
+id = "chapter_03"
+title_key = "chapter_03_title"
+quests = [
+	{
+		id = "belt_parts"
+		title_key = "quest_belt_parts_title"
+		text_key = "quest_belt_parts_text"
+		objectives = [
+			{type = "craft", item = "belt", count = 4}
+			{type = "craft", item = "burner_inserter", count = 1}
+		]
+		message_key = "mc_belt_parts"
+	}
+	{
+		id = "connect"
+		title_key = "quest_connect_title"
+		text_key = "quest_connect_text"
+		objectives = [
+			{type = "place", entity = "burner_mining_drill", count = 1}
+			{type = "place", entity = "belt", count = 2}
+			{type = "place", entity = "burner_inserter", count = 1}
+			{type = "craft", item = "iron_plate", count = 10, produced_since_active = true}
+		]
+		message_key = "mc_connect"
+		complete_key = "mc_connect_done"
+		hints = [
+			{counter = "belt_dead_end_ticks", threshold = 3600, text_key = "mc_hint_dead_end"}
+			{counter = "inserter_idle_a_minute", threshold = 1, text_key = "mc_hint_idle_inserter"}
+		]
+	}
+	{
+		id = "coal_loop"
+		title_key = "quest_coal_loop_title"
+		text_key = "quest_coal_loop_text"
+		objectives = [
+			{type = "counter", counter = "drill_fuel_burned", label_key = "objective_drill_fuel", count = 10}
+		]
+		message_key = "mc_coal_loop"
+		complete_key = "mc_coal_loop_done"
+		hints = [
+			{counter = "drill_out_of_fuel", threshold = 2, text_key = "mc_hint_drill_fuel"}
+		]
+	}
+	{
+		id = "plate_line"
+		title_key = "quest_plate_line_title"
+		text_key = "quest_plate_line_text"
+		objectives = [
+			{type = "place", entity = "wooden_chest", count = 1}
+			{type = "craft", item = "iron_plate", count = 50, produced_since_active = true}
+		]
+		message_key = "mc_plate_line"
+	}
+	{
+		id = "four_drills"
+		title_key = "quest_four_drills_title"
+		text_key = "quest_four_drills_text"
+		objectives = [
+			{type = "place", entity = "burner_mining_drill", count = 4}
+			{type = "place", entity = "stone_furnace", count = 3}
+		]
+		message_key = "mc_four_drills"
+	}
+	{
+		id = "prove"
+		title_key = "quest_prove_title"
+		text_key = "quest_prove_text"
+		objectives = [
+			{type = "sustain", item = "iron_plate", rate_per_minute = 10, minutes = 10, hands_off = true}
+		]
+		message_key = "mc_prove"
+		complete_key = "mc_prove_done"
+		rewards = [
+			{unlocks_recipe = "steam_engine"}
+			{item = "offshore_pump", count = 1}
+			{item = "boiler", count = 1}
+			{item = "pipe", count = 10}
+		]
+		main = true
+	}
+]

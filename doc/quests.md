@@ -26,6 +26,7 @@ Defined in data, evaluated every tick against the statistics counters, placed en
 | discover | recipe | Discover bronze plate |
 | ship | item, count, contract | Ship 200 electronic circuits, phase 8 |
 | walk | count | Walk 10 blocks (added by 0013 for beat 2, since "looked around" is not measured) |
+| counter | counter, count, label_key | Growth of a hint counter since activation, for example drills burning 10 fuel items (added by 0018 for the coal loop) |
 
 ## As implemented in 0013
 
@@ -33,6 +34,7 @@ Defined in data, evaluated every tick against the statistics counters, placed en
 - obtain, craft, place and walk count everything since the game began, so work done ahead of the journal counts. deliver counts what players put into the capsule since the quest became active. Hints count from activation and fire once. "Obtained" is measured as growth of what players hold between ticks, so crafted items and items taken back out of a chest count as obtained.
 - The landing pad is stamped by world generation at the spawn, so it returns identically on every load without saved state. One drop capsule stands on it and is never picked up; rewards land in it and wait when it is full.
 - Chapter 2 crafts the burner drill instead of placing it, because drills are not entities until M3.
+- Chapter 3 (0018) measures placements and production, not layout: it cannot tell that the belt feeds the same furnace or that the coal drill feeds itself. Craft objectives can count from activation with `produced_since_active`. New counters: `drill_fuel_burned`, `belt_dead_end_ticks` (lines whose front item is held at a dead end, feeds into an inserter excluded) and `inserter_idle_a_minute` (one inserter idle for sixty seconds without a break), the last two carrying the "belt ending nowhere" and "inserter facing the wrong way" hints on the connect quest. The main quest's reward unlocks the steam engine recipe through the quest channel and lands a pump, a boiler and pipes in the capsule.
 
 ## Spawn requirements
 

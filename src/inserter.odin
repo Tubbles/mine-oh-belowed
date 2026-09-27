@@ -48,6 +48,8 @@ Inserter :: struct {
 	phase_ticks:      u32,
 	state:            Inserter_State,
 	powered:          bool,
+	// Uninterrupted ticks in the Idle state, for the idle minute counter.
+	idle_streak:      u32,
 }
 
 @(rodata)

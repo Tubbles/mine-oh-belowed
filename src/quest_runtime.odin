@@ -9,10 +9,12 @@ package game
 // quest channel recipes and activates the next quest in the same tick.
 //
 // obtain, craft, place and walk count everything since the game began,
-// so work done ahead of the journal counts ("quests guide, never block").
-// deliver counts what players put into the capsule since the quest
-// became active and is still in it. sustain counts consecutive ticks at
-// the rate, and with hands_off also without a world action.
+// so work done ahead of the journal counts ("quests guide, never block"),
+// except a craft objective with produced_since_active. That one and
+// counter objectives count from activation. deliver counts what players
+// put into the capsule since the quest became active and is still in it.
+// sustain counts consecutive ticks at the rate, and with hands_off also
+// without a world action.
 
 CAPSULE_LANDED_KEY :: "capsule_landed"
 
@@ -26,14 +28,17 @@ Quest_Hint_Set :: bit_set[0 ..< MAXIMUM_QUEST_HINTS]
 
 // Per quest; the arrays are indexed like the quest's hints and objectives.
 Quest_Progress :: struct {
-	status:              Quest_Status,
-	activated_tick:      u64,
-	hints_fired:         Quest_Hint_Set,
-	hint_baselines:      [MAXIMUM_QUEST_HINTS]u64,
-	delivered_baselines: [MAXIMUM_QUEST_OBJECTIVES]u64,
-	sustained_ticks:     [MAXIMUM_QUEST_OBJECTIVES]u64,
+	status:               Quest_Status,
+	activated_tick:       u64,
+	hints_fired:          Quest_Hint_Set,
+	hint_baselines:       [MAXIMUM_QUEST_HINTS]u64,
+	delivered_baselines:  [MAXIMUM_QUEST_OBJECTIVES]u64,
+	// The produced or counter value at activation, for objectives that
+	// count from activation.
+	activation_baselines: [MAXIMUM_QUEST_OBJECTIVES]u64,
+	sustained_ticks:      [MAXIMUM_QUEST_OBJECTIVES]u64,
 	// world_actions when the current sustain streak started.
-	sustain_actions:     [MAXIMUM_QUEST_OBJECTIVES]u64,
+	sustain_actions:      [MAXIMUM_QUEST_OBJECTIVES]u64,
 }
 
 Quest_Message :: struct {
@@ -108,6 +113,12 @@ hint_counter_value :: proc(statistics: Statistics, hint: Hint) -> u64 {
 		return statistics.stalls[.Drill_Waiting_For_Room]
 	case .Vein_Exhausted:
 		return statistics.veins_exhausted
+	case .Belt_Dead_End_Ticks:
+		return statistics.belt_dead_end_ticks
+	case .Inserter_Idle_A_Minute:
+		return statistics.inserters_idle_a_minute
+	case .Drill_Fuel_Burned:
+		return statistics.drill_fuel_burned
 	}
 	return 0
 }
@@ -146,7 +157,8 @@ objective_progress :: proc(objective: Objective, index: int, progress: Quest_Pro
 	case .Obtain:
 		return {item_counter(statistics.obtained, objective.item), objective.count}
 	case .Craft:
-		return {item_counter(statistics.produced, objective.item), objective.count}
+		baseline := objective.produced_since_active ? progress.activation_baselines[index] : 0
+		return {item_counter(statistics.produced, objective.item) - baseline, objective.count}
 	case .Place:
 		placed := int(objective.machine) < len(statistics.placed) ? statistics.placed[objective.machine] : 0
 		return {placed, objective.count}
@@ -160,8 +172,25 @@ objective_progress :: proc(objective: Objective, index: int, progress: Quest_Pro
 		return delivered_progress(objective, progress.delivered_baselines[index], view)
 	case .Sustain:
 		return {progress.sustained_ticks[index], sustain_required_ticks(objective, view.tick_rate)}
+	case .Counter:
+		return {objective_counter_value(statistics, objective) - progress.activation_baselines[index], objective.count}
 	}
 	return {}
+}
+
+objective_counter_value :: proc(statistics: Statistics, objective: Objective) -> u64 {
+	return hint_counter_value(statistics, Hint{counter = objective.counter})
+}
+
+// What an objective that counts from activation subtracts.
+objective_activation_value :: proc(statistics: Statistics, objective: Objective) -> u64 {
+	#partial switch objective.type {
+	case .Craft:
+		return item_counter(statistics.produced, objective.item)
+	case .Counter:
+		return objective_counter_value(statistics, objective)
+	}
+	return 0
 }
 
 objective_done :: proc(value: Objective_Progress) -> bool {
@@ -235,6 +264,7 @@ activate_quest :: proc(state: ^Quest_State, registry: Quest_Registry, index: int
 	for objective, objective_index in quest.objectives {
 		progress.delivered_baselines[objective_index] = item_counter(statistics.delivered, objective.item)
 		progress.sustain_actions[objective_index] = statistics.world_actions
+		progress.activation_baselines[objective_index] = objective_activation_value(statistics, objective)
 	}
 	log_quest_message(state, tick, quest.message_key)
 }

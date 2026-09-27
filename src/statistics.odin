@@ -16,6 +16,7 @@ import "core:math"
 
 // The rolling rate per item is a ring of per second buckets.
 RATE_BUCKET_COUNT :: 60
+INSERTER_IDLE_MINUTE_SECONDS :: 60
 MILLIMETRES_PER_BLOCK :: 1000
 
 // Out_Of_Fuel and Output_Full are furnace stalls.
@@ -49,6 +50,15 @@ Statistics :: struct {
 	// Summed over inserters: ticks one stood at its pickup cell with
 	// nothing it could pick.
 	inserter_idle_ticks:         u64,
+	// Times an inserter reached INSERTER_IDLE_MINUTE_SECONDS of
+	// uninterrupted idling. Summed idle ticks grow on healthy lines too,
+	// since an inserter outpaces a burner drill or a furnace.
+	inserters_idle_a_minute:     u64,
+	// Summed over lines: ticks a line's front item was held at a dead end
+	// that no inserter picks from.
+	belt_dead_end_ticks:         u64,
+	// Fuel items lit by drills, a part of fuel_burned.
+	drill_fuel_burned:           u64,
 	// Finite veins drills drained to the last unit.
 	veins_exhausted:             u64,
 	// Mining, placing, picking up and opening a machine. hands_off
@@ -199,14 +209,22 @@ fuel_item_lit :: proc(joules_before, joules_after: u32) -> bool {
 	return joules_after > joules_before
 }
 
-// Like record_furnace_tick: fuel burned, idle ticks, and a stall when the
-// inserter enters it.
-record_inserter_tick :: proc(statistics: ^Statistics, before, after: Inserter) {
+// Uninterrupted idle ticks after a tick that ended in `state`.
+next_idle_streak :: proc(streak: u32, state: Inserter_State) -> u32 {
+	return state == .Idle ? streak + 1 : 0
+}
+
+// Like record_furnace_tick: fuel burned, idle ticks, a minute of idling,
+// and a stall when the inserter enters it.
+record_inserter_tick :: proc(statistics: ^Statistics, before, after: Inserter, tick_rate: int) {
 	if fuel_item_lit(before.fuel_joules, after.fuel_joules) {
 		statistics.fuel_burned += 1
 	}
 	if after.state == .Idle {
 		statistics.inserter_idle_ticks += 1
+	}
+	if after.idle_streak == u32(INSERTER_IDLE_MINUTE_SECONDS * tick_rate) {
+		statistics.inserters_idle_a_minute += 1
 	}
 	if after.state == before.state {
 		return
@@ -300,6 +318,7 @@ snapshot_capsule :: proc(statistics: ^Statistics, slots: []Item_Stack) {
 record_drill_tick :: proc(statistics: ^Statistics, before, after: Drill) {
 	if fuel_item_lit(before.fuel_joules, after.fuel_joules) {
 		statistics.fuel_burned += 1
+		statistics.drill_fuel_burned += 1
 	}
 	if after.state == before.state {
 		return
@@ -310,4 +329,23 @@ record_drill_tick :: proc(statistics: ^Statistics, before, after: Drill) {
 	case .Waiting_For_Room:
 		statistics.stalls[.Drill_Waiting_For_Room] += 1
 	}
+}
+
+// A line whose last block an inserter picks from feeds that inserter, so
+// items held at its end are not a dead end.
+record_belt_dead_ends :: proc(statistics: ^Statistics, entities: ^Entities) {
+	for line in entities.belt_network.lines {
+		if line.front_held_at_dead_end && !inserter_picks_from(entities, line.belts[len(line.belts) - 1]) {
+			statistics.belt_dead_end_ticks += 1
+		}
+	}
+}
+
+inserter_picks_from :: proc(entities: ^Entities, handle: Entity_Handle) -> bool {
+	for inserter in entities.inserters.entries {
+		if inserter.alive && entity_at(entities, inserter_pickup_cell(inserter)) == handle {
+			return true
+		}
+	}
+	return false
 }

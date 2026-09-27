@@ -25,6 +25,7 @@ objective_verb_keys := [Objective_Type]string {
 	.Deliver  = "objective_deliver",
 	.Discover = "objective_discover",
 	.Walk     = "objective_walk",
+	.Counter  = "objective_counter",
 }
 
 @(rodata)
@@ -95,13 +96,16 @@ objective_subject :: proc(objective: Objective, screen_context: Screen_Context) 
 		return technology_name(screen_context.technologies, objective.technology)
 	case .Discover:
 		return recipe_name(screen_context.recipes, objective.recipe)
-	case .Walk:
+	case .Walk, .Counter:
 		return ""
 	}
 	return ""
 }
 
 objective_label :: proc(objective: Objective, screen_context: Screen_Context) -> string {
+	if objective.type == .Counter {
+		return text(objective.label_key)
+	}
 	subject := objective_subject(objective, screen_context)
 	if subject == "" {
 		return text(objective_verb_keys[objective.type])

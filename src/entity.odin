@@ -355,6 +355,7 @@ cell_blocks_movement :: proc(world: ^World, registry: Block_Registry, cell: Worl
 // rock at the end.
 tick_entities :: proc(world: ^World, content: Simulation_Content, tick_rate: int) {
 	tick_belt_network(&world.entities.belt_network, tick_rate, world.entities.splitters.entries[:])
+	record_belt_dead_ends(&world.statistics, &world.entities)
 	for &drill in world.entities.drills.entries {
 		if drill.alive {
 			before := drill
@@ -366,7 +367,8 @@ tick_entities :: proc(world: ^World, content: Simulation_Content, tick_rate: int
 		if inserter.alive {
 			before := inserter
 			advance_inserter(&world.entities, content, &inserter, tick_rate)
-			record_inserter_tick(&world.statistics, before, inserter)
+			inserter.idle_streak = next_idle_streak(before.idle_streak, inserter.state)
+			record_inserter_tick(&world.statistics, before, inserter, tick_rate)
 		}
 	}
 	for &furnace in world.entities.furnaces.entries {

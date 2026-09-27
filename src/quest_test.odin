@@ -17,11 +17,12 @@ make_test_quest_references :: proc() -> Quest_References {
 	}
 }
 
-shipped_chapter_files :: proc() -> [2]Chapter_File {
+shipped_chapter_files :: proc() -> [3]Chapter_File {
 	first, first_error := parse_chapter_file(#load("../data/quests/chapter_01.sjson"), context.temp_allocator)
 	second, second_error := parse_chapter_file(#load("../data/quests/chapter_02.sjson"), context.temp_allocator)
-	assert(first_error == nil && second_error == nil)
-	return {first, second}
+	third, third_error := parse_chapter_file(#load("../data/quests/chapter_03.sjson"), context.temp_allocator)
+	assert(first_error == nil && second_error == nil && third_error == nil)
+	return {first, second, third}
 }
 
 make_test_quests :: proc(references: Quest_References) -> Quest_Registry {
@@ -44,7 +45,7 @@ test_quest_index :: proc(registry: Quest_Registry, id: string) -> int {
 test_shipped_quest_chapters_load :: proc(t: ^testing.T) {
 	references := make_test_quest_references()
 	registry := make_test_quests(references)
-	testing.expect_value(t, len(registry.chapters), 2)
+	testing.expect_value(t, len(registry.chapters), 3)
 	testing.expect_value(t, registry.chapters[0].quest_count, 9)
 	testing.expect_value(t, registry.chapters[1].first_quest, 9)
 	testing.expect_value(t, registry.chapters[1].quest_count, 8)
@@ -67,6 +68,8 @@ test_shipped_quest_chapters_load :: proc(t: ^testing.T) {
 	testing.expect_value(t, invoice.reward_items[0], Item_Stack{test_item(references.items, "belt"), 20})
 	survey := registry.quests[test_quest_index(registry, "survey")]
 	testing.expect_value(t, survey.objectives[2].recipe, test_recipe(references.recipes, "electronic_circuit"))
+	testing.expect_value(t, registry.chapters[2].first_quest, 17)
+	testing.expect_value(t, registry.chapters[2].quest_count, 6)
 }
 
 test_chapter :: proc() -> Chapter_File {
@@ -143,6 +146,11 @@ test_quest_data_rejects_bad_definitions :: proc(t: ^testing.T) {
 		with_hint(quest, {counter = "no_such_counter", threshold = 1, text_key = "mc_hint_grass"}),
 		with_hint(quest, {counter = "mining_ticks", block = "no_such_block", threshold = 1, text_key = "mc_hint_grass"}),
 		with_hint(quest, {counter = "blocks_mined", threshold = 1, text_key = "no_such_key"}),
+		with_objective(quest, {type = "counter", counter = "no_such_counter", label_key = "objective_drill_fuel", count = 1}),
+		with_objective(quest, {type = "counter", counter = "mining_ticks", label_key = "objective_drill_fuel", count = 1}),
+		with_objective(quest, {type = "counter", counter = "drill_fuel_burned", count = 1}),
+		with_objective(quest, {type = "counter", counter = "drill_fuel_burned", label_key = "objective_drill_fuel"}),
+		with_objective(quest, {type = "obtain", item = "log", count = 1, produced_since_active = true}),
 	}
 	for bad in cases {
 		testing.expectf(t, resolve_test_chapter(chapter_with(bad), references) != "", "accepted %v", bad)
