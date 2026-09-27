@@ -19,7 +19,16 @@ UI_SLOT_SIZE :: 80
 UI_SLOT_ICON_INSET :: 12
 UI_SLOT_COUNT_TEXT_SIZE :: 24
 UI_TOOLTIP_WIDTH :: 420
+// Lines of wrapped text (tooltips, toasts, quest text) sit this far apart.
+UI_LINE_HEIGHT :: UI_ROW_HEIGHT * 0.6
+// A toast is at most this share of the safe area wide, which leaves the
+// HUD objective its room, and wraps to at most UI_TOAST_MAXIMUM_LINES.
+UI_TOAST_WIDTH_FRACTION :: 0.55
+UI_TOAST_MAXIMUM_LINES :: 3
+UI_ELLIPSIS :: "..."
 UI_POINTER_SIZE :: 14
+// The panel id the glyph bar's commands carry.
+UI_GLYPH_BAR_PANEL :: Ui_Id(0xffff_ffff_ffff_ffff)
 // Rows per second at full right stick deflection.
 UI_LIST_STICK_ROWS_PER_SECOND :: 12
 
@@ -75,7 +84,9 @@ Radial_Result :: struct {
 }
 
 push_command :: proc(state: ^Ui_State, command: Draw_Command) {
-	append(&state.draw_list, command)
+	tagged := command
+	tagged.panel = state.current_panel
+	append(&state.draw_list, tagged)
 }
 
 draw_fill :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, color: Ui_Color) {
@@ -88,6 +99,49 @@ draw_outline :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, color: Ui_Color,
 
 draw_text :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, text: string, size: f32, alignment: Text_Alignment, color := UI_TEXT_COLOR) {
 	push_command(state, {kind = .Text, rectangle = rectangle, text = text, text_size = size, alignment = alignment, color = color})
+}
+
+// The text, or its longest start that fits the width followed by an
+// ellipsis ("" when not even the ellipsis fits). In the temp allocator.
+fit_text :: proc(state: ^Ui_State, value: string, size, width: f32) -> string {
+	if ui_text_width(state, value, size) <= width {
+		return value
+	}
+	// Byte offsets of the rune starts; the longest fitting start is found
+	// by bisection, since a longer start is never narrower.
+	starts := make([dynamic]int, 0, len(value), context.temp_allocator)
+	for _, offset in value {
+		append(&starts, offset)
+	}
+	fitting := ""
+	low, high := 0, len(starts) - 1
+	for low <= high {
+		middle := (low + high) / 2
+		candidate := strings.concatenate({strings.trim_right_space(value[:starts[middle]]), UI_ELLIPSIS}, context.temp_allocator)
+		if ui_text_width(state, candidate, size) <= width {
+			fitting, low = candidate, middle + 1
+		} else {
+			high = middle - 1
+		}
+	}
+	return fitting
+}
+
+// Single line text that ends with an ellipsis where it does not fit.
+draw_text_fitted :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, value: string, size: f32, alignment: Text_Alignment, color := UI_TEXT_COLOR) {
+	draw_text(state, rectangle, fit_text(state, value, size, rectangle.width), size, alignment, color)
+}
+
+// Wrapped to at most maximum_lines lines; the last line ends with an
+// ellipsis when the text goes on. In the temp allocator.
+wrap_text_lines :: proc(state: ^Ui_State, value: string, size, width: f32, maximum_lines: int) -> []string {
+	lines := wrap_text(state, value, size, width)
+	if len(lines) <= maximum_lines {
+		return lines
+	}
+	last := strings.join(lines[maximum_lines - 1:], " ", context.temp_allocator)
+	lines[maximum_lines - 1] = fit_text(state, last, size, width)
+	return lines[:maximum_lines]
 }
 
 // The pixels must stay valid until the frame is drawn.
@@ -145,7 +199,7 @@ ui_button :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, tool
 	id := ui_id(state, label)
 	interaction := ui_interact(state, id, rectangle, {}, tooltip)
 	widget_background(state, rectangle, id, interaction)
-	draw_text(state, rectangle, label, UI_BODY_TEXT_SIZE, .Centre)
+	draw_text_fitted(state, inset(rectangle, UI_GAP), label, UI_BODY_TEXT_SIZE, .Centre)
 	return interaction.activated
 }
 
@@ -157,7 +211,9 @@ ui_toggle :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, valu
 		value^ = !value^
 	}
 	widget_background(state, rectangle, id, interaction)
-	draw_text(state, inset(rectangle, UI_PADDING), label, UI_BODY_TEXT_SIZE, .Left)
+	label_area := inset(rectangle, UI_PADDING)
+	label_area.width = max(label_area.width - UI_CHECKBOX_SIZE - UI_GAP, 0)
+	draw_text_fitted(state, label_area, label, UI_BODY_TEXT_SIZE, .Left)
 	box := Ui_Rectangle {
 		rectangle.x + rectangle.width - UI_PADDING - UI_CHECKBOX_SIZE,
 		rectangle.y + (rectangle.height - UI_CHECKBOX_SIZE) / 2,
@@ -178,8 +234,10 @@ ui_choice :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label, value: strin
 	interaction := ui_interact(state, id, rectangle, {}, tooltip)
 	widget_background(state, rectangle, id, interaction)
 	content := inset(rectangle, UI_PADDING)
-	draw_text(state, content, label, UI_BODY_TEXT_SIZE, .Left)
-	draw_text(state, content, value, UI_BODY_TEXT_SIZE, .Right)
+	value_text := fit_text(state, value, UI_BODY_TEXT_SIZE, content.width / 2)
+	draw_text(state, content, value_text, UI_BODY_TEXT_SIZE, .Right)
+	content.width = max(content.width - ui_text_width(state, value_text, UI_BODY_TEXT_SIZE) - UI_GAP, 0)
+	draw_text_fitted(state, content, label, UI_BODY_TEXT_SIZE, .Left)
 	return interaction.activated
 }
 
@@ -225,7 +283,9 @@ ui_slider :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, valu
 		value^ = slider_value_at(track, state.pointer.x, range)
 	}
 	widget_background(state, rectangle, id, interaction)
-	draw_text(state, inset(rectangle, UI_PADDING), label, UI_BODY_TEXT_SIZE, .Left)
+	label_area := inset(rectangle, UI_PADDING)
+	label_area.width = max(track.x - UI_PADDING - label_area.x, 0)
+	draw_text_fitted(state, label_area, label, UI_BODY_TEXT_SIZE, .Left)
 	draw_fill(state, track, UI_PANEL_COLOR)
 	filled := track
 	filled.width *= slider_fraction(value^, range)
@@ -257,7 +317,7 @@ ui_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, labels
 			selected = index
 		}
 		draw_fill(state, tab, ui_pointer_over(state, tab) ? UI_HOVER_COLOR : UI_WIDGET_COLOR)
-		draw_text(state, tab, tab_label, UI_BODY_TEXT_SIZE, .Centre, index == selected ? UI_ACCENT_COLOR : UI_DIM_TEXT_COLOR)
+		draw_text_fitted(state, inset(tab, UI_GAP), tab_label, UI_BODY_TEXT_SIZE, .Centre, index == selected ? UI_ACCENT_COLOR : UI_DIM_TEXT_COLOR)
 	}
 	underline := column(rectangle, count, selected, UI_GAP)
 	draw_fill(state, cut_bottom(&underline, 4), UI_ACCENT_COLOR)
@@ -316,7 +376,7 @@ ui_list :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, items:
 			activated = index
 		}
 		widget_background(state, row, item_id, interaction)
-		draw_text(state, inset(row, UI_PADDING), item, UI_BODY_TEXT_SIZE, .Left)
+		draw_text_fitted(state, inset(row, UI_PADDING), item, UI_BODY_TEXT_SIZE, .Left)
 	}
 	push_command(state, {kind = .Clip_End})
 	if focus_inside || ui_pointer_over(state, rectangle) {
@@ -330,6 +390,61 @@ ui_list :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, items:
 	}
 	state.scroll_offsets[list_id] = clamp(scroll, 0, maximum_scroll)
 	return activated
+}
+
+// A clipped area over content that may be taller: the content moves under
+// it by the scroll offset. The right stick and the wheel scroll it while
+// the focus or the pointer is inside, and a focused widget inside keeps
+// itself in view, so panels clamped to the safe area stay usable with
+// focus navigation alone. Must not hold a list, since clips do not nest.
+Scroll_Region :: struct {
+	id:             Ui_Id,
+	area:           Ui_Rectangle,
+	scroll:         f32,
+	content_height: f32,
+	first_widget:   int,
+	first_command:  int,
+}
+
+// Returns the region and the content rectangle to lay out in: the area's
+// width and content_height tall (at least the area's), moved up by the
+// scroll. Content drawn below content_height still scrolls into view.
+scroll_region_begin :: proc(state: ^Ui_State, label: string, area: Ui_Rectangle, content_height: f32) -> (region: Scroll_Region, content: Ui_Rectangle) {
+	id := ui_id(state, label)
+	maximum_scroll := max(content_height - area.height, 0)
+	region = Scroll_Region {
+		id             = id,
+		area           = area,
+		scroll         = clamp(state.scroll_offsets[id], 0, maximum_scroll),
+		content_height = max(content_height, area.height),
+		first_widget   = len(state.widgets),
+		first_command  = len(state.draw_list) + 1,
+	}
+	push_command(state, {kind = .Clip_Begin, rectangle = area})
+	return region, {area.x, area.y - region.scroll, area.width, region.content_height}
+}
+
+scroll_region_end :: proc(state: ^Ui_State, region: Scroll_Region) {
+	content_top := region.area.y - region.scroll
+	// The content may reach below the height given; what was drawn counts.
+	content_height := region.content_height
+	for command in state.draw_list[region.first_command:] {
+		content_height = max(content_height, command.rectangle.y + command.rectangle.height - content_top)
+	}
+	push_command(state, {kind = .Clip_End})
+	scroll := region.scroll
+	focus_inside := false
+	for widget in state.widgets[region.first_widget:] {
+		if widget.id == state.focus {
+			focus_inside = true
+			scroll = scroll_to_show(scroll, widget.rectangle.y - content_top, widget.rectangle.height, region.area.height)
+		}
+	}
+	if focus_inside || ui_pointer_over(state, region.area) {
+		scroll -= state.input.scroll_stick * UI_LIST_STICK_ROWS_PER_SECOND * UI_ROW_HEIGHT * state.frame_seconds
+		scroll -= state.input.scroll_wheel * UI_ROW_HEIGHT
+	}
+	state.scroll_offsets[region.id] = clamp(scroll, 0, content_height - region.area.height)
 }
 
 ui_request_letter_jump :: proc(state: ^Ui_State, letter: rune) {
@@ -385,6 +500,17 @@ slot_grid_width :: proc(columns: int) -> f32 {
 
 slot_grid_height :: proc(rows: int) -> f32 {
 	return slot_grid_width(rows)
+}
+
+// Slots per row that fit a width, at least one.
+slot_columns :: proc(width: f32) -> int {
+	return max(int((width + UI_GAP) / (UI_SLOT_SIZE + UI_GAP)), 1)
+}
+
+// Height of count slots in rows of columns, with the gap under each row.
+slot_rows_height :: proc(count, columns: int) -> f32 {
+	rows := (count + columns - 1) / max(columns, 1)
+	return f32(rows) * (UI_SLOT_SIZE + UI_GAP)
 }
 
 slot_grid_rectangle :: proc(origin: [2]f32, columns, index: int) -> Ui_Rectangle {
@@ -488,20 +614,67 @@ glyph_key :: proc(device: Input_Device, button: Glyph_Button) -> string {
 	return ""
 }
 
-// Glyph and label pairs, right aligned along the bottom of the safe area.
+UI_GLYPH_BAR_HEIGHT :: UI_GLYPH_TEXT_SIZE + 2 * UI_GAP
+
+// The safe area above the glyph bar, where screens put their panels.
+ui_panel_area :: proc(state: ^Ui_State) -> Ui_Rectangle {
+	area := ui_safe_area(state)
+	cut_bottom(&area, UI_GLYPH_BAR_HEIGHT + 2 * UI_GAP)
+	return area
+}
+
+// Width of a hint's glyph box: the glyph with a margin, at least square.
+glyph_box_width :: proc(state: ^Ui_State, glyph: string) -> f32 {
+	return max(ui_text_width(state, glyph, UI_GLYPH_TEXT_SIZE) + 2 * UI_GAP, UI_GLYPH_BAR_HEIGHT)
+}
+
+glyph_bar_width :: proc(state: ^Ui_State, hints: []Glyph_Hint) -> f32 {
+	width := f32(0)
+	for hint, index in hints {
+		glyph := text(glyph_key(state.active_device, hint.button))
+		width += glyph_box_width(state, glyph) + UI_GAP + ui_text_width(state, hint.label, UI_GLYPH_TEXT_SIZE)
+		width += index > 0 ? 3 * UI_GAP : 0
+	}
+	return width
+}
+
+// The hints that fit the width. Hints go from the end of the list, but
+// the last one (Back by convention) stays; an unlabelled hint paired with
+// a dropped one (the left bumper of a bumper pair) goes with it. In the
+// temp allocator.
+glyph_hints_that_fit :: proc(state: ^Ui_State, hints: []Glyph_Hint, width: f32) -> []Glyph_Hint {
+	kept := make([dynamic]Glyph_Hint, 0, len(hints), context.temp_allocator)
+	append(&kept, ..hints)
+	for len(kept) > 1 && glyph_bar_width(state, kept[:]) > width {
+		dropped := len(kept) - 2
+		ordered_remove(&kept, dropped)
+		if dropped > 0 && kept[dropped - 1].label == "" {
+			ordered_remove(&kept, dropped - 1)
+		}
+	}
+	return kept[:]
+}
+
+// Glyph and label pairs, right aligned along the bottom of the safe area,
+// as many as fit its width (glyph_hints_that_fit). The bar registers the
+// safe area as its panel, so the bounds audit holds its commands to it.
 ui_glyph_bar :: proc(state: ^Ui_State, hints: []Glyph_Hint) {
 	area := ui_safe_area(state)
-	height := f32(UI_GLYPH_TEXT_SIZE + 2 * UI_GAP)
+	outer_panel := state.current_panel
+	append(&state.panels, Ui_Panel{id = UI_GLYPH_BAR_PANEL, rectangle = area})
+	state.current_panel = UI_GLYPH_BAR_PANEL
+	defer state.current_panel = outer_panel
+	height := f32(UI_GLYPH_BAR_HEIGHT)
 	x := area.x + area.width
 	y := area.y + area.height - height
-	#reverse for hint in hints {
+	#reverse for hint in glyph_hints_that_fit(state, hints, area.width) {
 		label_width := ui_text_width(state, hint.label, UI_GLYPH_TEXT_SIZE)
 		x -= label_width
 		draw_text(state, {x, y, label_width, height}, hint.label, UI_GLYPH_TEXT_SIZE, .Left)
 		glyph := text(glyph_key(state.active_device, hint.button))
-		glyph_width := ui_text_width(state, glyph, UI_GLYPH_TEXT_SIZE) + 2 * UI_GAP
-		x -= glyph_width + UI_GAP
-		box := Ui_Rectangle{x, y, max(glyph_width, height), height}
+		box_width := glyph_box_width(state, glyph)
+		x -= box_width + UI_GAP
+		box := Ui_Rectangle{x, y, box_width, height}
 		draw_fill(state, box, UI_WIDGET_COLOR)
 		draw_outline(state, box, UI_GLYPH_COLOR)
 		draw_text(state, box, glyph, UI_GLYPH_TEXT_SIZE, .Centre, UI_GLYPH_COLOR)
@@ -509,17 +682,42 @@ ui_glyph_bar :: proc(state: ^Ui_State, hints: []Glyph_Hint) {
 	}
 }
 
-// Dock the tooltip to the right of the panel, or to its left when the
-// screen has no room on the right.
-tooltip_rectangle :: proc(panel: Ui_Rectangle, screen_width, height: f32) -> Ui_Rectangle {
-	x := panel.x + panel.width + UI_GAP
-	if x + UI_TOOLTIP_WIDTH > screen_width {
-		x = panel.x - UI_GAP - UI_TOOLTIP_WIDTH
+// Dock the tooltip to the right of the panel, or to its left, whichever
+// has room in the safe area. With room on neither side (a panel as wide
+// as the screen) it covers the panel under the focused widget, or above
+// it near the bottom. Never outside the safe area.
+tooltip_rectangle :: proc(panel, widget, safe: Ui_Rectangle, height: f32) -> Ui_Rectangle {
+	width := min(f32(UI_TOOLTIP_WIDTH), safe.width)
+	box_height := min(height, safe.height)
+	right := panel.x + panel.width + UI_GAP
+	left := panel.x - UI_GAP - width
+	x, y := right, panel.y
+	if right + width > safe.x + safe.width {
+		x = left
+		if left < safe.x {
+			x = widget.x
+			y = widget.y + widget.height + UI_GAP
+			if y + box_height > safe.y + safe.height {
+				y = widget.y - UI_GAP - box_height
+			}
+		}
 	}
-	return {x, panel.y, UI_TOOLTIP_WIDTH, height}
+	return {clamp(x, safe.x, safe.x + safe.width - width), clamp(y, safe.y, safe.y + safe.height - box_height), width, box_height}
 }
 
-// The focused widget's tooltip while the info panel is open (Y).
+// Lines drawn from the top of the area, as many as fit.
+draw_text_lines :: proc(state: ^Ui_State, area: Ui_Rectangle, lines: []string, color := UI_TEXT_COLOR) {
+	content := area
+	for line in lines {
+		if content.height < UI_LINE_HEIGHT {
+			return
+		}
+		draw_text(state, cut_top(&content, UI_LINE_HEIGHT), line, UI_BODY_TEXT_SIZE, .Left, color)
+	}
+}
+
+// The focused widget's tooltip while the info panel is open (Y), wrapped
+// to the tooltip's width.
 append_tooltip :: proc(state: ^Ui_State) {
 	if !state.tooltip_open || state.focused_tooltip == "" {
 		return
@@ -528,26 +726,41 @@ append_tooltip :: proc(state: ^Ui_State) {
 	if focus_index < 0 {
 		return
 	}
-	panel_rectangle := state.widgets[focus_index].rectangle
+	widget := state.widgets[focus_index]
+	panel_rectangle := widget.rectangle
 	for panel in state.panels {
-		if panel.id == state.widgets[focus_index].panel {
+		if panel.id == widget.panel {
 			panel_rectangle = panel.rectangle
 		}
 	}
-	box := tooltip_rectangle(panel_rectangle, state.screen_units.x, UI_ROW_HEIGHT * 2)
+	safe := ui_safe_area(state)
+	text_width := min(f32(UI_TOOLTIP_WIDTH), safe.width) - 2 * UI_PADDING
+	lines := wrap_text(state, state.focused_tooltip, UI_BODY_TEXT_SIZE, text_width)
+	box := tooltip_rectangle(panel_rectangle, widget.rectangle, safe, f32(len(lines)) * UI_LINE_HEIGHT + 2 * UI_PADDING)
 	draw_fill(state, box, UI_PANEL_COLOR)
 	draw_outline(state, box, UI_ACCENT_COLOR)
-	draw_text(state, inset(box, UI_PADDING), state.focused_tooltip, UI_BODY_TEXT_SIZE, .Left)
+	draw_text_lines(state, inset(box, UI_PADDING), lines)
 }
 
+// Top left, one under the other, each wrapped to at most
+// UI_TOAST_MAXIMUM_LINES lines.
 append_toasts :: proc(state: ^Ui_State) {
 	area := ui_safe_area(state)
+	text_width := area.width * UI_TOAST_WIDTH_FRACTION - 2 * UI_PADDING
+	vertical_padding := f32(UI_ROW_HEIGHT - UI_LINE_HEIGHT) / 2
 	for toast in state.toasts {
-		width := ui_text_width(state, toast.text, UI_BODY_TEXT_SIZE) + 2 * UI_PADDING
-		box := cut_top(&area, UI_ROW_HEIGHT)
-		box.width = width
+		lines := wrap_text_lines(state, toast.text, UI_BODY_TEXT_SIZE, text_width, UI_TOAST_MAXIMUM_LINES)
+		if area.height < f32(len(lines)) * UI_LINE_HEIGHT + 2 * vertical_padding {
+			return
+		}
+		widest := f32(0)
+		for line in lines {
+			widest = max(widest, ui_text_width(state, line, UI_BODY_TEXT_SIZE))
+		}
+		box := cut_top(&area, f32(len(lines)) * UI_LINE_HEIGHT + 2 * vertical_padding)
+		box.width = widest + 2 * UI_PADDING
 		draw_fill(state, box, UI_PANEL_COLOR)
-		draw_text(state, inset(box, UI_PADDING), toast.text, UI_BODY_TEXT_SIZE, .Left)
+		draw_text_lines(state, {box.x + UI_PADDING, box.y + vertical_padding, widest, box.height - 2 * vertical_padding}, lines)
 		cut_top(&area, UI_GAP)
 	}
 }

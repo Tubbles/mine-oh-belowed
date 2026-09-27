@@ -26,6 +26,11 @@ String_Table :: struct {
 // Filled once at start up by main; text() reads it.
 global_string_table: String_Table
 
+// A test that needs the shipped strings (the UI audit) points this at its
+// own table: other tests read the global table from other threads.
+@(thread_local)
+thread_string_table: ^String_Table
+
 parse_string_table :: proc(data: []byte, allocator := context.allocator) -> (table: String_Table, error: json.Unmarshal_Error) {
 	error = json.unmarshal(data, &table.entries, .SJSON, allocator)
 	return
@@ -87,6 +92,11 @@ lookup_text :: proc(table: ^String_Table, key: string) -> string {
 	return key
 }
 
+// The thread's table when a test set one, else the global table.
+active_string_table :: proc() -> ^String_Table {
+	return thread_string_table != nil ? thread_string_table : &global_string_table
+}
+
 text :: proc(key: string) -> string {
-	return lookup_text(&global_string_table, key)
+	return lookup_text(active_string_table(), key)
 }

@@ -11,7 +11,9 @@ import "core:fmt"
 // production_statistics.odin.
 
 STATISTICS_LIST_COLUMN_WIDTH :: 900
-STATISTICS_RATE_COLUMN_WIDTH :: 200
+// The list column's most share of the panel on a narrow screen.
+STATISTICS_LIST_COLUMN_FRACTION :: 0.6
+STATISTICS_RATE_COLUMN_WIDTH :: 160
 
 // window is the chosen rate window; focused the item whose detail shows,
 // valid while has_focus, or focused_fluid the fluid's, valid while
@@ -60,9 +62,16 @@ draw_rate_columns :: proc(state: ^Ui_State, row: Ui_Rectangle, produced, consume
 	draw_text(state, consumed_column, consumed, UI_BODY_TEXT_SIZE, .Right, color)
 }
 
+// The name between the icon and the two rate columns.
+rate_name_area :: proc(row: Ui_Rectangle) -> Ui_Rectangle {
+	area := text_after_icon(row)
+	area.width = max(area.width - 2 * (STATISTICS_RATE_COLUMN_WIDTH + UI_GAP), 0)
+	return area
+}
+
 draw_statistics_row :: proc(state: ^Ui_State, row: Ui_Rectangle, screen_context: Screen_Context, names: []string, rate: Item_Rate_Row, window: Rate_Window) {
 	draw_item_icon(state, icon_rectangle(row), item_icon(screen_context.items, rate.item))
-	draw_text(state, text_after_icon(row), names[rate.item], UI_BODY_TEXT_SIZE, .Left)
+	draw_text_fitted(state, rate_name_area(row), names[rate.item], UI_BODY_TEXT_SIZE, .Left)
 	draw_rate_columns(state, row, format_window_rate(rate.produced, window), format_window_rate(rate.consumed, window), UI_TEXT_COLOR)
 }
 
@@ -70,7 +79,7 @@ draw_fluid_statistics_row :: proc(state: ^Ui_State, row: Ui_Rectangle, screen_co
 	fluid := screen_context.fluids.fluids[rate.fluid]
 	icon := Item_Icon{kind = .Lettered, color = {fluid.color.r, fluid.color.g, fluid.color.b, 255}, letters = item_letters(fluid.id)}
 	draw_item_icon(state, icon_rectangle(row), icon)
-	draw_text(state, text_after_icon(row), fluid_name(screen_context.fluids, rate.fluid), UI_BODY_TEXT_SIZE, .Left)
+	draw_text_fitted(state, rate_name_area(row), fluid_name(screen_context.fluids, rate.fluid), UI_BODY_TEXT_SIZE, .Left)
 	draw_rate_columns(state, row, format_fluid_window_rate(rate.produced, window), format_fluid_window_rate(rate.consumed, window), UI_TEXT_COLOR)
 }
 
@@ -112,7 +121,7 @@ statistics_fluid_detail :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_con
 	view := screen_context.statistics_view
 	content := area
 	rate := fluid_rate_row(screen_context.world.statistics, view.focused_fluid, view.window)
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), fluid_name(screen_context.fluids, view.focused_fluid), UI_HEADING_TEXT_SIZE, .Left)
+	draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), fluid_name(screen_context.fluids, view.focused_fluid), UI_HEADING_TEXT_SIZE, .Left)
 	detail_line(state, &content, fmt.tprintf("%s: %s", text("statistics_produced"), format_fluid_window_rate(rate.produced, view.window)))
 	detail_line(state, &content, fmt.tprintf("%s: %s", text("statistics_consumed"), format_fluid_window_rate(rate.consumed, view.window)))
 	detail_line(state, &content, fmt.tprintf("%s: %s", text("statistics_voided_rate"), format_fluid_window_rate(rate.voided, view.window)), UI_DIM_TEXT_COLOR)
@@ -143,7 +152,7 @@ statistics_detail :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: 
 	statistics := screen_context.world.statistics
 	rate := item_rate_row(statistics, view.focused, view.window)
 	counts := count_item_machines(screen_context.world, statistics_simulation_content(screen_context), view.focused)
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), names[view.focused], UI_HEADING_TEXT_SIZE, .Left)
+	draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), names[view.focused], UI_HEADING_TEXT_SIZE, .Left)
 	detail_line(state, &content, fmt.tprintf("%s: %s", text("statistics_produced"), format_window_rate(rate.produced, view.window)))
 	detail_line(state, &content, fmt.tprintf("%s: %s", text("statistics_consumed"), format_window_rate(rate.consumed, view.window)))
 	detail_line(state, &content, fmt.tprintf("%s: %d", text("statistics_producers"), counts.producers))
@@ -172,19 +181,23 @@ settle_statistics_focus :: proc(state: ^Ui_State, view: ^Statistics_View, list_i
 	}
 }
 
+statistics_list_width :: proc(content: Ui_Rectangle) -> f32 {
+	return min(f32(STATISTICS_LIST_COLUMN_WIDTH), content.width * STATISTICS_LIST_COLUMN_FRACTION)
+}
+
 production_tab :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context) {
 	view := screen_context.statistics_view
 	content := area
 	names := item_display_names(screen_context.items, context.temp_allocator)
 	rows := statistics_rows(screen_context.world.statistics, view.window, context.temp_allocator)
 	fluid_rows := fluid_statistics_rows(screen_context.world.statistics, view.window, context.temp_allocator)
-	list_area := cut_left(&content, STATISTICS_LIST_COLUMN_WIDTH)
+	list_area := cut_left(&content, statistics_list_width(content))
 	cut_left(&content, 2 * UI_PADDING)
 	if ui_choice(state, settings_row(&list_area), text("statistics_window"), text(rate_window_keys[view.window])) {
 		view.window = next_rate_window(view.window)
 	}
 	header := cut_top(&list_area, UI_ROW_HEIGHT)
-	draw_text(state, inset(header, UI_PADDING), text("statistics_item"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	draw_text_fitted(state, rate_name_area(header), text("statistics_item"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	draw_rate_columns(state, header, text("statistics_produced"), text("statistics_consumed"), UI_DIM_TEXT_COLOR)
 	list_id := ui_id(state, "statistics_list")
 	letter := letter_input(state, &view.letter_radial)
@@ -199,8 +212,7 @@ production_tab :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Scr
 
 statistics_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	ui_backdrop(state)
-	panel := ui_safe_area(state)
-	cut_bottom(&panel, UI_GLYPH_TEXT_SIZE + 4 * UI_GAP)
+	panel := ui_panel_area(state)
 	ui_panel_begin(state, "statistics", panel)
 	content := inset(panel, UI_PADDING)
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("statistics_title"), UI_HEADING_TEXT_SIZE, .Centre)

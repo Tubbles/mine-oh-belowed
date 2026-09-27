@@ -11,8 +11,13 @@ import "core:strings"
 // A last tab shows the venture's contracts (ui_contracts.odin).
 
 JOURNAL_LIST_COLUMN_WIDTH :: 560
+// The list column's most share of the panel on a narrow screen.
+JOURNAL_LIST_COLUMN_FRACTION :: 0.4
 JOURNAL_LOG_HEIGHT_FRACTION :: 0.45
 HUD_OBJECTIVE_WIDTH :: 620
+// At most this share of the safe area, so toasts on the left keep theirs
+// (UI_TOAST_WIDTH_FRACTION).
+HUD_OBJECTIVE_WIDTH_FRACTION :: 0.4
 SECONDS_PER_MINUTE :: 60
 SECONDS_PER_HOUR :: 3600
 
@@ -155,14 +160,17 @@ draw_quest_objective :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	quest := screen_context.quests.quests[quest_state.active]
 	progress := quest_state.progress[quest_state.active]
 	safe := ui_safe_area(state)
-	area := Ui_Rectangle{safe.x + safe.width - HUD_OBJECTIVE_WIDTH, safe.y, HUD_OBJECTIVE_WIDTH, safe.height}
-	draw_text(state, cut_top(&area, UI_ROW_HEIGHT), text(quest.title_key), UI_BODY_TEXT_SIZE, .Right, UI_ACCENT_COLOR)
-	for line in wrap_text(state, text(quest.text_key), UI_BODY_TEXT_SIZE, HUD_OBJECTIVE_WIDTH) {
-		draw_text(state, cut_top(&area, UI_ROW_HEIGHT * 0.6), line, UI_BODY_TEXT_SIZE, .Right)
+	width := min(f32(HUD_OBJECTIVE_WIDTH), safe.width * HUD_OBJECTIVE_WIDTH_FRACTION)
+	area := Ui_Rectangle{safe.x + safe.width - width, safe.y, width, safe.height}
+	draw_text_fitted(state, cut_top(&area, UI_ROW_HEIGHT), text(quest.title_key), UI_BODY_TEXT_SIZE, .Right, UI_ACCENT_COLOR)
+	for line in wrap_text(state, text(quest.text_key), UI_BODY_TEXT_SIZE, width) {
+		draw_text(state, cut_top(&area, UI_LINE_HEIGHT), line, UI_BODY_TEXT_SIZE, .Right)
 	}
 	for _, index in quest.objectives {
 		label, progress_text, done := objective_line(quest, index, progress, screen_context)
-		draw_text(state, cut_top(&area, UI_ROW_HEIGHT * 0.6), fmt.tprintf("%s  %s", label, progress_text), UI_BODY_TEXT_SIZE, .Right, done ? UI_DIM_TEXT_COLOR : UI_TEXT_COLOR)
+		for line in wrap_text(state, fmt.tprintf("%s  %s", label, progress_text), UI_BODY_TEXT_SIZE, width) {
+			draw_text(state, cut_top(&area, UI_LINE_HEIGHT), line, UI_BODY_TEXT_SIZE, .Right, done ? UI_DIM_TEXT_COLOR : UI_TEXT_COLOR)
+		}
 	}
 }
 
@@ -205,12 +213,22 @@ draw_quest_row :: proc(state: ^Ui_State, row: Ui_Rectangle, screen_context: Scre
 	status_width := ui_text_width(state, status_text, UI_BODY_TEXT_SIZE)
 	draw_text(state, content, status_text, UI_BODY_TEXT_SIZE, .Right, UI_DIM_TEXT_COLOR)
 	content.width = max(content.width - status_width - UI_GAP, 0)
-	draw_text(state, content, text(quest.title_key), UI_BODY_TEXT_SIZE, .Left, color)
+	draw_text_fitted(state, content, text(quest.title_key), UI_BODY_TEXT_SIZE, .Left, color)
 }
 
+// A strip off the top of the content, or false when less is left.
+take_line :: proc(content: ^Ui_Rectangle, height: f32) -> (line: Ui_Rectangle, fits: bool) {
+	if content.height < height {
+		return {}, false
+	}
+	return cut_top(content, height), true
+}
+
+// Wrapped lines from the top of the content, as many as fit.
 draw_wrapped :: proc(state: ^Ui_State, content: ^Ui_Rectangle, value: string, color := UI_TEXT_COLOR) {
 	for line in wrap_text(state, value, UI_BODY_TEXT_SIZE, content.width) {
-		ui_label(state, cut_top(content, UI_ROW_HEIGHT * 0.6), line, UI_BODY_TEXT_SIZE, .Left, color)
+		row := take_line(content, UI_LINE_HEIGHT) or_break
+		ui_label(state, row, line, UI_BODY_TEXT_SIZE, .Left, color)
 	}
 }
 
@@ -228,45 +246,54 @@ rewards_text :: proc(quest: Quest, screen_context: Screen_Context) -> string {
 	return strings.join(parts[:], ", ", context.temp_allocator)
 }
 
-// The focused quest: a silhouette shows only its title.
-journal_quest_detail :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context, quest_index: int) {
+// The focused quest: a silhouette shows only its title. Lines that do
+// not fit the area are left out. Returns the height used.
+journal_quest_detail :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context, quest_index: int) -> f32 {
 	if quest_index == NO_QUEST {
-		return
+		return 0
 	}
 	content := area
 	quest := screen_context.quests.quests[quest_index]
 	progress := screen_context.quest_state.progress[quest_index]
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text(quest.title_key), UI_HEADING_TEXT_SIZE, .Left)
+	draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), text(quest.title_key), UI_HEADING_TEXT_SIZE, .Left)
 	if progress.status == .Locked {
 		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("journal_locked"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
-		return
+		return area.height - content.height
 	}
 	if quest.main {
-		ui_label(state, cut_top(&content, UI_ROW_HEIGHT * 0.6), text("journal_main_quest"), UI_BODY_TEXT_SIZE, .Left, UI_ACCENT_COLOR)
+		if row, fits := take_line(&content, UI_LINE_HEIGHT); fits {
+			ui_label(state, row, text("journal_main_quest"), UI_BODY_TEXT_SIZE, .Left, UI_ACCENT_COLOR)
+		}
 	}
 	draw_wrapped(state, &content, text(quest.text_key))
 	cut_top(&content, UI_GAP)
 	for _, index in quest.objectives {
 		label, progress_text, done := objective_line(quest, index, progress, screen_context)
-		row := cut_top(&content, UI_ROW_HEIGHT * 0.6)
-		ui_label(state, row, label, UI_BODY_TEXT_SIZE, .Left, done ? UI_DIM_TEXT_COLOR : UI_TEXT_COLOR)
-		ui_label(state, row, progress_text, UI_BODY_TEXT_SIZE, .Right, done ? UI_DIM_TEXT_COLOR : UI_TEXT_COLOR)
+		row := take_line(&content, UI_LINE_HEIGHT) or_break
+		color := done ? UI_DIM_TEXT_COLOR : UI_TEXT_COLOR
+		draw_text(state, row, progress_text, UI_BODY_TEXT_SIZE, .Right, color)
+		row.width = max(row.width - ui_text_width(state, progress_text, UI_BODY_TEXT_SIZE) - UI_PADDING, 0)
+		draw_text_fitted(state, row, label, UI_BODY_TEXT_SIZE, .Left, color)
 	}
 	if rewards := rewards_text(quest, screen_context); rewards != "" {
 		cut_top(&content, UI_GAP)
 		draw_wrapped(state, &content, fmt.tprintf("%s %s", text("journal_rewards"), rewards), UI_DIM_TEXT_COLOR)
 	}
+	return area.height - content.height
 }
 
 // Mission Control's lines, newest first, as many as fit.
 journal_message_log :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context) {
 	content := area
+	if content.height < UI_ROW_HEIGHT + UI_LINE_HEIGHT {
+		return
+	}
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("journal_messages"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	messages := screen_context.quest_state.messages[:]
 	#reverse for message in messages {
 		line := fmt.tprintf("%s  %s", format_game_time(message.tick, screen_context.tick_rate), quest_message_text(message, screen_context.world.shipments[:], screen_context.items))
 		wrapped := wrap_text(state, line, UI_BODY_TEXT_SIZE, content.width)
-		if f32(len(wrapped)) * UI_ROW_HEIGHT * 0.6 > content.height {
+		if f32(len(wrapped)) * UI_LINE_HEIGHT > content.height {
 			return
 		}
 		draw_wrapped(state, &content, line)
@@ -276,8 +303,7 @@ journal_message_log :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context
 
 journal_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	ui_backdrop(state)
-	panel := ui_safe_area(state)
-	cut_bottom(&panel, UI_GLYPH_TEXT_SIZE + 4 * UI_GAP)
+	panel := ui_panel_area(state)
 	ui_panel_begin(state, "journal", panel)
 	content := inset(panel, UI_PADDING)
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("journal_title"), UI_HEADING_TEXT_SIZE, .Centre)
@@ -287,24 +313,31 @@ journal_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 	tab := chapter_tabs(state, cut_top(&content, UI_ROW_HEIGHT), screen_context)
 	cut_top(&content, UI_GAP)
-	list_area := cut_left(&content, JOURNAL_LIST_COLUMN_WIDTH)
-	cut_left(&content, 2 * UI_PADDING)
-	log_area := cut_bottom(&content, content.height * JOURNAL_LOG_HEIGHT_FRACTION)
+	// The contracts tab has no quest detail: the contracts take half the
+	// width and the log the other half.
 	if tab == len(screen_context.quests.chapters) {
-		journal_contracts_section(state, list_area, screen_context)
-		journal_message_log(state, log_area, screen_context)
+		contracts_area := cut_left(&content, content.width / 2)
+		cut_left(&content, 2 * UI_PADDING)
+		journal_contracts_section(state, contracts_area, screen_context)
+		journal_message_log(state, content, screen_context)
 		ui_panel_end(state)
 		journal_glyph_bar(state)
 		return
 	}
+	list_area := cut_left(&content, min(f32(JOURNAL_LIST_COLUMN_WIDTH), content.width * JOURNAL_LIST_COLUMN_FRACTION))
+	cut_left(&content, 2 * UI_PADDING)
 	chapter := screen_context.quests.chapters[tab]
 	order := journal_quest_order(screen_context.quest_state^, chapter)
 	focused := journal_quest_list(state, list_area, screen_context, order)
 	if focused == NO_QUEST && len(order) > 0 {
 		focused = order[0]
 	}
-	journal_quest_detail(state, content, screen_context, focused)
-	journal_message_log(state, log_area, screen_context)
+	// The detail takes what it needs, leaving the log at least its share;
+	// the log gets the rest.
+	detail_area := content
+	detail_area.height -= content.height * JOURNAL_LOG_HEIGHT_FRACTION
+	cut_top(&content, journal_quest_detail(state, detail_area, screen_context, focused) + UI_GAP)
+	journal_message_log(state, content, screen_context)
 	ui_panel_end(state)
 	journal_glyph_bar(state)
 }

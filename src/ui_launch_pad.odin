@@ -16,13 +16,18 @@ launch_pad_text_rows :: proc(machine: Machine) -> int {
 	return 1 + machine.launch_part_count + FLUID_ROWS_PER_BUFFER + 1 + 3
 }
 
-// The Rocket tab's rows below the tab row, which the other tabs share.
-launch_pad_area_size :: proc(machine: Machine) -> [2]f32 {
-	width := max(slot_grid_width(LAUNCH_PAD_CARGO_SLOTS), FLUID_AREA_WIDTH)
-	slot_rows := 2 * f32(UI_SLOT_SIZE + UI_GAP)
+launch_pad_area_width :: proc() -> f32 {
+	return max(slot_grid_width(LAUNCH_PAD_CARGO_SLOTS), FLUID_AREA_WIDTH)
+}
+
+// The Rocket tab's rows below the tab row at a width, whose slot rows
+// wrap; the other tabs share the height.
+launch_pad_area_height :: proc(machine: Machine, width: f32) -> f32 {
+	columns := slot_columns(width)
+	slot_rows := slot_rows_height(machine.launch_part_count, columns) + slot_rows_height(LAUNCH_PAD_CARGO_SLOTS, columns)
 	button_rows := 2 * f32(UI_ROW_HEIGHT + UI_GAP)
 	tab_row := f32(UI_ROW_HEIGHT + UI_GAP)
-	return {width, UI_ROW_HEIGHT + tab_row + f32(launch_pad_text_rows(machine)) * UI_ROW_HEIGHT + slot_rows + button_rows}
+	return UI_ROW_HEIGHT + tab_row + f32(launch_pad_text_rows(machine)) * UI_ROW_HEIGHT + slot_rows + button_rows
 }
 
 // Rocket, Contracts and Catalogue (work item 0041), switched with the
@@ -65,17 +70,17 @@ launch_pad_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, pad: ^Launc
 	machine := screen_context.machines.machines[pad.machine]
 	items := screen_context.items
 	slots := pad.slots[:launch_pad_slot_count(pad^)]
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("launch_pad_parts"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
-	machine_slot_row(state, cut_top(&content, UI_SLOT_SIZE + UI_GAP), 0, pad.part_count, slots, items, &result)
+	detail_line(state, &content, text("launch_pad_parts"), UI_DIM_TEXT_COLOR)
+	machine_slot_rows(state, &content, 0, pad.part_count, slots, items, &result)
 	for index in 0 ..< machine.launch_part_count {
-		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), launch_part_line(pad^, machine, items, index), UI_BODY_TEXT_SIZE, .Left)
+		detail_line(state, &content, launch_part_line(pad^, machine, items, index))
 	}
 	port := machine.fluid_ports[LAUNCH_PAD_FUEL_PORT]
 	fluid_buffer_rows(state, &content, screen_context.fluids, pad.buffers[LAUNCH_PAD_FUEL_PORT], port.filter, port.capacity, pad.closed[LAUNCH_PAD_FUEL_PORT], screen_context.tick_rate)
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("launch_pad_cargo"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
-	machine_slot_row(state, cut_top(&content, UI_SLOT_SIZE + UI_GAP), pad.part_count, LAUNCH_PAD_CARGO_SLOTS, slots, items, &result)
+	detail_line(state, &content, text("launch_pad_cargo"), UI_DIM_TEXT_COLOR)
+	machine_slot_rows(state, &content, pad.part_count, LAUNCH_PAD_CARGO_SLOTS, slots, items, &result)
 	machine_bar(state, cut_top(&content, UI_ROW_HEIGHT), launch_pad_progress(pad^, machine, screen_context.tick_rate))
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), launch_pad_state_text(pad), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	detail_line(state, &content, launch_pad_state_text(pad), UI_DIM_TEXT_COLOR)
 	if ui_button(state, choice_row(&content), text("launch_pad_assemble")) {
 		start_assembly(pad, machine)
 	}
@@ -83,7 +88,7 @@ launch_pad_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, pad: ^Launc
 		request_launch(&screen_context.world.entities, pad.handle)
 	}
 	power_line := power_status_line(&screen_context.world.entities.electric_networks, pad.handle)
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), power_line, UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	detail_line(state, &content, power_line, UI_DIM_TEXT_COLOR)
 	return result
 }
 
@@ -118,7 +123,7 @@ shipment_list :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Scre
 			scroll_list_keep_visible(&list, position)
 		}
 		widget_background(state, row, id, interaction)
-		draw_text(state, inset(row, UI_PADDING), shipment_line(shipment, screen_context.items, screen_context.tick_rate), UI_BODY_TEXT_SIZE, .Left)
+		draw_text_fitted(state, inset(row, UI_PADDING), shipment_line(shipment, screen_context.items, screen_context.tick_rate), UI_BODY_TEXT_SIZE, .Left)
 	}
 	scroll_list_end(state, &list)
 }
@@ -126,12 +131,12 @@ shipment_list :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Scre
 shipments_tab :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context) {
 	content := area
 	statistics := screen_context.world.statistics
-	list_area := cut_left(&content, STATISTICS_LIST_COLUMN_WIDTH)
+	list_area := cut_left(&content, statistics_list_width(content))
 	cut_left(&content, 2 * UI_PADDING)
 	header := cut_top(&list_area, UI_ROW_HEIGHT)
-	draw_text(state, inset(header, UI_PADDING), text("statistics_shipments"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	draw_text_fitted(state, inset(header, UI_PADDING), text("statistics_shipments"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	shipment_list(state, list_area, screen_context)
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("statistics_shipped_totals"), UI_HEADING_TEXT_SIZE, .Left)
+	draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), text("statistics_shipped_totals"), UI_HEADING_TEXT_SIZE, .Left)
 	detail_line(state, &content, fmt.tprintf("%s: %d", text("statistics_rockets_launched"), statistics.rockets_launched))
 	for total in shipped_totals(statistics.shipped) {
 		detail_line(state, &content, fmt.tprintf("%s: %d", item_name(screen_context.items, total.item), total.count))

@@ -56,5 +56,5 @@ format_blocks_with :: proc(table: ^String_Table, count: int) -> string {
 }
 
 format_blocks :: proc(count: int) -> string {
-	return format_blocks_with(&global_string_table, count)
+	return format_blocks_with(active_string_table(), count)
 }

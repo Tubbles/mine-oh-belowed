@@ -44,9 +44,11 @@ draw_technology_row :: proc(state: ^Ui_State, row: Ui_Rectangle, screen_context:
 	}
 	status := technology_status(screen_context.technologies, screen_context.unlocks^, technology)
 	content := Ui_Rectangle{row.x + UI_PADDING, row.y, max(row.width - 2 * UI_PADDING, 0), row.height}
-	draw_text(state, content, names[technology], UI_BODY_TEXT_SIZE, .Left, status == .Locked ? UI_DIM_TEXT_COLOR : UI_TEXT_COLOR)
 	level := technology_level_text(screen_context.technologies.technologies[technology], research.levels[technology])
-	draw_text(state, content, level != "" ? level : text(technology_status_keys[status]), UI_BODY_TEXT_SIZE, .Right, status_color(status))
+	status_text := fit_text(state, level != "" ? level : text(technology_status_keys[status]), UI_BODY_TEXT_SIZE, content.width / 2)
+	draw_text(state, content, status_text, UI_BODY_TEXT_SIZE, .Right, status_color(status))
+	content.width = max(content.width - ui_text_width(state, status_text, UI_BODY_TEXT_SIZE) - UI_GAP, 0)
+	draw_text_fitted(state, content, names[technology], UI_BODY_TEXT_SIZE, .Left, status == .Locked ? UI_DIM_TEXT_COLOR : UI_TEXT_COLOR)
 }
 
 // What each level of an infinite technology does, for the detail panel.
@@ -88,16 +90,16 @@ technology_status_column :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_co
 	content := area
 	browser := screen_context.technology_browser
 	ui_toggle(state, settings_row(&content), text("technologies_hide_researched"), &browser.filter.hide_researched)
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("technologies_queued"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	detail_line(state, &content, text("technologies_queued"), UI_DIM_TEXT_COLOR)
 	research := screen_context.world.research
 	if !research.queued {
-		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("technologies_none_queued"), UI_BODY_TEXT_SIZE, .Left)
+		detail_line(state, &content, text("technologies_none_queued"))
 		return
 	}
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), technology_name(screen_context.technologies, research.technology), UI_BODY_TEXT_SIZE, .Left, UI_ACCENT_COLOR)
+	detail_line(state, &content, technology_name(screen_context.technologies, research.technology), UI_ACCENT_COLOR)
 	machine_bar(state, cut_top(&content, UI_ROW_HEIGHT), research_progress_fraction(research, screen_context.technologies))
 	units := fmt.tprintf("%s %s", text("technologies_units"), research_progress_text(research, screen_context.technologies))
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), units, UI_BODY_TEXT_SIZE, .Left)
+	draw_wrapped(state, &content, units)
 }
 
 technology_names_text :: proc(technologies: Technology_Registry, indices: []int) -> string {
@@ -122,21 +124,22 @@ technology_detail_panel :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_con
 	content := area
 	definition := screen_context.technologies.technologies[technology]
 	status := technology_status(screen_context.technologies, screen_context.unlocks^, technology)
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), names[technology], UI_HEADING_TEXT_SIZE, .Left)
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text(technology_status_keys[status]), UI_BODY_TEXT_SIZE, .Left, status_color(status))
+	draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), names[technology], UI_HEADING_TEXT_SIZE, .Left)
+	detail_line(state, &content, text(technology_status_keys[status]), status_color(status))
 	levels := screen_context.world.research.levels
 	if definition.infinite {
-		level := fmt.tprintf("%s %d", text("technologies_level"), levels[technology])
-		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), level, UI_BODY_TEXT_SIZE, .Left, UI_ACCENT_COLOR)
+		detail_line(state, &content, fmt.tprintf("%s %d", text("technologies_level"), levels[technology]), UI_ACCENT_COLOR)
 	}
 	units := technology_next_cost(definition, levels, technology)
 	cost := fmt.tprintf("%s %s", text(definition.infinite ? "technologies_next_level_cost" : "technologies_cost"), technology_cost_text(definition, units, screen_context.items))
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), cost, UI_BODY_TEXT_SIZE, .Left)
+	draw_wrapped(state, &content, cost)
+	cut_top(&content, UI_GAP)
 	prerequisites := fmt.tprintf("%s %s", text("technologies_prerequisites"), technology_names_text(screen_context.technologies, definition.prerequisites))
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), prerequisites, UI_BODY_TEXT_SIZE, .Left)
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("technologies_unlocks"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	draw_wrapped(state, &content, prerequisites)
+	cut_top(&content, UI_GAP)
+	detail_line(state, &content, text("technologies_unlocks"), UI_DIM_TEXT_COLOR)
 	if len(definition.unlocks) == 0 {
-		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text(definition.infinite ? technology_effect_keys[definition.effect] : "technologies_unlocks_later"), UI_BODY_TEXT_SIZE, .Left)
+		draw_wrapped(state, &content, text(definition.infinite ? technology_effect_keys[definition.effect] : "technologies_unlocks_later"))
 	}
 	for recipe in definition.unlocks {
 		if content.height >= UI_ROW_HEIGHT {
@@ -179,15 +182,15 @@ technology_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	order := recipe_name_order(names, context.temp_allocator)
 	visible := filter_technologies(screen_context.technologies, screen_context.unlocks^, order, browser.filter, context.temp_allocator)
 	ui_backdrop(state)
-	panel := ui_safe_area(state)
-	cut_bottom(&panel, UI_GLYPH_TEXT_SIZE + 4 * UI_GAP)
+	panel := ui_panel_area(state)
 	ui_panel_begin(state, "technologies", panel)
 	content := inset(panel, UI_PADDING)
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("technologies_title"), UI_HEADING_TEXT_SIZE, .Centre)
 	cut_top(&content, UI_GAP)
-	technology_status_column(state, cut_left(&content, TECHNOLOGY_STATUS_COLUMN_WIDTH), screen_context)
+	status_width, list_width := three_column_widths(content, TECHNOLOGY_STATUS_COLUMN_WIDTH, TECHNOLOGY_LIST_COLUMN_WIDTH)
+	technology_status_column(state, cut_left(&content, status_width), screen_context)
 	cut_left(&content, 2 * UI_PADDING)
-	list_area := cut_left(&content, TECHNOLOGY_LIST_COLUMN_WIDTH)
+	list_area := cut_left(&content, list_width)
 	cut_left(&content, 2 * UI_PADDING)
 	list_id := ui_id(state, "technology_list")
 	letter := letter_input(state, &browser.letter_radial)

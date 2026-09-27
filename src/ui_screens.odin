@@ -199,15 +199,17 @@ panel_height :: proc(row_count: int, extra: f32) -> f32 {
 
 pause_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	ui_backdrop(state)
-	area := ui_safe_area(state)
+	area := ui_panel_area(state)
 	developer := screen_context.developer_mode || (screen_context.settings != nil && screen_context.settings.developer_mode)
 	button_count := developer ? 11 : 10
-	// The title row and the build stamp row besides the buttons.
-	panel := centred_rectangle(area, PAUSE_PANEL_WIDTH, panel_height(button_count, 2 * (UI_ROW_HEIGHT + UI_GAP)))
+	// The title row and the build stamp row besides the buttons; below the
+	// title the rows scroll when the panel is clamped to the safe area.
+	panel := fitted_panel(area, PAUSE_PANEL_WIDTH, panel_height(button_count, 2 * (UI_ROW_HEIGHT + UI_GAP)))
 	ui_panel_begin(state, "pause", panel)
-	content := inset(panel, UI_PADDING)
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_title"), UI_HEADING_TEXT_SIZE, .Centre)
-	cut_top(&content, UI_GAP)
+	title_area := inset(panel, UI_PADDING)
+	ui_label(state, cut_top(&title_area, UI_ROW_HEIGHT), text("pause_title"), UI_HEADING_TEXT_SIZE, .Centre)
+	cut_top(&title_area, UI_GAP)
+	region, content := scroll_region_begin(state, "pause_rows", title_area, f32(button_count) * (UI_ROW_HEIGHT + UI_GAP) + UI_ROW_HEIGHT)
 	if ui_button(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_resume")) {
 		state.screens.count = 0
 	}
@@ -268,7 +270,8 @@ pause_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 	cut_top(&content, UI_GAP)
 	// Which build this is, for bug reports from the couch.
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), BUILD_STAMP, UI_BODY_TEXT_SIZE, .Centre, UI_DIM_TEXT_COLOR)
+	draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), BUILD_STAMP, UI_BODY_TEXT_SIZE, .Centre, UI_DIM_TEXT_COLOR)
+	scroll_region_end(state, region)
 	ui_panel_end(state)
 	hints := [?]Glyph_Hint{{.Confirm, text("hint_select")}, {.Back, text("hint_resume")}}
 	ui_glyph_bar(state, hints[:])
@@ -281,8 +284,8 @@ multiplier_text :: proc(value: f32) -> string {
 settings_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	settings := screen_context.settings
 	ui_backdrop(state)
-	area := ui_safe_area(state)
-	panel := centred_rectangle(area, SETTINGS_PANEL_WIDTH, panel_height(SETTINGS_ROW_COUNT, 0))
+	area := ui_panel_area(state)
+	panel := fitted_panel(area, SETTINGS_PANEL_WIDTH, panel_height(SETTINGS_ROW_COUNT, 0))
 	ui_panel_begin(state, "settings", panel)
 	content := inset(panel, UI_PADDING)
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("settings_title"), UI_HEADING_TEXT_SIZE, .Centre)

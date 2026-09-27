@@ -66,8 +66,8 @@ fluid_flow_line :: proc(buffer: Fluid_Buffer, tick_rate: int) -> string {
 }
 
 fluid_buffer_rows :: proc(state: ^Ui_State, content: ^Ui_Rectangle, fluids: Fluid_Registry, buffer: Fluid_Buffer, filter: Fluid_Id, capacity: i32, closed: bool, tick_rate: int) {
-	ui_label(state, cut_top(content, UI_ROW_HEIGHT), fluid_level_line(fluids, buffer, filter, capacity, closed), UI_BODY_TEXT_SIZE, .Left)
-	ui_label(state, cut_top(content, UI_ROW_HEIGHT), fluid_flow_line(buffer, tick_rate), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	detail_line(state, content, fluid_level_line(fluids, buffer, filter, capacity, closed))
+	detail_line(state, content, fluid_flow_line(buffer, tick_rate), UI_DIM_TEXT_COLOR)
 }
 
 pipe_panel_region :: proc(state: ^Ui_State, area: Ui_Rectangle, pipe: Pipe, screen_context: Screen_Context) {
@@ -95,14 +95,14 @@ fluid_machine_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, fluid_ma
 		fluid_buffer_rows(state, &content, screen_context.fluids, buffer, port.filter, port.capacity, closed, screen_context.tick_rate)
 	}
 	if fluid_machine_shows_state(machine.kind) {
-		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text(fluid_machine_state_keys[fluid_machine.state]), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+		detail_line(state, &content, text(fluid_machine_state_keys[fluid_machine.state]), UI_DIM_TEXT_COLOR)
 	}
 	if machine_is_generator(machine) {
-		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), generator_output_line(fluid_machine, screen_context.tick_rate), UI_BODY_TEXT_SIZE, .Left)
+		detail_line(state, &content, generator_output_line(fluid_machine, screen_context.tick_rate))
 	}
 	if fluid_machine_power_rows(machine.kind) > 0 {
 		power_line := power_status_line(&screen_context.world.entities.electric_networks, fluid_machine.handle)
-		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), power_line, UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+		detail_line(state, &content, power_line, UI_DIM_TEXT_COLOR)
 	}
 	return result
 }

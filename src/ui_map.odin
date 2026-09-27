@@ -23,6 +23,7 @@ MAP_PAN_PIXELS_PER_SECOND :: 160.0
 MAP_STICK_ZOOM_THRESHOLD :: 0.5
 MAP_STICK_ZOOM_SECONDS :: 0.3
 MAP_REPAINT_SECONDS :: 0.5
+// The least width the legend keeps beside the image.
 MAP_LEGEND_WIDTH :: 360
 MAP_PLAYER_MARKER_SIZE :: 14.0
 MAP_BRIGHTNESS_LOW :: 0.65
@@ -321,7 +322,7 @@ draw_map_player :: proc(state: ^Ui_State, image: Ui_Rectangle, frame: Map_Frame,
 draw_map_legend :: proc(state: ^Ui_State, area: Ui_Rectangle, view: ^Map_View) {
 	content := area
 	scale := fmt.tprintf("%s: %d %s", text("map_scale"), map_blocks_per_pixel(view.zoom), text("map_blocks_per_pixel"))
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), scale, UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), scale, UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	entries := [?]struct {
 		color: Ui_Color,
 		key:   string,
@@ -339,7 +340,7 @@ draw_map_legend :: proc(state: ^Ui_State, area: Ui_Rectangle, view: ^Map_View) {
 		row := cut_top(&content, UI_ROW_HEIGHT)
 		swatch := Ui_Rectangle{row.x, row.y + (row.height - 20) / 2, 20, 20}
 		draw_fill(state, swatch, entry.color)
-		draw_text(state, {row.x + 32, row.y, row.width - 32, row.height}, text(entry.key), UI_BODY_TEXT_SIZE, .Left)
+		draw_text_fitted(state, {row.x + 32, row.y, row.width - 32, row.height}, text(entry.key), UI_BODY_TEXT_SIZE, .Left)
 	}
 }
 
@@ -353,13 +354,14 @@ map_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		activate_map_view(view, world, screen_context.player^)
 	}
 	ui_backdrop(state)
-	panel := ui_safe_area(state)
+	panel := ui_panel_area(state)
 	ui_panel_begin(state, "map", panel)
 	content := inset(panel, UI_PADDING)
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("map_title"), UI_HEADING_TEXT_SIZE, .Left)
 	side := min(content.height, content.width - MAP_LEGEND_WIDTH - UI_PADDING)
 	image := Ui_Rectangle{content.x, content.y, side, side}
-	legend := Ui_Rectangle{image.x + side + UI_PADDING, content.y, MAP_LEGEND_WIDTH, content.height}
+	// The legend takes the width the square image leaves.
+	legend := Ui_Rectangle{image.x + side + UI_PADDING, content.y, content.width - side - UI_PADDING, content.height}
 	view.zoom = clamp(view.zoom + map_zoom_step(view, state.input, state.frame_seconds), 0, MAP_ZOOM_LEVEL_COUNT - 1)
 	pan_map(view, state, image)
 	frame := map_frame_for(view.centre, view.zoom)

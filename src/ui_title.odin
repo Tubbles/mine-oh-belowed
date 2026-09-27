@@ -16,7 +16,10 @@ NEW_WORLD_PANEL_WIDTH :: 960
 // Heading, name, seed, six settings and the button row.
 NEW_WORLD_ROW_COUNT :: 10
 LOAD_PANEL_WIDTH :: 1400
-LOAD_LIST_ROWS :: 9
+// Rows of the save list below its column headings.
+LOAD_LIST_ROWS :: 8
+// The most of the name column the "cannot load" marker takes.
+SAVE_MARKER_SHARE :: 0.8
 CONFIRM_PANEL_WIDTH :: 720
 SEED_FIELD_SHARE :: 0.68
 
@@ -168,10 +171,10 @@ create_world :: proc(state: ^Ui_State, title: ^Title_State) {
 
 new_world_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	setup := &screen_context.title.setup
-	area := ui_safe_area(state)
+	area := ui_panel_area(state)
 	typing := state.keyboard.field != 0
 	height := typing ? panel_height(2, KEYBOARD_HEIGHT) : panel_height(NEW_WORLD_ROW_COUNT, -UI_GAP)
-	panel := centred_rectangle(area, NEW_WORLD_PANEL_WIDTH, height)
+	panel := fitted_panel(area, NEW_WORLD_PANEL_WIDTH, height)
 	ui_panel_begin(state, "new_world", panel)
 	content := inset(panel, UI_PADDING)
 	ui_label(state, title_row(&content), text("new_world_title"), UI_HEADING_TEXT_SIZE, .Centre)
@@ -194,10 +197,15 @@ new_world_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	if state.keyboard.return_focus != 0 {
 		state.requested_focus, state.keyboard.return_focus = state.keyboard.return_focus, 0
 	}
-	if ui_text_field(state, title_row(&content), name_label, &setup.name) {
+	button_row := cut_bottom(&content, UI_ROW_HEIGHT)
+	cut_bottom(&content, UI_GAP)
+	// Name, seed and the settings scroll when the panel is clamped to the
+	// safe area; the heading and the buttons stay.
+	region, rows := scroll_region_begin(state, "new_world_rows", content, f32(NEW_WORLD_ROW_COUNT - 2) * (UI_ROW_HEIGHT + UI_GAP) - UI_GAP)
+	if ui_text_field(state, title_row(&rows), name_label, &setup.name) {
 		open_keyboard(state, name_id)
 	}
-	seed_row := title_row(&content)
+	seed_row := title_row(&rows)
 	if ui_text_field(state, cut_left(&seed_row, seed_row.width * SEED_FIELD_SHARE), seed_label, &setup.seed) {
 		open_keyboard(state, seed_id)
 	}
@@ -205,8 +213,8 @@ new_world_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	if ui_button(state, seed_row, text("new_world_randomise")) {
 		randomise_seed(setup)
 	}
-	world_setting_rows(state, &content, setup)
-	button_row := title_row(&content)
+	world_setting_rows(state, &rows, setup)
+	scroll_region_end(state, region)
 	if ui_button(state, column(button_row, 2, 0, UI_GAP), text("new_world_create")) {
 		create_world(state, screen_context.title)
 	}
@@ -218,19 +226,82 @@ new_world_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	ui_glyph_bar(state, hints[:])
 }
 
-// A save this build cannot load carries a marker after its name.
-save_row_text :: proc(save: Save_Summary, zone: ^datetime.TZ_Region, tick_rate: int) -> string {
-	return fmt.tprintf(
-		"%s%s     %s %d     %s %s     %s %s",
-		save.name,
-		save.loadable ? "" : fmt.tprintf("  %s", text("load_incompatible")),
-		text("load_seed"),
-		save.seed,
-		text("load_play_time"),
-		play_time_text(save.tick, tick_rate),
-		text("load_last_played"),
-		date_text(save.last_played_unix_seconds, zone),
-	)
+// The load list's cells of one save; marker is set for a save this build
+// cannot load.
+Save_Row_Cells :: struct {
+	name:   string,
+	marker: string,
+	seed:   string,
+	played: string,
+	saved:  string,
+}
+
+save_row_cells :: proc(save: Save_Summary, zone: ^datetime.TZ_Region, tick_rate: int) -> Save_Row_Cells {
+	return Save_Row_Cells {
+		name = save.name,
+		marker = save.loadable ? "" : text("load_incompatible"),
+		seed = fmt.tprint(save.seed),
+		played = play_time_text(save.tick, tick_rate),
+		saved = date_text(save.last_played_unix_seconds, zone),
+	}
+}
+
+// Widths of the seed, played and saved columns: their widest possible
+// value or their heading; the name takes the rest.
+Save_Columns :: struct {
+	name, seed, played, saved: Ui_Rectangle,
+}
+
+save_column_width :: proc(state: ^Ui_State, widest, heading: string) -> f32 {
+	return max(ui_text_width(state, widest, UI_BODY_TEXT_SIZE), ui_text_width(state, heading, UI_BODY_TEXT_SIZE)) + 2 * UI_PADDING
+}
+
+save_columns :: proc(state: ^Ui_State, row: Ui_Rectangle) -> Save_Columns {
+	content := inset(row, UI_PADDING)
+	columns: Save_Columns
+	columns.saved = cut_right(&content, save_column_width(state, "0000-00-00 00:00", text("load_last_played")))
+	columns.played = cut_right(&content, save_column_width(state, "0000:00", text("load_play_time")))
+	columns.seed = cut_right(&content, save_column_width(state, "18446744073709551615", text("load_seed")))
+	columns.name = content
+	return columns
+}
+
+// Name (with the marker right aligned in its column), seed, played and
+// saved, each ending with an ellipsis where it does not fit.
+draw_save_row :: proc(state: ^Ui_State, row: Ui_Rectangle, cells: Save_Row_Cells, color := UI_TEXT_COLOR) {
+	columns := save_columns(state, row)
+	name := columns.name
+	if cells.marker != "" {
+		marker := fit_text(state, cells.marker, UI_BODY_TEXT_SIZE, name.width * SAVE_MARKER_SHARE)
+		draw_text(state, name, marker, UI_BODY_TEXT_SIZE, .Right, UI_ACCENT_COLOR)
+		name.width -= ui_text_width(state, marker, UI_BODY_TEXT_SIZE) + UI_PADDING
+	}
+	draw_text_fitted(state, name, cells.name, UI_BODY_TEXT_SIZE, .Left, color)
+	draw_text_fitted(state, columns.seed, cells.seed, UI_BODY_TEXT_SIZE, .Right, color)
+	draw_text_fitted(state, columns.played, cells.played, UI_BODY_TEXT_SIZE, .Right, color)
+	draw_text_fitted(state, columns.saved, cells.saved, UI_BODY_TEXT_SIZE, .Right, color)
+}
+
+// The saves as rows of columns; ids match ui_list's (focused_list_row).
+// Returns the activated save or -1.
+save_list :: proc(state: ^Ui_State, area: Ui_Rectangle, title: ^Title_State, tick_rate: int) -> int {
+	activated := -1
+	list := scroll_list_begin(state, "saves", area, len(title.saves))
+	for save, index in title.saves {
+		row := scroll_list_row(list, index)
+		id := ui_id(state, "item", index)
+		interaction := ui_interact(state, id, row)
+		if interaction.focused {
+			scroll_list_keep_visible(&list, index)
+		}
+		if interaction.activated {
+			activated = index
+		}
+		widget_background(state, row, id, interaction)
+		draw_save_row(state, row, save_row_cells(save, title.local_zone, tick_rate))
+	}
+	scroll_list_end(state, &list)
+	return activated
 }
 
 // The row of the list whose item holds the focus, or -1. Matches the ids
@@ -259,25 +330,29 @@ confirm_save_deletion :: proc(state: ^Ui_State, title: ^Title_State, index: int)
 load_world_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	title := screen_context.title
 	ui_backdrop(state)
-	area := ui_safe_area(state)
-	panel := centred_rectangle(area, LOAD_PANEL_WIDTH, panel_height(LOAD_LIST_ROWS + 2, -UI_GAP))
+	area := ui_panel_area(state)
+	// The heading, the column headings, the list and the button row.
+	panel := fitted_panel(area, LOAD_PANEL_WIDTH, panel_height(LOAD_LIST_ROWS + 3, -UI_GAP))
 	ui_panel_begin(state, "load", panel)
 	content := inset(panel, UI_PADDING)
 	ui_label(state, title_row(&content), text("load_title"), UI_HEADING_TEXT_SIZE, .Centre)
 	back_row := cut_bottom(&content, UI_ROW_HEIGHT)
 	cut_bottom(&content, UI_GAP)
-	rows := make([]string, len(title.saves), context.temp_allocator)
-	for save, index in title.saves {
-		rows[index] = save_row_text(save, title.local_zone, screen_context.tick_rate)
+	headings := Save_Row_Cells {
+		name   = text("new_world_name"),
+		seed   = text("load_seed"),
+		played = text("load_play_time"),
+		saved  = text("load_last_played"),
 	}
-	if len(rows) == 0 {
+	draw_save_row(state, cut_top(&content, UI_ROW_HEIGHT), headings, UI_DIM_TEXT_COLOR)
+	if len(title.saves) == 0 {
 		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("load_empty"), UI_BODY_TEXT_SIZE, .Centre, UI_DIM_TEXT_COLOR)
 	}
 	list_id := ui_id(state, "saves")
-	if activated := ui_list(state, content, "saves", rows); activated >= 0 {
+	if activated := save_list(state, content, title, screen_context.tick_rate); activated >= 0 {
 		title.request = {kind = .Load, directory_name = title.saves[activated].directory_name}
 	}
-	focused := focused_list_row(state, list_id, len(rows))
+	focused := focused_list_row(state, list_id, len(title.saves))
 	if focused >= 0 {
 		title.load_selection = focused
 	}
@@ -304,7 +379,7 @@ confirm_delete_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) 
 	}
 	save := title.saves[title.delete_index]
 	ui_backdrop(state)
-	panel := centred_rectangle(ui_safe_area(state), CONFIRM_PANEL_WIDTH, panel_height(2, -UI_GAP))
+	panel := fitted_panel(ui_panel_area(state), CONFIRM_PANEL_WIDTH, panel_height(2, -UI_GAP))
 	ui_panel_begin(state, "confirm_delete", panel)
 	content := inset(panel, UI_PADDING)
 	ui_label(state, title_row(&content), format_message_text(text("load_delete_question"), save.name), UI_BODY_TEXT_SIZE, .Centre)

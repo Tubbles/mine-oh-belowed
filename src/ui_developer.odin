@@ -90,15 +90,21 @@ time_of_day_buttons :: proc(state: ^Ui_State, row: Ui_Rectangle, screen_context:
 
 developer_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	ui_backdrop(state)
-	area := ui_safe_area(state)
-	panel := centred_rectangle(area, DEVELOPER_PANEL_WIDTH, panel_height(DEVELOPER_ROW_COUNT, 0))
+	area := ui_panel_area(state)
+	panel := fitted_panel(area, DEVELOPER_PANEL_WIDTH, panel_height(DEVELOPER_ROW_COUNT, 0))
 	ui_panel_begin(state, "developer", panel)
 	content := inset(panel, UI_PADDING)
 	ui_label(state, developer_row(&content), text("developer_title"), UI_HEADING_TEXT_SIZE, .Centre)
+	back_row := cut_bottom(&content, UI_ROW_HEIGHT)
+	cut_bottom(&content, UI_GAP)
+	// The action rows between the title and Back scroll when the panel is
+	// clamped to the safe area.
+	region, actions := scroll_region_begin(state, "developer_actions", content, f32(DEVELOPER_ROW_COUNT - 2) * (UI_ROW_HEIGHT + UI_GAP))
 	if screen_context.player != nil && screen_context.developer_requests != nil {
-		developer_actions(state, &content, screen_context)
+		developer_actions(state, &actions, screen_context)
 	}
-	if ui_button(state, cut_bottom(&content, UI_ROW_HEIGHT), text("developer_back")) {
+	scroll_region_end(state, region)
+	if ui_button(state, back_row, text("developer_back")) {
 		pop_screen(&state.screens)
 	}
 	ui_panel_end(state)

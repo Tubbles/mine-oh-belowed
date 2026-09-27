@@ -17,6 +17,10 @@ import "core:strings"
 
 RECIPE_FILTER_COLUMN_WIDTH :: 380
 RECIPE_LIST_COLUMN_WIDTH :: 560
+// The most share of the panel the filter and the list columns take on a
+// narrow screen (also the technology screen's), leaving the detail room.
+FILTER_COLUMN_FRACTION :: 0.24
+LIST_COLUMN_FRACTION :: 0.34
 RECIPE_ICON_SIZE :: 40
 RECIPE_CRAFTABLE_MARK_WIDTH :: 6
 RECIPE_CRAFT_MANY_COUNT :: 5
@@ -131,7 +135,7 @@ draw_recipe_row :: proc(state: ^Ui_State, row: Ui_Rectangle, screen_context: Scr
 	draw_item_icon(state, icon_rectangle(row), recipe_icon(screen_context, recipe))
 	available := recipe_is_available(screen_context.unlocks^, recipe)
 	color := available ? UI_TEXT_COLOR : UI_DIM_TEXT_COLOR
-	draw_text(state, text_after_icon(row), screen_context.recipe_names[recipe], UI_BODY_TEXT_SIZE, .Left, color)
+	draw_text_fitted(state, text_after_icon(row), screen_context.recipe_names[recipe], UI_BODY_TEXT_SIZE, .Left, color)
 }
 
 // The recipes of the filter. Returns the activated recipe or NO_RECIPE,
@@ -165,9 +169,9 @@ recipe_list :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen
 // activated recipe or NO_RECIPE.
 recipe_link_list :: proc(state: ^Ui_State, area: Ui_Rectangle, label: string, recipes: []int, screen_context: Screen_Context, craftable: []bool) -> int {
 	content := area
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text(label), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), text(label), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	if len(recipes) == 0 {
-		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("recipes_link_none"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+		draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), text("recipes_link_none"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 		return NO_RECIPE
 	}
 	activated := NO_RECIPE
@@ -216,10 +220,10 @@ recipe_filter_column :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_contex
 	if browser.selecting_for == NO_ENTITY {
 		queue := screen_context.player.crafting
 		queue_row := cut_bottom(&content, UI_ROW_HEIGHT)
-		ui_label(state, queue_row, queue_summary_text(queue), UI_BODY_TEXT_SIZE, .Left, queue.waiting ? UI_ACCENT_COLOR : UI_DIM_TEXT_COLOR)
+		draw_text_fitted(state, queue_row, queue_summary_text(queue), UI_BODY_TEXT_SIZE, .Left, queue.waiting ? UI_ACCENT_COLOR : UI_DIM_TEXT_COLOR)
 		ui_toggle(state, settings_row(&content), text("recipes_can_craft"), &browser.filter.craftable_only)
 	}
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("recipes_tags"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), text("recipes_tags"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	tags := category_tags(screen_context.recipes, browser.filter.category)
 	for name, index in screen_context.recipes.tag_names {
 		if index not_in tags || content.height < UI_ROW_HEIGHT {
@@ -236,12 +240,13 @@ stack_line :: proc(stack: Item_Stack, items: Item_Registry) -> string {
 	return fmt.tprintf("%d × %s", stack.count, item_name(items, stack.item))
 }
 
+// The label and a row per stack, as many as fit.
 draw_stack_rows :: proc(state: ^Ui_State, content: ^Ui_Rectangle, label: string, stacks: []Item_Stack, items: Item_Registry) {
-	ui_label(state, cut_top(content, UI_ROW_HEIGHT), text(label), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	detail_line(state, content, text(label), UI_DIM_TEXT_COLOR)
 	for stack in stacks {
-		row := cut_top(content, UI_ROW_HEIGHT)
+		row := take_line(content, UI_ROW_HEIGHT) or_break
 		draw_item_icon(state, icon_rectangle(row), item_icon(items, stack.item))
-		draw_text(state, text_after_icon(row), stack_line(stack, items), UI_BODY_TEXT_SIZE, .Left)
+		draw_text_fitted(state, text_after_icon(row), stack_line(stack, items), UI_BODY_TEXT_SIZE, .Left)
 	}
 }
 
@@ -282,17 +287,22 @@ recipe_detail_panel :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context
 		return NO_RECIPE
 	}
 	definition := screen_context.recipes.recipes[recipe]
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), screen_context.recipe_names[recipe], UI_HEADING_TEXT_SIZE, .Left)
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text(recipe_category_key(definition.category)), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), screen_context.recipe_names[recipe], UI_HEADING_TEXT_SIZE, .Left)
+	detail_line(state, &content, text(recipe_category_key(definition.category)), UI_DIM_TEXT_COLOR)
 	detail := recipe_detail(screen_context.recipes, screen_context.unlocks^, recipe, context.temp_allocator)
 	if !detail.revealed {
-		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), locked_recipe_text(definition, screen_context.technologies), UI_BODY_TEXT_SIZE, .Left, UI_ACCENT_COLOR)
+		draw_wrapped(state, &content, locked_recipe_text(definition, screen_context.technologies), UI_ACCENT_COLOR)
 		return NO_RECIPE
 	}
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), recipe_facts_text(definition), UI_BODY_TEXT_SIZE, .Left)
+	draw_wrapped(state, &content, recipe_facts_text(definition))
+	cut_top(&content, UI_GAP)
 	draw_stack_rows(state, &content, "recipes_inputs", detail.inputs, screen_context.items)
 	draw_stack_rows(state, &content, "recipes_outputs", detail.outputs, screen_context.items)
 	cut_top(&content, UI_GAP)
+	// The graph lists need their label and a row.
+	if content.height < 2 * UI_ROW_HEIGHT {
+		return NO_RECIPE
+	}
 	made_by := recipe_link_list(state, column(content, 2, 0, UI_GAP), "recipes_made_by", detail.made_by, screen_context, craftable)
 	used_in := recipe_link_list(state, column(content, 2, 1, UI_GAP), "recipes_used_in", detail.used_in, screen_context, craftable)
 	return made_by != NO_RECIPE ? made_by : used_in
@@ -418,21 +428,27 @@ open_recipe_selection :: proc(state: ^Ui_State, browser: ^Recipe_Browser, assemb
 	push_screen(&state.screens, .Recipes)
 }
 
+// The first two columns of a filter, list and detail screen: their
+// widths, or their share of a narrow panel.
+three_column_widths :: proc(content: Ui_Rectangle, filter_width, list_width: f32) -> (filter, list: f32) {
+	return min(filter_width, content.width * FILTER_COLUMN_FRACTION), min(list_width, content.width * LIST_COLUMN_FRACTION)
+}
+
 recipe_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	browser := screen_context.browser
 	selecting := browser.selecting_for != NO_ENTITY
 	craftable := craftable_recipes(screen_context.recipes, screen_context.unlocks^, screen_context.player.inventory, context.temp_allocator)
 	ui_backdrop(state)
-	panel := ui_safe_area(state)
-	cut_bottom(&panel, UI_GLYPH_TEXT_SIZE + 4 * UI_GAP)
+	panel := ui_panel_area(state)
 	ui_panel_begin(state, "recipes", panel)
 	content := inset(panel, UI_PADDING)
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text(selecting ? "recipes_choose_title" : "recipes_title"), UI_HEADING_TEXT_SIZE, .Centre)
 	recipe_category_tabs(state, cut_top(&content, UI_ROW_HEIGHT), browser)
 	cut_top(&content, UI_GAP)
-	recipe_filter_column(state, cut_left(&content, RECIPE_FILTER_COLUMN_WIDTH), screen_context)
+	filter_width, list_width := three_column_widths(content, RECIPE_FILTER_COLUMN_WIDTH, RECIPE_LIST_COLUMN_WIDTH)
+	recipe_filter_column(state, cut_left(&content, filter_width), screen_context)
 	cut_left(&content, 2 * UI_PADDING)
-	list_area := cut_left(&content, RECIPE_LIST_COLUMN_WIDTH)
+	list_area := cut_left(&content, list_width)
 	cut_left(&content, 2 * UI_PADDING)
 	filter := selecting ? selection_filter(browser.filter, .Assembler) : browser.filter
 	visible := filter_recipes(screen_context.recipes, screen_context.recipe_order, filter, craftable, screen_context.unlocks.available, context.temp_allocator)

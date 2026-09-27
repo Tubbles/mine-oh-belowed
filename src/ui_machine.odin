@@ -111,41 +111,75 @@ apply_machine_slot_secondary :: proc(slots: []Item_Stack, kind: Machine_Kind, he
 	return result
 }
 
-chest_rows :: proc(slot_count: int) -> int {
-	return (slot_count + MACHINE_CHEST_COLUMNS - 1) / MACHINE_CHEST_COLUMNS
-}
-
-machine_area_size :: proc(machine: Machine, slot_count: int) -> [2]f32 {
+// The machine side's natural width: its widest row of slots or text.
+machine_area_width :: proc(machine: Machine) -> f32 {
 	switch machine.kind {
 	case .Chest, .Capsule:
-		return {slot_grid_width(MACHINE_CHEST_COLUMNS), UI_ROW_HEIGHT + slot_grid_height(chest_rows(slot_count))}
-	case .Furnace:
-		return {FURNACE_AREA_WIDTH, UI_ROW_HEIGHT + 2 * (UI_SLOT_SIZE + UI_GAP) + 2 * UI_ROW_HEIGHT}
-	case .Inserter:
-		return {FURNACE_AREA_WIDTH, UI_ROW_HEIGHT + (UI_SLOT_SIZE + UI_GAP) + 3 * UI_ROW_HEIGHT}
+		return slot_grid_width(MACHINE_CHEST_COLUMNS)
+	case .Furnace, .Inserter:
+		return FURNACE_AREA_WIDTH
 	case .Drill:
-		rows := 1 + DRILL_TEXT_ROWS + drill_extra_rows(machine)
-		return {DRILL_AREA_WIDTH, UI_ROW_HEIGHT + (UI_SLOT_SIZE + UI_GAP) + f32(rows) * UI_ROW_HEIGHT}
+		return DRILL_AREA_WIDTH
 	case .Splitter:
-		return {SPLITTER_AREA_WIDTH, UI_ROW_HEIGHT + SPLITTER_CHOICE_ROWS * (UI_ROW_HEIGHT + UI_GAP) + (UI_SLOT_SIZE + UI_GAP)}
+		return SPLITTER_AREA_WIDTH
 	case .Pipe, .Offshore_Pump, .Boiler, .Steam_Engine, .Storage_Tank, .Pump, .Tar_Pit_Pump, .Flare_Stack, .Combustion_Generator, .Hydro_Turbine:
-		return fluid_area_size(machine)
+		return fluid_area_size(machine).x
 	case .Pole, .Power_Switch, .Lamp:
-		return power_area_size(machine)
+		return power_area_size(machine).x
 	case .Crafting_Machine, .Lab:
-		return crafting_machine_area_size(machine)
+		return crafting_machine_area_width(machine)
 	case .Core_Sample_Drill:
-		return core_sample_area_size()
+		return core_sample_area_size().x
 	case .Launch_Pad:
-		return launch_pad_area_size(machine)
+		return launch_pad_area_width()
 	case .Belt, .Schematic_Crate:
 	}
-	return {}
+	return 0
+}
+
+// The machine side's height at a width, to which its slot grids and
+// rows wrap.
+machine_area_height :: proc(machine: Machine, slot_count: int, width: f32) -> f32 {
+	switch machine.kind {
+	case .Chest, .Capsule:
+		return UI_ROW_HEIGHT + slot_rows_height(slot_count, chest_columns(width))
+	case .Furnace:
+		return UI_ROW_HEIGHT + 2 * (UI_SLOT_SIZE + UI_GAP) + 2 * UI_ROW_HEIGHT
+	case .Inserter:
+		return UI_ROW_HEIGHT + (UI_SLOT_SIZE + UI_GAP) + 3 * UI_ROW_HEIGHT
+	case .Drill:
+		rows := 1 + DRILL_TEXT_ROWS + drill_extra_rows(machine)
+		return UI_ROW_HEIGHT + (UI_SLOT_SIZE + UI_GAP) + f32(rows) * UI_ROW_HEIGHT
+	case .Splitter:
+		return UI_ROW_HEIGHT + SPLITTER_CHOICE_ROWS * (UI_ROW_HEIGHT + UI_GAP) + (UI_SLOT_SIZE + UI_GAP)
+	case .Pipe, .Offshore_Pump, .Boiler, .Steam_Engine, .Storage_Tank, .Pump, .Tar_Pit_Pump, .Flare_Stack, .Combustion_Generator, .Hydro_Turbine:
+		return fluid_area_size(machine).y
+	case .Pole, .Power_Switch, .Lamp:
+		return power_area_size(machine).y
+	case .Crafting_Machine, .Lab:
+		return crafting_machine_area_height(machine, slot_count, width)
+	case .Core_Sample_Drill:
+		return core_sample_area_size().y
+	case .Launch_Pad:
+		return launch_pad_area_height(machine, width)
+	case .Belt, .Schematic_Crate:
+	}
+	return 0
+}
+
+// A chest's columns: MACHINE_CHEST_COLUMNS, or fewer on a narrow screen.
+chest_columns :: proc(width: f32) -> int {
+	return min(slot_columns(width), MACHINE_CHEST_COLUMNS)
+}
+
+// Width of the progress bar between two slots (the furnace's).
+bar_between_slots_width :: proc(area_width: f32) -> f32 {
+	return clamp(area_width - 2 * (UI_SLOT_SIZE + UI_GAP), 0, MACHINE_BAR_WIDTH)
 }
 
 // A bar with its label to the right, vertically centred on the row.
 machine_bar :: proc(state: ^Ui_State, row: Ui_Rectangle, fraction: f32) {
-	bar := Ui_Rectangle{row.x, row.y + (row.height - MACHINE_BAR_HEIGHT) / 2, MACHINE_BAR_WIDTH, MACHINE_BAR_HEIGHT}
+	bar := Ui_Rectangle{row.x, row.y + (row.height - MACHINE_BAR_HEIGHT) / 2, min(MACHINE_BAR_WIDTH, row.width), MACHINE_BAR_HEIGHT}
 	ui_progress_bar(state, bar, fraction)
 }
 
@@ -168,16 +202,17 @@ furnace_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, furnace: Furna
 	recipes := screen_context.recipes
 	content := area
 	first := cut_top(&content, UI_SLOT_SIZE + UI_GAP)
+	bar_width := bar_between_slots_width(area.width)
 	machine_slot(state, {first.x, first.y, UI_SLOT_SIZE, UI_SLOT_SIZE}, FURNACE_INPUT_SLOT, slots[:], items, &result)
-	progress_row := Ui_Rectangle{first.x + UI_SLOT_SIZE + UI_GAP, first.y, MACHINE_BAR_WIDTH, UI_SLOT_SIZE}
+	progress_row := Ui_Rectangle{first.x + UI_SLOT_SIZE + UI_GAP, first.y, bar_width, UI_SLOT_SIZE}
 	machine_bar(state, progress_row, furnace_progress_fraction(furnace, machine, recipes, screen_context.tick_rate))
-	output := Ui_Rectangle{progress_row.x + MACHINE_BAR_WIDTH + UI_GAP, first.y, UI_SLOT_SIZE, UI_SLOT_SIZE}
+	output := Ui_Rectangle{progress_row.x + bar_width + UI_GAP, first.y, UI_SLOT_SIZE, UI_SLOT_SIZE}
 	machine_slot(state, output, FURNACE_OUTPUT_SLOT, slots[:], items, &result)
 	second := cut_top(&content, UI_SLOT_SIZE + UI_GAP)
 	machine_slot(state, {second.x, second.y, UI_SLOT_SIZE, UI_SLOT_SIZE}, FURNACE_FUEL_SLOT, slots[:], items, &result)
-	machine_bar(state, {second.x + UI_SLOT_SIZE + UI_GAP, second.y, MACHINE_BAR_WIDTH, UI_SLOT_SIZE}, furnace_burn_fraction(furnace))
+	machine_bar(state, {second.x + UI_SLOT_SIZE + UI_GAP, second.y, bar_width, UI_SLOT_SIZE}, furnace_burn_fraction(furnace))
 	machine_slot(state, {output.x, second.y, UI_SLOT_SIZE, UI_SLOT_SIZE}, FURNACE_BYPRODUCT_SLOT, slots[:], items, &result)
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text(furnace_state_keys[furnace.state]), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	detail_line(state, &content, text(furnace_state_keys[furnace.state]), UI_DIM_TEXT_COLOR)
 	output_rate_label(state, &content, furnace.output_rate, screen_context)
 	return result
 }
@@ -189,7 +224,7 @@ output_rate_line :: proc(rate: Machine_Output_Rate, second: u64) -> string {
 }
 
 output_rate_label :: proc(state: ^Ui_State, content: ^Ui_Rectangle, rate: Machine_Output_Rate, screen_context: Screen_Context) {
-	ui_label(state, cut_top(content, UI_ROW_HEIGHT), output_rate_line(rate, screen_context.world.statistics.current_second), UI_BODY_TEXT_SIZE, .Left)
+	detail_line(state, content, output_rate_line(rate, screen_context.world.statistics.current_second))
 }
 
 // The fuel slot and burn bar of a burner, or the filter slot of a filter
@@ -210,13 +245,13 @@ inserter_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, inserter: Ins
 		shown := inserter.filter == NO_ITEM ? EMPTY_STACK : Item_Stack{item = inserter.filter, count = 1}
 		interaction := ui_item_slot(state, slot, ui_id(state, "filter", 0), shown, screen_context.items)
 		result.filter_activated, result.filter_focused = interaction.activated, interaction.focused
-		ui_label(state, {first.x + UI_SLOT_SIZE + UI_GAP, first.y, MACHINE_BAR_WIDTH, UI_SLOT_SIZE}, text("inserter_filter"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+		draw_text_fitted(state, {first.x + UI_SLOT_SIZE + UI_GAP, first.y, MACHINE_BAR_WIDTH, UI_SLOT_SIZE}, text("inserter_filter"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	}
 	machine_bar(state, cut_top(&content, UI_ROW_HEIGHT), inserter_cycle_fraction(inserter, machine, screen_context.tick_rate))
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text(inserter_state_keys[inserter.state]), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	detail_line(state, &content, text(inserter_state_keys[inserter.state]), UI_DIM_TEXT_COLOR)
 	if inserter_is_electric(machine) {
 		power_line := power_status_line(&screen_context.world.entities.electric_networks, inserter.handle)
-		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), power_line, UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+		detail_line(state, &content, power_line, UI_DIM_TEXT_COLOR)
 	}
 	return result
 }
@@ -237,7 +272,7 @@ drill_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, drill: Drill, sc
 	content := area
 	first := cut_top(&content, UI_SLOT_SIZE + UI_GAP)
 	if drill_is_electric(drill) {
-		ui_label(state, first, power_status_line(&screen_context.world.entities.electric_networks, drill.handle), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+		draw_text_fitted(state, first, power_status_line(&screen_context.world.entities.electric_networks, drill.handle), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	} else {
 		slots := drill.slots
 		machine_slot(state, {first.x, first.y, UI_SLOT_SIZE, UI_SLOT_SIZE}, DRILL_FUEL_SLOT, slots[:], screen_context.items, &result)
@@ -245,19 +280,19 @@ drill_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, drill: Drill, sc
 	}
 	machine_bar(state, cut_top(&content, UI_ROW_HEIGHT), drill_progress_fraction(drill, machine, screen_context.tick_rate))
 	for line in drill_vein_lines(screen_context.world, screen_context.veins, screen_context.items, drill) {
-		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), line, UI_BODY_TEXT_SIZE, .Left)
+		detail_line(state, &content, line)
 	}
 	if drill_is_bore(machine) {
-		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), drill_depth_line(screen_context.world, drill), UI_BODY_TEXT_SIZE, .Left)
+		detail_line(state, &content, drill_depth_line(screen_context.world, drill))
 	}
 	for port, index in fluid_ports_of(machine) {
 		fluid_buffer_rows(state, &content, screen_context.fluids, drill.buffers[index], port.filter, port.capacity, drill.closed[index], screen_context.tick_rate)
 	}
 	units := drill_units_per_minute(machine, screen_context.tick_rate, drill.state == .Revived)
 	rate := fmt.tprintf("%s: %s", text("drill_rate"), format_per_minute(units))
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), rate, UI_BODY_TEXT_SIZE, .Left)
+	detail_line(state, &content, rate)
 	output_rate_label(state, &content, drill.output_rate, screen_context)
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text(drill_state_keys[drill.state]), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	detail_line(state, &content, text(drill_state_keys[drill.state]), UI_DIM_TEXT_COLOR)
 	return result
 }
 
@@ -284,7 +319,7 @@ splitter_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, splitter: ^Sp
 	shown := splitter.filter == NO_ITEM ? EMPTY_STACK : Item_Stack{item = splitter.filter, count = 1}
 	interaction := ui_item_slot(state, {first.x, first.y, UI_SLOT_SIZE, UI_SLOT_SIZE}, ui_id(state, "filter", 0), shown, screen_context.items)
 	result.filter_activated, result.filter_focused = interaction.activated, interaction.focused
-	ui_label(state, {first.x + UI_SLOT_SIZE + UI_GAP, first.y, MACHINE_BAR_WIDTH, UI_SLOT_SIZE}, text("inserter_filter"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	draw_text_fitted(state, {first.x + UI_SLOT_SIZE + UI_GAP, first.y, MACHINE_BAR_WIDTH, UI_SLOT_SIZE}, text("inserter_filter"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	if ui_choice(state, choice_row(&content), text("splitter_filter_side"), text(splitter_side_keys[splitter.filter_side])) {
 		splitter.filter_side = other_side(splitter.filter_side)
 	}
@@ -359,7 +394,7 @@ inserter_filter_after_input :: proc(filter: Item_Id, held: Item_Stack, activated
 machine_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, handle: Entity_Handle, slots: []Item_Stack, screen_context: Screen_Context) -> Machine_Slot_Result {
 	content := area
 	common := entity_common(&screen_context.world.entities, handle)
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), machine_name(screen_context.machines, common.machine), UI_HEADING_TEXT_SIZE, .Left)
+	draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), machine_name(screen_context.machines, common.machine), UI_HEADING_TEXT_SIZE, .Left)
 	ui_push_id(state, "machine_slots")
 	defer ui_pop_id(state)
 	#partial switch handle.kind {
@@ -389,7 +424,7 @@ machine_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, handle: Entity
 	case .Launch_Pad:
 		return {grid = launch_pad_slot_region(state, content, pool_get(&screen_context.world.entities.launch_pads, handle), screen_context)}
 	}
-	return {grid = ui_slot_grid(state, {content.x, content.y}, "chest", MACHINE_CHEST_COLUMNS, slots, screen_context.items)}
+	return {grid = ui_slot_grid(state, {content.x, content.y}, "chest", chest_columns(content.width), slots, screen_context.items)}
 }
 
 machine_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
@@ -403,16 +438,23 @@ machine_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	machine := screen_context.machines.machines[common.machine]
 	slots := entity_slots(&screen_context.world.entities, handle)
 	ui_backdrop(state)
-	machine_size := machine_area_size(machine, len(slots))
+	// The machine side gets what the player's slots leave of the safe
+	// area's width, wraps its slots to it, and scrolls when the panel is
+	// clamped to the safe area's height.
+	safe := ui_panel_area(state)
 	player_width := slot_grid_width(INVENTORY_COLUMNS)
-	height := max(inventory_panel_height(), machine_size.y + 2 * UI_PADDING)
-	panel := centred_rectangle(ui_safe_area(state), player_width + machine_size.x + 4 * UI_PADDING, height)
+	machine_width := max(min(machine_area_width(machine), safe.width - player_width - 4 * UI_PADDING), UI_SLOT_SIZE)
+	machine_height := machine_area_height(machine, len(slots), machine_width)
+	height := max(inventory_panel_height(), machine_height + 2 * UI_PADDING)
+	panel := fitted_panel(safe, player_width + machine_width + 4 * UI_PADDING, height)
 	ui_panel_begin(state, "machine", panel)
 	content := inset(panel, UI_PADDING)
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("inventory_title"), UI_HEADING_TEXT_SIZE, .Left)
+	draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), text("inventory_title"), UI_HEADING_TEXT_SIZE, .Left)
 	player_slots := player_slot_region(state, {content.x, content.y, player_width, content.height}, player, items)
-	machine_area := Ui_Rectangle{panel.x + UI_PADDING + player_width + 2 * UI_PADDING, panel.y + UI_PADDING, machine_size.x, machine_size.y}
+	machine_view := Ui_Rectangle{panel.x + UI_PADDING + player_width + 2 * UI_PADDING, panel.y + UI_PADDING, machine_width, panel.height - 2 * UI_PADDING}
+	region, machine_area := scroll_region_begin(state, "machine_area", machine_view, machine_height)
 	machine_slots := machine_slot_region(state, machine_area, handle, slots, screen_context)
+	scroll_region_end(state, region)
 	ui_panel_end(state)
 	apply_machine_screen_input(state, screen_context, handle, machine.kind, slots, player_slots, machine_slots)
 	if inserter := pool_get(&screen_context.world.entities.inserters, handle); inserter != nil {

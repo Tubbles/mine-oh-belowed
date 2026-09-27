@@ -15,6 +15,7 @@ CROSSHAIR_COLOR :: Ui_Color{255, 255, 255, 200}
 HUD_SELECTED_SLOT_SCALE :: 1.25
 HUD_SLOT_COLOR :: Ui_Color{24, 26, 34, 180}
 HUD_QUEUE_SLOT_SIZE :: 56
+HUD_WAITING_MAXIMUM_LINES :: 2
 // Distance of the radial's slot centres from the screen centre.
 HUD_RADIAL_RADIUS :: UI_SLOT_SIZE * 2.5
 
@@ -60,21 +61,27 @@ draw_hud_hotbar :: proc(state: ^Ui_State, player: Player, items: Item_Registry) 
 	draw_text(state, name_area, item_name(items, held.item), UI_BODY_TEXT_SIZE, .Centre)
 }
 
-// Left of the hotbar, newest entry nearest to it: the recipe's first
-// output per entry, a progress bar under the one in progress, and why it
-// waits when its outputs do not fit.
+// Left of the hotbar, newest entry nearest to it, in rows going up when
+// the queue is wider than the room beside the hotbar: the recipe's first
+// output per entry, a progress bar over the one in progress, and above it
+// why it waits when its outputs do not fit.
 draw_craft_queue :: proc(state: ^Ui_State, player: Player, screen_context: Screen_Context) {
 	queue := player.crafting
 	if queue.count == 0 {
 		return
 	}
-	hotbar := hud_hotbar_rectangles(ui_safe_area(state), player.selected_hotbar_slot)
+	safe := ui_safe_area(state)
+	hotbar := hud_hotbar_rectangles(safe, player.selected_hotbar_slot)
 	bottom := hotbar[0].y + hotbar[0].height
 	right := hotbar[0].x - 3 * UI_GAP
+	step := f32(HUD_QUEUE_SLOT_SIZE + UI_GAP)
+	columns := max(int((right - safe.x + UI_GAP) / step), 1)
 	first: Ui_Rectangle
 	for index in 0 ..< queue.count {
-		x := right - f32(queue.count - index) * (HUD_QUEUE_SLOT_SIZE + UI_GAP)
-		box := Ui_Rectangle{x, bottom - HUD_QUEUE_SLOT_SIZE, HUD_QUEUE_SLOT_SIZE, HUD_QUEUE_SLOT_SIZE}
+		place := queue.count - 1 - index
+		x := right - f32(place % columns + 1) * step
+		y := bottom - HUD_QUEUE_SLOT_SIZE - f32(place / columns) * step
+		box := Ui_Rectangle{x, y, HUD_QUEUE_SLOT_SIZE, HUD_QUEUE_SLOT_SIZE}
 		if index == 0 {
 			first = box
 		}
@@ -85,9 +92,14 @@ draw_craft_queue :: proc(state: ^Ui_State, player: Player, screen_context: Scree
 	}
 	bar := Ui_Rectangle{first.x, first.y - UI_GAP - 8, first.width, 8}
 	ui_progress_bar(state, bar, craft_progress_fraction(queue, screen_context.recipes, screen_context.tick_rate))
-	if queue.waiting {
-		width := ui_text_width(state, text("crafting_waiting"), UI_BODY_TEXT_SIZE)
-		draw_text(state, {right - width, bar.y - UI_GAP - UI_ROW_HEIGHT, width, UI_ROW_HEIGHT}, text("crafting_waiting"), UI_BODY_TEXT_SIZE, .Right, UI_ACCENT_COLOR)
+	if !queue.waiting {
+		return
+	}
+	lines := wrap_text_lines(state, text("crafting_waiting"), UI_BODY_TEXT_SIZE, right - safe.x, HUD_WAITING_MAXIMUM_LINES)
+	line_bottom := bar.y - UI_GAP
+	#reverse for line in lines {
+		draw_text(state, {safe.x, line_bottom - UI_LINE_HEIGHT, right - safe.x, UI_LINE_HEIGHT}, line, UI_BODY_TEXT_SIZE, .Right, UI_ACCENT_COLOR)
+		line_bottom -= UI_LINE_HEIGHT
 	}
 }
 

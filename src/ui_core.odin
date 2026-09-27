@@ -157,6 +157,9 @@ Draw_Command :: struct {
 	text_size: f32,
 	alignment: Text_Alignment,
 	widget:    Ui_Id,
+	// The panel open when the command was pushed (0 outside panels), so
+	// the bounds audit can check that a panel's content stays inside it.
+	panel:     Ui_Id,
 	tile:      int,
 	pixels:         []Ui_Color,
 	image_size:     [2]i32,
@@ -545,6 +548,12 @@ centred_rectangle :: proc(area: Ui_Rectangle, width, height: f32) -> Ui_Rectangl
 	return {area.x + (area.width - width) / 2, area.y + (area.height - height) / 2, width, height}
 }
 
+// A panel of the wanted size centred in the area and no larger than it;
+// what does not fit then scrolls (Scroll_Region) or shrinks.
+fitted_panel :: proc(area: Ui_Rectangle, width, height: f32) -> Ui_Rectangle {
+	return centred_rectangle(area, min(width, area.width), min(height, area.height))
+}
+
 // Takes a strip off the top of the area and returns it.
 cut_top :: proc(area: ^Ui_Rectangle, height: f32) -> Ui_Rectangle {
 	strip := Ui_Rectangle{area.x, area.y, area.width, min(height, area.height)}
@@ -565,6 +574,13 @@ cut_left :: proc(area: ^Ui_Rectangle, width: f32) -> Ui_Rectangle {
 	area.x += strip.width
 	area.width -= strip.width
 	return strip
+}
+
+// Takes a strip off the right of the area and returns it.
+cut_right :: proc(area: ^Ui_Rectangle, width: f32) -> Ui_Rectangle {
+	strip_width := min(width, area.width)
+	area.width -= strip_width
+	return {area.x + area.width, area.y, strip_width, area.height}
 }
 
 inset :: proc(rectangle: Ui_Rectangle, margin: f32) -> Ui_Rectangle {

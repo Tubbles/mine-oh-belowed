@@ -9,6 +9,7 @@ import "core:slice"
 
 POWER_AREA_WIDTH :: 480
 POWER_LIST_COLUMN_WIDTH :: 560
+POWER_LIST_COLUMN_FRACTION :: 0.4
 POWER_OVERVIEW_WIDTH :: 1400
 POWER_TOP_CONSUMER_COUNT :: 5
 POWER_GENERATOR_TYPE_COUNT :: 3
@@ -68,8 +69,8 @@ power_panel_region :: proc(state: ^Ui_State, area: Ui_Rectangle, handle: Entity_
 	entities := &screen_context.world.entities
 	networks := &entities.electric_networks
 	if lamp := pool_get(&entities.lamps, handle); lamp != nil {
-		ui_label(state, choice_row(&content), power_status_line(networks, handle), UI_BODY_TEXT_SIZE, .Left)
-		ui_label(state, choice_row(&content), text(lamp.lit ? "lamp_lit" : "lamp_dark"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+		draw_text_fitted(state, choice_row(&content), power_status_line(networks, handle), UI_BODY_TEXT_SIZE, .Left)
+		draw_text_fitted(state, choice_row(&content), text(lamp.lit ? "lamp_lit" : "lamp_dark"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 		return
 	}
 	pole := pool_get(&entities.poles, handle)
@@ -77,8 +78,8 @@ power_panel_region :: proc(state: ^Ui_State, area: Ui_Rectangle, handle: Entity_
 		return
 	}
 	network := entity_network(networks, handle)
-	ui_label(state, choice_row(&content), network < 0 ? text("power_switch_open") : network_name(network), UI_BODY_TEXT_SIZE, .Left)
-	ui_label(state, choice_row(&content), power_status_line(networks, handle), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	draw_text_fitted(state, choice_row(&content), network < 0 ? text("power_switch_open") : network_name(network), UI_BODY_TEXT_SIZE, .Left)
+	draw_text_fitted(state, choice_row(&content), power_status_line(networks, handle), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	if screen_context.machines.machines[pole.machine].kind != .Power_Switch {
 		return
 	}
@@ -158,8 +159,8 @@ participant_group_index :: proc(groups: []Participant_Group, machine: Machine_Id
 // pause: the network list on the left, the focused network on the right.
 power_overview_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	ui_backdrop(state)
-	area := ui_safe_area(state)
-	panel := centred_rectangle(area, POWER_OVERVIEW_WIDTH, panel_height(POWER_DETAIL_ROWS + 1, 0))
+	area := ui_panel_area(state)
+	panel := fitted_panel(area, POWER_OVERVIEW_WIDTH, panel_height(1, f32(POWER_DETAIL_ROWS) * UI_LINE_HEIGHT))
 	ui_panel_begin(state, "power", panel)
 	content := inset(panel, UI_PADDING)
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("power_overview_title"), UI_HEADING_TEXT_SIZE, .Centre)
@@ -176,10 +177,10 @@ power_overview_body :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context
 	content := area
 	networks := &screen_context.world.entities.electric_networks
 	if len(networks.networks) == 0 {
-		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("power_no_networks"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+		detail_line(state, &content, text("power_no_networks"), UI_DIM_TEXT_COLOR)
 		return
 	}
-	list_area := cut_left(&content, POWER_LIST_COLUMN_WIDTH)
+	list_area := cut_left(&content, min(f32(POWER_LIST_COLUMN_WIDTH), content.width * POWER_LIST_COLUMN_FRACTION))
 	cut_left(&content, 2 * UI_PADDING)
 	focused := power_network_list(state, list_area, networks)
 	power_network_detail(state, content, screen_context, max(focused, 0))
@@ -212,13 +213,13 @@ power_network_detail :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_contex
 	networks := &screen_context.world.entities.electric_networks
 	network := networks.networks[index]
 	tick_rate := screen_context.tick_rate
-	detail_line(state, &content, network_name(index), UI_ACCENT_COLOR)
-	detail_line(state, &content, fmt.tprintf("%s: %s", text("power_supply"), format_joules_per_tick(network.supply, tick_rate)))
-	detail_line(state, &content, fmt.tprintf("%s: %s", text("power_demand"), format_joules_per_tick(network.demand, tick_rate)))
-	detail_line(state, &content, fmt.tprintf("%s: %s", text("power_satisfaction"), format_satisfaction(network.satisfaction)))
-	detail_line(state, &content, fmt.tprintf("%s: %d", text("power_generators"), network.generator_count), UI_DIM_TEXT_COLOR)
+	detail_line(state, &content, network_name(index), UI_ACCENT_COLOR, UI_LINE_HEIGHT)
+	detail_line(state, &content, fmt.tprintf("%s: %s", text("power_supply"), format_joules_per_tick(network.supply, tick_rate)), UI_TEXT_COLOR, UI_LINE_HEIGHT)
+	detail_line(state, &content, fmt.tprintf("%s: %s", text("power_demand"), format_joules_per_tick(network.demand, tick_rate)), UI_TEXT_COLOR, UI_LINE_HEIGHT)
+	detail_line(state, &content, fmt.tprintf("%s: %s", text("power_satisfaction"), format_satisfaction(network.satisfaction)), UI_TEXT_COLOR, UI_LINE_HEIGHT)
+	detail_line(state, &content, fmt.tprintf("%s: %d", text("power_generators"), network.generator_count), UI_DIM_TEXT_COLOR, UI_LINE_HEIGHT)
 	participant_group_lines(state, &content, screen_context, index, true, POWER_GENERATOR_TYPE_COUNT)
-	detail_line(state, &content, text("power_largest_consumers"), UI_DIM_TEXT_COLOR)
+	detail_line(state, &content, text("power_largest_consumers"), UI_DIM_TEXT_COLOR, UI_LINE_HEIGHT)
 	participant_group_lines(state, &content, screen_context, index, false, POWER_TOP_CONSUMER_COUNT)
 }
 
@@ -226,12 +227,16 @@ participant_group_lines :: proc(state: ^Ui_State, content: ^Ui_Rectangle, screen
 	participants := screen_context.world.entities.electric_networks.participants[:]
 	for group in largest_participant_groups(participants, network, generators, limit) {
 		name := machine_name(screen_context.machines, group.machine)
-		detail_line(state, content, fmt.tprintf("%s x%d  %s", name, group.count, format_joules_per_tick(group.joules, screen_context.tick_rate)))
+		detail_line(state, content, fmt.tprintf("%s x%d  %s", name, group.count, format_joules_per_tick(group.joules, screen_context.tick_rate)), UI_TEXT_COLOR, UI_LINE_HEIGHT)
 	}
 }
 
-detail_line :: proc(state: ^Ui_State, content: ^Ui_Rectangle, line: string, color := UI_TEXT_COLOR) {
-	ui_label(state, cut_top(content, UI_ROW_HEIGHT), line, UI_BODY_TEXT_SIZE, .Left, color)
+// One line of text, ending with an ellipsis where it does not fit, or
+// nothing once the content has no room left.
+detail_line :: proc(state: ^Ui_State, content: ^Ui_Rectangle, line: string, color := UI_TEXT_COLOR, height: f32 = UI_ROW_HEIGHT) {
+	if row, fits := take_line(content, height); fits {
+		draw_text_fitted(state, row, line, UI_BODY_TEXT_SIZE, .Left, color)
+	}
 }
 
 // Top centre while any network is short of power.

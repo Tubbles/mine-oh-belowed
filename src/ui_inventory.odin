@@ -71,12 +71,19 @@ player_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, player: ^Player
 inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	player, items := screen_context.player, screen_context.items
 	ui_backdrop(state)
-	panel := centred_rectangle(ui_safe_area(state), slot_grid_width(INVENTORY_COLUMNS) + 2 * UI_PADDING, inventory_panel_height() + UI_ROW_HEIGHT + UI_GAP)
+	// The heading repeats the first tab's name, so it goes where the panel
+	// would not fit the area.
+	area := ui_panel_area(state)
+	tabs_height := f32(UI_ROW_HEIGHT + UI_GAP)
+	shows_heading := inventory_panel_height() + tabs_height <= area.height
+	panel := fitted_panel(area, slot_grid_width(INVENTORY_COLUMNS) + 2 * UI_PADDING, inventory_panel_height() + (shows_heading ? tabs_height : tabs_height - UI_ROW_HEIGHT))
 	ui_panel_begin(state, "inventory", panel)
 	content := inset(panel, UI_PADDING)
 	inventory_tabs(state, cut_top(&content, UI_ROW_HEIGHT))
 	cut_top(&content, UI_GAP)
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("inventory_title"), UI_HEADING_TEXT_SIZE, .Centre)
+	if shows_heading {
+		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("inventory_title"), UI_HEADING_TEXT_SIZE, .Centre)
+	}
 	slots := player_slot_region(state, content, player, items)
 	ui_panel_end(state)
 	slot_input := Inventory_Slot_Input {

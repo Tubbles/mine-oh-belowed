@@ -77,18 +77,18 @@ core_sample_panel_region :: proc(state: ^Ui_State, area: Ui_Rectangle, drill: Co
 	content := area
 	world := screen_context.world
 	machine := screen_context.machines.machines[drill.machine]
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), core_sample_state_text(world, drill), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	detail_line(state, &content, core_sample_state_text(world, drill), UI_DIM_TEXT_COLOR)
 	machine_bar(state, cut_top(&content, UI_ROW_HEIGHT), core_sample_fraction(drill, machine, screen_context.tick_rate))
 	sample := core_sample_of(world, drill)
 	if sample == nil {
 		return
 	}
 	for band in 0 ..< CORE_SAMPLE_BAND_COUNT {
-		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), core_sample_band_line(screen_context.blocks, sample^, band), UI_BODY_TEXT_SIZE, .Left)
+		detail_line(state, &content, core_sample_band_line(screen_context.blocks, sample^, band))
 	}
 	vein_line, mix_line := core_sample_vein_lines(sample^, screen_context.veins, screen_context.items)
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), vein_line, UI_BODY_TEXT_SIZE, .Left, UI_ACCENT_COLOR)
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), mix_line, UI_BODY_TEXT_SIZE, .Left)
+	detail_line(state, &content, vein_line, UI_ACCENT_COLOR)
+	detail_line(state, &content, mix_line)
 }
 
 // The magnetometer.
