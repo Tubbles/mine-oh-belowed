@@ -68,6 +68,13 @@ play_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/play" && pwd)"
 build_directory="$(readlink -f "$play_root/current")"
 cd "$build_directory"
 export MINE_OH_BELOWED_DATA="$build_directory/data"
+# Experiment (couch test 1, 2026-09-27): in Game Mode Steam keeps Steam
+# Input on for the Steam Controller whatever the per game setting says,
+# hands the game a virtual pad and tells SDL to ignore the real one. Let
+# SDL open the controller itself and skip the virtual pad. The game's log
+# says which device it got.
+unset SDL_GAMECONTROLLER_IGNORE_DEVICES
+export SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD=0
 exec "$build_directory/mine-oh-belowed" "$@"
 LAUNCHER
 chmod +x "$launcher"
