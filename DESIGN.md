@@ -88,6 +88,7 @@ Power is part of the logistics puzzle from the alpha on. Boilers need fuel, whic
 - Plastics have two routes. Fossil: oil from tar flats early and bore drills later, refinery into gas, light and heavy fractions, cracking of the heavier fractions towards gas, and a chemical plant making plastic from gas and coal, sulfur from gas and water, and bitumen from heavy oil, with bitumen becoming asphalt paving blocks. Renewable: wood to wood gas and charcoal in a gasifier, syngas plastic in the chemical plant, slower and land hungry with tree farms and automated harvesters.
 - Most products have more than one route. Alternate recipes come from research or from cave schematics and trade fewer byproducts, cheaper inputs, or a byproduct turned into a product.
 - Byproduct strictness is a world setting: byproducts must be handled (default) or may be voided.
+- Direction (user, 2026-09-27, to design after the play experience exists): byproducts grow past "the mineral you want and slag" into the minerals that occur together in reality, companion and gangue minerals of little use at first, with later technologies that recirculate, concentrate or enrich them into products.
 
 ## Research, quests and rockets
 

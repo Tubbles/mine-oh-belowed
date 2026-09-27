@@ -4,13 +4,11 @@ Open questions that need the user's decision, each with the lead architect's rec
 
 ## Decisions needed
 
-1. Tools. Tools only multiply mining speed (recommended, following Wube's removal of pickaxes and ore hardness for adding explanation without decisions, see `doc/inspiration.md`), or tools also gate block hardness Minecraft style.
-2. Rocket returns. The venture sends back both rare materials and schematics for alternate recipes (recommended), or only one of the two.
-3. Vein numbers for the data files. Proposal, before the richness multiplier: scatterings 2k to 5k units, deposits 20k to 60k, concentrations 100k to 300k, deep veins five times their surface counterpart. Approve or adjust.
-4. Byproduct strictness default. Strict by default, byproducts must be handled (recommended: it is the puzzle the user asked for), or lenient by default.
-5. Late survey contracts (0041). A contract whose reward is the orbital survey runs the full survey when late (recommended, a survey cannot be cut; the late message still names the percent), or pays a smaller radius.
-6. Infinite research after a level (0041). The technology stays queued for the next level (recommended, Factorio's behaviour, the player can queue something else), or the queue empties after every level.
-7. Infinite technologies sit behind rocket program (0041) so they are the late game sink, or move earlier (behind electrolysis) so mining productivity helps phase 7 already.
+Balance and design questions are deferred (user, 2026-09-27): the play experience (sound, textures, models, animations), lore and depth come first, and game balancing belongs to late beta, just before the first release. We are before the first alpha, so nothing here is decided arbitrarily now.
+
+Decided on 2026-09-27: tools gate block hardness as well as mining speed (work item 0051); infinite research empties the queue after each level (done).
+
+Deferred to the design and balance phase, with the current behaviour kept until then: rocket returns (rare materials, schematics or both; today both); the vein size numbers (scatterings 2k to 5k units, deposits 20k to 60k, concentrations 100k to 300k, deep veins five times); the byproduct strictness default (strict: a machine whose byproduct output is full waits; lenient: byproducts that do not fit are voided and counted; today strict), pending the byproduct redesign noted in `DESIGN.md`; whether a late orbital survey contract pays a smaller survey radius instead of the full survey; where the infinite technologies sit in the tree (today behind rocket program).
 
 ## Follow ups from the M1 implementation
 

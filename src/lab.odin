@@ -17,8 +17,9 @@ package game
 // packs.
 //
 // Infinite technologies (work item 0041) count levels in levels: a
-// finished level adds one and the technology stays queued for the next,
-// which costs more (technology_level_cost). Every level of research_speed
+// finished level adds one and empties the queue like any other finished
+// research (user decision 2026-09-27), the next level costing more
+// (technology_level_cost). Every level of research_speed
 // makes every lab faster by its effect percent.
 
 MAXIMUM_LAB_SLOTS :: 8
@@ -239,7 +240,7 @@ lab_start_state :: proc(lab: Lab, research: Research_State, technologies: Techno
 	return .Researching, false
 }
 
-// An infinite technology gains a level and stays queued for the next one.
+// An infinite technology gains a level; the queue empties either way.
 finish_research_unit :: proc(research: ^Research_State, technologies: Technology_Registry) {
 	research.units_done += 1
 	if research.units_done < queued_research_cost(research^, technologies) {
@@ -250,7 +251,6 @@ finish_research_unit :: proc(research: ^Research_State, technologies: Technology
 	research.units_done = 0
 	if technologies.technologies[research.technology].infinite {
 		research.levels[research.technology] += 1
-		return
 	}
 	research.queued = false
 }

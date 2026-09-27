@@ -80,7 +80,7 @@ Verify: couch test 5. The first rocket shipment leaves and the returns arrive. I
 
 ### M10 Alpha polish and release
 
-Art consistency pass, performance pass, 10 foot UI pass, full playthrough on the couch. Tag `alpha-1` and publish a GitHub release. Couch test findings become work items here: 0043 developer mode, 0044 quick fixes (overlay, sprint, cheat speed, world deletion), 0045 landing site (starter outcrops, flat ground), 0046 UI bounds pass.
+Art consistency pass, performance pass, 10 foot UI pass, full playthrough on the couch. Tag `alpha-1` and publish a GitHub release. Couch test findings become work items here: 0043 developer mode, 0044 quick fixes (overlay, sprint, cheat speed, world deletion), 0045 landing site (starter outcrops, flat ground), 0046 UI bounds pass, 0047 saves that survive builds, 0048 drills by footprint, 0049 pinned landing pad, 0050 factory benchmark, 0051 tool tiers. Order within M10 (user, 2026-09-27): play experience first (sound, textures, models, animations), then lore and depth; balance and design decisions belong to late beta, just before the first release, and are not taken arbitrarily before the first alpha.
 
 Verify: the alpha verify statement above.
 

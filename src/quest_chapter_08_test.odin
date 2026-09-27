@@ -109,7 +109,8 @@ test_research_objective_on_an_infinite_technology :: proc(t: ^testing.T) {
 	_, finished = apply_finished_research(&state, &test.unlocks, test.recipes)
 	testing.expect(t, finished)
 	testing.expect_value(t, state.levels[productivity], 1)
-	testing.expect(t, state.queued)
+	// The queue empties after a level (user decision 2026-09-27).
+	testing.expect(t, !state.queued)
 	testing.expect(t, objective_done(progress_of(&test, research, progress)))
 	testing.expect(t, technology_status(technologies, test.unlocks, productivity) != .Researched)
 }

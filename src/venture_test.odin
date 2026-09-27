@@ -399,7 +399,9 @@ test_infinite_research_levels :: proc(t: ^testing.T) {
 	testing.expect_value(t, queue_research(&research, technologies, test.unlocks, mining), Research_Refusal.None)
 	research.units_done = 99
 	finish_research_unit(&research, technologies)
-	testing.expect(t, research.finished && research.queued)
+	// The queue empties after a level like after any research (user
+	// decision 2026-09-27); the next level costs more.
+	testing.expect(t, research.finished && !research.queued)
 	testing.expect_value(t, research.levels[mining], 1)
 	testing.expect_value(t, research.units_done, 0)
 	testing.expect_value(t, queued_research_cost(research, technologies), 150)
