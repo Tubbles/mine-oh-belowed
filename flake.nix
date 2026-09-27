@@ -24,6 +24,14 @@
                 --replace-fail '"../linux/libraylib.so.600" when RAYLIB_SHARED else "../linux/libraylib.a",' '"system:raylib",'
             '';
         });
+      # The build stamp the game shows: the revision and the last modified
+      # time, in one define with a space so Odin never reads it as a number.
+      buildInfo =
+        let
+          date = self.lastModifiedDate or "00000000000000";
+          part = start: length: builtins.substring start length date;
+        in
+        "${self.shortRev or self.dirtyShortRev or "unknown"} ${part 0 4}-${part 4 2}-${part 6 2}T${part 8 2}:${part 10 2}Z";
     in
     {
       packages = forAllSystems (pkgs: {
@@ -44,7 +52,7 @@
 
           buildPhase = ''
             runHook preBuild
-            odin build src -out:mine-oh-belowed -o:speed -vet -strict-style -define:BUILD_COMMIT=${self.shortRev or self.dirtyShortRev or "unknown"} -define:BUILD_TIME=${self.lastModifiedDate or "unknown"}
+            odin build src -out:mine-oh-belowed -o:speed -vet -strict-style -define:BUILD_INFO="${buildInfo}"
             runHook postBuild
           '';
 
