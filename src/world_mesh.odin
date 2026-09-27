@@ -116,8 +116,13 @@ face_is_visible :: proc(input: Mesh_Input, local: Local_Coordinate, direction: D
 		return false
 	}
 	if block_water_level(input.registry, block) > 0 && block_water_level(input.registry, neighbour) > 0 {
-		lower := water_surface_eighths(input, neighbour_local, neighbour) < water_surface_eighths(input, local, block)
-		return direction_axis(direction) != 1 && lower
+		// Vertical faces are answered before any surface height is read: the
+		// surface of a neighbour above the chunk's top layer would need the
+		// cell above that, two steps out, past the shell.
+		if direction_axis(direction) == 1 {
+			return false
+		}
+		return water_surface_eighths(input, neighbour_local, neighbour) < water_surface_eighths(input, local, block)
 	}
 	return true
 }

@@ -294,3 +294,24 @@ test_mesh_water_step_between_levels :: proc(t: ^testing.T) {
 	chunk_set_block(chunk, {5, 5, 4}, test_block(registry, "water"))
 	testing.expect(t, !face_is_visible(input, {4, 4, 4}, .Positive_X))
 }
+
+// Water on a chunk's top layer under different water in the chunk above:
+// the top face is hidden without reading past the shell (a bounds check
+// on a mesh worker once crashed the game here, mining under a lake).
+@(test)
+test_mesh_water_under_water_across_chunk_top :: proc(t: ^testing.T) {
+	registry := make_test_registry()
+	chunk := make_test_chunk({0, 0, 0})
+	above := make_test_chunk({0, 1, 0})
+	chunk_set_block(chunk, {4, CHUNK_SIZE - 1, 4}, test_block(registry, "flowing_water_4"))
+	chunk_set_block(above, {4, 0, 4}, test_block(registry, "water"))
+	input := Mesh_Input {
+		chunk    = chunk,
+		border   = border_from_chunks(chunk, above),
+		registry = registry,
+		atlas    = atlas_layout_for_block_count(len(registry.definitions)),
+	}
+	testing.expect(t, !face_is_visible(input, {4, CHUNK_SIZE - 1, 4}, .Positive_Y))
+	data := mesh_chunk(input, context.temp_allocator)
+	testing.expect_value(t, data.quad_count, 5)
+}
