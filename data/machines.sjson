@@ -6,7 +6,8 @@
 // footprint is width (x), depth (z) and height (y) in blocks before
 // rotation; a quarter turn swaps width and depth.
 // kind selects the panel and the simulation: chest, furnace, capsule,
-// belt, inserter, drill or splitter.
+// belt, inserter, drill, splitter, pipe, offshore_pump, boiler,
+// steam_engine, storage_tank or pump.
 // The capsule (work item 0013) stands on the landing pad from the start:
 // it has no item, cannot be picked up, and holds 8 slots for quest
 // rewards and deliveries.
@@ -40,6 +41,26 @@
 // footprint is 1 along the flow (width) and 2 across it (depth);
 // belt_speed_blocks_per_second is the speed of items inside it, like the
 // belt it joins.
+// Fluids (work item 0019, doc/fluids.md): fluid_ports lists a machine's
+// ports, each with its own buffer: cell {x, y, z} of the unrotated
+// footprint (x along the width, y up, z along the depth), face
+// (positive_x, negative_x, positive_y, negative_y, positive_z, negative_z,
+// pointing out of the footprint, or "all" for every outward face of the
+// footprint), direction (input takes from the network, output gives to
+// it, both does either), fluid (optional, a fluids.sjson id the port only
+// ever holds) and buffer_litres. Ports turn with the footprint.
+// Pipes: buffer_litres per block and flow_litres_per_second, the most a
+// connection between two segments moves (1200 is 20 litres per tick).
+// Offshore pump: fluid_litres_per_second into its one output port while
+// there is room. Placed with the cell in front of its +x end (its intake,
+// the end without the port), at its height or one below, a water source.
+// Boiler: turns fluid_litres_per_second of its input port's fluid into as
+// much of its output port's fluid, burning fuel_power_kilowatts from its
+// fuel slot only while it does.
+// Steam engine: input ports only; it draws nothing until power networks.
+// Storage tank: one port on every face, its buffer is the tank.
+// Pump: moves fluid_litres_per_second from its input to its output port
+// whatever the heights, and only with electric_power_kilowatts.
 machines = [
 	{
 		id = "wooden_chest"
@@ -150,5 +171,73 @@ machines = [
 		kind = "splitter"
 		footprint = {width = 1, depth = 2, height = 1}
 		belt_speed_blocks_per_second = 1.875
+	}
+	{
+		id = "pipe"
+		name_key = "machine_pipe"
+		item = "pipe"
+		kind = "pipe"
+		footprint = {width = 1, depth = 1, height = 1}
+		buffer_litres = 100
+		flow_litres_per_second = 1200
+	}
+	{
+		id = "offshore_pump"
+		name_key = "machine_offshore_pump"
+		item = "offshore_pump"
+		kind = "offshore_pump"
+		footprint = {width = 2, depth = 1, height = 1}
+		fluid_litres_per_second = 1200
+		fluid_ports = [
+			{cell = {x = 0, y = 0, z = 0}, face = "negative_x", direction = "output", fluid = "water", buffer_litres = 200}
+		]
+	}
+	{
+		id = "boiler"
+		name_key = "machine_boiler"
+		item = "boiler"
+		kind = "boiler"
+		footprint = {width = 3, depth = 2, height = 2}
+		fuel_slots = 1
+		fuel_power_kilowatts = 1800
+		fluid_litres_per_second = 60
+		fluid_ports = [
+			{cell = {x = 1, y = 0, z = 0}, face = "negative_z", direction = "input", fluid = "water", buffer_litres = 200}
+			{cell = {x = 1, y = 0, z = 1}, face = "positive_z", direction = "output", fluid = "steam", buffer_litres = 200}
+		]
+	}
+	{
+		id = "steam_engine"
+		name_key = "machine_steam_engine"
+		item = "steam_engine"
+		kind = "steam_engine"
+		footprint = {width = 3, depth = 5, height = 2}
+		fluid_ports = [
+			{cell = {x = 1, y = 0, z = 0}, face = "negative_z", direction = "input", fluid = "steam", buffer_litres = 200}
+			{cell = {x = 1, y = 0, z = 4}, face = "positive_z", direction = "input", fluid = "steam", buffer_litres = 200}
+		]
+	}
+	{
+		id = "storage_tank"
+		name_key = "machine_storage_tank"
+		item = "storage_tank"
+		kind = "storage_tank"
+		footprint = {width = 3, depth = 3, height = 3}
+		fluid_ports = [
+			{face = "all", direction = "both", buffer_litres = 25000}
+		]
+	}
+	{
+		id = "pump"
+		name_key = "machine_pump"
+		item = "pump"
+		kind = "pump"
+		footprint = {width = 2, depth = 1, height = 1}
+		fluid_litres_per_second = 1200
+		electric_power_kilowatts = 30
+		fluid_ports = [
+			{cell = {x = 0, y = 0, z = 0}, face = "negative_x", direction = "input", buffer_litres = 200}
+			{cell = {x = 1, y = 0, z = 0}, face = "positive_x", direction = "output", buffer_litres = 200}
+		]
 	}
 ]

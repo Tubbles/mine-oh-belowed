@@ -1,0 +1,159 @@
+package game
+
+import "core:encoding/json"
+import "core:fmt"
+import "core:os"
+
+// Fluid prototypes from data/fluids.sjson (doc/fluids.md), resolved to a
+// dense Fluid_Id after the items. Fluids are never items: they live in
+// the litre buffers of pipes and machine ports (fluid_network.odin).
+
+FLUIDS_FILE_NAME :: "fluids.sjson"
+
+// Dense index into Fluid_Registry.fluids.
+Fluid_Id :: distinct u16
+
+NO_FLUID :: Fluid_Id(max(u16))
+
+// Liquids flow only to the same height or lower, gases fill any volume.
+Fluid_Phase :: enum u8 {
+	Liquid,
+	Gas,
+}
+
+@(rodata)
+fluid_phase_names := [Fluid_Phase]string {
+	.Liquid = "liquid",
+	.Gas    = "gas",
+}
+
+// As written in the file, before validation.
+Fluid_Definition :: struct {
+	id:       string,
+	name_key: string,
+	phase:    string,
+	color:    [3]int,
+}
+
+Fluids_File :: struct {
+	fluids: []Fluid_Definition,
+}
+
+Fluid :: struct {
+	id:       string,
+	name_key: string,
+	phase:    Fluid_Phase,
+	color:    [3]u8,
+}
+
+Fluid_Registry :: struct {
+	fluids: []Fluid,
+}
+
+parse_fluids_file :: proc(data: []byte, allocator := context.allocator) -> (file: Fluids_File, error: json.Unmarshal_Error) {
+	error = json.unmarshal(data, &file, .SJSON, allocator)
+	return
+}
+
+parse_fluid_phase :: proc(name: string) -> (phase: Fluid_Phase, found: bool) {
+	for candidate in Fluid_Phase {
+		if fluid_phase_names[candidate] == name {
+			return candidate, true
+		}
+	}
+	return .Liquid, false
+}
+
+validate_fluid_definition :: proc(definitions: []Fluid_Definition, index: int) -> string {
+	definition := definitions[index]
+	if definition.id == "" || definition.name_key == "" {
+		return fmt.tprintf("fluid %d needs an id and a name_key", index)
+	}
+	for other in definitions[:index] {
+		if other.id == definition.id {
+			return fmt.tprintf("fluid id %q is defined twice", definition.id)
+		}
+	}
+	if _, found := parse_fluid_phase(definition.phase); !found {
+		return fmt.tprintf("fluid %q has unknown phase %q", definition.id, definition.phase)
+	}
+	for channel in definition.color {
+		if channel < 0 || channel > 255 {
+			return fmt.tprintf("fluid %q has a colour channel outside 0 to 255", definition.id)
+		}
+	}
+	return ""
+}
+
+resolve_fluid_registry :: proc(file: Fluids_File, allocator := context.allocator) -> (registry: Fluid_Registry, problem: string) {
+	if len(file.fluids) >= int(NO_FLUID) {
+		return {}, fmt.tprintf("%d fluids exceed the limit of %d", len(file.fluids), int(NO_FLUID) - 1)
+	}
+	for _, index in file.fluids {
+		if problem = validate_fluid_definition(file.fluids, index); problem != "" {
+			return {}, problem
+		}
+	}
+	registry.fluids = make([]Fluid, len(file.fluids), allocator)
+	for definition, index in file.fluids {
+		phase, _ := parse_fluid_phase(definition.phase)
+		color := definition.color
+		registry.fluids[index] = Fluid {
+			id       = definition.id,
+			name_key = definition.name_key,
+			phase    = phase,
+			color    = {u8(color.r), u8(color.g), u8(color.b)},
+		}
+	}
+	return registry, ""
+}
+
+destroy_fluid_registry :: proc(registry: Fluid_Registry, allocator := context.allocator) {
+	delete(registry.fluids, allocator)
+}
+
+find_fluid_id :: proc(registry: Fluid_Registry, id: string) -> (fluid: Fluid_Id, found: bool) {
+	for candidate, index in registry.fluids {
+		if candidate.id == id {
+			return Fluid_Id(index), true
+		}
+	}
+	return NO_FLUID, false
+}
+
+// Ids outside the table (NO_FLUID included) are liquids, which never
+// matters: a network without a fluid moves nothing.
+fluid_is_gas :: proc(registry: Fluid_Registry, fluid: Fluid_Id) -> bool {
+	return int(fluid) < len(registry.fluids) && registry.fluids[fluid].phase == .Gas
+}
+
+fluid_name :: proc(registry: Fluid_Registry, fluid: Fluid_Id) -> string {
+	if int(fluid) >= len(registry.fluids) {
+		return text("fluid_none")
+	}
+	return text(registry.fluids[fluid].name_key)
+}
+
+load_fluid_registry :: proc(data_directory: string, allocator := context.allocator) -> (registry: Fluid_Registry, ok: bool) {
+	path, join_error := os.join_path({data_directory, FLUIDS_FILE_NAME}, context.temp_allocator)
+	if join_error != nil {
+		return {}, false
+	}
+	data, read_error := os.read_entire_file(path, context.temp_allocator)
+	if read_error != nil {
+		fmt.eprintfln("error: cannot read %s: %v", path, read_error)
+		return {}, false
+	}
+	file, parse_error := parse_fluids_file(data, allocator)
+	if parse_error != nil {
+		fmt.eprintfln("error: cannot parse %s: %v", path, parse_error)
+		return {}, false
+	}
+	problem: string
+	registry, problem = resolve_fluid_registry(file, allocator)
+	if problem != "" {
+		fmt.eprintfln("error: invalid %s: %s", path, problem)
+		return {}, false
+	}
+	return registry, true
+}

@@ -1,0 +1,11 @@
+// Fluid prototypes (work item 0019, doc/fluids.md), loaded after
+// items.sjson and resolved to a dense Fluid_Id. Fluids are never items.
+// name_key is a key into data/strings/en.sjson.
+// phase is liquid or gas: liquids flow through pipes only to the same
+// height or lower unless a pump pushes them, gases ignore height.
+// color is red, green, blue from 0 to 255, for the level band in pipes
+// and the port squares on machines.
+fluids = [
+	{id = "water", name_key = "fluid_water", phase = "liquid", color = [60, 110, 220]}
+	{id = "steam", name_key = "fluid_steam", phase = "gas", color = [215, 218, 224]}
+]

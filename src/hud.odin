@@ -146,7 +146,7 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		return
 	}
 	draw_quest_objective(state, screen_context)
-	status, vein_status := target_status_lines(screen_context.world, screen_context.machines, screen_context.veins, player.target)
+	status, vein_status := target_status_lines(screen_context.world, screen_context.machines, screen_context.fluids, screen_context.veins, player.target)
 	draw_target_status(state, status)
 	draw_target_status(state, vein_status, status == "" ? 0 : 1)
 	hotbar_radial(state, player, items)

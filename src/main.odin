@@ -162,7 +162,11 @@ main :: proc() {
 	if !items_loaded {
 		os.exit(1)
 	}
-	machines, machines_loaded := load_machine_registry(data_directory, items)
+	fluids, fluids_loaded := load_fluid_registry(data_directory)
+	if !fluids_loaded {
+		os.exit(1)
+	}
+	machines, machines_loaded := load_machine_registry(data_directory, items, fluids)
 	if !machines_loaded {
 		os.exit(1)
 	}
@@ -195,6 +199,7 @@ main :: proc() {
 		blocks          = registry,
 		items           = items,
 		machines        = machines,
+		fluids          = fluids,
 		recipes         = recipes,
 		technologies    = technologies,
 		quests          = quests,

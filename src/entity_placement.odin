@@ -104,7 +104,7 @@ placement_for_player :: proc(world: ^World, content: Simulation_Content, players
 	}
 	kind := content.machines.machines[machine].kind
 	rotation := player.placement_rotation
-	if kind == .Inserter || kind == .Drill || kind == .Splitter {
+	if kind == .Inserter || kind == .Drill || kind == .Splitter || kind == .Offshore_Pump || kind == .Pump {
 		rotation = inserter_placement_direction(player.yaw, player.placement_rotation)
 	}
 	if kind == .Splitter {
@@ -117,7 +117,8 @@ placement_for_player :: proc(world: ^World, content: Simulation_Content, players
 }
 
 // The placement of a machine with its rotated minimum corner at origin.
-// A drill is valid only over a vein outcrop.
+// A drill is valid only over a vein outcrop, an offshore pump only with
+// water in front of its intake. A pipe may also stand on a pipe.
 placement_at :: proc(world: ^World, content: Simulation_Content, players: []Player, machine: Machine_Id, origin: World_Coordinate, rotation: u8) -> Placement {
 	footprint := content.machines.machines[machine].footprint
 	kind := content.machines.machines[machine].kind
@@ -138,12 +139,19 @@ placement_at :: proc(world: ^World, content: Simulation_Content, players: []Play
 		placement.vein, vein_found = drill_vein_under(world, content.veins, cells, origin.y)
 		placement.valid = placement.valid && vein_found
 	}
+	if kind == .Pipe {
+		placement.valid = pipe_cell_is_placeable(world, content.blocks, players, origin)
+	}
+	if kind == .Offshore_Pump {
+		placement.valid = placement.valid && offshore_pump_has_water(world, content.blocks, origin, content.machines.machines[machine], rotation)
+	}
 	return placement
 }
 
 // Like belts: the player's facing turned by the rotation, so rotation 0
 // drops away from the player and picks up from the player's side. Drills
-// use it for their output arrow and splitters for their direction too.
+// use it for their output arrow, splitters, pumps and offshore pumps for
+// their direction too.
 inserter_placement_direction :: proc(yaw: f32, rotation: u8) -> u8 {
 	return turn_right(yaw_direction(yaw), rotation % 4)
 }

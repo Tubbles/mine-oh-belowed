@@ -96,7 +96,7 @@ Footprint is width by depth by height in blocks. Power is electric unless marked
 | Splitter | 1×2×1 across the flow | 5 circuit, 5 iron plate, 4 belt | Splits or merges two belts, priority and filter | | Research: logistics |
 | Wooden chest | 1×1×1 | 4 plank | 16 slots | | Start |
 | Iron chest | 1×1×1 | 8 iron plate | 32 slots | | Start |
-| Offshore pump | 1×2×1 | 2 circuit, 1 pipe, 1 iron gear | 1200 L per s | | Start |
+| Offshore pump | 2 wide along its facing | 2 circuit, 1 pipe, 1 iron gear | 1200 L per s | | Start |
 | Pipe | 1×1×1 | 1 pipe | 100 L capacity per block | | Start |
 | Pump | 1×2×1 | 1 steel, 1 iron gear, 1 pipe | 1200 L per s, lifts liquid | 30 kW | Research: fluid handling |
 | Storage tank | 3×3×3 | 20 steel, 5 iron plate | 25,000 L | | Research: fluid handling |
@@ -110,7 +110,7 @@ Footprint is width by depth by height in blocks. Power is electric unless marked
 | Core sample drill | 1×1×2 | 2 circuit, 5 steel, 5 iron gear | One column per 60 s | 40 kW | Research: prospecting |
 | Magnetometer | Handheld | 5 circuit, 2 copper wire, 1 iron plate | Iron veins within 30 blocks | | Research: prospecting |
 
-Machine recipes take 2 s each by hand, 0.5 s for inserters, belts, pipes, poles and chests, tools 1 s. Recipes live in `data/recipes.sjson` and technologies in `data/technologies.sjson` from work item 0012 on. Machine values live in `data/machines.sjson` from work item 0011 on (footprint, kind, slots, speed in percent, fuel power in watts); this table stays the design intent.
+Machine recipes take 2 s each by hand, 0.5 s for inserters, belts, pipes, poles and chests, tools 1 s. Recipes live in `data/recipes.sjson` and technologies in `data/technologies.sjson` from work item 0012 on. Machine values live in `data/machines.sjson` from work item 0011 on (footprint, kind, slots, speed in percent, fuel power in kilowatts, fluid ports and buffers from 0019); this table stays the design intent.
 
 ## Technologies (phase 4, science pack 1)
 

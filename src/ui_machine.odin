@@ -55,7 +55,7 @@ machine_slot_filters :: proc(kind: Machine_Kind, slot_count: int) -> []Slot_Filt
 		filters[FURNACE_FUEL_SLOT] = .Fuel
 		filters[FURNACE_INPUT_SLOT] = .Smeltable
 		filters[FURNACE_OUTPUT_SLOT] = .Output
-	case .Inserter, .Drill:
+	case .Inserter, .Drill, .Boiler:
 		for &filter in filters {
 			filter = .Fuel
 		}
@@ -113,8 +113,8 @@ chest_rows :: proc(slot_count: int) -> int {
 	return (slot_count + MACHINE_CHEST_COLUMNS - 1) / MACHINE_CHEST_COLUMNS
 }
 
-machine_area_size :: proc(kind: Machine_Kind, slot_count: int) -> [2]f32 {
-	switch kind {
+machine_area_size :: proc(machine: Machine, slot_count: int) -> [2]f32 {
+	switch machine.kind {
 	case .Chest, .Capsule:
 		return {slot_grid_width(MACHINE_CHEST_COLUMNS), UI_ROW_HEIGHT + slot_grid_height(chest_rows(slot_count))}
 	case .Furnace:
@@ -125,6 +125,8 @@ machine_area_size :: proc(kind: Machine_Kind, slot_count: int) -> [2]f32 {
 		return {DRILL_AREA_WIDTH, UI_ROW_HEIGHT + (UI_SLOT_SIZE + UI_GAP) + (1 + DRILL_TEXT_ROWS) * UI_ROW_HEIGHT}
 	case .Splitter:
 		return {SPLITTER_AREA_WIDTH, UI_ROW_HEIGHT + SPLITTER_CHOICE_ROWS * (UI_ROW_HEIGHT + UI_GAP) + (UI_SLOT_SIZE + UI_GAP)}
+	case .Pipe, .Offshore_Pump, .Boiler, .Steam_Engine, .Storage_Tank, .Pump:
+		return fluid_area_size(machine)
 	case .Belt:
 	}
 	return {}
@@ -304,6 +306,11 @@ machine_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, handle: Entity
 		return {grid = drill_slot_region(state, content, pool_get(&screen_context.world.entities.drills, handle)^, screen_context)}
 	case .Splitter:
 		return splitter_slot_region(state, content, pool_get(&screen_context.world.entities.splitters, handle), screen_context)
+	case .Pipe:
+		pipe_panel_region(state, content, pool_get(&screen_context.world.entities.pipes, handle)^, screen_context)
+		return {grid = {activated = -1, focused = -1}}
+	case .Fluid_Machine:
+		return {grid = fluid_machine_slot_region(state, content, pool_get(&screen_context.world.entities.fluid_machines, handle)^, screen_context)}
 	}
 	return {grid = ui_slot_grid(state, {content.x, content.y}, "chest", MACHINE_CHEST_COLUMNS, slots, screen_context.items)}
 }
@@ -319,7 +326,7 @@ machine_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	machine := screen_context.machines.machines[common.machine]
 	slots := entity_slots(&screen_context.world.entities, handle)
 	ui_backdrop(state)
-	machine_size := machine_area_size(machine.kind, len(slots))
+	machine_size := machine_area_size(machine, len(slots))
 	player_width := slot_grid_width(INVENTORY_COLUMNS)
 	height := max(inventory_panel_height(), machine_size.y + 2 * UI_PADDING)
 	panel := centred_rectangle(ui_safe_area(state), player_width + machine_size.x + 4 * UI_PADDING, height)
@@ -397,7 +404,7 @@ machine_glyph_bar :: proc(state: ^Ui_State, held, focused: Item_Stack) {
 }
 
 // The name and state of an entity for the HUD, "" when it has none.
-entity_status_text :: proc(world: ^World, machines: Machine_Registry, handle: Entity_Handle) -> string {
+entity_status_text :: proc(world: ^World, machines: Machine_Registry, fluids: Fluid_Registry, handle: Entity_Handle) -> string {
 	common := entity_common(&world.entities, handle)
 	if common == nil {
 		return ""
@@ -413,18 +420,20 @@ entity_status_text :: proc(world: ^World, machines: Machine_Registry, handle: En
 	case .Drill:
 		drill := pool_get(&world.entities.drills, handle)
 		return fmt.tprintf("%s  %s", name, text(drill_state_keys[drill.state]))
+	case .Pipe, .Fluid_Machine:
+		return fluid_status_text(world, machines, fluids, handle, name)
 	}
 	return name
 }
 
 // What the HUD shows under the crosshair: the targeted entity's name and
 // state, and for a drill or an outcrop block the vein and what is left.
-target_status_lines :: proc(world: ^World, machines: Machine_Registry, veins: Vein_Content, target: Raycast_Hit) -> (entity_line, vein_line: string) {
+target_status_lines :: proc(world: ^World, machines: Machine_Registry, fluids: Fluid_Registry, veins: Vein_Content, target: Raycast_Hit) -> (entity_line, vein_line: string) {
 	if drill := pool_get(&world.entities.drills, target.entity); drill != nil {
-		return entity_status_text(world, machines, target.entity), vein_status_text(world, veins, drill.vein)
+		return entity_status_text(world, machines, fluids, target.entity), vein_status_text(world, veins, drill.vein)
 	}
 	if target.entity != NO_ENTITY {
-		return entity_status_text(world, machines, target.entity), ""
+		return entity_status_text(world, machines, fluids, target.entity), ""
 	}
 	if !target.hit {
 		return "", ""

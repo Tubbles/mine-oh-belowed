@@ -5,7 +5,15 @@ import "core:testing"
 make_test_machines :: proc() -> Machine_Registry {
 	file, error := parse_machines_file(#load("../data/machines.sjson"), context.temp_allocator)
 	assert(error == nil)
-	registry, problem := resolve_machine_registry(file, make_test_items(), context.temp_allocator)
+	registry, problem := resolve_machine_registry(file, make_test_items(), make_test_fluids(), context.temp_allocator)
+	assert(problem == "", problem)
+	return registry
+}
+
+make_test_fluids :: proc() -> Fluid_Registry {
+	file, error := parse_fluids_file(#load("../data/fluids.sjson"), context.temp_allocator)
+	assert(error == nil)
+	registry, problem := resolve_fluid_registry(file, context.temp_allocator)
 	assert(problem == "", problem)
 	return registry
 }
@@ -16,7 +24,7 @@ make_test_content :: proc() -> Simulation_Content {
 	generator := make_test_generator(DEFAULT_WORLD_SEED)
 	veins, problem := resolve_vein_content(generator.veins, items, context.temp_allocator)
 	assert(problem == "", problem)
-	return Simulation_Content{blocks = make_test_registry(), items = items, machines = make_test_machines(), recipes = recipes, veins = veins}
+	return Simulation_Content{blocks = make_test_registry(), items = items, machines = make_test_machines(), fluids = make_test_fluids(), recipes = recipes, veins = veins}
 }
 
 test_machine :: proc(machines: Machine_Registry, id: string) -> Machine_Id {
@@ -32,7 +40,7 @@ test_machine :: proc(machines: Machine_Registry, id: string) -> Machine_Id {
 test_machine_data_loads :: proc(t: ^testing.T) {
 	items := make_test_items()
 	machines := make_test_machines()
-	testing.expect_value(t, len(machines.machines), 12)
+	testing.expect_value(t, len(machines.machines), 18)
 	wooden := machines.machines[test_machine(machines, "wooden_chest")]
 	testing.expect_value(t, wooden.kind, Machine_Kind.Chest)
 	testing.expect_value(t, wooden.slot_count, 16)
@@ -103,10 +111,19 @@ test_machine_strings_exist :: proc(t: ^testing.T) {
 	for key in splitter_side_keys {
 		testing.expectf(t, key in table.entries, "missing string %q", key)
 	}
+	for key in fluid_machine_state_keys {
+		testing.expectf(t, key in table.entries, "missing string %q", key)
+	}
+	for fluid in make_test_fluids().fluids {
+		testing.expectf(t, fluid.name_key in table.entries, "missing string %q", fluid.name_key)
+	}
+	for key in ([?]string{"fluid_none", "fluid_of", "fluid_flow_in", "fluid_flow_out", "fluid_mixing_refused"}) {
+		testing.expectf(t, key in table.entries, "missing string %q", key)
+	}
 }
 
 resolve_test_machines :: proc(definitions: []Machine_Definition) -> string {
-	registry, problem := resolve_machine_registry(Machines_File{machines = definitions}, make_test_items(), context.temp_allocator)
+	registry, problem := resolve_machine_registry(Machines_File{machines = definitions}, make_test_items(), make_test_fluids(), context.temp_allocator)
 	if problem == "" {
 		destroy_machine_registry(registry, context.temp_allocator)
 	}

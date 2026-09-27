@@ -35,17 +35,32 @@ Machine_Kind :: enum u8 {
 	// Stands across two belt cells and shares items between them
 	// (splitter.odin).
 	Splitter,
+	// A 1 by 1 by 1 fluid segment connecting on all six faces
+	// (fluid_network.odin).
+	Pipe,
+	// Fluid machines (fluid_machine.odin), all with fluid ports.
+	Offshore_Pump,
+	Boiler,
+	Steam_Engine,
+	Storage_Tank,
+	Pump,
 }
 
 @(rodata)
 machine_kind_names := [Machine_Kind]string {
-	.Chest    = "chest",
-	.Furnace  = "furnace",
-	.Capsule  = "capsule",
-	.Belt     = "belt",
-	.Inserter = "inserter",
-	.Drill    = "drill",
-	.Splitter = "splitter",
+	.Chest         = "chest",
+	.Furnace       = "furnace",
+	.Capsule       = "capsule",
+	.Belt          = "belt",
+	.Inserter      = "inserter",
+	.Drill         = "drill",
+	.Splitter      = "splitter",
+	.Pipe          = "pipe",
+	.Offshore_Pump = "offshore_pump",
+	.Boiler        = "boiler",
+	.Steam_Engine  = "steam_engine",
+	.Storage_Tank  = "storage_tank",
+	.Pump          = "pump",
 }
 
 // The shape family a belt item places. Ramps become up or down and lifts
@@ -91,6 +106,10 @@ Machine_Definition :: struct {
 	electric_power_kilowatts:     f32,
 	filter_slots:                 int,
 	rate_reference_ore_percent:   int,
+	fluid_ports:                  []Fluid_Port_Definition,
+	buffer_litres:                int,
+	flow_litres_per_second:       int,
+	fluid_litres_per_second:      int,
 }
 
 Machines_File :: struct {
@@ -119,6 +138,15 @@ Machine :: struct {
 	electric_power_watts:        u32,
 	filter_slot_count:           int,
 	rate_reference_ore_percent:  u32,
+	fluid_ports:                 [MAXIMUM_FLUID_PORTS]Fluid_Port,
+	fluid_port_count:            int,
+	// Pipes: the litres one pipe block holds, and the most litres a
+	// connection moves per second.
+	buffer_litres:               i32,
+	flow_litres_per_second:      u32,
+	// Offshore pumps and pumps: litres moved per second. Boilers: litres
+	// of steam made per second from as much water.
+	fluid_litres_per_second:     u32,
 }
 
 Machine_Registry :: struct {
@@ -181,6 +209,8 @@ validate_machine_kind_fields :: proc(definition: Machine_Definition, kind: Machi
 		return validate_drill_definition(definition)
 	case .Splitter:
 		return validate_splitter_definition(definition)
+	case .Pipe, .Offshore_Pump, .Boiler, .Steam_Engine, .Storage_Tank, .Pump:
+		return validate_fluid_machine_definition(definition, kind)
 	case .Capsule:
 		if definition.slots != CAPSULE_SLOT_COUNT {
 			return fmt.tprintf("capsule %q must have %d slots", definition.id, CAPSULE_SLOT_COUNT)
@@ -317,7 +347,7 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 	kind, _ := parse_machine_kind(definition.kind)
 	belt_shape, _ := parse_belt_item_shape(definition.belt_shape)
 	footprint := definition.footprint
-	slot_count := kind == .Inserter || kind == .Drill ? definition.fuel_slots : definition.slots
+	slot_count := kind == .Inserter || kind == .Drill || kind == .Boiler ? definition.fuel_slots : definition.slots
 	return Machine {
 		id = definition.id,
 		name_key = definition.name_key,
@@ -333,12 +363,15 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 		electric_power_watts = u32(math.round(definition.electric_power_kilowatts * 1000)),
 		filter_slot_count = definition.filter_slots,
 		rate_reference_ore_percent = u32(max(definition.rate_reference_ore_percent, 0)),
+		buffer_litres = i32(max(definition.buffer_litres, 0)),
+		flow_litres_per_second = u32(max(definition.flow_litres_per_second, 0)),
+		fluid_litres_per_second = u32(max(definition.fluid_litres_per_second, 0)),
 	}
 }
 
 // Validates the file against the item registry and resolves every
 // reference.
-resolve_machine_registry :: proc(file: Machines_File, items: Item_Registry, allocator := context.allocator) -> (registry: Machine_Registry, problem: string) {
+resolve_machine_registry :: proc(file: Machines_File, items: Item_Registry, fluids: Fluid_Registry, allocator := context.allocator) -> (registry: Machine_Registry, problem: string) {
 	if len(file.machines) >= int(NO_MACHINE) {
 		return {}, fmt.tprintf("%d machines exceed the limit of %d", len(file.machines), int(NO_MACHINE) - 1)
 	}
@@ -351,11 +384,16 @@ resolve_machine_registry :: proc(file: Machines_File, items: Item_Registry, allo
 		if problem == "" && definition.kind != machine_kind_names[.Capsule] {
 			item, problem = resolve_machine_item(definition, items, registry.machine_for_item, Machine_Id(index))
 		}
+		machine: Machine
+		if problem == "" {
+			machine = resolve_machine(definition, item)
+			problem = resolve_fluid_ports(&machine, definition, fluids)
+		}
 		if problem != "" {
 			destroy_machine_registry(registry, allocator)
 			return {}, problem
 		}
-		registry.machines[index] = resolve_machine(definition, item)
+		registry.machines[index] = machine
 	}
 	return registry, ""
 }
@@ -399,7 +437,7 @@ machine_name :: proc(registry: Machine_Registry, machine: Machine_Id) -> string 
 	return text(registry.machines[machine].name_key)
 }
 
-load_machine_registry :: proc(data_directory: string, items: Item_Registry, allocator := context.allocator) -> (registry: Machine_Registry, ok: bool) {
+load_machine_registry :: proc(data_directory: string, items: Item_Registry, fluids: Fluid_Registry, allocator := context.allocator) -> (registry: Machine_Registry, ok: bool) {
 	path, join_error := os.join_path({data_directory, MACHINES_FILE_NAME}, context.temp_allocator)
 	if join_error != nil {
 		return {}, false
@@ -415,7 +453,7 @@ load_machine_registry :: proc(data_directory: string, items: Item_Registry, allo
 		return {}, false
 	}
 	problem: string
-	registry, problem = resolve_machine_registry(file, items, allocator)
+	registry, problem = resolve_machine_registry(file, items, fluids, allocator)
 	if problem != "" {
 		fmt.eprintfln("error: invalid %s: %s", path, problem)
 		return {}, false

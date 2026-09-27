@@ -118,6 +118,7 @@ draw_placement_preview :: proc(world: ^World, content: Simulation_Content, playe
 		if placement.splitter {
 			draw_splitter_arrow(placement.origin, placement.size, placement.rotation, BELT_GHOST_ARROW_COLOR)
 		}
+		draw_fluid_machine_ghost(placement, content.machines, content.fluids)
 		return
 	}
 	if selected_placed_block(players[index], content.items) == AIR_BLOCK {

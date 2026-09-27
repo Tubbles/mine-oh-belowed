@@ -87,6 +87,11 @@ make_test_world :: proc(coordinates: []Chunk_Coordinate) -> World {
 	world.outcrop_cells = make(map[World_Coordinate]Vein_Id, context.temp_allocator)
 	world.spent_outcrops = make([dynamic]World_Coordinate, context.temp_allocator)
 	world.entities.belt_network.allocator = context.temp_allocator
+	world.entities.pipes.entries = make([dynamic]Pipe, context.temp_allocator)
+	world.entities.pipes.free = make([dynamic]u32, context.temp_allocator)
+	world.entities.fluid_machines.entries = make([dynamic]Fluid_Machine, context.temp_allocator)
+	world.entities.fluid_machines.free = make([dynamic]u32, context.temp_allocator)
+	world.entities.fluid_networks.allocator = context.temp_allocator
 	for coordinate in coordinates {
 		chunk := new(Chunk, context.temp_allocator)
 		chunk.coordinate = coordinate

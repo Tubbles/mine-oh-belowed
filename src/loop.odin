@@ -52,6 +52,7 @@ Frame_State :: struct {
 	registry:           Block_Registry,
 	items:              Item_Registry,
 	machines:           Machine_Registry,
+	fluids:             Fluid_Registry,
 	recipes:            Recipe_Registry,
 	technologies:       Technology_Registry,
 	quests:             Quest_Registry,
@@ -144,7 +145,7 @@ simulation_quest_context :: proc(state: ^Simulation_State, content: Simulation_C
 }
 
 frame_simulation_content :: proc(state: ^Frame_State) -> Simulation_Content {
-	return Simulation_Content{blocks = state.registry, items = state.items, machines = state.machines, recipes = state.recipes, quests = state.quests, veins = state.veins}
+	return Simulation_Content{blocks = state.registry, items = state.items, machines = state.machines, fluids = state.fluids, recipes = state.recipes, quests = state.quests, veins = state.veins}
 }
 
 make_tick_accumulator :: proc(tick_rate: int) -> Tick_Accumulator {
@@ -254,6 +255,7 @@ render_frame :: proc(state: ^Frame_State, config: Game_Config) {
 	rl.BeginMode3D(camera)
 	draw_chunks(&state.renderer, camera)
 	draw_entities(&state.simulation.world, state.machines, state.items, state.simulation.tick_rate)
+	draw_fluid_entities(&state.simulation.world, state.machines, state.fluids)
 	draw_belts(&state.belt_renderer, &state.simulation.world, state.items, state.machines, state.simulation.tick, alpha, state.simulation.tick_rate)
 	draw_player_world_overlay(&state.simulation.world, frame_simulation_content(state), state.simulation.players[:], 0, alpha)
 	rl.EndMode3D()
@@ -281,6 +283,7 @@ run_ui_frame :: proc(state: ^Frame_State) {
 		item_sort_ranks = state.item_sort_ranks,
 		world           = &state.simulation.world,
 		machines        = state.machines,
+		fluids          = state.fluids,
 		veins           = state.veins,
 		tick_rate       = state.simulation.tick_rate,
 		recipes         = state.recipes,
@@ -324,6 +327,7 @@ Game_Content :: struct {
 	blocks:          Block_Registry,
 	items:           Item_Registry,
 	machines:        Machine_Registry,
+	fluids:          Fluid_Registry,
 	recipes:         Recipe_Registry,
 	technologies:    Technology_Registry,
 	quests:          Quest_Registry,
@@ -335,7 +339,7 @@ Game_Content :: struct {
 }
 
 game_simulation_content :: proc(content: Game_Content) -> Simulation_Content {
-	return Simulation_Content{blocks = content.blocks, items = content.items, machines = content.machines, recipes = content.recipes, quests = content.quests, veins = content.veins}
+	return Simulation_Content{blocks = content.blocks, items = content.items, machines = content.machines, fluids = content.fluids, recipes = content.recipes, quests = content.quests, veins = content.veins}
 }
 
 run_game :: proc(config: Game_Config, input_backend: Input_Backend, content: Game_Content, generator: Generator, start: World_Start, data_directory: string) {
@@ -363,6 +367,7 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, content: Gam
 		registry        = registry,
 		items           = content.items,
 		machines        = content.machines,
+		fluids          = content.fluids,
 		recipes         = content.recipes,
 		technologies    = content.technologies,
 		quests          = content.quests,

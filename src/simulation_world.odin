@@ -10,6 +10,7 @@ Simulation_Content :: struct {
 	blocks:   Block_Registry,
 	items:    Item_Registry,
 	machines: Machine_Registry,
+	fluids:   Fluid_Registry,
 	recipes:  Recipe_Registry,
 	quests:   Quest_Registry,
 	veins:    Vein_Content,
