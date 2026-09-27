@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Install the play build the Steam shortcut launches: the latest commit,
-# built in release mode, with its own copy of data/, under bin/play/, plus
-# a launcher at bin/mine-oh-belowed. The working tree is never read by the
+# Install the play build the Steam shortcut launches: a commit (HEAD, or
+# the first argument), built in release mode, with its own copy of data/,
+# under bin/play/, plus a launcher at bin/mine-oh-belowed. The working tree is never read by the
 # installed game, so agents editing src/ and data/ cannot break a couch
 # session. Run it after every landed commit that should reach the couch.
 set -euo pipefail
@@ -9,11 +9,12 @@ set -euo pipefail
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 play_directory="$repository_root/bin/play"
 launcher="$repository_root/bin/mine-oh-belowed"
-commit="$(git -C "$repository_root" rev-parse --short HEAD)"
+ref="${1:-HEAD}"
+commit="$(git -C "$repository_root" rev-parse --short "$ref")"
 staging="$(mktemp -d "${TMPDIR:-/tmp}/mine-oh-belowed-play.XXXXXX")"
 trap 'rm -rf "$staging"' EXIT
 
-git -C "$repository_root" archive --format=tar HEAD | tar -x -C "$staging"
+git -C "$repository_root" archive --format=tar "$ref" | tar -x -C "$staging"
 "$staging/build.sh" release
 
 built="$staging/build/mine-oh-belowed"
