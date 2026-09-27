@@ -166,13 +166,42 @@ prospecting_loaded :: proc(loaded, original: ^World) -> bool {
 	return drill != nil && drill.work_ticks == 77 && records && counters && len(loaded.explored) == len(original.explored) && len(loaded.explored) > 0
 }
 
+SAVE_TEST_LAUNCH_PAD :: World_Coordinate{22, 1, 0}
+
+// A launch pad (work item 0040) assembling without power, with its parts,
+// fuel and cargo, and one shipment on the world.
+lay_save_test_launch_pad :: proc(world: ^World, content: Simulation_Content) {
+	handle := place_test_entity(world, content, "launch_pad", SAVE_TEST_LAUNCH_PAD)
+	for id in ([?]string{"rocket_structure", "guidance_unit", "cargo_capsule", "steel"}) {
+		entity_insert(&world.entities, content, handle, {test_item(content.items, id), 10})
+	}
+	pad := pool_get(&world.entities.launch_pads, handle)
+	pad.buffers[LAUNCH_PAD_FUEL_PORT] = {fluid = test_fluid(content, "rocket_fuel"), level = 300}
+	started := start_assembly(pad, content.machines.machines[pad.machine])
+	assert(started)
+	shipment := make_shipment([]Item_Stack{{test_item(content.items, "iron_plate"), 40}}, 77)
+	append(&world.shipments, shipment)
+	record_shipment(&world.statistics, shipment)
+}
+
+// The pad kept its assembly and cargo, the shipment and its statistics
+// came through.
+launch_pad_loaded :: proc(loaded, original: ^World) -> bool {
+	pad := pool_get(&loaded.entities.launch_pads, entity_at(&loaded.entities, SAVE_TEST_LAUNCH_PAD))
+	if pad == nil || len(loaded.shipments) != 1 {
+		return false
+	}
+	assembling := pad.state == .Assembling && pad.stages_taken == 1 && !stack_is_empty(pad.slots[pad.part_count])
+	return assembling && loaded.shipments[0] == original.shipments[0] && loaded.statistics.rockets_launched == 1
+}
+
 // Every entity kind with contents: the power plant (offshore pump, pipes,
 // boiler, steam engine, poles, electric drill, lamp, electric inserter), a
 // power switch, an assembler line, labs, a furnace line with belts, a
 // splitter, a burner drill on a finite vein, a bore drill part way down
 // to a deep vein, mining fluid in the electric drill's revival port, a
-// schematic crate, a core sample drill with the prospecting records, and
-// the capsule of the pad.
+// schematic crate, a core sample drill with the prospecting records, a
+// launch pad assembling with a shipment, and the capsule of the pad.
 build_save_test_site :: proc(simulation: ^Simulation_State, content: Simulation_Content) {
 	world := &simulation.world
 	carve_save_test_floor(world, test_block(content.blocks, "stone"))
@@ -191,6 +220,7 @@ build_save_test_site :: proc(simulation: ^Simulation_State, content: Simulation_
 	bore.vein, bore.bored_ticks = deep, 1234
 	lay_save_test_schematics(simulation, content)
 	lay_save_test_prospecting(world, content)
+	lay_save_test_launch_pad(world, content)
 	technology := test_technology(content.technologies, "automation")
 	testing_refusal := queue_research(&world.research, content.technologies, simulation.unlocks, technology)
 	assert(testing_refusal == .None)
@@ -320,6 +350,7 @@ test_save_load_run_matches_the_original :: proc(t: ^testing.T) {
 	testing.expect(t, deep_veins_and_bore_drill_loaded(&loaded.world))
 	testing.expect(t, schematics_loaded(&loaded, content))
 	testing.expect(t, prospecting_loaded(&loaded.world, &original.world))
+	testing.expect(t, launch_pad_loaded(&loaded.world, &original.world))
 	testing.expect_value(t, len(loaded.world.entities.fluid_networks.networks), len(original.world.entities.fluid_networks.networks))
 	testing.expect_value(t, len(loaded.world.entities.electric_networks.networks), len(original.world.entities.electric_networks.networks))
 	testing.expect_value(t, len(loaded.world.entities.belt_network.lines), len(original.world.entities.belt_network.lines))

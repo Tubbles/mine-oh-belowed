@@ -27,6 +27,8 @@ How every screen in the game is built, so that the pillars "couch first" and "on
 
 - The map screen (0038, View or M) draws the explored area top down as one 256 by 256 image at 1 to 16 blocks per pixel, coloured by the surface block, with the player, machines and the prospecting layers: assayed vein footprints, magnetometer readings, core sample columns and seismic circles. Bumpers or the right stick zoom, the left stick or pointer drag pans. The magnetometer shows a dial with a needle and strength on the HUD while selected.
 
+- The launch pad panel (0040) has part slots, a cargo section, an Assemble button and a Launch button; Interact on the pad launches when the rocket is ready and Sneak plus Interact opens the panel. The statistics screen has a Shipments tab listing launches newest first with their cargo.
+
 ## Widgets
 
 Label, button, toggle, slider, tabs, vertical list with letter jump, grid of slots, item slot (icon, count, highlight), progress bar, tooltip panel, radial menu, text field (opens the on-screen keyboard), glyph bar, toast.

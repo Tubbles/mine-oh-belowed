@@ -208,6 +208,7 @@ assign_electric_memberships :: proc(entities: ^Entities, machines: Machine_Regis
 	append_electric_members(networks, &entities.assemblers, machines)
 	append_electric_members(networks, &entities.labs, machines)
 	append_electric_members(networks, &entities.core_sample_drills, machines)
+	append_electric_members(networks, &entities.launch_pads, machines)
 }
 
 rebuild_electric_networks :: proc(entities: ^Entities, machines: Machine_Registry) {
@@ -382,8 +383,8 @@ collect_electric_participants :: proc(world: ^World, content: Simulation_Content
 	collect_crafting_participants(world, content, tick_rate)
 }
 
-// Electric crafting machines, labs and core sample drills, while they
-// have work.
+// Electric crafting machines, labs, core sample drills and launch pads,
+// while they have work.
 collect_crafting_participants :: proc(world: ^World, content: Simulation_Content, tick_rate: int) {
 	entities := &world.entities
 	networks := &entities.electric_networks
@@ -410,6 +411,13 @@ collect_crafting_participants :: proc(world: ^World, content: Simulation_Content
 			append(&networks.participants, make_participant(networks, drill.common, false, wants ? electric_joules_per_tick(watts, tick_rate) : 0))
 		}
 	}
+	for pad in entities.launch_pads.entries {
+		if pad.alive {
+			machine := content.machines.machines[pad.machine]
+			wants := launch_pad_wants_power(pad, machine, tick_rate)
+			append(&networks.participants, make_participant(networks, pad.common, false, wants ? electric_joules_per_tick(machine.electric_power_watts, tick_rate) : 0))
+		}
+	}
 }
 
 // The consumer's Power_State, or nil for a generator.
@@ -429,6 +437,8 @@ participant_power :: proc(entities: ^Entities, handle: Entity_Handle) -> ^Power_
 		return &pool_get(&entities.labs, handle).power
 	case .Core_Sample_Drill:
 		return &pool_get(&entities.core_sample_drills, handle).power
+	case .Launch_Pad:
+		return &pool_get(&entities.launch_pads, handle).power
 	}
 	return nil
 }

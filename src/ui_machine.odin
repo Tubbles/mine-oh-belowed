@@ -136,6 +136,8 @@ machine_area_size :: proc(machine: Machine, slot_count: int) -> [2]f32 {
 		return crafting_machine_area_size(machine)
 	case .Core_Sample_Drill:
 		return core_sample_area_size()
+	case .Launch_Pad:
+		return launch_pad_area_size(machine)
 	case .Belt, .Schematic_Crate:
 	}
 	return {}
@@ -384,6 +386,8 @@ machine_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, handle: Entity
 	case .Core_Sample_Drill:
 		core_sample_panel_region(state, content, pool_get(&screen_context.world.entities.core_sample_drills, handle)^, screen_context)
 		return {grid = {activated = -1, focused = -1}}
+	case .Launch_Pad:
+		return {grid = launch_pad_slot_region(state, content, pool_get(&screen_context.world.entities.launch_pads, handle), screen_context)}
 	}
 	return {grid = ui_slot_grid(state, {content.x, content.y}, "chest", MACHINE_CHEST_COLUMNS, slots, screen_context.items)}
 }
@@ -508,6 +512,8 @@ entity_status_text :: proc(world: ^World, machines: Machine_Registry, fluids: Fl
 		return stack_is_empty(crate.slots[0]) ? fmt.tprintf("%s  %s", name, text("schematic_crate_empty")) : name
 	case .Core_Sample_Drill:
 		return fmt.tprintf("%s  %s", name, core_sample_state_text(world, pool_get(&world.entities.core_sample_drills, handle)^))
+	case .Launch_Pad:
+		return fmt.tprintf("%s  %s", name, launch_pad_state_text(pool_get(&world.entities.launch_pads, handle)))
 	}
 	return name
 }

@@ -80,6 +80,7 @@ Hint_Counter :: enum u8 {
 	Bore_Drill_No_Vein_Attempts,
 	Turbine_Kilojoules,
 	Turbine_Still_Water_Ticks,
+	Rockets_Launched,
 }
 
 @(rodata)
@@ -115,6 +116,7 @@ hint_counter_names := [Hint_Counter]string {
 	.Bore_Drill_No_Vein_Attempts = "bore_drill_no_vein_attempts",
 	.Turbine_Kilojoules          = "turbine_kilojoules",
 	.Turbine_Still_Water_Ticks   = "turbine_still_water_ticks",
+	.Rockets_Launched            = "rockets_launched",
 }
 
 // As written in the files, before references are resolved.

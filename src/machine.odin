@@ -12,7 +12,7 @@ import "core:slice"
 // nothing about machines, and machine_for_item is derived here.
 
 MACHINES_FILE_NAME :: "machines.sjson"
-MAXIMUM_FOOTPRINT_SIZE :: 8
+MAXIMUM_FOOTPRINT_SIZE :: 9
 
 // Dense index into Machine_Registry.machines.
 Machine_Id :: distinct u16
@@ -74,6 +74,9 @@ Machine_Kind :: enum u8 {
 	// Reports the strata and the deep vein below its column after a
 	// powered while (prospecting.odin).
 	Core_Sample_Drill,
+	// Assembles a rocket from parts and fuel and launches it with its
+	// cargo (launch_pad.odin).
+	Launch_Pad,
 }
 
 @(rodata)
@@ -102,6 +105,7 @@ machine_kind_names := [Machine_Kind]string {
 	.Lab           = "lab",
 	.Schematic_Crate = "schematic_crate",
 	.Core_Sample_Drill = "core_sample_drill",
+	.Launch_Pad    = "launch_pad",
 }
 
 // The shape family a belt item places. Ramps become up or down and lifts
@@ -164,6 +168,10 @@ Machine_Definition :: struct {
 	hydro_kilowatts_per_water_level: f32,
 	hydro_minimum_water_level:    int,
 	sampling_seconds:             int,
+	launch_parts:                 []Launch_Part_Definition,
+	launch_fuel_litres:           int,
+	assembly_seconds:             int,
+	launch_seconds:               int,
 }
 
 Machines_File :: struct {
@@ -233,6 +241,13 @@ Machine :: struct {
 	hydro_minimum_water_level:   int,
 	// Core sample drills: the powered work before the report.
 	sampling_seconds:            u32,
+	// Launch pads (launch_pad.odin): the parts a rocket takes, one slot
+	// each, the litres of fuel, the powered assembly and the ascent.
+	launch_parts:                [MAXIMUM_LAUNCH_PARTS]Item_Stack,
+	launch_part_count:           int,
+	launch_fuel_litres:          i32,
+	assembly_seconds:            u32,
+	launch_seconds:              u32,
 }
 
 Machine_Registry :: struct {
@@ -317,6 +332,8 @@ validate_machine_kind_fields :: proc(definition: Machine_Definition, kind: Machi
 		return validate_schematic_crate_definition(definition)
 	case .Core_Sample_Drill:
 		return validate_core_sample_drill_definition(definition)
+	case .Launch_Pad:
+		return validate_launch_pad_definition(definition)
 	}
 	return ""
 }
@@ -524,6 +541,9 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 		hydro_watts_per_water_level = u32(math.round(definition.hydro_kilowatts_per_water_level * 1000)),
 		hydro_minimum_water_level = definition.hydro_minimum_water_level,
 		sampling_seconds = u32(max(definition.sampling_seconds, 0)),
+		launch_fuel_litres = i32(max(definition.launch_fuel_litres, 0)),
+		assembly_seconds = u32(max(definition.assembly_seconds, 0)),
+		launch_seconds = u32(max(definition.launch_seconds, 0)),
 	}
 }
 
@@ -546,6 +566,9 @@ resolve_machine_registry :: proc(file: Machines_File, items: Item_Registry, flui
 		if problem == "" {
 			machine = resolve_machine(definition, item)
 			problem = resolve_fluid_ports(&machine, definition, fluids)
+		}
+		if problem == "" {
+			problem = resolve_launch_parts(&machine, definition, items)
 		}
 		if problem != "" {
 			destroy_machine_registry(registry, allocator)

@@ -55,17 +55,18 @@ test_chapter_07_loads :: proc(t: ^testing.T) {
 	testing.expect_value(t, permit.reward_items[1], Item_Stack{test_item(items, "plastic_bar"), 100})
 }
 
-// A placeholder and a quest gate: it unlocks nothing and the labs refuse
-// it even with its prerequisites researched.
+// A quest gate: since work item 0040 it unlocks the launch pad and two
+// rocket parts, and the labs refuse it even with its prerequisites
+// researched.
 @(test)
-test_rocket_program_is_a_placeholder_quest_gate :: proc(t: ^testing.T) {
+test_rocket_program_is_a_quest_gate :: proc(t: ^testing.T) {
 	test := make_crafting_test()
 	technologies := test.technologies
 	rocket_program := test_technology(technologies, "rocket_program")
 	technology := technologies.technologies[rocket_program]
-	testing.expect(t, technology.placeholder)
+	testing.expect(t, !technology.placeholder)
 	testing.expect(t, technology.quest_gate)
-	testing.expect_value(t, len(technology.unlocks), 0)
+	testing.expect_value(t, len(technology.unlocks), 3)
 	for id in ([?]string{"automation", "logistics", "steel_processing", "ore_processing", "oil_processing", "plastics", "logistics_science", "deep_mining", "electrolysis"}) {
 		mark_technology_researched(&test.unlocks, test.recipes, test_technology(technologies, id))
 	}

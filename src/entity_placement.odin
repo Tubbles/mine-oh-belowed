@@ -288,6 +288,9 @@ pick_up_entity :: proc(world: ^World, content: Simulation_Content, player: ^Play
 	if assembler := pool_get(&world.entities.assemblers, handle); assembler != nil {
 		append(&returned, ..assembler_held_stacks(assembler^, content.machines.machines[assembler.machine], content.recipes))
 	}
+	if pad := pool_get(&world.entities.launch_pads, handle); pad != nil {
+		append(&returned, ..launch_pad_held_stacks(pad^, content.machines.machines[pad.machine]))
+	}
 	append(&returned, Item_Stack{item = machine_item, count = 1})
 	if !inventory_fits_all(player.inventory, content.items, returned[:]) {
 		return false

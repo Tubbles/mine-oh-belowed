@@ -63,3 +63,7 @@ The M4 model: pipes with liquids and gases, steam power, electric networks, and 
 
 - The hydro turbine is a fuel free generator giving 10 kW per level of flowing water in its eight cells, capped at 400 kW, read from the blocks every tick; water flows on through it; it needs solid ground and at least one cell of flowing water at level 3 or more (source water does not count, and since the water model has no velocity every flowing block counts as moving). Big pole and substation come from the pole code with reach and volume from data; wide footprints centre their supply volume, and since 0038 wire reach measures between footprint centres. No placeholder technology remains.
 
+### As implemented in 0040
+
+- Rocket fuel is a chemical plant fluid (light oil and sulfur, or wood gas and coal on the schematic channel; wood gas alone already selects the wood gas plastic recipe), so the chemical plant's output port lost its mining fluid filter. The launch pad has a 400 litre rocket fuel port and takes each of ten assembly stages' share of parts and fuel when the stage starts, pausing without power when a share is missing.
+

@@ -67,6 +67,8 @@ World :: struct {
 	core_samples:          [dynamic]Core_Sample,
 	seismic_shots:         [dynamic]Seismic_Shot,
 	seismic_outlines:      [dynamic]Seismic_Outline,
+	// Every rocket launched, oldest first (launch_pad.odin). Saved.
+	shipments:             [dynamic]Shipment,
 }
 
 Block_Change :: struct {
@@ -229,6 +231,7 @@ destroy_world :: proc(world: ^World) {
 	delete(world.core_samples)
 	delete(world.seismic_shots)
 	delete(world.seismic_outlines)
+	delete(world.shipments)
 	delete(world.block_changes)
 	destroy_lighting(&world.lighting)
 	delete(world.entity_lights)

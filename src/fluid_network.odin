@@ -98,7 +98,7 @@ clear_fluid_networks :: proc(networks: ^Fluid_Networks) {
 
 // Pipes in pool order, then every port of every fluid machine, then of
 // every crafting machine with ports (a washer), then of every drill with a
-// revival port, in pool and port order.
+// revival port, then of every launch pad, in pool and port order.
 collect_fluid_segments :: proc(entities: ^Entities, machines: Machine_Registry) {
 	segments := &entities.fluid_networks.segments
 	for pipe in entities.pipes.entries {
@@ -120,6 +120,11 @@ collect_fluid_segments :: proc(entities: ^Entities, machines: Machine_Registry) 
 	for drill in entities.drills.entries {
 		if drill.alive {
 			append_port_segments(segments, drill.common, machines.machines[drill.machine])
+		}
+	}
+	for pad in entities.launch_pads.entries {
+		if pad.alive {
+			append_port_segments(segments, pad.common, machines.machines[pad.machine])
 		}
 	}
 }
@@ -154,6 +159,10 @@ entity_port_buffers :: proc(entities: ^Entities, handle: Entity_Handle) -> (buff
 	case .Drill:
 		if drill := pool_get(&entities.drills, handle); drill != nil {
 			return &drill.buffers, &drill.closed
+		}
+	case .Launch_Pad:
+		if pad := pool_get(&entities.launch_pads, handle); pad != nil {
+			return &pad.buffers, &pad.closed
 		}
 	}
 	return nil, nil
@@ -590,6 +599,11 @@ reset_fluid_flows :: proc(entities: ^Entities) {
 	}
 	for &drill in entities.drills.entries {
 		for &buffer in drill.buffers {
+			buffer.flow_in, buffer.flow_out = 0, 0
+		}
+	}
+	for &pad in entities.launch_pads.entries {
+		for &buffer in pad.buffers {
 			buffer.flow_in, buffer.flow_out = 0, 0
 		}
 	}

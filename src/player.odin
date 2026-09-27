@@ -74,6 +74,8 @@ Player_Event :: enum u8 {
 	Open_Machine,
 	// Interact turned a power switch.
 	Toggled_Switch,
+	// Interact on a launch pad with a rocket and cargo (launch_pad.odin).
+	Launch_Requested,
 	// Use_Item with a prospecting tool (prospecting.odin).
 	Vein_Assayed,
 	Magnetometer_Recorded,
@@ -260,8 +262,9 @@ apply_player_toggles :: proc(player: ^Player, just_pressed: Action_Set) {
 
 // A gamepad's A is both Jump and Interact. Looking at an entity it opens
 // the entity instead of jumping; keyboard Space never interacts. On a
-// power switch Interact turns the switch like a lever, and Sneak with
-// Interact opens its panel.
+// power switch Interact turns the switch like a lever, and on a launch pad
+// with a rocket ready and cargo loaded it launches; Sneak with Interact
+// opens their panels.
 resolve_interact :: proc(player: ^Player, entities: ^Entities, machines: Machine_Registry, input: Input_Frame) -> (Input_Frame, Player_Events) {
 	result := input
 	if .Interact not_in input.pressed || !entity_has_panel(entities, player.target.entity) {
@@ -274,6 +277,9 @@ resolve_interact :: proc(player: ^Player, entities: ^Entities, machines: Machine
 	}
 	if .Sneak not_in input.pressed && toggle_power_switch(entities, machines, player.target.entity) {
 		return result, {.Toggled_Switch}
+	}
+	if .Sneak not_in input.pressed && request_launch(entities, player.target.entity) {
+		return result, {.Launch_Requested}
 	}
 	player.open_machine = player.target.entity
 	return result, {.Open_Machine}
@@ -313,7 +319,7 @@ tick_player :: proc(world: ^World, content: Simulation_Content, players: []Playe
 	if !player.flying {
 		record_walked(&world.statistics, walk_start, player.position)
 	}
-	if .Open_Machine in events || .Toggled_Switch in events {
+	if .Open_Machine in events || .Toggled_Switch in events || .Launch_Requested in events {
 		record_world_action(&world.statistics)
 	}
 	player.target = raycast_blocks(world, content.blocks, player_eye(player.position), player_look_direction(player^), PLAYER_REACH)

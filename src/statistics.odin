@@ -149,6 +149,10 @@ Statistics :: struct {
 	// count summed over ticks for the quest hints.
 	unpowered_machines:          u64,
 	unpowered_machine_ticks:     u64,
+	// Indexed by Item_Id: items rockets carried away, and the rockets
+	// launched (launch_pad.odin).
+	shipped:                     []u64,
+	rockets_launched:            u64,
 	// Mining, placing, picking up and opening a machine. hands_off
 	// sustain objectives break when this changes.
 	world_actions:               u64,
@@ -203,6 +207,7 @@ make_statistics :: proc(item_count, machine_count, block_count: int, allocator :
 		delivered = make([]u64, item_count, allocator),
 		voided = make([]u64, item_count, allocator),
 		consumed = make([]u64, item_count, allocator),
+		shipped = make([]u64, item_count, allocator),
 		placed = make([]u64, machine_count, allocator),
 		blocks_placed = make([]u64, item_count, allocator),
 		mining_ticks = make([]u64, block_count, allocator),
@@ -219,6 +224,7 @@ destroy_statistics :: proc(statistics: Statistics, allocator := context.allocato
 	delete(statistics.delivered, allocator)
 	delete(statistics.voided, allocator)
 	delete(statistics.consumed, allocator)
+	delete(statistics.shipped, allocator)
 	delete(statistics.placed, allocator)
 	delete(statistics.blocks_placed, allocator)
 	delete(statistics.mining_ticks, allocator)

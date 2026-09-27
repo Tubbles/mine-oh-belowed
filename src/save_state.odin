@@ -7,9 +7,9 @@ import "core:slice"
 // The simulation state of a save (entities.bin): every entity pool as
 // plain values, the belt items per cell, the vein records and outcrop
 // cells, pending block changes and water updates, statistics, research,
-// recipe unlocks, quest state and players. Derived data (belt lines, fluid
-// and electric networks, the entity cell map, vein lookups, entity lights)
-// is rebuilt after reading. The same bytes feed simulation_state_hash.
+// shipments, recipe unlocks, quest state and players. Derived data (belt
+// lines, fluid and electric networks, the entity cell map, vein lookups,
+// entity lights) is rebuilt after reading. The same bytes feed simulation_state_hash.
 
 SAVE_FORMAT_VERSION :: 1
 ENTITIES_FILE_MAGIC :: "MOBE"
@@ -39,6 +39,8 @@ save_layout_fingerprint :: proc() -> u64 {
 		type_info_of(Lab),
 		type_info_of(Schematic_Crate),
 		type_info_of(Core_Sample_Drill),
+		type_info_of(Launch_Pad),
+		type_info_of(Shipment),
 		type_info_of(Explored_Column),
 		type_info_of(Assayed_Vein),
 		type_info_of(Magnetometer_Reading),
@@ -156,6 +158,7 @@ write_entity_pools :: proc(bytes: ^[dynamic]byte, entities: ^Entities) {
 	write_pool(bytes, &entities.labs)
 	write_pool(bytes, &entities.schematic_crates)
 	write_pool(bytes, &entities.core_sample_drills)
+	write_pool(bytes, &entities.launch_pads)
 }
 
 outcrop_before :: proc(first, second: Outcrop_Cell) -> bool {
@@ -203,6 +206,7 @@ write_world_state :: proc(bytes: ^[dynamic]byte, world: ^World) {
 	write_list(bytes, fluid_network_fluids(world.entities.fluid_networks))
 	write_value_of(bytes, &world.statistics)
 	write_value_of(bytes, &world.research)
+	write_list(bytes, world.shipments[:])
 }
 
 // The explored map and the prospecting records (work item 0038).
@@ -284,6 +288,7 @@ read_entity_pools :: proc(reader: ^Byte_Reader, entities: ^Entities, machines: M
 	read_pool(reader, &entities.labs, .Lab, machines) or_return
 	read_pool(reader, &entities.schematic_crates, .Schematic_Crate, machines) or_return
 	read_pool(reader, &entities.core_sample_drills, .Core_Sample_Drill, machines) or_return
+	read_pool(reader, &entities.launch_pads, .Launch_Pad, machines) or_return
 	return true
 }
 
@@ -337,6 +342,7 @@ read_world_state :: proc(reader: ^Byte_Reader, world: ^World, machines: Machine_
 	read_list(reader, &derived.network_fluids) or_return
 	read_value_of(reader, &world.statistics) or_return
 	read_value_of(reader, &world.research) or_return
+	read_list(reader, &world.shipments) or_return
 	return true
 }
 
@@ -493,6 +499,8 @@ entity_pool_length :: proc(entities: ^Entities, kind: Entity_Kind) -> int {
 		return len(entities.schematic_crates.entries)
 	case .Core_Sample_Drill:
 		return len(entities.core_sample_drills.entries)
+	case .Launch_Pad:
+		return len(entities.launch_pads.entries)
 	}
 	return 0
 }
@@ -532,6 +540,8 @@ entity_common_at :: proc(entities: ^Entities, kind: Entity_Kind, index: int) -> 
 		return &entities.schematic_crates.entries[index].common
 	case .Core_Sample_Drill:
 		return &entities.core_sample_drills.entries[index].common
+	case .Launch_Pad:
+		return &entities.launch_pads.entries[index].common
 	}
 	return nil
 }

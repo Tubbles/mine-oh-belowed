@@ -44,6 +44,9 @@
 // detects is the ore item it finds, use_range the blocks it reaches) or
 // seismic_shot (a thumper charge fired at the targeted ground, consumed;
 // use_range is the radius it images).
+// Rocket program (work item 0040): the launch pad, and the rocket parts
+// it assembles a rocket from (rocket fuel is a fluid). A part stacks to
+// 10, which also caps what one pad slot holds.
 items = [
 	// Raw materials
 	{id = "log", name_key = "item_log", category = "raw", stack_size = 50, places_block = "log", fuel_megajoules = 2, cannot_recycle = true}
@@ -175,4 +178,11 @@ items = [
 	{id = "schematic_charcoal_steel", name_key = "item_schematic_charcoal_steel", category = "tool", stack_size = 1, usable = true, cannot_recycle = true}
 	{id = "schematic_wood_gas_plastic", name_key = "item_schematic_wood_gas_plastic", category = "tool", stack_size = 1, usable = true, cannot_recycle = true}
 	{id = "schematic_slag_concrete", name_key = "item_schematic_slag_concrete", category = "tool", stack_size = 1, usable = true, cannot_recycle = true}
+	{id = "schematic_wood_gas_rocket_fuel", name_key = "item_schematic_wood_gas_rocket_fuel", category = "tool", stack_size = 1, usable = true, cannot_recycle = true}
+
+	// Rocket program (work item 0040).
+	{id = "launch_pad", name_key = "item_launch_pad", category = "machine", stack_size = 10}
+	{id = "rocket_structure", name_key = "item_rocket_structure", category = "intermediate", stack_size = 10}
+	{id = "guidance_unit", name_key = "item_guidance_unit", category = "intermediate", stack_size = 10}
+	{id = "cargo_capsule", name_key = "item_cargo_capsule", category = "intermediate", stack_size = 10}
 ]

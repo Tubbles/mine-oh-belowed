@@ -272,7 +272,7 @@ test_use_item_resolution :: proc(t: ^testing.T) {
 test_schematic_channel_in_recipe_unlocks :: proc(t: ^testing.T) {
 	test := make_crafting_test()
 	schematics := schematic_items(test.recipes)
-	testing.expect_value(t, len(schematics), 4)
+	testing.expect_value(t, len(schematics), 5)
 	for item in schematics {
 		recipe := schematic_recipe_for(test.recipes, item)
 		definition := test.recipes.recipes[recipe]

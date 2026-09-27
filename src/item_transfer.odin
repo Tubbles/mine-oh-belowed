@@ -20,7 +20,9 @@ package game
 // Both take ingredients only while the slot holds less than two crafts'
 // worth (two pack sets for a lab), so an inserter does not pour a whole
 // belt into one machine. The player's panel is not limited: it does not come
-// through here.
+// through here. A launch pad (launch_pad.odin) takes each rocket part into
+// its part slot up to what a rocket takes, and anything else into its
+// cargo section, and gives nothing.
 //
 // Inserters peek with entity_offered_items and entity_takes_item_kind
 // before they pick, so they never pick an item the target can never take.
@@ -47,6 +49,9 @@ entity_accepts :: proc(entities: ^Entities, content: Simulation_Content, handle:
 		return limited_accepting_slot(slots, pack_slot, item, content.items, INSERTION_LIMIT_CRAFTS)
 	case .Schematic_Crate:
 		return -1, false
+	case .Launch_Pad:
+		pad := pool_get(&entities.launch_pads, handle)
+		return launch_pad_accepting_slot(pad, content.machines.machines[pad.machine], content.items, item)
 	}
 	return first_accepting_slot(slots, item, item_stack_size(content.items, item))
 }
@@ -80,7 +85,8 @@ entity_insert :: proc(entities: ^Entities, content: Simulation_Content, handle: 
 	if handle.kind != .Chest && handle.kind != .Capsule {
 		slot, ok := entity_accepts(entities, content, handle, stack.item)
 		if ok {
-			leftover.count = u16(fill_slot(&slots[slot], stack.item, int(stack.count), stack_size))
+			limit := slot_insert_limit(entities, content, handle, slot, stack_size)
+			leftover.count = u16(fill_slot(&slots[slot], stack.item, int(stack.count), limit))
 		}
 	} else {
 		leftover.count = u16(add_to_slots(slots, stack.item, int(stack.count), stack_size))
@@ -89,6 +95,16 @@ entity_insert :: proc(entities: ^Entities, content: Simulation_Content, handle: 
 		leftover = EMPTY_STACK
 	}
 	return leftover
+}
+
+// A launch pad's part slot fills up to what a rocket takes, any other slot
+// up to the stack size.
+slot_insert_limit :: proc(entities: ^Entities, content: Simulation_Content, handle: Entity_Handle, slot: int, stack_size: u16) -> u16 {
+	pad := pool_get(&entities.launch_pads, handle)
+	if pad == nil || slot >= pad.part_count {
+		return stack_size
+	}
+	return content.machines.machines[pad.machine].launch_parts[slot].count
 }
 
 // Up to maximum_count of one item; filter NO_ITEM takes any item.
@@ -147,7 +163,7 @@ furnace_accepting_slot :: proc(slots: []Item_Stack, item: Item_Id, content: Simu
 }
 
 // The slots entity_extract may take from: a furnace's (main output, then
-// byproduct) or an assembler's outputs, nothing of an inserter, a drill, a boiler, a lab or a schematic crate, every slot
+// byproduct) or an assembler's outputs, nothing of an inserter, a drill, a boiler, a lab, a schematic crate or a launch pad, every slot
 // of a chest or the capsule.
 giving_slots :: proc(entities: ^Entities, handle: Entity_Handle) -> []Item_Stack {
 	slots := entity_slots(entities, handle)
@@ -156,7 +172,7 @@ giving_slots :: proc(entities: ^Entities, handle: Entity_Handle) -> []Item_Stack
 		return slots[FURNACE_OUTPUT_SLOT:FURNACE_BYPRODUCT_SLOT + 1]
 	case .Assembler:
 		return assembler_output_slots(pool_get(&entities.assemblers, handle))
-	case .Inserter, .Drill, .Fluid_Machine, .Lab, .Schematic_Crate:
+	case .Inserter, .Drill, .Fluid_Machine, .Lab, .Schematic_Crate, .Launch_Pad:
 		return nil
 	}
 	return slots
@@ -224,6 +240,8 @@ entity_takes_item_kind :: proc(entities: ^Entities, content: Simulation_Content,
 	case .Lab:
 		slot := lab_slot_of(content.machines.lab_packs, item)
 		return slot >= 0 && slot < len(entity_slots(entities, handle))
+	case .Launch_Pad:
+		return true
 	case .Splitter, .Pipe, .Pole, .Lamp, .Schematic_Crate, .Core_Sample_Drill:
 		return false
 	}

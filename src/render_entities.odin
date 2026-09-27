@@ -10,8 +10,10 @@ import rl "vendor:raylib"
 // turning bar and the output arrow (brown burner, blue electric), for
 // crafting machines a body in their category's colour (teal assembler,
 // brown crusher, blue washer, grey alloy furnace) with a bright top while
-// working, and for labs a white body with a blue top while researching. Real models come with the
-// art pass.
+// working, and for labs a white body with a blue top while researching.
+// A launch pad is a flat platform with a tower on one corner, and the
+// rocket a tall box on the platform that grows with its assembly, stands
+// while ready, and rises and fades while it launches. Real models come with the art pass.
 
 CHEST_COLOR :: rl.Color{130, 88, 48, 255}
 FURNACE_COLOR :: rl.Color{120, 120, 124, 255}
@@ -62,6 +64,17 @@ LAB_COLOR :: rl.Color{200, 204, 210, 255}
 LAB_RESEARCHING_TOP_COLOR :: rl.Color{90, 150, 240, 255}
 CORE_SAMPLE_DRILL_COLOR :: rl.Color{150, 120, 90, 255}
 CORE_SAMPLE_DRILL_REPORTED_TOP_COLOR :: rl.Color{80, 200, 200, 255}
+LAUNCH_PAD_COLOR :: rl.Color{120, 122, 128, 255}
+LAUNCH_TOWER_COLOR :: rl.Color{170, 60, 45, 255}
+ROCKET_COLOR :: rl.Color{230, 232, 236, 255}
+LAUNCH_PAD_PLATFORM_HEIGHT :: 0.4
+LAUNCH_TOWER_HEIGHT :: 14.0
+ROCKET_WIDTH :: 2.0
+ROCKET_HEIGHT :: 12.0
+// The part of the rocket shown as soon as its assembly starts.
+ROCKET_MINIMUM_FRACTION :: 0.05
+// Blocks the rocket climbs during the ascent.
+ROCKET_ASCENT_HEIGHT :: 120.0
 // Turns of the bit per drill cycle.
 DRILL_BIT_TURNS_PER_CYCLE :: 4
 
@@ -192,6 +205,40 @@ draw_entities :: proc(world: ^World, machines: Machine_Registry, items: Item_Reg
 			draw_entity_cells(drill.common, machines, CORE_SAMPLE_DRILL_COLOR, top)
 		}
 	}
+	for pad in world.entities.launch_pads.entries {
+		if pad.alive {
+			draw_launch_pad(pad, machines.machines[pad.machine], tick_rate)
+		}
+	}
+}
+
+// How far the rocket has climbed and how opaque it is: it speeds up as it
+// climbs and fades out over the ascent.
+rocket_ascent :: proc(fraction: f32) -> (height: f32, alpha: u8) {
+	return fraction * fraction * ROCKET_ASCENT_HEIGHT, u8((1 - fraction) * 255)
+}
+
+draw_launch_pad :: proc(pad: Launch_Pad, machine: Machine, tick_rate: int) {
+	centre := box_centre(pad.origin, pad.size)
+	bottom := f32(pad.origin.y)
+	platform := [3]f32{f32(pad.size.x), LAUNCH_PAD_PLATFORM_HEIGHT, f32(pad.size.z)}
+	rl.DrawCubeV({centre.x, bottom + platform.y / 2, centre.z}, platform, LAUNCH_PAD_COLOR)
+	rl.DrawCubeWiresV({centre.x, bottom + platform.y / 2, centre.z}, platform, ENTITY_EDGE_COLOR)
+	tower := block_centre(pad.origin)
+	rl.DrawCubeV({tower.x, bottom + LAUNCH_TOWER_HEIGHT / 2, tower.z}, {1, LAUNCH_TOWER_HEIGHT, 1}, LAUNCH_TOWER_COLOR)
+	if pad.state != .Assembling && pad.state != .Rocket_Ready && pad.state != .Launching {
+		return
+	}
+	lift, alpha, height := f32(0), u8(255), f32(ROCKET_HEIGHT)
+	if pad.state == .Launching {
+		lift, alpha = rocket_ascent(launch_pad_progress(pad, machine, tick_rate))
+	} else if pad.state == .Assembling {
+		height *= max(launch_pad_progress(pad, machine, tick_rate), ROCKET_MINIMUM_FRACTION)
+	}
+	rocket := [3]f32{centre.x, bottom + LAUNCH_PAD_PLATFORM_HEIGHT + height / 2 + lift, centre.z}
+	color := ROCKET_COLOR
+	color.a = alpha
+	rl.DrawCubeV(rocket, {ROCKET_WIDTH, height, ROCKET_WIDTH}, color)
 }
 
 // Bottleneck overlay markers (work item 0028): a cube above each machine

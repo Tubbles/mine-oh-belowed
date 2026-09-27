@@ -4,12 +4,13 @@
 // it back. Each item places at most one machine.
 // name_key is a key into data/strings/en.sjson.
 // footprint is width (x), depth (z) and height (y) in blocks before
-// rotation; a quarter turn swaps width and depth.
+// rotation, each from 1 to 9; a quarter turn swaps width and depth.
 // kind selects the panel and the simulation: chest, furnace, capsule,
 // belt, inserter, drill, splitter, pipe, offshore_pump, boiler,
 // steam_engine, storage_tank, pump, tar_pit_pump, flare_stack,
 // combustion_generator, hydro_turbine, pole, power_switch, lamp,
-// crafting_machine, lab or schematic_crate.
+// crafting_machine, lab, schematic_crate, core_sample_drill or
+// launch_pad.
 // The capsule (work item 0013) stands on the landing pad from the start:
 // it has no item, cannot be picked up, and holds 8 slots for quest
 // rewards and deliveries.
@@ -157,7 +158,8 @@
 // wood gas), so the fluids present together with the loaded item (coal,
 // charcoal or none) pick plastic bar, sulfur, bitumen or syngas plastic.
 // One item output slot shared by every product. The output port on +z
-// (work item 0035) takes the mining fluid made from sulfur and water.
+// (work item 0035) takes the mining fluid made from sulfur and water, and
+// since work item 0040 rocket fuel too, so it has no fluid filter.
 // Wood gasifier (work item 0031): logs in, charcoal out, wood gas out on
 // +z; electric, no fuel slot.
 // The recycler (work item 0027) is recipe_maker recycler, fixed: no
@@ -173,6 +175,13 @@
 // 2, electric_power_kilowatts, no slots. After sampling_seconds of
 // powered work it records the strata below its column and the deep vein
 // under it, once; picked up and placed again it samples anew.
+// Launch pad (work item 0040, kind launch_pad): electric_power_kilowatts
+// drawn while assembling, slots is the cargo section (8, any item),
+// launch_parts the part items with the count a rocket takes (one slot
+// each, at most 3, in slot order), launch_fuel_litres of the fluid its one
+// input port is filtered to, assembly_seconds of powered work (the parts
+// and the fuel are taken in ten equal stages over it) and
+// launch_seconds of the ascent.
 // Lab (work item 0021): speed and electric_power_kilowatts, no slot
 // fields. A lab has one slot per science pack item any technology in
 // technologies.sjson consumes.
@@ -656,7 +665,7 @@ machines = [
 		fluid_ports = [
 			{cell = {x = 1, y = 0, z = 0}, face = "negative_z", direction = "input", phase = "gas", buffer_litres = 200}
 			{cell = {x = 0, y = 0, z = 1}, face = "negative_x", direction = "input", buffer_litres = 200}
-			{cell = {x = 1, y = 0, z = 2}, face = "positive_z", direction = "output", fluid = "mining_fluid", buffer_litres = 200}
+			{cell = {x = 1, y = 0, z = 2}, face = "positive_z", direction = "output", buffer_litres = 200}
 		]
 	}
 	{
@@ -696,6 +705,22 @@ machines = [
 		footprint = {width = 1, depth = 1, height = 2}
 		electric_power_kilowatts = 40
 		sampling_seconds = 60
+	}
+	{
+		id = "launch_pad"
+		name_key = "machine_launch_pad"
+		item = "launch_pad"
+		kind = "launch_pad"
+		footprint = {width = 9, depth = 9, height = 2}
+		slots = 8
+		electric_power_kilowatts = 200
+		launch_parts = [{item = "rocket_structure", count = 10}, {item = "guidance_unit", count = 2}, {item = "cargo_capsule", count = 1}]
+		launch_fuel_litres = 200
+		assembly_seconds = 60
+		launch_seconds = 5
+		fluid_ports = [
+			{cell = {x = 4, y = 0, z = 0}, face = "negative_z", direction = "input", fluid = "rocket_fuel", buffer_litres = 400}
+		]
 	}
 	{
 		id = "lab"

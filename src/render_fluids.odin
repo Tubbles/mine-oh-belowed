@@ -48,6 +48,7 @@ fluid_machine_colors := [Machine_Kind]rl.Color {
 	.Lab           = {},
 	.Schematic_Crate = {},
 	.Core_Sample_Drill = {},
+	.Launch_Pad    = {},
 }
 
 fluid_color :: proc(fluids: Fluid_Registry, fluid: Fluid_Id) -> rl.Color {
@@ -66,7 +67,7 @@ pipe_connects_through :: proc(entities: ^Entities, machines: Machine_Registry, c
 	#partial switch handle.kind {
 	case .Pipe:
 		return true
-	case .Fluid_Machine, .Assembler, .Drill:
+	case .Fluid_Machine, .Assembler, .Drill, .Launch_Pad:
 		common := entity_common(entities, handle)
 		return port_at_face(common^, machines.machines[common.machine], neighbour, opposite_directions[face]) >= 0
 	}
@@ -187,6 +188,12 @@ draw_fluid_entities :: proc(world: ^World, machines: Machine_Registry, fluids: F
 		if drill.alive {
 			buffers := drill.buffers
 			draw_fluid_ports(drill.common, machines.machines[drill.machine], buffers[:], fluids)
+		}
+	}
+	for pad in world.entities.launch_pads.entries {
+		if pad.alive {
+			buffers := pad.buffers
+			draw_fluid_ports(pad.common, machines.machines[pad.machine], buffers[:], fluids)
 		}
 	}
 }

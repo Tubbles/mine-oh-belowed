@@ -16,6 +16,9 @@
 // Mining fluid (work item 0035) comes from the chemical plant (sulfur and
 // water) and keeps an exhausted vein producing through a drill's revival
 // port.
+// Rocket fuel (work item 0040) comes from the chemical plant (light oil
+// and sulfur, or wood gas and coal once its schematic is read) and feeds
+// the launch pad's fuel port. It is not burned in generators.
 fluids = [
 	{id = "water", name_key = "fluid_water", phase = "liquid", color = [60, 110, 220]}
 	{id = "steam", name_key = "fluid_steam", phase = "gas", color = [215, 218, 224]}
@@ -25,4 +28,5 @@ fluids = [
 	{id = "heavy_oil", name_key = "fluid_heavy_oil", phase = "liquid", color = [130, 66, 30]}
 	{id = "wood_gas", name_key = "fluid_wood_gas", phase = "gas", color = [168, 150, 112], fuel_kilojoules_per_litre = 100}
 	{id = "mining_fluid", name_key = "fluid_mining_fluid", phase = "liquid", color = [120, 200, 170]}
+	{id = "rocket_fuel", name_key = "fluid_rocket_fuel", phase = "liquid", color = [230, 110, 50]}
 ]

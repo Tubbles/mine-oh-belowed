@@ -36,6 +36,8 @@ Entity_Kind :: enum u8 {
 	Schematic_Crate,
 	// Core sample drills (prospecting.odin).
 	Core_Sample_Drill,
+	// Launch pads (launch_pad.odin).
+	Launch_Pad,
 }
 
 // index is into the pool of `kind`. Generations start at 1, so the zero
@@ -95,6 +97,7 @@ Entities :: struct {
 	labs:           Entity_Pool(Lab),
 	schematic_crates: Entity_Pool(Schematic_Crate),
 	core_sample_drills: Entity_Pool(Core_Sample_Drill),
+	launch_pads:    Entity_Pool(Launch_Pad),
 	// Transport lines derived from the belts and splitters (belt.odin).
 	belt_network:   Belt_Network,
 	// Derived from the pipes and fluid ports (fluid_network.odin).
@@ -163,6 +166,7 @@ destroy_entities :: proc(entities: ^Entities) {
 	destroy_pool(&entities.labs)
 	destroy_pool(&entities.schematic_crates)
 	destroy_pool(&entities.core_sample_drills)
+	destroy_pool(&entities.launch_pads)
 	destroy_belt_network(&entities.belt_network)
 	destroy_fluid_networks(&entities.fluid_networks)
 	destroy_electric_networks(&entities.electric_networks)
@@ -233,6 +237,10 @@ entity_common :: proc(entities: ^Entities, handle: Entity_Handle) -> ^Entity_Com
 		if drill := pool_get(&entities.core_sample_drills, handle); drill != nil {
 			return &drill.common
 		}
+	case .Launch_Pad:
+		if pad := pool_get(&entities.launch_pads, handle); pad != nil {
+			return &pad.common
+		}
 	}
 	return nil
 }
@@ -286,6 +294,10 @@ entity_slots :: proc(entities: ^Entities, handle: Entity_Handle) -> []Item_Stack
 	case .Schematic_Crate:
 		if crate := pool_get(&entities.schematic_crates, handle); crate != nil {
 			return crate.slots[:]
+		}
+	case .Launch_Pad:
+		if pad := pool_get(&entities.launch_pads, handle); pad != nil {
+			return pad.slots[:launch_pad_slot_count(pad^)]
 		}
 	}
 	return nil
@@ -393,6 +405,8 @@ add_entity :: proc(entities: ^Entities, machines: Machine_Registry, machine: Mac
 		handle = pool_add(&entities.schematic_crates, .Schematic_Crate, Schematic_Crate{common = common, slots = {EMPTY_STACK}})
 	case .Core_Sample_Drill:
 		handle = pool_add(&entities.core_sample_drills, .Core_Sample_Drill, make_core_sample_drill(common))
+	case .Launch_Pad:
+		handle = pool_add(&entities.launch_pads, .Launch_Pad, make_launch_pad(common, machines.machines[machine]))
 	}
 	for cell in footprint_cells(origin, machines.machines[machine].footprint, rotation) {
 		entities.cells[cell] = handle
@@ -465,6 +479,10 @@ remove_entity :: proc(entities: ^Entities, machines: Machine_Registry, handle: E
 		return pool_remove(&entities.schematic_crates, handle)
 	case .Core_Sample_Drill:
 		return pool_remove(&entities.core_sample_drills, handle)
+	case .Launch_Pad:
+		pool_remove(&entities.launch_pads, handle)
+		rebuild_fluid_networks(entities, machines)
+		return true
 	case .Belt, .Splitter:
 		// Handled by remove_belt and remove_splitter above.
 		return false
@@ -491,7 +509,8 @@ cell_blocks_movement :: proc(world: ^World, registry: Block_Registry, cell: Worl
 // inserters, then furnaces, assemblers and labs, so a furnace sees an item
 // an inserter took off a belt in the same tick, and every electric machine
 // works at this tick's satisfaction. Fluids come after, so a boiler burns fuel an
-// inserter put in this tick, then lamps follow their power. Drills and inserters
+// inserter put in this tick, then lamps follow their power. Launch pads
+// assemble after the inserters fed them. Drills and inserters
 // run in pool order, which keeps two of them sharing a vein or a chest
 // deterministic. Outcrops of veins exhausted in this tick turn to spent
 // rock at the end, and crates of newly loaded cave sites appear.
@@ -526,6 +545,7 @@ tick_entities :: proc(world: ^World, content: Simulation_Content, tick_rate: int
 	tick_assemblers(world, content, tick_rate)
 	tick_labs(world, content, tick_rate)
 	tick_core_sample_drills(world, content, tick_rate)
+	tick_launch_pads(world, content, tick_rate)
 	tick_fluids(&world.entities, content, tick_rate, &world.statistics)
 	tick_lamps(world, content.machines)
 	apply_spent_outcrops(world, content.veins)

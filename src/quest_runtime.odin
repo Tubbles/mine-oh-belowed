@@ -157,6 +157,8 @@ hint_counter_value :: proc(statistics: Statistics, hint: Hint) -> u64 {
 		return statistics.turbine_joules / 1000
 	case .Turbine_Still_Water_Ticks:
 		return statistics.turbine_still_water_ticks
+	case .Rockets_Launched:
+		return statistics.rockets_launched
 	}
 	return 0
 }

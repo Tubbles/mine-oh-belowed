@@ -213,6 +213,13 @@ validate_fluid_port_layout :: proc(machine: Machine) -> string {
 		if machine.revival_port != revival {
 			return fmt.tprintf("drill %q needs revival_port with exactly one single face input port with a fluid, or neither", machine.id)
 		}
+	case .Launch_Pad:
+		// The fuel port: one input port holding one fluid, room for a
+		// rocket's fuel (launch_pad.odin).
+		fuel_port := len(ports) == 1 && inputs == 1 && ports[0].filter != NO_FLUID && !ports[0].every_face
+		if !fuel_port || ports[0].capacity < machine.launch_fuel_litres {
+			return fmt.tprintf("launch pad %q needs one single face input port with a fluid, holding at least launch_fuel_litres", machine.id)
+		}
 	case .Crafting_Machine:
 		// Recipes take from input ports and give into output ports.
 		if inputs + outputs != len(ports) {

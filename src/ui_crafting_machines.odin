@@ -122,6 +122,9 @@ open_machine_slot_filters :: proc(screen_context: Screen_Context, handle: Entity
 		return assembler_slot_filters(assembler^, screen_context.machines.machines[assembler.machine], screen_context.recipes)
 	case .Lab:
 		return lab_slot_filters(screen_context.machines.lab_packs, slot_count)
+	case .Launch_Pad:
+		pad := pool_get(&screen_context.world.entities.launch_pads, handle)
+		return launch_pad_slot_filters(pad^, screen_context.machines.machines[pad.machine])
 	}
 	return machine_slot_filters(kind, slot_count)
 }

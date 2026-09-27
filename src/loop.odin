@@ -142,6 +142,7 @@ simulation_tick :: proc(state: ^Simulation_State, content_tables: Simulation_Con
 	}
 	update_recipe_unlocks(&state.unlocks, content.recipes, state.players[:])
 	tick_entities(&state.world, content, state.tick_rate)
+	apply_launch_requests(&state.world, state.tick)
 	apply_research_result(state, content)
 	observe_player_holdings(&state.world.statistics, state.players[:], true)
 	observe_full_inventories(&state.world.statistics, state.players[:])
@@ -424,6 +425,8 @@ show_simulation_events :: proc(state: ^Ui_State, events: ^[dynamic]Simulation_Ev
 			}
 		case .Toggled_Switch:
 		// The switch's colour shows the change.
+		case .Launch_Requested:
+			ui_toast(state, text("toast_rocket_launch"))
 		case .Vein_Assayed:
 			ui_toast(state, text("toast_vein_assayed"))
 		case .Magnetometer_Recorded:
