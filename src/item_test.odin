@@ -74,6 +74,9 @@ test_item_loading_rejects_bad_tables :: proc(t: ^testing.T) {
 		{id = "stone", name_key = "k", category = "raw", stack_size = 1, price = 1},
 		// Every item needs a price (work item 0041).
 		{id = "x", name_key = "k", category = "raw", stack_size = 1, price = 0},
+		// Only a tool mines, and never below hands (work item 0051).
+		{id = "x", name_key = "k", category = "raw", stack_size = 1, price = 1, tool_tier = 1},
+		{id = "x", name_key = "k", category = "tool", stack_size = 1, price = 1, tool_tier = -1},
 	}
 	for bad in cases {
 		definitions := make([dynamic]Item_Definition, context.temp_allocator)
@@ -89,6 +92,25 @@ test_item_loading_rejects_bad_tables :: proc(t: ^testing.T) {
 		}
 	}
 	testing.expect(t, resolve_test_items(without_torch[:]) != "")
+	// Without the iron pickaxe nothing reaches deep stone.
+	without_iron_pickaxe := make([dynamic]Item_Definition, context.temp_allocator)
+	for definition in valid {
+		if definition.id != "iron_pickaxe" {
+			append(&without_iron_pickaxe, definition)
+		}
+	}
+	testing.expect_value(t, resolve_test_items(without_iron_pickaxe[:]), `block "deep_stone" needs tool_tier 3, no tool goes above 2`)
+}
+
+@(test)
+test_pickaxes_carry_their_tool_tier :: proc(t: ^testing.T) {
+	items := make_test_items()
+	testing.expect_value(t, items.items[test_item(items, "wooden_pickaxe")].tool_tier, 1)
+	testing.expect_value(t, items.items[test_item(items, "stone_pickaxe")].tool_tier, 2)
+	testing.expect_value(t, items.items[test_item(items, "iron_pickaxe")].tool_tier, 3)
+	testing.expect_value(t, highest_tool_tier(items.items), 3)
+	testing.expect_value(t, tool_item_for_tier(items, 2), test_item(items, "stone_pickaxe"))
+	testing.expect_value(t, tool_item_for_tier(items, 4), NO_ITEM)
 }
 
 @(test)

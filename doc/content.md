@@ -67,15 +67,17 @@ Charcoal has a fuel value of 3 MJ. Planks and sticks burn for 1 MJ and 0.5 MJ.
 
 ## Tools (phases 1 to 4)
 
+Tools gate hand mining (0051, user decision 2026-09-27): every minable block has a tool tier, hands mine tier 0 (soil, sand, wood, leaves, torches, tar, slag heaps), and the best pickaxe anywhere in the inventory must reach the block's tier; there is no speed bonus and no durability, and drills ignore tiers.
+
 Pending the decision on whether tools gate anything (SUGGESTIONS.md). Listed as speed multipliers only.
 
 | Tool | Recipe | Mining speed |
 | --- | --- | --- |
 | Hands | | 1 (three seconds for stone) |
-| Wooden pickaxe | 3 plank, 2 stick | 1.5 |
-| Stone pickaxe | 3 stone, 2 stick | 2 |
-| Iron pickaxe | 3 iron plate, 2 stick | 3 |
-| Geologist's hammer | 2 iron plate, 1 stick | Assays veins, mines like a stone pickaxe |
+| Wooden pickaxe | 3 plank, 2 stick | Tool tier 1: stone, spent rock, coal, hematite and chalcopyrite ore, brick, concrete, asphalt |
+| Stone pickaxe | 3 stone, 2 stick | Tool tier 2: cassiterite, galena, sphalerite, pentlandite ore |
+| Iron pickaxe | 3 iron plate, 2 stick | Tool tier 3: deep stone, gold quartz |
+| Geologist's hammer | 2 iron plate, 1 stick | Assays veins, tool tier 2 |
 
 ## Machines (phases 1 to 4)
 

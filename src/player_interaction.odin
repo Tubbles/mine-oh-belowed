@@ -62,11 +62,47 @@ mining_fraction :: proc(state: Mining_State) -> f32 {
 	return f32(state.progress_ticks) / f32(state.required_ticks)
 }
 
-required_ticks_for :: proc(registry: Block_Registry, block_id: Block_Id, tick_rate: int) -> u32 {
-	if !block_is_minable(registry, block_id) {
+// Zero, so digging never starts, for a block that cannot be mined or
+// whose tool_tier is above the player's best pickaxe (work item 0051).
+required_ticks_for :: proc(registry: Block_Registry, block_id: Block_Id, tool_tier: int, tick_rate: int) -> u32 {
+	if !block_is_minable(registry, block_id) || block_tool_tier(registry, block_id) > tool_tier {
 		return 0
 	}
 	return mining_required_ticks(registry.definitions[block_id].hardness_seconds, tick_rate)
+}
+
+// The tier hand mining works with: the best pickaxe carried, or every tier
+// under the developer cheat speed (0044), which is for reaching a game
+// state fast.
+effective_tool_tier :: proc(player: Player, items: Item_Registry, cheat_speed: bool) -> int {
+	return cheat_speed ? highest_tool_tier(items.items) : player_tool_tier(player, items)
+}
+
+// The best tool_tier in the inventory or on the cursor, 0 for bare hands.
+// Any slot counts, so the pickaxe need not be selected.
+player_tool_tier :: proc(player: Player, items: Item_Registry) -> int {
+	tier := stack_tool_tier(player.held.stack, items)
+	for stack in player.inventory.slots {
+		tier = max(tier, stack_tool_tier(stack, items))
+	}
+	return tier
+}
+
+stack_tool_tier :: proc(stack: Item_Stack, items: Item_Registry) -> int {
+	if stack_is_empty(stack) || int(stack.item) >= len(items.items) {
+		return 0
+	}
+	return items.items[stack.item].tool_tier
+}
+
+// The HUD line naming the tool the block needs, or empty when the player
+// can mine it or nothing can.
+mining_tool_line :: proc(blocks: Block_Registry, items: Item_Registry, block: Block_Id, tool_tier: int) -> string {
+	needed := block_tool_tier(blocks, block)
+	if !block_is_minable(blocks, block) || needed <= tool_tier {
+		return ""
+	}
+	return format_message_text(text("mining_needs_tool"), item_name(items, tool_item_for_tier(items, needed)))
 }
 
 // A finished dig whose result does not fit keeps its full progress and
@@ -86,7 +122,7 @@ mine_block :: proc(world: ^World, registry: Block_Registry, items: Item_Registry
 	if holding && player.target.hit {
 		record_mining_tick(&world.statistics, block_id)
 	}
-	next, finished := advance_mining(player.mining, holding, player.target, block_id, cheat_mining_ticks(required_ticks_for(registry, block_id, tick_rate), cheat_speed))
+	next, finished := advance_mining(player.mining, holding, player.target, block_id, cheat_mining_ticks(required_ticks_for(registry, block_id, effective_tool_tier(player^, items, cheat_speed), tick_rate), cheat_speed))
 	if !finished {
 		player.mining = next
 		return {}

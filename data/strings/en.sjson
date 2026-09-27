@@ -427,6 +427,9 @@ drill_vein = "Vein"
 drill_remaining = "remaining"
 drill_infinite = "Infinite"
 bore_drill_no_deep_vein = "No deep vein here"
+// HUD target line on a block above the best pickaxe (work item 0051);
+// {name} is the pickaxe's name.
+mining_needs_tool = "Needs a tool: {name}"
 drill_rate = "Rate"
 vein_type_iron = "Iron vein"
 vein_type_copper = "Copper vein"

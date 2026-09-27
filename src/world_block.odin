@@ -31,7 +31,8 @@ Block_Texture_Definition :: struct {
 // water_level is 0 for everything but water, WATER_SOURCE_LEVEL for a
 // source and 1 to WATER_SOURCE_LEVEL - 1 for flowing water. fluid_source
 // names the fluid a source pump draws from the block (a tar pit gives
-// crude oil), as a fluids.sjson id, or is empty.
+// crude oil), as a fluids.sjson id, or is empty. tool_tier is the
+// pickaxe tier hand mining needs, 0 for hands (work item 0051).
 Block_Definition :: struct {
 	id:               string,
 	name:             string,
@@ -40,6 +41,7 @@ Block_Definition :: struct {
 	light_level:      int,
 	water_level:      int,
 	fluid_source:     string,
+	tool_tier:        int,
 	texture:          Block_Texture_Definition,
 }
 
@@ -76,6 +78,9 @@ validate_block_definitions :: proc(definitions: []Block_Definition) -> string {
 		}
 		if definition.hardness_seconds < 0 {
 			return fmt.tprintf("block %q has a negative hardness_seconds", definition.id)
+		}
+		if definition.tool_tier < 0 {
+			return fmt.tprintf("block %q has a negative tool_tier", definition.id)
 		}
 		if definition.light_level < 0 || definition.light_level > MAXIMUM_LIGHT {
 			return fmt.tprintf("block %q has light_level %d outside 0 to %d", definition.id, definition.light_level, MAXIMUM_LIGHT)
@@ -179,6 +184,14 @@ block_is_minable :: proc(registry: Block_Registry, block: Block_Id) -> bool {
 		return false
 	}
 	return registry.definitions[block].hardness_seconds > 0
+}
+
+// The pickaxe tier hand mining the block needs, 0 outside the registry.
+block_tool_tier :: proc(registry: Block_Registry, block: Block_Id) -> int {
+	if int(block) >= len(registry.definitions) {
+		return 0
+	}
+	return registry.definitions[block].tool_tier
 }
 
 face_group_color :: proc(texture: Block_Texture_Definition, group: Face_Group) -> [3]u8 {

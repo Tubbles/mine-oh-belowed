@@ -1,5 +1,6 @@
 package game
 
+import "core:fmt"
 import "core:slice"
 import "core:testing"
 
@@ -112,9 +113,59 @@ open_quest_research :: proc(t: ^testing.T, quest: Quest, technologies: Technolog
 	}
 }
 
+// The lowest tool_tier among the blocks mining yields the item from.
+item_block_tool_tier :: proc(items: Item_Registry, blocks: Block_Registry, item: Item_Id) -> (tier: int, from_block: bool) {
+	for block in 0 ..< len(items.drop_for_block) {
+		if items.drop_for_block[block] == item || items.extra_drop_for_block[block] == item {
+			block_tier := block_tool_tier(blocks, Block_Id(block))
+			tier = from_block ? min(tier, block_tier) : block_tier
+			from_block = true
+		}
+	}
+	return
+}
+
+// Work item 0051: an obtain or place objective whose item comes from a
+// block, or a mining_ticks hint, must not need a pickaxe above tool_tier.
+quest_tool_tier_problem :: proc(quest: Quest, references: Quest_References, tool_tier: int) -> string {
+	for objective in quest.objectives {
+		if objective.type != .Obtain && objective.type != .Place {
+			continue
+		}
+		item := objective_item(objective, references.machines)
+		if tier, from_block := item_block_tool_tier(references.items, references.blocks, item); from_block && tier > tool_tier {
+			return fmt.tprintf("quest %s needs %s, mined with tool_tier %d, the quests so far reach %d", quest.id, references.items.items[item].id, tier, tool_tier)
+		}
+	}
+	for hint in quest.hints {
+		if hint.counter == .Mining_Ticks && block_tool_tier(references.blocks, hint.block) > tool_tier {
+			return fmt.tprintf("quest %s hints at mining %s above tool_tier %d", quest.id, references.blocks.definitions[hint.block].id, tool_tier)
+		}
+	}
+	return ""
+}
+
+// Every pickaxe recipe is a start recipe, so recipe availability alone
+// would allow the iron pickaxe from the first quest. The tier that counts
+// is the best pickaxe an earlier quest had the player craft or obtain, or
+// gave as a reward.
+quest_granted_tool_tier :: proc(quest: Quest, items: Item_Registry, tool_tier: int) -> int {
+	tier := tool_tier
+	for objective in quest.objectives {
+		if (objective.type == .Craft || objective.type == .Obtain) && int(objective.item) < len(items.items) {
+			tier = max(tier, items.items[objective.item].tool_tier)
+		}
+	}
+	for reward in quest.reward_items {
+		tier = max(tier, items.items[reward.item].tool_tier)
+	}
+	return tier
+}
+
 // Played in order, no quest asks for an item whose every recipe is still
 // locked, and research objectives come after their prerequisites. Reward
-// technologies count as researched from the next quest on.
+// technologies count as researched from the next quest on. No quest asks
+// for a block above the pickaxe the earlier quests put in hand.
 @(test)
 test_shipped_quests_never_need_a_locked_recipe :: proc(t: ^testing.T) {
 	references := make_test_quest_references()
@@ -123,7 +174,10 @@ test_shipped_quests_never_need_a_locked_recipe :: proc(t: ^testing.T) {
 		researched     = make([]bool, len(references.technologies.technologies), context.temp_allocator),
 		quest_unlocked = make([]bool, len(references.recipes.recipes), context.temp_allocator),
 	}
+	tool_tier := 0
 	for quest in registry.quests {
+		testing.expect_value(t, quest_tool_tier_problem(quest, references, tool_tier), "")
+		tool_tier = quest_granted_tool_tier(quest, references.items, tool_tier)
 		open_quest_research(t, quest, references.technologies, gates)
 		for objective in quest.objectives {
 			item := objective_item(objective, references.machines)
@@ -138,6 +192,23 @@ test_shipped_quests_never_need_a_locked_recipe :: proc(t: ^testing.T) {
 			gates.researched[technology] = true
 		}
 	}
+}
+
+// Chapter 1's stone quest passes only because the tools quest before it
+// crafts the wooden pickaxe.
+@(test)
+test_stone_quest_needs_the_tools_quest_first :: proc(t: ^testing.T) {
+	references := make_test_quest_references()
+	registry := make_test_quests(references)
+	tools := registry.quests[test_quest_index(registry, "tools")]
+	stone := registry.quests[test_quest_index(registry, "stone")]
+	testing.expect(t, quest_tool_tier_problem(stone, references, 0) != "")
+	testing.expect_value(t, quest_granted_tool_tier(tools, references.items, 0), 1)
+	testing.expect_value(t, quest_tool_tier_problem(stone, references, 1), "")
+	timber := registry.quests[test_quest_index(registry, "timber")]
+	testing.expect_value(t, quest_tool_tier_problem(timber, references, 0), "")
+	hints := []Hint{{counter = .Mining_Ticks, block = test_block(references.blocks, "deep_stone"), threshold = 1}}
+	testing.expect(t, quest_tool_tier_problem(Quest{id = "deep", hints = hints}, references, 2) != "")
 }
 
 @(test)

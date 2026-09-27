@@ -229,7 +229,7 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	case .None:
 	}
 	draw_brownout_warning(state, screen_context.world)
-	status, vein_status := target_status_lines(screen_context.world, screen_context.machines, screen_context.fluids, screen_context.veins, player.target)
+	status, vein_status := target_status_lines(screen_context.world, screen_context.machines, screen_context.fluids, screen_context.veins, screen_context.blocks, items, effective_tool_tier(player^, items, screen_context.cheat_speed), player.target)
 	if ghost_line, shown := bore_drill_ghost_line(screen_context.world, screen_context.machines, screen_context.veins, player^); shown {
 		vein_status = ghost_line
 	}

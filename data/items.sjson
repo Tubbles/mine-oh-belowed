@@ -47,6 +47,9 @@
 // Rocket program (work item 0040): the launch pad, and the rocket parts
 // it assembles a rocket from (rocket fuel is a fluid). A part stacks to
 // 10, which also caps what one pad slot holds.
+// tool_tier (optional, tool items only, work item 0051) is the highest
+// blocks.sjson tool_tier the item mines by hand while anywhere in the
+// player's inventory. Every block tier needs a tool that reaches it.
 // price (required, positive, work item 0041) is the venture credit one
 // item fetches when a shipment sells it as free trade. The values are
 // guesses from the recipe depth: raw material and ore 1, plates 2, steel
@@ -116,10 +119,10 @@ items = [
 	{id = "bitumen", name_key = "item_bitumen", category = "intermediate", stack_size = 50, cannot_recycle = true, price = 3}
 	{id = "science_pack_2", name_key = "item_science_pack_2", category = "intermediate", stack_size = 100, price = 15}
 	// Tools
-	{id = "wooden_pickaxe", name_key = "item_wooden_pickaxe", category = "tool", stack_size = 10, price = 5}
-	{id = "stone_pickaxe", name_key = "item_stone_pickaxe", category = "tool", stack_size = 10, price = 5}
-	{id = "iron_pickaxe", name_key = "item_iron_pickaxe", category = "tool", stack_size = 10, price = 8}
-	{id = "geologists_hammer", name_key = "item_geologists_hammer", category = "tool", stack_size = 10, usable = true, use = "assay", price = 6}
+	{id = "wooden_pickaxe", name_key = "item_wooden_pickaxe", category = "tool", stack_size = 10, tool_tier = 1, price = 5}
+	{id = "stone_pickaxe", name_key = "item_stone_pickaxe", category = "tool", stack_size = 10, tool_tier = 2, price = 5}
+	{id = "iron_pickaxe", name_key = "item_iron_pickaxe", category = "tool", stack_size = 10, tool_tier = 3, price = 8}
+	{id = "geologists_hammer", name_key = "item_geologists_hammer", category = "tool", stack_size = 10, usable = true, use = "assay", price = 6, tool_tier = 2}
 	{id = "magnetometer", name_key = "item_magnetometer", category = "tool", stack_size = 10, usable = true, use = "magnetometer", detects = "hematite", use_range = 30, price = 35}
 	{id = "thumper_charge", name_key = "item_thumper_charge", category = "tool", stack_size = 50, usable = true, use = "seismic_shot", use_range = 32, cannot_recycle = true, price = 5}
 	// Machines

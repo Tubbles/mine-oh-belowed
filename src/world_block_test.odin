@@ -30,4 +30,6 @@ test_block_validation_rejects_bad_tables :: proc(t: ^testing.T) {
 	testing.expect(t, validate_block_definitions(duplicate[:]) != "")
 	unnamed := [?]Block_Definition{{id = "air"}, {id = ""}}
 	testing.expect(t, validate_block_definitions(unnamed[:]) != "")
+	below_hands := [?]Block_Definition{{id = "air"}, {id = "stone", hardness_seconds = 1, tool_tier = -1}}
+	testing.expect_value(t, validate_block_definitions(below_hands[:]), `block "stone" has a negative tool_tier`)
 }

@@ -63,6 +63,7 @@ test_player_mines_block_into_hotbar :: proc(t: ^testing.T) {
 	stone := test_block(registry, "stone")
 	player := make_test_player(registry, {0.5, 1, 0.5})
 	player.pitch = -89
+	player.held.stack = Item_Stack{test_item(items, "wooden_pickaxe"), 1}
 	required := int(mining_required_ticks(registry.definitions[stone].hardness_seconds, TEST_TICK_RATE))
 	tick_test_player(&world, registry, &player, Input_Frame{pressed = {.Mine}}, required - 1)
 	testing.expect_value(t, world_get_block(&world, {0, 0, 0}), stone)
@@ -95,6 +96,7 @@ test_mining_with_a_full_inventory_is_refused :: proc(t: ^testing.T) {
 	for &slot in player.inventory.slots {
 		slot = Item_Stack{item = test_item(make_test_items(), "coal"), count = 50}
 	}
+	player.held.stack = Item_Stack{test_item(make_test_items(), "wooden_pickaxe"), 1}
 	stone := test_block(registry, "stone")
 	required := int(mining_required_ticks(registry.definitions[stone].hardness_seconds, TEST_TICK_RATE))
 	events := tick_test_player(&world, registry, &player, Input_Frame{pressed = {.Mine}}, required)
@@ -186,4 +188,85 @@ test_cheat_mining_ticks :: proc(t: ^testing.T) {
 	testing.expect_value(t, cheat_mining_ticks(5, true), 1)
 	testing.expect_value(t, cheat_mining_ticks(1, true), 1)
 	testing.expect_value(t, cheat_mining_ticks(0, true), 0)
+}
+
+// Work item 0051: a block above the best pickaxe takes no ticks, so
+// digging never starts. Hands are tier 0.
+@(test)
+test_tool_tier_gates_hand_mining :: proc(t: ^testing.T) {
+	registry := make_test_registry()
+	cases := [?]struct {
+		block:     string,
+		tool_tier: int,
+		minable:   bool,
+	} {
+		{"dirt", 0, true},
+		{"log", 0, true},
+		{"stone", 0, false},
+		{"stone", 1, true},
+		{"cassiterite_ore", 1, false},
+		{"cassiterite_ore", 2, true},
+		{"deep_stone", 2, false},
+		{"deep_stone", 3, true},
+	}
+	for entry in cases {
+		ticks := required_ticks_for(registry, test_block(registry, entry.block), entry.tool_tier, TEST_TICK_RATE)
+		testing.expectf(t, (ticks > 0) == entry.minable, "%s with tier %d took %d ticks", entry.block, entry.tool_tier, ticks)
+	}
+}
+
+// Any inventory slot or the cursor counts, the best pickaxe wins.
+@(test)
+test_player_tool_tier_is_the_best_pickaxe_held :: proc(t: ^testing.T) {
+	registry := make_test_registry()
+	items := make_test_items()
+	player := make_test_player(registry, {0.5, 1, 0.5})
+	testing.expect_value(t, player_tool_tier(player, items), 0)
+	player.inventory.slots[len(player.inventory.slots) - 1] = Item_Stack{test_item(items, "stone_pickaxe"), 1}
+	testing.expect_value(t, player_tool_tier(player, items), 2)
+	player.inventory.slots[0] = Item_Stack{test_item(items, "wooden_pickaxe"), 1}
+	testing.expect_value(t, player_tool_tier(player, items), 2)
+	player.held.stack = Item_Stack{test_item(items, "iron_pickaxe"), 1}
+	testing.expect_value(t, player_tool_tier(player, items), 3)
+}
+
+@(test)
+test_bare_hands_make_no_progress_on_stone :: proc(t: ^testing.T) {
+	registry := make_test_registry()
+	world := make_floor_world(registry, 32)
+	player := make_test_player(registry, {0.5, 1, 0.5})
+	player.pitch = -89
+	tick_test_player(&world, registry, &player, Input_Frame{pressed = {.Mine}}, 200)
+	testing.expect_value(t, world_get_block(&world, {0, 0, 0}), test_block(registry, "stone"))
+	testing.expect_value(t, player.mining, Mining_State{})
+}
+
+@(test)
+test_hud_names_the_pickaxe_a_block_needs :: proc(t: ^testing.T) {
+	table, error := parse_string_table(#load("../data/strings/en.sjson"), context.temp_allocator)
+	assert(error == nil)
+	thread_string_table = &table
+	defer thread_string_table = nil
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	target := Raycast_Hit{hit = true, block = {0, 0, 0}}
+	line, _ := target_status_lines(&world, content.machines, content.fluids, content.veins, content.blocks, content.items, 0, target)
+	testing.expect_value(t, line, "Needs a tool: Wooden pickaxe")
+	line, _ = target_status_lines(&world, content.machines, content.fluids, content.veins, content.blocks, content.items, 1, target)
+	testing.expect_value(t, line, "")
+	world_set_block(&world, {0, 0, 0}, test_block(content.blocks, "deep_stone"))
+	line, _ = target_status_lines(&world, content.machines, content.fluids, content.veins, content.blocks, content.items, 1, target)
+	testing.expect_value(t, line, "Needs a tool: Iron pickaxe")
+}
+
+// The developer cheat speed mines every tier; without it the carried
+// pickaxe decides.
+@(test)
+test_cheat_speed_mines_every_tier :: proc(t: ^testing.T) {
+	context.allocator = context.temp_allocator
+	items := make_test_items()
+	player := make_player(player_start_on({0, 0, 0}))
+	testing.expect_value(t, effective_tool_tier(player, items, false), 0)
+	testing.expect_value(t, effective_tool_tier(player, items, true), highest_tool_tier(items.items))
+	testing.expect(t, highest_tool_tier(items.items) >= 3)
 }

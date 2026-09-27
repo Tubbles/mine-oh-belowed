@@ -368,8 +368,10 @@ test_concrete_brick_and_slag_place_and_mine :: proc(t: ^testing.T) {
 		place_with_player(&world, Simulation_Content{blocks = registry, items = items, machines = make_test_machines()}, players, 0, {.Place})
 		testing.expect_value(t, world_get_block(&world, {2, 1, 0}), block)
 		testing.expect_value(t, player.inventory.slots[0], EMPTY_STACK)
-		// Mined from above, it takes its hardness and comes back.
+		// Mined from above, it takes its hardness and comes back. The
+		// pickaxe on the cursor reaches concrete and brick.
 		world_set_block(&world, {0, 0, 0}, block)
+		player.held.stack = Item_Stack{test_item(items, "wooden_pickaxe"), 1}
 		player.pitch = -89
 		required := int(mining_required_ticks(hardness[index], TEST_TICK_RATE))
 		tick_test_player(&world, registry, player, Input_Frame{pressed = {.Mine}}, required - 1)

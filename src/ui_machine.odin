@@ -575,8 +575,9 @@ bore_drill_ghost_line :: proc(world: ^World, machines: Machine_Registry, veins: 
 
 // What the HUD shows under the crosshair: the targeted entity's name and
 // state, and for a drill or any block over a surface vein's footprint
-// (mined outcrop or not) the vein and what is left.
-target_status_lines :: proc(world: ^World, machines: Machine_Registry, fluids: Fluid_Registry, veins: Vein_Content, target: Raycast_Hit) -> (entity_line, vein_line: string) {
+// (mined outcrop or not) the vein and what is left. A targeted block above
+// the player's tool_tier names the pickaxe it needs in the first line.
+target_status_lines :: proc(world: ^World, machines: Machine_Registry, fluids: Fluid_Registry, veins: Vein_Content, blocks: Block_Registry, items: Item_Registry, tool_tier: int, target: Raycast_Hit) -> (entity_line, vein_line: string) {
 	if drill := pool_get(&world.entities.drills, target.entity); drill != nil {
 		return entity_status_text(world, machines, fluids, target.entity), vein_status_text(world, veins, drill.vein)
 	}
@@ -586,8 +587,9 @@ target_status_lines :: proc(world: ^World, machines: Machine_Registry, fluids: F
 	if !target.hit {
 		return "", ""
 	}
+	tool_line := mining_tool_line(blocks, items, world_get_block(world, target.block), tool_tier)
 	if vein, found := vein_at_column(world, target.block.x, target.block.z); found {
-		return "", vein_status_text(world, veins, vein)
+		return tool_line, vein_status_text(world, veins, vein)
 	}
-	return "", ""
+	return tool_line, ""
 }

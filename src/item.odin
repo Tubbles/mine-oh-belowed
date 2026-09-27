@@ -71,6 +71,7 @@ Item_Definition :: struct {
 	detects:         string,
 	use_range:       int,
 	price:           int,
+	tool_tier:       int,
 }
 
 Items_File :: struct {
@@ -85,6 +86,8 @@ Items_File :: struct {
 // a magnetometer finds veins yielding detects within use_range blocks, a
 // seismic shot images deep veins within use_range blocks. price is the
 // venture credit one item fetches as free trade (work item 0041).
+// tool_tier is the highest block tool_tier the tool mines by hand, 0 for
+// every item but the pickaxes (work item 0051).
 Item :: struct {
 	id:              string,
 	name_key:        string,
@@ -98,6 +101,7 @@ Item :: struct {
 	detects:         Item_Id,
 	use_range:       i32,
 	price:           u64,
+	tool_tier:       int,
 }
 
 Item_Registry :: struct {
@@ -155,6 +159,9 @@ validate_item_definition :: proc(definitions: []Item_Definition, index: int) -> 
 	}
 	if definition.price < 1 {
 		return fmt.tprintf("item %q needs a positive price", definition.id)
+	}
+	if definition.tool_tier < 0 || (definition.tool_tier > 0 && definition.category != item_category_names[.Tool]) {
+		return fmt.tprintf("item %q has tool_tier %d, only a tool may have a positive one", definition.id, definition.tool_tier)
 	}
 	if definition.usable && definition.places_block != "" {
 		return fmt.tprintf("usable item %q cannot place a block", definition.id)
@@ -228,6 +235,7 @@ resolve_item :: proc(definition: Item_Definition, blocks: Block_Registry) -> (it
 		detects         = NO_ITEM,
 		use_range       = i32(definition.use_range),
 		price           = u64(definition.price),
+		tool_tier       = definition.tool_tier,
 	}
 	return item, ""
 }
@@ -292,6 +300,25 @@ resolve_item_drops :: proc(definitions: []Item_Definition, items: []Item, blocks
 	return ""
 }
 
+highest_tool_tier :: proc(items: []Item) -> int {
+	highest := 0
+	for item in items {
+		highest = max(highest, item.tool_tier)
+	}
+	return highest
+}
+
+// Every block that can be mined needs a tool that reaches its tier.
+validate_block_tool_tiers :: proc(items: []Item, blocks: Block_Registry) -> string {
+	highest := highest_tool_tier(items)
+	for definition, block in blocks.definitions {
+		if block_is_minable(blocks, Block_Id(block)) && definition.tool_tier > highest {
+			return fmt.tprintf("block %q needs tool_tier %d, no tool goes above %d", definition.id, definition.tool_tier, highest)
+		}
+	}
+	return ""
+}
+
 // Validates the file against the block registry and resolves every
 // reference. Unknown references are errors.
 resolve_item_registry :: proc(file: Items_File, blocks: Block_Registry, allocator := context.allocator) -> (registry: Item_Registry, problem: string) {
@@ -323,6 +350,10 @@ resolve_item_registry :: proc(file: Items_File, blocks: Block_Registry, allocato
 		return {}, problem
 	}
 	if problem = resolve_item_detects(file.items, registry); problem != "" {
+		destroy_item_registry(registry, allocator)
+		return {}, problem
+	}
+	if problem = validate_block_tool_tiers(items, blocks); problem != "" {
 		destroy_item_registry(registry, allocator)
 		return {}, problem
 	}
@@ -516,6 +547,17 @@ item_name :: proc(registry: Item_Registry, item: Item_Id) -> string {
 		return ""
 	}
 	return text(registry.items[item].name_key)
+}
+
+// The tool with the lowest tool_tier that reaches tier, or NO_ITEM.
+tool_item_for_tier :: proc(registry: Item_Registry, tier: int) -> Item_Id {
+	best := NO_ITEM
+	for item, index in registry.items {
+		if item.tool_tier >= tier && (best == NO_ITEM || item.tool_tier < registry.items[best].tool_tier) {
+			best = Item_Id(index)
+		}
+	}
+	return best
 }
 
 // The venture credit one item fetches, 0 outside the table.

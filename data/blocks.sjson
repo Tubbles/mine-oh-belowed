@@ -6,6 +6,11 @@
 // surface is lower.
 // hardness_seconds is the time to break the block by hand. 0 means the
 // block cannot be mined (air, water).
+// tool_tier (default 0, work item 0051) is the pickaxe hand mining needs:
+// 0 hands, 1 wooden, 2 stone, 3 iron (items.sjson tool_tier). Soil, sand,
+// wood, tar and slag heaps yield to hands; stone, the chapter 1 ores and
+// paving need a wooden pickaxe; the tin, lead, zinc and nickel ores a
+// stone one; deep stone and gold quartz an iron one. Drills ignore it.
 // texture holds one base colour (red, green, blue) per face group. The atlas
 // generator turns each into a 16 by 16 tile with a little per texel noise.
 // Solid blocks are opaque to light, every other block lets light through.
@@ -29,6 +34,7 @@ blocks = [
 		name = "Stone"
 		solid = true
 		hardness_seconds = 1.5
+		tool_tier = 1
 		texture = {top = [128, 128, 128], side = [128, 128, 128], bottom = [128, 128, 128]}
 	}
 	{
@@ -36,6 +42,7 @@ blocks = [
 		name = "Dirt"
 		solid = true
 		hardness_seconds = 0.75
+		tool_tier = 0
 		texture = {top = [134, 96, 67], side = [134, 96, 67], bottom = [134, 96, 67]}
 	}
 	{
@@ -43,6 +50,7 @@ blocks = [
 		name = "Grass"
 		solid = true
 		hardness_seconds = 0.75
+		tool_tier = 0
 		texture = {top = [106, 170, 64], side = [120, 110, 70], bottom = [134, 96, 67]}
 	}
 	{
@@ -50,6 +58,7 @@ blocks = [
 		name = "Sand"
 		solid = true
 		hardness_seconds = 0.75
+		tool_tier = 0
 		texture = {top = [219, 207, 163], side = [219, 207, 163], bottom = [219, 207, 163]}
 	}
 	{
@@ -57,6 +66,7 @@ blocks = [
 		name = "Hematite Ore"
 		solid = true
 		hardness_seconds = 2.5
+		tool_tier = 1
 		texture = {top = [150, 70, 60], side = [150, 70, 60], bottom = [150, 70, 60]}
 	}
 	{
@@ -72,6 +82,7 @@ blocks = [
 		name = "Log"
 		solid = true
 		hardness_seconds = 1.5
+		tool_tier = 0
 		texture = {top = [160, 130, 82], side = [104, 78, 48], bottom = [160, 130, 82]}
 	}
 	{
@@ -79,6 +90,7 @@ blocks = [
 		name = "Leaves"
 		solid = true
 		hardness_seconds = 0.3
+		tool_tier = 0
 		texture = {top = [58, 122, 44], side = [54, 114, 40], bottom = [50, 104, 36]}
 	}
 	{
@@ -86,6 +98,7 @@ blocks = [
 		name = "Tar"
 		solid = true
 		hardness_seconds = 2
+		tool_tier = 0
 		texture = {top = [34, 30, 28], side = [44, 40, 36], bottom = [44, 40, 36]}
 	}
 	{
@@ -93,6 +106,7 @@ blocks = [
 		name = "Deep Stone"
 		solid = true
 		hardness_seconds = 6
+		tool_tier = 3
 		texture = {top = [72, 72, 82], side = [72, 72, 82], bottom = [72, 72, 82]}
 	}
 	{
@@ -100,6 +114,7 @@ blocks = [
 		name = "Coal Ore"
 		solid = true
 		hardness_seconds = 2.5
+		tool_tier = 1
 		texture = {top = [52, 52, 52], side = [52, 52, 52], bottom = [52, 52, 52]}
 	}
 	{
@@ -107,6 +122,7 @@ blocks = [
 		name = "Chalcopyrite Ore"
 		solid = true
 		hardness_seconds = 2.5
+		tool_tier = 1
 		texture = {top = [176, 148, 60], side = [176, 148, 60], bottom = [176, 148, 60]}
 	}
 	{
@@ -114,6 +130,7 @@ blocks = [
 		name = "Cassiterite Ore"
 		solid = true
 		hardness_seconds = 2.5
+		tool_tier = 2
 		texture = {top = [96, 80, 72], side = [96, 80, 72], bottom = [96, 80, 72]}
 	}
 	{
@@ -121,6 +138,7 @@ blocks = [
 		name = "Galena Ore"
 		solid = true
 		hardness_seconds = 2.5
+		tool_tier = 2
 		texture = {top = [100, 110, 150], side = [100, 110, 150], bottom = [100, 110, 150]}
 	}
 	{
@@ -128,6 +146,7 @@ blocks = [
 		name = "Sphalerite Ore"
 		solid = true
 		hardness_seconds = 2.5
+		tool_tier = 2
 		texture = {top = [92, 70, 40], side = [92, 70, 40], bottom = [92, 70, 40]}
 	}
 	{
@@ -135,6 +154,7 @@ blocks = [
 		name = "Pentlandite Ore"
 		solid = true
 		hardness_seconds = 2.5
+		tool_tier = 2
 		texture = {top = [140, 160, 110], side = [140, 160, 110], bottom = [140, 160, 110]}
 	}
 	{
@@ -142,6 +162,7 @@ blocks = [
 		name = "Spent Rock"
 		solid = true
 		hardness_seconds = 1.5
+		tool_tier = 1
 		texture = {top = [150, 140, 128], side = [150, 140, 128], bottom = [150, 140, 128]}
 	}
 	{
@@ -205,6 +226,7 @@ blocks = [
 		name = "Torch"
 		solid = false
 		hardness_seconds = 0.1
+		tool_tier = 0
 		light_level = 14
 		texture = {top = [255, 200, 80], side = [150, 110, 60], bottom = [120, 90, 50]}
 	}
@@ -222,6 +244,7 @@ blocks = [
 		name = "Concrete"
 		solid = true
 		hardness_seconds = 3
+		tool_tier = 1
 		texture = {top = [176, 174, 168], side = [164, 162, 156], bottom = [164, 162, 156]}
 	}
 	{
@@ -230,6 +253,7 @@ blocks = [
 		name = "Brick"
 		solid = true
 		hardness_seconds = 2
+		tool_tier = 1
 		texture = {top = [168, 80, 60], side = [156, 72, 54], bottom = [156, 72, 54]}
 	}
 	{
@@ -239,6 +263,7 @@ blocks = [
 		name = "Slag Heap"
 		solid = true
 		hardness_seconds = 1.5
+		tool_tier = 0
 		texture = {top = [58, 54, 52], side = [48, 44, 43], bottom = [40, 37, 36]}
 	}
 	{
@@ -257,6 +282,7 @@ blocks = [
 		name = "Asphalt"
 		solid = true
 		hardness_seconds = 3
+		tool_tier = 1
 		texture = {top = [44, 44, 46], side = [52, 52, 54], bottom = [52, 52, 54]}
 	}
 	{
@@ -267,6 +293,7 @@ blocks = [
 		name = "Gold Quartz"
 		solid = true
 		hardness_seconds = 3
+		tool_tier = 3
 		texture = {top = [214, 206, 180], side = [222, 196, 120], bottom = [214, 206, 180]}
 	}
 ]
