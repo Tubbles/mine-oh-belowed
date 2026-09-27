@@ -89,7 +89,7 @@ command_usages := [?]Command_Usage {
 	{"tick <n>", "run n ticks as fast as possible, answer when done"},
 	{"pause | resume", "hold or release the simulation"},
 	{"save", "save the world"},
-	{"reload", "reload the game data (not available yet)"},
+	{"reload", "reload the content tables into the running world"},
 	{"screenshot [name]", "a PNG of the next frame, the answer names the path"},
 	{"query player|world|quests|contracts", "state as key value lines"},
 	{"query veins [radius] | query entities [kind] [radius] | query stats <item>", "state around the player, or of an item"},
@@ -236,7 +236,7 @@ execute_command :: proc(command_context: Command_Context, words: []string) -> Co
 	case "help":
 		return command_help()
 	case "reload":
-		return command_error("not available yet")
+		return command_error("reload runs only in the game")
 	case "save":
 		return command_error("save runs only in the game")
 	case "screenshot":

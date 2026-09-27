@@ -37,6 +37,21 @@ developer_screenshot = "Screenshot"
 developer_screenshot_saved = "Screenshot saved to"
 developer_screenshot_failed = "Screenshot failed"
 developer_applies_on_resume = "Applies when the game resumes"
+developer_data_current = "No game data changes seen"
+developer_data_changed = "Game data files changed, reload to apply"
+developer_reload_data = "Reload data"
+
+// Hot reload of the data files (work item 0054)
+reload_failed = "Could not reload"
+reload_strings_done = "Strings reloaded"
+reload_bindings_done = "Bindings reloaded"
+reload_developer_kits_done = "Developer kits reloaded"
+reload_shaders_done = "Shaders reloaded"
+reload_content = "the game data"
+reload_content_done = "Game data reloaded:"
+reload_chunks_note = "Loaded chunks keep their blocks, generation changes apply to chunks loaded later"
+reload_content_changed = "Game data files changed: F8 or Developer, Reload data applies them"
+reload_restart_needed = "game.sjson changed: it applies at the next start"
 developer_back = "Back"
 
 // Title screen

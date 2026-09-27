@@ -58,6 +58,12 @@ Screen_Context :: struct {
 	// The Developer screen's Screenshot button sets it; the frame loop
 	// takes the picture (work item 0053).
 	screenshot_requested: ^bool,
+	// The Developer screen's Reload data button sets it; the frame loop
+	// reloads the content tables (hot_reload.odin, work item 0054). Nil
+	// without a world.
+	reload_requested:     ^bool,
+	// Content files changed since the content was loaded.
+	data_changed:         bool,
 }
 
 // Pause opens the pause menu from the world, Open_Inventory the inventory,

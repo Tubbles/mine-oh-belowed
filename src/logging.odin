@@ -141,8 +141,18 @@ write_log_line :: proc(file: ^os.File, line: string) {
 
 // fmt.eprintfln (to the original stderr after a redirect) plus the log
 // file.
+// While a data reload loads the game data (data_reload.odin), the last
+// "error: " line this thread logged, without the prefix, in the temp
+// allocator, so the reload can name the file and the problem in a toast.
+// Thread local: tests log from several threads.
+@(thread_local)
+captured_log_error: ^string
+
 log_printf :: proc(format: string, arguments: ..any) {
 	line := fmt.tprintf(format, ..arguments)
+	if captured_log_error != nil && strings.has_prefix(line, "error: ") {
+		captured_log_error^ = line[len("error: "):]
+	}
 	sync.mutex_lock(&global_log.mutex)
 	defer sync.mutex_unlock(&global_log.mutex)
 	write_console(fmt.tprintf("%s\n", line))

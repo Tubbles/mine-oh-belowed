@@ -53,6 +53,11 @@ Player_Configuration :: struct {
 	// Effective bindings, and the tables the input backend reads.
 	bindings:       []Binding,
 	input_bindings: Input_Bindings,
+	// The configuration's bindings, applied again when data/bindings.sjson
+	// reloads (hot_reload.odin).
+	binding_overrides: []Binding,
+	// --watch-data, Default when not given.
+	watch_data:     Watch_Data_Mode,
 }
 
 // The environment variables the layering reads, passed in so that tests
@@ -303,7 +308,7 @@ sorted_object_keys :: proc(object: json.Object) -> []string {
 
 // Writes the tree into target, whose current values are the defaults.
 // Supports the field types Configuration uses: structs, f32, int, bool,
-// string and slices of structs.
+// string, enums (by lower case name) and slices of structs.
 assign_configuration_value :: proc(target: any, value: json.Value, key_path: string, provenance: Configuration_Provenance, allocator := context.allocator) -> string {
 	info := runtime.type_info_base(type_info_of(target.id))
 	#partial switch variant in info.variant {
@@ -335,10 +340,36 @@ assign_configuration_value :: proc(target: any, value: json.Value, key_path: str
 			return wrong_type_problem(provenance, key_path, "a string", value)
 		}
 		(^string)(target.data)^ = strings.clone(text, allocator)
+	case runtime.Type_Info_Enum:
+		return assign_configuration_enum(target, variant, info.size, value, key_path, provenance)
 	case:
 		panic("assign_configuration_value: unsupported field type")
 	}
 	return ""
+}
+
+// An enum is written as its value's name in lower case.
+assign_configuration_enum :: proc(target: any, variant: runtime.Type_Info_Enum, size: int, value: json.Value, key_path: string, provenance: Configuration_Provenance) -> string {
+	text, ok := value.(json.String)
+	names := configuration_enum_names(variant)
+	if !ok {
+		return wrong_type_problem(provenance, key_path, fmt.tprintf("one of %s", names), value)
+	}
+	for name, index in variant.names {
+		if strings.to_lower(name, context.temp_allocator) == text {
+			store_unsigned(target.data, size, u64(variant.values[index]))
+			return ""
+		}
+	}
+	return fmt.tprintf("%s: %s is %q, not one of %s", source_of_key_path(provenance, key_path), key_path, text, names)
+}
+
+configuration_enum_names :: proc(variant: runtime.Type_Info_Enum) -> string {
+	names := make([]string, len(variant.names), context.temp_allocator)
+	for name, index in variant.names {
+		names[index] = strings.to_lower(name, context.temp_allocator)
+	}
+	return strings.join(names, ", ", context.temp_allocator)
 }
 
 json_number :: proc(value: json.Value) -> (number: f64, ok: bool) {

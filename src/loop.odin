@@ -1,6 +1,7 @@
 package game
 
 import "core:fmt"
+import "core:mem/virtual"
 import "core:os"
 import "core:strings"
 import "core:time"
@@ -103,6 +104,19 @@ Frame_State :: struct {
 	screenshot_directory: string,
 	// The Developer screen's Screenshot button.
 	screenshot_requested: bool,
+	// Hot reload (work item 0054, hot_reload.odin). content and
+	// base_generator live in content_arena, which a content reload frees.
+	data_directory:       string,
+	content_arena:        ^virtual.Arena,
+	data_watch:           Data_Watch,
+	watch_data_flag:      Watch_Data_Mode,
+	binding_overrides:    []Binding,
+	// The bindings of the last bindings reload; nil for those main read.
+	bindings_arena:       ^virtual.Arena,
+	// String entries a strings reload replaced, freed at exit.
+	retired_strings:      [dynamic]map[string]string,
+	// F8, the Developer screen's Reload data button, watch_data all.
+	reload_requested:     bool,
 }
 
 // Above the middle of the debug terrain, looking down at an angle. The
@@ -303,6 +317,9 @@ update_frame :: proc(state: ^Frame_State) {
 		update_session(state, world_blocked)
 		state.haptic = haptic_request_for(state.session.simulation.players[0], !world_blocked)
 	}
+	if .Reload_Data in state.input.just_pressed && developer_mode_on(state) {
+		state.reload_requested = true
+	}
 	serve_command_socket(state)
 	if state.input_backend == .Sdl3 {
 		apply_sdl3_haptics(&state.sdl3_input, state.haptic)
@@ -462,6 +479,8 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 	screen_context.developer_requests = &session.simulation.developer_requests
 	screen_context.cheat_speed = session.simulation.cheat_speed
 	screen_context.landing_pad = session.start.landing_pad
+	screen_context.reload_requested = &state.reload_requested
+	screen_context.data_changed = state.data_watch.content_changed
 	return screen_context
 }
 
@@ -637,7 +656,8 @@ show_title :: proc(state: ^Frame_State) {
 
 // Takes ownership of the session, or shows the title when there is none.
 // Saves on quit when the world saves.
-run_game :: proc(config: Game_Config, input_backend: Input_Backend, content: Game_Content, base_generator: Generator, data_directory: string, session: ^Session, title: Title_State, player_configuration: Player_Configuration) {
+run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: Game_Data, data_directory: string, session: ^Session, title: Title_State, player_configuration: Player_Configuration) {
+	content := game_data.content
 	rl.SetTraceLogLevel(.WARNING)
 	rl.SetConfigFlags({.VSYNC_HINT, .WINDOW_RESIZABLE})
 	rl.InitWindow(1280, 720, "Mine oh Belowed")
@@ -658,7 +678,11 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, content: Gam
 	state := Frame_State {
 		config          = config,
 		content         = content,
-		base_generator  = base_generator,
+		base_generator  = game_data.base_generator,
+		content_arena   = game_data.arena,
+		data_directory  = data_directory,
+		watch_data_flag = player_configuration.watch_data,
+		binding_overrides = player_configuration.binding_overrides,
 		title           = title,
 		input_backend   = input_backend,
 		renderer        = renderer,
@@ -671,6 +695,8 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, content: Gam
 		// raylib starts with the cursor shown; the first apply hides it.
 		cursor_enabled  = true,
 	}
+	// After the session left, which saves with the content.
+	defer destroy_hot_reload_state(&state)
 	defer destroy_ui_state(&state.ui)
 	defer release_ui_images(&state.ui_images)
 	defer destroy_title_state(&state.title)
@@ -694,6 +720,8 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, content: Gam
 		update_frame(&state)
 		render_frame(&state)
 		apply_session_request(&state)
+		update_data_watch(&state)
+		apply_reload_request(&state)
 		if !screen_stack_contains(state.ui.screens, .Settings) {
 			write_changed_settings(&state)
 		}
@@ -796,13 +824,15 @@ frame_command_context :: proc(state: ^Frame_State) -> Command_Context {
 	return command_context
 }
 
-// save needs the session and the game content, the rest runs in
-// command.odin. A tick command answers later (answer_command_ticks).
+// save and reload need the session and the game content, the rest runs
+// in command.odin. A tick command answers later (answer_command_ticks).
 execute_queued_command :: proc(state: ^Frame_State, queued: Queued_Command_Line) {
 	words, _ := split_command_words(queued.line)
 	response: Command_Response
 	if len(words) > 0 && words[0] == "save" {
 		response = command_save(state)
+	} else if len(words) > 0 && words[0] == "reload" {
+		response = command_reload(state)
 	} else {
 		empty: bool
 		if response, empty = execute_command_line(frame_command_context(state), queued.line); empty {

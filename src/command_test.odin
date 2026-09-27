@@ -150,7 +150,7 @@ test_commands_without_a_world :: proc(t: ^testing.T) {
 	response, _ = execute_command_line(command_context, "give iron_plate 1")
 	testing.expect_value(t, response.text, "no world is loaded")
 	response, _ = execute_command_line(command_context, "reload")
-	testing.expect_value(t, response, Command_Response{text = "not available yet"})
+	testing.expect_value(t, response, Command_Response{text = "reload runs only in the game"})
 	response, _ = execute_command_line(command_context, "pause")
 	testing.expect(t, response.ok && control.paused)
 	response, _ = execute_command_line(command_context, "resume")

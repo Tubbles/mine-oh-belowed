@@ -54,7 +54,7 @@ One `game` package under `src/`, split into files by concern: `world_*.odin`, `g
 
 ## Data driven content
 
-`data/*.sjson` holds blocks (each with a `name_key`, `discoverable` marking an ore that reads "Unknown ore" until its drop was obtained, 0052), items, recipes, machines, technologies, vein types and ore tables, biomes, quest chapters. Files are parsed with `core:encoding/json` (`Specification.SJSON`) into prototype tables at startup. String ids are resolved to dense integer indices once. In development builds the data directory is watched and reloaded.
+`data/*.sjson` holds blocks (each with a `name_key`, `discoverable` marking an ore that reads "Unknown ore" until its drop was obtained, 0052), items, recipes, machines, technologies, vein types and ore tables, biomes, quest chapters. Files are parsed with `core:encoding/json` (`Specification.SJSON`) into prototype tables at startup through `load_game_data`, into a per generation arena the frame state owns. String ids are resolved to dense integer indices once. Hot reload (0054): a watcher polls the data directory once a second; strings, bindings, developer kits and shaders reload in place on change (a failed parse keeps the old data and says so), while the content tables reload only on request (the `reload` command, F8 or the Developer screen, or automatically with `watch_data = all` after a quiet second): the world is encoded through the save codec in memory, the data loads and validates as at start, and the world is decoded back with the content remap (0047), loaded chunks kept with their blocks remapped and remeshed. A generator change affects only chunks loaded afterwards.
 
 ## Strings and units
 

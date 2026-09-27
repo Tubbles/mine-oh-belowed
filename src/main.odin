@@ -43,6 +43,8 @@ Command_Line :: struct {
 	developer_mode:  bool `args:"name=dev" usage:"developer mode: a Developer entry in the pause menu"`,
 	chapter:         int `usage:"start a new world at chapter n: the earlier chapters' quests completed with their rewards, and chapter n's kit from data/dev_kits.sjson"`,
 	give_arguments:  [dynamic]string `args:"name=give" usage:"<item>:<count>, items into the inventory on the first tick (the rest into the drop capsule), repeatable (--give=iron_plate:50)"`,
+	// Work item 0054, overrides the watch_data setting for this run.
+	watch_data:      string `usage:"reload changed data files while the game runs: off, presentation or all (default: the watch_data setting)"`,
 }
 
 // Unix style keeps the documented spellings: --seed=42, --set=<key>=<value>.
@@ -113,6 +115,9 @@ command_line_value_problem :: proc(command_line: Command_Line) -> string {
 	}
 	if command_line.subcommand != "" && command_line.subcommand != CONFIG_SUBCOMMAND {
 		return fmt.tprintf("unknown command %q (supported: %s)", command_line.subcommand, CONFIG_SUBCOMMAND)
+	}
+	if _, ok := parse_watch_data_mode(command_line.watch_data); !ok {
+		return fmt.tprintf("invalid --watch-data=%s (expected off, presentation or all)", command_line.watch_data)
 	}
 	if command_line.chapter < 0 {
 		return fmt.tprintf("invalid --chapter=%d (expected a chapter from 1)", command_line.chapter)
@@ -196,7 +201,12 @@ main :: proc() {
 		os.exit(1)
 	}
 	data_directory := require_data_directory()
-	bindings, bindings_problem := load_bindings(data_directory, loaded_configuration)
+	binding_overrides, overrides_problem := resolve_bindings(loaded_configuration.configuration.bindings, loaded_configuration.provenance)
+	if overrides_problem != "" {
+		log_printf("error: %s", overrides_problem)
+		os.exit(1)
+	}
+	bindings, bindings_problem := load_bindings(data_directory, binding_overrides)
 	if bindings_problem != "" {
 		log_printf("error: %s", bindings_problem)
 		os.exit(1)
@@ -210,95 +220,20 @@ main :: proc() {
 		os.exit(1)
 	}
 	global_string_table = string_table
-	registry, registry_loaded := load_block_registry(data_directory, global_string_table.entries)
-	if !registry_loaded {
+	game_data, data_problem := load_game_data(data_directory, config, global_string_table.entries)
+	if data_problem != "" {
 		os.exit(1)
 	}
-	items, items_loaded := load_item_registry(data_directory, registry)
-	if !items_loaded {
-		os.exit(1)
-	}
-	fluids, fluids_loaded := load_fluid_registry(data_directory)
-	if !fluids_loaded {
-		os.exit(1)
-	}
-	machines, machines_loaded := load_machine_registry(data_directory, items, fluids)
-	if !machines_loaded {
-		os.exit(1)
-	}
-	recipes, recipes_loaded := load_recipe_registry(data_directory, items, fluids)
-	if !recipes_loaded {
-		os.exit(1)
-	}
-	if problem := validate_crafting_machine_recipes(machines, recipes); problem != "" {
-		log_printf("error: invalid %s: %s", MACHINES_FILE_NAME, problem)
-		os.exit(1)
-	}
-	technologies, technologies_loaded := load_technology_registry(data_directory, items, recipes)
-	if !technologies_loaded {
-		os.exit(1)
-	}
-	machines.lab_packs = technologies.science_packs
-	quest_references := Quest_References {
-		blocks       = registry,
-		items        = items,
-		machines     = machines,
-		fluids       = fluids,
-		recipes      = recipes,
-		technologies = technologies,
-		strings      = global_string_table.entries,
-	}
-	quests, quests_loaded := load_quest_registry(data_directory, quest_references)
-	if !quests_loaded {
-		os.exit(1)
-	}
-	contracts, contracts_loaded := load_contract_registry(data_directory, items, global_string_table.entries)
-	if !contracts_loaded {
-		os.exit(1)
-	}
-	if problem := validate_starting_items(config.starting_items, items); problem != "" {
-		log_printf("error: invalid %s: %s", GAME_CONFIG_FILE_NAME, problem)
-		os.exit(1)
-	}
-	developer_kits, developer_kits_loaded := load_developer_kits(data_directory, items)
-	if !developer_kits_loaded {
-		os.exit(1)
-	}
-	developer_grants, developer_problem := command_line_data_problem(command_line, items, developer_kits)
+	game_data.content.unlock_all = command_line.unlock_all
+	game_data.content.developer_mode = command_line.developer_mode
+	content := game_data.content
+	developer_grants, developer_problem := command_line_data_problem(command_line, content.items, content.developer_kits)
 	if developer_problem != "" {
 		log_printf("error: %s", developer_problem)
 		os.exit(2)
 	}
-	recipe_names := recipe_display_names(recipes)
-	content := Game_Content {
-		blocks          = registry,
-		items           = items,
-		machines        = machines,
-		fluids          = fluids,
-		recipes         = recipes,
-		technologies    = technologies,
-		quests          = quests,
-		contracts       = contracts,
-		developer_kits  = developer_kits,
-		item_sort_ranks = item_sort_ranks(items, item_display_names(items, context.temp_allocator)),
-		recipe_names    = recipe_names,
-		recipe_order    = recipe_name_order(recipe_names),
-		unlock_all      = command_line.unlock_all,
-		developer_mode  = command_line.developer_mode,
-	}
-	// Every world copies the generator data; only the seed differs.
-	base_generator, generator_loaded := load_generator(data_directory, registry, DEFAULT_WORLD_SEED)
-	if !generator_loaded {
-		os.exit(1)
-	}
-	veins, problem := resolve_vein_content(base_generator.veins, items)
-	if problem != "" {
-		log_printf("error: invalid %s: %s", VEINS_FILE_NAME, problem)
-		os.exit(1)
-	}
-	content.veins = veins
 	saves_directory, saves_found := resolve_saves_directory(loaded_configuration.configuration.paths.saves)
-	session := start_command_line_session(command_line, config, content, base_generator, saves_directory, saves_found)
+	session := start_command_line_session(command_line, config, content, game_data.base_generator, saves_directory, saves_found)
 	if session != nil {
 		command_line_developer_requests(&session.simulation.developer_requests, command_line.chapter, developer_grants)
 	}
@@ -307,14 +242,17 @@ main :: proc() {
 	if !input_started {
 		os.exit(1)
 	}
+	watch_data, _ := parse_watch_data_mode(command_line.watch_data)
 	player_configuration := Player_Configuration {
-		environment    = environment,
-		settings       = loaded_configuration.configuration.settings,
-		bindings       = bindings,
+		environment       = environment,
+		settings          = loaded_configuration.configuration.settings,
+		bindings          = bindings,
+		binding_overrides = binding_overrides,
 		// Before the window opens, so the report shows without a display.
-		input_bindings = make_backend_bindings(bindings, input_backend),
+		input_bindings    = make_backend_bindings(bindings, input_backend),
+		watch_data        = watch_data,
 	}
-	run_game(config, input_backend, content, base_generator, data_directory, session, make_title_state(config, saves_directory, saves_found, make_save_header()), player_configuration)
+	run_game(config, input_backend, game_data, data_directory, session, make_title_state(config, saves_directory, saves_found, make_save_header()), player_configuration)
 }
 
 // Builds the backend's tables and reports once what it cannot express.
@@ -340,19 +278,16 @@ require_data_directory :: proc() -> string {
 	return data_directory
 }
 
-// The defaults from data/bindings.sjson with the configuration's overrides.
-load_bindings :: proc(data_directory: string, loaded: Loaded_Configuration) -> (bindings: []Binding, problem: string) {
+// The defaults from data/bindings.sjson with the configuration's overrides
+// (resolve_bindings), also when data/bindings.sjson changes while the game
+// runs (hot_reload.odin).
+load_bindings :: proc(data_directory: string, overrides: []Binding, allocator := context.allocator) -> (bindings: []Binding, problem: string) {
 	defaults: []Binding
-	defaults, problem = load_default_bindings(data_directory)
+	defaults, problem = load_default_bindings(data_directory, allocator)
 	if problem != "" {
 		return nil, problem
 	}
-	overrides: []Binding
-	overrides, problem = resolve_bindings(loaded.configuration.bindings, loaded.provenance)
-	if problem != "" {
-		return nil, problem
-	}
-	return effective_bindings(defaults, overrides), ""
+	return effective_bindings(defaults, overrides, allocator), ""
 }
 
 // The config subcommand: no window, no log, exit 1 on a configuration error.
@@ -362,8 +297,11 @@ print_configuration :: proc(assignments: []string) {
 		log_printf("error: %s", problem)
 		os.exit(1)
 	}
-	bindings: []Binding
-	bindings, problem = load_bindings(require_data_directory(), loaded)
+	overrides, bindings: []Binding
+	overrides, problem = resolve_bindings(loaded.configuration.bindings, loaded.provenance)
+	if problem == "" {
+		bindings, problem = load_bindings(require_data_directory(), overrides)
+	}
 	if problem != "" {
 		log_printf("error: %s", problem)
 		os.exit(1)

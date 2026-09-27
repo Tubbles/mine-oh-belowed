@@ -2,6 +2,7 @@ package game
 
 import "base:runtime"
 import "core:encoding/json"
+import "core:fmt"
 import "core:os"
 import "core:strings"
 import "core:sync"
@@ -23,7 +24,8 @@ String_Table :: struct {
 	mutex:            sync.Mutex,
 }
 
-// Filled once at start up by main; text() reads it.
+// Filled at start up by main and replaced by a strings reload
+// (replace_string_entries); text() reads it.
 global_string_table: String_Table
 
 // A test that needs the shipped strings (the UI audit) points this at its
@@ -37,12 +39,45 @@ parse_string_table :: proc(data: []byte, allocator := context.allocator) -> (tab
 }
 
 destroy_string_table :: proc(table: ^String_Table) {
-	for key, value in table.entries {
+	destroy_string_entries(table.entries)
+	clear_missing_reports(table)
+}
+
+destroy_string_entries :: proc(entries: map[string]string) {
+	for key, value in entries {
 		delete(key)
 		delete(value)
 	}
-	delete(table.entries)
+	delete(entries)
+}
+
+// A strings reload (work item 0054): data parsed into new entries that
+// replace the table's, between frames. A file that does not parse leaves
+// the table as it was. The old entries come back to the caller, who
+// frees them once no text() result can point into them any more; the
+// missing key reports start over, since the file may have added them.
+replace_string_entries :: proc(table: ^String_Table, data: []byte) -> (old_entries: map[string]string, error: json.Unmarshal_Error) {
+	parsed: String_Table
+	if parsed, error = parse_string_table(data); error != nil {
+		destroy_string_entries(parsed.entries)
+		return nil, error
+	}
+	sync.mutex_lock(&table.mutex)
+	old_entries, table.entries = table.entries, parsed.entries
+	sync.mutex_unlock(&table.mutex)
 	clear_missing_reports(table)
+	return old_entries, nil
+}
+
+// The file's bytes, or the problem naming the file.
+read_strings_file :: proc(data_directory: string) -> (data: []byte, problem: string) {
+	path, _ := os.join_path({data_directory, STRINGS_DIRECTORY, STRINGS_FILE_NAME}, context.temp_allocator)
+	read_error: os.Error
+	data, read_error = os.read_entire_file(path, context.temp_allocator)
+	if read_error != nil {
+		return nil, fmt.tprintf("cannot read %s: %v", path, read_error)
+	}
+	return data, ""
 }
 
 // Frees the recorded missing keys. For tests that call text() without a

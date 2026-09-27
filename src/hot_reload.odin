@@ -1,0 +1,245 @@
+package game
+
+import "core:fmt"
+import "core:mem/virtual"
+import "core:time"
+
+// The frame loop's side of hot reload (work item 0054): the data watcher
+// (data_watch.odin) polled between frames, presentation files reloaded in
+// place, and the content reload (data_reload.odin) the reload command, the
+// Developer screen and F8 ask for. Everything here runs on the main thread
+// between frames or between ticks, so text() results and content pointers
+// taken within a frame stay valid for that frame. A file that fails to
+// load leaves the old data in place and says so in a toast and the log.
+
+// Developer mode from --dev or the setting, like the command socket.
+developer_mode_on :: proc(state: ^Frame_State) -> bool {
+	return state.content.developer_mode || state.settings.developer_mode
+}
+
+// At exit, after the session left.
+destroy_hot_reload_state :: proc(state: ^Frame_State) {
+	destroy_data_watch(&state.data_watch)
+	for entries in state.retired_strings {
+		destroy_string_entries(entries)
+	}
+	delete(state.retired_strings)
+	destroy_arena(state.bindings_arena)
+	destroy_arena(state.content_arena)
+}
+
+report_reload :: proc(state: ^Frame_State, message: string) {
+	log_printf("data: %s", message)
+	ui_toast(&state.ui, message)
+}
+
+// Loaders log their own error line too; this one says what was kept.
+report_reload_problem :: proc(state: ^Frame_State, what, problem: string) {
+	log_printf("error: could not reload %s, keeping the old data: %s", what, problem)
+	ui_toast(&state.ui, fmt.tprintf("%s %s: %s", text("reload_failed"), what, problem))
+}
+
+// Presentation.
+
+// The old entries stay until exit: names taken from the table outlive a
+// frame in places (the recipe names are refreshed here, others may not
+// be), and a table is small.
+reload_strings :: proc(state: ^Frame_State) -> string {
+	data, problem := read_strings_file(state.data_directory)
+	if problem != "" {
+		return problem
+	}
+	old_entries, error := replace_string_entries(&global_string_table, data)
+	if error != nil {
+		return fmt.tprintf("cannot parse %s/%s/%s: %v", state.data_directory, STRINGS_DIRECTORY, STRINGS_FILE_NAME, error)
+	}
+	append(&state.retired_strings, old_entries)
+	refresh_content_names(&state.content, virtual.arena_allocator(state.content_arena))
+	return ""
+}
+
+// The configuration's overrides stay as they were read at start.
+reload_bindings :: proc(state: ^Frame_State) -> string {
+	arena := new_growing_arena()
+	if arena == nil {
+		return "cannot reserve memory for the bindings"
+	}
+	bindings, problem := load_bindings(state.data_directory, state.binding_overrides, virtual.arena_allocator(arena))
+	if problem != "" {
+		destroy_arena(arena)
+		return problem
+	}
+	state.bindings = bindings
+	state.input_bindings = make_backend_bindings(bindings, state.input_backend)
+	destroy_arena(state.bindings_arena)
+	state.bindings_arena = arena
+	return ""
+}
+
+// Into the content arena, which frees the old kits with the content.
+reload_developer_kits :: proc(state: ^Frame_State) -> string {
+	capture: Log_Capture
+	begin_log_capture(&capture)
+	kits, loaded := load_developer_kits(state.data_directory, state.content.items, virtual.arena_allocator(state.content_arena))
+	problem := end_log_capture(&capture, fmt.tprintf("%s did not load", DEVELOPER_KITS_FILE_NAME))
+	if !loaded {
+		return problem
+	}
+	state.content.developer_kits = kits
+	return ""
+}
+
+reload_shaders :: proc(state: ^Frame_State) -> string {
+	capture: Log_Capture
+	begin_log_capture(&capture)
+	reloaded := reload_chunk_shader(&state.renderer, state.data_directory)
+	problem := end_log_capture(&capture, "the chunk shader did not load")
+	return reloaded ? "" : problem
+}
+
+@(rodata)
+presentation_reload_keys := [Data_File_Category]string {
+	.Ignored        = "",
+	.Restart        = "",
+	.Strings        = "reload_strings_done",
+	.Bindings       = "reload_bindings_done",
+	.Developer_Kits = "reload_developer_kits_done",
+	.Shaders        = "reload_shaders_done",
+	.Content        = "",
+}
+
+// What a failed reload's toast names.
+@(rodata)
+presentation_file_names := [Data_File_Category]string {
+	.Ignored        = "",
+	.Restart        = "",
+	.Strings        = STRINGS_DIRECTORY + "/" + STRINGS_FILE_NAME,
+	.Bindings       = BINDINGS_FILE_NAME,
+	.Developer_Kits = DEVELOPER_KITS_FILE_NAME,
+	.Shaders        = CHUNK_SHADER_DIRECTORY,
+	.Content        = "",
+}
+
+reload_presentation :: proc(state: ^Frame_State, category: Data_File_Category) -> string {
+	#partial switch category {
+	case .Strings:
+		return reload_strings(state)
+	case .Bindings:
+		return reload_bindings(state)
+	case .Developer_Kits:
+		return reload_developer_kits(state)
+	case .Shaders:
+		return reload_shaders(state)
+	}
+	return ""
+}
+
+// Strings first, so the toasts of the others read the new ones.
+apply_presentation_changes :: proc(state: ^Frame_State, changed: Data_File_Categories) {
+	for category in Data_File_Category {
+		if category not_in changed || category not_in PRESENTATION_CATEGORIES {
+			continue
+		}
+		if problem := reload_presentation(state, category); problem != "" {
+			report_reload_problem(state, presentation_file_names[category], problem)
+		} else {
+			report_reload(state, text(presentation_reload_keys[category]))
+		}
+	}
+}
+
+// The watcher.
+
+// Once a second while watching is on. Content changes are only announced,
+// except with watch_data all, where a poll that finds the content files
+// unchanged again asks for the reload.
+update_data_watch :: proc(state: ^Frame_State) {
+	watch := &state.data_watch
+	mode := effective_watch_data_mode(state.watch_data_flag, state.settings.watch_data, developer_mode_on(state))
+	if mode == .Off {
+		if watch.started {
+			destroy_data_watch(watch)
+		}
+		return
+	}
+	now := time.now()
+	if !data_watch_poll_due(watch^, now) {
+		return
+	}
+	was_settling, content_was_changed := watch.content_settling, watch.content_changed
+	changed := poll_data_watch(watch, state.data_directory, now)
+	apply_presentation_changes(state, changed)
+	if .Restart in changed {
+		report_reload(state, text("reload_restart_needed"))
+	}
+	if .Content in changed && !content_was_changed {
+		report_reload(state, text("reload_content_changed"))
+	}
+	if mode == .All && was_settling && !watch.content_settling && watch.content_changed {
+		state.reload_requested = true
+	}
+}
+
+// Content.
+
+// The new content replaces the frame's; the old arena goes once nothing
+// points into it: the session was rebuilt already, and the renderers
+// that were made from the content are made again.
+replace_frame_content :: proc(state: ^Frame_State, data: Game_Data) {
+	old_arena := state.content_arena
+	state.content = data.content
+	state.base_generator = data.base_generator
+	state.content_arena = data.arena
+	replace_chunk_atlas(&state.renderer, state.content.blocks)
+	destroy_belt_renderer(&state.belt_renderer)
+	state.belt_renderer = init_belt_renderer(state.content.machines)
+	destroy_arena(old_arena)
+	state.data_watch.content_changed = false
+	state.data_watch.content_settling = false
+}
+
+// Loads and validates every content file, then rebuilds the session under
+// the new data (reload_session). The answer for the command, or the
+// problem; either is also logged and toasted. On a problem everything
+// stays as it was.
+reload_content :: proc(state: ^Frame_State) -> (summary: string, problem: string) {
+	data: Game_Data
+	data, problem = load_game_data(state.data_directory, state.config, global_string_table.entries)
+	if problem == "" {
+		data.content.unlock_all = state.content.unlock_all
+		data.content.developer_mode = state.content.developer_mode
+		changes := content_table_changes(content_tables(game_simulation_content(state.content)), content_tables(game_simulation_content(data.content)))
+		summary = content_changes_text(changes)
+		if state.session != nil {
+			problem = reload_session(state.session, state.content, data, state.config)
+		}
+	}
+	if problem != "" {
+		destroy_game_data(&data)
+		report_reload_problem(state, text("reload_content"), problem)
+		return "", problem
+	}
+	replace_frame_content(state, data)
+	if state.session != nil {
+		summary = fmt.tprintf("%s. %s", summary, text("reload_chunks_note"))
+	}
+	report_reload(state, fmt.tprintf("%s %s", text("reload_content_done"), summary))
+	return summary, ""
+}
+
+// F8 in developer mode, the Developer screen's button and watch_data all.
+apply_reload_request :: proc(state: ^Frame_State) {
+	if !state.reload_requested {
+		return
+	}
+	state.reload_requested = false
+	reload_content(state)
+}
+
+command_reload :: proc(state: ^Frame_State) -> Command_Response {
+	summary, problem := reload_content(state)
+	if problem != "" {
+		return command_error("%s", problem)
+	}
+	return command_ok("reloaded: %s", summary)
+}

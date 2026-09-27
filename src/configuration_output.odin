@@ -62,9 +62,13 @@ write_configuration_dump_value :: proc(builder: ^strings.Builder, value: any, ke
 	strings.write_string(builder, "}\n")
 }
 
+// Enums by lower case name, as the configuration reads them.
 dump_leaf_text :: proc(value: any) -> string {
 	if text, is_string := value.(string); is_string {
 		return fmt.tprintf("%q", text)
+	}
+	if reflect.is_enum(type_info_of(value.id)) {
+		return fmt.tprintf("%q", strings.to_lower(fmt.tprint(value), context.temp_allocator))
 	}
 	return fmt.tprint(value)
 }

@@ -9,12 +9,14 @@ import "core:fmt"
 // frame state and change at once; everything else (fly mode and cheat
 // speed among them) queues a Developer_Request that the next
 // simulation tick serves (developer.odin). The pause menu below keeps the
-// simulation paused, so those apply once the game resumes.
+// simulation paused, so those apply once the game resumes. Screenshot and
+// Reload data are frame requests the frame loop serves after the frame.
 
 DEVELOPER_PANEL_WIDTH :: 1000
 // Title, two toggle rows, kit label and buttons, quest label and
-// buttons, time label and buttons, unlock, teleport and screenshot, back.
-DEVELOPER_ROW_COUNT :: 11
+// buttons, time label and buttons, unlock, teleport and screenshot, the
+// data reload row, back.
+DEVELOPER_ROW_COUNT :: 12
 
 // Pending toggle requests (fly mode, cheat speed) flip the shown state, so
 // the check box shows the state once the requests are served.
@@ -136,5 +138,19 @@ developer_actions :: proc(state: ^Ui_State, content: ^Ui_Rectangle, screen_conte
 	// state directory's screenshots and toasts the path (work item 0053).
 	if ui_button(state, column(last_row, 3, 2, UI_GAP), text("developer_screenshot")) && screen_context.screenshot_requested != nil {
 		screen_context.screenshot_requested^ = true
+	}
+	developer_reload_row(state, developer_row(content), screen_context)
+}
+
+// Whether content files changed since they were loaded, and the button
+// that reloads them into the running world (work item 0054), like F8 and
+// the reload command. The frame loop reloads after the frame.
+developer_reload_row :: proc(state: ^Ui_State, row: Ui_Rectangle, screen_context: Screen_Context) {
+	area := row
+	button := cut_right(&area, column(row, 3, 0, UI_GAP).width)
+	cut_right(&area, UI_GAP)
+	ui_label(state, area, text(screen_context.data_changed ? "developer_data_changed" : "developer_data_current"))
+	if ui_button(state, button, text("developer_reload_data")) && screen_context.reload_requested != nil {
+		screen_context.reload_requested^ = true
 	}
 }

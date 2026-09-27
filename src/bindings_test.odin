@@ -88,6 +88,7 @@ reference_keys := [?]Reference_Key {
 	{.F5, .Debug_Remove_Block},
 	{.F7, .Debug_Drop_Item},
 	{.F6, .Toggle_Fly_Mode},
+	{.F8, .Reload_Data},
 	{.UP, .Navigate_Up},
 	{.DOWN, .Navigate_Down},
 	{.LEFT, .Navigate_Left},

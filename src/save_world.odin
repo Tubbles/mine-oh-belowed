@@ -373,15 +373,20 @@ Save_Files :: struct {
 	regions:  [dynamic]Region_File,
 }
 
-encode_save_files :: proc(state: ^Simulation_State, content: Simulation_Content, display_name: string, last_played_unix_seconds: i64) -> Save_Files {
-	header := make_save_header()
+// The entities file's bytes, in the temp allocator.
+encode_entities :: proc(state: ^Simulation_State, content: Simulation_Content, header: Save_Header) -> []byte {
 	entities := make([dynamic]byte, context.temp_allocator)
 	append_save_header(&entities, ENTITIES_FILE_MAGIC, header)
 	append_content_tables(&entities, content_tables(content))
 	write_simulation_state(&entities, state)
+	return entities[:]
+}
+
+encode_save_files :: proc(state: ^Simulation_State, content: Simulation_Content, display_name: string, last_played_unix_seconds: i64) -> Save_Files {
+	header := make_save_header()
 	files := Save_Files {
 		world    = encode_world_file(make_world_file(state, display_name, last_played_unix_seconds), context.temp_allocator),
-		entities = entities[:],
+		entities = encode_entities(state, content, header),
 		regions  = make([dynamic]Region_File, context.temp_allocator),
 	}
 	for region, chunks in group_chunks_by_region(collect_saved_chunks(&state.world)) {
@@ -507,27 +512,34 @@ load_entities_file :: proc(state: ^Simulation_State, content: Simulation_Content
 	if error != nil {
 		return fmt.tprintf("cannot read %s: %v", path, error)
 	}
+	return decode_entities(state, content, data, path, expected, remap)
+}
+
+// The bytes of an entities file (encode_save_files), from disk or from a
+// data reload's snapshot (data_reload.odin). name is what the problems
+// call them.
+decode_entities :: proc(state: ^Simulation_State, content: Simulation_Content, data: []byte, name: string, expected: Save_Header, remap: ^Content_Remap) -> string {
 	reader := Byte_Reader {
 		data = data,
 	}
 	header, header_ok := read_save_header(&reader, ENTITIES_FILE_MAGIC)
 	if !header_ok {
-		return fmt.tprintf("%s is not an entities file", path)
+		return fmt.tprintf("%s is not an entities file", name)
 	}
-	if problem := header_problem(header, expected, path); problem != "" {
+	if problem := header_problem(header, expected, name); problem != "" {
 		return problem
 	}
 	saved_tables, tables_ok := read_content_tables(&reader)
 	if !tables_ok {
-		return fmt.tprintf("%s is malformed or truncated", path)
+		return fmt.tprintf("%s is malformed or truncated", name)
 	}
 	remap^ = make_content_remap(saved_tables, content_tables(content))
 	reader.remap = remap
 	if !read_simulation_state(&reader, state, content) {
 		if reader.problem != "" {
-			return fmt.tprintf("%s cannot be loaded: %s", path, reader.problem)
+			return fmt.tprintf("%s cannot be loaded: %s", name, reader.problem)
 		}
-		return fmt.tprintf("%s is malformed or truncated", path)
+		return fmt.tprintf("%s is malformed or truncated", name)
 	}
 	return ""
 }

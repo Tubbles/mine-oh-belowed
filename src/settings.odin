@@ -25,6 +25,10 @@ Settings :: struct {
 	// The Developer entry in the pause menu (ui_developer.odin, work item
 	// 0043), so a tester needs no launch options; --dev shows it too.
 	developer_mode:            bool,
+	// Reloading changed data files while the game runs (data_watch.odin,
+	// work item 0054): default, off, presentation or all. --watch-data
+	// overrides it for one run.
+	watch_data:                Watch_Data_Mode,
 }
 
 DEFAULT_SETTINGS :: Settings {
@@ -38,6 +42,7 @@ DEFAULT_SETTINGS :: Settings {
 	autosave_minutes          = 5,
 	bottleneck_overlay        = false,
 	developer_mode            = false,
+	watch_data                = .Default,
 }
 
 UI_SCALE_RANGE :: Slider_Range{0.75, 1.5, 0.05}

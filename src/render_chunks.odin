@@ -77,17 +77,42 @@ chunk_atlas_texture :: proc(renderer: Chunk_Renderer) -> rl.Texture2D {
 init_chunk_renderer :: proc(registry: Block_Registry, data_directory: string) -> (renderer: Chunk_Renderer, ok: bool) {
 	shader := load_chunk_shader(data_directory) or_return
 	renderer.atlas_layout = atlas_layout_for_block_count(len(registry.definitions))
+	renderer.material = rl.LoadMaterialDefault()
+	use_chunk_shader(&renderer, shader)
+	rl.SetMaterialTexture(&renderer.material, .ALBEDO, upload_atlas(registry, renderer.atlas_layout))
+	apply_daylight(&renderer, 1)
+	return renderer, true
+}
+
+// The uniforms that stay for the shader's life, and the locations of those
+// set every frame.
+use_chunk_shader :: proc(renderer: ^Chunk_Renderer, shader: rl.Shader) {
 	set_shader_vector2(shader, "tile_size", atlas_tile_uv_size(renderer.atlas_layout))
 	set_shader_float(shader, "fog_start", FOG_START)
 	set_shader_float(shader, "fog_end", FOG_END)
 	renderer.camera_position_location = rl.GetShaderLocation(shader, "camera_position")
 	renderer.day_factor_location = rl.GetShaderLocation(shader, "day_factor")
 	renderer.fog_color_location = rl.GetShaderLocation(shader, "fog_color")
-	renderer.material = rl.LoadMaterialDefault()
 	renderer.material.shader = shader
+}
+
+// A shader file changed (work item 0054). A shader that does not compile
+// keeps the old one; load_chunk_shader logged why.
+reload_chunk_shader :: proc(renderer: ^Chunk_Renderer, data_directory: string) -> bool {
+	shader := load_chunk_shader(data_directory) or_return
+	old_shader := renderer.material.shader
+	use_chunk_shader(renderer, shader)
+	rl.UnloadShader(old_shader)
+	return true
+}
+
+// The block table changed (a content reload): a new atlas, and every mesh
+// is rebuilt by the streaming, since tile positions may have moved.
+replace_chunk_atlas :: proc(renderer: ^Chunk_Renderer, registry: Block_Registry) {
+	rl.UnloadTexture(chunk_atlas_texture(renderer^))
+	renderer.atlas_layout = atlas_layout_for_block_count(len(registry.definitions))
+	set_shader_vector2(renderer.material.shader, "tile_size", atlas_tile_uv_size(renderer.atlas_layout))
 	rl.SetMaterialTexture(&renderer.material, .ALBEDO, upload_atlas(registry, renderer.atlas_layout))
-	apply_daylight(&renderer, 1)
-	return renderer, true
 }
 
 // raylib frees the CPU side arrays in UnloadMesh with its own allocator,

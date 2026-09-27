@@ -66,6 +66,8 @@ Action :: enum u8 {
 	// F7: one iron plate onto the targeted belt.
 	Debug_Drop_Item,
 	Toggle_Fly_Mode,
+	// F8, in developer mode: reload the content tables (work item 0054).
+	Reload_Data,
 }
 
 Action_Set :: bit_set[Action]
