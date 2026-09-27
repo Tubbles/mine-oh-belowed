@@ -24,6 +24,11 @@ Raised by the work item notes (0005 to 0008), to be turned into work items when 
 - Diagnostics overlay backdrop is narrower than its longest lines.
 - Fluid branches are served in coordinate order (0020), so a tank on one branch can starve a consumer on another until the tank's fill fraction passes the junction's. Proportional sharing at junctions would fix it.
 - Quest chapters measure placements and production, not layout (0018); an entity graph query would let quests check that pieces are actually connected.
+- Bindings are a list overridden per action (0025); an object keyed by action would merge better across layered files, and there is no way to unbind an action (a `none` control). The `context` field is displayed but does not gate actions.
+- The log file grows without limit and argument errors before the log opens reach stderr only.
+- Saves refuse any change to data ids or struct layout (0023). A remap by string id would let saves survive content changes once the content settles.
+- The load screen shows one long string per world; columns would read better on the couch. World setting choices step forward only; left and right should step back.
+- A player built roof over a saved chunk does not darken it on reload (0023), the same gap as generation under a roof.
 
 ## Next steps
 
