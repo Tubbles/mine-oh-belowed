@@ -254,9 +254,10 @@ test_drill_stalls_on_blocked_output_and_on_fuel :: proc(t: ^testing.T) {
 	handle := place_test_drill(&world, content, {0, 1, 0}, 0, vein)
 	drill := test_drill(&world, handle)
 	hematite := test_item(content.items, "hematite")
-	// Air in front: the unit stays in the drill, which stops burning.
+	// Air in front: the unit stays in the drill, which stops burning and
+	// says it has no output.
 	tick_test_entities(&world, content, 192)
-	testing.expect_value(t, drill.state, Drill_State.Waiting_For_Room)
+	testing.expect_value(t, drill.state, Drill_State.No_Output)
 	testing.expect_value(t, drill.held, Item_Stack{hematite, 1})
 	fuel := drill.fuel_joules
 	tick_test_entities(&world, content, 300)

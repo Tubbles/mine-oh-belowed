@@ -51,6 +51,9 @@ Drill_State :: enum u8 {
 	Unpowered,
 	Boring,
 	Revived,
+	// Nothing stands in the drop cell to take the held unit (couch test 1:
+	// "waiting for room" hid that the cell was empty).
+	No_Output,
 }
 
 @(rodata)
@@ -62,6 +65,7 @@ drill_state_keys := [Drill_State]string {
 	.Unpowered        = "machine_state_unpowered",
 	.Boring           = "machine_state_boring",
 	.Revived          = "machine_state_revived",
+	.No_Output        = "machine_state_no_output",
 }
 
 // held is a drawn unit that found no room yet. slot_count is 1 for a
@@ -184,9 +188,21 @@ drill_units_per_minute :: proc(machine: Machine, tick_rate: int, revived := fals
 // ground level. A side two cells wide has no middle cell, and the one on
 // the arrow's left is taken.
 drill_drop_cell :: proc(drill: Drill, machine: Machine) -> World_Coordinate {
+	return drill_drop_cell_at(drill.origin, drill.rotation, machine)
+}
+
+// The drop cell of a drill at origin with rotation, for placed drills and
+// the placement ghost alike.
+drill_drop_cell_at :: proc(origin: World_Coordinate, rotation: u8, machine: Machine) -> World_Coordinate {
 	width, depth := machine.footprint.x, machine.footprint.z
-	offset := rotate_footprint_cell({width, (depth - 1) / 2}, width, depth, drill.rotation)
-	return drill.origin + {offset.x, 0, offset.y}
+	offset := rotate_footprint_cell({width, (depth - 1) / 2}, width, depth, rotation)
+	return origin + {offset.x, 0, offset.y}
+}
+
+// Why a held unit did not go out: nothing stands in the drop cell, or what
+// stands there has no room for the item.
+drill_blocked_state :: proc(entities: ^Entities, drill: Drill, machine: Machine) -> Drill_State {
+	return entity_at(entities, drill_drop_cell(drill, machine)) == NO_ENTITY ? .No_Output : .Waiting_For_Room
 }
 
 // The lane on the belt's side facing the drill. A belt running in line
@@ -366,7 +382,7 @@ add_productivity :: proc(drill: ^Drill, bonus_per_mille: u32) {
 advance_drill :: proc(world: ^World, content: Simulation_Content, drill: ^Drill, tick_rate: int) {
 	machine := content.machines.machines[drill.machine]
 	if !stack_is_empty(drill.held) && !output_drill_item(world, content, drill, machine) {
-		drill.state = .Waiting_For_Room
+		drill.state = drill_blocked_state(&world.entities, drill^, machine)
 		return
 	}
 	vein := registered_vein(world, drill.vein)
@@ -394,7 +410,7 @@ advance_drill :: proc(world: ^World, content: Simulation_Content, drill: ^Drill,
 	drill.held = Item_Stack{item = item, count = 1}
 	add_productivity(drill, technology_effect_per_mille(content.technologies, world.research.levels, .Mining_Productivity))
 	if !output_drill_item(world, content, drill, machine) {
-		drill.state = .Waiting_For_Room
+		drill.state = drill_blocked_state(&world.entities, drill^, machine)
 	}
 }
 

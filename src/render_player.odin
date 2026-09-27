@@ -114,6 +114,7 @@ draw_placement_preview :: proc(world: ^World, content: Simulation_Content, playe
 		if placement.drill {
 			top := f32(placement.origin.y + placement.size.y) + 0.02
 			draw_drill_arrow(placement.origin, placement.size, placement.rotation, top, BELT_GHOST_ARROW_COLOR)
+			draw_drill_drop_cell(placement, content.machines)
 		}
 		if placement.splitter {
 			draw_splitter_arrow(placement.origin, placement.size, placement.rotation, BELT_GHOST_ARROW_COLOR)
@@ -126,6 +127,13 @@ draw_placement_preview :: proc(world: ^World, content: Simulation_Content, playe
 		return
 	}
 	rl.DrawCube(block_centre(players[index].target.adjacent), 1, 1, 1, PLACEMENT_PREVIEW_COLOR)
+}
+
+// The cell the drill's ore goes to, outlined: whatever stands there
+// receives it, an empty cell leaves the drill without output.
+draw_drill_drop_cell :: proc(placement: Placement, machines: Machine_Registry) {
+	cell := drill_drop_cell_at(placement.origin, placement.rotation, machines.machines[placement.machine])
+	rl.DrawCubeWiresV(block_centre(cell), {0.9, 0.9, 0.9}, BELT_GHOST_ARROW_COLOR)
 }
 
 // A line from the pickup side to the drop side with a small cube at the drop end.
