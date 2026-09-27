@@ -32,6 +32,8 @@ Entity_Kind :: enum u8 {
 	// Crafting machines (assembler.odin) and labs (lab.odin).
 	Assembler,
 	Lab,
+	// Cave crates holding a schematic (schematic.odin).
+	Schematic_Crate,
 }
 
 // index is into the pool of `kind`. Generations start at 1, so the zero
@@ -89,6 +91,7 @@ Entities :: struct {
 	lamps:          Entity_Pool(Lamp),
 	assemblers:     Entity_Pool(Assembler),
 	labs:           Entity_Pool(Lab),
+	schematic_crates: Entity_Pool(Schematic_Crate),
 	// Transport lines derived from the belts and splitters (belt.odin).
 	belt_network:   Belt_Network,
 	// Derived from the pipes and fluid ports (fluid_network.odin).
@@ -155,6 +158,7 @@ destroy_entities :: proc(entities: ^Entities) {
 	destroy_pool(&entities.lamps)
 	destroy_pool(&entities.assemblers)
 	destroy_pool(&entities.labs)
+	destroy_pool(&entities.schematic_crates)
 	destroy_belt_network(&entities.belt_network)
 	destroy_fluid_networks(&entities.fluid_networks)
 	destroy_electric_networks(&entities.electric_networks)
@@ -217,13 +221,18 @@ entity_common :: proc(entities: ^Entities, handle: Entity_Handle) -> ^Entity_Com
 		if lab := pool_get(&entities.labs, handle); lab != nil {
 			return &lab.common
 		}
+	case .Schematic_Crate:
+		if crate := pool_get(&entities.schematic_crates, handle); crate != nil {
+			return &crate.common
+		}
 	}
 	return nil
 }
 
-// Belts have no panel: Interact does nothing on them.
+// Belts have no panel: Interact does nothing on them. Interact on a
+// schematic crate takes its schematic instead (schematic.odin).
 entity_has_panel :: proc(entities: ^Entities, handle: Entity_Handle) -> bool {
-	return handle.kind != .Belt && entity_is_alive(entities, handle)
+	return handle.kind != .Belt && handle.kind != .Schematic_Crate && entity_is_alive(entities, handle)
 }
 
 entity_is_alive :: proc(entities: ^Entities, handle: Entity_Handle) -> bool {
@@ -265,6 +274,10 @@ entity_slots :: proc(entities: ^Entities, handle: Entity_Handle) -> []Item_Stack
 	case .Lab:
 		if lab := pool_get(&entities.labs, handle); lab != nil {
 			return lab.slots[:lab.slot_count]
+		}
+	case .Schematic_Crate:
+		if crate := pool_get(&entities.schematic_crates, handle); crate != nil {
+			return crate.slots[:]
 		}
 	}
 	return nil
@@ -368,6 +381,8 @@ add_entity :: proc(entities: ^Entities, machines: Machine_Registry, machine: Mac
 		handle = pool_add(&entities.assemblers, .Assembler, make_assembler(common, machines.machines[machine]))
 	case .Lab:
 		handle = pool_add(&entities.labs, .Lab, make_lab(common, len(machines.lab_packs)))
+	case .Schematic_Crate:
+		handle = pool_add(&entities.schematic_crates, .Schematic_Crate, Schematic_Crate{common = common, slots = {EMPTY_STACK}})
 	}
 	for cell in footprint_cells(origin, machines.machines[machine].footprint, rotation) {
 		entities.cells[cell] = handle
@@ -436,6 +451,8 @@ remove_entity :: proc(entities: ^Entities, machines: Machine_Registry, handle: E
 		return true
 	case .Lab:
 		return pool_remove(&entities.labs, handle)
+	case .Schematic_Crate:
+		return pool_remove(&entities.schematic_crates, handle)
 	case .Belt, .Splitter:
 		// Handled by remove_belt and remove_splitter above.
 		return false
@@ -465,7 +482,7 @@ cell_blocks_movement :: proc(world: ^World, registry: Block_Registry, cell: Worl
 // inserter put in this tick, then lamps follow their power. Drills and inserters
 // run in pool order, which keeps two of them sharing a vein or a chest
 // deterministic. Outcrops of veins exhausted in this tick turn to spent
-// rock at the end.
+// rock at the end, and crates of newly loaded cave sites appear.
 tick_entities :: proc(world: ^World, content: Simulation_Content, tick_rate: int) {
 	tick_belt_network(&world.entities.belt_network, tick_rate, world.entities.splitters.entries[:])
 	record_belt_dead_ends(&world.statistics, &world.entities)
@@ -499,4 +516,5 @@ tick_entities :: proc(world: ^World, content: Simulation_Content, tick_rate: int
 	tick_fluids(&world.entities, content, tick_rate, &world.statistics)
 	tick_lamps(world, content.machines)
 	apply_spent_outcrops(world, content.veins)
+	place_pending_crates(world, content)
 }

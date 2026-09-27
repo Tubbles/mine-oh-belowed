@@ -137,6 +137,7 @@ test_report_generation_and_meshing_time :: proc(t: ^testing.T) {
 				world.chunks[{x, y, z}] = generated.chunk
 				delete(generated.veins)
 				delete(generated.outcrops)
+				delete(generated.crates)
 			}
 		}
 	}

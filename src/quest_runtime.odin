@@ -139,6 +139,8 @@ hint_counter_value :: proc(statistics: Statistics, hint: Hint) -> u64 {
 		return statistics.flared_litres
 	case .Generator_Gas_Litres:
 		return statistics.generator_gas_litres
+	case .Schematics_Found:
+		return statistics.schematics_found
 	}
 	return 0
 }

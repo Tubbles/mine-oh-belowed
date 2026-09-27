@@ -120,6 +120,8 @@ Statistics :: struct {
 	generator_gas_litres:        u64,
 	// Finite veins drills drained to the last unit.
 	veins_exhausted:             u64,
+	// Schematics read whose recipe was not found before (schematic.odin).
+	schematics_found:            u64,
 	// Electric energy all networks delivered, in joules; produced and
 	// consumed are equal, generators give only what consumers receive.
 	energy_produced_joules:      u64,

@@ -2,7 +2,8 @@ package game
 
 // The world HUD, drawn through the UI draw list under any open screen:
 // crosshair, the targeted entity's name and state (and the vein of a
-// targeted drill or outcrop block), hotbar with the held
+// targeted drill or outcrop block, or the deep vein under a bore drill
+// ghost), hotbar with the held
 // item's name, the hotbar radial, the active quest objective (top right,
 // ui_journal.odin), the brownout warning (top centre, ui_power.odin) and
 // the glyph bar. Targeted block names come later.
@@ -126,6 +127,25 @@ draw_hotbar_radial :: proc(state: ^Ui_State, hotbar: []Item_Stack, items: Item_R
 	}
 }
 
+// A full schematic crate in view takes Interact; a selected schematic is
+// read with the Place control (Use_Item). In the temp allocator.
+schematic_glyph_hints :: proc(world: ^World, player: Player, items: Item_Registry) -> (hints: []Glyph_Hint, shown: bool) {
+	list := make([dynamic]Glyph_Hint, context.temp_allocator)
+	crate := pool_get(&world.entities.schematic_crates, player.target.entity)
+	if crate != nil && !stack_is_empty(crate.slots[0]) {
+		append(&list, Glyph_Hint{.Interact, text("hint_take_schematic")})
+	}
+	selected := selected_hotbar_stack(player)
+	if !stack_is_empty(selected) && item_is_usable(items, selected.item) {
+		append(&list, Glyph_Hint{.Use_Item, text("hint_read_schematic")})
+	}
+	if len(list) == 0 {
+		return nil, false
+	}
+	append(&list, Glyph_Hint{.Inventory, text("hint_inventory")}, Glyph_Hint{.Pause, text("hint_pause")})
+	return list[:], true
+}
+
 // Below the crosshair, the second line under the first.
 draw_target_status :: proc(state: ^Ui_State, status: string, line: int = 0) {
 	if status == "" {
@@ -149,9 +169,16 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	draw_quest_objective(state, screen_context)
 	draw_brownout_warning(state, screen_context.world)
 	status, vein_status := target_status_lines(screen_context.world, screen_context.machines, screen_context.fluids, screen_context.veins, player.target)
+	if ghost_line, shown := bore_drill_ghost_line(screen_context.world, screen_context.machines, screen_context.veins, player^); shown {
+		vein_status = ghost_line
+	}
 	draw_target_status(state, status)
 	draw_target_status(state, vein_status, status == "" ? 0 : 1)
 	hotbar_radial(state, player, items)
+	if hints, shown := schematic_glyph_hints(screen_context.world, player^, items); shown {
+		ui_glyph_bar(state, hints)
+		return
+	}
 	if entity_has_panel(&screen_context.world.entities, player.target.entity) {
 		// Interact turns a power switch; Sneak with Interact opens it.
 		switch_targeted := entity_is_power_switch(&screen_context.world.entities, screen_context.machines, player.target.entity)

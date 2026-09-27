@@ -202,19 +202,30 @@ recipe_fluid_inputs_within :: proc(first, second: Recipe) -> bool {
 // A fixed choice picks by the input items and then by the fluids in its
 // input ports, so within one category no recipe's inputs, items and fluids
 // both, may be a subset of another's: with only those loaded the machine
-// could not tell which the player meant.
+// could not tell which the player meant. The exception is a schematic
+// alternate with fewer input items than the recipe it shortens (plastic
+// from wood gas alone): the loaded items still tell the two apart, and
+// once found the alternate is meant to take over whenever only its
+// inputs are loaded.
 validate_fixed_category :: proc(recipes: []Recipe, maker: Recipe_Maker) -> string {
 	for recipe, index in recipes {
 		if maker not_in recipe.made_in {
 			continue
 		}
 		for other, other_index in recipes {
-			if other_index != index && maker in other.made_in && recipe_inputs_within(recipe, other) && recipe_fluid_inputs_within(recipe, other) {
+			if other_index == index || maker not_in other.made_in || alternate_shortens(recipe, other) {
+				continue
+			}
+			if recipe_inputs_within(recipe, other) && recipe_fluid_inputs_within(recipe, other) {
 				return fmt.tprintf("recipes %q and %q of the fixed category %q cannot be told apart by their inputs", recipe.id, other.id, recipe_maker_names[maker])
 			}
 		}
 	}
 	return ""
+}
+
+alternate_shortens :: proc(alternate, recipe: Recipe) -> bool {
+	return alternate.channel == .Schematic && len(alternate.inputs) < len(recipe.inputs)
 }
 
 // The machine has an input port for every fluid its recipes use.
@@ -390,15 +401,15 @@ loaded_items_within :: proc(loaded: []Item_Stack, recipe: Recipe) -> bool {
 }
 
 // Whether any recipe of the category uses the item, and the most of it
-// one craft takes.
+// one craft takes. Schematic alternates count once found.
 category_input_count :: proc(recipes: Recipe_Registry, maker: Recipe_Maker, item: Item_Id) -> int {
 	if maker == .Recycler {
 		recipe := recycle_recipe_of(recipes, item)
 		return recipe == NO_RECIPE ? 0 : int(recycled_stack(recipes, recipe).count)
 	}
 	most := 0
-	for recipe in recipes.recipes {
-		if maker not_in recipe.made_in {
+	for recipe, index in recipes.recipes {
+		if maker not_in recipe.made_in || !recipe_runs_in_machines(recipes, index) {
 			continue
 		}
 		for input in recipe.inputs {
@@ -417,7 +428,7 @@ category_input_count :: proc(recipes: Recipe_Registry, maker: Recipe_Maker, item
 fixed_recipe_for_inputs :: proc(recipes: Recipe_Registry, maker: Recipe_Maker, loaded: []Item_Stack, input_fluids: []Fluid_Id = nil) -> int {
 	first_match := NO_RECIPE
 	for recipe, index in recipes.recipes {
-		if maker not_in recipe.made_in || !loaded_items_within(loaded, recipe) || !recipe_inputs_loaded(recipe, loaded) {
+		if maker not_in recipe.made_in || !recipe_runs_in_machines(recipes, index) || !loaded_items_within(loaded, recipe) || !recipe_inputs_loaded(recipe, loaded) {
 			continue
 		}
 		if recipe_fluids_present(recipe, input_fluids) {

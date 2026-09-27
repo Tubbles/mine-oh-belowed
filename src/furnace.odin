@@ -104,8 +104,9 @@ finish_smelting :: proc(furnace: ^Furnace, recipe: Recipe, items: Item_Registry)
 }
 
 // One tick of the furnace. It smelts every furnace recipe whether or not
-// the recipe is unlocked: today every one of them is a start recipe or is
-// discovered by obtaining its only input. byproducts_lenient is the world
+// the recipe is unlocked (every one of them is a start recipe or is
+// discovered by obtaining its only input), except a schematic alternate
+// not found yet (recipe_runs_in_machines). byproducts_lenient is the world
 // setting, read on every tick including the one a smelt completes on.
 advance_furnace :: proc(furnace: Furnace, machine: Machine, items: Item_Registry, recipes: Recipe_Registry, tick_rate: int, byproducts_lenient := false) -> Furnace {
 	result := furnace

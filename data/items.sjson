@@ -32,6 +32,12 @@
 // bore drills, so they have no ore blocks. Bauxite washes into alumina,
 // the electrolyser turns alumina into aluminium plate and quartz into
 // silicon, and the furnace smelts gold ore into gold plate.
+// also_mined_from (optional, work item 0036) lists blocks that yield the
+// item besides their own drop: gold quartz in cave walls gives quartz
+// (mined_from) and gold ore (also_mined_from).
+// usable (optional, work item 0036) marks an item the Use_Item action
+// reads: the schematics found in cave crates, one per schematic channel
+// recipe (recipes.sjson). A usable item places nothing.
 items = [
 	// Raw materials
 	{id = "log", name_key = "item_log", category = "raw", stack_size = 50, places_block = "log", fuel_megajoules = 2, cannot_recycle = true}
@@ -55,8 +61,8 @@ items = [
 	{id = "pentlandite_low_grade", name_key = "item_pentlandite_low_grade", category = "raw", stack_size = 50, cannot_recycle = true}
 	{id = "bauxite", name_key = "item_bauxite", category = "raw", stack_size = 50, cannot_recycle = true}
 	{id = "bauxite_low_grade", name_key = "item_bauxite_low_grade", category = "raw", stack_size = 50, cannot_recycle = true}
-	{id = "gold_ore", name_key = "item_gold_ore", category = "raw", stack_size = 50, cannot_recycle = true}
-	{id = "quartz", name_key = "item_quartz", category = "raw", stack_size = 50, cannot_recycle = true}
+	{id = "gold_ore", name_key = "item_gold_ore", category = "raw", stack_size = 50, also_mined_from = ["gold_quartz"], cannot_recycle = true}
+	{id = "quartz", name_key = "item_quartz", category = "raw", stack_size = 50, mined_from = ["gold_quartz"], cannot_recycle = true}
 	{id = "mud", name_key = "item_mud", category = "raw", stack_size = 50, cannot_recycle = true}
 	{id = "slag", name_key = "item_slag", category = "raw", stack_size = 100, places_block = "slag_heap", cannot_recycle = true}
 	// Processed materials and intermediates
@@ -148,4 +154,10 @@ items = [
 	{id = "concrete", name_key = "item_concrete", category = "block", stack_size = 50, places_block = "concrete", cannot_recycle = true}
 	{id = "brick", name_key = "item_brick", category = "block", stack_size = 50, places_block = "brick", cannot_recycle = true}
 	{id = "asphalt", name_key = "item_asphalt", category = "block", stack_size = 50, places_block = "asphalt", cannot_recycle = true}
+
+	// Schematics (work item 0036), read with Use_Item.
+	{id = "schematic_low_grade_iron_plate", name_key = "item_schematic_low_grade_iron_plate", category = "tool", stack_size = 1, usable = true, cannot_recycle = true}
+	{id = "schematic_charcoal_steel", name_key = "item_schematic_charcoal_steel", category = "tool", stack_size = 1, usable = true, cannot_recycle = true}
+	{id = "schematic_wood_gas_plastic", name_key = "item_schematic_wood_gas_plastic", category = "tool", stack_size = 1, usable = true, cannot_recycle = true}
+	{id = "schematic_slag_concrete", name_key = "item_schematic_slag_concrete", category = "tool", stack_size = 1, usable = true, cannot_recycle = true}
 ]

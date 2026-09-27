@@ -44,6 +44,7 @@ reference_raylib_buttons := [?]Reference_Raylib_Button {
 	{.RIGHT_TRIGGER_1, .Hotbar_Next},
 	{.RIGHT_TRIGGER_2, .Mine},
 	{.LEFT_TRIGGER_2, .Place},
+	{.LEFT_TRIGGER_2, .Use_Item},
 	{.LEFT_TRIGGER_2, .Menu_Secondary},
 	{.MIDDLE_LEFT, .Open_Map},
 	{.MIDDLE_RIGHT, .Pause},
@@ -97,7 +98,7 @@ reference_keys := [?]Reference_Key {
 }
 
 @(rodata)
-reference_mouse_buttons := [?]Reference_Mouse_Button{{.LEFT, .Mine}, {.RIGHT, .Place}, {.MIDDLE, .Pipette}}
+reference_mouse_buttons := [?]Reference_Mouse_Button{{.LEFT, .Mine}, {.RIGHT, .Place}, {.RIGHT, .Use_Item}, {.MIDDLE, .Pipette}}
 
 @(rodata)
 reference_sdl3_buttons := [?]Reference_Sdl3_Button {
@@ -165,7 +166,7 @@ reference_sdl3_bindings :: proc() -> Input_Bindings {
 	for binding in reference_sdl3_buttons {
 		tables.gamepad_buttons[int(binding.button)] += {binding.action}
 	}
-	tables.gamepad_triggers = {.Right = {.Mine, .Confirm}, .Left = {.Place, .Menu_Secondary}}
+	tables.gamepad_triggers = {.Right = {.Mine, .Confirm}, .Left = {.Place, .Use_Item, .Menu_Secondary}}
 	tables.trackpads[LEFT_TOUCHPAD_INDEX] = {.Hotbar_Radial}
 	return tables
 }

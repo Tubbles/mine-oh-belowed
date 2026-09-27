@@ -267,6 +267,8 @@ locked_recipe_text :: proc(recipe: Recipe, technologies: Technology_Registry) ->
 		return fmt.tprintf("%s %s", text("recipes_locked_research"), technology_name(technologies, recipe.technology))
 	case .Quest:
 		return text("recipes_locked_quest")
+	case .Schematic:
+		return text("recipes_locked_schematic")
 	}
 	return ""
 }

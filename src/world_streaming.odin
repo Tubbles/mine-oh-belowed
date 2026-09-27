@@ -54,6 +54,7 @@ Chunk_Job_Result :: struct {
 	chunk:      ^Chunk,
 	veins:      [dynamic]Vein,
 	outcrops:   [dynamic]Outcrop_Cell,
+	crates:     [dynamic]Crate_Site,
 	mesh:       Chunk_Mesh_Data,
 }
 
@@ -164,6 +165,7 @@ free_job_result :: proc(result: Chunk_Job_Result) {
 	free(result.chunk)
 	delete(result.veins)
 	delete(result.outcrops)
+	delete(result.crates)
 	destroy_chunk_mesh_data(result.mesh)
 }
 
@@ -182,7 +184,7 @@ run_chunk_job :: proc(shared: ^Worker_Shared, job: Chunk_Job) -> Chunk_Job_Resul
 		} else {
 			generated = generate_chunk(shared.generator, job.coordinate)
 		}
-		result.chunk, result.veins, result.outcrops = generated.chunk, generated.veins, generated.outcrops
+		result.chunk, result.veins, result.outcrops, result.crates = generated.chunk, generated.veins, generated.outcrops, generated.crates
 	case .Mesh:
 		input := Mesh_Input {
 			chunk    = job.chunk,
@@ -311,6 +313,7 @@ insert_generated_chunk :: proc(world: ^World, result: Chunk_Job_Result) {
 	world.chunks[result.coordinate] = result.chunk
 	register_column_veins(world, chunk_column_of(result.coordinate), result.veins[:])
 	register_outcrop_cells(world, result.outcrops[:])
+	register_crate_sites(world, result.crates[:])
 	queue.push_back(&world.lighting.arrived_chunks, result.coordinate)
 	seed_entity_lights_in_chunk(world, result.chunk)
 	if chunk_is_all_air(result.chunk) && chunk_is_open_sky(result.chunk) {
@@ -345,7 +348,7 @@ load_chunk_now :: proc(world: ^World, generator: ^Generator, coordinate: Chunk_C
 	} else {
 		generated = generate_chunk(generator, coordinate)
 	}
-	result.chunk, result.veins, result.outcrops = generated.chunk, generated.veins, generated.outcrops
+	result.chunk, result.veins, result.outcrops, result.crates = generated.chunk, generated.veins, generated.outcrops, generated.crates
 	if result.restored {
 		insert_saved_chunk(world, generator.registry, result)
 	} else {
@@ -353,6 +356,7 @@ load_chunk_now :: proc(world: ^World, generator: ^Generator, coordinate: Chunk_C
 	}
 	delete(result.veins)
 	delete(result.outcrops)
+	delete(result.crates)
 }
 
 // A modified chunk going out of range keeps its blocks in
@@ -383,6 +387,7 @@ receive_generated_chunks :: proc(streaming: ^Chunk_Streaming, world: ^World, cam
 		}
 		delete(result.veins)
 		delete(result.outcrops)
+		delete(result.crates)
 	}
 }
 

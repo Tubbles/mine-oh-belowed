@@ -61,6 +61,9 @@ recipe_reachable :: proc(recipe: Recipe, index: int, gates: Quest_Gates) -> bool
 		return gates.researched[recipe.technology]
 	case .Quest:
 		return gates.quest_unlocked[index]
+	case .Schematic:
+		// Found in caves, never a quest's path.
+		return false
 	}
 	return false
 }

@@ -245,14 +245,14 @@ low_grade_share_ppm :: proc(vein: Vein, infinite: bool) -> i64 {
 }
 
 // The item a drawn output yields: its low grade twin when the grade roll
-// falls under the share, otherwise the ore itself.
-graded_output :: proc(vein: Vein, vein_type: Vein_Type_Content, output: int, infinite: bool, draw_hash: u64) -> Item_Id {
+// falls under the share (parts per million), otherwise the ore itself.
+graded_output :: proc(vein_type: Vein_Type_Content, output: int, low_grade_ppm: i64, draw_hash: u64) -> Item_Id {
 	low_grade := vein_type.low_grades[output]
 	if low_grade == NO_ITEM {
 		return vein_type.outputs[output]
 	}
 	roll := hash_to_range(hash_combine(draw_hash, VEIN_GRADE_SALT), 0, PARTS_PER_MILLION - 1)
-	return roll < low_grade_share_ppm(vein, infinite) ? low_grade : vein_type.outputs[output]
+	return roll < low_grade_ppm ? low_grade : vein_type.outputs[output]
 }
 
 vein_is_exhausted :: proc(vein: Vein, infinite: bool) -> bool {
@@ -276,21 +276,23 @@ exhaust_vein :: proc(world: ^World, vein: ^Vein) {
 // Takes one unit from the vein. The last unit of a finite vein exhausts
 // it, and its outcrop turns to spent rock at the end of the tick.
 draw_from_vein :: proc(world: ^World, veins: Vein_Content, vein: ^Vein) -> Item_Id {
-	return draw_vein_unit(world, veins, vein, world.settings.veins_infinite)
+	infinite := world.settings.veins_infinite
+	return draw_vein_unit(world, veins, vein, infinite, low_grade_share_ppm(vein^, infinite))
 }
 
 // A unit of an exhausted vein through a drill's revival port: by the vein
-// type's mix as if the reservoir were full, taking nothing from it, for
-// REVIVAL_LITRES_PER_UNIT of the port's fluid.
+// type's full mix, taking nothing from it, for REVIVAL_LITRES_PER_UNIT of
+// the port's fluid. The grade stays at the depleted end share, since the
+// reservoir is spent.
 draw_revived_unit :: proc(world: ^World, veins: Vein_Content, vein: ^Vein, port: ^Fluid_Buffer) -> Item_Id {
 	port.level -= REVIVAL_LITRES_PER_UNIT
-	return draw_vein_unit(world, veins, vein, true)
+	return draw_vein_unit(world, veins, vein, true, LOW_GRADE_END_PPM)
 }
 
-// full draws as if the reservoir were full and takes nothing from it (an
+// full draws by the whole mix and takes nothing from the reservoir (an
 // infinite or a revived vein). The draw count always grows, since it
 // seeds the next draw.
-draw_vein_unit :: proc(world: ^World, veins: Vein_Content, vein: ^Vein, full: bool) -> Item_Id {
+draw_vein_unit :: proc(world: ^World, veins: Vein_Content, vein: ^Vein, full: bool, low_grade_ppm: i64) -> Item_Id {
 	if vein.type >= len(veins.types) {
 		return NO_ITEM
 	}
@@ -300,7 +302,7 @@ draw_vein_unit :: proc(world: ^World, veins: Vein_Content, vein: ^Vein, full: bo
 	if output < 0 {
 		return NO_ITEM
 	}
-	item := graded_output(vein^, vein_type, output, full, draw_hash)
+	item := graded_output(vein_type, output, low_grade_ppm, draw_hash)
 	vein.draws += 1
 	if !full {
 		vein.remaining[output] -= 1

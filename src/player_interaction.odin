@@ -66,8 +66,9 @@ refuse_mining :: proc(player: ^Player, next: Mining_State) -> Player_Events {
 	return already_refused ? {} : {.Inventory_Full}
 }
 
-// The block's item goes into the inventory, hotbar first. A block whose
-// item does not fit is not broken.
+// The block's items go into the inventory, hotbar first: its drop and an
+// extra drop (gold quartz gives quartz and gold ore). A block whose items
+// do not fit is not broken.
 mine_block :: proc(world: ^World, registry: Block_Registry, items: Item_Registry, player: ^Player, holding: bool, tick_rate: int) -> Player_Events {
 	block_id := world_get_block(world, player.target.block)
 	if holding && player.target.hit {
@@ -78,8 +79,8 @@ mine_block :: proc(world: ^World, registry: Block_Registry, items: Item_Registry
 		player.mining = next
 		return {}
 	}
-	drop := block_drop(items, block_id)
-	if drop != NO_ITEM && !inventory_fits_all(player.inventory, items, {Item_Stack{item = drop, count = 1}}) {
+	drops := block_drop_stacks(items, block_id)
+	if !inventory_fits_all(player.inventory, items, drops) {
 		return refuse_mining(player, next)
 	}
 	player.mining = {}
@@ -87,10 +88,21 @@ mine_block :: proc(world: ^World, registry: Block_Registry, items: Item_Registry
 		return {}
 	}
 	record_block_mined(&world.statistics)
-	if drop != NO_ITEM {
-		inventory_add(player.inventory, items, drop, 1)
+	for drop in drops {
+		inventory_add(player.inventory, items, drop.item, 1)
 	}
 	return {}
+}
+
+// One of each item mining the block yields, in the temp allocator.
+block_drop_stacks :: proc(items: Item_Registry, block: Block_Id) -> []Item_Stack {
+	stacks := make([dynamic]Item_Stack, 0, 2, context.temp_allocator)
+	for drop in ([2]Item_Id{block_drop(items, block), block_extra_drop(items, block)}) {
+		if drop != NO_ITEM {
+			append(&stacks, Item_Stack{item = drop, count = 1})
+		}
+	}
+	return stacks[:]
 }
 
 // A long press of Mine on an entity picks it up with its contents.

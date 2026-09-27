@@ -165,6 +165,21 @@ inserter_placement_direction :: proc(yaw: f32, rotation: u8) -> u8 {
 	return turn_right(yaw_direction(yaw), rotation % 4)
 }
 
+// The deep vein the ghost of a selected bore drill would tap, found the
+// way placement_for_player places the footprint. selected is false unless
+// a bore drill is selected and the ray hit something.
+bore_drill_ghost_vein :: proc(world: ^World, machines: Machine_Registry, player: Player) -> (vein: Vein_Id, found, selected: bool) {
+	machine := selected_placed_machine(player, machines)
+	if machine == NO_MACHINE || !player.target.hit || !drill_is_bore(machines.machines[machine]) {
+		return {}, false, false
+	}
+	rotation := inserter_placement_direction(player.yaw, player.placement_rotation)
+	size := rotated_footprint_size(machines.machines[machine].footprint, rotation)
+	origin := footprint_origin(player.target.adjacent, player.target.face, size)
+	vein, found = bore_drill_vein_under(world, origin, size)
+	return vein, found, true
+}
+
 // Rotate_Building turns the ghost a quarter turn; Place puts the machine
 // down and uses up one item. Belts also follow the held Place.
 place_entity_with_player :: proc(world: ^World, content: Simulation_Content, players: []Player, index: int, just_pressed, pressed: Action_Set) {

@@ -37,7 +37,10 @@
 // channel is how the recipe becomes available: start (always), discovery
 // (once every input item has been obtained), research (once technology,
 // an id from technologies.sjson, is researched) or quest (a main quest
-// gate, work item 0013; locked until then).
+// gate, work item 0013; locked until then) or schematic (an alternate
+// recipe found in caves, work item 0036: locked until the usable item
+// named by schematic, an id from items.sjson, is read). Machines make a
+// schematic recipe only once it is found, since its inputs are common.
 // Machine recipes take 2 s, inserters, belts, pipes, poles and chests
 // 0.5 s (doc/content.md). Tools take 1 s.
 recipes = [
@@ -161,4 +164,11 @@ recipes = [
 	{id = "small_pole", inputs = [{item = "log", count = 1}, {item = "copper_wire", count = 2}], outputs = [{item = "small_pole", count = 1}], seconds = 0.5, made_in = ["hand", "assembler"], category = "power", tags = ["electric", "wood"], channel = "start"}
 	{id = "lamp", inputs = [{item = "electronic_circuit", count = 1}, {item = "copper_wire", count = 3}, {item = "iron_plate", count = 1}, {item = "glass", count = 1}], outputs = [{item = "lamp", count = 1}], seconds = 2, made_in = ["hand", "assembler"], category = "power", tags = ["light", "electric"], channel = "research", technology = "optics"}
 	{id = "power_switch", inputs = [{item = "electronic_circuit", count = 2}, {item = "iron_plate", count = 5}], outputs = [{item = "power_switch", count = 1}], seconds = 2, made_in = ["hand", "assembler"], category = "power", tags = ["electric"], channel = "research", technology = "electric_mining"}
+
+	// Alternate recipes from cave schematics (work item 0036): fewer
+	// machines, cheaper inputs, or a byproduct turned into a product.
+	{id = "low_grade_iron_plate", name_key = "recipe_low_grade_iron_plate", inputs = [{item = "hematite_low_grade", count = 2}], outputs = [{item = "iron_plate", count = 1}, {item = "slag", count = 1, byproduct = true}], seconds = 3.2, made_in = ["furnace"], category = "materials", tags = ["smelting", "iron", "schematic"], channel = "schematic", schematic = "schematic_low_grade_iron_plate"}
+	{id = "charcoal_steel", name_key = "recipe_charcoal_steel", inputs = [{item = "iron_plate", count = 5}, {item = "charcoal", count = 2}], outputs = [{item = "steel", count = 1}, {item = "slag", count = 1, byproduct = true}], seconds = 16, made_in = ["alloy_furnace"], category = "materials", tags = ["smelting", "alloy", "iron", "schematic"], channel = "schematic", schematic = "schematic_charcoal_steel"}
+	{id = "wood_gas_plastic", name_key = "recipe_wood_gas_plastic", fluid_inputs = [{fluid = "wood_gas", litres = 40}], outputs = [{item = "plastic_bar", count = 1}], seconds = 2, made_in = ["chemistry"], category = "materials", tags = ["wood", "gas", "plastic", "schematic"], channel = "schematic", schematic = "schematic_wood_gas_plastic"}
+	{id = "slag_concrete", name_key = "recipe_slag_concrete", inputs = [{item = "slag", count = 2}], fluid_inputs = [{fluid = "water", litres = 30}], outputs = [{item = "concrete", count = 1}], seconds = 1, made_in = ["washer"], category = "materials", tags = ["byproduct", "building", "schematic"], channel = "schematic", schematic = "schematic_slag_concrete"}
 ]

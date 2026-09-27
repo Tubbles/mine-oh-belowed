@@ -134,7 +134,7 @@ machine_area_size :: proc(machine: Machine, slot_count: int) -> [2]f32 {
 		return power_area_size(machine)
 	case .Crafting_Machine, .Lab:
 		return crafting_machine_area_size(machine)
-	case .Belt:
+	case .Belt, .Schematic_Crate:
 	}
 	return {}
 }
@@ -488,8 +488,24 @@ entity_status_text :: proc(world: ^World, machines: Machine_Registry, fluids: Fl
 	case .Lab:
 		lab := pool_get(&world.entities.labs, handle)
 		return fmt.tprintf("%s  %s", name, text(lab_state_keys[lab.state]))
+	case .Schematic_Crate:
+		crate := pool_get(&world.entities.schematic_crates, handle)
+		return stack_is_empty(crate.slots[0]) ? fmt.tprintf("%s  %s", name, text("schematic_crate_empty")) : name
 	}
 	return name
+}
+
+// While a bore drill is being placed, the HUD's vein line names the deep
+// vein its ghost would tap, since nothing on the surface marks deep veins.
+bore_drill_ghost_line :: proc(world: ^World, machines: Machine_Registry, veins: Vein_Content, player: Player) -> (line: string, shown: bool) {
+	vein, found, selected := bore_drill_ghost_vein(world, machines, player)
+	if !selected {
+		return "", false
+	}
+	if !found {
+		return text("bore_drill_no_deep_vein"), true
+	}
+	return vein_status_text(world, veins, vein), true
 }
 
 // What the HUD shows under the crosshair: the targeted entity's name and

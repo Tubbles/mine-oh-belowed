@@ -65,6 +65,9 @@ Machine_Kind :: enum u8 {
 	// Research (lab.odin).
 	Crafting_Machine,
 	Lab,
+	// A cave crate holding one schematic (schematic.odin): placed by world
+	// generation, never by an item, and never picked up.
+	Schematic_Crate,
 }
 
 @(rodata)
@@ -90,6 +93,7 @@ machine_kind_names := [Machine_Kind]string {
 	.Lamp          = "lamp",
 	.Crafting_Machine = "crafting_machine",
 	.Lab           = "lab",
+	.Schematic_Crate = "schematic_crate",
 }
 
 // The shape family a belt item places. Ramps become up or down and lifts
@@ -288,6 +292,8 @@ validate_machine_kind_fields :: proc(definition: Machine_Definition, kind: Machi
 		if definition.item != "" {
 			return fmt.tprintf("capsule %q cannot be placed by an item", definition.id)
 		}
+	case .Schematic_Crate:
+		return validate_schematic_crate_definition(definition)
 	}
 	return ""
 }
@@ -414,11 +420,32 @@ validate_machine_definition :: proc(definitions: []Machine_Definition, index: in
 	return validate_machine_kind_fields(definition, kind)
 }
 
-// The placing item must exist, place no block and place only this machine.
+// The capsule and schematic crates have no item.
+machine_kind_is_placed_by_world :: proc(kind_name: string) -> bool {
+	return kind_name == machine_kind_names[.Capsule] || kind_name == machine_kind_names[.Schematic_Crate]
+}
+
+// One by one by one with one slot, and no item.
+validate_schematic_crate_definition :: proc(definition: Machine_Definition) -> string {
+	footprint := definition.footprint
+	if footprint.width != 1 || footprint.depth != 1 || footprint.height != 1 || definition.slots != SCHEMATIC_CRATE_SLOT_COUNT {
+		return fmt.tprintf("schematic crate %q must be 1 by 1 by 1 with %d slot", definition.id, SCHEMATIC_CRATE_SLOT_COUNT)
+	}
+	if definition.item != "" {
+		return fmt.tprintf("schematic crate %q cannot be placed by an item", definition.id)
+	}
+	return ""
+}
+
+// The placing item must exist, place no block, not be usable and place
+// only this machine.
 resolve_machine_item :: proc(definition: Machine_Definition, items: Item_Registry, machine_for_item: []Machine_Id, machine: Machine_Id) -> (item: Item_Id, problem: string) {
 	found: bool
 	if item, found = find_item_id(items, definition.item); !found {
 		return NO_ITEM, fmt.tprintf("machine %q is placed by unknown item %q", definition.id, definition.item)
+	}
+	if item_is_usable(items, item) {
+		return NO_ITEM, fmt.tprintf("machine %q is placed by %q, which is usable", definition.id, definition.item)
 	}
 	if item_places_block(items, item) != AIR_BLOCK {
 		return NO_ITEM, fmt.tprintf("machine %q is placed by %q, which already places a block", definition.id, definition.item)
@@ -482,7 +509,7 @@ resolve_machine_registry :: proc(file: Machines_File, items: Item_Registry, flui
 	for definition, index in file.machines {
 		problem = validate_machine_definition(file.machines, index)
 		item := NO_ITEM
-		if problem == "" && definition.kind != machine_kind_names[.Capsule] {
+		if problem == "" && !machine_kind_is_placed_by_world(definition.kind) {
 			item, problem = resolve_machine_item(definition, items, registry.machine_for_item, Machine_Id(index))
 		}
 		machine: Machine

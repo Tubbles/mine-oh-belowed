@@ -116,11 +116,18 @@ destroy_simulation :: proc(state: ^Simulation_State) {
 
 // A player without an input entry gets an empty one. Entities tick after
 // the players, so a stack dropped into a furnace this tick is seen at once.
-simulation_tick :: proc(state: ^Simulation_State, content: Simulation_Content, inputs: []Input_Frame) {
+// Machines see the found schematics through the recipe registry
+// (recipe_runs_in_machines).
+simulation_tick :: proc(state: ^Simulation_State, content_tables: Simulation_Content, inputs: []Input_Frame) {
+	content := content_tables
+	content.recipes = with_schematics_found(content.recipes, state.unlocks.schematics_found)
 	state.tick += 1
 	advance_statistics_clock(&state.world.statistics, state.tick, state.tick_rate)
 	for index in 0 ..< len(state.players) {
-		input := index < len(inputs) ? inputs[index] : Input_Frame{}
+		input, used := resolve_use_item(&state.players[index], &state.world.entities, content.items, index < len(inputs) ? inputs[index] : Input_Frame{})
+		if used != NO_ITEM {
+			read_schematic(&state.unlocks, &state.quests, &state.world.statistics, content.recipes, used, state.tick)
+		}
 		events := tick_player(&state.world, content, state.players[:], index, input, state.tick_rate)
 		for kind in events {
 			append(&state.events, Simulation_Event{player = index, kind = kind})
@@ -369,6 +376,7 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 	screen_context.tick_rate = session.simulation.tick_rate
 	screen_context.technologies = session.technologies
 	screen_context.unlocks = &session.simulation.unlocks
+	screen_context.recipes = with_schematics_found(content.recipes, session.simulation.unlocks.schematics_found)
 	screen_context.quest_state = &session.simulation.quests
 	screen_context.browser = &session.recipe_browser
 	screen_context.technology_browser = &session.technology_browser

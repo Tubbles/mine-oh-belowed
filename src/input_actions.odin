@@ -9,6 +9,9 @@ Action :: enum u8 {
 	Jump,
 	Mine,
 	Place,
+	// Reads the selected usable item (a schematic). Bound with Place, which
+	// it replaces while such an item is selected (resolve_use_item).
+	Use_Item,
 	Rotate_Building,
 	Pipette,
 	Hotbar_Radial,
@@ -173,6 +176,7 @@ WORLD_ACTIONS :: Action_Set {
 	.Jump,
 	.Mine,
 	.Place,
+	.Use_Item,
 	.Rotate_Building,
 	.Pipette,
 	.Hotbar_Radial,

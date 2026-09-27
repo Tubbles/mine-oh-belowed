@@ -3,9 +3,10 @@ package game
 // Which recipes are available, as simulation state. Start recipes always
 // are; a discovery recipe once every input item has been obtained by any
 // player; a research recipe once its technology is researched; a quest
-// recipe once a quest reward unlocks it (quest_runtime.odin).
-// Unlocking everything (the --unlock-all flag or the world setting) marks
-// every item obtained and every technology researched.
+// recipe once a quest reward unlocks it (quest_runtime.odin); a schematic
+// recipe once its schematic was read (schematic.odin). Unlocking
+// everything (the --unlock-all flag or the world setting) marks every item
+// obtained, every technology researched and every schematic found.
 //
 // An item counts as obtained once it has been in a player's inventory or
 // on a player's cursor. That covers mining, crafting and taking from a
@@ -19,6 +20,10 @@ Recipe_Unlocks :: struct {
 	researched: []bool,
 	// Indexed by recipe: unlocked by a quest reward.
 	quest_unlocked: []bool,
+	// Indexed by recipe: a schematic channel recipe whose schematic was
+	// read. Machines make a schematic alternate only once it is found
+	// (recipe_runs_in_machines).
+	schematics_found: []bool,
 	// Indexed by recipe.
 	available:  []bool,
 	unlock_all: bool,
@@ -29,12 +34,14 @@ make_recipe_unlocks :: proc(item_count: int, recipes: Recipe_Registry, technolog
 		obtained   = make([]bool, item_count, allocator),
 		researched = make([]bool, len(technologies.technologies), allocator),
 		quest_unlocked = make([]bool, len(recipes.recipes), allocator),
+		schematics_found = make([]bool, len(recipes.recipes), allocator),
 		available  = make([]bool, len(recipes.recipes), allocator),
 		unlock_all = unlock_all,
 	}
 	if unlock_all {
 		fill_bools(unlocks.obtained, true)
 		fill_bools(unlocks.researched, true)
+		fill_bools(unlocks.schematics_found, true)
 	}
 	refresh_available_recipes(&unlocks, recipes)
 	return unlocks
@@ -44,6 +51,7 @@ destroy_recipe_unlocks :: proc(unlocks: Recipe_Unlocks, allocator := context.all
 	delete(unlocks.obtained, allocator)
 	delete(unlocks.researched, allocator)
 	delete(unlocks.quest_unlocked, allocator)
+	delete(unlocks.schematics_found, allocator)
 	delete(unlocks.available, allocator)
 }
 
@@ -75,6 +83,8 @@ recipe_is_unlocked :: proc(unlocks: Recipe_Unlocks, recipe: Recipe, index: int) 
 		return recipe.technology != NO_TECHNOLOGY && unlocks.researched[recipe.technology]
 	case .Quest:
 		return index < len(unlocks.quest_unlocked) && unlocks.quest_unlocked[index]
+	case .Schematic:
+		return index < len(unlocks.schematics_found) && unlocks.schematics_found[index]
 	}
 	return false
 }
@@ -122,6 +132,16 @@ update_recipe_unlocks :: proc(unlocks: ^Recipe_Unlocks, recipes: Recipe_Registry
 unlock_quest_recipe :: proc(unlocks: ^Recipe_Unlocks, recipes: Recipe_Registry, recipe: int) {
 	unlocks.quest_unlocked[recipe] = true
 	refresh_available_recipes(unlocks, recipes)
+}
+
+// The schematic channel. Returns whether the schematic is newly found.
+record_found_schematic :: proc(unlocks: ^Recipe_Unlocks, recipes: Recipe_Registry, recipe: int) -> bool {
+	if unlocks.schematics_found[recipe] {
+		return false
+	}
+	unlocks.schematics_found[recipe] = true
+	refresh_available_recipes(unlocks, recipes)
+	return true
 }
 
 // For the labs of M4.

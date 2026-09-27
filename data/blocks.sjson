@@ -259,4 +259,14 @@ blocks = [
 		hardness_seconds = 3
 		texture = {top = [44, 44, 46], side = [52, 52, 54], bottom = [52, 52, 54]}
 	}
+	{
+		// A small rare deposit in cave walls next to a schematic crate (work
+		// item 0036). Mining it yields quartz and gold ore both (items.sjson,
+		// also_mined_from). Placeholder colour.
+		id = "gold_quartz"
+		name = "Gold Quartz"
+		solid = true
+		hardness_seconds = 3
+		texture = {top = [214, 206, 180], side = [222, 196, 120], bottom = [214, 206, 180]}
+	}
 ]

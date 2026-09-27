@@ -13,6 +13,7 @@ Generation_Blocks :: struct {
 	leaves:      Block_Id,
 	sand:        Block_Id,
 	landing_pad: Block_Id,
+	gold_quartz: Block_Id,
 }
 
 // Read only after creation, so worker threads share it without locking.
@@ -36,8 +37,8 @@ Generator :: struct {
 }
 
 resolve_generation_blocks :: proc(registry: Block_Registry) -> (blocks: Generation_Blocks, problem: string) {
-	names := [7]string{"stone", "deep_stone", "water", "log", "leaves", "sand", "landing_pad"}
-	targets := [7]^Block_Id{&blocks.stone, &blocks.deep_stone, &blocks.water, &blocks.log, &blocks.leaves, &blocks.sand, &blocks.landing_pad}
+	names := [8]string{"stone", "deep_stone", "water", "log", "leaves", "sand", "landing_pad", "gold_quartz"}
+	targets := [8]^Block_Id{&blocks.stone, &blocks.deep_stone, &blocks.water, &blocks.log, &blocks.leaves, &blocks.sand, &blocks.landing_pad, &blocks.gold_quartz}
 	for name, index in names {
 		found: bool
 		if targets[index]^, found = find_block_id(registry, name); !found {

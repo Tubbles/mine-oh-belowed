@@ -37,6 +37,8 @@ save_layout_fingerprint :: proc() -> u64 {
 		type_info_of(Lamp),
 		type_info_of(Assembler),
 		type_info_of(Lab),
+		type_info_of(Schematic_Crate),
+		type_info_of(Crate_Site),
 		type_info_of(Vein),
 		type_info_of(Outcrop_Cell),
 		type_info_of(Block_Change),
@@ -145,6 +147,7 @@ write_entity_pools :: proc(bytes: ^[dynamic]byte, entities: ^Entities) {
 	write_pool(bytes, &entities.lamps)
 	write_pool(bytes, &entities.assemblers)
 	write_pool(bytes, &entities.labs)
+	write_pool(bytes, &entities.schematic_crates)
 }
 
 outcrop_before :: proc(first, second: Outcrop_Cell) -> bool {
@@ -183,6 +186,7 @@ write_world_state :: proc(bytes: ^[dynamic]byte, world: ^World) {
 	write_list(bytes, world.veins[:])
 	write_list(bytes, sorted_outcrop_cells(world))
 	write_list(bytes, world.spent_outcrops[:])
+	write_list(bytes, world.crate_sites[:])
 	write_list(bytes, world.block_changes[:])
 	write_list(bytes, water_update_list(&world.water))
 	write_entity_pools(bytes, &world.entities)
@@ -259,6 +263,7 @@ read_entity_pools :: proc(reader: ^Byte_Reader, entities: ^Entities, machines: M
 	read_pool(reader, &entities.lamps, .Lamp, machines) or_return
 	read_pool(reader, &entities.assemblers, .Assembler, machines) or_return
 	read_pool(reader, &entities.labs, .Lab, machines) or_return
+	read_pool(reader, &entities.schematic_crates, .Schematic_Crate, machines) or_return
 	return true
 }
 
@@ -277,6 +282,7 @@ read_world_lists :: proc(reader: ^Byte_Reader, world: ^World) -> bool {
 		world.outcrop_cells[cell.position] = cell.vein
 	}
 	read_list(reader, &world.spent_outcrops) or_return
+	read_list(reader, &world.crate_sites) or_return
 	read_list(reader, &world.block_changes) or_return
 	updates := make([dynamic]Water_Update, context.temp_allocator)
 	read_list(reader, &updates) or_return
@@ -308,6 +314,13 @@ known_message_key :: proc(content: Simulation_Content, key: string) -> (known: s
 		return CAPSULE_LANDED_KEY, true
 	case RESEARCH_COMPLETE_KEY:
 		return RESEARCH_COMPLETE_KEY, true
+	case SCHEMATIC_READ_KEY:
+		return SCHEMATIC_READ_KEY, true
+	}
+	for recipe in content.recipes.recipes {
+		if recipe.channel == .Schematic && recipe.name_key == key {
+			return recipe.name_key, true
+		}
 	}
 	for quest in content.quests.quests {
 		for candidate in ([2]string{quest.message_key, quest.complete_key}) {
@@ -440,6 +453,8 @@ entity_pool_length :: proc(entities: ^Entities, kind: Entity_Kind) -> int {
 		return len(entities.assemblers.entries)
 	case .Lab:
 		return len(entities.labs.entries)
+	case .Schematic_Crate:
+		return len(entities.schematic_crates.entries)
 	}
 	return 0
 }
@@ -475,6 +490,8 @@ entity_common_at :: proc(entities: ^Entities, kind: Entity_Kind, index: int) -> 
 		return &entities.assemblers.entries[index].common
 	case .Lab:
 		return &entities.labs.entries[index].common
+	case .Schematic_Crate:
+		return &entities.schematic_crates.entries[index].common
 	}
 	return nil
 }

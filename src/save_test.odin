@@ -114,12 +114,39 @@ lay_save_test_oil :: proc(world: ^World, content: Simulation_Content, offset: Wo
 	pool_get(&world.entities.fluid_machines, flare).buffers[0] = {fluid = test_fluid(content, "petroleum_gas"), level = 70}
 }
 
+SAVE_TEST_CRATE :: World_Coordinate{-28, 1, -28}
+SAVE_TEST_GOLD_QUARTZ :: World_Coordinate{-29, 0, -28}
+
+// Cave schematics (work item 0036): a placed crate holding a schematic, a
+// crate site whose chunk is not loaded, a gold quartz block and one
+// schematic read.
+lay_save_test_schematics :: proc(simulation: ^Simulation_State, content: Simulation_Content) {
+	world := &simulation.world
+	sites := [2]Crate_Site{{region = {40, 40}, position = SAVE_TEST_CRATE, choice = 1}, {region = {41, 40}, position = {10_000, -40, 10_000}, choice = 2}}
+	register_crate_sites(world, sites[:])
+	place_pending_crates(world, content)
+	world_set_block(world, SAVE_TEST_GOLD_QUARTZ, test_block(content.blocks, "gold_quartz"))
+	schematic := test_item(content.items, "schematic_slag_concrete")
+	read_schematic(&simulation.unlocks, &simulation.quests, &world.statistics, content.recipes, schematic, 0)
+}
+
+// The crate, the pending site, the gold quartz and the found schematic
+// came through a save.
+schematics_loaded :: proc(simulation: ^Simulation_State, content: Simulation_Content) -> bool {
+	world := &simulation.world
+	crate := pool_get(&world.entities.schematic_crates, entity_at(&world.entities, SAVE_TEST_CRATE))
+	found := simulation.unlocks.schematics_found[test_recipe(content.recipes, "slag_concrete")]
+	sites_kept := len(world.crate_sites) == 2 && world.crate_sites[0].placed && !world.crate_sites[1].placed
+	gold_quartz := world_get_block(world, SAVE_TEST_GOLD_QUARTZ) == test_block(content.blocks, "gold_quartz")
+	return crate != nil && !stack_is_empty(crate.slots[0]) && found && sites_kept && gold_quartz && world.statistics.schematics_found == 1
+}
+
 // Every entity kind with contents: the power plant (offshore pump, pipes,
 // boiler, steam engine, poles, electric drill, lamp, electric inserter), a
 // power switch, an assembler line, labs, a furnace line with belts, a
 // splitter, a burner drill on a finite vein, a bore drill part way down
-// to a deep vein, mining fluid in the electric drill's revival port, and
-// the capsule of the pad.
+// to a deep vein, mining fluid in the electric drill's revival port, a
+// schematic crate, and the capsule of the pad.
 build_save_test_site :: proc(simulation: ^Simulation_State, content: Simulation_Content) {
 	world := &simulation.world
 	carve_save_test_floor(world, test_block(content.blocks, "stone"))
@@ -136,6 +163,7 @@ build_save_test_site :: proc(simulation: ^Simulation_State, content: Simulation_
 	deep := add_test_deep_vein(world, content, "gold_quartz", {21, -10}, 3, {20_000, 70_000, 10_000, 0}, 1000)
 	bore := test_drill(world, place_test_entity(world, content, "bore_drill", {20, 1, -12}))
 	bore.vein, bore.bored_ticks = deep, 1234
+	lay_save_test_schematics(simulation, content)
 	technology := test_technology(content.technologies, "automation")
 	testing_refusal := queue_research(&world.research, content.technologies, simulation.unlocks, technology)
 	assert(testing_refusal == .None)
@@ -263,6 +291,7 @@ test_save_load_run_matches_the_original :: proc(t: ^testing.T) {
 	testing.expect(t, len(loaded.quests.messages) > 0)
 	testing.expect(t, pipes_holding_fluid(&loaded.world.entities) > 0)
 	testing.expect(t, deep_veins_and_bore_drill_loaded(&loaded.world))
+	testing.expect(t, schematics_loaded(&loaded, content))
 	testing.expect_value(t, len(loaded.world.entities.fluid_networks.networks), len(original.world.entities.fluid_networks.networks))
 	testing.expect_value(t, len(loaded.world.entities.electric_networks.networks), len(original.world.entities.electric_networks.networks))
 	testing.expect_value(t, len(loaded.world.entities.belt_network.lines), len(original.world.entities.belt_network.lines))

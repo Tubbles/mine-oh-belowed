@@ -200,14 +200,29 @@ sample_cave_grid :: proc(seed: u64, coordinate: Chunk_Coordinate, grid: ^Cave_Gr
 cave_density :: proc(grid: ^Cave_Grid, local: Local_Coordinate) -> f32 {
 	cell := [3]int{int(local.x), int(local.y), int(local.z)} / CAVE_GRID_STEP
 	fraction := [3]f32{f32(local.x), f32(local.y), f32(local.z)} / CAVE_GRID_STEP - [3]f32{f32(cell.x), f32(cell.y), f32(cell.z)}
+	corners: [8]f32
+	for &value, corner in corners {
+		step := cave_corner_step(corner)
+		value = grid[cave_grid_index(cell.x + step.x, cell.y + step.y, cell.z + step.z)]
+	}
+	return interpolate_cave_corners(corners, fraction)
+}
+
+cave_corner_step :: proc(corner: int) -> [3]int {
+	return {corner & 1, corner >> 1 & 1, corner >> 2 & 1}
+}
+
+// Shared by the chunk grid and the per block lookup (generation_caves.odin),
+// in one order of operations, so both give the same bits.
+interpolate_cave_corners :: proc(corners: [8]f32, fraction: [3]f32) -> f32 {
 	result: f32 = 0
-	for corner in 0 ..< 8 {
-		step := [3]int{corner & 1, corner >> 1 & 1, corner >> 2 & 1}
+	for value, corner in corners {
+		step := cave_corner_step(corner)
 		weight: f32 = 1
 		for axis in 0 ..< 3 {
 			weight *= step[axis] == 1 ? fraction[axis] : 1 - fraction[axis]
 		}
-		result += weight * grid[cave_grid_index(cell.x + step.x, cell.y + step.y, cell.z + step.z)]
+		result += weight * value
 	}
 	return result
 }

@@ -228,6 +228,7 @@ test_report_light_settling_on_generated_terrain :: proc(t: ^testing.T) {
 				insert_generated_chunk(&world, Chunk_Job_Result{kind = .Generate, coordinate = {x, y, z}, chunk = generated.chunk, veins = generated.veins, outcrops = generated.outcrops})
 				delete(generated.veins)
 				delete(generated.outcrops)
+				delete(generated.crates)
 			}
 		}
 	}

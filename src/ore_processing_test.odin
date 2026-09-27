@@ -163,7 +163,7 @@ test_vein_draws_come_out_graded :: proc(t: ^testing.T) {
 		vein.draws = draw
 		hash := vein_draw_hash(777, vein)
 		output := choose_vein_output(vein, vein_type, false, hash)
-		item := graded_output(vein, vein_type, output, false, hash)
+		item := graded_output(vein_type, output, low_grade_share_ppm(vein, false), hash)
 		testing.expect(t, item == vein_type.outputs[output] || item == vein_type.low_grades[output])
 	}
 	testing.expect_value(t, vein_type.low_grades[1], NO_ITEM)

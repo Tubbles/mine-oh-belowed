@@ -45,6 +45,9 @@ bindings = [
 	{action = "Pause" device = "gamepad" control = "START" context = "both"}
 	{action = "Mine" device = "gamepad" control = "RIGHT_TRIGGER" context = "world"}
 	{action = "Place" device = "gamepad" control = "LEFT_TRIGGER" context = "world"}
+	// Use_Item shares Place's controls: it reads a selected schematic,
+	// which never places (work item 0036).
+	{action = "Use_Item" device = "gamepad" control = "LEFT_TRIGGER" context = "world"}
 	{action = "Hotbar_Radial" device = "trackpad" control = "LEFT" context = "world"}
 
 	// Gamepad, in menus.
@@ -108,6 +111,7 @@ bindings = [
 	// Mouse.
 	{action = "Mine" device = "mouse" control = "LEFT" context = "world"}
 	{action = "Place" device = "mouse" control = "RIGHT" context = "world"}
+	{action = "Use_Item" device = "mouse" control = "RIGHT" context = "world"}
 	{action = "Pipette" device = "mouse" control = "MIDDLE" context = "world"}
 	{action = "Hotbar_Previous" device = "mouse" control = "WHEEL_UP" context = "world"}
 	{action = "Hotbar_Next" device = "mouse" control = "WHEEL_DOWN" context = "world"}

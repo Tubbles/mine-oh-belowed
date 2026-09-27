@@ -49,7 +49,7 @@ test_browser_filters_by_tab_tag_and_craftable :: proc(t: ^testing.T) {
 	iron := tag_index(test.recipes, "iron")
 	smelting := tag_index(test.recipes, "smelting")
 	iron_smelting := visible_ids(test, {category = .Materials, tags = {iron, smelting}})
-	testing.expect(t, slice.equal(iron_smelting, []string{"iron_plate", "steel"}))
+	testing.expect(t, slice.equal(iron_smelting, []string{"charcoal_steel", "iron_plate", "low_grade_iron_plate", "steel"}))
 	testing.expect_value(t, len(visible_ids(test, {category = .Tools, tags = {smelting}})), 0)
 	testing.expect(t, iron in category_tags(test.recipes, .Tools))
 	testing.expect(t, smelting not_in category_tags(test.recipes, .Tools))

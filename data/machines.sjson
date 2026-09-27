@@ -8,10 +8,14 @@
 // kind selects the panel and the simulation: chest, furnace, capsule,
 // belt, inserter, drill, splitter, pipe, offshore_pump, boiler,
 // steam_engine, storage_tank, pump, tar_pit_pump, flare_stack,
-// combustion_generator, pole, power_switch, lamp, crafting_machine or lab.
+// combustion_generator, pole, power_switch, lamp, crafting_machine, lab or
+// schematic_crate.
 // The capsule (work item 0013) stands on the landing pad from the start:
 // it has no item, cannot be picked up, and holds 8 slots for quest
 // rewards and deliveries.
+// Schematic crates (kind schematic_crate, work item 0036) stand in cave
+// pockets where world generation puts them: 1 by 1 by 1, no item, never
+// picked up, one slot holding a schematic that Interact takes and reads.
 // Chests: slots is the number of item slots.
 // Furnaces: fuel_slots and input_slots must be 1 and output_slots 2: the
 // main output and the byproduct (slag) slot of work item 0027. speed
@@ -201,6 +205,13 @@ machines = [
 		kind = "capsule"
 		footprint = {width = 1, depth = 1, height = 2}
 		slots = 8
+	}
+	{
+		id = "schematic_crate"
+		name_key = "machine_schematic_crate"
+		kind = "schematic_crate"
+		footprint = {width = 1, depth = 1, height = 1}
+		slots = 1
 	}
 	{
 		id = "belt"

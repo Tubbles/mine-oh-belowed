@@ -38,6 +38,10 @@ World :: struct {
 	outcrop_cells:  map[World_Coordinate]Vein_Id,
 	// Outcrop cells of exhausted veins still to turn into spent rock.
 	spent_outcrops: [dynamic]World_Coordinate,
+	// The schematic crate site of every region whose crate chunk loaded,
+	// placed or not yet (schematic.odin). Kept after the crate is emptied,
+	// so a reloaded chunk never places it again.
+	crate_sites:    [dynamic]Crate_Site,
 	block_changes:  [dynamic]Block_Change,
 	lighting:       Lighting,
 	// Block light sources that are entities, by cell (world_light.odin).
@@ -209,6 +213,7 @@ destroy_world :: proc(world: ^World) {
 	delete(world.veins)
 	delete(world.outcrop_cells)
 	delete(world.spent_outcrops)
+	delete(world.crate_sites)
 	delete(world.block_changes)
 	destroy_lighting(&world.lighting)
 	delete(world.entity_lights)

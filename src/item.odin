@@ -47,6 +47,8 @@ Item_Definition :: struct {
 	mined_from:      []string,
 	fuel_megajoules: f32,
 	cannot_recycle:  bool,
+	also_mined_from: []string,
+	usable:          bool,
 }
 
 Items_File :: struct {
@@ -56,6 +58,8 @@ Items_File :: struct {
 // places_block is AIR_BLOCK for items that place nothing. Fuel is kept in
 // whole kilojoules so machines burn it with integer arithmetic.
 // cannot_recycle keeps the recycler from taking the item (recycler.odin).
+// A usable item is read with the Use_Item action (schematics, work item
+// 0036) and never places anything.
 Item :: struct {
 	id:              string,
 	name_key:        string,
@@ -64,12 +68,16 @@ Item :: struct {
 	places_block:    Block_Id,
 	fuel_kilojoules: u32,
 	cannot_recycle:  bool,
+	usable:          bool,
 }
 
 Item_Registry :: struct {
 	items:          []Item,
 	// Indexed by Block_Id: the item mining the block yields, or NO_ITEM.
 	drop_for_block: []Item_Id,
+	// Indexed by Block_Id: a second item the block yields besides its
+	// drop (gold quartz gives quartz and gold ore), or NO_ITEM.
+	extra_drop_for_block: []Item_Id,
 }
 
 parse_items_file :: proc(data: []byte, allocator := context.allocator) -> (file: Items_File, error: json.Unmarshal_Error) {
@@ -116,6 +124,9 @@ validate_item_definition :: proc(definitions: []Item_Definition, index: int) -> 
 	if definition.fuel_megajoules < 0 {
 		return fmt.tprintf("item %q has a negative fuel_megajoules", definition.id)
 	}
+	if definition.usable && definition.places_block != "" {
+		return fmt.tprintf("usable item %q cannot place a block", definition.id)
+	}
 	return ""
 }
 
@@ -159,8 +170,33 @@ resolve_item :: proc(definition: Item_Definition, blocks: Block_Registry) -> (it
 		places_block    = placed_block,
 		fuel_kilojoules = u32(math.round(definition.fuel_megajoules * 1000)),
 		cannot_recycle  = definition.cannot_recycle,
+		usable          = definition.usable,
 	}
 	return item, ""
+}
+
+// A block yields at most one extra item, and only besides a main drop.
+assign_extra_drop :: proc(registry: Item_Registry, blocks: Block_Registry, block_name: string, item: Item_Id, item_name: string) -> string {
+	block, found := find_block_id(blocks, block_name)
+	if !found || registry.drop_for_block[block] == NO_ITEM || registry.drop_for_block[block] == item {
+		return fmt.tprintf("item %q is also mined from %q, which yields no other item", item_name, block_name)
+	}
+	if registry.extra_drop_for_block[block] != NO_ITEM {
+		return fmt.tprintf("block %q yields more than one extra item", block_name)
+	}
+	registry.extra_drop_for_block[block] = item
+	return ""
+}
+
+resolve_extra_drops :: proc(definitions: []Item_Definition, registry: Item_Registry, blocks: Block_Registry) -> string {
+	for definition, index in definitions {
+		for block_name in definition.also_mined_from {
+			if problem := assign_extra_drop(registry, blocks, block_name, Item_Id(index), definition.id); problem != "" {
+				return problem
+			}
+		}
+	}
+	return ""
 }
 
 resolve_item_drops :: proc(definitions: []Item_Definition, items: []Item, blocks: Block_Registry, drops: []Item_Id) -> string {
@@ -193,7 +229,9 @@ resolve_item_registry :: proc(file: Items_File, blocks: Block_Registry, allocato
 	items := make([]Item, len(file.items), allocator)
 	drops := make([]Item_Id, len(blocks.definitions), allocator)
 	slice.fill(drops, NO_ITEM)
-	registry = Item_Registry{items = items, drop_for_block = drops}
+	extra_drops := make([]Item_Id, len(blocks.definitions), allocator)
+	slice.fill(extra_drops, NO_ITEM)
+	registry = Item_Registry{items = items, drop_for_block = drops, extra_drop_for_block = extra_drops}
 	for definition, index in file.items {
 		problem = validate_item_definition(file.items, index)
 		if problem == "" {
@@ -208,12 +246,17 @@ resolve_item_registry :: proc(file: Items_File, blocks: Block_Registry, allocato
 		destroy_item_registry(registry, allocator)
 		return {}, problem
 	}
+	if problem = resolve_extra_drops(file.items, registry, blocks); problem != "" {
+		destroy_item_registry(registry, allocator)
+		return {}, problem
+	}
 	return registry, ""
 }
 
 destroy_item_registry :: proc(registry: Item_Registry, allocator := context.allocator) {
 	delete(registry.items, allocator)
 	delete(registry.drop_for_block, allocator)
+	delete(registry.extra_drop_for_block, allocator)
 }
 
 find_item_id :: proc(registry: Item_Registry, id: string) -> (item: Item_Id, found: bool) {
@@ -245,6 +288,17 @@ block_drop :: proc(registry: Item_Registry, block: Block_Id) -> Item_Id {
 		return NO_ITEM
 	}
 	return registry.drop_for_block[block]
+}
+
+block_extra_drop :: proc(registry: Item_Registry, block: Block_Id) -> Item_Id {
+	if int(block) >= len(registry.extra_drop_for_block) {
+		return NO_ITEM
+	}
+	return registry.extra_drop_for_block[block]
+}
+
+item_is_usable :: proc(registry: Item_Registry, item: Item_Id) -> bool {
+	return int(item) < len(registry.items) && registry.items[item].usable
 }
 
 Item_Sort_Context :: struct {

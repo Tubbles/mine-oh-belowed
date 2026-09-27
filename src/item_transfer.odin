@@ -45,6 +45,8 @@ entity_accepts :: proc(entities: ^Entities, content: Simulation_Content, handle:
 	case .Lab:
 		pack_slot := lab_slot_of(content.machines.lab_packs, item)
 		return limited_accepting_slot(slots, pack_slot, item, content.items, INSERTION_LIMIT_CRAFTS)
+	case .Schematic_Crate:
+		return -1, false
 	}
 	return first_accepting_slot(slots, item, item_stack_size(content.items, item))
 }
@@ -145,7 +147,7 @@ furnace_accepting_slot :: proc(slots: []Item_Stack, item: Item_Id, content: Simu
 }
 
 // The slots entity_extract may take from: a furnace's (main output, then
-// byproduct) or an assembler's outputs, nothing of an inserter, a drill, a boiler or a lab, every slot
+// byproduct) or an assembler's outputs, nothing of an inserter, a drill, a boiler, a lab or a schematic crate, every slot
 // of a chest or the capsule.
 giving_slots :: proc(entities: ^Entities, handle: Entity_Handle) -> []Item_Stack {
 	slots := entity_slots(entities, handle)
@@ -154,7 +156,7 @@ giving_slots :: proc(entities: ^Entities, handle: Entity_Handle) -> []Item_Stack
 		return slots[FURNACE_OUTPUT_SLOT:FURNACE_BYPRODUCT_SLOT + 1]
 	case .Assembler:
 		return assembler_output_slots(pool_get(&entities.assemblers, handle))
-	case .Inserter, .Drill, .Fluid_Machine, .Lab:
+	case .Inserter, .Drill, .Fluid_Machine, .Lab, .Schematic_Crate:
 		return nil
 	}
 	return slots
@@ -222,7 +224,7 @@ entity_takes_item_kind :: proc(entities: ^Entities, content: Simulation_Content,
 	case .Lab:
 		slot := lab_slot_of(content.machines.lab_packs, item)
 		return slot >= 0 && slot < len(entity_slots(entities, handle))
-	case .Splitter, .Pipe, .Pole, .Lamp:
+	case .Splitter, .Pipe, .Pole, .Lamp, .Schematic_Crate:
 		return false
 	}
 	return false

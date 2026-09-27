@@ -1,5 +1,6 @@
 package game
 
+import "core:fmt"
 import "core:slice"
 import "core:testing"
 
@@ -374,4 +375,64 @@ test_deep_mining_technologies :: proc(t: ^testing.T) {
 	for id in ([?]string{"electrolyser", "alumina", "aluminium_plate", "silicon"}) {
 		testing.expectf(t, slice.contains(electrolysis.unlocks, test_recipe(recipes, id)), "electrolysis does not unlock %s", id)
 	}
+}
+
+// Carried over from 0035: while a bore drill is placed, the HUD's vein
+// line names the deep vein its ghost would tap, the same one the
+// placement taps, or says there is none.
+@(test)
+test_bore_drill_ghost_names_the_deep_vein :: proc(t: ^testing.T) {
+	// No string table is loaded in tests, so text() records missing keys.
+	defer clear_missing_reports(&global_string_table)
+	content := make_test_content()
+	world := make_deep_mining_world(content)
+	vein := add_test_deep_vein(&world, content, "bauxite", {2, 2}, 2, {100, 20, 0, 0})
+	players := []Player{make_test_player(content.blocks, {10, 1, 10})}
+	player := &players[0]
+	inventory_add(player.inventory, content.items, test_item(content.items, "bore_drill"), 1)
+	// On the top face at (1, 0, 1): the 4 by 4 footprint starts at (0, 1, 0), centre column (2, 2).
+	player.target = Raycast_Hit{hit = true, block = {1, 0, 1}, face = .Positive_Y, adjacent = {1, 1, 1}}
+	placement := placement_for_player(&world, content, players, 0)
+	ghost_vein, found, selected := bore_drill_ghost_vein(&world, content.machines, player^)
+	testing.expect(t, selected && found && placement.valid)
+	testing.expect_value(t, ghost_vein, vein)
+	testing.expect_value(t, placement.vein, vein)
+	line, shown := bore_drill_ghost_line(&world, content.machines, content.veins, player^)
+	testing.expect(t, shown)
+	testing.expect_value(t, line, vein_status_text(&world, content.veins, vein))
+	testing.expect_value(t, line, fmt.tprintf("%s  120 %s", text("vein_type_bauxite"), text("drill_remaining")))
+	player.target = Raycast_Hit{hit = true, block = {20, 0, 20}, face = .Positive_Y, adjacent = {20, 1, 20}}
+	line, shown = bore_drill_ghost_line(&world, content.machines, content.veins, player^)
+	testing.expect(t, shown)
+	testing.expect_value(t, line, text("bore_drill_no_deep_vein"))
+	testing.expect(t, !placement_for_player(&world, content, players, 0).valid)
+	// Any other selection leaves the line alone.
+	player.selected_hotbar_slot = 1
+	_, shown = bore_drill_ghost_line(&world, content.machines, content.veins, player^)
+	testing.expect(t, !shown)
+}
+
+// Carried over from 0035: a revived vein is spent, so its draws keep the
+// depleted end share of low grade ore (60 percent), not the full vein's.
+@(test)
+test_revived_draws_keep_the_depleted_low_grade_share :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_drill_world(content)
+	world.settings.seed = 777
+	id := add_test_vein(&world, content, "iron", {1, 1}, 2, {0, 0, 0, 0})
+	hematite, low_grade := test_item(content.items, "hematite"), test_item(content.items, "hematite_low_grade")
+	port := Fluid_Buffer{level = 1_000_000}
+	high, low := 0, 0
+	for _ in 0 ..< 4000 {
+		switch draw_revived_unit(&world, content.veins, registered_vein(&world, id), &port) {
+		case hematite:
+			high += 1
+		case low_grade:
+			low += 1
+		}
+	}
+	share := f64(low) * 100 / f64(high + low)
+	testing.expectf(t, abs(share - 60) < 2.5, "revived vein: %.2f percent low grade", share)
+	testing.expect_value(t, port.level, 1_000_000 - 4000 * REVIVAL_LITRES_PER_UNIT)
+	testing.expect_value(t, vein_remaining_total(registered_vein(&world, id)^), 0)
 }

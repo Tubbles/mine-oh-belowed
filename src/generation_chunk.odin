@@ -2,19 +2,21 @@ package game
 
 import "base:runtime"
 
-// A generated chunk, the veins whose footprint overlaps its chunk column
-// and the outcrop cells inside the chunk. The main thread registers the
-// veins and the outcrop cells when it inserts the chunk.
+// A generated chunk, the veins whose footprint overlaps its chunk column,
+// the outcrop cells inside the chunk and the schematic crate site whose
+// crate cell it holds (none or one). The main thread registers the veins,
+// the outcrop cells and the crate site when it inserts the chunk.
 Generated_Chunk :: struct {
 	chunk:    ^Chunk,
 	veins:    [dynamic]Vein,
 	outcrops: [dynamic]Outcrop_Cell,
+	crates:   [dynamic]Crate_Site,
 }
 
 // The whole generation of one chunk: a pure function of the generator (its
 // seed and tables) and the chunk coordinate. Safe on any thread. open, when
 // given, receives the columns generation lit from the sky.
-generate_chunk_blocks :: proc(generator: ^Generator, chunk: ^Chunk, outcrops: ^[dynamic]Outcrop_Cell, open_columns: ^Open_Columns = nil) {
+generate_chunk_blocks :: proc(generator: ^Generator, chunk: ^Chunk, outcrops: ^[dynamic]Outcrop_Cell, crates: ^[dynamic]Crate_Site, open_columns: ^Open_Columns = nil) {
 	runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
 	origin := chunk_origin(chunk.coordinate)
 	if origin.y > GENERATION_CEILING {
@@ -42,6 +44,7 @@ generate_chunk_blocks :: proc(generator: ^Generator, chunk: ^Chunk, outcrops: ^[
 		sample_cave_grid(generator.seeds[.Caves], chunk.coordinate, caves)
 	}
 	fill_terrain(chunk, Terrain_Input{generator = generator, columns = columns, caves = caves, has_caves = has_caves})
+	apply_crate_site(generator, chunk, crates)
 	if underground {
 		return
 	}
@@ -106,8 +109,9 @@ generate_chunk :: proc(generator: ^Generator, coordinate: Chunk_Coordinate, allo
 	chunk.coordinate = coordinate
 	chunk.dirty = true
 	outcrops := make([dynamic]Outcrop_Cell, allocator)
-	generate_chunk_blocks(generator, chunk, &outcrops)
-	return Generated_Chunk{chunk = chunk, veins = column_veins(generator, chunk_column_of(coordinate), allocator), outcrops = outcrops}
+	crates := make([dynamic]Crate_Site, allocator)
+	generate_chunk_blocks(generator, chunk, &outcrops, &crates)
+	return Generated_Chunk{chunk = chunk, veins = column_veins(generator, chunk_column_of(coordinate), allocator), outcrops = outcrops, crates = crates}
 }
 
 // A chunk of a save: generated for its veins, outcrop cells and open
@@ -120,9 +124,10 @@ generate_saved_chunk :: proc(generator: ^Generator, coordinate: Chunk_Coordinate
 	chunk.coordinate = coordinate
 	chunk.dirty = true
 	outcrops := make([dynamic]Outcrop_Cell, allocator)
+	crates := make([dynamic]Crate_Site, allocator)
 	open: Open_Columns
-	generate_chunk_blocks(generator, chunk, &outcrops, &open)
-	generated = Generated_Chunk{chunk = chunk, veins = column_veins(generator, chunk_column_of(coordinate), allocator), outcrops = outcrops}
+	generate_chunk_blocks(generator, chunk, &outcrops, &crates, &open)
+	generated = Generated_Chunk{chunk = chunk, veins = column_veins(generator, chunk_column_of(coordinate), allocator), outcrops = outcrops, crates = crates}
 	if !deserialize_chunk_blocks(saved, &chunk.blocks) {
 		return generated, false
 	}

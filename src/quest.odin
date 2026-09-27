@@ -71,6 +71,7 @@ Hint_Counter :: enum u8 {
 	Mixing_Refusals,
 	Flared_Litres,
 	Generator_Gas_Litres,
+	Schematics_Found,
 }
 
 @(rodata)
@@ -97,6 +98,7 @@ hint_counter_names := [Hint_Counter]string {
 	.Mixing_Refusals           = "mixing_refusals",
 	.Flared_Litres             = "flared_litres",
 	.Generator_Gas_Litres      = "generator_gas_litres",
+	.Schematics_Found          = "schematics_found",
 }
 
 // As written in the files, before references are resolved.

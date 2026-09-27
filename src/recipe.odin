@@ -75,12 +75,14 @@ recipe_category_names := [Recipe_Category]string {
 	.Science    = "science",
 }
 
-// The three progression channels of DESIGN.md, plus the main quest gates.
+// The three progression channels of DESIGN.md, plus the main quest gates
+// and the alternate recipes of cave schematics (work item 0036).
 Recipe_Channel :: enum u8 {
 	Start,
 	Discovery,
 	Research,
 	Quest,
+	Schematic,
 }
 
 @(rodata)
@@ -89,6 +91,7 @@ recipe_channel_names := [Recipe_Channel]string {
 	.Discovery = "discovery",
 	.Research  = "research",
 	.Quest     = "quest",
+	.Schematic = "schematic",
 }
 
 // Indices into Recipe_Registry.tag_names.
@@ -134,6 +137,7 @@ Recipe_Definition :: struct {
 	tags:       []string,
 	channel:    string,
 	technology: string,
+	schematic:  string,
 }
 
 Recipes_File :: struct {
@@ -145,7 +149,8 @@ Recipes_File :: struct {
 // technology_id is the file's reference, technology its index once the
 // technologies are resolved (NO_TECHNOLOGY otherwise). byproducts marks
 // the outputs a lenient world voids when they do not fit, fluid_byproducts
-// the fluid outputs.
+// the fluid outputs. schematic is the usable item that unlocks a schematic
+// channel recipe, NO_ITEM for every other channel.
 Recipe :: struct {
 	id:            string,
 	name_key:      string,
@@ -162,6 +167,7 @@ Recipe :: struct {
 	channel:       Recipe_Channel,
 	technology_id: string,
 	technology:    int,
+	schematic:     Item_Id,
 }
 
 Recipe_Registry :: struct {
@@ -170,6 +176,12 @@ Recipe_Registry :: struct {
 	// Indexed by Item_Id: the recipe the recycler reverses for the item,
 	// or NO_RECIPE (recycler.odin).
 	recycle_recipes: []int,
+	// Not a table: the session's Recipe_Unlocks.schematics_found, set on
+	// the copy of the registry the simulation and the screens get
+	// (with_schematics_found). Every machine path already receives the
+	// registry, so this is how they skip schematic alternates not found
+	// yet (recipe_runs_in_machines). Nil finds none.
+	schematics_found: []bool,
 }
 
 parse_recipes_file :: proc(data: []byte, allocator := context.allocator) -> (file: Recipes_File, error: json.Unmarshal_Error) {
@@ -244,6 +256,9 @@ validate_recipe_channel :: proc(definition: Recipe_Definition) -> string {
 	}
 	if channel != .Research && definition.technology != "" {
 		return fmt.tprintf("recipe %q names a technology but its channel is %q", definition.id, definition.channel)
+	}
+	if (channel == .Schematic) != (definition.schematic != "") {
+		return fmt.tprintf("recipe %q needs a schematic exactly when its channel is schematic", definition.id)
 	}
 	return ""
 }
@@ -416,6 +431,7 @@ resolve_recipe :: proc(definition: Recipe_Definition, items: Item_Registry, flui
 		fluid_byproducts = resolve_fluid_byproducts(definition.fluid_outputs),
 		technology_id = definition.technology,
 		technology    = NO_TECHNOLOGY,
+		schematic     = NO_ITEM,
 	}
 	recipe.category, _ = parse_named_enum(recipe_category_names, definition.category)
 	recipe.channel, _ = parse_named_enum(recipe_channel_names, definition.channel)
@@ -443,7 +459,38 @@ resolve_recipe :: proc(definition: Recipe_Definition, items: Item_Registry, flui
 	if recipe.name_key == "" {
 		recipe.name_key = items.items[recipe.outputs[0].item].name_key
 	}
+	if recipe.schematic, problem = resolve_schematic_item(definition, items); problem != "" {
+		delete(recipe.inputs, allocator)
+		delete(recipe.outputs, allocator)
+		delete(recipe.fluid_inputs, allocator)
+		delete(recipe.fluid_outputs, allocator)
+		return {}, problem
+	}
 	return recipe, ""
+}
+
+// A schematic is a usable item.
+resolve_schematic_item :: proc(definition: Recipe_Definition, items: Item_Registry) -> (item: Item_Id, problem: string) {
+	if definition.schematic == "" {
+		return NO_ITEM, ""
+	}
+	found: bool
+	if item, found = find_item_id(items, definition.schematic); !found || !item_is_usable(items, item) {
+		return NO_ITEM, fmt.tprintf("recipe %q names schematic %q, which is not a usable item", definition.id, definition.schematic)
+	}
+	return item, ""
+}
+
+// One recipe per schematic item.
+validate_schematic_recipes :: proc(recipes: []Recipe) -> string {
+	for recipe, index in recipes {
+		for other in recipes[index + 1:] {
+			if recipe.schematic != NO_ITEM && other.schematic == recipe.schematic {
+				return fmt.tprintf("recipes %q and %q share their schematic", recipe.id, other.id)
+			}
+		}
+	}
+	return ""
 }
 
 // The furnace has one input slot, one output slot and a byproduct slot
@@ -502,6 +549,10 @@ resolve_recipe_registry :: proc(file: Recipes_File, items: Item_Registry, fluids
 		destroy_recipe_registry(registry, allocator)
 		return {}, problem
 	}
+	if problem = validate_schematic_recipes(registry.recipes); problem != "" {
+		destroy_recipe_registry(registry, allocator)
+		return {}, problem
+	}
 	return registry, ""
 }
 
@@ -516,6 +567,13 @@ destroy_recipe_registry :: proc(registry: Recipe_Registry, allocator := context.
 	delete(registry.recipes, allocator)
 	delete(registry.tag_names, allocator)
 	delete(registry.recycle_recipes, allocator)
+}
+
+// The registry as the session sees it, with its found schematics.
+with_schematics_found :: proc(registry: Recipe_Registry, schematics_found: []bool) -> Recipe_Registry {
+	result := registry
+	result.schematics_found = schematics_found
+	return result
 }
 
 find_recipe :: proc(registry: Recipe_Registry, id: string) -> int {
@@ -533,10 +591,11 @@ recipe_ticks :: proc(recipe: Recipe, speed_percent: u32, tick_rate: int) -> u32 
 	return max(u32(ticks), 1)
 }
 
-// The furnace recipe for an input item, or NO_RECIPE.
+// The furnace recipe for an input item, or NO_RECIPE. A schematic recipe
+// not found yet is skipped.
 furnace_recipe_for :: proc(registry: Recipe_Registry, item: Item_Id) -> int {
 	for recipe, index in registry.recipes {
-		if recipe_fits_furnace(recipe) && recipe.inputs[0].item == item {
+		if recipe_fits_furnace(recipe) && recipe.inputs[0].item == item && recipe_runs_in_machines(registry, index) {
 			return index
 		}
 	}
@@ -545,6 +604,35 @@ furnace_recipe_for :: proc(registry: Recipe_Registry, item: Item_Id) -> int {
 
 item_is_smeltable :: proc(registry: Recipe_Registry, item: Item_Id) -> bool {
 	return furnace_recipe_for(registry, item) != NO_RECIPE
+}
+
+// Machines pick their recipe by what they hold and never check unlocks,
+// except for schematic alternates: their inputs are common, so a machine
+// makes one only once its schematic was found.
+recipe_runs_in_machines :: proc(registry: Recipe_Registry, index: int) -> bool {
+	found := registry.schematics_found
+	return registry.recipes[index].channel != .Schematic || index < len(found) && found[index]
+}
+
+// The schematic recipe a usable item unlocks, or NO_RECIPE.
+schematic_recipe_for :: proc(registry: Recipe_Registry, item: Item_Id) -> int {
+	for recipe, index in registry.recipes {
+		if recipe.schematic != NO_ITEM && recipe.schematic == item {
+			return index
+		}
+	}
+	return NO_RECIPE
+}
+
+// Every schematic item in recipe order, in the temp allocator.
+schematic_items :: proc(registry: Recipe_Registry) -> []Item_Id {
+	found := make([dynamic]Item_Id, context.temp_allocator)
+	for recipe in registry.recipes {
+		if recipe.schematic != NO_ITEM {
+			append(&found, recipe.schematic)
+		}
+	}
+	return found[:]
 }
 
 // The graph queries of the recipe browser, in recipe order.
