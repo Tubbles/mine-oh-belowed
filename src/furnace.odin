@@ -66,17 +66,22 @@ fuel_joules_per_tick :: proc(machine: Machine, tick_rate: int) -> u32 {
 // Burns one more fuel item when the buffer cannot pay for this tick.
 // Returns false when there is nothing to burn.
 refuel_furnace :: proc(furnace: ^Furnace, items: Item_Registry, needed: u32) -> bool {
-	if furnace.fuel_joules >= needed {
+	return refuel_from_slot(&furnace.fuel_joules, &furnace.fuel_item_joules, &furnace.slots[FURNACE_FUEL_SLOT], items, needed)
+}
+
+// Shared by every fuel burning entity: the buffer, the full value of the
+// item burning (for the burn bar) and the fuel slot.
+refuel_from_slot :: proc(fuel_joules, fuel_item_joules: ^u32, fuel: ^Item_Stack, items: Item_Registry, needed: u32) -> bool {
+	if fuel_joules^ >= needed {
 		return true
 	}
-	fuel := &furnace.slots[FURNACE_FUEL_SLOT]
 	if stack_is_empty(fuel^) || !item_is_fuel(items, fuel.item) {
 		return false
 	}
 	joules := items.items[fuel.item].fuel_kilojoules * 1000
 	take_from_slot(fuel, 1)
-	furnace.fuel_joules += joules
-	furnace.fuel_item_joules = joules
+	fuel_joules^ += joules
+	fuel_item_joules^ = joules
 	return true
 }
 

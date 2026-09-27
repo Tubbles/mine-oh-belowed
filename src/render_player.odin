@@ -108,12 +108,23 @@ draw_placement_preview :: proc(world: ^World, content: Simulation_Content, playe
 	if placement.shown {
 		extent := [3]f32{f32(placement.size.x), f32(placement.size.y), f32(placement.size.z)}
 		rl.DrawCubeV(box_centre(placement.origin, placement.size), extent, placement.valid ? GHOST_VALID_COLOR : GHOST_INVALID_COLOR)
+		if placement.inserter {
+			draw_inserter_ghost_arrow(placement)
+		}
 		return
 	}
 	if selected_placed_block(players[index], content.items) == AIR_BLOCK {
 		return
 	}
 	rl.DrawCube(block_centre(players[index].target.adjacent), 1, 1, 1, PLACEMENT_PREVIEW_COLOR)
+}
+
+// A line from the pickup side to the drop side with a small cube at the drop end.
+draw_inserter_ghost_arrow :: proc(placement: Placement) {
+	forward := belt_direction_vector(placement.rotation)
+	centre := block_centre(placement.origin)
+	rl.DrawLine3D(centre - forward * 0.5, centre + forward * 0.5, BELT_GHOST_ARROW_COLOR)
+	rl.DrawCubeV(centre + forward * 0.45, {0.1, 0.1, 0.1}, BELT_GHOST_ARROW_COLOR)
 }
 
 // Placeholder body, a capsule over the collision box.

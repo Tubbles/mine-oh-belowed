@@ -75,6 +75,8 @@ make_test_world :: proc(coordinates: []Chunk_Coordinate) -> World {
 	world.entities.furnaces.free = make([dynamic]u32, context.temp_allocator)
 	world.entities.belts.entries = make([dynamic]Belt, context.temp_allocator)
 	world.entities.belts.free = make([dynamic]u32, context.temp_allocator)
+	world.entities.inserters.entries = make([dynamic]Inserter, context.temp_allocator)
+	world.entities.inserters.free = make([dynamic]u32, context.temp_allocator)
 	world.entities.belt_network.allocator = context.temp_allocator
 	for coordinate in coordinates {
 		chunk := new(Chunk, context.temp_allocator)

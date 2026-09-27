@@ -198,20 +198,7 @@ Belt_Item_Location :: struct {
 // The item on the belt block nearest its middle, either lane (left first
 // on a tie), matching the filter unless the filter is NO_ITEM.
 nearest_belt_item :: proc(line: Belt_Line, block: i32, filter: Item_Id) -> Belt_Item_Location {
-	middle := block * BELT_UNITS_PER_BLOCK + BELT_INSERT_OFFSET
-	best: Belt_Item_Location
-	best_distance := i32(max(i32))
-	for lane in Belt_Lane {
-		for entry, index in line.lanes[lane] {
-			if entry.position / BELT_UNITS_PER_BLOCK != block || (filter != NO_ITEM && entry.item != filter) {
-				continue
-			}
-			if distance := abs(entry.position - middle); distance < best_distance {
-				best, best_distance = Belt_Item_Location{found = true, lane = lane, index = index}, distance
-			}
-		}
-	}
-	return best
+	return nearest_belt_item_excluding(line, block, filter, nil)
 }
 
 belt_extract_item :: proc(entities: ^Entities, handle: Entity_Handle, filter: Item_Id) -> Item_Id {
@@ -226,4 +213,39 @@ belt_extract_item :: proc(entities: ^Entities, handle: Entity_Handle, filter: It
 	item := line.lanes[location.lane][location.index].item
 	ordered_remove(&line.lanes[location.lane], location.index)
 	return item
+}
+
+// The distinct items on the belt block in the order belt_extract_item
+// takes them: nearest the middle first, left lane first on a tie.
+belt_offered_items :: proc(entities: ^Entities, handle: Entity_Handle, filter: Item_Id) -> []Item_Id {
+	offered := make([dynamic]Item_Id, context.temp_allocator)
+	line, belt := belt_line_of(entities, handle)
+	if line == nil {
+		return offered[:]
+	}
+	for {
+		location := nearest_belt_item_excluding(line^, belt.line_index, filter, offered[:])
+		if !location.found {
+			return offered[:]
+		}
+		append(&offered, line.lanes[location.lane][location.index].item)
+	}
+}
+
+// nearest_belt_item skipping the items already listed.
+nearest_belt_item_excluding :: proc(line: Belt_Line, block: i32, filter: Item_Id, excluded: []Item_Id) -> Belt_Item_Location {
+	middle := block * BELT_UNITS_PER_BLOCK + BELT_INSERT_OFFSET
+	best: Belt_Item_Location
+	best_distance := i32(max(i32))
+	for lane in Belt_Lane {
+		for entry, index in line.lanes[lane] {
+			if entry.position / BELT_UNITS_PER_BLOCK != block || (filter != NO_ITEM && entry.item != filter) || slice_contains_item(excluded, entry.item) {
+				continue
+			}
+			if distance := abs(entry.position - middle); distance < best_distance {
+				best, best_distance = Belt_Item_Location{found = true, lane = lane, index = index}, distance
+			}
+		}
+	}
+	return best
 }

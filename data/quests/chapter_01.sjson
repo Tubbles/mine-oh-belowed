@@ -26,7 +26,10 @@
 // quest became active: blocks_mined, mining_ticks (with block, in ticks
 // at 60 per second), distance_walked (blocks), furnace_out_of_fuel and
 // furnace_output_full (times a furnace stalled), fuel_burned (items),
-// inventory_full_ticks (ticks with no empty inventory slot).
+// inventory_full_ticks (ticks with no empty inventory slot),
+// inserter_out_of_fuel and inserter_waiting_for_room (times an inserter
+// stalled), inserter_idle_ticks (ticks an inserter had nothing to pick,
+// summed over inserters).
 //
 // A reward is {item, count}, landing in the capsule, or {unlocks_recipe}
 // for a recipe of the quest channel.

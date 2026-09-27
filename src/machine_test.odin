@@ -29,7 +29,7 @@ test_machine :: proc(machines: Machine_Registry, id: string) -> Machine_Id {
 test_machine_data_loads :: proc(t: ^testing.T) {
 	items := make_test_items()
 	machines := make_test_machines()
-	testing.expect_value(t, len(machines.machines), 7)
+	testing.expect_value(t, len(machines.machines), 10)
 	wooden := machines.machines[test_machine(machines, "wooden_chest")]
 	testing.expect_value(t, wooden.kind, Machine_Kind.Chest)
 	testing.expect_value(t, wooden.slot_count, 16)
@@ -44,6 +44,16 @@ test_machine_data_loads :: proc(t: ^testing.T) {
 	testing.expect_value(t, item_places_machine(machines, test_item(items, "stone_furnace")), test_machine(machines, "stone_furnace"))
 	testing.expect_value(t, item_places_machine(machines, test_item(items, "stone")), NO_MACHINE)
 	testing.expect_value(t, item_places_machine(machines, NO_ITEM), NO_MACHINE)
+	burner := machines.machines[test_machine(machines, "burner_inserter")]
+	testing.expect_value(t, burner.kind, Machine_Kind.Inserter)
+	testing.expect_value(t, burner.slot_count, 1)
+	testing.expect_value(t, burner.items_per_minute, 36)
+	testing.expect_value(t, burner.fuel_power_watts, 94_000)
+	electric := machines.machines[test_machine(machines, "inserter")]
+	testing.expect_value(t, electric.slot_count, 0)
+	testing.expect_value(t, electric.electric_power_watts, 13_000)
+	testing.expect_value(t, electric.filter_slot_count, 0)
+	testing.expect_value(t, machines.machines[test_machine(machines, "filter_inserter")].filter_slot_count, 1)
 }
 
 @(test)
@@ -54,6 +64,12 @@ test_machine_strings_exist :: proc(t: ^testing.T) {
 		testing.expectf(t, machine.name_key in table.entries, "missing string %q", machine.name_key)
 	}
 	for key in furnace_state_keys {
+		testing.expectf(t, key in table.entries, "missing string %q", key)
+	}
+	for key in inserter_state_keys {
+		testing.expectf(t, key in table.entries, "missing string %q", key)
+	}
+	for key in ([?]string{"inserter_filter", "hint_set_filter", "hint_clear_filter"}) {
 		testing.expectf(t, key in table.entries, "missing string %q", key)
 	}
 }
@@ -114,4 +130,27 @@ test_machine_data_rejects_bad_definitions :: proc(t: ^testing.T) {
 	two_inputs := furnace
 	two_inputs.input_slots = 2
 	testing.expect(t, resolve_test_machines({two_inputs}) != "")
+	inserter := Machine_Definition {
+		id = "inserter",
+		name_key = "machine_burner_inserter",
+		item = "burner_inserter",
+		kind = "inserter",
+		footprint = {1, 1, 1},
+		items_per_minute = 36,
+		fuel_slots = 1,
+		fuel_power_kilowatts = 94,
+	}
+	testing.expect_value(t, resolve_test_machines({inserter}), "")
+	no_rate := inserter
+	no_rate.items_per_minute = 0
+	testing.expect(t, resolve_test_machines({no_rate}) != "")
+	no_power := inserter
+	no_power.fuel_slots = 0
+	testing.expect(t, resolve_test_machines({no_power}) != "")
+	wide := inserter
+	wide.footprint.width = 2
+	testing.expect(t, resolve_test_machines({wide}) != "")
+	two_filters := inserter
+	two_filters.filter_slots = 2
+	testing.expect(t, resolve_test_machines({two_filters}) != "")
 }

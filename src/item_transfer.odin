@@ -8,7 +8,11 @@ package game
 // smeltable items into its input slot first and fuel into its fuel slot,
 // and only gives from its output slot. A belt works on one lane of its
 // block: it takes one item at a time mid block and gives the item nearest
-// the middle of the block from either lane; `slot` is the lane.
+// the middle of the block from either lane; `slot` is the lane. A burner
+// inserter takes fuel into its fuel slot and gives nothing.
+//
+// Inserters peek with entity_offered_items and entity_takes_item_kind
+// before they pick, so they never pick an item the target can never take.
 
 // The slot (or lane) an item would go to.
 entity_accepts :: proc(entities: ^Entities, content: Simulation_Content, handle: Entity_Handle, item: Item_Id, lane := Belt_Lane.Left) -> (slot: int, ok: bool) {
@@ -19,8 +23,11 @@ entity_accepts :: proc(entities: ^Entities, content: Simulation_Content, handle:
 		return int(lane), belt_has_room(entities, handle, lane)
 	}
 	slots := entity_slots(entities, handle)
-	if handle.kind == .Furnace {
+	#partial switch handle.kind {
+	case .Furnace:
 		return furnace_accepting_slot(slots, item, content)
+	case .Inserter:
+		return fuel_accepting_slot(slots, item, content.items)
 	}
 	return first_accepting_slot(slots, item, item_stack_size(content.items, item))
 }
@@ -39,8 +46,8 @@ entity_insert :: proc(entities: ^Entities, content: Simulation_Content, handle: 
 	}
 	slots := entity_slots(entities, handle)
 	stack_size := item_stack_size(content.items, stack.item)
-	if handle.kind == .Furnace {
-		slot, ok := furnace_accepting_slot(slots, stack.item, content)
+	if handle.kind == .Furnace || handle.kind == .Inserter {
+		slot, ok := entity_accepts(entities, content, handle, stack.item)
 		if ok {
 			leftover.count = u16(fill_slot(&slots[slot], stack.item, int(stack.count), stack_size))
 		}
@@ -62,10 +69,7 @@ entity_extract :: proc(entities: ^Entities, content: Simulation_Content, handle:
 		item := belt_extract_item(entities, handle, filter)
 		return item == NO_ITEM ? EMPTY_STACK : Item_Stack{item = item, count = 1}
 	}
-	slots := entity_slots(entities, handle)
-	if handle.kind == .Furnace {
-		slots = slots[FURNACE_OUTPUT_SLOT:FURNACE_OUTPUT_SLOT + 1]
-	}
+	slots := giving_slots(entities, handle)
 	for &slot in slots {
 		if !stack_is_empty(slot) && (filter == NO_ITEM || slot.item == filter) {
 			item := slot.item
@@ -109,4 +113,69 @@ furnace_accepting_slot :: proc(slots: []Item_Stack, item: Item_Id, content: Simu
 		return FURNACE_FUEL_SLOT, true
 	}
 	return -1, false
+}
+
+// The slots entity_extract may take from: a furnace's output, nothing of
+// an inserter, every slot of a chest or the capsule.
+giving_slots :: proc(entities: ^Entities, handle: Entity_Handle) -> []Item_Stack {
+	slots := entity_slots(entities, handle)
+	#partial switch handle.kind {
+	case .Furnace:
+		return slots[FURNACE_OUTPUT_SLOT:FURNACE_OUTPUT_SLOT + 1]
+	case .Inserter:
+		return nil
+	}
+	return slots
+}
+
+// A burner inserter's single fuel slot.
+fuel_accepting_slot :: proc(slots: []Item_Stack, item: Item_Id, items: Item_Registry) -> (slot: int, ok: bool) {
+	if len(slots) != 1 || !item_is_fuel(items, item) || !slot_has_room_for(slots[0], item, item_stack_size(items, item)) {
+		return -1, false
+	}
+	return 0, true
+}
+
+// The distinct items entity_extract would give, in the order it takes
+// them, matching the filter unless the filter is NO_ITEM. In the temp
+// allocator.
+entity_offered_items :: proc(entities: ^Entities, handle: Entity_Handle, filter: Item_Id) -> []Item_Id {
+	if handle.kind == .Belt {
+		return belt_offered_items(entities, handle, filter)
+	}
+	offered := make([dynamic]Item_Id, context.temp_allocator)
+	for slot in giving_slots(entities, handle) {
+		if !stack_is_empty(slot) && (filter == NO_ITEM || slot.item == filter) && !slice_contains_item(offered[:], slot.item) {
+			append(&offered, slot.item)
+		}
+	}
+	return offered[:]
+}
+
+slice_contains_item :: proc(items: []Item_Id, item: Item_Id) -> bool {
+	for candidate in items {
+		if candidate == item {
+			return true
+		}
+	}
+	return false
+}
+
+// Whether the entity ever takes the item, full or not: an inserter picks
+// an item up only for a target like this and then waits for room.
+entity_takes_item_kind :: proc(entities: ^Entities, content: Simulation_Content, handle: Entity_Handle, item: Item_Id) -> bool {
+	if item == NO_ITEM || !entity_is_alive(entities, handle) {
+		return false
+	}
+	switch handle.kind {
+	case .None:
+		return false
+	case .Chest, .Capsule, .Belt:
+		return true
+	case .Furnace:
+		return slot_accepts(.Smeltable, item, content.items, content.recipes) || slot_accepts(.Fuel, item, content.items, content.recipes)
+	case .Inserter:
+		return len(entity_slots(entities, handle)) == 1 && item_is_fuel(content.items, item)
+	}
+	return false
 }

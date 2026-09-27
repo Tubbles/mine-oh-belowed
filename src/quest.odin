@@ -50,17 +50,23 @@ Hint_Counter :: enum u8 {
 	Furnace_Output_Full,
 	Fuel_Burned,
 	Inventory_Full_Ticks,
+	Inserter_Out_Of_Fuel,
+	Inserter_Waiting_For_Room,
+	Inserter_Idle_Ticks,
 }
 
 @(rodata)
 hint_counter_names := [Hint_Counter]string {
-	.Blocks_Mined         = "blocks_mined",
-	.Mining_Ticks         = "mining_ticks",
-	.Distance_Walked      = "distance_walked",
-	.Furnace_Out_Of_Fuel  = "furnace_out_of_fuel",
-	.Furnace_Output_Full  = "furnace_output_full",
-	.Fuel_Burned          = "fuel_burned",
-	.Inventory_Full_Ticks = "inventory_full_ticks",
+	.Blocks_Mined              = "blocks_mined",
+	.Mining_Ticks              = "mining_ticks",
+	.Distance_Walked           = "distance_walked",
+	.Furnace_Out_Of_Fuel       = "furnace_out_of_fuel",
+	.Furnace_Output_Full       = "furnace_output_full",
+	.Fuel_Burned               = "fuel_burned",
+	.Inventory_Full_Ticks      = "inventory_full_ticks",
+	.Inserter_Out_Of_Fuel      = "inserter_out_of_fuel",
+	.Inserter_Waiting_For_Room = "inserter_waiting_for_room",
+	.Inserter_Idle_Ticks       = "inserter_idle_ticks",
 }
 
 // As written in the files, before references are resolved.

@@ -16,6 +16,8 @@ Placement :: struct {
 	// A belt: rotation is its direction (belt_placement.odin).
 	belt:       bool,
 	belt_shape: Belt_Shape,
+	// An inserter: rotation is its drop direction.
+	inserter:   bool,
 }
 
 // The footprint's minimum corner, so that it starts at the cell in front
@@ -96,17 +98,29 @@ placement_for_player :: proc(world: ^World, content: Simulation_Content, players
 		return belt_placement_for_player(world, content, player, machine)
 	}
 	footprint := content.machines.machines[machine].footprint
-	size := rotated_footprint_size(footprint, player.placement_rotation)
+	inserter := content.machines.machines[machine].kind == .Inserter
+	rotation := player.placement_rotation
+	if inserter {
+		rotation = inserter_placement_direction(player.yaw, player.placement_rotation)
+	}
+	size := rotated_footprint_size(footprint, rotation)
 	origin := footprint_origin(player.target.adjacent, player.target.face, size)
-	cells := footprint_cells(origin, footprint, player.placement_rotation)
+	cells := footprint_cells(origin, footprint, rotation)
 	return Placement {
 		shown = true,
 		valid = footprint_is_valid(world, content.blocks, players, cells, origin.y),
 		machine = machine,
 		origin = origin,
-		rotation = player.placement_rotation,
+		rotation = rotation,
 		size = size,
+		inserter = inserter,
 	}
+}
+
+// Like belts: the player's facing turned by the rotation, so rotation 0
+// drops away from the player and picks up from the player's side.
+inserter_placement_direction :: proc(yaw: f32, rotation: u8) -> u8 {
+	return turn_right(yaw_direction(yaw), rotation % 4)
 }
 
 // Rotate_Building turns the ghost a quarter turn; Place puts the machine
@@ -149,6 +163,7 @@ pick_up_entity :: proc(world: ^World, content: Simulation_Content, player: ^Play
 	returned := make([dynamic]Item_Stack, context.temp_allocator)
 	append(&returned, ..entity_slots(&world.entities, handle))
 	append(&returned, ..belt_block_stacks(&world.entities, handle))
+	append(&returned, ..inserter_held_stacks(&world.entities, handle))
 	append(&returned, Item_Stack{item = machine_item, count = 1})
 	if !inventory_fits_all(player.inventory, content.items, returned[:]) {
 		return false

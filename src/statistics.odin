@@ -18,9 +18,12 @@ import "core:math"
 RATE_BUCKET_COUNT :: 60
 MILLIMETRES_PER_BLOCK :: 1000
 
+// Out_Of_Fuel and Output_Full are furnace stalls.
 Machine_Stall :: enum u8 {
 	Out_Of_Fuel,
 	Output_Full,
+	Inserter_Out_Of_Fuel,
+	Inserter_Waiting_For_Room,
 }
 
 Statistics :: struct {
@@ -41,6 +44,9 @@ Statistics :: struct {
 	distance_walked_millimetres: u64,
 	// Ticks during which some player's inventory had no empty slot.
 	inventory_full_ticks:        u64,
+	// Summed over inserters: ticks one stood at its pickup cell with
+	// nothing it could pick.
+	inserter_idle_ticks:         u64,
 	// Mining, placing, picking up and opening a machine. hands_off
 	// sustain objectives break when this changes.
 	world_actions:               u64,
@@ -179,6 +185,27 @@ record_furnace_tick :: proc(statistics: ^Statistics, before, after: Furnace) {
 		statistics.stalls[.Out_Of_Fuel] += 1
 	case .Output_Full:
 		statistics.stalls[.Output_Full] += 1
+	}
+}
+
+// Like record_furnace_tick: fuel burned from the slot, idle ticks, and a
+// stall when the inserter enters it.
+record_inserter_tick :: proc(statistics: ^Statistics, before, after: Inserter) {
+	fuel_before, fuel_after := before.slots[INSERTER_FUEL_SLOT], after.slots[INSERTER_FUEL_SLOT]
+	if fuel_after.count < fuel_before.count {
+		statistics.fuel_burned += u64(fuel_before.count - fuel_after.count)
+	}
+	if after.state == .Idle {
+		statistics.inserter_idle_ticks += 1
+	}
+	if after.state == before.state {
+		return
+	}
+	#partial switch after.state {
+	case .No_Fuel:
+		statistics.stalls[.Inserter_Out_Of_Fuel] += 1
+	case .Waiting_For_Room:
+		statistics.stalls[.Inserter_Waiting_For_Room] += 1
 	}
 }
 

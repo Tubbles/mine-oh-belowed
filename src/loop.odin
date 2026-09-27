@@ -252,7 +252,7 @@ render_frame :: proc(state: ^Frame_State, config: Game_Config) {
 	camera := fly_camera_to_raylib(player_view_camera(&state.simulation.world, state.registry, player, alpha))
 	rl.BeginMode3D(camera)
 	draw_chunks(&state.renderer, camera)
-	draw_entities(&state.simulation.world, state.machines)
+	draw_entities(&state.simulation.world, state.machines, state.items, state.simulation.tick_rate)
 	draw_belts(&state.belt_renderer, &state.simulation.world, state.items, state.machines, state.simulation.tick, alpha, state.simulation.tick_rate)
 	draw_player_world_overlay(&state.simulation.world, frame_simulation_content(state), state.simulation.players[:], 0, alpha)
 	rl.EndMode3D()

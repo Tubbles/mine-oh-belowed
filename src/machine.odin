@@ -27,14 +27,18 @@ Machine_Kind :: enum u8 {
 	Capsule,
 	// A belt block of one shape (belt.odin).
 	Belt,
+	// Moves one item at a time from the cell behind it to the cell in
+	// front (inserter.odin).
+	Inserter,
 }
 
 @(rodata)
 machine_kind_names := [Machine_Kind]string {
-	.Chest   = "chest",
-	.Furnace = "furnace",
-	.Capsule = "capsule",
-	.Belt    = "belt",
+	.Chest    = "chest",
+	.Furnace  = "furnace",
+	.Capsule  = "capsule",
+	.Belt     = "belt",
+	.Inserter = "inserter",
 }
 
 // The shape family a belt item places. Ramps become up or down and lifts
@@ -76,6 +80,9 @@ Machine_Definition :: struct {
 	fuel_power_kilowatts:         f32,
 	belt_shape:                   string,
 	belt_speed_blocks_per_second: f32,
+	items_per_minute:             int,
+	electric_power_kilowatts:     f32,
+	filter_slots:                 int,
 }
 
 Machines_File :: struct {
@@ -96,6 +103,10 @@ Machine :: struct {
 	belt_shape:                  Belt_Item_Shape,
 	// In 1/256 block per second; the belt tick divides by the tick rate.
 	belt_speed_units_per_second: u32,
+	// Inserters: the rate sets the cycle length (inserter_cycle_ticks).
+	items_per_minute:            u32,
+	electric_power_watts:        u32,
+	filter_slot_count:           int,
 }
 
 Machine_Registry :: struct {
@@ -152,6 +163,8 @@ validate_machine_kind_fields :: proc(definition: Machine_Definition, kind: Machi
 		}
 	case .Belt:
 		return validate_belt_definition(definition)
+	case .Inserter:
+		return validate_inserter_definition(definition)
 	case .Capsule:
 		if definition.slots != CAPSULE_SLOT_COUNT {
 			return fmt.tprintf("capsule %q must have %d slots", definition.id, CAPSULE_SLOT_COUNT)
@@ -182,6 +195,34 @@ validate_belt_definition :: proc(definition: Machine_Definition) -> string {
 	}
 	if definition.belt_speed_blocks_per_second <= 0 {
 		return fmt.tprintf("belt %q needs a positive belt_speed_blocks_per_second", definition.id)
+	}
+	return ""
+}
+
+// One by one by one, a positive rate, and either a fuel slot with fuel
+// power or electric power. At most one filter slot.
+validate_inserter_definition :: proc(definition: Machine_Definition) -> string {
+	footprint := definition.footprint
+	if footprint.width != 1 || footprint.depth != 1 || footprint.height != 1 {
+		return fmt.tprintf("inserter %q must have a 1 by 1 by 1 footprint", definition.id)
+	}
+	if definition.items_per_minute <= 0 {
+		return fmt.tprintf("inserter %q needs a positive items_per_minute", definition.id)
+	}
+	if definition.filter_slots < 0 || definition.filter_slots > 1 || definition.input_slots != 0 || definition.output_slots != 0 {
+		return fmt.tprintf("inserter %q may only have one fuel slot and one filter slot", definition.id)
+	}
+	switch definition.fuel_slots {
+	case 0:
+		if definition.electric_power_kilowatts <= 0 {
+			return fmt.tprintf("inserter %q without a fuel slot needs a positive electric_power_kilowatts", definition.id)
+		}
+	case 1:
+		if definition.fuel_power_kilowatts <= 0 {
+			return fmt.tprintf("inserter %q with a fuel slot needs a positive fuel_power_kilowatts", definition.id)
+		}
+	case:
+		return fmt.tprintf("inserter %q may have at most one fuel slot", definition.id)
 	}
 	return ""
 }
@@ -228,17 +269,21 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 	kind, _ := parse_machine_kind(definition.kind)
 	belt_shape, _ := parse_belt_item_shape(definition.belt_shape)
 	footprint := definition.footprint
+	slot_count := kind == .Inserter ? definition.fuel_slots : definition.slots
 	return Machine {
 		id = definition.id,
 		name_key = definition.name_key,
 		item = item,
 		kind = kind,
 		footprint = {i32(footprint.width), i32(footprint.height), i32(footprint.depth)},
-		slot_count = definition.slots,
+		slot_count = slot_count,
 		speed_percent = u32(math.round(definition.speed * 100)),
 		fuel_power_watts = u32(math.round(definition.fuel_power_kilowatts * 1000)),
 		belt_shape = belt_shape,
 		belt_speed_units_per_second = u32(math.round(definition.belt_speed_blocks_per_second * BELT_UNITS_PER_BLOCK)),
+		items_per_minute = u32(max(definition.items_per_minute, 0)),
+		electric_power_watts = u32(math.round(definition.electric_power_kilowatts * 1000)),
+		filter_slot_count = definition.filter_slots,
 	}
 }
 

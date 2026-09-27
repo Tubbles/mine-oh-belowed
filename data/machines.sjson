@@ -19,6 +19,12 @@
 // along the belt; it becomes a whole number of 1/256 block units per tick,
 // so pick values where speed * 256 / tick rate is an integer (1.875 at
 // 60 ticks per second is 8 units).
+// Inserters (work item 0015): items_per_minute sets the cycle, which is
+// 60 * tick rate / items_per_minute ticks (100 at 36 per minute), half a
+// swing to the drop side and half back. A burner inserter has fuel_slots
+// = 1 and fuel_power_kilowatts, burned only while the arm moves. Electric
+// inserters have electric_power_kilowatts and stay unpowered until power
+// arrives in M4. filter_slots = 1 makes a filter inserter.
 machines = [
 	{
 		id = "wooden_chest"
@@ -81,5 +87,34 @@ machines = [
 		footprint = {width = 1, depth = 1, height = 1}
 		belt_shape = "lift"
 		belt_speed_blocks_per_second = 1.875
+	}
+	{
+		id = "burner_inserter"
+		name_key = "machine_burner_inserter"
+		item = "burner_inserter"
+		kind = "inserter"
+		footprint = {width = 1, depth = 1, height = 1}
+		items_per_minute = 36
+		fuel_slots = 1
+		fuel_power_kilowatts = 94
+	}
+	{
+		id = "inserter"
+		name_key = "machine_inserter"
+		item = "inserter"
+		kind = "inserter"
+		footprint = {width = 1, depth = 1, height = 1}
+		items_per_minute = 50
+		electric_power_kilowatts = 13
+	}
+	{
+		id = "filter_inserter"
+		name_key = "machine_filter_inserter"
+		item = "filter_inserter"
+		kind = "inserter"
+		footprint = {width = 1, depth = 1, height = 1}
+		items_per_minute = 50
+		electric_power_kilowatts = 13
+		filter_slots = 1
 	}
 ]

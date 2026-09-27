@@ -21,6 +21,10 @@ How items move without hands: belts, inserters, splitters and the burner mining 
 - Sources: belts (either lane, the item nearest the pickup point), chests, machine output slots, the capsule. Sinks: belts (the far lane, as in Factorio), chests, machine input slots that accept the item (fuel into the fuel slot, smeltable ore into the input), never output slots. A filter inserter moves one item type only.
 - A fixed cycle of ticks derived from the rate: pick, swing, drop, swing back. The burner inserter has a fuel slot and stalls without fuel; the electric inserter idles until it has power (M4) and until then is a slower placeholder that never moves.
 
+### As implemented in 0015
+
+- Two read only calls joined the transfer interface: a peek at what a source offers and whether a target would ever take an item kind, so an inserter only picks what its target can take and never holds something undroppable. A full target does not stop the pick: the arm carries the item and waits at the drop. A belt running straight towards or away from the inserter has no far side and takes items on its right lane. Check order at pickup: no filter, then nothing to pick (idle), then no fuel. Inserter stalls have their own counters so furnace hints do not fire on inserters. Placement direction is relative to the player's facing like belts; rotating a placed inserter and burner inserters feeding themselves from carried fuel come with 0016.
+
 ## Splitters
 
 - A 2 by 1 by 1 entity across two adjacent belts, with a direction. Two inputs feed two outputs round robin per item, so an uneven pair of inputs still fills both outputs. Input priority and output priority flags, and one output filter, are data fields on the same entity and appear in its panel; the alpha implements them because they are the difference between spaghetti and a bus.

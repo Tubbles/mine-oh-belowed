@@ -19,6 +19,7 @@ Entity_Kind :: enum u8 {
 	Furnace,
 	Capsule,
 	Belt,
+	Inserter,
 }
 
 // index is into the pool of `kind`. Generations start at 1, so the zero
@@ -67,6 +68,7 @@ Entities :: struct {
 	furnaces:     Entity_Pool(Furnace),
 	capsules:     Entity_Pool(Capsule),
 	belts:        Entity_Pool(Belt),
+	inserters:    Entity_Pool(Inserter),
 	// Transport lines derived from the belts (belt.odin).
 	belt_network: Belt_Network,
 	cells:        map[World_Coordinate]Entity_Handle,
@@ -120,6 +122,7 @@ destroy_entities :: proc(entities: ^Entities) {
 	destroy_pool(&entities.furnaces)
 	destroy_pool(&entities.capsules)
 	destroy_pool(&entities.belts)
+	destroy_pool(&entities.inserters)
 	destroy_belt_network(&entities.belt_network)
 	delete(entities.cells)
 }
@@ -143,6 +146,10 @@ entity_common :: proc(entities: ^Entities, handle: Entity_Handle) -> ^Entity_Com
 	case .Belt:
 		if belt := pool_get(&entities.belts, handle); belt != nil {
 			return &belt.common
+		}
+	case .Inserter:
+		if inserter := pool_get(&entities.inserters, handle); inserter != nil {
+			return &inserter.common
 		}
 	}
 	return nil
@@ -172,6 +179,10 @@ entity_slots :: proc(entities: ^Entities, handle: Entity_Handle) -> []Item_Stack
 	case .Capsule:
 		if capsule := pool_get(&entities.capsules, handle); capsule != nil {
 			return capsule.slots[:]
+		}
+	case .Inserter:
+		if inserter := pool_get(&entities.inserters, handle); inserter != nil {
+			return inserter.slots[:inserter.slot_count]
 		}
 	}
 	return nil
@@ -256,6 +267,8 @@ add_entity :: proc(entities: ^Entities, machines: Machine_Registry, machine: Mac
 			slot = EMPTY_STACK
 		}
 		handle = pool_add(&entities.capsules, .Capsule, capsule)
+	case .Inserter:
+		handle = pool_add(&entities.inserters, .Inserter, make_inserter(common, machines.machines[machine]))
 	}
 	for cell in footprint_cells(origin, machines.machines[machine].footprint, rotation) {
 		entities.cells[cell] = handle
@@ -283,6 +296,8 @@ remove_entity :: proc(entities: ^Entities, machines: Machine_Registry, handle: E
 		return pool_remove(&entities.furnaces, handle)
 	case .Capsule:
 		return pool_remove(&entities.capsules, handle)
+	case .Inserter:
+		return pool_remove(&entities.inserters, handle)
 	case .Belt:
 		// Handled by remove_belt above.
 		return false
@@ -304,10 +319,18 @@ cell_blocks_movement :: proc(world: ^World, registry: Block_Registry, cell: Worl
 	return occupied && handle.kind != .Belt
 }
 
-// Belts first, so a furnace sees items an inserter (0015) takes off a
-// belt in the same tick.
+// Belts, then inserters, then furnaces, so a furnace sees an item an
+// inserter took off a belt in the same tick. Inserters run in pool order,
+// which keeps two inserters sharing a chest deterministic.
 tick_entities :: proc(world: ^World, content: Simulation_Content, tick_rate: int) {
 	tick_belt_network(&world.entities.belt_network, tick_rate)
+	for &inserter in world.entities.inserters.entries {
+		if inserter.alive {
+			before := inserter
+			advance_inserter(&world.entities, content, &inserter, tick_rate)
+			record_inserter_tick(&world.statistics, before, inserter)
+		}
+	}
 	for &furnace in world.entities.furnaces.entries {
 		if furnace.alive {
 			before := furnace
