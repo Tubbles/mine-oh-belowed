@@ -17,15 +17,16 @@ SECONDS_PER_HOUR :: 3600
 
 @(rodata)
 objective_verb_keys := [Objective_Type]string {
-	.Obtain   = "objective_obtain",
-	.Craft    = "objective_craft",
-	.Place    = "objective_place",
-	.Sustain  = "objective_sustain",
-	.Research = "objective_research",
-	.Deliver  = "objective_deliver",
-	.Discover = "objective_discover",
-	.Walk     = "objective_walk",
-	.Counter  = "objective_counter",
+	.Obtain        = "objective_obtain",
+	.Craft         = "objective_craft",
+	.Place         = "objective_place",
+	.Sustain       = "objective_sustain",
+	.Research      = "objective_research",
+	.Deliver       = "objective_deliver",
+	.Discover      = "objective_discover",
+	.Walk          = "objective_walk",
+	.Counter       = "objective_counter",
+	.Produce_Fluid = "objective_produce_fluid",
 }
 
 @(rodata)
@@ -99,6 +100,8 @@ objective_subject :: proc(objective: Objective, screen_context: Screen_Context) 
 		return technology_name(screen_context.technologies, objective.technology)
 	case .Discover:
 		return recipe_name(screen_context.recipes, objective.recipe)
+	case .Produce_Fluid:
+		return fluid_name(screen_context.fluids, objective.fluid)
 	case .Walk, .Counter:
 		return ""
 	}
@@ -129,6 +132,8 @@ objective_progress_text :: proc(objective: Objective, value: Objective_Progress,
 		return sustain_progress_text(objective, value, screen_context)
 	case .Walk:
 		return fmt.tprintf("%d / %s", min(value.current, value.required), format_blocks(int(value.required)))
+	case .Produce_Fluid:
+		return fmt.tprintf("%d / %d L", min(value.current, value.required), value.required)
 	}
 	return fmt.tprintf("%d / %d", min(value.current, value.required), value.required)
 }

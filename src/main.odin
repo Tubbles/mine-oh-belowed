@@ -210,6 +210,7 @@ main :: proc() {
 		blocks       = registry,
 		items        = items,
 		machines     = machines,
+		fluids       = fluids,
 		recipes      = recipes,
 		technologies = technologies,
 		strings      = global_string_table.entries,

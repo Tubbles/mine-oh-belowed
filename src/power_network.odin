@@ -313,7 +313,7 @@ pump_wants_power :: proc(pump: Fluid_Machine, machine: Machine) -> bool {
 }
 
 // Pumps while they can move fluid, tar pit pumps while there is room,
-// flare stacks while they hold gas.
+// flare stacks while they relieve gas.
 fluid_machine_wants_power :: proc(fluid_machine: Fluid_Machine, machine: Machine, fluids: Fluid_Registry) -> bool {
 	#partial switch machine.kind {
 	case .Pump:
@@ -321,7 +321,7 @@ fluid_machine_wants_power :: proc(fluid_machine: Fluid_Machine, machine: Machine
 	case .Tar_Pit_Pump:
 		return source_pump_has_room(fluid_machine, machine)
 	case .Flare_Stack:
-		return flare_stack_has_gas(fluid_machine, fluids)
+		return flare_stack_is_relieving(fluid_machine, machine, fluids)
 	}
 	return false
 }
@@ -426,15 +426,19 @@ apply_electric_balance :: proc(entities: ^Entities, content: Simulation_Content,
 		machine := content.machines.machines[generator.machine]
 		before := generator^
 		deliver_generator_energy(generator, machine, content, participant.delivered)
-		record_generator_tick(statistics, before, generator^)
+		record_generator_tick(statistics, machine.kind, before, generator^)
 		generator.state = generator_state(machine.kind, participant.delivered, participant.offered, network.demand)
 	}
 }
 
-// Fluids drawn, and fuel items lit from the slot as burned and consumed.
-record_generator_tick :: proc(statistics: ^Statistics, before, after: Fluid_Machine) {
+// Fluids drawn, the gas of combustion generators, and fuel items lit from
+// the slot as burned and consumed.
+record_generator_tick :: proc(statistics: ^Statistics, kind: Machine_Kind, before, after: Fluid_Machine) {
 	buffers_before, buffers_after := before.buffers, after.buffers
 	record_buffer_changes(statistics, buffers_before[:], buffers_after[:])
+	if kind == .Combustion_Generator {
+		statistics.generator_gas_litres += u64(max(before.buffers[0].level - after.buffers[0].level, 0))
+	}
 	slots_before, slots_after := before.slots, after.slots
 	for slot, index in slots_before[:before.slot_count] {
 		statistics.fuel_burned += u64(stack_shrink(slot, slots_after[index]))

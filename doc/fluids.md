@@ -55,3 +55,7 @@ The M4 model: pipes with liquids and gases, steam power, electric networks, and 
 
 - The combustion generator offers up to 600 kW capped by the gas in its port and the fuel in its slot, draws gas first in whole litres and then burns fuel items, and subtracts exactly the energy delivered so produced equals consumed. Petroleum gas is worth 200 kJ per litre and wood gas 100. The power overview and the statistics Power tab list generators by type. Science pack 2 now requires plastics research. Handed to 0033: the flare stack has no lower priority than a generator on the same gas network, and a gas without fuel value (steam) is accepted by the generator's port and sits there.
 
+### As implemented in 0033
+
+- The flare stack is a relief valve: it burns only while its port is at least 90 percent full, so generators and chemical plants on the same network are served first in practice (the network evens fill fractions, so the flare's port only fills once the rest is nearly full); it keeps up to 179 litres it never burns. The combustion generator's port carries a `burnable_gas` filter, so steam closes the port and stays in the pipe. A port closing for any reason counts as a mixing refusal.
+

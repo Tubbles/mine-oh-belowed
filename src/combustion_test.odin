@@ -35,7 +35,7 @@ test_combustion_data_loads :: proc(t: ^testing.T) {
 	testing.expect(t, machine_is_generator(machine))
 	testing.expect_value(t, electric_joules_per_tick(machine.electric_output_watts, TEST_TICK_RATE), 10_000)
 	testing.expect_value(t, machine.fluid_port_count, 1)
-	testing.expect_value(t, machine.fluid_ports[0].phase_filter, Fluid_Phase_Filter.Gas)
+	testing.expect_value(t, machine.fluid_ports[0].phase_filter, Fluid_Phase_Filter.Burnable_Gas)
 	testing.expect_value(t, machine.fluid_ports[0].direction, Fluid_Port_Direction.Input)
 	testing.expect_value(t, content.fluids.fluids[test_fluid(content, "petroleum_gas")].fuel_kilojoules_per_litre, 200)
 	testing.expect_value(t, content.fluids.fluids[test_fluid(content, "wood_gas")].fuel_kilojoules_per_litre, 100)
@@ -64,6 +64,8 @@ test_combustion_generator_burns_gas_for_delivered_energy :: proc(t: ^testing.T) 
 	testing.expect_value(t, world.statistics.energy_consumed_joules, world.statistics.energy_produced_joules)
 	testing.expect_value(t, machine.buffers[0].level, 47)
 	testing.expect_value(t, fluid_counter(world.statistics.fluids.consumed, gas), 3)
+	testing.expect_value(t, world.statistics.generator_gas_litres, 3)
+	testing.expect_value(t, hint_counter_value(world.statistics, Hint{counter = .Generator_Gas_Litres}), 3)
 	testing.expect_value(t, world.statistics.energy_produced_joules + u64(machine.fuel_joules), 3 * 200_000)
 	testing.expect_value(t, machine.state, Fluid_Machine_State.Generating)
 	testing.expect_value(t, machine.generated_joules, 166)
@@ -126,7 +128,32 @@ test_combustion_generator_prefers_gas :: proc(t: ^testing.T) {
 	testing.expect_value(t, machine.state, Fluid_Machine_State.No_Fuel)
 }
 
-// A gas that does not burn offers nothing, and the slot still works.
+// The gas port admits only gases with a fuel value: steam in a pipe at
+// the port closes it (one mixing refusal) and stays in the pipe, while
+// petroleum gas flows in.
+@(test)
+test_combustion_generator_port_refuses_steam :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world, generator := make_combustion_world(content)
+	pipe := lay_pipes(&world, content, {2, 1, 0})[0]
+	test_pipe(&world, pipe).buffer = {fluid = test_fluid(content, "steam"), level = 100}
+	tick_test_fluids_with_statistics(&world, content, 30)
+	testing.expect_value(t, test_fluid_machine(&world, generator).buffers[0].level, 0)
+	testing.expect(t, test_fluid_machine(&world, generator).closed[0])
+	testing.expect_value(t, test_pipe(&world, pipe).buffer.level, 100)
+	testing.expect_value(t, world.statistics.mixing_refusals, 1)
+	// Emptied, the network forgets the steam and takes the wood gas.
+	test_pipe(&world, pipe).buffer = EMPTY_FLUID_BUFFER
+	tick_test_fluids_with_statistics(&world, content, 1)
+	test_pipe(&world, pipe).buffer = {fluid = test_fluid(content, "wood_gas"), level = 100}
+	tick_test_fluids_with_statistics(&world, content, 30)
+	testing.expect(t, !test_fluid_machine(&world, generator).closed[0])
+	testing.expect(t, test_fluid_machine(&world, generator).buffers[0].level > 0)
+	testing.expect_value(t, world.statistics.mixing_refusals, 1)
+}
+
+// A gas that does not burn offers nothing, and the slot still works, even
+// when it was put straight into the buffer past the port filter.
 @(test)
 test_combustion_generator_ignores_gas_without_fuel_value :: proc(t: ^testing.T) {
 	content := make_test_content()

@@ -27,6 +27,7 @@ Defined in data, evaluated every tick against the statistics counters, placed en
 | ship | item, count, contract | Ship 200 electronic circuits, phase 8 |
 | walk | count | Walk 10 blocks (added by 0013 for beat 2, since "looked around" is not measured) |
 | counter | counter, count, label_key | Growth of a hint counter since activation, for example drills burning 10 fuel items (added by 0018 for the coal loop) |
+| produce_fluid | fluid, litres | Litres of a fluid produced since activation (added by 0033) |
 
 ## As implemented in 0013
 
@@ -39,6 +40,8 @@ Defined in data, evaluated every tick against the statistics counters, placed en
 - Chapter 4 (0022) runs steam, first pole (two poles and five glass, since the lamp is behind optics), first research (automation, carrying the brownout and unpowered hints), assembly, electric drill, second engine, and the main quest "The first contract" (100 electronic circuits delivered), which pays copper and iron plates until the phase 5 machines exist. A test plays every shipped chapter in order and checks that no objective needs a locked recipe and that research objectives follow their prerequisites.
 
 - Chapter 5 (0029) runs low grade (steel and ore processing research, then low grade hematite), the processing line (crusher, washer, crushed hematite), slag (20 slag heaps placed and 10 concrete blocks, a place objective may now name a block placing item through a per item blocks placed counter), alloys, recycling (a new `recycled` counter), a statistics contract (sustain 30 plates per minute, with a hint that fires on activation through the new `on_activation` hint form), and the main quest "extraction rights" (200 concrete and 100 brass delivered) whose reward marks the placeholder `oil_processing` technology researched through the new `unlocks_technology` reward. Chapter 4's first contract now pays a crusher and a washer.
+
+- Chapter 6 (0033) runs uphill (fluid handling, a pump and a tank), tar (tar pit pump and refinery with the mixing hint on a new `mixing_refusals` counter), fractions (500 litres of petroleum gas and cracking research), flare (a flare stack with a hint on `flared_litres`), plastic, two routes (the gasifier, with the route itself not measurable), waste power (combustion generator and `generator_gas_litres`), and the main quest "deep mining permit" (200 plastic and 50 sulfur delivered) rewarding the quest gated `deep_mining` placeholder. Layout facts (a pump lifting water, gas going into tanks) are not measurable and the chapter header says so.
 
 ## Spawn requirements
 

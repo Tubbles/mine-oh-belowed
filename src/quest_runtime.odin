@@ -13,8 +13,8 @@ import "core:strings"
 //
 // obtain, craft, place and walk count everything since the game began,
 // so work done ahead of the journal counts ("quests guide, never block"),
-// except a craft objective with produced_since_active. That one and
-// counter objectives count from activation. deliver counts what players
+// except a craft objective with produced_since_active. That one, counter
+// and produce_fluid objectives count from activation. deliver counts what players
 // put into the capsule since the quest became active and is still in it.
 // sustain counts consecutive ticks at the rate, and with hands_off also
 // without a world action.
@@ -133,6 +133,12 @@ hint_counter_value :: proc(statistics: Statistics, hint: Hint) -> u64 {
 		return statistics.unpowered_machine_ticks
 	case .Recycled:
 		return statistics.recycled
+	case .Mixing_Refusals:
+		return statistics.mixing_refusals
+	case .Flared_Litres:
+		return statistics.flared_litres
+	case .Generator_Gas_Litres:
+		return statistics.generator_gas_litres
 	}
 	return 0
 }
@@ -187,6 +193,8 @@ objective_progress :: proc(objective: Objective, index: int, progress: Quest_Pro
 		return {progress.sustained_ticks[index], sustain_required_ticks(objective, view.tick_rate)}
 	case .Counter:
 		return {objective_counter_value(statistics, objective) - progress.activation_baselines[index], objective.count}
+	case .Produce_Fluid:
+		return {fluid_counter(statistics.fluids.produced, objective.fluid) - progress.activation_baselines[index], objective.count}
 	}
 	return {}
 }
@@ -210,6 +218,8 @@ objective_activation_value :: proc(statistics: Statistics, objective: Objective)
 		return item_counter(statistics.produced, objective.item)
 	case .Counter:
 		return objective_counter_value(statistics, objective)
+	case .Produce_Fluid:
+		return fluid_counter(statistics.fluids.produced, objective.fluid)
 	}
 	return 0
 }

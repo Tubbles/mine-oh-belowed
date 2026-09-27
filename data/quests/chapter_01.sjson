@@ -26,9 +26,12 @@
 //   counter   counter, label_key, count
 //                              growth of a hint counter (below, except
 //                              mining_ticks); label_key is the journal text
+//   produce_fluid  fluid, litres
+//                              litres of a fluid put into machine ports by
+//                              pumps, boilers and crafting machines
 // obtain, craft, place and walk count since the game began; deliver,
-// counter and craft with produced_since_active count from the moment the
-// quest became active.
+// counter, produce_fluid and craft with produced_since_active count from
+// the moment the quest became active.
 //
 // A hint fires once, when its counter has grown by threshold since its
 // quest became active: blocks_mined, mining_ticks (with block, in ticks
@@ -45,7 +48,10 @@
 // drill_fuel_burned (fuel items lit by drills), brownout_ticks (ticks
 // some power network was below full satisfaction), unpowered_machine_ticks
 // (electric machines outside every power network, summed over ticks),
-// recycled (items recyclers took, counted when a recycling craft ends).
+// recycled (items recyclers took, counted when a recycling craft ends),
+// mixing_refusals (times a machine's fluid port closed because the
+// network's fluid would mix with it), flared_litres (gas flare stacks
+// burned), generator_gas_litres (gas combustion generators drew).
 // A hint with on_activation = true and no counter or threshold fires as
 // soon as its quest becomes active.
 //

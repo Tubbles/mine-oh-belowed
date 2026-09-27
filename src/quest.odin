@@ -18,7 +18,8 @@ NO_QUEST :: -1
 
 // walk and counter are not in doc/quests.md's table: chapter 1's "get
 // your bearings" needs walk, chapter 3's coal loop needs counter (the
-// growth of a hint counter since the quest became active).
+// growth of a hint counter since the quest became active). produce_fluid
+// (chapter 6) counts litres of a fluid produced since activation.
 Objective_Type :: enum u8 {
 	Obtain,
 	Craft,
@@ -29,19 +30,21 @@ Objective_Type :: enum u8 {
 	Discover,
 	Walk,
 	Counter,
+	Produce_Fluid,
 }
 
 @(rodata)
 objective_type_names := [Objective_Type]string {
-	.Obtain   = "obtain",
-	.Craft    = "craft",
-	.Place    = "place",
-	.Sustain  = "sustain",
-	.Research = "research",
-	.Deliver  = "deliver",
-	.Discover = "discover",
-	.Walk     = "walk",
-	.Counter  = "counter",
+	.Obtain        = "obtain",
+	.Craft         = "craft",
+	.Place         = "place",
+	.Sustain       = "sustain",
+	.Research      = "research",
+	.Deliver       = "deliver",
+	.Discover      = "discover",
+	.Walk          = "walk",
+	.Counter       = "counter",
+	.Produce_Fluid = "produce_fluid",
 }
 
 // The counters a hint can watch. Mining_Ticks is per block type.
@@ -65,6 +68,9 @@ Hint_Counter :: enum u8 {
 	Brownout_Ticks,
 	Unpowered_Machine_Ticks,
 	Recycled,
+	Mixing_Refusals,
+	Flared_Litres,
+	Generator_Gas_Litres,
 }
 
 @(rodata)
@@ -88,6 +94,9 @@ hint_counter_names := [Hint_Counter]string {
 	.Brownout_Ticks            = "brownout_ticks",
 	.Unpowered_Machine_Ticks   = "unpowered_machine_ticks",
 	.Recycled                  = "recycled",
+	.Mixing_Refusals           = "mixing_refusals",
+	.Flared_Litres             = "flared_litres",
+	.Generator_Gas_Litres      = "generator_gas_litres",
 }
 
 // As written in the files, before references are resolved.
@@ -99,7 +108,9 @@ Objective_Definition :: struct {
 	technology:            string,
 	counter:               string,
 	label_key:             string,
+	fluid:                 string,
 	count:                 int,
+	litres:                int,
 	rate_per_minute:       int,
 	minutes:               int,
 	hands_off:             bool,
@@ -143,8 +154,9 @@ Chapter_File :: struct {
 	quests:    []Quest_Definition,
 }
 
-// count is items, placements, blocks walked or counter growth. Unused
-// references are NO_ITEM, NO_MACHINE, NO_RECIPE, NO_TECHNOLOGY. A place
+// count is items, placements, blocks walked, counter growth or litres of
+// fluid. Unused references are NO_ITEM, NO_MACHINE, NO_RECIPE,
+// NO_TECHNOLOGY, NO_FLUID. A place
 // objective has a machine, or with NO_MACHINE the item whose blocks are
 // counted. counter and label_key (the journal's text for it) belong to
 // counter objectives; produced_since_active makes a craft objective count
@@ -153,6 +165,7 @@ Objective :: struct {
 	type:                  Objective_Type,
 	item:                  Item_Id,
 	machine:               Machine_Id,
+	fluid:                 Fluid_Id,
 	recipe:                int,
 	technology:            int,
 	counter:               Hint_Counter,
@@ -207,6 +220,7 @@ Quest_References :: struct {
 	blocks:       Block_Registry,
 	items:        Item_Registry,
 	machines:     Machine_Registry,
+	fluids:       Fluid_Registry,
 	recipes:      Recipe_Registry,
 	technologies: Technology_Registry,
 	strings:      map[string]string,
@@ -260,7 +274,21 @@ resolve_objective_reference :: proc(objective: ^Objective, definition: Objective
 		}
 	case .Counter:
 		return resolve_objective_counter(objective, definition, references, quest_id)
+	case .Produce_Fluid:
+		return resolve_objective_fluid(objective, definition, references, quest_id)
 	case .Walk:
+	}
+	return ""
+}
+
+// A fluid and litres, never a count.
+resolve_objective_fluid :: proc(objective: ^Objective, definition: Objective_Definition, references: Quest_References, quest_id: string) -> string {
+	found: bool
+	if objective.fluid, found = find_fluid_id(references.fluids, definition.fluid); !found {
+		return fmt.tprintf("quest %q names unknown fluid %q", quest_id, definition.fluid)
+	}
+	if definition.litres < 1 || definition.count != 0 {
+		return fmt.tprintf("quest %q has a produce_fluid objective without positive litres or with a count", quest_id)
 	}
 	return ""
 }
@@ -298,7 +326,7 @@ resolve_objective_counter :: proc(objective: ^Objective, definition: Objective_D
 
 objective_needs_count :: proc(type: Objective_Type) -> bool {
 	#partial switch type {
-	case .Sustain, .Research, .Discover:
+	case .Sustain, .Research, .Discover, .Produce_Fluid:
 		return false
 	}
 	return true
@@ -309,7 +337,7 @@ resolve_objective :: proc(definition: Objective_Definition, references: Quest_Re
 	if objective.type, found = parse_named_enum(objective_type_names, definition.type); !found {
 		return {}, fmt.tprintf("quest %q has unknown objective type %q", quest_id, definition.type)
 	}
-	objective.item, objective.machine = NO_ITEM, NO_MACHINE
+	objective.item, objective.machine, objective.fluid = NO_ITEM, NO_MACHINE, NO_FLUID
 	objective.recipe, objective.technology = NO_RECIPE, NO_TECHNOLOGY
 	if problem = resolve_objective_reference(&objective, definition, references, quest_id); problem != "" {
 		return {}, problem
@@ -323,7 +351,7 @@ resolve_objective :: proc(definition: Objective_Definition, references: Quest_Re
 	if definition.produced_since_active && objective.type != .Craft {
 		return {}, fmt.tprintf("quest %q sets produced_since_active on a %s objective", quest_id, definition.type)
 	}
-	objective.count = u64(max(definition.count, 0))
+	objective.count = u64(max(objective.type == .Produce_Fluid ? definition.litres : definition.count, 0))
 	objective.rate_per_minute = u64(max(definition.rate_per_minute, 0))
 	objective.minutes = u64(max(definition.minutes, 0))
 	objective.hands_off = definition.hands_off

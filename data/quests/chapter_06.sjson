@@ -1,0 +1,128 @@
+// Chapter 6, Fluids (doc/quests.md outline). The format is described in
+// chapter_01.sjson. This chapter adds one objective type:
+//   produce_fluid  fluid, litres  litres of a fluids.sjson fluid put into
+//                                 machine ports by pumps, boilers and
+//                                 crafting machines since the quest became
+//                                 active (Statistics.fluids.produced)
+// and three hint counters: mixing_refusals (times a machine's fluid port
+// closed because the network's fluid would mix with it), flared_litres
+// (litres of gas flare stacks burned) and generator_gas_litres (litres of
+// gas combustion generators drew).
+//
+// Placements and counters are measured, not layout: "uphill" cannot tell
+// that the pump lifts water uphill, "fractions" cannot tell that the gases
+// go into tanks, and "two_routes" cannot tell which route made the plastic
+// (plastic_bar is one item on both), so it asks for more plastic after
+// the gasifier is placed. Research follows the tree: fluid_handling needs
+// steel_processing (chapter 5), cracking, plastics and combustion_power
+// need oil_processing (chapter 5's reward), renewable_plastics needs
+// plastics. The main quest grants the deep_mining placeholder, a
+// quest_gate technology that unlocks nothing until the bore drill and the
+// seismic survey exist.
+id = "chapter_06"
+title_key = "chapter_06_title"
+quests = [
+	{
+		id = "uphill"
+		title_key = "quest_uphill_title"
+		text_key = "quest_uphill_text"
+		objectives = [
+			{type = "research", technology = "fluid_handling"}
+			{type = "place", entity = "pump", count = 1}
+			{type = "place", entity = "storage_tank", count = 1}
+		]
+		message_key = "mc_uphill"
+		complete_key = "mc_uphill_done"
+	}
+	{
+		id = "tar"
+		title_key = "quest_tar_title"
+		text_key = "quest_tar_text"
+		objectives = [
+			{type = "place", entity = "tar_pit_pump", count = 1}
+			{type = "place", entity = "refinery", count = 1}
+		]
+		message_key = "mc_tar"
+		complete_key = "mc_tar_done"
+		hints = [
+			{counter = "mixing_refusals", threshold = 1, text_key = "mc_hint_mixing"}
+		]
+	}
+	{
+		id = "fractions"
+		title_key = "quest_fractions_title"
+		text_key = "quest_fractions_text"
+		objectives = [
+			{type = "produce_fluid", fluid = "petroleum_gas", litres = 500}
+			{type = "research", technology = "cracking"}
+		]
+		message_key = "mc_fractions"
+		complete_key = "mc_fractions_done"
+	}
+	{
+		id = "flare"
+		title_key = "quest_flare_title"
+		text_key = "quest_flare_text"
+		objectives = [
+			{type = "place", entity = "flare_stack", count = 1}
+		]
+		message_key = "mc_flare"
+		complete_key = "mc_flare_done"
+		hints = [
+			{counter = "flared_litres", threshold = 1000, text_key = "mc_hint_flare"}
+		]
+	}
+	{
+		id = "plastic"
+		title_key = "quest_plastic_title"
+		text_key = "quest_plastic_text"
+		objectives = [
+			{type = "research", technology = "plastics"}
+			{type = "place", entity = "chemical_plant", count = 1}
+			{type = "craft", item = "plastic_bar", count = 50, produced_since_active = true}
+		]
+		message_key = "mc_plastic"
+		complete_key = "mc_plastic_done"
+	}
+	{
+		id = "two_routes"
+		title_key = "quest_two_routes_title"
+		text_key = "quest_two_routes_text"
+		objectives = [
+			{type = "research", technology = "renewable_plastics"}
+			{type = "place", entity = "wood_gasifier", count = 1}
+			{type = "craft", item = "plastic_bar", count = 20, produced_since_active = true}
+		]
+		message_key = "mc_two_routes"
+		complete_key = "mc_two_routes_done"
+	}
+	{
+		id = "waste_power"
+		title_key = "quest_waste_power_title"
+		text_key = "quest_waste_power_text"
+		objectives = [
+			{type = "research", technology = "combustion_power"}
+			{type = "place", entity = "combustion_generator", count = 1}
+			{type = "counter", counter = "generator_gas_litres", label_key = "objective_generator_gas", count = 300}
+		]
+		message_key = "mc_waste_power"
+		complete_key = "mc_waste_power_done"
+	}
+	{
+		id = "deep_mining_permit"
+		title_key = "quest_deep_mining_permit_title"
+		text_key = "quest_deep_mining_permit_text"
+		objectives = [
+			{type = "deliver", item = "plastic_bar", count = 200}
+			{type = "deliver", item = "sulfur", count = 50}
+		]
+		message_key = "mc_deep_mining_permit"
+		complete_key = "mc_deep_mining_permit_done"
+		rewards = [
+			{unlocks_technology = "deep_mining"}
+			{item = "steel", count = 100}
+			{item = "electronic_circuit", count = 50}
+		]
+		main = true
+	}
+]

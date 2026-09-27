@@ -27,19 +27,22 @@ fluid_phase_names := [Fluid_Phase]string {
 	.Gas    = "gas",
 }
 
-// What a port admits beside its fluid filter: any fluid, or only one phase
-// (the flare stack takes gases only).
+// What a port admits beside its fluid filter: any fluid, only one phase
+// (the flare stack takes gases only), or only gases with a fuel value (the
+// combustion generator, so steam never sits in its port).
 Fluid_Phase_Filter :: enum u8 {
 	Any,
 	Liquid,
 	Gas,
+	Burnable_Gas,
 }
 
 @(rodata)
 fluid_phase_filter_names := [Fluid_Phase_Filter]string {
-	.Any    = "",
-	.Liquid = "liquid",
-	.Gas    = "gas",
+	.Any          = "",
+	.Liquid       = "liquid",
+	.Gas          = "gas",
+	.Burnable_Gas = "burnable_gas",
 }
 
 // As written in the file, before validation.
@@ -157,6 +160,8 @@ phase_filter_admits :: proc(filter: Fluid_Phase_Filter, registry: Fluid_Registry
 		return !fluid_is_gas(registry, fluid)
 	case .Gas:
 		return fluid_is_gas(registry, fluid)
+	case .Burnable_Gas:
+		return fluid_is_gas(registry, fluid) && registry.fluids[fluid].fuel_kilojoules_per_litre > 0
 	case .Any:
 	}
 	return true

@@ -51,7 +51,8 @@
 // footprint), direction (input takes from the network, output gives to
 // it, both does either), fluid (optional, a fluids.sjson id the port only
 // ever holds), phase (optional, liquid or gas: the only phase the port
-// admits, work item 0030) and buffer_litres. Ports turn with the
+// admits, work item 0030, or burnable_gas: gases with a
+// fuel_kilojoules_per_litre only, work item 0033) and buffer_litres. Ports turn with the
 // footprint.
 // Pipes: buffer_litres per block and flow_litres_per_second, the most a
 // connection between two segments moves (1200 is 20 litres per tick).
@@ -77,8 +78,12 @@
 // Flare stack (work item 0030): one input port with phase = "gas"; while
 // powered it destroys up to fluid_litres_per_second of the gas in it,
 // counted as voided in the statistics. The power is the price of the sink.
-// Combustion generator (work item 0032): one input port with phase = "gas"
-// and fuel_slots = 1. A generator like the steam engine: gives up to
+// Since work item 0033 it is a relief valve: it burns only while its port
+// is at least 90 percent full, so consumers on the same gas network are
+// served first.
+// Combustion generator (work item 0032): one input port with phase =
+// "burnable_gas" (work item 0033, so steam stays out) and fuel_slots = 1.
+// A generator like the steam engine: gives up to
 // electric_output_kilowatts to its power network, burning the gas in its
 // port first, whole litres of fuel_kilojoules_per_litre (fluids.sjson),
 // then solid fuel from its slot, only for the energy delivered.
@@ -372,7 +377,7 @@ machines = [
 		fuel_slots = 1
 		electric_output_kilowatts = 600
 		fluid_ports = [
-			{cell = {x = 1, y = 0, z = 0}, face = "negative_z", direction = "input", phase = "gas", buffer_litres = 200}
+			{cell = {x = 1, y = 0, z = 0}, face = "negative_z", direction = "input", phase = "burnable_gas", buffer_litres = 200}
 		]
 	}
 	{

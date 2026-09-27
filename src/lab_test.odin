@@ -268,7 +268,7 @@ test_technology_screen_filters_and_orders :: proc(t: ^testing.T) {
 	for technology, index in visible {
 		ids[index] = names[technology]
 	}
-	expected := []string{"automation", "bitumen_paving", "combustion_power", "cracking", "electric_mining", "fast_belts", "fluid_handling", "logistics", "logistics_science", "oil_processing", "optics", "ore_processing", "plastics", "prospecting", "recycling", "renewable_plastics", "steel_processing"}
+	expected := []string{"automation", "bitumen_paving", "combustion_power", "cracking", "deep_mining", "electric_mining", "fast_belts", "fluid_handling", "logistics", "logistics_science", "oil_processing", "optics", "ore_processing", "plastics", "prospecting", "recycling", "renewable_plastics", "steel_processing"}
 	testing.expect(t, slice.equal(ids, expected))
 	testing.expect_value(t, names[visible[recipe_position_for_letter(names, visible, 'l')]], "logistics")
 	testing.expect_value(t, names[visible[recipe_position_for_letter(names, visible, 'g')]], "logistics")

@@ -228,16 +228,25 @@ source_pump_has_room :: proc(pump: Fluid_Machine, machine: Machine) -> bool {
 	return buffer_takes_fluid(pump.buffers[0], port.filter) && buffer_room(pump.buffers[0], port.capacity) > 0
 }
 
-// Whether the flare stack holds gas to burn. Its port admits gases only,
-// so a liquid never reaches the buffer; one that did would stay.
-flare_stack_has_gas :: proc(flare: Fluid_Machine, fluids: Fluid_Registry) -> bool {
-	return flare.buffers[0].level > 0 && fluid_is_gas(fluids, flare.buffers[0].fluid)
+// The flare stack is a relief valve: it burns only while its port is at
+// least this full. The network evens out fill fractions, so its port gets
+// there only once the generators and chemical plants on the same network
+// hold about as much, and the flare takes what nobody else wants.
+FLARE_RELIEF_PERCENT :: 90
+
+// Whether the flare stack holds gas to burn: enough gas to relieve. Its
+// port admits gases only, so a liquid never reaches the buffer; one that
+// did would stay.
+flare_stack_is_relieving :: proc(flare: Fluid_Machine, machine: Machine, fluids: Fluid_Registry) -> bool {
+	buffer := flare.buffers[0]
+	full_enough := i64(buffer.level) * 100 >= i64(machine.fluid_ports[0].capacity) * FLARE_RELIEF_PERCENT
+	return buffer.level > 0 && full_enough && fluid_is_gas(fluids, buffer.fluid)
 }
 
-// Destroys up to its rate of gas per tick of power credit.
+// Destroys up to its rate of gas per tick of power credit while relieving.
 advance_flare_stack :: proc(flare: ^Fluid_Machine, machine: Machine, fluids: Fluid_Registry, tick_rate: int) {
 	switch {
-	case !flare_stack_has_gas(flare^, fluids):
+	case !flare_stack_is_relieving(flare^, machine, fluids):
 		flare.state = .Idle
 	case !power_is_on(flare.power):
 		flare.state = .Unpowered
@@ -281,7 +290,7 @@ tick_fluids :: proc(entities: ^Entities, content: Simulation_Content, tick_rate:
 			}
 		}
 	}
-	tick_fluid_networks(entities, content.fluids, pipe_flow_per_tick(content.machines, tick_rate))
+	tick_fluid_networks(entities, content.fluids, pipe_flow_per_tick(content.machines, tick_rate), statistics)
 }
 
 // Fuel burned, fluids drawn and made, and the flare stack's gas as voided.
@@ -294,7 +303,9 @@ record_fluid_machine_tick :: proc(statistics: ^Statistics, machine: Machine, bef
 	buffers_before, buffers_after := before.buffers, after.buffers
 	record_buffer_changes(statistics, buffers_before[:], buffers_after[:])
 	if machine.kind == .Flare_Stack {
-		record_fluid_voided(statistics, before.buffers[0].fluid, int(before.buffers[0].level - after.buffers[0].level))
+		flared := before.buffers[0].level - after.buffers[0].level
+		record_fluid_voided(statistics, before.buffers[0].fluid, int(flared))
+		statistics.flared_litres += u64(max(flared, 0))
 	}
 }
 

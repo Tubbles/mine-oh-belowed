@@ -24,8 +24,9 @@ import "core:slice"
 // A liquid moves only to a segment at the same height or lower, unless
 // the network is pressurised by the output of a running pump. Gases
 // ignore height. A network holds one fluid: the first that enters it, kept
-// until it is empty. A port holding or only taking another fluid, or only
-// admitting the other phase, is closed and moves nothing.
+// until it is empty. A port holding or only taking another fluid, or whose
+// phase filter refuses the network's fluid, is closed and moves nothing;
+// each time a port closes counts as a mixing refusal in the statistics.
 
 Fluid_Segment :: struct {
 	owner:        Entity_Handle,
@@ -409,7 +410,7 @@ segment_takes :: proc(segment: Fluid_Segment) -> bool {
 }
 
 // A port holding another fluid, or empty but only taking another fluid
-// or another phase, would mix. Pipes always hold the network's fluid.
+// or refusing it by phase (or fuel value), would mix. Pipes always hold the network's fluid.
 segment_is_closed :: proc(segment: Fluid_Segment, buffer: Fluid_Buffer, fluid: Fluid_Id, fluids: Fluid_Registry) -> bool {
 	if segment.port < 0 {
 		return false
@@ -515,15 +516,18 @@ move_along_connection :: proc(entities: ^Entities, networks: ^Fluid_Networks, co
 }
 
 // Closes the ports that would mix, and tells their machines for the panel.
-mark_closed_ports :: proc(entities: ^Entities, networks: ^Fluid_Networks, members: []int, fluid: Fluid_Id, fluids: Fluid_Registry, closed: []bool) {
+// Returns how many ports closed that were open in the previous tick.
+mark_closed_ports :: proc(entities: ^Entities, networks: ^Fluid_Networks, members: []int, fluid: Fluid_Id, fluids: Fluid_Registry, closed: []bool) -> (refusals: u64) {
 	for member in members {
 		segment := networks.segments[member]
 		closed[member] = fluid != NO_FLUID && segment_is_closed(segment, segment_buffer(entities, segment)^, fluid, fluids)
 		if segment.port >= 0 {
 			_, port_closed := entity_port_buffers(entities, segment.owner)
+			refusals += closed[member] && !port_closed[segment.port] ? 1 : 0
 			port_closed[segment.port] = closed[member]
 		}
 	}
+	return refusals
 }
 
 network_litres :: proc(entities: ^Entities, networks: ^Fluid_Networks, members: []int, closed: []bool) -> i64 {
@@ -536,12 +540,13 @@ network_litres :: proc(entities: ^Entities, networks: ^Fluid_Networks, members: 
 	return total
 }
 
-tick_fluid_network :: proc(entities: ^Entities, networks: ^Fluid_Networks, network: ^Fluid_Network, fluids: Fluid_Registry, limit: i32, closed: []bool) {
+// Returns the mixing refusals of the tick.
+tick_fluid_network :: proc(entities: ^Entities, networks: ^Fluid_Networks, network: ^Fluid_Network, fluids: Fluid_Registry, limit: i32, closed: []bool) -> (refusals: u64) {
 	members := networks.members[network.first_member:][:network.member_count]
 	if network.fluid == NO_FLUID {
 		network.fluid = first_giving_fluid(entities, networks, members)
 	}
-	mark_closed_ports(entities, networks, members, network.fluid, fluids, closed)
+	refusals = mark_closed_ports(entities, networks, members, network.fluid, fluids, closed)
 	if network.fluid == NO_FLUID {
 		return
 	}
@@ -556,6 +561,7 @@ tick_fluid_network :: proc(entities: ^Entities, networks: ^Fluid_Networks, netwo
 	if network_litres(entities, networks, members, closed) == 0 {
 		network.fluid = NO_FLUID
 	}
+	return
 }
 
 reset_fluid_flows :: proc(entities: ^Entities) {
@@ -574,12 +580,16 @@ reset_fluid_flows :: proc(entities: ^Entities) {
 	}
 }
 
-tick_fluid_networks :: proc(entities: ^Entities, fluids: Fluid_Registry, limit: i32) {
+// A nil statistics (tests) records no mixing refusals.
+tick_fluid_networks :: proc(entities: ^Entities, fluids: Fluid_Registry, limit: i32, statistics: ^Statistics = nil) {
 	reset_fluid_flows(entities)
 	networks := &entities.fluid_networks
 	closed := make([]bool, len(networks.segments), context.temp_allocator)
 	for &network in networks.networks {
-		tick_fluid_network(entities, networks, &network, fluids, limit, closed)
+		refusals := tick_fluid_network(entities, networks, &network, fluids, limit, closed)
+		if statistics != nil {
+			statistics.mixing_refusals += refusals
+		}
 	}
 }
 

@@ -43,7 +43,8 @@ Fluid_Port_Cell_Definition :: struct {
 
 // cell is x along the width, y up, z along the depth of the unrotated
 // footprint. fluid is optional: a port with one only ever holds it.
-// phase is optional too: liquid or gas, the only phase the port admits.
+// phase is optional too: liquid, gas or burnable_gas (a gas with a fuel
+// value), what the port admits.
 Fluid_Port_Definition :: struct {
 	cell:          Fluid_Port_Cell_Definition,
 	face:          string,
@@ -203,8 +204,8 @@ validate_fluid_port_layout :: proc(machine: Machine) -> string {
 			return fmt.tprintf("flare stack %q needs one input port admitting gases only", machine.id)
 		}
 	case .Combustion_Generator:
-		if len(ports) != 1 || inputs != 1 || ports[0].phase_filter != .Gas {
-			return fmt.tprintf("combustion generator %q needs one input port admitting gases only", machine.id)
+		if len(ports) != 1 || inputs != 1 || ports[0].phase_filter != .Burnable_Gas {
+			return fmt.tprintf("combustion generator %q needs one input port admitting burnable gases only", machine.id)
 		}
 	case .Crafting_Machine:
 		// Recipes take from input ports and give into output ports.

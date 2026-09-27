@@ -111,6 +111,13 @@ Statistics :: struct {
 	drill_fuel_burned:           u64,
 	// Items recyclers took, counted when a recycling craft finishes.
 	recycled:                    u64,
+	// Times a machine's fluid port closed because the network's fluid
+	// would mix with what it holds or takes (fluid_network.odin).
+	mixing_refusals:             u64,
+	// Litres of gas flare stacks burned, and litres combustion generators
+	// drew from their ports.
+	flared_litres:               u64,
+	generator_gas_litres:        u64,
 	// Finite veins drills drained to the last unit.
 	veins_exhausted:             u64,
 	// Electric energy all networks delivered, in joules; produced and
