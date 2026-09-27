@@ -8,7 +8,7 @@
 
 ## Process structure
 
-- Main loop: render at vsync, simulate at a fixed 60 ticks per second with an accumulator. Only the camera interpolates between ticks, from the previous tick's player state to the current one.
+- Main loop: render at vsync or at the frame rate cap from the settings (0080, both optional), simulate at a fixed 60 ticks per second with an accumulator. Only the camera interpolates between ticks, from the previous tick's player state to the current one.
 - Frames and ticks run at different rates, so frame input is accumulated between ticks: `look_delta` (pixels) and `just_pressed` (edges) are events that sum up and the first tick after them takes the whole sum, held state (move, look, pressed) is a level and every tick reads the latest frame. A second tick in the same frame sees zero events.
 - The simulation owns the `World` and the players. The player body is ticked in the simulation, never per frame, with axis separated swept collision against blocks. Player physics is the one place plain `f32` is allowed to accumulate, until the world scale is settled; it stays deterministic for the same binary and input.
 - The simulation never reads the wall clock. Random numbers come from generators seeded by world seed, chunk coordinate or tick.

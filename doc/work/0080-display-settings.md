@@ -1,6 +1,6 @@
 # 0080 Display settings: window mode, resolution, vsync, frame rate cap
 
-Status: todo
+Status: implemented
 Milestone: M11
 
 ## Goal
@@ -25,3 +25,5 @@ Couch request (2026-09-27): "We need a setting for fullscreen/borderless fullscr
 ## Notes
 
 Files a subagent may touch: `src/settings.odin`, `src/settings_test.odin`, `src/configuration.odin`, `src/configuration_output.odin`, `src/configuration_test.odin`, `src/loop.odin` (window creation and the settings apply hook only), new `src/display.odin` and `src/display_test.odin`, `src/ui_screens.odin`, `src/ui_audit_test.odin`, `data/strings/en.sjson`, `doc/ui.md`, `doc/architecture.md`, `doc/work/0076-steam-deck.md`, `doc/log/2026-09-27.md`, this file. Raylib bindings: `~/opt/odin/vendor/raylib/raylib.odin` (read only).
+
+Implemented: the settings and their checks in `src/settings.odin` and `src/configuration.odin` (the mapper takes fixed arrays for `resolution`, the settings writer needed no change since the dump prints `[1920, 1080]`), the decision procedure, the transition table and every raylib call in `src/display.odin`, window creation and the per frame `update_display` hook in `src/loop.odin`, the rows in `src/ui_screens.odin`, strings in `data/strings/en.sjson`, tests in `src/display_test.odin`, `src/configuration_test.odin` and `src/ui_audit_test.odin` (a fullscreen case with a 7680 by 4320 resolution and a 480 cap besides the default Display tab). 706 tests pass. The window opens windowed (raylib cannot report the monitor before InitWindow, and a zero size would make InitWindow go fullscreen) and the settings' mode applies right after. The screen context carries the monitor's size, read once at start while windowed, since in fullscreen the monitor's current mode is the game's. The renderers use no render textures and read the screen size per frame; the font cache's pixel size follows the screen height too (`ui_pixels_per_unit`), and `sync_font_cache` already re-rasterises when it changes.

@@ -232,6 +232,10 @@ test_settings_file_round_trip :: proc(t: ^testing.T) {
 	settings.gyro_enabled = false
 	settings.font = "rajdhani"
 	settings.monospace_font = "share_tech_mono"
+	settings.window_mode = .Fullscreen
+	settings.resolution = {1920, 1080}
+	settings.vsync = false
+	settings.frame_rate_cap = 144
 	testing.expect_value(t, write_settings_file(environment, settings), "")
 
 	loaded, problem := load_configuration(environment, {})
@@ -251,6 +255,8 @@ test_settings_file_round_trip :: proc(t: ^testing.T) {
 	testing.expect_value(t, len(tree), 1)
 	testing.expect(t, "settings" in tree)
 	testing.expect(t, strings.contains(string(written_data), "\tui_scale = 1.15\n"), string(written_data))
+	testing.expect(t, strings.contains(string(written_data), "\twindow_mode = \"fullscreen\"\n"), string(written_data))
+	testing.expect(t, strings.contains(string(written_data), "\tresolution = [1920, 1080]\n"), string(written_data))
 }
 
 @(test)
@@ -274,6 +280,9 @@ test_configuration_dump :: proc(t: ^testing.T) {
 		strings.concatenate({"//   ", user}),
 		strings.concatenate({"\tui_scale = 1.25 // ", user}),
 		"\tpointer_speed = 1.5 // default",
+		"\twindow_mode = \"borderless\" // default",
+		"\tresolution = [0, 0] // default",
+		"\tframe_rate_cap = 0 // default",
 		"\tsaves = \"\" // default",
 		strings.concatenate({`{action = "Jump" device = "keyboard" control = "J" context = "world"} // `, user}),
 		`{action = "Mine" device = "mouse" control = "LEFT" context = "world"} // data/bindings.sjson`,
@@ -287,4 +296,56 @@ test_configuration_dump :: proc(t: ^testing.T) {
 	tree, parse_problem := parse_configuration_layer(transmute([]byte)dump, "dump")
 	testing.expect_value(t, parse_problem, "")
 	testing.expect_value(t, len(tree), 3)
+}
+
+@(test)
+test_configuration_display_settings :: proc(t: ^testing.T) {
+	context.allocator = context.temp_allocator
+	root := make_configuration_test_directory()
+	defer os.remove_all(root)
+	drop_in := join_save_path(root, "home", GAME_DIRECTORY_NAME, CONFIGURATION_DROP_IN_DIRECTORY, "50-display.sjson")
+
+	write_test_file(drop_in, `settings = {window_mode = "windowed" resolution = [1600, 900] vsync = false frame_rate_cap = 60}`)
+	loaded, problem := load_configuration(test_environment(root), {})
+	testing.expect_value(t, problem, "")
+	settings := loaded.configuration.settings
+	testing.expect_value(t, settings.window_mode, Window_Mode.Windowed)
+	testing.expect_value(t, settings.resolution, [2]int{1600, 900})
+	testing.expect(t, !settings.vsync)
+	testing.expect_value(t, settings.frame_rate_cap, 60)
+	// Both ends of each range.
+	write_test_file(drop_in, "settings = {resolution = [320, 7680] frame_rate_cap = 480}")
+	_, problem = load_configuration(test_environment(root), {})
+	testing.expect_value(t, problem, "")
+
+	Invalid :: struct {
+		text:    string,
+		mention: string,
+	}
+	invalid := [?]Invalid {
+		{`settings = {window_mode = "maximised"}`, `settings.window_mode is "maximised", not one of windowed, borderless, fullscreen`},
+		{"settings = {window_mode = 1}", "settings.window_mode must be one of"},
+		{"settings = {resolution = [319, 720]}", "settings.resolution[0] is 319, outside 320 to 7680"},
+		{"settings = {resolution = [1280, 7681]}", "settings.resolution[1] is 7681, outside 320 to 7680"},
+		{"settings = {resolution = [0, 720]}", "settings.resolution[0] is 0"},
+		{"settings = {resolution = [1280]}", "settings.resolution must be an array of 2, not an array"},
+		{"settings = {resolution = 1280}", "settings.resolution must be an array of 2, not a number"},
+		{"settings = {resolution = [1280.5, 720]}", "settings.resolution[0] must be a whole number"},
+		{"settings = {frame_rate_cap = -1}", "settings.frame_rate_cap is -1, outside 0 to 480"},
+		{"settings = {frame_rate_cap = 481}", "settings.frame_rate_cap is 481, outside 0 to 480"},
+		{"settings = {frame_rate_cap = 59.94}", "settings.frame_rate_cap must be a whole number"},
+		{`settings = {vsync = "on"}`, "settings.vsync must be a boolean"},
+	}
+	for case_value in invalid {
+		write_test_file(drop_in, case_value.text)
+		_, problem = load_configuration(test_environment(root), {})
+		expect_problem_mentions(t, problem, drop_in, case_value.mention)
+	}
+
+	os.remove(drop_in)
+	loaded, problem = load_configuration(test_environment(root), {"settings.window_mode=windowed", "settings.resolution=[1280, 720]"})
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, loaded.configuration.settings.window_mode, Window_Mode.Windowed)
+	testing.expect_value(t, loaded.configuration.settings.resolution, [2]int{1280, 720})
+	testing.expect_value(t, source_of_key_path(loaded.provenance, "settings.window_mode"), COMMAND_LINE_SOURCE)
 }

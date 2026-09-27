@@ -9,7 +9,7 @@ The Steam Deck is a supported target (user, 2026-09-27). The game must hold its 
 
 ## Deliverables
 
-- Performance: the benchmark (0050) run on a Deck, a frame rate cap setting (30, 40, 60) and the rendering settings (shadows, weather particles, view distance) tuned for a Deck preset chosen automatically when the device is a Deck (`SteamDeck=1` in the environment).
+- Performance: the benchmark (0050) run on a Deck, and the rendering settings (shadows, weather particles, view distance) tuned for a Deck preset chosen automatically when the device is a Deck (`SteamDeck=1` in the environment). The frame rate cap setting itself comes from 0080 (Off, 30, 40, 60 and up); the Deck preset picks its value.
 - UI: the audit's 1280 by 800 entries stay green, text sizes checked at arm's length, the safe area for the Deck's screen.
 - Controls: SDL's Steam Deck HIDAPI driver behind the same launcher override, pads, gyro (from Steam's layout, 0044 notes) and the four grips mapped like the Steam Controller's; verified in Game Mode on the device.
 - A Deck section in `doc/input.md` and `doc/build.md` (installing the play build on a Deck over SSH).

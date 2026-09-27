@@ -34,6 +34,8 @@ UI_AUDIT_SIZES :: [?]Ui_Audit_Size {
 }
 
 UI_AUDIT_TOLERANCE :: 1.0
+// The Display tab's Resolution row lists the choices up to it.
+UI_AUDIT_MONITOR_SIZE :: [2]int{3840, 2160}
 // Plain frames after the tab steps, so the focus and the screens settle.
 UI_AUDIT_SETTLE_FRAMES :: 2
 // Problems logged one by one; the count covers them all.
@@ -206,6 +208,7 @@ audit_screen_context :: proc(audit: ^Ui_Audit) -> Screen_Context {
 	simulation := &audit.simulation
 	return Screen_Context {
 		settings = &audit.settings,
+		monitor_size = UI_AUDIT_MONITOR_SIZE,
 		font_families = audit.fonts.families,
 		bindings = audit.bindings,
 		quit_requested = &audit.quit_requested,
@@ -458,6 +461,18 @@ audit_waiting_inserter :: proc(audit: ^Ui_Audit) {
 	}
 }
 
+// The Display tab with the Resolution row live (not borderless) at a
+// configured size outside the choices and the widest cap (work item 0080).
+// The settings are restored.
+audit_windowed_display :: proc(audit: ^Ui_Audit) {
+	settings := audit.settings
+	audit.settings.window_mode = .Fullscreen
+	audit.settings.resolution = {7680, 4320}
+	audit.settings.frame_rate_cap = 480
+	audit_case(audit, {name = "settings display fullscreen", screens = {.Pause, .Settings}, walk_focus = true})
+	audit.settings = settings
+}
+
 UI_AUDIT_TOASTS :: [?]string{"mc_extraction_rights_done", "inventory_full", "developer_applies_on_resume"}
 
 audit_every_case :: proc(audit: ^Ui_Audit) {
@@ -473,6 +488,7 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 	for tab in 0 ..< 3 {
 		audit_case(audit, {name = fmt.tprintf("settings tab %d", tab), screens = {.Pause, .Settings}, tab_next = tab, walk_focus = true})
 	}
+	audit_windowed_display(audit)
 	audit_case(audit, {name = "developer", screens = {.Pause, .Developer}, walk_focus = true})
 	audit_case(audit, {name = "inventory", screens = {.Inventory}, walk_focus = true})
 	simulation := &audit.simulation

@@ -81,6 +81,10 @@ Frame_State :: struct {
 	settings:           Settings,
 	// The settings as last read or written, see write_changed_settings.
 	stored_settings:    Settings,
+	// The settings as last applied to the window (display.odin), and the
+	// monitor's size read while the window was still windowed.
+	window_settings:    Settings,
+	monitor_size:       [2]int,
 	environment:        Configuration_Environment,
 	// The effective bindings, for the settings screen's Controls list.
 	bindings:           []Binding,
@@ -446,6 +450,7 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 	content := state.content
 	screen_context := Screen_Context {
 		settings        = &state.settings,
+		monitor_size    = state.monitor_size,
 		font_families   = state.fonts.families,
 		screenshot_requested = &state.screenshot_requested,
 		bindings        = state.bindings,
@@ -670,8 +675,11 @@ show_title :: proc(state: ^Frame_State) {
 run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: Game_Data, data_directory: string, fonts: Loaded_Fonts, session: ^Session, title: Title_State, player_configuration: Player_Configuration) {
 	content := game_data.content
 	rl.SetTraceLogLevel(.WARNING)
-	rl.SetConfigFlags({.VSYNC_HINT, .WINDOW_RESIZABLE})
-	rl.InitWindow(1280, 720, "Mine oh Belowed")
+	// Opened windowed; the settings' mode applies below, once raylib can
+	// report the monitor.
+	window_settings := initial_window_settings(player_configuration.settings)
+	rl.SetConfigFlags(window_config_flags(window_settings))
+	rl.InitWindow(i32(window_settings.resolution.x), i32(window_settings.resolution.y), "Mine oh Belowed")
 	// raylib returns from a failed InitWindow instead of reporting it, and
 	// the first draw call would then crash. A missing display is the usual cause.
 	if !rl.IsWindowReady() {
@@ -681,6 +689,8 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	defer rl.CloseWindow()
 	// Escape is bound to the Pause action, so it must not close the window.
 	rl.SetExitKey(.KEY_NULL)
+	monitor_size := current_monitor_size()
+	update_display(&window_settings, player_configuration.settings, monitor_size)
 
 	renderer, renderer_ok := init_chunk_renderer(content.blocks, data_directory)
 	if !renderer_ok {
@@ -699,6 +709,8 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 		renderer        = renderer,
 		settings        = player_configuration.settings,
 		stored_settings = player_configuration.settings,
+		window_settings = window_settings,
+		monitor_size    = monitor_size,
 		environment     = player_configuration.environment,
 		bindings        = player_configuration.bindings,
 		input_bindings  = player_configuration.input_bindings,
@@ -739,6 +751,8 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 		apply_session_request(&state)
 		update_data_watch(&state)
 		apply_reload_request(&state)
+		// Applied at once, like the font choice.
+		update_display(&state.window_settings, state.settings, state.monitor_size)
 		if !screen_stack_contains(state.ui.screens, .Settings) {
 			write_changed_settings(&state)
 		}

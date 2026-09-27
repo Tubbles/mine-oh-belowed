@@ -308,7 +308,8 @@ sorted_object_keys :: proc(object: json.Object) -> []string {
 
 // Writes the tree into target, whose current values are the defaults.
 // Supports the field types Configuration uses: structs, f32, int, bool,
-// string, enums (by lower case name) and slices of structs.
+// string, enums (by lower case name), slices of structs and fixed arrays
+// (settings.resolution).
 assign_configuration_value :: proc(target: any, value: json.Value, key_path: string, provenance: Configuration_Provenance, allocator := context.allocator) -> string {
 	info := runtime.type_info_base(type_info_of(target.id))
 	#partial switch variant in info.variant {
@@ -316,6 +317,8 @@ assign_configuration_value :: proc(target: any, value: json.Value, key_path: str
 		return assign_configuration_struct(target, value, key_path, provenance, allocator)
 	case runtime.Type_Info_Slice:
 		return assign_configuration_slice(target, variant.elem, value, key_path, provenance, allocator)
+	case runtime.Type_Info_Array:
+		return assign_configuration_array(target, variant, value, key_path, provenance, allocator)
 	case runtime.Type_Info_Float:
 		number, ok := json_number(value)
 		if !ok {
@@ -437,6 +440,22 @@ assign_configuration_slice :: proc(target: any, element: ^runtime.Type_Info, val
 	return ""
 }
 
+// A fixed array takes exactly its element count.
+assign_configuration_array :: proc(target: any, variant: runtime.Type_Info_Array, value: json.Value, key_path: string, provenance: Configuration_Provenance, allocator := context.allocator) -> string {
+	array, is_array := value.(json.Array)
+	if !is_array || len(array) != variant.count {
+		return wrong_type_problem(provenance, key_path, fmt.tprintf("an array of %d", variant.count), value)
+	}
+	for item, index in array {
+		element_path := fmt.tprintf("%s[%d]", key_path, index)
+		element_value := any{rawptr(uintptr(target.data) + uintptr(index * variant.elem_size)), variant.elem.id}
+		if problem := assign_configuration_value(element_value, item, element_path, provenance, allocator); problem != "" {
+			return problem
+		}
+	}
+	return ""
+}
+
 // Validation beyond types.
 
 range_problem :: proc(provenance: Configuration_Provenance, key_path: string, value, minimum, maximum: f32) -> string {
@@ -463,7 +482,27 @@ validate_settings :: proc(settings: Settings, provenance: Configuration_Provenan
 			return problem
 		}
 	}
-	return range_problem(provenance, "settings.autosave_minutes", f32(settings.autosave_minutes), 0, MAXIMUM_AUTOSAVE_MINUTES)
+	if problem := range_problem(provenance, "settings.autosave_minutes", f32(settings.autosave_minutes), 0, MAXIMUM_AUTOSAVE_MINUTES); problem != "" {
+		return problem
+	}
+	if problem := range_problem(provenance, "settings.frame_rate_cap", f32(settings.frame_rate_cap), 0, MAXIMUM_FRAME_RATE_CAP); problem != "" {
+		return problem
+	}
+	return resolution_problem(provenance, settings.resolution)
+}
+
+// {0, 0} is the monitor's size; anything else is in range on both axes.
+resolution_problem :: proc(provenance: Configuration_Provenance, resolution: [2]int) -> string {
+	if resolution == NATIVE_RESOLUTION {
+		return ""
+	}
+	for size, axis in resolution {
+		key_path := fmt.tprintf("settings.resolution[%d]", axis)
+		if problem := range_problem(provenance, key_path, f32(size), MINIMUM_RESOLUTION, MAXIMUM_RESOLUTION); problem != "" {
+			return problem
+		}
+	}
+	return ""
 }
 
 // A leading ~/ becomes $HOME/. Without HOME the path stays as written.

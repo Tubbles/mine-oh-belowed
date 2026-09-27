@@ -7,6 +7,14 @@ package game
 // simulation keeps its fixed base rates and only ever reads input.
 
 Settings :: struct {
+	// The window (display.odin, work item 0080). resolution is the
+	// windowed size and the fullscreen video mode, {0, 0} the monitor's
+	// size; borderless always covers the monitor. frame_rate_cap 0 is no
+	// cap.
+	window_mode:               Window_Mode,
+	resolution:                [2]int,
+	vsync:                     bool,
+	frame_rate_cap:            int,
 	ui_scale:                  f32,
 	// Gyro aiming in the world (SDL3 backend only).
 	gyro_enabled:              bool,
@@ -37,6 +45,12 @@ Settings :: struct {
 }
 
 DEFAULT_SETTINGS :: Settings {
+	// Borderless for the couch; gamescope presents the window full screen
+	// in any mode.
+	window_mode               = .Borderless,
+	resolution                = {0, 0},
+	vsync                     = true,
+	frame_rate_cap            = 0,
 	ui_scale                  = 1,
 	gyro_enabled              = true,
 	stick_look_sensitivity    = 1,

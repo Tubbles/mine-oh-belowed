@@ -10,12 +10,15 @@ PAUSE_PANEL_WIDTH :: 560
 SETTINGS_PANEL_WIDTH :: 960
 // Title, tabs, the longest tab's rows and the back button. The tabs
 // scroll where the panel is shorter (UI scale 1.5).
-SETTINGS_ROW_COUNT :: 10
-DISPLAY_SETTINGS_ROW_COUNT :: 7
+SETTINGS_ROW_COUNT :: 14
+DISPLAY_SETTINGS_ROW_COUNT :: 11
 CONTROL_SETTINGS_ROW_COUNT :: 5
 
 Screen_Context :: struct {
 	settings:        ^Settings,
+	// The monitor's size (display.odin): the Resolution choices up to it,
+	// and the Resolution row's value in borderless.
+	monitor_size:    [2]int,
 	// The Font choices cycle through them (data/fonts/fonts.sjson).
 	font_families:   []Font_Family,
 	// The effective bindings, shown read only.
@@ -311,7 +314,7 @@ settings_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	switch tab {
 	case 0:
 		region, rows := scroll_region_begin(state, "display_settings", content, settings_rows_height(DISPLAY_SETTINGS_ROW_COUNT))
-		display_settings(state, &rows, settings, screen_context.font_families)
+		display_settings(state, &rows, settings, screen_context.monitor_size, screen_context.font_families)
 		scroll_region_end(state, region)
 	case 1:
 		region, rows := scroll_region_begin(state, "control_settings", content, settings_rows_height(CONTROL_SETTINGS_ROW_COUNT))
@@ -345,7 +348,8 @@ settings_row :: proc(content: ^Ui_Rectangle) -> Ui_Rectangle {
 	return row
 }
 
-display_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Settings, font_families: []Font_Family) {
+display_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Settings, monitor_size: [2]int, font_families: []Font_Family) {
+	window_settings(state, content, settings, monitor_size)
 	ui_slider(
 		state,
 		settings_row(content),
@@ -372,6 +376,64 @@ display_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Se
 	ui_toggle(state, settings_row(content), text("settings_developer_mode"), &settings.developer_mode, text("settings_developer_mode_tooltip"))
 	font_choice(state, settings_row(content), "settings_font", &settings.font, font_families, false)
 	font_choice(state, settings_row(content), "settings_monospace_font", &settings.monospace_font, font_families, true)
+}
+
+// Applied at once: the frame loop applies them to the window
+// (update_display) after this frame.
+window_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Settings, monitor_size: [2]int) {
+	mode_text := text(window_mode_keys[settings.window_mode])
+	if ui_choice(state, settings_row(content), text("settings_window_mode"), mode_text, text("settings_window_mode_tooltip")) {
+		settings.window_mode = next_window_mode(settings.window_mode)
+	}
+	resolution_choice(state, settings_row(content), settings, monitor_size)
+	ui_toggle(state, settings_row(content), text("settings_vsync"), &settings.vsync, text("settings_vsync_tooltip"))
+	cap_text := frame_rate_cap_text(settings.frame_rate_cap)
+	if ui_choice(state, settings_row(content), text("settings_frame_rate_cap"), cap_text, text("settings_frame_rate_cap_tooltip")) {
+		settings.frame_rate_cap = next_frame_rate_cap(settings.frame_rate_cap)
+	}
+}
+
+@(rodata)
+window_mode_keys := [Window_Mode]string {
+	.Windowed   = "settings_window_mode_windowed",
+	.Borderless = "settings_window_mode_borderless",
+	.Fullscreen = "settings_window_mode_fullscreen",
+}
+
+// Borderless covers the monitor: the row is dimmed, shows the monitor's
+// size and does not step, but keeps its focus and tooltip.
+resolution_choice :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, settings: ^Settings, monitor_size: [2]int) {
+	if settings.window_mode == .Borderless {
+		dimmed_choice(state, rectangle, text("settings_resolution"), resolution_text(monitor_size), text("settings_resolution_tooltip"))
+		return
+	}
+	if ui_choice(state, rectangle, text("settings_resolution"), resolution_text(settings.resolution), text("settings_resolution_tooltip")) {
+		settings.resolution = next_resolution(settings.resolution, resolution_choices(monitor_size, context.temp_allocator))
+	}
+}
+
+// ui_choice's layout in the dimmed text colour, never activated.
+dimmed_choice :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label, value, tooltip: string) {
+	id := ui_id(state, label)
+	interaction := ui_interact(state, id, rectangle, {}, tooltip)
+	widget_background(state, rectangle, id, interaction)
+	content := inset(rectangle, UI_PADDING)
+	value_text := fit_text(state, value, UI_BODY_TEXT_SIZE, content.width / 2)
+	draw_text(state, content, value_text, UI_BODY_TEXT_SIZE, .Right, UI_DIM_TEXT_COLOR)
+	content.width = max(content.width - ui_text_width(state, value_text, UI_BODY_TEXT_SIZE) - UI_GAP, 0)
+	draw_text_fitted(state, content, label, UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+}
+
+// A configured size not in the choices shows as its numbers too.
+resolution_text :: proc(resolution: [2]int) -> string {
+	if resolution == NATIVE_RESOLUTION {
+		return text("settings_resolution_native")
+	}
+	return fmt.tprintf("%d x %d", resolution.x, resolution.y)
+}
+
+frame_rate_cap_text :: proc(cap: int) -> string {
+	return cap == 0 ? text("settings_frame_rate_cap_off") : fmt.tprintf("%d", cap)
 }
 
 // Applied at once: the font cache follows the setting from the next frame.
