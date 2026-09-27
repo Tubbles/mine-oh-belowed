@@ -6,9 +6,10 @@ import "core:fmt"
 // (ui_machine.odin). Crafting machine: the recipe, with a button that
 // opens the recipe browser in its selection mode when the player chooses
 // it, the fuel slot and burn bar of a fuel burner, the input slots, the
-// progress bar, the output slots, a level and a flow line per fluid port,
-// the output rate over the last minute, the state and the power line of
-// an electric one. Lab: the pack slots, the unit's
+// progress bar, the output slots, the transfer buttons (Take all, and
+// Fill for a fuel burner), a level and a flow line per fluid port, the
+// output rate over the last minute, the state and the power line of an
+// electric one. Lab: the pack slots, the Fill button, the unit's
 // progress bar, the queued technology with its progress, a button to the
 // technology screen, the state and the power line.
 
@@ -76,21 +77,24 @@ assembler_recipe_row :: proc(state: ^Ui_State, content: ^Ui_Rectangle, assembler
 	}
 }
 
-assembler_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, assembler: Assembler, screen_context: Screen_Context) -> Slot_Grid_Result {
-	result := Slot_Grid_Result{activated = -1, focused = -1}
+assembler_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, assembler: Assembler, screen_context: Screen_Context) -> Machine_Slot_Result {
+	result := Machine_Slot_Result {
+		grid = {activated = -1, focused = -1},
+	}
 	machine := screen_context.machines.machines[assembler.machine]
 	slots := assembler.slots
 	content := area
 	assembler_recipe_row(state, &content, assembler, machine, screen_context)
 	if assembler.fuel_count > 0 {
 		first := cut_top(&content, UI_SLOT_SIZE + UI_GAP)
-		machine_slot(state, {first.x, first.y, UI_SLOT_SIZE, UI_SLOT_SIZE}, 0, slots[:], screen_context.items, &result)
+		machine_slot(state, {first.x, first.y, UI_SLOT_SIZE, UI_SLOT_SIZE}, 0, slots[:], screen_context.items, &result.grid)
 		machine_bar(state, {first.x + UI_SLOT_SIZE + UI_GAP, first.y, MACHINE_BAR_WIDTH, UI_SLOT_SIZE}, assembler_burn_fraction(assembler))
 	}
 	first_input, first_output := assembler_first_input(assembler), assembler_first_output(assembler)
-	machine_slot_rows(state, &content, first_input, assembler.input_count, slots[:], screen_context.items, &result)
+	machine_slot_rows(state, &content, first_input, assembler.input_count, slots[:], screen_context.items, &result.grid)
 	machine_bar(state, cut_top(&content, UI_ROW_HEIGHT), assembler_progress_fraction(assembler, machine, screen_context.recipes, screen_context.tick_rate))
-	machine_slot_rows(state, &content, first_output, assembler.output_count, slots[:], screen_context.items, &result)
+	machine_slot_rows(state, &content, first_output, assembler.output_count, slots[:], screen_context.items, &result.grid)
+	result.transfer = transfer_button_rows(state, &content, machine)
 	for port, index in fluid_ports_of(machine) {
 		fluid_buffer_rows(state, &content, screen_context.fluids, assembler.buffers[index], port.filter, port.capacity, assembler.closed[index], screen_context.tick_rate)
 	}
@@ -110,13 +114,16 @@ lab_research_text :: proc(research: Research_State, technologies: Technology_Reg
 	return fmt.tprintf("%s  %s", technology_name(technologies, research.technology), research_progress_text(research, technologies))
 }
 
-lab_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, lab: Lab, screen_context: Screen_Context) -> Slot_Grid_Result {
-	result := Slot_Grid_Result{activated = -1, focused = -1}
+lab_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, lab: Lab, screen_context: Screen_Context) -> Machine_Slot_Result {
+	result := Machine_Slot_Result {
+		grid = {activated = -1, focused = -1},
+	}
 	machine := screen_context.machines.machines[lab.machine]
 	research := screen_context.world.research
 	slots := lab.slots
 	content := area
-	machine_slot_rows(state, &content, 0, lab.slot_count, slots[:], screen_context.items, &result)
+	machine_slot_rows(state, &content, 0, lab.slot_count, slots[:], screen_context.items, &result.grid)
+	result.transfer = transfer_button_rows(state, &content, machine)
 	machine_bar(state, cut_top(&content, UI_ROW_HEIGHT), lab_progress_fraction(lab, machine, research, screen_context.technologies, screen_context.tick_rate))
 	detail_line(state, &content, lab_research_text(research, screen_context.technologies))
 	machine_bar(state, cut_top(&content, UI_ROW_HEIGHT), research_progress_fraction(research, screen_context.technologies))

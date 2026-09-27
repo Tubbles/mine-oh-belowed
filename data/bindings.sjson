@@ -68,6 +68,9 @@ bindings = [
 	{action = "Tab_Previous" device = "gamepad" control = "LEFT_SHOULDER" context = "menu"}
 	{action = "Tab_Next" device = "gamepad" control = "RIGHT_SHOULDER" context = "menu"}
 	{action = "Menu_Secondary" device = "gamepad" control = "LEFT_TRIGGER" context = "menu"}
+	// R2 stays Confirm too: on a slot of a machine panel it quick moves
+	// instead (work item 0078), elsewhere it confirms.
+	{action = "Menu_Quick_Move" device = "gamepad" control = "RIGHT_TRIGGER" context = "menu"}
 
 	// Keyboard, in the world.
 	{action = "Jump" device = "keyboard" control = "SPACE" context = "world"}
@@ -87,6 +90,14 @@ bindings = [
 	{action = "Sprint_Hold" device = "keyboard" control = "LEFT_CONTROL" context = "world"}
 	{action = "Hotbar_Previous" device = "keyboard" control = "LEFT_BRACKET" context = "world"}
 	{action = "Hotbar_Next" device = "keyboard" control = "RIGHT_BRACKET" context = "world"}
+	{action = "Hotbar_Slot_1" device = "keyboard" control = "ONE" context = "world"}
+	{action = "Hotbar_Slot_2" device = "keyboard" control = "TWO" context = "world"}
+	{action = "Hotbar_Slot_3" device = "keyboard" control = "THREE" context = "world"}
+	{action = "Hotbar_Slot_4" device = "keyboard" control = "FOUR" context = "world"}
+	{action = "Hotbar_Slot_5" device = "keyboard" control = "FIVE" context = "world"}
+	{action = "Hotbar_Slot_6" device = "keyboard" control = "SIX" context = "world"}
+	{action = "Hotbar_Slot_7" device = "keyboard" control = "SEVEN" context = "world"}
+	{action = "Hotbar_Slot_8" device = "keyboard" control = "EIGHT" context = "world"}
 	{action = "Toggle_Camera_Mode" device = "keyboard" control = "V" context = "world"}
 	// No gamepad button for the overlay yet; the Display settings toggle it too.
 	{action = "Toggle_Bottleneck_Overlay" device = "keyboard" control = "O" context = "world"}
@@ -110,6 +121,11 @@ bindings = [
 	{action = "Tab_Next" device = "keyboard" control = "E" context = "menu"}
 	{action = "Info_Panel" device = "keyboard" control = "R" context = "menu"}
 	{action = "Context_Action" device = "keyboard" control = "F" context = "menu"}
+	// Q is Tab_Previous too; the machine panel drops the tab step while it
+	// quick moves (work item 0078).
+	{action = "Menu_Quick_Move" device = "keyboard" control = "Q" context = "menu"}
+	// Held with a left click: a quick move with the mouse.
+	{action = "Menu_Quick_Move_Modifier" device = "keyboard" control = "LEFT_CONTROL" context = "menu"}
 
 	// Mouse.
 	{action = "Mine" device = "mouse" control = "LEFT" context = "world"}

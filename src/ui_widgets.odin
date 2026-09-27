@@ -70,6 +70,8 @@ Glyph_Button :: enum u8 {
 	Use_Item,
 	// The stick click that toggles sprinting (0044).
 	Sprint,
+	// R2 or Q in a machine panel (0078).
+	Quick_Move,
 }
 
 Glyph_Hint :: struct {
@@ -583,6 +585,8 @@ glyph_key :: proc(device: Input_Device, button: Glyph_Button) -> string {
 			return "glyph_gamepad_use_item"
 		case .Sprint:
 			return "glyph_gamepad_sprint"
+		case .Quick_Move:
+			return "glyph_gamepad_quick_move"
 		}
 	case .Keyboard_Mouse:
 		switch button {
@@ -610,6 +614,8 @@ glyph_key :: proc(device: Input_Device, button: Glyph_Button) -> string {
 			return "glyph_keyboard_use_item"
 		case .Sprint:
 			return "glyph_keyboard_sprint"
+		case .Quick_Move:
+			return "glyph_keyboard_quick_move"
 		}
 	}
 	return ""

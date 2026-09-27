@@ -45,7 +45,7 @@ Label, button, toggle, slider, tabs, vertical list with letter jump, grid of slo
 
 ## Item slots on a gamepad
 
-A picks up the focused stack, A on another slot drops it or swaps, L2 splits the stack in half, X sorts the focused container, Y shows the item's info panel, holding A with a stack in hand while moving the focus across machine slots distributes it evenly over the visited slots on release (the Even Distribution gesture from `input.md`). The pointer does the same with clicks. A held stack follows the focus and the pointer, and goes back to its slot when the screen closes. Machine input slots accept only what the machine can use, and a rejected drop stays in hand.
+A picks up the focused stack, A on another slot drops it or swaps, L2 splits the stack in half, X sorts the focused container, Y shows the item's info panel, R2 (Q on the keyboard, or Left Control with a click) quick moves the focused stack to the other side of a machine panel with the rules inserters follow, fuel to the fuel slot and ore to the input, and a second press within half a second or a hold moves every stack of that item (0078); machine panels have Take all, Store all and Fill buttons under their slots, holding A with a stack in hand while moving the focus across machine slots distributes it evenly over the visited slots on release (the Even Distribution gesture from `input.md`). The pointer does the same with clicks. A held stack follows the focus and the pointer, and goes back to its slot when the screen closes. Machine input slots accept only what the machine can use, and a rejected drop stays in hand.
 
 ## HUD
 

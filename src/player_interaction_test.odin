@@ -1,6 +1,7 @@
 package game
 
 import "core:testing"
+import rl "vendor:raylib"
 
 @(test)
 test_mining_required_ticks :: proc(t: ^testing.T) {
@@ -176,6 +177,20 @@ test_hotbar_cycle_wraps :: proc(t: ^testing.T) {
 	testing.expect_value(t, cycle_hotbar_slot(HOTBAR_SLOT_COUNT - 1, {.Hotbar_Next}), 0)
 	testing.expect_value(t, cycle_hotbar_slot(3, {.Hotbar_Next}), 4)
 	testing.expect_value(t, cycle_hotbar_slot(3, {}), 3)
+}
+
+// 0078: keyboard 1 to 8 select their hotbar slot directly.
+@(test)
+test_hotbar_slot_actions_select_the_slot :: proc(t: ^testing.T) {
+	testing.expect_value(t, cycle_hotbar_slot(0, {.Hotbar_Slot_3}), 2)
+	testing.expect_value(t, cycle_hotbar_slot(5, {.Hotbar_Slot_1}), 0)
+	testing.expect_value(t, cycle_hotbar_slot(0, {.Hotbar_Slot_8}), HOTBAR_SLOT_COUNT - 1)
+	// A slot key wins over a cycle step in the same tick.
+	testing.expect_value(t, cycle_hotbar_slot(4, {.Hotbar_Slot_2, .Hotbar_Next}), 1)
+	bindings := shipped_default_bindings(t)
+	tables, _ := build_input_bindings(bindings, .Sdl3, context.temp_allocator)
+	testing.expect_value(t, tables.keys[int(rl.KeyboardKey.THREE)], Action_Set{.Hotbar_Slot_3})
+	testing.expect_value(t, tables.keys[int(rl.KeyboardKey.NINE)], Action_Set{})
 }
 
 // 0044: cheat speed digs in a tenth of the ticks, at least one, and a

@@ -141,7 +141,8 @@ draw_held_stack :: proc(state: ^Ui_State, stack: Item_Stack, items: Item_Registr
 	}
 }
 
-inventory_glyph_bar :: proc(state: ^Ui_State, held, focused: Item_Stack) {
+// quick_move: the machine panel's R2 or Q hint on a focused stack.
+inventory_glyph_bar :: proc(state: ^Ui_State, held, focused: Item_Stack, quick_move := false) {
 	if !stack_is_empty(held) {
 		hints := [?]Glyph_Hint{{.Confirm, text("hint_place_stack")}, {.Back, text("hint_close")}}
 		ui_glyph_bar(state, hints[:])
@@ -149,6 +150,9 @@ inventory_glyph_bar :: proc(state: ^Ui_State, held, focused: Item_Stack) {
 	}
 	hints := make([dynamic]Glyph_Hint, context.temp_allocator)
 	append(&hints, Glyph_Hint{.Confirm, text("hint_pick_up")})
+	if quick_move && !stack_is_empty(focused) {
+		append(&hints, Glyph_Hint{.Quick_Move, text("hint_quick_move")})
+	}
 	if focused.count >= 2 {
 		append(&hints, Glyph_Hint{.Secondary, text("hint_split")})
 	}

@@ -39,6 +39,15 @@ Action :: enum u8 {
 	Sprint_Hold,
 	Hotbar_Previous,
 	Hotbar_Next,
+	// Select a hotbar slot directly: keyboard 1 to 8 (0078).
+	Hotbar_Slot_1,
+	Hotbar_Slot_2,
+	Hotbar_Slot_3,
+	Hotbar_Slot_4,
+	Hotbar_Slot_5,
+	Hotbar_Slot_6,
+	Hotbar_Slot_7,
+	Hotbar_Slot_8,
 	// Opens the targeted entity's panel. A on a gamepad, which is Jump
 	// unless an entity is targeted (resolve_interact).
 	Interact,
@@ -53,6 +62,11 @@ Action :: enum u8 {
 	Context_Action,
 	// L2 (or Left Shift) in menus: split the focused stack.
 	Menu_Secondary,
+	// R2 (or Q) in a machine panel: move the focused stack to the other
+	// side (quick_transfer.odin, 0078).
+	Menu_Quick_Move,
+	// Held with a click, a quick move with the mouse: Left Control.
+	Menu_Quick_Move_Modifier,
 	// Keyboard only: the gamepad View button is taken by the map.
 	Toggle_Camera_Mode,
 	// Keyboard O, and the Display settings: machine state markers in the
@@ -221,6 +235,14 @@ WORLD_ACTIONS :: Action_Set {
 	.Sprint_Hold,
 	.Hotbar_Previous,
 	.Hotbar_Next,
+	.Hotbar_Slot_1,
+	.Hotbar_Slot_2,
+	.Hotbar_Slot_3,
+	.Hotbar_Slot_4,
+	.Hotbar_Slot_5,
+	.Hotbar_Slot_6,
+	.Hotbar_Slot_7,
+	.Hotbar_Slot_8,
 	.Interact,
 	.Toggle_Camera_Mode,
 	.Toggle_Fly_Mode,

@@ -49,6 +49,7 @@ reference_raylib_buttons := [?]Reference_Raylib_Button {
 	{.MIDDLE_LEFT, .Open_Map},
 	{.MIDDLE_RIGHT, .Pause},
 	{.RIGHT_TRIGGER_2, .Confirm},
+	{.RIGHT_TRIGGER_2, .Menu_Quick_Move},
 	{.LEFT_FACE_UP, .Navigate_Up},
 	{.LEFT_FACE_DOWN, .Navigate_Down},
 	{.LEFT_FACE_LEFT, .Navigate_Left},
@@ -81,6 +82,14 @@ reference_keys := [?]Reference_Key {
 	{.LEFT_CONTROL, .Sprint_Hold},
 	{.LEFT_BRACKET, .Hotbar_Previous},
 	{.RIGHT_BRACKET, .Hotbar_Next},
+	{.ONE, .Hotbar_Slot_1},
+	{.TWO, .Hotbar_Slot_2},
+	{.THREE, .Hotbar_Slot_3},
+	{.FOUR, .Hotbar_Slot_4},
+	{.FIVE, .Hotbar_Slot_5},
+	{.SIX, .Hotbar_Slot_6},
+	{.SEVEN, .Hotbar_Slot_7},
+	{.EIGHT, .Hotbar_Slot_8},
 	{.V, .Toggle_Camera_Mode},
 	{.O, .Toggle_Bottleneck_Overlay},
 	{.F3, .Toggle_Diagnostics},
@@ -97,6 +106,8 @@ reference_keys := [?]Reference_Key {
 	{.E, .Tab_Next},
 	{.R, .Info_Panel},
 	{.F, .Context_Action},
+	{.Q, .Menu_Quick_Move},
+	{.LEFT_CONTROL, .Menu_Quick_Move_Modifier},
 }
 
 @(rodata)
@@ -168,7 +179,7 @@ reference_sdl3_bindings :: proc() -> Input_Bindings {
 	for binding in reference_sdl3_buttons {
 		tables.gamepad_buttons[int(binding.button)] += {binding.action}
 	}
-	tables.gamepad_triggers = {.Right = {.Mine, .Confirm}, .Left = {.Place, .Use_Item, .Menu_Secondary}}
+	tables.gamepad_triggers = {.Right = {.Mine, .Confirm, .Menu_Quick_Move}, .Left = {.Place, .Use_Item, .Menu_Secondary}}
 	tables.trackpads[LEFT_TOUCHPAD_INDEX] = {.Hotbar_Radial}
 	return tables
 }

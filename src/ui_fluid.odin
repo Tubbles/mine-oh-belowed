@@ -5,8 +5,8 @@ import "core:fmt"
 // Panels and HUD text for pipes and fluid machines: per buffer the fluid,
 // its level against the capacity and the flow in and out during the last
 // tick, a note on ports closed to avoid mixing, the fuel slot of the
-// boiler (with its burn bar) and of the combustion generator, the machine
-// state, and a generator's output.
+// boiler (with its burn bar) and of the combustion generator with its Fill
+// button, the machine state, and a generator's output.
 
 FLUID_AREA_WIDTH :: 480
 // A level line and a flow line per buffer.
@@ -76,19 +76,23 @@ pipe_panel_region :: proc(state: ^Ui_State, area: Ui_Rectangle, pipe: Pipe, scre
 	fluid_buffer_rows(state, &content, screen_context.fluids, pipe.buffer, NO_FLUID, capacity, false, screen_context.tick_rate)
 }
 
-// The fuel slot first (with the boiler's burn bar), then a level and a
-// flow line per port, then the state and a generator's output.
-fluid_machine_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, fluid_machine: Fluid_Machine, screen_context: Screen_Context) -> Slot_Grid_Result {
-	result := Slot_Grid_Result{activated = -1, focused = -1}
+// The fuel slot first (with the boiler's burn bar) and its Fill button,
+// then a level and a flow line per port, then the state and a generator's
+// output.
+fluid_machine_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, fluid_machine: Fluid_Machine, screen_context: Screen_Context) -> Machine_Slot_Result {
+	result := Machine_Slot_Result {
+		grid = {activated = -1, focused = -1},
+	}
 	machine := screen_context.machines.machines[fluid_machine.machine]
 	content := area
 	if fluid_machine_has_fuel_slot(machine.kind) {
 		first := cut_top(&content, UI_SLOT_SIZE + UI_GAP)
 		slots := fluid_machine.slots
-		machine_slot(state, {first.x, first.y, UI_SLOT_SIZE, UI_SLOT_SIZE}, BOILER_FUEL_SLOT, slots[:], screen_context.items, &result)
+		machine_slot(state, {first.x, first.y, UI_SLOT_SIZE, UI_SLOT_SIZE}, BOILER_FUEL_SLOT, slots[:], screen_context.items, &result.grid)
 		if machine.kind == .Boiler {
 			machine_bar(state, {first.x + UI_SLOT_SIZE + UI_GAP, first.y, MACHINE_BAR_WIDTH, UI_SLOT_SIZE}, boiler_burn_fraction(fluid_machine))
 		}
+		result.transfer = transfer_button_rows(state, &content, machine)
 	}
 	for port, index in fluid_ports_of(machine) {
 		buffer, closed := fluid_machine.buffers[index], fluid_machine.closed[index]

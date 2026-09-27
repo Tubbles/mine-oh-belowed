@@ -33,11 +33,13 @@ splitter_side_keys := [Splitter_Side]string {
 }
 
 // The machine's slot indices plus the filter slot of a filter inserter
-// or a splitter, which is not one of the slots.
+// or a splitter, which is not one of the slots, and the transfer button
+// activated this frame (quick_transfer.odin).
 Machine_Slot_Result :: struct {
 	using grid:       Slot_Grid_Result,
 	filter_activated: bool,
 	filter_focused:   bool,
+	transfer:         Transfer_Button,
 }
 
 // Indices into the machine's slots, -1 for none.
@@ -194,24 +196,28 @@ machine_slot :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, index: int, slot
 }
 
 // Input, progress, output on the first row; fuel, the burn bar and the
-// byproduct slot under the output on the second; the state below.
-furnace_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, furnace: Furnace, screen_context: Screen_Context) -> Slot_Grid_Result {
-	result := Slot_Grid_Result{activated = -1, focused = -1}
+// byproduct slot under the output on the second; the transfer buttons and
+// the state below.
+furnace_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, furnace: Furnace, screen_context: Screen_Context) -> Machine_Slot_Result {
+	result := Machine_Slot_Result {
+		grid = {activated = -1, focused = -1},
+	}
 	slots, items := furnace.slots, screen_context.items
 	machine := screen_context.machines.machines[furnace.machine]
 	recipes := screen_context.recipes
 	content := area
 	first := cut_top(&content, UI_SLOT_SIZE + UI_GAP)
 	bar_width := bar_between_slots_width(area.width)
-	machine_slot(state, {first.x, first.y, UI_SLOT_SIZE, UI_SLOT_SIZE}, FURNACE_INPUT_SLOT, slots[:], items, &result)
+	machine_slot(state, {first.x, first.y, UI_SLOT_SIZE, UI_SLOT_SIZE}, FURNACE_INPUT_SLOT, slots[:], items, &result.grid)
 	progress_row := Ui_Rectangle{first.x + UI_SLOT_SIZE + UI_GAP, first.y, bar_width, UI_SLOT_SIZE}
 	machine_bar(state, progress_row, furnace_progress_fraction(furnace, machine, recipes, screen_context.tick_rate))
 	output := Ui_Rectangle{progress_row.x + bar_width + UI_GAP, first.y, UI_SLOT_SIZE, UI_SLOT_SIZE}
-	machine_slot(state, output, FURNACE_OUTPUT_SLOT, slots[:], items, &result)
+	machine_slot(state, output, FURNACE_OUTPUT_SLOT, slots[:], items, &result.grid)
 	second := cut_top(&content, UI_SLOT_SIZE + UI_GAP)
-	machine_slot(state, {second.x, second.y, UI_SLOT_SIZE, UI_SLOT_SIZE}, FURNACE_FUEL_SLOT, slots[:], items, &result)
+	machine_slot(state, {second.x, second.y, UI_SLOT_SIZE, UI_SLOT_SIZE}, FURNACE_FUEL_SLOT, slots[:], items, &result.grid)
 	machine_bar(state, {second.x + UI_SLOT_SIZE + UI_GAP, second.y, bar_width, UI_SLOT_SIZE}, furnace_burn_fraction(furnace))
-	machine_slot(state, {output.x, second.y, UI_SLOT_SIZE, UI_SLOT_SIZE}, FURNACE_BYPRODUCT_SLOT, slots[:], items, &result)
+	machine_slot(state, {output.x, second.y, UI_SLOT_SIZE, UI_SLOT_SIZE}, FURNACE_BYPRODUCT_SLOT, slots[:], items, &result.grid)
+	result.transfer = transfer_button_rows(state, &content, machine)
 	detail_line(state, &content, text(furnace_state_keys[furnace.state]), UI_DIM_TEXT_COLOR)
 	output_rate_label(state, &content, furnace.output_rate, screen_context)
 	return result
@@ -228,7 +234,8 @@ output_rate_label :: proc(state: ^Ui_State, content: ^Ui_Rectangle, rate: Machin
 }
 
 // The fuel slot and burn bar of a burner, or the filter slot of a filter
-// inserter, on the first row; the cycle bar and the state below.
+// inserter, on the first row; a burner's Fill button, the cycle bar and
+// the state below.
 inserter_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, inserter: Inserter, screen_context: Screen_Context) -> Machine_Slot_Result {
 	result := Machine_Slot_Result {
 		grid = {activated = -1, focused = -1},
@@ -247,6 +254,7 @@ inserter_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, inserter: Ins
 		result.filter_activated, result.filter_focused = interaction.activated, interaction.focused
 		draw_text_fitted(state, {first.x + UI_SLOT_SIZE + UI_GAP, first.y, MACHINE_BAR_WIDTH, UI_SLOT_SIZE}, text("inserter_filter"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	}
+	result.transfer = transfer_button_rows(state, &content, machine)
 	machine_bar(state, cut_top(&content, UI_ROW_HEIGHT), inserter_cycle_fraction(inserter, machine, screen_context.tick_rate))
 	detail_line(state, &content, text(inserter_state_keys[inserter.state]), UI_DIM_TEXT_COLOR)
 	if inserter_is_electric(machine) {
@@ -263,11 +271,14 @@ drill_extra_rows :: proc(machine: Machine) -> int {
 }
 
 // The fuel slot and burn bar (or the power line of an electric drill) on
-// the first row, the cycle bar (the boring bar while a bore drill bores),
+// the first row, a burner's Fill button, the cycle bar (the boring bar
+// while a bore drill bores),
 // then the vein's lines, a bore drill's depth, the revival port, the rate
 // (halved while revived) and the state.
-drill_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, drill: Drill, screen_context: Screen_Context) -> Slot_Grid_Result {
-	result := Slot_Grid_Result{activated = -1, focused = -1}
+drill_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, drill: Drill, screen_context: Screen_Context) -> Machine_Slot_Result {
+	result := Machine_Slot_Result {
+		grid = {activated = -1, focused = -1},
+	}
 	machine := screen_context.machines.machines[drill.machine]
 	content := area
 	first := cut_top(&content, UI_SLOT_SIZE + UI_GAP)
@@ -275,9 +286,10 @@ drill_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, drill: Drill, sc
 		draw_text_fitted(state, first, power_status_line(&screen_context.world.entities.electric_networks, drill.handle), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	} else {
 		slots := drill.slots
-		machine_slot(state, {first.x, first.y, UI_SLOT_SIZE, UI_SLOT_SIZE}, DRILL_FUEL_SLOT, slots[:], screen_context.items, &result)
+		machine_slot(state, {first.x, first.y, UI_SLOT_SIZE, UI_SLOT_SIZE}, DRILL_FUEL_SLOT, slots[:], screen_context.items, &result.grid)
 		machine_bar(state, {first.x + UI_SLOT_SIZE + UI_GAP, first.y, MACHINE_BAR_WIDTH, UI_SLOT_SIZE}, drill_burn_fraction(drill))
 	}
+	result.transfer = transfer_button_rows(state, &content, machine)
 	machine_bar(state, cut_top(&content, UI_ROW_HEIGHT), drill_progress_fraction(drill, machine, screen_context.tick_rate))
 	for line in drill_vein_lines(screen_context.world, screen_context.veins, screen_context.items, drill) {
 		detail_line(state, &content, line)
@@ -402,32 +414,39 @@ machine_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, handle: Entity
 	defer ui_pop_id(state)
 	#partial switch handle.kind {
 	case .Furnace:
-		return {grid = furnace_slot_region(state, content, pool_get(&screen_context.world.entities.furnaces, handle)^, screen_context)}
+		return furnace_slot_region(state, content, pool_get(&screen_context.world.entities.furnaces, handle)^, screen_context)
 	case .Inserter:
 		return inserter_slot_region(state, content, pool_get(&screen_context.world.entities.inserters, handle)^, screen_context)
 	case .Drill:
-		return {grid = drill_slot_region(state, content, pool_get(&screen_context.world.entities.drills, handle)^, screen_context)}
+		return drill_slot_region(state, content, pool_get(&screen_context.world.entities.drills, handle)^, screen_context)
 	case .Splitter:
 		return splitter_slot_region(state, content, pool_get(&screen_context.world.entities.splitters, handle), screen_context)
 	case .Pipe:
 		pipe_panel_region(state, content, pool_get(&screen_context.world.entities.pipes, handle)^, screen_context)
 		return {grid = {activated = -1, focused = -1}}
 	case .Fluid_Machine:
-		return {grid = fluid_machine_slot_region(state, content, pool_get(&screen_context.world.entities.fluid_machines, handle)^, screen_context)}
+		return fluid_machine_slot_region(state, content, pool_get(&screen_context.world.entities.fluid_machines, handle)^, screen_context)
 	case .Pole, .Lamp:
 		power_panel_region(state, content, handle, screen_context)
 		return {grid = {activated = -1, focused = -1}}
 	case .Assembler:
-		return {grid = assembler_slot_region(state, content, pool_get(&screen_context.world.entities.assemblers, handle)^, screen_context)}
+		return assembler_slot_region(state, content, pool_get(&screen_context.world.entities.assemblers, handle)^, screen_context)
 	case .Lab:
-		return {grid = lab_slot_region(state, content, pool_get(&screen_context.world.entities.labs, handle)^, screen_context)}
+		return lab_slot_region(state, content, pool_get(&screen_context.world.entities.labs, handle)^, screen_context)
 	case .Core_Sample_Drill:
 		core_sample_panel_region(state, content, pool_get(&screen_context.world.entities.core_sample_drills, handle)^, screen_context)
 		return {grid = {activated = -1, focused = -1}}
 	case .Launch_Pad:
 		return {grid = launch_pad_slot_region(state, content, pool_get(&screen_context.world.entities.launch_pads, handle), screen_context)}
 	}
-	return {grid = ui_slot_grid(state, {content.x, content.y}, "chest", chest_columns(content.width), slots, screen_context.items)}
+	// A chest or the capsule: the slots, then Take all and Store all.
+	columns := chest_columns(content.width)
+	grid := cut_top(&content, slot_rows_height(len(slots), columns))
+	result := Machine_Slot_Result {
+		grid = ui_slot_grid(state, {grid.x, grid.y}, "chest", columns, slots, screen_context.items),
+	}
+	result.transfer = transfer_button_rows(state, &content, screen_context.machines.machines[common.machine])
+	return result
 }
 
 machine_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
@@ -440,6 +459,11 @@ machine_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 	machine := screen_context.machines.machines[common.machine]
 	slots := entity_slots(&screen_context.world.entities, handle)
+	// Q is also Tab_Previous; while it quick moves it does not turn the
+	// launch pad's tabs.
+	if state.input.quick_move {
+		state.input.tab_previous = false
+	}
 	ui_backdrop(state)
 	// The machine side gets what the player's slots leave of the safe
 	// area's width, wraps its slots to it, and scrolls when the panel is
@@ -447,7 +471,7 @@ machine_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	safe := ui_panel_area(state)
 	player_width := slot_grid_width(INVENTORY_COLUMNS)
 	machine_width := max(min(machine_area_width(machine), safe.width - player_width - 4 * UI_PADDING), UI_SLOT_SIZE)
-	machine_height := machine_area_height(machine, len(slots), machine_width)
+	machine_height := machine_area_height(machine, len(slots), machine_width) + transfer_rows_height(machine, machine_width)
 	height := max(inventory_panel_height(), machine_height + 2 * UI_PADDING)
 	panel := fitted_panel(safe, player_width + machine_width + 4 * UI_PADDING, height)
 	ui_panel_begin(state, "machine", panel)
@@ -459,7 +483,9 @@ machine_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	machine_slots := machine_slot_region(state, machine_area, handle, slots, screen_context)
 	scroll_region_end(state, region)
 	ui_panel_end(state)
+	player_slots.activated, machine_slots.activated = apply_quick_move_input(state, screen_context, handle, slots, player_slots, machine_slots)
 	apply_machine_screen_input(state, screen_context, handle, machine.kind, slots, player_slots, machine_slots)
+	apply_transfer_button(&screen_context.world.entities, statistics_simulation_content(screen_context), handle, player.inventory, machine_slots.transfer)
 	if inserter := pool_get(&screen_context.world.entities.inserters, handle); inserter != nil {
 		clear_filter := machine_slots.filter_focused && state.input.context_action
 		inserter.filter = inserter_filter_after_input(inserter.filter, player.held.stack, machine_slots.filter_activated, clear_filter)
@@ -474,6 +500,36 @@ machine_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		return
 	}
 	machine_glyph_bar(state, player.held.stack, focused_stack(player.inventory.slots, player_slots.focused, slots, machine_slots.focused))
+}
+
+// The quick move (quick_transfer.odin): R2 or Q on a slot, or Left
+// Control with a click. Its press takes the slot's activation, since R2
+// is Confirm too and a click picks up, so the stack is not also picked
+// up; returns the activations left for the ordinary slot input.
+apply_quick_move_input :: proc(state: ^Ui_State, screen_context: Screen_Context, handle: Entity_Handle, slots: []Item_Stack, player_slots: Slot_Grid_Result, machine_slots: Machine_Slot_Result) -> (player_activated, machine_activated: int) {
+	input := state.input
+	modifier_click := input.quick_move_modifier && state.click
+	target, found := quick_move_target(player_slots, machine_slots.grid)
+	stack := EMPTY_STACK
+	if found {
+		stack = target.side == .Machine ? slots[target.slot] : screen_context.player.inventory.slots[target.slot]
+	}
+	quick_input := Quick_Move_Input {
+		panel   = handle,
+		pressed = input.quick_move || modifier_click,
+		down    = input.quick_move_down || (input.quick_move_modifier && state.pointer_held),
+		seconds = state.frame_seconds,
+		found   = found,
+		target  = target,
+		stack   = stack,
+	}
+	step: Quick_Move_Step
+	state.quick_move, step = advance_quick_move(state.quick_move, quick_input)
+	apply_quick_move(&screen_context.world.entities, statistics_simulation_content(screen_context), handle, screen_context.player.inventory, step)
+	if quick_input.pressed {
+		return -1, -1
+	}
+	return player_slots.activated, machine_slots.activated
 }
 
 filter_glyph_bar :: proc(state: ^Ui_State) {
@@ -522,7 +578,7 @@ machine_glyph_bar :: proc(state: ^Ui_State, held, focused: Item_Stack) {
 		ui_glyph_bar(state, hints[:])
 		return
 	}
-	inventory_glyph_bar(state, held, focused)
+	inventory_glyph_bar(state, held, focused, quick_move = true)
 }
 
 // The name and state of an entity for the HUD, "" when it has none.

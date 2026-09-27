@@ -13,7 +13,7 @@ A mined block whose items do not fit refuses to break, a belt that ends at a led
 - Spilling: a mined block whose drop does not fit spills the drop at the block; picking up an entity whose contents do not fit takes what fits and spills the rest around it (chests, furnaces, machines and their held items alike), so a pickup never refuses; the inventory's Drop action puts the held stack on the ground in front of the player; items spilled onto a belt land on it.
 - Belt ends: a line whose end is a dead end over a drop (no block in front at the belt's height and air below) lets items fall off the end into the cell below, onto the ground or a belt there; a dead end against a wall or on level ground still holds items as today.
 - Pickup: walking over loose items picks them up when they fit, hotbar first for items already there; a full inventory leaves them lying.
-- Drills keep handing their unit to the entity in their drop cell (the design stands): no spilling from drills.
+- Drills keep handing their unit to the entity in their drop cell and never spill: a refused unit (gravel into a fuel slot) stalls the drill on purpose, an early game mechanic the user keeps (2026-09-27); sorting is the answer.
 - Tests: spill on a full inventory, pickup on walk over, merge, despawn, belt end over a ledge drops and a level dead end holds, chest pickup with a full inventory spills the rest, save round trip.
 
 ## Verify

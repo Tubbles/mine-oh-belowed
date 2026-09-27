@@ -89,6 +89,12 @@ Ui_Input :: struct {
 	context_action: bool,
 	// L2 or Left Shift: split the focused stack.
 	secondary:      bool,
+	// R2 or Q: quick move the focused stack in a machine panel (0078).
+	quick_move:     bool,
+	// Held, not an edge: holding the quick move moves every stack.
+	quick_move_down: bool,
+	// Held, not an edge: Left Control, which makes a click a quick move.
+	quick_move_modifier: bool,
 	open_inventory: bool,
 	open_recipes:   bool,
 	open_journal:   bool,
@@ -258,6 +264,7 @@ Ui_State :: struct {
 	// The on-screen keyboard. While it is open, B, X and Y belong to it.
 	keyboard:         Keyboard_State,
 	distribute:       Distribute_Gesture,
+	quick_move:       Quick_Move_State,
 	toasts:           [dynamic]Toast,
 	scroll_offsets:   map[Ui_Id]f32,
 	selections:       map[Ui_Id]int,

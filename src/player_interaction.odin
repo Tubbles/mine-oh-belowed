@@ -238,8 +238,17 @@ place_block_with_player :: proc(world: ^World, registry: Block_Registry, items: 
 	}
 }
 
-// Steps through the hotbar slots, wrapping, empty slots included.
+HOTBAR_SLOT_ACTIONS :: [HOTBAR_SLOT_COUNT]Action{.Hotbar_Slot_1, .Hotbar_Slot_2, .Hotbar_Slot_3, .Hotbar_Slot_4, .Hotbar_Slot_5, .Hotbar_Slot_6, .Hotbar_Slot_7, .Hotbar_Slot_8}
+
+// A number key selects its slot directly; otherwise steps through the
+// hotbar slots, wrapping, empty slots included.
 cycle_hotbar_slot :: proc(selected: int, just_pressed: Action_Set) -> int {
+	slot_actions := HOTBAR_SLOT_ACTIONS
+	for action, slot in slot_actions {
+		if action in just_pressed {
+			return slot
+		}
+	}
 	result := selected
 	if .Hotbar_Next in just_pressed {
 		result += 1
