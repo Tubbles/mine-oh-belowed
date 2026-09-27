@@ -10,7 +10,19 @@
 // footprint (8 or 16 voxels per block) and turned with the machine. Its
 // +x side is the front, the side the rotation points at. A named file
 // must exist and load. tools/make_placeholder_models.py writes the
-// placeholders.
+// placeholders. Palette indices 240 to 255 are emissive (work item 0056):
+// they ignore the world light and light up while the machine works.
+// motion (optional, work item 0056, needs a model) moves one part of the
+// model while the machine works and rests it otherwise: {kind, axis,
+// amplitude, period_seconds, pivot, hand}. kind pump moves the part along
+// axis (x, y or z of the unrotated footprint) by amplitude blocks and back,
+// bob up to amplitude blocks either way, spin turns it about the axis
+// through pivot by amplitude turns per period, swing turns it by amplitude
+// turns and back, and glow moves nothing but pulses the emissive voxels.
+// Every kind but glow needs data/models/<model>_part.vox, the part alone at
+// the body's size and frame. pivot and hand are [x, y, z] in blocks from
+// the footprint's minimum corner; hand is where an inserter's held item
+// hangs from its part. An inserter's swing follows its arm, not the clock.
 // kind selects the panel and the simulation: chest, furnace, capsule,
 // belt, inserter, drill, splitter, pipe, offshore_pump, boiler,
 // steam_engine, storage_tank, pump, tar_pit_pump, flare_stack,
@@ -204,6 +216,7 @@ machines = [
 	{
 		id = "iron_chest"
 		name_key = "machine_iron_chest"
+		model = "iron_chest"
 		item = "iron_chest"
 		kind = "chest"
 		footprint = {width = 1, depth = 1, height = 1}
@@ -213,6 +226,7 @@ machines = [
 		id = "stone_furnace"
 		name_key = "machine_stone_furnace"
 		model = "stone_furnace"
+		motion = {kind = "glow", period_seconds = 2}
 		item = "stone_furnace"
 		kind = "furnace"
 		footprint = {width = 2, depth = 2, height = 2}
@@ -225,6 +239,8 @@ machines = [
 	{
 		id = "steel_furnace"
 		name_key = "machine_steel_furnace"
+		model = "steel_furnace"
+		motion = {kind = "glow", period_seconds = 2}
 		item = "steel_furnace"
 		kind = "furnace"
 		footprint = {width = 2, depth = 2, height = 2}
@@ -237,6 +253,7 @@ machines = [
 	{
 		id = "drop_capsule"
 		name_key = "machine_drop_capsule"
+		model = "drop_capsule"
 		kind = "capsule"
 		footprint = {width = 1, depth = 1, height = 2}
 		slots = 8
@@ -244,6 +261,7 @@ machines = [
 	{
 		id = "schematic_crate"
 		name_key = "machine_schematic_crate"
+		model = "schematic_crate"
 		kind = "schematic_crate"
 		footprint = {width = 1, depth = 1, height = 1}
 		slots = 1
@@ -305,6 +323,8 @@ machines = [
 	{
 		id = "burner_inserter"
 		name_key = "machine_burner_inserter"
+		model = "burner_inserter"
+		motion = {kind = "swing", axis = "y", amplitude = 0.5, period_seconds = 1, pivot = [0.5, 0, 0.5], hand = [0.125, 0.4375, 0.5]}
 		item = "burner_inserter"
 		kind = "inserter"
 		footprint = {width = 1, depth = 1, height = 1}
@@ -315,6 +335,8 @@ machines = [
 	{
 		id = "inserter"
 		name_key = "machine_inserter"
+		model = "inserter"
+		motion = {kind = "swing", axis = "y", amplitude = 0.5, period_seconds = 1, pivot = [0.5, 0, 0.5], hand = [0.125, 0.4375, 0.5]}
 		item = "inserter"
 		kind = "inserter"
 		footprint = {width = 1, depth = 1, height = 1}
@@ -324,6 +346,8 @@ machines = [
 	{
 		id = "filter_inserter"
 		name_key = "machine_filter_inserter"
+		model = "filter_inserter"
+		motion = {kind = "swing", axis = "y", amplitude = 0.5, period_seconds = 1, pivot = [0.5, 0, 0.5], hand = [0.125, 0.4375, 0.5]}
 		item = "filter_inserter"
 		kind = "inserter"
 		footprint = {width = 1, depth = 1, height = 1}
@@ -334,6 +358,8 @@ machines = [
 	{
 		id = "fast_inserter"
 		name_key = "machine_fast_inserter"
+		model = "fast_inserter"
+		motion = {kind = "swing", axis = "y", amplitude = 0.5, period_seconds = 1, pivot = [0.5, 0, 0.5], hand = [0.125, 0.4375, 0.5]}
 		item = "fast_inserter"
 		kind = "inserter"
 		footprint = {width = 1, depth = 1, height = 1}
@@ -343,6 +369,8 @@ machines = [
 	{
 		id = "long_inserter"
 		name_key = "machine_long_inserter"
+		model = "long_inserter"
+		motion = {kind = "swing", axis = "y", amplitude = 0.5, period_seconds = 1, pivot = [0.5, 0, 0.5], hand = [0.125, 0.4375, 0.5]}
 		item = "long_inserter"
 		kind = "inserter"
 		footprint = {width = 1, depth = 1, height = 1}
@@ -354,6 +382,7 @@ machines = [
 		id = "burner_mining_drill"
 		name_key = "machine_burner_mining_drill"
 		model = "burner_mining_drill"
+		motion = {kind = "pump", axis = "y", amplitude = -0.25, period_seconds = 0.8}
 		item = "burner_mining_drill"
 		kind = "drill"
 		footprint = {width = 2, depth = 2, height = 2}
@@ -365,6 +394,8 @@ machines = [
 	{
 		id = "electric_mining_drill"
 		name_key = "machine_electric_mining_drill"
+		model = "electric_mining_drill"
+		motion = {kind = "pump", axis = "y", amplitude = -0.25, period_seconds = 0.6}
 		item = "electric_mining_drill"
 		kind = "drill"
 		footprint = {width = 3, depth = 3, height = 3}
@@ -379,6 +410,8 @@ machines = [
 	{
 		id = "bore_drill"
 		name_key = "machine_bore_drill"
+		model = "bore_drill"
+		motion = {kind = "spin", axis = "y", amplitude = 1, period_seconds = 2, pivot = [2, 0, 2]}
 		item = "bore_drill"
 		kind = "drill"
 		footprint = {width = 4, depth = 4, height = 4}
@@ -394,6 +427,7 @@ machines = [
 	{
 		id = "splitter"
 		name_key = "machine_splitter"
+		model = "splitter"
 		item = "splitter"
 		kind = "splitter"
 		footprint = {width = 1, depth = 2, height = 1}
@@ -411,6 +445,8 @@ machines = [
 	{
 		id = "offshore_pump"
 		name_key = "machine_offshore_pump"
+		model = "offshore_pump"
+		motion = {kind = "bob", axis = "y", amplitude = 0.05, period_seconds = 0.8}
 		item = "offshore_pump"
 		kind = "offshore_pump"
 		footprint = {width = 2, depth = 1, height = 1}
@@ -422,6 +458,8 @@ machines = [
 	{
 		id = "boiler"
 		name_key = "machine_boiler"
+		model = "boiler"
+		motion = {kind = "glow", period_seconds = 1.5}
 		item = "boiler"
 		kind = "boiler"
 		footprint = {width = 3, depth = 2, height = 2}
@@ -436,6 +474,8 @@ machines = [
 	{
 		id = "steam_engine"
 		name_key = "machine_steam_engine"
+		model = "steam_engine"
+		motion = {kind = "spin", axis = "x", amplitude = 1, period_seconds = 1.2, pivot = [2.375, 1, 3.75]}
 		item = "steam_engine"
 		kind = "steam_engine"
 		footprint = {width = 3, depth = 5, height = 2}
@@ -449,6 +489,7 @@ machines = [
 	{
 		id = "storage_tank"
 		name_key = "machine_storage_tank"
+		model = "storage_tank"
 		item = "storage_tank"
 		kind = "storage_tank"
 		footprint = {width = 3, depth = 3, height = 3}
@@ -459,6 +500,8 @@ machines = [
 	{
 		id = "pump"
 		name_key = "machine_pump"
+		model = "pump"
+		motion = {kind = "bob", axis = "y", amplitude = 0.05, period_seconds = 0.6}
 		item = "pump"
 		kind = "pump"
 		footprint = {width = 2, depth = 1, height = 1}
@@ -472,6 +515,8 @@ machines = [
 	{
 		id = "tar_pit_pump"
 		name_key = "machine_tar_pit_pump"
+		model = "tar_pit_pump"
+		motion = {kind = "bob", axis = "y", amplitude = 0.08, period_seconds = 2}
 		item = "tar_pit_pump"
 		kind = "tar_pit_pump"
 		footprint = {width = 2, depth = 1, height = 1}
@@ -484,6 +529,8 @@ machines = [
 	{
 		id = "flare_stack"
 		name_key = "machine_flare_stack"
+		model = "flare_stack"
+		motion = {kind = "glow", period_seconds = 0.5}
 		item = "flare_stack"
 		kind = "flare_stack"
 		footprint = {width = 1, depth = 1, height = 3}
@@ -496,6 +543,8 @@ machines = [
 	{
 		id = "combustion_generator"
 		name_key = "machine_combustion_generator"
+		model = "combustion_generator"
+		motion = {kind = "spin", axis = "x", amplitude = 1, period_seconds = 0.8, pivot = [2.5, 1, 1]}
 		item = "combustion_generator"
 		kind = "combustion_generator"
 		footprint = {width = 3, depth = 2, height = 2}
@@ -508,6 +557,8 @@ machines = [
 	{
 		id = "hydro_turbine"
 		name_key = "machine_hydro_turbine"
+		model = "hydro_turbine"
+		motion = {kind = "spin", axis = "z", amplitude = 0.25, period_seconds = 1, pivot = [1, 1, 1]}
 		item = "hydro_turbine"
 		kind = "hydro_turbine"
 		footprint = {width = 2, depth = 2, height = 2}
@@ -518,6 +569,7 @@ machines = [
 	{
 		id = "small_pole"
 		name_key = "machine_small_pole"
+		model = "small_pole"
 		item = "small_pole"
 		kind = "pole"
 		footprint = {width = 1, depth = 1, height = 3}
@@ -527,6 +579,7 @@ machines = [
 	{
 		id = "big_pole"
 		name_key = "machine_big_pole"
+		model = "big_pole"
 		item = "big_pole"
 		kind = "pole"
 		footprint = {width = 1, depth = 1, height = 6}
@@ -536,6 +589,7 @@ machines = [
 	{
 		id = "substation"
 		name_key = "machine_substation"
+		model = "substation"
 		item = "substation"
 		kind = "pole"
 		footprint = {width = 2, depth = 2, height = 3}
@@ -545,6 +599,7 @@ machines = [
 	{
 		id = "power_switch"
 		name_key = "machine_power_switch"
+		model = "power_switch"
 		item = "power_switch"
 		kind = "power_switch"
 		footprint = {width = 1, depth = 1, height = 1}
@@ -553,6 +608,7 @@ machines = [
 	{
 		id = "lamp"
 		name_key = "machine_lamp"
+		model = "lamp"
 		item = "lamp"
 		kind = "lamp"
 		footprint = {width = 1, depth = 1, height = 1}
@@ -562,6 +618,8 @@ machines = [
 	{
 		id = "assembler_1"
 		name_key = "machine_assembler_1"
+		model = "assembler_1"
+		motion = {kind = "spin", axis = "y", amplitude = 1, period_seconds = 2, pivot = [1.5, 0, 1.5]}
 		item = "assembler_1"
 		kind = "crafting_machine"
 		footprint = {width = 3, depth = 3, height = 2}
@@ -573,6 +631,8 @@ machines = [
 	{
 		id = "crusher"
 		name_key = "machine_crusher"
+		model = "crusher"
+		motion = {kind = "spin", axis = "z", amplitude = 1, period_seconds = 1, pivot = [1, 1.5, 1]}
 		item = "crusher"
 		kind = "crafting_machine"
 		footprint = {width = 2, depth = 2, height = 2}
@@ -586,6 +646,8 @@ machines = [
 	{
 		id = "washer"
 		name_key = "machine_washer"
+		model = "washer"
+		motion = {kind = "spin", axis = "x", amplitude = 1, period_seconds = 2, pivot = [1.5, 1.5, 1]}
 		item = "washer"
 		kind = "crafting_machine"
 		footprint = {width = 3, depth = 2, height = 2}
@@ -602,6 +664,8 @@ machines = [
 	{
 		id = "alloy_furnace"
 		name_key = "machine_alloy_furnace"
+		model = "alloy_furnace"
+		motion = {kind = "glow", period_seconds = 2}
 		item = "alloy_furnace"
 		kind = "crafting_machine"
 		footprint = {width = 3, depth = 2, height = 2}
@@ -616,6 +680,8 @@ machines = [
 	{
 		id = "recycler"
 		name_key = "machine_recycler"
+		model = "recycler"
+		motion = {kind = "spin", axis = "y", amplitude = 1, period_seconds = 1.5, pivot = [1, 0, 1]}
 		item = "recycler"
 		kind = "crafting_machine"
 		footprint = {width = 2, depth = 2, height = 2}
@@ -629,6 +695,8 @@ machines = [
 	{
 		id = "refinery"
 		name_key = "machine_refinery"
+		model = "refinery"
+		motion = {kind = "glow", period_seconds = 1}
 		item = "refinery"
 		kind = "crafting_machine"
 		footprint = {width = 5, depth = 5, height = 3}
@@ -646,6 +714,8 @@ machines = [
 	{
 		id = "cracking_unit"
 		name_key = "machine_cracking_unit"
+		model = "cracking_unit"
+		motion = {kind = "glow", period_seconds = 1.5}
 		item = "cracking_unit"
 		kind = "crafting_machine"
 		footprint = {width = 3, depth = 3, height = 3}
@@ -662,6 +732,8 @@ machines = [
 	{
 		id = "chemical_plant"
 		name_key = "machine_chemical_plant"
+		model = "chemical_plant"
+		motion = {kind = "spin", axis = "y", amplitude = 1, period_seconds = 1.5, pivot = [1.875, 0, 1.5]}
 		item = "chemical_plant"
 		kind = "crafting_machine"
 		footprint = {width = 3, depth = 3, height = 3}
@@ -680,6 +752,8 @@ machines = [
 	{
 		id = "wood_gasifier"
 		name_key = "machine_wood_gasifier"
+		model = "wood_gasifier"
+		motion = {kind = "glow", period_seconds = 1.2}
 		item = "wood_gasifier"
 		kind = "crafting_machine"
 		footprint = {width = 2, depth = 2, height = 3}
@@ -696,6 +770,8 @@ machines = [
 	{
 		id = "electrolyser"
 		name_key = "machine_electrolyser"
+		model = "electrolyser"
+		motion = {kind = "bob", axis = "y", amplitude = 0.2, period_seconds = 0.7}
 		item = "electrolyser"
 		kind = "crafting_machine"
 		footprint = {width = 3, depth = 3, height = 3}
@@ -709,6 +785,8 @@ machines = [
 	{
 		id = "core_sample_drill"
 		name_key = "machine_core_sample_drill"
+		model = "core_sample_drill"
+		motion = {kind = "pump", axis = "y", amplitude = -0.25, period_seconds = 1}
 		item = "core_sample_drill"
 		kind = "core_sample_drill"
 		footprint = {width = 1, depth = 1, height = 2}
@@ -718,6 +796,7 @@ machines = [
 	{
 		id = "launch_pad"
 		name_key = "machine_launch_pad"
+		model = "launch_pad"
 		item = "launch_pad"
 		kind = "launch_pad"
 		footprint = {width = 9, depth = 9, height = 2}
@@ -734,6 +813,8 @@ machines = [
 	{
 		id = "lab"
 		name_key = "machine_lab"
+		model = "lab"
+		motion = {kind = "glow", period_seconds = 1.5}
 		item = "lab"
 		kind = "lab"
 		footprint = {width = 3, depth = 3, height = 2}

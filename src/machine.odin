@@ -173,6 +173,7 @@ Machine_Definition :: struct {
 	assembly_seconds:             int,
 	launch_seconds:               int,
 	model:                        string,
+	motion:                       Motion_Definition,
 }
 
 Machines_File :: struct {
@@ -252,6 +253,8 @@ Machine :: struct {
 	// The id of data/models/<model>.vox (model_vox.odin), or "" for the
 	// placeholder box.
 	model:                       string,
+	// How the model's part moves or its glow pulses (model_motion.odin).
+	motion:                      Machine_Motion,
 }
 
 Machine_Registry :: struct {
@@ -467,6 +470,9 @@ validate_machine_definition :: proc(definitions: []Machine_Definition, index: in
 	if definition.model != "" && !is_model_id(definition.model) {
 		return fmt.tprintf("machine %q has model %q, which is not lowercase letters, digits and underscores", definition.id, definition.model)
 	}
+	if problem := validate_motion_definition(definition); problem != "" {
+		return problem
+	}
 	return validate_machine_kind_fields(definition, kind)
 }
 
@@ -480,7 +486,8 @@ is_model_id :: proc(id: string) -> bool {
 	return id != ""
 }
 
-// Every named model file exists, parses and meshes (model_mesh.odin).
+// Every named model file exists, parses and meshes (model_mesh.odin), and
+// so does the part file of a motion that moves a part.
 validate_machine_models :: proc(registry: Machine_Registry, data_directory: string) -> string {
 	for machine in registry.machines {
 		if machine.model == "" {
@@ -490,7 +497,7 @@ validate_machine_models :: proc(registry: Machine_Registry, data_directory: stri
 		if problem != "" {
 			return problem
 		}
-		destroy_model_mesh(mesh)
+		destroy_machine_model_mesh(mesh)
 	}
 	return ""
 }
@@ -577,6 +584,7 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 		assembly_seconds = u32(max(definition.assembly_seconds, 0)),
 		launch_seconds = u32(max(definition.launch_seconds, 0)),
 		model = definition.model,
+		motion = resolve_machine_motion(definition.motion),
 	}
 }
 

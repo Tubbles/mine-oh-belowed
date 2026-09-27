@@ -9,7 +9,10 @@ import rl "vendor:raylib"
 // colour of the fluid held or taken (every face ports, the tank's, get
 // none). Offshore pumps, pumps and tar pit pumps show their direction with
 // an arrow. A flare stack's top glows while it burns gas, a combustion
-// generator's top is brighter while it generates.
+// generator's top is brighter while it generates. A fluid machine with a
+// model (render_models.odin) is drawn with it, animated while its
+// bottleneck marker would be green; the ports and arrows stay. Pipes keep
+// their stubs: a model per connection shape is left for later.
 
 PIPE_COLOR :: rl.Color{110, 112, 118, 255}
 FLARE_BURNING_TOP_COLOR :: rl.Color{255, 170, 60, 255}
@@ -137,7 +140,7 @@ fluid_machine_has_arrow :: proc(kind: Machine_Kind) -> bool {
 	return kind == .Offshore_Pump || kind == .Pump || kind == .Tar_Pit_Pump
 }
 
-draw_fluid_machine :: proc(fluid_machine: Fluid_Machine, machines: Machine_Registry, models: Model_Renderer, fluids: Fluid_Registry) {
+draw_fluid_machine :: proc(fluid_machine: Fluid_Machine, machines: Machine_Registry, models: Model_Renderer, fluids: Fluid_Registry, frame: Model_Frame) {
 	machine := machines.machines[fluid_machine.machine]
 	color := fluid_machine_colors[machine.kind]
 	top_color := color
@@ -147,7 +150,8 @@ draw_fluid_machine :: proc(fluid_machine: Fluid_Machine, machines: Machine_Regis
 	if (machine.kind == .Combustion_Generator || machine.kind == .Hydro_Turbine) && fluid_machine.state == .Generating {
 		top_color = GENERATING_TOP_COLOR
 	}
-	draw_entity_cells(fluid_machine.common, machines, models, color, top_color)
+	working := marker_means_working(machine_marker_colour(fluid_machine.state, true))
+	draw_entity_cells(fluid_machine.common, machines, models, frame, working, color, top_color)
 	buffers := fluid_machine.buffers
 	draw_fluid_ports(fluid_machine.common, machine, buffers[:], fluids)
 	if fluid_machine_has_arrow(machine.kind) {
@@ -167,7 +171,7 @@ draw_direction_arrow :: proc(origin: World_Coordinate, size: [3]i32, rotation: u
 }
 
 // Between BeginMode3D and EndMode3D, after the chunks.
-draw_fluid_entities :: proc(world: ^World, machines: Machine_Registry, models: Model_Renderer, fluids: Fluid_Registry) {
+draw_fluid_entities :: proc(world: ^World, machines: Machine_Registry, models: Model_Renderer, fluids: Fluid_Registry, frame: Model_Frame) {
 	for pipe in world.entities.pipes.entries {
 		if pipe.alive {
 			draw_pipe(world, pipe, machines, fluids)
@@ -175,7 +179,7 @@ draw_fluid_entities :: proc(world: ^World, machines: Machine_Registry, models: M
 	}
 	for fluid_machine in world.entities.fluid_machines.entries {
 		if fluid_machine.alive {
-			draw_fluid_machine(fluid_machine, machines, models, fluids)
+			draw_fluid_machine(fluid_machine, machines, models, fluids, frame)
 		}
 	}
 	for assembler in world.entities.assemblers.entries {

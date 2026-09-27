@@ -5,7 +5,9 @@ import rl "vendor:raylib"
 // Placeholder power models: a small pole is a thin tall post, a power
 // switch a box in green while on and red while off, a lamp a small box
 // that glows while lit, and wires are lines between the tops of wired
-// nodes. A pole's ghost shows its supply volume as a wire box.
+// nodes. A pole's ghost shows its supply volume as a wire box. A pole,
+// switch or lamp with a model (render_models.odin) is drawn with it; its
+// glow lights up while the switch is on or the lamp lit.
 
 POLE_COLOR :: rl.Color{120, 90, 60, 255}
 POLE_WIDTH :: 0.2
@@ -38,7 +40,11 @@ draw_wires :: proc(world: ^World) {
 	}
 }
 
-draw_pole :: proc(pole: Pole, machine: Machine) {
+draw_pole :: proc(pole: Pole, machines: Machine_Registry, models: Model_Renderer, frame: Model_Frame) {
+	machine := machines.machines[pole.machine]
+	if draw_machine_model(models, machines, pole.common, frame, machine.kind == .Power_Switch && pole.on) {
+		return
+	}
 	centre := box_centre(pole.origin, pole.size)
 	if machine.kind == .Power_Switch {
 		color := pole.on ? SWITCH_ON_COLOR : SWITCH_OFF_COLOR
@@ -61,7 +67,10 @@ draw_substation :: proc(pole: Pole, centre: [3]f32) {
 	rl.DrawCubeV(centre, {POLE_WIDTH * 2, f32(pole.size.y), POLE_WIDTH * 2}, POLE_COLOR)
 }
 
-draw_lamp :: proc(lamp: Lamp) {
+draw_lamp :: proc(lamp: Lamp, machines: Machine_Registry, models: Model_Renderer, frame: Model_Frame) {
+	if draw_machine_model(models, machines, lamp.common, frame, lamp.lit) {
+		return
+	}
 	centre := block_centre(lamp.origin)
 	centre.y = f32(lamp.origin.y) + LAMP_SIZE / 2
 	rl.DrawCubeV(centre, {LAMP_SIZE, LAMP_SIZE, LAMP_SIZE}, lamp.lit ? LAMP_ON_COLOR : LAMP_OFF_COLOR)
@@ -69,15 +78,15 @@ draw_lamp :: proc(lamp: Lamp) {
 }
 
 // Between BeginMode3D and EndMode3D, after the chunks.
-draw_power_entities :: proc(world: ^World, machines: Machine_Registry) {
+draw_power_entities :: proc(world: ^World, machines: Machine_Registry, models: Model_Renderer, frame: Model_Frame) {
 	for pole in world.entities.poles.entries {
 		if pole.alive {
-			draw_pole(pole, machines.machines[pole.machine])
+			draw_pole(pole, machines, models, frame)
 		}
 	}
 	for lamp in world.entities.lamps.entries {
 		if lamp.alive {
-			draw_lamp(lamp)
+			draw_lamp(lamp, machines, models, frame)
 		}
 	}
 	draw_wires(world)

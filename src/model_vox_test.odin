@@ -58,13 +58,26 @@ test_the_shipped_chest_model_loads :: proc(t: ^testing.T) {
 	model, problem := parse_voxel_model(#load("../data/models/wooden_chest.vox"))
 	defer destroy_voxel_model(model)
 	testing.expect_value(t, problem, "")
-	testing.expect_value(t, model.size, [3]i32{8, 8, 8})
+	// 16 voxels per block for a machine one block across.
+	testing.expect_value(t, model.size, [3]i32{16, 16, 16})
 	testing.expect_value(t, model.model_count, 1)
 	// The latch on the front (+x), metal grey; the corner column is empty.
-	testing.expect_value(t, model.palette[voxel_at(model, {7, 3, 3})], [4]u8{170, 170, 176, 255})
+	testing.expect_value(t, model.palette[voxel_at(model, {14, 7, 7})], [4]u8{170, 170, 176, 255})
 	testing.expect_value(t, voxel_at(model, {0, 0, 0}), 0)
-	// The lid line is the dark row at height 4.
-	testing.expect_value(t, model.palette[voxel_at(model, {1, 4, 1})], [4]u8{70, 45, 25, 255})
+	// The lid line is the dark row at height 8.
+	testing.expect_value(t, model.palette[voxel_at(model, {2, 8, 2})], [4]u8{70, 45, 25, 255})
+}
+
+@(test)
+test_the_shipped_furnace_glow_is_emissive :: proc(t: ^testing.T) {
+	model, problem := parse_voxel_model(#load("../data/models/stone_furnace.vox"))
+	defer destroy_voxel_model(model)
+	testing.expect_value(t, problem, "")
+	// The glow patch in the mouth takes the first emissive index, the
+	// stone does not.
+	testing.expect_value(t, voxel_at(model, {13, 2, 6}), EMISSIVE_PALETTE_START)
+	testing.expect_value(t, model.palette[EMISSIVE_PALETTE_START], [4]u8{240, 150, 60, 255})
+	testing.expect(t, voxel_at(model, {1, 0, 1}) < EMISSIVE_PALETTE_START)
 }
 
 @(test)

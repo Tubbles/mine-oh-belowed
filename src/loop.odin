@@ -428,13 +428,15 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session) {
 	rl.BeginMode3D(camera)
 	defer rl.EndMode3D()
 	draw_chunks(&state.renderer, camera)
-	draw_entities(world, content.machines, state.model_renderer, content.items, tick_rate)
+	blend := daylight_blend(simulation_day_ticks(session.simulation), session.simulation.day_length_ticks)
+	frame := Model_Frame{world = world, tick = session.simulation.tick, alpha = alpha, tick_rate = tick_rate, day_factor = day_factor(blend)}
+	draw_entities(world, content.machines, state.model_renderer, content.items, frame)
 	if state.settings.bottleneck_overlay {
-		draw_machine_markers(world, content.machines, camera.position)
+		draw_machine_markers(world, content.machines, state.model_renderer, camera.position)
 	}
-	draw_fluid_entities(world, content.machines, state.model_renderer, content.fluids)
-	draw_power_entities(world, content.machines)
-	draw_belts(&state.belt_renderer, world, content.items, content.machines, session.simulation.tick, alpha, tick_rate)
+	draw_fluid_entities(world, content.machines, state.model_renderer, content.fluids, frame)
+	draw_power_entities(world, content.machines, state.model_renderer, frame)
+	draw_belts(&state.belt_renderer, world, content.items, content.machines, state.model_renderer, frame)
 	draw_player_world_overlay(world, frame_simulation_content(state), session.simulation.players[:], 0, alpha)
 }
 

@@ -1,7 +1,7 @@
 package game
 
+import "core:strings"
 import "core:testing"
-import rl "vendor:raylib"
 
 // Model meshing tests (work item 0055): models are built in memory.
 
@@ -23,11 +23,13 @@ test_a_single_voxel_has_six_faces :: proc(t: ^testing.T) {
 	filled := [?][3]i32{{0, 0, 0}}
 	model := make_test_voxel_model({1, 1, 1}, filled[:])
 	defer destroy_voxel_model(model)
-	mesh, problem := mesh_voxel_model(model, {1, 1, 1})
-	defer destroy_model_mesh(mesh)
+	meshes, problem := mesh_voxel_model(model, {1, 1, 1})
+	defer destroy_model_layers(meshes)
+	mesh := meshes[.Lit]
 	testing.expect_value(t, problem, "")
 	testing.expect_value(t, len(mesh.positions), 24)
 	testing.expect_value(t, len(mesh.indices), 36)
+	testing.expect_value(t, len(meshes[.Emissive].positions), 0)
 	// The top face is the palette colour, the bottom shaded darker.
 	testing.expect(t, in_slice([4]u8{255, 255, 255, 255}, mesh.colors[:]))
 }
@@ -46,8 +48,9 @@ test_a_bar_merges_its_long_faces :: proc(t: ^testing.T) {
 	filled := [?][3]i32{{0, 0, 0}, {1, 0, 0}}
 	model := make_test_voxel_model({2, 1, 1}, filled[:])
 	defer destroy_voxel_model(model)
-	mesh, problem := mesh_voxel_model(model, {1, 1, 1})
-	defer destroy_model_mesh(mesh)
+	meshes, problem := mesh_voxel_model(model, {1, 1, 1})
+	defer destroy_model_layers(meshes)
+	mesh := meshes[.Lit]
 	testing.expect_value(t, problem, "")
 	// Two ends and four long faces merged across both voxels.
 	testing.expect_value(t, len(mesh.positions), 24)
@@ -55,9 +58,9 @@ test_a_bar_merges_its_long_faces :: proc(t: ^testing.T) {
 	// Different colours do not merge: the four long faces split in two.
 	model.cells[voxel_cell_index(model.size, {1, 0, 0})] = 2
 	split, split_problem := mesh_voxel_model(model, {1, 1, 1})
-	defer destroy_model_mesh(split)
+	defer destroy_model_layers(split)
 	testing.expect_value(t, split_problem, "")
-	testing.expect_value(t, len(split.positions), 40)
+	testing.expect_value(t, len(split[.Lit].positions), 40)
 }
 
 @(test)
@@ -69,8 +72,9 @@ test_a_model_scales_to_the_footprint :: proc(t: ^testing.T) {
 	defer destroy_voxel_model(model)
 	testing.expect_value(t, model_scale(model.size, {2, 2, 2}), [3]f32{0.125, 0.125, 0.125})
 	testing.expect_value(t, model_scale({16, 8, 8}, {2, 1, 1}), [3]f32{0.125, 0.125, 0.125})
-	mesh, problem := mesh_voxel_model(model, {2, 2, 2})
-	defer destroy_model_mesh(mesh)
+	meshes, problem := mesh_voxel_model(model, {2, 2, 2})
+	defer destroy_model_layers(meshes)
+	mesh := meshes[.Lit]
 	testing.expect_value(t, problem, "")
 	minimum, maximum := mesh.positions[0], mesh.positions[0]
 	for position in mesh.positions {
@@ -85,8 +89,8 @@ test_a_model_scales_to_the_footprint :: proc(t: ^testing.T) {
 test_an_empty_model_is_refused :: proc(t: ^testing.T) {
 	model := make_test_voxel_model({2, 2, 2}, nil)
 	defer destroy_voxel_model(model)
-	mesh, problem := mesh_voxel_model(model, {1, 1, 1})
-	defer destroy_model_mesh(mesh)
+	meshes, problem := mesh_voxel_model(model, {1, 1, 1})
+	defer destroy_model_layers(meshes)
 	testing.expect_value(t, problem, "no voxels")
 }
 
@@ -106,37 +110,143 @@ test_the_model_turns_with_the_entity :: proc(t: ^testing.T) {
 }
 
 @(test)
-test_a_machine_without_a_model_keeps_its_box :: proc(t: ^testing.T) {
-	meshes := [?]rl.Mesh{{}, {vertexCount = 24}}
-	renderer := Model_Renderer{meshes = meshes[:]}
-	_, found := machine_model_mesh(renderer, 0)
-	testing.expect(t, !found)
-	mesh: rl.Mesh
-	mesh, found = machine_model_mesh(renderer, 1)
-	testing.expect(t, found && mesh.vertexCount == 24)
-	_, found = machine_model_mesh(renderer, NO_MACHINE)
-	testing.expect(t, !found)
-	_, found = machine_model_mesh({}, 0)
-	testing.expect(t, !found)
+test_emissive_faces_mesh_apart_without_the_shade :: proc(t: ^testing.T) {
+	filled := [?][3]i32{{0, 0, 0}, {1, 0, 0}}
+	model := make_test_voxel_model({2, 1, 1}, filled[:])
+	defer destroy_voxel_model(model)
+	model.cells[voxel_cell_index(model.size, {1, 0, 0})] = EMISSIVE_PALETTE_START
+	model.palette[EMISSIVE_PALETTE_START] = {200, 100, 50, 255}
+	meshes, problem := mesh_voxel_model(model, {1, 1, 1})
+	defer destroy_model_layers(meshes)
+	testing.expect_value(t, problem, "")
+	// Each voxel keeps five faces, the shared one is covered.
+	testing.expect_value(t, len(meshes[.Lit].positions), 20)
+	testing.expect_value(t, len(meshes[.Emissive].positions), 20)
+	for colour in meshes[.Emissive].colors {
+		testing.expect_value(t, colour, [4]u8{200, 100, 50, 255})
+	}
+	testing.expect_value(t, palette_index_layer(EMISSIVE_PALETTE_START - 1), Model_Layer.Lit)
+	testing.expect_value(t, palette_index_layer(255), Model_Layer.Emissive)
 }
 
 @(test)
+test_the_model_top_is_its_highest_voxel :: proc(t: ^testing.T) {
+	filled := [?][3]i32{{0, 0, 0}, {1, 5, 1}}
+	model := make_test_voxel_model({2, 8, 2}, filled[:])
+	defer destroy_voxel_model(model)
+	testing.expect_value(t, voxel_model_top(model), 6)
+	empty := make_test_voxel_model({2, 2, 2}, nil)
+	defer destroy_voxel_model(empty)
+	testing.expect_value(t, voxel_model_top(empty), 0)
+}
+
+@(test)
+test_a_machine_without_a_model_keeps_its_box :: proc(t: ^testing.T) {
+	models := [?]Uploaded_Machine_Model{{}, {body = {.Lit = {vertexCount = 24}, .Emissive = {}}, top = 1.5}, {body = {.Lit = {}, .Emissive = {vertexCount = 8}}}}
+	renderer := Model_Renderer{models = models[:]}
+	_, found := machine_model(renderer, 0)
+	testing.expect(t, !found)
+	model: Uploaded_Machine_Model
+	model, found = machine_model(renderer, 1)
+	testing.expect(t, found && model.body[.Lit].vertexCount == 24)
+	_, found = machine_model(renderer, 2)
+	testing.expect(t, found, "a model of glow voxels only is a model")
+	_, found = machine_model(renderer, NO_MACHINE)
+	testing.expect(t, !found)
+	_, found = machine_model({}, 0)
+	testing.expect(t, !found)
+	testing.expect_value(t, machine_model_top(renderer, {machine = 1, size = {2, 2, 2}}), 1.5)
+	testing.expect_value(t, machine_model_top(renderer, {machine = 0, size = {2, 3, 2}}), 3)
+}
+
+// The ids and footprints of data/machines.sjson, resolved without the
+// item registry.
+shipped_machines :: proc(allocator := context.allocator) -> []Machine {
+	file, error := parse_machines_file(#load("../data/machines.sjson"), context.temp_allocator)
+	assert(error == nil)
+	machines := make([]Machine, len(file.machines), allocator)
+	for definition, index in file.machines {
+		machines[index] = resolve_machine(definition, NO_ITEM)
+	}
+	return machines
+}
+
+// Every machine but belts and pipes has a model, every model file loads
+// and meshes, and a motion that moves a part has its part file.
+@(test)
 test_the_shipped_machine_models_mesh :: proc(t: ^testing.T) {
+	machines := shipped_machines()
+	defer delete(machines)
+	meshes, problem := load_machine_model_meshes(Machine_Registry{machines = machines}, test_data_directory())
+	defer destroy_model_meshes(meshes)
+	testing.expect_value(t, problem, "")
+	if problem != "" {
+		return
+	}
+	for machine, index in machines {
+		mesh := meshes[index]
+		without_model := machine.kind == .Belt || machine.kind == .Pipe
+		testing.expectf(t, (machine.model == "") == without_model, "%s: model %q", machine.id, machine.model)
+		body_vertices := len(mesh.body[.Lit].positions) + len(mesh.body[.Emissive].positions)
+		testing.expectf(t, (body_vertices > 0) == !without_model, "%s has %d vertices", machine.id, body_vertices)
+		part_vertices := len(mesh.part[.Lit].positions) + len(mesh.part[.Emissive].positions)
+		testing.expectf(t, (part_vertices > 0) == motion_has_part(machine.motion.kind), "%s: a %v motion and %d part vertices", machine.id, machine.motion.kind, part_vertices)
+		testing.expectf(t, without_model || mesh.top > 0 && mesh.top <= f32(machine.footprint.y), "%s: top %v", machine.id, mesh.top)
+	}
+}
+
+@(test)
+test_a_missing_model_or_part_file_is_refused :: proc(t: ^testing.T) {
 	machines := [?]Machine {
-		{id = "burner_mining_drill", footprint = {2, 2, 2}, model = "burner_mining_drill"},
-		{id = "stone_furnace", footprint = {2, 2, 2}, model = "stone_furnace"},
 		{id = "wooden_chest", footprint = {1, 1, 1}, model = "wooden_chest"},
 		{id = "iron_chest", footprint = {1, 1, 1}},
 	}
 	meshes, problem := load_machine_model_meshes(Machine_Registry{machines = machines[:]}, test_data_directory())
-	defer destroy_model_meshes(meshes)
 	testing.expect_value(t, problem, "")
-	for mesh, index in meshes {
-		testing.expectf(t, (len(mesh.positions) > 0) == (machines[index].model != ""), "%s has %d vertices", machines[index].id, len(mesh.positions))
-	}
+	destroy_model_meshes(meshes)
 
-	machines[2].model = "no_such_model"
+	machines[0].motion = {kind = .Spin, period_seconds = 1}
+	_, problem = load_machine_model_meshes(Machine_Registry{machines = machines[:]}, test_data_directory())
+	testing.expect(t, strings.contains(problem, "wooden_chest_part.vox"), problem)
+
+	machines[0].motion = {}
+	machines[0].model = "no_such_model"
 	_, problem = load_machine_model_meshes(Machine_Registry{machines = machines[:]}, test_data_directory())
 	testing.expect(t, problem != "", "a missing model file is refused")
 	testing.expect(t, is_model_id("wooden_chest") && !is_model_id("../chest") && !is_model_id(""))
+}
+
+// A spinning part turns about the middle of its voxels, so it does not
+// wobble: the pivot names that middle on the two other axes.
+@(test)
+test_shipped_spinning_parts_turn_about_their_middle :: proc(t: ^testing.T) {
+	machines := shipped_machines()
+	defer delete(machines)
+	for machine in machines {
+		if machine.motion.kind != .Spin {
+			continue
+		}
+		path := model_file_path(test_data_directory(), model_part_id(machine.model))
+		part, problem := load_voxel_model_file(path, context.temp_allocator)
+		testing.expect_value(t, problem, "")
+		minimum, maximum := part.size, [3]i32{-1, -1, -1}
+		for z in 0 ..< part.size.z {
+			for y in 0 ..< part.size.y {
+				for x in 0 ..< part.size.x {
+					if voxel_at(part, {x, y, z}) != 0 {
+						minimum = {min(minimum.x, x), min(minimum.y, y), min(minimum.z, z)}
+						maximum = {max(maximum.x, x), max(maximum.y, y), max(maximum.z, z)}
+					}
+				}
+			}
+		}
+		scale := model_scale(part.size, machine.footprint)
+		for axis in 0 ..< 3 {
+			if axis == machine.motion.axis {
+				continue
+			}
+			middle := f32(minimum[axis] + maximum[axis] + 1) / 2 * scale[axis]
+			testing.expectf(t, abs(middle - machine.motion.pivot[axis]) < 0.01, "%s: pivot %v, the part's middle on axis %d is %v", machine.id, machine.motion.pivot, axis, middle)
+		}
+	}
 }

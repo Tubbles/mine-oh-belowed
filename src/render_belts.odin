@@ -10,7 +10,8 @@ import rl "vendor:raylib"
 // drawn. Items are small cubes coloured like their placeholder icon,
 // drawn one DrawCube each (no instancing yet), at most eight per block.
 // A splitter is the flat surface on both halves inside a wire frame, with
-// an arrow along its direction.
+// an arrow along its direction; a splitter model (render_models.odin)
+// takes the frame's place.
 
 BELT_SURFACE_HEIGHT :: 0.03
 BELT_ITEM_SIZE :: 0.2
@@ -240,7 +241,8 @@ belt_tier_tint :: proc(tier: int) -> rl.Color {
 // The meshes are shared, so the belts of each speed are drawn after the
 // texture is scrolled for that speed. A splitter scrolls like the slowest
 // belt.
-draw_belt_surfaces :: proc(renderer: ^Belt_Renderer, world: ^World, machines: Machine_Registry, tick: u64, alpha: f32, tick_rate: int) {
+draw_belt_surfaces :: proc(renderer: ^Belt_Renderer, world: ^World, machines: Machine_Registry, models: Model_Renderer, frame: Model_Frame) {
+	tick, alpha, tick_rate := frame.tick, frame.alpha, frame.tick_rate
 	for speed, tier in belt_speeds(machines) {
 		scroll_belt_models(renderer, belt_scroll_offset(tick, alpha, speed / u32(max(tick_rate, 1))))
 		for belt in world.entities.belts.entries {
@@ -252,7 +254,7 @@ draw_belt_surfaces :: proc(renderer: ^Belt_Renderer, world: ^World, machines: Ma
 		if tier == 0 {
 			for splitter in world.entities.splitters.entries {
 				if splitter.alive {
-					draw_splitter(renderer, splitter)
+					draw_splitter(renderer, splitter, machines, models, frame)
 				}
 			}
 		}
@@ -260,26 +262,28 @@ draw_belt_surfaces :: proc(renderer: ^Belt_Renderer, world: ^World, machines: Ma
 }
 
 // Between BeginMode3D and EndMode3D, after the chunks.
-draw_belts :: proc(renderer: ^Belt_Renderer, world: ^World, items: Item_Registry, machines: Machine_Registry, tick: u64, alpha: f32, tick_rate: int) {
+draw_belts :: proc(renderer: ^Belt_Renderer, world: ^World, items: Item_Registry, machines: Machine_Registry, models: Model_Renderer, frame: Model_Frame) {
 	if !renderer.ready {
 		return
 	}
-	draw_belt_surfaces(renderer, world, machines, tick, alpha, tick_rate)
+	draw_belt_surfaces(renderer, world, machines, models, frame)
 	for line in world.entities.belt_network.lines {
 		draw_belt_line_items(world, items, line)
 	}
 }
 
-draw_splitter :: proc(renderer: ^Belt_Renderer, splitter: Splitter) {
+draw_splitter :: proc(renderer: ^Belt_Renderer, splitter: Splitter, machines: Machine_Registry, models: Model_Renderer, frame: Model_Frame) {
 	for side in Splitter_Side {
 		cell := splitter_half_cell(splitter.origin, splitter.rotation, side)
 		position := [3]f32{f32(cell.x) + 0.5, f32(cell.y), f32(cell.z) + 0.5}
 		rl.DrawModelEx(renderer.models[.Flat], position, {0, 1, 0}, -90 * f32(splitter.rotation), {1, 1, 1}, rl.WHITE)
 	}
-	centre := box_centre(splitter.origin, splitter.size)
-	centre.y = f32(splitter.origin.y) + SPLITTER_FRAME_HEIGHT / 2
-	extent := [3]f32{f32(splitter.size.x), SPLITTER_FRAME_HEIGHT, f32(splitter.size.z)}
-	rl.DrawCubeWiresV(centre, extent, SPLITTER_FRAME_COLOR)
+	if !draw_machine_model(models, machines, splitter.common, frame, false) {
+		centre := box_centre(splitter.origin, splitter.size)
+		centre.y = f32(splitter.origin.y) + SPLITTER_FRAME_HEIGHT / 2
+		extent := [3]f32{f32(splitter.size.x), SPLITTER_FRAME_HEIGHT, f32(splitter.size.z)}
+		rl.DrawCubeWiresV(centre, extent, SPLITTER_FRAME_COLOR)
+	}
 	draw_splitter_arrow(splitter.origin, splitter.size, splitter.rotation, SPLITTER_ARROW_COLOR)
 }
 

@@ -1,6 +1,6 @@
 # 0056 Every machine a model, and one moving part each
 
-Status: todo
+Status: implemented
 Milestone: M11
 
 ## Goal
@@ -18,3 +18,26 @@ With the pipeline in place, every machine gets a model and one part that moves w
 
 - Builds and tests pass.
 - User: Screenshots of a working line.
+
+## Notes
+
+Implemented by a subagent (2026-09-27). Verified headless only: `odin check src -vet -strict-style`, `./build.sh test` (679 tests, new ones in `src/model_motion_test.odin`, `src/model_mesh_test.odin` and `src/model_vox_test.odin`), `./build.sh`, `./build.sh release`, and `python3 tools/make_placeholder_models.py` writes the same bytes on every run.
+
+Files: new `src/model_motion.odin` (motion kinds, phase, part transform, glow brightness, light tint, light cell), `src/model_motion_test.odin`, 42 bodies and 21 parts in `data/models/`; changes to `src/model_mesh.odin` (lit and emissive layers, part files, model top), `src/render_models.odin` (per layer upload, `Model_Frame`, posed drawing), `src/machine.odin` (`motion` key), `src/render_entities.odin`, `src/render_fluids.odin`, `src/render_power.odin`, `src/render_belts.odin`, `src/loop.odin`, `src/production_statistics.odin` (`marker_means_working`), the tests of the model files and markers, `data/machines.sjson`, `tools/make_placeholder_models.py`.
+
+### Model
+
+- Coverage: every machine in `data/machines.sjson` has a model except the six belts and the pipe, which keep their drawing (a pipe model per connection shape is left for later). Poles, the power switch, lamps, inserters, the splitter (its model replaces the wire frame, the belt surfaces stay) and the launch pad (the model is the platform; the tower and the rocket are drawn as before, the tower being taller than the footprint) now take models too.
+- Motion: `motion = {kind, axis, amplitude, period_seconds, pivot, hand}` per machine. pump strokes along the axis and back, bob moves both ways, spin turns amplitude turns per period about the axis through pivot, swing turns amplitude turns and back, glow moves nothing. Every kind but glow loads `<model>_part.vox`, which must have the body's size. The part pose is identity at phase 0, so an idle machine shows the model as authored.
+- Phase: `(tick + alpha) / (period_seconds * tick_rate)`, plus a per entity offset in [0, 1) hashed from the origin cell (`motion_phase_offset`, so machines of one kind move out of step, the glow pulse included), fractional part, while the machine works; 0 otherwise. Working is the green of the bottleneck marker procedures for furnaces, crafting machines, drills, labs and fluid machines; a lit lamp, a switch that is on, a crate holding a schematic, a core sample drill sampling with power, a launch pad assembling or launching. An inserter's phase is its arm fraction over two, so its swing follows the simulation's arm; its held item hangs at the part's `hand`.
+- Light: raylib's default material; its diffuse colour carries the tint (the lit meshes) or the glow brightness (the emissive meshes), so no model shader was needed. The tint is `curve(sky) * day_factor + curve(block)`, at most 1 and at least 0.06, with chunk.fs's curve, from the cell above the footprint's centre, or in front of a 1 by 1 machine at its base. Emissive voxels (palette 240 to 255) are lit like the rest while idle, full while working, and pulse down to 0.55 with a glow motion.
+- Markers sit over the model's top (the highest voxel of body and part), the footprint's top without a model.
+- A drill with a model loses the turning bar (its part moves instead); the drawn arrows, fluid ports and direction arrows stay on every model.
+
+### Deviations
+
+- `hand` is a key the brief did not list: the item an inserter holds needs a point on the moving part, and the arm cannot reach past its 1 by 1 footprint, so the old overhanging arm end did not fit.
+
+### Not verified
+
+The look and the motion: every placeholder's silhouette and colours, orientation against the front, pivots (a test checks each spinning part turns about the middle of its voxels), the glow against the world light at night, the light cell choice in cramped builds, the markers' height.

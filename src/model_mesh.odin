@@ -11,9 +11,13 @@ import "core:fmt"
 // x and z centred on the footprint and y from its bottom, so one mesh per
 // machine serves every rotation (model_transform).
 //
-// Entity boxes are drawn unlit, and so are models: the vertex colour is the
-// palette colour times a fixed shade per face direction, so the shape
-// reads without world light.
+// The vertex colour is the palette colour times a fixed shade per face
+// direction, so the shape reads; the renderer multiplies it by the world
+// light at the machine (model_motion.odin). Faces of the emissive palette
+// indices (EMISSIVE_PALETTE_START and up) go to a mesh of their own
+// without the shade, drawn at the glow brightness instead of the light.
+// A machine whose motion moves a part has a second model file,
+// <model>_part.vox, of the same size, meshed the same way.
 
 @(rodata)
 model_face_shades := [Direction]f32 {
@@ -30,6 +34,22 @@ Model_Mesh :: struct {
 	positions: [dynamic][3]f32,
 	colors:    [dynamic][4]u8,
 	indices:   [dynamic]u16,
+}
+
+// Lit faces take the world light, emissive ones the glow brightness.
+Model_Layer :: enum u8 {
+	Lit,
+	Emissive,
+}
+
+Model_Layers :: [Model_Layer]Model_Mesh
+
+// The body and the moving part (empty without one), and the height of the
+// highest voxel of either above the footprint's bottom, in blocks.
+Machine_Model_Mesh :: struct {
+	body: Model_Layers,
+	part: Model_Layers,
+	top:  f32,
 }
 
 Model_Rectangle :: struct {
@@ -128,39 +148,57 @@ place_model_corners :: proc(corners: [4][3]f32, scale: [3]f32, footprint: [3]i32
 	return placed
 }
 
-mesh_model_slice :: proc(mesh: ^Model_Mesh, model: Voxel_Model, footprint: [3]i32, direction: Direction, slice: int) -> string {
+palette_index_layer :: proc(index: u8) -> Model_Layer {
+	return index >= EMISSIVE_PALETTE_START ? .Emissive : .Lit
+}
+
+// Emissive faces keep their palette colour: the glow is not shaded.
+model_face_colour :: proc(model: Voxel_Model, index: u8, direction: Direction) -> [4]u8 {
+	if palette_index_layer(index) == .Emissive {
+		return shade_colour(model.palette[index], 1)
+	}
+	return shade_colour(model.palette[index], model_face_shades[direction])
+}
+
+mesh_model_slice :: proc(meshes: ^Model_Layers, model: Voxel_Model, footprint: [3]i32, direction: Direction, slice: int) -> string {
 	mask, width, height := model_face_mask(model, direction, slice, context.temp_allocator)
 	scale := model_scale(model.size, footprint)
 	for rectangle in model_greedy_rectangles(mask, width, height, context.temp_allocator) {
+		mesh := &meshes[palette_index_layer(rectangle.index)]
 		if len(mesh.positions) + QUAD_VERTEX_COUNT > MESH_PART_VERTEX_LIMIT {
 			return fmt.tprintf("more than %d vertices", MESH_PART_VERTEX_LIMIT)
 		}
 		corners := place_model_corners(quad_corners(direction, slice, rectangle.rectangle), scale, footprint)
-		colour := shade_colour(model.palette[rectangle.index], model_face_shades[direction])
-		append_model_quad(mesh, corners, colour, direction_is_positive(direction))
+		append_model_quad(mesh, corners, model_face_colour(model, rectangle.index, direction), direction_is_positive(direction))
 	}
 	return ""
 }
 
-// footprint is the machine's unrotated footprint (Machine.footprint). The
-// mesh is in allocator, also on a problem.
-mesh_voxel_model :: proc(model: Voxel_Model, footprint: [3]i32, allocator := context.allocator) -> (mesh: Model_Mesh, problem: string) {
-	mesh = Model_Mesh {
+make_model_mesh :: proc(allocator := context.allocator) -> Model_Mesh {
+	return Model_Mesh {
 		positions = make([dynamic][3]f32, allocator),
-		colors    = make([dynamic][4]u8, allocator),
-		indices   = make([dynamic]u16, allocator),
+		colors = make([dynamic][4]u8, allocator),
+		indices = make([dynamic]u16, allocator),
+	}
+}
+
+// footprint is the machine's unrotated footprint (Machine.footprint). The
+// meshes are in allocator, also on a problem.
+mesh_voxel_model :: proc(model: Voxel_Model, footprint: [3]i32, allocator := context.allocator) -> (meshes: Model_Layers, problem: string) {
+	for layer in Model_Layer {
+		meshes[layer] = make_model_mesh(allocator)
 	}
 	for direction in Direction {
 		for slice in 0 ..< int(model.size[direction_axis(direction)]) {
-			if problem = mesh_model_slice(&mesh, model, footprint, direction, slice); problem != "" {
-				return mesh, problem
+			if problem = mesh_model_slice(&meshes, model, footprint, direction, slice); problem != "" {
+				return meshes, problem
 			}
 		}
 	}
-	if len(mesh.positions) == 0 {
-		return mesh, "no voxels"
+	if len(meshes[.Lit].positions) + len(meshes[.Emissive].positions) == 0 {
+		return meshes, "no voxels"
 	}
-	return mesh, ""
+	return meshes, ""
 }
 
 destroy_model_mesh :: proc(mesh: Model_Mesh) {
@@ -169,24 +207,67 @@ destroy_model_mesh :: proc(mesh: Model_Mesh) {
 	delete(mesh.indices)
 }
 
-// The mesh of the machine's model; the problem names the machine, the
-// file and the chunk.
-load_machine_model_mesh :: proc(data_directory: string, machine: Machine, allocator := context.allocator) -> (mesh: Model_Mesh, problem: string) {
-	model: Voxel_Model
-	if model, problem = load_voxel_model_file(model_file_path(data_directory, machine.model), context.temp_allocator); problem != "" {
+destroy_model_layers :: proc(meshes: Model_Layers) {
+	for mesh in meshes {
+		destroy_model_mesh(mesh)
+	}
+}
+
+destroy_machine_model_mesh :: proc(mesh: Machine_Model_Mesh) {
+	destroy_model_layers(mesh.body)
+	destroy_model_layers(mesh.part)
+}
+
+// One above the highest filled voxel, 0 for an empty model.
+voxel_model_top :: proc(model: Voxel_Model) -> i32 {
+	for y := model.size.y - 1; y >= 0; y -= 1 {
+		for z in 0 ..< model.size.z {
+			for x in 0 ..< model.size.x {
+				if voxel_at(model, {x, y, z}) != 0 {
+					return y + 1
+				}
+			}
+		}
+	}
+	return 0
+}
+
+// The id of the part file of a model.
+model_part_id :: proc(model: string) -> string {
+	return fmt.tprintf("%s_part", model)
+}
+
+// The machine's model and, for a motion that moves a part, its part file;
+// the problem names the machine, the file and the chunk.
+load_machine_model_mesh :: proc(data_directory: string, machine: Machine, allocator := context.allocator) -> (mesh: Machine_Model_Mesh, problem: string) {
+	body, part: Voxel_Model
+	if body, problem = load_voxel_model_file(model_file_path(data_directory, machine.model), context.temp_allocator); problem != "" {
 		return {}, fmt.tprintf("machine %q: %s", machine.id, problem)
 	}
-	if mesh, problem = mesh_voxel_model(model, machine.footprint, allocator); problem != "" {
-		destroy_model_mesh(mesh)
+	if motion_has_part(machine.motion.kind) {
+		part_id := model_part_id(machine.model)
+		if part, problem = load_voxel_model_file(model_file_path(data_directory, part_id), context.temp_allocator); problem != "" {
+			return {}, fmt.tprintf("machine %q: %s", machine.id, problem)
+		}
+		if part.size != body.size {
+			return {}, fmt.tprintf("machine %q: model %s is %v voxels, its body %v", machine.id, part_id, part.size, body.size)
+		}
+	}
+	if mesh.body, problem = mesh_voxel_model(body, machine.footprint, allocator); problem == "" && part.cells != nil {
+		mesh.part, problem = mesh_voxel_model(part, machine.footprint, allocator)
+	}
+	if problem != "" {
+		destroy_machine_model_mesh(mesh)
 		return {}, fmt.tprintf("machine %q: model %s: %s", machine.id, machine.model, problem)
 	}
+	mesh.top = f32(max(voxel_model_top(body), voxel_model_top(part))) * model_scale(body.size, machine.footprint).y
 	return mesh, ""
 }
 
-// By Machine_Id; a machine without a model has an empty mesh. Nothing is
+// By Machine_Id; a machine without a model has empty meshes. Nothing is
 // kept on a problem.
-load_machine_model_meshes :: proc(machines: Machine_Registry, data_directory: string, allocator := context.allocator) -> (meshes: []Model_Mesh, problem: string) {
-	meshes = make([]Model_Mesh, len(machines.machines), allocator)
+load_machine_model_meshes :: proc(machines: Machine_Registry, data_directory: string, allocator := context.allocator) -> (meshes: []Machine_Model_Mesh, problem: string) {
+	meshes = make([]Machine_Model_Mesh, len(machines.machines), allocator)
 	for machine, index in machines.machines {
 		if machine.model == "" {
 			continue
@@ -199,9 +280,9 @@ load_machine_model_meshes :: proc(machines: Machine_Registry, data_directory: st
 	return meshes, ""
 }
 
-destroy_model_meshes :: proc(meshes: []Model_Mesh, allocator := context.allocator) {
+destroy_model_meshes :: proc(meshes: []Machine_Model_Mesh, allocator := context.allocator) {
 	for mesh in meshes {
-		destroy_model_mesh(mesh)
+		destroy_machine_model_mesh(mesh)
 	}
 	delete(meshes, allocator)
 }

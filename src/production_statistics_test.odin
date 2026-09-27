@@ -143,7 +143,11 @@ test_marker_size_grows_with_distance :: proc(t: ^testing.T) {
 	testing.expect_value(t, marker_size(2), MARKER_MINIMUM_SIZE)
 	testing.expect_value(t, marker_size(100), 100 * MARKER_SIZE_PER_DISTANCE)
 	common := Entity_Common{origin = {0, 1, 0}, size = {2, 2, 2}}
-	testing.expect_value(t, marker_position(common, 0.5), [3]f32{1, 3 + MARKER_GAP + 0.25, 1})
+	testing.expect_value(t, marker_position(common, 0.5, 2), [3]f32{1, 3 + MARKER_GAP + 0.25, 1})
+	// Over a model's top, not the footprint's.
+	testing.expect_value(t, marker_position(common, 0.5, 1.5), [3]f32{1, 2.5 + MARKER_GAP + 0.25, 1})
+	// A machine drawn as a box keeps the footprint's top.
+	testing.expect_value(t, machine_model_top({}, common), 2)
 }
 
 // The gear line of the assembler tests: the plates the assembler took,

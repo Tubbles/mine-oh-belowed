@@ -14,6 +14,12 @@ import rl "vendor:raylib"
 // A launch pad is a flat platform with a tower on one corner, and the
 // rocket a tall box on the platform that grows with its assembly, stands
 // while ready, and rises and fades while it launches. Real models come with the art pass.
+// A machine with a model (render_models.odin, work items 0055 and 0056) is
+// drawn with it instead: the part moves and the glow lights up while the
+// machine works (the green of its bottleneck marker), an inserter's arm
+// follows its swing and carries the held item at the part's hand, and a
+// launch pad's model is the platform, with the tower and the rocket drawn
+// as before.
 
 CHEST_COLOR :: rl.Color{130, 88, 48, 255}
 FURNACE_COLOR :: rl.Color{120, 120, 124, 255}
@@ -82,11 +88,12 @@ box_centre :: proc(minimum: World_Coordinate, size: [3]i32) -> [3]f32 {
 	return {f32(minimum.x) + f32(size.x) / 2, f32(minimum.y) + f32(size.y) / 2, f32(minimum.z) + f32(size.z) / 2}
 }
 
-// The machine's model (render_models.odin) when it has one, else a cube
-// per footprint cell in the colours with an edge frame.
-draw_entity_cells :: proc(common: Entity_Common, machines: Machine_Registry, models: Model_Renderer, color, top_color: rl.Color) {
-	if draw_machine_model(models, common) {
-		return
+// The machine's model (render_models.odin) when it has one, posed for
+// working, and true; else a cube per footprint cell in the colours with an
+// edge frame, and false.
+draw_entity_cells :: proc(common: Entity_Common, machines: Machine_Registry, models: Model_Renderer, frame: Model_Frame, working: bool, color, top_color: rl.Color) -> bool {
+	if draw_machine_model(models, machines, common, frame, working) {
+		return true
 	}
 	top := common.origin.y + common.size.y - 1
 	for cell in common_cells(common, machines) {
@@ -94,6 +101,7 @@ draw_entity_cells :: proc(common: Entity_Common, machines: Machine_Registry, mod
 	}
 	extent := [3]f32{f32(common.size.x), f32(common.size.y), f32(common.size.z)}
 	rl.DrawCubeWiresV(box_centre(common.origin, common.size), extent, ENTITY_EDGE_COLOR)
+	return false
 }
 
 inserter_arm_color :: proc(machine: Machine) -> rl.Color {
@@ -116,7 +124,28 @@ inserter_arm_end :: proc(pivot: [3]f32, direction: u8, fraction: f32, reach: i32
 	return pivot + (right * math.sin(angle) - forward * math.cos(angle)) * INSERTER_ARM_LENGTH * f32(max(reach, 1))
 }
 
-draw_inserter :: proc(inserter: Inserter, machine: Machine, items: Item_Registry, tick_rate: int) {
+draw_held_item :: proc(position: [3]f32, items: Item_Registry, item: Item_Id) {
+	size := f32(INSERTER_HELD_ITEM_SIZE)
+	rl.DrawCube(position - {0, size / 2, 0}, size, size, size, item_cube_color(items, item))
+}
+
+// The model's arm follows the swing: its stroke runs from pickup to drop
+// over half a motion period (inserter_motion_phase).
+draw_inserter_model :: proc(inserter: Inserter, machine: Machine, models: Model_Renderer, items: Item_Registry, frame: Model_Frame) -> bool {
+	model := machine_model(models, inserter.machine) or_return
+	phase := inserter_motion_phase(inserter_arm_fraction(inserter, machine, frame.tick_rate))
+	draw_posed_model(models, model, inserter.common, machine, frame, {phase = phase, working = inserter.state == .Moving})
+	if !stack_is_empty(inserter.held) {
+		draw_held_item(posed_hand_position(inserter.common, machine, phase), items, inserter.held.item)
+	}
+	return true
+}
+
+draw_inserter :: proc(inserter: Inserter, machine: Machine, models: Model_Renderer, items: Item_Registry, frame: Model_Frame) {
+	if draw_inserter_model(inserter, machine, models, items, frame) {
+		return
+	}
+	tick_rate := frame.tick_rate
 	centre := block_centre(inserter.origin)
 	bottom := f32(inserter.origin.y)
 	rl.DrawCubeV({centre.x, bottom + INSERTER_POST_SIZE.y / 2, centre.z}, INSERTER_POST_SIZE, INSERTER_POST_COLOR)
@@ -124,26 +153,29 @@ draw_inserter :: proc(inserter: Inserter, machine: Machine, items: Item_Registry
 	end := inserter_arm_end(pivot, inserter.rotation, inserter_arm_fraction(inserter, machine, tick_rate), inserter.reach)
 	rl.DrawCylinderEx(pivot, end, INSERTER_ARM_RADIUS, INSERTER_ARM_RADIUS, 6, inserter_arm_color(machine))
 	if !stack_is_empty(inserter.held) {
-		size := f32(INSERTER_HELD_ITEM_SIZE)
-		rl.DrawCube(end - {0, size / 2, 0}, size, size, size, item_cube_color(items, inserter.held.item))
+		draw_held_item(end, items, inserter.held.item)
 	}
 }
 
-// A bar across the top that turns with the cycle while the drill mines,
-// and the output arrow on the top face.
-draw_drill :: proc(drill: Drill, machine: Machine, machines: Machine_Registry, models: Model_Renderer, tick_rate: int) {
+// A bar across the top that turns with the cycle while the drill mines
+// (a model moves its own part instead), and the output arrow on the top
+// face.
+draw_drill :: proc(drill: Drill, machine: Machine, machines: Machine_Registry, models: Model_Renderer, frame: Model_Frame) {
+	working := marker_means_working(machine_marker_colour(drill.state, true))
+	color, top_color := DRILL_COLOR, DRILL_TOP_COLOR
 	if drill_is_bore(machine) {
-		draw_entity_cells(drill.common, machines, models, BORE_DRILL_COLOR, BORE_DRILL_TOP_COLOR)
+		color, top_color = BORE_DRILL_COLOR, BORE_DRILL_TOP_COLOR
 	} else if drill_is_electric(drill) {
-		draw_entity_cells(drill.common, machines, models, ELECTRIC_DRILL_COLOR, ELECTRIC_DRILL_TOP_COLOR)
-	} else {
-		draw_entity_cells(drill.common, machines, models, DRILL_COLOR, DRILL_TOP_COLOR)
+		color, top_color = ELECTRIC_DRILL_COLOR, ELECTRIC_DRILL_TOP_COLOR
 	}
+	has_model := draw_entity_cells(drill.common, machines, models, frame, working, color, top_color)
 	centre := box_centre(drill.origin, drill.size)
 	top := centre + {0, f32(drill.size.y) / 2 + 0.02, 0}
-	angle := drill_progress_fraction(drill, machine, tick_rate) * DRILL_BIT_TURNS_PER_CYCLE * 2 * math.PI
-	half := [3]f32{math.cos(angle), 0, math.sin(angle)} * DRILL_BIT_LENGTH / 2
-	rl.DrawCylinderEx(top - half, top + half, DRILL_BIT_RADIUS, DRILL_BIT_RADIUS, 6, DRILL_BIT_COLOR)
+	if !has_model {
+		angle := drill_progress_fraction(drill, machine, frame.tick_rate) * DRILL_BIT_TURNS_PER_CYCLE * 2 * math.PI
+		half := [3]f32{math.cos(angle), 0, math.sin(angle)} * DRILL_BIT_LENGTH / 2
+		rl.DrawCylinderEx(top - half, top + half, DRILL_BIT_RADIUS, DRILL_BIT_RADIUS, 6, DRILL_BIT_COLOR)
+	}
 	draw_drill_arrow(drill.origin, drill.size, drill.rotation, top.y, DRILL_ARROW_COLOR)
 }
 
@@ -158,61 +190,73 @@ draw_drill_arrow :: proc(origin: World_Coordinate, size: [3]i32, rotation: u8, h
 	rl.DrawCubeV(tip, {0.12, 0.12, 0.12}, color)
 }
 
+core_sample_drill_is_working :: proc(drill: Core_Sample_Drill) -> bool {
+	return core_sample_drill_wants_power(drill) && drill.power.satisfaction > 0
+}
+
+launch_pad_is_working :: proc(pad: Launch_Pad) -> bool {
+	return pad.state == .Assembling || pad.state == .Launching
+}
+
 // Between BeginMode3D and EndMode3D, after the chunks.
-draw_entities :: proc(world: ^World, machines: Machine_Registry, models: Model_Renderer, items: Item_Registry, tick_rate: int) {
+draw_entities :: proc(world: ^World, machines: Machine_Registry, models: Model_Renderer, items: Item_Registry, frame: Model_Frame) {
 	for chest in world.entities.chests.entries {
 		if chest.alive {
-			draw_entity_cells(chest.common, machines, models, CHEST_COLOR, CHEST_COLOR)
+			draw_entity_cells(chest.common, machines, models, frame, false, CHEST_COLOR, CHEST_COLOR)
 		}
 	}
 	for furnace in world.entities.furnaces.entries {
 		if furnace.alive {
 			top := furnace.state == .Burning ? FURNACE_BURNING_TOP_COLOR : FURNACE_COLOR
-			draw_entity_cells(furnace.common, machines, models, FURNACE_COLOR, top)
+			working := marker_means_working(machine_marker_colour(furnace.state, furnace_has_fuel(furnace)))
+			draw_entity_cells(furnace.common, machines, models, frame, working, FURNACE_COLOR, top)
 		}
 	}
 	for capsule in world.entities.capsules.entries {
 		if capsule.alive {
-			draw_entity_cells(capsule.common, machines, models, CAPSULE_COLOR, CAPSULE_TOP_COLOR)
+			draw_entity_cells(capsule.common, machines, models, frame, false, CAPSULE_COLOR, CAPSULE_TOP_COLOR)
 		}
 	}
 	for crate in world.entities.schematic_crates.entries {
 		if crate.alive {
-			top := stack_is_empty(crate.slots[0]) ? SCHEMATIC_CRATE_COLOR : SCHEMATIC_CRATE_FULL_TOP_COLOR
-			draw_entity_cells(crate.common, machines, models, SCHEMATIC_CRATE_COLOR, top)
+			full := !stack_is_empty(crate.slots[0])
+			top := full ? SCHEMATIC_CRATE_FULL_TOP_COLOR : SCHEMATIC_CRATE_COLOR
+			draw_entity_cells(crate.common, machines, models, frame, full, SCHEMATIC_CRATE_COLOR, top)
 		}
 	}
 	for inserter in world.entities.inserters.entries {
 		if inserter.alive {
-			draw_inserter(inserter, machines.machines[inserter.machine], items, tick_rate)
+			draw_inserter(inserter, machines.machines[inserter.machine], models, items, frame)
 		}
 	}
 	for drill in world.entities.drills.entries {
 		if drill.alive {
-			draw_drill(drill, machines.machines[drill.machine], machines, models, tick_rate)
+			draw_drill(drill, machines.machines[drill.machine], machines, models, frame)
 		}
 	}
 	for assembler in world.entities.assemblers.entries {
 		if assembler.alive {
 			color := crafting_machine_colors[machines.machines[assembler.machine].recipe_maker]
 			top := assembler.state == .Working ? ASSEMBLER_WORKING_TOP_COLOR : color
-			draw_entity_cells(assembler.common, machines, models, color, top)
+			working := marker_means_working(machine_marker_colour(assembler.state, true))
+			draw_entity_cells(assembler.common, machines, models, frame, working, color, top)
 		}
 	}
 	for lab in world.entities.labs.entries {
 		if lab.alive {
-			draw_entity_cells(lab.common, machines, models, LAB_COLOR, lab.state == .Researching ? LAB_RESEARCHING_TOP_COLOR : LAB_COLOR)
+			working := marker_means_working(machine_marker_colour(lab.state, true))
+			draw_entity_cells(lab.common, machines, models, frame, working, LAB_COLOR, lab.state == .Researching ? LAB_RESEARCHING_TOP_COLOR : LAB_COLOR)
 		}
 	}
 	for drill in world.entities.core_sample_drills.entries {
 		if drill.alive {
 			top := drill.sample >= 0 ? CORE_SAMPLE_DRILL_REPORTED_TOP_COLOR : CORE_SAMPLE_DRILL_COLOR
-			draw_entity_cells(drill.common, machines, models, CORE_SAMPLE_DRILL_COLOR, top)
+			draw_entity_cells(drill.common, machines, models, frame, core_sample_drill_is_working(drill), CORE_SAMPLE_DRILL_COLOR, top)
 		}
 	}
 	for pad in world.entities.launch_pads.entries {
 		if pad.alive {
-			draw_launch_pad(pad, machines.machines[pad.machine], tick_rate)
+			draw_launch_pad(pad, machines, models, frame)
 		}
 	}
 }
@@ -223,12 +267,16 @@ rocket_ascent :: proc(fraction: f32) -> (height: f32, alpha: u8) {
 	return fraction * fraction * ROCKET_ASCENT_HEIGHT, u8((1 - fraction) * 255)
 }
 
-draw_launch_pad :: proc(pad: Launch_Pad, machine: Machine, tick_rate: int) {
+draw_launch_pad :: proc(pad: Launch_Pad, machines: Machine_Registry, models: Model_Renderer, frame: Model_Frame) {
+	machine := machines.machines[pad.machine]
+	tick_rate := frame.tick_rate
 	centre := box_centre(pad.origin, pad.size)
 	bottom := f32(pad.origin.y)
-	platform := [3]f32{f32(pad.size.x), LAUNCH_PAD_PLATFORM_HEIGHT, f32(pad.size.z)}
-	rl.DrawCubeV({centre.x, bottom + platform.y / 2, centre.z}, platform, LAUNCH_PAD_COLOR)
-	rl.DrawCubeWiresV({centre.x, bottom + platform.y / 2, centre.z}, platform, ENTITY_EDGE_COLOR)
+	if !draw_machine_model(models, machines, pad.common, frame, launch_pad_is_working(pad)) {
+		platform := [3]f32{f32(pad.size.x), LAUNCH_PAD_PLATFORM_HEIGHT, f32(pad.size.z)}
+		rl.DrawCubeV({centre.x, bottom + platform.y / 2, centre.z}, platform, LAUNCH_PAD_COLOR)
+		rl.DrawCubeWiresV({centre.x, bottom + platform.y / 2, centre.z}, platform, ENTITY_EDGE_COLOR)
+	}
 	tower := block_centre(pad.origin)
 	rl.DrawCubeV({tower.x, bottom + LAUNCH_TOWER_HEIGHT / 2, tower.z}, {1, LAUNCH_TOWER_HEIGHT, 1}, LAUNCH_TOWER_COLOR)
 	if pad.state != .Assembling && pad.state != .Rocket_Ready && pad.state != .Launching {
@@ -247,7 +295,7 @@ draw_launch_pad :: proc(pad: Launch_Pad, machine: Machine, tick_rate: int) {
 }
 
 // Bottleneck overlay markers (work item 0028): a cube above each machine
-// in its state's colour. Its size grows with the distance from the eye,
+// in its state's colour, over the top of its model (work item 0056). Its size grows with the distance from the eye,
 // so it covers about the same part of the screen near and far, and never
 // shrinks below a small world size up close.
 MARKER_MINIMUM_SIZE :: 0.3
@@ -266,15 +314,16 @@ marker_size :: proc(distance: f32) -> f32 {
 	return max(MARKER_MINIMUM_SIZE, distance * MARKER_SIZE_PER_DISTANCE)
 }
 
-// Centred over the footprint, one gap above its top.
-marker_position :: proc(common: Entity_Common, size: f32) -> [3]f32 {
+// Centred over the footprint, one gap above top, the height of the
+// machine's model or footprint above its bottom.
+marker_position :: proc(common: Entity_Common, size, top: f32) -> [3]f32 {
 	centre := box_centre(common.origin, common.size)
-	return {centre.x, f32(common.origin.y + common.size.y) + MARKER_GAP + size / 2, centre.z}
+	return {centre.x, f32(common.origin.y) + top + MARKER_GAP + size / 2, centre.z}
 }
 
-draw_marker :: proc(common: Entity_Common, colour: Marker_Colour, eye: [3]f32) {
+draw_marker :: proc(common: Entity_Common, models: Model_Renderer, colour: Marker_Colour, eye: [3]f32) {
 	size := marker_size(linalg.length(box_centre(common.origin, common.size) - eye))
-	position := marker_position(common, size)
+	position := marker_position(common, size, machine_model_top(models, common))
 	rl.DrawCubeV(position, {size, size, size}, marker_colors[colour])
 	rl.DrawCubeWiresV(position, {size, size, size}, ENTITY_EDGE_COLOR)
 }
@@ -288,32 +337,32 @@ furnace_has_fuel :: proc(furnace: Furnace) -> bool {
 }
 
 // Between BeginMode3D and EndMode3D, after the entities.
-draw_machine_markers :: proc(world: ^World, machines: Machine_Registry, eye: [3]f32) {
+draw_machine_markers :: proc(world: ^World, machines: Machine_Registry, models: Model_Renderer, eye: [3]f32) {
 	entities := &world.entities
 	for furnace in entities.furnaces.entries {
 		if furnace.alive {
-			draw_marker(furnace.common, machine_marker_colour(furnace.state, furnace_has_fuel(furnace)), eye)
+			draw_marker(furnace.common, models, machine_marker_colour(furnace.state, furnace_has_fuel(furnace)), eye)
 		}
 	}
 	for assembler in entities.assemblers.entries {
 		if assembler.alive {
-			draw_marker(assembler.common, machine_marker_colour(assembler.state, machine_is_connected(entities, assembler.handle)), eye)
+			draw_marker(assembler.common, models, machine_marker_colour(assembler.state, machine_is_connected(entities, assembler.handle)), eye)
 		}
 	}
 	for drill in entities.drills.entries {
 		if drill.alive {
-			draw_marker(drill.common, machine_marker_colour(drill.state, machine_is_connected(entities, drill.handle)), eye)
+			draw_marker(drill.common, models, machine_marker_colour(drill.state, machine_is_connected(entities, drill.handle)), eye)
 		}
 	}
 	for lab in entities.labs.entries {
 		if lab.alive {
-			draw_marker(lab.common, machine_marker_colour(lab.state, machine_is_connected(entities, lab.handle)), eye)
+			draw_marker(lab.common, models, machine_marker_colour(lab.state, machine_is_connected(entities, lab.handle)), eye)
 		}
 	}
 	for fluid_machine in entities.fluid_machines.entries {
 		if fluid_machine.alive && fluid_machine_has_marker(machines.machines[fluid_machine.machine].kind) {
 			connected := machine_is_connected(entities, fluid_machine.handle)
-			draw_marker(fluid_machine.common, machine_marker_colour(fluid_machine.state, connected), eye)
+			draw_marker(fluid_machine.common, models, machine_marker_colour(fluid_machine.state, connected), eye)
 		}
 	}
 }

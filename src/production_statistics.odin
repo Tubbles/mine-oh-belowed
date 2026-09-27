@@ -294,6 +294,11 @@ fluid_machine_marker_colour :: proc(state: Fluid_Machine_State, connected: bool)
 	return .Grey
 }
 
+// A machine animates its model while its marker is green (work item 0056).
+marker_means_working :: proc(colour: Marker_Colour) -> bool {
+	return colour == .Green
+}
+
 machine_marker_colour :: proc {
 	furnace_marker_colour,
 	crafting_machine_marker_colour,
