@@ -1,5 +1,7 @@
 package game
 
+import "core:strings"
+
 // The quest runtime, ticked in the simulation. One quest is active at a
 // time, chapter after chapter in data order. Every tick the active
 // quest's objectives are compared with the statistics counters, the
@@ -17,6 +19,9 @@ package game
 // without a world action.
 
 CAPSULE_LANDED_KEY :: "capsule_landed"
+RESEARCH_COMPLETE_KEY :: "research_complete"
+// Where a message's argument text goes in its text.
+MESSAGE_ARGUMENT_MARK :: "{name}"
 
 Quest_Status :: enum u8 {
 	Locked,
@@ -41,9 +46,11 @@ Quest_Progress :: struct {
 	sustain_actions:      [MAXIMUM_QUEST_OBJECTIVES]u64,
 }
 
+// argument_key, when set, is the text that replaces MESSAGE_ARGUMENT_MARK.
 Quest_Message :: struct {
-	tick:     u64,
-	text_key: string,
+	tick:         u64,
+	text_key:     string,
+	argument_key: string,
 }
 
 Quest_State :: struct {
@@ -56,8 +63,8 @@ Quest_State :: struct {
 	pending_rewards: [dynamic]Item_Stack,
 	// Mission Control's lines, oldest first, for the journal.
 	messages:        [dynamic]Quest_Message,
-	// Text keys for toasts, emptied by the UI each frame.
-	notices:         [dynamic]string,
+	// Toasts, emptied by the UI each frame.
+	notices:         [dynamic]Quest_Message,
 	hints_fired:     int,
 }
 
@@ -231,12 +238,31 @@ advance_sustains :: proc(progress: ^Quest_Progress, quest: Quest, statistics: St
 	}
 }
 
-log_quest_message :: proc(state: ^Quest_State, tick: u64, key: string) {
+log_quest_message :: proc(state: ^Quest_State, tick: u64, key: string, argument_key := "") {
 	if key == "" {
 		return
 	}
-	append(&state.messages, Quest_Message{tick = tick, text_key = key})
-	append(&state.notices, key)
+	message := Quest_Message{tick = tick, text_key = key, argument_key = argument_key}
+	append(&state.messages, message)
+	append(&state.notices, message)
+}
+
+// A finished technology, in the log and as a toast.
+log_research_complete :: proc(state: ^Quest_State, tick: u64, technology_name_key: string) {
+	log_quest_message(state, tick, RESEARCH_COMPLETE_KEY, technology_name_key)
+}
+
+quest_message_text :: proc(message: Quest_Message) -> string {
+	if message.argument_key == "" {
+		return text(message.text_key)
+	}
+	return format_message_text(text(message.text_key), text(message.argument_key))
+}
+
+// In the temp allocator.
+format_message_text :: proc(template, argument: string) -> string {
+	result, _ := strings.replace_all(template, MESSAGE_ARGUMENT_MARK, argument, context.temp_allocator)
+	return result
 }
 
 // Hints fire once, when their counter has grown by the threshold since
@@ -377,7 +403,7 @@ tick_quests :: proc(state: ^Quest_State, tick_context: Quest_Tick_Context, entit
 	observe_capsule(tick_context.statistics, capsule_slots)
 	advance_active_quests(state, tick_context, capsule_slots)
 	if land_rewards(&state.pending_rewards, capsule_slots, tick_context.items) {
-		append(&state.notices, CAPSULE_LANDED_KEY)
+		append(&state.notices, Quest_Message{tick = tick_context.tick, text_key = CAPSULE_LANDED_KEY})
 	}
 	snapshot_capsule(tick_context.statistics, capsule_slots)
 }

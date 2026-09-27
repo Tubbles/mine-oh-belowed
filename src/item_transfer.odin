@@ -16,6 +16,10 @@ package game
 // slots and neither take nor give. An assembler takes each ingredient of
 // its recipe into that ingredient's slot only and gives from its output
 // slots; a lab takes each science pack into its slot and gives nothing.
+// Both take only while the slot holds less than two crafts' worth (two
+// pack sets for a lab), so an inserter does not pour a whole belt into
+// one machine. The player's panel is not limited: it does not come
+// through here.
 //
 // Inserters peek with entity_offered_items and entity_takes_item_kind
 // before they pick, so they never pick an item the target can never take.
@@ -35,11 +39,34 @@ entity_accepts :: proc(entities: ^Entities, content: Simulation_Content, handle:
 	case .Inserter, .Drill, .Fluid_Machine:
 		return fuel_accepting_slot(slots, item, content.items)
 	case .Assembler:
-		return fixed_accepting_slot(slots, entity_slot_for_item(entities, content, handle, item), item, content.items)
+		input_slot := entity_slot_for_item(entities, content, handle, item)
+		return limited_accepting_slot(slots, input_slot, item, content.items, assembler_insertion_limit(entities, content.recipes, handle, input_slot))
 	case .Lab:
-		return fixed_accepting_slot(slots, lab_slot_of(content.machines.lab_packs, item), item, content.items)
+		pack_slot := lab_slot_of(content.machines.lab_packs, item)
+		return limited_accepting_slot(slots, pack_slot, item, content.items, INSERTION_LIMIT_CRAFTS)
 	}
 	return first_accepting_slot(slots, item, item_stack_size(content.items, item))
+}
+
+// Crafts (or lab pack sets) an input slot may hold before automated
+// insertion stops.
+INSERTION_LIMIT_CRAFTS :: 2
+
+// Twice the ingredient count of the recipe for an assembler input slot.
+assembler_insertion_limit :: proc(entities: ^Entities, recipes: Recipe_Registry, handle: Entity_Handle, slot: int) -> int {
+	assembler := pool_get(&entities.assemblers, handle)
+	if assembler == nil || assembler.recipe == NO_RECIPE || slot < 0 {
+		return 0
+	}
+	return INSERTION_LIMIT_CRAFTS * int(recipes.recipes[assembler.recipe].inputs[slot].count)
+}
+
+// fixed_accepting_slot, and only while the slot holds fewer than limit.
+limited_accepting_slot :: proc(slots: []Item_Stack, slot: int, item: Item_Id, items: Item_Registry, limit: int) -> (index: int, ok: bool) {
+	if slot >= 0 && slot < len(slots) && int(slots[slot].count) >= limit {
+		return -1, false
+	}
+	return fixed_accepting_slot(slots, slot, item, items)
 }
 
 // What did not fit comes back.

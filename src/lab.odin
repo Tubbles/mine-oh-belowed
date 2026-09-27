@@ -11,8 +11,10 @@ package game
 // simulation marks it researched after the entity tick (simulation_tick),
 // since the unlocks live outside the world.
 //
-// Queueing another technology starts over from zero and bumps serial, so
-// a unit in progress for the old queue is dropped with its packs.
+// Queueing another technology keeps the units done of the old one and
+// resumes the new one where it was left, as Factorio does. It bumps
+// serial, so a unit in progress for the old queue is dropped with its
+// packs.
 
 MAXIMUM_LAB_SLOTS :: 8
 
@@ -45,11 +47,13 @@ Lab :: struct {
 }
 
 // finished is set on the tick a technology completes, until the
-// simulation applies it.
+// simulation applies it. units_done is the queued technology's progress;
+// units_kept holds every other technology's, indexed by technology.
 Research_State :: struct {
 	queued:              bool,
 	technology:          int,
 	units_done:          int,
+	units_kept:          [MAXIMUM_TECHNOLOGIES]int,
 	serial:              u32,
 	finished:            bool,
 	finished_technology: int,
@@ -73,9 +77,13 @@ Technology_Status :: enum u8 {
 	Locked,
 }
 
+// A placeholder opens recipes that do not exist yet, so it stays locked.
 technology_status :: proc(technologies: Technology_Registry, unlocks: Recipe_Unlocks, technology: int) -> Technology_Status {
 	if unlocks.researched[technology] {
 		return .Researched
+	}
+	if technologies.technologies[technology].placeholder {
+		return .Locked
 	}
 	for prerequisite in technologies.technologies[technology].prerequisites {
 		if !unlocks.researched[prerequisite] {
@@ -89,29 +97,42 @@ Research_Refusal :: enum u8 {
 	None,
 	Researched,
 	Locked,
+	Placeholder,
 }
 
 @(rodata)
 research_refusal_keys := [Research_Refusal]string {
-	.None       = "",
-	.Researched = "research_refused_researched",
-	.Locked     = "research_refused_locked",
+	.None        = "",
+	.Researched  = "research_refused_researched",
+	.Locked      = "research_refused_locked",
+	.Placeholder = "research_refused_placeholder",
 }
 
-// Replaces the queued technology with an available one, from zero.
-// Queueing the queued technology again keeps its progress.
-queue_research :: proc(research: ^Research_State, technologies: Technology_Registry, unlocks: Recipe_Unlocks, technology: int) -> Research_Refusal {
+research_refusal :: proc(technologies: Technology_Registry, unlocks: Recipe_Unlocks, technology: int) -> Research_Refusal {
 	switch technology_status(technologies, unlocks, technology) {
 	case .Researched:
 		return .Researched
 	case .Locked:
-		return .Locked
+		return technologies.technologies[technology].placeholder ? .Placeholder : .Locked
 	case .Available:
+	}
+	return .None
+}
+
+// Replaces the queued technology with an available one, resuming its
+// kept progress. Queueing the queued technology again changes nothing.
+queue_research :: proc(research: ^Research_State, technologies: Technology_Registry, unlocks: Recipe_Unlocks, technology: int) -> Research_Refusal {
+	if refusal := research_refusal(technologies, unlocks, technology); refusal != .None {
+		return refusal
 	}
 	if research.queued && research.technology == technology {
 		return .None
 	}
-	research.queued, research.technology, research.units_done = true, technology, 0
+	if research.queued {
+		research.units_kept[research.technology] = research.units_done
+	}
+	research.queued, research.technology = true, technology
+	research.units_done = research.units_kept[technology]
 	research.serial += 1
 	return .None
 }
@@ -191,6 +212,7 @@ finish_research_unit :: proc(research: ^Research_State, technologies: Technology
 		return
 	}
 	research.finished, research.finished_technology = true, research.technology
+	research.units_kept[research.technology] = 0
 	research.queued, research.units_done = false, 0
 }
 
@@ -241,13 +263,14 @@ tick_labs :: proc(world: ^World, content: Simulation_Content, tick_rate: int) {
 }
 
 // Marks a technology finished this tick researched, which opens its
-// recipes.
-apply_finished_research :: proc(research: ^Research_State, unlocks: ^Recipe_Unlocks, recipes: Recipe_Registry) {
+// recipes, and returns it for the completion notice.
+apply_finished_research :: proc(research: ^Research_State, unlocks: ^Recipe_Unlocks, recipes: Recipe_Registry) -> (technology: int, finished: bool) {
 	if !research.finished {
-		return
+		return NO_TECHNOLOGY, false
 	}
 	research.finished = false
 	mark_technology_researched(unlocks, recipes, research.finished_technology)
+	return research.finished_technology, true
 }
 
 lab_progress_fraction :: proc(lab: Lab, machine: Machine, research: Research_State, technologies: Technology_Registry, tick_rate: int) -> f32 {

@@ -127,11 +127,19 @@ simulation_tick :: proc(state: ^Simulation_State, content: Simulation_Content, i
 	}
 	update_recipe_unlocks(&state.unlocks, content.recipes, state.players[:])
 	tick_entities(&state.world, content, state.tick_rate)
-	apply_finished_research(&state.world.research, &state.unlocks, content.recipes)
+	apply_research_result(state, content)
 	observe_player_holdings(&state.world.statistics, state.players[:], true)
 	observe_full_inventories(&state.world.statistics, state.players[:])
 	tick_quests(&state.quests, simulation_quest_context(state, content), &state.world.entities)
 	tick_world(&state.world, content.blocks, state.tick)
+}
+
+// Opens the recipes of a technology the labs finished this tick and says
+// so in the message log.
+apply_research_result :: proc(state: ^Simulation_State, content: Simulation_Content) {
+	if technology, finished := apply_finished_research(&state.world.research, &state.unlocks, content.recipes); finished {
+		log_research_complete(&state.quests, state.tick, content.technologies.technologies[technology].name_key)
+	}
 }
 
 simulation_quest_context :: proc(state: ^Simulation_State, content: Simulation_Content) -> Quest_Tick_Context {
@@ -330,10 +338,11 @@ show_simulation_events :: proc(state: ^Ui_State, events: ^[dynamic]Simulation_Ev
 	clear(events)
 }
 
-// Mission Control's lines and the capsule landing, as toasts.
-show_quest_notices :: proc(state: ^Ui_State, notices: ^[dynamic]string) {
-	for key in notices {
-		ui_toast(state, text(key))
+// Mission Control's lines, finished research and the capsule landing, as
+// toasts.
+show_quest_notices :: proc(state: ^Ui_State, notices: ^[dynamic]Quest_Message) {
+	for notice in notices {
+		ui_toast(state, quest_message_text(notice))
 	}
 	clear(notices)
 }

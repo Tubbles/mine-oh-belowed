@@ -7,7 +7,7 @@ import "core:testing"
 
 chapter_03_registry :: proc(references: Quest_References) -> Quest_Registry {
 	files := shipped_chapter_files()
-	registry, problem := resolve_quest_registry(files[2:], references, context.temp_allocator)
+	registry, problem := resolve_quest_registry(files[2:3], references, context.temp_allocator)
 	assert(problem == "", problem)
 	return registry
 }

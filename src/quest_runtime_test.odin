@@ -192,7 +192,7 @@ test_hint_fires_once_after_its_threshold :: proc(t: ^testing.T) {
 	testing.expect_value(t, test.state.hints_fired, 1)
 	testing.expect_value(t, len(test.state.messages), 1)
 	testing.expect_value(t, test.state.messages[0], Quest_Message{tick = 2, text_key = "hint"})
-	testing.expect_value(t, test.state.notices[0], "hint")
+	testing.expect_value(t, test.state.notices[0].text_key, "hint")
 }
 
 @(test)
@@ -235,7 +235,7 @@ test_chapters_complete_in_order_and_deliver_rewards :: proc(t: ^testing.T) {
 	for key, index in keys {
 		testing.expect_value(t, test.state.messages[index].text_key, key)
 	}
-	testing.expect_value(t, test.state.notices[len(test.state.notices) - 1], CAPSULE_LANDED_KEY)
+	testing.expect_value(t, test.state.notices[len(test.state.notices) - 1].text_key, CAPSULE_LANDED_KEY)
 	// Landing is not a delivery.
 	testing.expect_value(t, test.statistics.delivered[log], 0)
 	test.statistics.obtained[log] = 100
@@ -261,7 +261,7 @@ test_rewards_wait_for_room_in_the_capsule :: proc(t: ^testing.T) {
 	run_quest_tick(&test)
 	testing.expect_value(t, slots[3], Item_Stack{coal, 50})
 	testing.expect_value(t, test.state.pending_rewards[0], Item_Stack{coal, 10})
-	testing.expect_value(t, test.state.notices[0], CAPSULE_LANDED_KEY)
+	testing.expect_value(t, test.state.notices[0].text_key, CAPSULE_LANDED_KEY)
 	slots[5] = EMPTY_STACK
 	run_quest_tick(&test)
 	testing.expect_value(t, slots[5], Item_Stack{coal, 10})

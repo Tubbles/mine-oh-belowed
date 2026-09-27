@@ -1,0 +1,96 @@
+// Chapter 4, Power (doc/quests.md outline). The format is described in
+// chapter_01.sjson. Recipes gate the order: the assembler recipe needs
+// automation and the electric drill needs electric mining, which needs
+// automation, so the first research comes before the assembler and the
+// drill. The lamp needs optics, so "first_pole" asks for glass instead of
+// a lamp. Placement and output are measured, not the layout: nothing
+// checks that the poles reach the engine or that the gears come from the
+// assembler (gears crafted by hand count too). The main quest rewards
+// plates: the crusher and washer of phase 5 are not items yet.
+id = "chapter_04"
+title_key = "chapter_04_title"
+quests = [
+	{
+		id = "steam"
+		title_key = "quest_steam_title"
+		text_key = "quest_steam_text"
+		objectives = [
+			{type = "place", entity = "offshore_pump", count = 1}
+			{type = "place", entity = "boiler", count = 1}
+			{type = "place", entity = "steam_engine", count = 1}
+		]
+		message_key = "mc_steam"
+		complete_key = "mc_steam_done"
+	}
+	{
+		id = "first_pole"
+		title_key = "quest_first_pole_title"
+		text_key = "quest_first_pole_text"
+		objectives = [
+			{type = "place", entity = "small_pole", count = 2}
+			{type = "obtain", item = "glass", count = 5}
+		]
+		message_key = "mc_first_pole"
+		complete_key = "mc_first_pole_done"
+	}
+	{
+		id = "first_research"
+		title_key = "quest_first_research_title"
+		text_key = "quest_first_research_text"
+		objectives = [
+			{type = "place", entity = "lab", count = 1}
+			{type = "research", technology = "automation"}
+		]
+		message_key = "mc_first_research"
+		complete_key = "mc_first_research_done"
+		hints = [
+			{counter = "brownout_ticks", threshold = 600, text_key = "mc_hint_brownout"}
+			{counter = "unpowered_machine_ticks", threshold = 1800, text_key = "mc_hint_unpowered"}
+		]
+	}
+	{
+		id = "assembly"
+		title_key = "quest_assembly_title"
+		text_key = "quest_assembly_text"
+		objectives = [
+			{type = "place", entity = "assembler_1", count = 1}
+			{type = "craft", item = "iron_gear", count = 20, produced_since_active = true}
+		]
+		message_key = "mc_assembly"
+	}
+	{
+		id = "electric_drill"
+		title_key = "quest_electric_drill_title"
+		text_key = "quest_electric_drill_text"
+		objectives = [
+			{type = "research", technology = "electric_mining"}
+			{type = "place", entity = "electric_mining_drill", count = 1}
+		]
+		message_key = "mc_electric_drill"
+		complete_key = "mc_electric_drill_done"
+	}
+	{
+		id = "second_engine"
+		title_key = "quest_second_engine_title"
+		text_key = "quest_second_engine_text"
+		objectives = [
+			{type = "place", entity = "steam_engine", count = 2}
+		]
+		message_key = "mc_second_engine"
+	}
+	{
+		id = "first_contract"
+		title_key = "quest_first_contract_title"
+		text_key = "quest_first_contract_text"
+		objectives = [
+			{type = "deliver", item = "electronic_circuit", count = 100}
+		]
+		message_key = "mc_first_contract"
+		complete_key = "mc_first_contract_done"
+		rewards = [
+			{item = "copper_plate", count = 50}
+			{item = "iron_plate", count = 50}
+		]
+		main = true
+	}
+]

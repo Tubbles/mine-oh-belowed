@@ -256,3 +256,19 @@ test_inserters_feed_an_assembler :: proc(t: ^testing.T) {
 	testing.expect_value(t, chest_count_of(&world, target, gear) + slots_count_of(assembler.slots[:], gear), 5)
 	testing.expect(t, assembler.working)
 }
+
+// Automated insertion stops at two crafts' worth of an ingredient: iron
+// gear wheels take 2 plates, so the third pair is refused.
+@(test)
+test_assembler_refuses_a_third_ingredient_set :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	handle := place_test_entity(&world, content, "assembler_1", {1, 1, -1})
+	set_assembler_recipe(test_assembler(&world, handle), content.recipes, test_recipe(content.recipes, "iron_gear"))
+	plate := test_item(content.items, "iron_plate")
+	testing.expect_value(t, entity_insert(&world.entities, content, handle, {plate, 2}), EMPTY_STACK)
+	testing.expect_value(t, entity_insert(&world.entities, content, handle, {plate, 1}), EMPTY_STACK)
+	testing.expect_value(t, entity_insert(&world.entities, content, handle, {plate, 1}), EMPTY_STACK)
+	testing.expect_value(t, entity_insert(&world.entities, content, handle, {plate, 2}), Item_Stack{plate, 2})
+	testing.expect_value(t, test_assembler(&world, handle).slots[0], Item_Stack{plate, 4})
+}

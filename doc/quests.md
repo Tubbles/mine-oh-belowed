@@ -36,6 +36,8 @@ Defined in data, evaluated every tick against the statistics counters, placed en
 - Chapter 2 crafts the burner drill instead of placing it, because drills are not entities until M3.
 - Chapter 3 (0018) measures placements and production, not layout: it cannot tell that the belt feeds the same furnace or that the coal drill feeds itself. Craft objectives can count from activation with `produced_since_active`. New counters: `drill_fuel_burned`, `belt_dead_end_ticks` (lines whose front item is held at a dead end, feeds into an inserter excluded) and `inserter_idle_a_minute` (one inserter idle for sixty seconds without a break), the last two carrying the "belt ending nowhere" and "inserter facing the wrong way" hints on the connect quest. The main quest's reward unlocks the steam engine recipe through the quest channel and lands a pump, a boiler and pipes in the capsule.
 
+- Chapter 4 (0022) runs steam, first pole (two poles and five glass, since the lamp is behind optics), first research (automation, carrying the brownout and unpowered hints), assembly, electric drill, second engine, and the main quest "The first contract" (100 electronic circuits delivered), which pays copper and iron plates until the phase 5 machines exist. A test plays every shipped chapter in order and checks that no objective needs a locked recipe and that research objectives follow their prerequisites.
+
 ## Spawn requirements
 
 Chapter 1 only works if the world guarantees, within about 150 blocks of the landing pad: trees, surface stone, sand, water, one iron outcrop, one copper outcrop and one coal outcrop. World generation searches for a spawn that satisfies this. It belongs to `doc/world.md` once written.

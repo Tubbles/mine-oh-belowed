@@ -305,3 +305,57 @@ test_assemblers_and_labs_are_deterministic :: proc(t: ^testing.T) {
 	testing.expect(t, first_units >= 2)
 	testing.expect(t, first_gears >= 4)
 }
+
+// Switching research keeps the old technology's units, and switching back
+// resumes them.
+@(test)
+test_switching_research_keeps_progress_per_technology :: proc(t: ^testing.T) {
+	content := make_test_content()
+	labs := []Lab{make_powered_lab(content, 50)}
+	unlocks := make_recipe_unlocks(len(content.items.items), content.recipes, content.technologies, false, context.temp_allocator)
+	mark_technology_researched(&unlocks, content.recipes, test_technology(content.technologies, "automation"))
+	logistics, electric_mining := test_technology(content.technologies, "logistics"), test_technology(content.technologies, "electric_mining")
+	research: Research_State
+	queue_research(&research, content.technologies, unlocks, logistics)
+	advance_test_labs(labs, content, &research, 2 * 900)
+	testing.expect_value(t, research.units_done, 2)
+	queue_research(&research, content.technologies, unlocks, electric_mining)
+	testing.expect_value(t, research.units_done, 0)
+	advance_test_labs(labs, content, &research, 900)
+	testing.expect_value(t, research.units_done, 1)
+	queue_research(&research, content.technologies, unlocks, logistics)
+	testing.expect_value(t, research.units_done, 2)
+	queue_research(&research, content.technologies, unlocks, electric_mining)
+	testing.expect_value(t, research.units_done, 1)
+}
+
+@(test)
+test_placeholder_technologies_are_locked :: proc(t: ^testing.T) {
+	content := make_test_content()
+	technologies := content.technologies
+	unlocks := make_recipe_unlocks(len(content.items.items), content.recipes, technologies, false, context.temp_allocator)
+	mark_technology_researched(&unlocks, content.recipes, test_technology(technologies, "automation"))
+	mark_technology_researched(&unlocks, content.recipes, test_technology(technologies, "logistics"))
+	placeholder := test_technology(technologies, "logistics_science")
+	testing.expect_value(t, technology_status(technologies, unlocks, placeholder), Technology_Status.Locked)
+	research: Research_State
+	testing.expect_value(t, queue_research(&research, technologies, unlocks, placeholder), Research_Refusal.Placeholder)
+	testing.expect(t, !research.queued)
+	testing.expect(t, research_refusal_keys[.Placeholder] != "")
+}
+
+// Inserters and drills fill a lab slot only up to two pack sets.
+@(test)
+test_lab_refuses_a_third_pack_set :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	lab := place_test_entity(&world, content, "lab", {1, 1, -1})
+	pack := test_item(content.items, "science_pack_1")
+	testing.expect_value(t, entity_insert(&world.entities, content, lab, {pack, 1}), EMPTY_STACK)
+	testing.expect_value(t, entity_insert(&world.entities, content, lab, {pack, 1}), EMPTY_STACK)
+	testing.expect_value(t, entity_insert(&world.entities, content, lab, {pack, 1}), Item_Stack{pack, 1})
+	_, accepted := entity_accepts(&world.entities, content, lab, pack)
+	testing.expect(t, !accepted)
+	testing.expect(t, entity_takes_item_kind(&world.entities, content, lab, pack))
+	testing.expect_value(t, test_lab(&world, lab).slots[0], Item_Stack{pack, 2})
+}

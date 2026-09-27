@@ -250,7 +250,7 @@ journal_message_log :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("journal_messages"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	messages := screen_context.quest_state.messages[:]
 	#reverse for message in messages {
-		line := fmt.tprintf("%s  %s", format_game_time(message.tick, screen_context.tick_rate), text(message.text_key))
+		line := fmt.tprintf("%s  %s", format_game_time(message.tick, screen_context.tick_rate), quest_message_text(message))
 		wrapped := wrap_text(state, line, UI_BODY_TEXT_SIZE, content.width)
 		if f32(len(wrapped)) * UI_ROW_HEIGHT * 0.6 > content.height {
 			return

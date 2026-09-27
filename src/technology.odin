@@ -11,6 +11,9 @@ import "core:os"
 // (lab.odin).
 
 TECHNOLOGIES_FILE_NAME :: "technologies.sjson"
+// The research state keeps every technology's progress in a fixed array,
+// so the world needs no allocation for it.
+MAXIMUM_TECHNOLOGIES :: 64
 
 Technology_Definition :: struct {
 	id:            string,
@@ -207,6 +210,9 @@ resolve_technology :: proc(definitions: []Technology_Definition, index: int, ite
 // Validates the file against the items and recipes and links the recipes
 // both ways. Changes the recipes' technology indices.
 resolve_technology_registry :: proc(file: Technologies_File, items: Item_Registry, recipes: Recipe_Registry, allocator := context.allocator) -> (registry: Technology_Registry, problem: string) {
+	if len(file.technologies) > MAXIMUM_TECHNOLOGIES {
+		return {}, fmt.tprintf("%d technologies, at most %d are supported", len(file.technologies), MAXIMUM_TECHNOLOGIES)
+	}
 	registry.technologies = make([]Technology, len(file.technologies), allocator)
 	for _, index in file.technologies {
 		if registry.technologies[index], problem = resolve_technology(file.technologies, index, items, recipes, allocator); problem != "" {
