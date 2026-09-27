@@ -18,7 +18,8 @@ NEW_WORLD_ROW_COUNT :: 10
 LOAD_PANEL_WIDTH :: 1400
 // Rows of the save list below its column headings.
 LOAD_LIST_ROWS :: 8
-// The most of the name column the "cannot load" marker takes.
+// The most of the name column a marker ("cannot load", "terrain
+// changed") takes.
 SAVE_MARKER_SHARE :: 0.8
 CONFIRM_PANEL_WIDTH :: 720
 SEED_FIELD_SHARE :: 0.68
@@ -227,7 +228,7 @@ new_world_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 }
 
 // The load list's cells of one save; marker is set for a save this build
-// cannot load.
+// cannot load or one made with older terrain.
 Save_Row_Cells :: struct {
 	name:   string,
 	marker: string,
@@ -236,10 +237,20 @@ Save_Row_Cells :: struct {
 	saved:  string,
 }
 
+save_marker :: proc(save: Save_Summary) -> string {
+	switch {
+	case !save.loadable:
+		return text("load_incompatible")
+	case save.terrain_changed:
+		return text("save_terrain_changed")
+	}
+	return ""
+}
+
 save_row_cells :: proc(save: Save_Summary, zone: ^datetime.TZ_Region, tick_rate: int) -> Save_Row_Cells {
 	return Save_Row_Cells {
 		name = save.name,
-		marker = save.loadable ? "" : text("load_incompatible"),
+		marker = save_marker(save),
 		seed = fmt.tprint(save.seed),
 		played = play_time_text(save.tick, tick_rate),
 		saved = date_text(save.last_played_unix_seconds, zone),

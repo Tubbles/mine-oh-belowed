@@ -111,6 +111,7 @@ load_delete_question = "Delete {name}?"
 load_delete_failed = "Deleting failed, see the log"
 load_delete = "Delete"
 load_incompatible = "(other build, cannot load)"
+save_terrain_changed = "(terrain changed since this world was made)"
 confirm_yes = "Yes"
 confirm_no = "No"
 

@@ -142,6 +142,7 @@ write_test_world_file :: proc(saves_directory, directory_name, name: string, las
 	os.make_directory_all(path)
 	file := World_File {
 		format_version = format_version,
+		generator_version = GENERATOR_VERSION,
 		name = name,
 		seed = u64(last_played),
 		settings = {day_length_seconds = 1200},

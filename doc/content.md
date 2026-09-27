@@ -137,6 +137,21 @@ Prerequisites (added by 0021, in `data/technologies.sjson`): logistics, electric
 
 Main quest gate for phase 4: the venture releases the steam engine schematics once the outpost reaches 40 iron plates per minute and holds it for five seconds (chapter 3's main quest in `quests.md`). Until then the player has boilers and no way to use the steam. One gate for the phase, nothing else waits on it.
 
+## Biomes
+
+A column takes the first biome in `data/biomes.sjson` whose height (relative to sea level) and moisture ranges contain it.
+
+| Biome | Height | Moisture | Surface |
+| --- | --- | --- | --- |
+| Lake | below sea level | any | Sand |
+| Mountains | 48 and up | any | Stone, boulders, no trees |
+| Hills | 24 to 47 | any | Stone, few trees, boulders |
+| Tar flats | 0 to 5 | dry | Tar over dirt, tar pits in low spots |
+| Desert | 0 and up | dry | Sand |
+| Beach | 0 to 1 | any | Sand, no trees |
+| Forest | 0 and up | wet | Grass, dense trees |
+| Plains | any | any | Grass, scattered trees |
+
 ## Veins (phases 1 to 4)
 
 Vein sizes before the richness multiplier, pending SUGGESTIONS.md item 3.

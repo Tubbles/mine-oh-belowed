@@ -7,8 +7,9 @@ import "core:testing"
 // Seeds besides the default that every generation test also runs on.
 TEST_SEEDS :: [3]u64{DEFAULT_WORLD_SEED, 1, 987654321}
 
-// The largest height step allowed between two neighbouring columns. River
-// banks cut into hills are the steepest terrain.
+// The largest height step allowed between two neighbouring columns.
+// Plateau cliffs and terraces (PLATEAU_STEP plus detail) are the steepest
+// terrain; river valley walls rise more gently (VALLEY_WALL_RISE).
 MAXIMUM_TEST_HEIGHT_STEP :: 16
 
 make_test_registry :: proc() -> Block_Registry {
@@ -29,11 +30,111 @@ make_test_generator :: proc(seed: u64) -> Generator {
 @(test)
 test_shipped_generation_data_resolves :: proc(t: ^testing.T) {
 	generator := make_test_generator(DEFAULT_WORLD_SEED)
-	testing.expect_value(t, len(generator.biomes), 6)
+	testing.expect_value(t, len(generator.biomes), 8)
 	testing.expect_value(t, len(generator.veins.types), 13)
 	testing.expect_value(t, len(generator.veins.size_classes), 3)
 	testing.expect_value(t, len(generator.veins.spawn_types), 3)
 	testing.expect(t, generator.blocks.water != generator.blocks.stone)
+}
+
+// Terrain shape (work item 0057), measured over TERRAIN_SAMPLE_SIZE
+// squared columns around the origin.
+TERRAIN_SAMPLE_SIZE :: 512
+MINIMUM_LAND_FRACTION :: 0.55
+MAXIMUM_LAND_FRACTION :: 0.85
+// Neighbouring columns at most 1 block apart, and 3 or more (cliffs).
+MINIMUM_GENTLE_SHARE :: 0.8
+MINIMUM_CLIFF_SHARE :: 0.005
+
+Terrain_Statistics :: struct {
+	columns:           int,
+	land:              int,
+	pairs:             int,
+	gentle_pairs:      int,
+	cliff_pairs:       int,
+	river_bed_reached: bool,
+	lowest:            i32,
+	highest:           i32,
+	biome_columns:     [8]int,
+}
+
+record_neighbour_pair :: proc(statistics: ^Terrain_Statistics, height, neighbour: i32) {
+	step := abs(height - neighbour)
+	statistics.pairs += 1
+	statistics.gentle_pairs += step <= 1 ? 1 : 0
+	statistics.cliff_pairs += step >= 3 ? 1 : 0
+}
+
+record_terrain_column :: proc(statistics: ^Terrain_Statistics, generator: ^Generator, x, z: i32) -> i32 {
+	column := sample_column(generator, x, z)
+	statistics.columns += 1
+	statistics.land += column.height >= SEA_LEVEL ? 1 : 0
+	statistics.lowest = min(statistics.lowest, column.height)
+	statistics.highest = max(statistics.highest, column.height)
+	statistics.biome_columns[column.biome] += 1
+	if column.height == RIVER_BED_HEIGHT && !statistics.river_bed_reached {
+		statistics.river_bed_reached = river_strength(river_distance(generator.seeds, x, z)) == 1
+	}
+	return column.height
+}
+
+// Each column is compared with its west and north neighbours; row keeps
+// the previous row's heights to the right of the current column.
+measure_terrain :: proc(generator: ^Generator) -> Terrain_Statistics {
+	statistics := Terrain_Statistics{lowest = max(i32), highest = min(i32)}
+	row := make([]i32, TERRAIN_SAMPLE_SIZE, context.temp_allocator)
+	half := i32(TERRAIN_SAMPLE_SIZE / 2)
+	for z in i32(0) ..< TERRAIN_SAMPLE_SIZE {
+		for x in i32(0) ..< TERRAIN_SAMPLE_SIZE {
+			height := record_terrain_column(&statistics, generator, x - half, z - half)
+			if x > 0 {
+				record_neighbour_pair(&statistics, height, row[x - 1])
+			}
+			if z > 0 {
+				record_neighbour_pair(&statistics, height, row[x])
+			}
+			row[x] = height
+		}
+	}
+	return statistics
+}
+
+@(test)
+test_terrain_has_lowlands_slopes_cliffs_and_rivers :: proc(t: ^testing.T) {
+	for seed in TEST_SEEDS {
+		generator := make_test_generator(seed)
+		statistics := measure_terrain(&generator)
+		land := f64(statistics.land) / f64(statistics.columns)
+		gentle := f64(statistics.gentle_pairs) / f64(statistics.pairs)
+		cliffs := f64(statistics.cliff_pairs) / f64(statistics.pairs)
+		log.infof("seed %d: land %.3f, gentle %.3f, cliffs %.4f, heights %d to %d, biome columns %v", seed, land, gentle, cliffs, statistics.lowest, statistics.highest, statistics.biome_columns)
+		testing.expectf(t, land >= MINIMUM_LAND_FRACTION && land <= MAXIMUM_LAND_FRACTION, "seed %d land fraction %.3f", seed, land)
+		testing.expectf(t, gentle >= MINIMUM_GENTLE_SHARE, "seed %d gentle share %.3f", seed, gentle)
+		testing.expectf(t, cliffs >= MINIMUM_CLIFF_SHARE, "seed %d cliff share %.4f", seed, cliffs)
+		testing.expectf(t, statistics.river_bed_reached, "seed %d has no river bed", seed)
+		testing.expect(t, statistics.lowest >= TERRAIN_MINIMUM_HEIGHT && statistics.highest <= TERRAIN_MAXIMUM_HEIGHT)
+	}
+}
+
+@(test)
+test_beach_and_mountain_biomes_cover_their_heights :: proc(t: ^testing.T) {
+	generator := make_test_generator(DEFAULT_WORLD_SEED)
+	beach := find_biome_index(generator.biomes, "beach")
+	mountains := find_biome_index(generator.biomes, "mountains")
+	hills := find_biome_index(generator.biomes, "hills")
+	for moisture in ([3]f32{-0.3, 0, 0.8}) {
+		testing.expect_value(t, select_biome(generator.biomes, 0, moisture), beach)
+		testing.expect_value(t, select_biome(generator.biomes, 1, moisture), beach)
+		testing.expect(t, select_biome(generator.biomes, 2, moisture) != beach)
+		testing.expect(t, select_biome(generator.biomes, -1, moisture) != beach)
+		testing.expect_value(t, select_biome(generator.biomes, 47, moisture), hills)
+		testing.expect_value(t, select_biome(generator.biomes, 48, moisture), mountains)
+		testing.expect_value(t, select_biome(generator.biomes, TERRAIN_MAXIMUM_HEIGHT - SEA_LEVEL, moisture), mountains)
+	}
+	testing.expect_value(t, generator.biomes[beach].top_block, generator.blocks.sand)
+	testing.expect_value(t, generator.biomes[mountains].top_block, generator.blocks.stone)
+	testing.expect_value(t, generator.biomes[beach].definition.tree_density, 0)
+	testing.expect_value(t, generator.biomes[mountains].definition.tree_density, 0)
 }
 
 @(test)

@@ -661,6 +661,63 @@ test_newer_and_older_formats_are_refused :: proc(t: ^testing.T) {
 	testing.expect_value(t, header_problem(expected, expected, "entities.bin"), "")
 }
 
+// 0057: world.sjson carries the generator version; a file written before
+// it existed reads as version 1, and the load list marks a save of an
+// older generator but still loads it.
+@(test)
+test_generator_version_round_trips_and_marks_older_terrain :: proc(t: ^testing.T) {
+	file := World_File {
+		format_version = SAVE_FORMAT_VERSION,
+		generator_version = GENERATOR_VERSION,
+		name = "terrain",
+		settings = {day_length_seconds = 1200},
+	}
+	encoded := string(encode_world_file(file, context.temp_allocator))
+	parsed, problem := parse_world_file(transmute([]byte)encoded, context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, parsed.generator_version, GENERATOR_VERSION)
+	without_version := strings.join(remove_lines_containing(encoded, "generator_version"), "\n", context.temp_allocator)
+	testing.expect(t, len(without_version) < len(encoded))
+	parsed, problem = parse_world_file(transmute([]byte)without_version, context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, parsed.generator_version, 1)
+
+	directory := make_save_test_directory()
+	defer remove_save_test_directory(directory)
+	expected := Save_Header {
+		version = SAVE_FORMAT_VERSION,
+	}
+	write_test_world_file(directory, "current", "Current", 2000)
+	write_test_entities_header(directory, "current", expected)
+	os.make_directory_all(join_save_path(directory, "older"))
+	older_path := join_save_path(directory, "older", WORLD_FILE_NAME)
+	testing.expect(t, os.write_entire_file(older_path, transmute([]byte)without_version) == nil)
+	write_test_entities_header(directory, "older", expected)
+	saves: [dynamic]Save_Summary
+	defer delete(saves)
+	defer destroy_save_summaries(&saves)
+	list_saves(&saves, directory, expected)
+	testing.expect_value(t, len(saves), 2)
+	if len(saves) != 2 {
+		return
+	}
+	testing.expect_value(t, saves[0].directory_name, "current")
+	testing.expect(t, saves[0].loadable && !saves[0].terrain_changed)
+	testing.expect(t, saves[1].loadable && saves[1].terrain_changed)
+	testing.expect_value(t, save_row_cells(saves[0], nil, 60).marker, "")
+	testing.expect_value(t, save_row_cells(saves[1], nil, 60).marker, text("save_terrain_changed"))
+}
+
+remove_lines_containing :: proc(contents, needle: string) -> []string {
+	kept := make([dynamic]string, context.temp_allocator)
+	for line in strings.split_lines(contents, context.temp_allocator) {
+		if !strings.contains(line, needle) {
+			append(&kept, line)
+		}
+	}
+	return kept[:]
+}
+
 // A save written before the loose item table existed ends after the
 // players; it loads with no loose items, and one with the table loads
 // them back.

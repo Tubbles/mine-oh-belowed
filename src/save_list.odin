@@ -22,6 +22,9 @@ Save_Summary :: struct {
 	// is missing or its tables do not parse; load_problem says why.
 	loadable:                 bool,
 	load_problem:             string,
+	// The save was made by an older generator (GENERATOR_VERSION): it
+	// loads, with the new terrain wherever the player changed nothing.
+	terrain_changed:          bool,
 }
 
 destroy_save_summaries :: proc(saves: ^[dynamic]Save_Summary) {
@@ -88,6 +91,7 @@ read_save_summary :: proc(saves_directory, directory_name: string, expected: Sav
 			last_played_unix_seconds = file.last_played_unix_seconds,
 			loadable = load_problem == "",
 			load_problem = strings.clone(load_problem),
+			terrain_changed = file.generator_version < GENERATOR_VERSION,
 		},
 		true
 }

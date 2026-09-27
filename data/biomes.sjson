@@ -10,6 +10,9 @@
 // pit_block (optional, work item 0030) replaces top_block in the low spots
 // of the biome: columns at most pit_maximum_height above sea level whose
 // four neighbours stand no lower. The tar flats get tar pits.
+// Work item 0057 added the mountains above the hills and the beaches at
+// the shore. Beaches come after the tar flats and the desert, so tar pits
+// and dry sand keep their shores.
 biomes = [
 	{
 		id = "lake"
@@ -24,10 +27,22 @@ biomes = [
 		boulder_density = 0
 	}
 	{
+		id = "mountains"
+		name = "Mountains"
+		minimum_height = 48
+		maximum_height = 1000
+		minimum_moisture = -1
+		maximum_moisture = 1
+		top_block = "stone"
+		filler_block = "stone"
+		tree_density = 0
+		boulder_density = 0.3
+	}
+	{
 		id = "hills"
 		name = "Hills"
 		minimum_height = 24
-		maximum_height = 1000
+		maximum_height = 47
 		minimum_moisture = -1
 		maximum_moisture = 1
 		top_block = "stone"
@@ -60,6 +75,18 @@ biomes = [
 		filler_block = "sand"
 		tree_density = 0
 		boulder_density = 0.15
+	}
+	{
+		id = "beach"
+		name = "Beach"
+		minimum_height = 0
+		maximum_height = 1
+		minimum_moisture = -1
+		maximum_moisture = 1
+		top_block = "sand"
+		filler_block = "sand"
+		tree_density = 0
+		boulder_density = 0
 	}
 	{
 		id = "forest"

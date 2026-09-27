@@ -21,6 +21,11 @@ Generation_Purpose :: enum u8 {
 	Deep_Veins,
 	Cave_Crates,
 	Starter_Veins,
+	// Terrain layers of work item 0057.
+	Range_Height,
+	Plateau_Mask,
+	Warp_X,
+	Warp_Z,
 }
 
 Purpose_Seeds :: [Generation_Purpose]u64

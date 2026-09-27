@@ -8,8 +8,8 @@ import "core:strconv"
 import "core:strings"
 
 // Saves on disk (doc/architecture.md, Save format). A world lives in
-// <saves>/<directory>/: world.sjson (format version, name, seed, world
-// settings, tick, day time, last played), entities.bin (save_state.odin)
+// <saves>/<directory>/: world.sjson (format version, generator version,
+// name, seed, world settings, tick, day time, last played), entities.bin (save_state.odin)
 // and regions/<x>_<z>.bin with the modified chunks of one region of
 // REGION_SIZE_IN_CHUNKS by REGION_SIZE_IN_CHUNKS chunk columns. Chunks
 // that match generation are not written; they regenerate from the seed.
@@ -47,6 +47,10 @@ World_File_Settings :: struct {
 
 World_File :: struct {
 	format_version:           int,
+	// GENERATOR_VERSION of the build that wrote the file; a file without
+	// it reads as 1. An older version loads, and its unmodified chunks
+	// regenerate with this build's terrain.
+	generator_version:        int,
 	name:                     string,
 	seed:                     u64,
 	settings:                 World_File_Settings,
@@ -162,6 +166,7 @@ make_world_file :: proc(state: ^Simulation_State, display_name: string, last_pla
 	day_length_ticks := max(state.day_length_ticks, 1)
 	return World_File {
 		format_version = SAVE_FORMAT_VERSION,
+		generator_version = GENERATOR_VERSION,
 		name = display_name,
 		seed = state.world.settings.seed,
 		settings = World_File_Settings {
@@ -192,6 +197,7 @@ parse_world_file :: proc(data: []byte, allocator := context.allocator) -> (file:
 		return {}, fmt.tprintf("cannot parse %s: %v", WORLD_FILE_NAME, error)
 	}
 	file.settings = with_percent_defaults(file.settings)
+	file.generator_version = max(file.generator_version, 1)
 	switch {
 	case file.format_version > SAVE_FORMAT_VERSION:
 		return file, fmt.tprintf("the save has format version %d, newer than this build reads (%d); update the game", file.format_version, SAVE_FORMAT_VERSION)
