@@ -64,7 +64,8 @@ fluid_machine_state_keys := [Fluid_Machine_State]string {
 // part of a litre it has pumped so far in litre_remainder, in litres per
 // minute times ticks (accumulate_litres). lets_water_through marks a
 // hydro turbine, whose cells flowing water keeps updating
-// (world_water.odin).
+// (world_water.odin), and still_water_ticks counts its ticks in a row
+// with no flowing water, for the quest hint.
 Fluid_Machine :: struct {
 	using common:     Entity_Common,
 	buffers:          [MAXIMUM_FLUID_PORTS]Fluid_Buffer,
@@ -78,6 +79,7 @@ Fluid_Machine :: struct {
 	state:            Fluid_Machine_State,
 	litre_remainder:  u32,
 	lets_water_through: bool,
+	still_water_ticks:  u32,
 }
 
 make_pipe :: proc(common: Entity_Common) -> Pipe {

@@ -51,7 +51,14 @@
 // recycled (items recyclers took, counted when a recycling craft ends),
 // mixing_refusals (times a machine's fluid port closed because the
 // network's fluid would mix with it), flared_litres (gas flare stacks
-// burned), generator_gas_litres (gas combustion generators drew).
+// burned), generator_gas_litres (gas combustion generators drew),
+// schematics_found (schematics read whose recipe was new), veins_assayed,
+// core_samples_taken, seismic_shots and veins_resolved (prospecting),
+// bore_drill_units (units bore drills put out),
+// bore_drill_no_vein_attempts (times Place was refused only because no
+// deep vein lies below a bore drill), turbine_kilojoules (energy hydro
+// turbines gave their networks) and turbine_still_water_ticks (times a
+// hydro turbine reached ten seconds in a row with no flowing water).
 // A hint with on_activation = true and no counter or threshold fires as
 // soon as its quest becomes active.
 //

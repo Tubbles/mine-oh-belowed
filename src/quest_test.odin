@@ -18,15 +18,16 @@ make_test_quest_references :: proc() -> Quest_References {
 	}
 }
 
-shipped_chapter_files :: proc() -> [6]Chapter_File {
+shipped_chapter_files :: proc() -> [7]Chapter_File {
 	first, first_error := parse_chapter_file(#load("../data/quests/chapter_01.sjson"), context.temp_allocator)
 	second, second_error := parse_chapter_file(#load("../data/quests/chapter_02.sjson"), context.temp_allocator)
 	third, third_error := parse_chapter_file(#load("../data/quests/chapter_03.sjson"), context.temp_allocator)
 	fourth, fourth_error := parse_chapter_file(#load("../data/quests/chapter_04.sjson"), context.temp_allocator)
 	fifth, fifth_error := parse_chapter_file(#load("../data/quests/chapter_05.sjson"), context.temp_allocator)
 	sixth, sixth_error := parse_chapter_file(#load("../data/quests/chapter_06.sjson"), context.temp_allocator)
-	assert(first_error == nil && second_error == nil && third_error == nil && fourth_error == nil && fifth_error == nil && sixth_error == nil)
-	return {first, second, third, fourth, fifth, sixth}
+	seventh, seventh_error := parse_chapter_file(#load("../data/quests/chapter_07.sjson"), context.temp_allocator)
+	assert(first_error == nil && second_error == nil && third_error == nil && fourth_error == nil && fifth_error == nil && sixth_error == nil && seventh_error == nil)
+	return {first, second, third, fourth, fifth, sixth, seventh}
 }
 
 make_test_quests :: proc(references: Quest_References) -> Quest_Registry {
@@ -49,7 +50,7 @@ test_quest_index :: proc(registry: Quest_Registry, id: string) -> int {
 test_shipped_quest_chapters_load :: proc(t: ^testing.T) {
 	references := make_test_quest_references()
 	registry := make_test_quests(references)
-	testing.expect_value(t, len(registry.chapters), 6)
+	testing.expect_value(t, len(registry.chapters), 7)
 	testing.expect_value(t, registry.chapters[0].quest_count, 9)
 	testing.expect_value(t, registry.chapters[1].first_quest, 9)
 	testing.expect_value(t, registry.chapters[1].quest_count, 8)

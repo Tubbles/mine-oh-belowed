@@ -149,6 +149,14 @@ hint_counter_value :: proc(statistics: Statistics, hint: Hint) -> u64 {
 		return statistics.seismic_shots
 	case .Veins_Resolved:
 		return statistics.veins_resolved
+	case .Bore_Drill_Units:
+		return statistics.bore_drill_units
+	case .Bore_Drill_No_Vein_Attempts:
+		return statistics.bore_drill_no_vein_attempts
+	case .Turbine_Kilojoules:
+		return statistics.turbine_joules / 1000
+	case .Turbine_Still_Water_Ticks:
+		return statistics.turbine_still_water_ticks
 	}
 	return 0
 }

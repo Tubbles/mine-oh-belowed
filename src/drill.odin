@@ -314,7 +314,8 @@ draw_vein_unit :: proc(world: ^World, veins: Vein_Content, vein: ^Vein, full: bo
 }
 
 // Into whatever entity stands in the drop cell. Nothing there, or no room,
-// keeps the unit held. Output leaving the drill counts as produced.
+// keeps the unit held. Output leaving the drill counts as produced, and
+// for a bore drill as bore drill units.
 output_drill_item :: proc(world: ^World, content: Simulation_Content, drill: ^Drill, machine: Machine) -> bool {
 	target := entity_at(&world.entities, drill_drop_cell(drill^, machine))
 	if target == NO_ENTITY {
@@ -325,6 +326,9 @@ output_drill_item :: proc(world: ^World, content: Simulation_Content, drill: ^Dr
 		return false
 	}
 	record_produced(&world.statistics, drill.held.item, int(drill.held.count))
+	if drill_is_bore(machine) {
+		world.statistics.bore_drill_units += u64(drill.held.count)
+	}
 	record_machine_output(&drill.output_rate, world.statistics.current_second, int(drill.held.count))
 	drill.held = EMPTY_STACK
 	return true

@@ -435,7 +435,7 @@ participant_power :: proc(entities: ^Entities, handle: Entity_Handle) -> ^Power_
 
 // Generators draw their steam, gas and fuel items here, so they are
 // counted consumed here.
-apply_electric_balance :: proc(entities: ^Entities, content: Simulation_Content, statistics: ^Statistics) {
+apply_electric_balance :: proc(entities: ^Entities, content: Simulation_Content, statistics: ^Statistics, tick_rate: int) {
 	networks := &entities.electric_networks
 	for participant in networks.participants {
 		network := participant.network >= 0 ? networks.networks[participant.network] : Electric_Network{}
@@ -449,16 +449,32 @@ apply_electric_balance :: proc(entities: ^Entities, content: Simulation_Content,
 		deliver_generator_energy(generator, machine, content, participant.delivered)
 		record_generator_tick(statistics, machine.kind, before, generator^)
 		generator.state = generator_state(machine.kind, participant.delivered, participant.offered, network.demand)
+		if machine.kind == .Hydro_Turbine {
+			record_turbine_still_water(statistics, generator, tick_rate)
+		}
 	}
 }
 
-// Fluids drawn, the gas of combustion generators, and fuel items lit from
-// the slot as burned and consumed.
+// A streak of No_Water ticks counts once when it reaches
+// TURBINE_STILL_WATER_SECONDS, so a turbine left in still water counts
+// once until water flows again.
+record_turbine_still_water :: proc(statistics: ^Statistics, turbine: ^Fluid_Machine, tick_rate: int) {
+	turbine.still_water_ticks = turbine.state == .No_Water ? turbine.still_water_ticks + 1 : 0
+	if turbine.still_water_ticks == u32(TURBINE_STILL_WATER_SECONDS * tick_rate) {
+		statistics.turbine_still_water_ticks += 1
+	}
+}
+
+// Fluids drawn, the gas of combustion generators, the energy of hydro
+// turbines, and fuel items lit from the slot as burned and consumed.
 record_generator_tick :: proc(statistics: ^Statistics, kind: Machine_Kind, before, after: Fluid_Machine) {
 	buffers_before, buffers_after := before.buffers, after.buffers
 	record_buffer_changes(statistics, buffers_before[:], buffers_after[:])
-	if kind == .Combustion_Generator {
+	#partial switch kind {
+	case .Combustion_Generator:
 		statistics.generator_gas_litres += u64(max(before.buffers[0].level - after.buffers[0].level, 0))
+	case .Hydro_Turbine:
+		statistics.turbine_joules += u64(after.generated_joules)
 	}
 	slots_before, slots_after := before.slots, after.slots
 	for slot, index in slots_before[:before.slot_count] {
@@ -507,6 +523,6 @@ tick_electric_networks :: proc(world: ^World, content: Simulation_Content, tick_
 	set_electric_allocators(networks)
 	collect_electric_participants(world, content, tick_rate)
 	balance_electric_energy(networks.participants[:], networks.networks[:])
-	apply_electric_balance(&world.entities, content, &world.statistics)
+	apply_electric_balance(&world.entities, content, &world.statistics, tick_rate)
 	record_electric_tick(&world.statistics, networks)
 }

@@ -27,6 +27,7 @@ import "core:math"
 RATE_BUCKET_COUNT :: 60
 RATE_LEVEL_COUNT :: 3
 INSERTER_IDLE_MINUTE_SECONDS :: 60
+TURBINE_STILL_WATER_SECONDS :: 10
 MILLIMETRES_PER_BLOCK :: 1000
 
 // Out_Of_Fuel and Output_Full are furnace stalls. Crafting_Missing_Input
@@ -129,6 +130,14 @@ Statistics :: struct {
 	core_samples_taken:          u64,
 	seismic_shots:               u64,
 	veins_resolved:              u64,
+	// Units bore drills put out, and times a player's Place was refused
+	// only because no deep vein lies below the bore drill (work item 0039).
+	bore_drill_units:            u64,
+	bore_drill_no_vein_attempts: u64,
+	// Joules hydro turbines gave their networks, and times a turbine
+	// reached TURBINE_STILL_WATER_SECONDS in a row with no flowing water.
+	turbine_joules:              u64,
+	turbine_still_water_ticks:   u64,
 	// Electric energy all networks delivered, in joules; produced and
 	// consumed are equal, generators give only what consumers receive.
 	energy_produced_joules:      u64,

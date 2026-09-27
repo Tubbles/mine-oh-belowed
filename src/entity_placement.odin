@@ -6,23 +6,25 @@ package game
 
 Placement :: struct {
 	// A machine is selected and the ray hit something to place it against.
-	shown:      bool,
-	valid:      bool,
-	machine:    Machine_Id,
-	origin:     World_Coordinate,
-	rotation:   u8,
+	shown:        bool,
+	valid:        bool,
+	machine:      Machine_Id,
+	origin:       World_Coordinate,
+	rotation:     u8,
 	// Rotated footprint, x y z.
-	size:       [3]i32,
+	size:         [3]i32,
 	// A belt: rotation is its direction (belt_placement.odin).
-	belt:       bool,
-	belt_shape: Belt_Shape,
+	belt:         bool,
+	belt_shape:   Belt_Shape,
 	// An inserter: rotation is its drop direction.
-	inserter:   bool,
+	inserter:     bool,
 	// A drill: rotation is its output direction, vein the vein it taps.
-	drill:      bool,
-	vein:       Vein_Id,
+	// no_deep_vein marks a bore drill refused only for the missing vein.
+	drill:        bool,
+	vein:         Vein_Id,
+	no_deep_vein: bool,
 	// A splitter: rotation is its direction.
-	splitter:   bool,
+	splitter:     bool,
 }
 
 // The footprint's minimum corner, so that it starts at the cell in front
@@ -144,6 +146,7 @@ placement_at :: proc(world: ^World, content: Simulation_Content, players: []Play
 		} else {
 			placement.vein, vein_found = drill_vein_under(world, content.veins, cells, origin.y)
 		}
+		placement.no_deep_vein = placement.valid && !vein_found && drill_is_bore(content.machines.machines[machine])
 		placement.valid = placement.valid && vein_found
 	}
 	if kind == .Pipe {
@@ -220,6 +223,9 @@ place_entity_with_player :: proc(world: ^World, content: Simulation_Content, pla
 		return
 	}
 	placement := placement_for_player(world, content, players, index)
+	if placement.no_deep_vein {
+		world.statistics.bore_drill_no_vein_attempts += 1
+	}
 	if !placement.valid {
 		return
 	}

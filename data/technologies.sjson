@@ -45,6 +45,10 @@
 // guess.
 // seismic_survey (work item 0038, science packs 1 and 2) unlocks the
 // thumper charge; 30 s per pack is a guess.
+// rocket_program (work item 0039) is the phase 8 gate: chapter 7's main
+// quest grants it through the quest channel. It is a placeholder that
+// unlocks nothing until the launch pad and rocket parts exist; its cost
+// and prerequisite are guesses.
 // placeholder = true marks a technology that unlocks nothing yet, and
 // quest_gate = true one only a main quest reward researches; labs refuse
 // both.
@@ -72,4 +76,5 @@ technologies = [
 	{id = "deep_mining", name_key = "technology_deep_mining", unlocks = ["bore_drill", "mining_fluid", "crush_bauxite", "wash_bauxite"], packs = 200, seconds = 30, science_packs = ["science_pack_1", "science_pack_2"], prerequisites = ["plastics"], quest_gate = true}
 	{id = "seismic_survey", name_key = "technology_seismic_survey", unlocks = ["thumper_charge"], packs = 100, seconds = 30, science_packs = ["science_pack_1", "science_pack_2"], prerequisites = ["prospecting"]}
 	{id = "electrolysis", name_key = "technology_electrolysis", unlocks = ["electrolyser", "alumina", "aluminium_plate", "silicon"], packs = 150, seconds = 30, science_packs = ["science_pack_1", "science_pack_2"], prerequisites = ["deep_mining"]}
+	{id = "rocket_program", name_key = "technology_rocket_program", unlocks = [], packs = 300, seconds = 30, science_packs = ["science_pack_1", "science_pack_2"], prerequisites = ["electrolysis"], placeholder = true, quest_gate = true}
 ]

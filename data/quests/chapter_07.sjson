@@ -1,0 +1,139 @@
+// Chapter 7, Scale (doc/quests.md outline). The format is described in
+// chapter_01.sjson. This chapter adds four hint counters:
+// bore_drill_units (units bore drills put out), bore_drill_no_vein_attempts
+// (times Place was refused only because no deep vein lies below a bore
+// drill), turbine_kilojoules (energy hydro turbines gave their networks,
+// in kJ) and turbine_still_water_ticks (times a turbine reached ten
+// seconds in a row with no flowing water).
+//
+// Placements and counters are measured, not layout: "second_vein" cannot
+// tell that the new drills stand on a second vein or feed the base, and
+// "two_floors" cannot tell that the factory has two floors, so it asks for
+// belt lifts and floor blocks instead. The floor blocks are concrete only:
+// a place objective names one item, and asphalt needs bitumen paving,
+// which no quest researches. Research follows the tree: prospecting needs
+// steel_processing (chapter 5), electrolysis needs deep_mining (chapter
+// 6's reward), hydro_power needs fluid_handling (chapter 6), electric_grid
+// needs electric_mining (chapter 4). The main quest grants the
+// rocket_program placeholder, a quest_gate technology that unlocks nothing
+// until the launch pad and the rocket parts exist.
+id = "chapter_07"
+title_key = "chapter_07_title"
+quests = [
+	{
+		id = "second_vein"
+		title_key = "quest_second_vein_title"
+		text_key = "quest_second_vein_text"
+		objectives = [
+			{type = "research", technology = "prospecting"}
+			{type = "counter", counter = "veins_assayed", label_key = "objective_veins_assayed", count = 2}
+			{type = "place", entity = "electric_mining_drill", count = 4}
+		]
+		message_key = "mc_second_vein"
+		complete_key = "mc_second_vein_done"
+	}
+	{
+		id = "deep_permit"
+		title_key = "quest_deep_permit_title"
+		text_key = "quest_deep_permit_text"
+		objectives = [
+			{type = "research", technology = "electrolysis"}
+			{type = "counter", counter = "core_samples_taken", label_key = "objective_core_samples", count = 1}
+			{type = "place", entity = "bore_drill", count = 1}
+			{type = "counter", counter = "bore_drill_units", label_key = "objective_bore_drill_units", count = 200}
+		]
+		message_key = "mc_deep_permit"
+		complete_key = "mc_deep_permit_done"
+		hints = [
+			{counter = "bore_drill_no_vein_attempts", threshold = 3, text_key = "mc_hint_bore_drill_no_vein"}
+		]
+	}
+	{
+		id = "aluminium"
+		title_key = "quest_aluminium_title"
+		text_key = "quest_aluminium_text"
+		objectives = [
+			{type = "craft", item = "aluminium_plate", count = 50, produced_since_active = true}
+			{type = "craft", item = "silicon", count = 20, produced_since_active = true}
+		]
+		message_key = "mc_aluminium"
+		complete_key = "mc_aluminium_done"
+	}
+	{
+		id = "two_floors"
+		title_key = "quest_two_floors_title"
+		text_key = "quest_two_floors_text"
+		objectives = [
+			{type = "place", entity = "belt_lift", count = 10}
+			{type = "place", item = "concrete", count = 20}
+		]
+		message_key = "mc_two_floors"
+		complete_key = "mc_two_floors_done"
+	}
+	{
+		id = "hydro"
+		title_key = "quest_hydro_title"
+		text_key = "quest_hydro_text"
+		objectives = [
+			{type = "research", technology = "hydro_power"}
+			{type = "place", entity = "hydro_turbine", count = 1}
+			{type = "counter", counter = "turbine_kilojoules", label_key = "objective_turbine_energy", count = 10000}
+		]
+		message_key = "mc_hydro"
+		complete_key = "mc_hydro_done"
+		hints = [
+			{counter = "turbine_still_water_ticks", threshold = 1, text_key = "mc_hint_turbine_still_water"}
+		]
+	}
+	{
+		id = "grid"
+		title_key = "quest_grid_title"
+		text_key = "quest_grid_text"
+		objectives = [
+			{type = "research", technology = "electric_grid"}
+			{type = "place", entity = "substation", count = 1}
+		]
+		message_key = "mc_grid"
+		complete_key = "mc_grid_done"
+	}
+	{
+		id = "schematic"
+		title_key = "quest_schematic_title"
+		text_key = "quest_schematic_text"
+		objectives = [
+			{type = "counter", counter = "schematics_found", label_key = "objective_schematics_found", count = 1}
+		]
+		message_key = "mc_schematic"
+		complete_key = "mc_schematic_done"
+		hints = [
+			{counter = "seismic_shots", threshold = 1, text_key = "mc_hint_seismic"}
+		]
+	}
+	{
+		id = "sixty"
+		title_key = "quest_sixty_title"
+		text_key = "quest_sixty_text"
+		objectives = [
+			{type = "sustain", item = "iron_plate", rate_per_minute = 60, minutes = 5}
+		]
+		message_key = "mc_sixty"
+		complete_key = "mc_sixty_done"
+	}
+	{
+		id = "launch_pad_permit"
+		title_key = "quest_launch_pad_permit_title"
+		text_key = "quest_launch_pad_permit_text"
+		objectives = [
+			{type = "deliver", item = "aluminium_plate", count = 100}
+			{type = "deliver", item = "silicon", count = 50}
+		]
+		message_key = "mc_launch_pad_permit"
+		complete_key = "mc_launch_pad_permit_done"
+		rewards = [
+			{unlocks_technology = "rocket_program"}
+			{item = "steel", count = 200}
+			{item = "plastic_bar", count = 100}
+		]
+		main = true
+	}
+]
