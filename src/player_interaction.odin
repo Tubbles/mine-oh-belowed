@@ -70,6 +70,9 @@ refuse_mining :: proc(player: ^Player, next: Mining_State) -> Player_Events {
 // item does not fit is not broken.
 mine_block :: proc(world: ^World, registry: Block_Registry, items: Item_Registry, player: ^Player, holding: bool, tick_rate: int) -> Player_Events {
 	block_id := world_get_block(world, player.target.block)
+	if holding && player.target.hit {
+		record_mining_tick(&world.statistics, block_id)
+	}
 	next, finished := advance_mining(player.mining, holding, player.target, block_id, required_ticks_for(registry, block_id, tick_rate))
 	if !finished {
 		player.mining = next
@@ -80,7 +83,11 @@ mine_block :: proc(world: ^World, registry: Block_Registry, items: Item_Registry
 		return refuse_mining(player, next)
 	}
 	player.mining = {}
-	if world_set_block(world, player.target.block, AIR_BLOCK) && drop != NO_ITEM {
+	if !world_set_block(world, player.target.block, AIR_BLOCK) {
+		return {}
+	}
+	record_block_mined(&world.statistics)
+	if drop != NO_ITEM {
 		inventory_add(player.inventory, items, drop, 1)
 	}
 	return {}
@@ -88,11 +95,11 @@ mine_block :: proc(world: ^World, registry: Block_Registry, items: Item_Registry
 
 // A long press of Mine on an entity picks it up with its contents.
 mine_entity :: proc(world: ^World, content: Simulation_Content, player: ^Player, holding: bool, tick_rate: int) -> Player_Events {
-	common := entity_common(&world.entities, player.target.entity)
-	if common == nil {
+	if !entity_can_be_picked_up(world, content.machines, player.target.entity) {
 		player.mining = {}
 		return {}
 	}
+	common := entity_common(&world.entities, player.target.entity)
 	target := player.target
 	target.block = common.origin
 	next, finished := advance_mining(player.mining, holding, target, AIR_BLOCK, mining_required_ticks(PICK_UP_SECONDS, tick_rate))
@@ -160,6 +167,7 @@ place_block_with_player :: proc(world: ^World, registry: Block_Registry, items: 
 	}
 	if world_set_block(world, player.target.adjacent, block) {
 		take_from_slot(&inventory_hotbar(player.inventory)[player.selected_hotbar_slot], 1)
+		record_world_action(&world.statistics)
 	}
 }
 

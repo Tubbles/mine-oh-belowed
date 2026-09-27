@@ -317,4 +317,44 @@ append_player_lines :: proc(lines: ^[dynamic]Diagnostics_Line, state: Frame_Stat
 		player.crafting.count,
 		player.crafting.waiting ? " waiting" : "",
 	)
+	append_line(lines, false, "%s", quest_diagnostics_text(state))
+	append_line(lines, false, "%s", objective_counters_text(state))
+}
+
+quest_diagnostics_text :: proc(state: Frame_State) -> string {
+	quests := state.simulation.quests
+	if quests.active == NO_QUEST {
+		return fmt.tprintf("quest none active  hints fired %d  rewards waiting %d", quests.hints_fired, len(quests.pending_rewards))
+	}
+	return fmt.tprintf(
+		"quest %s (%d of %d)  hints fired %d  rewards waiting %d",
+		state.quests.quests[quests.active].id,
+		quests.active + 1,
+		len(state.quests.quests),
+		quests.hints_fired,
+		len(quests.pending_rewards),
+	)
+}
+
+// The counters of the active quest's first item objective.
+objective_counters_text :: proc(state: Frame_State) -> string {
+	quests := state.simulation.quests
+	statistics := state.simulation.world.statistics
+	if quests.active == NO_QUEST {
+		return fmt.tprintf("walked %d mm  world actions %d", statistics.distance_walked_millimetres, statistics.world_actions)
+	}
+	for objective in state.quests.quests[quests.active].objectives {
+		if objective.item != NO_ITEM {
+			item := objective.item
+			return fmt.tprintf(
+				"%s produced %d obtained %d delivered %d rate %d/min",
+				item_id_text(state.items, item),
+				item_counter(statistics.produced, item),
+				item_counter(statistics.obtained, item),
+				item_counter(statistics.delivered, item),
+				production_rate_per_minute(statistics, item),
+			)
+		}
+	}
+	return fmt.tprintf("walked %d mm  blocks mined %d  world actions %d", statistics.distance_walked_millimetres, statistics.blocks_mined, statistics.world_actions)
 }

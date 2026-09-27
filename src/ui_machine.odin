@@ -83,7 +83,7 @@ chest_rows :: proc(slot_count: int) -> int {
 
 machine_area_size :: proc(kind: Machine_Kind, slot_count: int) -> [2]f32 {
 	switch kind {
-	case .Chest:
+	case .Chest, .Capsule:
 		return {slot_grid_width(MACHINE_CHEST_COLUMNS), UI_ROW_HEIGHT + slot_grid_height(chest_rows(slot_count))}
 	case .Furnace:
 		return {FURNACE_AREA_WIDTH, UI_ROW_HEIGHT + 2 * (UI_SLOT_SIZE + UI_GAP) + UI_ROW_HEIGHT}

@@ -11,6 +11,7 @@ Simulation_Content :: struct {
 	items:    Item_Registry,
 	machines: Machine_Registry,
 	recipes:  Recipe_Registry,
+	quests:   Quest_Registry,
 }
 
 apply_block_changes :: proc(world: ^World, registry: Block_Registry, tick: u64) {

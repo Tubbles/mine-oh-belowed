@@ -174,6 +174,18 @@ main :: proc() {
 	if !technologies_loaded {
 		os.exit(1)
 	}
+	quest_references := Quest_References {
+		blocks       = registry,
+		items        = items,
+		machines     = machines,
+		recipes      = recipes,
+		technologies = technologies,
+		strings      = global_string_table.entries,
+	}
+	quests, quests_loaded := load_quest_registry(data_directory, quest_references)
+	if !quests_loaded {
+		os.exit(1)
+	}
 	if problem := validate_starting_items(config.starting_items, items); problem != "" {
 		fmt.eprintfln("error: invalid %s: %s", GAME_CONFIG_FILE_NAME, problem)
 		os.exit(1)
@@ -185,6 +197,7 @@ main :: proc() {
 		machines        = machines,
 		recipes         = recipes,
 		technologies    = technologies,
+		quests          = quests,
 		item_sort_ranks = item_sort_ranks(items, item_display_names(items, context.temp_allocator)),
 		recipe_names    = recipe_names,
 		recipe_order    = recipe_name_order(recipe_names),
@@ -205,6 +218,7 @@ main :: proc() {
 World_Start :: struct {
 	debug_terrain: bool,
 	player:        Player_Start,
+	landing_pad:   Landing_Pad_Site,
 }
 
 // The debug terrain has no spawn search, so the player starts flying from
@@ -214,12 +228,20 @@ debug_terrain_player_start :: proc() -> Player_Start {
 	return Player_Start{position = camera.position - {0, PLAYER_EYE_HEIGHT, 0}, yaw = camera.yaw, pitch = camera.pitch, flying = true}
 }
 
+// The debug terrain has no pad blocks; the capsule stands on the terrain
+// near the origin.
+debug_terrain_landing_pad :: proc() -> Landing_Pad_Site {
+	capsule_column := CAPSULE_OFFSET.xz
+	return Landing_Pad_Site{present = true, centre = {0, debug_terrain_height(capsule_column.x, capsule_column.y), 0}}
+}
+
 // Runs the spawn search before the window opens, so its result (or failure)
-// shows on stderr even without a display.
+// shows on stderr even without a display. The landing pad goes where the
+// player spawns; the generator stamps it, so it is set before streaming.
 choose_world_start :: proc(generator: ^Generator, debug_terrain: bool) -> World_Start {
 	if debug_terrain {
 		fmt.eprintfln("world: debug terrain (seed %d unused)", generator.seed)
-		return World_Start{debug_terrain = true, player = debug_terrain_player_start()}
+		return World_Start{debug_terrain = true, player = debug_terrain_player_start(), landing_pad = debug_terrain_landing_pad()}
 	}
 	spawn, found := find_spawn(generator)
 	if found {
@@ -228,5 +250,6 @@ choose_world_start :: proc(generator: ^Generator, debug_terrain: bool) -> World_
 		fmt.eprintfln("world: seed %d, no spawn meets the requirements, starting at the origin", generator.seed)
 		spawn = {0, terrain_height(generator.seeds, 0, 0), 0}
 	}
-	return World_Start{player = player_start_on(spawn)}
+	generator.landing_pad = Landing_Pad_Site{present = true, centre = spawn}
+	return World_Start{player = player_start_on(spawn), landing_pad = generator.landing_pad}
 }

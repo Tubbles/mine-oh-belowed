@@ -258,8 +258,10 @@ make_generated_world :: proc(generator: ^Generator, centre: Chunk_Coordinate) ->
 make_generated_simulation :: proc(generator: ^Generator, content: Simulation_Content) -> Simulation_State {
 	surface := World_Coordinate{8, terrain_height(generator.seeds, 8, 8), 8}
 	_, technologies := make_test_recipes(content.items)
-	simulation := make_simulation(test_game_config(), player_start_on(surface), content, technologies, false)
-	simulation.world = make_generated_world(generator, world_to_chunk_coordinate(surface))
+	simulation := make_simulation(test_game_config(), player_start_on(surface), content, technologies, false, {})
+	generated := make_generated_world(generator, world_to_chunk_coordinate(surface))
+	generated.statistics = simulation.world.statistics
+	simulation.world = generated
 	return simulation
 }
 

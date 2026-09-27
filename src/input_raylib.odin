@@ -61,6 +61,7 @@ key_bindings := [?]Key_Binding {
 	{.TAB, .Hotbar_Radial},
 	{.E, .Open_Inventory},
 	{.C, .Open_Recipes},
+	{.J, .Open_Journal},
 	{.M, .Open_Map},
 	{.ESCAPE, .Pause},
 	{.ENTER, .Confirm},

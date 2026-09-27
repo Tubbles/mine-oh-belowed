@@ -2,8 +2,8 @@ package game
 
 // The world HUD, drawn through the UI draw list under any open screen:
 // crosshair, the targeted entity's name and state, hotbar with the held
-// item's name, the hotbar radial and the glyph bar. Targeted block names
-// come later.
+// item's name, the hotbar radial, the active quest objective (top right,
+// ui_journal.odin) and the glyph bar. Targeted block names come later.
 
 CROSSHAIR_SIZE :: 18.0
 CROSSHAIR_THICKNESS :: 3.0
@@ -143,6 +143,7 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		state.radial = {}
 		return
 	}
+	draw_quest_objective(state, screen_context)
 	status := entity_status_text(screen_context.world, screen_context.machines, player.target.entity)
 	draw_target_status(state, status)
 	hotbar_radial(state, player, items)

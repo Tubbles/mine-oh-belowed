@@ -184,4 +184,12 @@ blocks = [
 		light_level = 14
 		texture = {top = [255, 200, 80], side = [150, 110, 60], bottom = [120, 90, 50]}
 	}
+	{
+		id = "landing_pad"
+		name = "Landing Pad"
+		solid = true
+		// Not minable: the pad under the drop capsule (work item 0013).
+		hardness_seconds = 0
+		texture = {top = [96, 100, 108], side = [72, 74, 80], bottom = [72, 74, 80]}
+	}
 ]

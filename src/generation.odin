@@ -6,12 +6,13 @@ import "core:os"
 
 // Blocks the generator places by itself, independent of the biome table.
 Generation_Blocks :: struct {
-	stone:      Block_Id,
-	deep_stone: Block_Id,
-	water:      Block_Id,
-	log:        Block_Id,
-	leaves:     Block_Id,
-	sand:       Block_Id,
+	stone:       Block_Id,
+	deep_stone:  Block_Id,
+	water:       Block_Id,
+	log:         Block_Id,
+	leaves:      Block_Id,
+	sand:        Block_Id,
+	landing_pad: Block_Id,
 }
 
 // Read only after creation, so worker threads share it without locking.
@@ -27,11 +28,13 @@ Generator :: struct {
 	// roll exceeds them is rejected before any noise is sampled.
 	maximum_tree_density:    f64,
 	maximum_boulder_density: f64,
+	// Set once the spawn is known, before any chunk is generated.
+	landing_pad:             Landing_Pad_Site,
 }
 
 resolve_generation_blocks :: proc(registry: Block_Registry) -> (blocks: Generation_Blocks, problem: string) {
-	names := [6]string{"stone", "deep_stone", "water", "log", "leaves", "sand"}
-	targets := [6]^Block_Id{&blocks.stone, &blocks.deep_stone, &blocks.water, &blocks.log, &blocks.leaves, &blocks.sand}
+	names := [7]string{"stone", "deep_stone", "water", "log", "leaves", "sand", "landing_pad"}
+	targets := [7]^Block_Id{&blocks.stone, &blocks.deep_stone, &blocks.water, &blocks.log, &blocks.leaves, &blocks.sand, &blocks.landing_pad}
 	for name, index in names {
 		found: bool
 		if targets[index]^, found = find_block_id(registry, name); !found {

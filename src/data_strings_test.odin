@@ -36,7 +36,7 @@ test_shipped_strings_cover_the_ui :: proc(t: ^testing.T) {
 	table, error := parse_string_table(#load("../data/strings/en.sjson"))
 	defer destroy_string_table(&table)
 	testing.expect_value(t, error, nil)
-	sources := [?]string{#load("ui_screens.odin", string), #load("hud.odin", string)}
+	sources := [?]string{#load("ui_screens.odin", string), #load("hud.odin", string), #load("ui_journal.odin", string)}
 	key_count := 0
 	for source in sources {
 		for key in text_keys_in_source(source) {

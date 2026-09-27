@@ -15,6 +15,8 @@ Action :: enum u8 {
 	Open_Inventory,
 	// The recipe browser: keyboard C, and from the inventory and pause menu.
 	Open_Recipes,
+	// The quest journal: keyboard J, and from the pause menu.
+	Open_Journal,
 	Open_Map,
 	Pause,
 	Confirm,
@@ -159,6 +161,7 @@ WORLD_ACTIONS :: Action_Set {
 	.Hotbar_Radial,
 	.Open_Inventory,
 	.Open_Recipes,
+	.Open_Journal,
 	.Open_Map,
 	.Sneak,
 	.Sprint,

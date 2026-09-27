@@ -25,6 +25,14 @@ Defined in data, evaluated every tick against the statistics counters, placed en
 | deliver | item, count | Deliver 100 electronic circuits to the landing pad |
 | discover | recipe | Discover bronze plate |
 | ship | item, count, contract | Ship 200 electronic circuits, phase 8 |
+| walk | count | Walk 10 blocks (added by 0013 for beat 2, since "looked around" is not measured) |
+
+## As implemented in 0013
+
+- Quests play one at a time in data order across chapters. Beat 1 is a quest with no objectives that completes on the first tick and carries the opening message.
+- obtain, craft, place and walk count everything since the game began, so work done ahead of the journal counts. deliver counts what players put into the capsule since the quest became active. Hints count from activation and fire once. "Obtained" is measured as growth of what players hold between ticks, so crafted items and items taken back out of a chest count as obtained.
+- The landing pad is stamped by world generation at the spawn, so it returns identically on every load without saved state. One drop capsule stands on it and is never picked up; rewards land in it and wait when it is full.
+- Chapter 2 crafts the burner drill instead of placing it, because drills are not entities until M3.
 
 ## Spawn requirements
 

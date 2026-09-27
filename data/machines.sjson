@@ -5,7 +5,10 @@
 // name_key is a key into data/strings/en.sjson.
 // footprint is width (x), depth (z) and height (y) in blocks before
 // rotation; a quarter turn swaps width and depth.
-// kind selects the panel and the simulation: chest or furnace.
+// kind selects the panel and the simulation: chest, furnace or capsule.
+// The capsule (work item 0013) stands on the landing pad from the start:
+// it has no item, cannot be picked up, and holds 8 slots for quest
+// rewards and deliveries.
 // Chests: slots is the number of item slots.
 // Furnaces: fuel_slots, input_slots and output_slots must be 1 each for
 // now. speed multiplies the recipe rate (1 is the listed recipe time).
@@ -38,5 +41,12 @@ machines = [
 		output_slots = 1
 		speed = 1
 		fuel_power_kilowatts = 90
+	}
+	{
+		id = "drop_capsule"
+		name_key = "machine_drop_capsule"
+		kind = "capsule"
+		footprint = {width = 1, depth = 1, height = 2}
+		slots = 8
 	}
 ]

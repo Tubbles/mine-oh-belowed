@@ -40,7 +40,7 @@ One `game` package under `src/`, split into files by concern: `world_*.odin`, `g
 - Crafting machines hold a recipe id and a progress counter. Recipes are prototypes resolved to dense indices at load time.
 - Veins are entities, not block data: a reservoir struct with per ore amounts, centre, radius and size class, placed per region of 8 by 8 chunk columns so that every footprint lies inside its region. Generation threads compute footprints, the main thread registers each vein once when the first chunk of an overlapping column loads. Drills will hold a vein handle. There are no per block ore counters.
 - Fluids use one network model with a phase per fluid. A liquid network tracks its fill level and pumps decide whether an outlet above the level receives anything. Gas networks ignore height.
-- Production statistics counters (produced, consumed, per item, per network) are a day one system. The quest runtime, the statistics screen and the bottleneck overlay all read them.
+- Production statistics counters (produced, obtained, delivered per item, placed per machine, machine stalls, fuel burned, blocks mined, distance walked, and a one minute ring of per second buckets for rates) live on the `World` next to the entity pools. The quest runtime, the statistics screen and the bottleneck overlay all read them.
 - Quests are data: chapters of objectives whose predicates are evaluated against the statistics counters, placed entity counts and research state every tick. The journal reads the same state.
 
 ## Data driven content

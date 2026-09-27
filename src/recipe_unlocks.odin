@@ -3,7 +3,7 @@ package game
 // Which recipes are available, as simulation state. Start recipes always
 // are; a discovery recipe once every input item has been obtained by any
 // player; a research recipe once its technology is researched; a quest
-// recipe once its main quest is done (work item 0013, so never yet).
+// recipe once a quest reward unlocks it (quest_runtime.odin).
 // Unlocking everything (the --unlock-all flag or the world setting) marks
 // every item obtained and every technology researched.
 //
@@ -17,6 +17,8 @@ Recipe_Unlocks :: struct {
 	obtained:   []bool,
 	// Indexed by technology.
 	researched: []bool,
+	// Indexed by recipe: unlocked by a quest reward.
+	quest_unlocked: []bool,
 	// Indexed by recipe.
 	available:  []bool,
 	unlock_all: bool,
@@ -26,6 +28,7 @@ make_recipe_unlocks :: proc(item_count: int, recipes: Recipe_Registry, technolog
 	unlocks := Recipe_Unlocks {
 		obtained   = make([]bool, item_count, allocator),
 		researched = make([]bool, len(technologies.technologies), allocator),
+		quest_unlocked = make([]bool, len(recipes.recipes), allocator),
 		available  = make([]bool, len(recipes.recipes), allocator),
 		unlock_all = unlock_all,
 	}
@@ -40,6 +43,7 @@ make_recipe_unlocks :: proc(item_count: int, recipes: Recipe_Registry, technolog
 destroy_recipe_unlocks :: proc(unlocks: Recipe_Unlocks, allocator := context.allocator) {
 	delete(unlocks.obtained, allocator)
 	delete(unlocks.researched, allocator)
+	delete(unlocks.quest_unlocked, allocator)
 	delete(unlocks.available, allocator)
 }
 
@@ -58,7 +62,7 @@ all_inputs_obtained :: proc(recipe: Recipe, obtained: []bool) -> bool {
 	return true
 }
 
-recipe_is_unlocked :: proc(unlocks: Recipe_Unlocks, recipe: Recipe) -> bool {
+recipe_is_unlocked :: proc(unlocks: Recipe_Unlocks, recipe: Recipe, index: int) -> bool {
 	if unlocks.unlock_all {
 		return true
 	}
@@ -70,14 +74,14 @@ recipe_is_unlocked :: proc(unlocks: Recipe_Unlocks, recipe: Recipe) -> bool {
 	case .Research:
 		return recipe.technology != NO_TECHNOLOGY && unlocks.researched[recipe.technology]
 	case .Quest:
-		return false
+		return index < len(unlocks.quest_unlocked) && unlocks.quest_unlocked[index]
 	}
 	return false
 }
 
 refresh_available_recipes :: proc(unlocks: ^Recipe_Unlocks, recipes: Recipe_Registry) {
 	for recipe, index in recipes.recipes {
-		unlocks.available[index] = recipe_is_unlocked(unlocks^, recipe)
+		unlocks.available[index] = recipe_is_unlocked(unlocks^, recipe, index)
 	}
 }
 
@@ -112,6 +116,12 @@ update_recipe_unlocks :: proc(unlocks: ^Recipe_Unlocks, recipes: Recipe_Registry
 	if changed {
 		refresh_available_recipes(unlocks, recipes)
 	}
+}
+
+// The quest channel: a quest reward's unlocks_recipe.
+unlock_quest_recipe :: proc(unlocks: ^Recipe_Unlocks, recipes: Recipe_Registry, recipe: int) {
+	unlocks.quest_unlocked[recipe] = true
+	refresh_available_recipes(unlocks, recipes)
 }
 
 // For the labs of M4.

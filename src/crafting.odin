@@ -119,25 +119,28 @@ pop_front_craft :: proc(queue: ^Craft_Queue) {
 	queue.progress_ticks, queue.waiting = 0, false
 }
 
-// One tick of hand crafting.
-advance_crafting :: proc(queue: ^Craft_Queue, inventory: Inventory, recipes: Recipe_Registry, items: Item_Registry, tick_rate: int) {
+// One tick of hand crafting. Returns the recipe whose outputs went into
+// the inventory this tick, or NO_RECIPE.
+advance_crafting :: proc(queue: ^Craft_Queue, inventory: Inventory, recipes: Recipe_Registry, items: Item_Registry, tick_rate: int) -> (finished: int) {
 	if queue.count == 0 {
-		return
+		return NO_RECIPE
 	}
-	recipe := recipes.recipes[queue.recipes[0]]
+	finished = queue.recipes[0]
+	recipe := recipes.recipes[finished]
 	required := recipe_ticks(recipe, HAND_CRAFT_SPEED_PERCENT, tick_rate)
 	queue.progress_ticks = min(queue.progress_ticks + 1, required)
 	if queue.progress_ticks < required {
-		return
+		return NO_RECIPE
 	}
 	if !inventory_fits_all(inventory, items, recipe.outputs) {
 		queue.waiting = true
-		return
+		return NO_RECIPE
 	}
 	for output in recipe.outputs {
 		inventory_add(inventory, items, output.item, int(output.count))
 	}
 	pop_front_craft(queue)
+	return finished
 }
 
 craft_progress_fraction :: proc(queue: Craft_Queue, recipes: Recipe_Registry, tick_rate: int) -> f32 {

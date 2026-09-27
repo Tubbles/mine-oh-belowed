@@ -8,6 +8,8 @@ import rl "vendor:raylib"
 CHEST_COLOR :: rl.Color{130, 88, 48, 255}
 FURNACE_COLOR :: rl.Color{120, 120, 124, 255}
 FURNACE_BURNING_TOP_COLOR :: rl.Color{240, 150, 60, 255}
+CAPSULE_COLOR :: rl.Color{210, 212, 216, 255}
+CAPSULE_TOP_COLOR :: rl.Color{200, 90, 40, 255}
 ENTITY_EDGE_COLOR :: rl.Color{30, 30, 30, 255}
 
 box_centre :: proc(minimum: World_Coordinate, size: [3]i32) -> [3]f32 {
@@ -34,6 +36,11 @@ draw_entities :: proc(world: ^World, machines: Machine_Registry) {
 		if furnace.alive {
 			top := furnace.state == .Burning ? FURNACE_BURNING_TOP_COLOR : FURNACE_COLOR
 			draw_entity_cells(furnace.common, machines, FURNACE_COLOR, top)
+		}
+	}
+	for capsule in world.entities.capsules.entries {
+		if capsule.alive {
+			draw_entity_cells(capsule.common, machines, CAPSULE_COLOR, CAPSULE_TOP_COLOR)
 		}
 	}
 }

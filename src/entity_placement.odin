@@ -119,15 +119,22 @@ place_entity_with_player :: proc(world: ^World, content: Simulation_Content, pla
 	}
 	add_entity(&world.entities, content.machines, placement.machine, placement.origin, placement.rotation)
 	take_from_slot(&inventory_hotbar(player.inventory)[player.selected_hotbar_slot], 1)
+	record_placed(&world.statistics, placement.machine)
+}
+
+// Only entities placed by an item can be picked up (not the capsule).
+entity_can_be_picked_up :: proc(world: ^World, machines: Machine_Registry, handle: Entity_Handle) -> bool {
+	common := entity_common(&world.entities, handle)
+	return common != nil && machines.machines[common.machine].item != NO_ITEM
 }
 
 // The entity's contents and then its item go into the inventory. When not
 // everything fits nothing moves and the entity stays.
 pick_up_entity :: proc(world: ^World, content: Simulation_Content, player: ^Player, handle: Entity_Handle) -> bool {
-	common := entity_common(&world.entities, handle)
-	if common == nil {
+	if !entity_can_be_picked_up(world, content.machines, handle) {
 		return false
 	}
+	common := entity_common(&world.entities, handle)
 	machine_item := content.machines.machines[common.machine].item
 	returned := make([dynamic]Item_Stack, context.temp_allocator)
 	append(&returned, ..entity_slots(&world.entities, handle))
@@ -140,5 +147,6 @@ pick_up_entity :: proc(world: ^World, content: Simulation_Content, player: ^Play
 			inventory_add(player.inventory, content.items, stack.item, int(stack.count))
 		}
 	}
+	record_world_action(&world.statistics)
 	return remove_entity(&world.entities, content.machines, handle)
 }

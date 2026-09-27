@@ -22,12 +22,16 @@ NO_MACHINE :: Machine_Id(max(u16))
 Machine_Kind :: enum u8 {
 	Chest,
 	Furnace,
+	// The drop capsule on the landing pad: placed by the world, never by
+	// an item, and never picked up.
+	Capsule,
 }
 
 @(rodata)
 machine_kind_names := [Machine_Kind]string {
 	.Chest   = "chest",
 	.Furnace = "furnace",
+	.Capsule = "capsule",
 }
 
 Machine_Footprint_Definition :: struct {
@@ -120,6 +124,13 @@ validate_machine_kind_fields :: proc(definition: Machine_Definition, kind: Machi
 		if definition.speed <= 0 || definition.fuel_power_kilowatts <= 0 {
 			return fmt.tprintf("furnace %q needs a positive speed and fuel_power_kilowatts", definition.id)
 		}
+	case .Capsule:
+		if definition.slots != CAPSULE_SLOT_COUNT {
+			return fmt.tprintf("capsule %q must have %d slots", definition.id, CAPSULE_SLOT_COUNT)
+		}
+		if definition.item != "" {
+			return fmt.tprintf("capsule %q cannot be placed by an item", definition.id)
+		}
 	}
 	return ""
 }
@@ -188,8 +199,8 @@ resolve_machine_registry :: proc(file: Machines_File, items: Item_Registry, allo
 	slice.fill(registry.machine_for_item, NO_MACHINE)
 	for definition, index in file.machines {
 		problem = validate_machine_definition(file.machines, index)
-		item: Item_Id
-		if problem == "" {
+		item := NO_ITEM
+		if problem == "" && definition.kind != machine_kind_names[.Capsule] {
 			item, problem = resolve_machine_item(definition, items, registry.machine_for_item, Machine_Id(index))
 		}
 		if problem != "" {
@@ -212,6 +223,25 @@ item_places_machine :: proc(registry: Machine_Registry, item: Item_Id) -> Machin
 		return NO_MACHINE
 	}
 	return registry.machine_for_item[item]
+}
+
+// The first machine of a kind, or NO_MACHINE.
+find_machine_of_kind :: proc(registry: Machine_Registry, kind: Machine_Kind) -> Machine_Id {
+	for machine, index in registry.machines {
+		if machine.kind == kind {
+			return Machine_Id(index)
+		}
+	}
+	return NO_MACHINE
+}
+
+find_machine_id :: proc(registry: Machine_Registry, id: string) -> (machine: Machine_Id, found: bool) {
+	for candidate, index in registry.machines {
+		if candidate.id == id {
+			return Machine_Id(index), true
+		}
+	}
+	return NO_MACHINE, false
 }
 
 machine_name :: proc(registry: Machine_Registry, machine: Machine_Id) -> string {

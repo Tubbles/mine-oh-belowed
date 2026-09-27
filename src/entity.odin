@@ -11,11 +11,13 @@ package game
 // so it can be serialised per chunk later (M5).
 
 MAXIMUM_CHEST_SLOTS :: 48
+CAPSULE_SLOT_COUNT :: 8
 
 Entity_Kind :: enum u8 {
 	None,
 	Chest,
 	Furnace,
+	Capsule,
 }
 
 // index is into the pool of `kind`. Generations start at 1, so the zero
@@ -46,6 +48,12 @@ Chest :: struct {
 	slots:        [MAXIMUM_CHEST_SLOTS]Item_Stack,
 }
 
+// The drop capsule on the landing pad (landing_pad.odin).
+Capsule :: struct {
+	using common: Entity_Common,
+	slots:        [CAPSULE_SLOT_COUNT]Item_Stack,
+}
+
 // Freed entries stay in place with alive false and go on the free list;
 // reuse bumps the generation, so old handles stop resolving.
 Entity_Pool :: struct($T: typeid) {
@@ -56,6 +64,7 @@ Entity_Pool :: struct($T: typeid) {
 Entities :: struct {
 	chests:   Entity_Pool(Chest),
 	furnaces: Entity_Pool(Furnace),
+	capsules: Entity_Pool(Capsule),
 	cells:    map[World_Coordinate]Entity_Handle,
 }
 
@@ -105,6 +114,7 @@ destroy_pool :: proc(pool: ^Entity_Pool($T)) {
 destroy_entities :: proc(entities: ^Entities) {
 	destroy_pool(&entities.chests)
 	destroy_pool(&entities.furnaces)
+	destroy_pool(&entities.capsules)
 	delete(entities.cells)
 }
 
@@ -119,6 +129,10 @@ entity_common :: proc(entities: ^Entities, handle: Entity_Handle) -> ^Entity_Com
 	case .Furnace:
 		if furnace := pool_get(&entities.furnaces, handle); furnace != nil {
 			return &furnace.common
+		}
+	case .Capsule:
+		if capsule := pool_get(&entities.capsules, handle); capsule != nil {
+			return &capsule.common
 		}
 	}
 	return nil
@@ -139,6 +153,10 @@ entity_slots :: proc(entities: ^Entities, handle: Entity_Handle) -> []Item_Stack
 	case .Furnace:
 		if furnace := pool_get(&entities.furnaces, handle); furnace != nil {
 			return furnace.slots[:]
+		}
+	case .Capsule:
+		if capsule := pool_get(&entities.capsules, handle); capsule != nil {
+			return capsule.slots[:]
 		}
 	}
 	return nil
@@ -214,6 +232,12 @@ add_entity :: proc(entities: ^Entities, machines: Machine_Registry, machine: Mac
 		handle = pool_add(&entities.chests, .Chest, chest)
 	case .Furnace:
 		handle = pool_add(&entities.furnaces, .Furnace, make_furnace(common))
+	case .Capsule:
+		capsule := Capsule{common = common}
+		for &slot in capsule.slots {
+			slot = EMPTY_STACK
+		}
+		handle = pool_add(&entities.capsules, .Capsule, capsule)
 	}
 	for cell in footprint_cells(origin, machines.machines[machine].footprint, rotation) {
 		entities.cells[cell] = handle
@@ -236,6 +260,8 @@ remove_entity :: proc(entities: ^Entities, machines: Machine_Registry, handle: E
 		return pool_remove(&entities.chests, handle)
 	case .Furnace:
 		return pool_remove(&entities.furnaces, handle)
+	case .Capsule:
+		return pool_remove(&entities.capsules, handle)
 	}
 	return false
 }
@@ -248,7 +274,9 @@ cell_is_solid_or_entity :: proc(world: ^World, registry: Block_Registry, cell: W
 tick_entities :: proc(world: ^World, content: Simulation_Content, tick_rate: int) {
 	for &furnace in world.entities.furnaces.entries {
 		if furnace.alive {
+			before := furnace
 			furnace = advance_furnace(furnace, content.machines.machines[furnace.machine], content.items, content.recipes, tick_rate)
+			record_furnace_tick(&world.statistics, before, furnace)
 		}
 	}
 }

@@ -1,0 +1,92 @@
+// Chapter 2, The workshop (doc/quests.md outline). The format is described
+// in chapter_01.sjson. The burner drill is crafted, not placed: drills are
+// not entities yet. "200 plates in storage" waits for a storage counter.
+id = "chapter_02"
+title_key = "chapter_02_title"
+quests = [
+	{
+		id = "furnaces"
+		title_key = "quest_furnaces_title"
+		text_key = "quest_furnaces_text"
+		objectives = [
+			{type = "place", entity = "stone_furnace", count = 3}
+		]
+		message_key = "mc_furnaces"
+	}
+	{
+		id = "plates"
+		title_key = "quest_plates_title"
+		text_key = "quest_plates_text"
+		objectives = [
+			{type = "obtain", item = "iron_plate", count = 50}
+		]
+		message_key = "mc_plates"
+		hints = [
+			{counter = "furnace_out_of_fuel", threshold = 3, text_key = "mc_hint_fuel"}
+			{counter = "inventory_full_ticks", threshold = 1800, text_key = "mc_hint_chests"}
+		]
+	}
+	{
+		id = "copper"
+		title_key = "quest_copper_title"
+		text_key = "quest_copper_text"
+		objectives = [
+			{type = "craft", item = "copper_plate", count = 10}
+		]
+		message_key = "mc_copper"
+	}
+	{
+		id = "gears"
+		title_key = "quest_gears_title"
+		text_key = "quest_gears_text"
+		objectives = [
+			{type = "craft", item = "iron_gear", count = 10}
+		]
+		message_key = "mc_gears"
+	}
+	{
+		id = "drill"
+		title_key = "quest_drill_title"
+		text_key = "quest_drill_text"
+		objectives = [
+			{type = "craft", item = "burner_mining_drill", count = 1}
+		]
+		message_key = "mc_drill"
+	}
+	{
+		id = "storage"
+		title_key = "quest_storage_title"
+		text_key = "quest_storage_text"
+		objectives = [
+			{type = "craft", item = "iron_chest", count = 1}
+			{type = "place", entity = "iron_chest", count = 1}
+		]
+		message_key = "mc_storage"
+	}
+	{
+		id = "survey"
+		title_key = "quest_survey_title"
+		text_key = "quest_survey_text"
+		objectives = [
+			{type = "discover", recipe = "charcoal"}
+			{type = "discover", recipe = "glass"}
+			{type = "discover", recipe = "electronic_circuit"}
+		]
+		message_key = "mc_survey"
+	}
+	{
+		id = "invoice"
+		title_key = "quest_invoice_title"
+		text_key = "quest_invoice_text"
+		objectives = [
+			{type = "deliver", item = "iron_plate", count = 100}
+		]
+		message_key = "mc_invoice"
+		complete_key = "mc_invoice_done"
+		rewards = [
+			{item = "belt", count = 20}
+			{item = "burner_inserter", count = 4}
+		]
+		main = true
+	}
+]

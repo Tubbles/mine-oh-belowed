@@ -45,8 +45,10 @@ generate_chunk_blocks :: proc(generator: ^Generator, chunk: ^Chunk) {
 	boulders := chunk_boulders(generator, chunk.coordinate, nearby_veins[:], context.temp_allocator)
 	apply_outcrops(generator, chunk, columns, nearby_veins[:])
 	apply_features(generator, chunk, trees[:], boulders[:])
+	apply_landing_pad(generator.landing_pad, generator.blocks.landing_pad, chunk)
 	open := new(Open_Columns, context.temp_allocator)
 	find_open_columns(chunk.coordinate, columns, trees[:], boulders[:], open)
+	close_landing_pad_columns(generator.landing_pad, chunk.coordinate, open)
 	fill_chunk_sky_light(chunk, generator.registry, open)
 }
 

@@ -35,6 +35,9 @@ World :: struct {
 	lighting:      Lighting,
 	water:         Water_Flow,
 	entities:      Entities,
+	// Production statistics (statistics.odin), here like the entities so
+	// that the player and entity ticks reach them through the world.
+	statistics:    Statistics,
 }
 
 Block_Change :: struct {
@@ -187,6 +190,7 @@ destroy_world :: proc(world: ^World) {
 	destroy_lighting(&world.lighting)
 	destroy_water_flow(&world.water)
 	destroy_entities(&world.entities)
+	destroy_statistics(world.statistics)
 }
 
 chunk_is_all_air :: proc(chunk: ^Chunk) -> bool {

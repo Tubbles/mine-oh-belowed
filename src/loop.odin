@@ -18,6 +18,7 @@ Simulation_State :: struct {
 	players:          [dynamic]Player,
 	// Items obtained, technologies researched and the recipes they unlock.
 	unlocks:          Recipe_Unlocks,
+	quests:           Quest_State,
 	// Filled by ticks, emptied by the UI each frame (toasts). The
 	// simulation never calls the UI itself.
 	events:           [dynamic]Simulation_Event,
@@ -53,6 +54,7 @@ Frame_State :: struct {
 	machines:           Machine_Registry,
 	recipes:            Recipe_Registry,
 	technologies:       Technology_Registry,
+	quests:             Quest_Registry,
 	// Inventory sort order, from item_sort_ranks.
 	item_sort_ranks:    []u16,
 	// Recipe display names and the recipe indices sorted by them.
@@ -76,16 +78,23 @@ INITIAL_FLY_CAMERA :: Fly_Camera {
 
 // The config's starting items must have passed validate_starting_items.
 // unlock_all makes every recipe available (--unlock-all or the setting).
-make_simulation :: proc(config: Game_Config, start: Player_Start, content: Simulation_Content, technologies: Technology_Registry, unlock_all: bool) -> Simulation_State {
+// The capsule stands on the landing pad from the start, and the first
+// quest is active at tick 0.
+make_simulation :: proc(config: Game_Config, start: Player_Start, content: Simulation_Content, technologies: Technology_Registry, unlock_all: bool, landing_pad: Landing_Pad_Site) -> Simulation_State {
 	state := Simulation_State {
 		tick_rate        = config.tick_rate,
 		day_length_ticks = u64(config.day_length_seconds) * u64(config.tick_rate),
 		unlocks          = make_recipe_unlocks(len(content.items.items), content.recipes, technologies, unlock_all),
 	}
+	state.world.statistics = make_statistics(len(content.items.items), len(content.machines.machines), len(content.blocks.definitions))
+	capsule := place_capsule(&state.world.entities, content.machines, landing_pad)
+	state.quests = make_quest_state(content.quests, capsule)
 	player := make_player(start)
 	give_starting_items(&player, content.items, config.starting_items)
 	append(&state.players, player)
 	update_recipe_unlocks(&state.unlocks, content.recipes, state.players[:])
+	observe_player_holdings(&state.world.statistics, state.players[:], false)
+	start_quests(&state.quests, content.quests, state.world.statistics, 0)
 	return state
 }
 
@@ -96,6 +105,7 @@ destroy_simulation :: proc(state: ^Simulation_State) {
 	delete(state.players)
 	delete(state.events)
 	destroy_recipe_unlocks(state.unlocks)
+	destroy_quest_state(state.quests)
 	destroy_world(&state.world)
 }
 
@@ -103,6 +113,7 @@ destroy_simulation :: proc(state: ^Simulation_State) {
 // the players, so a stack dropped into a furnace this tick is seen at once.
 simulation_tick :: proc(state: ^Simulation_State, content: Simulation_Content, inputs: []Input_Frame) {
 	state.tick += 1
+	advance_statistics_clock(&state.world.statistics, state.tick, state.tick_rate)
 	for index in 0 ..< len(state.players) {
 		input := index < len(inputs) ? inputs[index] : Input_Frame{}
 		events := tick_player(&state.world, content, state.players[:], index, input, state.tick_rate)
@@ -112,11 +123,26 @@ simulation_tick :: proc(state: ^Simulation_State, content: Simulation_Content, i
 	}
 	update_recipe_unlocks(&state.unlocks, content.recipes, state.players[:])
 	tick_entities(&state.world, content, state.tick_rate)
+	observe_player_holdings(&state.world.statistics, state.players[:], true)
+	observe_full_inventories(&state.world.statistics, state.players[:])
+	tick_quests(&state.quests, simulation_quest_context(state, content), &state.world.entities)
 	tick_world(&state.world, content.blocks, state.tick)
 }
 
+simulation_quest_context :: proc(state: ^Simulation_State, content: Simulation_Content) -> Quest_Tick_Context {
+	return Quest_Tick_Context {
+		registry = content.quests,
+		recipes = content.recipes,
+		items = content.items,
+		statistics = &state.world.statistics,
+		unlocks = &state.unlocks,
+		tick = state.tick,
+		tick_rate = state.tick_rate,
+	}
+}
+
 frame_simulation_content :: proc(state: ^Frame_State) -> Simulation_Content {
-	return Simulation_Content{blocks = state.registry, items = state.items, machines = state.machines, recipes = state.recipes}
+	return Simulation_Content{blocks = state.registry, items = state.items, machines = state.machines, recipes = state.recipes, quests = state.quests}
 }
 
 make_tick_accumulator :: proc(tick_rate: int) -> Tick_Accumulator {
@@ -239,6 +265,7 @@ run_ui_frame :: proc(state: ^Frame_State) {
 	input := make_ui_input(state.previous_input, state.input)
 	ui_begin(&state.ui, input, screen_pixels, state.frame_seconds, state.settings.ui_scale, state.settings.pointer_speed)
 	show_simulation_events(&state.ui, &state.simulation.events)
+	show_quest_notices(&state.ui, &state.simulation.quests.notices)
 	player := &state.simulation.players[0]
 	screen_context := Screen_Context {
 		settings        = &state.settings,
@@ -252,6 +279,8 @@ run_ui_frame :: proc(state: ^Frame_State) {
 		recipes         = state.recipes,
 		technologies    = state.technologies,
 		unlocks         = &state.simulation.unlocks,
+		quests          = state.quests,
+		quest_state     = &state.simulation.quests,
 		recipe_names    = state.recipe_names,
 		recipe_order    = state.recipe_order,
 		browser         = &state.recipe_browser,
@@ -276,12 +305,21 @@ show_simulation_events :: proc(state: ^Ui_State, events: ^[dynamic]Simulation_Ev
 	clear(events)
 }
 
+// Mission Control's lines and the capsule landing, as toasts.
+show_quest_notices :: proc(state: ^Ui_State, notices: ^[dynamic]string) {
+	for key in notices {
+		ui_toast(state, text(key))
+	}
+	clear(notices)
+}
+
 Game_Content :: struct {
 	blocks:          Block_Registry,
 	items:           Item_Registry,
 	machines:        Machine_Registry,
 	recipes:         Recipe_Registry,
 	technologies:    Technology_Registry,
+	quests:          Quest_Registry,
 	item_sort_ranks: []u16,
 	recipe_names:    []string,
 	recipe_order:    []int,
@@ -289,7 +327,7 @@ Game_Content :: struct {
 }
 
 game_simulation_content :: proc(content: Game_Content) -> Simulation_Content {
-	return Simulation_Content{blocks = content.blocks, items = content.items, machines = content.machines, recipes = content.recipes}
+	return Simulation_Content{blocks = content.blocks, items = content.items, machines = content.machines, recipes = content.recipes, quests = content.quests}
 }
 
 run_game :: proc(config: Game_Config, input_backend: Input_Backend, content: Game_Content, generator: Generator, start: World_Start, data_directory: string) {
@@ -319,13 +357,14 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, content: Gam
 		machines        = content.machines,
 		recipes         = content.recipes,
 		technologies    = content.technologies,
+		quests          = content.quests,
 		item_sort_ranks = content.item_sort_ranks,
 		recipe_names    = content.recipe_names,
 		recipe_order    = content.recipe_order,
 		recipe_browser  = make_recipe_browser(),
 		generator       = generator,
 		renderer        = renderer,
-		simulation      = make_simulation(config, start.player, game_simulation_content(content), content.technologies, content.unlock_all),
+		simulation      = make_simulation(config, start.player, game_simulation_content(content), content.technologies, content.unlock_all, start.landing_pad),
 		settings        = DEFAULT_SETTINGS,
 		ui              = Ui_State{measure_text = raylib_measure_text},
 		// raylib starts with the cursor shown; the first apply hides it.

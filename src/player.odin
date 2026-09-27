@@ -275,10 +275,18 @@ tick_player :: proc(world: ^World, content: Simulation_Content, players: []Playe
 	} else {
 		walk_player(world, content.blocks, player, input, seconds)
 	}
+	if !player.flying {
+		record_walked(&world.statistics, player.previous_position, player.position)
+	}
+	if .Open_Machine in events {
+		record_world_action(&world.statistics)
+	}
 	player.target = raycast_blocks(world, content.blocks, player_eye(player.position), player_look_direction(player^), PLAYER_REACH)
 	events += mine_with_player(world, content, player, .Mine in input.pressed, tick_rate)
 	place_with_player(world, content, players, index, input.just_pressed)
 	player.selected_hotbar_slot = cycle_hotbar_slot(player.selected_hotbar_slot, input.just_pressed)
-	advance_crafting(&player.crafting, player.inventory, content.recipes, content.items, tick_rate)
+	if finished := advance_crafting(&player.crafting, player.inventory, content.recipes, content.items, tick_rate); finished != NO_RECIPE {
+		record_produced_stacks(&world.statistics, content.recipes.recipes[finished].outputs)
+	}
 	return events
 }

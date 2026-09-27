@@ -1,0 +1,130 @@
+// Chapter 1, Arrival (doc/quests.md, one quest per beat). Chapters load
+// in file name order and play in sequence, one active quest at a time.
+//
+// A quest: id, title_key, text_key (the objective text), objectives,
+// message_key (Mission Control when the quest becomes active) and
+// complete_key (when it is done), both optional, hints, rewards, and
+// main for the chapter's main quest (at most one per chapter). Every key
+// names a string in data/strings/en.sjson.
+//
+// Objective types and their parameters:
+//   obtain    item, count      what players came to hold (mined, taken, crafted)
+//   craft     item, count      crafted by hand or smelted
+//   place     entity, count    placements of a machine from machines.sjson
+//   sustain   item, rate_per_minute, minutes, hands_off
+//                              produced at the rate for that long without a
+//                              break (and, hands_off, without a world action)
+//   research  technology
+//   deliver   item, count      put into the capsule on the landing pad; the
+//                              capsule keeps them when the quest completes
+//   discover  recipe           the recipe is available
+//   walk      count            blocks walked on foot
+// obtain, craft, place and walk count since the game began; deliver
+// counts from the moment the quest became active.
+//
+// A hint fires once, when its counter has grown by threshold since its
+// quest became active: blocks_mined, mining_ticks (with block, in ticks
+// at 60 per second), distance_walked (blocks), furnace_out_of_fuel and
+// furnace_output_full (times a furnace stalled), fuel_burned (items),
+// inventory_full_ticks (ticks with no empty inventory slot).
+//
+// A reward is {item, count}, landing in the capsule, or {unlocks_recipe}
+// for a recipe of the quest channel.
+id = "chapter_01"
+title_key = "chapter_01_title"
+quests = [
+	{
+		id = "arrival"
+		title_key = "quest_arrival_title"
+		text_key = "quest_arrival_text"
+		objectives = []
+		message_key = "mc_arrival"
+	}
+	{
+		id = "bearings"
+		title_key = "quest_bearings_title"
+		text_key = "quest_bearings_text"
+		objectives = [
+			{type = "walk", count = 10}
+		]
+		complete_key = "mc_bearings_done"
+	}
+	{
+		id = "timber"
+		title_key = "quest_timber_title"
+		text_key = "quest_timber_text"
+		objectives = [
+			{type = "obtain", item = "log", count = 10}
+		]
+		message_key = "mc_timber"
+		hints = [
+			{counter = "mining_ticks", block = "grass", threshold = 120, text_key = "mc_hint_grass"}
+		]
+	}
+	{
+		id = "tools"
+		title_key = "quest_tools_title"
+		text_key = "quest_tools_text"
+		objectives = [
+			{type = "craft", item = "plank", count = 4}
+			{type = "craft", item = "stick", count = 4}
+			{type = "craft", item = "wooden_pickaxe", count = 1}
+		]
+		message_key = "mc_tools"
+	}
+	{
+		id = "stone"
+		title_key = "quest_stone_title"
+		text_key = "quest_stone_text"
+		objectives = [
+			{type = "obtain", item = "stone", count = 20}
+		]
+		message_key = "mc_stone"
+	}
+	{
+		id = "rocks"
+		title_key = "quest_rocks_title"
+		text_key = "quest_rocks_text"
+		objectives = [
+			{type = "obtain", item = "hematite", count = 10}
+		]
+		message_key = "mc_rocks"
+		complete_key = "mc_rocks_done"
+	}
+	{
+		id = "furnace"
+		title_key = "quest_furnace_title"
+		text_key = "quest_furnace_text"
+		objectives = [
+			{type = "craft", item = "stone_furnace", count = 1}
+			{type = "place", entity = "stone_furnace", count = 1}
+		]
+		message_key = "mc_furnace"
+	}
+	{
+		id = "fire"
+		title_key = "quest_fire_title"
+		text_key = "quest_fire_text"
+		objectives = [
+			{type = "craft", item = "iron_plate", count = 1}
+		]
+		hints = [
+			{counter = "fuel_burned", threshold = 1, text_key = "mc_smelting"}
+		]
+	}
+	{
+		id = "stock"
+		title_key = "quest_stock_title"
+		text_key = "quest_stock_text"
+		objectives = [
+			{type = "obtain", item = "iron_plate", count = 10}
+		]
+		message_key = "mc_stock"
+		complete_key = "mc_stock_done"
+		rewards = [
+			{item = "coal", count = 50}
+			{item = "iron_plate", count = 10}
+		]
+		main = true
+	}
+]
