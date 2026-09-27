@@ -1,6 +1,6 @@
 # 0003 Steam library shortcut
 
-Status: todo
+Status: implemented
 Milestone: M0
 
 ## Goal
@@ -25,3 +25,5 @@ The game starts from the Steam library on the couch machine.
 ## Notes
 
 - 2026-09-26: `tools/add_steam_shortcut.py` written and validated with `--dry-run` against the existing file. Not run for real because the Steam client was running (gamepad UI) at the time. Run it once Steam is closed, then disable Steam Input for the shortcut in Steam's controller settings.
+- 2026-09-27: run for real with Steam closed (the user shut it down from the desktop). The shortcut is entry 2 with app id -1640630315, exe `bin/mine-oh-belowed`, start directory the repository root. A backup of the previous file is in `tmp/`. Left for the user: disable Steam Input for the shortcut in its controller properties, then launch it; that is the verify step.
+
