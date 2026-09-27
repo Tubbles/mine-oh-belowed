@@ -3,7 +3,8 @@
 /tmp/
 /work/
 
-# Build output
+# Build output (build/) and the installed play build (bin/)
+/build/
 /bin/
 /result
 /result-*
