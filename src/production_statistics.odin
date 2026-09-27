@@ -305,7 +305,7 @@ machine_marker_colour :: proc {
 // Storage tanks hold fluid and do no work, so they get no marker.
 fluid_machine_has_marker :: proc(kind: Machine_Kind) -> bool {
 	#partial switch kind {
-	case .Offshore_Pump, .Boiler, .Steam_Engine, .Pump, .Tar_Pit_Pump, .Flare_Stack, .Combustion_Generator:
+	case .Offshore_Pump, .Boiler, .Steam_Engine, .Pump, .Tar_Pit_Pump, .Flare_Stack, .Combustion_Generator, .Hydro_Turbine:
 		return true
 	}
 	return false

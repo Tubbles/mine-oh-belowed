@@ -88,11 +88,12 @@ inserter_arm_color :: proc(machine: Machine) -> rl.Color {
 
 // The arm turns about the post through the right hand side, from over the
 // pickup cell (fraction 0) to over the drop cell (fraction 1).
-inserter_arm_end :: proc(pivot: [3]f32, direction: u8, fraction: f32) -> [3]f32 {
+// A long inserter's arm is as many times longer as its reach.
+inserter_arm_end :: proc(pivot: [3]f32, direction: u8, fraction: f32, reach: i32) -> [3]f32 {
 	forward := belt_direction_vector(direction)
 	right := belt_direction_vector(turn_right(direction))
 	angle := math.PI * fraction
-	return pivot + (right * math.sin(angle) - forward * math.cos(angle)) * INSERTER_ARM_LENGTH
+	return pivot + (right * math.sin(angle) - forward * math.cos(angle)) * INSERTER_ARM_LENGTH * f32(max(reach, 1))
 }
 
 draw_inserter :: proc(inserter: Inserter, machine: Machine, items: Item_Registry, tick_rate: int) {
@@ -100,7 +101,7 @@ draw_inserter :: proc(inserter: Inserter, machine: Machine, items: Item_Registry
 	bottom := f32(inserter.origin.y)
 	rl.DrawCubeV({centre.x, bottom + INSERTER_POST_SIZE.y / 2, centre.z}, INSERTER_POST_SIZE, INSERTER_POST_COLOR)
 	pivot := [3]f32{centre.x, bottom + INSERTER_PIVOT_HEIGHT, centre.z}
-	end := inserter_arm_end(pivot, inserter.rotation, inserter_arm_fraction(inserter, machine, tick_rate))
+	end := inserter_arm_end(pivot, inserter.rotation, inserter_arm_fraction(inserter, machine, tick_rate), inserter.reach)
 	rl.DrawCylinderEx(pivot, end, INSERTER_ARM_RADIUS, INSERTER_ARM_RADIUS, 6, inserter_arm_color(machine))
 	if !stack_is_empty(inserter.held) {
 		size := f32(INSERTER_HELD_ITEM_SIZE)

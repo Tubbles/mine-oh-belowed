@@ -59,3 +59,7 @@ The M4 model: pipes with liquids and gases, steam power, electric networks, and 
 
 - The flare stack is a relief valve: it burns only while its port is at least 90 percent full, so generators and chemical plants on the same network are served first in practice (the network evens fill fractions, so the flare's port only fills once the rest is nearly full); it keeps up to 179 litres it never burns. The combustion generator's port carries a `burnable_gas` filter, so steam closes the port and stays in the pipe. A port closing for any reason counts as a mixing refusal.
 
+### As implemented in 0037
+
+- The hydro turbine is a fuel free generator giving 10 kW per level of flowing water in its eight cells, capped at 400 kW, read from the blocks every tick; water flows on through it; it needs solid ground and at least one cell of flowing water at level 3 or more (source water does not count, and since the water model has no velocity every flowing block counts as moving). Big pole and substation come from the pole code with reach and volume from data; wide footprints centre their supply volume, but wire reach still measures from a corner (handed to 0038). No placeholder technology remains.
+

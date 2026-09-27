@@ -33,6 +33,10 @@ How items move without hands: belts, inserters, splitters and the burner mining 
 
 - Each splitter half is its own one block line, so a splitter is two line ends and two line starts; the tick order walks splitters after their output lines and before their input lines. The targeted cell becomes the left half and the right half extends to the right of the flow. Both cells must be free, so belts are picked up before a splitter goes down; a splitter does not carry the player and Rotate turns it half way round since a quarter turn would move a cell. With a filter set there is no round robin: the filter item goes only to its side and everything else only to the other, each stalling when its side is full. Input priority takes every tick it has items, the other input fills gaps. Items routed to the other half jump sideways at the entry edge without animation. Inserters and drills neither take from nor give to splitters.
 
+### As implemented in 0037
+
+- Belt speed comes from the machine entry everywhere: fast belts, ramps and lifts (3.75 blocks per second, 1800 items per minute) exist, drag placement picks the same speed's ramp or lift, lines split where the speed changes and the hand off keeps exact positions with an item entering a slower line waiting for room; faster belts are tinted red in the placeholder art. There is no fast splitter, a splitter keeps yellow speed inside it. Inserters have a data driven reach; the long inserter picks and drops two cells away and the fast inserter moves about 138 per minute.
+
 ## Burner mining drill
 
 - A 2 by 2 by 2 entity with a fuel slot and an output arrow. It is valid on a vein outcrop: at least one footprint cell stands on an outcrop block of a vein. It taps that vein's reservoir, not the blocks: every cycle it takes one unit from the vein, chosen by the vein type's output mix with a random generator seeded by tick and vein id (deterministic), and produces the ore or spoil item into the cell in front of the arrow, onto a belt or into a chest or machine that accepts it. It stalls when the output is blocked or fuel is out, and both stalls are counted for hints.

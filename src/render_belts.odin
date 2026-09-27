@@ -1,11 +1,13 @@
 package game
 
+import "core:slice"
 import rl "vendor:raylib"
 
 // Belts: one quad mesh per shape, built once with its v texture axis
 // along the flow, so one scroll offset (the distance items travelled)
-// animates every shape by rewriting four texture coordinates per mesh per
-// frame. Items are small cubes coloured like their placeholder icon,
+// animates every shape by rewriting four texture coordinates per mesh,
+// once per belt speed per frame, before the belts of that speed are
+// drawn. Items are small cubes coloured like their placeholder icon,
 // drawn one DrawCube each (no instancing yet), at most eight per block.
 // A splitter is the flat surface on both halves inside a wire frame, with
 // an arrow along its direction.
@@ -21,6 +23,7 @@ BELT_BASE_COLOR :: rl.Color{58, 58, 64, 255}
 BELT_STRIPE_COLOR :: rl.Color{104, 104, 112, 255}
 BELT_EDGE_COLOR :: rl.Color{200, 160, 40, 255}
 BELT_GHOST_ARROW_COLOR :: rl.Color{255, 255, 255, 200}
+BELT_FAST_TINT :: rl.Color{255, 140, 130, 255}
 SPLITTER_FRAME_COLOR :: rl.Color{200, 160, 40, 255}
 SPLITTER_ARROW_COLOR :: rl.Color{240, 220, 80, 255}
 SPLITTER_FRAME_HEIGHT :: 0.4
@@ -217,25 +220,51 @@ draw_belt_line_items :: proc(world: ^World, items: Item_Registry, line: Belt_Lin
 	}
 }
 
+// The distinct belt speeds of the data, slowest first.
+belt_speeds :: proc(machines: Machine_Registry) -> []u32 {
+	speeds := make([dynamic]u32, context.temp_allocator)
+	for machine in machines.machines {
+		if machine.kind == .Belt && !slice.contains(speeds[:], machine.belt_speed_units_per_second) {
+			append(&speeds, machine.belt_speed_units_per_second)
+		}
+	}
+	slice.sort(speeds[:])
+	return speeds[:]
+}
+
+// Faster tiers are tinted so a fast belt reads apart from a slow one.
+belt_tier_tint :: proc(tier: int) -> rl.Color {
+	return tier == 0 ? rl.WHITE : BELT_FAST_TINT
+}
+
+// The meshes are shared, so the belts of each speed are drawn after the
+// texture is scrolled for that speed. A splitter scrolls like the slowest
+// belt.
+draw_belt_surfaces :: proc(renderer: ^Belt_Renderer, world: ^World, machines: Machine_Registry, tick: u64, alpha: f32, tick_rate: int) {
+	for speed, tier in belt_speeds(machines) {
+		scroll_belt_models(renderer, belt_scroll_offset(tick, alpha, speed / u32(max(tick_rate, 1))))
+		for belt in world.entities.belts.entries {
+			if belt.alive && belt_speed(machines, belt) == speed {
+				position := [3]f32{f32(belt.origin.x) + 0.5, f32(belt.origin.y), f32(belt.origin.z) + 0.5}
+				rl.DrawModelEx(renderer.models[belt.shape], position, {0, 1, 0}, -90 * f32(belt.rotation), {1, 1, 1}, belt_tier_tint(tier))
+			}
+		}
+		if tier == 0 {
+			for splitter in world.entities.splitters.entries {
+				if splitter.alive {
+					draw_splitter(renderer, splitter)
+				}
+			}
+		}
+	}
+}
+
 // Between BeginMode3D and EndMode3D, after the chunks.
 draw_belts :: proc(renderer: ^Belt_Renderer, world: ^World, items: Item_Registry, machines: Machine_Registry, tick: u64, alpha: f32, tick_rate: int) {
 	if !renderer.ready {
 		return
 	}
-	flat := find_belt_machine(machines, .Flat)
-	units_per_tick := machines.machines[flat].belt_speed_units_per_second / u32(max(tick_rate, 1))
-	scroll_belt_models(renderer, belt_scroll_offset(tick, alpha, units_per_tick))
-	for belt in world.entities.belts.entries {
-		if belt.alive {
-			position := [3]f32{f32(belt.origin.x) + 0.5, f32(belt.origin.y), f32(belt.origin.z) + 0.5}
-			rl.DrawModelEx(renderer.models[belt.shape], position, {0, 1, 0}, -90 * f32(belt.rotation), {1, 1, 1}, rl.WHITE)
-		}
-	}
-	for splitter in world.entities.splitters.entries {
-		if splitter.alive {
-			draw_splitter(renderer, splitter)
-		}
-	}
+	draw_belt_surfaces(renderer, world, machines, tick, alpha, tick_rate)
 	for line in world.entities.belt_network.lines {
 		draw_belt_line_items(world, items, line)
 	}

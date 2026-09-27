@@ -56,12 +56,12 @@ test_lab_and_technology_data_load :: proc(t: ^testing.T) {
 	testing.expect_value(t, len(automation.prerequisites), 0)
 	optics := technologies.technologies[test_technology(technologies, "optics")]
 	testing.expect(t, slice.equal(optics.prerequisites, []int{test_technology(technologies, "electric_mining")}))
-	// Every technology with recipes in the data unlocks them; only the
-	// phase 5 ones are placeholders.
+	// Every technology with recipes in the data unlocks them; since fast
+	// belts arrived (work item 0037) none is a placeholder.
 	for technology in technologies.technologies {
 		testing.expectf(t, technology.placeholder == (len(technology.unlocks) == 0), "%s", technology.id)
 	}
-	testing.expect(t, technologies.technologies[test_technology(technologies, "fast_belts")].placeholder)
+	testing.expect(t, !technologies.technologies[test_technology(technologies, "fast_belts")].placeholder)
 }
 
 @(test)
@@ -85,11 +85,16 @@ test_technology_data_rejects_bad_prerequisites_and_empty_unlocks :: proc(t: ^tes
 	definitions[0].prerequisites = {"automation"}
 	testing.expect(t, resolve(definitions, items, recipes) != "")
 	definitions[0].prerequisites = nil
-	// A technology unlocking nothing needs placeholder = true.
-	last := find_technology_definition_index(definitions, "fast_belts")
-	definitions[last].placeholder = false
+	// A technology unlocking nothing needs placeholder = true. The data
+	// has none since work item 0037, so one is appended.
+	with_empty := make([dynamic]Technology_Definition, context.temp_allocator)
+	append(&with_empty, ..definitions)
+	append(&with_empty, Technology_Definition{id = "empty", name_key = "technology_fast_belts", packs = 1, seconds = 1, science_packs = {"science_pack_1"}})
+	definitions = with_empty[:]
+	last := len(definitions) - 1
 	testing.expect(t, resolve(definitions, items, recipes) != "")
 	definitions[last].placeholder = true
+	testing.expect_value(t, resolve(definitions, items, recipes), "")
 	// Science packs must be known items, named once.
 	definitions[last].science_packs = {"no_such_item"}
 	testing.expect(t, resolve(definitions, items, recipes) != "")
@@ -268,10 +273,11 @@ test_technology_screen_filters_and_orders :: proc(t: ^testing.T) {
 	for technology, index in visible {
 		ids[index] = names[technology]
 	}
-	expected := []string{"automation", "bitumen_paving", "combustion_power", "cracking", "deep_mining", "electric_mining", "electrolysis", "fast_belts", "fluid_handling", "logistics", "logistics_science", "oil_processing", "optics", "ore_processing", "plastics", "prospecting", "recycling", "renewable_plastics", "steel_processing"}
+	expected := []string{"automation", "bitumen_paving", "combustion_power", "cracking", "deep_mining", "electric_grid", "electric_mining", "electrolysis", "fast_belts", "fast_inserters", "fluid_handling", "hydro_power", "logistics", "logistics_science", "oil_processing", "optics", "ore_processing", "plastics", "prospecting", "recycling", "renewable_plastics", "steel_processing"}
 	testing.expect(t, slice.equal(ids, expected))
 	testing.expect_value(t, names[visible[recipe_position_for_letter(names, visible, 'l')]], "logistics")
-	testing.expect_value(t, names[visible[recipe_position_for_letter(names, visible, 'g')]], "logistics")
+	// No technology starts with g: the next letter, h, is taken.
+	testing.expect_value(t, names[visible[recipe_position_for_letter(names, visible, 'g')]], "hydro_power")
 	automation := test_technology(technologies, "automation")
 	mark_technology_researched(&test.unlocks, test.recipes, automation)
 	hidden := filter_technologies(technologies, test.unlocks, order, {hide_researched = true}, context.temp_allocator)
@@ -338,7 +344,10 @@ test_placeholder_technologies_are_locked :: proc(t: ^testing.T) {
 	mark_technology_researched(&unlocks, content.recipes, test_technology(technologies, "automation"))
 	mark_technology_researched(&unlocks, content.recipes, test_technology(technologies, "logistics"))
 	mark_technology_researched(&unlocks, content.recipes, test_technology(technologies, "logistics_science"))
+	// No technology in the data is a placeholder any more, so mark one.
 	placeholder := test_technology(technologies, "fast_belts")
+	technologies.technologies = slice.clone(technologies.technologies, context.temp_allocator)
+	technologies.technologies[placeholder].placeholder = true
 	testing.expect_value(t, technology_status(technologies, unlocks, placeholder), Technology_Status.Locked)
 	research: Research_State
 	testing.expect_value(t, queue_research(&research, technologies, unlocks, placeholder), Research_Refusal.Placeholder)

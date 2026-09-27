@@ -8,8 +8,8 @@
 // kind selects the panel and the simulation: chest, furnace, capsule,
 // belt, inserter, drill, splitter, pipe, offshore_pump, boiler,
 // steam_engine, storage_tank, pump, tar_pit_pump, flare_stack,
-// combustion_generator, pole, power_switch, lamp, crafting_machine, lab or
-// schematic_crate.
+// combustion_generator, hydro_turbine, pole, power_switch, lamp,
+// crafting_machine, lab or schematic_crate.
 // The capsule (work item 0013) stands on the landing pad from the start:
 // it has no item, cannot be picked up, and holds 8 slots for quest
 // rewards and deliveries.
@@ -26,13 +26,18 @@
 // are chosen at placement). belt_speed_blocks_per_second is the item speed
 // along the belt; it becomes a whole number of 1/256 block units per tick,
 // so pick values where speed * 256 / tick rate is an integer (1.875 at
-// 60 ticks per second is 8 units).
+// 60 ticks per second is 8 units). Belt 2 (work item 0037) runs at 3.75,
+// 16 units per tick: a line ends where the speed changes, and a drag or
+// an automatic ramp uses the ramp of the same speed as the belt placed.
 // Inserters (work item 0015): items_per_minute sets the cycle, which is
 // 60 * tick rate / items_per_minute ticks (100 at 36 per minute), half a
 // swing to the drop side and half back. A burner inserter has fuel_slots
 // = 1 and fuel_power_kilowatts, burned only while the arm moves. Electric
 // inserters have electric_power_kilowatts, drawn only while the arm
 // moves (work item 0020). filter_slots = 1 makes a filter inserter.
+// inserter_reach (optional, work item 0037, default 1) is how many cells
+// behind the inserter it picks from and how many ahead it drops into: 2
+// for the long inserter.
 // Drills (work item 0016): placed with at least one footprint cell on a
 // vein outcrop, they draw one unit per cycle from the vein's reservoir,
 // picked by the vein type's output mix, and drop it into the cell in
@@ -101,6 +106,13 @@
 // electric_output_kilowatts to its power network, burning the gas in its
 // port first, whole litres of fuel_kilojoules_per_litre (fluids.sjson),
 // then solid fuel from its slot, only for the energy delivered.
+// Hydro turbine (work item 0037): a generator without fuel or ports. Placed
+// in air or water with at least one footprint cell holding flowing water
+// of hydro_minimum_water_level or more (source water does not count), and
+// water keeps flowing through its cells. It offers
+// hydro_kilowatts_per_water_level times the sum of the flowing water
+// levels in its footprint, up to electric_output_kilowatts, read from the
+// blocks every tick.
 // Power (work item 0020, doc/fluids.md): electric machines (any with
 // electric_power_kilowatts: electric inserters, electric drills, pumps,
 // lamps) and generators (steam engines, combustion generators) belong to
@@ -108,8 +120,9 @@
 // drill without a fuel slot and with electric_power_kilowatts is an
 // electric drill.
 // Poles: supply_volume is width (x), depth (z) and height (y) of the box
-// of cells powered, centred across on the pole (odd width and depth) and
-// starting at the pole's bottom. wire_reach connects it to every pole or
+// of cells powered, centred across on the pole's square footprint (so the
+// volume's width and depth differ from the footprint's by an even count,
+// work item 0037) and starting at the pole's bottom. wire_reach connects it to every pole or
 // power switch whose origin is at most that far away (straight line, the
 // shorter reach of the two counts).
 // Power switch: a 1 by 1 by 1 pole without a supply volume that joins the
@@ -241,6 +254,33 @@ machines = [
 		belt_speed_blocks_per_second = 1.875
 	}
 	{
+		id = "belt_2"
+		name_key = "machine_belt_2"
+		item = "belt_2"
+		kind = "belt"
+		footprint = {width = 1, depth = 1, height = 1}
+		belt_shape = "flat"
+		belt_speed_blocks_per_second = 3.75
+	}
+	{
+		id = "belt_ramp_2"
+		name_key = "machine_belt_ramp_2"
+		item = "belt_ramp_2"
+		kind = "belt"
+		footprint = {width = 1, depth = 1, height = 1}
+		belt_shape = "ramp"
+		belt_speed_blocks_per_second = 3.75
+	}
+	{
+		id = "belt_lift_2"
+		name_key = "machine_belt_lift_2"
+		item = "belt_lift_2"
+		kind = "belt"
+		footprint = {width = 1, depth = 1, height = 1}
+		belt_shape = "lift"
+		belt_speed_blocks_per_second = 3.75
+	}
+	{
 		id = "burner_inserter"
 		name_key = "machine_burner_inserter"
 		item = "burner_inserter"
@@ -268,6 +308,25 @@ machines = [
 		items_per_minute = 50
 		electric_power_kilowatts = 13
 		filter_slots = 1
+	}
+	{
+		id = "fast_inserter"
+		name_key = "machine_fast_inserter"
+		item = "fast_inserter"
+		kind = "inserter"
+		footprint = {width = 1, depth = 1, height = 1}
+		items_per_minute = 138
+		electric_power_kilowatts = 46
+	}
+	{
+		id = "long_inserter"
+		name_key = "machine_long_inserter"
+		item = "long_inserter"
+		kind = "inserter"
+		footprint = {width = 1, depth = 1, height = 1}
+		items_per_minute = 50
+		electric_power_kilowatts = 13
+		inserter_reach = 2
 	}
 	{
 		id = "burner_mining_drill"
@@ -424,6 +483,16 @@ machines = [
 		]
 	}
 	{
+		id = "hydro_turbine"
+		name_key = "machine_hydro_turbine"
+		item = "hydro_turbine"
+		kind = "hydro_turbine"
+		footprint = {width = 2, depth = 2, height = 2}
+		electric_output_kilowatts = 400
+		hydro_kilowatts_per_water_level = 10
+		hydro_minimum_water_level = 3
+	}
+	{
 		id = "small_pole"
 		name_key = "machine_small_pole"
 		item = "small_pole"
@@ -431,6 +500,24 @@ machines = [
 		footprint = {width = 1, depth = 1, height = 3}
 		supply_volume = {width = 5, depth = 5, height = 4}
 		wire_reach = 7
+	}
+	{
+		id = "big_pole"
+		name_key = "machine_big_pole"
+		item = "big_pole"
+		kind = "pole"
+		footprint = {width = 1, depth = 1, height = 6}
+		supply_volume = {width = 3, depth = 3, height = 6}
+		wire_reach = 24
+	}
+	{
+		id = "substation"
+		name_key = "machine_substation"
+		item = "substation"
+		kind = "pole"
+		footprint = {width = 2, depth = 2, height = 3}
+		supply_volume = {width = 18, depth = 18, height = 6}
+		wire_reach = 18
 	}
 	{
 		id = "power_switch"

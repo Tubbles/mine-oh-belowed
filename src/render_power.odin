@@ -24,7 +24,7 @@ SUPPLY_VOLUME_COLOR :: rl.Color{90, 170, 240, 200}
 wire_anchor :: proc(node: Electric_Node, entities: ^Entities) -> [3]f32 {
 	common := entity_common(entities, node.handle)
 	height := f32(common.size.y)
-	anchor := block_centre(node.origin)
+	anchor := box_centre(node.origin, common.size)
 	anchor.y = f32(node.origin.y) + (node.supply_size == {} ? height / 2 : height - WIRE_DROP)
 	return anchor
 }
@@ -46,7 +46,19 @@ draw_pole :: proc(pole: Pole, machine: Machine) {
 		rl.DrawCubeWiresV(centre, {SWITCH_SIZE, SWITCH_SIZE, SWITCH_SIZE}, ENTITY_EDGE_COLOR)
 		return
 	}
+	if pole.size.x > 1 || pole.size.z > 1 {
+		draw_substation(pole, centre)
+		return
+	}
 	rl.DrawCubeV(centre, {POLE_WIDTH, f32(pole.size.y), POLE_WIDTH}, POLE_COLOR)
+}
+
+// A pole wider than one block: a frame the size of its footprint around
+// a post.
+draw_substation :: proc(pole: Pole, centre: [3]f32) {
+	extent := [3]f32{f32(pole.size.x), f32(pole.size.y), f32(pole.size.z)}
+	rl.DrawCubeWiresV(centre, extent, POLE_COLOR)
+	rl.DrawCubeV(centre, {POLE_WIDTH * 2, f32(pole.size.y), POLE_WIDTH * 2}, POLE_COLOR)
 }
 
 draw_lamp :: proc(lamp: Lamp) {
@@ -77,7 +89,7 @@ draw_supply_volume_ghost :: proc(placement: Placement, machines: Machine_Registr
 	if machine.kind != .Pole {
 		return
 	}
-	origin := supply_volume_origin(placement.origin, machine.supply_volume)
+	origin := supply_volume_origin(placement.origin, placement.size, machine.supply_volume)
 	extent := [3]f32{f32(machine.supply_volume.x), f32(machine.supply_volume.y), f32(machine.supply_volume.z)}
 	rl.DrawCubeWiresV(box_centre(origin, machine.supply_volume), extent, SUPPLY_VOLUME_COLOR)
 }

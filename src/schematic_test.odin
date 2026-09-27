@@ -72,6 +72,39 @@ test_crate_sites_are_deterministic_and_sparse :: proc(t: ^testing.T) {
 	}
 }
 
+// Sites prefer pockets 20 to 40 blocks down and go deeper only when no
+// candidate column of the region has a shallow pocket.
+@(test)
+test_crate_sites_prefer_shallow_pockets :: proc(t: ^testing.T) {
+	for seed in TEST_SEEDS {
+		generator := make_test_generator(seed)
+		cache := make(Cave_Noise_Cache, context.temp_allocator)
+		shallow, total := 0, 0
+		for region_z in i32(-6) ..< 6 {
+			for region_x in i32(-6) ..< 6 {
+				region := Region_Coordinate{region_x, region_z}
+				site, found := region_crate_site(&generator, region)
+				if !found {
+					continue
+				}
+				total += 1
+				depth := terrain_height(generator.seeds, site.position.x, site.position.z) - site.position.y
+				if depth <= CRATE_SHALLOW_MAXIMUM_DEPTH {
+					shallow += 1
+					continue
+				}
+				region_hash := region_crate_hash(&generator, region)
+				for candidate in 0 ..< CRATE_CANDIDATE_COLUMNS {
+					column := crate_candidate_column(region_hash, region, candidate)
+					_, has_shallow := column_crate_site(&generator, &cache, column, region_hash, CRATE_SHALLOW_MAXIMUM_DEPTH)
+					testing.expectf(t, !has_shallow, "seed %d region %v: deep site although candidate %d is shallow", seed, region, candidate)
+				}
+			}
+		}
+		testing.expectf(t, shallow * 2 > total, "seed %d: only %d of %d crates shallow", seed, shallow, total)
+	}
+}
+
 first_crate_site :: proc(generator: ^Generator) -> Crate_Site {
 	for region_z in i32(0) ..< 8 {
 		for region_x in i32(0) ..< 8 {

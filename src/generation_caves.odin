@@ -18,6 +18,11 @@ package game
 CRATE_REGION_CHANCE :: 0.25
 CRATE_CANDIDATE_COLUMNS :: 16
 CRATE_MINIMUM_DEPTH :: 20
+// Every candidate column is tried for a pocket down to this depth before
+// any column is searched deeper, so most crates sit a short dig down.
+CRATE_SHALLOW_MAXIMUM_DEPTH :: 40
+// Deeper than any column reaches, so the fallback search stops at the floor.
+CRATE_ANY_DEPTH :: 1 << 16
 // How far from the crate a wall may stand, along each horizontal axis.
 CRATE_WALL_REACH :: 3
 MINIMUM_GOLD_QUARTZ_WALLS :: 2
@@ -151,14 +156,17 @@ pocket_walls :: proc(generator: ^Generator, cache: ^Cave_Noise_Cache, crate: Wor
 	return
 }
 
-// The highest pocket of the column at least CRATE_MINIMUM_DEPTH below the
-// surface with enough walls, scanning down to just above the cave floor.
-column_crate_site :: proc(generator: ^Generator, cache: ^Cave_Noise_Cache, column: [2]i32, region_hash: u64) -> (site: Crate_Site, found: bool) {
+// The highest pocket of the column at least CRATE_MINIMUM_DEPTH and at
+// most maximum_depth below the surface with enough walls, never lower than
+// just above the cave floor.
+column_crate_site :: proc(generator: ^Generator, cache: ^Cave_Noise_Cache, column: [2]i32, region_hash: u64, maximum_depth: i32) -> (site: Crate_Site, found: bool) {
 	ceiling := cave_ceiling_at(generator.seeds, column.x, column.y)
-	top := min(terrain_height(generator.seeds, column.x, column.y) - CRATE_MINIMUM_DEPTH, ceiling)
+	surface := terrain_height(generator.seeds, column.x, column.y)
+	top := min(surface - CRATE_MINIMUM_DEPTH, ceiling)
+	bottom := max(CAVE_FLOOR, surface - maximum_depth - 1)
 	wall_count := i32(hash_to_range(hash_combine(region_hash, 1001), MINIMUM_GOLD_QUARTZ_WALLS, MAXIMUM_GOLD_QUARTZ_WALLS))
 	below_open := cave_cell_is_open(generator, cache, {column.x, top, column.y}, ceiling)
-	for y := top; y > CAVE_FLOOR; y -= 1 {
+	for y := top; y > bottom; y -= 1 {
 		open := below_open
 		below_open = cave_cell_is_open(generator, cache, {column.x, y - 1, column.y}, ceiling)
 		if !open || below_open {
@@ -173,18 +181,21 @@ column_crate_site :: proc(generator: ^Generator, cache: ^Cave_Noise_Cache, colum
 	return {}, false
 }
 
-// The region's crate site, if it has one.
+// The region's crate site, if it has one: the first candidate column with
+// a shallow pocket, or failing that the first with any pocket.
 region_crate_site :: proc(generator: ^Generator, region: Region_Coordinate) -> (site: Crate_Site, found: bool) {
 	region_hash := region_crate_hash(generator, region)
 	if !region_tries_crate(region_hash) {
 		return {}, false
 	}
 	cache := make(Cave_Noise_Cache, context.temp_allocator)
-	for candidate in 0 ..< CRATE_CANDIDATE_COLUMNS {
-		column := crate_candidate_column(region_hash, region, candidate)
-		if site, found = column_crate_site(generator, &cache, column, region_hash); found {
-			site.region = region
-			return site, true
+	for maximum_depth in ([2]i32{CRATE_SHALLOW_MAXIMUM_DEPTH, CRATE_ANY_DEPTH}) {
+		for candidate in 0 ..< CRATE_CANDIDATE_COLUMNS {
+			column := crate_candidate_column(region_hash, region, candidate)
+			if site, found = column_crate_site(generator, &cache, column, region_hash, maximum_depth); found {
+				site.region = region
+				return site, true
+			}
 		}
 	}
 	return {}, false

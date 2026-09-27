@@ -257,6 +257,8 @@ validate_fluid_machine_definition :: proc(definition: Machine_Definition, kind: 
 		if definition.fuel_slots != 1 || definition.electric_output_kilowatts <= 0 {
 			return fmt.tprintf("combustion generator %q needs one fuel slot and a positive electric_output_kilowatts", definition.id)
 		}
+	case .Hydro_Turbine:
+		return validate_hydro_turbine_definition(definition)
 	case .Tar_Pit_Pump:
 		if definition.fluid_litres_per_minute <= 0 || definition.electric_power_kilowatts <= 0 {
 			return fmt.tprintf("tar pit pump %q needs a positive fluid_litres_per_minute and electric_power_kilowatts", definition.id)

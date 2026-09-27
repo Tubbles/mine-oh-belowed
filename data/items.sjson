@@ -115,9 +115,14 @@ items = [
 	{id = "burner_inserter", name_key = "item_burner_inserter", category = "machine", stack_size = 10}
 	{id = "inserter", name_key = "item_inserter", category = "machine", stack_size = 10}
 	{id = "filter_inserter", name_key = "item_filter_inserter", category = "machine", stack_size = 10}
+	{id = "fast_inserter", name_key = "item_fast_inserter", category = "machine", stack_size = 10}
+	{id = "long_inserter", name_key = "item_long_inserter", category = "machine", stack_size = 10}
 	{id = "belt", name_key = "item_belt", category = "machine", stack_size = 10}
 	{id = "belt_ramp", name_key = "item_belt_ramp", category = "machine", stack_size = 10}
 	{id = "belt_lift", name_key = "item_belt_lift", category = "machine", stack_size = 10}
+	{id = "belt_2", name_key = "item_belt_2", category = "machine", stack_size = 10}
+	{id = "belt_ramp_2", name_key = "item_belt_ramp_2", category = "machine", stack_size = 10}
+	{id = "belt_lift_2", name_key = "item_belt_lift_2", category = "machine", stack_size = 10}
 	{id = "splitter", name_key = "item_splitter", category = "machine", stack_size = 10}
 	{id = "wooden_chest", name_key = "item_wooden_chest", category = "machine", stack_size = 10}
 	{id = "iron_chest", name_key = "item_iron_chest", category = "machine", stack_size = 10}
@@ -127,6 +132,8 @@ items = [
 	{id = "boiler", name_key = "item_boiler", category = "machine", stack_size = 10}
 	{id = "steam_engine", name_key = "item_steam_engine", category = "machine", stack_size = 10}
 	{id = "small_pole", name_key = "item_small_pole", category = "machine", stack_size = 10}
+	{id = "big_pole", name_key = "item_big_pole", category = "machine", stack_size = 10}
+	{id = "substation", name_key = "item_substation", category = "machine", stack_size = 10}
 	{id = "lamp", name_key = "item_lamp", category = "machine", stack_size = 10}
 	{id = "power_switch", name_key = "item_power_switch", category = "machine", stack_size = 10}
 	{id = "assembler_1", name_key = "item_assembler_1", category = "machine", stack_size = 10}
@@ -141,6 +148,7 @@ items = [
 	{id = "cracking_unit", name_key = "item_cracking_unit", category = "machine", stack_size = 10}
 	{id = "flare_stack", name_key = "item_flare_stack", category = "machine", stack_size = 10}
 	{id = "combustion_generator", name_key = "item_combustion_generator", category = "machine", stack_size = 10}
+	{id = "hydro_turbine", name_key = "item_hydro_turbine", category = "machine", stack_size = 10}
 	{id = "chemical_plant", name_key = "item_chemical_plant", category = "machine", stack_size = 10}
 	{id = "wood_gasifier", name_key = "item_wood_gasifier", category = "machine", stack_size = 10}
 	{id = "bore_drill", name_key = "item_bore_drill", category = "machine", stack_size = 10}

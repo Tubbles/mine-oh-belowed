@@ -119,7 +119,8 @@ placement_for_player :: proc(world: ^World, content: Simulation_Content, players
 // The placement of a machine with its rotated minimum corner at origin.
 // A drill is valid only over a vein outcrop (a bore drill over a deep
 // vein's disc, work item 0035), an offshore pump only with
-// water in front of its intake, a tar pit pump only with a tar pit there.
+// water in front of its intake, a tar pit pump only with a tar pit there,
+// a hydro turbine only in flowing water (work item 0037).
 // A pipe may also stand on a pipe.
 placement_at :: proc(world: ^World, content: Simulation_Content, players: []Player, machine: Machine_Id, origin: World_Coordinate, rotation: u8) -> Placement {
 	footprint := content.machines.machines[machine].footprint
@@ -154,7 +155,31 @@ placement_at :: proc(world: ^World, content: Simulation_Content, players: []Play
 	if kind == .Tar_Pit_Pump {
 		placement.valid = placement.valid && tar_pit_pump_has_source(world, content.blocks, content.fluids, origin, content.machines.machines[machine], rotation)
 	}
+	if kind == .Hydro_Turbine {
+		placement.valid = hydro_turbine_is_placeable(world, content.blocks, players, cells, origin.y, content.machines.machines[machine])
+	}
 	return placement
+}
+
+// Loaded, no entity, and air or water: a turbine stands in the stream.
+cell_takes_hydro_turbine :: proc(world: ^World, registry: Block_Registry, cell: World_Coordinate) -> bool {
+	if world_to_chunk_coordinate(cell) not_in world.chunks || cell in world.entities.cells {
+		return false
+	}
+	block := world_get_block(world, cell)
+	return block == AIR_BLOCK || block_water_level(registry, block) > 0
+}
+
+// On solid ground like any machine, clear of the players, with flowing
+// water of the minimum level in one of its cells.
+hydro_turbine_is_placeable :: proc(world: ^World, registry: Block_Registry, players: []Player, cells: []World_Coordinate, bottom: i32, machine: Machine) -> bool {
+	for cell in cells {
+		if !cell_takes_hydro_turbine(world, registry, cell) {
+			return false
+		}
+	}
+	supported := footprint_is_supported(world, registry, cells, bottom) && !footprint_hits_player(players, cells)
+	return supported && cells_hold_flowing_water(world, registry, cells, machine.hydro_minimum_water_level)
 }
 
 // Like belts: the player's facing turned by the rotation, so rotation 0

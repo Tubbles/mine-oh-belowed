@@ -96,7 +96,7 @@ test_supply_volume_decides_membership :: proc(t: ^testing.T) {
 	// Machines that do not use power never join.
 	chest := place_test_entity(&world, content, "wooden_chest", {1, 1, 1})
 	testing.expect_value(t, entity_network(networks, chest), -1)
-	testing.expect_value(t, supply_volume_origin({0, 1, 0}, {5, 4, 5}), World_Coordinate{-2, 1, -2})
+	testing.expect_value(t, supply_volume_origin({0, 1, 0}, {1, 3, 1}, {5, 4, 5}), World_Coordinate{-2, 1, -2})
 }
 
 participant :: proc(network: int, generator: bool, offered: u64) -> Electric_Participant {

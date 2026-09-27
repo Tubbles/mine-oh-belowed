@@ -13,8 +13,11 @@
 // appearance.
 // prerequisites lists technology ids that must be researched first; each
 // must be listed earlier in this file, which also rules out cycles.
-// fast_belts unlocks a phase 5 recipe that does not exist yet, so it is a
-// placeholder with an empty list. ore_processing
+// fast_belts (work item 0037) unlocks belt 2 with its ramp and lift.
+// hydro_power, electric_grid and fast_inserters (work item 0037, science
+// packs 1 and 2) unlock the hydro turbine, the big pole and substation,
+// and the fast and long inserters; the seconds of the last two are
+// guesses. ore_processing
 // (work item 0026) unlocks the crusher and washer and the crushing and
 // washing recipes; the alloy furnace is a start recipe since 0027, so
 // bronze is reachable in phase 2. recycling (work item 0027) unlocks the
@@ -30,8 +33,7 @@
 // pack 1) unlock the two plastic routes and the bitumen and asphalt
 // recipes. logistics_science unlocks science pack 2 since 0031 and needs
 // plastics since 0032, since the pack is made from plastic; fast belts
-// cost science packs 1 and 2 and stay a placeholder until a fast belt
-// exists. combustion_power (work item 0032, science pack 1) unlocks the
+// cost science packs 1 and 2. combustion_power (work item 0032, science pack 1) unlocks the
 // combustion generator; 30 s per pack is a guess.
 // deep_mining (work item 0033) is the phase 7 gate: chapter 6's main
 // quest grants it through the quest channel, and as a quest_gate the labs
@@ -58,7 +60,10 @@ technologies = [
 	{id = "cracking", name_key = "technology_cracking", unlocks = ["cracking_unit", "heavy_oil_cracking", "light_oil_cracking"], packs = 75, seconds = 30, science_packs = ["science_pack_1"], prerequisites = ["oil_processing"]}
 	{id = "plastics", name_key = "technology_plastics", unlocks = ["chemical_plant", "plastic_bar", "sulfur"], packs = 100, seconds = 30, science_packs = ["science_pack_1"], prerequisites = ["oil_processing"]}
 	{id = "logistics_science", name_key = "technology_logistics_science", unlocks = ["science_pack_2"], packs = 75, seconds = 15, science_packs = ["science_pack_1"], prerequisites = ["logistics", "plastics"]}
-	{id = "fast_belts", name_key = "technology_fast_belts", unlocks = [], packs = 100, seconds = 30, science_packs = ["science_pack_1", "science_pack_2"], prerequisites = ["logistics_science"], placeholder = true}
+	{id = "fast_belts", name_key = "technology_fast_belts", unlocks = ["belt_2", "belt_ramp_2", "belt_lift_2"], packs = 100, seconds = 30, science_packs = ["science_pack_1", "science_pack_2"], prerequisites = ["logistics_science"]}
+	{id = "hydro_power", name_key = "technology_hydro_power", unlocks = ["hydro_turbine"], packs = 100, seconds = 30, science_packs = ["science_pack_1", "science_pack_2"], prerequisites = ["fluid_handling"]}
+	{id = "electric_grid", name_key = "technology_electric_grid", unlocks = ["big_pole", "substation"], packs = 100, seconds = 30, science_packs = ["science_pack_1", "science_pack_2"], prerequisites = ["electric_mining"]}
+	{id = "fast_inserters", name_key = "technology_fast_inserters", unlocks = ["fast_inserter", "long_inserter"], packs = 75, seconds = 30, science_packs = ["science_pack_1", "science_pack_2"], prerequisites = ["logistics"]}
 	{id = "renewable_plastics", name_key = "technology_renewable_plastics", unlocks = ["wood_gasifier", "wood_gasification", "syngas_plastic"], packs = 75, seconds = 30, science_packs = ["science_pack_1"], prerequisites = ["plastics"]}
 	{id = "bitumen_paving", name_key = "technology_bitumen_paving", unlocks = ["bitumen", "asphalt"], packs = 50, seconds = 30, science_packs = ["science_pack_1"], prerequisites = ["plastics"]}
 	{id = "combustion_power", name_key = "technology_combustion_power", unlocks = ["combustion_generator"], packs = 75, seconds = 30, science_packs = ["science_pack_1"], prerequisites = ["oil_processing"]}

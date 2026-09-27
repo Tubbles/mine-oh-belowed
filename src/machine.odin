@@ -52,6 +52,9 @@ Machine_Kind :: enum u8 {
 	// A generator burning the gas in its input port or solid fuel from
 	// its fuel slot (power_machine.odin).
 	Combustion_Generator,
+	// A generator without fuel or ports, driven by the flowing water in
+	// its footprint, which keeps flowing through it (power_machine.odin).
+	Hydro_Turbine,
 	// Power (power_network.odin): a pole carries wires to other poles
 	// within reach and powers the machines in its supply volume, a power
 	// switch is a pole without a supply volume that can be turned off,
@@ -88,6 +91,7 @@ machine_kind_names := [Machine_Kind]string {
 	.Tar_Pit_Pump  = "tar_pit_pump",
 	.Flare_Stack   = "flare_stack",
 	.Combustion_Generator = "combustion_generator",
+	.Hydro_Turbine = "hydro_turbine",
 	.Pole          = "pole",
 	.Power_Switch  = "power_switch",
 	.Lamp          = "lamp",
@@ -152,6 +156,9 @@ Machine_Definition :: struct {
 	recipe_choice:                string,
 	boring_seconds:               int,
 	revival_port:                 bool,
+	inserter_reach:               int,
+	hydro_kilowatts_per_water_level: f32,
+	hydro_minimum_water_level:    int,
 }
 
 Machines_File :: struct {
@@ -212,6 +219,13 @@ Machine :: struct {
 	boring_seconds:              u32,
 	// Drills: the only fluid port is a revival port.
 	revival_port:                bool,
+	// Inserters: how many cells behind the post it picks from and ahead
+	// it drops into, at least 1.
+	inserter_reach:              i32,
+	// Hydro turbines: the power per level of flowing water in the
+	// footprint, and the level one footprint cell needs at placement.
+	hydro_watts_per_water_level: u32,
+	hydro_minimum_water_level:   int,
 }
 
 Machine_Registry :: struct {
@@ -277,7 +291,7 @@ validate_machine_kind_fields :: proc(definition: Machine_Definition, kind: Machi
 		return validate_drill_definition(definition)
 	case .Splitter:
 		return validate_splitter_definition(definition)
-	case .Pipe, .Offshore_Pump, .Boiler, .Steam_Engine, .Storage_Tank, .Pump, .Tar_Pit_Pump, .Flare_Stack, .Combustion_Generator:
+	case .Pipe, .Offshore_Pump, .Boiler, .Steam_Engine, .Storage_Tank, .Pump, .Tar_Pit_Pump, .Flare_Stack, .Combustion_Generator, .Hydro_Turbine:
 		return validate_fluid_machine_definition(definition, kind)
 	case .Pole, .Power_Switch, .Lamp:
 		return validate_power_machine_definition(definition, kind)
@@ -330,6 +344,9 @@ validate_inserter_definition :: proc(definition: Machine_Definition) -> string {
 	}
 	if definition.items_per_minute <= 0 {
 		return fmt.tprintf("inserter %q needs a positive items_per_minute", definition.id)
+	}
+	if definition.inserter_reach < 0 || definition.inserter_reach > MAXIMUM_INSERTER_REACH {
+		return fmt.tprintf("inserter %q has inserter_reach %d outside 1 to %d", definition.id, definition.inserter_reach, MAXIMUM_INSERTER_REACH)
 	}
 	if definition.filter_slots < 0 || definition.filter_slots > 1 || definition.input_slots != 0 || definition.output_slots != 0 {
 		return fmt.tprintf("inserter %q may only have one fuel slot and one filter slot", definition.id)
@@ -494,6 +511,9 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 		output_slot_count = definition.output_slots,
 		boring_seconds = u32(max(definition.boring_seconds, 0)),
 		revival_port = definition.revival_port,
+		inserter_reach = i32(max(definition.inserter_reach, 1)),
+		hydro_watts_per_water_level = u32(math.round(definition.hydro_kilowatts_per_water_level * 1000)),
+		hydro_minimum_water_level = definition.hydro_minimum_water_level,
 	}
 }
 

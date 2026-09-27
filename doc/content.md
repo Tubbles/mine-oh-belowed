@@ -126,7 +126,7 @@ Costs are packs times seconds per pack in a speed 1 lab. About ten technologies 
 | Fluid handling | Pump, storage tank | 50 × 15 s |
 | Prospecting | Core sample drill, magnetometer | 50 × 15 s |
 | Logistics science | Science pack 2 recipe | 75 × 15 s |
-| Fast belts | Belt 2 (1800 per min) | 100 × 30 s, phase 5 |
+| Fast belts | Belt 2, ramp 2, lift 2 (1800 per min) | 100 × 30 s, science packs 1 and 2 (landed with 0037) |
 
 Prerequisites (added by 0021, in `data/technologies.sjson`): logistics, electric mining and steel processing need automation; optics needs electric mining; fluid handling and prospecting need steel processing; logistics science needs logistics; fast belts need logistics science.
 

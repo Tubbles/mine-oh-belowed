@@ -102,10 +102,10 @@ clear_electric_networks :: proc(networks: ^Electric_Networks) {
 	clear(&networks.participants)
 }
 
-// The supply volume box of a pole at origin: centred across, from the
-// pole's bottom up.
-supply_volume_origin :: proc(origin: World_Coordinate, volume: [3]i32) -> World_Coordinate {
-	return origin - {(volume.x - 1) / 2, 0, (volume.z - 1) / 2}
+// The supply volume box of a pole at origin with the given footprint:
+// centred across the footprint, from the pole's bottom up.
+supply_volume_origin :: proc(origin: World_Coordinate, footprint, volume: [3]i32) -> World_Coordinate {
+	return origin - {(volume.x - footprint.x) / 2, 0, (volume.z - footprint.z) / 2}
 }
 
 make_electric_node :: proc(pole: Pole, machine: Machine) -> Electric_Node {
@@ -113,7 +113,7 @@ make_electric_node :: proc(pole: Pole, machine: Machine) -> Electric_Node {
 		handle = pole.handle,
 		origin = pole.origin,
 		reach = machine.wire_reach,
-		supply_origin = supply_volume_origin(pole.origin, machine.supply_volume),
+		supply_origin = supply_volume_origin(pole.origin, pole.size, machine.supply_volume),
 		supply_size = machine.kind == .Pole ? machine.supply_volume : {},
 		active = machine.kind == .Pole || pole.on,
 		network = -1,
@@ -356,7 +356,7 @@ collect_electric_participants :: proc(world: ^World, content: Simulation_Content
 		switch {
 		case !fluid_machine.alive:
 		case machine_is_generator(machine):
-			offer := generator_available_joules(fluid_machine, machine, content, tick_rate)
+			offer := generator_available_joules(world, fluid_machine, machine, content, tick_rate)
 			append(&networks.participants, make_participant(networks, fluid_machine.common, true, offer))
 		case machine_is_electric_consumer(machine):
 			demand := fluid_machine_wants_power(fluid_machine, machine, content.fluids) ? electric_joules_per_tick(machine.electric_power_watts, tick_rate) : 0

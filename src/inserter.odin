@@ -1,8 +1,9 @@
 package game
 
 // Inserters (doc/logistics.md): a 1 by 1 by 1 entity that picks one item
-// from the cell behind it and drops it into the cell in front, only
-// through the item transfer interface. The direction is
+// from the cell behind it and drops it into the cell in front (two cells
+// each way for a long inserter, work item 0037), only through the item
+// transfer interface. The direction is
 // Entity_Common.rotation (0 is +x, like belts).
 //
 // The cycle is a small state machine counted in ticks. Picking and
@@ -17,6 +18,7 @@ package game
 // hand, goes into its own fuel slot instead of on to the target.
 
 INSERTER_SLOT_COUNT :: 1
+MAXIMUM_INSERTER_REACH :: 2
 INSERTER_FUEL_SLOT :: 0
 
 Inserter_Phase :: enum u8 {
@@ -51,6 +53,9 @@ Inserter :: struct {
 	power:            Power_State,
 	// Uninterrupted ticks in the Idle state, for the idle minute counter.
 	idle_streak:      u32,
+	// Cells from the post to the pickup and to the drop cell, from the
+	// machine's inserter_reach.
+	reach:            i32,
 }
 
 @(rodata)
@@ -64,15 +69,15 @@ inserter_state_keys := [Inserter_State]string {
 }
 
 make_inserter :: proc(common: Entity_Common, machine: Machine) -> Inserter {
-	return Inserter{common = common, slot_count = machine.slot_count, slots = {EMPTY_STACK}, filter = NO_ITEM, held = EMPTY_STACK}
+	return Inserter{common = common, slot_count = machine.slot_count, slots = {EMPTY_STACK}, filter = NO_ITEM, held = EMPTY_STACK, reach = machine.inserter_reach}
 }
 
 inserter_pickup_cell :: proc(inserter: Inserter) -> World_Coordinate {
-	return inserter.origin - belt_direction_offset(inserter.rotation)
+	return inserter.origin - belt_direction_offset(inserter.rotation) * max(inserter.reach, 1)
 }
 
 inserter_drop_cell :: proc(inserter: Inserter) -> World_Coordinate {
-	return inserter.origin + belt_direction_offset(inserter.rotation)
+	return inserter.origin + belt_direction_offset(inserter.rotation) * max(inserter.reach, 1)
 }
 
 inserter_is_electric :: proc(machine: Machine) -> bool {

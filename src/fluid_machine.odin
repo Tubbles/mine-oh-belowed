@@ -1,8 +1,8 @@
 package game
 
 // Pipes and the fluid machines of doc/fluids.md: offshore pump, boiler,
-// steam engine, storage tank, pump, tar pit pump, flare stack and
-// combustion generator. They share one pool; the machine's kind decides
+// steam engine, storage tank, pump, tar pit pump, flare stack,
+// combustion generator and hydro turbine (which has no ports). They share one pool; the machine's kind decides
 // what the tick does. Each fluid port has its own litre
 // buffer, which is a segment of the fluid network on its side
 // (fluid_network.odin). Picking a machine up loses the fluid in it.
@@ -62,7 +62,9 @@ fluid_machine_state_keys := [Fluid_Machine_State]string {
 // that of gas and fuel items, and generated_joules is what either gave
 // its network in the last tick. A tar pit pump keeps the
 // part of a litre it has pumped so far in litre_remainder, in litres per
-// minute times ticks (accumulate_litres).
+// minute times ticks (accumulate_litres). lets_water_through marks a
+// hydro turbine, whose cells flowing water keeps updating
+// (world_water.odin).
 Fluid_Machine :: struct {
 	using common:     Entity_Common,
 	buffers:          [MAXIMUM_FLUID_PORTS]Fluid_Buffer,
@@ -75,6 +77,7 @@ Fluid_Machine :: struct {
 	generated_joules: u32,
 	state:            Fluid_Machine_State,
 	litre_remainder:  u32,
+	lets_water_through: bool,
 }
 
 make_pipe :: proc(common: Entity_Common) -> Pipe {
@@ -93,6 +96,7 @@ make_fluid_machine :: proc(common: Entity_Common, machine: Machine) -> Fluid_Mac
 	if machine.kind == .Pump || machine.kind == .Tar_Pit_Pump || machine.kind == .Flare_Stack {
 		result.state = .Unpowered
 	}
+	result.lets_water_through = machine.kind == .Hydro_Turbine
 	return result
 }
 

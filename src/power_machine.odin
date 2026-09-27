@@ -3,11 +3,11 @@ package game
 import "core:fmt"
 import "core:slice"
 
-// The entities of the power grid (doc/fluids.md, Power): small poles and
-// power switches in one pool (the machine kind tells them apart), lamps,
-// and the power side of the machines that already exist: electric
-// inserters, electric drills, pumps, steam engines and combustion
-// generators. Networks and the
+// The entities of the power grid (doc/fluids.md, Power): poles (small,
+// big, substations) and power switches in one pool (the machine kind
+// tells them apart), lamps, and the power side of the machines that
+// already exist: electric inserters, electric drills, pumps, steam
+// engines, combustion generators and hydro turbines. Networks and the
 // energy balance are in power_network.odin.
 //
 // A consumer's Power_State holds what its network gave it this tick. A
@@ -45,18 +45,20 @@ make_lamp :: proc(common: Entity_Common) -> Lamp {
 	return Lamp{common = common}
 }
 
-// Poles: 1 by 1 across, an odd supply volume so it centres on the pole,
-// and a wire reach. Power switches: 1 by 1 by 1 with a reach and no
-// volume. Lamps: 1 by 1 by 1, electric power and a light level.
+// Poles: a square footprint across, a supply volume at least as wide
+// whose width and depth differ from the footprint's by an even count so
+// it centres on the pole, and a wire reach. Power switches: 1 by 1 by 1
+// with a reach and no volume. Lamps: 1 by 1 by 1, electric power and a
+// light level.
 validate_power_machine_definition :: proc(definition: Machine_Definition, kind: Machine_Kind) -> string {
 	footprint, volume := definition.footprint, definition.supply_volume
 	#partial switch kind {
 	case .Pole:
-		if footprint.width != 1 || footprint.depth != 1 || definition.wire_reach <= 0 {
-			return fmt.tprintf("pole %q must be 1 by 1 across with a positive wire_reach", definition.id)
+		if footprint.width != footprint.depth || definition.wire_reach <= 0 {
+			return fmt.tprintf("pole %q must be square across with a positive wire_reach", definition.id)
 		}
-		if volume.width < 1 || volume.depth < 1 || volume.height < 1 || volume.width % 2 == 0 || volume.depth % 2 == 0 {
-			return fmt.tprintf("pole %q needs a supply_volume with odd width and depth and a positive height", definition.id)
+		if volume.width < footprint.width || volume.depth < footprint.depth || volume.height < 1 || (volume.width - footprint.width) % 2 != 0 || (volume.depth - footprint.depth) % 2 != 0 {
+			return fmt.tprintf("pole %q needs a supply_volume centred on its footprint (as wide or wider, the difference even) and a positive height", definition.id)
 		}
 	case .Power_Switch:
 		if footprint.width != 1 || footprint.depth != 1 || footprint.height != 1 || definition.wire_reach <= 0 {
@@ -236,26 +238,97 @@ combustion_generator_state :: proc(delivered, available: u64, network_demand: u6
 	return .Idle
 }
 
-// Generators of either kind.
+// Hydro turbines: no fuel and no ports. The power comes from the flowing
+// water standing in the turbine's own cells, read from the blocks every
+// tick, so a dam upstream or a drained channel changes it at once. Source
+// water is still and counts nothing.
 
-generator_available_joules :: proc(generator: Fluid_Machine, machine: Machine, content: Simulation_Content, tick_rate: int) -> u64 {
-	if machine.kind == .Combustion_Generator {
+validate_hydro_turbine_definition :: proc(definition: Machine_Definition) -> string {
+	if definition.electric_output_kilowatts <= 0 || definition.hydro_kilowatts_per_water_level <= 0 {
+		return fmt.tprintf("hydro turbine %q needs a positive electric_output_kilowatts and hydro_kilowatts_per_water_level", definition.id)
+	}
+	if definition.hydro_minimum_water_level < 1 || definition.hydro_minimum_water_level > WATER_FALLING_LEVEL {
+		return fmt.tprintf("hydro turbine %q needs a hydro_minimum_water_level from 1 to %d", definition.id, WATER_FALLING_LEVEL)
+	}
+	if definition.fuel_slots != 0 || definition.slots != 0 {
+		return fmt.tprintf("hydro turbine %q cannot have slots", definition.id)
+	}
+	return ""
+}
+
+// The level of flowing water in the cell, 0 for a source or no water.
+flowing_water_level :: proc(world: ^World, registry: Block_Registry, cell: World_Coordinate) -> int {
+	level := world_water_level(world, registry, cell)
+	return level == WATER_SOURCE_LEVEL ? 0 : level
+}
+
+flowing_water_level_sum :: proc(world: ^World, registry: Block_Registry, cells: []World_Coordinate) -> int {
+	sum := 0
+	for cell in cells {
+		sum += flowing_water_level(world, registry, cell)
+	}
+	return sum
+}
+
+// Placement: one cell holds flowing water of the machine's minimum level.
+cells_hold_flowing_water :: proc(world: ^World, registry: Block_Registry, cells: []World_Coordinate, minimum_level: int) -> bool {
+	for cell in cells {
+		if flowing_water_level(world, registry, cell) >= minimum_level {
+			return true
+		}
+	}
+	return false
+}
+
+hydro_turbine_watts :: proc(machine: Machine, level_sum: int) -> u32 {
+	return u32(min(u64(level_sum) * u64(machine.hydro_watts_per_water_level), u64(machine.electric_output_watts)))
+}
+
+hydro_turbine_available_joules :: proc(world: ^World, content: Simulation_Content, turbine: Fluid_Machine, tick_rate: int) -> u64 {
+	machine := content.machines.machines[turbine.machine]
+	level_sum := flowing_water_level_sum(world, content.blocks, common_cells(turbine.common, content.machines))
+	return electric_joules_per_tick(hydro_turbine_watts(machine, level_sum), tick_rate)
+}
+
+hydro_turbine_state :: proc(delivered, available: u64) -> Fluid_Machine_State {
+	switch {
+	case delivered > 0:
+		return .Generating
+	case available == 0:
+		return .No_Water
+	}
+	return .Idle
+}
+
+// Generators of every kind.
+
+generator_available_joules :: proc(world: ^World, generator: Fluid_Machine, machine: Machine, content: Simulation_Content, tick_rate: int) -> u64 {
+	#partial switch machine.kind {
+	case .Combustion_Generator:
 		return combustion_generator_available_joules(generator, machine, content.fluids, content.items, tick_rate)
+	case .Hydro_Turbine:
+		return hydro_turbine_available_joules(world, content, generator, tick_rate)
 	}
 	return steam_engine_available_joules(generator, machine, tick_rate)
 }
 
 deliver_generator_energy :: proc(generator: ^Fluid_Machine, machine: Machine, content: Simulation_Content, joules: u64) {
-	if machine.kind == .Combustion_Generator {
+	#partial switch machine.kind {
+	case .Combustion_Generator:
 		deliver_combustion_generator_energy(generator, content.fluids, content.items, joules)
-		return
+	case .Hydro_Turbine:
+		generator.generated_joules = u32(joules)
+	case:
+		deliver_steam_engine_energy(generator, machine, joules)
 	}
-	deliver_steam_engine_energy(generator, machine, joules)
 }
 
 generator_state :: proc(kind: Machine_Kind, delivered, available: u64, network_demand: u64) -> Fluid_Machine_State {
-	if kind == .Combustion_Generator {
+	#partial switch kind {
+	case .Combustion_Generator:
 		return combustion_generator_state(delivered, available, network_demand)
+	case .Hydro_Turbine:
+		return hydro_turbine_state(delivered, available)
 	}
 	return steam_engine_state(delivered, available, network_demand)
 }

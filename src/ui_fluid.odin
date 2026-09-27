@@ -19,7 +19,7 @@ fluid_buffer_count :: proc(machine: Machine) -> int {
 
 // Whether the panel shows a state line.
 fluid_machine_shows_state :: proc(kind: Machine_Kind) -> bool {
-	return kind == .Offshore_Pump || kind == .Boiler || kind == .Pump || kind == .Steam_Engine || kind == .Tar_Pit_Pump || kind == .Flare_Stack || kind == .Combustion_Generator
+	return kind == .Offshore_Pump || kind == .Boiler || kind == .Pump || kind == .Steam_Engine || kind == .Tar_Pit_Pump || kind == .Flare_Stack || kind == .Combustion_Generator || kind == .Hydro_Turbine
 }
 
 fluid_machine_has_fuel_slot :: proc(kind: Machine_Kind) -> bool {
@@ -32,7 +32,7 @@ fluid_machine_power_rows :: proc(kind: Machine_Kind) -> int {
 	#partial switch kind {
 	case .Pump, .Tar_Pit_Pump, .Flare_Stack:
 		return 1
-	case .Steam_Engine, .Combustion_Generator:
+	case .Steam_Engine, .Combustion_Generator, .Hydro_Turbine:
 		return 2
 	}
 	return 0

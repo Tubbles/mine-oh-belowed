@@ -40,6 +40,7 @@ fluid_machine_colors := [Machine_Kind]rl.Color {
 	.Tar_Pit_Pump  = {70, 64, 60, 255},
 	.Flare_Stack   = {120, 110, 100, 255},
 	.Combustion_Generator = {110, 100, 80, 255},
+	.Hydro_Turbine = {90, 120, 140, 255},
 	.Pole          = {},
 	.Power_Switch  = {},
 	.Lamp          = {},
@@ -141,7 +142,7 @@ draw_fluid_machine :: proc(fluid_machine: Fluid_Machine, machines: Machine_Regis
 	if machine.kind == .Flare_Stack && fluid_machine.state == .Flaring {
 		top_color = FLARE_BURNING_TOP_COLOR
 	}
-	if machine.kind == .Combustion_Generator && fluid_machine.state == .Generating {
+	if (machine.kind == .Combustion_Generator || machine.kind == .Hydro_Turbine) && fluid_machine.state == .Generating {
 		top_color = GENERATING_TOP_COLOR
 	}
 	draw_entity_cells(fluid_machine.common, machines, color, top_color)

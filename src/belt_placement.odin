@@ -174,10 +174,21 @@ belt_placement_for_player :: proc(world: ^World, content: Simulation_Content, pl
 	}
 }
 
-// The belt machine placed by items of a shape family.
+// The first belt machine placed by items of a shape family.
 find_belt_machine :: proc(machines: Machine_Registry, item_shape: Belt_Item_Shape) -> Machine_Id {
 	for machine, index in machines.machines {
 		if machine.kind == .Belt && machine.belt_shape == item_shape {
+			return Machine_Id(index)
+		}
+	}
+	return NO_MACHINE
+}
+
+// The belt machine of a shape family in the tier of the given speed, so a
+// fast belt run gets fast ramps.
+find_belt_machine_of_speed :: proc(machines: Machine_Registry, item_shape: Belt_Item_Shape, speed: u32) -> Machine_Id {
+	for machine, index in machines.machines {
+		if machine.kind == .Belt && machine.belt_shape == item_shape && machine.belt_speed_units_per_second == speed {
 			return Machine_Id(index)
 		}
 	}
@@ -196,14 +207,15 @@ belt_shape_item_shape :: proc(shape: Belt_Shape) -> Belt_Item_Shape {
 	return .Flat
 }
 
-// Takes the item of the planned shape from the inventory and places the
-// belt. A ramp without a ramp item in the inventory is placed flat.
-place_planned_belt :: proc(world: ^World, content: Simulation_Content, player: ^Player, planned: Planned_Belt) -> (handle: Entity_Handle, ok: bool) {
+// Takes the item of the planned shape in the tier of `speed` from the
+// inventory and places the belt. A ramp without a ramp item of that tier
+// in the inventory is placed flat.
+place_planned_belt :: proc(world: ^World, content: Simulation_Content, player: ^Player, planned: Planned_Belt, speed: u32) -> (handle: Entity_Handle, ok: bool) {
 	plan := planned
-	machine := find_belt_machine(content.machines, belt_shape_item_shape(plan.shape))
+	machine := find_belt_machine_of_speed(content.machines, belt_shape_item_shape(plan.shape), speed)
 	if machine == NO_MACHINE || inventory_count(player.inventory, content.machines.machines[machine].item) == 0 {
 		plan.shape = .Flat
-		machine = find_belt_machine(content.machines, .Flat)
+		machine = find_belt_machine_of_speed(content.machines, .Flat, speed)
 	}
 	if machine == NO_MACHINE || !cell_is_free(world, plan.cell) || !belt_cell_supported(world, content.blocks, plan.cell, plan.shape) {
 		return NO_ENTITY, false
@@ -230,10 +242,10 @@ update_dragged_belt :: proc(world: ^World, content: Simulation_Content, player: 
 	reshape_belt(&world.entities, content.machines, handle, machine, updated.direction, shape)
 }
 
-// Exchanges the item of `current` for one of the ramp machine in the
-// inventory. False when there is no ramp item or no room.
+// Exchanges the item of `current` for one of the ramp machine of the same
+// tier in the inventory. False when there is no ramp item or no room.
 swap_belt_item :: proc(player: ^Player, content: Simulation_Content, current: Machine_Id, replacement: ^Machine_Id) -> bool {
-	ramp := find_belt_machine(content.machines, .Ramp)
+	ramp := find_belt_machine_of_speed(content.machines, .Ramp, content.machines.machines[current].belt_speed_units_per_second)
 	if ramp == NO_MACHINE {
 		return false
 	}
@@ -249,8 +261,9 @@ swap_belt_item :: proc(player: ^Player, content: Simulation_Content, current: Ma
 	return true
 }
 
-// One step of the drag into the resolved cell.
-apply_drag_step :: proc(world: ^World, content: Simulation_Content, player: ^Player, cell: World_Coordinate) -> bool {
+// One step of the drag into the resolved cell, placing belts of the tier
+// of `speed`.
+apply_drag_step :: proc(world: ^World, content: Simulation_Content, player: ^Player, cell: World_Coordinate, speed: u32) -> bool {
 	drag := &player.belt_drag
 	previous := pool_get(&world.entities.belts, drag.last)
 	if previous == nil {
@@ -265,7 +278,7 @@ apply_drag_step :: proc(world: ^World, content: Simulation_Content, player: ^Pla
 		drag.last, drag.last_cell, drag.last_placed = existing.handle, cell, false
 		return true
 	}
-	handle, placed := place_planned_belt(world, content, player, next)
+	handle, placed := place_planned_belt(world, content, player, next, speed)
 	if !placed {
 		return false
 	}
@@ -283,7 +296,7 @@ drag_target_column :: proc(target: Raycast_Hit) -> [2]i32 {
 	return {cell.x, cell.z}
 }
 
-continue_belt_drag :: proc(world: ^World, content: Simulation_Content, player: ^Player) {
+continue_belt_drag :: proc(world: ^World, content: Simulation_Content, player: ^Player, machine: Machine_Id) {
 	if !player.target.hit {
 		return
 	}
@@ -298,7 +311,7 @@ continue_belt_drag :: proc(world: ^World, content: Simulation_Content, player: ^
 	columns := belt_drag_columns(from, column, x_first)
 	for step in columns[:min(len(columns), MAXIMUM_DRAG_STEPS_PER_TICK)] {
 		cell, ok := resolve_drag_cell(world, content.blocks, drag.last_cell, step)
-		if !ok || !apply_drag_step(world, content, player, cell) {
+		if !ok || !apply_drag_step(world, content, player, cell, content.machines.machines[machine].belt_speed_units_per_second) {
 			return
 		}
 	}
@@ -317,7 +330,7 @@ start_belt_drag :: proc(world: ^World, content: Simulation_Content, players: []P
 		return
 	}
 	plan := Planned_Belt{cell = placement.origin, direction = placement.rotation, shape = placement.belt_shape}
-	handle, placed := place_planned_belt(world, content, player, plan)
+	handle, placed := place_planned_belt(world, content, player, plan, content.machines.machines[machine].belt_speed_units_per_second)
 	if placed && item_shape == .Flat {
 		player.belt_drag = Belt_Drag{active = true, last = handle, last_cell = plan.cell, last_placed = true}
 	}
@@ -334,7 +347,7 @@ place_belt_with_player :: proc(world: ^World, content: Simulation_Content, playe
 		player.belt_drag = {}
 		start_belt_drag(world, content, players, index, machine)
 	case .Place in pressed && player.belt_drag.active:
-		continue_belt_drag(world, content, player)
+		continue_belt_drag(world, content, player, machine)
 	case .Place not_in pressed:
 		player.belt_drag = {}
 	}

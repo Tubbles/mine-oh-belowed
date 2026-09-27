@@ -64,8 +64,8 @@ test_browser_letter_jump :: proc(t: ^testing.T) {
 	test := make_browser_test()
 	craftable := craftable_recipes(test.recipes, test.unlocks, test.inventory, context.temp_allocator)
 	visible := filter_recipes(test.recipes, test.order, {category = .Logistics}, craftable, nil, context.temp_allocator)
-	// belt, belt_lift, belt_ramp, burner_inserter, filter_inserter, inserter, iron_chest, ...
-	testing.expect_value(t, test.names[visible[recipe_position_for_letter(test.names, visible, 'f')]], "filter_inserter")
+	// belt, belt_2, belt_lift, ..., burner_inserter, fast_inserter, filter_inserter, inserter, iron_chest, ...
+	testing.expect_value(t, test.names[visible[recipe_position_for_letter(test.names, visible, 'f')]], "fast_inserter")
 	testing.expect_value(t, test.names[visible[recipe_position_for_letter(test.names, visible, 'I')]], "inserter")
 	// No logistics recipe starts with g or h: the next letter is taken.
 	testing.expect_value(t, test.names[visible[recipe_position_for_letter(test.names, visible, 'g')]], "inserter")
