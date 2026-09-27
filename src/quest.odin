@@ -150,7 +150,9 @@ Objective_Definition :: struct {
 	count:                 int,
 	litres:                int,
 	rate_per_minute:       int,
+	// The sustain window: minutes and seconds add up.
 	minutes:               int,
+	seconds:               int,
 	hands_off:             bool,
 	produced_since_active: bool,
 }
@@ -211,6 +213,7 @@ Objective :: struct {
 	count:                 u64,
 	rate_per_minute:       u64,
 	minutes:               u64,
+	seconds:               u64,
 	hands_off:             bool,
 	produced_since_active: bool,
 }
@@ -387,8 +390,8 @@ resolve_objective :: proc(definition: Objective_Definition, references: Quest_Re
 	if objective_needs_count(objective.type) && definition.count < 1 {
 		return {}, fmt.tprintf("quest %q has a %s objective without a positive count", quest_id, definition.type)
 	}
-	if objective.type == .Sustain && (definition.rate_per_minute < 1 || definition.minutes < 1) {
-		return {}, fmt.tprintf("quest %q has a sustain objective without a positive rate_per_minute and minutes", quest_id)
+	if objective.type == .Sustain && (definition.rate_per_minute < 1 || definition.minutes + definition.seconds < 1 || definition.minutes < 0 || definition.seconds < 0) {
+		return {}, fmt.tprintf("quest %q has a sustain objective without a positive rate_per_minute and a window in minutes or seconds", quest_id)
 	}
 	if definition.produced_since_active && objective.type != .Craft {
 		return {}, fmt.tprintf("quest %q sets produced_since_active on a %s objective", quest_id, definition.type)
@@ -396,6 +399,7 @@ resolve_objective :: proc(definition: Objective_Definition, references: Quest_Re
 	objective.count = u64(max(objective.type == .Produce_Fluid ? definition.litres : definition.count, 0))
 	objective.rate_per_minute = u64(max(definition.rate_per_minute, 0))
 	objective.minutes = u64(max(definition.minutes, 0))
+	objective.seconds = u64(max(definition.seconds, 0))
 	objective.hands_off = definition.hands_off
 	objective.produced_since_active = definition.produced_since_active
 	return objective, ""

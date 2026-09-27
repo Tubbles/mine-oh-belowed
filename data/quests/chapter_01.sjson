@@ -15,9 +15,11 @@
 //   place     entity, count    placements of a machine from machines.sjson;
 //             or item, count   blocks placed with an item that places one
 //                              (concrete, slag heaps)
-//   sustain   item, rate_per_minute, minutes, hands_off
+//   sustain   item, rate_per_minute, minutes and/or seconds, hands_off
 //                              produced at the rate for that long without a
-//                              break (and, hands_off, without a world action)
+//                              break (and, hands_off, without a world action).
+//                              Windows are seconds, not minutes: a quest that
+//                              makes the player wait is not fun (user, 2026-09-27)
 //   research  technology      marked researched; an infinite technology
 //                              counts once its first level is done
 //   deliver   item, count      put into the capsule on the landing pad; the

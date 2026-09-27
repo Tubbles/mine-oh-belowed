@@ -41,7 +41,7 @@ One long progression from bare hands to a rocket program. Each phase ends when t
 
 1. Arrival. You land with a small kit and a radio to Mission Control, the orbital station that sends requests and rewards, on flat ground with the first iron, copper and coal outcrops in sight of the pad. Punch trees, pick up stone, craft a pickaxe, dig a little. Learn dig, place, craft and the radial hotbar.
 2. Hand fed workshop. Stone furnaces you feed coal by hand, burner drills you refuel by hand, ore carried in your pockets. The quest asks for fifty plates. The furnace goes cold while you are away. Nobody has to explain why belts exist.
-3. First automation. A coal drill feeding its own belt, inserters, the first unattended plate line. Quest: five minutes without touching it.
+3. First automation. A coal drill feeding its own belt, inserters, the first plate line that runs on its own. Quest: reach 40 iron plates per minute and hold it. No quest makes the player wait: sustain windows are seconds.
 4. Power. Pump, boiler, steam engine, poles. A lamp comes on. Electric drills and assemblers replace the burner ones, labs research the first technology. Fuel for the boilers is now a belt problem.
 5. Intermediates and byproducts. Gears, circuits, several ores, crushing and washing, the first slag and the first recycler. The first rocket contract asks for circuits.
 6. Fluids. Water networks with gravity, oil, refinery, plastics, gases, generators burning waste gas.

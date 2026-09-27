@@ -118,7 +118,7 @@ quests = [
 		title_key = "quest_sixty_title"
 		text_key = "quest_sixty_text"
 		objectives = [
-			{type = "sustain", item = "iron_plate", rate_per_minute = 60, minutes = 5}
+			{type = "sustain", item = "iron_plate", rate_per_minute = 60, seconds = 30}
 		]
 		message_key = "mc_sixty"
 		complete_key = "mc_sixty_done"

@@ -81,7 +81,7 @@ quests = [
 		title_key = "quest_statistics_title"
 		text_key = "quest_statistics_text"
 		objectives = [
-			{type = "sustain", item = "iron_plate", rate_per_minute = 30, minutes = 5}
+			{type = "sustain", item = "iron_plate", rate_per_minute = 30, seconds = 30}
 		]
 		message_key = "mc_statistics"
 		complete_key = "mc_statistics_done"

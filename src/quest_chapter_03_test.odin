@@ -65,7 +65,11 @@ test_chapter_03_loads :: proc(t: ^testing.T) {
 	testing.expect_value(t, coal_loop.hints[0].counter, Hint_Counter.Drill_Out_Of_Fuel)
 	prove := registry.quests[5]
 	testing.expect(t, prove.main)
-	testing.expect(t, prove.objectives[0].hands_off)
+	// No hands off and a five second window (user, 2026-09-27): a quest that
+	// makes the player wait is not fun.
+	testing.expect(t, !prove.objectives[0].hands_off)
+	testing.expect_value(t, prove.objectives[0].rate_per_minute, 40)
+	testing.expect_value(t, sustain_required_ticks(prove.objectives[0], TEST_TICK_RATE), 5 * TEST_TICK_RATE)
 	testing.expect_value(t, prove.reward_recipes[0], test_recipe(references.recipes, "steam_engine"))
 	testing.expect_value(t, len(prove.reward_items), 3)
 	testing.expect_value(t, references.recipes.recipes[prove.reward_recipes[0]].channel, Recipe_Channel.Quest)
@@ -177,8 +181,8 @@ test_chapter_03_completes_in_order :: proc(t: ^testing.T) {
 	testing.expect_value(t, active_quest_id(&test), "prove")
 	testing.expect(t, !recipe_is_available(test.unlocks, steam_engine))
 	ticks := run_plate_line_until_done(&test, plate)
-	// Up to a minute to reach the rate, then ten minutes at it.
-	testing.expectf(t, ticks > 10 * 60 * TEST_TICK_RATE && ticks <= 11 * 60 * TEST_TICK_RATE, "took %d ticks", ticks)
+	// Up to a minute to reach the rate, then five seconds at it.
+	testing.expectf(t, ticks > 5 * TEST_TICK_RATE && ticks <= 66 * TEST_TICK_RATE, "took %d ticks", ticks)
 	testing.expect(t, chapter_done(test.state, test.registry.chapters[0]))
 	testing.expect(t, recipe_is_available(test.unlocks, steam_engine))
 	testing.expect(t, has_message(&test, "mc_prove_done"))
@@ -188,8 +192,10 @@ test_chapter_03_completes_in_order :: proc(t: ^testing.T) {
 	testing.expect_value(t, slots_item_count(slots, test_item(test.items, "pipe")), 10)
 }
 
-// One plate every 6 seconds (10 per minute) until the quests run out;
-// returns the ticks it took.
+// Four plates every 6 seconds (40 per minute) until the quests run out;
+// returns the ticks it took. Batches on the six second mark keep the
+// minute window at 40 once it is full; a plate every 90 ticks would let
+// it dip to 39 around second boundaries.
 run_plate_line_until_done :: proc(test: ^Quest_Test, plate: Item_Id) -> int {
 	start := test.tick
 	for _ in 0 ..< 12 * 60 * TEST_TICK_RATE {
@@ -198,7 +204,7 @@ run_plate_line_until_done :: proc(test: ^Quest_Test, plate: Item_Id) -> int {
 		}
 		advance_statistics_clock(&test.statistics, test.tick + 1, TEST_TICK_RATE)
 		if (test.tick + 1) % (6 * TEST_TICK_RATE) == 0 {
-			record_produced(&test.statistics, plate, 1)
+			record_produced(&test.statistics, plate, 4)
 		}
 		run_quest_tick(test)
 	}

@@ -46,7 +46,7 @@ test_chapter_05_loads :: proc(t: ^testing.T) {
 	testing.expect_value(t, registry.quests[4].objectives[2].counter, Hint_Counter.Recycled)
 	statistics := registry.quests[5]
 	testing.expect_value(t, statistics.objectives[0].rate_per_minute, 30)
-	testing.expect_value(t, statistics.objectives[0].minutes, 5)
+	testing.expect_value(t, statistics.objectives[0].seconds, 30)
 	testing.expect_value(t, statistics.hints[0].threshold, 0)
 	rights := registry.quests[6]
 	testing.expect(t, rights.main)
@@ -110,7 +110,7 @@ complete_statistics :: proc(t: ^testing.T, test: ^Quest_Test) {
 	run_quest_tick(test)
 	testing.expect_value(t, progress.sustained_ticks[0], 0)
 	record_produced(&test.statistics, test_item(test.items, "iron_plate"), 30)
-	progress.sustained_ticks[0] = 5 * 60 * TEST_TICK_RATE - 2
+	progress.sustained_ticks[0] = 30 * TEST_TICK_RATE - 2
 	run_quest_tick(test)
 	testing.expect_value(t, active_quest_id(test), "statistics")
 	run_quest_tick(test)

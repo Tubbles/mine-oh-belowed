@@ -74,7 +74,7 @@ quests = [
 		title_key = "quest_prove_title"
 		text_key = "quest_prove_text"
 		objectives = [
-			{type = "sustain", item = "iron_plate", rate_per_minute = 10, minutes = 10, hands_off = true}
+			{type = "sustain", item = "iron_plate", rate_per_minute = 40, seconds = 5}
 		]
 		message_key = "mc_prove"
 		complete_key = "mc_prove_done"

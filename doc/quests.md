@@ -20,7 +20,7 @@ Defined in data, evaluated every tick against the statistics counters, placed en
 | obtain | item, count | Obtain 10 logs |
 | craft | item, count | Craft 1 wooden pickaxe |
 | place | entity, count | Place 1 stone furnace |
-| sustain | item, rate per minute, minutes, hands off flag | Sustain 10 iron plates per minute for 10 minutes without interacting |
+| sustain | item, rate per minute, minutes and/or seconds, hands off flag | Reach 40 iron plates per minute and hold it for 5 seconds (windows are seconds since 2026-09-27: a quest that makes the player wait is not fun) |
 | research | technology | Research automation; an infinite technology counts at its first level (0042) |
 | deliver | item, count | Deliver 100 electronic circuits to the landing pad |
 | discover | recipe | Discover bronze plate |
@@ -77,7 +77,7 @@ Target: thirty minutes. The pain is carrying. Quests: three stone furnaces, 50 i
 
 ## Chapter 3: Belts
 
-Target: forty five minutes. The pain is the furnace going cold. Quests: connect a drill to a furnace with a belt and an inserter, the coal loop (a coal drill whose belt feeds its own fuel slot), a chest at the end of a plate line, four drills feeding three furnaces. Hints: a belt that ends nowhere for a minute, an inserter facing the wrong way. Main quest, "Prove the outpost": sustain 10 iron plates per minute for ten minutes without interacting. This is the phase 4 gate: the venture releases the steam engine schematics only to an outpost that runs unattended. "Automation verified. Power generation schematics attached. Their cost is on your account."
+Target: forty five minutes. The pain is the furnace going cold. Quests: connect a drill to a furnace with a belt and an inserter, the coal loop (a coal drill whose belt feeds its own fuel slot), a chest at the end of a plate line, four drills feeding three furnaces. Hints: a belt that ends nowhere for a minute, an inserter facing the wrong way. Main quest, "Prove the outpost": reach 40 iron plates per minute and hold it for five seconds (it was ten minutes hands off; the user found being told not to play counter to the point of a game, 2026-09-27). This is the phase 4 gate: the venture releases the steam engine schematics to an outpost that produces at a rate. "Automation verified. Power generation schematics attached. Their cost is on your account."
 
 ## Chapter 4: Power
 

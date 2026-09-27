@@ -47,7 +47,7 @@ test_chapter_07_loads :: proc(t: ^testing.T) {
 	testing.expect_value(t, registry.quests[6].hints[0], Hint{counter = .Seismic_Shots, threshold = 1, text_key = "mc_hint_seismic"})
 	sixty := registry.quests[7].objectives[0]
 	testing.expect_value(t, sixty.rate_per_minute, 60)
-	testing.expect_value(t, sixty.minutes, 5)
+	testing.expect_value(t, sixty.seconds, 30)
 	permit := registry.quests[8]
 	testing.expect(t, permit.main)
 	testing.expect_value(t, len(permit.reward_technologies), 1)
@@ -223,7 +223,7 @@ complete_sixty :: proc(t: ^testing.T, test: ^Quest_Test) {
 	run_quest_tick(test)
 	testing.expect_value(t, progress.sustained_ticks[0], 0)
 	record_produced(&test.statistics, test_item(test.items, "iron_plate"), 1)
-	progress.sustained_ticks[0] = 5 * 60 * TEST_TICK_RATE - 2
+	progress.sustained_ticks[0] = 30 * TEST_TICK_RATE - 2
 	run_quest_tick(test)
 	testing.expect_value(t, active_quest_id(test), "sixty")
 	run_quest_tick(test)

@@ -200,7 +200,7 @@ slots_item_count :: proc(slots: []Item_Stack, item: Item_Id) -> u64 {
 }
 
 sustain_required_ticks :: proc(objective: Objective, tick_rate: int) -> u64 {
-	return objective.minutes * 60 * u64(tick_rate)
+	return (objective.minutes * 60 + objective.seconds) * u64(tick_rate)
 }
 
 bool_progress :: proc(done: bool) -> Objective_Progress {
