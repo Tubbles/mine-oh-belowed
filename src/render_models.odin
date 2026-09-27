@@ -152,16 +152,42 @@ grey_color :: proc(brightness: f32) -> rl.Color {
 
 // The material's diffuse colour multiplies the vertex colours.
 draw_model_layers :: proc(renderer: Model_Renderer, layers: Uploaded_Layers, transform: matrix[4, 4]f32, light_tint, glow: f32) {
-	brightness := [Model_Layer]f32 {
-		.Lit      = light_tint,
-		.Emissive = glow,
+	colors := [Model_Layer]rl.Color {
+		.Lit      = grey_color(light_tint),
+		.Emissive = grey_color(glow),
 	}
+	draw_model_layers_colored(renderer, layers, transform, colors)
+}
+
+// Both layers of a placement ghost take the ghost colour, alpha included,
+// at full brightness, so the ghost reads in the dark.
+ghost_layer_colors :: proc(tint: rl.Color) -> [Model_Layer]rl.Color {
+	return {.Lit = tint, .Emissive = tint}
+}
+
+// raylib's default blend mode is alpha blending, so a colour's alpha
+// makes the mesh translucent.
+draw_model_layers_colored :: proc(renderer: Model_Renderer, layers: Uploaded_Layers, transform: matrix[4, 4]f32, colors: [Model_Layer]rl.Color) {
 	for mesh, layer in layers {
 		if mesh.vertexCount > 0 {
-			renderer.material.maps[rl.MaterialMapIndex.ALBEDO].color = grey_color(brightness[layer])
+			renderer.material.maps[rl.MaterialMapIndex.ALBEDO].color = colors[layer]
 			rl.DrawMesh(mesh, renderer.material, cast(rl.Matrix)transform)
 		}
 	}
+}
+
+// The machine's model at a placement, the part at rest, tinted with the
+// ghost colour. False when the machine has no model, so the caller draws
+// the box.
+draw_ghost_model :: proc(renderer: Model_Renderer, machines: Machine_Registry, placement: Placement, tint: rl.Color) -> bool {
+	model := machine_model(renderer, placement.machine) or_return
+	machine := machines.machines[placement.machine]
+	colors := ghost_layer_colors(tint)
+	body := model_transform(placement.origin, placement.size, placement.rotation)
+	draw_model_layers_colored(renderer, model.body, body, colors)
+	part := body * motion_transform(machine.motion, machine.footprint, 0)
+	draw_model_layers_colored(renderer, model.part, part, colors)
+	return true
 }
 
 // The entity's model at the pose, lit by the cell model_light_cell names.

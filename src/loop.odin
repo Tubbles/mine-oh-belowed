@@ -441,7 +441,7 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session) {
 	draw_fluid_entities(world, content.machines, state.model_renderer, content.fluids, frame)
 	draw_power_entities(world, content.machines, state.model_renderer, frame)
 	draw_belts(&state.belt_renderer, world, content.items, content.machines, state.model_renderer, frame)
-	draw_player_world_overlay(world, frame_simulation_content(state), session.simulation.players[:], 0, alpha)
+	draw_player_world_overlay(world, frame_simulation_content(state), state.model_renderer, &state.belt_renderer, session.simulation.players[:], 0, alpha)
 }
 
 // The context every screen gets. Without a session the world fields stay

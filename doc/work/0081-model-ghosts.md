@@ -1,6 +1,6 @@
 # 0081 Placement ghosts show the machine
 
-Status: todo
+Status: implemented
 Milestone: M11
 
 ## Goal
@@ -24,3 +24,5 @@ Couch request (2026-09-27): "when building belts and inserters its very hard to 
 ## Notes
 
 Files a subagent may touch: `src/render_player.odin`, `src/render_models.odin`, `src/render_belts.odin`, `src/loop.odin` (the call chain arguments only), `src/inserter.odin` (only if a cell helper needs a variant that takes a placement), new tests `src/render_ghost_test.odin` or additions to `src/belt_placement_test.odin`, `doc/ui.md`, `doc/logistics.md`, `doc/log/2026-09-27.md`, this file.
+
+Implemented: `src/render_models.odin` (`draw_model_layers_colored`, `ghost_layer_colors`, `draw_ghost_model`), `src/render_belts.odin` (`belt_surface_pose` shared by real and ghost belts, `placement_ghost_belt`, `ghost_chevron_triangles`, `draw_belt_ghost` with the shape surface), `src/render_player.odin` (`draw_placement_preview` draws the model, `inserter_ghost_cells`, `inserter_ghost_chevron`, `draw_inserter_ghost`), `src/loop.odin` (the renderers passed to `draw_player_world_overlay`), new `src/render_ghost_test.odin` with 4 tests; 710 tests pass. `src/inserter.odin` needed no change: the cells come from `make_inserter` and the existing cell procedures. Decisions are in `doc/log/2026-09-27.md`.

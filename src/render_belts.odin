@@ -1,5 +1,6 @@
 package game
 
+import "core:math/linalg"
 import "core:slice"
 import rl "vendor:raylib"
 
@@ -24,6 +25,12 @@ BELT_BASE_COLOR :: rl.Color{58, 58, 64, 255}
 BELT_STRIPE_COLOR :: rl.Color{104, 104, 112, 255}
 BELT_EDGE_COLOR :: rl.Color{200, 160, 40, 255}
 BELT_GHOST_ARROW_COLOR :: rl.Color{255, 255, 255, 200}
+GHOST_CHEVRON_LENGTH :: 0.6
+GHOST_CHEVRON_HEAD_LENGTH :: 0.25
+GHOST_CHEVRON_SHAFT_HALF_WIDTH :: 0.05
+GHOST_CHEVRON_HEAD_HALF_WIDTH :: 0.16
+// Above the surface, so the chevron does not fight the surface for depth.
+GHOST_CHEVRON_LIFT :: 0.02
 BELT_FAST_TINT :: rl.Color{255, 140, 130, 255}
 SPLITTER_FRAME_COLOR :: rl.Color{200, 160, 40, 255}
 SPLITTER_ARROW_COLOR :: rl.Color{240, 220, 80, 255}
@@ -238,6 +245,17 @@ belt_tier_tint :: proc(tier: int) -> rl.Color {
 	return tier == 0 ? rl.WHITE : BELT_FAST_TINT
 }
 
+// Where a belt's shape model is drawn: the bottom centre of its cell,
+// turned about y by DrawModelEx's angle in degrees.
+Belt_Surface_Pose :: struct {
+	position: [3]f32,
+	angle:    f32,
+}
+
+belt_surface_pose :: proc(belt: Belt) -> Belt_Surface_Pose {
+	return {position = {f32(belt.origin.x) + 0.5, f32(belt.origin.y), f32(belt.origin.z) + 0.5}, angle = -90 * f32(belt.rotation)}
+}
+
 // The meshes are shared, so the belts of each speed are drawn after the
 // texture is scrolled for that speed. A splitter scrolls like the slowest
 // belt.
@@ -247,8 +265,8 @@ draw_belt_surfaces :: proc(renderer: ^Belt_Renderer, world: ^World, machines: Ma
 		scroll_belt_models(renderer, belt_scroll_offset(tick, alpha, speed / u32(max(tick_rate, 1))))
 		for belt in world.entities.belts.entries {
 			if belt.alive && belt_speed(machines, belt) == speed {
-				position := [3]f32{f32(belt.origin.x) + 0.5, f32(belt.origin.y), f32(belt.origin.z) + 0.5}
-				rl.DrawModelEx(renderer.models[belt.shape], position, {0, 1, 0}, -90 * f32(belt.rotation), {1, 1, 1}, belt_tier_tint(tier))
+				pose := belt_surface_pose(belt)
+				rl.DrawModelEx(renderer.models[belt.shape], pose.position, {0, 1, 0}, pose.angle, {1, 1, 1}, belt_tier_tint(tier))
 			}
 		}
 		if tier == 0 {
@@ -297,11 +315,53 @@ draw_splitter_arrow :: proc(origin: World_Coordinate, size: [3]i32, rotation: u8
 	rl.DrawCubeV(centre + forward * 0.45, {0.1, 0.1, 0.1}, color)
 }
 
-// The ghost of a belt: a thin slab and an arrow along the flow.
-draw_belt_ghost :: proc(placement: Placement, color: rl.Color) {
-	ghost := Belt{common = Entity_Common{origin = placement.origin, rotation = placement.rotation}, shape = placement.belt_shape, entry_direction = placement.rotation}
-	start := belt_item_point(ghost, .Left, 0) + belt_item_point(ghost, .Right, 0)
-	finish := belt_item_point(ghost, .Left, BELT_UNITS_PER_BLOCK - 1) + belt_item_point(ghost, .Right, BELT_UNITS_PER_BLOCK - 1)
-	rl.DrawCubeV(block_centre(placement.origin), {1, 1, 1}, color)
-	rl.DrawLine3D(start / 2, finish / 2, BELT_GHOST_ARROW_COLOR)
+// The belt a placement would build, straight since a curve only forms
+// when a neighbour feeds it from the side.
+placement_ghost_belt :: proc(placement: Placement) -> Belt {
+	return make_belt(Entity_Common{origin = placement.origin, rotation = placement.rotation, machine = placement.machine}, placement.belt_shape)
+}
+
+// The ghost of a belt: the shape's own surface, tinted, and a chevron
+// along the flow. The chevron alone when the belt renderer has no meshes.
+draw_belt_ghost :: proc(renderer: ^Belt_Renderer, placement: Placement, color: rl.Color) {
+	ghost := placement_ghost_belt(placement)
+	if renderer.ready {
+		pose := belt_surface_pose(ghost)
+		rl.DrawModelEx(renderer.models[ghost.shape], pose.position, {0, 1, 0}, pose.angle, {1, 1, 1}, color)
+	}
+	draw_ghost_chevron(belt_ghost_chevron(ghost), BELT_GHOST_ARROW_COLOR)
+}
+
+// The chevron over the middle of the belt's surface, from the entry edge
+// towards the exit edge, so it follows a ramp's slope and a lift's rise.
+belt_ghost_chevron :: proc(belt: Belt) -> Ghost_Chevron {
+	start := (belt_item_point(belt, .Left, 0) + belt_item_point(belt, .Right, 0)) / 2
+	last := i32(BELT_UNITS_PER_BLOCK - 1)
+	finish := (belt_item_point(belt, .Left, last) + belt_item_point(belt, .Right, last)) / 2
+	lift := [3]f32{0, GHOST_CHEVRON_LIFT, 0}
+	return ghost_chevron_triangles(start + lift, finish + lift, belt_direction_vector(turn_right(belt.rotation)))
+}
+
+// A shaft of two triangles and a head triangle whose last corner is the tip.
+Ghost_Chevron :: [3][3][3]f32
+
+// A flat arrow centred between start and finish, pointing from start to
+// finish, spread along right.
+ghost_chevron_triangles :: proc(start, finish, right: [3]f32) -> Ghost_Chevron {
+	direction := linalg.normalize(finish - start)
+	centre := (start + finish) / 2
+	tail := centre - direction * (GHOST_CHEVRON_LENGTH / 2)
+	tip := centre + direction * (GHOST_CHEVRON_LENGTH / 2)
+	neck := tip - direction * GHOST_CHEVRON_HEAD_LENGTH
+	shaft := right * GHOST_CHEVRON_SHAFT_HALF_WIDTH
+	head := right * GHOST_CHEVRON_HEAD_HALF_WIDTH
+	return {{tail - shaft, tail + shaft, neck + shaft}, {tail - shaft, neck + shaft, neck - shaft}, {neck - head, neck + head, tip}}
+}
+
+// Both windings, so the chevron shows from either side like the belt quad.
+draw_ghost_chevron :: proc(chevron: Ghost_Chevron, color: rl.Color) {
+	for triangle in chevron {
+		rl.DrawTriangle3D(triangle[0], triangle[1], triangle[2], color)
+		rl.DrawTriangle3D(triangle[0], triangle[2], triangle[1], color)
+	}
 }
