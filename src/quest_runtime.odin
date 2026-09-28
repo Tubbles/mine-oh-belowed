@@ -25,6 +25,9 @@ import "core:strings"
 
 CAPSULE_LANDED_KEY :: "capsule_landed"
 RESEARCH_COMPLETE_KEY :: "research_complete"
+// Mission Control's line for a vein whose outcrop was mined away with
+// units left (work item 0096).
+OUTCROP_SPENT_KEY :: "mc_outcrop_spent"
 // Where a message's argument text goes in its text, its value, and the
 // cargo of its shipment.
 MESSAGE_ARGUMENT_MARK :: "{name}"
@@ -168,6 +171,8 @@ hint_counter_value :: proc(statistics: Statistics, hint: Hint) -> u64 {
 		return statistics.bore_drill_units
 	case .Bore_Drill_No_Vein_Attempts:
 		return statistics.bore_drill_no_vein_attempts
+	case .Drill_No_Vein_Attempts:
+		return statistics.drill_no_vein_attempts
 	case .Turbine_Kilojoules:
 		return statistics.turbine_joules / 1000
 	case .Turbine_Still_Water_Ticks:
@@ -496,7 +501,18 @@ land_rewards :: proc(pending: ^[dynamic]Item_Stack, capsule_slots: []Item_Stack,
 	return landed
 }
 
+// One line per outcrop mined away since the last announcement, whatever
+// quest is active. The counts live in the saved statistics, so a line is
+// neither lost nor repeated across a save.
+announce_spent_outcrops :: proc(state: ^Quest_State, statistics: ^Statistics, tick: u64) {
+	for statistics.outcrops_spent_announced < statistics.outcrops_spent {
+		statistics.outcrops_spent_announced += 1
+		log_quest_message(state, tick, OUTCROP_SPENT_KEY)
+	}
+}
+
 tick_quests :: proc(state: ^Quest_State, tick_context: Quest_Tick_Context, entities: ^Entities) {
+	announce_spent_outcrops(state, tick_context.statistics, tick_context.tick)
 	capsule_slots := entity_slots(entities, state.capsule)
 	observe_capsule(tick_context.statistics, capsule_slots)
 	advance_active_quests(state, tick_context, capsule_slots)

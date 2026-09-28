@@ -24,12 +24,18 @@ CORE_SAMPLE_BAND_COUNT :: 8
 SEISMIC_SHOTS_TO_RESOLVE :: 3
 MAGNETOMETER_FULL :: 1000
 
+// A known vein, drawn on the map. from_spent_outcrop marks a record made
+// only because its outcrop was mined away (work item 0096): the vein is
+// known but not assayed. outcrop_spent marks that Mission Control said so,
+// once per vein. Saves from before 0096 read both as false.
 Assayed_Vein :: struct {
-	vein:       Vein_Id,
-	type:       int,
-	size_class: int,
-	centre:     World_Coordinate,
-	radius:     i32,
+	vein:               Vein_Id,
+	type:               int,
+	size_class:         int,
+	centre:             World_Coordinate,
+	radius:             i32,
+	from_spent_outcrop: bool,
+	outcrop_spent:      bool,
 }
 
 // Taken at origin (block x and z); offset points from there to the vein's
@@ -97,25 +103,60 @@ validate_core_sample_drill_definition :: proc(definition: Machine_Definition) ->
 
 // The geologist's hammer.
 
-vein_is_assayed :: proc(world: ^World, id: Vein_Id) -> bool {
-	for assayed in world.assayed_veins {
+// The index of the vein's record in World.assayed_veins, or -1.
+known_vein_index :: proc(world: ^World, id: Vein_Id) -> int {
+	for assayed, index in world.assayed_veins {
 		if assayed.vein == id {
-			return true
+			return index
 		}
 	}
-	return false
+	return -1
+}
+
+// Known from a spent outcrop alone does not count.
+vein_is_assayed :: proc(world: ^World, id: Vein_Id) -> bool {
+	index := known_vein_index(world, id)
+	return index >= 0 && !world.assayed_veins[index].from_spent_outcrop
+}
+
+assayed_vein_record :: proc(vein: Vein) -> Assayed_Vein {
+	return Assayed_Vein{vein = vein.id, type = vein.type, size_class = vein.size_class, centre = vein.centre, radius = vein.radius}
 }
 
 // Assays the vein whose outcrop the cell is; false for any other block
-// and for a vein assayed before.
+// and for a vein assayed before. A record from a spent outcrop becomes
+// an assayed one.
 assay_vein :: proc(world: ^World, veins: Vein_Content, cell: World_Coordinate) -> bool {
 	id, found := outcrop_vein_at(world, veins, cell)
 	if !found || vein_is_assayed(world, id) {
 		return false
 	}
-	vein := registered_vein(world, id)
-	append(&world.assayed_veins, Assayed_Vein{vein = id, type = vein.type, size_class = vein.size_class, centre = vein.centre, radius = vein.radius})
+	if index := known_vein_index(world, id); index >= 0 {
+		world.assayed_veins[index].from_spent_outcrop = false
+	} else {
+		append(&world.assayed_veins, assayed_vein_record(registered_vein(world, id)^))
+	}
 	world.statistics.veins_assayed += 1
+	return true
+}
+
+// A spent outcrop (work item 0096): the vein's outcrop was mined away
+// with units left, so the vein counts as known and the map keeps its
+// footprint. Returns true, and counts it for Mission Control, the first
+// time for the vein.
+record_spent_outcrop :: proc(world: ^World, id: Vein_Id) -> bool {
+	index := known_vein_index(world, id)
+	if index >= 0 && world.assayed_veins[index].outcrop_spent {
+		return false
+	}
+	if index < 0 {
+		record := assayed_vein_record(registered_vein(world, id)^)
+		record.from_spent_outcrop = true
+		append(&world.assayed_veins, record)
+		index = len(world.assayed_veins) - 1
+	}
+	world.assayed_veins[index].outcrop_spent = true
+	world.statistics.outcrops_spent += 1
 	return true
 }
 

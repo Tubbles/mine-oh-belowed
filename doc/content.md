@@ -202,6 +202,8 @@ Vein sizes before the richness multiplier, pending SUGGESTIONS.md item 3.
 | Mixed | 40% hematite, 40% chalcopyrite, 20% spoil | Hills |
 | Quarry | 60% stone, 20% sand, 20% gravel | Everywhere |
 
+An outcrop is the visible top of a vein, not its reservoir: hand mining takes the outcrop blocks, drills draw from the reservoir under the whole footprint. When players mine a vein's last outcrop block while its reservoir still has units (0096), Mission Control says once per vein that the vein continues below (`mc_outcrop_spent`), and the vein counts as known: the map keeps its footprint drawn like an assayed one, while the drill panel does not call it assayed.
+
 High grade ore smelts directly. Low grade ore needs crushing and washing (phase 5, work item 0026): the share of low grade rises linearly from 10% at a full reservoir to 60% at 5% remaining, infinite veins stay at 10%. Crushers, washers, the alloy furnace and the assembler are one data kind, `crafting_machine`, with a recipe category and either a player chosen or a fixed recipe picked by the loaded inputs (a fixed category refuses recipes whose inputs are a subset of another's). Steel, bronze and brass are alloy furnace recipes; the stone furnace only makes one input, one output recipes.
 
 ## Ratio checks
@@ -267,3 +269,4 @@ Notes (0070): `data/notes.sjson` lists the journal's notes in the order their mi
 Each entry: date, what was played, what the numbers did wrong, what changed.
 
 - 2026-09-27, couch test 1, chapter 1 on the M8 build. The hematite outcrop required within 150 blocks of the spawn was minutes of flying away and under trees; the spawn search accepted a river gorge next to the pad. Change (0045): three starter veins stamped 24 to 40 blocks from the pad, outcrops generated after trees and boulders with the column above cleared, and a flatness requirement on the spawn. Mining under a lake crashed the mesher (fixed). The statistics overlay was always on (0044).
+- 2026-09-28, couch report, chapter 2. Fifty iron plates by hand emptied the starter iron outcrop's visible blocks before the chapter asked for a drill. Change (0096): the drill quest comes right after gears and the fifty plates count from their quest's activation, so they are the drill's output; mining the last outcrop block brings a Mission Control line that the vein continues below, and the map keeps the footprint.

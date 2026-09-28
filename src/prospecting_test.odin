@@ -1,5 +1,6 @@
 package game
 
+import "core:slice"
 import "core:testing"
 
 // Prospecting worlds stand on the stone floor of make_floor_world (top at
@@ -62,6 +63,46 @@ test_hammer_assays_the_vein_of_an_outcrop :: proc(t: ^testing.T) {
 	testing.expect_value(t, world.statistics.veins_assayed, 1)
 	testing.expect(t, vein_is_assayed(&world, vein))
 	testing.expect_value(t, content.veins.size_class_ids[assayed.size_class], "deposit")
+}
+
+// A vein known only from its spent outcrop (work item 0096) is not
+// assayed; the hammer turns its record into an assayed one.
+@(test)
+test_hammer_assays_a_vein_known_from_its_spent_outcrop :: proc(t: ^testing.T) {
+	context.allocator = context.temp_allocator
+	content := make_test_content()
+	world := make_drill_world(content)
+	vein := add_test_vein(&world, content, "iron", {5, 5}, 2, IRON_TEST_VEIN)
+	testing.expect(t, record_spent_outcrop(&world, vein))
+	testing.expect(t, !vein_is_assayed(&world, vein))
+	testing.expect_value(t, world.statistics.veins_assayed, 0)
+	testing.expect(t, assay_vein(&world, content.veins, {6, 0, 5}))
+	testing.expect(t, vein_is_assayed(&world, vein))
+	testing.expect_value(t, len(world.assayed_veins), 1)
+	testing.expect(t, world.assayed_veins[0].outcrop_spent)
+	testing.expect_value(t, world.statistics.veins_assayed, 1)
+}
+
+// The map draws a spent vein's footprint like an assayed one.
+@(test)
+test_map_draws_the_footprint_of_a_spent_vein :: proc(t: ^testing.T) {
+	context.allocator = context.temp_allocator
+	content := make_test_content()
+	world := make_drill_world(content)
+	vein := add_test_vein(&world, content, "iron", {5, 5}, 2, IRON_TEST_VEIN)
+	frame := Map_Frame{origin = {0, 0}, blocks_per_pixel = 1, size = 12}
+	colors := DEFAULT_UI_THEME.palettes[.Default]
+	background := Ui_Color{0, 0, 0, 255}
+	pixels := make([]Ui_Color, frame.size * frame.size)
+	paint_map_records(pixels, frame, &world, colors)
+	testing.expect_value(t, pixels[5 * frame.size + 5], Ui_Color{})
+	testing.expect(t, record_spent_outcrop(&world, vein))
+	slice.fill(pixels, background)
+	paint_map_records(pixels, frame, &world, colors)
+	footprint := blend_color(background, colors[.Map_Assayed], MAP_ASSAYED_BLEND)
+	testing.expect_value(t, pixels[5 * frame.size + 5], footprint)
+	testing.expect_value(t, pixels[5 * frame.size + 7], footprint)
+	testing.expect_value(t, pixels[5 * frame.size + 8], background)
 }
 
 // The tools stay in the hotbar, a charge goes only when fired at a block.
@@ -304,6 +345,7 @@ test_prospecting_records_round_trip :: proc(t: ^testing.T) {
 	world.explored[{2, -3}] = surface
 	world.explored[{-1, 0}] = unknown_column_surface()
 	append(&world.assayed_veins, Assayed_Vein{vein = {region = {1, 2}, index = 3}, type = 2, size_class = 1, centre = {4, 40, 5}, radius = 6})
+	append(&world.assayed_veins, Assayed_Vein{vein = {index = 4}, centre = {9, 40, 9}, radius = 2, from_spent_outcrop = true, outcrop_spent = true})
 	append(&world.magnetometer_readings, Magnetometer_Reading{origin = {7, 8}, offset = {-3, 9}, strength = 420, found = true})
 	append(&world.core_samples, Core_Sample{position = {1, 2, 3}, bands = {5, 6, 0, 0, 0, 0, 0, 0}, band_count = 2, vein_found = true, vein_type = 4, vein_depth = 77})
 	append(&world.seismic_shots, Seismic_Shot{position = {9, 1, 9}})
@@ -318,6 +360,7 @@ test_prospecting_records_round_trip :: proc(t: ^testing.T) {
 	testing.expect_value(t, loaded.explored[{2, -3}][33], Surface_Cell{block = 4, height = 37})
 	testing.expect(t, !surface_cell_is_known(loaded.explored[{-1, 0}][0]))
 	testing.expect_value(t, loaded.assayed_veins[0], world.assayed_veins[0])
+	testing.expect_value(t, loaded.assayed_veins[1], world.assayed_veins[1])
 	testing.expect_value(t, loaded.magnetometer_readings[0], world.magnetometer_readings[0])
 	testing.expect_value(t, loaded.core_samples[0], world.core_samples[0])
 	testing.expect_value(t, loaded.seismic_shots[0], world.seismic_shots[0])

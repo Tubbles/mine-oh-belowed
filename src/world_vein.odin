@@ -176,6 +176,44 @@ outcrop_vein_at :: proc(world: ^World, veins: Vein_Content, cell: World_Coordina
 	return {}, false
 }
 
+// The registered vein whose outcrop cell this is, while the cell still
+// holds one of the vein type's outcrop blocks. Unlike outcrop_vein_at it
+// goes by the registered cells, so stone under a stone vein's outcrop
+// does not count.
+registered_outcrop_vein_at :: proc(world: ^World, veins: Vein_Content, cell: World_Coordinate) -> (id: Vein_Id, found: bool) {
+	id, found = world.outcrop_cells[cell]
+	if !found {
+		return {}, false
+	}
+	vein := registered_vein(world, id)
+	return id, vein != nil && vein_block_is_outcrop(veins, vein^, world_get_block(world, cell))
+}
+
+// Some registered outcrop cell of the vein still holds an outcrop block.
+// A cell whose chunk is not loaded counts as holding one, since its
+// block cannot be read.
+vein_outcrop_remains :: proc(world: ^World, veins: Vein_Content, vein: Vein) -> bool {
+	for position, id in world.outcrop_cells {
+		if id != vein.id {
+			continue
+		}
+		if world_to_chunk_coordinate(position) not_in world.chunks || vein_block_is_outcrop(veins, vein, world_get_block(world, position)) {
+			return true
+		}
+	}
+	return false
+}
+
+// After an outcrop block of the vein was mined (work item 0096): the
+// last one is gone while the reservoir below still has units.
+outcrop_spent_with_units_left :: proc(world: ^World, veins: Vein_Content, id: Vein_Id) -> bool {
+	vein := registered_vein(world, id)
+	if vein == nil || vein_is_deep(vein^) || vein_is_exhausted(vein^, world.settings.veins_infinite) {
+		return false
+	}
+	return !vein_outcrop_remains(world, veins, vein^)
+}
+
 // Called on the main thread for every inserted chunk. Cells of a vein
 // exhausted before the chunk loaded go straight to the spent queue, so the
 // chunk comes out as spent rock too.

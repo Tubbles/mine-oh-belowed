@@ -184,12 +184,32 @@ mine_entity :: proc(world: ^World, content: Simulation_Content, player: ^Player,
 	return {.Inventory_Full}
 }
 
-// cheat_speed shortens digging blocks, not picking up entities.
+// cheat_speed shortens digging blocks, not picking up entities. An
+// outcrop block mined away is checked for the spent outcrop (work item
+// 0096).
 mine_with_player :: proc(world: ^World, content: Simulation_Content, player: ^Player, holding: bool, tick_rate: int, cheat_speed: bool) -> Player_Events {
 	if player.target.entity != NO_ENTITY {
 		return mine_entity(world, content, player, holding, tick_rate)
 	}
-	return mine_block(world, content.blocks, content.items, simulation_tree_felling(content), player, holding, tick_rate, cheat_speed)
+	cell := player.target.block
+	vein, on_outcrop := registered_outcrop_vein_at(world, content.veins, cell)
+	events := mine_block(world, content.blocks, content.items, simulation_tree_felling(content), player, holding, tick_rate, cheat_speed)
+	if on_outcrop {
+		note_outcrop_block_gone(world, content.veins, cell, vein)
+	}
+	return events
+}
+
+// Once the cell holds no outcrop block any more and it was the vein's
+// last, the vein becomes known and Mission Control says so, once per
+// vein (record_spent_outcrop, announce_spent_outcrops).
+note_outcrop_block_gone :: proc(world: ^World, veins: Vein_Content, cell: World_Coordinate, vein: Vein_Id) {
+	if _, still_outcrop := registered_outcrop_vein_at(world, veins, cell); still_outcrop {
+		return
+	}
+	if outcrop_spent_with_units_left(world, veins, vein) {
+		record_spent_outcrop(world, vein)
+	}
 }
 
 // A block may go into a cell that is not solid (air, water, ground
@@ -222,6 +242,7 @@ selected_placed_block :: proc(player: Player, items: Item_Registry) -> Block_Id 
 // pressed is the held state, for dragging belts.
 place_with_player :: proc(world: ^World, content: Simulation_Content, players: []Player, index: int, just_pressed: Action_Set, pressed := Action_Set{}) {
 	if selected_placed_machine(players[index], content.machines) != NO_MACHINE {
+		record_drill_no_vein_attempt(world, content, players, index, just_pressed)
 		place_entity_with_player(world, content, players, index, just_pressed, pressed)
 		return
 	}
@@ -234,6 +255,25 @@ place_with_player :: proc(world: ^World, content: Simulation_Content, players: [
 		return
 	}
 	place_block_with_player(world, content.blocks, content.items, players, index, just_pressed)
+}
+
+// A pressed Place of a surface drill refused only because no vein lies
+// under its footprint, which is otherwise valid (work item 0096, chapter
+// 2's drill hint). Like bore_drill_no_vein_attempts it is counted on the
+// press, not in placement_at, which runs every frame for the ghost.
+record_drill_no_vein_attempt :: proc(world: ^World, content: Simulation_Content, players: []Player, index: int, just_pressed: Action_Set) {
+	machine := selected_placed_machine(players[index], content.machines)
+	if .Place not_in just_pressed || content.machines.machines[machine].kind != .Drill || drill_is_bore(content.machines.machines[machine]) {
+		return
+	}
+	placement := placement_for_player(world, content, players, index)
+	if !placement.shown || placement.valid {
+		return
+	}
+	cells := footprint_cells(placement.origin, content.machines.machines[machine].footprint, placement.rotation)
+	if footprint_is_valid(world, content.blocks, players, cells, placement.origin.y) {
+		world.statistics.drill_no_vein_attempts += 1
+	}
 }
 
 place_block_with_player :: proc(world: ^World, registry: Block_Registry, items: Item_Registry, players: []Player, index: int, just_pressed: Action_Set) {

@@ -134,6 +134,14 @@ Statistics :: struct {
 	// only because no deep vein lies below the bore drill (work item 0039).
 	bore_drill_units:            u64,
 	bore_drill_no_vein_attempts: u64,
+	// Times a player's Place of a surface drill was refused only because
+	// no vein lies under its footprint (work item 0096).
+	drill_no_vein_attempts:      u64,
+	// Veins whose outcrop players mined to the last block while units
+	// were left (record_spent_outcrop), and how many of them Mission
+	// Control has announced (announce_spent_outcrops).
+	outcrops_spent:              u64,
+	outcrops_spent_announced:    u64,
 	// Joules hydro turbines gave their networks, and times a turbine
 	// reached TURBINE_STILL_WATER_SECONDS in a row with no flowing water.
 	turbine_joules:              u64,

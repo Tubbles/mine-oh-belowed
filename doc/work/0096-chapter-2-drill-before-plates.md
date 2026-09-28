@@ -1,6 +1,6 @@
 # 0096 Chapter 2: the drill before the fifty plates, and a spent outcrop that says so
 
-Status: todo
+Status: implemented
 Milestone: M11
 
 ## Goal
@@ -22,3 +22,5 @@ Couch report (2026-09-28): chapter 2's "plates" quest (obtain 50 iron plates) em
 ## Notes
 
 Files a subagent may touch: `data/quests/chapter_02.sjson`, `data/strings/en.sjson`, `src/quest_chapter_02_test.odin`, `src/quest_runtime.odin`, `src/quest.odin` (a hint counter if needed), `src/statistics.odin` (the counter), `src/world_vein.odin`, `src/world_vein_test.odin`, `src/player_interaction.odin` (the hook where an outcrop block is mined), `src/ui_map.odin`, `src/prospecting.odin`, `src/prospecting_test.odin`, the docs above, this file.
+
+Implemented: `data/quests/chapter_02.sjson` (new order, drill as a place objective with a hint on the new `drill_no_vein_attempts` counter, plates as `craft` with `produced_since_active`), `data/strings/en.sjson` (drill and plates texts, `mc_plates`, `mc_hint_drill_no_vein`, `mc_outcrop_spent`), `src/quest.odin` and `src/quest_runtime.odin` (the hint counter, `announce_spent_outcrops` in `tick_quests`), `src/statistics.odin` (`drill_no_vein_attempts`, `outcrops_spent`, `outcrops_spent_announced`), `src/world_vein.odin` (`registered_outcrop_vein_at`, `vein_outcrop_remains`, `outcrop_spent_with_units_left`), `src/prospecting.odin` (`Assayed_Vein.from_spent_outcrop` and `outcrop_spent`, `record_spent_outcrop`), `src/player_interaction.odin` (the spent outcrop check in `mine_with_player`, `record_drill_no_vein_attempt`), tests in `src/quest_chapter_02_test.odin` (new), `src/world_vein_test.odin` (new) and `src/prospecting_test.odin`, and the docs. `src/ui_map.odin` needed no change: the map draws every record in `assayed_veins`. 961 tests pass. Decisions in `doc/log/2026-09-28.md`.

@@ -1,6 +1,11 @@
 // Chapter 2, The workshop (doc/quests.md outline). The format is described
-// in chapter_01.sjson. The burner drill is crafted, not placed: drills are
-// not entities yet. "200 plates in storage" waits for a storage counter.
+// in chapter_01.sjson. The burner drill comes before the fifty plates
+// (work item 0096), so it stands on the iron outcrop before hand mining
+// empties it; the plates count from the plates quest's activation, which
+// makes them the drill's output.
+// The drill quest's hint watches drill_no_vein_attempts (times Place of a
+// surface drill was refused only because no vein lies under it).
+// "200 plates in storage" waits for a storage counter.
 id = "chapter_02"
 title_key = "chapter_02_title"
 quests = [
@@ -12,19 +17,6 @@ quests = [
 			{type = "place", entity = "stone_furnace", count = 3}
 		]
 		message_key = "mc_furnaces"
-	}
-	{
-		id = "plates"
-		title_key = "quest_plates_title"
-		text_key = "quest_plates_text"
-		objectives = [
-			{type = "obtain", item = "iron_plate", count = 50}
-		]
-		message_key = "mc_plates"
-		hints = [
-			{counter = "furnace_out_of_fuel", threshold = 3, text_key = "mc_hint_fuel"}
-			{counter = "inventory_full_ticks", threshold = 1800, text_key = "mc_hint_chests"}
-		]
 	}
 	{
 		id = "copper"
@@ -49,9 +41,25 @@ quests = [
 		title_key = "quest_drill_title"
 		text_key = "quest_drill_text"
 		objectives = [
-			{type = "craft", item = "burner_mining_drill", count = 1}
+			{type = "place", entity = "burner_mining_drill", count = 1}
 		]
 		message_key = "mc_drill"
+		hints = [
+			{counter = "drill_no_vein_attempts", threshold = 2, text_key = "mc_hint_drill_no_vein"}
+		]
+	}
+	{
+		id = "plates"
+		title_key = "quest_plates_title"
+		text_key = "quest_plates_text"
+		objectives = [
+			{type = "craft", item = "iron_plate", count = 50, produced_since_active = true}
+		]
+		message_key = "mc_plates"
+		hints = [
+			{counter = "furnace_out_of_fuel", threshold = 3, text_key = "mc_hint_fuel"}
+			{counter = "inventory_full_ticks", threshold = 1800, text_key = "mc_hint_chests"}
+		]
 	}
 	{
 		id = "storage"
