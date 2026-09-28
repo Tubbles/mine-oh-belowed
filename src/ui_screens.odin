@@ -67,7 +67,8 @@ Screen_Context :: struct {
 	// --dev: the pause menu shows the Developer entry (ui_developer.odin);
 	// the developer_mode setting shows it too.
 	developer_mode:     bool,
-	show_diagnostics:   ^bool,
+	// The F3 pages (diagnostics.odin), stepped by the Developer screen.
+	diagnostics_page:   ^Diagnostics_Page,
 	show_world_overlay: ^bool,
 	// The simulation's developer cheat speed, before pending requests.
 	cheat_speed:        bool,

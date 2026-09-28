@@ -3,10 +3,10 @@ package game
 import "core:fmt"
 
 // The Developer screen (work item 0043), opened from the pause menu when
-// the game runs with --dev. Every entry is a button or a toggle, so the
-// focus cursor and the trackpad pointer reach all of them. The
-// diagnostics, statistics overlay and bottleneck overlay toggles are
-// frame state and change at once; everything else (fly mode and cheat
+// the game runs with --dev. Every entry is a button, a toggle or a
+// choice, so the focus cursor and the trackpad pointer reach all of them.
+// The diagnostics page choice (work item 0086) and the statistics
+// overlay and bottleneck overlay toggles are frame state and change at once; everything else (fly mode and cheat
 // speed among them) queues a Developer_Request that the next
 // simulation tick serves (developer.odin). The pause menu below keeps the
 // simulation paused, so those apply once the game resumes. Screenshot and
@@ -45,7 +45,7 @@ developer_row :: proc(content: ^Ui_Rectangle) -> Ui_Rectangle {
 }
 
 // The queued toggles on the first row, the frame state overlays on the
-// second.
+// second: the diagnostics page steps like F3.
 developer_toggles :: proc(state: ^Ui_State, first_row, second_row: Ui_Rectangle, screen_context: Screen_Context) {
 	requests := screen_context.developer_requests[:]
 	flying := pending_toggle(screen_context.player.flying, requests, .Toggle_Fly_Mode)
@@ -56,7 +56,10 @@ developer_toggles :: proc(state: ^Ui_State, first_row, second_row: Ui_Rectangle,
 	if ui_toggle(state, column(first_row, 2, 1, UI_GAP), text("developer_cheat_speed"), &cheat_speed) {
 		queue_developer_request(state, screen_context, Developer_Request{action = .Toggle_Cheat_Speed})
 	}
-	ui_toggle(state, column(second_row, 3, 0, UI_GAP), text("developer_diagnostics"), screen_context.show_diagnostics)
+	page := screen_context.diagnostics_page
+	if ui_choice(state, column(second_row, 3, 0, UI_GAP), text("developer_diagnostics"), text(diagnostics_page_keys[page^])) {
+		page^ = next_diagnostics_page(page^)
+	}
 	ui_toggle(state, column(second_row, 3, 1, UI_GAP), text("developer_world_overlay"), screen_context.show_world_overlay)
 	ui_toggle(state, column(second_row, 3, 2, UI_GAP), text("developer_bottleneck_overlay"), &screen_context.settings.bottleneck_overlay)
 }

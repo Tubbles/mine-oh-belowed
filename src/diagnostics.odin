@@ -4,6 +4,7 @@ import "core:container/queue"
 import "core:fmt"
 import "core:strings"
 import rl "vendor:raylib"
+import "vendor:raylib/rlgl"
 
 DIAGNOSTICS_MARGIN :: 16
 DIAGNOSTICS_TEXT_COLOR :: rl.Color{230, 230, 230, 255}
@@ -13,6 +14,233 @@ DIAGNOSTICS_BACKDROP_COLOR :: rl.Color{24, 24, 32, 220}
 Diagnostics_Line :: struct {
 	text:   string,
 	active: bool,
+}
+
+// F3 steps through the pages and back to Off (work item 0086). Every page
+// draws diagnostics_header_text first, then its columns.
+Diagnostics_Page :: enum u8 {
+	Off,
+	Input,
+	Render,
+	World,
+}
+
+@(rodata)
+diagnostics_page_keys := [Diagnostics_Page]string {
+	.Off    = "diagnostics_page_off",
+	.Input  = "diagnostics_page_input",
+	.Render = "diagnostics_page_render",
+	.World  = "diagnostics_page_world",
+}
+
+// The frame times of the Render page's average, newest at next - 1.
+FRAME_TIME_RING_SIZE :: 256
+
+Frame_Time_Ring :: struct {
+	seconds: [FRAME_TIME_RING_SIZE]f32,
+	next:    int,
+	count:   int,
+}
+
+// What the Render page shows, filled by the frame loop (render_facts in
+// loop.odin), so the lines need no raylib.
+Render_Facts :: struct {
+	build_stamp:            string,
+	window_mode:            Window_Mode,
+	monitor_size:           [2]int,
+	window_size:            [2]int,
+	render_size:            [2]int,
+	window_scale:           [2]f32,
+	wayland_display_set:    bool,
+	vsync:                  bool,
+	// 0 is no cap.
+	frame_rate_cap:         int,
+	frames_per_second:      int,
+	frame_milliseconds:     f32,
+	tick_count:             int,
+	accumulated_seconds:    f64,
+	fog_start:              f32,
+	fog_end:                f32,
+	weather:                Weather,
+	day_fraction:           f64,
+	loaded_chunk_count:     int,
+	drawn_chunk_count:      int,
+	vertex_count:           int,
+	// Mesh results taken from the workers this frame, stale ones included.
+	uploaded_mesh_count:    int,
+	pending_job_count:      int,
+	drawn_water_mesh_count: int,
+	live_particle_count:    int,
+	weather_particle_count: int,
+	flame_count:            int,
+	block_atlas_size:       [2]int,
+	item_atlas_size:        [2]int,
+	ui_atlas_size:          [2]int,
+	underwater:             bool,
+}
+
+// What the World page shows besides the F4 overlay's lines, filled by the
+// frame loop (world_facts in loop.odin).
+World_Facts :: struct {
+	overlay_lines:    []Diagnostics_Line,
+	tick:             u64,
+	player_chunk:     Chunk_Coordinate,
+	biome_name:       string,
+	entity_counts:    [Entity_Kind]int,
+	loose_item_count: int,
+	belt_line_count:  int,
+	belt_item_count:  int,
+	leaf_decay_count: int,
+}
+
+// The entity kinds per line on the World page.
+WORLD_PAGE_KINDS_PER_LINE :: 4
+
+next_diagnostics_page :: proc(page: Diagnostics_Page) -> Diagnostics_Page {
+	return Diagnostics_Page((int(page) + 1) % len(Diagnostics_Page))
+}
+
+// "Diagnostics 2/3 Render (F3 next)"; the pages count without Off.
+diagnostics_header_text :: proc(page: Diagnostics_Page) -> string {
+	return fmt.tprintf("Diagnostics %d/%d %s (F3 next)", int(page), len(Diagnostics_Page) - 1, text(diagnostics_page_keys[page]))
+}
+
+push_frame_time :: proc(ring: Frame_Time_Ring, seconds: f32) -> Frame_Time_Ring {
+	result := ring
+	result.seconds[result.next] = seconds
+	result.next = (result.next + 1) % FRAME_TIME_RING_SIZE
+	result.count = min(result.count + 1, FRAME_TIME_RING_SIZE)
+	return result
+}
+
+// The mean of the newest frames up to the one that completes a second, in
+// milliseconds; 0 without frames. Above FRAME_TIME_RING_SIZE frames per
+// second the ring covers less than a second.
+average_frame_milliseconds :: proc(ring: Frame_Time_Ring) -> f32 {
+	total: f32
+	frames := 0
+	for frames < ring.count && total < 1 {
+		index := (ring.next - 1 - frames + FRAME_TIME_RING_SIZE) % FRAME_TIME_RING_SIZE
+		total += ring.seconds[index]
+		frames += 1
+	}
+	if frames == 0 {
+		return 0
+	}
+	return total / f32(frames) * 1000
+}
+
+render_page_lines :: proc(facts: Render_Facts) -> []Diagnostics_Line {
+	lines := make([dynamic]Diagnostics_Line, context.temp_allocator)
+	append_line(&lines, false, "build %s", facts.build_stamp)
+	append_line(&lines, false, "mode %v  monitor %d x %d  window %d x %d", facts.window_mode, facts.monitor_size.x, facts.monitor_size.y, facts.window_size.x, facts.window_size.y)
+	append_line(&lines, false, "render %d x %d  scale %.2f x %.2f  session %s", facts.render_size.x, facts.render_size.y, facts.window_scale.x, facts.window_scale.y, facts.wayland_display_set ? "xwayland" : "x11")
+	append_line(&lines, false, "vsync %s  frame rate cap %s", yes_no(facts.vsync), frame_rate_cap_text(facts.frame_rate_cap))
+	append_line(&lines, false, "fps %d  frame %.2f ms (last second)", facts.frames_per_second, facts.frame_milliseconds)
+	append_line(&lines, false, "ticks this frame %d  accumulator %.2f ms", facts.tick_count, facts.accumulated_seconds * 1000)
+	append_line(&lines, false, "")
+	append_line(&lines, facts.underwater, "fog %.1f to %.1f  under water %s", facts.fog_start, facts.fog_end, yes_no(facts.underwater))
+	append_line(&lines, false, "weather %s %.2f  day %.3f", weather_kind_words[facts.weather.kind], facts.weather.intensity, facts.day_fraction)
+	append_line(&lines, false, "")
+	append_line(&lines, false, "chunks loaded %d  drawn %d  vertices %d", facts.loaded_chunk_count, facts.drawn_chunk_count, facts.vertex_count)
+	append_line(&lines, facts.uploaded_mesh_count > 0, "meshes uploaded %d  pending jobs %d", facts.uploaded_mesh_count, facts.pending_job_count)
+	append_line(&lines, false, "water meshes drawn %d  flames %d", facts.drawn_water_mesh_count, facts.flame_count)
+	append_line(&lines, false, "particles %d  weather particles %d", facts.live_particle_count, facts.weather_particle_count)
+	append_line(&lines, false, "")
+	append_line(&lines, false, "atlas block %d x %d  item %d x %d  ui %d x %d", facts.block_atlas_size.x, facts.block_atlas_size.y, facts.item_atlas_size.x, facts.item_atlas_size.y, facts.ui_atlas_size.x, facts.ui_atlas_size.y)
+	return lines[:]
+}
+
+world_page_lines :: proc(facts: World_Facts) -> []Diagnostics_Line {
+	lines := make([dynamic]Diagnostics_Line, context.temp_allocator)
+	append(&lines, ..facts.overlay_lines)
+	append_line(&lines, false, "")
+	chunk := facts.player_chunk
+	append_line(&lines, false, "tick %d  chunk %d %d %d  biome %s", facts.tick, chunk.x, chunk.y, chunk.z, facts.biome_name)
+	append_entity_count_lines(&lines, facts.entity_counts)
+	append_line(&lines, false, "loose items %d  belt lines %d  items on belts %d", facts.loose_item_count, facts.belt_line_count, facts.belt_item_count)
+	append_line(&lines, facts.leaf_decay_count > 0, "leaf decay queued %d", facts.leaf_decay_count)
+	return lines[:]
+}
+
+// WORLD_PAGE_KINDS_PER_LINE kinds per line, without None.
+append_entity_count_lines :: proc(lines: ^[dynamic]Diagnostics_Line, counts: [Entity_Kind]int) {
+	parts := make([dynamic]string, context.temp_allocator)
+	for count, kind in counts {
+		if kind == .None {
+			continue
+		}
+		append(&parts, fmt.tprintf("%v %d", kind, count))
+		if len(parts) == WORLD_PAGE_KINDS_PER_LINE {
+			append_line(lines, false, "%s", strings.join(parts[:], "  ", context.temp_allocator))
+			clear(&parts)
+		}
+	}
+	if len(parts) > 0 {
+		append_line(lines, false, "%s", strings.join(parts[:], "  ", context.temp_allocator))
+	}
+}
+
+pool_alive_count :: proc(pool: Entity_Pool($T)) -> int {
+	return len(pool.entries) - len(pool.free)
+}
+
+entity_counts :: proc(entities: ^Entities) -> [Entity_Kind]int {
+	return [Entity_Kind]int {
+		.None = 0,
+		.Chest = pool_alive_count(entities.chests),
+		.Furnace = pool_alive_count(entities.furnaces),
+		.Capsule = pool_alive_count(entities.capsules),
+		.Belt = pool_alive_count(entities.belts),
+		.Inserter = pool_alive_count(entities.inserters),
+		.Drill = pool_alive_count(entities.drills),
+		.Splitter = pool_alive_count(entities.splitters),
+		.Pipe = pool_alive_count(entities.pipes),
+		.Fluid_Machine = pool_alive_count(entities.fluid_machines),
+		.Pole = pool_alive_count(entities.poles),
+		.Lamp = pool_alive_count(entities.lamps),
+		.Assembler = pool_alive_count(entities.assemblers),
+		.Lab = pool_alive_count(entities.labs),
+		.Schematic_Crate = pool_alive_count(entities.schematic_crates),
+		.Core_Sample_Drill = pool_alive_count(entities.core_sample_drills),
+		.Launch_Pad = pool_alive_count(entities.launch_pads),
+	}
+}
+
+belt_item_count :: proc(network: Belt_Network) -> int {
+	count := 0
+	for line in network.lines {
+		for lane in line.lanes {
+			count += len(lane)
+		}
+	}
+	return count
+}
+
+flame_count :: proc(renderer: Chunk_Renderer) -> int {
+	count := 0
+	for _, chunk_render in renderer.chunk_meshes {
+		count += len(chunk_render.flames)
+	}
+	return count
+}
+
+// The water meshes the water pass draws, by its frustum test
+// (draw_water_chunks). Must run between BeginMode3D and EndMode3D.
+water_meshes_in_view :: proc(renderer: Chunk_Renderer, camera: rl.Camera3D) -> int {
+	view_projection := rlgl.GetMatrixProjection() * rl.GetCameraMatrix(camera)
+	frustum := frustum_from_matrix(cast(matrix[4, 4]f32)view_projection)
+	count := 0
+	for coordinate, chunk_render in renderer.chunk_meshes {
+		if len(chunk_render.water_meshes) > 0 && chunk_in_frustum(frustum, coordinate) {
+			count += len(chunk_render.water_meshes)
+		}
+	}
+	return count
+}
+
+texture_size :: proc(texture: rl.Texture2D) -> [2]int {
+	return {int(texture.width), int(texture.height)}
 }
 
 enum_label :: proc(value: $T) -> string {
@@ -190,16 +418,35 @@ draw_lines :: proc(fonts: ^Font_Cache, lines: []Diagnostics_Line, x, y, font_siz
 	return line_y
 }
 
-draw_diagnostics :: proc(state: Frame_State, config: Game_Config) {
+// The Input page's columns, from top down.
+draw_diagnostics :: proc(state: Frame_State, config: Game_Config, top: i32) {
 	font_size := diagnostics_font_size(rl.GetScreenHeight())
 	screen_width := rl.GetScreenWidth()
 	button_column_x := screen_width * 35 / 100
 	analog_column_x := screen_width * 64 / 100
 	fonts := state.ui.fonts
-	left_bottom := draw_lines(fonts, mapped_lines(state, config), DIAGNOSTICS_MARGIN, DIAGNOSTICS_MARGIN, font_size)
+	left_bottom := draw_lines(fonts, mapped_lines(state, config), DIAGNOSTICS_MARGIN, top, font_size)
 	draw_lines(fonts, keyboard_mouse_lines(state.input.raw), DIAGNOSTICS_MARGIN, left_bottom + font_size, font_size)
-	draw_lines(fonts, gamepad_button_lines(state.input.raw), button_column_x, DIAGNOSTICS_MARGIN, font_size)
-	draw_lines(fonts, gamepad_analog_lines(state.input.raw), analog_column_x, DIAGNOSTICS_MARGIN, font_size)
+	draw_lines(fonts, gamepad_button_lines(state.input.raw), button_column_x, top, font_size)
+	draw_lines(fonts, gamepad_analog_lines(state.input.raw), analog_column_x, top, font_size)
+}
+
+// Over the backdrop: the header line, then the page. render and world are
+// read only on their pages.
+draw_diagnostics_page :: proc(state: Frame_State, config: Game_Config, render: Render_Facts, world: World_Facts) {
+	draw_diagnostics_backdrop()
+	font_size := diagnostics_font_size(rl.GetScreenHeight())
+	header := [?]Diagnostics_Line{{text = diagnostics_header_text(state.diagnostics_page), active = true}}
+	top := draw_lines(state.ui.fonts, header[:], DIAGNOSTICS_MARGIN, DIAGNOSTICS_MARGIN, font_size)
+	switch state.diagnostics_page {
+	case .Off:
+	case .Input:
+		draw_diagnostics(state, config, top)
+	case .Render:
+		draw_lines(state.ui.fonts, render_page_lines(render), DIAGNOSTICS_MARGIN, top, font_size)
+	case .World:
+		draw_lines(state.ui.fonts, world_page_lines(world), DIAGNOSTICS_MARGIN, top, font_size)
+	}
 }
 
 world_statistics_text :: proc(state: Frame_State) -> string {
@@ -238,15 +485,23 @@ draw_diagnostics_backdrop :: proc() {
 	rl.DrawRectangle(0, 0, rl.GetScreenWidth(), rl.GetScreenHeight(), DIAGNOSTICS_BACKDROP_COLOR)
 }
 
-// Shown while the diagnostics screen is off and the overlay is on (F4 or
-// the Developer screen).
-draw_world_overlay :: proc(state: Frame_State) {
+// The F4 overlay's world, streaming, light and player lines, which the
+// World page shows too.
+world_overlay_statistics_lines :: proc(state: Frame_State) -> []Diagnostics_Line {
 	lines := make([dynamic]Diagnostics_Line, context.temp_allocator)
-	append_line(&lines, false, "fps %d  tick %d", rl.GetFPS(), state.session.simulation.tick)
 	append_line(&lines, false, "%s", world_statistics_text(state))
 	append_line(&lines, false, "%s", streaming_statistics_text(state))
 	append_line(&lines, false, "%s", light_statistics_text(state))
 	append_player_lines(&lines, state)
+	return lines[:]
+}
+
+// Shown while the diagnostics pages are off and the overlay is on (F4 or
+// the Developer screen).
+draw_world_overlay :: proc(state: Frame_State) {
+	lines := make([dynamic]Diagnostics_Line, context.temp_allocator)
+	append_line(&lines, false, "fps %d  tick %d", rl.GetFPS(), state.session.simulation.tick)
+	append(&lines, ..world_overlay_statistics_lines(state))
 	append_line(&lines, state.settings.bottleneck_overlay, "bottleneck overlay %s", yes_no(state.settings.bottleneck_overlay))
 	append_line(&lines, false, "F3 diagnostics  F4 statistics  F5 remove block  F6 fly  V camera  O bottlenecks")
 	font_size := diagnostics_font_size(rl.GetScreenHeight())

@@ -1,6 +1,6 @@
 # 0086 Pageable diagnostics with a render page
 
-Status: todo
+Status: implemented
 Milestone: M11
 
 ## Goal
@@ -24,3 +24,5 @@ Couch request (2026-09-28): "make the F3 screen pageable somehow, and add the ef
 ## Notes
 
 Files a subagent may touch: `src/diagnostics.odin`, new or existing `src/diagnostics_test.odin`, `src/loop.odin` (the page field, the facts, the ring and the draw call), `src/ui_developer.odin`, `src/ui_screens.odin` (the screen context field), `src/ui_audit_test.odin`, `data/strings/en.sjson`, the docs above, this file.
+
+Implemented: `src/diagnostics.odin` (the page enum, header, frame time ring, `Render_Facts`, `World_Facts`, the page lines and counts, `draw_diagnostics_page`), `src/loop.odin` (the page field, the ring and tick count, `Frame_Render_Counts`, `render_facts`, `world_facts`, the draw switch), `src/ui_developer.odin` (the choice row), `src/ui_screens.odin` and `src/ui_audit_test.odin` (the context field), `data/strings/en.sjson` (the page names), new `src/diagnostics_test.odin` (7 tests; the suite runs 921), `doc/ui.md`, `doc/input.md`, `doc/log/2026-09-28.md`. `doc/commands.md` does not mention the toggle and is unchanged. Decisions are in the log.

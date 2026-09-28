@@ -78,6 +78,10 @@ Frame_State :: struct {
 	haptic:             Haptic_Request,
 	previous_input:     Input_Frame,
 	frame_seconds:      f32,
+	// The Render page's frame time average and the ticks update_session
+	// ran this frame (work item 0086).
+	frame_times:        Frame_Time_Ring,
+	frame_tick_count:   int,
 	// World actions still held since a screen closed, see update_world_action_guard.
 	world_action_guard: Action_Set,
 	settings:           Settings,
@@ -131,7 +135,8 @@ Frame_State :: struct {
 	// frame, reset with the session.
 	audio:              Audio_Mixer,
 	sound_memory:       Sound_Memory,
-	show_diagnostics:   bool,
+	// F3 and the Developer screen (diagnostics.odin, work item 0086).
+	diagnostics_page:   Diagnostics_Page,
 	// The world statistics overlay (draw_world_overlay), off by default.
 	show_world_overlay: bool,
 	// The command socket (work item 0053): open while developer mode is
@@ -311,7 +316,7 @@ read_input_frame :: proc(state: ^Frame_State, frame_seconds: f32) -> Input_Frame
 // The mouse steers the view while the world is shown and is free for the
 // diagnostics screen and the menus.
 apply_cursor_mode :: proc(state: ^Frame_State) {
-	wanted := state.show_diagnostics || state.ui.screens.count > 0
+	wanted := state.diagnostics_page != .Off || state.ui.screens.count > 0
 	if wanted == state.cursor_enabled {
 		return
 	}
@@ -328,7 +333,9 @@ toggle_on_press :: proc(value: bool, just_pressed: Action_Set, action: Action) -
 }
 
 apply_debug_actions :: proc(state: ^Frame_State) {
-	state.show_diagnostics = toggle_on_press(state.show_diagnostics, state.input.just_pressed, .Toggle_Diagnostics)
+	if .Toggle_Diagnostics in state.input.just_pressed {
+		state.diagnostics_page = next_diagnostics_page(state.diagnostics_page)
+	}
 	state.show_world_overlay = toggle_on_press(state.show_world_overlay, state.input.just_pressed, .Toggle_World_Overlay)
 	session := state.session
 	if .Debug_Remove_Block in state.input.just_pressed {
@@ -346,6 +353,7 @@ apply_debug_actions :: proc(state: ^Frame_State) {
 // one frame later.
 update_frame :: proc(state: ^Frame_State) {
 	state.frame_seconds = rl.GetFrameTime()
+	state.frame_times = push_frame_time(state.frame_times, state.frame_seconds)
 	state.previous_input = state.input
 	state.input = read_input_frame(state, state.frame_seconds)
 	world_blocked := ui_blocks_world(state.ui.screens)
@@ -397,6 +405,7 @@ update_session :: proc(state: ^Frame_State, world_blocked: bool) {
 	if fast {
 		tick_count = run_command_ticks(state)
 	}
+	state.frame_tick_count = tick_count
 	session.ticks_since_save += u64(tick_count)
 	save_when_due(state)
 	player_chunk := world_to_chunk_coordinate(camera_world_coordinate(session.simulation.players[0].position))
@@ -433,6 +442,8 @@ render_frame :: proc(state: ^Frame_State) {
 		return
 	}
 	session := state.session
+	// Every mesh result taken lowers the pending jobs by one.
+	pending_before_upload := session.streaming.pending_jobs
 	upload_streamed_meshes(&state.renderer, &session.streaming)
 	weather := session_weather(session, state.settings.weather)
 	sky := weathered_day_sky(day_sky(simulation_day_ticks(session.simulation), session.simulation.day_length_ticks), weather)
@@ -442,15 +453,23 @@ render_frame :: proc(state: ^Frame_State) {
 	// The horizon colour, which is the fog colour: the dome covers the
 	// upper hemisphere alone, so the clear colour shows below the horizon.
 	rl.ClearBackground(sky.colors.horizon)
-	if draw_session_world(state, session, sky, weather) {
+	counts := draw_session_world(state, session, sky, weather)
+	counts.uploaded_meshes = pending_before_upload - session.streaming.pending_jobs
+	if counts.underwater {
 		draw_underwater_overlay()
 	}
 	play_frame_sounds(&state.audio, &state.sound_memory, session_sound_frame(state, weather))
-	if state.show_diagnostics {
-		draw_diagnostics_backdrop()
-		draw_diagnostics(state^, state.config)
-	} else if state.show_world_overlay {
-		draw_world_overlay(state^)
+	switch state.diagnostics_page {
+	case .Off:
+		if state.show_world_overlay {
+			draw_world_overlay(state^)
+		}
+	case .Input:
+		draw_diagnostics_page(state^, state.config, {}, {})
+	case .Render:
+		draw_diagnostics_page(state^, state.config, render_facts(state, sky, weather, counts), {})
+	case .World:
+		draw_diagnostics_page(state^, state.config, {}, world_facts(state))
 	}
 	run_ui_frame(state)
 	queue_requested_screenshot(state)
@@ -484,19 +503,95 @@ session_weather :: proc(session: ^Session, enabled: bool) -> Weather {
 }
 
 // Rain, or snow over a cold column, as much as the sky is open at the
-// camera. The light is the sky light of the frame.
-draw_session_weather :: proc(session: ^Session, camera: rl.Camera3D, weather: Weather, sky: Day_Sky, seconds: f64) {
+// camera. The light is the sky light of the frame. Returns the particles
+// drawn.
+draw_session_weather :: proc(session: ^Session, camera: rl.Camera3D, weather: Weather, sky: Day_Sky, seconds: f64) -> int {
 	cell := camera_world_coordinate(camera.position)
 	seeds := session.generator.seeds
 	temperature := terrain_temperature(seeds, cell.x, cell.z, terrain_height(seeds, cell.x, cell.z))
 	open_sky := f32(light_level(world_get_light(&session.simulation.world, cell), .Sky)) / MAXIMUM_LIGHT
 	light := color_to_vector3(sky.colors.sun_tint) * day_factor(sky.blend)
-	draw_weather(camera, weather_precipitation(weather, temperature), weather_particle_count(weather.intensity, open_sky), seconds, light)
+	precipitation := weather_precipitation(weather, temperature)
+	count := weather_particle_count(weather.intensity, open_sky)
+	draw_weather(camera, precipitation, count, seconds, light)
+	return precipitation == .None ? 0 : max(count, 0)
 }
 
-// Returns whether the camera is under water, for the tint drawn after the
-// 3D pass (work item 0065).
-draw_session_world :: proc(state: ^Frame_State, session: ^Session, sky: Day_Sky, weather: Weather) -> (underwater: bool) {
+// What the frame drew besides the renderer's own counts: whether the
+// camera is under water, for the tint drawn after the 3D pass (work item
+// 0065), and the counts of the Render page (work item 0086). The water
+// meshes are counted on the Render page only.
+Frame_Render_Counts :: struct {
+	underwater:        bool,
+	uploaded_meshes:   int,
+	water_meshes:      int,
+	weather_particles: int,
+}
+
+// The Render page's facts (diagnostics.odin). The fog is the underwater
+// fog while the camera is under water.
+render_facts :: proc(state: ^Frame_State, sky: Day_Sky, weather: Weather, counts: Frame_Render_Counts) -> Render_Facts {
+	session := state.session
+	fog_start, fog_end := weather_fog_distances(LOAD_RADIUS_HORIZONTAL, weather_look(weather, state.settings.weather, sky.blend).fog_scale)
+	if counts.underwater {
+		fog := underwater_fog()
+		fog_start, fog_end = fog.start, fog.end
+	}
+	return Render_Facts {
+		build_stamp = BUILD_STAMP,
+		window_mode = state.window_settings.window_mode,
+		monitor_size = state.monitor_size,
+		window_size = {int(rl.GetScreenWidth()), int(rl.GetScreenHeight())},
+		render_size = {int(rl.GetRenderWidth()), int(rl.GetRenderHeight())},
+		window_scale = state.window_scale,
+		wayland_display_set = state.wayland_display_set,
+		vsync = state.settings.vsync,
+		frame_rate_cap = state.settings.frame_rate_cap,
+		frames_per_second = int(rl.GetFPS()),
+		frame_milliseconds = average_frame_milliseconds(state.frame_times),
+		tick_count = state.frame_tick_count,
+		accumulated_seconds = session.accumulator.accumulated_seconds,
+		fog_start = fog_start,
+		fog_end = fog_end,
+		weather = weather,
+		day_fraction = sky.fraction,
+		loaded_chunk_count = len(session.simulation.world.chunks),
+		drawn_chunk_count = state.renderer.drawn_chunk_count,
+		vertex_count = state.renderer.vertex_count,
+		uploaded_mesh_count = counts.uploaded_meshes,
+		pending_job_count = session.streaming.pending_jobs,
+		drawn_water_mesh_count = counts.water_meshes,
+		live_particle_count = live_particle_count(&state.particles),
+		weather_particle_count = counts.weather_particles,
+		flame_count = flame_count(state.renderer),
+		block_atlas_size = texture_size(chunk_atlas_texture(state.renderer)),
+		item_atlas_size = texture_size(state.item_atlas.texture),
+		ui_atlas_size = texture_size(state.ui_icon_atlas.texture),
+		underwater = counts.underwater,
+	}
+}
+
+// The World page's facts (diagnostics.odin).
+world_facts :: proc(state: ^Frame_State) -> World_Facts {
+	session := state.session
+	world := &session.simulation.world
+	cell := camera_world_coordinate(session.simulation.players[0].position)
+	biome := sample_column(&session.generator, cell.x, cell.z).biome
+	biome_name := biome < len(session.generator.biomes) ? text(session.generator.biomes[biome].definition.name_key) : "?"
+	return World_Facts {
+		overlay_lines = world_overlay_statistics_lines(state^),
+		tick = session.simulation.tick,
+		player_chunk = world_to_chunk_coordinate(cell),
+		biome_name = biome_name,
+		entity_counts = entity_counts(&world.entities),
+		loose_item_count = len(world.entities.loose_items.items),
+		belt_line_count = len(world.entities.belt_network.lines),
+		belt_item_count = belt_item_count(world.entities.belt_network),
+		leaf_decay_count = len(world.leaf_decay.updates),
+	}
+}
+
+draw_session_world :: proc(state: ^Frame_State, session: ^Session, sky: Day_Sky, weather: Weather) -> (counts: Frame_Render_Counts) {
 	content := state.content
 	world := &session.simulation.world
 	tick_rate := session.simulation.tick_rate
@@ -510,8 +605,8 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session, sky: Day_Sky,
 	view := player_view_camera(world, content.blocks, player, alpha, bob)
 	camera := fly_camera_to_raylib(view)
 	apply_weather(&state.renderer, weather_look(weather, state.settings.weather, sky.blend), seconds)
-	underwater = camera_underwater(world, content.blocks, camera.position)
-	if underwater {
+	counts.underwater = camera_underwater(world, content.blocks, camera.position)
+	if counts.underwater {
 		apply_fog(&state.renderer, underwater_fog())
 	}
 	rl.BeginMode3D(camera)
@@ -528,17 +623,20 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session, sky: Day_Sky,
 	draw_loose_items(world, content.items, frame, Item_Billboards{camera = camera, atlas = state.item_atlas})
 	draw_torch_flames(&state.renderer, camera, seconds)
 	draw_water_chunks(&state.renderer, camera, seconds)
+	if state.diagnostics_page == .Render {
+		counts.water_meshes = water_meshes_in_view(state.renderer, camera)
+	}
 	update_particles(&state.particles, &state.particle_memory, world, frame_simulation_content(state), state.model_renderer, session.simulation.players[:], tick_rate, state.frame_seconds)
 	update_satellite_pass(&state.particle_memory, session.simulation.quests.messages[:], state.frame_seconds)
 	draw_particles(&state.particle_renderer, camera, &state.particles, state.particle_memory, world, state.model_renderer, color_to_vector3(sky.colors.sun_tint) * day_factor(sky.blend))
-	draw_session_weather(session, camera, weather, sky, seconds)
+	counts.weather_particles = draw_session_weather(session, camera, weather, sky, seconds)
 	body := Player_Body_Draw{renderer = state.model_renderer, model = state.player_model, animation = animation, light = player_body_light(frame, player_eye(pose.position))}
 	draw_player_world_overlay(world, frame_simulation_content(state), state.model_renderer, &state.belt_renderer, session.simulation.players[:], 0, alpha, body)
 	rl.EndMode3D()
 	if player.camera_mode == .First_Person {
 		draw_first_person_hands(view, body, Item_Billboards{camera = camera, atlas = state.item_atlas}, content.items, selected_hotbar_stack(player))
 	}
-	return underwater
+	return counts
 }
 
 // The context every screen gets. Without a session the world fields stay
@@ -570,7 +668,7 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 		recipe_names    = content.recipe_names,
 		recipe_order    = content.recipe_order,
 		developer_mode  = content.developer_mode,
-		show_diagnostics = &state.show_diagnostics,
+		diagnostics_page = &state.diagnostics_page,
 		show_world_overlay = &state.show_world_overlay,
 		developer_chapter_count = len(content.developer_kits.kits),
 	}
@@ -773,7 +871,7 @@ leave_session :: proc(state: ^Frame_State) {
 	unload_all_chunk_meshes(&state.renderer)
 	end_session(session)
 	state.session = nil
-	state.show_diagnostics = false
+	state.diagnostics_page = .Off
 	state.show_world_overlay = false
 	// A pause command holds only the world it was given in.
 	state.command_control.paused = false
