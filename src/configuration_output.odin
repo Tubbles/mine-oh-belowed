@@ -112,7 +112,7 @@ settings_file_text :: proc(settings: Settings) -> string {
 write_settings_file :: proc(environment: Configuration_Environment, settings: Settings) -> string {
 	user_directory, found := user_configuration_directory(environment)
 	if !found {
-		return "no configuration directory (set XDG_CONFIG_HOME or HOME)"
+		return "no configuration directory (set " + CONFIG_HOME_VARIABLES + ")"
 	}
 	text := settings_file_text(settings)
 	directory := join_save_path(user_directory, CONFIGURATION_DROP_IN_DIRECTORY)

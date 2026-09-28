@@ -693,7 +693,7 @@ queue_screenshot :: proc(control: ^Command_Control, directory, name: string, now
 	file_name := name == "" ? screenshot_default_name(now) : name
 	switch {
 	case directory == "":
-		return "", "no state directory (set XDG_STATE_HOME or HOME)"
+		return "", NO_STATE_DIRECTORY_PROBLEM
 	case !screenshot_name_valid(file_name):
 		return "", "a screenshot name holds letters, digits, dot, dash and underscore, up to 64, not starting with a dot"
 	}

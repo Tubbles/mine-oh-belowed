@@ -1079,11 +1079,9 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 
 start_command_frame_state :: proc(state: ^Frame_State) {
 	state.command_server = make_command_server()
-	runtime_directory := os.get_env("XDG_RUNTIME_DIR", context.temp_allocator)
-	state_home := os.get_env("XDG_STATE_HOME", context.temp_allocator)
-	home := os.get_env("HOME", context.temp_allocator)
-	state.command_socket_path, _ = command_socket_path_from_environment(runtime_directory, state_home, home)
-	state.screenshot_directory, _ = screenshot_directory_from_environment(state_home, home)
+	directories := platform_directories(context.temp_allocator)
+	state.command_socket_path, _ = command_socket_path_from_environment(directories.runtime_directory, directories.state_home, directories.home)
+	state.screenshot_directory, _ = screenshot_directory_from_environment(directories.state_home, directories.home)
 }
 
 destroy_command_frame_state :: proc(state: ^Frame_State) {
@@ -1258,7 +1256,8 @@ capture_pending_screenshot :: proc(state: ^Frame_State) {
 // $XDG_STATE_HOME/mine-oh-belowed/texture_edits.sjson in the temp
 // allocator, "" without a state directory.
 texture_edits_path :: proc() -> string {
-	path, _ := texture_edits_path_from_environment(os.get_env("XDG_STATE_HOME", context.temp_allocator), os.get_env("HOME", context.temp_allocator), context.temp_allocator)
+	directories := platform_directories(context.temp_allocator)
+	path, _ := texture_edits_path_from_environment(directories.state_home, directories.home, context.temp_allocator)
 	return path
 }
 
@@ -1289,7 +1288,7 @@ serve_texture_editor :: proc(state: ^Frame_State) {
 save_texture_edits :: proc(state: ^Frame_State) {
 	editor := &state.texture_editor
 	path := texture_edits_path()
-	problem := path == "" ? "no state directory (set XDG_STATE_HOME or HOME)" : ""
+	problem := path == "" ? NO_STATE_DIRECTORY_PROBLEM : ""
 	lines := texture_editor_lines(editor.entries[:])
 	if problem == "" {
 		problem = write_texture_edits_file(path, format_texture_edits_file(lines))

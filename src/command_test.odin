@@ -136,8 +136,10 @@ test_command_socket_path_from_environment :: proc(t: ^testing.T) {
 	directory, directory_ok := screenshot_directory_from_environment("/state", "/home/player", context.temp_allocator)
 	testing.expect(t, directory_ok)
 	testing.expect_value(t, directory, "/state/mine-oh-belowed/screenshots")
-	_, address_ok := unix_socket_address(strings.repeat("x", 200, context.temp_allocator))
-	testing.expect(t, !address_ok)
+	when ODIN_OS != .Windows {
+		_, address_ok := unix_socket_address(strings.repeat("x", 200, context.temp_allocator))
+		testing.expect(t, !address_ok)
+	}
 }
 
 @(test)
@@ -607,60 +609,71 @@ test_command_queries :: proc(t: ^testing.T) {
 	expect_command_error(t, test, "query veins 0")
 }
 
-// A real socket: bind a temporary path, connect, send help, read the
-// answer up to its terminating line.
-@(test)
-test_command_socket_round_trip :: proc(t: ^testing.T) {
-	directory, error := os.make_directory_temp("", "mine-oh-belowed-socket-test-*", context.temp_allocator)
-	testing.expect(t, error == nil)
-	defer os.remove_all(directory)
-	path, _ := os.join_path({directory, "run", COMMAND_SOCKET_FILE_NAME}, context.temp_allocator)
-	server := make_command_server()
-	defer destroy_command_server(&server)
-	testing.expect_value(t, open_command_server(&server, path), "")
-	testing.expect(t, os.exists(path))
+when ODIN_OS == .Windows {
+	// No command socket on Windows (work item 0102).
+	@(test)
+	test_command_socket_is_off_on_windows :: proc(t: ^testing.T) {
+		server := make_command_server()
+		defer destroy_command_server(&server)
+		testing.expect_value(t, open_command_server(&server, "unused"), "no command socket on Windows")
+		testing.expect_value(t, server.listening, posix.FD(-1))
+	}
+} else {
+	// A real socket: bind a temporary path, connect, send help, read the
+	// answer up to its terminating line.
+	@(test)
+	test_command_socket_round_trip :: proc(t: ^testing.T) {
+		directory, error := os.make_directory_temp("", "mine-oh-belowed-socket-test-*", context.temp_allocator)
+		testing.expect(t, error == nil)
+		defer os.remove_all(directory)
+		path, _ := os.join_path({directory, "run", COMMAND_SOCKET_FILE_NAME}, context.temp_allocator)
+		server := make_command_server()
+		defer destroy_command_server(&server)
+		testing.expect_value(t, open_command_server(&server, path), "")
+		testing.expect(t, os.exists(path))
 
-	address, _ := unix_socket_address(path)
-	client := posix.socket(.UNIX, .STREAM)
-	defer posix.close(client)
-	testing.expect_value(t, posix.connect(client, (^posix.sockaddr)(&address), size_of(address)), posix.result.OK)
-	message := "help\n# comment\n"
-	testing.expect_value(t, int(posix.send(client, raw_data(message), len(message), {})), len(message))
+		address, _ := unix_socket_address(path)
+		client := posix.socket(.UNIX, .STREAM)
+		defer posix.close(client)
+		testing.expect_value(t, posix.connect(client, (^posix.sockaddr)(&address), size_of(address)), posix.result.OK)
+		message := "help\n# comment\n"
+		testing.expect_value(t, int(posix.send(client, raw_data(message), len(message), {})), len(message))
 
-	control: Command_Control
-	command_context := Command_Context{control = &control}
-	answered := 0
-	for attempt := 0; attempt < 100 && answered < 2; attempt += 1 {
-		poll_command_server(&server)
-		for {
-			queued := take_command_line(&server) or_break
-			if response, empty := execute_command_line(command_context, queued.line); !empty {
-				send_command_response(&server, queued.client, format_command_response(response))
+		control: Command_Control
+		command_context := Command_Context{control = &control}
+		answered := 0
+		for attempt := 0; attempt < 100 && answered < 2; attempt += 1 {
+			poll_command_server(&server)
+			for {
+				queued := take_command_line(&server) or_break
+				if response, empty := execute_command_line(command_context, queued.line); !empty {
+					send_command_response(&server, queued.client, format_command_response(response))
+				}
+				answered += 1
+				delete(queued.line)
 			}
-			answered += 1
-			delete(queued.line)
+			flush_command_server(&server)
 		}
-		flush_command_server(&server)
-	}
-	testing.expect_value(t, answered, 2)
+		testing.expect_value(t, answered, 2)
 
-	received := make([dynamic]byte, context.temp_allocator)
-	buffer: [4096]byte
-	for !strings.has_suffix(string(received[:]), "\n.\n") {
-		count := posix.recv(client, &buffer[0], len(buffer), {})
-		if count <= 0 {
-			break
+		received := make([dynamic]byte, context.temp_allocator)
+		buffer: [4096]byte
+		for !strings.has_suffix(string(received[:]), "\n.\n") {
+			count := posix.recv(client, &buffer[0], len(buffer), {})
+			if count <= 0 {
+				break
+			}
+			append(&received, ..buffer[:count])
 		}
-		append(&received, ..buffer[:count])
-	}
-	text := string(received[:])
-	testing.expect(t, strings.has_prefix(text, "ok commands\nhelp: "), text)
-	testing.expect(t, strings.has_suffix(text, "\n.\n"), text)
+		text := string(received[:])
+		testing.expect(t, strings.has_prefix(text, "ok commands\nhelp: "), text)
+		testing.expect(t, strings.has_suffix(text, "\n.\n"), text)
 
-	// A second server on the same path refuses while the first listens.
-	second := make_command_server()
-	defer destroy_command_server(&second)
-	testing.expect(t, open_command_server(&second, path) != "")
-	close_command_server(&server)
-	testing.expect(t, !os.exists(path))
+		// A second server on the same path refuses while the first listens.
+		second := make_command_server()
+		defer destroy_command_server(&second)
+		testing.expect(t, open_command_server(&second, path) != "")
+		close_command_server(&server)
+		testing.expect(t, !os.exists(path))
+	}
 }

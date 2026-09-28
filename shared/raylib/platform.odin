@@ -2,7 +2,7 @@ package raylib
 
 // GLFW calls the binding does not expose, from the same archive. Ours, not
 // a copy from the Odin toolchain (see README.md). The nix flake rewrites
-// the library path to "system:glfw".
+// the Linux library path to "system:glfw".
 //
 // glfwGetPlatform: GLFW 3.4 built with both backends picks Wayland when
 // the session offers it and X11 otherwise; this says which one it took.
@@ -16,7 +16,13 @@ package raylib
 
 import "core:c"
 
-foreign import lib "linux/libraylib.a"
+// GLFW is inside raylib's static library on both systems. On Windows
+// (work item 0102) the MSVC build from raylib's release, see README.md.
+when ODIN_OS == .Windows {
+	foreign import lib "windows/raylib.lib"
+} else {
+	foreign import lib "linux/libraylib.a"
+}
 
 GLFW_PLATFORM_WAYLAND :: 0x00060003
 GLFW_PLATFORM_X11 :: 0x00060004

@@ -163,7 +163,7 @@ new_world_save_setup :: proc(display_name, saves_directory: string, saves_found,
 		log_printf("world: saving is off for the debug terrain")
 		return {}
 	case !saves_found:
-		log_printf("world: saving is off (set %s, XDG_DATA_HOME or HOME)", SAVES_DIRECTORY_ENVIRONMENT_VARIABLE)
+		log_printf("world: saving is off (set %s, %s)", SAVES_DIRECTORY_ENVIRONMENT_VARIABLE, DATA_HOME_VARIABLES)
 		return {}
 	}
 	directory_name := unused_world_directory_name(saves_directory, sanitize_world_name(display_name, context.temp_allocator), context.temp_allocator)

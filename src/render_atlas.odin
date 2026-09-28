@@ -212,7 +212,7 @@ read_block_textures :: proc(registry: Block_Registry, data_directory: string, pr
 // are read again on every upload, the texture edits from the state
 // directory with them.
 upload_atlas :: proc(registry: Block_Registry, layout: Atlas_Layout, data_directory: string) -> rl.Texture2D {
-	edits_path, _ := texture_edits_path_from_environment(os.get_env("XDG_STATE_HOME", context.temp_allocator), os.get_env("HOME", context.temp_allocator), context.temp_allocator)
+	edits_path := texture_edits_path()
 	procedural := load_procedural_textures(data_directory, edits_path, registry)
 	pixels := generate_atlas_pixels(registry, layout, read_block_textures(registry, data_directory, procedural), context.temp_allocator)
 	image := rl.Image {

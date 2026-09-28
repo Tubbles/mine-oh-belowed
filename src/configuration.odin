@@ -23,7 +23,12 @@ CONFIGURATION_DROP_IN_DIRECTORY :: "config.d"
 CONFIGURATION_EXTENSION :: ".sjson"
 // The settings screen writes this drop in and nothing else.
 SETTINGS_FILE_NAME :: "90-settings.sjson"
-DEFAULT_CONFIG_DIRS :: "/etc/xdg"
+when ODIN_OS == .Windows {
+	// No system wide configuration directory on Windows.
+	DEFAULT_CONFIG_DIRS :: ""
+} else {
+	DEFAULT_CONFIG_DIRS :: "/etc/xdg"
+}
 CONFIG_HOME_UNDER_HOME :: ".config"
 COMMAND_LINE_SOURCE :: "command line"
 DEFAULT_SOURCE :: "default"
@@ -88,12 +93,10 @@ Loaded_Configuration :: struct {
 	provenance:    Configuration_Provenance,
 }
 
+// platform_paths.odin: %APPDATA% as the config home on Windows.
 read_configuration_environment :: proc() -> Configuration_Environment {
-	return Configuration_Environment {
-		config_home = os.get_env("XDG_CONFIG_HOME", context.allocator),
-		config_dirs = os.get_env("XDG_CONFIG_DIRS", context.allocator),
-		home = os.get_env("HOME", context.allocator),
-	}
+	directories := platform_directories(context.allocator)
+	return Configuration_Environment{config_home = directories.config_home, config_dirs = directories.config_dirs, home = directories.home}
 }
 
 // Directories.

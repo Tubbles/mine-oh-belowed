@@ -6,6 +6,10 @@ import "core:os"
 import "core:strings"
 import "core:sys/posix"
 
+// Used only on the Linux side of the when blocks below.
+_ :: c
+_ :: fmt
+
 // The command socket (work item 0053, doc/commands.md): a Unix domain
 // stream socket the game listens on while developer mode is on, at
 // $XDG_RUNTIME_DIR/mine-oh-belowed/command.sock, or under
@@ -16,7 +20,8 @@ import "core:sys/posix"
 // arrival order. Several clients may connect, one after the other or at
 // once; each may send several lines and gets one response per line, in
 // order. The loop executes the lines between ticks (loop.odin), so the
-// simulation never reads the socket.
+// simulation never reads the socket. Linux only: on Windows the server
+// never opens (work item 0102).
 
 COMMAND_SOCKET_FILE_NAME :: "command.sock"
 // Bytes a client may send without a newline before it is dropped.
@@ -82,64 +87,72 @@ screenshot_directory_from_environment :: proc(state_home, home: string, allocato
 
 // Opening.
 
-unix_socket_address :: proc(path: string) -> (address: posix.sockaddr_un, ok: bool) {
-	if len(path) >= len(address.sun_path) {
-		return {}, false
+when ODIN_OS == .Windows {
+	// No Unix domain sockets on Windows (work item 0102): the server never
+	// opens, the frame loop logs this once and polling stays a no op.
+	open_command_server :: proc(server: ^Command_Server, path: string) -> string {
+		return "no command socket on Windows"
 	}
-	address.sun_family = .UNIX
-	for index in 0 ..< len(path) {
-		address.sun_path[index] = c.char(path[index])
+} else {
+	unix_socket_address :: proc(path: string) -> (address: posix.sockaddr_un, ok: bool) {
+		if len(path) >= len(address.sun_path) {
+			return {}, false
+		}
+		address.sun_family = .UNIX
+		for index in 0 ..< len(path) {
+			address.sun_path[index] = c.char(path[index])
+		}
+		return address, true
 	}
-	return address, true
-}
 
-set_non_blocking :: proc(descriptor: posix.FD) -> bool {
-	flags := posix.fcntl(descriptor, .GETFL)
-	if flags < 0 {
-		return false
+	set_non_blocking :: proc(descriptor: posix.FD) -> bool {
+		flags := posix.fcntl(descriptor, .GETFL)
+		if flags < 0 {
+			return false
+		}
+		return posix.fcntl(descriptor, .SETFL, transmute(posix.O_Flags)flags + {.NONBLOCK}) >= 0
 	}
-	return posix.fcntl(descriptor, .SETFL, transmute(posix.O_Flags)flags + {.NONBLOCK}) >= 0
-}
 
-// A connection succeeds only while another game listens there.
-socket_is_live :: proc(address: ^posix.sockaddr_un) -> bool {
-	probe := posix.socket(.UNIX, .STREAM)
-	if probe == -1 {
-		return false
+	// A connection succeeds only while another game listens there.
+	socket_is_live :: proc(address: ^posix.sockaddr_un) -> bool {
+		probe := posix.socket(.UNIX, .STREAM)
+		if probe == -1 {
+			return false
+		}
+		defer posix.close(probe)
+		return posix.connect(probe, (^posix.sockaddr)(address), size_of(posix.sockaddr_un)) == .OK
 	}
-	defer posix.close(probe)
-	return posix.connect(probe, (^posix.sockaddr)(address), size_of(posix.sockaddr_un)) == .OK
-}
 
-// Binds and listens at path in a directory made with mode 0700. A stale
-// socket file is removed first; one another game still listens on is left
-// alone and reported. Returns the problem, empty on success.
-open_command_server :: proc(server: ^Command_Server, path: string) -> string {
-	directory, _ := os.split_path(path)
-	if error := os.make_directory_all(directory, {.Read_User, .Write_User, .Execute_User}); error != nil && error != .Exist {
-		return fmt.tprintf("cannot make %s: %v", directory, error)
+	// Binds and listens at path in a directory made with mode 0700. A stale
+	// socket file is removed first; one another game still listens on is left
+	// alone and reported. Returns the problem, empty on success.
+	open_command_server :: proc(server: ^Command_Server, path: string) -> string {
+		directory, _ := os.split_path(path)
+		if error := os.make_directory_all(directory, {.Read_User, .Write_User, .Execute_User}); error != nil && error != .Exist {
+			return fmt.tprintf("cannot make %s: %v", directory, error)
+		}
+		posix.chmod(strings.clone_to_cstring(directory, context.temp_allocator), {.IRUSR, .IWUSR, .IXUSR})
+		address, address_ok := unix_socket_address(path)
+		if !address_ok {
+			return fmt.tprintf("the socket path %s is too long", path)
+		}
+		if socket_is_live(&address) {
+			return fmt.tprintf("another game listens on %s", path)
+		}
+		posix.unlink(strings.clone_to_cstring(path, context.temp_allocator))
+		descriptor := posix.socket(.UNIX, .STREAM)
+		if descriptor == -1 {
+			return fmt.tprintf("socket: %v", posix.errno())
+		}
+		if posix.bind(descriptor, (^posix.sockaddr)(&address), size_of(address)) != .OK || posix.listen(descriptor, COMMAND_SOCKET_BACKLOG) != .OK || !set_non_blocking(descriptor) {
+			problem := fmt.tprintf("cannot listen on %s: %v", path, posix.errno())
+			posix.close(descriptor)
+			return problem
+		}
+		server.listening = descriptor
+		server.path = strings.clone(path)
+		return ""
 	}
-	posix.chmod(strings.clone_to_cstring(directory, context.temp_allocator), {.IRUSR, .IWUSR, .IXUSR})
-	address, address_ok := unix_socket_address(path)
-	if !address_ok {
-		return fmt.tprintf("the socket path %s is too long", path)
-	}
-	if socket_is_live(&address) {
-		return fmt.tprintf("another game listens on %s", path)
-	}
-	posix.unlink(strings.clone_to_cstring(path, context.temp_allocator))
-	descriptor := posix.socket(.UNIX, .STREAM)
-	if descriptor == -1 {
-		return fmt.tprintf("socket: %v", posix.errno())
-	}
-	if posix.bind(descriptor, (^posix.sockaddr)(&address), size_of(address)) != .OK || posix.listen(descriptor, COMMAND_SOCKET_BACKLOG) != .OK || !set_non_blocking(descriptor) {
-		problem := fmt.tprintf("cannot listen on %s: %v", path, posix.errno())
-		posix.close(descriptor)
-		return problem
-	}
-	server.listening = descriptor
-	server.path = strings.clone(path)
-	return ""
 }
 
 // Closes every client, stops listening and removes the socket file.
@@ -152,10 +165,12 @@ close_command_server :: proc(server: ^Command_Server) {
 		delete(queued.line)
 	}
 	clear(&server.lines)
-	if server.listening != -1 {
-		posix.close(server.listening)
-		posix.unlink(strings.clone_to_cstring(server.path, context.temp_allocator))
-		server.listening = -1
+	when ODIN_OS != .Windows {
+		if server.listening != -1 {
+			posix.close(server.listening)
+			posix.unlink(strings.clone_to_cstring(server.path, context.temp_allocator))
+			server.listening = -1
+		}
 	}
 	delete(server.path)
 	server.path = ""
@@ -169,7 +184,9 @@ destroy_command_server :: proc(server: ^Command_Server) {
 }
 
 destroy_command_client :: proc(client: Command_Client) {
-	posix.close(client.descriptor)
+	when ODIN_OS != .Windows {
+		posix.close(client.descriptor)
+	}
 	delete(client.input)
 	delete(client.output)
 }
@@ -181,33 +198,37 @@ would_block :: proc(errno: posix.Errno) -> bool {
 }
 
 accept_command_clients :: proc(server: ^Command_Server) {
-	for {
-		descriptor := posix.accept(server.listening, nil, nil)
-		if descriptor == -1 {
-			return
+	when ODIN_OS != .Windows {
+		for {
+			descriptor := posix.accept(server.listening, nil, nil)
+			if descriptor == -1 {
+				return
+			}
+			if !set_non_blocking(descriptor) {
+				posix.close(descriptor)
+				continue
+			}
+			append(&server.clients, Command_Client{serial = server.next_serial, descriptor = descriptor})
+			server.next_serial += 1
 		}
-		if !set_non_blocking(descriptor) {
-			posix.close(descriptor)
-			continue
-		}
-		append(&server.clients, Command_Client{serial = server.next_serial, descriptor = descriptor})
-		server.next_serial += 1
 	}
 }
 
 // Reads what the client sent until the socket would block; end of file
 // or an error finishes it.
 read_command_client :: proc(client: ^Command_Client) {
-	buffer: [COMMAND_READ_CHUNK_BYTES]byte
-	for !client.finished {
-		count := posix.recv(client.descriptor, &buffer[0], len(buffer), {})
-		switch {
-		case count > 0:
-			append(&client.input, ..buffer[:count])
-		case count == 0 || !would_block(posix.errno()):
-			client.finished = true
-		case:
-			return
+	when ODIN_OS != .Windows {
+		buffer: [COMMAND_READ_CHUNK_BYTES]byte
+		for !client.finished {
+			count := posix.recv(client.descriptor, &buffer[0], len(buffer), {})
+			switch {
+			case count > 0:
+				append(&client.input, ..buffer[:count])
+			case count == 0 || !would_block(posix.errno()):
+				client.finished = true
+			case:
+				return
+			}
 		}
 	}
 }
@@ -275,16 +296,18 @@ send_command_response :: proc(server: ^Command_Server, serial: u64, text: string
 // Writes what the socket takes now; a broken connection finishes the
 // client and drops its output.
 flush_command_client :: proc(client: ^Command_Client) {
-	for len(client.output) > 0 {
-		count := posix.send(client.descriptor, &client.output[0], len(client.output), {.NOSIGNAL})
-		if count < 0 {
-			if !would_block(posix.errno()) {
-				client.finished = true
-				clear(&client.output)
+	when ODIN_OS != .Windows {
+		for len(client.output) > 0 {
+			count := posix.send(client.descriptor, &client.output[0], len(client.output), {.NOSIGNAL})
+			if count < 0 {
+				if !would_block(posix.errno()) {
+					client.finished = true
+					clear(&client.output)
+				}
+				return
 			}
-			return
+			remove_range(&client.output, 0, int(count))
 		}
-		remove_range(&client.output, 0, int(count))
 	}
 }
 

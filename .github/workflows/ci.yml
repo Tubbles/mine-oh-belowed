@@ -14,3 +14,77 @@ jobs:
         run: nix develop --command odin version
       - name: Build and test
         run: nix build --print-build-logs
+
+  # The Windows x64 build for GameNative on Android (work item 0102,
+  # doc/build.md). Builds and packages only: the tests assume Unix paths
+  # and sockets and stay in the nix job.
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      ODIN_URL: https://github.com/odin-lang/Odin/releases/download/dev-2026-09/odin-windows-amd64-dev-2026-09.zip
+      ODIN_SHA256: 8ed8abd95b82e0af1eb7e86cb75f380fd8bde104947721817b35929f5fc19388
+      SDL3_URL: https://github.com/libsdl-org/SDL/releases/download/release-3.4.16/SDL3-devel-3.4.16-VC.zip
+      SDL3_SHA256: 1a784cb2a5c64d56fe7a62090fe9d242d9865f235e4ea9678f1a6ba4e693e7de
+    steps:
+      - uses: actions/checkout@v7
+      - name: MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Short commit
+        run: echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
+      - name: Download Odin dev-2026-09
+        run: |
+          downloads="$(cygpath -u "$RUNNER_TEMP")"
+          curl --fail --location --silent --show-error --output "$downloads/odin.zip" "$ODIN_URL"
+          echo "$ODIN_SHA256  $downloads/odin.zip" | sha256sum --check -
+          7z x -o"$downloads/odin" "$downloads/odin.zip" >/dev/null
+          odin_executable="$(find "$downloads/odin" -name odin.exe -print -quit)"
+          if [ -z "$odin_executable" ]; then
+            echo "odin.exe not found in the release zip" >&2
+            exit 1
+          fi
+          echo "ODIN=$odin_executable" >> "$GITHUB_ENV"
+          "$odin_executable" version
+      - name: Download SDL3 3.4.16 and give Odin its SDL3.lib
+        run: |
+          downloads="$(cygpath -u "$RUNNER_TEMP")"
+          curl --fail --location --silent --show-error --output "$downloads/sdl3.zip" "$SDL3_URL"
+          echo "$SDL3_SHA256  $downloads/sdl3.zip" | sha256sum --check -
+          7z x -o"$downloads/sdl3" "$downloads/sdl3.zip" >/dev/null
+          cp "$downloads/sdl3/SDL3-3.4.16/lib/x64/SDL3.lib" "$(dirname "$ODIN")/vendor/sdl3/"
+          echo "SDL3_DLL=$downloads/sdl3/SDL3-3.4.16/lib/x64/SDL3.dll" >> "$GITHUB_ENV"
+      - name: Build release
+        run: MINE_OH_BELOWED_COMMIT="$SHORT_SHA" ./build.sh release
+      - name: Package
+        run: |
+          package=dist/mine-oh-belowed
+          mkdir -p "$package"
+          cp build/mine-oh-belowed.exe "$SDL3_DLL" "$package/"
+          cp -r data "$package/"
+          cat > "$package/README.txt" <<README
+          Mine oh Belowed, Windows x64 build (commit $SHORT_SHA)
+
+          A voxel automation game. Start mine-oh-belowed.exe; it finds the
+          data folder beside itself, and SDL3.dll must stay beside it too. The title
+          screen and the pause menu show the build stamp: this commit and
+          the build time.
+
+          Made for GameNative on Android (Wine): point the app at
+          mine-oh-belowed.exe. Inside the Wine container the files land in
+            log:           C:\users\<user>\AppData\Local\mine-oh-belowed\log.txt
+            screenshots:   C:\users\<user>\AppData\Local\mine-oh-belowed\screenshots
+            saves:         C:\users\<user>\AppData\Roaming\mine-oh-belowed\saves
+            configuration: C:\users\<user>\AppData\Roaming\mine-oh-belowed\config.sjson
+          (%LOCALAPPDATA% and %APPDATA%). The Windows build has no command
+          socket and writes no crash trace on a fatal signal.
+          README
+          ls -R "$package" | head -n 20
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mine-oh-belowed-windows-x64-${{ env.SHORT_SHA }}
+          path: dist/
+          if-no-files-found: error

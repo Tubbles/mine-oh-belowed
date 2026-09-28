@@ -2,6 +2,8 @@
 
 The game can be driven from outside while someone plays: give items, skip chapters, add a vein, build a blueprint, advance time, read the state back. Work item 0053. Source: `src/command_socket.odin` (transport), `src/command.odin` (protocol and commands), `src/developer.odin` (the requests the commands serve), `tools/moc` (the client).
 
+Linux only. The Windows build (work item 0102, `build.md`) has no Unix domain sockets: with developer mode on it logs `error: command socket: no command socket on Windows` once and never listens.
+
 ## For the assistant
 
 1. The game must run with developer mode on: `--dev`, or the `developer_mode` setting (Settings, Developer mode). The log then says `command: listening on <path>`.

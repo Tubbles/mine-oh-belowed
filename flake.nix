@@ -58,6 +58,9 @@
           checkPhase = ''
             runHook preCheck
             odin test src -collection:shared=shared
+            # The Windows target (work item 0102) checks on any host; this
+            # is where CI guards it on every push.
+            odin check src -collection:shared=shared -target:windows_amd64 -vet -strict-style
             runHook postCheck
           '';
 

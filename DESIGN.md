@@ -143,7 +143,7 @@ A major principle (user, 2026-09-28): people are very sensitive to patterns wher
 
 ## Technical
 
-Targets: the couch machine at 1080p with the Steam Controller, and the Steam Deck at 1280 by 800 with its built in controls (user, 2026-09-27); every rendering feature is budgeted for the Deck's APU and sits behind a setting when it costs. Odin with raylib for windowing and rendering and SDL3 for controller input. Deterministic fixed step simulation decoupled from rendering, typed entity pools, data driven prototypes in SJSON. The simulation holds an array of players from the start, so local co-op later needs no redesign. See [doc/architecture.md](doc/architecture.md).
+Targets: the couch machine at 1080p with the Steam Controller, and the Steam Deck at 1280 by 800 with its built in controls (user, 2026-09-27), and further an Android phone through GameNative, which runs the Windows x86-64 build under Wine and Box64 (user, 2026-09-28, `doc/build.md`); every rendering feature is budgeted for the Deck's APU and sits behind a setting when it costs. Odin with raylib for windowing and rendering and SDL3 for controller input. Deterministic fixed step simulation decoupled from rendering, typed entity pools, data driven prototypes in SJSON. The simulation holds an array of players from the start, so local co-op later needs no redesign. See [doc/architecture.md](doc/architecture.md).
 
 ## Out of scope for alpha 1
 

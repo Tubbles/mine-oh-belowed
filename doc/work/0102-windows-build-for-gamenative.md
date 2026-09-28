@@ -1,6 +1,6 @@
 # 0102 Windows build and CI artifact for GameNative
 
-Status: todo
+Status: implemented
 Milestone: M11
 
 ## Goal
@@ -37,3 +37,7 @@ Files a subagent may touch: `src/logging.odin`, `src/command_socket.odin`, `src/
 
 Facts checked by the main agent (2026-09-28): the Odin release zip unpacks to `dist/odin.exe` with `dist/vendor/sdl3/` (no `SDL3.lib`) and `dist/vendor/raylib/windows/raylib.lib` (5297172 bytes); the raylib release zip `raylib-6.0_win64_msvc16.zip` (SHA-256 `c93c7dc74576e00e3ee57fa2bd5fd109fbfc5aca87e12046dd7ec2c2268b3f78`) holds `lib/raylib.lib` (static, 5297172 bytes), `lib/raylibdll.lib` and `lib/raylib.dll`; the toolchain here has an empty `vendor/raylib/windows/`. Downloads of both are under `tmp/` (`tmp/raylib-6.0_win64_msvc16.zip`, `tmp/odin-windows.zip`, `tmp/sdl3-devel-vc.zip`), so the library can be taken from there without downloading again.
 Also checked: `raylib.lib` in the raylib release and in the Odin release are the same bytes (SHA-256 `e979fda995ea6b4ac0162156c6bc5d44c1ef6d995941f648a4f05ee19f3e00cb`), so record that hash for the committed file. `SDL3-devel-3.4.16-VC.zip` (SHA-256 `1a784cb2a5c64d56fe7a62090fe9d242d9865f235e4ea9678f1a6ba4e693e7de`) unpacks to `SDL3-3.4.16/lib/x64/SDL3.lib` (283572 bytes) and `SDL3-3.4.16/lib/x64/SDL3.dll` (2844160 bytes).
+
+## Implemented
+
+2026-09-28. `src/platform_paths.odin` holds `platform_directories` (Linux: the XDG variables and `$HOME` as before; Windows: `%APPDATA%` as config and data home, `%LOCALAPPDATA%` as state home, no home, no runtime directory, no system configuration directory) and every former environment reader goes through it. The command socket and the POSIX parts of logging are guarded with `when`; the socket round trip test is Linux only. `<executable directory>/data` joins the data lookup. `shared/raylib/windows/raylib.lib` is committed (SHA-256 `e979fda995ea6b4ac0162156c6bc5d44c1ef6d995941f648a4f05ee19f3e00cb`). `build.sh` has `check-windows` and a Git Bash branch; the flake runs the Windows check; CI has the `windows` job, with `actions/upload-artifact@v7` (the current major on 2026-09-28, not v4). Verified here: `./build.sh check`, `./build.sh check-windows`, `./build.sh test` (1047 tests) and `./build.sh release`. Not verified: the flake (no Nix here), the `windows` job on the runner, the game on the phone. Decisions and the untested runner assumptions are in `doc/log/2026-09-28.md`.

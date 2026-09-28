@@ -4,18 +4,38 @@
 #   ./build.sh release   optimised build to build/mine-oh-belowed
 # bin/ is reserved for the installed play build, see tools/install_play_build.sh.
 #   ./build.sh check     odin check src -vet -strict-style
+#   ./build.sh check-windows
+#                        the same check for the windows_amd64 target, on
+#                        any host (work item 0102)
 #   ./build.sh test      odin test src
 #   ./build.sh bench     the factory benchmark test, optimised, with the
 #                        size 4 budget (work item 0050)
 # Every command passes the shared collection, which holds the raylib
 # binding and the library tools/build_raylib.sh builds (work item 0085),
 # so a bare odin check src no longer compiles.
+# On a Windows host under Git Bash (CI, work item 0102) ODIN names
+# odin.exe, the output is build/mine-oh-belowed.exe, there are no linker
+# shims, and release links for the windows subsystem so no console window
+# opens beside the game.
 set -euo pipefail
+
+case "$(uname -s)" in
+	MINGW* | MSYS*) windows_host=true ;;
+	*) windows_host=false ;;
+esac
 
 odin="${ODIN:-$HOME/opt/odin/odin}"
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+output_suffix=""
+if [ "$windows_host" = true ]; then
+	# C:/a/b rather than /c/a/b: odin.exe is no MSYS program, so the paths
+	# it gets inside -collection: and -out: must not rely on Git Bash
+	# converting them.
+	repository_root="$(cygpath -m "$repository_root")"
+	output_suffix=".exe"
+fi
 shim_directory="$repository_root/tmp/linker-shims"
-output="$repository_root/build/mine-oh-belowed"
+output="$repository_root/build/mine-oh-belowed$output_suffix"
 mode="${1:-debug}"
 collection="-collection:shared=$repository_root/shared"
 
@@ -48,21 +68,31 @@ build_commit() {
 }
 
 build() {
-	create_linker_shims
+	local platform_flags=()
+	if [ "$windows_host" = false ]; then
+		create_linker_shims
+		platform_flags=(-extra-linker-flags:"-L$shim_directory")
+	fi
 	mkdir -p "$(dirname "$output")"
 	"$odin" build src -out:"$output" "$collection" -vet -strict-style \
 		-define:BUILD_INFO="$(build_commit) $(date -u +%Y-%m-%dT%H:%MZ)" \
-		-extra-linker-flags:"-L$shim_directory" "$@"
+		"${platform_flags[@]}" "$@"
 }
+
+release_flags=(-o:speed)
+if [ "$windows_host" = true ]; then
+	release_flags+=(-subsystem:windows)
+fi
 
 case "$mode" in
 	debug) build -debug ;;
-	release) build -o:speed ;;
+	release) build "${release_flags[@]}" ;;
 	check) "$odin" check src "$collection" -vet -strict-style ;;
+	check-windows) "$odin" check src "$collection" -target:windows_amd64 -vet -strict-style ;;
 	test) "$odin" test src "$collection" ;;
 	bench) "$odin" test src "$collection" -o:speed -define:ODIN_TEST_NAMES=game.test_factory_benchmark ;;
 	*)
-		echo "usage: $0 [debug|release|check|test|bench]" >&2
+		echo "usage: $0 [debug|release|check|check-windows|test|bench]" >&2
 		exit 2
 		;;
 esac

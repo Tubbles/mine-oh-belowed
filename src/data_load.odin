@@ -35,6 +35,8 @@ Game_Config :: struct {
 
 // An explicitly set environment variable wins even if the directory is
 // missing, so that a typo fails loudly instead of silently falling back.
+// Then ./data, data beside the executable (the unzipped Windows build, work
+// item 0102, from any working directory) and the installed layout.
 resolve_data_directory :: proc(allocator := context.allocator) -> (directory: string, ok: bool) {
 	if value, found := os.lookup_env(DATA_DIRECTORY_ENVIRONMENT_VARIABLE, allocator); found && value != "" {
 		return value, true
@@ -42,15 +44,18 @@ resolve_data_directory :: proc(allocator := context.allocator) -> (directory: st
 	if os.is_dir(WORKING_DIRECTORY_DATA) {
 		return WORKING_DIRECTORY_DATA, true
 	}
-	return installed_data_directory(allocator)
+	if beside, found := data_directory_relative_to_executable(WORKING_DIRECTORY_DATA, allocator); found {
+		return beside, true
+	}
+	return data_directory_relative_to_executable(INSTALLED_DATA_RELATIVE_TO_EXECUTABLE, allocator)
 }
 
-installed_data_directory :: proc(allocator := context.allocator) -> (directory: string, ok: bool) {
+data_directory_relative_to_executable :: proc(relative: string, allocator := context.allocator) -> (directory: string, ok: bool) {
 	executable_directory, error := os.get_executable_directory(context.temp_allocator)
 	if error != nil {
 		return "", false
 	}
-	joined, join_error := os.join_path({executable_directory, INSTALLED_DATA_RELATIVE_TO_EXECUTABLE}, allocator)
+	joined, join_error := os.join_path({executable_directory, relative}, allocator)
 	if join_error != nil || !os.is_dir(joined) {
 		return "", false
 	}

@@ -98,9 +98,8 @@ resolve_saves_directory :: proc(configured: string, allocator := context.allocat
 	if saves == "" {
 		saves = configured
 	}
-	data_home := os.get_env("XDG_DATA_HOME", context.temp_allocator)
-	home := os.get_env("HOME", context.temp_allocator)
-	return saves_directory_from_environment(saves, data_home, home, allocator)
+	directories := platform_directories(context.temp_allocator)
+	return saves_directory_from_environment(saves, directories.data_home, directories.home, allocator)
 }
 
 world_name_character_is_safe :: proc(character: rune) -> bool {

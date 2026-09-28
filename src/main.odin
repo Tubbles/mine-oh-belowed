@@ -294,8 +294,9 @@ require_data_directory :: proc() -> string {
 	data_directory, found := resolve_data_directory()
 	if !found {
 		log_printf(
-			"error: no data directory found. Set %s, run from the repository root (./%s), or install to <executable directory>/%s",
+			"error: no data directory found. Set %s, run from the repository root (./%s), put %s beside the executable, or install to <executable directory>/%s",
 			DATA_DIRECTORY_ENVIRONMENT_VARIABLE,
+			WORKING_DIRECTORY_DATA,
 			WORKING_DIRECTORY_DATA,
 			INSTALLED_DATA_RELATIVE_TO_EXECUTABLE,
 		)
@@ -374,7 +375,7 @@ start_command_line_session :: proc(command_line: Command_Line, config: Game_Conf
 command_line_plan :: proc(command_line: Command_Line, config: Game_Config, saves_directory: string, saves_found: bool) -> (plan: Session_Plan, problem: string) {
 	if command_line.load_name != "" {
 		if !saves_found {
-			return {}, fmt.tprintf("no saves directory (set %s, XDG_DATA_HOME or HOME)", SAVES_DIRECTORY_ENVIRONMENT_VARIABLE)
+			return {}, fmt.tprintf("no saves directory (set %s, %s)", SAVES_DIRECTORY_ENVIRONMENT_VARIABLE, DATA_HOME_VARIABLES)
 		}
 		return saved_world_plan(saves_directory, sanitize_world_name(command_line.load_name, context.temp_allocator))
 	}
