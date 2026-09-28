@@ -6,7 +6,8 @@ import rl "vendor:raylib"
 // Particles and feedback (work item 0067): the emitters of a frame, read
 // from the entity states and the players at render time, the memory of
 // the last frame that turns a finished dig into a puff and a new shipment
-// into a capsule descending under a parachute, and the drawing. The
+// into a capsule descending under a parachute, a new orbital survey into
+// the survey satellite's pass (work item 0069), and the drawing. The
 // simulation never sees any of it. Selection, the memory and the descent
 // path are pure procedures; only the disc upload and the draw calls touch
 // raylib.
@@ -38,6 +39,7 @@ BREAK_PUFF_SPREAD :: 0.4
 // long, swaying sideways by up to CAPSULE_SWAY_BLOCKS.
 CAPSULE_DESCENT_HEIGHT :: 60.0
 CAPSULE_DESCENT_SECONDS :: 8.0
+SATELLITE_PASS_SECONDS :: 6.0
 CAPSULE_SWAY_BLOCKS :: 0.6
 CAPSULE_SWAY_RATE :: 1.3
 DESCENT_CAPSULE_SIZE :: 0.8
@@ -66,14 +68,26 @@ Capsule_Descent :: struct {
 	seconds: f32,
 }
 
+// The survey satellite crossing the map and the sky after an orbital
+// survey (work item 0069), over SATELLITE_PASS_SECONDS.
+Satellite_Pass :: struct {
+	active:  bool,
+	seconds: f32,
+}
+
 // What the particles remember of the last frame, in Frame_State, reset
-// with the session. frame_count is the particles' random source.
+// with the session. frame_count is the particles' random source. The
+// message count finds a new orbital survey in the quest log as the
+// shipment count finds a new shipment.
 Particle_Memory :: struct {
 	frame_count:     u64,
 	mining:          Mining_Memory,
 	shipments_known: bool,
 	shipment_count:  int,
 	descent:         Capsule_Descent,
+	messages_known:  bool,
+	message_count:   int,
+	satellite:       Satellite_Pass,
 }
 
 Particle_Renderer :: struct {
@@ -291,6 +305,45 @@ update_capsule_descent :: proc(system: ^Particle_System, memory: ^Particle_Memor
 	} else if landed {
 		particle_burst(system, memory^, landing, LANDING_PUFF_COLOR)
 	}
+}
+
+// A new orbital survey message since the count.
+orbital_survey_since :: proc(messages: []Quest_Message, count: int) -> bool {
+	for message in messages[min(count, len(messages)):] {
+		if message.text_key == ORBITAL_SURVEY_KEY {
+			return true
+		}
+	}
+	return false
+}
+
+advance_satellite_pass :: proc(pass: Satellite_Pass, seconds: f32) -> Satellite_Pass {
+	if !pass.active {
+		return {}
+	}
+	next := pass
+	next.seconds += max(seconds, 0)
+	if next.seconds >= SATELLITE_PASS_SECONDS {
+		return {}
+	}
+	return next
+}
+
+// 0 as the pass starts, 1 as it ends.
+satellite_pass_fraction :: proc(pass: Satellite_Pass) -> f32 {
+	return clamp(pass.seconds / SATELLITE_PASS_SECONDS, 0, 1)
+}
+
+// A survey since the last frame starts a pass; nothing on the first frame
+// of a session, so a loaded world starts none.
+update_satellite_pass :: proc(memory: ^Particle_Memory, messages: []Quest_Message, frame_seconds: f32) {
+	surveyed := memory.messages_known && orbital_survey_since(messages, memory.message_count)
+	memory.messages_known, memory.message_count = true, len(messages)
+	if surveyed {
+		memory.satellite = {active = true}
+		return
+	}
+	memory.satellite = advance_satellite_pass(memory.satellite, clamp(frame_seconds, 0, PARTICLE_MAXIMUM_FRAME_SECONDS))
 }
 
 // The frame's spawning, memory and movement, with the frame time capped.

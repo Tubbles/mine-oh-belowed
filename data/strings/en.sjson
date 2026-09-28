@@ -296,6 +296,8 @@ block_palm_leaves = "Palm fronds"
 block_dead_log = "Dead wood"
 block_unknown_ore = "Unknown ore"
 item_discovered = "{name} discovered!"
+// The HUD's discovery card (work item 0069).
+discovery_card_title = "Discovered"
 
 // Biomes (data/biomes.sjson), named on the map legend and by the HUD
 // banner when the player walks into one (work item 0058).
@@ -819,6 +821,8 @@ journal_locked = "Not yet assigned."
 journal_main_quest = "Main quest"
 journal_rewards = "Reward:"
 journal_messages = "Mission Control"
+// The HUD panel's header (work item 0069).
+mission_control_header = "MISSION CONTROL"
 hint_chapters = "Chapters"
 capsule_landed = "A capsule has landed"
 objective_obtain = "Obtain"

@@ -753,9 +753,11 @@ append_tooltip :: proc(state: ^Ui_State) {
 }
 
 // Top left, one under the other, each wrapped to at most
-// UI_TOAST_MAXIMUM_LINES lines.
+// UI_TOAST_MAXIMUM_LINES lines, below Mission Control's panel while it
+// shows (toast_top_offset).
 append_toasts :: proc(state: ^Ui_State) {
 	area := ui_safe_area(state)
+	cut_top(&area, state.toast_top_offset)
 	text_width := area.width * UI_TOAST_WIDTH_FRACTION - 2 * UI_PADDING
 	vertical_padding := f32(UI_ROW_HEIGHT - UI_LINE_HEIGHT) / 2
 	for toast in state.toasts {

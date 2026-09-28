@@ -242,12 +242,16 @@ Radial_State :: struct {
 }
 
 // What the UI asks the mixer to play (work item 0068): a focus move, an
-// activation, a back press on a screen. Recorded here, drained by the
-// frame loop (play_ui_sounds), so the UI never calls audio itself.
+// activation, a back press on a screen, and the chimes of a Mission
+// Control line starting and of a discovery card (work item 0069).
+// Recorded here, drained by the frame loop (play_ui_sounds), so the UI
+// never calls audio itself.
 Ui_Sound_Event :: enum u8 {
 	Move,
 	Confirm,
 	Back,
+	Mission_Control,
+	Discovery,
 }
 
 Ui_State :: struct {
@@ -281,6 +285,11 @@ Ui_State :: struct {
 	distribute:       Distribute_Gesture,
 	quick_move:       Quick_Move_State,
 	toasts:           [dynamic]Toast,
+	// Mission Control's panel and the discovery card (ui_mission_control.odin).
+	mission_control:  Mission_Control_State,
+	// Set by the HUD while the Mission Control panel shows, so the toasts
+	// start below it; cleared by ui_begin.
+	toast_top_offset: f32,
 	// Filled by ui_begin and ui_resolve, emptied by the frame loop.
 	sound_events:     bit_set[Ui_Sound_Event],
 	scroll_offsets:   map[Ui_Id]f32,
@@ -305,6 +314,7 @@ destroy_ui_state :: proc(state: ^Ui_State) {
 		delete(toast.text)
 	}
 	delete(state.toasts)
+	destroy_mission_control(&state.mission_control)
 	delete(state.scroll_offsets)
 	delete(state.selections)
 	delete(state.widgets)
@@ -531,6 +541,8 @@ ui_begin :: proc(state: ^Ui_State, input: Ui_Input, screen_pixels: [2]f32, frame
 		state.sound_events += {.Back}
 	}
 	advance_toasts(state, frame_seconds)
+	state.toast_top_offset = 0
+	state.sound_events += advance_mission_control(&state.mission_control, frame_seconds)
 }
 
 // Focus fallback, hover, then the focus step. Pure: tests run it instead of ui_end.

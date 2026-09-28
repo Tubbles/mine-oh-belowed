@@ -379,11 +379,16 @@ set_ambience_targets :: proc(mixer: ^Audio_Mixer, frame: Sound_Frame, eye: [3]f3
 	set_loop_target(mixer, RAIN_SOUND, rain_volume(weather_precipitation(frame.weather, temperature), frame.weather.intensity, open_sky))
 }
 
+// The discovery card's chime is the one
+// play_frame_sounds also asks for when the message is logged; both land in
+// the same frame, so the mixer's gap rule plays it once.
 @(rodata)
 ui_sound_ids := [Ui_Sound_Event]string {
-	.Move    = "ui_move",
-	.Confirm = "ui_confirm",
-	.Back    = "ui_back",
+	.Move            = "ui_move",
+	.Confirm         = "ui_confirm",
+	.Back            = "ui_back",
+	.Mission_Control = "mission_control_chime",
+	.Discovery       = DISCOVERY_SOUND,
 }
 
 // The UI's sounds of the frame, drained.

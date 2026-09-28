@@ -31,7 +31,7 @@ shipped_biome_definitions :: proc(t: ^testing.T) -> []Biome {
 @(test)
 test_shipped_sound_table_loads_with_every_file :: proc(t: ^testing.T) {
 	table := shipped_sound_table(t)
-	testing.expect_value(t, len(table.entries), 28)
+	testing.expect_value(t, len(table.entries), 29)
 	testing.expect_value(t, missing_sound_file(table, test_data_directory()), "")
 	index, found := find_sound(table, "rain")
 	testing.expect(t, found)

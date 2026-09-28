@@ -12,7 +12,8 @@
 // block_break, block_place; ui_move, ui_confirm, ui_back; hum_burner,
 // hum_electric, hum_fluid (the nearest working machine by family);
 // ambience_<name> for every ambience of data/biomes.sjson; rain;
-// rocket_launch, capsule_landing, discovery_chime.
+// rocket_launch, capsule_landing, discovery_chime; mission_control_chime
+// (a Mission Control line starting on the HUD, work item 0069).
 // The placeholder files are written by tools/make_placeholder_sounds.py.
 sounds = [
 	{id = "footstep_stone", file = "footstep_stone.wav", volume = 0.5, kind = "effect"}
@@ -43,4 +44,5 @@ sounds = [
 	{id = "rocket_launch", file = "rocket_launch.wav", volume = 0.9, kind = "effect"}
 	{id = "capsule_landing", file = "capsule_landing.wav", volume = 0.8, kind = "effect"}
 	{id = "discovery_chime", file = "discovery_chime.wav", volume = 0.5, kind = "effect"}
+	{id = "mission_control_chime", file = "mission_control_chime.wav", volume = 0.45, kind = "effect"}
 ]

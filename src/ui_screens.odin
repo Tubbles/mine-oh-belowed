@@ -74,6 +74,10 @@ Screen_Context :: struct {
 	// The chapters the developer screen offers: one per kit.
 	developer_chapter_count: int,
 	landing_pad:        Landing_Pad_Site,
+	// The frame loop's particle memory (render_particles.odin), read only:
+	// the map draws the capsule descent and the satellite pass from it.
+	// Nil without a world and in tests.
+	particle_memory:    ^Particle_Memory,
 	// The Developer screen's Screenshot button sets it; the frame loop
 	// takes the picture (work item 0053).
 	screenshot_requested: ^bool,

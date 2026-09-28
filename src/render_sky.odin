@@ -10,9 +10,11 @@ import "vendor:raylib/rlgl"
 // draws over it: a hemisphere dome coloured from the horizon to the zenith
 // colour, stars at night turning with the day, then the sun and the moon
 // as camera facing discs, the moon's phase a second disc in the sky colour
-// overlapping it. The geometry, the star set and the colours are pure
-// procedures; only the upload and the draw calls touch raylib. Render
-// only, it reads nothing of the simulation but the day (Day_Sky).
+// overlapping it, and during a survey satellite's pass (work item 0069) a
+// small bright quad crossing from west to east along the sun's path. The
+// geometry, the star set and the colours are pure procedures; only the
+// upload and the draw calls touch raylib. Render only, it reads nothing
+// of the simulation but the day (Day_Sky) and the pass the frame passes.
 
 // Well inside the far plane; with the depth test off the size only sets
 // the scale of the discs and stars.
@@ -33,6 +35,8 @@ SUN_RADIUS_SHARE :: 0.04
 MOON_RADIUS_SHARE :: 0.03
 SUN_DISC_COLOR :: rl.Color{255, 248, 220, 255}
 MOON_DISC_COLOR :: rl.Color{225, 230, 240, 255}
+SATELLITE_SKY_SIZE :: 0.35
+SATELLITE_SKY_COLOR :: rl.Color{255, 255, 250, 255}
 DISC_TEXTURE_SIZE :: 64
 // The disc's edge fades out over this many texels.
 DISC_EDGE_TEXELS :: 1.5
@@ -286,12 +290,36 @@ draw_moon :: proc(renderer: ^Sky_Renderer, camera: rl.Camera3D, sky: Day_Sky) {
 	draw_sky_disc(renderer, camera, shadow, MOON_RADIUS_SHARE, sky_color_towards(sky.colors, direction))
 }
 
+// The satellite's direction: turned about the sun path's axis from the
+// western horizon (the sun's setting point) back over the top to the
+// eastern one (its rising point), against the sun's way.
+satellite_sky_direction :: proc(pass: Satellite_Pass) -> [3]f32 {
+	return sun_direction(0.5 * f64(1 - satellite_pass_fraction(pass)))
+}
+
+// One quad on raylib's white default texture, like a star.
+draw_satellite :: proc(camera: rl.Camera3D, pass: Satellite_Pass) {
+	if !pass.active {
+		return
+	}
+	white := rl.Texture2D {
+		id      = rlgl.GetTextureIdDefault(),
+		width   = 1,
+		height  = 1,
+		mipmaps = 1,
+		format  = .UNCOMPRESSED_R8G8B8A8,
+	}
+	position := camera.position + satellite_sky_direction(pass) * SKY_DOME_RADIUS
+	rl.DrawBillboardRec(camera, white, {0, 0, 1, 1}, position, {SATELLITE_SKY_SIZE, SATELLITE_SKY_SIZE}, SATELLITE_SKY_COLOR)
+}
+
 // Between BeginMode3D and EndMode3D, before anything else.
-draw_sky :: proc(renderer: ^Sky_Renderer, camera: rl.Camera3D, sky: Day_Sky) {
+draw_sky :: proc(renderer: ^Sky_Renderer, camera: rl.Camera3D, sky: Day_Sky, satellite: Satellite_Pass) {
 	begin_sky_pass()
 	defer end_sky_pass()
 	draw_sky_dome(renderer, camera, sky.colors)
 	draw_stars(camera, sky)
 	draw_sky_disc(renderer, camera, sun_direction(sky.fraction), SUN_RADIUS_SHARE, multiply_color(SUN_DISC_COLOR, sky.colors.sun_tint))
 	draw_moon(renderer, camera, sky)
+	draw_satellite(camera, satellite)
 }

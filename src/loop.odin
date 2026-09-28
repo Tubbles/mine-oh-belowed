@@ -512,7 +512,7 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session, sky: Day_Sky,
 		apply_fog(&state.renderer, underwater_fog())
 	}
 	rl.BeginMode3D(camera)
-	draw_sky(&state.renderer.sky, camera, sky)
+	draw_sky(&state.renderer.sky, camera, sky, state.particle_memory.satellite)
 	draw_chunks(&state.renderer, camera)
 	frame := Model_Frame{world = world, tick = session.simulation.tick, alpha = alpha, tick_rate = tick_rate, day_factor = day_factor(sky.blend), sky_tint = color_to_vector3(sky.colors.sun_tint)}
 	draw_entities(world, content.machines, state.model_renderer, content.items, frame)
@@ -526,6 +526,7 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session, sky: Day_Sky,
 	draw_torch_flames(&state.renderer, camera, seconds)
 	draw_water_chunks(&state.renderer, camera, seconds)
 	update_particles(&state.particles, &state.particle_memory, world, frame_simulation_content(state), state.model_renderer, session.simulation.players[:], tick_rate, state.frame_seconds)
+	update_satellite_pass(&state.particle_memory, session.simulation.quests.messages[:], state.frame_seconds)
 	draw_particles(&state.particle_renderer, camera, &state.particles, state.particle_memory, world, state.model_renderer, color_to_vector3(sky.colors.sun_tint) * day_factor(sky.blend))
 	draw_session_weather(session, camera, weather, sky, seconds)
 	body := Player_Body_Draw{renderer = state.model_renderer, model = state.player_model, animation = animation, light = player_body_light(frame, player_eye(pose.position))}
@@ -591,6 +592,7 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 	screen_context.developer_requests = &session.simulation.developer_requests
 	screen_context.cheat_speed = session.simulation.cheat_speed
 	screen_context.landing_pad = session.start.landing_pad
+	screen_context.particle_memory = &state.particle_memory
 	screen_context.reload_requested = &state.reload_requested
 	screen_context.data_changed = state.data_watch.content_changed
 	return screen_context
@@ -643,11 +645,19 @@ show_simulation_events :: proc(state: ^Ui_State, events: ^[dynamic]Simulation_Ev
 	clear(events)
 }
 
-// Mission Control's lines, finished research and the capsule landing, as
-// toasts.
+// Mission Control's lines to its panel, a discovery to its card, the
+// rest (finished research, the capsule landing, the venture's notes) as
+// toasts (work item 0069).
 show_quest_notices :: proc(state: ^Ui_State, notices: ^[dynamic]Quest_Message, shipments: []Shipment, items: Item_Registry) {
 	for notice in notices {
-		ui_toast(state, quest_message_text(notice, shipments, items))
+		switch notice_presentation(notice.text_key) {
+		case .Mission_Control:
+			ui_mission_control_line(state, quest_message_text(notice, shipments, items))
+		case .Discovery_Card:
+			ui_discovery_card(state, notice.item, text(notice.argument_key))
+		case .Toast:
+			ui_toast(state, quest_message_text(notice, shipments, items))
+		}
 	}
 	clear(notices)
 }
@@ -736,6 +746,7 @@ enter_session :: proc(state: ^Frame_State, session: ^Session) {
 	state.particle_memory = {}
 	state.player_animation = {}
 	state.sound_memory = {}
+	clear_mission_control(&state.ui.mission_control)
 	state.ui.screens = {}
 	state.ui.keyboard = {}
 	state.ui.tooltip_open = false

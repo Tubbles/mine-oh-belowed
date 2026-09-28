@@ -9,7 +9,9 @@ package game
 // ui_journal.odin) or, once every quest is done, the oldest open contract
 // (ui_contracts.odin), the brownout warning (top centre, ui_power.odin),
 // the biome banner below it (biome_banner.odin) and the glyph bar, and the magnetometer's dial while one is selected
-// (ui_prospecting.odin).
+// (ui_prospecting.odin). With no screen open, Mission Control's panel at
+// the top left, the toasts moved below it, and the discovery card at the
+// top centre (ui_mission_control.odin).
 
 CROSSHAIR_SIZE :: 18.0
 CROSSHAIR_THICKNESS :: 3.0
@@ -249,6 +251,10 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 	draw_brownout_warning(state, screen_context.world)
 	draw_biome_banner(state, screen_context)
+	if height := draw_mission_control_panel(state); height > 0 {
+		state.toast_top_offset = height + UI_GAP
+	}
+	draw_discovery_card(state, items)
 	obtained := screen_context.unlocks.obtained
 	name_status, tool_status, vein_status := target_status_lines(screen_context.world, screen_context.machines, screen_context.fluids, screen_context.veins, screen_context.blocks, items, obtained, effective_tool_tier(player^, items, screen_context.cheat_speed), player.target)
 	if ghost_line, shown := bore_drill_ghost_line(screen_context.world, screen_context.machines, screen_context.veins, screen_context.blocks, items, obtained, player^); shown {

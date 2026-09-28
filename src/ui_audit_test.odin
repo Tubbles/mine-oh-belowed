@@ -65,6 +65,10 @@ Ui_Audit_Case :: struct {
 	radial:       bool,
 	// String keys shown as toasts from the first frame.
 	toasts:       []string,
+	// Mission Control's panel with the longest line half typed and one
+	// waiting, and the discovery card of the longest named item (work
+	// item 0069).
+	mission_control: bool,
 	// Audit one more frame per widget with the focus and the info panel on it.
 	walk_focus:   bool,
 }
@@ -290,6 +294,9 @@ audit_case_at_size :: proc(audit: ^Ui_Audit, audit_case: Ui_Audit_Case, size: Ui
 	for toast in audit_case.toasts {
 		ui_toast(&state, text(toast))
 	}
+	if audit_case.mission_control {
+		audit_mission_control(audit, &state)
+	}
 	audit.browser.selecting_for = NO_ENTITY
 	audit_frame(audit, &state, size, audit_case, {}, "first frame")
 	for step in 0 ..< audit_case.tab_next {
@@ -308,6 +315,17 @@ audit_case_at_size :: proc(audit: ^Ui_Audit, audit_case: Ui_Audit_Case, size: Ui
 		state.focus = widget.id
 		audit_frame(audit, &state, size, audit_case, {}, fmt.tprintf("focus on widget %d", index))
 	}
+}
+
+UI_AUDIT_MISSION_CONTROL_LONGEST_KEY :: "mc_extraction_rights_done"
+
+audit_mission_control :: proc(audit: ^Ui_Audit, state: ^Ui_State) {
+	ui_mission_control_line(state, text(UI_AUDIT_MISSION_CONTROL_LONGEST_KEY))
+	ui_mission_control_line(state, text("mc_first_contract_done"))
+	line := &state.mission_control.lines[0]
+	line.seconds = mission_control_reveal_seconds(line.character_count) / 2
+	item := longest_named_item(audit.content.items)
+	ui_discovery_card(state, item, item_name(audit.content.items, item))
 }
 
 audit_case :: proc(audit: ^Ui_Audit, audit_case: Ui_Audit_Case) {
@@ -405,6 +423,9 @@ make_ui_audit :: proc() -> ^Ui_Audit {
 	for key, index in UI_AUDIT_MESSAGE_KEYS {
 		append(&simulation.quests.messages, Quest_Message{tick = u64(index + 1) * 60 * 60 * 61, text_key = key})
 	}
+	// A plain row between Mission Control's framed ones (work item 0069).
+	longest_item := longest_named_item(audit.content.items)
+	append(&simulation.quests.messages, Quest_Message{tick = 60 * 60 * 62, text_key = ITEM_DISCOVERED_KEY, argument_key = audit.content.items.items[longest_item].name_key, item = longest_item})
 	player := &simulation.players[0]
 	player.crafting = Craft_Queue{recipes = {0, 1, 2, 3, 4, 5, 6, 7}, count = HAND_CRAFT_QUEUE_CAPACITY, waiting = true}
 	for &drill in simulation.world.entities.drills.entries {
@@ -512,6 +533,7 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 	audit_case(audit, {name = "confirm delete", screens = {.Title, .Load_World, .Confirm_Delete}, walk_focus = true})
 	audit_case(audit, {name = "hud", hud = true, toasts = toasts[:]})
 	audit_case(audit, {name = "hud radial", hud = true, radial = true})
+	audit_case(audit, {name = "hud mission control", hud = true, toasts = toasts[:], mission_control = true})
 	audit_case(audit, {name = "pause", screens = {.Pause}, walk_focus = true})
 	for tab in 0 ..< 4 {
 		audit_case(audit, {name = fmt.tprintf("settings tab %d", tab), screens = {.Pause, .Settings}, tab_next = tab, walk_focus = true})

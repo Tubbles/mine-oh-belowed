@@ -59,7 +59,7 @@ vein_type_is_discovered :: proc(vein_type: Vein_Type_Content, blocks: Block_Regi
 log_discoveries :: proc(state: ^Quest_State, blocks: Block_Registry, items: Item_Registry, newly_obtained: []Item_Id, tick: u64) {
 	for item in newly_obtained {
 		if item_is_discoverable(blocks, items, item) {
-			log_quest_message(state, tick, ITEM_DISCOVERED_KEY, items.items[item].name_key)
+			log_message(state, Quest_Message{tick = tick, text_key = ITEM_DISCOVERED_KEY, argument_key = items.items[item].name_key, item = item})
 		}
 	}
 }

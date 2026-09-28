@@ -300,7 +300,9 @@ journal_quest_detail :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_contex
 	return area.height - content.height
 }
 
-// Mission Control's lines, newest first, as many as fit.
+// Mission Control's lines, newest first, as many as fit. Lines from
+// Mission Control itself (mc_ keys) carry the HUD panel's accent border
+// and mark (ui_mission_control.odin), the venture's notes stay plain.
 journal_message_log :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context) {
 	content := area
 	if content.height < UI_ROW_HEIGHT + UI_LINE_HEIGHT {
@@ -310,13 +312,33 @@ journal_message_log :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context
 	messages := screen_context.quest_state.messages[:]
 	#reverse for message in messages {
 		line := fmt.tprintf("%s  %s", format_game_time(message.tick, screen_context.tick_rate), quest_message_text(message, screen_context.world.shipments[:], screen_context.items))
-		wrapped := wrap_text(state, line, UI_BODY_TEXT_SIZE, content.width)
-		if f32(len(wrapped)) * UI_LINE_HEIGHT > content.height {
+		if !is_mission_control_key(message.text_key) {
+			wrapped := wrap_text(state, line, UI_BODY_TEXT_SIZE, content.width)
+			if f32(len(wrapped)) * UI_LINE_HEIGHT > content.height {
+				return
+			}
+			draw_wrapped(state, &content, line)
+		} else if !journal_mission_control_row(state, &content, line) {
 			return
 		}
-		draw_wrapped(state, &content, line)
 		cut_top(&content, UI_GAP)
 	}
+}
+
+// The line inside the accent border, the row grown by a gap above and
+// below; false when it does not fit.
+journal_mission_control_row :: proc(state: ^Ui_State, content: ^Ui_Rectangle, line: string) -> bool {
+	padding := f32(UI_GAP) / 2
+	wrapped := wrap_text(state, line, UI_BODY_TEXT_SIZE, content.width - MISSION_CONTROL_FRAME_INDENT)
+	height := f32(len(wrapped)) * UI_LINE_HEIGHT + 2 * padding
+	if height > content.height {
+		return false
+	}
+	text_area := draw_mission_control_frame(state, cut_top(content, height), padding, 1)
+	for wrapped_line in wrapped {
+		ui_label(state, cut_top(&text_area, UI_LINE_HEIGHT), wrapped_line, UI_BODY_TEXT_SIZE, .Left)
+	}
+	return true
 }
 
 journal_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {

@@ -25,6 +25,8 @@ loop. This script only writes the files, one per id below:
 - rain: the rain loop.
 - rocket_launch, capsule_landing, discovery_chime: the launch rumble,
   the landing thud and the chime of a discovered ore.
+- mission_control_chime: two short rising notes as a Mission Control line
+  starts on the HUD (work item 0069).
 
 A loop ends where it starts: its tail is crossfaded into its head, and
 its tones have a whole number of cycles over the loop. The whole set is a
@@ -228,6 +230,13 @@ def discovery_chime() -> list:
     return normalised(mix(*notes), 0.45)
 
 
+def mission_control_chime() -> list:
+    # Two short notes a fourth apart, the second after the first.
+    first = shaped(tone(783.99, 0.18), 0.004, 0.05)
+    second = [0.0] * sample_count(0.09) + shaped(tone(1046.50, 0.3), 0.004, 0.09)
+    return normalised(mix((first, 1.0), (second, 1.0)), 0.4)
+
+
 # Loops.
 
 
@@ -308,6 +317,7 @@ def sound_set() -> dict:
     sounds["rocket_launch"] = rocket_launch()
     sounds["capsule_landing"] = capsule_landing()
     sounds["discovery_chime"] = discovery_chime()
+    sounds["mission_control_chime"] = mission_control_chime()
     return sounds
 
 

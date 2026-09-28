@@ -7,7 +7,10 @@ import "core:slice"
 // The top down map (work item 0038): the explored columns coloured by
 // their surface block tinted with their biome's map colour (work item
 // 0058) and shaded by height, entities as dots, the player
-// as a marker, and the prospecting records on top. The map is one image of
+// as a marker, and the prospecting records on top; during a capsule
+// descent a parachute over the landing pad and during a survey
+// satellite's pass the satellite crossing west to east (work item 0069).
+// The map is one image of
 // MAP_IMAGE_SIZE pixels square, one pixel per block at the finest zoom
 // and 2, 4, 8 or 16 blocks per pixel coarser, painted here and uploaded by
 // the draw layer whenever it changes. Opening it reads the surfaces of the
@@ -43,6 +46,10 @@ MAP_CORE_SAMPLE_VEIN_COLOR :: Ui_Color{250, 240, 90, 255}
 MAP_SEISMIC_COLOR :: Ui_Color{200, 110, 230, 255}
 MAP_RESOLVED_COLOR :: Ui_Color{255, 170, 255, 255}
 MAP_PLAYER_COLOR :: Ui_Color{255, 255, 255, 255}
+MAP_EVENT_MARKER_SIZE :: 20.0
+MAP_PARACHUTE_COLOR :: Ui_Color{235, 120, 60, 255}
+MAP_CAPSULE_COLOR :: Ui_Color{220, 220, 225, 255}
+MAP_SATELLITE_COLOR :: Ui_Color{200, 225, 255, 255}
 // How far the assayed colour covers the ground inside a footprint.
 MAP_ASSAYED_BLEND :: 0.45
 // How far the biome's map colour tints the surface block's colour.
@@ -413,6 +420,44 @@ draw_map_player :: proc(state: ^Ui_State, image: Ui_Rectangle, frame: Map_Frame,
 	draw_fill(state, {facing.x - half / 2, facing.y - half / 2, half, half}, MAP_PLAYER_COLOR)
 }
 
+// Along the pad's row, from half the image's span west of the pad to half
+// east of it, over the pad halfway through the pass.
+satellite_map_position :: proc(frame: Map_Frame, pad: [2]f32, pass: Satellite_Pass) -> [2]f32 {
+	span := f32(frame.size * frame.blocks_per_pixel)
+	return {pad.x + (satellite_pass_fraction(pass) - 0.5) * span, pad.y}
+}
+
+// A canopy over a capsule.
+draw_map_parachute :: proc(state: ^Ui_State, point: [2]f32) {
+	size := f32(MAP_EVENT_MARKER_SIZE)
+	draw_fill(state, {point.x - size / 2, point.y - size / 2, size, size / 2}, MAP_PARACHUTE_COLOR)
+	draw_fill(state, {point.x - size / 4, point.y, size / 2, size / 2}, MAP_CAPSULE_COLOR)
+}
+
+// A body between two panels.
+draw_map_satellite :: proc(state: ^Ui_State, point: [2]f32) {
+	size := f32(MAP_EVENT_MARKER_SIZE)
+	draw_fill(state, {point.x - size / 2, point.y - size / 8, size, size / 4}, MAP_SATELLITE_COLOR)
+	draw_fill(state, {point.x - size / 4, point.y - size / 4, size / 2, size / 2}, MAP_CAPSULE_COLOR)
+}
+
+// The capsule descent and the satellite pass the frame loop keeps
+// (render_particles.odin); a marker is left out where it would leave the
+// image.
+draw_map_events :: proc(state: ^Ui_State, image: Ui_Rectangle, frame: Map_Frame, memory: ^Particle_Memory, pad: Landing_Pad_Site) {
+	if memory == nil || !pad.present {
+		return
+	}
+	inside := inset(image, MAP_EVENT_MARKER_SIZE / 2)
+	centre := [2]f32{f32(pad.centre.x) + 0.5, f32(pad.centre.z) + 0.5}
+	if point := map_point_units(image, frame, centre); memory.descent.active && rectangle_contains(inside, point) {
+		draw_map_parachute(state, point)
+	}
+	if point := map_point_units(image, frame, satellite_map_position(frame, centre, memory.satellite)); memory.satellite.active && rectangle_contains(inside, point) {
+		draw_map_satellite(state, point)
+	}
+}
+
 draw_map_legend_row :: proc(state: ^Ui_State, content: ^Ui_Rectangle, color: Ui_Color, label: string, label_color := UI_TEXT_COLOR) {
 	row := cut_top(content, UI_ROW_HEIGHT)
 	swatch := Ui_Rectangle{row.x, row.y + (row.height - MAP_LEGEND_SWATCH_SIZE) / 2, MAP_LEGEND_SWATCH_SIZE, MAP_LEGEND_SWATCH_SIZE}
@@ -513,6 +558,7 @@ map_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 	draw_image(state, image, view.pixels[:], {frame.size, frame.size}, view.revision)
 	draw_outline(state, image, UI_PANEL_BORDER_COLOR)
+	draw_map_events(state, image, frame, screen_context.particle_memory, screen_context.landing_pad)
 	draw_map_player(state, image, frame, screen_context.player^)
 	draw_map_legend(state, legend, view, screen_context.generator, screen_context.player^)
 	ui_panel_end(state)
