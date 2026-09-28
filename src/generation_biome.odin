@@ -19,7 +19,9 @@ BIOMES_FILE_NAME :: "biomes.sjson"
 // cover blocks set on the top block of dry land (apply_ground_cover).
 // ambience (optional, work item 0068) names the loop that plays while the
 // player stands in the biome, ambience_<name> in the sound table
-// (audio.odin); empty for none.
+// (audio.odin); empty for none. bird_density (optional, work item 0075)
+// is the chance, 0 to 1, that a flock cell whose centre lies in the biome
+// holds a flock of birds (ambient_life.odin).
 Biome_Definition :: struct {
 	id:               string,
 	name_key:         string,
@@ -42,21 +44,26 @@ Biome_Definition :: struct {
 	pit_maximum_height: i32,
 	map_color:        [3]u8,
 	ambience:         string,
+	bird_density:     f32,
 }
 
 // One entry of a biome's ground_cover list: a cross shaped block, its
-// chance per column (0 to 1) and the top block ids it stands on.
+// chance per column (0 to 1) and the top block ids it stands on. insects
+// (optional, work item 0075) marks the block as a flower that insect
+// motes circle wherever it stands (render_life.odin).
 Biome_Cover_Definition :: struct {
-	block:  string,
-	chance: f32,
-	on:     []string,
+	block:   string,
+	chance:  f32,
+	on:      []string,
+	insects: bool,
 }
 
 // A resolved ground_cover entry.
 Biome_Cover :: struct {
-	block:  Block_Id,
-	chance: f32,
-	on:     []Block_Id,
+	block:   Block_Id,
+	chance:  f32,
+	on:      []Block_Id,
+	insects: bool,
 }
 
 // What a column offers the biome table.
@@ -126,7 +133,7 @@ validate_biome_definition :: proc(definition: Biome_Definition) -> string {
 		return fmt.tprintf("biome %q has minimum_temperature above maximum_temperature", definition.id)
 	case definition.layer_block != "" && definition.layer_thickness < 1:
 		return fmt.tprintf("biome %q has a layer_thickness below 1", definition.id)
-	case !density_in_range(definition.tree_density) || !density_in_range(definition.boulder_density):
+	case !density_in_range(definition.tree_density) || !density_in_range(definition.boulder_density) || !density_in_range(definition.bird_density):
 		return fmt.tprintf("biome %q has a density outside 0 to 1", definition.id)
 	case definition.tree_density > 0 && len(definition.trees) == 0:
 		return fmt.tprintf("biome %q has trees but no trees list", definition.id)
@@ -187,7 +194,7 @@ resolve_biome_ground_cover :: proc(definition: Biome_Definition, registry: Block
 				return nil, fmt.tprintf("biome %q sets ground_cover on an unknown block %q", definition.id, name)
 			}
 		}
-		cover[index] = Biome_Cover{block = block, chance = entry.chance, on = on}
+		cover[index] = Biome_Cover{block = block, chance = entry.chance, on = on, insects = entry.insects}
 	}
 	return cover, ""
 }
@@ -220,6 +227,29 @@ biome_accepts :: proc(definition: Biome_Definition, climate: Climate) -> bool {
 	minimum_temperature, maximum_temperature := temperature_range(definition)
 	temperature_fits := climate.temperature >= minimum_temperature && climate.temperature <= maximum_temperature
 	return height_fits && moisture_fits && temperature_fits
+}
+
+// Whether any biome's ground_cover marks the block as a flower that draws
+// insects (Biome_Cover_Definition.insects).
+block_draws_insects :: proc(biomes: []Biome, block: Block_Id) -> bool {
+	for biome in biomes {
+		for entry in biome.ground_cover {
+			if entry.block == block && entry.insects {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// The largest bird_density over all biomes, so a flock cell whose roll
+// exceeds it is rejected before its column is sampled.
+maximum_bird_density :: proc(biomes: []Biome) -> f32 {
+	maximum: f32 = 0
+	for biome in biomes {
+		maximum = max(maximum, biome.definition.bird_density)
+	}
+	return maximum
 }
 
 // The first biome that accepts the column, or the last one as a fallback.

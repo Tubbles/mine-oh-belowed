@@ -35,12 +35,22 @@ Mesh_Part :: struct {
 
 // flames holds the cells of light emitting posts (torches), where the
 // renderer draws a flame. water_parts holds the faces of water blocks,
-// parts everything else.
+// parts everything else. covers holds the cells of cross shaped blocks
+// (plants), among which the renderer finds the flowers insects circle;
+// water_surfaces the source water cells under an open cell with water
+// below (water_surface_cell), where fish shadows may swim (work item 0075).
 Chunk_Mesh_Data :: struct {
-	parts:       [dynamic]Mesh_Part,
-	water_parts: [dynamic]Mesh_Part,
-	quad_count:  int,
-	flames:      [dynamic]Local_Coordinate,
+	parts:          [dynamic]Mesh_Part,
+	water_parts:    [dynamic]Mesh_Part,
+	quad_count:     int,
+	flames:         [dynamic]Local_Coordinate,
+	covers:         [dynamic]Cover_Cell,
+	water_surfaces: [dynamic]Local_Coordinate,
+}
+
+Cover_Cell :: struct {
+	local: Local_Coordinate,
+	block: Block_Id,
 }
 
 // A nil border reads every cell outside the chunk as a missing chunk.
@@ -506,13 +516,38 @@ mesh_shaped_cell :: proc(data: ^Chunk_Mesh_Data, input: Mesh_Input, local: Local
 	if shape == .Post && block_light_emission(input.registry, block) > 0 {
 		append(&data.flames, local)
 	}
+	if shape == .Cross {
+		append(&data.covers, Cover_Cell{local = local, block = block})
+	}
 }
 
-// The second pass: every cell whose block is not a cube.
+// A source water cell under an open cell (not water, not opaque) with
+// water in the two cells below it. The shell reaches one cell past the
+// chunk, so the second cell below is only checked where the chunk or the
+// shell holds it: a surface on the chunk's bottom layer (the sea level
+// lies on one) needs one cell of water below.
+water_surface_cell :: proc(input: Mesh_Input, local: Local_Coordinate, block: Block_Id) -> bool {
+	if block_water_level(input.registry, block) != WATER_SOURCE_LEVEL {
+		return false
+	}
+	above := neighbourhood_block(input, local + {0, 1, 0})
+	if block_water_level(input.registry, above) > 0 || block_is_opaque(input.registry, above) {
+		return false
+	}
+	if block_water_level(input.registry, neighbourhood_block(input, local - {0, 1, 0})) == 0 {
+		return false
+	}
+	return local.y < 1 || block_water_level(input.registry, neighbourhood_block(input, local - {0, 2, 0})) > 0
+}
+
+// The second pass: every cell whose block is not a cube, and the water
+// surface cells (water is a cube).
 mesh_shaped_cells :: proc(data: ^Chunk_Mesh_Data, input: Mesh_Input, allocator := context.allocator) {
 	for block, index in input.chunk.blocks {
 		if shape := block_shape(input.registry, block); shape != .Cube {
 			mesh_shaped_cell(data, input, index_to_local(index), block, shape, allocator)
+		} else if local := index_to_local(index); water_surface_cell(input, local, block) {
+			append(&data.water_surfaces, local)
 		}
 	}
 }
@@ -520,9 +555,11 @@ mesh_shaped_cells :: proc(data: ^Chunk_Mesh_Data, input: Mesh_Input, allocator :
 // Positions are relative to the chunk origin.
 mesh_chunk :: proc(input: Mesh_Input, allocator := context.allocator) -> Chunk_Mesh_Data {
 	data := Chunk_Mesh_Data {
-		parts       = make([dynamic]Mesh_Part, allocator),
-		water_parts = make([dynamic]Mesh_Part, allocator),
-		flames      = make([dynamic]Local_Coordinate, allocator),
+		parts          = make([dynamic]Mesh_Part, allocator),
+		water_parts    = make([dynamic]Mesh_Part, allocator),
+		flames         = make([dynamic]Local_Coordinate, allocator),
+		covers         = make([dynamic]Cover_Cell, allocator),
+		water_surfaces = make([dynamic]Local_Coordinate, allocator),
 	}
 	// About half of the streamed chunks are sky.
 	if chunk_is_all_air(input.chunk) {
@@ -565,4 +602,6 @@ destroy_chunk_mesh_data :: proc(data: Chunk_Mesh_Data) {
 	destroy_mesh_parts(data.parts)
 	destroy_mesh_parts(data.water_parts)
 	delete(data.flames)
+	delete(data.covers)
+	delete(data.water_surfaces)
 }

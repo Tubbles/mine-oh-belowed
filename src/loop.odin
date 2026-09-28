@@ -520,6 +520,23 @@ draw_session_weather :: proc(session: ^Session, camera: rl.Camera3D, weather: We
 	return precipitation == .None ? 0 : max(count, 0)
 }
 
+// Ambient life's view of the frame (render_life.odin): the tick in
+// seconds for the flocks' loops, the render time for the rest.
+session_life_frame :: proc(session: ^Session, camera: rl.Camera3D, sky: Day_Sky, weather: Weather, look: Weather_Look, alpha: f32, seconds: f64) -> Life_Frame {
+	simulation := &session.simulation
+	fog_start, fog_end := weather_fog_distances(LOAD_RADIUS_HORIZONTAL, look.fog_scale)
+	return Life_Frame {
+		camera = camera,
+		seed = simulation.world.settings.seed,
+		loop_seconds = (f64(simulation.tick) + f64(alpha)) / f64(simulation.tick_rate),
+		seconds = seconds,
+		presence = life_presence(sky.blend, weather.kind == .Rain ? weather.intensity : 0),
+		light = day_factor(sky.blend),
+		fog_start = fog_start,
+		fog_end = fog_end,
+	}
+}
+
 // What the frame drew besides the renderer's own counts: whether the
 // camera is under water, for the tint drawn after the 3D pass (work item
 // 0065), and the counts of the Render page (work item 0086). The water
@@ -609,7 +626,8 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session, sky: Day_Sky,
 	state.sprint_kick = advance_sprint_kick(state.sprint_kick, animation.moving && player_sprints(player, state.input.pressed), state.frame_seconds)
 	camera := fly_camera_to_raylib(view, sprint_field_of_view(state.settings.field_of_view, sprint_kick_degrees(state.settings), state.sprint_kick))
 	still_seconds := flicker_seconds(seconds, state.settings.reduced_motion)
-	apply_weather(&state.renderer, weather_look(weather, weather_motion_enabled(state.settings), sky.blend), still_seconds)
+	look := weather_look(weather, weather_motion_enabled(state.settings), sky.blend)
+	apply_weather(&state.renderer, look, still_seconds)
 	counts.underwater = camera_underwater(world, content.blocks, camera.position)
 	if counts.underwater {
 		apply_fog(&state.renderer, underwater_fog())
@@ -627,7 +645,11 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session, sky: Day_Sky,
 	draw_belts(&state.belt_renderer, world, content.items, content.machines, state.model_renderer, frame, Item_Billboards{camera = camera, atlas = state.item_atlas})
 	draw_loose_items(world, content.items, frame, Item_Billboards{camera = camera, atlas = state.item_atlas})
 	draw_torch_flames(&state.renderer, camera, still_seconds)
+	life := session_life_frame(session, camera, sky, weather, look, alpha, seconds)
+	draw_fish_shadows(&state.renderer, life)
 	draw_water_chunks(&state.renderer, camera, seconds)
+	draw_bird_flocks(&session.generator, life)
+	draw_insect_motes(&state.renderer, session.generator.biomes, life)
 	if state.diagnostics_page == .Render {
 		counts.water_meshes = water_meshes_in_view(state.renderer, camera)
 	}

@@ -21,11 +21,16 @@ LIGHT_FLICKER_MINIMUM :: 0.96
 // exceeds the u16 index range (MESH_PART_VERTEX_LIMIT). water_meshes are
 // the water parts, drawn by the water pass (render_water.odin). flames
 // holds the world cells of the chunk's torches (render_flames.odin).
+// covers and fish are what ambient life reads (render_life.odin): the
+// chunk's plants and the water surface cells that hold a fish shadow
+// (fish_in_cell).
 Chunk_Render :: struct {
 	meshes:       [dynamic]rl.Mesh,
 	water_meshes: [dynamic]rl.Mesh,
 	vertex_count: int,
 	flames:       [dynamic]World_Coordinate,
+	covers:       [dynamic]Life_Cover,
+	fish:         [dynamic]World_Coordinate,
 }
 
 Chunk_Renderer :: struct {
@@ -212,6 +217,8 @@ unload_chunk_render :: proc(chunk_render: Chunk_Render) {
 	delete(chunk_render.meshes)
 	delete(chunk_render.water_meshes)
 	delete(chunk_render.flames)
+	delete(chunk_render.covers)
+	delete(chunk_render.fish)
 }
 
 unload_chunk_mesh :: proc(renderer: ^Chunk_Renderer, coordinate: Chunk_Coordinate) {
@@ -233,6 +240,8 @@ apply_chunk_mesh :: proc(renderer: ^Chunk_Renderer, coordinate: Chunk_Coordinate
 		water_meshes = make([dynamic]rl.Mesh, 0, len(data.water_parts)),
 		vertex_count = chunk_mesh_vertex_count(data),
 		flames       = make([dynamic]World_Coordinate, 0, len(data.flames)),
+		covers       = make([dynamic]Life_Cover, 0, len(data.covers)),
+		fish         = make([dynamic]World_Coordinate),
 	}
 	for part in data.parts {
 		append(&chunk_render.meshes, upload_mesh_part(part))
@@ -242,6 +251,14 @@ apply_chunk_mesh :: proc(renderer: ^Chunk_Renderer, coordinate: Chunk_Coordinate
 	}
 	for local in data.flames {
 		append(&chunk_render.flames, chunk_origin(coordinate) + World_Coordinate(local))
+	}
+	for cover in data.covers {
+		append(&chunk_render.covers, Life_Cover{cell = chunk_origin(coordinate) + World_Coordinate(cover.local), block = cover.block})
+	}
+	for local in data.water_surfaces {
+		if cell := chunk_origin(coordinate) + World_Coordinate(local); fish_in_cell(cell) {
+			append(&chunk_render.fish, cell)
+		}
 	}
 	renderer.chunk_meshes[coordinate] = chunk_render
 	renderer.vertex_count += chunk_render.vertex_count

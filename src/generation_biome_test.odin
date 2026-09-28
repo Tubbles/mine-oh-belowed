@@ -447,3 +447,34 @@ test_choose_ground_cover_by_running_sum :: proc(t: ^testing.T) {
 	testing.expect_value(t, ground_cover_at(listed, 3, 1, 0, 0), 7)
 	testing.expect_value(t, ground_cover_at(listed, 4, 1, 0, 0), AIR_BLOCK)
 }
+
+// The bird_density work item 0075 gives each shipped biome.
+shipped_bird_density :: proc(id: string) -> f32 {
+	switch id {
+	case "forest":
+		return 0.6
+	case "plains":
+		return 0.4
+	case "wetland":
+		return 0.5
+	case "highland", "beach":
+		return 0.3
+	}
+	return 0
+}
+
+// bird_density and the ground cover's insects flag (work item 0075).
+@(test)
+test_biome_bird_density_and_insect_flowers :: proc(t: ^testing.T) {
+	invalid := Biome_Definition{id = "test", name_key = "biome_test", bird_density = 1.5}
+	testing.expect(t, validate_biome_definition(invalid) != "")
+	generator := make_test_generator(DEFAULT_WORLD_SEED)
+	for biome in generator.biomes {
+		testing.expectf(t, biome.definition.bird_density == shipped_bird_density(biome.definition.id), "%s has bird_density %v", biome.definition.id, biome.definition.bird_density)
+	}
+	testing.expect_value(t, maximum_bird_density(generator.biomes), 0.6)
+	registry := make_test_registry()
+	testing.expect(t, block_draws_insects(generator.biomes, test_block(registry, "flower_red")))
+	testing.expect(t, block_draws_insects(generator.biomes, test_block(registry, "flower_yellow")))
+	testing.expect(t, !block_draws_insects(generator.biomes, test_block(registry, "grass_tuft")))
+}

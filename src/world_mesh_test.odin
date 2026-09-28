@@ -670,3 +670,38 @@ test_mesh_marks_the_faces_that_keep_orientation :: proc(t: ^testing.T) {
 	// Four sides of the log and four of the post.
 	testing.expect_value(t, kept, 8)
 }
+
+// The lists ambient life reads (work item 0075): every cross shaped cell
+// with its block, and the source water cells under an open cell with two
+// cells of water below.
+@(test)
+test_mesh_lists_covers_and_water_surfaces :: proc(t: ^testing.T) {
+	registry := make_test_registry()
+	chunk := make_test_chunk({0, 0, 0})
+	water := test_block(registry, "water")
+	flower := test_block(registry, "flower_red")
+	chunk_set_block(chunk, {1, 2, 1}, test_block(registry, "grass"))
+	chunk_set_block(chunk, {1, 3, 1}, flower)
+	// Deep enough: water at y 2 to 5, the surface at 5.
+	for y in i32(2) ..= 5 {
+		chunk_set_block(chunk, {5, y, 5}, water)
+	}
+	// Too shallow: one cell of water below the surface.
+	chunk_set_block(chunk, {8, 2, 8}, test_block(registry, "stone"))
+	chunk_set_block(chunk, {8, 3, 8}, water)
+	chunk_set_block(chunk, {8, 4, 8}, water)
+	// Covered: stone on top of the water.
+	for y in i32(2) ..= 5 {
+		chunk_set_block(chunk, {10, y, 10}, water)
+	}
+	chunk_set_block(chunk, {10, 6, 10}, test_block(registry, "stone"))
+	data := mesh_chunk(water_test_mesh_input(chunk), context.temp_allocator)
+	testing.expect_value(t, len(data.covers), 1)
+	if len(data.covers) == 1 {
+		testing.expect_value(t, data.covers[0], Cover_Cell{local = {1, 3, 1}, block = flower})
+	}
+	testing.expect_value(t, len(data.water_surfaces), 1)
+	if len(data.water_surfaces) == 1 {
+		testing.expect_value(t, data.water_surfaces[0], Local_Coordinate{5, 5, 5})
+	}
+}

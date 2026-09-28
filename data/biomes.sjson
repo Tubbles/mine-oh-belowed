@@ -44,6 +44,11 @@
 // data/sounds/sounds.sjson. The shipped ones are wind and water (loops),
 // birds (by day) and insects (calls); a biome without it is quiet but for
 // the rain and the hum.
+// bird_density (optional, work item 0075, 0 to 1, default 0) is the
+// chance that a flock cell (96 by 96 blocks) whose centre column lies in
+// the biome holds a flock of birds circling above it. A ground_cover
+// entry with insects = true (optional) marks its block as a flower that
+// insect motes circle, wherever the block stands. Both are render only.
 biomes = [
 	{
 		id = "lake"
@@ -91,6 +96,7 @@ biomes = [
 	}
 	{
 		id = "highland"
+		bird_density = 0.3
 		ambience = "wind"
 		name_key = "biome_highland"
 		minimum_height = 24
@@ -143,6 +149,7 @@ biomes = [
 	}
 	{
 		id = "wetland"
+		bird_density = 0.5
 		ambience = "insects"
 		name_key = "biome_wetland"
 		minimum_height = 0
@@ -208,6 +215,7 @@ biomes = [
 	}
 	{
 		id = "beach"
+		bird_density = 0.3
 		ambience = "water"
 		name_key = "biome_beach"
 		minimum_height = 0
@@ -239,6 +247,7 @@ biomes = [
 	}
 	{
 		id = "forest"
+		bird_density = 0.6
 		ambience = "birds"
 		name_key = "biome_forest"
 		minimum_height = 0
@@ -258,6 +267,7 @@ biomes = [
 	}
 	{
 		id = "plains"
+		bird_density = 0.4
 		ambience = "birds"
 		name_key = "biome_plains"
 		minimum_height = -1000
@@ -270,7 +280,7 @@ biomes = [
 		trees = [{species = "oak", weight = 1}, {species = "birch", weight = 1}]
 		clearing_share = 0.5
 		boulder_density = 0.2
-		ground_cover = [{block = "grass_tuft", chance = 0.25, on = ["grass"]}, {block = "tall_grass", chance = 0.05, on = ["grass"]}, {block = "flower_red", chance = 0.02, on = ["grass"]}, {block = "flower_yellow", chance = 0.02, on = ["grass"]}]
+		ground_cover = [{block = "grass_tuft", chance = 0.25, on = ["grass"]}, {block = "tall_grass", chance = 0.05, on = ["grass"]}, {block = "flower_red", chance = 0.02, on = ["grass"], insects = true}, {block = "flower_yellow", chance = 0.02, on = ["grass"], insects = true}]
 		map_color = [124, 190, 80]
 	}
 ]
