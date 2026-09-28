@@ -188,6 +188,12 @@ test_configuration_unknown_key_and_wrong_type :: proc(t: ^testing.T) {
 	_, problem = load_configuration(test_environment(root), {})
 	expect_problem_mentions(t, problem, drop_in, "settings.ui_scale is 40")
 
+	// A removed setting (work item 0097) still loads, whatever its value.
+	write_test_file(drop_in, "settings = {shadows = true, ui_scale = 1.2}")
+	loaded, retired_problem := load_configuration(test_environment(root), {})
+	testing.expect_value(t, retired_problem, "")
+	testing.expect_value(t, loaded.configuration.settings.ui_scale, 1.2)
+
 	os.remove(drop_in)
 	_, problem = load_configuration(test_environment(root), {"settings.gyro_enabled=maybe"})
 	expect_problem_mentions(t, problem, COMMAND_LINE_SOURCE, "settings.gyro_enabled must be a boolean")
@@ -237,7 +243,6 @@ test_settings_file_round_trip :: proc(t: ^testing.T) {
 	settings.vsync = false
 	settings.frame_rate_cap = 144
 	settings.weather = false
-	settings.shadows = true
 	settings.head_bob = false
 	settings.field_of_view = 95
 	settings.sprint_field_of_view_kick = 0
@@ -361,7 +366,6 @@ test_configuration_display_settings :: proc(t: ^testing.T) {
 		{"settings = {frame_rate_cap = 59.94}", "settings.frame_rate_cap must be a whole number"},
 		{`settings = {vsync = "on"}`, "settings.vsync must be a boolean"},
 		{`settings = {weather = "on"}`, "settings.weather must be a boolean"},
-		{`settings = {shadows = "on"}`, "settings.shadows must be a boolean"},
 		{`settings = {head_bob = "on"}`, "settings.head_bob must be a boolean"},
 		{"settings = {field_of_view = 59}", "settings.field_of_view is 59, outside 60 to 110"},
 		{"settings = {field_of_view = 111}", "settings.field_of_view is 111, outside 60 to 110"},

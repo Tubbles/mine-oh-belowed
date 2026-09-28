@@ -610,7 +610,6 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session, sky: Day_Sky,
 	camera := fly_camera_to_raylib(view, sprint_field_of_view(state.settings.field_of_view, sprint_kick_degrees(state.settings), state.sprint_kick))
 	still_seconds := flicker_seconds(seconds, state.settings.reduced_motion)
 	apply_weather(&state.renderer, weather_look(weather, weather_motion_enabled(state.settings), sky.blend), still_seconds)
-	apply_shadows(&state.renderer, shadow_frame(state.settings.shadows, camera.position, sky.fraction), camera.position)
 	counts.underwater = camera_underwater(world, content.blocks, camera.position)
 	if counts.underwater {
 		apply_fog(&state.renderer, underwater_fog())

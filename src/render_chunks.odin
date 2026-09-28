@@ -43,9 +43,6 @@ Chunk_Renderer :: struct {
 	cloud_offset_location:          i32,
 	cloud_shadow_strength_location: i32,
 	flicker_location:               i32,
-	shadow_uniforms:                Shadow_Uniforms,
-	// The sun shadows' depth pass (render_shadows.odin, work item 0072).
-	shadows:                        Shadow_Renderer,
 	// The sky pass (render_sky.odin) lives with the chunks it sits behind.
 	sky:                            Sky_Renderer,
 	// The water pass (render_water.odin, work item 0065).
@@ -118,12 +115,6 @@ init_chunk_renderer :: proc(registry: Block_Registry, data_directory: string) ->
 		rl.UnloadShader(shader)
 		return {}, false
 	}
-	shadow_shader, shadow_loaded := load_shadow_shader(data_directory)
-	if !shadow_loaded {
-		rl.UnloadShader(shader)
-		rl.UnloadShader(water_shader)
-		return {}, false
-	}
 	renderer.atlas_layout = atlas_layout_for_block_count(len(registry.definitions))
 	renderer.material = rl.LoadMaterialDefault()
 	use_chunk_shader(&renderer, shader)
@@ -133,7 +124,6 @@ init_chunk_renderer :: proc(registry: Block_Registry, data_directory: string) ->
 	rl.SetMaterialTexture(&renderer.material, .METALNESS, upload_cloud_texture())
 	renderer.sky = init_sky_renderer()
 	renderer.water = init_water_renderer(water_shader, chunk_atlas_texture(renderer), renderer.atlas_layout)
-	renderer.shadows = init_shadow_renderer(shadow_shader)
 	apply_daylight(&renderer, day_sky_at(NOON_FRACTION, 0))
 	return renderer, true
 }
@@ -158,7 +148,6 @@ use_chunk_shader :: proc(renderer: ^Chunk_Renderer, shader: rl.Shader) {
 	renderer.flicker_location = rl.GetShaderLocation(shader, "flicker")
 	// DrawMesh binds the material's second map to this location.
 	shader.locs[rl.ShaderLocationIndex.MAP_METALNESS] = rl.GetShaderLocation(shader, "cloud_texture")
-	renderer.shadow_uniforms = shadow_uniform_locations(shader)
 	renderer.material.shader = shader
 }
 
@@ -365,14 +354,12 @@ unload_all_chunk_meshes :: proc(renderer: ^Chunk_Renderer) {
 }
 
 // UnloadMaterial also unloads the shader and the atlas texture, which the
-// water material shares, so that goes first, and the shadow map in both
-// materials' normal slot, so the shadows go before either.
+// water material shares, so that goes first.
 destroy_chunk_renderer :: proc(renderer: ^Chunk_Renderer) {
 	for _, chunk_render in renderer.chunk_meshes {
 		unload_chunk_render(chunk_render)
 	}
 	delete(renderer.chunk_meshes)
-	destroy_shadow_renderer(renderer)
 	destroy_water_renderer(&renderer.water)
 	rl.UnloadMaterial(renderer.material)
 	destroy_sky_renderer(&renderer.sky)

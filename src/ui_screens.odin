@@ -11,7 +11,7 @@ SETTINGS_PANEL_WIDTH :: 960
 // Title, tabs, the longest tab's rows and the back button. The tabs
 // scroll where the panel is shorter (UI scale 1.5).
 SETTINGS_ROW_COUNT :: 14
-DISPLAY_SETTINGS_ROW_COUNT :: 18
+DISPLAY_SETTINGS_ROW_COUNT :: 17
 AUDIO_SETTINGS_ROW_COUNT :: 3
 CONTROL_SETTINGS_ROW_COUNT :: 5
 ACCESSIBILITY_SETTINGS_ROW_COUNT :: 5
@@ -380,7 +380,6 @@ display_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Se
 	window_settings(state, content, settings, monitor_size, desktop_scaled)
 	camera_settings(state, content, settings)
 	ui_toggle(state, settings_row(content), text("settings_weather"), &settings.weather, text("settings_weather_tooltip"))
-	ui_toggle(state, settings_row(content), text("settings_shadows"), &settings.shadows, text("settings_shadows_tooltip"))
 	ui_toggle(state, settings_row(content), text("settings_head_bob"), &settings.head_bob, text("settings_head_bob_tooltip"))
 	ui_slider(
 		state,

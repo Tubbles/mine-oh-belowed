@@ -28,6 +28,10 @@ CONFIG_HOME_UNDER_HOME :: ".config"
 COMMAND_LINE_SOURCE :: "command line"
 DEFAULT_SOURCE :: "default"
 MAXIMUM_AUTOSAVE_MINUTES :: 24 * 60
+// Keys of removed settings, accepted and ignored with a log line so that a
+// settings file written by an older build still loads: settings.shadows
+// went with the sun shadows (work item 0097).
+RETIRED_CONFIGURATION_KEYS :: [?]string{"settings.shadows"}
 
 Configuration_Paths :: struct {
 	// The saves directory. MINE_OH_BELOWED_SAVES still wins over it.
@@ -393,6 +397,10 @@ assign_configuration_struct :: proc(target: any, value: json.Value, key_path: st
 	for key in sorted_object_keys(object) {
 		child_path := join_key_path(key_path, key, context.temp_allocator)
 		field, found := configuration_field(target.id, key)
+		if !found && is_retired_configuration_key(child_path) {
+			log_printf("%s: %s is no longer used and is ignored", source_of_key_path(provenance, child_path), child_path)
+			continue
+		}
 		if !found {
 			return fmt.tprintf("%s: unknown key %s", source_of_key_path(provenance, child_path), child_path)
 		}
@@ -402,6 +410,11 @@ assign_configuration_struct :: proc(target: any, value: json.Value, key_path: st
 		}
 	}
 	return ""
+}
+
+is_retired_configuration_key :: proc(key_path: string) -> bool {
+	retired := RETIRED_CONFIGURATION_KEYS
+	return slice.contains(retired[:], key_path)
 }
 
 // A field's key is its json tag when it has one.
