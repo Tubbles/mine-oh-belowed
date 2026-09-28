@@ -44,6 +44,11 @@
 // variants by id like any block. Placing picks the variant: the upper
 // slab against an underside or high on a side face, stairs rising away
 // from the player and turned by Rotate_Building.
+// sound_material (optional, work item 0068, default "stone") picks the
+// footstep sound: footstep_<material> must be in data/sounds/sounds.sjson.
+// The shipped materials are stone, dirt, sand, wood, leaves (leaves and
+// the ground cover), snow, metal and water. Wading, the water's material
+// plays.
 blocks = [
 	{
 		id = "air"
@@ -65,6 +70,7 @@ blocks = [
 		solid = true
 		hardness_seconds = 0.75
 		tool_tier = 0
+		sound_material = "dirt"
 		texture = {top = [134, 96, 67], side = [134, 96, 67], bottom = [134, 96, 67]}
 	}
 	{
@@ -73,6 +79,7 @@ blocks = [
 		solid = true
 		hardness_seconds = 0.75
 		tool_tier = 0
+		sound_material = "dirt"
 		texture = {top = [106, 170, 64], side = [120, 110, 70], bottom = [134, 96, 67]}
 	}
 	{
@@ -81,6 +88,7 @@ blocks = [
 		solid = true
 		hardness_seconds = 0.75
 		tool_tier = 0
+		sound_material = "sand"
 		texture = {top = [219, 207, 163], side = [219, 207, 163], bottom = [219, 207, 163]}
 	}
 	{
@@ -98,6 +106,7 @@ blocks = [
 		solid = false
 		hardness_seconds = 0
 		water_level = 8
+		sound_material = "water"
 		texture = {top = [52, 98, 186], side = [48, 90, 172], bottom = [44, 82, 160]}
 	}
 	{
@@ -106,6 +115,7 @@ blocks = [
 		solid = true
 		hardness_seconds = 1.5
 		tool_tier = 0
+		sound_material = "wood"
 		texture = {top = [160, 130, 82], side = [104, 78, 48], bottom = [160, 130, 82]}
 	}
 	{
@@ -114,6 +124,7 @@ blocks = [
 		solid = true
 		hardness_seconds = 0.3
 		tool_tier = 0
+		sound_material = "leaves"
 		texture = {top = [58, 122, 44], side = [54, 114, 40], bottom = [50, 104, 36]}
 	}
 	{
@@ -122,6 +133,7 @@ blocks = [
 		solid = true
 		hardness_seconds = 2
 		tool_tier = 0
+		sound_material = "dirt"
 		texture = {top = [34, 30, 28], side = [44, 40, 36], bottom = [44, 40, 36]}
 	}
 	{
@@ -200,6 +212,7 @@ blocks = [
 		solid = false
 		hardness_seconds = 0
 		water_level = 7
+		sound_material = "water"
 		texture = {top = [52, 98, 186], side = [48, 90, 172], bottom = [44, 82, 160]}
 	}
 	{
@@ -208,6 +221,7 @@ blocks = [
 		solid = false
 		hardness_seconds = 0
 		water_level = 6
+		sound_material = "water"
 		texture = {top = [52, 98, 186], side = [48, 90, 172], bottom = [44, 82, 160]}
 	}
 	{
@@ -216,6 +230,7 @@ blocks = [
 		solid = false
 		hardness_seconds = 0
 		water_level = 5
+		sound_material = "water"
 		texture = {top = [52, 98, 186], side = [48, 90, 172], bottom = [44, 82, 160]}
 	}
 	{
@@ -224,6 +239,7 @@ blocks = [
 		solid = false
 		hardness_seconds = 0
 		water_level = 4
+		sound_material = "water"
 		texture = {top = [52, 98, 186], side = [48, 90, 172], bottom = [44, 82, 160]}
 	}
 	{
@@ -232,6 +248,7 @@ blocks = [
 		solid = false
 		hardness_seconds = 0
 		water_level = 3
+		sound_material = "water"
 		texture = {top = [52, 98, 186], side = [48, 90, 172], bottom = [44, 82, 160]}
 	}
 	{
@@ -240,6 +257,7 @@ blocks = [
 		solid = false
 		hardness_seconds = 0
 		water_level = 2
+		sound_material = "water"
 		texture = {top = [52, 98, 186], side = [48, 90, 172], bottom = [44, 82, 160]}
 	}
 	{
@@ -248,6 +266,7 @@ blocks = [
 		solid = false
 		hardness_seconds = 0
 		water_level = 1
+		sound_material = "water"
 		texture = {top = [52, 98, 186], side = [48, 90, 172], bottom = [44, 82, 160]}
 	}
 	{
@@ -258,6 +277,7 @@ blocks = [
 		hardness_seconds = 0.1
 		tool_tier = 0
 		light_level = 14
+		sound_material = "wood"
 		texture = {top = [255, 200, 80], side = [150, 110, 60], bottom = [120, 90, 50]}
 	}
 	{
@@ -266,6 +286,7 @@ blocks = [
 		solid = true
 		// Not minable: the pad under the drop capsule (work item 0013).
 		hardness_seconds = 0
+		sound_material = "metal"
 		texture = {top = [96, 100, 108], side = [72, 74, 80], bottom = [72, 74, 80]}
 	}
 	{
@@ -294,6 +315,7 @@ blocks = [
 		solid = true
 		hardness_seconds = 1.5
 		tool_tier = 0
+		sound_material = "dirt"
 		texture = {top = [58, 54, 52], side = [48, 44, 43], bottom = [40, 37, 36]}
 	}
 	{
@@ -336,6 +358,7 @@ blocks = [
 		solid = true
 		hardness_seconds = 0.75
 		tool_tier = 0
+		sound_material = "snow"
 		texture = {top = [240, 244, 250], side = [232, 236, 244], bottom = [232, 236, 244]}
 	}
 	{
@@ -344,6 +367,7 @@ blocks = [
 		solid = true
 		hardness_seconds = 0.75
 		tool_tier = 0
+		sound_material = "dirt"
 		texture = {top = [118, 106, 98], side = [118, 106, 98], bottom = [118, 106, 98]}
 	}
 	{
@@ -352,6 +376,7 @@ blocks = [
 		solid = true
 		hardness_seconds = 0.75
 		tool_tier = 0
+		sound_material = "dirt"
 		texture = {top = [176, 164, 86], side = [140, 116, 72], bottom = [134, 96, 67]}
 	}
 	{
@@ -360,6 +385,7 @@ blocks = [
 		solid = true
 		hardness_seconds = 0.75
 		tool_tier = 0
+		sound_material = "dirt"
 		texture = {top = [88, 72, 52], side = [96, 78, 56], bottom = [96, 78, 56]}
 	}
 	{
@@ -386,6 +412,7 @@ blocks = [
 		solid = true
 		hardness_seconds = 1.5
 		tool_tier = 0
+		sound_material = "wood"
 		texture = {top = [204, 192, 160], side = [222, 218, 204], bottom = [204, 192, 160]}
 	}
 	{
@@ -394,6 +421,7 @@ blocks = [
 		solid = true
 		hardness_seconds = 0.3
 		tool_tier = 0
+		sound_material = "leaves"
 		texture = {top = [124, 180, 74], side = [116, 172, 68], bottom = [104, 154, 60]}
 	}
 	{
@@ -402,6 +430,7 @@ blocks = [
 		solid = true
 		hardness_seconds = 1.5
 		tool_tier = 0
+		sound_material = "wood"
 		texture = {top = [132, 102, 66], side = [72, 52, 34], bottom = [132, 102, 66]}
 	}
 	{
@@ -410,6 +439,7 @@ blocks = [
 		solid = true
 		hardness_seconds = 0.3
 		tool_tier = 0
+		sound_material = "leaves"
 		texture = {top = [36, 86, 50], side = [32, 80, 46], bottom = [28, 70, 40]}
 	}
 	{
@@ -418,6 +448,7 @@ blocks = [
 		solid = true
 		hardness_seconds = 0.3
 		tool_tier = 0
+		sound_material = "leaves"
 		texture = {top = [122, 132, 52], side = [114, 124, 48], bottom = [102, 110, 42]}
 	}
 	{
@@ -426,6 +457,7 @@ blocks = [
 		solid = true
 		hardness_seconds = 1.5
 		tool_tier = 0
+		sound_material = "wood"
 		texture = {top = [178, 152, 102], side = [142, 118, 78], bottom = [178, 152, 102]}
 	}
 	{
@@ -434,6 +466,7 @@ blocks = [
 		solid = true
 		hardness_seconds = 0.3
 		tool_tier = 0
+		sound_material = "leaves"
 		texture = {top = [72, 152, 58], side = [66, 144, 54], bottom = [58, 128, 48]}
 	}
 	{
@@ -442,6 +475,7 @@ blocks = [
 		solid = true
 		hardness_seconds = 1.5
 		tool_tier = 0
+		sound_material = "wood"
 		texture = {top = [152, 146, 138], side = [114, 110, 104], bottom = [152, 146, 138]}
 	}
 	// Slabs and stairs for factory floors (work item 0061), from stone,
@@ -489,6 +523,7 @@ blocks = [
 		solid = true
 		hardness_seconds = 1
 		tool_tier = 0
+		sound_material = "wood"
 		texture = {top = [176, 132, 84], side = [176, 132, 84], bottom = [176, 132, 84]}
 	}
 	{
@@ -498,6 +533,7 @@ blocks = [
 		solid = true
 		hardness_seconds = 1
 		tool_tier = 0
+		sound_material = "wood"
 		texture = {top = [176, 132, 84], side = [176, 132, 84], bottom = [176, 132, 84]}
 	}
 	// Ground cover (work item 0082): crosses that generation sets on the
@@ -511,6 +547,7 @@ blocks = [
 		solid = false
 		hardness_seconds = 0.05
 		tool_tier = 0
+		sound_material = "leaves"
 		texture = {top = [96, 160, 64], side = [96, 160, 64], bottom = [96, 160, 64]}
 	}
 	{
@@ -520,6 +557,7 @@ blocks = [
 		solid = false
 		hardness_seconds = 0.05
 		tool_tier = 0
+		sound_material = "leaves"
 		texture = {top = [88, 150, 60], side = [88, 150, 60], bottom = [88, 150, 60]}
 	}
 	{
@@ -529,6 +567,7 @@ blocks = [
 		solid = false
 		hardness_seconds = 0.05
 		tool_tier = 0
+		sound_material = "leaves"
 		texture = {top = [204, 52, 48], side = [204, 52, 48], bottom = [204, 52, 48]}
 	}
 	{
@@ -538,6 +577,7 @@ blocks = [
 		solid = false
 		hardness_seconds = 0.05
 		tool_tier = 0
+		sound_material = "leaves"
 		texture = {top = [232, 200, 64], side = [232, 200, 64], bottom = [232, 200, 64]}
 	}
 	{
@@ -547,6 +587,7 @@ blocks = [
 		solid = false
 		hardness_seconds = 0.05
 		tool_tier = 0
+		sound_material = "leaves"
 		texture = {top = [132, 100, 68], side = [132, 100, 68], bottom = [132, 100, 68]}
 	}
 	{
@@ -556,6 +597,7 @@ blocks = [
 		solid = false
 		hardness_seconds = 0.05
 		tool_tier = 0
+		sound_material = "leaves"
 		texture = {top = [124, 150, 80], side = [124, 150, 80], bottom = [124, 150, 80]}
 	}
 ]

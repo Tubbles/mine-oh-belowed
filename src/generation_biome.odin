@@ -17,6 +17,9 @@ BIOMES_FILE_NAME :: "biomes.sjson"
 // weight; clearing_share is about the share of the biome left without
 // trees (column_in_clearing). ground_cover (work item 0082) lists the
 // cover blocks set on the top block of dry land (apply_ground_cover).
+// ambience (optional, work item 0068) names the loop that plays while the
+// player stands in the biome, ambience_<name> in the sound table
+// (audio.odin); empty for none.
 Biome_Definition :: struct {
 	id:               string,
 	name_key:         string,
@@ -38,6 +41,7 @@ Biome_Definition :: struct {
 	pit_block:          string,
 	pit_maximum_height: i32,
 	map_color:        [3]u8,
+	ambience:         string,
 }
 
 // One entry of a biome's ground_cover list: a cross shaped block, its

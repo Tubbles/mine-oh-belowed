@@ -1,0 +1,46 @@
+// The sound table (work item 0068). Every sound the game plays is listed
+// here: id is what the game asks for, file the .wav under data/sounds/
+// (16 bit PCM), volume its level from 0 to 1 before the settings'
+// volumes, kind "effect" (short, played once, never repeated within 40
+// milliseconds) or "loop" (streamed and faded in and out by the mixer).
+// Effects scale with the effects volume, loops with the ambience volume,
+// both with the master volume.
+// Ids the game asks for:
+// footstep_<material> for every sound_material of data/blocks.sjson
+// (stone is the default and must exist); mine_hit_<tier> for the tool
+// tiers, the highest listed tier at or below the player's taking over;
+// block_break, block_place; ui_move, ui_confirm, ui_back; hum_burner,
+// hum_electric, hum_fluid (the nearest working machine by family);
+// ambience_<name> for every ambience of data/biomes.sjson; rain;
+// rocket_launch, capsule_landing, discovery_chime.
+// The placeholder files are written by tools/make_placeholder_sounds.py.
+sounds = [
+	{id = "footstep_stone", file = "footstep_stone.wav", volume = 0.5, kind = "effect"}
+	{id = "footstep_dirt", file = "footstep_dirt.wav", volume = 0.5, kind = "effect"}
+	{id = "footstep_sand", file = "footstep_sand.wav", volume = 0.45, kind = "effect"}
+	{id = "footstep_wood", file = "footstep_wood.wav", volume = 0.5, kind = "effect"}
+	{id = "footstep_leaves", file = "footstep_leaves.wav", volume = 0.4, kind = "effect"}
+	{id = "footstep_snow", file = "footstep_snow.wav", volume = 0.45, kind = "effect"}
+	{id = "footstep_metal", file = "footstep_metal.wav", volume = 0.45, kind = "effect"}
+	{id = "footstep_water", file = "footstep_water.wav", volume = 0.5, kind = "effect"}
+	{id = "mine_hit_0", file = "mine_hit_0.wav", volume = 0.5, kind = "effect"}
+	{id = "mine_hit_1", file = "mine_hit_1.wav", volume = 0.5, kind = "effect"}
+	{id = "mine_hit_2", file = "mine_hit_2.wav", volume = 0.5, kind = "effect"}
+	{id = "mine_hit_3", file = "mine_hit_3.wav", volume = 0.5, kind = "effect"}
+	{id = "block_break", file = "block_break.wav", volume = 0.6, kind = "effect"}
+	{id = "block_place", file = "block_place.wav", volume = 0.6, kind = "effect"}
+	{id = "ui_move", file = "ui_move.wav", volume = 0.3, kind = "effect"}
+	{id = "ui_confirm", file = "ui_confirm.wav", volume = 0.4, kind = "effect"}
+	{id = "ui_back", file = "ui_back.wav", volume = 0.35, kind = "effect"}
+	{id = "hum_burner", file = "hum_burner.wav", volume = 0.35, kind = "loop"}
+	{id = "hum_electric", file = "hum_electric.wav", volume = 0.3, kind = "loop"}
+	{id = "hum_fluid", file = "hum_fluid.wav", volume = 0.35, kind = "loop"}
+	{id = "ambience_wind", file = "ambience_wind.wav", volume = 0.4, kind = "loop"}
+	{id = "ambience_birds", file = "ambience_birds.wav", volume = 0.35, kind = "loop"}
+	{id = "ambience_insects", file = "ambience_insects.wav", volume = 0.25, kind = "loop"}
+	{id = "ambience_water", file = "ambience_water.wav", volume = 0.4, kind = "loop"}
+	{id = "rain", file = "rain.wav", volume = 0.5, kind = "loop"}
+	{id = "rocket_launch", file = "rocket_launch.wav", volume = 0.9, kind = "effect"}
+	{id = "capsule_landing", file = "capsule_landing.wav", volume = 0.8, kind = "effect"}
+	{id = "discovery_chime", file = "discovery_chime.wav", volume = 0.5, kind = "effect"}
+]

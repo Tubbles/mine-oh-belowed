@@ -238,6 +238,9 @@ test_settings_file_round_trip :: proc(t: ^testing.T) {
 	settings.frame_rate_cap = 144
 	settings.weather = false
 	settings.head_bob = false
+	settings.master_volume = 0.55
+	settings.effects_volume = 0.25
+	settings.ambience_volume = 0
 	testing.expect_value(t, write_settings_file(environment, settings), "")
 
 	loaded, problem := load_configuration(environment, {})
@@ -259,6 +262,7 @@ test_settings_file_round_trip :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(string(written_data), "\tui_scale = 1.15\n"), string(written_data))
 	testing.expect(t, strings.contains(string(written_data), "\twindow_mode = \"fullscreen\"\n"), string(written_data))
 	testing.expect(t, strings.contains(string(written_data), "\tresolution = [1920, 1080]\n"), string(written_data))
+	testing.expect(t, strings.contains(string(written_data), "\tmaster_volume = 0.55\n"), string(written_data))
 }
 
 @(test)

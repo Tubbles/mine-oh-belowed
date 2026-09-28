@@ -141,6 +141,12 @@ reload_textures :: proc(state: ^Frame_State) -> string {
 	return ""
 }
 
+// The table and every file load again; a table that does not load, or
+// names a missing file, keeps the old sounds.
+reload_sounds :: proc(state: ^Frame_State) -> string {
+	return load_mixer_sounds(&state.audio, state.data_directory, state.content.blocks, state.base_generator.biomes)
+}
+
 rebuild_atlases :: proc(state: ^Frame_State) {
 	replace_chunk_atlas(&state.renderer, state.content.blocks, state.data_directory)
 	replace_item_atlas(&state.item_atlas, &state.content.items, state.data_directory)
@@ -157,6 +163,7 @@ presentation_reload_keys := [Data_File_Category]string {
 	.Fonts          = "reload_fonts_done",
 	.Models         = "reload_models_done",
 	.Textures       = "reload_textures_done",
+	.Sounds         = "reload_sounds_done",
 	.Content        = "",
 }
 
@@ -172,6 +179,7 @@ presentation_file_names := [Data_File_Category]string {
 	.Fonts          = FONTS_DIRECTORY,
 	.Models         = MODELS_DIRECTORY,
 	.Textures       = "textures",
+	.Sounds         = SOUNDS_DIRECTORY,
 	.Content        = "",
 }
 
@@ -191,6 +199,8 @@ reload_presentation :: proc(state: ^Frame_State, category: Data_File_Category) -
 		return reload_models(state)
 	case .Textures:
 		return reload_textures(state)
+	case .Sounds:
+		return reload_sounds(state)
 	}
 	return ""
 }

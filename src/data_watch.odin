@@ -8,7 +8,8 @@ import "core:time"
 // a second the main thread stats every file under the data directory and
 // compares modification time and size with the previous scan; a file
 // added, changed or removed marks its category. Presentation files
-// (strings, bindings, developer kits, shaders, fonts, models, textures) reload in place at
+// (strings, bindings, developer kits, shaders, fonts, models, textures,
+// sounds) reload in place at
 // once (hot_reload.odin). Content files only mark the data as changed,
 // shown on the Developer screen and in the log, until a reload is asked
 // for (the reload command, the Developer screen, F8), or, with watch_data
@@ -45,12 +46,14 @@ Data_File_Category :: enum u8 {
 	// The .png files under textures/blocks/ and textures/items/
 	// (render_atlas.odin, render_icons.odin).
 	Textures,
+	// sounds/sounds.sjson and the .wav files under sounds/ (audio.odin).
+	Sounds,
 	Content,
 }
 
 Data_File_Categories :: bit_set[Data_File_Category]
 
-PRESENTATION_CATEGORIES :: Data_File_Categories{.Strings, .Bindings, .Developer_Kits, .Shaders, .Fonts, .Models, .Textures}
+PRESENTATION_CATEGORIES :: Data_File_Categories{.Strings, .Bindings, .Developer_Kits, .Shaders, .Fonts, .Models, .Textures, .Sounds}
 
 Data_File_Stamp :: struct {
 	modification_time: time.Time,
@@ -114,6 +117,8 @@ data_file_category :: proc(relative_path: string) -> Data_File_Category {
 		return strings.has_suffix(name, MODEL_FILE_EXTENSION) && !strings.has_prefix(name, ".") ? .Models : .Ignored
 	case BLOCK_TEXTURES_DIRECTORY, ITEM_TEXTURES_DIRECTORY:
 		return strings.has_suffix(name, TEXTURE_FILE_EXTENSION) && !strings.has_prefix(name, ".") ? .Textures : .Ignored
+	case SOUNDS_DIRECTORY:
+		return name == SOUNDS_FILE_NAME || (strings.has_suffix(name, SOUND_FILE_EXTENSION) && !strings.has_prefix(name, ".")) ? .Sounds : .Ignored
 	}
 	if strings.has_prefix(directory, FONTS_DIRECTORY + "/") {
 		return is_font_file_name(name) ? .Fonts : .Ignored

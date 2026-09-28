@@ -22,6 +22,12 @@ Settings :: struct {
 	// The first person camera rises and falls with each step (work item
 	// 0066); off for reduced motion.
 	head_bob:                  bool,
+	// Sound (audio.odin, work item 0068), 0 to 1 each: the master volume
+	// scales everything, the effects volume the short sounds, the
+	// ambience volume the loops (biome ambience, rain, the machine hum).
+	master_volume:             f32,
+	effects_volume:            f32,
+	ambience_volume:           f32,
 	// Gyro aiming in the world (SDL3 backend only).
 	gyro_enabled:              bool,
 	// Multipliers on the base look rates.
@@ -60,6 +66,9 @@ DEFAULT_SETTINGS :: Settings {
 	ui_scale                  = 1,
 	weather                   = true,
 	head_bob                  = true,
+	master_volume             = 0.8,
+	effects_volume            = 1,
+	ambience_volume           = 0.7,
 	gyro_enabled              = true,
 	stick_look_sensitivity    = 1,
 	gyro_look_sensitivity     = 1,
@@ -77,6 +86,7 @@ DEFAULT_SETTINGS :: Settings {
 UI_SCALE_RANGE :: Slider_Range{0.75, 1.5, 0.05}
 LOOK_SENSITIVITY_RANGE :: Slider_Range{0.25, 3, 0.05}
 POINTER_SPEED_RANGE :: Slider_Range{0.5, 3, 0.1}
+VOLUME_RANGE :: Slider_Range{0, 1, 0.05}
 // 0 turns autosave off. The configuration accepts up to
 // MAXIMUM_AUTOSAVE_MINUTES; the slider stops at an hour so a stick can
 // walk it.

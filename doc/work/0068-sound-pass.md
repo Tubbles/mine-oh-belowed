@@ -1,6 +1,6 @@
 # 0068 Sound, sparse
 
-Status: todo
+Status: implemented
 Milestone: M11
 
 ## Goal
@@ -31,3 +31,5 @@ Implementation pointers (main agent, 2026-09-28), decisions taken so the item is
 - Docs: `doc/ui.md` (the Audio tab), `doc/architecture.md` (audio), `doc/content.md` (the sound table, materials, biome ambience), `DESIGN.md` if the sparse sound rule is stated there, `doc/log/2026-09-28.md`, this item's Status and Notes.
 
 Files a subagent may touch: new `src/audio.odin`, `src/audio_test.odin`, `src/sound_events.odin`, `src/sound_events_test.odin`; `src/world_block.odin`, `src/world_block_test.odin`, `src/generation_biome.odin`, `src/generation_biome_test.odin`, `src/settings.odin`, `src/configuration_test.odin`, `src/ui_screens.odin`, `src/ui_core.odin`, `src/ui_audit_test.odin`, `src/data_watch.odin`, `src/data_watch_test.odin`, `src/hot_reload.odin`, `src/loop.odin` (init, the per frame drain and the shutdown), new `tools/make_placeholder_sounds.py`, new `data/sounds/`, `data/blocks.sjson`, `data/biomes.sjson`, `data/strings/en.sjson`, the docs above, this file.
+
+Implemented: new `src/audio.odin` (the sound table, `Mixer_State` with the gap rule and the loop volume approach, the raylib mixer: `init_audio`, `load_mixer_sounds`, `play_effect`, `set_loop_target`, `update_audio`, `shutdown_audio`) and `src/audio_test.odin`; new `src/sound_events.odin` (the selection per material, tier, biome and machine family, the step, quarter and counter detectors in `advance_sound_memory`, `Sound_Memory`, `play_frame_sounds`, `play_ui_sounds`) and `src/sound_events_test.odin`; `src/world_block.odin` (`sound_material`, `block_sound_material`) and its test; `src/generation_biome.odin` (`ambience`) and its test; `src/settings.odin` (the three volumes, `VOLUME_RANGE`), `src/configuration_test.odin`; `src/ui_screens.odin` (the Audio tab), `src/ui_audit_test.odin` (four settings tabs); `src/ui_core.odin` (`Ui_Sound_Event`, `Ui_State.sound_events`); `src/data_watch.odin`, `src/data_watch_test.odin` and `src/hot_reload.odin` (the `Sounds` category); `src/loop.odin` (the mixer and memory in `Frame_State`, init and shutdown, the memory reset in `enter_session`, the frame's sounds after the world pass, the UI's after `ui_end`, `update_audio` after the frame); new `tools/make_placeholder_sounds.py` and `data/sounds/` (the hand written `sounds.sjson` and 28 generated `.wav` files, 1,817,706 bytes); `data/blocks.sjson`, `data/biomes.sjson`, `data/strings/en.sjson`; `doc/ui.md`, `doc/architecture.md`, `doc/content.md`, `DESIGN.md`. Decisions the item left open are in `doc/log/2026-09-28.md`. 877 tests pass.

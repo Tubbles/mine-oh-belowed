@@ -80,6 +80,7 @@ Block_Definition :: struct {
 	tool_tier:        int,
 	texture:          Block_Texture_Definition,
 	shape:            string,
+	sound_material:   string,
 	resolved_shape:   Block_Shape,
 	orientation:      Block_Orientation,
 }
@@ -380,6 +381,17 @@ block_is_minable :: proc(registry: Block_Registry, block: Block_Id) -> bool {
 		return false
 	}
 	return registry.definitions[block].hardness_seconds > 0
+}
+
+DEFAULT_SOUND_MATERIAL :: "stone"
+
+// The block's sound_material, DEFAULT_SOUND_MATERIAL when it names none or
+// the id is out of range.
+block_sound_material :: proc(registry: Block_Registry, block: Block_Id) -> string {
+	if int(block) >= len(registry.definitions) || registry.definitions[block].sound_material == "" {
+		return DEFAULT_SOUND_MATERIAL
+	}
+	return registry.definitions[block].sound_material
 }
 
 // The pickaxe tier hand mining the block needs, 0 outside the registry.

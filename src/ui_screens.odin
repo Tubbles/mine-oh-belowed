@@ -12,6 +12,7 @@ SETTINGS_PANEL_WIDTH :: 960
 // scroll where the panel is shorter (UI scale 1.5).
 SETTINGS_ROW_COUNT :: 14
 DISPLAY_SETTINGS_ROW_COUNT :: 13
+AUDIO_SETTINGS_ROW_COUNT :: 3
 CONTROL_SETTINGS_ROW_COUNT :: 5
 
 Screen_Context :: struct {
@@ -313,7 +314,7 @@ settings_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	content := inset(panel, UI_PADDING)
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("settings_title"), UI_HEADING_TEXT_SIZE, .Centre)
 	cut_top(&content, UI_GAP)
-	tab_labels := [?]string{text("settings_tab_display"), text("settings_tab_controls"), text("settings_tab_bindings")}
+	tab_labels := [?]string{text("settings_tab_display"), text("settings_tab_audio"), text("settings_tab_controls"), text("settings_tab_bindings")}
 	tab := ui_tabs(state, cut_top(&content, UI_ROW_HEIGHT), "settings_tabs", tab_labels[:])
 	cut_top(&content, UI_GAP)
 	back_row := cut_bottom(&content, UI_ROW_HEIGHT)
@@ -323,6 +324,10 @@ settings_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		display_settings(state, &rows, settings, screen_context.monitor_size, screen_context.font_families)
 		scroll_region_end(state, region)
 	case 1:
+		region, rows := scroll_region_begin(state, "audio_settings", content, settings_rows_height(AUDIO_SETTINGS_ROW_COUNT))
+		audio_settings(state, &rows, settings)
+		scroll_region_end(state, region)
+	case 2:
 		region, rows := scroll_region_begin(state, "control_settings", content, settings_rows_height(CONTROL_SETTINGS_ROW_COUNT))
 		control_settings(state, &rows, settings)
 		scroll_region_end(state, region)
@@ -384,6 +389,18 @@ display_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Se
 	ui_toggle(state, settings_row(content), text("settings_developer_mode"), &settings.developer_mode, text("settings_developer_mode_tooltip"))
 	font_choice(state, settings_row(content), "settings_font", &settings.font, font_families, false)
 	font_choice(state, settings_row(content), "settings_monospace_font", &settings.monospace_font, font_families, true)
+}
+
+// Applied at once: the mixer reads the volumes every frame (update_audio).
+audio_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Settings) {
+	ui_slider(state, settings_row(content), text("settings_master_volume"), &settings.master_volume, VOLUME_RANGE, volume_text(settings.master_volume), text("settings_master_volume_tooltip"))
+	ui_slider(state, settings_row(content), text("settings_effects_volume"), &settings.effects_volume, VOLUME_RANGE, volume_text(settings.effects_volume), text("settings_effects_volume_tooltip"))
+	ui_slider(state, settings_row(content), text("settings_ambience_volume"), &settings.ambience_volume, VOLUME_RANGE, volume_text(settings.ambience_volume), text("settings_ambience_volume_tooltip"))
+}
+
+// A volume as a whole percentage.
+volume_text :: proc(volume: f32) -> string {
+	return fmt.tprintf("%d%%", int(math.round(volume * 100)))
 }
 
 // Applied at once: the frame loop applies them to the window

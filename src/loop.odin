@@ -119,6 +119,11 @@ Frame_State :: struct {
 	// session.
 	player_model:       Player_Model,
 	player_animation:   Player_Animation_Memory,
+	// Sound (work item 0068, audio.odin, sound_events.odin): the mixer
+	// for the whole run, and what the sound triggers remember of the last
+	// frame, reset with the session.
+	audio:              Audio_Mixer,
+	sound_memory:       Sound_Memory,
 	show_diagnostics:   bool,
 	// The world statistics overlay (draw_world_overlay), off by default.
 	show_world_overlay: bool,
@@ -433,6 +438,7 @@ render_frame :: proc(state: ^Frame_State) {
 	if draw_session_world(state, session, sky, weather) {
 		draw_underwater_overlay()
 	}
+	play_frame_sounds(&state.audio, &state.sound_memory, session_sound_frame(state, weather))
 	if state.show_diagnostics {
 		draw_diagnostics_backdrop()
 		draw_diagnostics(state^, state.config)
@@ -442,6 +448,21 @@ render_frame :: proc(state: ^Frame_State) {
 	run_ui_frame(state)
 	queue_requested_screenshot(state)
 	capture_pending_screenshot(state)
+}
+
+session_sound_frame :: proc(state: ^Frame_State, weather: Weather) -> Sound_Frame {
+	session := state.session
+	return Sound_Frame {
+		world = &session.simulation.world,
+		content = frame_simulation_content(state),
+		generator = &session.generator,
+		player = session.simulation.players[0],
+		tick = session.simulation.tick,
+		quests = &session.simulation.quests,
+		particle_memory = state.particle_memory,
+		weather = weather,
+		cheat_speed = session.simulation.cheat_speed,
+	}
 }
 
 // The weather of the frame: the schedule, or the weather command's kind;
@@ -588,6 +609,7 @@ run_ui_frame :: proc(state: ^Frame_State) {
 		item_layout  = state.item_atlas.layout,
 	}
 	ui_end(&state.ui, icon_atlas, &state.ui_images)
+	play_ui_sounds(&state.audio, &state.ui)
 	apply_cursor_mode(state)
 }
 
@@ -707,6 +729,7 @@ enter_session :: proc(state: ^Frame_State, session: ^Session) {
 	state.particles = {}
 	state.particle_memory = {}
 	state.player_animation = {}
+	state.sound_memory = {}
 	state.ui.screens = {}
 	state.ui.keyboard = {}
 	state.ui.tooltip_open = false
@@ -821,6 +844,8 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	defer destroy_particle_renderer(&state.particle_renderer)
 	state.player_model = init_player_model(data_directory)
 	defer unload_player_model(&state.player_model)
+	state.audio = init_audio(data_directory, content.blocks, game_data.base_generator.biomes, state.settings)
+	defer shutdown_audio(&state.audio)
 	start_command_frame_state(&state)
 	defer destroy_command_frame_state(&state)
 	if session != nil {
@@ -833,6 +858,7 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	for !rl.WindowShouldClose() && !state.quit_requested {
 		update_frame(&state)
 		render_frame(&state)
+		update_audio(&state.audio, state.settings, state.frame_seconds)
 		apply_session_request(&state)
 		update_data_watch(&state)
 		apply_reload_request(&state)

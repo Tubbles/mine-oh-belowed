@@ -145,7 +145,7 @@ test_biome_validation_rejects_bad_climate_fields :: proc(t: ^testing.T) {
 
 @(test)
 test_biomes_file_reads_optional_temperatures :: proc(t: ^testing.T) {
-	data := `biomes = [{id = "a", name_key = "biome_a", maximum_temperature = -0.5, map_color = [1, 2, 3]} {id = "b", name_key = "biome_b"}]`
+	data := `biomes = [{id = "a", name_key = "biome_a", maximum_temperature = -0.5, map_color = [1, 2, 3]} {id = "b", name_key = "biome_b", ambience = "wind"}]`
 	file, error := parse_biomes_file(transmute([]byte)data, context.temp_allocator)
 	testing.expect_value(t, error, nil)
 	if len(file.biomes) != 2 {
@@ -155,6 +155,8 @@ test_biomes_file_reads_optional_temperatures :: proc(t: ^testing.T) {
 	testing.expect_value(t, file.biomes[0].minimum_temperature, nil)
 	testing.expect_value(t, file.biomes[0].maximum_temperature.? or_else 0, -0.5)
 	testing.expect_value(t, file.biomes[0].map_color, [3]u8{1, 2, 3})
+	testing.expect_value(t, file.biomes[0].ambience, "")
+	testing.expect_value(t, file.biomes[1].ambience, "wind")
 	minimum, maximum := temperature_range(file.biomes[1])
 	testing.expect_value(t, minimum, -1)
 	testing.expect_value(t, maximum, 1)

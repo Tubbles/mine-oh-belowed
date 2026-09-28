@@ -241,6 +241,15 @@ Radial_State :: struct {
 	highlight: int,
 }
 
+// What the UI asks the mixer to play (work item 0068): a focus move, an
+// activation, a back press on a screen. Recorded here, drained by the
+// frame loop (play_ui_sounds), so the UI never calls audio itself.
+Ui_Sound_Event :: enum u8 {
+	Move,
+	Confirm,
+	Back,
+}
+
 Ui_State :: struct {
 	input:            Ui_Input,
 	frame_seconds:    f32,
@@ -272,6 +281,8 @@ Ui_State :: struct {
 	distribute:       Distribute_Gesture,
 	quick_move:       Quick_Move_State,
 	toasts:           [dynamic]Toast,
+	// Filled by ui_begin and ui_resolve, emptied by the frame loop.
+	sound_events:     bit_set[Ui_Sound_Event],
 	scroll_offsets:   map[Ui_Id]f32,
 	selections:       map[Ui_Id]int,
 	// Derived in ui_begin for this frame.
@@ -516,12 +527,20 @@ ui_begin :: proc(state: ^Ui_State, input: Ui_Input, screen_pixels: [2]f32, frame
 	} else if input.info && state.keyboard.field == 0 {
 		state.tooltip_open = !state.tooltip_open
 	}
+	if input.back && state.screens.count > 0 && top_screen(state.screens) != .Title {
+		state.sound_events += {.Back}
+	}
 	advance_toasts(state, frame_seconds)
 }
 
 // Focus fallback, hover, then the focus step. Pure: tests run it instead of ui_end.
 ui_resolve :: proc(state: ^Ui_State) {
 	widgets := state.widgets[:]
+	state.sound_events += ui_frame_sound_events(state^)
+	focus_before := state.focus
+	defer if focus_before != state.focus && widget_index(widgets, focus_before) >= 0 {
+		state.sound_events += {.Move}
+	}
 	state.hovered = state.pointer_source == .None ? 0 : widget_under(widgets, state.pointer)
 	if state.pointer_moved && state.hovered != 0 {
 		state.focus = state.hovered
@@ -542,6 +561,15 @@ ui_resolve :: proc(state: ^Ui_State) {
 	if neighbour, found := find_focus_neighbour(widgets, focus_index, state.navigation_step); found {
 		state.focus = widgets[neighbour].id
 	}
+}
+
+// An activation this frame, as ui_interact grants it: confirm on the
+// focused widget, or a click on one under the pointer.
+ui_frame_sound_events :: proc(state: Ui_State) -> bit_set[Ui_Sound_Event] {
+	widgets := state.widgets[:]
+	confirmed := state.confirm && widget_index(widgets, state.focus) >= 0
+	clicked := state.click && state.pointer_source != .None && widget_under(widgets, state.pointer) != 0
+	return confirmed || clicked ? {.Confirm} : {}
 }
 
 focus_step_allowed :: proc(focused: Ui_Widget, step: Ui_Direction) -> bool {

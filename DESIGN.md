@@ -106,7 +106,9 @@ Realistic rather than cartoonish. The player is a contractor establishing an ind
 
 ## Sound
 
-Sparse. A handful of quiet, positional machine loops with a hard cap on simultaneous voices, so a large base is a hum rather than a choir. Distinct sounds are reserved for state changes: a machine stopping, a brownout starting, a quest completing, a capsule landing. The visual layer (bottleneck overlay, HUD warnings) is the primary feedback and sound only confirms it. In the placeholder era that means one hum, a few soft clicks, or silence. No synthesised tone per machine type.
+Sparse. A handful of quiet, positional machine loops with a hard cap on simultaneous voices, so a large base is a hum rather than a choir. Distinct sounds are reserved for state changes: a machine stopping, a brownout starting, a quest completing, a capsule landing. The visual layer (bottleneck overlay, HUD warnings) is the primary feedback and sound only confirms it. In the placeholder era that means one hum, a few soft clicks, or silence. No synthesised tone per machine type: one hum per machine family (burner, electric, fluid) at most.
+
+The rule the mixer keeps (0068): nothing plays continuously but the biome ambience, the rain and one hum, the nearest working machine's within 12 blocks. Effects are short (footsteps, digging, placing, menu clicks, the launch, the capsule landing, the discovery chime) and never layered: the same effect plays at most once per 40 milliseconds.
 
 ## World settings
 

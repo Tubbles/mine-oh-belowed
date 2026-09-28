@@ -495,7 +495,7 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 	audit_case(audit, {name = "hud", hud = true, toasts = toasts[:]})
 	audit_case(audit, {name = "hud radial", hud = true, radial = true})
 	audit_case(audit, {name = "pause", screens = {.Pause}, walk_focus = true})
-	for tab in 0 ..< 3 {
+	for tab in 0 ..< 4 {
 		audit_case(audit, {name = fmt.tprintf("settings tab %d", tab), screens = {.Pause, .Settings}, tab_next = tab, walk_focus = true})
 	}
 	audit_windowed_display(audit)

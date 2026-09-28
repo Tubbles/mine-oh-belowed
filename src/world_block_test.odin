@@ -18,6 +18,16 @@ test_shipped_blocks_parse_and_validate :: proc(t: ^testing.T) {
 	grass, _ := find_block_id(registry, "grass")
 	testing.expect(t, block_is_solid(registry, grass))
 	testing.expect_value(t, registry.definitions[grass].texture.top, [3]u8{106, 170, 64})
+	testing.expect_value(t, block_sound_material(registry, grass), "dirt")
+}
+
+@(test)
+test_sound_material_defaults_to_stone :: proc(t: ^testing.T) {
+	file, error := parse_blocks_file(transmute([]byte)string(`blocks = [{id = "air"} {id = "rock"} {id = "moss", sound_material = "leaves"}]`), context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	registry := Block_Registry{definitions = file.blocks}
+	testing.expect_value(t, block_sound_material(registry, 1), DEFAULT_SOUND_MATERIAL)
+	testing.expect_value(t, block_sound_material(registry, 2), "leaves")
 }
 
 @(test)

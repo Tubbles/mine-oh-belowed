@@ -38,9 +38,14 @@
 // takes their wetter side; badlands take hot dry hills. Coastal dunes come
 // after the beach, so the beach keeps the shore line and tar pits keep
 // their low spots.
+// ambience (optional, work item 0068) names the loop that plays while the
+// player stands in the biome: ambience_<name> must be in
+// data/sounds/sounds.sjson. The shipped ones are wind, birds, insects and
+// water; a biome without it is quiet but for the rain and the hum.
 biomes = [
 	{
 		id = "lake"
+		ambience = "water"
 		name_key = "biome_lake"
 		minimum_height = -1000
 		maximum_height = -1
@@ -54,6 +59,7 @@ biomes = [
 	}
 	{
 		id = "mountains"
+		ambience = "wind"
 		name_key = "biome_mountains"
 		minimum_height = 48
 		maximum_height = 1000
@@ -67,6 +73,7 @@ biomes = [
 	}
 	{
 		id = "cold_barrens"
+		ambience = "wind"
 		name_key = "biome_cold_barrens"
 		minimum_height = 0
 		maximum_height = 1000
@@ -82,6 +89,7 @@ biomes = [
 	}
 	{
 		id = "highland"
+		ambience = "wind"
 		name_key = "biome_highland"
 		minimum_height = 24
 		maximum_height = 47
@@ -97,6 +105,7 @@ biomes = [
 	}
 	{
 		id = "badlands"
+		ambience = "wind"
 		name_key = "biome_badlands"
 		minimum_height = 6
 		maximum_height = 47
@@ -115,6 +124,7 @@ biomes = [
 	}
 	{
 		id = "steppe"
+		ambience = "insects"
 		name_key = "biome_steppe"
 		minimum_height = 0
 		maximum_height = 23
@@ -131,6 +141,7 @@ biomes = [
 	}
 	{
 		id = "wetland"
+		ambience = "insects"
 		name_key = "biome_wetland"
 		minimum_height = 0
 		maximum_height = 3
@@ -147,6 +158,7 @@ biomes = [
 	}
 	{
 		id = "hills"
+		ambience = "birds"
 		name_key = "biome_hills"
 		minimum_height = 24
 		maximum_height = 47
@@ -177,6 +189,7 @@ biomes = [
 	}
 	{
 		id = "desert"
+		ambience = "wind"
 		name_key = "biome_desert"
 		minimum_height = 0
 		maximum_height = 1000
@@ -193,6 +206,7 @@ biomes = [
 	}
 	{
 		id = "beach"
+		ambience = "water"
 		name_key = "biome_beach"
 		minimum_height = 0
 		maximum_height = 1
@@ -207,6 +221,7 @@ biomes = [
 	}
 	{
 		id = "coastal_dunes"
+		ambience = "wind"
 		name_key = "biome_coastal_dunes"
 		minimum_height = 1
 		maximum_height = 3
@@ -222,6 +237,7 @@ biomes = [
 	}
 	{
 		id = "forest"
+		ambience = "birds"
 		name_key = "biome_forest"
 		minimum_height = 0
 		maximum_height = 1000
@@ -240,6 +256,7 @@ biomes = [
 	}
 	{
 		id = "plains"
+		ambience = "birds"
 		name_key = "biome_plains"
 		minimum_height = -1000
 		maximum_height = 1000
