@@ -213,12 +213,16 @@ destroy_simulation :: proc(state: ^Simulation_State) {
 // A player without an input entry gets an empty one. Entities tick after
 // the players, so a stack dropped into a furnace this tick is seen at once.
 // Machines see the found schematics through the recipe registry
-// (recipe_runs_in_machines).
-simulation_tick :: proc(state: ^Simulation_State, content_tables: Simulation_Content, inputs: []Input_Frame) {
+// (recipe_runs_in_machines). A profile (tick_profile.odin) gets the wall
+// time of each step.
+simulation_tick :: proc(state: ^Simulation_State, content_tables: Simulation_Content, inputs: []Input_Frame, profile: ^Tick_Profile = nil) {
+	clock := profile_now(profile)
 	content := content_tables
 	content.recipes = with_schematics_found(content.recipes, state.unlocks.schematics_found)
+	clock = profile_section(profile, .Unlocks, clock)
 	state.tick += 1
 	advance_statistics_clock(&state.world.statistics, state.tick, state.tick_rate)
+	clock = profile_section(profile, .Statistics, clock)
 	serve_developer_requests(state, content)
 	for index in 0 ..< len(state.players) {
 		input, used := resolve_use_item(&state.players[index], &state.world.entities, content.items, index < len(inputs) ? inputs[index] : Input_Frame{})
@@ -233,17 +237,29 @@ simulation_tick :: proc(state: ^Simulation_State, content_tables: Simulation_Con
 			append(&state.events, Simulation_Event{player = index, kind = kind})
 		}
 	}
+	clock = profile_section(profile, .Players, clock)
 	newly_obtained := update_recipe_unlocks(&state.unlocks, content.recipes, state.players[:])
 	log_discoveries(&state.quests, content.blocks, content.items, newly_obtained, state.tick)
-	tick_entities(&state.world, content, state.tick_rate)
+	clock = profile_section(profile, .Unlocks, clock)
+	tick_entities(&state.world, content, state.tick_rate, profile)
+	clock = profile_now(profile)
 	shipments_before := len(state.world.shipments)
 	apply_launch_requests(&state.world, state.tick)
+	clock = profile_section(profile, .Launch_Pads, clock)
 	tick_venture(state, content, shipments_before)
+	clock = profile_section(profile, .Venture, clock)
 	apply_research_result(state, content)
+	clock = profile_section(profile, .Research, clock)
 	observe_player_holdings(&state.world.statistics, state.players[:], true)
 	observe_full_inventories(&state.world.statistics, state.players[:])
+	clock = profile_section(profile, .Statistics, clock)
 	tick_quests(&state.quests, simulation_quest_context(state, content), &state.world.entities)
+	clock = profile_section(profile, .Quests, clock)
 	tick_world(&state.world, content.blocks, state.tick, simulation_tree_felling(content))
+	profile_section(profile, .World, clock)
+	if profile != nil {
+		profile.ticks += 1
+	}
 }
 
 // Opens the recipes of a technology the labs finished this tick and says

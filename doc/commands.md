@@ -45,6 +45,8 @@ The game can be driven from outside while someone plays: give items, skip chapte
 | `remove <x> <y> <z>` | `tools/moc remove 30 71 -8` | The entity covering the cell (its contents discarded), or else the block. The capsule stays. |
 | `block <block> <x> <y> <z>` | `tools/moc block stone 30 70 -8` | Sets a block; refused where an entity stands. |
 | `insert <item> <count> <x> <y> <z>` | `tools/moc insert coal 20 30 71 -8` | Items into the entity at the cell as an inserter would put them (fuel into a fuel slot); what does not fit is discarded. |
+| `recipe <recipe> <x> <y> <z>` | `tools/moc recipe iron_gear 30 71 -8` | The chosen recipe of the crafting machine at the cell (work item 0050), through the assembler panel's path: its contents go to the inventory, and it is refused with the panel's reasons (a fixed recipe machine such as the chemical plant, a recipe of another category, contents that do not fit). |
+| `filter <item> <x> <y> <z>` | `tools/moc filter hematite 30 71 -8` | The filter of the filter inserter or splitter at the cell, as its panel sets it (work item 0050). A splitter sends the item to its filter side, the left half unless the panel turned it, and everything else to the other half. |
 | `blueprint <path>` | `tools/moc blueprint data/blueprints/tier1_factory.sjson` | Runs a blueprint file (below). |
 | `tick <n>` | `tools/moc tick 3600` | Runs n ticks (up to 1000000) as fast as the machine allows, with no player input, up to one second of wall time per frame, then answers `ok ran n ticks, now at tick T`. Later lines wait for it. |
 | `pause`, `resume` | `tools/moc pause` | Holds the ticks (like a pausing screen) or releases them. `tick` still runs while paused. |
@@ -72,8 +74,10 @@ commands = [
 ```
 
 - `origin`: `"pad"` is the cell above the landing pad's centre, `{vein = "<type>"}` the cell above the centre of the registered surface vein of that type nearest the pad (the starter vein once its chunks loaded), `[x, y, z]` a world cell. Relative y 0 therefore stands on the surface.
-- `commands`: `place`, `block`, `remove` and `insert` lines with coordinates relative to the origin. They run in order; the first failure stops the run with `error blueprint command <n> (<line>): <reason>` (n counts from 1). What ran before stays.
+- `commands`: `place`, `block`, `remove`, `insert`, `recipe` and `filter` lines with coordinates relative to the origin. They run in order; the first failure stops the run with `error blueprint command <n> (<line>): <reason>` (n counts from 1). What ran before stays.
 - `tools/moc blueprint <path>` sends the path made absolute; the game reads it as given.
+
+The factory benchmark (work item 0050, `doc/architecture.md`) builds its modules from the blueprints under `data/blueprints/benchmark/` (origin `[0, 0, 0]`, overridden with each copy's cell) as the manifest `data/blueprints/benchmark.sjson` lays them out: `smelting.sjson` (iron), `assembly.sjson` (gears, circuits, science pack 1 and a lab), `power.sjson` (steam) and `oil.sjson` (refinery, cracking, plastic, flare). The header comment of each describes it. The builder adds the veins the manifest lists for a module before its commands run; the commands go through the same `run_blueprint` as `tools/moc blueprint`.
 
 `data/blueprints/tier1_factory.sjson` builds a burner iron line east of the iron starter vein: two drills onto a belt, two stone furnaces fed from the belt, a coal chest per furnace, output chests and an overflow chest at the belt's end, with starting coal. It needs flat ground over about 12 by 11 blocks east of the vein centre.
 

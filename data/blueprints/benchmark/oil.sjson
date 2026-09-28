@@ -1,0 +1,106 @@
+// Benchmark module (work item 0050): oil processing on its own tar
+// pits, water, coal vein and power. Coordinates are relative to the
+// module's minimum corner on the surface (y 0), see doc/commands.md;
+// the manifest (../benchmark.sjson) adds the vein.
+//
+// Two tar pit pumps on tar pits laid into the grass pipe crude oil into
+// a refinery. Its petroleum gas feeds a chemical plant making plastic
+// bars from coal into a chest. Its heavy oil goes into a cracking unit,
+// whose light oil joins the refinery's in a second cracking unit; each
+// cracking unit has an offshore pump on its own pool of water. The
+// second one's petroleum gas is the waste and goes into a flare stack.
+// (A flare burns only above 90 percent of its port, so it takes gas
+// from a machine that outputs 20 litres a craft; the refinery's 45
+// would never find room next to it.) Two electric drills on the coal
+// vein drop onto a coal belt that feeds the plant and three combustion
+// generators and ends in a sink chest. Small poles carry the power; the
+// generators get starting coal.
+origin = [0, 0, 0]
+commands = [
+	// Two tar pit pumps pipe crude oil into the refinery
+	"block tar_pit 15 -1 2"
+	"block tar_pit 15 -1 4"
+	"place tar_pit_pump 13 0 2 0"
+	"place tar_pit_pump 13 0 4 0"
+	"place pipe 12 0 2 0"
+	"place pipe 12 0 3 0"
+	"place pipe 12 0 4 0"
+	"place pipe 12 0 5 0"
+	"place refinery 10 0 6 0"
+	// Its petroleum gas into a chemical plant making plastic bars into a chest
+	"place pipe 9 0 8 0"
+	"place chemical_plant 6 0 7 1"
+	"place inserter 5 0 8 0"
+	"place inserter 7 0 10 1"
+	"place iron_chest 7 0 11 0"
+	// Heavy oil round to a cracking unit with its own water
+	"place pipe 15 0 8 0"
+	"place pipe 15 0 7 0"
+	"place pipe 16 0 7 0"
+	"place pipe 17 0 7 0"
+	"place pipe 18 0 7 0"
+	"place pipe 19 0 7 0"
+	"place pipe 20 0 7 0"
+	"place pipe 20 0 8 0"
+	"place pipe 20 0 9 0"
+	"place pipe 20 0 10 0"
+	"place pipe 20 0 11 0"
+	"place pipe 19 0 11 0"
+	"place pipe 18 0 11 0"
+	"place cracking_unit 15 0 10 1"
+	"block water 19 -1 9"
+	"place offshore_pump 17 0 9 0"
+	"place pipe 16 0 9 0"
+	// Light oil (the refinery's and the cracked) into a second cracking unit
+	"place pipe 12 0 11 0"
+	"place pipe 13 0 11 0"
+	"place pipe 14 0 11 0"
+	"place cracking_unit 11 0 12 0"
+	"block water 6 -1 13"
+	"block water 7 -1 13"
+	"place offshore_pump 8 0 13 2"
+	"place pipe 10 0 13 0"
+	// Its petroleum gas, the waste, into a flare stack
+	"place flare_stack 12 0 15 0"
+	// Coal: two drills, a belt south past the plant and three generators, a sink
+	"place electric_mining_drill 1 0 1 0"
+	"place electric_mining_drill 5 0 3 2"
+	"place belt 4 0 2 1"
+	"place belt 4 0 3 1"
+	"place belt 4 0 4 1"
+	"place belt 4 0 5 1"
+	"place belt 4 0 6 1"
+	"place belt 4 0 7 1"
+	"place belt 4 0 8 1"
+	"place belt 4 0 9 1"
+	"place belt 4 0 10 1"
+	"place belt 4 0 11 1"
+	"place belt 4 0 12 1"
+	"place belt 4 0 13 1"
+	"place belt 4 0 14 1"
+	"place belt 4 0 15 1"
+	"place combustion_generator 0 0 7 0"
+	"place inserter 3 0 7 2"
+	"place combustion_generator 0 0 10 0"
+	"place inserter 3 0 10 2"
+	"place combustion_generator 0 0 13 0"
+	"place inserter 3 0 13 2"
+	"place inserter 4 0 16 1"
+	"place iron_chest 4 0 17 0"
+	// Power
+	"place small_pole 11 0 4 0"
+	"place small_pole 18 0 13 0"
+	"place small_pole 9 0 6 0"
+	"place small_pole 5 0 1 0"
+	"place small_pole 5 0 6 0"
+	"place small_pole 5 0 11 0"
+	"place small_pole 5 0 15 0"
+	"place small_pole 10 0 11 0"
+	"place small_pole 14 0 15 0"
+	"place small_pole 1 0 9 0"
+	"place small_pole 1 0 12 0"
+	// Starting coal for the generators
+	"insert coal 45 0 0 7"
+	"insert coal 45 0 0 10"
+	"insert coal 45 0 0 13"
+]

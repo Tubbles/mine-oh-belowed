@@ -68,6 +68,10 @@ Developer_Action :: enum u8 {
 	Insert_Items,
 	// Completes the active quest (work item 0098).
 	Finish_Active_Quest,
+	// The chosen recipe of the crafting machine at cell and the filter of
+	// the filter inserter or splitter at cell (work item 0050).
+	Set_Recipe,
+	Set_Filter,
 }
 
 // The sun rises at dawn, peaks at noon, sets at dusk and is lowest at
@@ -85,7 +89,8 @@ Time_Of_Day :: enum u8 {
 // indexes the technologies (Research_Technology). cell is the column of
 // Add_Vein (x and z), the minimum corner of Place_Machine and the cell of
 // Remove_At, Set_Block and Insert_Items. vein_type and size_class index
-// the generator's vein tables (Add_Vein).
+// the generator's vein tables (Add_Vein). recipe indexes the recipes
+// (Set_Recipe, NO_RECIPE clears it), filter is the item of Set_Filter.
 Developer_Request :: struct {
 	action:      Developer_Action,
 	chapter:     int,
@@ -99,6 +104,8 @@ Developer_Request :: struct {
 	cell:        World_Coordinate,
 	vein_type:   int,
 	size_class:  int,
+	recipe:      int,
+	filter:      Item_Id,
 }
 
 // Kits file.
@@ -393,6 +400,10 @@ serve_developer_request :: proc(state: ^Simulation_State, content: Simulation_Co
 		return set_block_for_developer(&state.world, request.block, request.cell)
 	case .Insert_Items:
 		return insert_for_developer(&state.world, content, request.cell, request.grant)
+	case .Set_Recipe:
+		return set_recipe_for_developer(&state.world, content, player.inventory, request.cell, request.recipe)
+	case .Set_Filter:
+		return set_filter_for_developer(&state.world, content.machines, request.cell, request.filter)
 	}
 	return ""
 }
@@ -501,4 +512,41 @@ insert_for_developer :: proc(world: ^World, content: Simulation_Content, cell: W
 		left -= inserted
 	}
 	return ""
+}
+
+@(rodata)
+recipe_change_refusal_reasons := [Recipe_Change_Refusal]string {
+	.None                = "",
+	.Not_For_Assembler   = "this machine cannot make that recipe (a fixed recipe machine, another category, or too many ingredients)",
+	.Contents_Do_Not_Fit = "the machine's contents do not fit in the inventory",
+}
+
+// Through the assembler panel's path (change_assembler_recipe): the old
+// contents go to the player's inventory, refused with the panel's
+// reasons.
+set_recipe_for_developer :: proc(world: ^World, content: Simulation_Content, inventory: Inventory, cell: World_Coordinate, recipe: int) -> string {
+	handle := entity_at(&world.entities, cell)
+	assembler := handle.kind == .Assembler ? pool_get(&world.entities.assemblers, handle) : nil
+	if assembler == nil {
+		return "no crafting machine there"
+	}
+	machine := content.machines.machines[assembler.machine]
+	refusal := change_assembler_recipe(assembler, machine, inventory, content.items, content.recipes, recipe)
+	return recipe_change_refusal_reasons[refusal]
+}
+
+// As the machine panel sets it: a filter inserter moves only the item, a
+// splitter sends it to its filter side (the left half unless the panel
+// turned it) and everything else to the other.
+set_filter_for_developer :: proc(world: ^World, machines: Machine_Registry, cell: World_Coordinate, item: Item_Id) -> string {
+	handle := entity_at(&world.entities, cell)
+	if inserter := pool_get(&world.entities.inserters, handle); inserter != nil && machines.machines[inserter.machine].filter_slot_count > 0 {
+		inserter.filter = item
+		return ""
+	}
+	if splitter := pool_get(&world.entities.splitters, handle); splitter != nil {
+		splitter.filter = item
+		return ""
+	}
+	return "no filter inserter or splitter there"
 }

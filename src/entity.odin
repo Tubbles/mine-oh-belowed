@@ -518,13 +518,19 @@ cell_blocks_movement :: proc(world: ^World, registry: Block_Registry, cell: Worl
 // assemble after the inserters fed them. Drills and inserters
 // run in pool order, which keeps two of them sharing a vein or a chest
 // deterministic. Outcrops of veins exhausted in this tick turn to spent
-// rock at the end, and crates of newly loaded cave sites appear.
-tick_entities :: proc(world: ^World, content: Simulation_Content, tick_rate: int) {
+// rock at the end, and crates of newly loaded cave sites appear. A
+// profile (tick_profile.odin) gets the wall time of each step.
+tick_entities :: proc(world: ^World, content: Simulation_Content, tick_rate: int, profile: ^Tick_Profile = nil) {
+	clock := profile_now(profile)
 	tick_belt_network(&world.entities.belt_network, tick_rate, world.entities.splitters.entries[:])
 	drop_items_off_belt_ends(world, content.blocks)
+	clock = profile_section(profile, .Belts, clock)
 	tick_loose_items(world, content)
+	clock = profile_section(profile, .Loose_Items, clock)
 	record_belt_dead_ends(&world.statistics, &world.entities)
+	clock = profile_section(profile, .Statistics, clock)
 	tick_electric_networks(world, content, tick_rate)
+	clock = profile_section(profile, .Power, clock)
 	for &drill in world.entities.drills.entries {
 		if drill.alive {
 			before := drill
@@ -532,6 +538,7 @@ tick_entities :: proc(world: ^World, content: Simulation_Content, tick_rate: int
 			record_drill_tick(&world.statistics, before, drill)
 		}
 	}
+	clock = profile_section(profile, .Drills, clock)
 	for &inserter in world.entities.inserters.entries {
 		if inserter.alive {
 			before := inserter
@@ -540,6 +547,7 @@ tick_entities :: proc(world: ^World, content: Simulation_Content, tick_rate: int
 			record_inserter_tick(&world.statistics, before, inserter, tick_rate)
 		}
 	}
+	clock = profile_section(profile, .Inserters, clock)
 	for &furnace in world.entities.furnaces.entries {
 		if furnace.alive {
 			before := furnace
@@ -549,12 +557,20 @@ tick_entities :: proc(world: ^World, content: Simulation_Content, tick_rate: int
 			record_machine_output(&furnace.output_rate, world.statistics.current_second, grown)
 		}
 	}
+	clock = profile_section(profile, .Furnaces, clock)
 	tick_assemblers(world, content, tick_rate)
+	clock = profile_section(profile, .Assemblers, clock)
 	tick_labs(world, content, tick_rate)
+	clock = profile_section(profile, .Labs, clock)
 	tick_core_sample_drills(world, content, tick_rate)
+	clock = profile_section(profile, .Core_Sample_Drills, clock)
 	tick_launch_pads(world, content, tick_rate)
+	clock = profile_section(profile, .Launch_Pads, clock)
 	tick_fluids(&world.entities, content, tick_rate, &world.statistics)
+	clock = profile_section(profile, .Fluids, clock)
 	tick_lamps(world, content.machines)
+	clock = profile_section(profile, .Lamps, clock)
 	apply_spent_outcrops(world, content.veins)
 	place_pending_crates(world, content)
+	profile_section(profile, .Outcrops_And_Crates, clock)
 }

@@ -1,0 +1,108 @@
+// Benchmark module (work item 0050): an iron smelting line on its own
+// iron vein, coal vein and power; assembly.sjson smelts copper.
+// Coordinates are relative to the module's minimum corner on the
+// surface (y 0), see doc/commands.md; the manifest (../benchmark.sjson)
+// adds the veins.
+//
+// North (z 0 to 7): an electric drill on the coal vein drops onto a
+// coal belt running west into a sink chest. Inserters take coal from it
+// into two steel furnaces and a combustion generator. Fast inserters
+// empty the furnaces (plates and slag) into chests. South (z 8 to 13):
+// two electric drills on the ore vein drop onto an ore belt running
+// east into a splitter filtered to hematite; everything else (gravel,
+// low grade ore) leaves by the other half, up a belt lift and into a
+// sink chest on stone, since a furnace holding one low grade ore waits
+// for a second and would stop the line. The hematite goes on into a
+// second splitter whose halves feed one furnace each: an inserter from
+// the near half, a long inserter reaching over it from the far half.
+// Small poles power the drills and inserters. The generator and the
+// furnaces get starting coal.
+origin = [0, 0, 0]
+commands = [
+	// Coal: drill, belt west, sink
+	"place electric_mining_drill 17 0 0 1"
+	"place belt 18 0 3 2"
+	"place belt 17 0 3 2"
+	"place belt 16 0 3 2"
+	"place belt 15 0 3 2"
+	"place belt 14 0 3 2"
+	"place belt 13 0 3 2"
+	"place belt 12 0 3 2"
+	"place belt 11 0 3 2"
+	"place belt 10 0 3 2"
+	"place belt 9 0 3 2"
+	"place belt 8 0 3 2"
+	"place belt 7 0 3 2"
+	"place belt 6 0 3 2"
+	"place belt 5 0 3 2"
+	"place belt 4 0 3 2"
+	"place belt 3 0 3 2"
+	"place belt 2 0 3 2"
+	"place inserter 1 0 3 2"
+	"place iron_chest 0 0 3 0"
+	// Generator and furnaces with their fuel and output inserters
+	"place combustion_generator 3 0 5 0"
+	"place inserter 4 0 4 1"
+	"place steel_furnace 12 0 5 0"
+	"place inserter 12 0 4 1"
+	"place fast_inserter 14 0 5 0"
+	"place iron_chest 15 0 5 0"
+	"place steel_furnace 16 0 5 0"
+	"place inserter 16 0 4 1"
+	"place fast_inserter 18 0 5 0"
+	"place iron_chest 19 0 5 0"
+	"place inserter 12 0 7 3"
+	"place long_inserter 16 0 7 3"
+	// Ore: drills, belt east, the filter splitter sorting the ore left
+	"place electric_mining_drill 1 0 11 3"
+	"place electric_mining_drill 4 0 11 3"
+	"place belt 1 0 10 0"
+	"place belt 2 0 10 0"
+	"place belt 3 0 10 0"
+	"place belt 4 0 10 0"
+	"place belt 5 0 10 0"
+	"place splitter 6 0 9 0"
+	"filter hematite 6 0 9"
+	// The rest up a belt lift into a sink chest on stone
+	"place belt 7 0 10 0"
+	"place belt 8 0 10 0"
+	"place belt_lift 9 0 10 0"
+	"block stone 10 0 10"
+	"block stone 11 0 10"
+	"block stone 12 0 10"
+	"place belt 10 1 10 0"
+	"place inserter 11 1 10 0"
+	"place iron_chest 12 1 10 0"
+	// The ore into a splitter feeding one furnace per half
+	"place belt 7 0 9 0"
+	"place splitter 8 0 8 0"
+	"place belt 9 0 8 0"
+	"place belt 10 0 8 0"
+	"place belt 11 0 8 0"
+	"place belt 12 0 8 0"
+	"place belt 13 0 8 0"
+	"place belt 9 0 9 0"
+	"place belt 10 0 9 0"
+	"place belt 11 0 9 0"
+	"place belt 12 0 9 0"
+	"place belt 13 0 9 0"
+	"place belt 14 0 9 0"
+	"place belt 15 0 9 0"
+	"place belt 16 0 9 0"
+	"place belt 17 0 9 0"
+	// Power
+	"place small_pole 1 0 4 0"
+	"place small_pole 6 0 4 0"
+	"place small_pole 10 0 4 0"
+	"place small_pole 14 0 4 0"
+	"place small_pole 18 0 4 0"
+	"place small_pole 10 0 7 0"
+	"place small_pole 14 0 7 0"
+	"place small_pole 0 0 10 0"
+	"place small_pole 7 0 12 0"
+	"place small_pole 12 0 12 0"
+	// Starting coal
+	"insert coal 45 3 0 5"
+	"insert coal 45 12 0 5"
+	"insert coal 45 16 0 5"
+]

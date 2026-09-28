@@ -45,6 +45,8 @@ Command_Line :: struct {
 	give_arguments:  [dynamic]string `args:"name=give" usage:"<item>:<count>, items into the inventory on the first tick (the rest into the drop capsule), repeatable (--give=iron_plate:50)"`,
 	// Work item 0054, overrides the watch_data setting for this run.
 	watch_data:      string `usage:"reload changed data files while the game runs: off, presentation or all (default: the watch_data setting)"`,
+	// Work item 0050: no window, no controller, the table on stdout.
+	benchmark:       int `usage:"run the headless factory benchmark of this size for ten simulated minutes and print the table"`,
 }
 
 // Unix style keeps the documented spellings: --seed=42, --set=<key>=<value>.
@@ -121,6 +123,9 @@ command_line_value_problem :: proc(command_line: Command_Line) -> string {
 	}
 	if command_line.chapter < 0 {
 		return fmt.tprintf("invalid --chapter=%d (expected a chapter from 1)", command_line.chapter)
+	}
+	if command_line.benchmark < 0 || command_line.benchmark > BENCHMARK_LARGEST_SIZE {
+		return fmt.tprintf("invalid --benchmark=%d (expected a size from 1 to %d)", command_line.benchmark, BENCHMARK_LARGEST_SIZE)
 	}
 	return give_arguments_problem(command_line.give_arguments[:])
 }
@@ -236,6 +241,9 @@ main :: proc() {
 	if developer_problem != "" {
 		log_printf("error: %s", developer_problem)
 		os.exit(2)
+	}
+	if command_line.benchmark > 0 {
+		os.exit(run_command_line_benchmark(command_line.benchmark, data_directory, config, game_data))
 	}
 	saves_directory, saves_found := resolve_saves_directory(loaded_configuration.configuration.paths.saves)
 	session := start_command_line_session(command_line, config, content, game_data.base_generator, saves_directory, saves_found)
@@ -377,6 +385,9 @@ command_line_plan :: proc(command_line: Command_Line, config: Game_Config, saves
 }
 
 command_line_conflict :: proc(command_line: Command_Line) -> string {
+	if command_line.benchmark > 0 {
+		return benchmark_conflict(command_line)
+	}
 	if command_line.load_name == "" {
 		return ""
 	}
@@ -389,6 +400,23 @@ command_line_conflict :: proc(command_line: Command_Line) -> string {
 		return "--load and --debug-terrain cannot be combined"
 	case command_line.chapter > 0:
 		return "--load and --chapter cannot be combined (--chapter starts a new world)"
+	}
+	return ""
+}
+
+// The benchmark builds its own world.
+benchmark_conflict :: proc(command_line: Command_Line) -> string {
+	switch {
+	case command_line.load_name != "":
+		return "--benchmark and --load cannot be combined (the benchmark builds its own world)"
+	case command_line.seed != "":
+		return "--benchmark and --seed cannot be combined (the benchmark builds its own world)"
+	case command_line.world_name != "":
+		return "--benchmark and --name cannot be combined"
+	case command_line.chapter > 0:
+		return "--benchmark and --chapter cannot be combined"
+	case command_line.debug_terrain:
+		return "--benchmark and --debug-terrain cannot be combined"
 	}
 	return ""
 }

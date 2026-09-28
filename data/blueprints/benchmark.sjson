@@ -1,0 +1,14 @@
+// The headless factory benchmark's layout (work item 0050,
+// benchmark_factory.odin, doc/architecture.md). Each module is a blueprint
+// under benchmark/ with origin [0, 0, 0]: extent is its footprint
+// [width, depth] in blocks, which the layout tiles by (a column per entry
+// along x, copies_per_size times the size copies along z, 4 blocks apart);
+// veins are added at x and z relative to the module's origin before its
+// commands run. Every module brings its own veins and power, so copies
+// never depend on each other and the cost grows linearly with the size.
+modules = [
+	{file = "smelting.sjson", extent = [22, 14], copies_per_size = 1, veins = [{type = "iron", size_class = "scattering", x = 4, z = 12}, {type = "coal", size_class = "scattering", x = 18, z = 1}]}
+	{file = "assembly.sjson", extent = [30, 14], copies_per_size = 1, veins = [{type = "mixed", size_class = "scattering", x = 5, z = 1}, {type = "coal", size_class = "scattering", x = 18, z = 1}]}
+	{file = "power.sjson", extent = [28, 17], copies_per_size = 1, veins = [{type = "coal", size_class = "scattering", x = 2, z = 1}]}
+	{file = "oil.sjson", extent = [21, 18], copies_per_size = 1, veins = [{type = "coal", size_class = "scattering", x = 4, z = 3}]}
+]

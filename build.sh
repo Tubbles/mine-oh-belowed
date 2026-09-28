@@ -5,6 +5,8 @@
 # bin/ is reserved for the installed play build, see tools/install_play_build.sh.
 #   ./build.sh check     odin check src -vet -strict-style
 #   ./build.sh test      odin test src
+#   ./build.sh bench     the factory benchmark test, optimised, with the
+#                        size 4 budget (work item 0050)
 set -euo pipefail
 
 odin="${ODIN:-$HOME/opt/odin/odin}"
@@ -54,8 +56,9 @@ case "$mode" in
 	release) build -o:speed ;;
 	check) "$odin" check src -vet -strict-style ;;
 	test) "$odin" test src ;;
+	bench) "$odin" test src -o:speed -define:ODIN_TEST_NAMES=game.test_factory_benchmark ;;
 	*)
-		echo "usage: $0 [debug|release|check|test]" >&2
+		echo "usage: $0 [debug|release|check|test|bench]" >&2
 		exit 2
 		;;
 esac

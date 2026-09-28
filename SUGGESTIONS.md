@@ -41,6 +41,11 @@ Raised by the work item notes (0005 to 0008), to be turned into work items when 
 - Tree roots done properly: the 0059 root logs at the foot of straight trunks were removed after the couch found them obscene (0083). Minecraft's vanilla mangrove (1.19) shows the shape that works: roots as a block type of their own, a tangle arching above ground and water, on a species designed around them. A wetland mangrove and a gnarled badlands tree would be the place to try it, with a root block shape from 0061's pipeline.
 - Sun shadows, if they ever return (0097 removed the 0072 shadow map): they must be soft and low contrast, treating the sun as mostly ambient, never a hard directional map. The sky light propagation already shades under crowns and in gullies.
 
+- Benchmark launch pad module (0050): the base has no launch pad because a pad assembles and launches only from its panel's buttons (`start_assembly`, `request_launch` have no simulation caller) and its rocket fuel needs a sulfur and light oil chain of its own. Decision needed: may the benchmark press those buttons in code, or should the pad get an automatic mode?
+- Refinery stall found by 0050: a refinery whose petroleum gas goes only to a flare stack stops, since the flare burns only above 90 percent of its port and the network evens the fill fractions, so the refinery's gas port never has room for a craft's 45 litres. The oil module works around it; a flare that burns at any fill, or a refinery that waits for less than a whole craft's room, would fix it for players too.
+- Splitter round robin per lane found by 0050: an inserter putting plate, slag, plate, slag on one lane makes the splitter send every plate one way. A round robin per item, or per lane item, would split mixed lanes evenly.
+- Benchmark build time (0050): every placement rebuilds the belt, fluid and electric networks, so size 64 takes minutes to build. Batching the rebuilds until a blueprint's last command would cut it, and would speed the command socket's blueprints too.
+
 ## Next steps
 
 1. Settle the decisions above, then update `DESIGN.md` and log them.

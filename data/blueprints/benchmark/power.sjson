@@ -1,0 +1,92 @@
+// Benchmark module (work item 0050): steam power on its own coal vein
+// and water. Coordinates are relative to the module's minimum corner on
+// the surface (y 0), see doc/commands.md; the manifest
+// (../benchmark.sjson) adds the vein.
+//
+// An electric drill on the coal vein drops onto a coal belt running
+// south into a sink chest. Two offshore pumps, each on a pool of water
+// laid into the grass, fill one boiler's water pipe each; long
+// inserters reach over the pipes to fuel the boilers from the coal
+// belt, and their steam pipe feeds four steam engines. Small poles
+// carry the power to the drill and the inserters and, through a power
+// switch that is on, to a substation lighting eight lamps. The boilers
+// get starting coal.
+origin = [0, 0, 0]
+commands = [
+	// Coal: drill, belt south, sink
+	"place electric_mining_drill 1 0 0 1"
+	"place belt 2 0 3 1"
+	"place belt 2 0 4 1"
+	"place belt 2 0 5 1"
+	"place belt 2 0 6 1"
+	"place belt 2 0 7 1"
+	"place belt 2 0 8 1"
+	"place belt 2 0 9 1"
+	"place belt 2 0 10 1"
+	"place belt 2 0 11 1"
+	"place belt 2 0 12 1"
+	"place belt 2 0 13 1"
+	"place belt 2 0 14 1"
+	"place inserter 2 0 15 1"
+	"place iron_chest 2 0 16 0"
+	// Two water pools, each with an offshore pump piping to one boiler
+	"block water 4 -1 0"
+	"block water 4 -1 1"
+	"block water 4 -1 13"
+	"block water 4 -1 14"
+	"block water 5 -1 0"
+	"block water 5 -1 1"
+	"block water 5 -1 13"
+	"block water 5 -1 14"
+	"block water 6 -1 0"
+	"block water 6 -1 1"
+	"block water 6 -1 13"
+	"block water 6 -1 14"
+	"place offshore_pump 5 0 2 3"
+	"place pipe 5 0 4 0"
+	"place pipe 5 0 5 0"
+	"place pipe 5 0 6 0"
+	"place offshore_pump 5 0 11 1"
+	"place pipe 5 0 10 0"
+	// Two boilers fed coal by long inserters over the water pipe
+	"place boiler 6 0 5 3"
+	"place long_inserter 4 0 6 0"
+	"place boiler 6 0 9 3"
+	"place long_inserter 4 0 10 0"
+	// The steam pipe and four steam engines
+	"place pipe 8 0 5 0"
+	"place pipe 8 0 6 0"
+	"place pipe 8 0 7 0"
+	"place pipe 8 0 8 0"
+	"place pipe 8 0 9 0"
+	"place pipe 8 0 10 0"
+	"place pipe 8 0 11 0"
+	"place pipe 8 0 12 0"
+	"place pipe 8 0 13 0"
+	"place pipe 8 0 14 0"
+	"place steam_engine 9 0 4 3"
+	"place steam_engine 9 0 7 3"
+	"place steam_engine 9 0 10 3"
+	"place steam_engine 9 0 13 3"
+	// Poles, a power switch (on) and a substation over eight lamps
+	"place small_pole 3 0 4 0"
+	"place small_pole 3 0 9 0"
+	"place small_pole 3 0 14 0"
+	"place small_pole 8 0 4 0"
+	"place small_pole 14 0 3 0"
+	"place small_pole 14 0 8 0"
+	"place small_pole 14 0 13 0"
+	"place power_switch 18 0 8 0"
+	"place substation 22 0 8 0"
+	"place lamp 17 0 2 0"
+	"place lamp 17 0 15 0"
+	"place lamp 20 0 2 0"
+	"place lamp 20 0 15 0"
+	"place lamp 23 0 2 0"
+	"place lamp 23 0 15 0"
+	"place lamp 26 0 2 0"
+	"place lamp 26 0 15 0"
+	// Starting coal for the boilers
+	"insert coal 45 6 0 5"
+	"insert coal 45 6 0 9"
+]

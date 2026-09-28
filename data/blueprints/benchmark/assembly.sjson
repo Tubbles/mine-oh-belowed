@@ -1,0 +1,171 @@
+// Benchmark module (work item 0050): assembly with research on its own
+// mixed vein (iron and copper ore), coal vein and power. Coordinates
+// are relative to the module's minimum corner on the surface (y 0), see
+// doc/commands.md; the manifest (../benchmark.sjson) adds the veins.
+//
+// Two drills on the mixed vein and one on the coal vein drop onto the
+// ore belt (z 3, east) which ends in a sink chest. Two combustion
+// generators take coal from it. An iron and a copper steel furnace each
+// take their ore and their coal through filter inserters, so gravel and
+// low grade ore pass by. A fast inserter puts the iron plates (and
+// slag) onto the iron belt (z 8, west), a long inserter the copper
+// plates over it onto the copper belt (z 9, west). The iron belt ends
+// in a sink chest (slag, surplus plates); the copper belt carries only
+// plates, since the copper furnace's slag goes into a chest of its own
+// (plates and slag in turn would make the splitter below send every
+// plate the same way). North of the belts an assembler making iron
+// gears feeds one making science pack 1 with copper plates, which feeds
+// a lab; south of them one making copper wire feeds one making
+// electronic circuits with iron plates into a chest. A splitter sends
+// half the copper into a sink chest before the science pack and wire
+// assemblers, since the wire one would otherwise take every plate the
+// science pack one leaves and let the circuit assembler take the iron
+// the gear assembler needs. Small poles power everything; the
+// generators and the furnaces get starting coal. The builder queues the
+// lab's research in code.
+origin = [0, 0, 0]
+commands = [
+	// Drills on the mixed vein and the coal vein onto the ore belt
+	"place electric_mining_drill 2 0 0 1"
+	"place electric_mining_drill 6 0 0 1"
+	"place electric_mining_drill 17 0 0 1"
+	"place belt 2 0 3 0"
+	"place belt 3 0 3 0"
+	"place belt 4 0 3 0"
+	"place belt 5 0 3 0"
+	"place belt 6 0 3 0"
+	"place belt 7 0 3 0"
+	"place belt 8 0 3 0"
+	"place belt 9 0 3 0"
+	"place belt 10 0 3 0"
+	"place belt 11 0 3 0"
+	"place belt 12 0 3 0"
+	"place belt 13 0 3 0"
+	"place belt 14 0 3 0"
+	"place belt 15 0 3 0"
+	"place belt 16 0 3 0"
+	"place belt 17 0 3 0"
+	"place belt 18 0 3 0"
+	"place belt 19 0 3 0"
+	"place belt 20 0 3 0"
+	"place belt 21 0 3 0"
+	"place belt 22 0 3 0"
+	"place belt 23 0 3 0"
+	"place belt 24 0 3 0"
+	"place belt 25 0 3 0"
+	"place belt 26 0 3 0"
+	"place belt 27 0 3 0"
+	"place fast_inserter 28 0 3 0"
+	"place iron_chest 29 0 3 0"
+	// Two combustion generators fed coal from the ore belt
+	"place combustion_generator 20 0 0 0"
+	"place inserter 21 0 2 3"
+	"place combustion_generator 23 0 0 0"
+	"place inserter 24 0 2 3"
+	// Furnaces fed ore and coal by filter inserters, iron plates onto the iron belt
+	"place steel_furnace 20 0 5 0"
+	"place filter_inserter 20 0 4 1"
+	"filter hematite 20 0 4"
+	"place filter_inserter 21 0 4 1"
+	"filter coal 21 0 4"
+	"place steel_furnace 24 0 5 0"
+	"place filter_inserter 24 0 4 1"
+	"filter chalcopyrite 24 0 4"
+	"place filter_inserter 25 0 4 1"
+	"filter coal 25 0 4"
+	"place fast_inserter 20 0 7 1"
+	// Copper plates over it onto the copper belt, which a splitter halves
+	"place long_inserter 24 0 7 1"
+	"place filter_inserter 26 0 5 0"
+	"filter slag 26 0 5"
+	"place iron_chest 27 0 5 0"
+	"place belt 20 0 8 2"
+	"place belt 19 0 8 2"
+	"place belt 18 0 8 2"
+	"place belt 17 0 8 2"
+	"place belt 16 0 8 2"
+	"place belt 15 0 8 2"
+	"place belt 14 0 8 2"
+	"place belt 13 0 8 2"
+	"place belt 12 0 8 2"
+	"place belt 11 0 8 2"
+	"place belt 10 0 8 2"
+	"place belt 9 0 8 2"
+	"place belt 8 0 8 2"
+	"place belt 7 0 8 2"
+	"place belt 6 0 8 2"
+	"place belt 5 0 8 2"
+	"place belt 4 0 8 2"
+	"place belt 3 0 8 2"
+	"place belt 2 0 8 2"
+	"place fast_inserter 1 0 8 2"
+	"place iron_chest 0 0 8 0"
+	"place belt 24 0 9 2"
+	"place belt 23 0 9 2"
+	"place belt 22 0 9 2"
+	"place belt 21 0 9 2"
+	"place belt 20 0 9 2"
+	"place belt 19 0 9 2"
+	"place belt 18 0 9 2"
+	"place belt 17 0 9 2"
+	"place belt 16 0 9 2"
+	"place belt 15 0 9 2"
+	"place splitter 14 0 9 2"
+	"place belt 13 0 9 2"
+	"place belt 12 0 9 2"
+	"place belt 11 0 9 2"
+	"place belt 10 0 9 2"
+	"place belt 9 0 9 2"
+	"place belt 8 0 9 2"
+	"place belt 7 0 9 2"
+	"place belt 6 0 9 2"
+	"place belt 5 0 9 2"
+	"place belt 4 0 9 2"
+	"place belt 3 0 9 2"
+	"place belt 2 0 9 2"
+	"place belt 13 0 10 2"
+	"place belt 12 0 10 2"
+	"place belt 11 0 10 2"
+	"place belt 10 0 10 2"
+	"place fast_inserter 9 0 10 2"
+	"place iron_chest 8 0 10 0"
+	// North chain: gears into science pack 1 into the lab
+	"place assembler_1 2 0 4 0"
+	"recipe iron_gear 2 0 4"
+	"place inserter 3 0 7 3"
+	"place inserter 5 0 5 0"
+	"place assembler_1 6 0 4 0"
+	"recipe science_pack_1 6 0 4"
+	"place long_inserter 7 0 7 3"
+	"place inserter 9 0 5 0"
+	"place lab 10 0 4 0"
+	// South chain: copper wire into electronic circuits into a chest
+	"place assembler_1 2 0 11 0"
+	"recipe copper_wire 2 0 11"
+	"place inserter 3 0 10 1"
+	"place inserter 5 0 12 0"
+	"place assembler_1 6 0 11 0"
+	"recipe electronic_circuit 6 0 11"
+	"place long_inserter 7 0 10 1"
+	"place inserter 9 0 12 0"
+	"place iron_chest 10 0 12 0"
+	// Power
+	"place small_pole 5 0 1 0"
+	"place small_pole 19 0 4 0"
+	"place small_pole 23 0 2 0"
+	"place small_pole 27 0 2 0"
+	"place small_pole 1 0 7 0"
+	"place small_pole 5 0 7 0"
+	"place small_pole 10 0 7 0"
+	"place small_pole 14 0 7 0"
+	"place small_pole 18 0 7 0"
+	"place small_pole 22 0 7 0"
+	"place small_pole 26 0 7 0"
+	"place small_pole 5 0 10 0"
+	"place small_pole 11 0 11 0"
+	// Starting coal for the generators and the furnaces
+	"insert coal 45 20 0 0"
+	"insert coal 45 23 0 0"
+	"insert coal 45 20 0 5"
+	"insert coal 45 24 0 5"
+]

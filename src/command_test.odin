@@ -386,6 +386,50 @@ test_command_place_remove_block_insert :: proc(t: ^testing.T) {
 	expect_command_error(t, test, fmt.tprintf("remove %d %d %d", origin.x, origin.y, origin.z))
 }
 
+// Work item 0050: the recipe and filter commands, as the panels set them.
+@(test)
+test_command_recipe_and_filter :: proc(t: ^testing.T) {
+	test := make_command_test()
+	defer destroy_command_test(test)
+	world := &test.simulation.world
+	recipes := test.content.recipes
+	expect_command_ok(t, test, "place assembler_1 4 1 4 0")
+	expect_command_ok(t, test, "recipe iron_gear 5 2 5")
+	assembler := pool_get(&world.entities.assemblers, entity_at(&world.entities, {4, 1, 4}))
+	testing.expect_value(t, assembler.recipe, test_recipe(recipes, "iron_gear"))
+	// A furnace recipe, a missing machine, an unknown recipe, bad words.
+	expect_command_error(t, test, "recipe iron_plate 4 1 4")
+	testing.expect_value(t, assembler.recipe, test_recipe(recipes, "iron_gear"))
+	expect_command_error(t, test, "recipe iron_gear 9 1 9")
+	expect_command_error(t, test, "recipe no_such_recipe 4 1 4")
+	expect_command_error(t, test, "recipe iron_gear 4 1")
+	// The old contents go to the player's inventory, as from the panel.
+	plate := test_item(test.content.items, "iron_plate")
+	expect_command_ok(t, test, "insert iron_plate 2 4 1 4")
+	held := inventory_count(test.simulation.players[0].inventory, plate)
+	expect_command_ok(t, test, "recipe copper_wire 4 1 4")
+	testing.expect_value(t, assembler.recipe, test_recipe(recipes, "copper_wire"))
+	testing.expect_value(t, inventory_count(test.simulation.players[0].inventory, plate), held + 2)
+	// A fixed recipe machine takes none.
+	expect_command_ok(t, test, "place crusher 9 1 4 0")
+	expect_command_error(t, test, "recipe iron_gear 9 1 4")
+
+	coal := test_item(test.content.items, "coal")
+	expect_command_ok(t, test, "place filter_inserter 2 1 8 0")
+	expect_command_ok(t, test, "filter coal 2 1 8")
+	testing.expect_value(t, pool_get(&world.entities.inserters, entity_at(&world.entities, {2, 1, 8})).filter, coal)
+	expect_command_ok(t, test, "place splitter 5 1 8 0")
+	expect_command_ok(t, test, "filter coal 5 1 9")
+	testing.expect_value(t, pool_get(&world.entities.splitters, entity_at(&world.entities, {5, 1, 8})).filter, coal)
+	expect_command_ok(t, test, "place inserter 8 1 8 0")
+	expect_command_error(t, test, "filter coal 8 1 8")
+	expect_command_error(t, test, "filter no_such_item 2 1 8")
+	words, _ := expand_blueprint_command("recipe iron_gear 1 0 1", {10, 20, 30})
+	testing.expect_value(t, strings.join(words, " ", context.temp_allocator), "recipe iron_gear 11 20 31")
+	words, _ = expand_blueprint_command("filter coal 1 0 1", {10, 20, 30})
+	testing.expect_value(t, strings.join(words, " ", context.temp_allocator), "filter coal 11 20 31")
+}
+
 @(test)
 test_blueprint_parsing_and_expansion :: proc(t: ^testing.T) {
 	blueprint, problem := parse_blueprint(transmute([]byte)string(`origin = [1, 2, 3]

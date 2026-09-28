@@ -55,6 +55,24 @@ test_command_line_rejects_unknown_values :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_command_line_benchmark_size_and_conflicts :: proc(t: ^testing.T) {
+	command_line, error := parse_command_line({"--benchmark=4"})
+	testing.expect_value(t, error, nil)
+	testing.expect_value(t, command_line.benchmark, 4)
+	testing.expect_value(t, command_line_value_problem(command_line), "")
+	testing.expect_value(t, command_line_conflict(command_line), "")
+	testing.expect(t, !command_line_starts_world(command_line))
+	for size in ([?]string{"--benchmark=-1", "--benchmark=65"}) {
+		invalid, _ := parse_command_line({size})
+		testing.expectf(t, strings.has_prefix(command_line_value_problem(invalid), "invalid --benchmark"), "%s accepted", size)
+	}
+	for other in ([?]string{"--load=a", "--seed=7", "--name=a", "--chapter=2", "--debug-terrain"}) {
+		combined, _ := parse_command_line({"--benchmark=1", other})
+		testing.expectf(t, strings.has_prefix(command_line_conflict(combined), "--benchmark and"), "--benchmark with %s accepted", other)
+	}
+}
+
+@(test)
 test_command_line_repeated_set :: proc(t: ^testing.T) {
 	command_line, error := parse_command_line({"config", "--set=settings.ui_scale=1.25", "--set=paths.saves=/tmp/saves"})
 	defer delete(command_line.set_assignments)
@@ -73,7 +91,7 @@ test_command_line_usage_lists_every_flag :: proc(t: ^testing.T) {
 	write_command_line_usage(strings.to_writer(&builder))
 	usage := strings.to_string(builder)
 	testing.expect(t, strings.contains(usage, PROGRAM_NAME))
-	for flag in ([?]string{"subcommand", "--version", "--set", "--input", "--seed", "--load", "--name", "--debug-terrain", "--unlock-all"}) {
+	for flag in ([?]string{"subcommand", "--version", "--set", "--input", "--seed", "--load", "--name", "--debug-terrain", "--unlock-all", "--benchmark"}) {
 		testing.expectf(t, strings.contains(usage, flag), "usage lacks %s:\n%s", flag, usage)
 	}
 }

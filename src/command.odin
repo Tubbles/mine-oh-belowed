@@ -91,7 +91,9 @@ command_usages := [?]Command_Usage {
 	{"remove <x> <y> <z>", "the entity or block there, contents discarded"},
 	{"block <block> <x> <y> <z>", "set a block"},
 	{"insert <item> <count> <x> <y> <z>", "items into the entity there, as an inserter would"},
-	{"blueprint <path>", "run the place, block, remove and insert commands of an SJSON file"},
+	{"recipe <recipe> <x> <y> <z>", "the chosen recipe of the crafting machine there, as its panel sets it"},
+	{"filter <item> <x> <y> <z>", "the filter of the filter inserter or splitter there, as its panel sets it"},
+	{"blueprint <path>", "run the place, block, remove, insert, recipe and filter commands of an SJSON file"},
 	{"tick <n>", "run n ticks as fast as possible, answer when done"},
 	{"pause | resume", "hold or release the simulation"},
 	{"save", "save the world"},
@@ -290,6 +292,10 @@ execute_world_command :: proc(command_context: Command_Context, name: string, ar
 		return command_block(command_context, arguments)
 	case "insert":
 		return command_insert(command_context, arguments)
+	case "recipe":
+		return command_recipe(command_context, arguments)
+	case "filter":
+		return command_filter(command_context, arguments)
 	case "blueprint":
 		return command_blueprint(command_context, arguments)
 	case "tick":
@@ -595,6 +601,32 @@ command_insert :: proc(command_context: Command_Context, arguments: []string) ->
 	return command_cell_request(command_context, arguments[2:], usage, Developer_Request{action = .Insert_Items, grant = grant})
 }
 
+// The contents a new recipe clears go to the player's inventory, as from
+// the panel.
+command_recipe :: proc(command_context: Command_Context, arguments: []string) -> Command_Response {
+	usage :: "recipe <recipe> <x> <y> <z>"
+	if len(arguments) != 4 {
+		return usage_error(usage)
+	}
+	recipe := find_recipe(command_context.content.recipes, arguments[0])
+	if recipe == NO_RECIPE {
+		return command_error("unknown recipe %q", arguments[0])
+	}
+	return command_cell_request(command_context, arguments[1:], usage, Developer_Request{action = .Set_Recipe, recipe = recipe})
+}
+
+command_filter :: proc(command_context: Command_Context, arguments: []string) -> Command_Response {
+	usage :: "filter <item> <x> <y> <z>"
+	if len(arguments) != 4 {
+		return usage_error(usage)
+	}
+	item, found := find_item_id(command_context.content.items, arguments[0])
+	if !found {
+		return command_error("unknown item %q", arguments[0])
+	}
+	return command_cell_request(command_context, arguments[1:], usage, Developer_Request{action = .Set_Filter, filter = item})
+}
+
 command_tick :: proc(command_context: Command_Context, arguments: []string) -> Command_Response {
 	if len(arguments) != 1 {
 		return usage_error("tick <n>")
@@ -688,7 +720,8 @@ Blueprint_Origin_Kind :: enum u8 {
 }
 
 // origin = "pad" | [x, y, z] | {vein = "<type>"}; commands are place,
-// block, remove and insert lines with coordinates relative to the origin.
+// block, remove, insert, recipe and filter lines with coordinates relative
+// to the origin.
 // In the temp allocator.
 Blueprint :: struct {
 	origin_kind: Blueprint_Origin_Kind,
@@ -808,7 +841,7 @@ blueprint_coordinate_index :: proc(name: string) -> int {
 	switch name {
 	case "remove":
 		return 1
-	case "place", "block":
+	case "place", "block", "recipe", "filter":
 		return 2
 	case "insert":
 		return 3
@@ -824,7 +857,7 @@ expand_blueprint_command :: proc(command: string, origin: World_Coordinate) -> (
 	}
 	first := blueprint_coordinate_index(words[0])
 	if first < 0 {
-		return nil, "a blueprint holds only place, block, remove and insert"
+		return nil, "a blueprint holds only place, block, remove, insert, recipe and filter"
 	}
 	if len(words) < first + 3 {
 		return nil, "missing coordinates"
