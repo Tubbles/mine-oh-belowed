@@ -108,6 +108,12 @@ Frame_State :: struct {
 	item_atlas:         Item_Atlas,
 	belt_renderer:      Belt_Renderer,
 	model_renderer:     Model_Renderer,
+	// Particles and feedback (work item 0067, render_particles.odin):
+	// render state only, advanced by the frame time, reset with the
+	// session.
+	particles:          Particle_System,
+	particle_memory:    Particle_Memory,
+	particle_renderer:  Particle_Renderer,
 	show_diagnostics:   bool,
 	// The world statistics overlay (draw_world_overlay), off by default.
 	show_world_overlay: bool,
@@ -485,6 +491,8 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session, sky: Day_Sky,
 	draw_loose_items(world, content.items, frame, Item_Billboards{camera = camera, atlas = state.item_atlas})
 	draw_torch_flames(&state.renderer, camera, seconds)
 	draw_water_chunks(&state.renderer, camera, seconds)
+	update_particles(&state.particles, &state.particle_memory, world, frame_simulation_content(state), state.model_renderer, session.simulation.players[:], tick_rate, state.frame_seconds)
+	draw_particles(&state.particle_renderer, camera, &state.particles, state.particle_memory, world, state.model_renderer, color_to_vector3(sky.colors.sun_tint) * day_factor(sky.blend))
 	draw_session_weather(session, camera, weather, sky, seconds)
 	draw_player_world_overlay(world, frame_simulation_content(state), state.model_renderer, &state.belt_renderer, session.simulation.players[:], 0, alpha)
 	return underwater
@@ -682,6 +690,8 @@ enter_planned_session :: proc(state: ^Frame_State, plan: Session_Plan) {
 
 enter_session :: proc(state: ^Frame_State, session: ^Session) {
 	state.session = session
+	state.particles = {}
+	state.particle_memory = {}
 	state.ui.screens = {}
 	state.ui.keyboard = {}
 	state.ui.tooltip_open = false
@@ -792,6 +802,8 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	defer destroy_belt_renderer(&state.belt_renderer)
 	state.model_renderer = init_model_renderer(content.machines, data_directory)
 	defer destroy_model_renderer(&state.model_renderer)
+	state.particle_renderer = init_particle_renderer()
+	defer destroy_particle_renderer(&state.particle_renderer)
 	start_command_frame_state(&state)
 	defer destroy_command_frame_state(&state)
 	if session != nil {

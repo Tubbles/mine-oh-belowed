@@ -1,6 +1,6 @@
 # 0067 Particles and feedback
 
-Status: todo
+Status: implemented
 Milestone: M11
 
 ## Goal
@@ -31,3 +31,5 @@ Implementation pointers (main agent, 2026-09-28), decisions taken so the item is
 - Docs: `doc/architecture.md` (rendering: particles), `doc/log/2026-09-28.md`, this item's Status and Notes.
 
 Files a subagent may touch: new `src/particles.odin`, `src/particles_test.odin`, `src/render_particles.odin`, `src/render_particles_test.odin`; `src/loop.odin` (the state fields, the advance and draw calls); `src/render_sky.odin` only to share the disc texture generator; the docs above, this file.
+
+Implemented: new `src/particles.odin` (the pool, `Particle_Behaviour` per kind, `advance_particles`, `spawn_particles`, `emitter_random_key`, the fade and growth) and `src/particles_test.odin`; new `src/render_particles.odin` (the emitter selection per machine and for digging, `emitters_for_frame`, `Particle_Memory` with the break puff and the capsule descent, `update_particles`, `draw_particles`) and `src/render_particles_test.odin`; `src/render_sky.odin` (`disc_pixels` and `upload_disc_texture` take the size and edge width); `src/loop.odin` (the `Frame_State` fields, reset in `enter_session`, the renderer's init and destroy, the update and draw after the water pass). Per frame the particles walk the 2048 slots three times (advance, debris, discs) and the furnace, fluid machine, assembler and launch pad pools once; each live particle is one `DrawBillboardRec` quad (debris a `DrawCubeV`) in the batch, flushed at the start and end of the pass and once at the switch from cubes to discs. A furnace smokes 6 particles a second living 3.5 seconds on average, about 21 live, so a line of 20 working furnaces draws about 420 quads, plus about 35 per producing boiler and 17 per steam engine. A launch draws about 850 during the first quarter of the ascent (exhaust 360 a second for 1.2 seconds, smoke 120 a second for 3.5 seconds) and under 300 afterwards; the pool caps it at 2048. Decisions the item left open are in `doc/log/2026-09-28.md`. 845 tests pass.

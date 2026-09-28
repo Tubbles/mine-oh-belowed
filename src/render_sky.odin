@@ -163,13 +163,14 @@ multiply_color :: proc(color, tint: rl.Color) -> rl.Color {
 	}
 }
 
-// White, opaque inside the disc, fading over DISC_EDGE_TEXELS at its edge.
-disc_pixels :: proc(size: int, allocator := context.allocator) -> []rl.Color {
+// White, opaque inside the disc, fading over edge_texels at its edge. The
+// particles (render_particles.odin) take a small, softer one.
+disc_pixels :: proc(size: int, edge_texels: f32 = DISC_EDGE_TEXELS, allocator := context.allocator) -> []rl.Color {
 	pixels := make([]rl.Color, size * size, allocator)
 	radius := f32(size) / 2
 	for &pixel, index in pixels {
 		offset := [2]f32{f32(index % size) + 0.5, f32(index / size) + 0.5} - radius
-		coverage := clamp((radius - linalg.length(offset)) / DISC_EDGE_TEXELS, 0, 1)
+		coverage := clamp((radius - linalg.length(offset)) / edge_texels, 0, 1)
 		pixel = {255, 255, 255, u8(coverage * 255 + 0.5)}
 	}
 	return pixels
@@ -190,13 +191,13 @@ upload_sky_dome :: proc() -> rl.Mesh {
 	return mesh
 }
 
-upload_disc_texture :: proc() -> rl.Texture2D {
-	pixels := disc_pixels(DISC_TEXTURE_SIZE)
+upload_disc_texture :: proc(size: int = DISC_TEXTURE_SIZE, edge_texels: f32 = DISC_EDGE_TEXELS) -> rl.Texture2D {
+	pixels := disc_pixels(size, edge_texels)
 	defer delete(pixels)
 	image := rl.Image {
 		data    = raw_data(pixels),
-		width   = DISC_TEXTURE_SIZE,
-		height  = DISC_TEXTURE_SIZE,
+		width   = i32(size),
+		height  = i32(size),
 		mipmaps = 1,
 		format  = .UNCOMPRESSED_R8G8B8A8,
 	}
