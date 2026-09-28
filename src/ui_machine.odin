@@ -501,6 +501,7 @@ machine_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	height := max(inventory_panel_height(), machine_height + 2 * UI_PADDING)
 	panel := fitted_panel(safe, player_width + machine_width + 4 * UI_PADDING, height)
 	ui_panel_begin(state, "machine", panel)
+	ui_prefer_focus(state, selected_hotbar_slot_id(state, player))
 	content := inset(panel, UI_PADDING)
 	draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), text("inventory_title"), UI_HEADING_TEXT_SIZE, .Left)
 	player_slots := player_slot_region(state, {content.x, content.y, player_width, content.height}, player, items)

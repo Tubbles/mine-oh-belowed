@@ -100,9 +100,12 @@ Screen_Context :: struct {
 // Open_Map the map (likewise). With a
 // screen open, Back and Pause both
 // step back one screen (the first press closes an open tooltip).
-// Open_Inventory closes the inventory and a machine panel too, except on
-// the gamepad, where the same X press is the context action; Open_Recipes
-// closes the recipe browser.
+// Open_Inventory closes the inventory tab strip's screens (the inventory,
+// the recipe browser, the technology screen) and a machine panel too,
+// except on the gamepad, where the same X press is the context action;
+// Open_Recipes closes the recipe browser. The pause menu opens neither
+// the recipe browser nor the technology screen: the inventory's tab strip
+// reaches them (work item 0094).
 handle_screen_keys :: proc(state: ^Ui_State) {
 	input := state.input
 	if state.screens.count == 0 {
@@ -131,7 +134,7 @@ handle_screen_keys :: proc(state: ^Ui_State) {
 	if top == .Title {
 		return
 	}
-	closes_inventory := (top == .Inventory || top == .Machine) && input.open_inventory && !input.context_action
+	closes_inventory := (top == .Inventory || top == .Machine || top == .Recipes || top == .Technologies) && input.open_inventory && !input.context_action
 	closes_recipes := top == .Recipes && input.open_recipes
 	closes_journal := top == .Journal && input.open_journal
 	closes_power := top == .Power && input.open_power
@@ -150,6 +153,13 @@ handle_screen_keys :: proc(state: ^Ui_State) {
 }
 
 run_screens :: proc(state: ^Ui_State, screen_context: Screen_Context) {
+	// The world has no focusable widgets, so a focus kept from the last
+	// screen is stale: every screen opened from the world starts at its
+	// preferred widget (ui_prefer_focus) or its first one. A screen pushed
+	// over another keeps the focus.
+	if state.screens.count == 0 {
+		state.focus = 0
+	}
 	screen := top_screen(state.screens)
 	// Read before the screen runs: the B press that closes the keyboard
 	// must not also close the screen.
@@ -237,7 +247,7 @@ pause_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	ui_backdrop(state)
 	area := ui_panel_area(state)
 	developer := screen_context.developer_mode || (screen_context.settings != nil && screen_context.settings.developer_mode)
-	button_count := developer ? 11 : 10
+	button_count := developer ? 9 : 8
 	// The title row and the build stamp row besides the buttons; below the
 	// title the rows scroll when the panel is clamped to the safe area.
 	panel := fitted_panel(area, PAUSE_PANEL_WIDTH, panel_height(button_count, 2 * (UI_ROW_HEIGHT + UI_GAP)))
@@ -250,13 +260,7 @@ pause_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		state.screens.count = 0
 	}
 	cut_top(&content, UI_GAP)
-	// The browser replaces the pause menu, so the factory keeps running.
-	if ui_button(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_recipes")) {
-		state.screens.count = 0
-		push_screen(&state.screens, .Recipes)
-	}
-	cut_top(&content, UI_GAP)
-	// Like the browser, the journal does not pause.
+	// The journal replaces the pause menu, so the factory keeps running.
 	if ui_button(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_journal")) {
 		state.screens.count = 0
 		push_screen(&state.screens, .Journal)
@@ -272,12 +276,6 @@ pause_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	if ui_button(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_statistics")) {
 		state.screens.count = 0
 		push_screen(&state.screens, .Statistics)
-	}
-	cut_top(&content, UI_GAP)
-	// Nor does the technology screen.
-	if ui_button(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_technologies")) {
-		state.screens.count = 0
-		push_screen(&state.screens, .Technologies)
 	}
 	cut_top(&content, UI_GAP)
 	// The frame loop writes the save after this frame's ticks and toasts.

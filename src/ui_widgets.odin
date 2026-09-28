@@ -25,6 +25,9 @@ UI_SLOT_SIZE :: 80
 UI_SLOT_ICON_INSET :: 12
 UI_SLOT_COUNT_TEXT_SIZE :: 24
 UI_TOOLTIP_WIDTH :: 420
+// Seconds the focus rests on an item slot before its info tooltip shows
+// by itself (work item 0094).
+UI_TOOLTIP_DELAY :: 0.4
 // Lines of wrapped text (tooltips, toasts, quest text) sit this far apart.
 UI_LINE_HEIGHT :: UI_ROW_HEIGHT * 0.6
 // A toast is at most this share of the safe area wide, which leaves the
@@ -456,22 +459,46 @@ draw_tab_label :: proc(state: ^Ui_State, tab: Ui_Rectangle, label: string, icon:
 	}
 }
 
-// Bumpers cycle the tabs, the pointer picks one. Tabs are not focus
-// targets, so the stick moves only between the widgets of the open tab.
-// The selection lives in the UI state under the tab strip's id. icons,
-// when given, holds one icon per tab, drawn before its label.
-ui_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, labels: []string, icons: []Ui_Icon = nil) -> int {
+// How a tab strip is stepped. Bumpers: the bumpers cycle the tabs and the
+// strip is not a focus target, so the stick moves only between the
+// widgets of the open tab. Focus: the strip is one focusable row, left
+// and right step the tabs while it holds the focus, up and down leave it,
+// and the bumpers are left to another strip (the recipe categories under
+// the inventory tab strip, work item 0094).
+Ui_Tabs_Mode :: enum u8 {
+	Bumpers,
+	Focus,
+}
+
+// The selection after one frame's steps, wrapping.
+step_tab_selection :: proc(selected, count: int, previous, next: bool) -> int {
+	result := selected
+	if previous {
+		result = (result + count - 1) % count
+	}
+	if next {
+		result = (result + 1) % count
+	}
+	return result
+}
+
+// The pointer picks a tab in either mode. The selection lives in the UI
+// state under the tab strip's id. icons, when given, holds one icon per
+// tab, drawn before its label.
+ui_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, labels: []string, icons: []Ui_Icon = nil, mode := Ui_Tabs_Mode.Bumpers) -> int {
 	id := ui_id(state, label)
 	count := len(labels)
 	if count == 0 {
 		return 0
 	}
 	selected := clamp(state.selections[id], 0, count - 1)
-	if state.input.tab_previous {
-		selected = (selected + count - 1) % count
-	}
-	if state.input.tab_next {
-		selected = (selected + 1) % count
+	switch mode {
+	case .Bumpers:
+		selected = step_tab_selection(selected, count, state.input.tab_previous, state.input.tab_next)
+	case .Focus:
+		interaction := ui_interact(state, id, rectangle, {.Adjusts_Horizontally})
+		step := interaction.focused ? state.navigation_step : .None
+		selected = step_tab_selection(selected, count, step == .Left, step == .Right)
 	}
 	theme := ui_theme(state)
 	for tab_label, index in labels {
@@ -491,6 +518,9 @@ ui_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, labels
 	draw_divider(state, cut_bottom(&strip, theme.border))
 	underline := column(rectangle, count, selected, UI_GAP)
 	draw_fill(state, cut_bottom(&underline, 4), theme.colors[.Accent])
+	if mode == .Focus {
+		draw_focus_outline(state, rectangle, id)
+	}
 	state.selections[id] = selected
 	return selected
 }
@@ -660,7 +690,7 @@ item_stack_tooltip :: proc(stack: Item_Stack, items: Item_Registry) -> string {
 }
 
 ui_item_slot :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, id: Ui_Id, stack: Item_Stack, items: Item_Registry) -> Ui_Interaction {
-	interaction := ui_interact(state, id, rectangle, {}, item_stack_tooltip(stack, items))
+	interaction := ui_interact(state, id, rectangle, {.Tooltip_Shows_Itself}, item_stack_tooltip(stack, items))
 	widget_background(state, rectangle, id, interaction)
 	draw_outline(state, rectangle, theme_color(state, .Panel_Edge), ui_theme(state).border)
 	draw_item_stack(state, rectangle, stack, items)
@@ -931,14 +961,25 @@ draw_text_lines :: proc(state: ^Ui_State, area: Ui_Rectangle, lines: []string, c
 	}
 }
 
-// The focused widget's tooltip while the info panel is open (Y), wrapped
-// to the tooltip's width.
-append_tooltip :: proc(state: ^Ui_State) {
-	if !state.tooltip_open || state.focused_tooltip == "" {
-		return
+// Whether the focused widget's tooltip shows: while the info panel is
+// open (Y), or on a widget whose tooltip shows by itself once the focus
+// has rested on it for UI_TOOLTIP_DELAY.
+tooltip_shows :: proc(state: Ui_State, widget: Ui_Widget) -> bool {
+	if state.focused_tooltip == "" {
+		return false
 	}
+	if state.tooltip_open {
+		return true
+	}
+	rested := state.focus_rest_id == state.focus && state.focus_rest_seconds >= UI_TOOLTIP_DELAY
+	return .Tooltip_Shows_Itself in widget.flags && rested
+}
+
+// The focused widget's tooltip (tooltip_shows), wrapped to the tooltip's
+// width.
+append_tooltip :: proc(state: ^Ui_State) {
 	focus_index := widget_index(state.widgets[:], state.focus)
-	if focus_index < 0 {
+	if focus_index < 0 || !tooltip_shows(state^, state.widgets[focus_index]) {
 		return
 	}
 	widget := state.widgets[focus_index]

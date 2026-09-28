@@ -48,6 +48,9 @@ Ui_Direction :: enum u8 {
 Ui_Widget_Flag :: enum u8 {
 	// Left and right change the widget's value instead of moving the focus.
 	Adjusts_Horizontally,
+	// The tooltip shows once the focus has rested on the widget for
+	// UI_TOOLTIP_DELAY, without the Info toggle (item slots, work item 0094).
+	Tooltip_Shows_Itself,
 }
 
 Ui_Widget_Flags :: bit_set[Ui_Widget_Flag]
@@ -296,6 +299,10 @@ Ui_State :: struct {
 	// Focus and pointer, persistent across frames.
 	focus:            Ui_Id,
 	requested_focus:  Ui_Id,
+	// How long the focus has stayed on focus_rest_id, for the tooltips
+	// that show by themselves (Tooltip_Shows_Itself).
+	focus_rest_id:      Ui_Id,
+	focus_rest_seconds: f32,
 	hovered:          Ui_Id,
 	dragging:         Ui_Id,
 	repeat:           Repeat_State,
@@ -337,6 +344,9 @@ Ui_State :: struct {
 	id_depth:         int,
 	current_panel:    Ui_Id,
 	focused_tooltip:  string,
+	// The widget the fallback focuses when the focus belongs to no widget
+	// of the frame (ui_prefer_focus), cleared by ui_begin.
+	preferred_focus:  Ui_Id,
 	widgets:          [dynamic]Ui_Widget,
 	panels:           [dynamic]Ui_Panel,
 	draw_list:        [dynamic]Draw_Command,
@@ -589,6 +599,8 @@ ui_begin :: proc(state: ^Ui_State, input: Ui_Input, screen_pixels: [2]f32, frame
 	state.id_depth = 0
 	state.current_panel = 0
 	state.focused_tooltip = ""
+	state.preferred_focus = 0
+	state.focus_rest_id, state.focus_rest_seconds = advance_focus_rest(state.focus_rest_id, state.focus_rest_seconds, state.focus, frame_seconds)
 	if input.device_seen {
 		state.active_device = input.device
 	}
@@ -623,6 +635,31 @@ ui_begin :: proc(state: ^Ui_State, input: Ui_Input, screen_pixels: [2]f32, frame
 	state.sound_events += advance_mission_control(&state.mission_control, frame_seconds, accessibility.reduced_motion)
 }
 
+// The seconds the focus has rested on one widget: counting while it
+// stays, from zero when it moved.
+advance_focus_rest :: proc(rest_id: Ui_Id, rest_seconds: f32, focus: Ui_Id, frame_seconds: f32) -> (Ui_Id, f32) {
+	if focus != rest_id {
+		return focus, 0
+	}
+	return rest_id, rest_seconds + frame_seconds
+}
+
+// The widget a screen wants focused when it opens (the selected hotbar
+// slot in the inventory and the machine panels). Called during the
+// frame; the fallback in ui_resolve takes it.
+ui_prefer_focus :: proc(state: ^Ui_State, id: Ui_Id) {
+	state.preferred_focus = id
+}
+
+// The fallback focus: the preferred widget when the frame has it, else
+// the first widget, 0 without widgets.
+fallback_focus :: proc(widgets: []Ui_Widget, preferred: Ui_Id) -> Ui_Id {
+	if preferred != 0 && widget_index(widgets, preferred) >= 0 {
+		return preferred
+	}
+	return len(widgets) > 0 ? widgets[0].id : 0
+}
+
 // Focus fallback, hover, then the focus step. Pure: tests run it instead of ui_end.
 ui_resolve :: proc(state: ^Ui_State) {
 	widgets := state.widgets[:]
@@ -642,7 +679,7 @@ ui_resolve :: proc(state: ^Ui_State) {
 	state.letter_jump = 0
 	focus_index := widget_index(widgets, state.focus)
 	if focus_index < 0 {
-		state.focus = len(widgets) > 0 ? widgets[0].id : 0
+		state.focus = fallback_focus(widgets, state.preferred_focus)
 		return
 	}
 	if !focus_step_allowed(widgets[focus_index], state.navigation_step) {
@@ -798,6 +835,13 @@ push_screen :: proc(stack: ^Screen_Stack, screen: Screen) {
 
 pop_screen :: proc(stack: ^Screen_Stack) {
 	stack.count = max(stack.count - 1, 0)
+}
+
+// Swaps the top screen for another (the inventory tab strip), so Back
+// still returns to what was under it.
+replace_top_screen :: proc(stack: ^Screen_Stack, screen: Screen) {
+	pop_screen(stack)
+	push_screen(stack, screen)
 }
 
 top_screen :: proc(stack: Screen_Stack) -> Screen {

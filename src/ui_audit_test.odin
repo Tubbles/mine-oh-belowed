@@ -623,3 +623,83 @@ test_every_screen_stays_inside_the_screen :: proc(t: ^testing.T) {
 	audit_every_case(audit)
 	testing.expectf(t, audit.failures == 0, "%d UI bounds problems", audit.failures)
 }
+
+// The screens of work item 0094 with the shipped content: the strip on
+// the three screens and none on the recipe picker, the pause menu without
+// Recipes and Research, and the inventory and a machine panel opening on
+// the selected hotbar slot.
+@(test)
+test_inventory_strip_pause_menu_and_initial_focus :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	for screen, index in inventory_tab_screens {
+		state := Ui_State{theme = audit.theme}
+		push_screen(&state.screens, screen)
+		screen_test_frame(audit, &state, {tab_next = true})
+		next := inventory_tab_screens[(index + 1) % len(inventory_tab_screens)]
+		testing.expect_value(t, top_screen(state.screens), next)
+		testing.expect_value(t, state.screens.count, 1)
+		destroy_ui_state(&state)
+	}
+	// The picker: no strip, and the bumpers change neither the screen nor
+	// the category.
+	simulation := &audit.simulation
+	for &assembler in simulation.world.entities.assemblers.entries {
+		if !assembler.alive || audit.content.machines.machines[assembler.machine].recipe_choice == .Fixed {
+			continue
+		}
+		state := Ui_State{theme = audit.theme}
+		push_screen(&state.screens, .Machine)
+		push_screen(&state.screens, .Recipes)
+		audit.browser.selecting_for = assembler.handle
+		simulation.players[0].open_machine = assembler.handle
+		category := audit.browser.filter.category
+		screen_test_frame(audit, &state, {tab_next = true})
+		testing.expect_value(t, top_screen(state.screens), Screen.Recipes)
+		testing.expect_value(t, state.screens.count, 2)
+		testing.expect_value(t, audit.browser.filter.category, category)
+		testing.expect(t, !draw_list_has_text(state.draw_list[:], text("inventory_tab_technologies")))
+		destroy_ui_state(&state)
+		break
+	}
+	pause := Ui_State{theme = audit.theme}
+	push_screen(&pause.screens, .Pause)
+	screen_test_frame(audit, &pause, {})
+	testing.expect(t, draw_list_has_text(pause.draw_list[:], text("pause_journal")))
+	testing.expect(t, !draw_list_has_text(pause.draw_list[:], text("inventory_tab_recipes")))
+	testing.expect(t, !draw_list_has_text(pause.draw_list[:], text("inventory_tab_technologies")))
+	destroy_ui_state(&pause)
+	player := &simulation.players[0]
+	player.selected_hotbar_slot = 3
+	inventory := Ui_State{theme = audit.theme, focus = 12345}
+	// A focus kept from an earlier screen goes on a frame in the world.
+	screen_test_frame(audit, &inventory, {})
+	push_screen(&inventory.screens, .Inventory)
+	screen_test_frame(audit, &inventory, {})
+	testing.expect_value(t, inventory.focus, ui_hash(ui_hash(ui_hash(0, "inventory", -1), "hotbar", -1), "slot", 3))
+	destroy_ui_state(&inventory)
+	machine := Ui_State{theme = audit.theme}
+	handle := machines_with_panels(&simulation.world, audit.content)[0]
+	push_screen(&machine.screens, .Machine)
+	simulation.players[0].open_machine = handle
+	screen_test_frame(audit, &machine, {})
+	testing.expect_value(t, machine.focus, ui_hash(ui_hash(ui_hash(0, "machine", -1), "hotbar", -1), "slot", 3))
+	destroy_ui_state(&machine)
+}
+
+draw_list_has_text :: proc(commands: []Draw_Command, wanted: string) -> bool {
+	for command in commands {
+		if command.kind == .Text && command.text == wanted {
+			return true
+		}
+	}
+	return false
+}
+
+// One frame of the screens over the audit's site, without the bounds
+// check: the draw list's texts stay valid after it.
+screen_test_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, input: Ui_Input) {
+	ui_begin(state, input, {1920, 1080}, 1.0 / 60, 1, 1, ui_accessibility(audit.settings))
+	run_screens(state, audit_screen_context(audit))
+	ui_resolve(state)
+}

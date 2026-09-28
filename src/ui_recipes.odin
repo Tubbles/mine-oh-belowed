@@ -4,8 +4,9 @@ import "core:fmt"
 import "core:slice"
 import "core:strings"
 
-// The recipe browser (DESIGN.md, User interface): category tabs on the
-// bumpers, the "can craft now" toggle and the tag filter on the left, the
+// The recipe browser (DESIGN.md, User interface): the inventory tab strip
+// on the bumpers (ui_inventory.odin), the category tabs as a focusable
+// row stepped with left and right, the "can craft now" toggle and the tag filter on the left, the
 // recipes sorted by name in the middle with the letter wheel on the left
 // pad (letter keys on the keyboard), and the focused recipe's detail on
 // the right, whose "made by" and "used in" lists walk the recipe graph.
@@ -14,7 +15,8 @@ import "core:strings"
 //
 // In the selection mode, opened from an assembler's panel, the list holds
 // the available recipes an assembler makes, and Confirm sets the focused
-// one on the assembler and goes back to its panel.
+// one on the assembler and goes back to its panel. It shows no inventory
+// tab strip.
 
 RECIPE_FILTER_COLUMN_WIDTH :: 380
 RECIPE_LIST_COLUMN_WIDTH :: 560
@@ -207,15 +209,16 @@ recipe_link_list :: proc(state: ^Ui_State, area: Ui_Rectangle, label: string, re
 	return activated
 }
 
-// Bumpers switch the category; switching drops the tag filter, since tags
-// belong to the recipes of one category.
+// A focusable row: left and right switch the category while it holds the
+// focus (the bumpers belong to the inventory tab strip). Switching drops
+// the tag filter, since tags belong to the recipes of one category.
 recipe_category_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, browser: ^Recipe_Browser) {
 	labels: [len(Recipe_Category)]string
 	for category in Recipe_Category {
 		labels[int(category)] = text(recipe_category_key(category))
 	}
 	state.selections[ui_id(state, "recipe_tabs")] = int(browser.filter.category)
-	category := Recipe_Category(ui_tabs(state, rectangle, "recipe_tabs", labels[:], slice.enumerated_array(&recipe_category_icons)))
+	category := Recipe_Category(ui_tabs(state, rectangle, "recipe_tabs", labels[:], slice.enumerated_array(&recipe_category_icons), .Focus))
 	if category != browser.filter.category {
 		browser.filter.category = category
 		browser.filter.tags = {}
@@ -467,6 +470,10 @@ recipe_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	panel := ui_panel_area(state)
 	ui_panel_begin(state, "recipes", panel)
 	content := inset(panel, UI_PADDING)
+	if !selecting {
+		inventory_tabs(state, cut_top(&content, UI_ROW_HEIGHT))
+		cut_top(&content, UI_GAP)
+	}
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text(selecting ? "recipes_choose_title" : "recipes_title"), UI_HEADING_TEXT_SIZE, .Centre)
 	recipe_category_tabs(state, cut_top(&content, UI_ROW_HEIGHT), browser)
 	cut_top(&content, UI_GAP)
@@ -502,7 +509,7 @@ recipe_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 }
 
 recipe_selection_glyph_bar :: proc(state: ^Ui_State) {
-	hints := [?]Glyph_Hint{{.Confirm, text("hint_choose_recipe")}, {.Tab_Previous, ""}, {.Tab_Next, text("hint_categories")}, {.Back, text("hint_back")}}
+	hints := [?]Glyph_Hint{{.Confirm, text("hint_choose_recipe")}, {.Back, text("hint_back")}}
 	ui_glyph_bar(state, hints[:])
 }
 
@@ -512,7 +519,7 @@ recipe_glyph_bar :: proc(state: ^Ui_State) {
 		{.Context_Action, text("hint_craft_five")},
 		{.Secondary, text("hint_cancel_craft")},
 		{.Tab_Previous, ""},
-		{.Tab_Next, text("hint_categories")},
+		{.Tab_Next, text("hint_tabs")},
 		{.Back, text("hint_close")},
 	}
 	ui_glyph_bar(state, hints[:])

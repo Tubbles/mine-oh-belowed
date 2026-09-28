@@ -462,3 +462,122 @@ test_detect_input_device :: proc(t: ^testing.T) {
 	device, _ = detect_input_device(idle, typing)
 	testing.expect_value(t, device, Input_Device.Keyboard_Mouse)
 }
+
+@(test)
+test_preferred_focus_wins_the_fallback :: proc(t: ^testing.T) {
+	state: Ui_State
+	defer destroy_ui_state(&state)
+	push_screen(&state.screens, .Inventory)
+	test_ui_frame(&state, {})
+	append(&state.widgets, test_widget(1, 0, 0), test_widget(2, 0, 100))
+	ui_prefer_focus(&state, 2)
+	ui_resolve(&state)
+	testing.expect_value(t, state.focus, 2)
+	// A preference the frame does not show falls back to the first widget.
+	state.focus = 99
+	test_ui_frame(&state, {})
+	append(&state.widgets, test_widget(1, 0, 0), test_widget(2, 0, 100))
+	ui_prefer_focus(&state, 5)
+	ui_resolve(&state)
+	testing.expect_value(t, state.focus, 1)
+	// A focus among the widgets keeps it.
+	state.focus = 1
+	test_ui_frame(&state, {})
+	append(&state.widgets, test_widget(1, 0, 0), test_widget(2, 0, 100))
+	ui_prefer_focus(&state, 2)
+	ui_resolve(&state)
+	testing.expect_value(t, state.focus, 1)
+}
+
+// Frames with an item slot like widget (1), a second one below it (2)
+// and a plain widget with a tooltip (3) below that.
+tooltip_test_frame :: proc(state: ^Ui_State, input: Ui_Input, seconds: f32) {
+	test_ui_frame(state, input, seconds)
+	ui_interact(state, 1, {0, 0, 80, 80}, {.Tooltip_Shows_Itself}, "first")
+	ui_interact(state, 2, {0, 100, 80, 80}, {.Tooltip_Shows_Itself}, "second")
+	ui_interact(state, 3, {0, 200, 80, 80}, {}, "plain")
+}
+
+focused_tooltip_shows :: proc(state: Ui_State) -> bool {
+	index := widget_index(state.widgets[:], state.focus)
+	return index >= 0 && tooltip_shows(state, state.widgets[index])
+}
+
+@(test)
+test_item_tooltip_shows_itself_after_the_delay :: proc(t: ^testing.T) {
+	state: Ui_State
+	defer destroy_ui_state(&state)
+	push_screen(&state.screens, .Inventory)
+	tooltip_test_frame(&state, {}, 0.25)
+	ui_resolve(&state)
+	testing.expect_value(t, state.focus, 1)
+	tooltip_test_frame(&state, {}, 0.25)
+	ui_resolve(&state)
+	testing.expect(t, !focused_tooltip_shows(state))
+	tooltip_test_frame(&state, {}, 0.25)
+	ui_resolve(&state)
+	testing.expect(t, !focused_tooltip_shows(state))
+	tooltip_test_frame(&state, {}, 0.25)
+	ui_resolve(&state)
+	testing.expect(t, focused_tooltip_shows(state))
+	testing.expect_value(t, state.focused_tooltip, "first")
+	// A focus move hides it in the frame of the move, and it waits again.
+	tooltip_test_frame(&state, {navigation = .Down}, 0.25)
+	ui_resolve(&state)
+	testing.expect_value(t, state.focus, 2)
+	testing.expect(t, !focused_tooltip_shows(state))
+	tooltip_test_frame(&state, {}, 0.25)
+	ui_resolve(&state)
+	testing.expect(t, !focused_tooltip_shows(state))
+	for _ in 0 ..< 2 {
+		tooltip_test_frame(&state, {}, 0.25)
+		ui_resolve(&state)
+	}
+	testing.expect(t, focused_tooltip_shows(state))
+	testing.expect_value(t, state.focused_tooltip, "second")
+	// A widget without the flag still needs the Info toggle.
+	tooltip_test_frame(&state, {navigation = .Down}, 0.25)
+	ui_resolve(&state)
+	testing.expect_value(t, state.focus, 3)
+	for _ in 0 ..< 4 {
+		tooltip_test_frame(&state, {}, 0.25)
+		ui_resolve(&state)
+	}
+	testing.expect(t, !focused_tooltip_shows(state))
+	tooltip_test_frame(&state, {info = true}, 0.25)
+	ui_resolve(&state)
+	testing.expect(t, focused_tooltip_shows(state))
+}
+
+@(test)
+test_focus_tabs_step_on_left_and_right :: proc(t: ^testing.T) {
+	state: Ui_State
+	defer destroy_ui_state(&state)
+	push_screen(&state.screens, .Recipes)
+	labels := [?]string{"a", "b", "c"}
+	strip := Ui_Rectangle{0, 0, 600, 56}
+	frame :: proc(state: ^Ui_State, input: Ui_Input, labels: []string, strip: Ui_Rectangle) -> int {
+		test_ui_frame(state, input)
+		selected := ui_tabs(state, strip, "tabs", labels, nil, .Focus)
+		ui_interact(state, 2, {0, 100, 100, 40})
+		ui_resolve(state)
+		return selected
+	}
+	// Not focused yet: left and right do nothing to it.
+	testing.expect_value(t, frame(&state, {navigation = .Right}, labels[:], strip), 0)
+	tabs_id := ui_hash(0, "tabs", -1)
+	testing.expect_value(t, state.focus, tabs_id)
+	frame(&state, {}, labels[:], strip)
+	testing.expect_value(t, frame(&state, {navigation = .Right}, labels[:], strip), 1)
+	testing.expect_value(t, state.focus, tabs_id)
+	frame(&state, {}, labels[:], strip)
+	testing.expect_value(t, frame(&state, {navigation = .Left}, labels[:], strip), 0)
+	frame(&state, {}, labels[:], strip)
+	testing.expect_value(t, frame(&state, {navigation = .Left}, labels[:], strip), 2)
+	// The bumpers are not the row's.
+	testing.expect_value(t, frame(&state, {tab_next = true}, labels[:], strip), 2)
+	testing.expect_value(t, frame(&state, {tab_previous = true}, labels[:], strip), 2)
+	// Down leaves the row.
+	frame(&state, {navigation = .Down}, labels[:], strip)
+	testing.expect_value(t, state.focus, 2)
+}

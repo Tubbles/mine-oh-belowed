@@ -71,6 +71,12 @@ player_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, player: ^Player
 	return merge_grid_results(grid_result_to_inventory(grid, HOTBAR_SLOT_COUNT), grid_result_to_inventory(hotbar, 0))
 }
 
+// The id player_slot_region gives the selected hotbar slot, for a
+// screen's preferred focus; called inside the same panel.
+selected_hotbar_slot_id :: proc(state: ^Ui_State, player: ^Player) -> Ui_Id {
+	return ui_hash(ui_id(state, "hotbar"), "slot", player.selected_hotbar_slot)
+}
+
 // The Drop button's row under the hotbar.
 INVENTORY_DROP_ROW_HEIGHT :: UI_GAP + UI_ROW_HEIGHT
 
@@ -85,6 +91,7 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	shows_heading := panel_height + tabs_height <= area.height
 	panel := fitted_panel(area, slot_grid_width(INVENTORY_COLUMNS) + 2 * UI_PADDING, panel_height + (shows_heading ? tabs_height : tabs_height - UI_ROW_HEIGHT))
 	ui_panel_begin(state, "inventory", panel)
+	ui_prefer_focus(state, selected_hotbar_slot_id(state, player))
 	content := inset(panel, UI_PADDING)
 	inventory_tabs(state, cut_top(&content, UI_ROW_HEIGHT))
 	cut_top(&content, UI_GAP)
@@ -109,23 +116,40 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	inventory_glyph_bar(state, player.held.stack, slots.focused >= 0 ? player.inventory.slots[slots.focused] : EMPTY_STACK)
 }
 
-// The context tabs: the bumpers (or a click) on the recipes or
-// technologies tab open that screen over the inventory, and Back returns
-// here. On the
-// keyboard E is both Open_Inventory and Tab_Next, and there it closes the
-// inventory instead.
+// The screens of the inventory tab strip, in its order.
+@(rodata)
+inventory_tab_screens := [3]Screen{.Inventory, .Recipes, .Technologies}
+
+// The strip's tab of a screen, 0 for one outside it.
+inventory_tab_index :: proc(screen: Screen) -> int {
+	for tab_screen, index in inventory_tab_screens {
+		if tab_screen == screen {
+			return index
+		}
+	}
+	return 0
+}
+
+// The tab strip over the inventory, the recipe browser and the
+// technology screen (work item 0094), drawn by all three: the bumpers
+// (or a click) step between them, wrapping, by replacing the top screen,
+// so Back from any tab returns to what was under the strip. The
+// selection follows the top screen. On the keyboard E is both
+// Open_Inventory and Tab_Next, and there it closes the strip instead
+// (handle_screen_keys).
 inventory_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle) {
 	labels := [?]string{text("inventory_tab_inventory"), text("inventory_tab_recipes"), text("inventory_tab_technologies")}
 	icons := [?]Ui_Icon{.Inventory, .Recipes, .Technologies}
+	current := inventory_tab_index(top_screen(state.screens))
+	state.selections[ui_id(state, "inventory_tabs")] = current
 	input := state.input
 	if input.open_inventory {
 		state.input.tab_previous, state.input.tab_next = false, false
 	}
 	tab := ui_tabs(state, rectangle, "inventory_tabs", labels[:], icons[:])
 	state.input = input
-	if tab != 0 {
-		state.selections[ui_id(state, "inventory_tabs")] = 0
-		push_screen(&state.screens, tab == 1 ? .Recipes : .Technologies)
+	if tab != current {
+		replace_top_screen(&state.screens, inventory_tab_screens[tab])
 	}
 }
 
@@ -169,6 +193,6 @@ inventory_glyph_bar :: proc(state: ^Ui_State, held, focused: Item_Stack, quick_m
 	if focused.count >= 2 {
 		append(&hints, Glyph_Hint{.Secondary, text("hint_split")})
 	}
-	append(&hints, Glyph_Hint{.Context_Action, text("hint_sort")}, Glyph_Hint{.Info, text("hint_info")}, Glyph_Hint{.Back, text("hint_close")})
+	append(&hints, Glyph_Hint{.Context_Action, text("hint_sort")}, Glyph_Hint{.Back, text("hint_close")})
 	ui_glyph_bar(state, hints[:])
 }

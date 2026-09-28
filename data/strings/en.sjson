@@ -14,7 +14,6 @@ save_failed = "Saving failed, see the log"
 pause_journal = "Journal"
 pause_power = "Power"
 pause_statistics = "Statistics"
-pause_technologies = "Research"
 pause_developer = "Developer"
 
 // Developer screen (--dev, work item 0043)
@@ -874,7 +873,6 @@ splitter_side_left = "Left"
 splitter_side_right = "Right"
 
 // Recipe browser and hand crafting (data/recipes.sjson)
-pause_recipes = "Recipes"
 inventory_tab_inventory = "Inventory"
 inventory_tab_recipes = "Recipes"
 inventory_tab_technologies = "Research"
@@ -906,7 +904,6 @@ craft_refused_queue_full = "Crafting queue full"
 hint_craft = "Craft"
 hint_craft_five = "Craft 5"
 hint_cancel_craft = "Cancel last"
-hint_categories = "Categories"
 recipe_category_materials = "Materials"
 recipe_category_components = "Components"
 recipe_category_tools = "Tools"

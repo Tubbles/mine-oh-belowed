@@ -6,8 +6,9 @@ import "core:fmt"
 // queued technology and its progress on the left with the filter toggle,
 // the technologies sorted by name in the middle with the letter wheel,
 // and the focused one's status, cost, description, prerequisites and
-// unlocks on the right. Confirm queues the focused technology when it is available,
-// replacing the queued one. It does not pause.
+// unlocks on the right, under the inventory tab strip (ui_inventory.odin).
+// Confirm queues the focused technology when it is available, replacing
+// the queued one. It does not pause.
 
 TECHNOLOGY_STATUS_COLUMN_WIDTH :: 380
 TECHNOLOGY_LIST_COLUMN_WIDTH :: 560
@@ -189,6 +190,8 @@ technology_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	panel := ui_panel_area(state)
 	ui_panel_begin(state, "technologies", panel)
 	content := inset(panel, UI_PADDING)
+	inventory_tabs(state, cut_top(&content, UI_ROW_HEIGHT))
+	cut_top(&content, UI_GAP)
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("technologies_title"), UI_HEADING_TEXT_SIZE, .Centre)
 	cut_top(&content, UI_GAP)
 	status_width, list_width := three_column_widths(content, TECHNOLOGY_STATUS_COLUMN_WIDTH, TECHNOLOGY_LIST_COLUMN_WIDTH)
@@ -209,6 +212,6 @@ technology_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		queue_focused_research(state, screen_context, activated)
 	}
 	draw_letter_wheel(state, browser.letter_radial)
-	hints := [?]Glyph_Hint{{.Confirm, text("hint_queue_research")}, {.Back, text("hint_close")}}
+	hints := [?]Glyph_Hint{{.Confirm, text("hint_queue_research")}, {.Tab_Previous, ""}, {.Tab_Next, text("hint_tabs")}, {.Back, text("hint_close")}}
 	ui_glyph_bar(state, hints[:])
 }
