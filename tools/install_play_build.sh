@@ -75,6 +75,17 @@ export MINE_OH_BELOWED_DATA="$build_directory/data"
 # says which device it got.
 unset SDL_GAMECONTROLLER_IGNORE_DEVICES
 export SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD=0
+# Work item 0084: MINE_OH_BELOWED_GAMESCOPE holds gamescope's own arguments
+# (for example "-f -W 2880 -H 1920") and runs the game inside gamescope,
+# which presents it at the panel's full size on a scaled Wayland desktop.
+# Unquoted on purpose, so the arguments split into words.
+if [ -n "${MINE_OH_BELOWED_GAMESCOPE:-}" ]; then
+	if command -v gamescope >/dev/null; then
+		# shellcheck disable=SC2086
+		exec gamescope $MINE_OH_BELOWED_GAMESCOPE -- "$build_directory/mine-oh-belowed" "$@"
+	fi
+	echo "mine-oh-belowed: MINE_OH_BELOWED_GAMESCOPE is set but gamescope is not on the path, running without it" >&2
+fi
 exec "$build_directory/mine-oh-belowed" "$@"
 LAUNCHER
 chmod +x "$launcher"

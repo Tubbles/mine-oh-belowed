@@ -1,6 +1,6 @@
 # 0084 Display diagnostics and a gamescope launch
 
-Status: todo
+Status: implemented
 Milestone: M11
 
 ## Goal
@@ -23,3 +23,5 @@ Laptop report (2026-09-28): in Borderless the Resolution row shows 1694 by 1129 
 ## Notes
 
 Files a subagent may touch: `src/display.odin`, `src/display_test.odin`, `src/loop.odin` (the log call and the screen context fields), `src/ui_screens.odin`, `src/ui_audit_test.odin`, `data/strings/en.sjson`, `tools/install_play_build.sh`, the docs above, this file.
+
+Implemented: `src/display.odin` (the diagnostics text, the desktop scaled decision, the log call in `update_display`), `src/display_test.odin`, `src/loop.odin` (the log after the window opens, the window scale read every frame, the session read once, the screen context fields), `src/ui_screens.odin` (the Resolution row's note and tooltip in Borderless), `src/ui_audit_test.odin` (the desktop scaled Display tab case), `data/strings/en.sjson`, `tools/install_play_build.sh` (the gamescope branch), `doc/build.md`, `doc/ui.md`, `doc/log/2026-09-28.md`. 881 tests pass.

@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+import "core:os"
 import rl "vendor:raylib"
 
 // The window's mode, size, vsync and frame rate cap from the settings
@@ -217,12 +219,54 @@ centred_window_position :: proc(monitor_origin, monitor_size, size: [2]int) -> [
 }
 
 // The frame loop's hook: applies what changed since the settings last
-// applied (applied), and remembers them.
-update_display :: proc(applied: ^Settings, next: Settings, monitor_size: [2]int) {
+// applied (applied), remembers them and logs the display afterwards.
+update_display :: proc(applied: ^Settings, next: Settings, monitor_size: [2]int, wayland_display_set: bool) {
 	changes := display_changes(applied^, next)
 	if changes == {} {
 		return
 	}
 	apply_display_changes(changes, monitor_size)
 	applied^ = next
+	log_display_diagnostics(wayland_display_set)
+}
+
+// Work item 0084. The vendored raylib is X11 only, so a Wayland session
+// (WAYLAND_DISPLAY set) runs the game through XWayland, which hands X11
+// applications the scaled screen when the desktop is scaled and upscales
+// them: the monitor then reports the scaled size, not the panel's.
+wayland_display_set :: proc() -> bool {
+	return os.get_env("WAYLAND_DISPLAY", context.temp_allocator) != ""
+}
+
+// The desktop scales the window: the Resolution row cannot reach the
+// panel's size and says so.
+display_is_desktop_scaled :: proc(scale: [2]f32, wayland_display_set: bool) -> bool {
+	return wayland_display_set || scale != {1, 1}
+}
+
+display_diagnostics_text :: proc(monitor_size, window_size, render_size: [2]int, scale: [2]f32, wayland_display_set: bool) -> string {
+	session := wayland_display_set ? "xwayland" : "x11"
+	return fmt.tprintf(
+		"display: monitor %d x %d, window %d x %d, render %d x %d, scale %.2f x %.2f, session %s",
+		monitor_size.x,
+		monitor_size.y,
+		window_size.x,
+		window_size.y,
+		render_size.x,
+		render_size.y,
+		scale.x,
+		scale.y,
+		session,
+	)
+}
+
+window_scale :: proc() -> [2]f32 {
+	scale := rl.GetWindowScaleDPI()
+	return {scale.x, scale.y}
+}
+
+log_display_diagnostics :: proc(wayland_display_set: bool) {
+	window_size := [2]int{int(rl.GetScreenWidth()), int(rl.GetScreenHeight())}
+	render_size := [2]int{int(rl.GetRenderWidth()), int(rl.GetRenderHeight())}
+	log_printf("%s", display_diagnostics_text(current_monitor_size(), window_size, render_size, window_scale(), wayland_display_set))
 }

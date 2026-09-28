@@ -87,6 +87,10 @@ Frame_State :: struct {
 	// monitor's size read while the window was still windowed.
 	window_settings:    Settings,
 	monitor_size:       [2]int,
+	// The window's scale, read every frame, and whether the session is
+	// Wayland (display.odin, work item 0084).
+	window_scale:       [2]f32,
+	wayland_display_set: bool,
 	environment:        Configuration_Environment,
 	// The effective bindings, for the settings screen's Controls list.
 	bindings:           []Binding,
@@ -540,6 +544,8 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 	screen_context := Screen_Context {
 		settings        = &state.settings,
 		monitor_size    = state.monitor_size,
+		window_scale    = state.window_scale,
+		wayland_display_set = state.wayland_display_set,
 		font_families   = state.fonts.families,
 		screenshot_requested = &state.screenshot_requested,
 		bindings        = state.bindings,
@@ -792,7 +798,9 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	// Escape is bound to the Pause action, so it must not close the window.
 	rl.SetExitKey(.KEY_NULL)
 	monitor_size := current_monitor_size()
-	update_display(&window_settings, player_configuration.settings, monitor_size)
+	wayland := wayland_display_set()
+	log_display_diagnostics(wayland)
+	update_display(&window_settings, player_configuration.settings, monitor_size, wayland)
 
 	renderer, renderer_ok := init_chunk_renderer(content.blocks, data_directory)
 	if !renderer_ok {
@@ -813,6 +821,8 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 		stored_settings = player_configuration.settings,
 		window_settings = window_settings,
 		monitor_size    = monitor_size,
+		window_scale    = window_scale(),
+		wayland_display_set = wayland,
 		environment     = player_configuration.environment,
 		bindings        = player_configuration.bindings,
 		input_bindings  = player_configuration.input_bindings,
@@ -863,7 +873,8 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 		update_data_watch(&state)
 		apply_reload_request(&state)
 		// Applied at once, like the font choice.
-		update_display(&state.window_settings, state.settings, state.monitor_size)
+		update_display(&state.window_settings, state.settings, state.monitor_size, state.wayland_display_set)
+		state.window_scale = window_scale()
 		if !screen_stack_contains(state.ui.screens, .Settings) {
 			write_changed_settings(&state)
 		}

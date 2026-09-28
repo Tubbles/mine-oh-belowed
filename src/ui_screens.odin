@@ -20,6 +20,10 @@ Screen_Context :: struct {
 	// The monitor's size (display.odin): the Resolution choices up to it,
 	// and the Resolution row's value in borderless.
 	monitor_size:    [2]int,
+	// The window's scale and whether the session is Wayland: the
+	// Resolution row notes a desktop scaled screen (display.odin).
+	window_scale:    [2]f32,
+	wayland_display_set: bool,
 	// The Font choices cycle through them (data/fonts/fonts.sjson).
 	font_families:   []Font_Family,
 	// The effective bindings, shown read only.
@@ -321,7 +325,8 @@ settings_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	switch tab {
 	case 0:
 		region, rows := scroll_region_begin(state, "display_settings", content, settings_rows_height(DISPLAY_SETTINGS_ROW_COUNT))
-		display_settings(state, &rows, settings, screen_context.monitor_size, screen_context.font_families)
+		desktop_scaled := display_is_desktop_scaled(screen_context.window_scale, screen_context.wayland_display_set)
+		display_settings(state, &rows, settings, screen_context.monitor_size, desktop_scaled, screen_context.font_families)
 		scroll_region_end(state, region)
 	case 1:
 		region, rows := scroll_region_begin(state, "audio_settings", content, settings_rows_height(AUDIO_SETTINGS_ROW_COUNT))
@@ -359,8 +364,8 @@ settings_row :: proc(content: ^Ui_Rectangle) -> Ui_Rectangle {
 	return row
 }
 
-display_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Settings, monitor_size: [2]int, font_families: []Font_Family) {
-	window_settings(state, content, settings, monitor_size)
+display_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Settings, monitor_size: [2]int, desktop_scaled: bool, font_families: []Font_Family) {
+	window_settings(state, content, settings, monitor_size, desktop_scaled)
 	ui_toggle(state, settings_row(content), text("settings_weather"), &settings.weather, text("settings_weather_tooltip"))
 	ui_toggle(state, settings_row(content), text("settings_head_bob"), &settings.head_bob, text("settings_head_bob_tooltip"))
 	ui_slider(
@@ -405,12 +410,12 @@ volume_text :: proc(volume: f32) -> string {
 
 // Applied at once: the frame loop applies them to the window
 // (update_display) after this frame.
-window_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Settings, monitor_size: [2]int) {
+window_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Settings, monitor_size: [2]int, desktop_scaled: bool) {
 	mode_text := text(window_mode_keys[settings.window_mode])
 	if ui_choice(state, settings_row(content), text("settings_window_mode"), mode_text, text("settings_window_mode_tooltip")) {
 		settings.window_mode = next_window_mode(settings.window_mode)
 	}
-	resolution_choice(state, settings_row(content), settings, monitor_size)
+	resolution_choice(state, settings_row(content), settings, monitor_size, desktop_scaled)
 	ui_toggle(state, settings_row(content), text("settings_vsync"), &settings.vsync, text("settings_vsync_tooltip"))
 	cap_text := frame_rate_cap_text(settings.frame_rate_cap)
 	if ui_choice(state, settings_row(content), text("settings_frame_rate_cap"), cap_text, text("settings_frame_rate_cap_tooltip")) {
@@ -426,8 +431,15 @@ window_mode_keys := [Window_Mode]string {
 }
 
 // Borderless covers the monitor: the row is dimmed, shows the monitor's
-// size and does not step, but keeps its focus and tooltip.
-resolution_choice :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, settings: ^Settings, monitor_size: [2]int) {
+// size and does not step, but keeps its focus and tooltip. On a desktop
+// scaled screen (work item 0084) the size is the scaled one: the value
+// says so and the tooltip names the ways to the panel's full size.
+resolution_choice :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, settings: ^Settings, monitor_size: [2]int, desktop_scaled: bool) {
+	if settings.window_mode == .Borderless && desktop_scaled {
+		value := fmt.tprintf("%s (%s)", resolution_text(monitor_size), text("settings_resolution_desktop_scaled"))
+		dimmed_choice(state, rectangle, text("settings_resolution"), value, text("settings_resolution_desktop_scaled_tooltip"))
+		return
+	}
 	if settings.window_mode == .Borderless {
 		dimmed_choice(state, rectangle, text("settings_resolution"), resolution_text(monitor_size), text("settings_resolution_tooltip"))
 		return

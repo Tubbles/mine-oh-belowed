@@ -75,6 +75,9 @@ Ui_Audit :: struct {
 	content:            Simulation_Content,
 	simulation:         Simulation_State,
 	settings:           Settings,
+	// The screen context's display facts (work item 0084).
+	window_scale:       [2]f32,
+	wayland_display_set: bool,
 	fonts:              Loaded_Fonts,
 	bindings:           []Binding,
 	title:              Title_State,
@@ -211,6 +214,8 @@ audit_screen_context :: proc(audit: ^Ui_Audit) -> Screen_Context {
 	return Screen_Context {
 		settings = &audit.settings,
 		monitor_size = UI_AUDIT_MONITOR_SIZE,
+		window_scale = audit.window_scale,
+		wayland_display_set = audit.wayland_display_set,
 		font_families = audit.fonts.families,
 		bindings = audit.bindings,
 		quit_requested = &audit.quit_requested,
@@ -410,6 +415,7 @@ make_ui_audit :: proc() -> ^Ui_Audit {
 	}
 	audit.settings = DEFAULT_SETTINGS
 	audit.settings.developer_mode = true
+	audit.window_scale = {1, 1}
 	fonts_problem: string
 	audit.fonts, fonts_problem = load_fonts(test_data_directory())
 	assert(fonts_problem == "", fonts_problem)
@@ -483,6 +489,18 @@ audit_windowed_display :: proc(audit: ^Ui_Audit) {
 	audit.settings = settings
 }
 
+// The Display tab in borderless on a desktop scaled XWayland session: the
+// Resolution row's value carries the note (work item 0084). The settings
+// and the display facts are restored.
+audit_desktop_scaled_display :: proc(audit: ^Ui_Audit) {
+	settings := audit.settings
+	audit.settings.window_mode = .Borderless
+	audit.window_scale, audit.wayland_display_set = {1.7, 1.7}, true
+	audit_case(audit, {name = "settings display desktop scaled", screens = {.Pause, .Settings}, walk_focus = true})
+	audit.window_scale, audit.wayland_display_set = {1, 1}, false
+	audit.settings = settings
+}
+
 UI_AUDIT_TOASTS :: [?]string{"mc_extraction_rights_done", "inventory_full", "developer_applies_on_resume"}
 
 audit_every_case :: proc(audit: ^Ui_Audit) {
@@ -499,6 +517,7 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 		audit_case(audit, {name = fmt.tprintf("settings tab %d", tab), screens = {.Pause, .Settings}, tab_next = tab, walk_focus = true})
 	}
 	audit_windowed_display(audit)
+	audit_desktop_scaled_display(audit)
 	audit_case(audit, {name = "developer", screens = {.Pause, .Developer}, walk_focus = true})
 	audit_case(audit, {name = "inventory", screens = {.Inventory}, walk_focus = true})
 	simulation := &audit.simulation

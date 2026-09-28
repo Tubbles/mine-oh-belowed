@@ -134,3 +134,19 @@ test_centred_window_position :: proc(t: ^testing.T) {
 	// Larger than the monitor: its top left corner.
 	testing.expect_value(t, centred_window_position({0, 0}, {1280, 800}, {1920, 1080}), [2]int{0, 0})
 }
+
+@(test)
+test_display_diagnostics_text :: proc(t: ^testing.T) {
+	scaled := display_diagnostics_text({1694, 1129}, {1694, 1129}, {1694, 1129}, {1, 1}, true)
+	testing.expect_value(t, scaled, "display: monitor 1694 x 1129, window 1694 x 1129, render 1694 x 1129, scale 1.00 x 1.00, session xwayland")
+	x11 := display_diagnostics_text({2880, 1920}, {1280, 720}, {2176, 1224}, {1.7, 1.7}, false)
+	testing.expect_value(t, x11, "display: monitor 2880 x 1920, window 1280 x 720, render 2176 x 1224, scale 1.70 x 1.70, session x11")
+}
+
+@(test)
+test_display_is_desktop_scaled :: proc(t: ^testing.T) {
+	testing.expect(t, !display_is_desktop_scaled({1, 1}, false))
+	testing.expect(t, display_is_desktop_scaled({1, 1}, true))
+	testing.expect(t, display_is_desktop_scaled({1.7, 1.7}, false))
+	testing.expect(t, display_is_desktop_scaled({1, 1.25}, false))
+}
