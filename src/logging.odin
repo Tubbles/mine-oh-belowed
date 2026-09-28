@@ -1,17 +1,12 @@
 package game
 
 import "base:runtime"
-import "core:c"
 import "core:debug/trace"
 import "core:fmt"
 import "core:os"
 import "core:strings"
 import "core:sync"
-import "core:sys/posix"
 import "core:time"
-
-// Used only on the Linux side of the crash signal handlers.
-_ :: c
 
 // The lines the game prints to stderr ("input:", "world:", "strings:",
 // "error:") also go to $XDG_STATE_HOME/mine-oh-belowed/log.txt
@@ -30,22 +25,20 @@ _ :: c
 // once either way. Assertions and panics of the main thread go through
 // log_assertion_failure, which adds a back trace. SIGSEGV and SIGILL (the
 // trap) print a raw back trace from the signal handler, then the signal
-// ends the process as before. On Windows (work item 0102) the console
-// lines go to stderr as they are: no redirect and no signal handlers.
+// ends the process as before. The descriptors, the redirect and the
+// signal handlers live in logging_posix.odin; on Windows
+// (logging_windows.odin, work item 0102) the console lines go to stderr as
+// they are, with no redirect and no signal handlers. Build tags, not a
+// `when` block: the posix package links the static C runtime on Windows
+// by its import alone, so only a build tag keeps it out.
 
 LOG_FILE_NAME :: "log.txt"
 STATE_HOME_UNDER_HOME :: ".local/state"
 GAME_DIRECTORY_NAME :: "mine-oh-belowed"
 
 Log_State :: struct {
-	mutex:         sync.Mutex,
-	file:          ^os.File,
-	// The file's descriptor, for the signal handler, which has no context.
-	descriptor:        posix.FD,
-	// stderr was pointed at the log file; original_stderr is where
-	// stderr went before.
-	stderr_redirected: bool,
-	original_stderr:   posix.FD,
+	mutex: sync.Mutex,
+	file:  ^os.File,
 }
 
 global_log: Log_State
@@ -93,46 +86,8 @@ open_log_file :: proc() {
 		return
 	}
 	global_log.file = file
-	global_log.descriptor = posix.FD(os.fd(file))
 	write_log_line(global_log.file, log_session_header(time.now()))
-	redirect_stderr_to_log()
-}
-
-// Only when stderr is not a terminal: someone running the game in a
-// terminal keeps seeing its output there. Not on Windows (work item
-// 0102): stderr stays where it is.
-redirect_stderr_to_log :: proc() {
-	when ODIN_OS == .Windows {
-		return
-	} else {
-		if posix.isatty(posix.STDERR_FILENO) {
-			return
-		}
-		original := posix.dup(posix.STDERR_FILENO)
-		if original == -1 || posix.dup2(global_log.descriptor, posix.STDERR_FILENO) == -1 {
-			write_log_line(global_log.file, "error: cannot point stderr at the log, runtime errors will not be logged")
-			if original != -1 {
-				posix.close(original)
-			}
-			return
-		}
-		global_log.original_stderr = original
-		global_log.stderr_redirected = true
-	}
-}
-
-// The game's own output for a person or a script: stderr, or what stderr
-// was before the redirect.
-console_descriptor :: proc "contextless" () -> posix.FD {
-	return global_log.stderr_redirected ? global_log.original_stderr : posix.STDERR_FILENO
-}
-
-write_console :: proc(text: string) {
-	when ODIN_OS == .Windows {
-		os.write_string(os.stderr, text)
-	} else {
-		posix.write(console_descriptor(), raw_data(text), len(text))
-	}
+	redirect_stderr_to_log(file)
 }
 
 open_log_for_append :: proc(directory, path: string) -> (^os.File, os.Error) {
@@ -221,59 +176,6 @@ log_assertion_failure :: proc(prefix, message: string, location: runtime.Source_
 	} else {
 		write_crash_text(fmt.tprintf("no back trace: %s\n", trace.resolve_err_string(error)))
 	}
-	// The trap raises SIGILL; the trace above already says it all.
-	posix.signal(.SIGILL, auto_cast posix.SIG_DFL)
+	restore_default_trap_signal()
 	runtime.trap()
-}
-
-// No signal handlers on Windows (work item 0102): a crash there leaves
-// no raw back trace, the assertion path above still writes its own.
-when ODIN_OS == .Windows {
-	install_crash_handlers :: proc() {}
-} else {
-	foreign import libc "system:c"
-
-	@(default_calling_convention = "c")
-	foreign libc {
-		backtrace :: proc(buffer: [^]rawptr, size: c.int) -> c.int ---
-		backtrace_symbols_fd :: proc(buffer: [^]rawptr, size: c.int, file_descriptor: c.int) ---
-	}
-
-	CRASH_SIGNAL_TEXT :: "crash: fatal signal (SIGSEGV or SIGILL), raw back trace:\n"
-	CRASH_SIGNAL_FRAMES :: 64
-
-	write_crash_signal_trace :: proc "c" (file_descriptor: posix.FD, frames: []rawptr) {
-		message := CRASH_SIGNAL_TEXT
-		posix.write(file_descriptor, raw_data(message), len(message))
-		backtrace_symbols_fd(raw_data(frames), c.int(len(frames)), c.int(file_descriptor))
-	}
-
-	// Uses only calls that do not allocate: backtrace was loaded at install
-	// time and backtrace_symbols_fd writes straight to the descriptor.
-	// SA_RESETHAND has restored the default action, so the raised signal
-	// ends the process (with a core dump, as without the handler) once the
-	// handler returns.
-	crash_signal_handler :: proc "c" (signal: posix.Signal) {
-		frames: [CRASH_SIGNAL_FRAMES]rawptr
-		count := backtrace(&frames[0], CRASH_SIGNAL_FRAMES)
-		write_crash_signal_trace(console_descriptor(), frames[:count])
-		if global_log.file != nil {
-			write_crash_signal_trace(global_log.descriptor, frames[:count])
-		}
-		posix.raise(signal)
-	}
-
-	install_crash_handlers :: proc() {
-		// The first backtrace call loads libgcc, which allocates; do that here
-		// rather than inside the handler.
-		frames: [1]rawptr
-		backtrace(&frames[0], 1)
-		action := posix.sigaction_t {
-			sa_handler = crash_signal_handler,
-			sa_flags   = {.RESETHAND},
-		}
-		posix.sigemptyset(&action.sa_mask)
-		posix.sigaction(.SIGSEGV, &action, nil)
-		posix.sigaction(.SIGILL, &action, nil)
-	}
 }

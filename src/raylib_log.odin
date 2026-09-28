@@ -22,9 +22,9 @@ SILENCED_TRACE_LOG_PREFIX :: "GLFW: Error: 65548 "
 TRACE_LOG_BUFFER_SIZE :: 512
 
 // The C formatter for the va_list, declared here rather than through
-// core:c/libc: on Windows that package links the static C runtime
-// (libucrt.lib), which clashes with raylib's release library, built for
-// the dynamic one (work item 0102, the first CI run). The dynamic
+// the libc package of core: on Windows that package links the static C
+// runtime (libucrt.lib), which clashes with raylib's release library,
+// built for the dynamic one (work item 0102, the first CI run). The dynamic
 // runtime's vsnprintf is an inline function of its headers over
 // __stdio_common_vsprintf, called here with the same option.
 when ODIN_OS == .Windows {
