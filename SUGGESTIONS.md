@@ -38,6 +38,7 @@ Raised by the work item notes (0005 to 0008), to be turned into work items when 
 - Hot reload (0054): block light in loaded chunks is not recomputed after a content reload (an emission change waits for a remesh of light), and a changed vein type keeps registered veins' old records, so outcrops in chunks generated later can disagree with the registry until the world reloads.
 - Command socket (0053): `place` does not count as a player placement for quests (use `chapter` to advance); a blueprint's `{vein}` origin needs the vein's chunks loaded, since it reads registered veins rather than the generator's starter veins; veins added by command are invisible to the map survey and the orbital survey, which read the generator.
 - The orbital survey (0041) asks the generator for about 25 regions of vein placement on the main thread inside one tick; its cost at the 256 block radius was not measured. The catalogue buttons and the pad panel tabs have not been seen with the gamepad's focus movement.
+- Tree roots done properly: the 0059 root logs at the foot of straight trunks were removed after the couch found them obscene (0083). Minecraft's vanilla mangrove (1.19) shows the shape that works: roots as a block type of their own, a tangle arching above ground and water, on a species designed around them. A wetland mangrove and a gnarled badlands tree would be the place to try it, with a root block shape from 0061's pipeline.
 
 ## Next steps
 

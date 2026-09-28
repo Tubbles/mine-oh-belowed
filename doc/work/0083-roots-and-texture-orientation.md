@@ -21,4 +21,6 @@ Couch report (2026-09-28): the root logs beside tree trunks read as obscene ("we
 
 ## Notes
 
+Roots are dropped, not ruled out (user, 2026-09-28): Minecraft's mangrove (vanilla, the 1.19 Wild Update) grows roots as a block type of their own, a tangle arching above the ground and the water, and mods have done the same for large or gnarled trees. What read badly here was log blocks at the foot of a straight trunk. A later species pass (a mangrove for the wetland, a gnarled dead tree for the badlands) could bring roots back as their own shaped block with a crown and a trunk designed around them. Recorded in `SUGGESTIONS.md`.
+
 Files a subagent may touch: `src/generation_features.odin`, `src/generation_trees.odin`, `src/generation_trees_test.odin`, `src/tree_felling_test.odin`, `src/generation_terrain.odin` (the version constant), `src/world_mesh.odin`, `src/world_mesh_test.odin`, `data/shaders/water.fs`, `data/trees.sjson`, `doc/content.md`, `doc/architecture.md`, `doc/work/0061-block-shapes.md`, `doc/log/2026-09-28.md`, this file.
