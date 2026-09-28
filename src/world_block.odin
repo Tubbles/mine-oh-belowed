@@ -56,7 +56,10 @@ Block_Texture_Definition :: struct {
 }
 
 // hardness_seconds is the hand mining time, 0 for blocks that cannot be
-// mined. light_level is the block light emitted (0 to MAXIMUM_LIGHT).
+// mined. light_level is the block light emitted (0 to MAXIMUM_LIGHT);
+// light_color, optional, gives its colour as red, green and blue levels
+// (0 to MAXIMUM_LIGHT each, the largest equal to light_level), white at
+// light_level when left out (work item 0072).
 // water_level is 0 for everything but water, WATER_SOURCE_LEVEL for a
 // source and 1 to WATER_SOURCE_LEVEL - 1 for flowing water. fluid_source
 // names the fluid a source pump draws from the block (a tar pit gives
@@ -75,6 +78,7 @@ Block_Definition :: struct {
 	solid:            bool,
 	hardness_seconds: f32,
 	light_level:      int,
+	light_color:      [3]int,
 	water_level:      int,
 	fluid_source:     string,
 	tool_tier:        int,
@@ -202,6 +206,9 @@ validate_block_definitions :: proc(definitions: []Block_Definition) -> string {
 		}
 		if definition.light_level < 0 || definition.light_level > MAXIMUM_LIGHT {
 			return fmt.tprintf("block %q has light_level %d outside 0 to %d", definition.id, definition.light_level, MAXIMUM_LIGHT)
+		}
+		if problem := validate_light_color(definition.light_color, definition.light_level); problem != "" {
+			return fmt.tprintf("block %q %s", definition.id, problem)
 		}
 		if definition.water_level < 0 || definition.water_level > WATER_SOURCE_LEVEL {
 			return fmt.tprintf("block %q has water_level %d outside 0 to %d", definition.id, definition.water_level, WATER_SOURCE_LEVEL)
@@ -343,6 +350,38 @@ block_light_emission :: proc(registry: Block_Registry, block: Block_Id) -> u8 {
 		return 0
 	}
 	return u8(registry.definitions[block].light_level)
+}
+
+// An unset light_color (all zero) is white at the level.
+resolve_light_color :: proc(color: [3]int, level: int) -> Light_Color {
+	if color == {} {
+		return u8(level)
+	}
+	return {u8(color.r), u8(color.g), u8(color.b)}
+}
+
+// A light_color, when set, has every channel within 0 to MAXIMUM_LIGHT and
+// its largest channel at light_level. Returns the problem, "" for none.
+validate_light_color :: proc(color: [3]int, level: int) -> string {
+	if color == {} {
+		return ""
+	}
+	if min(color.r, color.g, color.b) < 0 || max(color.r, color.g, color.b) > MAXIMUM_LIGHT {
+		return fmt.tprintf("has a light_color channel outside 0 to %d", MAXIMUM_LIGHT)
+	}
+	if max(color.r, color.g, color.b) != level {
+		return fmt.tprintf("has a light_color whose largest channel %d is not its light_level %d", max(color.r, color.g, color.b), level)
+	}
+	return ""
+}
+
+// The colour of the block light a block emits, black for none.
+block_light_color :: proc(registry: Block_Registry, block: Block_Id) -> Light_Color {
+	if int(block) >= len(registry.definitions) {
+		return {}
+	}
+	definition := registry.definitions[block]
+	return resolve_light_color(definition.light_color, definition.light_level)
 }
 
 block_water_level :: proc(registry: Block_Registry, block: Block_Id) -> int {

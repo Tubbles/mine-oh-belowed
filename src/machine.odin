@@ -161,6 +161,7 @@ Machine_Definition :: struct {
 	wire_reach:                   int,
 	electric_output_kilowatts:    f32,
 	light_level:                  int,
+	light_color:                  [3]int,
 	recipe_maker:                 string,
 	recipe_choice:                string,
 	boring_seconds:               int,
@@ -226,8 +227,10 @@ Machine :: struct {
 	wire_reach:                  i32,
 	// Generators (steam and combustion): the most power they give.
 	electric_output_watts:       u32,
-	// Lamps: the block light level while lit.
+	// Lamps: the block light level while lit, and its colour (white at
+	// light_level when the file gives none, resolve_light_color).
 	light_level:                 u8,
+	light_color:                 Light_Color,
 	// Crafting machines: the recipes they make, whether the player picks
 	// the recipe, and for a fixed choice the input and output slot counts.
 	recipe_maker:                Recipe_Maker,
@@ -575,6 +578,7 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 		wire_reach = i32(max(definition.wire_reach, 0)),
 		electric_output_watts = u32(math.round(definition.electric_output_kilowatts * 1000)),
 		light_level = u8(clamp(definition.light_level, 0, MAXIMUM_LIGHT)),
+		light_color = resolve_light_color(definition.light_color, clamp(definition.light_level, 0, MAXIMUM_LIGHT)),
 		recipe_maker = recipe_maker,
 		recipe_choice = recipe_choice,
 		input_slot_count = definition.input_slots,

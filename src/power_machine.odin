@@ -71,6 +71,9 @@ validate_power_machine_definition :: proc(definition: Machine_Definition, kind: 
 		if definition.light_level < 1 || definition.light_level > MAXIMUM_LIGHT {
 			return fmt.tprintf("lamp %q needs a light_level from 1 to %d", definition.id, MAXIMUM_LIGHT)
 		}
+		if problem := validate_light_color(definition.light_color, definition.light_level); problem != "" {
+			return fmt.tprintf("lamp %q %s", definition.id, problem)
+		}
 	}
 	return ""
 }
@@ -345,12 +348,12 @@ tick_lamps :: proc(world: ^World, machines: Machine_Registry) {
 	sync_entity_lights(world, lit_lamp_lights(&world.entities, machines))
 }
 
-// Cell and level of every lit lamp, in the temp allocator.
-lit_lamp_lights :: proc(entities: ^Entities, machines: Machine_Registry) -> map[World_Coordinate]u8 {
-	lights := make(map[World_Coordinate]u8, context.temp_allocator)
+// Cell and light colour of every lit lamp, in the temp allocator.
+lit_lamp_lights :: proc(entities: ^Entities, machines: Machine_Registry) -> map[World_Coordinate]Light_Color {
+	lights := make(map[World_Coordinate]Light_Color, context.temp_allocator)
 	for lamp in entities.lamps.entries {
 		if lamp.alive && lamp.lit {
-			lights[lamp.origin] = machines.machines[lamp.machine].light_level
+			lights[lamp.origin] = machines.machines[lamp.machine].light_color
 		}
 	}
 	return lights
@@ -359,10 +362,10 @@ lit_lamp_lights :: proc(entities: ^Entities, machines: Machine_Registry) -> map[
 // Makes World.entity_lights match wanted: sources that went out or were
 // picked up go through the removal queue, new ones through the addition
 // queue. Cells are visited in coordinate order.
-sync_entity_lights :: proc(world: ^World, wanted: map[World_Coordinate]u8) {
+sync_entity_lights :: proc(world: ^World, wanted: map[World_Coordinate]Light_Color) {
 	changed := make([dynamic]World_Coordinate, context.temp_allocator)
-	for cell, level in world.entity_lights {
-		if wanted[cell] != level {
+	for cell, color in world.entity_lights {
+		if wanted[cell] != color {
 			append(&changed, cell)
 		}
 	}

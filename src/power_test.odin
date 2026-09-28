@@ -37,7 +37,8 @@ test_power_data_loads :: proc(t: ^testing.T) {
 	testing.expect_value(t, switch_machine.kind, Machine_Kind.Power_Switch)
 	testing.expect_value(t, switch_machine.supply_volume, [3]i32{0, 0, 0})
 	lamp := content.machines.machines[test_machine(content.machines, "lamp")]
-	testing.expect_value(t, lamp.light_level, 14)
+	testing.expect_value(t, lamp.light_level, 15)
+	testing.expect_value(t, lamp.light_color, Light_Color{14, 14, 15})
 	testing.expect_value(t, electric_joules_per_tick(lamp.electric_power_watts, TEST_TICK_RATE), 83)
 	drill := content.machines.machines[test_machine(content.machines, "electric_mining_drill")]
 	testing.expect_value(t, drill.slot_count, 0)
@@ -265,9 +266,9 @@ test_lamp_lights_and_darkens_with_power :: proc(t: ^testing.T) {
 	lamp := place_test_entity(&world, content, "lamp", {2, 1, 2})
 	tick_test_entities(&world, content, 1)
 	propagate_light(&world, content.blocks, 100_000)
-	testing.expect_value(t, block_light_at(&world, {2, 1, 2}), 14)
-	testing.expect_value(t, block_light_at(&world, {2, 2, 2}), 13)
-	testing.expect_value(t, block_light_at(&world, {5, 1, 2}), 11)
+	testing.expect_value(t, block_light_at(&world, {2, 1, 2}), 15)
+	testing.expect_value(t, block_light_at(&world, {2, 2, 2}), 14)
+	testing.expect_value(t, block_light_at(&world, {5, 1, 2}), 12)
 	// Without its pole the lamp is unpowered, and its light goes out
 	// through the removal queue.
 	testing.expect(t, remove_entity(&world.entities, content.machines, pole))
@@ -281,7 +282,7 @@ test_lamp_lights_and_darkens_with_power :: proc(t: ^testing.T) {
 	place_test_entity(&world, content, "small_pole", {0, 1, 0})
 	tick_test_entities(&world, content, 1)
 	propagate_light(&world, content.blocks, 100_000)
-	testing.expect_value(t, block_light_at(&world, {2, 1, 2}), 14)
+	testing.expect_value(t, block_light_at(&world, {2, 1, 2}), 15)
 	testing.expect(t, remove_entity(&world.entities, content.machines, lamp))
 	tick_test_entities(&world, content, 1)
 	propagate_light(&world, content.blocks, 100_000)

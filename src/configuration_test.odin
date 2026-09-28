@@ -237,6 +237,7 @@ test_settings_file_round_trip :: proc(t: ^testing.T) {
 	settings.vsync = false
 	settings.frame_rate_cap = 144
 	settings.weather = false
+	settings.shadows = true
 	settings.head_bob = false
 	settings.master_volume = 0.55
 	settings.effects_volume = 0.25
@@ -342,6 +343,7 @@ test_configuration_display_settings :: proc(t: ^testing.T) {
 		{"settings = {frame_rate_cap = 59.94}", "settings.frame_rate_cap must be a whole number"},
 		{`settings = {vsync = "on"}`, "settings.vsync must be a boolean"},
 		{`settings = {weather = "on"}`, "settings.weather must be a boolean"},
+		{`settings = {shadows = "on"}`, "settings.shadows must be a boolean"},
 		{`settings = {head_bob = "on"}`, "settings.head_bob must be a boolean"},
 	}
 	for case_value in invalid {

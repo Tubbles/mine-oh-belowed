@@ -21,7 +21,8 @@ QUAD_INDEX_COUNT :: 6
 // shader can repeat the tile with fract(). tile_origins holds the atlas
 // UV of the tile's corner, the same for all four vertices of a quad.
 // tangents is filled in water parts only: the cell's flow direction in x
-// and z, the vertex's shore value, and 0 (water_tangent).
+// and z, the vertex's shore value, and 0 (water_tangent). normals carries
+// the vertex's red, green and blue block light (block_light_normal).
 Mesh_Part :: struct {
 	positions:    [dynamic][3]f32,
 	texcoords:    [dynamic][2]f32,
@@ -29,6 +30,7 @@ Mesh_Part :: struct {
 	colors:       [dynamic][4]u8,
 	indices:      [dynamic]u16,
 	tangents:     [dynamic][4]f32,
+	normals:      [dynamic][3]f32,
 }
 
 // flames holds the cells of light emitting posts (torches), where the
@@ -51,7 +53,7 @@ Mesh_Input :: struct {
 
 Mesh_Cell :: struct {
 	block: Block_Id,
-	light: u8,
+	light: u16,
 }
 
 // What a visible face looks like. Faces merge only when their keys are
@@ -339,6 +341,7 @@ make_mesh_part :: proc(allocator := context.allocator) -> Mesh_Part {
 		colors = make([dynamic][4]u8, allocator),
 		indices = make([dynamic]u16, allocator),
 		tangents = make([dynamic][4]f32, allocator),
+		normals = make([dynamic][3]f32, allocator),
 	}
 }
 
@@ -371,7 +374,8 @@ append_quad :: proc(part: ^Mesh_Part, direction: Direction, corners: [4][3]f32, 
 		append(&part.positions, corner)
 		append(&part.texcoords, face_texcoord(direction, corner, bounds[0], bounds[1]))
 		append(&part.tile_origins, tile_origin)
-		append(&part.colors, rectangle.key.corners[index])
+		append(&part.colors, rectangle.key.corners[index].color)
+		append(&part.normals, block_light_normal(rectangle.key.corners[index]))
 	}
 	order := direction_is_positive(direction) ? positive_quad_indices : negative_quad_indices
 	for index in order {
@@ -467,7 +471,8 @@ append_shaped_quad :: proc(part: ^Mesh_Part, input: Mesh_Input, local: Local_Coo
 		append(&part.positions, origin + corner)
 		append(&part.texcoords, texcoords[index])
 		append(&part.tile_origins, tile_origin)
-		append(&part.colors, sway_vertex_light(light[index], corner, sways))
+		append(&part.colors, sway_vertex_light(light[index], corner, sways).color)
+		append(&part.normals, block_light_normal(light[index]))
 	}
 	for index in positive_quad_indices {
 		append(&part.indices, base + index)
@@ -546,6 +551,7 @@ destroy_mesh_parts :: proc(parts: [dynamic]Mesh_Part) {
 		delete(part.colors)
 		delete(part.indices)
 		delete(part.tangents)
+		delete(part.normals)
 	}
 	delete(parts)
 }

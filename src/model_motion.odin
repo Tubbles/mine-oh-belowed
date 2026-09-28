@@ -256,13 +256,14 @@ light_curve :: proc(level: u8) -> f32 {
 	return fraction / (4 - 3 * fraction)
 }
 
-// A packed light byte (sky high, block low) to the brightness of a model
-// per colour channel, combined like chunk.fs: sky light scaled by the day
-// factor and coloured by the sky tint, plus block light, at most 1 and
-// never below MINIMUM_MODEL_BRIGHTNESS.
-model_light_tint :: proc(light: u8, day_factor: f32, sky_tint: [3]f32) -> [3]f32 {
+// A packed light value (sky, red, green, blue, world_light.odin) to the
+// brightness of a model per colour channel, combined like chunk.fs: sky
+// light scaled by the day factor and coloured by the sky tint, plus the
+// block light of the same colour channel, at most 1 and never below
+// MINIMUM_MODEL_BRIGHTNESS.
+model_light_tint :: proc(light: u16, day_factor: f32, sky_tint: [3]f32) -> [3]f32 {
 	sky := light_curve(light_level(light, .Sky)) * day_factor * sky_tint
-	block := light_curve(light_level(light, .Block))
+	block := [3]f32{light_curve(light_level(light, .Red)), light_curve(light_level(light, .Green)), light_curve(light_level(light, .Blue))}
 	return linalg.clamp(sky + block, MINIMUM_MODEL_BRIGHTNESS, 1)
 }
 

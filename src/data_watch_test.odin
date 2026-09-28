@@ -22,6 +22,8 @@ test_data_files_fall_into_their_categories :: proc(t: ^testing.T) {
 		{"shaders/chunk.vs", .Shaders},
 		{"shaders/water.fs", .Shaders},
 		{"shaders/water.vs", .Shaders},
+		{"shaders/shadow.fs", .Shaders},
+		{"shaders/shadow.vs", .Shaders},
 		{"shaders/sky.fs", .Ignored},
 		{"fonts/fonts.sjson", .Fonts},
 		{"fonts/exo_2/Exo2[wght].ttf", .Fonts},

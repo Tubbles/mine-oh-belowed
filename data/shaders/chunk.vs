@@ -2,7 +2,8 @@
 
 // Chunk vertex shader (work item 0005). Attribute and matrix names are the
 // raylib defaults, so DrawMesh binds them without extra code. The vertex
-// colour carries light and occlusion (packing in chunk.fs).
+// colour carries sky light and occlusion, the normal the red, green and
+// blue block light (packing in chunk.fs).
 //
 // Wind (work item 0063): the vertex colour's alpha is 1 for rigid
 // vertices and lower for those that sway (the upper vertices of cross
@@ -16,6 +17,7 @@ in vec3 vertexPosition;
 in vec2 vertexTexCoord;
 in vec2 vertexTexCoord2;
 in vec4 vertexColor;
+in vec3 vertexNormal;
 
 uniform mat4 mvp;
 uniform mat4 matModel;
@@ -28,6 +30,7 @@ uniform float wind_strength;
 out vec2 fragment_texcoord;
 out vec2 fragment_tile_origin;
 out vec4 fragment_color;
+out vec3 fragment_block_light;
 out float fragment_distance;
 out vec3 fragment_world_position;
 
@@ -54,6 +57,7 @@ void main()
     fragment_texcoord = vertexTexCoord;
     fragment_tile_origin = vertexTexCoord2;
     fragment_color = vertexColor;
+    fragment_block_light = vertexNormal;
     fragment_distance = length(world_position.xyz - camera_position);
     fragment_world_position = world_position.xyz;
     gl_Position = mvp * vec4(position, 1.0);

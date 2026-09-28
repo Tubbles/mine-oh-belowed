@@ -110,16 +110,17 @@ reload_developer_kits :: proc(state: ^Frame_State) -> string {
 	return ""
 }
 
-// Both pairs, the chunk shader and the water shader (work item 0065): a
-// pair that does not compile keeps its old shader, the other still
-// reloads.
+// Every pair, the chunk, the water (work item 0065) and the shadow shader
+// (work item 0072): a pair that does not compile keeps its old shader,
+// the others still reload.
 reload_shaders :: proc(state: ^Frame_State) -> string {
 	capture: Log_Capture
 	begin_log_capture(&capture)
 	chunk_reloaded := reload_chunk_shader(&state.renderer, state.data_directory)
 	water_reloaded := reload_water_shader(&state.renderer.water, state.renderer.atlas_layout, state.data_directory)
+	shadow_reloaded := reload_shadow_shader(&state.renderer.shadows, state.data_directory)
 	problem := end_log_capture(&capture, "a shader did not load")
-	return chunk_reloaded && water_reloaded ? "" : problem
+	return chunk_reloaded && water_reloaded && shadow_reloaded ? "" : problem
 }
 
 // Every machine's mesh and the player's limbs (work item 0066) are made

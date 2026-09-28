@@ -133,11 +133,11 @@ data_file_category :: proc(relative_path: string) -> Data_File_Category {
 	return .Ignored
 }
 
-// The chunk and the water shader pairs (render_chunks.odin,
-// render_water.odin).
+// The chunk, the water and the shadow shader pairs (render_chunks.odin,
+// render_water.odin, render_shadows.odin).
 is_shader_file_name :: proc(name: string) -> bool {
 	switch name {
-	case "chunk.vs", "chunk.fs", "water.vs", "water.fs":
+	case "chunk.vs", "chunk.fs", "water.vs", "water.fs", "shadow.vs", "shadow.fs":
 		return true
 	}
 	return false

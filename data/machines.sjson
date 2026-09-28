@@ -151,7 +151,8 @@
 // Power switch: a 1 by 1 by 1 pole without a supply volume that joins the
 // networks it wires while on and splits them while off.
 // Lamp: electric_power_kilowatts and light_level, the block light it
-// gives while its network is satisfied above half.
+// gives while its network is satisfied above half, and optionally
+// light_color as for blocks (blocks.sjson), white when left out.
 // Crafting machines (work items 0021 and 0026): speed, recipe_maker (the
 // made_in category of recipes.sjson it makes: assembler, crusher, washer,
 // alloy_furnace, refinery, cracking, chemistry, gasifier or electrolysis) and either
@@ -652,7 +653,8 @@ machines = [
 		kind = "lamp"
 		footprint = {width = 1, depth = 1, height = 1}
 		electric_power_kilowatts = 5
-		light_level = 14
+		light_level = 15
+		light_color = [14, 14, 15]
 	}
 	{
 		id = "assembler_1"

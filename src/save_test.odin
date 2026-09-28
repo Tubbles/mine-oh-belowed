@@ -424,8 +424,8 @@ test_saved_torch_lit_cave_is_lit_after_load :: proc(t: ^testing.T) {
 	}
 	world_set_block(&dug, centre, torch)
 	settle_world(t, &dug, registry, 0)
-	testing.expect_value(t, block_light_at(&dug, centre), 14)
-	testing.expect_value(t, block_light_at(&dug, centre + {3, 0, 0}), 11)
+	testing.expect_value(t, block_light_at(&dug, centre), 15)
+	testing.expect_value(t, block_light_at(&dug, centre + {3, 0, 0}), 12)
 
 	loaded: World
 	defer destroy_world(&loaded)
@@ -435,8 +435,8 @@ test_saved_torch_lit_cave_is_lit_after_load :: proc(t: ^testing.T) {
 	testing.expect(t, chunk.modified)
 	testing.expect_value(t, world_get_block(&loaded, centre), torch)
 	settle_world(t, &loaded, registry, 0)
-	testing.expect_value(t, block_light_at(&loaded, centre), 14)
-	testing.expect_value(t, block_light_at(&loaded, centre + {3, 0, 0}), 11)
+	testing.expect_value(t, block_light_at(&loaded, centre), 15)
+	testing.expect_value(t, block_light_at(&loaded, centre + {3, 0, 0}), 12)
 	testing.expect(t, slice.equal(chunk.light[:], dug.chunks[coordinate].light[:]), "the relit chunk has the light of the dug one")
 }
 

@@ -104,7 +104,7 @@ make_test_world :: proc(coordinates: []Chunk_Coordinate) -> World {
 	world.entities.schematic_crates.free = make([dynamic]u32, context.temp_allocator)
 	world.crate_sites = make([dynamic]Crate_Site, context.temp_allocator)
 	world.entities.electric_networks.allocator = context.temp_allocator
-	world.entity_lights = make(map[World_Coordinate]u8, context.temp_allocator)
+	world.entity_lights = make(map[World_Coordinate]Light_Color, context.temp_allocator)
 	for coordinate in coordinates {
 		chunk := new(Chunk, context.temp_allocator)
 		chunk.coordinate = coordinate

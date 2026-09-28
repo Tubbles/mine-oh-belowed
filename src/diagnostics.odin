@@ -466,9 +466,11 @@ light_statistics_text :: proc(state: Frame_State) -> string {
 	player := simulation.players[0]
 	light := player.target.hit ? world_get_light(&world, player.target.adjacent) : 0
 	return fmt.tprintf(
-		"light sky %d block %d  day %.2f  queued light %d chunks %d water %d",
+		"light sky %d block %d %d %d  day %.2f  queued light %d chunks %d water %d",
 		light_level(light, .Sky),
-		light_level(light, .Block),
+		light_level(light, .Red),
+		light_level(light, .Green),
+		light_level(light, .Blue),
 		day_factor(daylight_blend(simulation_day_ticks(simulation), simulation.day_length_ticks)),
 		pending_light_nodes(world.lighting),
 		queue.len(world.lighting.arrived_chunks),

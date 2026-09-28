@@ -10,13 +10,13 @@ BORDER_SIZE :: CHUNK_SIZE + 2
 BORDER_CELL_COUNT :: BORDER_SIZE * BORDER_SIZE * BORDER_SIZE
 // Cells of missing chunks read as air under open sky. Missing chunks only
 // remain at the load boundary, which the fog hides.
-MISSING_CHUNK_LIGHT :: u8(MAXIMUM_LIGHT << 4)
+MISSING_CHUNK_LIGHT :: u16(MAXIMUM_LIGHT) << 12
 
 // Indexed by local coordinates from -1 to CHUNK_SIZE on every axis. Only
 // the shell is filled, the inside is the chunk itself.
 Chunk_Border :: struct {
 	blocks: [BORDER_CELL_COUNT]Block_Id,
-	light:  [BORDER_CELL_COUNT]u8,
+	light:  [BORDER_CELL_COUNT]u16,
 }
 
 border_index :: proc(local: Local_Coordinate) -> int {

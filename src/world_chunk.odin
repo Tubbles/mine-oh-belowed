@@ -10,19 +10,19 @@ World_Coordinate :: distinct [3]i32
 // Block position inside a chunk, each component 0 to CHUNK_SIZE - 1.
 Local_Coordinate :: distinct [3]i32
 
-// light holds sky light in the high nibble and block light in the low
-// nibble, 0 to MAXIMUM_LIGHT each (world_light.odin).
+// light holds four nibbles, from the highest: sky, red, green and blue
+// block light, 0 to MAXIMUM_LIGHT each (world_light.odin).
 Chunk :: struct {
 	coordinate: Chunk_Coordinate,
 	blocks:     [CHUNK_BLOCK_COUNT]Block_Id,
-	light:      [CHUNK_BLOCK_COUNT]u8,
+	light:      [CHUNK_BLOCK_COUNT]u16,
 	dirty:      bool,
 	// Differs from what generation makes, so a save stores it (save_world.odin).
 	modified:   bool,
 }
 
 // Chunks are heap allocated and referenced by pointer, so growing the map
-// never moves a 96 KiB chunk and pointers held across a frame stay valid.
+// never moves a 128 KiB chunk and pointers held across a frame stay valid.
 // Veins are entities registered once, when the first chunk of a chunk
 // column they overlap is loaded, and they stay when chunks unload.
 // Every world_set_block is recorded in block_changes, and the next
@@ -45,7 +45,7 @@ World :: struct {
 	block_changes:  [dynamic]Block_Change,
 	lighting:       Lighting,
 	// Block light sources that are entities, by cell (world_light.odin).
-	entity_lights:  map[World_Coordinate]u8,
+	entity_lights:  map[World_Coordinate]Light_Color,
 	water:          Water_Flow,
 	// Leaves waiting to decay after a felling (tree_felling.odin).
 	leaf_decay:     Leaf_Decay,

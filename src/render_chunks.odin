@@ -1,5 +1,6 @@
 package game
 
+import "core:math"
 import "core:os"
 import "core:strings"
 import rl "vendor:raylib"
@@ -11,6 +12,11 @@ CHUNK_FRAGMENT_SHADER_PATH :: "shaders/chunk.fs"
 // The fog starts at this share of its end distance (fog_distances).
 FOG_START_SHARE :: 0.6
 CAMERA_FIELD_OF_VIEW_DEGREES :: 70.0
+// Block light flickers like torchlight (work item 0072): two sines of the
+// render time with these periods, between LIGHT_FLICKER_MINIMUM and 1.
+LIGHT_FLICKER_FIRST_SECONDS :: 0.17
+LIGHT_FLICKER_SECOND_SECONDS :: 0.41
+LIGHT_FLICKER_MINIMUM :: 0.96
 
 // One raylib mesh per part: a chunk only needs more than one when it
 // exceeds the u16 index range (MESH_PART_VERTEX_LIMIT). water_meshes are
@@ -37,6 +43,10 @@ Chunk_Renderer :: struct {
 	wind_strength_location:         i32,
 	cloud_offset_location:          i32,
 	cloud_shadow_strength_location: i32,
+	flicker_location:               i32,
+	shadow_uniforms:                Shadow_Uniforms,
+	// The sun shadows' depth pass (render_shadows.odin, work item 0072).
+	shadows:                        Shadow_Renderer,
 	// The sky pass (render_sky.odin) lives with the chunks it sits behind.
 	sky:                            Sky_Renderer,
 	// The water pass (render_water.odin, work item 0065).
@@ -109,6 +119,12 @@ init_chunk_renderer :: proc(registry: Block_Registry, data_directory: string) ->
 		rl.UnloadShader(shader)
 		return {}, false
 	}
+	shadow_shader, shadow_loaded := load_shadow_shader(data_directory)
+	if !shadow_loaded {
+		rl.UnloadShader(shader)
+		rl.UnloadShader(water_shader)
+		return {}, false
+	}
 	renderer.atlas_layout = atlas_layout_for_block_count(len(registry.definitions))
 	renderer.material = rl.LoadMaterialDefault()
 	use_chunk_shader(&renderer, shader)
@@ -118,6 +134,7 @@ init_chunk_renderer :: proc(registry: Block_Registry, data_directory: string) ->
 	rl.SetMaterialTexture(&renderer.material, .METALNESS, upload_cloud_texture())
 	renderer.sky = init_sky_renderer()
 	renderer.water = init_water_renderer(water_shader, chunk_atlas_texture(renderer), renderer.atlas_layout)
+	renderer.shadows = init_shadow_renderer(shadow_shader)
 	apply_daylight(&renderer, day_sky_at(NOON_FRACTION, 0))
 	return renderer, true
 }
@@ -139,8 +156,10 @@ use_chunk_shader :: proc(renderer: ^Chunk_Renderer, shader: rl.Shader) {
 	renderer.wind_strength_location = rl.GetShaderLocation(shader, "wind_strength")
 	renderer.cloud_offset_location = rl.GetShaderLocation(shader, "cloud_offset")
 	renderer.cloud_shadow_strength_location = rl.GetShaderLocation(shader, "cloud_shadow_strength")
+	renderer.flicker_location = rl.GetShaderLocation(shader, "flicker")
 	// DrawMesh binds the material's second map to this location.
 	shader.locs[rl.ShaderLocationIndex.MAP_METALNESS] = rl.GetShaderLocation(shader, "cloud_texture")
+	renderer.shadow_uniforms = shadow_uniform_locations(shader)
 	renderer.material.shader = shader
 }
 
@@ -175,7 +194,8 @@ clone_for_raylib :: proc(values: []$T) -> [^]T {
 	return raw_data(copied)
 }
 
-// Water parts carry a tangent per vertex (water_tangent), the others none.
+// Every part carries its block light in the normals (block_light_normal);
+// water parts carry a tangent per vertex (water_tangent), the others none.
 upload_mesh_part :: proc(part: Mesh_Part) -> rl.Mesh {
 	mesh := rl.Mesh {
 		vertexCount   = i32(len(part.positions)),
@@ -184,6 +204,7 @@ upload_mesh_part :: proc(part: Mesh_Part) -> rl.Mesh {
 		texcoords     = cast([^]f32)clone_for_raylib(part.texcoords[:]),
 		texcoords2    = cast([^]f32)clone_for_raylib(part.tile_origins[:]),
 		colors        = cast([^]u8)clone_for_raylib(part.colors[:]),
+		normals       = cast([^]f32)clone_for_raylib(part.normals[:]),
 		indices       = clone_for_raylib(part.indices[:]),
 	}
 	if len(part.tangents) > 0 {
@@ -281,8 +302,16 @@ apply_daylight :: proc(renderer: ^Chunk_Renderer, sky: Day_Sky) {
 	rl.SetShaderValue(water.material.shader, water.sky_tint_location, &tint, .VEC3)
 }
 
-// The weather's fog distances (on the water material too), plant sway and
-// cloud shadows, once per frame; seconds is the render time.
+// Every block light's brightness factor at the render time, 0.96 to 1.
+light_flicker :: proc(seconds: f64) -> f32 {
+	first := math.sin(seconds * math.TAU / LIGHT_FLICKER_FIRST_SECONDS)
+	second := math.sin(seconds * math.TAU / LIGHT_FLICKER_SECOND_SECONDS)
+	return f32(1 - (1 - LIGHT_FLICKER_MINIMUM) * (2 - first - second) / 4)
+}
+
+// The weather's fog distances (on the water material too), plant sway,
+// cloud shadows and the block light's flicker, once per frame; seconds is
+// the render time.
 apply_weather :: proc(renderer: ^Chunk_Renderer, look: Weather_Look, seconds: f64) {
 	shader := renderer.material.shader
 	fog_start, fog_end := weather_fog_distances(LOAD_RADIUS_HORIZONTAL, look.fog_scale)
@@ -290,13 +319,16 @@ apply_weather :: proc(renderer: ^Chunk_Renderer, look: Weather_Look, seconds: f6
 	wind_strength := look.wind_strength
 	offset := cloud_offset(seconds)
 	shadow := look.cloud_shadow_strength
+	flicker := light_flicker(seconds)
 	rl.SetShaderValue(shader, renderer.fog_start_location, &fog_start, .FLOAT)
 	rl.SetShaderValue(shader, renderer.fog_end_location, &fog_end, .FLOAT)
 	rl.SetShaderValue(shader, renderer.wind_time_location, &wind, .FLOAT)
 	rl.SetShaderValue(shader, renderer.wind_strength_location, &wind_strength, .FLOAT)
 	rl.SetShaderValue(shader, renderer.cloud_offset_location, &offset, .VEC2)
 	rl.SetShaderValue(shader, renderer.cloud_shadow_strength_location, &shadow, .FLOAT)
+	rl.SetShaderValue(shader, renderer.flicker_location, &flicker, .FLOAT)
 	water := &renderer.water
+	rl.SetShaderValue(water.material.shader, water.flicker_location, &flicker, .FLOAT)
 	rl.SetShaderValue(water.material.shader, water.fog_start_location, &fog_start, .FLOAT)
 	rl.SetShaderValue(water.material.shader, water.fog_end_location, &fog_end, .FLOAT)
 }
@@ -333,12 +365,14 @@ unload_all_chunk_meshes :: proc(renderer: ^Chunk_Renderer) {
 }
 
 // UnloadMaterial also unloads the shader and the atlas texture, which the
-// water material shares, so that goes first.
+// water material shares, so that goes first, and the shadow map in both
+// materials' normal slot, so the shadows go before either.
 destroy_chunk_renderer :: proc(renderer: ^Chunk_Renderer) {
 	for _, chunk_render in renderer.chunk_meshes {
 		unload_chunk_render(chunk_render)
 	}
 	delete(renderer.chunk_meshes)
+	destroy_shadow_renderer(renderer)
 	destroy_water_renderer(&renderer.water)
 	rl.UnloadMaterial(renderer.material)
 	destroy_sky_renderer(&renderer.sky)

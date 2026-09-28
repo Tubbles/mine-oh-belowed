@@ -17,7 +17,7 @@ column_index :: proc(x, z: i32) -> int {
 	return int(x) + int(z) * CHUNK_SIZE
 }
 
-fill_chunk_light :: proc(chunk: ^Chunk, light: u8) {
+fill_chunk_light :: proc(chunk: ^Chunk, light: u16) {
 	for &value in chunk.light {
 		value = light
 	}

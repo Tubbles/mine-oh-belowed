@@ -162,6 +162,14 @@ test_the_sky_tint_colours_only_sky_light :: proc(t: ^testing.T) {
 	expect_near_point(t, model_light_tint(pack_light(12, 12), 1, tint), {1, 0.75, 0.625}, "both")
 }
 
+// Coloured block light (work item 0072) tints a model per colour channel.
+@(test)
+test_the_light_tint_takes_the_block_light_colour :: proc(t: ^testing.T) {
+	white := [3]f32{1, 1, 1}
+	expect_near_point(t, model_light_tint(pack_light(0, {15, 0, 0}), 1, white), {1, MINIMUM_MODEL_BRIGHTNESS, MINIMUM_MODEL_BRIGHTNESS}, "red light")
+	expect_near_point(t, model_light_tint(pack_light(12, {0, 12, 0}), 1, white), {0.5, 1, 0.5}, "sky and green light")
+}
+
 @(test)
 test_the_light_comes_from_above_or_in_front :: proc(t: ^testing.T) {
 	// Above the centre of a 3 by 2 by 3 machine.

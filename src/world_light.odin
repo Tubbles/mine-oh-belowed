@@ -2,10 +2,14 @@ package game
 
 import "core:container/queue"
 
-// Sky light and block light, Minecraft style: 16 levels each, stored as
-// the two nibbles of Chunk.light. Light spreads to the six face neighbours
-// that are not opaque and loses one level per block, except sky light at
-// full strength, which falls straight down without loss.
+// Sky light and coloured block light, Minecraft style: 16 levels on each
+// of four channels (sky, red, green, blue), stored as the four nibbles of
+// Chunk.light. Light spreads to the six face neighbours that are not
+// opaque and loses one level per block on every channel alike, except sky
+// light at full strength, which falls straight down without loss. The
+// channels never mix while spreading: a cell holds the brightest level
+// that reaches it per channel, so two emitters of different colours mix by
+// taking the larger level per channel (work item 0072).
 //
 // Generation workers compute a chunk's sky light from its own columns
 // (world_light_sky.odin). Everything that crosses chunk borders or follows
@@ -16,19 +20,39 @@ import "core:container/queue"
 // not depend on the order the nodes are visited in.
 //
 // Besides blocks, entities can emit block light: World.entity_lights maps
-// a cell to its level (a lit lamp, power_machine.odin). A cell emits the
-// brighter of its block and its entity light.
+// a cell to its colour (a lit lamp, power_machine.odin). A cell emits the
+// brighter of its block and its entity light per channel.
 
 MAXIMUM_LIGHT :: 15
-// Nodes taken from the removal and addition queues per tick together.
+// Nodes taken from the removal and addition queues per tick together, over
+// all channels: a white emitter costs three times a single channel.
 MAXIMUM_LIGHT_STEPS_PER_TICK :: 4096
 // Newly loaded chunks whose borders are compared with their neighbours
 // per tick. One comparison visits 2 * 6 * CHUNK_SIZE * CHUNK_SIZE cells.
 MAXIMUM_LIGHT_CHUNK_SEEDS_PER_TICK :: 4
 
+// The order is the nibble order of a packed light value, sky highest.
 Light_Channel :: enum u8 {
 	Sky,
-	Block,
+	Red,
+	Green,
+	Blue,
+}
+
+BLOCK_LIGHT_CHANNELS :: bit_set[Light_Channel]{.Red, .Green, .Blue}
+EVERY_LIGHT_CHANNEL :: bit_set[Light_Channel]{.Sky, .Red, .Green, .Blue}
+
+// Block light emitted or held: red, green, blue, 0 to MAXIMUM_LIGHT each.
+Light_Color :: [3]u8
+
+// The three block light nibbles of a packed light value. Most cells hold
+// no block light, and the hot loops skip those channels then.
+BLOCK_LIGHT_MASK :: u16(0x0FFF)
+
+// The channels worth visiting for a packed light value: the sky alone
+// when it holds no block light.
+held_light_channels :: proc(light: u16) -> bit_set[Light_Channel] {
+	return light & BLOCK_LIGHT_MASK == 0 ? {.Sky} : EVERY_LIGHT_CHANNEL
 }
 
 // For removals, value is the level the cell had before it was cleared.
@@ -57,16 +81,40 @@ destroy_lighting :: proc(lighting: ^Lighting) {
 	queue.destroy(&lighting.arrived_chunks)
 }
 
-light_level :: proc(light: u8, channel: Light_Channel) -> u8 {
-	return channel == .Sky ? light >> 4 : light & 0x0F
+light_shift :: proc(channel: Light_Channel) -> u16 {
+	return u16(3 - u8(channel)) * 4
 }
 
-with_light_level :: proc(light: u8, channel: Light_Channel, level: u8) -> u8 {
-	return channel == .Sky ? light & 0x0F | level << 4 : light & 0xF0 | level
+light_level :: proc(light: u16, channel: Light_Channel) -> u8 {
+	return u8(light >> light_shift(channel) & 0x0F)
 }
 
-pack_light :: proc(sky, block: u8) -> u8 {
-	return sky << 4 | block
+with_light_level :: proc(light: u16, channel: Light_Channel, level: u8) -> u16 {
+	shift := light_shift(channel)
+	return light & ~(u16(0x0F) << shift) | u16(level) << shift
+}
+
+// A plain level as block, pack_light(sky, 9), is white light.
+pack_light :: proc(sky: u8, block: Light_Color) -> u16 {
+	return u16(sky) << 12 | u16(block.r) << 8 | u16(block.g) << 4 | u16(block.b)
+}
+
+unpack_block_light :: proc(light: u16) -> Light_Color {
+	return {light_level(light, .Red), light_level(light, .Green), light_level(light, .Blue)}
+}
+
+// A colour's level on one channel, 0 on the sky channel.
+color_channel_level :: proc(color: Light_Color, channel: Light_Channel) -> u8 {
+	return channel == .Sky ? 0 : color[int(channel) - 1]
+}
+
+brighter_light_color :: proc(first, second: Light_Color) -> Light_Color {
+	return {max(first.r, second.r), max(first.g, second.g), max(first.b, second.b)}
+}
+
+// A colour's largest channel, the one level that stands for it.
+light_color_level :: proc(color: Light_Color) -> u8 {
+	return max(color.r, color.g, color.b)
 }
 
 // Full sky light keeps its level going down, everything else loses one.
@@ -101,8 +149,8 @@ cell_block :: proc(cell: World_Cell) -> Block_Id {
 	return cell.chunk.blocks[cell.index]
 }
 
-// Missing chunks read as 0 on both channels.
-world_get_light :: proc(world: ^World, position: World_Coordinate) -> u8 {
+// Missing chunks read as 0 on every channel.
+world_get_light :: proc(world: ^World, position: World_Coordinate) -> u16 {
 	cell, loaded := world_cell(world, position)
 	if !loaded {
 		return 0
@@ -133,12 +181,27 @@ remove_cell_light :: proc(world: ^World, position: World_Coordinate, cell: World
 	push_removal(&world.lighting, position, channel, level)
 }
 
-// Neighbours holding light spread it into the cell again.
-queue_lit_neighbours :: proc(world: ^World, position: World_Coordinate, channel: Light_Channel) {
+// Neighbours holding light on any of channels spread it into the cell again.
+queue_lit_neighbours :: proc(world: ^World, position: World_Coordinate, channels: bit_set[Light_Channel]) {
 	for direction in Direction {
 		neighbour := position + World_Coordinate(direction_offsets[direction])
-		if cell, loaded := world_cell(world, neighbour); loaded && cell_light(cell, channel) > 0 {
-			push_addition(&world.lighting, neighbour, channel)
+		cell := world_cell(world, neighbour) or_continue
+		for channel in channels {
+			if cell_light(cell, channel) > 0 {
+				push_addition(&world.lighting, neighbour, channel)
+			}
+		}
+	}
+}
+
+// Clears the cell's three block channels, queueing the removal of what
+// they lit, and gives the cell its own emission back.
+reset_cell_emission :: proc(world: ^World, position: World_Coordinate, cell: World_Cell, emission: Light_Color) {
+	for channel in BLOCK_LIGHT_CHANNELS {
+		remove_cell_light(world, position, cell, channel)
+		if level := color_channel_level(emission, channel); level > 0 {
+			set_cell_light(world, position, cell, channel, level)
+			push_addition(&world.lighting, position, channel)
 		}
 	}
 }
@@ -153,57 +216,52 @@ light_block_changed :: proc(world: ^World, registry: Block_Registry, position: W
 	}
 	block := cell_block(cell)
 	opaque := block_is_opaque(registry, block)
-	emission := block_light_emission(registry, block)
-	if opaque == block_is_opaque(registry, previous) && emission == block_light_emission(registry, previous) {
+	emission := block_light_color(registry, block)
+	if opaque == block_is_opaque(registry, previous) && emission == block_light_color(registry, previous) {
 		return
 	}
-	remove_cell_light(world, position, cell, .Block)
-	if emission > 0 {
-		set_cell_light(world, position, cell, .Block, emission)
-		push_addition(&world.lighting, position, .Block)
-	}
+	reset_cell_emission(world, position, cell, emission)
 	if opaque {
 		remove_cell_light(world, position, cell, .Sky)
 		return
 	}
-	queue_lit_neighbours(world, position, .Block)
-	queue_lit_neighbours(world, position, .Sky)
+	queue_lit_neighbours(world, position, EVERY_LIGHT_CHANNEL)
 }
 
-cell_emission :: proc(world: ^World, registry: Block_Registry, position: World_Coordinate, cell: World_Cell) -> u8 {
-	return max(block_light_emission(registry, cell_block(cell)), world.entity_lights[position] or_else 0)
+cell_emission :: proc(world: ^World, registry: Block_Registry, position: World_Coordinate, cell: World_Cell) -> Light_Color {
+	return brighter_light_color(block_light_color(registry, cell_block(cell)), world.entity_lights[position] or_else {})
 }
 
-// Turns an entity light source at position on (level above 0), off or to
-// another level: what it lit goes through the removal queue, and the
-// cell's own emission comes back through the addition queue.
-set_entity_light :: proc(world: ^World, position: World_Coordinate, level: u8) {
-	if (world.entity_lights[position] or_else 0) == level {
+// Turns an entity light source at position on (a colour above black), off
+// or to another colour: what it lit goes through the removal queue, and
+// the cell's own emission comes back through the addition queue.
+set_entity_light :: proc(world: ^World, position: World_Coordinate, color: Light_Color) {
+	if (world.entity_lights[position] or_else {}) == color {
 		return
 	}
-	if level == 0 {
+	if color == {} {
 		delete_key(&world.entity_lights, position)
 	} else {
-		world.entity_lights[position] = level
+		world.entity_lights[position] = color
 	}
 	cell, loaded := world_cell(world, position)
 	if !loaded {
 		return
 	}
-	remove_cell_light(world, position, cell, .Block)
-	if level > 0 {
-		set_cell_light(world, position, cell, .Block, level)
-		push_addition(&world.lighting, position, .Block)
-	}
-	queue_lit_neighbours(world, position, .Block)
+	reset_cell_emission(world, position, cell, color)
+	queue_lit_neighbours(world, position, BLOCK_LIGHT_CHANNELS)
 }
 
-// A cleared cell that emits light gets its own light back and spreads it.
+// A cleared cell that emits light on channel gets its own light back and
+// spreads it.
 restore_emission :: proc(world: ^World, registry: Block_Registry, position: World_Coordinate, cell: World_Cell, channel: Light_Channel) {
-	emission := cell_emission(world, registry, position, cell)
-	if channel == .Block && emission > 0 {
-		set_cell_light(world, position, cell, .Block, emission)
-		push_addition(&world.lighting, position, .Block)
+	if channel == .Sky {
+		return
+	}
+	level := color_channel_level(cell_emission(world, registry, position, cell), channel)
+	if level > 0 {
+		set_cell_light(world, position, cell, channel, level)
+		push_addition(&world.lighting, position, channel)
 	}
 }
 
@@ -266,8 +324,9 @@ seed_light_across :: proc(lighting: ^Lighting, registry: Block_Registry, from, t
 	if block_is_opaque(registry, cell_block(to)) {
 		return
 	}
-	for channel in Light_Channel {
-		if spread_level(channel, direction, cell_light(from, channel)) > cell_light(to, channel) {
+	from_light, to_light := from.chunk.light[from.index], to.chunk.light[to.index]
+	for channel in held_light_channels(from_light) {
+		if spread_level(channel, direction, light_level(from_light, channel)) > light_level(to_light, channel) {
 			push_addition(lighting, from_position, channel)
 		}
 	}
@@ -314,15 +373,21 @@ pending_light_nodes :: proc(lighting: Lighting) -> int {
 }
 
 // A cell that emits light gets its emission and spreads it, like a torch
-// placed there. For chunks that arrive with emitters in them.
+// placed there, on every channel where it is brighter than what the cell
+// holds. For chunks that arrive with emitters in them.
 seed_emitter :: proc(world: ^World, registry: Block_Registry, position: World_Coordinate) {
 	cell, loaded := world_cell(world, position)
-	emission := loaded ? cell_emission(world, registry, position, cell) : 0
-	if emission == 0 || emission <= cell_light(cell, .Block) {
+	if !loaded {
 		return
 	}
-	set_cell_light(world, position, cell, .Block, emission)
-	push_addition(&world.lighting, position, .Block)
+	emission := cell_emission(world, registry, position, cell)
+	for channel in BLOCK_LIGHT_CHANNELS {
+		level := color_channel_level(emission, channel)
+		if level > cell_light(cell, channel) {
+			set_cell_light(world, position, cell, channel, level)
+			push_addition(&world.lighting, position, channel)
+		}
+	}
 }
 
 // Light is not saved, so a chunk with saved blocks relights its light

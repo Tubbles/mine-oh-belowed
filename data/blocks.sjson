@@ -20,6 +20,9 @@
 // generator turns each into a 16 by 16 tile with a little per texel noise.
 // Solid blocks are opaque to light, every other block lets light through.
 // light_level (0 to 15, default 0) is the block light the block emits.
+// light_color (optional, [red, green, blue], 0 to 15 each) colours it:
+// its largest channel must equal light_level, and without it the light is
+// white, light_level on all three channels (work item 0072).
 // water_level (default 0) marks water: 8 is a source block, 7 to 1 are
 // flowing water, 7 next to a source and 1 at the far end of a spread.
 // Water needs one block for every level from 1 to 8 or none at all.
@@ -276,7 +279,8 @@ blocks = [
 		solid = false
 		hardness_seconds = 0.1
 		tool_tier = 0
-		light_level = 14
+		light_level = 15
+		light_color = [15, 11, 6]
 		sound_material = "wood"
 		texture = {top = [255, 200, 80], side = [150, 110, 60], bottom = [120, 90, 50]}
 	}

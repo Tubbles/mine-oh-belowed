@@ -185,16 +185,21 @@ test_mesh_texcoords_span_merged_quad :: proc(t: ^testing.T) {
 	testing.expect_value(t, part.tile_origins[0], expected_origin)
 }
 
-fill_chunk_light_levels :: proc(chunk: ^Chunk, sky, block: u8) {
+fill_chunk_light_levels :: proc(chunk: ^Chunk, sky: u8, block: Light_Color) {
 	for &value in chunk.light {
 		value = pack_light(sky, block)
 	}
 }
 
-expect_all_colours :: proc(t: ^testing.T, data: Chunk_Mesh_Data, expected: Vertex_Light) {
+// block is the expected block light in the normals, 0 to 1 per channel.
+expect_all_colours :: proc(t: ^testing.T, data: Chunk_Mesh_Data, expected: [4]u8, block: [3]f32 = {}) {
 	for part in data.parts {
+		testing.expect_value(t, len(part.normals), len(part.colors))
 		for colour in part.colors {
 			testing.expect_value(t, colour, expected)
+		}
+		for normal in part.normals {
+			testing.expect_value(t, normal, block)
 		}
 	}
 }
@@ -212,7 +217,29 @@ test_mesh_writes_light_of_lit_and_unlit_faces :: proc(t: ^testing.T) {
 
 	fill_chunk_light_levels(chunk, 0, 9)
 	dark := mesh_chunk(test_mesh_input(chunk), context.temp_allocator)
-	expect_all_colours(t, dark, {0, 9 * LIGHT_COLOUR_SCALE, 255, 255})
+	expect_all_colours(t, dark, {0, 0, 255, 255}, f32(9 * LIGHT_COLOUR_SCALE) / 255)
+}
+
+// Coloured block light (work item 0072): each vertex carries the red,
+// green and blue levels in its normal, averaged per channel like the sky
+// light, and the vertex colour does not change with it.
+@(test)
+test_mesh_writes_block_light_channels :: proc(t: ^testing.T) {
+	chunk := new(Chunk, context.temp_allocator)
+	chunk_set_block(chunk, {10, 10, 10}, TEST_STONE)
+	fill_chunk_light_levels(chunk, 0, {15, 11, 6})
+	data := mesh_chunk(test_mesh_input(chunk), context.temp_allocator)
+	expect_all_colours(t, data, {0, 0, 255, 255}, {1, f32(11 * LIGHT_COLOUR_SCALE) / 255, f32(6 * LIGHT_COLOUR_SCALE) / 255})
+
+	// Only the cell in front of the top face holds red light: each corner
+	// averages it with three dark cells, the other channels stay dark.
+	fill_chunk_light_levels(chunk, 0, 0)
+	chunk.light[local_to_index({10, 11, 10})] = pack_light(0, {MAXIMUM_LIGHT, 0, 0})
+	key := face_key(test_mesh_input(chunk), {10, 10, 10}, .Positive_Y)
+	for corner in key.corners {
+		testing.expect_value(t, corner, Vertex_Light{color = {0, 0, 255, 255}, block = {64, 0, 0}})
+		testing.expect_value(t, block_light_normal(corner), [3]f32{64.0 / 255, 0, 0})
+	}
 }
 
 // Only the cell in front of the top face is lit: each corner averages it
@@ -224,7 +251,7 @@ test_mesh_vertex_light_averages_cells :: proc(t: ^testing.T) {
 	chunk.light[local_to_index({10, 11, 10})] = pack_light(MAXIMUM_LIGHT, 0)
 	key := face_key(test_mesh_input(chunk), {10, 10, 10}, .Positive_Y)
 	for corner in key.corners {
-		testing.expect_value(t, corner, Vertex_Light{64, 0, 255, 255})
+		testing.expect_value(t, corner, Vertex_Light{color = {64, 0, 255, 255}})
 	}
 }
 
@@ -240,9 +267,9 @@ test_mesh_ambient_occlusion_darkens_corners :: proc(t: ^testing.T) {
 	key := face_key(test_mesh_input(chunk), {10, 10, 10}, .Positive_Y)
 	// The top face's u axis is z and its v axis is x, so corners 2 and 3
 	// lie towards +x.
-	testing.expect_value(t, key.corners[0], Vertex_Light{255, 0, 255, 255})
-	testing.expect_value(t, key.corners[2], Vertex_Light{255, 0, 2 * OCCLUSION_COLOUR_SCALE, 255})
-	testing.expect_value(t, key.corners[3], Vertex_Light{255, 0, 2 * OCCLUSION_COLOUR_SCALE, 255})
+	testing.expect_value(t, key.corners[0], Vertex_Light{color = {255, 0, 255, 255}})
+	testing.expect_value(t, key.corners[2], Vertex_Light{color = {255, 0, 2 * OCCLUSION_COLOUR_SCALE, 255}})
+	testing.expect_value(t, key.corners[3], Vertex_Light{color = {255, 0, 2 * OCCLUSION_COLOUR_SCALE, 255}})
 	testing.expect(t, !corners_uniform(key))
 	// The block at z 11 alone would merge with this one into one top quad.
 	data := mesh_chunk(test_mesh_input(chunk), context.temp_allocator)

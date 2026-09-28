@@ -19,6 +19,10 @@ Settings :: struct {
 	// Rain, fog, wind and cloud shadows (work item 0063); off keeps the
 	// weather clear, still and without shadows, for reduced motion.
 	weather:                   bool,
+	// Sun shadows on the terrain near the player (render_shadows.odin,
+	// work item 0072), a depth pass of their own; off by default and in
+	// the Steam Deck preset.
+	shadows:                   bool,
 	// The first person camera rises and falls with each step (work item
 	// 0066); off for reduced motion.
 	head_bob:                  bool,
@@ -65,6 +69,7 @@ DEFAULT_SETTINGS :: Settings {
 	frame_rate_cap            = 0,
 	ui_scale                  = 1,
 	weather                   = true,
+	shadows                   = false,
 	head_bob                  = true,
 	master_volume             = 0.8,
 	effects_volume            = 1,
