@@ -1,6 +1,6 @@
 # 0093 Focus navigation that follows rows and columns
 
-Status: todo
+Status: implemented
 Milestone: M11
 
 ## Goal
@@ -21,3 +21,6 @@ Couch report (2026-09-28): on the Developer screen, pressing right from "Fly mod
 ## Notes
 
 Files a subagent may touch: `src/ui_core.odin`, `src/ui_core_test.odin` (new or existing), `src/ui_audit_test.odin`, the docs above, this file.
+
+Implemented: `src/ui_core.odin` (`focus_extents_overlap`, `find_focus_in_line`, `find_focus_by_score`, `find_focus_neighbour` running them in turn), `src/ui_core_test.odin` (six tests: the Developer rows of two over three, two rows of three, a column of full width rows, a grid of slots, a taller neighbour in the row, the fallback to the nearest below), `doc/ui.md`, `doc/log/2026-09-28.md`. 959 tests pass.
+

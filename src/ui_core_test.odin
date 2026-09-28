@@ -55,6 +55,105 @@ test_focus_wraps_inside_the_panel :: proc(t: ^testing.T) {
 	testing.expect_value(t, widgets[index].id, 3)
 }
 
+// The id of the widget a step lands on, 0 for none.
+focus_step :: proc(widgets: []Ui_Widget, from_id: Ui_Id, direction: Ui_Direction) -> Ui_Id {
+	index, found := find_focus_neighbour(widgets, widget_index(widgets, from_id), direction)
+	return found ? widgets[index].id : 0
+}
+
+// A row of count columns across width at y, ids from first_id.
+append_focus_row :: proc(widgets: ^[dynamic]Ui_Widget, first_id: Ui_Id, count: int, y: f32) {
+	row := Ui_Rectangle{0, y, 960, UI_ROW_HEIGHT}
+	for index in 0 ..< count {
+		append(widgets, Ui_Widget{id = first_id + Ui_Id(index), panel = 1, rectangle = column(row, count, index, UI_GAP)})
+	}
+}
+
+// The Developer screen's toggles (couch report 2026-09-28): fly mode and
+// cheat speed on a row of two over a row of three. Right from fly mode
+// went to the middle of the row below, whose centre is nearer.
+@(test)
+test_focus_stays_in_the_developer_rows :: proc(t: ^testing.T) {
+	widgets: [dynamic]Ui_Widget
+	defer delete(widgets)
+	append_focus_row(&widgets, 1, 2, 0)
+	append_focus_row(&widgets, 11, 3, UI_ROW_HEIGHT + UI_GAP)
+	testing.expect_value(t, focus_step(widgets[:], 1, .Right), 2)
+	testing.expect_value(t, focus_step(widgets[:], 2, .Left), 1)
+	testing.expect_value(t, focus_step(widgets[:], 1, .Down), 11)
+	testing.expect_value(t, focus_step(widgets[:], 11, .Right), 12)
+	testing.expect_value(t, focus_step(widgets[:], 12, .Up), 1)
+	// The last of a row wraps to the first of its row, as before.
+	testing.expect_value(t, focus_step(widgets[:], 13, .Right), 11)
+}
+
+// Two rows of three buttons with a gap: rows and columns.
+@(test)
+test_focus_follows_two_rows_of_three :: proc(t: ^testing.T) {
+	widgets: [dynamic]Ui_Widget
+	defer delete(widgets)
+	append_focus_row(&widgets, 1, 3, 0)
+	append_focus_row(&widgets, 11, 3, UI_ROW_HEIGHT + UI_GAP)
+	testing.expect_value(t, focus_step(widgets[:], 1, .Right), 2)
+	testing.expect_value(t, focus_step(widgets[:], 2, .Right), 3)
+	testing.expect_value(t, focus_step(widgets[:], 1, .Down), 11)
+	testing.expect_value(t, focus_step(widgets[:], 2, .Down), 12)
+	testing.expect_value(t, focus_step(widgets[:], 13, .Up), 3)
+	testing.expect_value(t, focus_step(widgets[:], 3, .Right), 1)
+}
+
+// A settings column of full width rows steps row by row and wraps.
+@(test)
+test_focus_walks_a_column_of_full_rows :: proc(t: ^testing.T) {
+	widgets: [dynamic]Ui_Widget
+	defer delete(widgets)
+	for index in 0 ..< 4 {
+		append_focus_row(&widgets, Ui_Id(index + 1), 1, f32(index) * (UI_ROW_HEIGHT + UI_GAP))
+	}
+	testing.expect_value(t, focus_step(widgets[:], 1, .Down), 2)
+	testing.expect_value(t, focus_step(widgets[:], 3, .Up), 2)
+	testing.expect_value(t, focus_step(widgets[:], 4, .Down), 1)
+}
+
+// A grid of slots, 4 by 3, ids row * 10 + column.
+@(test)
+test_focus_walks_a_grid_of_slots :: proc(t: ^testing.T) {
+	widgets: [dynamic]Ui_Widget
+	defer delete(widgets)
+	for row in 0 ..< 3 {
+		for column_index in 0 ..< 4 {
+			rectangle := Ui_Rectangle{f32(column_index) * 68, f32(row) * 68, 64, 64}
+			append(&widgets, Ui_Widget{id = Ui_Id(row * 10 + column_index + 1), panel = 1, rectangle = rectangle})
+		}
+	}
+	testing.expect_value(t, focus_step(widgets[:], 1, .Right), 2)
+	testing.expect_value(t, focus_step(widgets[:], 2, .Down), 12)
+	testing.expect_value(t, focus_step(widgets[:], 23, .Up), 13)
+	testing.expect_value(t, focus_step(widgets[:], 14, .Left), 13)
+	testing.expect_value(t, focus_step(widgets[:], 4, .Right), 1)
+}
+
+// A taller neighbour whose centre sits off the focused widget's row
+// still counts as the row.
+@(test)
+test_focus_reaches_a_taller_neighbour_in_the_row :: proc(t: ^testing.T) {
+	widgets := [?]Ui_Widget {
+		{id = 1, panel = 1, rectangle = {0, 0, 100, 40}},
+		{id = 2, panel = 1, rectangle = {300, 20, 100, 200}},
+		// Nearer, but below the row.
+		{id = 3, panel = 1, rectangle = {150, 60, 100, 40}},
+	}
+	testing.expect_value(t, focus_step(widgets[:], 1, .Right), 2)
+}
+
+// Nothing in the widget's column below: the weighted score picks the
+// nearest widget below.
+@(test)
+test_focus_without_a_line_falls_back_to_the_nearest :: proc(t: ^testing.T) {
+	widgets := [?]Ui_Widget{test_widget(1, 0, 0), test_widget(2, 500, 100), test_widget(3, 150, 100)}
+	testing.expect_value(t, focus_step(widgets[:], 1, .Down), 3)
+}
+
 @(test)
 test_focus_without_candidate_stays :: proc(t: ^testing.T) {
 	widgets := [?]Ui_Widget{test_widget(1, 0, 0), test_widget(2, 200, 0, 2)}

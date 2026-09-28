@@ -450,9 +450,39 @@ focus_score :: proc(from, to: Ui_Rectangle, direction: Ui_Direction) -> (along: 
 	return
 }
 
-// The nearest widget of the focused widget's panel in the direction, or,
-// when there is none, the one farthest behind (wrapping to the far side).
-find_focus_neighbour :: proc(widgets: []Ui_Widget, focus_index: int, direction: Ui_Direction) -> (index: int, found: bool) {
+// Whether the two rectangles share some of their extent across the
+// direction: a row for left and right, a column for up and down.
+focus_extents_overlap :: proc(from, to: Ui_Rectangle, direction: Ui_Direction) -> bool {
+	if direction == .Left || direction == .Right {
+		return to.y < from.y + from.height && from.y < to.y + to.height
+	}
+	return to.x < from.x + from.width && from.x < to.x + to.width
+}
+
+// The first pass of the focus step: among the widgets of the focused
+// widget's panel ahead in the direction and in its row or column
+// (focus_extents_overlap), the nearest along the direction, ties to the
+// smallest sideways offset.
+find_focus_in_line :: proc(widgets: []Ui_Widget, focus_index: int, direction: Ui_Direction) -> (index: int, found: bool) {
+	from := widgets[focus_index]
+	best_along, best_perpendicular := max(f32), max(f32)
+	index = -1
+	for widget, candidate in widgets {
+		if candidate == focus_index || widget.panel != from.panel || !focus_extents_overlap(from.rectangle, widget.rectangle, direction) {
+			continue
+		}
+		along, perpendicular := focus_score(from.rectangle, widget.rectangle, direction)
+		if along > 0 && (along < best_along || (along == best_along && perpendicular < best_perpendicular)) {
+			best_along, best_perpendicular, index = along, perpendicular, candidate
+		}
+	}
+	return index, index >= 0
+}
+
+// The second pass: the nearest widget of the panel in the direction by
+// the weighted score, or, when there is none, the one farthest behind
+// (wrapping to the far side).
+find_focus_by_score :: proc(widgets: []Ui_Widget, focus_index: int, direction: Ui_Direction) -> (index: int, found: bool) {
 	from := widgets[focus_index]
 	best_ahead, best_behind := max(f32), max(f32)
 	index_ahead, index_behind := -1, -1
@@ -472,6 +502,17 @@ find_focus_neighbour :: proc(widgets: []Ui_Widget, focus_index: int, direction: 
 		return index_ahead, true
 	}
 	return index_behind, index_behind >= 0
+}
+
+// The next widget in the direction (work item 0093): the nearest in the
+// focused widget's row or column when one lies ahead there, so a step
+// right stays in the row even when the row below holds a nearer centre,
+// otherwise the weighted score across the panel with its wrap.
+find_focus_neighbour :: proc(widgets: []Ui_Widget, focus_index: int, direction: Ui_Direction) -> (index: int, found: bool) {
+	if index, found = find_focus_in_line(widgets, focus_index, direction); found {
+		return index, found
+	}
+	return find_focus_by_score(widgets, focus_index, direction)
 }
 
 widget_index :: proc(widgets: []Ui_Widget, id: Ui_Id) -> int {
