@@ -24,7 +24,7 @@ Mine oh Belowed is a factory game in a voxel world. This document is the map. De
 - Prospecting is its own tool tier ladder, and the tools complement each other because each reveals a different attribute (location, composition, size, depth). See the prospecting section below.
 - Strata are topsoil, stone and deep stone. Dug blocks become items (dirt, sand, clay, gravel, stone) and the factory uses all of them, for glass, bricks, concrete and paving. Terrain is a raw material.
 - Water flows, Minecraft style: source blocks spread into neighbouring air and drain when the source is removed. Rivers and lakes are infinite for pumps. Digging under a lake floods the hole, which is a puzzle rather than a punishment, since nothing hurts the player. Flowing water is also a power source later (hydro turbines, dams).
-- Lighting is Minecraft style: 16 level sky light and block light propagation, so nights and interiors need lamps. The day and night cycle is cosmetic in alpha.
+- Lighting is Minecraft style: 16 level sky light and block light propagation, so nights and interiors need lamps. The day and night cycle is cosmetic in alpha: a sun and moon cross the sky on a tilted path, stars come out at night, dawn and dusk colour the horizon and the light.
 - Nothing falls. There are no gravity blocks.
 
 ## The player

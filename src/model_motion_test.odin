@@ -73,14 +73,15 @@ test_a_glow_moves_nothing_and_pulses :: proc(t: ^testing.T) {
 	for phase in ([3]f32{0, 0.5, 1}) {
 		expect_near_point(t, posed_point(motion, {2, 2, 2}, phase, {0.5, 1, 0.5}), {0.5, 1, 0.5}, "glow")
 	}
-	testing.expect(t, math.abs(emissive_brightness(.Glow, 0, true, 0.3) - 1) < MOTION_TEST_TOLERANCE)
-	testing.expect(t, math.abs(emissive_brightness(.Glow, 0.5, true, 0.3) - GLOW_MINIMUM_BRIGHTNESS) < MOTION_TEST_TOLERANCE)
-	testing.expect(t, math.abs(emissive_brightness(.Glow, 1, true, 0.3) - 1) < MOTION_TEST_TOLERANCE)
+	light := [3]f32{0.3, 0.25, 0.2}
+	expect_near_point(t, emissive_brightness(.Glow, 0, true, light), 1, "glow at phase 0")
+	expect_near_point(t, emissive_brightness(.Glow, 0.5, true, light), GLOW_MINIMUM_BRIGHTNESS, "glow at phase 0.5")
+	expect_near_point(t, emissive_brightness(.Glow, 1, true, light), 1, "glow at phase 1")
 	// Without a glow motion a working machine's glow is full.
-	testing.expect_value(t, emissive_brightness(.Spin, 0.5, true, 0.3), 1)
-	testing.expect_value(t, emissive_brightness(.None, 0.5, true, 0.3), 1)
+	testing.expect_value(t, emissive_brightness(.Spin, 0.5, true, light), 1)
+	testing.expect_value(t, emissive_brightness(.None, 0.5, true, light), 1)
 	// An idle machine's glow is lit like the rest of it.
-	testing.expect_value(t, emissive_brightness(.Glow, 0.5, false, 0.3), 0.3)
+	testing.expect_value(t, emissive_brightness(.Glow, 0.5, false, light), light)
 }
 
 @(test)
@@ -138,17 +139,27 @@ test_the_inserter_arm_carries_the_item_from_pickup_to_drop :: proc(t: ^testing.T
 
 @(test)
 test_the_light_tint_combines_sky_and_block_light :: proc(t: ^testing.T) {
-	testing.expect_value(t, model_light_tint(pack_light(15, 0), 1), 1)
-	testing.expect_value(t, model_light_tint(pack_light(15, 0), 0.2), 0.2)
+	white := [3]f32{1, 1, 1}
+	testing.expect_value(t, model_light_tint(pack_light(15, 0), 1, white), 1)
+	testing.expect_value(t, model_light_tint(pack_light(15, 0), 0.2, white), 0.2)
 	// Block light is not scaled by the day.
-	testing.expect_value(t, model_light_tint(pack_light(0, 15), 0.2), 1)
+	testing.expect_value(t, model_light_tint(pack_light(0, 15), 0.2, white), 1)
 	// A dark cave never goes below the minimum.
-	testing.expect_value(t, model_light_tint(pack_light(0, 0), 1), MINIMUM_MODEL_BRIGHTNESS)
+	testing.expect_value(t, model_light_tint(pack_light(0, 0), 1, white), MINIMUM_MODEL_BRIGHTNESS)
 	// Level 12 of 15 is 0.8 / (4 - 2.4) = 0.5, like chunk.fs.
-	testing.expect(t, math.abs(model_light_tint(pack_light(12, 0), 1) - 0.5) < MOTION_TEST_TOLERANCE)
-	testing.expect(t, math.abs(model_light_tint(pack_light(12, 12), 0.5) - 0.75) < MOTION_TEST_TOLERANCE)
+	expect_near_point(t, model_light_tint(pack_light(12, 0), 1, white), 0.5, "sky level 12")
+	expect_near_point(t, model_light_tint(pack_light(12, 12), 0.5, white), 0.75, "sky and block level 12")
 	// Sky and block light together stop at full brightness.
-	testing.expect_value(t, model_light_tint(pack_light(15, 15), 1), 1)
+	testing.expect_value(t, model_light_tint(pack_light(15, 15), 1, white), 1)
+}
+
+// The sky tint colours the sky share only; block light stays white.
+@(test)
+test_the_sky_tint_colours_only_sky_light :: proc(t: ^testing.T) {
+	tint := [3]f32{1, 0.5, 0.25}
+	expect_near_point(t, model_light_tint(pack_light(15, 0), 1, tint), tint, "sky light only")
+	expect_near_point(t, model_light_tint(pack_light(0, 12), 1, tint), 0.5, "block light only")
+	expect_near_point(t, model_light_tint(pack_light(12, 12), 1, tint), {1, 0.75, 0.625}, "both")
 }
 
 @(test)

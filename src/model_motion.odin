@@ -2,6 +2,7 @@ package game
 
 import "core:fmt"
 import "core:math"
+import "core:math/linalg"
 
 // Moving parts and world light of machine models (work item 0056), no
 // raylib here: render_models.odin draws with the results. A machine's
@@ -234,10 +235,11 @@ motion_transform :: proc(motion: Machine_Motion, footprint: [3]i32, phase: f32) 
 	return translation_matrix({})
 }
 
-// The brightness of the emissive voxels: lit like the rest while the
-// machine does not work, full while it works, pulsing with a glow motion
-// (full at phase 0 and 1, GLOW_MINIMUM_BRIGHTNESS at 0.5).
-emissive_brightness :: proc(kind: Motion_Kind, phase: f32, working: bool, light_tint: f32) -> f32 {
+// The brightness of the emissive voxels per colour channel: lit like the
+// rest while the machine does not work, full white while it works,
+// pulsing with a glow motion (full at phase 0 and 1,
+// GLOW_MINIMUM_BRIGHTNESS at 0.5).
+emissive_brightness :: proc(kind: Motion_Kind, phase: f32, working: bool, light_tint: [3]f32) -> [3]f32 {
 	if !working {
 		return light_tint
 	}
@@ -254,13 +256,14 @@ light_curve :: proc(level: u8) -> f32 {
 	return fraction / (4 - 3 * fraction)
 }
 
-// A packed light byte (sky high, block low) to the brightness of a model,
-// combined like chunk.fs: sky light scaled by the day factor plus block
-// light, at most 1 and never below MINIMUM_MODEL_BRIGHTNESS.
-model_light_tint :: proc(light: u8, day_factor: f32) -> f32 {
-	sky := light_curve(light_level(light, .Sky)) * day_factor
+// A packed light byte (sky high, block low) to the brightness of a model
+// per colour channel, combined like chunk.fs: sky light scaled by the day
+// factor and coloured by the sky tint, plus block light, at most 1 and
+// never below MINIMUM_MODEL_BRIGHTNESS.
+model_light_tint :: proc(light: u8, day_factor: f32, sky_tint: [3]f32) -> [3]f32 {
+	sky := light_curve(light_level(light, .Sky)) * day_factor * sky_tint
 	block := light_curve(light_level(light, .Block))
-	return max(min(sky + block, 1), MINIMUM_MODEL_BRIGHTNESS)
+	return linalg.clamp(sky + block, MINIMUM_MODEL_BRIGHTNESS, 1)
 }
 
 // The cell a model takes its light from: above the footprint's centre, or

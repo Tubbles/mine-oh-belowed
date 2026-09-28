@@ -411,11 +411,13 @@ render_frame :: proc(state: ^Frame_State) {
 	}
 	session := state.session
 	upload_streamed_meshes(&state.renderer, &session.streaming)
-	blend := daylight_blend(simulation_day_ticks(session.simulation), session.simulation.day_length_ticks)
-	apply_daylight(&state.renderer, blend)
+	sky := day_sky(simulation_day_ticks(session.simulation), session.simulation.day_length_ticks)
+	apply_daylight(&state.renderer, sky)
 	rl.BeginDrawing()
 	defer rl.EndDrawing()
-	rl.ClearBackground(sky_color(blend))
+	// The horizon colour, which is the fog colour: the dome covers the
+	// upper hemisphere alone, so the clear colour shows below the horizon.
+	rl.ClearBackground(sky.colors.horizon)
 	draw_session_world(state, session)
 	if state.show_diagnostics {
 		draw_diagnostics_backdrop()
@@ -437,9 +439,10 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session) {
 	camera := fly_camera_to_raylib(player_view_camera(world, content.blocks, player, alpha))
 	rl.BeginMode3D(camera)
 	defer rl.EndMode3D()
+	sky := day_sky(simulation_day_ticks(session.simulation), session.simulation.day_length_ticks)
+	draw_sky(&state.renderer.sky, camera, sky)
 	draw_chunks(&state.renderer, camera)
-	blend := daylight_blend(simulation_day_ticks(session.simulation), session.simulation.day_length_ticks)
-	frame := Model_Frame{world = world, tick = session.simulation.tick, alpha = alpha, tick_rate = tick_rate, day_factor = day_factor(blend)}
+	frame := Model_Frame{world = world, tick = session.simulation.tick, alpha = alpha, tick_rate = tick_rate, day_factor = day_factor(sky.blend), sky_tint = color_to_vector3(sky.colors.sun_tint)}
 	draw_entities(world, content.machines, state.model_renderer, content.items, frame)
 	if state.settings.bottleneck_overlay {
 		draw_machine_markers(world, content.machines, state.model_renderer, camera.position)

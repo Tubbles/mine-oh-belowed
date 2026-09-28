@@ -27,13 +27,15 @@ Model_Renderer :: struct {
 }
 
 // What every model drawn this frame shares: the world for the light, the
-// render time for the motion, and the day factor for the sky light.
+// render time for the motion, and the day factor and sky tint for the sky
+// light.
 Model_Frame :: struct {
 	world:      ^World,
 	tick:       u64,
 	alpha:      f32,
 	tick_rate:  int,
 	day_factor: f32,
+	sky_tint:   [3]f32,
 }
 
 // The pose of one entity's model this frame.
@@ -145,16 +147,19 @@ destroy_model_renderer :: proc(renderer: ^Model_Renderer) {
 	rl.UnloadMaterial(renderer.material)
 }
 
-grey_color :: proc(brightness: f32) -> rl.Color {
-	value := u8(clamp(brightness, 0, 1) * 255 + 0.5)
-	return {value, value, value, 255}
+brightness_color :: proc(brightness: [3]f32) -> rl.Color {
+	value := [3]u8{}
+	for channel, index in brightness {
+		value[index] = u8(clamp(channel, 0, 1) * 255 + 0.5)
+	}
+	return {value.r, value.g, value.b, 255}
 }
 
 // The material's diffuse colour multiplies the vertex colours.
-draw_model_layers :: proc(renderer: Model_Renderer, layers: Uploaded_Layers, transform: matrix[4, 4]f32, light_tint, glow: f32) {
+draw_model_layers :: proc(renderer: Model_Renderer, layers: Uploaded_Layers, transform: matrix[4, 4]f32, light_tint, glow: [3]f32) {
 	colors := [Model_Layer]rl.Color {
-		.Lit      = grey_color(light_tint),
-		.Emissive = grey_color(glow),
+		.Lit      = brightness_color(light_tint),
+		.Emissive = brightness_color(glow),
 	}
 	draw_model_layers_colored(renderer, layers, transform, colors)
 }
@@ -192,7 +197,7 @@ draw_ghost_model :: proc(renderer: Model_Renderer, machines: Machine_Registry, p
 
 // The entity's model at the pose, lit by the cell model_light_cell names.
 draw_posed_model :: proc(renderer: Model_Renderer, model: Uploaded_Machine_Model, common: Entity_Common, machine: Machine, frame: Model_Frame, pose: Model_Pose) {
-	light_tint := model_light_tint(world_get_light(frame.world, model_light_cell(common)), frame.day_factor)
+	light_tint := model_light_tint(world_get_light(frame.world, model_light_cell(common)), frame.day_factor, frame.sky_tint)
 	glow := emissive_brightness(machine.motion.kind, pose.phase, pose.working, light_tint)
 	body := model_transform(common.origin, common.size, common.rotation)
 	draw_model_layers(renderer, model.body, body, light_tint, glow)

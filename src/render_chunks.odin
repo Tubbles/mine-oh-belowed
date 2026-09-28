@@ -8,10 +8,8 @@ import "vendor:raylib/rlgl"
 CHUNK_VERTEX_SHADER_PATH :: "shaders/chunk.vs"
 CHUNK_FRAGMENT_SHADER_PATH :: "shaders/chunk.fs"
 
-// The load radius reaches at least 192 blocks from the camera, so the fog
-// is complete before the load boundary.
-FOG_START :: 96.0
-FOG_END :: 160.0
+// The fog starts at this share of its end distance (fog_distances).
+FOG_START_SHARE :: 0.6
 CAMERA_FIELD_OF_VIEW_DEGREES :: 70.0
 
 // One raylib mesh per part: a chunk only needs more than one when it
@@ -29,6 +27,9 @@ Chunk_Renderer :: struct {
 	camera_position_location: i32,
 	day_factor_location:      i32,
 	fog_color_location:       i32,
+	sky_tint_location:        i32,
+	// The sky pass (render_sky.odin) lives with the chunks it sits behind.
+	sky:                      Sky_Renderer,
 	chunk_meshes:             map[Chunk_Coordinate]Chunk_Render,
 	drawn_chunk_count:        int,
 	vertex_count:             int,
@@ -67,6 +68,14 @@ set_shader_vector3 :: proc(shader: rl.Shader, name: cstring, value: [3]f32) {
 	rl.SetShaderValue(shader, rl.GetShaderLocation(shader, name), &value, .VEC3)
 }
 
+// The fog is complete one chunk inside the load radius and starts at
+// FOG_START_SHARE of that, so the world edge never shows whatever the
+// radius (work item 0064).
+fog_distances :: proc(load_radius_chunks: int) -> (start, end: f32) {
+	end = f32((load_radius_chunks - 1) * CHUNK_SIZE)
+	return end * FOG_START_SHARE, end
+}
+
 color_to_vector3 :: proc(color: rl.Color) -> [3]f32 {
 	return {f32(color.r), f32(color.g), f32(color.b)} / 255
 }
@@ -83,7 +92,8 @@ init_chunk_renderer :: proc(registry: Block_Registry, data_directory: string) ->
 	renderer.material = rl.LoadMaterialDefault()
 	use_chunk_shader(&renderer, shader)
 	rl.SetMaterialTexture(&renderer.material, .ALBEDO, upload_atlas(registry, renderer.atlas_layout, data_directory))
-	apply_daylight(&renderer, 1)
+	renderer.sky = init_sky_renderer()
+	apply_daylight(&renderer, day_sky_at(NOON_FRACTION, 0))
 	return renderer, true
 }
 
@@ -91,11 +101,13 @@ init_chunk_renderer :: proc(registry: Block_Registry, data_directory: string) ->
 // set every frame.
 use_chunk_shader :: proc(renderer: ^Chunk_Renderer, shader: rl.Shader) {
 	set_shader_vector2(shader, "tile_size", atlas_tile_uv_size(renderer.atlas_layout))
-	set_shader_float(shader, "fog_start", FOG_START)
-	set_shader_float(shader, "fog_end", FOG_END)
+	fog_start, fog_end := fog_distances(LOAD_RADIUS_HORIZONTAL)
+	set_shader_float(shader, "fog_start", fog_start)
+	set_shader_float(shader, "fog_end", fog_end)
 	renderer.camera_position_location = rl.GetShaderLocation(shader, "camera_position")
 	renderer.day_factor_location = rl.GetShaderLocation(shader, "day_factor")
 	renderer.fog_color_location = rl.GetShaderLocation(shader, "fog_color")
+	renderer.sky_tint_location = rl.GetShaderLocation(shader, "sky_tint")
 	renderer.material.shader = shader
 }
 
@@ -207,12 +219,15 @@ chunk_in_frustum :: proc(frustum: Frustum, coordinate: Chunk_Coordinate) -> bool
 	return frustum_contains_box(frustum, minimum, minimum + CHUNK_SIZE)
 }
 
-// Sky light scale and fog colour for the time of day, once per frame.
-apply_daylight :: proc(renderer: ^Chunk_Renderer, blend: f32) {
-	factor := day_factor(blend)
-	fog := color_to_vector3(sky_color(blend))
+// Sky light scale and tint and the fog colour for the time of day, once
+// per frame.
+apply_daylight :: proc(renderer: ^Chunk_Renderer, sky: Day_Sky) {
+	factor := day_factor(sky.blend)
+	fog := color_to_vector3(sky.colors.fog)
+	tint := color_to_vector3(sky.colors.sun_tint)
 	rl.SetShaderValue(renderer.material.shader, renderer.day_factor_location, &factor, .FLOAT)
 	rl.SetShaderValue(renderer.material.shader, renderer.fog_color_location, &fog, .VEC3)
+	rl.SetShaderValue(renderer.material.shader, renderer.sky_tint_location, &tint, .VEC3)
 }
 
 // Must run between BeginMode3D and EndMode3D, which sets the projection
@@ -253,4 +268,5 @@ destroy_chunk_renderer :: proc(renderer: ^Chunk_Renderer) {
 	}
 	delete(renderer.chunk_meshes)
 	rl.UnloadMaterial(renderer.material)
+	destroy_sky_renderer(&renderer.sky)
 }

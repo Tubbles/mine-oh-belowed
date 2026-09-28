@@ -11,9 +11,11 @@
 //   r  sky light level / 15, averaged over the cells around the vertex
 //   g  block light level / 15, same
 //   b  ambient occlusion / 3, 1 where nothing solid touches the vertex
-// Sky light is scaled by day_factor, block light is not, so torches glow
-// the same at night. Brightness is sky plus block light, times the
-// occlusion shade, never below minimum_brightness.
+// Sky light is scaled by day_factor and coloured by sky_tint (white by
+// day, warm at dawn and dusk, blue grey at night, work item 0064), block
+// light is neither, so torches glow the same at night. Brightness is sky
+// plus block light per colour channel, at most 1, times the occlusion
+// shade, never below minimum_brightness.
 
 in vec2 fragment_texcoord;
 in vec2 fragment_tile_origin;
@@ -27,6 +29,7 @@ uniform vec3 fog_color;
 uniform float fog_start;
 uniform float fog_end;
 uniform float day_factor;
+uniform vec3 sky_tint;
 
 out vec4 finalColor;
 
@@ -48,9 +51,9 @@ void main()
     {
         discard;
     }
-    float light = light_curve(fragment_color.r) * day_factor + light_curve(fragment_color.g);
+    vec3 light = light_curve(fragment_color.r) * day_factor * sky_tint + light_curve(fragment_color.g);
     float shade = mix(darkest_occlusion_shade, 1.0, fragment_color.b);
-    float brightness = max(min(light, 1.0) * shade, minimum_brightness);
+    vec3 brightness = max(min(light, 1.0) * shade, minimum_brightness);
     float fog = clamp((fragment_distance - fog_start) / (fog_end - fog_start), 0.0, 1.0);
     finalColor = vec4(mix(texel.rgb * brightness, fog_color, fog), 1.0);
 }
