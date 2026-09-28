@@ -62,7 +62,7 @@ test_command_line_benchmark_size_and_conflicts :: proc(t: ^testing.T) {
 	testing.expect_value(t, command_line_value_problem(command_line), "")
 	testing.expect_value(t, command_line_conflict(command_line), "")
 	testing.expect(t, !command_line_starts_world(command_line))
-	for size in ([?]string{"--benchmark=-1", "--benchmark=65"}) {
+	for size in ([?]string{"--benchmark=-1", "--benchmark=17"}) {
 		invalid, _ := parse_command_line({size})
 		testing.expectf(t, strings.has_prefix(command_line_value_problem(invalid), "invalid --benchmark"), "%s accepted", size)
 	}

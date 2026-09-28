@@ -33,7 +33,10 @@ BENCHMARK_HIGHEST_CHUNK_Y :: 2
 // research cost multiplier), so the one technology the builder queues
 // outlasts every run at every size.
 BENCHMARK_RESEARCH_COST_PERCENT :: 100_000
-BENCHMARK_LARGEST_SIZE :: 64
+// Larger factories are read off size 16 (user, 2026-09-28): the cost per
+// tick is close to linear in the size, and a size 64 build took minutes,
+// nearly all of it network rebuilds.
+BENCHMARK_LARGEST_SIZE :: 16
 // The window over which a machine must show progress at the end of the
 // warm up.
 BENCHMARK_IDLE_WINDOW_SECONDS :: 60
