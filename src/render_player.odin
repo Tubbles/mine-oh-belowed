@@ -74,16 +74,19 @@ block_centre :: proc(block: World_Coordinate) -> [3]f32 {
 	return {f32(block.x), f32(block.y), f32(block.z)} + 0.5
 }
 
-// The outline of the targeted block or the whole footprint of the
-// targeted entity, and inside it a second outline that shrinks as mining
-// (or picking up) progresses.
-draw_target_outline :: proc(world: ^World, player: Player) {
-	minimum, size := player.target.block, [3]i32{1, 1, 1}
+// The outline of the targeted block's shape (block_bounds: a slab's half,
+// a torch's post) or the whole footprint of the targeted entity, and
+// inside it a second outline that shrinks as mining (or picking up)
+// progresses.
+draw_target_outline :: proc(world: ^World, registry: Block_Registry, player: Player) {
+	bounds := block_bounds(registry, world_get_block(world, player.target.block))
+	origin := [3]f32{f32(player.target.block.x), f32(player.target.block.y), f32(player.target.block.z)}
+	centre := origin + (bounds.minimum + bounds.maximum) / 2
+	extent := bounds.maximum - bounds.minimum
 	if common := entity_common(&world.entities, player.target.entity); common != nil {
-		minimum, size = common.origin, common.size
+		centre = box_centre(common.origin, common.size)
+		extent = {f32(common.size.x), f32(common.size.y), f32(common.size.z)}
 	}
-	centre := box_centre(minimum, size)
-	extent := [3]f32{f32(size.x), f32(size.y), f32(size.z)}
 	rl.DrawCubeWiresV(centre, extent * OUTLINE_SCALE, TARGET_OUTLINE_COLOR)
 	fraction := mining_fraction(player.mining)
 	if fraction > 0 && mining_matches_target(player.mining, player.target) {
@@ -181,6 +184,6 @@ draw_player_world_overlay :: proc(world: ^World, content: Simulation_Content, mo
 	if !player.target.hit {
 		return
 	}
-	draw_target_outline(world, player)
+	draw_target_outline(world, content.blocks, player)
 	draw_placement_preview(world, content, models, belts, players, index)
 }

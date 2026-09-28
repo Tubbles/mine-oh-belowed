@@ -9,8 +9,9 @@ package game
 //   alpha  255
 // The light of a vertex averages the cells around it in the layer in front
 // of the face: the front cell, the two side cells and the corner cell,
-// leaving out solid ones (they hold no light). The corner counts as solid
-// when both sides are, since light cannot get past them.
+// leaving out opaque ones (they hold no light, block_is_opaque). The
+// corner counts as opaque when both sides are, since light cannot get
+// past them. Slabs, stairs and torches hold light like air.
 
 Vertex_Light :: [4]u8
 
@@ -24,8 +25,8 @@ FULL_HEIGHT_EIGHTHS :: 8
 @(rodata)
 corner_signs := [4][2]i32{{-1, -1}, {1, -1}, {1, 1}, {-1, 1}}
 
-cell_is_solid :: proc(input: Mesh_Input, local: Local_Coordinate) -> bool {
-	return block_is_solid(input.registry, neighbourhood_block(input, local))
+cell_is_opaque :: proc(input: Mesh_Input, local: Local_Coordinate) -> bool {
+	return block_is_opaque(input.registry, neighbourhood_block(input, local))
 }
 
 average_light_colour :: proc(sum, count: int) -> u8 {
@@ -39,7 +40,7 @@ vertex_light :: proc(input: Mesh_Input, front: Local_Coordinate, u_axis, v_axis:
 	cells := [4]Local_Coordinate{front, front + u_step, front + v_step, front + u_step + v_step}
 	solid: [4]bool
 	for cell, index in cells {
-		solid[index] = cell_is_solid(input, cell)
+		solid[index] = cell_is_opaque(input, cell)
 	}
 	if solid[1] && solid[2] {
 		solid[3] = true

@@ -448,6 +448,7 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session) {
 	draw_power_entities(world, content.machines, state.model_renderer, frame)
 	draw_belts(&state.belt_renderer, world, content.items, content.machines, state.model_renderer, frame, Item_Billboards{camera = camera, atlas = state.item_atlas})
 	draw_loose_items(world, content.items, frame, Item_Billboards{camera = camera, atlas = state.item_atlas})
+	draw_torch_flames(&state.renderer, camera, rl.GetTime())
 	draw_player_world_overlay(world, frame_simulation_content(state), state.model_renderer, &state.belt_renderer, session.simulation.players[:], 0, alpha)
 }
 

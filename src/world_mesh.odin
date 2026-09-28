@@ -1,8 +1,13 @@
 package game
 
+import "core:math/linalg"
+
 // Greedy mesher: turns a chunk and the shell of cells around it into plain
 // vertex and index arrays. No raylib here, render_chunks.odin uploads the
 // result. The vertex colour carries light (packing in world_mesh_light.odin).
+// Cubes merge into greedy rectangles; every other shape (slabs, stairs,
+// torches) is meshed cell by cell from its quads (block_shape.odin) in a
+// second pass, mesh_shaped_cells.
 
 // u16 indices address at most this many vertices, so a mesh part is closed
 // and a new one started before it would exceed the limit.
@@ -21,9 +26,12 @@ Mesh_Part :: struct {
 	indices:      [dynamic]u16,
 }
 
+// flames holds the cells of light emitting posts (torches), where the
+// renderer draws a flame.
 Chunk_Mesh_Data :: struct {
 	parts:      [dynamic]Mesh_Part,
 	quad_count: int,
+	flames:     [dynamic]Local_Coordinate,
 }
 
 // A nil border reads every cell outside the chunk as a missing chunk.
@@ -101,18 +109,19 @@ slice_local :: proc(axis, slice, u, v: int) -> Local_Coordinate {
 	return local
 }
 
-// A face shows against any different block that is not solid, so solid
-// blocks show against air, water and torches. Water shows against other
-// water only sideways and only where the other surface is lower, so the
-// step between two levels is closed.
+// A cube's face shows against any different block that is not opaque, so
+// solid cubes show against air, water, torches and the open part of a
+// slab. Water shows against other water only sideways and only where the
+// other surface is lower, so the step between two levels is closed.
+// Blocks of other shapes have no greedy faces (mesh_shaped_cells).
 face_is_visible :: proc(input: Mesh_Input, local: Local_Coordinate, direction: Direction) -> bool {
 	block := chunk_get_block(input.chunk, local)
-	if block == AIR_BLOCK {
+	if block == AIR_BLOCK || block_shape(input.registry, block) != .Cube {
 		return false
 	}
 	neighbour_local := local + Local_Coordinate(direction_offsets[direction])
 	neighbour := neighbourhood_block(input, neighbour_local)
-	if neighbour == block || block_is_solid(input.registry, neighbour) {
+	if neighbour == block || block_is_opaque(input.registry, neighbour) {
 		return false
 	}
 	if block_water_level(input.registry, block) > 0 && block_water_level(input.registry, neighbour) > 0 {
@@ -299,10 +308,104 @@ mesh_slice :: proc(data: ^Chunk_Mesh_Data, input: Mesh_Input, direction: Directi
 	}
 }
 
+// The axis a shaped quad faces most along; a cross's diagonal quad takes x.
+quad_facing_axis :: proc(corners: [4][3]f32) -> int {
+	normal := linalg.cross(corners[1] - corners[0], corners[3] - corners[0])
+	axis := 0
+	for candidate in 1 ..< 3 {
+		if abs(normal[candidate]) > abs(normal[axis]) {
+			axis = candidate
+		}
+	}
+	return axis
+}
+
+// The light of each corner of a shaped quad, smooth like a cube face: a
+// quad on the cell's border reads the layer in front of it, a quad inside
+// the cell the cell's own layer, towards the side of the cell the corner
+// lies on.
+shaped_quad_light :: proc(input: Mesh_Input, local: Local_Coordinate, quad: Shape_Quad) -> [4]Vertex_Light {
+	axis := quad_facing_axis(quad.corners)
+	front := local
+	if border, found := quad.border.?; found {
+		front += Local_Coordinate(direction_offsets[border])
+	}
+	u_axis, v_axis := (axis + 1) % 3, (axis + 2) % 3
+	light: [4]Vertex_Light
+	for corner, index in quad.corners {
+		signs := [2]i32{corner[u_axis] >= 0.5 ? 1 : -1, corner[v_axis] >= 0.5 ? 1 : -1}
+		light[index] = vertex_light(input, front, u_axis, v_axis, signs)
+	}
+	return light
+}
+
+// Texcoords as a cube face of the same axis has them, so a partial quad
+// shows the part of the tile it covers (a slab side the lower half).
+shaped_quad_texcoords :: proc(corners: [4][3]f32) -> [4][2]f32 {
+	axis := quad_facing_axis(corners)
+	u_axis, v_axis := (axis + 1) % 3, (axis + 2) % 3
+	texcoords: [4][2]f32
+	for corner, index in corners {
+		texcoords[index] = {corner[u_axis], corner[v_axis]}
+	}
+	return texcoords
+}
+
+// Shape quads are counter clockwise seen from outside, so every one takes
+// the positive order.
+append_shaped_quad :: proc(part: ^Mesh_Part, input: Mesh_Input, local: Local_Coordinate, quad: Shape_Quad, tile_origin: [2]f32) {
+	base := u16(len(part.positions))
+	origin := [3]f32{f32(local.x), f32(local.y), f32(local.z)}
+	texcoords := shaped_quad_texcoords(quad.corners)
+	light := shaped_quad_light(input, local, quad)
+	for corner, index in quad.corners {
+		append(&part.positions, origin + corner)
+		append(&part.texcoords, texcoords[index])
+		append(&part.tile_origins, tile_origin)
+		append(&part.colors, light[index])
+	}
+	for index in positive_quad_indices {
+		append(&part.indices, base + index)
+	}
+}
+
+// A border quad is hidden by an opaque neighbour.
+shaped_quad_visible :: proc(input: Mesh_Input, local: Local_Coordinate, quad: Shape_Quad) -> bool {
+	border, found := quad.border.?
+	return !found || !block_is_opaque(input.registry, neighbourhood_block(input, local + Local_Coordinate(direction_offsets[border])))
+}
+
+// Variants draw their base block's tiles, which the texture files name.
+mesh_shaped_cell :: proc(data: ^Chunk_Mesh_Data, input: Mesh_Input, local: Local_Coordinate, block: Block_Id, shape: Block_Shape, allocator := context.allocator) {
+	quads := shape_quads(shape, block_orientation(input.registry, block))
+	base := block_shape_base(input.registry, block)
+	for quad in quads.quads[:quads.count] {
+		if !shaped_quad_visible(input, local, quad) {
+			continue
+		}
+		tile_origin := atlas_tile_origin(input.atlas, atlas_tile_index(base, quad.group))
+		append_shaped_quad(current_part(data, allocator), input, local, quad, tile_origin)
+		data.quad_count += 1
+	}
+	if shape == .Post && block_light_emission(input.registry, block) > 0 {
+		append(&data.flames, local)
+	}
+}
+
+// The second pass: every cell whose block is not a cube.
+mesh_shaped_cells :: proc(data: ^Chunk_Mesh_Data, input: Mesh_Input, allocator := context.allocator) {
+	for block, index in input.chunk.blocks {
+		if shape := block_shape(input.registry, block); shape != .Cube {
+			mesh_shaped_cell(data, input, index_to_local(index), block, shape, allocator)
+		}
+	}
+}
+
 // Positions are relative to the chunk origin.
 mesh_chunk :: proc(input: Mesh_Input, allocator := context.allocator) -> Chunk_Mesh_Data {
 	data := Chunk_Mesh_Data {
-		parts = make([dynamic]Mesh_Part, allocator),
+		parts  = make([dynamic]Mesh_Part, allocator),
+		flames = make([dynamic]Local_Coordinate, allocator),
 	}
 	// About half of the streamed chunks are sky.
 	if chunk_is_all_air(input.chunk) {
@@ -313,6 +416,7 @@ mesh_chunk :: proc(input: Mesh_Input, allocator := context.allocator) -> Chunk_M
 			mesh_slice(&data, input, direction, slice, allocator)
 		}
 	}
+	mesh_shaped_cells(&data, input, allocator)
 	return data
 }
 
@@ -333,4 +437,5 @@ destroy_chunk_mesh_data :: proc(data: Chunk_Mesh_Data) {
 		delete(part.indices)
 	}
 	delete(data.parts)
+	delete(data.flames)
 }

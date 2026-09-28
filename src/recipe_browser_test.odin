@@ -137,8 +137,9 @@ test_browser_selection_mode_lists_assembler_recipes :: proc(t: ^testing.T) {
 	for recipe, index in visible {
 		ids[index] = test.names[recipe]
 	}
-	// Plank and stick are start recipes; the furnace recipes are left out.
-	testing.expect(t, slice.equal(ids, []string{"plank", "stick"}))
+	// Plank, stick, the slabs and the stairs are start recipes; the furnace
+	// recipes are left out.
+	testing.expectf(t, slice.equal(ids, []string{"concrete_slab", "concrete_stairs", "plank", "plank_slab", "plank_stairs", "stick", "stone_slab", "stone_stairs"}), "%v", ids)
 	// Science pack 1 is a discovery recipe: listed once discovered.
 	science := selection_filter({category = .Science}, .Assembler)
 	testing.expect_value(t, len(filter_recipes(test.recipes, test.order, science, craftable, test.unlocks.available, context.temp_allocator)), 0)

@@ -15,10 +15,12 @@ FOG_END :: 160.0
 CAMERA_FIELD_OF_VIEW_DEGREES :: 70.0
 
 // One raylib mesh per part: a chunk only needs more than one when it
-// exceeds the u16 index range (MESH_PART_VERTEX_LIMIT).
+// exceeds the u16 index range (MESH_PART_VERTEX_LIMIT). flames holds the
+// world cells of the chunk's torches (render_flames.odin).
 Chunk_Render :: struct {
 	meshes:       [dynamic]rl.Mesh,
 	vertex_count: int,
+	flames:       [dynamic]World_Coordinate,
 }
 
 Chunk_Renderer :: struct {
@@ -145,6 +147,7 @@ unload_chunk_render :: proc(chunk_render: Chunk_Render) {
 		rl.UnloadMesh(mesh)
 	}
 	delete(chunk_render.meshes)
+	delete(chunk_render.flames)
 }
 
 unload_chunk_mesh :: proc(renderer: ^Chunk_Renderer, coordinate: Chunk_Coordinate) {
@@ -164,9 +167,13 @@ apply_chunk_mesh :: proc(renderer: ^Chunk_Renderer, coordinate: Chunk_Coordinate
 	chunk_render := Chunk_Render {
 		meshes       = make([dynamic]rl.Mesh, 0, len(data.parts)),
 		vertex_count = chunk_mesh_vertex_count(data),
+		flames       = make([dynamic]World_Coordinate, 0, len(data.flames)),
 	}
 	for part in data.parts {
 		append(&chunk_render.meshes, upload_mesh_part(part))
+	}
+	for local in data.flames {
+		append(&chunk_render.flames, chunk_origin(coordinate) + World_Coordinate(local))
 	}
 	renderer.chunk_meshes[coordinate] = chunk_render
 	renderer.vertex_count += chunk_render.vertex_count

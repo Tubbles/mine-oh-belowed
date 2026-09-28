@@ -60,7 +60,8 @@ Player :: struct {
 	selected_hotbar_slot: int,
 	// The stack on the cursor of the inventory screen.
 	held:                 Held_Stack,
-	// Quarter turns of the machine ghost, changed with Rotate_Building.
+	// Quarter turns of the machine ghost and of held stairs, changed with
+	// Rotate_Building.
 	placement_rotation:   u8,
 	// The belt run being dragged while Place is held.
 	belt_drag:            Belt_Drag,

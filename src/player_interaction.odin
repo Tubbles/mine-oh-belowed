@@ -212,6 +212,10 @@ place_with_player :: proc(world: ^World, content: Simulation_Content, players: [
 		return
 	}
 	players[index].belt_drag = {}
+	if .Rotate_Building in just_pressed && block_shape(content.blocks, selected_placed_block(players[index], content.items)) == .Stairs {
+		players[index].placement_rotation = (players[index].placement_rotation + 1) % 4
+		return
+	}
 	if .Rotate_Building in just_pressed && rotate_targeted_entity(world, content, &players[index]) {
 		return
 	}
@@ -228,10 +232,35 @@ place_block_with_player :: proc(world: ^World, registry: Block_Registry, items: 
 		return
 	}
 	item := selected_hotbar_stack(player^).item
+	hit_point := player_eye(player.position) + player_look_direction(player^) * player.target.distance
+	block = placed_block_variant(registry, block, player.target, hit_point, player.yaw, player.placement_rotation)
 	if world_set_block(world, player.target.adjacent, block) {
 		take_from_slot(&inventory_hotbar(player.inventory)[player.selected_hotbar_slot], 1)
 		record_block_placed(&world.statistics, item)
 	}
+}
+
+// A slab goes into the upper half of its cell when placed against the
+// underside of a block or high up on a side face, else into the lower
+// half.
+slab_goes_upper :: proc(target: Raycast_Hit, hit_point: [3]f32) -> bool {
+	if target.face == .Negative_Y {
+		return true
+	}
+	return direction_axis(target.face) != 1 && hit_point.y - f32(target.adjacent.y) > 0.5
+}
+
+// The variant of block the player places at target: the slab half from
+// where the ray hit, stairs rising away from the player (yaw_direction)
+// and turned by Rotate_Building (rotation). Any other block is itself.
+placed_block_variant :: proc(registry: Block_Registry, block: Block_Id, target: Raycast_Hit, hit_point: [3]f32, yaw: f32, rotation: u8) -> Block_Id {
+	#partial switch block_shape(registry, block) {
+	case .Slab:
+		return oriented_block(registry, block, Block_Orientation{upper = slab_goes_upper(target, hit_point)})
+	case .Stairs:
+		return oriented_block(registry, block, Block_Orientation{rotation = turn_right(yaw_direction(yaw), rotation % 4)})
+	}
+	return block
 }
 
 HOTBAR_SLOT_ACTIONS :: [HOTBAR_SLOT_COUNT]Action{.Hotbar_Slot_1, .Hotbar_Slot_2, .Hotbar_Slot_3, .Hotbar_Slot_4, .Hotbar_Slot_5, .Hotbar_Slot_6, .Hotbar_Slot_7, .Hotbar_Slot_8}

@@ -387,3 +387,64 @@ test_cheat_speed_multiplies_movement :: proc(t: ^testing.T) {
 	tick_player(&world, content, slice.from_ptr(&player, 1), 0, Input_Frame{move = {0, 1}, pressed = {.Sprint_Hold}}, TEST_TICK_RATE, true)
 	testing.expect(t, abs(player.velocity.x - FLY_CAMERA_SPEED * FLY_CAMERA_SPRINT_FACTOR * CHEAT_SPEED_FACTOR) < TEST_TOLERANCE)
 }
+
+// A bottom slab stops a fall half way up its cell and is ground to stand
+// on; an upper slab stops a rising head at its underside.
+@(test)
+test_sweep_stops_on_a_slab_at_half_height :: proc(t: ^testing.T) {
+	registry := make_shape_test_registry()
+	world := make_floor_world(registry, 32)
+	set_blocks(&world, SHAPE_TEST_SLAB, {0, 1, 0})
+	set_blocks(&world, SHAPE_TEST_UPPER_SLAB, {0, 4, 0})
+	moved, blocked := sweep_box_axis(&world, registry, player_box({0.5, 3, 0.5}), 1, -5)
+	testing.expect(t, blocked)
+	testing.expectf(t, abs(moved + 1.5) < 1e-4, "moved %v", moved)
+	testing.expect(t, box_has_ground(&world, registry, player_box({0.5, 1.5, 0.5})))
+	testing.expect(t, !box_has_ground(&world, registry, player_box({0.5, 1.6, 0.5})))
+	testing.expect(t, !box_intersects_solid(&world, registry, player_box({0.5, 1.5, 0.5})))
+	testing.expect(t, box_intersects_solid(&world, registry, player_box({0.5, 1.4, 0.5})))
+	// The head at 1.5 + 1.8 rises to the upper slab's underside at 4.5.
+	up, stopped := sweep_box_axis(&world, registry, player_box({0.5, 1.5, 0.5}), 1, 3)
+	testing.expect(t, stopped)
+	testing.expectf(t, abs(up - (4.5 - 3.3)) < 1e-4, "up %v", up)
+	// Walking into the slab from the floor stops at its side; above its
+	// top the way is free.
+	side, side_blocked := sweep_box_axis(&world, registry, player_box({-1.5, 1, 0.5}), 0, 2)
+	testing.expect(t, side_blocked)
+	testing.expectf(t, abs(side - 1.2) < 1e-4, "side %v", side)
+	_, over_blocked := sweep_box_axis(&world, registry, player_box({-1.5, 1.5, 0.5}), 0, 2)
+	testing.expect(t, !over_blocked)
+}
+
+@(test)
+test_player_falls_onto_a_slab_and_stands_on_it :: proc(t: ^testing.T) {
+	registry := make_shape_test_registry()
+	world := make_floor_world(registry, 32)
+	set_blocks(&world, SHAPE_TEST_SLAB, {0, 1, 0})
+	player := make_test_player(registry, {0.5, 6, 0.5})
+	tick_test_player(&world, registry, &player, {}, 120)
+	testing.expect(t, player.on_ground)
+	testing.expectf(t, abs(player.position.y - 1.5) < 1e-3, "y %v", player.position.y)
+}
+
+// Stairs rising towards +x: the low half is a slab, the back quarter
+// stands a full block high. A torch stops nothing.
+@(test)
+test_stairs_collide_with_both_boxes_and_torches_not_at_all :: proc(t: ^testing.T) {
+	registry := make_shape_test_registry()
+	world := make_floor_world(registry, 32)
+	set_blocks(&world, SHAPE_TEST_STAIRS, {0, 1, 0})
+	set_blocks(&world, SHAPE_TEST_TORCH, {0, 1, 3})
+	low, low_blocked := sweep_box_axis(&world, registry, player_box({0.2, 3, 0.5}), 1, -5)
+	testing.expect(t, low_blocked)
+	testing.expectf(t, abs(low + 1.5) < 1e-4, "low %v", low)
+	high, high_blocked := sweep_box_axis(&world, registry, player_box({0.8, 3, 0.5}), 1, -5)
+	testing.expect(t, high_blocked)
+	testing.expectf(t, abs(high + 1) < 1e-4, "high %v", high)
+	// Standing on the low step, the back quarter stops the way forward.
+	forward, forward_blocked := sweep_box_axis(&world, registry, player_box({0.2, 1.5, 0.5}), 0, 1)
+	testing.expect(t, forward_blocked)
+	testing.expectf(t, abs(forward) < 1e-4, "forward %v", forward)
+	_, torch_blocked := sweep_box_axis(&world, registry, player_box({-1.5, 1, 3.5}), 0, 4)
+	testing.expect(t, !torch_blocked)
+}

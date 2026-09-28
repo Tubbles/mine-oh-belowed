@@ -5,10 +5,10 @@
 // false) marks an ore: it reads "Unknown ore" until the player has held
 // its drop item once, and that first time is announced. A discoverable
 // block must yield an item.
-// A block that is not solid (water, torch) is drawn where it touches a
+// A block that is not solid (water) is drawn where it touches a
 // different block that is not solid, and solid blocks show their faces
-// against it. Water shows against other water only where the other
-// surface is lower.
+// against it and against every shape but the cube. Water shows against
+// other water only where the other surface is lower.
 // hardness_seconds is the time to break the block by hand. 0 means the
 // block cannot be mined (air, water).
 // tool_tier (default 0, work item 0051) is the pickaxe hand mining needs:
@@ -26,6 +26,24 @@
 // fluid_source (optional) is a fluids.sjson id: a source pump standing in
 // front of the block draws that fluid (the tar pit and crude oil, work
 // item 0030). Tar pits are infinite in the alpha.
+// shape (optional, work item 0061, default "cube") is the block's
+// geometry: cube, slab (the lower half of the cell), stairs (a lower half
+// and a quarter at the back, rising towards +x), post (a thin column,
+// torches) or cross (two diagonal quads, for ground cover). Slabs and
+// stairs must be solid and collide with their boxes; posts and crosses
+// must not be solid. Only solid cubes are opaque: light passes slabs,
+// stairs, posts and crosses. The loader expands an oriented shape into
+// one block per orientation, right after the listed block: a slab <id>
+// gets <id>_upper (the upper half), stairs <id> get <id>_r1, <id>_r2 and
+// <id>_r3 (turned a quarter, a half and three quarters: rising towards
+// +z, -x and -z). Variant ids never take a face group suffix (_top,
+// _side, _bottom), since <id>_top.png is the listed block's top face
+// texture. A variant copies the listed block (name_key, hardness,
+// texture files), is never discoverable, and must be named in the
+// mined_from of the item the listed block drops (items.sjson). Saves map
+// variants by id like any block. Placing picks the variant: the upper
+// slab against an underside or high on a side face, stairs rising away
+// from the player and turned by Rotate_Building.
 blocks = [
 	{
 		id = "air"
@@ -235,6 +253,7 @@ blocks = [
 	{
 		id = "torch"
 		name_key = "block_torch"
+		shape = "post"
 		solid = false
 		hardness_seconds = 0.1
 		tool_tier = 0
@@ -424,5 +443,61 @@ blocks = [
 		hardness_seconds = 1.5
 		tool_tier = 0
 		texture = {top = [152, 146, 138], side = [114, 110, 104], bottom = [152, 146, 138]}
+	}
+	// Slabs and stairs for factory floors (work item 0061), from stone,
+	// concrete and planks.
+	{
+		id = "stone_slab"
+		name_key = "block_stone_slab"
+		shape = "slab"
+		solid = true
+		hardness_seconds = 1.5
+		tool_tier = 1
+		texture = {top = [128, 128, 128], side = [128, 128, 128], bottom = [128, 128, 128]}
+	}
+	{
+		id = "stone_stairs"
+		name_key = "block_stone_stairs"
+		shape = "stairs"
+		solid = true
+		hardness_seconds = 1.5
+		tool_tier = 1
+		texture = {top = [128, 128, 128], side = [128, 128, 128], bottom = [128, 128, 128]}
+	}
+	{
+		id = "concrete_slab"
+		name_key = "block_concrete_slab"
+		shape = "slab"
+		solid = true
+		hardness_seconds = 3
+		tool_tier = 1
+		texture = {top = [176, 174, 168], side = [164, 162, 156], bottom = [164, 162, 156]}
+	}
+	{
+		id = "concrete_stairs"
+		name_key = "block_concrete_stairs"
+		shape = "stairs"
+		solid = true
+		hardness_seconds = 3
+		tool_tier = 1
+		texture = {top = [176, 174, 168], side = [164, 162, 156], bottom = [164, 162, 156]}
+	}
+	{
+		id = "plank_slab"
+		name_key = "block_plank_slab"
+		shape = "slab"
+		solid = true
+		hardness_seconds = 1
+		tool_tier = 0
+		texture = {top = [176, 132, 84], side = [176, 132, 84], bottom = [176, 132, 84]}
+	}
+	{
+		id = "plank_stairs"
+		name_key = "block_plank_stairs"
+		shape = "stairs"
+		solid = true
+		hardness_seconds = 1
+		tool_tier = 0
+		texture = {top = [176, 132, 84], side = [176, 132, 84], bottom = [176, 132, 84]}
 	}
 ]

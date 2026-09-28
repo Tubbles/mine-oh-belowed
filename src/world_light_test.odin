@@ -244,3 +244,24 @@ test_report_light_settling_on_generated_terrain :: proc(t: ^testing.T) {
 	testing.expect(t, world_is_idle(&world))
 	log.infof("light settled over %d chunks in %d ticks, %d queue nodes, %v in total, slowest tick %v", len(world.chunks), ticks, steps, time.tick_since(start), busiest)
 }
+
+// A slab is solid but not opaque: a torch's light passes through it where
+// a stone block of the same place makes it go round, and the slab cell
+// holds light itself.
+@(test)
+test_block_light_passes_a_slab :: proc(t: ^testing.T) {
+	registry := make_shape_test_registry()
+	world := make_test_world({{0, 0, 0}})
+	world_set_block(&world, {10, 10, 10}, SHAPE_TEST_TORCH)
+	world_set_block(&world, {11, 10, 10}, SHAPE_TEST_SLAB)
+	tick := settle_world(t, &world, registry, 0)
+	testing.expect_value(t, block_light_at(&world, {11, 10, 10}), 13)
+	testing.expect_value(t, block_light_at(&world, {12, 10, 10}), 12)
+	world_set_block(&world, {11, 10, 10}, SHAPE_TEST_STAIRS + 2)
+	tick = settle_world(t, &world, registry, tick)
+	testing.expect_value(t, block_light_at(&world, {12, 10, 10}), 12)
+	world_set_block(&world, {11, 10, 10}, SHAPE_TEST_STONE)
+	settle_world(t, &world, registry, tick)
+	testing.expect_value(t, block_light_at(&world, {11, 10, 10}), 0)
+	testing.expect_value(t, block_light_at(&world, {12, 10, 10}), 10)
+}

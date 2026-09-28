@@ -20,6 +20,35 @@ Face_Group :: enum u8 {
 
 FACE_GROUP_COUNT :: len(Face_Group)
 
+// The geometry of a block (block_shape.odin). A cube is meshed greedily,
+// every other shape from its own quads. Slabs and stairs are oriented:
+// the loader expands them into one block per orientation
+// (expand_block_shapes).
+Block_Shape :: enum u8 {
+	Cube,
+	Slab,
+	Stairs,
+	Post,
+	Cross,
+}
+
+@(rodata)
+block_shape_names := [Block_Shape]string {
+	.Cube   = "cube",
+	.Slab   = "slab",
+	.Stairs = "stairs",
+	.Post   = "post",
+	.Cross  = "cross",
+}
+
+// rotation is in quarter turns like every rotation in the game
+// (belt_direction_offset): stairs of rotation 0 rise towards +x. upper
+// is a slab filling the upper half of its cell.
+Block_Orientation :: struct {
+	rotation: u8,
+	upper:    bool,
+}
+
 Block_Texture_Definition :: struct {
 	top:    [3]u8,
 	side:   [3]u8,
@@ -36,7 +65,9 @@ Block_Texture_Definition :: struct {
 // name_key is the display name in data/strings/en.sjson, required on
 // every block but air. A discoverable block (the ores) reads "Unknown ore"
 // until its drop item was obtained once (work item 0052); it must have a
-// drop, which item_registry validation checks.
+// drop, which item_registry validation checks. shape names a Block_Shape,
+// cube when empty; resolved_shape and orientation are set by
+// expand_block_shapes, not read from the file.
 Block_Definition :: struct {
 	id:               string,
 	name_key:         string,
@@ -48,6 +79,9 @@ Block_Definition :: struct {
 	fluid_source:     string,
 	tool_tier:        int,
 	texture:          Block_Texture_Definition,
+	shape:            string,
+	resolved_shape:   Block_Shape,
+	orientation:      Block_Orientation,
 }
 
 Blocks_File :: struct {
@@ -58,9 +92,87 @@ Block_Registry :: struct {
 	definitions: []Block_Definition,
 }
 
+// The file's blocks with every oriented shape expanded into its variants.
 parse_blocks_file :: proc(data: []byte, allocator := context.allocator) -> (file: Blocks_File, error: json.Unmarshal_Error) {
 	error = json.unmarshal(data, &file, .SJSON, allocator)
+	if error != nil {
+		return
+	}
+	listed := file.blocks
+	file.blocks = expand_block_shapes(listed, allocator)
+	delete(listed, allocator)
 	return
+}
+
+// An empty name is a cube.
+parse_block_shape :: proc(name: string) -> (shape: Block_Shape, found: bool) {
+	if name == "" {
+		return .Cube, true
+	}
+	return parse_named_enum(block_shape_names, name)
+}
+
+// A slab has a bottom and an upper half, stairs four quarter turns.
+shape_variant_count :: proc(shape: Block_Shape) -> int {
+	#partial switch shape {
+	case .Slab:
+		return 2
+	case .Stairs:
+		return 4
+	}
+	return 1
+}
+
+variant_orientation :: proc(shape: Block_Shape, variant: int) -> Block_Orientation {
+	#partial switch shape {
+	case .Slab:
+		return Block_Orientation{upper = variant == 1}
+	case .Stairs:
+		return Block_Orientation{rotation = u8(variant)}
+	}
+	return {}
+}
+
+// The inverse of variant_orientation: how far the variant follows its
+// base block in the table.
+variant_index :: proc(shape: Block_Shape, orientation: Block_Orientation) -> int {
+	#partial switch shape {
+	case .Slab:
+		return int(orientation.upper)
+	case .Stairs:
+		return int(orientation.rotation % 4)
+	}
+	return 0
+}
+
+// "<id>_upper" for a slab's upper half, "<id>_r1" to "<id>_r3" for the
+// stairs' quarter turns.
+variant_block_id :: proc(base_id: string, shape: Block_Shape, variant: int, allocator := context.allocator) -> string {
+	if shape == .Slab {
+		return fmt.aprintf("%s_upper", base_id, allocator = allocator)
+	}
+	return fmt.aprintf("%s_r%d", base_id, variant, allocator = allocator)
+}
+
+// Each block followed by its variants: copies with the orientation set, an
+// id of their own, the base block's name_key and never discoverable on
+// their own. An unknown shape stays a cube here and fails validation.
+expand_block_shapes :: proc(definitions: []Block_Definition, allocator := context.allocator) -> []Block_Definition {
+	expanded := make([dynamic]Block_Definition, 0, len(definitions), allocator)
+	for definition in definitions {
+		shape, _ := parse_block_shape(definition.shape)
+		for variant in 0 ..< shape_variant_count(shape) {
+			copied := definition
+			copied.resolved_shape = shape
+			copied.orientation = variant_orientation(shape, variant)
+			if variant > 0 {
+				copied.id = variant_block_id(definition.id, shape, variant, allocator)
+				copied.discoverable = false
+			}
+			append(&expanded, copied)
+		}
+	}
+	return expanded[:]
 }
 
 // Returns an empty string when the definitions are valid, otherwise the problem.
@@ -93,8 +205,31 @@ validate_block_definitions :: proc(definitions: []Block_Definition) -> string {
 		if definition.water_level < 0 || definition.water_level > WATER_SOURCE_LEVEL {
 			return fmt.tprintf("block %q has water_level %d outside 0 to %d", definition.id, definition.water_level, WATER_SOURCE_LEVEL)
 		}
+		if problem := validate_block_shape(definition); problem != "" {
+			return problem
+		}
 	}
 	return validate_water_levels(definitions)
+}
+
+// Slabs and stairs stop movement and water, posts and crosses do not.
+validate_block_shape :: proc(definition: Block_Definition) -> string {
+	shape, found := parse_block_shape(definition.shape)
+	if !found {
+		return fmt.tprintf("block %q has unknown shape %q", definition.id, definition.shape)
+	}
+	switch shape {
+	case .Cube:
+	case .Slab, .Stairs:
+		if !definition.solid {
+			return fmt.tprintf("block %q of shape %q must be solid", definition.id, definition.shape)
+		}
+	case .Post, .Cross:
+		if definition.solid {
+			return fmt.tprintf("block %q of shape %q must not be solid", definition.id, definition.shape)
+		}
+	}
+	return ""
 }
 
 // Flow turns water of one level into another, so either every level has
@@ -167,9 +302,39 @@ block_is_solid :: proc(registry: Block_Registry, block: Block_Id) -> bool {
 	return registry.definitions[block].solid
 }
 
-// Light passes through every block that is not solid.
+// Light passes through every block but solid cubes, so slabs, stairs,
+// posts and crosses let it through.
 block_is_opaque :: proc(registry: Block_Registry, block: Block_Id) -> bool {
-	return block_is_solid(registry, block)
+	if int(block) >= len(registry.definitions) {
+		return false
+	}
+	return registry.definitions[block].solid && registry.definitions[block].resolved_shape == .Cube
+}
+
+// Cube outside the registry.
+block_shape :: proc(registry: Block_Registry, block: Block_Id) -> Block_Shape {
+	if int(block) >= len(registry.definitions) {
+		return .Cube
+	}
+	return registry.definitions[block].resolved_shape
+}
+
+block_orientation :: proc(registry: Block_Registry, block: Block_Id) -> Block_Orientation {
+	if int(block) >= len(registry.definitions) {
+		return {}
+	}
+	return registry.definitions[block].orientation
+}
+
+// The block a variant was expanded from, the block itself for every other.
+block_shape_base :: proc(registry: Block_Registry, block: Block_Id) -> Block_Id {
+	return block - Block_Id(variant_index(block_shape(registry, block), block_orientation(registry, block)))
+}
+
+// The variant of block's base in the given orientation; a block without
+// variants stays itself.
+oriented_block :: proc(registry: Block_Registry, block: Block_Id, orientation: Block_Orientation) -> Block_Id {
+	return block_shape_base(registry, block) + Block_Id(variant_index(block_shape(registry, block), orientation))
 }
 
 block_light_emission :: proc(registry: Block_Registry, block: Block_Id) -> u8 {

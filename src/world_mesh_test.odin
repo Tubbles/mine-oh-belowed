@@ -315,3 +315,99 @@ test_mesh_water_under_water_across_chunk_top :: proc(t: ^testing.T) {
 	data := mesh_chunk(input, context.temp_allocator)
 	testing.expect_value(t, data.quad_count, 5)
 }
+
+shape_test_mesh_input :: proc(chunk: ^Chunk) -> Mesh_Input {
+	registry := make_shape_test_registry()
+	return Mesh_Input{chunk = chunk, registry = registry, atlas = atlas_layout_for_block_count(len(registry.definitions))}
+}
+
+// A slab against a stone block: the stone's face behind the slab shows
+// (the slab covers half of it), the slab's face against the stone does
+// not, and the slab's top lies half way up.
+@(test)
+test_mesh_slab_quads_and_the_cube_face_behind :: proc(t: ^testing.T) {
+	chunk := new(Chunk, context.temp_allocator)
+	fill_chunk_light_levels(chunk, MAXIMUM_LIGHT, 0)
+	chunk_set_block(chunk, {4, 4, 4}, SHAPE_TEST_STONE)
+	chunk_set_block(chunk, {5, 4, 4}, SHAPE_TEST_SLAB)
+	input := shape_test_mesh_input(chunk)
+	testing.expect(t, face_is_visible(input, {4, 4, 4}, .Positive_X))
+	testing.expect(t, !face_is_visible(input, {5, 4, 4}, .Positive_Y))
+	data := mesh_chunk(input, context.temp_allocator)
+	testing.expect_value(t, data.quad_count, 6 + 5)
+	highest_slab: f32 = 0
+	for position in data.parts[0].positions {
+		if position.x > 5 {
+			highest_slab = max(highest_slab, position.y)
+		}
+	}
+	testing.expect_value(t, highest_slab, f32(4.5))
+	// The slab's quads come after the greedy ones. Its +z side runs its
+	// texcoord y along the block's y like a cube face, over the lower half.
+	part := data.parts[0]
+	highest_texcoord: f32 = 0
+	for quad := 6 * QUAD_VERTEX_COUNT; quad < len(part.positions); quad += QUAD_VERTEX_COUNT {
+		if part.positions[quad].z != 5 || part.positions[quad + 2].z != 5 {
+			continue
+		}
+		for index in quad ..< quad + QUAD_VERTEX_COUNT {
+			highest_texcoord = max(highest_texcoord, part.texcoords[index].y)
+		}
+	}
+	testing.expect_value(t, highest_texcoord, f32(0.5))
+}
+
+// Stairs of every rotation draw their ten quads in open air, the upper
+// slab its six, with the base block's tiles.
+@(test)
+test_mesh_oriented_variants_use_the_base_tiles :: proc(t: ^testing.T) {
+	chunk := new(Chunk, context.temp_allocator)
+	fill_chunk_light_levels(chunk, MAXIMUM_LIGHT, 0)
+	chunk_set_block(chunk, {10, 10, 10}, SHAPE_TEST_STAIRS + 3)
+	input := shape_test_mesh_input(chunk)
+	data := mesh_chunk(input, context.temp_allocator)
+	testing.expect_value(t, data.quad_count, 10)
+	side := atlas_tile_origin(input.atlas, atlas_tile_index(SHAPE_TEST_STAIRS, .Side))
+	top := atlas_tile_origin(input.atlas, atlas_tile_index(SHAPE_TEST_STAIRS, .Top))
+	bottom := atlas_tile_origin(input.atlas, atlas_tile_index(SHAPE_TEST_STAIRS, .Bottom))
+	for origin in data.parts[0].tile_origins {
+		testing.expect(t, origin == side || origin == top || origin == bottom)
+	}
+	chunk_set_block(chunk, {10, 10, 10}, SHAPE_TEST_UPPER_SLAB)
+	testing.expect_value(t, mesh_quad_count(input), 6)
+}
+
+// A torch is a post: six quads and a flame at its cell; a cross has four
+// quads and no flame.
+@(test)
+test_mesh_torch_post_and_flame :: proc(t: ^testing.T) {
+	chunk := new(Chunk, context.temp_allocator)
+	fill_chunk_light_levels(chunk, MAXIMUM_LIGHT, 0)
+	chunk_set_block(chunk, {3, 2, 1}, SHAPE_TEST_TORCH)
+	input := shape_test_mesh_input(chunk)
+	data := mesh_chunk(input, context.temp_allocator)
+	testing.expect_value(t, data.quad_count, 6)
+	testing.expect_value(t, len(data.flames), 1)
+	testing.expect_value(t, data.flames[0], Local_Coordinate{3, 2, 1})
+	chunk_set_block(chunk, {3, 2, 1}, SHAPE_TEST_TUFT)
+	crossed := mesh_chunk(input, context.temp_allocator)
+	testing.expect_value(t, crossed.quad_count, 4)
+	testing.expect_value(t, len(crossed.flames), 0)
+}
+
+// A slab's bottom on stone is hidden like a cube face, while the stone's
+// top under the slab still shows, since a slab is not opaque. The lit
+// slab's quads carry the light of the open cells around them.
+@(test)
+test_mesh_slab_on_stone_hides_its_bottom_and_is_lit :: proc(t: ^testing.T) {
+	chunk := new(Chunk, context.temp_allocator)
+	fill_chunk_light_levels(chunk, MAXIMUM_LIGHT, 0)
+	chunk_set_block(chunk, {4, 3, 4}, SHAPE_TEST_STONE)
+	chunk_set_block(chunk, {4, 4, 4}, SHAPE_TEST_SLAB)
+	data := mesh_chunk(shape_test_mesh_input(chunk), context.temp_allocator)
+	testing.expect_value(t, data.quad_count, 6 + 5)
+	part := data.parts[0]
+	for index in 6 * QUAD_VERTEX_COUNT ..< len(part.positions) {
+		testing.expect_value(t, part.colors[index].r, 255)
+	}
+}

@@ -319,3 +319,68 @@ test_mining_a_log_fells_the_tree :: proc(t: ^testing.T) {
 	testing.expect_value(t, len(world.entities.loose_items.items), int(tree.trunk_height) - 1)
 	testing.expect(t, len(world.leaf_decay.felled) > 0)
 }
+
+// A slab goes up against an underside or high on a side face, down on a
+// top face or low on a side; stairs rise away from the player, turned by
+// the placement rotation; any other block stays itself.
+@(test)
+test_placed_block_variant_picks_slab_half_and_stairs_rotation :: proc(t: ^testing.T) {
+	registry := make_shape_test_registry()
+	on_top := Raycast_Hit{hit = true, block = {0, 0, 0}, face = .Positive_Y, adjacent = {0, 1, 0}}
+	testing.expect_value(t, placed_block_variant(registry, SHAPE_TEST_SLAB, on_top, {0.5, 1, 0.5}, 0, 0), SHAPE_TEST_SLAB)
+	underside := Raycast_Hit{hit = true, block = {0, 3, 0}, face = .Negative_Y, adjacent = {0, 2, 0}}
+	testing.expect_value(t, placed_block_variant(registry, SHAPE_TEST_SLAB, underside, {0.5, 3, 0.5}, 0, 0), SHAPE_TEST_UPPER_SLAB)
+	side := Raycast_Hit{hit = true, block = {3, 1, 0}, face = .Negative_X, adjacent = {2, 1, 0}}
+	testing.expect_value(t, placed_block_variant(registry, SHAPE_TEST_SLAB, side, {3, 1.7, 0.5}, 0, 0), SHAPE_TEST_UPPER_SLAB)
+	testing.expect_value(t, placed_block_variant(registry, SHAPE_TEST_SLAB, side, {3, 1.3, 0.5}, 0, 0), SHAPE_TEST_SLAB)
+	testing.expect_value(t, placed_block_variant(registry, SHAPE_TEST_UPPER_SLAB, on_top, {0.5, 1, 0.5}, 0, 0), SHAPE_TEST_SLAB)
+	// Looking along +z (yaw 90) the stairs rise towards +z, rotation 1.
+	testing.expect_value(t, placed_block_variant(registry, SHAPE_TEST_STAIRS, on_top, {0.5, 1, 0.5}, 0, 0), SHAPE_TEST_STAIRS)
+	testing.expect_value(t, placed_block_variant(registry, SHAPE_TEST_STAIRS, on_top, {0.5, 1, 0.5}, 90, 0), SHAPE_TEST_STAIRS + 1)
+	testing.expect_value(t, placed_block_variant(registry, SHAPE_TEST_STAIRS, on_top, {0.5, 1, 0.5}, 90, 2), SHAPE_TEST_STAIRS + 3)
+	testing.expect_value(t, placed_block_variant(registry, SHAPE_TEST_STAIRS, on_top, {0.5, 1, 0.5}, 180, 3), SHAPE_TEST_STAIRS + 1)
+	testing.expect_value(t, placed_block_variant(registry, SHAPE_TEST_STONE, underside, {0.5, 3, 0.5}, 90, 1), SHAPE_TEST_STONE)
+	testing.expect_value(t, placed_block_variant(registry, SHAPE_TEST_TORCH, underside, {0.5, 3, 0.5}, 90, 1), SHAPE_TEST_TORCH)
+}
+
+// A stone slab item placed on the floor goes into the lower half and one
+// placed against a ceiling into the upper half; stairs face away from the
+// player and Rotate_Building turns the held stairs.
+@(test)
+test_placing_slabs_and_rotated_stairs :: proc(t: ^testing.T) {
+	registry := make_test_registry()
+	items := make_test_items()
+	content := Simulation_Content{blocks = registry, items = items, machines = make_test_machines()}
+	world := make_floor_world(registry, 32)
+	set_blocks(&world, test_block(registry, "stone"), {3, 4, 0})
+	players := []Player{make_test_player(registry, {0.5, 1, 0.5})}
+	player := &players[0]
+	player.inventory.slots[0] = Item_Stack{item = test_item(items, "stone_slab"), count = 4}
+	player.inventory.slots[1] = Item_Stack{item = test_item(items, "stone_stairs"), count = 4}
+	// Looking down at the floor two blocks ahead.
+	player.pitch = -60
+	player.target = raycast_blocks(&world, registry, player_eye(player.position), player_look_direction(player^), PLAYER_REACH)
+	testing.expect_value(t, player.target.face, Direction.Positive_Y)
+	place_with_player(&world, content, players, 0, {.Place})
+	testing.expect_value(t, world_get_block(&world, player.target.adjacent), test_block(registry, "stone_slab"))
+	// Looking up at the underside of the stone at y 4.
+	player.position = {3.5, 1, 0.5}
+	player.pitch = 89
+	player.target = raycast_blocks(&world, registry, player_eye(player.position), player_look_direction(player^), PLAYER_REACH)
+	testing.expect_value(t, player.target.face, Direction.Negative_Y)
+	place_with_player(&world, content, players, 0, {.Place})
+	testing.expect_value(t, world_get_block(&world, {3, 3, 0}), test_block(registry, "stone_slab_upper"))
+	// Stairs placed looking along +z rise towards +z; one Rotate turns
+	// them a quarter further.
+	player.selected_hotbar_slot = 1
+	player.yaw = 90
+	player.target = Raycast_Hit{hit = true, block = {6, 0, 6}, face = .Positive_Y, adjacent = {6, 1, 6}, distance = 2}
+	place_with_player(&world, content, players, 0, {.Place})
+	testing.expect_value(t, world_get_block(&world, {6, 1, 6}), test_block(registry, "stone_stairs_r1"))
+	place_with_player(&world, content, players, 0, {.Rotate_Building})
+	testing.expect_value(t, player.placement_rotation, 1)
+	player.target = Raycast_Hit{hit = true, block = {8, 0, 6}, face = .Positive_Y, adjacent = {8, 1, 6}, distance = 2}
+	place_with_player(&world, content, players, 0, {.Place})
+	testing.expect_value(t, world_get_block(&world, {8, 1, 6}), test_block(registry, "stone_stairs_r2"))
+	testing.expect_value(t, player.inventory.slots[1].count, 2)
+}

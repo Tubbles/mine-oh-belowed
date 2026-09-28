@@ -185,6 +185,14 @@ items = [
 	{id = "spent_rock", name_key = "item_spent_rock", category = "block", stack_size = 50, places_block = "spent_rock", price = 1}
 	{id = "torch", name_key = "item_torch", category = "block", stack_size = 50, places_block = "torch", price = 1}
 	{id = "concrete", name_key = "item_concrete", category = "block", stack_size = 50, places_block = "concrete", cannot_recycle = true, price = 3}
+	// Slabs and stairs (work item 0061): each also drops from the
+	// variants the loader expands it into (blocks.sjson).
+	{id = "stone_slab", name_key = "item_stone_slab", category = "block", stack_size = 50, places_block = "stone_slab", mined_from = ["stone_slab_upper"], price = 1}
+	{id = "stone_stairs", name_key = "item_stone_stairs", category = "block", stack_size = 50, places_block = "stone_stairs", mined_from = ["stone_stairs_r1", "stone_stairs_r2", "stone_stairs_r3"], price = 1}
+	{id = "concrete_slab", name_key = "item_concrete_slab", category = "block", stack_size = 50, places_block = "concrete_slab", mined_from = ["concrete_slab_upper"], price = 2}
+	{id = "concrete_stairs", name_key = "item_concrete_stairs", category = "block", stack_size = 50, places_block = "concrete_stairs", mined_from = ["concrete_stairs_r1", "concrete_stairs_r2", "concrete_stairs_r3"], price = 3}
+	{id = "plank_slab", name_key = "item_plank_slab", category = "block", stack_size = 50, places_block = "plank_slab", mined_from = ["plank_slab_upper"], price = 1}
+	{id = "plank_stairs", name_key = "item_plank_stairs", category = "block", stack_size = 50, places_block = "plank_stairs", mined_from = ["plank_stairs_r1", "plank_stairs_r2", "plank_stairs_r3"], price = 1}
 	{id = "brick", name_key = "item_brick", category = "block", stack_size = 50, places_block = "brick", cannot_recycle = true, price = 2}
 	{id = "asphalt", name_key = "item_asphalt", category = "block", stack_size = 50, places_block = "asphalt", cannot_recycle = true, price = 3}
 	{id = "snow", name_key = "item_snow", category = "block", stack_size = 50, places_block = "snow", cannot_recycle = true, price = 1}
