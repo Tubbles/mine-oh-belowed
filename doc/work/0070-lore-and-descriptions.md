@@ -1,6 +1,6 @@
 # 0070 Lore: descriptions and notes
 
-Status: todo
+Status: implemented
 Milestone: M11
 
 ## Goal
@@ -29,3 +29,5 @@ Implementation pointers (main agent, 2026-09-28), decisions taken so the item is
 - Docs: `doc/content.md` (descriptions and notes), `doc/ui.md` (where descriptions show, the Notes tab), `doc/quests.md` (notes as world building), `doc/log/2026-09-28.md`, this item's Status and Notes.
 
 Files a subagent may touch: `src/item.odin`, `src/machine.odin`, `src/technology.odin` (the field and its validation), new `src/notes.odin` and `src/notes_test.odin`, `src/data_load.odin`, `src/data_reload.odin`, `src/data_watch.odin`, `src/loop.odin` (the content table and the screen context), `src/ui_screens.odin`, `src/ui_recipes.odin`, `src/ui_machine.odin`, `src/ui_technologies.odin`, `src/ui_journal.odin`, `src/ui_audit_test.odin`, `src/data_strings_test.odin`, `data/items.sjson`, `data/machines.sjson`, `data/technologies.sjson`, new `data/notes.sjson`, `data/strings/en.sjson`, the docs above, this file.
+
+Implemented: `description_key` with its string check in `src/item.odin`, `src/machine.odin` and `src/technology.odin` (`description_key_problem`, the per table validators and `item_description`, `machine_description`, `technology_description`), checked after loading by `validate_content_description_keys` in `src/data_reload.odin`; 218 descriptions (142 items, 49 machines, 27 technologies) in `data/strings/en.sjson` with the keys in `data/items.sjson`, `data/machines.sjson` and `data/technologies.sjson`; the recipe detail panel (`recipe_description_item`, `src/ui_recipes.odin`), the machine panel (`machine_description_lines`, `src/ui_machine.odin`) and the technology detail panel (`src/ui_technologies.odin`) show them dim. New `src/notes.odin` (`Note_Registry`, loading and validation, `note_is_unlocked`, `unlocked_notes`) and `data/notes.sjson` with 29 notes, loaded with the content in `src/data_reload.odin`, watched by `src/data_watch.odin`, carried in `Game_Content` (`src/loop.odin`) and `Screen_Context` (`src/ui_screens.odin`); the Notes tab after Contracts in `src/ui_journal.odin`. Tests: new `src/notes_test.odin` (4 tests: the shipped notes resolve with every unlock kind, validation, the unlock rules per kind, newest first), two in `src/data_strings_test.odin` (every shipped item, machine and technology described with an existing key, the optional key check), and `src/ui_audit_test.odin` audits the Notes tab and a Notes tab with every note unlocked. One line outside the list: `src/data_reload_test.odin` writes `notes.sjson` for the reload tests, which load every content file. Docs: `doc/content.md`, `doc/ui.md`, `doc/quests.md`, decisions in `doc/log/2026-09-28.md`. 898 tests pass.

@@ -3,6 +3,9 @@
 // item is the item that places the machine; picking the machine up gives
 // it back. Each item places at most one machine.
 // name_key is a key into data/strings/en.sjson.
+// description_key (optional, work item 0070) is the key of the text the
+// machine panel shows under the name: describe_machine_<id> by
+// convention. A set key must exist.
 // footprint is width (x), depth (z) and height (y) in blocks before
 // rotation, each from 1 to 9; a quarter turn swaps width and depth.
 // model (optional, work item 0055) names data/models/<model>.vox, a
@@ -207,6 +210,7 @@ machines = [
 	{
 		id = "wooden_chest"
 		name_key = "machine_wooden_chest"
+		description_key = "describe_machine_wooden_chest"
 		model = "wooden_chest"
 		item = "wooden_chest"
 		kind = "chest"
@@ -216,6 +220,7 @@ machines = [
 	{
 		id = "iron_chest"
 		name_key = "machine_iron_chest"
+		description_key = "describe_machine_iron_chest"
 		model = "iron_chest"
 		item = "iron_chest"
 		kind = "chest"
@@ -225,6 +230,7 @@ machines = [
 	{
 		id = "stone_furnace"
 		name_key = "machine_stone_furnace"
+		description_key = "describe_machine_stone_furnace"
 		model = "stone_furnace"
 		motion = {kind = "glow", period_seconds = 2}
 		item = "stone_furnace"
@@ -239,6 +245,7 @@ machines = [
 	{
 		id = "steel_furnace"
 		name_key = "machine_steel_furnace"
+		description_key = "describe_machine_steel_furnace"
 		model = "steel_furnace"
 		motion = {kind = "glow", period_seconds = 2}
 		item = "steel_furnace"
@@ -253,6 +260,7 @@ machines = [
 	{
 		id = "drop_capsule"
 		name_key = "machine_drop_capsule"
+		description_key = "describe_machine_drop_capsule"
 		model = "drop_capsule"
 		kind = "capsule"
 		footprint = {width = 1, depth = 1, height = 2}
@@ -261,6 +269,7 @@ machines = [
 	{
 		id = "schematic_crate"
 		name_key = "machine_schematic_crate"
+		description_key = "describe_machine_schematic_crate"
 		model = "schematic_crate"
 		kind = "schematic_crate"
 		footprint = {width = 1, depth = 1, height = 1}
@@ -269,6 +278,7 @@ machines = [
 	{
 		id = "belt"
 		name_key = "machine_belt"
+		description_key = "describe_machine_belt"
 		item = "belt"
 		kind = "belt"
 		footprint = {width = 1, depth = 1, height = 1}
@@ -278,6 +288,7 @@ machines = [
 	{
 		id = "belt_ramp"
 		name_key = "machine_belt_ramp"
+		description_key = "describe_machine_belt_ramp"
 		item = "belt_ramp"
 		kind = "belt"
 		footprint = {width = 1, depth = 1, height = 1}
@@ -287,6 +298,7 @@ machines = [
 	{
 		id = "belt_lift"
 		name_key = "machine_belt_lift"
+		description_key = "describe_machine_belt_lift"
 		item = "belt_lift"
 		kind = "belt"
 		footprint = {width = 1, depth = 1, height = 1}
@@ -296,6 +308,7 @@ machines = [
 	{
 		id = "belt_2"
 		name_key = "machine_belt_2"
+		description_key = "describe_machine_belt_2"
 		item = "belt_2"
 		kind = "belt"
 		footprint = {width = 1, depth = 1, height = 1}
@@ -305,6 +318,7 @@ machines = [
 	{
 		id = "belt_ramp_2"
 		name_key = "machine_belt_ramp_2"
+		description_key = "describe_machine_belt_ramp_2"
 		item = "belt_ramp_2"
 		kind = "belt"
 		footprint = {width = 1, depth = 1, height = 1}
@@ -314,6 +328,7 @@ machines = [
 	{
 		id = "belt_lift_2"
 		name_key = "machine_belt_lift_2"
+		description_key = "describe_machine_belt_lift_2"
 		item = "belt_lift_2"
 		kind = "belt"
 		footprint = {width = 1, depth = 1, height = 1}
@@ -323,6 +338,7 @@ machines = [
 	{
 		id = "burner_inserter"
 		name_key = "machine_burner_inserter"
+		description_key = "describe_machine_burner_inserter"
 		model = "burner_inserter"
 		motion = {kind = "swing", axis = "y", amplitude = 0.5, period_seconds = 1, pivot = [0.5, 0, 0.5], hand = [0.125, 0.4375, 0.5]}
 		item = "burner_inserter"
@@ -335,6 +351,7 @@ machines = [
 	{
 		id = "inserter"
 		name_key = "machine_inserter"
+		description_key = "describe_machine_inserter"
 		model = "inserter"
 		motion = {kind = "swing", axis = "y", amplitude = 0.5, period_seconds = 1, pivot = [0.5, 0, 0.5], hand = [0.125, 0.4375, 0.5]}
 		item = "inserter"
@@ -346,6 +363,7 @@ machines = [
 	{
 		id = "filter_inserter"
 		name_key = "machine_filter_inserter"
+		description_key = "describe_machine_filter_inserter"
 		model = "filter_inserter"
 		motion = {kind = "swing", axis = "y", amplitude = 0.5, period_seconds = 1, pivot = [0.5, 0, 0.5], hand = [0.125, 0.4375, 0.5]}
 		item = "filter_inserter"
@@ -358,6 +376,7 @@ machines = [
 	{
 		id = "fast_inserter"
 		name_key = "machine_fast_inserter"
+		description_key = "describe_machine_fast_inserter"
 		model = "fast_inserter"
 		motion = {kind = "swing", axis = "y", amplitude = 0.5, period_seconds = 1, pivot = [0.5, 0, 0.5], hand = [0.125, 0.4375, 0.5]}
 		item = "fast_inserter"
@@ -369,6 +388,7 @@ machines = [
 	{
 		id = "long_inserter"
 		name_key = "machine_long_inserter"
+		description_key = "describe_machine_long_inserter"
 		model = "long_inserter"
 		motion = {kind = "swing", axis = "y", amplitude = 0.5, period_seconds = 1, pivot = [0.5, 0, 0.5], hand = [0.125, 0.4375, 0.5]}
 		item = "long_inserter"
@@ -381,6 +401,7 @@ machines = [
 	{
 		id = "burner_mining_drill"
 		name_key = "machine_burner_mining_drill"
+		description_key = "describe_machine_burner_mining_drill"
 		model = "burner_mining_drill"
 		motion = {kind = "pump", axis = "y", amplitude = -0.25, period_seconds = 0.8}
 		item = "burner_mining_drill"
@@ -394,6 +415,7 @@ machines = [
 	{
 		id = "electric_mining_drill"
 		name_key = "machine_electric_mining_drill"
+		description_key = "describe_machine_electric_mining_drill"
 		model = "electric_mining_drill"
 		motion = {kind = "pump", axis = "y", amplitude = -0.25, period_seconds = 0.6}
 		item = "electric_mining_drill"
@@ -410,6 +432,7 @@ machines = [
 	{
 		id = "bore_drill"
 		name_key = "machine_bore_drill"
+		description_key = "describe_machine_bore_drill"
 		model = "bore_drill"
 		motion = {kind = "spin", axis = "y", amplitude = 1, period_seconds = 2, pivot = [2, 0, 2]}
 		item = "bore_drill"
@@ -427,6 +450,7 @@ machines = [
 	{
 		id = "splitter"
 		name_key = "machine_splitter"
+		description_key = "describe_machine_splitter"
 		model = "splitter"
 		item = "splitter"
 		kind = "splitter"
@@ -436,6 +460,7 @@ machines = [
 	{
 		id = "pipe"
 		name_key = "machine_pipe"
+		description_key = "describe_machine_pipe"
 		item = "pipe"
 		kind = "pipe"
 		footprint = {width = 1, depth = 1, height = 1}
@@ -445,6 +470,7 @@ machines = [
 	{
 		id = "offshore_pump"
 		name_key = "machine_offshore_pump"
+		description_key = "describe_machine_offshore_pump"
 		model = "offshore_pump"
 		motion = {kind = "bob", axis = "y", amplitude = 0.05, period_seconds = 0.8}
 		item = "offshore_pump"
@@ -458,6 +484,7 @@ machines = [
 	{
 		id = "boiler"
 		name_key = "machine_boiler"
+		description_key = "describe_machine_boiler"
 		model = "boiler"
 		motion = {kind = "glow", period_seconds = 1.5}
 		item = "boiler"
@@ -474,6 +501,7 @@ machines = [
 	{
 		id = "steam_engine"
 		name_key = "machine_steam_engine"
+		description_key = "describe_machine_steam_engine"
 		model = "steam_engine"
 		motion = {kind = "spin", axis = "x", amplitude = 1, period_seconds = 1.2, pivot = [2.375, 1, 3.75]}
 		item = "steam_engine"
@@ -489,6 +517,7 @@ machines = [
 	{
 		id = "storage_tank"
 		name_key = "machine_storage_tank"
+		description_key = "describe_machine_storage_tank"
 		model = "storage_tank"
 		item = "storage_tank"
 		kind = "storage_tank"
@@ -500,6 +529,7 @@ machines = [
 	{
 		id = "pump"
 		name_key = "machine_pump"
+		description_key = "describe_machine_pump"
 		model = "pump"
 		motion = {kind = "bob", axis = "y", amplitude = 0.05, period_seconds = 0.6}
 		item = "pump"
@@ -515,6 +545,7 @@ machines = [
 	{
 		id = "tar_pit_pump"
 		name_key = "machine_tar_pit_pump"
+		description_key = "describe_machine_tar_pit_pump"
 		model = "tar_pit_pump"
 		motion = {kind = "bob", axis = "y", amplitude = 0.08, period_seconds = 2}
 		item = "tar_pit_pump"
@@ -529,6 +560,7 @@ machines = [
 	{
 		id = "flare_stack"
 		name_key = "machine_flare_stack"
+		description_key = "describe_machine_flare_stack"
 		model = "flare_stack"
 		motion = {kind = "glow", period_seconds = 0.5}
 		item = "flare_stack"
@@ -543,6 +575,7 @@ machines = [
 	{
 		id = "combustion_generator"
 		name_key = "machine_combustion_generator"
+		description_key = "describe_machine_combustion_generator"
 		model = "combustion_generator"
 		motion = {kind = "spin", axis = "x", amplitude = 1, period_seconds = 0.8, pivot = [2.5, 1, 1]}
 		item = "combustion_generator"
@@ -557,6 +590,7 @@ machines = [
 	{
 		id = "hydro_turbine"
 		name_key = "machine_hydro_turbine"
+		description_key = "describe_machine_hydro_turbine"
 		model = "hydro_turbine"
 		motion = {kind = "spin", axis = "z", amplitude = 0.25, period_seconds = 1, pivot = [1, 1, 1]}
 		item = "hydro_turbine"
@@ -569,6 +603,7 @@ machines = [
 	{
 		id = "small_pole"
 		name_key = "machine_small_pole"
+		description_key = "describe_machine_small_pole"
 		model = "small_pole"
 		item = "small_pole"
 		kind = "pole"
@@ -579,6 +614,7 @@ machines = [
 	{
 		id = "big_pole"
 		name_key = "machine_big_pole"
+		description_key = "describe_machine_big_pole"
 		model = "big_pole"
 		item = "big_pole"
 		kind = "pole"
@@ -589,6 +625,7 @@ machines = [
 	{
 		id = "substation"
 		name_key = "machine_substation"
+		description_key = "describe_machine_substation"
 		model = "substation"
 		item = "substation"
 		kind = "pole"
@@ -599,6 +636,7 @@ machines = [
 	{
 		id = "power_switch"
 		name_key = "machine_power_switch"
+		description_key = "describe_machine_power_switch"
 		model = "power_switch"
 		item = "power_switch"
 		kind = "power_switch"
@@ -608,6 +646,7 @@ machines = [
 	{
 		id = "lamp"
 		name_key = "machine_lamp"
+		description_key = "describe_machine_lamp"
 		model = "lamp"
 		item = "lamp"
 		kind = "lamp"
@@ -618,6 +657,7 @@ machines = [
 	{
 		id = "assembler_1"
 		name_key = "machine_assembler_1"
+		description_key = "describe_machine_assembler_1"
 		model = "assembler_1"
 		motion = {kind = "spin", axis = "y", amplitude = 1, period_seconds = 2, pivot = [1.5, 0, 1.5]}
 		item = "assembler_1"
@@ -631,6 +671,7 @@ machines = [
 	{
 		id = "crusher"
 		name_key = "machine_crusher"
+		description_key = "describe_machine_crusher"
 		model = "crusher"
 		motion = {kind = "spin", axis = "z", amplitude = 1, period_seconds = 1, pivot = [1, 1.5, 1]}
 		item = "crusher"
@@ -646,6 +687,7 @@ machines = [
 	{
 		id = "washer"
 		name_key = "machine_washer"
+		description_key = "describe_machine_washer"
 		model = "washer"
 		motion = {kind = "spin", axis = "x", amplitude = 1, period_seconds = 2, pivot = [1.5, 1.5, 1]}
 		item = "washer"
@@ -664,6 +706,7 @@ machines = [
 	{
 		id = "alloy_furnace"
 		name_key = "machine_alloy_furnace"
+		description_key = "describe_machine_alloy_furnace"
 		model = "alloy_furnace"
 		motion = {kind = "glow", period_seconds = 2}
 		item = "alloy_furnace"
@@ -680,6 +723,7 @@ machines = [
 	{
 		id = "recycler"
 		name_key = "machine_recycler"
+		description_key = "describe_machine_recycler"
 		model = "recycler"
 		motion = {kind = "spin", axis = "y", amplitude = 1, period_seconds = 1.5, pivot = [1, 0, 1]}
 		item = "recycler"
@@ -695,6 +739,7 @@ machines = [
 	{
 		id = "refinery"
 		name_key = "machine_refinery"
+		description_key = "describe_machine_refinery"
 		model = "refinery"
 		motion = {kind = "glow", period_seconds = 1}
 		item = "refinery"
@@ -714,6 +759,7 @@ machines = [
 	{
 		id = "cracking_unit"
 		name_key = "machine_cracking_unit"
+		description_key = "describe_machine_cracking_unit"
 		model = "cracking_unit"
 		motion = {kind = "glow", period_seconds = 1.5}
 		item = "cracking_unit"
@@ -732,6 +778,7 @@ machines = [
 	{
 		id = "chemical_plant"
 		name_key = "machine_chemical_plant"
+		description_key = "describe_machine_chemical_plant"
 		model = "chemical_plant"
 		motion = {kind = "spin", axis = "y", amplitude = 1, period_seconds = 1.5, pivot = [1.875, 0, 1.5]}
 		item = "chemical_plant"
@@ -752,6 +799,7 @@ machines = [
 	{
 		id = "wood_gasifier"
 		name_key = "machine_wood_gasifier"
+		description_key = "describe_machine_wood_gasifier"
 		model = "wood_gasifier"
 		motion = {kind = "glow", period_seconds = 1.2}
 		item = "wood_gasifier"
@@ -770,6 +818,7 @@ machines = [
 	{
 		id = "electrolyser"
 		name_key = "machine_electrolyser"
+		description_key = "describe_machine_electrolyser"
 		model = "electrolyser"
 		motion = {kind = "bob", axis = "y", amplitude = 0.2, period_seconds = 0.7}
 		item = "electrolyser"
@@ -785,6 +834,7 @@ machines = [
 	{
 		id = "core_sample_drill"
 		name_key = "machine_core_sample_drill"
+		description_key = "describe_machine_core_sample_drill"
 		model = "core_sample_drill"
 		motion = {kind = "pump", axis = "y", amplitude = -0.25, period_seconds = 1}
 		item = "core_sample_drill"
@@ -796,6 +846,7 @@ machines = [
 	{
 		id = "launch_pad"
 		name_key = "machine_launch_pad"
+		description_key = "describe_machine_launch_pad"
 		model = "launch_pad"
 		item = "launch_pad"
 		kind = "launch_pad"
@@ -813,6 +864,7 @@ machines = [
 	{
 		id = "lab"
 		name_key = "machine_lab"
+		description_key = "describe_machine_lab"
 		model = "lab"
 		motion = {kind = "glow", period_seconds = 1.5}
 		item = "lab"

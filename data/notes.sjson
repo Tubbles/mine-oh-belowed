@@ -1,0 +1,44 @@
+// Notes (work item 0070): what the planet, the lease and the venture tell
+// the player, listed in the journal's Notes tab. The runtime is
+// src/notes.odin.
+//
+// notes: id, title_key and text_key (keys into data/strings/en.sjson,
+// note_<id>_title and note_<id>_text by convention) and unlock, exactly
+// one of chapter (from 1, reached once that chapter's first quest or any
+// later one is no longer locked), item (obtained once by any player),
+// technology (researched) or quest (done). Nothing is saved: the unlock is
+// read from the state, so a loaded world shows what its milestones earned.
+// The journal lists unlocked notes newest first, which is this file's
+// order reversed, so keep the notes in the order their milestones come in
+// play.
+notes = [
+	{id = "the_asset", title_key = "note_the_asset_title", text_key = "note_the_asset_text", unlock = {chapter = 1}}
+	{id = "the_lease", title_key = "note_the_lease_title", text_key = "note_the_lease_text", unlock = {chapter = 1}}
+	{id = "mission_control", title_key = "note_mission_control_title", text_key = "note_mission_control_text", unlock = {quest = "arrival"}}
+	{id = "the_contractor", title_key = "note_the_contractor_title", text_key = "note_the_contractor_text", unlock = {quest = "bearings"}}
+	{id = "the_capsule", title_key = "note_the_capsule_title", text_key = "note_the_capsule_text", unlock = {quest = "stock"}}
+	{id = "iron", title_key = "note_iron_title", text_key = "note_iron_text", unlock = {item = "hematite"}}
+	{id = "slag", title_key = "note_slag_title", text_key = "note_slag_text", unlock = {item = "slag"}}
+	{id = "coal", title_key = "note_coal_title", text_key = "note_coal_text", unlock = {item = "coal"}}
+	{id = "copper", title_key = "note_copper_title", text_key = "note_copper_text", unlock = {item = "chalcopyrite"}}
+	{id = "strata", title_key = "note_strata_title", text_key = "note_strata_text", unlock = {chapter = 2}}
+	{id = "the_survey", title_key = "note_the_survey_title", text_key = "note_the_survey_text", unlock = {quest = "survey"}}
+	{id = "the_ledger", title_key = "note_the_ledger_title", text_key = "note_the_ledger_text", unlock = {quest = "invoice"}}
+	{id = "the_utility", title_key = "note_the_utility_title", text_key = "note_the_utility_text", unlock = {chapter = 4}}
+	{id = "the_buyers", title_key = "note_the_buyers_title", text_key = "note_the_buyers_text", unlock = {quest = "first_contract"}}
+	{id = "the_station", title_key = "note_the_station_title", text_key = "note_the_station_text", unlock = {chapter = 5}}
+	{id = "grade", title_key = "note_grade_title", text_key = "note_grade_text", unlock = {quest = "low_grade"}}
+	{id = "lead_and_zinc", title_key = "note_lead_and_zinc_title", text_key = "note_lead_and_zinc_text", unlock = {item = "galena"}}
+	{id = "nickel", title_key = "note_nickel_title", text_key = "note_nickel_text", unlock = {item = "pentlandite"}}
+	{id = "extraction_rights", title_key = "note_extraction_rights_title", text_key = "note_extraction_rights_text", unlock = {technology = "oil_processing"}}
+	{id = "tar_flats", title_key = "note_tar_flats_title", text_key = "note_tar_flats_text", unlock = {chapter = 6}}
+	{id = "the_flare", title_key = "note_the_flare_title", text_key = "note_the_flare_text", unlock = {quest = "flare"}}
+	{id = "deep_strata", title_key = "note_deep_strata_title", text_key = "note_deep_strata_text", unlock = {technology = "deep_mining"}}
+	{id = "bauxite", title_key = "note_bauxite_title", text_key = "note_bauxite_text", unlock = {item = "bauxite"}}
+	{id = "gold", title_key = "note_gold_title", text_key = "note_gold_text", unlock = {item = "gold_ore"}}
+	{id = "previous_tenants", title_key = "note_previous_tenants_title", text_key = "note_previous_tenants_text", unlock = {quest = "schematic"}}
+	{id = "congealed_power", title_key = "note_congealed_power_title", text_key = "note_congealed_power_text", unlock = {technology = "electrolysis"}}
+	{id = "launch_permit", title_key = "note_launch_permit_title", text_key = "note_launch_permit_text", unlock = {technology = "rocket_program"}}
+	{id = "from_orbit", title_key = "note_from_orbit_title", text_key = "note_from_orbit_text", unlock = {quest = "orbital_survey"}}
+	{id = "self_sufficient", title_key = "note_self_sufficient_title", text_key = "note_self_sufficient_text", unlock = {quest = "self_sufficient"}}
+]

@@ -136,6 +136,7 @@ Machine_Footprint_Definition :: struct {
 Machine_Definition :: struct {
 	id:                           string,
 	name_key:                     string,
+	description_key:              string,
 	item:                         string,
 	kind:                         string,
 	footprint:                    Machine_Footprint_Definition,
@@ -182,9 +183,12 @@ Machines_File :: struct {
 
 // footprint is x (width), y (height), z (depth) before rotation. Speed is
 // kept in percent and power in watts, so the tick works in integers.
+// description_key is the string the machine panel shows under the name,
+// "" for none (work item 0070).
 Machine :: struct {
 	id:                          string,
 	name_key:                    string,
+	description_key:             string,
 	item:                        Item_Id,
 	kind:                        Machine_Kind,
 	footprint:                   [3]i32,
@@ -550,6 +554,7 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 	return Machine {
 		id = definition.id,
 		name_key = definition.name_key,
+		description_key = definition.description_key,
 		item = item,
 		kind = kind,
 		footprint = {i32(footprint.width), i32(footprint.height), i32(footprint.depth)},
@@ -657,6 +662,23 @@ machine_name :: proc(registry: Machine_Registry, machine: Machine_Id) -> string 
 		return ""
 	}
 	return text(registry.machines[machine].name_key)
+}
+
+validate_machine_description_keys :: proc(registry: Machine_Registry, strings: map[string]string) -> string {
+	for machine in registry.machines {
+		if problem := description_key_problem(strings, "machine", machine.id, machine.description_key); problem != "" {
+			return problem
+		}
+	}
+	return ""
+}
+
+// The machine's description, "" for none.
+machine_description :: proc(registry: Machine_Registry, machine: Machine_Id) -> string {
+	if int(machine) >= len(registry.machines) || registry.machines[machine].description_key == "" {
+		return ""
+	}
+	return text(registry.machines[machine].description_key)
 }
 
 load_machine_registry :: proc(data_directory: string, items: Item_Registry, fluids: Fluid_Registry, allocator := context.allocator) -> (registry: Machine_Registry, ok: bool) {

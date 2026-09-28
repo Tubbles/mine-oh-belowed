@@ -85,3 +85,41 @@ test_shipped_strings_cover_the_ui :: proc(t: ^testing.T) {
 		testing.expectf(t, key in table.entries, "key %q is not in en.sjson", key)
 	}
 }
+
+// Work item 0070: every shipped item, machine and technology has a
+// description, and its key is in the string table.
+@(test)
+test_shipped_descriptions_exist :: proc(t: ^testing.T) {
+	table, error := parse_string_table(#load("../data/strings/en.sjson"), context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	items := make_test_items()
+	_, technologies := make_test_recipes(items)
+	keys := make([dynamic]string, context.temp_allocator)
+	for item in items.items {
+		testing.expectf(t, item.description_key != "", "item %q has no description_key", item.id)
+		append(&keys, item.description_key)
+	}
+	for machine in make_test_machines().machines {
+		testing.expectf(t, machine.description_key != "", "machine %q has no description_key", machine.id)
+		append(&keys, machine.description_key)
+	}
+	for technology in technologies.technologies {
+		testing.expectf(t, technology.description_key != "", "technology %q has no description_key", technology.id)
+		append(&keys, technology.description_key)
+	}
+	for key in keys {
+		testing.expectf(t, key == "" || key in table.entries, "description key %q is not in en.sjson", key)
+	}
+	testing.expect_value(t, validate_item_description_keys(items, table.entries), "")
+	testing.expect_value(t, validate_machine_description_keys(make_test_machines(), table.entries), "")
+	testing.expect_value(t, validate_technology_description_keys(technologies, table.entries), "")
+}
+
+@(test)
+test_description_key_is_optional_but_must_resolve :: proc(t: ^testing.T) {
+	table, error := parse_string_table(transmute([]byte)string(`describe_item_log = "Wood."`), context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	testing.expect_value(t, description_key_problem(table.entries, "item", "log", ""), "")
+	testing.expect_value(t, description_key_problem(table.entries, "item", "log", "describe_item_log"), "")
+	testing.expect_value(t, description_key_problem(table.entries, "item", "log", "describe_item_nothing"), `item "log": description_key "describe_item_nothing" is not in the string table`)
+}

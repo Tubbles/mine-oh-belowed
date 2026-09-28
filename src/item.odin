@@ -59,6 +59,7 @@ item_use_names := [Item_Use]string {
 Item_Definition :: struct {
 	id:              string,
 	name_key:        string,
+	description_key: string,
 	category:        string,
 	stack_size:      int,
 	places_block:    string,
@@ -87,10 +88,13 @@ Items_File :: struct {
 // seismic shot images deep veins within use_range blocks. price is the
 // venture credit one item fetches as free trade (work item 0041).
 // tool_tier is the highest block tool_tier the tool mines by hand, 0 for
-// every item but the pickaxes (work item 0051).
+// every item but the pickaxes (work item 0051). description_key is the
+// string shown under the facts in the recipe browser, "" for none (work
+// item 0070).
 Item :: struct {
 	id:              string,
 	name_key:        string,
+	description_key: string,
 	category:        Item_Category,
 	stack_size:      u16,
 	places_block:    Block_Id,
@@ -229,6 +233,7 @@ resolve_item :: proc(definition: Item_Definition, blocks: Block_Registry) -> (it
 	item = Item {
 		id              = definition.id,
 		name_key        = definition.name_key,
+		description_key = definition.description_key,
 		category        = category,
 		stack_size      = u16(definition.stack_size),
 		places_block    = placed_block,
@@ -562,6 +567,33 @@ item_icon :: proc(registry: Item_Registry, item: Item_Id) -> Item_Icon {
 		return Item_Icon{kind = .Block_Tile, tile = atlas_tile_index(definition.places_block, .Side)}
 	}
 	return Item_Icon{kind = .Lettered, color = item_category_colors[definition.category], letters = item_letters(definition.id)}
+}
+
+// A description key is optional, and one that is set must be in the
+// string table (work item 0070). The loaders know no strings, so the
+// content load checks every table with these after they are resolved.
+description_key_problem :: proc(strings: map[string]string, owner, id, key: string) -> string {
+	if key != "" && key not_in strings {
+		return fmt.tprintf("%s %q: description_key %q is not in the string table", owner, id, key)
+	}
+	return ""
+}
+
+validate_item_description_keys :: proc(registry: Item_Registry, strings: map[string]string) -> string {
+	for item in registry.items {
+		if problem := description_key_problem(strings, "item", item.id, item.description_key); problem != "" {
+			return problem
+		}
+	}
+	return ""
+}
+
+// The item's description, "" for none.
+item_description :: proc(registry: Item_Registry, item: Item_Id) -> string {
+	if int(item) >= len(registry.items) || registry.items[item].description_key == "" {
+		return ""
+	}
+	return text(registry.items[item].description_key)
 }
 
 item_category_key :: proc(category: Item_Category) -> string {

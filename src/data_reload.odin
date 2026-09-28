@@ -7,8 +7,8 @@ import "core:strings"
 
 // Loading the game data, at start and again on a content reload (work
 // item 0054). The content tables (blocks, items, fluids, machines,
-// recipes, technologies, quests, contracts, developer kits, biomes, tree
-// species and veins) load into one arena, so a reload frees the data it replaces in
+// recipes, technologies, quests, contracts, notes, developer kits,
+// biomes, tree species and veins) load into one arena, so a reload frees the data it replaces in
 // one go once nothing points into it any more.
 //
 // A content reload runs between frames, never during a tick: the new data
@@ -94,7 +94,30 @@ load_content_registries :: proc(data_directory: string, string_entries: map[stri
 	content.machines.lab_packs = content.technologies.science_packs
 	content.quests = load_quest_registry(data_directory, content_quest_references(content, string_entries)) or_return
 	content.contracts = load_contract_registry(data_directory, content.items, string_entries) or_return
+	validate_content_description_keys(content, string_entries) or_return
+	content.notes = load_note_registry(data_directory, content.items, content.technologies, content.quests, string_entries) or_return
 	return content, true
+}
+
+// The description keys (work item 0070) are checked once every table is
+// resolved, since the item, machine and technology loaders know no
+// strings.
+validate_content_description_keys :: proc(content: Game_Content, string_entries: map[string]string) -> bool {
+	checks := [?]struct {
+		file:    string,
+		problem: string,
+	} {
+		{ITEMS_FILE_NAME, validate_item_description_keys(content.items, string_entries)},
+		{MACHINES_FILE_NAME, validate_machine_description_keys(content.machines, string_entries)},
+		{TECHNOLOGIES_FILE_NAME, validate_technology_description_keys(content.technologies, string_entries)},
+	}
+	for check in checks {
+		if check.problem != "" {
+			log_printf("error: invalid %s: %s", check.file, check.problem)
+			return false
+		}
+	}
+	return true
 }
 
 content_quest_references :: proc(content: Game_Content, string_entries: map[string]string) -> Quest_References {

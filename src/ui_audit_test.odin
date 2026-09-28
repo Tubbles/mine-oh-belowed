@@ -94,6 +94,7 @@ Ui_Audit :: struct {
 	recipe_names:       []string,
 	recipe_order:       []int,
 	item_sort_ranks:    []u16,
+	notes:              Note_Registry,
 	quit_requested:     bool,
 	save_requested:     bool,
 	show_diagnostics:   bool,
@@ -240,6 +241,7 @@ audit_screen_context :: proc(audit: ^Ui_Audit) -> Screen_Context {
 		quests = audit.content.quests,
 		quest_state = &simulation.quests,
 		contracts = audit.content.contracts,
+		notes = audit.notes,
 		tick = simulation.tick,
 		recipe_names = audit.recipe_names,
 		recipe_order = audit.recipe_order,
@@ -449,6 +451,8 @@ make_ui_audit :: proc() -> ^Ui_Audit {
 	audit.recipe_names = recipe_display_names(audit.content.recipes, context.temp_allocator)
 	audit.recipe_order = recipe_name_order(audit.recipe_names, context.temp_allocator)
 	audit.item_sort_ranks = item_sort_ranks(audit.content.items, item_display_names(audit.content.items, context.temp_allocator), context.temp_allocator)
+	// Every quest but one is done, so the chapter and quest notes show.
+	audit.notes = make_test_notes(audit.content.quests)
 	return audit
 }
 
@@ -522,6 +526,19 @@ audit_desktop_scaled_display :: proc(audit: ^Ui_Audit) {
 	audit.settings = settings
 }
 
+// The Notes tab with every note unlocked, so each note's text is audited
+// (work item 0070). The unlocks are restored.
+audit_every_note :: proc(audit: ^Ui_Audit) {
+	unlocks := &audit.simulation.unlocks
+	obtained := slice.clone(unlocks.obtained, context.temp_allocator)
+	researched := slice.clone(unlocks.researched, context.temp_allocator)
+	slice.fill(unlocks.obtained, true)
+	slice.fill(unlocks.researched, true)
+	audit_case(audit, {name = "journal notes, every note", screens = {.Journal}, tab_next = len(audit.content.quests.chapters) + 1, walk_focus = true})
+	copy(unlocks.obtained, obtained)
+	copy(unlocks.researched, researched)
+}
+
 UI_AUDIT_TOASTS :: [?]string{"mc_extraction_rights_done", "inventory_full", "developer_applies_on_resume"}
 
 audit_every_case :: proc(audit: ^Ui_Audit) {
@@ -560,9 +577,11 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 		}
 	}
 	audit_case(audit, {name = "technologies", screens = {.Technologies}, walk_focus = true})
-	for tab in 0 ..= len(audit.content.quests.chapters) {
+	// The chapters, the contracts and the notes (work item 0070).
+	for tab in 0 ..= len(audit.content.quests.chapters) + 1 {
 		audit_case(audit, {name = fmt.tprintf("journal tab %d", tab), screens = {.Journal}, tab_next = tab, walk_focus = true})
 	}
+	audit_every_note(audit)
 	for tab in 0 ..< 3 {
 		audit_case(audit, {name = fmt.tprintf("statistics tab %d", tab), screens = {.Statistics}, tab_next = tab, walk_focus = true})
 	}

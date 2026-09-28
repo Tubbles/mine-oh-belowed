@@ -422,10 +422,19 @@ inserter_hand_after_input :: proc(hand: Item_Stack, held: Held_Stack, activated:
 }
 
 // The machine's name and slots. Results are indices into the machine's slots.
+// The machine's description wrapped to the machine side (work item
+// 0070), dim under its name. The side scrolls, so it always has room.
+machine_description_lines :: proc(state: ^Ui_State, machines: Machine_Registry, machine: Machine_Id, width: f32) -> []string {
+	return wrap_text(state, machine_description(machines, machine), UI_BODY_TEXT_SIZE, width)
+}
+
 machine_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, handle: Entity_Handle, slots: []Item_Stack, screen_context: Screen_Context) -> Machine_Slot_Result {
 	content := area
 	common := entity_common(&screen_context.world.entities, handle)
 	draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), machine_name(screen_context.machines, common.machine), UI_HEADING_TEXT_SIZE, .Left)
+	for line in machine_description_lines(state, screen_context.machines, common.machine, content.width) {
+		ui_label(state, cut_top(&content, UI_LINE_HEIGHT), line, UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	}
 	ui_push_id(state, "machine_slots")
 	defer ui_pop_id(state)
 	#partial switch handle.kind {
@@ -487,7 +496,8 @@ machine_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	safe := ui_panel_area(state)
 	player_width := slot_grid_width(INVENTORY_COLUMNS)
 	machine_width := max(min(machine_area_width(machine), safe.width - player_width - 4 * UI_PADDING), UI_SLOT_SIZE)
-	machine_height := machine_area_height(machine, len(slots), machine_width) + transfer_rows_height(machine, machine_width)
+	description_height := f32(len(machine_description_lines(state, screen_context.machines, common.machine, machine_width))) * UI_LINE_HEIGHT
+	machine_height := machine_area_height(machine, len(slots), machine_width) + transfer_rows_height(machine, machine_width) + description_height
 	height := max(inventory_panel_height(), machine_height + 2 * UI_PADDING)
 	panel := fitted_panel(safe, player_width + machine_width + 4 * UI_PADDING, height)
 	ui_panel_begin(state, "machine", panel)

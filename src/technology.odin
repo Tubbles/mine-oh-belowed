@@ -19,6 +19,7 @@ MAXIMUM_TECHNOLOGIES :: 64
 Technology_Definition :: struct {
 	id:                        string,
 	name_key:                  string,
+	description_key:           string,
 	unlocks:                   []string,
 	packs:                     int,
 	seconds:                   f32,
@@ -45,9 +46,12 @@ Technologies_File :: struct {
 // technology is researched level after level (Research_State.levels):
 // level n costs pack_count times level_cost_growth_percent to the power n
 // minus one, and every level adds effect_percent to its effect.
+// description_key is the string the technology screen shows under the
+// cost, "" for none (work item 0070).
 Technology :: struct {
 	id:                        string,
 	name_key:                  string,
+	description_key:           string,
 	unlocks:                   []int,
 	pack_count:                int,
 	milliseconds_per_pack:     u32,
@@ -254,6 +258,7 @@ resolve_technology :: proc(definitions: []Technology_Definition, index: int, ite
 	technology = Technology {
 		id                        = definition.id,
 		name_key                  = definition.name_key,
+		description_key           = definition.description_key,
 		pack_count                = definition.packs,
 		milliseconds_per_pack     = u32(math.round(definition.seconds * 1000)),
 		placeholder               = definition.placeholder,
@@ -313,6 +318,23 @@ technology_name :: proc(registry: Technology_Registry, technology: int) -> strin
 		return ""
 	}
 	return text(registry.technologies[technology].name_key)
+}
+
+validate_technology_description_keys :: proc(registry: Technology_Registry, strings: map[string]string) -> string {
+	for technology in registry.technologies {
+		if problem := description_key_problem(strings, "technology", technology.id, technology.description_key); problem != "" {
+			return problem
+		}
+	}
+	return ""
+}
+
+// The technology's description, "" for none.
+technology_description :: proc(registry: Technology_Registry, technology: int) -> string {
+	if technology < 0 || technology >= len(registry.technologies) || registry.technologies[technology].description_key == "" {
+		return ""
+	}
+	return text(registry.technologies[technology].description_key)
 }
 
 load_technology_registry :: proc(data_directory: string, items: Item_Registry, recipes: Recipe_Registry, allocator := context.allocator) -> (registry: Technology_Registry, ok: bool) {

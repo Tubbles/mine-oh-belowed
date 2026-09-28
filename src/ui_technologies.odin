@@ -5,8 +5,8 @@ import "core:fmt"
 // The technology screen (doc/fluids.md, Assembler, lab and research): the
 // queued technology and its progress on the left with the filter toggle,
 // the technologies sorted by name in the middle with the letter wheel,
-// and the focused one's status, cost, prerequisites and unlocks on the
-// right. Confirm queues the focused technology when it is available,
+// and the focused one's status, cost, description, prerequisites and
+// unlocks on the right. Confirm queues the focused technology when it is available,
 // replacing the queued one. It does not pause.
 
 TECHNOLOGY_STATUS_COLUMN_WIDTH :: 380
@@ -114,8 +114,8 @@ technology_names_text :: proc(technologies: Technology_Registry, indices: []int)
 	return result
 }
 
-// The focused technology: status, cost, prerequisites and the recipes it
-// unlocks.
+// The focused technology: status, cost, its description, prerequisites
+// and the recipes it unlocks.
 technology_detail_panel :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context, names: []string) {
 	technology := screen_context.technology_browser.focused
 	if technology == NO_TECHNOLOGY {
@@ -133,6 +133,10 @@ technology_detail_panel :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_con
 	units := technology_next_cost(definition, levels, technology)
 	cost := fmt.tprintf("%s %s", text(definition.infinite ? "technologies_next_level_cost" : "technologies_cost"), technology_cost_text(definition, units, screen_context.items))
 	draw_wrapped(state, &content, cost)
+	if description := technology_description(screen_context.technologies, technology); description != "" {
+		cut_top(&content, UI_GAP)
+		draw_wrapped(state, &content, description, UI_DIM_TEXT_COLOR)
+	}
 	cut_top(&content, UI_GAP)
 	prerequisites := fmt.tprintf("%s %s", text("technologies_prerequisites"), technology_names_text(screen_context.technologies, definition.prerequisites))
 	draw_wrapped(state, &content, prerequisites)

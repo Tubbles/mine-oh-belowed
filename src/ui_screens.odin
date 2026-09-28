@@ -48,6 +48,8 @@ Screen_Context :: struct {
 	quests:          Quest_Registry,
 	quest_state:     ^Quest_State,
 	contracts:       Contract_Registry,
+	// The journal's Notes tab (notes.odin).
+	notes:           Note_Registry,
 	// The simulation's tick, for the contracts' time left.
 	tick:            u64,
 	recipe_names:    []string,

@@ -563,6 +563,7 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 		technologies    = content.technologies,
 		quests          = content.quests,
 		contracts       = content.contracts,
+		notes           = content.notes,
 		recipe_names    = content.recipe_names,
 		recipe_order    = content.recipe_order,
 		developer_mode  = content.developer_mode,
@@ -672,6 +673,9 @@ Game_Content :: struct {
 	quests:          Quest_Registry,
 	veins:           Vein_Content,
 	contracts:       Contract_Registry,
+	// The journal's Notes tab (notes.odin); presentation only, so the
+	// simulation never sees it.
+	notes:           Note_Registry,
 	developer_kits:  Developer_Kits,
 	item_sort_ranks: []u16,
 	recipe_names:    []string,

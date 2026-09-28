@@ -8,7 +8,8 @@ import "core:strings"
 // then done, then locked ones as silhouettes with only the title), the
 // focused quest's objectives with their progress on the right, and Mission
 // Control's lines below, newest first, with the game time they arrived.
-// A last tab shows the venture's contracts (ui_contracts.odin). Once every
+// A tab after the chapters shows the venture's contracts
+// (ui_contracts.odin), the last one the notes (notes.odin). Once every
 // quest is done the last chapter's list starts with "Contracts continue",
 // where the active quest would be, and the HUD shows the oldest open
 // contract instead (hud.odin).
@@ -192,14 +193,16 @@ draw_quest_objective :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 }
 
-// One tab per chapter and a last one for the contracts (work item 0041).
+// One tab per chapter, then the contracts (work item 0041) and the notes
+// (work item 0070).
 chapter_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, screen_context: Screen_Context) -> int {
 	chapters := screen_context.quests.chapters
-	labels := make([]string, len(chapters) + 1, context.temp_allocator)
+	labels := make([]string, len(chapters) + 2, context.temp_allocator)
 	for chapter, index in chapters {
 		labels[index] = text(chapter.title_key)
 	}
 	labels[len(chapters)] = text("journal_contracts")
+	labels[len(chapters) + 1] = text("journal_notes")
 	return ui_tabs(state, rectangle, "journal_chapters", labels)
 }
 
@@ -232,6 +235,56 @@ draw_quest_row :: proc(state: ^Ui_State, row: Ui_Rectangle, screen_context: Scre
 	draw_text(state, content, status_text, UI_BODY_TEXT_SIZE, .Right, UI_DIM_TEXT_COLOR)
 	content.width = max(content.width - status_width - UI_GAP, 0)
 	draw_text_fitted(state, content, text(quest.title_key), UI_BODY_TEXT_SIZE, .Left, color)
+}
+
+// The Notes tab (work item 0070): the unlocked notes newest first on the
+// left with the count still to find under them, the focused note on the
+// right.
+journal_notes_section :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context) {
+	content := area
+	shown := unlocked_notes(screen_context.notes, screen_context.quests, screen_context.quest_state^, screen_context.unlocks^)
+	list_area := cut_left(&content, min(f32(JOURNAL_LIST_COLUMN_WIDTH), content.width * JOURNAL_LIST_COLUMN_FRACTION))
+	cut_left(&content, 2 * UI_PADDING)
+	remaining_row := inset(cut_bottom(&list_area, UI_ROW_HEIGHT), UI_PADDING)
+	draw_text_fitted(state, remaining_row, notes_remaining_text(len(screen_context.notes.notes) - len(shown)), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	if len(shown) == 0 {
+		draw_text_fitted(state, inset(cut_top(&list_area, UI_ROW_HEIGHT), UI_PADDING), text("journal_notes_none"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+		return
+	}
+	focused := journal_note_list(state, list_area, screen_context, shown)
+	if focused < 0 {
+		focused = shown[0]
+	}
+	note := screen_context.notes.notes[focused]
+	draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), text(note.title_key), UI_HEADING_TEXT_SIZE, .Left)
+	draw_wrapped(state, &content, text(note.text_key))
+}
+
+// "12 more to find", or that every note was found.
+notes_remaining_text :: proc(remaining: int) -> string {
+	if remaining <= 0 {
+		return text("journal_notes_all_found")
+	}
+	return fmt.tprintf("%d %s", remaining, text("journal_notes_more"))
+}
+
+// One row per unlocked note; returns the focused note or -1.
+journal_note_list :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context, shown: []int) -> int {
+	focused := -1
+	list := scroll_list_begin(state, "journal_notes", area, len(shown))
+	for note_index, position in shown {
+		row := scroll_list_row(list, position)
+		id := ui_id(state, "note", note_index)
+		interaction := ui_interact(state, id, row)
+		if interaction.focused {
+			scroll_list_keep_visible(&list, position)
+			focused = note_index
+		}
+		widget_background(state, row, id, interaction)
+		draw_text_fitted(state, inset(row, UI_PADDING), text(screen_context.notes.notes[note_index].title_key), UI_BODY_TEXT_SIZE, .Left)
+	}
+	scroll_list_end(state, &list)
+	return focused
 }
 
 // A strip off the top of the content, or false when less is left.
@@ -353,6 +406,12 @@ journal_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 	tab := chapter_tabs(state, cut_top(&content, UI_ROW_HEIGHT), screen_context)
 	cut_top(&content, UI_GAP)
+	if tab == len(screen_context.quests.chapters) + 1 {
+		journal_notes_section(state, content, screen_context)
+		ui_panel_end(state)
+		journal_glyph_bar(state)
+		return
+	}
 	// The contracts tab has no quest detail: the contracts take half the
 	// width and the log the other half.
 	if tab == len(screen_context.quests.chapters) {

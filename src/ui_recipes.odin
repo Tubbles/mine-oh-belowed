@@ -278,6 +278,13 @@ locked_recipe_text :: proc(recipe: Recipe, technologies: Technology_Registry) ->
 	return ""
 }
 
+// The item whose description the detail panel shows (work item 0070):
+// the recipe's first output item, NO_ITEM for a recipe making only
+// fluids.
+recipe_description_item :: proc(recipe: Recipe) -> Item_Id {
+	return len(recipe.outputs) > 0 ? recipe.outputs[0].item : NO_ITEM
+}
+
 // The focused recipe. Returns a recipe reached through the graph lists,
 // or NO_RECIPE.
 recipe_detail_panel :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context, craftable: []bool) -> int {
@@ -295,6 +302,10 @@ recipe_detail_panel :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context
 		return NO_RECIPE
 	}
 	draw_wrapped(state, &content, recipe_facts_text(definition))
+	if description := item_description(screen_context.items, recipe_description_item(definition)); description != "" {
+		cut_top(&content, UI_GAP)
+		draw_wrapped(state, &content, description, UI_DIM_TEXT_COLOR)
+	}
 	cut_top(&content, UI_GAP)
 	draw_stack_rows(state, &content, "recipes_inputs", detail.inputs, screen_context.items)
 	draw_stack_rows(state, &content, "recipes_outputs", detail.outputs, screen_context.items)
