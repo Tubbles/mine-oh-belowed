@@ -2,8 +2,6 @@ package game
 
 import "core:fmt"
 import "core:strings"
-import "core:time/datetime"
-import "core:time/timezone"
 
 // The title screen and its screens: New world, Load and the delete
 // confirmation. They run without a world behind them, over a plain
@@ -51,7 +49,7 @@ Title_State :: struct {
 	// What the New world screen starts from (game.sjson).
 	default_settings: World_File_Settings,
 	// Nil shows dates in UTC.
-	local_zone:       ^datetime.TZ_Region,
+	local_zone:       Local_Zone,
 	// The save the delete confirmation is about.
 	delete_index:     int,
 	// The save row that last held the focus on the Load screen, for its
@@ -63,12 +61,11 @@ Title_State :: struct {
 }
 
 make_title_state :: proc(config: Game_Config, saves_directory: string, saves_found: bool, expected_header: Save_Header) -> Title_State {
-	zone, _ := timezone.region_load("local")
 	return Title_State {
 		saves_directory = saves_directory,
 		saves_found = saves_found,
 		default_settings = default_world_file_settings(config),
-		local_zone = zone,
+		local_zone = load_local_zone(),
 		expected_header = expected_header,
 	}
 }
@@ -76,7 +73,7 @@ make_title_state :: proc(config: Game_Config, saves_directory: string, saves_fou
 destroy_title_state :: proc(title: ^Title_State) {
 	destroy_save_summaries(&title.saves)
 	delete(title.saves)
-	timezone.region_destroy(title.local_zone)
+	destroy_local_zone(&title.local_zone)
 }
 
 refresh_title_saves :: proc(title: ^Title_State) {
@@ -247,7 +244,7 @@ save_marker :: proc(save: Save_Summary) -> string {
 	return ""
 }
 
-save_row_cells :: proc(save: Save_Summary, zone: ^datetime.TZ_Region, tick_rate: int) -> Save_Row_Cells {
+save_row_cells :: proc(save: Save_Summary, zone: Local_Zone, tick_rate: int) -> Save_Row_Cells {
 	return Save_Row_Cells {
 		name = save.name,
 		marker = save_marker(save),

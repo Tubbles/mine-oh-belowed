@@ -225,8 +225,8 @@ test_save_listing_marks_saves_this_build_cannot_load :: proc(t: ^testing.T) {
 		testing.expect(t, strings.contains(saves[index].load_problem, "format version 1"), saves[index].load_problem)
 	}
 	testing.expect(t, !saves[3].loadable)
-	testing.expect_value(t, save_row_cells(saves[1], nil, 60).marker, text("load_incompatible"))
-	testing.expect_value(t, save_row_cells(saves[0], nil, 60).marker, "")
+	testing.expect_value(t, save_row_cells(saves[1], {}, 60).marker, text("load_incompatible"))
+	testing.expect_value(t, save_row_cells(saves[0], {}, 60).marker, "")
 	testing.expect(t, delete_save(directory, "older") == nil)
 	list_saves(&saves, directory, expected)
 	testing.expect_value(t, len(saves), 3)
@@ -245,5 +245,11 @@ test_continue_picks_the_newest_save :: proc(t: ^testing.T) {
 	index, found = newest_save(saves[:])
 	testing.expect(t, found)
 	testing.expect_value(t, index, 1)
-	testing.expect_value(t, date_text(0, nil), "1970-01-01 00:00")
+	testing.expect_value(t, date_text(0, {}), "1970-01-01 00:00")
+	// An offset stands in for the region on Windows (local_zone.odin).
+	testing.expect_value(t, date_text(0, {offset_seconds = 3600}), "1970-01-01 01:00")
+	testing.expect_value(t, date_text(0, {offset_seconds = -3600}), "1969-12-31 23:00")
+	// Stockholm in summer: bias -60, daylight bias -60.
+	testing.expect_value(t, local_zone_offset_seconds(-60, 0, -60, true), 7200)
+	testing.expect_value(t, local_zone_offset_seconds(-60, 0, -60, false), 3600)
 }

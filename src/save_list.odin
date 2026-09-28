@@ -5,8 +5,6 @@ import "core:os"
 import "core:slice"
 import "core:strings"
 import "core:time"
-import "core:time/datetime"
-import "core:time/timezone"
 
 // The saved worlds the title screen and the Load screen list, read from
 // each save's world.sjson. The format versions and the entities file's
@@ -132,12 +130,12 @@ play_time_text :: proc(tick: u64, tick_rate: int) -> string {
 	return fmt.tprintf("%d:%02d", minutes / 60, minutes % 60)
 }
 
-// In the zone given, UTC for nil.
-date_text :: proc(unix_seconds: i64, zone: ^datetime.TZ_Region) -> string {
+// In the zone given (local_zone.odin), UTC for an empty one.
+date_text :: proc(unix_seconds: i64, zone: Local_Zone) -> string {
 	utc, ok := time.time_to_datetime(time.unix(unix_seconds, 0))
 	if !ok {
 		return ""
 	}
-	local := timezone.datetime_to_tz(utc, zone) or_else utc
+	local := to_local_datetime(utc, zone)
 	return fmt.tprintf("%04d-%02d-%02d %02d:%02d", local.year, local.month, local.day, local.hour, local.minute)
 }

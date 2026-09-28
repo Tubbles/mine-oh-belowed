@@ -704,8 +704,8 @@ test_generator_version_round_trips_and_marks_older_terrain :: proc(t: ^testing.T
 	testing.expect_value(t, saves[0].directory_name, "current")
 	testing.expect(t, saves[0].loadable && !saves[0].terrain_changed)
 	testing.expect(t, saves[1].loadable && saves[1].terrain_changed)
-	testing.expect_value(t, save_row_cells(saves[0], nil, 60).marker, "")
-	testing.expect_value(t, save_row_cells(saves[1], nil, 60).marker, text("save_terrain_changed"))
+	testing.expect_value(t, save_row_cells(saves[0], {}, 60).marker, "")
+	testing.expect_value(t, save_row_cells(saves[1], {}, 60).marker, text("save_terrain_changed"))
 }
 
 remove_lines_containing :: proc(contents, needle: string) -> []string {
