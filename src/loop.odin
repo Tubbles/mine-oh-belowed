@@ -411,14 +411,15 @@ render_frame :: proc(state: ^Frame_State) {
 	}
 	session := state.session
 	upload_streamed_meshes(&state.renderer, &session.streaming)
-	sky := day_sky(simulation_day_ticks(session.simulation), session.simulation.day_length_ticks)
+	weather := session_weather(session, state.settings.weather)
+	sky := weathered_day_sky(day_sky(simulation_day_ticks(session.simulation), session.simulation.day_length_ticks), weather)
 	apply_daylight(&state.renderer, sky)
 	rl.BeginDrawing()
 	defer rl.EndDrawing()
 	// The horizon colour, which is the fog colour: the dome covers the
 	// upper hemisphere alone, so the clear colour shows below the horizon.
 	rl.ClearBackground(sky.colors.horizon)
-	draw_session_world(state, session)
+	draw_session_world(state, session, sky, weather)
 	if state.show_diagnostics {
 		draw_diagnostics_backdrop()
 		draw_diagnostics(state^, state.config)
@@ -430,16 +431,39 @@ render_frame :: proc(state: ^Frame_State) {
 	capture_pending_screenshot(state)
 }
 
-draw_session_world :: proc(state: ^Frame_State, session: ^Session) {
+// The weather of the frame: the schedule, or the weather command's kind;
+// always clear with the weather setting off (work item 0063).
+session_weather :: proc(session: ^Session, enabled: bool) -> Weather {
+	if !enabled {
+		return {}
+	}
+	simulation := &session.simulation
+	scheduled := weather_at(simulation.world.settings.seed, simulation_day_ticks(simulation^), simulation.day_length_ticks)
+	return forced_weather(scheduled, session.weather_override)
+}
+
+// Rain, or snow over a cold column, as much as the sky is open at the
+// camera. The light is the sky light of the frame.
+draw_session_weather :: proc(session: ^Session, camera: rl.Camera3D, weather: Weather, sky: Day_Sky, seconds: f64) {
+	cell := camera_world_coordinate(camera.position)
+	seeds := session.generator.seeds
+	temperature := terrain_temperature(seeds, cell.x, cell.z, terrain_height(seeds, cell.x, cell.z))
+	open_sky := f32(light_level(world_get_light(&session.simulation.world, cell), .Sky)) / MAXIMUM_LIGHT
+	light := color_to_vector3(sky.colors.sun_tint) * day_factor(sky.blend)
+	draw_weather(camera, weather_precipitation(weather, temperature), weather_particle_count(weather.intensity, open_sky), seconds, light)
+}
+
+draw_session_world :: proc(state: ^Frame_State, session: ^Session, sky: Day_Sky, weather: Weather) {
 	content := state.content
 	world := &session.simulation.world
 	tick_rate := session.simulation.tick_rate
 	player := session.simulation.players[0]
 	alpha := f32(interpolation_alpha(session.accumulator))
 	camera := fly_camera_to_raylib(player_view_camera(world, content.blocks, player, alpha))
+	seconds := rl.GetTime()
+	apply_weather(&state.renderer, weather_look(weather, state.settings.weather, sky.blend), seconds)
 	rl.BeginMode3D(camera)
 	defer rl.EndMode3D()
-	sky := day_sky(simulation_day_ticks(session.simulation), session.simulation.day_length_ticks)
 	draw_sky(&state.renderer.sky, camera, sky)
 	draw_chunks(&state.renderer, camera)
 	frame := Model_Frame{world = world, tick = session.simulation.tick, alpha = alpha, tick_rate = tick_rate, day_factor = day_factor(sky.blend), sky_tint = color_to_vector3(sky.colors.sun_tint)}
@@ -451,7 +475,8 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session) {
 	draw_power_entities(world, content.machines, state.model_renderer, frame)
 	draw_belts(&state.belt_renderer, world, content.items, content.machines, state.model_renderer, frame, Item_Billboards{camera = camera, atlas = state.item_atlas})
 	draw_loose_items(world, content.items, frame, Item_Billboards{camera = camera, atlas = state.item_atlas})
-	draw_torch_flames(&state.renderer, camera, rl.GetTime())
+	draw_torch_flames(&state.renderer, camera, seconds)
+	draw_session_weather(session, camera, weather, sky, seconds)
 	draw_player_world_overlay(world, frame_simulation_content(state), state.model_renderer, &state.belt_renderer, session.simulation.players[:], 0, alpha)
 }
 
@@ -872,6 +897,7 @@ frame_command_context :: proc(state: ^Frame_State) -> Command_Context {
 	if state.session != nil {
 		command_context.simulation = &state.session.simulation
 		command_context.content = frame_simulation_content(state)
+		command_context.weather_override = &state.session.weather_override
 	}
 	return command_context
 }

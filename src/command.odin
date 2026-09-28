@@ -52,6 +52,10 @@ Command_Context :: struct {
 	screenshot_directory: string,
 	// For a screenshot's default name.
 	now:                  time.Time,
+	// The session's forced weather kind (work item 0063), nil without a
+	// world. Render only, so it is set here and not through a developer
+	// request, and never saved.
+	weather_override:     ^Maybe(Weather_Kind),
 }
 
 // text may hold several lines. deferred: the tick command answers once
@@ -78,6 +82,7 @@ command_usages := [?]Command_Usage {
 	{"unlock_all", "every recipe and technology"},
 	{"teleport <x> <y> <z> | teleport pad", "feet into the block, or onto the landing pad"},
 	{"time <dawn|noon|dusk|midnight>", "set the time of day"},
+	{"weather <clear|overcast|rain|fog|auto>", "force a weather kind for screenshots, auto returns to the schedule"},
 	{"fly <on|off>", "fly mode"},
 	{"cheat_speed <on|off>", "fast movement and hand mining"},
 	{"vein <type> <x> <z> [size_class]", "a new surface vein centred on the column"},
@@ -268,6 +273,8 @@ execute_world_command :: proc(command_context: Command_Context, name: string, ar
 		return command_teleport(command_context, arguments)
 	case "time":
 		return command_time(command_context, arguments)
+	case "weather":
+		return command_weather(command_context, arguments)
 	case "fly", "cheat_speed":
 		return command_toggle(command_context, name, arguments)
 	case "vein":
@@ -413,6 +420,23 @@ command_time :: proc(command_context: Command_Context, arguments: []string) -> C
 		}
 	}
 	return usage_error("time <dawn|noon|dusk|midnight>")
+}
+
+command_weather :: proc(command_context: Command_Context, arguments: []string) -> Command_Response {
+	if command_context.weather_override == nil {
+		return command_error("no world is loaded")
+	}
+	if len(arguments) == 1 && arguments[0] == "auto" {
+		command_context.weather_override^ = nil
+		return command_ok("weather auto")
+	}
+	if len(arguments) == 1 {
+		if kind, found := parse_named_enum(weather_kind_words, arguments[0]); found {
+			command_context.weather_override^ = kind
+			return command_ok("weather %s", arguments[0])
+		}
+	}
+	return usage_error("weather <clear|overcast|rain|fog|auto>")
 }
 
 // Toggles only when the state differs, so the command sets it.

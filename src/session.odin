@@ -29,6 +29,9 @@ Session :: struct {
 	statistics_view:    Statistics_View,
 	map_view:           Map_View,
 	debug_edit_counter: u64,
+	// The weather command's forced kind (work item 0063), nil for the
+	// schedule. Not saved.
+	weather_override:   Maybe(Weather_Kind),
 }
 
 // What a session starts from: a new world's seed and settings, or a save.

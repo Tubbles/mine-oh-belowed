@@ -6,7 +6,9 @@ package game
 //   green  block light, same scale
 //   blue   ambient occlusion, 0 (both side cells and the corner cell
 //          solid) to 3 (all open) times OCCLUSION_COLOUR_SCALE
-//   alpha  255
+//   alpha  255 for rigid vertices, SWAY_VERTEX_ALPHA for vertices the
+//          wind sways (data/shaders/chunk.vs, work item 0063): the upper
+//          vertices of cross shaped blocks (sway_vertex_light)
 // The light of a vertex averages the cells around it in the layer in front
 // of the face: the front cell, the two side cells and the corner cell,
 // leaving out opaque ones (they hold no light, block_is_opaque). The
@@ -19,6 +21,8 @@ LIGHT_COLOUR_SCALE :: 17
 OCCLUSION_COLOUR_SCALE :: 85
 MAXIMUM_OCCLUSION :: 3
 FULL_HEIGHT_EIGHTHS :: 8
+// The shader sways a vertex by one minus its alpha: 0 moves it fully.
+SWAY_VERTEX_ALPHA :: 0
 
 // Directions along the face's u and v axes towards each corner, in the
 // order of quad_corners.
@@ -57,4 +61,18 @@ vertex_light :: proc(input: Mesh_Input, front: Local_Coordinate, u_axis, v_axis:
 	}
 	occlusion := MAXIMUM_OCCLUSION - int(solid[1]) - int(solid[2]) - int(solid[3])
 	return {average_light_colour(sky_sum, open_count), average_light_colour(block_sum, open_count), u8(occlusion * OCCLUSION_COLOUR_SCALE), 255}
+}
+
+// Plants sway: cross shaped blocks, by their shape in the block table.
+block_sways :: proc(registry: Block_Registry, block: Block_Id) -> bool {
+	return block_shape(registry, block) == .Cross
+}
+
+// The upper vertices of a swaying block get SWAY_VERTEX_ALPHA, its foot
+// stays put. corner is relative to the cell.
+sway_vertex_light :: proc(light: Vertex_Light, corner: [3]f32, sways: bool) -> Vertex_Light {
+	if !sways || corner.y < 0.5 {
+		return light
+	}
+	return {light.r, light.g, light.b, SWAY_VERTEX_ALPHA}
 }

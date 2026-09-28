@@ -22,17 +22,24 @@ Chunk_Render :: struct {
 }
 
 Chunk_Renderer :: struct {
-	atlas_layout:             Atlas_Layout,
-	material:                 rl.Material,
-	camera_position_location: i32,
-	day_factor_location:      i32,
-	fog_color_location:       i32,
-	sky_tint_location:        i32,
+	atlas_layout:                   Atlas_Layout,
+	material:                       rl.Material,
+	camera_position_location:       i32,
+	day_factor_location:            i32,
+	fog_color_location:             i32,
+	sky_tint_location:              i32,
+	// Set every frame from the weather (apply_weather, work item 0063).
+	fog_start_location:             i32,
+	fog_end_location:               i32,
+	wind_time_location:             i32,
+	wind_strength_location:         i32,
+	cloud_offset_location:          i32,
+	cloud_shadow_strength_location: i32,
 	// The sky pass (render_sky.odin) lives with the chunks it sits behind.
-	sky:                      Sky_Renderer,
-	chunk_meshes:             map[Chunk_Coordinate]Chunk_Render,
-	drawn_chunk_count:        int,
-	vertex_count:             int,
+	sky:                            Sky_Renderer,
+	chunk_meshes:                   map[Chunk_Coordinate]Chunk_Render,
+	drawn_chunk_count:              int,
+	vertex_count:                   int,
 }
 
 load_chunk_shader :: proc(data_directory: string) -> (shader: rl.Shader, ok: bool) {
@@ -92,6 +99,9 @@ init_chunk_renderer :: proc(registry: Block_Registry, data_directory: string) ->
 	renderer.material = rl.LoadMaterialDefault()
 	use_chunk_shader(&renderer, shader)
 	rl.SetMaterialTexture(&renderer.material, .ALBEDO, upload_atlas(registry, renderer.atlas_layout, data_directory))
+	// The cloud shadows (render_weather.odin) in the second texture slot,
+	// bound to cloud_texture by use_chunk_shader; UnloadMaterial frees it.
+	rl.SetMaterialTexture(&renderer.material, .METALNESS, upload_cloud_texture())
 	renderer.sky = init_sky_renderer()
 	apply_daylight(&renderer, day_sky_at(NOON_FRACTION, 0))
 	return renderer, true
@@ -108,6 +118,14 @@ use_chunk_shader :: proc(renderer: ^Chunk_Renderer, shader: rl.Shader) {
 	renderer.day_factor_location = rl.GetShaderLocation(shader, "day_factor")
 	renderer.fog_color_location = rl.GetShaderLocation(shader, "fog_color")
 	renderer.sky_tint_location = rl.GetShaderLocation(shader, "sky_tint")
+	renderer.fog_start_location = rl.GetShaderLocation(shader, "fog_start")
+	renderer.fog_end_location = rl.GetShaderLocation(shader, "fog_end")
+	renderer.wind_time_location = rl.GetShaderLocation(shader, "wind_time")
+	renderer.wind_strength_location = rl.GetShaderLocation(shader, "wind_strength")
+	renderer.cloud_offset_location = rl.GetShaderLocation(shader, "cloud_offset")
+	renderer.cloud_shadow_strength_location = rl.GetShaderLocation(shader, "cloud_shadow_strength")
+	// DrawMesh binds the material's second map to this location.
+	shader.locs[rl.ShaderLocationIndex.MAP_METALNESS] = rl.GetShaderLocation(shader, "cloud_texture")
 	renderer.material.shader = shader
 }
 
@@ -228,6 +246,23 @@ apply_daylight :: proc(renderer: ^Chunk_Renderer, sky: Day_Sky) {
 	rl.SetShaderValue(renderer.material.shader, renderer.day_factor_location, &factor, .FLOAT)
 	rl.SetShaderValue(renderer.material.shader, renderer.fog_color_location, &fog, .VEC3)
 	rl.SetShaderValue(renderer.material.shader, renderer.sky_tint_location, &tint, .VEC3)
+}
+
+// The weather's fog distances, plant sway and cloud shadows, once per
+// frame; seconds is the render time.
+apply_weather :: proc(renderer: ^Chunk_Renderer, look: Weather_Look, seconds: f64) {
+	shader := renderer.material.shader
+	fog_start, fog_end := weather_fog_distances(LOAD_RADIUS_HORIZONTAL, look.fog_scale)
+	wind := wind_time(seconds)
+	wind_strength := look.wind_strength
+	offset := cloud_offset(seconds)
+	shadow := look.cloud_shadow_strength
+	rl.SetShaderValue(shader, renderer.fog_start_location, &fog_start, .FLOAT)
+	rl.SetShaderValue(shader, renderer.fog_end_location, &fog_end, .FLOAT)
+	rl.SetShaderValue(shader, renderer.wind_time_location, &wind, .FLOAT)
+	rl.SetShaderValue(shader, renderer.wind_strength_location, &wind_strength, .FLOAT)
+	rl.SetShaderValue(shader, renderer.cloud_offset_location, &offset, .VEC2)
+	rl.SetShaderValue(shader, renderer.cloud_shadow_strength_location, &shadow, .FLOAT)
 }
 
 // Must run between BeginMode3D and EndMode3D, which sets the projection

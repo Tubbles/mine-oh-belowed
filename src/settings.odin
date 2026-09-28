@@ -16,6 +16,9 @@ Settings :: struct {
 	vsync:                     bool,
 	frame_rate_cap:            int,
 	ui_scale:                  f32,
+	// Rain, fog, wind and cloud shadows (work item 0063); off keeps the
+	// weather clear, still and without shadows, for reduced motion.
+	weather:                   bool,
 	// Gyro aiming in the world (SDL3 backend only).
 	gyro_enabled:              bool,
 	// Multipliers on the base look rates.
@@ -52,6 +55,7 @@ DEFAULT_SETTINGS :: Settings {
 	vsync                     = true,
 	frame_rate_cap            = 0,
 	ui_scale                  = 1,
+	weather                   = true,
 	gyro_enabled              = true,
 	stick_look_sensitivity    = 1,
 	gyro_look_sensitivity     = 1,

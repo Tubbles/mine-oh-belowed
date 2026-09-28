@@ -1,6 +1,6 @@
 # 0063 Weather
 
-Status: todo
+Status: implemented
 Milestone: M11
 
 ## Goal
@@ -32,3 +32,5 @@ Implementation pointers, decisions taken so the item is unambiguous:
 - Docs: `doc/architecture.md` (rendering: weather), `doc/ui.md` (the setting), `doc/commands.md` (the command), `DESIGN.md` if the weather is mentioned, `doc/log/2026-09-28.md`, this item's Status and Notes.
 
 Files a subagent may touch: new `src/weather.odin`, `src/weather_test.odin`, `src/render_weather.odin`, `src/render_weather_test.odin`; `src/render_day.odin` and `src/render_sky.odin` (the hooks the weather modulates), `src/render_chunks.odin`, `data/shaders/chunk.vs`, `data/shaders/chunk.fs`, `src/world_mesh.odin`, `src/world_mesh_light.odin`, `src/world_mesh_test.odin`, `src/settings.odin`, `src/configuration.odin`, `src/configuration_test.odin`, `src/ui_screens.odin`, `src/ui_audit_test.odin`, `src/command.odin`, `src/developer.odin`, `src/session.odin` (the override field), `src/loop.odin` (the draw calls and uniforms), `data/strings/en.sjson`, the docs above, this file.
+
+Implemented: new `src/weather.odin` (the schedule `weather_at`, `forced_weather`, `weather_precipitation`) and `src/weather_test.odin`; new `src/render_weather.odin` (`Weather_Look`, the fog scale, the sky gloom and wet ground, the particle positions, the cloud noise texture, the rain and snow draw calls) and `src/render_weather_test.odin`; `src/render_chunks.odin` (`apply_weather` sets the fog distances, the wind and the cloud uniforms per frame; the cloud texture in the material's second map); `data/shaders/chunk.vs` (sway by vertex alpha) and `data/shaders/chunk.fs` (cloud shadows on the sky light term); `src/world_mesh.odin`, `src/world_mesh_light.odin` and `src/world_mesh_test.odin` (the upper vertices of crosses get `SWAY_VERTEX_ALPHA`); `src/settings.odin`, `src/configuration_test.odin`, `src/ui_screens.odin` and `data/strings/en.sjson` (the Weather toggle; the configuration maps a bool setting generically, so `src/configuration.odin` is unchanged); `src/command.odin`, `src/session.odin` and `src/loop.odin` (the `weather` command, the session override, `session_weather`, `draw_session_weather`, the uniforms and the draw call). Per frame at full rain the weather draws about 470 of its 600 particles (those inside the cylinder) as `DrawLine3D` streaks, or as many snow billboards, in one batch with depth writes off; it sets six more chunk uniforms and adds one texture sample per chunk fragment and a few sines per chunk vertex. Leaves do not sway: the mesher cannot tell them from other cubes without a data flag on the block, outside this item's files (see the log). 824 tests pass.

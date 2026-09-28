@@ -236,6 +236,7 @@ test_settings_file_round_trip :: proc(t: ^testing.T) {
 	settings.resolution = {1920, 1080}
 	settings.vsync = false
 	settings.frame_rate_cap = 144
+	settings.weather = false
 	testing.expect_value(t, write_settings_file(environment, settings), "")
 
 	loaded, problem := load_configuration(environment, {})
@@ -335,6 +336,7 @@ test_configuration_display_settings :: proc(t: ^testing.T) {
 		{"settings = {frame_rate_cap = 481}", "settings.frame_rate_cap is 481, outside 0 to 480"},
 		{"settings = {frame_rate_cap = 59.94}", "settings.frame_rate_cap must be a whole number"},
 		{`settings = {vsync = "on"}`, "settings.vsync must be a boolean"},
+		{`settings = {weather = "on"}`, "settings.weather must be a boolean"},
 	}
 	for case_value in invalid {
 		write_test_file(drop_in, case_value.text)

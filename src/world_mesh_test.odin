@@ -411,3 +411,30 @@ test_mesh_slab_on_stone_hides_its_bottom_and_is_lit :: proc(t: ^testing.T) {
 		testing.expect_value(t, part.colors[index].r, 255)
 	}
 }
+
+// The wind sways the upper vertices of a cross and nothing else: the
+// cross's feet, the stone's faces and the slab keep alpha 255 (work item
+// 0063).
+@(test)
+test_mesh_marks_the_swaying_vertices :: proc(t: ^testing.T) {
+	chunk := new(Chunk, context.temp_allocator)
+	fill_chunk_light_levels(chunk, MAXIMUM_LIGHT, 0)
+	chunk_set_block(chunk, {4, 3, 4}, SHAPE_TEST_STONE)
+	chunk_set_block(chunk, {4, 4, 4}, SHAPE_TEST_TUFT)
+	chunk_set_block(chunk, {8, 4, 8}, SHAPE_TEST_SLAB)
+	data := mesh_chunk(shape_test_mesh_input(chunk), context.temp_allocator)
+	swaying := 0
+	for part in data.parts {
+		for position, index in part.positions {
+			upper_tuft := position.x >= 4 && position.x <= 5 && position.z >= 4 && position.z <= 5 && position.y == 5
+			alpha := part.colors[index].a
+			if upper_tuft && alpha == SWAY_VERTEX_ALPHA {
+				swaying += 1
+				continue
+			}
+			testing.expectf(t, alpha == 255, "vertex %v has alpha %d", position, alpha)
+		}
+	}
+	// Four quads with two upper vertices each.
+	testing.expect_value(t, swaying, 8)
+}

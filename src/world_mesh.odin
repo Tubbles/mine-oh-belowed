@@ -352,8 +352,8 @@ shaped_quad_texcoords :: proc(corners: [4][3]f32) -> [4][2]f32 {
 }
 
 // Shape quads are counter clockwise seen from outside, so every one takes
-// the positive order.
-append_shaped_quad :: proc(part: ^Mesh_Part, input: Mesh_Input, local: Local_Coordinate, quad: Shape_Quad, tile_origin: [2]f32) {
+// the positive order. sways marks the upper vertices for the wind.
+append_shaped_quad :: proc(part: ^Mesh_Part, input: Mesh_Input, local: Local_Coordinate, quad: Shape_Quad, tile_origin: [2]f32, sways: bool) {
 	base := u16(len(part.positions))
 	origin := [3]f32{f32(local.x), f32(local.y), f32(local.z)}
 	texcoords := shaped_quad_texcoords(quad.corners)
@@ -362,7 +362,7 @@ append_shaped_quad :: proc(part: ^Mesh_Part, input: Mesh_Input, local: Local_Coo
 		append(&part.positions, origin + corner)
 		append(&part.texcoords, texcoords[index])
 		append(&part.tile_origins, tile_origin)
-		append(&part.colors, light[index])
+		append(&part.colors, sway_vertex_light(light[index], corner, sways))
 	}
 	for index in positive_quad_indices {
 		append(&part.indices, base + index)
@@ -379,12 +379,13 @@ shaped_quad_visible :: proc(input: Mesh_Input, local: Local_Coordinate, quad: Sh
 mesh_shaped_cell :: proc(data: ^Chunk_Mesh_Data, input: Mesh_Input, local: Local_Coordinate, block: Block_Id, shape: Block_Shape, allocator := context.allocator) {
 	quads := shape_quads(shape, block_orientation(input.registry, block))
 	base := block_shape_base(input.registry, block)
+	sways := block_sways(input.registry, block)
 	for quad in quads.quads[:quads.count] {
 		if !shaped_quad_visible(input, local, quad) {
 			continue
 		}
 		tile_origin := atlas_tile_origin(input.atlas, atlas_tile_index(base, quad.group))
-		append_shaped_quad(current_part(data, allocator), input, local, quad, tile_origin)
+		append_shaped_quad(current_part(data, allocator), input, local, quad, tile_origin, sways)
 		data.quad_count += 1
 	}
 	if shape == .Post && block_light_emission(input.registry, block) > 0 {

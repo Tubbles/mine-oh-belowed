@@ -11,16 +11,23 @@
 //   r  sky light level / 15, averaged over the cells around the vertex
 //   g  block light level / 15, same
 //   b  ambient occlusion / 3, 1 where nothing solid touches the vertex
+//   a  1, lower for vertices that sway in the wind (chunk.vs)
 // Sky light is scaled by day_factor and coloured by sky_tint (white by
 // day, warm at dawn and dusk, blue grey at night, work item 0064), block
 // light is neither, so torches glow the same at night. Brightness is sky
 // plus block light per colour channel, at most 1, times the occlusion
 // shade, never below minimum_brightness.
+//
+// Cloud shadows (work item 0063): cloud_texture, a tiling noise, laid
+// over the world every cloud_tile_blocks blocks (CLOUD_TILE_BLOCKS in
+// render_weather.odin) and drifting by cloud_offset, dims the sky light
+// term by up to cloud_shadow_strength.
 
 in vec2 fragment_texcoord;
 in vec2 fragment_tile_origin;
 in vec4 fragment_color;
 in float fragment_distance;
+in vec3 fragment_world_position;
 
 uniform sampler2D texture0;
 uniform vec4 colDiffuse;
@@ -30,11 +37,15 @@ uniform float fog_start;
 uniform float fog_end;
 uniform float day_factor;
 uniform vec3 sky_tint;
+uniform sampler2D cloud_texture;
+uniform vec2 cloud_offset;
+uniform float cloud_shadow_strength;
 
 out vec4 finalColor;
 
 const float minimum_brightness = 0.06;
 const float darkest_occlusion_shade = 0.5;
+const float cloud_tile_blocks = 96.0;
 
 // Light levels to brightness: each level down dims a little more than
 // linear, Minecraft style, 0 stays 0 and 1 stays 1.
@@ -51,7 +62,9 @@ void main()
     {
         discard;
     }
-    vec3 light = light_curve(fragment_color.r) * day_factor * sky_tint + light_curve(fragment_color.g);
+    float cloud = texture(cloud_texture, (fragment_world_position.xz + cloud_offset) / cloud_tile_blocks).r;
+    float cloud_shade = 1.0 - cloud_shadow_strength * cloud;
+    vec3 light = light_curve(fragment_color.r) * day_factor * cloud_shade * sky_tint + light_curve(fragment_color.g);
     float shade = mix(darkest_occlusion_shade, 1.0, fragment_color.b);
     vec3 brightness = max(min(light, 1.0) * shade, minimum_brightness);
     float fog = clamp((fragment_distance - fog_start) / (fog_end - fog_start), 0.0, 1.0);

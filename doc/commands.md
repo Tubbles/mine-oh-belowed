@@ -36,6 +36,7 @@ The game can be driven from outside while someone plays: give items, skip chapte
 | `unlock_all` | `tools/moc unlock_all` | Every recipe and technology. |
 | `teleport <x> <y> <z>`, `teleport pad` | `tools/moc teleport 40 70 -12` | Feet into that block's centre, or onto the landing pad. |
 | `time <dawn\|noon\|dusk\|midnight>` | `tools/moc time noon` | Sets the time of day. |
+| `weather <clear\|overcast\|rain\|fog\|auto>` | `tools/moc weather rain` | Forces a weather kind at full intensity for screenshots (0063); `auto` returns to the schedule. Kept in the session, not saved, and ignored while the Weather setting is off. |
 | `fly <on\|off>` | `tools/moc fly on` | Fly mode. |
 | `cheat_speed <on\|off>` | `tools/moc cheat_speed on` | Faster movement and hand mining. |
 | `vein <type> <x> <z> [size_class]` | `tools/moc vein copper 120 -40 deposit` | A new surface vein centred on the column at the generated surface height, size class by id (default the smallest, `scattering`). Refused where its disc (with the vein spacing) reaches another vein. Outcrops appear in loaded chunks at once and in other chunks when they load; saved with the world. |
