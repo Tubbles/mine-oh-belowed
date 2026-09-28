@@ -36,8 +36,8 @@ flask. An item that places a block shows the block's plain texture.
 UI icons (the ui family): one file per name in UI_ICON_NAMES, which must
 match the Ui_Icon enum in src/ui_theme.odin (a test checks the files).
 Gamepad buttons are drawn by position (the face button's dot lit in the
-accent among four), bumpers, triggers and sticks carry an L or an R in a
-3 by 5 pixel font, the key is a blank dark key cap the game draws the
+accent among four), bumpers carry L1 or R1, triggers LT or RT and sticks
+an L or an R in a 3 by 5 pixel font, the key is a blank dark key cap the game draws the
 key's name on, and the categories and screens are small pictures.
 
 The whole set is a placeholder: hand made art replaces the files later.
@@ -803,6 +803,8 @@ UI_RED = (200, 70, 56)
 PIXEL_LETTERS = {
     "L": ["X..", "X..", "X..", "X..", "XXX"],
     "R": ["XX.", "X.X", "XX.", "X.X", "X.X"],
+    "T": ["XXX", ".X.", ".X.", ".X.", ".X."],
+    "1": [".X.", "XX.", ".X.", ".X.", "XXX"],
 }
 
 FACE_BUTTON_CENTRES = {
@@ -820,6 +822,12 @@ def stamp_letter(image: list, letter: str, left: int, top: int, colour) -> None:
                 image[top + row][left + column] = opaque(colour)
 
 
+def stamp_label(image: list, label: str, left: int, top: int, colour) -> None:
+    """Letters side by side, one texel apart."""
+    for index, letter in enumerate(label):
+        stamp_letter(image, letter, left + index * 4, top, colour)
+
+
 def draw_face_button(lit: str, key: str) -> list:
     """Four buttons in a diamond, the named one lit."""
     image = blank()
@@ -833,7 +841,7 @@ def draw_bumper(letter: str, key: str) -> list:
     image = blank()
     mask = rounded_rectangle_mask(1, 4, 14, 11)
     paint(image, mask, UI_RIM, key, 2)
-    stamp_letter(image, letter, 6, 5, UI_DARK)
+    stamp_label(image, letter + "1", 4, 5, UI_DARK)
     return image
 
 
@@ -842,7 +850,7 @@ def draw_trigger(letter: str, key: str) -> list:
     image = blank()
     mask = {(x, y) for x, y in rectangle_mask(3, 3, 12, 14)} | {(x, y) for x, y in disc_mask(7.5, 4.5, 4.6) if y <= 4}
     paint(image, mask, UI_RIM, key, 2)
-    stamp_letter(image, letter, 6, 7, UI_DARK)
+    stamp_label(image, letter + "T", 4, 7, UI_DARK)
     return image
 
 
