@@ -300,3 +300,71 @@ test_quick_move_targets_the_hand_slot :: proc(t: ^testing.T) {
 	testing.expect(t, !quick_move_targets_hand({grid = {activated = -1, focused = -1}, hand_focused = true}, true))
 	testing.expect(t, !quick_move_targets_hand({grid = {activated = -1, focused = 0}}, true))
 }
+
+// Work item 0090: the quick move between the hotbar and the backpack.
+@(test)
+test_inventory_quick_move_target :: proc(t: ^testing.T) {
+	target, found := inventory_quick_move_target(HOTBAR_SLOT_COUNT - 1)
+	testing.expect(t, found)
+	testing.expect_value(t, target, Quick_Move_Target{.Hotbar, HOTBAR_SLOT_COUNT - 1})
+	target, found = inventory_quick_move_target(HOTBAR_SLOT_COUNT)
+	testing.expect_value(t, target, Quick_Move_Target{.Backpack, HOTBAR_SLOT_COUNT})
+	_, found = inventory_quick_move_target(-1)
+	testing.expect(t, !found)
+}
+
+@(test)
+test_inventory_quick_move_between_hotbar_and_backpack :: proc(t: ^testing.T) {
+	test := make_quick_transfer_test()
+	coal := test_item(test.content.items, "coal")
+	stone := test_item(test.content.items, "stone")
+	test.inventory.slots[0] = {stone, 1}
+	test.inventory.slots[3] = {coal, 5}
+	test.inventory.slots[20] = {coal, 10}
+	// The hotbar's partial coal stack before its first empty slot.
+	apply_inventory_quick_move(test.inventory, test.content.items, {kind = .Stack, target = {.Backpack, 20}, item = coal})
+	testing.expect_value(t, test.inventory.slots[20], EMPTY_STACK)
+	testing.expect_value(t, test.inventory.slots[3], Item_Stack{coal, 15})
+	testing.expect_value(t, test.inventory.slots[1], EMPTY_STACK)
+	// Back into the backpack's first empty slot.
+	apply_inventory_quick_move(test.inventory, test.content.items, {kind = .Stack, target = {.Hotbar, 3}, item = coal})
+	testing.expect_value(t, test.inventory.slots[3], EMPTY_STACK)
+	testing.expect_value(t, test.inventory.slots[HOTBAR_SLOT_COUNT], Item_Stack{coal, 15})
+	testing.expect_value(t, test.inventory.slots[0], Item_Stack{stone, 1})
+}
+
+@(test)
+test_inventory_quick_move_all_of_one_item :: proc(t: ^testing.T) {
+	test := make_quick_transfer_test()
+	coal := test_item(test.content.items, "coal")
+	stone := test_item(test.content.items, "stone")
+	test.inventory.slots[2] = {coal, 4}
+	test.inventory.slots[12] = {coal, 5}
+	test.inventory.slots[30] = {coal, 6}
+	test.inventory.slots[31] = {stone, 7}
+	apply_inventory_quick_move(test.inventory, test.content.items, {kind = .All, target = {.Backpack, -1}, item = coal})
+	testing.expect_value(t, test.inventory.slots[2], Item_Stack{coal, 15})
+	testing.expect_value(t, test.inventory.slots[12], EMPTY_STACK)
+	testing.expect_value(t, test.inventory.slots[30], EMPTY_STACK)
+	testing.expect_value(t, test.inventory.slots[31], Item_Stack{stone, 7})
+	// From the hotbar, none of the backpack's own stacks move.
+	test.inventory.slots[40] = {coal, 1}
+	apply_inventory_quick_move(test.inventory, test.content.items, {kind = .All, target = {.Hotbar, -1}, item = coal})
+	testing.expect_value(t, inventory_count(test.inventory, coal), 16)
+	testing.expect_value(t, test.inventory.slots[2], EMPTY_STACK)
+	testing.expect_value(t, test.inventory.slots[40], Item_Stack{coal, 16})
+}
+
+@(test)
+test_inventory_quick_move_into_a_full_section_leaves_the_stack :: proc(t: ^testing.T) {
+	test := make_quick_transfer_test()
+	coal := test_item(test.content.items, "coal")
+	stone := test_item(test.content.items, "stone")
+	stone_size := item_stack_size(test.content.items, stone)
+	for &slot in inventory_hotbar(test.inventory) {
+		slot = {stone, stone_size}
+	}
+	test.inventory.slots[20] = {coal, 10}
+	apply_inventory_quick_move(test.inventory, test.content.items, {kind = .Stack, target = {.Backpack, 20}, item = coal})
+	testing.expect_value(t, test.inventory.slots[20], Item_Stack{coal, 10})
+}

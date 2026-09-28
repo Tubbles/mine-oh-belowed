@@ -23,6 +23,9 @@ TRANSFER_BUTTON_MINIMUM_WIDTH :: 150
 Quick_Move_Side :: enum u8 {
 	Inventory,
 	Machine,
+	// The inventory screen's two sections (work item 0090).
+	Hotbar,
+	Backpack,
 }
 
 // The slot a quick move acts on: an inventory index or a machine slot.
@@ -248,6 +251,58 @@ apply_quick_move :: proc(entities: ^Entities, content: Simulation_Content, handl
 			take_item(inventory, content.items, slots, step.item)
 		} else if len(slots) > 0 {
 			store_item(entities, content, handle, inventory, step.item)
+		}
+	}
+}
+
+// The inventory screen's quick move (work item 0090) runs the same state
+// machine with NO_ENTITY as its panel: a stack goes from the hotbar to
+// the backpack or back, partial stacks of the item first, then empty
+// slots; what does not fit stays in the slot.
+
+// The focused inventory index as a quick move target, -1 for none.
+inventory_quick_move_target :: proc(focused: int) -> (target: Quick_Move_Target, found: bool) {
+	if focused < 0 {
+		return {}, false
+	}
+	return {focused < HOTBAR_SLOT_COUNT ? .Hotbar : .Backpack, focused}, true
+}
+
+// The slots of the section a stack from the side goes to.
+inventory_quick_move_destination :: proc(inventory: Inventory, side: Quick_Move_Side) -> []Item_Stack {
+	return side == .Hotbar ? inventory_grid(inventory) : inventory_hotbar(inventory)
+}
+
+// The inventory indices of the side's section.
+inventory_quick_move_origin :: proc(inventory: Inventory, side: Quick_Move_Side) -> (first, last: int) {
+	hotbar := len(inventory_hotbar(inventory))
+	return side == .Hotbar ? 0 : hotbar, side == .Hotbar ? hotbar : len(inventory.slots)
+}
+
+// One slot's stack into the other section; the rest stays in the slot.
+move_slot_to_section :: proc(inventory: Inventory, items: Item_Registry, index: int, side: Quick_Move_Side) {
+	slot := &inventory.slots[index]
+	if stack_is_empty(slot^) {
+		return
+	}
+	destination := inventory_quick_move_destination(inventory, side)
+	slot.count = u16(add_to_slots(destination, slot.item, int(slot.count), item_stack_size(items, slot.item)))
+	if slot.count == 0 {
+		slot^ = EMPTY_STACK
+	}
+}
+
+apply_inventory_quick_move :: proc(inventory: Inventory, items: Item_Registry, step: Quick_Move_Step) {
+	switch step.kind {
+	case .None:
+	case .Stack:
+		move_slot_to_section(inventory, items, step.target.slot, step.target.side)
+	case .All:
+		first, last := inventory_quick_move_origin(inventory, step.target.side)
+		for index in first ..< last {
+			if inventory.slots[index].item == step.item {
+				move_slot_to_section(inventory, items, index, step.target.side)
+			}
 		}
 	}
 }

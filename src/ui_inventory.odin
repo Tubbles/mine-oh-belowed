@@ -1,10 +1,11 @@
 package game
 
 // The inventory screen: the 36 slot grid and the hotbar as slot grids, with
-// the slot interaction from doc/ui.md, and a Drop button under them (also
-// Menu_Drop): the cursor's stack, or the focused one with nothing held,
-// goes onto the ground in front of the player (loose_item.odin). It does
-// not pause the simulation.
+// the slot interaction from doc/ui.md and the quick move between the
+// hotbar and the backpack (quick_transfer.odin). Menu_Drop (the right
+// stick click, X on the keyboard) puts the cursor's stack, or the focused
+// one with nothing held, onto the ground in front of the player
+// (loose_item.odin). It does not pause the simulation.
 
 INVENTORY_COLUMNS :: 9
 INVENTORY_ROWS :: PLAYER_GRID_SLOT_COUNT / INVENTORY_COLUMNS
@@ -77,17 +78,19 @@ selected_hotbar_slot_id :: proc(state: ^Ui_State, player: ^Player) -> Ui_Id {
 	return ui_hash(ui_id(state, "hotbar"), "slot", player.selected_hotbar_slot)
 }
 
-// The Drop button's row under the hotbar.
-INVENTORY_DROP_ROW_HEIGHT :: UI_GAP + UI_ROW_HEIGHT
-
 inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	player, items := screen_context.player, screen_context.items
+	// Q is also Tab_Previous; while it quick moves it does not step the
+	// tab strip.
+	if state.input.quick_move {
+		state.input.tab_previous = false
+	}
 	ui_backdrop(state)
 	// The heading repeats the first tab's name, so it goes where the panel
 	// would not fit the area.
 	area := ui_panel_area(state)
 	tabs_height := f32(UI_ROW_HEIGHT + UI_GAP)
-	panel_height := inventory_panel_height() + INVENTORY_DROP_ROW_HEIGHT
+	panel_height := inventory_panel_height()
 	shows_heading := panel_height + tabs_height <= area.height
 	panel := fitted_panel(area, slot_grid_width(INVENTORY_COLUMNS) + 2 * UI_PADDING, panel_height + (shows_heading ? tabs_height : tabs_height - UI_ROW_HEIGHT))
 	ui_panel_begin(state, "inventory", panel)
@@ -98,10 +101,9 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	if shows_heading {
 		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("inventory_title"), UI_HEADING_TEXT_SIZE, .Centre)
 	}
-	drop_row := cut_bottom(&content, UI_ROW_HEIGHT)
 	slots := player_slot_region(state, content, player, items)
-	drop_clicked := ui_button(state, drop_row, text("inventory_drop"))
 	ui_panel_end(state)
+	slots.activated = apply_inventory_quick_move_input(state, screen_context, slots)
 	slot_input := Inventory_Slot_Input {
 		activated      = slots.activated,
 		focused        = slots.focused,
@@ -109,11 +111,35 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		context_action = state.input.context_action,
 	}
 	player.held = apply_inventory_slot_input(player.inventory, player.held, slot_input, items, screen_context.item_sort_ranks)
-	if (drop_clicked || state.input.drop) && screen_context.world != nil {
+	if state.input.drop && screen_context.world != nil {
 		drop_player_stack(screen_context.world, screen_context.blocks, player, slots.focused)
 	}
 	draw_held_stack(state, player.held.stack, items)
-	inventory_glyph_bar(state, player.held.stack, slots.focused >= 0 ? player.inventory.slots[slots.focused] : EMPTY_STACK)
+	inventory_glyph_bar(state, player.held.stack, slots.focused >= 0 ? player.inventory.slots[slots.focused] : EMPTY_STACK, quick_move = true, drop = true)
+}
+
+// The quick move between the hotbar and the backpack: R2 or Q on the
+// focused slot, or Left Control with a click, as apply_quick_move_input
+// in the machine panel. Its press takes the slot's activation, since R2
+// is Confirm too and a click picks up; returns the activation left for
+// the ordinary slot input.
+apply_inventory_quick_move_input :: proc(state: ^Ui_State, screen_context: Screen_Context, slots: Slot_Grid_Result) -> (activated: int) {
+	input := state.input
+	inventory := screen_context.player.inventory
+	target, found := inventory_quick_move_target(slots.activated >= 0 ? slots.activated : slots.focused)
+	quick_input := Quick_Move_Input {
+		panel   = NO_ENTITY,
+		pressed = input.quick_move || (input.quick_move_modifier && state.click),
+		down    = input.quick_move_down || (input.quick_move_modifier && state.pointer_held),
+		seconds = state.frame_seconds,
+		found   = found,
+		target  = target,
+		stack   = found ? inventory.slots[target.slot] : EMPTY_STACK,
+	}
+	step: Quick_Move_Step
+	state.quick_move, step = advance_quick_move(state.quick_move, quick_input)
+	apply_inventory_quick_move(inventory, screen_context.items, step)
+	return quick_input.pressed ? -1 : slots.activated
 }
 
 // The screens of the inventory tab strip, in its order.
@@ -178,10 +204,16 @@ draw_held_stack :: proc(state: ^Ui_State, stack: Item_Stack, items: Item_Registr
 	}
 }
 
-// quick_move: the machine panel's R2 or Q hint on a focused stack.
-inventory_glyph_bar :: proc(state: ^Ui_State, held, focused: Item_Stack, quick_move := false) {
+// quick_move: the R2 or Q hint on a focused stack. drop: the Drop hint
+// on a focused or held stack (the inventory screen).
+inventory_glyph_bar :: proc(state: ^Ui_State, held, focused: Item_Stack, quick_move := false, drop := false) {
 	if !stack_is_empty(held) {
-		hints := [?]Glyph_Hint{{.Confirm, text("hint_place_stack")}, {.Back, text("hint_close")}}
+		hints := make([dynamic]Glyph_Hint, context.temp_allocator)
+		append(&hints, Glyph_Hint{.Confirm, text("hint_place_stack")})
+		if drop {
+			append(&hints, Glyph_Hint{.Drop, text("hint_drop")})
+		}
+		append(&hints, Glyph_Hint{.Back, text("hint_close")})
 		ui_glyph_bar(state, hints[:])
 		return
 	}
@@ -189,6 +221,9 @@ inventory_glyph_bar :: proc(state: ^Ui_State, held, focused: Item_Stack, quick_m
 	append(&hints, Glyph_Hint{.Confirm, text("hint_pick_up")})
 	if quick_move && !stack_is_empty(focused) {
 		append(&hints, Glyph_Hint{.Quick_Move, text("hint_quick_move")})
+	}
+	if drop && !stack_is_empty(focused) {
+		append(&hints, Glyph_Hint{.Drop, text("hint_drop")})
 	}
 	if focused.count >= 2 {
 		append(&hints, Glyph_Hint{.Secondary, text("hint_split")})
