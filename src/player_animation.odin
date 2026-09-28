@@ -4,12 +4,15 @@ import "core:math"
 
 // Player animation (work item 0066): the phases the body, the first
 // person arm and the head bob are posed by, pure and without raylib. The
-// walk phase comes from the distance the statistics count
-// (distance_walked_millimetres), so the walk keeps no state of its own
-// and is the same for the same walk. What the renderer remembers of the
-// last frame (whether the distance moved, the placed counters, a place
+// walk phase comes from the cadence distance: the distance the statistics
+// count (distance_walked_millimetres), each tick's share divided by the
+// cheat speed factor while cheat speed is on (work item 0087), so a walk
+// at three times the speed bobs and steps at the normal rate. What the
+// renderer remembers of the last frame (the distance, the cadence
+// distance, whether the distance moved, the placed counters, a place
 // swing under way) is Player_Animation_Memory in Frame_State: render
-// state, never read by the simulation.
+// state, never read by the simulation. The mining chop follows render
+// time, so a faster dig chops at the same period.
 //
 // Angles are degrees about the body's sideways axis, positive swinging a
 // limb forward (and the head up, like the pitch).
@@ -49,6 +52,7 @@ Player_Animation_Memory :: struct {
 	known:                bool,
 	tick:                 u64,
 	distance_millimetres: u64,
+	cadence_millimetres:  u64,
 	moving:               bool,
 	placed_total:         u64,
 	place_swing_active:   bool,
@@ -146,6 +150,16 @@ head_bob_offset :: proc(phase, amplitude: f32) -> f32 {
 	return amplitude * math.sin(phase * 2 * math.TAU)
 }
 
+// The cadence distance after a tick walked from previous_distance to
+// distance: under cheat speed the tick's walk counts divided by the cheat
+// speed factor, rounded like the statistics round a tick's walk.
+advance_cadence_millimetres :: proc(cadence, previous_distance, distance: u64, cheat_speed: bool) -> u64 {
+	if distance <= previous_distance {
+		return cadence
+	}
+	return cadence + u64(math.round(f64(distance - previous_distance) / f64(cheat_speed_factor(cheat_speed))))
+}
+
 // A foot comes down each half cycle: true when the distance crossed one.
 footstep_due :: proc(previous_millimetres, millimetres: u64) -> bool {
 	half := u64(WALK_CYCLE_MILLIMETRES / 2)
@@ -166,15 +180,17 @@ placed_total :: proc(statistics: Statistics) -> u64 {
 
 // The frame's memory from the last one. The first frame of a session only
 // learns the counters, so a loaded world neither steps nor swings.
-// footstep is true on the frame whose tick crossed a half cycle.
-advance_player_animation_memory :: proc(memory: Player_Animation_Memory, distance_millimetres, placed: u64, tick: u64, render_seconds: f64) -> (next: Player_Animation_Memory, footstep: bool) {
+// footstep is true on the frame whose tick crossed a half cycle of the
+// cadence distance.
+advance_player_animation_memory :: proc(memory: Player_Animation_Memory, distance_millimetres, placed: u64, tick: u64, render_seconds: f64, cheat_speed := false) -> (next: Player_Animation_Memory, footstep: bool) {
 	if !memory.known {
-		return Player_Animation_Memory{known = true, tick = tick, distance_millimetres = distance_millimetres, placed_total = placed}, false
+		return Player_Animation_Memory{known = true, tick = tick, distance_millimetres = distance_millimetres, cadence_millimetres = distance_millimetres, placed_total = placed}, false
 	}
 	next = memory
 	if tick != memory.tick {
 		next.moving = distance_millimetres != memory.distance_millimetres
-		footstep = footstep_due(memory.distance_millimetres, distance_millimetres)
+		next.cadence_millimetres = advance_cadence_millimetres(memory.cadence_millimetres, memory.distance_millimetres, distance_millimetres, cheat_speed)
+		footstep = footstep_due(memory.cadence_millimetres, next.cadence_millimetres)
 		next.tick, next.distance_millimetres = tick, distance_millimetres
 	}
 	if placed > memory.placed_total {
@@ -196,7 +212,7 @@ place_swing_elapsed :: proc(memory: Player_Animation_Memory, render_seconds: f64
 
 player_animation_state :: proc(memory: Player_Animation_Memory, player: Player, pitch: f32, render_seconds: f64) -> Player_Animation_State {
 	return Player_Animation_State {
-		walk_phase = walk_phase(memory.distance_millimetres),
+		walk_phase = walk_phase(memory.cadence_millimetres),
 		moving = memory.moving,
 		sprinting = player.sprinting,
 		mining = player.mining.active,

@@ -1,6 +1,6 @@
 # 0087 Cheat speed: step up, jump two, and no faster cadence
 
-Status: todo
+Status: implemented
 Milestone: M11
 
 ## Goal
@@ -24,3 +24,5 @@ Couch report (2026-09-28): with cheat speed on the player should climb single bl
 The mining hit cap landed with 0089 (`MINING_HIT_MAXIMUM_PER_SECOND` 3, a minimum gap in `Sound_Memory` in `src/sound_events.odin`); this item keeps the chop animation and the walked distance under cheat speed.
 
 Files a subagent may touch: `src/player.odin`, `src/player_collision.odin`, `src/player_test.odin`, `src/player_animation.odin`, `src/player_animation_test.odin`, `src/sound_events.odin`, `src/sound_events_test.odin`, `src/player_interaction.odin`, `src/render_player.odin`, `src/loop.odin` (passing the cheat flag to the animation and sounds), the docs above, this file.
+
+Implemented: `src/player.odin` (`CHEAT_JUMP_SPEED`, `STEP_UP_HEIGHT`, `player_jump_speed`, `step_up_move`, the cheat flag through `walk_player` and `move_player_horizontally`), `src/player_animation.odin` (`advance_cadence_millimetres`, the cadence distance in `Player_Animation_Memory` and the walk phase from it), `src/sound_events.odin` (the cadence distance in `Sound_Memory`, the cheat flag in `Sound_Observation`), `src/render_player.odin` and `src/loop.odin` (passing the cheat flag to the animation memory), tests in `src/player_test.odin`, `src/player_animation_test.odin` and `src/sound_events_test.odin`, `doc/ui.md`, `doc/log/2026-09-28.md`. The chop and the hit cap needed no change: the chop runs on render time and the cap landed with 0089. 974 tests pass.

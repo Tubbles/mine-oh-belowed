@@ -527,3 +527,87 @@ test_sprint_hold_and_toggle :: proc(t: ^testing.T) {
 	testing.expect(t, !player.sprinting)
 	testing.expect(t, abs(player.velocity.x - PLAYER_WALK_SPEED) < TEST_TOLERANCE)
 }
+
+tick_cheat_test_player :: proc(world: ^World, registry: Block_Registry, player: ^Player, input: Input_Frame, ticks: int) {
+	content := make_test_content()
+	content.blocks = registry
+	for _ in 0 ..< ticks {
+		tick_player(world, content, slice.from_ptr(player, 1), 0, input, TEST_TICK_RATE, true)
+	}
+}
+
+// Stone from x 3 to 9 on row z, height blocks high, a ledge to walk onto.
+set_ledge :: proc(world: ^World, stone: Block_Id, z, height: i32) {
+	for x in i32(3) ..< 10 {
+		for y in i32(1) ..= height {
+			world_set_block(world, {x, y, z}, stone)
+		}
+	}
+}
+
+// 0087: under cheat speed a walk climbs a one block ledge without jumping
+// and stops at a two block wall; without it the ledge stops the walk.
+@(test)
+test_cheat_speed_steps_up_one_block_not_two :: proc(t: ^testing.T) {
+	registry := make_test_registry()
+	stone := test_block(registry, "stone")
+	world := make_floor_world(registry, 32)
+	set_ledge(&world, stone, 0, 1)
+	set_ledge(&world, stone, 2, 2)
+	low := make_test_player(registry, {0.5, 1, 0.5})
+	tick_cheat_test_player(&world, registry, &low, WALK_FORWARD, 20)
+	testing.expectf(t, low.position.x > 3.3, "x %v", low.position.x)
+	testing.expectf(t, abs(low.position.y - 2) < 1e-3, "y %v", low.position.y)
+	testing.expect(t, low.on_ground)
+	high := make_test_player(registry, {0.5, 1, 2.5})
+	tick_cheat_test_player(&world, registry, &high, WALK_FORWARD, 20)
+	testing.expectf(t, abs(high.position.x - (3 - PLAYER_WIDTH / 2)) < 1e-3, "x %v", high.position.x)
+	testing.expectf(t, abs(high.position.y - 1) < 1e-3, "y %v", high.position.y)
+	normal := make_test_player(registry, {0.5, 1, 0.5})
+	tick_test_player(&world, registry, &normal, WALK_FORWARD, 60)
+	testing.expectf(t, abs(normal.position.x - (3 - PLAYER_WIDTH / 2)) < 1e-3, "x %v", normal.position.x)
+	testing.expectf(t, abs(normal.position.y - 1) < 1e-3, "y %v", normal.position.y)
+}
+
+// 0087: a ceiling right above the ledge leaves no room to stand there, so
+// the walk does not step up.
+@(test)
+test_cheat_step_up_needs_room_above_the_ledge :: proc(t: ^testing.T) {
+	registry := make_test_registry()
+	stone := test_block(registry, "stone")
+	world := make_floor_world(registry, 32)
+	set_blocks(&world, stone, {3, 1, 0}, {3, 3, 0}, {4, 3, 0})
+	player := make_test_player(registry, {0.5, 1, 0.5})
+	tick_cheat_test_player(&world, registry, &player, WALK_FORWARD, 60)
+	testing.expectf(t, abs(player.position.x - (3 - PLAYER_WIDTH / 2)) < 1e-3, "x %v", player.position.x)
+	testing.expectf(t, abs(player.position.y - 1) < 1e-3, "y %v", player.position.y)
+}
+
+// 0087: the cheat jump's apex is about 2.2 blocks, so a jump clears a two
+// block wall.
+@(test)
+test_cheat_jump_reaches_two_blocks :: proc(t: ^testing.T) {
+	registry := make_test_registry()
+	stone := test_block(registry, "stone")
+	world := make_floor_world(registry, 32)
+	player := make_test_player(registry, {0.5, 1, 0.5})
+	tick_cheat_test_player(&world, registry, &player, {}, 1)
+	tick_cheat_test_player(&world, registry, &player, Input_Frame{pressed = {.Jump}}, 1)
+	apex := player.position.y
+	for _ in 0 ..< 90 {
+		tick_cheat_test_player(&world, registry, &player, {}, 1)
+		apex = max(apex, player.position.y)
+	}
+	testing.expectf(t, abs(apex - 1 - 2.2) < 0.02, "apex %v", apex - 1)
+	testing.expect(t, player.on_ground)
+
+	set_ledge(&world, stone, 2, 2)
+	climber := make_test_player(registry, {0.5, 1, 2.5})
+	input := Input_Frame {
+		move    = {0, 1},
+		pressed = {.Jump},
+	}
+	tick_cheat_test_player(&world, registry, &climber, input, 40)
+	testing.expectf(t, climber.position.x > 3.3, "x %v", climber.position.x)
+	testing.expectf(t, climber.position.y > 3 - 1e-3, "y %v", climber.position.y)
+}

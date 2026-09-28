@@ -601,7 +601,7 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session, sky: Day_Sky,
 	player := session.simulation.players[0]
 	alpha := f32(interpolation_alpha(session.accumulator))
 	seconds := rl.GetTime()
-	update_player_presence(&state.player_animation, &state.particles, state.particle_memory, world, content.blocks, player, session.simulation.tick, seconds)
+	update_player_presence(&state.player_animation, &state.particles, state.particle_memory, world, content.blocks, player, session.simulation.tick, seconds, session.simulation.cheat_speed)
 	pose := interpolate_player_pose(player, alpha)
 	animation := player_animation_state(state.player_animation, player, pose.pitch, seconds)
 	bob := head_bob_offset(animation.walk_phase, head_bob_amplitude(animation.moving, animation.sprinting, head_bob_enabled(state.settings)))

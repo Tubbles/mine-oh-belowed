@@ -235,6 +235,22 @@ test_mining_hits_capped_at_three_a_second :: proc(t: ^testing.T) {
 	testing.expect(t, mining_hit_allowed(20, 20))
 }
 
+// 0087: the cheat speed's walk, three times as far a tick, steps as often
+// as the normal walk.
+@(test)
+test_cheat_speed_footsteps_keep_the_normal_rate :: proc(t: ^testing.T) {
+	steps_of :: proc(per_tick: u64, cheat_speed: bool) -> u64 {
+		memory, _ := advance_sound_memory({}, {tick = 0, cheat_speed = cheat_speed})
+		for tick in u64(1) ..= 600 {
+			memory, _ = advance_sound_memory(memory, {tick = tick, distance_millimetres = tick * per_tick, cheat_speed = cheat_speed})
+		}
+		return memory.step_count
+	}
+	testing.expect_value(t, steps_of(215, true), steps_of(72, false))
+	testing.expect_value(t, steps_of(280, true), steps_of(93, false))
+	testing.expect(t, steps_of(215, false) > 2 * steps_of(72, false), "without the cheat flag the fast walk steps faster")
+}
+
 // Pauses between clusters lie in 20 to 60 seconds and are not all the
 // same; the gaps within one in 1 to 3 seconds.
 @(test)

@@ -30,6 +30,11 @@ PLAYER_SWIM_SPEED :: 2.5
 // The developer cheat speed (0044) multiplies walking, sprinting and
 // flying speeds.
 CHEAT_SPEED_FACTOR :: 3.0
+// Under cheat speed (0087) the jump's apex is about 2.2 blocks at 60 Hz,
+// two blocks and a margin, and a walk climbs a ledge up to this high
+// without jumping.
+CHEAT_JUMP_SPEED :: 11.34
+STEP_UP_HEIGHT :: 1.05
 
 Camera_Mode :: enum u8 {
 	First_Person,
@@ -202,6 +207,10 @@ cheat_speed_factor :: proc(cheat_speed: bool) -> f32 {
 	return cheat_speed ? CHEAT_SPEED_FACTOR : 1
 }
 
+player_jump_speed :: proc(cheat_speed: bool) -> f32 {
+	return cheat_speed ? CHEAT_JUMP_SPEED : PLAYER_JUMP_SPEED
+}
+
 // Horizontal velocity follows the input directly, without acceleration.
 // speed is in blocks per second at full stick.
 walk_velocity :: proc(yaw: f32, input: Input_Frame, speed: f32) -> [2]f32 {
@@ -256,11 +265,41 @@ move_player_vertically :: proc(world: ^World, registry: Block_Registry, player: 
 	}
 }
 
-move_player_horizontally :: proc(world: ^World, registry: Block_Registry, player: ^Player, sneaking: bool, seconds: f32) {
+// The horizontal move tried again from up to STEP_UP_HEIGHT higher (a
+// ceiling stops the rise), then dropped back down. Taken when the raised
+// box goes further than the blocked move and the drop lands on a
+// collision box above the start, so a one block ledge is climbed and a
+// two block wall is not. blocked is the raised move's own stop.
+step_up_move :: proc(world: ^World, registry: Block_Registry, position: [3]f32, axis: int, delta, blocked_moved: f32) -> (result: [3]f32, blocked, stepped: bool) {
+	rise, _ := sweep_box_axis(world, registry, player_box(position), 1, STEP_UP_HEIGHT)
+	raised := position + {0, rise, 0}
+	moved: f32
+	moved, blocked = sweep_box_axis(world, registry, player_box(raised), axis, delta)
+	if abs(moved) <= abs(blocked_moved) + COLLISION_EPSILON {
+		return position, true, false
+	}
+	raised[axis] += moved
+	drop, landed := sweep_box_axis(world, registry, player_box(raised), 1, -rise)
+	if !landed {
+		return position, true, false
+	}
+	raised.y += drop
+	return raised, blocked, true
+}
+
+// step_up is the cheat speed (0087): a move blocked while on the ground
+// tries step_up_move. Normal play never steps up.
+move_player_horizontally :: proc(world: ^World, registry: Block_Registry, player: ^Player, sneaking, step_up: bool, seconds: f32) {
 	for axis in ([2]int{0, 2}) {
-		moved, blocked := sweep_box_axis(world, registry, player_box(player.position), axis, player.velocity[axis] * seconds)
+		delta := player.velocity[axis] * seconds
+		moved, blocked := sweep_box_axis(world, registry, player_box(player.position), axis, delta)
 		candidate := player.position
 		candidate[axis] += moved
+		if blocked && step_up && player.on_ground {
+			if raised, raised_blocked, stepped := step_up_move(world, registry, player.position, axis, delta, moved); stepped {
+				candidate, blocked = raised, raised_blocked
+			}
+		}
 		if !step_keeps_ground(world, registry, player^, sneaking, candidate) {
 			blocked = true
 			candidate = player.position
@@ -283,13 +322,14 @@ lift_out_of_blocks :: proc(world: ^World, registry: Block_Registry, player: ^Pla
 	return true
 }
 
-walk_player :: proc(world: ^World, registry: Block_Registry, player: ^Player, input: Input_Frame, speed: f32, seconds: f32) {
+// cheat_speed (0087) raises the jump and steps up ledges.
+walk_player :: proc(world: ^World, registry: Block_Registry, player: ^Player, input: Input_Frame, speed: f32, cheat_speed: bool, seconds: f32) {
 	if lift_out_of_blocks(world, registry, player) {
 		return
 	}
 	in_water := box_touches_water(world, registry, player_box(player.position))
 	if player.on_ground && !in_water && .Jump in input.pressed {
-		player.velocity.y = PLAYER_JUMP_SPEED
+		player.velocity.y = player_jump_speed(cheat_speed)
 	}
 	horizontal := walk_velocity(player.yaw, input, speed)
 	if in_water {
@@ -297,7 +337,7 @@ walk_player :: proc(world: ^World, registry: Block_Registry, player: ^Player, in
 	}
 	player.velocity.x, player.velocity.z = horizontal.x, horizontal.y
 	move_player_vertically(world, registry, player, in_water, .Jump in input.pressed, seconds)
-	move_player_horizontally(world, registry, player, .Sneak in input.pressed, seconds)
+	move_player_horizontally(world, registry, player, .Sneak in input.pressed, cheat_speed, seconds)
 }
 
 // The developer fly mode: fly camera speeds, no gravity and no collision.
@@ -376,7 +416,7 @@ tick_player :: proc(world: ^World, content: Simulation_Content, players: []Playe
 	if player.flying {
 		fly_player(player, input, sprinting, cheat_speed_factor(cheat_speed), seconds)
 	} else {
-		walk_player(world, content.blocks, player, input, player_walk_speed(input.pressed, sprinting) * cheat_speed_factor(cheat_speed), seconds)
+		walk_player(world, content.blocks, player, input, player_walk_speed(input.pressed, sprinting) * cheat_speed_factor(cheat_speed), cheat_speed, seconds)
 	}
 	if !player.flying {
 		record_walked(&world.statistics, walk_start, player.position)

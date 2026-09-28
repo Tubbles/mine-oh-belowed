@@ -92,6 +92,8 @@ Sound_Memory :: struct {
 	known:                bool,
 	tick:                 u64,
 	distance_millimetres: u64,
+	// The walk cadence's distance (advance_cadence_millimetres).
+	cadence_millimetres:  u64,
 	step_count:           u64,
 	placed_total:         u64,
 	blocks_mined:         u64,
@@ -117,6 +119,8 @@ Sound_Observation :: struct {
 	message_count:        int,
 	// A message since the memory's count is a discovery.
 	discovered:           bool,
+	// The steps count the cheat speed's walk divided (work item 0087).
+	cheat_speed:          bool,
 }
 
 // The effects the frame's changes ask for.
@@ -397,13 +401,15 @@ discovery_since :: proc(messages: []Quest_Message, count: int) -> bool {
 	return false
 }
 
-// The step follows the walked distance at tick granularity, like the
-// animation (advance_player_animation_memory).
+// The step follows the cadence distance at tick granularity, like the
+// animation (advance_player_animation_memory), so cheat speed steps at the
+// normal rate.
 advance_sound_memory :: proc(memory: Sound_Memory, observation: Sound_Observation) -> (next: Sound_Memory, cues: Sound_Cues) {
 	next = Sound_Memory {
 		known                = true,
 		tick                 = observation.tick,
 		distance_millimetres = observation.distance_millimetres,
+		cadence_millimetres  = memory.cadence_millimetres,
 		step_count           = memory.step_count,
 		placed_total         = observation.placed_total,
 		blocks_mined         = observation.blocks_mined,
@@ -416,10 +422,12 @@ advance_sound_memory :: proc(memory: Sound_Memory, observation: Sound_Observatio
 		hum_drift            = advance_hum_drift(memory.hum_drift, observation.tick),
 	}
 	if !memory.known {
+		next.cadence_millimetres = observation.distance_millimetres
 		return next, {}
 	}
 	if observation.tick != memory.tick {
-		cues.footstep = footstep_due(memory.distance_millimetres, observation.distance_millimetres)
+		next.cadence_millimetres = advance_cadence_millimetres(memory.cadence_millimetres, memory.distance_millimetres, observation.distance_millimetres, observation.cheat_speed)
+		cues.footstep = footstep_due(memory.cadence_millimetres, next.cadence_millimetres)
 	} else {
 		next.distance_millimetres = memory.distance_millimetres
 	}
@@ -450,7 +458,7 @@ launching_pad_count :: proc(world: ^World) -> int {
 	return count
 }
 
-observe_sounds :: proc(memory: Sound_Memory, world: ^World, player: Player, tick: u64, quests: ^Quest_State, particle_memory: Particle_Memory) -> Sound_Observation {
+observe_sounds :: proc(memory: Sound_Memory, world: ^World, player: Player, tick: u64, quests: ^Quest_State, particle_memory: Particle_Memory, cheat_speed: bool) -> Sound_Observation {
 	return Sound_Observation {
 		tick = tick,
 		distance_millimetres = world.statistics.distance_walked_millimetres,
@@ -461,6 +469,7 @@ observe_sounds :: proc(memory: Sound_Memory, world: ^World, player: Player, tick
 		descent_active = particle_memory.descent.active,
 		message_count = len(quests.messages),
 		discovered = discovery_since(quests.messages[:], memory.message_count),
+		cheat_speed = cheat_speed,
 	}
 }
 
@@ -520,7 +529,7 @@ Sound_Frame :: struct {
 // Once a frame in a session, after the particles.
 play_frame_sounds :: proc(mixer: ^Audio_Mixer, memory: ^Sound_Memory, frame: Sound_Frame) {
 	cues: Sound_Cues
-	memory^, cues = advance_sound_memory(memory^, observe_sounds(memory^, frame.world, frame.player, frame.tick, frame.quests, frame.particle_memory))
+	memory^, cues = advance_sound_memory(memory^, observe_sounds(memory^, frame.world, frame.player, frame.tick, frame.quests, frame.particle_memory, frame.cheat_speed))
 	play_sound_cues(mixer, memory^, cues, frame)
 	eye := player_eye(frame.player.position)
 	set_hum_target(mixer, memory^, frame, eye)

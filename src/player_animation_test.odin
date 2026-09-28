@@ -145,3 +145,36 @@ test_footstep_fires_once_per_half_cycle :: proc(t: ^testing.T) {
 	}
 	testing.expect_value(t, steps, int(math.floor(f32(7200) / 2400)))
 }
+
+// Steps and the final walk phase of ticks of walking, per_tick
+// millimetres a tick.
+walk_cadence :: proc(per_tick: u64, ticks: int, cheat_speed: bool) -> (steps: int, phase: f32) {
+	memory, _ := advance_player_animation_memory({}, 0, 0, 0, 0, cheat_speed)
+	for tick in 1 ..= ticks {
+		footstep: bool
+		memory, footstep = advance_player_animation_memory(memory, u64(tick) * per_tick, 0, u64(tick), 0, cheat_speed)
+		steps += int(footstep)
+	}
+	return steps, walk_phase(memory.cadence_millimetres)
+}
+
+// 0087: a walk or sprint at the cheat speed steps and bobs at the normal
+// rate: the same steps and the same phase over the same ticks.
+@(test)
+test_cheat_speed_walk_keeps_the_normal_cadence :: proc(t: ^testing.T) {
+	// Walking 4.3 and sprinting 5.6 blocks a second at 60 Hz, as the
+	// statistics round a tick.
+	walk_steps, normal_walk_phase := walk_cadence(72, 600, false)
+	cheat_walk_steps, cheat_walk_phase := walk_cadence(215, 600, true)
+	testing.expect_value(t, cheat_walk_steps, walk_steps)
+	expect_near_value(t, cheat_walk_phase, normal_walk_phase)
+	sprint_steps, sprint_phase := walk_cadence(93, 600, false)
+	cheat_sprint_steps, cheat_sprint_phase := walk_cadence(280, 600, true)
+	testing.expect_value(t, cheat_sprint_steps, sprint_steps)
+	expect_near_value(t, cheat_sprint_phase, sprint_phase)
+	fast_steps, _ := walk_cadence(215, 600, false)
+	testing.expect(t, fast_steps > 2 * walk_steps, "without the cheat flag the fast walk steps faster")
+	testing.expect_value(t, advance_cadence_millimetres(100, 500, 500, true), 100)
+	testing.expect_value(t, advance_cadence_millimetres(100, 500, 800, false), 400)
+	testing.expect_value(t, advance_cadence_millimetres(100, 500, 800, true), 200)
+}
