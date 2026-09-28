@@ -38,10 +38,12 @@
 // takes their wetter side; badlands take hot dry hills. Coastal dunes come
 // after the beach, so the beach keeps the shore line and tar pits keep
 // their low spots.
-// ambience (optional, work item 0068) names the loop that plays while the
-// player stands in the biome: ambience_<name> must be in
-// data/sounds/sounds.sjson. The shipped ones are wind, birds, insects and
-// water; a biome without it is quiet but for the rain and the hum.
+// ambience (optional, work item 0068) names the sound that plays while the
+// player stands in the biome: the loop ambience_<name> or the calls
+// ambience_<name>_1 and on, played in clusters (work item 0089), must be in
+// data/sounds/sounds.sjson. The shipped ones are wind and water (loops),
+// birds (by day) and insects (calls); a biome without it is quiet but for
+// the rain and the hum.
 biomes = [
 	{
 		id = "lake"

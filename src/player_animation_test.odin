@@ -7,14 +7,22 @@ expect_near_value :: proc(t: ^testing.T, value, expected: f32, loc := #caller_lo
 	testing.expectf(t, abs(value - expected) < 0.001, "%v, expected %v", value, expected, loc = loc)
 }
 
-// One cycle per 1.6 metres, wrapping.
+// One cycle per 4.8 metres, wrapping.
 @(test)
 test_walk_phase_comes_from_the_walked_distance :: proc(t: ^testing.T) {
 	expect_near_value(t, walk_phase(0), 0)
-	expect_near_value(t, walk_phase(400), 0.25)
-	expect_near_value(t, walk_phase(800), 0.5)
-	expect_near_value(t, walk_phase(1600), 0)
-	expect_near_value(t, walk_phase(1600 * 7 + 1200), 0.75)
+	expect_near_value(t, walk_phase(1200), 0.25)
+	expect_near_value(t, walk_phase(2400), 0.5)
+	expect_near_value(t, walk_phase(4800), 0)
+	expect_near_value(t, walk_phase(4800 * 7 + 3600), 0.75)
+}
+
+// About two steps a second at the walking speed (work item 0089).
+@(test)
+test_walk_cycle_gives_about_two_steps_a_second :: proc(t: ^testing.T) {
+	testing.expect_value(t, WALK_CYCLE_MILLIMETRES, 4800)
+	steps_per_second := PLAYER_WALK_SPEED * 1000 / (WALK_CYCLE_MILLIMETRES / 2)
+	testing.expectf(t, steps_per_second > 1.5 && steps_per_second < 2.5, "%v steps a second", steps_per_second)
 }
 
 // Level at phase 0 and a half, the full swing at a quarter; sprinting
@@ -119,10 +127,10 @@ test_head_bob_amplitude_and_setting :: proc(t: ^testing.T) {
 // Once per half cycle, also when a frame covers several ticks' walking.
 @(test)
 test_footstep_fires_once_per_half_cycle :: proc(t: ^testing.T) {
-	testing.expect(t, !footstep_due(0, 799), "before the half")
-	testing.expect(t, footstep_due(799, 800), "at the half")
-	testing.expect(t, !footstep_due(800, 1599), "after it")
-	testing.expect(t, footstep_due(1500, 1700), "at the cycle")
+	testing.expect(t, !footstep_due(0, 2399), "before the half")
+	testing.expect(t, footstep_due(2399, 2400), "at the half")
+	testing.expect(t, !footstep_due(2400, 4799), "after it")
+	testing.expect(t, footstep_due(4700, 4900), "at the cycle")
 
 	steps := 0
 	memory, _ := advance_player_animation_memory({}, 0, 0, 0, 0)
@@ -135,5 +143,5 @@ test_footstep_fires_once_per_half_cycle :: proc(t: ^testing.T) {
 		memory, footstep = advance_player_animation_memory(memory, u64(tick) * 72, 0, u64(tick), 0)
 		steps += int(footstep)
 	}
-	testing.expect_value(t, steps, int(math.floor(f32(7200) / 800)))
+	testing.expect_value(t, steps, int(math.floor(f32(7200) / 2400)))
 }

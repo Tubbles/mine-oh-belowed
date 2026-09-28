@@ -31,7 +31,7 @@ shipped_biome_definitions :: proc(t: ^testing.T) -> []Biome {
 @(test)
 test_shipped_sound_table_loads_with_every_file :: proc(t: ^testing.T) {
 	table := shipped_sound_table(t)
-	testing.expect_value(t, len(table.entries), 29)
+	testing.expect_value(t, len(table.entries), 32)
 	testing.expect_value(t, missing_sound_file(table, test_data_directory()), "")
 	index, found := find_sound(table, "rain")
 	testing.expect(t, found)
@@ -72,6 +72,11 @@ test_sound_references_catch_a_missing_footstep_or_ambience :: proc(t: ^testing.T
 	biomes := [?]Biome{{definition = {id = "a", ambience = "wind"}}, {definition = {id = "b"}}, {definition = {id = "c", ambience = "birds"}}}
 	testing.expect_value(t, validate_sound_references(table, {}, biomes[:2]), "")
 	testing.expect(t, validate_sound_references(table, {}, biomes[:]) != "")
+	// Clustered calls stand in for a loop; a loop named _1 does not.
+	clustered := [?]Sound_Entry{{id = "ambience_birds_1", file = "c.wav", volume = 1}}
+	testing.expect_value(t, validate_sound_references(Sound_Table{entries = clustered[:]}, {}, biomes[2:]), "")
+	clustered[0].kind = .Loop
+	testing.expect(t, validate_sound_references(Sound_Table{entries = clustered[:]}, {}, biomes[2:]) != "")
 }
 
 @(test)
@@ -91,10 +96,11 @@ test_sound_table_rejects_bad_entries :: proc(t: ^testing.T) {
 		_, problem := resolve_sound_table(Sounds_File{sounds = entry.sounds[:]}, context.temp_allocator)
 		testing.expectf(t, problem != "", "%v is refused", entry.sounds[1])
 	}
-	good := [?]Sound_Definition{valid, {id = "b", file = "b.wav", volume = 1, kind = "loop"}}
+	good := [?]Sound_Definition{valid, {id = "b", file = "b.wav", volume = 1, kind = "loop"}, {id = "c", file = "c.wav", volume = 1, kind = "effect", day_only = true}}
 	table, problem := resolve_sound_table(Sounds_File{sounds = good[:]}, context.temp_allocator)
 	testing.expect_value(t, problem, "")
 	testing.expect_value(t, table.entries[1].kind, Sound_Kind.Loop)
+	testing.expect(t, !table.entries[0].day_only && table.entries[2].day_only, "day_only carries over")
 	testing.expect(t, missing_sound_file(table, test_data_directory()) != "")
 }
 
@@ -143,6 +149,9 @@ test_output_volume_by_channel :: proc(t: ^testing.T) {
 	loop := Sound_Entry{volume = 0.5, kind = .Loop}
 	expect_near_value(t, sound_output_volume(effect, 1, volumes), 0.4)
 	expect_near_value(t, sound_output_volume(loop, 0.5, volumes), 0.14)
+	// A clustered ambience call is an effect on the ambience channel.
+	call := Sound_Entry{id = "ambience_birds_1", volume = 0.5, kind = .Effect}
+	expect_near_value(t, sound_output_volume(call, 1, volumes), 0.28)
 	silent := DEFAULT_SETTINGS
 	silent.master_volume = 0
 	expect_near_value(t, sound_output_volume(effect, 1, audio_volumes(silent)), 0)

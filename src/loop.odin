@@ -490,6 +490,7 @@ session_sound_frame :: proc(state: ^Frame_State, weather: Weather) -> Sound_Fram
 		particle_memory = state.particle_memory,
 		weather = weather,
 		cheat_speed = session.simulation.cheat_speed,
+		daylight = daylight_blend(simulation_day_ticks(session.simulation), session.simulation.day_length_ticks),
 	}
 }
 

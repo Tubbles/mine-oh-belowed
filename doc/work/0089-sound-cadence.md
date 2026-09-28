@@ -1,6 +1,6 @@
 # 0089 Sound cadence: slower steps, bird clusters, no machine gun
 
-Status: todo
+Status: implemented
 Milestone: M11
 
 ## Goal
@@ -24,3 +24,5 @@ Couch report (2026-09-28): many of the new sounds play too often. The walking bo
 ## Notes
 
 Files a subagent may touch: `src/player_animation.odin`, `src/player_animation_test.odin`, `src/sound_events.odin`, `src/sound_events_test.odin`, `src/audio.odin`, `src/audio_test.odin`, `tools/make_placeholder_sounds.py`, `data/sounds/` (new files, the table, the removed loops), `data/biomes.sjson` (ambience names), the docs above, this file.
+
+Implemented: `WALK_CYCLE_MILLIMETRES` is 4800 (`src/player_animation.odin`). `src/sound_events.odin` has the cluster scheduler (`Ambience_Cluster_Memory`, `advance_ambience_cluster`, the variant choice, pauses, gaps and pitch from `sound_hash`), the mining hit cap (`MINING_HIT_MAXIMUM_PER_SECOND` 3, `next_mining_hit_tick` in `Sound_Memory`, the 0087 part) and the hum drift (`Hum_Drift_Memory`). `src/audio.odin` reads an optional `day_only` per sound, accepts clustered variants for a biome ambience and plays `ambience_` calls on the ambience volume. `tools/make_placeholder_sounds.py` writes `ambience_birds_1` to `_3` and `ambience_insects_1` to `_2` instead of the two loops and takes an optional output directory; `data/sounds/` gains those five files and loses `ambience_birds.wav` and `ambience_insects.wav`; `data/sounds/sounds.sjson` and the comment in `data/biomes.sjson` follow. `src/loop.odin` (outside the list) passes the daylight blend in `Sound_Frame`, which "only by day for birds" needs. Tests in `src/player_animation_test.odin`, `src/sound_events_test.odin` and `src/audio_test.odin`; 954 tests pass. Docs: `doc/content.md`, `DESIGN.md`, `doc/log/2026-09-28.md`.

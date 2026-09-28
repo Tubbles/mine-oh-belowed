@@ -21,4 +21,6 @@ Couch report (2026-09-28): with cheat speed on the player should climb single bl
 
 ## Notes
 
+The mining hit cap landed with 0089 (`MINING_HIT_MAXIMUM_PER_SECOND` 3, a minimum gap in `Sound_Memory` in `src/sound_events.odin`); this item keeps the chop animation and the walked distance under cheat speed.
+
 Files a subagent may touch: `src/player.odin`, `src/player_collision.odin`, `src/player_test.odin`, `src/player_animation.odin`, `src/player_animation_test.odin`, `src/sound_events.odin`, `src/sound_events_test.odin`, `src/player_interaction.odin`, `src/render_player.odin`, `src/loop.odin` (passing the cheat flag to the animation and sounds), the docs above, this file.

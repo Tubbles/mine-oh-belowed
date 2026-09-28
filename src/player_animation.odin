@@ -14,8 +14,9 @@ import "core:math"
 // Angles are degrees about the body's sideways axis, positive swinging a
 // limb forward (and the head up, like the pitch).
 
-// One walk cycle, a step with each foot, per this many millimetres.
-WALK_CYCLE_MILLIMETRES :: 1600
+// One walk cycle, a step with each foot, per this many millimetres: at
+// the walking speed about two steps a second (work item 0089).
+WALK_CYCLE_MILLIMETRES :: 4800
 WALK_SWING_DEGREES :: 35.0
 SPRINT_SWING_DEGREES :: 50.0
 // The right arm chops down and comes back once per period while mining,

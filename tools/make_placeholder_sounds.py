@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Write the placeholder sounds (work item 0068) to data/sounds/.
 
-Usage: tools/make_placeholder_sounds.py
+Usage: tools/make_placeholder_sounds.py [output directory]
+
+The output directory defaults to data/sounds/.
 
 Only the standard library is used (wave and struct write the files), and
 the output is deterministic: noise comes from a small generator seeded
@@ -20,8 +22,10 @@ loop. This script only writes the files, one per id below:
 - block_break, block_place: a crunch and a thud.
 - ui_move, ui_confirm, ui_back: soft blips.
 - hum_burner, hum_electric, hum_fluid: one hum loop per machine family.
-- ambience_wind, ambience_birds, ambience_insects, ambience_water: the
-  biome ambience loops.
+- ambience_wind, ambience_water: the biome ambience loops.
+- ambience_birds_1 to _3, ambience_insects_1 to _2: short calls of three
+  to five chirps or buzzes each, the variants the game plays in clusters
+  with long pauses between them (work item 0089).
 - rain: the rain loop.
 - rocket_launch, capsule_landing, discovery_chime: the launch rumble,
   the landing thud and the chime of a discovered ore.
@@ -36,6 +40,7 @@ placeholder: recorded sounds replace the files later.
 import math
 import pathlib
 import struct
+import sys
 import wave
 
 REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -258,30 +263,41 @@ def ambience_wind() -> list:
     return normalised(seamless([sample * gain for sample, gain in zip(gust, swell)]), 0.4)
 
 
-def ambience_birds() -> list:
-    seconds = 6.0
-    bed = seamless(loop_noise("ambience_birds", seconds, 200.0, 1200.0))
-    output = [sample * 0.15 for sample in bed]
-    noise = Noise(seed_of("ambience_birds_chirps"))
-    for chirp in range(7):
-        start = int((chirp + 0.5 + 0.4 * noise.next()) * len(output) / 7)
+def placed(calls: list, seconds: float) -> list:
+    """Each (start in seconds, samples) added into a silence this long."""
+    output = [0.0] * sample_count(seconds)
+    for start, call in calls:
+        offset = sample_count(start)
+        for index, sample in enumerate(call[: len(output) - offset]):
+            output[offset + index] += sample
+    return output
+
+
+def ambience_birds(variant: int) -> list:
+    # Three to five rising chirps, their spacing and pitch per variant.
+    noise = Noise(seed_of(f"ambience_birds_{variant}"))
+    chirps, start = [], 0.02
+    for _ in range(3 + variant % 3):
         pitch = 2600.0 + 600.0 * noise.next()
-        call = shaped(sweep(pitch, pitch * 1.3, 0.09), 0.01, 0.03)
-        for repeat in range(2):
-            offset = start + repeat * sample_count(0.12)
-            for index, sample in enumerate(call):
-                output[(offset + index) % len(output)] += sample * 0.5
-    return normalised(output, 0.35)
+        length = 0.07 + 0.03 * abs(noise.next())
+        chirps.append((start, shaped(sweep(pitch, pitch * (1.2 + 0.15 * noise.next()), length), 0.01, 0.03)))
+        start += length + 0.06 + 0.08 * abs(noise.next())
+    return normalised(placed(chirps, start + 0.1), 0.35)
 
 
-def ambience_insects() -> list:
-    seconds = 4.0
-    bed = seamless(loop_noise("ambience_insects", seconds, 3000.0, 8000.0))
-    count = len(bed)
-    # A chirr pulsing 20 times a second, a whole number of pulses per loop.
-    pulses = round(20 * count / SAMPLE_RATE)
-    pulse = [0.5 + 0.5 * math.sin(2.0 * math.pi * pulses * index / count) for index in range(count)]
-    return normalised([sample * gain for sample, gain in zip(bed, pulse)], 0.25)
+def ambience_insects(variant: int) -> list:
+    # Three to five short chirrs of noise pulsing about 20 times a second.
+    noise = Noise(seed_of(f"ambience_insects_{variant}"))
+    buzzes, start = [], 0.02
+    for index in range(3 + (variant + 1) % 3):
+        length = 0.25 + 0.15 * abs(noise.next())
+        hiss = band_noise(f"ambience_insects_{variant}_{index}", length, 3000.0, 8000.0)
+        rate = 20.0 + 4.0 * noise.next()
+        pulse = [0.5 + 0.5 * math.sin(2.0 * math.pi * rate * sample / SAMPLE_RATE) for sample in range(len(hiss))]
+        fade = [min(sample / (0.03 * SAMPLE_RATE), (len(hiss) - sample) / (0.05 * SAMPLE_RATE), 1.0) for sample in range(len(hiss))]
+        buzzes.append((start, [value * gain * edge for value, gain, edge in zip(hiss, pulse, fade)]))
+        start += length + 0.1 + 0.2 * abs(noise.next())
+    return normalised(placed(buzzes, start + 0.05), 0.25)
 
 
 def ambience_water() -> list:
@@ -310,8 +326,8 @@ def sound_set() -> dict:
     sounds["hum_electric"] = hum("hum_electric", 60.0, [(1, 0.6), (2, 1.0), (3, 0.4), (5, 0.15)], 0.05, 2000.0, 6000.0)
     sounds["hum_fluid"] = hum("hum_fluid", 45.0, [(1, 0.7), (3, 0.2)], 0.8, 200.0, 1500.0)
     sounds["ambience_wind"] = ambience_wind()
-    sounds["ambience_birds"] = ambience_birds()
-    sounds["ambience_insects"] = ambience_insects()
+    sounds.update({f"ambience_birds_{variant}": ambience_birds(variant) for variant in range(1, 4)})
+    sounds.update({f"ambience_insects_{variant}": ambience_insects(variant) for variant in range(1, 3)})
     sounds["ambience_water"] = ambience_water()
     sounds["rain"] = rain()
     sounds["rocket_launch"] = rocket_launch()
@@ -321,21 +337,22 @@ def sound_set() -> dict:
     return sounds
 
 
-def write_wave(name: str, samples: list) -> None:
-    path = SOUNDS_DIRECTORY / f"{name}.wav"
+def write_wave(directory: pathlib.Path, name: str, samples: list) -> None:
+    path = directory / f"{name}.wav"
     frames = b"".join(struct.pack("<h", max(-PEAK, min(PEAK, int(round(sample * PEAK))))) for sample in samples)
     with wave.open(str(path), "wb") as file:
         file.setnchannels(1)
         file.setsampwidth(2)
         file.setframerate(SAMPLE_RATE)
         file.writeframes(frames)
-    print(f"wrote {path.relative_to(REPOSITORY_ROOT)}")
+    print(f"wrote {path}")
 
 
 def main() -> None:
-    SOUNDS_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    directory = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else SOUNDS_DIRECTORY
+    directory.mkdir(parents=True, exist_ok=True)
     for name, samples in sound_set().items():
-        write_wave(name, samples)
+        write_wave(directory, name, samples)
 
 
 if __name__ == "__main__":

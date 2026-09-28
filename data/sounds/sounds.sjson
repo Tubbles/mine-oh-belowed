@@ -3,15 +3,19 @@
 // (16 bit PCM), volume its level from 0 to 1 before the settings'
 // volumes, kind "effect" (short, played once, never repeated within 40
 // milliseconds) or "loop" (streamed and faded in and out by the mixer).
-// Effects scale with the effects volume, loops with the ambience volume,
-// both with the master volume.
+// Effects scale with the effects volume, loops and the ambience_ calls
+// with the ambience volume, all with the master volume. day_only (optional, default false) on a
+// clustered ambience's variants keeps its calls to the day.
 // Ids the game asks for:
 // footstep_<material> for every sound_material of data/blocks.sjson
 // (stone is the default and must exist); mine_hit_<tier> for the tool
 // tiers, the highest listed tier at or below the player's taking over;
 // block_break, block_place; ui_move, ui_confirm, ui_back; hum_burner,
 // hum_electric, hum_fluid (the nearest working machine by family);
-// ambience_<name> for every ambience of data/biomes.sjson; rain;
+// ambience_<name> for every ambience of data/biomes.sjson, either a loop
+// or effect variants ambience_<name>_1, _2 and on, which play in clusters
+// of two or three calls with 20 to 60 seconds between clusters and the
+// pitch varied (work item 0089); rain;
 // rocket_launch, capsule_landing, discovery_chime; mission_control_chime
 // (a Mission Control line starting on the HUD, work item 0069).
 // The placeholder files are written by tools/make_placeholder_sounds.py.
@@ -37,8 +41,11 @@ sounds = [
 	{id = "hum_electric", file = "hum_electric.wav", volume = 0.3, kind = "loop"}
 	{id = "hum_fluid", file = "hum_fluid.wav", volume = 0.35, kind = "loop"}
 	{id = "ambience_wind", file = "ambience_wind.wav", volume = 0.4, kind = "loop"}
-	{id = "ambience_birds", file = "ambience_birds.wav", volume = 0.35, kind = "loop"}
-	{id = "ambience_insects", file = "ambience_insects.wav", volume = 0.25, kind = "loop"}
+	{id = "ambience_birds_1", file = "ambience_birds_1.wav", volume = 0.35, kind = "effect", day_only = true}
+	{id = "ambience_birds_2", file = "ambience_birds_2.wav", volume = 0.35, kind = "effect", day_only = true}
+	{id = "ambience_birds_3", file = "ambience_birds_3.wav", volume = 0.35, kind = "effect", day_only = true}
+	{id = "ambience_insects_1", file = "ambience_insects_1.wav", volume = 0.25, kind = "effect"}
+	{id = "ambience_insects_2", file = "ambience_insects_2.wav", volume = 0.25, kind = "effect"}
 	{id = "ambience_water", file = "ambience_water.wav", volume = 0.4, kind = "loop"}
 	{id = "rain", file = "rain.wav", volume = 0.5, kind = "loop"}
 	{id = "rocket_launch", file = "rocket_launch.wav", volume = 0.9, kind = "effect"}

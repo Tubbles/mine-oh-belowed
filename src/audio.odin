@@ -4,6 +4,7 @@ import "core:encoding/json"
 import "core:fmt"
 import "core:mem/virtual"
 import "core:os"
+import "core:strings"
 import rl "vendor:raylib"
 
 // Sound (work item 0068): the sound table in data/sounds/sounds.sjson and
@@ -15,6 +16,8 @@ import rl "vendor:raylib"
 // gap rule and the volume approach are pure; only the device, loading
 // and playing touch raylib, and without an audio device every call is a
 // no op. Sound is presentation: the simulation never sees any of it.
+// A biome ambience is a loop or a set of effect variants the sound events
+// play in clusters (work item 0089); day_only keeps the latter to the day.
 
 SOUNDS_DIRECTORY :: "sounds"
 SOUNDS_FILE_NAME :: "sounds.sjson"
@@ -37,10 +40,11 @@ sound_kind_names := [Sound_Kind]string {
 }
 
 Sound_Definition :: struct {
-	id:     string,
-	file:   string,
-	volume: f32,
-	kind:   string,
+	id:       string,
+	file:     string,
+	volume:   f32,
+	kind:     string,
+	day_only: bool,
 }
 
 Sounds_File :: struct {
@@ -48,10 +52,11 @@ Sounds_File :: struct {
 }
 
 Sound_Entry :: struct {
-	id:     string,
-	file:   string,
-	volume: f32,
-	kind:   Sound_Kind,
+	id:       string,
+	file:     string,
+	volume:   f32,
+	kind:     Sound_Kind,
+	day_only: bool,
 }
 
 Sound_Table :: struct {
@@ -118,7 +123,7 @@ resolve_sound_table :: proc(file: Sounds_File, allocator := context.allocator) -
 		if _, listed := find_sound(Sound_Table{entries = entries[:index]}, definition.id); listed {
 			return {}, fmt.tprintf("sound id %q is listed twice", definition.id)
 		}
-		entries[index] = Sound_Entry{id = definition.id, file = definition.file, volume = definition.volume, kind = kind}
+		entries[index] = Sound_Entry{id = definition.id, file = definition.file, volume = definition.volume, kind = kind, day_only = definition.day_only}
 	}
 	return Sound_Table{entries = entries}, ""
 }
@@ -168,6 +173,11 @@ load_sound_table :: proc(data_directory: string, allocator := context.allocator)
 	return table, missing_sound_file(table, data_directory)
 }
 
+// A loop ambience_<name> or its variants ambience_<name>_1 and up.
+ambience_listed :: proc(table: Sound_Table, id: string) -> bool {
+	return sound_listed(table, id) || ambience_variant_count(table, id) > 0
+}
+
 // The blocks' footsteps and the biomes' ambience are in the table.
 validate_sound_references :: proc(table: Sound_Table, blocks: Block_Registry, biomes: []Biome) -> string {
 	for definition, block in blocks.definitions {
@@ -176,8 +186,8 @@ validate_sound_references :: proc(table: Sound_Table, blocks: Block_Registry, bi
 		}
 	}
 	for biome in biomes {
-		if id := ambience_sound_id(biome.definition.ambience); id != "" && !sound_listed(table, id) {
-			return fmt.tprintf("biome %q has ambience %q, but %s lists no %q", biome.definition.id, biome.definition.ambience, SOUNDS_FILE_NAME, id)
+		if id := ambience_sound_id(biome.definition.ambience); id != "" && !ambience_listed(table, id) {
+			return fmt.tprintf("biome %q has ambience %q, but %s lists no %q nor %q", biome.definition.id, biome.definition.ambience, SOUNDS_FILE_NAME, id, ambience_variant_sound_id(id, 1))
 		}
 	}
 	return ""
@@ -237,11 +247,18 @@ audio_volumes :: proc(settings: Settings) -> Audio_Volumes {
 	return Audio_Volumes{master = clamp(settings.master_volume, 0, 1), effects = clamp(settings.effects_volume, 0, 1), ambience = clamp(settings.ambience_volume, 0, 1)}
 }
 
+// Loops and the clustered ambience calls are ambience, the rest effects.
+sound_channel_volume :: proc(entry: Sound_Entry, volumes: Audio_Volumes) -> f32 {
+	if entry.kind == .Loop || strings.has_prefix(entry.id, AMBIENCE_SOUND_PREFIX) {
+		return volumes.ambience
+	}
+	return volumes.effects
+}
+
 // The level raylib gets: the entry's volume, the play's or the loop's,
 // the channel's and the master volume.
 sound_output_volume :: proc(entry: Sound_Entry, volume: f32, volumes: Audio_Volumes) -> f32 {
-	channel := entry.kind == .Loop ? volumes.ambience : volumes.effects
-	return clamp(entry.volume * volume * channel * volumes.master, 0, 1)
+	return clamp(entry.volume * volume * sound_channel_volume(entry, volumes) * volumes.master, 0, 1)
 }
 
 // Raylib.
