@@ -342,3 +342,50 @@ log_display_diagnostics :: proc(platform: Window_Platform) {
 	window_size := [2]int{int(rl.GetScreenWidth()), int(rl.GetScreenHeight())}
 	log_printf("%s", display_diagnostics_text(current_monitor_size(), window_size, render_size(), window_scale(), platform))
 }
+
+// The GL implementation, logged once per start after the display line
+// (work item 0104): on the phone a translation layer between Wine and the
+// GPU (GL4ES, VirGL) rejected a fragment shader at link time without
+// saying which layer it was or what GLSL level it offers.
+GL_VENDOR :: 0x1F00
+GL_RENDERER :: 0x1F01
+GL_VERSION :: 0x1F02
+GL_SHADING_LANGUAGE_VERSION :: 0x8B8C
+
+Gl_Get_String :: #type proc "c" (name: u32) -> cstring
+
+gl_info_field :: proc(value: string) -> string {
+	return value if value != "" else "unknown"
+}
+
+gl_info_text :: proc(vendor, renderer, version, shading_language_version: string) -> string {
+	return fmt.tprintf(
+		"gl: vendor %s, renderer %s, version %s, glsl %s",
+		gl_info_field(vendor),
+		gl_info_field(renderer),
+		gl_info_field(version),
+		gl_info_field(shading_language_version),
+	)
+}
+
+// A nil procedure or a nil string reads as empty, which logs as unknown.
+gl_string :: proc(get_string: Gl_Get_String, name: u32) -> string {
+	if get_string == nil {
+		return ""
+	}
+	return string(get_string(name))
+}
+
+// Through GLFW's loader, so the game links neither libGL nor opengl32.
+log_gl_info :: proc() {
+	get_string := cast(Gl_Get_String)rl.glfwGetProcAddress("glGetString")
+	log_printf(
+		"%s",
+		gl_info_text(
+			gl_string(get_string, GL_VENDOR),
+			gl_string(get_string, GL_RENDERER),
+			gl_string(get_string, GL_VERSION),
+			gl_string(get_string, GL_SHADING_LANGUAGE_VERSION),
+		),
+	)
+}

@@ -147,6 +147,16 @@ test_display_diagnostics_text :: proc(t: ^testing.T) {
 	testing.expect_value(t, x11, "display: monitor 2880 x 1920, window 1280 x 720, render 2176 x 1224, scale 1.70 x 1.70, session x11")
 }
 
+// Work item 0104: the gl line, with unknown for a missing string.
+@(test)
+test_gl_info_text :: proc(t: ^testing.T) {
+	known := gl_info_text("Mesa", "virgl", "3.3 (Core Profile) Mesa 24.0", "3.30")
+	testing.expect_value(t, known, "gl: vendor Mesa, renderer virgl, version 3.3 (Core Profile) Mesa 24.0, glsl 3.30")
+	missing := gl_info_text("", "", "2.1", "")
+	testing.expect_value(t, missing, "gl: vendor unknown, renderer unknown, version 2.1, glsl unknown")
+	testing.expect_value(t, gl_string(nil, GL_VENDOR), "")
+}
+
 @(test)
 test_display_is_desktop_scaled :: proc(t: ^testing.T) {
 	testing.expect(t, !display_is_desktop_scaled(.X11))

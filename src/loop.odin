@@ -982,6 +982,7 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	monitor_size := current_monitor_size()
 	platform := current_window_platform()
 	log_display_diagnostics(platform)
+	log_gl_info()
 	update_display(&window_settings, player_configuration.settings, monitor_size, platform)
 
 	renderer, renderer_ok := init_chunk_renderer(content.blocks, data_directory)

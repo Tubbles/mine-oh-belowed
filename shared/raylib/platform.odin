@@ -13,6 +13,11 @@ package raylib
 // window, which glfwGetCurrentContext returns for raylib's window (its
 // context is current on the main thread); raylib's GetWindowHandle returns
 // the native X11 or Wayland handle instead, not GLFW's.
+//
+// glfwGetProcAddress: a GL function of the current context by name, as
+// raylib loads GL itself, so the game reads glGetString without linking
+// libGL or opengl32 (work item 0104, the gl line in the log). Call it after
+// InitWindow.
 
 import "core:c"
 
@@ -32,4 +37,5 @@ foreign lib {
 	glfwGetPlatform :: proc() -> c.int ---
 	glfwGetCurrentContext :: proc() -> rawptr ---
 	glfwGetWindowSize :: proc(window: rawptr, width, height: ^c.int) ---
+	glfwGetProcAddress :: proc(name: cstring) -> rawptr ---
 }
