@@ -61,7 +61,7 @@ Everything below is a binding table in configuration, not code. Same physical in
 
 | Input | In the world | In menus |
 | --- | --- | --- |
-| Left stick | Move. Click: sprint toggle | Focus navigation |
+| Left stick | Move. Click: sprint (toggle by default, see Hold or toggle) | Focus navigation |
 | Right stick | Camera, coarse | Scroll lists. Click: drop the held or focused stack in the inventory (0062) |
 | Gyro | Camera, fine aim. Active while the right stick or right pad is touched; always on and grip sense are settings. The bias is learned while the controller is still and the thumb is off (about a second and a half), subtracted, and a small deadzone counts as rest, since couch test 1 saw a constant rate turn the view (`calibrate_gyro`); the diagnostics show the raw rate, the bias and the corrected rate | Off |
 | Right trackpad | Camera as a mouse surface. Click: interact | Pointer. Click: confirm |
@@ -69,7 +69,7 @@ Everything below is a binding table in configuration, not code. Same physical in
 | R2 trigger | Mine, break | Confirm; quick move on a slot of a machine panel (0078) |
 | L2 trigger | Place, use | Secondary action (split stack) |
 | A | Jump | Confirm |
-| B | Sneak (hold) | Back |
+| B | Sneak (hold by default, see Hold or toggle) | Back |
 | X | Open inventory | Sort |
 | Y | Rotate held building | Info panel |
 | D-pad | Left and right: hotbar slot. Up: pipette. Down: drop | Focus navigation |
@@ -85,6 +85,8 @@ Selection assist: the reticle snaps to the nearest entity in the aim direction, 
 Distribute gesture: holding L2 while sweeping the reticle across machines spreads the held stack evenly over them. Hand feeding is the whole early game and Even Distribution is one of the most installed Factorio mods for exactly this.
 
 R2 to mine and L2 to place mirrors Minecraft Bedrock's controller defaults, so habits transfer for players who know it. The grip buttons duplicate face buttons on purpose: they are the expert copy that keeps the thumbs on the sticks.
+
+Hold or toggle (0074): the Accessibility tab's Sneak and Sprint rows (`settings.sneak_hold`, `settings.sprint_hold`, `hold` or `toggle`) choose how the `Sneak` and `Sprint` actions act. Sneak defaults to hold: the player sneaks while the button is held; in toggle a press starts sneaking and the next press stops it, and it lasts through open screens. Sprint defaults to toggle: a press while moving sprints until movement stops or the next press; in hold the player sprints while the button is held and moving. `Sprint_Hold` (Left Control) always sprints while held. The input layer puts the choice into the frame (`apply_hold_settings` sets `Input_Frame.sneak_toggles` and `sprint_holds`, in `world_input`), and the simulation's `update_sneaking` and `update_sprinting` read it from there, so the simulation never reads the settings; the player's sneaking is `Player.sneaking`, and the rest of the tick sees Sneak pressed exactly while it is set. A toggled sneak while flying keeps the player descending until it is toggled off.
 
 ## Bindings implemented so far
 

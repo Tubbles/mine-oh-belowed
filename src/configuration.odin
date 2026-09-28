@@ -472,6 +472,7 @@ validate_settings :: proc(settings: Settings, provenance: Configuration_Provenan
 		range: Slider_Range,
 	} {
 		{"settings.ui_scale", settings.ui_scale, UI_SCALE_RANGE},
+		{"settings.text_scale", settings.text_scale, TEXT_SCALE_RANGE},
 		{"settings.field_of_view", settings.field_of_view, FIELD_OF_VIEW_RANGE},
 		{"settings.sprint_field_of_view_kick", settings.sprint_field_of_view_kick, SPRINT_FIELD_OF_VIEW_KICK_RANGE},
 		{"settings.third_person_distance", settings.third_person_distance, THIRD_PERSON_DISTANCE_RANGE},

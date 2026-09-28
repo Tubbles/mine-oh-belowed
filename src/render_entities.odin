@@ -297,17 +297,26 @@ draw_launch_pad :: proc(pad: Launch_Pad, machines: Machine_Registry, models: Mod
 // Bottleneck overlay markers (work item 0028): a cube above each machine
 // in its state's colour, over the top of its model (work item 0056). Its size grows with the distance from the eye,
 // so it covers about the same part of the screen near and far, and never
-// shrinks below a small world size up close.
+// shrinks below a small world size up close. Its colours come from the
+// theme's palette the palette setting picks (work item 0074).
 MARKER_MINIMUM_SIZE :: 0.3
 MARKER_SIZE_PER_DISTANCE :: 0.02
 MARKER_GAP :: 0.25
 
+// Which palette colour shows each state.
 @(rodata)
-marker_colors := [Marker_Colour]rl.Color {
-	.Green  = {60, 200, 80, 255},
-	.Yellow = {240, 200, 40, 255},
-	.Red    = {225, 55, 45, 255},
-	.Grey   = {140, 140, 145, 255},
+marker_palette_colors := [Marker_Colour]Palette_Color {
+	.Green  = .Working,
+	.Yellow = .Waiting,
+	.Red    = .Missing,
+	.Grey   = .Idle,
+}
+
+bottleneck_marker_colors :: proc(theme: Ui_Theme, palette: Marker_Palette) -> (colors: [Marker_Colour]Ui_Color) {
+	for &color, marker in colors {
+		color = theme.palettes[palette][marker_palette_colors[marker]]
+	}
+	return colors
 }
 
 marker_size :: proc(distance: f32) -> f32 {
@@ -321,10 +330,10 @@ marker_position :: proc(common: Entity_Common, size, top: f32) -> [3]f32 {
 	return {centre.x, f32(common.origin.y) + top + MARKER_GAP + size / 2, centre.z}
 }
 
-draw_marker :: proc(common: Entity_Common, models: Model_Renderer, colour: Marker_Colour, eye: [3]f32) {
+draw_marker :: proc(common: Entity_Common, models: Model_Renderer, color: Ui_Color, eye: [3]f32) {
 	size := marker_size(linalg.length(box_centre(common.origin, common.size) - eye))
 	position := marker_position(common, size, machine_model_top(models, common))
-	rl.DrawCubeV(position, {size, size, size}, marker_colors[colour])
+	rl.DrawCubeV(position, {size, size, size}, to_raylib_color(color))
 	rl.DrawCubeWiresV(position, {size, size, size}, ENTITY_EDGE_COLOR)
 }
 
@@ -336,33 +345,34 @@ furnace_has_fuel :: proc(furnace: Furnace) -> bool {
 	return furnace.fuel_joules > 0 || !stack_is_empty(furnace.slots[FURNACE_FUEL_SLOT])
 }
 
-// Between BeginMode3D and EndMode3D, after the entities.
-draw_machine_markers :: proc(world: ^World, machines: Machine_Registry, models: Model_Renderer, eye: [3]f32) {
+// Between BeginMode3D and EndMode3D, after the entities. colors from
+// bottleneck_marker_colors.
+draw_machine_markers :: proc(world: ^World, machines: Machine_Registry, models: Model_Renderer, eye: [3]f32, colors: [Marker_Colour]Ui_Color) {
 	entities := &world.entities
 	for furnace in entities.furnaces.entries {
 		if furnace.alive {
-			draw_marker(furnace.common, models, machine_marker_colour(furnace.state, furnace_has_fuel(furnace)), eye)
+			draw_marker(furnace.common, models, colors[machine_marker_colour(furnace.state, furnace_has_fuel(furnace))], eye)
 		}
 	}
 	for assembler in entities.assemblers.entries {
 		if assembler.alive {
-			draw_marker(assembler.common, models, machine_marker_colour(assembler.state, machine_is_connected(entities, assembler.handle)), eye)
+			draw_marker(assembler.common, models, colors[machine_marker_colour(assembler.state, machine_is_connected(entities, assembler.handle))], eye)
 		}
 	}
 	for drill in entities.drills.entries {
 		if drill.alive {
-			draw_marker(drill.common, models, machine_marker_colour(drill.state, machine_is_connected(entities, drill.handle)), eye)
+			draw_marker(drill.common, models, colors[machine_marker_colour(drill.state, machine_is_connected(entities, drill.handle))], eye)
 		}
 	}
 	for lab in entities.labs.entries {
 		if lab.alive {
-			draw_marker(lab.common, models, machine_marker_colour(lab.state, machine_is_connected(entities, lab.handle)), eye)
+			draw_marker(lab.common, models, colors[machine_marker_colour(lab.state, machine_is_connected(entities, lab.handle))], eye)
 		}
 	}
 	for fluid_machine in entities.fluid_machines.entries {
 		if fluid_machine.alive && fluid_machine_has_marker(machines.machines[fluid_machine.machine].kind) {
 			connected := machine_is_connected(entities, fluid_machine.handle)
-			draw_marker(fluid_machine.common, models, machine_marker_colour(fluid_machine.state, connected), eye)
+			draw_marker(fluid_machine.common, models, colors[machine_marker_colour(fluid_machine.state, connected)], eye)
 		}
 	}
 }

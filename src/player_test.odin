@@ -448,3 +448,82 @@ test_stairs_collide_with_both_boxes_and_torches_not_at_all :: proc(t: ^testing.T
 	_, torch_blocked := sweep_box_axis(&world, registry, player_box({-1.5, 1, 3.5}), 0, 4)
 	testing.expect(t, !torch_blocked)
 }
+
+// 0074: the sneak_hold and sprint_hold settings ride in the frame.
+@(test)
+test_hold_settings_reach_the_frame :: proc(t: ^testing.T) {
+	defaults := world_input(Input_Frame{pressed = {.Sneak}}, false, {}, DEFAULT_SETTINGS)
+	testing.expect(t, !defaults.sneak_toggles)
+	testing.expect(t, !defaults.sprint_holds)
+	testing.expect_value(t, defaults.pressed, Action_Set{.Sneak})
+	settings := DEFAULT_SETTINGS
+	settings.sneak_hold = .Toggle
+	settings.sprint_hold = .Hold
+	open := world_input(Input_Frame{}, false, {}, settings)
+	testing.expect(t, open.sneak_toggles)
+	testing.expect(t, open.sprint_holds)
+	// Also while a screen is open, so a toggled sneak outlasts it.
+	blocked := world_input(Input_Frame{}, true, {}, settings)
+	testing.expect(t, blocked.sneak_toggles)
+	testing.expect(t, blocked.sprint_holds)
+}
+
+@(test)
+test_sneak_hold_and_toggle :: proc(t: ^testing.T) {
+	// Hold: sneaking follows the button.
+	testing.expect(t, update_sneaking(false, Input_Frame{pressed = {.Sneak}}))
+	testing.expect(t, !update_sneaking(true, Input_Frame{}))
+	// Toggle: a press flips it, holding or releasing does not.
+	toggle := Input_Frame{sneak_toggles = true}
+	pressed := toggle
+	pressed.pressed, pressed.just_pressed = {.Sneak}, {.Sneak}
+	held := toggle
+	held.pressed = {.Sneak}
+	testing.expect(t, update_sneaking(false, pressed))
+	testing.expect(t, update_sneaking(true, held))
+	testing.expect(t, update_sneaking(true, toggle))
+	testing.expect(t, !update_sneaking(true, pressed))
+	testing.expect(t, !update_sneaking(false, held))
+	testing.expect_value(t, with_sneaking(Input_Frame{pressed = {.Jump}}, true).pressed, Action_Set{.Jump, .Sneak})
+	testing.expect_value(t, with_sneaking(Input_Frame{pressed = {.Jump, .Sneak}}, false).pressed, Action_Set{.Jump})
+}
+
+@(test)
+test_toggled_sneak_keeps_the_player_slow :: proc(t: ^testing.T) {
+	registry := make_test_registry()
+	world := make_floor_world(registry, 32)
+	player := make_test_player(registry, {0.5, 1, 0.5})
+	press := Input_Frame{move = {0, 1}, pressed = {.Sneak}, just_pressed = {.Sneak}, sneak_toggles = true}
+	tick_test_player(&world, registry, &player, press, 1)
+	testing.expect(t, player.sneaking)
+	released := Input_Frame{move = {0, 1}, sneak_toggles = true}
+	tick_test_player(&world, registry, &player, released, 1)
+	testing.expect(t, player.sneaking)
+	testing.expect(t, abs(player.velocity.x - PLAYER_SNEAK_SPEED) < TEST_TOLERANCE)
+	tick_test_player(&world, registry, &player, press, 1)
+	testing.expect(t, !player.sneaking)
+	tick_test_player(&world, registry, &player, released, 1)
+	testing.expect(t, abs(player.velocity.x - PLAYER_WALK_SPEED) < TEST_TOLERANCE)
+}
+
+@(test)
+test_sprint_hold_and_toggle :: proc(t: ^testing.T) {
+	// Hold: sprinting while Sprint is held and the player moves.
+	holding := Input_Frame{move = {0, 1}, pressed = {.Sprint}, sprint_holds = true}
+	testing.expect(t, update_sprinting(false, holding))
+	testing.expect(t, !update_sprinting(true, Input_Frame{move = {0, 1}, sprint_holds = true}))
+	testing.expect(t, !update_sprinting(true, Input_Frame{pressed = {.Sprint}, sprint_holds = true}))
+	// Toggle, the default: a press starts it, releasing keeps it.
+	testing.expect(t, update_sprinting(false, Input_Frame{move = {0, 1}, pressed = {.Sprint}, just_pressed = {.Sprint}}))
+	testing.expect(t, update_sprinting(true, Input_Frame{move = {0, 1}}))
+
+	registry := make_test_registry()
+	world := make_floor_world(registry, 32)
+	player := make_test_player(registry, {0.5, 1, 0.5})
+	tick_test_player(&world, registry, &player, holding, 1)
+	testing.expect(t, player.sprinting)
+	testing.expect(t, abs(player.velocity.x - PLAYER_SPRINT_SPEED) < TEST_TOLERANCE)
+	tick_test_player(&world, registry, &player, Input_Frame{move = {0, 1}, sprint_holds = true}, 1)
+	testing.expect(t, !player.sprinting)
+	testing.expect(t, abs(player.velocity.x - PLAYER_WALK_SPEED) < TEST_TOLERANCE)
+}

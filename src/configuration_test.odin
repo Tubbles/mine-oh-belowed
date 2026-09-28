@@ -246,6 +246,11 @@ test_settings_file_round_trip :: proc(t: ^testing.T) {
 	settings.master_volume = 0.55
 	settings.effects_volume = 0.25
 	settings.ambience_volume = 0
+	settings.text_scale = 1.4
+	settings.palette = .Colour_Blind
+	settings.reduced_motion = true
+	settings.sneak_hold = .Toggle
+	settings.sprint_hold = .Hold
 	testing.expect_value(t, write_settings_file(environment, settings), "")
 
 	loaded, problem := load_configuration(environment, {})
@@ -269,6 +274,8 @@ test_settings_file_round_trip :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(string(written_data), "\tresolution = [1920, 1080]\n"), string(written_data))
 	testing.expect(t, strings.contains(string(written_data), "\tmaster_volume = 0.55\n"), string(written_data))
 	testing.expect(t, strings.contains(string(written_data), "\tfield_of_view = 95\n"), string(written_data))
+	testing.expect(t, strings.contains(string(written_data), "\tpalette = \"colour_blind\"\n"), string(written_data))
+	testing.expect(t, strings.contains(string(written_data), "\tsneak_hold = \"toggle\"\n"), string(written_data))
 }
 
 @(test)
@@ -378,4 +385,45 @@ test_configuration_display_settings :: proc(t: ^testing.T) {
 	testing.expect_value(t, loaded.configuration.settings.window_mode, Window_Mode.Windowed)
 	testing.expect_value(t, loaded.configuration.settings.resolution, [2]int{1280, 720})
 	testing.expect_value(t, source_of_key_path(loaded.provenance, "settings.window_mode"), COMMAND_LINE_SOURCE)
+}
+
+@(test)
+test_configuration_accessibility_settings :: proc(t: ^testing.T) {
+	context.allocator = context.temp_allocator
+	root := make_configuration_test_directory()
+	defer os.remove_all(root)
+	drop_in := join_save_path(root, "home", GAME_DIRECTORY_NAME, CONFIGURATION_DROP_IN_DIRECTORY, "50-accessibility.sjson")
+
+	write_test_file(drop_in, `settings = {text_scale = 1.6 palette = "colour_blind" reduced_motion = true sneak_hold = "toggle" sprint_hold = "hold"}`)
+	loaded, problem := load_configuration(test_environment(root), {})
+	testing.expect_value(t, problem, "")
+	settings := loaded.configuration.settings
+	testing.expect_value(t, settings.text_scale, 1.6)
+	testing.expect_value(t, settings.palette, Marker_Palette.Colour_Blind)
+	testing.expect(t, settings.reduced_motion)
+	testing.expect_value(t, settings.sneak_hold, Hold_Mode.Toggle)
+	testing.expect_value(t, settings.sprint_hold, Hold_Mode.Hold)
+	write_test_file(drop_in, "settings = {text_scale = 0.8}")
+	_, problem = load_configuration(test_environment(root), {})
+	testing.expect_value(t, problem, "")
+
+	Invalid :: struct {
+		text:    string,
+		mention: string,
+	}
+	invalid := [?]Invalid {
+		{"settings = {text_scale = 0.7}", "settings.text_scale is 0.7, outside 0.8 to 1.6"},
+		{"settings = {text_scale = 1.7}", "settings.text_scale is 1.7, outside 0.8 to 1.6"},
+		{`settings = {text_scale = "large"}`, "settings.text_scale must be a number"},
+		{`settings = {palette = "rainbow"}`, `settings.palette is "rainbow", not one of default, colour_blind`},
+		{"settings = {palette = 1}", "settings.palette must be one of"},
+		{`settings = {reduced_motion = "on"}`, "settings.reduced_motion must be a boolean"},
+		{`settings = {sneak_hold = "press"}`, `settings.sneak_hold is "press", not one of toggle, hold`},
+		{"settings = {sprint_hold = true}", "settings.sprint_hold must be one of"},
+	}
+	for case_value in invalid {
+		write_test_file(drop_in, case_value.text)
+		_, problem = load_configuration(test_environment(root), {})
+		expect_problem_mentions(t, problem, drop_in, case_value.mention)
+	}
 }

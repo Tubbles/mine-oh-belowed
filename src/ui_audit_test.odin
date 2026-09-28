@@ -20,7 +20,10 @@ import "core:testing"
 // approximate_text_width. A failure names the case, the size, the scale,
 // the glyphs, the frame and the command. Overlaps inside a panel, icon
 // alignment and colours are left to the manual check list in the work
-// item.
+// item. Every size also runs at the largest text scale (work item 0074):
+// widths are measured at the scaled size, as the game draws them, while a
+// text's height is checked at the size the layout named, since the rows
+// keep their height and larger text grows into their padding.
 
 Ui_Audit_Size :: struct {
 	pixels: [2]f32,
@@ -35,6 +38,10 @@ UI_AUDIT_SIZES :: [?]Ui_Audit_Size {
 	{{1280, 800}, 1.2},
 	{{1280, 800}, 1.5},
 }
+
+// Each size runs at the default text size and at the largest (work item
+// 0074).
+UI_AUDIT_TEXT_SCALES :: [?]f32{1, TEXT_SCALE_RANGE.maximum}
 
 UI_AUDIT_TOLERANCE :: 1.0
 // The Display tab's Resolution row lists the choices up to it.
@@ -274,7 +281,7 @@ audit_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, size: Ui_Audit_Size, aud
 	if audit_case.selecting != NO_ENTITY {
 		audit.browser.selecting_for = audit_case.selecting
 	}
-	ui_begin(state, input, size.pixels, 1.0 / 60, size.scale, 1)
+	ui_begin(state, input, size.pixels, 1.0 / 60, size.scale, 1, ui_accessibility(audit.settings))
 	state.focus_pulse = device == .Gamepad ? 1 : 0
 	screen_context := audit_screen_context(audit)
 	if audit_case.hud {
@@ -283,7 +290,7 @@ audit_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, size: Ui_Audit_Size, aud
 	run_screens(state, screen_context)
 	ui_resolve(state)
 	ui_append_overlays(state)
-	case_text := fmt.tprintf("%s, %.0fx%.0f at scale %.2f, %v glyphs", audit_case.name, size.pixels.x, size.pixels.y, size.scale, device)
+	case_text := fmt.tprintf("%s, %.0fx%.0f at scale %.2f, text %.1f, %v glyphs", audit_case.name, size.pixels.x, size.pixels.y, size.scale, audit.settings.text_scale, device)
 	audit_draw_list(audit, state, case_text, frame_name)
 }
 
@@ -337,9 +344,14 @@ audit_mission_control :: proc(audit: ^Ui_Audit, state: ^Ui_State) {
 }
 
 audit_case :: proc(audit: ^Ui_Audit, audit_case: Ui_Audit_Case) {
-	for size in UI_AUDIT_SIZES {
-		for device in Input_Device {
-			audit_case_at_size(audit, audit_case, size, device)
+	text_scale := audit.settings.text_scale
+	defer audit.settings.text_scale = text_scale
+	for scale in UI_AUDIT_TEXT_SCALES {
+		audit.settings.text_scale = scale
+		for size in UI_AUDIT_SIZES {
+			for device in Input_Device {
+				audit_case_at_size(audit, audit_case, size, device)
+			}
 		}
 	}
 }
@@ -561,7 +573,7 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 	audit_case(audit, {name = "hud radial", hud = true, radial = true})
 	audit_case(audit, {name = "hud mission control", hud = true, toasts = toasts[:], mission_control = true})
 	audit_case(audit, {name = "pause", screens = {.Pause}, walk_focus = true})
-	for tab in 0 ..< 4 {
+	for tab in 0 ..< 5 {
 		audit_case(audit, {name = fmt.tprintf("settings tab %d", tab), screens = {.Pause, .Settings}, tab_next = tab, walk_focus = true})
 	}
 	audit_windowed_display(audit)

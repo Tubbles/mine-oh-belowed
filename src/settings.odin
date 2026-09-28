@@ -66,6 +66,26 @@ Settings :: struct {
 	// families. main refuses an id the file does not list.
 	font:                      string,
 	monospace_font:            string,
+	// Accessibility (work item 0074). text_scale multiplies every text
+	// size the UI draws, on top of ui_scale (ui_core.odin). palette picks
+	// the colour set of the bottleneck markers and the map from the theme
+	// (ui_theme.odin). reduced_motion stills the head bob, the sprint
+	// kick, the weather, the torch flames and the light's flicker, the
+	// focus outline's pulse and Mission Control's typing. sneak_hold and
+	// sprint_hold choose whether Sneak and Sprint act while held or
+	// toggle on a press; the input layer hands the choice to the
+	// simulation in the input frame (apply_hold_settings).
+	text_scale:                f32,
+	palette:                   Marker_Palette,
+	reduced_motion:            bool,
+	sneak_hold:                Hold_Mode,
+	sprint_hold:               Hold_Mode,
+}
+
+// Hold acts while the button is held, Toggle switches on a press.
+Hold_Mode :: enum u8 {
+	Toggle,
+	Hold,
 }
 
 DEFAULT_SETTINGS :: Settings {
@@ -99,9 +119,17 @@ DEFAULT_SETTINGS :: Settings {
 	watch_data                = .Default,
 	font                      = "exo_2",
 	monospace_font            = "jetbrains_mono",
+	text_scale                = 1,
+	palette                   = .Default,
+	reduced_motion            = false,
+	// As before the setting: Sneak held, Sprint toggled by the stick
+	// click.
+	sneak_hold                = .Hold,
+	sprint_hold               = .Toggle,
 }
 
 UI_SCALE_RANGE :: Slider_Range{0.75, 1.5, 0.05}
+TEXT_SCALE_RANGE :: Slider_Range{0.8, 1.6, 0.1}
 LOOK_SENSITIVITY_RANGE :: Slider_Range{0.25, 3, 0.05}
 POINTER_SPEED_RANGE :: Slider_Range{0.5, 3, 0.1}
 VOLUME_RANGE :: Slider_Range{0, 1, 0.05}
@@ -123,5 +151,14 @@ apply_look_settings :: proc(frame: Input_Frame, settings: Settings) -> Input_Fra
 		result.look.y = -result.look.y
 		result.look_delta.y = -result.look_delta.y
 	}
+	return result
+}
+
+// The hold or toggle choices ride in the frame, so the simulation reads
+// them from its input like any press (update_sneaking, update_sprinting).
+apply_hold_settings :: proc(frame: Input_Frame, settings: Settings) -> Input_Frame {
+	result := frame
+	result.sneak_toggles = settings.sneak_hold == .Toggle
+	result.sprint_holds = settings.sprint_hold == .Hold
 	return result
 }

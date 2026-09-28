@@ -8,7 +8,8 @@ import "core:slice"
 // their surface block tinted with their biome's map colour (work item
 // 0058) and shaded by height, entities as dots in the theme's colour of
 // their machine item's category (work item 0071), the player
-// as a marker, and the prospecting records on top; during a capsule
+// as a marker, and the prospecting records on top, the markers and the
+// legend in the colours of the palette setting (work item 0074); during a capsule
 // descent a parachute over the landing pad and during a survey
 // satellite's pass the satellite crossing west to east (work item 0069).
 // The map is one image of
@@ -39,6 +40,8 @@ MAP_BRIGHTNESS_LOW :: 0.65
 MAP_BRIGHTNESS_HIGH :: 1.15
 
 MAP_UNEXPLORED_COLOR :: Ui_Color{14, 16, 22, 255}
+// The default palette's map colours (DEFAULT_UI_THEME); the map draws
+// the palette's (Palette_Color).
 MAP_ASSAYED_COLOR :: Ui_Color{236, 176, 64, 255}
 MAP_READING_COLOR :: Ui_Color{225, 80, 60, 255}
 MAP_CORE_SAMPLE_COLOR :: Ui_Color{80, 210, 220, 255}
@@ -285,10 +288,10 @@ paint_map_cross :: proc(pixels: []Ui_Color, frame: Map_Frame, x, z: i32, color: 
 
 // A 2 by 2 dot, and for a reading that found a vein a line towards it
 // as long as the reading was strong.
-paint_map_reading :: proc(pixels: []Ui_Color, frame: Map_Frame, reading: Magnetometer_Reading) {
+paint_map_reading :: proc(pixels: []Ui_Color, frame: Map_Frame, reading: Magnetometer_Reading, color: Ui_Color) {
 	pixel, _ := map_pixel_of(frame, reading.origin.x, reading.origin.y)
 	for offset in ([4][2]i32{{0, 0}, {1, 0}, {0, 1}, {1, 1}}) {
-		set_map_pixel(pixels, frame, pixel + offset, MAP_READING_COLOR)
+		set_map_pixel(pixels, frame, pixel + offset, color)
 	}
 	length := math.sqrt(f32(reading.offset.x * reading.offset.x + reading.offset.y * reading.offset.y))
 	if !reading.found || length == 0 {
@@ -298,28 +301,29 @@ paint_map_reading :: proc(pixels: []Ui_Color, frame: Map_Frame, reading: Magneto
 	steps := max(int(f32(MAP_READING_LINE_PIXELS) * f32(reading.strength) / MAGNETOMETER_FULL), 2)
 	for step in 1 ..= steps {
 		point := direction * f32(step)
-		set_map_pixel(pixels, frame, pixel + {i32(math.round(point.x)), i32(math.round(point.y))}, MAP_READING_COLOR)
+		set_map_pixel(pixels, frame, pixel + {i32(math.round(point.x)), i32(math.round(point.y))}, color)
 	}
 }
 
 // The dot colour of a machine: its item's category's marker, the
-// machine marker for one without an item (the drop capsule).
-machine_marker_color :: proc(theme: Ui_Theme, machines: Machine_Registry, items: Item_Registry, machine: Machine_Id) -> Ui_Color {
+// machine marker for one without an item (the drop capsule), under the
+// palette (map_dot_color).
+machine_marker_color :: proc(theme: Ui_Theme, machines: Machine_Registry, items: Item_Registry, machine: Machine_Id, palette := Marker_Palette.Default) -> Ui_Color {
 	if int(machine) >= len(machines.machines) {
-		return theme.colors[.Map_Marker_Machine]
+		return map_dot_color(theme, palette, .Machine)
 	}
 	item := machines.machines[machine].item
 	if int(item) >= len(items.items) {
-		return theme.colors[.Map_Marker_Machine]
+		return map_dot_color(theme, palette, .Machine)
 	}
-	return map_marker_color(theme, items.items[item].category)
+	return map_dot_color(theme, palette, items.items[item].category)
 }
 
 // Indexed by Machine_Id, in the temp allocator.
-machine_marker_colors :: proc(theme: Ui_Theme, machines: Machine_Registry, items: Item_Registry) -> []Ui_Color {
+machine_marker_colors :: proc(theme: Ui_Theme, machines: Machine_Registry, items: Item_Registry, palette := Marker_Palette.Default) -> []Ui_Color {
 	colors := make([]Ui_Color, len(machines.machines), context.temp_allocator)
 	for &color, index in colors {
-		color = machine_marker_color(theme, machines, items, Machine_Id(index))
+		color = machine_marker_color(theme, machines, items, Machine_Id(index), palette)
 	}
 	return colors
 }
@@ -335,25 +339,26 @@ paint_map_entities :: proc(pixels: []Ui_Color, frame: Map_Frame, entities: ^Enti
 }
 
 // The prospecting layers over the ground: assayed footprints, seismic
-// outlines, core samples and magnetometer readings, in that order.
-paint_map_records :: proc(pixels: []Ui_Color, frame: Map_Frame, world: ^World) {
+// outlines, core samples and magnetometer readings, in that order, in
+// the palette's colours.
+paint_map_records :: proc(pixels: []Ui_Color, frame: Map_Frame, world: ^World, colors: [Palette_Color]Ui_Color) {
 	for assayed in world.assayed_veins {
-		paint_map_disc(pixels, frame, assayed.centre, assayed.radius, MAP_ASSAYED_COLOR, MAP_ASSAYED_BLEND)
+		paint_map_disc(pixels, frame, assayed.centre, assayed.radius, colors[.Map_Assayed], MAP_ASSAYED_BLEND)
 	}
 	for outline in world.seismic_outlines {
-		paint_map_circle(pixels, frame, outline.centre, outline.radius, outline.resolved ? MAP_RESOLVED_COLOR : MAP_SEISMIC_COLOR)
+		paint_map_circle(pixels, frame, outline.centre, outline.radius, colors[outline.resolved ? .Map_Resolved : .Map_Seismic])
 	}
 	for sample in world.core_samples {
-		paint_map_cross(pixels, frame, sample.position.x, sample.position.z, sample.vein_found ? MAP_CORE_SAMPLE_VEIN_COLOR : MAP_CORE_SAMPLE_COLOR)
+		paint_map_cross(pixels, frame, sample.position.x, sample.position.z, colors[sample.vein_found ? .Map_Core_Sample_Vein : .Map_Core_Sample])
 	}
 	for reading in world.magnetometer_readings {
-		paint_map_reading(pixels, frame, reading)
+		paint_map_reading(pixels, frame, reading, colors[.Map_Magnetometer])
 	}
 }
 
 // Without a generator the surface has no biome tint. marker_colors is
-// indexed by Machine_Id (machine_marker_colors).
-paint_map :: proc(view: ^Map_View, frame: Map_Frame, world: ^World, blocks: Block_Registry, generator: ^Generator, marker_colors: []Ui_Color) {
+// indexed by Machine_Id (machine_marker_colors); colors is the palette's.
+paint_map :: proc(view: ^Map_View, frame: Map_Frame, world: ^World, blocks: Block_Registry, generator: ^Generator, marker_colors: []Ui_Color, colors: [Palette_Color]Ui_Color) {
 	resize(&view.pixels, int(frame.size * frame.size))
 	layer: Map_Biome_Layer
 	if generator != nil {
@@ -364,7 +369,7 @@ paint_map :: proc(view: ^Map_View, frame: Map_Frame, world: ^World, blocks: Bloc
 	}
 	paint_map_surface(view.pixels[:], frame, view.surfaces, map_block_colors(blocks), layer)
 	paint_map_entities(view.pixels[:], frame, &world.entities, marker_colors)
-	paint_map_records(view.pixels[:], frame, world)
+	paint_map_records(view.pixels[:], frame, world, colors)
 	view.painted_frame = frame
 	view.revision += 1
 	view.repaint_seconds = 0
@@ -432,17 +437,17 @@ map_point_units :: proc(image: Ui_Rectangle, frame: Map_Frame, position: [2]f32)
 }
 
 // A square on the player's position with a dot where the player looks.
-draw_map_player :: proc(state: ^Ui_State, image: Ui_Rectangle, frame: Map_Frame, player: Player) {
+draw_map_player :: proc(state: ^Ui_State, image: Ui_Rectangle, frame: Map_Frame, player: Player, color: Ui_Color) {
 	point := map_point_units(image, frame, {player.position.x, player.position.z})
 	if !rectangle_contains(image, point) {
 		return
 	}
 	half := f32(MAP_PLAYER_MARKER_SIZE / 2)
-	draw_fill(state, {point.x - half, point.y - half, 2 * half, 2 * half}, MAP_PLAYER_COLOR)
+	draw_fill(state, {point.x - half, point.y - half, 2 * half, 2 * half}, color)
 	draw_outline(state, {point.x - half, point.y - half, 2 * half, 2 * half}, UI_PANEL_COLOR)
 	yaw := player.yaw * math.RAD_PER_DEG
 	facing := point + [2]f32{math.cos(yaw), math.sin(yaw)} * MAP_PLAYER_MARKER_SIZE * 1.2
-	draw_fill(state, {facing.x - half / 2, facing.y - half / 2, half, half}, MAP_PLAYER_COLOR)
+	draw_fill(state, {facing.x - half / 2, facing.y - half / 2, half, half}, color)
 }
 
 // Along the pad's row, from half the image's span west of the pad to half
@@ -523,9 +528,26 @@ draw_map_biome_legend :: proc(state: ^Ui_State, content: ^Ui_Rectangle, view: ^M
 	}
 }
 
+Map_Legend_Entry :: struct {
+	color: Palette_Color,
+	key:   string,
+}
+
+@(rodata)
+map_legend_entries := [?]Map_Legend_Entry {
+	{.Map_Player, "map_legend_player"},
+	{.Map_Machine, "map_legend_machines"},
+	{.Map_Assayed, "map_legend_assayed"},
+	{.Map_Magnetometer, "map_legend_magnetometer"},
+	{.Map_Core_Sample, "map_legend_core_sample"},
+	{.Map_Core_Sample_Vein, "map_legend_core_sample_vein"},
+	{.Map_Seismic, "map_legend_seismic"},
+	{.Map_Resolved, "map_legend_resolved"},
+}
+
 // The biomes go below the other entries, or in a second column when the
 // height does not hold both (large UI scales).
-draw_map_legend :: proc(state: ^Ui_State, area: Ui_Rectangle, view: ^Map_View, generator: ^Generator, player: Player) {
+draw_map_legend :: proc(state: ^Ui_State, area: Ui_Rectangle, view: ^Map_View, generator: ^Generator, player: Player, colors: [Palette_Color]Ui_Color) {
 	content := area
 	biome_content := &content
 	second_column: Ui_Rectangle
@@ -537,21 +559,8 @@ draw_map_legend :: proc(state: ^Ui_State, area: Ui_Rectangle, view: ^Map_View, g
 	}
 	scale := fmt.tprintf("%s: %d %s", text("map_scale"), map_blocks_per_pixel(view.zoom), text("map_blocks_per_pixel"))
 	draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), scale, UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
-	entries := [?]struct {
-		color: Ui_Color,
-		key:   string,
-	} {
-		{MAP_PLAYER_COLOR, "map_legend_player"},
-		{theme_color(state, .Map_Marker_Machine), "map_legend_machines"},
-		{MAP_ASSAYED_COLOR, "map_legend_assayed"},
-		{MAP_READING_COLOR, "map_legend_magnetometer"},
-		{MAP_CORE_SAMPLE_COLOR, "map_legend_core_sample"},
-		{MAP_CORE_SAMPLE_VEIN_COLOR, "map_legend_core_sample_vein"},
-		{MAP_SEISMIC_COLOR, "map_legend_seismic"},
-		{MAP_RESOLVED_COLOR, "map_legend_resolved"},
-	}
-	for entry in entries {
-		draw_map_legend_row(state, &content, entry.color, text(entry.key))
+	for entry in map_legend_entries {
+		draw_map_legend_row(state, &content, colors[entry.color], text(entry.key))
 	}
 	draw_map_biome_legend(state, biome_content, view, generator, player)
 }
@@ -574,18 +583,20 @@ map_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	image := Ui_Rectangle{content.x, content.y, side, side}
 	// The legend takes the width the square image leaves.
 	legend := Ui_Rectangle{image.x + side + UI_PADDING, content.y, content.width - side - UI_PADDING, content.height}
+	palette := state.accessibility.palette
+	colors := ui_theme(state).palettes[palette]
 	view.zoom = clamp(view.zoom + map_zoom_step(view, state.input, state.frame_seconds), 0, MAP_ZOOM_LEVEL_COUNT - 1)
 	pan_map(view, state, image)
 	frame := map_frame_for(view.centre, view.zoom)
 	view.repaint_seconds += state.frame_seconds
 	if frame != view.painted_frame || view.repaint_seconds >= MAP_REPAINT_SECONDS {
-		paint_map(view, frame, world, screen_context.blocks, screen_context.generator, machine_marker_colors(ui_theme(state), screen_context.machines, screen_context.items))
+		paint_map(view, frame, world, screen_context.blocks, screen_context.generator, machine_marker_colors(ui_theme(state), screen_context.machines, screen_context.items, palette), colors)
 	}
 	draw_image(state, image, view.pixels[:], {frame.size, frame.size}, view.revision)
 	draw_outline(state, image, UI_PANEL_BORDER_COLOR)
 	draw_map_events(state, image, frame, screen_context.particle_memory, screen_context.landing_pad)
-	draw_map_player(state, image, frame, screen_context.player^)
-	draw_map_legend(state, legend, view, screen_context.generator, screen_context.player^)
+	draw_map_player(state, image, frame, screen_context.player^, colors[.Map_Player])
+	draw_map_legend(state, legend, view, screen_context.generator, screen_context.player^, colors)
 	ui_panel_end(state)
 	hints := [?]Glyph_Hint{{.Tab_Previous, ""}, {.Tab_Next, text("hint_zoom")}, {.Back, text("hint_close")}}
 	ui_glyph_bar(state, hints[:])

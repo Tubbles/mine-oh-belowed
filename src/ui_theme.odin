@@ -13,7 +13,9 @@ import "core:os"
 // a wrong type or a value out of range refuses the whole file, naming
 // it. A colour whose alpha is 0 turns its element off (the highlight
 // line, the pressed state, dividers). The icon set the theme's art uses
-// (Ui_Icon) lives under data/ui/icons/ (render_icons.odin).
+// (Ui_Icon) lives under data/ui/icons/ (render_icons.odin). The theme
+// also holds the marker palettes (work item 0074): the bottleneck
+// overlay's and the map's colours, one set per palette setting.
 
 UI_THEME_DIRECTORY :: "ui"
 UI_THEME_FILE_NAME :: "theme.sjson"
@@ -74,6 +76,61 @@ ui_theme_color_names := [Ui_Theme_Color]string {
 	.Map_Marker_Block        = "map_marker_block",
 }
 
+// The colour sets of the markers that tell states and finds apart (work
+// item 0074), picked by the palette setting. Colour_Blind is safe for
+// deuteranopia and protanopia.
+Marker_Palette :: enum u8 {
+	Default,
+	Colour_Blind,
+}
+
+// The colours a palette holds: the bottleneck overlay's four states
+// (bottleneck_marker_colors) and the map's markers and legend. Under the
+// default palette the map's machine dots keep their category colours
+// (map_marker_color); under another every dot takes its Map_Machine.
+Palette_Color :: enum u8 {
+	Working,
+	Waiting,
+	Missing,
+	Idle,
+	Map_Player,
+	Map_Machine,
+	Map_Assayed,
+	Map_Magnetometer,
+	Map_Core_Sample,
+	Map_Core_Sample_Vein,
+	Map_Seismic,
+	Map_Resolved,
+}
+
+// The bottleneck colours and the map colours are shown apart, so each
+// set only needs to be distinct within itself.
+BOTTLENECK_PALETTE_COLORS :: bit_set[Palette_Color]{.Working, .Waiting, .Missing, .Idle}
+MAP_PALETTE_COLORS :: bit_set[Palette_Color]{.Map_Player, .Map_Machine, .Map_Assayed, .Map_Magnetometer, .Map_Core_Sample, .Map_Core_Sample_Vein, .Map_Seismic, .Map_Resolved}
+
+// The theme file's keys: palettes = {default = {working = ...}}.
+@(rodata)
+marker_palette_names := [Marker_Palette]string {
+	.Default      = "default",
+	.Colour_Blind = "colour_blind",
+}
+
+@(rodata)
+palette_color_names := [Palette_Color]string {
+	.Working              = "working",
+	.Waiting              = "waiting",
+	.Missing              = "missing",
+	.Idle                 = "idle",
+	.Map_Player           = "map_player",
+	.Map_Machine          = "map_machine",
+	.Map_Assayed          = "map_assayed",
+	.Map_Magnetometer     = "map_magnetometer",
+	.Map_Core_Sample      = "map_core_sample",
+	.Map_Core_Sample_Vein = "map_core_sample_vein",
+	.Map_Seismic          = "map_seismic",
+	.Map_Resolved         = "map_resolved",
+}
+
 Ui_Theme :: struct {
 	colors:      [Ui_Theme_Color]Ui_Color,
 	// Edge, highlight and divider lines, in UI units.
@@ -82,6 +139,7 @@ Ui_Theme :: struct {
 	corner:      f32,
 	// How much thicker the focus outline grows at the top of its pulse.
 	focus_pulse: f32,
+	palettes:    [Marker_Palette][Palette_Color]Ui_Color,
 }
 
 UI_THEME_METRIC_NAMES :: [?]string{"border", "corner", "focus_pulse"}
@@ -111,6 +169,39 @@ DEFAULT_UI_THEME :: Ui_Theme {
 	border = 2,
 	corner = 0,
 	focus_pulse = 0,
+	palettes = {
+		// The colours the markers had before the palettes.
+		.Default = {
+			.Working = {60, 200, 80, 255},
+			.Waiting = {240, 200, 40, 255},
+			.Missing = {225, 55, 45, 255},
+			.Idle = {140, 140, 145, 255},
+			.Map_Player = MAP_PLAYER_COLOR,
+			.Map_Machine = {240, 240, 245, 255},
+			.Map_Assayed = MAP_ASSAYED_COLOR,
+			.Map_Magnetometer = MAP_READING_COLOR,
+			.Map_Core_Sample = MAP_CORE_SAMPLE_COLOR,
+			.Map_Core_Sample_Vein = MAP_CORE_SAMPLE_VEIN_COLOR,
+			.Map_Seismic = MAP_SEISMIC_COLOR,
+			.Map_Resolved = MAP_RESOLVED_COLOR,
+		},
+		// Blue, orange, black and white, then the rest of the Okabe and
+		// Ito set, apart for deuteranopia and protanopia and by lightness.
+		.Colour_Blind = {
+			.Working = {0, 114, 178, 255},
+			.Waiting = {230, 159, 0, 255},
+			.Missing = {255, 255, 255, 255},
+			.Idle = {0, 0, 0, 255},
+			.Map_Player = {255, 255, 255, 255},
+			.Map_Machine = {0, 0, 0, 255},
+			.Map_Assayed = {230, 159, 0, 255},
+			.Map_Magnetometer = {213, 94, 0, 255},
+			.Map_Core_Sample = {86, 180, 233, 255},
+			.Map_Core_Sample_Vein = {240, 228, 66, 255},
+			.Map_Seismic = {0, 114, 178, 255},
+			.Map_Resolved = {204, 121, 167, 255},
+		},
+	},
 }
 
 // The icons of data/ui/icons/<name>.png, the tile index the enum value.
@@ -223,6 +314,14 @@ map_marker_color :: proc(theme: Ui_Theme, category: Item_Category) -> Ui_Color {
 	return theme.colors[.Map_Marker_Machine]
 }
 
+// The dot colour of a machine item's category under the palette.
+map_dot_color :: proc(theme: Ui_Theme, palette: Marker_Palette, category: Item_Category) -> Ui_Color {
+	if palette == .Default {
+		return map_marker_color(theme, category)
+	}
+	return theme.palettes[palette][.Map_Machine]
+}
+
 // 0 at the start of a pulse, 1 at its middle, eased by a cosine.
 focus_pulse_phase :: proc(seconds: f32) -> f32 {
 	return 0.5 - 0.5 * math.cos(math.TAU * seconds / UI_FOCUS_PULSE_SECONDS)
@@ -282,10 +381,69 @@ assign_theme_key :: proc(theme: ^Ui_Theme, key: string, value: json.Value, sourc
 		theme.corner, problem = parse_theme_metric(value, source, key, UI_THEME_MAXIMUM_CORNER)
 	case "focus_pulse":
 		theme.focus_pulse, problem = parse_theme_metric(value, source, key, UI_THEME_MAXIMUM_FOCUS_PULSE)
+	case "palettes":
+		problem = assign_theme_palettes(theme, value, source)
 	case:
 		problem = fmt.tprintf("%s: unknown key %s", source, key)
 	}
 	return problem
+}
+
+find_marker_palette :: proc(key: string) -> (palette: Marker_Palette, found: bool) {
+	for name, candidate in marker_palette_names {
+		if name == key {
+			return candidate, true
+		}
+	}
+	return {}, false
+}
+
+find_palette_color :: proc(key: string) -> (color: Palette_Color, found: bool) {
+	for name, candidate in palette_color_names {
+		if name == key {
+			return candidate, true
+		}
+	}
+	return {}, false
+}
+
+// palettes = {default = {...}, colour_blind = {...}}; a colour left out
+// keeps its default.
+assign_theme_palettes :: proc(theme: ^Ui_Theme, value: json.Value, source: string) -> string {
+	object, is_object := value.(json.Object)
+	if !is_object {
+		return fmt.tprintf("%s: palettes must be an object, not %s", source, json_type_name(value))
+	}
+	for name in sorted_object_keys(object) {
+		palette, found := find_marker_palette(name)
+		if !found {
+			return fmt.tprintf("%s: unknown key palettes.%s", source, name)
+		}
+		if problem := assign_theme_palette(&theme.palettes[palette], object[name], source, name); problem != "" {
+			return problem
+		}
+	}
+	return ""
+}
+
+assign_theme_palette :: proc(colors: ^[Palette_Color]Ui_Color, value: json.Value, source, name: string) -> string {
+	object, is_object := value.(json.Object)
+	if !is_object {
+		return fmt.tprintf("%s: palettes.%s must be an object, not %s", source, name, json_type_name(value))
+	}
+	for key in sorted_object_keys(object) {
+		key_path := fmt.tprintf("palettes.%s.%s", name, key)
+		color, found := find_palette_color(key)
+		if !found {
+			return fmt.tprintf("%s: unknown key %s", source, key_path)
+		}
+		problem: string
+		colors[color], problem = parse_theme_color(object[key], source, key_path)
+		if problem != "" {
+			return problem
+		}
+	}
+	return ""
 }
 
 // The problem names the source.

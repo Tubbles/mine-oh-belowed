@@ -1,6 +1,6 @@
 # 0074 Accessibility
 
-Status: todo
+Status: implemented
 Milestone: M11
 
 ## Goal
@@ -26,3 +26,5 @@ Implementation pointers (main agent, 2026-09-28), decisions taken so the item is
 - Docs: `doc/ui.md` (the tab and each setting), `doc/input.md` (hold and toggle), `doc/log/2026-09-28.md`, this item's Status and Notes.
 
 Files a subagent may touch: `src/settings.odin`, `src/configuration.odin`, `src/configuration_test.odin`, `src/ui_screens.odin`, `src/ui_core.odin`, `src/ui_theme.odin` (the palette table), `src/ui_map.odin`, `src/render_entities.odin`, `src/render_weather.odin`, `src/render_player.odin`, `src/player_animation.odin`, `src/ui_mission_control.odin`, `src/player.odin`, `src/player_test.odin`, `src/input_frame.odin` or wherever the input frame carries the toggles, `src/ui_audit_test.odin`, `data/ui/theme.sjson`, `data/strings/en.sjson`, the docs above, this file.
+
+Implemented: `src/settings.odin` (the five settings, `Hold_Mode`, `TEXT_SCALE_RANGE`, `apply_hold_settings`), `src/configuration.odin` (the text scale's range check), `src/configuration_test.odin` (round trip and refusals), `src/ui_screens.odin` and `data/strings/en.sjson` (the Accessibility tab), `src/ui_core.odin` (`Ui_Accessibility`, the text scale in measuring and in `ui_end`, the still focus pulse), `src/ui_theme.odin` and `data/ui/theme.sjson` (`Marker_Palette`, `Palette_Color`, the `palettes` table and its parsing, `map_dot_color`), `src/render_entities.odin` (`bottleneck_marker_colors`), `src/ui_map.odin` (records, player, dots and legend from the palette), `src/render_weather.odin` (`weather_motion_enabled`), `src/player_animation.odin` (`head_bob_enabled`), `src/render_player.odin` (`sprint_kick_degrees`, `flicker_seconds`), `src/ui_mission_control.odin` (`instant_reveal`), `src/input_actions.odin` (the frame's `sneak_toggles` and `sprint_holds`), `src/player.odin` (`update_sneaking`, `with_sneaking`, `Player.sneaking`, the sprint hold), `src/player_test.odin`, `src/ui_audit_test.odin` (text scales 1 and 1.6, the fifth tab), `doc/ui.md`, `doc/input.md`, `doc/log/2026-09-28.md`. Outside the list: `src/loop.odin` (the call sites), `src/ui_theme_test.odin` (the shipped key count) and the new `src/accessibility_test.odin`; decisions and the text height limit at 1.6 are in the log. 947 tests pass (936 before).

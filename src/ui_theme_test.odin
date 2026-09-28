@@ -1,5 +1,6 @@
 package game
 
+import "core:encoding/json"
 import "core:testing"
 
 // The UI theme and its art (work item 0071). None of these touch raylib.
@@ -81,7 +82,17 @@ test_shipped_theme_has_every_key :: proc(t: ^testing.T) {
 	for name in UI_THEME_METRIC_NAMES {
 		testing.expectf(t, name in tree, "the shipped theme sets %s", name)
 	}
-	testing.expect_value(t, len(tree), len(Ui_Theme_Color) + len(UI_THEME_METRIC_NAMES))
+	// The marker palettes (work item 0074), each with every colour.
+	palettes, has_palettes := tree["palettes"].(json.Object)
+	testing.expect(t, has_palettes, "the shipped theme sets palettes")
+	for palette_name in marker_palette_names {
+		colors, has_palette := palettes[palette_name].(json.Object)
+		testing.expectf(t, has_palette, "the shipped theme sets palettes.%s", palette_name)
+		for color_name in palette_color_names {
+			testing.expectf(t, color_name in colors, "the shipped theme sets palettes.%s.%s", palette_name, color_name)
+		}
+	}
+	testing.expect_value(t, len(tree), len(Ui_Theme_Color) + len(UI_THEME_METRIC_NAMES) + 1)
 }
 
 @(test)

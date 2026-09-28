@@ -257,6 +257,26 @@ Ui_Sound_Event :: enum u8 {
 	Discovery,
 }
 
+// The accessibility settings the UI reads (work item 0074), handed to
+// ui_begin each frame. text_scale multiplies every text size, measured
+// and drawn, on top of the UI scale: the layout keeps its sizes, so large
+// text fills more of each row and fit_text shortens more. reduced_motion
+// holds the focus outline's pulse still and shows Mission Control's lines
+// whole. palette picks the map's marker colours (ui_map.odin).
+Ui_Accessibility :: struct {
+	text_scale:     f32,
+	reduced_motion: bool,
+	palette:        Marker_Palette,
+}
+
+DEFAULT_UI_ACCESSIBILITY :: Ui_Accessibility {
+	text_scale = 1,
+}
+
+ui_accessibility :: proc(settings: Settings) -> Ui_Accessibility {
+	return Ui_Accessibility{text_scale = settings.text_scale, reduced_motion = settings.reduced_motion, palette = settings.palette}
+}
+
 Ui_State :: struct {
 	// The theme (ui_theme.odin, apply_ui_theme); read through ui_theme,
 	// which gives the defaults while none is set.
@@ -264,6 +284,7 @@ Ui_State :: struct {
 	input:            Ui_Input,
 	frame_seconds:    f32,
 	pixels_per_unit:  f32,
+	accessibility:    Ui_Accessibility,
 	screen_units:     [2]f32,
 	// The fonts text is measured and drawn with (ui_font.odin). Both are
 	// nil in headless tests, which measure with approximate_text_width
@@ -514,10 +535,11 @@ ui_toast :: proc(state: ^Ui_State, text: string) {
 	append(&state.toasts, Toast{text = strings.clone(text), remaining_seconds = UI_TOAST_SECONDS})
 }
 
-ui_begin :: proc(state: ^Ui_State, input: Ui_Input, screen_pixels: [2]f32, frame_seconds, ui_scale, pointer_speed: f32) {
+ui_begin :: proc(state: ^Ui_State, input: Ui_Input, screen_pixels: [2]f32, frame_seconds, ui_scale, pointer_speed: f32, accessibility := DEFAULT_UI_ACCESSIBILITY) {
 	state.input = input
 	state.frame_seconds = frame_seconds
 	state.pointer_speed = pointer_speed
+	state.accessibility = accessibility
 	state.pixels_per_unit = ui_pixels_per_unit(screen_pixels.y, ui_scale)
 	state.screen_units = ui_screen_units(screen_pixels, state.pixels_per_unit)
 	clear(&state.widgets)
@@ -555,9 +577,9 @@ ui_begin :: proc(state: ^Ui_State, input: Ui_Input, screen_pixels: [2]f32, frame
 	}
 	advance_toasts(state, frame_seconds)
 	state.focus_pulse_seconds = math.mod(state.focus_pulse_seconds + frame_seconds, UI_FOCUS_PULSE_SECONDS)
-	state.focus_pulse = focus_pulse_phase(state.focus_pulse_seconds)
+	state.focus_pulse = still_focus_pulse(focus_pulse_phase(state.focus_pulse_seconds), accessibility.reduced_motion)
 	state.toast_top_offset = 0
-	state.sound_events += advance_mission_control(&state.mission_control, frame_seconds)
+	state.sound_events += advance_mission_control(&state.mission_control, frame_seconds, accessibility.reduced_motion)
 }
 
 // Focus fallback, hover, then the focus step. Pure: tests run it instead of ui_end.
@@ -611,10 +633,32 @@ focus_step_allowed :: proc(focused: Ui_Widget, step: Ui_Direction) -> bool {
 	return false
 }
 
+// Reduced motion holds the focus outline at its thickest, where the
+// focused control is easiest to find.
+still_focus_pulse :: proc(phase: f32, reduced_motion: bool) -> f32 {
+	return reduced_motion ? 1 : phase
+}
+
 ui_end :: proc(state: ^Ui_State, atlas: Icon_Atlas, images: ^Ui_Image_Cache) {
 	ui_resolve(state)
 	ui_append_overlays(state)
+	scale_text_commands(state.draw_list[:], ui_text_scale(state^))
 	execute_draw_list(state^, atlas, images)
+}
+
+// The text scale, 1 for a state ui_begin has not run on (tests).
+ui_text_scale :: proc(state: Ui_State) -> f32 {
+	return state.accessibility.text_scale > 0 ? state.accessibility.text_scale : 1
+}
+
+// Widgets lay text out at the sizes they name, measured at the scaled
+// size (ui_text_width_in_weight); the draw layer gets the scaled size.
+scale_text_commands :: proc(commands: []Draw_Command, text_scale: f32) {
+	for &command in commands {
+		if command.kind == .Text {
+			command.text_size *= text_scale
+		}
+	}
 }
 
 // Layout helpers.
@@ -694,7 +738,8 @@ ui_text_width :: proc(state: ^Ui_State, text: string, size: f32, emphasis := fal
 }
 
 // Measured with the font the text is drawn with, so layout matches it.
-ui_text_width_in_weight :: proc(state: ^Ui_State, text: string, size: f32, weight: Font_Weight) -> f32 {
+ui_text_width_in_weight :: proc(state: ^Ui_State, text: string, unscaled_size: f32, weight: Font_Weight) -> f32 {
+	size := unscaled_size * ui_text_scale(state^)
 	if state.measure_text == nil || state.fonts == nil || len(state.fonts.families) == 0 {
 		return approximate_text_width(text, size)
 	}

@@ -103,7 +103,15 @@ blend_weather_value :: proc(clear_value, kind_value, intensity: f32) -> f32 {
 	return clear_value + (kind_value - clear_value) * intensity
 }
 
-// enabled is the weather setting: off, nothing moves and no shadows fall.
+// Rain and snow, sway and cloud shadows: the weather setting, off under
+// reduced motion (work item 0074). The weather itself stays, so the sky
+// still greys and the rain is still heard.
+weather_motion_enabled :: proc(settings: Settings) -> bool {
+	return settings.weather && !settings.reduced_motion
+}
+
+// enabled is weather_motion_enabled: off, nothing moves and no shadows
+// fall.
 // daylight is the day's blend: no cloud shadows at night.
 weather_look :: proc(weather: Weather, enabled: bool, daylight: f32) -> Weather_Look {
 	if !enabled {

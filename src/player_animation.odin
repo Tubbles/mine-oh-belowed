@@ -127,6 +127,11 @@ player_limb_angles :: proc(state: Player_Animation_State) -> Player_Limb_Angles 
 	return angles
 }
 
+// The head bob setting, off under reduced motion (work item 0074).
+head_bob_enabled :: proc(settings: Settings) -> bool {
+	return settings.head_bob && !settings.reduced_motion
+}
+
 head_bob_amplitude :: proc(moving, sprinting, enabled: bool) -> f32 {
 	if !moving || !enabled {
 		return 0

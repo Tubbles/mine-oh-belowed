@@ -14,6 +14,7 @@ SETTINGS_ROW_COUNT :: 14
 DISPLAY_SETTINGS_ROW_COUNT :: 18
 AUDIO_SETTINGS_ROW_COUNT :: 3
 CONTROL_SETTINGS_ROW_COUNT :: 5
+ACCESSIBILITY_SETTINGS_ROW_COUNT :: 5
 
 Screen_Context :: struct {
 	settings:        ^Settings,
@@ -325,7 +326,7 @@ settings_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	content := inset(panel, UI_PADDING)
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("settings_title"), UI_HEADING_TEXT_SIZE, .Centre)
 	cut_top(&content, UI_GAP)
-	tab_labels := [?]string{text("settings_tab_display"), text("settings_tab_audio"), text("settings_tab_controls"), text("settings_tab_bindings")}
+	tab_labels := [?]string{text("settings_tab_display"), text("settings_tab_audio"), text("settings_tab_controls"), text("settings_tab_accessibility"), text("settings_tab_bindings")}
 	tab := ui_tabs(state, cut_top(&content, UI_ROW_HEIGHT), "settings_tabs", tab_labels[:])
 	cut_top(&content, UI_GAP)
 	back_row := cut_bottom(&content, UI_ROW_HEIGHT)
@@ -342,6 +343,10 @@ settings_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	case 2:
 		region, rows := scroll_region_begin(state, "control_settings", content, settings_rows_height(CONTROL_SETTINGS_ROW_COUNT))
 		control_settings(state, &rows, settings)
+		scroll_region_end(state, region)
+	case 3:
+		region, rows := scroll_region_begin(state, "accessibility_settings", content, settings_rows_height(ACCESSIBILITY_SETTINGS_ROW_COUNT))
+		accessibility_settings(state, &rows, settings)
 		scroll_region_end(state, region)
 	case:
 		// Read only for now; activating a row does nothing.
@@ -557,4 +562,43 @@ control_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Se
 
 sensitivity_slider :: proc(state: ^Ui_State, content: ^Ui_Rectangle, key: string, value: ^f32) {
 	ui_slider(state, settings_row(content), text(key), value, LOOK_SENSITIVITY_RANGE, multiplier_text(value^), text("settings_sensitivity_tooltip"))
+}
+
+// Applied at once: the frame loop reads them each frame (ui_begin, the
+// camera, the weather, the markers) and the input layer each tick
+// (apply_hold_settings).
+accessibility_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Settings) {
+	ui_slider(
+		state,
+		settings_row(content),
+		text("settings_text_scale"),
+		&settings.text_scale,
+		TEXT_SCALE_RANGE,
+		multiplier_text(settings.text_scale),
+		text("settings_text_scale_tooltip"),
+	)
+	if ui_choice(state, settings_row(content), text("settings_palette"), text(palette_keys[settings.palette]), text("settings_palette_tooltip")) {
+		settings.palette = settings.palette == .Default ? .Colour_Blind : .Default
+	}
+	ui_toggle(state, settings_row(content), text("settings_reduced_motion"), &settings.reduced_motion, text("settings_reduced_motion_tooltip"))
+	hold_mode_choice(state, settings_row(content), "settings_sneak_hold", &settings.sneak_hold)
+	hold_mode_choice(state, settings_row(content), "settings_sprint_hold", &settings.sprint_hold)
+}
+
+@(rodata)
+palette_keys := [Marker_Palette]string {
+	.Default      = "settings_palette_default",
+	.Colour_Blind = "settings_palette_colour_blind",
+}
+
+@(rodata)
+hold_mode_keys := [Hold_Mode]string {
+	.Toggle = "settings_hold_mode_toggle",
+	.Hold   = "settings_hold_mode_hold",
+}
+
+hold_mode_choice :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, key: string, mode: ^Hold_Mode) {
+	if ui_choice(state, rectangle, text(key), text(hold_mode_keys[mode^]), text(fmt.tprintf("%s_tooltip", key))) {
+		mode^ = mode^ == .Hold ? .Toggle : .Hold
+	}
 }

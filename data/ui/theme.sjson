@@ -40,3 +40,42 @@ map_marker_intermediate = [120, 190, 230, 255]
 map_marker_tool = [230, 130, 200, 255]
 map_marker_machine = [240, 240, 245, 255]
 map_marker_block = [170, 176, 186, 255]
+
+// The marker palettes (work item 0074), picked by the palette setting on
+// the Accessibility tab: the bottleneck overlay's machine states and the
+// map's markers and legend. Under default the map's machine dots keep the
+// category colours above; under colour_blind every dot is map_machine.
+// colour_blind is blue, orange, black and white, then the rest of the
+// Okabe and Ito set: told apart with deuteranopia and protanopia, and by
+// lightness too. Each palette keeps its four states apart and its eight
+// map colours apart.
+palettes = {
+	default = {
+		working = [60, 200, 80, 255]
+		waiting = [240, 200, 40, 255]
+		missing = [225, 55, 45, 255]
+		idle = [140, 140, 145, 255]
+		map_player = [255, 255, 255, 255]
+		map_machine = [240, 240, 245, 255]
+		map_assayed = [236, 176, 64, 255]
+		map_magnetometer = [225, 80, 60, 255]
+		map_core_sample = [80, 210, 220, 255]
+		map_core_sample_vein = [250, 240, 90, 255]
+		map_seismic = [200, 110, 230, 255]
+		map_resolved = [255, 170, 255, 255]
+	}
+	colour_blind = {
+		working = [0, 114, 178, 255]
+		waiting = [230, 159, 0, 255]
+		missing = [255, 255, 255, 255]
+		idle = [0, 0, 0, 255]
+		map_player = [255, 255, 255, 255]
+		map_machine = [0, 0, 0, 255]
+		map_assayed = [230, 159, 0, 255]
+		map_magnetometer = [213, 94, 0, 255]
+		map_core_sample = [86, 180, 233, 255]
+		map_core_sample_vein = [240, 228, 66, 255]
+		map_seismic = [0, 114, 178, 255]
+		map_resolved = [204, 121, 167, 255]
+	}
+}

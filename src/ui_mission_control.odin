@@ -182,12 +182,23 @@ advance_discovery_card :: proc(card: ^Discovery_Card, seconds: f32) {
 	}
 }
 
+// Reduced motion shows the line whole at once: its time starts past the
+// typing, so the hold and the fade keep their length.
+instant_reveal :: proc(line: Mission_Control_Line) -> Mission_Control_Line {
+	next := line
+	next.seconds = max(line.seconds, mission_control_reveal_seconds(line.character_count))
+	return next
+}
+
 // The frame's step: the time on the line shown, the next line started
 // once it is gone. Returns the chimes due.
-advance_mission_control :: proc(state: ^Mission_Control_State, seconds: f32) -> bit_set[Ui_Sound_Event] {
+advance_mission_control :: proc(state: ^Mission_Control_State, seconds: f32, reduced_motion := false) -> bit_set[Ui_Sound_Event] {
 	advance_discovery_card(&state.discovery, seconds)
 	if len(state.lines) == 0 {
 		return {}
+	}
+	if reduced_motion {
+		state.lines[0] = instant_reveal(state.lines[0])
 	}
 	finished: bool
 	state.lines[0], finished = advance_mission_control_line(state.lines[0], seconds)

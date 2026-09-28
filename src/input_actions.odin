@@ -193,15 +193,19 @@ Raw_Input :: struct {
 
 Input_Frame :: struct {
 	// Positive x is right, positive y is forward (away from the player).
-	move:         [2]f32,
+	move:          [2]f32,
 	// Rate style look from a stick, positive x is right, positive y is up.
-	look:         [2]f32,
+	look:          [2]f32,
 	// Pointer style look this frame in mouse pixels, positive x is right,
 	// positive y is down. Mouse, right trackpad and gyro add into it.
-	look_delta:   [2]f32,
-	pressed:      Action_Set,
-	just_pressed: Action_Set,
-	raw:          Raw_Input,
+	look_delta:    [2]f32,
+	pressed:       Action_Set,
+	just_pressed:  Action_Set,
+	raw:           Raw_Input,
+	// The sneak_hold and sprint_hold settings (apply_hold_settings). The
+	// zero value is the default: Sneak acts while held, Sprint toggles.
+	sneak_toggles: bool,
+	sprint_holds:  bool,
 }
 
 // What the backend plays on the controller this frame (work item 0038),
@@ -277,9 +281,9 @@ update_world_action_guard :: proc(guard: Action_Set, world_blocked: bool, presse
 // The frame the simulation sees.
 world_input :: proc(frame: Input_Frame, world_blocked: bool, guard: Action_Set, settings: Settings) -> Input_Frame {
 	if world_blocked {
-		return without_actions(frame, WORLD_ACTIONS)
+		return apply_hold_settings(without_actions(frame, WORLD_ACTIONS), settings)
 	}
-	return apply_look_settings(without_actions(frame, guard), settings)
+	return apply_hold_settings(apply_look_settings(without_actions(frame, guard), settings), settings)
 }
 
 // What frames collect between two simulation ticks. Frames and ticks run

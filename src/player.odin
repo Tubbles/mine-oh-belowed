@@ -49,9 +49,11 @@ Player :: struct {
 	previous_pitch:       f32,
 	on_ground:            bool,
 	flying:               bool,
-	// Toggled by Sprint, cleared by a tick without movement
-	// (update_sprinting).
+	// Toggled by Sprint, cleared by a tick without movement, or while
+	// Sprint is held in the hold mode (update_sprinting).
 	sprinting:            bool,
+	// Sneak held, or toggled by Sneak in the toggle mode (update_sneaking).
+	sneaking:             bool,
 	camera_mode:          Camera_Mode,
 	target:               Raycast_Hit,
 	mining:               Mining_State,
@@ -144,15 +146,41 @@ turn_player :: proc(player: ^Player, input: Input_Frame, seconds: f32) {
 }
 
 // A Sprint press toggles sprinting while moving; a tick without movement
-// input ends it, so a press while standing still does nothing.
+// input ends it, so a press while standing still does nothing. In the
+// hold mode (the sprint_hold setting, carried by the frame) Sprint
+// sprints while it is held and the player moves.
 update_sprinting :: proc(sprinting: bool, input: Input_Frame) -> bool {
 	if input.move == {} {
 		return false
+	}
+	if input.sprint_holds {
+		return .Sprint in input.pressed
 	}
 	if .Sprint in input.just_pressed {
 		return !sprinting
 	}
 	return sprinting
+}
+
+// Sneak while held; in the toggle mode (the sneak_hold setting, carried
+// by the frame) a Sneak press starts sneaking and the next one stops it.
+update_sneaking :: proc(sneaking: bool, input: Input_Frame) -> bool {
+	if !input.sneak_toggles {
+		return .Sneak in input.pressed
+	}
+	return .Sneak in input.just_pressed ? !sneaking : sneaking
+}
+
+// The frame as the rest of the tick reads it: Sneak pressed exactly
+// while the player sneaks.
+with_sneaking :: proc(input: Input_Frame, sneaking: bool) -> Input_Frame {
+	result := input
+	if sneaking {
+		result.pressed += {.Sneak}
+	} else {
+		result.pressed -= {.Sneak}
+	}
+	return result
 }
 
 // The toggled sprint, or Sprint_Hold held (Left Control).
@@ -336,7 +364,8 @@ carry_player_on_belt :: proc(world: ^World, content: Simulation_Content, player:
 tick_player :: proc(world: ^World, content: Simulation_Content, players: []Player, index: int, frame: Input_Frame, tick_rate: int, cheat_speed := false) -> Player_Events {
 	player := &players[index]
 	seconds := 1 / f32(tick_rate)
-	input, events := resolve_interact(player, &world.entities, content.machines, frame)
+	player.sneaking = update_sneaking(player.sneaking, frame)
+	input, events := resolve_interact(player, &world.entities, content.machines, with_sneaking(frame, player.sneaking))
 	player.previous_position, player.previous_yaw, player.previous_pitch = player.position, player.yaw, player.pitch
 	apply_player_toggles(player, input.just_pressed)
 	player.sprinting = update_sprinting(player.sprinting, input)

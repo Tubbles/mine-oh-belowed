@@ -534,7 +534,7 @@ Frame_Render_Counts :: struct {
 // fog while the camera is under water.
 render_facts :: proc(state: ^Frame_State, sky: Day_Sky, weather: Weather, counts: Frame_Render_Counts) -> Render_Facts {
 	session := state.session
-	fog_start, fog_end := weather_fog_distances(LOAD_RADIUS_HORIZONTAL, weather_look(weather, state.settings.weather, sky.blend).fog_scale)
+	fog_start, fog_end := weather_fog_distances(LOAD_RADIUS_HORIZONTAL, weather_look(weather, weather_motion_enabled(state.settings), sky.blend).fog_scale)
 	if counts.underwater {
 		fog := underwater_fog()
 		fog_start, fog_end = fog.start, fog.end
@@ -603,11 +603,12 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session, sky: Day_Sky,
 	update_player_presence(&state.player_animation, &state.particles, state.particle_memory, world, content.blocks, player, session.simulation.tick, seconds)
 	pose := interpolate_player_pose(player, alpha)
 	animation := player_animation_state(state.player_animation, player, pose.pitch, seconds)
-	bob := head_bob_offset(animation.walk_phase, head_bob_amplitude(animation.moving, animation.sprinting, state.settings.head_bob))
+	bob := head_bob_offset(animation.walk_phase, head_bob_amplitude(animation.moving, animation.sprinting, head_bob_enabled(state.settings)))
 	view := player_view_camera(world, content.blocks, player, alpha, bob, state.settings)
 	state.sprint_kick = advance_sprint_kick(state.sprint_kick, animation.moving && player_sprints(player, state.input.pressed), state.frame_seconds)
-	camera := fly_camera_to_raylib(view, sprint_field_of_view(state.settings.field_of_view, state.settings.sprint_field_of_view_kick, state.sprint_kick))
-	apply_weather(&state.renderer, weather_look(weather, state.settings.weather, sky.blend), seconds)
+	camera := fly_camera_to_raylib(view, sprint_field_of_view(state.settings.field_of_view, sprint_kick_degrees(state.settings), state.sprint_kick))
+	still_seconds := flicker_seconds(seconds, state.settings.reduced_motion)
+	apply_weather(&state.renderer, weather_look(weather, weather_motion_enabled(state.settings), sky.blend), still_seconds)
 	apply_shadows(&state.renderer, shadow_frame(state.settings.shadows, camera.position, sky.fraction), camera.position)
 	counts.underwater = camera_underwater(world, content.blocks, camera.position)
 	if counts.underwater {
@@ -619,13 +620,13 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session, sky: Day_Sky,
 	frame := Model_Frame{world = world, tick = session.simulation.tick, alpha = alpha, tick_rate = tick_rate, day_factor = day_factor(sky.blend), sky_tint = color_to_vector3(sky.colors.sun_tint)}
 	draw_entities(world, content.machines, state.model_renderer, content.items, frame)
 	if state.settings.bottleneck_overlay {
-		draw_machine_markers(world, content.machines, state.model_renderer, camera.position)
+		draw_machine_markers(world, content.machines, state.model_renderer, camera.position, bottleneck_marker_colors(ui_theme(&state.ui), state.settings.palette))
 	}
 	draw_fluid_entities(world, content.machines, state.model_renderer, content.fluids, frame)
 	draw_power_entities(world, content.machines, state.model_renderer, frame)
 	draw_belts(&state.belt_renderer, world, content.items, content.machines, state.model_renderer, frame, Item_Billboards{camera = camera, atlas = state.item_atlas})
 	draw_loose_items(world, content.items, frame, Item_Billboards{camera = camera, atlas = state.item_atlas})
-	draw_torch_flames(&state.renderer, camera, seconds)
+	draw_torch_flames(&state.renderer, camera, still_seconds)
 	draw_water_chunks(&state.renderer, camera, seconds)
 	if state.diagnostics_page == .Render {
 		counts.water_meshes = water_meshes_in_view(state.renderer, camera)
@@ -633,7 +634,9 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session, sky: Day_Sky,
 	update_particles(&state.particles, &state.particle_memory, world, frame_simulation_content(state), state.model_renderer, session.simulation.players[:], tick_rate, state.frame_seconds)
 	update_satellite_pass(&state.particle_memory, session.simulation.quests.messages[:], state.frame_seconds)
 	draw_particles(&state.particle_renderer, camera, &state.particles, state.particle_memory, world, state.model_renderer, color_to_vector3(sky.colors.sun_tint) * day_factor(sky.blend))
-	counts.weather_particles = draw_session_weather(session, camera, weather, sky, seconds)
+	if weather_motion_enabled(state.settings) {
+		counts.weather_particles = draw_session_weather(session, camera, weather, sky, seconds)
+	}
 	body := Player_Body_Draw{renderer = state.model_renderer, model = state.player_model, animation = animation, light = player_body_light(frame, player_eye(pose.position))}
 	draw_player_world_overlay(world, frame_simulation_content(state), state.model_renderer, &state.belt_renderer, session.simulation.players[:], 0, alpha, body)
 	rl.EndMode3D()
@@ -707,7 +710,7 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 run_ui_frame :: proc(state: ^Frame_State) {
 	screen_pixels := [2]f32{f32(rl.GetScreenWidth()), f32(rl.GetScreenHeight())}
 	input := make_ui_input(state.previous_input, state.input)
-	ui_begin(&state.ui, input, screen_pixels, state.frame_seconds, state.settings.ui_scale, state.settings.pointer_speed)
+	ui_begin(&state.ui, input, screen_pixels, state.frame_seconds, state.settings.ui_scale, state.settings.pointer_speed, ui_accessibility(state.settings))
 	sync_font_cache(&state.font_cache, state.settings, state.ui.pixels_per_unit)
 	screen_context := make_screen_context(state)
 	if state.session != nil {
