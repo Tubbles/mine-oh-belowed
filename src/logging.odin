@@ -9,12 +9,13 @@ import "core:sync"
 import "core:time"
 
 // The lines the game prints to stderr ("input:", "world:", "strings:",
-// "error:") also go to $XDG_STATE_HOME/mine-oh-belowed/log.txt
-// (%LOCALAPPDATA%\mine-oh-belowed\log.txt on Windows, platform_paths.odin),
-// appended, with one header line per start. Before open_log_file (and
-// when it fails) only stderr gets them. Chunk workers can report missing
-// strings, hence the mutex. raylib's trace log takes the same path
-// (raylib_log.odin).
+// "error:") also go to $XDG_STATE_HOME/mine-oh-belowed/log.txt (on
+// Windows log.txt beside the executable, work item 0103: GameNative's Wine
+// container is out of reach of the phone's file manager, the unzipped
+// folder is not), appended, with one header line per start. Before
+// open_log_file (and when it fails) only stderr gets them. Chunk workers
+// can report missing strings, hence the mutex. raylib's trace log takes
+// the same path (raylib_log.odin).
 //
 // Crash traces (work item 0043). Steam discards stderr, where Odin's
 // runtime reports bounds check and type assertion failures before it
@@ -71,11 +72,22 @@ log_session_header :: proc(now: time.Time) -> string {
 	)
 }
 
+// The directory log.txt goes into: the executable's on Windows, the state
+// home elsewhere.
+platform_log_directory :: proc(allocator := context.allocator) -> (directory: string, ok: bool) {
+	when ODIN_OS == .Windows {
+		executable_directory, error := os.get_executable_directory(allocator)
+		return executable_directory, error == nil
+	} else {
+		directories := platform_directories(context.temp_allocator)
+		return log_directory_from_environment(directories.state_home, directories.home, allocator)
+	}
+}
+
 // A log file that cannot be opened is reported once and the game goes on
 // with stderr only.
 open_log_file :: proc() {
-	directories := platform_directories(context.temp_allocator)
-	directory, found := log_directory_from_environment(directories.state_home, directories.home, context.temp_allocator)
+	directory, found := platform_log_directory(context.temp_allocator)
 	if !found {
 		return
 	}

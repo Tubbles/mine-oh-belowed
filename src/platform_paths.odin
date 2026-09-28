@@ -13,11 +13,12 @@ import "core:os"
 // Windows (work item 0102, run under Wine through GameNative, which sets
 // no XDG variable and no HOME): %APPDATA% stands in for the config home
 // and the data home, so configuration and saves roam, and %LOCALAPPDATA%
-// for the state home (log, screenshots, texture edits). The helpers append
-// mine-oh-belowed to both. There is no runtime directory, no system
-// configuration directory and no home, so a missing variable means no
-// directory rather than a Unix style fallback, and a leading ~/ in a
-// configured path stays as written.
+// for the state home (screenshots, texture edits; the log sits beside the
+// executable instead, work item 0103). The helpers append mine-oh-belowed
+// to both. There is no runtime directory, no system configuration
+// directory and no home, so a missing variable means no directory rather
+// than a Unix style fallback, and a leading ~/ in a configured path stays
+// as written.
 Platform_Directories :: struct {
 	config_home:       string,
 	config_dirs:       string,

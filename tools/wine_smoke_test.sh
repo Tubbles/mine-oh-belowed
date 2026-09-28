@@ -2,8 +2,8 @@
 # Smoke test a Windows build under Proton's Wine on this machine, without
 # a display (work item 0102): prints the version, then starts the game so
 # it loads its data and fails at the window, and shows the log it wrote
-# inside the prefix. A Wine abort (an unimplemented function) shows here
-# before the build reaches the phone.
+# beside the executable (work item 0103). A Wine abort (an unimplemented
+# function) shows here before the build reaches the phone.
 #   tools/wine_smoke_test.sh [path/to/mine-oh-belowed.exe]
 # Default: the newest executable under tmp/artifact (gh run download).
 # The prefix is tmp/wineprefix, made on the first run.
@@ -30,8 +30,8 @@ export WAYLAND_DISPLAY=
 # Without a display the window cannot open, which ends the start after
 # the data loaded; a Wine abort ends it earlier and says so.
 timeout 120 "$wine" "$executable" || echo "exit $? (1 with no display is the expected end)"
-log="$(find "$WINEPREFIX/drive_c/users" -path '*mine-oh-belowed*' -name log.txt | head -n 1)"
-if [ -n "$log" ]; then
+log="$(dirname "$executable")/log.txt"
+if [ -f "$log" ]; then
 	echo "--- $log"
 	tail -n 20 "$log"
 fi

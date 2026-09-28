@@ -29,7 +29,7 @@ The user (2026-09-28) wants to run the game on their Android phone in GameNative
 
 - `./build.sh check`, `./build.sh check-windows`, `./build.sh test`, `./build.sh release` pass on this machine.
 - CI: the nix job stays green with the new check; the windows job is green and its artifact holds the executable, `SDL3.dll` and `data/`. The main agent watches CI and iterates on the workflow if the runner disagrees.
-- User: on the phone, GameNative pointed at `mine-oh-belowed.exe` starts the game, the title screen shows the build stamp, a world can be made and saved, the log lands under `%LOCALAPPDATA%\mine-oh-belowed\log.txt` in the container.
+- User: on the phone, GameNative pointed at `mine-oh-belowed.exe` starts the game, the title screen shows the build stamp, a world can be made and saved, `log.txt` lands beside `mine-oh-belowed.exe` (work item 0103; it was under `%LOCALAPPDATA%\mine-oh-belowed\` in the container before).
 
 ## Notes
 

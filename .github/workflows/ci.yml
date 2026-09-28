@@ -74,8 +74,8 @@ jobs:
           the build time.
 
           Made for GameNative on Android (Wine): point the app at
-          mine-oh-belowed.exe. Inside the Wine container the files land in
-            log:           C:\users\<user>\AppData\Local\mine-oh-belowed\log.txt
+          mine-oh-belowed.exe. The log is log.txt beside mine-oh-belowed.exe.
+          Inside the Wine container the other files land in
             screenshots:   C:\users\<user>\AppData\Local\mine-oh-belowed\screenshots
             saves:         C:\users\<user>\AppData\Roaming\mine-oh-belowed\saves
             configuration: C:\users\<user>\AppData\Roaming\mine-oh-belowed\config.sjson
