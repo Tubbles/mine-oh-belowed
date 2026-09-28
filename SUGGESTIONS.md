@@ -54,3 +54,5 @@ Raised by the work item notes (0005 to 0008), to be turned into work items when 
 3. Work item 0002, the Steam Controller input spike, before anything else in code. It decides whether the SDL3 direct path works on this machine with Steam running.
 4. Work item 0001, toolchain skeleton and `build.sh`, so CI turns green and the Steam shortcut (0003) has something to launch.
 5. Write `doc/world.md` (generation, strata, vein reservoirs, prospecting, water, spawn requirements), `doc/logistics.md` (belt lines, ramps, lifts, inserters, splitters), `doc/fluids.md` (network model, phases, gravity) and `doc/lore.md` (the venture, Mission Control, naming glossary) before their milestones start.
+- Windows test run in CI (0102): the `windows` job builds only. Running `odin test` there needs `core:testing`'s own libc import kept away from the dynamic runtime (it links `libucrt.lib` on Windows) and the tests' Unix path and socket assumptions sorted per platform.
+- Windows artifact without a GitHub login (0102): a workflow artifact needs a signed in browser or `gh` to download. Attaching the zip to a GitHub release on a tag would give the phone a plain URL.
