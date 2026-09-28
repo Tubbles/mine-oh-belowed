@@ -146,6 +146,9 @@ Draw_Command_Kind :: enum u8 {
 	Clip_End,
 	// The block atlas tile `tile`, stretched over the rectangle.
 	Atlas_Tile,
+	// The item atlas tile `tile` (render_icons.odin), stretched over the
+	// rectangle.
+	Item_Tile,
 	// An RGBA image of image_size pixels, stretched over the rectangle;
 	// the draw layer uploads it again whenever image_revision changes.
 	Image,

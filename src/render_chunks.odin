@@ -69,7 +69,8 @@ color_to_vector3 :: proc(color: rl.Color) -> [3]f32 {
 	return {f32(color.r), f32(color.g), f32(color.b)} / 255
 }
 
-// The block atlas also serves as the placeholder item icons.
+// The block atlas also serves as the icon of a block placing item without
+// an icon file.
 chunk_atlas_texture :: proc(renderer: Chunk_Renderer) -> rl.Texture2D {
 	return renderer.material.maps[rl.MaterialMapIndex.ALBEDO].texture
 }
@@ -79,7 +80,7 @@ init_chunk_renderer :: proc(registry: Block_Registry, data_directory: string) ->
 	renderer.atlas_layout = atlas_layout_for_block_count(len(registry.definitions))
 	renderer.material = rl.LoadMaterialDefault()
 	use_chunk_shader(&renderer, shader)
-	rl.SetMaterialTexture(&renderer.material, .ALBEDO, upload_atlas(registry, renderer.atlas_layout))
+	rl.SetMaterialTexture(&renderer.material, .ALBEDO, upload_atlas(registry, renderer.atlas_layout, data_directory))
 	apply_daylight(&renderer, 1)
 	return renderer, true
 }
@@ -106,13 +107,15 @@ reload_chunk_shader :: proc(renderer: ^Chunk_Renderer, data_directory: string) -
 	return true
 }
 
-// The block table changed (a content reload): a new atlas, and every mesh
-// is rebuilt by the streaming, since tile positions may have moved.
-replace_chunk_atlas :: proc(renderer: ^Chunk_Renderer, registry: Block_Registry) {
+// The block table changed (a content reload), or a texture file did: a new
+// atlas. After a content reload every mesh is rebuilt by the streaming,
+// since tile positions may have moved; a texture change keeps the layout,
+// which depends on the block count alone, so the meshes stay.
+replace_chunk_atlas :: proc(renderer: ^Chunk_Renderer, registry: Block_Registry, data_directory: string) {
 	rl.UnloadTexture(chunk_atlas_texture(renderer^))
 	renderer.atlas_layout = atlas_layout_for_block_count(len(registry.definitions))
 	set_shader_vector2(renderer.material.shader, "tile_size", atlas_tile_uv_size(renderer.atlas_layout))
-	rl.SetMaterialTexture(&renderer.material, .ALBEDO, upload_atlas(registry, renderer.atlas_layout))
+	rl.SetMaterialTexture(&renderer.material, .ALBEDO, upload_atlas(registry, renderer.atlas_layout, data_directory))
 }
 
 // raylib frees the CPU side arrays in UnloadMesh with its own allocator,

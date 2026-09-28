@@ -1,16 +1,38 @@
 package game
 
+import "core:fmt"
+import "core:image"
+import "core:image/png"
+import "core:os"
+import "core:slice"
 import rl "vendor:raylib"
 
-// Placeholder block atlas generated at startup: one 16 by 16 tile per face
-// group per block, the base colour from blocks.sjson plus a little per texel
-// noise. No image files.
+// The block atlas, built at startup and on a reload: one 16 by 16 tile per
+// face group per block. A tile comes from data/textures/blocks/<id>.png,
+// or from <id>_top.png, <id>_side.png or <id>_bottom.png for its group
+// when that file exists. A block or group without a file falls back to
+// its base colour from blocks.sjson plus a little per texel noise.
 
 ATLAS_TILE_SIZE :: 16
 ATLAS_COLUMNS :: 16
 // Largest brightness offset the noise adds to or removes from a texel.
 ATLAS_NOISE_AMPLITUDE :: 12
 ATLAS_NOISE_SEED :: 0x6d696e65
+BLOCK_TEXTURES_DIRECTORY :: "textures/blocks"
+TEXTURE_FILE_EXTENSION :: ".png"
+
+// One tile's texels, row major.
+Tile_Pixels :: [ATLAS_TILE_SIZE * ATLAS_TILE_SIZE][4]u8
+
+// A block's tiles read from files, by face group; nil takes the colour tile.
+Block_Face_Tiles :: [Face_Group]Maybe(Tile_Pixels)
+
+@(rodata)
+face_group_file_suffixes := [Face_Group]string {
+	.Top    = "_top",
+	.Side   = "_side",
+	.Bottom = "_bottom",
+}
 
 Atlas_Layout :: struct {
 	columns: int,
@@ -66,33 +88,116 @@ noisy_texel :: proc(base: [3]u8, noise: int) -> [4]u8 {
 	return texel
 }
 
+tile_pixel_origin :: proc(layout: Atlas_Layout, tile_index: int) -> [2]int {
+	return {tile_index % layout.columns * ATLAS_TILE_SIZE, tile_index / layout.columns * ATLAS_TILE_SIZE}
+}
+
+copy_tile :: proc(pixels: [][4]u8, width: int, origin: [2]int, tile: Tile_Pixels) {
+	tile := tile
+	for y in 0 ..< ATLAS_TILE_SIZE {
+		row := (origin.y + y) * width + origin.x
+		copy(pixels[row:row + ATLAS_TILE_SIZE], tile[y * ATLAS_TILE_SIZE:(y + 1) * ATLAS_TILE_SIZE])
+	}
+}
+
 fill_tile :: proc(pixels: [][4]u8, layout: Atlas_Layout, tile_index: int, base: [3]u8) {
 	width := atlas_pixel_width(layout)
-	origin_x := tile_index % layout.columns * ATLAS_TILE_SIZE
-	origin_y := tile_index / layout.columns * ATLAS_TILE_SIZE
+	origin := tile_pixel_origin(layout, tile_index)
 	for y in 0 ..< ATLAS_TILE_SIZE {
 		for x in 0 ..< ATLAS_TILE_SIZE {
-			pixels[(origin_y + y) * width + origin_x + x] = noisy_texel(base, texel_noise(tile_index, x, y))
+			pixels[(origin.y + y) * width + origin.x + x] = noisy_texel(base, texel_noise(tile_index, x, y))
 		}
 	}
 }
 
-// Row major RGBA pixels, atlas_pixel_width by atlas_pixel_height.
-generate_atlas_pixels :: proc(registry: Block_Registry, layout: Atlas_Layout, allocator := context.allocator) -> [][4]u8 {
+// Row major RGBA pixels, atlas_pixel_width by atlas_pixel_height. tiles is
+// indexed by Block_Id; a block past its end takes the colour tiles.
+generate_atlas_pixels :: proc(registry: Block_Registry, layout: Atlas_Layout, tiles: []Block_Face_Tiles, allocator := context.allocator) -> [][4]u8 {
 	pixels := make([][4]u8, atlas_pixel_width(layout) * atlas_pixel_height(layout), allocator)
 	for definition, block_index in registry.definitions {
 		for group in Face_Group {
 			tile_index := atlas_tile_index(Block_Id(block_index), group)
+			if block_index < len(tiles) {
+				if tile, found := tiles[block_index][group].?; found {
+					copy_tile(pixels, atlas_pixel_width(layout), tile_pixel_origin(layout, tile_index), tile)
+					continue
+				}
+			}
 			fill_tile(pixels, layout, tile_index, face_group_color(definition.texture, group))
 		}
 	}
 	return pixels
 }
 
+// A texture file must be 16 by 16 with 8 bit channels; the decoder
+// already added the alpha channel an RGB file lacks.
+tile_from_image :: proc(decoded: ^image.Image) -> (tile: Tile_Pixels, problem: string) {
+	if decoded.width != ATLAS_TILE_SIZE || decoded.height != ATLAS_TILE_SIZE {
+		return {}, fmt.tprintf("the image is %d by %d pixels, not %d by %d", decoded.width, decoded.height, ATLAS_TILE_SIZE, ATLAS_TILE_SIZE)
+	}
+	if decoded.channels != 4 || decoded.depth != 8 {
+		return {}, fmt.tprintf("the image has %d channels of %d bits, not RGBA of 8 bits", decoded.channels, decoded.depth)
+	}
+	copy(tile[:], slice.reinterpret([][4]u8, decoded.pixels.buf[:]))
+	return tile, ""
+}
+
+// found is false for a missing file, and for one that does not decode to
+// a tile, which is logged. The decoding uses the temp allocator.
+read_tile_file :: proc(path: string) -> (tile: Tile_Pixels, found: bool) {
+	if !os.exists(path) {
+		return {}, false
+	}
+	data, read_error := os.read_entire_file(path, context.temp_allocator)
+	if read_error != nil {
+		log_printf("error: cannot read %s: %v, using the colour tile", path, read_error)
+		return {}, false
+	}
+	decoded, decode_error := png.load_from_bytes(data, {.alpha_add_if_missing}, context.temp_allocator)
+	if decode_error != nil {
+		log_printf("error: cannot decode %s: %v, using the colour tile", path, decode_error)
+		return {}, false
+	}
+	problem: string
+	tile, problem = tile_from_image(decoded)
+	if problem != "" {
+		log_printf("error: %s: %s, using the colour tile", path, problem)
+		return {}, false
+	}
+	return tile, true
+}
+
+texture_file_path :: proc(data_directory, directory, name: string) -> string {
+	return fmt.tprintf("%s/%s/%s%s", data_directory, directory, name, TEXTURE_FILE_EXTENSION)
+}
+
+// The plain file serves every group a group file does not override.
+read_block_face_tiles :: proc(data_directory, block_id: string) -> (tiles: Block_Face_Tiles) {
+	plain, plain_found := read_tile_file(texture_file_path(data_directory, BLOCK_TEXTURES_DIRECTORY, block_id))
+	for group in Face_Group {
+		name := fmt.tprintf("%s%s", block_id, face_group_file_suffixes[group])
+		if tile, found := read_tile_file(texture_file_path(data_directory, BLOCK_TEXTURES_DIRECTORY, name)); found {
+			tiles[group] = tile
+		} else if plain_found {
+			tiles[group] = plain
+		}
+	}
+	return tiles
+}
+
+// Indexed by Block_Id, in the temp allocator.
+read_block_textures :: proc(registry: Block_Registry, data_directory: string) -> []Block_Face_Tiles {
+	tiles := make([]Block_Face_Tiles, len(registry.definitions), context.temp_allocator)
+	for definition, block_index in registry.definitions {
+		tiles[block_index] = read_block_face_tiles(data_directory, definition.id)
+	}
+	return tiles
+}
+
 // Point filtering keeps the texels sharp. There are no mipmaps, so tiles do
 // not bleed into their neighbours at a distance.
-upload_atlas :: proc(registry: Block_Registry, layout: Atlas_Layout) -> rl.Texture2D {
-	pixels := generate_atlas_pixels(registry, layout, context.temp_allocator)
+upload_atlas :: proc(registry: Block_Registry, layout: Atlas_Layout, data_directory: string) -> rl.Texture2D {
+	pixels := generate_atlas_pixels(registry, layout, read_block_textures(registry, data_directory), context.temp_allocator)
 	image := rl.Image {
 		data    = raw_data(pixels),
 		width   = i32(atlas_pixel_width(layout)),

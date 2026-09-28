@@ -174,7 +174,7 @@ audit_draw_list :: proc(audit: ^Ui_Audit, state: ^Ui_State, case_text, frame_nam
 		case .Clip_End:
 			clipped = false
 			continue
-		case .Fill, .Outline, .Text, .Focus_Outline, .Clip_Begin, .Atlas_Tile, .Image:
+		case .Fill, .Outline, .Text, .Focus_Outline, .Clip_Begin, .Atlas_Tile, .Item_Tile, .Image:
 		}
 		for problem in audit_command(state, command, clip, clipped) {
 			audit_report(audit, case_text, frame_name, problem, command.kind, command.rectangle, command.text)
@@ -383,6 +383,8 @@ make_ui_audit :: proc() -> ^Ui_Audit {
 	audit.strings = table
 	thread_string_table = &audit.strings
 	audit.content = make_save_test_content()
+	// Slots draw the shipped icon files, as in the game.
+	audit.content.items.icon_loaded = generate_item_icon_pixels(audit.content.items, test_data_directory(), context.temp_allocator).loaded
 	audit.generator = make_test_generator(DEFAULT_WORLD_SEED)
 	generator := &audit.generator
 	audit.simulation = make_save_test_simulation(generator, audit.content)

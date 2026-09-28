@@ -64,7 +64,7 @@ Text is drawn with TrueType fonts (0077) rasterised at `round(text_size * pixels
 
 ## Icons
 
-Placeholder icons are the block's atlas tile for blocks, and a coloured square with two letters for items and machines. Real icons come with the art pass.
+An item's icon is its tile in the item atlas, read from `data/textures/items/<item id>.png` (16 by 16 RGBA with transparency, 0060), and draws in slots, the hotbar, the recipe browser and every other icon place through `draw_item_icon`. An item without a file falls back to its placed block's atlas tile, and an item that places no block to a coloured square with two letters. On belts and on the ground an item with an icon is a camera facing quad of its tile, 0.4 blocks, and one without is a small cube in its category's colour. The shipped icons are placeholders from `tools/make_placeholder_textures.py` (see `doc/content.md`, Textures); hand made art only replaces the files.
 
 ## On-screen keyboard
 

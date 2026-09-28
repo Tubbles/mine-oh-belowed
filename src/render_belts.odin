@@ -8,8 +8,9 @@ import rl "vendor:raylib"
 // along the flow, so one scroll offset (the distance items travelled)
 // animates every shape by rewriting four texture coordinates per mesh,
 // once per belt speed per frame, before the belts of that speed are
-// drawn. Items are small cubes coloured like their placeholder icon,
-// drawn one DrawCube each (no instancing yet), at most eight per block.
+// drawn. Items are their icon on a camera facing quad (render_icons.odin),
+// or a small cube in their category's colour for an item without an icon
+// file, drawn one each (no instancing yet), at most eight per block.
 // A splitter is the flat surface on both halves inside a wire frame, with
 // an arrow along its direction; a splitter model (render_models.odin)
 // takes the frame's place.
@@ -209,7 +210,7 @@ line_block_belt :: proc(entities: ^Entities, line: Belt_Line, block: i32) -> (be
 	return pointer^, true
 }
 
-draw_belt_line_items :: proc(world: ^World, items: Item_Registry, line: Belt_Line) {
+draw_belt_line_items :: proc(world: ^World, items: Item_Registry, line: Belt_Line, billboards: Item_Billboards) {
 	drawn := make([]u8, len(line.belts), context.temp_allocator)
 	for lane in Belt_Lane {
 		for entry in line.lanes[lane] {
@@ -223,7 +224,9 @@ draw_belt_line_items :: proc(world: ^World, items: Item_Registry, line: Belt_Lin
 			}
 			drawn[block] += 1
 			point := belt_item_point(belt, lane, entry.position % BELT_UNITS_PER_BLOCK)
-			rl.DrawCube(point + {0, BELT_ITEM_SIZE / 2, 0}, BELT_ITEM_SIZE, BELT_ITEM_SIZE, BELT_ITEM_SIZE, item_cube_color(items, entry.item))
+			if !draw_item_billboard(billboards, entry.item, point) {
+				rl.DrawCube(point + {0, BELT_ITEM_SIZE / 2, 0}, BELT_ITEM_SIZE, BELT_ITEM_SIZE, BELT_ITEM_SIZE, item_cube_color(items, entry.item))
+			}
 		}
 	}
 }
@@ -280,13 +283,15 @@ draw_belt_surfaces :: proc(renderer: ^Belt_Renderer, world: ^World, machines: Ma
 }
 
 // Between BeginMode3D and EndMode3D, after the chunks.
-draw_belts :: proc(renderer: ^Belt_Renderer, world: ^World, items: Item_Registry, machines: Machine_Registry, models: Model_Renderer, frame: Model_Frame) {
+draw_belts :: proc(renderer: ^Belt_Renderer, world: ^World, items: Item_Registry, machines: Machine_Registry, models: Model_Renderer, frame: Model_Frame, billboards: Item_Billboards) {
 	if !renderer.ready {
 		return
 	}
 	draw_belt_surfaces(renderer, world, machines, models, frame)
+	begin_item_billboards()
+	defer end_item_billboards()
 	for line in world.entities.belt_network.lines {
-		draw_belt_line_items(world, items, line)
+		draw_belt_line_items(world, items, line, billboards)
 	}
 }
 

@@ -454,9 +454,12 @@ ui_request_letter_jump :: proc(state: ^Ui_State, letter: rune) {
 	state.letter_jump = letter
 }
 
-// Placeholder icon: the atlas tile, or a coloured square with two letters.
+// The item's icon tile, its block's atlas tile, or a coloured square with
+// two letters.
 draw_item_icon :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, icon: Item_Icon) {
 	switch icon.kind {
+	case .Item_Tile:
+		push_command(state, {kind = .Item_Tile, rectangle = rectangle, tile = icon.tile})
 	case .Block_Tile:
 		push_command(state, {kind = .Atlas_Tile, rectangle = rectangle, tile = icon.tile})
 	case .Lettered:

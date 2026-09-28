@@ -124,6 +124,20 @@ reload_models :: proc(state: ^Frame_State) -> string {
 	return replace_machine_models(&state.model_renderer, state.content.machines, state.data_directory)
 }
 
+// Both atlases are made again from the files. The block atlas layout
+// depends on the block count alone, so the chunk meshes keep their tile
+// coordinates. A file that does not load takes its fallback and is
+// logged; the rest still load.
+reload_textures :: proc(state: ^Frame_State) -> string {
+	rebuild_atlases(state)
+	return ""
+}
+
+rebuild_atlases :: proc(state: ^Frame_State) {
+	replace_chunk_atlas(&state.renderer, state.content.blocks, state.data_directory)
+	replace_item_atlas(&state.item_atlas, &state.content.items, state.data_directory)
+}
+
 @(rodata)
 presentation_reload_keys := [Data_File_Category]string {
 	.Ignored        = "",
@@ -134,6 +148,7 @@ presentation_reload_keys := [Data_File_Category]string {
 	.Shaders        = "reload_shaders_done",
 	.Fonts          = "reload_fonts_done",
 	.Models         = "reload_models_done",
+	.Textures       = "reload_textures_done",
 	.Content        = "",
 }
 
@@ -148,6 +163,7 @@ presentation_file_names := [Data_File_Category]string {
 	.Shaders        = CHUNK_SHADER_DIRECTORY,
 	.Fonts          = FONTS_DIRECTORY,
 	.Models         = MODELS_DIRECTORY,
+	.Textures       = "textures",
 	.Content        = "",
 }
 
@@ -165,6 +181,8 @@ reload_presentation :: proc(state: ^Frame_State, category: Data_File_Category) -
 		return reload_fonts(state)
 	case .Models:
 		return reload_models(state)
+	case .Textures:
+		return reload_textures(state)
 	}
 	return ""
 }
@@ -219,14 +237,14 @@ update_data_watch :: proc(state: ^Frame_State) {
 
 // The new content replaces the frame's; the old arena goes once nothing
 // points into it: the session was rebuilt already, and the renderers
-// that were made from the content (chunk atlas, belts, machine models)
-// are made again.
+// that were made from the content (block and item atlases, belts, machine
+// models) are made again.
 replace_frame_content :: proc(state: ^Frame_State, data: Game_Data) {
 	old_arena := state.content_arena
 	state.content = data.content
 	state.base_generator = data.base_generator
 	state.content_arena = data.arena
-	replace_chunk_atlas(&state.renderer, state.content.blocks)
+	rebuild_atlases(state)
 	destroy_belt_renderer(&state.belt_renderer)
 	state.belt_renderer = init_belt_renderer(state.content.machines)
 	use_machine_models(&state.model_renderer, state.content.machines, state.data_directory)

@@ -4,9 +4,10 @@ import "core:math"
 import rl "vendor:raylib"
 import "vendor:raylib/rlgl"
 
-// Loose items (loose_item.odin): one small cube per stack, coloured like
-// the items on belts (item_cube_color), turning slowly and bobbing with
-// the render time. A falling stack moves smoothly between cells.
+// Loose items (loose_item.odin): one icon per stack, a camera facing quad
+// like the items on belts, bobbing with the render time; an item without
+// an icon file is a small cube in its category's colour (item_cube_color)
+// that also turns slowly. A falling stack moves smoothly between cells.
 
 LOOSE_ITEM_CUBE_SIZE :: 0.3
 LOOSE_ITEM_TURN_SECONDS :: 6.0
@@ -32,9 +33,14 @@ loose_item_draw_centre :: proc(loose: Loose_Item, frame: Model_Frame) -> [3]f32 
 	return point
 }
 
-draw_loose_items :: proc(world: ^World, items: Item_Registry, frame: Model_Frame) {
+draw_loose_items :: proc(world: ^World, items: Item_Registry, frame: Model_Frame, billboards: Item_Billboards) {
+	begin_item_billboards()
+	defer end_item_billboards()
 	for loose in world.entities.loose_items.items {
 		centre := loose_item_draw_centre(loose, frame)
+		if draw_item_billboard(billboards, loose.item, centre - {0, LOOSE_ITEM_CUBE_SIZE / 2, 0}) {
+			continue
+		}
 		turn := motion_phase(frame.tick, frame.alpha, frame.tick_rate, LOOSE_ITEM_TURN_SECONDS, true, motion_phase_offset(loose.cell))
 		rlgl.PushMatrix()
 		rlgl.Translatef(centre.x, centre.y, centre.z)

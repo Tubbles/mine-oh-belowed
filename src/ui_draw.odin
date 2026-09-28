@@ -20,18 +20,21 @@ execute_text_command :: proc(command: Draw_Command, fonts: ^Font_Cache, pixels_p
 	}
 }
 
-// The block atlas, for placeholder item icons.
+// The atlases item icons draw from: the block atlas (Atlas_Tile) and the
+// item atlas (Item_Tile).
 Icon_Atlas :: struct {
-	texture: rl.Texture2D,
-	layout:  Atlas_Layout,
+	texture:      rl.Texture2D,
+	layout:       Atlas_Layout,
+	item_texture: rl.Texture2D,
+	item_layout:  Atlas_Layout,
 }
 
-execute_atlas_tile_command :: proc(command: Draw_Command, atlas: Icon_Atlas, pixels_per_unit: f32) {
-	origin := atlas_tile_origin(atlas.layout, command.tile)
-	width, height := f32(atlas.texture.width), f32(atlas.texture.height)
-	uv_size := atlas_tile_uv_size(atlas.layout)
+draw_atlas_tile :: proc(texture: rl.Texture2D, layout: Atlas_Layout, tile: int, rectangle: Ui_Rectangle, pixels_per_unit: f32) {
+	origin := atlas_tile_origin(layout, tile)
+	width, height := f32(texture.width), f32(texture.height)
+	uv_size := atlas_tile_uv_size(layout)
 	source := rl.Rectangle{origin.x * width, origin.y * height, uv_size.x * width, uv_size.y * height}
-	rl.DrawTexturePro(atlas.texture, source, to_pixels(command.rectangle, pixels_per_unit), {}, 0, rl.WHITE)
+	rl.DrawTexturePro(texture, source, to_pixels(rectangle, pixels_per_unit), {}, 0, rl.WHITE)
 }
 
 // The texture of the last drawn image (the map), uploaded again when the
@@ -96,7 +99,9 @@ execute_draw_command :: proc(command: Draw_Command, focus: Ui_Id, atlas: Icon_At
 	case .Clip_End:
 		rl.EndScissorMode()
 	case .Atlas_Tile:
-		execute_atlas_tile_command(command, atlas, pixels_per_unit)
+		draw_atlas_tile(atlas.texture, atlas.layout, command.tile, command.rectangle, pixels_per_unit)
+	case .Item_Tile:
+		draw_atlas_tile(atlas.item_texture, atlas.item_layout, command.tile, command.rectangle, pixels_per_unit)
 	case .Image:
 		execute_image_command(command, images, pixels_per_unit)
 	}

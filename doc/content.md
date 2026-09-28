@@ -220,6 +220,15 @@ Listed for planning, values follow with their milestones.
 - Phase 7: bore drill, mining fluid, seismic thumper, hydro turbine, big pole, substation, assembler 3, express belt, stack inserter, bauxite, gold, quartz, silicon, science pack 4. Bore drill, mining fluid, deep veins, bauxite to aluminium through the washer and the electrolyser, gold and quartz to silicon landed with 0035; guessed values are in its work item.
 - Phase 8: launch pad, rocket assembly, rocket parts, cargo capsule, orbital survey, infinite research, science pack 5. The launch pad, rocket structure, guidance unit, cargo capsule and rocket fuel landed with 0040. Contracts, venture credit, the catalogue, the orbital survey and infinite research landed with 0041: every item has a `price` in `data/items.sjson` (raw and ore 1, plates 2, steel 12, crafted items about the sum of their inputs, aluminium, silicon and gold well above); `data/contracts.sjson` holds eleven contracts in three tiers opened at 0, 3 and 10 rockets launched, deadlines of 30 to 60 game minutes paying 30 to 50 percent when late, up to three open at a time; the catalogue sells 50 silicon for 600 credit, 50 aluminium plate for 750, 20 gold plate for 600, 100 science pack 2 for 2250 and an orbital survey (surface veins within 256 blocks of the pad) for 3000. Mining productivity and research speed are infinite technologies after rocket program: 100 packs of science 1 and 2 at 30 s for level 1, 1.5 times more per level, 10 percent per level. Every number is a guess for playtesting.
 
+## Textures
+
+Block textures and item icons are 16 by 16 RGBA PNG files under `data/textures/` (0060), loaded into atlases at start, on a content reload and when a file changes (a presentation hot reload category).
+
+- `textures/blocks/<block id>.png` serves all three face groups of the block. `<id>_top.png`, `<id>_side.png` and `<id>_bottom.png` override one group each (grass: a green top, a dirt side with a green fringe, the plain file dirt for the bottom). A block or group without a file keeps its colour from `blocks.sjson` with a little noise.
+- `textures/items/<item id>.png` is the item's icon; transparent texels show the slot behind. An item without one shows its placed block's tile, or two letters.
+- A file that is not 16 by 16 with 8 bit channels, or does not decode, is refused with a line in the log and takes the fallback.
+- `tools/make_placeholder_textures.py` writes the whole placeholder set from the ids and colours in `blocks.sjson` and `items.sjson`: block patterns by material family from the id (stone, rock strata, ore speckles in the ore's colour over stone, dirt, sand, grass, bark grain with ring tops, mottled leaves, water, snow, tar, concrete, brick), item shapes by category (plates, lumps, crushed grains, gears, rods, flasks for science packs, tool silhouettes, a box for machines) coloured from a material table or a hash of the id, and a block placing item as its block's plain texture. Run it after adding a block or item; hand made files replace its output one by one.
+
 ## Learned from couch tests
 
 Each entry: date, what was played, what the numbers did wrong, what changed.

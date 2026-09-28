@@ -103,6 +103,9 @@ Frame_State :: struct {
 	cursor_enabled:     bool,
 	quit_requested:     bool,
 	renderer:           Chunk_Renderer,
+	// The item icons (render_icons.odin), rebuilt with the block atlas;
+	// content.items.icon_loaded points into it.
+	item_atlas:         Item_Atlas,
 	belt_renderer:      Belt_Renderer,
 	model_renderer:     Model_Renderer,
 	show_diagnostics:   bool,
@@ -443,8 +446,8 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session) {
 	}
 	draw_fluid_entities(world, content.machines, state.model_renderer, content.fluids, frame)
 	draw_power_entities(world, content.machines, state.model_renderer, frame)
-	draw_belts(&state.belt_renderer, world, content.items, content.machines, state.model_renderer, frame)
-	draw_loose_items(world, content.items, frame)
+	draw_belts(&state.belt_renderer, world, content.items, content.machines, state.model_renderer, frame, Item_Billboards{camera = camera, atlas = state.item_atlas})
+	draw_loose_items(world, content.items, frame, Item_Billboards{camera = camera, atlas = state.item_atlas})
 	draw_player_world_overlay(world, frame_simulation_content(state), state.model_renderer, &state.belt_renderer, session.simulation.players[:], 0, alpha)
 }
 
@@ -517,7 +520,13 @@ run_ui_frame :: proc(state: ^Frame_State) {
 		draw_hud(&state.ui, screen_context)
 	}
 	run_screens(&state.ui, screen_context)
-	ui_end(&state.ui, Icon_Atlas{texture = chunk_atlas_texture(state.renderer), layout = state.renderer.atlas_layout}, &state.ui_images)
+	icon_atlas := Icon_Atlas {
+		texture      = chunk_atlas_texture(state.renderer),
+		layout       = state.renderer.atlas_layout,
+		item_texture = state.item_atlas.texture,
+		item_layout  = state.item_atlas.layout,
+	}
+	ui_end(&state.ui, icon_atlas, &state.ui_images)
 	apply_cursor_mode(state)
 }
 
@@ -738,6 +747,8 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 		shutdown_sdl3_input(&state.sdl3_input)
 	}
 	defer destroy_chunk_renderer(&state.renderer)
+	state.item_atlas = upload_item_atlas(&state.content.items, data_directory)
+	defer destroy_item_atlas(&state.item_atlas)
 	state.belt_renderer = init_belt_renderer(content.machines)
 	defer destroy_belt_renderer(&state.belt_renderer)
 	state.model_renderer = init_model_renderer(content.machines, data_directory)

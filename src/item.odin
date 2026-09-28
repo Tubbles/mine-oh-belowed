@@ -111,6 +111,10 @@ Item_Registry :: struct {
 	// Indexed by Block_Id: a second item the block yields besides its
 	// drop (gold quartz gives quartz and gold ore), or NO_ITEM.
 	extra_drop_for_block: []Item_Id,
+	// Indexed by Item_Id: the item atlas holds a tile from the item's icon
+	// file (render_icons.odin). Empty until the atlas is built, and in
+	// tests that build none; it points into the atlas.
+	icon_loaded:          []bool,
 }
 
 parse_items_file :: proc(data: []byte, allocator := context.allocator) -> (file: Items_File, error: json.Unmarshal_Error) {
@@ -495,11 +499,15 @@ load_item_registry :: proc(data_directory: string, blocks: Block_Registry, alloc
 	return registry, true
 }
 
-// Placeholder icons from doc/ui.md: the placed block's atlas tile, or a
-// coloured square with two letters. A pure description; ui_draw.odin draws it.
+// Item icons from doc/ui.md: the item atlas tile from the item's icon
+// file, else the placed block's atlas tile, else a coloured square with
+// two letters. A pure description; ui_draw.odin draws it.
 Item_Icon_Kind :: enum u8 {
+	// tile is the block atlas tile.
 	Block_Tile,
 	Lettered,
+	// tile is the item atlas tile, the Item_Id.
+	Item_Tile,
 }
 
 Item_Icon :: struct {
@@ -545,6 +553,9 @@ item_letters :: proc(id: string) -> [2]u8 {
 item_icon :: proc(registry: Item_Registry, item: Item_Id) -> Item_Icon {
 	if int(item) >= len(registry.items) {
 		return Item_Icon{kind = .Lettered, color = UI_WIDGET_COLOR, letters = '?'}
+	}
+	if int(item) < len(registry.icon_loaded) && registry.icon_loaded[item] {
+		return Item_Icon{kind = .Item_Tile, tile = int(item)}
 	}
 	definition := registry.items[item]
 	if definition.places_block != AIR_BLOCK {
