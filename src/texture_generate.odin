@@ -5,6 +5,7 @@ import "core:fmt"
 import "core:math"
 import "core:os"
 import "core:slice"
+import "core:strings"
 
 // Procedural block textures (work item 0099). A block listed in
 // data/textures/procedural.sjson gets its tile from a generator and its
@@ -540,4 +541,82 @@ generate_procedural_tile :: proc(entries: []Procedural_Texture, registry: Block_
 		return generate_ore_tile(entry.parameters, registry.definitions[ground].texture.side, registry.definitions[block].texture.side)
 	}
 	return nil
+}
+
+// The overrides writer (the texture editor, work item 0100): entries in
+// the data file's form, so a line copies into
+// data/textures/procedural.sjson as it is.
+
+// Whole numbers 0, else the decimals of the step: 2 for 0.01 and 0.05.
+texture_parameter_decimals :: proc(range: Texture_Parameter_Range) -> int {
+	if range.whole {
+		return 0
+	}
+	decimals := 0
+	for scaled := range.step; decimals < 6 && abs(scaled - math.round(scaled)) > 1e-9; scaled *= 10 {
+		decimals += 1
+	}
+	return decimals
+}
+
+// On the step's grid inside the range, rounded to the step's decimals, so
+// the value prints and parses back to the same f32.
+snapped_texture_parameter :: proc(range: Texture_Parameter_Range, value: f64) -> f64 {
+	steps := math.round((value - range.minimum) / range.step)
+	snapped := clamp(range.minimum + steps * range.step, range.minimum, range.maximum)
+	scale := math.pow(10, f64(texture_parameter_decimals(range)))
+	return math.round(snapped * scale) / scale
+}
+
+// "1101", "0.2", "0.65": the step's decimals without trailing zeros. In
+// the temp allocator.
+format_texture_parameter_value :: proc(range: Texture_Parameter_Range, value: f64) -> string {
+	if range.whole {
+		return fmt.tprintf("%d", i64(math.round(value)))
+	}
+	text := fmt.tprintf(fmt.tprintf("%%.%df", texture_parameter_decimals(range)), value)
+	if strings.contains_rune(text, '.') {
+		text = strings.trim_right(text, "0")
+		text = strings.trim_right(text, ".")
+	}
+	return text
+}
+
+// {block = "<id>", kind = "ore", seed = <int>, ...} in file order. In the
+// temp allocator.
+format_procedural_texture_entry :: proc(block_name: string, kind: Procedural_Texture_Kind, parameters: Ore_Texture_Parameters) -> string {
+	builder := strings.builder_make(context.temp_allocator)
+	fmt.sbprintf(&builder, "{{block = %q, kind = %q", block_name, procedural_texture_kind_names[kind])
+	for parameter in Ore_Texture_Parameter {
+		range := ore_texture_parameter_ranges[parameter]
+		fmt.sbprintf(&builder, ", %s = %s", range.key, format_texture_parameter_value(range, ore_texture_parameter(parameters, parameter)))
+	}
+	strings.write_string(&builder, "}")
+	return strings.to_string(builder)
+}
+
+// The overrides file around entry lines. In the temp allocator.
+format_texture_edits_file :: proc(entry_lines: []string) -> string {
+	builder := strings.builder_make(context.temp_allocator)
+	strings.write_string(&builder, "// Written by the texture editor (work item 0100). Each entry replaces\n")
+	strings.write_string(&builder, "// data/textures/procedural.sjson's entry for its block; copy an entry\n")
+	strings.write_string(&builder, "// there to make it the default, then delete this file.\n")
+	strings.write_string(&builder, "textures = [\n")
+	for line in entry_lines {
+		fmt.sbprintf(&builder, "\t%s\n", line)
+	}
+	strings.write_string(&builder, "]\n")
+	return strings.to_string(builder)
+}
+
+// Returns the problem, or an empty string. Makes the state directory.
+write_texture_edits_file :: proc(path, text: string) -> string {
+	directory := os.dir(path)
+	if error := os.make_directory_all(directory); error != nil && error != .Exist {
+		return fmt.tprintf("cannot create %s: %v", directory, error)
+	}
+	if error := os.write_entire_file(path, text); error != nil {
+		return fmt.tprintf("cannot write %s: %v", path, error)
+	}
+	return ""
 }

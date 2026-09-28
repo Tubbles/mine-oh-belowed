@@ -15,8 +15,8 @@ import "core:fmt"
 DEVELOPER_PANEL_WIDTH :: 1000
 // Title, two toggle rows, kit label and buttons, quest label (with the
 // finish active quest button) and buttons, time label and buttons, unlock, teleport and screenshot, the
-// data reload row, back.
-DEVELOPER_ROW_COUNT :: 12
+// data reload row, the editors row, back.
+DEVELOPER_ROW_COUNT :: 13
 
 // Pending toggle requests (fly mode, cheat speed) flip the shown state, so
 // the check box shows the state once the requests are served.
@@ -143,6 +143,17 @@ developer_actions :: proc(state: ^Ui_State, content: ^Ui_Rectangle, screen_conte
 		screen_context.screenshot_requested^ = true
 	}
 	developer_reload_row(state, developer_row(content), screen_context)
+	developer_editors_row(state, developer_row(content), screen_context)
+}
+
+// The game's editors (DESIGN.md, Editors): the texture editor so far
+// (work item 0100). Opening it asks the frame loop to read the texture
+// files again, so Reset returns to the data file as it is now.
+developer_editors_row :: proc(state: ^Ui_State, row: Ui_Rectangle, screen_context: Screen_Context) {
+	if ui_button(state, column(row, 3, 0, UI_GAP), text("developer_texture_editor")) && screen_context.texture_editor != nil {
+		screen_context.texture_editor.refresh_requested = true
+		push_screen(&state.screens, .Textures)
+	}
 }
 
 // The label of the chapter completion buttons, and the button that

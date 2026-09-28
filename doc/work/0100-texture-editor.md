@@ -1,6 +1,6 @@
 # 0100 Texture editor
 
-Status: todo
+Status: implemented
 Milestone: M11
 
 ## Goal
@@ -25,3 +25,5 @@ The user (2026-09-28) wants to reroll and tune the procedural textures (0099) fr
 ## Notes
 
 Files a subagent may touch: new `src/ui_texture_editor.odin` and its test, `src/ui_developer.odin`, `src/ui_core.odin` (the screen enum and the screen context), `src/ui_screens.odin` (the screen dispatch), `src/loop.odin` (the context fields and the atlas update), `src/render_atlas.odin` (the tile update), `src/texture_generate.odin` (the overrides writer), `src/command.odin` and `src/command_test.odin`, `src/ui_audit_test.odin`, `data/strings/en.sjson`, the docs above, this file.
+
+Implemented: new `src/ui_texture_editor.odin` (`Texture_Editor`, `load_texture_editor`, `step_texture_seed`, `reroll_texture_seed`, `texture_field_source`, `texture_preview_pixel`, the screen with its list, preview, seed stepper, sliders and buttons) with `src/ui_texture_editor_test.odin` (seed step and reroll, the field against `face_tile_orientation` and `face_tile_offset`, the save file through `parse_procedural_textures` and the loader, value printing, a slider step and the list to controls focus through the screen, `query textures` without a world); `src/texture_generate.odin` (`snapped_texture_parameter`, `format_texture_parameter_value`, `format_procedural_texture_entry`, `format_texture_edits_file`, `write_texture_edits_file`); `src/render_atlas.odin` (`update_atlas_block_tile`); `src/ui_core.odin` (`Screen.Textures`, pausing); `src/ui_screens.odin` (the context's `texture_editor`, the dispatch); `src/ui_developer.odin` (the editors row); `src/loop.odin` (the editor in `Frame_State`, `serve_texture_editor` before each frame's screens, `save_texture_edits`, the command context's textures); `src/command.odin` (`query textures`, answered without a world); `src/ui_audit_test.odin` (the textures case over the shipped entries); `data/strings/en.sjson`; `doc/ui.md`, `doc/commands.md`, `doc/content.md`, `doc/log/2026-09-28.md`. The query test sits in the editor's test file rather than `src/command_test.odin`, since it needs no world.

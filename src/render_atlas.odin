@@ -226,3 +226,15 @@ upload_atlas :: proc(registry: Block_Registry, layout: Atlas_Layout, data_direct
 	rl.SetTextureFilter(texture, .POINT)
 	return texture
 }
+
+// The block's tiles of all three face groups replaced in the uploaded
+// atlas in place (the texture editor, work item 0100): the chunk meshes
+// keep their texcoords, so the world shows the tile in the next frame.
+update_atlas_block_tile :: proc(texture: rl.Texture2D, layout: Atlas_Layout, block: Block_Id, tile: Tile_Pixels) {
+	tile := tile
+	for group in Face_Group {
+		origin := tile_pixel_origin(layout, atlas_tile_index(block, group))
+		rectangle := rl.Rectangle{f32(origin.x), f32(origin.y), ATLAS_TILE_SIZE, ATLAS_TILE_SIZE}
+		rl.UpdateTextureRec(texture, rectangle, raw_data(tile[:]))
+	}
+}

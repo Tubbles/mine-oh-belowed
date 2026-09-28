@@ -90,6 +90,9 @@ Screen_Context :: struct {
 	reload_requested:     ^bool,
 	// Content files changed since the content was loaded.
 	data_changed:         bool,
+	// The texture editor's entries (ui_texture_editor.odin), kept by the
+	// frame loop. Nil in tests that open no editor.
+	texture_editor:       ^Texture_Editor,
 }
 
 // Pause opens the pause menu from the world, Open_Inventory the inventory,
@@ -171,6 +174,8 @@ run_screens :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		settings_screen(state, screen_context)
 	case .Developer:
 		developer_screen(state, screen_context)
+	case .Textures:
+		texture_editor_screen(state, screen_context)
 	case .Inventory:
 		inventory_screen(state, screen_context)
 	case .Machine:

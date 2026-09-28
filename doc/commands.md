@@ -60,6 +60,7 @@ The game can be driven from outside while someone plays: give items, skip chapte
 | `query quests` | `tools/moc query quests` | The active quest and its chapter, `objective <n> <current>/<required>` lines, quests done, pending rewards. |
 | `query contracts` | `tools/moc query contracts` | Venture credit and each open contract with its requests delivered. |
 | `query stats <item>` | `tools/moc query stats iron_plate` | `produced`, `consumed`, `obtained`, `delivered`, `voided`, `rate_per_minute`, `inventory`. |
+| `query textures` | `tools/moc query textures` | `textures <n>`, then one line per procedural texture with the texture editor's current parameters (0100, saved or not) in the form of `data/textures/procedural.sjson`, for example `{block = "hematite_ore", kind = "ore", seed = 1101, share = 0.2, blob_width = 0.65, crystal_size = 1, stone_grain = 8, stone_mottle = 16, ore_grain = 14, rim_strength = 0.15}`. Copy a line into the data file to make it the default. Answers without a world too. |
 
 ## Blueprints
 

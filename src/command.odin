@@ -56,6 +56,9 @@ Command_Context :: struct {
 	// world. Render only, so it is set here and not through a developer
 	// request, and never saved.
 	weather_override:     ^Maybe(Weather_Kind),
+	// The texture editor's entries (work item 0100) with their current
+	// parameters, for query textures.
+	textures:             []Texture_Editor_Entry,
 }
 
 // text may hold several lines. deferred: the tick command answers once
@@ -100,6 +103,7 @@ command_usages := [?]Command_Usage {
 	{"reload", "reload the content tables into the running world"},
 	{"screenshot [name]", "a PNG of the next frame, the answer names the path"},
 	{"query player|world|quests|contracts", "state as key value lines"},
+	{"query textures", "each procedural texture's current parameters in data/textures/procedural.sjson's form"},
 	{"query veins [radius] | query entities [kind] [radius] | query stats <item>", "state around the player, or of an item"},
 }
 
@@ -252,6 +256,11 @@ execute_command :: proc(command_context: Command_Context, words: []string) -> Co
 	case "pause", "resume":
 		command_context.control.paused = name == "pause"
 		return command_ok("%s", name == "pause" ? "paused" : "resumed")
+	case "query":
+		// The textures exist without a world.
+		if len(arguments) > 0 && arguments[0] == "textures" {
+			return query_textures(command_context, arguments[1:])
+		}
 	}
 	if command_context.simulation == nil || len(command_context.simulation.players) == 0 {
 		return command_error("no world is loaded")
@@ -929,7 +938,21 @@ command_query :: proc(command_context: Command_Context, arguments: []string) -> 
 	case "stats":
 		return query_stats(command_context, rest)
 	}
-	return usage_error("query player|world|veins|entities|quests|contracts|stats")
+	return usage_error("query player|world|veins|entities|quests|contracts|stats|textures")
+}
+
+// One line per procedural texture in the data file's form, the texture
+// editor's current parameters (work item 0100).
+query_textures :: proc(command_context: Command_Context, arguments: []string) -> Command_Response {
+	if len(arguments) > 0 {
+		return usage_error("query textures")
+	}
+	builder := strings.builder_make(context.temp_allocator)
+	fmt.sbprintf(&builder, "textures %d", len(command_context.textures))
+	for line in texture_editor_lines(command_context.textures) {
+		fmt.sbprintf(&builder, "\n%s", line)
+	}
+	return query_response(&builder)
 }
 
 query_response :: proc(builder: ^strings.Builder) -> Command_Response {

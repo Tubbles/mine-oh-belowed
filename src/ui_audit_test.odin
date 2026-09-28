@@ -118,6 +118,8 @@ Ui_Audit :: struct {
 	save_requested:     bool,
 	diagnostics_page:   Diagnostics_Page,
 	show_world_overlay: bool,
+	// The shipped procedural textures (work item 0100).
+	texture_editor:     Texture_Editor,
 	frame_arena:        virtual.Arena,
 	reported:           map[string]bool,
 	failures:           int,
@@ -275,6 +277,7 @@ audit_screen_context :: proc(audit: ^Ui_Audit) -> Screen_Context {
 		developer_requests = &simulation.developer_requests,
 		developer_chapter_count = len(audit.content.quests.chapters),
 		landing_pad = SAVE_TEST_LANDING_PAD,
+		texture_editor = &audit.texture_editor,
 	}
 }
 
@@ -485,6 +488,7 @@ make_ui_audit :: proc() -> ^Ui_Audit {
 	audit.item_sort_ranks = item_sort_ranks(audit.content.items, item_display_names(audit.content.items, context.temp_allocator), context.temp_allocator)
 	// Every quest but one is done, so the chapter and quest notes show.
 	audit.notes = make_test_notes(audit.content.quests)
+	load_texture_editor(&audit.texture_editor, test_data_directory(), "", audit.content.blocks)
 	return audit
 }
 
@@ -496,6 +500,7 @@ destroy_ui_audit :: proc(audit: ^Ui_Audit) {
 	destroy_save_summaries(&audit.title.saves)
 	delete(audit.title.saves)
 	destroy_map_view(&audit.map_view)
+	destroy_texture_editor(&audit.texture_editor)
 	virtual.arena_destroy(&audit.frame_arena)
 	for message in audit.reported {
 		delete(message)
@@ -590,6 +595,7 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 	audit_windowed_display(audit)
 	audit_desktop_scaled_display(audit)
 	audit_case(audit, {name = "developer", screens = {.Pause, .Developer}, walk_focus = true})
+	audit_case(audit, {name = "textures", screens = {.Pause, .Developer, .Textures}, walk_focus = true})
 	audit_case(audit, {name = "inventory", screens = {.Inventory}, walk_focus = true})
 	simulation := &audit.simulation
 	for handle in machines_with_panels(&simulation.world, audit.content) {

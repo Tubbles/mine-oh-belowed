@@ -163,6 +163,9 @@ Frame_State :: struct {
 	retired_strings:      [dynamic]map[string]string,
 	// F8, the Developer screen's Reload data button, watch_data all.
 	reload_requested:     bool,
+	// The texture editor's entries (work item 0100, ui_texture_editor.odin),
+	// read at start and served by serve_texture_editor.
+	texture_editor:       Texture_Editor,
 }
 
 // Above the middle of the debug terrain, looking down at an angle. The
@@ -728,6 +731,7 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 		diagnostics_page = &state.diagnostics_page,
 		show_world_overlay = &state.show_world_overlay,
 		developer_chapter_count = len(content.developer_kits.kits),
+		texture_editor  = &state.texture_editor,
 	}
 	session := state.session
 	if session == nil {
@@ -1044,6 +1048,8 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	defer shutdown_audio(&state.audio)
 	start_command_frame_state(&state)
 	defer destroy_command_frame_state(&state)
+	load_texture_editor(&state.texture_editor, data_directory, texture_edits_path(), state.content.blocks)
+	defer destroy_texture_editor(&state.texture_editor)
 	if session != nil {
 		enter_session(&state, session)
 	} else {
@@ -1053,6 +1059,7 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	apply_cursor_mode(&state)
 	for !rl.WindowShouldClose() && !state.quit_requested {
 		update_frame(&state)
+		serve_texture_editor(&state)
 		render_frame(&state)
 		update_audio(&state.audio, state.settings, state.frame_seconds)
 		apply_session_request(&state)
@@ -1153,6 +1160,7 @@ frame_command_context :: proc(state: ^Frame_State) -> Command_Context {
 	command_context := Command_Context {
 		content              = game_simulation_content(state.content),
 		control              = &state.command_control,
+		textures             = state.texture_editor.entries[:],
 		screenshot_directory = state.screenshot_directory,
 		now                  = time.now(),
 	}
@@ -1243,4 +1251,60 @@ capture_pending_screenshot :: proc(state: ^Frame_State) {
 	} else {
 		log_printf("error: screenshot: cannot write %s", path)
 	}
+}
+
+// The texture editor (work item 0100, ui_texture_editor.odin).
+
+// $XDG_STATE_HOME/mine-oh-belowed/texture_edits.sjson in the temp
+// allocator, "" without a state directory.
+texture_edits_path :: proc() -> string {
+	path, _ := texture_edits_path_from_environment(os.get_env("XDG_STATE_HOME", context.temp_allocator), os.get_env("HOME", context.temp_allocator), context.temp_allocator)
+	return path
+}
+
+// Before the frame's screens: the files read again when the Developer
+// screen asked or a content reload renumbered the blocks; while the
+// editor is open every entry's tile copied into the block atlas, which
+// also puts the edits back after a reload rebuilt the atlas from the
+// files; a Save written.
+serve_texture_editor :: proc(state: ^Frame_State) {
+	editor := &state.texture_editor
+	if editor.refresh_requested || !texture_editor_matches_registry(editor^, state.content.blocks) {
+		editor.refresh_requested = false
+		load_texture_editor(editor, state.data_directory, texture_edits_path(), state.content.blocks)
+	}
+	if screen_stack_contains(state.ui.screens, .Textures) {
+		for entry in editor.entries {
+			update_atlas_block_tile(chunk_atlas_texture(state.renderer), state.renderer.atlas_layout, entry.block, entry.tile)
+		}
+	}
+	if editor.save_requested {
+		editor.save_requested = false
+		save_texture_edits(state)
+	}
+}
+
+// Every texture's current parameters to the overrides file, one log line
+// per texture in the data file's form, and a toast naming the file.
+save_texture_edits :: proc(state: ^Frame_State) {
+	editor := &state.texture_editor
+	path := texture_edits_path()
+	problem := path == "" ? "no state directory (set XDG_STATE_HOME or HOME)" : ""
+	lines := texture_editor_lines(editor.entries[:])
+	if problem == "" {
+		problem = write_texture_edits_file(path, format_texture_edits_file(lines))
+	}
+	if problem != "" {
+		log_printf("error: texture edits: %s", problem)
+		ui_toast(&state.ui, fmt.tprintf("%s: %s", text("texture_editor_save_failed"), problem))
+		return
+	}
+	log_printf("texture edits saved to %s", path)
+	for line in lines {
+		log_printf("texture: %s", line)
+	}
+	for &entry in editor.entries {
+		entry.edited = false
+	}
+	ui_toast(&state.ui, fmt.tprintf("%s %s", text("texture_editor_saved"), path))
 }
