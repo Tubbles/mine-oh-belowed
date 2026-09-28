@@ -23,7 +23,8 @@ import "core:testing"
 // item. Every size also runs at the largest text scale (work item 0074):
 // widths are measured at the scaled size, as the game draws them, while a
 // text's height is checked at the size the layout named, since the rows
-// keep their height and larger text grows into their padding.
+// keep their height and larger text grows into their padding. The Steam
+// Deck preset's scales run once more at the Deck's size (work item 0076).
 
 Ui_Audit_Size :: struct {
 	pixels: [2]f32,
@@ -46,6 +47,10 @@ UI_AUDIT_SIZES :: [?]Ui_Audit_Size {
 // Each size runs at the default text size and at the largest (work item
 // 0074).
 UI_AUDIT_TEXT_SCALES :: [?]f32{1, TEXT_SCALE_RANGE.maximum}
+
+// The Steam Deck's screen at the Deck preset's interface scale, run at the
+// preset's text scale after the matrix (work item 0076).
+UI_AUDIT_DECK_SIZE :: Ui_Audit_Size{{1280, 800}, DECK_PRESET_UI_SCALE}
 
 UI_AUDIT_TOLERANCE :: 1.0
 // The Display tab's Resolution row lists the choices up to it.
@@ -355,6 +360,10 @@ audit_case :: proc(audit: ^Ui_Audit, audit_case: Ui_Audit_Case) {
 				audit_case_at_size(audit, audit_case, size, device)
 			}
 		}
+	}
+	audit.settings.text_scale = DECK_PRESET_TEXT_SCALE
+	for device in Input_Device {
+		audit_case_at_size(audit, audit_case, UI_AUDIT_DECK_SIZE, device)
 	}
 }
 

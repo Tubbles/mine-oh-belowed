@@ -76,6 +76,10 @@ Settings :: struct {
 	reduced_motion:            bool,
 	sneak_hold:                Hold_Mode,
 	sprint_hold:               Hold_Mode,
+	// Set by the Steam Deck preset (deck_preset.odin, work item 0076)
+	// when it applied, so it applies once and later starts leave the
+	// player's choices alone.
+	deck_preset_applied:       bool,
 }
 
 // Hold acts while the button is held, Toggle switches on a press.
@@ -121,6 +125,7 @@ DEFAULT_SETTINGS :: Settings {
 	// click.
 	sneak_hold                = .Hold,
 	sprint_hold               = .Toggle,
+	deck_preset_applied       = false,
 }
 
 UI_SCALE_RANGE :: Slider_Range{0.75, 1.5, 0.05}

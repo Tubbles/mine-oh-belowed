@@ -205,6 +205,7 @@ main :: proc() {
 		log_printf("error: %s", configuration_problem)
 		os.exit(1)
 	}
+	apply_deck_preset_at_start(environment, &loaded_configuration)
 	data_directory := require_data_directory()
 	fonts, fonts_problem := load_checked_fonts(data_directory, loaded_configuration)
 	if fonts_problem != "" {

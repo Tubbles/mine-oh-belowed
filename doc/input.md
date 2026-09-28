@@ -55,6 +55,16 @@ Read from the SDL `release-3.4.16` sources on 2026-09-27: `src/joystick/hidapi/S
    - Accelerometer: flat on the table, about +9.8 on the second value (y up) and near 0 on the others.
 5. Repeat steps 2 to 4 over the puck and over Bluetooth, and once with the Steam overlay open.
 
+## Steam Deck
+
+Work item 0076. The Deck's built in controls take the couch's path: the same launcher (`doc/build.md`, Steam Deck) unsets `SDL_GAMECONTROLLER_IGNORE_DEVICES` and sets `SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD=0`, so SDL may open the Deck's controller itself through its HIDAPI driver while Steam Input keeps running, and the gyro comes from Steam's layout as mouse movement, as on the couch (couch test checklist step 1). The couch machine's `libSDL3.so.0` carries a "Steam Deck" mapping (vendor 28de, product 1205) with `paddle1` to `paddle4`, the four back grips; the game binds the paddles exactly as the Steam Controller's (L4 Jump and Confirm, R4 Sneak and Back, L5 Rotate_Building, R5 Pipette). Which physical grip SDL names which paddle, and whether the Deck's own SDL opens the controller at all, is not known until the device is tested: the log line `input: opened gamepad ...` names the device, and an evdev path with `touchpads 0` means SDL got Steam's virtual pad instead.
+
+What to set in the Deck's controller layout for the shortcut (Game Mode, the shortcut's controller settings, Edit Layout):
+
+- Gyro: as mouse, activated while the right pad or the right stick is touched, as on the couch.
+- Trackpads: no mouse or other output, so they reach SDL alone (they drive the radial hotbar and the pointer only when SDL opened the controller through HIDAPI).
+- Back grips: if SDL got the real controller they arrive as the paddles and need no binding in Steam. If SDL got the virtual pad (no paddles), bind them in the layout to the buttons of the same actions: L4 to A, R4 to B, L5 to Y, R5 to d-pad up.
+
 ## Layout proposal for the alpha
 
 Everything below is a binding table in configuration, not code. Same physical input, two contexts.

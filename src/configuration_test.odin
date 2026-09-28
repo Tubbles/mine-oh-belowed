@@ -256,6 +256,7 @@ test_settings_file_round_trip :: proc(t: ^testing.T) {
 	settings.reduced_motion = true
 	settings.sneak_hold = .Toggle
 	settings.sprint_hold = .Hold
+	settings.deck_preset_applied = true
 	testing.expect_value(t, write_settings_file(environment, settings), "")
 
 	loaded, problem := load_configuration(environment, {})
@@ -281,6 +282,7 @@ test_settings_file_round_trip :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(string(written_data), "\tfield_of_view = 95\n"), string(written_data))
 	testing.expect(t, strings.contains(string(written_data), "\tpalette = \"colour_blind\"\n"), string(written_data))
 	testing.expect(t, strings.contains(string(written_data), "\tsneak_hold = \"toggle\"\n"), string(written_data))
+	testing.expect(t, strings.contains(string(written_data), "\tdeck_preset_applied = true\n"), string(written_data))
 }
 
 @(test)
