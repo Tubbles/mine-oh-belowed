@@ -132,7 +132,8 @@ reload_models :: proc(state: ^Frame_State) -> string {
 	return machine_problem != "" ? machine_problem : player_problem
 }
 
-// Both atlases are made again from the files. The block atlas layout
+// Both atlases are made again from the files, the block atlas with the
+// procedural tiles generated again (texture_generate.odin). The layout
 // depends on the block count alone, so the chunk meshes keep their tile
 // coordinates. A file that does not load takes its fallback and is
 // logged; the rest still load.

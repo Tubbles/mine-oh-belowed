@@ -44,7 +44,8 @@ Data_File_Category :: enum u8 {
 	// The .vox files under models/ (model_vox.odin).
 	Models,
 	// The .png files under textures/blocks/ and textures/items/
-	// (render_atlas.odin, render_icons.odin).
+	// (render_atlas.odin, render_icons.odin) and
+	// textures/procedural.sjson (texture_generate.odin).
 	Textures,
 	// sounds/sounds.sjson and the .wav files under sounds/ (audio.odin).
 	Sounds,
@@ -118,6 +119,8 @@ data_file_category :: proc(relative_path: string) -> Data_File_Category {
 		return name == FONTS_FILE_NAME ? .Fonts : .Ignored
 	case MODELS_DIRECTORY:
 		return strings.has_suffix(name, MODEL_FILE_EXTENSION) && !strings.has_prefix(name, ".") ? .Models : .Ignored
+	case TEXTURES_DIRECTORY:
+		return name == PROCEDURAL_TEXTURES_FILE_NAME ? .Textures : .Ignored
 	case BLOCK_TEXTURES_DIRECTORY, ITEM_TEXTURES_DIRECTORY:
 		return strings.has_suffix(name, TEXTURE_FILE_EXTENSION) && !strings.has_prefix(name, ".") ? .Textures : .Ignored
 	case SOUNDS_DIRECTORY:

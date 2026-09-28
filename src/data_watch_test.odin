@@ -38,6 +38,8 @@ test_data_files_fall_into_their_categories :: proc(t: ^testing.T) {
 		{"textures/items/.iron_plate.png.swp", .Ignored},
 		{"textures/blocks/notes.txt", .Ignored},
 		{"textures/stone.png", .Ignored},
+		{"textures/procedural.sjson", .Textures},
+		{"textures/.procedural.sjson.swp", .Ignored},
 		{"sounds/sounds.sjson", .Sounds},
 		{"sounds/footstep_stone.wav", .Sounds},
 		{"sounds/.footstep_stone.wav.swp", .Ignored},

@@ -10,8 +10,11 @@ import rl "shared:raylib"
 // The block atlas, built at startup and on a reload: one 16 by 16 tile per
 // face group per block. A tile comes from data/textures/blocks/<id>.png,
 // or from <id>_top.png, <id>_side.png or <id>_bottom.png for its group
-// when that file exists. A block or group without a file falls back to
-// its base colour from blocks.sjson plus a little per texel noise.
+// when that file exists. A block with an entry in
+// data/textures/procedural.sjson takes its generated tile for all three
+// groups instead (texture_generate.odin, work item 0099). A block or group
+// without either falls back to its base colour from blocks.sjson plus a
+// little per texel noise.
 
 ATLAS_TILE_SIZE :: 16
 ATLAS_COLUMNS :: 16
@@ -171,8 +174,16 @@ texture_file_path :: proc(data_directory, directory, name: string) -> string {
 	return fmt.tprintf("%s/%s/%s%s", data_directory, directory, name, TEXTURE_FILE_EXTENSION)
 }
 
-// The plain file serves every group a group file does not override.
-read_block_face_tiles :: proc(data_directory, block_id: string) -> (tiles: Block_Face_Tiles) {
+// A generated tile serves every group, before any file is looked for.
+// Otherwise the plain file serves every group a group file does not
+// override.
+read_block_face_tiles :: proc(data_directory, block_id: string, generated: Maybe(Tile_Pixels) = nil) -> (tiles: Block_Face_Tiles) {
+	if tile, found := generated.?; found {
+		for group in Face_Group {
+			tiles[group] = tile
+		}
+		return tiles
+	}
 	plain, plain_found := read_tile_file(texture_file_path(data_directory, BLOCK_TEXTURES_DIRECTORY, block_id))
 	for group in Face_Group {
 		name := fmt.tprintf("%s%s", block_id, face_group_file_suffixes[group])
@@ -185,19 +196,25 @@ read_block_face_tiles :: proc(data_directory, block_id: string) -> (tiles: Block
 	return tiles
 }
 
-// Indexed by Block_Id, in the temp allocator.
-read_block_textures :: proc(registry: Block_Registry, data_directory: string) -> []Block_Face_Tiles {
+// Indexed by Block_Id, in the temp allocator. procedural holds the
+// entries of load_procedural_textures.
+read_block_textures :: proc(registry: Block_Registry, data_directory: string, procedural: []Procedural_Texture) -> []Block_Face_Tiles {
 	tiles := make([]Block_Face_Tiles, len(registry.definitions), context.temp_allocator)
 	for definition, block_index in registry.definitions {
-		tiles[block_index] = read_block_face_tiles(data_directory, definition.id)
+		generated := generate_procedural_tile(procedural, registry, Block_Id(block_index))
+		tiles[block_index] = read_block_face_tiles(data_directory, definition.id, generated)
 	}
 	return tiles
 }
 
 // Point filtering keeps the texels sharp. There are no mipmaps, so tiles do
-// not bleed into their neighbours at a distance.
+// not bleed into their neighbours at a distance. The procedural entries
+// are read again on every upload, the texture edits from the state
+// directory with them.
 upload_atlas :: proc(registry: Block_Registry, layout: Atlas_Layout, data_directory: string) -> rl.Texture2D {
-	pixels := generate_atlas_pixels(registry, layout, read_block_textures(registry, data_directory), context.temp_allocator)
+	edits_path, _ := texture_edits_path_from_environment(os.get_env("XDG_STATE_HOME", context.temp_allocator), os.get_env("HOME", context.temp_allocator), context.temp_allocator)
+	procedural := load_procedural_textures(data_directory, edits_path, registry)
+	pixels := generate_atlas_pixels(registry, layout, read_block_textures(registry, data_directory, procedural), context.temp_allocator)
 	image := rl.Image {
 		data    = raw_data(pixels),
 		width   = i32(atlas_pixel_width(layout)),

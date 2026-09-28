@@ -1,0 +1,30 @@
+// Procedural block textures (work item 0099): the game generates these
+// tiles from the parameters below instead of reading a file under
+// textures/blocks/ (src/texture_generate.odin). The colours come from
+// blocks.sjson: the ore from the block's texture.side, the ground from
+// stone's. Every key is required; an unknown key, an unknown block, a
+// value outside its range or a kind other than "ore" refuses the file.
+// $XDG_STATE_HOME/mine-oh-belowed/texture_edits.sjson (the texture editor,
+// work item 0100) has the same form and replaces entries per block.
+//
+// kind = "ore": blobs of ore over stone.
+//   seed          0 to 2147483647: the noise.
+//   share         0.05 to 0.5, step 0.01: the fraction of texels in blobs.
+//   blob_width    0.3 to 3, step 0.05: the blur's standard deviation in
+//                 texels; wider gives fewer, larger blobs.
+//   crystal_size  1 to 4: the noise is constant over cells of this many
+//                 texels a side; 1 is round blobs, 2 and up blocky ones.
+//   stone_grain   0 to 32: per texel brightness offset of the stone.
+//   stone_mottle  0 to 48: smooth brightness offset of the stone.
+//   ore_grain     0 to 48: per texel brightness offset of the ore.
+//   rim_strength  0 to 0.8, step 0.05: stone next to a blob is darker by
+//                 this fraction, an outline for depth.
+textures = [
+	{block = "hematite_ore", kind = "ore", seed = 1101, share = 0.2, blob_width = 0.65, crystal_size = 1, stone_grain = 8, stone_mottle = 16, ore_grain = 14, rim_strength = 0.15}
+	{block = "coal_ore", kind = "ore", seed = 1102, share = 0.2, blob_width = 0.75, crystal_size = 1, stone_grain = 8, stone_mottle = 16, ore_grain = 8, rim_strength = 0.1}
+	{block = "chalcopyrite_ore", kind = "ore", seed = 1103, share = 0.18, blob_width = 0.6, crystal_size = 1, stone_grain = 8, stone_mottle = 16, ore_grain = 16, rim_strength = 0.15}
+	{block = "cassiterite_ore", kind = "ore", seed = 1104, share = 0.2, blob_width = 0.65, crystal_size = 1, stone_grain = 8, stone_mottle = 16, ore_grain = 8, rim_strength = 0.1}
+	{block = "galena_ore", kind = "ore", seed = 1105, share = 0.16, blob_width = 0.4, crystal_size = 2, stone_grain = 8, stone_mottle = 16, ore_grain = 10, rim_strength = 0.15}
+	{block = "sphalerite_ore", kind = "ore", seed = 1106, share = 0.2, blob_width = 0.6, crystal_size = 1, stone_grain = 8, stone_mottle = 16, ore_grain = 14, rim_strength = 0.15}
+	{block = "pentlandite_ore", kind = "ore", seed = 1107, share = 0.16, blob_width = 0.6, crystal_size = 1, stone_grain = 8, stone_mottle = 16, ore_grain = 14, rim_strength = 0.15}
+]

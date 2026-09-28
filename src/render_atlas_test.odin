@@ -65,7 +65,7 @@ test_block_texture_file_lands_in_its_tile :: proc(t: ^testing.T) {
 		definitions = definitions[:],
 	}
 	layout := atlas_layout_for_block_count(len(definitions))
-	pixels := generate_atlas_pixels(registry, layout, read_block_textures(registry, test_data_directory()), context.temp_allocator)
+	pixels := generate_atlas_pixels(registry, layout, read_block_textures(registry, test_data_directory(), nil), context.temp_allocator)
 	stone := read_test_block_tile("stone")
 	for group in Face_Group {
 		testing.expect_value(t, atlas_tile_texels(pixels, layout, atlas_tile_index(Block_Id(1), group)), stone)
@@ -79,7 +79,7 @@ test_block_without_texture_file_falls_back_to_colour :: proc(t: ^testing.T) {
 		definitions = definitions[:],
 	}
 	layout := atlas_layout_for_block_count(len(definitions))
-	tiles := read_block_textures(registry, test_data_directory())
+	tiles := read_block_textures(registry, test_data_directory(), nil)
 	testing.expect(t, tiles[1][.Top] == nil && tiles[1][.Side] == nil && tiles[1][.Bottom] == nil)
 	with_files := generate_atlas_pixels(registry, layout, tiles, context.temp_allocator)
 	without_files := generate_atlas_pixels(registry, layout, nil, context.temp_allocator)

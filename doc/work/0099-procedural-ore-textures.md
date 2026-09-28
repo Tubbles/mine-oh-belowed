@@ -1,6 +1,6 @@
 # 0099 Procedural ore textures
 
-Status: todo
+Status: implemented
 Milestone: M11
 
 ## Goal
@@ -29,3 +29,5 @@ Couch report (2026-09-28): the per block variation of 0088 is good, but the ore 
 ## Notes
 
 Files a subagent may touch: new `src/texture_generate.odin` and `src/texture_generate_test.odin`, `src/render_atlas.odin`, `src/render_atlas_test.odin`, `src/data_watch.odin` and its test, `src/hot_reload.odin`, new `data/textures/procedural.sjson`, the seven ore PNG files (deleted), `tools/make_placeholder_textures.py`, the docs above, this file. Not the UI, which is 0100.
+
+Implemented: `src/texture_generate.odin` (the generator `generate_ore_tile` with `white_noise_field`, `blur_on_torus`, `blob_mask`, `rim_mask`; the schema `Ore_Texture_Parameter` and `ore_texture_parameter_ranges` with `ore_texture_parameter` and `set_ore_texture_parameter` for the editor; the strict parser `parse_procedural_textures`, `merge_procedural_textures`, `load_procedural_textures`, `texture_edits_path_from_environment`, `generate_procedural_tile`) with `src/texture_generate_test.odin`; `src/render_atlas.odin` (`read_block_face_tiles` takes the generated tile first, `read_block_textures` takes the entries, `upload_atlas` loads them); `src/data_watch.odin` and its test (`textures/procedural.sjson` is Textures); the comment of `reload_textures` in `src/hot_reload.odin`; `data/textures/procedural.sjson` with the seven ores; the seven ore PNG files deleted; `tools/make_placeholder_textures.py` skips the blocks of the procedural file; `doc/content.md`, `doc/architecture.md`, `doc/log/2026-09-28.md`. Parameters: `seed`, `share`, `blob_width`, `crystal_size`, `stone_grain`, `stone_mottle`, `ore_grain`, `rim_strength`. The cause of the grid was not the blur's edges (the script's blur already wrapped) but two or three large blobs per tile cut at the wrapped edge, see the log. `test_write_ore_texture_previews` with `-define:TEXTURE_PREVIEW=true` writes the tiles and 6 by 6 oriented fields to `tmp/texture_preview/`.
