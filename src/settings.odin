@@ -19,6 +19,9 @@ Settings :: struct {
 	// Rain, fog, wind and cloud shadows (work item 0063); off keeps the
 	// weather clear, still and without shadows, for reduced motion.
 	weather:                   bool,
+	// The first person camera rises and falls with each step (work item
+	// 0066); off for reduced motion.
+	head_bob:                  bool,
 	// Gyro aiming in the world (SDL3 backend only).
 	gyro_enabled:              bool,
 	// Multipliers on the base look rates.
@@ -56,6 +59,7 @@ DEFAULT_SETTINGS :: Settings {
 	frame_rate_cap            = 0,
 	ui_scale                  = 1,
 	weather                   = true,
+	head_bob                  = true,
 	gyro_enabled              = true,
 	stick_look_sensitivity    = 1,
 	gyro_look_sensitivity     = 1,

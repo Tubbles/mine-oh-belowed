@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Write the placeholder machine models (work items 0055 and 0056) to
-data/models/.
+"""Write the placeholder machine models (work items 0055 and 0056) and
+the player's limbs (work item 0066) to data/models/.
 
 Usage: tools/make_placeholder_models.py
 
@@ -107,6 +107,9 @@ PAD_GREY = (120, 122, 128)
 PAD_STRIPE = (220, 180, 40)
 SWITCH_BODY = (80, 80, 86)
 INSERTER_POST = (70, 70, 76)
+SUIT = (60, 110, 200)
+SUIT_DARK = (38, 62, 110)
+VISOR = (24, 30, 44)
 
 FIRE = glow((240, 150, 60))
 FLAME = glow((255, 190, 80))
@@ -122,11 +125,13 @@ class Model:
     """Voxels in game axes, keyed by (x, y, z), valued by a colour: an RGB
     tuple, or four entries for a glow colour."""
 
-    def __init__(self, footprint: tuple[int, int, int]):
+    def __init__(self, footprint: tuple[int, int, int], size: tuple[int, int, int] | None = None):
+        """size, in voxels, replaces the size the footprint gives, for a
+        frame that is not a whole number of blocks (the player set)."""
         width, height, depth = footprint
         self.voxels_per_block = 16 if width == 1 and depth == 1 else 8
         per_block = self.voxels_per_block
-        self.size = (width * per_block, height * per_block, depth * per_block)
+        self.size = size or (width * per_block, height * per_block, depth * per_block)
         self.voxels: dict[tuple[int, int, int], tuple] = {}
 
     def box(self, minimum: tuple[int, int, int], maximum: tuple[int, int, int], colour) -> None:
@@ -759,6 +764,62 @@ def launch_pad():
     return {"": model}
 
 
+# The player (work item 0066): six limbs in one frame of 10 by 29 by 10
+# voxels at 16 per block, about the 0.6 by 1.8 by 0.6 blocks of the
+# collision box. Every limb file has the whole frame's size, so the limbs
+# stand in place when drawn at the same transform; the game swings each
+# about a pivot it takes from the limb's voxel bounds (the top of an arm
+# or a leg, the bottom of the head). The front is +x, the right side +z.
+
+PLAYER_FRAME = (10, 29, 10)
+
+
+def player_limb() -> Model:
+    return Model((1, 2, 1), size=PLAYER_FRAME)
+
+
+def player_torso() -> Model:
+    model = player_limb()
+    model.box((3, 13, 2), (6, 22, 7), SUIT)
+    model.box((3, 13, 2), (6, 13, 7), SUIT_DARK)
+    return model
+
+
+def player_head() -> Model:
+    """A helmet with the darker visor on the front."""
+    model = player_limb()
+    model.box((2, 23, 2), (7, 28, 7), SUIT)
+    model.box((7, 24, 3), (7, 26, 6), VISOR)
+    return model
+
+
+def player_arm(z: int) -> Model:
+    """Two voxels square, a darker glove at the bottom."""
+    model = player_limb()
+    model.box((4, 12, z), (5, 22, z + 1), SUIT)
+    model.box((4, 12, z), (5, 13, z + 1), SUIT_DARK)
+    return model
+
+
+def player_leg(z: int) -> Model:
+    """Three voxels across, a darker boot at the bottom."""
+    model = player_limb()
+    model.box((3, 0, z), (6, 12, z + 2), SUIT)
+    model.box((3, 0, z), (6, 2, z + 2), SUIT_DARK)
+    return model
+
+
+def player():
+    return {
+        "_torso": player_torso(),
+        "_head": player_head(),
+        "_arm_left": player_arm(0),
+        "_arm_right": player_arm(8),
+        "_leg_left": player_leg(2),
+        "_leg_right": player_leg(5),
+    }
+
+
 MODELS = {
     "wooden_chest": wooden_chest,
     "iron_chest": iron_chest,
@@ -802,6 +863,7 @@ MODELS = {
     "core_sample_drill": core_sample_drill,
     "launch_pad": launch_pad,
     "lab": lab,
+    "player": player,
 }
 
 

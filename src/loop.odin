@@ -114,6 +114,11 @@ Frame_State :: struct {
 	particles:          Particle_System,
 	particle_memory:    Particle_Memory,
 	particle_renderer:  Particle_Renderer,
+	// The player's body and arm (work item 0066, render_player_model.odin)
+	// and what its animation remembers of the last frame, reset with the
+	// session.
+	player_model:       Player_Model,
+	player_animation:   Player_Animation_Memory,
 	show_diagnostics:   bool,
 	// The world statistics overlay (draw_world_overlay), off by default.
 	show_world_overlay: bool,
@@ -469,15 +474,19 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session, sky: Day_Sky,
 	tick_rate := session.simulation.tick_rate
 	player := session.simulation.players[0]
 	alpha := f32(interpolation_alpha(session.accumulator))
-	camera := fly_camera_to_raylib(player_view_camera(world, content.blocks, player, alpha))
 	seconds := rl.GetTime()
+	update_player_presence(&state.player_animation, &state.particles, state.particle_memory, world, content.blocks, player, session.simulation.tick, seconds)
+	pose := interpolate_player_pose(player, alpha)
+	animation := player_animation_state(state.player_animation, player, pose.pitch, seconds)
+	bob := head_bob_offset(animation.walk_phase, head_bob_amplitude(animation.moving, animation.sprinting, state.settings.head_bob))
+	view := player_view_camera(world, content.blocks, player, alpha, bob)
+	camera := fly_camera_to_raylib(view)
 	apply_weather(&state.renderer, weather_look(weather, state.settings.weather, sky.blend), seconds)
 	underwater = camera_underwater(world, content.blocks, camera.position)
 	if underwater {
 		apply_fog(&state.renderer, underwater_fog())
 	}
 	rl.BeginMode3D(camera)
-	defer rl.EndMode3D()
 	draw_sky(&state.renderer.sky, camera, sky)
 	draw_chunks(&state.renderer, camera)
 	frame := Model_Frame{world = world, tick = session.simulation.tick, alpha = alpha, tick_rate = tick_rate, day_factor = day_factor(sky.blend), sky_tint = color_to_vector3(sky.colors.sun_tint)}
@@ -494,7 +503,12 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session, sky: Day_Sky,
 	update_particles(&state.particles, &state.particle_memory, world, frame_simulation_content(state), state.model_renderer, session.simulation.players[:], tick_rate, state.frame_seconds)
 	draw_particles(&state.particle_renderer, camera, &state.particles, state.particle_memory, world, state.model_renderer, color_to_vector3(sky.colors.sun_tint) * day_factor(sky.blend))
 	draw_session_weather(session, camera, weather, sky, seconds)
-	draw_player_world_overlay(world, frame_simulation_content(state), state.model_renderer, &state.belt_renderer, session.simulation.players[:], 0, alpha)
+	body := Player_Body_Draw{renderer = state.model_renderer, model = state.player_model, animation = animation, light = player_body_light(frame, player_eye(pose.position))}
+	draw_player_world_overlay(world, frame_simulation_content(state), state.model_renderer, &state.belt_renderer, session.simulation.players[:], 0, alpha, body)
+	rl.EndMode3D()
+	if player.camera_mode == .First_Person {
+		draw_first_person_hands(view, body, Item_Billboards{camera = camera, atlas = state.item_atlas}, content.items, selected_hotbar_stack(player))
+	}
 	return underwater
 }
 
@@ -692,6 +706,7 @@ enter_session :: proc(state: ^Frame_State, session: ^Session) {
 	state.session = session
 	state.particles = {}
 	state.particle_memory = {}
+	state.player_animation = {}
 	state.ui.screens = {}
 	state.ui.keyboard = {}
 	state.ui.tooltip_open = false
@@ -804,6 +819,8 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	defer destroy_model_renderer(&state.model_renderer)
 	state.particle_renderer = init_particle_renderer()
 	defer destroy_particle_renderer(&state.particle_renderer)
+	state.player_model = init_player_model(data_directory)
+	defer unload_player_model(&state.player_model)
 	start_command_frame_state(&state)
 	defer destroy_command_frame_state(&state)
 	if session != nil {

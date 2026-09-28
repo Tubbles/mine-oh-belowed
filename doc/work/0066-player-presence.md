@@ -1,6 +1,6 @@
 # 0066 The player has hands
 
-Status: todo
+Status: implemented
 Milestone: M11
 
 ## Goal
@@ -31,3 +31,5 @@ Implementation pointers (main agent, 2026-09-28), decisions taken so the item is
 - Docs: `doc/ui.md` (the setting, the hands), `doc/architecture.md` (rendering: the player), `doc/content.md` (the model set in `data/models/`), `doc/work/0073-camera-polish.md` (the head bob line), `doc/log/2026-09-28.md`, this item's Status and Notes.
 
 Files a subagent may touch: new `src/render_player_model.odin`, `src/render_player_model_test.odin`, `src/player_animation.odin`, `src/player_animation_test.odin`; `src/render_player.odin`, `src/hot_reload.odin`, `src/loop.odin` (the state fields, the model load and the draw calls), `src/settings.odin`, `src/configuration_test.odin`, `src/ui_screens.odin`, `src/ui_audit_test.odin`, `tools/make_placeholder_models.py`, new `data/models/player_*.vox`, `data/strings/en.sjson`, the docs above, `doc/work/0073-camera-polish.md`, this file.
+
+Implemented: new `src/player_animation.odin` (the walk phase, the swings, the head bob, the step detector, `Player_Animation_Memory`) and `src/player_animation_test.odin`; new `src/render_player_model.odin` (the limb set's loader, the pivots from the voxel bounds, the body, limb and first person transforms, the upload and reload) and `src/render_player_model_test.odin`; `src/render_player.odin` (the bob in `player_view_camera`, the body in place of the capsule, `draw_first_person_hands`, the footstep dust); `src/loop.odin` (the `Frame_State` fields, the model's load and unload, the memory reset in `enter_session`, the animation, bob and draws in `draw_session_world`, whose world pass now ends before the first person pass); `src/hot_reload.odin` (`reload_models` also reloads the player); `src/settings.odin` (`head_bob`), `src/ui_screens.odin` (the Display tab toggle), `src/configuration_test.odin`, `data/strings/en.sjson`; `tools/make_placeholder_models.py` and the six `data/models/player_*.vox`; `doc/ui.md`, `doc/architecture.md`, `doc/content.md`, `doc/work/0073-camera-polish.md`. Decisions the item left open are in `doc/log/2026-09-28.md`. 858 tests pass.

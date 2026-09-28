@@ -2,6 +2,7 @@ package game
 
 import "core:math"
 import rl "vendor:raylib"
+import "vendor:raylib/rlgl"
 
 THIRD_PERSON_DISTANCE :: 4.0
 THIRD_PERSON_HEIGHT :: 0.75
@@ -57,7 +58,9 @@ third_person_position :: proc(world: ^World, registry: Block_Registry, eye: [3]f
 	return eye + direction * max(hit.distance - THIRD_PERSON_WALL_MARGIN, 0)
 }
 
-player_view_camera :: proc(world: ^World, registry: Block_Registry, player: Player, alpha: f32) -> Fly_Camera {
+// bob is the head bob in blocks (work item 0066), which only the first
+// person eye takes.
+player_view_camera :: proc(world: ^World, registry: Block_Registry, player: Player, alpha: f32, bob: f32) -> Fly_Camera {
 	pose := interpolate_player_pose(player, alpha)
 	view := Fly_Camera {
 		position = player_eye(pose.position),
@@ -66,6 +69,8 @@ player_view_camera :: proc(world: ^World, registry: Block_Registry, player: Play
 	}
 	if player.camera_mode == .Third_Person {
 		view.position = third_person_position(world, registry, view.position, fly_camera_forward(view))
+	} else {
+		view.position.y += bob
 	}
 	return view
 }
@@ -167,7 +172,8 @@ draw_inserter_ghost :: proc(placement: Placement, machines: Machine_Registry, mo
 	draw_ghost_chevron(inserter_ghost_chevron(placement, top), BELT_GHOST_ARROW_COLOR)
 }
 
-// Placeholder body, a capsule over the collision box.
+// The capsule over the collision box, while the player model did not
+// load.
 draw_player_body :: proc(position: [3]f32) {
 	radius := f32(PLAYER_WIDTH / 2)
 	bottom := position + {0, radius, 0}
@@ -175,11 +181,93 @@ draw_player_body :: proc(position: [3]f32) {
 	rl.DrawCapsule(bottom, top, radius, 12, 6, PLAYER_BODY_COLOR)
 }
 
-// Between BeginMode3D and EndMode3D, after the chunks.
-draw_player_world_overlay :: proc(world: ^World, content: Simulation_Content, models: Model_Renderer, belts: ^Belt_Renderer, players: []Player, index: int, alpha: f32) {
+// What the body and the first person arm are drawn with this frame
+// (work item 0066). light is the world light at the eye.
+Player_Body_Draw :: struct {
+	renderer:  Model_Renderer,
+	model:     Player_Model,
+	animation: Player_Animation_State,
+	light:     rl.Color,
+}
+
+// The world light at the eye, like a machine model's.
+player_body_light :: proc(frame: Model_Frame, eye: [3]f32) -> rl.Color {
+	light := world_get_light(frame.world, camera_world_coordinate(eye))
+	return brightness_color(model_light_tint(light, frame.day_factor, frame.sky_tint))
+}
+
+// The six limbs posed by the animation, or the capsule.
+draw_player_third_person :: proc(body: Player_Body_Draw, pose: Player_Pose) {
+	if !body.model.loaded {
+		draw_player_body(pose.position)
+		return
+	}
+	draw_player_model(body.renderer, body.model, pose, player_limb_angles(body.animation), body.light)
+}
+
+// The held stack's icon, or its coloured cube for an item without one.
+draw_player_held_item :: proc(billboards: Item_Billboards, items: Item_Registry, item: Item_Id, centre: [3]f32) {
+	if item_has_icon(billboards.atlas, item) {
+		rl.DrawBillboardRec(billboards.camera, billboards.atlas.texture, item_atlas_source(billboards.atlas, item), centre, {HELD_ITEM_SIZE, HELD_ITEM_SIZE}, rl.WHITE)
+		return
+	}
+	rl.DrawCubeV(centre, HELD_ITEM_SIZE / 2, item_cube_color(items, item))
+}
+
+// After the world's 3D pass and before the UI, in a pass of its own with
+// the depth test off so the arm draws over the world: the right arm held
+// forward from the lower right of the view, chopping while mining and
+// swinging on a place, and the selected hotbar stack at the hand. It
+// rides the bobbed camera. Nothing without the player model.
+draw_first_person_hands :: proc(view: Fly_Camera, body: Player_Body_Draw, billboards: Item_Billboards, items: Item_Registry, held: Item_Stack) {
+	if !body.model.loaded {
+		return
+	}
+	rl.BeginMode3D(billboards.camera)
+	defer rl.EndMode3D()
+	rlgl.DrawRenderBatchActive()
+	rlgl.DisableDepthTest()
+	defer rlgl.EnableDepthTest()
+	defer rlgl.DrawRenderBatchActive()
+	arm := camera_frame_transform(view.position, view.yaw, view.pitch) * first_person_arm_transform(body.model.pivots[.Arm_Right], right_arm_action_angle(body.animation))
+	draw_player_limb(body.renderer, body.model, .Arm_Right, arm * player_model_scale(), body.light)
+	if !stack_is_empty(held) {
+		draw_player_held_item(billboards, items, held.item, transform_point(arm, body.model.hand - {0, HELD_ITEM_REACH, 0}))
+	}
+}
+
+// Dust kicked up under the feet on a step (work item 0066): on the ground
+// and out of water, in the colour of the block stood on.
+FOOTSTEP_DUST_COUNT :: 6
+FOOTSTEP_DUST_SPREAD :: 0.15
+
+footstep_dust_due :: proc(footstep, on_ground, in_water: bool) -> bool {
+	return footstep && on_ground && !in_water
+}
+
+spawn_footstep_dust :: proc(particles: ^Particle_System, particle_memory: Particle_Memory, world: ^World, blocks: Block_Registry, position: [3]f32) {
+	under := world_get_block(world, camera_world_coordinate(position - {0, COLLISION_EPSILON, 0}))
+	emitter := Emitter{position = position + {0, 0.05, 0}, kind = .Puff, color = block_debris_color(blocks, under), spread = FOOTSTEP_DUST_SPREAD}
+	spawn_particle_count(particles, emitter, FOOTSTEP_DUST_COUNT, emitter_random_key(particle_memory.frame_count, emitter))
+}
+
+// Once a frame, before the camera: the animation memory learns the
+// frame, and a step puts dust into the particle pool.
+update_player_presence :: proc(memory: ^Player_Animation_Memory, particles: ^Particle_System, particle_memory: Particle_Memory, world: ^World, blocks: Block_Registry, player: Player, tick: u64, render_seconds: f64) {
+	footstep: bool
+	memory^, footstep = advance_player_animation_memory(memory^, world.statistics.distance_walked_millimetres, placed_total(world.statistics), tick, render_seconds)
+	in_water := footstep && box_touches_water(world, blocks, player_box(player.position))
+	if footstep_dust_due(footstep, player.on_ground, in_water) {
+		spawn_footstep_dust(particles, particle_memory, world, blocks, player.position)
+	}
+}
+
+// Between BeginMode3D and EndMode3D, after the chunks. The body shows in
+// third person only.
+draw_player_world_overlay :: proc(world: ^World, content: Simulation_Content, models: Model_Renderer, belts: ^Belt_Renderer, players: []Player, index: int, alpha: f32, body: Player_Body_Draw) {
 	player := players[index]
 	if player.camera_mode == .Third_Person {
-		draw_player_body(interpolate_player_pose(player, alpha).position)
+		draw_player_third_person(body, interpolate_player_pose(player, alpha))
 	}
 	if !player.target.hit {
 		return

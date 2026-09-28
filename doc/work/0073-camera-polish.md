@@ -5,11 +5,11 @@ Milestone: M11
 
 ## Goal
 
-Field of view, a sprint kick, head bob and the third person shoulder as settings, all off under reduced motion.
+Field of view, a sprint kick and the third person shoulder as settings, all off under reduced motion. The head bob and its toggle came with 0066.
 
 ## Deliverables
 
-- FOV setting, sprint FOV kick, head bob toggle, third person shoulder offset setting.
+- FOV setting, sprint FOV kick, third person shoulder offset setting (the head bob toggle is 0066's).
 - Tests: the settings round trip and the reduced motion rule.
 
 ## Verify

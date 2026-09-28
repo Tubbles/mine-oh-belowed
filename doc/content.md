@@ -84,6 +84,8 @@ Pending the decision on whether tools gate anything (SUGGESTIONS.md). Listed as 
 
 A machine's `model` key (0055) names a `.vox` file in `data/models`, authored in MagicaVoxel at 8 or 16 voxels per block with z up and the model's +x side as its front; the mesh is scaled to the footprint. Placeholders come from `tools/make_placeholder_models.py` until an artist replaces them; since 0056 every machine but belts and pipes has one. A `motion` key (kind `pump`, `spin`, `swing`, `bob` or `glow`; `axis`; `amplitude` in blocks or turns; `period_seconds`; `pivot` and, for arms, `hand` in footprint blocks) moves the machine's `<model>_part.vox` while it works: drills pump, assemblers and engines spin, inserter arms swing with their item, pumps bob, furnaces and labs glow. Palette indices 240 to 255 are emissive.
 
+The player's body (0066) is six files in `data/models`: `player_torso.vox`, `player_head.vox`, `player_arm_left.vox`, `player_arm_right.vox`, `player_leg_left.vox` and `player_leg_right.vox`, each the whole 10 by 29 by 10 voxel frame at 16 per block (about the 0.6 by 1.8 by 0.6 block collision box) with only its limb filled, +x the front and +z the right side. The game swings each limb about a pivot it reads from the limb's voxel bounds, so a replacement keeps the frame size and puts the shoulders at the tops of the arms, the hips at the tops of the legs and the neck under the head. The placeholders come from the same script.
+
 Footprint is width by depth by height in blocks. Power is electric unless marked fuel.
 
 | Machine | Footprint | Recipe | Rate | Power | Channel |

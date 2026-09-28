@@ -122,10 +122,14 @@ reload_shaders :: proc(state: ^Frame_State) -> string {
 	return chunk_reloaded && water_reloaded ? "" : problem
 }
 
-// Every machine's mesh is made again from the files. A model that does
-// not load keeps every old mesh.
+// Every machine's mesh and the player's limbs (work item 0066) are made
+// again from the files. A machine model that does not load keeps every
+// old machine mesh, a limb that does not load keeps the old player; the
+// other still reloads.
 reload_models :: proc(state: ^Frame_State) -> string {
-	return replace_machine_models(&state.model_renderer, state.content.machines, state.data_directory)
+	machine_problem := replace_machine_models(&state.model_renderer, state.content.machines, state.data_directory)
+	player_problem := replace_player_model(&state.player_model, state.data_directory)
+	return machine_problem != "" ? machine_problem : player_problem
 }
 
 // Both atlases are made again from the files. The block atlas layout
