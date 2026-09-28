@@ -4,11 +4,16 @@ import "core:math"
 import rl "vendor:raylib"
 import "vendor:raylib/rlgl"
 
+// The default third person distance; settings.third_person_distance
+// holds the player's.
 THIRD_PERSON_DISTANCE :: 4.0
 THIRD_PERSON_HEIGHT :: 0.75
 // Kept between the pulled in camera and the block that blocked it, so the
 // near plane does not clip into the block.
 THIRD_PERSON_WALL_MARGIN :: 0.2
+// The sprint field of view kick eases in or out over this long (work item
+// 0073).
+SPRINT_KICK_SECONDS :: 0.3
 TARGET_OUTLINE_COLOR :: rl.Color{20, 20, 20, 255}
 MINING_OUTLINE_COLOR :: rl.Color{240, 240, 240, 255}
 GHOST_VALID_COLOR :: rl.Color{60, 220, 90, 90}
@@ -45,10 +50,22 @@ interpolate_player_pose :: proc(player: Player, alpha: f32) -> Player_Pose {
 	}
 }
 
-// Behind and above the eye along the reverse look direction, pulled in
-// when a solid block lies between the eye and that spot.
-third_person_position :: proc(world: ^World, registry: Block_Registry, eye: [3]f32, forward: [3]f32) -> [3]f32 {
-	offset := -forward * THIRD_PERSON_DISTANCE + {0, THIRD_PERSON_HEIGHT, 0}
+// Behind and above the eye along the reverse look direction, and shoulder
+// blocks to the camera's right (from the yaw, so looking up or down does
+// not tip it).
+third_person_offset :: proc(forward: [3]f32, yaw, distance, shoulder: f32) -> [3]f32 {
+	return -forward * distance + {0, THIRD_PERSON_HEIGHT, 0} + camera_right(yaw) * shoulder
+}
+
+// Yaw 0 looks along +x, so the right is +z (fly_camera_velocity).
+camera_right :: proc(yaw: f32) -> [3]f32 {
+	radians := yaw * math.RAD_PER_DEG
+	return {-math.sin(radians), 0, math.cos(radians)}
+}
+
+// The eye moved by offset, pulled in when a solid block lies between the
+// eye and that spot.
+third_person_position :: proc(world: ^World, registry: Block_Registry, eye: [3]f32, offset: [3]f32) -> [3]f32 {
 	length := math.sqrt(offset.x * offset.x + offset.y * offset.y + offset.z * offset.z)
 	direction := offset / length
 	hit := raycast_blocks(world, registry, eye, direction, length)
@@ -59,8 +76,9 @@ third_person_position :: proc(world: ^World, registry: Block_Registry, eye: [3]f
 }
 
 // bob is the head bob in blocks (work item 0066), which only the first
-// person eye takes.
-player_view_camera :: proc(world: ^World, registry: Block_Registry, player: Player, alpha: f32, bob: f32) -> Fly_Camera {
+// person eye takes. The third person camera sits where the settings'
+// distance and shoulder put it (work item 0073).
+player_view_camera :: proc(world: ^World, registry: Block_Registry, player: Player, alpha: f32, bob: f32, settings: Settings) -> Fly_Camera {
 	pose := interpolate_player_pose(player, alpha)
 	view := Fly_Camera {
 		position = player_eye(pose.position),
@@ -68,11 +86,26 @@ player_view_camera :: proc(world: ^World, registry: Block_Registry, player: Play
 		pitch    = pose.pitch,
 	}
 	if player.camera_mode == .Third_Person {
-		view.position = third_person_position(world, registry, view.position, fly_camera_forward(view))
+		offset := third_person_offset(fly_camera_forward(view), view.yaw, settings.third_person_distance, settings.third_person_shoulder)
+		view.position = third_person_position(world, registry, view.position, offset)
 	} else {
 		view.position.y += bob
 	}
 	return view
+}
+
+// The sprint kick's progress from 0 to 1: towards 1 while sprinting,
+// towards 0 otherwise, a full swing in SPRINT_KICK_SECONDS of frame time.
+advance_sprint_kick :: proc(progress: f32, sprinting: bool, frame_seconds: f32) -> f32 {
+	step := frame_seconds / SPRINT_KICK_SECONDS
+	return sprinting ? min(progress + step, 1) : max(progress - step, 0)
+}
+
+// The field of view with the kick eased in and out (smoothstep) by the
+// progress from advance_sprint_kick.
+sprint_field_of_view :: proc(field_of_view, kick, progress: f32) -> f32 {
+	eased := progress * progress * (3 - 2 * progress)
+	return field_of_view + kick * eased
 }
 
 block_centre :: proc(block: World_Coordinate) -> [3]f32 {

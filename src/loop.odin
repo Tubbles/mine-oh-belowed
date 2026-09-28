@@ -78,6 +78,8 @@ Frame_State :: struct {
 	haptic:             Haptic_Request,
 	previous_input:     Input_Frame,
 	frame_seconds:      f32,
+	// The sprint field of view kick's progress, 0 to 1 (advance_sprint_kick).
+	sprint_kick:        f32,
 	// The Render page's frame time average and the ticks update_session
 	// ran this frame (work item 0086).
 	frame_times:        Frame_Time_Ring,
@@ -602,8 +604,9 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session, sky: Day_Sky,
 	pose := interpolate_player_pose(player, alpha)
 	animation := player_animation_state(state.player_animation, player, pose.pitch, seconds)
 	bob := head_bob_offset(animation.walk_phase, head_bob_amplitude(animation.moving, animation.sprinting, state.settings.head_bob))
-	view := player_view_camera(world, content.blocks, player, alpha, bob)
-	camera := fly_camera_to_raylib(view)
+	view := player_view_camera(world, content.blocks, player, alpha, bob, state.settings)
+	state.sprint_kick = advance_sprint_kick(state.sprint_kick, animation.moving && player_sprints(player, state.input.pressed), state.frame_seconds)
+	camera := fly_camera_to_raylib(view, sprint_field_of_view(state.settings.field_of_view, state.settings.sprint_field_of_view_kick, state.sprint_kick))
 	apply_weather(&state.renderer, weather_look(weather, state.settings.weather, sky.blend), seconds)
 	apply_shadows(&state.renderer, shadow_frame(state.settings.shadows, camera.position, sky.fraction), camera.position)
 	counts.underwater = camera_underwater(world, content.blocks, camera.position)

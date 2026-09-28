@@ -67,14 +67,14 @@ test_player_limb_transforms :: proc(t: ^testing.T) {
 
 // The first person hand and the held item sit in the lower right of the
 // view at rest: in front, below and right of the centre, inside the
-// vertical field of view.
+// narrowest vertical field of view the settings allow.
 @(test)
 test_first_person_hand_is_in_view :: proc(t: ^testing.T) {
 	mesh, problem := load_player_model_mesh(test_data_directory(), context.temp_allocator)
 	testing.expect_value(t, problem, "")
 	arm := first_person_arm_transform(mesh.pivots[.Arm_Right], 0)
 	expect_near_point(t, transform_point(arm, mesh.pivots[.Arm_Right]), FIRST_PERSON_SHOULDER, "shoulder")
-	half_height := math.tan(f32(CAMERA_FIELD_OF_VIEW_DEGREES) / 2 * math.RAD_PER_DEG)
+	half_height := math.tan(FIELD_OF_VIEW_RANGE.minimum / 2 * math.RAD_PER_DEG)
 	for point in ([2][3]f32{mesh.hand, mesh.hand - {0, HELD_ITEM_REACH, 0}}) {
 		view := transform_point(arm, point)
 		testing.expectf(t, view.x > 0.3 && view.y < 0 && view.z > 0, "%v in the lower right, in front", view)

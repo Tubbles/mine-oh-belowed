@@ -239,6 +239,10 @@ test_settings_file_round_trip :: proc(t: ^testing.T) {
 	settings.weather = false
 	settings.shadows = true
 	settings.head_bob = false
+	settings.field_of_view = 95
+	settings.sprint_field_of_view_kick = 0
+	settings.third_person_distance = 6.5
+	settings.third_person_shoulder = -0.4
 	settings.master_volume = 0.55
 	settings.effects_volume = 0.25
 	settings.ambience_volume = 0
@@ -264,6 +268,7 @@ test_settings_file_round_trip :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(string(written_data), "\twindow_mode = \"fullscreen\"\n"), string(written_data))
 	testing.expect(t, strings.contains(string(written_data), "\tresolution = [1920, 1080]\n"), string(written_data))
 	testing.expect(t, strings.contains(string(written_data), "\tmaster_volume = 0.55\n"), string(written_data))
+	testing.expect(t, strings.contains(string(written_data), "\tfield_of_view = 95\n"), string(written_data))
 }
 
 @(test)
@@ -324,6 +329,12 @@ test_configuration_display_settings :: proc(t: ^testing.T) {
 	write_test_file(drop_in, "settings = {resolution = [320, 7680] frame_rate_cap = 480}")
 	_, problem = load_configuration(test_environment(root), {})
 	testing.expect_value(t, problem, "")
+	write_test_file(drop_in, "settings = {field_of_view = 60 sprint_field_of_view_kick = 15 third_person_distance = 2 third_person_shoulder = -1}")
+	_, problem = load_configuration(test_environment(root), {})
+	testing.expect_value(t, problem, "")
+	write_test_file(drop_in, "settings = {field_of_view = 110 sprint_field_of_view_kick = 0 third_person_distance = 8 third_person_shoulder = 1}")
+	_, problem = load_configuration(test_environment(root), {})
+	testing.expect_value(t, problem, "")
 
 	Invalid :: struct {
 		text:    string,
@@ -345,6 +356,15 @@ test_configuration_display_settings :: proc(t: ^testing.T) {
 		{`settings = {weather = "on"}`, "settings.weather must be a boolean"},
 		{`settings = {shadows = "on"}`, "settings.shadows must be a boolean"},
 		{`settings = {head_bob = "on"}`, "settings.head_bob must be a boolean"},
+		{"settings = {field_of_view = 59}", "settings.field_of_view is 59, outside 60 to 110"},
+		{"settings = {field_of_view = 111}", "settings.field_of_view is 111, outside 60 to 110"},
+		{"settings = {sprint_field_of_view_kick = -1}", "settings.sprint_field_of_view_kick is -1, outside 0 to 15"},
+		{"settings = {sprint_field_of_view_kick = 16}", "settings.sprint_field_of_view_kick is 16, outside 0 to 15"},
+		{"settings = {third_person_distance = 1.5}", "settings.third_person_distance is 1.5, outside 2 to 8"},
+		{"settings = {third_person_distance = 9}", "settings.third_person_distance is 9, outside 2 to 8"},
+		{"settings = {third_person_shoulder = -1.5}", "settings.third_person_shoulder is -1.5, outside -1 to 1"},
+		{"settings = {third_person_shoulder = 2}", "settings.third_person_shoulder is 2, outside -1 to 1"},
+		{`settings = {field_of_view = "wide"}`, "settings.field_of_view must be a number"},
 	}
 	for case_value in invalid {
 		write_test_file(drop_in, case_value.text)

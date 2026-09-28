@@ -11,7 +11,7 @@ SETTINGS_PANEL_WIDTH :: 960
 // Title, tabs, the longest tab's rows and the back button. The tabs
 // scroll where the panel is shorter (UI scale 1.5).
 SETTINGS_ROW_COUNT :: 14
-DISPLAY_SETTINGS_ROW_COUNT :: 14
+DISPLAY_SETTINGS_ROW_COUNT :: 18
 AUDIO_SETTINGS_ROW_COUNT :: 3
 CONTROL_SETTINGS_ROW_COUNT :: 5
 
@@ -373,6 +373,7 @@ settings_row :: proc(content: ^Ui_Rectangle) -> Ui_Rectangle {
 
 display_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Settings, monitor_size: [2]int, desktop_scaled: bool, font_families: []Font_Family) {
 	window_settings(state, content, settings, monitor_size, desktop_scaled)
+	camera_settings(state, content, settings)
 	ui_toggle(state, settings_row(content), text("settings_weather"), &settings.weather, text("settings_weather_tooltip"))
 	ui_toggle(state, settings_row(content), text("settings_shadows"), &settings.shadows, text("settings_shadows_tooltip"))
 	ui_toggle(state, settings_row(content), text("settings_head_bob"), &settings.head_bob, text("settings_head_bob_tooltip"))
@@ -429,6 +430,56 @@ window_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Set
 	if ui_choice(state, settings_row(content), text("settings_frame_rate_cap"), cap_text, text("settings_frame_rate_cap_tooltip")) {
 		settings.frame_rate_cap = next_frame_rate_cap(settings.frame_rate_cap)
 	}
+}
+
+// Applied at once: the frame loop reads them for each frame's camera
+// (draw_session_world, work item 0073).
+camera_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Settings) {
+	ui_slider(
+		state,
+		settings_row(content),
+		text("settings_field_of_view"),
+		&settings.field_of_view,
+		FIELD_OF_VIEW_RANGE,
+		whole_number_text(settings.field_of_view),
+		text("settings_field_of_view_tooltip"),
+	)
+	ui_slider(
+		state,
+		settings_row(content),
+		text("settings_sprint_field_of_view_kick"),
+		&settings.sprint_field_of_view_kick,
+		SPRINT_FIELD_OF_VIEW_KICK_RANGE,
+		whole_number_text(settings.sprint_field_of_view_kick),
+		text("settings_sprint_field_of_view_kick_tooltip"),
+	)
+	ui_slider(
+		state,
+		settings_row(content),
+		text("settings_third_person_distance"),
+		&settings.third_person_distance,
+		THIRD_PERSON_DISTANCE_RANGE,
+		blocks_text(settings.third_person_distance),
+		text("settings_third_person_distance_tooltip"),
+	)
+	ui_slider(
+		state,
+		settings_row(content),
+		text("settings_third_person_shoulder"),
+		&settings.third_person_shoulder,
+		THIRD_PERSON_SHOULDER_RANGE,
+		blocks_text(settings.third_person_shoulder),
+		text("settings_third_person_shoulder_tooltip"),
+	)
+}
+
+whole_number_text :: proc(value: f32) -> string {
+	return fmt.tprintf("%d", int(math.round(value)))
+}
+
+// Blocks to one decimal.
+blocks_text :: proc(value: f32) -> string {
+	return fmt.tprintf("%.1f", value)
 }
 
 @(rodata)

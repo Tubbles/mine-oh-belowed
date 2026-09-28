@@ -1,6 +1,6 @@
 # 0073 Camera polish
 
-Status: todo
+Status: implemented
 Milestone: M11
 
 ## Goal
@@ -26,3 +26,5 @@ Implementation pointers (main agent, 2026-09-28), decisions taken so the item is
 - Docs: `doc/ui.md` (the settings), `doc/log/2026-09-28.md`, this item's Status and Notes.
 
 Files a subagent may touch: `src/settings.odin`, `src/configuration.odin`, `src/configuration_test.odin`, `src/ui_screens.odin`, `src/ui_audit_test.odin`, `src/render_chunks.odin`, `src/render_player.odin`, `src/render_player_test.odin` if it exists or new, `src/loop.odin` (the camera call), `data/strings/en.sjson`, the docs above, this file.
+
+Implemented: `src/settings.odin` (the four settings, defaults and slider ranges), `src/configuration.odin` (their range checks), `src/configuration_test.odin` (round trip, both range ends, out of range and type refusals), `src/ui_screens.odin` (`camera_settings` after the window rows, 18 Display rows), `data/strings/en.sjson`, `src/render_chunks.odin` (`fly_camera_to_raylib` takes the field of view, the constant is gone), `src/render_player.odin` (`third_person_offset`, `camera_right`, `advance_sprint_kick`, `sprint_field_of_view`), `src/render_player_test.odin` (new: the kick blend and the shoulder direction), `src/loop.odin` (`Frame_State.sprint_kick` and the camera call), `doc/ui.md`, `doc/log/2026-09-28.md`. Outside the list, `src/player_test.odin` and `src/render_player_model_test.odin` follow the changed signature and the removed constant (see the log). The UI audit's Display tab case walks the new rows. 935 tests pass.

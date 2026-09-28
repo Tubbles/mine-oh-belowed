@@ -11,7 +11,6 @@ CHUNK_FRAGMENT_SHADER_PATH :: "shaders/chunk.fs"
 
 // The fog starts at this share of its end distance (fog_distances).
 FOG_START_SHARE :: 0.6
-CAMERA_FIELD_OF_VIEW_DEGREES :: 70.0
 // Block light flickers like torchlight (work item 0072): two sines of the
 // render time with these periods, between LIGHT_FLICKER_MINIMUM and 1.
 LIGHT_FLICKER_FIRST_SECONDS :: 0.17
@@ -271,12 +270,13 @@ upload_streamed_meshes :: proc(renderer: ^Chunk_Renderer, streaming: ^Chunk_Stre
 	}
 }
 
-fly_camera_to_raylib :: proc(camera: Fly_Camera) -> rl.Camera3D {
+// field_of_view is the vertical one in degrees (sprint_field_of_view).
+fly_camera_to_raylib :: proc(camera: Fly_Camera, field_of_view: f32) -> rl.Camera3D {
 	return rl.Camera3D {
 		position = camera.position,
 		target = fly_camera_target(camera),
 		up = {0, 1, 0},
-		fovy = CAMERA_FIELD_OF_VIEW_DEGREES,
+		fovy = field_of_view,
 		projection = .PERSPECTIVE,
 	}
 }

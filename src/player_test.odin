@@ -198,12 +198,12 @@ test_third_person_camera_pulls_in_before_a_wall :: proc(t: ^testing.T) {
 	registry := make_test_registry()
 	world := make_floor_world(registry, 32)
 	eye := [3]f32{0.5, 2.6, 0.5}
-	free := third_person_position(&world, registry, eye, {1, 0, 0})
+	free := third_person_position(&world, registry, eye, third_person_offset({1, 0, 0}, 0, THIRD_PERSON_DISTANCE, 0))
 	testing.expectf(t, abs(free.x - (0.5 - THIRD_PERSON_DISTANCE)) < 1e-3, "x %v", free.x)
 	for y in i32(1) ..= 6 {
 		set_blocks(&world, test_block(registry, "stone"), {-2, y, 0})
 	}
-	blocked := third_person_position(&world, registry, eye, {1, 0, 0})
+	blocked := third_person_position(&world, registry, eye, third_person_offset({1, 0, 0}, 0, THIRD_PERSON_DISTANCE, 0))
 	testing.expectf(t, blocked.x > -1 && blocked.x < 0.5, "x %v", blocked.x)
 }
 

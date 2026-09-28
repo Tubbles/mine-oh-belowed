@@ -16,6 +16,14 @@ Settings :: struct {
 	vsync:                     bool,
 	frame_rate_cap:            int,
 	ui_scale:                  f32,
+	// The camera (work item 0073), in degrees and blocks: the vertical
+	// field of view, the degrees added to it while sprinting (eased in and
+	// out, sprint_field_of_view), and the third person camera's distance
+	// behind the eye and its offset to the right of it.
+	field_of_view:             f32,
+	sprint_field_of_view_kick: f32,
+	third_person_distance:     f32,
+	third_person_shoulder:     f32,
 	// Rain, fog, wind and cloud shadows (work item 0063); off keeps the
 	// weather clear, still and without shadows, for reduced motion.
 	weather:                   bool,
@@ -68,6 +76,11 @@ DEFAULT_SETTINGS :: Settings {
 	vsync                     = true,
 	frame_rate_cap            = 0,
 	ui_scale                  = 1,
+	field_of_view             = 70,
+	sprint_field_of_view_kick = 6,
+	third_person_distance     = THIRD_PERSON_DISTANCE,
+	// The camera to the right, so the player stands left of centre.
+	third_person_shoulder     = 0.6,
 	weather                   = true,
 	shadows                   = false,
 	head_bob                  = true,
@@ -92,6 +105,10 @@ UI_SCALE_RANGE :: Slider_Range{0.75, 1.5, 0.05}
 LOOK_SENSITIVITY_RANGE :: Slider_Range{0.25, 3, 0.05}
 POINTER_SPEED_RANGE :: Slider_Range{0.5, 3, 0.1}
 VOLUME_RANGE :: Slider_Range{0, 1, 0.05}
+FIELD_OF_VIEW_RANGE :: Slider_Range{60, 110, 1}
+SPRINT_FIELD_OF_VIEW_KICK_RANGE :: Slider_Range{0, 15, 1}
+THIRD_PERSON_DISTANCE_RANGE :: Slider_Range{2, 8, 0.5}
+THIRD_PERSON_SHOULDER_RANGE :: Slider_Range{-1, 1, 0.1}
 // 0 turns autosave off. The configuration accepts up to
 // MAXIMUM_AUTOSAVE_MINUTES; the slider stops at an hour so a stick can
 // walk it.
