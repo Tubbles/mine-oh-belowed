@@ -219,3 +219,45 @@ test_approximate_width_follows_the_default_font :: proc(t: ^testing.T) {
 		testing.expectf(t, width > approximation * 0.9, "%v: measured %v looks unread", weight, width)
 	}
 }
+
+// The code points of the list the font file maps to no glyph, in the
+// temp allocator; all of them when the file cannot be read. raylib's
+// loader asks stb_truetype for each code point's glyph index and treats 0
+// as missing; font_glyph_index reads the same cmap. rl.LoadFontData would
+// be the direct check, but it pulls raylib and X11 into the test link,
+// which the test build does not set up (see font_file_text_width).
+font_file_missing_code_points :: proc(path: string, code_points: []rune) -> []rune {
+	data, error := os.read_entire_file(path, context.temp_allocator)
+	if error != nil {
+		return code_points
+	}
+	missing := make([dynamic]rune, context.temp_allocator)
+	for code_point in code_points {
+		if font_glyph_index(data, code_point) == 0 {
+			append(&missing, code_point)
+		}
+	}
+	return missing[:]
+}
+
+// Work item 0091: every code point past ASCII in the shipped string table
+// (the ones collect_code_points adds to every font load) exists in both
+// files of every shipped family, or that family shows "?" for it.
+@(test)
+test_shipped_fonts_have_every_string_glyph :: proc(t: ^testing.T) {
+	fonts, problem := load_fonts(test_data_directory())
+	defer destroy_arena(fonts.arena)
+	testing.expect_value(t, problem, "")
+	all_code_points := collect_code_points(#load("../data/strings/en.sjson", string), context.temp_allocator)
+	code_points := all_code_points[LAST_ASCII_CODE_POINT - FIRST_ASCII_CODE_POINT + 1:]
+	testing.expect(t, slice.contains(code_points, '×'))
+	fonts_directory := join_save_path(test_data_directory(), FONTS_DIRECTORY)
+	for family in fonts.families {
+		for weight in Font_Weight {
+			path := font_file_path(fonts_directory, family, weight)
+			for code_point in font_file_missing_code_points(path, code_points) {
+				testing.expectf(t, false, "%s %v has no glyph for U+%04X %q", family.id, weight, code_point, code_point)
+			}
+		}
+	}
+}

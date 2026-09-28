@@ -7,9 +7,10 @@ import "core:unicode/utf8"
 // the detail panel may show. ui_recipes.odin draws it.
 
 // The recipe list shows the recipes of one category that carry every
-// selected tag, and with craftable_only only those craftable now. The
-// selection mode (choosing an assembler's recipe) adds makers, which the
-// recipe must be made in, and available_only.
+// selected tag, with craftable_only only those craftable now, and with
+// available_only (the "Unlocked only" toggle, on by default) only the
+// unlocked ones. The selection mode (choosing an assembler's recipe) adds
+// makers, which the recipe must be made in, and forces available_only.
 Recipe_Filter :: struct {
 	category:       Recipe_Category,
 	tags:           Recipe_Tag_Set,
@@ -124,8 +125,9 @@ recipe_detail :: proc(recipes: Recipe_Registry, unlocks: Recipe_Unlocks, recipe:
 }
 
 // The filter that shows a recipe reached through the graph: its category,
-// and the tag and craftable filters dropped when they would hide it.
-filter_showing_recipe :: proc(filter: Recipe_Filter, recipe: Recipe, craftable: bool) -> Recipe_Filter {
+// and the tag, craftable and unlocked filters dropped when they would hide
+// it.
+filter_showing_recipe :: proc(filter: Recipe_Filter, recipe: Recipe, craftable, available: bool) -> Recipe_Filter {
 	result := filter
 	result.category = recipe.category
 	if result.tags & recipe.tags != result.tags {
@@ -134,7 +136,23 @@ filter_showing_recipe :: proc(filter: Recipe_Filter, recipe: Recipe, craftable: 
 	if result.craftable_only && !craftable {
 		result.craftable_only = false
 	}
+	if result.available_only && !available {
+		result.available_only = false
+	}
 	return result
+}
+
+// How many times the inventory covers the recipe's item inputs: the
+// smallest have divided by need. A recipe without item inputs counts as 0.
+crafts_covered :: proc(inventory: Inventory, recipe: Recipe) -> int {
+	if len(recipe.inputs) == 0 {
+		return 0
+	}
+	covered := max(int)
+	for input in recipe.inputs {
+		covered = min(covered, inventory_count(inventory, input.item) / max(int(input.count), 1))
+	}
+	return covered
 }
 
 // Letters bound to menu actions on the keyboard (WASD navigate, Q and E

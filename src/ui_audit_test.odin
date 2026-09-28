@@ -735,3 +735,24 @@ test_inventory_screen_quick_move_and_drop :: proc(t: ^testing.T) {
 	screen_test_frame(audit, &state, {drop = true})
 	testing.expect_value(t, player.inventory.slots[3], EMPTY_STACK)
 }
+
+// Work item 0091: a focused unlocked recipe's ingredients read have and
+// need, and the filter column offers the unlocked only toggle.
+@(test)
+test_recipe_screen_shows_have_and_need :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	player := &audit.simulation.players[0]
+	plank := test_recipe(audit.content.recipes, "plank")
+	log_item := test_item(audit.content.items, "log")
+	audit.browser.focused_recipe = plank
+	state := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&state)
+	push_screen(&state.screens, .Recipes)
+	screen_test_frame(audit, &state, {})
+	line := ingredient_line(inventory_count(player.inventory, log_item), 1, item_name(audit.content.items, log_item))
+	testing.expectf(t, draw_list_has_text(state.draw_list[:], line), "no row %q", line)
+	testing.expect(t, draw_list_has_text(state.draw_list[:], text("recipes_unlocked_only")))
+	covered := crafts_covered(player.inventory, audit.content.recipes.recipes[plank])
+	testing.expect(t, draw_list_has_text(state.draw_list[:], can_craft_text(covered)))
+}

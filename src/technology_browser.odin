@@ -44,10 +44,13 @@ technology_status_keys := [Technology_Status]string {
 }
 
 // "10 × 10 s" per the content tables, and the pack items. units is the
-// cost of the next research (technology_next_cost).
+// cost of the next research (technology_next_cost). The sign lives in the
+// string table, so every font loads its glyph (collect_code_points).
 technology_cost_text :: proc(technology: Technology, units: int, items: Item_Registry) -> string {
 	seconds := f32(technology.milliseconds_per_pack) / 1000
-	return fmt.tprintf("%d × %.0f s  (%s)", units, seconds, pack_names_text(technology.science_packs, items))
+	line := replace_message_mark(text("technologies_cost_line"), "{count}", fmt.tprint(units))
+	line = replace_message_mark(line, "{seconds}", fmt.tprintf("%.0f", seconds))
+	return replace_message_mark(line, "{packs}", pack_names_text(technology.science_packs, items))
 }
 
 // "Level 2" for an infinite technology with levels done, else "".

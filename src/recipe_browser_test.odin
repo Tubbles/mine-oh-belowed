@@ -103,14 +103,64 @@ test_graph_step_adjusts_the_filter :: proc(t: ^testing.T) {
 	wood := tag_index(test.recipes, "wood")
 	filter := Recipe_Filter{category = .Materials, tags = {wood}, craftable_only = true}
 	lab := test.recipes.recipes[test_recipe(test.recipes, "lab")]
-	shown := filter_showing_recipe(filter, lab, false)
+	shown := filter_showing_recipe(filter, lab, false, true)
 	testing.expect_value(t, shown.category, Recipe_Category.Machines)
 	testing.expect_value(t, shown.tags, Recipe_Tag_Set{})
 	testing.expect(t, !shown.craftable_only)
 	chest := test.recipes.recipes[test_recipe(test.recipes, "wooden_chest")]
-	kept := filter_showing_recipe(filter, chest, true)
+	kept := filter_showing_recipe(filter, chest, true, true)
 	testing.expect_value(t, kept.tags, Recipe_Tag_Set{wood})
 	testing.expect(t, kept.craftable_only)
+}
+
+// Work item 0091: a locked recipe reached through the graph drops the
+// unlocked only filter, an available one keeps it.
+@(test)
+test_graph_step_to_a_locked_recipe_drops_unlocked_only :: proc(t: ^testing.T) {
+	test := make_browser_test()
+	filter := make_recipe_browser().filter
+	circuit := test_recipe(test.recipes, "electronic_circuit")
+	locked := filter_showing_recipe(filter, test.recipes.recipes[circuit], false, recipe_is_available(test.unlocks, circuit))
+	testing.expect(t, !locked.available_only)
+	plank := test_recipe(test.recipes, "plank")
+	kept := filter_showing_recipe(filter, test.recipes.recipes[plank], false, recipe_is_available(test.unlocks, plank))
+	testing.expect(t, kept.available_only)
+}
+
+// Work item 0091: the browser opens with unlocked only on, which hides the
+// locked recipes; turning the toggle off shows them as silhouettes.
+@(test)
+test_default_filter_hides_locked_recipes :: proc(t: ^testing.T) {
+	test := make_browser_test()
+	craftable := craftable_recipes(test.recipes, test.unlocks, test.inventory, context.temp_allocator)
+	filter := make_recipe_browser().filter
+	testing.expect(t, filter.available_only)
+	filter.category = .Science
+	testing.expect_value(t, len(filter_recipes(test.recipes, test.order, filter, craftable, test.unlocks.available, context.temp_allocator)), 0)
+	filter.available_only = false
+	testing.expect_value(t, len(filter_recipes(test.recipes, test.order, filter, craftable, test.unlocks.available, context.temp_allocator)), 2)
+	filter.category = .Materials
+	filter.available_only = true
+	for recipe in filter_recipes(test.recipes, test.order, filter, craftable, test.unlocks.available, context.temp_allocator) {
+		testing.expectf(t, recipe_is_available(test.unlocks, recipe), "%s is locked", test.names[recipe])
+	}
+}
+
+// Work item 0091: the smallest have divided by need over the inputs.
+@(test)
+test_crafts_covered :: proc(t: ^testing.T) {
+	test := make_browser_test()
+	gear := test.recipes.recipes[test_recipe(test.recipes, "iron_gear")]
+	testing.expect_value(t, crafts_covered(test.inventory, gear), 0)
+	inventory_add(test.inventory, test.items, test_item(test.items, "iron_plate"), 5)
+	testing.expect_value(t, crafts_covered(test.inventory, gear), 2)
+	testing.expect_value(t, crafts_covered(test.inventory, Recipe{}), 0)
+	two_inputs := Recipe {
+		inputs = []Item_Stack{{test_item(test.items, "iron_plate"), 1}, {test_item(test.items, "stone"), 2}},
+	}
+	testing.expect_value(t, crafts_covered(test.inventory, two_inputs), 0)
+	inventory_add(test.inventory, test.items, test_item(test.items, "stone"), 7)
+	testing.expect_value(t, crafts_covered(test.inventory, two_inputs), 3)
 }
 
 @(test)
@@ -147,4 +197,18 @@ test_browser_selection_mode_lists_assembler_recipes :: proc(t: ^testing.T) {
 	record_obtained_item(&test.unlocks, test_item(test.items, "iron_gear"))
 	refresh_available_recipes(&test.unlocks, test.recipes)
 	testing.expect_value(t, len(filter_recipes(test.recipes, test.order, science, craftable, test.unlocks.available, context.temp_allocator)), 1)
+}
+
+// Work item 0091: the ingredient, stack and craft count lines from the
+// shipped string table.
+@(test)
+test_recipe_detail_lines :: proc(t: ^testing.T) {
+	use_shipped_strings()
+	defer thread_string_table = nil
+	test := make_browser_test()
+	stone := test_item(test.items, "stone")
+	testing.expect_value(t, ingredient_line(13, 5, item_name(test.items, stone)), "13 / 5 Stone")
+	testing.expect_value(t, stack_line(Item_Stack{stone, 5}, test.items), "5 × Stone")
+	testing.expect_value(t, can_craft_text(2), "Can craft 2")
+	testing.expect_value(t, can_craft_text(0), "Can craft 0")
 }

@@ -6,7 +6,8 @@ import "core:strings"
 
 // The recipe browser (DESIGN.md, User interface): the inventory tab strip
 // on the bumpers (ui_inventory.odin), the category tabs as a focusable
-// row stepped with left and right, the "can craft now" toggle and the tag filter on the left, the
+// row stepped with left and right, the "can craft now" and "unlocked only"
+// toggles and the tag filter on the left, the
 // recipes sorted by name in the middle with the letter wheel on the left
 // pad (letter keys on the keyboard), and the focused recipe's detail on
 // the right, whose "made by" and "used in" lists walk the recipe graph.
@@ -62,8 +63,9 @@ recipe_change_refusal_keys := [Recipe_Change_Refusal]string {
 	.Contents_Do_Not_Fit = "recipe_change_refused_contents",
 }
 
+// Unlocked only is on by default (work item 0091).
 make_recipe_browser :: proc() -> Recipe_Browser {
-	return Recipe_Browser{focused_recipe = NO_RECIPE, pending_focus = NO_RECIPE}
+	return Recipe_Browser{filter = {available_only = true}, focused_recipe = NO_RECIPE, pending_focus = NO_RECIPE}
 }
 
 // A scrolling column of rows. The right stick and the wheel scroll it and
@@ -229,7 +231,7 @@ queue_summary_text :: proc(queue: Craft_Queue) -> string {
 	return fmt.tprintf("%s  %d / %d", text("crafting_queue"), queue.count, HAND_CRAFT_QUEUE_CAPACITY)
 }
 
-// The craftable toggle, one toggle per tag of the category, and the queue
+// The craftable and unlocked toggles, one toggle per tag of the category, and the queue
 // length at the bottom. Tags that do not fit are left out.
 recipe_filter_column :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context) {
 	browser := screen_context.browser
@@ -239,6 +241,7 @@ recipe_filter_column :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_contex
 		queue_row := cut_bottom(&content, UI_ROW_HEIGHT)
 		draw_text_fitted(state, queue_row, queue_summary_text(queue), UI_BODY_TEXT_SIZE, .Left, queue.waiting ? UI_ACCENT_COLOR : UI_DIM_TEXT_COLOR)
 		ui_toggle(state, settings_row(&content), text("recipes_can_craft"), &browser.filter.craftable_only)
+		ui_toggle(state, settings_row(&content), text("recipes_unlocked_only"), &browser.filter.available_only)
 	}
 	draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), text("recipes_tags"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	tags := category_tags(screen_context.recipes, browser.filter.category)
@@ -253,8 +256,27 @@ recipe_filter_column :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_contex
 	}
 }
 
+// "5 × Stone". The sign lives in the string table, so every font loads its
+// glyph (collect_code_points).
 stack_line :: proc(stack: Item_Stack, items: Item_Registry) -> string {
-	return fmt.tprintf("%d × %s", stack.count, item_name(items, stack.item))
+	line := replace_message_mark(text("recipes_stack_line"), "{count}", fmt.tprint(stack.count))
+	return replace_message_mark(line, "{name}", item_name(items, stack.item))
+}
+
+// "13 / 5 Stone": what the inventory holds, what one craft needs.
+ingredient_line :: proc(have, need: int, name: string) -> string {
+	line := replace_message_mark(text("recipes_ingredient_line"), "{have}", fmt.tprint(have))
+	line = replace_message_mark(line, "{need}", fmt.tprint(need))
+	return replace_message_mark(line, "{name}", name)
+}
+
+ingredient_color :: proc(state: ^Ui_State, have, need: int) -> Ui_Color {
+	return theme_color(state, have >= need ? .Accent : .Danger)
+}
+
+// "Can craft 2".
+can_craft_text :: proc(count: int) -> string {
+	return replace_message_mark(text("recipes_can_craft_count"), "{count}", fmt.tprint(count))
 }
 
 // The label and a row per stack, as many as fit.
@@ -264,6 +286,17 @@ draw_stack_rows :: proc(state: ^Ui_State, content: ^Ui_Rectangle, label: string,
 		row := take_line(content, UI_ROW_HEIGHT) or_break
 		draw_item_icon(state, icon_rectangle(row), item_icon(items, stack.item))
 		draw_text_fitted(state, text_after_icon(row), stack_line(stack, items), UI_BODY_TEXT_SIZE, .Left)
+	}
+}
+
+// The label and a have and need row per ingredient, as many as fit.
+draw_ingredient_rows :: proc(state: ^Ui_State, content: ^Ui_Rectangle, label: string, stacks: []Item_Stack, items: Item_Registry, inventory: Inventory) {
+	detail_line(state, content, text(label), UI_DIM_TEXT_COLOR)
+	for stack in stacks {
+		row := take_line(content, UI_ROW_HEIGHT) or_break
+		have, need := inventory_count(inventory, stack.item), int(stack.count)
+		draw_item_icon(state, icon_rectangle(row), item_icon(items, stack.item))
+		draw_text_fitted(state, text_after_icon(row), ingredient_line(have, need, item_name(items, stack.item)), UI_BODY_TEXT_SIZE, .Left, ingredient_color(state, have, need))
 	}
 }
 
@@ -324,7 +357,10 @@ recipe_detail_panel :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context
 		draw_wrapped(state, &content, description, UI_DIM_TEXT_COLOR)
 	}
 	cut_top(&content, UI_GAP)
-	draw_stack_rows(state, &content, "recipes_inputs", detail.inputs, screen_context.items)
+	inventory := screen_context.player.inventory
+	draw_ingredient_rows(state, &content, "recipes_inputs", detail.inputs, screen_context.items, inventory)
+	covered := crafts_covered(inventory, definition)
+	detail_line(state, &content, can_craft_text(covered), covered >= 1 ? UI_ACCENT_COLOR : UI_DIM_TEXT_COLOR)
 	draw_stack_rows(state, &content, "recipes_outputs", detail.outputs, screen_context.items)
 	cut_top(&content, UI_GAP)
 	// The graph lists need their label and a row.
@@ -423,8 +459,8 @@ settle_recipe_focus :: proc(state: ^Ui_State, browser: ^Recipe_Browser, list_id:
 	}
 }
 
-navigate_to_recipe :: proc(browser: ^Recipe_Browser, recipes: Recipe_Registry, recipe: int, craftable: []bool) {
-	browser.filter = filter_showing_recipe(browser.filter, recipes.recipes[recipe], craftable[recipe])
+navigate_to_recipe :: proc(browser: ^Recipe_Browser, recipes: Recipe_Registry, unlocks: Recipe_Unlocks, recipe: int, craftable: []bool) {
+	browser.filter = filter_showing_recipe(browser.filter, recipes.recipes[recipe], craftable[recipe], recipe_is_available(unlocks, recipe))
 	browser.pending_focus = recipe
 	browser.focused_recipe = recipe
 }
@@ -494,7 +530,7 @@ recipe_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		focus_recipe_row(state, browser, list_id, visible[position])
 	}
 	if reached != NO_RECIPE {
-		navigate_to_recipe(browser, screen_context.recipes, reached, craftable)
+		navigate_to_recipe(browser, screen_context.recipes, screen_context.unlocks^, reached, craftable)
 	}
 	draw_letter_wheel(state, browser.letter_radial)
 	if selecting {
