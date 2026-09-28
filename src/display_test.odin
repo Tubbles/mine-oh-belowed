@@ -28,11 +28,7 @@ test_display_changes_for_every_mode_pair :: proc(t: ^testing.T) {
 	}
 	for test_case in cases {
 		changes := display_changes(display_test_settings(test_case.from), display_test_settings(test_case.to))
-		expected := test_case.expected
-		// Vsync and the cap are equal, so they only carry the values.
-		expected.vsync = DEFAULT_SETTINGS.vsync
-		expected.frame_rate_cap = DEFAULT_SETTINGS.frame_rate_cap
-		testing.expectf(t, changes == expected, "%v to %v: %v, expected %v", test_case.from, test_case.to, changes, expected)
+		testing.expectf(t, changes == test_case.expected, "%v to %v: %v, expected %v", test_case.from, test_case.to, changes, test_case.expected)
 	}
 }
 
@@ -43,6 +39,14 @@ test_display_changes_for_each_field :: proc(t: ^testing.T) {
 	testing.expect(t, !display_changes(previous, next).resize)
 	testing.expect(t, !display_changes(previous, next).change_vsync)
 	testing.expect(t, !display_changes(previous, next).change_frame_rate)
+	// Equal settings give an empty struct whatever vsync and the cap are:
+	// update_display's guard is the empty struct, and the values used to
+	// ride along unconditionally, which logged the display every frame
+	// with vsync on (found 2026-09-28).
+	capped := previous
+	capped.frame_rate_cap = 60
+	testing.expect(t, capped.vsync)
+	testing.expect_value(t, display_changes(capped, capped), Display_Changes{})
 
 	// A setting the window does not use changes nothing.
 	next.ui_scale = 1.25
@@ -53,7 +57,7 @@ test_display_changes_for_each_field :: proc(t: ^testing.T) {
 	next = previous
 	next.resolution = NATIVE_RESOLUTION
 	resized := display_changes(previous, next)
-	testing.expect_value(t, resized, Display_Changes{resize = true, resolution = NATIVE_RESOLUTION, centre = true, vsync = true})
+	testing.expect_value(t, resized, Display_Changes{resize = true, resolution = NATIVE_RESOLUTION, centre = true})
 
 	// Borderless ignores the resolution; fullscreen changes its video mode.
 	borderless := display_test_settings(.Borderless)
@@ -63,7 +67,7 @@ test_display_changes_for_each_field :: proc(t: ^testing.T) {
 	fullscreen := display_test_settings(.Fullscreen)
 	fullscreen_next := fullscreen
 	fullscreen_next.resolution = {1280, 720}
-	testing.expect_value(t, display_changes(fullscreen, fullscreen_next), Display_Changes{resize = true, resolution = {1280, 720}, vsync = true})
+	testing.expect_value(t, display_changes(fullscreen, fullscreen_next), Display_Changes{resize = true, resolution = {1280, 720}})
 
 	next = previous
 	next.vsync = false
@@ -71,7 +75,7 @@ test_display_changes_for_each_field :: proc(t: ^testing.T) {
 
 	next = previous
 	next.frame_rate_cap = 60
-	testing.expect_value(t, display_changes(previous, next), Display_Changes{vsync = true, change_frame_rate = true, frame_rate_cap = 60})
+	testing.expect_value(t, display_changes(previous, next), Display_Changes{change_frame_rate = true, frame_rate_cap = 60})
 }
 
 @(test)
@@ -82,7 +86,7 @@ test_initial_window_applies_the_settings :: proc(t: ^testing.T) {
 	testing.expect_value(t, window.window_mode, Window_Mode.Windowed)
 	testing.expect_value(t, window.resolution, INITIAL_WINDOW_SIZE)
 	testing.expect_value(t, window.frame_rate_cap, 0)
-	testing.expect_value(t, display_changes(window, settings), Display_Changes{enter_borderless = true, vsync = true, change_frame_rate = true, frame_rate_cap = 60})
+	testing.expect_value(t, display_changes(window, settings), Display_Changes{enter_borderless = true, change_frame_rate = true, frame_rate_cap = 60})
 	testing.expect(t, .VSYNC_HINT in window_config_flags(window))
 	settings.vsync = false
 	settings.resolution = {1600, 900}

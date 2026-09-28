@@ -75,6 +75,9 @@ Display_Changes :: struct {
 	resolution:        [2]int,
 	// A windowed window is centred on its monitor after the resize.
 	centre:            bool,
+	// The values ride only with their change flags, so settings that
+	// differ in nothing the window uses give an empty struct, which is
+	// update_display's guard.
 	change_vsync:      bool,
 	vsync:             bool,
 	change_frame_rate: bool,
@@ -88,9 +91,13 @@ display_changes :: proc(previous, next: Settings) -> Display_Changes {
 		enter_borderless  = previous.window_mode != .Borderless && next.window_mode == .Borderless,
 		enter_fullscreen  = previous.window_mode != .Fullscreen && next.window_mode == .Fullscreen,
 		change_vsync      = previous.vsync != next.vsync,
-		vsync             = next.vsync,
 		change_frame_rate = previous.frame_rate_cap != next.frame_rate_cap,
-		frame_rate_cap    = next.frame_rate_cap,
+	}
+	if changes.change_vsync {
+		changes.vsync = next.vsync
+	}
+	if changes.change_frame_rate {
+		changes.frame_rate_cap = next.frame_rate_cap
 	}
 	sized := next.window_mode != .Borderless
 	changed := previous.window_mode != next.window_mode || previous.resolution != next.resolution
