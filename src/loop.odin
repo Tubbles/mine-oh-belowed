@@ -959,6 +959,7 @@ show_title :: proc(state: ^Frame_State) {
 // Saves on quit when the world saves.
 run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: Game_Data, data_directory: string, fonts: Loaded_Fonts, session: ^Session, title: Title_State, player_configuration: Player_Configuration) {
 	content := game_data.content
+	install_raylib_trace_log()
 	rl.SetTraceLogLevel(.WARNING)
 	// Opened windowed; the settings' mode applies below, once raylib can
 	// report the monitor.

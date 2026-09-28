@@ -14,7 +14,7 @@ import "core:time"
 // "error:") also go to $XDG_STATE_HOME/mine-oh-belowed/log.txt, appended,
 // with one header line per start. Before open_log_file (and when it fails)
 // only stderr gets them. Chunk workers can report missing strings, hence
-// the mutex.
+// the mutex. raylib's trace log takes the same path (raylib_log.odin).
 //
 // Crash traces (work item 0043). Steam discards stderr, where Odin's
 // runtime reports bounds check and type assertion failures before it
