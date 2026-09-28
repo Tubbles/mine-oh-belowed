@@ -1,6 +1,6 @@
 # 0098 Developer mode: finish the active quest
 
-Status: todo
+Status: implemented
 Milestone: M11
 
 ## Goal
@@ -22,3 +22,5 @@ Couch request (2026-09-28): the Developer screen needs a "Finish the active ques
 ## Notes
 
 Files a subagent may touch: `src/developer.odin`, `src/developer_test.odin`, `src/ui_developer.odin`, `src/quest_runtime.odin`, `src/quest_runtime_test.odin`, `src/command.odin`, `src/command_test.odin`, `src/ui_audit_test.odin`, `data/strings/en.sjson`, the docs above, this file.
+
+Implemented: `src/developer.odin` (the `Finish_Active_Quest` request and `finish_active_quest`), `src/ui_developer.odin` (the button on the quest label row), `src/command.odin` (`quest finish`), `data/strings/en.sjson` (`developer_finish_active_quest`), `src/developer_test.odin` (the request completes a quest with reward items and recipes and activates the next, changes nothing at the end, and is served by the tick), `src/command_test.odin` (`quest finish` and its errors), `doc/ui.md`, `doc/commands.md`, `doc/log/2026-09-28.md`. The UI audit's existing developer case covers the button with its focus walk. Deliveries are not taken, as with the chapter completion. 949 tests pass.

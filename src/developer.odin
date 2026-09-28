@@ -66,6 +66,8 @@ Developer_Action :: enum u8 {
 	Remove_At,
 	Set_Block,
 	Insert_Items,
+	// Completes the active quest (work item 0098).
+	Finish_Active_Quest,
 }
 
 // The sun rises at dawn, peaks at noon, sets at dusk and is lowest at
@@ -288,6 +290,22 @@ complete_quests_to_chapter :: proc(state: ^Quest_State, registry: Quest_Registry
 	}
 }
 
+// Completes the active quest as if its objectives were met: marked done,
+// its complete message logged, its rewards queued like
+// complete_quests_to_chapter's (deliveries are not taken), the next quest
+// activated. Nothing happens once every quest is done.
+finish_active_quest :: proc(state: ^Quest_State, registry: Quest_Registry, unlocks: ^Recipe_Unlocks, recipes: Recipe_Registry, statistics: Statistics, tick: u64) {
+	index := state.active
+	if index == NO_QUEST {
+		return
+	}
+	quest := registry.quests[index]
+	state.progress[index].status = .Done
+	log_quest_message(state, tick, quest.complete_key)
+	queue_rewards(state, quest, unlocks, recipes)
+	activate_quest(state, registry, next_quest(registry, index), statistics, tick)
+}
+
 // What --unlock-all does at the start, applied to a running world. Saved
 // with the world like the setting.
 unlock_everything :: proc(unlocks: ^Recipe_Unlocks, recipes: Recipe_Registry) {
@@ -351,6 +369,8 @@ serve_developer_request :: proc(state: ^Simulation_State, content: Simulation_Co
 		give_to_player(player, &state.quests.pending_rewards, content.items, request.grant)
 	case .Complete_Quests_To_Chapter:
 		complete_quests_to_chapter(&state.quests, content.quests, &state.unlocks, content.recipes, state.world.statistics, state.tick, request.chapter)
+	case .Finish_Active_Quest:
+		finish_active_quest(&state.quests, content.quests, &state.unlocks, content.recipes, state.world.statistics, state.tick)
 	case .Unlock_All:
 		unlock_everything(&state.unlocks, content.recipes)
 	case .Set_Time_Of_Day:

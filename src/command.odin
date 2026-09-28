@@ -78,6 +78,7 @@ command_usages := [?]Command_Usage {
 	{"take <item> <count>", "items out of the inventory"},
 	{"kit <chapter>", "the chapter's developer kit (data/dev_kits.sjson)"},
 	{"chapter <n>", "complete the quests before chapter n with their rewards"},
+	{"quest finish", "complete the active quest with its rewards"},
 	{"research <technology>", "mark researched, or one more level of an infinite technology"},
 	{"unlock_all", "every recipe and technology"},
 	{"teleport <x> <y> <z> | teleport pad", "feet into the block, or onto the landing pad"},
@@ -264,6 +265,8 @@ execute_world_command :: proc(command_context: Command_Context, name: string, ar
 		return command_kit(command_context, arguments)
 	case "chapter":
 		return command_chapter(command_context, arguments)
+	case "quest":
+		return command_quest(command_context, arguments)
 	case "research":
 		return command_research(command_context, arguments)
 	case "unlock_all":
@@ -360,6 +363,24 @@ command_chapter :: proc(command_context: Command_Context, arguments: []string) -
 		return command_error("%s", problem)
 	}
 	serve_command_request(command_context, Developer_Request{action = .Complete_Quests_To_Chapter, chapter = chapter})
+	active := command_context.simulation.quests.active
+	if active == NO_QUEST {
+		return command_ok("every quest done")
+	}
+	return command_ok("active quest %s (chapter %d)", quests.quests[active].id, quests.quests[active].chapter + 1)
+}
+
+// quest finish completes the active quest like the Developer screen's
+// button (work item 0098).
+command_quest :: proc(command_context: Command_Context, arguments: []string) -> Command_Response {
+	if len(arguments) != 1 || arguments[0] != "finish" {
+		return usage_error("quest finish")
+	}
+	quests := command_context.content.quests
+	if command_context.simulation.quests.active == NO_QUEST {
+		return command_error("every quest is already done")
+	}
+	serve_command_request(command_context, Developer_Request{action = .Finish_Active_Quest})
 	active := command_context.simulation.quests.active
 	if active == NO_QUEST {
 		return command_ok("every quest done")

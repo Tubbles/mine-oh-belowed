@@ -182,6 +182,16 @@ test_command_give_take_kit_chapter :: proc(t: ^testing.T) {
 	testing.expect_value(t, test.simulation.quests.active, test.content.quests.chapters[3].first_quest)
 	testing.expect(t, strings.contains(response.text, "chapter 4"), response.text)
 	expect_command_error(t, test, "chapter 0")
+
+	first := test.simulation.quests.active
+	response = expect_command_ok(t, test, "quest finish")
+	testing.expect_value(t, test.simulation.quests.progress[first].status, Quest_Status.Done)
+	testing.expect_value(t, test.simulation.quests.active, first + 1)
+	testing.expect(t, strings.contains(response.text, "active quest"), response.text)
+	expect_command_error(t, test, "quest")
+	expect_command_error(t, test, "quest done")
+	expect_command_ok(t, test, fmt.tprintf("chapter %d", len(test.content.quests.chapters) + 1))
+	expect_command_error(t, test, "quest finish")
 }
 
 @(test)

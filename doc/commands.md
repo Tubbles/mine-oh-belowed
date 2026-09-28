@@ -32,6 +32,7 @@ The game can be driven from outside while someone plays: give items, skip chapte
 | `take <item> <count>` | `tools/moc take stone 100` | Items out of the inventory; the answer says how many were there. |
 | `kit <chapter>` | `tools/moc kit 4` | The chapter's kit from `data/dev_kits.sjson`. |
 | `chapter <n>` | `tools/moc chapter 5` | Completes every quest before chapter n with its rewards (items to the capsule, recipes and technologies unlocked), like the Developer screen. One past the last chapter completes all. Does not give the kit. |
+| `quest finish` | `tools/moc quest finish` | Completes the active quest with its rewards (items to the capsule, recipes and technologies unlocked, deliveries not taken), logs its complete message and activates the next, like the Developer screen's Finish active quest button. An error once every quest is done. |
 | `research <technology>` | `tools/moc research ore_processing` | Marked researched as a quest reward does; an infinite technology gains one level. |
 | `unlock_all` | `tools/moc unlock_all` | Every recipe and technology. |
 | `teleport <x> <y> <z>`, `teleport pad` | `tools/moc teleport 40 70 -12` | Feet into that block's centre, or onto the landing pad. |

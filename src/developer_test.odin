@@ -174,6 +174,65 @@ test_complete_quests_past_the_last_chapter :: proc(t: ^testing.T) {
 	}
 }
 
+// The first quest with reward items and recipes: done with its rewards
+// queued and its recipes available, its complete message and the next
+// quest's message logged, the next quest active. Past the last quest
+// nothing changes.
+@(test)
+test_finish_active_quest_grants_rewards_and_moves_on :: proc(t: ^testing.T) {
+	references := make_test_quest_references()
+	registry := make_test_quests(references)
+	test := make_quest_test(registry.quests, registry.chapters)
+	defer destroy_quest_test(&test)
+	index := -1
+	for quest, quest_index in registry.quests {
+		if len(quest.reward_items) > 0 && len(quest.reward_recipes) > 0 {
+			index = quest_index
+			break
+		}
+	}
+	testing.expect(t, index >= 0 && index + 1 < len(registry.quests))
+	complete_quests_to_chapter(&test.state, test.registry, &test.unlocks, test.recipes, test.statistics, 1, registry.quests[index].chapter + 1)
+	for test.state.active < index {
+		finish_active_quest(&test.state, test.registry, &test.unlocks, test.recipes, test.statistics, 2)
+	}
+	quest := registry.quests[index]
+	pending_before := len(test.state.pending_rewards)
+	messages_before := len(test.state.messages)
+	finish_active_quest(&test.state, test.registry, &test.unlocks, test.recipes, test.statistics, 7)
+	testing.expect_value(t, test.state.progress[index].status, Quest_Status.Done)
+	testing.expect_value(t, test.state.active, index + 1)
+	testing.expect_value(t, test.state.progress[index + 1].status, Quest_Status.Active)
+	testing.expect_value(t, test.state.progress[index + 1].activated_tick, 7)
+	testing.expect_value(t, len(test.state.pending_rewards), pending_before + len(quest.reward_items))
+	for recipe in quest.reward_recipes {
+		testing.expect(t, recipe_is_available(test.unlocks, recipe))
+	}
+	testing.expect_value(t, len(test.state.messages), messages_before + 2)
+	testing.expect_value(t, test.state.messages[messages_before].text_key, quest.complete_key)
+	testing.expect_value(t, test.state.messages[messages_before + 1].text_key, registry.quests[index + 1].message_key)
+
+	complete_quests_to_chapter(&test.state, test.registry, &test.unlocks, test.recipes, test.statistics, 8, len(registry.chapters) + 1)
+	messages_before, pending_before = len(test.state.messages), len(test.state.pending_rewards)
+	finish_active_quest(&test.state, test.registry, &test.unlocks, test.recipes, test.statistics, 9)
+	testing.expect_value(t, test.state.active, NO_QUEST)
+	testing.expect_value(t, len(test.state.messages), messages_before)
+	testing.expect_value(t, len(test.state.pending_rewards), pending_before)
+}
+
+// The request the Developer screen queues, served by the tick.
+@(test)
+test_finish_active_quest_request_served_by_the_tick :: proc(t: ^testing.T) {
+	simulation, content := make_developer_test_simulation()
+	defer destroy_simulation(&simulation)
+	active := simulation.quests.active
+	append(&simulation.developer_requests, Developer_Request{action = .Finish_Active_Quest})
+	simulation_tick(&simulation, content, {})
+	testing.expect_value(t, len(simulation.developer_requests), 0)
+	testing.expect_value(t, simulation.quests.progress[active].status, Quest_Status.Done)
+	testing.expect(t, simulation.quests.active > active)
+}
+
 // --chapter=4 --give=iron_plate:3 served on the first tick.
 @(test)
 test_chapter_requests_served_by_the_tick :: proc(t: ^testing.T) {

@@ -13,8 +13,8 @@ import "core:fmt"
 // Reload data are frame requests the frame loop serves after the frame.
 
 DEVELOPER_PANEL_WIDTH :: 1000
-// Title, two toggle rows, kit label and buttons, quest label and
-// buttons, time label and buttons, unlock, teleport and screenshot, the
+// Title, two toggle rows, kit label and buttons, quest label (with the
+// finish active quest button) and buttons, time label and buttons, unlock, teleport and screenshot, the
 // data reload row, back.
 DEVELOPER_ROW_COUNT :: 12
 
@@ -123,7 +123,7 @@ developer_actions :: proc(state: ^Ui_State, content: ^Ui_Rectangle, screen_conte
 	if chapter := chapter_buttons(state, developer_row(content), "kit", screen_context.developer_chapter_count); chapter > 0 {
 		queue_developer_request(state, screen_context, Developer_Request{action = .Give_Kit, chapter = chapter})
 	}
-	ui_label(state, developer_row(content), text("developer_complete_quests"))
+	developer_quest_label_row(state, developer_row(content), screen_context)
 	if chapter := chapter_buttons(state, developer_row(content), "quests", screen_context.developer_chapter_count); chapter > 0 {
 		queue_developer_request(state, screen_context, Developer_Request{action = .Complete_Quests_To_Chapter, chapter = chapter})
 	}
@@ -143,6 +143,18 @@ developer_actions :: proc(state: ^Ui_State, content: ^Ui_Rectangle, screen_conte
 		screen_context.screenshot_requested^ = true
 	}
 	developer_reload_row(state, developer_row(content), screen_context)
+}
+
+// The label of the chapter completion buttons, and the button that
+// finishes the active quest (work item 0098).
+developer_quest_label_row :: proc(state: ^Ui_State, row: Ui_Rectangle, screen_context: Screen_Context) {
+	area := row
+	button := cut_right(&area, column(row, 3, 0, UI_GAP).width)
+	cut_right(&area, UI_GAP)
+	ui_label(state, area, text("developer_complete_quests"))
+	if ui_button(state, button, text("developer_finish_active_quest")) {
+		queue_developer_request(state, screen_context, Developer_Request{action = .Finish_Active_Quest})
+	}
 }
 
 // Whether content files changed since they were loaded, and the button
