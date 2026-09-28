@@ -1,5 +1,6 @@
 package game
 
+import "core:math/linalg"
 import "core:testing"
 
 // The kick eases in over SPRINT_KICK_SECONDS of frame time, holds while
@@ -53,4 +54,39 @@ test_third_person_shoulder_follows_the_yaw :: proc(t: ^testing.T) {
 	down := Fly_Camera{yaw = 0, pitch = -60}
 	sideways := third_person_offset(fly_camera_forward(down), 0, 4, 1) - third_person_offset(fly_camera_forward(down), 0, 4, 0)
 	testing.expectf(t, abs(sideways.y) < 1e-6 && abs(sideways.z - 1) < 1e-4, "pitched: %v", sideways)
+}
+
+// The held block (work item 0092): six faces of the given edge around
+// the centre, each wound counter clockwise seen from outside so culling
+// keeps the near faces with the depth test off, and the whole cube turned
+// and moved with the arm's transform.
+@(test)
+test_held_block_cube_faces_wind_outwards :: proc(t: ^testing.T) {
+	centre := [3]f32{1, 2, 3}
+	size: f32 = 0.35
+	identity := matrix[4, 4]f32{
+		1, 0, 0, 0,
+		0, 1, 0, 0,
+		0, 0, 1, 0,
+		0, 0, 0, 1,
+	}
+	faces := held_block_cube_corners(identity, centre, size)
+	for corners, direction in faces {
+		offset := direction_offsets[direction]
+		normal := [3]f32{f32(offset.x), f32(offset.y), f32(offset.z)}
+		for corner in corners {
+			testing.expectf(t, abs(linalg.dot(corner - centre, normal) - size / 2) < 1e-5, "%v corner %v off its face", direction, corner)
+			for axis in 0 ..< 3 {
+				testing.expectf(t, abs(abs(corner[axis] - centre[axis]) - size / 2) < 1e-5, "%v corner %v not on the cube", direction, corner)
+			}
+		}
+		winding := linalg.cross(corners[1] - corners[0], corners[2] - corners[1])
+		testing.expectf(t, linalg.dot(winding, normal) > 0, "%v wound inwards", direction)
+	}
+	turned := camera_frame_transform({5, 6, 7}, 90, 0)
+	moved := held_block_cube_corners(turned, {}, size)
+	top := (moved[.Positive_Y][0] + moved[.Positive_Y][2]) / 2
+	expect_near_point(t, top, [3]f32{5, 6, 7} + {0, size / 2, 0}, "top face middle")
+	front := (moved[.Positive_X][0] + moved[.Positive_X][2]) / 2
+	expect_near_point(t, front, [3]f32{5, 6, 7} + fly_camera_forward(Fly_Camera{yaw = 90}) * size / 2, "front face middle")
 }

@@ -1,6 +1,6 @@
 # 0092 A held block as a cube, sun and moon discs that face the player
 
-Status: todo
+Status: implemented
 Milestone: M11
 
 ## Goal
@@ -21,3 +21,6 @@ Couch report (2026-09-28): holding a block item shows a flat texture face in the
 ## Notes
 
 Files a subagent may touch: `src/render_player.odin`, `src/render_player_test.odin`, `src/render_player_model.odin`, `src/render_sky.odin`, `src/render_sky_test.odin`, the docs above, this file.
+
+Implemented: `src/render_player.odin` (`Held_Block_Tiles`, `held_cube_block`, `held_block_face_up`, `held_block_cube_corners`, `draw_held_block`), `src/render_player_model.odin` (`HELD_BLOCK_SIZE`), `src/render_sky.odin` (`disc_axes`, `draw_sky_quad`), `src/loop.odin` (one call passes the block atlas to the hands), tests `test_held_block_cube_faces_wind_outwards` and `test_disc_axes_are_square_across_the_direction`; `doc/ui.md`, `doc/architecture.md`, `doc/log/2026-09-28.md`. 953 tests pass.
+

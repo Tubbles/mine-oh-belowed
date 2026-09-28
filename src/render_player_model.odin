@@ -29,6 +29,9 @@ FIRST_PERSON_SWING_SHARE :: 0.5
 // The held item's icon, in blocks, a little past the hand.
 HELD_ITEM_SIZE :: 0.18
 HELD_ITEM_REACH :: 0.08
+// A held cube shaped block (work item 0092): its edge in blocks, the top
+// face at the hand.
+HELD_BLOCK_SIZE :: 0.35
 
 Player_Limb :: enum u8 {
 	Torso,

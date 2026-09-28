@@ -1,6 +1,7 @@
 package game
 
 import "core:math"
+import "core:math/linalg"
 import rl "vendor:raylib"
 import "vendor:raylib/rlgl"
 
@@ -249,6 +250,70 @@ draw_player_third_person :: proc(body: Player_Body_Draw, pose: Player_Pose) {
 	draw_player_model(body.renderer, body.model, pose, player_limb_angles(body.animation), body.light)
 }
 
+// The block atlas the held block's faces take their tiles from.
+Held_Block_Tiles :: struct {
+	texture: rl.Texture2D,
+	layout:  Atlas_Layout,
+	blocks:  Block_Registry,
+}
+
+// The block an item places when it is a cube, drawn in the hand as one;
+// AIR_BLOCK for any other item, including a torch, a slab, stairs and
+// ground cover, which keep their icon.
+held_cube_block :: proc(items: Item_Registry, blocks: Block_Registry, item: Item_Id) -> Block_Id {
+	block := item_places_block(items, item)
+	if block == AIR_BLOCK || block_shape(blocks, block) != .Cube {
+		return AIR_BLOCK
+	}
+	return block
+}
+
+// The face's up across it, for its texture: the world's up on a side,
+// the frame's forward (+x) on the top and the bottom.
+held_block_face_up :: proc(direction: Direction) -> [3]f32 {
+	return direction_axis(direction) == 1 ? [3]f32{1, 0, 0} : [3]f32{0, 1, 0}
+}
+
+// The six faces of a cube of edge size at centre in the transform's
+// frame, each counter clockwise seen from outside, starting at the top
+// left of its tile (the face's up as held_block_face_up gives it).
+held_block_cube_corners :: proc(transform: matrix[4, 4]f32, centre: [3]f32, size: f32) -> (faces: [Direction][4][3]f32) {
+	half := size / 2
+	for direction in Direction {
+		offset := direction_offsets[direction]
+		normal := [3]f32{f32(offset.x), f32(offset.y), f32(offset.z)}
+		up := held_block_face_up(direction)
+		right := linalg.cross(-normal, up)
+		middle := centre + normal * half
+		local := [4][3]f32{middle + (up - right) * half, middle - (up + right) * half, middle + (right - up) * half, middle + (right + up) * half}
+		for corner, index in local {
+			faces[direction][index] = transform_point(transform, corner)
+		}
+	}
+	return faces
+}
+
+// The block's top, side and bottom tiles on the cube's faces, shaded per
+// face like a model and lit by the light at the eye, like the arm.
+draw_held_block :: proc(tiles: Held_Block_Tiles, block: Block_Id, faces: [Direction][4][3]f32, light: rl.Color) {
+	tile_size := atlas_tile_uv_size(tiles.layout)
+	corner_offsets := [4][2]f32{{0, 0}, {0, 1}, {1, 1}, {1, 0}}
+	rlgl.SetTexture(tiles.texture.id)
+	rlgl.Begin(rlgl.QUADS)
+	for corners, direction in faces {
+		origin := atlas_tile_origin(tiles.layout, atlas_tile_index(block, direction_face_group(direction)))
+		color := shade_colour(cast([4]u8)light, model_face_shades[direction])
+		rlgl.Color4ub(color.r, color.g, color.b, color.a)
+		for corner, index in corners {
+			texture_coordinate := origin + corner_offsets[index] * tile_size
+			rlgl.TexCoord2f(texture_coordinate.x, texture_coordinate.y)
+			rlgl.Vertex3f(corner.x, corner.y, corner.z)
+		}
+	}
+	rlgl.End()
+	rlgl.SetTexture(0)
+}
+
 // The held stack's icon, or its coloured cube for an item without one.
 draw_player_held_item :: proc(billboards: Item_Billboards, items: Item_Registry, item: Item_Id, centre: [3]f32) {
 	if item_has_icon(billboards.atlas, item) {
@@ -261,9 +326,11 @@ draw_player_held_item :: proc(billboards: Item_Billboards, items: Item_Registry,
 // After the world's 3D pass and before the UI, in a pass of its own with
 // the depth test off so the arm draws over the world: the right arm held
 // forward from the lower right of the view, chopping while mining and
-// swinging on a place, and the selected hotbar stack at the hand. It
-// rides the bobbed camera. Nothing without the player model.
-draw_first_person_hands :: proc(view: Fly_Camera, body: Player_Body_Draw, billboards: Item_Billboards, items: Item_Registry, held: Item_Stack) {
+// swinging on a place, and the selected hotbar stack at the hand: a
+// cube shaped block as a small cube turning with the arm, any other item
+// as its icon. It rides the bobbed camera. Nothing without the player
+// model.
+draw_first_person_hands :: proc(view: Fly_Camera, body: Player_Body_Draw, billboards: Item_Billboards, tiles: Held_Block_Tiles, items: Item_Registry, held: Item_Stack) {
 	if !body.model.loaded {
 		return
 	}
@@ -275,9 +342,15 @@ draw_first_person_hands :: proc(view: Fly_Camera, body: Player_Body_Draw, billbo
 	defer rlgl.DrawRenderBatchActive()
 	arm := camera_frame_transform(view.position, view.yaw, view.pitch) * first_person_arm_transform(body.model.pivots[.Arm_Right], right_arm_action_angle(body.animation))
 	draw_player_limb(body.renderer, body.model, .Arm_Right, arm * player_model_scale(), body.light)
-	if !stack_is_empty(held) {
-		draw_player_held_item(billboards, items, held.item, transform_point(arm, body.model.hand - {0, HELD_ITEM_REACH, 0}))
+	if stack_is_empty(held) {
+		return
 	}
+	if block := held_cube_block(items, tiles.blocks, held.item); block != AIR_BLOCK {
+		faces := held_block_cube_corners(arm, body.model.hand - {0, HELD_BLOCK_SIZE / 2, 0}, HELD_BLOCK_SIZE)
+		draw_held_block(tiles, block, faces, body.light)
+		return
+	}
+	draw_player_held_item(billboards, items, held.item, transform_point(arm, body.model.hand - {0, HELD_ITEM_REACH, 0}))
 }
 
 // Dust kicked up under the feet on a step (work item 0066): on the ground

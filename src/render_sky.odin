@@ -9,7 +9,8 @@ import "vendor:raylib/rlgl"
 // on the camera, without depth test or depth writes, so everything else
 // draws over it: a hemisphere dome coloured from the horizon to the zenith
 // colour, stars at night turning with the day, then the sun and the moon
-// as camera facing discs, the moon's phase a second disc in the sky colour
+// as discs facing the camera along their own direction, so they stay
+// round anywhere in the sky (work item 0092), the moon's phase a second disc in the sky colour
 // overlapping it, and during a survey satellite's pass (work item 0069) a
 // small bright quad crossing from west to east along the sun's path. The
 // geometry, the star set and the colours are pure procedures; only the
@@ -270,12 +271,44 @@ draw_stars :: proc(camera: rl.Camera3D, sky: Day_Sky) {
 	}
 }
 
+// Unit right and up across a quad seen along direction, like a camera
+// looking that way: right level with the horizon, up towards the zenith.
+// Straight up or down the level reference is +x instead of +y. raylib's
+// billboards take the camera's right and the world's up, which squashes a
+// disc high in the sky into an ellipse.
+disc_axes :: proc(direction: [3]f32) -> (right, up: [3]f32) {
+	forward := linalg.normalize(direction)
+	reference := abs(forward.y) < 0.99 ? [3]f32{0, 1, 0} : [3]f32{1, 0, 0}
+	right = linalg.normalize(linalg.cross(forward, reference))
+	up = linalg.cross(right, forward)
+	return right, up
+}
+
+// A square of side size at centre, facing back along direction, with the
+// whole texture on it. The sky pass has culling off, so the winding does
+// not matter.
+draw_sky_quad :: proc(texture: rl.Texture2D, centre, direction: [3]f32, size: f32, color: rl.Color) {
+	right, up := disc_axes(direction)
+	right, up = right * size / 2, up * size / 2
+	corners := [4][3]f32{centre - right + up, centre - right - up, centre + right - up, centre + right + up}
+	texture_coordinates := [4][2]f32{{0, 0}, {0, 1}, {1, 1}, {1, 0}}
+	rlgl.SetTexture(texture.id)
+	rlgl.Begin(rlgl.QUADS)
+	rlgl.Color4ub(color.r, color.g, color.b, color.a)
+	for corner, index in corners {
+		rlgl.TexCoord2f(texture_coordinates[index].x, texture_coordinates[index].y)
+		rlgl.Vertex3f(corner.x, corner.y, corner.z)
+	}
+	rlgl.End()
+	rlgl.SetTexture(0)
+}
+
 // Left out once the whole disc is under the horizon.
 draw_sky_disc :: proc(renderer: ^Sky_Renderer, camera: rl.Camera3D, direction: [3]f32, radius_share: f32, color: rl.Color) {
 	if direction.y < -2 * radius_share {
 		return
 	}
-	rl.DrawBillboard(camera, renderer.disc, camera.position + direction * SKY_DOME_RADIUS, 2 * radius_share * SKY_DOME_RADIUS, color)
+	draw_sky_quad(renderer.disc, camera.position + direction * SKY_DOME_RADIUS, direction, 2 * radius_share * SKY_DOME_RADIUS, color)
 }
 
 draw_moon :: proc(renderer: ^Sky_Renderer, camera: rl.Camera3D, sky: Day_Sky) {
@@ -297,7 +330,8 @@ satellite_sky_direction :: proc(pass: Satellite_Pass) -> [3]f32 {
 	return sun_direction(0.5 * f64(1 - satellite_pass_fraction(pass)))
 }
 
-// One quad on raylib's white default texture, like a star.
+// One quad on raylib's white default texture, facing the camera along
+// its direction like the discs.
 draw_satellite :: proc(camera: rl.Camera3D, pass: Satellite_Pass) {
 	if !pass.active {
 		return
@@ -309,8 +343,8 @@ draw_satellite :: proc(camera: rl.Camera3D, pass: Satellite_Pass) {
 		mipmaps = 1,
 		format  = .UNCOMPRESSED_R8G8B8A8,
 	}
-	position := camera.position + satellite_sky_direction(pass) * SKY_DOME_RADIUS
-	rl.DrawBillboardRec(camera, white, {0, 0, 1, 1}, position, {SATELLITE_SKY_SIZE, SATELLITE_SKY_SIZE}, SATELLITE_SKY_COLOR)
+	direction := satellite_sky_direction(pass)
+	draw_sky_quad(white, camera.position + direction * SKY_DOME_RADIUS, direction, SATELLITE_SKY_SIZE, SATELLITE_SKY_COLOR)
 }
 
 // Between BeginMode3D and EndMode3D, before anything else.

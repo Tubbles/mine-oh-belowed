@@ -110,3 +110,23 @@ test_the_disc_texture_is_round :: proc(t: ^testing.T) {
 	testing.expect_value(t, pixels[8 * 16 + 8].a, 255)
 	testing.expect_value(t, pixels[8 * 16 + 8].r, 255)
 }
+
+// The sun and moon quads stay square wherever the disc stands: both axes
+// unit length and across the direction, at the zenith, on the horizon
+// and between.
+@(test)
+test_disc_axes_are_square_across_the_direction :: proc(t: ^testing.T) {
+	directions := [5][3]f32{{0, 1, 0}, {0, -1, 0}, {1, 0, 0}, {0, 0, -1}, sun_direction(0.2)}
+	for direction in directions {
+		right, up := disc_axes(direction)
+		testing.expectf(t, abs(linalg.length(right) - 1) < 1e-5, "right of %v: %v", direction, right)
+		testing.expectf(t, abs(linalg.length(up) - 1) < 1e-5, "up of %v: %v", direction, up)
+		testing.expectf(t, abs(linalg.dot(right, direction)) < 1e-5, "right across %v: %v", direction, right)
+		testing.expectf(t, abs(linalg.dot(up, direction)) < 1e-5, "up across %v: %v", direction, up)
+		testing.expectf(t, abs(linalg.dot(right, up)) < 1e-5, "right across up at %v", direction)
+	}
+	// On the horizon the right stays level and the up points to the zenith.
+	right, up := disc_axes({1, 0, 0})
+	testing.expect(t, abs(right.y) < 1e-5)
+	testing.expect(t, up.y > 0.99)
+}

@@ -641,7 +641,7 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session, sky: Day_Sky,
 	draw_player_world_overlay(world, frame_simulation_content(state), state.model_renderer, &state.belt_renderer, session.simulation.players[:], 0, alpha, body)
 	rl.EndMode3D()
 	if player.camera_mode == .First_Person {
-		draw_first_person_hands(view, body, Item_Billboards{camera = camera, atlas = state.item_atlas}, content.items, selected_hotbar_stack(player))
+		draw_first_person_hands(view, body, Item_Billboards{camera = camera, atlas = state.item_atlas}, Held_Block_Tiles{texture = chunk_atlas_texture(state.renderer), layout = state.renderer.atlas_layout, blocks = content.blocks}, content.items, selected_hotbar_stack(player))
 	}
 	return counts
 }
