@@ -1,10 +1,22 @@
 package game
 
-import rl "vendor:raylib"
+import rl "shared:raylib"
+import "shared:raylib/rlgl"
 
 // The only UI file that calls raylib, with ui_font.odin for the text: it
 // turns the draw list into pixels. Text comes from the TrueType families
 // in data/fonts/, rasterised at the exact pixel size it is drawn at.
+
+// A clip in render pixels (work item 0085). raylib's BeginScissorMode
+// multiplies the box by the window's DPI scale under the high DPI flag,
+// which would clip a UI already laid out in render pixels at the wrong
+// place; rlgl takes the box as it is, with the origin at the bottom.
+// rl.EndScissorMode ends it.
+begin_render_pixel_scissor :: proc(box: rl.Rectangle) {
+	rlgl.DrawRenderBatchActive()
+	rlgl.EnableScissorTest()
+	rlgl.Scissor(i32(box.x), rl.GetRenderHeight() - i32(box.y) - i32(box.height), i32(box.width), i32(box.height))
+}
 
 to_pixels :: proc(rectangle: Ui_Rectangle, pixels_per_unit: f32) -> rl.Rectangle {
 	return {rectangle.x * pixels_per_unit, rectangle.y * pixels_per_unit, rectangle.width * pixels_per_unit, rectangle.height * pixels_per_unit}
@@ -96,8 +108,7 @@ execute_draw_command :: proc(command: Draw_Command, focus: Ui_Id, atlas: Icon_At
 	case .Text:
 		execute_text_command(command, fonts, pixels_per_unit)
 	case .Clip_Begin:
-		box := to_pixels(command.rectangle, pixels_per_unit)
-		rl.BeginScissorMode(i32(box.x), i32(box.y), i32(box.width), i32(box.height))
+		begin_render_pixel_scissor(to_pixels(command.rectangle, pixels_per_unit))
 	case .Clip_End:
 		rl.EndScissorMode()
 	case .Atlas_Tile:

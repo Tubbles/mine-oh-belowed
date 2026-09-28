@@ -1,7 +1,7 @@
 package game
 
 import "core:math"
-import rl "vendor:raylib"
+import rl "shared:raylib"
 
 // Particles and feedback (work item 0067): the emitters of a frame, read
 // from the entity states and the players at render time, the memory of

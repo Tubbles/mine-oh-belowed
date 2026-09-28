@@ -3,8 +3,8 @@ package game
 import "core:math"
 import "core:os"
 import "core:strings"
-import rl "vendor:raylib"
-import "vendor:raylib/rlgl"
+import rl "shared:raylib"
+import "shared:raylib/rlgl"
 
 CHUNK_VERTEX_SHADER_PATH :: "shaders/chunk.vs"
 CHUNK_FRAGMENT_SHADER_PATH :: "shaders/chunk.fs"

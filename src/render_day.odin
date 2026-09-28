@@ -1,7 +1,7 @@
 package game
 
 import "core:math"
-import rl "vendor:raylib"
+import rl "shared:raylib"
 
 // The cosmetic day and night cycle, a function of the simulation tick
 // alone. It sets the sky colours, the fog colour, the sun and moon

@@ -137,16 +137,38 @@ test_centred_window_position :: proc(t: ^testing.T) {
 
 @(test)
 test_display_diagnostics_text :: proc(t: ^testing.T) {
-	scaled := display_diagnostics_text({1694, 1129}, {1694, 1129}, {1694, 1129}, {1, 1}, true)
+	scaled := display_diagnostics_text({1694, 1129}, {1694, 1129}, {1694, 1129}, {1, 1}, .XWayland)
 	testing.expect_value(t, scaled, "display: monitor 1694 x 1129, window 1694 x 1129, render 1694 x 1129, scale 1.00 x 1.00, session xwayland")
-	x11 := display_diagnostics_text({2880, 1920}, {1280, 720}, {2176, 1224}, {1.7, 1.7}, false)
+	x11 := display_diagnostics_text({2880, 1920}, {1280, 720}, {2176, 1224}, {1.7, 1.7}, .X11)
 	testing.expect_value(t, x11, "display: monitor 2880 x 1920, window 1280 x 720, render 2176 x 1224, scale 1.70 x 1.70, session x11")
 }
 
 @(test)
 test_display_is_desktop_scaled :: proc(t: ^testing.T) {
-	testing.expect(t, !display_is_desktop_scaled({1, 1}, false))
-	testing.expect(t, display_is_desktop_scaled({1, 1}, true))
-	testing.expect(t, display_is_desktop_scaled({1.7, 1.7}, false))
-	testing.expect(t, display_is_desktop_scaled({1, 1.25}, false))
+	testing.expect(t, !display_is_desktop_scaled(.X11))
+	testing.expect(t, display_is_desktop_scaled(.XWayland))
+	testing.expect(t, !display_is_desktop_scaled(.Wayland))
+}
+
+@(test)
+test_window_platform_from_glfw :: proc(t: ^testing.T) {
+	testing.expect_value(t, window_platform_from_glfw(0x00060003, true), Window_Platform.Wayland)
+	testing.expect_value(t, window_platform_from_glfw(0x00060004, true), Window_Platform.XWayland)
+	testing.expect_value(t, window_platform_from_glfw(0x00060004, false), Window_Platform.X11)
+	wayland := display_diagnostics_text({2880, 1920}, {1694, 1129}, {2880, 1920}, {1.7, 1.7}, .Wayland)
+	testing.expect_value(t, wayland, "display: monitor 2880 x 1920, window 1694 x 1129, render 2880 x 1920, scale 1.70 x 1.70, session wayland")
+}
+
+// Work item 0085: the cursor in window coordinates to render pixels.
+@(test)
+test_pointer_to_render_pixels :: proc(t: ^testing.T) {
+	testing.expect_value(t, pointer_to_render_pixels({640, 360}, {1280, 720}, {1280, 720}), [2]f32{640, 360})
+	testing.expect_value(t, pointer_to_render_pixels({847, 564.5}, {1694, 1129}, {2880, 1920}), [2]f32{1440, 960})
+	testing.expect_value(t, pointer_to_render_pixels({1694, 1129}, {1694, 1129}, {2880, 1920}), [2]f32{2880, 1920})
+	testing.expect_value(t, pointer_to_render_pixels({10, 20}, {0, 0}, {2880, 1920}), [2]f32{10, 20})
+}
+
+@(test)
+test_window_config_flags_ask_for_high_dpi :: proc(t: ^testing.T) {
+	testing.expect(t, .WINDOW_HIGHDPI in window_config_flags(DEFAULT_SETTINGS))
 }

@@ -5,8 +5,8 @@ import "core:mem/virtual"
 import "core:os"
 import "core:strings"
 import "core:time"
-import rl "vendor:raylib"
-import rlgl "vendor:raylib/rlgl"
+import rl "shared:raylib"
+import rlgl "shared:raylib/rlgl"
 
 // Longest frame the accumulator accepts, so that a stall (debugger, window
 // drag) does not trigger a burst of catch up ticks.
@@ -93,10 +93,10 @@ Frame_State :: struct {
 	// monitor's size read while the window was still windowed.
 	window_settings:    Settings,
 	monitor_size:       [2]int,
-	// The window's scale, read every frame, and whether the session is
-	// Wayland (display.odin, work item 0084).
+	// The window's scale, read every frame, and the windowing platform GLFW
+	// took (display.odin, work items 0084 and 0085).
 	window_scale:       [2]f32,
-	wayland_display_set: bool,
+	platform:           Window_Platform,
 	environment:        Configuration_Environment,
 	// The effective bindings, for the settings screen's Controls list.
 	bindings:           []Binding,
@@ -450,11 +450,23 @@ save_when_due :: proc(state: ^Frame_State) {
 	}
 }
 
+// The 2D passes (the underwater overlay, the diagnostics pages, the UI)
+// draw in render pixels (work item 0085). raylib 6.0 multiplies its DPI
+// scale into the modelview in BeginDrawing and after EndMode3D, which
+// would upscale them a second time under a scaled Wayland desktop; this
+// flushes what is batched under that matrix and resets it. The identity at
+// scale 1.
+begin_render_pixel_drawing :: proc() {
+	rlgl.DrawRenderBatchActive()
+	rlgl.LoadIdentity()
+}
+
 render_frame :: proc(state: ^Frame_State) {
 	if state.session == nil {
 		rl.BeginDrawing()
 		defer rl.EndDrawing()
 		rl.ClearBackground(DAY_SKY_COLOR)
+		begin_render_pixel_drawing()
 		run_ui_frame(state)
 		capture_pending_screenshot(state)
 		return
@@ -473,6 +485,7 @@ render_frame :: proc(state: ^Frame_State) {
 	rl.ClearBackground(sky.colors.horizon)
 	counts := draw_session_world(state, session, sky, weather)
 	counts.uploaded_meshes = pending_before_upload - session.streaming.pending_jobs
+	begin_render_pixel_drawing()
 	if counts.underwater {
 		draw_underwater_overlay()
 	}
@@ -580,7 +593,7 @@ render_facts :: proc(state: ^Frame_State, sky: Day_Sky, weather: Weather, counts
 		window_size = {int(rl.GetScreenWidth()), int(rl.GetScreenHeight())},
 		render_size = {int(rl.GetRenderWidth()), int(rl.GetRenderHeight())},
 		window_scale = state.window_scale,
-		wayland_display_set = state.wayland_display_set,
+		platform = state.platform,
 		vsync = state.settings.vsync,
 		frame_rate_cap = state.settings.frame_rate_cap,
 		frames_per_second = int(rl.GetFPS()),
@@ -691,8 +704,7 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 	screen_context := Screen_Context {
 		settings        = &state.settings,
 		monitor_size    = state.monitor_size,
-		window_scale    = state.window_scale,
-		wayland_display_set = state.wayland_display_set,
+		platform        = state.platform,
 		font_families   = state.fonts.families,
 		screenshot_requested = &state.screenshot_requested,
 		bindings        = state.bindings,
@@ -746,7 +758,9 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 }
 
 run_ui_frame :: proc(state: ^Frame_State) {
-	screen_pixels := [2]f32{f32(rl.GetScreenWidth()), f32(rl.GetScreenHeight())}
+	// Render pixels (work item 0085): with the high DPI flag the UI follows
+	// the panel's pixels and its text rasterises at their size.
+	screen_pixels := [2]f32{f32(rl.GetRenderWidth()), f32(rl.GetRenderHeight())}
 	input := make_ui_input(state.previous_input, state.input)
 	ui_begin(&state.ui, input, screen_pixels, state.frame_seconds, state.settings.ui_scale, state.settings.pointer_speed, ui_accessibility(state.settings))
 	sync_font_cache(&state.font_cache, state.settings, state.ui.pixels_per_unit)
@@ -961,9 +975,9 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	// Escape is bound to the Pause action, so it must not close the window.
 	rl.SetExitKey(.KEY_NULL)
 	monitor_size := current_monitor_size()
-	wayland := wayland_display_set()
-	log_display_diagnostics(wayland)
-	update_display(&window_settings, player_configuration.settings, monitor_size, wayland)
+	platform := current_window_platform()
+	log_display_diagnostics(platform)
+	update_display(&window_settings, player_configuration.settings, monitor_size, platform)
 
 	renderer, renderer_ok := init_chunk_renderer(content.blocks, data_directory)
 	if !renderer_ok {
@@ -985,7 +999,7 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 		window_settings = window_settings,
 		monitor_size    = monitor_size,
 		window_scale    = window_scale(),
-		wayland_display_set = wayland,
+		platform        = platform,
 		environment     = player_configuration.environment,
 		bindings        = player_configuration.bindings,
 		input_bindings  = player_configuration.input_bindings,
@@ -1044,7 +1058,7 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 		update_data_watch(&state)
 		apply_reload_request(&state)
 		// Applied at once, like the font choice.
-		update_display(&state.window_settings, state.settings, state.monitor_size, state.wayland_display_set)
+		update_display(&state.window_settings, state.settings, state.monitor_size, state.platform)
 		state.window_scale = window_scale()
 		if !screen_stack_contains(state.ui.screens, .Settings) {
 			write_changed_settings(&state)

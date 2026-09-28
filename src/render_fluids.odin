@@ -1,6 +1,6 @@
 package game
 
-import rl "vendor:raylib"
+import rl "shared:raylib"
 
 // Placeholder fluid models: a pipe is a small core cube with a stub
 // towards every neighbour it connects to and a band in the fluid's colour

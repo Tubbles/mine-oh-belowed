@@ -1,7 +1,7 @@
 package game
 
-import rl "vendor:raylib"
-import "vendor:raylib/rlgl"
+import rl "shared:raylib"
+import "shared:raylib/rlgl"
 
 // The water pass (work item 0065): the faces of water blocks, which the
 // mesher puts in parts of their own (world_mesh.odin), drawn after
@@ -173,7 +173,7 @@ draw_water_chunks :: proc(renderer: ^Chunk_Renderer, camera: rl.Camera3D, second
 	}
 }
 
-// After the 3D pass.
+// After the 3D pass, in render pixels (begin_render_pixel_drawing).
 draw_underwater_overlay :: proc() {
-	rl.DrawRectangle(0, 0, rl.GetScreenWidth(), rl.GetScreenHeight(), rl.Fade(UNDERWATER_COLOR, UNDERWATER_OVERLAY_ALPHA))
+	rl.DrawRectangle(0, 0, rl.GetRenderWidth(), rl.GetRenderHeight(), rl.Fade(UNDERWATER_COLOR, UNDERWATER_OVERLAY_ALPHA))
 }

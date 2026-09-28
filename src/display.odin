@@ -2,7 +2,7 @@ package game
 
 import "core:fmt"
 import "core:os"
-import rl "vendor:raylib"
+import rl "shared:raylib"
 
 // The window's mode, size, vsync and frame rate cap from the settings
 // (work item 0080). display_changes decides what to do and is pure;
@@ -113,8 +113,11 @@ initial_window_settings :: proc(settings: Settings) -> Settings {
 	return result
 }
 
+// The high DPI flag (work item 0085): on a scaled Wayland desktop the
+// framebuffer follows the panel's pixels, not the scaled window size. On
+// X11 at scale 1 it changes nothing.
 window_config_flags :: proc(settings: Settings) -> rl.ConfigFlags {
-	flags := rl.ConfigFlags{.WINDOW_RESIZABLE}
+	flags := rl.ConfigFlags{.WINDOW_RESIZABLE, .WINDOW_HIGHDPI}
 	if settings.vsync {
 		flags += {.VSYNC_HINT}
 	}
@@ -220,32 +223,67 @@ centred_window_position :: proc(monitor_origin, monitor_size, size: [2]int) -> [
 
 // The frame loop's hook: applies what changed since the settings last
 // applied (applied), remembers them and logs the display afterwards.
-update_display :: proc(applied: ^Settings, next: Settings, monitor_size: [2]int, wayland_display_set: bool) {
+update_display :: proc(applied: ^Settings, next: Settings, monitor_size: [2]int, platform: Window_Platform) {
 	changes := display_changes(applied^, next)
 	if changes == {} {
 		return
 	}
 	apply_display_changes(changes, monitor_size)
 	applied^ = next
-	log_display_diagnostics(wayland_display_set)
+	log_display_diagnostics(platform)
 }
 
-// Work item 0084. The vendored raylib is X11 only, so a Wayland session
-// (WAYLAND_DISPLAY set) runs the game through XWayland, which hands X11
-// applications the scaled screen when the desktop is scaled and upscales
-// them: the monitor then reports the scaled size, not the panel's.
+// The windowing platform GLFW took (work item 0085). raylib's GLFW has
+// both backends and tries Wayland first, X11 when Wayland does not
+// connect or XDG_SESSION_TYPE says x11. XWayland is the X11 platform with
+// WAYLAND_DISPLAY set; XWayland hands X11 applications the scaled screen
+// when the desktop is scaled and upscales them (work item 0084). The
+// launcher's MINE_OH_BELOWED_X11 unsets WAYLAND_DISPLAY, so that route
+// reports x11 although XWayland serves it.
+Window_Platform :: enum u8 {
+	X11,
+	XWayland,
+	Wayland,
+}
+
+// The name the display log line and the Render page show.
+window_platform_name :: proc(platform: Window_Platform) -> string {
+	switch platform {
+	case .X11:
+		return "x11"
+	case .XWayland:
+		return "xwayland"
+	case .Wayland:
+		return "wayland"
+	}
+	return "?"
+}
+
 wayland_display_set :: proc() -> bool {
 	return os.get_env("WAYLAND_DISPLAY", context.temp_allocator) != ""
 }
 
-// The desktop scales the window: the Resolution row cannot reach the
-// panel's size and says so.
-display_is_desktop_scaled :: proc(scale: [2]f32, wayland_display_set: bool) -> bool {
-	return wayland_display_set || scale != {1, 1}
+// glfw_platform is glfwGetPlatform's answer.
+window_platform_from_glfw :: proc(glfw_platform: int, wayland_session: bool) -> Window_Platform {
+	if glfw_platform == rl.GLFW_PLATFORM_WAYLAND {
+		return .Wayland
+	}
+	return wayland_session ? .XWayland : .X11
 }
 
-display_diagnostics_text :: proc(monitor_size, window_size, render_size: [2]int, scale: [2]f32, wayland_display_set: bool) -> string {
-	session := wayland_display_set ? "xwayland" : "x11"
+// Read once after InitWindow: GLFW does not change its platform.
+current_window_platform :: proc() -> Window_Platform {
+	return window_platform_from_glfw(int(rl.glfwGetPlatform()), wayland_display_set())
+}
+
+// The desktop scales the window: under XWayland the Resolution row cannot
+// reach the panel's size and says so. A native Wayland window with the
+// high DPI flag has a framebuffer at the panel's size.
+display_is_desktop_scaled :: proc(platform: Window_Platform) -> bool {
+	return platform == .XWayland
+}
+
+display_diagnostics_text :: proc(monitor_size, window_size, render_size: [2]int, scale: [2]f32, platform: Window_Platform) -> string {
 	return fmt.tprintf(
 		"display: monitor %d x %d, window %d x %d, render %d x %d, scale %.2f x %.2f, session %s",
 		monitor_size.x,
@@ -256,7 +294,7 @@ display_diagnostics_text :: proc(monitor_size, window_size, render_size: [2]int,
 		render_size.y,
 		scale.x,
 		scale.y,
-		session,
+		window_platform_name(platform),
 	)
 }
 
@@ -265,8 +303,35 @@ window_scale :: proc() -> [2]f32 {
 	return {scale.x, scale.y}
 }
 
-log_display_diagnostics :: proc(wayland_display_set: bool) {
+// The framebuffer's size in pixels, which the 3D pass fills and the UI
+// lays out in (work item 0085). With the high DPI flag it differs from
+// the window's size (GetScreenWidth) under a scaled Wayland desktop.
+render_size :: proc() -> [2]int {
+	return {int(rl.GetRenderWidth()), int(rl.GetRenderHeight())}
+}
+
+// A position in the window's coordinates, as GLFW reports the cursor, in
+// render pixels: scaled per axis by the framebuffer's size over the
+// window's size in the same coordinates. The identity on X11, where both
+// are pixels; a zero size (a minimised window) leaves the position alone.
+pointer_to_render_pixels :: proc(position: [2]f32, window_size, render_size: [2]int) -> [2]f32 {
+	if window_size.x <= 0 || window_size.y <= 0 {
+		return position
+	}
+	return position * [2]f32{f32(render_size.x) / f32(window_size.x), f32(render_size.y) / f32(window_size.y)}
+}
+
+// The window's size in the cursor's coordinates, from GLFW. raylib's
+// GetScreenWidth is not that on Wayland in fullscreen, where raylib 6.0
+// sets it to the framebuffer's size while GLFW keeps the cursor in the
+// window's logical coordinates.
+cursor_window_size :: proc() -> [2]int {
+	width, height: i32
+	rl.glfwGetWindowSize(rl.glfwGetCurrentContext(), &width, &height)
+	return {int(width), int(height)}
+}
+
+log_display_diagnostics :: proc(platform: Window_Platform) {
 	window_size := [2]int{int(rl.GetScreenWidth()), int(rl.GetScreenHeight())}
-	render_size := [2]int{int(rl.GetRenderWidth()), int(rl.GetRenderHeight())}
-	log_printf("%s", display_diagnostics_text(current_monitor_size(), window_size, render_size, window_scale(), wayland_display_set))
+	log_printf("%s", display_diagnostics_text(current_monitor_size(), window_size, render_size(), window_scale(), platform))
 }

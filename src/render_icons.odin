@@ -1,8 +1,8 @@
 package game
 
 import "core:slice"
-import rl "vendor:raylib"
-import "vendor:raylib/rlgl"
+import rl "shared:raylib"
+import "shared:raylib/rlgl"
 
 // The item atlas (work item 0060): one 16 by 16 tile per item, the tile
 // index the Item_Id, read from data/textures/items/<id>.png. An item

@@ -76,7 +76,7 @@ test_render_page_lines_from_facts :: proc(t: ^testing.T) {
 		window_size = {1694, 1129},
 		render_size = {1694, 1129},
 		window_scale = {1, 1},
-		wayland_display_set = true,
+		platform = .XWayland,
 		vsync = true,
 		frame_rate_cap = 0,
 		frames_per_second = 60,

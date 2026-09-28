@@ -1,6 +1,6 @@
 package game
 
-import rl "vendor:raylib"
+import rl "shared:raylib"
 
 // Machine models on the GPU (work items 0055 and 0056): per machine that
 // names a model, the body and the moving part, each as a lit and an

@@ -1,7 +1,7 @@
 package game
 
 import "core:testing"
-import rl "vendor:raylib"
+import rl "shared:raylib"
 
 @(test)
 test_mining_required_ticks :: proc(t: ^testing.T) {

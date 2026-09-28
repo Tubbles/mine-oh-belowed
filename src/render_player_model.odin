@@ -2,7 +2,7 @@ package game
 
 import "core:fmt"
 import "core:math"
-import rl "vendor:raylib"
+import rl "shared:raylib"
 
 // The player's body (work item 0066): six limb files in data/models/
 // (player_torso.vox and the rest, tools/make_placeholder_models.py), each

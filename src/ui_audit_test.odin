@@ -37,6 +37,10 @@ UI_AUDIT_SIZES :: [?]Ui_Audit_Size {
 	{{1280, 800}, 1.0},
 	{{1280, 800}, 1.2},
 	{{1280, 800}, 1.5},
+	// The laptop's panel under a 1.7 desktop scale on Wayland, in render
+	// pixels (work item 0085): the window is 1694 by 1129 there, the UI
+	// lays out in the framebuffer's 2880 by 1920.
+	{{2880, 1920}, 1.0},
 }
 
 // Each size runs at the default text size and at the largest (work item
@@ -90,9 +94,8 @@ Ui_Audit :: struct {
 	content:            Simulation_Content,
 	simulation:         Simulation_State,
 	settings:           Settings,
-	// The screen context's display facts (work item 0084).
-	window_scale:       [2]f32,
-	wayland_display_set: bool,
+	// The screen context's display fact (work items 0084 and 0085).
+	platform:           Window_Platform,
 	fonts:              Loaded_Fonts,
 	bindings:           []Binding,
 	title:              Title_State,
@@ -230,8 +233,7 @@ audit_screen_context :: proc(audit: ^Ui_Audit) -> Screen_Context {
 	return Screen_Context {
 		settings = &audit.settings,
 		monitor_size = UI_AUDIT_MONITOR_SIZE,
-		window_scale = audit.window_scale,
-		wayland_display_set = audit.wayland_display_set,
+		platform = audit.platform,
 		font_families = audit.fonts.families,
 		bindings = audit.bindings,
 		quit_requested = &audit.quit_requested,
@@ -459,7 +461,7 @@ make_ui_audit :: proc() -> ^Ui_Audit {
 	}
 	audit.settings = DEFAULT_SETTINGS
 	audit.settings.developer_mode = true
-	audit.window_scale = {1, 1}
+	audit.platform = .X11
 	fonts_problem: string
 	audit.fonts, fonts_problem = load_fonts(test_data_directory())
 	assert(fonts_problem == "", fonts_problem)
@@ -541,9 +543,9 @@ audit_windowed_display :: proc(audit: ^Ui_Audit) {
 audit_desktop_scaled_display :: proc(audit: ^Ui_Audit) {
 	settings := audit.settings
 	audit.settings.window_mode = .Borderless
-	audit.window_scale, audit.wayland_display_set = {1.7, 1.7}, true
+	audit.platform = .XWayland
 	audit_case(audit, {name = "settings display desktop scaled", screens = {.Pause, .Settings}, walk_focus = true})
-	audit.window_scale, audit.wayland_display_set = {1, 1}, false
+	audit.platform = .X11
 	audit.settings = settings
 }
 

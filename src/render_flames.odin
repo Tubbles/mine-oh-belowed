@@ -1,8 +1,8 @@
 package game
 
 import "core:math"
-import rl "vendor:raylib"
-import "vendor:raylib/rlgl"
+import rl "shared:raylib"
+import "shared:raylib/rlgl"
 
 // Torch flames (work item 0061): a small camera facing quad above every
 // light emitting post the mesher found (Chunk_Mesh_Data.flames). Its size

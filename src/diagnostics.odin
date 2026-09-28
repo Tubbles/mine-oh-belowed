@@ -3,8 +3,8 @@ package game
 import "core:container/queue"
 import "core:fmt"
 import "core:strings"
-import rl "vendor:raylib"
-import "vendor:raylib/rlgl"
+import rl "shared:raylib"
+import "shared:raylib/rlgl"
 
 DIAGNOSTICS_MARGIN :: 16
 DIAGNOSTICS_TEXT_COLOR :: rl.Color{230, 230, 230, 255}
@@ -51,7 +51,7 @@ Render_Facts :: struct {
 	window_size:            [2]int,
 	render_size:            [2]int,
 	window_scale:           [2]f32,
-	wayland_display_set:    bool,
+	platform:               Window_Platform,
 	vsync:                  bool,
 	// 0 is no cap.
 	frame_rate_cap:         int,
@@ -134,7 +134,7 @@ render_page_lines :: proc(facts: Render_Facts) -> []Diagnostics_Line {
 	lines := make([dynamic]Diagnostics_Line, context.temp_allocator)
 	append_line(&lines, false, "build %s", facts.build_stamp)
 	append_line(&lines, false, "mode %v  monitor %d x %d  window %d x %d", facts.window_mode, facts.monitor_size.x, facts.monitor_size.y, facts.window_size.x, facts.window_size.y)
-	append_line(&lines, false, "render %d x %d  scale %.2f x %.2f  session %s", facts.render_size.x, facts.render_size.y, facts.window_scale.x, facts.window_scale.y, facts.wayland_display_set ? "xwayland" : "x11")
+	append_line(&lines, false, "render %d x %d  scale %.2f x %.2f  session %s", facts.render_size.x, facts.render_size.y, facts.window_scale.x, facts.window_scale.y, window_platform_name(facts.platform))
 	append_line(&lines, false, "vsync %s  frame rate cap %s", yes_no(facts.vsync), frame_rate_cap_text(facts.frame_rate_cap))
 	append_line(&lines, false, "fps %d  frame %.2f ms (last second)", facts.frames_per_second, facts.frame_milliseconds)
 	append_line(&lines, false, "ticks this frame %d  accumulator %.2f ms", facts.tick_count, facts.accumulated_seconds * 1000)
@@ -420,8 +420,8 @@ draw_lines :: proc(fonts: ^Font_Cache, lines: []Diagnostics_Line, x, y, font_siz
 
 // The Input page's columns, from top down.
 draw_diagnostics :: proc(state: Frame_State, config: Game_Config, top: i32) {
-	font_size := diagnostics_font_size(rl.GetScreenHeight())
-	screen_width := rl.GetScreenWidth()
+	font_size := diagnostics_font_size(rl.GetRenderHeight())
+	screen_width := rl.GetRenderWidth()
 	button_column_x := screen_width * 35 / 100
 	analog_column_x := screen_width * 64 / 100
 	fonts := state.ui.fonts
@@ -435,7 +435,7 @@ draw_diagnostics :: proc(state: Frame_State, config: Game_Config, top: i32) {
 // read only on their pages.
 draw_diagnostics_page :: proc(state: Frame_State, config: Game_Config, render: Render_Facts, world: World_Facts) {
 	draw_diagnostics_backdrop()
-	font_size := diagnostics_font_size(rl.GetScreenHeight())
+	font_size := diagnostics_font_size(rl.GetRenderHeight())
 	header := [?]Diagnostics_Line{{text = diagnostics_header_text(state.diagnostics_page), active = true}}
 	top := draw_lines(state.ui.fonts, header[:], DIAGNOSTICS_MARGIN, DIAGNOSTICS_MARGIN, font_size)
 	switch state.diagnostics_page {
@@ -484,7 +484,7 @@ streaming_statistics_text :: proc(state: Frame_State) -> string {
 
 // Keeps the diagnostics readable over the bright sky.
 draw_diagnostics_backdrop :: proc() {
-	rl.DrawRectangle(0, 0, rl.GetScreenWidth(), rl.GetScreenHeight(), DIAGNOSTICS_BACKDROP_COLOR)
+	rl.DrawRectangle(0, 0, rl.GetRenderWidth(), rl.GetRenderHeight(), DIAGNOSTICS_BACKDROP_COLOR)
 }
 
 // The F4 overlay's world, streaming, light and player lines, which the
@@ -506,7 +506,7 @@ draw_world_overlay :: proc(state: Frame_State) {
 	append(&lines, ..world_overlay_statistics_lines(state))
 	append_line(&lines, state.settings.bottleneck_overlay, "bottleneck overlay %s", yes_no(state.settings.bottleneck_overlay))
 	append_line(&lines, false, "F3 diagnostics  F4 statistics  F5 remove block  F6 fly  V camera  O bottlenecks")
-	font_size := diagnostics_font_size(rl.GetScreenHeight())
+	font_size := diagnostics_font_size(rl.GetRenderHeight())
 	backdrop_height := i32(len(lines)) * (font_size + font_size / 5) + DIAGNOSTICS_MARGIN
 	rl.DrawRectangle(0, 0, font_size * 24, backdrop_height + DIAGNOSTICS_MARGIN, DIAGNOSTICS_BACKDROP_COLOR)
 	draw_lines(state.ui.fonts, lines[:], DIAGNOSTICS_MARGIN, DIAGNOSTICS_MARGIN, font_size)

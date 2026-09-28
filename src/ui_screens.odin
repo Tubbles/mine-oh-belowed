@@ -21,10 +21,9 @@ Screen_Context :: struct {
 	// The monitor's size (display.odin): the Resolution choices up to it,
 	// and the Resolution row's value in borderless.
 	monitor_size:    [2]int,
-	// The window's scale and whether the session is Wayland: the
-	// Resolution row notes a desktop scaled screen (display.odin).
-	window_scale:    [2]f32,
-	wayland_display_set: bool,
+	// The windowing platform GLFW took: under XWayland the Resolution row
+	// notes a desktop scaled screen (display.odin).
+	platform:        Window_Platform,
 	// The Font choices cycle through them (data/fonts/fonts.sjson).
 	font_families:   []Font_Family,
 	// The effective bindings, shown read only.
@@ -331,7 +330,7 @@ settings_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	switch tab {
 	case 0:
 		region, rows := scroll_region_begin(state, "display_settings", content, settings_rows_height(DISPLAY_SETTINGS_ROW_COUNT))
-		desktop_scaled := display_is_desktop_scaled(screen_context.window_scale, screen_context.wayland_display_set)
+		desktop_scaled := display_is_desktop_scaled(screen_context.platform)
 		display_settings(state, &rows, settings, screen_context.monitor_size, desktop_scaled, screen_context.font_families)
 		scroll_region_end(state, region)
 	case 1:
@@ -492,9 +491,10 @@ window_mode_keys := [Window_Mode]string {
 }
 
 // Borderless covers the monitor: the row is dimmed, shows the monitor's
-// size and does not step, but keeps its focus and tooltip. On a desktop
-// scaled screen (work item 0084) the size is the scaled one: the value
-// says so and the tooltip names the ways to the panel's full size.
+// size and does not step, but keeps its focus and tooltip. Under XWayland
+// on a desktop scaled screen (work item 0084) the size is the scaled one:
+// the value says so and the tooltip names the ways to the panel's full
+// size. A native Wayland window reaches the panel (work item 0085).
 resolution_choice :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, settings: ^Settings, monitor_size: [2]int, desktop_scaled: bool) {
 	if settings.window_mode == .Borderless && desktop_scaled {
 		value := fmt.tprintf("%s (%s)", resolution_text(monitor_size), text("settings_resolution_desktop_scaled"))

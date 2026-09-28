@@ -5,7 +5,7 @@ import "core:fmt"
 import "core:os"
 import "core:reflect"
 import "core:strings"
-import rl "vendor:raylib"
+import rl "shared:raylib"
 import sdl "vendor:sdl3"
 
 // Input bindings (doc/input.md). The defaults live in data/bindings.sjson,

@@ -3,7 +3,7 @@ package game
 import "core:math"
 import "core:math/linalg"
 import "core:testing"
-import rl "vendor:raylib"
+import rl "shared:raylib"
 
 @(test)
 test_fog_ends_one_chunk_inside_the_load_radius :: proc(t: ^testing.T) {

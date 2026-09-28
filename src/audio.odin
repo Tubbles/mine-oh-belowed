@@ -5,7 +5,7 @@ import "core:fmt"
 import "core:mem/virtual"
 import "core:os"
 import "core:strings"
-import rl "vendor:raylib"
+import rl "shared:raylib"
 
 // Sound (work item 0068): the sound table in data/sounds/sounds.sjson and
 // a small mixer over raylib audio. Effects are short sounds played once,

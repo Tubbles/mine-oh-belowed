@@ -2,8 +2,8 @@ package game
 
 import "core:math"
 import "core:math/linalg"
-import rl "vendor:raylib"
-import "vendor:raylib/rlgl"
+import rl "shared:raylib"
+import "shared:raylib/rlgl"
 
 // Drawing of ambient life (work item 0075, pure parts in
 // ambient_life.odin): bird flocks as dark silhouettes of a body and two

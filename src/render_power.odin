@@ -1,6 +1,6 @@
 package game
 
-import rl "vendor:raylib"
+import rl "shared:raylib"
 
 // Placeholder power models: a small pole is a thin tall post, a power
 // switch a box in green while on and red while off, a lamp a small box

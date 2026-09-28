@@ -2,8 +2,8 @@ package game
 
 import "core:math"
 import "core:math/linalg"
-import rl "vendor:raylib"
-import "vendor:raylib/rlgl"
+import rl "shared:raylib"
+import "shared:raylib/rlgl"
 
 // The sky pass (work item 0064), drawn first inside BeginMode3D, centred
 // on the camera, without depth test or depth writes, so everything else

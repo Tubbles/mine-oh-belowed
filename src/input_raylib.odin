@@ -1,6 +1,6 @@
 package game
 
-import rl "vendor:raylib"
+import rl "shared:raylib"
 
 // Bindings come from data/bindings.sjson and the configuration
 // (bindings.odin). The left trackpad is not readable here, so Hotbar_Radial
@@ -39,9 +39,18 @@ read_raylib_gamepad :: proc() -> Raw_Gamepad {
 	return gamepad
 }
 
+// The position is in render pixels, where the UI lays out (work item
+// 0085). raylib 6.0 scales the cursor by its guess of the DPI scale, and
+// guesses wrong on Wayland (its window callbacks are compiled without
+// GLFW's Wayland define and set 1 over the scale, although GLFW reports
+// the cursor in logical units there). The scale is reset to 1 so the
+// position and the delta are GLFW's window coordinates, mapped to the
+// framebuffer by GLFW's window size. The delta stays in window
+// coordinates, so mouse look keeps its speed.
 read_raylib_mouse :: proc() -> Raw_Mouse {
+	rl.SetMouseScale(1, 1)
 	mouse := Raw_Mouse {
-		position     = rl.GetMousePosition(),
+		position     = pointer_to_render_pixels(rl.GetMousePosition(), cursor_window_size(), render_size()),
 		delta        = rl.GetMouseDelta(),
 		wheel        = rl.GetMouseWheelMoveV(),
 		button_count = min(len(rl.MouseButton), RAW_MOUSE_BUTTON_CAPACITY),

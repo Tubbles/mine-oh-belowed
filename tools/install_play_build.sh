@@ -75,6 +75,17 @@ export MINE_OH_BELOWED_DATA="$build_directory/data"
 # says which device it got.
 unset SDL_GAMECONTROLLER_IGNORE_DEVICES
 export SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD=0
+# Work item 0085: the game opens a native Wayland window when the session
+# (gamescope included) offers one. MINE_OH_BELOWED_X11=1 makes GLFW take
+# X11 (XWayland under a Wayland desktop), the way back if Wayland
+# misbehaves. Unsetting WAYLAND_DISPLAY alone is not enough: GLFW then
+# still tries Wayland first, whose client library falls back to the
+# wayland-0 socket; with XDG_SESSION_TYPE=x11 and DISPLAY set GLFW asks
+# for X11 directly (glfw/src/platform.c, _glfwSelectPlatform).
+if [ "${MINE_OH_BELOWED_X11:-}" = 1 ]; then
+	unset WAYLAND_DISPLAY
+	export XDG_SESSION_TYPE=x11
+fi
 # Work item 0084: MINE_OH_BELOWED_GAMESCOPE holds gamescope's own arguments
 # (for example "-f -W 2880 -H 1920") and runs the game inside gamescope,
 # which presents it at the panel's full size on a scaled Wayland desktop.

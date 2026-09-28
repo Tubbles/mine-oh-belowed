@@ -3,7 +3,7 @@
 ## Stack
 
 - Odin dev-2026-09. Data oriented, procedures and structs, matching the code rules in `CLAUDE.md`.
-- raylib 6.0 through `vendor:raylib` for the window, OpenGL rendering through rlgl, textures, fonts and audio. The bundled Linux build is static and uses GLFW.
+- raylib 6.0 through the repository collection `shared:raylib` (0085: the toolchain's binding copied, linking a static raylib built from source by `tools/build_raylib.sh`, see `build.md`) for the window, OpenGL rendering through rlgl, textures, fonts and audio. Its GLFW has the Wayland and the X11 backend and takes Wayland when the session offers it; the window asks for high DPI, so the framebuffer has the panel's pixels on a scaled Wayland desktop.
 - SDL3 through `vendor:sdl3` for controller input only (joystick, gamepad and sensor subsystems). SDL video is never initialised. raylib's GLFW gamepad path remains as the fallback for generic controllers.
 
 ## Process structure

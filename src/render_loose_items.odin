@@ -1,8 +1,8 @@
 package game
 
 import "core:math"
-import rl "vendor:raylib"
-import "vendor:raylib/rlgl"
+import rl "shared:raylib"
+import "shared:raylib/rlgl"
 
 // Loose items (loose_item.odin): one icon per stack, a camera facing quad
 // like the items on belts, bobbing with the render time; an item without

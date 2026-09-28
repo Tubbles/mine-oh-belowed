@@ -7,6 +7,9 @@
 #   ./build.sh test      odin test src
 #   ./build.sh bench     the factory benchmark test, optimised, with the
 #                        size 4 budget (work item 0050)
+# Every command passes the shared collection, which holds the raylib
+# binding and the library tools/build_raylib.sh builds (work item 0085),
+# so a bare odin check src no longer compiles.
 set -euo pipefail
 
 odin="${ODIN:-$HOME/opt/odin/odin}"
@@ -14,6 +17,7 @@ repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 shim_directory="$repository_root/tmp/linker-shims"
 output="$repository_root/build/mine-oh-belowed"
 mode="${1:-debug}"
+collection="-collection:shared=$repository_root/shared"
 
 cd "$repository_root"
 
@@ -46,7 +50,7 @@ build_commit() {
 build() {
 	create_linker_shims
 	mkdir -p "$(dirname "$output")"
-	"$odin" build src -out:"$output" -vet -strict-style \
+	"$odin" build src -out:"$output" "$collection" -vet -strict-style \
 		-define:BUILD_INFO="$(build_commit) $(date -u +%Y-%m-%dT%H:%MZ)" \
 		-extra-linker-flags:"-L$shim_directory" "$@"
 }
@@ -54,9 +58,9 @@ build() {
 case "$mode" in
 	debug) build -debug ;;
 	release) build -o:speed ;;
-	check) "$odin" check src -vet -strict-style ;;
-	test) "$odin" test src ;;
-	bench) "$odin" test src -o:speed -define:ODIN_TEST_NAMES=game.test_factory_benchmark ;;
+	check) "$odin" check src "$collection" -vet -strict-style ;;
+	test) "$odin" test src "$collection" ;;
+	bench) "$odin" test src "$collection" -o:speed -define:ODIN_TEST_NAMES=game.test_factory_benchmark ;;
 	*)
 		echo "usage: $0 [debug|release|check|test|bench]" >&2
 		exit 2

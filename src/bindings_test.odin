@@ -2,7 +2,7 @@ package game
 
 import "core:strings"
 import "core:testing"
-import rl "vendor:raylib"
+import rl "shared:raylib"
 import sdl "vendor:sdl3"
 
 // The binding tables as they were hardcoded in input_raylib.odin and

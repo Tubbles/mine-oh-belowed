@@ -2,8 +2,8 @@ package game
 
 import "core:math"
 import "core:math/linalg"
-import rl "vendor:raylib"
-import "vendor:raylib/rlgl"
+import rl "shared:raylib"
+import "shared:raylib/rlgl"
 
 // The default third person distance; settings.third_person_distance
 // holds the player's.

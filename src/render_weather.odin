@@ -1,8 +1,8 @@
 package game
 
 import "core:math"
-import rl "vendor:raylib"
-import "vendor:raylib/rlgl"
+import rl "shared:raylib"
+import "shared:raylib/rlgl"
 
 // Drawing the weather (work item 0063), all from the weather of the
 // frame (weather.odin), the render time and the camera, nothing of the

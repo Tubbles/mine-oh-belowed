@@ -2,7 +2,7 @@ package game
 
 import "core:math/linalg"
 import "core:slice"
-import rl "vendor:raylib"
+import rl "shared:raylib"
 
 // Belts: one quad mesh per shape, built once with its v texture axis
 // along the flow, so one scroll offset (the distance items travelled)

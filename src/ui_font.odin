@@ -7,7 +7,7 @@ import "core:mem/virtual"
 import "core:os"
 import "core:slice"
 import "core:strings"
-import rl "vendor:raylib"
+import rl "shared:raylib"
 
 // TrueType fonts at exact pixel sizes (work item 0077). The families come
 // from data/fonts/fonts.sjson. Text drawn at text_size UI units is

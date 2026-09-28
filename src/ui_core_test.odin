@@ -581,3 +581,24 @@ test_focus_tabs_step_on_left_and_right :: proc(t: ^testing.T) {
 	frame(&state, {navigation = .Down}, labels[:], strip)
 	testing.expect_value(t, state.focus, 2)
 }
+
+// Work item 0085: the UI lays out in render pixels. The laptop's panel
+// under a 1.7 desktop scale on Wayland has a 1694 by 1129 window and a
+// 2880 by 1920 framebuffer: the layout in units is the same, a unit is
+// 1.7 times the pixels, so text rasterises at the panel's size, and the
+// cursor mapped to render pixels lands on the same unit (within one, as
+// the window's size is rounded to whole units of the desktop).
+@(test)
+test_ui_layout_in_render_pixels :: proc(t: ^testing.T) {
+	window, render: Ui_State
+	defer destroy_ui_state(&window)
+	defer destroy_ui_state(&render)
+	cursor := [2]f32{847, 564.5}
+	ui_begin(&window, {mouse_position = cursor, mouse_moved = true}, {1694, 1129}, 0, 1, 1)
+	ui_begin(&render, {mouse_position = pointer_to_render_pixels(cursor, {1694, 1129}, {2880, 1920}), mouse_moved = true}, {2880, 1920}, 0, 1, 1)
+	testing.expect(t, abs(render.pixels_per_unit / window.pixels_per_unit - 1920.0 / 1129) < TEST_TOLERANCE)
+	testing.expect(t, abs(render.screen_units.x - window.screen_units.x) < 1)
+	testing.expect(t, abs(render.screen_units.y - UI_UNITS_PER_SCREEN_HEIGHT) < TEST_TOLERANCE)
+	testing.expect(t, abs(render.pointer.x - window.pointer.x) < 1)
+	testing.expect(t, abs(render.pointer.y - window.pointer.y) < 1)
+}

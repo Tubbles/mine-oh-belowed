@@ -2,7 +2,7 @@ package game
 
 import "core:math/linalg"
 import "core:testing"
-import rl "vendor:raylib"
+import rl "shared:raylib"
 
 @(test)
 test_belt_ghost_surface_sits_where_a_real_belt_does :: proc(t: ^testing.T) {

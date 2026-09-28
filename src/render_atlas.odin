@@ -5,7 +5,7 @@ import "core:image"
 import "core:image/png"
 import "core:os"
 import "core:slice"
-import rl "vendor:raylib"
+import rl "shared:raylib"
 
 // The block atlas, built at startup and on a reload: one 16 by 16 tile per
 // face group per block. A tile comes from data/textures/blocks/<id>.png,

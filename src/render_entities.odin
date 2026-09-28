@@ -2,7 +2,7 @@ package game
 
 import "core:math"
 import "core:math/linalg"
-import rl "vendor:raylib"
+import rl "shared:raylib"
 
 // Placeholder entity models: a coloured cube per footprint cell, with a
 // brighter top layer on a burning furnace, for inserters a post with an
