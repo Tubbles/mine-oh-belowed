@@ -13,10 +13,12 @@ FOG_START_SHARE :: 0.6
 CAMERA_FIELD_OF_VIEW_DEGREES :: 70.0
 
 // One raylib mesh per part: a chunk only needs more than one when it
-// exceeds the u16 index range (MESH_PART_VERTEX_LIMIT). flames holds the
-// world cells of the chunk's torches (render_flames.odin).
+// exceeds the u16 index range (MESH_PART_VERTEX_LIMIT). water_meshes are
+// the water parts, drawn by the water pass (render_water.odin). flames
+// holds the world cells of the chunk's torches (render_flames.odin).
 Chunk_Render :: struct {
 	meshes:       [dynamic]rl.Mesh,
+	water_meshes: [dynamic]rl.Mesh,
 	vertex_count: int,
 	flames:       [dynamic]World_Coordinate,
 }
@@ -37,14 +39,21 @@ Chunk_Renderer :: struct {
 	cloud_shadow_strength_location: i32,
 	// The sky pass (render_sky.odin) lives with the chunks it sits behind.
 	sky:                            Sky_Renderer,
+	// The water pass (render_water.odin, work item 0065).
+	water:                          Water_Renderer,
 	chunk_meshes:                   map[Chunk_Coordinate]Chunk_Render,
 	drawn_chunk_count:              int,
 	vertex_count:                   int,
 }
 
 load_chunk_shader :: proc(data_directory: string) -> (shader: rl.Shader, ok: bool) {
-	vertex_path, vertex_error := os.join_path({data_directory, CHUNK_VERTEX_SHADER_PATH}, context.temp_allocator)
-	fragment_path, fragment_error := os.join_path({data_directory, CHUNK_FRAGMENT_SHADER_PATH}, context.temp_allocator)
+	return load_shader_pair(data_directory, CHUNK_VERTEX_SHADER_PATH, CHUNK_FRAGMENT_SHADER_PATH, "chunk")
+}
+
+// name says which shader failed in the log.
+load_shader_pair :: proc(data_directory, vertex_file, fragment_file, name: string) -> (shader: rl.Shader, ok: bool) {
+	vertex_path, vertex_error := os.join_path({data_directory, vertex_file}, context.temp_allocator)
+	fragment_path, fragment_error := os.join_path({data_directory, fragment_file}, context.temp_allocator)
 	if vertex_error != nil || fragment_error != nil {
 		return {}, false
 	}
@@ -54,7 +63,7 @@ load_chunk_shader :: proc(data_directory: string) -> (shader: rl.Shader, ok: boo
 	)
 	// raylib falls back to its default shader when loading or compiling fails.
 	if !rl.IsShaderValid(shader) || shader.id == rlgl.GetShaderIdDefault() {
-		log_printf("error: cannot load the chunk shader from %s and %s", vertex_path, fragment_path)
+		log_printf("error: cannot load the %s shader from %s and %s", name, vertex_path, fragment_path)
 		return {}, false
 	}
 	return shader, true
@@ -95,6 +104,11 @@ chunk_atlas_texture :: proc(renderer: Chunk_Renderer) -> rl.Texture2D {
 
 init_chunk_renderer :: proc(registry: Block_Registry, data_directory: string) -> (renderer: Chunk_Renderer, ok: bool) {
 	shader := load_chunk_shader(data_directory) or_return
+	water_shader, water_loaded := load_water_shader(data_directory)
+	if !water_loaded {
+		rl.UnloadShader(shader)
+		return {}, false
+	}
 	renderer.atlas_layout = atlas_layout_for_block_count(len(registry.definitions))
 	renderer.material = rl.LoadMaterialDefault()
 	use_chunk_shader(&renderer, shader)
@@ -103,6 +117,7 @@ init_chunk_renderer :: proc(registry: Block_Registry, data_directory: string) ->
 	// bound to cloud_texture by use_chunk_shader; UnloadMaterial frees it.
 	rl.SetMaterialTexture(&renderer.material, .METALNESS, upload_cloud_texture())
 	renderer.sky = init_sky_renderer()
+	renderer.water = init_water_renderer(water_shader, chunk_atlas_texture(renderer), renderer.atlas_layout)
 	apply_daylight(&renderer, day_sky_at(NOON_FRACTION, 0))
 	return renderer, true
 }
@@ -148,6 +163,8 @@ replace_chunk_atlas :: proc(renderer: ^Chunk_Renderer, registry: Block_Registry,
 	renderer.atlas_layout = atlas_layout_for_block_count(len(registry.definitions))
 	set_shader_vector2(renderer.material.shader, "tile_size", atlas_tile_uv_size(renderer.atlas_layout))
 	rl.SetMaterialTexture(&renderer.material, .ALBEDO, upload_atlas(registry, renderer.atlas_layout, data_directory))
+	set_shader_vector2(renderer.water.material.shader, "tile_size", atlas_tile_uv_size(renderer.atlas_layout))
+	renderer.water.material.maps[rl.MaterialMapIndex.ALBEDO].texture = chunk_atlas_texture(renderer^)
 }
 
 // raylib frees the CPU side arrays in UnloadMesh with its own allocator,
@@ -158,6 +175,7 @@ clone_for_raylib :: proc(values: []$T) -> [^]T {
 	return raw_data(copied)
 }
 
+// Water parts carry a tangent per vertex (water_tangent), the others none.
 upload_mesh_part :: proc(part: Mesh_Part) -> rl.Mesh {
 	mesh := rl.Mesh {
 		vertexCount   = i32(len(part.positions)),
@@ -168,6 +186,9 @@ upload_mesh_part :: proc(part: Mesh_Part) -> rl.Mesh {
 		colors        = cast([^]u8)clone_for_raylib(part.colors[:]),
 		indices       = clone_for_raylib(part.indices[:]),
 	}
+	if len(part.tangents) > 0 {
+		mesh.tangents = cast([^]f32)clone_for_raylib(part.tangents[:])
+	}
 	rl.UploadMesh(&mesh, false)
 	return mesh
 }
@@ -176,7 +197,11 @@ unload_chunk_render :: proc(chunk_render: Chunk_Render) {
 	for mesh in chunk_render.meshes {
 		rl.UnloadMesh(mesh)
 	}
+	for mesh in chunk_render.water_meshes {
+		rl.UnloadMesh(mesh)
+	}
 	delete(chunk_render.meshes)
+	delete(chunk_render.water_meshes)
 	delete(chunk_render.flames)
 }
 
@@ -191,16 +216,20 @@ unload_chunk_mesh :: proc(renderer: ^Chunk_Renderer, coordinate: Chunk_Coordinat
 // Replaces the chunk's mesh. An empty mesh only removes the old one.
 apply_chunk_mesh :: proc(renderer: ^Chunk_Renderer, coordinate: Chunk_Coordinate, data: Chunk_Mesh_Data) {
 	unload_chunk_mesh(renderer, coordinate)
-	if len(data.parts) == 0 {
+	if len(data.parts) == 0 && len(data.water_parts) == 0 {
 		return
 	}
 	chunk_render := Chunk_Render {
 		meshes       = make([dynamic]rl.Mesh, 0, len(data.parts)),
+		water_meshes = make([dynamic]rl.Mesh, 0, len(data.water_parts)),
 		vertex_count = chunk_mesh_vertex_count(data),
 		flames       = make([dynamic]World_Coordinate, 0, len(data.flames)),
 	}
 	for part in data.parts {
 		append(&chunk_render.meshes, upload_mesh_part(part))
+	}
+	for part in data.water_parts {
+		append(&chunk_render.water_meshes, upload_mesh_part(part))
 	}
 	for local in data.flames {
 		append(&chunk_render.flames, chunk_origin(coordinate) + World_Coordinate(local))
@@ -238,7 +267,7 @@ chunk_in_frustum :: proc(frustum: Frustum, coordinate: Chunk_Coordinate) -> bool
 }
 
 // Sky light scale and tint and the fog colour for the time of day, once
-// per frame.
+// per frame, on the chunk and the water material.
 apply_daylight :: proc(renderer: ^Chunk_Renderer, sky: Day_Sky) {
 	factor := day_factor(sky.blend)
 	fog := color_to_vector3(sky.colors.fog)
@@ -246,10 +275,14 @@ apply_daylight :: proc(renderer: ^Chunk_Renderer, sky: Day_Sky) {
 	rl.SetShaderValue(renderer.material.shader, renderer.day_factor_location, &factor, .FLOAT)
 	rl.SetShaderValue(renderer.material.shader, renderer.fog_color_location, &fog, .VEC3)
 	rl.SetShaderValue(renderer.material.shader, renderer.sky_tint_location, &tint, .VEC3)
+	water := &renderer.water
+	rl.SetShaderValue(water.material.shader, water.day_factor_location, &factor, .FLOAT)
+	rl.SetShaderValue(water.material.shader, water.fog_color_location, &fog, .VEC3)
+	rl.SetShaderValue(water.material.shader, water.sky_tint_location, &tint, .VEC3)
 }
 
-// The weather's fog distances, plant sway and cloud shadows, once per
-// frame; seconds is the render time.
+// The weather's fog distances (on the water material too), plant sway and
+// cloud shadows, once per frame; seconds is the render time.
 apply_weather :: proc(renderer: ^Chunk_Renderer, look: Weather_Look, seconds: f64) {
 	shader := renderer.material.shader
 	fog_start, fog_end := weather_fog_distances(LOAD_RADIUS_HORIZONTAL, look.fog_scale)
@@ -263,6 +296,9 @@ apply_weather :: proc(renderer: ^Chunk_Renderer, look: Weather_Look, seconds: f6
 	rl.SetShaderValue(shader, renderer.wind_strength_location, &wind_strength, .FLOAT)
 	rl.SetShaderValue(shader, renderer.cloud_offset_location, &offset, .VEC2)
 	rl.SetShaderValue(shader, renderer.cloud_shadow_strength_location, &shadow, .FLOAT)
+	water := &renderer.water
+	rl.SetShaderValue(water.material.shader, water.fog_start_location, &fog_start, .FLOAT)
+	rl.SetShaderValue(water.material.shader, water.fog_end_location, &fog_end, .FLOAT)
 }
 
 // Must run between BeginMode3D and EndMode3D, which sets the projection
@@ -296,12 +332,14 @@ unload_all_chunk_meshes :: proc(renderer: ^Chunk_Renderer) {
 	renderer.drawn_chunk_count = 0
 }
 
-// UnloadMaterial also unloads the shader and the atlas texture.
+// UnloadMaterial also unloads the shader and the atlas texture, which the
+// water material shares, so that goes first.
 destroy_chunk_renderer :: proc(renderer: ^Chunk_Renderer) {
 	for _, chunk_render in renderer.chunk_meshes {
 		unload_chunk_render(chunk_render)
 	}
 	delete(renderer.chunk_meshes)
+	destroy_water_renderer(&renderer.water)
 	rl.UnloadMaterial(renderer.material)
 	destroy_sky_renderer(&renderer.sky)
 }

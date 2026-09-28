@@ -107,7 +107,7 @@ data_file_category :: proc(relative_path: string) -> Data_File_Category {
 	case QUESTS_DIRECTORY:
 		return strings.has_suffix(name, QUEST_FILE_EXTENSION) && !strings.has_prefix(name, ".") ? .Content : .Ignored
 	case CHUNK_SHADER_DIRECTORY:
-		return name == "chunk.vs" || name == "chunk.fs" ? .Shaders : .Ignored
+		return is_shader_file_name(name) ? .Shaders : .Ignored
 	case FONTS_DIRECTORY:
 		return name == FONTS_FILE_NAME ? .Fonts : .Ignored
 	case MODELS_DIRECTORY:
@@ -119,6 +119,16 @@ data_file_category :: proc(relative_path: string) -> Data_File_Category {
 		return is_font_file_name(name) ? .Fonts : .Ignored
 	}
 	return .Ignored
+}
+
+// The chunk and the water shader pairs (render_chunks.odin,
+// render_water.odin).
+is_shader_file_name :: proc(name: string) -> bool {
+	switch name {
+	case "chunk.vs", "chunk.fs", "water.vs", "water.fs":
+		return true
+	}
+	return false
 }
 
 is_font_file_name :: proc(name: string) -> bool {

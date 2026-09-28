@@ -419,7 +419,9 @@ render_frame :: proc(state: ^Frame_State) {
 	// The horizon colour, which is the fog colour: the dome covers the
 	// upper hemisphere alone, so the clear colour shows below the horizon.
 	rl.ClearBackground(sky.colors.horizon)
-	draw_session_world(state, session, sky, weather)
+	if draw_session_world(state, session, sky, weather) {
+		draw_underwater_overlay()
+	}
 	if state.show_diagnostics {
 		draw_diagnostics_backdrop()
 		draw_diagnostics(state^, state.config)
@@ -453,7 +455,9 @@ draw_session_weather :: proc(session: ^Session, camera: rl.Camera3D, weather: We
 	draw_weather(camera, weather_precipitation(weather, temperature), weather_particle_count(weather.intensity, open_sky), seconds, light)
 }
 
-draw_session_world :: proc(state: ^Frame_State, session: ^Session, sky: Day_Sky, weather: Weather) {
+// Returns whether the camera is under water, for the tint drawn after the
+// 3D pass (work item 0065).
+draw_session_world :: proc(state: ^Frame_State, session: ^Session, sky: Day_Sky, weather: Weather) -> (underwater: bool) {
 	content := state.content
 	world := &session.simulation.world
 	tick_rate := session.simulation.tick_rate
@@ -462,6 +466,10 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session, sky: Day_Sky,
 	camera := fly_camera_to_raylib(player_view_camera(world, content.blocks, player, alpha))
 	seconds := rl.GetTime()
 	apply_weather(&state.renderer, weather_look(weather, state.settings.weather, sky.blend), seconds)
+	underwater = camera_underwater(world, content.blocks, camera.position)
+	if underwater {
+		apply_fog(&state.renderer, underwater_fog())
+	}
 	rl.BeginMode3D(camera)
 	defer rl.EndMode3D()
 	draw_sky(&state.renderer.sky, camera, sky)
@@ -476,8 +484,10 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session, sky: Day_Sky,
 	draw_belts(&state.belt_renderer, world, content.items, content.machines, state.model_renderer, frame, Item_Billboards{camera = camera, atlas = state.item_atlas})
 	draw_loose_items(world, content.items, frame, Item_Billboards{camera = camera, atlas = state.item_atlas})
 	draw_torch_flames(&state.renderer, camera, seconds)
+	draw_water_chunks(&state.renderer, camera, seconds)
 	draw_session_weather(session, camera, weather, sky, seconds)
 	draw_player_world_overlay(world, frame_simulation_content(state), state.model_renderer, &state.belt_renderer, session.simulation.players[:], 0, alpha)
+	return underwater
 }
 
 // The context every screen gets. Without a session the world fields stay

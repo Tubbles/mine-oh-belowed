@@ -1,6 +1,6 @@
 # 0065 Water that looks like water
 
-Status: todo
+Status: implemented
 Milestone: M11
 
 ## Goal
@@ -29,3 +29,5 @@ Implementation pointers (main agent, 2026-09-28), decisions taken so the item is
 - Docs: `doc/architecture.md` (the meshing and rendering lines: the water pass), `doc/log/2026-09-28.md`, this item's Status and Notes.
 
 Files a subagent may touch: `src/world_mesh.odin`, `src/world_mesh_light.odin`, `src/world_mesh_test.odin`, `src/render_chunks.odin`, new `src/render_water.odin` and `src/render_water_test.odin`, new `data/shaders/water.vs` and `data/shaders/water.fs`, `src/data_watch.odin`, `src/data_watch_test.odin`, `src/hot_reload.odin`, `src/loop.odin` (the draw order, the underwater uniforms and overlay), the docs above, this file.
+
+Implemented: `src/world_mesh.odin` (water faces to `Chunk_Mesh_Data.water_parts`, `Mesh_Part.tangents`, the flow and shore in `Face_Key`, `water_flow_sum`, `water_flow_vector`, `water_vertex_shore`, `face_corner_horizontal_signs`, `water_tangent`) and `src/world_mesh_test.odin`; new `src/render_water.odin` (`Water_Renderer`, the water material and its uniforms, `draw_water_chunks`, `camera_underwater`, `underwater_fog`, `apply_fog`, the overlay) and `src/render_water_test.odin`; new `data/shaders/water.vs` and `data/shaders/water.fs`; `src/render_chunks.odin` (`load_shader_pair`, `Chunk_Render.water_meshes`, tangent upload, the water uniforms in `apply_daylight` and `apply_weather`, the shared atlas); `src/data_watch.odin` and `src/data_watch_test.odin` (the water pair is a shader file); `src/hot_reload.odin` (both pairs reload); `src/loop.odin` (the water pass after the torch flames and before the weather particles, the underwater fog and overlay). `src/world_mesh_light.odin` is unchanged. The meshing line of `test_report_generation_and_meshing_time` read 22.9 to 29.0 ms per chunk before (four runs) and 27.2 to 32.0 ms after (seven runs), within one and a half times. Per frame the water pass draws each visible chunk's water meshes with `DrawMesh` in one extra pass (alpha blended, depth writes and culling off), one more shader with seven per frame uniforms; under water it sets six more uniforms and draws one full screen rectangle. Decisions the item left open are in `doc/log/2026-09-28.md`. 831 tests pass.

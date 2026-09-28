@@ -110,12 +110,16 @@ reload_developer_kits :: proc(state: ^Frame_State) -> string {
 	return ""
 }
 
+// Both pairs, the chunk shader and the water shader (work item 0065): a
+// pair that does not compile keeps its old shader, the other still
+// reloads.
 reload_shaders :: proc(state: ^Frame_State) -> string {
 	capture: Log_Capture
 	begin_log_capture(&capture)
-	reloaded := reload_chunk_shader(&state.renderer, state.data_directory)
-	problem := end_log_capture(&capture, "the chunk shader did not load")
-	return reloaded ? "" : problem
+	chunk_reloaded := reload_chunk_shader(&state.renderer, state.data_directory)
+	water_reloaded := reload_water_shader(&state.renderer.water, state.renderer.atlas_layout, state.data_directory)
+	problem := end_log_capture(&capture, "a shader did not load")
+	return chunk_reloaded && water_reloaded ? "" : problem
 }
 
 // Every machine's mesh is made again from the files. A model that does

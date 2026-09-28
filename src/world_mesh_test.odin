@@ -270,7 +270,7 @@ test_mesh_water_surface_follows_level :: proc(t: ^testing.T) {
 	data := mesh_chunk(input, context.temp_allocator)
 	testing.expect_value(t, data.quad_count, 6)
 	highest: f32 = 0
-	for position in data.parts[0].positions {
+	for position in data.water_parts[0].positions {
 		highest = max(highest, position.y)
 	}
 	testing.expect_value(t, highest, f32(4.5))
@@ -314,6 +314,132 @@ test_mesh_water_under_water_across_chunk_top :: proc(t: ^testing.T) {
 	testing.expect(t, !face_is_visible(input, {4, CHUNK_SIZE - 1, 4}, .Positive_Y))
 	data := mesh_chunk(input, context.temp_allocator)
 	testing.expect_value(t, data.quad_count, 5)
+}
+
+water_test_mesh_input :: proc(chunk: ^Chunk) -> Mesh_Input {
+	registry := make_test_registry()
+	return Mesh_Input{chunk = chunk, registry = registry, atlas = atlas_layout_for_block_count(len(registry.definitions))}
+}
+
+// Water on stone (work item 0065): the water's five faces go to the water
+// parts with a tangent per vertex, the stone's six to the opaque parts,
+// its top face against the water included.
+@(test)
+test_mesh_water_faces_go_to_the_water_parts :: proc(t: ^testing.T) {
+	chunk := new(Chunk, context.temp_allocator)
+	input := water_test_mesh_input(chunk)
+	water := test_block(input.registry, "water")
+	stone := test_block(input.registry, "stone")
+	chunk_set_block(chunk, {4, 3, 4}, stone)
+	chunk_set_block(chunk, {4, 4, 4}, water)
+	data := mesh_chunk(input, context.temp_allocator)
+	testing.expect_value(t, data.quad_count, 6 + 5)
+	testing.expect_value(t, len(data.parts), 1)
+	testing.expect_value(t, len(data.water_parts), 1)
+	opaque := data.parts[0]
+	testing.expect_value(t, len(opaque.positions), 6 * QUAD_VERTEX_COUNT)
+	testing.expect_value(t, len(opaque.tangents), 0)
+	water_tile := atlas_tile_origin(input.atlas, atlas_tile_index(water, .Side))
+	for origin in opaque.tile_origins {
+		testing.expect(t, origin != water_tile)
+	}
+	stone_top := atlas_tile_origin(input.atlas, atlas_tile_index(stone, .Top))
+	testing.expect(t, slice_contains(opaque.tile_origins[:], stone_top))
+	surface := data.water_parts[0]
+	testing.expect_value(t, len(surface.positions), 5 * QUAD_VERTEX_COUNT)
+	testing.expect_value(t, len(surface.tangents), len(surface.positions))
+	for position in surface.positions {
+		testing.expect(t, position.y >= 4)
+	}
+}
+
+slice_contains :: proc(values: [][2]f32, wanted: [2]f32) -> bool {
+	for value in values {
+		if value == wanted {
+			return true
+		}
+	}
+	return false
+}
+
+// A cell between a higher and a lower neighbour flows towards the lower
+// one; a source and a cell level with its neighbours do not flow.
+@(test)
+test_mesh_water_flow_points_downhill :: proc(t: ^testing.T) {
+	chunk := new(Chunk, context.temp_allocator)
+	input := water_test_mesh_input(chunk)
+	chunk_set_block(chunk, {3, 4, 4}, test_block(input.registry, "flowing_water_6"))
+	chunk_set_block(chunk, {4, 4, 4}, test_block(input.registry, "flowing_water_5"))
+	chunk_set_block(chunk, {5, 4, 4}, test_block(input.registry, "flowing_water_4"))
+	sum := water_flow_sum(input, {4, 4, 4}, 5)
+	testing.expect_value(t, sum, [2]i8{2, 0})
+	testing.expect_value(t, water_flow_vector(sum), [2]f32{1, 0})
+	// Across z the lower neighbour lies on the negative side.
+	chunk_set_block(chunk, {4, 4, 3}, test_block(input.registry, "flowing_water_4"))
+	diagonal := water_flow_vector(water_flow_sum(input, {4, 4, 4}, 5))
+	testing.expect(t, diagonal.x > 0 && diagonal.y < 0)
+	testing.expect(t, abs(diagonal.x * diagonal.x + diagonal.y * diagonal.y - 1) < 1e-5)
+	testing.expect_value(t, water_flow_sum(input, {3, 4, 4}, WATER_SOURCE_LEVEL), [2]i8{})
+	chunk_set_block(chunk, {3, 4, 4}, test_block(input.registry, "flowing_water_5"))
+	chunk_set_block(chunk, {5, 4, 4}, test_block(input.registry, "flowing_water_5"))
+	chunk_set_block(chunk, {4, 4, 3}, test_block(input.registry, "flowing_water_5"))
+	testing.expect_value(t, water_flow_vector(water_flow_sum(input, {4, 4, 4}, 5)), [2]f32{})
+	// Every vertex of the flowing cell's faces carries its flow.
+	chunk_set_block(chunk, {5, 4, 4}, test_block(input.registry, "flowing_water_4"))
+	data := mesh_chunk(input, context.temp_allocator)
+	flowing := 0
+	for part in data.water_parts {
+		for tangent in part.tangents {
+			if tangent.x == 1 && tangent.y == 0 {
+				flowing += 1
+			}
+		}
+	}
+	testing.expect(t, flowing >= QUAD_VERTEX_COUNT)
+}
+
+// A vertex next to stone is at the shore, a vertex in open water is not,
+// and the mesher writes it into the tangent's third component.
+@(test)
+test_mesh_water_shore_next_to_stone :: proc(t: ^testing.T) {
+	chunk := new(Chunk, context.temp_allocator)
+	input := water_test_mesh_input(chunk)
+	water := test_block(input.registry, "water")
+	chunk_set_block(chunk, {4, 4, 4}, water)
+	chunk_set_block(chunk, {5, 4, 4}, test_block(input.registry, "stone"))
+	testing.expect(t, water_vertex_shore(input, {4, 4, 4}, {1, 1}))
+	testing.expect(t, water_vertex_shore(input, {4, 4, 4}, {1, -1}))
+	testing.expect(t, !water_vertex_shore(input, {4, 4, 4}, {-1, 1}))
+	data := mesh_chunk(input, context.temp_allocator)
+	for position, index in data.water_parts[0].positions {
+		expected: f32 = position.x == 5 ? 1 : 0
+		testing.expectf(t, data.water_parts[0].tangents[index].z == expected, "vertex %v has shore %v", position, data.water_parts[0].tangents[index].z)
+	}
+	// Open water: a pond of three by three sources, its middle far from
+	// the stone.
+	open := new(Chunk, context.temp_allocator)
+	for z in i32(10) ..= 12 {
+		for x in i32(10) ..= 12 {
+			chunk_set_block(open, {x, 10, z}, water)
+		}
+	}
+	open_input := water_test_mesh_input(open)
+	for signs in corner_signs {
+		testing.expect(t, !water_vertex_shore(open_input, {11, 10, 11}, signs))
+	}
+}
+
+// The corners of a face in quad_corners order point from the cell's
+// centre the way face_corner_horizontal_signs says.
+@(test)
+test_mesh_face_corner_horizontal_signs :: proc(t: ^testing.T) {
+	rectangle := Face_Rectangle{u = 4, v = 4, width = 1, height = 1}
+	for direction in Direction {
+		for corner, index in quad_corners(direction, 4, rectangle) {
+			signs := face_corner_horizontal_signs(direction, index)
+			testing.expect_value(t, [2]i32{corner.x > 4.5 ? 1 : -1, corner.z > 4.5 ? 1 : -1}, signs)
+		}
+	}
 }
 
 shape_test_mesh_input :: proc(chunk: ^Chunk) -> Mesh_Input {

@@ -7,7 +7,9 @@ import "core:math/linalg"
 // result. The vertex colour carries light (packing in world_mesh_light.odin).
 // Cubes merge into greedy rectangles; every other shape (slabs, stairs,
 // torches) is meshed cell by cell from its quads (block_shape.odin) in a
-// second pass, mesh_shaped_cells.
+// second pass, mesh_shaped_cells. Every face of a water block goes to
+// the water parts, drawn by a transparent pass of their own (work item
+// 0065, render_water.odin).
 
 // u16 indices address at most this many vertices, so a mesh part is closed
 // and a new one started before it would exceed the limit.
@@ -18,20 +20,25 @@ QUAD_INDEX_COUNT :: 6
 // Texcoords run in blocks across a merged quad (0 to width, 0 to height) so
 // the shader can repeat the tile with fract(). tile_origins holds the atlas
 // UV of the tile's corner, the same for all four vertices of a quad.
+// tangents is filled in water parts only: the cell's flow direction in x
+// and z, the vertex's shore value, and 0 (water_tangent).
 Mesh_Part :: struct {
 	positions:    [dynamic][3]f32,
 	texcoords:    [dynamic][2]f32,
 	tile_origins: [dynamic][2]f32,
 	colors:       [dynamic][4]u8,
 	indices:      [dynamic]u16,
+	tangents:     [dynamic][4]f32,
 }
 
 // flames holds the cells of light emitting posts (torches), where the
-// renderer draws a flame.
+// renderer draws a flame. water_parts holds the faces of water blocks,
+// parts everything else.
 Chunk_Mesh_Data :: struct {
-	parts:      [dynamic]Mesh_Part,
-	quad_count: int,
-	flames:     [dynamic]Local_Coordinate,
+	parts:       [dynamic]Mesh_Part,
+	water_parts: [dynamic]Mesh_Part,
+	quad_count:  int,
+	flames:      [dynamic]Local_Coordinate,
 }
 
 // A nil border reads every cell outside the chunk as a missing chunk.
@@ -56,6 +63,10 @@ Face_Key :: struct {
 	// FULL_HEIGHT_EIGHTHS only for the surface of flowing water.
 	height:  u8,
 	corners: [4]Vertex_Light,
+	// Water faces only: the cell's flow (water_flow_sum) and each corner's
+	// shore value (water_vertex_shore).
+	flow:    [2]i8,
+	shore:   [4]bool,
 }
 
 Face_Rectangle :: struct {
@@ -146,6 +157,57 @@ water_surface_eighths :: proc(input: Mesh_Input, local: Local_Coordinate, block:
 	return u8(level)
 }
 
+// The flow of a water cell in x and z: over its four horizontal water
+// neighbours, the level difference times the direction away from the
+// higher of the two, which is the cell's level minus the neighbour's
+// times the step towards the neighbour. It points downhill. Zero for a
+// source, which only ripples, and for a cell level with its neighbours.
+water_flow_sum :: proc(input: Mesh_Input, local: Local_Coordinate, level: int) -> [2]i8 {
+	if level == WATER_SOURCE_LEVEL {
+		return {}
+	}
+	sum: [2]int
+	for direction in horizontal_directions {
+		offset := direction_offsets[direction]
+		neighbour_level := block_water_level(input.registry, neighbourhood_block(input, local + Local_Coordinate(offset)))
+		if neighbour_level > 0 {
+			sum += (level - neighbour_level) * [2]int{int(offset.x), int(offset.z)}
+		}
+	}
+	return {i8(sum.x), i8(sum.y)}
+}
+
+// The flow sum as a unit vector, or zero.
+water_flow_vector :: proc(sum: [2]i8) -> [2]f32 {
+	vector := [2]f32{f32(sum.x), f32(sum.y)}
+	length := linalg.length(vector)
+	return length > 0 ? vector / length : {}
+}
+
+// Whether a water vertex lies at the shore: any of the four cells around
+// its vertical edge in the water cell's layer is solid. signs point from
+// the cell towards the vertex along x and z; the cell itself is water.
+water_vertex_shore :: proc(input: Mesh_Input, local: Local_Coordinate, signs: [2]i32) -> bool {
+	cells := [3]Local_Coordinate{local + {signs.x, 0, 0}, local + {0, 0, signs.y}, local + {signs.x, 0, signs.y}}
+	for cell in cells {
+		if block_is_solid(input.registry, neighbourhood_block(input, cell)) {
+			return true
+		}
+	}
+	return false
+}
+
+// The x and z signs from a cell's centre towards a corner of its face,
+// corners in the order of quad_corners.
+face_corner_horizontal_signs :: proc(direction: Direction, corner: int) -> [2]i32 {
+	axis := direction_axis(direction)
+	signs: [3]i32
+	signs[axis] = direction_is_positive(direction) ? 1 : -1
+	signs[(axis + 1) % 3] = corner_signs[corner][0]
+	signs[(axis + 2) % 3] = corner_signs[corner][1]
+	return {signs.x, signs.z}
+}
+
 face_key :: proc(input: Mesh_Input, local: Local_Coordinate, direction: Direction) -> Face_Key {
 	if !face_is_visible(input, local, direction) {
 		return {}
@@ -159,6 +221,12 @@ face_key :: proc(input: Mesh_Input, local: Local_Coordinate, direction: Directio
 	front := local + Local_Coordinate(direction_offsets[direction])
 	for signs, corner in corner_signs {
 		key.corners[corner] = vertex_light(input, front, (axis + 1) % 3, (axis + 2) % 3, signs)
+	}
+	if level := block_water_level(input.registry, block); level > 0 {
+		key.flow = water_flow_sum(input, local, level)
+		for &shore, corner in key.shore {
+			shore = water_vertex_shore(input, local, face_corner_horizontal_signs(direction, corner))
+		}
 	}
 	return key
 }
@@ -174,8 +242,9 @@ build_face_mask :: proc(input: Mesh_Input, direction: Direction, slice: int) -> 
 	return mask
 }
 
+// The shore values count as corners too: a merged water quad carries one.
 corners_uniform :: proc(key: Face_Key) -> bool {
-	return key.corners[0] == key.corners[1] && key.corners[0] == key.corners[2] && key.corners[0] == key.corners[3]
+	return key.corners[0] == key.corners[1] && key.corners[0] == key.corners[2] && key.corners[0] == key.corners[3] && key.shore[0] == key.shore[1] && key.shore[0] == key.shore[2] && key.shore[0] == key.shore[3]
 }
 
 run_width :: proc(mask: ^Face_Mask, u, v: int, key: Face_Key) -> int {
@@ -253,13 +322,13 @@ lower_top_edge :: proc(corners: ^[4][3]f32, height: u8) {
 	}
 }
 
-current_part :: proc(data: ^Chunk_Mesh_Data, allocator := context.allocator) -> ^Mesh_Part {
-	last := len(data.parts) - 1
-	if last < 0 || len(data.parts[last].positions) + QUAD_VERTEX_COUNT > MESH_PART_VERTEX_LIMIT {
-		append(&data.parts, make_mesh_part(allocator))
+current_part :: proc(parts: ^[dynamic]Mesh_Part, allocator := context.allocator) -> ^Mesh_Part {
+	last := len(parts) - 1
+	if last < 0 || len(parts[last].positions) + QUAD_VERTEX_COUNT > MESH_PART_VERTEX_LIMIT {
+		append(parts, make_mesh_part(allocator))
 		last += 1
 	}
-	return &data.parts[last]
+	return &parts[last]
 }
 
 make_mesh_part :: proc(allocator := context.allocator) -> Mesh_Part {
@@ -269,6 +338,7 @@ make_mesh_part :: proc(allocator := context.allocator) -> Mesh_Part {
 		tile_origins = make([dynamic][2]f32, allocator),
 		colors = make([dynamic][4]u8, allocator),
 		indices = make([dynamic]u16, allocator),
+		tangents = make([dynamic][4]f32, allocator),
 	}
 }
 
@@ -293,6 +363,19 @@ append_quad :: proc(part: ^Mesh_Part, corners: [4][3]f32, rectangle: Face_Rectan
 	}
 }
 
+// What a water vertex tells the water shader (data/shaders/water.vs).
+water_tangent :: proc(flow: [2]i8, shore: bool) -> [4]f32 {
+	vector := water_flow_vector(flow)
+	return {vector.x, vector.y, shore ? 1 : 0, 0}
+}
+
+// After append_quad, for the quad's four vertices.
+append_water_tangents :: proc(part: ^Mesh_Part, key: Face_Key) {
+	for shore in key.shore {
+		append(&part.tangents, water_tangent(key.flow, shore))
+	}
+}
+
 mesh_slice :: proc(data: ^Chunk_Mesh_Data, input: Mesh_Input, direction: Direction, slice: int, allocator := context.allocator) {
 	mask := build_face_mask(input, direction, slice)
 	rectangles := greedy_rectangles(&mask, context.temp_allocator)
@@ -303,7 +386,12 @@ mesh_slice :: proc(data: ^Chunk_Mesh_Data, input: Mesh_Input, direction: Directi
 		if rectangle.key.height < FULL_HEIGHT_EIGHTHS {
 			lower_top_edge(&corners, rectangle.key.height)
 		}
-		append_quad(current_part(data, allocator), corners, rectangle, tile_origin, direction_is_positive(direction))
+		water := block_water_level(input.registry, rectangle.key.block) > 0
+		part := current_part(water ? &data.water_parts : &data.parts, allocator)
+		append_quad(part, corners, rectangle, tile_origin, direction_is_positive(direction))
+		if water {
+			append_water_tangents(part, rectangle.key)
+		}
 		data.quad_count += 1
 	}
 }
@@ -385,7 +473,7 @@ mesh_shaped_cell :: proc(data: ^Chunk_Mesh_Data, input: Mesh_Input, local: Local
 			continue
 		}
 		tile_origin := atlas_tile_origin(input.atlas, atlas_tile_index(base, quad.group))
-		append_shaped_quad(current_part(data, allocator), input, local, quad, tile_origin, sways)
+		append_shaped_quad(current_part(&data.parts, allocator), input, local, quad, tile_origin, sways)
 		data.quad_count += 1
 	}
 	if shape == .Post && block_light_emission(input.registry, block) > 0 {
@@ -405,8 +493,9 @@ mesh_shaped_cells :: proc(data: ^Chunk_Mesh_Data, input: Mesh_Input, allocator :
 // Positions are relative to the chunk origin.
 mesh_chunk :: proc(input: Mesh_Input, allocator := context.allocator) -> Chunk_Mesh_Data {
 	data := Chunk_Mesh_Data {
-		parts  = make([dynamic]Mesh_Part, allocator),
-		flames = make([dynamic]Local_Coordinate, allocator),
+		parts       = make([dynamic]Mesh_Part, allocator),
+		water_parts = make([dynamic]Mesh_Part, allocator),
+		flames      = make([dynamic]Local_Coordinate, allocator),
 	}
 	// About half of the streamed chunks are sky.
 	if chunk_is_all_air(input.chunk) {
@@ -426,17 +515,26 @@ chunk_mesh_vertex_count :: proc(data: Chunk_Mesh_Data) -> int {
 	for part in data.parts {
 		total += len(part.positions)
 	}
+	for part in data.water_parts {
+		total += len(part.positions)
+	}
 	return total
 }
 
-destroy_chunk_mesh_data :: proc(data: Chunk_Mesh_Data) {
-	for part in data.parts {
+destroy_mesh_parts :: proc(parts: [dynamic]Mesh_Part) {
+	for part in parts {
 		delete(part.positions)
 		delete(part.texcoords)
 		delete(part.tile_origins)
 		delete(part.colors)
 		delete(part.indices)
+		delete(part.tangents)
 	}
-	delete(data.parts)
+	delete(parts)
+}
+
+destroy_chunk_mesh_data :: proc(data: Chunk_Mesh_Data) {
+	destroy_mesh_parts(data.parts)
+	destroy_mesh_parts(data.water_parts)
 	delete(data.flames)
 }
