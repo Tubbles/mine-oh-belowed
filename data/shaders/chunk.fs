@@ -9,7 +9,10 @@
 //
 // Vertex colour packing (world_mesh_light.odin), each channel 0 to 1:
 //   r  sky light level / 15, averaged over the cells around the vertex
-//   g  1 where the face keeps its tile upright (keep_orientation), else 0
+//   g  the face's tile variation (orientation_flag_green): 0 turn, mirror
+//      and slide the tile per block, 0.5 turn and mirror only (a framed
+//      block, work item 0101), 1 keep it upright (keep_orientation);
+//      read with thresholds at 0.25 and 0.75
 //   b  ambient occlusion / 3, 1 where nothing solid touches the vertex
 //   a  1, lower for vertices that sway in the wind (chunk.vs)
 // The block light's red, green and blue levels / 15, averaged the same
@@ -30,10 +33,14 @@
 // Per block variation (work item 0088, mirrored in
 // texture_variation.odin): a hash of the block's integer position, the
 // cell behind the face (fragment_cell), turns and mirrors the tile inside
-// the block (one of eight orientations, unless the green channel says the
-// face keeps it) and scales the texel's brightness by up to
+// the block (one of eight orientations), then slides it by a whole texel
+// offset (work item 0101), as far as the green channel allows (a framed
+// face turns but never slides, a kept face does neither), and scales the texel's brightness by up to
 // brightness_jitter either way, so a field of one block does not repeat
-// the same tile in rows.
+// the same tile in rows. The tiles that vary are periodic (checked by
+// texture_periodicity_test.odin), so the offset shows no seam inside the
+// block, and two neighbours whose orientations mirror across their shared
+// edge still show different crops, not a symmetric motif.
 
 in vec2 fragment_texcoord;
 in vec2 fragment_tile_origin;
@@ -63,8 +70,14 @@ const float cloud_tile_blocks = 96.0;
 const float brightness_jitter = 0.04;
 // How far behind the face the cell is read, in blocks.
 const float cell_depth = 0.01;
-// Keeps a turned or mirrored texcoord inside its tile's last texel.
+// Keeps a turned, mirrored or shifted texcoord inside its tile's last
+// texel.
 const float largest_tile_texcoord = 0.9999;
+// Texels along a tile's edge (ATLAS_TILE_SIZE in render_atlas.odin).
+const float tile_texels = 16.0;
+// The green channel's thresholds between the three tile variations.
+const float turn_only_green = 0.25;
+const float keep_orientation_green = 0.75;
 
 // Light levels to brightness: each level down dims a little more than
 // linear, Minecraft style, 0 stays 0 and 1 stays 1.
@@ -128,6 +141,20 @@ vec2 oriented_tile_texcoord(vec2 texcoord, uint hash)
     return min(oriented, vec2(largest_tile_texcoord));
 }
 
+// tile_offset: bits 3 to 6 for x, 7 to 10 for y, whole texels.
+vec2 tile_offset(uint hash)
+{
+    return vec2(float((hash >> 3) & 15u), float((hash >> 7) & 15u));
+}
+
+// varied_tile_texcoord: oriented, clamped, slid by the offset and
+// wrapped inside the tile, clamped again.
+vec2 varied_tile_texcoord(vec2 texcoord, uint hash)
+{
+    vec2 shifted = fract(oriented_tile_texcoord(texcoord, hash) + tile_offset(hash) / tile_texels);
+    return min(shifted, vec2(largest_tile_texcoord));
+}
+
 // texture_variation_brightness: bits 8 to 15.
 float variation_brightness(uint hash)
 {
@@ -138,7 +165,11 @@ void main()
 {
     uint hash = variation_hash(fragment_cell());
     vec2 tile_texcoord = fract(fragment_texcoord);
-    if (fragment_color.g < 0.5)
+    if (fragment_color.g < turn_only_green)
+    {
+        tile_texcoord = varied_tile_texcoord(tile_texcoord, hash);
+    }
+    else if (fragment_color.g < keep_orientation_green)
     {
         tile_texcoord = oriented_tile_texcoord(tile_texcoord, hash);
     }

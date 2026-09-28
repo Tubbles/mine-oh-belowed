@@ -1,5 +1,6 @@
 package game
 
+import "core:strings"
 import "core:testing"
 
 @(test)
@@ -138,4 +139,26 @@ test_keep_orientation_flag_parses_with_a_default :: proc(t: ^testing.T) {
 		testing.expectf(t, found, "%s is shipped", flag.id)
 		testing.expectf(t, block_keeps_orientation(shipped_registry, block) == flag.keeps, "%s keeps orientation: %v", flag.id, flag.keeps)
 	}
+}
+
+// framed (work item 0101) defaults to false, reaches the variants of an
+// oriented shape and is shipped on every log and nothing else.
+@(test)
+test_framed_flag_parses_with_a_default :: proc(t: ^testing.T) {
+	file, error := parse_blocks_file(transmute([]byte)string(`blocks = [{id = "air"} {id = "rock", solid = true} {id = "trunk", solid = true, framed = true} {id = "ledge", shape = "slab", solid = true, framed = true}]`), context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	registry := Block_Registry{definitions = file.blocks}
+	testing.expect(t, !block_is_framed(registry, 1))
+	testing.expect(t, block_is_framed(registry, 2))
+	testing.expect(t, block_is_framed(registry, 4), "the upper slab")
+	testing.expect(t, !block_is_framed(registry, 99))
+	shipped, shipped_error := parse_blocks_file(#load("../data/blocks.sjson"), context.temp_allocator)
+	testing.expect_value(t, shipped_error, nil)
+	framed_count := 0
+	for definition in shipped.blocks {
+		is_log := strings.has_suffix(definition.id, "_log") || definition.id == "log"
+		testing.expectf(t, definition.framed == is_log, "%s framed: %v", definition.id, definition.framed)
+		framed_count += int(definition.framed)
+	}
+	testing.expect_value(t, framed_count, 5)
 }

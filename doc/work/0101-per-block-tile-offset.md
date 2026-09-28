@@ -1,6 +1,6 @@
 # 0101 Per block offset for periodic tiles
 
-Status: todo
+Status: implemented
 Milestone: M11
 
 ## Goal
@@ -23,3 +23,5 @@ Found in the 0099 previews (2026-09-28): every varying tile is periodic (the scr
 ## Notes
 
 Files a subagent may touch: `data/shaders/chunk.fs`, `data/shaders/water.fs`, `src/texture_variation.odin`, `src/texture_variation_test.odin`, `src/texture_generate_test.odin`, new `src/texture_periodicity_test.odin`, `tools/make_placeholder_textures.py` and regenerated files under `data/textures/blocks/` only if a pattern fails the check, the docs above, this file, `doc/work/0100-texture-editor.md`.
+
+Implemented: `data/shaders/chunk.fs` (`tile_offset`, `varied_tile_texcoord`: the offset after the mirror and the turns, clamped before and after the shift; the green channel read as three values at 0.25 and 0.75), `src/texture_variation.odin` (`Tile_Variation`, `face_tile_variation` replacing `face_keeps_orientation`, `tile_offset`, `face_tile_offset`, `shift_tile_texcoord`, `varied_tile_texcoord`, `LARGEST_TILE_TEXCOORD`) with tests in `src/texture_variation_test.odin`, the block flag `framed` (`src/world_block.odin`, `block_is_framed`, set on the five logs in `data/blocks.sjson`, parse test in `src/world_block_test.odin`), the mesher's green values 0, 128 and 255 (`src/world_mesh_light.odin`, `src/world_mesh.odin`, test in `src/world_mesh_test.odin`), new `src/texture_periodicity_test.odin` (`tile_edge_roughness`, factor 2.5, framed blocks left out, and a test that a ramp is flagged), the preview field in `src/texture_generate_test.odin` through `varied_tile_texcoord`, `tools/make_placeholder_textures.py` (the brick's shade per brick and the rock strata wrap) with the brick, rock and slag heap files and their item icons regenerated, `doc/architecture.md`, `doc/content.md`, `DESIGN.md`, `doc/log/2026-09-28.md`, `doc/work/0100-texture-editor.md`. Water keeps no offset (see the log). In a 32 by 32 field no neighbour pair mirrors across its edge any more (241 before).

@@ -3,9 +3,11 @@ package game
 // Smooth lighting and ambient occlusion per vertex. The vertex colour
 // packs, as read by data/shaders/chunk.fs:
 //   red    sky light, 0 to 15 times LIGHT_COLOUR_SCALE (0 to 255)
-//   green  KEEP_ORIENTATION_GREEN where the face keeps its tile upright,
-//          0 where the shader turns and mirrors it per block (work item
-//          0088, orientation_flag_green, texture_variation.odin)
+//   green  the face's Tile_Variation (orientation_flag_green,
+//          texture_variation.odin): 0 where the shader turns, mirrors
+//          and slides its tile per block (work items 0088 and 0101),
+//          TURN_ONLY_GREEN where it only turns and mirrors it (a framed
+//          block), KEEP_ORIENTATION_GREEN where the tile stays upright
 //   blue   ambient occlusion, 0 (both side cells and the corner cell
 //          solid) to 3 (all open) times OCCLUSION_COLOUR_SCALE
 //   alpha  255 for rigid vertices, SWAY_VERTEX_ALPHA for vertices the
@@ -31,6 +33,7 @@ MAXIMUM_OCCLUSION :: 3
 FULL_HEIGHT_EIGHTHS :: 8
 // The shader sways a vertex by one minus its alpha: 0 moves it fully.
 SWAY_VERTEX_ALPHA :: 0
+TURN_ONLY_GREEN :: 128
 KEEP_ORIENTATION_GREEN :: 255
 
 // Directions along the face's u and v axes towards each corner, in the
@@ -101,15 +104,22 @@ sway_vertex_light :: proc(light: Vertex_Light, corner: [3]f32, sways: bool) -> V
 	return swayed
 }
 
-// The vertex colour's green channel for a face that keeps its tile
-// upright or not (face_keeps_orientation).
-orientation_flag_green :: proc(keeps_orientation: bool) -> u8 {
-	return keeps_orientation ? KEEP_ORIENTATION_GREEN : 0
+// The vertex colour's green channel for a face's variation
+// (face_tile_variation); the shader splits it at 0.25 and 0.75.
+orientation_flag_green :: proc(variation: Tile_Variation) -> u8 {
+	switch variation {
+	case .Turn:
+		return TURN_ONLY_GREEN
+	case .Keep:
+		return KEEP_ORIENTATION_GREEN
+	case .Full:
+	}
+	return 0
 }
 
-// The colour a vertex is written with: its light and the orientation flag.
-vertex_color :: proc(light: Vertex_Light, keeps_orientation: bool) -> [4]u8 {
+// The colour a vertex is written with: its light and the variation flag.
+vertex_color :: proc(light: Vertex_Light, variation: Tile_Variation) -> [4]u8 {
 	color := light.color
-	color.g = orientation_flag_green(keeps_orientation)
+	color.g = orientation_flag_green(variation)
 	return color
 }

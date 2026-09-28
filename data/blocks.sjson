@@ -53,6 +53,10 @@
 // the slabs and stairs. Every other face is turned and mirrored per block
 // by the chunk shader, so a field of one block does not repeat its tile
 // in rows; tops and bottoms always are.
+// framed (default false, work item 0101) marks a block whose varying
+// faces are a picture with a centre, not a periodic tile: the log ends'
+// rings inside a bark rim. The chunk shader turns and mirrors those
+// faces but never slides them by the per block offset.
 // sound_material (optional, work item 0068, default "stone") picks the
 // footstep sound: footstep_<material> must be in data/sounds/sounds.sjson.
 // The shipped materials are stone, dirt, sand, wood, leaves (leaves and
@@ -124,6 +128,7 @@ blocks = [
 		name_key = "block_log"
 		solid = true
 		keep_orientation = true
+		framed = true
 		hardness_seconds = 1.5
 		tool_tier = 0
 		sound_material = "wood"
@@ -430,6 +435,7 @@ blocks = [
 		name_key = "block_birch_log"
 		solid = true
 		keep_orientation = true
+		framed = true
 		hardness_seconds = 1.5
 		tool_tier = 0
 		sound_material = "wood"
@@ -449,6 +455,7 @@ blocks = [
 		name_key = "block_pine_log"
 		solid = true
 		keep_orientation = true
+		framed = true
 		hardness_seconds = 1.5
 		tool_tier = 0
 		sound_material = "wood"
@@ -477,6 +484,7 @@ blocks = [
 		name_key = "block_palm_log"
 		solid = true
 		keep_orientation = true
+		framed = true
 		hardness_seconds = 1.5
 		tool_tier = 0
 		sound_material = "wood"
@@ -496,6 +504,7 @@ blocks = [
 		name_key = "block_dead_log"
 		solid = true
 		keep_orientation = true
+		framed = true
 		hardness_seconds = 1.5
 		tool_tier = 0
 		sound_material = "wood"

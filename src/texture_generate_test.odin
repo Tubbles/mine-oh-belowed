@@ -9,8 +9,9 @@ import rl "shared:raylib"
 // -define:TEXTURE_PREVIEW=true makes test_write_ore_texture_previews write
 // under tmp/texture_preview/ each generated ore tile at 1 to 1
 // (<id>.png), enlarged 8 times (<id>_enlarged.png) and as a 6 by 6 field
-// turned per cell like the chunk shader (<id>_field.png, 4 pixels per
-// texel), and print its blob statistics. It calls raylib, so that run
+// turned, mirrored and slid per cell like the chunk shader, through
+// varied_tile_texcoord (<id>_field.png, 4 pixels per texel), and print
+// its blob statistics. It calls raylib, so that run
 // links like a build: odin test src -collection:shared=<repository>/shared
 // -define:TEXTURE_PREVIEW=true
 // -define:ODIN_TEST_NAMES=game.test_write_ore_texture_previews
@@ -169,7 +170,7 @@ slice_equal_procedural :: proc(first, second: []Procedural_Texture) -> bool {
 	return true
 }
 
-// A field of cells, each the tile turned and mirrored as the chunk
+// A field of cells, each the tile turned, mirrored and slid as the chunk
 // shader does for a top face at (x, 0, z), with its brightness jitter.
 oriented_field_pixels :: proc(tile: Tile_Pixels, cells, scale: int) -> []rl.Color {
 	size := cells * ATLAS_TILE_SIZE * scale
@@ -178,10 +179,9 @@ oriented_field_pixels :: proc(tile: Tile_Pixels, cells, scale: int) -> []rl.Colo
 		for pixel_x in 0 ..< size {
 			cell := [2]int{pixel_x, pixel_y} / (ATLAS_TILE_SIZE * scale)
 			hash := texture_variation_hash({i32(cell.x), 0, i32(cell.y)})
-			turns, mirrored := face_tile_orientation(hash, false)
 			inside := [2]f32{f32(pixel_x % (ATLAS_TILE_SIZE * scale)), f32(pixel_y % (ATLAS_TILE_SIZE * scale))}
-			oriented := orient_tile_texcoord((inside + 0.5) / f32(ATLAS_TILE_SIZE * scale), turns, mirrored)
-			texel := tile[texel_index(clamp(int(oriented.x * ATLAS_TILE_SIZE), 0, ATLAS_TILE_SIZE - 1), clamp(int(oriented.y * ATLAS_TILE_SIZE), 0, ATLAS_TILE_SIZE - 1))]
+			varied := varied_tile_texcoord((inside + 0.5) / f32(ATLAS_TILE_SIZE * scale), hash, .Full)
+			texel := tile[texel_index(int(varied.x * ATLAS_TILE_SIZE), int(varied.y * ATLAS_TILE_SIZE))]
 			pixels[pixel_y * size + pixel_x] = rl.Color(shaded_texel(texel.rgb, 0, texture_variation_brightness(hash)))
 		}
 	}

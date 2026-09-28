@@ -377,15 +377,15 @@ face_texcoord :: proc(direction: Direction, corner, rectangle_minimum, rectangle
 
 // bounds are the minimum and maximum corner of the face's whole blocks,
 // before lower_top_edge, so a lowered water face shows the lower part of
-// its tile as a slab side does. keeps_orientation goes into the vertex
-// colour (vertex_color).
-append_quad :: proc(part: ^Mesh_Part, direction: Direction, corners: [4][3]f32, bounds: [2][3]f32, rectangle: Face_Rectangle, tile_origin: [2]f32, keeps_orientation: bool) {
+// its tile as a slab side does. variation goes into the vertex colour
+// (vertex_color).
+append_quad :: proc(part: ^Mesh_Part, direction: Direction, corners: [4][3]f32, bounds: [2][3]f32, rectangle: Face_Rectangle, tile_origin: [2]f32, variation: Tile_Variation) {
 	base := u16(len(part.positions))
 	for corner, index in corners {
 		append(&part.positions, corner)
 		append(&part.texcoords, face_texcoord(direction, corner, bounds[0], bounds[1]))
 		append(&part.tile_origins, tile_origin)
-		append(&part.colors, vertex_color(rectangle.key.corners[index], keeps_orientation))
+		append(&part.colors, vertex_color(rectangle.key.corners[index], variation))
 		append(&part.normals, block_light_normal(rectangle.key.corners[index]))
 	}
 	order := direction_is_positive(direction) ? positive_quad_indices : negative_quad_indices
@@ -420,8 +420,9 @@ mesh_slice :: proc(data: ^Chunk_Mesh_Data, input: Mesh_Input, direction: Directi
 		}
 		water := block_water_level(input.registry, rectangle.key.block) > 0
 		part := current_part(water ? &data.water_parts : &data.parts, allocator)
-		keeps_orientation := face_keeps_orientation(block_keeps_orientation(input.registry, rectangle.key.block), group)
-		append_quad(part, direction, corners, bounds, rectangle, tile_origin, keeps_orientation)
+		block := rectangle.key.block
+		variation := face_tile_variation(block_keeps_orientation(input.registry, block), block_is_framed(input.registry, block), group)
+		append_quad(part, direction, corners, bounds, rectangle, tile_origin, variation)
 		if water {
 			append_water_tangents(part, rectangle.key)
 		}
@@ -474,18 +475,18 @@ shaped_quad_texcoords :: proc(corners: [4][3]f32) -> [4][2]f32 {
 
 // Shape quads are counter clockwise seen from outside, so every one takes
 // the positive order. sways marks the upper vertices for the wind,
-// keep_orientation is the block's flag (face_keeps_orientation).
-append_shaped_quad :: proc(part: ^Mesh_Part, input: Mesh_Input, local: Local_Coordinate, quad: Shape_Quad, tile_origin: [2]f32, sways, keep_orientation: bool) {
+// keep_orientation and framed are the block's flags (face_tile_variation).
+append_shaped_quad :: proc(part: ^Mesh_Part, input: Mesh_Input, local: Local_Coordinate, quad: Shape_Quad, tile_origin: [2]f32, sways, keep_orientation, framed: bool) {
 	base := u16(len(part.positions))
 	origin := [3]f32{f32(local.x), f32(local.y), f32(local.z)}
 	texcoords := shaped_quad_texcoords(quad.corners)
 	light := shaped_quad_light(input, local, quad)
-	keeps_orientation := face_keeps_orientation(keep_orientation, quad.group)
+	variation := face_tile_variation(keep_orientation, framed, quad.group)
 	for corner, index in quad.corners {
 		append(&part.positions, origin + corner)
 		append(&part.texcoords, texcoords[index])
 		append(&part.tile_origins, tile_origin)
-		append(&part.colors, vertex_color(sway_vertex_light(light[index], corner, sways), keeps_orientation))
+		append(&part.colors, vertex_color(sway_vertex_light(light[index], corner, sways), variation))
 		append(&part.normals, block_light_normal(light[index]))
 	}
 	for index in positive_quad_indices {
@@ -505,12 +506,13 @@ mesh_shaped_cell :: proc(data: ^Chunk_Mesh_Data, input: Mesh_Input, local: Local
 	base := block_shape_base(input.registry, block)
 	sways := block_sways(input.registry, block)
 	keep_orientation := block_keeps_orientation(input.registry, block)
+	framed := block_is_framed(input.registry, block)
 	for quad in quads.quads[:quads.count] {
 		if !shaped_quad_visible(input, local, quad) {
 			continue
 		}
 		tile_origin := atlas_tile_origin(input.atlas, atlas_tile_index(base, quad.group))
-		append_shaped_quad(current_part(&data.parts, allocator), input, local, quad, tile_origin, sways, keep_orientation)
+		append_shaped_quad(current_part(&data.parts, allocator), input, local, quad, tile_origin, sways, keep_orientation, framed)
 		data.quad_count += 1
 	}
 	if shape == .Post && block_light_emission(input.registry, block) > 0 {

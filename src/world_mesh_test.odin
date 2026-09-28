@@ -639,12 +639,13 @@ test_mesh_marks_the_swaying_vertices :: proc(t: ^testing.T) {
 	testing.expect_value(t, swaying, 8)
 }
 
-// The orientation flag (work item 0088): the side faces of a block with
-// keep_orientation carry KEEP_ORIENTATION_GREEN in every vertex, its top
-// and bottom and every face of other blocks 0; a post's sides alike.
+// The variation flag (work items 0088 and 0101): the side faces of a
+// block with keep_orientation carry KEEP_ORIENTATION_GREEN in every
+// vertex, its top and bottom 0, or TURN_ONLY_GREEN when the block is
+// framed, and every face of other blocks 0; a post's sides alike.
 @(test)
 test_mesh_marks_the_faces_that_keep_orientation :: proc(t: ^testing.T) {
-	file, error := parse_blocks_file(transmute([]byte)string(`blocks = [{id = "air"} {id = "stone", solid = true} {id = "log", solid = true, keep_orientation = true} {id = "torch", shape = "post", keep_orientation = true}]`), context.temp_allocator)
+	file, error := parse_blocks_file(transmute([]byte)string(`blocks = [{id = "air"} {id = "stone", solid = true} {id = "log", solid = true, keep_orientation = true, framed = true} {id = "torch", shape = "post", keep_orientation = true} {id = "brick", solid = true, keep_orientation = true}]`), context.temp_allocator)
 	testing.expect_value(t, error, nil)
 	registry := Block_Registry{definitions = file.blocks}
 	chunk := new(Chunk, context.temp_allocator)
@@ -652,23 +653,36 @@ test_mesh_marks_the_faces_that_keep_orientation :: proc(t: ^testing.T) {
 	chunk_set_block(chunk, {2, 2, 2}, Block_Id(1))
 	chunk_set_block(chunk, {10, 10, 10}, Block_Id(2))
 	chunk_set_block(chunk, {6, 6, 6}, Block_Id(3))
+	chunk_set_block(chunk, {2, 10, 2}, Block_Id(4))
 	data := mesh_chunk(Mesh_Input{chunk = chunk, registry = registry, atlas = atlas_layout_for_block_count(len(registry.definitions))}, context.temp_allocator)
-	testing.expect_value(t, data.quad_count, 6 + 6 + 6)
-	kept := 0
+	testing.expect_value(t, data.quad_count, 6 + 6 + 6 + 6)
+	kept, turned := 0, 0
 	for part in data.parts {
 		for quad := 0; quad < len(part.positions); quad += QUAD_VERTEX_COUNT {
 			corners := part.positions[quad:quad + QUAD_VERTEX_COUNT]
 			flat := corners[0].y == corners[1].y && corners[0].y == corners[2].y
-			flagged := corners[0].x >= 6 && !flat
-			expected := u8(flagged ? KEEP_ORIENTATION_GREEN : 0)
+			flagged_block := corners[0].x >= 6 || corners[0].y >= 10
+			in_log := corners[0].x >= 10 && corners[0].y >= 10
+			expected := u8(0)
+			if flagged_block && !flat {
+				expected = KEEP_ORIENTATION_GREEN
+			} else if in_log {
+				expected = TURN_ONLY_GREEN
+			}
 			for colour in part.colors[quad:quad + QUAD_VERTEX_COUNT] {
 				testing.expectf(t, colour.g == expected, "quad at %v has green %d", corners[0], colour.g)
 			}
-			kept += int(flagged)
+			kept += int(expected == KEEP_ORIENTATION_GREEN)
+			turned += int(expected == TURN_ONLY_GREEN)
 		}
 	}
-	// Four sides of the log and four of the post.
-	testing.expect_value(t, kept, 8)
+	// Four sides each of the log, the post and the brick; the log's top
+	// and bottom.
+	testing.expect_value(t, kept, 12)
+	testing.expect_value(t, turned, 2)
+	testing.expect_value(t, orientation_flag_green(.Full), 0)
+	testing.expect_value(t, orientation_flag_green(.Turn), TURN_ONLY_GREEN)
+	testing.expect_value(t, orientation_flag_green(.Keep), KEEP_ORIENTATION_GREEN)
 }
 
 // The lists ambient life reads (work item 0075): every cross shaped cell
