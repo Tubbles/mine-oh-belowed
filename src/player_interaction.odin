@@ -126,6 +126,7 @@ mine_block :: proc(world: ^World, registry: Block_Registry, items: Item_Registry
 	if block_is_tree_log(felling.blocks, block_id) {
 		fell_tree(world, registry, felling, player.target.block)
 	}
+	drop_unsupported_cover(world, registry, items, player.target.block + UP)
 	spilled := false
 	for drop in block_drop_stacks(items, block_id) {
 		if leftover := inventory_add(player.inventory, items, drop.item, 1); leftover > 0 {
@@ -134,6 +135,19 @@ mine_block :: proc(world: ^World, registry: Block_Registry, items: Item_Registry
 		}
 	}
 	return spilled ? {.Inventory_Full} : {}
+}
+
+// Ground cover stands on the block below it (work item 0082): with that
+// block mined, the cover in cell turns to air and spills its item there.
+drop_unsupported_cover :: proc(world: ^World, registry: Block_Registry, items: Item_Registry, cell: World_Coordinate) {
+	cover := world_get_block(world, cell)
+	if block_shape(registry, cover) != .Cross {
+		return
+	}
+	world_set_block(world, cell, AIR_BLOCK)
+	for drop in block_drop_stacks(items, cover) {
+		spill_stack(world, registry, cell, drop)
+	}
 }
 
 // One of each item mining the block yields, in the temp allocator.
@@ -178,8 +192,8 @@ mine_with_player :: proc(world: ^World, content: Simulation_Content, player: ^Pl
 	return mine_block(world, content.blocks, content.items, simulation_tree_felling(content), player, holding, tick_rate, cheat_speed)
 }
 
-// A block may go into a cell that is not solid, holds no entity and that
-// no player's body overlaps.
+// A block may go into a cell that is not solid (air, water, ground
+// cover), holds no entity and that no player's body overlaps.
 placement_allowed :: proc(world: ^World, registry: Block_Registry, players: []Player, cell: World_Coordinate) -> bool {
 	if cell_is_solid_or_entity(world, registry, cell) {
 		return false
@@ -228,16 +242,30 @@ place_block_with_player :: proc(world: ^World, registry: Block_Registry, items: 
 	if .Place not_in just_pressed || !player.target.hit || block == AIR_BLOCK {
 		return
 	}
-	if !placement_allowed(world, registry, players, player.target.adjacent) {
+	target := placement_target(registry, world_get_block(world, player.target.block), player.target)
+	if !placement_allowed(world, registry, players, target.adjacent) {
 		return
 	}
 	item := selected_hotbar_stack(player^).item
 	hit_point := player_eye(player.position) + player_look_direction(player^) * player.target.distance
-	block = placed_block_variant(registry, block, player.target, hit_point, player.yaw, player.placement_rotation)
-	if world_set_block(world, player.target.adjacent, block) {
+	block = placed_block_variant(registry, block, target, hit_point, player.yaw, player.placement_rotation)
+	if world_set_block(world, target.adjacent, block) {
 		take_from_slot(&inventory_hotbar(player.inventory)[player.selected_hotbar_slot], 1)
 		record_block_placed(&world.statistics, item)
 	}
+}
+
+// The target a placement goes by: aimed at ground cover (work item 0082),
+// whose bounds fill its cell, the placement takes the cover's own cell and
+// replaces the cover; otherwise the cell in front of the targeted face.
+// targeted is the block in target.block.
+placement_target :: proc(registry: Block_Registry, targeted: Block_Id, target: Raycast_Hit) -> Raycast_Hit {
+	if block_shape(registry, targeted) != .Cross {
+		return target
+	}
+	replaced := target
+	replaced.adjacent = target.block
+	return replaced
 }
 
 // A slab goes into the upper half of its cell when placed against the

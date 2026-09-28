@@ -159,3 +159,27 @@ test_rotate_and_debug_drop_on_a_targeted_belt :: proc(t: ^testing.T) {
 	// Interact on a belt does not open a panel.
 	testing.expect(t, !entity_has_panel(&world.entities, belts[1]))
 }
+
+// Work item 0082: a belt aimed at ground cover takes the cover's cell, and
+// a drag lays belts over cover, each replacing it.
+@(test)
+test_belts_placed_over_ground_cover_replace_it :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	tuft := test_block(content.blocks, "grass_tuft")
+	set_blocks(&world, tuft, {0, 1, 0}, {1, 1, 0}, {2, 1, 0})
+	players := []Player{make_test_player(content.blocks, {-3.5, 1, 0.5})}
+	player := &players[0]
+	give_test_items(player, content.items, "belt", 10)
+	player.target = Raycast_Hit{hit = true, block = {0, 1, 0}, face = .Positive_Y, adjacent = {0, 2, 0}}
+	place_with_player(&world, content, players, 0, {.Place}, {.Place})
+	testing.expect(t, player.belt_drag.active)
+	player.target = Raycast_Hit{hit = true, block = {2, 1, 0}, face = .Positive_Y, adjacent = {2, 2, 0}}
+	place_with_player(&world, content, players, 0, {}, {.Place})
+	for x in i32(0) ..= 2 {
+		cell := World_Coordinate{x, 1, 0}
+		testing.expectf(t, belt_at(&world.entities, cell) != nil, "no belt at %v", cell)
+		testing.expect_value(t, world_get_block(&world, cell), AIR_BLOCK)
+	}
+	testing.expect_value(t, inventory_count(player.inventory, test_item(content.items, "belt")), 7)
+}

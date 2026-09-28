@@ -22,7 +22,9 @@ group a colour of its own, and <id>_side.png where the side differs from
 the plain file (grass: dirt with a green fringe). The pattern follows the
 material family taken from the id: noise per family, ore speckles in the
 ore's colour over stone, bark grain and a ring top for logs, mottled
-leaves, a grass top over a dirt side, bricks and mortar.
+leaves, a grass top over a dirt side, bricks and mortar. Ground cover
+(work item 0082: tufts, tall grass, flowers, dead bushes, reeds) is a
+plant silhouette on transparent texels, drawn on the cross quads.
 
 Items: by category, coloured from a table of the common materials (a word
 of the id picks it) or a colour hashed from the id: plates as rounded
@@ -99,6 +101,8 @@ MAGNET_RED = (200, 50, 44)
 CHARGE_RED = (180, 56, 40)
 FUSE = (60, 56, 50)
 SAPLING_GREEN = (80, 150, 60)
+STEM_GREEN = (70, 130, 52)
+REED_HEAD = (110, 72, 40)
 
 
 # Deterministic hashing.
@@ -346,12 +350,85 @@ def snow_pattern(colour, key: str) -> list:
     return pattern(texel)
 
 
+# Ground cover: plant silhouettes over transparent texels, rooted in the
+# bottom row.
+
+
+def fill(image: list, mask: set, colour, key: str, amplitude: int) -> None:
+    for x, y in mask:
+        image[y][x] = opaque(shifted(colour, noise(key, x, y, amplitude)))
+
+
+def blades_pattern(colour, key: str, count: int, shortest: int, tallest: int) -> list:
+    """Grass blades leaning a little either way from the bottom row."""
+    image = blank()
+    for blade in range(count):
+        root_x = 1 + int(random_unit(key, blade, 600) * (SIZE - 2))
+        height = shortest + int(random_unit(key, blade, 601) * (tallest - shortest + 1))
+        lean = int(random_unit(key, blade, 602) * 5) - 2
+        mask = line_mask((root_x, SIZE - 1), (root_x + lean, SIZE - height), 0.5)
+        fill(image, mask, shifted(colour, noise(key, blade, 603, 14)), f"{key}/{blade}", 8)
+    return image
+
+
+def flower_pattern(colour, key: str) -> list:
+    """A green stem with two leaves and a head in the block's colour."""
+    image = blank()
+    stem = line_mask((7.5, SIZE - 1), (7.5, 6), 0.6)
+    leaves = line_mask((7.5, 12), (4, 10), 0.6) | line_mask((7.5, 11), (11, 9), 0.6)
+    fill(image, stem | leaves, STEM_GREEN, key + "/stem", 8)
+    fill(image, disc_mask(7.5, 4.5, 2.6), colour, key + "/head", 14)
+    fill(image, disc_mask(7.5, 4.5, 0.8), (240, 220, 120), key + "/centre", 6)
+    return image
+
+
+def dead_bush_pattern(colour, key: str) -> list:
+    """Bare twigs fanning out from the root, each with a side twig."""
+    image = blank()
+    mask = set()
+    for twig in range(5):
+        top_x = 1 + twig * 3.3 + random_unit(key, twig, 610) * 1.5
+        top_y = 2 + random_unit(key, twig, 611) * 6
+        middle_x, middle_y = (7.5 + top_x) / 2, (SIZE - 1 + top_y) / 2
+        mask |= line_mask((7.5, SIZE - 1), (top_x, top_y), 0.5)
+        side = 2 if top_x >= 7.5 else -2
+        mask |= line_mask((middle_x, middle_y), (middle_x + side, middle_y - 3), 0.5)
+    fill(image, mask, colour, key, 12)
+    return image
+
+
+def reeds_pattern(colour, key: str) -> list:
+    """Tall straight stalks, some with a brown head."""
+    image = blank()
+    for stalk in range(5):
+        x = 1 + stalk * 3 + int(random_unit(key, stalk, 620) * 2)
+        top = 1 + int(random_unit(key, stalk, 621) * 5)
+        fill(image, line_mask((x, SIZE - 1), (x, top), 0.5), colour, f"{key}/{stalk}", 10)
+        if stalk % 2 == 0:
+            fill(image, rectangle_mask(x, top, x, top + 3) | rectangle_mask(x + 1, top + 1, x + 1, top + 2), REED_HEAD, f"{key}/head{stalk}", 8)
+    return image
+
+
+def cover_pattern(block_id: str, colour) -> list:
+    words = block_id.split("_")
+    if "flower" in words:
+        return flower_pattern(colour, block_id)
+    if "bush" in words:
+        return dead_bush_pattern(colour, block_id)
+    if "reeds" in words:
+        return reeds_pattern(colour, block_id)
+    if block_id == "tall_grass":
+        return blades_pattern(colour, block_id, 9, 9, 15)
+    return blades_pattern(colour, block_id, 8, 4, 8)
+
+
 def block_family(block_id: str) -> str:
     """The material family, from the id."""
     words = block_id.split("_")
     if words[-1] == "ore" or block_id == "gold_quartz":
         return "ore"
     checks = [
+        ("cover", "tuft" in words or "flower" in words or "bush" in words or "reeds" in words or block_id == "tall_grass"),
         ("log", "log" in words),
         ("leaves", "leaves" in words),
         ("water", "water" in words),
@@ -396,6 +473,8 @@ def face_pattern(family: str, colour, key: str, stone) -> list:
 def block_files(block_id: str, faces: dict, stone) -> dict:
     """File suffix to image. faces maps top, side and bottom to colours."""
     family = block_family(block_id)
+    if family == "cover":
+        return {"": cover_pattern(block_id, faces["side"])}
     if family == "grass":
         return {
             "": dirt_pattern(faces["bottom"], block_id),

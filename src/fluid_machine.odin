@@ -331,11 +331,12 @@ boiler_burn_fraction :: proc(boiler: Fluid_Machine) -> f32 {
 	return f32(boiler.fuel_joules) / f32(boiler.fuel_item_joules)
 }
 
-// Free, clear of the players, and on a solid block or on another pipe, so
-// pipes climb in columns like belt lifts.
+// Free or ground cover (which the pipe replaces, work item 0082), clear of
+// the players, and on a solid block or on another pipe, so pipes climb in
+// columns like belt lifts.
 pipe_cell_is_placeable :: proc(world: ^World, registry: Block_Registry, players: []Player, cell: World_Coordinate) -> bool {
 	cells := [1]World_Coordinate{cell}
-	if !cell_is_free(world, cell) || footprint_hits_player(players, cells[:]) {
+	if !cell_takes_machine(world, registry, cell) || footprint_hits_player(players, cells[:]) {
 		return false
 	}
 	below := cell - {0, 1, 0}

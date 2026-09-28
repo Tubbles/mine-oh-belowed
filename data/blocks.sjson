@@ -500,4 +500,62 @@ blocks = [
 		tool_tier = 0
 		texture = {top = [176, 132, 84], side = [176, 132, 84], bottom = [176, 132, 84]}
 	}
+	// Ground cover (work item 0082): crosses that generation sets on the
+	// top block of dry land per biome (ground_cover in biomes.sjson). Not
+	// solid, so the player walks through them; mined at once, each drops
+	// its own item. Placing a block into a cover cell replaces the cover.
+	{
+		id = "grass_tuft"
+		name_key = "block_grass_tuft"
+		shape = "cross"
+		solid = false
+		hardness_seconds = 0.05
+		tool_tier = 0
+		texture = {top = [96, 160, 64], side = [96, 160, 64], bottom = [96, 160, 64]}
+	}
+	{
+		id = "tall_grass"
+		name_key = "block_tall_grass"
+		shape = "cross"
+		solid = false
+		hardness_seconds = 0.05
+		tool_tier = 0
+		texture = {top = [88, 150, 60], side = [88, 150, 60], bottom = [88, 150, 60]}
+	}
+	{
+		id = "flower_red"
+		name_key = "block_flower_red"
+		shape = "cross"
+		solid = false
+		hardness_seconds = 0.05
+		tool_tier = 0
+		texture = {top = [204, 52, 48], side = [204, 52, 48], bottom = [204, 52, 48]}
+	}
+	{
+		id = "flower_yellow"
+		name_key = "block_flower_yellow"
+		shape = "cross"
+		solid = false
+		hardness_seconds = 0.05
+		tool_tier = 0
+		texture = {top = [232, 200, 64], side = [232, 200, 64], bottom = [232, 200, 64]}
+	}
+	{
+		id = "dead_bush"
+		name_key = "block_dead_bush"
+		shape = "cross"
+		solid = false
+		hardness_seconds = 0.05
+		tool_tier = 0
+		texture = {top = [132, 100, 68], side = [132, 100, 68], bottom = [132, 100, 68]}
+	}
+	{
+		id = "reeds"
+		name_key = "block_reeds"
+		shape = "cross"
+		solid = false
+		hardness_seconds = 0.05
+		tool_tier = 0
+		texture = {top = [124, 150, 80], side = [124, 150, 80], bottom = [124, 150, 80]}
+	}
 ]

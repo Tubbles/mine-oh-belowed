@@ -469,3 +469,17 @@ test_fluid_throughput_does_not_depend_on_direction :: proc(t: ^testing.T) {
 	// the first tick take the rest.
 	testing.expect_value(t, negative_ticks, 1258)
 }
+
+// Work item 0082: a pipe placed over ground cover replaces it.
+@(test)
+test_pipe_placed_over_ground_cover_replaces_it :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	set_blocks(&world, test_block(content.blocks, "grass_tuft"), {0, 1, 0})
+	placement := placement_at(&world, content, nil, test_machine(content.machines, "pipe"), {0, 1, 0}, 0)
+	testing.expect(t, placement.valid)
+	testing.expect(t, placement.clears_cover)
+	commit_placement(&world, content.machines, placement)
+	testing.expect_value(t, world_get_block(&world, {0, 1, 0}), AIR_BLOCK)
+	testing.expect_value(t, entity_at(&world.entities, {0, 1, 0}).kind, Entity_Kind.Pipe)
+}

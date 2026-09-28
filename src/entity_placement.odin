@@ -25,6 +25,9 @@ Placement :: struct {
 	no_deep_vein: bool,
 	// A splitter: rotation is its direction.
 	splitter:     bool,
+	// Ground cover stands in the footprint (work item 0082), which
+	// commit_placement clears.
+	clears_cover: bool,
 }
 
 // The footprint's minimum corner, so that it starts at the cell in front
@@ -55,6 +58,25 @@ cell_is_free :: proc(world: ^World, cell: World_Coordinate) -> bool {
 	return world_get_block(world, cell) == AIR_BLOCK && cell not_in world.entities.cells
 }
 
+// Free, or ground cover with no entity in it, which a machine replaces
+// (work item 0082).
+cell_takes_machine :: proc(world: ^World, registry: Block_Registry, cell: World_Coordinate) -> bool {
+	return cell_is_free(world, cell) || (cell_holds_cover(world, registry, cell) && cell not_in world.entities.cells)
+}
+
+cell_holds_cover :: proc(world: ^World, registry: Block_Registry, cell: World_Coordinate) -> bool {
+	return block_shape(registry, world_get_block(world, cell)) == .Cross
+}
+
+footprint_holds_cover :: proc(world: ^World, registry: Block_Registry, cells: []World_Coordinate) -> bool {
+	for cell in cells {
+		if cell_holds_cover(world, registry, cell) {
+			return true
+		}
+	}
+	return false
+}
+
 // Every cell of the bottom layer rests on a solid block. Entities do not
 // count as support, so picking one up never leaves another floating.
 footprint_is_supported :: proc(world: ^World, registry: Block_Registry, cells: []World_Coordinate, bottom: i32) -> bool {
@@ -79,7 +101,7 @@ footprint_hits_player :: proc(players: []Player, cells: []World_Coordinate) -> b
 
 footprint_is_valid :: proc(world: ^World, registry: Block_Registry, players: []Player, cells: []World_Coordinate, bottom: i32) -> bool {
 	for cell in cells {
-		if !cell_is_free(world, cell) {
+		if !cell_takes_machine(world, registry, cell) {
 			return false
 		}
 	}
@@ -111,10 +133,12 @@ placement_for_player :: proc(world: ^World, content: Simulation_Content, players
 	}
 	if kind == .Splitter {
 		// Walked over like belts, so the player may stand in the way.
-		return placement_at(world, content, players[:0], machine, splitter_origin(player.target.adjacent, rotation), rotation)
+		target := placement_target(content.blocks, world_get_block(world, player.target.block), player.target)
+		return placement_at(world, content, players[:0], machine, splitter_origin(target.adjacent, rotation), rotation)
 	}
+	target := placement_target(content.blocks, world_get_block(world, player.target.block), player.target)
 	size := rotated_footprint_size(content.machines.machines[machine].footprint, rotation)
-	origin := footprint_origin(player.target.adjacent, player.target.face, size)
+	origin := footprint_origin(target.adjacent, target.face, size)
 	return placement_at(world, content, players, machine, origin, rotation)
 }
 
@@ -138,6 +162,7 @@ placement_at :: proc(world: ^World, content: Simulation_Content, players: []Play
 		inserter = kind == .Inserter,
 		drill    = kind == .Drill,
 		splitter = kind == .Splitter,
+		clears_cover = footprint_holds_cover(world, content.blocks, cells),
 	}
 	if placement.drill {
 		vein_found: bool
@@ -239,16 +264,30 @@ place_entity_with_player :: proc(world: ^World, content: Simulation_Content, pla
 // it, any other machine lifting loose items in its cells onto its top. The player's Place and the developer
 // command `place` (work item 0053) both end here.
 commit_placement :: proc(world: ^World, machines: Machine_Registry, placement: Placement) -> Entity_Handle {
+	cells := footprint_cells(placement.origin, machines.machines[placement.machine].footprint, placement.rotation)
+	if placement.clears_cover {
+		clear_cover_from(world, cells)
+	}
 	if placement.belt {
 		return add_belt(&world.entities, machines, placement.machine, placement.origin, placement.rotation, placement.belt_shape)
 	}
 	handle := add_entity(&world.entities, machines, placement.machine, placement.origin, placement.rotation)
-	cells := footprint_cells(placement.origin, machines.machines[placement.machine].footprint, placement.rotation)
 	lift_loose_items_out_of(&world.entities.loose_items, cells, placement.origin.y + placement.size.y)
 	if drill := pool_get(&world.entities.drills, handle); drill != nil {
 		drill.vein = placement.vein
 	}
 	return handle
+}
+
+// A valid placement's footprint holds only air and ground cover
+// (cell_takes_machine; hydro turbines refuse cover), so every block left
+// in it is cover.
+clear_cover_from :: proc(world: ^World, cells: []World_Coordinate) {
+	for cell in cells {
+		if world_get_block(world, cell) != AIR_BLOCK {
+			world_set_block(world, cell, AIR_BLOCK)
+		}
+	}
 }
 
 // The placement of a machine given by its minimum corner and rotation,
@@ -285,13 +324,14 @@ command_belt_placement :: proc(world: ^World, content: Simulation_Content, machi
 	}
 	return Placement {
 		shown = true,
-		valid = cell_is_free(world, cell) && belt_cell_supported(world, content.blocks, cell, shape),
+		valid = cell_takes_machine(world, content.blocks, cell) && belt_cell_supported(world, content.blocks, cell, shape),
 		machine = machine,
 		origin = cell,
 		rotation = direction,
 		size = {1, 1, 1},
 		belt = true,
 		belt_shape = shape,
+		clears_cover = cell_holds_cover(world, content.blocks, cell),
 	}
 }
 

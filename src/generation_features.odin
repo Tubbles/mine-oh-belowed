@@ -1,11 +1,15 @@
 package game
 
+import "core:slice"
+
 // Trees and boulders. Each feature is rooted in a cell of a world aligned
 // grid, from a hash of the cell, so a chunk finds every feature reaching
 // into it by visiting the cells within FEATURE_REACH of its border. Features
 // only fill air, in a fixed order (logs, boulders, leaves), so the result
 // does not depend on which features a chunk visits first. Trees take a
 // species from their biome's list (generation_trees.odin, work item 0059).
+// Ground cover (work item 0082) comes last: one cross shaped block per
+// column at most, from a hash of the column.
 
 TREE_CELL_SIZE :: 6
 BOULDER_CELL_SIZE :: 16
@@ -437,6 +441,65 @@ apply_features :: proc(generator: ^Generator, chunk: ^Chunk, trees: []Tree, boul
 	for tree in trees {
 		if tree.crown != .None {
 			place_feature(chunk, Feature{shape = .Leaves, tree = tree}, generator.species[tree.species].leaves_block)
+		}
+	}
+}
+
+// The entry a roll in [0, 1) picks: entries in order, the roll against
+// the running sum of their chances. found is false past the last sum.
+choose_ground_cover :: proc(cover: []Biome_Cover, roll: f64) -> (entry: Biome_Cover, found: bool) {
+	sum: f64 = 0
+	for candidate in cover {
+		sum += f64(candidate.chance)
+		if roll < sum {
+			return candidate, true
+		}
+	}
+	return {}, false
+}
+
+// The top block of a column as fill_terrain_column sets it: the biome's
+// top block, or its pit block in a low spot.
+column_top_block :: proc(generator: ^Generator, columns: ^Column_Grid, local_x, local_z: i32) -> Block_Id {
+	biome := column_biome(generator, grid_column(columns, local_x, local_z))
+	return column_is_pit(generator, columns, local_x, local_z) ? biome.pit_block : biome.top_block
+}
+
+// The cover block a column's roll gives on its top block, or air when
+// the roll picks no entry or one that does not stand on top. A pure
+// function of the seed and the column, so every chunk agrees.
+ground_cover_at :: proc(cover: []Biome_Cover, top: Block_Id, seed: u64, x, z: i32) -> Block_Id {
+	if len(cover) == 0 {
+		return AIR_BLOCK
+	}
+	entry, found := choose_ground_cover(cover, hash_to_unit(hash_column(seed, x, z)))
+	if !found || !slice.contains(entry.on, top) {
+		return AIR_BLOCK
+	}
+	return entry.block
+}
+
+// Sets each column's cover into the cell above its surface when that cell
+// lies in the chunk and is still air after the features: water keeps it
+// off flooded columns, logs, leaves and boulders keep it out of their
+// cells. Vein footprints stay bare so outcrops read clearly. The landing
+// pad is stamped afterwards and clears its own cells.
+apply_ground_cover :: proc(generator: ^Generator, chunk: ^Chunk, columns: ^Column_Grid, veins: []Vein) {
+	origin := chunk_origin(chunk.coordinate)
+	for z in i32(0) ..< CHUNK_SIZE {
+		for x in i32(0) ..< CHUNK_SIZE {
+			y := grid_column(columns, x, z).height + 1 - origin.y
+			if y < 0 || y >= CHUNK_SIZE {
+				continue
+			}
+			index := local_to_index({x, y, z})
+			world_x, world_z := origin.x + x, origin.z + z
+			if chunk.blocks[index] != AIR_BLOCK || column_in_vein_footprint(veins, world_x, world_z) {
+				continue
+			}
+			cover := column_biome(generator, grid_column(columns, x, z)).ground_cover
+			top := column_top_block(generator, columns, x, z)
+			chunk.blocks[index] = ground_cover_at(cover, top, generator.seeds[.Ground_Cover], world_x, world_z)
 		}
 	}
 }

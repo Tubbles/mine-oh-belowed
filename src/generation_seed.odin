@@ -30,6 +30,8 @@ Generation_Purpose :: enum u8 {
 	Temperature,
 	// The forest clearings of work item 0059.
 	Clearings,
+	// The ground cover of work item 0082.
+	Ground_Cover,
 }
 
 Purpose_Seeds :: [Generation_Purpose]u64

@@ -193,6 +193,13 @@ items = [
 	{id = "concrete_stairs", name_key = "item_concrete_stairs", category = "block", stack_size = 50, places_block = "concrete_stairs", mined_from = ["concrete_stairs_r1", "concrete_stairs_r2", "concrete_stairs_r3"], price = 3}
 	{id = "plank_slab", name_key = "item_plank_slab", category = "block", stack_size = 50, places_block = "plank_slab", mined_from = ["plank_slab_upper"], price = 1}
 	{id = "plank_stairs", name_key = "item_plank_stairs", category = "block", stack_size = 50, places_block = "plank_stairs", mined_from = ["plank_stairs_r1", "plank_stairs_r2", "plank_stairs_r3"], price = 1}
+	// Ground cover (work item 0082): each drops itself and places back.
+	{id = "grass_tuft", name_key = "item_grass_tuft", category = "block", stack_size = 50, places_block = "grass_tuft", price = 1}
+	{id = "tall_grass", name_key = "item_tall_grass", category = "block", stack_size = 50, places_block = "tall_grass", price = 1}
+	{id = "flower_red", name_key = "item_flower_red", category = "block", stack_size = 50, places_block = "flower_red", price = 1}
+	{id = "flower_yellow", name_key = "item_flower_yellow", category = "block", stack_size = 50, places_block = "flower_yellow", price = 1}
+	{id = "dead_bush", name_key = "item_dead_bush", category = "block", stack_size = 50, places_block = "dead_bush", price = 1}
+	{id = "reeds", name_key = "item_reeds", category = "block", stack_size = 50, places_block = "reeds", price = 1}
 	{id = "brick", name_key = "item_brick", category = "block", stack_size = 50, places_block = "brick", cannot_recycle = true, price = 2}
 	{id = "asphalt", name_key = "item_asphalt", category = "block", stack_size = 50, places_block = "asphalt", cannot_recycle = true, price = 3}
 	{id = "snow", name_key = "item_snow", category = "block", stack_size = 50, places_block = "snow", cannot_recycle = true, price = 1}

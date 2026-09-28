@@ -384,3 +384,57 @@ test_placing_slabs_and_rotated_stairs :: proc(t: ^testing.T) {
 	testing.expect_value(t, world_get_block(&world, {8, 1, 6}), test_block(registry, "stone_stairs_r2"))
 	testing.expect_value(t, player.inventory.slots[1].count, 2)
 }
+
+// Work item 0082: the ray stops at ground cover, and a block placed there
+// takes the cover's cell. Cover has no collision, digs in a few ticks and
+// drops its own item.
+@(test)
+test_placing_a_block_replaces_ground_cover :: proc(t: ^testing.T) {
+	registry := make_test_registry()
+	items := make_test_items()
+	content := Simulation_Content{blocks = registry, items = items, machines = make_test_machines()}
+	world := make_floor_world(registry, 32)
+	tuft := test_block(registry, "grass_tuft")
+	players := []Player{make_test_player(registry, {0.5, 1, 0.5})}
+	player := &players[0]
+	player.inventory.slots[0] = Item_Stack{item = test_item(items, "dirt"), count = 2}
+	player.pitch = -60
+	floor := raycast_blocks(&world, registry, player_eye(player.position), player_look_direction(player^), PLAYER_REACH)
+	set_blocks(&world, tuft, floor.adjacent)
+	player.target = raycast_blocks(&world, registry, player_eye(player.position), player_look_direction(player^), PLAYER_REACH)
+	testing.expect_value(t, player.target.block, floor.adjacent)
+	place_with_player(&world, content, players, 0, {.Place})
+	testing.expect_value(t, world_get_block(&world, floor.adjacent), test_block(registry, "dirt"))
+	testing.expect_value(t, player.inventory.slots[0].count, 1)
+	testing.expect(t, placement_allowed(&world, registry, players[:0], {6, 1, 0}))
+	testing.expect_value(t, len(block_collision_boxes(registry, tuft)), 0)
+	testing.expect(t, mining_required_ticks(registry.definitions[tuft].hardness_seconds, TEST_TICK_RATE) <= 3)
+	testing.expect_value(t, block_drop(items, tuft), test_item(items, "grass_tuft"))
+	testing.expect_value(t, item_places_block(items, test_item(items, "grass_tuft")), tuft)
+}
+
+// Work item 0082: mining the block under ground cover turns the cover to
+// air and spills its item, so no cover floats.
+@(test)
+test_mining_under_ground_cover_spills_the_cover :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_loose_item_test_world(content)
+	tuft := test_block(content.blocks, "grass_tuft")
+	set_blocks(&world, tuft, {2, 1, 0})
+	player := make_test_player(content.blocks, {0.5, 1, 0.5})
+	player.held.stack = Item_Stack{test_item(content.items, "wooden_pickaxe"), 1}
+	player.target = Raycast_Hit{hit = true, block = {2, 0, 0}}
+	for _ in 0 ..< 600 {
+		mine_block(&world, content.blocks, content.items, {}, &player, true, TEST_TICK_RATE, false)
+		if world_get_block(&world, player.target.block) == AIR_BLOCK {
+			break
+		}
+	}
+	testing.expect_value(t, world_get_block(&world, {2, 0, 0}), AIR_BLOCK)
+	testing.expect_value(t, world_get_block(&world, {2, 1, 0}), AIR_BLOCK)
+	items := world.entities.loose_items.items[:]
+	testing.expect_value(t, len(items), 1)
+	if len(items) == 1 {
+		testing.expect_value(t, items[0], Loose_Item{item = test_item(content.items, "grass_tuft"), count = 1, cell = {2, 1, 0}})
+	}
+}

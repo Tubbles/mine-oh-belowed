@@ -2,7 +2,10 @@
 
 // Chunk fragment shader (work items 0005 and 0008): samples the block
 // atlas, lights it from the vertex colour and fades to the fog colour
-// between fog_start and fog_end to hide the load boundary.
+// between fog_start and fog_end to hide the load boundary. Texels with
+// alpha below 0.5 are discarded, so the clear texels of ground cover
+// tiles (work item 0082) show what lies behind; every other tile is
+// opaque.
 //
 // Vertex colour packing (world_mesh_light.odin), each channel 0 to 1:
 //   r  sky light level / 15, averaged over the cells around the vertex
@@ -41,6 +44,10 @@ void main()
 {
     vec2 atlas_uv = fragment_tile_origin + fract(fragment_texcoord) * tile_size;
     vec4 texel = texture(texture0, atlas_uv) * colDiffuse;
+    if (texel.a < 0.5)
+    {
+        discard;
+    }
     float light = light_curve(fragment_color.r) * day_factor + light_curve(fragment_color.g);
     float shade = mix(darkest_occlusion_shade, 1.0, fragment_color.b);
     float brightness = max(min(light, 1.0) * shade, minimum_brightness);

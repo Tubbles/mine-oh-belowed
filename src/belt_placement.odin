@@ -89,7 +89,8 @@ belt_cell_supported :: proc(world: ^World, registry: Block_Registry, cell: World
 
 // The cell of a drag step into a column: level, one up where a block
 // stands in the way, one down where the ground falls away. An existing
-// belt at either height is joined.
+// belt at either height is joined. Ground cover counts as free, and the
+// belt replaces it (work item 0082).
 resolve_drag_cell :: proc(world: ^World, registry: Block_Registry, from: World_Coordinate, column: [2]i32) -> (cell: World_Coordinate, ok: bool) {
 	level := World_Coordinate{column.x, from.y, column.y}
 	candidates := [3]World_Coordinate{level, level + UP, level - UP}
@@ -98,15 +99,15 @@ resolve_drag_cell :: proc(world: ^World, registry: Block_Registry, from: World_C
 			return candidate, true
 		}
 	}
-	if cell_is_free(world, level) {
+	if cell_takes_machine(world, registry, level) {
 		if belt_cell_supported(world, registry, level, .Flat) {
 			return level, true
 		}
 		down := level - UP
-		return down, cell_is_free(world, down) && belt_cell_supported(world, registry, down, .Flat)
+		return down, cell_takes_machine(world, registry, down) && belt_cell_supported(world, registry, down, .Flat)
 	}
 	up := level + UP
-	return up, cell_is_free(world, up) && belt_cell_supported(world, registry, up, .Flat)
+	return up, cell_takes_machine(world, registry, up) && belt_cell_supported(world, registry, up, .Flat)
 }
 
 // A belt whose items come out into the cell, or nil.
@@ -157,20 +158,22 @@ single_belt_plan :: proc(world: ^World, registry: Block_Registry, cell: World_Co
 	return plan
 }
 
-// The ghost of a belt: no player check, belts are walked over.
+// The ghost of a belt: no player check, belts are walked over. Aimed at
+// ground cover, the belt takes the cover's cell.
 belt_placement_for_player :: proc(world: ^World, content: Simulation_Content, player: Player, machine: Machine_Id) -> Placement {
-	cell := player.target.adjacent
+	cell := placement_target(content.blocks, world_get_block(world, player.target.block), player.target).adjacent
 	item_shape := content.machines.machines[machine].belt_shape
 	plan := single_belt_plan(world, content.blocks, cell, item_shape, player.yaw, player.placement_rotation)
 	return Placement {
 		shown = true,
-		valid = cell_is_free(world, cell) && belt_cell_supported(world, content.blocks, cell, plan.shape),
+		valid = cell_takes_machine(world, content.blocks, cell) && belt_cell_supported(world, content.blocks, cell, plan.shape),
 		machine = machine,
 		origin = cell,
 		rotation = plan.direction,
 		size = {1, 1, 1},
 		belt = true,
 		belt_shape = plan.shape,
+		clears_cover = cell_holds_cover(world, content.blocks, cell),
 	}
 }
 
@@ -209,7 +212,7 @@ belt_shape_item_shape :: proc(shape: Belt_Shape) -> Belt_Item_Shape {
 
 // Takes the item of the planned shape in the tier of `speed` from the
 // inventory and places the belt. A ramp without a ramp item of that tier
-// in the inventory is placed flat.
+// in the inventory is placed flat. Ground cover in the cell is cleared.
 place_planned_belt :: proc(world: ^World, content: Simulation_Content, player: ^Player, planned: Planned_Belt, speed: u32) -> (handle: Entity_Handle, ok: bool) {
 	plan := planned
 	machine := find_belt_machine_of_speed(content.machines, belt_shape_item_shape(plan.shape), speed)
@@ -217,12 +220,14 @@ place_planned_belt :: proc(world: ^World, content: Simulation_Content, player: ^
 		plan.shape = .Flat
 		machine = find_belt_machine_of_speed(content.machines, .Flat, speed)
 	}
-	if machine == NO_MACHINE || !cell_is_free(world, plan.cell) || !belt_cell_supported(world, content.blocks, plan.cell, plan.shape) {
+	if machine == NO_MACHINE || !cell_takes_machine(world, content.blocks, plan.cell) || !belt_cell_supported(world, content.blocks, plan.cell, plan.shape) {
 		return NO_ENTITY, false
 	}
 	if inventory_remove(player.inventory, content.machines.machines[machine].item, 1) != 1 {
 		return NO_ENTITY, false
 	}
+	cells := [1]World_Coordinate{plan.cell}
+	clear_cover_from(world, cells[:])
 	handle = add_belt(&world.entities, content.machines, machine, plan.cell, plan.direction, plan.shape)
 	record_placed(&world.statistics, machine)
 	return handle, true
@@ -301,7 +306,7 @@ continue_belt_drag :: proc(world: ^World, content: Simulation_Content, player: ^
 		return
 	}
 	drag := &player.belt_drag
-	column := drag_target_column(player.target)
+	column := drag_target_column(placement_target(content.blocks, world_get_block(world, player.target.block), player.target))
 	from := [2]i32{drag.last_cell.x, drag.last_cell.z}
 	if column == from {
 		return

@@ -22,6 +22,12 @@
 // with a tree_density above 0 needs the list. clearing_share (optional, 0
 // to 1, default 0) is about the share of the biome a clearing noise keeps
 // free of trees, so forests have open patches and plains have groves.
+// ground_cover (optional, work item 0082) lists the cover blocks (cross
+// shaped, blocks.sjson) set on the top block of a dry land column: block
+// the cover, chance its share of the columns (0 to 1, the chances of a
+// biome add up to at most 1), on the top blocks it stands on. One roll per
+// column picks at most one entry, in order. No cover in a vein footprint,
+// under water, or where a tree or boulder fills the cell above.
 // pit_block (optional, work item 0030) replaces top_block in the low spots
 // of the biome: columns at most pit_maximum_height above sea level whose
 // four neighbours stand no lower. The tar flats get tar pits.
@@ -86,6 +92,7 @@ biomes = [
 		tree_density = 0.02
 		trees = [{species = "pine", weight = 2}, {species = "birch", weight = 1}]
 		boulder_density = 0.3
+		ground_cover = [{block = "grass_tuft", chance = 0.1, on = ["grass"]}]
 		map_color = [96, 150, 96]
 	}
 	{
@@ -103,6 +110,7 @@ biomes = [
 		tree_density = 0
 		trees = [{species = "dead_tree", weight = 1}]
 		boulder_density = 0.2
+		ground_cover = [{block = "dead_bush", chance = 0.01, on = ["red_rock"]}]
 		map_color = [204, 96, 56]
 	}
 	{
@@ -118,6 +126,7 @@ biomes = [
 		tree_density = 0.005
 		trees = [{species = "acacia", weight = 3}, {species = "dead_tree", weight = 1}]
 		boulder_density = 0.05
+		ground_cover = [{block = "grass_tuft", chance = 0.1, on = ["dry_grass"]}, {block = "dead_bush", chance = 0.04, on = ["dry_grass"]}]
 		map_color = [196, 184, 96]
 	}
 	{
@@ -133,6 +142,7 @@ biomes = [
 		tree_density = 0.03
 		trees = [{species = "oak", weight = 1}, {species = "birch", weight = 2}]
 		boulder_density = 0
+		ground_cover = [{block = "reeds", chance = 0.2, on = ["mud"]}, {block = "grass_tuft", chance = 0.1, on = ["mud"]}]
 		map_color = [56, 124, 112]
 	}
 	{
@@ -178,6 +188,7 @@ biomes = [
 		tree_density = 0
 		trees = [{species = "dead_tree", weight = 1}]
 		boulder_density = 0.15
+		ground_cover = [{block = "dead_bush", chance = 0.01, on = ["sand"]}]
 		map_color = [232, 184, 100]
 	}
 	{
@@ -224,6 +235,7 @@ biomes = [
 		trees = [{species = "oak", weight = 3}, {species = "birch", weight = 1}]
 		clearing_share = 0.35
 		boulder_density = 0.05
+		ground_cover = [{block = "grass_tuft", chance = 0.15, on = ["grass"]}]
 		map_color = [32, 112, 44]
 	}
 	{
@@ -239,6 +251,7 @@ biomes = [
 		trees = [{species = "oak", weight = 1}, {species = "birch", weight = 1}]
 		clearing_share = 0.5
 		boulder_density = 0.2
+		ground_cover = [{block = "grass_tuft", chance = 0.25, on = ["grass"]}, {block = "tall_grass", chance = 0.05, on = ["grass"]}, {block = "flower_red", chance = 0.02, on = ["grass"]}, {block = "flower_yellow", chance = 0.02, on = ["grass"]}]
 		map_color = [124, 190, 80]
 	}
 ]

@@ -15,7 +15,8 @@ BIOMES_FILE_NAME :: "biomes.sjson"
 // the biome on the map, name_key names it in data/strings/en.sjson.
 // trees (work item 0059) lists the species its trees are drawn from, by
 // weight; clearing_share is about the share of the biome left without
-// trees (column_in_clearing).
+// trees (column_in_clearing). ground_cover (work item 0082) lists the
+// cover blocks set on the top block of dry land (apply_ground_cover).
 Biome_Definition :: struct {
 	id:               string,
 	name_key:         string,
@@ -33,9 +34,25 @@ Biome_Definition :: struct {
 	boulder_density:  f32,
 	trees:            []Biome_Tree_Definition,
 	clearing_share:   f32,
+	ground_cover:     []Biome_Cover_Definition,
 	pit_block:          string,
 	pit_maximum_height: i32,
 	map_color:        [3]u8,
+}
+
+// One entry of a biome's ground_cover list: a cross shaped block, its
+// chance per column (0 to 1) and the top block ids it stands on.
+Biome_Cover_Definition :: struct {
+	block:  string,
+	chance: f32,
+	on:     []string,
+}
+
+// A resolved ground_cover entry.
+Biome_Cover :: struct {
+	block:  Block_Id,
+	chance: f32,
+	on:     []Block_Id,
 }
 
 // What a column offers the biome table.
@@ -58,6 +75,7 @@ Biome :: struct {
 	pit_block:    Block_Id,
 	layer_block:  Block_Id,
 	trees:        []Biome_Tree,
+	ground_cover: []Biome_Cover,
 }
 
 parse_biomes_file :: proc(data: []byte, allocator := context.allocator) -> (file: Biomes_File, error: json.Unmarshal_Error) {
@@ -67,6 +85,19 @@ parse_biomes_file :: proc(data: []byte, allocator := context.allocator) -> (file
 
 density_in_range :: proc(density: f32) -> bool {
 	return density >= 0 && density <= 1
+}
+
+// Each chance lies in 0 to 1 and together they reach at most 1, since one
+// roll per column picks an entry by the running sum.
+ground_cover_chances_valid :: proc(cover: []Biome_Cover_Definition) -> bool {
+	total: f32 = 0
+	for entry in cover {
+		if !density_in_range(entry.chance) {
+			return false
+		}
+		total += entry.chance
+	}
+	return total <= 1
 }
 
 // The temperature bounds with the missing ones filled in: temperatures
@@ -97,6 +128,8 @@ validate_biome_definition :: proc(definition: Biome_Definition) -> string {
 		return fmt.tprintf("biome %q has trees but no trees list", definition.id)
 	case !density_in_range(definition.clearing_share):
 		return fmt.tprintf("biome %q has a clearing_share outside 0 to 1", definition.id)
+	case !ground_cover_chances_valid(definition.ground_cover):
+		return fmt.tprintf("biome %q has ground_cover chances outside 0 to 1", definition.id)
 	}
 	return ""
 }
@@ -127,7 +160,32 @@ resolve_biome :: proc(definition: Biome_Definition, registry: Block_Registry, sp
 	if biome.trees, problem = resolve_biome_trees(definition, species, allocator); problem != "" {
 		return {}, problem
 	}
+	if biome.ground_cover, problem = resolve_biome_ground_cover(definition, registry, allocator); problem != "" {
+		return {}, problem
+	}
 	return biome, ""
+}
+
+// Every cover block exists and is a cross, every on block exists.
+resolve_biome_ground_cover :: proc(definition: Biome_Definition, registry: Block_Registry, allocator := context.allocator) -> (cover: []Biome_Cover, problem: string) {
+	cover = make([]Biome_Cover, len(definition.ground_cover), allocator)
+	for entry, index in definition.ground_cover {
+		block, found := find_block_id(registry, entry.block)
+		if !found {
+			return nil, fmt.tprintf("biome %q names an unknown ground_cover block %q", definition.id, entry.block)
+		}
+		if block_shape(registry, block) != .Cross {
+			return nil, fmt.tprintf("biome %q has ground_cover block %q that is not a cross", definition.id, entry.block)
+		}
+		on := make([]Block_Id, len(entry.on), allocator)
+		for name, on_index in entry.on {
+			if on[on_index], found = find_block_id(registry, name); !found {
+				return nil, fmt.tprintf("biome %q sets ground_cover on an unknown block %q", definition.id, name)
+			}
+		}
+		cover[index] = Biome_Cover{block = block, chance = entry.chance, on = on}
+	}
+	return cover, ""
 }
 
 resolve_biomes :: proc(file: Biomes_File, registry: Block_Registry, species: []Tree_Species, allocator := context.allocator) -> (biomes: []Biome, problem: string) {
