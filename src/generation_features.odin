@@ -22,30 +22,15 @@ FEATURE_REACH :: max(LEAF_REACH, MAXIMUM_BOULDER_RADIUS)
 // Clearings: patches of about this size where a biome with a
 // clearing_share grows no trees.
 CLEARING_WAVELENGTH :: 48.0
-// A conical crown over roots starts at least this high above the root, so
-// no leaf lies within LEAF_SUPPORT_DISTANCE of a root log and a felled
-// tree's crown never stays on its roots. Round and flat crowns over roots
-// (trunks of MINIMUM_ROOTED_TRUNK_HEIGHT or more) start high enough by
-// themselves.
-ROOTED_CROWN_MINIMUM_HEIGHT :: LEAF_SUPPORT_DISTANCE + 2
-
-// Indices into tree_root_offsets.
-Tree_Root_Directions :: bit_set[0 ..< 4;u8]
-
-@(rodata)
-tree_root_offsets := [4][2]i32{{1, 0}, {0, 1}, {-1, 0}, {0, -1}}
-
 // root is the surface block under the trunk. species indexes the
 // generator's species table; crown and crown_radius come from it
-// (crown_radius 0 without a crown). root_directions is empty for a tree
-// without roots.
+// (crown_radius 0 without a crown).
 Tree :: struct {
-	root:            World_Coordinate,
-	trunk_height:    i32,
-	species:         int,
-	crown:           Tree_Crown,
-	crown_radius:    i32,
-	root_directions: Tree_Root_Directions,
+	root:         World_Coordinate,
+	trunk_height: i32,
+	species:      int,
+	crown:        Tree_Crown,
+	crown_radius: i32,
 }
 
 // centre is the surface block the boulder sits half buried in.
@@ -148,23 +133,7 @@ make_tree :: proc(species: Tree_Species, species_index: int, root: Feature_Root)
 		species = species_index,
 		crown = species.crown,
 		crown_radius = species.crown == .None ? 0 : definition.crown_radius,
-		root_directions = tree_root_directions(definition.roots, trunk, hash_combine(root.hash, 5)),
 	}
-}
-
-// Two or three neighbouring directions from the hash, for a rooted
-// species with a trunk tall enough.
-tree_root_directions :: proc(rooted: bool, trunk_height: i32, hash: u64) -> Tree_Root_Directions {
-	if !rooted || trunk_height < MINIMUM_ROOTED_TRUNK_HEIGHT {
-		return {}
-	}
-	count := 2 + int(hash & 1)
-	first := int((hash >> 1) % 4)
-	directions: Tree_Root_Directions
-	for step in 0 ..< count {
-		directions += {(first + step) % 4}
-	}
-	return directions
 }
 
 boulder_in_cell :: proc(generator: ^Generator, cell: [2]i32, veins: []Vein) -> (boulder: Boulder, found: bool) {
@@ -178,22 +147,8 @@ tree_trunk_contains :: proc(tree: Tree, position: World_Coordinate) -> bool {
 	return on_axis && position.y > tree.root.y && position.y <= tree.root.y + tree.trunk_height
 }
 
-// Roots lie beside the lowest trunk block, on the surface.
-tree_roots_contain :: proc(tree: Tree, position: World_Coordinate) -> bool {
-	if position.y != tree.root.y + 1 {
-		return false
-	}
-	for direction in tree.root_directions {
-		offset := tree_root_offsets[direction]
-		if position.x == tree.root.x + offset.x && position.z == tree.root.z + offset.y {
-			return true
-		}
-	}
-	return false
-}
-
 tree_log_contains :: proc(tree: Tree, position: World_Coordinate) -> bool {
-	return tree_trunk_contains(tree, position) || tree_roots_contain(tree, position)
+	return tree_trunk_contains(tree, position)
 }
 
 // A horizontal disc with the corners cut: radius 0 is the centre alone,
@@ -251,13 +206,9 @@ flat_crown_layer_radius :: proc(crown_radius, layer: i32) -> i32 {
 	return -1
 }
 
-// A third of the trunk up, and above the roots' reach on a rooted tree.
+// A third of the trunk up.
 conical_crown_bottom :: proc(tree: Tree) -> i32 {
-	height := tree.trunk_height / 3
-	if tree.root_directions != {} {
-		height = max(height, ROOTED_CROWN_MINIMUM_HEIGHT)
-	}
-	return min(height, tree.trunk_height) - tree.trunk_height
+	return tree.trunk_height / 3 - tree.trunk_height
 }
 
 tree_crown_layer_radius :: proc(tree: Tree, layer: i32) -> i32 {
@@ -303,10 +254,9 @@ Block_Box :: struct {
 	maximum: World_Coordinate,
 }
 
-// The trunk and the roots.
+// The trunk.
 tree_log_box :: proc(tree: Tree) -> Block_Box {
-	reach: i32 = tree.root_directions != {} ? 1 : 0
-	return Block_Box{minimum = tree.root + {-reach, 1, -reach}, maximum = tree.root + {reach, tree.trunk_height, reach}}
+	return Block_Box{minimum = tree.root + {0, 1, 0}, maximum = tree.root + {0, tree.trunk_height, 0}}
 }
 
 tree_crown_box :: proc(tree: Tree) -> Block_Box {

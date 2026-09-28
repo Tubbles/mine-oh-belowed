@@ -1,6 +1,6 @@
 # 0083 Couch findings: no tree roots, upright side textures
 
-Status: todo
+Status: implemented
 Milestone: M11
 
 ## Goal
@@ -24,3 +24,5 @@ Couch report (2026-09-28): the root logs beside tree trunks read as obscene ("we
 Roots are dropped, not ruled out (user, 2026-09-28): Minecraft's mangrove (vanilla, the 1.19 Wild Update) grows roots as a block type of their own, a tangle arching above the ground and the water, and mods have done the same for large or gnarled trees. What read badly here was log blocks at the foot of a straight trunk. A later species pass (a mangrove for the wetland, a gnarled dead tree for the badlands) could bring roots back as their own shaped block with a crown and a trunk designed around them. Recorded in `SUGGESTIONS.md`.
 
 Files a subagent may touch: `src/generation_features.odin`, `src/generation_trees.odin`, `src/generation_trees_test.odin`, `src/tree_felling_test.odin`, `src/generation_terrain.odin` (the version constant), `src/world_mesh.odin`, `src/world_mesh_test.odin`, `data/shaders/water.fs`, `data/trees.sjson`, `doc/content.md`, `doc/architecture.md`, `doc/work/0061-block-shapes.md`, `doc/log/2026-09-28.md`, this file.
+
+Implemented: roots removed in `src/generation_features.odin`, `src/generation_trees.odin` and `data/trees.sjson`, with `GENERATOR_VERSION` 6 in `src/generation_terrain.odin`; `test_roots_only_on_tall_rooted_trees` is replaced by `test_tree_logs_are_the_trunk` and the felling test counts the trunk alone. `face_texcoord` in `src/world_mesh.odin` sets every texcoord from the corner and the face's whole block bounds (taken before a water face's top is lowered), `shaped_quad_texcoords` uses it within the cell, and `data/shaders/water.fs` maps the flow to the new axes. New tests `test_face_texcoord_per_direction` and `test_shaped_quad_texcoords_upright`, and the merged quad and slab tests updated, in `src/world_mesh_test.odin`. Docs: `doc/content.md`, `doc/architecture.md`, `doc/work/0061-block-shapes.md`, `doc/log/2026-09-28.md`. 879 tests pass. The tile is mirrored on the negative face of each horizontal axis against the positive one, as the rule above gives.

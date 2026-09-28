@@ -168,17 +168,17 @@ Ground cover (0082): each biome's `ground_cover` list in `data/biomes.sjson` nam
 
 Tree species (work item 0059) live in `data/trees.sjson`; each biome lists the species its trees are drawn from, by weight, in `data/biomes.sjson` (`trees`), and a biome with a `tree_density` above 0 must have the list. The shapes are pure procedures in `src/generation_features.odin`. Every log block drops the `log` item and every leaves block the `leaves` item, so recipes see one kind of wood.
 
-| Species | Log | Leaves | Trunk | Crown | Roots |
-| --- | --- | --- | --- | --- | --- |
-| Oak | log | leaves | 6 to 10 | round, radius 3 | yes |
-| Birch | birch log (pale bark) | birch leaves (light green) | 8 to 12 | round, radius 2 | no |
-| Pine | pine log (dark bark) | pine needles (dark green) | 10 to 16 | conical, radius 3 | yes |
-| Acacia | log | acacia leaves (olive) | 5 to 8 | flat, radius 4 | no |
-| Palm | palm log | palm fronds | 8 to 12 | flat, radius 2 | no |
-| Dead tree | dead wood (grey) | none | 4 to 8 | none | no |
+| Species | Log | Leaves | Trunk | Crown |
+| --- | --- | --- | --- | --- |
+| Oak | log | leaves | 6 to 10 | round, radius 3 |
+| Birch | birch log (pale bark) | birch leaves (light green) | 8 to 12 | round, radius 2 |
+| Pine | pine log (dark bark) | pine needles (dark green) | 10 to 16 | conical, radius 3 |
+| Acacia | log | acacia leaves (olive) | 5 to 8 | flat, radius 4 |
+| Palm | palm log | palm fronds | 8 to 12 | flat, radius 2 |
+| Dead tree | dead wood (grey) | none | 4 to 8 | none |
 
-- Crowns: round runs from two layers below the trunk top to two above, widest at and just below the top; conical steps down from its radius near the bottom to 1 at the top in pairs of layers (the upper one of each pair narrower) with a tip block above, starting a third of the trunk up and at least 6 blocks above the root on a rooted tree, so no needle lies within the leaf support distance of a root; flat is a disc at the trunk top and a disc of radius 1 above it. Discs have their corners cut.
-- Roots: log blocks beside the lowest trunk block in two or three of the four directions, on trunks of 8 or more of a rooted species.
+- Crowns: round runs from two layers below the trunk top to two above, widest at and just below the top; conical steps down from its radius near the bottom to 1 at the top in pairs of layers (the upper one of each pair narrower) with a tip block above, starting a third of the trunk up; flat is a disc at the trunk top and a disc of radius 1 above it. Discs have their corners cut.
+- No roots (work item 0083): the log blocks beside the foot of a trunk read badly, so every tree is its trunk and crown alone.
 - Biome lists: forest oak 3 and birch 1; plains oak 1 and birch 1; highland pine 2 and birch 1; hills pine; cold barrens pine; steppe acacia 3 and dead tree 1; wetland oak 1 and birch 2; badlands and desert dead tree; beach and coastal dunes palm; lake, mountains and tar flats none. Biomes at density 0 grow nothing; their list names the species for when a density is set.
 - Clearings: a noise of wavelength 48 blocks keeps about `clearing_share` of a biome free of trees: forest 0.35, plains 0.5 (with its density raised from 0.06 to 0.15, so its trees stand in groves). Trees also keep off vein outcrops and at least 4 blocks off the landing pad, which clears only 10 blocks above itself.
 - Felling (`src/tree_felling.odin`): mining a log drops every log straight above it as loose `log` items and queues the leaves near the felled column for decay. A queued leaf decays 1 to 4 seconds later unless a log lies within 4 blocks (Manhattan), then queues its leaves neighbours. One decaying leaf in 8 drops a `leaves` item and one in 20 a `sapling` (no use yet). Leaves the player places only decay when a log near them is felled.

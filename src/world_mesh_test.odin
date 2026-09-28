@@ -177,8 +177,10 @@ test_mesh_texcoords_span_merged_quad :: proc(t: ^testing.T) {
 	input := test_mesh_input(chunk)
 	data := mesh_chunk(input, context.temp_allocator)
 	part := data.parts[0]
-	testing.expect_value(t, part.texcoords[2], [2]f32{CHUNK_SIZE, CHUNK_SIZE})
-	// The first quad is the negative x face, a side face.
+	// The first quad is the negative x face, a side face: x along z, y
+	// down from the chunk's top.
+	testing.expect_value(t, part.texcoords[0], [2]f32{0, CHUNK_SIZE})
+	testing.expect_value(t, part.texcoords[2], [2]f32{CHUNK_SIZE, 0})
 	expected_origin := atlas_tile_origin(input.atlas, atlas_tile_index(TEST_STONE, .Side))
 	testing.expect_value(t, part.tile_origins[0], expected_origin)
 }
@@ -442,6 +444,49 @@ test_mesh_face_corner_horizontal_signs :: proc(t: ^testing.T) {
 	}
 }
 
+// A 2 by 3 rectangle at the chunk corner, texcoords in quad_corners
+// order by face axis. Side faces (x and z) have y 0 at the top of the
+// face and the face's height at the bottom, x along the horizontal axis
+// (z for faces along x, x for faces along z); top and bottom faces x
+// along x and y along z. Both directions of an axis map alike.
+@(test)
+test_face_texcoord_per_direction :: proc(t: ^testing.T) {
+	expected := [3][4][2]f32 {
+		{{0, 2}, {0, 0}, {3, 0}, {3, 2}},
+		{{0, 0}, {0, 2}, {3, 2}, {3, 0}},
+		{{0, 3}, {2, 3}, {2, 0}, {0, 0}},
+	}
+	rectangle := Face_Rectangle{width = 2, height = 3}
+	for direction in Direction {
+		corners := quad_corners(direction, 0, rectangle)
+		for corner, index in corners {
+			texcoord := face_texcoord(direction, corner, corners[0], corners[2])
+			testing.expectf(t, texcoord == expected[direction_axis(direction)][index], "%v corner %d: %v", direction, index, texcoord)
+		}
+	}
+}
+
+// A slab's side shows the lower half of its tile (y 0.5 at its top, 1 at
+// the bottom) and a cross quad stands upright, y 0 at its top.
+@(test)
+test_shaped_quad_texcoords_upright :: proc(t: ^testing.T) {
+	slab := Box{minimum = {0, 0, 0}, maximum = {1, 0.5, 1}}
+	for direction in ([4]Direction{.Negative_X, .Positive_X, .Negative_Z, .Positive_Z}) {
+		corners := box_face_corners(slab, direction)
+		texcoords := shaped_quad_texcoords(corners)
+		for corner, index in corners {
+			testing.expect_value(t, texcoords[index].y, corner.y == 0.5 ? f32(0.5) : f32(1))
+		}
+	}
+	cross := cross_quads()
+	for quad in cross.quads[:cross.count] {
+		texcoords := shaped_quad_texcoords(quad.corners)
+		for corner, index in quad.corners {
+			testing.expect_value(t, texcoords[index], [2]f32{corner.z, 1 - corner.y})
+		}
+	}
+}
+
 shape_test_mesh_input :: proc(chunk: ^Chunk) -> Mesh_Input {
 	registry := make_shape_test_registry()
 	return Mesh_Input{chunk = chunk, registry = registry, atlas = atlas_layout_for_block_count(len(registry.definitions))}
@@ -469,18 +514,20 @@ test_mesh_slab_quads_and_the_cube_face_behind :: proc(t: ^testing.T) {
 	}
 	testing.expect_value(t, highest_slab, f32(4.5))
 	// The slab's quads come after the greedy ones. Its +z side runs its
-	// texcoord y along the block's y like a cube face, over the lower half.
+	// texcoord y down the block like a cube face, over the lower half.
 	part := data.parts[0]
-	highest_texcoord: f32 = 0
+	lowest_texcoord, highest_texcoord: f32 = 1, 0
 	for quad := 6 * QUAD_VERTEX_COUNT; quad < len(part.positions); quad += QUAD_VERTEX_COUNT {
 		if part.positions[quad].z != 5 || part.positions[quad + 2].z != 5 {
 			continue
 		}
 		for index in quad ..< quad + QUAD_VERTEX_COUNT {
+			lowest_texcoord = min(lowest_texcoord, part.texcoords[index].y)
 			highest_texcoord = max(highest_texcoord, part.texcoords[index].y)
 		}
 	}
-	testing.expect_value(t, highest_texcoord, f32(0.5))
+	testing.expect_value(t, lowest_texcoord, f32(0.5))
+	testing.expect_value(t, highest_texcoord, f32(1))
 }
 
 // Stairs of every rotation draw their ten quads in open air, the upper

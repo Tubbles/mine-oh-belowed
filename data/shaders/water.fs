@@ -13,10 +13,10 @@
 // time wraps after WATER_TIME_WRAP_SECONDS (render_water.odin), a whole
 // number of both ripple periods.
 //
-// The texcoords run along the face's own axes (world_mesh.odin: top and
-// bottom faces z then x, faces along x y then z, faces along z x then y),
-// so the flow, in world x and z, is turned into them by the face's
-// normal.
+// The texcoords run along the face's own axes (face_texcoord in
+// world_mesh.odin: top and bottom faces x then z, faces along x z then
+// down, faces along z x then down), so the flow, in world x and z, is
+// turned into them by the face's normal.
 
 in vec2 fragment_texcoord;
 in vec2 fragment_tile_origin;
@@ -60,11 +60,11 @@ vec2 flow_texcoord_offset(vec2 flow_blocks)
     vec3 normal = abs(cross(dFdx(fragment_world_position), dFdy(fragment_world_position)));
     if (normal.y >= normal.x && normal.y >= normal.z)
     {
-        return flow_blocks.yx;
+        return flow_blocks;
     }
     if (normal.x >= normal.z)
     {
-        return vec2(0.0, flow_blocks.y);
+        return vec2(flow_blocks.y, 0.0);
     }
     return vec2(flow_blocks.x, 0.0);
 }

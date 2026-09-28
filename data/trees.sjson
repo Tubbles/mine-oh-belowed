@@ -14,8 +14,6 @@
 //            1 above it
 //   none     the trunk alone
 // crown_radius is 1 to 4 for a crowned species.
-// roots = true grows log blocks beside the foot of trunks of 8 or more,
-// in two or three of the four directions.
 // sapling_item is the items.sjson id that decaying leaves drop after a
 // felling (src/tree_felling.odin).
 sapling_item = "sapling"
@@ -29,7 +27,6 @@ species = [
 		maximum_trunk_height = 10
 		crown = "round"
 		crown_radius = 3
-		roots = true
 	}
 	{
 		id = "birch"
@@ -50,7 +47,6 @@ species = [
 		maximum_trunk_height = 16
 		crown = "conical"
 		crown_radius = 3
-		roots = true
 	}
 	{
 		id = "acacia"

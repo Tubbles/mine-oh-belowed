@@ -12,8 +12,6 @@ TREES_FILE_NAME :: "trees.sjson"
 // FEATURE_MAXIMUM_HEIGHT cover every tree.
 MAXIMUM_CROWN_RADIUS :: 4
 MAXIMUM_TRUNK_HEIGHT :: 16
-// Roots grow beside trunks of at least this height.
-MINIMUM_ROOTED_TRUNK_HEIGHT :: 8
 
 Tree_Crown :: enum u8 {
 	None,
@@ -33,7 +31,6 @@ Tree_Species_Definition :: struct {
 	maximum_trunk_height: i32,
 	crown:                string,
 	crown_radius:         i32,
-	roots:                bool,
 }
 
 Trees_File :: struct {

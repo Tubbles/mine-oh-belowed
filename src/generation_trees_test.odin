@@ -12,13 +12,11 @@ test_tree_species :: proc(generator: ^Generator, id: string) -> int {
 	return index
 }
 
-// A tree of the species at the origin, with roots in every direction the
-// species allows at this trunk height.
+// A tree of the species at the origin.
 make_test_tree :: proc(generator: ^Generator, id: string, trunk_height: i32) -> Tree {
 	species := test_tree_species(generator, id)
 	tree := make_tree(generator.species[species], species, Feature_Root{})
 	tree.trunk_height = trunk_height
-	tree.root_directions = tree_root_directions(generator.species[species].definition.roots, trunk_height, 0)
 	return tree
 }
 
@@ -116,14 +114,13 @@ test_tree_species_validation :: proc(t: ^testing.T) {
 @(test)
 test_trees_file_reads_and_biomes_need_species :: proc(t: ^testing.T) {
 	data := `sapling_item = "sapling"
-species = [{id = "fir", name_key = "tree_fir", log_block = "log", leaves_block = "leaves", minimum_trunk_height = 5, maximum_trunk_height = 6, crown = "conical", crown_radius = 2, roots = true}]`
+species = [{id = "fir", name_key = "tree_fir", log_block = "log", leaves_block = "leaves", minimum_trunk_height = 5, maximum_trunk_height = 6, crown = "conical", crown_radius = 2}]`
 	file, error := parse_trees_file(transmute([]byte)data, context.temp_allocator)
 	testing.expect_value(t, error, nil)
 	table, problem := resolve_tree_species_table(file, make_test_registry(), context.temp_allocator)
 	testing.expect_value(t, problem, "")
 	testing.expect_value(t, len(table), 1)
 	testing.expect_value(t, table[0].crown, Tree_Crown.Conical)
-	testing.expect(t, table[0].definition.roots)
 	biome := Biome_Definition {
 		id             = "grove",
 		name_key       = "biome_grove",
@@ -207,7 +204,7 @@ test_conical_crown_layers :: proc(t: ^testing.T) {
 	generator := make_test_generator(DEFAULT_WORLD_SEED)
 	pine := make_test_tree(&generator, "pine", 10)
 	bottom := conical_crown_bottom(pine)
-	testing.expect_value(t, bottom, i32(ROOTED_CROWN_MINIMUM_HEIGHT) - 10)
+	testing.expect_value(t, bottom, i32(10 / 3 - 10))
 	// Widest at the bottom, a plus at the top, one tip block above.
 	testing.expect_value(t, count_crown_layer(pine, bottom), 37)
 	testing.expect_value(t, count_crown_layer(pine, bottom - 1), 0)
@@ -247,35 +244,24 @@ test_flat_and_bare_crowns :: proc(t: ^testing.T) {
 	testing.expect(t, !tree_trunk_contains(dead, dead.root + {0, 7, 0}))
 }
 
+// The logs are the trunk alone: nothing beside its foot.
 @(test)
-test_roots_only_on_tall_rooted_trees :: proc(t: ^testing.T) {
-	testing.expect_value(t, tree_root_directions(true, MINIMUM_ROOTED_TRUNK_HEIGHT - 1, 0), Tree_Root_Directions{})
-	testing.expect_value(t, tree_root_directions(false, 12, 0), Tree_Root_Directions{})
-	for hash in u64(0) ..< 16 {
-		count := card(tree_root_directions(true, MINIMUM_ROOTED_TRUNK_HEIGHT, hash_u64(hash)))
-		testing.expect(t, count == 2 || count == 3)
-	}
+test_tree_logs_are_the_trunk :: proc(t: ^testing.T) {
 	generator := make_test_generator(DEFAULT_WORLD_SEED)
-	oak := make_test_tree(&generator, "oak", 9)
-	roots := 0
-	for dz in i32(-1) ..= 1 {
-		for dx in i32(-1) ..= 1 {
-			roots += tree_roots_contain(oak, oak.root + {dx, 1, dz}) ? 1 : 0
-			testing.expect(t, !tree_roots_contain(oak, oak.root + {dx, 0, dz}))
-			testing.expect(t, !tree_roots_contain(oak, oak.root + {dx, 2, dz}))
+	for species in generator.species {
+		tree := make_test_tree(&generator, species.definition.id, species.definition.maximum_trunk_height)
+		for dz in i32(-1) ..= 1 {
+			for dx in i32(-1) ..= 1 {
+				testing.expect_value(t, tree_log_contains(tree, tree.root + {dx, 1, dz}), dx == 0 && dz == 0)
+			}
 		}
+		box := tree_log_box(tree)
+		testing.expect_value(t, box, Block_Box{minimum = tree.root + {0, 1, 0}, maximum = tree.root + {0, tree.trunk_height, 0}})
 	}
-	testing.expect(t, roots == 2 || roots == 3)
-	testing.expect(t, tree_log_box(oak).minimum.x == oak.root.x - 1)
-	short_oak := make_test_tree(&generator, "oak", 7)
-	testing.expect_value(t, short_oak.root_directions, Tree_Root_Directions{})
-	birch := make_test_tree(&generator, "birch", 12)
-	testing.expect_value(t, birch.root_directions, Tree_Root_Directions{})
 }
 
 // No leaf lies farther than LEAF_REACH from its trunk or outside the
-// tree's box, and none of a rooted tree lies within LEAF_SUPPORT_DISTANCE
-// of a root, for every species and trunk height.
+// tree's box, for every species and trunk height.
 @(test)
 test_crowns_stay_within_reach :: proc(t: ^testing.T) {
 	generator := make_test_generator(DEFAULT_WORLD_SEED)
@@ -300,18 +286,8 @@ expect_crown_within_reach :: proc(t: ^testing.T, tree: Tree) {
 				testing.expectf(t, abs(dx) <= LEAF_REACH && abs(dz) <= LEAF_REACH, "leaf at %v beyond LEAF_REACH", position)
 				testing.expectf(t, box.minimum.y <= position.y && position.y <= box.maximum.y && box_covers_column(box, position.x, position.z), "leaf at %v outside the tree box", position)
 				testing.expect(t, y <= FEATURE_MAXIMUM_HEIGHT)
-				expect_leaf_beyond_roots(t, tree, position)
 			}
 		}
-	}
-}
-
-expect_leaf_beyond_roots :: proc(t: ^testing.T, tree: Tree, leaf: World_Coordinate) {
-	for direction in tree.root_directions {
-		offset := tree_root_offsets[direction]
-		root := tree.root + {offset.x, 1, offset.y}
-		distance := abs(leaf.x - root.x) + abs(leaf.y - root.y) + abs(leaf.z - root.z)
-		testing.expectf(t, distance > LEAF_SUPPORT_DISTANCE, "leaf at %v within support reach of the root at %v", leaf, root)
 	}
 }
 

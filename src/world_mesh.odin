@@ -17,8 +17,8 @@ MESH_PART_VERTEX_LIMIT :: 65536
 QUAD_VERTEX_COUNT :: 4
 QUAD_INDEX_COUNT :: 6
 
-// Texcoords run in blocks across a merged quad (0 to width, 0 to height) so
-// the shader can repeat the tile with fract(). tile_origins holds the atlas
+// Texcoords run in blocks across a merged quad (face_texcoord) so the
+// shader can repeat the tile with fract(). tile_origins holds the atlas
 // UV of the tile's corner, the same for all four vertices of a quad.
 // tangents is filled in water parts only: the cell's flow direction in x
 // and z, the vertex's shore value, and 0 (water_tangent).
@@ -347,17 +347,33 @@ positive_quad_indices := [QUAD_INDEX_COUNT]u16{0, 1, 2, 0, 2, 3}
 @(rodata)
 negative_quad_indices := [QUAD_INDEX_COUNT]u16{0, 2, 1, 0, 3, 2}
 
-append_quad :: proc(part: ^Mesh_Part, corners: [4][3]f32, rectangle: Face_Rectangle, tile_origin: [2]f32, positive: bool) {
+// A corner's texcoord in blocks within the face's rectangle, so the top of
+// the tile (its row 0) is up on every side face: on a side face x runs
+// along the horizontal axis (z for faces along x, x for faces along z) and
+// y down from the rectangle's top; on a top or bottom face x runs along x
+// and y along z.
+face_texcoord :: proc(direction: Direction, corner, rectangle_minimum, rectangle_maximum: [3]f32) -> [2]f32 {
+	switch direction_axis(direction) {
+	case 0:
+		return {corner.z - rectangle_minimum.z, rectangle_maximum.y - corner.y}
+	case 1:
+		return {corner.x - rectangle_minimum.x, corner.z - rectangle_minimum.z}
+	}
+	return {corner.x - rectangle_minimum.x, rectangle_maximum.y - corner.y}
+}
+
+// bounds are the minimum and maximum corner of the face's whole blocks,
+// before lower_top_edge, so a lowered water face shows the lower part of
+// its tile as a slab side does.
+append_quad :: proc(part: ^Mesh_Part, direction: Direction, corners: [4][3]f32, bounds: [2][3]f32, rectangle: Face_Rectangle, tile_origin: [2]f32) {
 	base := u16(len(part.positions))
-	width, height := f32(rectangle.width), f32(rectangle.height)
-	texcoords := [4][2]f32{{0, 0}, {width, 0}, {width, height}, {0, height}}
 	for corner, index in corners {
 		append(&part.positions, corner)
-		append(&part.texcoords, texcoords[index])
+		append(&part.texcoords, face_texcoord(direction, corner, bounds[0], bounds[1]))
 		append(&part.tile_origins, tile_origin)
 		append(&part.colors, rectangle.key.corners[index])
 	}
-	order := positive ? positive_quad_indices : negative_quad_indices
+	order := direction_is_positive(direction) ? positive_quad_indices : negative_quad_indices
 	for index in order {
 		append(&part.indices, base + index)
 	}
@@ -383,12 +399,13 @@ mesh_slice :: proc(data: ^Chunk_Mesh_Data, input: Mesh_Input, direction: Directi
 	for rectangle in rectangles {
 		tile_origin := atlas_tile_origin(input.atlas, atlas_tile_index(rectangle.key.block, group))
 		corners := quad_corners(direction, slice, rectangle)
+		bounds := [2][3]f32{corners[0], corners[2]}
 		if rectangle.key.height < FULL_HEIGHT_EIGHTHS {
 			lower_top_edge(&corners, rectangle.key.height)
 		}
 		water := block_water_level(input.registry, rectangle.key.block) > 0
 		part := current_part(water ? &data.water_parts : &data.parts, allocator)
-		append_quad(part, corners, rectangle, tile_origin, direction_is_positive(direction))
+		append_quad(part, direction, corners, bounds, rectangle, tile_origin)
 		if water {
 			append_water_tangents(part, rectangle.key)
 		}
@@ -427,14 +444,14 @@ shaped_quad_light :: proc(input: Mesh_Input, local: Local_Coordinate, quad: Shap
 	return light
 }
 
-// Texcoords as a cube face of the same axis has them, so a partial quad
-// shows the part of the tile it covers (a slab side the lower half).
+// Texcoords as a cube face of the same axis has them within the cell, so
+// a partial quad shows the part of the tile it covers (a slab side the
+// lower half, y from 0.5 to 1). Both directions of an axis map alike.
 shaped_quad_texcoords :: proc(corners: [4][3]f32) -> [4][2]f32 {
-	axis := quad_facing_axis(corners)
-	u_axis, v_axis := (axis + 1) % 3, (axis + 2) % 3
+	direction := Direction(quad_facing_axis(corners) * 2)
 	texcoords: [4][2]f32
 	for corner, index in corners {
-		texcoords[index] = {corner[u_axis], corner[v_axis]}
+		texcoords[index] = face_texcoord(direction, corner, {0, 0, 0}, {1, 1, 1})
 	}
 	return texcoords
 }

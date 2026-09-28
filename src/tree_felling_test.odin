@@ -64,9 +64,8 @@ run_test_decay :: proc(world: ^World, content: Simulation_Content, felling: Tree
 	}
 }
 
-// Felling the lowest log of every crowned species, the tallest of each
-// and so with roots where the species has them, leaves no trunk log and,
-// once the decay has run, no leaves: only the roots, and the logs as
+// Felling the lowest log of every crowned species, the tallest of each,
+// leaves no log and, once the decay has run, no leaves: only the logs as
 // loose items on the ground.
 @(test)
 test_felling_leaves_no_floating_blocks :: proc(t: ^testing.T) {
@@ -87,14 +86,13 @@ expect_felled_tree_gone :: proc(t: ^testing.T, content: Simulation_Content, fell
 	place_test_tree(&world, generator, tree)
 	box := tree_box(tree)
 	logs_before, leaves_before := count_tree_blocks_in_box(&world, felling.blocks, box)
-	roots := card(tree.root_directions)
-	testing.expect_value(t, logs_before, int(tree.trunk_height) + roots)
+	testing.expect_value(t, logs_before, int(tree.trunk_height))
 	testing.expect_value(t, leaves_before > 0, tree.crown != .None)
 	lowest := tree.root + {0, 1, 0}
 	world_set_block(&world, lowest, AIR_BLOCK)
 	fell_tree(&world, content.blocks, felling, lowest)
 	logs_after, _ := count_tree_blocks_in_box(&world, felling.blocks, box)
-	testing.expectf(t, logs_after == roots, "species %d: %d logs left, %d roots", tree.species, logs_after, roots)
+	testing.expectf(t, logs_after == 0, "species %d: %d logs left", tree.species, logs_after)
 	run_test_decay(&world, content, felling, LEAF_DECAY_TEST_TICKS)
 	_, leaves_left := count_tree_blocks_in_box(&world, felling.blocks, box)
 	testing.expectf(t, leaves_left == 0, "species %d: %d of %d leaves left", tree.species, leaves_left, leaves_before)

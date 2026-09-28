@@ -27,9 +27,10 @@ MAXIMUM_TOPSOIL_DEPTH :: 5
 // The terrain before work item 0057 was version 1, the shaped terrain
 // with the height and moisture biomes version 2, the climate biomes of
 // work item 0058 version 3, the tree species of work item 0059 version
-// 4, the ground cover of work item 0082 version 5. A world saved by an
-// older generator regenerates its unmodified chunks with this one.
-GENERATOR_VERSION :: 5
+// 4, the ground cover of work item 0082 version 5, the trees without
+// roots of work item 0083 version 6. A world saved by an older generator
+// regenerates its unmodified chunks with this one.
+GENERATOR_VERSION :: 6
 
 // Continental swell: broad lowlands near sea level, and raised masses
 // where the continental noise lies above RAISED_START, fully raised from
