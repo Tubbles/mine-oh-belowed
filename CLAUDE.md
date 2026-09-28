@@ -22,6 +22,7 @@ Follows the project structure from the global preferences: `doc/` (detail docs),
 - The simulation is deterministic: fixed 60 Hz tick, seeded RNG, no wall clock and no float accumulation in simulation state where fixed point works. Rendering interpolates, the simulation never reads the frame time.
 - Gamepad first: every UI must work with focus navigation and with the trackpad pointer. Keyboard is only for string fields.
 - Documentation is updated in the same commit as the behaviour it describes. Decisions go to `doc/log/YYYY-MM-DD.md`.
+- No perceivable repetition (a major principle, `DESIGN.md`): sounds recur in clusters with long varying pauses and varied pitch, never on a fixed period; textures must not stripe or tile visibly, so they are isotropic or varied per block by a hash; animation cadences follow the world at a natural rate and never speed up with cheat speed. Every new sound, animation and texture is checked against this before it lands.
 - Review and commit language: plain engineering vocabulary (malformed input, validate the size before allocating), see the global instructions.
 
 ## Work flow
