@@ -18,6 +18,7 @@ Follows the project structure from the global preferences: `doc/` (detail docs),
 
 - Odin conventions: `snake_case` procedures and variables, `Ada_Case` types, `SCREAMING_CASE` constants. Full words in names, no abbreviations.
 - Small pure procedures, structs as data carriers, arrays of structs, no OOP.
+- Never import `core:c/libc`: on Windows it links the static C runtime (`libucrt.lib`), which clashes with raylib's release library, built for the dynamic one (0102). Declare the one C function needed against `system:c` and `system:ucrt.lib`, as `raylib_log.odin` does.
 - One `game` package under `src/` split into files by concern. New packages only for leaf utilities with no back references, because Odin forbids import cycles.
 - The simulation is deterministic: fixed 60 Hz tick, seeded RNG, no wall clock and no float accumulation in simulation state where fixed point works. Rendering interpolates, the simulation never reads the frame time.
 - Gamepad first: every UI must work with focus navigation and with the trackpad pointer. Keyboard is only for string fields.
