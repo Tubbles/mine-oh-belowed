@@ -116,11 +116,12 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 // inventory instead.
 inventory_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle) {
 	labels := [?]string{text("inventory_tab_inventory"), text("inventory_tab_recipes"), text("inventory_tab_technologies")}
+	icons := [?]Ui_Icon{.Inventory, .Recipes, .Technologies}
 	input := state.input
 	if input.open_inventory {
 		state.input.tab_previous, state.input.tab_next = false, false
 	}
-	tab := ui_tabs(state, rectangle, "inventory_tabs", labels[:])
+	tab := ui_tabs(state, rectangle, "inventory_tabs", labels[:], icons[:])
 	state.input = input
 	if tab != 0 {
 		state.selections[ui_id(state, "inventory_tabs")] = 0

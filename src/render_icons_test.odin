@@ -1,5 +1,7 @@
 package game
 
+import "core:os"
+import "core:strings"
 import "core:testing"
 
 @(test)
@@ -68,4 +70,27 @@ test_item_average_color_counts_opaque_texels :: proc(t: ^testing.T) {
 	stone := icons.average_colors[test_item(items, "stone")]
 	testing.expect(t, stone.r == stone.g && stone.g == stone.b && stone.a == 255)
 	testing.expect(t, abs(int(stone.r) - 128) <= 12)
+}
+
+@(test)
+test_ui_icon_atlas_packs_every_file :: proc(t: ^testing.T) {
+	icons := generate_ui_icon_pixels(test_data_directory(), context.temp_allocator)
+	testing.expect_value(t, icons.layout, item_atlas_layout_for_item_count(len(Ui_Icon)))
+	for name, icon in ui_icon_names {
+		testing.expectf(t, icons.loaded[icon], "%s has an icon file", name)
+		file, found := read_tile_file(texture_file_path(test_data_directory(), UI_ICONS_DIRECTORY, name))
+		testing.expect(t, found)
+		testing.expect_value(t, atlas_tile_texels(icons.pixels, icons.layout, int(icon)), file)
+	}
+	// Every file in the directory is an icon the game draws.
+	entries, error := os.read_all_directory_by_path(join_save_path(test_data_directory(), UI_ICONS_DIRECTORY), context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	for entry in entries {
+		name, is_texture := strings.trim_suffix(entry.name, TEXTURE_FILE_EXTENSION), strings.has_suffix(entry.name, TEXTURE_FILE_EXTENSION)
+		known := false
+		for icon_name in ui_icon_names {
+			known ||= is_texture && icon_name == name
+		}
+		testing.expectf(t, known, "%s is a Ui_Icon", entry.name)
+	}
 }

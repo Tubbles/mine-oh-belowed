@@ -1,0 +1,42 @@
+// The UI theme (work item 0071, src/ui_theme.odin, doc/ui.md). Colours
+// are [red, green, blue, alpha] from 0 to 255; alpha 0 turns an element
+// off. Lengths are UI units (1080 per screen height). A key left out
+// keeps its default, which is how the UI looked before this file; an
+// unknown key, a wrong type or a value out of range refuses the file.
+// Reloads while the game runs with watch_data (doc/architecture.md).
+
+// Panels: a fill, an edge line, a highlight line one border inside the
+// edge, corners cut by corner.
+panel = [24, 26, 34, 230]
+panel_edge = [110, 118, 150, 255]
+panel_highlight = [150, 160, 196, 64]
+border = 2
+corner = 8
+
+// Buttons, rows and slots: normal, under the pointer, and pressed while
+// Confirm (or the pointer) is held.
+widget = [44, 48, 62, 255]
+widget_hover = [72, 80, 108, 255]
+widget_active = [128, 98, 44, 255]
+
+// The accent marks the selected tab, filled tracks, toggles that are on.
+accent = [236, 176, 64, 255]
+text = [235, 235, 240, 255]
+text_dim = [160, 164, 180, 255]
+
+// The focus outline, which pulses by focus_pulse units so the focused
+// control is found from the couch.
+focus = [236, 176, 64, 255]
+focus_pulse = 3
+
+divider = [90, 96, 120, 160]
+tooltip = [18, 20, 27, 245]
+toast = [24, 26, 34, 230]
+danger = [225, 80, 60, 255]
+
+// The map's machine dots, by the category of the machine's item.
+map_marker_raw = [214, 178, 120, 255]
+map_marker_intermediate = [120, 190, 230, 255]
+map_marker_tool = [230, 130, 200, 255]
+map_marker_machine = [240, 240, 245, 255]
+map_marker_block = [170, 176, 186, 255]

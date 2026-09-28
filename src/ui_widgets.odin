@@ -12,9 +12,15 @@ UI_GLYPH_TEXT_SIZE :: 28
 UI_ROW_HEIGHT :: 56
 UI_PADDING :: 16
 UI_GAP :: 8
-UI_BORDER :: 2
 UI_FOCUS_BORDER :: 4
 UI_CHECKBOX_SIZE :: 32
+// A toggle's track is this wide and UI_CHECKBOX_SIZE tall; the knob
+// slides across it at UI_KNOB_TRAVELS_PER_SECOND.
+UI_TOGGLE_WIDTH :: UI_CHECKBOX_SIZE * 7 / 4
+UI_TOGGLE_KNOB_INSET :: 6
+UI_KNOB_TRAVELS_PER_SECOND :: 8
+// The icon before a tab's label.
+UI_TAB_ICON_SIZE :: 32
 UI_SLOT_SIZE :: 80
 UI_SLOT_ICON_INSET :: 12
 UI_SLOT_COUNT_TEXT_SIZE :: 24
@@ -32,13 +38,19 @@ UI_GLYPH_BAR_PANEL :: Ui_Id(0xffff_ffff_ffff_ffff)
 // Rows per second at full right stick deflection.
 UI_LIST_STICK_ROWS_PER_SECOND :: 12
 
-UI_PANEL_COLOR :: Ui_Color{24, 26, 34, 230}
-UI_PANEL_BORDER_COLOR :: Ui_Color{90, 96, 120, 255}
-UI_WIDGET_COLOR :: Ui_Color{44, 48, 62, 255}
-UI_HOVER_COLOR :: Ui_Color{60, 66, 86, 255}
-UI_ACCENT_COLOR :: Ui_Color{236, 176, 64, 255}
-UI_TEXT_COLOR :: Ui_Color{235, 235, 240, 255}
-UI_DIM_TEXT_COLOR :: Ui_Color{160, 164, 180, 255}
+// The theme's colours and border (ui_theme.odin) under the names the
+// screens use. Variables, not constants: apply_ui_theme sets them from
+// the loaded theme on the main thread, between frames. Tests never set
+// them, so they read the defaults; a test that needs a theme sets it on
+// its Ui_State, which the widgets here read (ui_theme).
+UI_BORDER := DEFAULT_UI_THEME.border
+UI_PANEL_COLOR := DEFAULT_UI_THEME.colors[.Panel]
+UI_PANEL_BORDER_COLOR := DEFAULT_UI_THEME.colors[.Panel_Edge]
+UI_WIDGET_COLOR := DEFAULT_UI_THEME.colors[.Widget]
+UI_HOVER_COLOR := DEFAULT_UI_THEME.colors[.Widget_Hover]
+UI_ACCENT_COLOR := DEFAULT_UI_THEME.colors[.Accent]
+UI_TEXT_COLOR := DEFAULT_UI_THEME.colors[.Text]
+UI_DIM_TEXT_COLOR := DEFAULT_UI_THEME.colors[.Text_Dim]
 UI_BACKDROP_COLOR :: Ui_Color{0, 0, 0, 120}
 UI_GLYPH_COLOR :: Ui_Color{235, 235, 240, 255}
 
@@ -152,8 +164,100 @@ draw_image :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, pixels: []Ui_Color
 	push_command(state, {kind = .Image, rectangle = rectangle, pixels = pixels, image_size = size, image_revision = revision})
 }
 
+// The icon atlas tile of a Ui_Icon, stretched over the rectangle.
+draw_ui_icon :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, icon: Ui_Icon) {
+	push_command(state, {kind = .Ui_Icon, rectangle = rectangle, tile = int(icon)})
+}
+
+// The focus outline grows inwards with the pulse, so it never leaves the
+// widget's rectangle.
+focus_outline_thickness :: proc(theme: Ui_Theme, pulse: f32) -> f32 {
+	return UI_FOCUS_BORDER + theme.focus_pulse * clamp(pulse, 0, 1)
+}
+
 draw_focus_outline :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, id: Ui_Id) {
-	push_command(state, {kind = .Focus_Outline, rectangle = rectangle, color = UI_ACCENT_COLOR, thickness = UI_FOCUS_BORDER, widget = id})
+	theme := ui_theme(state)
+	push_command(state, {kind = .Focus_Outline, rectangle = rectangle, color = theme.colors[.Focus], thickness = focus_outline_thickness(theme, state.focus_pulse), widget = id})
+}
+
+// Panel art (work item 0071). A panel is a fill, an edge line and a
+// highlight line one border inside it, with the corners cut by the
+// theme's corner: square notches, so the shape is three fills and its
+// lines are straight pieces. The pieces never overlap, since the fill and
+// the lines may be translucent.
+
+// The corner a rectangle can take with lines of the thickness, 0 when it
+// is too small for one.
+fitted_corner :: proc(rectangle: Ui_Rectangle, corner, thickness: f32) -> f32 {
+	if corner <= 0 {
+		return 0
+	}
+	fitted := min(max(corner, thickness), (min(rectangle.width, rectangle.height) - 2 * thickness) / 2)
+	return fitted >= thickness ? fitted : 0
+}
+
+// The centre column and the two side strips.
+cut_corner_fills :: proc(rectangle: Ui_Rectangle, corner: f32) -> [3]Ui_Rectangle {
+	x, y, width, height, c := rectangle.x, rectangle.y, rectangle.width, rectangle.height, corner
+	return {{x + c, y, width - 2 * c, height}, {x, y + c, c, height - 2 * c}, {x + width - c, y + c, c, height - 2 * c}}
+}
+
+// The outline of cut_corner_fills' shape, thickness wide, inside it:
+// the four sides and two pieces per notch.
+cut_corner_frame :: proc(rectangle: Ui_Rectangle, corner, thickness: f32) -> [12]Ui_Rectangle {
+	x, y, width, height, c, b := rectangle.x, rectangle.y, rectangle.width, rectangle.height, corner, thickness
+	right, bottom := x + width, y + height
+	return {
+		{x + c, y, width - 2 * c, b},
+		{x + c, bottom - b, width - 2 * c, b},
+		{x, y + c + b, b, height - 2 * c - 2 * b},
+		{right - b, y + c + b, b, height - 2 * c - 2 * b},
+		{x + c, y + b, b, c - b},
+		{x, y + c, c + b, b},
+		{x + c, bottom - c, b, c - b},
+		{x, bottom - c - b, c + b, b},
+		{right - c - b, y + b, b, c - b},
+		{right - c - b, y + c, c + b, b},
+		{right - c - b, bottom - c, b, c - b},
+		{right - c - b, bottom - c - b, c + b, b},
+	}
+}
+
+draw_cut_corner_frame :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, corner, thickness: f32, color: Ui_Color) {
+	if color.a == 0 || thickness <= 0 {
+		return
+	}
+	if corner <= 0 {
+		draw_outline(state, rectangle, color, thickness)
+		return
+	}
+	for piece in cut_corner_frame(rectangle, corner, thickness) {
+		draw_fill(state, piece, color)
+	}
+}
+
+// With the default theme (square corners, no highlight) this is the fill
+// and the outline panels always had.
+draw_panel_art :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, fill, edge: Ui_Color) {
+	theme := ui_theme(state)
+	corner := fitted_corner(rectangle, theme.corner, theme.border)
+	if corner <= 0 {
+		draw_fill(state, rectangle, fill)
+	} else {
+		for part in cut_corner_fills(rectangle, corner) {
+			draw_fill(state, part, fill)
+		}
+	}
+	draw_cut_corner_frame(state, rectangle, corner, theme.border, edge)
+	highlight := inset(rectangle, theme.border)
+	draw_cut_corner_frame(state, highlight, fitted_corner(highlight, corner, theme.border), theme.border, theme.colors[.Panel_Highlight])
+}
+
+// A line in the divider colour, nothing when its alpha is 0.
+draw_divider :: proc(state: ^Ui_State, line: Ui_Rectangle) {
+	if color := theme_color(state, .Divider); color.a > 0 {
+		draw_fill(state, line, color)
+	}
 }
 
 ui_pointer_over :: proc(state: ^Ui_State, rectangle: Ui_Rectangle) -> bool {
@@ -176,8 +280,7 @@ ui_panel_begin :: proc(state: ^Ui_State, label: string, rectangle: Ui_Rectangle)
 	id := ui_push_id(state, label)
 	state.current_panel = id
 	append(&state.panels, Ui_Panel{id = id, rectangle = rectangle})
-	draw_fill(state, rectangle, UI_PANEL_COLOR)
-	draw_outline(state, rectangle, UI_PANEL_BORDER_COLOR)
+	draw_panel_art(state, rectangle, theme_color(state, .Panel), theme_color(state, .Panel_Edge))
 }
 
 ui_panel_end :: proc(state: ^Ui_State) {
@@ -193,8 +296,22 @@ ui_label :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, text: string, size: 
 	draw_text(state, rectangle, text, size, alignment, color)
 }
 
+// Held down: Confirm on the focused widget, or the pointer on the hovered one.
+widget_pressed :: proc(state: ^Ui_State, interaction: Ui_Interaction) -> bool {
+	return (interaction.focused && state.input.confirm_down) || (interaction.hovered && state.pointer_held)
+}
+
+// Pressed, then hovered, then plain. A pressed colour with alpha 0
+// leaves the pressed state out.
+widget_fill_color :: proc(theme: Ui_Theme, hovered, pressed: bool) -> Ui_Color {
+	if pressed && theme.colors[.Widget_Active].a > 0 {
+		return theme.colors[.Widget_Active]
+	}
+	return hovered ? theme.colors[.Widget_Hover] : theme.colors[.Widget]
+}
+
 widget_background :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, id: Ui_Id, interaction: Ui_Interaction) {
-	draw_fill(state, rectangle, interaction.hovered ? UI_HOVER_COLOR : UI_WIDGET_COLOR)
+	draw_fill(state, rectangle, widget_fill_color(ui_theme(state), interaction.hovered, widget_pressed(state, interaction)))
 	draw_focus_outline(state, rectangle, id)
 }
 
@@ -206,27 +323,49 @@ ui_button :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, tool
 	return interaction.activated
 }
 
-// Label on the left, a check box on the right. Returns true when flipped.
+// Moves from current towards target by at most step.
+slide_towards :: proc(current, target, step: f32) -> f32 {
+	if current < target {
+		return min(current + step, target)
+	}
+	return max(current - step, target)
+}
+
+// The knob inside the track at position 0 (left, off) to 1 (right, on).
+toggle_knob_rectangle :: proc(track: Ui_Rectangle, position: f32) -> Ui_Rectangle {
+	knob := inset(track, UI_TOGGLE_KNOB_INSET)
+	knob.width = knob.height
+	knob.x += (track.width - 2 * UI_TOGGLE_KNOB_INSET - knob.width) * clamp(position, 0, 1)
+	return knob
+}
+
+// Label on the left, a switch on the right: a track, filled in the accent
+// while on, and a knob that slides to the side of the value. Returns true
+// when flipped.
 ui_toggle :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, value: ^bool, tooltip := "") -> bool {
 	id := ui_id(state, label)
 	interaction := ui_interact(state, id, rectangle, {}, tooltip)
 	if interaction.activated {
 		value^ = !value^
 	}
+	theme := ui_theme(state)
 	widget_background(state, rectangle, id, interaction)
 	label_area := inset(rectangle, UI_PADDING)
-	label_area.width = max(label_area.width - UI_CHECKBOX_SIZE - UI_GAP, 0)
+	label_area.width = max(label_area.width - UI_TOGGLE_WIDTH - UI_GAP, 0)
 	draw_text_fitted(state, label_area, label, UI_BODY_TEXT_SIZE, .Left)
-	box := Ui_Rectangle {
-		rectangle.x + rectangle.width - UI_PADDING - UI_CHECKBOX_SIZE,
+	track := Ui_Rectangle {
+		rectangle.x + rectangle.width - UI_PADDING - UI_TOGGLE_WIDTH,
 		rectangle.y + (rectangle.height - UI_CHECKBOX_SIZE) / 2,
-		UI_CHECKBOX_SIZE,
+		UI_TOGGLE_WIDTH,
 		UI_CHECKBOX_SIZE,
 	}
-	draw_outline(state, box, UI_TEXT_COLOR)
-	if value^ {
-		draw_fill(state, inset(box, 6), UI_ACCENT_COLOR)
-	}
+	target := f32(value^ ? 1 : 0)
+	position, known := state.knob_positions[id]
+	position = known ? slide_towards(position, target, state.frame_seconds * UI_KNOB_TRAVELS_PER_SECOND) : target
+	state.knob_positions[id] = position
+	draw_fill(state, track, value^ ? theme.colors[.Accent] : theme.colors[.Panel])
+	draw_outline(state, track, theme.colors[.Text], theme.border)
+	draw_fill(state, toggle_knob_rectangle(track, position), theme.colors[.Text])
 	return interaction.activated
 }
 
@@ -289,19 +428,39 @@ ui_slider :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, valu
 	label_area := inset(rectangle, UI_PADDING)
 	label_area.width = max(track.x - UI_PADDING - label_area.x, 0)
 	draw_text_fitted(state, label_area, label, UI_BODY_TEXT_SIZE, .Left)
-	draw_fill(state, track, UI_PANEL_COLOR)
+	draw_fill(state, track, theme_color(state, .Panel))
 	filled := track
 	filled.width *= slider_fraction(value^, range)
-	draw_fill(state, filled, UI_ACCENT_COLOR)
+	draw_fill(state, filled, theme_color(state, .Accent))
 	value_area := Ui_Rectangle{rectangle.x + rectangle.width - UI_PADDING - value_width, rectangle.y, value_width, rectangle.height}
 	draw_text(state, value_area, value_text, UI_BODY_TEXT_SIZE, .Right)
 	return value^ != before
 }
 
+// A tab's icon and label, centred together; the label ends with an
+// ellipsis where it does not fit.
+draw_tab_label :: proc(state: ^Ui_State, tab: Ui_Rectangle, label: string, icon: Maybe(Ui_Icon), color: Ui_Color) {
+	content := inset(tab, UI_GAP)
+	chosen, has_icon := icon.?
+	if !has_icon || content.width < UI_TAB_ICON_SIZE + UI_GAP || content.height < UI_TAB_ICON_SIZE {
+		draw_text_fitted(state, content, label, UI_BODY_TEXT_SIZE, .Centre, color)
+		return
+	}
+	fitted := fit_text(state, label, UI_BODY_TEXT_SIZE, content.width - UI_TAB_ICON_SIZE - UI_GAP)
+	text_width := fitted == "" ? 0 : ui_text_width(state, fitted, UI_BODY_TEXT_SIZE)
+	group_width := UI_TAB_ICON_SIZE + (fitted == "" ? 0 : UI_GAP + text_width)
+	x := content.x + (content.width - group_width) / 2
+	draw_ui_icon(state, {x, content.y + (content.height - UI_TAB_ICON_SIZE) / 2, UI_TAB_ICON_SIZE, UI_TAB_ICON_SIZE}, chosen)
+	if fitted != "" {
+		draw_text(state, {x + UI_TAB_ICON_SIZE + UI_GAP, content.y, text_width, content.height}, fitted, UI_BODY_TEXT_SIZE, .Left, color)
+	}
+}
+
 // Bumpers cycle the tabs, the pointer picks one. Tabs are not focus
 // targets, so the stick moves only between the widgets of the open tab.
-// The selection lives in the UI state under the tab strip's id.
-ui_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, labels: []string) -> int {
+// The selection lives in the UI state under the tab strip's id. icons,
+// when given, holds one icon per tab, drawn before its label.
+ui_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, labels: []string, icons: []Ui_Icon = nil) -> int {
 	id := ui_id(state, label)
 	count := len(labels)
 	if count == 0 {
@@ -314,16 +473,24 @@ ui_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, labels
 	if state.input.tab_next {
 		selected = (selected + 1) % count
 	}
+	theme := ui_theme(state)
 	for tab_label, index in labels {
 		tab := column(rectangle, count, index, UI_GAP)
 		if state.click && ui_pointer_over(state, tab) {
 			selected = index
 		}
-		draw_fill(state, tab, ui_pointer_over(state, tab) ? UI_HOVER_COLOR : UI_WIDGET_COLOR)
-		draw_text_fitted(state, inset(tab, UI_GAP), tab_label, UI_BODY_TEXT_SIZE, .Centre, index == selected ? UI_ACCENT_COLOR : UI_DIM_TEXT_COLOR)
+		hovered := ui_pointer_over(state, tab)
+		draw_fill(state, tab, widget_fill_color(theme, hovered, hovered && state.pointer_held))
+		icon: Maybe(Ui_Icon)
+		if index < len(icons) {
+			icon = icons[index]
+		}
+		draw_tab_label(state, tab, tab_label, icon, index == selected ? theme.colors[.Accent] : theme.colors[.Text_Dim])
 	}
+	strip := rectangle
+	draw_divider(state, cut_bottom(&strip, theme.border))
 	underline := column(rectangle, count, selected, UI_GAP)
-	draw_fill(state, cut_bottom(&underline, 4), UI_ACCENT_COLOR)
+	draw_fill(state, cut_bottom(&underline, 4), theme.colors[.Accent])
 	state.selections[id] = selected
 	return selected
 }
@@ -465,7 +632,7 @@ draw_item_icon :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, icon: Item_Ico
 	case .Lettered:
 		letters := icon.letters
 		draw_fill(state, rectangle, icon.color)
-		draw_outline(state, rectangle, UI_PANEL_COLOR)
+		draw_outline(state, rectangle, theme_color(state, .Panel))
 		draw_text(state, rectangle, strings.clone_from_bytes(letters[:], context.temp_allocator), rectangle.height * 0.45, .Centre)
 	}
 }
@@ -495,7 +662,7 @@ item_stack_tooltip :: proc(stack: Item_Stack, items: Item_Registry) -> string {
 ui_item_slot :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, id: Ui_Id, stack: Item_Stack, items: Item_Registry) -> Ui_Interaction {
 	interaction := ui_interact(state, id, rectangle, {}, item_stack_tooltip(stack, items))
 	widget_background(state, rectangle, id, interaction)
-	draw_outline(state, rectangle, UI_PANEL_BORDER_COLOR)
+	draw_outline(state, rectangle, theme_color(state, .Panel_Edge), ui_theme(state).border)
 	draw_item_stack(state, rectangle, stack, items)
 	return interaction
 }
@@ -552,11 +719,12 @@ ui_slot_grid :: proc(state: ^Ui_State, origin: [2]f32, label: string, columns: i
 }
 
 ui_progress_bar :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, fraction: f32) {
-	draw_fill(state, rectangle, UI_WIDGET_COLOR)
+	theme := ui_theme(state)
+	draw_fill(state, rectangle, theme.colors[.Widget])
 	filled := rectangle
 	filled.width *= clamp(fraction, 0, 1)
-	draw_fill(state, filled, UI_ACCENT_COLOR)
-	draw_outline(state, rectangle, UI_PANEL_BORDER_COLOR)
+	draw_fill(state, filled, theme.colors[.Accent])
+	draw_outline(state, rectangle, theme.colors[.Panel_Edge], theme.border)
 }
 
 // String key of a button's glyph on the active device.
@@ -633,16 +801,51 @@ ui_panel_area :: proc(state: ^Ui_State) -> Ui_Rectangle {
 	return area
 }
 
-// Width of a hint's glyph box: the glyph with a margin, at least square.
-glyph_box_width :: proc(state: ^Ui_State, glyph: string) -> f32 {
+// The icon of a button's glyph: the pad button on the gamepad, the blank
+// key cap the key's name is drawn on for the keyboard and mouse.
+glyph_icon :: proc(device: Input_Device, button: Glyph_Button) -> Ui_Icon {
+	if device == .Keyboard_Mouse {
+		return .Key
+	}
+	switch button {
+	case .Confirm, .Interact:
+		return .Button_South
+	case .Back:
+		return .Button_East
+	case .Context_Action, .Inventory:
+		return .Button_West
+	case .Info:
+		return .Button_North
+	case .Tab_Previous:
+		return .Bumper_Left
+	case .Tab_Next:
+		return .Bumper_Right
+	case .Secondary, .Use_Item:
+		return .Trigger_Left
+	case .Quick_Move:
+		return .Trigger_Right
+	case .Sprint:
+		return .Stick_Left
+	case .Pause:
+		return .Menu
+	}
+	return .Key
+}
+
+// Width of a hint's glyph box: the pad button's square icon, or the key
+// cap with the key's name and a margin, at least square.
+glyph_box_width :: proc(state: ^Ui_State, button: Glyph_Button) -> f32 {
+	if state.active_device == .Gamepad {
+		return UI_GLYPH_BAR_HEIGHT
+	}
+	glyph := text(glyph_key(state.active_device, button))
 	return max(ui_text_width(state, glyph, UI_GLYPH_TEXT_SIZE) + 2 * UI_GAP, UI_GLYPH_BAR_HEIGHT)
 }
 
 glyph_bar_width :: proc(state: ^Ui_State, hints: []Glyph_Hint) -> f32 {
 	width := f32(0)
 	for hint, index in hints {
-		glyph := text(glyph_key(state.active_device, hint.button))
-		width += glyph_box_width(state, glyph) + UI_GAP + ui_text_width(state, hint.label, UI_GLYPH_TEXT_SIZE)
+		width += glyph_box_width(state, hint.button) + UI_GAP + ui_text_width(state, hint.label, UI_GLYPH_TEXT_SIZE)
 		width += index > 0 ? 3 * UI_GAP : 0
 	}
 	return width
@@ -665,7 +868,9 @@ glyph_hints_that_fit :: proc(state: ^Ui_State, hints: []Glyph_Hint, width: f32) 
 	return kept[:]
 }
 
-// Glyph and label pairs, right aligned along the bottom of the safe area,
+// Glyph and label pairs, right aligned along the bottom of the safe area:
+// the pad button's icon on the gamepad, the key's name on a key cap
+// icon on the keyboard,
 // as many as fit its width (glyph_hints_that_fit). The bar registers the
 // safe area as its panel, so the bounds audit holds its commands to it.
 ui_glyph_bar :: proc(state: ^Ui_State, hints: []Glyph_Hint) {
@@ -681,13 +886,13 @@ ui_glyph_bar :: proc(state: ^Ui_State, hints: []Glyph_Hint) {
 		label_width := ui_text_width(state, hint.label, UI_GLYPH_TEXT_SIZE)
 		x -= label_width
 		draw_text(state, {x, y, label_width, height}, hint.label, UI_GLYPH_TEXT_SIZE, .Left)
-		glyph := text(glyph_key(state.active_device, hint.button))
-		box_width := glyph_box_width(state, glyph)
+		box_width := glyph_box_width(state, hint.button)
 		x -= box_width + UI_GAP
 		box := Ui_Rectangle{x, y, box_width, height}
-		draw_fill(state, box, UI_WIDGET_COLOR)
-		draw_outline(state, box, UI_GLYPH_COLOR)
-		draw_text(state, box, glyph, UI_GLYPH_TEXT_SIZE, .Centre, UI_GLYPH_COLOR)
+		draw_ui_icon(state, box, glyph_icon(state.active_device, hint.button))
+		if state.active_device == .Keyboard_Mouse {
+			draw_text(state, box, text(glyph_key(state.active_device, hint.button)), UI_GLYPH_TEXT_SIZE, .Centre, UI_GLYPH_COLOR)
+		}
 		x -= 3 * UI_GAP
 	}
 }
@@ -747,8 +952,7 @@ append_tooltip :: proc(state: ^Ui_State) {
 	text_width := min(f32(UI_TOOLTIP_WIDTH), safe.width) - 2 * UI_PADDING
 	lines := wrap_text(state, state.focused_tooltip, UI_BODY_TEXT_SIZE, text_width)
 	box := tooltip_rectangle(panel_rectangle, widget.rectangle, safe, f32(len(lines)) * UI_LINE_HEIGHT + 2 * UI_PADDING)
-	draw_fill(state, box, UI_PANEL_COLOR)
-	draw_outline(state, box, UI_ACCENT_COLOR)
+	draw_panel_art(state, box, theme_color(state, .Tooltip), theme_color(state, .Accent))
 	draw_text_lines(state, inset(box, UI_PADDING), lines)
 }
 
@@ -771,7 +975,7 @@ append_toasts :: proc(state: ^Ui_State) {
 		}
 		box := cut_top(&area, f32(len(lines)) * UI_LINE_HEIGHT + 2 * vertical_padding)
 		box.width = widest + 2 * UI_PADDING
-		draw_fill(state, box, UI_PANEL_COLOR)
+		draw_fill(state, box, theme_color(state, .Toast))
 		draw_text_lines(state, {box.x + UI_PADDING, box.y + vertical_padding, widest, box.height - 2 * vertical_padding}, lines)
 		cut_top(&area, UI_GAP)
 	}
@@ -784,8 +988,8 @@ append_pointer :: proc(state: ^Ui_State) {
 	}
 	half := f32(UI_POINTER_SIZE / 2)
 	box := Ui_Rectangle{state.pointer.x - half, state.pointer.y - half, UI_POINTER_SIZE, UI_POINTER_SIZE}
-	draw_fill(state, box, UI_ACCENT_COLOR)
-	draw_outline(state, box, UI_PANEL_COLOR)
+	draw_fill(state, box, theme_color(state, .Accent))
+	draw_outline(state, box, theme_color(state, .Panel))
 }
 
 // Drawn last, over every screen.
@@ -852,12 +1056,13 @@ draw_radial :: proc(state: ^Ui_State, labels: []string) {
 	centre := state.screen_units / 2
 	radius := f32(UI_SLOT_SIZE * 2.5)
 	count := len(labels)
+	theme := ui_theme(state)
 	for label, index in labels {
 		point := radial_slot_offset(index, count) * radius + centre
 		box := Ui_Rectangle{point.x - UI_SLOT_SIZE, point.y - UI_ROW_HEIGHT / 2, UI_SLOT_SIZE * 2, UI_ROW_HEIGHT}
 		highlighted := index == state.radial.highlight
-		draw_fill(state, box, highlighted ? UI_ACCENT_COLOR : UI_PANEL_COLOR)
-		draw_text(state, box, label, UI_BODY_TEXT_SIZE, .Centre, highlighted ? UI_PANEL_COLOR : UI_TEXT_COLOR)
+		draw_fill(state, box, highlighted ? theme.colors[.Accent] : theme.colors[.Panel])
+		draw_text(state, box, label, UI_BODY_TEXT_SIZE, .Centre, highlighted ? theme.colors[.Panel] : theme.colors[.Text])
 	}
 }
 

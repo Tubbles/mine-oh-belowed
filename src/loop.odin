@@ -110,6 +110,9 @@ Frame_State :: struct {
 	// The item icons (render_icons.odin), rebuilt with the block atlas;
 	// content.items.icon_loaded points into it.
 	item_atlas:         Item_Atlas,
+	// The UI icons (render_icons.odin, work item 0071), rebuilt with the
+	// theme.
+	ui_icon_atlas:      Item_Atlas,
 	belt_renderer:      Belt_Renderer,
 	model_renderer:     Model_Renderer,
 	// Particles and feedback (work item 0067, render_particles.odin):
@@ -616,6 +619,8 @@ run_ui_frame :: proc(state: ^Frame_State) {
 		layout       = state.renderer.atlas_layout,
 		item_texture = state.item_atlas.texture,
 		item_layout  = state.item_atlas.layout,
+		ui_texture   = state.ui_icon_atlas.texture,
+		ui_layout    = state.ui_icon_atlas.layout,
 	}
 	ui_end(&state.ui, icon_atlas, &state.ui_images)
 	play_ui_sounds(&state.audio, &state.ui)
@@ -853,6 +858,14 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	init_font_cache(&state.font_cache, data_directory, state.fonts.families, string(strings_text), state.settings)
 	state.ui.fonts, state.ui.measure_text = &state.font_cache, measure_font_text
 	defer destroy_font_cache(&state.font_cache)
+	theme, theme_problem := load_ui_theme(data_directory)
+	if theme_problem != "" {
+		log_printf("error: %s", theme_problem)
+		os.exit(1)
+	}
+	apply_ui_theme(&state.ui, theme)
+	state.ui_icon_atlas = upload_ui_icon_atlas(data_directory)
+	defer destroy_item_atlas(&state.ui_icon_atlas)
 	defer destroy_title_state(&state.title)
 	defer write_changed_settings(&state)
 	defer if input_backend == .Sdl3 {

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Write the placeholder block textures and item icons (work item 0060) to
-data/textures/blocks/ and data/textures/items/.
+data/textures/blocks/ and data/textures/items/, and the UI icons (work
+item 0071) to data/ui/icons/.
 
 Usage: tools/make_placeholder_textures.py
 
@@ -32,6 +33,13 @@ rectangles, ores as lumps, gears as toothed rings, tools as simple
 silhouettes, machines as a box with a darker base, science packs as a
 flask. An item that places a block shows the block's plain texture.
 
+UI icons (the ui family): one file per name in UI_ICON_NAMES, which must
+match the Ui_Icon enum in src/ui_theme.odin (a test checks the files).
+Gamepad buttons are drawn by position (the face button's dot lit in the
+accent among four), bumpers, triggers and sticks carry an L or an R in a
+3 by 5 pixel font, the key is a blank dark key cap the game draws the
+key's name on, and the categories and screens are small pictures.
+
 The whole set is a placeholder: hand made art replaces the files later.
 """
 
@@ -45,6 +53,7 @@ REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parent.parent
 DATA_DIRECTORY = REPOSITORY_ROOT / "data"
 BLOCK_TEXTURES_DIRECTORY = DATA_DIRECTORY / "textures" / "blocks"
 ITEM_TEXTURES_DIRECTORY = DATA_DIRECTORY / "textures" / "items"
+UI_ICONS_DIRECTORY = DATA_DIRECTORY / "ui" / "icons"
 SIZE = 16
 TRANSPARENT = (0, 0, 0, 0)
 FALLBACK_STONE = (128, 128, 128)
@@ -747,6 +756,257 @@ def draw_raw(item_id: str, colour, key: str) -> list:
     return draw_lump(colour, key)
 
 
+# UI icons.
+
+UI_ICON_NAMES = [
+    "button_south",
+    "button_east",
+    "button_west",
+    "button_north",
+    "bumper_left",
+    "bumper_right",
+    "trigger_left",
+    "trigger_right",
+    "stick_left",
+    "stick_right",
+    "dpad",
+    "menu",
+    "view",
+    "key",
+    "category_raw",
+    "category_intermediate",
+    "category_tool",
+    "category_machine",
+    "category_block",
+    "category_logistics",
+    "category_power",
+    "category_science",
+    "mission_control",
+    "journal",
+    "map",
+    "settings",
+    "search",
+    "inventory",
+    "recipes",
+    "technologies",
+]
+
+UI_FACE = (58, 62, 78)
+UI_RIM = (184, 190, 208)
+UI_LIGHT = (235, 235, 240)
+UI_DARK = (30, 32, 40)
+UI_ACCENT = (236, 176, 64)
+UI_BLUE = (90, 160, 230)
+UI_RED = (200, 70, 56)
+
+# 3 by 5 pixel letters, rows top to bottom.
+PIXEL_LETTERS = {
+    "L": ["X..", "X..", "X..", "X..", "XXX"],
+    "R": ["XX.", "X.X", "XX.", "X.X", "X.X"],
+}
+
+FACE_BUTTON_CENTRES = {
+    "north": (7.5, 3),
+    "south": (7.5, 12),
+    "west": (3, 7.5),
+    "east": (12, 7.5),
+}
+
+
+def stamp_letter(image: list, letter: str, left: int, top: int, colour) -> None:
+    for row, line in enumerate(PIXEL_LETTERS[letter]):
+        for column, cell in enumerate(line):
+            if cell == "X":
+                image[top + row][left + column] = opaque(colour)
+
+
+def draw_face_button(lit: str, key: str) -> list:
+    """Four buttons in a diamond, the named one lit."""
+    image = blank()
+    for position, (centre_x, centre_y) in FACE_BUTTON_CENTRES.items():
+        colour = UI_ACCENT if position == lit else UI_FACE
+        paint(image, disc_mask(centre_x, centre_y, 2.6), colour, f"{key}/{position}", 2)
+    return image
+
+
+def draw_bumper(letter: str, key: str) -> list:
+    image = blank()
+    mask = rounded_rectangle_mask(1, 4, 14, 11)
+    paint(image, mask, UI_RIM, key, 2)
+    stamp_letter(image, letter, 6, 5, UI_DARK)
+    return image
+
+
+def draw_trigger(letter: str, key: str) -> list:
+    """A tall trigger, rounded at the top."""
+    image = blank()
+    mask = {(x, y) for x, y in rectangle_mask(3, 3, 12, 14)} | {(x, y) for x, y in disc_mask(7.5, 4.5, 4.6) if y <= 4}
+    paint(image, mask, UI_RIM, key, 2)
+    stamp_letter(image, letter, 6, 7, UI_DARK)
+    return image
+
+
+def draw_stick(letter: str, key: str) -> list:
+    """A stick seen from above: a rim and a cap with the letter."""
+    image = blank()
+    paint(image, disc_mask(7.5, 7.5, 7.2), UI_FACE, key + "/rim", 2)
+    paint(image, disc_mask(7.5, 7.5, 4.6), UI_RIM, key + "/cap", 2)
+    stamp_letter(image, letter, 6, 5, UI_DARK)
+    return image
+
+
+def draw_dpad(key: str) -> list:
+    image = blank()
+    paint(image, rectangle_mask(6, 1, 9, 14) | rectangle_mask(1, 6, 14, 9), UI_RIM, key, 2)
+    for x, y in rectangle_mask(7, 7, 8, 8):
+        image[y][x] = opaque(UI_FACE)
+    return image
+
+
+def draw_menu_button(key: str) -> list:
+    """Three lines on a round button."""
+    image = blank()
+    paint(image, disc_mask(7.5, 7.5, 7.2), UI_FACE, key, 2)
+    for y in (5, 8, 11):
+        for x in range(4, 12):
+            image[y][x] = opaque(UI_LIGHT)
+    return image
+
+
+def draw_view_button(key: str) -> list:
+    """Two overlapping windows on a round button."""
+    image = blank()
+    paint(image, disc_mask(7.5, 7.5, 7.2), UI_FACE, key, 2)
+    for x, y in rectangle_mask(3, 4, 9, 9) - rectangle_mask(4, 5, 8, 8):
+        image[y][x] = opaque(UI_LIGHT)
+    for x, y in rectangle_mask(6, 7, 12, 12):
+        image[y][x] = opaque(UI_LIGHT)
+    return image
+
+
+def draw_key_cap(key: str) -> list:
+    """A blank dark key cap, lit at the top left; stretched for long names."""
+    image = blank()
+    paint(image, rounded_rectangle_mask(0, 0, 15, 15), UI_FACE, key, 0)
+    return image
+
+
+def draw_cube(colour, key: str) -> list:
+    image = blank()
+    paint(image, rectangle_mask(2, 2, 13, 13), colour, key, 10)
+    return image
+
+
+def draw_belt(key: str) -> list:
+    """A belt with chevrons."""
+    image = blank()
+    paint(image, rounded_rectangle_mask(0, 4, 15, 11), UI_FACE, key, 2)
+    for left in (2, 7, 12):
+        for step in range(3):
+            for x, y in ((left + step, 5 + step), (left + step, 10 - step)):
+                if x < SIZE:
+                    image[y][x] = opaque(UI_ACCENT)
+    return image
+
+
+def draw_bolt(key: str) -> list:
+    image = blank()
+    mask = line_mask((10, 1), (5, 8), 1.3) | line_mask((5, 8), (10, 8), 1.1) | line_mask((10, 8), (5, 14), 1.3)
+    paint(image, mask, UI_ACCENT, key, 2)
+    return image
+
+
+def draw_mission_control(key: str) -> list:
+    """A mast with a dish and two signal arcs."""
+    image = blank()
+    paint(image, rectangle_mask(7, 7, 8, 14) | rectangle_mask(4, 13, 11, 14), UI_RIM, key + "/mast", 2)
+    paint(image, disc_mask(7.5, 6, 2), UI_ACCENT, key + "/dish", 2)
+    for radius in (4.2, 6.6):
+        for x, y in disc_mask(7.5, 6, radius + 0.5):
+            if math.hypot(x - 7.5, y - 6) > radius - 0.5 and y <= 4 and image[y][x] == TRANSPARENT:
+                image[y][x] = opaque(UI_LIGHT)
+    return image
+
+
+def draw_book(key: str) -> list:
+    image = blank()
+    paint(image, rectangle_mask(3, 1, 12, 14), UI_RED, key + "/cover", 3)
+    for y in range(3, 13):
+        image[y][11] = opaque(PAPER)
+    for x, y in rectangle_mask(5, 4, 9, 5):
+        image[y][x] = opaque(UI_ACCENT)
+    return image
+
+
+def draw_folded_map(key: str) -> list:
+    image = blank()
+    for index, (left, right) in enumerate(((1, 5), (6, 10), (11, 14))):
+        paint(image, rectangle_mask(left, 3, right, 12), scaled(PAPER, 0.85 if index % 2 else 1.0), f"{key}/{index}", 3)
+    paint(image, disc_mask(8, 7, 1.6), UI_RED, key + "/pin", 2)
+    return image
+
+
+def draw_magnifier(key: str) -> list:
+    image = blank()
+    ring = {(x, y) for x, y in disc_mask(6, 6, 4.8) if math.hypot(x - 6, y - 6) > 3}
+    paint(image, ring | line_mask((9.5, 9.5), (13.5, 13.5), 1.2), UI_RIM, key, 2)
+    return image
+
+
+def draw_chest(key: str) -> list:
+    image = blank()
+    wood = MATERIAL_COLOURS["wood"]
+    paint(image, rectangle_mask(1, 4, 14, 13), wood, key + "/box", 6)
+    for x in range(1, 15):
+        image[7][x] = opaque(scaled(wood, 0.5))
+    paint(image, rectangle_mask(6, 6, 9, 9), MATERIAL_COLOURS["iron"], key + "/latch", 2)
+    return image
+
+
+def draw_research_tree(key: str) -> list:
+    """Three nodes joined: a root below two branches."""
+    image = blank()
+    paint(image, line_mask((7.5, 11), (3.5, 4), 0.7) | line_mask((7.5, 11), (11.5, 4), 0.7), UI_RIM, key + "/lines", 2)
+    for index, (centre_x, centre_y) in enumerate(((7.5, 11.5), (3.5, 3.5), (11.5, 3.5))):
+        paint(image, disc_mask(centre_x, centre_y, 2.4), UI_BLUE if index else UI_ACCENT, f"{key}/{index}", 2)
+    return image
+
+
+def ui_icon_image(name: str) -> list:
+    if name.startswith("button_"):
+        return draw_face_button(name.removeprefix("button_"), name)
+    side = "L" if name.endswith("_left") else "R"
+    if name.startswith("bumper_"):
+        return draw_bumper(side, name)
+    if name.startswith("trigger_"):
+        return draw_trigger(side, name)
+    if name.startswith("stick_"):
+        return draw_stick(side, name)
+    pictures = {
+        "dpad": lambda: draw_dpad(name),
+        "menu": lambda: draw_menu_button(name),
+        "view": lambda: draw_view_button(name),
+        "key": lambda: draw_key_cap(name),
+        "category_raw": lambda: draw_lump(MATERIAL_COLOURS["copper"], name),
+        "category_intermediate": lambda: draw_gear(MATERIAL_COLOURS["iron"], name),
+        "category_tool": lambda: draw_pickaxe(MATERIAL_COLOURS["iron"], name),
+        "category_machine": lambda: draw_machine((120, 130, 150), name),
+        "category_block": lambda: draw_cube(MATERIAL_COLOURS["stone"], name),
+        "category_logistics": lambda: draw_belt(name),
+        "category_power": lambda: draw_bolt(name),
+        "category_science": lambda: draw_flask(UI_BLUE, name),
+        "mission_control": lambda: draw_mission_control(name),
+        "journal": lambda: draw_book(name),
+        "map": lambda: draw_folded_map(name),
+        "settings": lambda: draw_gear(UI_RIM, name),
+        "search": lambda: draw_magnifier(name),
+        "inventory": lambda: draw_chest(name),
+        "recipes": lambda: draw_schematic(name),
+        "technologies": lambda: draw_research_tree(name),
+    }
+    return pictures[name]()
+
+
 def item_image(item: dict, block_images: dict) -> list:
     """block_images maps a block id to its plain texture."""
     item_id = item["id"]
@@ -812,6 +1072,9 @@ def main() -> None:
                 block_images[block_id] = image
     for item in read_items():
         write_image(ITEM_TEXTURES_DIRECTORY, item["id"], item_image(item, block_images))
+    UI_ICONS_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    for name in UI_ICON_NAMES:
+        write_image(UI_ICONS_DIRECTORY, name, ui_icon_image(name))
 
 
 if __name__ == "__main__":

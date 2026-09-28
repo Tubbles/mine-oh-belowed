@@ -152,6 +152,9 @@ Draw_Command_Kind :: enum u8 {
 	// An RGBA image of image_size pixels, stretched over the rectangle;
 	// the draw layer uploads it again whenever image_revision changes.
 	Image,
+	// The UI icon atlas tile `tile` (a Ui_Icon, ui_theme.odin), stretched
+	// over the rectangle.
+	Ui_Icon,
 }
 
 Text_Alignment :: enum u8 {
@@ -255,6 +258,9 @@ Ui_Sound_Event :: enum u8 {
 }
 
 Ui_State :: struct {
+	// The theme (ui_theme.odin, apply_ui_theme); read through ui_theme,
+	// which gives the defaults while none is set.
+	theme:            Maybe(Ui_Theme),
 	input:            Ui_Input,
 	frame_seconds:    f32,
 	pixels_per_unit:  f32,
@@ -294,6 +300,12 @@ Ui_State :: struct {
 	sound_events:     bit_set[Ui_Sound_Event],
 	scroll_offsets:   map[Ui_Id]f32,
 	selections:       map[Ui_Id]int,
+	// Where each toggle's knob is, 0 off to 1 on, sliding towards its value.
+	knob_positions:   map[Ui_Id]f32,
+	// The focus outline's pulse: the seconds into the current pulse, and
+	// its phase for this frame (focus_pulse_phase), 0 thinnest to 1 thickest.
+	focus_pulse_seconds: f32,
+	focus_pulse:      f32,
 	// Derived in ui_begin for this frame.
 	navigation_step:  Ui_Direction,
 	confirm:          bool,
@@ -317,6 +329,7 @@ destroy_ui_state :: proc(state: ^Ui_State) {
 	destroy_mission_control(&state.mission_control)
 	delete(state.scroll_offsets)
 	delete(state.selections)
+	delete(state.knob_positions)
 	delete(state.widgets)
 	delete(state.panels)
 	delete(state.draw_list)
@@ -541,6 +554,8 @@ ui_begin :: proc(state: ^Ui_State, input: Ui_Input, screen_pixels: [2]f32, frame
 		state.sound_events += {.Back}
 	}
 	advance_toasts(state, frame_seconds)
+	state.focus_pulse_seconds = math.mod(state.focus_pulse_seconds + frame_seconds, UI_FOCUS_PULSE_SECONDS)
+	state.focus_pulse = focus_pulse_phase(state.focus_pulse_seconds)
 	state.toast_top_offset = 0
 	state.sound_events += advance_mission_control(&state.mission_control, frame_seconds)
 }

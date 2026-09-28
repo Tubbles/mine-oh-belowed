@@ -1,5 +1,6 @@
 package game
 
+import "core:slice"
 import rl "vendor:raylib"
 import "vendor:raylib/rlgl"
 
@@ -9,6 +10,11 @@ import "vendor:raylib/rlgl"
 // item_icon's fallbacks: its block's atlas tile or two letters. Built
 // with the block atlas, at start, on a content reload and when a texture
 // file changes.
+//
+// The UI icon atlas (work item 0071) is a second atlas made by the same
+// code: one tile per Ui_Icon (ui_theme.odin), the tile index the enum
+// value, read from data/ui/icons/<name>.png. Built at start and when the
+// theme reloads (hot_reload.odin).
 
 ITEM_TEXTURES_DIRECTORY :: "textures/items"
 // Texels at least this opaque count towards an item's average colour.
@@ -54,16 +60,18 @@ average_opaque_color :: proc(tile: Tile_Pixels) -> Ui_Color {
 	return {u8(sum.r / count), u8(sum.g / count), u8(sum.b / count), 255}
 }
 
-generate_item_icon_pixels :: proc(items: Item_Registry, data_directory: string, allocator := context.allocator) -> Item_Icon_Pixels {
-	layout := item_atlas_layout_for_item_count(len(items.items))
+// One tile per id, in order, from <directory>/<id>.png under the data
+// directory.
+generate_icon_pixels :: proc(ids: []string, data_directory, directory: string, allocator := context.allocator) -> Item_Icon_Pixels {
+	layout := item_atlas_layout_for_item_count(len(ids))
 	icons := Item_Icon_Pixels {
 		layout         = layout,
 		pixels         = make([][4]u8, atlas_pixel_width(layout) * atlas_pixel_height(layout), allocator),
-		loaded         = make([]bool, len(items.items), allocator),
-		average_colors = make([]Ui_Color, len(items.items), allocator),
+		loaded         = make([]bool, len(ids), allocator),
+		average_colors = make([]Ui_Color, len(ids), allocator),
 	}
-	for item, index in items.items {
-		tile, found := read_tile_file(texture_file_path(data_directory, ITEM_TEXTURES_DIRECTORY, item.id))
+	for id, index in ids {
+		tile, found := read_tile_file(texture_file_path(data_directory, directory, id))
 		if !found {
 			continue
 		}
@@ -74,11 +82,21 @@ generate_item_icon_pixels :: proc(items: Item_Registry, data_directory: string, 
 	return icons
 }
 
-// Point filtered like the block atlas. The item registry learns which
-// items have a tile (Item_Registry.icon_loaded); it points into the atlas.
-upload_item_atlas :: proc(items: ^Item_Registry, data_directory: string) -> Item_Atlas {
-	icons := generate_item_icon_pixels(items^, data_directory)
-	defer delete(icons.pixels)
+generate_item_icon_pixels :: proc(items: Item_Registry, data_directory: string, allocator := context.allocator) -> Item_Icon_Pixels {
+	ids := make([]string, len(items.items), context.temp_allocator)
+	for item, index in items.items {
+		ids[index] = item.id
+	}
+	return generate_icon_pixels(ids, data_directory, ITEM_TEXTURES_DIRECTORY, allocator)
+}
+
+generate_ui_icon_pixels :: proc(data_directory: string, allocator := context.allocator) -> Item_Icon_Pixels {
+	return generate_icon_pixels(slice.enumerated_array(&ui_icon_names), data_directory, UI_ICONS_DIRECTORY, allocator)
+}
+
+// Point filtered like the block atlas. Takes the loaded flags and the
+// average colours; the pixels stay with the caller.
+upload_icon_pixels :: proc(icons: Item_Icon_Pixels) -> Item_Atlas {
 	image := rl.Image {
 		data    = raw_data(icons.pixels),
 		width   = i32(atlas_pixel_width(icons.layout)),
@@ -88,8 +106,24 @@ upload_item_atlas :: proc(items: ^Item_Registry, data_directory: string) -> Item
 	}
 	texture := rl.LoadTextureFromImage(image)
 	rl.SetTextureFilter(texture, .POINT)
-	items.icon_loaded = icons.loaded
 	return Item_Atlas{texture = texture, layout = icons.layout, loaded = icons.loaded, average_colors = icons.average_colors}
+}
+
+// The item registry learns which items have a tile
+// (Item_Registry.icon_loaded); it points into the atlas.
+upload_item_atlas :: proc(items: ^Item_Registry, data_directory: string) -> Item_Atlas {
+	icons := generate_item_icon_pixels(items^, data_directory)
+	defer delete(icons.pixels)
+	items.icon_loaded = icons.loaded
+	return upload_icon_pixels(icons)
+}
+
+// An icon without a file has an empty tile, which the test of the
+// shipped set rules out.
+upload_ui_icon_atlas :: proc(data_directory: string) -> Item_Atlas {
+	icons := generate_ui_icon_pixels(data_directory)
+	defer delete(icons.pixels)
+	return upload_icon_pixels(icons)
 }
 
 destroy_item_atlas :: proc(atlas: ^Item_Atlas) {

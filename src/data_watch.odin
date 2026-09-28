@@ -9,7 +9,7 @@ import "core:time"
 // compares modification time and size with the previous scan; a file
 // added, changed or removed marks its category. Presentation files
 // (strings, bindings, developer kits, shaders, fonts, models, textures,
-// sounds) reload in place at
+// sounds, the UI theme and icons) reload in place at
 // once (hot_reload.odin). Content files only mark the data as changed,
 // shown on the Developer screen and in the log, until a reload is asked
 // for (the reload command, the Developer screen, F8), or, with watch_data
@@ -48,12 +48,15 @@ Data_File_Category :: enum u8 {
 	Textures,
 	// sounds/sounds.sjson and the .wav files under sounds/ (audio.odin).
 	Sounds,
+	// ui/theme.sjson and the .png files under ui/icons/ (ui_theme.odin,
+	// render_icons.odin).
+	Theme,
 	Content,
 }
 
 Data_File_Categories :: bit_set[Data_File_Category]
 
-PRESENTATION_CATEGORIES :: Data_File_Categories{.Strings, .Bindings, .Developer_Kits, .Shaders, .Fonts, .Models, .Textures, .Sounds}
+PRESENTATION_CATEGORIES :: Data_File_Categories{.Strings, .Bindings, .Developer_Kits, .Shaders, .Fonts, .Models, .Textures, .Sounds, .Theme}
 
 Data_File_Stamp :: struct {
 	modification_time: time.Time,
@@ -119,6 +122,10 @@ data_file_category :: proc(relative_path: string) -> Data_File_Category {
 		return strings.has_suffix(name, TEXTURE_FILE_EXTENSION) && !strings.has_prefix(name, ".") ? .Textures : .Ignored
 	case SOUNDS_DIRECTORY:
 		return name == SOUNDS_FILE_NAME || (strings.has_suffix(name, SOUND_FILE_EXTENSION) && !strings.has_prefix(name, ".")) ? .Sounds : .Ignored
+	case UI_THEME_DIRECTORY:
+		return name == UI_THEME_FILE_NAME ? .Theme : .Ignored
+	case UI_ICONS_DIRECTORY:
+		return strings.has_suffix(name, TEXTURE_FILE_EXTENSION) && !strings.has_prefix(name, ".") ? .Theme : .Ignored
 	}
 	if strings.has_prefix(directory, FONTS_DIRECTORY + "/") {
 		return is_font_file_name(name) ? .Fonts : .Ignored

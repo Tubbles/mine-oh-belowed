@@ -1,6 +1,7 @@
 package game
 
 import "core:fmt"
+import "core:slice"
 import "core:strings"
 
 // The recipe browser (DESIGN.md, User interface): category tabs on the
@@ -26,6 +27,19 @@ RECIPE_CRAFTABLE_MARK_WIDTH :: 6
 RECIPE_CRAFT_MANY_COUNT :: 5
 RECIPE_LETTER_WHEEL_RADIUS :: 320
 RECIPE_LETTER_BOX_SIZE :: 52
+
+// The icon before each category tab's label (work item 0071): the item
+// category's where one matches.
+@(rodata)
+recipe_category_icons := [Recipe_Category]Ui_Icon {
+	.Materials  = .Category_Raw,
+	.Components = .Category_Intermediate,
+	.Tools      = .Category_Tool,
+	.Machines   = .Category_Machine,
+	.Logistics  = .Category_Logistics,
+	.Power      = .Category_Power,
+	.Science    = .Category_Science,
+}
 
 // State of the browser across frames and openings. pending_focus is a
 // recipe reached through the graph whose list row takes the focus on the
@@ -201,7 +215,7 @@ recipe_category_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, browser:
 		labels[int(category)] = text(recipe_category_key(category))
 	}
 	state.selections[ui_id(state, "recipe_tabs")] = int(browser.filter.category)
-	category := Recipe_Category(ui_tabs(state, rectangle, "recipe_tabs", labels[:]))
+	category := Recipe_Category(ui_tabs(state, rectangle, "recipe_tabs", labels[:], slice.enumerated_array(&recipe_category_icons)))
 	if category != browser.filter.category {
 		browser.filter.category = category
 		browser.filter.tags = {}

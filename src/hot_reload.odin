@@ -141,6 +141,19 @@ reload_textures :: proc(state: ^Frame_State) -> string {
 	return ""
 }
 
+// The theme file and the icon atlas (work item 0071). A theme that does
+// not load keeps the old theme; the icons load again either way.
+reload_theme :: proc(state: ^Frame_State) -> string {
+	destroy_item_atlas(&state.ui_icon_atlas)
+	state.ui_icon_atlas = upload_ui_icon_atlas(state.data_directory)
+	theme, problem := load_ui_theme(state.data_directory)
+	if problem != "" {
+		return problem
+	}
+	apply_ui_theme(&state.ui, theme)
+	return ""
+}
+
 // The table and every file load again; a table that does not load, or
 // names a missing file, keeps the old sounds.
 reload_sounds :: proc(state: ^Frame_State) -> string {
@@ -164,6 +177,7 @@ presentation_reload_keys := [Data_File_Category]string {
 	.Models         = "reload_models_done",
 	.Textures       = "reload_textures_done",
 	.Sounds         = "reload_sounds_done",
+	.Theme          = "reload_theme_done",
 	.Content        = "",
 }
 
@@ -180,6 +194,7 @@ presentation_file_names := [Data_File_Category]string {
 	.Models         = MODELS_DIRECTORY,
 	.Textures       = "textures",
 	.Sounds         = SOUNDS_DIRECTORY,
+	.Theme          = UI_THEME_DIRECTORY,
 	.Content        = "",
 }
 
@@ -201,6 +216,8 @@ reload_presentation :: proc(state: ^Frame_State, category: Data_File_Category) -
 		return reload_textures(state)
 	case .Sounds:
 		return reload_sounds(state)
+	case .Theme:
+		return reload_theme(state)
 	}
 	return ""
 }

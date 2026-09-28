@@ -6,7 +6,8 @@ import "core:slice"
 
 // The top down map (work item 0038): the explored columns coloured by
 // their surface block tinted with their biome's map colour (work item
-// 0058) and shaded by height, entities as dots, the player
+// 0058) and shaded by height, entities as dots in the theme's colour of
+// their machine item's category (work item 0071), the player
 // as a marker, and the prospecting records on top; during a capsule
 // descent a parachute over the landing pad and during a survey
 // satellite's pass the satellite crossing west to east (work item 0069).
@@ -38,7 +39,6 @@ MAP_BRIGHTNESS_LOW :: 0.65
 MAP_BRIGHTNESS_HIGH :: 1.15
 
 MAP_UNEXPLORED_COLOR :: Ui_Color{14, 16, 22, 255}
-MAP_ENTITY_COLOR :: Ui_Color{240, 240, 245, 255}
 MAP_ASSAYED_COLOR :: Ui_Color{236, 176, 64, 255}
 MAP_READING_COLOR :: Ui_Color{225, 80, 60, 255}
 MAP_CORE_SAMPLE_COLOR :: Ui_Color{80, 210, 220, 255}
@@ -302,10 +302,34 @@ paint_map_reading :: proc(pixels: []Ui_Color, frame: Map_Frame, reading: Magneto
 	}
 }
 
-paint_map_entities :: proc(pixels: []Ui_Color, frame: Map_Frame, cells: map[World_Coordinate]Entity_Handle) {
-	for cell in cells {
-		if pixel, inside := map_pixel_of(frame, cell.x, cell.z); inside {
-			pixels[pixel.y * frame.size + pixel.x] = MAP_ENTITY_COLOR
+// The dot colour of a machine: its item's category's marker, the
+// machine marker for one without an item (the drop capsule).
+machine_marker_color :: proc(theme: Ui_Theme, machines: Machine_Registry, items: Item_Registry, machine: Machine_Id) -> Ui_Color {
+	if int(machine) >= len(machines.machines) {
+		return theme.colors[.Map_Marker_Machine]
+	}
+	item := machines.machines[machine].item
+	if int(item) >= len(items.items) {
+		return theme.colors[.Map_Marker_Machine]
+	}
+	return map_marker_color(theme, items.items[item].category)
+}
+
+// Indexed by Machine_Id, in the temp allocator.
+machine_marker_colors :: proc(theme: Ui_Theme, machines: Machine_Registry, items: Item_Registry) -> []Ui_Color {
+	colors := make([]Ui_Color, len(machines.machines), context.temp_allocator)
+	for &color, index in colors {
+		color = machine_marker_color(theme, machines, items, Machine_Id(index))
+	}
+	return colors
+}
+
+paint_map_entities :: proc(pixels: []Ui_Color, frame: Map_Frame, entities: ^Entities, marker_colors: []Ui_Color) {
+	for cell, handle in entities.cells {
+		pixel, inside := map_pixel_of(frame, cell.x, cell.z)
+		common := entity_common(entities, handle)
+		if inside && common != nil && int(common.machine) < len(marker_colors) {
+			pixels[pixel.y * frame.size + pixel.x] = marker_colors[common.machine]
 		}
 	}
 }
@@ -327,8 +351,9 @@ paint_map_records :: proc(pixels: []Ui_Color, frame: Map_Frame, world: ^World) {
 	}
 }
 
-// Without a generator the surface has no biome tint.
-paint_map :: proc(view: ^Map_View, frame: Map_Frame, world: ^World, blocks: Block_Registry, generator: ^Generator) {
+// Without a generator the surface has no biome tint. marker_colors is
+// indexed by Machine_Id (machine_marker_colors).
+paint_map :: proc(view: ^Map_View, frame: Map_Frame, world: ^World, blocks: Block_Registry, generator: ^Generator, marker_colors: []Ui_Color) {
 	resize(&view.pixels, int(frame.size * frame.size))
 	layer: Map_Biome_Layer
 	if generator != nil {
@@ -338,7 +363,7 @@ paint_map :: proc(view: ^Map_View, frame: Map_Frame, world: ^World, blocks: Bloc
 		layer = {biomes = view.biomes[:], colors = map_biome_colors(generator.biomes), shown = view.biomes_shown[:]}
 	}
 	paint_map_surface(view.pixels[:], frame, view.surfaces, map_block_colors(blocks), layer)
-	paint_map_entities(view.pixels[:], frame, world.entities.cells)
+	paint_map_entities(view.pixels[:], frame, &world.entities, marker_colors)
 	paint_map_records(view.pixels[:], frame, world)
 	view.painted_frame = frame
 	view.revision += 1
@@ -517,7 +542,7 @@ draw_map_legend :: proc(state: ^Ui_State, area: Ui_Rectangle, view: ^Map_View, g
 		key:   string,
 	} {
 		{MAP_PLAYER_COLOR, "map_legend_player"},
-		{MAP_ENTITY_COLOR, "map_legend_machines"},
+		{theme_color(state, .Map_Marker_Machine), "map_legend_machines"},
 		{MAP_ASSAYED_COLOR, "map_legend_assayed"},
 		{MAP_READING_COLOR, "map_legend_magnetometer"},
 		{MAP_CORE_SAMPLE_COLOR, "map_legend_core_sample"},
@@ -554,7 +579,7 @@ map_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	frame := map_frame_for(view.centre, view.zoom)
 	view.repaint_seconds += state.frame_seconds
 	if frame != view.painted_frame || view.repaint_seconds >= MAP_REPAINT_SECONDS {
-		paint_map(view, frame, world, screen_context.blocks, screen_context.generator)
+		paint_map(view, frame, world, screen_context.blocks, screen_context.generator, machine_marker_colors(ui_theme(state), screen_context.machines, screen_context.items))
 	}
 	draw_image(state, image, view.pixels[:], {frame.size, frame.size}, view.revision)
 	draw_outline(state, image, UI_PANEL_BORDER_COLOR)

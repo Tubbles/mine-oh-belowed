@@ -1,6 +1,6 @@
 # 0071 UI skin and map visuals
 
-Status: todo
+Status: implemented
 Milestone: M11
 
 ## Goal
@@ -32,3 +32,5 @@ Implementation pointers, decisions taken so the item is unambiguous:
 - Docs: `doc/ui.md` (a Theme section: the file, the art rules, the icons), `doc/content.md` (the `data/ui` files), `doc/architecture.md` (hot reload categories), `doc/log/2026-09-28.md`, this item's Status and Notes.
 
 Files a subagent may touch: new `src/ui_theme.odin` and `src/ui_theme_test.odin`, `src/ui_widgets.odin`, `src/ui_core.odin`, `src/ui_draw.odin`, `src/ui_map.odin`, `src/ui_recipes.odin`, `src/ui_inventory.odin`, `src/render_icons.odin`, `src/render_icons_test.odin`, `src/data_watch.odin`, `src/data_watch_test.odin`, `src/hot_reload.odin`, `src/loop.odin` (the theme load and the atlas), `src/ui_audit_test.odin`, `tools/make_placeholder_textures.py`, new `data/ui/theme.sjson` and `data/ui/icons/*.png`, `data/strings/en.sjson`, the docs above, this file.
+
+Implemented: new `src/ui_theme.odin` (the theme, its parsing and validation, `Ui_Icon`) and `src/ui_theme_test.odin`, `data/ui/theme.sjson` and 30 icons in `data/ui/icons/` (the ui family of `tools/make_placeholder_textures.py`, which rewrote no existing file); changed `src/ui_widgets.odin` (panel art, widget states, focus pulse, toggle switch, tab icons and divider, glyph bar icons, the colour names as theme variables), `src/ui_core.odin` (the `Ui_Icon` command, `Ui_State.theme`, the pulse and knob state), `src/ui_draw.odin`, `src/render_icons.odin` (the UI atlas by the item atlas code), `src/ui_map.odin` (dots by category), `src/ui_recipes.odin` and `src/ui_inventory.odin` (tab icons), `src/data_watch.odin` and `src/hot_reload.odin` (the `Theme` category), `src/loop.odin`, the tests in `src/render_icons_test.odin`, `src/data_watch_test.odin` and `src/ui_audit_test.odin` (shipped theme, pulse at both ends), `data/strings/en.sjson` (`reload_theme_done`), `doc/ui.md`, `doc/content.md`, `doc/architecture.md`, `doc/log/2026-09-28.md`. The shipped theme changes against the defaults: `panel_edge` 90,96,120 to 110,118,150; `panel_highlight` on (150,160,196 at alpha 64); `corner` 0 to 8; `widget_hover` 60,66,86 to 72,80,108; `widget_active` on (128,98,44); `focus_pulse` 0 to 3; `divider` on (90,96,120 at alpha 160); `tooltip` 24,26,34,230 to 18,20,27,245; the raw, intermediate, tool and block map markers coloured (the machine marker stays white). Not done: the layout sizes and the font roles stay out of the theme (see the log). 914 tests pass (898 before).

@@ -10,7 +10,10 @@ import "core:testing"
 // The UI bounds audit (work item 0046). Every screen and the HUD run
 // headless over the save test's site with the shipped strings, at the
 // couch and handheld screen sizes and UI scales, with keyboard and with
-// gamepad glyphs. Each frame's draw list is checked: every command lies on
+// gamepad glyphs, drawn with the shipped theme (data/ui/theme.sjson, work
+// item 0071) and the focus outline's pulse at its thinnest with keyboard
+// glyphs and at its thickest with gamepad glyphs. Each frame's draw list
+// is checked: every command lies on
 // the screen and inside the panel it was drawn in (clipped commands by
 // their visible part), every panel lies in the safe area and clear of the
 // glyph bar, and every text fits the rectangle it was given, measured with
@@ -76,6 +79,7 @@ Ui_Audit_Case :: struct {
 // Owns everything a Screen_Context points into.
 Ui_Audit :: struct {
 	strings:            String_Table,
+	theme:              Ui_Theme,
 	content:            Simulation_Content,
 	simulation:         Simulation_State,
 	settings:           Settings,
@@ -182,7 +186,7 @@ audit_draw_list :: proc(audit: ^Ui_Audit, state: ^Ui_State, case_text, frame_nam
 		case .Clip_End:
 			clipped = false
 			continue
-		case .Fill, .Outline, .Text, .Focus_Outline, .Clip_Begin, .Atlas_Tile, .Item_Tile, .Image:
+		case .Fill, .Outline, .Text, .Focus_Outline, .Clip_Begin, .Atlas_Tile, .Item_Tile, .Image, .Ui_Icon:
 		}
 		for problem in audit_command(state, command, clip, clipped) {
 			audit_report(audit, case_text, frame_name, problem, command.kind, command.rectangle, command.text)
@@ -271,6 +275,7 @@ audit_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, size: Ui_Audit_Size, aud
 		audit.browser.selecting_for = audit_case.selecting
 	}
 	ui_begin(state, input, size.pixels, 1.0 / 60, size.scale, 1)
+	state.focus_pulse = device == .Gamepad ? 1 : 0
 	screen_context := audit_screen_context(audit)
 	if audit_case.hud {
 		draw_hud(state, screen_context)
@@ -284,6 +289,7 @@ audit_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, size: Ui_Audit_Size, aud
 
 audit_case_at_size :: proc(audit: ^Ui_Audit, audit_case: Ui_Audit_Case, size: Ui_Audit_Size, device: Input_Device) {
 	state := Ui_State {
+		theme         = audit.theme,
 		active_device = device,
 	}
 	defer destroy_ui_state(&state)
@@ -407,6 +413,9 @@ make_ui_audit :: proc() -> ^Ui_Audit {
 	assert(error == nil)
 	audit.strings = table
 	thread_string_table = &audit.strings
+	theme, theme_problem := parse_ui_theme(#load("../data/ui/theme.sjson"), "data/ui/theme.sjson")
+	assert(theme_problem == "", theme_problem)
+	audit.theme = theme
 	audit.content = make_save_test_content()
 	// Slots draw the shipped icon files, as in the game.
 	audit.content.items.icon_loaded = generate_item_icon_pixels(audit.content.items, test_data_directory(), context.temp_allocator).loaded

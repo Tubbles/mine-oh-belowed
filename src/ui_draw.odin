@@ -20,13 +20,15 @@ execute_text_command :: proc(command: Draw_Command, fonts: ^Font_Cache, pixels_p
 	}
 }
 
-// The atlases item icons draw from: the block atlas (Atlas_Tile) and the
-// item atlas (Item_Tile).
+// The atlases icons draw from: the block atlas (Atlas_Tile), the item
+// atlas (Item_Tile) and the UI icon atlas (Ui_Icon, render_icons.odin).
 Icon_Atlas :: struct {
 	texture:      rl.Texture2D,
 	layout:       Atlas_Layout,
 	item_texture: rl.Texture2D,
 	item_layout:  Atlas_Layout,
+	ui_texture:   rl.Texture2D,
+	ui_layout:    Atlas_Layout,
 }
 
 draw_atlas_tile :: proc(texture: rl.Texture2D, layout: Atlas_Layout, tile: int, rectangle: Ui_Rectangle, pixels_per_unit: f32) {
@@ -104,6 +106,8 @@ execute_draw_command :: proc(command: Draw_Command, focus: Ui_Id, atlas: Icon_At
 		draw_atlas_tile(atlas.item_texture, atlas.item_layout, command.tile, command.rectangle, pixels_per_unit)
 	case .Image:
 		execute_image_command(command, images, pixels_per_unit)
+	case .Ui_Icon:
+		draw_atlas_tile(atlas.ui_texture, atlas.ui_layout, command.tile, command.rectangle, pixels_per_unit)
 	}
 }
 
