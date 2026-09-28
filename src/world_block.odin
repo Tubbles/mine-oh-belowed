@@ -70,7 +70,9 @@ Block_Texture_Definition :: struct {
 // until its drop item was obtained once (work item 0052); it must have a
 // drop, which item_registry validation checks. shape names a Block_Shape,
 // cube when empty; resolved_shape and orientation are set by
-// expand_block_shapes, not read from the file.
+// expand_block_shapes, not read from the file. keep_orientation (work
+// item 0088) keeps the tile of the block's side faces upright where the
+// chunk shader would turn and mirror it per block (texture_variation.odin).
 Block_Definition :: struct {
 	id:               string,
 	name_key:         string,
@@ -85,6 +87,7 @@ Block_Definition :: struct {
 	texture:          Block_Texture_Definition,
 	shape:            string,
 	sound_material:   string,
+	keep_orientation: bool,
 	resolved_shape:   Block_Shape,
 	orientation:      Block_Orientation,
 }
@@ -343,6 +346,14 @@ block_shape_base :: proc(registry: Block_Registry, block: Block_Id) -> Block_Id 
 // variants stays itself.
 oriented_block :: proc(registry: Block_Registry, block: Block_Id, orientation: Block_Orientation) -> Block_Id {
 	return block_shape_base(registry, block) + Block_Id(variant_index(block_shape(registry, block), orientation))
+}
+
+// False outside the registry.
+block_keeps_orientation :: proc(registry: Block_Registry, block: Block_Id) -> bool {
+	if int(block) >= len(registry.definitions) {
+		return false
+	}
+	return registry.definitions[block].keep_orientation
 }
 
 block_light_emission :: proc(registry: Block_Registry, block: Block_Id) -> u8 {

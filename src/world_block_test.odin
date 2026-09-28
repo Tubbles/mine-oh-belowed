@@ -112,3 +112,30 @@ test_shipped_shape_variants_drop_the_base_item :: proc(t: ^testing.T) {
 	}
 	testing.expect_value(t, test_block(registry, "stone_stairs_r3"), test_block(registry, "stone_stairs") + 3)
 }
+
+// keep_orientation (work item 0088) defaults to false and reaches the
+// variants of an oriented shape.
+@(test)
+test_keep_orientation_flag_parses_with_a_default :: proc(t: ^testing.T) {
+	file, error := parse_blocks_file(transmute([]byte)string(`blocks = [{id = "air"} {id = "rock", solid = true} {id = "bark", solid = true, keep_orientation = true} {id = "ledge", shape = "slab", solid = true, keep_orientation = true}]`), context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	registry := Block_Registry{definitions = file.blocks}
+	testing.expect(t, !block_keeps_orientation(registry, 1))
+	testing.expect(t, block_keeps_orientation(registry, 2))
+	testing.expect(t, block_keeps_orientation(registry, 3))
+	testing.expect(t, block_keeps_orientation(registry, 4), "the upper slab")
+	testing.expect(t, !block_keeps_orientation(registry, 99))
+	shipped, shipped_error := parse_blocks_file(#load("../data/blocks.sjson"), context.temp_allocator)
+	testing.expect_value(t, shipped_error, nil)
+	shipped_registry := Block_Registry{definitions = shipped.blocks}
+	Expected_Flag :: struct {
+		id:    string,
+		keeps: bool,
+	}
+	expected := [?]Expected_Flag{{"stone", false}, {"water", false}, {"hematite_ore", false}, {"leaves", false}, {"log", true}, {"grass", true}, {"torch", true}, {"grass_tuft", true}, {"stone_stairs_r2", true}}
+	for flag in expected {
+		block, found := find_block_id(shipped_registry, flag.id)
+		testing.expectf(t, found, "%s is shipped", flag.id)
+		testing.expectf(t, block_keeps_orientation(shipped_registry, block) == flag.keeps, "%s keeps orientation: %v", flag.id, flag.keeps)
+	}
+}

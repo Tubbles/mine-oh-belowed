@@ -21,17 +21,26 @@ Blocks: <id>.png holds the side pattern and serves every face group;
 <id>_top.png and <id>_bottom.png are written where the data gives the
 group a colour of its own, and <id>_side.png where the side differs from
 the plain file (grass: dirt with a green fringe). The pattern follows the
-material family taken from the id: noise per family, ore speckles in the
+material family taken from the id: noise per family, ore blobs in the
 ore's colour over stone, bark grain and a ring top for logs, mottled
 leaves, a grass top over a dirt side, bricks and mortar. Ground cover
 (work item 0082: tufts, tall grass, flowers, dead bushes, reeds) is a
-plant silhouette on transparent texels, drawn on the cross quads.
+plant silhouette on transparent texels, drawn on the cross quads. The
+torch is a stick with a flame head on transparent texels: the post
+shows the stick, the item icon the whole torch.
+
+Stone, the ores, leaves and water (work item 0088) use isotropic noise
+only (isotropic_field: white noise blurred by a round Gaussian), with
+no rows or diagonals, since the chunk shader turns and mirrors their
+tiles per block and a field of them must not stripe.
 
 Items: by category, coloured from a table of the common materials (a word
 of the id picks it) or a colour hashed from the id: plates as rounded
 rectangles, ores as lumps, gears as toothed rings, tools as simple
 silhouettes, machines as a box with a darker base, science packs as a
-flask. An item that places a block shows the block's plain texture.
+flask. Tools stand upright: the handle vertical, the head at the top
+(a pickaxe's crescent across it, a hammer's head reaching to the right).
+An item that places a block shows the block's plain texture.
 
 UI icons (the ui family): one file per name in UI_ICON_NAMES, which must
 match the Ui_Icon enum in src/ui_theme.odin (a test checks the files).
@@ -43,6 +52,7 @@ key's name on, and the categories and screens are small pictures.
 The whole set is a placeholder: hand made art replaces the files later.
 """
 
+import functools
 import math
 import pathlib
 import re
@@ -154,6 +164,35 @@ def smooth_noise(key: str, x: int, y: int, cell: int, amplitude: int) -> int:
     return int((value * 2 - 1) * amplitude)
 
 
+ISOTROPIC_WIDTHS = ((2.0, 0.6), (1.0, 0.4))
+
+
+def gaussian_blur(values: list, width: float) -> list:
+    """values blurred by a round Gaussian of the given standard deviation
+    in texels, wrapping at the tile edge so neighbouring blocks join."""
+    reach = int(3 * width)
+    kernel = [(offset_x, offset_y, math.exp(-(offset_x**2 + offset_y**2) / (2 * width**2))) for offset_y in range(-reach, reach + 1) for offset_x in range(-reach, reach + 1)]
+    total = sum(weight for _, _, weight in kernel)
+    return [[sum(weight * values[(y + offset_y) % SIZE][(x + offset_x) % SIZE] for offset_x, offset_y, weight in kernel) / total for x in range(SIZE)] for y in range(SIZE)]
+
+
+@functools.cache
+def isotropic_field(key: str, widths: tuple = ISOTROPIC_WIDTHS) -> tuple:
+    """White noise blurred round at each (width, weight) and summed, then
+    stretched to [0, 1]: smooth, without rows, diagonals or a grid."""
+    white = [[random_unit(key + "/white", x, y) for x in range(SIZE)] for y in range(SIZE)]
+    layers = [(gaussian_blur(white, width), weight) for width, weight in widths]
+    summed = [[sum(layer[y][x] * weight for layer, weight in layers) for x in range(SIZE)] for y in range(SIZE)]
+    lowest = min(min(row) for row in summed)
+    highest = max(max(row) for row in summed)
+    return tuple(tuple((value - lowest) / (highest - lowest) for value in row) for row in summed)
+
+
+def isotropic_noise(key: str, x: int, y: int, amplitude: int) -> int:
+    """isotropic_field as a shift of up to amplitude either way."""
+    return int((isotropic_field(key)[y][x] * 2 - 1) * amplitude)
+
+
 # Colours.
 
 
@@ -223,7 +262,7 @@ def noisy(colour, key: str, amplitude: int, blotch: int = 0) -> list:
 
 
 def stone_texel(colour, key: str, x: int, y: int) -> tuple:
-    return shifted(colour, noise(key, x, y, 10) + smooth_noise(key, x, y, 4, 14))
+    return shifted(colour, noise(key, x, y, 8) + isotropic_noise(key, x, y, 16))
 
 
 def stone_pattern(colour, key: str) -> list:
@@ -231,20 +270,31 @@ def stone_pattern(colour, key: str) -> list:
 
 
 def rock_pattern(colour, key: str) -> list:
-    """Stone with horizontal strata."""
-    return pattern(lambda x, y: shifted(stone_texel(colour, key, x, y), -12 if (y + x // 6) % 5 == 0 else 0))
+    """Stone with horizontal strata (its side keeps its orientation,
+    keep_orientation in blocks.sjson)."""
+
+    def texel(x: int, y: int) -> tuple:
+        base = shifted(colour, noise(key, x, y, 10) + smooth_noise(key, x, y, 4, 14))
+        return shifted(base, -12 if (y + x // 6) % 5 == 0 else 0)
+
+    return pattern(texel)
+
+
+# The share of an ore tile's texels in blobs, and the blobs' width.
+ORE_BLOB_SHARE = 0.2
+ORE_BLOB_WIDTHS = ((1.6, 1.0),)
 
 
 def ore_pattern(colour, key: str, stone) -> list:
-    """Clusters of ore colour over stone."""
+    """Round blobs of ore colour over stone: the highest ORE_BLOB_SHARE of
+    an isotropic field."""
     image = stone_pattern(stone, key + "/stone")
-    for cluster in range(6):
-        centre_x = int(random_unit(key, cluster, 100) * SIZE)
-        centre_y = int(random_unit(key, cluster, 101) * SIZE)
-        for step in range(4):
-            x = (centre_x + int(random_unit(key, cluster, 200 + step) * 3) - 1) % SIZE
-            y = (centre_y + int(random_unit(key, cluster, 300 + step) * 3) - 1) % SIZE
-            image[y][x] = opaque(shifted(colour, noise(key, x, y, 14)))
+    field = isotropic_field(key + "/blob", ORE_BLOB_WIDTHS)
+    threshold = sorted(value for row in field for value in row)[int(SIZE * SIZE * (1 - ORE_BLOB_SHARE))]
+    for y in range(SIZE):
+        for x in range(SIZE):
+            if field[y][x] >= threshold:
+                image[y][x] = opaque(shifted(colour, noise(key, x, y, 14)))
     return image
 
 
@@ -305,17 +355,13 @@ def leaves_pattern(colour, key: str) -> list:
     def texel(x: int, y: int) -> tuple:
         value = random_unit(key, x, y)
         amount = -40 if value < 0.12 else -16 if value < 0.45 else 18 if value > 0.85 else 0
-        return shifted(colour, amount + smooth_noise(key, x, y, 4, 8))
+        return shifted(colour, amount + isotropic_noise(key, x, y, 10))
 
     return pattern(texel)
 
 
 def water_pattern(colour, key: str) -> list:
-    def texel(x: int, y: int) -> tuple:
-        wave = math.sin((x + 2 * y) * 2 * math.pi / SIZE + smooth_noise(key, x, y, 8, 3))
-        return shifted(colour, int(wave * 8) + noise(key, x, y, 3))
-
-    return pattern(texel)
+    return pattern(lambda x, y: shifted(colour, isotropic_noise(key, x, y, 10) + noise(key, x, y, 3)))
 
 
 def tar_pattern(colour, key: str) -> list:
@@ -431,11 +477,24 @@ def cover_pattern(block_id: str, colour) -> list:
     return blades_pattern(colour, block_id, 8, 4, 8)
 
 
+def torch_pattern(stick, flame, key: str) -> list:
+    """A stick two texels wide from the bottom row up to row 6, where the
+    post (POST_HEIGHT in block_shape.odin) ends, and a flame head above
+    it on transparent texels."""
+    image = blank()
+    paint(image, rectangle_mask(7, 6, 8, SIZE - 1), stick, key + "/stick", 6)
+    paint(image, disc_mask(7.5, 3.6, 2.4) | rectangle_mask(7, 0, 8, 2), flame, key + "/flame", 6)
+    fill(image, disc_mask(7.5, 4, 1.1), (255, 244, 200), key + "/core", 4)
+    return image
+
+
 def block_family(block_id: str) -> str:
     """The material family, from the id."""
     words = block_id.split("_")
     if words[-1] == "ore" or block_id == "gold_quartz":
         return "ore"
+    if block_id == "torch":
+        return "torch"
     checks = [
         ("cover", "tuft" in words or "flower" in words or "bush" in words or "reeds" in words or block_id == "tall_grass"),
         ("log", "log" in words),
@@ -484,6 +543,11 @@ def block_files(block_id: str, faces: dict, stone) -> dict:
     family = block_family(block_id)
     if family == "cover":
         return {"": cover_pattern(block_id, faces["side"])}
+    if family == "torch":
+        files = {"": torch_pattern(faces["side"], faces["top"], block_id)}
+        for group in ("top", "bottom"):
+            files["_" + group] = face_pattern("default", faces[group], f"{block_id}/{group}", stone)
+        return files
     if family == "grass":
         return {
             "": dirt_pattern(faces["bottom"], block_id),
@@ -650,17 +714,19 @@ def draw_flask(colour, key: str) -> list:
 
 
 def draw_pickaxe(colour, key: str) -> list:
+    """An upright handle under a crescent head whose tips hang down."""
     image = blank()
-    paint(image, line_mask((4, 13), (11, 5), 0.9), MATERIAL_COLOURS["wood"], key + "/handle", 4)
-    head = {(x, y) for x, y in disc_mask(8.5, 8.5, 7.4) if math.hypot(x - 8.5, y - 8.5) > 4.6 and x + y <= 12 and x - y > -9 and y - x > -9}
+    paint(image, rectangle_mask(7, 4, 8, 14), MATERIAL_COLOURS["wood"], key + "/handle", 4)
+    head = {(x, y) for x, y in disc_mask(7.5, 10, 7.4) if math.hypot(x - 7.5, y - 10) > 4.6 and y <= 7}
     paint(image, head, colour, key + "/head", 4)
     return image
 
 
 def draw_hammer(colour, key: str) -> list:
+    """An upright handle, the head across its top reaching to the right."""
     image = blank()
-    paint(image, line_mask((4, 13), (10, 5), 0.9), MATERIAL_COLOURS["wood"], key + "/handle", 4)
-    paint(image, line_mask((6, 2), (13, 7), 1.6), colour, key + "/head", 4)
+    paint(image, rectangle_mask(5, 5, 6, 14), MATERIAL_COLOURS["wood"], key + "/handle", 4)
+    paint(image, rounded_rectangle_mask(3, 1, 13, 4), colour, key + "/head", 4)
     return image
 
 

@@ -47,6 +47,12 @@
 // variants by id like any block. Placing picks the variant: the upper
 // slab against an underside or high on a side face, stairs rising away
 // from the player and turned by Rotate_Building.
+// keep_orientation (default false, work item 0088) keeps the tile of the
+// block's side faces upright, for textures with an up: bark, the grass
+// fringe, strata, brick courses, the torch stick, the ground cover and
+// the slabs and stairs. Every other face is turned and mirrored per block
+// by the chunk shader, so a field of one block does not repeat its tile
+// in rows; tops and bottoms always are.
 // sound_material (optional, work item 0068, default "stone") picks the
 // footstep sound: footstep_<material> must be in data/sounds/sounds.sjson.
 // The shipped materials are stone, dirt, sand, wood, leaves (leaves and
@@ -80,6 +86,7 @@ blocks = [
 		id = "grass"
 		name_key = "block_grass"
 		solid = true
+		keep_orientation = true
 		hardness_seconds = 0.75
 		tool_tier = 0
 		sound_material = "dirt"
@@ -116,6 +123,7 @@ blocks = [
 		id = "log"
 		name_key = "block_log"
 		solid = true
+		keep_orientation = true
 		hardness_seconds = 1.5
 		tool_tier = 0
 		sound_material = "wood"
@@ -205,6 +213,7 @@ blocks = [
 		id = "spent_rock"
 		name_key = "block_spent_rock"
 		solid = true
+		keep_orientation = true
 		hardness_seconds = 1.5
 		tool_tier = 1
 		texture = {top = [150, 140, 128], side = [150, 140, 128], bottom = [150, 140, 128]}
@@ -277,6 +286,7 @@ blocks = [
 		name_key = "block_torch"
 		shape = "post"
 		solid = false
+		keep_orientation = true
 		hardness_seconds = 0.1
 		tool_tier = 0
 		light_level = 15
@@ -307,6 +317,7 @@ blocks = [
 		id = "brick"
 		name_key = "block_brick"
 		solid = true
+		keep_orientation = true
 		hardness_seconds = 2
 		tool_tier = 1
 		texture = {top = [168, 80, 60], side = [156, 72, 54], bottom = [156, 72, 54]}
@@ -317,6 +328,7 @@ blocks = [
 		id = "slag_heap"
 		name_key = "block_slag_heap"
 		solid = true
+		keep_orientation = true
 		hardness_seconds = 1.5
 		tool_tier = 0
 		sound_material = "dirt"
@@ -378,6 +390,7 @@ blocks = [
 		id = "dry_grass"
 		name_key = "block_dry_grass"
 		solid = true
+		keep_orientation = true
 		hardness_seconds = 0.75
 		tool_tier = 0
 		sound_material = "dirt"
@@ -396,6 +409,7 @@ blocks = [
 		id = "red_rock"
 		name_key = "block_red_rock"
 		solid = true
+		keep_orientation = true
 		hardness_seconds = 1.5
 		tool_tier = 1
 		texture = {top = [172, 84, 56], side = [172, 84, 56], bottom = [172, 84, 56]}
@@ -404,6 +418,7 @@ blocks = [
 		id = "pale_rock"
 		name_key = "block_pale_rock"
 		solid = true
+		keep_orientation = true
 		hardness_seconds = 1.5
 		tool_tier = 1
 		texture = {top = [216, 192, 160], side = [216, 192, 160], bottom = [216, 192, 160]}
@@ -414,6 +429,7 @@ blocks = [
 		id = "birch_log"
 		name_key = "block_birch_log"
 		solid = true
+		keep_orientation = true
 		hardness_seconds = 1.5
 		tool_tier = 0
 		sound_material = "wood"
@@ -432,6 +448,7 @@ blocks = [
 		id = "pine_log"
 		name_key = "block_pine_log"
 		solid = true
+		keep_orientation = true
 		hardness_seconds = 1.5
 		tool_tier = 0
 		sound_material = "wood"
@@ -459,6 +476,7 @@ blocks = [
 		id = "palm_log"
 		name_key = "block_palm_log"
 		solid = true
+		keep_orientation = true
 		hardness_seconds = 1.5
 		tool_tier = 0
 		sound_material = "wood"
@@ -477,6 +495,7 @@ blocks = [
 		id = "dead_log"
 		name_key = "block_dead_log"
 		solid = true
+		keep_orientation = true
 		hardness_seconds = 1.5
 		tool_tier = 0
 		sound_material = "wood"
@@ -489,6 +508,7 @@ blocks = [
 		name_key = "block_stone_slab"
 		shape = "slab"
 		solid = true
+		keep_orientation = true
 		hardness_seconds = 1.5
 		tool_tier = 1
 		texture = {top = [128, 128, 128], side = [128, 128, 128], bottom = [128, 128, 128]}
@@ -498,6 +518,7 @@ blocks = [
 		name_key = "block_stone_stairs"
 		shape = "stairs"
 		solid = true
+		keep_orientation = true
 		hardness_seconds = 1.5
 		tool_tier = 1
 		texture = {top = [128, 128, 128], side = [128, 128, 128], bottom = [128, 128, 128]}
@@ -507,6 +528,7 @@ blocks = [
 		name_key = "block_concrete_slab"
 		shape = "slab"
 		solid = true
+		keep_orientation = true
 		hardness_seconds = 3
 		tool_tier = 1
 		texture = {top = [176, 174, 168], side = [164, 162, 156], bottom = [164, 162, 156]}
@@ -516,6 +538,7 @@ blocks = [
 		name_key = "block_concrete_stairs"
 		shape = "stairs"
 		solid = true
+		keep_orientation = true
 		hardness_seconds = 3
 		tool_tier = 1
 		texture = {top = [176, 174, 168], side = [164, 162, 156], bottom = [164, 162, 156]}
@@ -525,6 +548,7 @@ blocks = [
 		name_key = "block_plank_slab"
 		shape = "slab"
 		solid = true
+		keep_orientation = true
 		hardness_seconds = 1
 		tool_tier = 0
 		sound_material = "wood"
@@ -535,6 +559,7 @@ blocks = [
 		name_key = "block_plank_stairs"
 		shape = "stairs"
 		solid = true
+		keep_orientation = true
 		hardness_seconds = 1
 		tool_tier = 0
 		sound_material = "wood"
@@ -549,6 +574,7 @@ blocks = [
 		name_key = "block_grass_tuft"
 		shape = "cross"
 		solid = false
+		keep_orientation = true
 		hardness_seconds = 0.05
 		tool_tier = 0
 		sound_material = "leaves"
@@ -559,6 +585,7 @@ blocks = [
 		name_key = "block_tall_grass"
 		shape = "cross"
 		solid = false
+		keep_orientation = true
 		hardness_seconds = 0.05
 		tool_tier = 0
 		sound_material = "leaves"
@@ -569,6 +596,7 @@ blocks = [
 		name_key = "block_flower_red"
 		shape = "cross"
 		solid = false
+		keep_orientation = true
 		hardness_seconds = 0.05
 		tool_tier = 0
 		sound_material = "leaves"
@@ -579,6 +607,7 @@ blocks = [
 		name_key = "block_flower_yellow"
 		shape = "cross"
 		solid = false
+		keep_orientation = true
 		hardness_seconds = 0.05
 		tool_tier = 0
 		sound_material = "leaves"
@@ -589,6 +618,7 @@ blocks = [
 		name_key = "block_dead_bush"
 		shape = "cross"
 		solid = false
+		keep_orientation = true
 		hardness_seconds = 0.05
 		tool_tier = 0
 		sound_material = "leaves"
@@ -599,6 +629,7 @@ blocks = [
 		name_key = "block_reeds"
 		shape = "cross"
 		solid = false
+		keep_orientation = true
 		hardness_seconds = 0.05
 		tool_tier = 0
 		sound_material = "leaves"
