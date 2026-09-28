@@ -45,6 +45,7 @@ Raised by the work item notes (0005 to 0008), to be turned into work items when 
 - Refinery stall found by 0050: a refinery whose petroleum gas goes only to a flare stack stops, since the flare burns only above 90 percent of its port and the network evens the fill fractions, so the refinery's gas port never has room for a craft's 45 litres. The oil module works around it; a flare that burns at any fill, or a refinery that waits for less than a whole craft's room, would fix it for players too.
 - Splitter round robin per lane found by 0050: an inserter putting plate, slag, plate, slag on one lane makes the splitter send every plate one way. A round robin per item, or per lane item, would split mixed lanes evenly.
 - Benchmark build time (0050): every placement rebuilds the belt, fluid and electric networks, so size 64 takes minutes to build. Batching the rebuilds until a blueprint's last command would cut it, and would speed the command socket's blueprints too.
+- Deck link against an older glibc (0076): the release binary linked on the couch machine needs GLIBC_2.43 symbol versions (atan2f, asinf, acosf, sqrtf in libm; glibc 2.43 is from 2026, and the Deck was on 2.37 in early 2024). If ldd on the Deck says so, the --target install should link inside a container whose glibc is no newer than the Deck's; the Odin compiler at ~/opt/odin is a static binary (checked 2026-09-28), so it runs in such a container, and tools/build_raylib.sh has the distrobox pattern to copy.
 
 ## Next steps
 
