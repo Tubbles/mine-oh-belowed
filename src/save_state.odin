@@ -5,7 +5,7 @@ import "core:slice"
 
 // The simulation state of a save (entities.bin): every entity pool as
 // plain values, the belt items per cell, the loose items, the vein records and outcrop
-// cells, pending block changes and water updates, statistics, research,
+// cells, pending block changes, water updates and leaf decay, statistics, research,
 // shipments, recipe unlocks, quest state and players. Derived data (belt
 // lines, fluid and electric networks, the entity cell map, vein lookups,
 // entity lights) is rebuilt after reading. The same bytes feed simulation_state_hash.
@@ -169,9 +169,11 @@ write_simulation_state :: proc(bytes: ^[dynamic]byte, state: ^Simulation_State) 
 // file ends where its build's tables ended, so each is read only while
 // bytes are left (read_later_tables) and an older save loads with the
 // newer tables empty, without a format version step. The loose items
-// (work item 0062) are the first.
+// (work item 0062) are the first, the leaf decay queue (work item 0059)
+// the second; its felled list is always empty between ticks.
 write_later_tables :: proc(bytes: ^[dynamic]byte, world: ^World) {
 	write_list(bytes, world.entities.loose_items.items[:])
+	write_list(bytes, world.leaf_decay.updates[:])
 }
 
 // Reading.
@@ -380,6 +382,14 @@ read_later_tables :: proc(reader: ^Byte_Reader, world: ^World) -> bool {
 	if bytes_left(reader^) > 0 {
 		read_list(reader, &world.entities.loose_items.items) or_return
 		drop_gone_loose_items(&world.entities.loose_items.items)
+	}
+	clear_leaf_decay(&world.leaf_decay)
+	if bytes_left(reader^) > 0 {
+		updates := make([dynamic]Leaf_Decay_Update, context.temp_allocator)
+		read_list(reader, &updates) or_return
+		for update in updates {
+			schedule_leaf_decay(&world.leaf_decay, update.position, update.due_tick)
+		}
 	}
 	return true
 }

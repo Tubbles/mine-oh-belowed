@@ -15,9 +15,10 @@ DEEP_STONE_LEVEL :: -24
 CAVE_FLOOR :: -128
 TERRAIN_MINIMUM_HEIGHT :: SEA_LEVEL - 24
 TERRAIN_MAXIMUM_HEIGHT :: SEA_LEVEL + 96
-// Tallest feature above the surface (trunk plus leaves). Chunks wholly
-// above the terrain plus this are air, filled without any noise work.
-FEATURE_MAXIMUM_HEIGHT :: 8
+// Tallest feature above the surface: the tallest trunk plus the most a
+// crown rises above it. Chunks wholly above the terrain plus this are
+// air, filled without any noise work.
+FEATURE_MAXIMUM_HEIGHT :: MAXIMUM_TRUNK_HEIGHT + MAXIMUM_CROWN_RADIUS
 GENERATION_CEILING :: TERRAIN_MAXIMUM_HEIGHT + FEATURE_MAXIMUM_HEIGHT
 
 MINIMUM_TOPSOIL_DEPTH :: 3
@@ -25,9 +26,10 @@ MAXIMUM_TOPSOIL_DEPTH :: 5
 
 // The terrain before work item 0057 was version 1, the shaped terrain
 // with the height and moisture biomes version 2, the climate biomes of
-// work item 0058 version 3. A world saved by an older generator
-// regenerates its unmodified chunks with this one.
-GENERATOR_VERSION :: 3
+// work item 0058 version 3, the tree species of work item 0059 version
+// 4. A world saved by an older generator regenerates its unmodified
+// chunks with this one.
+GENERATOR_VERSION :: 4
 
 // Continental swell: broad lowlands near sea level, and raised masses
 // where the continental noise lies above RAISED_START, fully raised from

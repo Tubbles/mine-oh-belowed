@@ -24,6 +24,9 @@
 // as the wetland's mud block and mining that gives the mud back (work item
 // 0058). The other climate biome blocks give dirt (frozen dirt, dry grass)
 // or stone (red and pale rock); snow drops itself.
+// The tree species' logs give the log item and their leaves the leaves
+// item (work item 0059), so recipes see one kind of wood. Saplings fall
+// from decaying leaves after a felling and have no use yet.
 // cannot_recycle (optional) keeps the recycler from taking the item even
 // when a recipe makes it: raw materials, ore, spoils, slag, mud, crushed
 // ore, bricks and concrete.
@@ -60,7 +63,7 @@
 // materials (aluminium, silicon, gold) well above their inputs.
 items = [
 	// Raw materials
-	{id = "log", name_key = "item_log", category = "raw", stack_size = 50, places_block = "log", fuel_megajoules = 2, cannot_recycle = true, price = 1}
+	{id = "log", name_key = "item_log", category = "raw", stack_size = 50, places_block = "log", mined_from = ["birch_log", "pine_log", "palm_log", "dead_log"], fuel_megajoules = 2, cannot_recycle = true, price = 1}
 	{id = "stone", name_key = "item_stone", category = "raw", stack_size = 50, places_block = "stone", mined_from = ["red_rock", "pale_rock"], cannot_recycle = true, price = 1}
 	{id = "dirt", name_key = "item_dirt", category = "raw", stack_size = 50, places_block = "dirt", mined_from = ["grass", "frozen_dirt", "dry_grass"], cannot_recycle = true, price = 1}
 	{id = "sand", name_key = "item_sand", category = "raw", stack_size = 50, places_block = "sand", cannot_recycle = true, price = 1}
@@ -83,6 +86,7 @@ items = [
 	{id = "bauxite_low_grade", name_key = "item_bauxite_low_grade", category = "raw", stack_size = 50, cannot_recycle = true, price = 1}
 	{id = "gold_ore", name_key = "item_gold_ore", category = "raw", stack_size = 50, also_mined_from = ["gold_quartz"], cannot_recycle = true, price = 8}
 	{id = "quartz", name_key = "item_quartz", category = "raw", stack_size = 50, mined_from = ["gold_quartz"], cannot_recycle = true, price = 3}
+	{id = "sapling", name_key = "item_sapling", category = "raw", stack_size = 50, cannot_recycle = true, price = 1}
 	{id = "mud", name_key = "item_mud", category = "raw", stack_size = 50, places_block = "mud", cannot_recycle = true, price = 1}
 	{id = "slag", name_key = "item_slag", category = "raw", stack_size = 100, places_block = "slag_heap", cannot_recycle = true, price = 1}
 	// Processed materials and intermediates
@@ -175,7 +179,7 @@ items = [
 	{id = "bore_drill", name_key = "item_bore_drill", category = "machine", stack_size = 10, price = 460}
 	{id = "electrolyser", name_key = "item_electrolyser", category = "machine", stack_size = 10, price = 230}
 	// Blocks that drop themselves
-	{id = "leaves", name_key = "item_leaves", category = "block", stack_size = 50, places_block = "leaves", price = 1}
+	{id = "leaves", name_key = "item_leaves", category = "block", stack_size = 50, places_block = "leaves", mined_from = ["birch_leaves", "pine_leaves", "acacia_leaves", "palm_leaves"], price = 1}
 	{id = "tar", name_key = "item_tar", category = "block", stack_size = 50, places_block = "tar", price = 1}
 	{id = "deep_stone", name_key = "item_deep_stone", category = "block", stack_size = 50, places_block = "deep_stone", price = 1}
 	{id = "spent_rock", name_key = "item_spent_rock", category = "block", stack_size = 50, places_block = "spent_rock", price = 1}

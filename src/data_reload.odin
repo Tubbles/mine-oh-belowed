@@ -7,8 +7,8 @@ import "core:strings"
 
 // Loading the game data, at start and again on a content reload (work
 // item 0054). The content tables (blocks, items, fluids, machines,
-// recipes, technologies, quests, contracts, developer kits, biomes and
-// veins) load into one arena, so a reload frees the data it replaces in
+// recipes, technologies, quests, contracts, developer kits, biomes, tree
+// species and veins) load into one arena, so a reload frees the data it replaces in
 // one go once nothing points into it any more.
 //
 // A content reload runs between frames, never during a tick: the new data
@@ -72,6 +72,10 @@ load_game_tables :: proc(data_directory: string, config: Game_Config, string_ent
 		return {}, {}, false
 	}
 	content.veins = veins
+	if _, found := find_item_id(content.items, base_generator.sapling_item); !found {
+		log_printf("error: invalid %s: sapling_item %q is not an item", TREES_FILE_NAME, base_generator.sapling_item)
+		return {}, {}, false
+	}
 	refresh_content_names(&content)
 	return content, base_generator, true
 }

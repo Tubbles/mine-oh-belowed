@@ -359,4 +359,70 @@ blocks = [
 		tool_tier = 1
 		texture = {top = [216, 192, 160], side = [216, 192, 160], bottom = [216, 192, 160]}
 	}
+	// Tree species (work item 0059, data/trees.sjson). Every log drops the
+	// log item and every leaves block the leaves item (items.sjson).
+	{
+		id = "birch_log"
+		name_key = "block_birch_log"
+		solid = true
+		hardness_seconds = 1.5
+		tool_tier = 0
+		texture = {top = [204, 192, 160], side = [222, 218, 204], bottom = [204, 192, 160]}
+	}
+	{
+		id = "birch_leaves"
+		name_key = "block_birch_leaves"
+		solid = true
+		hardness_seconds = 0.3
+		tool_tier = 0
+		texture = {top = [124, 180, 74], side = [116, 172, 68], bottom = [104, 154, 60]}
+	}
+	{
+		id = "pine_log"
+		name_key = "block_pine_log"
+		solid = true
+		hardness_seconds = 1.5
+		tool_tier = 0
+		texture = {top = [132, 102, 66], side = [72, 52, 34], bottom = [132, 102, 66]}
+	}
+	{
+		id = "pine_leaves"
+		name_key = "block_pine_leaves"
+		solid = true
+		hardness_seconds = 0.3
+		tool_tier = 0
+		texture = {top = [36, 86, 50], side = [32, 80, 46], bottom = [28, 70, 40]}
+	}
+	{
+		id = "acacia_leaves"
+		name_key = "block_acacia_leaves"
+		solid = true
+		hardness_seconds = 0.3
+		tool_tier = 0
+		texture = {top = [122, 132, 52], side = [114, 124, 48], bottom = [102, 110, 42]}
+	}
+	{
+		id = "palm_log"
+		name_key = "block_palm_log"
+		solid = true
+		hardness_seconds = 1.5
+		tool_tier = 0
+		texture = {top = [178, 152, 102], side = [142, 118, 78], bottom = [178, 152, 102]}
+	}
+	{
+		id = "palm_leaves"
+		name_key = "block_palm_leaves"
+		solid = true
+		hardness_seconds = 0.3
+		tool_tier = 0
+		texture = {top = [72, 152, 58], side = [66, 144, 54], bottom = [58, 128, 48]}
+	}
+	{
+		id = "dead_log"
+		name_key = "block_dead_log"
+		solid = true
+		hardness_seconds = 1.5
+		tool_tier = 0
+		texture = {top = [152, 146, 138], side = [114, 110, 104], bottom = [152, 146, 138]}
+	}
 ]

@@ -9,8 +9,6 @@ Generation_Blocks :: struct {
 	stone:       Block_Id,
 	deep_stone:  Block_Id,
 	water:       Block_Id,
-	log:         Block_Id,
-	leaves:      Block_Id,
 	sand:        Block_Id,
 	landing_pad: Block_Id,
 	gold_quartz: Block_Id,
@@ -24,6 +22,11 @@ Generator :: struct {
 	registry:                Block_Registry,
 	blocks:                  Generation_Blocks,
 	biomes:                  []Biome,
+	// The tree species (data/trees.sjson), the blocks felling recognises
+	// and the item decaying leaves drop as a sapling.
+	species:                 []Tree_Species,
+	tree_blocks:             Tree_Blocks,
+	sapling_item:            string,
 	veins:                   Vein_Tables,
 	// The largest densities over all biomes, so that a feature cell whose
 	// roll exceeds them is rejected before any noise is sampled.
@@ -37,8 +40,8 @@ Generator :: struct {
 }
 
 resolve_generation_blocks :: proc(registry: Block_Registry) -> (blocks: Generation_Blocks, problem: string) {
-	names := [8]string{"stone", "deep_stone", "water", "log", "leaves", "sand", "landing_pad", "gold_quartz"}
-	targets := [8]^Block_Id{&blocks.stone, &blocks.deep_stone, &blocks.water, &blocks.log, &blocks.leaves, &blocks.sand, &blocks.landing_pad, &blocks.gold_quartz}
+	names := [6]string{"stone", "deep_stone", "water", "sand", "landing_pad", "gold_quartz"}
+	targets := [6]^Block_Id{&blocks.stone, &blocks.deep_stone, &blocks.water, &blocks.sand, &blocks.landing_pad, &blocks.gold_quartz}
 	for name, index in names {
 		found: bool
 		if targets[index]^, found = find_block_id(registry, name); !found {
@@ -60,6 +63,7 @@ make_generator :: proc(
 	seed: u64,
 	registry: Block_Registry,
 	biomes_file: Biomes_File,
+	trees_file: Trees_File,
 	veins_file: Veins_File,
 	allocator := context.allocator,
 ) -> (
@@ -73,7 +77,12 @@ make_generator :: proc(
 	if generator.blocks, problem = resolve_generation_blocks(registry); problem != "" {
 		return {}, problem
 	}
-	if generator.biomes, problem = resolve_biomes(biomes_file, registry, allocator); problem != "" {
+	if generator.species, problem = resolve_tree_species_table(trees_file, registry, allocator); problem != "" {
+		return {}, problem
+	}
+	generator.tree_blocks = make_tree_blocks(generator.species, allocator)
+	generator.sapling_item = trees_file.sapling_item
+	if generator.biomes, problem = resolve_biomes(biomes_file, registry, generator.species, allocator); problem != "" {
 		return {}, problem
 	}
 	if generator.veins, problem = resolve_vein_tables(veins_file, registry, generator.biomes, allocator); problem != "" {
@@ -122,9 +131,10 @@ load_veins_file :: proc(data_directory: string, allocator := context.allocator) 
 
 load_generator :: proc(data_directory: string, registry: Block_Registry, seed: u64, allocator := context.allocator) -> (generator: Generator, ok: bool) {
 	biomes_file := load_biomes_file(data_directory, allocator) or_return
+	trees_file := load_trees_file(data_directory, allocator) or_return
 	veins_file := load_veins_file(data_directory, allocator) or_return
 	problem: string
-	generator, problem = make_generator(seed, registry, biomes_file, veins_file, allocator)
+	generator, problem = make_generator(seed, registry, biomes_file, trees_file, veins_file, allocator)
 	if problem != "" {
 		log_printf("error: invalid world generation data in %s: %s", data_directory, problem)
 		return {}, false

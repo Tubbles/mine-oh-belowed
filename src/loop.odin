@@ -210,7 +210,7 @@ simulation_tick :: proc(state: ^Simulation_State, content_tables: Simulation_Con
 	observe_player_holdings(&state.world.statistics, state.players[:], true)
 	observe_full_inventories(&state.world.statistics, state.players[:])
 	tick_quests(&state.quests, simulation_quest_context(state, content), &state.world.entities)
-	tick_world(&state.world, content.blocks, state.tick)
+	tick_world(&state.world, content.blocks, state.tick, simulation_tree_felling(content))
 }
 
 // Opens the recipes of a technology the labs finished this tick and says

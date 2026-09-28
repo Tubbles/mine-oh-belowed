@@ -13,6 +13,9 @@ BIOMES_FILE_NAME :: "biomes.sjson"
 // layer_block (optional) alternates with filler_block every
 // layer_thickness blocks of absolute height (badlands). map_color tints
 // the biome on the map, name_key names it in data/strings/en.sjson.
+// trees (work item 0059) lists the species its trees are drawn from, by
+// weight; clearing_share is about the share of the biome left without
+// trees (column_in_clearing).
 Biome_Definition :: struct {
 	id:               string,
 	name_key:         string,
@@ -28,6 +31,8 @@ Biome_Definition :: struct {
 	layer_thickness:  i32,
 	tree_density:     f32,
 	boulder_density:  f32,
+	trees:            []Biome_Tree_Definition,
+	clearing_share:   f32,
 	pit_block:          string,
 	pit_maximum_height: i32,
 	map_color:        [3]u8,
@@ -52,6 +57,7 @@ Biome :: struct {
 	filler_block: Block_Id,
 	pit_block:    Block_Id,
 	layer_block:  Block_Id,
+	trees:        []Biome_Tree,
 }
 
 parse_biomes_file :: proc(data: []byte, allocator := context.allocator) -> (file: Biomes_File, error: json.Unmarshal_Error) {
@@ -87,11 +93,15 @@ validate_biome_definition :: proc(definition: Biome_Definition) -> string {
 		return fmt.tprintf("biome %q has a layer_thickness below 1", definition.id)
 	case !density_in_range(definition.tree_density) || !density_in_range(definition.boulder_density):
 		return fmt.tprintf("biome %q has a density outside 0 to 1", definition.id)
+	case definition.tree_density > 0 && len(definition.trees) == 0:
+		return fmt.tprintf("biome %q has trees but no trees list", definition.id)
+	case !density_in_range(definition.clearing_share):
+		return fmt.tprintf("biome %q has a clearing_share outside 0 to 1", definition.id)
 	}
 	return ""
 }
 
-resolve_biome :: proc(definition: Biome_Definition, registry: Block_Registry) -> (biome: Biome, problem: string) {
+resolve_biome :: proc(definition: Biome_Definition, registry: Block_Registry, species: []Tree_Species, allocator := context.allocator) -> (biome: Biome, problem: string) {
 	if problem = validate_biome_definition(definition); problem != "" {
 		return {}, problem
 	}
@@ -114,16 +124,19 @@ resolve_biome :: proc(definition: Biome_Definition, registry: Block_Registry) ->
 			return {}, fmt.tprintf("biome %q names an unknown layer_block", definition.id)
 		}
 	}
+	if biome.trees, problem = resolve_biome_trees(definition, species, allocator); problem != "" {
+		return {}, problem
+	}
 	return biome, ""
 }
 
-resolve_biomes :: proc(file: Biomes_File, registry: Block_Registry, allocator := context.allocator) -> (biomes: []Biome, problem: string) {
+resolve_biomes :: proc(file: Biomes_File, registry: Block_Registry, species: []Tree_Species, allocator := context.allocator) -> (biomes: []Biome, problem: string) {
 	if len(file.biomes) == 0 {
 		return nil, "no biomes defined"
 	}
 	biomes = make([]Biome, len(file.biomes), allocator)
 	for definition, index in file.biomes {
-		if biomes[index], problem = resolve_biome(definition, registry); problem != "" {
+		if biomes[index], problem = resolve_biome(definition, registry, species, allocator); problem != "" {
 			return nil, problem
 		}
 	}

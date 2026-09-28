@@ -17,6 +17,11 @@
 // cliffs show bands (badlands).
 // tree_density and boulder_density are the chance, 0 to 1, that a feature
 // cell holds a tree or a boulder rooted in this biome.
+// trees (work item 0059) lists the species (data/trees.sjson) the
+// biome's trees are drawn from, each with a whole number weight. A biome
+// with a tree_density above 0 needs the list. clearing_share (optional, 0
+// to 1, default 0) is about the share of the biome a clearing noise keeps
+// free of trees, so forests have open patches and plains have groves.
 // pit_block (optional, work item 0030) replaces top_block in the low spots
 // of the biome: columns at most pit_maximum_height above sea level whose
 // four neighbours stand no lower. The tar flats get tar pits.
@@ -65,6 +70,7 @@ biomes = [
 		top_block = "snow"
 		filler_block = "frozen_dirt"
 		tree_density = 0
+		trees = [{species = "pine", weight = 1}]
 		boulder_density = 0.2
 		map_color = [235, 240, 250]
 	}
@@ -78,6 +84,7 @@ biomes = [
 		top_block = "grass"
 		filler_block = "stone"
 		tree_density = 0.02
+		trees = [{species = "pine", weight = 2}, {species = "birch", weight = 1}]
 		boulder_density = 0.3
 		map_color = [96, 150, 96]
 	}
@@ -94,6 +101,7 @@ biomes = [
 		layer_block = "pale_rock"
 		layer_thickness = 4
 		tree_density = 0
+		trees = [{species = "dead_tree", weight = 1}]
 		boulder_density = 0.2
 		map_color = [204, 96, 56]
 	}
@@ -108,6 +116,7 @@ biomes = [
 		top_block = "dry_grass"
 		filler_block = "dirt"
 		tree_density = 0.005
+		trees = [{species = "acacia", weight = 3}, {species = "dead_tree", weight = 1}]
 		boulder_density = 0.05
 		map_color = [196, 184, 96]
 	}
@@ -122,6 +131,7 @@ biomes = [
 		top_block = "mud"
 		filler_block = "dirt"
 		tree_density = 0.03
+		trees = [{species = "oak", weight = 1}, {species = "birch", weight = 2}]
 		boulder_density = 0
 		map_color = [56, 124, 112]
 	}
@@ -135,6 +145,7 @@ biomes = [
 		top_block = "stone"
 		filler_block = "stone"
 		tree_density = 0.05
+		trees = [{species = "pine", weight = 1}]
 		boulder_density = 0.5
 		map_color = [128, 116, 96]
 	}
@@ -165,6 +176,7 @@ biomes = [
 		top_block = "sand"
 		filler_block = "sand"
 		tree_density = 0
+		trees = [{species = "dead_tree", weight = 1}]
 		boulder_density = 0.15
 		map_color = [232, 184, 100]
 	}
@@ -178,6 +190,7 @@ biomes = [
 		top_block = "sand"
 		filler_block = "sand"
 		tree_density = 0
+		trees = [{species = "palm", weight = 1}]
 		boulder_density = 0
 		map_color = [246, 232, 186]
 	}
@@ -192,6 +205,7 @@ biomes = [
 		top_block = "sand"
 		filler_block = "sand"
 		tree_density = 0
+		trees = [{species = "palm", weight = 1}]
 		boulder_density = 0
 		map_color = [224, 208, 150]
 	}
@@ -207,6 +221,8 @@ biomes = [
 		top_block = "grass"
 		filler_block = "dirt"
 		tree_density = 0.7
+		trees = [{species = "oak", weight = 3}, {species = "birch", weight = 1}]
+		clearing_share = 0.35
 		boulder_density = 0.05
 		map_color = [32, 112, 44]
 	}
@@ -219,7 +235,9 @@ biomes = [
 		maximum_moisture = 1
 		top_block = "grass"
 		filler_block = "dirt"
-		tree_density = 0.06
+		tree_density = 0.15
+		trees = [{species = "oak", weight = 1}, {species = "birch", weight = 1}]
+		clearing_share = 0.5
 		boulder_density = 0.2
 		map_color = [124, 190, 80]
 	}

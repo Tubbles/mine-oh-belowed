@@ -47,6 +47,8 @@ World :: struct {
 	// Block light sources that are entities, by cell (world_light.odin).
 	entity_lights:  map[World_Coordinate]u8,
 	water:          Water_Flow,
+	// Leaves waiting to decay after a felling (tree_felling.odin).
+	leaf_decay:     Leaf_Decay,
 	entities:       Entities,
 	// Modified chunks that are not loaded, serialised (world_serialize.odin):
 	// unloaded ones and those read from a save. Streaming inserts these
@@ -242,6 +244,7 @@ destroy_world :: proc(world: ^World) {
 	destroy_lighting(&world.lighting)
 	delete(world.entity_lights)
 	destroy_water_flow(&world.water)
+	destroy_leaf_decay(&world.leaf_decay)
 	destroy_entities(&world.entities)
 	destroy_statistics(world.statistics)
 }

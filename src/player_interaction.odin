@@ -106,8 +106,9 @@ mining_tool_line :: proc(blocks: Block_Registry, items: Item_Registry, block: Bl
 // The block's items go into the inventory, hotbar first: its drop and an
 // extra drop (gold quartz gives quartz and gold ore). What does not fit
 // spills at the block's cell as loose items (loose_item.odin), and the
-// full inventory is reported once for the block.
-mine_block :: proc(world: ^World, registry: Block_Registry, items: Item_Registry, player: ^Player, holding: bool, tick_rate: int, cheat_speed: bool) -> Player_Events {
+// full inventory is reported once for the block. A log fells the tree
+// above it (tree_felling.odin).
+mine_block :: proc(world: ^World, registry: Block_Registry, items: Item_Registry, felling: Tree_Felling, player: ^Player, holding: bool, tick_rate: int, cheat_speed: bool) -> Player_Events {
 	block_id := world_get_block(world, player.target.block)
 	if holding && player.target.hit {
 		record_mining_tick(&world.statistics, block_id)
@@ -122,6 +123,9 @@ mine_block :: proc(world: ^World, registry: Block_Registry, items: Item_Registry
 		return {}
 	}
 	record_block_mined(&world.statistics)
+	if block_is_tree_log(felling.blocks, block_id) {
+		fell_tree(world, registry, felling, player.target.block)
+	}
 	spilled := false
 	for drop in block_drop_stacks(items, block_id) {
 		if leftover := inventory_add(player.inventory, items, drop.item, 1); leftover > 0 {
@@ -171,7 +175,7 @@ mine_with_player :: proc(world: ^World, content: Simulation_Content, player: ^Pl
 	if player.target.entity != NO_ENTITY {
 		return mine_entity(world, content, player, holding, tick_rate)
 	}
-	return mine_block(world, content.blocks, content.items, player, holding, tick_rate, cheat_speed)
+	return mine_block(world, content.blocks, content.items, simulation_tree_felling(content), player, holding, tick_rate, cheat_speed)
 }
 
 // A block may go into a cell that is not solid, holds no entity and that

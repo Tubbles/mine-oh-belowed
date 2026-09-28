@@ -28,6 +28,8 @@ Generation_Purpose :: enum u8 {
 	Warp_Z,
 	// The climate of work item 0058.
 	Temperature,
+	// The forest clearings of work item 0059.
+	Clearings,
 }
 
 Purpose_Seeds :: [Generation_Purpose]u64

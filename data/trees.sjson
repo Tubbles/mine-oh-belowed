@@ -1,0 +1,83 @@
+// Tree species (work item 0059). Biomes pick them by weight
+// (biomes.sjson trees). name_key names the species in
+// data/strings/en.sjson.
+// log_block and leaves_block are blocks.sjson ids. A species with crown
+// "none" (a dead tree) has no leaves and needs no leaves_block.
+// The trunk is minimum_trunk_height to maximum_trunk_height blocks tall
+// (1 to 16), chosen per tree.
+// crown is one of:
+//   round    layers from two below the trunk top to two above it, widest
+//            (crown_radius) at and just below the top
+//   conical  from crown_radius near the bottom up to 1 at the top and a
+//            tip above it, alternating full and narrower layers (a fir)
+//   flat     a disc of crown_radius at the trunk top and a disc of radius
+//            1 above it
+//   none     the trunk alone
+// crown_radius is 1 to 4 for a crowned species.
+// roots = true grows log blocks beside the foot of trunks of 8 or more,
+// in two or three of the four directions.
+// sapling_item is the items.sjson id that decaying leaves drop after a
+// felling (src/tree_felling.odin).
+sapling_item = "sapling"
+species = [
+	{
+		id = "oak"
+		name_key = "tree_oak"
+		log_block = "log"
+		leaves_block = "leaves"
+		minimum_trunk_height = 6
+		maximum_trunk_height = 10
+		crown = "round"
+		crown_radius = 3
+		roots = true
+	}
+	{
+		id = "birch"
+		name_key = "tree_birch"
+		log_block = "birch_log"
+		leaves_block = "birch_leaves"
+		minimum_trunk_height = 8
+		maximum_trunk_height = 12
+		crown = "round"
+		crown_radius = 2
+	}
+	{
+		id = "pine"
+		name_key = "tree_pine"
+		log_block = "pine_log"
+		leaves_block = "pine_leaves"
+		minimum_trunk_height = 10
+		maximum_trunk_height = 16
+		crown = "conical"
+		crown_radius = 3
+		roots = true
+	}
+	{
+		id = "acacia"
+		name_key = "tree_acacia"
+		log_block = "log"
+		leaves_block = "acacia_leaves"
+		minimum_trunk_height = 5
+		maximum_trunk_height = 8
+		crown = "flat"
+		crown_radius = 4
+	}
+	{
+		id = "palm"
+		name_key = "tree_palm"
+		log_block = "palm_log"
+		leaves_block = "palm_leaves"
+		minimum_trunk_height = 8
+		maximum_trunk_height = 12
+		crown = "flat"
+		crown_radius = 2
+	}
+	{
+		id = "dead_tree"
+		name_key = "tree_dead_tree"
+		log_block = "dead_log"
+		minimum_trunk_height = 4
+		maximum_trunk_height = 8
+		crown = "none"
+	}
+]

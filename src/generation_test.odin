@@ -22,9 +22,10 @@ make_test_registry :: proc() -> Block_Registry {
 
 make_test_generator :: proc(seed: u64) -> Generator {
 	biomes, biomes_error := parse_biomes_file(#load("../data/biomes.sjson"), context.temp_allocator)
+	trees, trees_error := parse_trees_file(#load("../data/trees.sjson"), context.temp_allocator)
 	veins, veins_error := parse_veins_file(#load("../data/veins.sjson"), context.temp_allocator)
-	assert(biomes_error == nil && veins_error == nil)
-	generator, problem := make_generator(seed, make_test_registry(), biomes, veins, context.temp_allocator)
+	assert(biomes_error == nil && trees_error == nil && veins_error == nil)
+	generator, problem := make_generator(seed, make_test_registry(), biomes, trees, veins, context.temp_allocator)
 	assert(problem == "", problem)
 	return generator
 }
@@ -260,7 +261,8 @@ expect_column_surface :: proc(t: ^testing.T, generator: ^Generator, chunk: ^Chun
 	surface := chunk_get_block(chunk, {local.x, surface_y, local.z})
 	above := chunk_get_block(chunk, {local.x, surface_y + 1, local.z})
 	testing.expect(t, surface != AIR_BLOCK)
-	is_feature := above == generator.blocks.log || above == generator.blocks.leaves || above == generator.blocks.stone
+	is_tree := block_is_tree_log(generator.tree_blocks, above) || block_is_tree_leaves(generator.tree_blocks, above)
+	is_feature := is_tree || above == generator.blocks.stone
 	testing.expectf(t, !block_is_solid(registry, above) || is_feature, "solid block %d above the surface at %v", above, local)
 }
 
@@ -283,11 +285,12 @@ test_tree_across_border_matches_from_both_chunks :: proc(t: ^testing.T) {
 			for x in box.minimum.x ..= box.maximum.x {
 				position := World_Coordinate{x, y, z}
 				block := cached_block_at(&generator, &cache, position)
-				if tree_log_contains(tree, position) {
-					testing.expect_value(t, block, generator.blocks.log)
+				species := generator.species[tree.species]
+				if tree_trunk_contains(tree, position) {
+					testing.expect_value(t, block, species.log_block)
 				} else if tree_leaves_contain(tree, position) {
 					testing.expectf(t, block != AIR_BLOCK, "air inside the leaves at %v", position)
-					if world_to_chunk_coordinate(position).x != world_to_chunk_coordinate(tree.root).x && block == generator.blocks.leaves {
+					if world_to_chunk_coordinate(position).x != world_to_chunk_coordinate(tree.root).x && block == species.leaves_block {
 						leaves_in_neighbour += 1
 					}
 				}
@@ -316,7 +319,7 @@ find_border_tree :: proc(generator: ^Generator) -> (tree: Tree, found: bool) {
 		for cell_x in i32(-60) ..< 60 {
 			veins := veins_near_box(generator, {cell_x, cell_z} * TREE_CELL_SIZE - FEATURE_REACH, ({cell_x, cell_z} + 1) * TREE_CELL_SIZE + FEATURE_REACH, context.temp_allocator)
 			candidate, exists := tree_in_cell(generator, {cell_x, cell_z}, veins[:])
-			if exists && candidate.root.x %% CHUNK_SIZE == CHUNK_SIZE - 1 {
+			if exists && candidate.crown != .None && candidate.root.x %% CHUNK_SIZE == CHUNK_SIZE - 1 {
 				return candidate, true
 			}
 		}

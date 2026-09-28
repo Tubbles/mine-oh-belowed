@@ -290,3 +290,32 @@ test_cheat_speed_mines_every_tier :: proc(t: ^testing.T) {
 	testing.expect_value(t, effective_tool_tier(player, items, true), highest_tool_tier(items.items))
 	testing.expect(t, highest_tool_tier(items.items) >= 3)
 }
+
+// Mining the lowest log of a tree fells it: the log goes to the player,
+// the logs above fall as loose items and the crown is queued for decay.
+@(test)
+test_mining_a_log_fells_the_tree :: proc(t: ^testing.T) {
+	generator := make_test_generator(DEFAULT_WORLD_SEED)
+	content := make_test_content()
+	content.generator = &generator
+	world := make_loose_item_test_world(content)
+	defer destroy_leaf_decay(&world.leaf_decay)
+	tree := make_test_tree(&generator, "birch", 9)
+	place_test_tree(&world, &generator, tree)
+	player := make_test_player(content.blocks, {3.5, 1, 0.5})
+	player.target = Raycast_Hit{hit = true, block = tree.root + {0, 1, 0}}
+	felling := simulation_tree_felling(content)
+	for _ in 0 ..< 600 {
+		mine_block(&world, content.blocks, content.items, felling, &player, true, TEST_TICK_RATE, false)
+		if world_get_block(&world, player.target.block) == AIR_BLOCK {
+			break
+		}
+	}
+	log_item := test_item(content.items, "log")
+	testing.expect_value(t, player.inventory.slots[0], Item_Stack{item = log_item, count = 1})
+	for height in i32(1) ..= tree.trunk_height {
+		testing.expect_value(t, world_get_block(&world, tree.root + {0, height, 0}), AIR_BLOCK)
+	}
+	testing.expect_value(t, len(world.entities.loose_items.items), int(tree.trunk_height) - 1)
+	testing.expect(t, len(world.leaf_decay.felled) > 0)
+}

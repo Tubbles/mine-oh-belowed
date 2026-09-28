@@ -145,20 +145,39 @@ A column takes the first biome in `data/biomes.sjson` whose height (relative to 
 | --- | --- | --- | --- | --- |
 | Lake | below sea level | any | any | Sand |
 | Mountains | 48 and up | any | any | Stone, boulders, no trees |
-| Cold barrens | 0 and up | any | -0.45 and below | Snow over frozen dirt, boulders, no trees |
-| Highland | 24 to 47 | 0 and up | any | Grass over stone, few trees, boulders |
-| Badlands | 6 to 47 | -0.2 and below | 0.3 and up | Red rock layered with pale rock every 4 blocks, no trees |
-| Steppe | 0 to 23 | -0.35 to 0.1 | 0.2 and up | Dry grass over dirt, rare trees |
-| Wetland | 0 to 3 | 0.6 and up | -0.2 and up | Mud over dirt, few trees |
-| Hills | 24 to 47 | any (dry side, the highland takes the wet) | any | Stone, few trees, boulders |
+| Cold barrens | 0 and up | any | -0.45 and below | Snow over frozen dirt, boulders, no trees (pine listed at density 0) |
+| Highland | 24 to 47 | 0 and up | any | Grass over stone, few pines and birches, boulders |
+| Badlands | 6 to 47 | -0.2 and below | 0.3 and up | Red rock layered with pale rock every 4 blocks, no trees (dead tree listed at density 0) |
+| Steppe | 0 to 23 | -0.35 to 0.1 | 0.2 and up | Dry grass over dirt, rare acacias and dead trees |
+| Wetland | 0 to 3 | 0.6 and up | -0.2 and up | Mud over dirt, few birches and oaks |
+| Hills | 24 to 47 | any (dry side, the highland takes the wet) | any | Stone, few pines, boulders |
 | Tar flats | 0 to 5 | -0.45 and below | 0.1 and up | Tar over dirt, tar pits in low spots |
-| Desert | 0 and up | -0.35 and below | 0.1 and up | Sand |
-| Beach | 0 to 1 | any | any | Sand, no trees |
-| Coastal dunes | 1 to 3 | 0.3 and below | -0.2 and up | Sand, no trees |
-| Forest | 0 and up | 0.3 and up | -0.45 to 0.6 | Grass, dense trees |
-| Plains | any | any | any | Grass, scattered trees |
+| Desert | 0 and up | -0.35 and below | 0.1 and up | Sand, no trees (dead tree listed at density 0) |
+| Beach | 0 to 1 | any | any | Sand, no trees (palm listed at density 0) |
+| Coastal dunes | 1 to 3 | 0.3 and below | -0.2 and up | Sand, no trees (palm listed at density 0) |
+| Forest | 0 and up | 0.3 and up | -0.45 to 0.6 | Grass, dense oaks and birches with clearings |
+| Plains | any | any | any | Grass, groves of oaks and birches |
 
 The climate biome blocks drop dirt (frozen dirt, dry grass) or stone (red and pale rock); snow drops itself and mud gives the mud item, which places it again.
+
+## Trees
+
+Tree species (work item 0059) live in `data/trees.sjson`; each biome lists the species its trees are drawn from, by weight, in `data/biomes.sjson` (`trees`), and a biome with a `tree_density` above 0 must have the list. The shapes are pure procedures in `src/generation_features.odin`. Every log block drops the `log` item and every leaves block the `leaves` item, so recipes see one kind of wood.
+
+| Species | Log | Leaves | Trunk | Crown | Roots |
+| --- | --- | --- | --- | --- | --- |
+| Oak | log | leaves | 6 to 10 | round, radius 3 | yes |
+| Birch | birch log (pale bark) | birch leaves (light green) | 8 to 12 | round, radius 2 | no |
+| Pine | pine log (dark bark) | pine needles (dark green) | 10 to 16 | conical, radius 3 | yes |
+| Acacia | log | acacia leaves (olive) | 5 to 8 | flat, radius 4 | no |
+| Palm | palm log | palm fronds | 8 to 12 | flat, radius 2 | no |
+| Dead tree | dead wood (grey) | none | 4 to 8 | none | no |
+
+- Crowns: round runs from two layers below the trunk top to two above, widest at and just below the top; conical steps down from its radius near the bottom to 1 at the top in pairs of layers (the upper one of each pair narrower) with a tip block above, starting a third of the trunk up and at least 6 blocks above the root on a rooted tree, so no needle lies within the leaf support distance of a root; flat is a disc at the trunk top and a disc of radius 1 above it. Discs have their corners cut.
+- Roots: log blocks beside the lowest trunk block in two or three of the four directions, on trunks of 8 or more of a rooted species.
+- Biome lists: forest oak 3 and birch 1; plains oak 1 and birch 1; highland pine 2 and birch 1; hills pine; cold barrens pine; steppe acacia 3 and dead tree 1; wetland oak 1 and birch 2; badlands and desert dead tree; beach and coastal dunes palm; lake, mountains and tar flats none. Biomes at density 0 grow nothing; their list names the species for when a density is set.
+- Clearings: a noise of wavelength 48 blocks keeps about `clearing_share` of a biome free of trees: forest 0.35, plains 0.5 (with its density raised from 0.06 to 0.15, so its trees stand in groves). Trees also keep off vein outcrops and at least 4 blocks off the landing pad, which clears only 10 blocks above itself.
+- Felling (`src/tree_felling.odin`): mining a log drops every log straight above it as loose `log` items and queues the leaves near the felled column for decay. A queued leaf decays 1 to 4 seconds later unless a log lies within 4 blocks (Manhattan), then queues its leaves neighbours. One decaying leaf in 8 drops a `leaves` item and one in 20 a `sapling` (no use yet). Leaves the player places only decay when a log near them is felled.
 
 ## Veins (phases 1 to 4)
 

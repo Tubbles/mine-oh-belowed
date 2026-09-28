@@ -794,3 +794,34 @@ test_save_swaps_a_staged_directory_into_place :: proc(t: ^testing.T) {
 	testing.expect(t, !os.exists(previous))
 	testing.expect(t, os.exists(join_save_path(target, WORLD_FILE_NAME)))
 }
+
+// The leaf decay queue is the second later table: it round trips, and a
+// save that ends after the loose items loads with an empty queue.
+@(test)
+test_leaf_decay_queue_round_trips :: proc(t: ^testing.T) {
+	content := make_save_test_content()
+	generator := make_test_generator(DEFAULT_WORLD_SEED)
+	original := make_save_test_simulation(&generator, content)
+	defer destroy_simulation(&original)
+	schedule_leaf_decay(&original.world.leaf_decay, {4, 12, -3}, 130)
+	schedule_leaf_decay(&original.world.leaf_decay, {5, 12, -3}, 95)
+	header := make_save_header()
+	with_table := encode_entities(&original, content, header)
+	table := make([dynamic]byte, context.temp_allocator)
+	write_list(&table, original.world.leaf_decay.updates[:])
+	without_table := with_table[:len(with_table) - len(table)]
+
+	remap: Content_Remap
+	newer := make_save_test_simulation(&generator, content)
+	defer destroy_simulation(&newer)
+	testing.expect_value(t, decode_entities(&newer, content, with_table, "entities.bin", header, &remap), "")
+	testing.expect(t, slice.equal(newer.world.leaf_decay.updates[:], original.world.leaf_decay.updates[:]))
+	testing.expect(t, World_Coordinate{5, 12, -3} in newer.world.leaf_decay.scheduled)
+
+	older := make_save_test_simulation(&generator, content)
+	defer destroy_simulation(&older)
+	schedule_leaf_decay(&older.world.leaf_decay, {1, 1, 1}, 1)
+	testing.expect_value(t, decode_entities(&older, content, without_table, "entities.bin", header, &remap), "")
+	testing.expect_value(t, len(older.world.leaf_decay.updates), 0)
+	testing.expect_value(t, len(older.world.leaf_decay.scheduled), 0)
+}
