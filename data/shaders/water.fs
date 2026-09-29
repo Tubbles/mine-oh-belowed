@@ -22,6 +22,11 @@
 // Per block variation (work item 0088, as in chunk.fs): the brightness
 // jitter only. The tile keeps its orientation, since the flow scrolls
 // along the face's own axes.
+//
+// Every integer literal carries the u suffix (work item 0105,
+// shader_source_test.odin): Winlator's Gladio appends .0 to a bare
+// integer on any line with a float variable, and hash >> 8.0 does not
+// compile.
 
 in vec2 fragment_texcoord;
 in vec2 fragment_tile_origin;
@@ -97,18 +102,18 @@ uint variation_hash(ivec3 cell)
 {
     uvec3 bits = uvec3(cell);
     uint hash = (bits.x * 73856093u) ^ (bits.y * 19349663u) ^ (bits.z * 83492791u);
-    hash ^= hash >> 16;
+    hash ^= hash >> 16u;
     hash *= 0x7feb352du;
-    hash ^= hash >> 15;
+    hash ^= hash >> 15u;
     hash *= 0x846ca68bu;
-    hash ^= hash >> 16;
+    hash ^= hash >> 16u;
     return hash;
 }
 
 // As in chunk.fs.
 float variation_brightness(uint hash)
 {
-    return 1.0 + brightness_jitter * (float((hash >> 8) & 255u) / 127.5 - 1.0);
+    return 1.0 + brightness_jitter * (float((hash >> 8u) & 255u) / 127.5 - 1.0);
 }
 
 // 0 to 1.

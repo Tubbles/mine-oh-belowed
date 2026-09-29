@@ -41,6 +41,11 @@
 // texture_periodicity_test.odin), so the offset shows no seam inside the
 // block, and two neighbours whose orientations mirror across their shared
 // edge still show different crops, not a symmetric motif.
+//
+// Every integer literal carries the u suffix (work item 0105,
+// shader_source_test.odin): Winlator's Gladio appends .0 to a bare
+// integer on any line with a float variable, and hash >> 8.0 does not
+// compile.
 
 in vec2 fragment_texcoord;
 in vec2 fragment_tile_origin;
@@ -108,11 +113,11 @@ uint variation_hash(ivec3 cell)
 {
     uvec3 bits = uvec3(cell);
     uint hash = (bits.x * 73856093u) ^ (bits.y * 19349663u) ^ (bits.z * 83492791u);
-    hash ^= hash >> 16;
+    hash ^= hash >> 16u;
     hash *= 0x7feb352du;
-    hash ^= hash >> 15;
+    hash ^= hash >> 15u;
     hash *= 0x846ca68bu;
-    hash ^= hash >> 16;
+    hash ^= hash >> 16u;
     return hash;
 }
 
@@ -144,7 +149,7 @@ vec2 oriented_tile_texcoord(vec2 texcoord, uint hash)
 // tile_offset: bits 3 to 6 for x, 7 to 10 for y, whole texels.
 vec2 tile_offset(uint hash)
 {
-    return vec2(float((hash >> 3) & 15u), float((hash >> 7) & 15u));
+    return vec2(float((hash >> 3u) & 15u), float((hash >> 7u) & 15u));
 }
 
 // varied_tile_texcoord: oriented, clamped, slid by the offset and
@@ -158,7 +163,7 @@ vec2 varied_tile_texcoord(vec2 texcoord, uint hash)
 // texture_variation_brightness: bits 8 to 15.
 float variation_brightness(uint hash)
 {
-    return 1.0 + brightness_jitter * (float((hash >> 8) & 255u) / 127.5 - 1.0);
+    return 1.0 + brightness_jitter * (float((hash >> 8u) & 255u) / 127.5 - 1.0);
 }
 
 void main()
