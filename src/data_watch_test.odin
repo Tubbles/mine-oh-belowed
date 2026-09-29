@@ -4,6 +4,7 @@ import "core:os"
 import "core:strings"
 import "core:testing"
 import "core:time"
+import fsw "shared:fsw"
 
 // Watcher tests write only under a temporary directory they create and
 // remove.
@@ -91,6 +92,45 @@ test_watch_data_setting_reads_and_writes_by_name :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_data_events_fall_into_the_categories_of_their_files :: proc(t: ^testing.T) {
+	directory := join_save_path("/games", "mine-oh-belowed", "data")
+	cases := [?]struct {
+		event:    fsw.Event,
+		category: Data_File_Category,
+	} {
+		{{.Modified, join_save_path(directory, STRINGS_DIRECTORY, STRINGS_FILE_NAME), false}, .Strings},
+		{{.Renamed, join_save_path(directory, CHUNK_SHADER_DIRECTORY, "chunk.fs"), false}, .Shaders},
+		{{.Added, join_save_path(directory, "textures", "blocks", "grass_top.png"), false}, .Textures},
+		{{.Removed, join_save_path(directory, ITEMS_FILE_NAME), false}, .Content},
+		{{.Added, join_save_path(directory, "textures", "blocks"), true}, .Ignored},
+		{{.Modified, join_save_path(directory, "blueprints", "base.sjson"), false}, .Ignored},
+		{{.Modified, join_save_path("/games", "mine-oh-belowed", "data2", ITEMS_FILE_NAME), false}, .Ignored},
+		{{.Overflow, "", false}, .Ignored},
+	}
+	events: [len(cases)]fsw.Event
+	for entry, index in cases {
+		category := data_event_category(directory, entry.event)
+		testing.expectf(t, category == entry.category, "%s is %v", entry.event.path, category)
+		events[index] = entry.event
+	}
+	testing.expect_value(t, data_event_categories(directory, events[:]), Data_File_Categories{.Strings, .Shaders, .Textures, .Content})
+}
+
+// Polls every 10 ms until the categories include expected or two seconds
+// passed, so the test does not depend on how fast the events arrive.
+wait_for_data_events :: proc(watch: ^Data_Watch, expected: Data_File_Categories, now: time.Time) -> (changed: Data_File_Categories) {
+	start := time.tick_now()
+	for time.tick_since(start) < 2 * time.Second {
+		changed += poll_data_watch(watch, now)
+		if expected <= changed {
+			return changed
+		}
+		time.sleep(10 * time.Millisecond)
+	}
+	return changed
+}
+
+@(test)
 test_watcher_notices_changed_files :: proc(t: ^testing.T) {
 	directory, error := os.make_directory_temp("", "mine-oh-belowed-watch-test-*", context.temp_allocator)
 	assert(error == nil)
@@ -102,37 +142,40 @@ test_watcher_notices_changed_files :: proc(t: ^testing.T) {
 	write_test_file(join_save_path(directory, "blueprints", "base.sjson"), "commands = []")
 	watch: Data_Watch
 	defer destroy_data_watch(&watch)
+	testing.expect(t, open_data_watch(&watch, directory))
 	now := time.unix(1_700_000_000, 0)
-	testing.expect_value(t, poll_data_watch(&watch, directory, now), Data_File_Categories{})
-	testing.expect_value(t, len(watch.stamps), 3)
-	testing.expect(t, !data_watch_poll_due(watch, time.time_add(now, DATA_WATCH_INTERVAL / 2)))
-	testing.expect(t, data_watch_poll_due(watch, time.time_add(now, DATA_WATCH_INTERVAL)))
+	testing.expect_value(t, poll_data_watch(&watch, now), Data_File_Categories{})
 
-	// Same size, only the modification time moves.
-	testing.expect_value(t, os.change_times(strings_path, now, now), nil)
-	testing.expect_value(t, poll_data_watch(&watch, directory, now), Data_File_Categories{.Strings})
-	testing.expect_value(t, poll_data_watch(&watch, directory, now), Data_File_Categories{})
+	write_test_file(strings_path, `hello = "Hello"`)
+	testing.expect_value(t, wait_for_data_events(&watch, {.Strings}, now), Data_File_Categories{.Strings})
 
 	write_test_file(items_path, "items = [ ]")
 	write_test_file(join_save_path(directory, "blueprints", "base.sjson"), "commands = [ ]")
-	testing.expect_value(t, poll_data_watch(&watch, directory, now), Data_File_Categories{.Content})
+	testing.expect_value(t, wait_for_data_events(&watch, {.Content}, now), Data_File_Categories{.Content})
 	testing.expect(t, watch.content_changed && watch.content_settling)
-	testing.expect_value(t, poll_data_watch(&watch, directory, now), Data_File_Categories{})
-	testing.expect(t, watch.content_changed && !watch.content_settling)
+	testing.expect_value(t, watch.last_content_event, now)
+
+	// Saved through a rename, as many editors do.
+	temporary_path := join_save_path(directory, STRINGS_DIRECTORY, "en.sjson.tmp")
+	write_test_file(temporary_path, `hello = "Hey"`)
+	testing.expect_value(t, os.rename(temporary_path, strings_path), nil)
+	testing.expect_value(t, wait_for_data_events(&watch, {.Strings}, now), Data_File_Categories{.Strings})
 
 	testing.expect_value(t, os.remove(strings_path), nil)
-	testing.expect_value(t, poll_data_watch(&watch, directory, now), Data_File_Categories{.Strings})
+	testing.expect_value(t, wait_for_data_events(&watch, {.Strings}, now), Data_File_Categories{.Strings})
+	testing.expect_value(t, poll_data_watch(&watch, now), Data_File_Categories{})
 }
 
 @(test)
-test_slow_data_scan_switches_the_watch_off :: proc(t: ^testing.T) {
-	testing.expect(t, !data_watch_scan_too_slow(DATA_WATCH_SLOW_SCAN))
-	testing.expect(t, data_watch_scan_too_slow(DATA_WATCH_SLOW_SCAN + time.Millisecond))
-	testing.expect_value(
-		t,
-		data_watch_slow_scan_line(469, 2_345 * time.Millisecond + 600 * time.Microsecond),
-		"data: scanning 469 files took 2345 ms, the data watch is off for this run",
-	)
-	watch := Data_Watch{disabled = true}
-	testing.expect(t, !data_watch_poll_due(watch, time.unix(1_700_000_000, 0)))
+test_content_settles_a_second_after_its_last_event :: proc(t: ^testing.T) {
+	now := time.unix(1_700_000_000, 0)
+	watch := Data_Watch {
+		content_changed    = true,
+		content_settling   = true,
+		last_content_event = now,
+	}
+	testing.expect(t, !data_watch_content_settled(watch, time.time_add(now, DATA_WATCH_CONTENT_SETTLE - time.Millisecond)))
+	testing.expect(t, data_watch_content_settled(watch, time.time_add(now, DATA_WATCH_CONTENT_SETTLE)))
+	watch.content_settling = false
+	testing.expect(t, !data_watch_content_settled(watch, time.time_add(now, 2 * DATA_WATCH_CONTENT_SETTLE)))
 }

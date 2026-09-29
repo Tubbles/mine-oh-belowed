@@ -21,3 +21,7 @@ On the phone (Winlator, 2026-09-29) developer mode drops the game to a frame eve
 ## Implemented
 
 2026-09-29: `poll_data_watch` times the scan with `time.tick_now` and `time.tick_since`; a scan over `DATA_WATCH_SLOW_SCAN` sets `disabled` and logs the `data: scanning` line, `data_watch_poll_due` returns false while `disabled`, and `update_data_watch` keeps `disabled` when developer mode is switched off, so the watch stays off for the run. `data_watch_scan_too_slow` and `data_watch_slow_scan_line` are tested in `data_watch_test.odin`. Verified here: `./build.sh check`, `./build.sh check-windows` and `./build.sh test` pass. The phone and couch checks are the user's.
+
+## Replaced
+
+2026-09-29: work item 0111 replaced the scan with operating system file events (`shared/fsw`), so there is no slow scan to switch off any more. `DATA_WATCH_SLOW_SCAN`, `disabled` and the `data: scanning` line are gone.

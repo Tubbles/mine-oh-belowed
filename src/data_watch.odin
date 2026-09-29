@@ -1,29 +1,28 @@
 package game
 
 import "core:fmt"
-import "core:os"
+import "core:path/filepath"
 import "core:strings"
 import "core:time"
+import fsw "shared:fsw"
 
-// Watching the data directory while the game runs (work item 0054). Once
-// a second the main thread stats every file under the data directory and
-// compares modification time and size with the previous scan; a file
-// added, changed or removed marks its category. Presentation files
-// (strings, bindings, developer kits, shaders, fonts, models, textures,
-// sounds, the UI theme and icons) reload in place at
-// once (hot_reload.odin). Content files only mark the data as changed,
-// shown on the Developer screen and in the log, until a reload is asked
-// for (the reload command, the Developer screen, F8), or, with watch_data
-// all, once a poll finds them unchanged again, so a half saved file is
-// not loaded.
-// A scan slower than DATA_WATCH_SLOW_SCAN switches the watch off for the
-// rest of the run with one log line (work item 0110): on the phone
-// (Winlator) each stat costs milliseconds and the frame waits for the
-// scan.
+// Watching the data directory while the game runs (work items 0054 and
+// 0111). The operating system reports the changes (inotify on Linux,
+// ReadDirectoryChangesW on Windows) through the vendored odin-fsw
+// (shared/fsw); nothing is scanned or stat'ed. Every frame the main thread
+// takes the events since the frame before, and a file added, changed,
+// renamed or removed marks its category. Presentation files (strings,
+// bindings, developer kits, shaders, fonts, models, textures, sounds, the
+// UI theme and icons) reload in place at once (hot_reload.odin). Content
+// files only mark the data as changed, shown on the Developer screen and
+// in the log, until a reload is asked for (the reload command, the
+// Developer screen, F8), or, with watch_data all, once a second passes
+// without another content event, so a half saved file is not loaded.
+// A watcher that cannot be opened logs one line and leaves the watch off
+// for the run.
 // The simulation never sees the watcher: reloads run between frames.
 
-DATA_WATCH_INTERVAL :: 1 * time.Second
-DATA_WATCH_SLOW_SCAN :: 50 * time.Millisecond
+DATA_WATCH_CONTENT_SETTLE :: 1 * time.Second
 CHUNK_SHADER_DIRECTORY :: "shaders"
 
 // The watch_data setting and --watch-data.
@@ -65,23 +64,17 @@ Data_File_Categories :: bit_set[Data_File_Category]
 
 PRESENTATION_CATEGORIES :: Data_File_Categories{.Strings, .Bindings, .Developer_Kits, .Shaders, .Fonts, .Models, .Textures, .Sounds, .Theme}
 
-Data_File_Stamp :: struct {
-	modification_time: time.Time,
-	size:              i64,
-}
-
 Data_Watch :: struct {
-	started:          bool,
-	last_poll:        time.Time,
-	// By path relative to the data directory, with / between names. The
-	// keys are owned.
-	stamps:           map[string]Data_File_Stamp,
+	// Recursive over the data directory while open is set.
+	watcher:            fsw.Watcher_Recursive,
+	open:               bool,
+	// The watcher could not be opened; no more tries this run.
+	unavailable:        bool,
 	// Content files changed since the content was last loaded.
-	content_changed:  bool,
-	// Content files changed in the latest poll.
-	content_settling: bool,
-	// A scan was too slow; no more polls this run.
-	disabled:         bool,
+	content_changed:    bool,
+	// Content files changed and the settle has not passed yet.
+	content_settling:   bool,
+	last_content_event: time.Time,
 }
 
 // "" for the setting's value; the command line names only the three modes.
@@ -172,95 +165,74 @@ top_level_data_file_category :: proc(name: string) -> Data_File_Category {
 	return .Ignored
 }
 
-// Every regular file under directory, in the temp allocator. Directories
-// that cannot be read are left out.
-scan_data_files :: proc(directory: string) -> map[string]Data_File_Stamp {
-	files := make(map[string]Data_File_Stamp, context.temp_allocator)
-	scan_data_directory(&files, directory, "")
-	return files
+
+// Logs a line and leaves the watch off for the run when the operating
+// system refuses the watcher.
+open_data_watch :: proc(watch: ^Data_Watch, data_directory: string) -> bool {
+	watcher, error := fsw.watch_dir_recursive(data_directory)
+	if error != .None {
+		watch.unavailable = true
+		log_printf("%s", data_watch_open_failed_line(data_directory, error))
+		return false
+	}
+	watch.watcher = watcher
+	watch.open = true
+	return true
 }
 
-scan_data_directory :: proc(files: ^map[string]Data_File_Stamp, directory, prefix: string) {
-	entries, error := os.read_all_directory_by_path(directory, context.temp_allocator)
-	if error != nil {
-		return
-	}
-	for entry in entries {
-		relative := prefix == "" ? entry.name : strings.concatenate({prefix, "/", entry.name}, context.temp_allocator)
-		#partial switch entry.type {
-		case .Directory:
-			scan_data_directory(files, entry.fullpath, relative)
-		case .Regular:
-			files[relative] = Data_File_Stamp{entry.modification_time, entry.size}
-		}
-	}
+data_watch_open_failed_line :: proc(directory: string, error: fsw.Error) -> string {
+	return fmt.tprintf("data: cannot watch %s: %v", directory, error)
 }
 
-// The categories of the files added, changed or removed between the scans.
-changed_data_categories :: proc(previous, current: map[string]Data_File_Stamp) -> (changed: Data_File_Categories) {
-	for path, stamp in current {
-		if previous_stamp, found := previous[path]; !found || previous_stamp != stamp {
-			changed += {data_file_category(path)}
-		}
+// Closes the watcher; a watch that could not be opened stays off.
+destroy_data_watch :: proc(watch: ^Data_Watch) {
+	if watch.open {
+		fsw.destroy(watch.watcher)
 	}
-	for path in previous {
-		if path not_in current {
-			changed += {data_file_category(path)}
-		}
+	watch^ = {unavailable = watch.unavailable}
+}
+
+// The categories of the files touched since the call before.
+poll_data_watch :: proc(watch: ^Data_Watch, now: time.Time) -> Data_File_Categories {
+	events := fsw.get_events(&watch.watcher, context.temp_allocator)
+	changed := data_event_categories(watch.watcher.path, events)
+	if .Content in changed {
+		watch.content_changed = true
+		watch.content_settling = true
+		watch.last_content_event = now
+	}
+	return changed
+}
+
+data_event_categories :: proc(watched_directory: string, events: []fsw.Event) -> (changed: Data_File_Categories) {
+	for event in events {
+		changed += {data_event_category(watched_directory, event)}
 	}
 	return changed - {.Ignored}
 }
 
-destroy_data_watch :: proc(watch: ^Data_Watch) {
-	for path in watch.stamps {
-		delete(path)
+// Every event kind counts: editors save through a rename as often as
+// through a write.
+data_event_category :: proc(watched_directory: string, event: fsw.Event) -> Data_File_Category {
+	if event.is_dir {
+		return .Ignored
 	}
-	delete(watch.stamps)
-	watch^ = {}
+	relative, inside := data_relative_path(watched_directory, event.path)
+	return inside ? data_file_category(relative) : .Ignored
 }
 
-replace_data_stamps :: proc(watch: ^Data_Watch, scanned: map[string]Data_File_Stamp) {
-	for path in watch.stamps {
-		delete(path)
+// fsw reports absolute paths under the absolute watched directory. The
+// result uses / between names.
+data_relative_path :: proc(directory, path: string) -> (relative: string, inside: bool) {
+	prefix := strings.concatenate({directory, filepath.SEPARATOR_STRING}, context.temp_allocator)
+	if !strings.has_prefix(path, prefix) {
+		return "", false
 	}
-	clear(&watch.stamps)
-	for path, stamp in scanned {
-		watch.stamps[strings.clone(path)] = stamp
-	}
+	relative, _ = strings.replace_all(path[len(prefix):], filepath.SEPARATOR_STRING, "/", context.temp_allocator)
+	return relative, true
 }
 
-// The first call records the files; later ones return what changed since
-// the call before.
-poll_data_watch :: proc(watch: ^Data_Watch, data_directory: string, now: time.Time) -> Data_File_Categories {
-	scan_start := time.tick_now()
-	scanned := scan_data_files(data_directory)
-	scan_duration := time.tick_since(scan_start)
-	if data_watch_scan_too_slow(scan_duration) {
-		watch.disabled = true
-		log_printf("%s", data_watch_slow_scan_line(len(scanned), scan_duration))
-	}
-	changed := watch.started ? changed_data_categories(watch.stamps, scanned) : {}
-	replace_data_stamps(watch, scanned)
-	watch.started = true
-	watch.last_poll = now
-	if .Content in changed {
-		watch.content_changed = true
-	}
-	watch.content_settling = .Content in changed
-	return changed
-}
-
-data_watch_scan_too_slow :: proc(duration: time.Duration) -> bool {
-	return duration > DATA_WATCH_SLOW_SCAN
-}
-
-data_watch_slow_scan_line :: proc(file_count: int, duration: time.Duration) -> string {
-	return fmt.tprintf("data: scanning %d files took %d ms, the data watch is off for this run", file_count, i64(duration / time.Millisecond))
-}
-
-data_watch_poll_due :: proc(watch: Data_Watch, now: time.Time) -> bool {
-	if watch.disabled {
-		return false
-	}
-	return !watch.started || time.diff(watch.last_poll, now) >= DATA_WATCH_INTERVAL
+// A whole DATA_WATCH_CONTENT_SETTLE passed since the last content event.
+data_watch_content_settled :: proc(watch: Data_Watch, now: time.Time) -> bool {
+	return watch.content_settling && time.diff(watch.last_content_event, now) >= DATA_WATCH_CONTENT_SETTLE
 }

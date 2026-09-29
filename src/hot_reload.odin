@@ -239,27 +239,24 @@ apply_presentation_changes :: proc(state: ^Frame_State, changed: Data_File_Categ
 
 // The watcher.
 
-// Once a second while watching is on. Content changes are only announced,
-// except with watch_data all, where a poll that finds the content files
-// unchanged again asks for the reload.
+// Every frame while watching is on, the events since the frame before.
+// Content changes are only announced, except with watch_data all, where a
+// second without another content event asks for the reload.
 update_data_watch :: proc(state: ^Frame_State) {
 	watch := &state.data_watch
 	mode := effective_watch_data_mode(state.watch_data_flag, state.settings.watch_data, developer_mode_on(state))
 	if mode == .Off {
-		if watch.started {
-			// A watch switched off by a slow scan stays off for the run.
-			disabled := watch.disabled
+		if watch.open {
 			destroy_data_watch(watch)
-			watch.disabled = disabled
 		}
 		return
 	}
-	now := time.now()
-	if !data_watch_poll_due(watch^, now) {
+	if !watch.open && (watch.unavailable || !open_data_watch(watch, state.data_directory)) {
 		return
 	}
-	was_settling, content_was_changed := watch.content_settling, watch.content_changed
-	changed := poll_data_watch(watch, state.data_directory, now)
+	now := time.now()
+	content_was_changed := watch.content_changed
+	changed := poll_data_watch(watch, now)
 	apply_presentation_changes(state, changed)
 	if .Restart in changed {
 		report_reload(state, text("reload_restart_needed"))
@@ -267,8 +264,11 @@ update_data_watch :: proc(state: ^Frame_State) {
 	if .Content in changed && !content_was_changed {
 		report_reload(state, text("reload_content_changed"))
 	}
-	if mode == .All && was_settling && !watch.content_settling && watch.content_changed {
-		state.reload_requested = true
+	if data_watch_content_settled(watch^, now) {
+		watch.content_settling = false
+		if mode == .All && watch.content_changed {
+			state.reload_requested = true
+		}
 	}
 }
 
