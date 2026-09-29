@@ -128,6 +128,18 @@ when ODIN_OS == .Windows {
 		"system:User32.lib",
 		"system:Shell32.lib",
 	}
+} else when ODIN_OS == .Linux && ODIN_PLATFORM_SUBTARGET == .Android {
+	// Ours, not in the Odin toolchain's copy (work item 0113, README.md):
+	// raylib for Android arm64 with OpenGL ES 3.0, built by
+	// tools/build_raylib.sh --android.
+	foreign import lib {
+		"../android/libraylib.a",
+		"system:log",
+		"system:android",
+		"system:EGL",
+		"system:GLESv3",
+		"system:OpenSLES",
+	}
 } else when ODIN_OS == .Linux  {
 	when ODIN_ARCH == .arm64 {
 		foreign import lib {

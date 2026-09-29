@@ -19,12 +19,19 @@ package raylib
 // libGL or opengl32 (work item 0104, the gl line in the log). Call it after
 // InitWindow.
 
-import "core:c"
+// require: on Android nothing in this file uses core:c or the foreign
+// import below, and -vet refuses an unused import.
+@(require) import "core:c"
 
-// GLFW is inside raylib's static library on both systems. On Windows
-// (work item 0102) the MSVC build from raylib's release, see README.md.
+// GLFW is inside raylib's static library on both desktop systems. On
+// Windows (work item 0102) the MSVC build from raylib's release, see
+// README.md. The Android archive (work item 0113) has no GLFW, so the
+// procedures below are declared only off Android: a call from the game
+// fails at compile time there, not at link time.
 when ODIN_OS == .Windows {
 	foreign import lib "windows/raylib.lib"
+} else when ODIN_OS == .Linux && ODIN_PLATFORM_SUBTARGET == .Android {
+	@(require) foreign import lib "android/libraylib.a"
 } else {
 	foreign import lib "linux/libraylib.a"
 }
@@ -32,10 +39,12 @@ when ODIN_OS == .Windows {
 GLFW_PLATFORM_WAYLAND :: 0x00060003
 GLFW_PLATFORM_X11 :: 0x00060004
 
-@(default_calling_convention = "c")
-foreign lib {
-	glfwGetPlatform :: proc() -> c.int ---
-	glfwGetCurrentContext :: proc() -> rawptr ---
-	glfwGetWindowSize :: proc(window: rawptr, width, height: ^c.int) ---
-	glfwGetProcAddress :: proc(name: cstring) -> rawptr ---
+when ODIN_PLATFORM_SUBTARGET != .Android {
+	@(default_calling_convention = "c")
+	foreign lib {
+		glfwGetPlatform :: proc() -> c.int ---
+		glfwGetCurrentContext :: proc() -> rawptr ---
+		glfwGetWindowSize :: proc(window: rawptr, width, height: ^c.int) ---
+		glfwGetProcAddress :: proc(name: cstring) -> rawptr ---
+	}
 }
