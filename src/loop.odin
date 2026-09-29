@@ -1094,11 +1094,12 @@ destroy_command_frame_state :: proc(state: ^Frame_State) {
 
 // Listens while developer mode is on (--dev or the setting), and stops
 // when the setting is switched off. A failure to listen is logged once.
+// Does nothing where there is no command socket (Windows, 0108).
 update_command_server_open :: proc(state: ^Frame_State) {
 	server := &state.command_server
 	wanted := state.content.developer_mode || state.settings.developer_mode
 	switch {
-	case wanted && server.listening == -1 && !server.open_failed:
+	case COMMAND_SOCKET_SUPPORTED && wanted && server.listening == -1 && !server.open_failed:
 		problem := state.command_socket_path == "" ? "no directory for it (set XDG_RUNTIME_DIR, XDG_STATE_HOME or HOME)" : open_command_server(server, state.command_socket_path)
 		if problem != "" {
 			log_printf("error: command socket: %s", problem)

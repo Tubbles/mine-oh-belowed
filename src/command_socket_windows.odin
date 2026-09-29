@@ -3,8 +3,10 @@ package game
 
 // The Windows side of the command socket (work item 0102): no Unix domain
 // sockets, so the server never opens. The procedures the frame loop calls
-// exist with the POSIX side's names and signatures; open_command_server
-// returns the problem the loop logs once, the rest do nothing. No
+// exist with the POSIX side's names and signatures and do nothing. The
+// frame loop never calls open_command_server here, since
+// COMMAND_SOCKET_SUPPORTED is false, so developer mode logs no socket
+// line. The stub still returns a problem for completeness. No
 // posix package here: its import alone links the static C runtime
 // (libucrt.lib), which clashes with raylib's release library.
 
@@ -17,6 +19,8 @@ Command_Server :: struct {
 	open_failed: bool,
 	tick_client: u64,
 }
+
+COMMAND_SOCKET_SUPPORTED :: false
 
 make_command_server :: proc() -> Command_Server {
 	return Command_Server{listening = -1}

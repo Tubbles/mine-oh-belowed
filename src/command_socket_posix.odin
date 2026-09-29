@@ -11,6 +11,9 @@ import "core:sys/posix"
 // domain stream socket. Excluded from the Windows build by the tag above,
 // since core:sys/posix links the static C runtime there (work item 0102).
 
+// The frame loop opens the socket only where there is one.
+COMMAND_SOCKET_SUPPORTED :: true
+
 // Bytes a client may send without a newline before it is dropped.
 MAXIMUM_COMMAND_LINE_BYTES :: 64 * 1024
 COMMAND_SOCKET_BACKLOG :: 8
