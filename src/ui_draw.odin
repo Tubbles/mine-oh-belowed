@@ -79,7 +79,7 @@ upload_ui_image :: proc(images: ^Ui_Image_Cache, command: Draw_Command) {
 			mipmaps = 1,
 			format  = .UNCOMPRESSED_R8G8B8A8,
 		}
-		images.texture = rl.LoadTextureFromImage(image)
+		images.texture = load_rgba_texture(image)
 	} else {
 		rl.UpdateTexture(images.texture, raw_data(command.pixels))
 	}

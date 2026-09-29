@@ -206,7 +206,7 @@ upload_disc_texture :: proc(size: int = DISC_TEXTURE_SIZE, edge_texels: f32 = DI
 		mipmaps = 1,
 		format  = .UNCOMPRESSED_R8G8B8A8,
 	}
-	texture := rl.LoadTextureFromImage(image)
+	texture := load_rgba_texture(image)
 	rl.SetTextureFilter(texture, .BILINEAR)
 	return texture
 }

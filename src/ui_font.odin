@@ -303,13 +303,40 @@ sync_font_cache :: proc(cache: ^Font_Cache, settings: Settings, pixels_per_unit:
 	}
 }
 
+// raylib's padding around each glyph in a TrueType atlas
+// (FONT_TTF_DEFAULT_CHARS_PADDING in rtext.c).
+FONT_GLYPH_PADDING :: 4
+
+// The font LoadFontEx would build, with the atlas uploaded as RGBA
+// (load_rgba_texture): raylib's two-channel atlas relies on a texture
+// swizzle Gladio drops, so its glyphs render in red boxes on the phone
+// (0106). A zero glyphCount means the file could not be read or has no
+// glyphs. UnloadFont frees what this allocates through raylib.
+load_font_file :: proc(path: string, pixel_size: i32, code_points: []rune) -> rl.Font {
+	path_c := strings.clone_to_cstring(path, context.temp_allocator)
+	data_size: i32
+	data := rl.LoadFileData(path_c, &data_size)
+	if data == nil {
+		return {}
+	}
+	defer rl.UnloadFileData(data)
+	font := rl.Font{baseSize = pixel_size, glyphPadding = FONT_GLYPH_PADDING}
+	font.glyphs = rl.LoadFontData(data, data_size, pixel_size, raw_data(code_points), i32(len(code_points)), .DEFAULT, &font.glyphCount)
+	if font.glyphs == nil || font.glyphCount == 0 {
+		return {}
+	}
+	atlas := rl.GenImageFontAtlas(font.glyphs, &font.recs, font.glyphCount, pixel_size, FONT_GLYPH_PADDING, 0)
+	font.texture = load_rgba_texture(atlas)
+	rl.UnloadImage(atlas)
+	return font
+}
+
 // A file raylib cannot read gives its default font, which UnloadFont
-// leaves alone.
+// leaves alone. That fallback keeps raylib's two-channel atlas.
 load_cached_font :: proc(cache: ^Font_Cache, key: Font_Key) -> rl.Font {
 	path := font_file_path(cache.fonts_directory, cache.families[key.family], key.weight)
-	path_c := strings.clone_to_cstring(path, context.temp_allocator)
-	font := rl.LoadFontEx(path_c, key.pixel_size, raw_data(cache.code_points), i32(len(cache.code_points)))
-	if font.glyphCount == 0 || font.texture.id == rl.GetFontDefault().texture.id {
+	font := load_font_file(path, key.pixel_size, cache.code_points)
+	if font.glyphCount == 0 {
 		log_printf("error: cannot load the font %s, drawing with raylib's default", path)
 		font = rl.GetFontDefault()
 	}

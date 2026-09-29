@@ -80,7 +80,7 @@ make_belt_texture :: proc() -> rl.Texture2D {
 			}
 		}
 	}
-	texture := rl.LoadTextureFromImage(image)
+	texture := load_rgba_texture(image)
 	rl.SetTextureWrap(texture, .REPEAT)
 	return texture
 }

@@ -22,6 +22,7 @@ Follows the project structure from the global preferences: `doc/` (detail docs),
 - One `game` package under `src/` split into files by concern. New packages only for leaf utilities with no back references, because Odin forbids import cycles.
 - The simulation is deterministic: fixed 60 Hz tick, seeded RNG, no wall clock and no float accumulation in simulation state where fixed point works. Rendering interpolates, the simulation never reads the frame time.
 - Shaders: every integer literal carries the `u` suffix (`hash >> 8u`), since Winlator's Gladio turns bare integers into floats on lines with float variables (0105). `shader_source_test.odin` enforces it.
+- Textures go up as RGBA through `load_rgba_texture` (`render_atlas.odin`), never through `rl.LoadTextureFromImage` directly: gray and gray alpha formats render red on the phone, because Gladio drops raylib's texture swizzle (0106).
 - Gamepad first: every UI must work with focus navigation and with the trackpad pointer. Keyboard is only for string fields.
 - Documentation is updated in the same commit as the behaviour it describes. Decisions go to `doc/log/YYYY-MM-DD.md`.
 - No perceivable repetition (a major principle, `DESIGN.md`): sounds recur in clusters with long varying pauses and varied pitch, never on a fixed period; textures must not stripe or tile visibly, so they are isotropic or varied per block by a hash; animation cadences follow the world at a natural rate and never speed up with cheat speed. Every new sound, animation and texture is checked against this before it lands.

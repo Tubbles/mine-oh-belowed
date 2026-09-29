@@ -222,7 +222,7 @@ upload_atlas :: proc(registry: Block_Registry, layout: Atlas_Layout, data_direct
 		mipmaps = 1,
 		format  = .UNCOMPRESSED_R8G8B8A8,
 	}
-	texture := rl.LoadTextureFromImage(image)
+	texture := load_rgba_texture(image)
 	rl.SetTextureFilter(texture, .POINT)
 	return texture
 }
@@ -237,4 +237,20 @@ update_atlas_block_tile :: proc(texture: rl.Texture2D, layout: Atlas_Layout, blo
 		rectangle := rl.Rectangle{f32(origin.x), f32(origin.y), ATLAS_TILE_SIZE, ATLAS_TILE_SIZE}
 		rl.UpdateTextureRec(texture, rectangle, raw_data(tile[:]))
 	}
+}
+
+// Every texture goes up as RGBA (0106). raylib uploads gray and gray alpha
+// images as one or two channel textures with a texture swizzle that
+// Winlator's Gladio drops, so they sample red on the phone. Another format
+// is converted on a copy, since ImageFormat frees the pixels it replaces
+// and the callers' images often point at Odin memory.
+load_rgba_texture :: proc(image: rl.Image) -> rl.Texture2D {
+	if image.format == .UNCOMPRESSED_R8G8B8A8 {
+		return rl.LoadTextureFromImage(image)
+	}
+	converted := rl.ImageCopy(image)
+	rl.ImageFormat(&converted, .UNCOMPRESSED_R8G8B8A8)
+	texture := rl.LoadTextureFromImage(converted)
+	rl.UnloadImage(converted)
+	return texture
 }

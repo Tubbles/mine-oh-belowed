@@ -247,7 +247,7 @@ upload_cloud_texture :: proc() -> rl.Texture2D {
 		mipmaps = 1,
 		format  = .UNCOMPRESSED_R8G8B8A8,
 	}
-	texture := rl.LoadTextureFromImage(image)
+	texture := load_rgba_texture(image)
 	rl.SetTextureFilter(texture, .BILINEAR)
 	return texture
 }

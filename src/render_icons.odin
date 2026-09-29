@@ -104,7 +104,7 @@ upload_icon_pixels :: proc(icons: Item_Icon_Pixels) -> Item_Atlas {
 		mipmaps = 1,
 		format  = .UNCOMPRESSED_R8G8B8A8,
 	}
-	texture := rl.LoadTextureFromImage(image)
+	texture := load_rgba_texture(image)
 	rl.SetTextureFilter(texture, .POINT)
 	return Item_Atlas{texture = texture, layout = icons.layout, loaded = icons.loaded, average_colors = icons.average_colors}
 }
