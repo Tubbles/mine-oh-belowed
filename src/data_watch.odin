@@ -1,5 +1,6 @@
 package game
 
+import "core:fmt"
 import "core:os"
 import "core:strings"
 import "core:time"
@@ -15,9 +16,14 @@ import "core:time"
 // for (the reload command, the Developer screen, F8), or, with watch_data
 // all, once a poll finds them unchanged again, so a half saved file is
 // not loaded.
+// A scan slower than DATA_WATCH_SLOW_SCAN switches the watch off for the
+// rest of the run with one log line (work item 0110): on the phone
+// (Winlator) each stat costs milliseconds and the frame waits for the
+// scan.
 // The simulation never sees the watcher: reloads run between frames.
 
 DATA_WATCH_INTERVAL :: 1 * time.Second
+DATA_WATCH_SLOW_SCAN :: 50 * time.Millisecond
 CHUNK_SHADER_DIRECTORY :: "shaders"
 
 // The watch_data setting and --watch-data.
@@ -74,6 +80,8 @@ Data_Watch :: struct {
 	content_changed:  bool,
 	// Content files changed in the latest poll.
 	content_settling: bool,
+	// A scan was too slow; no more polls this run.
+	disabled:         bool,
 }
 
 // "" for the setting's value; the command line names only the three modes.
@@ -224,7 +232,13 @@ replace_data_stamps :: proc(watch: ^Data_Watch, scanned: map[string]Data_File_St
 // The first call records the files; later ones return what changed since
 // the call before.
 poll_data_watch :: proc(watch: ^Data_Watch, data_directory: string, now: time.Time) -> Data_File_Categories {
+	scan_start := time.tick_now()
 	scanned := scan_data_files(data_directory)
+	scan_duration := time.tick_since(scan_start)
+	if data_watch_scan_too_slow(scan_duration) {
+		watch.disabled = true
+		log_printf("%s", data_watch_slow_scan_line(len(scanned), scan_duration))
+	}
 	changed := watch.started ? changed_data_categories(watch.stamps, scanned) : {}
 	replace_data_stamps(watch, scanned)
 	watch.started = true
@@ -236,6 +250,17 @@ poll_data_watch :: proc(watch: ^Data_Watch, data_directory: string, now: time.Ti
 	return changed
 }
 
+data_watch_scan_too_slow :: proc(duration: time.Duration) -> bool {
+	return duration > DATA_WATCH_SLOW_SCAN
+}
+
+data_watch_slow_scan_line :: proc(file_count: int, duration: time.Duration) -> string {
+	return fmt.tprintf("data: scanning %d files took %d ms, the data watch is off for this run", file_count, i64(duration / time.Millisecond))
+}
+
 data_watch_poll_due :: proc(watch: Data_Watch, now: time.Time) -> bool {
+	if watch.disabled {
+		return false
+	}
 	return !watch.started || time.diff(watch.last_poll, now) >= DATA_WATCH_INTERVAL
 }

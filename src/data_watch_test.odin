@@ -123,3 +123,16 @@ test_watcher_notices_changed_files :: proc(t: ^testing.T) {
 	testing.expect_value(t, os.remove(strings_path), nil)
 	testing.expect_value(t, poll_data_watch(&watch, directory, now), Data_File_Categories{.Strings})
 }
+
+@(test)
+test_slow_data_scan_switches_the_watch_off :: proc(t: ^testing.T) {
+	testing.expect(t, !data_watch_scan_too_slow(DATA_WATCH_SLOW_SCAN))
+	testing.expect(t, data_watch_scan_too_slow(DATA_WATCH_SLOW_SCAN + time.Millisecond))
+	testing.expect_value(
+		t,
+		data_watch_slow_scan_line(469, 2_345 * time.Millisecond + 600 * time.Microsecond),
+		"data: scanning 469 files took 2345 ms, the data watch is off for this run",
+	)
+	watch := Data_Watch{disabled = true}
+	testing.expect(t, !data_watch_poll_due(watch, time.unix(1_700_000_000, 0)))
+}

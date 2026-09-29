@@ -247,7 +247,10 @@ update_data_watch :: proc(state: ^Frame_State) {
 	mode := effective_watch_data_mode(state.watch_data_flag, state.settings.watch_data, developer_mode_on(state))
 	if mode == .Off {
 		if watch.started {
+			// A watch switched off by a slow scan stays off for the run.
+			disabled := watch.disabled
 			destroy_data_watch(watch)
+			watch.disabled = disabled
 		}
 		return
 	}
