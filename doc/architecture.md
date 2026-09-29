@@ -73,7 +73,7 @@ Worlds live under `$XDG_DATA_HOME/mine-oh-belowed/saves/<world>/` (override with
 
 ## Input abstraction
 
-Actions, not buttons. An `Action` enum (move, look, jump, mine, place, rotate, pipette, hotbar radial, inventory, map, pause, and so on) and an `Input_Frame` struct that a backend fills every frame. Backends: SDL3 for the Steam Controller with its full feature set, raylib gamepad for generic controllers, keyboard and mouse for development. Bindings live in configuration, not in code. Details in [input.md](input.md).
+Actions, not buttons. An `Action` enum (move, look, jump, mine, place, rotate, pipette, hotbar radial, inventory, map, pause, and so on) and an `Input_Frame` struct that a backend fills every frame. Backends: SDL3 for the Steam Controller with its full feature set, raylib gamepad for generic controllers, keyboard and mouse for development. Bindings live in configuration, not in code. The SDL3 backend logs how many joysticks SDL sees at start and one line per joystick added or removed (name, vendor, product, GUID and whether SDL has a gamepad mapping for it), so a controller SDL sees but does not take for a gamepad is told apart from one it never sees. Details in [input.md](input.md).
 
 ## Configuration
 

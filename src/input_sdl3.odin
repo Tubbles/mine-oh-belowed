@@ -56,7 +56,38 @@ init_sdl3_input :: proc() -> (ok: bool, error_message: string) {
 		return false, string(sdl.GetError())
 	}
 	log_printf("input: %s", steam_input_environment_text(os.get_env(sdl.HINT_GAMECONTROLLER_IGNORE_DEVICES, context.temp_allocator), os.get_env("SteamVirtualGamepadInfo", context.temp_allocator)))
+	log_printf("input: SDL sees %d joysticks at start", sdl3_joystick_count())
 	return true, ""
+}
+
+sdl3_joystick_count :: proc() -> int {
+	count: i32
+	joysticks := sdl.GetJoysticks(&count)
+	sdl.free(joysticks)
+	return int(count)
+}
+
+// One log line per joystick SDL adds, gamepad or not, so a device SDL sees
+// but has no gamepad mapping for is told apart from one it never sees.
+sdl3_joystick_line :: proc(id: u32, name: string, vendor, product: u16, guid: string, is_gamepad: bool) -> string {
+	kind := is_gamepad ? "gamepad" : "no gamepad mapping"
+	return fmt.tprintf("input: joystick %d \"%s\" vendor %04x product %04x guid %s %s", id, name, vendor, product, guid, kind)
+}
+
+log_sdl3_joystick_added :: proc(id: sdl.JoystickID) {
+	guid_text: [33]u8
+	sdl.GUIDToString(sdl.GetJoystickGUIDForID(id), raw_data(guid_text[:]), len(guid_text))
+	log_printf(
+		"%s",
+		sdl3_joystick_line(
+			u32(id),
+			string(sdl.GetJoystickNameForID(id)),
+			sdl.GetJoystickVendorForID(id),
+			sdl.GetJoystickProductForID(id),
+			string(cstring(raw_data(guid_text[:]))),
+			sdl.IsGamepad(id),
+		),
+	)
 }
 
 // What Steam's environment says about Steam Input for this launch. With
@@ -131,6 +162,10 @@ poll_sdl3_events :: proc(state: ^Sdl3_Input_State) {
 	event: sdl.Event
 	for sdl.PollEvent(&event) {
 		#partial switch event.type {
+		case .JOYSTICK_ADDED:
+			log_sdl3_joystick_added(event.jdevice.which)
+		case .JOYSTICK_REMOVED:
+			log_printf("input: joystick %d removed", event.jdevice.which)
 		case .GAMEPAD_ADDED:
 			if state.gamepad == nil {
 				open_sdl3_gamepad(state, event.gdevice.which)
