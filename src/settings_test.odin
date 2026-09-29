@@ -11,12 +11,12 @@ test_world_input_is_empty_while_a_screen_is_open :: proc(t: ^testing.T) {
 		pressed      = {.Move, .Look, .Jump, .Confirm, .Mine},
 		just_pressed = {.Jump, .Confirm},
 	}
-	blocked := world_input(frame, true, {}, DEFAULT_SETTINGS)
+	blocked := world_input(frame, true, {}, DEFAULT_SETTINGS, false)
 	testing.expect_value(t, blocked.move, [2]f32{})
 	testing.expect_value(t, blocked.look_delta, [2]f32{})
 	testing.expect_value(t, blocked.pressed, Action_Set{.Confirm})
 	testing.expect_value(t, blocked.just_pressed, Action_Set{.Confirm})
-	open := world_input(frame, false, {}, DEFAULT_SETTINGS)
+	open := world_input(frame, false, {}, DEFAULT_SETTINGS, false)
 	testing.expect_value(t, open.pressed, frame.pressed)
 }
 
@@ -27,12 +27,12 @@ test_world_action_guard_holds_until_release :: proc(t: ^testing.T) {
 	testing.expect_value(t, guard, Action_Set{.Jump})
 	// Screen closed, A still held: no jump.
 	guard = update_world_action_guard(guard, false, {.Jump, .Confirm})
-	held := world_input(Input_Frame{pressed = {.Jump, .Confirm}}, false, guard, DEFAULT_SETTINGS)
+	held := world_input(Input_Frame{pressed = {.Jump, .Confirm}}, false, guard, DEFAULT_SETTINGS, false)
 	testing.expect(t, .Jump not_in held.pressed)
 	// Released once: the guard is gone and the next press jumps.
 	guard = update_world_action_guard(guard, false, {})
 	testing.expect_value(t, guard, Action_Set{})
-	pressed_again := world_input(Input_Frame{pressed = {.Jump}, just_pressed = {.Jump}}, false, guard, DEFAULT_SETTINGS)
+	pressed_again := world_input(Input_Frame{pressed = {.Jump}, just_pressed = {.Jump}}, false, guard, DEFAULT_SETTINGS, false)
 	testing.expect(t, .Jump in pressed_again.just_pressed)
 }
 

@@ -19,6 +19,7 @@ pause_developer = "Developer"
 // Developer screen (--dev, work item 0043)
 developer_title = "Developer"
 developer_fly_mode = "Fly mode"
+developer_no_clip = "No clip"
 developer_diagnostics = "Diagnostics"
 diagnostics_page_off = "Off"
 diagnostics_page_input = "Input"

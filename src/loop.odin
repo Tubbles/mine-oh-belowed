@@ -410,7 +410,7 @@ update_session :: proc(state: ^Frame_State, world_blocked: bool) {
 	session := state.session
 	paused := ui_pauses_simulation(state.ui.screens) || state.command_control.paused
 	fast := state.command_control.pending_ticks > 0
-	frame_for_world := world_input(state.input, world_blocked, state.world_action_guard, state.settings)
+	frame_for_world := world_input(state.input, world_blocked, state.world_action_guard, state.settings, developer_mode_on(state))
 	// The right stick drives an open hotbar radial instead of the camera.
 	if state.ui.radial.open {
 		frame_for_world = without_actions(frame_for_world, {.Look})

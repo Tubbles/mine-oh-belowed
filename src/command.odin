@@ -87,7 +87,8 @@ command_usages := [?]Command_Usage {
 	{"teleport <x> <y> <z> | teleport pad", "feet into the block, or onto the landing pad"},
 	{"time <dawn|noon|dusk|midnight>", "set the time of day"},
 	{"weather <clear|overcast|rain|fog|auto>", "force a weather kind for screenshots, auto returns to the schedule"},
-	{"fly <on|off>", "fly mode"},
+	{"fly <on|off>", "fly mode, swept against blocks"},
+	{"noclip <on|off>", "flying passes through blocks"},
 	{"cheat_speed <on|off>", "fast movement and hand mining"},
 	{"vein <type> <x> <z> [size_class]", "a new surface vein centred on the column"},
 	{"place <machine> <x> <y> <z> <rotation>", "a machine by its minimum corner, by the player's rules, no item taken"},
@@ -289,7 +290,7 @@ execute_world_command :: proc(command_context: Command_Context, name: string, ar
 		return command_time(command_context, arguments)
 	case "weather":
 		return command_weather(command_context, arguments)
-	case "fly", "cheat_speed":
+	case "fly", "noclip", "cheat_speed":
 		return command_toggle(command_context, name, arguments)
 	case "vein":
 		return command_vein(command_context, arguments)
@@ -481,13 +482,22 @@ command_toggle :: proc(command_context: Command_Context, name: string, arguments
 	if !ok {
 		return usage_error(fmt.tprintf("%s <on|off>", name))
 	}
-	simulation := command_context.simulation
-	current := name == "fly" ? simulation.players[0].flying : simulation.cheat_speed
+	current, action := toggle_command_state(command_context.simulation, name)
 	if current != wanted {
-		action := name == "fly" ? Developer_Action.Toggle_Fly_Mode : Developer_Action.Toggle_Cheat_Speed
 		serve_command_request(command_context, Developer_Request{action = action})
 	}
 	return command_ok("%s %s", name, arguments[0])
+}
+
+// The current state and the toggling action of a command_toggle name.
+toggle_command_state :: proc(simulation: ^Simulation_State, name: string) -> (bool, Developer_Action) {
+	switch name {
+	case "fly":
+		return simulation.players[0].flying, .Toggle_Fly_Mode
+	case "noclip":
+		return simulation.players[0].no_clip, .Toggle_No_Clip
+	}
+	return simulation.cheat_speed, .Toggle_Cheat_Speed
 }
 
 find_vein_type :: proc(veins: Vein_Content, id: string) -> int {
@@ -966,7 +976,7 @@ query_player :: proc(command_context: Command_Context) -> Command_Response {
 	builder := strings.builder_make(context.temp_allocator)
 	cell := camera_world_coordinate(player.position)
 	fmt.sbprintf(&builder, "player\nposition %.2f %.2f %.2f\nblock %d %d %d", player.position.x, player.position.y, player.position.z, cell.x, cell.y, cell.z)
-	fmt.sbprintf(&builder, "\nyaw %.1f\npitch %.1f\nflying %v\non_ground %v\ncheat_speed %v", player.yaw, player.pitch, player.flying, player.on_ground, simulation.cheat_speed)
+	fmt.sbprintf(&builder, "\nyaw %.1f\npitch %.1f\nflying %v\nno_clip %v\non_ground %v\ncheat_speed %v", player.yaw, player.pitch, player.flying, player.no_clip, player.on_ground, simulation.cheat_speed)
 	for item, index in items.items {
 		if count := inventory_count(player.inventory, Item_Id(index)); count > 0 {
 			fmt.sbprintf(&builder, "\nitem %s %d", item.id, count)

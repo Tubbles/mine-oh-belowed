@@ -107,6 +107,7 @@ bindings = [
 	{action = "Toggle_World_Overlay" device = "keyboard" control = "F4" context = "both"}
 	{action = "Debug_Remove_Block" device = "keyboard" control = "F5" context = "world"}
 	{action = "Toggle_Fly_Mode" device = "keyboard" control = "F6" context = "world"}
+	{action = "Toggle_No_Clip" device = "keyboard" control = "F9" context = "world"}
 	{action = "Debug_Drop_Item" device = "keyboard" control = "F7" context = "world"}
 	// Developer mode only: reloads the content tables into the running world.
 	{action = "Reload_Data" device = "keyboard" control = "F8" context = "both"}

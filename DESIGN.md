@@ -33,7 +33,7 @@ Mine oh Belowed is a factory game in a voxel world. This document is the map. De
 - Hand mining is fast: one to three seconds per block by hand. Tools multiply mining speed. Whether tools also gate anything is open (see [SUGGESTIONS.md](SUGGESTIONS.md)).
 - Inventory is a grid of 36 slots plus an 8 slot hotbar. The hotbar doubles as the radial menu on the left trackpad. A distribute gesture spreads the held stack evenly over several machines, because hand feeding is the whole early game.
 - No health, hunger, weight or drowning.
-- A flying and instant mining toggle exists as a developer and creative tool.
+- A flying and instant mining toggle exists as a developer and creative tool. Flight collides with blocks; a separate no clip toggle passes through them (0112).
 
 ## Gameplay phases
 

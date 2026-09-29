@@ -50,6 +50,8 @@ Developer_Kits :: struct {
 
 Developer_Action :: enum u8 {
 	Toggle_Fly_Mode,
+	// Flips Player.no_clip: flying passes through blocks.
+	Toggle_No_Clip,
 	Give_Kit,
 	Give_Item,
 	Complete_Quests_To_Chapter,
@@ -370,6 +372,8 @@ serve_developer_request :: proc(state: ^Simulation_State, content: Simulation_Co
 	switch request.action {
 	case .Toggle_Fly_Mode:
 		apply_player_toggles(player, {.Toggle_Fly_Mode})
+	case .Toggle_No_Clip:
+		apply_player_toggles(player, {.Toggle_No_Clip})
 	case .Give_Kit:
 		give_kit(player, &state.quests.pending_rewards, content.items, content.developer_kits, request.chapter)
 	case .Give_Item:

@@ -247,6 +247,14 @@ test_command_teleport_time_and_toggles :: proc(t: ^testing.T) {
 	expect_command_ok(t, test, "cheat_speed off")
 	testing.expect(t, !simulation.cheat_speed)
 	expect_command_error(t, test, "fly maybe")
+
+	expect_command_ok(t, test, "noclip on")
+	testing.expect(t, simulation.players[0].no_clip)
+	query := expect_command_ok(t, test, "query player")
+	testing.expect(t, strings.contains(query.text, "\nno_clip true\n"), query.text)
+	expect_command_ok(t, test, "noclip off")
+	testing.expect(t, !simulation.players[0].no_clip)
+	expect_command_error(t, test, "noclip maybe")
 }
 
 // The first column, walking chunk column centres east from start, where
@@ -577,6 +585,7 @@ test_command_queries :: proc(t: ^testing.T) {
 	expected := [?][2]string {
 		{"query player", "position 0.50 11.00 0.50"},
 		{"query player", "item iron_plate 7"},
+		{"query player", "\nno_clip false\n"},
 		{"query world", "pad 0 10 0"},
 		{"query world", "loaded_chunks 8"},
 		{"query world", "tick 0"},

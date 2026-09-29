@@ -83,6 +83,8 @@ Action :: enum u8 {
 	// F7: one iron plate onto the targeted belt.
 	Debug_Drop_Item,
 	Toggle_Fly_Mode,
+	// F9: flying passes through blocks (Player.no_clip).
+	Toggle_No_Clip,
 	// F8, in developer mode: reload the content tables (work item 0054).
 	Reload_Data,
 }
@@ -206,6 +208,9 @@ Input_Frame :: struct {
 	// zero value is the default: Sneak acts while held, Sprint toggles.
 	sneak_toggles: bool,
 	sprint_holds:  bool,
+	// Developer mode (world_input), for the Jump double tap that toggles
+	// flying (update_jump_double_tap).
+	developer:     bool,
 }
 
 // What the backend plays on the controller this frame (work item 0038),
@@ -253,6 +258,7 @@ WORLD_ACTIONS :: Action_Set {
 	.Interact,
 	.Toggle_Camera_Mode,
 	.Toggle_Fly_Mode,
+	.Toggle_No_Clip,
 }
 
 without_actions :: proc(frame: Input_Frame, removed: Action_Set) -> Input_Frame {
@@ -278,12 +284,17 @@ update_world_action_guard :: proc(guard: Action_Set, world_blocked: bool, presse
 	return guard & pressed
 }
 
-// The frame the simulation sees.
-world_input :: proc(frame: Input_Frame, world_blocked: bool, guard: Action_Set, settings: Settings) -> Input_Frame {
+// The frame the simulation sees. developer rides in the frame, so the
+// simulation never reads the setting itself.
+world_input :: proc(frame: Input_Frame, world_blocked: bool, guard: Action_Set, settings: Settings, developer: bool) -> Input_Frame {
+	result: Input_Frame
 	if world_blocked {
-		return apply_hold_settings(without_actions(frame, WORLD_ACTIONS), settings)
+		result = apply_hold_settings(without_actions(frame, WORLD_ACTIONS), settings)
+	} else {
+		result = apply_hold_settings(apply_look_settings(without_actions(frame, guard), settings), settings)
 	}
-	return apply_hold_settings(apply_look_settings(without_actions(frame, guard), settings), settings)
+	result.developer = developer
+	return result
 }
 
 // What frames collect between two simulation ticks. Frames and ticks run

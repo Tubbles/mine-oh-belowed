@@ -35,6 +35,9 @@ CHEAT_SPEED_FACTOR :: 3.0
 // without jumping.
 CHEAT_JUMP_SPEED :: 11.34
 STEP_UP_HEIGHT :: 1.05
+// A second Jump press within this many ticks of the first toggles flying
+// in developer mode (update_jump_double_tap): 300 ms at 60 Hz.
+JUMP_DOUBLE_TAP_TICKS :: 18
 
 Camera_Mode :: enum u8 {
 	First_Person,
@@ -53,7 +56,13 @@ Player :: struct {
 	previous_yaw:         f32,
 	previous_pitch:       f32,
 	on_ground:            bool,
+	// The developer fly mode (F6, a Jump double tap in developer mode).
+	// Flight is swept against blocks unless no_clip (F9) is on; walking
+	// ignores no_clip. Neither is saved.
 	flying:               bool,
+	no_clip:              bool,
+	// Ticks left of the double tap window opened by a Jump press.
+	jump_tap_ticks:       u8,
 	// Toggled by Sprint, cleared by a tick without movement, or while
 	// Sprint is held in the hold mode (update_sprinting).
 	sprinting:            bool,
@@ -340,11 +349,31 @@ walk_player :: proc(world: ^World, registry: Block_Registry, player: ^Player, in
 	move_player_horizontally(world, registry, player, .Sneak in input.pressed, cheat_speed, seconds)
 }
 
-// The developer fly mode: fly camera speeds, no gravity and no collision.
-fly_player :: proc(player: ^Player, input: Input_Frame, sprinting: bool, speed_factor: f32, seconds: f32) {
+// The developer fly mode: fly camera speeds and no gravity. Blocks stop
+// each axis like walking (without the step up and the sneak edge check)
+// unless no_clip is on, which passes through them.
+fly_player :: proc(world: ^World, registry: Block_Registry, player: ^Player, input: Input_Frame, sprinting: bool, speed_factor: f32, seconds: f32) {
 	player.velocity = fly_camera_velocity(Fly_Camera{yaw = player.yaw}, input, sprinting) * speed_factor
-	player.position += player.velocity * seconds
 	player.on_ground = false
+	if player.no_clip {
+		player.position += player.velocity * seconds
+		return
+	}
+	if lift_out_of_blocks(world, registry, player) {
+		return
+	}
+	for axis in 0 ..< 3 {
+		moved, blocked := sweep_box_axis(world, registry, player_box(player.position), axis, player.velocity[axis] * seconds)
+		player.position[axis] += moved
+		if blocked {
+			player.velocity[axis] = 0
+		}
+	}
+}
+
+toggle_flying :: proc(player: ^Player) {
+	player.flying = !player.flying
+	player.velocity = {}
 }
 
 apply_player_toggles :: proc(player: ^Player, just_pressed: Action_Set) {
@@ -352,9 +381,27 @@ apply_player_toggles :: proc(player: ^Player, just_pressed: Action_Set) {
 		player.camera_mode = player.camera_mode == .First_Person ? .Third_Person : .First_Person
 	}
 	if .Toggle_Fly_Mode in just_pressed {
-		player.flying = !player.flying
-		player.velocity = {}
+		toggle_flying(player)
 	}
+	if .Toggle_No_Clip in just_pressed {
+		player.no_clip = !player.no_clip
+	}
+}
+
+// A Jump press opens a JUMP_DOUBLE_TAP_TICKS window; a second press inside
+// it toggles flying in developer mode (input.developer) and closes it.
+// Outside developer mode a double tap is two jumps.
+update_jump_double_tap :: proc(player: ^Player, input: Input_Frame) {
+	if .Jump not_in input.just_pressed {
+		player.jump_tap_ticks = player.jump_tap_ticks > 0 ? player.jump_tap_ticks - 1 : 0
+		return
+	}
+	if player.jump_tap_ticks > 0 && input.developer {
+		toggle_flying(player)
+		player.jump_tap_ticks = 0
+		return
+	}
+	player.jump_tap_ticks = JUMP_DOUBLE_TAP_TICKS
 }
 
 // A gamepad's A is both Jump and Interact. Looking at an entity it opens
@@ -408,13 +455,14 @@ tick_player :: proc(world: ^World, content: Simulation_Content, players: []Playe
 	input, events := resolve_interact(player, &world.entities, content.machines, with_sneaking(frame, player.sneaking))
 	player.previous_position, player.previous_yaw, player.previous_pitch = player.position, player.yaw, player.pitch
 	apply_player_toggles(player, input.just_pressed)
+	update_jump_double_tap(player, input)
 	player.sprinting = update_sprinting(player.sprinting, input)
 	sprinting := player_sprints(player^, input.pressed)
 	turn_player(player, input, seconds)
 	carry_player_on_belt(world, content, player, tick_rate)
 	walk_start := player.position
 	if player.flying {
-		fly_player(player, input, sprinting, cheat_speed_factor(cheat_speed), seconds)
+		fly_player(world, content.blocks, player, input, sprinting, cheat_speed_factor(cheat_speed), seconds)
 	} else {
 		walk_player(world, content.blocks, player, input, player_walk_speed(input.pressed, sprinting) * cheat_speed_factor(cheat_speed), cheat_speed, seconds)
 	}

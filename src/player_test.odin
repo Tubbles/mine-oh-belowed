@@ -159,11 +159,81 @@ test_fly_mode_ignores_gravity_and_blocks :: proc(t: ^testing.T) {
 	world := make_floor_world(registry, 32)
 	set_blocks(&world, test_block(registry, "stone"), {3, 1, 0}, {3, 2, 0})
 	player := make_test_player(registry, {0.5, 1, 0.5})
-	tick_test_player(&world, registry, &player, Input_Frame{just_pressed = {.Toggle_Fly_Mode}}, 1)
+	tick_test_player(&world, registry, &player, Input_Frame{just_pressed = {.Toggle_Fly_Mode, .Toggle_No_Clip}}, 1)
 	testing.expect(t, player.flying)
+	testing.expect(t, player.no_clip)
 	tick_test_player(&world, registry, &player, WALK_FORWARD, 60)
 	testing.expectf(t, abs(player.position.x - (0.5 + FLY_CAMERA_SPEED)) < 1e-2, "x %v", player.position.x)
 	testing.expect_value(t, player.position.y, 1)
+}
+
+// 0112: without no clip, flight stops at blocks on every axis.
+@(test)
+test_flying_without_no_clip_stops_at_blocks :: proc(t: ^testing.T) {
+	registry := make_test_registry()
+	world := make_floor_world(registry, 32)
+	set_blocks(&world, test_block(registry, "stone"), {3, 1, 0}, {3, 2, 0})
+	player := make_test_player(registry, {0.5, 1, 0.5})
+	tick_test_player(&world, registry, &player, Input_Frame{just_pressed = {.Toggle_Fly_Mode}}, 1)
+	testing.expect(t, player.flying)
+	testing.expect(t, !player.no_clip)
+	tick_test_player(&world, registry, &player, WALK_FORWARD, 60)
+	testing.expectf(t, abs(player.position.x - (3 - PLAYER_WIDTH / 2)) < 1e-3, "x %v", player.position.x)
+	testing.expect_value(t, player.velocity.x, 0)
+	testing.expect_value(t, player.position.y, 1)
+	player.position = {0.5, 3, 0.5}
+	tick_test_player(&world, registry, &player, Input_Frame{pressed = {.Sneak}}, 60)
+	testing.expectf(t, abs(player.position.y - 1) < 1e-3, "y %v", player.position.y)
+	testing.expect(t, player.flying)
+}
+
+JUMP_TAP :: Input_Frame {
+	pressed      = {.Jump},
+	just_pressed = {.Jump},
+	developer    = true,
+}
+
+// Two Jump presses gap_ticks apart, the frames between them empty.
+double_tap_jump :: proc(world: ^World, registry: Block_Registry, player: ^Player, tap: Input_Frame, gap_ticks: int) {
+	tick_test_player(world, registry, player, tap, 1)
+	tick_test_player(world, registry, player, Input_Frame{developer = tap.developer}, gap_ticks - 1)
+	tick_test_player(world, registry, player, tap, 1)
+}
+
+// 0112: a Jump double tap toggles flying in developer mode only.
+@(test)
+test_double_tap_jump_toggles_flying :: proc(t: ^testing.T) {
+	registry := make_test_registry()
+	world := make_floor_world(registry, 32)
+	player := make_test_player(registry, {0.5, 1, 0.5})
+	tick_test_player(&world, registry, &player, {}, 1)
+	double_tap_jump(&world, registry, &player, JUMP_TAP, JUMP_DOUBLE_TAP_TICKS)
+	testing.expect(t, player.flying)
+	testing.expect_value(t, player.jump_tap_ticks, 0)
+	double_tap_jump(&world, registry, &player, JUMP_TAP, 5)
+	testing.expect(t, !player.flying)
+}
+
+@(test)
+test_slow_double_tap_jump_does_not_fly :: proc(t: ^testing.T) {
+	registry := make_test_registry()
+	world := make_floor_world(registry, 32)
+	player := make_test_player(registry, {0.5, 1, 0.5})
+	tick_test_player(&world, registry, &player, {}, 1)
+	double_tap_jump(&world, registry, &player, JUMP_TAP, JUMP_DOUBLE_TAP_TICKS + 1)
+	testing.expect(t, !player.flying)
+}
+
+@(test)
+test_double_tap_jump_without_developer_does_not_fly :: proc(t: ^testing.T) {
+	registry := make_test_registry()
+	world := make_floor_world(registry, 32)
+	player := make_test_player(registry, {0.5, 1, 0.5})
+	tick_test_player(&world, registry, &player, {}, 1)
+	tap := JUMP_TAP
+	tap.developer = false
+	double_tap_jump(&world, registry, &player, tap, 5)
+	testing.expect(t, !player.flying)
 }
 
 @(test)
@@ -452,20 +522,28 @@ test_stairs_collide_with_both_boxes_and_torches_not_at_all :: proc(t: ^testing.T
 // 0074: the sneak_hold and sprint_hold settings ride in the frame.
 @(test)
 test_hold_settings_reach_the_frame :: proc(t: ^testing.T) {
-	defaults := world_input(Input_Frame{pressed = {.Sneak}}, false, {}, DEFAULT_SETTINGS)
+	defaults := world_input(Input_Frame{pressed = {.Sneak}}, false, {}, DEFAULT_SETTINGS, false)
 	testing.expect(t, !defaults.sneak_toggles)
 	testing.expect(t, !defaults.sprint_holds)
 	testing.expect_value(t, defaults.pressed, Action_Set{.Sneak})
 	settings := DEFAULT_SETTINGS
 	settings.sneak_hold = .Toggle
 	settings.sprint_hold = .Hold
-	open := world_input(Input_Frame{}, false, {}, settings)
+	open := world_input(Input_Frame{}, false, {}, settings, false)
 	testing.expect(t, open.sneak_toggles)
 	testing.expect(t, open.sprint_holds)
 	// Also while a screen is open, so a toggled sneak outlasts it.
-	blocked := world_input(Input_Frame{}, true, {}, settings)
+	blocked := world_input(Input_Frame{}, true, {}, settings, false)
 	testing.expect(t, blocked.sneak_toggles)
 	testing.expect(t, blocked.sprint_holds)
+}
+
+// 0112: developer mode rides in the frame in both branches.
+@(test)
+test_developer_mode_reaches_the_frame :: proc(t: ^testing.T) {
+	testing.expect(t, world_input(Input_Frame{}, false, {}, DEFAULT_SETTINGS, true).developer)
+	testing.expect(t, world_input(Input_Frame{}, true, {}, DEFAULT_SETTINGS, true).developer)
+	testing.expect(t, !world_input(Input_Frame{}, false, {}, DEFAULT_SETTINGS, false).developer)
 }
 
 @(test)

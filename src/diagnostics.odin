@@ -557,7 +557,7 @@ append_player_lines :: proc(lines: ^[dynamic]Diagnostics_Line, state: Frame_Stat
 	position, velocity := player.position, player.velocity
 	append_line(lines, false, "player % .2f % .2f % .2f  velocity % .2f % .2f % .2f", position.x, position.y, position.z, velocity.x, velocity.y, velocity.z)
 	cheat_speed := state.session.simulation.cheat_speed
-	append_line(lines, cheat_speed, "on ground %s  camera %v  flying %s  sprinting %s%s", yes_no(player.on_ground), player.camera_mode, yes_no(player.flying), yes_no(player.sprinting), cheat_speed ? "  cheat speed" : "")
+	append_line(lines, cheat_speed, "on ground %s  camera %v  flying %s  no clip %s  sprinting %s%s", yes_no(player.on_ground), player.camera_mode, yes_no(player.flying), yes_no(player.no_clip), yes_no(player.sprinting), cheat_speed ? "  cheat speed" : "")
 	append_line(lines, player.mining.active, "%s  mining %.0f%%", target_text(registry, &world, player.target), mining_fraction(player.mining) * 100)
 	items := state.content.items
 	append_line(

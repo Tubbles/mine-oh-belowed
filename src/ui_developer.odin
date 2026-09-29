@@ -49,11 +49,15 @@ developer_row :: proc(content: ^Ui_Rectangle) -> Ui_Rectangle {
 developer_toggles :: proc(state: ^Ui_State, first_row, second_row: Ui_Rectangle, screen_context: Screen_Context) {
 	requests := screen_context.developer_requests[:]
 	flying := pending_toggle(screen_context.player.flying, requests, .Toggle_Fly_Mode)
-	if ui_toggle(state, column(first_row, 2, 0, UI_GAP), text("developer_fly_mode"), &flying) {
+	if ui_toggle(state, column(first_row, 3, 0, UI_GAP), text("developer_fly_mode"), &flying) {
 		queue_developer_request(state, screen_context, Developer_Request{action = .Toggle_Fly_Mode})
 	}
+	no_clip := pending_toggle(screen_context.player.no_clip, requests, .Toggle_No_Clip)
+	if ui_toggle(state, column(first_row, 3, 1, UI_GAP), text("developer_no_clip"), &no_clip) {
+		queue_developer_request(state, screen_context, Developer_Request{action = .Toggle_No_Clip})
+	}
 	cheat_speed := pending_toggle(screen_context.cheat_speed, requests, .Toggle_Cheat_Speed)
-	if ui_toggle(state, column(first_row, 2, 1, UI_GAP), text("developer_cheat_speed"), &cheat_speed) {
+	if ui_toggle(state, column(first_row, 3, 2, UI_GAP), text("developer_cheat_speed"), &cheat_speed) {
 		queue_developer_request(state, screen_context, Developer_Request{action = .Toggle_Cheat_Speed})
 	}
 	page := screen_context.diagnostics_page

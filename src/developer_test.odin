@@ -258,15 +258,20 @@ test_developer_toggles_teleport_and_unlock :: proc(t: ^testing.T) {
 	requests := [?]Developer_Request{{action = .Toggle_Fly_Mode}}
 	testing.expect(t, pending_toggle(false, requests[:], .Toggle_Fly_Mode))
 	testing.expect(t, !pending_toggle(true, requests[:], .Toggle_Fly_Mode))
+	no_clip_requests := [?]Developer_Request{{action = .Toggle_No_Clip}}
+	testing.expect(t, pending_toggle(false, no_clip_requests[:], .Toggle_No_Clip))
+	testing.expect(t, !pending_toggle(false, requests[:], .Toggle_No_Clip))
 
 	position := landing_pad_standing_position(TEST_LANDING_PAD)
 	testing.expect_value(t, position, [3]f32{0.5, 11, 0.5})
 	append(&simulation.developer_requests, Developer_Request{action = .Toggle_Fly_Mode})
+	append(&simulation.developer_requests, Developer_Request{action = .Toggle_No_Clip})
 	append(&simulation.developer_requests, Developer_Request{action = .Teleport, position = position})
 	append(&simulation.developer_requests, Developer_Request{action = .Unlock_All})
 	serve_developer_requests(&simulation, content)
 	player := simulation.players[0]
 	testing.expect(t, player.flying)
+	testing.expect(t, player.no_clip)
 	testing.expect_value(t, player.position, position)
 	testing.expect_value(t, player.previous_position, position)
 	testing.expect(t, simulation.unlocks.unlock_all)
