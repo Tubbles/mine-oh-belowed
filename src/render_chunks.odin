@@ -8,6 +8,8 @@ import "shared:raylib/rlgl"
 
 CHUNK_VERTEX_SHADER_PATH :: "shaders/chunk.vs"
 CHUNK_FRAGMENT_SHADER_PATH :: "shaders/chunk.fs"
+// How often load_shader_pair tries a shader before it gives up (0109).
+SHADER_LOAD_ATTEMPTS :: 3
 
 // The fog starts at this share of its end distance (fog_distances).
 FOG_START_SHARE :: 0.6
@@ -68,16 +70,33 @@ load_shader_pair :: proc(data_directory, vertex_file, fragment_file, name: strin
 	if vertex_error != nil || fragment_error != nil {
 		return {}, false
 	}
-	shader = rl.LoadShader(
-		strings.clone_to_cstring(vertex_path, context.temp_allocator),
-		strings.clone_to_cstring(fragment_path, context.temp_allocator),
-	)
-	// raylib falls back to its default shader when loading or compiling fails.
-	if !rl.IsShaderValid(shader) || shader.id == rlgl.GetShaderIdDefault() {
+	vertex_cstring := strings.clone_to_cstring(vertex_path, context.temp_allocator)
+	fragment_cstring := strings.clone_to_cstring(fragment_path, context.temp_allocator)
+	shader, ok = load_shader_with_retry(vertex_cstring, fragment_cstring, name)
+	if !ok {
 		log_printf("error: cannot load the %s shader from %s and %s", name, vertex_path, fragment_path)
-		return {}, false
 	}
-	return shader, true
+	return shader, ok
+}
+
+// Winlator's Gladio fails a shader compile now and then and compiles the
+// same files on the next try (work item 0109), so a failed load is tried
+// again. A failed rl.LoadShader returns raylib's default shader, which
+// must never be unloaded, so nothing is released between attempts.
+load_shader_with_retry :: proc(vertex_path, fragment_path: cstring, name: string) -> (shader: rl.Shader, ok: bool) {
+	for attempt in 1 ..= SHADER_LOAD_ATTEMPTS {
+		shader = rl.LoadShader(vertex_path, fragment_path)
+		if shader_loaded(shader) {
+			return shader, true
+		}
+		log_printf("shader: %s failed to load, attempt %d of %d", name, attempt, SHADER_LOAD_ATTEMPTS)
+	}
+	return {}, false
+}
+
+// raylib falls back to its default shader when loading or compiling fails.
+shader_loaded :: proc(shader: rl.Shader) -> bool {
+	return rl.IsShaderValid(shader) && shader.id != rlgl.GetShaderIdDefault()
 }
 
 set_shader_float :: proc(shader: rl.Shader, name: cstring, value: f32) {
