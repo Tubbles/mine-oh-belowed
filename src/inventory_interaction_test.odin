@@ -225,3 +225,21 @@ test_machine_slots_filter_what_the_player_drops :: proc(t: ^testing.T) {
 	testing.expect_value(t, taken, Held_Stack{Item_Stack{test_item(items, "iron_plate"), 4}, MACHINE_SLOT_ORIGIN})
 	testing.expect_value(t, slots[FURNACE_OUTPUT_SLOT], EMPTY_STACK)
 }
+
+// Work item 0125: the focused slot's grid is active and stays active
+// while the focus is off the slots (on a button of the touch row).
+@(test)
+test_active_slot_follows_the_focused_grid :: proc(t: ^testing.T) {
+	active := active_slot_after_focus({}, 3, -1)
+	testing.expect_value(t, active, Active_Slot{.Hotbar, 3})
+	active = active_slot_after_focus(active, HOTBAR_SLOT_COUNT + 4, -1)
+	testing.expect_value(t, active, Active_Slot{.Main, HOTBAR_SLOT_COUNT + 4})
+	active = active_slot_after_focus(active, -1, 2)
+	testing.expect_value(t, active, Active_Slot{.Machine, 2})
+	testing.expect_value(t, active_slot_after_focus(active, -1, -1), active)
+	// Sort from the hotbar sorts the main grid; the hotbar keeps its order.
+	testing.expect_value(t, sort_target_grid(.Hotbar), Slot_Grid_Kind.Main)
+	testing.expect_value(t, sort_target_grid(.Main), Slot_Grid_Kind.Main)
+	testing.expect_value(t, sort_target_grid(.Machine), Slot_Grid_Kind.Machine)
+	testing.expect_value(t, sort_target_grid(.None), Slot_Grid_Kind.None)
+}

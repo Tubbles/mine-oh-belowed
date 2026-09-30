@@ -281,11 +281,15 @@ inventory_quick_move_origin :: proc(inventory: Inventory, side: Quick_Move_Side)
 
 // One slot's stack into the other section; the rest stays in the slot.
 move_slot_to_section :: proc(inventory: Inventory, items: Item_Registry, index: int, side: Quick_Move_Side) {
-	slot := &inventory.slots[index]
+	move_stack_into_slots(inventory_quick_move_destination(inventory, side), items, &inventory.slots[index])
+}
+
+// Partial stacks of the item first, then empty slots; the rest stays in
+// the slot.
+move_stack_into_slots :: proc(destination: []Item_Stack, items: Item_Registry, slot: ^Item_Stack) {
 	if stack_is_empty(slot^) {
 		return
 	}
-	destination := inventory_quick_move_destination(inventory, side)
 	slot.count = u16(add_to_slots(destination, slot.item, int(slot.count), item_stack_size(items, slot.item)))
 	if slot.count == 0 {
 		slot^ = EMPTY_STACK
@@ -442,4 +446,81 @@ transfer_button_rows :: proc(state: ^Ui_State, content: ^Ui_Rectangle, machine: 
 		index += 1
 	}
 	return pressed
+}
+
+// The touch row's transfers (0125) move stacks from the active grid to
+// the grid the screen pairs it with: in the inventory screen the hotbar
+// and the main grid into each other, in a machine panel the hotbar and
+// the main grid into the machine and the machine into the main grid,
+// never into the hotbar.
+Slot_Screen_Kind :: enum u8 {
+	Inventory,
+	Machine,
+}
+
+transfer_target_grid :: proc(screen: Slot_Screen_Kind, source: Slot_Grid_Kind) -> Slot_Grid_Kind {
+	switch screen {
+	case .Inventory:
+		#partial switch source {
+		case .Hotbar:
+			return .Main
+		case .Main:
+			return .Hotbar
+		}
+	case .Machine:
+		#partial switch source {
+		case .Hotbar, .Main:
+			return .Machine
+		case .Machine:
+			return .Main
+		}
+	}
+	return .None
+}
+
+// Every stack of the source, or with of_type only the item's stacks.
+Grid_Transfer :: struct {
+	source:  Slot_Grid_Kind,
+	target:  Slot_Grid_Kind,
+	of_type: bool,
+	item:    Item_Id,
+}
+
+// The grid's slots; the machine's are the open entity's.
+grid_slots :: proc(inventory: Inventory, machine_slots: []Item_Stack, grid: Slot_Grid_Kind) -> []Item_Stack {
+	switch grid {
+	case .None:
+	case .Hotbar:
+		return inventory_hotbar(inventory)
+	case .Main:
+		return inventory_grid(inventory)
+	case .Machine:
+		return machine_slots
+	}
+	return nil
+}
+
+// Into the machine the way the quick move stores (store_slot), between
+// the player's grids and out of the machine by partial stacks first,
+// then empty slots. What does not fit stays where it was. The inventory
+// screen passes no entities and NO_ENTITY, as it never targets a machine.
+apply_grid_transfer :: proc(entities: ^Entities, content: Simulation_Content, handle: Entity_Handle, inventory: Inventory, transfer: Grid_Transfer) {
+	machine_slots: []Item_Stack
+	if handle != NO_ENTITY {
+		machine_slots = entity_slots(entities, handle)
+	}
+	if transfer.target == .None || (transfer.target == .Machine && len(machine_slots) == 0) {
+		return
+	}
+	destination := grid_slots(inventory, machine_slots, transfer.target)
+	for &slot in grid_slots(inventory, machine_slots, transfer.source) {
+		if stack_is_empty(slot) || (transfer.of_type && slot.item != transfer.item) {
+			continue
+		}
+		if transfer.target == .Machine {
+			store_slot(entities, content, handle, &slot)
+		} else {
+			move_stack_into_slots(destination, content.items, &slot)
+		}
+	}
 }

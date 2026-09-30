@@ -175,6 +175,7 @@ run_screens :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	// over another keeps the focus.
 	if state.screens.count == 0 {
 		state.focus = 0
+		state.active_slot = {}
 	}
 	screen := top_screen(state.screens)
 	// Read before the screen runs: the B press that closes the keyboard

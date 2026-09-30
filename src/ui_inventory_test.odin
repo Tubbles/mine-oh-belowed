@@ -411,3 +411,261 @@ test_a_drag_sounds_on_the_pick_up_and_the_drop :: proc(t: ^testing.T) {
 	screen_test_frame(audit, &state, pointer_input(to, false, moved = false))
 	testing.expect(t, .Confirm in state.sound_events)
 }
+
+// Work item 0125: the touch row of the slot screens.
+
+touch_input :: proc(position: [2]f32, down: bool, pressed := false, moved := true) -> Ui_Input {
+	input := pointer_input(position, down, pressed, moved)
+	input.pointer_is_touch = true
+	return input
+}
+
+// A finger's press and release on a widget of the last frame.
+tap_widget :: proc(audit: ^Ui_Audit, state: ^Ui_State, id: Ui_Id) {
+	at := widget_centre(state^, id)
+	screen_test_frame(audit, state, touch_input(at, true, pressed = true))
+	screen_test_frame(audit, state, touch_input(at, false, moved = false))
+}
+
+slot_button_id :: proc(key: string) -> Ui_Id {
+	return ui_hash(0, text(key), -1)
+}
+
+glyph_bar_draws_glyphs :: proc(commands: []Draw_Command) -> bool {
+	for command in commands {
+		if command.panel == UI_GLYPH_BAR_PANEL && command.kind == .Ui_Icon {
+			return true
+		}
+	}
+	return false
+}
+
+// The chest panel open over an empty inventory and an empty chest.
+chest_test_panel :: proc(audit: ^Ui_Audit, state: ^Ui_State) -> (player: ^Player, chest_slots: []Item_Stack) {
+	simulation := &audit.simulation
+	chest := audit_machine_of_kind(audit, .Chest)
+	assert(chest != NO_ENTITY, "no chest")
+	player = &simulation.players[0]
+	for &slot in player.inventory.slots {
+		slot = EMPTY_STACK
+	}
+	player.held = EMPTY_HELD_STACK
+	player.selected_hotbar_slot = 0
+	chest_slots = entity_slots(&simulation.world.entities, chest)
+	for &slot in chest_slots {
+		slot = EMPTY_STACK
+	}
+	player.open_machine = chest
+	push_screen(&state.screens, .Machine)
+	screen_test_frame(audit, state, {})
+	return player, chest_slots
+}
+
+machine_panel_slot_id :: proc(grid: string, index: int) -> Ui_Id {
+	machine_panel := ui_hash(0, "machine", -1)
+	if grid == "chest" {
+		return ui_hash(ui_hash(ui_hash(machine_panel, "machine_slots", -1), "chest", -1), "slot", index)
+	}
+	return ui_hash(ui_hash(machine_panel, grid, -1), "slot", index)
+}
+
+@(test)
+test_the_touch_row_replaces_the_glyph_bar :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	for screen in ([2]Screen{.Inventory, .Machine}) {
+		state := Ui_State{theme = audit.theme}
+		if screen == .Inventory {
+			drag_test_inventory(audit, &state)
+		} else {
+			chest_test_panel(audit, &state)
+		}
+		screen_test_frame(audit, &state, {pointer_is_touch = true})
+		testing.expect(t, widget_index(state.widgets[:], slot_button_id("slot_button_transfer_all_of_type")) >= 0)
+		testing.expect(t, !glyph_bar_draws_glyphs(state.draw_list[:]))
+		screen_test_frame(audit, &state, {device = .Gamepad, device_seen = true})
+		testing.expect(t, widget_index(state.widgets[:], slot_button_id("slot_button_transfer_all_of_type")) < 0)
+		testing.expect(t, glyph_bar_draws_glyphs(state.draw_list[:]))
+		destroy_ui_state(&state)
+	}
+}
+
+// In the inventory screen: Split halves the active stack onto the
+// cursor, Sort sorts the main grid from the main grid and from the
+// hotbar, which keeps its order, and the transfers move between the
+// hotbar and the main grid.
+@(test)
+test_the_touch_row_in_the_inventory :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	state := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&state)
+	player := drag_test_inventory(audit, &state)
+	coal := test_item(audit.content.items, "coal")
+	stone := test_item(audit.content.items, "stone")
+	slots := player.inventory.slots
+	slots[HOTBAR_SLOT_COUNT + 4] = {stone, 2}
+	slots[HOTBAR_SLOT_COUNT + 6] = {coal, 1}
+	tap_widget(audit, &state, inventory_slot_id("hotbar", 3))
+	tap_widget(audit, &state, slot_button_id("slot_button_split"))
+	testing.expect_value(t, player.held.stack, Item_Stack{coal, 3})
+	testing.expect_value(t, slots[3], Item_Stack{coal, 2})
+	player.held = EMPTY_HELD_STACK
+	slots[3] = {coal, 5}
+	// The hotbar is active: Sort sorts the main grid, the hotbar keeps
+	// its order.
+	slots[5] = {stone, 1}
+	tap_widget(audit, &state, slot_button_id("slot_button_sort"))
+	testing.expect(t, !stack_is_empty(slots[HOTBAR_SLOT_COUNT]))
+	testing.expect(t, !stack_is_empty(slots[HOTBAR_SLOT_COUNT + 1]))
+	testing.expect_value(t, slots[HOTBAR_SLOT_COUNT + 4], EMPTY_STACK)
+	testing.expect_value(t, slots[HOTBAR_SLOT_COUNT + 6], EMPTY_STACK)
+	testing.expect_value(t, slots[3], Item_Stack{coal, 5})
+	testing.expect_value(t, slots[5], Item_Stack{stone, 1})
+	// Of type: the hotbar's coal onto the main grid's coal, the stone stays.
+	tap_widget(audit, &state, slot_button_id("slot_button_transfer_all_of_type"))
+	testing.expect_value(t, slots[3], EMPTY_STACK)
+	testing.expect_value(t, slots[5], Item_Stack{stone, 1})
+	testing.expect_value(t, inventory_count({slots = slots[HOTBAR_SLOT_COUNT:]}, coal), 6)
+	// The main grid is active: Sort sorts it.
+	slots[HOTBAR_SLOT_COUNT + 9] = slots[HOTBAR_SLOT_COUNT]
+	slots[HOTBAR_SLOT_COUNT] = EMPTY_STACK
+	tap_widget(audit, &state, inventory_slot_id("grid", 4))
+	tap_widget(audit, &state, slot_button_id("slot_button_sort"))
+	testing.expect(t, !stack_is_empty(slots[HOTBAR_SLOT_COUNT]))
+	testing.expect_value(t, slots[HOTBAR_SLOT_COUNT + 9], EMPTY_STACK)
+	testing.expect_value(t, slots[5], Item_Stack{stone, 1})
+	// Transfer all: the main grid into the hotbar.
+	tap_widget(audit, &state, slot_button_id("slot_button_transfer_all"))
+	testing.expect(t, slots_empty(inventory_grid(player.inventory)))
+	testing.expect_value(t, inventory_count(player.inventory, coal), 6)
+	testing.expect_value(t, inventory_count(player.inventory, stone), 3)
+	testing.expect_value(t, top_screen(state.screens), Screen.Inventory)
+}
+
+// X in a chest panel sorts the grid holding the focus, not the other.
+@(test)
+test_sort_touches_only_the_active_grid :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	state := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&state)
+	player, chest_slots := chest_test_panel(audit, &state)
+	coal := test_item(audit.content.items, "coal")
+	slots := player.inventory.slots
+	slots[HOTBAR_SLOT_COUNT + 5] = {coal, 1}
+	chest_slots[4] = {coal, 2}
+	tap_widget(audit, &state, machine_panel_slot_id("grid", 0))
+	screen_test_frame(audit, &state, {context_action = true})
+	testing.expect_value(t, slots[HOTBAR_SLOT_COUNT], Item_Stack{coal, 1})
+	testing.expect_value(t, chest_slots[4], Item_Stack{coal, 2})
+	slots[HOTBAR_SLOT_COUNT + 5] = {coal, 3}
+	tap_widget(audit, &state, machine_panel_slot_id("chest", 0))
+	screen_test_frame(audit, &state, {context_action = true})
+	testing.expect_value(t, chest_slots[0], Item_Stack{coal, 2})
+	testing.expect_value(t, slots[HOTBAR_SLOT_COUNT + 5], Item_Stack{coal, 3})
+	// From the hotbar X sorts the main grid, not the chest.
+	chest_slots[0], chest_slots[4] = EMPTY_STACK, {coal, 2}
+	tap_widget(audit, &state, machine_panel_slot_id("hotbar", 0))
+	screen_test_frame(audit, &state, {context_action = true})
+	// The coal of the first sort and this one merge.
+	testing.expect_value(t, slots[HOTBAR_SLOT_COUNT], Item_Stack{coal, 4})
+	testing.expect_value(t, slots[HOTBAR_SLOT_COUNT + 5], EMPTY_STACK)
+	testing.expect_value(t, chest_slots[4], Item_Stack{coal, 2})
+}
+
+// In a chest panel the hotbar and the main grid transfer into the chest,
+// the chest into the main grid; Split and Sort act on the chest's slot.
+@(test)
+test_the_touch_row_in_a_chest_panel :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	state := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&state)
+	player, chest_slots := chest_test_panel(audit, &state)
+	coal := test_item(audit.content.items, "coal")
+	stone := test_item(audit.content.items, "stone")
+	slots := player.inventory.slots
+	slots[2] = {coal, 4}
+	slots[HOTBAR_SLOT_COUNT + 1] = {stone, 3}
+	slots[HOTBAR_SLOT_COUNT + 2] = {coal, 1}
+	tap_widget(audit, &state, machine_panel_slot_id("hotbar", 2))
+	tap_widget(audit, &state, slot_button_id("slot_button_transfer_all"))
+	testing.expect(t, slots_empty(inventory_hotbar(player.inventory)))
+	testing.expect_value(t, chest_slots[0], Item_Stack{coal, 4})
+	tap_widget(audit, &state, machine_panel_slot_id("grid", 2))
+	tap_widget(audit, &state, slot_button_id("slot_button_transfer_all_of_type"))
+	testing.expect_value(t, chest_slots[0], Item_Stack{coal, 5})
+	testing.expect_value(t, slots[HOTBAR_SLOT_COUNT + 1], Item_Stack{stone, 3})
+	tap_widget(audit, &state, machine_panel_slot_id("chest", 0))
+	tap_widget(audit, &state, slot_button_id("slot_button_split"))
+	testing.expect_value(t, player.held.stack, Item_Stack{coal, 3})
+	testing.expect_value(t, chest_slots[0], Item_Stack{coal, 2})
+	player.held = EMPTY_HELD_STACK
+	chest_slots[0] = EMPTY_STACK
+	chest_slots[3] = {coal, 5}
+	tap_widget(audit, &state, slot_button_id("slot_button_sort"))
+	testing.expect_value(t, chest_slots[0], Item_Stack{coal, 5})
+	// The chest into the main grid, never the hotbar.
+	tap_widget(audit, &state, slot_button_id("slot_button_transfer_all"))
+	testing.expect(t, slots_empty(chest_slots))
+	testing.expect(t, slots_empty(inventory_hotbar(player.inventory)))
+	testing.expect_value(t, inventory_count(player.inventory, coal), 5)
+}
+
+// The active grid is forgotten with the focus on a frame without a screen.
+@(test)
+test_a_frame_without_a_screen_clears_the_active_slot :: proc(t: ^testing.T) {
+	state: Ui_State
+	defer destroy_ui_state(&state)
+	state.active_slot = {.Main, HOTBAR_SLOT_COUNT + 2}
+	push_screen(&state.screens, .None)
+	test_ui_frame(&state, {})
+	run_screens(&state, {})
+	testing.expect_value(t, state.active_slot, Active_Slot{.Main, HOTBAR_SLOT_COUNT + 2})
+	pop_screen(&state.screens)
+	test_ui_frame(&state, {})
+	run_screens(&state, {})
+	testing.expect_value(t, state.active_slot, Active_Slot{})
+}
+
+// X with a hotbar slot focused (where the screen opens) sorts the main
+// grid and leaves the hotbar's order.
+@(test)
+test_x_on_the_hotbar_sorts_the_main_grid :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	state := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&state)
+	player := drag_test_inventory(audit, &state)
+	coal := test_item(audit.content.items, "coal")
+	stone := test_item(audit.content.items, "stone")
+	slots := player.inventory.slots
+	slots[6] = {stone, 1}
+	slots[HOTBAR_SLOT_COUNT + 7] = {stone, 2}
+	screen_test_frame(audit, &state, {})
+	testing.expect_value(t, state.active_slot.grid, Slot_Grid_Kind.Hotbar)
+	screen_test_frame(audit, &state, {context_action = true})
+	testing.expect_value(t, slots[HOTBAR_SLOT_COUNT], Item_Stack{stone, 2})
+	testing.expect_value(t, slots[HOTBAR_SLOT_COUNT + 7], EMPTY_STACK)
+	testing.expect_value(t, slots[3], Item_Stack{coal, 5})
+	testing.expect_value(t, slots[6], Item_Stack{stone, 1})
+}
+
+// Buttons keep their widths while they fit; else the widest shrink
+// first to one common width.
+@(test)
+test_fit_button_widths_caps_the_widest :: proc(t: ^testing.T) {
+	natural := [?]f32{50, 60, 150, 250}
+	fitted := fit_button_widths(natural[:], 1000)
+	testing.expect_value(t, fitted[3], 250)
+	fitted = fit_button_widths(natural[:], 400)
+	testing.expect_value(t, fitted[0], 50)
+	testing.expect_value(t, fitted[1], 60)
+	testing.expect_value(t, fitted[2], 145)
+	testing.expect_value(t, fitted[3], 145)
+	fitted = fit_button_widths(natural[:], 100)
+	for width in fitted {
+		testing.expect_value(t, width, 25)
+	}
+}

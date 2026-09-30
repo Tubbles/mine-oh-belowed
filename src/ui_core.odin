@@ -382,6 +382,8 @@ Ui_State :: struct {
 	keyboard:         Keyboard_State,
 	distribute:       Distribute_Gesture,
 	quick_move:       Quick_Move_State,
+	// The slot screens' active grid (0125), forgotten with the focus.
+	active_slot:      Active_Slot,
 	toasts:           [dynamic]Toast,
 	// Mission Control's panel and the discovery card (ui_mission_control.odin).
 	mission_control:  Mission_Control_State,

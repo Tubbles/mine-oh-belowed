@@ -1501,6 +1501,12 @@ transfer_take_all = "Take all"
 transfer_store_all = "Store all"
 transfer_fill = "Fill"
 
+// The touch row of the slot screens (work item 0125)
+slot_button_sort = "Sort"
+slot_button_split = "Split"
+slot_button_transfer_all = "Transfer all"
+slot_button_transfer_all_of_type = "Transfer all of type"
+
 // Prospecting (work item 0038)
 toast_vein_assayed = "Vein assayed, marked on the map"
 toast_magnetometer_recorded = "Magnetometer reading marked on the map"

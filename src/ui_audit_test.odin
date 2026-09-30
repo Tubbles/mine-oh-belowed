@@ -69,6 +69,8 @@ Ui_Audit_Problem :: enum u8 {
 	Text_Too_Tall,
 	// A panel under the glyph bar's glyphs or labels.
 	Panel_Under_Glyph_Bar,
+	// A button of the touch row over the HUD's hotbar at UI scale 1 (0125).
+	Button_Over_Hud_Hotbar,
 }
 
 // One screen stack to audit at every size.
@@ -90,6 +92,9 @@ Ui_Audit_Case :: struct {
 	mission_control: bool,
 	// Audit one more frame per widget with the focus and the info panel on it.
 	walk_focus:   bool,
+	// The pointer is a finger (Ui_Input.pointer_is_touch): the slot
+	// screens draw the touch row (0125).
+	touch:        bool,
 }
 
 // Owns everything a Screen_Context points into.
@@ -299,7 +304,9 @@ audit_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, size: Ui_Audit_Size, aud
 	if audit_case.selecting != NO_ENTITY {
 		audit.browser.selecting_for = audit_case.selecting
 	}
-	ui_begin(state, input, size.pixels, 1.0 / 60, size.scale, 1, ui_accessibility(audit.settings))
+	frame_input := input
+	frame_input.pointer_is_touch = audit_case.touch
+	ui_begin(state, frame_input, size.pixels, 1.0 / 60, size.scale, 1, ui_accessibility(audit.settings))
 	state.focus_pulse = device == .Gamepad ? 1 : 0
 	screen_context := audit_screen_context(audit)
 	if audit_case.hud {
@@ -310,6 +317,25 @@ audit_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, size: Ui_Audit_Size, aud
 	ui_append_overlays(state)
 	case_text := fmt.tprintf("%s, %.0fx%.0f at scale %.2f, text %.1f, %v glyphs", audit_case.name, size.pixels.x, size.pixels.y, size.scale, audit.settings.text_scale, device)
 	audit_draw_list(audit, state, case_text, frame_name)
+	if audit_case.touch && size.scale == 1 {
+		audit_buttons_clear_hud_hotbar(audit, state, case_text, frame_name)
+	}
+}
+
+// The touch row stays off the HUD's hotbar, which draws under the open
+// screens.
+audit_buttons_clear_hud_hotbar :: proc(audit: ^Ui_Audit, state: ^Ui_State, case_text, frame_name: string) {
+	hotbar := hud_hotbar_rectangles(ui_safe_area(state), audit.simulation.players[0].selected_hotbar_slot)
+	for widget in state.widgets {
+		if widget.panel != UI_GLYPH_BAR_PANEL {
+			continue
+		}
+		for slot in hotbar {
+			if _, overlaps := rectangle_intersection(inset(widget.rectangle, UI_AUDIT_TOLERANCE), slot); overlaps {
+				audit_report(audit, case_text, frame_name, .Button_Over_Hud_Hotbar, .Fill, widget.rectangle, "")
+			}
+		}
+	}
 }
 
 audit_case_at_size :: proc(audit: ^Ui_Audit, audit_case: Ui_Audit_Case, size: Ui_Audit_Size, device: Input_Device) {
@@ -625,6 +651,7 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 	audit_case(audit, {name = "textures", screens = {.Pause, .Developer, .Textures}, walk_focus = true})
 	audit_touch_layout_editor(audit)
 	audit_case(audit, {name = "inventory", screens = {.Inventory}, walk_focus = true})
+	audit_case(audit, {name = "inventory touch row", screens = {.Inventory}, hud = true, touch = true})
 	simulation := &audit.simulation
 	for handle in machines_with_panels(&simulation.world, audit.content) {
 		machine := audit.content.machines.machines[entity_common(&simulation.world.entities, handle).machine]
@@ -633,6 +660,7 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 			name := fmt.tprintf("machine %s tab %d", machine.id, tab)
 			audit_case(audit, {name = name, screens = {.Machine}, machine = handle, tab_next = tab, walk_focus = true})
 		}
+		audit_case(audit, {name = fmt.tprintf("machine %s touch row", machine.id), screens = {.Machine}, machine = handle, hud = true, touch = true})
 	}
 	audit_waiting_inserter(audit)
 	audit_case(audit, {name = "recipes", screens = {.Recipes}, walk_focus = true})

@@ -53,13 +53,51 @@ apply_slot_split :: proc(inventory: Inventory, held: Held_Stack, index: int) -> 
 	return Held_Stack{stack = taken, origin_slot = index}
 }
 
-// X is the context action: it sorts the grid (the hotbar keeps its order).
-// Holding a stack, it does nothing.
+// X is the context action: it sorts the main grid (the hotbar keeps its
+// order); the screens apply it only while the main grid or the hotbar
+// is active (sort_target_grid, 0125). Holding a stack, it does nothing.
 apply_slot_context :: proc(inventory: Inventory, held: Held_Stack, registry: Item_Registry, ranks: []u16) -> Held_Stack {
 	if stack_is_empty(held.stack) {
 		sort_slots(inventory_grid(inventory), registry, ranks)
 	}
 	return held
+}
+
+// The grids of a slot screen (0125): the player's hotbar row, the
+// player's main grid and the open machine's slots.
+Slot_Grid_Kind :: enum u8 {
+	None,
+	Hotbar,
+	Main,
+	Machine,
+}
+
+// The slot that last held the focus and its grid, the active grid: Sort,
+// Split and the transfers of the touch row act on it after the focus
+// moved to the row's button. index is an inventory index for the
+// player's grids and a machine slot for .Machine.
+Active_Slot :: struct {
+	grid:  Slot_Grid_Kind,
+	index: int,
+}
+
+// The grid Sort sorts: the active one, but the hotbar keeps its order,
+// so from the hotbar Sort sorts the player's main grid (the screens open
+// with the focus on the hotbar).
+sort_target_grid :: proc(active: Slot_Grid_Kind) -> Slot_Grid_Kind {
+	return active == .Hotbar ? .Main : active
+}
+
+// A focused player slot (an inventory index) or machine slot makes its
+// grid active; a focus off the slots keeps the last one.
+active_slot_after_focus :: proc(previous: Active_Slot, player_focused, machine_focused: int) -> Active_Slot {
+	switch {
+	case player_focused >= 0:
+		return {player_focused < HOTBAR_SLOT_COUNT ? .Hotbar : .Main, player_focused}
+	case machine_focused >= 0:
+		return {.Machine, machine_focused}
+	}
+	return previous
 }
 
 // Back to the origin slot when it is free or holds the same item, then

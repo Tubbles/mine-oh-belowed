@@ -510,8 +510,15 @@ machine_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	machine_slots := machine_slot_region(state, machine_area, handle, slots, screen_context)
 	scroll_region_end(state, region)
 	ui_panel_end(state)
+	touch := slot_buttons_show(state)
+	button := touch ? slot_button_row(state) : .None
 	player_slots.activated, machine_slots.activated, machine_slots.hand_activated = apply_quick_move_input(state, screen_context, handle, slots, player_slots, machine_slots)
+	state.active_slot = active_slot_after_focus(state.active_slot, player_slots.focused, machine_slots.focused)
 	apply_machine_screen_input(state, screen_context, handle, machine.kind, slots, player_slots, machine_slots)
+	// Not during the Even Distribution gesture, as the slot input.
+	if !state.distribute.active {
+		apply_machine_slot_button(screen_context, handle, machine.kind, slots, state.active_slot, button)
+	}
 	apply_transfer_button(&screen_context.world.entities, statistics_simulation_content(screen_context), handle, player.inventory, machine_slots.transfer)
 	if inserter := pool_get(&screen_context.world.entities.inserters, handle); inserter != nil {
 		clear_filter := machine_slots.filter_focused && state.input.context_action
@@ -524,6 +531,9 @@ machine_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 	player.held = finish_slot_drag(state, player.inventory, player.held, items)
 	draw_held_stack(state, player.held.stack, items)
+	if touch {
+		return
+	}
 	if machine_slots.filter_focused {
 		filter_glyph_bar(state)
 		return
@@ -581,12 +591,15 @@ apply_machine_screen_input :: proc(state: ^Ui_State, screen_context: Screen_Cont
 	player, items := screen_context.player, screen_context.items
 	recipes := screen_context.recipes
 	input := state.input
+	// X sorts the active grid alone, the main grid from the hotbar
+	// (sort_target_grid, 0125); on a filter slot it clears the filter.
+	sorts := input.context_action && !machine_slots.filter_focused
 	if !state.distribute.active {
 		player_input := Inventory_Slot_Input {
 			activated      = player_slots.activated,
 			focused        = player_slots.focused,
 			secondary      = input.secondary,
-			context_action = input.context_action && machine_slots.focused < 0 && !machine_slots.filter_focused,
+			context_action = sorts && sort_target_grid(state.active_slot.grid) == .Main,
 		}
 		player.held = apply_inventory_slot_input(player.inventory, player.held, player_input, items, screen_context.item_sort_ranks)
 	}
@@ -595,11 +608,30 @@ apply_machine_screen_input :: proc(state: ^Ui_State, screen_context: Screen_Cont
 		focused        = machine_slots.focused,
 		confirm_down   = input.confirm_down || state.pointer_held,
 		secondary      = input.secondary,
-		context_action = input.context_action,
+		context_action = sorts && sort_target_grid(state.active_slot.grid) == .Machine,
 	}
 	filters := open_machine_slot_filters(screen_context, handle, kind, len(slots))
 	player.held = apply_machine_slot_input(&state.distribute, slots, filters, player.held, machine_input, items, recipes)
 	player.held = apply_machine_slot_secondary(slots, kind, player.held, machine_input, items, screen_context.item_sort_ranks)
+}
+
+// The touch row's button (0125) on the active grid: Sort and Split as X
+// and L2 on the active slot, the transfers into the grid the panel pairs
+// it with (transfer_target_grid).
+apply_machine_slot_button :: proc(screen_context: Screen_Context, handle: Entity_Handle, kind: Machine_Kind, slots: []Item_Stack, active: Active_Slot, button: Slot_Button) {
+	player, items, ranks := screen_context.player, screen_context.items, screen_context.item_sort_ranks
+	player.held = apply_player_slot_button(player.inventory, player.held, active, button, items, ranks)
+	if active.grid == .Machine && active.index < len(slots) {
+		machine_input := Machine_Slot_Input {
+			activated      = -1,
+			focused        = active.index,
+			secondary      = button == .Split,
+			context_action = button == .Sort,
+		}
+		player.held = apply_machine_slot_secondary(slots, kind, player.held, machine_input, items, ranks)
+	}
+	transfer := slot_button_transfer(.Machine, active, active_slot_stack(player.inventory, slots, active), button)
+	apply_grid_transfer(&screen_context.world.entities, statistics_simulation_content(screen_context), handle, player.inventory, transfer)
 }
 
 focused_stack :: proc(player_slots: []Item_Stack, player_focused: int, machine_slots: []Item_Stack, machine_focused: int) -> Item_Stack {

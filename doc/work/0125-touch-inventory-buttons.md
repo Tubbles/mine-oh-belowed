@@ -1,6 +1,6 @@
 # 0125: A tappable button row under the inventory screens
 
-Status: todo
+Status: implemented
 
 ## Goal
 
@@ -17,3 +17,12 @@ The user, playing the phone build (2026-09-30): the bottom row of the inventory 
 
 - `./build.sh check`, `./build.sh check-android`, `./build.sh test`. Tests: sort touches only the active grid in a two grid screen; each button's effect through the screen frame helpers; the row shows without glyphs for touch and the glyph bar shows for a gamepad; the target mapping: hotbar to main grid and back in the player's inventory; hotbar to machine, main grid to machine and machine to main grid in a machine panel.
 - The user, on the phone.
+
+## Implemented
+
+- The row: `slot_button_row` in `src/ui_inventory.odin` over the new `ui_button_bar` (`src/ui_widgets.odin`, the glyph bar's panel and place), drawn by `inventory_screen` and `machine_screen` in place of the glyph bar. The active grid: `Active_Slot` and `active_slot_after_focus` (`src/inventory_interaction.odin`), kept in `Ui_State.active_slot` (`src/ui_core.odin`) and cleared with the focus in `run_screens` (`src/ui_screens.odin`). The targets: `transfer_target_grid` and `apply_grid_transfer` (`src/quick_transfer.odin`), which reuses the quick move's `store_slot` into the machine and `move_stack_into_slots` (split out of `move_slot_to_section`) between the player's grids and out of the machine. Strings `slot_button_*` in `data/strings/en.sjson`. Decisions in `doc/log/2026-09-30.md`, the rules in `doc/ui.md` (Touch button row).
+- Deviation: the row shows on `Ui_Input.pointer_is_touch` (Android, or the touch overlay on) rather than on the `Touch` pointer source, which is `None` until the first tap on a screen and after a stick step, so the phone would show glyphs on opening the inventory.
+- Sort from a focused hotbar slot sorts the player's main grid (`sort_target_grid`), with X as with the button: the hotbar keeps its order, and the screens open with the focus on the hotbar, so the gamepad keeps its X sort of the backpack. Split and the transfers keep the hotbar as the active grid. On the gamepad, X in a chest panel now sorts the chest or the backpack, not both.
+- Deviation: the four buttons always show, in fixed places; one that does not apply (Transfer all of type on an empty slot) does nothing. Split lifts the larger half as L2 does, so a single item is lifted whole.
+- Review fixes: the row sits right of the HUD's hotbar where that leaves four slot widths (`slot_button_strip`), else along the whole safe area over the hotbar (larger UI scales, as the glyph bar); narrow buttons shrink widest first with ellipsized labels (`fit_button_widths`); the bounds audit covers the row with touch cases and a hotbar overlap check at UI scale 1 (`src/ui_audit_test.odin`); the buttons wait out the Even Distribution gesture.
+- Tests: `test_transfer_target_grid_per_screen`, `test_grid_transfer_between_hotbar_and_main_grid`, `test_grid_transfer_into_and_out_of_a_chest` (`src/quick_transfer_test.odin`), `test_active_slot_follows_the_focused_grid` (`src/inventory_interaction_test.odin`), and through screen frames `test_the_touch_row_replaces_the_glyph_bar`, `test_the_touch_row_in_the_inventory`, `test_sort_touches_only_the_active_grid`, `test_the_touch_row_in_a_chest_panel` (`src/ui_inventory_test.odin`, the machine panel tests sit beside the 0124 chest drag test there).

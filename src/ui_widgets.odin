@@ -978,6 +978,64 @@ ui_glyph_bar :: proc(state: ^Ui_State, hints: []Glyph_Hint) {
 	}
 }
 
+// Buttons without glyphs in the glyph bar's place (the touch row of the
+// slot screens, 0125): right aligned along the bottom of the strip, each
+// as wide as its label while they fit, else narrowed by
+// fit_button_widths with the labels cut short (draw_text_fitted), in
+// the glyph bar's panel. The index of the one activated this frame, -1
+// for none.
+ui_button_bar :: proc(state: ^Ui_State, labels: []string, strip: Ui_Rectangle) -> int {
+	area := ui_safe_area(state)
+	outer_panel := state.current_panel
+	append(&state.panels, Ui_Panel{id = UI_GLYPH_BAR_PANEL, rectangle = area})
+	state.current_panel = UI_GLYPH_BAR_PANEL
+	defer state.current_panel = outer_panel
+	natural := make([]f32, len(labels), context.temp_allocator)
+	for label, index in labels {
+		natural[index] = ui_text_width(state, label, UI_BODY_TEXT_SIZE) + 4 * UI_GAP
+	}
+	widths := fit_button_widths(natural, strip.width - f32(max(len(labels) - 1, 0)) * UI_GAP)
+	height := f32(UI_GLYPH_BAR_HEIGHT)
+	x := strip.x + strip.width
+	pressed := -1
+	#reverse for label, index in labels {
+		x -= widths[index]
+		if ui_button(state, {x, strip.y + strip.height - height, widths[index], height}, label) {
+			pressed = index
+		}
+		x -= UI_GAP
+	}
+	return pressed
+}
+
+// The natural widths while they fit the available width; otherwise the
+// widest are capped first at one common width, so short labels keep
+// theirs. In the temp allocator.
+fit_button_widths :: proc(natural: []f32, available: f32) -> []f32 {
+	widths := make([]f32, len(natural), context.temp_allocator)
+	copy(widths, natural)
+	if math.sum(natural) <= available || len(natural) == 0 {
+		return widths
+	}
+	cap := available / f32(len(natural))
+	// Each pass settles at least one more button under the cap.
+	for _ in natural {
+		room, uncapped := available, 0
+		for width in natural {
+			if width <= cap {
+				room -= width
+			} else {
+				uncapped += 1
+			}
+		}
+		cap = room / f32(max(uncapped, 1))
+	}
+	for &width in widths {
+		width = min(width, cap)
+	}
+	return widths
+}
+
 // Dock the tooltip to the right of the panel, or to its left, whichever
 // has room in the safe area. With room on neither side (a panel as wide
 // as the screen) it covers the panel under the focused widget, or above
