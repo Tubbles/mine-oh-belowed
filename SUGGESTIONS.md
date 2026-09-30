@@ -98,3 +98,8 @@ Written at the end of the Android app series (0112 to 0115), each with why it wa
 - The Data files screen keeps its tree until the screen is rebuilt or the game exits; it is small (0129 review). The overlay log line comes once per read, so a file read twice at start logs twice.
 - A content file's Save reloads at once rather than marking the data changed for the Reload button (0130); a `watch_data` gate would restore the item's wording. A string holding a character past printable ASCII (the strings file's `×`) or longer than 512 cannot be edited in the game and toasts. After a failed start turned the overlay off, it stays off for the run: Discard the broken file and restart; a Save meanwhile still writes and takes effect at the next start.
 - The export (0131) copies about 475 files in one frame on the main thread, a second or more on the phone's shared storage; a worker would remove the stall. The overlap check does not resolve symbolic links. Android before 11 has no All files access check, so a refused write toasts with its path there. On the phone the user sets the Syncthing folder's absolute path once on the Data files screen and grants All files access when the page opens.
+
+## Follow ups from the documentation pass (0141)
+
+- `tools/check_docs.py` runs by hand and is not part of `build.sh` or CI, so a stale link or name in a doc surfaces only when someone runs it. A CI step (the nix check) or a test that shells out to it would catch it on every push.
+- The belt surface scroll, the splitter's speed and the loose item's look have no doc since the pass; the old text was stale. `presentation.md` is the home if they are ever written up (cluster C review).
