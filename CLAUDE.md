@@ -34,6 +34,22 @@ Follows the project structure from the global preferences: `doc/` (detail docs),
 
 Work items live in `doc/work/NNNN-slug.md` with a `Status` line and a `Verify` section. Subagents get one item at a time with the files they may touch and the verify commands. A second subagent reviews the diff afterwards (the global instructions, Subagents); the main agent weighs the review, has the implementer fix what holds, and commits.
 
+Before handing back, an implementer walks the hand-back check below and says in its report what it changed because of it. The main agent reads the review's findings and the parts of the diff they touch, not the whole diff the reviewer covered, and runs the test suite once itself before the commit (user, 2026-09-30: both to cut the time per item, see the log).
+
+## Hand-back check
+
+Each line is a finding of the 2026-09-30 reviews that cost a fix round. The implementer checks its change against every line before it reports.
+
+- Anything that frees or replaces memory a frame may still draw from (an arena, a string table, a screen's rows) runs between frames through a request the loop serves (`serve_data_browser`, `serve_touch_layouts`), never inside the UI pass, and a test runs the frame and then reads the draw list.
+- A file is written to `<path>.tmp` and renamed over the path (`write_file_replacing`), never in place. A copy refuses a destination equal to its source. A path built from a listing or a setting stays under the directory it belongs to.
+- A start-up load that the game itself can make fail (an overlay copy, a setting) falls back and reports instead of exiting.
+- A number parsed from text is range checked (`strconv.parse_i64` wraps silently). A rate scaled per tick accumulates credits (`take_power_step`) instead of truncating.
+- A changed save layout loads an old save (a remap and one log line), and a behaviour change that stops old saves is named in the log and covered by the dev kits.
+- A new participant in a shared budget (power, fluid, a queue that credits future outputs) is checked for what it does to the existing ones: a proportional share that keeps it busy, an entry stuck ahead of it in a queue.
+- A list that grows without bound is capped where it draws (the HUD), a long string is fitted or wrapped, both checked at the smallest audit size.
+- A UI audit case a change makes obsolete is replaced, so the state it showed (a waiting queue, a full inventory) is still drawn somewhere.
+- Tests never touch the machine's state directory or settings; they use temporary directories (the overlay directory is "" under `odin test`).
+
 The factory benchmark (`./build.sh bench`, `--benchmark=<size>`) runs sizes up to 16; larger factories are read off size 16, never built (user, 2026-09-28). Heavy benchmark runs follow the window and lock rules of the global instructions.
 
 The couch always runs the latest build. After every commit that lands on `main` and changes `src/` or `data/`, run `tools/install_play_build.sh`; it never waits for the game, since every install gets its own directory under `bin/play/builds/` and the launcher resolves the `bin/play/current` link at launch. A work item or a bug fix is not done until the play build is installed, and the wrap-up names the installed commit. The user reads the build stamp (commit and build time) from the title screen or the pause menu when reporting a bug.
