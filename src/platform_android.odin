@@ -25,11 +25,24 @@ Android_Native_Activity :: struct {
 	obb_path:           cstring,
 }
 
+// The fields up to destroyRequested (work item 0116), in the order of
+// android_native_app_glue.h, NDK 27.3.13750724; content_rect is ARect,
+// four int32_t (android/rect.h).
 Android_App :: struct {
-	user_data:      rawptr,
-	on_app_cmd:     rawptr,
-	on_input_event: rawptr,
-	activity:       ^Android_Native_Activity,
+	user_data:         rawptr,
+	on_app_cmd:        rawptr,
+	on_input_event:    rawptr,
+	activity:          ^Android_Native_Activity,
+	config:            rawptr,
+	saved_state:       rawptr,
+	saved_state_size:  uint,
+	looper:            rawptr,
+	input_queue:       rawptr,
+	window:            rawptr,
+	content_rect:      [4]i32,
+	activity_state:    i32,
+	// Non-zero while the activity is being destroyed.
+	destroy_requested: i32,
 }
 
 // rcore_android.c: the android_app raylib's android_main was given. Set

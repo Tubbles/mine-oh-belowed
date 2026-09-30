@@ -153,6 +153,7 @@ command_line_developer_requests :: proc(requests: ^[dynamic]Developer_Request, c
 // Prints which backend is active and why. Fails only when SDL3 was asked for
 // explicitly, so that a broken SDL setup cannot hide behind the fallback.
 start_input_backend :: proc(request: Input_Backend_Request) -> (backend: Input_Backend, ok: bool) {
+	reset_raylib_pointer_position()
 	if request == .Raylib {
 		log_printf("input: raylib backend (requested with --input=raylib)")
 		return .Raylib, true

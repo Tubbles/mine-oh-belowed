@@ -73,10 +73,19 @@ when ODIN_PLATFORM_SUBTARGET == .Android {
 		last_touch_position = touch_pointer_position(int(rl.GetTouchPointCount()), rl.GetTouchPosition(0), last_touch_position)
 		return last_touch_position
 	}
+
+	// A second main in the same process (work item 0116) runs without the
+	// global initialisers, so the backend's start clears the previous
+	// run's position.
+	reset_raylib_pointer_position :: proc() {
+		last_touch_position = {}
+	}
 } else {
 	raylib_pointer_position :: proc() -> [2]f32 {
 		return rl.GetMousePosition()
 	}
+
+	reset_raylib_pointer_position :: proc() {}
 }
 
 touch_pointer_position :: proc(touch_count: int, first_touch, last_position: [2]f32) -> [2]f32 {

@@ -27,6 +27,10 @@ global_console: Console_State
 // keeps seeing its output there), points stderr at the log file.
 redirect_stderr_to_log :: proc(file: ^os.File) {
 	global_console.log_descriptor = posix.FD(os.fd(file))
+	if global_console.stderr_redirected {
+		point_redirected_stderr_at_log()
+		return
+	}
 	if posix.isatty(posix.STDERR_FILENO) {
 		return
 	}
@@ -40,6 +44,18 @@ redirect_stderr_to_log :: proc(file: ^os.File) {
 	}
 	global_console.original_stderr = original
 	global_console.stderr_redirected = true
+}
+
+// A second main in the same process (Android, work item 0116): stderr
+// still holds the previous run's log (close_log_file closed only its own
+// descriptor), and original_stderr is still the stderr from before the
+// first redirect, so only stderr moves to the new log. When that fails,
+// stderr stays on the previous run's log, the same path opened for append,
+// so runtime errors still land in the log.
+point_redirected_stderr_at_log :: proc() {
+	if posix.dup2(global_console.log_descriptor, posix.STDERR_FILENO) == -1 {
+		write_log_line(global_log.file, "error: cannot point stderr at the new log, it stays on the previous one")
+	}
 }
 
 // The game's own output for a person or a script: stderr, or what stderr
