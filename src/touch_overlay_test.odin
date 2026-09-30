@@ -38,8 +38,9 @@ slot_by_id :: proc(state: Touch_Overlay_State, id: i32) -> Touch_Slot {
 
 // 0115's scheme, where the look half is the look drag from the start; a
 // 60 Hz frame with a tick in the one before.
-CROSSHAIR_TOUCH :: Touch_Interaction_Frame{interaction = .Crosshair, frame_seconds = 1.0 / 60, ticked = true}
-TAP_TOUCH :: Touch_Interaction_Frame{interaction = .Tap, frame_seconds = 1.0 / 60, ticked = true}
+// The sneak setting at its default, Hold, so double taps latch.
+CROSSHAIR_TOUCH :: Touch_Interaction_Frame{interaction = .Crosshair, frame_seconds = 1.0 / 60, ticked = true, double_tap_latches = true}
+TAP_TOUCH :: Touch_Interaction_Frame{interaction = .Tap, frame_seconds = 1.0 / 60, ticked = true, double_tap_latches = true}
 
 // One frame of fingers, the output as the backends read it.
 touch_frame :: proc(state: ^Touch_Overlay_State, layout: Touch_Overlay_Layout, points: []Touch_Point, world_shown := true, screen := PHONE_SCREEN, inputs := CROSSHAIR_TOUCH) -> Touch_Overlay_Output {
@@ -413,6 +414,9 @@ test_touch_overlay_errors_name_the_element :: proc(t: ^testing.T) {
 		{`reference_height = 0 elements = []`, "reference_height must be positive"},
 		{`reference_height = 1080 elements = []`, `unknown hotbar_drop_control ""`},
 		{`reference_height = 1080 hotbar_drop_control = "DROP" elements = []`, `unknown hotbar_drop_control "DROP"`},
+		{`reference_height = 1080 hotbar_drop_control = "DPAD_DOWN" elements = [{kind = "stick" side = "left" radius = 130 sprint_rim = 1.25 position = [300, 300]}]`, "elements[0] (stick): a floating stick takes no anchor or position"},
+		{`reference_height = 1080 hotbar_drop_control = "DPAD_DOWN" elements = [{kind = "stick" side = "left" radius = 130 sprint_rim = 1.25 static = true}]`, "elements[0] (stick): a static stick needs an anchor and a position"},
+		{`reference_height = 1080 hotbar_drop_control = "DPAD_DOWN" elements = [{kind = "stick" side = "left" radius = 130 sprint_rim = 1.25 static = true position = [300, 300]}]`, `elements[0] (stick): unknown anchor ""`},
 	}
 	for test_case in cases {
 		_, problem := parse_touch_overlay_file(transmute([]byte)test_case.text, "data/touch_overlay.sjson")
@@ -1037,4 +1041,130 @@ test_over_a_screen_a_hotbar_touch_is_the_pointers :: proc(t: ^testing.T) {
 	// And a frame from a screen presses no action even if it carried one.
 	frame.hotbar_tap = 3
 	testing.expect_value(t, apply_touch_overlay_hotbar({}, frame).just_pressed, Action_Set{})
+}
+
+// A static stick at the bottom left, its base centred at 300, 780 on the
+// phone, and the look on the right.
+STATIC_STICK_LAYOUT :: `reference_height = 1080 hotbar_drop_control = "DPAD_DOWN" elements = [
+	{kind = "stick" static = true anchor = "bottom_left" position = [300, 300] side = "left" radius = 130 sprint_rim = 1.25}
+	{kind = "look" side = "right" sensitivity = 1 hold_control = "RIGHT_TRIGGER" tap_interact_control = "SOUTH" tap_place_control = "LEFT_TRIGGER"}
+]`
+
+@(test)
+test_a_static_stick_reads_a_touch_inside_its_base_and_ignores_one_outside :: proc(t: ^testing.T) {
+	layout, problem := parse_touch_overlay_file(transmute([]byte)string(STATIC_STICK_LAYOUT), "static.sjson", context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	state: Touch_Overlay_State
+	// Inside the base, off its centre: the drag counts from the centre.
+	output := touch_frame(&state, layout, {{id = 0, position = {330, 780}}})
+	testing.expect_value(t, slot_by_id(state, 0).role, Touch_Role.Stick)
+	expect_near(t, output.stick, {30.0 / 130, 0})
+	output = touch_frame(&state, layout, {{id = 0, position = {300, 715}}})
+	expect_near(t, output.stick, {0, -0.5})
+	touch_frame(&state, layout, {})
+	// Outside the base on its half: neither the stick nor the look.
+	touch_frame(&state, layout, {{id = 1, position = {700, 400}}})
+	testing.expect_value(t, slot_by_id(state, 1).role, Touch_Role.Ignored)
+	output = touch_frame(&state, layout, {{id = 1, position = {760, 420}}})
+	testing.expect_value(t, output, Touch_Overlay_Output{})
+}
+
+B_BUTTON_POINT :: [2]f32{2424 - 172, 431}
+
+// A tap on B: one frame down, one frame up.
+tap_b :: proc(state: ^Touch_Overlay_State, layout: Touch_Overlay_Layout, id: i32, inputs := CROSSHAIR_TOUCH) -> (while_down, after_lift: bool) {
+	while_down = touch_frame(state, layout, {{id = id, position = B_BUTTON_POINT}}, inputs = inputs).buttons[int(sdl.GamepadButton.EAST)]
+	after_lift = touch_frame(state, layout, {}, inputs = inputs).buttons[int(sdl.GamepadButton.EAST)]
+	return
+}
+
+@(test)
+test_a_double_tap_latches_b_and_the_next_tap_releases_it :: proc(t: ^testing.T) {
+	layout := shipped_touch_overlay(t)
+	state: Touch_Overlay_State
+	down, lifted := tap_b(&state, layout, 0)
+	testing.expect(t, down && !lifted)
+	down, lifted = tap_b(&state, layout, 1)
+	testing.expect(t, down && lifted)
+	// Latched well past the double tap time.
+	for _ in 0 ..< 60 {
+		testing.expect(t, touch_frame(&state, layout, {}).buttons[int(sdl.GamepadButton.EAST)])
+	}
+	// The next tap holds it while down and releases it on the lift.
+	down, lifted = tap_b(&state, layout, 2)
+	testing.expect(t, down && !lifted)
+	// A quick tap after the release is a first tap again, not a latch.
+	down, lifted = tap_b(&state, layout, 3)
+	testing.expect(t, down && !lifted)
+}
+
+@(test)
+test_single_taps_on_b_press_and_release :: proc(t: ^testing.T) {
+	layout := shipped_touch_overlay(t)
+	state: Touch_Overlay_State
+	for id in i32(0) ..< 3 {
+		down, lifted := tap_b(&state, layout, id)
+		testing.expect(t, down && !lifted)
+		// Longer than TOUCH_DOUBLE_TAP_SECONDS apart: 20 frames at 60 Hz.
+		for _ in 0 ..< 20 {
+			touch_frame(&state, layout, {})
+		}
+	}
+	// A double tap on A, which does not toggle, latches nothing.
+	touch_frame(&state, layout, {{id = 5, position = {2112, 575}}})
+	touch_frame(&state, layout, {})
+	touch_frame(&state, layout, {{id = 6, position = {2112, 575}}})
+	testing.expect_value(t, touch_frame(&state, layout, {}), Touch_Overlay_Output{})
+}
+
+@(test)
+test_double_taps_latch_only_while_the_sneak_setting_is_hold :: proc(t: ^testing.T) {
+	layout := shipped_touch_overlay(t)
+	toggle_sneak := CROSSHAIR_TOUCH
+	toggle_sneak.double_tap_latches = false
+	state: Touch_Overlay_State
+	// In Toggle a double tap is two taps.
+	down, lifted := tap_b(&state, layout, 0, toggle_sneak)
+	testing.expect(t, down && !lifted)
+	down, lifted = tap_b(&state, layout, 1, toggle_sneak)
+	testing.expect(t, down && !lifted)
+	// A latch made in Hold is released once the setting is Toggle.
+	tap_b(&state, layout, 2)
+	_, lifted = tap_b(&state, layout, 3)
+	testing.expect(t, lifted)
+	testing.expect_value(t, touch_frame(&state, layout, {}, inputs = toggle_sneak), Touch_Overlay_Output{})
+	testing.expect_value(t, state.latched, bit_set[0 ..< TOUCH_OVERLAY_ELEMENT_CAPACITY]{})
+}
+
+@(test)
+test_a_data_reload_releases_the_latches :: proc(t: ^testing.T) {
+	layout := shipped_touch_overlay(t)
+	state: Touch_Overlay_State
+	tap_b(&state, layout, 0)
+	_, lifted := tap_b(&state, layout, 1)
+	testing.expect(t, lifted)
+	// The reloaded layout has a toggling button inserted before B, so B's
+	// old index is now that button.
+	b_index := button_at(overlay_layout(layout, PHONE_SCREEN, context.temp_allocator), B_BUTTON_POINT)
+	inserted := Touch_Overlay_Element{kind = .Button, control = {button = .NORTH}, shape = .Circle, anchor = .Top_Left, position = {500, 500}, size = {50, 50}, label = "N", double_tap_toggles = true}
+	elements := make([dynamic]Touch_Overlay_Element, context.temp_allocator)
+	append(&elements, ..layout.elements[:b_index])
+	append(&elements, inserted)
+	append(&elements, ..layout.elements[b_index:])
+	reloaded := Touch_Overlay_Layout{reference_height = layout.reference_height, hotbar_drop_control = layout.hotbar_drop_control, elements = elements[:]}
+	state = release_touch_latches(state)
+	testing.expect_value(t, touch_frame(&state, reloaded, {}), Touch_Overlay_Output{})
+}
+
+@(test)
+test_a_long_press_on_b_then_a_quick_press_does_not_latch :: proc(t: ^testing.T) {
+	layout := shipped_touch_overlay(t)
+	state: Touch_Overlay_State
+	// Half a second down, longer than TOUCH_HOLD_SECONDS.
+	for _ in 0 ..< 30 {
+		touch_frame(&state, layout, {{id = 0, position = B_BUTTON_POINT}})
+	}
+	touch_frame(&state, layout, {})
+	down, lifted := tap_b(&state, layout, 1)
+	testing.expect(t, down && !lifted)
 }

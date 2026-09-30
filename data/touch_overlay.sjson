@@ -20,13 +20,26 @@
 //               offset from the centre line, negative to the left
 //     size      width and height (a circle's diameter twice)
 //     label     drawn on the button and named in load errors
+//     double_tap_toggles  (work item 0120, false when left out) a touch
+//               landing within 0.3 seconds of a tap's lift (a tap: down
+//               less than 0.25 seconds) latches the button down until
+//               the next tap; a single tap presses it as usual. B (Sneak)
+//               has it: double tapping B keeps sneaking. Latching works
+//               only while the sneak setting is Hold, where a tap does
+//               not already toggle
 //   stick: side (left or right, the half of the screen a touch that
 //     begins on no button turns into the stick, centred where it began),
 //     radius (the drag that gives a full stick; the input backend's stick
 //     dead zone applies as for any stick) and sprint_rim (the drag over
 //     the radius at which the stick starts to hold LEFT_STICK, Sprint:
 //     the first crossing within 45 degrees of straight up holds it until
-//     the finger lifts)
+//     the finger lifts), and static (work item 0120, false when left
+//     out): a static stick has anchor and position like a button (its
+//     base's centre) and reads only a touch that begins inside its base
+//     circle, centred on the base; a touch elsewhere on its half does
+//     nothing. A floating stick takes no anchor or position. The loader
+//     cannot tell position = [0, 0] from no position, so a static stick
+//     needs a non zero position and a floating stick leaves it out.
 //   look: side (the half whose drags turn the view) and sensitivity (the
 //     drag's pixels are multiplied by it and added as mouse pixels), and
 //     the controls of the tap scheme (work item 0118, the touch_interaction
@@ -53,7 +66,7 @@ elements = [
 	{kind = "button" control = "RIGHT_SHOULDER" shape = "rectangle" anchor = "top_right" position = [85, 238] size = [170, 100] label = "RB"}
 	{kind = "button" control = "NORTH" shape = "circle" anchor = "top_right" position = [312, 287] size = [146, 146] label = "Y"}
 	{kind = "button" control = "WEST" shape = "circle" anchor = "top_right" position = [457, 431] size = [146, 146] label = "X"}
-	{kind = "button" control = "EAST" shape = "circle" anchor = "top_right" position = [172, 431] size = [146, 146] label = "B"}
+	{kind = "button" control = "EAST" shape = "circle" anchor = "top_right" position = [172, 431] size = [146, 146] label = "B" double_tap_toggles = true}
 	{kind = "button" control = "SOUTH" shape = "circle" anchor = "top_right" position = [312, 575] size = [146, 146] label = "A"}
 	{kind = "button" control = "LEFT_STICK" shape = "circle" anchor = "bottom_left" position = [121, 290] size = [120, 120] label = "L3"}
 	{kind = "button" control = "BACK" shape = "rectangle" anchor = "top_center" position = [-99, 60] size = [163, 79] label = "Back"}

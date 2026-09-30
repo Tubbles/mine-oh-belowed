@@ -25,7 +25,9 @@ import sdl "vendor:sdl3"
 // it when tapped, the one place the overlay presses an action
 // (apply_touch_overlay_hotbar), since selecting a given slot has no
 // gamepad control; held on the selected slot it presses
-// hotbar_drop_control (Drop_Stack).
+// hotbar_drop_control (Drop_Stack). A static stick (0120) sits at a fixed
+// place and reads only a touch that begins inside its base; a button with
+// double_tap_toggles latches down on a double tap until the next tap.
 
 TOUCH_OVERLAY_FILE_NAME :: "touch_overlay.sjson"
 // raylib's MAX_TOUCH_POINTS (rcore.c).
@@ -42,6 +44,12 @@ RAYLIB_TRIGGER_REST :: -1
 // is the look drag, one that rests this long is a hold.
 TOUCH_TAP_SLOP :: 12.0
 TOUCH_HOLD_SECONDS :: 0.25
+// A button with double_tap_toggles (0120) latches when a touch lands on it
+// this soon after the previous touch on it lifted.
+TOUCH_DOUBLE_TAP_SECONDS :: 0.3
+// The latched buttons are a bit set over the element index, so a layout
+// holds at most this many elements.
+TOUCH_OVERLAY_ELEMENT_CAPACITY :: 64
 
 // The settings value (settings.touch_overlay): auto is on for the Android
 // build and off elsewhere.
@@ -108,6 +116,10 @@ Touch_Overlay_Element_Entry :: struct {
 	hold_control:         string,
 	tap_interact_control: string,
 	tap_place_control:    string,
+	// 0120: a stick with anchor and position, a button that latches on a
+	// double tap.
+	static:               bool,
+	double_tap_toggles:   bool,
 }
 
 Touch_Overlay_File :: struct {
@@ -135,6 +147,9 @@ Touch_Overlay_Element :: struct {
 	hold_control:         Touch_Overlay_Control,
 	tap_interact_control: Touch_Overlay_Control,
 	tap_place_control:    Touch_Overlay_Control,
+	// A static stick's base is centred at anchor and position (0120).
+	static:               bool,
+	double_tap_toggles:   bool,
 }
 
 // hotbar_drop_control: held by a long press on the selected hotbar slot
@@ -186,7 +201,7 @@ Touch_Slot :: struct {
 	previous: [2]f32,
 	// A stick's drag crossed the rim upwards (stick_sprint_latched).
 	sprint_latched: bool,
-	// How long a Pending or Hotbar touch has been down.
+	// How long a Pending, Hotbar or Button touch has been down.
 	held_seconds:   f32,
 	// A Hotbar touch's slot. spent: its long press fired or it moved past
 	// the slop, so it fires nothing more. drops: its long press was on
@@ -194,6 +209,16 @@ Touch_Slot :: struct {
 	hotbar_slot:    int,
 	hotbar_spent:   bool,
 	hotbar_drops:   bool,
+	// A Button touch that latched or released its double_tap_toggles
+	// button, so its lift starts no double tap.
+	toggle_spent:   bool,
+}
+
+// The last lift of a double_tap_toggles button and the frame time since.
+Touch_Double_Tap :: struct {
+	armed:   bool,
+	element: int,
+	seconds: f32,
 }
 
 // A tap after its finger lifted: first it aims at the point until a tick
@@ -221,6 +246,9 @@ Touch_Tap :: struct {
 Touch_Overlay_State :: struct {
 	slots: [TOUCH_POINT_CAPACITY]Touch_Slot,
 	tap:   Touch_Tap,
+	// The double_tap_toggles buttons latched down, by element index.
+	latched:    bit_set[0 ..< TOUCH_OVERLAY_ELEMENT_CAPACITY],
+	double_tap: Touch_Double_Tap,
 }
 
 // What the frame hands the overlay besides the fingers. ticked: the
@@ -236,6 +264,9 @@ Touch_Interaction_Frame :: struct {
 	target_takes_interaction: bool,
 	hotbar_slots:             [HOTBAR_SLOT_COUNT]Ui_Rectangle,
 	selected_hotbar_slot:     int,
+	// A double_tap_toggles button may latch (0120): the sneak setting is
+	// Hold. False releases every latch.
+	double_tap_latches:       bool,
 }
 
 // What the fingers hold this frame. buttons by SDL button index; stick in
@@ -374,6 +405,17 @@ resolve_touch_overlay_stick :: proc(entry: Touch_Overlay_Element_Entry, element:
 	case entry.sprint_rim < 1:
 		return "the sprint_rim must be 1 or more"
 	}
+	if !entry.static {
+		return entry.anchor != "" || entry.position != {} ? "a floating stick takes no anchor or position (static = true fixes it in place)" : ""
+	}
+	if entry.position == {} {
+		return "a static stick needs an anchor and a position"
+	}
+	anchor, anchor_ok := name_to_enum(touch_overlay_anchor_names, entry.anchor)
+	if !anchor_ok {
+		return fmt.tprintf("unknown anchor %q (top_left, top_right, bottom_left, bottom_right, bottom_center, top_center)", entry.anchor)
+	}
+	element.anchor = anchor
 	return ""
 }
 
@@ -408,13 +450,15 @@ resolve_touch_overlay_element :: proc(entry: Touch_Overlay_Element_Entry) -> (el
 		return {}, fmt.tprintf("unknown kind %q (button, stick, look)", entry.kind)
 	}
 	element = Touch_Overlay_Element {
-		kind        = kind,
-		position    = entry.position,
-		size        = entry.size,
-		label       = entry.label,
-		radius      = entry.radius,
-		sprint_rim  = entry.sprint_rim,
-		sensitivity = entry.sensitivity,
+		kind               = kind,
+		position           = entry.position,
+		size               = entry.size,
+		label              = entry.label,
+		radius             = entry.radius,
+		sprint_rim         = entry.sprint_rim,
+		sensitivity        = entry.sensitivity,
+		static             = entry.static,
+		double_tap_toggles = entry.double_tap_toggles,
 	}
 	switch kind {
 	case .Button:
@@ -449,6 +493,9 @@ touch_overlay_zones_problem :: proc(elements: []Touch_Overlay_Element) -> string
 resolve_touch_overlay :: proc(file: Touch_Overlay_File, allocator := context.allocator) -> (layout: Touch_Overlay_Layout, problem: string) {
 	if file.reference_height <= 0 {
 		return {}, "reference_height must be positive"
+	}
+	if len(file.elements) > TOUCH_OVERLAY_ELEMENT_CAPACITY {
+		return {}, fmt.tprintf("more than %d elements", TOUCH_OVERLAY_ELEMENT_CAPACITY)
 	}
 	elements := make([]Touch_Overlay_Element, len(file.elements), allocator)
 	for entry, index in file.elements {
@@ -639,13 +686,39 @@ classify_touch :: proc(state: Touch_Overlay_State, layout: Touch_Overlay_Layout,
 		return .Hotbar, -1, slot
 	}
 	side := screen_side(point, screen_size)
-	if stick := zone_element(layout, .Stick, side); stick >= 0 && !stick_held(state) {
+	if stick := zone_element(layout, .Stick, side); stick >= 0 {
+		if stick_held(state) || !stick_reaches(layout, layout.elements[stick], point, screen_size) {
+			return .Ignored, -1, -1
+		}
 		return .Stick, stick, -1
 	}
 	if look := zone_element(layout, .Look, side); look >= 0 {
 		return inputs.interaction == .Tap ? .Pending : .Look, look, -1
 	}
 	return .Ignored, -1, -1
+}
+
+// A static stick's base centre in render pixels, anchored like a button.
+static_stick_centre :: proc(layout: Touch_Overlay_Layout, stick: Touch_Overlay_Element, screen_size: [2]f32) -> [2]f32 {
+	return anchored_position(stick.anchor, stick.position * touch_overlay_scale(layout, screen_size), screen_size)
+}
+
+// A floating stick takes a touch anywhere on its half, a static one only
+// inside its base circle.
+stick_reaches :: proc(layout: Touch_Overlay_Layout, stick: Touch_Overlay_Element, point, screen_size: [2]f32) -> bool {
+	if !stick.static {
+		return true
+	}
+	return linalg.length(point - static_stick_centre(layout, stick, screen_size)) <= stick.radius * touch_overlay_scale(layout, screen_size)
+}
+
+// Where a new finger's drag counts from: a static stick's base centre,
+// else where it landed.
+touch_origin :: proc(layout: Touch_Overlay_Layout, role: Touch_Role, element: int, point, screen_size: [2]f32) -> [2]f32 {
+	if role == .Stick && layout.elements[element].static {
+		return static_stick_centre(layout, layout.elements[element], screen_size)
+	}
+	return point
 }
 
 // The hotbar slot under the point, -1 for none.
@@ -689,6 +762,47 @@ advance_hotbar_touch :: proc(slot: Touch_Slot, slop, frame_seconds: f32, selecte
 // in the world only.
 lifted_hotbar_taps :: proc(slot: Touch_Slot, world_shown: bool) -> bool {
 	return world_shown && slot.role == .Hotbar && !slot.hotbar_spent
+}
+
+// The time since the last lift, forgotten past TOUCH_DOUBLE_TAP_SECONDS.
+advance_double_tap :: proc(double_tap: Touch_Double_Tap, frame_seconds: f32) -> Touch_Double_Tap {
+	result := double_tap
+	result.seconds += frame_seconds
+	return result.armed && result.seconds <= TOUCH_DOUBLE_TAP_SECONDS ? result : {}
+}
+
+// A tap's lift (down shorter than TOUCH_HOLD_SECONDS) on a
+// double_tap_toggles button that neither latched nor released it starts
+// the wait for the second tap; a longer press does not.
+lifted_button_arms_double_tap :: proc(slot: Touch_Slot, layout: Touch_Overlay_Layout) -> bool {
+	return slot.role == .Button && !slot.toggle_spent && slot.held_seconds < TOUCH_HOLD_SECONDS && touch_slot_reads(slot, layout) && layout.elements[slot.element].double_tap_toggles
+}
+
+// The latches index the layout's elements, so a data reload that installs
+// a new layout (replace_frame_content) releases them and forgets the
+// double tap, rather than leaving a latch on an element that moved.
+release_touch_latches :: proc(state: Touch_Overlay_State) -> Touch_Overlay_State {
+	result := state
+	result.latched, result.double_tap = {}, {}
+	return result
+}
+
+// A finger landing on a double_tap_toggles button: on a latched one it
+// releases the latch (the finger still holds the button until it lifts),
+// within TOUCH_DOUBLE_TAP_SECONDS of the last lift of the same button it
+// latches it. spent: either happened.
+touch_down_toggles :: proc(state: Touch_Overlay_State, layout: Touch_Overlay_Layout, element: int) -> (latched: bit_set[0 ..< TOUCH_OVERLAY_ELEMENT_CAPACITY], spent: bool) {
+	latched = state.latched
+	if !layout.elements[element].double_tap_toggles {
+		return latched, false
+	}
+	switch {
+	case element in latched:
+		return latched - {element}, true
+	case state.double_tap.armed && state.double_tap.element == element:
+		return latched + {element}, true
+	}
+	return latched, false
 }
 
 find_touch_point :: proc(points: []Touch_Point, id: i32) -> (point: Touch_Point, found: bool) {
@@ -789,6 +903,12 @@ touch_hold_held :: proc(state: Touch_Overlay_State) -> bool {
 update_touch_overlay :: proc(state: ^Touch_Overlay_State, points: []Touch_Point, layout: Touch_Overlay_Layout, placed: []Placed_Element, screen_size: [2]f32, world_shown: bool, inputs: Touch_Interaction_Frame) -> (hotbar_tap: int) {
 	hotbar_tap = -1
 	state.tap = advance_touch_tap(state.tap, layout, world_shown, inputs)
+	state.double_tap = advance_double_tap(state.double_tap, inputs.frame_seconds)
+	// Only while the sneak setting is Hold: in Toggle a tap already
+	// toggles, and a latch would swallow the next toggle's edge.
+	if !inputs.double_tap_latches {
+		state^ = release_touch_latches(state^)
+	}
 	slop := TOUCH_TAP_SLOP * touch_overlay_scale(layout, screen_size)
 	for &slot in state.slots {
 		if !slot.active {
@@ -802,10 +922,16 @@ update_touch_overlay :: proc(state: ^Touch_Overlay_State, points: []Touch_Point,
 			if lifted_hotbar_taps(slot, world_shown) {
 				hotbar_tap = slot.hotbar_slot
 			}
+			if inputs.double_tap_latches && lifted_button_arms_double_tap(slot, layout) {
+				state.double_tap = Touch_Double_Tap{armed = true, element = slot.element}
+			}
 			slot = {}
 			continue
 		}
 		slot.previous, slot.position = slot.position, point.position
+		if slot.role == .Button {
+			slot.held_seconds += inputs.frame_seconds
+		}
 		// Not under a screen, where the held stick reads nothing: a rim
 		// crossing there would be a fresh press the frame it closes.
 		if world_shown {
@@ -831,7 +957,15 @@ update_touch_overlay :: proc(state: ^Touch_Overlay_State, points: []Touch_Point,
 			return hotbar_tap
 		}
 		role, element, hotbar_slot := classify_touch(state^, layout, placed, point.position, screen_size, world_shown, inputs)
-		state.slots[free_index] = Touch_Slot{active = true, id = point.id, role = role, element = element, hotbar_slot = hotbar_slot, origin = point.position, position = point.position, previous = point.position}
+		origin := touch_origin(layout, role, element, point.position, screen_size)
+		toggle_spent: bool
+		if role == .Button && inputs.double_tap_latches {
+			state.latched, toggle_spent = touch_down_toggles(state^, layout, element)
+		}
+		if toggle_spent {
+			state.double_tap = {}
+		}
+		state.slots[free_index] = Touch_Slot{active = true, id = point.id, role = role, element = element, hotbar_slot = hotbar_slot, origin = origin, position = point.position, previous = point.position, toggle_spent = toggle_spent}
 	}
 	return hotbar_tap
 }
@@ -944,10 +1078,25 @@ touch_overlay_output :: proc(state: Touch_Overlay_State, layout: Touch_Overlay_L
 			press_touch_control(&output, layout.hotbar_drop_control)
 		}
 	}
+	for element in state.latched {
+		if latched_button_reads(layout, element, world_shown) {
+			press_touch_control(&output, layout.elements[element].control)
+		}
+	}
 	if world_shown {
 		add_touch_tap_output(&output, state.tap)
 	}
 	return output
+}
+
+// A latched button presses like a held one, Start and Back alone under a
+// screen; after a data reload only while its element still toggles.
+latched_button_reads :: proc(layout: Touch_Overlay_Layout, element: int, world_shown: bool) -> bool {
+	if element >= len(layout.elements) {
+		return false
+	}
+	button := layout.elements[element]
+	return button.kind == .Button && button.double_tap_toggles && (world_shown || control_serves_screens(button.control))
 }
 
 // Into the backends.
@@ -1104,6 +1253,7 @@ touch_interaction_frame :: proc(state: ^Frame_State) -> Touch_Interaction_Frame 
 		target_takes_interaction = entity_takes_interact(&simulation.world.entities, simulation.players[0].target.entity),
 		hotbar_slots = hud_hotbar_pixel_rectangles(&state.ui, selected),
 		selected_hotbar_slot = selected,
+		double_tap_latches = state.settings.sneak_hold == .Hold,
 	}
 }
 
@@ -1203,8 +1353,8 @@ render_pixels_to_window_units :: proc(delta: [2]f32, window_size, render_size: [
 
 // Drawing.
 
-// Outlines and labels at a low alpha, a held button filled. Nothing moves
-// but with a finger, so nothing pulses (DESIGN.md).
+// Outlines and labels at a low alpha, a held or latched button filled.
+// Nothing moves but with a finger, so nothing pulses (DESIGN.md).
 TOUCH_OVERLAY_COLOR :: Ui_Color{255, 255, 255, 89}
 TOUCH_OVERLAY_LINE :: 2.0
 // The knob's radius over the stick's radius.
@@ -1255,6 +1405,13 @@ draw_touch_overlay :: proc(ui: ^Ui_State, state: Touch_Overlay_State, layout: To
 	for slot in state.slots {
 		if slot.role == .Stick && touch_slot_reads(slot, layout) {
 			draw_touch_stick(ui, slot, layout.elements[slot.element].radius * scale)
+		}
+	}
+	// A static stick at rest: its base with the knob centred.
+	for element in layout.elements {
+		if element.kind == .Stick && element.static && !stick_held(state) {
+			centre := static_stick_centre(layout, element, screen_pixels)
+			draw_touch_stick(ui, Touch_Slot{origin = centre, position = centre}, element.radius * scale)
 		}
 	}
 }

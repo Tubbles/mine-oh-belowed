@@ -281,6 +281,7 @@ update_data_watch :: proc(state: ^Frame_State) {
 replace_frame_content :: proc(state: ^Frame_State, data: Game_Data) {
 	old_arena := state.content_arena
 	state.content = data.content
+	state.touch_overlay = release_touch_latches(state.touch_overlay)
 	state.base_generator = data.base_generator
 	state.content_arena = data.arena
 	rebuild_atlases(state)
