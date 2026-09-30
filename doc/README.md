@@ -2,6 +2,7 @@
 
 [CLAUDE.md](../CLAUDE.md) holds the rules for agents, [DESIGN.md](../DESIGN.md) and [PLAN.md](../PLAN.md) the intent and the plan. The documents here say how each part works, in the present tense; the why lives in the decision log and the work items.
 
+- [code_map.md](code_map.md): the entry to the source: eight clusters with their entry files, files in reading order, state, tests, and the allowed dependencies between clusters.
 - [architecture.md](architecture.md): frame and tick, sessions, threads and chunk streaming, generation, world storage, the simulation, data loading, hot reload and the data edits overlay, strings, the save format, configuration and directories, logging, platform split, testing, the factory benchmark.
 - [content.md](content.md): the rules behind the values in the data files: units, stack and price classes, tools, hand crafting, phase budgets, gates, veins, ratio checks, world, blocks, textures, models, sounds, descriptions, the tick cost baseline.
 - [logistics.md](logistics.md): belts as transport lines, belt placement, inserters, splitters, mining drills and bore drills, loose items, item transfer.

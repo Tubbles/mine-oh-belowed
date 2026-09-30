@@ -15,13 +15,20 @@ the largest and the files outside it) and the ten files of the largest
 component with the fewest edges into it.
 
 Options: --files adds each file's edges, --json dumps the graph instead,
---tests includes the *_test.odin files. Run from anywhere:
-python3 tools/code_graph.py
+--tests includes the *_test.odin files. --check MAP compares the cluster
+edges that the map's allowed dependency table (the Markdown table whose
+second header cell is "May reference") does not allow with the map's
+record of them (the "Reaches into:" line of each "## <cluster>" section,
+"target count (notes)" parts separated by commas): it exits 1 when an
+edge is new or above its recorded count, 2 when the map cannot be read,
+0 otherwise. Run from anywhere:
+python3 tools/code_graph.py --check doc/code_map.md
 """
 
 import argparse
 import json
 import pathlib
+import re
 import sys
 
 # The import would otherwise leave a __pycache__ directory in tools/.
@@ -36,28 +43,41 @@ from check_dead_code import (  # noqa: E402
     parse_definitions,
 )
 
-CLUSTERS = ("ui", "world", "presentation", "simulation", "content", "loop")
+# The clusters of doc/code_map.md, in its order.
+CLUSTERS = ("loop", "ui", "world", "simulation", "presentation", "content", "tools", "platform")
 
 PREFIX_CLUSTERS = {
-    "ui": ("hud", "touch", "input", "bindings", "text", "haptics", "system"),
-    "world": ("generation", "save", "block"),
-    "presentation": ("render", "model", "texture", "particles", "ambient", "audio", "sound", "display", "raylib"),
+    "loop": ("loop", "main", "session", "simulation", "hot"),
+    "ui": ("hud", "touch", "input", "bindings", "text", "quick", "biome"),
+    "world": ("generation", "save", "block", "landing"),
     "simulation": (
         "entity", "belt", "splitter", "inserter", "fluid", "power", "machine", "assembler",
         "furnace", "drill", "lab", "launch", "crafting", "inventory", "item", "player",
-        "loose", "statistics",
+        "loose", "statistics", "production", "developer", "venture", "recycler", "schematic",
+        "prospecting", "tree", "tick",
+    ),
+    "presentation": (
+        "render", "model", "texture", "particles", "ambient", "audio", "sound", "display", "weather",
     ),
     "content": (
         "data", "recipe", "technology", "quest", "contract", "notes", "configuration",
-        "settings", "command", "logging", "local", "platform", "export", "sjson", "run", "jni",
+        "settings", "deck", "discovery",
     ),
-    "loop": ("loop", "main", "session", "simulation"),
+    "tools": ("command", "diagnostics", "benchmark"),
+    "platform": (
+        "logging", "local", "platform", "export", "sjson", "run", "jni", "raylib", "system", "haptics",
+    ),
 }
 
 # Files whose prefix names the wrong cluster; the prefix rule keeps the
 # other files of the prefix (item_transfer.odin stays in simulation).
 FILE_CLUSTERS = {
     "item.odin": "content",
+    "quest_runtime.odin": "simulation",
+    "recipe_unlocks.odin": "simulation",
+    "player_animation.odin": "presentation",
+    "data_browser.odin": "tools",
+    "data_export.odin": "tools",
 }
 
 LARGEST_COMPONENT_REPORT_COUNT = 10
@@ -255,11 +275,141 @@ def dump_json(edges, clusters, totals, components):
     print()
 
 
+class Map_Error(Exception):
+    """A map whose allowed table or reach records the check cannot read."""
+
+
+def markdown_tables(text):
+    """Returns the tables of a Markdown text as lists of rows of cells."""
+    tables, current = [], []
+    for line in text.split("\n"):
+        if line.strip().startswith("|"):
+            current.append([cell.strip() for cell in line.strip().strip("|").split("|")])
+        elif current:
+            tables.append(current)
+            current = []
+    if current:
+        tables.append(current)
+    return tables
+
+
+def known_cluster_name(name, where):
+    if name not in CLUSTERS:
+        raise Map_Error(f"unknown cluster {name} in {where}")
+    return name
+
+
+def listed_clusters(cell, where):
+    """Returns the clusters a cell lists, [] for "nothing"."""
+    names = [word.strip() for word in re.split(r",|\band\b", cell.replace("`", "")) if word.strip()]
+    if names == ["nothing"]:
+        return []
+    return [known_cluster_name(name, where) for name in names]
+
+
+def allowed_table(text):
+    """Returns {cluster: set of allowed clusters} from the table whose
+    second header cell is "May reference"."""
+    where = "the allowed dependency table"
+    tables = [table for table in markdown_tables(text) if len(table[0]) >= 2 and table[0][1].lower() == "may reference"]
+    if not tables:
+        raise Map_Error("no allowed dependency table found")
+    allowed = {}
+    for row in tables[0][2:]:
+        cluster = known_cluster_name(row[0].replace("`", ""), where)
+        if cluster in allowed:
+            raise Map_Error(f"duplicate row for the cluster {cluster} in {where}")
+        allowed[cluster] = set(listed_clusters(row[1] if len(row) > 1 else "", where))
+    for cluster in CLUSTERS:
+        if cluster not in allowed:
+            raise Map_Error(f"no row for the cluster {cluster} in {where}")
+    return allowed
+
+
+def top_level_parts(text):
+    """Splits at the commas outside parentheses."""
+    parts, depth, current = [], 0, ""
+    for character in text:
+        depth += {"(": 1, ")": -1}.get(character, 0)
+        if character == "," and depth == 0:
+            parts.append(current)
+            current = ""
+        else:
+            current += character
+    return parts + [current]
+
+
+def reach_record(line, source):
+    """Returns {(source, target): count} from one "Reaches into:" line."""
+    body = line.split("Reaches into:", 1)[1].strip().rstrip(".")
+    if body == "nothing":
+        return {}
+    record = {}
+    for part in top_level_parts(body):
+        match = re.match(r"\s*(\w+) (\d+)\b", part)
+        if match is None:
+            raise Map_Error(f"cannot read the reach record of {source}: {part.strip()}")
+        target = known_cluster_name(match.group(1), f"the reach record of {source}")
+        record[(source, target)] = int(match.group(2))
+    return record
+
+
+def recorded_reaches(text):
+    """Returns {(source, target): count} from the "Reaches into:" line of
+    each cluster section (a "## <cluster>" heading)."""
+    record, section, seen = {}, None, set()
+    for line in text.split("\n"):
+        if line.startswith("## "):
+            section = line[3:].strip()
+        elif "Reaches into:" in line and section in CLUSTERS:
+            if section in seen:
+                raise Map_Error(f"two reach records in the section {section}")
+            seen.add(section)
+            record.update(reach_record(line, section))
+    return record
+
+
+def disallowed_edges(totals, allowed):
+    return {pair: count for pair, count in totals.items() if pair[1] not in allowed[pair[0]]}
+
+
+def edge_verdict(count, recorded):
+    if recorded is None:
+        return "not recorded, new", True
+    if count > recorded:
+        return f"recorded {recorded}, grew", True
+    if count < recorded:
+        return f"recorded {recorded}, below: lower the map's record", False
+    return f"recorded {recorded}", False
+
+
+def check_map(map_path, totals):
+    text = pathlib.Path(map_path).read_text()
+    try:
+        allowed, record = allowed_table(text), recorded_reaches(text)
+    except Map_Error as error:
+        print(f"{map_path}: {error}")
+        return 2
+    edges = disallowed_edges(totals, allowed)
+    failures = 0
+    print(f"Cluster edges against the allowed table of {map_path} (references):")
+    for (source, target), count in sorted(edges.items(), key=lambda item: (-item[1], item[0])):
+        verdict, failed = edge_verdict(count, record.get((source, target)))
+        failures += failed
+        print(f"  {source:>12} -> {target:<12} {count} ({verdict})")
+    for (source, target), recorded in sorted(record.items()):
+        if (source, target) not in edges:
+            print(f"  {source:>12} -> {target:<12} 0 (recorded {recorded}, gone: remove it from the map)")
+    print(f"{len(edges)} edges against the table, {sum(edges.values())} references, {failures} new or grown")
+    return 1 if failures else 0
+
+
 def parse_arguments():
     parser = argparse.ArgumentParser(description="The file and cluster dependency graph of src/.")
     parser.add_argument("--files", action="store_true", help="also print each file's in and out edges")
     parser.add_argument("--json", action="store_true", help="dump the graph as JSON")
     parser.add_argument("--tests", action="store_true", help="include the *_test.odin files")
+    parser.add_argument("--check", metavar="MAP", help="print the cluster edges the map's allowed table does not allow")
     return parser.parse_args()
 
 
@@ -268,6 +418,9 @@ def main():
     edges = file_edges(source_files(arguments.tests))
     clusters, chosen = assign_clusters(edges)
     totals = cluster_edges(edges, clusters)
+    if arguments.check:
+        print_cluster_assignment(chosen)
+        return check_map(arguments.check, totals)
     components = strongly_connected_components(edges)
     if arguments.json:
         dump_json(edges, clusters, totals, components)

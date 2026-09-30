@@ -33,6 +33,7 @@ Rule: frames render as fast as allowed, the simulation advances in fixed ticks, 
 ## Source layout
 
 - Files by concern: `world_*.odin`, `generation_*.odin`, `render_*.odin`, `input_*.odin`, `ui_*.odin`, `data_*.odin`, `save_*.odin`, one file per entity kind (`furnace.odin`, `inserter.odin`), tests beside their file as `*_test.odin`.
+- The files form eight clusters by prefix with an allowed dependency table between them; [code_map.md](code_map.md) lists every file by cluster.
 - Leaf utilities with no back references may become packages (Odin forbids import cycles): `src/android_libc/` today.
 
 ## Threads and chunk streaming

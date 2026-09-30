@@ -15,7 +15,7 @@ Read this together with the global `~/.claude/CLAUDE.md`. This file holds the pr
 
 ## Layout
 
-The project structure of the global preferences: `doc/` (detail docs, index in `doc/README.md`), `doc/log/` (dated decision logs, write once), `doc/work/` (work items with status `todo`, `implemented`, `verified`), `work/` and `tmp/` (untracked), `PLAN.md`, `DESIGN.md`, `TODO.md` (the user's inbox, the user writes there), `SUGGESTIONS.md` (agent follow ups and decisions needed, including the deferred work of a big series, never `TODO.md`). Source under `src/`, content under `data/`, build output under `bin/`.
+The project structure of the global preferences: `doc/` (detail docs, index in `doc/README.md`), `doc/log/` (dated decision logs, write once), `doc/work/` (work items with status `todo`, `implemented`, `verified`), `work/` and `tmp/` (untracked), `PLAN.md`, `DESIGN.md`, `TODO.md` (the user's inbox, the user writes there), `SUGGESTIONS.md` (agent follow ups and decisions needed, including the deferred work of a big series, never `TODO.md`). Source under `src/`, content under `data/`, build output under `bin/`. The entry to the source is [doc/code_map.md](doc/code_map.md): the clusters, their entry files and the allowed dependencies between them.
 
 ## Code rules
 

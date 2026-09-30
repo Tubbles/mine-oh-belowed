@@ -52,7 +52,7 @@ Bugs found on the way, queued in `SUGGESTIONS.md`: three files written in place 
 
 The refactor queue across the reports, in the order the prerequisites suggest (each entry is ranked in its report with files, guards, gain and risk):
 
-1. Pure moves and the cluster table, no behaviour change: the simulation state out of `loop.odin`; rename `column` and move `world_settings_from_file` and the JNI helpers; `Box` and the coordinate helpers to the world files; `join_save_path`, `sorted_object_keys` and the build stamp parameter to free the platform leaves; the toolkit pieces out of the screen files. This is the 0145 prerequisite.
+1. Pure moves and the cluster table, no behaviour change: the simulation state out of `loop.odin`; rename `column` and move `world_settings_from_file` and the JNI helpers; `Box` and the coordinate helpers to the world files; `join_save_path`, `sorted_object_keys` and the build stamp parameter to free the platform leaves; the toolkit pieces out of the screen files; and the small misplacements the map's borders exposed, listed in 0144's notes. This is the 0145 prerequisite.
 2. The bug fixes above.
 3. The hubs: embed `Simulation_Content` in `Game_Content`; narrow the serve procedures; the game's records off `World` (byte compatible); ticks without `^World`; `Frame_State` into groups; `Screen_Context` by consumer; the UI views out of `Session`.
 4. The tables: the `[Entity_Kind]` table with component locations; one burner step; the screen table; one theme copy; one loader body with unknown key refusal and the hand written lookups on `find_definition_index`; one request table in the loop.
