@@ -468,6 +468,22 @@ audit_title_state :: proc() -> Title_State {
 	return title
 }
 
+// Runs of several crafts (0138), twelve enough to wrap into rows beside
+// the hotbar, the front one waiting for an item.
+audit_craft_queue :: proc(recipes: Recipe_Registry, waiting_for: Item_Id, count := 12) -> Craft_Queue {
+	queue := Craft_Queue{waiting_for = waiting_for}
+	for recipe, index in recipes.recipes {
+		if queue.count == count {
+			break
+		}
+		if len(recipe.outputs) > 0 {
+			queue.runs[queue.count] = {index, 1 + queue.count * 13}
+			queue.count += 1
+		}
+	}
+	return queue
+}
+
 make_ui_audit :: proc() -> ^Ui_Audit {
 	audit := new(Ui_Audit)
 	table, error := parse_string_table(#load("../data/strings/en.sjson"))
@@ -499,7 +515,7 @@ make_ui_audit :: proc() -> ^Ui_Audit {
 	longest_item := longest_named_item(audit.content.items)
 	append(&simulation.quests.messages, Quest_Message{tick = 60 * 60 * 62, text_key = ITEM_DISCOVERED_KEY, argument_key = audit.content.items.items[longest_item].name_key, item = longest_item})
 	player := &simulation.players[0]
-	player.crafting = Craft_Queue{recipes = {0, 1, 2, 3, 4, 5, 6, 7}, count = HAND_CRAFT_QUEUE_CAPACITY, waiting = true}
+	player.crafting = audit_craft_queue(audit.content.recipes, longest_item)
 	for &drill in simulation.world.entities.drills.entries {
 		if drill.alive {
 			player.target = Raycast_Hit{hit = true, entity = drill.handle}
@@ -679,6 +695,16 @@ audit_touch_rows :: proc(audit: ^Ui_Audit) {
 
 UI_AUDIT_TOASTS :: [?]string{"mc_extraction_rights_done", "inventory_full", "developer_applies_on_resume"}
 
+// The HUD with the front craft finished and its outputs waiting for room
+// ("Crafting waits: inventory full").
+audit_crafting_waits_on_a_full_inventory :: proc(audit: ^Ui_Audit) {
+	crafting := &audit.simulation.players[0].crafting
+	saved := crafting^
+	defer crafting^ = saved
+	crafting.started, crafting.waiting = true, true
+	audit_case(audit, {name = "hud crafting waits on a full inventory", hud = true})
+}
+
 audit_every_case :: proc(audit: ^Ui_Audit) {
 	toasts := UI_AUDIT_TOASTS
 	audit_case(audit, {name = "title", screens = {.Title}, walk_focus = true})
@@ -688,6 +714,7 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 	audit_case(audit, {name = "load", screens = {.Title, .Load_World}, walk_focus = true})
 	audit_case(audit, {name = "confirm delete", screens = {.Title, .Load_World, .Confirm_Delete}, walk_focus = true})
 	audit_case(audit, {name = "hud", hud = true, toasts = toasts[:]})
+	audit_crafting_waits_on_a_full_inventory(audit)
 	audit_case(audit, {name = "hud radial", hud = true, radial = true})
 	audit_case(audit, {name = "hud mission control", hud = true, toasts = toasts[:], mission_control = true})
 	audit_case(audit, {name = "pause", screens = {.Pause}, walk_focus = true})
@@ -810,6 +837,61 @@ test_inventory_strip_pause_menu_and_initial_focus :: proc(t: ^testing.T) {
 	destroy_ui_state(&machine)
 }
 
+// Work item 0138: the HUD draws a box per run with its crafts in the
+// corner, and says what the front run waits for.
+@(test)
+test_hud_draws_craft_runs_and_the_wait :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	crafting := &audit.simulation.players[0].crafting
+	crafting.waiting_for = test_item(audit.content.items, "log")
+	queue := crafting^
+	state := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&state)
+	ui_begin(&state, {}, {1920, 1080}, 1.0 / 60, 1, 1, ui_accessibility(audit.settings))
+	draw_hud(&state, audit_screen_context(audit))
+	ui_resolve(&state)
+	for run in queue.runs[1:queue.count] {
+		testing.expectf(t, draw_list_has_text(state.draw_list[:], fmt.tprint(run.count)), "no count %d", run.count)
+	}
+	testing.expect(t, draw_list_has_text(state.draw_list[:], "Waiting for Log"))
+}
+
+// A full queue of 64 runs, waiting for an ingredient and waiting on a full
+// inventory, keeps its boxes, the bar and the waiting lines inside the
+// safe area at every audited size, the narrowest included (0138).
+@(test)
+test_a_full_craft_queue_stays_inside_the_safe_area :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	player := &audit.simulation.players[0]
+	full := audit_craft_queue(audit.content.recipes, longest_named_item(audit.content.items), HAND_CRAFT_QUEUE_RUNS)
+	testing.expect_value(t, full.count, HAND_CRAFT_QUEUE_RUNS)
+	queues := [2]Craft_Queue{full, full}
+	queues[1].started, queues[1].waiting = true, true
+	audit_sizes := UI_AUDIT_SIZES
+	sizes := make([dynamic]Ui_Audit_Size, context.temp_allocator)
+	append(&sizes, ..audit_sizes[:])
+	append(&sizes, UI_AUDIT_DECK_SIZE)
+	for queue in queues {
+		for size in sizes {
+			for text_scale in UI_AUDIT_TEXT_SCALES {
+				player.crafting = queue
+				audit.settings.text_scale = text_scale
+				state := Ui_State{theme = audit.theme}
+				ui_begin(&state, {}, size.pixels, 1.0 / 60, size.scale, 1, ui_accessibility(audit.settings))
+				draw_craft_queue(&state, player^, audit_screen_context(audit))
+				ui_resolve(&state)
+				safe := ui_safe_area(&state)
+				for command in state.draw_list {
+					testing.expectf(t, rectangle_inside(command.rectangle, safe, UI_AUDIT_TOLERANCE), "%v scale %.1f text %.1f: %v %q at %v outside %v", size.pixels, size.scale, text_scale, command.kind, command.text, command.rectangle, safe)
+				}
+				destroy_ui_state(&state)
+			}
+		}
+	}
+}
+
 draw_list_has_text :: proc(commands: []Draw_Command, wanted: string) -> bool {
 	for command in commands {
 		if command.kind == .Text && command.text == wanted {
@@ -878,4 +960,9 @@ test_recipe_screen_shows_have_and_need :: proc(t: ^testing.T) {
 	testing.expect(t, draw_list_has_text(state.draw_list[:], text("recipes_unlocked_only")))
 	covered := crafts_covered(player.inventory, audit.content.recipes.recipes[plank])
 	testing.expect(t, draw_list_has_text(state.draw_list[:], can_craft_text(covered)))
+	// 0138: the product line with the count held, the queue summary.
+	product := audit.content.recipes.recipes[plank].outputs[0]
+	held_line := product_held_line(product, inventory_count(player.inventory, product.item), audit.content.items)
+	testing.expectf(t, draw_list_has_text(state.draw_list[:], held_line), "no row %q", held_line)
+	testing.expect(t, draw_list_has_text(state.draw_list[:], queue_summary_text(player.crafting)))
 }

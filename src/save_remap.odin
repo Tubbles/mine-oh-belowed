@@ -504,26 +504,48 @@ remap_machine_recipes :: proc(entities: ^Entities, remap: Content_Remap, recipes
 	return true
 }
 
-// Entries of a vanished recipe leave the queue; their ingredients, taken
-// when they were queued, are lost with them.
+// Runs of a vanished recipe leave the queue; the ingredients a craft in
+// progress took are lost with it. A queue saved before work item 0138
+// counted single crafts in count and held them in a field this build
+// lacks, so it reads as runs of no crafts: it comes back empty, with one
+// log line (the ingredients those crafts took when queued are lost).
 remap_craft_queue :: proc(queue: ^Craft_Queue, remap: Content_Remap) -> bool {
-	if queue.count < 0 || queue.count > HAND_CRAFT_QUEUE_CAPACITY {
+	if queue.count < 0 || queue.count > HAND_CRAFT_QUEUE_RUNS {
 		return false
+	}
+	if craft_queue_has_empty_runs(queue^) {
+		log_printf("save: dropped a hand crafting queue of %d crafts saved in the layout before work item 0138", queue.count)
+		queue^ = make_craft_queue()
+		return true
 	}
 	saved := queue^
 	queue.count = 0
-	for recipe, position in saved.recipes[:saved.count] {
-		new_recipe := remapped_index(remap, .Recipes, recipe) or_return
+	for run, position in saved.runs[:saved.count] {
+		new_recipe := remapped_index(remap, .Recipes, run.recipe) or_return
 		if new_recipe == CONTENT_GONE {
 			if position == 0 {
-				queue.progress_ticks, queue.waiting = 0, false
+				reset_front_craft(queue)
 			}
 			continue
 		}
-		queue.recipes[queue.count] = new_recipe
+		queue.runs[queue.count] = {new_recipe, run.count}
 		queue.count += 1
 	}
+	if queue.count == 0 {
+		reset_front_craft(queue)
+	}
 	return true
+}
+
+// A run of no crafts, which only a queue of the older layout has.
+craft_queue_has_empty_runs :: proc(queue: Craft_Queue) -> bool {
+	queue := queue
+	for run in queue.runs[:queue.count] {
+		if run.count <= 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // A registered vein of a vanished type cannot be dropped (drills and

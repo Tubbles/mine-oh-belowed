@@ -12,7 +12,9 @@ import "core:strings"
 // pad (letter keys on the keyboard), and the focused recipe's detail on
 // the right, whose "made by" and "used in" lists walk the recipe graph.
 // Confirm on a recipe queues one hand craft, the context action five, the
-// secondary action cancels the newest queued craft. There is no search box.
+// secondary action cancels the newest queued craft; queuing plans the
+// missing hand craftable intermediates ahead (crafting.odin). Each row
+// shows how many of its product the inventory holds. There is no search box.
 // On touch a tap on a recipe selects it and the touch row's Craft, Craft
 // 5 and Cancel last act on the selected recipe (0137).
 //
@@ -28,6 +30,8 @@ RECIPE_LIST_COLUMN_WIDTH :: 560
 FILTER_COLUMN_FRACTION :: 0.24
 LIST_COLUMN_FRACTION :: 0.34
 RECIPE_ICON_SIZE :: 40
+// The room at a row's right end for the held count of its product.
+RECIPE_HELD_COUNT_WIDTH :: 96
 RECIPE_CRAFTABLE_MARK_WIDTH :: 6
 RECIPE_CRAFT_MANY_COUNT :: 5
 RECIPE_LETTER_WHEEL_RADIUS :: 320
@@ -152,8 +156,9 @@ text_after_icon :: proc(row: Ui_Rectangle) -> Ui_Rectangle {
 	return {row.x + offset, row.y, max(row.width - offset - UI_PADDING, 0), row.height}
 }
 
-// One recipe row: icon, name, and a mark when it can be crafted now.
-// Silhouettes are dimmed and show no icon.
+// One recipe row: icon, name, a mark when it can be crafted now, and
+// at the right end how many of its first product the inventory holds
+// (0138, dim at 0). Silhouettes are dimmed and show no icon and no count.
 draw_recipe_row :: proc(state: ^Ui_State, row: Ui_Rectangle, screen_context: Screen_Context, recipe: int, craftable: bool) {
 	if craftable {
 		draw_fill(state, {row.x, row.y, RECIPE_CRAFTABLE_MARK_WIDTH, row.height}, UI_ACCENT_COLOR)
@@ -161,7 +166,21 @@ draw_recipe_row :: proc(state: ^Ui_State, row: Ui_Rectangle, screen_context: Scr
 	draw_item_icon(state, icon_rectangle(row), recipe_icon(screen_context, recipe))
 	available := recipe_is_available(screen_context.unlocks^, recipe)
 	color := available ? UI_TEXT_COLOR : UI_DIM_TEXT_COLOR
-	draw_text_fitted(state, text_after_icon(row), screen_context.recipe_names[recipe], UI_BODY_TEXT_SIZE, .Left, color)
+	name_area := text_after_icon(row)
+	if held, has_product := recipe_held_count(screen_context.player.inventory, screen_context.recipes.recipes[recipe]); available && has_product {
+		count_area := cut_right(&name_area, RECIPE_HELD_COUNT_WIDTH)
+		draw_text_fitted(state, count_area, fmt.tprint(held), UI_BODY_TEXT_SIZE, .Right, held > 0 ? UI_TEXT_COLOR : UI_DIM_TEXT_COLOR)
+	}
+	draw_text_fitted(state, name_area, screen_context.recipe_names[recipe], UI_BODY_TEXT_SIZE, .Left, color)
+}
+
+// How many of the recipe's first product the inventory (hotbar and main
+// grid) holds; has_product is false for a recipe making only fluids.
+recipe_held_count :: proc(inventory: Inventory, recipe: Recipe) -> (held: int, has_product: bool) {
+	if len(recipe.outputs) == 0 {
+		return 0, false
+	}
+	return inventory_count(inventory, recipe.outputs[0].item), true
 }
 
 // The recipes of the filter. Returns the activated recipe or NO_RECIPE,
@@ -235,8 +254,9 @@ recipe_category_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, browser:
 	}
 }
 
+// "Crafting  20": the crafts queued over every run.
 queue_summary_text :: proc(queue: Craft_Queue) -> string {
-	return fmt.tprintf("%s  %d / %d", text("crafting_queue"), queue.count, HAND_CRAFT_QUEUE_CAPACITY)
+	return fmt.tprintf("%s  %d", text("crafting_queue"), queued_craft_count(queue))
 }
 
 // The craftable and unlocked toggles, one toggle per tag of the category, and the queue
@@ -247,7 +267,8 @@ recipe_filter_column :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_contex
 	if browser.selecting_for == NO_ENTITY {
 		queue := screen_context.player.crafting
 		queue_row := cut_bottom(&content, UI_ROW_HEIGHT)
-		draw_text_fitted(state, queue_row, queue_summary_text(queue), UI_BODY_TEXT_SIZE, .Left, queue.waiting ? UI_ACCENT_COLOR : UI_DIM_TEXT_COLOR)
+		waits := queue.waiting || craft_queue_waits_for_input(queue)
+		draw_text_fitted(state, queue_row, queue_summary_text(queue), UI_BODY_TEXT_SIZE, .Left, waits ? UI_ACCENT_COLOR : UI_DIM_TEXT_COLOR)
 		ui_toggle(state, settings_row(&content), text("recipes_can_craft"), &browser.filter.craftable_only)
 		ui_toggle(state, settings_row(&content), text("recipes_unlocked_only"), &browser.filter.available_only)
 	}
@@ -271,6 +292,13 @@ stack_line :: proc(stack: Item_Stack, items: Item_Registry) -> string {
 	return replace_message_mark(line, "{name}", item_name(items, stack.item))
 }
 
+// "4 × Plank, 12 held": a product and how many the inventory holds.
+product_held_line :: proc(stack: Item_Stack, held: int, items: Item_Registry) -> string {
+	line := replace_message_mark(text("recipes_product_held_line"), "{count}", fmt.tprint(stack.count))
+	line = replace_message_mark(line, "{held}", fmt.tprint(held))
+	return replace_message_mark(line, "{name}", item_name(items, stack.item))
+}
+
 // "13 / 5 Stone": what the inventory holds, what one craft needs.
 ingredient_line :: proc(have, need: int, name: string) -> string {
 	line := replace_message_mark(text("recipes_ingredient_line"), "{have}", fmt.tprint(have))
@@ -287,13 +315,13 @@ can_craft_text :: proc(count: int) -> string {
 	return replace_message_mark(text("recipes_can_craft_count"), "{count}", fmt.tprint(count))
 }
 
-// The label and a row per stack, as many as fit.
-draw_stack_rows :: proc(state: ^Ui_State, content: ^Ui_Rectangle, label: string, stacks: []Item_Stack, items: Item_Registry) {
+// The label and a row per product with the count held, as many as fit.
+draw_product_rows :: proc(state: ^Ui_State, content: ^Ui_Rectangle, label: string, stacks: []Item_Stack, items: Item_Registry, inventory: Inventory) {
 	detail_line(state, content, text(label), UI_DIM_TEXT_COLOR)
 	for stack in stacks {
 		row := take_line(content, UI_ROW_HEIGHT) or_break
 		draw_item_icon(state, icon_rectangle(row), item_icon(items, stack.item))
-		draw_text_fitted(state, text_after_icon(row), stack_line(stack, items), UI_BODY_TEXT_SIZE, .Left)
+		draw_text_fitted(state, text_after_icon(row), product_held_line(stack, inventory_count(inventory, stack.item), items), UI_BODY_TEXT_SIZE, .Left)
 	}
 }
 
@@ -369,7 +397,7 @@ recipe_detail_panel :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context
 	draw_ingredient_rows(state, &content, "recipes_inputs", detail.inputs, screen_context.items, inventory)
 	covered := crafts_covered(inventory, definition)
 	detail_line(state, &content, can_craft_text(covered), covered >= 1 ? UI_ACCENT_COLOR : UI_DIM_TEXT_COLOR)
-	draw_stack_rows(state, &content, "recipes_outputs", detail.outputs, screen_context.items)
+	draw_product_rows(state, &content, "recipes_outputs", detail.outputs, screen_context.items, inventory)
 	cut_top(&content, UI_GAP)
 	// The graph lists need their label and a row.
 	if content.height < 2 * UI_ROW_HEIGHT {
@@ -380,9 +408,20 @@ recipe_detail_panel :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context
 	return made_by != NO_RECIPE ? made_by : used_in
 }
 
-toast_craft_refusal :: proc(state: ^Ui_State, refusal: Craft_Refusal) {
+// "Missing 4 Iron plate", "Stick is made from itself", or the plain
+// refusal.
+craft_refusal_text :: proc(refusal: Craft_Refusal, shortage: Craft_Shortage, items: Item_Registry) -> string {
+	line := text(craft_refusal_keys[refusal])
+	if refusal == .Missing_Ingredients || refusal == .Recipe_Cycle || refusal == .Plan_Too_Deep {
+		line = replace_message_mark(line, "{count}", fmt.tprint(shortage.count))
+		line = replace_message_mark(line, "{name}", item_name(items, shortage.item))
+	}
+	return line
+}
+
+toast_craft_refusal :: proc(state: ^Ui_State, refusal: Craft_Refusal, shortage: Craft_Shortage, items: Item_Registry) {
 	if refusal != .None {
-		ui_toast(state, text(craft_refusal_keys[refusal]))
+		ui_toast(state, craft_refusal_text(refusal, shortage, items))
 	}
 }
 
@@ -401,11 +440,12 @@ apply_recipe_craft_input :: proc(state: ^Ui_State, screen_context: Screen_Contex
 		crafted = selected
 	}
 	if crafted != NO_RECIPE {
-		toast_craft_refusal(state, queue_craft(&player.crafting, player.inventory, recipes, unlocks, crafted))
+		refusal, shortage := queue_crafts(&player.crafting, player.inventory, recipes, unlocks, crafted, 1)
+		toast_craft_refusal(state, refusal, shortage, screen_context.items)
 	}
 	if (state.input.context_action && list_focused) || (button == .Craft_Five && selected_shown) {
-		_, refusal := queue_crafts(&player.crafting, player.inventory, recipes, unlocks, selected, RECIPE_CRAFT_MANY_COUNT)
-		toast_craft_refusal(state, refusal)
+		refusal, shortage := queue_crafts(&player.crafting, player.inventory, recipes, unlocks, selected, RECIPE_CRAFT_MANY_COUNT)
+		toast_craft_refusal(state, refusal, shortage, screen_context.items)
 	}
 	cancels := state.input.secondary || button == .Cancel_Craft
 	if cancels && player.crafting.count > 0 && !cancel_last_craft(&player.crafting, player.inventory, recipes, screen_context.items) {

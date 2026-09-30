@@ -1,6 +1,6 @@
 # 0138: Held counts in the recipe browser, an open crafting queue, intermediates crafted on demand
 
-Status: todo
+Status: implemented
 
 ## Goal
 
@@ -20,3 +20,13 @@ Asked on 2026-09-30: "In recipe screen, we need to see how many of something we 
 
 - `./build.sh check`, `./build.sh check-android`, `./build.sh test`. Tests: the held count text for a product held in both grids; a queue of 20 planks is one run of 20 and the summary says 20; Craft five twice on the same recipe makes one run of 10; queuing an iron gear with plates missing but ore and a furnace-less plate recipe by hand available queues the plate run first (or, if plates are not hand craftable in the data, use a recipe pair that is, and add a test data table); a plan short of a raw item queues nothing and names the item and count; a cycle in test data refuses; a run at the front with its input spent waits and names it, and Cancel frees it; cancelling the newest run returns nothing to the inventory and cancelling the craft in progress returns its inputs; an old layout save loads; the HUD audit with a queue of several runs.
 - The user: queue 20 planks, watch one box count down; queue a machine whose intermediates are missing, watch them craft first; read the held count of stone in the browser.
+
+## Implementation notes
+
+- Held counts are shown on unlocked rows only: a silhouette and a recipe making only fluids show none. The detail panel shows the held count on every product line, not only the first.
+- An old layout save's queue comes back empty (the spec's second option), with one log line; the ingredients its crafts took when queued are lost.
+- The HUD box counts crafts of the run, not products. The Missing toast names the first shortage the plan meets; a recipe cycle has its own toast ("Cannot plan: X is made from itself"), and a chain past 16 levels another ("Cannot plan: too many steps to make X").
+- "Cancel frees it" holds only when the waiting run is the newest, since Cancel takes from the newest run. A waiting front is repaired by the next queue action of any recipe when the inventory can make the missing item (its makers go in ahead of it, covering every craft of the run), or cancelled by taking the runs behind it off first. A plan's item counts stop at zero, so it never queues a maker behind a run already short.
+- The HUD draws at most 4 rows of run boxes; beyond that the front run and the newest runs show, the middle is left out.
+- A count below one queues nothing (no refusal).
+- Hand crafting is described in `doc/content.md` (Rules of thumb), not `doc/logistics.md`.

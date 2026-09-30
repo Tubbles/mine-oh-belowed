@@ -575,12 +575,14 @@ append_player_lines :: proc(lines: ^[dynamic]Diagnostics_Line, state: Frame_Stat
 	append_line(
 		lines,
 		player.crafting.count > 0,
-		"recipes available %d of %d  items discovered %d  craft queue %d%s",
+		"recipes available %d of %d  items discovered %d  craft queue %d runs %d crafts%s%s",
 		available_recipe_count(unlocks),
 		len(unlocks.available),
 		obtained_item_count(unlocks),
 		player.crafting.count,
+		queued_craft_count(player.crafting),
 		player.crafting.waiting ? " waiting" : "",
+		craft_queue_waits_for_input(player.crafting) ? " waiting for input" : "",
 	)
 	append_line(lines, false, "%s", research_diagnostics_text(state))
 	append_line(lines, false, "%s", quest_diagnostics_text(state))

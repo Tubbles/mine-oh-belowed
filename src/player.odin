@@ -128,6 +128,7 @@ make_player :: proc(start: Player_Start, allocator := context.allocator) -> Play
 		flying = start.flying,
 		inventory = make_inventory(PLAYER_INVENTORY_SLOT_COUNT, allocator),
 		held = EMPTY_HELD_STACK,
+		crafting = make_craft_queue(),
 	}
 }
 

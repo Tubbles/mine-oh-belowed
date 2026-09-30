@@ -9,11 +9,11 @@ import "core:testing"
 // state is checked; the changed copies keep the ids other registries
 // hold, so they are not run.
 
-// Two hand crafts queued, the save test's world otherwise.
+// Two runs of hand crafts queued, the save test's world otherwise.
 queue_save_test_crafts :: proc(simulation: ^Simulation_State, content: Simulation_Content) {
 	crafting := &simulation.players[0].crafting
-	crafting.recipes[0] = test_recipe(content.recipes, "stick")
-	crafting.recipes[1] = test_recipe(content.recipes, "plank")
+	crafting.runs[0] = {test_recipe(content.recipes, "stick"), 3}
+	crafting.runs[1] = {test_recipe(content.recipes, "plank"), 2}
 	crafting.count = 2
 }
 
@@ -207,8 +207,9 @@ test_an_inserted_recipe_keeps_queues_and_machine_recipes :: proc(t: ^testing.T) 
 	defer destroy_simulation(&loaded)
 	original_queue, loaded_queue := original.players[0].crafting, loaded.players[0].crafting
 	testing.expect_value(t, loaded_queue.count, original_queue.count)
-	for recipe, position in original_queue.recipes[:original_queue.count] {
-		testing.expect_value(t, recipe_id(changed.recipes, loaded_queue.recipes[position]), recipe_id(content.recipes, recipe))
+	for run, position in original_queue.runs[:original_queue.count] {
+		testing.expect_value(t, recipe_id(changed.recipes, loaded_queue.runs[position].recipe), recipe_id(content.recipes, run.recipe))
+		testing.expect_value(t, loaded_queue.runs[position].count, run.count)
 	}
 	set := 0
 	for assembler, index in original.world.entities.assemblers.entries {

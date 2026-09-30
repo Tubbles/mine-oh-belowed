@@ -554,17 +554,18 @@ test_a_tap_on_a_recipe_selects_it_and_the_row_crafts :: proc(t: ^testing.T) {
 	testing.expect_value(t, audit.browser.focused_recipe, plank)
 	testing.expect_value(t, top_screen(state.screens), Screen.Recipes)
 	tap_widget(audit, &state, slot_button_id("touch_button_craft"))
-	testing.expect_value(t, player.crafting.count, 1)
-	testing.expect_value(t, player.crafting.recipes[0], plank)
+	testing.expect_value(t, queued_craft_count(player.crafting), 1)
+	testing.expect_value(t, player.crafting.runs[0].recipe, plank)
 	tap_widget(audit, &state, slot_button_id("touch_button_craft_five"))
-	testing.expect_value(t, player.crafting.count, 1 + RECIPE_CRAFT_MANY_COUNT)
+	testing.expect_value(t, queued_craft_count(player.crafting), 1 + RECIPE_CRAFT_MANY_COUNT)
+	testing.expect_value(t, player.crafting.count, 1)
 	tap_widget(audit, &state, slot_button_id("touch_button_cancel_craft"))
-	testing.expect_value(t, player.crafting.count, RECIPE_CRAFT_MANY_COUNT)
+	testing.expect_value(t, queued_craft_count(player.crafting), RECIPE_CRAFT_MANY_COUNT)
 	// The gamepad's Confirm still crafts the focused recipe.
 	state.requested_focus = row
 	touch_screen_frame(audit, &state)
 	screen_test_frame(audit, &state, {confirm = true, pointer_is_touch = true})
-	testing.expect_value(t, player.crafting.count, RECIPE_CRAFT_MANY_COUNT + 1)
+	testing.expect_value(t, queued_craft_count(player.crafting), RECIPE_CRAFT_MANY_COUNT + 1)
 }
 
 // A tap on a technology selects it and starts nothing; Research starts it.

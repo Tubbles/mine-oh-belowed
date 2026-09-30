@@ -21,6 +21,8 @@ HUD_SELECTED_SLOT_SCALE :: 1.25
 HUD_SLOT_COLOR :: Ui_Color{24, 26, 34, 180}
 HUD_QUEUE_SLOT_SIZE :: 56
 HUD_WAITING_MAXIMUM_LINES :: 2
+// Rows of run boxes beside the hotbar at most (0138).
+HUD_QUEUE_MAXIMUM_ROWS :: 4
 // Distance of the radial's slot centres from the screen centre.
 HUD_RADIAL_RADIUS :: UI_SLOT_SIZE * 2.5
 // The mining progress bar above the crosshair.
@@ -176,10 +178,12 @@ draw_hud_hotbar :: proc(state: ^Ui_State, player: Player, items: Item_Registry) 
 	draw_text(state, name_area, item_name(items, held.item), UI_BODY_TEXT_SIZE, .Centre)
 }
 
-// Left of the hotbar, newest entry nearest to it, in rows going up when
-// the queue is wider than the room beside the hotbar: the recipe's first
-// output per entry, a progress bar over the one in progress, and above it
-// why it waits when its outputs do not fit.
+// Left of the hotbar, newest run nearest to it, in up to
+// HUD_QUEUE_MAXIMUM_ROWS rows going up when the queue is wider than the
+// room beside the hotbar (craft_queue_shown_runs): the recipe's first
+// output per run with the run's crafts in the corner like a stack count,
+// a progress bar over the front run, and above it why it waits
+// (craft_queue_waiting_text).
 draw_craft_queue :: proc(state: ^Ui_State, player: Player, screen_context: Screen_Context) {
 	queue := player.crafting
 	if queue.count == 0 {
@@ -191,9 +195,10 @@ draw_craft_queue :: proc(state: ^Ui_State, player: Player, screen_context: Scree
 	right := hotbar[0].x - 3 * UI_GAP
 	step := f32(HUD_QUEUE_SLOT_SIZE + UI_GAP)
 	columns := max(int((right - safe.x + UI_GAP) / step), 1)
+	shown := craft_queue_shown_runs(queue.count, columns * HUD_QUEUE_MAXIMUM_ROWS)
 	first: Ui_Rectangle
-	for index in 0 ..< queue.count {
-		place := queue.count - 1 - index
+	for index, position in shown {
+		place := len(shown) - 1 - position
 		x := right - f32(place % columns + 1) * step
 		y := bottom - HUD_QUEUE_SLOT_SIZE - f32(place / columns) * step
 		box := Ui_Rectangle{x, y, HUD_QUEUE_SLOT_SIZE, HUD_QUEUE_SLOT_SIZE}
@@ -202,20 +207,55 @@ draw_craft_queue :: proc(state: ^Ui_State, player: Player, screen_context: Scree
 		}
 		draw_fill(state, box, HUD_SLOT_COLOR)
 		draw_outline(state, box, index == 0 ? UI_ACCENT_COLOR : UI_PANEL_BORDER_COLOR)
-		recipe := screen_context.recipes.recipes[queue.recipes[index]]
-		draw_item_stack(state, box, recipe.outputs[0], screen_context.items)
+		draw_item_stack(state, box, craft_run_stack(queue.runs[index], screen_context.recipes), screen_context.items)
 	}
 	bar := Ui_Rectangle{first.x, first.y - UI_GAP - 8, first.width, 8}
 	ui_progress_bar(state, bar, craft_progress_fraction(queue, screen_context.recipes, screen_context.tick_rate))
-	if !queue.waiting {
+	waiting := craft_queue_waiting_text(queue, screen_context.items)
+	if waiting == "" {
 		return
 	}
-	lines := wrap_text_lines(state, text("crafting_waiting"), UI_BODY_TEXT_SIZE, right - safe.x, HUD_WAITING_MAXIMUM_LINES)
+	lines := wrap_text_lines(state, waiting, UI_BODY_TEXT_SIZE, right - safe.x, HUD_WAITING_MAXIMUM_LINES)
 	line_bottom := bar.y - UI_GAP
 	#reverse for line in lines {
 		draw_text(state, {safe.x, line_bottom - UI_LINE_HEIGHT, right - safe.x, UI_LINE_HEIGHT}, line, UI_BODY_TEXT_SIZE, .Right, UI_ACCENT_COLOR)
 		line_bottom -= UI_LINE_HEIGHT
 	}
+}
+
+// The runs the HUD has boxes for, in queue order: all of them when they
+// fit, else the front run and the newest capacity - 1, the middle left
+// out. In the temp allocator.
+craft_queue_shown_runs :: proc(count, capacity: int) -> []int {
+	shown := make([dynamic]int, 0, count, context.temp_allocator)
+	for index in 0 ..< count {
+		if count <= capacity || index == 0 || index >= count - (capacity - 1) {
+			append(&shown, index)
+		}
+	}
+	return shown[:]
+}
+
+// The run's box: its recipe's first output with the run's crafts as the
+// count.
+craft_run_stack :: proc(run: Craft_Run, recipes: Recipe_Registry) -> Item_Stack {
+	outputs := recipes.recipes[run.recipe].outputs
+	if len(outputs) == 0 {
+		return EMPTY_STACK
+	}
+	return Item_Stack{outputs[0].item, u16(clamp(run.count, 0, int(max(u16))))}
+}
+
+// "Crafting waits: inventory full" while the front craft's outputs do not
+// fit, "Waiting for Log" while it lacks an ingredient, empty otherwise.
+craft_queue_waiting_text :: proc(queue: Craft_Queue, items: Item_Registry) -> string {
+	switch {
+	case queue.count > 0 && queue.waiting:
+		return text("crafting_waiting")
+	case craft_queue_waits_for_input(queue):
+		return replace_message_mark(text("crafting_waiting_for"), "{name}", item_name(items, queue.waiting_for))
+	}
+	return ""
 }
 
 hotbar_radial_source :: proc(input: Ui_Input) -> Radial_Source {
