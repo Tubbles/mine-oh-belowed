@@ -116,6 +116,14 @@ draw_outline :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, color: Ui_Color,
 	push_command(state, {kind = .Outline, rectangle = rectangle, color = color, thickness = thickness})
 }
 
+draw_circle :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, color: Ui_Color) {
+	push_command(state, {kind = .Circle, rectangle = rectangle, color = color})
+}
+
+draw_ring :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, color: Ui_Color, thickness: f32 = UI_BORDER) {
+	push_command(state, {kind = .Ring, rectangle = rectangle, color = color, thickness = thickness})
+}
+
 // emphasis draws body sized text bold, like a heading (text_weight).
 draw_text :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, text: string, size: f32, alignment: Text_Alignment, color := UI_TEXT_COLOR, emphasis := false) {
 	push_command(state, {kind = .Text, rectangle = rectangle, text = text, text_size = size, weight = text_weight(size, emphasis), alignment = alignment, color = color})

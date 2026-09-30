@@ -46,6 +46,7 @@ write_test_data_directory :: proc(directory, items, recipes: string) {
 		{CONTRACTS_FILE_NAME, #load("../data/contracts.sjson", string)},
 		{NOTES_FILE_NAME, #load("../data/notes.sjson", string)},
 		{DEVELOPER_KITS_FILE_NAME, #load("../data/dev_kits.sjson", string)},
+		{TOUCH_OVERLAY_FILE_NAME, #load("../data/touch_overlay.sjson", string)},
 		{BIOMES_FILE_NAME, #load("../data/biomes.sjson", string)},
 		{TREES_FILE_NAME, #load("../data/trees.sjson", string)},
 		{VEINS_FILE_NAME, #load("../data/veins.sjson", string)},

@@ -120,15 +120,24 @@ read_raylib_raw_input :: proc() -> Raw_Input {
 	}
 }
 
-// Keyboard and mouse come from raylib on both backends.
-keyboard_mouse_actions :: proc(bindings: Input_Bindings) -> Action_Set {
+// Keyboard and mouse come from raylib on both backends. While the touch
+// overlay drives the world the mouse buttons are its touches and read
+// nothing here (touch_overlay_drives_world); over a screen the left
+// button reads nothing while the overlay claims the pointer's touch.
+keyboard_mouse_actions :: proc(bindings: Input_Bindings, overlay: Touch_Overlay_Frame) -> Action_Set {
 	actions: Action_Set
 	for key_actions, code in bindings.keys {
 		if key_actions != {} && rl.IsKeyDown(rl.KeyboardKey(code)) {
 			actions += key_actions
 		}
 	}
+	if touch_overlay_drives_world(overlay) {
+		return actions
+	}
 	for button_actions, button in bindings.mouse_buttons {
+		if overlay.pointer_claimed && rl.MouseButton(button) == .LEFT {
+			continue
+		}
 		if button_actions != {} && rl.IsMouseButtonDown(rl.MouseButton(button)) {
 			actions += button_actions
 		}
@@ -160,13 +169,16 @@ keyboard_move :: proc() -> [2]f32 {
 	return {key_axis(.A, .D), key_axis(.S, .W)}
 }
 
-read_raylib_input_frame :: proc(previous_pressed: Action_Set, bindings: Input_Bindings) -> Input_Frame {
+// The touch overlay's gamepad joins the physical one (touch_overlay.odin).
+read_raylib_input_frame :: proc(previous_pressed: Action_Set, bindings: Input_Bindings, overlay: Touch_Overlay_Frame) -> Input_Frame {
 	raw := read_raylib_raw_input()
+	raw.gamepad = touch_overlay_gamepad(raw.gamepad, overlay, .Raylib)
+	raw.mouse = touch_overlay_mouse(raw.mouse, overlay)
 	move := clamp_to_unit_length(gamepad_stick(raw.gamepad, .LEFT_X, .LEFT_Y) + keyboard_move())
 	look := gamepad_stick(raw.gamepad, .RIGHT_X, .RIGHT_Y)
-	look_delta := raw.mouse.delta
+	look_delta := pointer_look_delta(raw.mouse.delta, overlay)
 	wheel_actions := mouse_wheel_actions(raw.mouse.wheel, bindings)
-	pressed := gamepad_button_actions(raw.gamepad, bindings) + keyboard_mouse_actions(bindings) + analog_actions(move, look, look_delta) + wheel_actions
+	pressed := gamepad_button_actions(raw.gamepad, bindings) + keyboard_mouse_actions(bindings, overlay) + analog_actions(move, look, look_delta) + wheel_actions
 	return Input_Frame {
 		move = move,
 		look = look,

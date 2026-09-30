@@ -155,6 +155,9 @@ Raw_Touch_Sense :: struct {
 
 Raw_Gamepad :: struct {
 	connected:      bool,
+	// The touch overlay's gamepad alone (touch_overlay.odin): its presses
+	// are touches, so they do not make the gamepad the active device.
+	on_screen:      bool,
 	index:          int,
 	name:           cstring,
 	axis_count:     int,

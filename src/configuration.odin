@@ -67,6 +67,8 @@ Player_Configuration :: struct {
 	binding_overrides: []Binding,
 	// --watch-data, Default when not given.
 	watch_data:     Watch_Data_Mode,
+	// --touch-overlay: the touch overlay on for this run (work item 0115).
+	touch_overlay_forced: bool,
 }
 
 // The environment variables the layering reads, passed in so that tests

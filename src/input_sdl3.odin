@@ -265,25 +265,29 @@ calibrate_frame_gyro :: proc(calibration: ^Gyro_Calibration, gamepad: ^Raw_Gamep
 	gyro.bias, gyro.settled = calibration.bias, calibration.settled
 }
 
-read_sdl3_input_frame :: proc(state: ^Sdl3_Input_State, previous: Input_Frame, frame_seconds: f32, settings: Settings, bindings: Input_Bindings) -> Input_Frame {
+// The touch overlay's gamepad joins the physical one after the gyro's
+// calibration (touch_overlay.odin), so --touch-overlay works on this
+// backend too.
+read_sdl3_input_frame :: proc(state: ^Sdl3_Input_State, previous: Input_Frame, frame_seconds: f32, settings: Settings, bindings: Input_Bindings, overlay: Touch_Overlay_Frame) -> Input_Frame {
 	poll_sdl3_events(state)
 	raw := Raw_Input {
 		backend  = .Sdl3,
 		gamepad  = read_sdl3_gamepad(state.gamepad),
-		mouse    = read_raylib_mouse(),
+		mouse    = touch_overlay_mouse(read_raylib_mouse(), overlay),
 		keyboard = read_raylib_keyboard(),
 	}
 	calibrate_frame_gyro(&state.gyro_calibration, &raw.gamepad)
 	raw.gamepad.motion.gyro_source = state.steam_layer ? .Steam : .Sdl
+	raw.gamepad = touch_overlay_gamepad(raw.gamepad, overlay, .Sdl3)
 	move := clamp_to_unit_length(sdl3_stick(raw.gamepad, .LEFTX, .LEFTY) + keyboard_move())
 	look := sdl3_stick(raw.gamepad, .RIGHTX, .RIGHTY)
-	look_delta := raw.mouse.delta + sdl3_look_delta(previous.raw.gamepad, raw.gamepad, frame_seconds, settings, !state.steam_layer)
+	look_delta := pointer_look_delta(raw.mouse.delta, overlay) + sdl3_look_delta(previous.raw.gamepad, raw.gamepad, frame_seconds, settings, !state.steam_layer)
 	wheel_actions := mouse_wheel_actions(raw.mouse.wheel, bindings)
 	pressed :=
 		gamepad_button_actions(raw.gamepad, bindings) +
 		gamepad_trigger_actions(raw.gamepad, bindings) +
 		trackpad_actions(raw.gamepad, bindings) +
-		keyboard_mouse_actions(bindings) +
+		keyboard_mouse_actions(bindings, overlay) +
 		analog_actions(move, look, look_delta) +
 		wheel_actions
 	return Input_Frame {

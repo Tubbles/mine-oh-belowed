@@ -243,6 +243,11 @@ settings_sprint_hold = "Sprint"
 settings_sprint_hold_tooltip = "Toggle sprints from a press until you stop moving. Hold sprints while the button is held. Left Control always sprints while held"
 settings_hold_mode_hold = "Hold"
 settings_hold_mode_toggle = "Toggle"
+settings_touch_overlay = "Touch controls"
+settings_touch_overlay_tooltip = "Buttons and sticks drawn on a touch screen. Auto shows them on Android. On a desktop the mouse is the finger, so mouse look, gyro and mouse mining are off in the world while they show"
+settings_touch_overlay_auto = "Auto"
+settings_touch_overlay_on = "On"
+settings_touch_overlay_off = "Off"
 
 // Glyph bar labels
 hint_select = "Select"

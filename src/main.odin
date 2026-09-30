@@ -45,6 +45,8 @@ Command_Line :: struct {
 	give_arguments:  [dynamic]string `args:"name=give" usage:"<item>:<count>, items into the inventory on the first tick (the rest into the drop capsule), repeatable (--give=iron_plate:50)"`,
 	// Work item 0054, overrides the watch_data setting for this run.
 	watch_data:      string `usage:"reload changed data files while the game runs: off, presentation or all (default: the watch_data setting)"`,
+	// Work item 0115, forces the touch_overlay setting on for this run.
+	touch_overlay:   bool `usage:"the touch overlay on for this run; on the desktop the mouse is its touch while the left button is held"`,
 	// Work item 0050: no window, no controller, the table on stdout.
 	benchmark:       int `usage:"run the headless factory benchmark of this size for ten simulated minutes and print the table"`,
 }
@@ -265,6 +267,7 @@ main :: proc() {
 		// Before the window opens, so the report shows without a display.
 		input_bindings    = make_backend_bindings(bindings, input_backend),
 		watch_data        = watch_data,
+		touch_overlay_forced = command_line.touch_overlay,
 	}
 	run_game(config, input_backend, game_data, data_directory, fonts, session, make_title_state(config, saves_directory, saves_found, make_save_header()), player_configuration)
 }

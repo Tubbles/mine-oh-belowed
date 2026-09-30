@@ -50,10 +50,12 @@ gamepad_stick_moved :: proc(gamepad: Raw_Gamepad) -> bool {
 // Which device produced input this frame. Button edges rather than levels,
 // because the Steam Controller's grip sense holds buttons down while the
 // player merely holds the controller.
+// The touch overlay's gamepad (on_screen) is skipped: its presses are
+// touches, which stay the pointer's device.
 detect_input_device :: proc(previous, current: Raw_Input) -> (device: Input_Device, seen: bool) {
 	gamepad := current.gamepad
 	right_pad := touchpad_delta(touchpad_finger(previous.gamepad, RIGHT_TOUCHPAD_INDEX), touchpad_finger(gamepad, RIGHT_TOUCHPAD_INDEX))
-	if gamepad.connected && (gamepad_button_newly_down(previous.gamepad, gamepad) || gamepad_stick_moved(gamepad) || right_pad != {}) {
+	if gamepad.connected && !gamepad.on_screen && (gamepad_button_newly_down(previous.gamepad, gamepad) || gamepad_stick_moved(gamepad) || right_pad != {}) {
 		return .Gamepad, true
 	}
 	mouse_clicked := current.mouse.button_down[0] && !previous.mouse.button_down[0]

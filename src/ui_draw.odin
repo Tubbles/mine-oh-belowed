@@ -119,6 +119,13 @@ execute_draw_command :: proc(command: Draw_Command, focus: Ui_Id, atlas: Icon_At
 		execute_image_command(command, images, pixels_per_unit)
 	case .Ui_Icon:
 		draw_atlas_tile(atlas.ui_texture, atlas.ui_layout, command.tile, command.rectangle, pixels_per_unit)
+	case .Circle:
+		box := to_pixels(command.rectangle, pixels_per_unit)
+		rl.DrawCircleV({box.x + box.width / 2, box.y + box.height / 2}, min(box.width, box.height) / 2, to_raylib_color(command.color))
+	case .Ring:
+		box := to_pixels(command.rectangle, pixels_per_unit)
+		radius := min(box.width, box.height) / 2
+		rl.DrawRing({box.x + box.width / 2, box.y + box.height / 2}, max(radius - command.thickness * pixels_per_unit, 0), radius, 0, 360, 0, to_raylib_color(command.color))
 	}
 }
 

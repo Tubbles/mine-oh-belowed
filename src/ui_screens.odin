@@ -14,7 +14,7 @@ SETTINGS_ROW_COUNT :: 14
 DISPLAY_SETTINGS_ROW_COUNT :: 17
 AUDIO_SETTINGS_ROW_COUNT :: 3
 CONTROL_SETTINGS_ROW_COUNT :: 5
-ACCESSIBILITY_SETTINGS_ROW_COUNT :: 5
+ACCESSIBILITY_SETTINGS_ROW_COUNT :: 6
 
 Screen_Context :: struct {
 	settings:        ^Settings,
@@ -585,6 +585,20 @@ accessibility_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, setting
 	ui_toggle(state, settings_row(content), text("settings_reduced_motion"), &settings.reduced_motion, text("settings_reduced_motion_tooltip"))
 	hold_mode_choice(state, settings_row(content), "settings_sneak_hold", &settings.sneak_hold)
 	hold_mode_choice(state, settings_row(content), "settings_sprint_hold", &settings.sprint_hold)
+	if ui_choice(state, settings_row(content), text("settings_touch_overlay"), text(touch_overlay_mode_keys[settings.touch_overlay]), text("settings_touch_overlay_tooltip")) {
+		settings.touch_overlay = next_touch_overlay_mode(settings.touch_overlay)
+	}
+}
+
+@(rodata)
+touch_overlay_mode_keys := [Touch_Overlay_Mode]string {
+	.Auto = "settings_touch_overlay_auto",
+	.On   = "settings_touch_overlay_on",
+	.Off  = "settings_touch_overlay_off",
+}
+
+next_touch_overlay_mode :: proc(mode: Touch_Overlay_Mode) -> Touch_Overlay_Mode {
+	return mode == max(Touch_Overlay_Mode) ? min(Touch_Overlay_Mode) : Touch_Overlay_Mode(int(mode) + 1)
 }
 
 @(rodata)

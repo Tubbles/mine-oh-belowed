@@ -76,6 +76,10 @@ Settings :: struct {
 	reduced_motion:            bool,
 	sneak_hold:                Hold_Mode,
 	sprint_hold:               Hold_Mode,
+	// The touch overlay (touch_overlay.odin, work item 0115): auto is on
+	// for the Android build and off elsewhere; --touch-overlay forces it
+	// on for a run.
+	touch_overlay:             Touch_Overlay_Mode,
 	// Set by the Steam Deck preset (deck_preset.odin, work item 0076)
 	// when it applied, so it applies once and later starts leave the
 	// player's choices alone.
@@ -125,6 +129,7 @@ DEFAULT_SETTINGS :: Settings {
 	// click.
 	sneak_hold                = .Hold,
 	sprint_hold               = .Toggle,
+	touch_overlay             = .Auto,
 	deck_preset_applied       = false,
 }
 

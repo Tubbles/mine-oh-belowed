@@ -19,6 +19,7 @@ test_data_files_fall_into_their_categories :: proc(t: ^testing.T) {
 		{"strings/.en.sjson.swp", .Ignored},
 		{"bindings.sjson", .Bindings},
 		{"dev_kits.sjson", .Developer_Kits},
+		{"touch_overlay.sjson", .Content},
 		{"shaders/chunk.fs", .Shaders},
 		{"shaders/chunk.vs", .Shaders},
 		{"shaders/water.fs", .Shaders},

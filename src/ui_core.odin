@@ -158,6 +158,10 @@ Draw_Command_Kind :: enum u8 {
 	// The UI icon atlas tile `tile` (a Ui_Icon, ui_theme.odin), stretched
 	// over the rectangle.
 	Ui_Icon,
+	// A filled circle, and a circle's outline of thickness, inside the
+	// rectangle (the touch overlay, touch_overlay.odin).
+	Circle,
+	Ring,
 }
 
 Text_Alignment :: enum u8 {

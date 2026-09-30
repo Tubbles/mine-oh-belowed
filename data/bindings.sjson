@@ -29,7 +29,7 @@ bindings = [
 	{action = "Interact" device = "gamepad" control = "SOUTH" context = "world"}
 	{action = "Interact" device = "gamepad" control = "LEFT_PADDLE1" context = "world"}
 	{action = "Interact" device = "gamepad" control = "MISC2" context = "world"}
-	{action = "Sneak" device = "gamepad" control = "EAST" context = "world" backend = "sdl3"}
+	{action = "Sneak" device = "gamepad" control = "EAST" context = "world"}
 	{action = "Sneak" device = "gamepad" control = "RIGHT_PADDLE1" context = "world"}
 	{action = "Open_Inventory" device = "gamepad" control = "WEST" context = "both"}
 	{action = "Rotate_Building" device = "gamepad" control = "NORTH" context = "world"}
@@ -40,7 +40,7 @@ bindings = [
 	{action = "Hotbar_Previous" device = "gamepad" control = "LEFT_SHOULDER" context = "world"}
 	{action = "Hotbar_Next" device = "gamepad" control = "DPAD_RIGHT" context = "world"}
 	{action = "Hotbar_Next" device = "gamepad" control = "RIGHT_SHOULDER" context = "world"}
-	{action = "Sprint" device = "gamepad" control = "LEFT_STICK" context = "world" backend = "sdl3"}
+	{action = "Sprint" device = "gamepad" control = "LEFT_STICK" context = "world"}
 	{action = "Open_Map" device = "gamepad" control = "BACK" context = "both"}
 	{action = "Pause" device = "gamepad" control = "START" context = "both"}
 	{action = "Mine" device = "gamepad" control = "RIGHT_TRIGGER" context = "world"}

@@ -35,6 +35,10 @@ reference_raylib_buttons := [?]Reference_Raylib_Button {
 	{.RIGHT_FACE_DOWN, .Interact},
 	{.RIGHT_FACE_DOWN, .Confirm},
 	{.RIGHT_FACE_RIGHT, .Back},
+	// Sneak on B and Sprint on the stick click reach the raylib backend
+	// since the touch overlay (0115), which presses them on Android.
+	{.RIGHT_FACE_RIGHT, .Sneak},
+	{.LEFT_THUMB, .Sprint},
 	{.RIGHT_FACE_LEFT, .Open_Inventory},
 	{.RIGHT_FACE_UP, .Rotate_Building},
 	{.LEFT_FACE_UP, .Pipette},
@@ -290,7 +294,7 @@ test_binding_rows :: proc(t: ^testing.T) {
 	for row in rows {
 		if strings.has_prefix(row, "Sprint:") {
 			found_sprint = true
-			testing.expect_value(t, row, "Sprint: gamepad LEFT_STICK (sdl3 only)")
+			testing.expect_value(t, row, "Sprint: gamepad LEFT_STICK")
 		}
 		if strings.has_prefix(row, "Sprint Hold:") {
 			found_sprint_hold = true

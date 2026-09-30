@@ -74,6 +74,9 @@ Frame_State :: struct {
 	input_backend:      Input_Backend,
 	sdl3_input:         Sdl3_Input_State,
 	input:              Input_Frame,
+	// The touch overlay's fingers (touch_overlay.odin), and --touch-overlay.
+	touch_overlay:        Touch_Overlay_State,
+	touch_overlay_forced: bool,
 	// The rumble for this frame, applied by the SDL3 backend.
 	haptic:             Haptic_Request,
 	previous_input:     Input_Frame,
@@ -325,19 +328,21 @@ interpolation_alpha :: proc(accumulator: Tick_Accumulator) -> f64 {
 }
 
 read_input_frame :: proc(state: ^Frame_State, frame_seconds: f32) -> Input_Frame {
+	overlay := read_touch_overlay_frame(state)
 	switch state.input_backend {
 	case .Sdl3:
-		return read_sdl3_input_frame(&state.sdl3_input, state.input, frame_seconds, state.settings, state.input_bindings)
+		return read_sdl3_input_frame(&state.sdl3_input, state.input, frame_seconds, state.settings, state.input_bindings, overlay)
 	case .Raylib:
-		return read_raylib_input_frame(state.input.pressed, state.input_bindings)
+		return read_raylib_input_frame(state.input.pressed, state.input_bindings, overlay)
 	}
 	return {}
 }
 
 // The mouse steers the view while the world is shown and is free for the
-// diagnostics screen and the menus.
+// diagnostics screen and the menus. With the touch overlay on it stays
+// free, since on the desktop the mouse is the overlay's touch point.
 apply_cursor_mode :: proc(state: ^Frame_State) {
-	wanted := state.diagnostics_page != .Off || state.ui.screens.count > 0
+	wanted := state.diagnostics_page != .Off || state.ui.screens.count > 0 || touch_overlay_on(state)
 	if wanted == state.cursor_enabled {
 		return
 	}
@@ -775,6 +780,10 @@ run_ui_frame :: proc(state: ^Frame_State) {
 		draw_hud(&state.ui, screen_context)
 	}
 	run_screens(&state.ui, screen_context)
+	// After the screens, so Start and Back show over an open one.
+	if state.session != nil && touch_overlay_on(state) {
+		draw_touch_overlay(&state.ui, state.touch_overlay, state.content.touch_overlay, screen_pixels, !ui_blocks_world(state.ui.screens))
+	}
 	icon_atlas := Icon_Atlas {
 		texture      = chunk_atlas_texture(state.renderer),
 		layout       = state.renderer.atlas_layout,
@@ -843,6 +852,8 @@ Game_Content :: struct {
 	// simulation never sees it.
 	notes:           Note_Registry,
 	developer_kits:  Developer_Kits,
+	// The touch overlay's layout (touch_overlay.odin); presentation only.
+	touch_overlay:   Touch_Overlay_Layout,
 	item_sort_ranks: []u16,
 	recipe_names:    []string,
 	recipe_order:    []int,
@@ -1002,6 +1013,7 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 		data_directory  = data_directory,
 		watch_data_flag = player_configuration.watch_data,
 		binding_overrides = player_configuration.binding_overrides,
+		touch_overlay_forced = player_configuration.touch_overlay_forced,
 		title           = title,
 		input_backend   = input_backend,
 		renderer        = renderer,
