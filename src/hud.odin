@@ -289,7 +289,7 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	if height := draw_mission_control_panel(state); height > 0 {
 		state.toast_top_offset = height + UI_GAP
 	}
-	draw_discovery_card(state, items)
+	draw_discovery_card(state, items, screen_context.discovery_card_clearance)
 	obtained := screen_context.unlocks.obtained
 	name_status, tool_status, vein_status := target_status_lines(screen_context.world, screen_context.machines, screen_context.fluids, screen_context.veins, screen_context.blocks, items, obtained, effective_tool_tier(player^, items, screen_context.cheat_speed), player.target)
 	if ghost_line, shown := bore_drill_ghost_line(screen_context.world, screen_context.machines, screen_context.veins, screen_context.blocks, items, obtained, player^); shown {

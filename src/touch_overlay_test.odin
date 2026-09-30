@@ -1319,3 +1319,23 @@ test_opacity_scales_the_overlays_alpha :: proc(t: ^testing.T) {
 		testing.expect_value(t, element.opacity, 1)
 	}
 }
+
+// 0123: Back and Start end 99.5 pixels down at 1080 high, the card a gap
+// below; a layout without top_center buttons moves nothing.
+@(test)
+test_the_top_center_clearance_follows_back_and_start :: proc(t: ^testing.T) {
+	layout := shipped_touch_overlay(t)
+	screen := [2]f32{2272, 1080}
+	pixels_per_unit := ui_pixels_per_unit(screen.y, 1)
+	placed := overlay_layout(layout, screen, context.temp_allocator)
+	testing.expect_value(t, touch_overlay_top_center_clearance(layout, placed, pixels_per_unit), 99.5 + UI_GAP)
+	testing.expect_value(t, touch_overlay_top_center_clearance(layout, placed, ui_pixels_per_unit(screen.y, 2)), 99.5 / 2 + UI_GAP)
+	corners := make([dynamic]Touch_Overlay_Element, 0, len(layout.elements), context.temp_allocator)
+	for element in layout.elements {
+		if element.anchor != .Top_Center {
+			append(&corners, element)
+		}
+	}
+	without := Touch_Overlay_Layout{reference_height = layout.reference_height, elements = corners[:]}
+	testing.expect_value(t, touch_overlay_top_center_clearance(without, overlay_layout(without, screen, context.temp_allocator), pixels_per_unit), 0)
+}

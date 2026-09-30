@@ -98,6 +98,9 @@ Screen_Context :: struct {
 	// mining_ring_centre is in render pixels.
 	touch_aims:           bool,
 	mining_ring_centre:   [2]f32,
+	// The discovery card's lowest top, a UI y below the touch overlay's
+	// Back and Start while it is drawn, else 0 (0123).
+	discovery_card_clearance: f32,
 	// The user touch layouts and the editor's draft (0121,
 	// ui_touch_layout_editor.odin), kept by the frame loop, and the data
 	// file's layout, Default. Nil in tests that edit no layout.

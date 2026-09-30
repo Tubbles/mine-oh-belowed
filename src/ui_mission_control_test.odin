@@ -191,3 +191,27 @@ test_the_satellite_crosses_the_map_through_the_pad :: proc(t: ^testing.T) {
 	testing.expect(t, top.y > 0.9, "the pass crosses high in the sky")
 	testing.expect(t, east.x > 0.99 && abs(east.y) < 0.01, "the pass ends on the eastern horizon")
 }
+
+// 0123: at 2272 by 1080 and ui scale 1 the card, even at its widest,
+// clears Back and Start; with no clearance it sits where it did before.
+@(test)
+test_the_discovery_card_sits_below_back_and_start :: proc(t: ^testing.T) {
+	layout := shipped_touch_overlay(t)
+	screen := [2]f32{2272, 1080}
+	ui: Ui_State
+	ui.pixels_per_unit = ui_pixels_per_unit(screen.y, 1)
+	ui.screen_units = ui_screen_units(screen, ui.pixels_per_unit)
+	safe := ui_safe_area(&ui)
+	placed := overlay_layout(layout, screen, context.temp_allocator)
+	card := discovery_card_rectangle(safe, safe.width, touch_overlay_top_center_clearance(layout, placed, ui.pixels_per_unit))
+	for label in ([?]string{"Back", "Start"}) {
+		pill := placed_by_label(layout, placed, label)
+		testing.expect(t, pill.element >= 0)
+		rectangle := pixels_to_units_rectangle(pill.centre, pill.size, ui.pixels_per_unit)
+		testing.expectf(t, !rectangles_overlap(card, rectangle), "the card %v overlaps %v at %v", card, label, rectangle)
+	}
+	// Before 0123: x centred in the safe area, y its top, 54.
+	unmoved := discovery_card_rectangle(safe, 300, 0)
+	expect_near(t, {unmoved.x, unmoved.y}, {986, 54})
+	expect_near(t, {unmoved.width, unmoved.height}, {300, UI_ROW_HEIGHT})
+}

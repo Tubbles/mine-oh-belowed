@@ -1793,6 +1793,31 @@ pixels_to_units_rectangle :: proc(centre, size: [2]f32, pixels_per_unit: f32) ->
 	return Ui_Rectangle{corner.x, corner.y, size.x / pixels_per_unit, size.y / pixels_per_unit}
 }
 
+// A UI y a gap below the lowest top_center button, 0 without one: the
+// discovery card's top keeps clear of Back and Start (0123).
+touch_overlay_top_center_clearance :: proc(layout: Touch_Overlay_Layout, placed: []Placed_Element, pixels_per_unit: f32) -> f32 {
+	clearance: f32 = 0
+	for element in placed {
+		if layout.elements[element.element].anchor == .Top_Center {
+			rectangle := pixels_to_units_rectangle(element.centre, element.size, pixels_per_unit)
+			clearance = max(clearance, rectangle.y + rectangle.height + UI_GAP)
+		}
+	}
+	return clearance
+}
+
+// The clearance of the layout in use while the overlay is drawn (the
+// condition run_ui_frame draws it under), else 0.
+discovery_card_clearance :: proc(state: ^Frame_State) -> f32 {
+	if state.session == nil || !touch_overlay_on(state) || touch_layout_editor_shown(state.ui.screens) {
+		return 0
+	}
+	size := render_size()
+	screen_pixels := [2]f32{f32(size.x), f32(size.y)}
+	layout := frame_touch_layout(state)
+	return touch_overlay_top_center_clearance(layout, overlay_layout(layout, screen_pixels, context.temp_allocator), state.ui.pixels_per_unit)
+}
+
 // The overlay's colour with an element's opacity (0121) on its alpha.
 touch_overlay_color :: proc(opacity: f32) -> Ui_Color {
 	color := TOUCH_OVERLAY_COLOR

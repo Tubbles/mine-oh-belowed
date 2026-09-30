@@ -323,9 +323,15 @@ draw_mission_control_cursor :: proc(state: ^Ui_State, below_text: Ui_Rectangle, 
 	draw_fill(state, {x, row_y + (UI_LINE_HEIGHT - height) / 2, MISSION_CONTROL_CURSOR_WIDTH, height}, UI_ACCENT_COLOR)
 }
 
-// Centred under the top edge of the safe area: the item's icon,
-// "Discovered" dim and the name.
-draw_discovery_card :: proc(state: ^Ui_State, items: Item_Registry) {
+// Centred under the top edge of the safe area, or lower where top_clearance
+// (a UI y, 0 for none) says: below the touch overlay's Back and Start
+// (0123, touch_overlay_top_center_clearance).
+discovery_card_rectangle :: proc(safe: Ui_Rectangle, width, top_clearance: f32) -> Ui_Rectangle {
+	return Ui_Rectangle{safe.x + (safe.width - width) / 2, max(safe.y, top_clearance), width, UI_ROW_HEIGHT}
+}
+
+// The item's icon, "Discovered" dim and the name.
+draw_discovery_card :: proc(state: ^Ui_State, items: Item_Registry, top_clearance: f32) {
 	card := state.mission_control.discovery
 	if !card.active {
 		return
@@ -337,7 +343,7 @@ draw_discovery_card :: proc(state: ^Ui_State, items: Item_Registry) {
 	_, has_item := card.item.?
 	icon_width := has_item ? f32(DISCOVERY_CARD_ICON_SIZE + UI_GAP) : 0
 	width := min(icon_width + title_width + UI_GAP + name_width + 2 * UI_PADDING, safe.width)
-	box := Ui_Rectangle{safe.x + (safe.width - width) / 2, safe.y, width, UI_ROW_HEIGHT}
+	box := discovery_card_rectangle(safe, width, top_clearance)
 	draw_fill(state, box, UI_PANEL_COLOR)
 	draw_outline(state, box, UI_ACCENT_COLOR)
 	content := inset(box, UI_PADDING)
