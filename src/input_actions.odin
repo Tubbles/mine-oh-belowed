@@ -218,6 +218,11 @@ Input_Frame :: struct {
 	// Developer mode (world_input), for the Jump double tap that toggles
 	// flying (update_jump_double_tap).
 	developer:     bool,
+	// A screen blocked the world on a frame since the last tick the world
+	// ran (world_input, Tick_Input_Accumulator), paused ticks included:
+	// the Jump double tap's window closes (update_jump_double_tap, 0132),
+	// so a Jump before a pause and one after it are no double tap.
+	world_blocked: bool,
 	// The touch overlay's tap scheme (0118): the unit direction through
 	// the touched point, from the render camera, which the player's target
 	// takes instead of the look direction while aim_overrides is set.
@@ -374,7 +379,7 @@ world_input :: proc(frame: Input_Frame, world_blocked: bool, guard: Action_Set, 
 	} else {
 		result = apply_hold_settings(apply_look_settings(without_actions(frame, guard), settings), settings)
 	}
-	result.developer = developer
+	result.developer, result.world_blocked = developer, world_blocked
 	return result
 }
 
@@ -384,16 +389,25 @@ world_input :: proc(frame: Input_Frame, world_blocked: bool, guard: Action_Set, 
 // (edges) are events, so each frame adds to the pending sum and the first
 // tick after them takes it all. Held state (move, look, pressed) is a level
 // and every tick reads the latest frame.
+// world_blocked is an event too: any blocked frame since the last tick.
 Tick_Input_Accumulator :: struct {
-	look_delta:   [2]f32,
-	just_pressed: Action_Set,
+	look_delta:    [2]f32,
+	just_pressed:  Action_Set,
+	world_blocked: bool,
 }
 
 accumulate_frame_input :: proc(accumulator: Tick_Input_Accumulator, frame: Input_Frame) -> Tick_Input_Accumulator {
 	return Tick_Input_Accumulator {
 		look_delta = accumulator.look_delta + frame.look_delta,
 		just_pressed = accumulator.just_pressed + frame.just_pressed,
+		world_blocked = accumulator.world_blocked || frame.world_blocked,
 	}
+}
+
+// While the simulation is paused the frames' events are dropped, but a
+// blocked frame is remembered for the first tick after the pause.
+paused_frame_input :: proc(accumulator: Tick_Input_Accumulator, frame: Input_Frame) -> Tick_Input_Accumulator {
+	return Tick_Input_Accumulator{world_blocked = accumulator.world_blocked || frame.world_blocked}
 }
 
 // The input one tick sees, and the emptied accumulator for the next tick.
@@ -401,6 +415,7 @@ take_tick_input :: proc(accumulator: Tick_Input_Accumulator, frame: Input_Frame)
 	tick_input := frame
 	tick_input.look_delta = accumulator.look_delta
 	tick_input.just_pressed = accumulator.just_pressed
+	tick_input.world_blocked = accumulator.world_blocked
 	return tick_input, {}
 }
 

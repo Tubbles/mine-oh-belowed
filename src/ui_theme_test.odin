@@ -298,16 +298,23 @@ test_toggle_knob_slides_to_its_side :: proc(t: ^testing.T) {
 	test_ui_frame(&state, {})
 	ui_toggle(&state, row, "toggle", &value)
 	id := ui_id(&state, "toggle")
-	testing.expect_value(t, state.knob_positions[id], 0)
+	testing.expect_value(t, state.knob_positions[id].position, 0)
 	value = true
 	test_ui_frame(&state, {})
 	ui_toggle(&state, row, "toggle", &value)
-	testing.expect(t, state.knob_positions[id] > 0 && state.knob_positions[id] < 1)
+	testing.expect(t, state.knob_positions[id].position > 0 && state.knob_positions[id].position < 1)
 	for _ in 0 ..< 60 {
 		test_ui_frame(&state, {})
 		ui_toggle(&state, row, "toggle", &value)
 	}
-	testing.expect_value(t, state.knob_positions[id], 1)
+	testing.expect_value(t, state.knob_positions[id].position, 1)
+	// Not drawn for a frame (its screen closed), then drawn at the other
+	// value: the knob starts there instead of sliding (0132).
+	test_ui_frame(&state, {})
+	value = false
+	test_ui_frame(&state, {})
+	ui_toggle(&state, row, "toggle", &value)
+	testing.expect_value(t, state.knob_positions[id].position, 0)
 }
 
 @(test)

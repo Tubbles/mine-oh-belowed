@@ -402,15 +402,9 @@ display_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Se
 	camera_settings(state, content, settings)
 	ui_toggle(state, settings_row(content), text("settings_weather"), &settings.weather, text("settings_weather_tooltip"))
 	ui_toggle(state, settings_row(content), text("settings_head_bob"), &settings.head_bob, text("settings_head_bob_tooltip"))
-	ui_slider(
-		state,
-		settings_row(content),
-		text("settings_ui_scale"),
-		&settings.ui_scale,
-		UI_SCALE_RANGE,
-		multiplier_text(settings.ui_scale),
-		text("settings_ui_scale_tooltip"),
-	)
+	// Applied on the release of a drag (ui_layout_slider), since it
+	// changes the layout under the finger.
+	ui_layout_slider(state, settings_row(content), text("settings_ui_scale"), &settings.ui_scale, UI_SCALE_RANGE, multiplier_text, text("settings_ui_scale_tooltip"))
 	ui_slider(
 		state,
 		settings_row(content),
@@ -589,15 +583,8 @@ sensitivity_slider :: proc(state: ^Ui_State, content: ^Ui_Rectangle, key: string
 // camera, the weather, the markers) and the input layer each tick
 // (apply_hold_settings).
 accessibility_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Settings, screen_context: Screen_Context) {
-	ui_slider(
-		state,
-		settings_row(content),
-		text("settings_text_scale"),
-		&settings.text_scale,
-		TEXT_SCALE_RANGE,
-		multiplier_text(settings.text_scale),
-		text("settings_text_scale_tooltip"),
-	)
+	// Applied on the release of a drag, like the UI scale.
+	ui_layout_slider(state, settings_row(content), text("settings_text_scale"), &settings.text_scale, TEXT_SCALE_RANGE, multiplier_text, text("settings_text_scale_tooltip"))
 	if ui_choice(state, settings_row(content), text("settings_palette"), text(palette_keys[settings.palette]), text("settings_palette_tooltip")) {
 		settings.palette = settings.palette == .Default ? .Colour_Blind : .Default
 	}

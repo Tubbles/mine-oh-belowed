@@ -247,7 +247,9 @@ simulation_tick :: proc(state: ^Simulation_State, content_tables: Simulation_Con
 				append(&state.events, Simulation_Event{player = index, kind = event})
 			}
 		}
+		before := movement_toggles(state.players[index])
 		events := tick_player(&state.world, content, state.players[:], index, input, state.tick_rate, state.cheat_speed)
+		log_movement_toggles(before, state.players[index], player_tick_toggle_cause(input.just_pressed), state.tick)
 		update_magnetometer(&state.world, content, &state.players[index])
 		for kind in events {
 			append(&state.events, Simulation_Event{player = index, kind = kind})
@@ -434,7 +436,7 @@ update_session :: proc(state: ^Frame_State, world_blocked: bool) {
 	if state.ui.radial.open {
 		frame_for_world = without_actions(frame_for_world, {.Look})
 	}
-	session.tick_input = paused ? {} : accumulate_frame_input(session.tick_input, frame_for_world)
+	session.tick_input = paused ? paused_frame_input(session.tick_input, frame_for_world) : accumulate_frame_input(session.tick_input, frame_for_world)
 	tick_count: int
 	session.accumulator, tick_count = advance_simulation_clock(session.accumulator, f64(state.frame_seconds), paused || fast)
 	for _ in 0 ..< tick_count {

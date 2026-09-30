@@ -417,9 +417,11 @@ serve_developer_request :: proc(state: ^Simulation_State, content: Simulation_Co
 serve_developer_requests :: proc(state: ^Simulation_State, content: Simulation_Content) {
 	if len(state.players) > 0 {
 		for request in state.developer_requests {
+			before := movement_toggles(state.players[0])
 			if problem := serve_developer_request(state, content, request); problem != "" {
 				log_printf("developer: %v refused: %s", request.action, problem)
 			}
+			log_movement_toggles(before, state.players[0], "the Developer screen's request", state.tick)
 		}
 	}
 	clear(&state.developer_requests)

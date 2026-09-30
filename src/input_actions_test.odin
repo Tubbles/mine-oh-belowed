@@ -208,3 +208,20 @@ test_vibration_amplitude_follows_the_strength :: proc(t: ^testing.T) {
 	testing.expect_value(t, vibration_amplitude(1), 255)
 	testing.expect_value(t, vibration_amplitude(2), 255)
 }
+
+// 0132: a blocked frame reaches the next tick, also across a pause, which
+// drops the frames' other events.
+@(test)
+test_a_blocked_frame_reaches_the_next_tick :: proc(t: ^testing.T) {
+	accumulator := paused_frame_input({}, Input_Frame{world_blocked = true, just_pressed = {.Jump}})
+	accumulator = paused_frame_input(accumulator, {})
+	tick_input: Input_Frame
+	tick_input, accumulator = take_tick_input(accumulator, {})
+	testing.expect(t, tick_input.world_blocked)
+	testing.expect_value(t, tick_input.just_pressed, Action_Set{})
+	tick_input, accumulator = take_tick_input(accumulator, {})
+	testing.expect(t, !tick_input.world_blocked)
+	accumulator = accumulate_frame_input(accumulator, Input_Frame{world_blocked = true})
+	tick_input, accumulator = take_tick_input(accumulator, {})
+	testing.expect(t, tick_input.world_blocked)
+}

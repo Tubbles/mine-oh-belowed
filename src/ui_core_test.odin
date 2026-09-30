@@ -269,13 +269,17 @@ test_button_activates_by_confirm_and_click :: proc(t: ^testing.T) {
 	test_ui_frame(&state, {confirm = true})
 	testing.expect(t, ui_button(&state, button, "resume"))
 	ui_resolve(&state)
-	// A click hits by position, with no focus needed.
+	// A tap hits by position, with no focus needed, on the release (0132).
 	other := Ui_Rectangle{100, 300, 200, 50}
 	test_ui_frame(&state, {mouse_position = {150, 320}, mouse_moved = true, mouse_pressed = true, mouse_down = true})
 	testing.expect(t, !ui_button(&state, button, "resume"))
-	testing.expect(t, ui_button(&state, other, "quit"))
+	testing.expect(t, !ui_button(&state, other, "quit"))
 	ui_resolve(&state)
 	testing.expect_value(t, state.focus, ui_id(&state, "quit"))
+	test_ui_frame(&state, {mouse_position = {150, 320}})
+	testing.expect(t, !ui_button(&state, button, "resume"))
+	testing.expect(t, ui_button(&state, other, "quit"))
+	ui_resolve(&state)
 }
 
 @(test)
@@ -313,8 +317,14 @@ test_slider_steps_and_drags :: proc(t: ^testing.T) {
 	testing.expect(t, abs(value - 1.05) < TEST_TOLERANCE)
 	ui_resolve(&state)
 	testing.expect_value(t, state.focus, ui_id(&state, "scale"))
-	// Clicking at the far right of the track sets the maximum.
-	test_ui_frame(&state, {mouse_position = {990 - UI_BODY_TEXT_SIZE * 4 - 2 * UI_PADDING, 28}, mouse_moved = true, mouse_pressed = true, mouse_down = true})
+	// A tap at the far right of the track sets the maximum, on the release
+	// (0132).
+	far_right := [2]f32{990 - UI_BODY_TEXT_SIZE * 4 - 2 * UI_PADDING, 28}
+	test_ui_frame(&state, {mouse_position = far_right, mouse_moved = true, mouse_pressed = true, mouse_down = true})
+	ui_slider(&state, row, "scale", &value, UI_SCALE_RANGE, "")
+	testing.expect(t, abs(value - 1.05) < TEST_TOLERANCE)
+	ui_resolve(&state)
+	test_ui_frame(&state, {mouse_position = far_right})
 	ui_slider(&state, row, "scale", &value, UI_SCALE_RANGE, "")
 	testing.expect(t, abs(value - UI_SCALE_RANGE.maximum) < TEST_TOLERANCE)
 }

@@ -281,7 +281,11 @@ ui_pointer_over :: proc(state: ^Ui_State, rectangle: Ui_Rectangle) -> bool {
 	return state.pointer_source != .None && rectangle_contains(rectangle, state.pointer)
 }
 
-// Registers a focusable widget and reports how it is used this frame.
+// Registers a focusable widget and reports how it is used this frame:
+// activated by Confirm while focused, or by a tap, a press on it released
+// over it without leaving the slop (pointer_tapped, 0132). The press
+// names the widget; the last one registered under the pointer wins, as in
+// widget_under.
 ui_interact :: proc(state: ^Ui_State, id: Ui_Id, rectangle: Ui_Rectangle, flags: Ui_Widget_Flags = {}, tooltip := "") -> Ui_Interaction {
 	append(&state.widgets, Ui_Widget{id = id, panel = state.current_panel, rectangle = rectangle, flags = flags})
 	focused := state.focus == id
@@ -289,7 +293,11 @@ ui_interact :: proc(state: ^Ui_State, id: Ui_Id, rectangle: Ui_Rectangle, flags:
 	if focused && tooltip != "" {
 		state.focused_tooltip = tooltip
 	}
-	return Ui_Interaction{focused = focused, hovered = hovered, activated = (focused && state.confirm) || (hovered && state.click)}
+	if hovered && state.click {
+		state.pointer_press.widget, state.pointer_press.on_slot = id, .Item_Slot in flags
+	}
+	tapped := hovered && pointer_tapped(state^, id)
+	return Ui_Interaction{focused = focused, hovered = hovered, activated = (focused && state.confirm) || tapped}
 }
 
 // Widgets inside a panel move focus among each other; the tooltip docks to it.
@@ -377,9 +385,10 @@ ui_toggle :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, valu
 		UI_CHECKBOX_SIZE,
 	}
 	target := f32(value^ ? 1 : 0)
-	position, known := state.knob_positions[id]
-	position = known ? slide_towards(position, target, state.frame_seconds * UI_KNOB_TRAVELS_PER_SECOND) : target
-	state.knob_positions[id] = position
+	knob, known := state.knob_positions[id]
+	drawn_last_frame := known && knob.frame + 1 == state.frame_count
+	position := drawn_last_frame ? slide_towards(knob.position, target, state.frame_seconds * UI_KNOB_TRAVELS_PER_SECOND) : target
+	state.knob_positions[id] = Knob_Position{position, state.frame_count}
 	draw_fill(state, track, value^ ? theme.colors[.Accent] : theme.colors[.Panel])
 	draw_outline(state, track, theme.colors[.Text], theme.border)
 	draw_fill(state, toggle_knob_rectangle(track, position), theme.colors[.Text])
@@ -402,7 +411,7 @@ ui_choice :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label, value: strin
 
 // Label on the left, "<  value  >" on the right (the texture editor's
 // seed, the touch layout editor's values). Left and right step while
-// focused; a click on the left half steps down, on the right half up.
+// focused; a tap on the left half steps down, on the right half up.
 // Returns the step's direction, .None for none; the caller steps the
 // value, so the id stays with the label.
 ui_stepper :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label, value: string, tooltip := "") -> Ui_Direction {
@@ -412,7 +421,7 @@ ui_stepper :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label, value: stri
 	if interaction.focused && (state.navigation_step == .Left || state.navigation_step == .Right) {
 		direction = state.navigation_step
 	}
-	if interaction.hovered && state.click {
+	if interaction.hovered && pointer_tapped(state^, id) {
 		direction = state.pointer.x < rectangle_centre(rectangle).x ? .Left : .Right
 	}
 	widget_background(state, rectangle, id, interaction)
@@ -447,34 +456,117 @@ step_slider_value :: proc(value: f32, range: Slider_Range, direction: Ui_Directi
 	return value
 }
 
-// Label on the left, the track and the value text on the right. Left and
-// right step the value while focused; a click or drag on the track sets it.
-ui_slider :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, value: ^f32, range: Slider_Range, value_text: string, tooltip := "") -> bool {
+// A slider's widget and its geometry for one frame.
+Slider :: struct {
+	id:          Ui_Id,
+	interaction: Ui_Interaction,
+	track:       Ui_Rectangle,
+	// Where a press takes the value: the track and a padding around it.
+	grab:        Ui_Rectangle,
+}
+
+SLIDER_VALUE_WIDTH :: UI_BODY_TEXT_SIZE * 4
+
+slider_begin :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label, tooltip: string) -> Slider {
 	id := ui_id(state, label)
 	interaction := ui_interact(state, id, rectangle, {.Adjusts_Horizontally}, tooltip)
-	value_width := f32(UI_BODY_TEXT_SIZE * 4)
-	track := Ui_Rectangle{rectangle.x + rectangle.width * 0.45, rectangle.y + rectangle.height / 2 - 6, rectangle.width * 0.55 - value_width - 2 * UI_PADDING, 12}
-	before := value^
-	if interaction.focused {
-		value^ = step_slider_value(value^, range, state.navigation_step)
-	}
+	track := Ui_Rectangle{rectangle.x + rectangle.width * 0.45, rectangle.y + rectangle.height / 2 - 6, rectangle.width * 0.55 - SLIDER_VALUE_WIDTH - 2 * UI_PADDING, 12}
 	grab := Ui_Rectangle{track.x - UI_PADDING, rectangle.y, track.width + 2 * UI_PADDING, rectangle.height}
 	if state.click && ui_pointer_over(state, grab) {
-		state.dragging = id
+		state.pointer_press.on_track = true
 	}
-	if state.dragging == id && state.pointer_held {
-		value^ = slider_value_at(track, state.pointer.x, range)
+	return Slider{id, interaction, track, grab}
+}
+
+// The value the pointer gives the slider this frame, if any (0132). A
+// press on the track decides by its first movement past the slop: along
+// the track it is the slider's drag (dragging), whose value follows the
+// pointer on the frames it moves, never a still one, so a layout change
+// under it changes nothing; across it is the scroll region's drag, and
+// the value stays. A release within the slop is a tap, which sets the
+// value at the press point.
+slider_pointer_value :: proc(state: ^Ui_State, slider: Slider, range: Slider_Range) -> (value: f32, pointed: bool) {
+	press := state.pointer_press
+	on_track := press.widget == slider.id && press.on_track
+	if on_track && press.down && press.moved && press.horizontal {
+		state.dragging = slider.id
 	}
-	widget_background(state, rectangle, id, interaction)
+	switch {
+	case on_track && pointer_tapped(state^, slider.id):
+		return slider_value_at(slider.track, press.position.x, range), true
+	case state.dragging == slider.id && state.pointer_moved:
+		return slider_value_at(slider.track, state.pointer.x, range), true
+	}
+	return 0, false
+}
+
+// The release of the slider's drag along the track, this frame.
+slider_drag_released :: proc(state: Ui_State, id: Ui_Id) -> bool {
+	press := state.pointer_press
+	return state.pointer_released && press.widget == id && press.on_track && press.moved && press.horizontal
+}
+
+draw_slider :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, slider: Slider, label: string, value: f32, range: Slider_Range, value_text: string) {
+	widget_background(state, rectangle, slider.id, slider.interaction)
 	label_area := inset(rectangle, UI_PADDING)
-	label_area.width = max(track.x - UI_PADDING - label_area.x, 0)
+	label_area.width = max(slider.track.x - UI_PADDING - label_area.x, 0)
 	draw_text_fitted(state, label_area, label, UI_BODY_TEXT_SIZE, .Left)
-	draw_fill(state, track, theme_color(state, .Panel))
-	filled := track
-	filled.width *= slider_fraction(value^, range)
+	draw_fill(state, slider.track, theme_color(state, .Panel))
+	filled := slider.track
+	filled.width *= slider_fraction(value, range)
 	draw_fill(state, filled, theme_color(state, .Accent))
-	value_area := Ui_Rectangle{rectangle.x + rectangle.width - UI_PADDING - value_width, rectangle.y, value_width, rectangle.height}
+	value_area := Ui_Rectangle{rectangle.x + rectangle.width - UI_PADDING - SLIDER_VALUE_WIDTH, rectangle.y, SLIDER_VALUE_WIDTH, rectangle.height}
 	draw_text(state, value_area, value_text, UI_BODY_TEXT_SIZE, .Right)
+}
+
+// Label on the left, the track and the value text on the right. Left and
+// right step the value while focused; the pointer sets it by a tap or a
+// drag along the track (slider_pointer_value).
+ui_slider :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, value: ^f32, range: Slider_Range, value_text: string, tooltip := "") -> bool {
+	slider := slider_begin(state, rectangle, label, tooltip)
+	before := value^
+	if slider.interaction.focused {
+		value^ = step_slider_value(value^, range, state.navigation_step)
+	}
+	if pointed, ok := slider_pointer_value(state, slider, range); ok {
+		value^ = pointed
+	}
+	draw_slider(state, rectangle, slider, label, value^, range, value_text)
+	return value^ != before
+}
+
+// A slider whose value changes the layout (the UI scale, the text scale):
+// during a drag along the track the value shown follows the pointer
+// (Ui_State.slider_drag_value) but the setting changes only on the
+// release, so the layout under the finger holds still and the slider
+// tracks it exactly (0132). Steps and a tap apply at once. The value text
+// comes from format_value, since it shows the dragged value.
+ui_layout_slider :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, value: ^f32, range: Slider_Range, format_value: proc(value: f32) -> string, tooltip := "") -> bool {
+	slider := slider_begin(state, rectangle, label, tooltip)
+	before := value^
+	if slider.interaction.focused {
+		value^ = step_slider_value(value^, range, state.navigation_step)
+	}
+	was_dragging := state.dragging == slider.id
+	pointed, ok := slider_pointer_value(state, slider, range)
+	// The drag starts with the setting's value, so a drag that begins on a
+	// frame without a pointer move (a rescale pushed the press past the
+	// slop) never shows or applies an earlier drag's value.
+	if state.dragging == slider.id && !was_dragging {
+		state.slider_drag_value = value^
+	}
+	if ok {
+		if state.dragging == slider.id {
+			state.slider_drag_value = pointed
+		} else {
+			value^ = pointed
+		}
+	}
+	if slider_drag_released(state^, slider.id) {
+		value^ = state.slider_drag_value
+	}
+	shown := state.dragging == slider.id ? state.slider_drag_value : value^
+	draw_slider(state, rectangle, slider, label, shown, range, format_value(shown))
 	return value^ != before
 }
 
@@ -588,8 +680,8 @@ scroll_to_show :: proc(scroll, row_top, row_height, view_height: f32) -> f32 {
 	return scroll
 }
 
-// A scrolling vertical list. The right stick and the wheel scroll it, the
-// focus keeps itself in view, and ui_request_letter_jump (the letter wheel)
+// A scrolling vertical list. The right stick, the wheel and a pointer drag
+// scroll it like a Scroll_Region, the focus keeps itself in view, and ui_request_letter_jump (the letter wheel)
 // moves the focus to the first item starting with a letter. Returns the
 // activated item or -1.
 ui_list :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, items: []string, tooltip := "") -> int {
@@ -608,7 +700,9 @@ ui_list :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, items:
 		interaction := ui_interact(state, item_id, row, {}, tooltip)
 		if interaction.focused {
 			focus_inside = true
-			scroll = scroll_to_show(scroll, row_top, UI_ROW_HEIGHT, rectangle.height)
+			if !state.focus_scrolled_away {
+				scroll = scroll_to_show(scroll, row_top, UI_ROW_HEIGHT, rectangle.height)
+			}
 		}
 		if interaction.activated {
 			activated = index
@@ -617,6 +711,7 @@ ui_list :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, items:
 		draw_text_fitted(state, inset(row, UI_PADDING), item, UI_BODY_TEXT_SIZE, .Left)
 	}
 	push_command(state, {kind = .Clip_End})
+	scroll -= pointer_drag_scroll(state, rectangle)
 	if focus_inside || ui_pointer_over(state, rectangle) {
 		scroll -= state.input.scroll_stick * UI_LIST_STICK_ROWS_PER_SECOND * UI_ROW_HEIGHT * state.frame_seconds
 		scroll -= state.input.scroll_wheel * UI_ROW_HEIGHT
@@ -632,9 +727,11 @@ ui_list :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, items:
 
 // A clipped area over content that may be taller: the content moves under
 // it by the scroll offset. The right stick and the wheel scroll it while
-// the focus or the pointer is inside, and a focused widget inside keeps
-// itself in view, so panels clamped to the safe area stay usable with
-// focus navigation alone. Must not hold a list, since clips do not nest.
+// the focus or the pointer is inside, a pointer drag that starts inside
+// moves it with the pointer (pointer_drag_scroll, 0132), and a focused
+// widget inside keeps itself in view, so panels clamped to the safe area
+// stay usable with focus navigation alone, until a drag scrolls it away.
+// Must not hold a list, since clips do not nest.
 Scroll_Region :: struct {
 	id:             Ui_Id,
 	area:           Ui_Rectangle,
@@ -670,12 +767,14 @@ scroll_region_end :: proc(state: ^Ui_State, region: Scroll_Region) {
 		content_height = max(content_height, command.rectangle.y + command.rectangle.height - content_top)
 	}
 	push_command(state, {kind = .Clip_End})
-	scroll := region.scroll
+	scroll := region.scroll - pointer_drag_scroll(state, region.area)
 	focus_inside := false
 	for widget in state.widgets[region.first_widget:] {
 		if widget.id == state.focus {
 			focus_inside = true
-			scroll = scroll_to_show(scroll, widget.rectangle.y - content_top, widget.rectangle.height, region.area.height)
+			if !state.focus_scrolled_away {
+				scroll = scroll_to_show(scroll, widget.rectangle.y - content_top, widget.rectangle.height, region.area.height)
+			}
 		}
 	}
 	if focus_inside || ui_pointer_over(state, region.area) {

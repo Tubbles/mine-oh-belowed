@@ -293,6 +293,41 @@ Slot_Drag :: struct {
 	origin_slot:    int,
 }
 
+// A pointer press (0132). ui_begin starts and steps it
+// (advance_pointer_press), ui_interact names the widget it landed on.
+// Releasing over that widget without having left UI_SLOT_DRAG_SLOP is a
+// tap, which activates it (pointer_tapped); a press in a scroll region
+// that leaves the slop scrolls the region instead (pointer_drag_scroll).
+Pointer_Press :: struct {
+	down:          bool,
+	widget:        Ui_Id,
+	// The pressed widget is an item slot, whose drag moves the stack
+	// (Slot_Drag, 0124) rather than scrolling.
+	on_slot:       bool,
+	// The press landed on a slider's track (slider_begin), and whether the
+	// first movement past the slop ran more along x than y: a slider takes
+	// such a drag, a scroll region the others (slider_pointer_value).
+	on_track:      bool,
+	horizontal:    bool,
+	position:      [2]f32,
+	// The pointer at the end of the last frame of the drag.
+	last_position: [2]f32,
+	moved:         bool,
+	// A scroll region follows this press's drag: the focus stays where it
+	// was meanwhile.
+	scrolling:     bool,
+}
+
+// A toggle's knob and the frame it was last drawn in (frame_count). A
+// knob not drawn last frame starts at its value instead of sliding from
+// where its screen left it (0132): a value changed while the screen was
+// closed would otherwise slide into place as the screen opens, which
+// reads as the toggle flipping on entry.
+Knob_Position :: struct {
+	position: f32,
+	frame:    u64,
+}
+
 Radial_Source :: enum u8 {
 	Touchpad,
 	Stick,
@@ -369,6 +404,13 @@ Ui_State :: struct {
 	hovered:          Ui_Id,
 	dragging:         Ui_Id,
 	slot_drag:        Slot_Drag,
+	pointer_press:    Pointer_Press,
+	// A pointer drag scrolled since the focus last moved, so the scroll
+	// regions leave the focused widget where the drag put it instead of
+	// keeping it in view.
+	focus_scrolled_away: bool,
+	// The value a layout slider shows during its drag (ui_layout_slider).
+	slider_drag_value: f32,
 	repeat:           Repeat_State,
 	pointer:          [2]f32,
 	pointer_source:   Pointer_Source,
@@ -395,7 +437,9 @@ Ui_State :: struct {
 	scroll_offsets:   map[Ui_Id]f32,
 	selections:       map[Ui_Id]int,
 	// Where each toggle's knob is, 0 off to 1 on, sliding towards its value.
-	knob_positions:   map[Ui_Id]f32,
+	knob_positions:   map[Ui_Id]Knob_Position,
+	// Counts ui_begin calls, so a knob knows whether it was drawn last frame.
+	frame_count:      u64,
 	// The focus outline's pulse: the seconds into the current pulse, and
 	// its phase for this frame (focus_pulse_phase), 0 thinnest to 1 thickest.
 	focus_pulse_seconds: f32,
@@ -405,6 +449,10 @@ Ui_State :: struct {
 	confirm:          bool,
 	click:            bool,
 	pointer_held:     bool,
+	// The pointer press ended this frame (pointer_tapped reads it).
+	pointer_released: bool,
+	// The pointer's movement this frame while its press is a drag.
+	pointer_drag:     [2]f32,
 	// Collected by widget calls this frame.
 	id_stack:         [UI_ID_STACK_CAPACITY]Ui_Id,
 	id_depth:         int,
@@ -630,6 +678,73 @@ update_pointer :: proc(state: ^Ui_State) {
 	}
 }
 
+// A UI scale change moves the pointer's unit position under a pointer
+// that stays put, and update_pointer reads the mouse only when it moves
+// or presses, so the stored positions follow the new scale (0132).
+rescale_pointer :: proc(state: ^Ui_State, pixels_per_unit: f32) {
+	if state.pixels_per_unit <= 0 || pixels_per_unit == state.pixels_per_unit {
+		return
+	}
+	factor := state.pixels_per_unit / pixels_per_unit
+	state.pointer *= factor
+	state.pointer_press.position *= factor
+	state.pointer_press.last_position *= factor
+	state.slot_drag.press_position *= factor
+}
+
+// Steps the pointer press (0132) before the widgets run: a click starts
+// it, leaving the slop makes it a drag whose movement this frame is
+// pointer_drag, and lifting ends it, which is pointer_released for this
+// frame.
+advance_pointer_press :: proc(state: ^Ui_State) {
+	press := &state.pointer_press
+	state.pointer_released, state.pointer_drag = false, {}
+	if state.click {
+		press^ = Pointer_Press{down = true, position = state.pointer, last_position = state.pointer}
+		return
+	}
+	if !press.down {
+		return
+	}
+	if !press.moved && slot_drag_moved(press.position, state.pointer) {
+		offset := state.pointer - press.position
+		press.moved, press.horizontal = true, abs(offset.x) > abs(offset.y)
+	}
+	if press.moved {
+		state.pointer_drag = state.pointer - press.last_position
+		press.last_position = state.pointer
+	}
+	if !state.pointer_held {
+		press.down, state.pointer_released = false, true
+	}
+}
+
+// The pointer lifted this frame from a press on the widget that never
+// left the slop: a tap, the pointer's activation (0132).
+pointer_tapped :: proc(state: Ui_State, id: Ui_Id) -> bool {
+	press := state.pointer_press
+	return state.pointer_released && !press.moved && press.widget == id
+}
+
+// A scroll region's drag this frame (0132): the pointer's vertical
+// movement while a press that landed in the area is a drag, 0 otherwise.
+// Not for a press on an item slot, whose drag moves the stack, nor one a
+// slider (a drag along its track) or an editor element holds (dragging).
+pointer_drag_scroll :: proc(state: ^Ui_State, area: Ui_Rectangle) -> f32 {
+	press := state.pointer_press
+	slider_drag := press.on_track && press.horizontal
+	if !press.down || !press.moved || press.on_slot || slider_drag || state.dragging != 0 || !rectangle_contains(area, press.position) {
+		return 0
+	}
+	state.pointer_press.scrolling, state.focus_scrolled_away = true, true
+	return state.pointer_drag.y
+}
+
+// A scroll drag is under way, its release frame included.
+pointer_scrolling :: proc(state: Ui_State) -> bool {
+	return state.pointer_press.scrolling && (state.pointer_press.down || state.pointer_released)
+}
+
 advance_toasts :: proc(state: ^Ui_State, seconds: f32) {
 	index := 0
 	for index < len(state.toasts) {
@@ -654,10 +769,13 @@ ui_toast :: proc(state: ^Ui_State, text: string) {
 
 ui_begin :: proc(state: ^Ui_State, input: Ui_Input, screen_pixels: [2]f32, frame_seconds, ui_scale, pointer_speed: f32, accessibility := DEFAULT_UI_ACCESSIBILITY) {
 	state.input = input
+	state.frame_count += 1
 	state.frame_seconds = frame_seconds
 	state.pointer_speed = pointer_speed
 	state.accessibility = accessibility
-	state.pixels_per_unit = ui_pixels_per_unit(screen_pixels.y, ui_scale)
+	pixels_per_unit := ui_pixels_per_unit(screen_pixels.y, ui_scale)
+	rescale_pointer(state, pixels_per_unit)
+	state.pixels_per_unit = pixels_per_unit
 	state.screen_units = ui_screen_units(screen_pixels, state.pixels_per_unit)
 	state.id_depth = 0
 	state.current_panel = 0
@@ -670,6 +788,11 @@ ui_begin :: proc(state: ^Ui_State, input: Ui_Input, screen_pixels: [2]f32, frame
 	step: bool
 	state.repeat, step = advance_repeat(state.repeat, input.navigation, frame_seconds)
 	state.navigation_step = step ? input.navigation : .None
+	// A step keeps the focused widget in view again, also one that keeps
+	// the focus (a slider, a stepper).
+	if state.navigation_step != .None {
+		state.focus_scrolled_away = false
+	}
 	pointer_was_hidden := state.pointer_source == .None
 	update_pointer(state)
 	// A pad click with the pointer hidden confirms the focused widget
@@ -681,6 +804,7 @@ ui_begin :: proc(state: ^Ui_State, input: Ui_Input, screen_pixels: [2]f32, frame
 	if !state.pointer_held {
 		state.dragging = 0
 	}
+	advance_pointer_press(state)
 	// Before the clear: it reads the last frame's panels and widgets.
 	advance_slot_drag(state)
 	clear(&state.widgets)
@@ -845,9 +969,16 @@ ui_resolve :: proc(state: ^Ui_State) {
 	defer if focus_before != state.focus && widget_index(widgets, focus_before) >= 0 {
 		state.sound_events += {.Move}
 	}
+	// A focus move keeps itself in view again (focus_scrolled_away).
+	defer if focus_before != state.focus {
+		state.focus_scrolled_away = false
+	}
 	state.hovered = state.pointer_source == .None ? 0 : widget_under(widgets, state.pointer)
-	if state.pointer_moved && state.hovered != 0 {
+	if state.pointer_moved && state.hovered != 0 && !pointer_scrolling(state^) {
 		state.focus = state.hovered
+	}
+	if state.requested_focus != 0 {
+		state.focus_scrolled_away = false
 	}
 	if state.requested_focus != 0 && widget_index(widgets, state.requested_focus) >= 0 {
 		state.focus = state.requested_focus
@@ -868,17 +999,18 @@ ui_resolve :: proc(state: ^Ui_State) {
 }
 
 // An activation this frame, as ui_interact grants it: confirm on the
-// focused widget, or a click on one under the pointer.
-// A press on an item slot is no activation but with Left Control (the
-// quick move); its drop is (0124).
+// focused widget, or a tap on one under the pointer, which sounds on the
+// release (0132). A tap on an item slot is no activation, a press with
+// Left Control is (the quick move), and so is its drop (0124).
 ui_frame_sound_events :: proc(state: Ui_State) -> bit_set[Ui_Sound_Event] {
 	widgets := state.widgets[:]
 	confirmed := state.confirm && widget_index(widgets, state.focus) >= 0
 	under := state.pointer_source != .None ? widget_index(widgets, widget_under(widgets, state.pointer)) : -1
 	on_slot := under >= 0 && .Item_Slot in widgets[under].flags
-	clicked := state.click && under >= 0 && (!on_slot || state.input.quick_move_modifier)
+	tapped := under >= 0 && !on_slot && pointer_tapped(state, widgets[under].id)
+	quick_moved := state.click && on_slot && state.input.quick_move_modifier
 	dropped := state.slot_drag.released && on_slot
-	return confirmed || clicked || dropped ? {.Confirm} : {}
+	return confirmed || tapped || quick_moved || dropped ? {.Confirm} : {}
 }
 
 focus_step_allowed :: proc(focused: Ui_Widget, step: Ui_Direction) -> bool {

@@ -379,6 +379,36 @@ fly_player :: proc(world: ^World, registry: Block_Registry, player: ^Player, inp
 	}
 }
 
+// Fly mode and no clip before a change (log_movement_toggles).
+Movement_Toggles :: struct {
+	flying:  bool,
+	no_clip: bool,
+}
+
+movement_toggles :: proc(player: Player) -> Movement_Toggles {
+	return {player.flying, player.no_clip}
+}
+
+// One log line per change of fly mode or no clip, naming the cause and the
+// tick (0132), so a toggle nobody asked for shows in the log or logcat.
+log_movement_toggles :: proc(before: Movement_Toggles, player: Player, cause: string, tick: u64) {
+	if before.flying != player.flying {
+		log_printf("player: fly mode %s at tick %d by %s", player.flying ? "on" : "off", tick, cause)
+	}
+	if before.no_clip != player.no_clip {
+		log_printf("player: no clip %s at tick %d by %s", player.no_clip ? "on" : "off", tick, cause)
+	}
+}
+
+// What changed fly mode or no clip in a player's tick: the toggle keys
+// (F6, F9), else the Jump double tap.
+player_tick_toggle_cause :: proc(just_pressed: Action_Set) -> string {
+	if .Toggle_Fly_Mode in just_pressed || .Toggle_No_Clip in just_pressed {
+		return "a toggle key (F6 or F9)"
+	}
+	return "a Jump double tap"
+}
+
 toggle_flying :: proc(player: ^Player) {
 	player.flying = !player.flying
 	player.velocity = {}
@@ -398,8 +428,12 @@ apply_player_toggles :: proc(player: ^Player, just_pressed: Action_Set) {
 
 // A Jump press opens a JUMP_DOUBLE_TAP_TICKS window; a second press inside
 // it toggles flying in developer mode (input.developer) and closes it.
-// Outside developer mode a double tap is two jumps.
+// Outside developer mode a double tap is two jumps. A tick after a screen
+// blocked the world closes the window first (Input_Frame.world_blocked).
 update_jump_double_tap :: proc(player: ^Player, input: Input_Frame) {
+	if input.world_blocked {
+		player.jump_tap_ticks = 0
+	}
 	if .Jump not_in input.just_pressed {
 		player.jump_tap_ticks = player.jump_tap_ticks > 0 ? player.jump_tap_ticks - 1 : 0
 		return

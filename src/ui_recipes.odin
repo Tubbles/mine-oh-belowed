@@ -68,20 +68,23 @@ make_recipe_browser :: proc() -> Recipe_Browser {
 	return Recipe_Browser{filter = {available_only = true}, focused_recipe = NO_RECIPE, pending_focus = NO_RECIPE}
 }
 
-// A scrolling column of rows. The right stick and the wheel scroll it and
-// a focused row keeps itself in view, like ui_list.
+// A scrolling column of rows. The right stick, the wheel and a pointer
+// drag scroll it and a focused row keeps itself in view, until a drag
+// scrolls it away, like ui_list.
 Scroll_List :: struct {
 	id:           Ui_Id,
 	area:         Ui_Rectangle,
 	scroll:       f32,
 	count:        int,
 	focus_inside: bool,
+	// False after a pointer drag scrolled the focus away (focus_scrolled_away).
+	keeps_focus_in_view: bool,
 }
 
 scroll_list_begin :: proc(state: ^Ui_State, label: string, area: Ui_Rectangle, count: int) -> Scroll_List {
 	id := ui_push_id(state, label)
 	push_command(state, {kind = .Clip_Begin, rectangle = area})
-	return Scroll_List{id = id, area = area, scroll = state.scroll_offsets[id], count = count}
+	return Scroll_List{id = id, area = area, scroll = state.scroll_offsets[id], count = count, keeps_focus_in_view = !state.focus_scrolled_away}
 }
 
 scroll_list_row :: proc(list: Scroll_List, position: int) -> Ui_Rectangle {
@@ -90,11 +93,14 @@ scroll_list_row :: proc(list: Scroll_List, position: int) -> Ui_Rectangle {
 
 scroll_list_keep_visible :: proc(list: ^Scroll_List, position: int) {
 	list.focus_inside = true
-	list.scroll = scroll_to_show(list.scroll, f32(position) * UI_ROW_HEIGHT, UI_ROW_HEIGHT, list.area.height)
+	if list.keeps_focus_in_view {
+		list.scroll = scroll_to_show(list.scroll, f32(position) * UI_ROW_HEIGHT, UI_ROW_HEIGHT, list.area.height)
+	}
 }
 
 scroll_list_end :: proc(state: ^Ui_State, list: ^Scroll_List) {
 	push_command(state, {kind = .Clip_End})
+	list.scroll -= pointer_drag_scroll(state, list.area)
 	if list.focus_inside || ui_pointer_over(state, list.area) {
 		list.scroll -= state.input.scroll_stick * UI_LIST_STICK_ROWS_PER_SECOND * UI_ROW_HEIGHT * state.frame_seconds
 		list.scroll -= state.input.scroll_wheel * UI_ROW_HEIGHT

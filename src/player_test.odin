@@ -694,3 +694,21 @@ test_cheat_jump_reaches_two_blocks :: proc(t: ^testing.T) {
 	testing.expectf(t, climber.position.x > 3.3, "x %v", climber.position.x)
 	testing.expectf(t, climber.position.y > 3 - 1e-3, "y %v", climber.position.y)
 }
+
+// 0132: a Jump before a screen blocked the world and one after it are no
+// double tap, however few ticks ran between them; without the block two
+// Jumps 10 ticks apart still toggle.
+@(test)
+test_a_blocked_world_closes_the_double_tap_window :: proc(t: ^testing.T) {
+	registry := make_test_registry()
+	world := make_floor_world(registry, 32)
+	player := make_test_player(registry, {0.5, 1, 0.5})
+	tick_test_player(&world, registry, &player, {}, 1)
+	tick_test_player(&world, registry, &player, JUMP_TAP, 1)
+	tick_test_player(&world, registry, &player, Input_Frame{developer = true, world_blocked = true}, 1)
+	tick_test_player(&world, registry, &player, JUMP_TAP, 1)
+	testing.expect(t, !player.flying)
+	tick_test_player(&world, registry, &player, {}, JUMP_DOUBLE_TAP_TICKS + 1)
+	double_tap_jump(&world, registry, &player, JUMP_TAP, 10)
+	testing.expect(t, player.flying)
+}

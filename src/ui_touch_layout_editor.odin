@@ -372,8 +372,11 @@ touch_layout_elements :: proc(state: ^Ui_State, editor: ^Touch_Layout_Editor, sc
 		if interaction.activated {
 			editor.selected = index
 		}
+		// The press selects and grabs the element at once, where other
+		// widgets wait for the tap (0132), so the drag moves the selection.
 		if interaction.hovered && state.click {
 			state.dragging, editor.grab = id, centre - pointer
+			editor.selected = index
 		}
 		switch {
 		case state.dragging == id && state.pointer_held && state.pointer_moved:

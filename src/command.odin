@@ -240,7 +240,11 @@ command_content :: proc(command_context: Command_Context) -> Simulation_Content 
 }
 
 serve_command_request :: proc(command_context: Command_Context, request: Developer_Request) -> (problem: string) {
-	return serve_developer_request(command_context.simulation, command_content(command_context), request)
+	simulation := command_context.simulation
+	before := movement_toggles(simulation.players[0])
+	problem = serve_developer_request(simulation, command_content(command_context), request)
+	log_movement_toggles(before, simulation.players[0], "a command", simulation.tick)
+	return
 }
 
 execute_command :: proc(command_context: Command_Context, words: []string) -> Command_Response {
