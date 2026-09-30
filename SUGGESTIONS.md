@@ -70,3 +70,15 @@ Written at the end of the series (2026-09-29 and 2026-09-30). Each names why it 
 - Android crash traces: `src/android_libc/android_libc.odin` stubs `backtrace`, so the game's own trace lines are empty on Android and only the system tombstone in logcat has frames; `libunwind` from the NDK or parsing the tombstone could restore the log's trace. Left out until a crash on the phone asks for it.
 - `adb` from the container: `platform-tools` is installed under `~/opt/android/sdk` (0113) but no `adb install` or `adb logcat` path is written up in `doc/build.md`; it needs USB debugging on the phone and a udev rule on the host. Sideloading the APK was enough for the series.
 - Steam Deck touch: `--touch-overlay` on the desktop build reads the mouse as touch point 0 (`src/touch_overlay.odin`), since raylib's desktop platform reports no touch points; the Deck's screen would need the raylib GLFW touch path or SDL's finger events. Not needed while the Deck has its pads.
+
+## Follow ups from the touch overlay series (0118 to 0123)
+
+Written on 2026-09-30 at the end of the series. Things the implementers and reviewers noticed and left alone because no work item asked for them; none is approved scope.
+
+- Haptics renewal: `apply_vibrator_haptics` (`src/haptics_android.odin`) plays a new 100 ms one shot every frame while a request holds, the SDL3 rumble pattern. On some phone motors a restart every 16 ms may feel rougher or weaker than one steady vibration; renewing only when the amplitude changes or when the 100 ms is nearly used up would be the fix. Waits for the phone test of version code 221.
+- Gamepad rumble on the phone: a gamepad attached to the phone does not rumble, since raylib has no rumble API; only the vibrator plays haptics there.
+- Layout editor panel: the element panel (`src/ui_touch_layout_editor.odin`) sits in the middle of the screen, so elements behind it are reached with focus navigation only, not with the pointer. Moving the panel to the side the selected element is not on would fix it.
+- Layout editor and hot reload: a data file reload while the editor shows a draft of Default keeps the old copy in the draft until the editor is reopened.
+- Target status lines in tap mode: with `touch_interaction = tap` the crosshair is not drawn, but the target's status lines (`draw_target_status`, `src/hud.odin`) still sit at the screen centre where the crosshair was.
+- Test duplication: `test_no_touch_overlay_element_covers_a_hotbar_slot` (`src/touch_overlay_test.odin`) converts the hotbar rectangles to pixels inline instead of calling `hud_hotbar_pixel_rectangles` (0119).
+- `os.args` after an Android relaunch: `core:os` builds `os.args` once at the first runtime start, so on a second `main` in the same process (0116) its `[0]` points at the first launch's `arg0` on raylib's stack. Nothing reads it (the game reads `os.args[1:]`, empty on Android); a static literal in `__wrap_main` would remove the dangling pointer.
