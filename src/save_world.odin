@@ -405,7 +405,7 @@ write_save_files :: proc(directory: string, files: Save_Files) -> os.Error {
 		os.remove_all(directory) or_return
 	}
 	regions := join_save_path(directory, REGIONS_DIRECTORY_NAME)
-	os.make_directory_all(regions) or_return
+	make_directory_path(regions) or_return
 	os.write_entire_file(join_save_path(directory, WORLD_FILE_NAME), files.world) or_return
 	os.write_entire_file(join_save_path(directory, ENTITIES_FILE_NAME), files.entities) or_return
 	for region in files.regions {

@@ -116,7 +116,7 @@ write_settings_file :: proc(environment: Configuration_Environment, settings: Se
 	}
 	text := settings_file_text(settings)
 	directory := join_save_path(user_directory, CONFIGURATION_DROP_IN_DIRECTORY)
-	if error := os.make_directory_all(directory); error != nil && error != .Exist {
+	if error := make_directory_path(directory); error != nil {
 		return fmt.tprintf("cannot create %s: %v", directory, error)
 	}
 	path := join_save_path(directory, SETTINGS_FILE_NAME)

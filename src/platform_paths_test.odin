@@ -173,3 +173,54 @@ test_static_runtime_imports_stay_out_of_windows :: proc(t: ^testing.T) {
 	}
 	testing.expect(t, checked > 0, "no source files found")
 }
+
+// make_directory_path (work item 0117): mkdir -p that starts at the first
+// missing directory instead of at /.
+@(test)
+test_make_directory_path_makes_missing_levels_and_tolerates_existing :: proc(t: ^testing.T) {
+	base, error := os.make_directory_temp("", "mine-oh-belowed-directories-test-*", context.temp_allocator)
+	testing.expect(t, error == nil)
+	defer os.remove_all(base)
+	nested, _ := os.join_path({base, "one", "two", "three"}, context.temp_allocator)
+	testing.expect_value(t, make_directory_path(nested), nil)
+	testing.expect(t, os.is_dir(nested))
+	testing.expect_value(t, make_directory_path(nested), nil)
+	sibling, _ := os.join_path({base, "one", "sibling"}, context.temp_allocator)
+	testing.expect_value(t, make_directory_path(sibling), nil)
+	testing.expect(t, os.is_dir(sibling))
+	trailing, _ := os.join_path({base, "trailing", "slash"}, context.temp_allocator)
+	testing.expect_value(t, make_directory_path(strings.concatenate({trailing, "/"}, context.temp_allocator)), nil)
+	testing.expect(t, os.is_dir(trailing))
+}
+
+@(test)
+test_trim_trailing_separators_keeps_the_root :: proc(t: ^testing.T) {
+	testing.expect_value(t, trim_trailing_separators("/a/b//"), "/a/b")
+	testing.expect_value(t, trim_trailing_separators("/a/b"), "/a/b")
+	testing.expect_value(t, trim_trailing_separators("/"), "/")
+}
+
+// Every directory the game makes goes through make_directory_path: core:os's
+// make_directory_all opens /, which Android refuses (work item 0117). A
+// new call site fails here instead of on the phone.
+@(test)
+test_game_sources_do_not_call_make_directory_all :: proc(t: ^testing.T) {
+	directory := #directory
+	entries, error := os.read_all_directory_by_path(directory, context.temp_allocator)
+	testing.expect(t, error == nil, "cannot read the source directory")
+	checked := 0
+	for entry in entries {
+		if entry.type != .Regular || !strings.has_suffix(entry.name, ".odin") || strings.has_suffix(entry.name, "_test.odin") {
+			continue
+		}
+		path, _ := os.join_path({directory, entry.name}, context.temp_allocator)
+		data, read_error := os.read_entire_file(path, context.temp_allocator)
+		testing.expect(t, read_error == nil, path)
+		checked += 1
+		source := string(data)
+		for name in ([?]string{"os.make_directory" + "_all", "os.mkdir" + "_all"}) {
+			testing.expectf(t, !strings.contains(source, name), "%s calls %s, use make_directory_path", entry.name, name)
+		}
+	}
+	testing.expect(t, checked > 0, "no source files found")
+}

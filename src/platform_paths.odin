@@ -87,3 +87,37 @@ android_platform_directories :: proc(internal, external: string, allocator := co
 	state_home, _ := os.join_path({base, "state"}, allocator)
 	return Platform_Directories{config_home = config_home, data_home = data_home, state_home = state_home}
 }
+
+// mkdir -p that never touches a directory above the first missing one
+// (work item 0117). core:os's make_directory_all opens / to walk an
+// absolute path, and Android's SELinux policy refuses an app that read
+// (Permission_Denied on the phone, 2026-09-30), while a plain mkdir below
+// the app's folder is allowed. So this tries the directory itself, makes
+// the parent the same way when that is missing, and tries again. An
+// existing directory is success. On Windows the same errors map to
+// .Exist and .Not_Exist, so the same code serves there.
+make_directory_path :: proc(path: string, permissions := os.Permissions_Default_Directory) -> os.Error {
+	directory := trim_trailing_separators(path)
+	error := os.make_directory(directory, permissions)
+	if error == .Not_Exist {
+		parent, _ := os.split_path(directory)
+		if parent == "" || parent == directory {
+			return error
+		}
+		make_directory_path(parent, permissions) or_return
+		error = os.make_directory(directory, permissions)
+	}
+	if error == .Exist {
+		return nil
+	}
+	return error
+}
+
+// Keeps a lone separator (the root).
+trim_trailing_separators :: proc(path: string) -> string {
+	end := len(path)
+	for end > 1 && os.is_path_separator(path[end - 1]) {
+		end -= 1
+	}
+	return path[:end]
+}

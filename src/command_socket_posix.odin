@@ -84,7 +84,7 @@ socket_is_live :: proc(address: ^posix.sockaddr_un) -> bool {
 // alone and reported. Returns the problem, empty on success.
 open_command_server :: proc(server: ^Command_Server, path: string) -> string {
 	directory, _ := os.split_path(path)
-	if error := os.make_directory_all(directory, {.Read_User, .Write_User, .Execute_User}); error != nil && error != .Exist {
+	if error := make_directory_path(directory, {.Read_User, .Write_User, .Execute_User}); error != nil {
 		return fmt.tprintf("cannot make %s: %v", directory, error)
 	}
 	posix.chmod(strings.clone_to_cstring(directory, context.temp_allocator), {.IRUSR, .IWUSR, .IXUSR})

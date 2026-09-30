@@ -612,7 +612,7 @@ format_texture_edits_file :: proc(entry_lines: []string) -> string {
 // Returns the problem, or an empty string. Makes the state directory.
 write_texture_edits_file :: proc(path, text: string) -> string {
 	directory := os.dir(path)
-	if error := os.make_directory_all(directory); error != nil && error != .Exist {
+	if error := make_directory_path(directory); error != nil {
 		return fmt.tprintf("cannot create %s: %v", directory, error)
 	}
 	if error := os.write_entire_file(path, text); error != nil {

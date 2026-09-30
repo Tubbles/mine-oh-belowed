@@ -710,7 +710,7 @@ queue_screenshot :: proc(control: ^Command_Control, directory, name: string, now
 	if !strings.has_suffix(file_name, ".png") {
 		file_name = fmt.tprintf("%s.png", file_name)
 	}
-	if error := os.make_directory_all(directory); error != nil && error != .Exist {
+	if error := make_directory_path(directory); error != nil {
 		return "", fmt.tprintf("cannot make %s: %v", directory, error)
 	}
 	joined, _ := os.join_path({directory, file_name}, context.temp_allocator)

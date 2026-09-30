@@ -105,7 +105,7 @@ open_log_file :: proc() {
 }
 
 open_log_for_append :: proc(directory, path: string) -> (^os.File, os.Error) {
-	if error := os.make_directory_all(directory); error != nil && error != .Exist {
+	if error := make_directory_path(directory); error != nil {
 		return nil, error
 	}
 	return os.open(path, {.Write, .Append, .Create})
