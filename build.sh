@@ -74,16 +74,30 @@ build_commit() {
 	printf '%s' "$commit"
 }
 
-build() {
-	local platform_flags=()
+# The host's linker flags: the shims on Linux, nothing on Windows.
+set_platform_flags() {
+	platform_flags=()
 	if [ "$windows_host" = false ]; then
 		create_linker_shims
 		platform_flags=(-extra-linker-flags:"-L$shim_directory")
 	fi
+}
+
+build() {
+	set_platform_flags
 	mkdir -p "$(dirname "$output")"
 	"$odin" build src -out:"$output" "$collection" -vet -strict-style \
 		-define:BUILD_INFO="$(build_commit) $(date -u +%Y-%m-%dT%H:%MZ)" \
 		"${platform_flags[@]}" "$@"
+}
+
+# Odin links a foreign library only when a reachable procedure uses it,
+# so the test binary links raylib (and with it X11) as soon as one test
+# reaches a procedure that loads or draws through it; the shims serve
+# the test link like the build.
+run_tests() {
+	set_platform_flags
+	"$odin" test src "$collection" "${platform_flags[@]}" "$@"
 }
 
 android_container_name=mine-oh-belowed-android
@@ -153,8 +167,8 @@ case "$mode" in
 	release) build "${release_flags[@]}" ;;
 	check) "$odin" check src "$collection" -vet -strict-style ;;
 	check-windows) "$odin" check src "$collection" -target:windows_amd64 -vet -strict-style ;;
-	test) "$odin" test src "$collection" ;;
-	bench) "$odin" test src "$collection" -o:speed -define:ODIN_TEST_NAMES=game.test_factory_benchmark ;;
+	test) run_tests ;;
+	bench) run_tests -o:speed -define:ODIN_TEST_NAMES=game.test_factory_benchmark ;;
 	check-android) check_android ;;
 	android) build_android ;;
 	*)
