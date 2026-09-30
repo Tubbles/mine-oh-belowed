@@ -149,15 +149,34 @@ copy_android_asset :: proc(internal, path: string) -> string {
 	if !ok {
 		return "not in the APK"
 	}
-	target, _ := os.join_path({internal, path}, context.temp_allocator)
-	directory, _ := os.split_path(target)
-	if error := os.make_directory_all(directory); error != nil && error != .Exist {
+	relative_directory, _ := os.split_path(path)
+	if error := make_directories_below(internal, relative_directory); error != nil {
 		return fmt.tprintf("%v", error)
 	}
+	target, _ := os.join_path({internal, path}, context.temp_allocator)
 	if error := os.write_entire_file(target, data); error != nil {
 		return fmt.tprintf("%v", error)
 	}
 	return ""
+}
+
+// Makes relative_directory ("data/strings") under base one directory at a
+// time. os.make_directory_all opens / to walk an absolute path, and
+// Android's SELinux policy refuses an app that read (Permission_Denied on
+// the phone, 2026-09-30); a plain mkdir below the app's folder is allowed.
+// Existing directories are fine.
+make_directories_below :: proc(base, relative_directory: string) -> os.Error {
+	directory := base
+	for component in strings.split(relative_directory, "/", context.temp_allocator) {
+		if component == "" {
+			continue
+		}
+		directory, _ = os.join_path({directory, component}, context.temp_allocator)
+		if error := os.make_directory(directory); error != nil && error != .Exist {
+			return error
+		}
+	}
+	return nil
 }
 
 parse_game_config :: proc(data: []byte, allocator := context.allocator) -> (config: Game_Config, error: json.Unmarshal_Error) {

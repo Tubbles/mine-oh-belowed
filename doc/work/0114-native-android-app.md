@@ -60,3 +60,5 @@ Verified here: `./build.sh check`, `./build.sh check-windows`, `./build.sh test`
 
 Not verified: the CI job (pushed by the main agent) and everything on the phone (the user's check in Verify).
 
+2026-09-30, first phone run (Pixel, Android 17, version code 208): the library loaded and the data copy started, then `error: cannot copy data/bindings.sjson from the app: Permission_Denied` after an SELinux denial of reading `/`: `os.make_directory_all` opens `/` to walk an absolute path. Fixed with `make_directories_below`, one `mkdir` per directory under the app's folder. The same logcat showed `libsigchain: Setting SIGSEGV to SIG_DFL` from `install_crash_handlers`: bionic's `sigaction` struct layout differs from glibc's, which `core:sys/posix` follows, so the handlers are no longer installed on Android. CI job `android` passed on 3245cbb and its APK matched the local build.
+

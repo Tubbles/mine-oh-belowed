@@ -90,16 +90,23 @@ crash_signal_handler :: proc "c" (signal: posix.Signal) {
 	posix.raise(signal)
 }
 
+// Not on Android (work item 0114): bionic's sigaction struct puts sa_flags
+// first while core:sys/posix follows glibc with the handler first, so the
+// call installed SIG_DFL with stray flags (logcat, 2026-09-30), and the
+// back trace is a stub there anyway. Android's own crash reporter writes
+// the native trace to logcat.
 install_crash_handlers :: proc() {
-	// The first backtrace call loads libgcc, which allocates; do that here
-	// rather than inside the handler.
-	frames: [1]rawptr
-	backtrace(&frames[0], 1)
-	action := posix.sigaction_t {
-		sa_handler = crash_signal_handler,
-		sa_flags   = {.RESETHAND},
+	when ODIN_PLATFORM_SUBTARGET != .Android {
+		// The first backtrace call loads libgcc, which allocates; do that
+		// here rather than inside the handler.
+		frames: [1]rawptr
+		backtrace(&frames[0], 1)
+		action := posix.sigaction_t {
+			sa_handler = crash_signal_handler,
+			sa_flags   = {.RESETHAND},
+		}
+		posix.sigemptyset(&action.sa_mask)
+		posix.sigaction(.SIGSEGV, &action, nil)
+		posix.sigaction(.SIGILL, &action, nil)
 	}
-	posix.sigemptyset(&action.sa_mask)
-	posix.sigaction(.SIGSEGV, &action, nil)
-	posix.sigaction(.SIGILL, &action, nil)
 }

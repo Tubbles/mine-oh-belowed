@@ -1,5 +1,6 @@
 package game
 
+import "core:os"
 import "core:testing"
 
 @(test)
@@ -39,4 +40,18 @@ test_android_assets_current_compares_the_build_stamp :: proc(t: ^testing.T) {
 	testing.expect(t, android_assets_current("abc1234 2026-09-29T12:00Z\n", "abc1234 2026-09-29T12:00Z"))
 	testing.expect(t, !android_assets_current("abc1234 2026-09-29T12:00Z", "def5678 2026-09-29T13:00Z"))
 	testing.expect(t, !android_assets_current("", "abc1234 2026-09-29T12:00Z"))
+}
+
+// The asset copy on the phone makes its directories one mkdir at a time
+// (make_directories_below), never through os.make_directory_all.
+@(test)
+test_make_directories_below_makes_each_level_and_tolerates_existing :: proc(t: ^testing.T) {
+	base, error := os.make_directory_temp("", "mine-oh-belowed-directories-test-*", context.temp_allocator)
+	testing.expect(t, error == nil)
+	defer os.remove_all(base)
+	testing.expect(t, make_directories_below(base, "data/strings") == nil)
+	nested, _ := os.join_path({base, "data", "strings"}, context.temp_allocator)
+	testing.expect(t, os.is_dir(nested))
+	testing.expect(t, make_directories_below(base, "data/strings") == nil)
+	testing.expect(t, make_directories_below(base, "") == nil)
 }
