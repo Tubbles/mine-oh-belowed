@@ -59,21 +59,33 @@ fill_slot :: proc(slot: ^Item_Stack, item: Item_Id, count: int, stack_size: u16)
 	return count - moved
 }
 
-// Fills partial stacks of the item first, then empty slots, both in slot
-// order. Returns the count that did not fit.
-add_to_slots :: proc(slots: []Item_Stack, item: Item_Id, count: int, stack_size: u16) -> int {
+// Fills the partial stacks of the item in slot order. Returns the count
+// that did not fit.
+fill_partial_stacks :: proc(slots: []Item_Stack, item: Item_Id, count: int, stack_size: u16) -> int {
 	remaining := count
 	for &slot in slots {
 		if remaining > 0 && !stack_is_empty(slot) && slot.item == item {
 			remaining = fill_slot(&slot, item, remaining, stack_size)
 		}
 	}
+	return remaining
+}
+
+// Fills the empty slots in slot order. Returns the count that did not fit.
+fill_empty_slots :: proc(slots: []Item_Stack, item: Item_Id, count: int, stack_size: u16) -> int {
+	remaining := count
 	for &slot in slots {
 		if remaining > 0 && stack_is_empty(slot) {
 			remaining = fill_slot(&slot, item, remaining, stack_size)
 		}
 	}
 	return remaining
+}
+
+// Fills partial stacks of the item first, then empty slots, both in slot
+// order. Returns the count that did not fit.
+add_to_slots :: proc(slots: []Item_Stack, item: Item_Id, count: int, stack_size: u16) -> int {
+	return fill_empty_slots(slots, item, fill_partial_stacks(slots, item, count, stack_size), stack_size)
 }
 
 // Hotbar first, since it is the front of the slot array.
@@ -85,12 +97,48 @@ inventory_add :: proc(inventory: Inventory, registry: Item_Registry, item: Item_
 	return add_to_slots(inventory.slots, item, count, stack_size)
 }
 
+// Tools and machines take an empty hotbar slot on pick up; every other
+// item goes to the main grid.
+item_takes_empty_hotbar_slot :: proc(registry: Item_Registry, item: Item_Id) -> bool {
+	return int(item) < len(registry.items) && registry.items[item].category in bit_set[Item_Category]{.Tool, .Machine}
+}
+
+// Items picked up, mined, or returned by a machine pick up (work item
+// 0128): the item's partial stacks on the hotbar first, whatever the
+// item; then a tool or a machine takes empty hotbar slots before the main
+// grid, while every other item fills the main grid (partial stacks, then
+// empty slots) and takes empty hotbar slots only when the grid is full.
+inventory_add_picked_up :: proc(inventory: Inventory, registry: Item_Registry, item: Item_Id, count: int) -> (leftover: int) {
+	stack_size := item_stack_size(registry, item)
+	if stack_size == 0 {
+		return count
+	}
+	hotbar, grid := inventory_hotbar(inventory), inventory_grid(inventory)
+	remaining := fill_partial_stacks(hotbar, item, count, stack_size)
+	if item_takes_empty_hotbar_slot(registry, item) {
+		return add_to_slots(grid, item, fill_empty_slots(hotbar, item, remaining, stack_size), stack_size)
+	}
+	return fill_empty_slots(hotbar, item, add_to_slots(grid, item, remaining, stack_size), stack_size)
+}
+
 // Whether all the stacks fit at once, tried on a copy of the slots.
 inventory_fits_all :: proc(inventory: Inventory, registry: Item_Registry, stacks: []Item_Stack) -> bool {
 	trial := make([]Item_Stack, len(inventory.slots), context.temp_allocator)
 	copy(trial, inventory.slots)
 	for stack in stacks {
 		if !stack_is_empty(stack) && add_to_slots(trial, stack.item, int(stack.count), item_stack_size(registry, stack.item)) > 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// inventory_fits_all for stacks that go in by inventory_add_picked_up.
+inventory_fits_all_picked_up :: proc(inventory: Inventory, registry: Item_Registry, stacks: []Item_Stack) -> bool {
+	trial := Inventory{slots = make([]Item_Stack, len(inventory.slots), context.temp_allocator)}
+	copy(trial.slots, inventory.slots)
+	for stack in stacks {
+		if !stack_is_empty(stack) && inventory_add_picked_up(trial, registry, stack.item, int(stack.count)) > 0 {
 			return false
 		}
 	}

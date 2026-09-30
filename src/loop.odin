@@ -775,6 +775,7 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 	screen_context.mining_ring_centre = mining_ring_centre(state, session.simulation.players[0].mining)
 	screen_context.discovery_card_clearance = discovery_card_clearance(state)
 	screen_context.player = &session.simulation.players[0]
+	screen_context.player_index = 0
 	screen_context.world = &session.simulation.world
 	screen_context.tick = session.simulation.tick
 	screen_context.tick_rate = session.simulation.tick_rate

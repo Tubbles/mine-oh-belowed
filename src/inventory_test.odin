@@ -106,3 +106,74 @@ test_sort_merges_and_orders_by_rank :: proc(t: ^testing.T) {
 		testing.expect_value(t, slot, expected[index])
 	}
 }
+
+@(test)
+test_picked_up_raw_items_go_to_the_main_grid :: proc(t: ^testing.T) {
+	items := make_small_items()
+	inventory := make_test_inventory(PLAYER_INVENTORY_SLOT_COUNT)
+	testing.expect_value(t, inventory_add_picked_up(inventory, items, TEST_ORE, 3), 0)
+	testing.expect_value(t, inventory.slots[HOTBAR_SLOT_COUNT], Item_Stack{TEST_ORE, 3})
+	testing.expect_value(t, inventory.slots[0], EMPTY_STACK)
+}
+
+@(test)
+test_picked_up_tools_and_machines_go_to_the_hotbar :: proc(t: ^testing.T) {
+	items := make_small_items()
+	inventory := make_test_inventory(PLAYER_INVENTORY_SLOT_COUNT)
+	inventory.slots[0] = Item_Stack{TEST_GEAR, 1}
+	testing.expect_value(t, inventory_add_picked_up(inventory, items, TEST_MACHINE, 2), 0)
+	testing.expect_value(t, inventory.slots[1], Item_Stack{TEST_MACHINE, 2})
+	tools := Item_Registry{items = []Item{{id = "pickaxe", category = .Tool, stack_size = 1}}}
+	testing.expect(t, item_takes_empty_hotbar_slot(tools, Item_Id(0)))
+	testing.expect(t, !item_takes_empty_hotbar_slot(items, TEST_GEAR))
+	testing.expect(t, !item_takes_empty_hotbar_slot(items, NO_ITEM))
+}
+
+// A partial stack on the hotbar comes first for every item, then the
+// grid's partial stacks, then its empty slots.
+@(test)
+test_picked_up_items_fill_a_partial_hotbar_stack_first :: proc(t: ^testing.T) {
+	items := make_small_items()
+	inventory := make_test_inventory(PLAYER_INVENTORY_SLOT_COUNT)
+	inventory.slots[2] = Item_Stack{TEST_ORE, 45}
+	inventory.slots[HOTBAR_SLOT_COUNT + 3] = Item_Stack{TEST_ORE, 48}
+	testing.expect_value(t, inventory_add_picked_up(inventory, items, TEST_ORE, 10), 0)
+	testing.expect_value(t, inventory.slots[2], Item_Stack{TEST_ORE, 50})
+	testing.expect_value(t, inventory.slots[HOTBAR_SLOT_COUNT + 3], Item_Stack{TEST_ORE, 50})
+	testing.expect_value(t, inventory.slots[HOTBAR_SLOT_COUNT], Item_Stack{TEST_ORE, 3})
+}
+
+@(test)
+test_picked_up_raw_items_take_an_empty_hotbar_slot_only_with_the_grid_full :: proc(t: ^testing.T) {
+	items := make_small_items()
+	inventory := make_test_inventory(PLAYER_INVENTORY_SLOT_COUNT)
+	for &slot in inventory_grid(inventory) {
+		slot = Item_Stack{TEST_GEAR, 1}
+	}
+	inventory.slots[HOTBAR_SLOT_COUNT + 5] = Item_Stack{TEST_ORE, 49}
+	testing.expect_value(t, inventory_add_picked_up(inventory, items, TEST_ORE, 3), 0)
+	testing.expect_value(t, inventory.slots[HOTBAR_SLOT_COUNT + 5], Item_Stack{TEST_ORE, 50})
+	testing.expect_value(t, inventory.slots[0], Item_Stack{TEST_ORE, 2})
+	for &slot in inventory_hotbar(inventory) {
+		slot = Item_Stack{TEST_GEAR, 1}
+	}
+	testing.expect_value(t, inventory_add_picked_up(inventory, items, TEST_ORE, 4), 4)
+}
+
+// The fits check of a machine pick up follows the pick up routing: the
+// machine takes the one empty hotbar slot, so the ore finds no room,
+// though the plain slot order would have fitted both.
+@(test)
+test_picked_up_fits_check_follows_the_routing :: proc(t: ^testing.T) {
+	items := make_small_items()
+	inventory := make_test_inventory(PLAYER_INVENTORY_SLOT_COUNT)
+	for &slot in inventory.slots[1:] {
+		slot = Item_Stack{TEST_GEAR, 1}
+	}
+	inventory.slots[HOTBAR_SLOT_COUNT] = Item_Stack{TEST_MACHINE, 8}
+	stacks := []Item_Stack{{TEST_MACHINE, 2}, {TEST_ORE, 1}}
+	testing.expect(t, inventory_fits_all(inventory, items, stacks))
+	testing.expect(t, !inventory_fits_all_picked_up(inventory, items, stacks))
+	testing.expect_value(t, inventory_add_picked_up(inventory, items, TEST_MACHINE, 2), 0)
+	testing.expect_value(t, inventory_add_picked_up(inventory, items, TEST_ORE, 1), 1)
+}

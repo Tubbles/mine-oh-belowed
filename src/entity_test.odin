@@ -171,7 +171,7 @@ test_player_places_rotates_and_picks_up_a_machine :: proc(t: ^testing.T) {
 	testing.expect(t, !entity_is_alive(&world.entities, handle))
 	testing.expect_value(t, len(world.entities.cells), 0)
 	testing.expect_value(t, player.inventory.slots[0], Item_Stack{furnace_item, 2})
-	testing.expect_value(t, player.inventory.slots[1], Item_Stack{test_item(content.items, "iron_plate"), 7})
+	testing.expect_value(t, player.inventory.slots[HOTBAR_SLOT_COUNT], Item_Stack{test_item(content.items, "iron_plate"), 7})
 }
 
 @(test)

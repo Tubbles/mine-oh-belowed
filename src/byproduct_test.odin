@@ -378,6 +378,7 @@ test_concrete_brick_and_slag_place_and_mine :: proc(t: ^testing.T) {
 		testing.expect_value(t, world_get_block(&world, {0, 0, 0}), block)
 		tick_test_player(&world, registry, player, Input_Frame{pressed = {.Mine}}, 1)
 		testing.expect_value(t, world_get_block(&world, {0, 0, 0}), AIR_BLOCK)
-		testing.expect_value(t, player.inventory.slots[0], Item_Stack{item, 1})
+		// A block item without a stack on the hotbar goes to the main grid.
+		testing.expect_value(t, player.inventory.slots[HOTBAR_SLOT_COUNT], Item_Stack{item, 1})
 	}
 }

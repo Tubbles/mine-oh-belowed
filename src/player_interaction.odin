@@ -129,7 +129,7 @@ mine_block :: proc(world: ^World, registry: Block_Registry, items: Item_Registry
 	drop_unsupported_cover(world, registry, items, player.target.block + UP)
 	spilled := false
 	for drop in block_drop_stacks(items, block_id) {
-		if leftover := inventory_add(player.inventory, items, drop.item, 1); leftover > 0 {
+		if leftover := inventory_add_picked_up(player.inventory, items, drop.item, 1); leftover > 0 {
 			spill_stack(world, registry, player.target.block, Item_Stack{item = drop.item, count = u16(leftover)})
 			spilled = true
 		}
@@ -177,7 +177,7 @@ mine_entity :: proc(world: ^World, content: Simulation_Content, player: ^Player,
 		return {}
 	}
 	player.mining = {}
-	spills := !inventory_fits_all(player.inventory, content.items, entity_pickup_stacks(world, content, player.target.entity))
+	spills := !inventory_fits_all_picked_up(player.inventory, content.items, entity_pickup_stacks(world, content, player.target.entity))
 	if !pick_up_entity(world, content, player, player.target.entity) || !spills {
 		return {}
 	}

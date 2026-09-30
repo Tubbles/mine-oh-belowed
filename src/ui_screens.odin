@@ -34,6 +34,8 @@ Screen_Context :: struct {
 	// The title screens' state and the requests to start or leave a world.
 	title:           ^Title_State,
 	player:          ^Player,
+	// The player's index in the simulation's players.
+	player_index:    int,
 	items:           Item_Registry,
 	blocks:          Block_Registry,
 	item_sort_ranks: []u16,

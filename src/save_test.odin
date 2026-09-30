@@ -223,6 +223,8 @@ venture_loaded :: proc(loaded, original: ^World, technologies: Technology_Regist
 lay_save_test_loose_items :: proc(world: ^World, content: Simulation_Content) {
 	spill_stack(world, content.blocks, {2, 1, 28}, {test_item(content.items, "iron_plate"), 12})
 	spill_stack(world, content.blocks, {3, 30, 28}, {test_item(content.items, "coal"), 3}, {1, -1})
+	// A dropper no ticking player clears, so the field survives to the save.
+	world.entities.loose_items.items[0].dropping_player = dropping_player_value(1)
 }
 
 build_save_test_site :: proc(simulation: ^Simulation_State, content: Simulation_Content) {

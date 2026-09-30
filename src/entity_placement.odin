@@ -409,7 +409,7 @@ pick_up_entity :: proc(world: ^World, content: Simulation_Content, player: ^Play
 		if stack_is_empty(stack) {
 			continue
 		}
-		if leftover := inventory_add(player.inventory, content.items, stack.item, int(stack.count)); leftover > 0 {
+		if leftover := inventory_add_picked_up(player.inventory, content.items, stack.item, int(stack.count)); leftover > 0 {
 			spill_stack(world, content.blocks, origin, Item_Stack{item = stack.item, count = u16(leftover)})
 		}
 	}

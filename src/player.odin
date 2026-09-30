@@ -485,7 +485,7 @@ tick_player :: proc(world: ^World, content: Simulation_Content, players: []Playe
 	if !player.flying {
 		record_walked(&world.statistics, walk_start, player.position)
 	}
-	pick_up_loose_items(world, content.items, player)
+	pick_up_loose_items(world, content.items, player, index)
 	if .Open_Machine in events || .Toggled_Switch in events || .Launch_Requested in events {
 		record_world_action(&world.statistics)
 	}
@@ -497,7 +497,7 @@ tick_player :: proc(world: ^World, content: Simulation_Content, players: []Playe
 	// being the first slots; before the selection changes, since the long
 	// press that sent it was on the slot selected until now.
 	if .Drop_Stack in input.just_pressed {
-		drop_player_stack(world, content.blocks, player, player.selected_hotbar_slot)
+		drop_player_stack(world, content.blocks, player, index, player.selected_hotbar_slot)
 	}
 	player.selected_hotbar_slot = cycle_hotbar_slot(player.selected_hotbar_slot, input.just_pressed)
 	if finished := advance_crafting(&player.crafting, player.inventory, content.recipes, content.items, tick_rate); finished != NO_RECIPE {

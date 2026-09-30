@@ -354,6 +354,11 @@ test_player_ticks_are_deterministic :: proc(t: ^testing.T) {
 	defer destroy_simulation(&first)
 	second := make_generated_simulation(&second_generator, content)
 	defer destroy_simulation(&second)
+	// Mined blocks reach the hotbar only onto a partial stack there
+	// (inventory_add_picked_up), so both start with one dirt to pillar with.
+	dirt := test_item(content.items, "dirt")
+	first.players[0].inventory.slots[0] = Item_Stack{dirt, 1}
+	second.players[0].inventory.slots[0] = Item_Stack{dirt, 1}
 	start := first.players[0].position
 	placed_count := 0
 	for tick in 0 ..< 1200 {

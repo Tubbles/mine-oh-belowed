@@ -57,12 +57,14 @@ test_mining_progress_resets :: proc(t: ^testing.T) {
 }
 
 @(test)
-test_player_mines_block_into_hotbar :: proc(t: ^testing.T) {
+test_player_mines_block_onto_its_hotbar_stack :: proc(t: ^testing.T) {
 	registry := make_test_registry()
 	items := make_test_items()
 	world := make_floor_world(registry, 32)
 	stone := test_block(registry, "stone")
+	stone_item := test_item(items, "stone")
 	player := make_test_player(registry, {0.5, 1, 0.5})
+	player.inventory.slots[0] = Item_Stack{item = stone_item, count = 1}
 	player.pitch = -89
 	player.held.stack = Item_Stack{test_item(items, "wooden_pickaxe"), 1}
 	required := int(mining_required_ticks(registry.definitions[stone].hardness_seconds, TEST_TICK_RATE))
@@ -70,8 +72,7 @@ test_player_mines_block_into_hotbar :: proc(t: ^testing.T) {
 	testing.expect_value(t, world_get_block(&world, {0, 0, 0}), stone)
 	tick_test_player(&world, registry, &player, Input_Frame{pressed = {.Mine}}, 1)
 	testing.expect_value(t, world_get_block(&world, {0, 0, 0}), AIR_BLOCK)
-	stone_item := test_item(items, "stone")
-	testing.expect_value(t, player.inventory.slots[0], Item_Stack{item = stone_item, count = 1})
+	testing.expect_value(t, player.inventory.slots[0], Item_Stack{item = stone_item, count = 2})
 	testing.expect_value(t, selected_placed_block(player, items), stone)
 }
 
@@ -312,7 +313,7 @@ test_mining_a_log_fells_the_tree :: proc(t: ^testing.T) {
 		}
 	}
 	log_item := test_item(content.items, "log")
-	testing.expect_value(t, player.inventory.slots[0], Item_Stack{item = log_item, count = 1})
+	testing.expect_value(t, player.inventory.slots[HOTBAR_SLOT_COUNT], Item_Stack{item = log_item, count = 1})
 	for height in i32(1) ..= tree.trunk_height {
 		testing.expect_value(t, world_get_block(&world, tree.root + {0, height, 0}), AIR_BLOCK)
 	}
