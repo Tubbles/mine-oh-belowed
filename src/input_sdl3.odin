@@ -8,8 +8,9 @@ import sdl "vendor:sdl3"
 
 // Reads the Steam Controller (2026) through SDL3's HIDAPI driver
 // (SDL_hidapi_steam_triton.c). SDL runs without video: raylib owns the window,
-// keyboard and mouse. What the driver reports and how is in doc/input.md,
-// "How SDL3 exposes the controller".
+// keyboard and mouse. The button mapping, the touchpads, the sensors,
+// the gyro calibration and Steam Input beside the game are in
+// doc/input.md, "Steam Controller through SDL3".
 
 VALVE_VENDOR_ID :: 0x28de
 SDL3_AXIS_COUNT :: int(sdl.GamepadAxis.RIGHT_TRIGGER) + 1

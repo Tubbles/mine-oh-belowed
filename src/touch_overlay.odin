@@ -9,9 +9,10 @@ import "core:strings"
 import rl "shared:raylib"
 import sdl "vendor:sdl3"
 
-// The touch overlay (work item 0115, doc/input.md): a virtual gamepad the
-// game draws on a touch screen. It fills a Raw_Gamepad like a physical
-// one and adds its drags to the look delta like the mouse, so the
+// The touch overlay (work item 0115, doc/touch_overlay.md): a virtual
+// gamepad the game draws on a touch screen. It fills a Raw_Gamepad
+// like a physical one and adds its drags to the look delta like the
+// mouse, so the
 // bindings, the diagnostics and everything downstream see a gamepad.
 // The layout is data/touch_overlay.sjson, whose Default has only the
 // stick and the look (0134); a user layout may add buttons. A touch that
@@ -942,7 +943,7 @@ touch_overlay_element_text :: proc(element: Touch_Overlay_Element) -> string {
 // layers' arrays replace wholesale.
 touch_layouts_file_text :: proc(layouts: Touch_Layouts) -> string {
 	builder := strings.builder_make(context.temp_allocator)
-	strings.write_string(&builder, "// Written by the touch layout editor (doc/input.md, Touch overlay).\n")
+	strings.write_string(&builder, "// Written by the touch layout editor (doc/touch_overlay.md, User layouts and the editor).\n")
 	fmt.sbprintf(&builder, "selected = %q\n", selected_touch_layout_name(layouts))
 	strings.write_string(&builder, "layouts = [\n")
 	for named in layouts.layouts {

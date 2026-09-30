@@ -1,4 +1,4 @@
-// The touch overlay (work item 0115, src/touch_overlay.odin, doc/input.md):
+// The touch overlay (work item 0115, src/touch_overlay.odin, doc/touch_overlay.md):
 // a virtual gamepad the game draws on a touch screen. Its stick, its
 // gestures and any buttons press gamepad controls, so data/bindings.sjson
 // maps them to actions like any gamepad's.
@@ -61,8 +61,8 @@
 // This file's layout is the one called Default. The touch layout editor
 // (Accessibility, Edit touch layout) never changes it: it saves copies to
 // touch_overlay.sjson in the user configuration directory, in this file's
-// form under a name each (doc/input.md, Touch overlay), and a reload of
-// this file keeps applying to Default. A saved layout needs no START
+// form under a name each (doc/touch_overlay.md, User layouts and the
+// editor), and a reload of this file keeps applying to Default. A saved layout needs no START
 // button: the HUD's pause button beside the hotbar opens the pause menu.
 //
 // hotbar_drop_control (work item 0119): the control a long press on the

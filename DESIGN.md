@@ -131,7 +131,7 @@ The game carries its own editors (user, 2026-09-28; the model is the Warcraft 3 
 
 ## Input
 
-Steam Controller (2026) first. The layout proposal and the technical path are in [doc/input.md](doc/input.md).
+Steam Controller (2026) first. The bindings are in [doc/input.md](doc/input.md); the technical path was decided in [doc/log/2026-09-26.md](doc/log/2026-09-26.md).
 
 Touch is a first class input beside the gamepad and the trackpad pointer (0115): on a touch screen the game draws its own overlay, a virtual gamepad with a floating stick on the left half and gestures on the whole screen (tap to place or interact, hold to mine, drag to look, tap the right edge to jump) instead of GameNative's button layout (0134), with touch buttons beside the hotbar for the inventory, the map, the pause menu and rotating, and in menus a finger is the pointer. The overlay feeds the same gamepad state and look delta as the physical devices, so a world action reaches touch through a gamepad binding, except the hotbar slot taps and the jump tap, which press their action directly because no gamepad control does only that; in the Default layout sneak has no touch control.
 
