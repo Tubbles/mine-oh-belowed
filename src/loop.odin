@@ -339,7 +339,7 @@ read_input_frame :: proc(state: ^Frame_State, frame_seconds: f32) -> Input_Frame
 	case .Raylib:
 		frame = read_raylib_input_frame(state.input.pressed, state.input_bindings, overlay)
 	}
-	return apply_touch_overlay_aim(frame, overlay)
+	return apply_touch_overlay_hotbar(apply_touch_overlay_aim(frame, overlay), overlay)
 }
 
 // The mouse steers the view while the world is shown and is free for the

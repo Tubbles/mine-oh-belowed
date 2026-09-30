@@ -80,6 +80,19 @@ hud_hotbar_rectangles :: proc(area: Ui_Rectangle, selected: int) -> [HOTBAR_SLOT
 	return rectangles
 }
 
+// The slots in render pixels, where the touch overlay hit tests them
+// (0119).
+hud_hotbar_pixel_rectangles :: proc(state: ^Ui_State, selected: int) -> [HOTBAR_SLOT_COUNT]Ui_Rectangle {
+	rectangles := hud_hotbar_rectangles(ui_safe_area(state), selected)
+	for &rectangle in rectangles {
+		rectangle.x *= state.pixels_per_unit
+		rectangle.y *= state.pixels_per_unit
+		rectangle.width *= state.pixels_per_unit
+		rectangle.height *= state.pixels_per_unit
+	}
+	return rectangles
+}
+
 draw_hud_hotbar :: proc(state: ^Ui_State, player: Player, items: Item_Registry) {
 	hotbar := inventory_hotbar(player.inventory)
 	rectangles := hud_hotbar_rectangles(ui_safe_area(state), player.selected_hotbar_slot)

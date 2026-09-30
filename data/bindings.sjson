@@ -36,6 +36,9 @@ bindings = [
 	{action = "Rotate_Building" device = "gamepad" control = "LEFT_PADDLE2" context = "world"}
 	{action = "Pipette" device = "gamepad" control = "DPAD_UP" context = "world"}
 	{action = "Pipette" device = "gamepad" control = "RIGHT_PADDLE2" context = "world"}
+	// The touch overlay's long press on the selected hotbar slot presses
+	// it too (hotbar_drop_control, work item 0119).
+	{action = "Drop_Stack" device = "gamepad" control = "DPAD_DOWN" context = "world"}
 	{action = "Hotbar_Previous" device = "gamepad" control = "DPAD_LEFT" context = "world"}
 	{action = "Hotbar_Previous" device = "gamepad" control = "LEFT_SHOULDER" context = "world"}
 	{action = "Hotbar_Next" device = "gamepad" control = "DPAD_RIGHT" context = "world"}
@@ -100,6 +103,9 @@ bindings = [
 	{action = "Hotbar_Slot_6" device = "keyboard" control = "SIX" context = "world"}
 	{action = "Hotbar_Slot_7" device = "keyboard" control = "SEVEN" context = "world"}
 	{action = "Hotbar_Slot_8" device = "keyboard" control = "EIGHT" context = "world"}
+	// X as the inventory's Menu_Drop; Q is Pipette in the world (work item
+	// 0119).
+	{action = "Drop_Stack" device = "keyboard" control = "X" context = "world"}
 	{action = "Toggle_Camera_Mode" device = "keyboard" control = "V" context = "world"}
 	// No gamepad button for the overlay yet; the Display settings toggle it too.
 	{action = "Toggle_Bottleneck_Overlay" device = "keyboard" control = "O" context = "world"}

@@ -198,3 +198,28 @@ test_drop_puts_the_held_or_focused_stack_in_front_of_the_player :: proc(t: ^test
 	testing.expect_value(t, items[1], Loose_Item{item = stone, count = 7, cell = {2, 1, 3}})
 	testing.expect_value(t, world.statistics.world_actions, 2)
 }
+
+@(test)
+test_drop_stack_drops_the_selected_hotbar_stack_in_the_world :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_loose_item_test_world(content)
+	coal, stone := test_item(content.items, "coal"), test_item(content.items, "stone")
+	players := []Player{make_test_player(content.blocks, {2.5, 1, 2.5})}
+	players[0].yaw = 90
+	players[0].selected_hotbar_slot = 3
+	players[0].inventory.slots[3] = Item_Stack{coal, 6}
+	players[0].inventory.slots[4] = Item_Stack{stone, 2}
+	// With a slot select in the same tick, the drop takes the slot
+	// selected until then.
+	tick_player(&world, content, players, 0, {just_pressed = {.Drop_Stack, .Hotbar_Slot_5}}, TEST_TICK_RATE)
+	testing.expect_value(t, players[0].inventory.slots[3], EMPTY_STACK)
+	testing.expect_value(t, players[0].inventory.slots[4], Item_Stack{stone, 2})
+	testing.expect_value(t, players[0].selected_hotbar_slot, 4)
+	items := world.entities.loose_items.items[:]
+	testing.expect_value(t, len(items), 1)
+	testing.expect_value(t, items[0], Loose_Item{item = coal, count = 6, cell = {2, 1, 3}})
+	// An empty selected slot drops nothing.
+	players[0].selected_hotbar_slot = 3
+	tick_player(&world, content, players, 0, {just_pressed = {.Drop_Stack}}, TEST_TICK_RATE)
+	testing.expect_value(t, len(world.entities.loose_items.items), 1)
+}

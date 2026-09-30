@@ -48,6 +48,10 @@ Action :: enum u8 {
 	Hotbar_Slot_6,
 	Hotbar_Slot_7,
 	Hotbar_Slot_8,
+	// Drops the selected hotbar slot's stack in front of the player (0119):
+	// d-pad down (which the touch overlay's long press on the selected slot
+	// presses) and keyboard X.
+	Drop_Stack,
 	// Opens the targeted entity's panel. A on a gamepad, which is Jump
 	// unless an entity is targeted (resolve_interact).
 	Interact,
@@ -316,6 +320,7 @@ WORLD_ACTIONS :: Action_Set {
 	.Hotbar_Slot_6,
 	.Hotbar_Slot_7,
 	.Hotbar_Slot_8,
+	.Drop_Stack,
 	.Interact,
 	.Toggle_Camera_Mode,
 	.Toggle_Fly_Mode,

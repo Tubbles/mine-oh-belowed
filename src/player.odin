@@ -493,6 +493,12 @@ tick_player :: proc(world: ^World, content: Simulation_Content, players: []Playe
 	player.target = raycast_blocks(world, content.blocks, player_eye(player.position), player.target_direction, PLAYER_REACH)
 	events += mine_with_player(world, content, player, .Mine in input.pressed, tick_rate, cheat_speed)
 	place_with_player(world, content, players, index, input.just_pressed, input.pressed)
+	// Drop_Stack (0119) drops the selected hotbar slot's stack, the hotbar
+	// being the first slots; before the selection changes, since the long
+	// press that sent it was on the slot selected until now.
+	if .Drop_Stack in input.just_pressed {
+		drop_player_stack(world, content.blocks, player, player.selected_hotbar_slot)
+	}
 	player.selected_hotbar_slot = cycle_hotbar_slot(player.selected_hotbar_slot, input.just_pressed)
 	if finished := advance_crafting(&player.crafting, player.inventory, content.recipes, content.items, tick_rate); finished != NO_RECIPE {
 		record_produced_stacks(&world.statistics, content.recipes.recipes[finished].outputs)

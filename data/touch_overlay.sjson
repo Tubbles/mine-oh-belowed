@@ -36,11 +36,16 @@
 //     Interact) and tap_place_control (pressed by a tap on anything else:
 //     Place)
 //
+// hotbar_drop_control (work item 0119): the control a long press on the
+// selected hotbar slot holds until the finger lifts, a control as a
+// button's (DPAD_DOWN: Drop_Stack through the bindings).
+//
 // The layout is GameNative's (a 2424 by 1080 screenshot of 2026-09-29)
 // without its d-pad, whose half belongs to the stick, and without R3.
 // Back and Start sit at the top centre instead of GameNative's bottom
 // centre, where the hotbar is.
 reference_height = 1080
+hotbar_drop_control = "DPAD_DOWN"
 elements = [
 	{kind = "button" control = "LEFT_TRIGGER" shape = "rectangle" anchor = "top_left" position = [181.5, 85] size = [363, 170] label = "LT"}
 	{kind = "button" control = "RIGHT_TRIGGER" shape = "rectangle" anchor = "top_right" position = [181.5, 85] size = [363, 170] label = "RT"}

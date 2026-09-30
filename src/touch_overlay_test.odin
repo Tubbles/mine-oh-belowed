@@ -411,6 +411,8 @@ test_touch_overlay_errors_name_the_element :: proc(t: ^testing.T) {
 		{`reference_height = 1080 elements = [{kind = "look" side = "right" sensitivity = 1 hold_control = "RIGHT_TRIGGER" tap_interact_control = "SOUTH"}]`, `elements[0] (look): unknown tap_place_control ""`},
 		{`reference_height = 1080 elements = [{kind = "look" side = "right" sensitivity = 1 colour = "red"}]`, "unknown key elements[0].colour"},
 		{`reference_height = 0 elements = []`, "reference_height must be positive"},
+		{`reference_height = 1080 elements = []`, `unknown hotbar_drop_control ""`},
+		{`reference_height = 1080 hotbar_drop_control = "DROP" elements = []`, `unknown hotbar_drop_control "DROP"`},
 	}
 	for test_case in cases {
 		_, problem := parse_touch_overlay_file(transmute([]byte)test_case.text, "data/touch_overlay.sjson")
@@ -879,4 +881,160 @@ test_a_touch_aimed_slab_takes_its_half_from_the_aim :: proc(t: ^testing.T) {
 	tick_player(&world, content, players, 0, aimed, TEST_TICK_RATE)
 	testing.expect_value(t, players[0].target.face, Direction.Negative_X)
 	testing.expect_value(t, world_get_block(&world, {2, 2, 0}), test_block(content.blocks, "stone_slab_upper"))
+}
+
+// The hotbar (0119): the phone's slots as the HUD draws them at UI scale
+// 1, in the tap scheme, with the given slot selected.
+phone_hotbar_inputs :: proc(selected: int) -> Touch_Interaction_Frame {
+	ui: Ui_State
+	ui.pixels_per_unit = ui_pixels_per_unit(PHONE_SCREEN.y, 1)
+	ui.screen_units = ui_screen_units(PHONE_SCREEN, ui.pixels_per_unit)
+	inputs := TAP_TOUCH
+	inputs.hotbar_slots = hud_hotbar_pixel_rectangles(&ui, selected)
+	inputs.selected_hotbar_slot = selected
+	return inputs
+}
+
+hotbar_frame :: proc(state: ^Touch_Overlay_State, layout: Touch_Overlay_Layout, points: []Touch_Point, inputs: Touch_Interaction_Frame, world_shown := true) -> Touch_Overlay_Frame {
+	return touch_overlay_frame(state, layout, points, PHONE_SCREEN, world_shown, inputs)
+}
+
+@(test)
+test_a_tap_on_a_hotbar_slot_selects_it_once_and_claims_the_pointer :: proc(t: ^testing.T) {
+	layout := shipped_touch_overlay(t)
+	state: Touch_Overlay_State
+	inputs := phone_hotbar_inputs(0)
+	slot_point := rectangle_centre(inputs.hotbar_slots[2])
+	frame := hotbar_frame(&state, layout, {{id = 3, position = slot_point}}, inputs)
+	testing.expect_value(t, slot_by_id(state, 3).role, Touch_Role.Hotbar)
+	testing.expect(t, frame.pointer_claimed)
+	testing.expect_value(t, frame.hotbar_tap, -1)
+	testing.expect_value(t, frame.output, Touch_Overlay_Output{})
+	frame = hotbar_frame(&state, layout, {}, inputs)
+	testing.expect_value(t, frame.hotbar_tap, 2)
+	testing.expect_value(t, frame.output, Touch_Overlay_Output{})
+	input := apply_touch_overlay_hotbar({}, frame)
+	testing.expect_value(t, input.just_pressed, Action_Set{.Hotbar_Slot_3})
+	frame = hotbar_frame(&state, layout, {}, inputs)
+	testing.expect_value(t, frame.hotbar_tap, -1)
+	testing.expect_value(t, apply_touch_overlay_hotbar({}, frame).just_pressed, Action_Set{})
+	// The simulation selects the slot from the edge.
+	testing.expect_value(t, cycle_hotbar_slot(0, input.just_pressed), 2)
+}
+
+@(test)
+test_a_long_press_on_the_selected_slot_drops_its_stack :: proc(t: ^testing.T) {
+	layout := shipped_touch_overlay(t)
+	state: Touch_Overlay_State
+	inputs := phone_hotbar_inputs(5)
+	inputs.frame_seconds = 0.1
+	points := []Touch_Point{{id = 0, position = rectangle_centre(inputs.hotbar_slots[5])}}
+	tables, _ := build_input_bindings(shipped_default_bindings(t), .Raylib, context.temp_allocator)
+	// hotbar_drop_control (d-pad down) is held from the long press until
+	// the lift: one Drop_Stack edge through the bindings.
+	previous: Action_Set
+	edges := 0
+	for step in 0 ..< 10 {
+		frame := hotbar_frame(&state, layout, points, inputs)
+		testing.expect_value(t, frame.hotbar_tap, -1)
+		testing.expect_value(t, frame.output.buttons[int(sdl.GamepadButton.DPAD_DOWN)], step >= 3)
+		actions := gamepad_button_actions(touch_overlay_raw_gamepad(frame.output, .Raylib), tables)
+		if .Drop_Stack in actions_just_pressed(previous, actions) {
+			edges += 1
+		}
+		previous = actions
+		testing.expect_value(t, apply_touch_overlay_hotbar({}, frame).just_pressed, Action_Set{})
+	}
+	testing.expect_value(t, edges, 1)
+	// The lift after a long press is no tap and releases the control.
+	frame := hotbar_frame(&state, layout, {}, inputs)
+	testing.expect_value(t, frame.hotbar_tap, -1)
+	testing.expect_value(t, frame.output, Touch_Overlay_Output{})
+}
+
+@(test)
+test_a_finger_that_slides_off_the_selected_slot_fires_nothing :: proc(t: ^testing.T) {
+	layout := shipped_touch_overlay(t)
+	inputs := phone_hotbar_inputs(5)
+	inputs.frame_seconds = 0.1
+	origin := rectangle_centre(inputs.hotbar_slots[5])
+	// Slid a little or far away and held there past the long press time,
+	// then lifted: neither the drop nor a tap.
+	for path in ([?][]Touch_Point{{{id = 0, position = origin + {0, -40}}}, {{id = 0, position = origin + {-300, -200}}}}) {
+		state: Touch_Overlay_State
+		frame := hotbar_frame(&state, layout, {{id = 0, position = origin}}, inputs)
+		for _ in 0 ..< 10 {
+			frame = hotbar_frame(&state, layout, path, inputs)
+			testing.expect_value(t, frame.hotbar_tap, -1)
+			testing.expect_value(t, frame.output, Touch_Overlay_Output{})
+			testing.expect_value(t, slot_by_id(state, 0).role, Touch_Role.Hotbar)
+			testing.expect(t, frame.pointer_claimed)
+		}
+		testing.expect_value(t, hotbar_frame(&state, layout, {}, inputs).hotbar_tap, -1)
+	}
+	// A quick flick, lifted before the long press time: no tap.
+	state: Touch_Overlay_State
+	hotbar_frame(&state, layout, {{id = 0, position = origin}}, inputs)
+	hotbar_frame(&state, layout, {{id = 0, position = origin + {200, -100}}}, inputs)
+	testing.expect_value(t, hotbar_frame(&state, layout, {}, inputs).hotbar_tap, -1)
+}
+
+@(test)
+test_a_long_press_on_another_slot_only_selects_it :: proc(t: ^testing.T) {
+	layout := shipped_touch_overlay(t)
+	state: Touch_Overlay_State
+	inputs := phone_hotbar_inputs(0)
+	inputs.frame_seconds = 0.1
+	points := []Touch_Point{{id = 0, position = rectangle_centre(inputs.hotbar_slots[6])}}
+	taps: [dynamic]int
+	taps.allocator = context.temp_allocator
+	for _ in 0 ..< 10 {
+		frame := hotbar_frame(&state, layout, points, inputs)
+		testing.expect_value(t, frame.output, Touch_Overlay_Output{})
+		if frame.hotbar_tap >= 0 {
+			append(&taps, frame.hotbar_tap)
+		}
+	}
+	frame := hotbar_frame(&state, layout, {}, inputs)
+	testing.expect_value(t, frame.hotbar_tap, -1)
+	testing.expect_value(t, len(taps), 1)
+	testing.expect_value(t, taps[0], 6)
+}
+
+@(test)
+test_a_hotbar_tap_leaves_a_held_stick_alone :: proc(t: ^testing.T) {
+	layout := shipped_touch_overlay(t)
+	state: Touch_Overlay_State
+	inputs := phone_hotbar_inputs(0)
+	stick_origin := [2]f32{400, 600}
+	hotbar_frame(&state, layout, {{id = 0, position = stick_origin}}, inputs)
+	stick_points := []Touch_Point{{id = 0, position = stick_origin + {60, 0}}}
+	before := hotbar_frame(&state, layout, stick_points, inputs)
+	// Slot 0 lies on the stick's half: the hotbar comes first.
+	slot_point := rectangle_centre(inputs.hotbar_slots[0])
+	testing.expect_value(t, screen_side(slot_point, PHONE_SCREEN), Touch_Overlay_Side.Left)
+	during := hotbar_frame(&state, layout, {stick_points[0], {id = 1, position = slot_point}}, inputs)
+	testing.expect_value(t, slot_by_id(state, 1).role, Touch_Role.Hotbar)
+	testing.expect_value(t, during.output, before.output)
+	// The stick finger is the pointer's touch (points[0]), so nothing claims it.
+	testing.expect(t, !during.pointer_claimed)
+	after := hotbar_frame(&state, layout, stick_points, inputs)
+	testing.expect_value(t, after.hotbar_tap, 0)
+	testing.expect_value(t, after.output, before.output)
+	testing.expect_value(t, slot_by_id(state, 0).role, Touch_Role.Stick)
+}
+
+@(test)
+test_over_a_screen_a_hotbar_touch_is_the_pointers :: proc(t: ^testing.T) {
+	layout := shipped_touch_overlay(t)
+	state: Touch_Overlay_State
+	inputs := phone_hotbar_inputs(0)
+	slot_point := rectangle_centre(inputs.hotbar_slots[3])
+	frame := hotbar_frame(&state, layout, {{id = 0, position = slot_point}}, inputs, false)
+	testing.expect_value(t, slot_by_id(state, 0).role, Touch_Role.Ignored)
+	testing.expect(t, !frame.pointer_claimed)
+	testing.expect_value(t, hotbar_frame(&state, layout, {}, inputs, false).hotbar_tap, -1)
+	// And a frame from a screen presses no action even if it carried one.
+	frame.hotbar_tap = 3
+	testing.expect_value(t, apply_touch_overlay_hotbar({}, frame).just_pressed, Action_Set{})
 }
