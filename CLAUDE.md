@@ -14,7 +14,7 @@ Read this together with the global `~/.claude/CLAUDE.md`. This file only adds wh
 
 ## Layout
 
-Follows the project structure from the global preferences: `doc/` (detail docs), `doc/log/` (dated decision logs, write once), `doc/work/` (work items with status `todo`, `implemented`, `verified`), `work/` and `tmp/` (untracked), `PLAN.md`, `DESIGN.md`, `TODO.md` (user inbox), `SUGGESTIONS.md`. Source under `src/`, content under `data/`, build output under `bin/`.
+Follows the project structure from the global preferences: `doc/` (detail docs), `doc/log/` (dated decision logs, write once), `doc/work/` (work items with status `todo`, `implemented`, `verified`), `work/` and `tmp/` (untracked), `PLAN.md`, `DESIGN.md`, `TODO.md` (user inbox, the user writes there), `SUGGESTIONS.md` (agent follow ups and decisions needed; the deferred work of a big series goes here, never into `TODO.md`). Source under `src/`, content under `data/`, build output under `bin/`.
 
 ## Code rules
 
