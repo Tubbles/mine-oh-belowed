@@ -3,7 +3,6 @@ package game
 import "core:encoding/json"
 import "core:fmt"
 import "core:math"
-import "core:os"
 import "core:slice"
 
 // Item prototypes from data/items.sjson, resolved to a dense Item_Id at
@@ -481,15 +480,7 @@ item_display_names :: proc(registry: Item_Registry, allocator := context.allocat
 }
 
 load_item_registry :: proc(data_directory: string, blocks: Block_Registry, allocator := context.allocator) -> (registry: Item_Registry, ok: bool) {
-	path, join_error := os.join_path({data_directory, ITEMS_FILE_NAME}, context.temp_allocator)
-	if join_error != nil {
-		return {}, false
-	}
-	data, read_error := os.read_entire_file(path, context.temp_allocator)
-	if read_error != nil {
-		log_printf("error: cannot read %s: %v", path, read_error)
-		return {}, false
-	}
+	data, path := read_logged_data_file(data_directory, ITEMS_FILE_NAME) or_return
 	file, parse_error := parse_items_file(data, allocator)
 	if parse_error != nil {
 		log_printf("error: cannot parse %s: %v", path, parse_error)

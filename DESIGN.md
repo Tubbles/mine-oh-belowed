@@ -127,7 +127,7 @@ Chosen at world creation: seed, name, vein finiteness, vein richness (50, 100, 2
 
 ## Editors
 
-The game carries its own editors (user, 2026-09-28; the model is the Warcraft 3 world editor, and the long term aim is making one's own maps in the game). Every tunable presentation or generation parameter is data with an in-game editor in developer mode: the data file's values to reset to, a reroll for seeds, every change applied on the fly, and a save that hands the chosen values to an agent (a file in the state directory, a log line, a socket query) so they become the new defaults. Editors are screens like any other, gamepad first and usable from the couch. The texture editor (0100) is the first.
+The game carries its own editors (user, 2026-09-28; the model is the Warcraft 3 world editor, and the long term aim is making one's own maps in the game). Every tunable presentation or generation parameter is data with an in-game editor in developer mode: the data file's values to reset to, a reroll for seeds, every change applied on the fly, and a save that hands the chosen values to an agent (a file in the state directory, a log line, a socket query) so they become the new defaults. Editors are screens like any other, gamepad first and usable from the couch. The texture editor (0100) is the first. The data file browser (0129, the Data files screen) is the fallback editor for everything without one of its own: it shows every data file, and its edits go to an overlay in the state directory rather than the checked in files.
 
 ## Input
 

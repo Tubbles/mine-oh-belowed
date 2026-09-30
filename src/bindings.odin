@@ -2,7 +2,6 @@ package game
 
 import "core:encoding/json"
 import "core:fmt"
-import "core:os"
 import "core:reflect"
 import "core:strings"
 import rl "shared:raylib"
@@ -261,8 +260,7 @@ parse_bindings_file :: proc(data: []byte, source: string, allocator := context.a
 }
 
 load_default_bindings :: proc(data_directory: string, allocator := context.allocator) -> (bindings: []Binding, problem: string) {
-	path := join_save_path(data_directory, BINDINGS_FILE_NAME)
-	data, error := os.read_entire_file(path, context.temp_allocator)
+	data, path, error := read_data_file(data_directory, BINDINGS_FILE_NAME, context.temp_allocator)
 	if error != nil {
 		return nil, fmt.tprintf("%s: cannot read: %v", path, error)
 	}

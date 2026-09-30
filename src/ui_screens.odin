@@ -95,6 +95,9 @@ Screen_Context :: struct {
 	// The texture editor's entries (ui_texture_editor.odin), kept by the
 	// frame loop. Nil in tests that open no editor.
 	texture_editor:       ^Texture_Editor,
+	// The Data files screen's tree and open file (ui_data_browser.odin),
+	// kept by the frame loop. Nil in tests that open no browser.
+	data_browser:         ^Data_Browser,
 	// The touch overlay's tap scheme is on (touch_overlay_aims): the HUD
 	// draws no crosshair and rings the mined block, whose centre
 	// mining_ring_centre is in render pixels.
@@ -196,6 +199,8 @@ run_screens :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		developer_screen(state, screen_context)
 	case .Textures:
 		texture_editor_screen(state, screen_context)
+	case .Data_Files:
+		data_browser_screen(state, screen_context)
 	case .Inventory:
 		inventory_screen(state, screen_context)
 	case .Machine:

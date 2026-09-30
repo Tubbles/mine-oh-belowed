@@ -2,7 +2,6 @@ package game
 
 import "core:encoding/json"
 import "core:fmt"
-import "core:os"
 
 BLOCKS_FILE_NAME :: "blocks.sjson"
 AIR_BLOCK_NAME :: "air"
@@ -477,15 +476,7 @@ face_group_color :: proc(texture: Block_Texture_Definition, group: Face_Group) -
 
 // strings is the loaded string table the name keys are checked against.
 load_block_registry :: proc(data_directory: string, strings: map[string]string, allocator := context.allocator) -> (registry: Block_Registry, ok: bool) {
-	path, join_error := os.join_path({data_directory, BLOCKS_FILE_NAME}, context.temp_allocator)
-	if join_error != nil {
-		return {}, false
-	}
-	data, read_error := os.read_entire_file(path, context.temp_allocator)
-	if read_error != nil {
-		log_printf("error: cannot read %s: %v", path, read_error)
-		return {}, false
-	}
+	data, path := read_logged_data_file(data_directory, BLOCKS_FILE_NAME) or_return
 	file, parse_error := parse_blocks_file(data, allocator)
 	if parse_error != nil {
 		log_printf("error: cannot parse %s: %v", path, parse_error)

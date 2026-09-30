@@ -3,7 +3,6 @@ package game
 import "core:encoding/json"
 import "core:fmt"
 import "core:math"
-import "core:os"
 import "core:slice"
 
 // Technologies from data/technologies.sjson, resolved after the recipes:
@@ -338,15 +337,7 @@ technology_description :: proc(registry: Technology_Registry, technology: int) -
 }
 
 load_technology_registry :: proc(data_directory: string, items: Item_Registry, recipes: Recipe_Registry, allocator := context.allocator) -> (registry: Technology_Registry, ok: bool) {
-	path, join_error := os.join_path({data_directory, TECHNOLOGIES_FILE_NAME}, context.temp_allocator)
-	if join_error != nil {
-		return {}, false
-	}
-	data, read_error := os.read_entire_file(path, context.temp_allocator)
-	if read_error != nil {
-		log_printf("error: cannot read %s: %v", path, read_error)
-		return {}, false
-	}
+	data, path := read_logged_data_file(data_directory, TECHNOLOGIES_FILE_NAME) or_return
 	file, parse_error := parse_technologies_file(data, allocator)
 	if parse_error != nil {
 		log_printf("error: cannot parse %s: %v", path, parse_error)

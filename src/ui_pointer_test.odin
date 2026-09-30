@@ -391,6 +391,7 @@ test_every_screen_has_a_back_button_on_touch :: proc(t: ^testing.T) {
 		{screens = {.Pause, .Settings}},
 		{screens = {.Pause, .Developer}},
 		{screens = {.Pause, .Developer, .Textures}},
+		{screens = {.Pause, .Developer, .Data_Files}},
 		{screens = {.Inventory}},
 		{screens = {.Machine}, machine = true},
 		{screens = {.Recipes}},

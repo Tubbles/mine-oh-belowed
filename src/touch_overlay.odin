@@ -657,8 +657,7 @@ parse_touch_overlay_file :: proc(data: []byte, source: string, allocator := cont
 }
 
 load_touch_overlay :: proc(data_directory: string, allocator := context.allocator) -> (layout: Touch_Overlay_Layout, ok: bool) {
-	path := join_save_path(data_directory, TOUCH_OVERLAY_FILE_NAME)
-	data, read_error := os.read_entire_file(path, context.temp_allocator)
+	data, path, read_error := read_data_file(data_directory, TOUCH_OVERLAY_FILE_NAME, context.temp_allocator)
 	if read_error != nil {
 		log_printf("error: cannot read %s: %v", path, read_error)
 		return {}, false

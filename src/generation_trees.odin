@@ -71,7 +71,7 @@ parse_trees_file :: proc(data: []byte, allocator := context.allocator) -> (file:
 }
 
 load_trees_file :: proc(data_directory: string, allocator := context.allocator) -> (file: Trees_File, ok: bool) {
-	data, path := read_data_file(data_directory, TREES_FILE_NAME) or_return
+	data, path := read_logged_data_file(data_directory, TREES_FILE_NAME) or_return
 	parse_error: json.Unmarshal_Error
 	file, parse_error = parse_trees_file(data, allocator)
 	if parse_error != nil {

@@ -158,8 +158,7 @@ missing_sound_file :: proc(table: Sound_Table, data_directory: string) -> string
 
 // The table from data/sounds/sounds.sjson, its files checked; no raylib.
 load_sound_table :: proc(data_directory: string, allocator := context.allocator) -> (table: Sound_Table, problem: string) {
-	path := join_save_path(data_directory, SOUNDS_DIRECTORY, SOUNDS_FILE_NAME)
-	data, read_error := os.read_entire_file(path, context.temp_allocator)
+	data, path, read_error := read_data_file(data_directory, SOUNDS_DIRECTORY + "/" + SOUNDS_FILE_NAME, context.temp_allocator)
 	if read_error != nil {
 		return {}, fmt.tprintf("cannot read %s: %v", path, read_error)
 	}

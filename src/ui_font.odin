@@ -129,8 +129,7 @@ missing_font_file :: proc(fonts_directory: string, families: []Font_Family) -> s
 // The problem names the file.
 load_fonts :: proc(data_directory: string) -> (fonts: Loaded_Fonts, problem: string) {
 	fonts_directory := join_save_path(data_directory, FONTS_DIRECTORY)
-	path := join_save_path(fonts_directory, FONTS_FILE_NAME)
-	data, read_error := os.read_entire_file(path, context.temp_allocator)
+	data, path, read_error := read_data_file(data_directory, FONTS_DIRECTORY + "/" + FONTS_FILE_NAME, context.temp_allocator)
 	if read_error != nil {
 		return {}, fmt.tprintf("cannot read %s: %v", path, read_error)
 	}

@@ -69,15 +69,15 @@ replace_string_entries :: proc(table: ^String_Table, data: []byte) -> (old_entri
 	return old_entries, nil
 }
 
-// The file's bytes, or the problem naming the file.
-read_strings_file :: proc(data_directory: string) -> (data: []byte, problem: string) {
-	path, _ := os.join_path({data_directory, STRINGS_DIRECTORY, STRINGS_FILE_NAME}, context.temp_allocator)
+// The file's bytes and the path read (the data edits overlay's copy when
+// it has one), or the problem naming the file.
+read_strings_file :: proc(data_directory: string) -> (data: []byte, path: string, problem: string) {
 	read_error: os.Error
-	data, read_error = os.read_entire_file(path, context.temp_allocator)
+	data, path, read_error = read_data_file(data_directory, STRINGS_DIRECTORY + "/" + STRINGS_FILE_NAME, context.temp_allocator)
 	if read_error != nil {
-		return nil, fmt.tprintf("cannot read %s: %v", path, read_error)
+		return nil, path, fmt.tprintf("cannot read %s: %v", path, read_error)
 	}
-	return data, ""
+	return data, path, ""
 }
 
 // Frees the recorded missing keys. For tests that call text() without a
@@ -93,15 +93,7 @@ clear_missing_reports :: proc(table: ^String_Table) {
 }
 
 load_string_table :: proc(data_directory: string, allocator := context.allocator) -> (table: String_Table, ok: bool) {
-	path, join_error := os.join_path({data_directory, STRINGS_DIRECTORY, STRINGS_FILE_NAME}, context.temp_allocator)
-	if join_error != nil {
-		return {}, false
-	}
-	data, read_error := os.read_entire_file(path, context.temp_allocator)
-	if read_error != nil {
-		log_printf("error: cannot read %s: %v", path, read_error)
-		return {}, false
-	}
+	data, path := read_logged_data_file(data_directory, STRINGS_DIRECTORY + "/" + STRINGS_FILE_NAME) or_return
 	parse_error: json.Unmarshal_Error
 	table, parse_error = parse_string_table(data, allocator)
 	if parse_error != nil {

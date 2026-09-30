@@ -3,7 +3,6 @@ package game
 import "core:encoding/json"
 import "core:fmt"
 import "core:math"
-import "core:os"
 import "core:slice"
 
 // Recipes from data/recipes.sjson, resolved to dense indices after the
@@ -708,15 +707,7 @@ recipe_maker_key :: proc(maker: Recipe_Maker) -> string {
 }
 
 load_recipe_registry :: proc(data_directory: string, items: Item_Registry, fluids: Fluid_Registry, allocator := context.allocator) -> (registry: Recipe_Registry, ok: bool) {
-	path, join_error := os.join_path({data_directory, RECIPES_FILE_NAME}, context.temp_allocator)
-	if join_error != nil {
-		return {}, false
-	}
-	data, read_error := os.read_entire_file(path, context.temp_allocator)
-	if read_error != nil {
-		log_printf("error: cannot read %s: %v", path, read_error)
-		return {}, false
-	}
+	data, path := read_logged_data_file(data_directory, RECIPES_FILE_NAME) or_return
 	file, parse_error := parse_recipes_file(data, allocator)
 	if parse_error != nil {
 		log_printf("error: cannot parse %s: %v", path, parse_error)

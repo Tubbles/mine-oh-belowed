@@ -232,6 +232,9 @@ Screen :: enum u8 {
 	// The texture editor (ui_texture_editor.odin), above the Developer
 	// screen.
 	Textures,
+	// The data file browser (ui_data_browser.odin, work item 0129), above
+	// the Developer screen.
+	Data_Files,
 	Inventory,
 	// The panel of the player's open_machine.
 	Machine,
@@ -1189,7 +1192,7 @@ screen_pauses_simulation :: proc(screen: Screen) -> bool {
 	switch screen {
 	case .None, .Inventory, .Machine, .Recipes, .Journal, .Power, .Statistics, .Technologies, .Map:
 		return false
-	case .Pause, .Settings, .Developer, .Textures, .Touch_Layout, .Title, .New_World, .Load_World, .Confirm_Delete:
+	case .Pause, .Settings, .Developer, .Textures, .Data_Files, .Touch_Layout, .Title, .New_World, .Load_World, .Confirm_Delete:
 		return true
 	}
 	return false

@@ -46,6 +46,7 @@ developer_data_current = "No game data changes seen"
 developer_data_changed = "Game data files changed, reload to apply"
 developer_reload_data = "Reload data"
 developer_texture_editor = "Texture editor"
+developer_data_files = "Data files"
 
 // The texture editor (work item 0100)
 texture_editor_title = "Textures"
@@ -64,6 +65,19 @@ texture_editor_save = "Save"
 texture_editor_back = "Back"
 texture_editor_saved = "Texture edits saved to"
 texture_editor_save_failed = "Texture edits not saved"
+
+// The data file browser (work item 0129)
+data_files_title = "Data files"
+data_files_none = "No data files found"
+data_files_edited = "edited"
+data_files_discard = "Discard edit"
+data_files_back = "Back"
+data_files_binary = "Only text files open here"
+data_files_read_failed = "Cannot read"
+data_files_parse_failed = "Cannot parse"
+data_files_empty_file = "The file is empty"
+data_files_discarded = "Edit discarded:"
+data_files_discard_failed = "Could not discard the edit of"
 
 // Hot reload of the data files (work item 0054)
 reload_failed = "Could not reload"

@@ -1,7 +1,6 @@
 package game
 
 import "core:math"
-import "core:os"
 import "core:strings"
 import rl "shared:raylib"
 import "shared:raylib/rlgl"
@@ -67,13 +66,8 @@ load_chunk_shader :: proc(data_directory: string) -> (shader: rl.Shader, ok: boo
 // handed to raylib as source, one path on every platform; on Android
 // (work item 0114) the source is rewritten for GLSL ES first.
 load_shader_pair :: proc(data_directory, vertex_file, fragment_file, name: string) -> (shader: rl.Shader, ok: bool) {
-	vertex_path, vertex_error := os.join_path({data_directory, vertex_file}, context.temp_allocator)
-	fragment_path, fragment_error := os.join_path({data_directory, fragment_file}, context.temp_allocator)
-	if vertex_error != nil || fragment_error != nil {
-		return {}, false
-	}
-	vertex_source, vertex_read_error := os.read_entire_file(vertex_path, context.temp_allocator)
-	fragment_source, fragment_read_error := os.read_entire_file(fragment_path, context.temp_allocator)
+	vertex_source, vertex_path, vertex_read_error := read_data_file(data_directory, vertex_file, context.temp_allocator)
+	fragment_source, fragment_path, fragment_read_error := read_data_file(data_directory, fragment_file, context.temp_allocator)
 	if vertex_read_error != nil || fragment_read_error != nil {
 		log_printf("error: cannot read the %s shader from %s and %s", name, vertex_path, fragment_path)
 		return {}, false

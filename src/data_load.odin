@@ -160,6 +160,55 @@ copy_android_asset :: proc(internal, path: string) -> string {
 	return ""
 }
 
+// The data edits overlay (work item 0129): a copy of a data file under
+// <state>/mine-oh-belowed/data_edits/<relative path> wins over the data
+// file. The Data files screen (ui_data_browser.odin) shows which files
+// have one, work item 0130 writes them. The overlay is not watched: the
+// screen that changes it calls apply_data_edit_change (hot_reload.odin).
+DATA_EDITS_DIRECTORY_NAME :: "data_edits"
+
+// $XDG_STATE_HOME/mine-oh-belowed/data_edits. In the given allocator.
+data_edits_directory_from_environment :: proc(state_home, home: string, allocator := context.allocator) -> (directory: string, ok: bool) {
+	state_directory := log_directory_from_environment(state_home, home, context.temp_allocator) or_return
+	joined, error := os.join_path({state_directory, DATA_EDITS_DIRECTORY_NAME}, allocator)
+	return joined, error == nil
+}
+
+// The data file at relative_path (/ between names), or its overlay copy
+// when data_edits_directory has one, which is logged; path is the file
+// read, for the caller's problem lines. The data is in allocator, the path
+// in the temp allocator.
+read_data_file :: proc(data_directory, relative_path: string, allocator := context.allocator) -> (data: []byte, path: string, error: os.Error) {
+	return read_data_file_with_edits(data_directory, data_edits_directory(), relative_path, allocator)
+}
+
+// read_data_file with the overlay directory given; "" reads no overlay.
+read_data_file_with_edits :: proc(data_directory, edits_directory, relative_path: string, allocator := context.allocator) -> (data: []byte, path: string, error: os.Error) {
+	if edits_directory != "" {
+		overlay := join_save_path(edits_directory, relative_path)
+		if os.is_file(overlay) {
+			log_printf("data: %s from the data edits overlay %s", relative_path, overlay)
+			data, error = os.read_entire_file(overlay, allocator)
+			return data, overlay, error
+		}
+	}
+	path = join_save_path(data_directory, relative_path)
+	data, error = os.read_entire_file(path, allocator)
+	return data, path, error
+}
+
+// read_data_file for the loaders that log a file that cannot be read and
+// give up.
+read_logged_data_file :: proc(data_directory, relative_path: string) -> (data: []byte, path: string, ok: bool) {
+	error: os.Error
+	data, path, error = read_data_file(data_directory, relative_path, context.temp_allocator)
+	if error != nil {
+		log_printf("error: cannot read %s: %v", path, error)
+		return nil, path, false
+	}
+	return data, path, true
+}
+
 parse_game_config :: proc(data: []byte, allocator := context.allocator) -> (config: Game_Config, error: json.Unmarshal_Error) {
 	error = json.unmarshal(data, &config, .SJSON, allocator)
 	return
@@ -196,15 +245,7 @@ validate_starting_items :: proc(starting_items: []Starting_Item, items: Item_Reg
 }
 
 load_game_config :: proc(data_directory: string, allocator := context.allocator) -> (config: Game_Config, ok: bool) {
-	path, join_error := os.join_path({data_directory, GAME_CONFIG_FILE_NAME}, context.temp_allocator)
-	if join_error != nil {
-		return {}, false
-	}
-	data, read_error := os.read_entire_file(path, context.temp_allocator)
-	if read_error != nil {
-		log_printf("error: cannot read %s: %v", path, read_error)
-		return {}, false
-	}
+	data, path := read_logged_data_file(data_directory, GAME_CONFIG_FILE_NAME) or_return
 	parse_error: json.Unmarshal_Error
 	config, parse_error = parse_game_config(data, allocator)
 	if parse_error != nil {

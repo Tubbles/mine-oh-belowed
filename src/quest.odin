@@ -652,8 +652,10 @@ quest_file_names :: proc(directory: string, allocator := context.allocator) -> (
 	return found[:], true
 }
 
-load_chapter_file :: proc(directory, name: string, allocator := context.allocator) -> (file: Chapter_File, ok: bool) {
-	data, path := read_data_file(directory, name) or_return
+// The chapter list comes from the data directory's listing; each file is
+// read through the data edits overlay (read_data_file).
+load_chapter_file :: proc(data_directory, name: string, allocator := context.allocator) -> (file: Chapter_File, ok: bool) {
+	data, path := read_logged_data_file(data_directory, fmt.tprintf("%s/%s", QUESTS_DIRECTORY, name)) or_return
 	parse_error: json.Unmarshal_Error
 	file, parse_error = parse_chapter_file(data, allocator)
 	if parse_error != nil {
@@ -671,7 +673,7 @@ load_quest_registry :: proc(data_directory: string, references: Quest_References
 	names := quest_file_names(directory, context.temp_allocator) or_return
 	files := make([]Chapter_File, len(names), allocator)
 	for name, index in names {
-		files[index] = load_chapter_file(directory, name, allocator) or_return
+		files[index] = load_chapter_file(data_directory, name, allocator) or_return
 	}
 	problem: string
 	if registry, problem = resolve_quest_registry(files, references, allocator); problem != "" {

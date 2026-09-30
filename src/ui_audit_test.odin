@@ -128,6 +128,8 @@ Ui_Audit :: struct {
 	show_world_overlay: bool,
 	// The shipped procedural textures (work item 0100).
 	texture_editor:     Texture_Editor,
+	// The shipped data directory's tree, no overlay (work item 0129).
+	data_browser:       Data_Browser,
 	// The shipped touch layout as Default, no user layouts, and the
 	// editor's draft of Default (work item 0121).
 	default_touch_layout: Touch_Overlay_Layout,
@@ -291,6 +293,7 @@ audit_screen_context :: proc(audit: ^Ui_Audit) -> Screen_Context {
 		developer_chapter_count = len(audit.content.quests.chapters),
 		landing_pad = SAVE_TEST_LANDING_PAD,
 		texture_editor = &audit.texture_editor,
+		data_browser = &audit.data_browser,
 		touch_layouts = &audit.touch_layouts,
 		touch_layout_editor = &audit.touch_layout_editor,
 		default_touch_layout = audit.default_touch_layout,
@@ -540,6 +543,8 @@ make_ui_audit :: proc() -> ^Ui_Audit {
 	// Every quest but one is done, so the chapter and quest notes show.
 	audit.notes = make_test_notes(audit.content.quests)
 	load_texture_editor(&audit.texture_editor, test_data_directory(), "", audit.content.blocks)
+	audit.data_browser = make_data_browser()
+	rebuild_data_tree(&audit.data_browser, list_data_files(test_data_directory(), ""))
 	touch_layout, touch_layout_problem := parse_touch_overlay_file(#load("../data/touch_overlay.sjson"), "data/touch_overlay.sjson", context.temp_allocator)
 	assert(touch_layout_problem == "", touch_layout_problem)
 	audit.default_touch_layout = touch_layout
@@ -556,6 +561,7 @@ destroy_ui_audit :: proc(audit: ^Ui_Audit) {
 	delete(audit.title.saves)
 	destroy_map_view(&audit.map_view)
 	destroy_texture_editor(&audit.texture_editor)
+	destroy_data_browser(&audit.data_browser)
 	destroy_touch_layouts(&audit.touch_layouts)
 	destroy_touch_layout_editor(&audit.touch_layout_editor)
 	virtual.arena_destroy(&audit.frame_arena)
@@ -650,6 +656,59 @@ audit_touch_layout_editor :: proc(audit: ^Ui_Audit) {
 	audit_case(audit, {name = "touch layout name entry, system keyboard", screens = {.Pause, .Settings, .Touch_Layout}, keyboard = true, system_keyboard = true})
 }
 
+// The Data files screen (work item 0129): the tree with fonts, one font's
+// directory, the quests and the shaders expanded and a chapter marked edited and selected, so the
+// tag and a live Discard show; that chapter open with its first values
+// expanded; a shader open line by line. Each also with the touch row.
+// The browser is closed and collapsed again after.
+audit_data_browser :: proc(audit: ^Ui_Audit) {
+	browser := &audit.data_browser
+	defer close_data_browser_file(browser)
+	defer set_data_browser_selection(browser, -1, false)
+	for path in ([]string{"fonts", "fonts/play", "quests", "shaders"}) {
+		browser.expanded[find_data_tree_row(browser.rows, path)] = true
+	}
+	defer for &expanded in browser.expanded {
+		expanded = false
+	}
+	chapter := find_data_tree_row(browser.rows, "quests/chapter_01.sjson")
+	assert(chapter >= 0, "no quests/chapter_01.sjson in the data directory")
+	set_data_browser_selection(browser, chapter, true)
+	screens := []Screen{.Pause, .Developer, .Data_Files}
+	audit_case(audit, {name = "data files", screens = screens, walk_focus = true})
+	audit_case(audit, {name = "data files touch row", screens = screens, hud = true, touch = true})
+	open_data_browser_file(browser, test_data_directory())
+	expand_first_data_values(browser)
+	audit_case(audit, {name = "data files, a chapter open", screens = screens, walk_focus = true})
+	audit_case(audit, {name = "data files, a chapter open, touch row", screens = screens, hud = true, touch = true})
+	set_data_browser_selection(browser, -1, false)
+	browser.selected = find_data_tree_row(browser.rows, "shaders/chunk.fs")
+	open_data_browser_file(browser, test_data_directory())
+	audit_case(audit, {name = "data files, a shader open", screens = screens})
+}
+
+// Marks the chosen row edited (-1 clears every mark) and selects it.
+set_data_browser_selection :: proc(browser: ^Data_Browser, row: int, edited: bool) {
+	for &entry in browser.rows {
+		entry.edited = false
+	}
+	if row >= 0 {
+		browser.rows[row].edited = edited
+	}
+	browser.selected = row
+}
+
+// The first object or array and the first one inside it.
+expand_first_data_values :: proc(browser: ^Data_Browser) {
+	expanded_count := 0
+	for row, index in browser.value_rows {
+		if row.expandable && expanded_count < 2 {
+			browser.value_expanded[index] = true
+			expanded_count += 1
+		}
+	}
+}
+
 // The touch row of every screen besides the slot screens (0137), with
 // the HUD under it as in the game.
 audit_touch_rows :: proc(audit: ^Ui_Audit) {
@@ -725,6 +784,7 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 	audit_desktop_scaled_display(audit)
 	audit_case(audit, {name = "developer", screens = {.Pause, .Developer}, walk_focus = true})
 	audit_case(audit, {name = "textures", screens = {.Pause, .Developer, .Textures}, walk_focus = true})
+	audit_data_browser(audit)
 	audit_touch_layout_editor(audit)
 	audit_case(audit, {name = "inventory", screens = {.Inventory}, walk_focus = true})
 	audit_case(audit, {name = "inventory touch row", screens = {.Inventory}, hud = true, touch = true})

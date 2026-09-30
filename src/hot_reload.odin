@@ -50,13 +50,13 @@ report_reload_problem :: proc(state: ^Frame_State, what, problem: string) {
 // frame in places (the recipe names are refreshed here, others may not
 // be), and a table is small.
 reload_strings :: proc(state: ^Frame_State) -> string {
-	data, problem := read_strings_file(state.data_directory)
+	data, path, problem := read_strings_file(state.data_directory)
 	if problem != "" {
 		return problem
 	}
 	old_entries, error := replace_string_entries(&global_string_table, data)
 	if error != nil {
-		return fmt.tprintf("cannot parse %s/%s/%s: %v", state.data_directory, STRINGS_DIRECTORY, STRINGS_FILE_NAME, error)
+		return fmt.tprintf("cannot parse %s: %v", path, error)
 	}
 	append(&state.retired_strings, old_entries)
 	refresh_content_names(&state.content, virtual.arena_allocator(state.content_arena))
@@ -74,7 +74,7 @@ reload_fonts :: proc(state: ^Frame_State) -> string {
 	}
 	append(&state.retired_font_arenas, state.fonts.arena)
 	state.fonts = fonts
-	strings_text, _ := read_strings_file(state.data_directory)
+	strings_text, _, _ := read_strings_file(state.data_directory)
 	replace_font_cache_sources(&state.font_cache, fonts.families, string(strings_text), state.settings)
 	return ""
 }
@@ -235,6 +235,25 @@ apply_presentation_changes :: proc(state: ^Frame_State, changed: Data_File_Categ
 			report_reload(state, text(presentation_reload_keys[category]))
 		}
 	}
+}
+
+// The data edits overlay (work item 0129, read_data_file) is not
+// watched: a change to it comes through here, from the Data files
+// screen's Discard (and 0130's Save), and does what the watcher does for
+// the same file in the data directory. A presentation file reloads in
+// place, a content file asks for the content reload, game.sjson says a
+// restart is needed. The category, for the caller and the tests.
+apply_data_edit_change :: proc(state: ^Frame_State, relative_path: string) -> Data_File_Category {
+	category := data_file_category(relative_path)
+	switch {
+	case category in PRESENTATION_CATEGORIES:
+		apply_presentation_changes(state, {category})
+	case category == .Content:
+		state.reload_requested = true
+	case category == .Restart:
+		report_reload(state, text("reload_restart_needed"))
+	}
+	return category
 }
 
 // The watcher.

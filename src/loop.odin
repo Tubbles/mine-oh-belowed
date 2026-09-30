@@ -178,6 +178,9 @@ Frame_State :: struct {
 	// The texture editor's entries (work item 0100, ui_texture_editor.odin),
 	// read at start and served by serve_texture_editor.
 	texture_editor:       Texture_Editor,
+	// The Data files screen's tree and open file (work item 0129,
+	// ui_data_browser.odin), served by serve_data_browser.
+	data_browser:         Data_Browser,
 	// The user touch layouts (0121, touch_overlay.odin), read at start and
 	// written by serve_touch_layouts, and the layout editor's draft
 	// (ui_touch_layout_editor.odin).
@@ -768,6 +771,7 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 		show_world_overlay = &state.show_world_overlay,
 		developer_chapter_count = len(content.developer_kits.kits),
 		texture_editor  = &state.texture_editor,
+		data_browser    = &state.data_browser,
 		touch_layouts   = &state.touch_layouts,
 		touch_layout_editor = &state.touch_layout_editor,
 		default_touch_layout = content.touch_overlay,
@@ -1108,7 +1112,7 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	defer destroy_hot_reload_state(&state)
 	defer destroy_ui_state(&state.ui)
 	defer release_ui_images(&state.ui_images)
-	strings_text, _ := read_strings_file(data_directory)
+	strings_text, _, _ := read_strings_file(data_directory)
 	init_font_cache(&state.font_cache, data_directory, state.fonts.families, string(strings_text), state.settings)
 	state.ui.fonts, state.ui.measure_text = &state.font_cache, measure_font_text
 	defer destroy_font_cache(&state.font_cache)
@@ -1146,6 +1150,8 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	defer destroy_command_frame_state(&state)
 	load_texture_editor(&state.texture_editor, data_directory, texture_edits_path(), state.content.blocks)
 	defer destroy_texture_editor(&state.texture_editor)
+	state.data_browser = make_data_browser()
+	defer destroy_data_browser(&state.data_browser)
 	touch_layouts_problem: string
 	if state.touch_layouts, touch_layouts_problem = load_touch_layouts(state.environment); touch_layouts_problem != "" {
 		ui_toast(&state.ui, touch_layouts_locked_text(state.touch_layouts))
@@ -1162,6 +1168,7 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	for !rl.WindowShouldClose() && !state.quit_requested {
 		update_frame(&state)
 		serve_texture_editor(&state)
+		serve_data_browser(&state)
 		serve_touch_layouts(&state)
 		render_frame(&state)
 		update_audio(&state.audio, state.settings, state.frame_seconds)
@@ -1365,6 +1372,20 @@ texture_edits_path :: proc() -> string {
 	return path
 }
 
+// $XDG_STATE_HOME/mine-oh-belowed/data_edits (work item 0129,
+// read_data_file) in the temp allocator, "" without a state directory.
+// Always "" under odin test, so the tests read the shipped data whatever
+// overlay the machine holds.
+data_edits_directory :: proc() -> string {
+	when ODIN_TEST {
+		return ""
+	} else {
+		directories := platform_directories(context.temp_allocator)
+		directory, _ := data_edits_directory_from_environment(directories.state_home, directories.home, context.temp_allocator)
+		return directory
+	}
+}
+
 // Before the frame's screens: the files read again when the Developer
 // screen asked or a content reload renumbered the blocks; while the
 // editor is open every entry's tile copied into the block atlas, which
@@ -1385,6 +1406,50 @@ serve_texture_editor :: proc(state: ^Frame_State) {
 		editor.save_requested = false
 		save_texture_edits(state)
 	}
+}
+
+// The Data files screen (work item 0129), before the frame's screens: a
+// close first (the last frame's draw list pointed into the file), then a
+// discard, which reads the tree again, then the tree when the Developer
+// screen asked, then the file the screen opens.
+serve_data_browser :: proc(state: ^Frame_State) {
+	browser := &state.data_browser
+	apply_data_browser_close_request(browser)
+	if browser.discard_requested {
+		browser.discard_requested = false
+		discard_data_edit(state)
+	}
+	if browser.refresh_requested {
+		browser.refresh_requested = false
+		rebuild_data_tree(browser, list_data_files(state.data_directory, data_edits_directory()))
+	}
+	if browser.open_requested {
+		browser.open_requested = false
+		open_data_browser_file(browser, state.data_directory)
+	}
+}
+
+// Deletes the selected file's overlay copy and applies the change as the
+// watcher would (apply_data_edit_change); the tree and an open file are
+// read again. A copy that cannot be deleted is logged and toasted.
+discard_data_edit :: proc(state: ^Frame_State) {
+	browser := &state.data_browser
+	edits_directory := data_edits_directory()
+	if browser.selected < 0 || browser.selected >= len(browser.rows) || edits_directory == "" {
+		return
+	}
+	relative_path := strings.clone(browser.rows[browser.selected].path, context.temp_allocator)
+	overlay := join_save_path(edits_directory, relative_path)
+	if error := os.remove(overlay); error != nil {
+		log_printf("error: cannot discard the data edit %s: %v", overlay, error)
+		ui_toast(&state.ui, fmt.tprintf("%s %s", text("data_files_discard_failed"), relative_path))
+		return
+	}
+	log_printf("data: discarded the data edit %s", overlay)
+	ui_toast(&state.ui, fmt.tprintf("%s %s", text("data_files_discarded"), relative_path))
+	apply_data_edit_change(state, relative_path)
+	browser.refresh_requested = true
+	browser.open_requested = browser.open
 }
 
 // The touch layouts (0121), between frames: the editor's request, served

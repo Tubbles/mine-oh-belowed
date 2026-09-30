@@ -498,6 +498,22 @@ read_procedural_textures_file :: proc(path: string, registry: Block_Registry) ->
 	return entries, true, problem
 }
 
+// The data file, through the data edits overlay (read_data_file). found
+// is false for a missing file. In the temp allocator.
+read_procedural_textures_data_file :: proc(data_directory: string, registry: Block_Registry) -> (entries: []Procedural_Texture, path: string, found: bool, problem: string) {
+	data: []byte
+	read_error: os.Error
+	data, path, read_error = read_data_file(data_directory, TEXTURES_DIRECTORY + "/" + PROCEDURAL_TEXTURES_FILE_NAME, context.temp_allocator)
+	if read_error == .Not_Exist {
+		return nil, path, false, ""
+	}
+	if read_error != nil {
+		return nil, path, true, fmt.tprintf("%s: cannot read: %v", path, read_error)
+	}
+	entries, problem = parse_procedural_textures(data, path, registry, context.temp_allocator)
+	return entries, path, true, problem
+}
+
 // $XDG_STATE_HOME/mine-oh-belowed/texture_edits.sjson. In the given
 // allocator.
 texture_edits_path_from_environment :: proc(state_home, home: string, allocator := context.allocator) -> (path: string, ok: bool) {
@@ -511,8 +527,7 @@ texture_edits_path_from_environment :: proc(state_home, home: string, allocator 
 // the data file the ores fall back to files or their colour, without the
 // edits file the data file's entries stand. edits_path "" reads no edits.
 load_procedural_textures :: proc(data_directory, edits_path: string, registry: Block_Registry) -> []Procedural_Texture {
-	data_path := join_save_path(data_directory, TEXTURES_DIRECTORY, PROCEDURAL_TEXTURES_FILE_NAME)
-	base, base_found, base_problem := read_procedural_textures_file(data_path, registry)
+	base, data_path, base_found, base_problem := read_procedural_textures_data_file(data_directory, registry)
 	if base_problem != "" {
 		log_printf("error: %s, the procedural textures are left out", base_problem)
 	} else if !base_found {

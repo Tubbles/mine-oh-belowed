@@ -3,7 +3,6 @@ package game
 import "core:encoding/json"
 import "core:fmt"
 import "core:math"
-import "core:os"
 
 // The UI theme (work item 0071): colours and art metrics from
 // data/ui/theme.sjson, loaded at start and on a presentation reload
@@ -469,13 +468,8 @@ parse_ui_theme :: proc(data: []byte, source: string) -> (theme: Ui_Theme, proble
 	return theme, ""
 }
 
-ui_theme_path :: proc(data_directory: string) -> string {
-	return join_save_path(data_directory, UI_THEME_DIRECTORY, UI_THEME_FILE_NAME)
-}
-
 load_ui_theme :: proc(data_directory: string) -> (theme: Ui_Theme, problem: string) {
-	path := ui_theme_path(data_directory)
-	data, error := os.read_entire_file(path, context.temp_allocator)
+	data, path, error := read_data_file(data_directory, UI_THEME_DIRECTORY + "/" + UI_THEME_FILE_NAME, context.temp_allocator)
 	if error != nil {
 		return {}, fmt.tprintf("%s: cannot read: %v", path, error)
 	}

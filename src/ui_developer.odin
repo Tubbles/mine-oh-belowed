@@ -150,13 +150,18 @@ developer_actions :: proc(state: ^Ui_State, content: ^Ui_Rectangle, screen_conte
 	developer_editors_row(state, developer_row(content), screen_context)
 }
 
-// The game's editors (DESIGN.md, Editors): the texture editor so far
-// (work item 0100). Opening it asks the frame loop to read the texture
-// files again, so Reset returns to the data file as it is now.
+// The game's editors (DESIGN.md, Editors): the texture editor (work item
+// 0100) and the data file browser (0129). Opening either asks the frame
+// loop to read the files again: Reset returns to the data file as it is
+// now, the tree shows the files and overlay copies there are now.
 developer_editors_row :: proc(state: ^Ui_State, row: Ui_Rectangle, screen_context: Screen_Context) {
 	if ui_button(state, column(row, 3, 0, UI_GAP), text("developer_texture_editor")) && screen_context.texture_editor != nil {
 		screen_context.texture_editor.refresh_requested = true
 		push_screen(&state.screens, .Textures)
+	}
+	if ui_button(state, column(row, 3, 1, UI_GAP), text("developer_data_files")) && screen_context.data_browser != nil {
+		screen_context.data_browser.refresh_requested = true
+		push_screen(&state.screens, .Data_Files)
 	}
 }
 

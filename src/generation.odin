@@ -2,7 +2,6 @@ package game
 
 import "core:encoding/json"
 import "core:fmt"
-import "core:os"
 
 // Blocks the generator places by itself, independent of the biome table.
 Generation_Blocks :: struct {
@@ -92,23 +91,8 @@ make_generator :: proc(
 	return generator, ""
 }
 
-read_data_file :: proc(data_directory, file_name: string) -> (data: []byte, path: string, ok: bool) {
-	join_error: os.Error
-	path, join_error = os.join_path({data_directory, file_name}, context.temp_allocator)
-	if join_error != nil {
-		return nil, file_name, false
-	}
-	read_error: os.Error
-	data, read_error = os.read_entire_file(path, context.temp_allocator)
-	if read_error != nil {
-		log_printf("error: cannot read %s: %v", path, read_error)
-		return nil, path, false
-	}
-	return data, path, true
-}
-
 load_biomes_file :: proc(data_directory: string, allocator := context.allocator) -> (file: Biomes_File, ok: bool) {
-	data, path := read_data_file(data_directory, BIOMES_FILE_NAME) or_return
+	data, path := read_logged_data_file(data_directory, BIOMES_FILE_NAME) or_return
 	parse_error: json.Unmarshal_Error
 	file, parse_error = parse_biomes_file(data, allocator)
 	if parse_error != nil {
@@ -119,7 +103,7 @@ load_biomes_file :: proc(data_directory: string, allocator := context.allocator)
 }
 
 load_veins_file :: proc(data_directory: string, allocator := context.allocator) -> (file: Veins_File, ok: bool) {
-	data, path := read_data_file(data_directory, VEINS_FILE_NAME) or_return
+	data, path := read_logged_data_file(data_directory, VEINS_FILE_NAME) or_return
 	parse_error: json.Unmarshal_Error
 	file, parse_error = parse_veins_file(data, allocator)
 	if parse_error != nil {
