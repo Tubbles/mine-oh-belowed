@@ -108,3 +108,4 @@ Written at the end of the Android app series (0112 to 0115), each with why it wa
 
 - The save round trip test never covered oil machines: an oil fixture procedure sat in `save_test.odin` without a caller, and 0142 removed it as dead. A save test that places a pumpjack, a refinery and a pipe run and compares the state hash after a reload would close the gap (`save_test.odin`, `simulation_state_hash`).
 - `tools/check_dead_code.py` and `tools/code_graph.py` run by hand like `check_docs.py`; the same CI step would keep all three honest.
+- The glyph bar and the button glyphs ignore rebindings: `glyph_key` and `glyph_icon` (`ui_widgets.odin`) take a device and a button but no bindings, so a rebound action keeps showing the default glyph (ui audit, `doc/audit/ui.md`). Passing the bindings in and looking the glyph up from the bound control fixes it; the decision is whether the glyph shows the first binding or all of them.
