@@ -58,6 +58,7 @@ kits = [
 			{item = "burner_inserter", count = 20}
 			{item = "iron_chest", count = 10}
 			{item = "offshore_pump", count = 1}
+			{item = "fuel_generator", count = 1}
 			{item = "boiler", count = 2}
 			{item = "steam_engine", count = 2}
 			{item = "pipe", count = 20}
@@ -82,6 +83,7 @@ kits = [
 			{item = "steam_engine", count = 5}
 			{item = "boiler", count = 3}
 			{item = "offshore_pump", count = 2}
+			{item = "fuel_generator", count = 1}
 			{item = "pipe", count = 50}
 			{item = "iron_chest", count = 10}
 			{item = "iron_plate", count = 200}

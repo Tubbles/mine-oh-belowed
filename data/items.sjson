@@ -158,6 +158,7 @@ items = [
 	{id = "pump", name_key = "item_pump", description_key = "describe_item_pump", category = "machine", stack_size = 10, price = 20}
 	{id = "storage_tank", name_key = "item_storage_tank", description_key = "describe_item_storage_tank", category = "machine", stack_size = 10, price = 250}
 	{id = "boiler", name_key = "item_boiler", description_key = "describe_item_boiler", category = "machine", stack_size = 10, price = 13}
+	{id = "fuel_generator", name_key = "item_fuel_generator", description_key = "describe_item_fuel_generator", category = "machine", stack_size = 10, price = 31}
 	{id = "steam_engine", name_key = "item_steam_engine", description_key = "describe_item_steam_engine", category = "machine", stack_size = 10, price = 62}
 	{id = "small_pole", name_key = "item_small_pole", description_key = "describe_item_small_pole", category = "machine", stack_size = 10, price = 3}
 	{id = "big_pole", name_key = "item_big_pole", description_key = "describe_item_big_pole", category = "machine", stack_size = 10, price = 28}

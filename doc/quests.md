@@ -84,7 +84,7 @@ Target: forty five minutes. The pain is the furnace going cold. Quests: connect 
 
 ## Chapter 4: Power
 
-Target: seventy five minutes. Quests: offshore pump, boiler and steam engine, the first pole, lights on (a lamp needs glass, which needs sand, the first time discovery sends the player digging on purpose), electric drill replacing a burner drill, an assembler making gears, a lab and the first science pack, research automation, a brownout the first time demand exceeds supply ("Demand exceeded supply. Machines slowed down. Nobody was harmed, which is not the point."), a second engine. Main quest, "The first contract": deliver 100 electronic circuits to the landing pad. The venture's reply opens phase 5: contracts, and the ore processing schematics that come with the first low grade ore.
+Target: seventy five minutes. Quests: fuel generator, offshore pump, boiler and steam engine (the offshore pump draws power since 0140, so a small fuel generator burning coal or logs starts it for the first boiler), the first pole, lights on (a lamp needs glass, which needs sand, the first time discovery sends the player digging on purpose), electric drill replacing a burner drill, an assembler making gears, a lab and the first science pack, research automation, a brownout the first time demand exceeds supply ("Demand exceeded supply. Machines slowed down. Nobody was harmed, which is not the point."), a second engine. Main quest, "The first contract": deliver 100 electronic circuits to the landing pad. The venture's reply opens phase 5: contracts, and the ore processing schematics that come with the first low grade ore.
 
 ## Chapter 5: Contracts
 

@@ -1,6 +1,6 @@
 # 0140: A fuel generator for the first electricity, and a powered offshore pump
 
-Status: todo
+Status: implemented
 
 ## Goal
 
@@ -18,3 +18,14 @@ Asked on 2026-09-30, following 0139: "I also think the offshore pump should requ
 
 - `./build.sh check`, `./build.sh check-android`, `./build.sh test`. Tests: the fuel generator with coal in its slot offers 75 kW and burns fuel only for the energy delivered at a quarter efficiency (a coal gives a quarter of its joules), produced equals consumed, the combustion generator at 100 is unchanged; the offshore pump plus an electric drill on one fuel generator brown out (the combustion generator's tests as the pattern); an unpowered offshore pump pushes nothing and a powered one 1200 litres per second; the steam chapter's quest completes in the chapter test with the fuel generator placed; the recipe and technology graph validates; the model and icon load.
 - The user: place a fuel generator with coal, a small pole and the offshore pump, see water flow; remove the coal, see the pump say Unpowered.
+
+## Implemented
+
+- The fuel generator is kind `combustion_generator` with no fluid ports (the kind now accepts none), 2 by 2 by 2, one fuel slot, 75 kW, `fuel_efficiency_percent = 25`; the combustion generator has 100. Recipe on the start channel with no technology, like the small pole: 5 iron plates, 3 iron gears, 1 stone furnace, 4 copper wire. Model from `tools/make_placeholder_models.py` (glow motion, no part), icon from `tools/make_placeholder_textures.py`; rerunning both changed no other file.
+- The offshore pump draws 60 kW while its port has room, pumps its rate times the satisfaction, and starts Unpowered.
+- The panel line "Efficiency N %  Burn time m:ss" shows on every combustion generator, not only the fuel generator, so both read the same.
+- Deviation: no note. Notes in `data/notes.sjson` are chapter milestones, not one per machine.
+- Deviation: files beyond the list, each because a steam plant can no longer start itself: `data/blueprints/benchmark/power.sjson` (a fuel generator with 20 coal) and `oil.sjson` (a small pole over the offshore pump that stood outside every supply volume), `data/dev_kits.sjson` (a fuel generator in the chapter 4 and 5 kits), `src/power_test.odin` (`build_power_plant`, shared by the power, oil, chemistry and save tests, gained a fuel generator and a pole), `src/fluid_test.odin` (tests of the pump itself set its power), `src/furnace.odin` (`refuel_from_slot` takes the efficiency), `src/power_network.odin` (the offshore pump's demand), `src/ui_fluid.odin` (panel rows), `SUGGESTIONS.md` (balance list), and the registry counts in `src/item_test.odin`, `src/recipe_test.odin`, `src/machine_test.odin`.
+- Tests: `test_fuel_generator_data_loads`, `test_fuel_generator_burns_coal_at_a_quarter`, `test_fuel_generator_browns_out_under_a_pump_and_a_drill`, `test_fuel_efficiency_is_validated` (`src/combustion_test.odin`), `test_offshore_pump_pumps_only_with_power` (`src/fluid_test.odin`), the chapter 4 order test now needs the fuel generator. Model and icon loading are covered by the existing tests over every machine and item.
+- Review fixes: `dispatch_order` on every generator (hydro 0, steam engine 1, combustion generator 2, fuel generator 3), and `share_generator_energy` serves the orders from the lowest, so the fuel generator burns nothing beside running engines (`test_fuel_generator_only_covers_what_the_engines_cannot`, `test_generators_serve_in_dispatch_order`, `test_dispatch_order_is_validated`); the combustion versus steam brownout test now gives the engine its 60 J first. The offshore pump pumps per power credit step (`test_offshore_pump_yields_its_rate_times_the_satisfaction`, 990 and 40 per mille); the electric pump is unchanged. `src/benchmark_factory.odin` counts a generator in the Idle state as standing by, since the benchmark's fuel generator now idles behind the engines; `doc/architecture.md` says so. The chapter 4 test again checks that the steam quest waits for the engine as well as the fuel generator. `test_combustion_fuel_line` covers the panel line and the row counts.
+

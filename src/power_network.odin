@@ -18,8 +18,10 @@ import "base:runtime"
 // satisfaction is min(supply, demand) over demand in per mille, every
 // consumer receives its demand times the satisfaction and works at that
 // fraction (power_machine.odin), and the generators share the energy
-// actually received in proportion to their offers and burn fuel or steam
-// only for their share.
+// actually received in their dispatch order (0140: the lowest order
+// serves first, up to its offers, the next takes the rest), within one
+// order in proportion to their offers, and burn fuel or steam only for
+// their share.
 
 Electric_Node :: struct {
 	handle:        Entity_Handle,
@@ -62,6 +64,8 @@ Electric_Participant :: struct {
 	generator: bool,
 	offered:   u64,
 	delivered: u64,
+	// Generators: lower serves first (share_generator_energy).
+	dispatch_order: u8,
 }
 
 Electric_Networks :: struct {
@@ -287,21 +291,62 @@ add_participant_offer :: proc(network: ^Electric_Network, participant: Electric_
 	}
 }
 
+// A generator of the given order inside a network.
+generator_at_order :: proc(participant: Electric_Participant, order: u8) -> bool {
+	return participant.network >= 0 && participant.generator && participant.dispatch_order == order
+}
+
+highest_dispatch_order :: proc(participants: []Electric_Participant) -> u8 {
+	highest: u8
+	for participant in participants {
+		if participant.generator {
+			highest = max(highest, participant.dispatch_order)
+		}
+	}
+	return highest
+}
+
+// One order at a time from the lowest: each takes up to its offers of
+// what the network's consumers received and has not been assigned yet.
 share_generator_energy :: proc(participants: []Electric_Participant, networks: []Electric_Network) {
-	assigned := make([]u64, len(networks), context.temp_allocator)
+	remaining := make([]u64, len(networks), context.temp_allocator)
+	for network, index in networks {
+		remaining[index] = network.delivered
+	}
+	for order in 0 ..= int(highest_dispatch_order(participants)) {
+		share_dispatch_level(participants, remaining, u8(order))
+	}
+}
+
+// Within one order: in proportion to the offers, rounded down, the rest a
+// joule at a time in participant order.
+share_dispatch_level :: proc(participants: []Electric_Participant, remaining: []u64, order: u8) {
+	level_supply := make([]u64, len(remaining), context.temp_allocator)
+	for participant in participants {
+		if generator_at_order(participant, order) {
+			level_supply[participant.network] += participant.offered
+		}
+	}
+	level_share := make([]u64, len(remaining), context.temp_allocator)
+	for supply, index in level_supply {
+		level_share[index] = min(supply, remaining[index])
+	}
+	assigned := make([]u64, len(remaining), context.temp_allocator)
 	for &participant in participants {
-		if participant.network >= 0 && participant.generator && networks[participant.network].supply > 0 {
-			network := networks[participant.network]
-			participant.delivered = participant.offered * network.delivered / network.supply
+		if generator_at_order(participant, order) && level_supply[participant.network] > 0 {
+			participant.delivered = participant.offered * level_share[participant.network] / level_supply[participant.network]
 			assigned[participant.network] += participant.delivered
 		}
 	}
 	for &participant in participants {
-		if participant.network >= 0 && participant.generator {
-			extra := min(networks[participant.network].delivered - assigned[participant.network], participant.offered - participant.delivered)
+		if generator_at_order(participant, order) {
+			extra := min(level_share[participant.network] - assigned[participant.network], participant.offered - participant.delivered)
 			participant.delivered += extra
 			assigned[participant.network] += extra
 		}
+	}
+	for share, index in level_share {
+		remaining[index] -= share
 	}
 }
 
@@ -324,13 +369,13 @@ pump_wants_power :: proc(pump: Fluid_Machine, machine: Machine) -> bool {
 	return input.level > 0 && buffer_room(pump.buffers[output_index], machine.fluid_ports[output_index].capacity) > 0
 }
 
-// Pumps while they can move fluid, tar pit pumps while there is room,
-// flare stacks while they relieve gas.
+// Pumps while they can move fluid, offshore and tar pit pumps while
+// there is room, flare stacks while they relieve gas.
 fluid_machine_wants_power :: proc(fluid_machine: Fluid_Machine, machine: Machine, fluids: Fluid_Registry) -> bool {
 	#partial switch machine.kind {
 	case .Pump:
 		return pump_wants_power(fluid_machine, machine)
-	case .Tar_Pit_Pump:
+	case .Offshore_Pump, .Tar_Pit_Pump:
 		return source_pump_has_room(fluid_machine, machine)
 	case .Flare_Stack:
 		return flare_stack_is_relieving(fluid_machine, machine, fluids)
@@ -368,7 +413,9 @@ collect_electric_participants :: proc(world: ^World, content: Simulation_Content
 		case !fluid_machine.alive:
 		case machine_is_generator(machine):
 			offer := generator_available_joules(world, fluid_machine, machine, content, tick_rate)
-			append(&networks.participants, make_participant(networks, fluid_machine.common, true, offer))
+			participant := make_participant(networks, fluid_machine.common, true, offer)
+			participant.dispatch_order = machine.dispatch_order
+			append(&networks.participants, participant)
 		case machine_is_electric_consumer(machine):
 			demand := fluid_machine_wants_power(fluid_machine, machine, content.fluids) ? electric_joules_per_tick(machine.electric_power_watts, tick_rate) : 0
 			append(&networks.participants, make_participant(networks, fluid_machine.common, false, demand))

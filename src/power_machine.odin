@@ -174,8 +174,9 @@ steam_engine_state :: proc(delivered, available: u64, network_demand: u64) -> Fl
 // Combustion generators: like a steam engine, but the energy comes from
 // the gas in its one port (whole litres at the gas's
 // fuel_kilojoules_per_litre) and, with no burnable gas left, from fuel
-// items in its slot, lit whole like a furnace's. What was drawn and not
-// yet delivered waits in fuel_joules.
+// items in its slot, lit whole like a furnace's at the machine's
+// fuel_efficiency_percent. What was drawn and not yet delivered waits in
+// fuel_joules. The fuel generator (0140) is one without a port.
 
 COMBUSTION_FUEL_SLOT :: 0
 
@@ -192,19 +193,22 @@ combustion_gas_joules :: proc(generator: Fluid_Machine, fluids: Fluid_Registry) 
 	return u64(max(generator.buffers[0].level, 0)) * combustion_gas_joules_per_litre(generator, fluids)
 }
 
-combustion_slot_joules :: proc(generator: Fluid_Machine, items: Item_Registry) -> u64 {
+combustion_slot_joules :: proc(generator: Fluid_Machine, machine: Machine, items: Item_Registry) -> u64 {
 	fuel := generator.slots[COMBUSTION_FUEL_SLOT]
 	if stack_is_empty(fuel) || !item_is_fuel(items, fuel.item) {
 		return 0
 	}
-	return u64(fuel.count) * u64(items.items[fuel.item].fuel_kilojoules) * 1000
+	return u64(fuel.count) * u64(fuel_joules_at_efficiency(items.items[fuel.item].fuel_kilojoules, machine.fuel_efficiency_percent))
 }
 
-// Up to its output over the tick, and no more than its gas, its fuel
-// items and what it drew already are worth.
+// What its gas, its fuel items and what it drew already are worth.
+combustion_generator_stored_joules :: proc(generator: Fluid_Machine, machine: Machine, fluids: Fluid_Registry, items: Item_Registry) -> u64 {
+	return u64(generator.fuel_joules) + combustion_gas_joules(generator, fluids) + combustion_slot_joules(generator, machine, items)
+}
+
+// Up to its output over the tick, and no more than it has stored.
 combustion_generator_available_joules :: proc(generator: Fluid_Machine, machine: Machine, fluids: Fluid_Registry, items: Item_Registry, tick_rate: int) -> u64 {
-	stored := u64(generator.fuel_joules) + combustion_gas_joules(generator, fluids) + combustion_slot_joules(generator, items)
-	return min(electric_joules_per_tick(machine.electric_output_watts, tick_rate), stored)
+	return min(electric_joules_per_tick(machine.electric_output_watts, tick_rate), combustion_generator_stored_joules(generator, machine, fluids, items))
 }
 
 // Whole litres, as few as cover what fuel_joules lacks.
@@ -221,11 +225,11 @@ draw_combustion_gas :: proc(generator: ^Fluid_Machine, fluids: Fluid_Registry, j
 
 // Gas first, then fuel items one at a time, only as the delivered energy
 // needs them.
-deliver_combustion_generator_energy :: proc(generator: ^Fluid_Machine, fluids: Fluid_Registry, items: Item_Registry, joules: u64) {
+deliver_combustion_generator_energy :: proc(generator: ^Fluid_Machine, machine: Machine, fluids: Fluid_Registry, items: Item_Registry, joules: u64) {
 	draw_combustion_gas(generator, fluids, joules)
 	needed := u32(joules)
 	fuel := &generator.slots[COMBUSTION_FUEL_SLOT]
-	for generator.fuel_joules < needed && refuel_from_slot(&generator.fuel_joules, &generator.fuel_item_joules, fuel, items, needed) {
+	for generator.fuel_joules < needed && refuel_from_slot(&generator.fuel_joules, &generator.fuel_item_joules, fuel, items, needed, machine.fuel_efficiency_percent) {
 	}
 	generator.fuel_joules -= min(needed, generator.fuel_joules)
 	generator.generated_joules = needed
@@ -239,6 +243,38 @@ combustion_generator_state :: proc(delivered, available: u64, network_demand: u6
 		return .No_Fuel
 	}
 	return .Idle
+}
+
+// Combustion generators turn 1 to 100 percent of a fuel item's energy
+// into electricity (0140); no other kind burns items for power.
+validate_fuel_efficiency :: proc(definition: Machine_Definition, kind: Machine_Kind) -> string {
+	if kind == .Combustion_Generator && (definition.fuel_efficiency_percent < 1 || definition.fuel_efficiency_percent > 100) {
+		return fmt.tprintf("combustion generator %q needs a fuel_efficiency_percent from 1 to 100", definition.id)
+	}
+	if kind != .Combustion_Generator && definition.fuel_efficiency_percent != 0 {
+		return fmt.tprintf("machine %q is not a combustion generator and cannot have fuel_efficiency_percent", definition.id)
+	}
+	return ""
+}
+
+// Dispatch orders run from 0 (serves first) to this.
+MAXIMUM_DISPATCH_ORDER :: 9
+
+machine_kind_is_generator :: proc(kind: Machine_Kind) -> bool {
+	return kind == .Steam_Engine || kind == .Combustion_Generator || kind == .Hydro_Turbine
+}
+
+// Every generator kind names its dispatch_order (0140); no other kind
+// has one.
+validate_dispatch_order :: proc(definition: Machine_Definition, kind: Machine_Kind) -> string {
+	order, found := definition.dispatch_order.?
+	if machine_kind_is_generator(kind) && (!found || order < 0 || order > MAXIMUM_DISPATCH_ORDER) {
+		return fmt.tprintf("generator %q needs a dispatch_order from 0 to %d", definition.id, MAXIMUM_DISPATCH_ORDER)
+	}
+	if !machine_kind_is_generator(kind) && found {
+		return fmt.tprintf("machine %q is not a generator and cannot have dispatch_order", definition.id)
+	}
+	return ""
 }
 
 // Hydro turbines: no fuel and no ports. The power comes from the flowing
@@ -318,7 +354,7 @@ generator_available_joules :: proc(world: ^World, generator: Fluid_Machine, mach
 deliver_generator_energy :: proc(generator: ^Fluid_Machine, machine: Machine, content: Simulation_Content, joules: u64) {
 	#partial switch machine.kind {
 	case .Combustion_Generator:
-		deliver_combustion_generator_energy(generator, content.fluids, content.items, joules)
+		deliver_combustion_generator_energy(generator, machine, content.fluids, content.items, joules)
 	case .Hydro_Turbine:
 		generator.generated_joules = u32(joules)
 	case:

@@ -161,6 +161,8 @@ Machine_Definition :: struct {
 	supply_volume:                Machine_Footprint_Definition,
 	wire_reach:                   int,
 	electric_output_kilowatts:    f32,
+	fuel_efficiency_percent:      int,
+	dispatch_order:               Maybe(int),
 	light_level:                  int,
 	light_color:                  [3]int,
 	recipe_maker:                 string,
@@ -231,6 +233,12 @@ Machine :: struct {
 	wire_reach:                  i32,
 	// Generators (steam and combustion): the most power they give.
 	electric_output_watts:       u32,
+	// Combustion generators: the percent of a fuel item's energy they
+	// turn into electricity (0140).
+	fuel_efficiency_percent:     u32,
+	// Generators: which serve first, the lowest (0140,
+	// share_generator_energy).
+	dispatch_order:              u8,
 	// Lamps: the block light level while lit, and its colour (white at
 	// light_level when the file gives none, resolve_light_color).
 	light_level:                 u8,
@@ -487,6 +495,12 @@ validate_machine_definition :: proc(definitions: []Machine_Definition, index: in
 	if problem := validate_pump_head(definition, kind); problem != "" {
 		return problem
 	}
+	if problem := validate_fuel_efficiency(definition, kind); problem != "" {
+		return problem
+	}
+	if problem := validate_dispatch_order(definition, kind); problem != "" {
+		return problem
+	}
 	return validate_machine_kind_fields(definition, kind)
 }
 
@@ -585,6 +599,8 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 		supply_volume = {i32(definition.supply_volume.width), i32(definition.supply_volume.height), i32(definition.supply_volume.depth)},
 		wire_reach = i32(max(definition.wire_reach, 0)),
 		electric_output_watts = u32(math.round(definition.electric_output_kilowatts * 1000)),
+		fuel_efficiency_percent = u32(max(definition.fuel_efficiency_percent, 0)),
+		dispatch_order = u8(clamp(definition.dispatch_order.? or_else 0, 0, MAXIMUM_DISPATCH_ORDER)),
 		light_level = u8(clamp(definition.light_level, 0, MAXIMUM_LIGHT)),
 		light_color = resolve_light_color(definition.light_color, clamp(definition.light_level, 0, MAXIMUM_LIGHT)),
 		recipe_maker = recipe_maker,

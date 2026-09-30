@@ -22,7 +22,7 @@ Target playtime and what the player owns at the end of each phase. These drive r
 | 1 Arrival | 10 min | Wooden pickaxe, a stack of logs, stone, one stone furnace placed |
 | 2 Workshop | 30 min | 3 stone furnaces, 2 burner drills, 200 plates, first gears, belts discovered |
 | 3 Automation | 45 min | One self feeding coal drill, 4 drills feeding 3 furnaces, inserters, chests, ten unattended minutes |
-| 4 Power | 75 min | 1 offshore pump, 1 boiler, 2 steam engines, 10 poles, 4 electric drills, 4 assemblers, 2 labs, 5 technologies |
+| 4 Power | 75 min | 1 fuel generator, 1 offshore pump, 1 boiler, 2 steam engines, 10 poles, 4 electric drills, 4 assemblers, 2 labs, 5 technologies |
 
 Phases 1 to 4 together are about two hours forty minutes, spread over two or three sittings. Budgets for phases 5 to 8 follow when their content is listed. The user suspects this pacing is on the quick side; couch test 1 checks it first.
 
@@ -103,7 +103,8 @@ Footprint is width by depth by height in blocks. Power is electric unless marked
 | Splitter | 1×2×1 across the flow | 5 circuit, 5 iron plate, 4 belt | Splits or merges two belts, priority and filter | | Research: logistics |
 | Wooden chest | 1×1×1 | 4 plank | 16 slots | | Start |
 | Iron chest | 1×1×1 | 8 iron plate | 32 slots | | Start |
-| Offshore pump | 2 wide along its facing | 2 circuit, 1 pipe, 1 iron gear | 1200 L per s, 6 m head | | Start |
+| Offshore pump | 2 wide along its facing | 2 circuit, 1 pipe, 1 iron gear | 1200 L per s, 6 m head | 60 kW | Start |
+| Fuel generator | 2×2×2 | 5 iron plate, 3 iron gear, 1 stone furnace, 4 copper wire | Up to 75 kW from any fuel item at 25 percent (a coal gives 1 MJ, 13 s at full output) | | Start |
 | Pipe | 1×1×1 | 1 pipe | 100 L capacity per block | | Start |
 | Pump | 1×2×1 | 1 steel, 1 iron gear, 1 pipe | 1200 L per s, 30 m head | 30 kW | Research: fluid handling |
 | Storage tank | 3×3×3 | 20 steel, 5 iron plate | 25,000 L | | Research: fluid handling |

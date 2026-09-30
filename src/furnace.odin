@@ -77,16 +77,22 @@ refuel_furnace :: proc(furnace: ^Furnace, items: Item_Registry, needed: u32) -> 
 	return refuel_from_slot(&furnace.fuel_joules, &furnace.fuel_item_joules, &furnace.slots[FURNACE_FUEL_SLOT], items, needed)
 }
 
+// A fuel item's joules at an efficiency in percent: the fuel generator
+// gets a quarter (0140), every other machine all of it.
+fuel_joules_at_efficiency :: proc(fuel_kilojoules, efficiency_percent: u32) -> u32 {
+	return u32(u64(fuel_kilojoules) * 1000 * u64(efficiency_percent) / 100)
+}
+
 // Shared by every fuel burning entity: the buffer, the full value of the
 // item burning (for the burn bar) and the fuel slot.
-refuel_from_slot :: proc(fuel_joules, fuel_item_joules: ^u32, fuel: ^Item_Stack, items: Item_Registry, needed: u32) -> bool {
+refuel_from_slot :: proc(fuel_joules, fuel_item_joules: ^u32, fuel: ^Item_Stack, items: Item_Registry, needed: u32, efficiency_percent: u32 = 100) -> bool {
 	if fuel_joules^ >= needed {
 		return true
 	}
 	if stack_is_empty(fuel^) || !item_is_fuel(items, fuel.item) {
 		return false
 	}
-	joules := items.items[fuel.item].fuel_kilojoules * 1000
+	joules := fuel_joules_at_efficiency(items.items[fuel.item].fuel_kilojoules, efficiency_percent)
 	take_from_slot(fuel, 1)
 	fuel_joules^ += joules
 	fuel_item_joules^ = joules

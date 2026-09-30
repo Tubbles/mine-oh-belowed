@@ -204,8 +204,10 @@ validate_fluid_port_layout :: proc(machine: Machine) -> string {
 			return fmt.tprintf("flare stack %q needs one input port admitting gases only", machine.id)
 		}
 	case .Combustion_Generator:
-		if len(ports) != 1 || inputs != 1 || ports[0].phase_filter != .Burnable_Gas {
-			return fmt.tprintf("combustion generator %q needs one input port admitting burnable gases only", machine.id)
+		// No port makes a fuel generator (0140), which burns items only.
+		gas_port := len(ports) == 1 && inputs == 1 && ports[0].phase_filter == .Burnable_Gas
+		if len(ports) != 0 && !gas_port {
+			return fmt.tprintf("combustion generator %q needs one input port admitting burnable gases only, or none", machine.id)
 		}
 	case .Drill:
 		// A revival port: one input port holding one fluid (drill.odin).

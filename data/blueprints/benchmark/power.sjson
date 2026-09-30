@@ -10,7 +10,9 @@
 // belt, and their steam pipe feeds four steam engines. Small poles
 // carry the power to the drill and the inserters and, through a power
 // switch that is on, to a substation lighting eight lamps. The boilers
-// get starting coal.
+// get starting coal. The offshore pumps need power (work item 0140), so a
+// fuel generator with starting coal starts the plant; the engines carry
+// it from there.
 origin = [0, 0, 0]
 commands = [
 	// Coal: drill, belt south, sink
@@ -86,7 +88,10 @@ commands = [
 	"place lamp 23 0 15 0"
 	"place lamp 26 0 2 0"
 	"place lamp 26 0 15 0"
-	// Starting coal for the boilers
+	// A fuel generator to power the offshore pumps until the engines run
+	"place fuel_generator 0 0 5 0"
+	// Starting coal for the boilers and the fuel generator
 	"insert coal 45 6 0 5"
 	"insert coal 45 6 0 9"
+	"insert coal 20 0 0 5"
 ]

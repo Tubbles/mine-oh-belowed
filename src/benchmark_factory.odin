@@ -436,6 +436,14 @@ observe_machine_activity :: proc(world: ^World, activity: ^Machine_Activity) {
 	}
 }
 
+// A generator in the Idle state delivered nothing while it could have
+// (or nothing was asked): a reserve behind generators of a lower dispatch
+// order (0140), like the fuel generator beside running engines. Not idle;
+// No_Fuel, No_Steam and No_Water still are.
+generator_is_standing_by :: proc(kind: Machine_Kind, state: Fluid_Machine_State) -> bool {
+	return machine_kind_is_generator(kind) && state == .Idle
+}
+
 idle_machine_of :: proc(common: Entity_Common) -> Idle_Machine {
 	return Idle_Machine{machine = common.machine, cell = common.origin}
 }
@@ -443,7 +451,7 @@ idle_machine_of :: proc(common: Entity_Common) -> Idle_Machine {
 // After the idle window: drills and furnaces by their output over the
 // last minute (the rate their panels show), inserters by an idle streak
 // (nothing to pick) as long as the window, every other machine by the
-// observed activity. An inserter holding an item for a full target is not
+// observed activity, except a generator standing by. An inserter holding an item for a full target is not
 // idle: its supply runs, the target is just stocked. Storage tanks hold
 // fluid and do no work, so they are left out. In the temp allocator, by
 // cell.
@@ -469,7 +477,8 @@ benchmark_idle_machines :: proc(world: ^World, content: Simulation_Content, acti
 	append_unobserved(&idle, world.entities.labs.entries[:], activity)
 	append_unobserved(&idle, world.entities.launch_pads.entries[:], activity)
 	for machine in world.entities.fluid_machines.entries {
-		if machine.alive && content.machines.machines[machine.machine].kind != .Storage_Tank && !activity[machine.handle] {
+		kind := content.machines.machines[machine.machine].kind
+		if machine.alive && kind != .Storage_Tank && !activity[machine.handle] && !generator_is_standing_by(kind, machine.state) {
 			append(&idle, idle_machine_of(machine.common))
 		}
 	}

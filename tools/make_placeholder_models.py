@@ -660,6 +660,19 @@ def combustion_generator():
     return {"": model, "_part": part}
 
 
+def fuel_generator():
+    """2 by 2 by 2 (work item 0140): a small brown body with a glowing
+    firebox at the front, a chimney at the back and a dynamo on top."""
+    model = Model((2, 2, 2))
+    base_plate(model, BASE, 0)
+    model.box((1, 1, 1), (12, 10, 14), GENERATOR_BROWN)
+    model.box((13, 1, 3), (14, 8, 12), FURNACE_MOUTH)
+    model.box((15, 2, 5), (15, 5, 10), FIRE)
+    model.box((2, 11, 2), (4, 15, 4), CHIMNEY)
+    model.box((7, 11, 6), (11, 13, 11), IRON_DARK)
+    return {"": model}
+
+
 def hydro_turbine():
     """2 by 2 by 2: two side frames and a water wheel that spins about z."""
     model = Model((2, 2, 2))
@@ -844,6 +857,7 @@ MODELS = {
     "tar_pit_pump": tar_pit_pump,
     "flare_stack": flare_stack,
     "combustion_generator": combustion_generator,
+    "fuel_generator": fuel_generator,
     "hydro_turbine": hydro_turbine,
     "small_pole": small_pole,
     "big_pole": big_pole,

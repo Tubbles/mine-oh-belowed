@@ -98,8 +98,10 @@
 // Pipes: buffer_litres per block and flow_litres_per_second, the most a
 // connection between two segments moves (1200 is 20 litres per tick).
 // Offshore pump: fluid_litres_per_second into its one output port while
-// there is room. Placed with the cell in front of its +x end (its intake,
-// the end without the port), at its height or one below, a water source.
+// there is room and it has electric_power_kilowatts (work item 0140),
+// scaled by its network's satisfaction like the pump. Placed with the
+// cell in front of its +x end (its intake, the end without the port), at
+// its height or one below, a water source.
 // Boiler: turns fluid_litres_per_second of its input port's fluid into as
 // much of its output port's fluid, burning fuel_power_kilowatts from its
 // fuel slot only while it does.
@@ -128,6 +130,9 @@
 // electric_output_kilowatts to its power network, burning the gas in its
 // port first, whole litres of fuel_kilojoules_per_litre (fluids.sjson),
 // then solid fuel from its slot, only for the energy delivered.
+// fuel_efficiency_percent (work item 0140, required on this kind only, 1
+// to 100) is the share of a fuel item's energy it turns into electricity.
+// Without fluid ports it is a fuel generator, burning items only.
 // Hydro turbine (work item 0037): a generator without fuel or ports. Placed
 // in air or water with at least one footprint cell holding flowing water
 // of hydro_minimum_water_level or more (source water does not count), and
@@ -141,6 +146,13 @@
 // the network of a pole whose supply_volume covers one of their cells. A
 // drill without a fuel slot and with electric_power_kilowatts is an
 // electric drill.
+// dispatch_order (work item 0140, required on every generator kind and
+// refused elsewhere, 0 to 9): generators with the lowest order serve
+// their network first, up to their offers; the next order takes only
+// what is left, so the fuel generator (3) burns nothing while the steam
+// engines (1) cover the load. Within one order the delivered energy is
+// split in proportion to the offers. Hydro turbine 0, combustion
+// generator 2.
 // Poles: supply_volume is width (x), depth (z) and height (y) of the box
 // of cells powered, centred across on the pole's square footprint (so the
 // volume's width and depth differ from the footprint's by an even count,
@@ -478,6 +490,7 @@ machines = [
 		kind = "offshore_pump"
 		footprint = {width = 2, depth = 1, height = 1}
 		fluid_litres_per_second = 1200
+		electric_power_kilowatts = 60
 		head_metres = 6
 		fluid_ports = [
 			{cell = {x = 0, y = 0, z = 0}, face = "negative_x", direction = "output", fluid = "water", buffer_litres = 200}
@@ -510,6 +523,7 @@ machines = [
 		kind = "steam_engine"
 		footprint = {width = 3, depth = 5, height = 2}
 		electric_output_kilowatts = 900
+		dispatch_order = 1
 		fluid_litres_per_second = 30
 		fluid_ports = [
 			{cell = {x = 1, y = 0, z = 0}, face = "negative_z", direction = "input", fluid = "steam", buffer_litres = 200}
@@ -587,9 +601,25 @@ machines = [
 		footprint = {width = 3, depth = 2, height = 2}
 		fuel_slots = 1
 		electric_output_kilowatts = 600
+		dispatch_order = 2
+		fuel_efficiency_percent = 100
 		fluid_ports = [
 			{cell = {x = 1, y = 0, z = 0}, face = "negative_z", direction = "input", phase = "burnable_gas", buffer_litres = 200}
 		]
+	}
+	{
+		id = "fuel_generator"
+		name_key = "machine_fuel_generator"
+		description_key = "describe_machine_fuel_generator"
+		model = "fuel_generator"
+		motion = {kind = "glow", period_seconds = 1.1}
+		item = "fuel_generator"
+		kind = "combustion_generator"
+		footprint = {width = 2, depth = 2, height = 2}
+		fuel_slots = 1
+		electric_output_kilowatts = 75
+		dispatch_order = 3
+		fuel_efficiency_percent = 25
 	}
 	{
 		id = "hydro_turbine"
@@ -601,6 +631,7 @@ machines = [
 		kind = "hydro_turbine"
 		footprint = {width = 2, depth = 2, height = 2}
 		electric_output_kilowatts = 400
+		dispatch_order = 0
 		hydro_kilowatts_per_water_level = 10
 		hydro_minimum_water_level = 3
 	}

@@ -137,6 +137,61 @@ test_energy_balance_with_two_generators_and_three_consumers :: proc(t: ^testing.
 	testing.expect_value(t, alone[0].delivered, 0)
 }
 
+generator_participant :: proc(offered: u64, order: u8) -> Electric_Participant {
+	result := participant(0, true, offered)
+	result.dispatch_order = order
+	return result
+}
+
+// Work item 0140: two engines of order 1 serve before a fuel generator of
+// order 3, split 600 to 400 between them; the generator gives only what
+// they cannot.
+@(test)
+test_generators_serve_in_dispatch_order :: proc(t: ^testing.T) {
+	networks := make([]Electric_Network, 1, context.temp_allocator)
+	covered := []Electric_Participant{generator_participant(500, 3), generator_participant(600, 1), generator_participant(400, 1), participant(0, false, 801)}
+	balance_electric_energy(covered, networks)
+	testing.expect_value(t, networks[0].delivered, 801)
+	delivered := [3]u64{covered[0].delivered, covered[1].delivered, covered[2].delivered}
+	testing.expect_value(t, delivered, [3]u64{0, 481, 320})
+	short := []Electric_Participant{generator_participant(500, 3), generator_participant(600, 1), generator_participant(400, 1), participant(0, false, 1300)}
+	balance_electric_energy(short, networks)
+	delivered = {short[0].delivered, short[1].delivered, short[2].delivered}
+	testing.expect_value(t, delivered, [3]u64{300, 600, 400})
+}
+
+// Work item 0140: once the engine runs, the fuel generator that started
+// the plant burns nothing for 100 s; with the steam cut it carries the
+// offshore pump again.
+@(test)
+test_fuel_generator_only_covers_what_the_engines_cannot :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_drill_world(content)
+	build_power_plant(&world, content)
+	generator := entity_at(&world.entities, {4, 1, -2})
+	pump := entity_at(&world.entities, {2, 1, -3})
+	prototype := content.machines.machines[test_machine(content.machines, "fuel_generator")]
+	tick_test_entities(&world, content, 1200)
+	stored := combustion_generator_stored_joules(test_fluid_machine(&world, generator)^, prototype, content.fluids, content.items)
+	testing.expect(t, stored < 5 * 1_000_000)
+	tick_test_entities(&world, content, 6000)
+	testing.expect_value(t, combustion_generator_stored_joules(test_fluid_machine(&world, generator)^, prototype, content.fluids, content.items), stored)
+	testing.expect_value(t, test_fluid_machine(&world, generator).generated_joules, 0)
+	// Cut the steam: no coal in the boiler and none of its steam left.
+	boiler := test_fluid_machine(&world, entity_at(&world.entities, {0, 1, 0}))
+	boiler.slots[BOILER_FUEL_SLOT] = EMPTY_STACK
+	boiler.fuel_joules = 0
+	boiler.buffers[1] = EMPTY_FLUID_BUFFER
+	engine := test_fluid_machine(&world, entity_at(&world.entities, {0, 1, 3}))
+	engine.buffers = {}
+	engine.fuel_joules = 0
+	test_pipe(&world, entity_at(&world.entities, {1, 1, 2})).buffer = EMPTY_FLUID_BUFFER
+	tick_test_entities(&world, content, 60)
+	testing.expect(t, test_fluid_machine(&world, generator).generated_joules > 0)
+	testing.expect(t, combustion_generator_stored_joules(test_fluid_machine(&world, generator)^, prototype, content.fluids, content.items) < stored)
+	testing.expect(t, power_is_on(test_fluid_machine(&world, pump).power))
+}
+
 // An electric drill on an iron vein dropping into a chest, a pole and a
 // steam engine whose offer the test sets every tick.
 Drill_Power_Test :: struct {
@@ -289,10 +344,15 @@ test_lamp_lights_and_darkens_with_power :: proc(t: ^testing.T) {
 	testing.expect_value(t, block_light_at(&world, {3, 1, 2}), 0)
 }
 
-// Water, a boiler, a steam engine, two poles, an electric drill feeding
-// a chest, a lamp and an electric inserter between two chests.
+// Water, a boiler, a steam engine, three poles, an electric drill feeding
+// a chest, a lamp and an electric inserter between two chests. The
+// offshore pump draws power (0140): a fuel generator with coal on the
+// pump's pole starts the plant.
 build_power_plant :: proc(world: ^World, content: Simulation_Content) {
 	place_test_fluid_entity(world, content, "offshore_pump", {2, 1, -3})
+	place_test_entity(world, content, "small_pole", {3, 1, -1})
+	generator := place_test_entity(world, content, "fuel_generator", {4, 1, -2})
+	test_fluid_machine(world, generator).slots[COMBUSTION_FUEL_SLOT] = Item_Stack{item = test_item(content.items, "coal"), count = 5}
 	lay_pipes(world, content, {1, 1, -3}, {1, 1, -2}, {1, 1, -1})
 	boiler := place_test_fluid_entity(world, content, "boiler", {0, 1, 0})
 	test_fluid_machine(world, boiler).slots[BOILER_FUEL_SLOT] = Item_Stack{item = test_item(content.items, "coal"), count = 20}

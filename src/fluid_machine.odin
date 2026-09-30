@@ -95,7 +95,7 @@ make_fluid_machine :: proc(common: Entity_Common, machine: Machine) -> Fluid_Mac
 	for &buffer in result.buffers {
 		buffer = EMPTY_FLUID_BUFFER
 	}
-	if machine.kind == .Pump || machine.kind == .Tar_Pit_Pump || machine.kind == .Flare_Stack {
+	if machine.kind == .Offshore_Pump || machine.kind == .Pump || machine.kind == .Tar_Pit_Pump || machine.kind == .Flare_Stack {
 		result.state = .Unpowered
 	}
 	result.lets_water_through = machine.kind == .Hydro_Turbine
@@ -121,17 +121,25 @@ add_to_buffer :: proc(buffer: ^Fluid_Buffer, fluid: Fluid_Id, litres: i32) {
 	buffer.level += litres
 }
 
-// Drawing water: 1200 litres per second into its port while there is room.
+// Drawing water: 1200 litres per second into its port while there is
+// room, and only with power (0140). Like the tar pit pump it pumps a full
+// tick's litres once per power credit step, so over a second it yields
+// its rate times its network's satisfaction, and it counts as producing
+// on the ticks in between.
 advance_offshore_pump :: proc(pump: ^Fluid_Machine, machine: Machine, tick_rate: int) {
 	port := machine.fluid_ports[0]
 	buffer := &pump.buffers[0]
-	amount := min(litres_per_tick(machine.fluid_litres_per_second, tick_rate), buffer_room(buffer^, port.capacity))
-	if amount <= 0 || !buffer_takes_fluid(buffer^, port.filter) {
+	switch {
+	case !power_is_on(pump.power):
+		pump.state = .Unpowered
+	case !source_pump_has_room(pump^, machine):
 		pump.state = .Output_Full
-		return
+	case:
+		pump.state = .Producing
+		if take_power_step(&pump.power) {
+			add_to_buffer(buffer, port.filter, min(litres_per_tick(machine.fluid_litres_per_second, tick_rate), buffer_room(buffer^, port.capacity)))
+		}
 	}
-	add_to_buffer(buffer, port.filter, amount)
-	pump.state = .Producing
 }
 
 port_index_of_direction :: proc(machine: Machine, direction: Fluid_Port_Direction) -> int {

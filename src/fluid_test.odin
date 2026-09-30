@@ -9,6 +9,14 @@ place_test_fluid_entity :: proc(world: ^World, content: Simulation_Content, id: 
 	return add_entity(&world.entities, content.machines, test_machine(content.machines, id), origin, rotation)
 }
 
+// An offshore pump with full power, which tick_test_fluids leaves as it
+// is (the offshore pump draws electricity since 0140).
+place_powered_offshore_pump :: proc(world: ^World, content: Simulation_Content, origin: World_Coordinate, rotation: u8 = 0) -> Entity_Handle {
+	pump := place_test_fluid_entity(world, content, "offshore_pump", origin, rotation)
+	test_fluid_machine(world, pump).power.satisfaction = POWER_FULL
+	return pump
+}
+
 lay_pipes :: proc(world: ^World, content: Simulation_Content, cells: ..World_Coordinate) -> []Entity_Handle {
 	handles := make([]Entity_Handle, len(cells), context.temp_allocator)
 	for cell, index in cells {
@@ -69,6 +77,7 @@ test_fluid_data_loads :: proc(t: ^testing.T) {
 	testing.expect_value(t, content.machines.machines[test_machine(content.machines, "steam_engine")].fluid_port_count, 2)
 	testing.expect_value(t, content.machines.machines[test_machine(content.machines, "offshore_pump")].fluid_litres_per_second, 1200)
 	testing.expect_value(t, content.machines.machines[test_machine(content.machines, "pump")].electric_power_watts, 30_000)
+	testing.expect_value(t, content.machines.machines[test_machine(content.machines, "offshore_pump")].electric_power_watts, 60_000)
 	testing.expect_value(t, content.machines.machines[test_machine(content.machines, "pump")].head_metres, 30)
 	testing.expect_value(t, content.machines.machines[test_machine(content.machines, "tar_pit_pump")].head_metres, 6)
 }
@@ -326,7 +335,7 @@ test_offshore_pump_lifts_water_to_its_head :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
 	testing.expect_value(t, content.machines.machines[test_machine(content.machines, "offshore_pump")].head_metres, 6)
-	place_test_fluid_entity(&world, content, "offshore_pump", {0, 1, 0})
+	place_powered_offshore_pump(&world, content, {0, 1, 0})
 	column := lay_pipe_column(&world, content, -1, 0, 1, 8)
 	tick_test_fluids(&world, content, 600)
 	levels := pipe_levels(&world, column)
@@ -399,8 +408,8 @@ test_pumps_in_series_chain_their_heads :: proc(t: ^testing.T) {
 test_head_line_follows_the_highest_outlet :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
-	place_test_fluid_entity(&world, content, "offshore_pump", {0, 1, 0})
-	place_test_fluid_entity(&world, content, "offshore_pump", {0, 3, 0})
+	place_powered_offshore_pump(&world, content, {0, 1, 0})
+	place_powered_offshore_pump(&world, content, {0, 3, 0})
 	column := lay_pipe_column(&world, content, -1, 0, 1, 10)
 	testing.expect_value(t, len(world.entities.fluid_networks.networks), 1)
 	networks := &world.entities.fluid_networks
@@ -420,7 +429,7 @@ test_head_line_follows_the_highest_outlet :: proc(t: ^testing.T) {
 test_a_closed_pump_outlet_lifts_nothing :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
-	pump := place_test_fluid_entity(&world, content, "offshore_pump", {0, 1, 0})
+	pump := place_powered_offshore_pump(&world, content, {0, 1, 0})
 	column := lay_pipe_column(&world, content, -1, 0, 1, 8)
 	test_pipe(&world, column[0]).buffer = {fluid = test_fluid(content, "crude_oil"), level = 100}
 	tick_test_fluids(&world, content, 600)
@@ -523,7 +532,7 @@ test_boiler_takes_fuel_through_the_transfer_interface :: proc(t: ^testing.T) {
 test_offshore_pump_fills_a_tank_to_its_capacity :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
-	pump := place_test_fluid_entity(&world, content, "offshore_pump", {0, 1, 0})
+	pump := place_powered_offshore_pump(&world, content, {0, 1, 0})
 	pipes := lay_pipes(&world, content, {-1, 1, 0}, {-2, 1, 0}, {-3, 1, 0})
 	tank := place_test_fluid_entity(&world, content, "storage_tank", {-6, 1, -1})
 	testing.expect_value(t, len(world.entities.fluid_networks.networks), 1)
@@ -535,6 +544,65 @@ test_offshore_pump_fills_a_tank_to_its_capacity :: proc(t: ^testing.T) {
 	testing.expect_value(t, pipe_levels(&world, pipes)[2], 100)
 	testing.expect_value(t, test_fluid_machine(&world, pump).buffers[0].level, 200)
 	testing.expect_value(t, test_fluid_machine(&world, pump).state, Fluid_Machine_State.Output_Full)
+}
+
+// Work item 0140: unpowered, the offshore pump pushes nothing and says
+// so; powered, 1200 litres a second (20 a tick); at half satisfaction
+// half as much.
+@(test)
+test_offshore_pump_pumps_only_with_power :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	pump := place_test_fluid_entity(&world, content, "offshore_pump", {0, 1, 0})
+	lay_pipes(&world, content, {-1, 1, 0}, {-2, 1, 0}, {-3, 1, 0})
+	tank := place_test_fluid_entity(&world, content, "storage_tank", {-6, 1, -1})
+	testing.expect_value(t, test_fluid_machine(&world, pump).state, Fluid_Machine_State.Unpowered)
+	tick_test_fluids(&world, content, 60)
+	testing.expect_value(t, water_litres(&world), 0)
+	testing.expect_value(t, test_fluid_machine(&world, pump).state, Fluid_Machine_State.Unpowered)
+	test_fluid_machine(&world, pump).power.satisfaction = POWER_FULL
+	tick_test_fluids(&world, content, 60)
+	testing.expect_value(t, water_litres(&world), 1200)
+	testing.expect_value(t, test_fluid_machine(&world, pump).state, Fluid_Machine_State.Producing)
+	test_fluid_machine(&world, pump).power.satisfaction = POWER_FULL / 2
+	tick_test_fluids(&world, content, 60)
+	testing.expect_value(t, water_litres(&world), 1800)
+	testing.expect(t, test_fluid_machine(&world, tank).buffers[0].level > 0)
+}
+
+// At 990 per mille the pump yields 99 of 100 ticks' litres, at 40 per
+// mille 4: the rate times the satisfaction, nothing lost to rounding.
+@(test)
+test_offshore_pump_yields_its_rate_times_the_satisfaction :: proc(t: ^testing.T) {
+	content := make_test_content()
+	for sample in ([?][2]i32{{990, 1980}, {40, 80}}) {
+		world := make_floor_world(content.blocks, 32)
+		pump := place_test_fluid_entity(&world, content, "offshore_pump", {0, 1, 0})
+		lay_pipes(&world, content, {-1, 1, 0}, {-2, 1, 0}, {-3, 1, 0})
+		place_test_fluid_entity(&world, content, "storage_tank", {-6, 1, -1})
+		test_fluid_machine(&world, pump).power.satisfaction = u32(sample[0])
+		tick_test_fluids(&world, content, 100)
+		testing.expect_value(t, water_litres(&world), sample[1])
+		testing.expect_value(t, test_fluid_machine(&world, pump).state, Fluid_Machine_State.Producing)
+	}
+}
+
+// Every litre of water in pipes and machines.
+water_litres :: proc(world: ^World) -> i32 {
+	total: i32
+	for pipe in world.entities.pipes.entries {
+		if pipe.alive && pipe.buffer.level > 0 {
+			total += pipe.buffer.level
+		}
+	}
+	for machine in world.entities.fluid_machines.entries {
+		for buffer in machine.buffers {
+			if machine.alive && buffer.level > 0 {
+				total += buffer.level
+			}
+		}
+	}
+	return total
 }
 
 @(test)
@@ -602,7 +670,7 @@ test_picking_up_a_boiler_returns_its_fuel :: proc(t: ^testing.T) {
 // Offshore pump, three pipes, the boiler, a steam column and a tank on a
 // ledge above.
 build_steam_plant :: proc(world: ^World, content: Simulation_Content) -> (boiler, tank: Entity_Handle) {
-	place_test_fluid_entity(world, content, "offshore_pump", {2, 1, -3})
+	place_powered_offshore_pump(world, content, {2, 1, -3})
 	lay_pipes(world, content, {1, 1, -3}, {1, 1, -2}, {1, 1, -1})
 	boiler = place_test_fluid_entity(world, content, "boiler", {0, 1, 0})
 	lay_pipes(world, content, {1, 1, 2}, {1, 2, 2}, {1, 3, 2})
@@ -678,11 +746,11 @@ ticks_to_fill_tank :: proc(world: ^World, content: Simulation_Content, tank: Ent
 test_fluid_throughput_does_not_depend_on_direction :: proc(t: ^testing.T) {
 	content := make_test_content()
 	towards_negative := make_floor_world(content.blocks, 32)
-	place_test_fluid_entity(&towards_negative, content, "offshore_pump", {0, 1, 0})
+	place_powered_offshore_pump(&towards_negative, content, {0, 1, 0})
 	lay_pipes(&towards_negative, content, {-1, 1, 0}, {-2, 1, 0}, {-3, 1, 0})
 	negative_tank := place_test_fluid_entity(&towards_negative, content, "storage_tank", {-6, 1, -1})
 	towards_positive := make_floor_world(content.blocks, 32)
-	place_test_fluid_entity(&towards_positive, content, "offshore_pump", {0, 1, 0}, 2)
+	place_powered_offshore_pump(&towards_positive, content, {0, 1, 0}, 2)
 	lay_pipes(&towards_positive, content, {2, 1, 0}, {3, 1, 0}, {4, 1, 0})
 	positive_tank := place_test_fluid_entity(&towards_positive, content, "storage_tank", {5, 1, -1})
 	negative_ticks := ticks_to_fill_tank(&towards_negative, content, negative_tank, 3000)

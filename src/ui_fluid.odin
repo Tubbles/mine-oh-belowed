@@ -7,7 +7,8 @@ import "core:fmt"
 // tick (or that it stands above its network's head line), a note on
 // ports closed to avoid mixing, a pump's head, the fuel slot of the
 // boiler (with its burn bar) and of the combustion generator with its Fill
-// button, the machine state, and a generator's output.
+// button, the machine state, a generator's output, and a combustion
+// generator's efficiency and burn time left.
 
 FLUID_AREA_WIDTH :: 480
 // A level line and a flow line per buffer.
@@ -32,16 +33,26 @@ fluid_machine_head_rows :: proc(kind: Machine_Kind) -> int {
 	return machine_kind_is_pump(kind) ? 1 : 0
 }
 
-// Pumps, tar pit pumps, flare stacks and generators show their power
-// network; generators their output too.
+// Pumps (offshore, tar pit, electric), flare stacks and generators show
+// their power network; generators their output too, and combustion
+// generators their efficiency and burn time.
 fluid_machine_power_rows :: proc(kind: Machine_Kind) -> int {
 	#partial switch kind {
-	case .Pump, .Tar_Pit_Pump, .Flare_Stack:
+	case .Offshore_Pump, .Pump, .Tar_Pit_Pump, .Flare_Stack:
 		return 1
-	case .Steam_Engine, .Combustion_Generator, .Hydro_Turbine:
+	case .Steam_Engine, .Hydro_Turbine:
 		return 2
+	case .Combustion_Generator:
+		return 3
 	}
 	return 0
+}
+
+// "Efficiency 25 %  Burn time 0:40": how long what it holds lasts at
+// full output (0140).
+combustion_fuel_line :: proc(machine: Machine, stored_joules: u64, tick_rate: int) -> string {
+	ticks := stored_joules / max(electric_joules_per_tick(machine.electric_output_watts, tick_rate), 1)
+	return fmt.tprintf("%s %d %%  %s %s", text("fuel_efficiency"), machine.fuel_efficiency_percent, text("fuel_burn_time"), format_game_time(ticks, tick_rate))
 }
 
 fluid_area_size :: proc(machine: Machine) -> [2]f32 {
@@ -124,6 +135,10 @@ fluid_machine_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, fluid_ma
 	}
 	if machine_is_generator(machine) {
 		detail_line(state, &content, generator_output_line(fluid_machine, screen_context.tick_rate))
+	}
+	if machine.kind == .Combustion_Generator {
+		stored := combustion_generator_stored_joules(fluid_machine, machine, screen_context.fluids, screen_context.items)
+		detail_line(state, &content, combustion_fuel_line(machine, stored, screen_context.tick_rate), UI_DIM_TEXT_COLOR)
 	}
 	if fluid_machine_power_rows(machine.kind) > 0 {
 		power_line := power_status_line(&screen_context.world.entities.electric_networks, fluid_machine.handle)

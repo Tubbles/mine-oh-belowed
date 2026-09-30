@@ -241,6 +241,7 @@ test_power_counters_count_brownouts_and_unpowered_machines :: proc(t: ^testing.T
 
 // Completes steam and first_pole, so first_research is active.
 reach_first_research :: proc(test: ^Quest_Test) {
+	set_placed(test, "fuel_generator", 1)
 	set_placed(test, "offshore_pump", 1)
 	set_placed(test, "boiler", 1)
 	set_placed(test, "steam_engine", 1)
@@ -281,11 +282,18 @@ test_chapter_04_completes_in_order :: proc(t: ^testing.T) {
 	test := make_chapter_04_test()
 	defer destroy_quest_test(&test)
 	testing.expect_value(t, active_quest_id(&test), "steam")
+	set_placed(&test, "fuel_generator", 1)
 	set_placed(&test, "offshore_pump", 1)
 	set_placed(&test, "boiler", 1)
 	run_quest_tick(&test)
+	// Waits for the steam engine.
 	testing.expect_value(t, active_quest_id(&test), "steam")
+	set_placed(&test, "fuel_generator", 0)
 	set_placed(&test, "steam_engine", 1)
+	run_quest_tick(&test)
+	// And for the fuel generator, since the offshore pump needs power (0140).
+	testing.expect_value(t, active_quest_id(&test), "steam")
+	set_placed(&test, "fuel_generator", 1)
 	run_quest_tick(&test)
 	testing.expect_value(t, active_quest_id(&test), "first_pole")
 	set_placed(&test, "small_pole", 2)

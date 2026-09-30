@@ -6,7 +6,9 @@
 // a lamp. Placement and output are measured, not the layout: nothing
 // checks that the poles reach the engine or that the gears come from the
 // assembler (gears crafted by hand count too). The main quest pays a
-// crusher and a washer for chapter 5.
+// crusher and a washer for chapter 5. The steam quest asks for a fuel
+// generator first (work item 0140): the offshore pump needs power, and
+// the generator bootstraps it for the first boiler.
 id = "chapter_04"
 title_key = "chapter_04_title"
 quests = [
@@ -15,6 +17,7 @@ quests = [
 		title_key = "quest_steam_title"
 		text_key = "quest_steam_text"
 		objectives = [
+			{type = "place", entity = "fuel_generator", count = 1}
 			{type = "place", entity = "offshore_pump", count = 1}
 			{type = "place", entity = "boiler", count = 1}
 			{type = "place", entity = "steam_engine", count = 1}
