@@ -47,7 +47,7 @@ Keyboard_Key :: struct {
 
 // Rows of single width character keys, then the row of large keys.
 @(rodata)
-keyboard_character_rows := [?]string{"1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm", "-_."}
+keyboard_character_rows := [?]string{"1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm", "-_./"}
 
 @(rodata)
 keyboard_action_row := [?]Keyboard_Key{{kind = .Shift, width = 2}, {kind = .Space, character = ' ', width = 4}, {kind = .Backspace, width = 2}, {kind = .Done, width = 2}}

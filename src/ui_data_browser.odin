@@ -22,6 +22,10 @@ import "core:strings"
 // row last activated). Save writes the tree to the data edits overlay;
 // Back drops unsaved changes and says so.
 //
+// The export (work item 0131, data_export.odin): over the tree, a row
+// with the export directory (the keyboard types it) and the Export on
+// save toggle, both settings, and an Export button in the buttons row.
+//
 // The screen changes the browser's expansion, selection and the open
 // file's tree, and makes requests; the frame loop reads the directory and
 // the files and saves (serve_data_browser in loop.odin). An edit frees
@@ -52,6 +56,11 @@ data_browser_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		data_value_entry(state, browser)
 		return
 	}
+	settings := screen_context.settings
+	if state.keyboard.field != 0 && browser.editing_export_directory && settings != nil {
+		data_export_directory_entry(state, browser, settings)
+		return
+	}
 	if state.keyboard.return_focus != 0 {
 		state.requested_focus, state.keyboard.return_focus = state.keyboard.return_focus, 0
 	}
@@ -66,10 +75,18 @@ data_browser_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 	buttons := cut_bottom(&content, UI_ROW_HEIGHT)
 	cut_bottom(&content, UI_GAP)
+	export_row: Ui_Rectangle
+	if !browser.open && settings != nil {
+		export_row = cut_bottom(&content, UI_ROW_HEIGHT)
+		cut_bottom(&content, UI_GAP)
+	}
 	if browser.open {
 		data_file_view(state, content, browser)
 	} else {
 		data_tree_view(state, content, browser)
+	}
+	if export_row != {} {
+		data_export_row(state, export_row, browser, settings)
 	}
 	data_browser_buttons(state, buttons, browser)
 	ui_panel_end(state)
@@ -308,15 +325,8 @@ data_browser_editing :: proc(browser: Data_Browser) -> bool {
 // Done sets the value; a number that does not parse keeps the old one
 // and toasts.
 data_value_entry :: proc(state: ^Ui_State, browser: ^Data_Browser) {
-	width := f32(max(DATA_BROWSER_PANEL_WIDTH, KEYBOARD_WIDTH + 2 * UI_PADDING))
-	panel := fitted_panel(ui_panel_area(state), width, panel_height(DATA_BROWSER_ENTRY_ROWS, keyboard_keys_height(state.keyboard)))
-	ui_panel_begin(state, "data_value_entry", panel)
-	content := inset(panel, UI_PADDING)
-	field_area := cut_top(&content, f32(DATA_BROWSER_ENTRY_ROWS) * (UI_ROW_HEIGHT + UI_GAP) - UI_GAP)
-	cut_top(&content, UI_GAP)
 	label := data_value_row_path_text(browser.value_rows, browser.editing_row)
-	draw_data_value_field(state, field_area, label, &browser.value_field)
-	if ui_on_screen_keyboard(state, field_area, {content.x + (content.width - KEYBOARD_WIDTH) / 2, content.y}, &browser.value_field) {
+	if data_browser_entry(state, "data_value_entry", label, &browser.value_field) {
 		if !set_data_browser_value(browser, browser.editing_row, text_field_text(&browser.value_field)) {
 			ui_toast(state, text("data_files_bad_number"))
 		}
@@ -325,8 +335,34 @@ data_value_entry :: proc(state: ^Ui_State, browser: ^Data_Browser) {
 			return_focus = state.keyboard.field,
 		}
 	}
+}
+
+// The export directory under the keyboard, as a value is; Done sets the
+// setting (set_export_directory).
+data_export_directory_entry :: proc(state: ^Ui_State, browser: ^Data_Browser, settings: ^Settings) {
+	if data_browser_entry(state, "data_export_directory_entry", text("data_files_export_directory"), &browser.export_field) {
+		set_export_directory(settings, text_field_text(&browser.export_field), platform_directories(context.temp_allocator).home)
+		browser.editing_export_directory = false
+		state.keyboard = Keyboard_State {
+			return_focus = state.keyboard.field,
+		}
+	}
+}
+
+// The panel of an entry: the field, the label dimmed over the typed text,
+// and the keys under it. True when the entry is done.
+data_browser_entry :: proc(state: ^Ui_State, panel_label, label: string, field: ^Text_Field) -> (done: bool) {
+	width := f32(max(DATA_BROWSER_PANEL_WIDTH, KEYBOARD_WIDTH + 2 * UI_PADDING))
+	panel := fitted_panel(ui_panel_area(state), width, panel_height(DATA_BROWSER_ENTRY_ROWS, keyboard_keys_height(state.keyboard)))
+	ui_panel_begin(state, panel_label, panel)
+	content := inset(panel, UI_PADDING)
+	field_area := cut_top(&content, f32(DATA_BROWSER_ENTRY_ROWS) * (UI_ROW_HEIGHT + UI_GAP) - UI_GAP)
+	cut_top(&content, UI_GAP)
+	draw_data_value_field(state, field_area, label, field)
+	done = ui_on_screen_keyboard(state, field_area, {content.x + (content.width - KEYBOARD_WIDTH) / 2, content.y}, field)
 	ui_panel_end(state)
 	keyboard_glyph_bar(state)
+	return done
 }
 
 // The value's place dimmed, then the typed text with the caret, wrapped,
@@ -361,12 +397,18 @@ data_text_view :: proc(state: ^Ui_State, area: Ui_Rectangle, lines: []string) {
 }
 
 // With a file open Save (live while unsaved), Duplicate and Remove (live
-// while the selection is an array element) first; Discard edit, live
-// while the selected file has an overlay copy; Back, which closes the
-// file first.
+// while the selection is an array element) first, over the tree Export;
+// Discard edit, live while the selected file has an overlay copy; Back,
+// which closes the file first.
 data_browser_buttons :: proc(state: ^Ui_State, row: Ui_Rectangle, browser: ^Data_Browser) {
-	count := browser.open ? 5 : 2
+	count := browser.open ? 5 : 3
 	next := 0
+	if !browser.open {
+		if ui_button(state, column(row, count, 0, UI_GAP), text("data_files_export")) {
+			browser.export_requested = true
+		}
+		next = 1
+	}
 	if browser.open {
 		element := data_value_row_is_element(browser.value_rows, browser.value_selected)
 		if data_browser_button(state, column(row, count, 0, UI_GAP), text("data_files_save"), browser.unsaved) {
@@ -404,4 +446,37 @@ data_browser_button :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: st
 	widget_background(state, rectangle, id, interaction)
 	draw_text_fitted(state, inset(rectangle, UI_GAP), label, UI_BODY_TEXT_SIZE, .Centre, UI_DIM_TEXT_COLOR)
 	return false
+}
+
+// The export directory field and the Export on save toggle (0131), two
+// settings. The field's tap or Confirm opens the keyboard with the
+// directory.
+data_export_row :: proc(state: ^Ui_State, row: Ui_Rectangle, browser: ^Data_Browser, settings: ^Settings) {
+	toggle := row
+	field := cut_left(&toggle, (row.width - UI_GAP) * 2 / 3)
+	cut_left(&toggle, UI_GAP)
+	label := text("data_files_export_directory")
+	if data_export_directory_field(state, field, label, settings.export_directory) {
+		browser.export_field = make_text_field(settings.export_directory, TEXT_FIELD_CAPACITY)
+		browser.editing_export_directory = true
+		open_keyboard(state, ui_id(state, label))
+	}
+	ui_toggle(state, toggle, text("data_files_export_on_save"), &settings.export_on_save)
+}
+
+// As ui_text_field, but the directory is fitted right of the label (a
+// shared storage path is long), dimmed "not set" while empty.
+data_export_directory_field :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label, directory: string) -> bool {
+	id := ui_id(state, label)
+	interaction := ui_interact(state, id, rectangle)
+	widget_background(state, rectangle, id, interaction)
+	content := inset(rectangle, UI_PADDING)
+	draw_text(state, cut_left(&content, ui_text_width(state, label, UI_BODY_TEXT_SIZE)), label, UI_BODY_TEXT_SIZE, .Left)
+	cut_left(&content, UI_GAP)
+	if directory == "" {
+		draw_text_fitted(state, content, text("data_files_export_directory_none"), UI_BODY_TEXT_SIZE, .Right, UI_DIM_TEXT_COLOR)
+	} else {
+		draw_text_fitted(state, content, directory, UI_BODY_TEXT_SIZE, .Right)
+	}
+	return interaction.activated
 }

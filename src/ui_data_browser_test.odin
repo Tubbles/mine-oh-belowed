@@ -235,3 +235,43 @@ test_data_files_keyboard_sets_a_value :: proc(t: ^testing.T) {
 	testing.expect(t, browser.close_requested)
 	testing.expect(t, state_has_toast(state, "data_files_changes_dropped"))
 }
+
+// Work item 0131: the export directory field opens the keyboard and Done
+// sets the setting, the focus back on the field; the toggle flips Export
+// on save; Export only asks, the frame loop exports between frames.
+@(test)
+test_data_files_export_directory_toggle_and_button :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	browser := &audit.data_browser
+	defer delete(audit.settings.export_directory)
+	state := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&state)
+	push_screen(&state.screens, .Data_Files)
+	screen_test_frame(audit, &state, {})
+	testing.expect(t, draw_list_has_text(state.draw_list[:], text("data_files_export_directory_none")))
+	field := data_files_button_id("data_files_export_directory")
+	state.focus = field
+	screen_test_frame(audit, &state, {confirm = true})
+	testing.expect_value(t, state.keyboard.field, field)
+	testing.expect(t, browser.editing_export_directory)
+	screen_test_frame(audit, &state, {})
+	testing.expect(t, draw_list_has_text(state.draw_list[:], text("data_files_export_directory")))
+	text_field_set(&browser.export_field, "/sync/mine")
+	screen_test_frame(audit, &state, {back = true})
+	testing.expect_value(t, state.keyboard.field, Ui_Id(0))
+	testing.expect(t, !browser.editing_export_directory)
+	testing.expect_value(t, audit.settings.export_directory, "/sync/mine")
+	testing.expect_value(t, top_screen(state.screens), Screen.Data_Files)
+	screen_test_frame(audit, &state, {})
+	testing.expect_value(t, state.focus, field)
+	testing.expect(t, draw_list_has_text(state.draw_list[:], "/sync/mine"))
+
+	state.focus = data_files_button_id("data_files_export_on_save")
+	screen_test_frame(audit, &state, {confirm = true})
+	testing.expect(t, audit.settings.export_on_save)
+	state.focus = data_files_button_id("data_files_export")
+	screen_test_frame(audit, &state, {confirm = true})
+	testing.expect(t, browser.export_requested)
+	browser.export_requested = false
+}

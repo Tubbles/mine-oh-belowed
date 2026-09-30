@@ -88,6 +88,12 @@ Settings :: struct {
 	// or Steam's keyboard where one is available, game always the game's
 	// own keys (ui_keyboard.odin).
 	on_screen_keyboard:        On_Screen_Keyboard,
+	// The Data files screen's export (work item 0131, data_export.odin):
+	// the directory Export copies the data files and the data edits into,
+	// "" for no export, and whether every save and discard of a data edit
+	// also writes or deletes its copy there.
+	export_directory:          string,
+	export_on_save:            bool,
 	// Set by the Steam Deck preset (deck_preset.odin, work item 0076)
 	// when it applied, so it applies once and later starts leave the
 	// player's choices alone.
@@ -145,6 +151,8 @@ DEFAULT_SETTINGS :: Settings {
 	touch_overlay             = .Auto,
 	touch_interaction         = .Tap,
 	on_screen_keyboard        = .System,
+	export_directory          = "",
+	export_on_save            = false,
 	deck_preset_applied       = false,
 }
 

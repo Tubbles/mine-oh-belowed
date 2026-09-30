@@ -60,6 +60,8 @@ UI_AUDIT_SETTLE_FRAMES :: 2
 // Problems logged one by one; the count covers them all.
 UI_AUDIT_REPORT_LIMIT :: 200
 UI_AUDIT_LONG_WORLD_NAME :: "Wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww"
+// A Syncthing folder on the phone's shared storage (work item 0131).
+UI_AUDIT_LONG_EXPORT_DIRECTORY :: "/storage/emulated/0/Syncthing/mine-oh-belowed-exports/couch-and-phone"
 
 Ui_Audit_Problem :: enum u8 {
 	Off_Screen,
@@ -677,6 +679,18 @@ audit_data_browser :: proc(audit: ^Ui_Audit) {
 	screens := []Screen{.Pause, .Developer, .Data_Files}
 	audit_case(audit, {name = "data files", screens = screens, walk_focus = true})
 	audit_case(audit, {name = "data files touch row", screens = screens, hud = true, touch = true})
+	// Work item 0131: a long shared storage path in the export row with
+	// Export on save on, and the directory under either keyboard.
+	settings := audit.settings
+	audit.settings.export_directory = UI_AUDIT_LONG_EXPORT_DIRECTORY
+	audit.settings.export_on_save = true
+	audit_case(audit, {name = "data files, an export directory", screens = screens, walk_focus = true})
+	audit_case(audit, {name = "data files, an export directory, touch row", screens = screens, hud = true, touch = true})
+	browser.editing_export_directory, browser.export_field = true, make_text_field(UI_AUDIT_LONG_EXPORT_DIRECTORY, TEXT_FIELD_CAPACITY)
+	audit_case(audit, {name = "data files, the export directory under the keyboard", screens = screens, keyboard = true, walk_focus = true})
+	audit_case(audit, {name = "data files, the export directory under the system keyboard", screens = screens, keyboard = true, system_keyboard = true})
+	browser.editing_export_directory = false
+	audit.settings = settings
 	open_data_browser_file(browser, test_data_directory())
 	expand_first_data_values(browser)
 	audit_case(audit, {name = "data files, a chapter open", screens = screens, walk_focus = true})

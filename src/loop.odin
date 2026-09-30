@@ -1430,9 +1430,9 @@ serve_texture_editor :: proc(state: ^Frame_State) {
 
 // The Data files screen (work item 0129), before the frame's screens: a
 // close first (the last frame's draw list pointed into the file), then a
-// discard, which reads the tree again, then a save (0130), then the tree
-// when the Developer screen or the save asked, then the file the screen
-// opens.
+// discard, which reads the tree again, then a save (0130), then an export
+// (0131, data_export.odin), then the tree when the Developer screen or the
+// save asked, then the file the screen opens.
 serve_data_browser :: proc(state: ^Frame_State) {
 	browser := &state.data_browser
 	apply_data_browser_close_request(browser)
@@ -1443,6 +1443,10 @@ serve_data_browser :: proc(state: ^Frame_State) {
 	if browser.save_requested {
 		browser.save_requested = false
 		save_data_edit(state, data_edits_directory())
+	}
+	if browser.export_requested {
+		browser.export_requested = false
+		export_data_browser_files(state, data_edits_directory())
 	}
 	if browser.refresh_requested {
 		browser.refresh_requested = false
@@ -1456,7 +1460,8 @@ serve_data_browser :: proc(state: ^Frame_State) {
 
 // Deletes the selected file's overlay copy and applies the change as the
 // watcher would (apply_data_edit_change); the tree and an open file are
-// read again. A copy that cannot be deleted is logged and toasted.
+// read again. A copy that cannot be deleted is logged and toasted. With
+// export_on_save the export's copy goes too (sync_data_edit_export).
 discard_data_edit :: proc(state: ^Frame_State) {
 	browser := &state.data_browser
 	edits_directory := data_edits_directory()
@@ -1475,6 +1480,7 @@ discard_data_edit :: proc(state: ^Frame_State) {
 		ui_toast(&state.ui, text("data_files_changes_dropped"))
 	}
 	ui_toast(&state.ui, fmt.tprintf("%s %s", text("data_files_discarded"), relative_path))
+	sync_data_edit_export(state, edits_directory, relative_path)
 	apply_data_edit_change(state, relative_path)
 	browser.refresh_requested = true
 	browser.open_requested = browser.open
@@ -1483,8 +1489,9 @@ discard_data_edit :: proc(state: ^Frame_State) {
 // Writes the open SJSON file's tree to the edits directory (0130) and
 // applies the change as the watcher would (apply_data_edit_change); the
 // tree is read again for its edited tag. A failed write is logged and
-// toasted, and the file stays unsaved. The edits directory is a parameter
-// for the test (data_edits_directory is "" under odin test).
+// toasted, and the file stays unsaved. With export_on_save the copy goes
+// to the export too (sync_data_edit_export). The edits directory is a
+// parameter for the test (data_edits_directory is "" under odin test).
 save_data_edit :: proc(state: ^Frame_State, edits_directory: string) {
 	browser := &state.data_browser
 	if !browser.open || browser.file_kind != .Sjson || browser.file_problem != "" || browser.selected < 0 || browser.selected >= len(browser.rows) {
@@ -1500,6 +1507,7 @@ save_data_edit :: proc(state: ^Frame_State, edits_directory: string) {
 	browser.loaded_text, browser.unsaved, browser.shows_overlay = file_text, false, true
 	browser.refresh_requested = true
 	ui_toast(&state.ui, fmt.tprintf("%s %s", text("data_files_saved"), relative_path))
+	sync_data_edit_export(state, edits_directory, relative_path)
 	apply_data_edit_change(state, relative_path)
 }
 

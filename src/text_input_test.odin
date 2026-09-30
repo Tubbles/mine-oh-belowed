@@ -239,3 +239,21 @@ test_backspaces_in_typed_text_each_delete_once :: proc(t: ^testing.T) {
 	advance_keyboard(&field, &keyboard, Keyboard_Input{backspace_key = true})
 	testing.expect_value(t, text_field_text(&field), "mix")
 }
+
+// Work item 0131: the keys type a path for the export directory, so a row
+// holds '/', and it types into a printable field.
+@(test)
+test_keyboard_rows_type_a_slash :: proc(t: ^testing.T) {
+	found := false
+	for row in keyboard_character_rows {
+		for character in transmute([]u8)row {
+			found ||= character == '/'
+		}
+	}
+	testing.expect(t, found)
+	field := make_text_field("", TEXT_FIELD_CAPACITY)
+	keyboard: Keyboard_State
+	press_key(&field, &keyboard, character_key('/'))
+	press_key(&field, &keyboard, character_key('a'))
+	testing.expect_value(t, text_field_text(&field), "/a")
+}

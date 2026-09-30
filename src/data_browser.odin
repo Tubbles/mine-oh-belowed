@@ -104,14 +104,23 @@ Data_Browser :: struct {
 	// Set by the screens, served by the frame loop before the next frame's
 	// screens: close the open file, read the tree again, open the selected
 	// file, discard the selected file's overlay copy, save the open file
-	// to the overlay. The file closes between frames because the frame's
-	// draw list points into its arena until the frame is drawn; the save
-	// reloads what the file feeds, strings among them.
+	// to the overlay, export the data files (0131, data_export.odin). The
+	// file closes between frames because the frame's draw list points into
+	// its arena until the frame is drawn; the save reloads what the file
+	// feeds, strings among them.
 	close_requested:   bool,
 	refresh_requested: bool,
 	open_requested:    bool,
 	discard_requested: bool,
 	save_requested:    bool,
+	export_requested:  bool,
+	// The export directory under the keyboard (0131); Done sets the
+	// setting (set_export_directory).
+	editing_export_directory: bool,
+	export_field:             Text_Field,
+	// An export on save failed and toasted; no toast again until one
+	// succeeds (sync_data_edit_export).
+	export_sync_failed:       bool,
 }
 
 make_data_browser :: proc() -> Data_Browser {
@@ -371,20 +380,10 @@ write_data_edit :: proc(edits_directory, relative_path, file_text: string) -> st
 		return "no state directory"
 	}
 	path := join_save_path(edits_directory, relative_path)
-	directory, _ := os.split_path(path)
-	if error := make_directory_path(directory); error != nil {
-		return fmt.tprintf("%v: %s", error, directory)
-	}
 	// Beside it first, then renamed over it, so a crash or a full disk
 	// never leaves a cut off copy the next start would fail on.
-	temporary := strings.concatenate({path, ".tmp"}, context.temp_allocator)
-	if error := os.write_entire_file(temporary, file_text); error != nil {
-		os.remove(temporary)
-		return fmt.tprintf("%v: %s", error, temporary)
-	}
-	if error := os.rename(temporary, path); error != nil {
-		os.remove(temporary)
-		return fmt.tprintf("%v: %s", error, path)
+	if problem := write_file_replacing(path, transmute([]byte)file_text); problem != "" {
+		return problem
 	}
 	log_printf("data: saved the data edit %s", path)
 	return ""
