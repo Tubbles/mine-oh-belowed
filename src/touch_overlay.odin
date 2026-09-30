@@ -3,7 +3,9 @@ package game
 import "core:encoding/json"
 import "core:fmt"
 import "core:math/linalg"
+import "core:mem/virtual"
 import "core:os"
+import "core:strings"
 import rl "shared:raylib"
 import sdl "vendor:sdl3"
 
@@ -50,6 +52,9 @@ TOUCH_DOUBLE_TAP_SECONDS :: 0.3
 // The latched buttons are a bit set over the element index, so a layout
 // holds at most this many elements.
 TOUCH_OVERLAY_ELEMENT_CAPACITY :: 64
+// An element's opacity (0121) runs from this to 1. The loader cannot tell
+// opacity = 0 from no opacity, which is 1.
+TOUCH_OVERLAY_OPACITY_MINIMUM :: 0.1
 
 // The settings value (settings.touch_overlay): auto is on for the Android
 // build and off elsewhere.
@@ -120,6 +125,8 @@ Touch_Overlay_Element_Entry :: struct {
 	// double tap.
 	static:               bool,
 	double_tap_toggles:   bool,
+	// 0121: 0.1 to 1, left out (0) for 1.
+	opacity:              f32,
 }
 
 Touch_Overlay_File :: struct {
@@ -150,6 +157,8 @@ Touch_Overlay_Element :: struct {
 	// A static stick's base is centred at anchor and position (0120).
 	static:               bool,
 	double_tap_toggles:   bool,
+	// The drawing's alpha over the overlay's own (0121), 0.1 to 1.
+	opacity:              f32,
 }
 
 // hotbar_drop_control: held by a long press on the selected hotbar slot
@@ -358,6 +367,73 @@ touch_overlay_control_from_name :: proc(name: string) -> (control: Touch_Overlay
 	return {button = button}, true
 }
 
+// Every control touch_overlay_control_from_name knows, the editor's rebind
+// cycle (0121): the buttons in SDL's order, then the triggers.
+touch_overlay_controls :: proc(allocator := context.temp_allocator) -> []Touch_Overlay_Control {
+	controls := make([dynamic]Touch_Overlay_Control, allocator)
+	for button in sdl.GamepadButton {
+		if _, mapped := raylib_gamepad_button(button); mapped {
+			append(&controls, Touch_Overlay_Control{button = button})
+		}
+	}
+	for trigger in Gamepad_Trigger {
+		append(&controls, Touch_Overlay_Control{is_trigger = true, trigger = trigger})
+	}
+	return controls[:]
+}
+
+// The control after this one in touch_overlay_controls, wrapping.
+next_touch_overlay_control :: proc(control: Touch_Overlay_Control) -> Touch_Overlay_Control {
+	controls := touch_overlay_controls()
+	for candidate, index in controls {
+		if candidate == control {
+			return controls[(index + 1) % len(controls)]
+		}
+	}
+	return controls[0]
+}
+
+// The strings key of a button's label for a control, which a rebind
+// gives the button.
+touch_overlay_control_label_key :: proc(control: Touch_Overlay_Control) -> string {
+	if control.is_trigger {
+		return control.trigger == .Left ? "touch_label_left_trigger" : "touch_label_right_trigger"
+	}
+	#partial switch control.button {
+	case .SOUTH:
+		return "touch_label_south"
+	case .EAST:
+		return "touch_label_east"
+	case .WEST:
+		return "touch_label_west"
+	case .NORTH:
+		return "touch_label_north"
+	case .BACK:
+		return "touch_label_back"
+	case .GUIDE:
+		return "touch_label_guide"
+	case .START:
+		return "touch_label_start"
+	case .LEFT_STICK:
+		return "touch_label_left_stick"
+	case .RIGHT_STICK:
+		return "touch_label_right_stick"
+	case .LEFT_SHOULDER:
+		return "touch_label_left_shoulder"
+	case .RIGHT_SHOULDER:
+		return "touch_label_right_shoulder"
+	case .DPAD_UP:
+		return "touch_label_dpad_up"
+	case .DPAD_DOWN:
+		return "touch_label_dpad_down"
+	case .DPAD_LEFT:
+		return "touch_label_dpad_left"
+	case .DPAD_RIGHT:
+		return "touch_label_dpad_right"
+	}
+	return "touch_label_south"
+}
+
 // Buttons by their label, the stick and the look by their kind.
 touch_overlay_element_name :: proc(entry: Touch_Overlay_Element_Entry, index: int) -> string {
 	if entry.label != "" {
@@ -468,6 +544,10 @@ resolve_touch_overlay_element :: proc(entry: Touch_Overlay_Element_Entry) -> (el
 	case .Look:
 		problem = resolve_touch_overlay_look(entry, &element)
 	}
+	if problem == "" && entry.opacity != 0 && (entry.opacity < TOUCH_OVERLAY_OPACITY_MINIMUM || entry.opacity > 1) {
+		problem = "the opacity must be from 0.1 to 1"
+	}
+	element.opacity = entry.opacity == 0 ? 1 : entry.opacity
 	return element, problem
 }
 
@@ -551,6 +631,321 @@ load_touch_overlay :: proc(data_directory: string, allocator := context.allocato
 	return layout, true
 }
 
+// User layouts (0121): touch_overlay.sjson in the user configuration
+// directory holds the layouts the editor saved (ui_touch_layout_editor.odin)
+// and the one selected. The data file's layout is "Default", which the
+// user file never holds: it stays in Game_Content, so a data reload keeps
+// applying to it.
+
+DEFAULT_TOUCH_LAYOUT_NAME :: "Default"
+
+// A layout of the user file: a name and the data file's keys.
+Touch_Overlay_Named_Entry :: struct {
+	name:                string,
+	reference_height:    f32,
+	hotbar_drop_control: string,
+	elements:            []Touch_Overlay_Element_Entry,
+}
+
+Touch_Overlay_User_File :: struct {
+	selected: string,
+	layouts:  []Touch_Overlay_Named_Entry,
+}
+
+Named_Touch_Layout :: struct {
+	name:   string,
+	layout: Touch_Overlay_Layout,
+}
+
+// The user file's layouts, in arena. selection 0 is Default, n the layout
+// layouts[n - 1]. write_requested: the frame loop writes the file
+// (serve_touch_layouts); changed: the active layout changed, so the frame
+// loop releases the latches, which index its elements. locked_path
+// (owned): the file at start was broken, so nothing may overwrite it
+// until the user fixed or removed it and started again.
+Touch_Layouts :: struct {
+	layouts:         []Named_Touch_Layout,
+	selection:       int,
+	arena:           ^virtual.Arena,
+	write_requested: bool,
+	changed:         bool,
+	locked_path:     string,
+}
+
+destroy_touch_layouts :: proc(layouts: ^Touch_Layouts) {
+	destroy_arena(layouts.arena)
+	delete(layouts.locked_path)
+	layouts^ = {}
+}
+
+// The toast while the broken file stands, in the temp allocator.
+touch_layouts_locked_text :: proc(layouts: Touch_Layouts) -> string {
+	return fmt.tprintf("%s %s", text("touch_layout_file_locked"), layouts.locked_path)
+}
+
+// A user layout needs a START button: the bindings open the pause menu
+// from START or Escape only, and raylib keeps Android's back key, so
+// without one the phone could never reach the menus again.
+touch_overlay_start_problem :: proc(layout: Touch_Overlay_Layout) -> string {
+	for element in layout.elements {
+		if element.kind == .Button && !element.control.is_trigger && element.control.button == .START {
+			return ""
+		}
+	}
+	return "no button presses START, so the pause menu could not be opened"
+}
+
+// Empty for a name the editor may save under, else why not.
+touch_layout_name_problem :: proc(name: string) -> string {
+	switch {
+	case strings.trim_space(name) == "":
+		return "a layout needs a name"
+	case strings.equal_fold(strings.trim_space(name), DEFAULT_TOUCH_LAYOUT_NAME):
+		return "the name Default belongs to the data file's layout"
+	}
+	return ""
+}
+
+// "" and Default are Default (0); found is false for an unknown name.
+touch_layout_selection :: proc(layouts: []Named_Touch_Layout, name: string) -> (selection: int, found: bool) {
+	if name == "" || name == DEFAULT_TOUCH_LAYOUT_NAME {
+		return 0, true
+	}
+	for layout, index in layouts {
+		if layout.name == name {
+			return index + 1, true
+		}
+	}
+	return 0, false
+}
+
+touch_layout_name_taken :: proc(entries: []Touch_Overlay_Named_Entry, name: string) -> bool {
+	for entry in entries {
+		if entry.name == name {
+			return true
+		}
+	}
+	return false
+}
+
+resolve_touch_overlay_named_entry :: proc(entry: Touch_Overlay_Named_Entry, earlier: []Touch_Overlay_Named_Entry, allocator := context.allocator) -> (layout: Named_Touch_Layout, problem: string) {
+	if problem = touch_layout_name_problem(entry.name); problem != "" {
+		return {}, problem
+	}
+	if touch_layout_name_taken(earlier, entry.name) {
+		return {}, fmt.tprintf("two layouts named %q", entry.name)
+	}
+	file := Touch_Overlay_File{reference_height = entry.reference_height, hotbar_drop_control = entry.hotbar_drop_control, elements = entry.elements}
+	resolved: Touch_Overlay_Layout
+	if resolved, problem = resolve_touch_overlay(file, allocator); problem == "" {
+		problem = touch_overlay_start_problem(resolved)
+	}
+	if problem != "" {
+		return {}, fmt.tprintf("(%q): %s", entry.name, problem)
+	}
+	return Named_Touch_Layout{name = entry.name, layout = resolved}, ""
+}
+
+// Held to the configuration's strict keys like the data file. Every
+// string is cloned into allocator.
+parse_touch_layouts_file :: proc(data: []byte, source: string, allocator := context.allocator) -> (layouts: []Named_Touch_Layout, selection: int, problem: string) {
+	tree, parse_problem := parse_configuration_layer(data, source, context.temp_allocator)
+	if parse_problem != "" {
+		return nil, 0, parse_problem
+	}
+	provenance := make(Configuration_Provenance, context.temp_allocator)
+	provenance[""] = source
+	file: Touch_Overlay_User_File
+	if problem = assign_configuration_value(any{&file, typeid_of(Touch_Overlay_User_File)}, json.Value(tree), "", provenance, allocator); problem != "" {
+		return nil, 0, problem
+	}
+	layouts = make([]Named_Touch_Layout, len(file.layouts), allocator)
+	for entry, index in file.layouts {
+		if layouts[index], problem = resolve_touch_overlay_named_entry(entry, file.layouts[:index], allocator); problem != "" {
+			return nil, 0, fmt.tprintf("%s: layouts[%d] %s", source, index, problem)
+		}
+	}
+	found: bool
+	if selection, found = touch_layout_selection(layouts, file.selected); !found {
+		return nil, 0, fmt.tprintf("%s: selected %q names no layout", source, file.selected)
+	}
+	return layouts, selection, ""
+}
+
+// The user directory's file in the temp allocator, "" without a user
+// directory.
+touch_layouts_path :: proc(environment: Configuration_Environment) -> string {
+	directory, found := user_configuration_directory(environment)
+	return found ? join_save_path(directory, TOUCH_OVERLAY_FILE_NAME) : ""
+}
+
+// No file is no user layouts. A file that cannot be read or is refused is
+// logged like a broken data file and Default is used; problem says so,
+// and the result is locked (locked_path) so no write replaces the file.
+load_touch_layouts :: proc(environment: Configuration_Environment) -> (layouts: Touch_Layouts, problem: string) {
+	path := touch_layouts_path(environment)
+	if path == "" || !os.is_file(path) {
+		return {}, ""
+	}
+	data, read_error := os.read_entire_file(path, context.temp_allocator)
+	if read_error != nil {
+		problem = fmt.tprintf("cannot read %s: %v", path, read_error)
+		log_printf("error: %s, the default touch layout is used", problem)
+		return Touch_Layouts{locked_path = strings.clone(path)}, problem
+	}
+	arena := new_growing_arena()
+	named: []Named_Touch_Layout
+	selection: int
+	named, selection, problem = parse_touch_layouts_file(data, path, virtual.arena_allocator(arena))
+	if problem != "" {
+		destroy_arena(arena)
+		log_printf("error: invalid %s, the default touch layout is used", problem)
+		return Touch_Layouts{locked_path = strings.clone(path)}, problem
+	}
+	return Touch_Layouts{layouts = named, selection = selection, arena = arena}, ""
+}
+
+// The layout the overlay reads: the selected user layout, else Default.
+active_touch_layout :: proc(layouts: Touch_Layouts, default_layout: Touch_Overlay_Layout) -> Touch_Overlay_Layout {
+	if layouts.selection > 0 && layouts.selection <= len(layouts.layouts) {
+		return layouts.layouts[layouts.selection - 1].layout
+	}
+	return default_layout
+}
+
+selected_touch_layout_name :: proc(layouts: Touch_Layouts) -> string {
+	if layouts.selection > 0 && layouts.selection <= len(layouts.layouts) {
+		return layouts.layouts[layouts.selection - 1].name
+	}
+	return DEFAULT_TOUCH_LAYOUT_NAME
+}
+
+// Default, then the user layouts in the file's order, wrapping.
+next_touch_layout_selection :: proc(layouts: Touch_Layouts) -> int {
+	return (layouts.selection + 1) % (len(layouts.layouts) + 1)
+}
+
+clone_touch_overlay_layout :: proc(layout: Touch_Overlay_Layout, allocator := context.allocator) -> Touch_Overlay_Layout {
+	result := layout
+	result.elements = make([]Touch_Overlay_Element, len(layout.elements), allocator)
+	for element, index in layout.elements {
+		result.elements[index] = element
+		result.elements[index].label = strings.clone(element.label, allocator)
+	}
+	return result
+}
+
+// Cloned into a new arena before the old one goes, so named may point
+// into it.
+replace_touch_layouts :: proc(layouts: ^Touch_Layouts, named: []Named_Touch_Layout, selection: int) {
+	arena := new_growing_arena()
+	allocator := virtual.arena_allocator(arena)
+	cloned := make([]Named_Touch_Layout, len(named), allocator)
+	for layout, index in named {
+		cloned[index] = Named_Touch_Layout{name = strings.clone(layout.name, allocator), layout = clone_touch_overlay_layout(layout.layout, allocator)}
+	}
+	destroy_arena(layouts.arena)
+	layouts.layouts, layouts.selection, layouts.arena = cloned, selection, arena
+}
+
+// The layouts with name's replaced by layout, or layout added at the end,
+// in the temp allocator (pointing into the originals).
+touch_layouts_with :: proc(layouts: []Named_Touch_Layout, name: string, layout: Touch_Overlay_Layout) -> (result: []Named_Touch_Layout, selection: int) {
+	named := make([dynamic]Named_Touch_Layout, 0, len(layouts) + 1, context.temp_allocator)
+	append(&named, ..layouts)
+	for &existing, index in named {
+		if existing.name == name {
+			existing.layout = layout
+			return named[:], index + 1
+		}
+	}
+	append(&named, Named_Touch_Layout{name = name, layout = layout})
+	return named[:], len(named)
+}
+
+// The layouts without the one at selection, in the temp allocator.
+touch_layouts_without :: proc(layouts: []Named_Touch_Layout, selection: int) -> []Named_Touch_Layout {
+	named := make([dynamic]Named_Touch_Layout, 0, len(layouts), context.temp_allocator)
+	for layout, index in layouts {
+		if index + 1 != selection {
+			append(&named, layout)
+		}
+	}
+	return named[:]
+}
+
+touch_overlay_control_name :: proc(control: Touch_Overlay_Control) -> string {
+	if control.is_trigger {
+		return control.trigger == .Left ? GAMEPAD_LEFT_TRIGGER_NAME : GAMEPAD_RIGHT_TRIGGER_NAME
+	}
+	return fmt.tprint(control.button)
+}
+
+// One element in the data file's form, the keys its kind reads; opacity
+// only when below 1. In the temp allocator.
+touch_overlay_element_text :: proc(element: Touch_Overlay_Element) -> string {
+	builder := strings.builder_make(context.temp_allocator)
+	fmt.sbprintf(&builder, "{{kind = %q", touch_overlay_kind_names[element.kind])
+	switch element.kind {
+	case .Button:
+		fmt.sbprintf(&builder, " control = %q shape = %q", touch_overlay_control_name(element.control), touch_overlay_shape_names[element.shape])
+		fmt.sbprintf(&builder, " anchor = %q position = %v size = %v label = %q", touch_overlay_anchor_names[element.anchor], element.position, element.size, element.label)
+		if element.double_tap_toggles {
+			strings.write_string(&builder, " double_tap_toggles = true")
+		}
+	case .Stick:
+		fmt.sbprintf(&builder, " side = %q radius = %v sprint_rim = %v", touch_overlay_side_names[element.side], element.radius, element.sprint_rim)
+		if element.static {
+			fmt.sbprintf(&builder, " static = true anchor = %q position = %v", touch_overlay_anchor_names[element.anchor], element.position)
+		}
+	case .Look:
+		fmt.sbprintf(&builder, " side = %q sensitivity = %v", touch_overlay_side_names[element.side], element.sensitivity)
+		fmt.sbprintf(&builder, " hold_control = %q", touch_overlay_control_name(element.hold_control))
+		fmt.sbprintf(&builder, " tap_interact_control = %q", touch_overlay_control_name(element.tap_interact_control))
+		fmt.sbprintf(&builder, " tap_place_control = %q", touch_overlay_control_name(element.tap_place_control))
+	}
+	if element.opacity < 1 {
+		fmt.sbprintf(&builder, " opacity = %v", element.opacity)
+	}
+	strings.write_byte(&builder, '}')
+	return strings.to_string(builder)
+}
+
+// The whole user file, in the temp allocator: written whole, since the
+// layers' arrays replace wholesale.
+touch_layouts_file_text :: proc(layouts: Touch_Layouts) -> string {
+	builder := strings.builder_make(context.temp_allocator)
+	strings.write_string(&builder, "// Written by the touch layout editor (doc/input.md, Touch overlay).\n")
+	fmt.sbprintf(&builder, "selected = %q\n", selected_touch_layout_name(layouts))
+	strings.write_string(&builder, "layouts = [\n")
+	for named in layouts.layouts {
+		layout := named.layout
+		fmt.sbprintf(&builder, "\t{{name = %q reference_height = %v hotbar_drop_control = %q elements = [\n", named.name, layout.reference_height, touch_overlay_control_name(layout.hotbar_drop_control))
+		for element in layout.elements {
+			fmt.sbprintf(&builder, "\t\t%s\n", touch_overlay_element_text(element))
+		}
+		strings.write_string(&builder, "\t]}\n")
+	}
+	strings.write_string(&builder, "]\n")
+	return strings.to_string(builder)
+}
+
+// Returns the problem, or an empty string.
+write_touch_layouts_file :: proc(environment: Configuration_Environment, layouts: Touch_Layouts) -> string {
+	directory, found := user_configuration_directory(environment)
+	if !found {
+		return "no configuration directory (set " + CONFIG_HOME_VARIABLES + ")"
+	}
+	if error := make_directory_path(directory); error != nil {
+		return fmt.tprintf("cannot create %s: %v", directory, error)
+	}
+	path := join_save_path(directory, TOUCH_OVERLAY_FILE_NAME)
+	if error := os.write_entire_file(path, touch_layouts_file_text(layouts)); error != nil {
+		return fmt.tprintf("cannot write %s: %v", path, error)
+	}
+	return ""
+}
+
 // When it is on.
 
 touch_overlay_enabled :: proc(mode: Touch_Overlay_Mode, forced, android: bool) -> bool {
@@ -586,6 +981,26 @@ anchored_position :: proc(anchor: Touch_Overlay_Anchor, offset, screen_size: [2]
 		return {screen_size.x / 2 + offset.x, offset.y}
 	}
 	return offset
+}
+
+// The offset from the anchor that puts an element's centre at point, the
+// inverse of anchored_position (the editor's move, 0121).
+anchored_offset :: proc(anchor: Touch_Overlay_Anchor, point, screen_size: [2]f32) -> [2]f32 {
+	switch anchor {
+	case .Top_Left:
+		return point
+	case .Top_Right:
+		return {screen_size.x - point.x, point.y}
+	case .Bottom_Left:
+		return {point.x, screen_size.y - point.y}
+	case .Bottom_Right:
+		return screen_size - point
+	case .Bottom_Center:
+		return {point.x - screen_size.x / 2, screen_size.y - point.y}
+	case .Top_Center:
+		return {point.x - screen_size.x / 2, point.y}
+	}
+	return point
 }
 
 // The buttons on a screen of screen_size render pixels, every length
@@ -1285,16 +1700,28 @@ eye_aim_direction :: proc(world: ^World, registry: Block_Registry, eye, ray_orig
 	return linalg.normalize0(ray_origin + ray_direction * distance - eye)
 }
 
+// The layout the overlay reads: the selected user layout, else Default
+// (0121).
+frame_touch_layout :: proc(state: ^Frame_State) -> Touch_Overlay_Layout {
+	return active_touch_layout(state.touch_layouts, state.content.touch_overlay)
+}
+
+// The layout editor on top draws the layout itself and takes every touch
+// as the pointer, so the overlay neither reads nor draws (0121).
+touch_layout_editor_shown :: proc(screens: Screen_Stack) -> bool {
+	return top_screen(screens) == .Touch_Layout
+}
+
 // Only in a world: the title screens take touch as the pointer alone.
 read_touch_overlay_frame :: proc(state: ^Frame_State) -> Touch_Overlay_Frame {
-	if !touch_overlay_on(state) || state.session == nil {
+	if !touch_overlay_on(state) || state.session == nil || touch_layout_editor_shown(state.ui.screens) {
 		state.touch_overlay = {}
 		return {}
 	}
 	screen_size := render_size()
 	screen := [2]f32{f32(screen_size.x), f32(screen_size.y)}
 	buffer: [TOUCH_POINT_CAPACITY]Touch_Point
-	frame := touch_overlay_frame(&state.touch_overlay, state.content.touch_overlay, read_touch_points(buffer[:]), screen, !ui_blocks_world(state.ui.screens), touch_interaction_frame(state))
+	frame := touch_overlay_frame(&state.touch_overlay, frame_touch_layout(state), read_touch_points(buffer[:]), screen, !ui_blocks_world(state.ui.screens), touch_interaction_frame(state))
 	frame.output.look_delta = render_pixels_to_window_units(frame.output.look_delta, cursor_window_size(), screen_size)
 	if frame.output.aims {
 		simulation := &state.session.simulation
@@ -1353,7 +1780,8 @@ render_pixels_to_window_units :: proc(delta: [2]f32, window_size, render_size: [
 
 // Drawing.
 
-// Outlines and labels at a low alpha, a held or latched button filled.
+// Outlines and labels at a low alpha times the element's opacity, a held
+// or latched button filled.
 // Nothing moves but with a finger, so nothing pulses (DESIGN.md).
 TOUCH_OVERLAY_COLOR :: Ui_Color{255, 255, 255, 89}
 TOUCH_OVERLAY_LINE :: 2.0
@@ -1365,26 +1793,33 @@ pixels_to_units_rectangle :: proc(centre, size: [2]f32, pixels_per_unit: f32) ->
 	return Ui_Rectangle{corner.x, corner.y, size.x / pixels_per_unit, size.y / pixels_per_unit}
 }
 
-draw_touch_overlay_button :: proc(ui: ^Ui_State, rectangle: Ui_Rectangle, shape: Touch_Overlay_Shape, down: bool, label: string) {
+// The overlay's colour with an element's opacity (0121) on its alpha.
+touch_overlay_color :: proc(opacity: f32) -> Ui_Color {
+	color := TOUCH_OVERLAY_COLOR
+	color.a = u8(f32(color.a) * clamp(opacity, 0, 1) + 0.5)
+	return color
+}
+
+draw_touch_overlay_button :: proc(ui: ^Ui_State, rectangle: Ui_Rectangle, shape: Touch_Overlay_Shape, down: bool, label: string, color: Ui_Color) {
 	switch shape {
 	case .Rectangle:
 		if down {
-			draw_fill(ui, rectangle, TOUCH_OVERLAY_COLOR)
+			draw_fill(ui, rectangle, color)
 		}
-		draw_outline(ui, rectangle, TOUCH_OVERLAY_COLOR, TOUCH_OVERLAY_LINE)
+		draw_outline(ui, rectangle, color, TOUCH_OVERLAY_LINE)
 	case .Circle:
 		if down {
-			draw_circle(ui, rectangle, TOUCH_OVERLAY_COLOR)
+			draw_circle(ui, rectangle, color)
 		}
-		draw_ring(ui, rectangle, TOUCH_OVERLAY_COLOR, TOUCH_OVERLAY_LINE)
+		draw_ring(ui, rectangle, color, TOUCH_OVERLAY_LINE)
 	}
-	draw_text(ui, rectangle, label, UI_BODY_TEXT_SIZE, .Centre, TOUCH_OVERLAY_COLOR)
+	draw_text(ui, rectangle, label, UI_BODY_TEXT_SIZE, .Centre, color)
 }
 
-draw_touch_stick :: proc(ui: ^Ui_State, slot: Touch_Slot, radius: f32) {
+draw_touch_stick :: proc(ui: ^Ui_State, slot: Touch_Slot, radius: f32, color: Ui_Color) {
 	diameter := [2]f32{2 * radius, 2 * radius}
-	draw_ring(ui, pixels_to_units_rectangle(slot.origin, diameter, ui.pixels_per_unit), TOUCH_OVERLAY_COLOR, TOUCH_OVERLAY_LINE)
-	draw_circle(ui, pixels_to_units_rectangle(slot.position, diameter * TOUCH_OVERLAY_KNOB_FRACTION, ui.pixels_per_unit), TOUCH_OVERLAY_COLOR)
+	draw_ring(ui, pixels_to_units_rectangle(slot.origin, diameter, ui.pixels_per_unit), color, TOUCH_OVERLAY_LINE)
+	draw_circle(ui, pixels_to_units_rectangle(slot.position, diameter * TOUCH_OVERLAY_KNOB_FRACTION, ui.pixels_per_unit), color)
 }
 
 // Through the UI draw list, after the screens so Start and Back show
@@ -1396,7 +1831,7 @@ draw_touch_overlay :: proc(ui: ^Ui_State, state: Touch_Overlay_State, layout: To
 	for shown in placed_for_screen(layout, placed, world_shown, context.temp_allocator) {
 		element := layout.elements[shown.element]
 		rectangle := pixels_to_units_rectangle(shown.centre, shown.size, ui.pixels_per_unit)
-		draw_touch_overlay_button(ui, rectangle, shown.shape, touch_overlay_control_down(output, element.control), element.label)
+		draw_touch_overlay_button(ui, rectangle, shown.shape, touch_overlay_control_down(output, element.control), element.label, touch_overlay_color(element.opacity))
 	}
 	if !world_shown {
 		return
@@ -1404,14 +1839,15 @@ draw_touch_overlay :: proc(ui: ^Ui_State, state: Touch_Overlay_State, layout: To
 	scale := touch_overlay_scale(layout, screen_pixels)
 	for slot in state.slots {
 		if slot.role == .Stick && touch_slot_reads(slot, layout) {
-			draw_touch_stick(ui, slot, layout.elements[slot.element].radius * scale)
+			stick := layout.elements[slot.element]
+			draw_touch_stick(ui, slot, stick.radius * scale, touch_overlay_color(stick.opacity))
 		}
 	}
 	// A static stick at rest: its base with the knob centred.
 	for element in layout.elements {
 		if element.kind == .Stick && element.static && !stick_held(state) {
 			centre := static_stick_centre(layout, element, screen_pixels)
-			draw_touch_stick(ui, Touch_Slot{origin = centre, position = centre}, element.radius * scale)
+			draw_touch_stick(ui, Touch_Slot{origin = centre, position = centre}, element.radius * scale, touch_overlay_color(element.opacity))
 		}
 	}
 }

@@ -334,32 +334,11 @@ texture_seed_row :: proc(state: ^Ui_State, row: Ui_Rectangle, parameters: ^Ore_T
 	}
 	stepper := row
 	cut_left(&stepper, column(row, 3, 0, UI_GAP).width + UI_GAP)
-	seed = texture_seed_stepper(state, stepper, text(ore_texture_parameter_label_keys[.Seed]), seed)
+	seed_text := format_texture_parameter_value(ore_texture_parameter_ranges[.Seed], f64(seed))
+	seed = step_texture_seed(seed, ui_stepper(state, stepper, text(ore_texture_parameter_label_keys[.Seed]), seed_text))
 	changed := seed != parameters.seed
 	parameters.seed = seed
 	return changed
-}
-
-// Label on the left, "< seed >" on the right. Left and right step the
-// seed by one while focused; a click on the left half steps it down, on
-// the right half up.
-texture_seed_stepper :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, seed: int) -> int {
-	id := ui_id(state, label)
-	interaction := ui_interact(state, id, rectangle, {.Adjusts_Horizontally})
-	result := seed
-	if interaction.focused {
-		result = step_texture_seed(result, state.navigation_step)
-	}
-	if interaction.hovered && state.click {
-		result = step_texture_seed(result, state.pointer.x < rectangle_centre(rectangle).x ? .Left : .Right)
-	}
-	widget_background(state, rectangle, id, interaction)
-	content := inset(rectangle, UI_PADDING)
-	value_text := fit_text(state, strings.concatenate({"<  ", format_texture_parameter_value(ore_texture_parameter_ranges[.Seed], f64(result)), "  >"}, context.temp_allocator), UI_BODY_TEXT_SIZE, content.width / 2)
-	draw_text(state, content, value_text, UI_BODY_TEXT_SIZE, .Right)
-	content.width = max(content.width - ui_text_width(state, value_text, UI_BODY_TEXT_SIZE) - UI_GAP, 0)
-	draw_text_fitted(state, content, label, UI_BODY_TEXT_SIZE, .Left)
-	return result
 }
 
 texture_parameter_slider :: proc(state: ^Ui_State, row: Ui_Rectangle, parameters: ^Ore_Texture_Parameters, parameter: Ore_Texture_Parameter) -> bool {

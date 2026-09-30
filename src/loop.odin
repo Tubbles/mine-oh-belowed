@@ -172,6 +172,11 @@ Frame_State :: struct {
 	// The texture editor's entries (work item 0100, ui_texture_editor.odin),
 	// read at start and served by serve_texture_editor.
 	texture_editor:       Texture_Editor,
+	// The user touch layouts (0121, touch_overlay.odin), read at start and
+	// written by serve_touch_layouts, and the layout editor's draft
+	// (ui_touch_layout_editor.odin).
+	touch_layouts:        Touch_Layouts,
+	touch_layout_editor:  Touch_Layout_Editor,
 }
 
 // Above the middle of the debug terrain, looking down at an angle. The
@@ -752,6 +757,9 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 		show_world_overlay = &state.show_world_overlay,
 		developer_chapter_count = len(content.developer_kits.kits),
 		texture_editor  = &state.texture_editor,
+		touch_layouts   = &state.touch_layouts,
+		touch_layout_editor = &state.touch_layout_editor,
+		default_touch_layout = content.touch_overlay,
 	}
 	session := state.session
 	if session == nil {
@@ -798,8 +806,8 @@ run_ui_frame :: proc(state: ^Frame_State) {
 	}
 	run_screens(&state.ui, screen_context)
 	// After the screens, so Start and Back show over an open one.
-	if state.session != nil && touch_overlay_on(state) {
-		draw_touch_overlay(&state.ui, state.touch_overlay, state.content.touch_overlay, screen_pixels, !ui_blocks_world(state.ui.screens))
+	if state.session != nil && touch_overlay_on(state) && !touch_layout_editor_shown(state.ui.screens) {
+		draw_touch_overlay(&state.ui, state.touch_overlay, frame_touch_layout(state), screen_pixels, !ui_blocks_world(state.ui.screens))
 	}
 	icon_atlas := Icon_Atlas {
 		texture      = chunk_atlas_texture(state.renderer),
@@ -1085,6 +1093,12 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	defer destroy_command_frame_state(&state)
 	load_texture_editor(&state.texture_editor, data_directory, texture_edits_path(), state.content.blocks)
 	defer destroy_texture_editor(&state.texture_editor)
+	touch_layouts_problem: string
+	if state.touch_layouts, touch_layouts_problem = load_touch_layouts(state.environment); touch_layouts_problem != "" {
+		ui_toast(&state.ui, touch_layouts_locked_text(state.touch_layouts))
+	}
+	defer destroy_touch_layouts(&state.touch_layouts)
+	defer destroy_touch_layout_editor(&state.touch_layout_editor)
 	if session != nil {
 		enter_session(&state, session)
 	} else {
@@ -1095,6 +1109,7 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	for !rl.WindowShouldClose() && !state.quit_requested {
 		update_frame(&state)
 		serve_texture_editor(&state)
+		serve_touch_layouts(&state)
 		render_frame(&state)
 		update_audio(&state.audio, state.settings, state.frame_seconds)
 		apply_session_request(&state)
@@ -1316,6 +1331,34 @@ serve_texture_editor :: proc(state: ^Frame_State) {
 	if editor.save_requested {
 		editor.save_requested = false
 		save_texture_edits(state)
+	}
+}
+
+// The touch layouts (0121), between frames: the editor's request, served
+// after the frame's draw list ran, since it may free the draft's arena
+// the frame's text pointed into; a change of the active layout releases
+// the overlay's latches, which index its elements; a change the settings
+// or the editor made is written to the user file whole. A failed write is
+// logged and toasted, and not retried. While a broken file from the start
+// stands, nothing is written.
+serve_touch_layouts :: proc(state: ^Frame_State) {
+	layouts := &state.touch_layouts
+	apply_touch_layout_request(&state.ui, &state.touch_layout_editor, layouts, state.content.touch_overlay)
+	if layouts.changed {
+		layouts.changed = false
+		state.touch_overlay = release_touch_latches(state.touch_overlay)
+	}
+	if !layouts.write_requested {
+		return
+	}
+	layouts.write_requested = false
+	if layouts.locked_path != "" {
+		ui_toast(&state.ui, touch_layouts_locked_text(layouts^))
+		return
+	}
+	if problem := write_touch_layouts_file(state.environment, layouts^); problem != "" {
+		log_printf("error: cannot save the touch layouts: %s", problem)
+		ui_toast(&state.ui, text("touch_layout_save_failed"))
 	}
 }
 

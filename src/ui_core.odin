@@ -48,6 +48,9 @@ Ui_Direction :: enum u8 {
 Ui_Widget_Flag :: enum u8 {
 	// Left and right change the widget's value instead of moving the focus.
 	Adjusts_Horizontally,
+	// Up and down do likewise (the touch layout editor's selected element,
+	// which the d-pad moves, 0121).
+	Adjusts_Vertically,
 	// The tooltip shows once the focus has rested on the widget for
 	// UI_TOOLTIP_DELAY, without the Info toggle (item slots, work item 0094).
 	Tooltip_Shows_Itself,
@@ -229,6 +232,9 @@ Screen :: enum u8 {
 	Technologies,
 	// The top down map (ui_map.odin).
 	Map,
+	// The touch layout editor (ui_touch_layout_editor.odin, 0121), above
+	// the settings.
+	Touch_Layout,
 	// The title and its screens, shown while no world is played.
 	Title,
 	New_World,
@@ -717,7 +723,7 @@ focus_step_allowed :: proc(focused: Ui_Widget, step: Ui_Direction) -> bool {
 	case .Left, .Right:
 		return .Adjusts_Horizontally not_in focused.flags
 	case .Up, .Down:
-		return true
+		return .Adjusts_Vertically not_in focused.flags
 	}
 	return false
 }
@@ -863,7 +869,7 @@ screen_pauses_simulation :: proc(screen: Screen) -> bool {
 	switch screen {
 	case .None, .Inventory, .Machine, .Recipes, .Journal, .Power, .Statistics, .Technologies, .Map:
 		return false
-	case .Pause, .Settings, .Developer, .Textures, .Title, .New_World, .Load_World, .Confirm_Delete:
+	case .Pause, .Settings, .Developer, .Textures, .Touch_Layout, .Title, .New_World, .Load_World, .Confirm_Delete:
 		return true
 	}
 	return false

@@ -1,6 +1,7 @@
 package game
 
 import "core:math/linalg"
+import "core:os"
 import "core:testing"
 import rl "shared:raylib"
 import sdl "vendor:sdl3"
@@ -501,6 +502,8 @@ test_touch_overlay_presses_keep_touch_the_active_device :: proc(t: ^testing.T) {
 }
 
 // The overlay's buttons in UI units at ui scale 1, as the HUD lays out.
+// The shipped layout, Default, only: a user layout (0121) may cover the
+// hotbar.
 @(test)
 test_no_touch_overlay_element_covers_a_hotbar_slot :: proc(t: ^testing.T) {
 	layout := shipped_touch_overlay(t)
@@ -1167,4 +1170,152 @@ test_a_long_press_on_b_then_a_quick_press_does_not_latch :: proc(t: ^testing.T) 
 	touch_frame(&state, layout, {})
 	down, lifted := tap_b(&state, layout, 1)
 	testing.expect(t, down && !lifted)
+}
+
+// User layouts (0121).
+
+expect_same_touch_layout :: proc(t: ^testing.T, value, expected: Touch_Overlay_Layout, loc := #caller_location) {
+	testing.expect_value(t, value.reference_height, expected.reference_height, loc = loc)
+	testing.expect_value(t, value.hotbar_drop_control, expected.hotbar_drop_control, loc = loc)
+	testing.expect_value(t, len(value.elements), len(expected.elements), loc = loc)
+	for element, index in value.elements {
+		if index < len(expected.elements) {
+			testing.expect_value(t, element, expected.elements[index], loc = loc)
+		}
+	}
+}
+
+// The shipped layout with every key the editor changes set away from
+// the data file: a moved, larger, fainter and rebound A, and a static
+// stick.
+edited_touch_layout :: proc(t: ^testing.T) -> Touch_Overlay_Layout {
+	layout := clone_touch_overlay_layout(shipped_touch_overlay(t), context.temp_allocator)
+	for &element in layout.elements {
+		switch {
+		case element.label == "A":
+			element.position, element.size, element.opacity = {300.5, 590}, {166, 166}, 0.4
+			element.control, element.label = {button = .NORTH}, "Y"
+		case element.kind == .Stick:
+			element.static, element.anchor, element.position, element.opacity = true, .Bottom_Left, {260, 260}, 0.7
+		}
+	}
+	return layout
+}
+
+@(test)
+test_the_user_touch_layouts_round_trip :: proc(t: ^testing.T) {
+	context.allocator = context.temp_allocator
+	named := [?]Named_Touch_Layout{{name = "Mine", layout = edited_touch_layout(t)}, {name = "Shipped", layout = shipped_touch_overlay(t)}}
+	written := Touch_Layouts{layouts = named[:], selection = 1}
+	text := touch_layouts_file_text(written)
+	layouts, selection, problem := parse_touch_layouts_file(transmute([]byte)text, "touch_overlay.sjson")
+	testing.expectf(t, problem == "", "%s in\n%s", problem, text)
+	testing.expect_value(t, selection, 1)
+	testing.expect_value(t, len(layouts), 2)
+	if len(layouts) == 2 {
+		testing.expect_value(t, layouts[0].name, "Mine")
+		expect_same_touch_layout(t, layouts[0].layout, named[0].layout)
+		expect_same_touch_layout(t, layouts[1].layout, named[1].layout)
+	}
+}
+
+@(test)
+test_the_selected_user_layout_wins_over_default :: proc(t: ^testing.T) {
+	context.allocator = context.temp_allocator
+	default_layout := shipped_touch_overlay(t)
+	named := [?]Named_Touch_Layout{{name = "Mine", layout = edited_touch_layout(t)}}
+	text := touch_layouts_file_text(Touch_Layouts{layouts = named[:], selection = 1})
+	layouts, selection, problem := parse_touch_layouts_file(transmute([]byte)text, "touch_overlay.sjson")
+	testing.expect_value(t, problem, "")
+	loaded := Touch_Layouts{layouts = layouts, selection = selection}
+	testing.expect_value(t, selected_touch_layout_name(loaded), "Mine")
+	expect_same_touch_layout(t, active_touch_layout(loaded, default_layout), named[0].layout)
+	// Stepping the selection reaches Default and wraps back.
+	loaded.selection = next_touch_layout_selection(loaded)
+	testing.expect_value(t, selected_touch_layout_name(loaded), DEFAULT_TOUCH_LAYOUT_NAME)
+	expect_same_touch_layout(t, active_touch_layout(loaded, default_layout), default_layout)
+	testing.expect_value(t, next_touch_layout_selection(loaded), 1)
+}
+
+START_BUTTON :: `{kind = "button" control = "START" shape = "rectangle" anchor = "top_center" position = [92, 60] size = [163, 79] label = "Start"}`
+
+@(test)
+test_a_broken_user_touch_layout_file_reports_and_default_loads :: proc(t: ^testing.T) {
+	context.allocator = context.temp_allocator
+	Case :: struct {
+		text:    string,
+		mention: string,
+	}
+	cases := [?]Case {
+		{`selected = "Mine" layouts = [{name = "Mine" reference_height = 1080 hotbar_drop_control = "DPAD_DOWN" elements = [{kind = "button" control = "SOUTHH" shape = "circle" anchor = "top_right" position = [10, 10] size = [20, 20] label = "A"}]}]`, `layouts[0] ("Mine"): elements[0] ("A"): unknown control "SOUTHH"`},
+		{`selected = "Mine" layouts = [{name = "Mine" reference_height = 1080 hotbar_drop_control = "DPAD_DOWN" elements = [{kind = "button" control = "SOUTH" shape = "circle" anchor = "top_right" position = [10, 10] size = [20, 20] label = "A" opacity = 1.5}]}]`, `elements[0] ("A"): the opacity must be from 0.1 to 1`},
+		{`selected = "Other" layouts = []`, `selected "Other" names no layout`},
+		{`layouts = [{name = "Default" reference_height = 1080 hotbar_drop_control = "DPAD_DOWN" elements = []}]`, "the name Default belongs to the data file's layout"},
+		{`layouts = [{name = "A" reference_height = 1080 hotbar_drop_control = "DPAD_DOWN" elements = [` + START_BUTTON + `]} {name = "A" reference_height = 1080 hotbar_drop_control = "DPAD_DOWN" elements = [` + START_BUTTON + `]}]`, `layouts[1] two layouts named "A"`},
+		{`layouts = [{name = "default " reference_height = 1080 hotbar_drop_control = "DPAD_DOWN" elements = [` + START_BUTTON + `]}]`, "the name Default belongs to the data file's layout"},
+		{`selected = "Mine" layouts = [{name = "Mine" reference_height = 1080 hotbar_drop_control = "DPAD_DOWN" elements = [{kind = "button" control = "BACK" shape = "rectangle" anchor = "top_center" position = [10, 60] size = [100, 60] label = "Back"}]}]`, `layouts[0] ("Mine"): no button presses START`},
+		{`selected = "Mine" colour = "red"`, "unknown key colour"},
+	}
+	for test_case in cases {
+		_, _, problem := parse_touch_layouts_file(transmute([]byte)test_case.text, "touch_overlay.sjson")
+		expect_problem_mentions(t, problem, "touch_overlay.sjson", test_case.mention)
+	}
+	root := make_configuration_test_directory()
+	defer os.remove_all(root)
+	environment := test_environment(root)
+	write_test_file(touch_layouts_path(environment), cases[0].text)
+	layouts, problem := load_touch_layouts(environment)
+	defer destroy_touch_layouts(&layouts)
+	expect_problem_mentions(t, problem, `unknown control "SOUTHH"`)
+	testing.expect_value(t, layouts.selection, 0)
+	// Locked, so nothing overwrites the broken file.
+	testing.expect_value(t, layouts.locked_path, touch_layouts_path(environment))
+	expect_same_touch_layout(t, active_touch_layout(layouts, shipped_touch_overlay(t)), shipped_touch_overlay(t))
+}
+
+@(test)
+test_the_user_touch_layouts_file_is_written_and_read_back :: proc(t: ^testing.T) {
+	context.allocator = context.temp_allocator
+	root := make_configuration_test_directory()
+	defer os.remove_all(root)
+	environment := test_environment(root)
+	// No file: Default and no problem.
+	missing, missing_problem := load_touch_layouts(environment)
+	testing.expect_value(t, missing_problem, "")
+	testing.expect_value(t, missing.selection, 0)
+	written: Touch_Layouts
+	defer destroy_touch_layouts(&written)
+	named, selection := touch_layouts_with(nil, "Mine", edited_touch_layout(t))
+	replace_touch_layouts(&written, named, selection)
+	testing.expect_value(t, write_touch_layouts_file(environment, written), "")
+	read, problem := load_touch_layouts(environment)
+	defer destroy_touch_layouts(&read)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, selected_touch_layout_name(read), "Mine")
+	expect_same_touch_layout(t, active_touch_layout(read, {}), edited_touch_layout(t))
+	// Deleting it leaves Default selected.
+	replace_touch_layouts(&read, touch_layouts_without(read.layouts, read.selection), 0)
+	testing.expect_value(t, len(read.layouts), 0)
+	testing.expect_value(t, selected_touch_layout_name(read), DEFAULT_TOUCH_LAYOUT_NAME)
+}
+
+@(test)
+test_anchored_offset_inverts_anchored_position :: proc(t: ^testing.T) {
+	for anchor in Touch_Overlay_Anchor {
+		for screen in ([?][2]f32{PHONE_SCREEN, {1280, 720}}) {
+			point := [2]f32{900, 300}
+			expect_near(t, anchored_position(anchor, anchored_offset(anchor, point, screen), screen), point)
+		}
+	}
+}
+
+@(test)
+test_opacity_scales_the_overlays_alpha :: proc(t: ^testing.T) {
+	testing.expect_value(t, touch_overlay_color(1), TOUCH_OVERLAY_COLOR)
+	testing.expect_value(t, touch_overlay_color(0.5).a, u8(45))
+	testing.expect_value(t, touch_overlay_color(0.5).rgb, TOUCH_OVERLAY_COLOR.rgb)
+	// Left out, it is 1.
+	for element in shipped_touch_overlay(t).elements {
+		testing.expect_value(t, element.opacity, 1)
+	}
 }

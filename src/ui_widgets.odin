@@ -400,6 +400,30 @@ ui_choice :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label, value: strin
 	return interaction.activated
 }
 
+// Label on the left, "<  value  >" on the right (the texture editor's
+// seed, the touch layout editor's values). Left and right step while
+// focused; a click on the left half steps down, on the right half up.
+// Returns the step's direction, .None for none; the caller steps the
+// value, so the id stays with the label.
+ui_stepper :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label, value: string, tooltip := "") -> Ui_Direction {
+	id := ui_id(state, label)
+	interaction := ui_interact(state, id, rectangle, {.Adjusts_Horizontally}, tooltip)
+	direction := Ui_Direction.None
+	if interaction.focused && (state.navigation_step == .Left || state.navigation_step == .Right) {
+		direction = state.navigation_step
+	}
+	if interaction.hovered && state.click {
+		direction = state.pointer.x < rectangle_centre(rectangle).x ? .Left : .Right
+	}
+	widget_background(state, rectangle, id, interaction)
+	content := inset(rectangle, UI_PADDING)
+	value_text := fit_text(state, strings.concatenate({"<  ", value, "  >"}, context.temp_allocator), UI_BODY_TEXT_SIZE, content.width / 2)
+	draw_text(state, content, value_text, UI_BODY_TEXT_SIZE, .Right)
+	content.width = max(content.width - ui_text_width(state, value_text, UI_BODY_TEXT_SIZE) - UI_GAP, 0)
+	draw_text_fitted(state, content, label, UI_BODY_TEXT_SIZE, .Left)
+	return direction
+}
+
 slider_fraction :: proc(value: f32, range: Slider_Range) -> f32 {
 	if range.maximum <= range.minimum {
 		return 0

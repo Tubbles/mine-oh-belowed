@@ -14,7 +14,7 @@ SETTINGS_ROW_COUNT :: 14
 DISPLAY_SETTINGS_ROW_COUNT :: 17
 AUDIO_SETTINGS_ROW_COUNT :: 3
 CONTROL_SETTINGS_ROW_COUNT :: 5
-ACCESSIBILITY_SETTINGS_ROW_COUNT :: 7
+ACCESSIBILITY_SETTINGS_ROW_COUNT :: 9
 
 Screen_Context :: struct {
 	settings:        ^Settings,
@@ -98,6 +98,12 @@ Screen_Context :: struct {
 	// mining_ring_centre is in render pixels.
 	touch_aims:           bool,
 	mining_ring_centre:   [2]f32,
+	// The user touch layouts and the editor's draft (0121,
+	// ui_touch_layout_editor.odin), kept by the frame loop, and the data
+	// file's layout, Default. Nil in tests that edit no layout.
+	touch_layouts:        ^Touch_Layouts,
+	touch_layout_editor:  ^Touch_Layout_Editor,
+	default_touch_layout: Touch_Overlay_Layout,
 }
 
 // Pause opens the pause menu from the world, Open_Inventory the inventory,
@@ -197,6 +203,8 @@ run_screens :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		technology_screen(state, screen_context)
 	case .Map:
 		map_screen(state, screen_context)
+	case .Touch_Layout:
+		touch_layout_editor_screen(state, screen_context)
 	case .Title:
 		title_screen(state, screen_context)
 	case .New_World:
@@ -353,7 +361,7 @@ settings_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		scroll_region_end(state, region)
 	case 3:
 		region, rows := scroll_region_begin(state, "accessibility_settings", content, settings_rows_height(ACCESSIBILITY_SETTINGS_ROW_COUNT))
-		accessibility_settings(state, &rows, settings)
+		accessibility_settings(state, &rows, settings, screen_context)
 		scroll_region_end(state, region)
 	case:
 		// Read only for now; activating a row does nothing.
@@ -574,7 +582,7 @@ sensitivity_slider :: proc(state: ^Ui_State, content: ^Ui_Rectangle, key: string
 // Applied at once: the frame loop reads them each frame (ui_begin, the
 // camera, the weather, the markers) and the input layer each tick
 // (apply_hold_settings).
-accessibility_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Settings) {
+accessibility_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Settings, screen_context: Screen_Context) {
 	ui_slider(
 		state,
 		settings_row(content),
@@ -595,6 +603,32 @@ accessibility_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, setting
 	}
 	if ui_choice(state, settings_row(content), text("settings_touch_interaction"), text(touch_interaction_keys[settings.touch_interaction]), text("settings_touch_interaction_tooltip")) {
 		settings.touch_interaction = settings.touch_interaction == .Tap ? .Crosshair : .Tap
+	}
+	touch_layout_rows(state, content, screen_context)
+}
+
+// The next layout, unless the broken file from the start stands: then it
+// says so and changes nothing.
+step_touch_layout_selection :: proc(state: ^Ui_State, layouts: ^Touch_Layouts) {
+	if layouts.locked_path != "" {
+		ui_toast(state, touch_layouts_locked_text(layouts^))
+		return
+	}
+	layouts.selection = next_touch_layout_selection(layouts^)
+	layouts.write_requested, layouts.changed = true, true
+}
+
+// The touch layout (0121): the row steps the selection through Default and
+// the user layouts, which the frame loop writes to the user file at once;
+// the button opens the editor on the selected layout.
+touch_layout_rows :: proc(state: ^Ui_State, content: ^Ui_Rectangle, screen_context: Screen_Context) {
+	layouts := screen_context.touch_layouts
+	name := layouts != nil ? selected_touch_layout_name(layouts^) : DEFAULT_TOUCH_LAYOUT_NAME
+	if ui_choice(state, settings_row(content), text("settings_touch_layout"), touch_layout_display_name(name), text("settings_touch_layout_tooltip")) && layouts != nil {
+		step_touch_layout_selection(state, layouts)
+	}
+	if ui_button(state, settings_row(content), text("settings_edit_touch_layout"), text("settings_edit_touch_layout_tooltip")) && layouts != nil && screen_context.touch_layout_editor != nil {
+		open_touch_layout_editor(state, screen_context.touch_layout_editor, layouts^, screen_context.default_touch_layout)
 	}
 }
 

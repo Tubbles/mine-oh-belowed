@@ -49,6 +49,17 @@
 //     Interact) and tap_place_control (pressed by a tap on anything else:
 //     Place)
 //
+// Every element also takes opacity (work item 0121, 0.1 to 1, 1 when left
+// out): its drawing's alpha, times the overlay's own. The loader cannot
+// tell opacity = 0 from no opacity, so 0 counts as 1.
+//
+// This file's layout is the one called Default. The touch layout editor
+// (Accessibility, Edit touch layout) never changes it: it saves copies to
+// touch_overlay.sjson in the user configuration directory, in this file's
+// form under a name each (doc/input.md, Touch overlay), and a reload of
+// this file keeps applying to Default. A saved layout needs a START
+// button, the only way to the pause menu on the phone.
+//
 // hotbar_drop_control (work item 0119): the control a long press on the
 // selected hotbar slot holds until the finger lifts, a control as a
 // button's (DPAD_DOWN: Drop_Stack through the bindings).

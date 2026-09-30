@@ -120,6 +120,11 @@ Ui_Audit :: struct {
 	show_world_overlay: bool,
 	// The shipped procedural textures (work item 0100).
 	texture_editor:     Texture_Editor,
+	// The shipped touch layout as Default, no user layouts, and the
+	// editor's draft of Default (work item 0121).
+	default_touch_layout: Touch_Overlay_Layout,
+	touch_layouts:        Touch_Layouts,
+	touch_layout_editor:  Touch_Layout_Editor,
 	frame_arena:        virtual.Arena,
 	reported:           map[string]bool,
 	failures:           int,
@@ -278,6 +283,9 @@ audit_screen_context :: proc(audit: ^Ui_Audit) -> Screen_Context {
 		developer_chapter_count = len(audit.content.quests.chapters),
 		landing_pad = SAVE_TEST_LANDING_PAD,
 		texture_editor = &audit.texture_editor,
+		touch_layouts = &audit.touch_layouts,
+		touch_layout_editor = &audit.touch_layout_editor,
+		default_touch_layout = audit.default_touch_layout,
 	}
 }
 
@@ -489,6 +497,10 @@ make_ui_audit :: proc() -> ^Ui_Audit {
 	// Every quest but one is done, so the chapter and quest notes show.
 	audit.notes = make_test_notes(audit.content.quests)
 	load_texture_editor(&audit.texture_editor, test_data_directory(), "", audit.content.blocks)
+	touch_layout, touch_layout_problem := parse_touch_overlay_file(#load("../data/touch_overlay.sjson"), "data/touch_overlay.sjson", context.temp_allocator)
+	assert(touch_layout_problem == "", touch_layout_problem)
+	audit.default_touch_layout = touch_layout
+	start_touch_layout_draft(&audit.touch_layout_editor, DEFAULT_TOUCH_LAYOUT_NAME, touch_layout)
 	return audit
 }
 
@@ -501,6 +513,8 @@ destroy_ui_audit :: proc(audit: ^Ui_Audit) {
 	delete(audit.title.saves)
 	destroy_map_view(&audit.map_view)
 	destroy_texture_editor(&audit.texture_editor)
+	destroy_touch_layouts(&audit.touch_layouts)
+	destroy_touch_layout_editor(&audit.touch_layout_editor)
 	virtual.arena_destroy(&audit.frame_arena)
 	for message in audit.reported {
 		delete(message)
@@ -576,6 +590,19 @@ audit_every_note :: proc(audit: ^Ui_Audit) {
 	copy(unlocks.researched, researched)
 }
 
+// The touch layout editor (work item 0121) with nothing, a button and the
+// stick selected, and its name entry.
+audit_touch_layout_editor :: proc(audit: ^Ui_Audit) {
+	editor := &audit.touch_layout_editor
+	selections := [?]int{-1, 0, zone_element(editor.draft, .Stick, .Left)}
+	for selected in selections {
+		editor.selected = selected
+		audit_case(audit, {name = fmt.tprintf("touch layout editor, element %d selected", selected), screens = {.Pause, .Settings, .Touch_Layout}, walk_focus = true})
+	}
+	editor.selected = -1
+	audit_case(audit, {name = "touch layout name entry", screens = {.Pause, .Settings, .Touch_Layout}, keyboard = true, walk_focus = true})
+}
+
 UI_AUDIT_TOASTS :: [?]string{"mc_extraction_rights_done", "inventory_full", "developer_applies_on_resume"}
 
 audit_every_case :: proc(audit: ^Ui_Audit) {
@@ -596,6 +623,7 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 	audit_desktop_scaled_display(audit)
 	audit_case(audit, {name = "developer", screens = {.Pause, .Developer}, walk_focus = true})
 	audit_case(audit, {name = "textures", screens = {.Pause, .Developer, .Textures}, walk_focus = true})
+	audit_touch_layout_editor(audit)
 	audit_case(audit, {name = "inventory", screens = {.Inventory}, walk_focus = true})
 	simulation := &audit.simulation
 	for handle in machines_with_panels(&simulation.world, audit.content) {
