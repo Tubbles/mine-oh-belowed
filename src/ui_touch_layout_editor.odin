@@ -326,8 +326,11 @@ touch_layout_editor_screen :: proc(state: ^Ui_State, screen_context: Screen_Cont
 	resize_selected_touch_element(state, editor, screen_size)
 	touch_layout_panel(state, panel, editor, screen_size, name_label)
 	ui_panel_end(state)
-	hints := [?]Glyph_Hint{{.Confirm, text("hint_select")}, {.Tab_Previous, ""}, {.Tab_Next, text("hint_touch_layout_size")}, {.Back, text("hint_back")}}
-	ui_glyph_bar(state, hints[:])
+	// On touch its own buttons (Close among them) are the row.
+	if !touch_row_shows(state) {
+		hints := [?]Glyph_Hint{{.Confirm, text("hint_select")}, {.Tab_Previous, ""}, {.Tab_Next, text("hint_touch_layout_size")}, {.Back, text("hint_back")}}
+		ui_glyph_bar(state, hints[:])
+	}
 }
 
 // The name field and the on-screen keyboard alone, as the new world
@@ -345,7 +348,7 @@ touch_layout_name_entry :: proc(state: ^Ui_State, editor: ^Touch_Layout_Editor, 
 		}
 	}
 	ui_panel_end(state)
-	ui_glyph_bar(state, keyboard_glyph_hints(state.keyboard))
+	keyboard_glyph_bar(state)
 }
 
 // Every editable element as a widget: a click or Confirm selects it, a

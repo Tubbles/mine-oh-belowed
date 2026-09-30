@@ -13,6 +13,8 @@ import "core:strings"
 // the right, whose "made by" and "used in" lists walk the recipe graph.
 // Confirm on a recipe queues one hand craft, the context action five, the
 // secondary action cancels the newest queued craft. There is no search box.
+// On touch a tap on a recipe selects it and the touch row's Craft, Craft
+// 5 and Cancel last act on the selected recipe (0137).
 //
 // In the selection mode, opened from an assembler's panel, the list holds
 // the available recipes an assembler makes, and Confirm sets the focused
@@ -385,18 +387,28 @@ toast_craft_refusal :: proc(state: ^Ui_State, refusal: Craft_Refusal) {
 }
 
 // Confirm on a row queues one craft, the context action five of the
-// focused recipe, the secondary action cancels the newest craft.
-apply_recipe_craft_input :: proc(state: ^Ui_State, screen_context: Screen_Context, activated: int, list_focused: bool) {
+// focused recipe, the secondary action cancels the newest craft; the
+// touch row's Craft and Craft 5 act on the selected recipe (the focused
+// one before the tap moved the focus to the button) while the list shows
+// it, as the context action needs the list's focus; Cancel last as the
+// secondary action.
+apply_recipe_craft_input :: proc(state: ^Ui_State, screen_context: Screen_Context, activated: int, list_focused, selected_shown: bool, button: Touch_Button) {
 	player := screen_context.player
 	recipes, unlocks := screen_context.recipes, screen_context.unlocks^
-	if activated != NO_RECIPE {
-		toast_craft_refusal(state, queue_craft(&player.crafting, player.inventory, recipes, unlocks, activated))
+	selected := screen_context.browser.focused_recipe
+	crafted := activated
+	if button == .Craft && selected_shown {
+		crafted = selected
 	}
-	if state.input.context_action && list_focused {
-		_, refusal := queue_crafts(&player.crafting, player.inventory, recipes, unlocks, screen_context.browser.focused_recipe, RECIPE_CRAFT_MANY_COUNT)
+	if crafted != NO_RECIPE {
+		toast_craft_refusal(state, queue_craft(&player.crafting, player.inventory, recipes, unlocks, crafted))
+	}
+	if (state.input.context_action && list_focused) || (button == .Craft_Five && selected_shown) {
+		_, refusal := queue_crafts(&player.crafting, player.inventory, recipes, unlocks, selected, RECIPE_CRAFT_MANY_COUNT)
 		toast_craft_refusal(state, refusal)
 	}
-	if state.input.secondary && player.crafting.count > 0 && !cancel_last_craft(&player.crafting, player.inventory, recipes, screen_context.items) {
+	cancels := state.input.secondary || button == .Cancel_Craft
+	if cancels && player.crafting.count > 0 && !cancel_last_craft(&player.crafting, player.inventory, recipes, screen_context.items) {
 		ui_toast(state, text("inventory_full"))
 	}
 }
@@ -531,6 +543,15 @@ recipe_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	activated, list_focused := recipe_list(state, list_area, screen_context, visible, craftable)
 	reached := recipe_detail_panel(state, content, screen_context, craftable)
 	ui_panel_end(state)
+	// Before the focus settles: a focus on the row's button belongs to
+	// the screen, so the selection stays.
+	touch := touch_row_shows(state)
+	button := touch ? ui_touch_row(state, recipe_touch_buttons(selecting)) : .None
+	// On touch a tap on a row selects the recipe; the row's buttons commit.
+	if activated != NO_RECIPE && tap_selects_only(state) {
+		focus_recipe_row(state, browser, list_id, activated)
+		activated = NO_RECIPE
+	}
 	settle_recipe_focus(state, browser, list_id, visible)
 	if position := recipe_position_for_letter(screen_context.recipe_names, visible, letter); letter != 0 && position >= 0 {
 		focus_recipe_row(state, browser, list_id, visible[position])
@@ -539,15 +560,32 @@ recipe_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		navigate_to_recipe(browser, screen_context.recipes, screen_context.unlocks^, reached, craftable)
 	}
 	draw_letter_wheel(state, browser.letter_radial)
+	// The row acts on the selected recipe only while the list shows it.
+	selected_shown := slice.contains(visible, browser.focused_recipe)
 	if selecting {
+		if button == .Choose_Recipe && selected_shown {
+			activated = browser.focused_recipe
+		}
 		if activated != NO_RECIPE {
 			choose_assembler_recipe(state, screen_context, activated)
 		}
-		recipe_selection_glyph_bar(state)
+		if !touch {
+			recipe_selection_glyph_bar(state)
+		}
 		return
 	}
-	apply_recipe_craft_input(state, screen_context, activated, list_focused)
-	recipe_glyph_bar(state)
+	apply_recipe_craft_input(state, screen_context, activated, list_focused, selected_shown, button)
+	if !touch {
+		recipe_glyph_bar(state)
+	}
+}
+
+// The touch row (0137): what the glyphs name, on the selected recipe.
+recipe_touch_buttons :: proc(selecting: bool) -> Touch_Buttons {
+	if selecting {
+		return {.Choose_Recipe, .Back}
+	}
+	return {.Craft, .Craft_Five, .Cancel_Craft, .Back}
 }
 
 recipe_selection_glyph_bar :: proc(state: ^Ui_State) {

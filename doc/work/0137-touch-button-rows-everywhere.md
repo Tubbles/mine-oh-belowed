@@ -1,6 +1,6 @@
 # 0137: Button rows on every screen for touch, taps select only
 
-Status: todo
+Status: implemented
 
 ## Goal
 
@@ -25,3 +25,17 @@ Asked on 2026-09-30: "The back button is labeled 'back' but in almost all screen
 
 - `./build.sh check`, `./build.sh check-android`, `./build.sh test`. Tests: on touch no screen draws a glyph bar and every screen's row has Back (walk the screens as the UI bounds audit does, with `pointer_is_touch`); Back on each row pops the screen; A tap outside the pause menu resumes, outside settings returns to the pause menu, outside new world returns to the title, outside the confirm dialog cancels; a tap on a recipe row selects and queues nothing, the Craft button queues one; a tap on a technology selects and starts nothing, the Research button starts it; Clear filter clears an inserter's filter; Drop drops the focused stack; the audit covers the rows.
 - The user, on the phone: close every screen with its Back button and again by tapping outside it, the pause menu included; read a recipe and a technology by tapping them, craft and research with the buttons.
+
+## Implemented
+
+- The row: `Touch_Button`, `ui_touch_row`, `touch_row_shows`, `tap_selects_only` and `ui_glyph_bar_or_back_row` in `src/ui_widgets.odin`; 0125's `Slot_Button` and `slot_button_row` folded into them. Back last on the right; it sets the frame's Back, which `handle_screen_keys` takes.
+- Rows: inventory (the slot buttons, Drop, Back), machine panels (Clear filter on filter panels, the slot buttons, Back), recipes (Craft, Craft 5, Cancel last, Back; Choose, Back in the picker), technologies (Research, Back), map (Zoom in, Zoom out, Back), every other screen with a panel Back alone. No row on the title, the touch layout editor and an open keyboard. The HUD's world hints are off on touch.
+- The outside tap: `screen_closes_on_outside_tap` in `src/ui_core.odin`.
+- Tests: `src/ui_pointer_test.odin` (every screen's Back pops it, no glyphs on touch, the outside taps, the system keyboard's two taps, recipe and technology taps, the row procedures), `src/ui_inventory_test.odin` (Drop, Clear filter on every filter panel), `src/ui_audit_test.odin` (touch cases of every screen, `audit_touch_rows`).
+- Deviation: a procedure per screen only where the row depends on state (machine, recipes, the map's zoom); fixed rows are constants, and the Back only screens share one helper. The screen walk test checks every screen's row instead of a test per screen.
+- Deviation: Clear filter shows on every panel with a filter slot, not only while the slot is focused, since the tap on the button moves the focus off the slot and 0125 keeps the buttons in fixed places. Every machine panel lays its row out for the row with Clear filter, so Sort keeps its place (`test_the_machine_row_keeps_its_places_at_the_deck_size`).
+- Review fixes: the row uses the strip right of the hotbar only when it holds every label whole, else the whole safe width over the hotbar (0125's audit check against crossing the hotbar is replaced by one against cut labels); labels shortened to Transfer same and Clear; Craft, Craft 5, Choose and Research act only on a selection the list shows, and the row is drawn before the focus settles; the row's Back sounds as B. Tests added for the hidden selection, the picker, the map's zoom bounds, Back's sound and the outside tap on every screen of the walk.
+- Deviation: the recipe picker's tap selects too, with a Choose button, as choosing commits.
+- Deviation: the empty journal (no chapters) now draws its glyph bar or row too, so it has Back on touch.
+- Trade-off: At UI scale 1 the slot rows cross the HUD's hotbar on the Deck (1280 by 800) and at 1920 by 1080, a visual overlap only, since that hotbar takes no input under a screen, and sit beside it on a 2400 by 1080 phone; 0125's check that no button crosses the hotbar gave way to the audit's check that no label is cut.
+- Decisions in `doc/log/2026-09-30.md`, the rules in `doc/ui.md` (Item slots with a pointer, Touch button row), the Back pill in `doc/input.md` (Touch overlay).

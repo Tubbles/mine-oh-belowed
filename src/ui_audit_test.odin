@@ -69,8 +69,9 @@ Ui_Audit_Problem :: enum u8 {
 	Text_Too_Tall,
 	// A panel under the glyph bar's glyphs or labels.
 	Panel_Under_Glyph_Bar,
-	// A button of the touch row over the HUD's hotbar at UI scale 1 (0125).
-	Button_Over_Hud_Hotbar,
+	// A label of the touch row cut short (0137): the row takes the whole
+	// safe width where the strip beside the HUD's hotbar would cut one.
+	Button_Label_Cut,
 }
 
 // One screen stack to audit at every size.
@@ -94,8 +95,8 @@ Ui_Audit_Case :: struct {
 	mission_control: bool,
 	// Audit one more frame per widget with the focus and the info panel on it.
 	walk_focus:   bool,
-	// The pointer is a finger (Ui_Input.pointer_is_touch): the slot
-	// screens draw the touch row (0125).
+	// The pointer is a finger (Ui_Input.pointer_is_touch): the screens
+	// draw the touch row (0125, 0137).
 	touch:        bool,
 }
 
@@ -319,23 +320,16 @@ audit_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, size: Ui_Audit_Size, aud
 	ui_append_overlays(state)
 	case_text := fmt.tprintf("%s, %.0fx%.0f at scale %.2f, text %.1f, %v glyphs", audit_case.name, size.pixels.x, size.pixels.y, size.scale, audit.settings.text_scale, device)
 	audit_draw_list(audit, state, case_text, frame_name)
-	if audit_case.touch && size.scale == 1 {
-		audit_buttons_clear_hud_hotbar(audit, state, case_text, frame_name)
+	if audit_case.touch {
+		audit_touch_labels_whole(audit, state, case_text, frame_name)
 	}
 }
 
-// The touch row stays off the HUD's hotbar, which draws under the open
-// screens.
-audit_buttons_clear_hud_hotbar :: proc(audit: ^Ui_Audit, state: ^Ui_State, case_text, frame_name: string) {
-	hotbar := hud_hotbar_rectangles(ui_safe_area(state), audit.simulation.players[0].selected_hotbar_slot)
-	for widget in state.widgets {
-		if widget.panel != UI_GLYPH_BAR_PANEL {
-			continue
-		}
-		for slot in hotbar {
-			if _, overlaps := rectangle_intersection(inset(widget.rectangle, UI_AUDIT_TOLERANCE), slot); overlaps {
-				audit_report(audit, case_text, frame_name, .Button_Over_Hud_Hotbar, .Fill, widget.rectangle, "")
-			}
+// Every label of the touch row shows whole, never with an ellipsis.
+audit_touch_labels_whole :: proc(audit: ^Ui_Audit, state: ^Ui_State, case_text, frame_name: string) {
+	for command in state.draw_list {
+		if command.panel == UI_GLYPH_BAR_PANEL && command.kind == .Text && strings.has_suffix(command.text, UI_ELLIPSIS) {
+			audit_report(audit, case_text, frame_name, .Button_Label_Cut, .Text, command.rectangle, command.text)
 		}
 	}
 }
@@ -633,6 +627,49 @@ audit_touch_layout_editor :: proc(audit: ^Ui_Audit) {
 	audit_case(audit, {name = "touch layout name entry, system keyboard", screens = {.Pause, .Settings, .Touch_Layout}, keyboard = true, system_keyboard = true})
 }
 
+// The touch row of every screen besides the slot screens (0137), with
+// the HUD under it as in the game.
+audit_touch_rows :: proc(audit: ^Ui_Audit) {
+	Touch_Audit_Case :: struct {
+		name:     string,
+		screens:  []Screen,
+		tab_next: int,
+		keyboard: bool,
+		system_keyboard: bool,
+	}
+	cases := [?]Touch_Audit_Case {
+		{name = "title", screens = {.Title}},
+		{name = "new world", screens = {.Title, .New_World}},
+		{name = "on-screen keyboard", screens = {.Title, .New_World}, keyboard = true},
+		{name = "system keyboard", screens = {.Title, .New_World}, keyboard = true, system_keyboard = true},
+		{name = "load", screens = {.Title, .Load_World}},
+		{name = "confirm delete", screens = {.Title, .Load_World, .Confirm_Delete}},
+		{name = "pause", screens = {.Pause}},
+		{name = "settings", screens = {.Pause, .Settings}},
+		{name = "developer", screens = {.Pause, .Developer}},
+		{name = "textures", screens = {.Pause, .Developer, .Textures}},
+		{name = "touch layout editor", screens = {.Pause, .Settings, .Touch_Layout}},
+		{name = "recipes", screens = {.Recipes}},
+		{name = "technologies", screens = {.Technologies}},
+		{name = "journal", screens = {.Journal}},
+		{name = "journal notes", screens = {.Journal}, tab_next = len(audit.content.quests.chapters) + 1},
+		{name = "power", screens = {.Power}},
+		{name = "statistics", screens = {.Statistics}},
+		{name = "map", screens = {.Map}},
+	}
+	for touch_case in cases {
+		audit_case(audit, {name = fmt.tprintf("%s touch row", touch_case.name), screens = touch_case.screens, hud = touch_case.screens[0] != .Title, tab_next = touch_case.tab_next, keyboard = touch_case.keyboard, system_keyboard = touch_case.system_keyboard, touch = true})
+	}
+	audit_case(audit, {name = "hud touch", hud = true, touch = true})
+	simulation := &audit.simulation
+	for &assembler in simulation.world.entities.assemblers.entries {
+		if assembler.alive && audit.content.machines.machines[assembler.machine].recipe_choice != .Fixed {
+			audit_case(audit, {name = "recipe selection touch row", screens = {.Machine, .Recipes}, hud = true, machine = assembler.handle, selecting = assembler.handle, touch = true})
+			break
+		}
+	}
+}
+
 UI_AUDIT_TOASTS :: [?]string{"mc_extraction_rights_done", "inventory_full", "developer_applies_on_resume"}
 
 audit_every_case :: proc(audit: ^Ui_Audit) {
@@ -686,6 +723,7 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 	}
 	audit_case(audit, {name = "power", screens = {.Power}, walk_focus = true})
 	audit_case(audit, {name = "map", screens = {.Map}})
+	audit_touch_rows(audit)
 	// Last, since it changes the hotbar: a selected magnetometer shows its
 	// dial and the Use_Item hint.
 	player := &simulation.players[0]

@@ -39,6 +39,8 @@ Machine_Slot_Result :: struct {
 	using grid:       Slot_Grid_Result,
 	filter_activated: bool,
 	filter_focused:   bool,
+	// The panel has the filter slot (the touch row's Clear filter).
+	filter_shown:     bool,
 	hand_activated:   bool,
 	hand_focused:     bool,
 	transfer:         Transfer_Button,
@@ -254,7 +256,7 @@ inserter_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, inserter: Ins
 	} else if inserter_has_filter(machine) {
 		shown := inserter.filter == NO_ITEM ? EMPTY_STACK : Item_Stack{item = inserter.filter, count = 1}
 		interaction := ui_item_slot(state, slot, ui_id(state, "filter", 0), shown, screen_context.items)
-		result.filter_activated, result.filter_focused = interaction.activated, interaction.focused
+		result.filter_activated, result.filter_focused, result.filter_shown = interaction.activated, interaction.focused, true
 		draw_text_fitted(state, {first.x + UI_SLOT_SIZE + UI_GAP, first.y, MACHINE_BAR_WIDTH, UI_SLOT_SIZE}, text("inserter_filter"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	}
 	second := cut_top(&content, UI_SLOT_SIZE + UI_GAP)
@@ -337,7 +339,7 @@ splitter_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, splitter: ^Sp
 	first := cut_top(&content, UI_SLOT_SIZE + UI_GAP)
 	shown := splitter.filter == NO_ITEM ? EMPTY_STACK : Item_Stack{item = splitter.filter, count = 1}
 	interaction := ui_item_slot(state, {first.x, first.y, UI_SLOT_SIZE, UI_SLOT_SIZE}, ui_id(state, "filter", 0), shown, screen_context.items)
-	result.filter_activated, result.filter_focused = interaction.activated, interaction.focused
+	result.filter_activated, result.filter_focused, result.filter_shown = interaction.activated, interaction.focused, true
 	draw_text_fitted(state, {first.x + UI_SLOT_SIZE + UI_GAP, first.y, MACHINE_BAR_WIDTH, UI_SLOT_SIZE}, text("inserter_filter"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	if ui_choice(state, choice_row(&content), text("splitter_filter_side"), text(splitter_side_keys[splitter.filter_side])) {
 		splitter.filter_side = other_side(splitter.filter_side)
@@ -510,8 +512,10 @@ machine_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	machine_slots := machine_slot_region(state, machine_area, handle, slots, screen_context)
 	scroll_region_end(state, region)
 	ui_panel_end(state)
-	touch := slot_buttons_show(state)
-	button := touch ? slot_button_row(state) : .None
+	touch := touch_row_shows(state)
+	// Laid out for the row with Clear filter on every panel, so Sort and
+	// the others keep their places whether it shows or not.
+	button := touch ? ui_touch_row(state, machine_touch_buttons(machine_slots.filter_shown), machine_touch_buttons(true)) : .None
 	player_slots.activated, machine_slots.activated, machine_slots.hand_activated = apply_quick_move_input(state, screen_context, handle, slots, player_slots, machine_slots)
 	state.active_slot = active_slot_after_focus(state.active_slot, player_slots.focused, machine_slots.focused)
 	apply_machine_screen_input(state, screen_context, handle, machine.kind, slots, player_slots, machine_slots)
@@ -521,12 +525,12 @@ machine_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 	apply_transfer_button(&screen_context.world.entities, statistics_simulation_content(screen_context), handle, player.inventory, machine_slots.transfer)
 	if inserter := pool_get(&screen_context.world.entities.inserters, handle); inserter != nil {
-		clear_filter := machine_slots.filter_focused && state.input.context_action
+		clear_filter := (machine_slots.filter_focused && state.input.context_action) || button == .Clear_Filter
 		inserter.filter = inserter_filter_after_input(inserter.filter, player.held.stack, machine_slots.filter_activated, clear_filter)
 		inserter.held, player.held = inserter_hand_after_input(inserter.held, player.held, machine_slots.hand_activated)
 	}
 	if splitter := pool_get(&screen_context.world.entities.splitters, handle); splitter != nil {
-		clear_filter := machine_slots.filter_focused && state.input.context_action
+		clear_filter := (machine_slots.filter_focused && state.input.context_action) || button == .Clear_Filter
 		splitter.filter = inserter_filter_after_input(splitter.filter, player.held.stack, machine_slots.filter_activated, clear_filter)
 	}
 	player.held = finish_slot_drag(state, player.inventory, player.held, items)
@@ -582,6 +586,15 @@ apply_quick_move_input :: proc(state: ^Ui_State, screen_context: Screen_Context,
 	return player_slots.activated, machine_slots.activated, machine_slots.hand_activated
 }
 
+// The machine panels' touch row (0125, 0137): the slot buttons on the
+// active grid and, on a panel with a filter slot, Clear filter, as X on
+// the filter slot. It shows on such a panel whatever holds the focus,
+// since a tap on the button takes the focus off the filter slot.
+machine_touch_buttons :: proc(filter_shown: bool) -> Touch_Buttons {
+	buttons := Touch_Buttons{.Sort, .Split, .Transfer_All, .Transfer_All_Of_Type, .Back}
+	return filter_shown ? buttons + {.Clear_Filter} : buttons
+}
+
 filter_glyph_bar :: proc(state: ^Ui_State) {
 	hints := [?]Glyph_Hint{{.Confirm, text("hint_set_filter")}, {.Context_Action, text("hint_clear_filter")}, {.Back, text("hint_close")}}
 	ui_glyph_bar(state, hints[:])
@@ -615,10 +628,10 @@ apply_machine_screen_input :: proc(state: ^Ui_State, screen_context: Screen_Cont
 	player.held = apply_machine_slot_secondary(slots, kind, player.held, machine_input, items, screen_context.item_sort_ranks)
 }
 
-// The touch row's button (0125) on the active grid: Sort and Split as X
+// The touch row's slot button (0125) on the active grid: Sort and Split as X
 // and L2 on the active slot, the transfers into the grid the panel pairs
 // it with (transfer_target_grid).
-apply_machine_slot_button :: proc(screen_context: Screen_Context, handle: Entity_Handle, kind: Machine_Kind, slots: []Item_Stack, active: Active_Slot, button: Slot_Button) {
+apply_machine_slot_button :: proc(screen_context: Screen_Context, handle: Entity_Handle, kind: Machine_Kind, slots: []Item_Stack, active: Active_Slot, button: Touch_Button) {
 	player, items, ranks := screen_context.player, screen_context.items, screen_context.item_sort_ranks
 	player.held = apply_player_slot_button(player.inventory, player.held, active, button, items, ranks)
 	if active.grid == .Machine && active.index < len(slots) {

@@ -230,5 +230,5 @@ statistics_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 	ui_panel_end(state)
 	hints := [?]Glyph_Hint{{.Tab_Previous, ""}, {.Tab_Next, text("hint_tabs")}, {.Back, text("hint_close")}}
-	ui_glyph_bar(state, hints[:])
+	ui_glyph_bar_or_back_row(state, hints[:])
 }

@@ -168,7 +168,7 @@ power_overview_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) 
 	power_overview_body(state, content, screen_context)
 	ui_panel_end(state)
 	hints := [?]Glyph_Hint{{.Back, text("hint_close")}}
-	ui_glyph_bar(state, hints[:])
+	ui_glyph_bar_or_back_row(state, hints[:])
 }
 
 // The network list and the focused network's detail, also the Power tab

@@ -598,6 +598,25 @@ map_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	draw_map_player(state, image, frame, screen_context.player^, colors[.Map_Player])
 	draw_map_legend(state, legend, view, screen_context.generator, screen_context.player^, colors)
 	ui_panel_end(state)
+	if touch_row_shows(state) {
+		// Painted anew next frame, since the frame changes with the zoom.
+		view.zoom = clamp(view.zoom + map_touch_zoom_step(ui_touch_row(state, MAP_TOUCH_BUTTONS)), 0, MAP_ZOOM_LEVEL_COUNT - 1)
+		return
+	}
 	hints := [?]Glyph_Hint{{.Tab_Previous, ""}, {.Tab_Next, text("hint_zoom")}, {.Back, text("hint_close")}}
 	ui_glyph_bar(state, hints[:])
+}
+
+// The touch row (0137): the bumpers' zoom as buttons.
+MAP_TOUCH_BUTTONS :: Touch_Buttons{.Zoom_In, .Zoom_Out, .Back}
+
+// Zoom in shows fewer blocks per pixel, as the right bumper.
+map_touch_zoom_step :: proc(button: Touch_Button) -> int {
+	#partial switch button {
+	case .Zoom_In:
+		return -1
+	case .Zoom_Out:
+		return 1
+	}
+	return 0
 }

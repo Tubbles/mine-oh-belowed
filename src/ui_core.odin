@@ -439,6 +439,9 @@ Ui_State :: struct {
 	toast_top_offset: f32,
 	// Filled by ui_begin and ui_resolve, emptied by the frame loop.
 	sound_events:     bit_set[Ui_Sound_Event],
+	// This frame only: the touch row's Back was tapped (ui_touch_row), so
+	// the tap sounds as Back, not as Confirm.
+	back_tapped:      bool,
 	scroll_offsets:   map[Ui_Id]f32,
 	selections:       map[Ui_Id]int,
 	// Where each toggle's knob is, 0 off to 1 on, sliding towards its value.
@@ -830,6 +833,7 @@ ui_begin :: proc(state: ^Ui_State, input: Ui_Input, screen_pixels: [2]f32, frame
 	state.focus_pulse_seconds = math.mod(state.focus_pulse_seconds + frame_seconds, UI_FOCUS_PULSE_SECONDS)
 	state.focus_pulse = still_focus_pulse(focus_pulse_phase(state.focus_pulse_seconds), accessibility.reduced_motion)
 	state.toast_top_offset = 0
+	state.back_tapped = false
 	state.sound_events += advance_mission_control(&state.mission_control, frame_seconds, accessibility.reduced_motion)
 }
 
@@ -909,12 +913,22 @@ end_slot_drag :: proc(state: ^Ui_State, holding: bool) {
 	}
 }
 
-// The panels over the running world (the inventory, a machine panel, the
-// map...); the menus that pause and the editors, which take presses all
-// over the screen, stay. Not while the keyboard is open.
+// Every screen with a panel (0137): the pause menu resumes, the settings
+// return to what opened them, the confirm dialog says No. Not while the
+// keyboard is open: with the system keyboard the tap ends the entry
+// (ui_on_screen_keyboard) and the next one closes the screen.
 outside_tap_closes_screen :: proc(state: Ui_State) -> bool {
-	top := top_screen(state.screens)
-	return top != .None && !screen_pauses_simulation(top) && state.keyboard.field == 0
+	return screen_closes_on_outside_tap(top_screen(state.screens)) && state.keyboard.field == 0
+}
+
+// The title has nothing to close, and the touch layout editor's elements
+// cover the whole screen, so a tap beside its panel edits the layout.
+screen_closes_on_outside_tap :: proc(screen: Screen) -> bool {
+	#partial switch screen {
+	case .None, .Title, .Touch_Layout:
+		return false
+	}
+	return true
 }
 
 // Whether the pointer lies off the screen's content: outside every panel
@@ -1006,8 +1020,12 @@ ui_resolve :: proc(state: ^Ui_State) {
 // An activation this frame, as ui_interact grants it: confirm on the
 // focused widget, or a tap on one under the pointer, which sounds on the
 // release (0132). A tap on an item slot is no activation, a press with
-// Left Control is (the quick move), and so is its drop (0124).
+// Left Control is (the quick move), and so is its drop (0124). The touch
+// row's Back sounds as B (0137).
 ui_frame_sound_events :: proc(state: Ui_State) -> bit_set[Ui_Sound_Event] {
+	if state.back_tapped {
+		return {.Back}
+	}
 	widgets := state.widgets[:]
 	confirmed := state.confirm && widget_index(widgets, state.focus) >= 0
 	under := state.pointer_source != .None ? widget_index(widgets, widget_under(widgets, state.pointer)) : -1

@@ -331,7 +331,7 @@ pause_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	scroll_region_end(state, region)
 	ui_panel_end(state)
 	hints := [?]Glyph_Hint{{.Confirm, text("hint_select")}, {.Back, text("hint_resume")}}
-	ui_glyph_bar(state, hints[:])
+	ui_glyph_bar_or_back_row(state, hints[:])
 }
 
 multiplier_text :: proc(value: f32) -> string {
@@ -384,7 +384,7 @@ settings_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		{.Tab_Next, text("hint_tabs")},
 		{.Info, text("hint_info")},
 	}
-	ui_glyph_bar(state, hints[:])
+	ui_glyph_bar_or_back_row(state, hints[:])
 }
 
 settings_rows_height :: proc(row_count: int) -> f32 {

@@ -103,8 +103,8 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 	slots := player_slot_region(state, content, player, items)
 	ui_panel_end(state)
-	touch := slot_buttons_show(state)
-	button := touch ? slot_button_row(state) : .None
+	touch := touch_row_shows(state)
+	button := touch ? ui_touch_row(state, INVENTORY_TOUCH_BUTTONS) : .None
 	slots.activated = apply_inventory_quick_move_input(state, screen_context, slots)
 	state.active_slot = active_slot_after_focus(state.active_slot, slots.focused, -1)
 	active := state.active_slot
@@ -118,8 +118,9 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	player.held = apply_player_slot_button(player.inventory, player.held, active, button, items, screen_context.item_sort_ranks)
 	transfer := slot_button_transfer(.Inventory, active, active_slot_stack(player.inventory, nil, active), button)
 	apply_grid_transfer(nil, {items = items}, NO_ENTITY, player.inventory, transfer)
-	if state.input.drop && screen_context.world != nil {
-		drop_player_stack(screen_context.world, screen_context.blocks, player, screen_context.player_index, slots.focused)
+	if screen_context.world != nil && (state.input.drop || button == .Drop) {
+		dropped_slot := button == .Drop ? player_slot_index(active) : slots.focused
+		drop_player_stack(screen_context.world, screen_context.blocks, player, screen_context.player_index, dropped_slot)
 	}
 	player.held = finish_slot_drag(state, player.inventory, player.held, items)
 	draw_held_stack(state, player.held.stack, items)
@@ -128,41 +129,27 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 }
 
-// The touch row of the slot screens (0125): buttons without glyphs in
-// the glyph bar's place, acting on the active grid (Active_Slot).
-Slot_Button :: enum u8 {
-	None,
-	Sort,
-	Split,
-	Transfer_All,
-	Transfer_All_Of_Type,
-}
+// The inventory's touch row (0125, 0137): the slot buttons on the active
+// grid, and Drop, which drops the active slot's stack as the right stick
+// click drops the focused one.
+INVENTORY_TOUCH_BUTTONS :: Touch_Buttons{.Sort, .Split, .Transfer_All, .Transfer_All_Of_Type, .Drop, .Back}
 
-// On Android and with the touch overlay (Ui_Input.pointer_is_touch); the
-// keyboard and the gamepad keep the glyph bar.
-slot_buttons_show :: proc(state: ^Ui_State) -> bool {
-	return state.input.pointer_is_touch
-}
-
-// Narrower than this, the space right of the HUD's hotbar is not used.
-SLOT_BUTTON_ROW_MINIMUM_WIDTH :: 4 * UI_SLOT_SIZE + 3 * UI_GAP
-
-// The row in Slot_Button's order; the button pressed this frame.
-slot_button_row :: proc(state: ^Ui_State) -> Slot_Button {
-	labels := [?]string{text("slot_button_sort"), text("slot_button_split"), text("slot_button_transfer_all"), text("slot_button_transfer_all_of_type")}
-	pressed := ui_button_bar(state, labels[:], slot_button_strip(ui_safe_area(state)))
-	return pressed < 0 ? .None : Slot_Button(pressed + 1)
+// The active slot's inventory index when it is one of the player's, -1
+// otherwise.
+player_slot_index :: proc(active: Active_Slot) -> int {
+	return active.grid == .Hotbar || active.grid == .Main ? active.index : -1
 }
 
 // Where the row goes: right of the HUD's hotbar, which draws under open
-// screens, when that leaves SLOT_BUTTON_ROW_MINIMUM_WIDTH; otherwise
-// (large UI scales) the whole safe area's width, over the hotbar as the
-// glyph bar is.
-slot_button_strip :: proc(safe: Ui_Rectangle) -> Ui_Rectangle {
+// screens, when that holds the row at its natural width
+// (touch_row_natural_width); otherwise the whole safe area's width, over
+// the hotbar as the glyph bar is, so no label is cut where the safe area
+// holds them.
+touch_row_strip :: proc(safe: Ui_Rectangle, natural_width: f32) -> Ui_Rectangle {
 	last_slot := hud_hotbar_rectangles(safe, 0)[HOTBAR_SLOT_COUNT - 1]
 	left := last_slot.x + last_slot.width + UI_GAP
 	right := safe.x + safe.width
-	if right - left < SLOT_BUTTON_ROW_MINIMUM_WIDTH {
+	if right - left < natural_width {
 		return safe
 	}
 	return {left, safe.y, right - left, safe.height}
@@ -180,7 +167,7 @@ active_slot_stack :: proc(inventory: Inventory, machine_slots: []Item_Stack, act
 // Transfer all moves every stack of the active grid, Transfer all of
 // type those of the active slot's item (nothing on an empty slot), into
 // the grid the screen pairs it with. Other buttons transfer nothing.
-slot_button_transfer :: proc(screen: Slot_Screen_Kind, active: Active_Slot, active_stack: Item_Stack, button: Slot_Button) -> Grid_Transfer {
+slot_button_transfer :: proc(screen: Slot_Screen_Kind, active: Active_Slot, active_stack: Item_Stack, button: Touch_Button) -> Grid_Transfer {
 	transfer := Grid_Transfer {
 		source = active.grid,
 		target = transfer_target_grid(screen, active.grid),
@@ -200,7 +187,7 @@ slot_button_transfer :: proc(screen: Slot_Screen_Kind, active: Active_Slot, acti
 // Sort and Split on the player's active slot, as X and L2 on it: Sort
 // sorts the main grid from the main grid and from the hotbar, which keeps
 // its order (sort_target_grid).
-apply_player_slot_button :: proc(inventory: Inventory, held: Held_Stack, active: Active_Slot, button: Slot_Button, items: Item_Registry, ranks: []u16) -> Held_Stack {
+apply_player_slot_button :: proc(inventory: Inventory, held: Held_Stack, active: Active_Slot, button: Touch_Button, items: Item_Registry, ranks: []u16) -> Held_Stack {
 	on_player := active.grid == .Hotbar || active.grid == .Main
 	input := Inventory_Slot_Input {
 		activated      = -1,

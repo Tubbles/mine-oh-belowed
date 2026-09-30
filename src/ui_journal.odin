@@ -402,6 +402,7 @@ journal_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("journal_title"), UI_HEADING_TEXT_SIZE, .Centre)
 	if len(screen_context.quests.chapters) == 0 {
 		ui_panel_end(state)
+		journal_glyph_bar(state)
 		return
 	}
 	tab := chapter_tabs(state, cut_top(&content, UI_ROW_HEIGHT), screen_context)
@@ -447,5 +448,5 @@ journal_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 
 journal_glyph_bar :: proc(state: ^Ui_State) {
 	hints := [?]Glyph_Hint{{.Tab_Previous, ""}, {.Tab_Next, text("hint_chapters")}, {.Back, text("hint_close")}}
-	ui_glyph_bar(state, hints[:])
+	ui_glyph_bar_or_back_row(state, hints[:])
 }

@@ -669,3 +669,54 @@ test_fit_button_widths_caps_the_widest :: proc(t: ^testing.T) {
 		testing.expect_value(t, width, 25)
 	}
 }
+
+// Work item 0137: Drop in the inventory's row drops the active slot's
+// stack, Clear filter in a filter panel's row clears the filter.
+@(test)
+test_the_touch_row_drops_the_active_stack :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	state := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&state)
+	player := drag_test_inventory(audit, &state)
+	loose_before := len(audit.simulation.world.entities.loose_items.items)
+	tap_widget(audit, &state, inventory_slot_id("hotbar", 3))
+	tap_widget(audit, &state, slot_button_id("touch_button_drop"))
+	testing.expect_value(t, player.inventory.slots[3], EMPTY_STACK)
+	testing.expect_value(t, len(audit.simulation.world.entities.loose_items.items), loose_before + 1)
+	testing.expect_value(t, top_screen(state.screens), Screen.Inventory)
+}
+
+@(test)
+test_the_touch_row_clears_a_filter :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	simulation := &audit.simulation
+	coal := test_item(audit.content.items, "coal")
+	filtered := 0
+	for handle in machines_with_panels(&simulation.world, audit.content) {
+		machine := audit.content.machines.machines[entity_common(&simulation.world.entities, handle).machine]
+		filter: ^Item_Id
+		if inserter := pool_get(&simulation.world.entities.inserters, handle); inserter != nil && inserter_has_filter(machine) && inserter.slot_count == 0 {
+			filter = &inserter.filter
+		}
+		if splitter := pool_get(&simulation.world.entities.splitters, handle); splitter != nil {
+			filter = &splitter.filter
+		}
+		if filter == nil {
+			continue
+		}
+		filtered += 1
+		filter^ = coal
+		state := Ui_State{theme = audit.theme}
+		simulation.players[0].open_machine = handle
+		push_screen(&state.screens, .Machine)
+		screen_test_frame(audit, &state, {pointer_is_touch = true})
+		tap_widget(audit, &state, slot_button_id("touch_button_clear_filter"))
+		testing.expectf(t, filter^ == NO_ITEM, "%s keeps its filter", machine.id)
+		testing.expect_value(t, top_screen(state.screens), Screen.Machine)
+		destroy_ui_state(&state)
+	}
+	testing.expect(t, filtered >= 2)
+	simulation.players[0].open_machine = NO_ENTITY
+}

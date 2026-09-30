@@ -118,7 +118,7 @@ developer_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 	ui_panel_end(state)
 	hints := [?]Glyph_Hint{{.Confirm, text("hint_select")}, {.Back, text("hint_back")}}
-	ui_glyph_bar(state, hints[:])
+	ui_glyph_bar_or_back_row(state, hints[:])
 }
 
 developer_actions :: proc(state: ^Ui_State, content: ^Ui_Rectangle, screen_context: Screen_Context) {

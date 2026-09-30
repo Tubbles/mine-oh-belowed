@@ -1077,8 +1077,8 @@ ui_glyph_bar :: proc(state: ^Ui_State, hints: []Glyph_Hint) {
 	}
 }
 
-// Buttons without glyphs in the glyph bar's place (the touch row of the
-// slot screens, 0125): right aligned along the bottom of the strip, each
+// Buttons without glyphs in the glyph bar's place (the touch row,
+// ui_touch_row): right aligned along the bottom of the strip, each
 // as wide as its label while they fit, else narrowed by
 // fit_button_widths with the labels cut short (draw_text_fitted), in
 // the glyph bar's panel. The index of the one activated this frame, -1
@@ -1091,7 +1091,7 @@ ui_button_bar :: proc(state: ^Ui_State, labels: []string, strip: Ui_Rectangle) -
 	defer state.current_panel = outer_panel
 	natural := make([]f32, len(labels), context.temp_allocator)
 	for label, index in labels {
-		natural[index] = ui_text_width(state, label, UI_BODY_TEXT_SIZE) + 4 * UI_GAP
+		natural[index] = button_natural_width(state, label)
 	}
 	widths := fit_button_widths(natural, strip.width - f32(max(len(labels) - 1, 0)) * UI_GAP)
 	height := f32(UI_GLYPH_BAR_HEIGHT)
@@ -1105,6 +1105,115 @@ ui_button_bar :: proc(state: ^Ui_State, labels: []string, strip: Ui_Rectangle) -
 		x -= UI_GAP
 	}
 	return pressed
+}
+
+// The buttons of the touch row (0125, 0137), in the row's order from the
+// left. Back is last, on the right, where the glyph bar's Back sits;
+// Clear filter is first, so the panels that have it keep the other
+// buttons in the places the other panels have them.
+Touch_Button :: enum u8 {
+	None,
+	Clear_Filter,
+	Sort,
+	Split,
+	Transfer_All,
+	Transfer_All_Of_Type,
+	Drop,
+	Craft,
+	Craft_Five,
+	Cancel_Craft,
+	Choose_Recipe,
+	Research,
+	Zoom_In,
+	Zoom_Out,
+	Back,
+}
+
+Touch_Buttons :: bit_set[Touch_Button]
+
+// The row of the screens whose only action for a finger is to close.
+BACK_TOUCH_BUTTONS :: Touch_Buttons{.Back}
+
+@(rodata)
+touch_button_keys := [Touch_Button]string {
+	.None                 = "",
+	.Clear_Filter         = "touch_button_clear_filter",
+	.Sort                 = "slot_button_sort",
+	.Split                = "slot_button_split",
+	.Transfer_All         = "slot_button_transfer_all",
+	.Transfer_All_Of_Type = "slot_button_transfer_all_of_type",
+	.Drop                 = "touch_button_drop",
+	.Craft                = "touch_button_craft",
+	.Craft_Five           = "touch_button_craft_five",
+	.Cancel_Craft         = "touch_button_cancel_craft",
+	.Choose_Recipe        = "touch_button_choose_recipe",
+	.Research             = "touch_button_research",
+	.Zoom_In              = "touch_button_zoom_in",
+	.Zoom_Out             = "touch_button_zoom_out",
+	.Back                 = "touch_button_back",
+}
+
+// On Android and with the touch overlay (Ui_Input.pointer_is_touch) the
+// screens draw the touch row in the glyph bar's place; the keyboard and
+// the gamepad keep the glyph bar.
+touch_row_shows :: proc(state: ^Ui_State) -> bool {
+	return state.input.pointer_is_touch
+}
+
+// The glyph bar, or on touch the row with Back alone: the screens whose
+// other glyphs name what a finger does on the screen itself (Select, the
+// tabs) or has no use for (Info).
+ui_glyph_bar_or_back_row :: proc(state: ^Ui_State, hints: []Glyph_Hint) {
+	if touch_row_shows(state) {
+		ui_touch_row(state, BACK_TOUCH_BUTTONS)
+		return
+	}
+	ui_glyph_bar(state, hints)
+}
+
+// A tap on a list row selects it and commits nothing (0137): on touch,
+// an activation without Confirm is a finger's. Confirm (the gamepad's A
+// with the touch overlay on) still commits.
+tap_selects_only :: proc(state: ^Ui_State) -> bool {
+	return touch_row_shows(state) && !state.confirm
+}
+
+// The buttons in Touch_Button's order along the bottom of
+// touch_row_strip, chosen for the layout's buttons (the widest row the
+// screen can show, so a button that comes and goes moves no other); the
+// one tapped this frame, .None for none. Back sets the frame's Back,
+// which handle_screen_keys takes after the screen as it takes B, so it
+// closes every screen as B does, with B's sound (Ui_State.back_tapped).
+ui_touch_row :: proc(state: ^Ui_State, buttons: Touch_Buttons, layout: Touch_Buttons = {}) -> Touch_Button {
+	shown := make([dynamic]Touch_Button, 0, len(Touch_Button), context.temp_allocator)
+	labels := make([dynamic]string, 0, len(Touch_Button), context.temp_allocator)
+	for button in buttons - {.None} {
+		append(&shown, button)
+		append(&labels, text(touch_button_keys[button]))
+	}
+	layout_width := touch_row_natural_width(state, layout == {} ? buttons : layout)
+	pressed := ui_button_bar(state, labels[:], touch_row_strip(ui_safe_area(state), layout_width))
+	if pressed < 0 {
+		return .None
+	}
+	if shown[pressed] == .Back {
+		state.input.back, state.back_tapped = true, true
+	}
+	return shown[pressed]
+}
+
+// The row's width with every label whole: the natural widths and the gaps.
+touch_row_natural_width :: proc(state: ^Ui_State, buttons: Touch_Buttons) -> f32 {
+	width := f32(0)
+	for button in buttons - {.None} {
+		width += button_natural_width(state, text(touch_button_keys[button])) + UI_GAP
+	}
+	return max(width - UI_GAP, 0)
+}
+
+// A bar button as wide as its label and its padding.
+button_natural_width :: proc(state: ^Ui_State, label: string) -> f32 {
+	return ui_text_width(state, label, UI_BODY_TEXT_SIZE) + 4 * UI_GAP
 }
 
 // The natural widths while they fit the available width; otherwise the

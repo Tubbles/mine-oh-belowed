@@ -1,6 +1,7 @@
 package game
 
 import "core:fmt"
+import "core:slice"
 
 // The technology screen (doc/fluids.md, Assembler, lab and research): the
 // queued technology and its progress on the left with the filter toggle,
@@ -8,7 +9,8 @@ import "core:fmt"
 // and the focused one's status, cost, description, prerequisites and
 // unlocks on the right, under the inventory tab strip (ui_inventory.odin).
 // Confirm queues the focused technology when it is available, replacing
-// the queued one. It does not pause.
+// the queued one. On touch a tap selects a technology and the touch row's
+// Research queues the selected one (0137). It does not pause.
 
 TECHNOLOGY_STATUS_COLUMN_WIDTH :: 380
 TECHNOLOGY_LIST_COLUMN_WIDTH :: 560
@@ -204,14 +206,32 @@ technology_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	activated := technology_list(state, list_area, screen_context, names, visible)
 	technology_detail_panel(state, content, screen_context, names)
 	ui_panel_end(state)
+	// Before the focus settles: a focus on the row's button belongs to
+	// the screen, so the selection stays.
+	touch := touch_row_shows(state)
+	button := touch ? ui_touch_row(state, TECHNOLOGY_TOUCH_BUTTONS) : .None
+	// On touch a tap on a row selects the technology; Research commits.
+	if activated != NO_TECHNOLOGY && tap_selects_only(state) {
+		focus_technology_row(state, browser, list_id, activated)
+		activated = NO_TECHNOLOGY
+	}
 	settle_technology_focus(state, browser, list_id, visible)
 	if position := recipe_position_for_letter(names, visible, letter); letter != 0 && position >= 0 {
 		focus_technology_row(state, browser, list_id, visible[position])
 	}
+	draw_letter_wheel(state, browser.letter_radial)
+	// Research acts on the selected technology only while the list shows it.
+	if button == .Research && slice.contains(visible, browser.focused) {
+		activated = browser.focused
+	}
 	if activated != NO_TECHNOLOGY {
 		queue_focused_research(state, screen_context, activated)
 	}
-	draw_letter_wheel(state, browser.letter_radial)
-	hints := [?]Glyph_Hint{{.Confirm, text("hint_queue_research")}, {.Tab_Previous, ""}, {.Tab_Next, text("hint_tabs")}, {.Back, text("hint_close")}}
-	ui_glyph_bar(state, hints[:])
+	if !touch {
+		hints := [?]Glyph_Hint{{.Confirm, text("hint_queue_research")}, {.Tab_Previous, ""}, {.Tab_Next, text("hint_tabs")}, {.Back, text("hint_close")}}
+		ui_glyph_bar(state, hints[:])
+	}
 }
+
+// The touch row (0137): Research on the selected technology, as A.
+TECHNOLOGY_TOUCH_BUTTONS :: Touch_Buttons{.Research, .Back}

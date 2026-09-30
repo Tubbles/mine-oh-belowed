@@ -1,5 +1,6 @@
 package game
 
+import "core:strings"
 import "core:testing"
 
 // Work item 0132: misclicks in the menus. The screen frames run at 1920
@@ -348,4 +349,428 @@ test_a_stepper_steps_on_the_tap :: proc(t: ^testing.T) {
 	testing.expect_value(t, ui_stepper(&state, row, "seed", "1"), Ui_Direction.None)
 	test_ui_frame(&state, pointer_input(left, false, moved = false))
 	testing.expect_value(t, ui_stepper(&state, row, "seed", "1"), Ui_Direction.Left)
+}
+
+// Work item 0137: the touch row on every screen.
+
+touch_screen_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State) {
+	screen_test_frame(audit, state, {pointer_is_touch = true})
+}
+
+// A finger's press and release at a point, off every widget.
+tap_screen_at :: proc(audit: ^Ui_Audit, state: ^Ui_State, at: [2]f32) {
+	screen_test_frame(audit, state, touch_input(at, true, pressed = true))
+	screen_test_frame(audit, state, touch_input(at, false, moved = false))
+}
+
+Touch_Row_Case :: struct {
+	screens:   []Screen,
+	machine:   bool,
+	selecting: bool,
+}
+
+// On touch no screen draws glyphs, every screen with a panel draws Back,
+// and Back pops the top screen as B does, with B's sound; the pause
+// menu's pop resumes. A tap off the panels, left of the safe area, pops
+// it too.
+@(test)
+test_every_screen_has_a_back_button_on_touch :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	simulation := &audit.simulation
+	assembler := NO_ENTITY
+	for &entry in simulation.world.entities.assemblers.entries {
+		if entry.alive && audit.content.machines.machines[entry.machine].recipe_choice != .Fixed {
+			assembler = entry.handle
+			break
+		}
+	}
+	testing.expect(t, assembler != NO_ENTITY)
+	cases := [?]Touch_Row_Case {
+		{screens = {.Pause}},
+		{screens = {.Pause, .Settings}},
+		{screens = {.Pause, .Developer}},
+		{screens = {.Pause, .Developer, .Textures}},
+		{screens = {.Inventory}},
+		{screens = {.Machine}, machine = true},
+		{screens = {.Recipes}},
+		{screens = {.Machine, .Recipes}, machine = true, selecting = true},
+		{screens = {.Technologies}},
+		{screens = {.Journal}},
+		{screens = {.Power}},
+		{screens = {.Statistics}},
+		{screens = {.Map}},
+		{screens = {.Title, .Settings}},
+		{screens = {.Title, .New_World}},
+		{screens = {.Title, .Load_World}},
+		{screens = {.Title, .Load_World, .Confirm_Delete}},
+	}
+	for touch_case in cases {
+		state := Ui_State{theme = audit.theme}
+		simulation.players[0].open_machine = touch_case.machine ? assembler : NO_ENTITY
+		audit.browser.selecting_for = touch_case.selecting ? assembler : NO_ENTITY
+		for screen in touch_case.screens {
+			push_screen(&state.screens, screen)
+		}
+		touch_screen_frame(audit, &state)
+		touch_screen_frame(audit, &state)
+		top := top_screen(state.screens)
+		testing.expectf(t, !glyph_bar_draws_glyphs(state.draw_list[:]), "%v draws glyphs on touch", top)
+		back := slot_button_id("touch_button_back")
+		if !testing.expectf(t, widget_index(state.widgets[:], back) >= 0, "%v has no Back", top) {
+			destroy_ui_state(&state)
+			continue
+		}
+		count := state.screens.count
+		expected := top == .Pause ? 0 : count - 1
+		state.sound_events = {}
+		tap_widget(audit, &state, back)
+		testing.expectf(t, state.screens.count == expected, "Back on %v left %d screens", top, state.screens.count)
+		testing.expectf(t, .Back in state.sound_events && .Confirm not_in state.sound_events, "Back on %v sounds %v", top, state.sound_events)
+		destroy_ui_state(&state)
+		// run_screens forgot the machine and the picker once they closed.
+		simulation.players[0].open_machine = touch_case.machine ? assembler : NO_ENTITY
+		audit.browser.selecting_for = touch_case.selecting ? assembler : NO_ENTITY
+		outside := Ui_State{theme = audit.theme}
+		for screen in touch_case.screens {
+			push_screen(&outside.screens, screen)
+		}
+		touch_screen_frame(audit, &outside)
+		testing.expectf(t, top_screen(outside.screens) == top, "%v closed before the tap", top)
+		tap_screen_at(audit, &outside, {40, 400})
+		testing.expectf(t, outside.screens.count == expected, "a tap outside %v left %d screens", top, outside.screens.count)
+		destroy_ui_state(&outside)
+	}
+	simulation.players[0].open_machine = NO_ENTITY
+	audit.browser.selecting_for = NO_ENTITY
+}
+
+// The title and the touch layout editor draw neither glyphs nor a row:
+// the title has nothing to close, the editor has its own Close.
+@(test)
+test_the_title_and_the_layout_editor_draw_no_row_on_touch :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	stacks := [?][]Screen{{.Title}, {.Pause, .Settings, .Touch_Layout}}
+	for stack in stacks {
+		state := Ui_State{theme = audit.theme}
+		for screen in stack {
+			push_screen(&state.screens, screen)
+		}
+		touch_screen_frame(audit, &state)
+		testing.expect(t, !glyph_bar_draws_glyphs(state.draw_list[:]))
+		testing.expect(t, widget_index(state.widgets[:], slot_button_id("touch_button_back")) < 0)
+		destroy_ui_state(&state)
+	}
+}
+
+// A tap off the panel closes the pause menu (the game resumes), the
+// settings (back to the pause menu), new world (back to the title) and
+// the confirm dialog (No); never the title or the layout editor.
+@(test)
+test_a_tap_outside_closes_every_screen_with_a_panel :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	outside := [2]f32{100, 400}
+	Outside_Case :: struct {
+		screens:  []Screen,
+		expected: Screen,
+	}
+	cases := [?]Outside_Case {
+		{{.Pause}, .None},
+		{{.Pause, .Settings}, .Pause},
+		{{.Title, .New_World}, .Title},
+		{{.Title, .Load_World, .Confirm_Delete}, .Load_World},
+		{{.Title}, .Title},
+	}
+	for outside_case in cases {
+		state := Ui_State{theme = audit.theme}
+		for screen in outside_case.screens {
+			push_screen(&state.screens, screen)
+		}
+		touch_screen_frame(audit, &state)
+		tap_screen_at(audit, &state, outside)
+		testing.expectf(t, top_screen(state.screens) == outside_case.expected, "a tap outside %v left %v", outside_case.screens, top_screen(state.screens))
+		destroy_ui_state(&state)
+	}
+	testing.expect(t, !screen_closes_on_outside_tap(.Touch_Layout))
+	testing.expect(t, !screen_closes_on_outside_tap(.Title))
+	testing.expect(t, screen_closes_on_outside_tap(.Textures))
+}
+
+// With the system keyboard the first tap outside ends the entry, the
+// next one closes the screen; the game's keyboard keeps the screen.
+@(test)
+test_a_tap_outside_ends_a_system_keyboard_entry_first :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	outside := [2]f32{100, 400}
+	for system in ([2]bool{true, false}) {
+		state := Ui_State{theme = audit.theme}
+		push_screen(&state.screens, .Title)
+		push_screen(&state.screens, .New_World)
+		state.keyboard = {field = 1, system = system}
+		touch_screen_frame(audit, &state)
+		tap_screen_at(audit, &state, outside)
+		testing.expect_value(t, top_screen(state.screens), Screen.New_World)
+		testing.expect_value(t, state.keyboard.field == 0, system)
+		if system {
+			touch_screen_frame(audit, &state)
+			tap_screen_at(audit, &state, outside)
+			testing.expect_value(t, top_screen(state.screens), Screen.Title)
+		}
+		destroy_ui_state(&state)
+	}
+}
+
+// A tap on a recipe selects it and queues nothing; Craft, Craft 5 and
+// Cancel last act on the selected recipe.
+@(test)
+test_a_tap_on_a_recipe_selects_it_and_the_row_crafts :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	player := &audit.simulation.players[0]
+	player.crafting = {}
+	for &slot in player.inventory.slots {
+		slot = EMPTY_STACK
+	}
+	player.inventory.slots[3] = {test_item(audit.content.items, "log"), 20}
+	plank := test_recipe(audit.content.recipes, "plank")
+	audit.browser.filter.category = audit.content.recipes.recipes[plank].category
+	audit.browser.focused_recipe = NO_RECIPE
+	state := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&state)
+	push_screen(&state.screens, .Recipes)
+	for _ in 0 ..< 3 {
+		touch_screen_frame(audit, &state)
+	}
+	list_id := ui_hash(ui_hash(0, "recipes", -1), "recipe_list", -1)
+	row := recipe_row_id(list_id, plank)
+	if !testing.expect(t, widget_index(state.widgets[:], row) >= 0) {
+		return
+	}
+	tap_widget(audit, &state, row)
+	testing.expect_value(t, player.crafting.count, 0)
+	testing.expect_value(t, audit.browser.focused_recipe, plank)
+	testing.expect_value(t, top_screen(state.screens), Screen.Recipes)
+	tap_widget(audit, &state, slot_button_id("touch_button_craft"))
+	testing.expect_value(t, player.crafting.count, 1)
+	testing.expect_value(t, player.crafting.recipes[0], plank)
+	tap_widget(audit, &state, slot_button_id("touch_button_craft_five"))
+	testing.expect_value(t, player.crafting.count, 1 + RECIPE_CRAFT_MANY_COUNT)
+	tap_widget(audit, &state, slot_button_id("touch_button_cancel_craft"))
+	testing.expect_value(t, player.crafting.count, RECIPE_CRAFT_MANY_COUNT)
+	// The gamepad's Confirm still crafts the focused recipe.
+	state.requested_focus = row
+	touch_screen_frame(audit, &state)
+	screen_test_frame(audit, &state, {confirm = true, pointer_is_touch = true})
+	testing.expect_value(t, player.crafting.count, RECIPE_CRAFT_MANY_COUNT + 1)
+}
+
+// A tap on a technology selects it and starts nothing; Research starts it.
+@(test)
+test_a_tap_on_a_technology_selects_it_and_research_starts_it :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	research := &audit.simulation.world.research
+	research.queued = false
+	available := NO_TECHNOLOGY
+	for _, index in audit.content.technologies.technologies {
+		if technology_status(audit.content.technologies, audit.simulation.unlocks, index) == .Available {
+			available = index
+			break
+		}
+	}
+	if !testing.expect(t, available != NO_TECHNOLOGY) {
+		return
+	}
+	audit.technology_browser.focused = available
+	state := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&state)
+	push_screen(&state.screens, .Technologies)
+	for _ in 0 ..< 3 {
+		touch_screen_frame(audit, &state)
+	}
+	list_id := ui_hash(ui_hash(0, "technologies", -1), "technology_list", -1)
+	row := technology_row_id(list_id, available)
+	if !testing.expect(t, widget_index(state.widgets[:], row) >= 0) {
+		return
+	}
+	tap_widget(audit, &state, row)
+	testing.expect(t, !research.queued)
+	testing.expect_value(t, audit.technology_browser.focused, available)
+	tap_widget(audit, &state, slot_button_id("touch_button_research"))
+	testing.expect(t, research.queued)
+	testing.expect_value(t, research.technology, available)
+}
+
+// The rows' buttons by screen state.
+@(test)
+test_touch_row_buttons_by_screen :: proc(t: ^testing.T) {
+	testing.expect(t, .Clear_Filter in machine_touch_buttons(true))
+	testing.expect(t, .Clear_Filter not_in machine_touch_buttons(false))
+	testing.expect(t, .Back in machine_touch_buttons(false))
+	testing.expect_value(t, recipe_touch_buttons(true), Touch_Buttons{.Choose_Recipe, .Back})
+	testing.expect_value(t, recipe_touch_buttons(false), Touch_Buttons{.Craft, .Craft_Five, .Cancel_Craft, .Back})
+	testing.expect(t, .Drop in INVENTORY_TOUCH_BUTTONS)
+	testing.expect(t, .Research in TECHNOLOGY_TOUCH_BUTTONS)
+	testing.expect_value(t, map_touch_zoom_step(.Zoom_In), -1)
+	testing.expect_value(t, map_touch_zoom_step(.Zoom_Out), 1)
+	testing.expect_value(t, map_touch_zoom_step(.Back), 0)
+	testing.expect_value(t, player_slot_index({.Hotbar, 3}), 3)
+	testing.expect_value(t, player_slot_index({.Machine, 3}), -1)
+}
+
+// Craft, Craft 5 and Research do nothing while the list hides the
+// selected entry.
+@(test)
+test_the_row_ignores_a_hidden_selection :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	player := &audit.simulation.players[0]
+	player.crafting = {}
+	player.inventory.slots[3] = {test_item(audit.content.items, "log"), 20}
+	plank := test_recipe(audit.content.recipes, "plank")
+	audit.browser.filter.category = audit.content.recipes.recipes[plank].category
+	audit.browser.filter.tags = ~Recipe_Tag_Set{}
+	audit.browser.focused_recipe = plank
+	state := Ui_State{theme = audit.theme}
+	push_screen(&state.screens, .Recipes)
+	touch_screen_frame(audit, &state)
+	touch_screen_frame(audit, &state)
+	tap_widget(audit, &state, slot_button_id("touch_button_craft"))
+	tap_widget(audit, &state, slot_button_id("touch_button_craft_five"))
+	testing.expect_value(t, player.crafting.count, 0)
+	destroy_ui_state(&state)
+	// A researched technology, hidden by Hide researched.
+	researched := -1
+	for technology, index in audit.content.technologies.technologies {
+		if !technology.infinite {
+			researched = index
+			break
+		}
+	}
+	audit.simulation.unlocks.researched[researched] = true
+	audit.technology_browser.focused = researched
+	audit.technology_browser.filter.hide_researched = true
+	audit.simulation.world.research.queued = false
+	technologies := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&technologies)
+	push_screen(&technologies.screens, .Technologies)
+	touch_screen_frame(audit, &technologies)
+	testing.expect(t, widget_index(technologies.widgets[:], technology_row_id(ui_hash(ui_hash(0, "technologies", -1), "technology_list", -1), researched)) < 0)
+	// Selected before the filter hid it, with the focus off the list (the
+	// toggle that hid it).
+	audit.technology_browser.focused = researched
+	technologies.focus = slot_button_id("touch_button_research")
+	tap_widget(audit, &technologies, slot_button_id("touch_button_research"))
+	testing.expect(t, !audit.simulation.world.research.queued)
+	testing.expect_value(t, len(technologies.toasts), 0)
+}
+
+// In the recipe picker a tap selects and sets nothing; Choose sets the
+// selected recipe and returns to the assembler's panel.
+@(test)
+test_a_tap_in_the_recipe_picker_selects_and_choose_sets_it :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	simulation := &audit.simulation
+	assembler: ^Assembler
+	for &entry in simulation.world.entities.assemblers.entries {
+		if entry.alive && audit.content.machines.machines[entry.machine].recipe_choice != .Fixed {
+			assembler = &entry
+			break
+		}
+	}
+	if !testing.expect(t, assembler != nil) {
+		return
+	}
+	simulation.players[0].open_machine = assembler.handle
+	audit.browser.selecting_for = assembler.handle
+	state := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&state)
+	push_screen(&state.screens, .Machine)
+	push_screen(&state.screens, .Recipes)
+	for _ in 0 ..< 3 {
+		touch_screen_frame(audit, &state)
+	}
+	list_id := ui_hash(ui_hash(0, "recipes", -1), "recipe_list", -1)
+	chosen := NO_RECIPE
+	for widget in state.widgets {
+		for recipe in 0 ..< len(audit.content.recipes.recipes) {
+			if recipe != assembler.recipe && widget.id == recipe_row_id(list_id, recipe) {
+				chosen = recipe
+			}
+		}
+		if chosen != NO_RECIPE {
+			break
+		}
+	}
+	if !testing.expect(t, chosen != NO_RECIPE) {
+		return
+	}
+	before := assembler.recipe
+	tap_widget(audit, &state, recipe_row_id(list_id, chosen))
+	testing.expect_value(t, top_screen(state.screens), Screen.Recipes)
+	testing.expect_value(t, assembler.recipe, before)
+	testing.expect_value(t, audit.browser.focused_recipe, chosen)
+	tap_widget(audit, &state, slot_button_id("touch_button_choose_recipe"))
+	testing.expect_value(t, top_screen(state.screens), Screen.Machine)
+	testing.expect_value(t, assembler.recipe, chosen)
+	simulation.players[0].open_machine = NO_ENTITY
+}
+
+// The map's zoom buttons step the zoom and stop at its ends.
+@(test)
+test_the_map_zoom_buttons_step_within_bounds :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	state := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&state)
+	push_screen(&state.screens, .Map)
+	touch_screen_frame(audit, &state)
+	audit.map_view.zoom = 1
+	tap_widget(audit, &state, slot_button_id("touch_button_zoom_in"))
+	testing.expect_value(t, audit.map_view.zoom, 0)
+	tap_widget(audit, &state, slot_button_id("touch_button_zoom_in"))
+	testing.expect_value(t, audit.map_view.zoom, 0)
+	tap_widget(audit, &state, slot_button_id("touch_button_zoom_out"))
+	testing.expect_value(t, audit.map_view.zoom, 1)
+	audit.map_view.zoom = MAP_ZOOM_LEVEL_COUNT - 1
+	tap_widget(audit, &state, slot_button_id("touch_button_zoom_out"))
+	testing.expect_value(t, audit.map_view.zoom, MAP_ZOOM_LEVEL_COUNT - 1)
+}
+
+// At 1280 by 800 (the Deck) the machine panels' row keeps Sort in one
+// place with and without Clear filter, and no label is cut.
+@(test)
+test_the_machine_row_keeps_its_places_at_the_deck_size :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	sort_x: [2]f32
+	for kind, index in ([2]Machine_Kind{.Chest, .Splitter}) {
+		handle := audit_machine_of_kind(audit, kind)
+		if !testing.expect(t, handle != NO_ENTITY) {
+			return
+		}
+		audit.simulation.players[0].open_machine = handle
+		state := Ui_State{theme = audit.theme}
+		push_screen(&state.screens, .Machine)
+		ui_begin(&state, {pointer_is_touch = true}, {1280, 800}, 1.0 / 60, 1, 1, ui_accessibility(audit.settings))
+		run_screens(&state, audit_screen_context(audit))
+		ui_resolve(&state)
+		sort := widget_index(state.widgets[:], slot_button_id("slot_button_sort"))
+		if testing.expect(t, sort >= 0) {
+			sort_x[index] = state.widgets[sort].rectangle.x
+		}
+		testing.expect_value(t, widget_index(state.widgets[:], slot_button_id("touch_button_clear_filter")) >= 0, kind == .Splitter)
+		for command in state.draw_list {
+			if command.panel == UI_GLYPH_BAR_PANEL && command.kind == .Text {
+				testing.expectf(t, !strings.has_suffix(command.text, UI_ELLIPSIS), "%v cuts %q", kind, command.text)
+			}
+		}
+		destroy_ui_state(&state)
+	}
+	testing.expect_value(t, sort_x[0], sort_x[1])
+	audit.simulation.players[0].open_machine = NO_ENTITY
 }

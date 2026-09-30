@@ -274,7 +274,7 @@ texture_editor_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) 
 	texture_editor_buttons(state, buttons, editor, screen_context.blocks, editable)
 	ui_panel_end(state)
 	hints := [?]Glyph_Hint{{.Confirm, text("hint_select")}, {.Back, text("hint_back")}}
-	ui_glyph_bar(state, hints[:])
+	ui_glyph_bar_or_back_row(state, hints[:])
 }
 
 // One row per texture, the selected one marked in the accent; Confirm or

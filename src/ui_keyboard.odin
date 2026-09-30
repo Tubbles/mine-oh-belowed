@@ -171,3 +171,12 @@ keyboard_glyph_hints :: proc(keyboard: Keyboard_State) -> []Glyph_Hint {
 	}
 	return slice.clone([]Glyph_Hint{{.Confirm, text("hint_type")}, {.Context_Action, text("keyboard_backspace")}, {.Info, text("keyboard_shift")}, {.Back, text("keyboard_done")}}, context.temp_allocator)
 }
+
+// The keyboard's glyphs; on touch none, since a finger taps the keys (Done
+// among them) or, with the system keyboard, taps off the field to end the
+// entry.
+keyboard_glyph_bar :: proc(state: ^Ui_State) {
+	if !touch_row_shows(state) {
+		ui_glyph_bar(state, keyboard_glyph_hints(state.keyboard))
+	}
+}

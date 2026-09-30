@@ -120,8 +120,11 @@ title_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		screen_context.quit_requested^ = true
 	}
 	ui_panel_end(state)
-	hints := [?]Glyph_Hint{{.Confirm, text("hint_select")}}
-	ui_glyph_bar(state, hints[:])
+	// A finger taps the buttons; there is nothing to go back to.
+	if !touch_row_shows(state) {
+		hints := [?]Glyph_Hint{{.Confirm, text("hint_select")}}
+		ui_glyph_bar(state, hints[:])
+	}
 }
 
 on_off_key :: proc(value: bool, on_key, off_key: string) -> string {
@@ -189,7 +192,7 @@ new_world_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 			}
 		}
 		ui_panel_end(state)
-		ui_glyph_bar(state, keyboard_glyph_hints(state.keyboard))
+		keyboard_glyph_bar(state)
 		return
 	}
 	if state.keyboard.return_focus != 0 {
@@ -221,7 +224,7 @@ new_world_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 	ui_panel_end(state)
 	hints := [?]Glyph_Hint{{.Confirm, text("hint_select")}, {.Back, text("hint_back")}, {.Info, text("hint_info")}}
-	ui_glyph_bar(state, hints[:])
+	ui_glyph_bar_or_back_row(state, hints[:])
 }
 
 // The load list's cells of one save; marker is set for a save this build
@@ -375,7 +378,7 @@ load_world_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 	ui_panel_end(state)
 	hints := [?]Glyph_Hint{{.Confirm, text("hint_load")}, {.Context_Action, text("hint_delete")}, {.Back, text("hint_back")}}
-	ui_glyph_bar(state, hints[:])
+	ui_glyph_bar_or_back_row(state, hints[:])
 }
 
 // No is declared first, so it holds the focus when the dialog opens.
@@ -401,7 +404,7 @@ confirm_delete_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) 
 	}
 	ui_panel_end(state)
 	hints := [?]Glyph_Hint{{.Confirm, text("hint_select")}, {.Back, text("hint_back")}}
-	ui_glyph_bar(state, hints[:])
+	ui_glyph_bar_or_back_row(state, hints[:])
 }
 
 delete_title_save :: proc(state: ^Ui_State, title: ^Title_State, directory_name: string) {

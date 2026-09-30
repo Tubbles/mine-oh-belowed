@@ -304,6 +304,10 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		draw_magnetometer(state, player^)
 	}
 	hotbar_radial(state, player, items)
+	// On touch the gestures and the overlay's buttons are the hints (0137).
+	if touch_row_shows(state) {
+		return
+	}
 	if hints, shown := schematic_glyph_hints(screen_context.world, player^, items); shown {
 		ui_glyph_bar(state, hints)
 		return
