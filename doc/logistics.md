@@ -27,7 +27,7 @@ How items move without hands: belts, inserters, splitters and the burner mining 
 
 ### As implemented in 0079
 
-- The inserter panel shows the arm's hand in an "In hand" slot under the fuel or filter row, empty when the hand is. A or a click with an empty cursor lifts the item onto the cursor, a quick move puts it into the inventory (what does not fit stays in the hand), and the slot takes nothing in. An arm whose hand the player emptied drops nothing and swings back to pick again. This is the way out of the gravel stall: an inserter that picked an item its target stopped taking waits at the drop, reads "Waiting for room: Gravel" in its panel and in the HUD, and the player takes the item from its hand. Sorting the gravel off the line (a chest at the belt's end) remains the lasting answer.
+- The inserter panel shows the arm's hand in an "In hand" slot under the fuel or filter row, empty when the hand is. A or a drag with an empty cursor lifts the item onto the cursor, a quick move puts it into the inventory (what does not fit stays in the hand), and the slot takes nothing in. An arm whose hand the player emptied drops nothing and swings back to pick again. This is the way out of the gravel stall: an inserter that picked an item its target stopped taking waits at the drop, reads "Waiting for room: Gravel" in its panel and in the HUD, and the player takes the item from its hand. Sorting the gravel off the line (a chest at the belt's end) remains the lasting answer.
 
 ## Splitters
 

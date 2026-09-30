@@ -1,6 +1,6 @@
 # 0124: Drag to move items on a touch screen
 
-Status: todo
+Status: implemented
 
 ## Goal
 
@@ -20,3 +20,12 @@ Assumptions (state them in the log): the drag scheme applies to every pointer so
 
 - `./build.sh check`, `./build.sh check-android`, `./build.sh test`. Tests through the screen frame helpers: a press, move and release moves a stack; a tap only focuses; a hold splits and drags the half; a release outside returns the stack; a tap outside the panel closes the screen; the gamepad path unchanged (existing tests keep passing); the touch rectangle offset.
 - The user, on the phone.
+
+## Implemented
+
+- `Slot_Drag` in `Ui_State` (`ui_core.odin`): `ui_begin` starts it on a press and steps it (`advance_slot_drag`) before the widgets run; `ui_item_slot` names the pressed slot and takes the drop; `finish_slot_drag` (`ui_inventory.odin`), called by the inventory and the machine screen, returns what is still held after a release. The pick up and the split are Confirm and `Menu_Secondary` on the pressed slot, so every slot screen applies them through its gamepad path, unchanged.
+- `Pointer_Source.Touch`: set from `Ui_Input.pointer_is_touch`, which `run_ui_frame` (`loop.odin`) sets on Android or while the touch overlay is on. No change in `input_raylib.odin` was needed. `detect_input_device` is untouched.
+- Deviation: what is still held after a release goes back to the dragged stack's origin, not only on a release off the slots: after a swap or a partial merge nothing would otherwise stay under a lifted finger. So a drag onto another item swaps the two slots.
+- Deviation: the outside tap closes only the screens that do not pause the simulation (inventory tabs, machine, journal, power, statistics, map), not the pause menu, settings, editors or title screens, whose presses land all over the screen; and not while the on-screen keyboard is open. It sets Back for the frame instead of calling `pop_screen`, so the screens close exactly as on B. The glyph bar's panel spans the safe area, so it is left out of the panel test and a bottom strip (the glyph bar and the HUD's hotbar) counts as content instead.
+- The pointer's Even Distribution gesture is gone (the release drops on one slot, as the item asks); the gamepad keeps it. A click with Left Control quick moves the pressed slot (`advance_slot_drag` focuses it) and starts no drag.
+- Tests (`ui_inventory_test.odin`): a drag moves a stack, a drag onto another item swaps, a tap only focuses, a hold splits and drags the half, a release off the slots returns the stack, a tap outside closes the screen while a drag released outside does not, a drag into a chest, the touch offset, the `Touch` source.

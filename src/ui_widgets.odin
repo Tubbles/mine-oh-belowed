@@ -727,8 +727,15 @@ item_stack_tooltip :: proc(stack: Item_Stack, items: Item_Registry) -> string {
 	return fmt.tprintf("%s  %s  %d / %d", item_name(items, stack.item), category, stack.count, item_stack_size(items, stack.item))
 }
 
+// The pointer moves stacks by drag and drop (Slot_Drag, 0124): a press
+// names the slot for the drag and activates nothing, the slot under a
+// drag's release takes the drop.
 ui_item_slot :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, id: Ui_Id, stack: Item_Stack, items: Item_Registry) -> Ui_Interaction {
-	interaction := ui_interact(state, id, rectangle, {.Tooltip_Shows_Itself}, item_stack_tooltip(stack, items))
+	interaction := ui_interact(state, id, rectangle, {.Tooltip_Shows_Itself, .Item_Slot}, item_stack_tooltip(stack, items))
+	if interaction.hovered && state.click {
+		state.slot_drag.slot, state.slot_drag.count = id, stack.count
+	}
+	interaction.activated = (interaction.focused && state.confirm) || (interaction.hovered && state.slot_drag.released)
 	widget_background(state, rectangle, id, interaction)
 	draw_outline(state, rectangle, theme_color(state, .Panel_Edge), ui_theme(state).border)
 	draw_item_stack(state, rectangle, stack, items)

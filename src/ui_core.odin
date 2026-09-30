@@ -54,6 +54,9 @@ Ui_Widget_Flag :: enum u8 {
 	// The tooltip shows once the focus has rested on the widget for
 	// UI_TOOLTIP_DELAY, without the Info toggle (item slots, work item 0094).
 	Tooltip_Shows_Itself,
+	// An item slot: the pointer moves its stack by drag and drop, and a
+	// press on it is no click (Slot_Drag, 0124).
+	Item_Slot,
 }
 
 Ui_Widget_Flags :: bit_set[Ui_Widget_Flag]
@@ -80,6 +83,9 @@ Pointer_Source :: enum u8 {
 	None,
 	Mouse,
 	Trackpad,
+	// The mouse's pointer when it is a finger (Ui_Input.pointer_is_touch):
+	// a dragged stack sits above it (held_stack_rectangle, 0124).
+	Touch,
 }
 
 // What the UI reads from one frame of input, built by make_ui_input.
@@ -129,6 +135,9 @@ Ui_Input :: struct {
 	mouse_moved:    bool,
 	mouse_pressed:  bool,
 	mouse_down:     bool,
+	// The mouse's pointer is a finger: on Android, and while the touch
+	// overlay is on (run_ui_frame, 0124).
+	pointer_is_touch: bool,
 	// Right trackpad movement in pad widths.
 	trackpad_delta: [2]f32,
 	pad_pressed:    bool,
@@ -247,6 +256,43 @@ Screen_Stack :: struct {
 	count:   int,
 }
 
+// UI units the pointer may move from where it pressed before the press
+// is a drag rather than a tap (0124): a finger wobbles a little in a tap.
+UI_SLOT_DRAG_SLOP :: 16
+
+Slot_Drag_Phase :: enum u8 {
+	None,
+	// Down, neither moved past the slop nor rested TOUCH_HOLD_SECONDS on
+	// a stack yet.
+	Pressed,
+	// A stack follows the pointer until it lifts.
+	Dragging,
+}
+
+// The pointer moves item stacks by drag and drop (0124). ui_begin starts
+// and steps it (advance_slot_drag), ui_item_slot names the pressed slot
+// and takes the drop, finish_slot_drag (ui_inventory.odin) returns what
+// is still held when it ends.
+Slot_Drag :: struct {
+	phase:          Slot_Drag_Phase,
+	// The pressed slot and its stack's count, 0 for a press off the slots.
+	slot:           Ui_Id,
+	count:          u16,
+	press_position: [2]f32,
+	held_seconds:   f32,
+	// The pointer left the slop since the press, so it is no tap.
+	moved:          bool,
+	// The press landed off the screen's content (pointer_outside_screen).
+	outside:        bool,
+	// This frame only: the pointer lifted from a drag, and the slot under
+	// it takes the drop.
+	released:       bool,
+	// Written by finish_slot_drag on every frame of a slot screen: a stack
+	// is held, and where the dragged stack came from.
+	holding:        bool,
+	origin_slot:    int,
+}
+
 Radial_Source :: enum u8 {
 	Touchpad,
 	Stick,
@@ -322,6 +368,7 @@ Ui_State :: struct {
 	focus_rest_seconds: f32,
 	hovered:          Ui_Id,
 	dragging:         Ui_Id,
+	slot_drag:        Slot_Drag,
 	repeat:           Repeat_State,
 	pointer:          [2]f32,
 	pointer_source:   Pointer_Source,
@@ -568,7 +615,7 @@ update_pointer :: proc(state: ^Ui_State) {
 	state.pointer_moved = false
 	if input.mouse_moved || input.mouse_pressed {
 		state.pointer = input.mouse_position / state.pixels_per_unit
-		state.pointer_source = .Mouse
+		state.pointer_source = input.pointer_is_touch ? .Touch : .Mouse
 		state.pointer_moved = input.mouse_moved
 	} else if input.trackpad_delta != {} {
 		moved := state.pointer + input.trackpad_delta * state.pointer_speed * state.screen_units.y
@@ -610,9 +657,6 @@ ui_begin :: proc(state: ^Ui_State, input: Ui_Input, screen_pixels: [2]f32, frame
 	state.accessibility = accessibility
 	state.pixels_per_unit = ui_pixels_per_unit(screen_pixels.y, ui_scale)
 	state.screen_units = ui_screen_units(screen_pixels, state.pixels_per_unit)
-	clear(&state.widgets)
-	clear(&state.panels)
-	clear(&state.draw_list)
 	state.id_depth = 0
 	state.current_panel = 0
 	state.focused_tooltip = ""
@@ -635,6 +679,11 @@ ui_begin :: proc(state: ^Ui_State, input: Ui_Input, screen_pixels: [2]f32, frame
 	if !state.pointer_held {
 		state.dragging = 0
 	}
+	// Before the clear: it reads the last frame's panels and widgets.
+	advance_slot_drag(state)
+	clear(&state.widgets)
+	clear(&state.panels)
+	clear(&state.draw_list)
 	// Y rotates the held building in the world, so it opens the info panel
 	// only on a screen.
 	if state.screens.count == 0 {
@@ -642,7 +691,8 @@ ui_begin :: proc(state: ^Ui_State, input: Ui_Input, screen_pixels: [2]f32, frame
 	} else if input.info && state.keyboard.field == 0 {
 		state.tooltip_open = !state.tooltip_open
 	}
-	if input.back && state.screens.count > 0 && top_screen(state.screens) != .Title {
+	// The state's input: a tap off the screen sets Back (end_slot_drag).
+	if state.input.back && state.screens.count > 0 && top_screen(state.screens) != .Title {
 		state.sound_events += {.Back}
 	}
 	advance_toasts(state, frame_seconds)
@@ -650,6 +700,114 @@ ui_begin :: proc(state: ^Ui_State, input: Ui_Input, screen_pixels: [2]f32, frame
 	state.focus_pulse = still_focus_pulse(focus_pulse_phase(state.focus_pulse_seconds), accessibility.reduced_motion)
 	state.toast_top_offset = 0
 	state.sound_events += advance_mission_control(&state.mission_control, frame_seconds, accessibility.reduced_motion)
+}
+
+// Steps the slot drag (0124) before the widgets run. A press starts it,
+// a drag at once when a stack is held already (the gamepad picked it
+// up); while it is down, moving past the slop picks the pressed stack up
+// and resting on a stack of two or more splits it; lifting ends it.
+// A click with Left Control is a quick move of the slot under the
+// pointer, which it focuses, and starts no drag.
+advance_slot_drag :: proc(state: ^Ui_State) {
+	holding := state.slot_drag.holding
+	state.slot_drag.holding, state.slot_drag.released = false, false
+	switch {
+	case state.click && state.input.quick_move_modifier:
+		state.slot_drag = {}
+		if pressed := widget_under(state.widgets[:], state.pointer); pressed != 0 {
+			state.focus = pressed
+		}
+	case state.click:
+		state.slot_drag = start_slot_drag(state^, holding)
+	case state.slot_drag.phase == .None:
+	case !state.pointer_held:
+		end_slot_drag(state, holding)
+	case:
+		step_slot_drag(state)
+	}
+}
+
+start_slot_drag :: proc(state: Ui_State, holding: bool) -> Slot_Drag {
+	return Slot_Drag {
+		phase = holding ? .Dragging : .Pressed,
+		press_position = state.pointer,
+		outside = pointer_outside_screen(state),
+		origin_slot = state.slot_drag.origin_slot,
+	}
+}
+
+slot_drag_moved :: proc(press_position, pointer: [2]f32) -> bool {
+	offset := pointer - press_position
+	return offset.x * offset.x + offset.y * offset.y > UI_SLOT_DRAG_SLOP * UI_SLOT_DRAG_SLOP
+}
+
+// The pick up is Confirm on the pressed slot, the split Menu_Secondary
+// on it, so every slot screen applies them as it applies the gamepad's.
+step_slot_drag :: proc(state: ^Ui_State) {
+	drag := &state.slot_drag
+	drag.held_seconds += state.frame_seconds
+	drag.moved = drag.moved || slot_drag_moved(drag.press_position, state.pointer)
+	if drag.phase != .Pressed || drag.slot == 0 {
+		return
+	}
+	switch {
+	case drag.moved && drag.count > 0:
+		state.focus, state.confirm = drag.slot, true
+		drag.phase = .Dragging
+	case drag.held_seconds >= TOUCH_HOLD_SECONDS && drag.count >= 2:
+		state.focus, state.input.secondary = drag.slot, true
+		state.sound_events += {.Confirm}
+		drag.phase = .Dragging
+	}
+}
+
+// A drag ends in a drop (released) while a stack is held, a tap on a
+// slot focuses it, and a tap off the screen's content closes the screen
+// as Back does.
+end_slot_drag :: proc(state: ^Ui_State, holding: bool) {
+	drag := state.slot_drag
+	state.slot_drag.phase = .None
+	switch {
+	case drag.phase == .Dragging:
+		state.slot_drag.released = holding
+	case drag.moved:
+	case drag.slot != 0:
+		state.focus = drag.slot
+	case drag.outside && pointer_outside_screen(state^) && outside_tap_closes_screen(state^):
+		state.input.back = true
+	}
+}
+
+// The panels over the running world (the inventory, a machine panel, the
+// map...); the menus that pause and the editors, which take presses all
+// over the screen, stay. Not while the keyboard is open.
+outside_tap_closes_screen :: proc(state: Ui_State) -> bool {
+	top := top_screen(state.screens)
+	return top != .None && !screen_pauses_simulation(top) && state.keyboard.field == 0
+}
+
+// Whether the pointer lies off the screen's content: outside every panel
+// (but the glyph bar's, which spans the safe area for the focus only),
+// every widget, and the bottom strip of the glyph bar and the HUD's
+// hotbar. Reads the last frame's panels and widgets; false before a
+// screen drew any.
+pointer_outside_screen :: proc(state: Ui_State) -> bool {
+	if len(state.panels) == 0 || widget_under(state.widgets[:], state.pointer) != 0 {
+		return false
+	}
+	for panel in state.panels {
+		if panel.id != UI_GLYPH_BAR_PANEL && rectangle_contains(panel.rectangle, state.pointer) {
+			return false
+		}
+	}
+	return state.pointer.y < bottom_strip_top(state.screen_units)
+}
+
+// The top of the strip along the bottom of the safe area and below it
+// where the glyph bar and the HUD's hotbar sit.
+bottom_strip_top :: proc(screen_units: [2]f32) -> f32 {
+	safe_bottom := screen_units.y * (1 - UI_SAFE_AREA_FRACTION)
+	return safe_bottom - max(f32(UI_GLYPH_BAR_HEIGHT + 2 * UI_GAP), UI_SLOT_SIZE * HUD_SELECTED_SLOT_SCALE)
 }
 
 // The seconds the focus has rested on one widget: counting while it
@@ -709,11 +867,16 @@ ui_resolve :: proc(state: ^Ui_State) {
 
 // An activation this frame, as ui_interact grants it: confirm on the
 // focused widget, or a click on one under the pointer.
+// A press on an item slot is no activation but with Left Control (the
+// quick move); its drop is (0124).
 ui_frame_sound_events :: proc(state: Ui_State) -> bit_set[Ui_Sound_Event] {
 	widgets := state.widgets[:]
 	confirmed := state.confirm && widget_index(widgets, state.focus) >= 0
-	clicked := state.click && state.pointer_source != .None && widget_under(widgets, state.pointer) != 0
-	return confirmed || clicked ? {.Confirm} : {}
+	under := state.pointer_source != .None ? widget_index(widgets, widget_under(widgets, state.pointer)) : -1
+	on_slot := under >= 0 && .Item_Slot in widgets[under].flags
+	clicked := state.click && under >= 0 && (!on_slot || state.input.quick_move_modifier)
+	dropped := state.slot_drag.released && on_slot
+	return confirmed || clicked || dropped ? {.Confirm} : {}
 }
 
 focus_step_allowed :: proc(focused: Ui_Widget, step: Ui_Direction) -> bool {

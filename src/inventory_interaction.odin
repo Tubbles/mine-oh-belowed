@@ -2,7 +2,8 @@ package game
 
 // The gamepad slot interaction from doc/ui.md as pure procedures over the
 // inventory and the stack on the cursor. The pointer drives the same
-// procedures with clicks. Slot indices are into Inventory.slots.
+// procedures by drag and drop (Slot_Drag, 0124). Slot indices are into
+// Inventory.slots.
 
 // origin_slot is where the stack was picked up, so closing the screen can
 // put it back there.
@@ -15,9 +16,9 @@ EMPTY_HELD_STACK :: Held_Stack {
 	stack = EMPTY_STACK,
 }
 
-// A (or a click): pick up the slot's stack, drop the held stack onto an
-// empty slot, merge it onto the same item (the rest stays held), or swap
-// it with a different item.
+// A (or a pointer drag, Slot_Drag): pick up the slot's stack, drop the
+// held stack onto an empty slot, merge it onto the same item (the rest
+// stays held), or swap it with a different item.
 apply_slot_primary :: proc(inventory: Inventory, held: Held_Stack, index: int, registry: Item_Registry) -> Held_Stack {
 	slot := &inventory.slots[index]
 	if stack_is_empty(held.stack) {
@@ -111,10 +112,11 @@ distribute_held_stack :: proc(held: Held_Stack, targets: []^Item_Stack, registry
 MACHINE_SLOT_ORIGIN :: -1
 DISTRIBUTE_MAXIMUM_SLOTS :: MAXIMUM_CHEST_SLOTS
 
-// The distribute gesture from doc/ui.md: A (or a click) on a machine slot
-// while holding a stack starts it, moving the focus or the pointer with A
-// held visits more slots, and releasing spreads the stack over them. A
-// single visited slot gets the ordinary drop instead.
+// The distribute gesture from doc/ui.md: A on a machine slot while
+// holding a stack starts it, moving the focus with A held visits more
+// slots (a pointer drag drops on one slot instead, 0124), and releasing
+// spreads the stack over them. A single visited slot gets the ordinary
+// drop instead.
 Distribute_Gesture :: struct {
 	active:  bool,
 	visited: [DISTRIBUTE_MAXIMUM_SLOTS]int,

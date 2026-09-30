@@ -412,7 +412,7 @@ inserter_filter_after_input :: proc(filter: Item_Id, held: Item_Stack, activated
 	return filter
 }
 
-// A or a click with nothing on the cursor lifts the inserter's hand onto
+// A or a drag with nothing on the cursor lifts the inserter's hand onto
 // it. The hand takes nothing in: a stack on the cursor stays there.
 inserter_hand_after_input :: proc(hand: Item_Stack, held: Held_Stack, activated: bool) -> (Item_Stack, Held_Stack) {
 	if !activated || !stack_is_empty(held.stack) || stack_is_empty(hand) {
@@ -522,6 +522,7 @@ machine_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		clear_filter := machine_slots.filter_focused && state.input.context_action
 		splitter.filter = inserter_filter_after_input(splitter.filter, player.held.stack, machine_slots.filter_activated, clear_filter)
 	}
+	player.held = finish_slot_drag(state, player.inventory, player.held, items)
 	draw_held_stack(state, player.held.stack, items)
 	if machine_slots.filter_focused {
 		filter_glyph_bar(state)
@@ -535,10 +536,11 @@ machine_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 }
 
 // The quick move (quick_transfer.odin): R2 or Q on a slot, or Left
-// Control with a click. Its press takes the slot's activation, since R2
-// is Confirm too and a click picks up, so the stack is not also picked
-// up; returns the activations left for the ordinary slot input. On an
-// inserter's hand slot it moves the hand into the inventory.
+// Control with a click on it (advance_slot_drag focuses the pressed
+// slot). Its press takes the slot's activation, since R2 is Confirm too,
+// so the stack is not also picked up; returns the activations left for
+// the ordinary slot input. On an inserter's hand slot it moves the hand
+// into the inventory.
 apply_quick_move_input :: proc(state: ^Ui_State, screen_context: Screen_Context, handle: Entity_Handle, slots: []Item_Stack, player_slots: Slot_Grid_Result, machine_slots: Machine_Slot_Result) -> (player_activated, machine_activated: int, hand_activated: bool) {
 	input := state.input
 	modifier_click := input.quick_move_modifier && state.click

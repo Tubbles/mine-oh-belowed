@@ -114,15 +114,16 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	if state.input.drop && screen_context.world != nil {
 		drop_player_stack(screen_context.world, screen_context.blocks, player, slots.focused)
 	}
+	player.held = finish_slot_drag(state, player.inventory, player.held, items)
 	draw_held_stack(state, player.held.stack, items)
 	inventory_glyph_bar(state, player.held.stack, slots.focused >= 0 ? player.inventory.slots[slots.focused] : EMPTY_STACK, quick_move = true, drop = true)
 }
 
 // The quick move between the hotbar and the backpack: R2 or Q on the
-// focused slot, or Left Control with a click, as apply_quick_move_input
-// in the machine panel. Its press takes the slot's activation, since R2
-// is Confirm too and a click picks up; returns the activation left for
-// the ordinary slot input.
+// focused slot, or Left Control with a click on a slot, as
+// apply_quick_move_input in the machine panel. Its press takes the
+// slot's activation, since R2 is Confirm too; returns the activation
+// left for the ordinary slot input.
 apply_inventory_quick_move_input :: proc(state: ^Ui_State, screen_context: Screen_Context, slots: Slot_Grid_Result) -> (activated: int) {
 	input := state.input
 	inventory := screen_context.player.inventory
@@ -179,11 +180,41 @@ inventory_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle) {
 	}
 }
 
-// Follows the pointer while it is shown, otherwise the focused widget.
+// The end of a pointer drag on a slot screen (0124), after the slot
+// input: on the release frame what is still held (a stack released off
+// the slots, the rest of a merge, a swapped stack) goes back, to where
+// the dragged stack came from, so a drag onto another item swaps the two
+// slots. A drag that holds nothing (its pick up lifted nothing: a filter
+// slot, a slot a machine emptied) ends. Records for the next frame
+// whether a stack is held and, while dragging, its origin.
+finish_slot_drag :: proc(state: ^Ui_State, inventory: Inventory, held: Held_Stack, items: Item_Registry) -> Held_Stack {
+	result := held
+	if state.slot_drag.released && !stack_is_empty(result.stack) {
+		result.origin_slot = state.slot_drag.origin_slot
+		result = return_held_stack(inventory, result, items)
+	}
+	holding := !stack_is_empty(result.stack)
+	if state.slot_drag.phase == .Dragging {
+		state.slot_drag.origin_slot = result.origin_slot
+		if !holding {
+			state.slot_drag.phase = .None
+		}
+	}
+	state.slot_drag.holding = holding
+	return result
+}
+
+// Follows the pointer while it is shown, a finger's a slot height above
+// it so the finger does not cover the stack (0124), otherwise the
+// focused widget.
 held_stack_rectangle :: proc(state: ^Ui_State) -> (rectangle: Ui_Rectangle, found: bool) {
 	if state.pointer_source != .None {
 		half := f32(UI_SLOT_SIZE / 2)
-		return {state.pointer.x - half, state.pointer.y - half, UI_SLOT_SIZE, UI_SLOT_SIZE}, true
+		rectangle = {state.pointer.x - half, state.pointer.y - half, UI_SLOT_SIZE, UI_SLOT_SIZE}
+		if state.pointer_source == .Touch {
+			rectangle.y -= UI_SLOT_SIZE
+		}
+		return rectangle, true
 	}
 	index := widget_index(state.widgets[:], state.focus)
 	if index < 0 {

@@ -802,6 +802,9 @@ run_ui_frame :: proc(state: ^Frame_State) {
 	// the panel's pixels and its text rasterises at their size.
 	screen_pixels := [2]f32{f32(rl.GetRenderWidth()), f32(rl.GetRenderHeight())}
 	input := make_ui_input(state.previous_input, state.input)
+	// The phone's pointer is its first touch (input_raylib.odin); with the
+	// overlay on, the desktop's mouse stands in for a finger (0124).
+	input.pointer_is_touch = ODIN_PLATFORM_SUBTARGET == .Android || touch_overlay_on(state)
 	ui_begin(&state.ui, input, screen_pixels, state.frame_seconds, state.settings.ui_scale, state.settings.pointer_speed, ui_accessibility(state.settings))
 	sync_font_cache(&state.font_cache, state.settings, state.ui.pixels_per_unit)
 	screen_context := make_screen_context(state)
