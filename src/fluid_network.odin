@@ -21,8 +21,10 @@ import "core:slice"
 // Rounding down keeps a litre from moving back and forth between two
 // segments once a run is full.
 //
-// A liquid moves only to a segment at the same height or lower, unless
-// the network is pressurised by the output of a running pump. Gases
+// A liquid moves to a higher segment only while that segment is at or
+// below the network's head line: the highest outlet height plus head of
+// the running pumps whose output port is in the network (0139). Without a
+// running pump a liquid moves only to the same height or lower. Gases
 // ignore height. A network holds one fluid: the first that enters it, kept
 // until it is empty. A port holding or only taking another fluid, or whose
 // phase filter refuses the network's fluid, is closed and moves nothing;
@@ -37,8 +39,13 @@ Fluid_Segment :: struct {
 	direction:    Fluid_Port_Direction,
 	filter:       Fluid_Id,
 	phase_filter: Fluid_Phase_Filter,
-	// The output port of a pump.
+	// The output port of a pump (offshore, tar pit or electric), the
+	// height its head reaches, whether it runs only with power, and its
+	// pump's input port, or -1 for a pump standing at its source.
 	pressurising:    bool,
+	head_line:       i32,
+	needs_power:     bool,
+	input_port:      int,
 	network:         int,
 	// Connections to the nearest output port of the network, or
 	// UNREACHABLE_DISTANCE.
@@ -131,15 +138,19 @@ collect_fluid_segments :: proc(entities: ^Entities, machines: Machine_Registry) 
 
 append_port_segments :: proc(segments: ^[dynamic]Fluid_Segment, common: Entity_Common, machine: Machine) {
 	for port, index in fluid_ports_of(machine) {
+		height := placed_port_height(common, machine, port)
 		segment := Fluid_Segment {
 			owner        = common.handle,
 			port         = index,
-			height       = placed_port_height(common, machine, port),
+			height       = height,
 			capacity     = port.capacity,
 			direction    = port.direction,
 			filter       = port.filter,
 			phase_filter = port.phase_filter,
-			pressurising = machine.kind == .Pump && port.direction == .Output,
+			pressurising = machine_kind_is_pump(machine.kind) && port.direction == .Output,
+			head_line    = height + machine.head_metres,
+			needs_power  = machine.electric_power_watts > 0,
+			input_port   = port_index_of_direction(machine, .Input),
 		}
 		append(segments, segment)
 	}
@@ -455,14 +466,45 @@ first_giving_fluid :: proc(entities: ^Entities, networks: ^Fluid_Networks, membe
 	return NO_FLUID
 }
 
-network_is_pressurised :: proc(entities: ^Entities, networks: ^Fluid_Networks, members: []int) -> bool {
+// A pump outlet sets a head line while it can push: its port is open
+// (not closed for mixing this tick), it has power or needs none, and its
+// input side holds fluid. A pump at its source (offshore, tar pit) always
+// does; the electric pump did when it moved fluid this tick (it may have
+// drained its input to zero doing so) or while its input holds a litre.
+// A pump against a full output keeps its head.
+outlet_is_running :: proc(entities: ^Entities, segment: Fluid_Segment) -> bool {
+	if !segment.pressurising {
+		return false
+	}
+	pump := pool_get(&entities.fluid_machines, segment.owner)
+	if pump.closed[segment.port] || segment.needs_power && !power_is_on(pump.power) {
+		return false
+	}
+	return segment.input_port < 0 || pump.state == .Pumping || pump.buffers[segment.input_port].level > 0
+}
+
+// The highest head line of the network's running pump outlets.
+network_head_line :: proc(entities: ^Entities, networks: ^Fluid_Networks, members: []int) -> (line: i32, found: bool) {
 	for member in members {
 		segment := networks.segments[member]
-		if segment.pressurising && power_is_on(pool_get(&entities.fluid_machines, segment.owner).power) {
-			return true
+		if outlet_is_running(entities, segment) && (!found || segment.head_line > line) {
+			line, found = segment.head_line, true
 		}
 	}
-	return false
+	return
+}
+
+// No running pump: a liquid never climbs. A gas climbs anywhere.
+NO_HEAD_LINE :: min(i32)
+HEIGHTS_IGNORED :: max(i32)
+
+// The height a liquid may climb to in the network this tick.
+tick_head_line :: proc(entities: ^Entities, networks: ^Fluid_Networks, members: []int, fluids: Fluid_Registry, fluid: Fluid_Id) -> i32 {
+	if fluid_is_gas(fluids, fluid) {
+		return HEIGHTS_IGNORED
+	}
+	line, found := network_head_line(entities, networks, members)
+	return found ? line : NO_HEAD_LINE
 }
 
 // How much fuller `from` is than `to` by fill fraction, scaled by both
@@ -500,10 +542,12 @@ order_by_fullness :: proc(first, second: Fluid_Segment, first_buffer, second_buf
 	return 0, 1
 }
 
+// head_line: a move into a higher segment needs that segment at or below
+// it (tick_head_line).
 Fluid_Tick_Rules :: struct {
-	fluid:   Fluid_Id,
-	gravity: bool,
-	limit:   i32,
+	fluid:     Fluid_Id,
+	head_line: i32,
+	limit:     i32,
 }
 
 move_along_connection :: proc(entities: ^Entities, networks: ^Fluid_Networks, connection: Fluid_Connection, closed: []bool, rules: Fluid_Tick_Rules) {
@@ -516,7 +560,7 @@ move_along_connection :: proc(entities: ^Entities, networks: ^Fluid_Networks, co
 	if !segment_gives(pair[from]) || !segment_takes(pair[to]) {
 		return
 	}
-	if rules.gravity && pair[from].height < pair[to].height {
+	if pair[from].height < pair[to].height && pair[to].height > rules.head_line {
 		return
 	}
 	amount: i32
@@ -570,9 +614,9 @@ tick_fluid_network :: proc(entities: ^Entities, networks: ^Fluid_Networks, netwo
 		return
 	}
 	rules := Fluid_Tick_Rules {
-		fluid   = network.fluid,
-		gravity = !fluid_is_gas(fluids, network.fluid) && !network_is_pressurised(entities, networks, members),
-		limit   = limit,
+		fluid     = network.fluid,
+		head_line = tick_head_line(entities, networks, members, fluids, network.fluid),
+		limit     = limit,
 	}
 	for connection in networks.connections[network.first_connection:][:network.connection_count] {
 		move_along_connection(entities, networks, connection, closed, rules)
@@ -630,4 +674,32 @@ fluid_network_of :: proc(networks: ^Fluid_Networks, owner: Entity_Handle, port: 
 		}
 	}
 	return -1
+}
+
+// The segment of a pipe or a machine port, or -1.
+find_fluid_segment :: proc(networks: ^Fluid_Networks, owner: Entity_Handle, port: int) -> int {
+	for segment, index in networks.segments {
+		if segment.owner == owner && segment.port == port {
+			return index
+		}
+	}
+	return -1
+}
+
+// Whether a pipe or port stands above the head line of its liquid
+// network, so no pump lifts anything into it (the panels, 0139). False
+// without a running pump and for a gas.
+segment_is_above_head_line :: proc(entities: ^Entities, fluids: Fluid_Registry, owner: Entity_Handle, port: int) -> bool {
+	networks := &entities.fluid_networks
+	index := find_fluid_segment(networks, owner, port)
+	if index < 0 {
+		return false
+	}
+	segment := networks.segments[index]
+	network := networks.networks[segment.network]
+	if fluid_is_gas(fluids, network.fluid) {
+		return false
+	}
+	line, found := network_head_line(entities, networks, networks.members[network.first_member:][:network.member_count])
+	return found && segment.height > line
 }

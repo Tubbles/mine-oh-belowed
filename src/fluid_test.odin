@@ -1,5 +1,6 @@
 package game
 
+import "core:strings"
 import "core:testing"
 
 // Fluid worlds stand on the stone floor of make_floor_world (top at y 1).
@@ -68,6 +69,69 @@ test_fluid_data_loads :: proc(t: ^testing.T) {
 	testing.expect_value(t, content.machines.machines[test_machine(content.machines, "steam_engine")].fluid_port_count, 2)
 	testing.expect_value(t, content.machines.machines[test_machine(content.machines, "offshore_pump")].fluid_litres_per_second, 1200)
 	testing.expect_value(t, content.machines.machines[test_machine(content.machines, "pump")].electric_power_watts, 30_000)
+	testing.expect_value(t, content.machines.machines[test_machine(content.machines, "pump")].head_metres, 30)
+	testing.expect_value(t, content.machines.machines[test_machine(content.machines, "tar_pit_pump")].head_metres, 6)
+}
+
+// Work item 0139: every pump kind has a head of at least one metre, and
+// nothing else has one.
+@(test)
+test_pump_head_is_validated :: proc(t: ^testing.T) {
+	pump := Machine_Definition {
+		id                      = "offshore_pump",
+		name_key                = "machine_offshore_pump",
+		item                    = "offshore_pump",
+		kind                    = "offshore_pump",
+		footprint               = {2, 1, 1},
+		fluid_litres_per_second = 1200,
+		head_metres             = 6,
+		fluid_ports             = {{cell = {0, 0, 0}, face = "negative_x", direction = "output", fluid = "water", buffer_litres = 200}},
+	}
+	testing.expect_value(t, resolve_test_machines({pump}), "")
+	no_head := pump
+	no_head.head_metres = 0
+	testing.expect(t, strings.contains(resolve_test_machines({no_head}), "offshore_pump"))
+	too_high := pump
+	too_high.head_metres = MAXIMUM_HEAD_METRES + 1
+	testing.expect(t, strings.contains(resolve_test_machines({too_high}), "offshore_pump"))
+	too_high.head_metres = MAXIMUM_HEAD_METRES
+	testing.expect_value(t, resolve_test_machines({too_high}), "")
+	electric := Machine_Definition {
+		id                       = "pump",
+		name_key                 = "machine_pump",
+		item                     = "pump",
+		kind                     = "pump",
+		footprint                = {2, 1, 1},
+		fluid_litres_per_second  = 1200,
+		electric_power_kilowatts = 30,
+		fluid_ports              = {
+			{cell = {0, 0, 0}, face = "negative_x", direction = "input", buffer_litres = 200},
+			{cell = {1, 0, 0}, face = "positive_x", direction = "output", buffer_litres = 200},
+		},
+	}
+	testing.expect(t, strings.contains(resolve_test_machines({electric}), "\"pump\""))
+	electric.head_metres = 30
+	testing.expect_value(t, resolve_test_machines({electric}), "")
+	pipe := Machine_Definition{id = "pipe", name_key = "machine_pipe", item = "pipe", kind = "pipe", footprint = {1, 1, 1}, buffer_litres = 100, flow_litres_per_second = 1200}
+	testing.expect_value(t, resolve_test_machines({pipe}), "")
+	pipe.head_metres = 6
+	testing.expect(t, strings.contains(resolve_test_machines({pipe}), "pipe"))
+	boiler := Machine_Definition {
+		id                      = "boiler",
+		name_key                = "machine_boiler",
+		item                    = "boiler",
+		kind                    = "boiler",
+		footprint               = {3, 2, 2},
+		fuel_slots              = 1,
+		fuel_power_kilowatts    = 1800,
+		fluid_litres_per_second = 60,
+		head_metres             = 6,
+		fluid_ports             = {
+			{cell = {1, 0, 0}, face = "negative_z", direction = "input", fluid = "water", buffer_litres = 200},
+			{cell = {1, 0, 1}, face = "positive_z", direction = "output", fluid = "steam", buffer_litres = 200},
+		},
+	}
+	testing.expect(t, strings.contains(resolve_test_machines({boiler}), "boiler"))
 }
 
 @(test)
@@ -244,6 +308,165 @@ test_pump_moves_water_uphill_only_with_power :: proc(t: ^testing.T) {
 	testing.expect(t, levels[2] > 0)
 	// Nothing is lost or made on the way.
 	testing.expect_value(t, levels[0] + levels[1] + levels[2] + fluid_machine_litres(&world, pump) + test_pipe(&world, source).buffer.level, 100)
+}
+
+// Pipes stacked in a column at x z, from y bottom to y top.
+lay_pipe_column :: proc(world: ^World, content: Simulation_Content, x, z, bottom, top: i32) -> []Entity_Handle {
+	cells := make([]World_Coordinate, top - bottom + 1, context.temp_allocator)
+	for &cell, index in cells {
+		cell = {x, bottom + i32(index), z}
+	}
+	return lay_pipes(world, content, ..cells)
+}
+
+// Work item 0139: the offshore pump's outlet at y 1 lifts water to its
+// 6 metre head, y 7, and the panel says why the pipe above stays dry.
+@(test)
+test_offshore_pump_lifts_water_to_its_head :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	testing.expect_value(t, content.machines.machines[test_machine(content.machines, "offshore_pump")].head_metres, 6)
+	place_test_fluid_entity(&world, content, "offshore_pump", {0, 1, 0})
+	column := lay_pipe_column(&world, content, -1, 0, 1, 8)
+	tick_test_fluids(&world, content, 600)
+	levels := pipe_levels(&world, column)
+	testing.expect_value(t, levels[6], 100)
+	testing.expect_value(t, levels[7], 0)
+	testing.expect(t, !segment_is_above_head_line(&world.entities, content.fluids, column[6], -1))
+	testing.expect(t, segment_is_above_head_line(&world.entities, content.fluids, column[7], -1))
+	above := test_pipe(&world, column[7]).buffer
+	testing.expect_value(t, fluid_second_line(above, true, TEST_TICK_RATE), text("fluid_above_pump_head"))
+	testing.expect_value(t, fluid_second_line(above, false, TEST_TICK_RATE), fluid_flow_line(above, TEST_TICK_RATE))
+}
+
+// A full tank of the fluid beside the pump's input at y 1 and a column
+// of pipes from its output up to y top.
+make_head_pump_world :: proc(content: Simulation_Content, fluid: string, top: i32) -> (world: World, pump: Entity_Handle, column: []Entity_Handle) {
+	world = make_floor_world(content.blocks, 32)
+	pump = place_test_fluid_entity(&world, content, "pump", {0, 1, 0})
+	tank := place_test_fluid_entity(&world, content, "storage_tank", {-3, 1, -1})
+	test_fluid_machine(&world, tank).buffers[0] = {fluid = test_fluid(content, fluid), level = 25_000}
+	column = lay_pipe_column(&world, content, 2, 0, 1, top)
+	return
+}
+
+@(test)
+test_electric_pump_lifts_to_its_head_only_with_power :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world, pump, column := make_head_pump_world(content, "water", 32)
+	tick_test_fluids(&world, content, 100)
+	for level in pipe_levels(&world, column) {
+		testing.expect_value(t, level, 0)
+	}
+	test_fluid_machine(&world, pump).power.satisfaction = POWER_FULL
+	tick_test_fluids(&world, content, 1000)
+	levels := pipe_levels(&world, column)
+	testing.expect_value(t, levels[30], 100)
+	testing.expect_value(t, levels[31], 0)
+}
+
+// Steam from the same pump climbs past the head line.
+@(test)
+test_gas_ignores_the_head_line :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world, pump, column := make_head_pump_world(content, "steam", 32)
+	test_fluid_machine(&world, pump).power.satisfaction = POWER_FULL
+	tick_test_fluids(&world, content, 1000)
+	testing.expect(t, pipe_levels(&world, column)[31] > 0)
+	testing.expect(t, !segment_is_above_head_line(&world.entities, content.fluids, column[31], -1))
+}
+
+// The first pump lifts to y 5, where the second takes the water and
+// lifts it to its own outlet plus 30, y 35.
+@(test)
+test_pumps_in_series_chain_their_heads :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world, first, _ := make_head_pump_world(content, "water", 5)
+	lay_pipes(&world, content, {3, 5, 0})
+	second := place_test_fluid_entity(&world, content, "pump", {4, 5, 0})
+	column := lay_pipe_column(&world, content, 6, 0, 5, 36)
+	test_fluid_machine(&world, first).power.satisfaction = POWER_FULL
+	test_fluid_machine(&world, second).power.satisfaction = POWER_FULL
+	tick_test_fluids(&world, content, 1500)
+	levels := pipe_levels(&world, column)
+	testing.expect_value(t, levels[30], 100)
+	testing.expect_value(t, levels[31], 0)
+}
+
+// Two offshore pumps feed one column: the higher outlet's line, y 9,
+// holds.
+@(test)
+test_head_line_follows_the_highest_outlet :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	place_test_fluid_entity(&world, content, "offshore_pump", {0, 1, 0})
+	place_test_fluid_entity(&world, content, "offshore_pump", {0, 3, 0})
+	column := lay_pipe_column(&world, content, -1, 0, 1, 10)
+	testing.expect_value(t, len(world.entities.fluid_networks.networks), 1)
+	networks := &world.entities.fluid_networks
+	network := networks.networks[0]
+	line, found := network_head_line(&world.entities, networks, networks.members[network.first_member:][:network.member_count])
+	testing.expect(t, found)
+	testing.expect_value(t, line, 9)
+	tick_test_fluids(&world, content, 600)
+	levels := pipe_levels(&world, column)
+	testing.expect_value(t, levels[8], 100)
+	testing.expect_value(t, levels[9], 0)
+}
+
+// An offshore pump whose port is closed for mixing sets no head line:
+// crude oil in its column stays at the outlet's height.
+@(test)
+test_a_closed_pump_outlet_lifts_nothing :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	pump := place_test_fluid_entity(&world, content, "offshore_pump", {0, 1, 0})
+	column := lay_pipe_column(&world, content, -1, 0, 1, 8)
+	test_pipe(&world, column[0]).buffer = {fluid = test_fluid(content, "crude_oil"), level = 100}
+	tick_test_fluids(&world, content, 600)
+	testing.expect(t, test_fluid_machine(&world, pump).closed[0])
+	levels := pipe_levels(&world, column)
+	testing.expect_value(t, levels[0], 100)
+	for level in levels[1:] {
+		testing.expect_value(t, level, 0)
+	}
+	testing.expect(t, !segment_is_above_head_line(&world.entities, content.fluids, column[7], -1))
+}
+
+// A powered pump with an empty input pushes nothing, so water already in
+// its output network does not climb.
+@(test)
+test_a_pump_with_an_empty_input_lifts_nothing :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	pump := place_test_fluid_entity(&world, content, "pump", {0, 1, 0})
+	test_fluid_machine(&world, pump).power.satisfaction = POWER_FULL
+	column := lay_pipe_column(&world, content, 2, 0, 1, 4)
+	test_pipe(&world, column[0]).buffer = {fluid = test_fluid(content, "water"), level = 100}
+	tick_test_fluids(&world, content, 200)
+	testing.expect_value(t, test_fluid_machine(&world, pump).state, Fluid_Machine_State.Idle)
+	for level in pipe_levels(&world, column)[1:] {
+		testing.expect_value(t, level, 0)
+	}
+	// A litre at its input and it pushes, holding its head.
+	test_fluid_machine(&world, pump).buffers[0] = {fluid = test_fluid(content, "water"), level = 1}
+	tick_test_fluids(&world, content, 1)
+	// A push runs the whole column in one tick, so the top pipe has it.
+	testing.expect_value(t, pipe_levels(&world, column)[3], 20)
+}
+
+// A refinery's output port lifts nothing: its heavy oil stays level.
+@(test)
+test_machine_fed_liquid_never_climbs :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world, refinery := make_refinery_world(content)
+	test_oil_assembler(&world, refinery).buffers[3] = {fluid = test_fluid(content, "heavy_oil"), level = 200}
+	column := lay_pipe_column(&world, content, 5, 2, 1, 2)
+	tick_test_fluids(&world, content, 60)
+	levels := pipe_levels(&world, column)
+	testing.expect(t, levels[0] > 0)
+	testing.expect_value(t, levels[1], 0)
+	testing.expect(t, !segment_is_above_head_line(&world.entities, content.fluids, column[1], -1))
 }
 
 @(test)

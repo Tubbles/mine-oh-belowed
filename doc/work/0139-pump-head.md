@@ -1,6 +1,6 @@
 # 0139: Pumps lift liquids up to their head
 
-Status: todo
+Status: implemented
 
 ## Goal
 
@@ -23,3 +23,12 @@ Asked on 2026-09-30, from the shore problem: the offshore pump needs no power bu
 
 - `./build.sh check`, `./build.sh check-android`, `./build.sh test`. Tests (`fluid_test.odin`): an offshore pump's network fills a pipe 6 blocks above the outlet and not one 7 above; the electric pump without power lifts nothing and with power lifts 30; two pumps in series lift to the second's outlet plus 30; a machine fed liquid network (a refinery output) still never climbs; gas ignores the line; the head line follows the highest outlet when two pumps feed one network; the panel text for a segment above the line; determinism (integers, connections in coordinate order as today).
 - The user: build the first boiler and engine on the bank a few blocks above the water and see them fed; pipe up a hill past six blocks and see the pipe say why it stays dry.
+
+## Implemented
+
+- Data and loader: `head_metres` on the three pumps; `validate_pump_head` (`machine_fluid_ports.odin`) requires 1 to 1000 on pump kinds (so height plus head cannot overflow i32) and refuses the key elsewhere.
+- Model: `Fluid_Segment` carries `pressurising` (now for every pump kind's output port), `head_line` (port height plus head) and `needs_power`; `network_head_line` and `tick_head_line` in `fluid_network.odin` replace `network_is_pressurised` and the gravity flag. An outlet counts (`outlet_is_running`) while its port is open (not closed for mixing), its pump has power or needs none, and its input side holds fluid: always for the offshore and tar pit pumps, and for the electric pump a litre in its input buffer or fluid moved this tick (it may drain its input to zero before the line is computed). A pump against a full output keeps its head.
+- Panels: `fluid_second_line` swaps the flow line for "Above the pump's head"; `pump_head_line` adds "Head: N m" to the three pump panels.
+- Deviation: the "above" note shows on every port of a fluid machine panel, not only tanks, since a boiler or engine input set too high is dry for the same reason. It needs a running pump in the network; with none there is no line.
+- Review fixes: closed outlets and pumps with an empty input set no line (tests `test_a_closed_pump_outlet_lifts_nothing`, `test_a_pump_with_an_empty_input_lifts_nothing`); the head cap and the validation messages are tested; the pump descriptions in `en.sjson`, `doc/architecture.md`, the `data/fluids.sjson` header and the 0019 note in `doc/fluids.md` follow the head model.
+- Deviation: the item's determinism point is covered by the existing `test_fluid_simulation_is_deterministic`, whose steam plant now has an offshore pump head line; no new determinism test.

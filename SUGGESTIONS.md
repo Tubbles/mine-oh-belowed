@@ -8,7 +8,7 @@ Balance and design questions are deferred (user, 2026-09-27): the play experienc
 
 Decided on 2026-09-27: tools gate block hardness as well as mining speed (work item 0051); infinite research empties the queue after each level (done).
 
-Deferred to the design and balance phase, with the current behaviour kept until then: rocket returns (rare materials, schematics or both; today both); the vein size numbers (scatterings 2k to 5k units, deposits 20k to 60k, concentrations 100k to 300k, deep veins five times); the byproduct strictness default (strict: a machine whose byproduct output is full waits; lenient: byproducts that do not fit are voided and counted; today strict), pending the byproduct redesign noted in `DESIGN.md`; whether a late orbital survey contract pays a smaller survey radius instead of the full survey; where the infinite technologies sit in the tree (today behind rocket program).
+Deferred to the design and balance phase, with the current behaviour kept until then: rocket returns (rare materials, schematics or both; today both); the vein size numbers (scatterings 2k to 5k units, deposits 20k to 60k, concentrations 100k to 300k, deep veins five times); the byproduct strictness default (strict: a machine whose byproduct output is full waits; lenient: byproducts that do not fit are voided and counted; today strict), pending the byproduct redesign noted in `DESIGN.md`; whether a late orbital survey contract pays a smaller survey radius instead of the full survey; where the infinite technologies sit in the tree (today behind rocket program). The pump heads (0139): offshore pump 6 metres, tar pit pump 6, pump 30.
 
 ## Follow ups from the M1 implementation
 

@@ -478,6 +478,7 @@ machines = [
 		kind = "offshore_pump"
 		footprint = {width = 2, depth = 1, height = 1}
 		fluid_litres_per_second = 1200
+		head_metres = 6
 		fluid_ports = [
 			{cell = {x = 0, y = 0, z = 0}, face = "negative_x", direction = "output", fluid = "water", buffer_litres = 200}
 		]
@@ -538,6 +539,7 @@ machines = [
 		footprint = {width = 2, depth = 1, height = 1}
 		fluid_litres_per_second = 1200
 		electric_power_kilowatts = 30
+		head_metres = 30
 		fluid_ports = [
 			{cell = {x = 0, y = 0, z = 0}, face = "negative_x", direction = "input", buffer_litres = 200}
 			{cell = {x = 1, y = 0, z = 0}, face = "positive_x", direction = "output", buffer_litres = 200}
@@ -554,6 +556,7 @@ machines = [
 		footprint = {width = 2, depth = 1, height = 1}
 		fluid_litres_per_minute = 600
 		electric_power_kilowatts = 60
+		head_metres = 6
 		fluid_ports = [
 			{cell = {x = 0, y = 0, z = 0}, face = "negative_x", direction = "output", fluid = "crude_oil", buffer_litres = 200}
 		]

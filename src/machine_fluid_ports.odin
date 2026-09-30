@@ -233,6 +233,25 @@ validate_fluid_port_layout :: proc(machine: Machine) -> string {
 	return ""
 }
 
+machine_kind_is_pump :: proc(kind: Machine_Kind) -> bool {
+	return kind == .Offshore_Pump || kind == .Pump || kind == .Tar_Pit_Pump
+}
+
+// Keeps a port height plus the head far inside i32.
+MAXIMUM_HEAD_METRES :: 1000
+
+// Every pump kind lifts liquid up to a head of 1 to MAXIMUM_HEAD_METRES
+// metres (0139); no other kind has one.
+validate_pump_head :: proc(definition: Machine_Definition, kind: Machine_Kind) -> string {
+	if machine_kind_is_pump(kind) && (definition.head_metres < 1 || definition.head_metres > MAXIMUM_HEAD_METRES) {
+		return fmt.tprintf("pump %q needs a head_metres from 1 to %d", definition.id, MAXIMUM_HEAD_METRES)
+	}
+	if !machine_kind_is_pump(kind) && definition.head_metres != 0 {
+		return fmt.tprintf("machine %q is not a pump and cannot have head_metres", definition.id)
+	}
+	return ""
+}
+
 // The fields that need no fluid registry.
 validate_fluid_machine_definition :: proc(definition: Machine_Definition, kind: Machine_Kind) -> string {
 	footprint := definition.footprint

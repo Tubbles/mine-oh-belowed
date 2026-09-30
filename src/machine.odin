@@ -157,6 +157,7 @@ Machine_Definition :: struct {
 	flow_litres_per_second:       int,
 	fluid_litres_per_second:      int,
 	fluid_litres_per_minute:      int,
+	head_metres:                  int,
 	supply_volume:                Machine_Footprint_Definition,
 	wire_reach:                   int,
 	electric_output_kilowatts:    f32,
@@ -220,6 +221,9 @@ Machine :: struct {
 	// Tar pit pumps: litres per minute, a whole litre whenever enough
 	// ticks have added up (accumulate_litres).
 	fluid_litres_per_minute:     u32,
+	// Offshore, tar pit and electric pumps: how many blocks above their
+	// output port they lift a liquid (fluid_network.odin, 0139).
+	head_metres:                 i32,
 	// Poles: the box of cells powered, x y z like footprint, centred on
 	// the pole across and starting at its bottom. Zero for a power switch.
 	supply_volume:               [3]i32,
@@ -480,6 +484,9 @@ validate_machine_definition :: proc(definitions: []Machine_Definition, index: in
 	if problem := validate_motion_definition(definition); problem != "" {
 		return problem
 	}
+	if problem := validate_pump_head(definition, kind); problem != "" {
+		return problem
+	}
 	return validate_machine_kind_fields(definition, kind)
 }
 
@@ -574,6 +581,7 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 		flow_litres_per_second = u32(max(definition.flow_litres_per_second, 0)),
 		fluid_litres_per_second = u32(max(definition.fluid_litres_per_second, 0)),
 		fluid_litres_per_minute = u32(max(definition.fluid_litres_per_minute, 0)),
+		head_metres = i32(max(definition.head_metres, 0)),
 		supply_volume = {i32(definition.supply_volume.width), i32(definition.supply_volume.height), i32(definition.supply_volume.depth)},
 		wire_reach = i32(max(definition.wire_reach, 0)),
 		electric_output_watts = u32(math.round(definition.electric_output_kilowatts * 1000)),

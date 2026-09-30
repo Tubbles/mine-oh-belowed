@@ -4,7 +4,8 @@ import "core:fmt"
 
 // Panels and HUD text for pipes and fluid machines: per buffer the fluid,
 // its level against the capacity and the flow in and out during the last
-// tick, a note on ports closed to avoid mixing, the fuel slot of the
+// tick (or that it stands above its network's head line), a note on
+// ports closed to avoid mixing, a pump's head, the fuel slot of the
 // boiler (with its burn bar) and of the combustion generator with its Fill
 // button, the machine state, and a generator's output.
 
@@ -26,6 +27,11 @@ fluid_machine_has_fuel_slot :: proc(kind: Machine_Kind) -> bool {
 	return kind == .Boiler || kind == .Combustion_Generator
 }
 
+// Offshore, tar pit and electric pumps show their head.
+fluid_machine_head_rows :: proc(kind: Machine_Kind) -> int {
+	return machine_kind_is_pump(kind) ? 1 : 0
+}
+
 // Pumps, tar pit pumps, flare stacks and generators show their power
 // network; generators their output too.
 fluid_machine_power_rows :: proc(kind: Machine_Kind) -> int {
@@ -39,7 +45,7 @@ fluid_machine_power_rows :: proc(kind: Machine_Kind) -> int {
 }
 
 fluid_area_size :: proc(machine: Machine) -> [2]f32 {
-	rows := 1 + FLUID_ROWS_PER_BUFFER * fluid_buffer_count(machine) + fluid_machine_power_rows(machine.kind)
+	rows := 1 + FLUID_ROWS_PER_BUFFER * fluid_buffer_count(machine) + fluid_machine_head_rows(machine.kind) + fluid_machine_power_rows(machine.kind)
 	if fluid_machine_shows_state(machine.kind) {
 		rows += 1
 	}
@@ -65,15 +71,26 @@ fluid_flow_line :: proc(buffer: Fluid_Buffer, tick_rate: int) -> string {
 	return fmt.tprintf("%s %s  %s %s", text("fluid_flow_in"), format_litres_per_minute(buffer.flow_in, tick_rate), text("fluid_flow_out"), format_litres_per_minute(buffer.flow_out, tick_rate))
 }
 
-fluid_buffer_rows :: proc(state: ^Ui_State, content: ^Ui_Rectangle, fluids: Fluid_Registry, buffer: Fluid_Buffer, filter: Fluid_Id, capacity: i32, closed: bool, tick_rate: int) {
+// The flow, or why no pump lifts anything this high.
+fluid_second_line :: proc(buffer: Fluid_Buffer, above_head_line: bool, tick_rate: int) -> string {
+	return above_head_line ? text("fluid_above_pump_head") : fluid_flow_line(buffer, tick_rate)
+}
+
+// "Head: 6 m".
+pump_head_line :: proc(machine: Machine) -> string {
+	return fmt.tprintf("%s: %d m", text("fluid_pump_head"), machine.head_metres)
+}
+
+fluid_buffer_rows :: proc(state: ^Ui_State, content: ^Ui_Rectangle, fluids: Fluid_Registry, buffer: Fluid_Buffer, filter: Fluid_Id, capacity: i32, closed: bool, tick_rate: int, above_head_line := false) {
 	detail_line(state, content, fluid_level_line(fluids, buffer, filter, capacity, closed))
-	detail_line(state, content, fluid_flow_line(buffer, tick_rate), UI_DIM_TEXT_COLOR)
+	detail_line(state, content, fluid_second_line(buffer, above_head_line, tick_rate), UI_DIM_TEXT_COLOR)
 }
 
 pipe_panel_region :: proc(state: ^Ui_State, area: Ui_Rectangle, pipe: Pipe, screen_context: Screen_Context) {
 	content := area
 	capacity := screen_context.machines.machines[pipe.machine].buffer_litres
-	fluid_buffer_rows(state, &content, screen_context.fluids, pipe.buffer, NO_FLUID, capacity, false, screen_context.tick_rate)
+	above := segment_is_above_head_line(&screen_context.world.entities, screen_context.fluids, pipe.handle, -1)
+	fluid_buffer_rows(state, &content, screen_context.fluids, pipe.buffer, NO_FLUID, capacity, false, screen_context.tick_rate, above)
 }
 
 // The fuel slot first (with the boiler's burn bar) and its Fill button,
@@ -96,7 +113,11 @@ fluid_machine_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, fluid_ma
 	}
 	for port, index in fluid_ports_of(machine) {
 		buffer, closed := fluid_machine.buffers[index], fluid_machine.closed[index]
-		fluid_buffer_rows(state, &content, screen_context.fluids, buffer, port.filter, port.capacity, closed, screen_context.tick_rate)
+		above := segment_is_above_head_line(&screen_context.world.entities, screen_context.fluids, fluid_machine.handle, index)
+		fluid_buffer_rows(state, &content, screen_context.fluids, buffer, port.filter, port.capacity, closed, screen_context.tick_rate, above)
+	}
+	if fluid_machine_head_rows(machine.kind) > 0 {
+		detail_line(state, &content, pump_head_line(machine), UI_DIM_TEXT_COLOR)
 	}
 	if fluid_machine_shows_state(machine.kind) {
 		detail_line(state, &content, text(fluid_machine_state_keys[fluid_machine.state]), UI_DIM_TEXT_COLOR)

@@ -177,8 +177,8 @@ advance_boiler :: proc(boiler: ^Fluid_Machine, machine: Machine, items: Item_Reg
 }
 
 // Moves its rate times its network's satisfaction from the input port to
-// the output port whatever the heights, and only with power. Its output
-// network ignores gravity while it runs (fluid_network.odin).
+// the output port whatever the heights, and only with power. While it
+// runs its output network lifts liquid up to its head (fluid_network.odin).
 advance_pump :: proc(pump: ^Fluid_Machine, machine: Machine, tick_rate: int) {
 	if !power_is_on(pump.power) {
 		pump.state = .Unpowered
