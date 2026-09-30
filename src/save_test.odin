@@ -5,6 +5,7 @@ import "core:os"
 import "core:slice"
 import "core:strings"
 import "core:testing"
+import "platform"
 
 // Save tests write only under a temporary directory they create and
 // remove, never under the real saves directory.
@@ -308,16 +309,16 @@ save_file_size :: proc(path: string) -> i64 {
 }
 
 log_save_sizes :: proc(location: Save_Location) {
-	directory := join_save_path(location.saves_directory, location.directory_name)
-	regions, _ := os.read_all_directory_by_path(join_save_path(directory, REGIONS_DIRECTORY_NAME), context.temp_allocator)
+	directory := platform.join_path(location.saves_directory, location.directory_name)
+	regions, _ := os.read_all_directory_by_path(platform.join_path(directory, REGIONS_DIRECTORY_NAME), context.temp_allocator)
 	region_bytes: i64
 	for region in regions {
 		region_bytes += region.size
 	}
 	log.infof(
 		"save sizes: world.sjson %d bytes, entities.bin %d bytes, %d region files with %d bytes",
-		save_file_size(join_save_path(directory, WORLD_FILE_NAME)),
-		save_file_size(join_save_path(directory, ENTITIES_FILE_NAME)),
+		save_file_size(platform.join_path(directory, WORLD_FILE_NAME)),
+		save_file_size(platform.join_path(directory, ENTITIES_FILE_NAME)),
 		len(regions),
 		region_bytes,
 	)
@@ -679,8 +680,8 @@ test_generator_version_round_trips_and_marks_older_terrain :: proc(t: ^testing.T
 	}
 	write_test_world_file(directory, "current", "Current", 2000)
 	write_test_entities_header(directory, "current", expected)
-	os.make_directory_all(join_save_path(directory, "older"))
-	older_path := join_save_path(directory, "older", WORLD_FILE_NAME)
+	os.make_directory_all(platform.join_path(directory, "older"))
+	older_path := platform.join_path(directory, "older", WORLD_FILE_NAME)
 	testing.expect(t, os.write_entire_file(older_path, transmute([]byte)without_version) == nil)
 	write_test_entities_header(directory, "older", expected)
 	saves: [dynamic]Save_Summary
@@ -772,7 +773,7 @@ test_save_swaps_a_staged_directory_into_place :: proc(t: ^testing.T) {
 	testing.expect_value(t, file.last_played_unix_seconds, 2)
 	testing.expect_value(t, file.name, "Round trip!")
 
-	target := join_save_path(directory, location.directory_name)
+	target := platform.join_path(directory, location.directory_name)
 	previous := strings.concatenate({target, PREVIOUS_DIRECTORY_SUFFIX}, context.temp_allocator)
 	testing.expect(t, os.rename(target, previous) == nil)
 	saved, found = existing_save_directory(location)
@@ -782,7 +783,7 @@ test_save_swaps_a_staged_directory_into_place :: proc(t: ^testing.T) {
 	testing.expect_value(t, unused_world_directory_name(directory, location.directory_name, context.temp_allocator), "Round trip_ 2")
 	testing.expect_value(t, save_world(&simulation, content, location, 3), "")
 	testing.expect(t, !os.exists(previous))
-	testing.expect(t, os.exists(join_save_path(target, WORLD_FILE_NAME)))
+	testing.expect(t, os.exists(platform.join_path(target, WORLD_FILE_NAME)))
 }
 
 // The leaf decay queue is the second later table: it round trips, and a

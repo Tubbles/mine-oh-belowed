@@ -4,6 +4,7 @@ import "core:fmt"
 import "core:os"
 import "core:strings"
 import "core:time"
+import "platform"
 
 // The export of the data files and the data edits (work item 0131), for
 // reading them outside the phone (a Syncthing folder): the Data files
@@ -50,8 +51,8 @@ data_export_copies :: proc(data_files, edit_files: []Data_File_Entry, data_direc
 
 data_export_copy :: proc(source_directory, export_directory, subdirectory, relative_path: string, edit: bool) -> Data_Export_Copy {
 	return Data_Export_Copy {
-		source = join_save_path(source_directory, relative_path),
-		destination = join_save_path(export_directory, subdirectory, relative_path),
+		source = platform.join_path(source_directory, relative_path),
+		destination = platform.join_path(export_directory, subdirectory, relative_path),
 		edit = edit,
 	}
 }
@@ -89,14 +90,14 @@ expand_home_path :: proc(path, home: string) -> string {
 	if home == "" || !strings.has_prefix(path, "~/") {
 		return path
 	}
-	return join_save_path(home, path[2:])
+	return platform.join_path(home, path[2:])
 }
 
 // The path made absolute against the working directory and cleaned (no
 // ., .. or doubled separators); symbolic links stay as they are. In the
 // temp allocator.
 absolute_clean_path :: proc(path, working_directory: string) -> string {
-	absolute := os.is_absolute_path(path) ? path : join_save_path(working_directory, path)
+	absolute := os.is_absolute_path(path) ? path : platform.join_path(working_directory, path)
 	cleaned, _ := os.clean_path(absolute, context.temp_allocator)
 	return cleaned
 }
@@ -147,7 +148,7 @@ export_directory_refusal_here :: proc(export_directory, data_directory, edits_di
 // the default permissions, whatever its source had. The problem, or "".
 write_file_replacing :: proc(path: string, data: []byte) -> string {
 	directory, _ := os.split_path(path)
-	if error := make_directory_path(directory); error != nil {
+	if error := platform.make_directory_path(directory); error != nil {
 		return fmt.tprintf("%v: %s", error, directory)
 	}
 	temporary := strings.concatenate({path, ".tmp"}, context.temp_allocator)
@@ -197,7 +198,7 @@ export_data_files :: proc(data_directory, edits_directory, export_directory: str
 		result.edit_count += planned.edit ? 1 : 0
 		result.data_count += planned.edit ? 0 : 1
 	}
-	stamp := join_save_path(export_directory, DATA_EXPORT_STAMP_FILE)
+	stamp := platform.join_path(export_directory, DATA_EXPORT_STAMP_FILE)
 	result.problem = write_file_replacing(stamp, transmute([]byte)data_export_stamp_text(BUILD_STAMP, now, result))
 	return result
 }
@@ -210,8 +211,8 @@ sync_exported_data_edit :: proc(data_directory, edits_directory, export_director
 	if refusal := export_directory_refusal_here(export_directory, data_directory, edits_directory); refusal != "" {
 		return refusal
 	}
-	overlay := join_save_path(edits_directory, relative_path)
-	exported := join_save_path(export_directory, DATA_EXPORT_EDITS_DIRECTORY, relative_path)
+	overlay := platform.join_path(edits_directory, relative_path)
+	exported := platform.join_path(export_directory, DATA_EXPORT_EDITS_DIRECTORY, relative_path)
 	if os.is_file(overlay) {
 		return copy_exported_file(overlay, exported)
 	}
@@ -242,10 +243,10 @@ data_export_toast_text :: proc(export_directory: string, result: Data_Export_Res
 // All files access on Android: asked for, and the settings page opened
 // with a toast when it is missing. Always granted elsewhere.
 export_access_granted :: proc(ui: ^Ui_State) -> bool {
-	if all_files_access_granted() {
+	if platform.all_files_access_granted() {
 		return true
 	}
-	open_all_files_access_settings()
+	platform.open_all_files_access_settings()
 	ui_toast(ui, text("data_files_export_access"))
 	return false
 }
@@ -253,7 +254,7 @@ export_access_granted :: proc(ui: ^Ui_State) -> bool {
 // The export directory setting with a leading ~/ expanded against the
 // home directory. In the temp allocator.
 export_directory_setting :: proc(settings: Settings) -> string {
-	return expand_home_path(settings.export_directory, platform_directories(context.temp_allocator).home)
+	return expand_home_path(settings.export_directory, platform.platform_directories(context.temp_allocator).home)
 }
 
 // The Export button's request: the export into the settings' directory,
@@ -272,9 +273,9 @@ export_data_browser_files :: proc(state: ^Frame_State, edits_directory: string) 
 	}
 	result := export_data_files(state.data_directory, edits_directory, export_directory, time.now())
 	if result.problem != "" {
-		log_printf("error: the data export to %s stopped: %s", export_directory, result.problem)
+		platform.log_printf("error: the data export to %s stopped: %s", export_directory, result.problem)
 	} else {
-		log_printf("data: exported %d data files and %d data edits to %s", result.data_count, result.edit_count, export_directory)
+		platform.log_printf("data: exported %d data files and %d data edits to %s", result.data_count, result.edit_count, export_directory)
 		state.data_browser.export_sync_failed = false
 	}
 	ui_toast(&state.ui, data_export_toast_text(export_directory, result))
@@ -292,10 +293,10 @@ sync_data_edit_export :: proc(state: ^Frame_State, edits_directory, relative_pat
 	}
 	browser := &state.data_browser
 	problem: string
-	if !all_files_access_granted() {
+	if !platform.all_files_access_granted() {
 		problem = text("data_files_export_access")
 		if !browser.export_sync_failed {
-			open_all_files_access_settings()
+			platform.open_all_files_access_settings()
 		}
 	} else {
 		problem = sync_exported_data_edit(state.data_directory, edits_directory, export_directory, relative_path)
@@ -304,7 +305,7 @@ sync_data_edit_export :: proc(state: ^Frame_State, edits_directory, relative_pat
 		browser.export_sync_failed = false
 		return
 	}
-	log_printf("error: cannot export the data edit %s: %s", relative_path, problem)
+	platform.log_printf("error: cannot export the data edit %s: %s", relative_path, problem)
 	if !browser.export_sync_failed {
 		ui_toast(&state.ui, fmt.tprintf("%s %s", text("data_files_export_sync_failed"), problem))
 		browser.export_sync_failed = true

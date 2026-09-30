@@ -1,5 +1,5 @@
 #+build !windows
-package game
+package platform
 
 import "core:c"
 import "core:os"

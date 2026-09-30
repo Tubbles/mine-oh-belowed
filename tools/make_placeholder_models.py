@@ -10,7 +10,7 @@ same script writes the same bytes. Each model is drawn in the game's axes
 depth) at 16 voxels per block for a machine of 1 by 1 blocks across and 8
 otherwise, and written as a MagicaVoxel .vox file, which is z up: game
 (x, y, z) is stored as vox (x, depth - 1 - z, y), depth being the game z
-size, the mapping the loader (src/model_vox.odin) undoes. Both are right
+size, the mapping the loader (src/model_vox/model_vox.odin) undoes. Both are right
 handed, so nothing is mirrored. The front of a machine is its +x side,
 the side its rotation points at.
 

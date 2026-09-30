@@ -3,6 +3,7 @@ package game
 import "core:encoding/json"
 import "core:fmt"
 import "core:strings"
+import "platform"
 
 // The Data files screen (work item 0129), opened from the Developer
 // screen's editors row: the fallback editor for every data file without
@@ -341,7 +342,7 @@ data_value_entry :: proc(state: ^Ui_State, browser: ^Data_Browser) {
 // setting (set_export_directory).
 data_export_directory_entry :: proc(state: ^Ui_State, browser: ^Data_Browser, settings: ^Settings) {
 	if data_browser_entry(state, "data_export_directory_entry", text("data_files_export_directory"), &browser.export_field) {
-		set_export_directory(settings, text_field_text(&browser.export_field), platform_directories(context.temp_allocator).home)
+		set_export_directory(settings, text_field_text(&browser.export_field), platform.platform_directories(context.temp_allocator).home)
 		browser.editing_export_directory = false
 		state.keyboard = Keyboard_State {
 			return_focus = state.keyboard.field,

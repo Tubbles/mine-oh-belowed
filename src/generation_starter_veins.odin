@@ -1,6 +1,7 @@
 package game
 
 import "core:math"
+import "generation_seed"
 
 // Starter veins (work item 0045): one small vein of each spawn vein type
 // (data/veins.sjson spawn_vein_types) at STARTER_VEIN_MINIMUM_DISTANCE to
@@ -51,11 +52,11 @@ place_starter_vein :: proc(generator: ^Generator, placed: []Vein, type_index: in
 	pad := [2]i32{generator.landing_pad.centre.x, generator.landing_pad.centre.z}
 	size_class := generator.veins.size_classes[STARTER_VEIN_SIZE_CLASS]
 	for attempt in 0 ..< STARTER_VEIN_PLACEMENT_ATTEMPTS {
-		attempt_hash := hash_combine(hash, u64(attempt))
-		distance := i32(hash_to_range(attempt_hash, STARTER_VEIN_MINIMUM_DISTANCE, STARTER_VEIN_MAXIMUM_DISTANCE))
+		attempt_hash := generation_seed.hash_combine(hash, u64(attempt))
+		distance := i32(generation_seed.hash_to_range(attempt_hash, STARTER_VEIN_MINIMUM_DISTANCE, STARTER_VEIN_MAXIMUM_DISTANCE))
 		position := starter_vein_position(pad, direction + starter_attempt_turn(attempt, sector), distance)
 		richness := region_richness(generator.veins, block_to_region(position.x, position.y))
-		radius := vein_radius(size_class, richness, hash_combine(attempt_hash, 1))
+		radius := vein_radius(size_class, richness, generation_seed.hash_combine(attempt_hash, 1))
 		if !starter_distance_ok(pad, position) || !footprint_inside_region(position, radius) {
 			continue
 		}
@@ -63,7 +64,7 @@ place_starter_vein :: proc(generator: ^Generator, placed: []Vein, type_index: in
 		if centre.y < SEA_LEVEL || !disc_is_clear(placed, centre, radius) {
 			continue
 		}
-		units := vein_units(generator, size_class, richness, hash_combine(attempt_hash, 2))
+		units := vein_units(generator, size_class, richness, generation_seed.hash_combine(attempt_hash, 2))
 		vein = Vein {
 			type       = type_index,
 			size_class = STARTER_VEIN_SIZE_CLASS,
@@ -80,12 +81,12 @@ place_starter_vein :: proc(generator: ^Generator, placed: []Vein, type_index: in
 starter_veins :: proc(generator: ^Generator, allocator := context.allocator) -> [dynamic]Vein {
 	veins := make([dynamic]Vein, allocator)
 	pad := generator.landing_pad.centre
-	hash := hash_column(generator.seeds[.Starter_Veins], pad.x, pad.z)
-	rotation := hash_to_unit(hash) * math.TAU
+	hash := generation_seed.hash_column(generator.seeds[.Starter_Veins], pad.x, pad.z)
+	rotation := generation_seed.hash_to_unit(hash) * math.TAU
 	sector := math.TAU / f64(len(generator.veins.spawn_types))
 	for type_index, number in generator.veins.spawn_types {
 		direction := rotation + sector * f64(number)
-		if vein, placed := place_starter_vein(generator, veins[:], type_index, direction, sector, hash_combine(hash, u64(number) + 1)); placed {
+		if vein, placed := place_starter_vein(generator, veins[:], type_index, direction, sector, generation_seed.hash_combine(hash, u64(number) + 1)); placed {
 			append(&veins, vein)
 		}
 	}

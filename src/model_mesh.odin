@@ -1,6 +1,7 @@
 package game
 
 import "core:fmt"
+import "model_vox"
 
 // Voxel models to meshes (work item 0055), no raylib here: render_models.odin
 // uploads the result. Same coloured faces merge greedily per slice like the
@@ -58,16 +59,16 @@ Model_Rectangle :: struct {
 }
 
 // The palette index of the face, or 0 where the voxel is empty or covered.
-model_face_index :: proc(model: Voxel_Model, position: [3]i32, direction: Direction) -> u8 {
-	index := voxel_at(model, position)
-	if index == 0 || voxel_at(model, position + direction_offsets[direction]) != 0 {
+model_face_index :: proc(model: model_vox.Voxel_Model, position: [3]i32, direction: Direction) -> u8 {
+	index := model_vox.voxel_at(model, position)
+	if index == 0 || model_vox.voxel_at(model, position + direction_offsets[direction]) != 0 {
 		return 0
 	}
 	return index
 }
 
 // width by height over the direction's u and v axes, like slice_local.
-model_face_mask :: proc(model: Voxel_Model, direction: Direction, slice: int, allocator := context.allocator) -> (mask: []u8, width, height: int) {
+model_face_mask :: proc(model: model_vox.Voxel_Model, direction: Direction, slice: int, allocator := context.allocator) -> (mask: []u8, width, height: int) {
 	axis := direction_axis(direction)
 	u_axis, v_axis := (axis + 1) % 3, (axis + 2) % 3
 	width, height = int(model.size[u_axis]), int(model.size[v_axis])
@@ -153,14 +154,14 @@ palette_index_layer :: proc(index: u8) -> Model_Layer {
 }
 
 // Emissive faces keep their palette colour: the glow is not shaded.
-model_face_colour :: proc(model: Voxel_Model, index: u8, direction: Direction) -> [4]u8 {
+model_face_colour :: proc(model: model_vox.Voxel_Model, index: u8, direction: Direction) -> [4]u8 {
 	if palette_index_layer(index) == .Emissive {
 		return shade_colour(model.palette[index], 1)
 	}
 	return shade_colour(model.palette[index], model_face_shades[direction])
 }
 
-mesh_model_slice :: proc(meshes: ^Model_Layers, model: Voxel_Model, footprint: [3]i32, direction: Direction, slice: int) -> string {
+mesh_model_slice :: proc(meshes: ^Model_Layers, model: model_vox.Voxel_Model, footprint: [3]i32, direction: Direction, slice: int) -> string {
 	mask, width, height := model_face_mask(model, direction, slice, context.temp_allocator)
 	scale := model_scale(model.size, footprint)
 	for rectangle in model_greedy_rectangles(mask, width, height, context.temp_allocator) {
@@ -184,7 +185,7 @@ make_model_mesh :: proc(allocator := context.allocator) -> Model_Mesh {
 
 // footprint is the machine's unrotated footprint (Machine.footprint). The
 // meshes are in allocator, also on a problem.
-mesh_voxel_model :: proc(model: Voxel_Model, footprint: [3]i32, allocator := context.allocator) -> (meshes: Model_Layers, problem: string) {
+mesh_voxel_model :: proc(model: model_vox.Voxel_Model, footprint: [3]i32, allocator := context.allocator) -> (meshes: Model_Layers, problem: string) {
 	for layer in Model_Layer {
 		meshes[layer] = make_model_mesh(allocator)
 	}
@@ -219,11 +220,11 @@ destroy_machine_model_mesh :: proc(mesh: Machine_Model_Mesh) {
 }
 
 // One above the highest filled voxel, 0 for an empty model.
-voxel_model_top :: proc(model: Voxel_Model) -> i32 {
+voxel_model_top :: proc(model: model_vox.Voxel_Model) -> i32 {
 	for y := model.size.y - 1; y >= 0; y -= 1 {
 		for z in 0 ..< model.size.z {
 			for x in 0 ..< model.size.x {
-				if voxel_at(model, {x, y, z}) != 0 {
+				if model_vox.voxel_at(model, {x, y, z}) != 0 {
 					return y + 1
 				}
 			}
@@ -240,13 +241,13 @@ model_part_id :: proc(model: string) -> string {
 // The machine's model and, for a motion that moves a part, its part file;
 // the problem names the machine, the file and the chunk.
 load_machine_model_mesh :: proc(data_directory: string, machine: Machine, allocator := context.allocator) -> (mesh: Machine_Model_Mesh, problem: string) {
-	body, part: Voxel_Model
-	if body, problem = load_voxel_model_file(model_file_path(data_directory, machine.model), context.temp_allocator); problem != "" {
+	body, part: model_vox.Voxel_Model
+	if body, problem = model_vox.load_voxel_model_file(model_vox.model_file_path(data_directory, machine.model), context.temp_allocator); problem != "" {
 		return {}, fmt.tprintf("machine %q: %s", machine.id, problem)
 	}
 	if motion_has_part(machine.motion.kind) {
 		part_id := model_part_id(machine.model)
-		if part, problem = load_voxel_model_file(model_file_path(data_directory, part_id), context.temp_allocator); problem != "" {
+		if part, problem = model_vox.load_voxel_model_file(model_vox.model_file_path(data_directory, part_id), context.temp_allocator); problem != "" {
 			return {}, fmt.tprintf("machine %q: %s", machine.id, problem)
 		}
 		if part.size != body.size {

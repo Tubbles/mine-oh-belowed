@@ -1,24 +1,30 @@
 # Code map
 
-The entry page for the source: 193 files under `src/` plus 136 test files beside them, in one `game` package, grouped into eight clusters. Read the cluster table, pick a cluster, open its entry file; the section of each cluster lists its files in reading order. How the parts work is in [architecture.md](architecture.md), the why of the clusters in the audits under [audit/](audit/).
+The entry page for the source: 195 files under `src/` plus 137 test files beside them. 177 are the `game` package, grouped into seven clusters; 18 are seven leaf packages under `src/` (section Packages), each a cluster named after its directory. Read the cluster table, pick a cluster, open its entry file; the section of each cluster lists its files in reading order. How the parts work is in [architecture.md](architecture.md), the why of the clusters in the audits under [audit/](audit/).
 
 - Rule: a new file goes into a cluster and takes one of its file name prefixes (or a line in the file table of `tools/code_graph.py`); a reference against the allowed dependency table below is a finding until it is refactored away.
 - The map is kept true by two checks: `python3 tools/check_docs.py` checks every backticked file and name in it, and `python3 tools/code_graph.py --check doc/code_map.md` compares every cluster edge the allowed table does not allow with the map's record of it ([build.md](build.md), Source checks).
 - The record is the "Reaches into" line of each cluster section: `target count (notes)` parts separated by commas, or `nothing`. The check fails when an edge is missing from the record or above its recorded count, so a new reach through is caught; when a refactor lowers a count, lower the record by hand in the same commit.
-- The clusters of the map and of `tools/code_graph.py` are the same: the script assigns each file by its prefix, a few files by name, and prints any file it had to place by its edges.
+- The clusters of the map and of `tools/code_graph.py` are the same: the script assigns each file of the game package by its prefix, a few files by name, and prints any file it had to place by its edges. A package's files are its cluster; the script names them with the directory (`platform/logging.odin`) and resolves a name after an import's name and a dot (`platform.log_printf`) in that package, so a package's edges are only the ones the compiler allows: into the packages it imports, never into the game package.
 
 ## Clusters
 
 | Cluster | Purpose | Entry | Files | Lines | Audit |
 |---|---|---|---|---|---|
-| loop | the process: start-up, the frame, the tick order, sessions, the requests served between frames | `loop.odin` | 6 | 2770 | [loop](audit/loop.md) |
-| ui | the input layer, the immediate mode toolkit, every screen, the HUD and the touch overlay | `ui_core.odin` | 41 | 16748 | [ui](audit/ui.md) |
-| world | blocks and what follows a block: chunks, light, water, meshing, streaming, generation, the save codec | `world_chunk.odin` | 34 | 9623 | [world](audit/world.md) |
-| simulation | the factory per tick: entity pools, networks, players, inventories, crafting, statistics, the game's records | `entity.odin` | 38 | 15218 | [simulation](audit/simulation.md) |
-| presentation | pixels and sound from the world and the tick: shaders, atlases, models, sky, weather, particles, audio, the window | `render_chunks.odin` | 32 | 8592 | [presentation](audit/presentation.md) |
-| content | data files into typed tables, the string table, configuration and settings | `data_reload.odin` | 15 | 4973 | [content](audit/content.md) |
-| tools | the command socket, the diagnostics pages, the Data files browser and export, the factory benchmark | `command.odin` | 8 | 3876 | [loop](audit/loop.md), [content](audit/content.md) |
-| platform | leaves over the operating system: logging, paths, the time zone, JNI, haptics, the system keyboard, small codecs | `logging.odin` | 19 | 1532 | [content](audit/content.md), [ui](audit/ui.md) |
+| loop | the process: start-up, the frame, the tick order, sessions, the requests served between frames | `loop.odin` | 6 | 2778 | [loop](audit/loop.md) |
+| ui | the input layer, the immediate mode toolkit, every screen, the HUD and the touch overlay | `ui_core.odin` | 46 | 17009 | [ui](audit/ui.md) |
+| world | blocks and what follows a block: chunks, light, water, meshing, streaming, generation, the save codec | `world_chunk.odin` | 33 | 9572 | [world](audit/world.md) |
+| simulation | the factory per tick: entity pools, networks, players, inventories, crafting, statistics, the game's records | `entity.odin` | 38 | 15228 | [simulation](audit/simulation.md) |
+| presentation | pixels and sound from the world and the tick: shaders, atlases, models, sky, weather, particles, audio, the window | `render_chunks.odin` | 31 | 8388 | [presentation](audit/presentation.md) |
+| content | data files into typed tables, the string table, configuration and settings | `data_reload.odin` | 15 | 4962 | [content](audit/content.md) |
+| tools | the command socket, the diagnostics pages, the Data files browser and export, the factory benchmark | `command.odin` | 8 | 3884 | [loop](audit/loop.md), [content](audit/content.md) |
+| platform | the package `src/platform/`: logging, paths, the time zone, JNI, the export's file access | `logging.odin` | 12 | 975 | [content](audit/content.md) |
+| generation_seed | the package `src/generation_seed/`: purpose seeds and the integer hashes | `generation_seed.odin` | 1 | 74 | [world](audit/world.md) |
+| model_vox | the package `src/model_vox/`: the MagicaVoxel parser | `model_vox.odin` | 1 | 283 | [presentation](audit/presentation.md) |
+| render_frustum | the package `src/render_frustum/`: frustum planes and the box test | `render_frustum.odin` | 1 | 35 | [presentation](audit/presentation.md) |
+| run_length | the package `src/run_length/`: the chunk run length codec | `run_length.odin` | 1 | 39 | [world](audit/world.md) |
+| sjson_text | the package `src/sjson_text/`: the SJSON writer and `sorted_object_keys` | `sjson_text.odin` | 1 | 212 | [content](audit/content.md) |
+| android_libc | the package `src/android_libc/`: the glibc functions bionic lacks, for the Android link | `android_libc.odin` | 1 | 63 | [content](audit/content.md) |
 
 ## Allowed dependencies
 
@@ -26,15 +32,22 @@ Rule: a cluster references only the clusters of its row. The pilot split (0145) 
 
 | Cluster | May reference |
 |---|---|
-| loop | ui, world, simulation, presentation, content, tools and platform |
-| ui | presentation, simulation, world, content and platform |
-| world | content and platform |
-| simulation | world, content and platform |
-| presentation | simulation, world, content and platform |
-| content | platform |
-| tools | ui, world, simulation, presentation, content and platform |
-| platform | nothing |
+| loop | ui, world, simulation, presentation, content, tools, platform, generation_seed, model_vox, render_frustum, run_length and sjson_text |
+| ui | presentation, simulation, world, content, platform, generation_seed, model_vox, render_frustum, run_length and sjson_text |
+| world | content, platform, generation_seed, model_vox, render_frustum, run_length and sjson_text |
+| simulation | world, content, platform, generation_seed, model_vox, render_frustum, run_length and sjson_text |
+| presentation | simulation, world, content, platform, generation_seed, model_vox, render_frustum, run_length and sjson_text |
+| content | platform, generation_seed, model_vox, render_frustum, run_length and sjson_text |
+| tools | ui, world, simulation, presentation, content, platform, generation_seed, model_vox, render_frustum, run_length and sjson_text |
+| platform | android_libc |
+| generation_seed | nothing |
+| model_vox | platform |
+| render_frustum | nothing |
+| run_length | nothing |
+| sjson_text | nothing |
+| android_libc | nothing |
 
+- The packages sit where the platform cluster sat: every game cluster may reference them, and they reference only the packages of their row (`platform` imports `android_libc` for the link alone, `model_vox` names `platform.join_path`).
 - The order is engine below game only in part: world storage and the platform are engine, the simulation is game, presentation and ui mix both ([audit/](audit/), section 6 of each report).
 - In the records, "accepted" means essential today and named in an audit; "queued" names the entry of the 0143 refactor queue that removes the references (1 pure moves, 3 the hubs, 5 the seams). Graph noise (a field or parameter named like a top level procedure, such as `column`) counts as a reference; the rename that ends it is queued where one is.
 
@@ -79,6 +92,8 @@ The toolkit turns an input frame into a draw list; the screens decide what the w
   - `ui_developer.odin`, `ui_data_browser.odin`, `ui_texture_editor.odin`, `ui_touch_layout_editor.odin`: the Developer, Data files, Textures and touch layout screens.
   - `hud.odin`, `biome_banner.odin`: crosshair, hotbar, craft queue, glyph hints; the biome banner.
   - `touch_overlay.odin`: the virtual gamepad, its layout files, gestures, drawing ([touch_overlay.md](touch_overlay.md)).
+  - `haptics_android.odin`, `haptics_desktop.odin`: the phone's vibrator for `Haptic_Request`, through the JNI helpers of the platform package; the desktop stub.
+  - `system_keyboard_linux.odin`, `system_keyboard_android.odin`, `system_keyboard_windows.odin`: show and hide the platform keyboard for a text field's `Ui_Rectangle`.
 - State: `Ui_State` (57 fields), `Screen_Context` (54), `Input_Frame`, `Touch_Overlay_State`, `Title_State`; the four session views (`Map_View` and the browsers) sit on `Session`.
 - Tests: every `*_test.odin` beside its file; `ui_audit_test.odin` draws every screen at every audit size, `ui_pointer_test.odin` the pointer and taps, `accessibility_test.odin`.
 - Reaches into: tools 49 (accepted 43: the Data files screen on `Data_Browser` 31, the diagnostics page names 3, a `block_name` field as noise 9; queued 1: `enum_label` 6), loop 25 (queued 1: `Simulation_Content` 11; queued 3: `Frame_State` in `touch_overlay.odin` 8; accepted 6: `mining_ring_centre`, `BUILD_STAMP`, `parse_seed`, noise).
@@ -98,7 +113,7 @@ The world owns blocks and what is derived from blocks; generation is a pure func
   - `world_streaming.odin`: `Chunk_Streaming`, workers, insert, unload, mesh revisions.
   - `world_vein.odin`, `world_explored.odin`: `World_Settings`, the vein registry and outcrops; explored columns for the map.
   - `world_debug_edit.odin`, `world_debug_terrain.odin`: the F-key dig; the flat debug terrain.
-  - `generation.odin`, `generation_seed.odin`: `Generator`, purpose seeds, hashes.
+  - `generation.odin`: `Generator`, `DEFAULT_WORLD_SEED`; the purpose seeds and the hashes are the `generation_seed` package (Packages).
   - `generation_chunk.odin`, `generation_terrain.odin`, `generation_caves.odin`: the per chunk steps; height, climate, the column grid and the cave carving; the crate site search in cave pockets.
   - `generation_biome.odin`, `generation_trees.odin`, `generation_features.odin`: biomes and species, trees, boulders and ground cover.
   - `generation_veins.odin`, `generation_vein_tables.odin`, `generation_starter_veins.odin`: vein placement and outcrops, the vein file, starter veins.
@@ -108,7 +123,7 @@ The world owns blocks and what is derived from blocks; generation is a pure func
   - `save_world.odin`, `save_list.odin`: world.sjson, region files, staging and swap; the save list.
 - State: `World` (27 fields; 13 are the simulation's records parked here), `Chunk`, `Chunk_Streaming` (on `Session`), `Generator`, `Block_Registry`, `World_Settings`.
 - Tests: every `*_test.odin` beside its file; `save_test.odin` and `save_codec_test.odin` (save, load and run to the same hash).
-- Reaches into: simulation 227 (accepted 169: the save codec encoding pools and records 168, `vein_is_exhausted` 1; queued 1: `Box`, `rotate_direction`, `coordinate_before` 27, `place_capsule` in `landing_pad.odin` 8; queued 3: the game's records on `World` 15; queued 5: raycast and water reading entities, the crate sites at chunk arrival 8), ui 118 (queued 1: `column` noise 117, `world_settings_from_file` 1), loop 27 (queued 1: `Simulation_State` and `Simulation_Content` in the save files), presentation 16 (accepted 12: the mesher's atlas and tile variation; queued 1: `hash_u64` 4).
+- Reaches into: simulation 227 (accepted 169: the save codec encoding pools and records 168, `vein_is_exhausted` 1; queued 1: `Box`, `rotate_direction`, `coordinate_before` 27, `place_capsule` in `landing_pad.odin` 8; queued 3: the game's records on `World` 15; queued 5: raycast and water reading entities, the crate sites at chunk arrival 8), ui 118 (queued 1: `column` noise 117, `world_settings_from_file` 1), loop 27 (queued 1: `Simulation_State` and `Simulation_Content` in the save files), presentation 12 (accepted: the mesher's atlas and tile variation).
 
 ## simulation
 
@@ -146,19 +161,19 @@ Presentation turns the world, the tick and the render time into pixels and sound
 - Entry: `render_chunks.odin`, `Chunk_Renderer`; the frame's draw order is `draw_session_world` in `loop.odin`.
 - Files in reading order:
   - `render_chunks.odin`: shader loading with retry and the GLES rewrite, mesh upload, uniforms, `draw_chunks`.
-  - `render_atlas.odin`, `texture_generate.odin`, `texture_variation.odin`: `Atlas_Layout`, `load_rgba_texture`, `hash_u64`; procedural ore tiles and texture edits; the Odin mirror of the shader's tile variation.
-  - `render_water.odin`, `render_frustum.odin`: `Water_Renderer`, underwater fog; frustum planes and the box test.
+  - `render_atlas.odin`, `texture_generate.odin`, `texture_variation.odin`: `Atlas_Layout`, `load_rgba_texture` (the hashes are the `generation_seed` package); procedural ore tiles and texture edits; the Odin mirror of the shader's tile variation.
+  - `render_water.odin`: `Water_Renderer`, underwater fog; the frustum test is the `render_frustum` package (Packages).
   - `render_day.odin`, `render_sky.odin`: `Day_Sky`, sun and moon; the sky dome, stars, the survey satellite.
   - `weather.odin`, `render_weather.odin`: `weather_at`, the hourly schedule; `Weather_Look`, rain, snow, clouds.
   - `render_entities.odin`, `render_models.odin`: `draw_entities` over the pools, bottleneck markers; `Model_Renderer`, posed and ghost models.
-  - `model_vox.odin`, `model_mesh.odin`, `model_motion.odin`: the MagicaVoxel parser; the voxel mesher; `Machine_Motion` and part transforms.
+  - `model_mesh.odin`, `model_motion.odin`: the voxel mesher over the `model_vox` package's parser (Packages); `Machine_Motion` and part transforms.
   - `render_belts.odin`, `render_fluids.odin`, `render_power.odin`, `render_loose_items.odin`: belts and lane items; pipes and ports; poles and wires; loose stacks.
   - `render_icons.odin`: `Item_Atlas` for items and UI icons, item billboards.
   - `render_player.odin`, `render_player_model.odin`, `player_animation.odin`, `render_fly_camera.odin`: pose, camera, ghosts, hands; limb models; walk cadence and limb angles; `Fly_Camera`.
   - `particles.odin`, `render_particles.odin`: `Particle_System`; emitters, `Particle_Memory`, capsule descent.
   - `ambient_life.odin`, `render_life.odin`, `render_flames.odin`: flocks, insects, fish; their draws; torch flames.
   - `audio.odin`, `sound_events.odin`: `Audio_Mixer`, sound table, loop fades; `Sound_Memory`, cues, hum, ambience clusters.
-  - `display.odin`: window modes, resolutions, scale, GL info.
+  - `display.odin`, `raylib_log.odin`: window modes, resolutions, scale, GL info; raylib's log into the game log.
 - State: the GPU resources (`Chunk_Renderer`, `Item_Atlas`, `Belt_Renderer`, `Model_Renderer`) and `Audio_Mixer` for the run, the memories (`Particle_System`, `Particle_Memory`, `Player_Animation_Memory`, `Sound_Memory`) for a session; nothing is saved.
 - Tests: every `*_test.odin` beside its file; `shader_source_test.odin` (the `u` suffix rule), `render_ghost_test.odin`, `texture_periodicity_test.odin`; the draw procedures are untested.
 - Reaches into: ui 28 (accepted 17: theme colours and marker palettes 13, `Input_Frame` for the fly camera 2, `Ui_Sound_Event` 2; queued 1: `column` noise 11), loop 6 (queued 1: `Simulation_Content` 5; accepted 1: `texture_edits_path`), tools 2 (accepted: a `block_name` parameter, noise).
@@ -179,7 +194,7 @@ Content turns files under `data/` and the configuration into typed tables once, 
   - `settings.odin`, `deck_preset.odin`: `Settings` and ranges; the Steam Deck preset.
 - State: the registries, one arena per load (`content_arena` on `Frame_State`), the global `String_Table`, `Settings`, `Game_Config`, `Data_Watch`.
 - Tests: every `*_test.odin` beside its file; the shipped chapters in `quest_chapter_02_test.odin` to `quest_chapter_08_test.odin`; most simulation tests build content through `make_test_content` (`machine_test.odin`).
-- Reaches into: world 105 (accepted 93: item, quest and discovery definitions naming blocks 48, the content reload remapping the world 41, data file names 4; queued 1: `join_save_path` 11, `store_unsigned` 1), simulation 87 (accepted: the registries' cross links and value types such as `Item_Stack`, `Furnace`, `Quest_State`), ui 42 (accepted 40: settings typed by `Slider_Range`, `Binding` and the overlay enums, UI data file names and colours; queued 3: the session's UI views made by `data_reload.odin` 2), loop 28 (queued 1: `Simulation_State`, `make_simulation`, `destroy_simulation`, `Simulation_Content` 9; accepted 19: `Game_Content` and `Session` in the reload, `data_edits_directory`, `BUILD_INFO`, noise), presentation 18 (accepted: data file names, display limits), tools 12 (accepted: a `block_name` parameter, noise).
+- Reaches into: world 94 (accepted 93: item, quest and discovery definitions naming blocks 48, the content reload remapping the world 41, data file names 4; queued 1: `store_unsigned` 1), simulation 87 (accepted: the registries' cross links and value types such as `Item_Stack`, `Furnace`, `Quest_State`), ui 42 (accepted 40: settings typed by `Slider_Range`, `Binding` and the overlay enums, UI data file names and colours; queued 3: the session's UI views made by `data_reload.odin` 2), loop 28 (queued 1: `Simulation_State`, `make_simulation`, `destroy_simulation`, `Simulation_Content` 9; accepted 19: `Game_Content` and `Session` in the reload, `data_edits_directory`, `BUILD_INFO`, noise), presentation 16 (accepted: data file names, display limits), tools 12 (accepted: a `block_name` parameter, noise).
 
 ## tools
 
@@ -198,19 +213,22 @@ The developer's and the assistant's instruments: they drive, inspect or measure 
 
 ## platform
 
-Leaves over the operating system and small codecs; the target of the 0145 pilot split.
+The package `src/platform/`, one of the leaf packages below; the leaves over the operating system. The platform shims that take a game type stay in the game package: haptics and the system keyboard in ui, `raylib_log.odin` in presentation.
 
-- Entry: `logging.odin`, `log_printf`.
-- Files in reading order:
-  - `logging.odin`, `logging_posix.odin`, `logging_windows.odin`: `Log_State`, the log file and `log_printf`; the stderr redirect and crash traces per system.
-  - `platform_paths.odin`, `platform_android.odin`: `Platform_Directories`; the Android entry points and logcat.
-  - `local_zone.odin`, `local_zone_posix.odin`, `local_zone_windows.odin`: the local time zone.
-  - `jni_indices.odin`, `haptics_android.odin`, `haptics_desktop.odin`: JNI table indices; the vibrator through JNI (and today the JNI helpers `Jni_Calls`); the desktop stub.
-  - `export_access_android.odin`, `export_access_desktop.odin`: all files access for the export.
-  - `system_keyboard_linux.odin`, `system_keyboard_android.odin`, `system_keyboard_windows.odin`: show and hide the platform keyboard.
-  - `raylib_log.odin`: raylib's log into the game log.
-  - `sjson_text.odin`, `run_length.odin`: the SJSON writer of the data edits; the chunk run length codec.
-- Beside the package: `src/android_libc/`, a leaf package of its own ([android.md](android.md)).
-- State: `global_log` (`Log_State`) and `captured_log_error`, `Vibrator_State`; the rest are procedures.
-- Tests: `jni_indices_test.odin`, `platform_paths_test.odin`, `raylib_log_test.odin`, `run_length_test.odin`, `system_keyboard_test.odin`; the log file, the time zone lookup and the export access are untested.
-- Reaches into: content 18 (accepted 15: a parameter named `text`, noise; queued 1: `sorted_object_keys` 2, `STEAM_DECK_ENVIRONMENT_VARIABLE` 1), ui 9 (queued 1: `Haptic_Request` and the rumble constants of the input layer 4, `Ui_Rectangle` for the system keyboard 4, `column` noise 1), loop 1 (queued 1: `BUILD_STAMP`, the build stamp parameter).
+- Entry: `logging.odin`, `log_printf`, called as `platform.log_printf`.
+- Files: section Packages.
+- State: `global_log` (`Log_State`) and `captured_log_error` behind `begin_log_capture` and `end_log_capture`.
+- Tests: `jni_indices_test.odin` and `platform_paths_test.odin` beside the package; the game's `platform_paths_test.odin` checks the directory mappings through the game's path helpers and scans every package for the Windows static runtime imports; the log file, the time zone lookup and the export access are untested.
+- Reaches into: nothing.
+
+## Packages
+
+Leaf packages under `src/` (work item 0145, the pilot split): each is a directory with its own `package` line, imported by the files that use it (`import "platform"`, `import "../platform"` from a package), its names qualified at every use (`platform.log_printf`). A package imports no game file, so the compiler keeps it a leaf. `./build.sh test` runs their tests with `-all-packages` ([build.md](build.md)).
+
+- `platform`: `logging.odin`, `logging_posix.odin`, `logging_windows.odin` (`Log_State`, the log file and `log_printf`, `Log_Capture`; the stderr redirect and crash traces per system); `platform_paths.odin` (`Platform_Directories`, `join_path`, `make_directory_path`); `platform_android.odin` (the Android entry points and logcat, imports `android_libc` for the link); `local_zone.odin`, `local_zone_posix.odin`, `local_zone_windows.odin` (the local time zone); `jni_indices.odin`, `jni_android.odin` (JNI table indices; `Jni_Calls` and the call helpers); `export_access_android.odin`, `export_access_desktop.odin` (All files access for the export). Tests: `jni_indices_test.odin`, `platform_paths_test.odin`.
+- `generation_seed`: `generation_seed.odin` (`Generation_Purpose`, `Purpose_Seeds`, `hash_u64`, `hash_combine` and the hash helpers).
+- `model_vox`: `model_vox.odin` (`Voxel_Model`, the .vox parser, `model_file_path`), imports `platform`. Tests: `model_vox_test.odin`.
+- `render_frustum`: `render_frustum.odin` (`Frustum`, `frustum_from_matrix`, `frustum_contains_box`). Tests: `render_frustum_test.odin`.
+- `run_length`: `run_length.odin` (`Run`, `run_length_encode`, `run_length_decode`). Tests: `run_length_test.odin`.
+- `sjson_text`: `sjson_text.odin` (the SJSON writer of the data edits and `sorted_object_keys`). Tests: `sjson_text_test.odin` (the writer's round trip, with its own copy of the game's `json_values_equal` test helper); the round trip of every shipped file needs the game's data file listing and stays in `data_browser_test.odin` (`test_shipped_sjson_files_round_trip`).
+- `android_libc`: `android_libc.odin` (the glibc functions bionic lacks, [android.md](android.md)).

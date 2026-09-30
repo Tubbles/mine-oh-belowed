@@ -1,8 +1,9 @@
-package game
+package model_vox
 
 import "core:encoding/endian"
 import "core:fmt"
 import "core:os"
+import "../platform"
 
 // MagicaVoxel .vox models (work item 0055), no raylib here: meshing is in
 // model_mesh.odin and the upload in render_models.odin. A machine names
@@ -264,7 +265,7 @@ parse_voxel_model :: proc(data: []byte, allocator := context.allocator) -> (mode
 
 // In the temp allocator.
 model_file_path :: proc(data_directory, id: string) -> string {
-	return join_save_path(data_directory, MODELS_DIRECTORY, fmt.tprintf("%s%s", id, MODEL_FILE_EXTENSION))
+	return platform.join_path(data_directory, MODELS_DIRECTORY, fmt.tprintf("%s%s", id, MODEL_FILE_EXTENSION))
 }
 
 // The problem names the file and the chunk.

@@ -8,6 +8,7 @@ import "core:os"
 import "core:slice"
 import "core:strings"
 import rl "shared:raylib"
+import "platform"
 
 // TrueType fonts at exact pixel sizes (work item 0077). The families come
 // from data/fonts/fonts.sjson. Text drawn at text_size UI units is
@@ -112,7 +113,7 @@ validate_font_families :: proc(families: []Font_Family) -> string {
 // In the temp allocator.
 font_file_path :: proc(fonts_directory: string, family: Font_Family, weight: Font_Weight) -> string {
 	file := weight == .Bold ? family.bold : family.regular
-	return join_save_path(fonts_directory, family.id, file)
+	return platform.join_path(fonts_directory, family.id, file)
 }
 
 missing_font_file :: proc(fonts_directory: string, families: []Font_Family) -> string {
@@ -128,7 +129,7 @@ missing_font_file :: proc(fonts_directory: string, families: []Font_Family) -> s
 
 // The problem names the file.
 load_fonts :: proc(data_directory: string) -> (fonts: Loaded_Fonts, problem: string) {
-	fonts_directory := join_save_path(data_directory, FONTS_DIRECTORY)
+	fonts_directory := platform.join_path(data_directory, FONTS_DIRECTORY)
 	data, path, read_error := read_data_file(data_directory, FONTS_DIRECTORY + "/" + FONTS_FILE_NAME, context.temp_allocator)
 	if read_error != nil {
 		return {}, fmt.tprintf("cannot read %s: %v", path, read_error)
@@ -255,7 +256,7 @@ find_font_entry :: proc(entries: []Font_Entry, key: Font_Key) -> int {
 // strings_text is the content of strings/en.sjson, scanned for the code
 // points to rasterise.
 init_font_cache :: proc(cache: ^Font_Cache, data_directory: string, families: []Font_Family, strings_text: string, settings: Settings) {
-	cache.fonts_directory = strings.clone(join_save_path(data_directory, FONTS_DIRECTORY))
+	cache.fonts_directory = strings.clone(platform.join_path(data_directory, FONTS_DIRECTORY))
 	cache.families = families
 	cache.code_points = collect_code_points(strings_text)
 	select_font_families(cache, settings)
@@ -336,7 +337,7 @@ load_cached_font :: proc(cache: ^Font_Cache, key: Font_Key) -> rl.Font {
 	path := font_file_path(cache.fonts_directory, cache.families[key.family], key.weight)
 	font := load_font_file(path, key.pixel_size, cache.code_points)
 	if font.glyphCount == 0 {
-		log_printf("error: cannot load the font %s, drawing with raylib's default", path)
+		platform.log_printf("error: cannot load the font %s, drawing with raylib's default", path)
 		font = rl.GetFontDefault()
 	}
 	rl.SetTextureFilter(font.texture, .BILINEAR)

@@ -7,6 +7,7 @@ import "core:os"
 import "core:slice"
 import "core:strings"
 import "core:time"
+import "platform"
 
 // The headless factory benchmark (work item 0050, doc/architecture.md):
 // a flat world built in code, a factory laid out from module blueprints
@@ -649,7 +650,7 @@ BENCHMARK_COMMAND_MEASURED_MINUTES :: 10
 run_command_line_benchmark :: proc(size: int, data_directory: string, config: Game_Config, game_data: Game_Data) -> int {
 	plan, problem := load_benchmark_plan(data_directory)
 	if problem != "" {
-		log_printf("error: %s", problem)
+		platform.log_printf("error: %s", problem)
 		return 1
 	}
 	defer destroy_benchmark_plan(&plan)

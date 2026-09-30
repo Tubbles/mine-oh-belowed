@@ -1,4 +1,4 @@
-package game
+package platform
 
 import "core:os"
 
@@ -87,6 +87,12 @@ android_platform_directories :: proc(internal, external: string, allocator := co
 	data_home, _ := os.join_path({base, "share"}, allocator)
 	state_home, _ := os.join_path({base, "state"}, allocator)
 	return Platform_Directories{config_home = config_home, data_home = data_home, state_home = state_home}
+}
+
+// The elements joined with the separator, in the temp allocator.
+join_path :: proc(elements: ..string) -> string {
+	joined, _ := os.join_path(elements, context.temp_allocator)
+	return joined
 }
 
 // mkdir -p that never touches a directory above the first missing one

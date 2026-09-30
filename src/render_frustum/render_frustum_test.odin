@@ -1,4 +1,4 @@
-package game
+package render_frustum
 
 import "core:math"
 import "core:math/linalg"

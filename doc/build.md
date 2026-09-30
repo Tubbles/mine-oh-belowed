@@ -54,12 +54,13 @@ Gotcha: Bazzite ships runtime libraries without the development symlinks (`libX1
 ./build.sh check          # odin check src -vet -strict-style
 ./build.sh check-windows  # the same check for -target:windows_amd64, on any host
 ./build.sh check-android  # the same check for Android arm64 (android.md)
-./build.sh test           # odin test src
+./build.sh test           # odin test src -all-packages
 ./build.sh bench          # test_factory_benchmark only, optimised
 ./build.sh android        # the signed APK (android.md)
 ```
 
 - Every command passes the collection; both builds pass `-vet -strict-style` and the `BUILD_INFO` define (below).
+- `test` passes `-all-packages`: plain `odin test src` runs only the game package's tests, not those of the packages under `src/` it imports (`src/platform/` and the others, [code_map.md](code_map.md), Packages). The checks need nothing extra: `odin check src` checks every package the game imports, tests included, for the target it checks.
 - `check-windows` catches code that does not compile for Windows without a Windows machine; the Nix build runs the same check, so CI guards it on every push.
 - `bench` runs `test_factory_benchmark` with `-o:speed`: sizes 1 and 4, both tables logged, a failure when size 4 averages 8 ms per tick or more, half the 60 Hz budget. Plain `test` (and CI) runs it unoptimised and only logs. `bench` is a heavy benchmark and follows the benchmark rules in [CLAUDE.md](../CLAUDE.md).
 - On a Windows host (Git Bash) `build.sh` makes no shims, writes `build/mine-oh-belowed.exe` and adds `-subsystem:windows` to `release`.
@@ -69,8 +70,8 @@ Gotcha: Bazzite ships runtime libraries without the development symlinks (`libX1
 Python 3 scripts without dependencies, run by hand from anywhere; none is part of `build.sh` or CI.
 
 - `python3 tools/check_docs.py` checks the Markdown docs against the repository: relative links, backticked paths, file names and identifiers. Exit 1 lists each finding.
-- `python3 tools/check_dead_code.py` lists the definitions of `src/*.odin` that nothing references, and those outside the test files that only `*_test.odin` files reference. It scans the declarations at file level, including those inside file level `when` and `foreign` blocks, and counts whole word uses in the code of every `.odin` file under `src/` (comments and strings stripped, the definition's own body and every definition line of the same name left out) plus `build.sh`, `tools/` and `data/shaders/`. `@(test)`, `@(export)`, `@(init)` and `@(fini)` definitions are exempt; its allow lists hold what no attribute covers (`main`) and the test seams, each with its reason. Exit 1 when it finds anything.
-- `python3 tools/code_graph.py` prints the file dependency graph of `src/` grouped into clusters by file name prefix: the cluster edges with reference counts, the clusters that reference each other, the strongly connected components with the files outside the largest, and the files of the largest with the fewest edges into it. `--files` adds each file's edges, `--json` dumps the graph, `--tests` includes the test files; these exit 0. `--check doc/code_map.md` compares the cluster edges that the map's allowed dependency table does not allow with the map's record of them (the "Reaches into" line of each cluster): it exits 1 when an edge is new or above its recorded count, 2 when the map cannot be read, 0 otherwise, and marks the edges that fell below their record. A refactor that lowers a count lowers the record by hand ([code_map.md](code_map.md)).
+- `python3 tools/check_dead_code.py` lists the definitions of `src/**/*.odin` (the game package and the packages under it) that nothing references, and those outside the test files that only `*_test.odin` files reference. It scans the declarations at file level, including those inside file level `when` and `foreign` blocks, and counts whole word uses in the code of every `.odin` file under `src/` (comments and strings stripped, the definition's own body and every definition line of the same name left out) plus `build.sh`, `tools/` and `data/shaders/`. `@(test)`, `@(export)`, `@(init)` and `@(fini)` definitions are exempt; its allow lists hold what no attribute covers (`main`) and the test seams, each with its reason. Exit 1 when it finds anything.
+- `python3 tools/code_graph.py` prints the file dependency graph of `src/` grouped into clusters by file name prefix, each package under `src/` a cluster of its own, whose names resolve only in the package itself and in the packages it imports: the cluster edges with reference counts, the clusters that reference each other, the strongly connected components with the files outside the largest, and the files of the largest with the fewest edges into it. `--files` adds each file's edges, `--json` dumps the graph, `--tests` includes the test files; these exit 0. `--check doc/code_map.md` compares the cluster edges that the map's allowed dependency table does not allow with the map's record of them (the "Reaches into" line of each cluster): it exits 1 when an edge is new or above its recorded count, 2 when the map cannot be read, 0 otherwise, and marks the edges that fell below their record. A refactor that lowers a count lowers the record by hand ([code_map.md](code_map.md)).
 
 ## Command line
 
@@ -141,7 +142,7 @@ The Deck runs the same play build, installed over SSH from the couch machine (00
 
 - `flake.nix` provides `packages.default` (the game), `devShells.default` (odin, raylib, glfw, sdl3, libX11) and `checks`.
 - The flake patches the binding in `postPatch`: `shared/raylib/raylib.odin` and `rlgl/rlgl.odin` link `system:raylib` instead of the committed archive, and `platform.odin` links `system:glfw`, since nixpkgs raylib is built against an external GLFW with both backends. libX11 stays a build input for the binding's import block. A renamed foreign import line breaks `substituteInPlace` loudly.
-- The build runs `odin build` with `-o:speed -vet -strict-style`, then `odin test src` and the Windows target check, all with `-collection:shared=shared`, and installs the data under `share/mine-oh-belowed/`.
+- The build runs `odin build` with `-o:speed -vet -strict-style`, then `odin test src -all-packages` and the Windows target check, all with `-collection:shared=shared`, and installs the data under `share/mine-oh-belowed/`.
 - Nix is not installed on the couch machine; CI validates the flake.
 
 ## CI
@@ -168,7 +169,7 @@ Gotcha: raylib's release library is built for the dynamic C runtime (`/DEFAULTLI
 - `core:c/libc` and `core:sys/posix` pull `libucrt.lib` by their import alone, whether a procedure is used or not. A `when` block does not help, since the import stays.
 - `raylib_log.odin` declares its formatter against `ucrt.lib` instead of importing `core:c/libc`.
 - Files that need `core:sys/posix` carry `#+build !windows` on their first line, each with a `#+build windows` counterpart ([architecture.md](architecture.md), Platforms).
-- `test_static_runtime_imports_stay_out_of_windows` (`platform_paths_test.odin`) fails when a file in `src/` imports either package without a tag that excludes Windows.
+- `test_static_runtime_imports_stay_out_of_windows` (`platform_paths_test.odin`) fails when a file in `src/` or a package directory under it imports either package without a tag that excludes Windows.
 
 ### Fetching and installing
 

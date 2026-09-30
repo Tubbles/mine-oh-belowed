@@ -1,9 +1,10 @@
-package game
+package model_vox
 
 import "core:encoding/endian"
 import "core:os"
 import "core:strings"
 import "core:testing"
+import "../platform"
 
 // .vox loader tests (work item 0055): the shipped placeholder the script
 // wrote, and small files built here from bytes. The one test that writes
@@ -55,7 +56,7 @@ make_vox_file :: proc(size: [3]i32, voxels: [][4]u8, palette: [][4]u8 = nil) -> 
 
 @(test)
 test_the_shipped_chest_model_loads :: proc(t: ^testing.T) {
-	model, problem := parse_voxel_model(#load("../data/models/wooden_chest.vox"))
+	model, problem := parse_voxel_model(#load("../../data/models/wooden_chest.vox"))
 	defer delete(model.cells)
 	testing.expect_value(t, problem, "")
 	// 16 voxels per block for a machine one block across.
@@ -66,18 +67,6 @@ test_the_shipped_chest_model_loads :: proc(t: ^testing.T) {
 	testing.expect_value(t, voxel_at(model, {0, 0, 0}), 0)
 	// The lid line is the dark row at height 8.
 	testing.expect_value(t, model.palette[voxel_at(model, {2, 8, 2})], [4]u8{70, 45, 25, 255})
-}
-
-@(test)
-test_the_shipped_furnace_glow_is_emissive :: proc(t: ^testing.T) {
-	model, problem := parse_voxel_model(#load("../data/models/stone_furnace.vox"))
-	defer delete(model.cells)
-	testing.expect_value(t, problem, "")
-	// The glow patch in the mouth takes the first emissive index, the
-	// stone does not.
-	testing.expect_value(t, voxel_at(model, {13, 2, 6}), EMISSIVE_PALETTE_START)
-	testing.expect_value(t, model.palette[EMISSIVE_PALETTE_START], [4]u8{240, 150, 60, 255})
-	testing.expect(t, voxel_at(model, {1, 0, 1}) < EMISSIVE_PALETTE_START)
 }
 
 @(test)
@@ -141,14 +130,14 @@ test_a_model_file_problem_names_the_file_and_the_chunk :: proc(t: ^testing.T) {
 	assert(error == nil)
 	defer os.remove_all(directory)
 	outside := [?][4]u8{{0, 0, 9, 1}}
-	path := join_save_path(directory, "broken.vox")
+	path := platform.join_path(directory, "broken.vox")
 	assert(os.write_entire_file(path, make_vox_file({2, 2, 2}, outside[:])) == nil)
 	model, problem := load_voxel_model_file(path)
 	testing.expect(t, model.cells == nil)
 	testing.expect(t, strings.contains(problem, path), problem)
 	testing.expect(t, strings.contains(problem, "XYZI chunk"), problem)
 
-	_, problem = load_voxel_model_file(join_save_path(directory, "missing.vox"))
+	_, problem = load_voxel_model_file(platform.join_path(directory, "missing.vox"))
 	testing.expect(t, strings.contains(problem, "missing.vox"), problem)
 }
 

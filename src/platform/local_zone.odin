@@ -1,4 +1,4 @@
-package game
+package platform
 
 import "core:time/datetime"
 import "core:time/timezone"

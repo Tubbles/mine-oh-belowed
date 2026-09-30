@@ -5,6 +5,7 @@ import "core:fmt"
 import "core:strings"
 import rl "shared:raylib"
 import "shared:raylib/rlgl"
+import "render_frustum"
 
 DIAGNOSTICS_MARGIN :: 16
 DIAGNOSTICS_TEXT_COLOR :: rl.Color{230, 230, 230, 255}
@@ -229,7 +230,7 @@ flame_count :: proc(renderer: Chunk_Renderer) -> int {
 // (draw_water_chunks). Must run between BeginMode3D and EndMode3D.
 water_meshes_in_view :: proc(renderer: Chunk_Renderer, camera: rl.Camera3D) -> int {
 	view_projection := rlgl.GetMatrixProjection() * rl.GetCameraMatrix(camera)
-	frustum := frustum_from_matrix(cast(matrix[4, 4]f32)view_projection)
+	frustum := render_frustum.frustum_from_matrix(cast(matrix[4, 4]f32)view_projection)
 	count := 0
 	for coordinate, chunk_render in renderer.chunk_meshes {
 		if len(chunk_render.water_meshes) > 0 && chunk_in_frustum(frustum, coordinate) {

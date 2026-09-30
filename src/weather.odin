@@ -1,5 +1,7 @@
 package game
 
+import "generation_seed"
+
 // The weather (work item 0063): cosmetic, a pure function of the world
 // seed and the tick, so nothing is saved and the same world always has
 // the same weather at the same tick. Each game hour (a twenty fourth of
@@ -62,7 +64,7 @@ weather_hour_length :: proc(day_length_ticks: u64) -> u64 {
 }
 
 weather_hour_hash :: proc(seed, hour: u64) -> u64 {
-	return hash_u64(seed ~ WEATHER_SEED_SALT ~ (hour * 0x9e37_79b9_7f4a_7c15))
+	return generation_seed.hash_u64(seed ~ WEATHER_SEED_SALT ~ (hour * 0x9e37_79b9_7f4a_7c15))
 }
 
 // roll is 0 to 99.

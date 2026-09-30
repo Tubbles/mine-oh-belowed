@@ -8,6 +8,8 @@ import "core:os"
 import "core:slice"
 import "core:strconv"
 import "core:strings"
+import "platform"
+import "sjson_text"
 
 // The Data files screen's data (work item 0129, ui_data_browser.odin):
 // the tree of the data directory, and the open file as a tree of values
@@ -264,7 +266,7 @@ data_value_rows :: proc(value: json.Value, allocator := context.allocator) -> []
 append_data_value_children :: proc(rows: ^[dynamic]Data_Value_Row, value: json.Value, depth, parent: int, allocator := context.allocator) {
 	#partial switch container in value {
 	case json.Object:
-		for key in sorted_object_keys(container) {
+		for key in sjson_text.sorted_object_keys(container) {
 			row := Data_Value_Row{depth = depth, label = strings.clone(key, allocator), parent = parent, element_index = -1}
 			append_data_value_row(rows, row, container[key], allocator)
 		}
@@ -296,7 +298,7 @@ append_data_value_row :: proc(rows: ^[dynamic]Data_Value_Row, row: Data_Value_Ro
 // A leaf as SJSON writes it (sjson_leaf_text): strings quoted, a float
 // with a point.
 data_leaf_text :: proc(value: json.Value, allocator := context.allocator) -> string {
-	return sjson_leaf_text(value, allocator)
+	return sjson_text.sjson_leaf_text(value, allocator)
 }
 
 // "key = value" for a leaf, the key alone for an object or an array.
@@ -355,7 +357,7 @@ list_data_files :: proc(data_directory, edits_directory: string) -> []Data_File_
 append_data_directory_files :: proc(entries: ^[dynamic]Data_File_Entry, directory, relative, edits_directory: string) {
 	infos, error := os.read_all_directory_by_path(directory, context.temp_allocator)
 	if error != nil {
-		log_printf("error: cannot read %s: %v", directory, error)
+		platform.log_printf("error: cannot read %s: %v", directory, error)
 		return
 	}
 	for info in infos {
@@ -367,7 +369,7 @@ append_data_directory_files :: proc(entries: ^[dynamic]Data_File_Entry, director
 		case .Directory:
 			append_data_directory_files(entries, info.fullpath, path, edits_directory)
 		case .Regular:
-			edited := edits_directory != "" && os.is_file(join_save_path(edits_directory, path))
+			edited := edits_directory != "" && os.is_file(platform.join_path(edits_directory, path))
 			append(entries, Data_File_Entry{path = path, size = info.size, edited = edited})
 		}
 	}
@@ -379,13 +381,13 @@ write_data_edit :: proc(edits_directory, relative_path, file_text: string) -> st
 	if edits_directory == "" {
 		return "no state directory"
 	}
-	path := join_save_path(edits_directory, relative_path)
+	path := platform.join_path(edits_directory, relative_path)
 	// Beside it first, then renamed over it, so a crash or a full disk
 	// never leaves a cut off copy the next start would fail on.
 	if problem := write_file_replacing(path, transmute([]byte)file_text); problem != "" {
 		return problem
 	}
-	log_printf("data: saved the data edit %s", path)
+	platform.log_printf("data: saved the data edit %s", path)
 	return ""
 }
 
@@ -394,7 +396,7 @@ write_data_edit :: proc(edits_directory, relative_path, file_text: string) -> st
 rebuild_data_tree :: proc(browser: ^Data_Browser, entries: []Data_File_Entry) {
 	arena := new_growing_arena()
 	if arena == nil {
-		log_printf("error: cannot reserve memory for the data file tree")
+		platform.log_printf("error: cannot reserve memory for the data file tree")
 		return
 	}
 	allocator := virtual.arena_allocator(arena)
@@ -438,7 +440,7 @@ open_data_browser_file :: proc(browser: ^Data_Browser, data_directory: string) {
 	close_data_browser_file(browser)
 	browser.file_arena = new_growing_arena()
 	if browser.file_arena == nil {
-		log_printf("error: cannot reserve memory for %s", row.path)
+		platform.log_printf("error: cannot reserve memory for %s", row.path)
 		return
 	}
 	allocator := virtual.arena_allocator(browser.file_arena)
@@ -448,7 +450,7 @@ open_data_browser_file :: proc(browser: ^Data_Browser, data_directory: string) {
 		browser.file_problem = fmt.aprintf("%s %v: %s", text("data_files_read_failed"), read_error, path, allocator = allocator)
 		return
 	}
-	browser.shows_overlay = path != join_save_path(data_directory, row.path)
+	browser.shows_overlay = path != platform.join_path(data_directory, row.path)
 	switch browser.file_kind {
 	case .Sjson:
 		value, parse_error := json.parse(data, .SJSON, true, allocator)
@@ -472,7 +474,7 @@ show_data_browser_value :: proc(browser: ^Data_Browser, value: json.Value, alloc
 	browser.value = value
 	browser.value_rows = data_value_rows(value, allocator)
 	browser.value_expanded = make([]bool, len(browser.value_rows), allocator)
-	browser.loaded_text = sjson_text(value, allocator)
+	browser.loaded_text = sjson_text.sjson_text(value, allocator)
 	browser.value_selected, browser.editing_row, browser.unsaved = -1, -1, false
 }
 
@@ -647,7 +649,7 @@ data_integer_from_text :: proc(typed: string) -> (value: json.Value, ok: bool) {
 data_value_field_text :: proc(value: json.Value) -> (text: string, characters: Text_Field_Characters, editable: bool) {
 	#partial switch leaf in value {
 	case json.Integer, json.Float:
-		text, characters = sjson_leaf_text(value, context.temp_allocator), .Number
+		text, characters = sjson_text.sjson_leaf_text(value, context.temp_allocator), .Number
 	case json.String:
 		text, characters = leaf, .Printable
 	case:
@@ -663,7 +665,7 @@ refresh_data_browser_value :: proc(browser: ^Data_Browser, value: json.Value, ex
 	browser.value = value
 	browser.value_rows = data_value_rows(value, allocator)
 	browser.value_expanded = expanded
-	browser.unsaved = sjson_text(value, context.temp_allocator) != browser.loaded_text
+	browser.unsaved = sjson_text.sjson_text(value, context.temp_allocator) != browser.loaded_text
 }
 
 // A leaf replaced: the tree keeps its shape, so only the row's text is
@@ -671,7 +673,7 @@ refresh_data_browser_value :: proc(browser: ^Data_Browser, value: json.Value, ex
 replace_data_browser_leaf :: proc(browser: ^Data_Browser, index: int, leaf: json.Value) {
 	browser.value = data_value_set(browser.value, browser.value_rows, index, leaf)
 	browser.value_rows[index].value = data_leaf_text(leaf, virtual.arena_allocator(browser.file_arena))
-	browser.unsaved = sjson_text(browser.value, context.temp_allocator) != browser.loaded_text
+	browser.unsaved = sjson_text.sjson_text(browser.value, context.temp_allocator) != browser.loaded_text
 }
 
 // A boolean flipped; any other row is left alone.

@@ -2,6 +2,7 @@ package game
 
 import rl "shared:raylib"
 import "shared:raylib/rlgl"
+import "render_frustum"
 
 // The water pass (work item 0065): the faces of water blocks, which the
 // mesher puts in parts of their own (world_mesh.odin), drawn after
@@ -141,7 +142,7 @@ apply_fog :: proc(renderer: ^Chunk_Renderer, fog: Fog) {
 // seconds is the render time.
 draw_water_chunks :: proc(renderer: ^Chunk_Renderer, camera: rl.Camera3D, seconds: f64) {
 	view_projection := rlgl.GetMatrixProjection() * rl.GetCameraMatrix(camera)
-	frustum := frustum_from_matrix(cast(matrix[4, 4]f32)view_projection)
+	frustum := render_frustum.frustum_from_matrix(cast(matrix[4, 4]f32)view_projection)
 	water := &renderer.water
 	position := camera.position
 	time := water_time(seconds)

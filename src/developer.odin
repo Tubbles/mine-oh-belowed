@@ -4,6 +4,7 @@ import "core:encoding/json"
 import "core:fmt"
 import "core:math"
 import "core:strings"
+import "platform"
 
 // Developer mode (work item 0043): shortcuts that put a tester into a
 // given game state from the couch. The Developer screen (ui_developer.odin,
@@ -167,12 +168,12 @@ load_developer_kits :: proc(data_directory: string, items: Item_Registry, alloca
 	data, path := read_logged_data_file(data_directory, DEVELOPER_KITS_FILE_NAME) or_return
 	file, parse_error := parse_developer_kits_file(data, context.temp_allocator)
 	if parse_error != nil {
-		log_printf("error: cannot parse %s: %v", path, parse_error)
+		platform.log_printf("error: cannot parse %s: %v", path, parse_error)
 		return {}, false
 	}
 	problem: string
 	if kits, problem = resolve_developer_kits(file, items, allocator); problem != "" {
-		log_printf("error: invalid %s: %s", path, problem)
+		platform.log_printf("error: invalid %s: %s", path, problem)
 		return {}, false
 	}
 	return kits, true
@@ -410,7 +411,7 @@ serve_developer_requests :: proc(state: ^Simulation_State, content: Simulation_C
 		for request in state.developer_requests {
 			before := movement_toggles(state.players[0])
 			if problem := serve_developer_request(state, content, request); problem != "" {
-				log_printf("developer: %v refused: %s", request.action, problem)
+				platform.log_printf("developer: %v refused: %s", request.action, problem)
 			}
 			log_movement_toggles(before, state.players[0], "the Developer screen's request", state.tick)
 		}

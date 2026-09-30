@@ -4,6 +4,7 @@ import "core:encoding/json"
 import "core:fmt"
 import "core:math"
 import "core:slice"
+import "platform"
 
 // Technologies from data/technologies.sjson, resolved after the recipes:
 // an id, a name, a cost in units of science packs, the research recipes it
@@ -331,13 +332,13 @@ load_technology_registry :: proc(data_directory: string, items: Item_Registry, r
 	data, path := read_logged_data_file(data_directory, TECHNOLOGIES_FILE_NAME) or_return
 	file, parse_error := parse_technologies_file(data, allocator)
 	if parse_error != nil {
-		log_printf("error: cannot parse %s: %v", path, parse_error)
+		platform.log_printf("error: cannot parse %s: %v", path, parse_error)
 		return {}, false
 	}
 	problem: string
 	registry, problem = resolve_technology_registry(file, items, recipes, allocator)
 	if problem != "" {
-		log_printf("error: invalid %s: %s", path, problem)
+		platform.log_printf("error: invalid %s: %s", path, problem)
 		return {}, false
 	}
 	return registry, true

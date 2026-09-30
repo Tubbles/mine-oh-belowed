@@ -6,6 +6,7 @@ import "core:fmt"
 import "core:os"
 import "core:strings"
 import sdl "vendor:sdl3"
+import "platform"
 
 // Steam's on-screen keyboard for text fields (work item 0133, doc/ui.md,
 // On-screen keyboard), opened the way SDL's X11 backend opens it: through
@@ -51,6 +52,6 @@ hide_system_keyboard :: proc() {
 
 open_steam_link :: proc(link: string) {
 	if !sdl.OpenURL(strings.clone_to_cstring(link, context.temp_allocator)) {
-		log_printf("error: cannot open %s: %s", link, sdl.GetError())
+		platform.log_printf("error: cannot open %s: %s", link, sdl.GetError())
 	}
 }

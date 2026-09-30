@@ -1,6 +1,7 @@
 package game
 
 import "core:slice"
+import "generation_seed"
 
 // Trees and boulders. Each feature is rooted in a cell of a world aligned
 // grid, from a hash of the cell, so a chunk finds every feature reaching
@@ -71,14 +72,14 @@ feature_density :: proc(definition: Biome_Definition, kind: Feature_Kind) -> f64
 // land only, never on a vein outcrop, which should stay readable, and no
 // tree in a clearing or next to the landing pad.
 feature_root :: proc(generator: ^Generator, kind: Feature_Kind, cell: [2]i32, veins: []Vein) -> (root: Feature_Root, found: bool) {
-	hash := hash_column(feature_seed(generator, kind), cell.x, cell.y)
-	roll := hash_to_unit(hash_combine(hash, 2))
+	hash := generation_seed.hash_column(feature_seed(generator, kind), cell.x, cell.y)
+	roll := generation_seed.hash_to_unit(generation_seed.hash_combine(hash, 2))
 	if roll >= feature_maximum_density(generator, kind) {
 		return {}, false
 	}
 	cell_size := feature_cell_size(kind)
 	x := cell.x * cell_size + i32(hash % u64(cell_size))
-	z := cell.y * cell_size + i32(hash_combine(hash, 1) % u64(cell_size))
+	z := cell.y * cell_size + i32(generation_seed.hash_combine(hash, 1) % u64(cell_size))
 	if kind == .Tree && column_near_landing_pad(generator.landing_pad, x, z) {
 		return {}, false
 	}
@@ -99,7 +100,7 @@ clearing_threshold :: proc(share: f32) -> f64 {
 	return 2 * f64(share) - 1
 }
 
-column_in_clearing :: proc(seeds: Purpose_Seeds, share: f32, x, z: i32) -> bool {
+column_in_clearing :: proc(seeds: generation_seed.Purpose_Seeds, share: f32, x, z: i32) -> bool {
 	if share <= 0 {
 		return false
 	}
@@ -120,13 +121,13 @@ column_near_landing_pad :: proc(site: Landing_Pad_Site, x, z: i32) -> bool {
 
 tree_in_cell :: proc(generator: ^Generator, cell: [2]i32, veins: []Vein) -> (tree: Tree, found: bool) {
 	root := feature_root(generator, .Tree, cell, veins) or_return
-	species := choose_tree_species(generator.biomes[root.biome].trees, hash_combine(root.hash, 4))
+	species := choose_tree_species(generator.biomes[root.biome].trees, generation_seed.hash_combine(root.hash, 4))
 	return make_tree(generator.species[species], species, root), true
 }
 
 make_tree :: proc(species: Tree_Species, species_index: int, root: Feature_Root) -> Tree {
 	definition := species.definition
-	trunk := i32(hash_to_range(hash_combine(root.hash, 3), i64(definition.minimum_trunk_height), i64(definition.maximum_trunk_height)))
+	trunk := i32(generation_seed.hash_to_range(generation_seed.hash_combine(root.hash, 3), i64(definition.minimum_trunk_height), i64(definition.maximum_trunk_height)))
 	return Tree {
 		root = root.position,
 		trunk_height = trunk,
@@ -138,7 +139,7 @@ make_tree :: proc(species: Tree_Species, species_index: int, root: Feature_Root)
 
 boulder_in_cell :: proc(generator: ^Generator, cell: [2]i32, veins: []Vein) -> (boulder: Boulder, found: bool) {
 	root := feature_root(generator, .Boulder, cell, veins) or_return
-	radius := hash_to_range(hash_combine(root.hash, 3), MINIMUM_BOULDER_RADIUS, MAXIMUM_BOULDER_RADIUS)
+	radius := generation_seed.hash_to_range(generation_seed.hash_combine(root.hash, 3), MINIMUM_BOULDER_RADIUS, MAXIMUM_BOULDER_RADIUS)
 	return Boulder{centre = root.position, radius = i32(radius)}, true
 }
 
@@ -422,7 +423,7 @@ ground_cover_at :: proc(cover: []Biome_Cover, top: Block_Id, seed: u64, x, z: i3
 	if len(cover) == 0 {
 		return AIR_BLOCK
 	}
-	entry, found := choose_ground_cover(cover, hash_to_unit(hash_column(seed, x, z)))
+	entry, found := choose_ground_cover(cover, generation_seed.hash_to_unit(generation_seed.hash_column(seed, x, z)))
 	if !found || !slice.contains(entry.on, top) {
 		return AIR_BLOCK
 	}

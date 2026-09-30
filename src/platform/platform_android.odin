@@ -1,9 +1,9 @@
 #+build linux:android
-package game
+package platform
 
 import "core:strings"
 // Exports the C functions bionic lacks (android_libc.odin).
-@(require) import "android_libc"
+@(require) import "../android_libc"
 
 // What the Android build needs from the system and from raylib's Android
 // archive beyond the binding (work item 0114). The struct layouts are the

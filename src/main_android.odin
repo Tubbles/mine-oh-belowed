@@ -3,6 +3,7 @@ package game
 
 import "base:runtime"
 import "core:os"
+import "platform"
 
 // The Android entry point (work item 0114, facts in doc/android.md, Entry
 // point). The library is built with -build-mode:shared -no-entry-point
@@ -44,7 +45,7 @@ android_wrapped_main :: proc "c" (argc: i32, argv: [^]cstring) -> i32 {
 		runtime_started = true
 	}
 	main()
-	if GetAndroidApp().destroy_requested == 0 {
+	if platform.GetAndroidApp().destroy_requested == 0 {
 		os.exit(0)
 	}
 	return 0

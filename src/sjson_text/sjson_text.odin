@@ -1,4 +1,4 @@
-package game
+package sjson_text
 
 import "core:encoding/json"
 import "core:fmt"
@@ -25,6 +25,16 @@ sjson_text :: proc(value: json.Value, allocator := context.allocator) -> string 
 		strings.write_byte(&builder, '\n')
 	}
 	return strings.to_string(builder)
+}
+
+// An object's keys in order, in the temp allocator.
+sorted_object_keys :: proc(object: json.Object) -> []string {
+	keys := make([dynamic]string, 0, len(object), context.temp_allocator)
+	for key in object {
+		append(&keys, key)
+	}
+	slice.sort(keys[:])
+	return keys[:]
 }
 
 // One "key = value" line per member at the indentation.

@@ -5,6 +5,7 @@ import "core:c"
 import "core:os"
 import "core:strings"
 import rl "shared:raylib"
+import "platform"
 
 // raylib's trace log (its own lines and GLFW's errors, which raylib logs
 // as warnings) goes through log_printf, so the lines reach the log file
@@ -90,7 +91,7 @@ raylib_trace_log_callback :: proc "c" (level: rl.TraceLogLevel, text: cstring, a
 	if trace_log_is_silenced(message) {
 		return
 	}
-	log_printf("%s: %s", trace_log_level_prefix(level), message)
+	platform.log_printf("%s: %s", trace_log_level_prefix(level), message)
 	if level == .FATAL {
 		os.exit(1)
 	}

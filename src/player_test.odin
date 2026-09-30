@@ -3,6 +3,7 @@ package game
 import "core:log"
 import "core:slice"
 import "core:testing"
+import "generation_seed"
 
 TEST_TICK_RATE :: 60
 
@@ -291,7 +292,7 @@ recorded_input :: proc(tick: int) -> Input_Frame {
 	case tick < 615:
 		return Input_Frame{look_delta = {0, -30}}
 	}
-	random := hash_u64(u64(tick) / 20)
+	random := generation_seed.hash_u64(u64(tick) / 20)
 	input := Input_Frame {
 		move       = {f32(random % 3) - 1, 1},
 		look_delta = {f32(random / 3 % 41) - 20, f32(random / 123 % 21) - 10},

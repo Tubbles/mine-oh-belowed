@@ -4,6 +4,8 @@ import "core:encoding/json"
 import "core:os"
 import "core:strings"
 import "core:testing"
+import "model_vox"
+import "platform"
 
 // Hot reload (work item 0054): the strings swap, the content loader, and
 // the running world taken through the save codec under new content. The
@@ -60,20 +62,20 @@ write_test_data_directory :: proc(directory, items, recipes: string) {
 		{"quests/chapter_08.sjson", #load("../data/quests/chapter_08.sjson", string)},
 	}
 	for file in files {
-		write_test_file(join_save_path(directory, file.name), file.text)
+		write_test_file(platform.join_path(directory, file.name), file.text)
 	}
 	copy_test_models(directory)
 }
 
 // The machines name the shipped model files, which must load.
 copy_test_models :: proc(directory: string) {
-	models_directory := join_save_path(test_data_directory(), MODELS_DIRECTORY)
+	models_directory := platform.join_path(test_data_directory(), model_vox.MODELS_DIRECTORY)
 	entries, error := os.read_all_directory_by_path(models_directory, context.temp_allocator)
 	assert(error == nil)
 	for entry in entries {
 		data, read_error := os.read_entire_file(entry.fullpath, context.temp_allocator)
 		assert(read_error == nil)
-		write_test_file(join_save_path(directory, MODELS_DIRECTORY, entry.name), string(data))
+		write_test_file(platform.join_path(directory, model_vox.MODELS_DIRECTORY, entry.name), string(data))
 	}
 }
 

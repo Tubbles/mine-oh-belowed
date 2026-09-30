@@ -1,4 +1,4 @@
-package game
+package platform
 
 import "base:runtime"
 import "core:debug/trace"
@@ -60,11 +60,11 @@ log_directory_from_environment :: proc(state_home, home: string, allocator := co
 	return "", false
 }
 
-log_session_header :: proc(now: time.Time) -> string {
+log_session_header :: proc(now: time.Time, build_stamp: string) -> string {
 	date_time, _ := time.time_to_datetime(now)
 	return fmt.tprintf(
 		"--- Mine oh Belowed %s started %04d-%02d-%02d %02d:%02d:%02d UTC ---",
-		BUILD_STAMP,
+		build_stamp,
 		date_time.year,
 		date_time.month,
 		date_time.day,
@@ -87,8 +87,8 @@ platform_log_directory :: proc(allocator := context.allocator) -> (directory: st
 }
 
 // A log file that cannot be opened is reported once and the game goes on
-// with stderr only.
-open_log_file :: proc() {
+// with stderr only. The build stamp goes into the header line.
+open_log_file :: proc(build_stamp: string) {
 	directory, found := platform_log_directory(context.temp_allocator)
 	if !found {
 		return
@@ -100,7 +100,7 @@ open_log_file :: proc() {
 		return
 	}
 	global_log.file = file
-	write_log_line(global_log.file, log_session_header(time.now()))
+	write_log_line(global_log.file, log_session_header(time.now(), build_stamp))
 	redirect_stderr_to_log(file)
 }
 
@@ -124,15 +124,32 @@ write_log_line :: proc(file: ^os.File, line: string) {
 	os.write_strings(file, line, "\n")
 }
 
-// fmt.eprintfln (to the original stderr after a redirect) plus the log
-// file.
-// While a data reload loads the game data (data_reload.odin), the last
-// "error: " line this thread logged, without the prefix, in the temp
-// allocator, so the reload can name the file and the problem in a toast.
-// Thread local: tests log from several threads.
+// Between begin_log_capture and end_log_capture (a data reload,
+// data_reload.odin), the last "error: " line this thread logged, without
+// the prefix, in the temp allocator, so the reload can name the file and
+// the problem in a toast. Thread local: tests log from several threads.
 @(thread_local)
 captured_log_error: ^string
 
+// log_printf's error capture around a loader that logs its problem. The
+// problem is in the temp allocator.
+Log_Capture :: struct {
+	captured: string,
+	previous: ^string,
+}
+
+begin_log_capture :: proc(capture: ^Log_Capture) {
+	capture.previous = captured_log_error
+	captured_log_error = &capture.captured
+}
+
+end_log_capture :: proc(capture: ^Log_Capture, fallback: string) -> string {
+	captured_log_error = capture.previous
+	return capture.captured != "" ? capture.captured : fallback
+}
+
+// fmt.eprintfln (to the original stderr after a redirect) plus the log
+// file.
 log_printf :: proc(format: string, arguments: ..any) {
 	line := fmt.tprintf(format, ..arguments)
 	if captured_log_error != nil && strings.has_prefix(line, "error: ") {

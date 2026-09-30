@@ -1,6 +1,7 @@
 package game
 
 import "core:os"
+import "platform"
 
 // The Steam Deck preset (work item 0076). Steam sets SteamDeck=1 in the
 // environment of every game it starts on a Deck. On the first start there
@@ -60,10 +61,10 @@ apply_deck_preset_at_start :: proc(environment: Configuration_Environment, loade
 	}
 	settings^ = apply_deck_preset(settings^)
 	if problem := write_settings_file(environment, settings^); problem != "" {
-		log_printf("error: cannot save the Steam Deck preset: %s", problem)
+		platform.log_printf("error: cannot save the Steam Deck preset: %s", problem)
 		return
 	}
-	log_printf(
+	platform.log_printf(
 		"settings: Steam Deck preset applied (frame rate cap %d, weather on, ui scale %v, text scale %v, borderless)",
 		DECK_PRESET_FRAME_RATE_CAP,
 		DECK_PRESET_UI_SCALE,

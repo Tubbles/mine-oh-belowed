@@ -1,4 +1,4 @@
-package game
+package run_length
 
 import "core:math/rand"
 import "core:slice"

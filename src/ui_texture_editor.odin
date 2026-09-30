@@ -1,6 +1,8 @@
 package game
 
 import "core:strings"
+import "generation_seed"
+import "platform"
 
 // The Textures screen (work item 0100), the first of the game's editors
 // (DESIGN.md, Editors), opened from the Developer screen. Left, the
@@ -125,7 +127,7 @@ read_texture_edits :: proc(edits_path: string, registry: Block_Registry) -> []Pr
 	}
 	edits, _, problem := read_procedural_textures_file(edits_path, registry)
 	if problem != "" {
-		log_printf("error: %s, the texture edits are ignored", problem)
+		platform.log_printf("error: %s, the texture edits are ignored", problem)
 		return nil
 	}
 	return edits
@@ -185,7 +187,7 @@ step_texture_seed :: proc(seed: int, direction: Ui_Direction) -> int {
 // the same tick gives the same seed.
 reroll_texture_seed :: proc(tick: u64, seed: int) -> int {
 	count := u64(ore_texture_parameter_ranges[.Seed].maximum) + 1
-	return int(hash_u64(tick ~ (u64(seed) << 32) ~ TEXTURE_REROLL_KEY) % count)
+	return int(generation_seed.hash_u64(tick ~ (u64(seed) << 32) ~ TEXTURE_REROLL_KEY) % count)
 }
 
 // Where a field pixel reads the tile: its cell's hash and the texel the

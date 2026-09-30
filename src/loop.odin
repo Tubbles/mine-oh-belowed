@@ -7,6 +7,8 @@ import "core:strings"
 import "core:time"
 import rl "shared:raylib"
 import rlgl "shared:raylib/rlgl"
+import "platform"
+import "sjson_text"
 
 // Longest frame the accumulator accepts, so that a stall (debugger, window
 // drag) does not trigger a burst of catch up ticks.
@@ -982,7 +984,7 @@ apply_session_request :: proc(state: ^Frame_State) {
 }
 
 report_session_problem :: proc(state: ^Frame_State, problem: string) {
-	log_printf("error: %s", problem)
+	platform.log_printf("error: %s", problem)
 	ui_toast(&state.ui, fmt.tprintf("%s: %s", text("title_world_failed"), problem))
 }
 
@@ -1018,7 +1020,7 @@ leave_session :: proc(state: ^Frame_State) {
 		return
 	}
 	if session.save.enabled && save_session(session, state.content) == "" {
-		log_printf("world: saved %q", session.save.location.display_name)
+		platform.log_printf("world: saved %q", session.save.location.display_name)
 	}
 	unload_all_chunk_meshes(&state.renderer)
 	end_session(session)
@@ -1037,7 +1039,7 @@ write_changed_settings :: proc(state: ^Frame_State) {
 	}
 	state.stored_settings = state.settings
 	if problem := write_settings_file(state.environment, state.settings); problem != "" {
-		log_printf("error: cannot save the settings: %s", problem)
+		platform.log_printf("error: cannot save the settings: %s", problem)
 	}
 }
 
@@ -1067,17 +1069,17 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	// raylib returns from a failed InitWindow instead of reporting it, and
 	// the first draw call would then crash. A missing display is the usual cause.
 	if !rl.IsWindowReady() {
-		log_printf("error: could not open a window (is a display available?)")
+		platform.log_printf("error: could not open a window (is a display available?)")
 		os.exit(1)
 	}
 	defer rl.CloseWindow()
 	// Escape is bound to the Pause action, so it must not close the window.
 	rl.SetExitKey(.KEY_NULL)
 	monitor_size := current_monitor_size()
-	platform := current_window_platform()
-	log_display_diagnostics(platform)
+	window_platform := current_window_platform()
+	log_display_diagnostics(window_platform)
 	log_gl_info()
-	update_display(&window_settings, player_configuration.settings, monitor_size, platform)
+	update_display(&window_settings, player_configuration.settings, monitor_size, window_platform)
 
 	renderer, renderer_ok := init_chunk_renderer_or_without_edits(content.blocks, data_directory)
 	if !renderer_ok {
@@ -1100,7 +1102,7 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 		window_settings = window_settings,
 		monitor_size    = monitor_size,
 		window_scale    = window_scale(),
-		platform        = platform,
+		platform        = window_platform,
 		environment     = player_configuration.environment,
 		bindings        = player_configuration.bindings,
 		input_bindings  = player_configuration.input_bindings,
@@ -1121,7 +1123,7 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 		theme, theme_problem = load_ui_theme(data_directory)
 	}
 	if theme_problem != "" {
-		log_printf("error: %s", theme_problem)
+		platform.log_printf("error: %s", theme_problem)
 		os.exit(1)
 	}
 	apply_ui_theme(&state.ui, theme)
@@ -1138,7 +1140,7 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	state.vibrator = start_vibrator()
 	defer stop_vibrator(&state.vibrator)
 	state.system_keyboard_available = system_keyboard_available()
-	log_printf("keyboard: system keyboard %s", state.system_keyboard_available ? "available" : "not available")
+	platform.log_printf("keyboard: system keyboard %s", state.system_keyboard_available ? "available" : "not available")
 	defer destroy_chunk_renderer(&state.renderer)
 	state.item_atlas = upload_item_atlas(&state.content.items, data_directory)
 	defer destroy_item_atlas(&state.item_atlas)
@@ -1195,7 +1197,7 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 
 start_command_frame_state :: proc(state: ^Frame_State) {
 	state.command_server = make_command_server()
-	directories := platform_directories(context.temp_allocator)
+	directories := platform.platform_directories(context.temp_allocator)
 	state.command_socket_path, _ = command_socket_path_from_environment(directories.runtime_directory, directories.state_home, directories.home)
 	state.screenshot_directory, _ = screenshot_directory_from_environment(directories.state_home, directories.home)
 }
@@ -1217,14 +1219,14 @@ update_command_server_open :: proc(state: ^Frame_State) {
 	case COMMAND_SOCKET_SUPPORTED && wanted && server.listening == -1 && !server.open_failed:
 		problem := state.command_socket_path == "" ? "no directory for it (set XDG_RUNTIME_DIR, XDG_STATE_HOME or HOME)" : open_command_server(server, state.command_socket_path)
 		if problem != "" {
-			log_printf("error: command socket: %s", problem)
+			platform.log_printf("error: command socket: %s", problem)
 			server.open_failed = true
 		} else {
-			log_printf("command: listening on %s", server.path)
+			platform.log_printf("command: listening on %s", server.path)
 		}
 	case !wanted && server.listening != -1:
 		close_command_server(server)
-		log_printf("command: socket closed")
+		platform.log_printf("command: socket closed")
 	case !wanted:
 		server.open_failed = false
 	}
@@ -1303,7 +1305,7 @@ execute_queued_command :: proc(state: ^Frame_State, queued: Queued_Command_Line)
 		}
 	}
 	if response.deferred {
-		log_printf("command: %s", queued.line)
+		platform.log_printf("command: %s", queued.line)
 		state.command_server.tick_client = queued.client
 		return
 	}
@@ -1341,7 +1343,7 @@ queue_requested_screenshot :: proc(state: ^Frame_State) {
 	state.screenshot_requested = false
 	path, problem := queue_screenshot(&state.command_control, state.screenshot_directory, "", time.now())
 	if problem != "" {
-		log_printf("error: screenshot: %s", problem)
+		platform.log_printf("error: screenshot: %s", problem)
 		ui_toast(&state.ui, fmt.tprintf("%s: %s", text("developer_screenshot_failed"), problem))
 		return
 	}
@@ -1362,9 +1364,9 @@ capture_pending_screenshot :: proc(state: ^Frame_State) {
 	image := rl.LoadImageFromScreen()
 	defer rl.UnloadImage(image)
 	if rl.ExportImage(image, strings.clone_to_cstring(path, context.temp_allocator)) {
-		log_printf("command: screenshot %s", path)
+		platform.log_printf("command: screenshot %s", path)
 	} else {
-		log_printf("error: screenshot: cannot write %s", path)
+		platform.log_printf("error: screenshot: cannot write %s", path)
 	}
 }
 
@@ -1373,7 +1375,7 @@ capture_pending_screenshot :: proc(state: ^Frame_State) {
 // $XDG_STATE_HOME/mine-oh-belowed/texture_edits.sjson in the temp
 // allocator, "" without a state directory.
 texture_edits_path :: proc() -> string {
-	directories := platform_directories(context.temp_allocator)
+	directories := platform.platform_directories(context.temp_allocator)
 	path, _ := texture_edits_path_from_environment(directories.state_home, directories.home, context.temp_allocator)
 	return path
 }
@@ -1381,10 +1383,10 @@ texture_edits_path :: proc() -> string {
 // The chunk renderer, loaded again without the data edits overlay when
 // its shaders failed with it (turn_data_edits_off).
 init_chunk_renderer_or_without_edits :: proc(blocks: Block_Registry, data_directory: string) -> (renderer: Chunk_Renderer, ok: bool) {
-	capture: Log_Capture
-	begin_log_capture(&capture)
+	capture: platform.Log_Capture
+	platform.begin_log_capture(&capture)
 	renderer, ok = init_chunk_renderer(blocks, data_directory)
-	problem := end_log_capture(&capture, "the chunk shaders did not load")
+	problem := platform.end_log_capture(&capture, "the chunk shaders did not load")
 	if !ok && turn_data_edits_off(problem) {
 		renderer, ok = init_chunk_renderer(blocks, data_directory)
 	}
@@ -1400,7 +1402,7 @@ data_edits_directory :: proc() -> string {
 	when ODIN_TEST {
 		return data_edits_reading.directory
 	} else {
-		directories := platform_directories(context.temp_allocator)
+		directories := platform.platform_directories(context.temp_allocator)
 		directory, _ := data_edits_directory_from_environment(directories.state_home, directories.home, context.temp_allocator)
 		return directory
 	}
@@ -1469,13 +1471,13 @@ discard_data_edit :: proc(state: ^Frame_State) {
 		return
 	}
 	relative_path := strings.clone(browser.rows[browser.selected].path, context.temp_allocator)
-	overlay := join_save_path(edits_directory, relative_path)
+	overlay := platform.join_path(edits_directory, relative_path)
 	if error := os.remove(overlay); error != nil {
-		log_printf("error: cannot discard the data edit %s: %v", overlay, error)
+		platform.log_printf("error: cannot discard the data edit %s: %v", overlay, error)
 		ui_toast(&state.ui, fmt.tprintf("%s %s", text("data_files_discard_failed"), relative_path))
 		return
 	}
-	log_printf("data: discarded the data edit %s", overlay)
+	platform.log_printf("data: discarded the data edit %s", overlay)
 	if browser.open && browser.unsaved {
 		ui_toast(&state.ui, text("data_files_changes_dropped"))
 	}
@@ -1498,9 +1500,9 @@ save_data_edit :: proc(state: ^Frame_State, edits_directory: string) {
 		return
 	}
 	relative_path := strings.clone(browser.rows[browser.selected].path, context.temp_allocator)
-	file_text := sjson_text(browser.value, virtual.arena_allocator(browser.file_arena))
+	file_text := sjson_text.sjson_text(browser.value, virtual.arena_allocator(browser.file_arena))
 	if problem := write_data_edit(edits_directory, relative_path, file_text); problem != "" {
-		log_printf("error: cannot save the data edit %s: %s", relative_path, problem)
+		platform.log_printf("error: cannot save the data edit %s: %s", relative_path, problem)
 		ui_toast(&state.ui, fmt.tprintf("%s %s", text("data_files_save_failed"), relative_path))
 		return
 	}
@@ -1534,7 +1536,7 @@ serve_touch_layouts :: proc(state: ^Frame_State) {
 		return
 	}
 	if problem := write_touch_layouts_file(state.environment, layouts^); problem != "" {
-		log_printf("error: cannot save the touch layouts: %s", problem)
+		platform.log_printf("error: cannot save the touch layouts: %s", problem)
 		ui_toast(&state.ui, text("touch_layout_save_failed"))
 	}
 }
@@ -1544,19 +1546,19 @@ serve_touch_layouts :: proc(state: ^Frame_State) {
 save_texture_edits :: proc(state: ^Frame_State) {
 	editor := &state.texture_editor
 	path := texture_edits_path()
-	problem := path == "" ? NO_STATE_DIRECTORY_PROBLEM : ""
+	problem := path == "" ? platform.NO_STATE_DIRECTORY_PROBLEM : ""
 	lines := texture_editor_lines(editor.entries[:])
 	if problem == "" {
 		problem = write_texture_edits_file(path, format_texture_edits_file(lines))
 	}
 	if problem != "" {
-		log_printf("error: texture edits: %s", problem)
+		platform.log_printf("error: texture edits: %s", problem)
 		ui_toast(&state.ui, fmt.tprintf("%s: %s", text("texture_editor_save_failed"), problem))
 		return
 	}
-	log_printf("texture edits saved to %s", path)
+	platform.log_printf("texture edits saved to %s", path)
 	for line in lines {
-		log_printf("texture: %s", line)
+		platform.log_printf("texture: %s", line)
 	}
 	for &entry in editor.entries {
 		entry.edited = false

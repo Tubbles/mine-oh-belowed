@@ -2,6 +2,11 @@ package game
 
 import "core:encoding/json"
 import "core:fmt"
+import "generation_seed"
+import "platform"
+
+// Used when no --seed is given, so that runs are reproducible.
+DEFAULT_WORLD_SEED :: u64(20260927)
 
 // Blocks the generator places by itself, independent of the biome table.
 Generation_Blocks :: struct {
@@ -16,7 +21,7 @@ Generation_Blocks :: struct {
 // Read only after creation, so worker threads share it without locking.
 Generator :: struct {
 	seed:                    u64,
-	seeds:                   Purpose_Seeds,
+	seeds:                   generation_seed.Purpose_Seeds,
 	// For the opacity of blocks when generation computes sky light.
 	registry:                Block_Registry,
 	blocks:                  Generation_Blocks,
@@ -70,7 +75,7 @@ make_generator :: proc(
 	problem: string,
 ) {
 	generator.seed = seed
-	generator.seeds = derive_purpose_seeds(seed)
+	generator.seeds = generation_seed.derive_purpose_seeds(seed)
 	generator.vein_richness_percent = 100
 	generator.registry = registry
 	if generator.blocks, problem = resolve_generation_blocks(registry); problem != "" {
@@ -96,7 +101,7 @@ load_biomes_file :: proc(data_directory: string, allocator := context.allocator)
 	parse_error: json.Unmarshal_Error
 	file, parse_error = parse_biomes_file(data, allocator)
 	if parse_error != nil {
-		log_printf("error: cannot parse %s: %v", path, parse_error)
+		platform.log_printf("error: cannot parse %s: %v", path, parse_error)
 		return {}, false
 	}
 	return file, true
@@ -107,7 +112,7 @@ load_veins_file :: proc(data_directory: string, allocator := context.allocator) 
 	parse_error: json.Unmarshal_Error
 	file, parse_error = parse_veins_file(data, allocator)
 	if parse_error != nil {
-		log_printf("error: cannot parse %s: %v", path, parse_error)
+		platform.log_printf("error: cannot parse %s: %v", path, parse_error)
 		return {}, false
 	}
 	return file, true
@@ -120,7 +125,7 @@ load_generator :: proc(data_directory: string, registry: Block_Registry, seed: u
 	problem: string
 	generator, problem = make_generator(seed, registry, biomes_file, trees_file, veins_file, allocator)
 	if problem != "" {
-		log_printf("error: invalid world generation data in %s: %s", data_directory, problem)
+		platform.log_printf("error: invalid world generation data in %s: %s", data_directory, problem)
 		return {}, false
 	}
 	return generator, true

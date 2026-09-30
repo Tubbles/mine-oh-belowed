@@ -1,4 +1,4 @@
-package game
+package platform
 
 import "core:testing"
 

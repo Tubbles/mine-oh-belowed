@@ -7,7 +7,8 @@
 #   ./build.sh check-windows
 #                        the same check for the windows_amd64 target, on
 #                        any host (work item 0102)
-#   ./build.sh test      odin test src
+#   ./build.sh test      odin test src -all-packages, so the tests of the
+#                        packages under src/ run too (work item 0145)
 #   ./build.sh bench     the factory benchmark test, optimised, with the
 #                        size 4 budget (work item 0050)
 #   ./build.sh check-android
@@ -97,7 +98,7 @@ build() {
 # the test link like the build.
 run_tests() {
 	set_platform_flags
-	"$odin" test src "$collection" "${platform_flags[@]}" "$@"
+	"$odin" test src -all-packages "$collection" "${platform_flags[@]}" "$@"
 }
 
 android_container_name=mine-oh-belowed-android

@@ -6,6 +6,7 @@ import "core:os"
 import "core:slice"
 import "core:strings"
 import "core:time"
+import "platform"
 
 // The command protocol (work item 0053, doc/commands.md): the lines the
 // command socket (command_socket.odin) receives, parsed and executed on
@@ -707,14 +708,14 @@ queue_screenshot :: proc(control: ^Command_Control, directory, name: string, now
 	file_name := name == "" ? screenshot_default_name(now) : name
 	switch {
 	case directory == "":
-		return "", NO_STATE_DIRECTORY_PROBLEM
+		return "", platform.NO_STATE_DIRECTORY_PROBLEM
 	case !screenshot_name_valid(file_name):
 		return "", "a screenshot name holds letters, digits, dot, dash and underscore, up to 64, not starting with a dot"
 	}
 	if !strings.has_suffix(file_name, ".png") {
 		file_name = fmt.tprintf("%s.png", file_name)
 	}
-	if error := make_directory_path(directory); error != nil {
+	if error := platform.make_directory_path(directory); error != nil {
 		return "", fmt.tprintf("cannot make %s: %v", directory, error)
 	}
 	joined, _ := os.join_path({directory, file_name}, context.temp_allocator)

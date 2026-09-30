@@ -3,6 +3,8 @@ package game
 import "core:fmt"
 import "core:strings"
 import "core:time"
+import "generation_seed"
+import "platform"
 
 // A played world: the simulation, the generator its chunks stream from,
 // the streaming workers and where it saves. The title screen runs without
@@ -58,7 +60,7 @@ session_simulation_content :: proc(content: Game_Content, technologies: Technolo
 session_generator :: proc(base: Generator, seed: u64, vein_richness_percent: int) -> Generator {
 	generator := base
 	generator.seed = seed
-	generator.seeds = derive_purpose_seeds(seed)
+	generator.seeds = generation_seed.derive_purpose_seeds(seed)
 	generator.vein_richness_percent = vein_richness_percent
 	generator.landing_pad = {}
 	return generator
@@ -80,7 +82,7 @@ make_session_simulation :: proc(plan: Session_Plan, config: Game_Config, content
 	if plan.loading {
 		simulation, problem = make_simulation_from_save(world_config, start.player, simulation_content, start.landing_pad, plan.directory, plan.file)
 		if problem == "" {
-			log_printf("world: loaded %q at tick %d from %s", plan.file.name, plan.file.tick, plan.directory)
+			platform.log_printf("world: loaded %q at tick %d from %s", plan.file.name, plan.file.tick, plan.directory)
 		}
 		return simulation, problem
 	}
@@ -149,7 +151,7 @@ save_session :: proc(session: ^Session, content: Game_Content) -> string {
 	if problem == "" {
 		session.ticks_since_save = 0
 	} else {
-		log_printf("error: saving %q failed: %s", session.save.location.display_name, problem)
+		platform.log_printf("error: saving %q failed: %s", session.save.location.display_name, problem)
 	}
 	return problem
 }
@@ -160,14 +162,14 @@ save_session :: proc(session: ^Session, content: Game_Content) -> string {
 new_world_save_setup :: proc(display_name, saves_directory: string, saves_found, debug_terrain: bool) -> Save_Setup {
 	switch {
 	case debug_terrain:
-		log_printf("world: saving is off for the debug terrain")
+		platform.log_printf("world: saving is off for the debug terrain")
 		return {}
 	case !saves_found:
-		log_printf("world: saving is off (set %s, %s)", SAVES_DIRECTORY_ENVIRONMENT_VARIABLE, DATA_HOME_VARIABLES)
+		platform.log_printf("world: saving is off (set %s, %s)", SAVES_DIRECTORY_ENVIRONMENT_VARIABLE, platform.DATA_HOME_VARIABLES)
 		return {}
 	}
 	directory_name := unused_world_directory_name(saves_directory, sanitize_world_name(display_name, context.temp_allocator), context.temp_allocator)
-	log_printf("world: new world %q, saves to %s", display_name, join_save_path(saves_directory, directory_name))
+	platform.log_printf("world: new world %q, saves to %s", display_name, platform.join_path(saves_directory, directory_name))
 	location := Save_Location {
 		saves_directory = saves_directory,
 		directory_name  = directory_name,

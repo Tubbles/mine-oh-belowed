@@ -1,12 +1,12 @@
 #+build linux:android
-package game
+package platform
 
 // All files access for the data export (work item 0131, doc/android.md,
 // Export and storage access): the export directory is on shared storage
 // (a Syncthing folder), which scoped storage keeps from the app unless
 // the user grants MANAGE_EXTERNAL_STORAGE on the settings page. Through
-// JNI as the vibrator (haptics_android.odin, whose helpers these use):
-// attached first, every local reference deleted by hand.
+// JNI as the vibrator, through the helpers of jni_android.odin: attached
+// first, every local reference deleted by hand.
 
 ALL_FILES_ACCESS_SETTINGS_ACTION :: "android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION"
 // The list of every app's All files access, for a device without the

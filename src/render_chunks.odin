@@ -4,6 +4,8 @@ import "core:math"
 import "core:strings"
 import rl "shared:raylib"
 import "shared:raylib/rlgl"
+import "platform"
+import "render_frustum"
 
 CHUNK_VERTEX_SHADER_PATH :: "shaders/chunk.vs"
 CHUNK_FRAGMENT_SHADER_PATH :: "shaders/chunk.fs"
@@ -69,14 +71,14 @@ load_shader_pair :: proc(data_directory, vertex_file, fragment_file, name: strin
 	vertex_source, vertex_path, vertex_read_error := read_data_file(data_directory, vertex_file, context.temp_allocator)
 	fragment_source, fragment_path, fragment_read_error := read_data_file(data_directory, fragment_file, context.temp_allocator)
 	if vertex_read_error != nil || fragment_read_error != nil {
-		log_printf("error: cannot read the %s shader from %s and %s", name, vertex_path, fragment_path)
+		platform.log_printf("error: cannot read the %s shader from %s and %s", name, vertex_path, fragment_path)
 		return {}, false
 	}
 	vertex_cstring := strings.clone_to_cstring(platform_shader_source(string(vertex_source)), context.temp_allocator)
 	fragment_cstring := strings.clone_to_cstring(platform_shader_source(string(fragment_source)), context.temp_allocator)
 	shader, ok = load_shader_with_retry(vertex_cstring, fragment_cstring, name)
 	if !ok {
-		log_printf("error: cannot load the %s shader from %s and %s", name, vertex_path, fragment_path)
+		platform.log_printf("error: cannot load the %s shader from %s and %s", name, vertex_path, fragment_path)
 	}
 	return shader, ok
 }
@@ -114,7 +116,7 @@ load_shader_with_retry :: proc(vertex_source, fragment_source: cstring, name: st
 		if shader_loaded(shader) {
 			return shader, true
 		}
-		log_printf("shader: %s failed to load, attempt %d of %d", name, attempt, SHADER_LOAD_ATTEMPTS)
+		platform.log_printf("shader: %s failed to load, attempt %d of %d", name, attempt, SHADER_LOAD_ATTEMPTS)
 	}
 	return {}, false
 }
@@ -341,10 +343,10 @@ fly_camera_to_raylib :: proc(camera: Fly_Camera, field_of_view: f32) -> rl.Camer
 	}
 }
 
-chunk_in_frustum :: proc(frustum: Frustum, coordinate: Chunk_Coordinate) -> bool {
+chunk_in_frustum :: proc(frustum: render_frustum.Frustum, coordinate: Chunk_Coordinate) -> bool {
 	origin := chunk_origin(coordinate)
 	minimum := [3]f32{f32(origin.x), f32(origin.y), f32(origin.z)}
-	return frustum_contains_box(frustum, minimum, minimum + CHUNK_SIZE)
+	return render_frustum.frustum_contains_box(frustum, minimum, minimum + CHUNK_SIZE)
 }
 
 // Sky light scale and tint and the fog colour for the time of day, once
@@ -397,7 +399,7 @@ apply_weather :: proc(renderer: ^Chunk_Renderer, look: Weather_Look, seconds: f6
 // matrix read here.
 draw_chunks :: proc(renderer: ^Chunk_Renderer, camera: rl.Camera3D) {
 	view_projection := rlgl.GetMatrixProjection() * rl.GetCameraMatrix(camera)
-	frustum := frustum_from_matrix(cast(matrix[4, 4]f32)view_projection)
+	frustum := render_frustum.frustum_from_matrix(cast(matrix[4, 4]f32)view_projection)
 	position := camera.position
 	rl.SetShaderValue(renderer.material.shader, renderer.camera_position_location, &position, .VEC3)
 	renderer.drawn_chunk_count = 0

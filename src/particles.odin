@@ -1,6 +1,7 @@
 package game
 
 import "core:math"
+import "generation_seed"
 
 // The particle pool (work item 0067): render state in Frame_State, never
 // touched by the simulation, discarded on a session change. A fixed pool
@@ -159,7 +160,7 @@ make_particle :: proc(emitter: Emitter, key: u64) -> Particle {
 
 // Eight keys apart per particle, which make_particle uses up.
 particle_key :: proc(random_key: u64, index: int) -> u64 {
-	return hash_u64(random_key + u64(index) * 8)
+	return generation_seed.hash_u64(random_key + u64(index) * 8)
 }
 
 spawn_particle_count :: proc(system: ^Particle_System, emitter: Emitter, count: int, random_key: u64) {
@@ -177,11 +178,11 @@ spawn_particles :: proc(system: ^Particle_System, emitter: Emitter, seconds: f32
 // The random source of an emitter in a frame: the frame count, the cell
 // the emitter stands in and its kind.
 emitter_random_key :: proc(frame_count: u64, emitter: Emitter) -> u64 {
-	key := hash_u64(u64(PARTICLE_SEED) ~ frame_count)
+	key := generation_seed.hash_u64(u64(PARTICLE_SEED) ~ frame_count)
 	for coordinate in emitter.position {
-		key = hash_u64(key ~ u64(u32(i32(math.floor(coordinate)))))
+		key = generation_seed.hash_u64(key ~ u64(u32(i32(math.floor(coordinate)))))
 	}
-	return hash_u64(key ~ u64(emitter.kind))
+	return generation_seed.hash_u64(key ~ u64(emitter.kind))
 }
 
 // 1 until the last third of the life, then down to 0.

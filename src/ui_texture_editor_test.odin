@@ -3,6 +3,7 @@ package game
 import "core:os"
 import "core:strings"
 import "core:testing"
+import "platform"
 
 // The texture editor (work item 0100): the seed step and the reroll, the
 // preview field against the chunk shader's orientation, the overrides
@@ -104,7 +105,7 @@ test_texture_edits_file_round_trips_through_the_parser :: proc(t: ^testing.T) {
 	// Written to the state directory, the loader takes it over the data file.
 	directory := make_configuration_test_directory()
 	defer os.remove_all(directory)
-	path := join_save_path(directory, "state", TEXTURE_EDITS_FILE_NAME)
+	path := platform.join_path(directory, "state", TEXTURE_EDITS_FILE_NAME)
 	testing.expect_value(t, write_texture_edits_file(path, text), "")
 	loaded := load_procedural_textures(test_data_directory(), path, registry)
 	for entry in editor.entries {

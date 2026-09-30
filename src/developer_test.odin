@@ -3,6 +3,7 @@ package game
 import "base:runtime"
 import "core:strings"
 import "core:testing"
+import "platform"
 
 // Developer mode (work item 0043): the kits data, the command line, the
 // requests the simulation serves, and the crash text for the log.
@@ -310,10 +311,10 @@ test_time_of_day_sets_the_day_cycle :: proc(t: ^testing.T) {
 @(test)
 test_assertion_failure_text :: proc(t: ^testing.T) {
 	location := runtime.Source_Code_Location{file_path = "/src/game/belt.odin", line = 12, column = 3, procedure = "move_items"}
-	testing.expect_value(t, assertion_failure_text("Assertion failure", "index in range", location), "crash: /src/game/belt.odin(12:3) in move_items: Assertion failure: index in range")
-	testing.expect_value(t, assertion_failure_text("Panic", "", location), "crash: /src/game/belt.odin(12:3) in move_items: Panic")
+	testing.expect_value(t, platform.assertion_failure_text("Assertion failure", "index in range", location), "crash: /src/game/belt.odin(12:3) in move_items: Assertion failure: index in range")
+	testing.expect_value(t, platform.assertion_failure_text("Panic", "", location), "crash: /src/game/belt.odin(12:3) in move_items: Panic")
 	frames := [?]runtime.Source_Code_Location{{procedure = "game.move_items", file_path = "/src/game/belt.odin", line = 12}, {procedure = "0x1234", file_path = "/bin/game"}}
-	testing.expect_value(t, back_trace_text(frames[:]), "back trace:\n\t#0 game.move_items at /src/game/belt.odin(12)\n\t#1 0x1234 at /bin/game\n")
+	testing.expect_value(t, platform.back_trace_text(frames[:]), "back trace:\n\t#0 game.move_items at /src/game/belt.odin(12)\n\t#1 0x1234 at /bin/game\n")
 }
 
 // 0044: the statistics overlay is off in a fresh frame state and its key

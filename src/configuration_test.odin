@@ -4,6 +4,7 @@ import "core:encoding/json"
 import "core:os"
 import "core:strings"
 import "core:testing"
+import "platform"
 
 // Configuration tests write only under a temporary directory they create
 // and remove, and pass the XDG directories in; the real configuration is
@@ -22,8 +23,8 @@ write_test_file :: proc(path, text: string) {
 
 test_environment :: proc(root: string) -> Configuration_Environment {
 	return Configuration_Environment {
-		config_home = join_save_path(root, "home"),
-		config_dirs = strings.concatenate({join_save_path(root, "first"), ":", join_save_path(root, "second")}, context.temp_allocator),
+		config_home = platform.join_path(root, "home"),
+		config_dirs = strings.concatenate({platform.join_path(root, "first"), ":", platform.join_path(root, "second")}, context.temp_allocator),
 		home = "/home/player",
 	}
 }
@@ -33,16 +34,16 @@ test_configuration_layer_precedence :: proc(t: ^testing.T) {
 	context.allocator = context.temp_allocator
 	root := make_configuration_test_directory()
 	defer os.remove_all(root)
-	first := join_save_path(root, "first", GAME_DIRECTORY_NAME, CONFIGURATION_FILE_NAME)
-	second := join_save_path(root, "second", GAME_DIRECTORY_NAME, CONFIGURATION_FILE_NAME)
-	user := join_save_path(root, "home", GAME_DIRECTORY_NAME, CONFIGURATION_FILE_NAME)
-	drop_in := join_save_path(root, "home", GAME_DIRECTORY_NAME, CONFIGURATION_DROP_IN_DIRECTORY)
+	first := platform.join_path(root, "first", platform.GAME_DIRECTORY_NAME, CONFIGURATION_FILE_NAME)
+	second := platform.join_path(root, "second", platform.GAME_DIRECTORY_NAME, CONFIGURATION_FILE_NAME)
+	user := platform.join_path(root, "home", platform.GAME_DIRECTORY_NAME, CONFIGURATION_FILE_NAME)
+	drop_in := platform.join_path(root, "home", platform.GAME_DIRECTORY_NAME, CONFIGURATION_DROP_IN_DIRECTORY)
 	write_test_file(second, "settings = {ui_scale = 0.8, pointer_speed = 0.5, gyro_look_sensitivity = 0.5}")
 	write_test_file(first, "settings = {ui_scale = 0.9, pointer_speed = 0.6}")
 	write_test_file(user, "settings = {ui_scale = 1.0, stick_look_sensitivity = 2}")
-	write_test_file(join_save_path(drop_in, "20-late.sjson"), "settings = {ui_scale = 1.2}")
-	write_test_file(join_save_path(drop_in, "10-early.sjson"), "settings = {ui_scale = 1.1, invert_pitch = true}")
-	write_test_file(join_save_path(drop_in, "notes.txt"), "not configuration")
+	write_test_file(platform.join_path(drop_in, "20-late.sjson"), "settings = {ui_scale = 1.2}")
+	write_test_file(platform.join_path(drop_in, "10-early.sjson"), "settings = {ui_scale = 1.1, invert_pitch = true}")
+	write_test_file(platform.join_path(drop_in, "notes.txt"), "not configuration")
 
 	loaded, problem := load_configuration(test_environment(root), {})
 	testing.expect_value(t, problem, "")
@@ -53,11 +54,11 @@ test_configuration_layer_precedence :: proc(t: ^testing.T) {
 	testing.expect_value(t, settings.stick_look_sensitivity, 2)
 	testing.expect(t, settings.invert_pitch)
 	testing.expect_value(t, settings.autosave_minutes, DEFAULT_SETTINGS.autosave_minutes)
-	testing.expect_value(t, source_of_key_path(loaded.provenance, "settings.ui_scale"), join_save_path(drop_in, "20-late.sjson"))
+	testing.expect_value(t, source_of_key_path(loaded.provenance, "settings.ui_scale"), platform.join_path(drop_in, "20-late.sjson"))
 	testing.expect_value(t, source_of_key_path(loaded.provenance, "settings.pointer_speed"), first)
 	testing.expect_value(t, source_of_key_path(loaded.provenance, "settings.autosave_minutes"), DEFAULT_SOURCE)
 
-	expected_files := [?]string{second, first, user, join_save_path(drop_in, "10-early.sjson"), join_save_path(drop_in, "20-late.sjson")}
+	expected_files := [?]string{second, first, user, platform.join_path(drop_in, "10-early.sjson"), platform.join_path(drop_in, "20-late.sjson")}
 	testing.expect_value(t, len(loaded.files), len(expected_files))
 	for path, index in expected_files {
 		if index < len(loaded.files) {
@@ -160,8 +161,8 @@ test_configuration_unknown_key_and_wrong_type :: proc(t: ^testing.T) {
 	context.allocator = context.temp_allocator
 	root := make_configuration_test_directory()
 	defer os.remove_all(root)
-	user := join_save_path(root, "home", GAME_DIRECTORY_NAME, CONFIGURATION_FILE_NAME)
-	drop_in := join_save_path(root, "home", GAME_DIRECTORY_NAME, CONFIGURATION_DROP_IN_DIRECTORY, "50-typo.sjson")
+	user := platform.join_path(root, "home", platform.GAME_DIRECTORY_NAME, CONFIGURATION_FILE_NAME)
+	drop_in := platform.join_path(root, "home", platform.GAME_DIRECTORY_NAME, CONFIGURATION_DROP_IN_DIRECTORY, "50-typo.sjson")
 
 	write_test_file(user, "settings = {ui_scale = 1.1}")
 	write_test_file(drop_in, "settings = {ui_scael = 1.2}")
@@ -212,7 +213,7 @@ test_configuration_home_expansion :: proc(t: ^testing.T) {
 
 	root := make_configuration_test_directory()
 	defer os.remove_all(root)
-	write_test_file(join_save_path(root, "home", GAME_DIRECTORY_NAME, CONFIGURATION_FILE_NAME), `paths = {saves = "~/games/saves"}`)
+	write_test_file(platform.join_path(root, "home", platform.GAME_DIRECTORY_NAME, CONFIGURATION_FILE_NAME), `paths = {saves = "~/games/saves"}`)
 	loaded, problem := load_configuration(test_environment(root), {})
 	testing.expect_value(t, problem, "")
 	testing.expect_value(t, loaded.configuration.paths.saves, "/home/player/games/saves")
@@ -228,7 +229,7 @@ test_settings_file_round_trip :: proc(t: ^testing.T) {
 	root := make_configuration_test_directory()
 	defer os.remove_all(root)
 	environment := test_environment(root)
-	other := join_save_path(root, "home", GAME_DIRECTORY_NAME, CONFIGURATION_DROP_IN_DIRECTORY, "95-mine.sjson")
+	other := platform.join_path(root, "home", platform.GAME_DIRECTORY_NAME, CONFIGURATION_DROP_IN_DIRECTORY, "95-mine.sjson")
 	other_text := "// mine\nsettings = {autosave_minutes = 10}\n"
 	write_test_file(other, other_text)
 
@@ -268,7 +269,7 @@ test_settings_file_round_trip :: proc(t: ^testing.T) {
 	testing.expect_value(t, problem, "")
 	settings.autosave_minutes = 10
 	testing.expect_value(t, loaded.configuration.settings, settings)
-	written := join_save_path(root, "home", GAME_DIRECTORY_NAME, CONFIGURATION_DROP_IN_DIRECTORY, SETTINGS_FILE_NAME)
+	written := platform.join_path(root, "home", platform.GAME_DIRECTORY_NAME, CONFIGURATION_DROP_IN_DIRECTORY, SETTINGS_FILE_NAME)
 	testing.expect_value(t, source_of_key_path(loaded.provenance, "settings.ui_scale"), written)
 	testing.expect_value(t, source_of_key_path(loaded.provenance, "settings.autosave_minutes"), other)
 	data, error := os.read_entire_file(other, context.temp_allocator)
@@ -300,7 +301,7 @@ test_configuration_dump :: proc(t: ^testing.T) {
 	context.allocator = context.temp_allocator
 	root := make_configuration_test_directory()
 	defer os.remove_all(root)
-	user := join_save_path(root, "home", GAME_DIRECTORY_NAME, CONFIGURATION_FILE_NAME)
+	user := platform.join_path(root, "home", platform.GAME_DIRECTORY_NAME, CONFIGURATION_FILE_NAME)
 	write_test_file(user, `settings = {ui_scale = 1.25} bindings = [{action = "Jump" device = "keyboard" control = "J" context = "world"}]`)
 	loaded, problem := load_configuration(test_environment(root), {})
 	testing.expect_value(t, problem, "")
@@ -310,7 +311,7 @@ test_configuration_dump :: proc(t: ^testing.T) {
 	testing.expect_value(t, overrides_problem, "")
 	dump := configuration_dump(loaded, effective_bindings(defaults, overrides))
 
-	system := join_save_path(root, "first", GAME_DIRECTORY_NAME, CONFIGURATION_FILE_NAME)
+	system := platform.join_path(root, "first", platform.GAME_DIRECTORY_NAME, CONFIGURATION_FILE_NAME)
 	expected_lines := [?]string {
 		strings.concatenate({"//   ", system, " (missing)"}),
 		strings.concatenate({"//   ", user}),
@@ -339,7 +340,7 @@ test_configuration_display_settings :: proc(t: ^testing.T) {
 	context.allocator = context.temp_allocator
 	root := make_configuration_test_directory()
 	defer os.remove_all(root)
-	drop_in := join_save_path(root, "home", GAME_DIRECTORY_NAME, CONFIGURATION_DROP_IN_DIRECTORY, "50-display.sjson")
+	drop_in := platform.join_path(root, "home", platform.GAME_DIRECTORY_NAME, CONFIGURATION_DROP_IN_DIRECTORY, "50-display.sjson")
 
 	write_test_file(drop_in, `settings = {window_mode = "windowed" resolution = [1600, 900] vsync = false frame_rate_cap = 60}`)
 	loaded, problem := load_configuration(test_environment(root), {})
@@ -408,7 +409,7 @@ test_configuration_accessibility_settings :: proc(t: ^testing.T) {
 	context.allocator = context.temp_allocator
 	root := make_configuration_test_directory()
 	defer os.remove_all(root)
-	drop_in := join_save_path(root, "home", GAME_DIRECTORY_NAME, CONFIGURATION_DROP_IN_DIRECTORY, "50-accessibility.sjson")
+	drop_in := platform.join_path(root, "home", platform.GAME_DIRECTORY_NAME, CONFIGURATION_DROP_IN_DIRECTORY, "50-accessibility.sjson")
 
 	write_test_file(drop_in, `settings = {text_scale = 1.6 palette = "colour_blind" reduced_motion = true sneak_hold = "toggle" sprint_hold = "hold" touch_overlay = "on" touch_interaction = "crosshair" on_screen_keyboard = "game"}`)
 	loaded, problem := load_configuration(test_environment(root), {})

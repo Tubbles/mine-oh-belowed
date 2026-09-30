@@ -1,5 +1,7 @@
 package game
 
+import "generation_seed"
+
 // The venture's side of shipments (work item 0041, DESIGN.md Research,
 // quests and rockets): contracts, free trade, venture credit, the
 // catalogue and the orbital survey. Served in simulation_tick after the
@@ -118,8 +120,8 @@ choose_contract :: proc(candidates: []int, seed, tick: u64, slot: int) -> int {
 	if len(candidates) == 0 {
 		return -1
 	}
-	hash := hash_combine(hash_combine(hash_combine(seed, CONTRACT_OFFER_SALT), tick), u64(slot))
-	return candidates[hash_to_range(hash, 0, i64(len(candidates) - 1))]
+	hash := generation_seed.hash_combine(generation_seed.hash_combine(generation_seed.hash_combine(seed, CONTRACT_OFFER_SALT), tick), u64(slot))
+	return candidates[generation_seed.hash_to_range(hash, 0, i64(len(candidates) - 1))]
 }
 
 offer_contract :: proc(state: ^Contract_State, contract: int, tick: u64) {

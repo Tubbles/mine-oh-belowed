@@ -3,6 +3,7 @@ package game
 import "core:math"
 import "core:strings"
 import "core:testing"
+import "model_vox"
 
 // Motion and model light tests (work item 0056): pure procedures, no window.
 
@@ -215,4 +216,16 @@ test_a_motion_parses_from_the_machines_file :: proc(t: ^testing.T) {
 	motion := resolve_machine_motion(file.machines[0].motion)
 	testing.expect_value(t, motion, Machine_Motion{kind = .Spin, axis = 0, amplitude = 1, period_seconds = 1.5, pivot = {2.5, 1, 0.5}})
 	testing.expect(t, motion_has_part(.Spin) && motion_has_part(.Swing) && !motion_has_part(.Glow) && !motion_has_part(.None))
+}
+
+@(test)
+test_the_shipped_furnace_glow_is_emissive :: proc(t: ^testing.T) {
+	model, problem := model_vox.parse_voxel_model(#load("../data/models/stone_furnace.vox"))
+	defer delete(model.cells)
+	testing.expect_value(t, problem, "")
+	// The glow patch in the mouth takes the first emissive index, the
+	// stone does not.
+	testing.expect_value(t, model_vox.voxel_at(model, {13, 2, 6}), EMISSIVE_PALETTE_START)
+	testing.expect_value(t, model.palette[EMISSIVE_PALETTE_START], [4]u8{240, 150, 60, 255})
+	testing.expect(t, model_vox.voxel_at(model, {1, 0, 1}) < EMISSIVE_PALETTE_START)
 }

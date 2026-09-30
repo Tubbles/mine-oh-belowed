@@ -4,6 +4,7 @@ import "core:os"
 import "core:strings"
 import "core:testing"
 import "core:time"
+import "platform"
 
 // Work item 0131: the export of the data files and the data edits, and
 // the export on save. Every test writes only under a temporary directory
@@ -12,13 +13,13 @@ import "core:time"
 // A data directory with a file in a directory and a binary file, and an
 // overlay copy of the first, under base.
 make_data_export_test_files :: proc(t: ^testing.T, base: string) -> (data_directory, edits_directory: string) {
-	data_directory = join_save_path(base, "data_source")
-	edits_directory = join_save_path(base, "edits")
-	testing.expect_value(t, make_directory_path(join_save_path(data_directory, "quests")), nil)
-	testing.expect_value(t, make_directory_path(join_save_path(edits_directory, "quests")), nil)
-	testing.expect_value(t, os.write_entire_file(join_save_path(data_directory, "quests", "chapter_01.sjson"), "data chapter"), nil)
-	testing.expect_value(t, os.write_entire_file(join_save_path(data_directory, "icon.png"), "png"), nil)
-	testing.expect_value(t, os.write_entire_file(join_save_path(edits_directory, "quests", "chapter_01.sjson"), "edited chapter"), nil)
+	data_directory = platform.join_path(base, "data_source")
+	edits_directory = platform.join_path(base, "edits")
+	testing.expect_value(t, platform.make_directory_path(platform.join_path(data_directory, "quests")), nil)
+	testing.expect_value(t, platform.make_directory_path(platform.join_path(edits_directory, "quests")), nil)
+	testing.expect_value(t, os.write_entire_file(platform.join_path(data_directory, "quests", "chapter_01.sjson"), "data chapter"), nil)
+	testing.expect_value(t, os.write_entire_file(platform.join_path(data_directory, "icon.png"), "png"), nil)
+	testing.expect_value(t, os.write_entire_file(platform.join_path(edits_directory, "quests", "chapter_01.sjson"), "edited chapter"), nil)
 	return data_directory, edits_directory
 }
 
@@ -53,26 +54,26 @@ test_an_export_writes_the_data_the_edits_and_the_stamp :: proc(t: ^testing.T) {
 	testing.expect_value(t, error, nil)
 	defer os.remove_all(base)
 	data_directory, edits_directory := make_data_export_test_files(t, base)
-	export_directory := join_save_path(base, "sync", "mine")
-	testing.expect_value(t, make_directory_path(join_save_path(export_directory, "data")), nil)
-	testing.expect_value(t, os.write_entire_file(join_save_path(export_directory, "data", "icon.png"), "old png"), nil)
-	testing.expect_value(t, os.write_entire_file(join_save_path(export_directory, "notes.txt"), "mine"), nil)
+	export_directory := platform.join_path(base, "sync", "mine")
+	testing.expect_value(t, platform.make_directory_path(platform.join_path(export_directory, "data")), nil)
+	testing.expect_value(t, os.write_entire_file(platform.join_path(export_directory, "data", "icon.png"), "old png"), nil)
+	testing.expect_value(t, os.write_entire_file(platform.join_path(export_directory, "notes.txt"), "mine"), nil)
 
 	now := time.unix(1_790_000_000, 0)
 	result := export_data_files(data_directory, edits_directory, export_directory, now)
 	testing.expect_value(t, result, Data_Export_Result{data_count = 2, edit_count = 1})
-	expect_file_text(t, join_save_path(export_directory, "data", "quests", "chapter_01.sjson"), "data chapter")
-	expect_file_text(t, join_save_path(export_directory, "data", "icon.png"), "png")
-	expect_file_text(t, join_save_path(export_directory, "data_edits", "quests", "chapter_01.sjson"), "edited chapter")
-	expect_file_text(t, join_save_path(export_directory, "notes.txt"), "mine")
-	expect_file_text(t, join_save_path(export_directory, "export.txt"), data_export_stamp_text(BUILD_STAMP, now, result))
+	expect_file_text(t, platform.join_path(export_directory, "data", "quests", "chapter_01.sjson"), "data chapter")
+	expect_file_text(t, platform.join_path(export_directory, "data", "icon.png"), "png")
+	expect_file_text(t, platform.join_path(export_directory, "data_edits", "quests", "chapter_01.sjson"), "edited chapter")
+	expect_file_text(t, platform.join_path(export_directory, "notes.txt"), "mine")
+	expect_file_text(t, platform.join_path(export_directory, "export.txt"), data_export_stamp_text(BUILD_STAMP, now, result))
 	stamp := data_export_stamp_text(BUILD_STAMP, now, result)
 	testing.expect(t, strings.contains(stamp, BUILD_STAMP), stamp)
 	testing.expect(t, strings.contains(stamp, "exported 2026-09-21 "), stamp)
 	testing.expect(t, strings.contains(stamp, "2 data files, 1 data edits"), stamp)
 
 	// Without an overlay directory only the data goes.
-	result = export_data_files(data_directory, join_save_path(base, "no_edits"), export_directory, now)
+	result = export_data_files(data_directory, platform.join_path(base, "no_edits"), export_directory, now)
 	testing.expect_value(t, result, Data_Export_Result{data_count = 2})
 }
 
@@ -92,7 +93,7 @@ test_an_empty_export_directory_exports_nothing_and_says_so :: proc(t: ^testing.T
 	base, error := os.make_directory_temp("", "mine-oh-belowed-export-blocked-test-*", context.temp_allocator)
 	testing.expect_value(t, error, nil)
 	defer os.remove_all(base)
-	blocked := join_save_path(base, "file")
+	blocked := platform.join_path(base, "file")
 	testing.expect_value(t, os.write_entire_file(blocked, "not a directory"), nil)
 	result := export_data_files(test_data_directory(), "", blocked, {})
 	testing.expect(t, strings.contains(result.problem, blocked), result.problem)
@@ -107,8 +108,8 @@ test_a_synced_save_writes_the_edit_and_a_synced_discard_removes_it :: proc(t: ^t
 	base, error := os.make_directory_temp("", "mine-oh-belowed-export-sync-test-*", context.temp_allocator)
 	testing.expect_value(t, error, nil)
 	defer os.remove_all(base)
-	edits_directory := join_save_path(base, "edits")
-	export_directory := join_save_path(base, "sync")
+	edits_directory := platform.join_path(base, "edits")
+	export_directory := platform.join_path(base, "sync")
 	data_edits_reading.directory = edits_directory
 	defer reset_data_edits_reading()
 	defer clear_missing_reports(&global_string_table)
@@ -123,7 +124,7 @@ test_a_synced_save_writes_the_edit_and_a_synced_discard_removes_it :: proc(t: ^t
 	browser.rows = data_tree_rows(entries[:], context.temp_allocator)
 	defer browser.rows = nil
 	browser.selected = find_data_tree_row(browser.rows, "quests/chapter_09.sjson")
-	exported := join_save_path(export_directory, "data_edits", "quests", "chapter_09.sjson")
+	exported := platform.join_path(export_directory, "data_edits", "quests", "chapter_09.sjson")
 
 	testing.expect(t, set_data_browser_value(browser, find_data_value_row(browser.value_rows, "blocks.0.hardness"), "3"))
 	state.settings.export_directory = export_directory
@@ -133,14 +134,14 @@ test_a_synced_save_writes_the_edit_and_a_synced_discard_removes_it :: proc(t: ^t
 	state.settings.export_on_save = true
 	testing.expect(t, set_data_browser_value(browser, find_data_value_row(browser.value_rows, "blocks.0.hardness"), "4"))
 	save_data_edit(state, edits_directory)
-	overlay, read_error := os.read_entire_file(join_save_path(edits_directory, "quests", "chapter_09.sjson"), context.temp_allocator)
+	overlay, read_error := os.read_entire_file(platform.join_path(edits_directory, "quests", "chapter_09.sjson"), context.temp_allocator)
 	testing.expect_value(t, read_error, nil)
 	expect_file_text(t, exported, string(overlay))
 	testing.expect(t, !browser.export_sync_failed)
 
 	browser.rows[browser.selected].edited = true
 	discard_data_edit(state)
-	testing.expect(t, !os.exists(join_save_path(edits_directory, "quests", "chapter_09.sjson")))
+	testing.expect(t, !os.exists(platform.join_path(edits_directory, "quests", "chapter_09.sjson")))
 	testing.expect(t, !os.exists(exported), "the discard deleted the exported copy")
 	testing.expect(t, !browser.export_sync_failed)
 }
@@ -152,9 +153,9 @@ test_a_failed_export_sync_toasts_once :: proc(t: ^testing.T) {
 	base, error := os.make_directory_temp("", "mine-oh-belowed-export-sync-failure-test-*", context.temp_allocator)
 	testing.expect_value(t, error, nil)
 	defer os.remove_all(base)
-	edits_directory := join_save_path(base, "edits")
+	edits_directory := platform.join_path(base, "edits")
 	testing.expect_value(t, write_data_edit(edits_directory, "blocks.sjson", "blocks = []"), "")
-	blocked := join_save_path(base, "file")
+	blocked := platform.join_path(base, "file")
 	testing.expect_value(t, os.write_entire_file(blocked, "not a directory"), nil)
 	state := new(Frame_State)
 	defer free(state)
@@ -166,16 +167,16 @@ test_a_failed_export_sync_toasts_once :: proc(t: ^testing.T) {
 	testing.expect_value(t, len(state.ui.toasts), 1)
 	testing.expect(t, state.data_browser.export_sync_failed)
 	// A successful export ends the run of failures too.
-	state.data_directory, _ = make_data_export_test_files(t, join_save_path(base, "export_source"))
-	state.settings.export_directory = join_save_path(base, "exported")
+	state.data_directory, _ = make_data_export_test_files(t, platform.join_path(base, "export_source"))
+	state.settings.export_directory = platform.join_path(base, "exported")
 	export_data_browser_files(state, "")
-	testing.expect(t, os.is_file(join_save_path(base, "exported", "export.txt")))
+	testing.expect(t, os.is_file(platform.join_path(base, "exported", "export.txt")))
 	testing.expect(t, !state.data_browser.export_sync_failed)
 	state.data_browser.export_sync_failed = true
-	state.settings.export_directory = join_save_path(base, "sync")
+	state.settings.export_directory = platform.join_path(base, "sync")
 	sync_data_edit_export(state, edits_directory, "blocks.sjson")
 	testing.expect(t, !state.data_browser.export_sync_failed)
-	testing.expect(t, os.is_file(join_save_path(base, "sync", "data_edits", "blocks.sjson")))
+	testing.expect(t, os.is_file(platform.join_path(base, "sync", "data_edits", "blocks.sjson")))
 }
 
 // The typed directory, trimmed and with ~/ expanded, becomes the setting,
@@ -226,12 +227,12 @@ test_an_export_onto_its_sources_is_refused :: proc(t: ^testing.T) {
 	testing.expect_value(t, error, nil)
 	defer os.remove_all(base)
 	data_directory, edits_directory := make_data_export_test_files(t, base)
-	source := join_save_path(data_directory, "quests", "chapter_01.sjson")
+	source := platform.join_path(data_directory, "quests", "chapter_01.sjson")
 
 	result := export_data_files(data_directory, edits_directory, base, {})
 	testing.expect_value(t, result, Data_Export_Result{problem = text("data_files_export_overlaps")})
 	expect_file_text(t, source, "data chapter")
-	testing.expect(t, !os.exists(join_save_path(base, "export.txt")))
+	testing.expect(t, !os.exists(platform.join_path(base, "export.txt")))
 
 	testing.expect(t, strings.contains(copy_exported_file(source, source), text("data_files_export_overlaps")))
 	expect_file_text(t, source, "data chapter")
@@ -239,7 +240,7 @@ test_an_export_onto_its_sources_is_refused :: proc(t: ^testing.T) {
 	parent, _ := os.split_path(edits_directory)
 	problem := sync_exported_data_edit(data_directory, edits_directory, parent, "quests/chapter_01.sjson")
 	testing.expect_value(t, problem, text("data_files_export_overlaps"))
-	expect_file_text(t, join_save_path(edits_directory, "quests", "chapter_01.sjson"), "edited chapter")
+	expect_file_text(t, platform.join_path(edits_directory, "quests", "chapter_01.sjson"), "edited chapter")
 }
 
 // The copy goes through a temporary file renamed over the destination,
@@ -250,8 +251,8 @@ test_an_exported_copy_replaces_the_destination_whole :: proc(t: ^testing.T) {
 	base, error := os.make_directory_temp("", "mine-oh-belowed-export-copy-test-*", context.temp_allocator)
 	testing.expect_value(t, error, nil)
 	defer os.remove_all(base)
-	source := join_save_path(base, "source.sjson")
-	destination := join_save_path(base, "export", "data", "source.sjson")
+	source := platform.join_path(base, "source.sjson")
+	destination := platform.join_path(base, "export", "data", "source.sjson")
 	testing.expect_value(t, os.write_entire_file(source, "read only", os.Permissions_Read_All), nil)
 	testing.expect_value(t, copy_exported_file(source, destination), "")
 	testing.expect_value(t, copy_exported_file(source, destination), "")

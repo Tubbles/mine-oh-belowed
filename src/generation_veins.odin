@@ -1,6 +1,7 @@
 package game
 
 import "core:math"
+import "generation_seed"
 
 // Vein placement per region of 8 by 8 chunk columns. Every footprint lies
 // wholly inside its region, so the veins overlapping any column are found
@@ -103,8 +104,8 @@ candidate_vein_centre :: proc(hash: u64, region: Region_Coordinate, radius: i32)
 	margin := radius + 1
 	span := i64(REGION_SIZE - 2 * margin - 1)
 	origin := region_origin(region)
-	x := origin.x + margin + i32(hash_to_range(hash, 0, span))
-	z := origin.y + margin + i32(hash_to_range(hash_combine(hash, 1), 0, span))
+	x := origin.x + margin + i32(generation_seed.hash_to_range(hash, 0, span))
+	z := origin.y + margin + i32(generation_seed.hash_to_range(generation_seed.hash_combine(hash, 1), 0, span))
 	return {x, z}
 }
 
@@ -136,7 +137,7 @@ choose_vein_type :: proc(types: []Vein_Type, biome: int, layer: Vein_Layer, hash
 	if total == 0 {
 		return -1
 	}
-	roll := hash_to_range(hash, 0, total - 1)
+	roll := generation_seed.hash_to_range(hash, 0, total - 1)
 	for vein_type, index in types {
 		if !vein_type_allowed(vein_type, biome, layer) {
 			continue
@@ -172,7 +173,7 @@ vein_depth :: proc(tables: Vein_Tables, layer: Vein_Layer, hash: u64) -> i32 {
 	if layer == .Surface {
 		return 0
 	}
-	return i32(hash_to_range(hash, i64(tables.deep_minimum_depth), i64(tables.deep_maximum_depth)))
+	return i32(generation_seed.hash_to_range(hash, i64(tables.deep_minimum_depth), i64(tables.deep_maximum_depth)))
 }
 
 vein_units_factor :: proc(tables: Vein_Tables, layer: Vein_Layer) -> i64 {
@@ -180,12 +181,12 @@ vein_units_factor :: proc(tables: Vein_Tables, layer: Vein_Layer) -> i64 {
 }
 
 vein_radius :: proc(size_class: Vein_Size_Class, richness: Region_Richness, hash: u64) -> i32 {
-	return i32(hash_to_range(hash, i64(size_class.minimum_radius), i64(size_class.maximum_radius))) + richness.radius_growth
+	return i32(generation_seed.hash_to_range(hash, i64(size_class.minimum_radius), i64(size_class.maximum_radius))) + richness.radius_growth
 }
 
 // Ore units of a surface vein, before the layer factor.
 vein_units :: proc(generator: ^Generator, size_class: Vein_Size_Class, richness: Region_Richness, hash: u64) -> i64 {
-	base_units := hash_to_range(hash, size_class.minimum_units, size_class.maximum_units)
+	base_units := generation_seed.hash_to_range(hash, size_class.minimum_units, size_class.maximum_units)
 	return i64(f64(base_units) * richness.units_factor) * i64(generator.vein_richness_percent) / 100
 }
 
@@ -195,19 +196,19 @@ place_vein :: proc(generator: ^Generator, veins: []Vein, region: Region_Coordina
 	size_class := generator.veins.size_classes[size_class_index]
 	richness := region_richness(generator.veins, region)
 	radius := vein_radius(size_class, richness, hash)
-	depth := vein_depth(generator.veins, layer, hash_combine(hash, 102))
+	depth := vein_depth(generator.veins, layer, generation_seed.hash_combine(hash, 102))
 	for attempt in 0 ..< VEIN_PLACEMENT_ATTEMPTS {
-		position := candidate_vein_centre(hash_combine(hash, u64(attempt) + 2), region, radius)
+		position := candidate_vein_centre(generation_seed.hash_combine(hash, u64(attempt) + 2), region, radius)
 		column := sample_column(generator, position.x, position.y)
 		centre := World_Coordinate{position.x, column.height - depth, position.y}
 		if !disc_is_clear(veins, centre, radius) {
 			continue
 		}
-		type_index := choose_vein_type(generator.veins.types, column.biome, layer, hash_combine(hash, 100))
+		type_index := choose_vein_type(generator.veins.types, column.biome, layer, generation_seed.hash_combine(hash, 100))
 		if type_index < 0 {
 			return {}, false
 		}
-		units := vein_units(generator, size_class, richness, hash_combine(hash, 101))
+		units := vein_units(generator, size_class, richness, generation_seed.hash_combine(hash, 101))
 		vein = Vein {
 			type       = type_index,
 			size_class = size_class_index,
@@ -225,11 +226,11 @@ region_class_count :: proc(size_class: Vein_Size_Class, region: Region_Coordinat
 	if region_centre_distance(region) < f64(size_class.minimum_distance) {
 		return 0
 	}
-	return i32(hash_to_range(hash, i64(size_class.minimum_per_region), i64(size_class.maximum_per_region)))
+	return i32(generation_seed.hash_to_range(hash, i64(size_class.minimum_per_region), i64(size_class.maximum_per_region)))
 }
 
 @(rodata)
-vein_layer_purposes := [Vein_Layer]Generation_Purpose {
+vein_layer_purposes := [Vein_Layer]generation_seed.Generation_Purpose {
 	.Surface = .Veins,
 	.Deep    = .Deep_Veins,
 }
@@ -240,12 +241,12 @@ vein_layer_purposes := [Vein_Layer]Generation_Purpose {
 // (generation_starter_veins.odin).
 layer_veins :: proc(generator: ^Generator, region: Region_Coordinate, layer: Vein_Layer, allocator := context.allocator) -> [dynamic]Vein {
 	veins := make([dynamic]Vein, allocator)
-	region_hash := hash_combine(generator.seeds[vein_layer_purposes[layer]], pack_pair(region.x, region.y))
+	region_hash := generation_seed.hash_combine(generator.seeds[vein_layer_purposes[layer]], generation_seed.pack_pair(region.x, region.y))
 	for size_class, class_index in generator.veins.size_classes {
-		class_hash := hash_combine(region_hash, u64(class_index))
+		class_hash := generation_seed.hash_combine(region_hash, u64(class_index))
 		count := region_class_count(size_class, region, class_hash)
 		for number in 0 ..< count {
-			vein, placed := place_vein(generator, veins[:], region, class_index, layer, hash_combine(class_hash, u64(number) + 1))
+			vein, placed := place_vein(generator, veins[:], region, class_index, layer, generation_seed.hash_combine(class_hash, u64(number) + 1))
 			if placed {
 				vein.id = Vein_Id{region = region, index = i32(len(veins)), layer = layer}
 				append(&veins, vein)

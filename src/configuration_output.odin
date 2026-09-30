@@ -5,6 +5,7 @@ import "core:fmt"
 import "core:os"
 import "core:reflect"
 import "core:strings"
+import "platform"
 
 // The `config` subcommand's dump and the settings file the settings screen
 // writes.
@@ -112,14 +113,14 @@ settings_file_text :: proc(settings: Settings) -> string {
 write_settings_file :: proc(environment: Configuration_Environment, settings: Settings) -> string {
 	user_directory, found := user_configuration_directory(environment)
 	if !found {
-		return "no configuration directory (set " + CONFIG_HOME_VARIABLES + ")"
+		return "no configuration directory (set " + platform.CONFIG_HOME_VARIABLES + ")"
 	}
 	text := settings_file_text(settings)
-	directory := join_save_path(user_directory, CONFIGURATION_DROP_IN_DIRECTORY)
-	if error := make_directory_path(directory); error != nil {
+	directory := platform.join_path(user_directory, CONFIGURATION_DROP_IN_DIRECTORY)
+	if error := platform.make_directory_path(directory); error != nil {
 		return fmt.tprintf("cannot create %s: %v", directory, error)
 	}
-	path := join_save_path(directory, SETTINGS_FILE_NAME)
+	path := platform.join_path(directory, SETTINGS_FILE_NAME)
 	if error := os.write_entire_file(path, text); error != nil {
 		return fmt.tprintf("cannot write %s: %v", path, error)
 	}

@@ -1,4 +1,4 @@
-package game
+package render_frustum
 
 // View frustum as six planes (normal xyz, distance w), normals pointing
 // inwards, extracted from a view projection matrix in the column vector

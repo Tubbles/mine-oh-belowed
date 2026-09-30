@@ -1,5 +1,5 @@
 #+build !linux:android
-package game
+package platform
 
 // Outside Android the export writes wherever the file system lets it
 // (work item 0131): these stand in for export_access_android.odin.

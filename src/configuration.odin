@@ -8,6 +8,8 @@ import "core:os"
 import "core:reflect"
 import "core:slice"
 import "core:strings"
+import "platform"
+import "sjson_text"
 
 // Player configuration (doc/architecture.md, Configuration and
 // directories). Layers, lowest precedence first:
@@ -98,7 +100,7 @@ Loaded_Configuration :: struct {
 
 // platform_paths.odin: %APPDATA% as the config home on Windows.
 read_configuration_environment :: proc() -> Configuration_Environment {
-	directories := platform_directories(context.allocator)
+	directories := platform.platform_directories(context.allocator)
 	return Configuration_Environment{config_home = directories.config_home, config_dirs = directories.config_dirs, home = directories.home}
 }
 
@@ -108,9 +110,9 @@ read_configuration_environment :: proc() -> Configuration_Environment {
 user_configuration_directory :: proc(environment: Configuration_Environment) -> (directory: string, ok: bool) {
 	switch {
 	case environment.config_home != "" && os.is_absolute_path(environment.config_home):
-		return join_save_path(environment.config_home, GAME_DIRECTORY_NAME), true
+		return platform.join_path(environment.config_home, platform.GAME_DIRECTORY_NAME), true
 	case environment.home != "":
-		return join_save_path(environment.home, CONFIG_HOME_UNDER_HOME, GAME_DIRECTORY_NAME), true
+		return platform.join_path(environment.home, CONFIG_HOME_UNDER_HOME, platform.GAME_DIRECTORY_NAME), true
 	}
 	return "", false
 }
@@ -123,7 +125,7 @@ system_configuration_directories :: proc(environment: Configuration_Environment)
 	entries := strings.split(value, ":", context.temp_allocator)
 	#reverse for entry in entries {
 		if entry != "" && os.is_absolute_path(entry) {
-			append(&directories, join_save_path(entry, GAME_DIRECTORY_NAME))
+			append(&directories, platform.join_path(entry, platform.GAME_DIRECTORY_NAME))
 		}
 	}
 	return directories[:]
@@ -134,14 +136,14 @@ system_configuration_directories :: proc(environment: Configuration_Environment)
 find_configuration_files :: proc(environment: Configuration_Environment, allocator := context.allocator) -> []Configuration_File {
 	files := make([dynamic]Configuration_File, allocator)
 	for directory in system_configuration_directories(environment) {
-		append(&files, configuration_file(join_save_path(directory, CONFIGURATION_FILE_NAME), allocator))
+		append(&files, configuration_file(platform.join_path(directory, CONFIGURATION_FILE_NAME), allocator))
 	}
 	user_directory, found := user_configuration_directory(environment)
 	if !found {
 		return files[:]
 	}
-	append(&files, configuration_file(join_save_path(user_directory, CONFIGURATION_FILE_NAME), allocator))
-	append_drop_in_files(&files, join_save_path(user_directory, CONFIGURATION_DROP_IN_DIRECTORY), allocator)
+	append(&files, configuration_file(platform.join_path(user_directory, CONFIGURATION_FILE_NAME), allocator))
+	append_drop_in_files(&files, platform.join_path(user_directory, CONFIGURATION_DROP_IN_DIRECTORY), allocator)
 	return files[:]
 }
 
@@ -163,7 +165,7 @@ append_drop_in_files :: proc(files: ^[dynamic]Configuration_File, directory: str
 	}
 	slice.sort(names[:])
 	for name in names {
-		append(files, Configuration_File{path = strings.clone(join_save_path(directory, name), allocator), found = true})
+		append(files, Configuration_File{path = strings.clone(platform.join_path(directory, name), allocator), found = true})
 	}
 }
 
@@ -307,15 +309,6 @@ wrong_type_problem :: proc(provenance: Configuration_Provenance, key_path, expec
 	return fmt.tprintf("%s: %s must be %s, not %s", source_of_key_path(provenance, key_path), key_path, expected, json_type_name(value))
 }
 
-sorted_object_keys :: proc(object: json.Object) -> []string {
-	keys := make([dynamic]string, 0, len(object), context.temp_allocator)
-	for key in object {
-		append(&keys, key)
-	}
-	slice.sort(keys[:])
-	return keys[:]
-}
-
 // Writes the tree into target, whose current values are the defaults.
 // Supports the field types Configuration uses: structs, f32, int, bool,
 // string, enums (by lower case name), slices of structs and fixed arrays
@@ -400,11 +393,11 @@ assign_configuration_struct :: proc(target: any, value: json.Value, key_path: st
 	if !is_object {
 		return wrong_type_problem(provenance, key_path, "an object", value)
 	}
-	for key in sorted_object_keys(object) {
+	for key in sjson_text.sorted_object_keys(object) {
 		child_path := join_key_path(key_path, key, context.temp_allocator)
 		field, found := configuration_field(target.id, key)
 		if !found && is_retired_configuration_key(child_path) {
-			log_printf("%s: %s is no longer used and is ignored", source_of_key_path(provenance, child_path), child_path)
+			platform.log_printf("%s: %s is no longer used and is ignored", source_of_key_path(provenance, child_path), child_path)
 			continue
 		}
 		if !found {

@@ -5,6 +5,7 @@ import "core:fmt"
 import "core:os"
 import "core:strings"
 import sdl "vendor:sdl3"
+import "platform"
 
 // Reads the Steam Controller (2026) through SDL3's HIDAPI driver
 // (SDL_hidapi_steam_triton.c). SDL runs without video: raylib owns the window,
@@ -44,8 +45,8 @@ init_sdl3_input :: proc() -> (ok: bool, error_message: string) {
 	if !sdl.Init({.JOYSTICK, .GAMEPAD}) {
 		return false, string(sdl.GetError())
 	}
-	log_printf("input: %s", steam_input_environment_text(os.get_env(sdl.HINT_GAMECONTROLLER_IGNORE_DEVICES, context.temp_allocator), os.get_env("SteamVirtualGamepadInfo", context.temp_allocator)))
-	log_printf("input: SDL sees %d joysticks at start", sdl3_joystick_count())
+	platform.log_printf("input: %s", steam_input_environment_text(os.get_env(sdl.HINT_GAMECONTROLLER_IGNORE_DEVICES, context.temp_allocator), os.get_env("SteamVirtualGamepadInfo", context.temp_allocator)))
+	platform.log_printf("input: SDL sees %d joysticks at start", sdl3_joystick_count())
 	return true, ""
 }
 
@@ -66,7 +67,7 @@ sdl3_joystick_line :: proc(id: u32, name: string, vendor, product: u16, guid: st
 log_sdl3_joystick_added :: proc(id: sdl.JoystickID) {
 	guid_text: [33]u8
 	sdl.GUIDToString(sdl.GetJoystickGUIDForID(id), raw_data(guid_text[:]), len(guid_text))
-	log_printf(
+	platform.log_printf(
 		"%s",
 		sdl3_joystick_line(
 			u32(id),
@@ -105,18 +106,18 @@ shutdown_sdl3_input :: proc(state: ^Sdl3_Input_State) {
 open_sdl3_gamepad :: proc(state: ^Sdl3_Input_State, id: sdl.JoystickID) {
 	gamepad := sdl.OpenGamepad(id)
 	if gamepad == nil {
-		log_printf("input: cannot open gamepad %d: %s", id, sdl.GetError())
+		platform.log_printf("input: cannot open gamepad %d: %s", id, sdl.GetError())
 		return
 	}
 	state.gamepad = gamepad
 	state.steam_layer = os.get_env("SteamVirtualGamepadInfo", context.temp_allocator) != ""
 	if state.steam_layer {
-		log_printf("input: Steam's layer runs beside the game, the gyro comes from its layout as mouse movement, SDL's gyro is ignored")
+		platform.log_printf("input: Steam's layer runs beside the game, the gyro comes from its layout as mouse movement, SDL's gyro is ignored")
 	}
 	// The path tells the device apart: /dev/hidraw* is the controller read
 	// through HIDAPI, /dev/input/event* an evdev device such as Steam's
 	// virtual pad. The controller itself has two touchpads.
-	log_printf(
+	platform.log_printf(
 		"input: opened gamepad %d %q vendor %04x product %04x path %s touchpads %d",
 		id,
 		sdl.GetGamepadName(gamepad),
@@ -131,11 +132,11 @@ open_sdl3_gamepad :: proc(state: ^Sdl3_Input_State, id: sdl.JoystickID) {
 
 enable_sdl3_sensor :: proc(gamepad: ^sdl.Gamepad, type: sdl.SensorType) {
 	if !sdl.GamepadHasSensor(gamepad, type) {
-		log_printf("input: gamepad has no %v sensor", type)
+		platform.log_printf("input: gamepad has no %v sensor", type)
 		return
 	}
 	if !sdl.SetGamepadSensorEnabled(gamepad, type, true) {
-		log_printf("input: cannot enable %v sensor: %s", type, sdl.GetError())
+		platform.log_printf("input: cannot enable %v sensor: %s", type, sdl.GetError())
 	}
 }
 
@@ -154,14 +155,14 @@ poll_sdl3_events :: proc(state: ^Sdl3_Input_State) {
 		case .JOYSTICK_ADDED:
 			log_sdl3_joystick_added(event.jdevice.which)
 		case .JOYSTICK_REMOVED:
-			log_printf("input: joystick %d removed", event.jdevice.which)
+			platform.log_printf("input: joystick %d removed", event.jdevice.which)
 		case .GAMEPAD_ADDED:
 			if state.gamepad == nil {
 				open_sdl3_gamepad(state, event.gdevice.which)
 			}
 		case .GAMEPAD_REMOVED:
 			if state.gamepad != nil && sdl.GetGamepadID(state.gamepad) == event.gdevice.which {
-				log_printf("input: gamepad %d removed", event.gdevice.which)
+				platform.log_printf("input: gamepad %d removed", event.gdevice.which)
 				close_sdl3_gamepad(state)
 			}
 		}

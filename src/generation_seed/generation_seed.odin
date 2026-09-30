@@ -1,7 +1,4 @@
-package game
-
-// Used when no --seed is given, so that runs are reproducible.
-DEFAULT_WORLD_SEED :: u64(20260927)
+package generation_seed
 
 // One sub seed per purpose, so no noise field or hash stream is shared
 // between two uses of the world seed.
@@ -35,6 +32,15 @@ Generation_Purpose :: enum u8 {
 }
 
 Purpose_Seeds :: [Generation_Purpose]u64
+
+// splitmix64 finaliser: a fixed integer hash, so the atlas and the world
+// are identical on every run and every machine.
+hash_u64 :: proc(value: u64) -> u64 {
+	mixed := value + 0x9e3779b97f4a7c15
+	mixed = (mixed ~ (mixed >> 30)) * 0xbf58476d1ce4e5b9
+	mixed = (mixed ~ (mixed >> 27)) * 0x94d049bb133111eb
+	return mixed ~ (mixed >> 31)
+}
 
 hash_combine :: proc(seed: u64, value: u64) -> u64 {
 	return hash_u64(seed ~ hash_u64(value))

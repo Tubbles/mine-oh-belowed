@@ -3,6 +3,8 @@ package game
 import "core:fmt"
 import "core:mem/virtual"
 import "core:time"
+import "model_vox"
+import "platform"
 
 // The frame loop's side of hot reload (work item 0054): the data watcher
 // (data_watch.odin) polled between frames, presentation files reloaded in
@@ -34,13 +36,13 @@ destroy_hot_reload_state :: proc(state: ^Frame_State) {
 }
 
 report_reload :: proc(state: ^Frame_State, message: string) {
-	log_printf("data: %s", message)
+	platform.log_printf("data: %s", message)
 	ui_toast(&state.ui, message)
 }
 
 // Loaders log their own error line too; this one says what was kept.
 report_reload_problem :: proc(state: ^Frame_State, what, problem: string) {
-	log_printf("error: could not reload %s, keeping the old data: %s", what, problem)
+	platform.log_printf("error: could not reload %s, keeping the old data: %s", what, problem)
 	ui_toast(&state.ui, fmt.tprintf("%s %s: %s", text("reload_failed"), what, problem))
 }
 
@@ -99,10 +101,10 @@ reload_bindings :: proc(state: ^Frame_State) -> string {
 
 // Into the content arena, which frees the old kits with the content.
 reload_developer_kits :: proc(state: ^Frame_State) -> string {
-	capture: Log_Capture
-	begin_log_capture(&capture)
+	capture: platform.Log_Capture
+	platform.begin_log_capture(&capture)
 	kits, loaded := load_developer_kits(state.data_directory, state.content.items, virtual.arena_allocator(state.content_arena))
-	problem := end_log_capture(&capture, fmt.tprintf("%s did not load", DEVELOPER_KITS_FILE_NAME))
+	problem := platform.end_log_capture(&capture, fmt.tprintf("%s did not load", DEVELOPER_KITS_FILE_NAME))
 	if !loaded {
 		return problem
 	}
@@ -114,11 +116,11 @@ reload_developer_kits :: proc(state: ^Frame_State) -> string {
 // pair that does not compile keeps its old shader, the other still
 // reloads.
 reload_shaders :: proc(state: ^Frame_State) -> string {
-	capture: Log_Capture
-	begin_log_capture(&capture)
+	capture: platform.Log_Capture
+	platform.begin_log_capture(&capture)
 	chunk_reloaded := reload_chunk_shader(&state.renderer, state.data_directory)
 	water_reloaded := reload_water_shader(&state.renderer.water, state.renderer.atlas_layout, state.data_directory)
-	problem := end_log_capture(&capture, "a shader did not load")
+	problem := platform.end_log_capture(&capture, "a shader did not load")
 	return chunk_reloaded && water_reloaded ? "" : problem
 }
 
@@ -192,7 +194,7 @@ presentation_file_names := [Data_File_Category]string {
 	.Developer_Kits = DEVELOPER_KITS_FILE_NAME,
 	.Shaders        = CHUNK_SHADER_DIRECTORY,
 	.Fonts          = FONTS_DIRECTORY,
-	.Models         = MODELS_DIRECTORY,
+	.Models         = model_vox.MODELS_DIRECTORY,
 	.Textures       = "textures",
 	.Sounds         = SOUNDS_DIRECTORY,
 	.Theme          = UI_THEME_DIRECTORY,

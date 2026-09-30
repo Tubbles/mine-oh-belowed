@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Find top level definitions of the game package that nothing reaches.
+"""Find top level definitions of the game's packages that nothing reaches.
 
-Scans src/*.odin for top level definitions (procedures, types, constants,
+Scans src/**/*.odin (the game package and the packages under src/, work
+item 0145) for top level definitions (procedures, types, constants,
 variables, anything written as `name ::`, `name: Type` or `name :=` at the
 start of a line, or one tab deeper per enclosing file level `when` or
 `foreign` block) and counts the references to each name as whole words in
@@ -227,10 +228,6 @@ def identifier_occurrences(path, lines):
     ]
 
 
-def game_source_files():
-    return sorted(SOURCE_DIRECTORY.glob("*.odin"))
-
-
 def all_odin_files():
     return sorted(SOURCE_DIRECTORY.rglob("*.odin"))
 
@@ -307,7 +304,7 @@ def is_allowed(definition, verdict, external):
 
 def all_definitions():
     definitions = []
-    for path in game_source_files():
+    for path in all_odin_files():
         definitions.extend(parse_definitions(path, code_lines(path)))
     return definitions
 

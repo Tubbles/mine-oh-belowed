@@ -2,6 +2,7 @@ package game
 
 import "core:encoding/json"
 import "core:fmt"
+import "platform"
 
 // Notes from data/notes.sjson (work item 0070): what the planet, the
 // lease and the venture tell the player, collected in the journal's Notes
@@ -153,13 +154,13 @@ load_note_registry :: proc(data_directory: string, items: Item_Registry, technol
 	data, path := read_logged_data_file(data_directory, NOTES_FILE_NAME) or_return
 	file, parse_error := parse_notes_file(data, allocator)
 	if parse_error != nil {
-		log_printf("error: cannot parse %s: %v", path, parse_error)
+		platform.log_printf("error: cannot parse %s: %v", path, parse_error)
 		return {}, false
 	}
 	problem: string
 	registry, problem = resolve_note_registry(file, items, technologies, quests, strings, allocator)
 	if problem != "" {
-		log_printf("error: invalid %s: %s", path, problem)
+		platform.log_printf("error: invalid %s: %s", path, problem)
 		return {}, false
 	}
 	return registry, true

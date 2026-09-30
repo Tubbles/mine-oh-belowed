@@ -3,6 +3,7 @@ package game
 import "core:fmt"
 import "core:os"
 import rl "shared:raylib"
+import "platform"
 
 // The window's mode, size, vsync and frame rate cap from the settings
 // (work item 0080). display_changes decides what to do and is pure;
@@ -363,9 +364,9 @@ cursor_window_size :: proc() -> [2]int {
 	}
 }
 
-log_display_diagnostics :: proc(platform: Window_Platform) {
+log_display_diagnostics :: proc(window_platform: Window_Platform) {
 	window_size := [2]int{int(rl.GetScreenWidth()), int(rl.GetScreenHeight())}
-	log_printf("%s", display_diagnostics_text(current_monitor_size(), window_size, render_size(), window_scale(), platform))
+	platform.log_printf("%s", display_diagnostics_text(current_monitor_size(), window_size, render_size(), window_scale(), window_platform))
 }
 
 // The GL implementation, logged once per start after the display line
@@ -405,11 +406,11 @@ gl_string :: proc(get_string: Gl_Get_String, name: u32) -> string {
 // On Android from libGLESv3, which raylib's archive links anyway.
 log_gl_info :: proc() {
 	when ODIN_PLATFORM_SUBTARGET == .Android {
-		get_string: Gl_Get_String = glGetString
+		get_string: Gl_Get_String = platform.glGetString
 	} else {
 		get_string := cast(Gl_Get_String)rl.glfwGetProcAddress("glGetString")
 	}
-	log_printf(
+	platform.log_printf(
 		"%s",
 		gl_info_text(
 			gl_string(get_string, GL_VENDOR),

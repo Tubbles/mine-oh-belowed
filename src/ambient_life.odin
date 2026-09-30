@@ -2,6 +2,7 @@ package game
 
 import "core:math"
 import "core:math/linalg"
+import "generation_seed"
 
 // Ambient life (work item 0075): bird flocks over forests and plains,
 // insect motes around flowers and fish shadows under water. Render only
@@ -116,7 +117,7 @@ Fish_Pose :: struct {
 
 // 0 to 1 from a stream of the hash.
 hash_share :: proc(hash: u64, stream: u64) -> f64 {
-	return hash_to_unit(hash_combine(hash, stream))
+	return generation_seed.hash_to_unit(generation_seed.hash_combine(hash, stream))
 }
 
 hash_lerp :: proc(hash: u64, stream: u64, minimum, maximum: f64) -> f64 {
@@ -124,30 +125,30 @@ hash_lerp :: proc(hash: u64, stream: u64, minimum, maximum: f64) -> f64 {
 }
 
 flock_cell_hash :: proc(seed: u64, cell: [2]i32) -> u64 {
-	return hash_column(seed ~ FLOCK_SEED_SALT, cell.x, cell.y)
+	return generation_seed.hash_column(seed ~ FLOCK_SEED_SALT, cell.x, cell.y)
 }
 
 // density is the bird_density of the biome at the loop's centre.
 flock_present :: proc(hash: u64, density: f32) -> bool {
-	return hash_to_unit(hash) < f64(density)
+	return generation_seed.hash_to_unit(hash) < f64(density)
 }
 
 // The column the loop circles, whose surface and biome place the flock.
 flock_centre_column :: proc(cell: [2]i32, hash: u64) -> [2]i32 {
 	jitter := [2]i32 {
-		i32(hash_to_range(hash_combine(hash, 1), -FLOCK_CENTRE_JITTER, FLOCK_CENTRE_JITTER)),
-		i32(hash_to_range(hash_combine(hash, 2), -FLOCK_CENTRE_JITTER, FLOCK_CENTRE_JITTER)),
+		i32(generation_seed.hash_to_range(generation_seed.hash_combine(hash, 1), -FLOCK_CENTRE_JITTER, FLOCK_CENTRE_JITTER)),
+		i32(generation_seed.hash_to_range(generation_seed.hash_combine(hash, 2), -FLOCK_CENTRE_JITTER, FLOCK_CENTRE_JITTER)),
 	}
 	return cell * FLOCK_CELL_SIZE + FLOCK_CELL_SIZE / 2 + jitter
 }
 
 make_flock :: proc(hash: u64, column: [2]i32, surface_height: i32) -> Flock {
-	altitude := hash_to_range(hash_combine(hash, 3), FLOCK_MINIMUM_ALTITUDE, FLOCK_MAXIMUM_ALTITUDE)
+	altitude := generation_seed.hash_to_range(generation_seed.hash_combine(hash, 3), FLOCK_MINIMUM_ALTITUDE, FLOCK_MAXIMUM_ALTITUDE)
 	return Flock {
 		hash = hash,
 		centre = {f32(column.x) + 0.5, f32(surface_height) + f32(altitude), f32(column.y) + 0.5},
 		angle = f32(hash_share(hash, 4) * math.TAU),
-		bird_count = int(hash_to_range(hash_combine(hash, 5), FLOCK_MINIMUM_BIRDS, FLOCK_MAXIMUM_BIRDS)),
+		bird_count = int(generation_seed.hash_to_range(generation_seed.hash_combine(hash, 5), FLOCK_MINIMUM_BIRDS, FLOCK_MAXIMUM_BIRDS)),
 		period_seconds = FLOCK_PERIOD_SECONDS * hash_lerp(hash, 6, 1 - FLOCK_PERIOD_SPREAD, 1 + FLOCK_PERIOD_SPREAD),
 		phase = hash_share(hash, 7),
 		direction = hash_share(hash, 8) < 0.5 ? -1 : 1,
@@ -216,7 +217,7 @@ rotate_2d :: proc(point: [2]f32, angle: f32) -> [2]f32 {
 // Share of the loop a bird is at: the flock's phase moved on by the loop
 // time, the birds behind the first spaced by a hash.
 flock_bird_share :: proc(flock: Flock, bird: int, loop_seconds: f64) -> f64 {
-	bird_hash := hash_combine(flock.hash, 100 + u64(bird))
+	bird_hash := generation_seed.hash_combine(flock.hash, 100 + u64(bird))
 	behind := (f64(bird) + 0.5 * hash_share(bird_hash, 1)) * BIRD_SPACING_SHARE
 	share := flock.phase + flock.direction * (loop_seconds / flock.period_seconds - behind)
 	return share - math.floor(share)
@@ -225,7 +226,7 @@ flock_bird_share :: proc(flock: Flock, bird: int, loop_seconds: f64) -> f64 {
 // loop_seconds is the tick in seconds, so the flock's path follows the
 // simulation's clock: a flock is where it is at a tick on every run.
 flock_bird_pose :: proc(flock: Flock, bird: int, loop_seconds: f64) -> Bird_Pose {
-	bird_hash := hash_combine(flock.hash, 100 + u64(bird))
+	bird_hash := generation_seed.hash_combine(flock.hash, 100 + u64(bird))
 	share := flock_bird_share(flock, bird, loop_seconds)
 	point := rounded_rectangle_point(share)
 	ahead := rounded_rectangle_point(share + flock.direction * 0.001) - point
@@ -245,7 +246,7 @@ flock_bird_pose :: proc(flock: Flock, bird: int, loop_seconds: f64) -> Bird_Pose
 // bird's own speed, faded in and out by a slow wave of its own period so
 // the bird alternates flapping and gliding.
 bird_wing_lift :: proc(flock_hash: u64, bird: int, seconds: f64) -> f32 {
-	bird_hash := hash_combine(flock_hash, 100 + u64(bird))
+	bird_hash := generation_seed.hash_combine(flock_hash, 100 + u64(bird))
 	hertz := hash_lerp(bird_hash, 5, BIRD_FLAP_MINIMUM_HERTZ, BIRD_FLAP_MAXIMUM_HERTZ)
 	flap := math.sin(seconds * hertz * math.TAU + hash_share(bird_hash, 6) * math.TAU)
 	glide_period := hash_lerp(bird_hash, 7, BIRD_GLIDE_MINIMUM_SECONDS, BIRD_GLIDE_MAXIMUM_SECONDS)
@@ -255,7 +256,7 @@ bird_wing_lift :: proc(flock_hash: u64, bird: int, seconds: f64) -> f32 {
 }
 
 life_cell_hash :: proc(cell: World_Coordinate, salt: u64) -> u64 {
-	return hash_combine(salt, u64(u32(cell.x)) ~ (u64(u32(cell.y)) << 21) ~ (u64(u32(cell.z)) << 42))
+	return generation_seed.hash_combine(salt, u64(u32(cell.x)) ~ (u64(u32(cell.y)) << 21) ~ (u64(u32(cell.z)) << 42))
 }
 
 // Whether a flower's cell has insects circling it.
@@ -267,7 +268,7 @@ flower_has_insects :: proc(cell: World_Coordinate) -> bool {
 // radius, its three angular speeds and phases from a hash of the cell and
 // the mote.
 insect_mote_position :: proc(cell: World_Coordinate, mote: int, seconds: f64) -> [3]f32 {
-	hash := hash_combine(life_cell_hash(cell, INSECT_SEED_SALT), u64(mote) + 1)
+	hash := generation_seed.hash_combine(life_cell_hash(cell, INSECT_SEED_SALT), u64(mote) + 1)
 	radius := hash_lerp(hash, 1, INSECT_MINIMUM_RADIUS, INSECT_MAXIMUM_RADIUS)
 	minimum, maximum := INSECT_SPEED_MINIMUM, INSECT_SPEED_MAXIMUM
 	angles: [3]f64

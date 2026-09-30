@@ -2,6 +2,7 @@ package game
 
 import "core:fmt"
 import "core:strings"
+import "platform"
 
 // The title screen and its screens: New world, Load and the delete
 // confirmation. They run without a world behind them, over a plain
@@ -49,7 +50,7 @@ Title_State :: struct {
 	// What the New world screen starts from (game.sjson).
 	default_settings: World_File_Settings,
 	// Nil shows dates in UTC.
-	local_zone:       Local_Zone,
+	local_zone:       platform.Local_Zone,
 	// The save the delete confirmation is about.
 	delete_index:     int,
 	// The save row that last held the focus on the Load screen, for its
@@ -65,7 +66,7 @@ make_title_state :: proc(config: Game_Config, saves_directory: string, saves_fou
 		saves_directory = saves_directory,
 		saves_found = saves_found,
 		default_settings = default_world_file_settings(config),
-		local_zone = load_local_zone(),
+		local_zone = platform.load_local_zone(),
 		expected_header = expected_header,
 	}
 }
@@ -73,7 +74,7 @@ make_title_state :: proc(config: Game_Config, saves_directory: string, saves_fou
 destroy_title_state :: proc(title: ^Title_State) {
 	destroy_save_summaries(&title.saves)
 	delete(title.saves)
-	destroy_local_zone(&title.local_zone)
+	platform.destroy_local_zone(&title.local_zone)
 }
 
 refresh_title_saves :: proc(title: ^Title_State) {
@@ -247,7 +248,7 @@ save_marker :: proc(save: Save_Summary) -> string {
 	return ""
 }
 
-save_row_cells :: proc(save: Save_Summary, zone: Local_Zone, tick_rate: int) -> Save_Row_Cells {
+save_row_cells :: proc(save: Save_Summary, zone: platform.Local_Zone, tick_rate: int) -> Save_Row_Cells {
 	return Save_Row_Cells {
 		name = save.name,
 		marker = save_marker(save),
@@ -409,7 +410,7 @@ confirm_delete_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) 
 
 delete_title_save :: proc(state: ^Ui_State, title: ^Title_State, directory_name: string) {
 	if error := delete_save(title.saves_directory, directory_name); error != nil {
-		log_printf("error: cannot delete the save %q: %v", directory_name, error)
+		platform.log_printf("error: cannot delete the save %q: %v", directory_name, error)
 		ui_toast(state, text("load_delete_failed"))
 	}
 	refresh_title_saves(title)

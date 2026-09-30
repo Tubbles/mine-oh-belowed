@@ -2,6 +2,7 @@ package game
 
 import "core:os"
 import "core:strings"
+import "platform"
 
 // The command socket (work item 0053, doc/commands.md): a Unix domain
 // stream socket the game listens on while developer mode is on, at
@@ -33,10 +34,10 @@ Queued_Command_Line :: struct {
 // (logging.odin). In the given allocator.
 command_socket_directory_from_environment :: proc(runtime_directory, state_home, home: string, allocator := context.allocator) -> (directory: string, ok: bool) {
 	if runtime_directory != "" && os.is_absolute_path(runtime_directory) {
-		joined, error := os.join_path({runtime_directory, GAME_DIRECTORY_NAME}, allocator)
+		joined, error := os.join_path({runtime_directory, platform.GAME_DIRECTORY_NAME}, allocator)
 		return joined, error == nil
 	}
-	return log_directory_from_environment(state_home, home, allocator)
+	return platform.log_directory_from_environment(state_home, home, allocator)
 }
 
 command_socket_path_from_environment :: proc(runtime_directory, state_home, home: string, allocator := context.allocator) -> (path: string, ok: bool) {
@@ -47,7 +48,7 @@ command_socket_path_from_environment :: proc(runtime_directory, state_home, home
 
 // $XDG_STATE_HOME/mine-oh-belowed/screenshots. In the given allocator.
 screenshot_directory_from_environment :: proc(state_home, home: string, allocator := context.allocator) -> (directory: string, ok: bool) {
-	state_directory := log_directory_from_environment(state_home, home, context.temp_allocator) or_return
+	state_directory := platform.log_directory_from_environment(state_home, home, context.temp_allocator) or_return
 	joined, error := os.join_path({state_directory, SCREENSHOT_DIRECTORY_NAME}, allocator)
 	return joined, error == nil
 }
@@ -64,8 +65,8 @@ take_command_line :: proc(server: ^Command_Server) -> (queued: Queued_Command_Li
 
 // Every line and response line into the log.
 log_command_exchange :: proc(line, response: string) {
-	log_printf("command: %s", line)
+	platform.log_printf("command: %s", line)
 	for response_line in strings.split_lines(strings.trim_right(response, "\n"), context.temp_allocator) {
-		log_printf("command: -> %s", response_line)
+		platform.log_printf("command: -> %s", response_line)
 	}
 }

@@ -3,12 +3,13 @@ package game
 import "core:os"
 import "core:strings"
 import "core:testing"
+import "platform"
 
 // The Windows mapping through the same helpers the game calls, with Unix
 // style absolute paths standing in for the Windows ones so it runs here.
 @(test)
 test_windows_platform_directories :: proc(t: ^testing.T) {
-	directories := windows_platform_directories("/roaming", "/local")
+	directories := platform.windows_platform_directories("/roaming", "/local")
 	testing.expect_value(t, directories.config_home, "/roaming")
 	testing.expect_value(t, directories.data_home, "/roaming")
 	testing.expect_value(t, directories.state_home, "/local")
@@ -16,7 +17,7 @@ test_windows_platform_directories :: proc(t: ^testing.T) {
 	testing.expect_value(t, directories.runtime_directory, "")
 	testing.expect_value(t, directories.home, "")
 
-	log_directory, log_ok := log_directory_from_environment(directories.state_home, directories.home, context.temp_allocator)
+	log_directory, log_ok := platform.log_directory_from_environment(directories.state_home, directories.home, context.temp_allocator)
 	testing.expect(t, log_ok)
 	testing.expect_value(t, log_directory, "/local/mine-oh-belowed")
 	saves, saves_ok := saves_directory_from_environment("", directories.data_home, directories.home, context.temp_allocator)
@@ -32,8 +33,8 @@ test_windows_platform_directories :: proc(t: ^testing.T) {
 // home.
 @(test)
 test_windows_platform_directories_missing :: proc(t: ^testing.T) {
-	directories := windows_platform_directories("", "")
-	_, log_ok := log_directory_from_environment(directories.state_home, directories.home, context.temp_allocator)
+	directories := platform.windows_platform_directories("", "")
+	_, log_ok := platform.log_directory_from_environment(directories.state_home, directories.home, context.temp_allocator)
 	testing.expect(t, !log_ok)
 	_, saves_ok := saves_directory_from_environment("", directories.data_home, directories.home, context.temp_allocator)
 	testing.expect(t, !saves_ok)
@@ -43,7 +44,7 @@ test_windows_platform_directories_missing :: proc(t: ^testing.T) {
 @(test)
 test_android_platform_directories_use_the_external_folder :: proc(t: ^testing.T) {
 	external := "/storage/emulated/0/Android/data/io.github.tubbles.mineohbelowed/files"
-	directories := android_platform_directories("/data/user/0/io.github.tubbles.mineohbelowed/files", external, context.temp_allocator)
+	directories := platform.android_platform_directories("/data/user/0/io.github.tubbles.mineohbelowed/files", external, context.temp_allocator)
 	testing.expect_value(t, directories.config_home, "/storage/emulated/0/Android/data/io.github.tubbles.mineohbelowed/files/config")
 	testing.expect_value(t, directories.data_home, "/storage/emulated/0/Android/data/io.github.tubbles.mineohbelowed/files/share")
 	testing.expect_value(t, directories.state_home, "/storage/emulated/0/Android/data/io.github.tubbles.mineohbelowed/files/state")
@@ -51,7 +52,7 @@ test_android_platform_directories_use_the_external_folder :: proc(t: ^testing.T)
 	testing.expect_value(t, directories.runtime_directory, "")
 	testing.expect_value(t, directories.home, "")
 
-	log_directory, log_ok := log_directory_from_environment(directories.state_home, directories.home, context.temp_allocator)
+	log_directory, log_ok := platform.log_directory_from_environment(directories.state_home, directories.home, context.temp_allocator)
 	testing.expect(t, log_ok)
 	testing.expect_value(t, log_directory, "/storage/emulated/0/Android/data/io.github.tubbles.mineohbelowed/files/state/mine-oh-belowed")
 	saves, saves_ok := saves_directory_from_environment("", directories.data_home, directories.home, context.temp_allocator)
@@ -65,12 +66,12 @@ test_android_platform_directories_use_the_external_folder :: proc(t: ^testing.T)
 
 @(test)
 test_android_platform_directories_fall_back_to_the_internal_folder :: proc(t: ^testing.T) {
-	directories := android_platform_directories("/data/user/0/app/files", "", context.temp_allocator)
+	directories := platform.android_platform_directories("/data/user/0/app/files", "", context.temp_allocator)
 	testing.expect_value(t, directories.state_home, "/data/user/0/app/files/state")
 	testing.expect_value(t, directories.data_home, "/data/user/0/app/files/share")
 	testing.expect_value(t, directories.config_home, "/data/user/0/app/files/config")
-	none := android_platform_directories("", "", context.temp_allocator)
-	_, log_ok := log_directory_from_environment(none.state_home, none.home, context.temp_allocator)
+	none := platform.android_platform_directories("", "", context.temp_allocator)
+	_, log_ok := platform.log_directory_from_environment(none.state_home, none.home, context.temp_allocator)
 	testing.expect(t, !log_ok)
 }
 
@@ -150,54 +151,43 @@ test_build_tags_exclude_windows :: proc(t: ^testing.T) {
 	testing.expect(t, !imports_windows_static_runtime("package game\n// not through core:c/" + "libc\n"))
 }
 
-// Every game source file that imports the posix or the libc package of
-// core must be kept out of the Windows build by its build tag.
+// Every source file, the packages under src/ included, that imports the
+// posix or the libc package of core must be kept out of the Windows build
+// by its build tag.
 @(test)
 test_static_runtime_imports_stay_out_of_windows :: proc(t: ^testing.T) {
-	directory := #directory
-	entries, error := os.read_all_directory_by_path(directory, context.temp_allocator)
-	testing.expect(t, error == nil, "cannot read the source directory")
-	checked := 0
-	for entry in entries {
-		if entry.type != .Regular || !strings.has_suffix(entry.name, ".odin") {
-			continue
-		}
-		path, _ := os.join_path({directory, entry.name}, context.temp_allocator)
+	paths := source_file_paths(t, #directory)
+	for path in paths {
 		data, read_error := os.read_entire_file(path, context.temp_allocator)
 		testing.expect(t, read_error == nil, path)
-		checked += 1
 		source := string(data)
 		if imports_windows_static_runtime(source) {
-			testing.expectf(t, build_tags_exclude_windows(source), "%s imports the posix or libc package of core without a #+build tag that excludes windows", entry.name)
+			testing.expectf(t, build_tags_exclude_windows(source), "%s imports the posix or libc package of core without a #+build tag that excludes windows", path)
 		}
 	}
-	testing.expect(t, checked > 0, "no source files found")
+	testing.expect(t, len(paths) > 0, "no source files found")
 }
 
-// make_directory_path (work item 0117): mkdir -p that starts at the first
-// missing directory instead of at /.
-@(test)
-test_make_directory_path_makes_missing_levels_and_tolerates_existing :: proc(t: ^testing.T) {
-	base, error := os.make_directory_temp("", "mine-oh-belowed-directories-test-*", context.temp_allocator)
-	testing.expect(t, error == nil)
-	defer os.remove_all(base)
-	nested, _ := os.join_path({base, "one", "two", "three"}, context.temp_allocator)
-	testing.expect_value(t, make_directory_path(nested), nil)
-	testing.expect(t, os.is_dir(nested))
-	testing.expect_value(t, make_directory_path(nested), nil)
-	sibling, _ := os.join_path({base, "one", "sibling"}, context.temp_allocator)
-	testing.expect_value(t, make_directory_path(sibling), nil)
-	testing.expect(t, os.is_dir(sibling))
-	trailing, _ := os.join_path({base, "trailing", "slash"}, context.temp_allocator)
-	testing.expect_value(t, make_directory_path(strings.concatenate({trailing, "/"}, context.temp_allocator)), nil)
-	testing.expect(t, os.is_dir(trailing))
+// The .odin files under directory and its package directories (work
+// item 0145), in the temp allocator.
+// A directory that cannot be read fails the test.
+source_file_paths :: proc(t: ^testing.T, directory: string) -> []string {
+	paths := make([dynamic]string, context.temp_allocator)
+	append_source_file_paths(t, &paths, directory)
+	return paths[:]
 }
 
-@(test)
-test_trim_trailing_separators_keeps_the_root :: proc(t: ^testing.T) {
-	testing.expect_value(t, trim_trailing_separators("/a/b//"), "/a/b")
-	testing.expect_value(t, trim_trailing_separators("/a/b"), "/a/b")
-	testing.expect_value(t, trim_trailing_separators("/"), "/")
+append_source_file_paths :: proc(t: ^testing.T, paths: ^[dynamic]string, directory: string) {
+	entries, error := os.read_all_directory_by_path(directory, context.temp_allocator)
+	testing.expectf(t, error == nil, "cannot read the source directory %s", directory)
+	for entry in entries {
+		path, _ := os.join_path({directory, entry.name}, context.temp_allocator)
+		if entry.type == .Directory {
+			append_source_file_paths(t, paths, path)
+		} else if entry.type == .Regular && strings.has_suffix(entry.name, ".odin") {
+			append(paths, path)
+		}
+	}
 }
 
 // Every directory the game makes goes through make_directory_path: core:os's
@@ -205,22 +195,17 @@ test_trim_trailing_separators_keeps_the_root :: proc(t: ^testing.T) {
 // new call site fails here instead of on the phone.
 @(test)
 test_game_sources_do_not_call_make_directory_all :: proc(t: ^testing.T) {
-	directory := #directory
-	entries, error := os.read_all_directory_by_path(directory, context.temp_allocator)
-	testing.expect(t, error == nil, "cannot read the source directory")
-	checked := 0
-	for entry in entries {
-		if entry.type != .Regular || !strings.has_suffix(entry.name, ".odin") || strings.has_suffix(entry.name, "_test.odin") {
+	paths := source_file_paths(t, #directory)
+	for path in paths {
+		if strings.has_suffix(path, "_test.odin") {
 			continue
 		}
-		path, _ := os.join_path({directory, entry.name}, context.temp_allocator)
 		data, read_error := os.read_entire_file(path, context.temp_allocator)
 		testing.expect(t, read_error == nil, path)
-		checked += 1
 		source := string(data)
 		for name in ([?]string{"os.make_directory" + "_all", "os.mkdir" + "_all"}) {
-			testing.expectf(t, !strings.contains(source, name), "%s calls %s, use make_directory_path", entry.name, name)
+			testing.expectf(t, !strings.contains(source, name), "%s calls %s, use make_directory_path", path, name)
 		}
 	}
-	testing.expect(t, checked > 0, "no source files found")
+	testing.expect(t, len(paths) > 0, "no source files found")
 }

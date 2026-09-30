@@ -2,6 +2,7 @@ package game
 
 import "core:fmt"
 import "core:slice"
+import "generation_seed"
 
 // Chosen at world creation (DESIGN.md, World settings). The seed also
 // seeds the drills' reservoir draws (drill.odin).
@@ -299,8 +300,8 @@ make_added_vein :: proc(generator: ^Generator, type_index, size_class_index: int
 	size_class := generator.veins.size_classes[size_class_index]
 	region := block_to_region(column.x, column.y)
 	richness := region_richness(generator.veins, region)
-	hash := hash_combine(hash_column(generator.seeds[.Veins], column.x, column.y), ADDED_VEIN_HASH_SALT)
-	units := vein_units(generator, size_class, richness, hash_combine(hash, 1))
+	hash := generation_seed.hash_combine(generation_seed.hash_column(generator.seeds[.Veins], column.x, column.y), ADDED_VEIN_HASH_SALT)
+	units := vein_units(generator, size_class, richness, generation_seed.hash_combine(hash, 1))
 	return Vein {
 		type = type_index,
 		size_class = size_class_index,

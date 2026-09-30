@@ -3,6 +3,7 @@ package game
 import "core:os"
 import "core:strings"
 import "core:testing"
+import "platform"
 
 non_default_world_setup :: proc() -> World_Setup {
 	setup := make_world_setup(World_File_Settings{day_length_seconds = 1200}, "Settings", 7)
@@ -130,15 +131,15 @@ test_default_new_world_name_is_unique :: proc(t: ^testing.T) {
 	directory := make_save_test_directory()
 	defer remove_save_test_directory(directory)
 	testing.expect_value(t, default_new_world_name("New world", directory, true), "New world")
-	os.make_directory(join_save_path(directory, "New world"))
+	os.make_directory(platform.join_path(directory, "New world"))
 	testing.expect_value(t, default_new_world_name("New world", directory, true), "New world 2")
-	os.make_directory(join_save_path(directory, "New world 2.previous"))
+	os.make_directory(platform.join_path(directory, "New world 2.previous"))
 	testing.expect_value(t, default_new_world_name("New world", directory, true), "New world 3")
 	testing.expect_value(t, default_new_world_name("New world", "", false), "New world")
 }
 
 write_test_world_file :: proc(saves_directory, directory_name, name: string, last_played: i64, format_version := SAVE_FORMAT_VERSION) {
-	path := join_save_path(saves_directory, directory_name)
+	path := platform.join_path(saves_directory, directory_name)
 	os.make_directory_all(path)
 	file := World_File {
 		format_version = format_version,
@@ -149,7 +150,7 @@ write_test_world_file :: proc(saves_directory, directory_name, name: string, las
 		tick = 60 * 60 * 90,
 		last_played_unix_seconds = last_played,
 	}
-	error := os.write_entire_file(join_save_path(path, WORLD_FILE_NAME), encode_world_file(file, context.temp_allocator))
+	error := os.write_entire_file(platform.join_path(path, WORLD_FILE_NAME), encode_world_file(file, context.temp_allocator))
 	assert(error == nil)
 }
 
@@ -164,7 +165,7 @@ test_save_listing_is_newest_first :: proc(t: ^testing.T) {
 	write_test_world_file(directory, "crashed.previous", "Crashed", 1500)
 	// A staging directory is no save.
 	write_test_world_file(directory, "half.saving", "Half", 9000)
-	os.make_directory(join_save_path(directory, "not a save"))
+	os.make_directory(platform.join_path(directory, "not a save"))
 	saves: [dynamic]Save_Summary
 	defer delete(saves)
 	defer destroy_save_summaries(&saves)
@@ -189,7 +190,7 @@ write_test_entities_header :: proc(saves_directory, directory_name: string, head
 	bytes := make([dynamic]byte, context.temp_allocator)
 	append_save_header(&bytes, ENTITIES_FILE_MAGIC, header)
 	append_content_tables(&bytes, {})
-	error := os.write_entire_file(join_save_path(saves_directory, directory_name, ENTITIES_FILE_NAME), bytes[:])
+	error := os.write_entire_file(platform.join_path(saves_directory, directory_name, ENTITIES_FILE_NAME), bytes[:])
 	assert(error == nil)
 }
 
@@ -250,6 +251,6 @@ test_continue_picks_the_newest_save :: proc(t: ^testing.T) {
 	testing.expect_value(t, date_text(0, {offset_seconds = 3600}), "1970-01-01 01:00")
 	testing.expect_value(t, date_text(0, {offset_seconds = -3600}), "1969-12-31 23:00")
 	// Stockholm in summer: bias -60, daylight bias -60.
-	testing.expect_value(t, local_zone_offset_seconds(-60, 0, -60, true), 7200)
-	testing.expect_value(t, local_zone_offset_seconds(-60, 0, -60, false), 3600)
+	testing.expect_value(t, platform.local_zone_offset_seconds(-60, 0, -60, true), 7200)
+	testing.expect_value(t, platform.local_zone_offset_seconds(-60, 0, -60, false), 3600)
 }

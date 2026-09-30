@@ -1,6 +1,7 @@
 package game
 
 import "core:math"
+import "platform"
 
 // The player body, ticked by the simulation at the fixed rate. Physics runs
 // in plain f32: the fixed point rule for accumulating simulation state has
@@ -394,10 +395,10 @@ movement_toggles :: proc(player: Player) -> Movement_Toggles {
 // tick (0132), so a toggle nobody asked for shows in the log or logcat.
 log_movement_toggles :: proc(before: Movement_Toggles, player: Player, cause: string, tick: u64) {
 	if before.flying != player.flying {
-		log_printf("player: fly mode %s at tick %d by %s", player.flying ? "on" : "off", tick, cause)
+		platform.log_printf("player: fly mode %s at tick %d by %s", player.flying ? "on" : "off", tick, cause)
 	}
 	if before.no_clip != player.no_clip {
-		log_printf("player: no clip %s at tick %d by %s", player.no_clip ? "on" : "off", tick, cause)
+		platform.log_printf("player: no clip %s at tick %d by %s", player.no_clip ? "on" : "off", tick, cause)
 	}
 }
 

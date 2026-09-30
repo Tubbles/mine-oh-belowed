@@ -3,6 +3,7 @@ package game
 import "core:encoding/json"
 import "core:fmt"
 import "core:math"
+import "sjson_text"
 
 // The UI theme (work item 0071): colours and art metrics from
 // data/ui/theme.sjson, loaded at start and on a presentation reload
@@ -412,7 +413,7 @@ assign_theme_palettes :: proc(theme: ^Ui_Theme, value: json.Value, source: strin
 	if !is_object {
 		return fmt.tprintf("%s: palettes must be an object, not %s", source, json_type_name(value))
 	}
-	for name in sorted_object_keys(object) {
+	for name in sjson_text.sorted_object_keys(object) {
 		palette, found := find_marker_palette(name)
 		if !found {
 			return fmt.tprintf("%s: unknown key palettes.%s", source, name)
@@ -429,7 +430,7 @@ assign_theme_palette :: proc(colors: ^[Palette_Color]Ui_Color, value: json.Value
 	if !is_object {
 		return fmt.tprintf("%s: palettes.%s must be an object, not %s", source, name, json_type_name(value))
 	}
-	for key in sorted_object_keys(object) {
+	for key in sjson_text.sorted_object_keys(object) {
 		key_path := fmt.tprintf("palettes.%s.%s", name, key)
 		color, found := find_palette_color(key)
 		if !found {
@@ -452,7 +453,7 @@ parse_ui_theme :: proc(data: []byte, source: string) -> (theme: Ui_Theme, proble
 		return {}, problem
 	}
 	theme = DEFAULT_UI_THEME
-	for key in sorted_object_keys(tree) {
+	for key in sjson_text.sorted_object_keys(tree) {
 		if problem = assign_theme_key(&theme, key, tree[key], source); problem != "" {
 			return {}, problem
 		}

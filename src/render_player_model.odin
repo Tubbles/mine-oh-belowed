@@ -3,6 +3,8 @@ package game
 import "core:fmt"
 import "core:math"
 import rl "shared:raylib"
+import "model_vox"
+import "platform"
 
 // The player's body (work item 0066): six limb files in data/models/
 // (player_torso.vox and the rest, tools/make_placeholder_models.py), each
@@ -77,12 +79,12 @@ Player_Model :: struct {
 }
 
 // found false for an empty model.
-voxel_model_bounds :: proc(model: Voxel_Model) -> (bounds: Voxel_Bounds, found: bool) {
+voxel_model_bounds :: proc(model: model_vox.Voxel_Model) -> (bounds: Voxel_Bounds, found: bool) {
 	bounds = Voxel_Bounds{minimum = model.size, maximum = {}}
 	for z in 0 ..< model.size.z {
 		for y in 0 ..< model.size.y {
 			for x in 0 ..< model.size.x {
-				if voxel_at(model, {x, y, z}) != 0 {
+				if model_vox.voxel_at(model, {x, y, z}) != 0 {
 					bounds.minimum = {min(bounds.minimum.x, x), min(bounds.minimum.y, y), min(bounds.minimum.z, z)}
 					bounds.maximum = {max(bounds.maximum.x, x + 1), max(bounds.maximum.y, y + 1), max(bounds.maximum.z, z + 1)}
 					found = true
@@ -131,7 +133,7 @@ destroy_player_model_mesh :: proc(mesh: Player_Model_Mesh) {
 // The mesh is in allocator.
 load_player_limb :: proc(mesh: ^Player_Model_Mesh, data_directory: string, limb: Player_Limb, allocator := context.allocator) -> string {
 	id := player_limb_model_ids[limb]
-	model, problem := load_voxel_model_file(model_file_path(data_directory, id), context.temp_allocator)
+	model, problem := model_vox.load_voxel_model_file(model_vox.model_file_path(data_directory, id), context.temp_allocator)
 	if problem != "" {
 		return problem
 	}
@@ -276,7 +278,7 @@ replace_player_model :: proc(model: ^Player_Model, data_directory: string) -> st
 // At start: without the files the capsule stands in.
 init_player_model :: proc(data_directory: string) -> (model: Player_Model) {
 	if problem := replace_player_model(&model, data_directory); problem != "" {
-		log_printf("error: %s; the player is drawn as a capsule", problem)
+		platform.log_printf("error: %s; the player is drawn as a capsule", problem)
 	}
 	return model
 }

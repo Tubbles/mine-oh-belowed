@@ -4,6 +4,7 @@ import "core:encoding/json"
 import "core:fmt"
 import "core:math"
 import "core:slice"
+import "platform"
 
 // Item prototypes from data/items.sjson, resolved to a dense Item_Id at
 // startup like the blocks. The inventory, mining drops and placing all go
@@ -474,13 +475,13 @@ load_item_registry :: proc(data_directory: string, blocks: Block_Registry, alloc
 	data, path := read_logged_data_file(data_directory, ITEMS_FILE_NAME) or_return
 	file, parse_error := parse_items_file(data, allocator)
 	if parse_error != nil {
-		log_printf("error: cannot parse %s: %v", path, parse_error)
+		platform.log_printf("error: cannot parse %s: %v", path, parse_error)
 		return {}, false
 	}
 	problem: string
 	registry, problem = resolve_item_registry(file, blocks, allocator)
 	if problem != "" {
-		log_printf("error: invalid %s: %s", path, problem)
+		platform.log_printf("error: invalid %s: %s", path, problem)
 		return {}, false
 	}
 	return registry, true

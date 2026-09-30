@@ -1,5 +1,7 @@
 package game
 
+import "generation_seed"
+
 // Felling (work item 0059). Mining a log block drops every log straight
 // above it as loose items (loose_item.odin) and queues the leaves around
 // the felled column for decay. A queued leaves block decays once its due
@@ -105,11 +107,11 @@ queue_felled_leaves :: proc(world: ^World, blocks: Tree_Blocks, position: World_
 }
 
 leaf_decay_hash :: proc(position: World_Coordinate, tick: u64) -> u64 {
-	return hash_combine(hash_column(u64(u32(position.y)), position.x, position.z), tick)
+	return generation_seed.hash_combine(generation_seed.hash_column(u64(u32(position.y)), position.x, position.z), tick)
 }
 
 leaf_decay_delay :: proc(hash: u64) -> u64 {
-	return u64(hash_to_range(hash, LEAF_DECAY_MINIMUM_DELAY_TICKS, LEAF_DECAY_MAXIMUM_DELAY_TICKS))
+	return u64(generation_seed.hash_to_range(hash, LEAF_DECAY_MINIMUM_DELAY_TICKS, LEAF_DECAY_MAXIMUM_DELAY_TICKS))
 }
 
 leaf_decay_due_tick :: proc(position: World_Coordinate, tick: u64) -> u64 {

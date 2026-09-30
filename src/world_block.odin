@@ -2,6 +2,7 @@ package game
 
 import "core:encoding/json"
 import "core:fmt"
+import "platform"
 
 BLOCKS_FILE_NAME :: "blocks.sjson"
 AIR_BLOCK_NAME :: "air"
@@ -470,15 +471,15 @@ load_block_registry :: proc(data_directory: string, strings: map[string]string, 
 	data, path := read_logged_data_file(data_directory, BLOCKS_FILE_NAME) or_return
 	file, parse_error := parse_blocks_file(data, allocator)
 	if parse_error != nil {
-		log_printf("error: cannot parse %s: %v", path, parse_error)
+		platform.log_printf("error: cannot parse %s: %v", path, parse_error)
 		return {}, false
 	}
 	if problem := validate_block_definitions(file.blocks); problem != "" {
-		log_printf("error: invalid %s: %s", path, problem)
+		platform.log_printf("error: invalid %s: %s", path, problem)
 		return {}, false
 	}
 	if problem := validate_block_name_keys(file.blocks, strings); problem != "" {
-		log_printf("error: invalid %s: %s", path, problem)
+		platform.log_printf("error: invalid %s: %s", path, problem)
 		return {}, false
 	}
 	return Block_Registry{definitions = file.blocks}, true

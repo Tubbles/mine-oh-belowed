@@ -1,13 +1,21 @@
 #!/usr/bin/env python3
-"""Print the file and cluster dependency graph of the game package.
+"""Print the file and cluster dependency graph of the game's packages.
 
 File A has an edge to file B when A's code names a top level definition
 of B (the parser of check_dead_code.py: comments and strings stripped).
-The weight of an edge is the number of such references. Files are
-grouped into clusters by the name prefix before the first underscore,
+The weight of an edge is the number of such references. A name resolves
+in the file's own package, or in an imported package when it follows the
+import's name and a dot (platform.log_printf); every other dotted name
+still resolves in the own package, so a field named like a top level
+procedure counts as graph noise. The files of the game package (src/*.odin)
+are grouped into clusters by the name prefix before the first underscore,
 through the tables below (a file override first); a file whose prefix
 the tables do not know joins the cluster it references most, and the
-script prints that choice.
+script prints that choice. Each package under src/ (work item 0145) is
+a cluster named after its directory, and its files are named with the
+directory (platform/logging.odin). A package never reaches the game
+package (Odin forbids the import cycle), which the check shows as the
+package clusters' edges into game clusters.
 
 Prints the cluster edge table, the pairs of clusters that reference each
 other, the strongly connected components of the file graph (the size of
@@ -36,19 +44,27 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from check_dead_code import (  # noqa: E402
+    IDENTIFIER,
+    SOURCE_DIRECTORY,
+    all_odin_files,
     code_lines,
-    game_source_files,
-    identifier_occurrences,
     is_test_file,
     parse_definitions,
 )
 
-# The clusters of doc/code_map.md, in its order.
-CLUSTERS = ("loop", "ui", "world", "simulation", "presentation", "content", "tools", "platform")
+GAME_PACKAGE = "game"
+
+# The clusters of the game package in the order of doc/code_map.md; the
+# package clusters follow, one per directory under src/.
+GAME_CLUSTERS = ("loop", "ui", "world", "simulation", "presentation", "content", "tools")
+PACKAGE_CLUSTERS = tuple(sorted(path.name for path in SOURCE_DIRECTORY.iterdir() if path.is_dir()))
+CLUSTERS = GAME_CLUSTERS + PACKAGE_CLUSTERS
+
+IMPORT_LINE = re.compile(r'^\s*(?:@\([^)]*\)\s*)?import\s+(?:([A-Za-z_]\w*)\s+)?"([^"]+)"')
 
 PREFIX_CLUSTERS = {
     "loop": ("loop", "main", "session", "simulation", "hot"),
-    "ui": ("hud", "touch", "input", "bindings", "text", "quick", "biome"),
+    "ui": ("hud", "touch", "input", "bindings", "text", "quick", "biome", "haptics", "system"),
     "world": ("generation", "save", "block", "landing"),
     "simulation": (
         "entity", "belt", "splitter", "inserter", "fluid", "power", "machine", "assembler",
@@ -58,15 +74,13 @@ PREFIX_CLUSTERS = {
     ),
     "presentation": (
         "render", "model", "texture", "particles", "ambient", "audio", "sound", "display", "weather",
+        "raylib",
     ),
     "content": (
         "data", "recipe", "technology", "quest", "contract", "notes", "configuration",
         "settings", "deck", "discovery",
     ),
     "tools": ("command", "diagnostics", "benchmark"),
-    "platform": (
-        "logging", "local", "platform", "export", "sjson", "run", "jni", "raylib", "system", "haptics",
-    ),
 }
 
 # Files whose prefix names the wrong cluster; the prefix rule keeps the
@@ -91,38 +105,91 @@ def known_cluster(prefix):
     for cluster, prefixes in PREFIX_CLUSTERS.items():
         if prefix in prefixes:
             return cluster
-    return prefix if prefix in CLUSTERS else None
+    return prefix if prefix in GAME_CLUSTERS else None
+
+
+def file_package(name):
+    """The package of a file name: its directory, or the game package."""
+    return name.split("/")[0] if "/" in name else GAME_PACKAGE
+
+
+def file_name(path):
+    """src/loop.odin is loop.odin, src/platform/logging.odin is
+    platform/logging.odin."""
+    return path.relative_to(SOURCE_DIRECTORY).as_posix()
 
 
 def source_files(include_tests):
-    return [path for path in game_source_files() if include_tests or not is_test_file(path)]
+    return [path for path in all_odin_files() if include_tests or not is_test_file(path)]
+
+
+def package_imports(path):
+    """Returns {import name: package} for the imports of packages under
+    src/ (a path without a collection, such as "platform" or
+    "../platform")."""
+    imports = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        match = IMPORT_LINE.match(line)
+        if match and ":" not in match.group(2):
+            package = match.group(2).rstrip("/").split("/")[-1]
+            imports[match.group(1) or package] = package
+    return imports
+
+
+def resolved_occurrences(path, lines):
+    """Returns (package or None, name, line) for every identifier: the
+    package an import qualifies it with, None when unqualified. The
+    import's own name before the dot is no occurrence."""
+    imports = package_imports(path)
+    occurrences = []
+    for index, line in enumerate(lines):
+        qualifier = None
+        for match in IDENTIFIER.finditer(line):
+            name, after = match.group(0), line[match.end():].lstrip()
+            before = line[:match.start()].rstrip()
+            if name in imports and after.startswith(".") and not before.endswith("."):
+                qualifier = imports[name]
+                continue
+            occurrences.append((qualifier if before.endswith(".") else None, name, index + 1))
+            qualifier = None
+    return occurrences
 
 
 def file_edges(paths):
     """Returns {from name: {to name: reference count}} over the files."""
-    lines_by_file = {path.name: code_lines(path) for path in paths}
+    names = {path: file_name(path) for path in paths}
+    lines_by_file = {path: code_lines(path) for path in paths}
     owners, sites = {}, set()
     for path in paths:
-        for definition in parse_definitions(path, lines_by_file[path.name]):
-            owners.setdefault(definition["name"], set()).add(path.name)
-            sites.add((definition["name"], path.name, definition["line"]))
-    edges = {path.name: {} for path in paths}
+        package = file_package(names[path])
+        for definition in parse_definitions(path, lines_by_file[path]):
+            owners.setdefault((package, definition["name"]), set()).add(names[path])
+            sites.add((definition["name"], names[path], definition["line"]))
+    edges = {names[path]: {} for path in paths}
     for path in paths:
-        targets = edges[path.name]
-        for name, line in identifier_occurrences(path, lines_by_file[path.name]):
+        source = names[path]
+        targets = edges[source]
+        for qualifier, name, line in resolved_occurrences(path, lines_by_file[path]):
             # A definition line of the name (a platform variant's) is no
             # reference to it.
-            if (name, path.name, line) in sites:
+            if (name, source, line) in sites:
                 continue
-            for owner in owners.get(name, ()):
-                if owner != path.name:
+            for owner in owners.get((qualifier or file_package(source), name), ()):
+                if owner != source:
                     targets[owner] = targets.get(owner, 0) + 1
     return edges
 
 
+def file_cluster(name):
+    package = file_package(name)
+    if package != GAME_PACKAGE:
+        return package
+    return FILE_CLUSTERS.get(name) or known_cluster(file_prefix(name))
+
+
 def assign_clusters(edges):
     """Returns ({file: cluster}, {file: cluster chosen by its edges})."""
-    clusters = {name: FILE_CLUSTERS.get(name) or known_cluster(file_prefix(name)) for name in edges}
+    clusters = {name: file_cluster(name) for name in edges}
     chosen = {}
     for name, cluster in clusters.items():
         if cluster is None:

@@ -2,6 +2,7 @@ package game
 
 import "core:math"
 import "core:math/noise"
+import "generation_seed"
 
 // Terrain shape. Every value here is a pure function of the world seed and
 // a world position, so any chunk (or the spawn search) computes the same
@@ -132,7 +133,7 @@ noise_2d_at_position :: proc(seed: u64, position: [2]f64, wavelength: f64) -> f6
 }
 
 // The absolute value of the river noise: zero on a river's centre line.
-river_distance :: proc(seeds: Purpose_Seeds, x, z: i32) -> f64 {
+river_distance :: proc(seeds: generation_seed.Purpose_Seeds, x, z: i32) -> f64 {
 	return abs(noise_2d_at(seeds[.Rivers], x, z, RIVER_WAVELENGTH))
 }
 
@@ -160,13 +161,13 @@ ridge :: proc(value: f64) -> f64 {
 	return crest * crest
 }
 
-warped_position :: proc(seeds: Purpose_Seeds, x, z: i32) -> [2]f64 {
+warped_position :: proc(seeds: generation_seed.Purpose_Seeds, x, z: i32) -> [2]f64 {
 	offset := [2]f64{noise_2d_at(seeds[.Warp_X], x, z, WARP_WAVELENGTH), noise_2d_at(seeds[.Warp_Z], x, z, WARP_WAVELENGTH)}
 	return {f64(x), f64(z)} + offset * WARP_AMPLITUDE
 }
 
 // Ranges and hills, before the raised mask scales them.
-raised_relief :: proc(seeds: Purpose_Seeds, x, z: i32) -> f64 {
+raised_relief :: proc(seeds: generation_seed.Purpose_Seeds, x, z: i32) -> f64 {
 	position := warped_position(seeds, x, z)
 	range := ridge(noise_2d_at_position(seeds[.Range_Height], position, RANGE_WAVELENGTH))
 	hills := max(noise_2d_at_position(seeds[.Hill_Height], position, HILL_WAVELENGTH), 0)
@@ -175,7 +176,7 @@ raised_relief :: proc(seeds: Purpose_Seeds, x, z: i32) -> f64 {
 
 // Continental swell, raised masses, and ranges and hills on them. raised
 // is 0 in the lowlands and 1 on the raised masses.
-base_height :: proc(seeds: Purpose_Seeds, x, z: i32) -> (height, raised: f64) {
+base_height :: proc(seeds: generation_seed.Purpose_Seeds, x, z: i32) -> (height, raised: f64) {
 	continental := noise_2d_at(seeds[.Continental_Height], x, z, CONTINENTAL_WAVELENGTH)
 	raised = smoothstep(RAISED_START, RAISED_END, continental)
 	height = SEA_LEVEL + LAND_OFFSET + continental * LOWLAND_AMPLITUDE + raised * RAISED_HEIGHT
@@ -191,7 +192,7 @@ plateau_level :: proc(height: f64) -> f64 {
 }
 
 // 0 off a plateau, 1 on its top, the cliff between.
-plateau_blend :: proc(seeds: Purpose_Seeds, x, z: i32) -> f64 {
+plateau_blend :: proc(seeds: generation_seed.Purpose_Seeds, x, z: i32) -> f64 {
 	mask := noise_2d_at(seeds[.Plateau_Mask], x, z, PLATEAU_WAVELENGTH)
 	return smoothstep(PLATEAU_THRESHOLD, PLATEAU_THRESHOLD + PLATEAU_CLIFF_WIDTH, mask)
 }
@@ -203,7 +204,7 @@ detail_share :: proc(raised, plateau: f64) -> f64 {
 }
 
 // Layers: base height, plateaus, fine detail, valleys, then rivers.
-terrain_height :: proc(seeds: Purpose_Seeds, x, z: i32) -> i32 {
+terrain_height :: proc(seeds: generation_seed.Purpose_Seeds, x, z: i32) -> i32 {
 	height, raised := base_height(seeds, x, z)
 	plateau := plateau_blend(seeds, x, z)
 	height = math.lerp(height, plateau_level(height), plateau)
@@ -214,7 +215,7 @@ terrain_height :: proc(seeds: Purpose_Seeds, x, z: i32) -> i32 {
 	return clamp(i32(math.floor(height)), TERRAIN_MINIMUM_HEIGHT, TERRAIN_MAXIMUM_HEIGHT)
 }
 
-terrain_moisture :: proc(seeds: Purpose_Seeds, x, z: i32) -> f32 {
+terrain_moisture :: proc(seeds: generation_seed.Purpose_Seeds, x, z: i32) -> f32 {
 	return f32(noise_2d_at(seeds[.Moisture], x, z, MOISTURE_WAVELENGTH))
 }
 
@@ -226,14 +227,14 @@ latitude_temperature :: proc(z: i32) -> f64 {
 }
 
 // height is the column's surface height.
-terrain_temperature :: proc(seeds: Purpose_Seeds, x, z, height: i32) -> f32 {
+terrain_temperature :: proc(seeds: generation_seed.Purpose_Seeds, x, z, height: i32) -> f32 {
 	noise_part := noise_2d_at(seeds[.Temperature], x, z, TEMPERATURE_WAVELENGTH) * TEMPERATURE_NOISE_AMPLITUDE
 	lapse := f64(max(height - SEA_LEVEL, 0)) * TEMPERATURE_LAPSE
 	return f32(clamp(latitude_temperature(z) + noise_part - lapse, -1, 1))
 }
 
-topsoil_depth :: proc(seeds: Purpose_Seeds, x, z: i32) -> i32 {
-	return i32(hash_to_range(hash_column(seeds[.Topsoil], x, z), MINIMUM_TOPSOIL_DEPTH, MAXIMUM_TOPSOIL_DEPTH))
+topsoil_depth :: proc(seeds: generation_seed.Purpose_Seeds, x, z: i32) -> i32 {
+	return i32(generation_seed.hash_to_range(generation_seed.hash_column(seeds[.Topsoil], x, z), MINIMUM_TOPSOIL_DEPTH, MAXIMUM_TOPSOIL_DEPTH))
 }
 
 sample_column :: proc(generator: ^Generator, x, z: i32) -> Column_Sample {

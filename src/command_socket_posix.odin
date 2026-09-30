@@ -6,6 +6,7 @@ import "core:fmt"
 import "core:os"
 import "core:strings"
 import "core:sys/posix"
+import "platform"
 
 // The POSIX side of the command socket (command_socket.odin): a Unix
 // domain stream socket. Excluded from the Windows build by the tag above,
@@ -84,7 +85,7 @@ socket_is_live :: proc(address: ^posix.sockaddr_un) -> bool {
 // alone and reported. Returns the problem, empty on success.
 open_command_server :: proc(server: ^Command_Server, path: string) -> string {
 	directory, _ := os.split_path(path)
-	if error := make_directory_path(directory, {.Read_User, .Write_User, .Execute_User}); error != nil {
+	if error := platform.make_directory_path(directory, {.Read_User, .Write_User, .Execute_User}); error != nil {
 		return fmt.tprintf("cannot make %s: %v", directory, error)
 	}
 	posix.chmod(strings.clone_to_cstring(directory, context.temp_allocator), {.IRUSR, .IWUSR, .IXUSR})

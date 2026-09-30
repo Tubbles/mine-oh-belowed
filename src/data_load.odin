@@ -6,6 +6,7 @@ import "core:os"
 import "core:slice"
 import "core:strings"
 import rl "shared:raylib"
+import "platform"
 
 DATA_DIRECTORY_ENVIRONMENT_VARIABLE :: "MINE_OH_BELOWED_DATA"
 WORKING_DIRECTORY_DATA :: "data"
@@ -54,7 +55,7 @@ find_definition_index :: proc(definitions: []$T, id: string) -> int {
 // internal folder, refreshed when the build changed.
 resolve_data_directory :: proc(allocator := context.allocator) -> (directory: string, ok: bool) {
 	when ODIN_PLATFORM_SUBTARGET == .Android {
-		internal, _ := android_data_paths()
+		internal, _ := platform.android_data_paths()
 		if !sync_android_assets(internal, BUILD_INFO) {
 			return "", false
 		}
@@ -124,20 +125,20 @@ sync_android_assets :: proc(internal, build_info: string) -> bool {
 	os.remove_all(data_directory)
 	list, list_ok := read_android_asset(ANDROID_ASSET_LIST)
 	if !list_ok {
-		log_printf("error: cannot copy %s from the app: not in the APK", ANDROID_ASSET_LIST)
+		platform.log_printf("error: cannot copy %s from the app: not in the APK", ANDROID_ASSET_LIST)
 		return false
 	}
 	for path in android_asset_paths(string(list)) {
 		if problem := copy_android_asset(internal, path); problem != "" {
-			log_printf("error: cannot copy %s from the app: %s", path, problem)
+			platform.log_printf("error: cannot copy %s from the app: %s", path, problem)
 			return false
 		}
 	}
 	if error := os.write_entire_file(stamp_path, build_info); error != nil {
-		log_printf("error: cannot copy %s from the app: %v", stamp_path, error)
+		platform.log_printf("error: cannot copy %s from the app: %v", stamp_path, error)
 		return false
 	}
-	log_printf("data: copied the app's data to %s", data_directory)
+	platform.log_printf("data: copied the app's data to %s", data_directory)
 	return true
 }
 
@@ -161,7 +162,7 @@ copy_android_asset :: proc(internal, path: string) -> string {
 	}
 	target, _ := os.join_path({internal, path}, context.temp_allocator)
 	directory, _ := os.split_path(target)
-	if error := make_directory_path(directory); error != nil {
+	if error := platform.make_directory_path(directory); error != nil {
 		return fmt.tprintf("%v", error)
 	}
 	if error := os.write_entire_file(target, data); error != nil {
@@ -179,7 +180,7 @@ DATA_EDITS_DIRECTORY_NAME :: "data_edits"
 
 // $XDG_STATE_HOME/mine-oh-belowed/data_edits. In the given allocator.
 data_edits_directory_from_environment :: proc(state_home, home: string, allocator := context.allocator) -> (directory: string, ok: bool) {
-	state_directory := log_directory_from_environment(state_home, home, context.temp_allocator) or_return
+	state_directory := platform.log_directory_from_environment(state_home, home, context.temp_allocator) or_return
 	joined, error := os.join_path({state_directory, DATA_EDITS_DIRECTORY_NAME}, allocator)
 	return joined, error == nil
 }
@@ -228,7 +229,7 @@ turn_data_edits_off :: proc(problem: string) -> bool {
 	}
 	data_edits_reading.off = true
 	data_edits_reading.off_problem = strings.clone(problem)
-	log_printf("data: the data edits are off for this run after a failed load: %s", problem)
+	platform.log_printf("data: the data edits are off for this run after a failed load: %s", problem)
 	return true
 }
 
@@ -241,14 +242,14 @@ reset_data_edits_reading :: proc() {
 // read_data_file with the overlay directory given; "" reads no overlay.
 read_data_file_with_edits :: proc(data_directory, edits_directory, relative_path: string, allocator := context.allocator) -> (data: []byte, path: string, error: os.Error) {
 	if edits_directory != "" {
-		overlay := join_save_path(edits_directory, relative_path)
+		overlay := platform.join_path(edits_directory, relative_path)
 		if os.is_file(overlay) {
-			log_printf("data: %s from the data edits overlay %s", relative_path, overlay)
+			platform.log_printf("data: %s from the data edits overlay %s", relative_path, overlay)
 			data, error = os.read_entire_file(overlay, allocator)
 			return data, overlay, error
 		}
 	}
-	path = join_save_path(data_directory, relative_path)
+	path = platform.join_path(data_directory, relative_path)
 	data, error = os.read_entire_file(path, allocator)
 	return data, path, error
 }
@@ -259,7 +260,7 @@ read_logged_data_file :: proc(data_directory, relative_path: string) -> (data: [
 	error: os.Error
 	data, path, error = read_data_file(data_directory, relative_path, context.temp_allocator)
 	if error != nil {
-		log_printf("error: cannot read %s: %v", path, error)
+		platform.log_printf("error: cannot read %s: %v", path, error)
 		return nil, path, false
 	}
 	return data, path, true
@@ -305,11 +306,11 @@ load_game_config :: proc(data_directory: string, allocator := context.allocator)
 	parse_error: json.Unmarshal_Error
 	config, parse_error = parse_game_config(data, allocator)
 	if parse_error != nil {
-		log_printf("error: cannot parse %s: %v", path, parse_error)
+		platform.log_printf("error: cannot parse %s: %v", path, parse_error)
 		return {}, false
 	}
 	if problem := validate_game_config(config); problem != "" {
-		log_printf("error: invalid %s: %s", path, problem)
+		platform.log_printf("error: invalid %s: %s", path, problem)
 		return {}, false
 	}
 	return config, true

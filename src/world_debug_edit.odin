@@ -1,6 +1,7 @@
 package game
 
 import "core:math"
+import "generation_seed"
 
 // How many chunks below the camera the debug edit searches for a solid block.
 DEBUG_EDIT_SEARCH_DEPTH :: 8
@@ -27,7 +28,7 @@ topmost_solid_in_column :: proc(chunk: ^Chunk, registry: Block_Registry, x, z: i
 // removed position.
 debug_remove_block :: proc(world: ^World, registry: Block_Registry, camera_position: [3]f32, counter: u64) -> (removed: World_Coordinate, ok: bool) {
 	camera_chunk := world_to_chunk_coordinate(camera_world_coordinate(camera_position))
-	random := hash_u64(counter)
+	random := generation_seed.hash_u64(counter)
 	x := i32(random % CHUNK_SIZE)
 	z := i32(random / CHUNK_SIZE % CHUNK_SIZE)
 	for depth in i32(0) ..< DEBUG_EDIT_SEARCH_DEPTH {

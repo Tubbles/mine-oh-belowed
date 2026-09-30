@@ -3,6 +3,7 @@ package game
 import "core:os"
 import "core:strings"
 import "core:testing"
+import "platform"
 
 // Shader source tests read the shipped data/shaders (work item 0105).
 // Winlator's Gladio rewrites the GLSL line by line before compiling it
@@ -81,7 +82,7 @@ test_bare_integer_literals_are_found_outside_identifiers :: proc(t: ^testing.T) 
 
 @(test)
 test_shipped_shaders_have_no_bare_integer_literals :: proc(t: ^testing.T) {
-	directory := join_save_path(test_data_directory(), CHUNK_SHADER_DIRECTORY)
+	directory := platform.join_path(test_data_directory(), CHUNK_SHADER_DIRECTORY)
 	entries, error := os.read_all_directory_by_path(directory, context.temp_allocator)
 	testing.expect_value(t, error, nil)
 	checked := 0
@@ -128,7 +129,7 @@ test_shader_source_for_gles_leaves_a_source_without_version :: proc(t: ^testing.
 
 @(test)
 test_shipped_shaders_begin_with_a_version_line :: proc(t: ^testing.T) {
-	directory := join_save_path(test_data_directory(), CHUNK_SHADER_DIRECTORY)
+	directory := platform.join_path(test_data_directory(), CHUNK_SHADER_DIRECTORY)
 	entries, error := os.read_all_directory_by_path(directory, context.temp_allocator)
 	testing.expect_value(t, error, nil)
 	checked := 0

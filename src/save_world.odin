@@ -6,6 +6,7 @@ import "core:os"
 import "core:slice"
 import "core:strconv"
 import "core:strings"
+import "platform"
 
 // Saves on disk (doc/architecture.md, Save format). A world lives in
 // <saves>/<directory>/: world.sjson (format version, generator version,
@@ -98,7 +99,7 @@ resolve_saves_directory :: proc(configured: string, allocator := context.allocat
 	if saves == "" {
 		saves = configured
 	}
-	directories := platform_directories(context.temp_allocator)
+	directories := platform.platform_directories(context.temp_allocator)
 	return saves_directory_from_environment(saves, directories.data_home, directories.home, allocator)
 }
 
@@ -125,13 +126,8 @@ sanitize_world_name :: proc(name: string, allocator := context.allocator) -> str
 	return strings.clone(sanitized == "" ? DEFAULT_WORLD_NAME : sanitized, allocator)
 }
 
-join_save_path :: proc(elements: ..string) -> string {
-	joined, _ := os.join_path(elements, context.temp_allocator)
-	return joined
-}
-
 world_directory_taken :: proc(saves_directory, directory_name: string) -> bool {
-	target := join_save_path(saves_directory, directory_name)
+	target := platform.join_path(saves_directory, directory_name)
 	return os.exists(target) || os.exists(strings.concatenate({target, PREVIOUS_DIRECTORY_SUFFIX}, context.temp_allocator))
 }
 
@@ -148,12 +144,12 @@ unused_world_directory_name :: proc(saves_directory, base: string, allocator := 
 // The directory to load from, in the temp allocator: the save, or the
 // previous one when a crash interrupted the swap.
 existing_save_directory :: proc(location: Save_Location) -> (directory: string, found: bool) {
-	target := join_save_path(location.saves_directory, location.directory_name)
-	if os.exists(join_save_path(target, WORLD_FILE_NAME)) {
+	target := platform.join_path(location.saves_directory, location.directory_name)
+	if os.exists(platform.join_path(target, WORLD_FILE_NAME)) {
 		return target, true
 	}
 	previous := strings.concatenate({target, PREVIOUS_DIRECTORY_SUFFIX}, context.temp_allocator)
-	if os.exists(join_save_path(previous, WORLD_FILE_NAME)) {
+	if os.exists(platform.join_path(previous, WORLD_FILE_NAME)) {
 		return previous, true
 	}
 	return "", false
@@ -230,7 +226,7 @@ setting_percent_valid :: proc(percent: int) -> bool {
 }
 
 read_world_file :: proc(directory: string, allocator := context.allocator) -> (file: World_File, problem: string) {
-	path := join_save_path(directory, WORLD_FILE_NAME)
+	path := platform.join_path(directory, WORLD_FILE_NAME)
 	data, error := os.read_entire_file(path, context.temp_allocator)
 	if error != nil {
 		return {}, fmt.tprintf("cannot read %s: %v", path, error)
@@ -404,12 +400,12 @@ write_save_files :: proc(directory: string, files: Save_Files) -> os.Error {
 	if os.exists(directory) {
 		os.remove_all(directory) or_return
 	}
-	regions := join_save_path(directory, REGIONS_DIRECTORY_NAME)
-	make_directory_path(regions) or_return
-	os.write_entire_file(join_save_path(directory, WORLD_FILE_NAME), files.world) or_return
-	os.write_entire_file(join_save_path(directory, ENTITIES_FILE_NAME), files.entities) or_return
+	regions := platform.join_path(directory, REGIONS_DIRECTORY_NAME)
+	platform.make_directory_path(regions) or_return
+	os.write_entire_file(platform.join_path(directory, WORLD_FILE_NAME), files.world) or_return
+	os.write_entire_file(platform.join_path(directory, ENTITIES_FILE_NAME), files.entities) or_return
 	for region in files.regions {
-		os.write_entire_file(join_save_path(regions, region.name), region.bytes) or_return
+		os.write_entire_file(platform.join_path(regions, region.name), region.bytes) or_return
 	}
 	return nil
 }
@@ -436,7 +432,7 @@ swap_in_save :: proc(target, staging, previous: string) -> os.Error {
 save_world :: proc(state: ^Simulation_State, content: Simulation_Content, location: Save_Location, last_played_unix_seconds: i64) -> string {
 	refresh_loaded_surfaces(&state.world)
 	files := encode_save_files(state, content, location.display_name, last_played_unix_seconds)
-	target := join_save_path(location.saves_directory, location.directory_name)
+	target := platform.join_path(location.saves_directory, location.directory_name)
 	staging := strings.concatenate({target, STAGING_DIRECTORY_SUFFIX}, context.temp_allocator)
 	previous := strings.concatenate({target, PREVIOUS_DIRECTORY_SUFFIX}, context.temp_allocator)
 	if error := write_save_files(staging, files); error != nil {
@@ -461,7 +457,7 @@ header_problem :: proc(header, expected: Save_Header, file: string) -> string {
 // the save list: the problem load_entities_file would report for them, or
 // an empty string.
 entities_header_problem :: proc(directory: string, expected: Save_Header) -> string {
-	path := join_save_path(directory, ENTITIES_FILE_NAME)
+	path := platform.join_path(directory, ENTITIES_FILE_NAME)
 	file, open_error := os.open(path)
 	if open_error != nil {
 		return fmt.tprintf("cannot read %s: %v", path, open_error)
@@ -512,7 +508,7 @@ entities_tables_parse :: proc(file: ^os.File, length_bytes: []byte) -> bool {
 // remap receives the content remap of the file, which the region files
 // need.
 load_entities_file :: proc(state: ^Simulation_State, content: Simulation_Content, directory: string, expected: Save_Header, remap: ^Content_Remap) -> string {
-	path := join_save_path(directory, ENTITIES_FILE_NAME)
+	path := platform.join_path(directory, ENTITIES_FILE_NAME)
 	data, error := os.read_entire_file(path, context.temp_allocator)
 	if error != nil {
 		return fmt.tprintf("cannot read %s: %v", path, error)
@@ -572,7 +568,7 @@ load_region_file :: proc(world: ^World, path, name: string, expected: Save_Heade
 }
 
 load_region_files :: proc(world: ^World, directory: string, expected: Save_Header, remap: ^Content_Remap) -> string {
-	regions := join_save_path(directory, REGIONS_DIRECTORY_NAME)
+	regions := platform.join_path(directory, REGIONS_DIRECTORY_NAME)
 	if !os.exists(regions) {
 		return ""
 	}

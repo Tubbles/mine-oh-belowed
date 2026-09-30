@@ -4,6 +4,7 @@ import "core:encoding/json"
 import "core:fmt"
 import "core:math"
 import "core:slice"
+import "platform"
 
 // Recipes from data/recipes.sjson, resolved to dense indices after the
 // items. Technologies (technology.odin) are resolved after the recipes and
@@ -692,13 +693,13 @@ load_recipe_registry :: proc(data_directory: string, items: Item_Registry, fluid
 	data, path := read_logged_data_file(data_directory, RECIPES_FILE_NAME) or_return
 	file, parse_error := parse_recipes_file(data, allocator)
 	if parse_error != nil {
-		log_printf("error: cannot parse %s: %v", path, parse_error)
+		platform.log_printf("error: cannot parse %s: %v", path, parse_error)
 		return {}, false
 	}
 	problem: string
 	registry, problem = resolve_recipe_registry(file, items, fluids, allocator)
 	if problem != "" {
-		log_printf("error: invalid %s: %s", path, problem)
+		platform.log_printf("error: invalid %s: %s", path, problem)
 		return {}, false
 	}
 	return registry, true

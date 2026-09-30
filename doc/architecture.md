@@ -33,8 +33,8 @@ Rule: frames render as fast as allowed, the simulation advances in fixed ticks, 
 ## Source layout
 
 - Files by concern: `world_*.odin`, `generation_*.odin`, `render_*.odin`, `input_*.odin`, `ui_*.odin`, `data_*.odin`, `save_*.odin`, one file per entity kind (`furnace.odin`, `inserter.odin`), tests beside their file as `*_test.odin`.
-- The files form eight clusters by prefix with an allowed dependency table between them; [code_map.md](code_map.md) lists every file by cluster.
-- Leaf utilities with no back references may become packages (Odin forbids import cycles): `src/android_libc/` today.
+- The files of the game package form seven clusters by prefix with an allowed dependency table between them; [code_map.md](code_map.md) lists every file by cluster.
+- Leaf utilities with no back references are packages under `src/` (Odin forbids import cycles), each a cluster of its own: `src/platform/`, `src/generation_seed/`, `src/model_vox/`, `src/render_frustum/`, `src/run_length/`, `src/sjson_text/` (the 0145 pilot split) and `src/android_libc/` ([code_map.md](code_map.md), Packages).
 
 ## Threads and chunk streaming
 
@@ -177,11 +177,11 @@ Rule: platform code is split by build tags, never by `when` around an import, si
 | Command socket | `command_socket.odin` | `command_socket_posix.odin` | `command_socket_windows.odin` (stubs: no socket on Windows, [build.md](build.md), What the Windows build lacks) |
 | Local time zone | `local_zone.odin` | `local_zone_posix.odin` | `local_zone_windows.odin` (`GetTimeZoneInformation`, since ICU aborts under Wine) |
 
-- Android splits by the subtarget tags `#+build linux:android` and `#+build !linux:android`: `main_android.odin`, `platform_android.odin`, `input_sdl3_android.odin`, `haptics_android.odin`, `system_keyboard_android.odin`, `export_access_android.odin` and the leaf package `android_libc/` ([android.md](android.md)).
+- Android splits by the subtarget tags `#+build linux:android` and `#+build !linux:android`: `main_android.odin`, `input_sdl3_android.odin`, `haptics_android.odin`, `system_keyboard_android.odin`, in the platform package `platform_android.odin`, `jni_android.odin` and `export_access_android.odin`, and the leaf package `android_libc/` ([android.md](android.md)).
 
 ## Testing
 
-- `./build.sh test` runs the package's tests (`odin test`). Pure procedures get unit tests: noise and generation, belt line arithmetic, recipe resolution, run length coding, the save codec and remap.
+- `./build.sh test` runs the tests of the game package and the packages under `src/` (`odin test -all-packages`). Pure procedures get unit tests: noise and generation, belt line arithmetic, recipe resolution, run length coding, the save codec and remap.
 - Determinism: the `*_is_deterministic` tests run two identical worlds (belts, inserters, generation, fluids, combustion and more) and compare their state; `simulation_state_hash` hashes the save bytes for the save and reload tests.
 - Tests that guard rules: `test_static_runtime_imports_stay_out_of_windows`, `test_game_sources_do_not_call_make_directory_all` (`platform_paths_test.odin`), the shader literal check (`shader_source_test.odin`), `texture_periodicity_test.odin`.
 - Rendering and input are verified by playing.

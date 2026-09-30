@@ -6,6 +6,9 @@ import "core:math"
 import "core:os"
 import "core:slice"
 import "core:strings"
+import "generation_seed"
+import "platform"
+import "sjson_text"
 
 // Procedural block textures (work item 0099). A block listed in
 // data/textures/procedural.sjson gets its tile from a generator and its
@@ -145,8 +148,8 @@ Texture_Noise_Stream :: enum u64 {
 
 // In [0, 1), fixed by the seed, the stream and the texel.
 texture_noise_unit :: proc(seed: int, stream: Texture_Noise_Stream, x, y: int) -> f32 {
-	stream_key := hash_u64(u64(seed) ~ (u64(stream) << 48))
-	return f32(hash_u64(stream_key ~ (u64(y) << 16) ~ u64(x)) >> 40) / (1 << 24)
+	stream_key := generation_seed.hash_u64(u64(seed) ~ (u64(stream) << 48))
+	return f32(generation_seed.hash_u64(stream_key ~ (u64(y) << 16) ~ u64(x)) >> 40) / (1 << 24)
 }
 
 // In [-1, 1).
@@ -392,7 +395,7 @@ parse_procedural_texture :: proc(value: json.Value, registry: Block_Registry) ->
 	if !is_object {
 		return {}, fmt.tprintf("must be an object, not %s", json_type_name(value))
 	}
-	for key in sorted_object_keys(object) {
+	for key in sjson_text.sorted_object_keys(object) {
 		if !is_procedural_texture_key(key) {
 			return {}, fmt.tprintf("unknown key %s", key)
 		}
@@ -441,7 +444,7 @@ parse_procedural_textures :: proc(data: []byte, source: string, registry: Block_
 	if tree, problem = parse_configuration_layer(data, source, context.temp_allocator); problem != "" {
 		return nil, problem
 	}
-	for key in sorted_object_keys(tree) {
+	for key in sjson_text.sorted_object_keys(tree) {
 		if key != "textures" {
 			return nil, fmt.tprintf("%s: unknown key %s", source, key)
 		}
@@ -517,7 +520,7 @@ read_procedural_textures_data_file :: proc(data_directory: string, registry: Blo
 // $XDG_STATE_HOME/mine-oh-belowed/texture_edits.sjson. In the given
 // allocator.
 texture_edits_path_from_environment :: proc(state_home, home: string, allocator := context.allocator) -> (path: string, ok: bool) {
-	state_directory := log_directory_from_environment(state_home, home, context.temp_allocator) or_return
+	state_directory := platform.log_directory_from_environment(state_home, home, context.temp_allocator) or_return
 	joined, error := os.join_path({state_directory, TEXTURE_EDITS_FILE_NAME}, allocator)
 	return joined, error == nil
 }
@@ -529,16 +532,16 @@ texture_edits_path_from_environment :: proc(state_home, home: string, allocator 
 load_procedural_textures :: proc(data_directory, edits_path: string, registry: Block_Registry) -> []Procedural_Texture {
 	base, data_path, base_found, base_problem := read_procedural_textures_data_file(data_directory, registry)
 	if base_problem != "" {
-		log_printf("error: %s, the procedural textures are left out", base_problem)
+		platform.log_printf("error: %s, the procedural textures are left out", base_problem)
 	} else if !base_found {
-		log_printf("error: %s is missing, the procedural textures are left out", data_path)
+		platform.log_printf("error: %s is missing, the procedural textures are left out", data_path)
 	}
 	if edits_path == "" {
 		return base
 	}
 	edits, _, edits_problem := read_procedural_textures_file(edits_path, registry)
 	if edits_problem != "" {
-		log_printf("error: %s, the texture edits are ignored", edits_problem)
+		platform.log_printf("error: %s, the texture edits are ignored", edits_problem)
 		return base
 	}
 	return merge_procedural_textures(base, edits, context.temp_allocator)
@@ -627,7 +630,7 @@ format_texture_edits_file :: proc(entry_lines: []string) -> string {
 // Returns the problem, or an empty string. Makes the state directory.
 write_texture_edits_file :: proc(path, text: string) -> string {
 	directory := os.dir(path)
-	if error := make_directory_path(directory); error != nil {
+	if error := platform.make_directory_path(directory); error != nil {
 		return fmt.tprintf("cannot create %s: %v", directory, error)
 	}
 	if error := os.write_entire_file(path, text); error != nil {

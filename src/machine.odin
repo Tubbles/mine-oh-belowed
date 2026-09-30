@@ -4,6 +4,7 @@ import "core:encoding/json"
 import "core:fmt"
 import "core:math"
 import "core:slice"
+import "platform"
 
 // Machine prototypes from data/machines.sjson, resolved to a dense
 // Machine_Id after the items. A machine names the item that places it,
@@ -703,7 +704,7 @@ load_machine_registry :: proc(data_directory: string, items: Item_Registry, flui
 	data, path := read_logged_data_file(data_directory, MACHINES_FILE_NAME) or_return
 	file, parse_error := parse_machines_file(data, allocator)
 	if parse_error != nil {
-		log_printf("error: cannot parse %s: %v", path, parse_error)
+		platform.log_printf("error: cannot parse %s: %v", path, parse_error)
 		return {}, false
 	}
 	problem: string
@@ -714,7 +715,7 @@ load_machine_registry :: proc(data_directory: string, items: Item_Registry, flui
 		}
 	}
 	if problem != "" {
-		log_printf("error: invalid %s: %s", path, problem)
+		platform.log_printf("error: invalid %s: %s", path, problem)
 		return {}, false
 	}
 	return registry, true

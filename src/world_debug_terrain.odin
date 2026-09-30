@@ -2,6 +2,8 @@ package game
 
 import "core:container/queue"
 import "core:math"
+import "generation_seed"
+import "platform"
 
 // Fixed terrain built in code, shown with --debug-terrain instead of the
 // generated world, for comparing the mesher against a known scene.
@@ -31,7 +33,7 @@ resolve_debug_terrain_blocks :: proc(registry: Block_Registry) -> (blocks: Debug
 		found: bool
 		targets[index]^, found = find_block_id(registry, name)
 		if !found {
-			log_printf("error: the debug terrain needs block %q in %s", name, BLOCKS_FILE_NAME)
+			platform.log_printf("error: the debug terrain needs block %q in %s", name, BLOCKS_FILE_NAME)
 			return {}, false
 		}
 	}
@@ -49,7 +51,7 @@ debug_terrain_is_sand :: proc(x, z: i32) -> bool {
 
 debug_terrain_is_ore :: proc(x, z: i32) -> bool {
 	key := u64(u32(x)) << 32 | u64(u32(z))
-	return hash_u64(key) % DEBUG_TERRAIN_ORE_RARITY == 0
+	return generation_seed.hash_u64(key) % DEBUG_TERRAIN_ORE_RARITY == 0
 }
 
 debug_terrain_surface_block :: proc(blocks: Debug_Terrain_Blocks, x, z: i32) -> Block_Id {

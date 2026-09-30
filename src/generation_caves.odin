@@ -1,5 +1,7 @@
 package game
 
+import "generation_seed"
+
 // Schematic crate sites in cave pockets (work item 0036). A region of
 // REGION_SIZE blocks holds at most one crate. A hash of the region decides
 // whether it has one and lists candidate columns; the first candidate
@@ -49,21 +51,21 @@ Crate_Site :: struct {
 Cave_Noise_Cache :: map[World_Coordinate]f32
 
 region_crate_hash :: proc(generator: ^Generator, region: Region_Coordinate) -> u64 {
-	return hash_combine(generator.seeds[.Cave_Crates], pack_pair(region.x, region.y))
+	return generation_seed.hash_combine(generator.seeds[.Cave_Crates], generation_seed.pack_pair(region.x, region.y))
 }
 
 region_tries_crate :: proc(region_hash: u64) -> bool {
-	return hash_to_unit(hash_combine(region_hash, 0)) < CRATE_REGION_CHANCE
+	return generation_seed.hash_to_unit(generation_seed.hash_combine(region_hash, 0)) < CRATE_REGION_CHANCE
 }
 
 // Candidate columns keep the walls inside the region, so a chunk only
 // ever looks at its own region's site.
 crate_candidate_column :: proc(region_hash: u64, region: Region_Coordinate, candidate: int) -> [2]i32 {
-	hash := hash_combine(region_hash, u64(candidate) + 1)
+	hash := generation_seed.hash_combine(region_hash, u64(candidate) + 1)
 	margin := i32(CRATE_WALL_REACH + 1)
 	span := i64(REGION_SIZE - 2 * margin - 1)
 	origin := region_origin(region)
-	return {origin.x + margin + i32(hash_to_range(hash, 0, span)), origin.y + margin + i32(hash_to_range(hash_combine(hash, 1), 0, span))}
+	return {origin.x + margin + i32(generation_seed.hash_to_range(hash, 0, span)), origin.y + margin + i32(generation_seed.hash_to_range(generation_seed.hash_combine(hash, 1), 0, span))}
 }
 
 cave_roof_height :: proc(lowest_surface: i32) -> i32 {
@@ -71,7 +73,7 @@ cave_roof_height :: proc(lowest_surface: i32) -> i32 {
 }
 
 // cave_ceiling from the terrain heights instead of a chunk's column grid.
-cave_ceiling_at :: proc(seeds: Purpose_Seeds, x, z: i32) -> i32 {
+cave_ceiling_at :: proc(seeds: generation_seed.Purpose_Seeds, x, z: i32) -> i32 {
 	lowest := terrain_height(seeds, x, z)
 	for offset in ([4][2]i32{{-1, 0}, {1, 0}, {0, -1}, {0, 1}}) {
 		lowest = min(lowest, terrain_height(seeds, x + offset.x, z + offset.y))
@@ -164,7 +166,7 @@ column_crate_site :: proc(generator: ^Generator, cache: ^Cave_Noise_Cache, colum
 	surface := terrain_height(generator.seeds, column.x, column.y)
 	top := min(surface - CRATE_MINIMUM_DEPTH, ceiling)
 	bottom := max(CAVE_FLOOR, surface - maximum_depth - 1)
-	wall_count := i32(hash_to_range(hash_combine(region_hash, 1001), MINIMUM_GOLD_QUARTZ_WALLS, MAXIMUM_GOLD_QUARTZ_WALLS))
+	wall_count := i32(generation_seed.hash_to_range(generation_seed.hash_combine(region_hash, 1001), MINIMUM_GOLD_QUARTZ_WALLS, MAXIMUM_GOLD_QUARTZ_WALLS))
 	below_open := cave_cell_is_open(generator, cache, {column.x, top, column.y}, ceiling)
 	for y := top; y > bottom; y -= 1 {
 		open := below_open
@@ -173,9 +175,9 @@ column_crate_site :: proc(generator: ^Generator, cache: ^Cave_Noise_Cache, colum
 			continue
 		}
 		crate := World_Coordinate{column.x, y, column.y}
-		walls, count := pocket_walls(generator, cache, crate, wall_count, hash_combine(region_hash, 1002))
+		walls, count := pocket_walls(generator, cache, crate, wall_count, generation_seed.hash_combine(region_hash, 1002))
 		if count >= MINIMUM_GOLD_QUARTZ_WALLS {
-			return Crate_Site{position = crate, choice = hash_combine(region_hash, 1000), walls = walls, wall_count = count}, true
+			return Crate_Site{position = crate, choice = generation_seed.hash_combine(region_hash, 1000), walls = walls, wall_count = count}, true
 		}
 	}
 	return {}, false

@@ -4,6 +4,7 @@ import "core:fmt"
 import "core:mem/virtual"
 import "core:slice"
 import "core:strings"
+import "platform"
 
 // Loading the game data, at start and again on a content reload (work
 // item 0054). The content tables (blocks, items, fluids, machines,
@@ -42,14 +43,14 @@ load_game_data :: proc(data_directory: string, config: Game_Config, string_entri
 	if data.arena == nil {
 		return {}, "cannot reserve memory for the game data"
 	}
-	capture: Log_Capture
-	begin_log_capture(&capture)
+	capture: platform.Log_Capture
+	platform.begin_log_capture(&capture)
 	loaded: bool
 	{
 		context.allocator = virtual.arena_allocator(data.arena)
 		data.content, data.base_generator, loaded = load_game_tables(data_directory, config, string_entries)
 	}
-	problem = end_log_capture(&capture, fmt.tprintf("the game data in %s did not load", data_directory))
+	problem = platform.end_log_capture(&capture, fmt.tprintf("the game data in %s did not load", data_directory))
 	if !loaded {
 		destroy_game_data(&data)
 		return {}, problem
@@ -61,7 +62,7 @@ load_game_data :: proc(data_directory: string, config: Game_Config, string_entri
 load_game_tables :: proc(data_directory: string, config: Game_Config, string_entries: map[string]string) -> (content: Game_Content, base_generator: Generator, ok: bool) {
 	content = load_content_registries(data_directory, string_entries) or_return
 	if problem := validate_starting_items(config.starting_items, content.items); problem != "" {
-		log_printf("error: invalid %s: %s", GAME_CONFIG_FILE_NAME, problem)
+		platform.log_printf("error: invalid %s: %s", GAME_CONFIG_FILE_NAME, problem)
 		return {}, {}, false
 	}
 	content.developer_kits = load_developer_kits(data_directory, content.items) or_return
@@ -69,12 +70,12 @@ load_game_tables :: proc(data_directory: string, config: Game_Config, string_ent
 	base_generator = load_generator(data_directory, content.blocks, DEFAULT_WORLD_SEED) or_return
 	veins, problem := resolve_vein_content(base_generator.veins, content.items)
 	if problem != "" {
-		log_printf("error: invalid %s: %s", VEINS_FILE_NAME, problem)
+		platform.log_printf("error: invalid %s: %s", VEINS_FILE_NAME, problem)
 		return {}, {}, false
 	}
 	content.veins = veins
 	if _, found := find_item_id(content.items, base_generator.sapling_item); !found {
-		log_printf("error: invalid %s: sapling_item %q is not an item", TREES_FILE_NAME, base_generator.sapling_item)
+		platform.log_printf("error: invalid %s: sapling_item %q is not an item", TREES_FILE_NAME, base_generator.sapling_item)
 		return {}, {}, false
 	}
 	refresh_content_names(&content)
@@ -88,7 +89,7 @@ load_content_registries :: proc(data_directory: string, string_entries: map[stri
 	content.machines = load_machine_registry(data_directory, content.items, content.fluids) or_return
 	content.recipes = load_recipe_registry(data_directory, content.items, content.fluids) or_return
 	if problem := validate_crafting_machine_recipes(content.machines, content.recipes); problem != "" {
-		log_printf("error: invalid %s: %s", MACHINES_FILE_NAME, problem)
+		platform.log_printf("error: invalid %s: %s", MACHINES_FILE_NAME, problem)
 		return {}, false
 	}
 	content.technologies = load_technology_registry(data_directory, content.items, content.recipes) or_return
@@ -114,7 +115,7 @@ validate_content_description_keys :: proc(content: Game_Content, string_entries:
 	}
 	for check in checks {
 		if check.problem != "" {
-			log_printf("error: invalid %s: %s", check.file, check.problem)
+			platform.log_printf("error: invalid %s: %s", check.file, check.problem)
 			return false
 		}
 	}
@@ -351,23 +352,6 @@ reset_session_views :: proc(session: ^Session) {
 	session.statistics_view.fluid_has_focus = false
 	collect_explored_surfaces(&session.simulation.world, &session.map_view.surfaces)
 	session.map_view.painted_frame = {}
-}
-
-// log_printf's error capture (logging.odin) around a loader that logs its
-// problem. The problem is in the temp allocator.
-Log_Capture :: struct {
-	captured: string,
-	previous: ^string,
-}
-
-begin_log_capture :: proc(capture: ^Log_Capture) {
-	capture.previous = captured_log_error
-	captured_log_error = &capture.captured
-}
-
-end_log_capture :: proc(capture: ^Log_Capture, fallback: string) -> string {
-	captured_log_error = capture.previous
-	return capture.captured != "" ? capture.captured : fallback
 }
 
 new_growing_arena :: proc() -> ^virtual.Arena {

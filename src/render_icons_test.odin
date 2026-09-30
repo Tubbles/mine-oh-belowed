@@ -3,6 +3,7 @@ package game
 import "core:os"
 import "core:strings"
 import "core:testing"
+import "platform"
 
 @(test)
 test_item_atlas_packs_every_item_to_its_own_tile :: proc(t: ^testing.T) {
@@ -83,7 +84,7 @@ test_ui_icon_atlas_packs_every_file :: proc(t: ^testing.T) {
 		testing.expect_value(t, atlas_tile_texels(icons.pixels, icons.layout, int(icon)), file)
 	}
 	// Every file in the directory is an icon the game draws.
-	entries, error := os.read_all_directory_by_path(join_save_path(test_data_directory(), UI_ICONS_DIRECTORY), context.temp_allocator)
+	entries, error := os.read_all_directory_by_path(platform.join_path(test_data_directory(), UI_ICONS_DIRECTORY), context.temp_allocator)
 	testing.expect_value(t, error, nil)
 	for entry in entries {
 		name, is_texture := strings.trim_suffix(entry.name, TEXTURE_FILE_EXTENSION), strings.has_suffix(entry.name, TEXTURE_FILE_EXTENSION)

@@ -2,6 +2,7 @@ package game
 
 import "core:encoding/json"
 import "core:fmt"
+import "platform"
 
 // Tree species (work item 0059), data/trees.sjson. Biomes draw their trees
 // from weighted species lists (Biome_Definition.trees); the crown shapes
@@ -75,7 +76,7 @@ load_trees_file :: proc(data_directory: string, allocator := context.allocator) 
 	parse_error: json.Unmarshal_Error
 	file, parse_error = parse_trees_file(data, allocator)
 	if parse_error != nil {
-		log_printf("error: cannot parse %s: %v", path, parse_error)
+		platform.log_printf("error: cannot parse %s: %v", path, parse_error)
 		return {}, false
 	}
 	return file, true

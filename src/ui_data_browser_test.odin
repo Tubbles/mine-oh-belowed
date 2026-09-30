@@ -3,6 +3,7 @@ package game
 import "core:encoding/json"
 import "core:os"
 import "core:testing"
+import "platform"
 
 // Work item 0129: Back (B, and the touch row's Back) closes an open file
 // first and the screen second. The file closes between frames: the Back
@@ -182,7 +183,7 @@ test_data_files_save_waits_for_the_frame_loop :: proc(t: ^testing.T) {
 	testing.expect(t, !browser.save_requested)
 	testing.expect(t, !browser.unsaved)
 	testing.expect(t, browser.open)
-	testing.expect(t, os.is_file(join_save_path(edits_directory, "game.sjson")))
+	testing.expect(t, os.is_file(platform.join_path(edits_directory, "game.sjson")))
 	screen_test_frame(audit, &state, {})
 	testing.expect(t, draw_list_text_checksum(state) > 0)
 	testing.expect(t, draw_list_has_text(state.draw_list[:], text("data_files_edited")))

@@ -2,6 +2,7 @@ package game
 
 import "core:log"
 import "core:testing"
+import "generation_seed"
 
 // The entries of data/trees.sjson.
 SHIPPED_TREE_SPECIES_COUNT :: 6
@@ -145,7 +146,7 @@ test_choose_tree_species_by_weight :: proc(t: ^testing.T) {
 	trees := []Biome_Tree{{species = 4, weight = 3}, {species = 7, weight = 1}}
 	counts: [2]int
 	for hash in u64(0) ..< 400 {
-		species := choose_tree_species(trees, hash_u64(hash))
+		species := choose_tree_species(trees, generation_seed.hash_u64(hash))
 		counts[species == 4 ? 0 : 1] += 1
 	}
 	testing.expect(t, counts[0] > 250 && counts[0] < 350, "weight 3 of 4 should take about three quarters")

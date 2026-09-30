@@ -3,6 +3,7 @@ package game
 import "core:log"
 import "core:slice"
 import "core:testing"
+import "generation_seed"
 
 // Seeds besides the default that every generation test also runs on.
 TEST_SEEDS :: [3]u64{DEFAULT_WORLD_SEED, 1, 987654321}
@@ -148,13 +149,13 @@ test_beach_and_mountain_biomes_cover_their_heights :: proc(t: ^testing.T) {
 
 @(test)
 test_purpose_seeds_differ :: proc(t: ^testing.T) {
-	seeds := derive_purpose_seeds(DEFAULT_WORLD_SEED)
-	for first in Generation_Purpose {
-		for second in Generation_Purpose {
+	seeds := generation_seed.derive_purpose_seeds(DEFAULT_WORLD_SEED)
+	for first in generation_seed.Generation_Purpose {
+		for second in generation_seed.Generation_Purpose {
 			testing.expect(t, first == second || seeds[first] != seeds[second])
 		}
 	}
-	testing.expect(t, derive_purpose_seeds(1)[.Caves] != seeds[.Caves])
+	testing.expect(t, generation_seed.derive_purpose_seeds(1)[.Caves] != seeds[.Caves])
 }
 
 // Surface, underground, sky and deep chunks, at negative coordinates too.

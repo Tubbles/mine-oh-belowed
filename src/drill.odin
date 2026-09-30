@@ -1,5 +1,7 @@
 package game
 
+import "generation_seed"
+
 // Mining drills (doc/logistics.md): a square entity placed with
 // at least one footprint cell over a surface vein's footprint disc, mined
 // outcrop or not (work item 0048). It taps the vein's
@@ -243,10 +245,10 @@ drill_drop_lane :: proc(entities: ^Entities, drill: Drill, target: Entity_Handle
 // region and index. Surface veins mix in no layer, so they keep their own
 // draw stream and an existing world draws the same units from them.
 vein_draw_hash :: proc(seed: u64, vein: Vein) -> u64 {
-	hash := hash_combine(hash_combine(seed, VEIN_DRAW_SALT), pack_pair(vein.id.region.x, vein.id.region.y))
-	hash = hash_combine(hash_combine(hash, u64(vein.id.index)), vein.draws)
+	hash := generation_seed.hash_combine(generation_seed.hash_combine(seed, VEIN_DRAW_SALT), generation_seed.pack_pair(vein.id.region.x, vein.id.region.y))
+	hash = generation_seed.hash_combine(generation_seed.hash_combine(hash, u64(vein.id.index)), vein.draws)
 	if vein_is_deep(vein) {
-		hash = hash_combine(hash, u64(vein.id.layer))
+		hash = generation_seed.hash_combine(hash, u64(vein.id.layer))
 	}
 	return hash
 }
@@ -265,7 +267,7 @@ choose_vein_output :: proc(vein: Vein, vein_type: Vein_Type_Content, infinite: b
 	if total == 0 {
 		return -1
 	}
-	roll := hash_to_range(hash, 0, total - 1)
+	roll := generation_seed.hash_to_range(hash, 0, total - 1)
 	for weight, index in weights {
 		roll -= weight
 		if roll < 0 {
@@ -297,7 +299,7 @@ graded_output :: proc(vein_type: Vein_Type_Content, output: int, low_grade_ppm: 
 	if low_grade == NO_ITEM {
 		return vein_type.outputs[output]
 	}
-	roll := hash_to_range(hash_combine(draw_hash, VEIN_GRADE_SALT), 0, PARTS_PER_MILLION - 1)
+	roll := generation_seed.hash_to_range(generation_seed.hash_combine(draw_hash, VEIN_GRADE_SALT), 0, PARTS_PER_MILLION - 1)
 	return roll < low_grade_ppm ? low_grade : vein_type.outputs[output]
 }
 

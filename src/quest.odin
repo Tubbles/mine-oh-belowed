@@ -5,6 +5,7 @@ import "core:fmt"
 import "core:os"
 import "core:slice"
 import "core:strings"
+import "platform"
 
 // Quest chapters from data/quests/*.sjson (doc/quests.md), loaded in file
 // name order after every other prototype table and the strings, resolved
@@ -639,7 +640,7 @@ resolve_quest_registry :: proc(files: []Chapter_File, references: Quest_Referenc
 quest_file_names :: proc(directory: string, allocator := context.allocator) -> (names: []string, ok: bool) {
 	entries, error := os.read_all_directory_by_path(directory, context.temp_allocator)
 	if error != nil {
-		log_printf("error: cannot read %s: %v", directory, error)
+		platform.log_printf("error: cannot read %s: %v", directory, error)
 		return nil, false
 	}
 	found := make([dynamic]string, allocator)
@@ -659,7 +660,7 @@ load_chapter_file :: proc(data_directory, name: string, allocator := context.all
 	parse_error: json.Unmarshal_Error
 	file, parse_error = parse_chapter_file(data, allocator)
 	if parse_error != nil {
-		log_printf("error: cannot parse %s: %v", path, parse_error)
+		platform.log_printf("error: cannot parse %s: %v", path, parse_error)
 		return {}, false
 	}
 	return file, true
@@ -677,7 +678,7 @@ load_quest_registry :: proc(data_directory: string, references: Quest_References
 	}
 	problem: string
 	if registry, problem = resolve_quest_registry(files, references, allocator); problem != "" {
-		log_printf("error: invalid quest data in %s: %s", directory, problem)
+		platform.log_printf("error: invalid quest data in %s: %s", directory, problem)
 		return {}, false
 	}
 	return registry, true

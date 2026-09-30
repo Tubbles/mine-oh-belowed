@@ -5,6 +5,8 @@ import "core:mem/virtual"
 import "core:os"
 import "core:strings"
 import "core:testing"
+import "platform"
+import "sjson_text"
 
 // Work item 0129: the data edits overlay, the reaction to an overlay
 // change, the file tree and the value tree. The overlay test writes only
@@ -15,23 +17,23 @@ test_read_data_file_takes_the_overlay_copy_when_present :: proc(t: ^testing.T) {
 	base, error := os.make_directory_temp("", "mine-oh-belowed-data-edits-test-*", context.temp_allocator)
 	testing.expect_value(t, error, nil)
 	defer os.remove_all(base)
-	data_directory := join_save_path(base, "data")
-	edits_directory := join_save_path(base, "data_edits")
-	testing.expect_value(t, make_directory_path(join_save_path(data_directory, "quests")), nil)
-	testing.expect_value(t, make_directory_path(join_save_path(edits_directory, "quests")), nil)
-	testing.expect_value(t, os.write_entire_file(join_save_path(data_directory, "blocks.sjson"), "data"), nil)
-	testing.expect_value(t, os.write_entire_file(join_save_path(data_directory, "quests", "chapter_01.sjson"), "data chapter"), nil)
-	testing.expect_value(t, os.write_entire_file(join_save_path(edits_directory, "quests", "chapter_01.sjson"), "edited chapter"), nil)
+	data_directory := platform.join_path(base, "data")
+	edits_directory := platform.join_path(base, "data_edits")
+	testing.expect_value(t, platform.make_directory_path(platform.join_path(data_directory, "quests")), nil)
+	testing.expect_value(t, platform.make_directory_path(platform.join_path(edits_directory, "quests")), nil)
+	testing.expect_value(t, os.write_entire_file(platform.join_path(data_directory, "blocks.sjson"), "data"), nil)
+	testing.expect_value(t, os.write_entire_file(platform.join_path(data_directory, "quests", "chapter_01.sjson"), "data chapter"), nil)
+	testing.expect_value(t, os.write_entire_file(platform.join_path(edits_directory, "quests", "chapter_01.sjson"), "edited chapter"), nil)
 
 	data, path, read_error := read_data_file_with_edits(data_directory, edits_directory, "blocks.sjson", context.temp_allocator)
 	testing.expect_value(t, read_error, nil)
 	testing.expect_value(t, string(data), "data")
-	testing.expect_value(t, path, join_save_path(data_directory, "blocks.sjson"))
+	testing.expect_value(t, path, platform.join_path(data_directory, "blocks.sjson"))
 
 	data, path, read_error = read_data_file_with_edits(data_directory, edits_directory, "quests/chapter_01.sjson", context.temp_allocator)
 	testing.expect_value(t, read_error, nil)
 	testing.expect_value(t, string(data), "edited chapter")
-	testing.expect_value(t, path, join_save_path(edits_directory, "quests/chapter_01.sjson"))
+	testing.expect_value(t, path, platform.join_path(edits_directory, "quests/chapter_01.sjson"))
 
 	data, _, read_error = read_data_file_with_edits(data_directory, "", "quests/chapter_01.sjson", context.temp_allocator)
 	testing.expect_value(t, read_error, nil)
@@ -203,40 +205,10 @@ json_values_equal :: proc(first, second: json.Value) -> bool {
 	return false
 }
 
-// The text written for a tree parses back to an equal tree, in the data
-// files' style; every shipped SJSON file round trips too.
+// Every shipped SJSON file round trips through the writer (the package's
+// own tests are in sjson_text/sjson_text_test.odin).
 @(test)
-test_sjson_text_parses_back_to_an_equal_tree :: proc(t: ^testing.T) {
-	source := `
-name = "Mine \"oh\" Belowed"
-tick_rate = 60
-speed = 16.0
-share = 0.5
-tiny = 0.00001
-large = 2500000.0
-below = -3
-cold = -0.25
-path = "C:\\data\ttab\nline"
-"true" = 1
-on = false
-nothing = null
-"odd key" = "{count} × {name}"
-starting_items = [
-	{item = "torch", count = 64}
-]
-made_in = ["hand", "assembler"]
-nested = {deep = [[1, 2], []], empty = {}}
-`
-	value, error := json.parse_string(source, .SJSON, true, context.temp_allocator)
-	testing.expect_value(t, error, json.Error.None)
-	written := sjson_text(value, context.temp_allocator)
-	parsed, parse_error := json.parse_string(written, .SJSON, true, context.temp_allocator)
-	testing.expect_value(t, parse_error, json.Error.None)
-	testing.expect(t, json_values_equal(value, parsed), written)
-	for wanted in ([]string{"tick_rate = 60\n", "speed = 16.0\n", "share = 0.5\n", "starting_items = [\n\t{count = 64, item = \"torch\"}\n]\n", `made_in = ["hand", "assembler"]`, `"odd key" = "{count} × {name}"`, `name = "Mine \"oh\" Belowed"`, "\tempty = {}\n", "\t\t[1, 2]\n", "tiny = 1e-05\n", "large = 2.5e+06\n", "below = -3\n", "cold = -0.25\n", `path = "C:\\data\ttab\nline"`, `"true" = 1`}) {
-		testing.expectf(t, strings.contains(written, wanted), "%q not in %s", wanted, written)
-	}
-
+test_shipped_sjson_files_round_trip :: proc(t: ^testing.T) {
 	for entry in list_data_files(test_data_directory(), "") {
 		if data_file_kind(entry.path) != .Sjson {
 			continue
@@ -245,7 +217,7 @@ nested = {deep = [[1, 2], []], empty = {}}
 		testing.expect_value(t, read_error, nil)
 		shipped, shipped_error := json.parse(data, .SJSON, true, context.temp_allocator)
 		testing.expect_value(t, shipped_error, json.Error.None)
-		again, again_error := json.parse_string(sjson_text(shipped, context.temp_allocator), .SJSON, true, context.temp_allocator)
+		again, again_error := json.parse_string(sjson_text.sjson_text(shipped, context.temp_allocator), .SJSON, true, context.temp_allocator)
 		testing.expect_value(t, again_error, json.Error.None)
 		testing.expectf(t, json_values_equal(shipped, again), "%s does not round trip", entry.path)
 	}
@@ -410,7 +382,7 @@ test_a_data_edit_save_writes_the_overlay_and_asks_for_the_reload :: proc(t: ^tes
 		testing.expect(t, browser.shows_overlay)
 		testing.expect(t, browser.refresh_requested)
 		testing.expect_value(t, state.reload_requested, data_file_category(relative_path) == .Content)
-		data, read_error := os.read_entire_file(join_save_path(edits_directory, relative_path), context.temp_allocator)
+		data, read_error := os.read_entire_file(platform.join_path(edits_directory, relative_path), context.temp_allocator)
 		testing.expect_value(t, read_error, nil)
 		saved, parse_error := json.parse(data, .SJSON, true, context.temp_allocator)
 		testing.expect_value(t, parse_error, json.Error.None)
@@ -444,7 +416,7 @@ test_a_saved_strings_edit_shows_at_once :: proc(t: ^testing.T) {
 	defer destroy_font_cache(&state.font_cache)
 	state.data_directory = test_data_directory()
 	state.content_arena = new_growing_arena()
-	source, read_error := os.read_entire_file(join_save_path(test_data_directory(), "strings", "en.sjson"), context.temp_allocator)
+	source, read_error := os.read_entire_file(platform.join_path(test_data_directory(), "strings", "en.sjson"), context.temp_allocator)
 	testing.expect_value(t, read_error, nil)
 	state.data_browser = open_test_data_value(t, string(source))
 	defer destroy_data_browser(&state.data_browser)
@@ -459,8 +431,8 @@ test_a_saved_strings_edit_shows_at_once :: proc(t: ^testing.T) {
 	testing.expect(t, !browser.unsaved)
 	testing.expect_value(t, text("data_files_title"), "Edited files")
 	testing.expect(t, !state.reload_requested)
-	testing.expect(t, os.is_file(join_save_path(edits_directory, "strings", "en.sjson")))
-	testing.expect(t, !os.exists(join_save_path(edits_directory, "strings", "en.sjson.tmp")), "the temporary copy was renamed")
+	testing.expect(t, os.is_file(platform.join_path(edits_directory, "strings", "en.sjson")))
+	testing.expect(t, !os.exists(platform.join_path(edits_directory, "strings", "en.sjson.tmp")), "the temporary copy was renamed")
 }
 
 // A broken overlay copy of blocks.sjson fails the start load, with the
@@ -473,7 +445,7 @@ test_a_broken_data_edit_turns_the_overlay_off_at_start :: proc(t: ^testing.T) {
 	defer os.remove_all(edits_directory)
 	data_edits_reading.directory = edits_directory
 	defer reset_data_edits_reading()
-	broken := join_save_path(edits_directory, "blocks.sjson")
+	broken := platform.join_path(edits_directory, "blocks.sjson")
 	testing.expect_value(t, os.write_entire_file(broken, "blocks = ["), nil)
 	loaded := Loaded_Configuration{configuration = DEFAULT_CONFIGURATION}
 

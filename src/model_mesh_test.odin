@@ -2,18 +2,19 @@ package game
 
 import "core:strings"
 import "core:testing"
+import "model_vox"
 
 // Model meshing tests (work item 0055): models are built in memory.
 
-make_test_voxel_model :: proc(size: [3]i32, filled: [][3]i32, allocator := context.allocator) -> Voxel_Model {
-	model := Voxel_Model {
+make_test_voxel_model :: proc(size: [3]i32, filled: [][3]i32, allocator := context.allocator) -> model_vox.Voxel_Model {
+	model := model_vox.Voxel_Model {
 		size        = size,
 		cells       = make([]u8, int(size.x * size.y * size.z), allocator),
-		palette     = vox_default_palette_colours(),
+		palette     = model_vox.vox_default_palette_colours(),
 		model_count = 1,
 	}
 	for position in filled {
-		model.cells[voxel_cell_index(size, position)] = 1
+		model.cells[model_vox.voxel_cell_index(size, position)] = 1
 	}
 	return model
 }
@@ -56,7 +57,7 @@ test_a_bar_merges_its_long_faces :: proc(t: ^testing.T) {
 	testing.expect_value(t, len(mesh.positions), 24)
 
 	// Different colours do not merge: the four long faces split in two.
-	model.cells[voxel_cell_index(model.size, {1, 0, 0})] = 2
+	model.cells[model_vox.voxel_cell_index(model.size, {1, 0, 0})] = 2
 	split, split_problem := mesh_voxel_model(model, {1, 1, 1})
 	defer destroy_model_layers(split)
 	testing.expect_value(t, split_problem, "")
@@ -114,7 +115,7 @@ test_emissive_faces_mesh_apart_without_the_shade :: proc(t: ^testing.T) {
 	filled := [?][3]i32{{0, 0, 0}, {1, 0, 0}}
 	model := make_test_voxel_model({2, 1, 1}, filled[:])
 	defer delete(model.cells)
-	model.cells[voxel_cell_index(model.size, {1, 0, 0})] = EMISSIVE_PALETTE_START
+	model.cells[model_vox.voxel_cell_index(model.size, {1, 0, 0})] = EMISSIVE_PALETTE_START
 	model.palette[EMISSIVE_PALETTE_START] = {200, 100, 50, 255}
 	meshes, problem := mesh_voxel_model(model, {1, 1, 1})
 	defer destroy_model_layers(meshes)
@@ -226,14 +227,14 @@ test_shipped_spinning_parts_turn_about_their_middle :: proc(t: ^testing.T) {
 		if machine.motion.kind != .Spin {
 			continue
 		}
-		path := model_file_path(test_data_directory(), model_part_id(machine.model))
-		part, problem := load_voxel_model_file(path, context.temp_allocator)
+		path := model_vox.model_file_path(test_data_directory(), model_part_id(machine.model))
+		part, problem := model_vox.load_voxel_model_file(path, context.temp_allocator)
 		testing.expect_value(t, problem, "")
 		minimum, maximum := part.size, [3]i32{-1, -1, -1}
 		for z in 0 ..< part.size.z {
 			for y in 0 ..< part.size.y {
 				for x in 0 ..< part.size.x {
-					if voxel_at(part, {x, y, z}) != 0 {
+					if model_vox.voxel_at(part, {x, y, z}) != 0 {
 						minimum = {min(minimum.x, x), min(minimum.y, y), min(minimum.z, z)}
 						maximum = {max(maximum.x, x), max(maximum.y, y), max(maximum.z, z)}
 					}

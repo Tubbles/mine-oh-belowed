@@ -4,6 +4,7 @@ import "core:math"
 import "core:math/linalg"
 import rl "shared:raylib"
 import "shared:raylib/rlgl"
+import "generation_seed"
 
 // The sky pass (work item 0064), drawn first inside BeginMode3D, centred
 // on the camera, without depth test or depth writes, so everything else
@@ -123,7 +124,7 @@ rotate_about_axis :: proc(point, axis: [3]f32, angle: f32) -> [3]f32 {
 }
 
 hash_unit :: proc(key: u64) -> f32 {
-	return f32(hash_u64(key) % 65536) / 65536
+	return f32(generation_seed.hash_u64(key) % 65536) / 65536
 }
 
 // A fixed direction, uniform over the sphere, per star.

@@ -5,6 +5,8 @@ import "core:path/filepath"
 import "core:strings"
 import "core:time"
 import fsw "shared:fsw"
+import "model_vox"
+import "platform"
 
 // Watching the data directory while the game runs (work items 0054 and
 // 0111). The operating system reports the changes (inotify on Linux,
@@ -118,8 +120,8 @@ data_file_category :: proc(relative_path: string) -> Data_File_Category {
 		return is_shader_file_name(name) ? .Shaders : .Ignored
 	case FONTS_DIRECTORY:
 		return name == FONTS_FILE_NAME ? .Fonts : .Ignored
-	case MODELS_DIRECTORY:
-		return strings.has_suffix(name, MODEL_FILE_EXTENSION) && !strings.has_prefix(name, ".") ? .Models : .Ignored
+	case model_vox.MODELS_DIRECTORY:
+		return strings.has_suffix(name, model_vox.MODEL_FILE_EXTENSION) && !strings.has_prefix(name, ".") ? .Models : .Ignored
 	case TEXTURES_DIRECTORY:
 		return name == PROCEDURAL_TEXTURES_FILE_NAME ? .Textures : .Ignored
 	case BLOCK_TEXTURES_DIRECTORY, ITEM_TEXTURES_DIRECTORY:
@@ -172,7 +174,7 @@ open_data_watch :: proc(watch: ^Data_Watch, data_directory: string) -> bool {
 	watcher, error := fsw.watch_dir_recursive(data_directory)
 	if error != .None {
 		watch.unavailable = true
-		log_printf("%s", data_watch_open_failed_line(data_directory, error))
+		platform.log_printf("%s", data_watch_open_failed_line(data_directory, error))
 		return false
 	}
 	watch.watcher = watcher

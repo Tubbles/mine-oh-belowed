@@ -5,6 +5,7 @@ import "core:os"
 import "core:slice"
 import "core:strings"
 import "core:time"
+import "platform"
 
 // The saved worlds the title screen and the Load screen list, read from
 // each save's world.sjson. The format versions and the entities file's
@@ -115,7 +116,7 @@ list_saves :: proc(saves: ^[dynamic]Save_Summary, saves_directory: string, expec
 
 // Removes the save and any staging or previous directory beside it.
 delete_save :: proc(saves_directory, directory_name: string) -> os.Error {
-	target := join_save_path(saves_directory, directory_name)
+	target := platform.join_path(saves_directory, directory_name)
 	for path in ([?]string{target, strings.concatenate({target, PREVIOUS_DIRECTORY_SUFFIX}, context.temp_allocator), strings.concatenate({target, STAGING_DIRECTORY_SUFFIX}, context.temp_allocator)}) {
 		if os.exists(path) {
 			os.remove_all(path) or_return
@@ -131,11 +132,11 @@ play_time_text :: proc(tick: u64, tick_rate: int) -> string {
 }
 
 // In the zone given (local_zone.odin), UTC for an empty one.
-date_text :: proc(unix_seconds: i64, zone: Local_Zone) -> string {
+date_text :: proc(unix_seconds: i64, zone: platform.Local_Zone) -> string {
 	utc, ok := time.time_to_datetime(time.unix(unix_seconds, 0))
 	if !ok {
 		return ""
 	}
-	local := to_local_datetime(utc, zone)
+	local := platform.to_local_datetime(utc, zone)
 	return fmt.tprintf("%04d-%02d-%02d %02d:%02d", local.year, local.month, local.day, local.hour, local.minute)
 }

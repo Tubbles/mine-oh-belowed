@@ -5,6 +5,7 @@ import "core:fmt"
 import "core:io"
 import "core:mem/virtual"
 import "core:os"
+import "platform"
 
 GAME_VERSION :: "0.0.0"
 // From build.sh or the flake through -define: the short commit ("+dirty"
@@ -157,19 +158,19 @@ start_input_backend :: proc(request: Input_Backend_Request) -> (backend: Input_B
 	reset_raylib_pointer_position()
 	reset_raylib_typed_text()
 	if request == .Raylib {
-		log_printf("input: raylib backend (requested with --input=raylib)")
+		platform.log_printf("input: raylib backend (requested with --input=raylib)")
 		return .Raylib, true
 	}
 	sdl3_ready, error_message := init_sdl3_input()
 	switch {
 	case sdl3_ready:
-		log_printf("input: sdl3 backend (%s)", request == .Sdl3 ? "requested with --input=sdl3" : "default")
+		platform.log_printf("input: sdl3 backend (%s)", request == .Sdl3 ? "requested with --input=sdl3" : "default")
 		return .Sdl3, true
 	case request == .Sdl3:
-		log_printf("error: --input=sdl3 but SDL failed to initialise: %s", error_message)
+		platform.log_printf("error: --input=sdl3 but SDL failed to initialise: %s", error_message)
 		return .Raylib, false
 	}
-	log_printf("input: raylib backend (SDL3 failed to initialise: %s)", error_message)
+	platform.log_printf("input: raylib backend (SDL3 failed to initialise: %s)", error_message)
 	return .Raylib, true
 }
 
@@ -180,11 +181,11 @@ main :: proc() {
 		return
 	}
 	if parse_error != nil {
-		log_printf("error: %s (see --help)", flags_error_message(parse_error))
+		platform.log_printf("error: %s (see --help)", flags_error_message(parse_error))
 		os.exit(2)
 	}
 	if problem := command_line_value_problem(command_line); problem != "" {
-		log_printf("error: %s", problem)
+		platform.log_printf("error: %s", problem)
 		os.exit(2)
 	}
 	if command_line.show_version {
@@ -192,29 +193,29 @@ main :: proc() {
 		return
 	}
 	if problem := command_line_conflict(command_line); problem != "" {
-		log_printf("error: %s", problem)
+		platform.log_printf("error: %s", problem)
 		os.exit(2)
 	}
 	if command_line.subcommand == CONFIG_SUBCOMMAND {
 		print_configuration(command_line.set_assignments[:])
 		return
 	}
-	open_log_file()
-	defer close_log_file()
+	platform.open_log_file(BUILD_STAMP)
+	defer platform.close_log_file()
 	// Crash traces into the log (logging.odin).
-	context.assertion_failure_proc = log_assertion_failure
-	install_crash_handlers()
+	context.assertion_failure_proc = platform.log_assertion_failure
+	platform.install_crash_handlers()
 	environment := read_configuration_environment()
 	loaded_configuration, configuration_problem := load_configuration(environment, command_line.set_assignments[:])
 	if configuration_problem != "" {
-		log_printf("error: %s", configuration_problem)
+		platform.log_printf("error: %s", configuration_problem)
 		os.exit(1)
 	}
 	apply_deck_preset_at_start(environment, &loaded_configuration)
 	data_directory := require_data_directory()
 	binding_overrides, overrides_problem := resolve_bindings(loaded_configuration.configuration.bindings, loaded_configuration.provenance)
 	if overrides_problem != "" {
-		log_printf("error: %s", overrides_problem)
+		platform.log_printf("error: %s", overrides_problem)
 		os.exit(1)
 	}
 	start, start_problem := load_start_data(data_directory, loaded_configuration, binding_overrides)
@@ -231,7 +232,7 @@ main :: proc() {
 	content := game_data.content
 	developer_grants, developer_problem := command_line_data_problem(command_line, content.items, content.developer_kits)
 	if developer_problem != "" {
-		log_printf("error: %s", developer_problem)
+		platform.log_printf("error: %s", developer_problem)
 		os.exit(2)
 	}
 	if command_line.benchmark > 0 {
@@ -295,21 +296,21 @@ load_start_data :: proc(data_directory: string, loaded: Loaded_Configuration, bi
 load_start_data_into :: proc(start: ^Start_Data, data_directory: string, loaded: Loaded_Configuration, binding_overrides: []Binding) -> (problem: string) {
 	allocator := virtual.arena_allocator(start.arena)
 	if start.fonts, problem = load_checked_fonts(data_directory, loaded); problem != "" {
-		log_printf("error: %s", problem)
+		platform.log_printf("error: %s", problem)
 		return problem
 	}
 	if start.bindings, problem = load_bindings(data_directory, binding_overrides, allocator); problem != "" {
-		log_printf("error: %s", problem)
+		platform.log_printf("error: %s", problem)
 		return problem
 	}
-	capture: Log_Capture
-	begin_log_capture(&capture)
+	capture: platform.Log_Capture
+	platform.begin_log_capture(&capture)
 	config_loaded, strings_loaded: bool
 	start.config, config_loaded = load_game_config(data_directory, allocator)
 	if config_loaded {
 		start.string_table, strings_loaded = load_string_table(data_directory)
 	}
-	problem = end_log_capture(&capture, "")
+	problem = platform.end_log_capture(&capture, "")
 	if !config_loaded || !strings_loaded {
 		return problem != "" ? problem : "the game config or the strings did not load"
 	}
@@ -344,7 +345,7 @@ load_checked_fonts :: proc(data_directory: string, loaded: Loaded_Configuration)
 make_backend_bindings :: proc(bindings: []Binding, backend: Input_Backend) -> Input_Bindings {
 	tables, unsupported := build_input_bindings(bindings, backend, context.temp_allocator)
 	if len(unsupported) > 0 {
-		log_printf("%s", unsupported_bindings_report(unsupported, backend))
+		platform.log_printf("%s", unsupported_bindings_report(unsupported, backend))
 	}
 	return tables
 }
@@ -352,11 +353,11 @@ make_backend_bindings :: proc(bindings: []Binding, backend: Input_Backend) -> In
 require_data_directory :: proc() -> string {
 	data_directory, found := resolve_data_directory()
 	if !found && ODIN_PLATFORM_SUBTARGET == .Android {
-		log_printf("error: no data directory: the copy from the app failed (see above)")
+		platform.log_printf("error: no data directory: the copy from the app failed (see above)")
 		os.exit(1)
 	}
 	if !found {
-		log_printf(
+		platform.log_printf(
 			"error: no data directory found. Set %s, run from the repository root (./%s), put %s beside the executable, or install to <executable directory>/%s",
 			DATA_DIRECTORY_ENVIRONMENT_VARIABLE,
 			WORKING_DIRECTORY_DATA,
@@ -384,7 +385,7 @@ load_bindings :: proc(data_directory: string, overrides: []Binding, allocator :=
 print_configuration :: proc(assignments: []string) {
 	loaded, problem := load_configuration(read_configuration_environment(), assignments)
 	if problem != "" {
-		log_printf("error: %s", problem)
+		platform.log_printf("error: %s", problem)
 		os.exit(1)
 	}
 	overrides, bindings: []Binding
@@ -399,7 +400,7 @@ print_configuration :: proc(assignments: []string) {
 		bindings, problem = load_bindings(data_directory, overrides)
 	}
 	if problem != "" {
-		log_printf("error: %s", problem)
+		platform.log_printf("error: %s", problem)
 		os.exit(1)
 	}
 	fmt.print(configuration_dump(loaded, bindings))
@@ -420,13 +421,13 @@ start_command_line_session :: proc(command_line: Command_Line, config: Game_Conf
 	}
 	plan, problem := command_line_plan(command_line, config, saves_directory, saves_found)
 	if problem != "" {
-		log_printf("error: %s", problem)
+		platform.log_printf("error: %s", problem)
 		os.exit(1)
 	}
 	session: ^Session
 	session, problem = start_session(plan, config, content, base_generator)
 	if problem != "" {
-		log_printf("error: cannot start the world: %s", problem)
+		platform.log_printf("error: cannot start the world: %s", problem)
 		os.exit(1)
 	}
 	if !plan.loading && session.save.enabled {
@@ -438,7 +439,7 @@ start_command_line_session :: proc(command_line: Command_Line, config: Game_Conf
 command_line_plan :: proc(command_line: Command_Line, config: Game_Config, saves_directory: string, saves_found: bool) -> (plan: Session_Plan, problem: string) {
 	if command_line.load_name != "" {
 		if !saves_found {
-			return {}, fmt.tprintf("no saves directory (set %s, %s)", SAVES_DIRECTORY_ENVIRONMENT_VARIABLE, DATA_HOME_VARIABLES)
+			return {}, fmt.tprintf("no saves directory (set %s, %s)", SAVES_DIRECTORY_ENVIRONMENT_VARIABLE, platform.DATA_HOME_VARIABLES)
 		}
 		return saved_world_plan(saves_directory, sanitize_world_name(command_line.load_name, context.temp_allocator))
 	}
@@ -523,14 +524,14 @@ saved_world_start :: proc(generator: ^Generator, loading: bool, file: World_File
 // player spawns; the generator stamps it, so it is set before streaming.
 choose_world_start :: proc(generator: ^Generator, debug_terrain: bool) -> World_Start {
 	if debug_terrain {
-		log_printf("world: debug terrain (seed %d unused)", generator.seed)
+		platform.log_printf("world: debug terrain (seed %d unused)", generator.seed)
 		return World_Start{debug_terrain = true, player = debug_terrain_player_start(), landing_pad = debug_terrain_landing_pad()}
 	}
 	spawn, found := find_spawn(generator)
 	if found {
-		log_printf("world: seed %d, spawn at %d %d %d", generator.seed, spawn.x, spawn.y, spawn.z)
+		platform.log_printf("world: seed %d, spawn at %d %d %d", generator.seed, spawn.x, spawn.y, spawn.z)
 	} else {
-		log_printf("world: seed %d, no spawn meets the requirements, starting at the origin", generator.seed)
+		platform.log_printf("world: seed %d, no spawn meets the requirements, starting at the origin", generator.seed)
 		spawn = {0, terrain_height(generator.seeds, 0, 0), 0}
 	}
 	generator.landing_pad = Landing_Pad_Site{present = true, centre = spawn}

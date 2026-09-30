@@ -2,6 +2,7 @@ package game
 
 import "core:encoding/json"
 import "core:fmt"
+import "platform"
 
 // Fluid prototypes from data/fluids.sjson (doc/fluids.md), resolved to a
 // dense Fluid_Id after the items. Fluids are never items: they live in
@@ -173,13 +174,13 @@ load_fluid_registry :: proc(data_directory: string, allocator := context.allocat
 	data, path := read_logged_data_file(data_directory, FLUIDS_FILE_NAME) or_return
 	file, parse_error := parse_fluids_file(data, allocator)
 	if parse_error != nil {
-		log_printf("error: cannot parse %s: %v", path, parse_error)
+		platform.log_printf("error: cannot parse %s: %v", path, parse_error)
 		return {}, false
 	}
 	problem: string
 	registry, problem = resolve_fluid_registry(file, allocator)
 	if problem != "" {
-		log_printf("error: invalid %s: %s", path, problem)
+		platform.log_printf("error: invalid %s: %s", path, problem)
 		return {}, false
 	}
 	return registry, true

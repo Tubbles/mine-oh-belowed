@@ -106,7 +106,7 @@ Into the cluster:
 - content -> presentation 35: `hot_reload.odin` 14 (the loop's), `data_watch.odin` 11 (directory and extension constants), `configuration.odin` 4 (resolution and frame cap limits), `command.odin` 2 (weather words).
 - world -> presentation 16: `hash_u64` 4 (the world audit moves it), the mesher's `Atlas_Layout`, `atlas_tile_index` and `face_tile_variation` 12.
 
-Cycles: 31 of the 32 graph assigned files are in the 185 file strongly connected component; only `render_frustum.odin` is outside. Leaf files join it through one helper each (`model_vox.odin` through `join_save_path`, `render_day.odin` through `smoothstep`, `render_fly_camera.odin` through `Input_Frame`). The back edges listed above (after the loop audit takes `diagnostics.odin` and `hot_reload.odin`: 17 from simulation, 21 from content, 16 from world) are what keeps presentation from sitting above world, simulation and content.
+Cycles: 31 of the 32 graph assigned files are in the 185 file strongly connected component; only `render_frustum.odin` is outside. Leaf files join it through one helper each (`model_vox.odin` through join_save_path (`join_path` since 0145), `render_day.odin` through `smoothstep`, `render_fly_camera.odin` through `Input_Frame`). The back edges listed above (after the loop audit takes `diagnostics.odin` and `hot_reload.odin`: 17 from simulation, 21 from content, 16 from world) are what keeps presentation from sitting above world, simulation and content.
 
 ## 4. Abstraction gaps
 

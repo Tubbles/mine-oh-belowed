@@ -1,6 +1,7 @@
 package game
 
 import "core:fmt"
+import "platform"
 
 // Content tables and remapping (work item 0047). Saved values index the
 // game data: blocks in chunks, items in stacks, machines of entities,
@@ -514,7 +515,7 @@ remap_craft_queue :: proc(queue: ^Craft_Queue, remap: Content_Remap) -> bool {
 		return false
 	}
 	if craft_queue_has_empty_runs(queue^) {
-		log_printf("save: dropped a hand crafting queue of %d crafts saved in the layout before work item 0138", queue.count)
+		platform.log_printf("save: dropped a hand crafting queue of %d crafts saved in the layout before work item 0138", queue.count)
 		queue^ = make_craft_queue()
 		return true
 	}

@@ -4,12 +4,13 @@ import "core:os"
 import "core:slice"
 import "core:strings"
 import "core:testing"
+import "platform"
 
 // Font tests read the shipped data/fonts; the few that write use a
 // temporary directory they create and remove.
 
 test_data_directory :: proc() -> string {
-	return join_save_path(#directory, "..", "data")
+	return platform.join_path(#directory, "..", "data")
 }
 
 @(test)
@@ -53,9 +54,9 @@ test_fonts_file_with_a_missing_font_is_refused :: proc(t: ^testing.T) {
 	context.allocator = context.temp_allocator
 	root := make_configuration_test_directory()
 	defer os.remove_all(root)
-	path := join_save_path(root, FONTS_DIRECTORY, FONTS_FILE_NAME)
+	path := platform.join_path(root, FONTS_DIRECTORY, FONTS_FILE_NAME)
 	write_test_file(path, `families = [{id = "sans", name_key = "font_sans", regular = "Sans.ttf", bold = "Sans.ttf"} {id = "mono", name_key = "font_mono", regular = "Mono.ttf", bold = "Mono.ttf", monospace = true}]`)
-	write_test_file(join_save_path(root, FONTS_DIRECTORY, "sans", "Sans.ttf"), "not read")
+	write_test_file(platform.join_path(root, FONTS_DIRECTORY, "sans", "Sans.ttf"), "not read")
 	_, problem := load_fonts(root)
 	testing.expect(t, strings.contains(problem, "Mono.ttf is missing"), problem)
 	write_test_file(path, `families = [{id = "sans"}]`)
@@ -211,7 +212,7 @@ test_approximate_width_follows_the_default_font :: proc(t: ^testing.T) {
 	sample := "Build the furnace, then smelt iron ore into plates. Inventory Settings 1234"
 	size :: 100
 	for weight in Font_Weight {
-		data, error := os.read_entire_file(font_file_path(join_save_path(test_data_directory(), FONTS_DIRECTORY), family, weight), context.temp_allocator)
+		data, error := os.read_entire_file(font_file_path(platform.join_path(test_data_directory(), FONTS_DIRECTORY), family, weight), context.temp_allocator)
 		testing.expect_value(t, error, nil)
 		width := font_file_text_width(data, sample, size)
 		approximation := approximate_text_width(sample, size)
@@ -251,7 +252,7 @@ test_shipped_fonts_have_every_string_glyph :: proc(t: ^testing.T) {
 	all_code_points := collect_code_points(#load("../data/strings/en.sjson", string), context.temp_allocator)
 	code_points := all_code_points[LAST_ASCII_CODE_POINT - FIRST_ASCII_CODE_POINT + 1:]
 	testing.expect(t, slice.contains(code_points, '×'))
-	fonts_directory := join_save_path(test_data_directory(), FONTS_DIRECTORY)
+	fonts_directory := platform.join_path(test_data_directory(), FONTS_DIRECTORY)
 	for family in fonts.families {
 		for weight in Font_Weight {
 			path := font_file_path(fonts_directory, family, weight)

@@ -5,6 +5,7 @@ import "core:os"
 import "core:strings"
 import "core:testing"
 import rl "shared:raylib"
+import "platform"
 
 // -define:TEXTURE_PREVIEW=true makes test_write_ore_texture_previews write
 // under tmp/texture_preview/ each generated ore tile at 1 to 1
@@ -29,7 +30,7 @@ test_ore_parameters :: proc() -> Ore_Texture_Parameters {
 }
 
 shipped_procedural_textures_data :: proc() -> []byte {
-	data, error := os.read_entire_file(join_save_path(test_data_directory(), TEXTURES_DIRECTORY, PROCEDURAL_TEXTURES_FILE_NAME), context.temp_allocator)
+	data, error := os.read_entire_file(platform.join_path(test_data_directory(), TEXTURES_DIRECTORY, PROCEDURAL_TEXTURES_FILE_NAME), context.temp_allocator)
 	assert(error == nil)
 	return data
 }
@@ -141,7 +142,7 @@ test_texture_edits_replace_an_entry :: proc(t: ^testing.T) {
 	registry := shipped_block_registry(t)
 	directory := make_configuration_test_directory()
 	defer os.remove_all(directory)
-	edits_path := join_save_path(directory, TEXTURE_EDITS_FILE_NAME)
+	edits_path := platform.join_path(directory, TEXTURE_EDITS_FILE_NAME)
 	write_test_file(edits_path, fmt.tprintf("textures = [{{%s}}]", TEST_ORE_ENTRY))
 	base := load_procedural_textures(test_data_directory(), "", registry)
 	edited := load_procedural_textures(test_data_directory(), edits_path, registry)
@@ -228,7 +229,7 @@ test_write_ore_texture_previews :: proc(t: ^testing.T) {
 	when TEXTURE_PREVIEW {
 		registry := shipped_block_registry(t)
 		procedural := load_procedural_textures(test_data_directory(), "", registry)
-		directory := join_save_path(#directory, "..", "tmp", "texture_preview")
+		directory := platform.join_path(#directory, "..", "tmp", "texture_preview")
 		os.make_directory_all(directory)
 		for name in SHIPPED_ORE_BLOCKS {
 			block, _ := find_block_id(registry, name)
@@ -243,17 +244,17 @@ test_write_ore_texture_previews :: proc(t: ^testing.T) {
 			for texel, index in tile {
 				tile_pixels[index] = rl.Color(texel)
 			}
-			rl.ExportImage(preview_image(tile_pixels, ATLAS_TILE_SIZE), strings.clone_to_cstring(join_save_path(directory, fmt.tprintf("%s.png", name)), context.temp_allocator))
+			rl.ExportImage(preview_image(tile_pixels, ATLAS_TILE_SIZE), strings.clone_to_cstring(platform.join_path(directory, fmt.tprintf("%s.png", name)), context.temp_allocator))
 			// The same tile unturned, enlarged for a look.
 			enlarged := make([]rl.Color, len(tile) * PREVIEW_ENLARGED_SCALE * PREVIEW_ENLARGED_SCALE, context.temp_allocator)
 			enlarged_size := ATLAS_TILE_SIZE * PREVIEW_ENLARGED_SCALE
 			for &pixel, index in enlarged {
 				pixel = rl.Color(tile[texel_index(index % enlarged_size / PREVIEW_ENLARGED_SCALE, index / enlarged_size / PREVIEW_ENLARGED_SCALE)])
 			}
-			rl.ExportImage(preview_image(enlarged, enlarged_size), strings.clone_to_cstring(join_save_path(directory, fmt.tprintf("%s_enlarged.png", name)), context.temp_allocator))
+			rl.ExportImage(preview_image(enlarged, enlarged_size), strings.clone_to_cstring(platform.join_path(directory, fmt.tprintf("%s_enlarged.png", name)), context.temp_allocator))
 			field_size := PREVIEW_FIELD_CELLS * ATLAS_TILE_SIZE * PREVIEW_PIXELS_PER_TEXEL
 			field := oriented_field_pixels(tile, PREVIEW_FIELD_CELLS, PREVIEW_PIXELS_PER_TEXEL)
-			rl.ExportImage(preview_image(field, field_size), strings.clone_to_cstring(join_save_path(directory, fmt.tprintf("%s_field.png", name)), context.temp_allocator))
+			rl.ExportImage(preview_image(field, field_size), strings.clone_to_cstring(platform.join_path(directory, fmt.tprintf("%s_field.png", name)), context.temp_allocator))
 		}
 	}
 }

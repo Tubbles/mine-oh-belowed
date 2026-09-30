@@ -3,6 +3,7 @@ package game
 import "core:log"
 import "core:slice"
 import "core:testing"
+import "generation_seed"
 
 // The climate biomes of work item 0058.
 
@@ -15,7 +16,7 @@ BIOME_SAMPLE_STRIDE :: 32
 test_temperature_is_temperate_at_the_origin :: proc(t: ^testing.T) {
 	testing.expect(t, abs(latitude_temperature(0) - ORIGIN_TEMPERATURE) < 1e-9)
 	for seed in TEST_SEEDS {
-		seeds := derive_purpose_seeds(seed)
+		seeds := generation_seed.derive_purpose_seeds(seed)
 		origin := terrain_temperature(seeds, 0, 0, SEA_LEVEL)
 		testing.expectf(t, abs(origin - ORIGIN_TEMPERATURE) <= TEMPERATURE_NOISE_AMPLITUDE, "seed %d origin temperature %v", seed, origin)
 		north := terrain_temperature(seeds, 0, -1500, SEA_LEVEL)
@@ -27,7 +28,7 @@ test_temperature_is_temperate_at_the_origin :: proc(t: ^testing.T) {
 
 @(test)
 test_temperature_falls_with_height :: proc(t: ^testing.T) {
-	seeds := derive_purpose_seeds(DEFAULT_WORLD_SEED)
+	seeds := generation_seed.derive_purpose_seeds(DEFAULT_WORLD_SEED)
 	for x in ([3]i32{0, 700, -1300}) {
 		sea := terrain_temperature(seeds, x, 200, SEA_LEVEL)
 		mountain := terrain_temperature(seeds, x, 200, SEA_LEVEL + 60)

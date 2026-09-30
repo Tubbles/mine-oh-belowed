@@ -1,4 +1,4 @@
-package game
+package run_length
 
 Run :: struct {
 	value: u16,

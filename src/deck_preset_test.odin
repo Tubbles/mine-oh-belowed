@@ -3,6 +3,7 @@ package game
 import "core:os"
 import "core:strings"
 import "core:testing"
+import "platform"
 
 // The preset's decision per environment and settings state, and its marker
 // through the settings file (work item 0076). Files only under a temporary
@@ -91,7 +92,7 @@ test_deck_preset_marker_round_trip :: proc(t: ^testing.T) {
 	testing.expect(t, !deck_preset_active("1", third.configuration.settings, third.provenance))
 	testing.expect_value(t, third.configuration.settings, chosen)
 
-	settings_file := join_save_path(root, "home", GAME_DIRECTORY_NAME, CONFIGURATION_DROP_IN_DIRECTORY, SETTINGS_FILE_NAME)
+	settings_file := platform.join_path(root, "home", platform.GAME_DIRECTORY_NAME, CONFIGURATION_DROP_IN_DIRECTORY, SETTINGS_FILE_NAME)
 	write_test_file(settings_file, "settings = {ui_scale = 1.3}\n")
 	fourth, fourth_problem := load_configuration(environment, {})
 	testing.expect_value(t, fourth_problem, "")

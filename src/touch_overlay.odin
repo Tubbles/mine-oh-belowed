@@ -8,6 +8,7 @@ import "core:os"
 import "core:strings"
 import rl "shared:raylib"
 import sdl "vendor:sdl3"
+import "platform"
 
 // The touch overlay (work item 0115, doc/touch_overlay.md): a virtual
 // gamepad the game draws on a touch screen. It fills a Raw_Gamepad
@@ -660,12 +661,12 @@ parse_touch_overlay_file :: proc(data: []byte, source: string, allocator := cont
 load_touch_overlay :: proc(data_directory: string, allocator := context.allocator) -> (layout: Touch_Overlay_Layout, ok: bool) {
 	data, path, read_error := read_data_file(data_directory, TOUCH_OVERLAY_FILE_NAME, context.temp_allocator)
 	if read_error != nil {
-		log_printf("error: cannot read %s: %v", path, read_error)
+		platform.log_printf("error: cannot read %s: %v", path, read_error)
 		return {}, false
 	}
 	problem: string
 	if layout, problem = parse_touch_overlay_file(data, path, allocator); problem != "" {
-		log_printf("error: invalid %s", problem)
+		platform.log_printf("error: invalid %s", problem)
 		return {}, false
 	}
 	return layout, true
@@ -801,7 +802,7 @@ parse_touch_layouts_file :: proc(data: []byte, source: string, allocator := cont
 // directory.
 touch_layouts_path :: proc(environment: Configuration_Environment) -> string {
 	directory, found := user_configuration_directory(environment)
-	return found ? join_save_path(directory, TOUCH_OVERLAY_FILE_NAME) : ""
+	return found ? platform.join_path(directory, TOUCH_OVERLAY_FILE_NAME) : ""
 }
 
 // No file is no user layouts. A file that cannot be read or is refused is
@@ -815,7 +816,7 @@ load_touch_layouts :: proc(environment: Configuration_Environment) -> (layouts: 
 	data, read_error := os.read_entire_file(path, context.temp_allocator)
 	if read_error != nil {
 		problem = fmt.tprintf("cannot read %s: %v", path, read_error)
-		log_printf("error: %s, the default touch layout is used", problem)
+		platform.log_printf("error: %s, the default touch layout is used", problem)
 		return Touch_Layouts{locked_path = strings.clone(path)}, problem
 	}
 	arena := new_growing_arena()
@@ -824,7 +825,7 @@ load_touch_layouts :: proc(environment: Configuration_Environment) -> (layouts: 
 	named, selection, problem = parse_touch_layouts_file(data, path, virtual.arena_allocator(arena))
 	if problem != "" {
 		destroy_arena(arena)
-		log_printf("error: invalid %s, the default touch layout is used", problem)
+		platform.log_printf("error: invalid %s, the default touch layout is used", problem)
 		return Touch_Layouts{locked_path = strings.clone(path)}, problem
 	}
 	return Touch_Layouts{layouts = named, selection = selection, arena = arena}, ""
@@ -962,12 +963,12 @@ touch_layouts_file_text :: proc(layouts: Touch_Layouts) -> string {
 write_touch_layouts_file :: proc(environment: Configuration_Environment, layouts: Touch_Layouts) -> string {
 	directory, found := user_configuration_directory(environment)
 	if !found {
-		return "no configuration directory (set " + CONFIG_HOME_VARIABLES + ")"
+		return "no configuration directory (set " + platform.CONFIG_HOME_VARIABLES + ")"
 	}
-	if error := make_directory_path(directory); error != nil {
+	if error := platform.make_directory_path(directory); error != nil {
 		return fmt.tprintf("cannot create %s: %v", directory, error)
 	}
-	path := join_save_path(directory, TOUCH_OVERLAY_FILE_NAME)
+	path := platform.join_path(directory, TOUCH_OVERLAY_FILE_NAME)
 	if error := os.write_entire_file(path, touch_layouts_file_text(layouts)); error != nil {
 		return fmt.tprintf("cannot write %s: %v", path, error)
 	}

@@ -6,6 +6,8 @@ import "core:image/png"
 import "core:os"
 import "core:slice"
 import rl "shared:raylib"
+import "generation_seed"
+import "platform"
 
 // The block atlas, built at startup and on a reload: one 16 by 16 tile per
 // face group per block. A tile comes from data/textures/blocks/<id>.png,
@@ -69,18 +71,9 @@ atlas_pixel_height :: proc(layout: Atlas_Layout) -> int {
 	return layout.rows * ATLAS_TILE_SIZE
 }
 
-// splitmix64 finaliser: a fixed integer hash, so the atlas is identical on
-// every run and every machine.
-hash_u64 :: proc(value: u64) -> u64 {
-	mixed := value + 0x9e3779b97f4a7c15
-	mixed = (mixed ~ (mixed >> 30)) * 0xbf58476d1ce4e5b9
-	mixed = (mixed ~ (mixed >> 27)) * 0x94d049bb133111eb
-	return mixed ~ (mixed >> 31)
-}
-
 texel_noise :: proc(tile_index, x, y: int) -> int {
 	key := u64(ATLAS_NOISE_SEED) ~ (u64(tile_index) << 32) ~ (u64(y) << 16) ~ u64(x)
-	return int(hash_u64(key) % (2 * ATLAS_NOISE_AMPLITUDE + 1)) - ATLAS_NOISE_AMPLITUDE
+	return int(generation_seed.hash_u64(key) % (2 * ATLAS_NOISE_AMPLITUDE + 1)) - ATLAS_NOISE_AMPLITUDE
 }
 
 noisy_texel :: proc(base: [3]u8, noise: int) -> [4]u8 {
@@ -153,18 +146,18 @@ read_tile_file :: proc(path: string) -> (tile: Tile_Pixels, found: bool) {
 	}
 	data, read_error := os.read_entire_file(path, context.temp_allocator)
 	if read_error != nil {
-		log_printf("error: cannot read %s: %v, using the colour tile", path, read_error)
+		platform.log_printf("error: cannot read %s: %v, using the colour tile", path, read_error)
 		return {}, false
 	}
 	decoded, decode_error := png.load_from_bytes(data, {.alpha_add_if_missing}, context.temp_allocator)
 	if decode_error != nil {
-		log_printf("error: cannot decode %s: %v, using the colour tile", path, decode_error)
+		platform.log_printf("error: cannot decode %s: %v, using the colour tile", path, decode_error)
 		return {}, false
 	}
 	problem: string
 	tile, problem = tile_from_image(decoded)
 	if problem != "" {
-		log_printf("error: %s: %s, using the colour tile", path, problem)
+		platform.log_printf("error: %s: %s, using the colour tile", path, problem)
 		return {}, false
 	}
 	return tile, true

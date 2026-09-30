@@ -6,6 +6,7 @@ import "core:fmt"
 import "core:os"
 import "core:strings"
 import "core:sync"
+import "platform"
 
 // Player facing text by key, from data/strings/en.sjson. A missing key
 // shows as the key itself, so the gap is visible in the UI, and is reported
@@ -97,7 +98,7 @@ load_string_table :: proc(data_directory: string, allocator := context.allocator
 	parse_error: json.Unmarshal_Error
 	table, parse_error = parse_string_table(data, allocator)
 	if parse_error != nil {
-		log_printf("error: cannot parse %s: %v", path, parse_error)
+		platform.log_printf("error: cannot parse %s: %v", path, parse_error)
 		return {}, false
 	}
 	return table, true
@@ -114,7 +115,7 @@ lookup_text :: proc(table: ^String_Table, key: string) -> string {
 			table.reported_missing = make(map[string]bool, runtime.heap_allocator())
 		}
 		table.reported_missing[strings.clone(key, runtime.heap_allocator())] = true
-		log_printf("strings: missing key %q in %s", key, STRINGS_FILE_NAME)
+		platform.log_printf("strings: missing key %q in %s", key, STRINGS_FILE_NAME)
 	}
 	return key
 }

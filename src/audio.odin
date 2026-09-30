@@ -6,6 +6,7 @@ import "core:mem/virtual"
 import "core:os"
 import "core:strings"
 import rl "shared:raylib"
+import "platform"
 
 // Sound (work item 0068): the sound table in data/sounds/sounds.sjson and
 // a small mixer over raylib audio. Effects are short sounds played once,
@@ -143,7 +144,7 @@ sound_listed :: proc(table: Sound_Table, id: string) -> bool {
 }
 
 sound_file_path :: proc(data_directory, file: string) -> string {
-	return join_save_path(data_directory, SOUNDS_DIRECTORY, file)
+	return platform.join_path(data_directory, SOUNDS_DIRECTORY, file)
 }
 
 // Every listed file is on disk.
@@ -266,12 +267,12 @@ sound_output_volume :: proc(entry: Sound_Entry, volume: f32, volumes: Audio_Volu
 init_audio :: proc(data_directory: string, blocks: Block_Registry, biomes: []Biome, settings: Settings) -> Audio_Mixer {
 	rl.InitAudioDevice()
 	if !rl.IsAudioDeviceReady() {
-		log_printf("audio: no audio device, the game stays silent")
+		platform.log_printf("audio: no audio device, the game stays silent")
 		return {}
 	}
 	mixer := Audio_Mixer{device_ready = true, volumes = audio_volumes(settings)}
 	if problem := load_mixer_sounds(&mixer, data_directory, blocks, biomes); problem != "" {
-		log_printf("error: sounds: %s", problem)
+		platform.log_printf("error: sounds: %s", problem)
 	}
 	return mixer
 }

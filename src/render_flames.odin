@@ -3,6 +3,7 @@ package game
 import "core:math"
 import rl "shared:raylib"
 import "shared:raylib/rlgl"
+import "generation_seed"
 
 // Torch flames (work item 0061): a small camera facing quad above every
 // light emitting post the mesher found (Chunk_Mesh_Data.flames). Its size
@@ -21,7 +22,7 @@ FLAME_BRIGHT_COLOR :: rl.Color{255, 225, 120, 245}
 // 0 to 1: two sine waves of unrelated speeds, phase shifted per cell.
 flame_flicker :: proc(cell: World_Coordinate, seconds: f64) -> f32 {
 	key := u64(u32(cell.x)) ~ (u64(u32(cell.y)) << 21) ~ (u64(u32(cell.z)) << 42)
-	phase := f64(hash_u64(key) % 1024) / 1024 * math.TAU
+	phase := f64(generation_seed.hash_u64(key) % 1024) / 1024 * math.TAU
 	angle := seconds * FLAME_FLICKER_HERTZ * math.TAU + phase
 	wave := 0.6 * math.sin(angle) + 0.4 * math.sin(2.3 * angle + phase)
 	return f32(wave * 0.5 + 0.5)

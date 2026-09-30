@@ -2,6 +2,7 @@ package game
 
 import "core:encoding/json"
 import "core:fmt"
+import "platform"
 
 // Contracts and the catalogue from data/contracts.sjson (work item 0041,
 // DESIGN.md Research, quests and rockets). A contract asks for items, pays
@@ -220,13 +221,13 @@ load_contract_registry :: proc(data_directory: string, items: Item_Registry, str
 	data, path := read_logged_data_file(data_directory, CONTRACTS_FILE_NAME) or_return
 	file, parse_error := parse_contracts_file(data, allocator)
 	if parse_error != nil {
-		log_printf("error: cannot parse %s: %v", path, parse_error)
+		platform.log_printf("error: cannot parse %s: %v", path, parse_error)
 		return {}, false
 	}
 	problem: string
 	registry, problem = resolve_contract_registry(file, items, strings, allocator)
 	if problem != "" {
-		log_printf("error: invalid %s: %s", path, problem)
+		platform.log_printf("error: invalid %s: %s", path, problem)
 		return {}, false
 	}
 	return registry, true

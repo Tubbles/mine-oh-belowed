@@ -1,6 +1,7 @@
 package game
 
 import rl "shared:raylib"
+import "platform"
 
 // Machine models on the GPU (work items 0055 and 0056): per machine that
 // names a model, the body and the moving part, each as a lit and an
@@ -129,7 +130,7 @@ replace_machine_models :: proc(renderer: ^Model_Renderer, machines: Machine_Regi
 // Machine_Ids.
 use_machine_models :: proc(renderer: ^Model_Renderer, machines: Machine_Registry, data_directory: string) {
 	if problem := replace_machine_models(renderer, machines, data_directory); problem != "" {
-		log_printf("error: %s; machines are drawn as boxes", problem)
+		platform.log_printf("error: %s; machines are drawn as boxes", problem)
 		unload_model_meshes(renderer)
 	}
 }

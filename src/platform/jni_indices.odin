@@ -1,4 +1,4 @@
-package game
+package platform
 
 // The slots of the JNI function tables the phone's vibrator calls
 // (haptics_android.odin, work item 0122) and the export's All files
