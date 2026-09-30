@@ -17,7 +17,11 @@ import sdl "vendor:sdl3"
 // look half turns the view. While a screen is open the overlay draws and
 // reads Start and Back alone, so every screen can be closed by touch (most
 // have no close widget and raylib keeps Android's back key); every other
-// touch is the pointer then (0114).
+// touch is the pointer then (0114). In the tap scheme (0118,
+// settings.touch_interaction) a touch on the look half is undecided until
+// it moves (the look drag), rests (a hold: Mine at the touched point) or
+// lifts (a tap: Interact or Place at the point), each through a gamepad
+// control like every other touch.
 
 TOUCH_OVERLAY_FILE_NAME :: "touch_overlay.sjson"
 // raylib's MAX_TOUCH_POINTS (rcore.c).
@@ -29,6 +33,11 @@ TOUCH_OVERLAY_SDL_BUTTON_COUNT :: int(sdl.GamepadButton.MISC6) + 1
 TOUCH_OVERLAY_AXIS_COUNT :: int(sdl.GamepadAxis.RIGHT_TRIGGER) + 1
 // raylib's trigger axes rest at -1, SDL's at 0.
 RAYLIB_TRIGGER_REST :: -1
+// The tap scheme (0118): a touch on the look half that moves further than
+// this (pixels of a reference_height high screen, scaled like the layout)
+// is the look drag, one that rests this long is a hold.
+TOUCH_TAP_SLOP :: 12.0
+TOUCH_HOLD_SECONDS :: 0.25
 
 // The settings value (settings.touch_overlay): auto is on for the Android
 // build and off elsewhere.
@@ -36,6 +45,14 @@ Touch_Overlay_Mode :: enum u8 {
 	Auto,
 	On,
 	Off,
+}
+
+// The settings value (settings.touch_interaction, 0118): tap aims Mine,
+// Place and Interact at the touched point; crosshair aims them with the
+// view as 0115 did.
+Touch_Interaction :: enum u8 {
+	Tap,
+	Crosshair,
 }
 
 Touch_Overlay_Kind :: enum u8 {
@@ -83,6 +100,10 @@ Touch_Overlay_Element_Entry :: struct {
 	radius:      f32,
 	sprint_rim:  f32,
 	sensitivity: f32,
+	// The look's controls in the tap scheme (0118).
+	hold_control:         string,
+	tap_interact_control: string,
+	tap_place_control:    string,
 }
 
 Touch_Overlay_File :: struct {
@@ -103,6 +124,12 @@ Touch_Overlay_Element :: struct {
 	radius:      f32,
 	sprint_rim:  f32,
 	sensitivity: f32,
+	// A look's controls in the tap scheme (0118): the hold presses
+	// hold_control, a tap tap_interact_control on a target that takes
+	// Interact, else tap_place_control.
+	hold_control:         Touch_Overlay_Control,
+	tap_interact_control: Touch_Overlay_Control,
+	tap_place_control:    Touch_Overlay_Control,
 }
 
 Touch_Overlay_Layout :: struct {
@@ -131,6 +158,10 @@ Touch_Role :: enum u8 {
 	Button,
 	Stick,
 	Look,
+	// The tap scheme's touch on the look half before it moved or rested
+	// (advance_pending_touch), and one that rested: Mine at its point.
+	Pending,
+	Hold,
 }
 
 // One finger from the frame it lands to the frame it lifts. element is
@@ -145,20 +176,59 @@ Touch_Slot :: struct {
 	previous: [2]f32,
 	// A stick's drag crossed the rim upwards (stick_sprint_latched).
 	sprint_latched: bool,
+	// How long a Pending touch has been down.
+	held_seconds:   f32,
+}
+
+// A tap after its finger lifted: first it aims at the point until a tick
+// has run with that aim, so the target is the tapped one, then it presses
+// control (Interact's SOUTH or Place's LEFT_TRIGGER, chosen by that
+// target) until a tick has run with the press.
+Touch_Tap_Phase :: enum u8 {
+	None,
+	Aiming,
+	Pressing,
+}
+
+// element is the look element the finger began on, whose controls the
+// tap presses. waited_seconds: frame time since the tap last saw a tick;
+// past TOUCH_HOLD_SECONDS (a developer pause holds the ticks) it is
+// dropped instead of firing late.
+Touch_Tap :: struct {
+	phase:          Touch_Tap_Phase,
+	point:          [2]f32,
+	element:        int,
+	control:        Touch_Overlay_Control,
+	waited_seconds: f32,
 }
 
 Touch_Overlay_State :: struct {
 	slots: [TOUCH_POINT_CAPACITY]Touch_Slot,
+	tap:   Touch_Tap,
+}
+
+// What the frame hands the overlay besides the fingers. ticked: the
+// previous frame ran a simulation tick, so the world saw the aim and the
+// press that frame sent. target_takes_interaction: the first player's
+// target after that tick takes Interact (entity_takes_interact).
+Touch_Interaction_Frame :: struct {
+	interaction:              Touch_Interaction,
+	frame_seconds:            f32,
+	ticked:                   bool,
+	target_takes_interaction: bool,
 }
 
 // What the fingers hold this frame. buttons by SDL button index; stick in
 // the raw axis convention (x right, y down, -1 to 1); look_delta in mouse
-// pixels.
+// pixels. aim_point (render pixels) is where Mine, Place and Interact aim
+// while aims is set, instead of the view's centre.
 Touch_Overlay_Output :: struct {
 	buttons:    [RAW_GAMEPAD_BUTTON_CAPACITY]bool,
 	triggers:   [Gamepad_Trigger]bool,
 	stick:      [2]f32,
 	look_delta: [2]f32,
+	aims:       bool,
+	aim_point:  [2]f32,
 }
 
 // What the input backends merge into their frame. active while the
@@ -168,11 +238,14 @@ Touch_Overlay_Output :: struct {
 // button, is a finger on one of the overlay's buttons, so the frame reads
 // that button up (touch_overlay_mouse) and a Back tap never also clicks
 // the widget under the pill.
+// aim_direction: the render camera's ray through output.aim_point, set
+// by the frame (read_touch_overlay_frame) while output.aims.
 Touch_Overlay_Frame :: struct {
 	active:          bool,
 	world_shown:     bool,
 	output:          Touch_Overlay_Output,
 	pointer_claimed: bool,
+	aim_direction:   [3]f32,
 }
 
 // Loading.
@@ -287,6 +360,21 @@ resolve_touch_overlay_look :: proc(entry: Touch_Overlay_Element_Entry, element: 
 	}
 	if entry.sensitivity <= 0 {
 		return "the sensitivity must be positive"
+	}
+	controls := [?]struct {
+		key:    string,
+		name:   string,
+		target: ^Touch_Overlay_Control,
+	} {
+		{"hold_control", entry.hold_control, &element.hold_control},
+		{"tap_interact_control", entry.tap_interact_control, &element.tap_interact_control},
+		{"tap_place_control", entry.tap_place_control, &element.tap_place_control},
+	}
+	for control in controls {
+		ok: bool
+		if control.target^, ok = touch_overlay_control_from_name(control.name); !ok {
+			return fmt.tprintf("unknown %s %q (a gamepad button bindings.sjson names, or LEFT_TRIGGER, RIGHT_TRIGGER)", control.key, control.name)
+		}
 	}
 	return ""
 }
@@ -508,8 +596,9 @@ placed_for_screen :: proc(layout: Touch_Overlay_Layout, placed: []Placed_Element
 
 // What a finger landing at point becomes. With a screen open a finger on
 // Start or Back is that button and every other finger the pointer's. One
-// stick at a time: a second finger on the stick's half is ignored.
-classify_touch :: proc(state: Touch_Overlay_State, layout: Touch_Overlay_Layout, placed: []Placed_Element, point, screen_size: [2]f32, world_shown: bool) -> (role: Touch_Role, element: int) {
+// stick at a time: a second finger on the stick's half is ignored. In the
+// tap scheme the look half's finger is undecided at first.
+classify_touch :: proc(state: Touch_Overlay_State, layout: Touch_Overlay_Layout, placed: []Placed_Element, point, screen_size: [2]f32, world_shown: bool, interaction: Touch_Interaction) -> (role: Touch_Role, element: int) {
 	if button := button_at(placed_for_screen(layout, placed, world_shown, context.temp_allocator), point); button >= 0 {
 		return .Button, button
 	}
@@ -521,7 +610,7 @@ classify_touch :: proc(state: Touch_Overlay_State, layout: Touch_Overlay_Layout,
 		return .Stick, stick
 	}
 	if look := zone_element(layout, .Look, side); look >= 0 {
-		return .Look, look
+		return interaction == .Tap ? .Pending : .Look, look
 	}
 	return .Ignored, -1
 }
@@ -553,15 +642,85 @@ free_touch_slot :: proc(state: Touch_Overlay_State) -> int {
 	return -1
 }
 
+// A tap past its aim once a tick has run with it presses the control the
+// target calls for, and ends once a tick has run with the press. A screen
+// opening, a data reload that removed its look element, or a wait for a
+// tick longer than TOUCH_HOLD_SECONDS drops it.
+advance_touch_tap :: proc(tap: Touch_Tap, layout: Touch_Overlay_Layout, world_shown: bool, inputs: Touch_Interaction_Frame) -> Touch_Tap {
+	if !world_shown || tap.phase == .None || !look_element_valid(layout, tap.element) {
+		return {}
+	}
+	if !inputs.ticked {
+		waiting := tap
+		waiting.waited_seconds += inputs.frame_seconds
+		return waiting.waited_seconds > TOUCH_HOLD_SECONDS ? {} : waiting
+	}
+	if tap.phase == .Pressing {
+		return {}
+	}
+	control := tap_control(layout.elements[tap.element], inputs.target_takes_interaction)
+	return Touch_Tap{phase = .Pressing, point = tap.point, element = tap.element, control = control}
+}
+
+look_element_valid :: proc(layout: Touch_Overlay_Layout, element: int) -> bool {
+	return element >= 0 && element < len(layout.elements) && layout.elements[element].kind == .Look
+}
+
+// Interact's control on a target that takes it, else Place's, through the
+// bindings like the buttons.
+tap_control :: proc(look: Touch_Overlay_Element, target_takes_interaction: bool) -> Touch_Overlay_Control {
+	return target_takes_interaction ? look.tap_interact_control : look.tap_place_control
+}
+
+// An undecided finger becomes the look drag once it moves past the slop,
+// taking the drag so far on this frame, else a hold once it rests
+// TOUCH_HOLD_SECONDS.
+advance_pending_touch :: proc(slot: Touch_Slot, slop, frame_seconds: f32) -> Touch_Slot {
+	result := slot
+	if result.role != .Pending {
+		return result
+	}
+	result.held_seconds += frame_seconds
+	switch {
+	case linalg.length(result.position - result.origin) > slop:
+		result.role = .Look
+		result.previous = result.origin
+	case result.held_seconds >= TOUCH_HOLD_SECONDS:
+		result.role = .Hold
+	}
+	return result
+}
+
+// A finger lifting while still undecided in the world is a tap, unless a
+// tap is still in flight (a second one would move its aim before its press
+// was read) or another finger holds (the hold owns the aim and the dig).
+lifted_touch_taps :: proc(state: Touch_Overlay_State, slot: Touch_Slot, layout: Touch_Overlay_Layout, world_shown: bool) -> bool {
+	return world_shown && slot.role == .Pending && touch_slot_reads(slot, layout) && state.tap.phase == .None && !touch_hold_held(state)
+}
+
+touch_hold_held :: proc(state: Touch_Overlay_State) -> bool {
+	for slot in state.slots {
+		if slot.active && slot.role == .Hold {
+			return true
+		}
+	}
+	return false
+}
+
 // Moves the fingers still down, forgets the lifted ones and gives each
 // new finger its role from where it landed.
-update_touch_overlay :: proc(state: ^Touch_Overlay_State, points: []Touch_Point, layout: Touch_Overlay_Layout, placed: []Placed_Element, screen_size: [2]f32, world_shown: bool) {
+update_touch_overlay :: proc(state: ^Touch_Overlay_State, points: []Touch_Point, layout: Touch_Overlay_Layout, placed: []Placed_Element, screen_size: [2]f32, world_shown: bool, inputs: Touch_Interaction_Frame) {
+	state.tap = advance_touch_tap(state.tap, layout, world_shown, inputs)
+	slop := TOUCH_TAP_SLOP * touch_overlay_scale(layout, screen_size)
 	for &slot in state.slots {
 		if !slot.active {
 			continue
 		}
 		point, found := find_touch_point(points, slot.id)
 		if !found {
+			if lifted_touch_taps(state^, slot, layout, world_shown) {
+				state.tap = Touch_Tap{phase = .Aiming, point = slot.position, element = slot.element}
+			}
 			slot = {}
 			continue
 		}
@@ -570,7 +729,13 @@ update_touch_overlay :: proc(state: ^Touch_Overlay_State, points: []Touch_Point,
 		// crossing there would be a fresh press the frame it closes.
 		if world_shown {
 			slot.sprint_latched = stick_sprint_latched(slot, layout, screen_size)
+			slot = advance_pending_touch(slot, slop, inputs.frame_seconds)
 		}
+	}
+	// A hold that begins while a tap is still in flight owns the aim: the
+	// tap is dropped rather than firing at the held block.
+	if touch_hold_held(state^) {
+		state.tap = {}
 	}
 	for point in points {
 		if touch_slot_tracks(state^, point.id) {
@@ -580,7 +745,7 @@ update_touch_overlay :: proc(state: ^Touch_Overlay_State, points: []Touch_Point,
 		if free_index < 0 {
 			return
 		}
-		role, element := classify_touch(state^, layout, placed, point.position, screen_size, world_shown)
+		role, element := classify_touch(state^, layout, placed, point.position, screen_size, world_shown, inputs.interaction)
 		state.slots[free_index] = Touch_Slot{active = true, id = point.id, role = role, element = element, origin = point.position, position = point.position, previous = point.position}
 	}
 }
@@ -639,7 +804,22 @@ add_touch_slot_output :: proc(output: ^Touch_Overlay_Output, slot: Touch_Slot, e
 		}
 	case .Look:
 		output.look_delta += (slot.position - slot.previous) * element.sensitivity
+	case .Pending:
+	case .Hold:
+		press_touch_control(output, element.hold_control)
+		output.aims, output.aim_point = true, slot.position
 	}
+}
+
+add_touch_tap_output :: proc(output: ^Touch_Overlay_Output, tap: Touch_Tap) {
+	switch tap.phase {
+	case .None:
+		return
+	case .Aiming:
+	case .Pressing:
+		press_touch_control(output, tap.control)
+	}
+	output.aims, output.aim_point = true, tap.point
 }
 
 // False for an ignored finger, and for one whose element a data reload
@@ -656,7 +836,7 @@ touch_slot_reads :: proc(slot: Touch_Slot, layout: Touch_Overlay_Layout) -> bool
 		return kind == .Button
 	case .Stick:
 		return kind == .Stick
-	case .Look:
+	case .Look, .Pending, .Hold:
 		return kind == .Look
 	}
 	return false
@@ -673,6 +853,9 @@ touch_overlay_output :: proc(state: Touch_Overlay_State, layout: Touch_Overlay_L
 		if touch_slot_reads(slot, layout) {
 			add_touch_slot_output(&output, slot, layout.elements[slot.element], scale, world_shown)
 		}
+	}
+	if world_shown {
+		add_touch_tap_output(&output, state.tap)
 	}
 	return output
 }
@@ -758,6 +941,23 @@ pointer_look_delta :: proc(mouse_delta: [2]f32, overlay: Touch_Overlay_Frame) ->
 	return touch_overlay_drives_world(overlay) ? overlay.output.look_delta : mouse_delta
 }
 
+// The tap scheme's aim into the input frame, where the player's target
+// takes it instead of the look direction (tick_player). The simulation
+// gets the direction like the look delta and never calls raylib.
+apply_touch_overlay_aim :: proc(frame: Input_Frame, overlay: Touch_Overlay_Frame) -> Input_Frame {
+	result := frame
+	if touch_overlay_drives_world(overlay) && overlay.output.aims {
+		result.aim_direction, result.aim_overrides = overlay.aim_direction, true
+	}
+	return result
+}
+
+// The tap scheme hides the crosshair and rings the mined block instead
+// (draw_hud), whenever the overlay is on in a world.
+touch_overlay_aims :: proc(state: ^Frame_State) -> bool {
+	return state.session != nil && touch_overlay_on(state) && state.settings.touch_interaction == .Tap
+}
+
 // The frame.
 
 // Every finger on Android. On the desktop raylib has no touch points, so
@@ -784,6 +984,47 @@ touch_overlay_on :: proc(state: ^Frame_State) -> bool {
 	return touch_overlay_enabled(state.settings.touch_overlay, state.touch_overlay_forced, ODIN_PLATFORM_SUBTARGET == .Android)
 }
 
+// The tap scheme's inputs: frame_tick_count is still the previous frame's
+// here (update_session sets it after the input is read), and the target is
+// the one that frame's last tick found.
+touch_interaction_frame :: proc(state: ^Frame_State) -> Touch_Interaction_Frame {
+	simulation := &state.session.simulation
+	return Touch_Interaction_Frame {
+		interaction = state.settings.touch_interaction,
+		frame_seconds = state.frame_seconds,
+		ticked = state.frame_tick_count > 0,
+		target_takes_interaction = entity_takes_interact(&simulation.world.entities, simulation.players[0].target.entity),
+	}
+}
+
+// The render camera's ray through a point in render pixels, as a
+// direction from the eye the simulation casts the target from. The camera
+// is the last frame's (Frame_State.render_camera); before the first world
+// frame it is empty and the aim stays off.
+touch_aim_direction :: proc(point: [2]f32, camera: rl.Camera3D, screen_size: [2]int, world: ^World, registry: Block_Registry, eye: [3]f32) -> (direction: [3]f32, ok: bool) {
+	if camera.fovy <= 0 {
+		return {}, false
+	}
+	ray := rl.GetScreenToWorldRayEx(point, camera, i32(screen_size.x), i32(screen_size.y))
+	return eye_aim_direction(world, registry, eye, ray.position, linalg.normalize0(ray.direction)), true
+}
+
+// A little into the hit block, so the eye's ray to the point enters it
+// rather than stopping on its face.
+TOUCH_AIM_INSET :: 0.01
+
+// The direction from the eye to what the camera ray hits, or to its far
+// end when it hits nothing. In third person the camera sits behind and
+// beside the eye, so its ray's own direction cast from the eye would pick
+// another block; in first person the two coincide. The reach counts from
+// the eye, so the ray reaches the camera's distance to the eye further.
+eye_aim_direction :: proc(world: ^World, registry: Block_Registry, eye, ray_origin, ray_direction: [3]f32) -> [3]f32 {
+	reach := PLAYER_REACH + linalg.length(ray_origin - eye)
+	hit := raycast_blocks(world, registry, ray_origin, ray_direction, reach)
+	distance := hit.hit ? hit.distance + TOUCH_AIM_INSET : reach
+	return linalg.normalize0(ray_origin + ray_direction * distance - eye)
+}
+
 // Only in a world: the title screens take touch as the pointer alone.
 read_touch_overlay_frame :: proc(state: ^Frame_State) -> Touch_Overlay_Frame {
 	if !touch_overlay_on(state) || state.session == nil {
@@ -793,17 +1034,22 @@ read_touch_overlay_frame :: proc(state: ^Frame_State) -> Touch_Overlay_Frame {
 	screen_size := render_size()
 	screen := [2]f32{f32(screen_size.x), f32(screen_size.y)}
 	buffer: [TOUCH_POINT_CAPACITY]Touch_Point
-	frame := touch_overlay_frame(&state.touch_overlay, state.content.touch_overlay, read_touch_points(buffer[:]), screen, !ui_blocks_world(state.ui.screens))
+	frame := touch_overlay_frame(&state.touch_overlay, state.content.touch_overlay, read_touch_points(buffer[:]), screen, !ui_blocks_world(state.ui.screens), touch_interaction_frame(state))
 	frame.output.look_delta = render_pixels_to_window_units(frame.output.look_delta, cursor_window_size(), screen_size)
+	if frame.output.aims {
+		simulation := &state.session.simulation
+		eye := player_eye(simulation.players[0].position)
+		frame.aim_direction, frame.output.aims = touch_aim_direction(frame.output.aim_point, state.render_camera, screen_size, &simulation.world, state.content.blocks, eye)
+	}
 	return frame
 }
 
 // One frame of the overlay from this frame's fingers, in touch index
 // order, so points[0] is the touch raylib holds the left mouse button for
 // (the mouse itself on the desktop).
-touch_overlay_frame :: proc(state: ^Touch_Overlay_State, layout: Touch_Overlay_Layout, points: []Touch_Point, screen_size: [2]f32, world_shown: bool) -> Touch_Overlay_Frame {
+touch_overlay_frame :: proc(state: ^Touch_Overlay_State, layout: Touch_Overlay_Layout, points: []Touch_Point, screen_size: [2]f32, world_shown: bool, inputs: Touch_Interaction_Frame) -> Touch_Overlay_Frame {
 	placed := overlay_layout(layout, screen_size, context.temp_allocator)
-	update_touch_overlay(state, points, layout, placed, screen_size, world_shown)
+	update_touch_overlay(state, points, layout, placed, screen_size, world_shown, inputs)
 	return Touch_Overlay_Frame {
 		active = true,
 		world_shown = world_shown,

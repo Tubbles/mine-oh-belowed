@@ -80,6 +80,10 @@ Settings :: struct {
 	// for the Android build and off elsewhere; --touch-overlay forces it
 	// on for a run.
 	touch_overlay:             Touch_Overlay_Mode,
+	// How the overlay aims Mine, Place and Interact while it drives the
+	// world (work item 0118): tap at the touched point, or crosshair with
+	// the view as in 0115.
+	touch_interaction:         Touch_Interaction,
 	// Set by the Steam Deck preset (deck_preset.odin, work item 0076)
 	// when it applied, so it applies once and later starts leave the
 	// player's choices alone.
@@ -130,6 +134,7 @@ DEFAULT_SETTINGS :: Settings {
 	sneak_hold                = .Hold,
 	sprint_hold               = .Toggle,
 	touch_overlay             = .Auto,
+	touch_interaction         = .Tap,
 	deck_preset_applied       = false,
 }
 

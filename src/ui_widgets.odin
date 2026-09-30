@@ -124,6 +124,10 @@ draw_ring :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, color: Ui_Color, th
 	push_command(state, {kind = .Ring, rectangle = rectangle, color = color, thickness = thickness})
 }
 
+draw_arc :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, color: Ui_Color, thickness, sweep: f32) {
+	push_command(state, {kind = .Arc, rectangle = rectangle, color = color, thickness = thickness, sweep = clamp(sweep, 0, 1)})
+}
+
 // emphasis draws body sized text bold, like a heading (text_weight).
 draw_text :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, text: string, size: f32, alignment: Text_Alignment, color := UI_TEXT_COLOR, emphasis := false) {
 	push_command(state, {kind = .Text, rectangle = rectangle, text = text, text_size = size, weight = text_weight(size, emphasis), alignment = alignment, color = color})

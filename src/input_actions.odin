@@ -214,6 +214,11 @@ Input_Frame :: struct {
 	// Developer mode (world_input), for the Jump double tap that toggles
 	// flying (update_jump_double_tap).
 	developer:     bool,
+	// The touch overlay's tap scheme (0118): the unit direction through
+	// the touched point, from the render camera, which the player's target
+	// takes instead of the look direction while aim_overrides is set.
+	aim_direction: [3]f32,
+	aim_overrides: bool,
 }
 
 // What the backend plays on the controller this frame (work item 0038),

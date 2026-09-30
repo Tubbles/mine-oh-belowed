@@ -203,7 +203,7 @@ audit_draw_list :: proc(audit: ^Ui_Audit, state: ^Ui_State, case_text, frame_nam
 		case .Clip_End:
 			clipped = false
 			continue
-		case .Fill, .Outline, .Text, .Focus_Outline, .Clip_Begin, .Atlas_Tile, .Item_Tile, .Image, .Ui_Icon, .Circle, .Ring:
+		case .Fill, .Outline, .Text, .Focus_Outline, .Clip_Begin, .Atlas_Tile, .Item_Tile, .Image, .Ui_Icon, .Circle, .Ring, .Arc:
 		}
 		for problem in audit_command(state, command, clip, clipped) {
 			audit_report(audit, case_text, frame_name, problem, command.kind, command.rectangle, command.text)

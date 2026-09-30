@@ -83,6 +83,9 @@ Frame_State :: struct {
 	frame_seconds:      f32,
 	// The sprint field of view kick's progress, 0 to 1 (advance_sprint_kick).
 	sprint_kick:        f32,
+	// The camera the world was last drawn with: the touch overlay's aim
+	// ray (touch_aim_direction) and the HUD's mining ring.
+	render_camera:      rl.Camera3D,
 	// The Render page's frame time average and the ticks update_session
 	// ran this frame (work item 0086).
 	frame_times:        Frame_Time_Ring,
@@ -329,13 +332,14 @@ interpolation_alpha :: proc(accumulator: Tick_Accumulator) -> f64 {
 
 read_input_frame :: proc(state: ^Frame_State, frame_seconds: f32) -> Input_Frame {
 	overlay := read_touch_overlay_frame(state)
+	frame: Input_Frame
 	switch state.input_backend {
 	case .Sdl3:
-		return read_sdl3_input_frame(&state.sdl3_input, state.input, frame_seconds, state.settings, state.input_bindings, overlay)
+		frame = read_sdl3_input_frame(&state.sdl3_input, state.input, frame_seconds, state.settings, state.input_bindings, overlay)
 	case .Raylib:
-		return read_raylib_input_frame(state.input.pressed, state.input_bindings, overlay)
+		frame = read_raylib_input_frame(state.input.pressed, state.input_bindings, overlay)
 	}
-	return {}
+	return apply_touch_overlay_aim(frame, overlay)
 }
 
 // The mouse steers the view while the world is shown and is free for the
@@ -662,6 +666,7 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session, sky: Day_Sky,
 	view := player_view_camera(world, content.blocks, player, alpha, bob, state.settings)
 	state.sprint_kick = advance_sprint_kick(state.sprint_kick, animation.moving && player_sprints(player, state.input.pressed), state.frame_seconds)
 	camera := fly_camera_to_raylib(view, sprint_field_of_view(state.settings.field_of_view, sprint_kick_degrees(state.settings), state.sprint_kick))
+	state.render_camera = camera
 	still_seconds := flicker_seconds(seconds, state.settings.reduced_motion)
 	look := weather_look(weather, weather_motion_enabled(state.settings), sky.blend)
 	apply_weather(&state.renderer, look, still_seconds)
@@ -705,6 +710,16 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session, sky: Day_Sky,
 	return counts
 }
 
+// The mined block's centre in render pixels, through the camera the world
+// was drawn with this frame (the HUD draws after the world).
+mining_ring_centre :: proc(state: ^Frame_State, mining: Mining_State) -> [2]f32 {
+	if !mining.active {
+		return {}
+	}
+	size := render_size()
+	return rl.GetWorldToScreenEx(block_centre(mining.block), state.render_camera, i32(size.x), i32(size.y))
+}
+
 // The context every screen gets. Without a session the world fields stay
 // empty; only the title screens and settings run then.
 make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
@@ -743,6 +758,8 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 		return screen_context
 	}
 	screen_context.save_requested = &session.save_requested
+	screen_context.touch_aims = touch_overlay_aims(state)
+	screen_context.mining_ring_centre = mining_ring_centre(state, session.simulation.players[0].mining)
 	screen_context.player = &session.simulation.players[0]
 	screen_context.world = &session.simulation.world
 	screen_context.tick = session.simulation.tick

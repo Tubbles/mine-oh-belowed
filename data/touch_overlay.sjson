@@ -28,7 +28,13 @@
 //     the first crossing within 45 degrees of straight up holds it until
 //     the finger lifts)
 //   look: side (the half whose drags turn the view) and sensitivity (the
-//     drag's pixels are multiplied by it and added as mouse pixels)
+//     drag's pixels are multiplied by it and added as mouse pixels), and
+//     the controls of the tap scheme (work item 0118, the touch_interaction
+//     setting), each a control as a button's: hold_control (held while a
+//     finger rests on the half, aimed at the finger: Mine),
+//     tap_interact_control (pressed by a tap on a target that takes
+//     Interact) and tap_place_control (pressed by a tap on anything else:
+//     Place)
 //
 // The layout is GameNative's (a 2424 by 1080 screenshot of 2026-09-29)
 // without its d-pad, whose half belongs to the stick, and without R3.
@@ -48,5 +54,5 @@ elements = [
 	{kind = "button" control = "BACK" shape = "rectangle" anchor = "top_center" position = [-99, 60] size = [163, 79] label = "Back"}
 	{kind = "button" control = "START" shape = "rectangle" anchor = "top_center" position = [92, 60] size = [163, 79] label = "Start"}
 	{kind = "stick" side = "left" radius = 130 sprint_rim = 1.25}
-	{kind = "look" side = "right" sensitivity = 1.0}
+	{kind = "look" side = "right" sensitivity = 1.0 hold_control = "RIGHT_TRIGGER" tap_interact_control = "SOUTH" tap_place_control = "LEFT_TRIGGER"}
 ]

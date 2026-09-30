@@ -14,7 +14,7 @@ SETTINGS_ROW_COUNT :: 14
 DISPLAY_SETTINGS_ROW_COUNT :: 17
 AUDIO_SETTINGS_ROW_COUNT :: 3
 CONTROL_SETTINGS_ROW_COUNT :: 5
-ACCESSIBILITY_SETTINGS_ROW_COUNT :: 6
+ACCESSIBILITY_SETTINGS_ROW_COUNT :: 7
 
 Screen_Context :: struct {
 	settings:        ^Settings,
@@ -93,6 +93,11 @@ Screen_Context :: struct {
 	// The texture editor's entries (ui_texture_editor.odin), kept by the
 	// frame loop. Nil in tests that open no editor.
 	texture_editor:       ^Texture_Editor,
+	// The touch overlay's tap scheme is on (touch_overlay_aims): the HUD
+	// draws no crosshair and rings the mined block, whose centre
+	// mining_ring_centre is in render pixels.
+	touch_aims:           bool,
+	mining_ring_centre:   [2]f32,
 }
 
 // Pause opens the pause menu from the world, Open_Inventory the inventory,
@@ -588,6 +593,15 @@ accessibility_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, setting
 	if ui_choice(state, settings_row(content), text("settings_touch_overlay"), text(touch_overlay_mode_keys[settings.touch_overlay]), text("settings_touch_overlay_tooltip")) {
 		settings.touch_overlay = next_touch_overlay_mode(settings.touch_overlay)
 	}
+	if ui_choice(state, settings_row(content), text("settings_touch_interaction"), text(touch_interaction_keys[settings.touch_interaction]), text("settings_touch_interaction_tooltip")) {
+		settings.touch_interaction = settings.touch_interaction == .Tap ? .Crosshair : .Tap
+	}
+}
+
+@(rodata)
+touch_interaction_keys := [Touch_Interaction]string {
+	.Tap       = "settings_touch_interaction_tap",
+	.Crosshair = "settings_touch_interaction_crosshair",
 }
 
 @(rodata)

@@ -257,6 +257,7 @@ test_settings_file_round_trip :: proc(t: ^testing.T) {
 	settings.sneak_hold = .Toggle
 	settings.sprint_hold = .Hold
 	settings.touch_overlay = .Off
+	settings.touch_interaction = .Crosshair
 	settings.deck_preset_applied = true
 	testing.expect_value(t, write_settings_file(environment, settings), "")
 
@@ -284,6 +285,7 @@ test_settings_file_round_trip :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(string(written_data), "\tpalette = \"colour_blind\"\n"), string(written_data))
 	testing.expect(t, strings.contains(string(written_data), "\tsneak_hold = \"toggle\"\n"), string(written_data))
 	testing.expect(t, strings.contains(string(written_data), "\ttouch_overlay = \"off\"\n"), string(written_data))
+	testing.expect(t, strings.contains(string(written_data), "\ttouch_interaction = \"crosshair\"\n"), string(written_data))
 	testing.expect(t, strings.contains(string(written_data), "\tdeck_preset_applied = true\n"), string(written_data))
 }
 
@@ -402,7 +404,7 @@ test_configuration_accessibility_settings :: proc(t: ^testing.T) {
 	defer os.remove_all(root)
 	drop_in := join_save_path(root, "home", GAME_DIRECTORY_NAME, CONFIGURATION_DROP_IN_DIRECTORY, "50-accessibility.sjson")
 
-	write_test_file(drop_in, `settings = {text_scale = 1.6 palette = "colour_blind" reduced_motion = true sneak_hold = "toggle" sprint_hold = "hold" touch_overlay = "on"}`)
+	write_test_file(drop_in, `settings = {text_scale = 1.6 palette = "colour_blind" reduced_motion = true sneak_hold = "toggle" sprint_hold = "hold" touch_overlay = "on" touch_interaction = "crosshair"}`)
 	loaded, problem := load_configuration(test_environment(root), {})
 	testing.expect_value(t, problem, "")
 	settings := loaded.configuration.settings
@@ -412,6 +414,8 @@ test_configuration_accessibility_settings :: proc(t: ^testing.T) {
 	testing.expect_value(t, settings.sneak_hold, Hold_Mode.Toggle)
 	testing.expect_value(t, settings.sprint_hold, Hold_Mode.Hold)
 	testing.expect_value(t, settings.touch_overlay, Touch_Overlay_Mode.On)
+	testing.expect_value(t, settings.touch_interaction, Touch_Interaction.Crosshair)
+	testing.expect_value(t, DEFAULT_SETTINGS.touch_interaction, Touch_Interaction.Tap)
 	write_test_file(drop_in, "settings = {text_scale = 0.8}")
 	_, problem = load_configuration(test_environment(root), {})
 	testing.expect_value(t, problem, "")
@@ -430,6 +434,7 @@ test_configuration_accessibility_settings :: proc(t: ^testing.T) {
 		{`settings = {sneak_hold = "press"}`, `settings.sneak_hold is "press", not one of toggle, hold`},
 		{"settings = {sprint_hold = true}", "settings.sprint_hold must be one of"},
 		{`settings = {touch_overlay = "always"}`, `settings.touch_overlay is "always", not one of auto, on, off`},
+		{`settings = {touch_interaction = "swipe"}`, `settings.touch_interaction is "swipe", not one of tap, crosshair`},
 	}
 	for case_value in invalid {
 		write_test_file(drop_in, case_value.text)

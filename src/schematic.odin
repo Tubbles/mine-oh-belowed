@@ -86,10 +86,10 @@ resolve_use_item :: proc(player: ^Player, entities: ^Entities, items: Item_Regis
 		result.pressed -= {.Use_Item}
 		result.just_pressed -= {.Use_Item}
 	}
-	crate := pool_get(&entities.schematic_crates, player.target.entity)
-	if crate == nil || .Interact not_in input.pressed {
+	if !schematic_crate_takes_interact(entities, player.target.entity) || .Interact not_in input.pressed {
 		return
 	}
+	crate := pool_get(&entities.schematic_crates, player.target.entity)
 	result.pressed -= {.Jump, .Interact}
 	result.just_pressed -= {.Jump, .Interact}
 	if .Interact in input.just_pressed && used == NO_ITEM && !stack_is_empty(crate.slots[0]) {
@@ -97,6 +97,12 @@ resolve_use_item :: proc(player: ^Player, entities: ^Entities, items: Item_Regis
 		take_from_slot(&crate.slots[0], 1)
 	}
 	return
+}
+
+// Interact on a schematic crate takes its schematic, also on an empty
+// one, where it does nothing but keeps A from jumping.
+schematic_crate_takes_interact :: proc(entities: ^Entities, handle: Entity_Handle) -> bool {
+	return pool_get(&entities.schematic_crates, handle) != nil
 }
 
 // Reads a schematic: its recipe is found (counted once in the statistics)

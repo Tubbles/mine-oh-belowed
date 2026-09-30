@@ -126,6 +126,11 @@ execute_draw_command :: proc(command: Draw_Command, focus: Ui_Id, atlas: Icon_At
 		box := to_pixels(command.rectangle, pixels_per_unit)
 		radius := min(box.width, box.height) / 2
 		rl.DrawRing({box.x + box.width / 2, box.y + box.height / 2}, max(radius - command.thickness * pixels_per_unit, 0), radius, 0, 360, 0, to_raylib_color(command.color))
+	case .Arc:
+		box := to_pixels(command.rectangle, pixels_per_unit)
+		radius := min(box.width, box.height) / 2
+		// raylib's angles run clockwise on the screen from the right.
+		rl.DrawRing({box.x + box.width / 2, box.y + box.height / 2}, max(radius - command.thickness * pixels_per_unit, 0), radius, -90, -90 + 360 * command.sweep, 0, to_raylib_color(command.color))
 	}
 }
 

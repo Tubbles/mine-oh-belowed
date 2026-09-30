@@ -248,6 +248,10 @@ settings_touch_overlay_tooltip = "Buttons and sticks drawn on a touch screen. Au
 settings_touch_overlay_auto = "Auto"
 settings_touch_overlay_on = "On"
 settings_touch_overlay_off = "Off"
+settings_touch_interaction = "Touch aiming"
+settings_touch_interaction_tooltip = "With the touch controls in the world. Tap: hold a finger on a block to mine it, tap to place the selected block or to open a machine. Crosshair: mine, place and interact at the screen centre with RT, LT and A"
+settings_touch_interaction_tap = "Tap"
+settings_touch_interaction_crosshair = "Crosshair"
 
 // Glyph bar labels
 hint_select = "Select"

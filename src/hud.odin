@@ -25,6 +25,9 @@ HUD_RADIAL_RADIUS :: UI_SLOT_SIZE * 2.5
 // The mining progress bar above the crosshair.
 HUD_MINING_BAR_WIDTH :: 4 * CROSSHAIR_SIZE
 HUD_MINING_BAR_HEIGHT :: 6.0
+// The touch tap scheme's ring around the mined block (0118).
+HUD_MINING_RING_DIAMETER :: 3 * CROSSHAIR_SIZE
+HUD_MINING_RING_THICKNESS :: 6.0
 
 draw_crosshair :: proc(state: ^Ui_State) {
 	centre := state.screen_units / 2
@@ -42,6 +45,21 @@ draw_mining_progress :: proc(state: ^Ui_State, mining: Mining_State) {
 	centre := state.screen_units / 2
 	bar := Ui_Rectangle{centre.x - HUD_MINING_BAR_WIDTH / 2, centre.y - CROSSHAIR_SIZE - 2 * UI_GAP - HUD_MINING_BAR_HEIGHT, HUD_MINING_BAR_WIDTH, HUD_MINING_BAR_HEIGHT}
 	ui_progress_bar(state, bar, fraction)
+}
+
+// The touch tap scheme's progress: no crosshair shows where the finger
+// digs, so a ring around the mined block's centre (render pixels) fills
+// clockwise instead of the bar.
+draw_mining_ring :: proc(state: ^Ui_State, mining: Mining_State, centre_pixels: [2]f32) {
+	fraction := mining_fraction(mining)
+	if fraction <= 0 {
+		return
+	}
+	theme := ui_theme(state)
+	centre := centre_pixels / state.pixels_per_unit
+	ring := Ui_Rectangle{centre.x - HUD_MINING_RING_DIAMETER / 2, centre.y - HUD_MINING_RING_DIAMETER / 2, HUD_MINING_RING_DIAMETER, HUD_MINING_RING_DIAMETER}
+	draw_ring(state, ring, theme.colors[.Widget], HUD_MINING_RING_THICKNESS)
+	draw_arc(state, ring, theme.colors[.Accent], HUD_MINING_RING_THICKNESS, fraction)
 }
 
 hud_slot_size :: proc(index, selected: int) -> f32 {
@@ -234,8 +252,12 @@ draw_contract_objective :: proc(state: ^Ui_State, screen_context: Screen_Context
 
 draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	player, items := screen_context.player, screen_context.items
-	draw_crosshair(state)
-	draw_mining_progress(state, player.mining)
+	if screen_context.touch_aims {
+		draw_mining_ring(state, player.mining, screen_context.mining_ring_centre)
+	} else {
+		draw_crosshair(state)
+		draw_mining_progress(state, player.mining)
+	}
 	draw_hud_hotbar(state, player^, items)
 	draw_craft_queue(state, player^, screen_context)
 	if state.screens.count > 0 {

@@ -162,6 +162,9 @@ Draw_Command_Kind :: enum u8 {
 	// rectangle (the touch overlay, touch_overlay.odin).
 	Circle,
 	Ring,
+	// A ring's arc of thickness, the share sweep of the circle clockwise
+	// from the top (the HUD's mining ring, hud.odin).
+	Arc,
 }
 
 Text_Alignment :: enum u8 {
@@ -193,6 +196,7 @@ Draw_Command :: struct {
 	pixels:         []Ui_Color,
 	image_size:     [2]i32,
 	image_revision: u64,
+	sweep:          f32,
 }
 
 Repeat_State :: struct {

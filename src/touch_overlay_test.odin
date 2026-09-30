@@ -1,5 +1,6 @@
 package game
 
+import "core:math/linalg"
 import "core:testing"
 import rl "shared:raylib"
 import sdl "vendor:sdl3"
@@ -35,10 +36,15 @@ slot_by_id :: proc(state: Touch_Overlay_State, id: i32) -> Touch_Slot {
 	return {}
 }
 
+// 0115's scheme, where the look half is the look drag from the start; a
+// 60 Hz frame with a tick in the one before.
+CROSSHAIR_TOUCH :: Touch_Interaction_Frame{interaction = .Crosshair, frame_seconds = 1.0 / 60, ticked = true}
+TAP_TOUCH :: Touch_Interaction_Frame{interaction = .Tap, frame_seconds = 1.0 / 60, ticked = true}
+
 // One frame of fingers, the output as the backends read it.
-touch_frame :: proc(state: ^Touch_Overlay_State, layout: Touch_Overlay_Layout, points: []Touch_Point, world_shown := true, screen := PHONE_SCREEN) -> Touch_Overlay_Output {
+touch_frame :: proc(state: ^Touch_Overlay_State, layout: Touch_Overlay_Layout, points: []Touch_Point, world_shown := true, screen := PHONE_SCREEN, inputs := CROSSHAIR_TOUCH) -> Touch_Overlay_Output {
 	placed := overlay_layout(layout, screen, context.temp_allocator)
-	update_touch_overlay(state, points, layout, placed, screen, world_shown)
+	update_touch_overlay(state, points, layout, placed, screen, world_shown, inputs)
 	return touch_overlay_output(state^, layout, screen, world_shown)
 }
 
@@ -400,7 +406,9 @@ test_touch_overlay_errors_name_the_element :: proc(t: ^testing.T) {
 		{`reference_height = 1080 elements = [{kind = "button" control = "SOUTH" shape = "circle" anchor = "middle" position = [10, 10] size = [20, 20] label = "A"}]`, `elements[0] ("A"): unknown anchor "middle"`},
 		{`reference_height = 1080 elements = [{kind = "stick" side = "left" radius = 130 sprint_rim = 1.25} {kind = "dpad" label = "D"}]`, `elements[1] ("D"): unknown kind "dpad"`},
 		{`reference_height = 1080 elements = [{kind = "stick" side = "up" radius = 130 sprint_rim = 1.25}]`, `elements[0] (stick): unknown side "up"`},
-		{`reference_height = 1080 elements = [{kind = "stick" side = "left" radius = 130 sprint_rim = 1.25} {kind = "look" side = "left" sensitivity = 1}]`, "the stick and the look are on the same side"},
+		{`reference_height = 1080 elements = [{kind = "stick" side = "left" radius = 130 sprint_rim = 1.25} {kind = "look" side = "left" sensitivity = 1 hold_control = "RIGHT_TRIGGER" tap_interact_control = "SOUTH" tap_place_control = "LEFT_TRIGGER"}]`, "the stick and the look are on the same side"},
+		{`reference_height = 1080 elements = [{kind = "look" side = "right" sensitivity = 1 hold_control = "MINE" tap_interact_control = "SOUTH" tap_place_control = "LEFT_TRIGGER"}]`, `elements[0] (look): unknown hold_control "MINE"`},
+		{`reference_height = 1080 elements = [{kind = "look" side = "right" sensitivity = 1 hold_control = "RIGHT_TRIGGER" tap_interact_control = "SOUTH"}]`, `elements[0] (look): unknown tap_place_control ""`},
 		{`reference_height = 1080 elements = [{kind = "look" side = "right" sensitivity = 1 colour = "red"}]`, "unknown key elements[0].colour"},
 		{`reference_height = 0 elements = []`, "reference_height must be positive"},
 	}
@@ -515,31 +523,360 @@ test_a_touch_the_overlay_claims_is_no_pointer_click :: proc(t: ^testing.T) {
 	pressed_mouse.position = {1304, 60}
 	pressed_mouse.button_down[int(rl.MouseButton.LEFT)] = true
 	// A Start tap over a screen: the pill reads, the mouse button does not.
-	frame := touch_overlay_frame(&state, layout, {{id = 7, position = {1304, 60}}}, PHONE_SCREEN, false)
+	frame := touch_overlay_frame(&state, layout, {{id = 7, position = {1304, 60}}}, PHONE_SCREEN, false, CROSSHAIR_TOUCH)
 	testing.expect(t, frame.output.buttons[int(sdl.GamepadButton.START)])
 	testing.expect(t, frame.pointer_claimed)
 	mouse := touch_overlay_mouse(pressed_mouse, frame)
 	testing.expect(t, !mouse.button_down[int(rl.MouseButton.LEFT)])
 	expect_near(t, mouse.position, {1304, 60})
 	// Still claimed while the finger stays down.
-	frame = touch_overlay_frame(&state, layout, {{id = 7, position = {1320, 400}}}, PHONE_SCREEN, false)
+	frame = touch_overlay_frame(&state, layout, {{id = 7, position = {1320, 400}}}, PHONE_SCREEN, false, CROSSHAIR_TOUCH)
 	testing.expect(t, frame.pointer_claimed)
-	touch_overlay_frame(&state, layout, {}, PHONE_SCREEN, false)
+	touch_overlay_frame(&state, layout, {}, PHONE_SCREEN, false, CROSSHAIR_TOUCH)
 	// A plain pointer tap elsewhere over the screen keeps the button down.
-	frame = touch_overlay_frame(&state, layout, {{id = 8, position = {900, 500}}}, PHONE_SCREEN, false)
+	frame = touch_overlay_frame(&state, layout, {{id = 8, position = {900, 500}}}, PHONE_SCREEN, false, CROSSHAIR_TOUCH)
 	testing.expect(t, !frame.pointer_claimed)
 	testing.expect(t, touch_overlay_mouse(pressed_mouse, frame).button_down[int(rl.MouseButton.LEFT)])
-	touch_overlay_frame(&state, layout, {}, PHONE_SCREEN, false)
+	touch_overlay_frame(&state, layout, {}, PHONE_SCREEN, false, CROSSHAIR_TOUCH)
 	// In the world a button claims it too, the stick does not.
-	frame = touch_overlay_frame(&state, layout, {{id = 9, position = {2112, 575}}}, PHONE_SCREEN, true)
+	frame = touch_overlay_frame(&state, layout, {{id = 9, position = {2112, 575}}}, PHONE_SCREEN, true, CROSSHAIR_TOUCH)
 	testing.expect(t, frame.pointer_claimed)
-	touch_overlay_frame(&state, layout, {}, PHONE_SCREEN, true)
-	frame = touch_overlay_frame(&state, layout, {{id = 10, position = {600, 700}}}, PHONE_SCREEN, true)
+	touch_overlay_frame(&state, layout, {}, PHONE_SCREEN, true, CROSSHAIR_TOUCH)
+	frame = touch_overlay_frame(&state, layout, {{id = 10, position = {600, 700}}}, PHONE_SCREEN, true, CROSSHAIR_TOUCH)
 	testing.expect(t, !frame.pointer_claimed)
 	// Only the first touch holds the mouse button: a second finger on
 	// Start leaves a pointer finger's click alone.
-	frame = touch_overlay_frame(&state, layout, {{id = 10, position = {600, 700}}, {id = 11, position = {1304, 60}}}, PHONE_SCREEN, true)
+	frame = touch_overlay_frame(&state, layout, {{id = 10, position = {600, 700}}, {id = 11, position = {1304, 60}}}, PHONE_SCREEN, true, CROSSHAIR_TOUCH)
 	testing.expect(t, !frame.pointer_claimed)
 	// The overlay off: nothing claimed.
 	testing.expect(t, touch_overlay_mouse(pressed_mouse, {}).button_down[int(rl.MouseButton.LEFT)])
+}
+
+// The tap scheme (0118). A free spot on the look half.
+TAP_POINT :: [2]f32{1600, 850}
+
+@(test)
+test_a_resting_touch_becomes_a_hold_that_mines_at_the_point :: proc(t: ^testing.T) {
+	layout := shipped_touch_overlay(t)
+	state: Touch_Overlay_State
+	inputs := TAP_TOUCH
+	inputs.frame_seconds = 0.1
+	// Undecided while it rests less than TOUCH_HOLD_SECONDS, also when it
+	// wobbles inside the slop.
+	for position in ([?][2]f32{TAP_POINT, TAP_POINT + {5, 0}, TAP_POINT + {0, 6}}) {
+		output := touch_frame(&state, layout, {{id = 0, position = position}}, inputs = inputs)
+		testing.expect_value(t, output, Touch_Overlay_Output{})
+	}
+	output := touch_frame(&state, layout, {{id = 0, position = TAP_POINT + {0, 6}}}, inputs = inputs)
+	testing.expect_value(t, slot_by_id(state, 0).role, Touch_Role.Hold)
+	testing.expect(t, output.triggers[.Right])
+	testing.expect(t, output.aims)
+	expect_near(t, output.aim_point, TAP_POINT + {0, 6})
+	testing.expect_value(t, output.look_delta, [2]f32{})
+	// Mine through the bindings, and the aim follows the finger.
+	tables, _ := build_input_bindings(shipped_default_bindings(t), .Raylib, context.temp_allocator)
+	testing.expect(t, .Mine in gamepad_button_actions(touch_overlay_raw_gamepad(output, .Raylib), tables))
+	output = touch_frame(&state, layout, {{id = 0, position = TAP_POINT + {80, 0}}}, inputs = inputs)
+	testing.expect(t, output.triggers[.Right])
+	expect_near(t, output.aim_point, TAP_POINT + {80, 0})
+	// A hold's lift is no tap.
+	output = touch_frame(&state, layout, {}, inputs = inputs)
+	testing.expect_value(t, output, Touch_Overlay_Output{})
+	testing.expect_value(t, state.tap.phase, Touch_Tap_Phase.None)
+}
+
+@(test)
+test_a_touch_that_moves_before_the_hold_is_the_look_drag :: proc(t: ^testing.T) {
+	layout := shipped_touch_overlay(t)
+	state: Touch_Overlay_State
+	touch_frame(&state, layout, {{id = 0, position = TAP_POINT}}, inputs = TAP_TOUCH)
+	// Past the slop (12 pixels at 1080 high): the drag so far turns the view.
+	output := touch_frame(&state, layout, {{id = 0, position = TAP_POINT + {20, 0}}}, inputs = TAP_TOUCH)
+	testing.expect_value(t, slot_by_id(state, 0).role, Touch_Role.Look)
+	expect_near(t, output.look_delta, {20, 0})
+	testing.expect(t, !output.aims)
+	testing.expect_value(t, output.triggers, [Gamepad_Trigger]bool{})
+	// Resting afterwards stays the look drag, and the lift taps nothing.
+	for _ in 0 ..< 30 {
+		output = touch_frame(&state, layout, {{id = 0, position = TAP_POINT + {20, 0}}}, inputs = TAP_TOUCH)
+	}
+	testing.expect_value(t, output, Touch_Overlay_Output{})
+	output = touch_frame(&state, layout, {}, inputs = TAP_TOUCH)
+	testing.expect_value(t, output, Touch_Overlay_Output{})
+	// On a 720 high screen the slop scales: 10 pixels is past it.
+	small := [2]f32{1280, 720}
+	touch_frame(&state, layout, {{id = 1, position = {1000, 500}}}, true, small, TAP_TOUCH)
+	touch_frame(&state, layout, {{id = 1, position = {1010, 500}}}, true, small, TAP_TOUCH)
+	testing.expect_value(t, slot_by_id(state, 1).role, Touch_Role.Look)
+}
+
+// The frames of a tap from its lift: the aim alone until a tick has run
+// with it, then the control until a tick has run with the press.
+@(test)
+test_a_tap_presses_interact_on_a_machine_and_place_elsewhere :: proc(t: ^testing.T) {
+	layout := shipped_touch_overlay(t)
+	for takes_interaction in ([?]bool{true, false}) {
+		state: Touch_Overlay_State
+		inputs := TAP_TOUCH
+		inputs.target_takes_interaction = takes_interaction
+		touch_frame(&state, layout, {{id = 0, position = TAP_POINT}}, inputs = inputs)
+		output := touch_frame(&state, layout, {}, inputs = inputs)
+		expected_aim: Touch_Overlay_Output
+		expected_aim.aims, expected_aim.aim_point = true, TAP_POINT
+		testing.expect_value(t, output, expected_aim)
+		// No tick ran with the aim yet (a fast display): keep aiming.
+		waiting := inputs
+		waiting.ticked = false
+		output = touch_frame(&state, layout, {}, inputs = waiting)
+		testing.expect_value(t, output, expected_aim)
+		output = touch_frame(&state, layout, {}, inputs = inputs)
+		testing.expect(t, output.aims)
+		expect_near(t, output.aim_point, TAP_POINT)
+		testing.expect_value(t, output.buttons[int(sdl.GamepadButton.SOUTH)], takes_interaction)
+		testing.expect_value(t, output.triggers[.Left], !takes_interaction)
+		testing.expect(t, !output.triggers[.Right])
+		// Held until a tick has run with the press, then gone.
+		pressed := output
+		output = touch_frame(&state, layout, {}, inputs = waiting)
+		testing.expect_value(t, output, pressed)
+		output = touch_frame(&state, layout, {}, inputs = inputs)
+		testing.expect_value(t, output, Touch_Overlay_Output{})
+		// Through the bindings: Interact, or Place.
+		tables, _ := build_input_bindings(shipped_default_bindings(t), .Sdl3, context.temp_allocator)
+		gamepad := touch_overlay_raw_gamepad(pressed, .Sdl3)
+		actions := gamepad_button_actions(gamepad, tables) + gamepad_trigger_actions(gamepad, tables)
+		testing.expect_value(t, .Interact in actions, takes_interaction)
+		testing.expect_value(t, .Place in actions, !takes_interaction)
+	}
+	// A screen opening drops a pending tap.
+	state: Touch_Overlay_State
+	touch_frame(&state, layout, {{id = 0, position = TAP_POINT}}, inputs = TAP_TOUCH)
+	touch_frame(&state, layout, {}, inputs = TAP_TOUCH)
+	testing.expect_value(t, touch_frame(&state, layout, {}, false, inputs = TAP_TOUCH), Touch_Overlay_Output{})
+	testing.expect_value(t, touch_frame(&state, layout, {}, inputs = TAP_TOUCH), Touch_Overlay_Output{})
+}
+
+@(test)
+test_crosshair_mode_keeps_the_look_half_the_look_drag :: proc(t: ^testing.T) {
+	layout := shipped_touch_overlay(t)
+	state: Touch_Overlay_State
+	inputs := CROSSHAIR_TOUCH
+	inputs.frame_seconds = 0.1
+	touch_frame(&state, layout, {{id = 0, position = TAP_POINT}}, inputs = inputs)
+	testing.expect_value(t, slot_by_id(state, 0).role, Touch_Role.Look)
+	for _ in 0 ..< 10 {
+		testing.expect_value(t, touch_frame(&state, layout, {{id = 0, position = TAP_POINT}}, inputs = inputs), Touch_Overlay_Output{})
+	}
+	output := touch_frame(&state, layout, {{id = 0, position = TAP_POINT + {3, 0}}}, inputs = inputs)
+	expect_near(t, output.look_delta, {3, 0})
+	testing.expect_value(t, touch_frame(&state, layout, {}, inputs = inputs), Touch_Overlay_Output{})
+	testing.expect_value(t, state.tap.phase, Touch_Tap_Phase.None)
+}
+
+@(test)
+test_the_touch_aim_reaches_the_input_frame_while_the_overlay_drives_the_world :: proc(t: ^testing.T) {
+	overlay := Touch_Overlay_Frame{active = true, world_shown = true, aim_direction = {0, -1, 0}}
+	overlay.output.aims = true
+	frame := apply_touch_overlay_aim({move = {0, 1}}, overlay)
+	testing.expect(t, frame.aim_overrides)
+	testing.expect_value(t, frame.aim_direction, [3]f32{0, -1, 0})
+	testing.expect_value(t, frame.move, [2]f32{0, 1})
+	overlay.world_shown = false
+	testing.expect(t, !apply_touch_overlay_aim({}, overlay).aim_overrides)
+	overlay.world_shown, overlay.output.aims = true, false
+	testing.expect(t, !apply_touch_overlay_aim({}, overlay).aim_overrides)
+}
+
+// The player's target follows the aim instead of the view, and the tap's
+// predicate agrees with what Interact acts on.
+@(test)
+test_the_touch_aim_picks_the_players_target :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	handle := add_entity(&world.entities, content.machines, test_machine(content.machines, "wooden_chest"), {4, 1, 4}, 0)
+	players := []Player{make_test_player(content.blocks, {4.5, 1, 1.5})}
+	// Looking up at the sky: no target.
+	players[0].pitch, players[0].yaw = 60, 90
+	tick_player(&world, content, players, 0, {}, TEST_TICK_RATE)
+	testing.expect(t, !players[0].target.hit)
+	// Aimed at the chest.
+	eye := player_eye(players[0].position)
+	aimed := Input_Frame{aim_direction = linalg.normalize(block_centre({4, 1, 4}) - eye), aim_overrides = true}
+	tick_player(&world, content, players, 0, aimed, TEST_TICK_RATE)
+	testing.expect_value(t, players[0].target.entity, handle)
+	testing.expect(t, entity_takes_interact(&world.entities, players[0].target.entity))
+	// The press that follows opens it.
+	players[0].on_ground = true
+	aimed.pressed, aimed.just_pressed = {.Jump, .Interact}, {.Jump, .Interact}
+	events := tick_player(&world, content, players, 0, aimed, TEST_TICK_RATE)
+	testing.expect_value(t, events, Player_Events{.Open_Machine})
+	// Aimed at the floor: a block, no interaction.
+	floor := Input_Frame{aim_direction = linalg.normalize(block_centre({4, 0, 2}) - eye), aim_overrides = true}
+	tick_player(&world, content, players, 0, floor, TEST_TICK_RATE)
+	testing.expect_value(t, players[0].target.block, World_Coordinate{4, 0, 2})
+	testing.expect(t, !entity_takes_interact(&world.entities, players[0].target.entity))
+}
+
+// A tap aims then presses: land, lift, the frames of the aim.
+tap_at :: proc(state: ^Touch_Overlay_State, layout: Touch_Overlay_Layout, id: i32, point: [2]f32, inputs: Touch_Interaction_Frame) -> Touch_Overlay_Output {
+	touch_frame(state, layout, {{id = id, position = point}}, inputs = inputs)
+	return touch_frame(state, layout, {}, inputs = inputs)
+}
+
+@(test)
+test_a_second_tap_while_one_is_in_flight_is_ignored :: proc(t: ^testing.T) {
+	layout := shipped_touch_overlay(t)
+	state: Touch_Overlay_State
+	waiting := TAP_TOUCH
+	waiting.ticked = false
+	tap_at(&state, layout, 0, TAP_POINT, waiting)
+	second := TAP_POINT + {200, -100}
+	output := tap_at(&state, layout, 1, second, waiting)
+	expect_near(t, output.aim_point, TAP_POINT)
+	// The press goes to the first tap's point, and nothing follows it.
+	output = touch_frame(&state, layout, {}, inputs = TAP_TOUCH)
+	testing.expect(t, output.triggers[.Left])
+	expect_near(t, output.aim_point, TAP_POINT)
+	touch_frame(&state, layout, {}, inputs = TAP_TOUCH)
+	testing.expect_value(t, state.tap.phase, Touch_Tap_Phase.None)
+	// While it presses a lift is ignored too.
+	tap_at(&state, layout, 2, TAP_POINT, TAP_TOUCH)
+	touch_frame(&state, layout, {}, inputs = TAP_TOUCH)
+	testing.expect_value(t, state.tap.phase, Touch_Tap_Phase.Pressing)
+	tap_at(&state, layout, 3, second, waiting)
+	expect_near(t, state.tap.point, TAP_POINT)
+}
+
+@(test)
+test_a_tap_while_a_finger_holds_leaves_the_hold_alone :: proc(t: ^testing.T) {
+	layout := shipped_touch_overlay(t)
+	state: Touch_Overlay_State
+	inputs := TAP_TOUCH
+	inputs.frame_seconds = 0.1
+	for _ in 0 ..< 4 {
+		touch_frame(&state, layout, {{id = 0, position = TAP_POINT}}, inputs = inputs)
+	}
+	testing.expect_value(t, slot_by_id(state, 0).role, Touch_Role.Hold)
+	other := TAP_POINT + {300, -200}
+	touch_frame(&state, layout, {{id = 0, position = TAP_POINT}, {id = 1, position = other}}, inputs = inputs)
+	output := touch_frame(&state, layout, {{id = 0, position = TAP_POINT}}, inputs = inputs)
+	testing.expect_value(t, state.tap.phase, Touch_Tap_Phase.None)
+	testing.expect(t, output.triggers[.Right])
+	testing.expect(t, !output.triggers[.Left])
+	expect_near(t, output.aim_point, TAP_POINT)
+}
+
+@(test)
+test_a_hold_that_begins_while_a_tap_is_in_flight_drops_the_tap :: proc(t: ^testing.T) {
+	layout := shipped_touch_overlay(t)
+	state: Touch_Overlay_State
+	waiting := TAP_TOUCH
+	waiting.frame_seconds = 0.1
+	waiting.ticked = false
+	other := TAP_POINT + {300, -200}
+	// Finger 0 rests; finger 1 taps while it does, so the tap waits for a
+	// tick when finger 0 turns into a hold.
+	touch_frame(&state, layout, {{id = 0, position = TAP_POINT}}, inputs = waiting)
+	touch_frame(&state, layout, {{id = 0, position = TAP_POINT}, {id = 1, position = other}}, inputs = waiting)
+	touch_frame(&state, layout, {{id = 0, position = TAP_POINT}}, inputs = waiting)
+	testing.expect_value(t, state.tap.phase, Touch_Tap_Phase.Aiming)
+	testing.expect_value(t, slot_by_id(state, 0).role, Touch_Role.Pending)
+	output := touch_frame(&state, layout, {{id = 0, position = TAP_POINT}}, inputs = waiting)
+	testing.expect_value(t, slot_by_id(state, 0).role, Touch_Role.Hold)
+	testing.expect_value(t, state.tap.phase, Touch_Tap_Phase.None)
+	testing.expect(t, output.triggers[.Right])
+	testing.expect(t, !output.triggers[.Left])
+	expect_near(t, output.aim_point, TAP_POINT)
+}
+
+@(test)
+test_a_tap_waiting_too_long_for_a_tick_is_dropped :: proc(t: ^testing.T) {
+	layout := shipped_touch_overlay(t)
+	state: Touch_Overlay_State
+	waiting := TAP_TOUCH
+	waiting.ticked = false
+	tap_at(&state, layout, 0, TAP_POINT, waiting)
+	// A developer pause: frames run, ticks do not. Under TOUCH_HOLD_SECONDS
+	// it still aims.
+	for _ in 0 ..< 14 {
+		testing.expect(t, touch_frame(&state, layout, {}, inputs = waiting).aims)
+	}
+	for _ in 0 ..< 2 {
+		touch_frame(&state, layout, {}, inputs = waiting)
+	}
+	testing.expect_value(t, state.tap.phase, Touch_Tap_Phase.None)
+	// The pause ends: nothing fires late.
+	testing.expect_value(t, touch_frame(&state, layout, {}, inputs = TAP_TOUCH), Touch_Overlay_Output{})
+}
+
+// The look element's controls come from the layout file.
+@(test)
+test_the_tap_and_hold_controls_come_from_the_layout :: proc(t: ^testing.T) {
+	shipped := shipped_touch_overlay(t)
+	look := zone_element(shipped, .Look, .Right)
+	testing.expect_value(t, shipped.elements[look].hold_control, Touch_Overlay_Control{is_trigger = true, trigger = .Right})
+	testing.expect_value(t, shipped.elements[look].tap_interact_control, Touch_Overlay_Control{button = .SOUTH})
+	testing.expect_value(t, shipped.elements[look].tap_place_control, Touch_Overlay_Control{is_trigger = true, trigger = .Left})
+	elements := make([]Touch_Overlay_Element, len(shipped.elements), context.temp_allocator)
+	copy(elements, shipped.elements)
+	elements[look].hold_control = {button = .WEST}
+	elements[look].tap_place_control = {button = .NORTH}
+	layout := Touch_Overlay_Layout{reference_height = shipped.reference_height, elements = elements}
+	state: Touch_Overlay_State
+	inputs := TAP_TOUCH
+	inputs.frame_seconds = 0.1
+	output: Touch_Overlay_Output
+	for _ in 0 ..< 4 {
+		output = touch_frame(&state, layout, {{id = 0, position = TAP_POINT}}, inputs = inputs)
+	}
+	testing.expect(t, output.buttons[int(sdl.GamepadButton.WEST)])
+	testing.expect(t, !output.triggers[.Right])
+	touch_frame(&state, layout, {}, inputs = inputs)
+	tap_at(&state, layout, 1, TAP_POINT, TAP_TOUCH)
+	output = touch_frame(&state, layout, {}, inputs = TAP_TOUCH)
+	testing.expect(t, output.buttons[int(sdl.GamepadButton.NORTH)])
+	testing.expect(t, !output.triggers[.Left])
+}
+
+// In third person the camera sits behind and beside the eye; the aim is
+// the direction from the eye to the block the camera ray hits.
+@(test)
+test_the_third_person_aim_points_from_the_eye_at_the_camera_rays_block :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	eye := player_eye({0.5, 1, 0.5})
+	camera := eye + {-3, 1, 0.6}
+	face_point := [3]f32{3.5, 1, 0.5}
+	ray_direction := linalg.normalize(face_point - camera)
+	testing.expect_value(t, raycast_blocks(&world, content.blocks, camera, ray_direction, 10).block, World_Coordinate{3, 0, 0})
+	direction := eye_aim_direction(&world, content.blocks, eye, camera, ray_direction)
+	from_eye := raycast_blocks(&world, content.blocks, eye, direction, PLAYER_REACH)
+	testing.expect(t, from_eye.hit)
+	testing.expect_value(t, from_eye.block, World_Coordinate{3, 0, 0})
+	// The camera ray's own direction cast from the eye lands elsewhere.
+	testing.expect(t, raycast_blocks(&world, content.blocks, eye, ray_direction, PLAYER_REACH).block != World_Coordinate{3, 0, 0})
+	// In first person the camera is the eye: the direction is the ray's.
+	first_person_error := linalg.length(eye_aim_direction(&world, content.blocks, eye, eye, ray_direction) - ray_direction)
+	testing.expect(t, first_person_error < 0.001)
+	// Nothing hit: towards the far end of the ray.
+	up := linalg.normalize([3]f32{0.2, 1, 0})
+	testing.expect(t, linalg.length(eye_aim_direction(&world, content.blocks, eye, eye, up) - up) < 0.001)
+}
+
+// Player.target_direction exists for this: a slab placed on a side face
+// takes its half from where the aim hit, not from the look direction.
+@(test)
+test_a_touch_aimed_slab_takes_its_half_from_the_aim :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	set_blocks(&world, test_block(content.blocks, "stone"), {3, 2, 0})
+	players := []Player{make_test_player(content.blocks, {0.5, 1, 0.5})}
+	players[0].inventory.slots[0] = Item_Stack{item = test_item(content.items, "stone_slab"), count = 4}
+	// The view looks down at the floor, where a slab would go low.
+	players[0].pitch = -60
+	eye := player_eye(players[0].position)
+	aimed := Input_Frame{aim_direction = linalg.normalize([3]f32{3, 2.8, 0.5} - eye), aim_overrides = true, pressed = {.Place}, just_pressed = {.Place}}
+	tick_player(&world, content, players, 0, aimed, TEST_TICK_RATE)
+	testing.expect_value(t, players[0].target.face, Direction.Negative_X)
+	testing.expect_value(t, world_get_block(&world, {2, 2, 0}), test_block(content.blocks, "stone_slab_upper"))
 }

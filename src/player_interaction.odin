@@ -287,7 +287,7 @@ place_block_with_player :: proc(world: ^World, registry: Block_Registry, items: 
 		return
 	}
 	item := selected_hotbar_stack(player^).item
-	hit_point := player_eye(player.position) + player_look_direction(player^) * player.target.distance
+	hit_point := player_eye(player.position) + player.target_direction * player.target.distance
 	block = placed_block_variant(registry, block, target, hit_point, player.yaw, player.placement_rotation)
 	if world_set_block(world, target.adjacent, block) {
 		take_from_slot(&inventory_hotbar(player.inventory)[player.selected_hotbar_slot], 1)

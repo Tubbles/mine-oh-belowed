@@ -70,6 +70,9 @@ Player :: struct {
 	sneaking:             bool,
 	camera_mode:          Camera_Mode,
 	target:               Raycast_Hit,
+	// The ray's direction that found target: the look direction, or the
+	// touch aim while one overrides it (player_target_direction).
+	target_direction:     [3]f32,
 	mining:               Mining_State,
 	// The hotbar is the first HOTBAR_SLOT_COUNT slots.
 	inventory:            Inventory,
@@ -152,6 +155,11 @@ player_eye :: proc(position: [3]f32) -> [3]f32 {
 
 player_look_direction :: proc(player: Player) -> [3]f32 {
 	return fly_camera_forward(Fly_Camera{yaw = player.yaw, pitch = player.pitch})
+}
+
+// The touch aim (Input_Frame.aim_direction) while it overrides the view.
+player_target_direction :: proc(player: Player, input: Input_Frame) -> [3]f32 {
+	return input.aim_overrides ? input.aim_direction : player_look_direction(player)
 }
 
 turn_player :: proc(player: ^Player, input: Input_Frame, seconds: f32) {
@@ -404,6 +412,14 @@ update_jump_double_tap :: proc(player: ^Player, input: Input_Frame) {
 	player.jump_tap_ticks = JUMP_DOUBLE_TAP_TICKS
 }
 
+// Whether Interact acts on the entity, so a gamepad's A does not jump: an
+// entity with a panel (resolve_interact) or a schematic crate
+// (resolve_use_item). The touch overlay's tap presses Interact on such a
+// target and Place on any other (tap_control).
+entity_takes_interact :: proc(entities: ^Entities, handle: Entity_Handle) -> bool {
+	return entity_has_panel(entities, handle) || schematic_crate_takes_interact(entities, handle)
+}
+
 // A gamepad's A is both Jump and Interact. Looking at an entity it opens
 // the entity instead of jumping; keyboard Space never interacts. On a
 // power switch Interact turns the switch like a lever, and on a launch pad
@@ -473,7 +489,8 @@ tick_player :: proc(world: ^World, content: Simulation_Content, players: []Playe
 	if .Open_Machine in events || .Toggled_Switch in events || .Launch_Requested in events {
 		record_world_action(&world.statistics)
 	}
-	player.target = raycast_blocks(world, content.blocks, player_eye(player.position), player_look_direction(player^), PLAYER_REACH)
+	player.target_direction = player_target_direction(player^, input)
+	player.target = raycast_blocks(world, content.blocks, player_eye(player.position), player.target_direction, PLAYER_REACH)
 	events += mine_with_player(world, content, player, .Mine in input.pressed, tick_rate, cheat_speed)
 	place_with_player(world, content, players, index, input.just_pressed, input.pressed)
 	player.selected_hotbar_slot = cycle_hotbar_slot(player.selected_hotbar_slot, input.just_pressed)
