@@ -1,6 +1,6 @@
 # 0126: High precision in raylib's default shader on Android
 
-Status: todo
+Status: implemented
 
 ## Goal
 
@@ -18,3 +18,9 @@ Cause, confirmed in the raylib 6.0 source (`tmp/raylib-src/src/rlgl.h`, `rlLoadS
 
 - `./build.sh check-android` and `./build.sh android` (the APK links against the new archive).
 - The user, on the phone: a held block keeps its shape while looking around; particles and models no longer jitter.
+
+## Implemented
+
+- `patch_default_shader_precision` (`tools/build_raylib.sh`) runs in the Android build between `fetch_source` and `android_configure_and_build`. It is an awk, not a sed, since it has to count: it rewrites only the lines that hold both `precision mediump float;` and the `OpenGL ES3 (WebGL 2)` comment (the two ES3 blocks) and fails unless it rewrote exactly two. The ES2 lines stay as they are. `fetch_source` deletes and clones the source directory on every run, so the patch always meets an unpatched file and a second run does not fail.
+- Archive rebuilt (`tools/build_raylib.sh --android`, 2026-09-30T07:41Z). `strings shared/raylib/android/libraylib.a | grep -c 'precision highp float'`: 2. `grep -c 'precision mediump float'`: 0 (the ES2 blocks are compiled out). Same size as before (2550222 bytes), different contents. The linked `libmain.so` holds three `precision highp float` strings (the two above and the game's `shader_source_for_gles`) and no mediump.
+- `./build.sh check-android` and `./build.sh android` pass (version code 223).

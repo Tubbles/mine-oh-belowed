@@ -60,6 +60,32 @@ configure_and_build() {
 	cmake --build "$build_directory" --parallel 2
 }
 
+# rlLoadShaderDefault declares "precision mediump float;" in the OpenGL
+# ES 3 default vertex and fragment shaders (kept for WebGL browsers). On
+# Mali mediump is 16 bit, so world space positions drawn through raylib's
+# batch snap to a coarse grid that shifts as the camera moves (work item
+# 0126). Only the two ES3 lines are rewritten, found by their "OpenGL ES3
+# (WebGL 2)" comment; the ES2 lines are not compiled for ES 3.0. Anything
+# but two rewrites fails, so a raylib upgrade that moves the text is
+# noticed. fetch_source clones afresh on every run, so the file is never
+# already patched.
+patch_default_shader_precision() {
+	local header="$source_directory/src/rlgl.h"
+	awk '
+		/precision mediump float;/ && /OpenGL ES3 \(WebGL 2\)/ {
+			sub(/precision mediump float;/, "precision highp float;")
+			rewrites++
+		}
+		{ print }
+		END { if (rewrites != 2) exit 1 }
+	' "$header" > "$header.new" || {
+		echo "rlgl.h: expected two OpenGL ES3 default shader precision lines" >&2
+		rm -f "$header.new"
+		exit 1
+	}
+	mv "$header.new" "$header"
+}
+
 # raylib's cmake forces OpenGL ES 2.0 for PLATFORM=Android; OPENGL_VERSION
 # "ES 3.0" overrides it with a warning ("You are overriding the suggested
 # GRAPHICS"), which is expected. The archive holds rcore_android.c with
@@ -116,6 +142,7 @@ write_android_build_record() {
 	cat >> "$collection_directory/README.md" <<RECORD
 $android_record_marker
 - android raylib tag: $raylib_tag ($raylib_url), commit $commit
+- android source patch: src/rlgl.h, the two OpenGL ES3 default shader lines "precision mediump float;" become "precision highp float;" (work item 0126)
 - android cmake flags: -G "Unix Makefiles" -DCMAKE_TOOLCHAIN_FILE=<ndk>/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-$ANDROID_API_LEVEL -DPLATFORM=Android -DOPENGL_VERSION="ES 3.0" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DBUILD_EXAMPLES=OFF
 - android compiler: NDK $ANDROID_NDK_VERSION, $compiler
 - android built: $(date -u +%Y-%m-%dT%H:%MZ)
@@ -136,6 +163,7 @@ android_build_on_host() {
 	# shellcheck source=android_env.sh
 	. "$repository_root/tools/android_env.sh"
 	fetch_source
+	patch_default_shader_precision
 	android_configure_and_build
 	mkdir -p "$collection_directory/android"
 	# The NDK compiles with -g even in Release; without the debug sections
