@@ -1312,7 +1312,7 @@ test_anchored_offset_inverts_anchored_position :: proc(t: ^testing.T) {
 @(test)
 test_opacity_scales_the_overlays_alpha :: proc(t: ^testing.T) {
 	testing.expect_value(t, touch_overlay_color(1), TOUCH_OVERLAY_COLOR)
-	testing.expect_value(t, touch_overlay_color(0.5).a, u8(45))
+	testing.expect_value(t, touch_overlay_color(0.5).a, u8(70))
 	testing.expect_value(t, touch_overlay_color(0.5).rgb, TOUCH_OVERLAY_COLOR.rgb)
 	// Left out, it is 1.
 	for element in shipped_touch_overlay(t).elements {

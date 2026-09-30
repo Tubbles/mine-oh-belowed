@@ -1783,8 +1783,8 @@ render_pixels_to_window_units :: proc(delta: [2]f32, window_size, render_size: [
 // Outlines and labels at a low alpha times the element's opacity, a held
 // or latched button filled.
 // Nothing moves but with a finger, so nothing pulses (DESIGN.md).
-TOUCH_OVERLAY_COLOR :: Ui_Color{255, 255, 255, 89}
-TOUCH_OVERLAY_LINE :: 2.0
+TOUCH_OVERLAY_COLOR :: Ui_Color{255, 255, 255, 140}
+TOUCH_OVERLAY_LINE :: 4.0
 // The knob's radius over the stick's radius.
 TOUCH_OVERLAY_KNOB_FRACTION :: 0.4
 
