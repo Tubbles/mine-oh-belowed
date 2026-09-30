@@ -1,6 +1,6 @@
 # 0135: Fly mode toggles when the Developer screen is entered
 
-Status: todo
+Status: verified
 
 ## Goal
 
@@ -21,3 +21,7 @@ The user reproduces once on the phone or the couch after the 0132 build and send
 
 - `./build.sh check`, `./build.sh check-android`, `./build.sh test`, plus the reproduction test of the found mechanism.
 - The user: enter the Developer screen from the pause menu on the phone and on the couch, fly mode unchanged.
+
+## Outcome
+
+The user, 2026-09-30, on the 0132 build (a90c53e): "Fly mode doesnt get misclicked now, so that's seemingly solved." One of the two leads that landed with 0132 covered it (the stale knob, or the double tap Jump window frozen through a pause); no log line was needed. The `player: fly mode` log line stays for a recurrence.

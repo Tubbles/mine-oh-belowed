@@ -82,3 +82,13 @@ Written on 2026-09-30 at the end of the series. Things the implementers and revi
 - Target status lines in tap mode: with `touch_interaction = tap` the crosshair is not drawn, but the target's status lines (`draw_target_status`, `src/hud.odin`) still sit at the screen centre where the crosshair was.
 - Test duplication: `test_no_touch_overlay_element_covers_a_hotbar_slot` (`src/touch_overlay_test.odin`) converts the hotbar rectangles to pixels inline instead of calling `hud_hotbar_pixel_rectangles` (0119).
 - `os.args` after an Android relaunch: `core:os` builds `os.args` once at the first runtime start, so on a second `main` in the same process (0116) its `[0]` points at the first launch's `arg0` on raylib's stack. Nothing reads it (the game reads `os.args[1:]`, empty on Android); a static literal in `__wrap_main` would remove the dangling pointer.
+
+## Follow ups from the touch inventory and misclick series (0124 to 0133)
+
+- The gamepad glyph bar and the touch button row cross the HUD's hotbar, which draws under open screens, at UI scales above 1 (0125 review). The row avoids it at scale 1 by sitting right of the hotbar; a layout that hides the HUD hotbar under slot screens, or moves the bar, would settle every scale.
+- Widgets registered inside a clipped scroll region keep their full rectangle for hit tests, so a row scrolled out of the visible area can take a press or a hover through the clip if nothing later covers it (0132 review; pre-existing). Clipping the widget rectangles to the region's area in `ui_interact` would close it.
+- The tap sound (`ui_frame_sound_events`, at resolve time) and the activation (`ui_interact`, at declaration time) read the widget list at different moments, so an overlapping later widget can make one fire without the other (0132 review; pre-existing).
+- A d-pad step on the UI scale or text scale slider during a finger drag is overwritten by the drag's release (`ui_layout_slider`, 0132 review). Rare; a drag could cancel on a step.
+- The mouse gets no feedback inside the slop on a slider press: nothing moves until the pointer leaves 16 units or the button lifts (0132 review). A mouse only rule could keep the press behaviour.
+- A merge of two players' drops hands the stack's dropper mark to the later dropper, so the earlier one can take it back at once (0128 review; multiplayer only).
+- Two Backspaces from the phone's IME in one frame count as one (0133), since the field reads a per frame flag; a count would fix it.
