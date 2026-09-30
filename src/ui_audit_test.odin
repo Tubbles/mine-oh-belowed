@@ -312,6 +312,10 @@ audit_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, size: Ui_Audit_Size, aud
 	ui_begin(state, frame_input, size.pixels, 1.0 / 60, size.scale, 1, ui_accessibility(audit.settings))
 	state.focus_pulse = device == .Gamepad ? 1 : 0
 	screen_context := audit_screen_context(audit)
+	// On touch the HUD's touch buttons (0134), rotate included.
+	if audit_case.touch {
+		screen_context.touch_hud_buttons = hud_touch_buttons_shown(true)
+	}
 	if audit_case.hud {
 		draw_hud(state, screen_context)
 	}
@@ -614,9 +618,12 @@ audit_every_note :: proc(audit: ^Ui_Audit) {
 }
 
 // The touch layout editor (work item 0121) with nothing, a button and the
-// stick selected, and its name entry.
+// stick selected, and its name entry, on GameNative's buttons (Default has
+// none since 0134).
 audit_touch_layout_editor :: proc(audit: ^Ui_Audit) {
 	editor := &audit.touch_layout_editor
+	start_touch_layout_draft(editor, DEFAULT_TOUCH_LAYOUT_NAME, gamenative_touch_layout())
+	defer start_touch_layout_draft(editor, DEFAULT_TOUCH_LAYOUT_NAME, audit.default_touch_layout)
 	selections := [?]int{-1, 0, zone_element(editor.draft, .Stick, .Left)}
 	for selected in selections {
 		editor.selected = selected

@@ -1,7 +1,7 @@
 // The touch overlay (work item 0115, src/touch_overlay.odin, doc/input.md):
-// a virtual gamepad the game draws on a touch screen. Its buttons press
-// gamepad controls, so data/bindings.sjson maps them to actions like any
-// gamepad's.
+// a virtual gamepad the game draws on a touch screen. Its stick, its
+// gestures and any buttons press gamepad controls, so data/bindings.sjson
+// maps them to actions like any gamepad's.
 //
 // Lengths are pixels of a screen reference_height pixels high and scale
 // with the screen's height, so a wider screen keeps the buttons in the
@@ -23,12 +23,13 @@
 //     double_tap_toggles  (work item 0120, false when left out) a touch
 //               landing within 0.3 seconds of a tap's lift (a tap: down
 //               less than 0.25 seconds) latches the button down until
-//               the next tap; a single tap presses it as usual. B (Sneak)
-//               has it: double tapping B keeps sneaking. Latching works
+//               the next tap; a single tap presses it as usual. On a B
+//               (Sneak) button, double tapping keeps sneaking. Latching works
 //               only while the sneak setting is Hold, where a tap does
 //               not already toggle
-//   stick: side (left or right, the half of the screen a touch that
-//     begins on no button turns into the stick, centred where it began),
+//   stick: side (left or right, the half of the screen where a touch that
+//     begins on no button turns into the stick once it moves, centred
+//     where it began),
 //     radius (the drag that gives a full stick; the input backend's stick
 //     dead zone applies as for any stick) and sprint_rim (the drag over
 //     the radius at which the stick starts to hold LEFT_STICK, Sprint:
@@ -36,18 +37,22 @@
 //     the finger lifts), and static (work item 0120, false when left
 //     out): a static stick has anchor and position like a button (its
 //     base's centre) and reads only a touch that begins inside its base
-//     circle, centred on the base; a touch elsewhere on its half does
-//     nothing. A floating stick takes no anchor or position. The loader
-//     cannot tell position = [0, 0] from no position, so a static stick
-//     needs a non zero position and a floating stick leaves it out.
-//   look: side (the half whose drags turn the view) and sensitivity (the
-//     drag's pixels are multiplied by it and added as mouse pixels), and
-//     the controls of the tap scheme (work item 0118, the touch_interaction
-//     setting), each a control as a button's: hold_control (held while a
-//     finger rests on the half, aimed at the finger: Mine),
-//     tap_interact_control (pressed by a tap on a target that takes
+//     circle, centred on the base; a touch elsewhere on its half is free
+//     screen like the rest. A floating stick takes no anchor or
+//     position. The loader cannot tell position = [0, 0] from no
+//     position, so a static stick needs a non zero position and a
+//     floating stick leaves it out.
+//   look: side (kept for the file's form: since work item 0134 a drag
+//     anywhere off the stick turns the view) and sensitivity (the drag's
+//     pixels are multiplied by it and added as mouse pixels), and the
+//     controls of the gestures (work item 0118), each a control as a
+//     button's: hold_control (held while a finger rests on free screen:
+//     Mine), tap_interact_control (pressed by a tap on a target that takes
 //     Interact) and tap_place_control (pressed by a tap on anything else:
-//     Place)
+//     Place), and jump_zone_share (work item 0134, 0 or left out for none,
+//     below 1): a tap in that share of the screen's width at the right
+//     edge presses the Jump action itself instead, aimed nowhere (not
+//     SOUTH, which is Interact too)
 //
 // Every element also takes opacity (work item 0121, 0.1 to 1, 1 when left
 // out): its drawing's alpha, times the overlay's own. The loader cannot
@@ -57,31 +62,21 @@
 // (Accessibility, Edit touch layout) never changes it: it saves copies to
 // touch_overlay.sjson in the user configuration directory, in this file's
 // form under a name each (doc/input.md, Touch overlay), and a reload of
-// this file keeps applying to Default. A saved layout needs a START
-// button, the only way to the pause menu on the phone.
+// this file keeps applying to Default. A saved layout needs no START
+// button: the HUD's pause button beside the hotbar opens the pause menu.
 //
 // hotbar_drop_control (work item 0119): the control a long press on the
 // selected hotbar slot holds until the finger lifts, a control as a
 // button's (DPAD_DOWN: Drop_Stack through the bindings).
 //
-// The layout is GameNative's (a 2424 by 1080 screenshot of 2026-09-29)
-// without its d-pad, whose half belongs to the stick, and without R3.
-// Back and Start sit at the top centre instead of GameNative's bottom
-// centre, where the hotbar is.
+// The layout has no buttons (work item 0134): taps and holds anywhere
+// place and mine, a tap at the right edge jumps, the stick's rim sprints,
+// the hotbar's taps and long press select and drop, and the HUD's touch
+// buttons beside the hotbar open the inventory, the map and the pause
+// menu and rotate. Sneak has no touch control; a user layout may add a B button.
 reference_height = 1080
 hotbar_drop_control = "DPAD_DOWN"
 elements = [
-	{kind = "button" control = "LEFT_TRIGGER" shape = "rectangle" anchor = "top_left" position = [181.5, 85] size = [363, 170] label = "LT"}
-	{kind = "button" control = "RIGHT_TRIGGER" shape = "rectangle" anchor = "top_right" position = [181.5, 85] size = [363, 170] label = "RT"}
-	{kind = "button" control = "LEFT_SHOULDER" shape = "rectangle" anchor = "top_left" position = [85, 238] size = [170, 100] label = "LB"}
-	{kind = "button" control = "RIGHT_SHOULDER" shape = "rectangle" anchor = "top_right" position = [85, 238] size = [170, 100] label = "RB"}
-	{kind = "button" control = "NORTH" shape = "circle" anchor = "top_right" position = [312, 287] size = [146, 146] label = "Y"}
-	{kind = "button" control = "WEST" shape = "circle" anchor = "top_right" position = [457, 431] size = [146, 146] label = "X"}
-	{kind = "button" control = "EAST" shape = "circle" anchor = "top_right" position = [172, 431] size = [146, 146] label = "B" double_tap_toggles = true}
-	{kind = "button" control = "SOUTH" shape = "circle" anchor = "top_right" position = [312, 575] size = [146, 146] label = "A"}
-	{kind = "button" control = "LEFT_STICK" shape = "circle" anchor = "bottom_left" position = [121, 290] size = [120, 120] label = "L3"}
-	{kind = "button" control = "BACK" shape = "rectangle" anchor = "top_center" position = [-99, 60] size = [163, 79] label = "Back"}
-	{kind = "button" control = "START" shape = "rectangle" anchor = "top_center" position = [92, 60] size = [163, 79] label = "Start"}
 	{kind = "stick" side = "left" radius = 130 sprint_rim = 1.25}
-	{kind = "look" side = "right" sensitivity = 1.0 hold_control = "RIGHT_TRIGGER" tap_interact_control = "SOUTH" tap_place_control = "LEFT_TRIGGER"}
+	{kind = "look" side = "right" sensitivity = 1.0 hold_control = "RIGHT_TRIGGER" tap_interact_control = "SOUTH" tap_place_control = "LEFT_TRIGGER" jump_zone_share = 0.2}
 ]

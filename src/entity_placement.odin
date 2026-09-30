@@ -335,11 +335,26 @@ command_belt_placement :: proc(world: ^World, content: Simulation_Content, machi
 	}
 }
 
+// The entities rotate_targeted_entity turns (the touch overlay's rotate
+// button shows for them, 0134).
+entity_rotates :: proc(entities: ^Entities, handle: Entity_Handle) -> bool {
+	#partial switch handle.kind {
+	case .Belt, .Splitter:
+		return true
+	case .Inserter, .Drill:
+		return entity_common(entities, handle) != nil
+	}
+	return false
+}
+
 // Rotate with no machine item selected turns the targeted belt, inserter
 // or drill a quarter turn. A drill's footprint is square, so no cell moves,
 // but its revival port does, so its fluid networks are rebuilt.
 // A splitter turns half way round on its two cells.
 rotate_targeted_entity :: proc(world: ^World, content: Simulation_Content, player: ^Player) -> bool {
+	if !entity_rotates(&world.entities, player.target.entity) {
+		return false
+	}
 	#partial switch player.target.entity.kind {
 	case .Belt:
 		rotate_targeted_belt(world, content, player)

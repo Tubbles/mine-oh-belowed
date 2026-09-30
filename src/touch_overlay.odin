@@ -13,23 +13,28 @@ import sdl "vendor:sdl3"
 // game draws on a touch screen. It fills a Raw_Gamepad like a physical
 // one and adds its drags to the look delta like the mouse, so the
 // bindings, the diagnostics and everything downstream see a gamepad.
-// The layout is data/touch_overlay.sjson. A touch that begins on a button
-// holds that button until it lifts, one that begins on the stick's half
-// becomes a floating stick centred where it began, one that begins on the
-// look half turns the view. While a screen is open the overlay draws and
-// reads Start and Back alone, so every screen can be closed by touch (most
-// have no close widget and raylib keeps Android's back key); every other
-// touch is the pointer then (0114). In the tap scheme (0118,
-// settings.touch_interaction) a touch on the look half is undecided until
-// it moves (the look drag), rests (a hold: Mine at the touched point) or
-// lifts (a tap: Interact or Place at the point), each through a gamepad
-// control like every other touch. A touch on a hotbar slot (0119) selects
-// it when tapped, the one place the overlay presses an action
-// (apply_touch_overlay_hotbar), since selecting a given slot has no
-// gamepad control; held on the selected slot it presses
-// hotbar_drop_control (Drop_Stack). A static stick (0120) sits at a fixed
-// place and reads only a touch that begins inside its base; a button with
-// double_tap_toggles latches down on a double tap until the next tap.
+// The layout is data/touch_overlay.sjson, whose Default has only the
+// stick and the look (0134); a user layout may add buttons. A touch that
+// begins on a button holds that button until it lifts. Every other touch
+// on free screen, on either half, is undecided at first (0134): moving
+// past the slop makes it a drag (the floating stick, centred where it
+// landed, when it landed on the stick's half and the stick is free, else
+// the look drag), resting makes it a hold (Mine) and a lift before either
+// a tap (Interact or Place through gamepad controls like every other
+// touch, or in the jump zone at the right edge the Jump action itself). The tap scheme
+// (0118, settings.touch_interaction) aims the hold and the tap at the
+// finger, the crosshair scheme at the view's centre. While a screen is
+// open the overlay draws and reads Start and Back alone; every other
+// touch is the pointer then (0114). A touch on a hotbar slot (0119)
+// selects it when tapped, one of the two places the overlay presses an
+// action (apply_touch_overlay_hotbar; the jump tap is the other), since
+// selecting a given slot has no gamepad control; held on the selected slot it presses
+// hotbar_drop_control (Drop_Stack). A touch on one of the HUD's touch
+// buttons beside the hotbar (0134, hud.odin: inventory, pause, rotate)
+// presses the gamepad control bound to its action. A static stick (0120)
+// sits at a fixed place and reads only a touch that begins inside its
+// base; a button with double_tap_toggles latches down on a double tap
+// until the next tap.
 
 TOUCH_OVERLAY_FILE_NAME :: "touch_overlay.sjson"
 // raylib's MAX_TOUCH_POINTS (rcore.c).
@@ -41,9 +46,9 @@ TOUCH_OVERLAY_SDL_BUTTON_COUNT :: int(sdl.GamepadButton.MISC6) + 1
 TOUCH_OVERLAY_AXIS_COUNT :: int(sdl.GamepadAxis.RIGHT_TRIGGER) + 1
 // raylib's trigger axes rest at -1, SDL's at 0.
 RAYLIB_TRIGGER_REST :: -1
-// The tap scheme (0118): a touch on the look half that moves further than
-// this (pixels of a reference_height high screen, scaled like the layout)
-// is the look drag, one that rests this long is a hold.
+// A touch on free screen (0118, 0134) that moves further than this
+// (pixels of a reference_height high screen, scaled like the layout) is a
+// drag, one that rests this long is a hold.
 TOUCH_TAP_SLOP :: 12.0
 TOUCH_HOLD_SECONDS :: 0.25
 // A button with double_tap_toggles (0120) latches when a touch lands on it
@@ -65,8 +70,8 @@ Touch_Overlay_Mode :: enum u8 {
 }
 
 // The settings value (settings.touch_interaction, 0118): tap aims Mine,
-// Place and Interact at the touched point; crosshair aims them with the
-// view as 0115 did.
+// Place and Interact at the touched point; crosshair aims them at the
+// view's centre. Both read the same gestures (0134).
 Touch_Interaction :: enum u8 {
 	Tap,
 	Crosshair,
@@ -117,10 +122,11 @@ Touch_Overlay_Element_Entry :: struct {
 	radius:      f32,
 	sprint_rim:  f32,
 	sensitivity: f32,
-	// The look's controls in the tap scheme (0118).
+	// The look's controls (0118) and its jump zone (0134).
 	hold_control:         string,
 	tap_interact_control: string,
 	tap_place_control:    string,
+	jump_zone_share:      f32,
 	// 0120: a stick with anchor and position, a button that latches on a
 	// double tap.
 	static:               bool,
@@ -148,12 +154,15 @@ Touch_Overlay_Element :: struct {
 	radius:      f32,
 	sprint_rim:  f32,
 	sensitivity: f32,
-	// A look's controls in the tap scheme (0118): the hold presses
-	// hold_control, a tap tap_interact_control on a target that takes
-	// Interact, else tap_place_control.
+	// A look's controls (0118): the hold presses hold_control, a tap
+	// tap_interact_control on a target that takes Interact, else
+	// tap_place_control. A tap in the rightmost jump_zone_share of the
+	// screen's width presses the Jump action instead (0134,
+	// apply_touch_overlay_jump; 0 for no zone).
 	hold_control:         Touch_Overlay_Control,
 	tap_interact_control: Touch_Overlay_Control,
 	tap_place_control:    Touch_Overlay_Control,
+	jump_zone_share:      f32,
 	// A static stick's base is centred at anchor and position (0120).
 	static:               bool,
 	double_tap_toggles:   bool,
@@ -190,16 +199,20 @@ Touch_Role :: enum u8 {
 	Button,
 	Stick,
 	Look,
-	// The tap scheme's touch on the look half before it moved or rested
-	// (advance_pending_touch), and one that rested: Mine at its point.
+	// A touch on free screen before it moved or rested
+	// (advance_pending_touch), and one that rested: Mine.
 	Pending,
 	Hold,
 	// Began on a hotbar slot in the world (0119): Touch_Slot.hotbar_slot.
 	Hotbar,
+	// Began on one of the HUD's touch buttons in the world (0134):
+	// Touch_Slot.hud_control.
+	Hud_Button,
 }
 
 // One finger from the frame it lands to the frame it lifts. element is
-// the layout element it began on (the button, the stick or the look).
+// the layout element it began on (the button, the stick or the look; a
+// Pending finger's is the look, whose controls it presses).
 Touch_Slot :: struct {
 	active:   bool,
 	id:       i32,
@@ -221,6 +234,9 @@ Touch_Slot :: struct {
 	// A Button touch that latched or released its double_tap_toggles
 	// button, so its lift starts no double tap.
 	toggle_spent:   bool,
+	// A Hud_Button touch's control, the one bound to its button's action
+	// when it landed.
+	hud_control:    Touch_Overlay_Control,
 }
 
 // The last lift of a double_tap_toggles button and the frame time since.
@@ -233,7 +249,10 @@ Touch_Double_Tap :: struct {
 // A tap after its finger lifted: first it aims at the point until a tick
 // has run with that aim, so the target is the tapped one, then it presses
 // control (Interact's SOUTH or Place's LEFT_TRIGGER, chosen by that
-// target) until a tick has run with the press.
+// target) until a tick has run with the press. A tap in the jump zone
+// (0134, jumps) presses the Jump action at once, until a tick has run with
+// it, and aims nowhere (apply_touch_overlay_jump); fresh marks its first
+// frame, the edge.
 Touch_Tap_Phase :: enum u8 {
 	None,
 	Aiming,
@@ -250,6 +269,9 @@ Touch_Tap :: struct {
 	element:        int,
 	control:        Touch_Overlay_Control,
 	waited_seconds: f32,
+	aims:           bool,
+	jumps:          bool,
+	fresh:          bool,
 }
 
 Touch_Overlay_State :: struct {
@@ -276,12 +298,23 @@ Touch_Interaction_Frame :: struct {
 	// A double_tap_toggles button may latch (0120): the sneak setting is
 	// Hold. False releases every latch.
 	double_tap_latches:       bool,
+	// The HUD's touch buttons beside the hotbar (0134), in render pixels.
+	hud_buttons:              [Hud_Touch_Button]Touch_Hud_Button,
+}
+
+// A HUD touch button as the overlay hit tests it: shown while the HUD
+// draws it and a gamepad control is bound to its action.
+Touch_Hud_Button :: struct {
+	shown:     bool,
+	rectangle: Ui_Rectangle,
+	control:   Touch_Overlay_Control,
 }
 
 // What the fingers hold this frame. buttons by SDL button index; stick in
 // the raw axis convention (x right, y down, -1 to 1); look_delta in mouse
 // pixels. aim_point (render pixels) is where Mine, Place and Interact aim
-// while aims is set, instead of the view's centre.
+// while aims is set, instead of the view's centre. jump_tap: a jump zone
+// tap holds the Jump action (0134), jump_tap_edge on its first frame.
 Touch_Overlay_Output :: struct {
 	buttons:    [RAW_GAMEPAD_BUTTON_CAPACITY]bool,
 	triggers:   [Gamepad_Trigger]bool,
@@ -289,15 +322,18 @@ Touch_Overlay_Output :: struct {
 	look_delta: [2]f32,
 	aims:       bool,
 	aim_point:  [2]f32,
+	jump_tap:      bool,
+	jump_tap_edge: bool,
 }
 
 // What the input backends merge into their frame. active while the
 // overlay is on in a world; world_shown while no screen is open, when its
 // drags turn the view instead of the pointer's.
 // pointer_claimed: the first touch, which holds raylib's left mouse
-// button, is a finger on one of the overlay's buttons or on a hotbar
-// slot, so the frame reads that button up (touch_overlay_mouse) and a Back
-// tap never also clicks the widget under the pill.
+// button, is a finger on one of the overlay's buttons, on a hotbar slot
+// or on a HUD touch button, so the frame reads that button up
+// (touch_overlay_mouse) and a Back tap never also clicks the widget under
+// the pill.
 // aim_direction: the render camera's ray through output.aim_point, set
 // by the frame (read_touch_overlay_frame) while output.aims.
 Touch_Overlay_Frame :: struct {
@@ -517,6 +553,9 @@ resolve_touch_overlay_look :: proc(entry: Touch_Overlay_Element_Entry, element: 
 			return fmt.tprintf("unknown %s %q (a gamepad button bindings.sjson names, or LEFT_TRIGGER, RIGHT_TRIGGER)", control.key, control.name)
 		}
 	}
+	if entry.jump_zone_share < 0 || entry.jump_zone_share >= 1 {
+		return "the jump_zone_share must be from 0 to below 1"
+	}
 	return ""
 }
 
@@ -533,6 +572,7 @@ resolve_touch_overlay_element :: proc(entry: Touch_Overlay_Element_Entry) -> (el
 		radius             = entry.radius,
 		sprint_rim         = entry.sprint_rim,
 		sensitivity        = entry.sensitivity,
+		jump_zone_share    = entry.jump_zone_share,
 		static             = entry.static,
 		double_tap_toggles = entry.double_tap_toggles,
 	}
@@ -683,18 +723,6 @@ touch_layouts_locked_text :: proc(layouts: Touch_Layouts) -> string {
 	return fmt.tprintf("%s %s", text("touch_layout_file_locked"), layouts.locked_path)
 }
 
-// A user layout needs a START button: the bindings open the pause menu
-// from START or Escape only, and raylib keeps Android's back key, so
-// without one the phone could never reach the menus again.
-touch_overlay_start_problem :: proc(layout: Touch_Overlay_Layout) -> string {
-	for element in layout.elements {
-		if element.kind == .Button && !element.control.is_trigger && element.control.button == .START {
-			return ""
-		}
-	}
-	return "no button presses START, so the pause menu could not be opened"
-}
-
 // Empty for a name the editor may save under, else why not.
 touch_layout_name_problem :: proc(name: string) -> string {
 	switch {
@@ -737,10 +765,7 @@ resolve_touch_overlay_named_entry :: proc(entry: Touch_Overlay_Named_Entry, earl
 	}
 	file := Touch_Overlay_File{reference_height = entry.reference_height, hotbar_drop_control = entry.hotbar_drop_control, elements = entry.elements}
 	resolved: Touch_Overlay_Layout
-	if resolved, problem = resolve_touch_overlay(file, allocator); problem == "" {
-		problem = touch_overlay_start_problem(resolved)
-	}
-	if problem != "" {
+	if resolved, problem = resolve_touch_overlay(file, allocator); problem != "" {
 		return {}, fmt.tprintf("(%q): %s", entry.name, problem)
 	}
 	return Named_Touch_Layout{name = entry.name, layout = resolved}, ""
@@ -903,6 +928,9 @@ touch_overlay_element_text :: proc(element: Touch_Overlay_Element) -> string {
 		fmt.sbprintf(&builder, " hold_control = %q", touch_overlay_control_name(element.hold_control))
 		fmt.sbprintf(&builder, " tap_interact_control = %q", touch_overlay_control_name(element.tap_interact_control))
 		fmt.sbprintf(&builder, " tap_place_control = %q", touch_overlay_control_name(element.tap_place_control))
+		if element.jump_zone_share > 0 {
+			fmt.sbprintf(&builder, " jump_zone_share = %v", element.jump_zone_share)
+		}
 	}
 	if element.opacity < 1 {
 		fmt.sbprintf(&builder, " opacity = %v", element.opacity)
@@ -1058,6 +1086,16 @@ zone_element :: proc(layout: Touch_Overlay_Layout, kind: Touch_Overlay_Kind, sid
 	return -1
 }
 
+// The first element of the kind on either side, -1 for none.
+layout_element :: proc(layout: Touch_Overlay_Layout, kind: Touch_Overlay_Kind) -> int {
+	for element, index in layout.elements {
+		if element.kind == kind {
+			return index
+		}
+	}
+	return -1
+}
+
 stick_held :: proc(state: Touch_Overlay_State) -> bool {
 	for slot in state.slots {
 		if slot.active && slot.role == .Stick {
@@ -1086,31 +1124,57 @@ placed_for_screen :: proc(layout: Touch_Overlay_Layout, placed: []Placed_Element
 
 // What a finger landing at point becomes. With a screen open a finger on
 // Start or Back is that button and every other finger the pointer's. In
-// the world a finger on a hotbar slot is that slot's, before the stick's
-// and the look's halves reach under the hotbar. One stick at a time: a
-// second finger on the stick's half is ignored. In the tap scheme the look
-// half's finger is undecided at first. hotbar_slot is -1 but for Hotbar.
-classify_touch :: proc(state: Touch_Overlay_State, layout: Touch_Overlay_Layout, placed: []Placed_Element, point, screen_size: [2]f32, world_shown: bool, inputs: Touch_Interaction_Frame) -> (role: Touch_Role, element: int, hotbar_slot: int) {
+// the world a finger on a HUD touch button or a hotbar slot is that one's,
+// before the free screen reaches under them, and one inside a free static
+// stick's base is the stick. Every other finger is undecided (Pending,
+// reading the look element's controls) on either half (0134); a layout
+// without a look keeps the floating stick on its half. hotbar_slot is -1
+// but for Hotbar, hud_control set only for Hud_Button.
+classify_touch :: proc(state: Touch_Overlay_State, layout: Touch_Overlay_Layout, placed: []Placed_Element, point, screen_size: [2]f32, world_shown: bool, inputs: Touch_Interaction_Frame) -> (role: Touch_Role, element: int, hotbar_slot: int, hud_control: Touch_Overlay_Control) {
 	if button := button_at(placed_for_screen(layout, placed, world_shown, context.temp_allocator), point); button >= 0 {
-		return .Button, button, -1
+		return .Button, button, -1, {}
 	}
 	if !world_shown {
-		return .Ignored, -1, -1
+		return .Ignored, -1, -1, {}
+	}
+	if control, found := hud_touch_button_at(inputs.hud_buttons, point); found {
+		return .Hud_Button, -1, -1, control
 	}
 	if slot := hotbar_slot_at(inputs.hotbar_slots, point); slot >= 0 {
-		return .Hotbar, -1, slot
+		return .Hotbar, -1, slot, {}
 	}
-	side := screen_side(point, screen_size)
-	if stick := zone_element(layout, .Stick, side); stick >= 0 {
-		if stick_held(state) || !stick_reaches(layout, layout.elements[stick], point, screen_size) {
-			return .Ignored, -1, -1
+	stick := zone_element(layout, .Stick, screen_side(point, screen_size))
+	stick_free := stick >= 0 && !stick_held(state)
+	if stick_free && layout.elements[stick].static && stick_reaches(layout, layout.elements[stick], point, screen_size) {
+		return .Stick, stick, -1, {}
+	}
+	if look := layout_element(layout, .Look); look >= 0 {
+		return .Pending, look, -1, {}
+	}
+	if stick_free && !layout.elements[stick].static {
+		return .Stick, stick, -1, {}
+	}
+	return .Ignored, -1, -1, {}
+}
+
+// The control of the shown HUD touch button under the point.
+hud_touch_button_at :: proc(buttons: [Hud_Touch_Button]Touch_Hud_Button, point: [2]f32) -> (control: Touch_Overlay_Control, found: bool) {
+	for button in buttons {
+		if button.shown && rectangle_contains(button.rectangle, point) {
+			return button.control, true
 		}
-		return .Stick, stick, -1
 	}
-	if look := zone_element(layout, .Look, side); look >= 0 {
-		return inputs.interaction == .Tap ? .Pending : .Look, look, -1
+	return {}, false
+}
+
+// What a Pending finger's drag becomes: the floating stick of the half it
+// landed on while no finger holds the stick, else -1 for the look drag.
+pending_drag_stick :: proc(state: Touch_Overlay_State, layout: Touch_Overlay_Layout, origin, screen_size: [2]f32) -> int {
+	stick := zone_element(layout, .Stick, screen_side(origin, screen_size))
+	if stick < 0 || layout.elements[stick].static || stick_held(state) {
+		return -1
 	}
-	return .Ignored, -1, -1
+	return stick
 }
 
 // A static stick's base centre in render pixels, anchored like a button.
@@ -1257,6 +1321,7 @@ advance_touch_tap :: proc(tap: Touch_Tap, layout: Touch_Overlay_Layout, world_sh
 	}
 	if !inputs.ticked {
 		waiting := tap
+		waiting.fresh = false
 		waiting.waited_seconds += inputs.frame_seconds
 		return waiting.waited_seconds > TOUCH_HOLD_SECONDS ? {} : waiting
 	}
@@ -1264,7 +1329,21 @@ advance_touch_tap :: proc(tap: Touch_Tap, layout: Touch_Overlay_Layout, world_sh
 		return {}
 	}
 	control := tap_control(layout.elements[tap.element], inputs.target_takes_interaction)
-	return Touch_Tap{phase = .Pressing, point = tap.point, element = tap.element, control = control}
+	return Touch_Tap{phase = .Pressing, point = tap.point, element = tap.element, control = control, aims = tap.aims}
+}
+
+// A tap in the look's jump zone presses Jump at once and aims nowhere;
+// any other tap aims at the point first.
+lifted_touch_tap :: proc(layout: Touch_Overlay_Layout, slot: Touch_Slot, screen_size: [2]f32) -> Touch_Tap {
+	if jump_zone_contains(layout.elements[slot.element], slot.position, screen_size) {
+		return Touch_Tap{phase = .Pressing, point = slot.position, element = slot.element, jumps = true, fresh = true}
+	}
+	return Touch_Tap{phase = .Aiming, point = slot.position, element = slot.element, aims = true}
+}
+
+// The rightmost jump_zone_share of the screen's width; none at 0.
+jump_zone_contains :: proc(look: Touch_Overlay_Element, point, screen_size: [2]f32) -> bool {
+	return look.jump_zone_share > 0 && point.x >= screen_size.x * (1 - look.jump_zone_share)
 }
 
 look_element_valid :: proc(layout: Touch_Overlay_Layout, element: int) -> bool {
@@ -1277,16 +1356,26 @@ tap_control :: proc(look: Touch_Overlay_Element, target_takes_interaction: bool)
 	return target_takes_interaction ? look.tap_interact_control : look.tap_place_control
 }
 
-// An undecided finger becomes the look drag once it moves past the slop,
-// taking the drag so far on this frame, else a hold once it rests
-// TOUCH_HOLD_SECONDS.
-advance_pending_touch :: proc(slot: Touch_Slot, slop, frame_seconds: f32) -> Touch_Slot {
+// An undecided finger becomes a drag once it moves past the slop, taking
+// the drag so far on this frame: the stick element stick (centred where
+// the finger landed) unless it is -1, else the look drag. One that rests
+// TOUCH_HOLD_SECONDS inside the slop becomes a hold. A hold that moves
+// past the slop becomes the stick the same way when stick is not -1 (a
+// thumb that rested before it pushed), which ends its Mine and its aim; a
+// hold with no stick to become keeps mining where the finger goes.
+advance_pending_touch :: proc(slot: Touch_Slot, slop, frame_seconds: f32, stick: int) -> Touch_Slot {
 	result := slot
+	if result.role == .Hold && stick >= 0 && linalg.length(result.position - result.origin) > slop {
+		result.role, result.element = .Stick, stick
+		return result
+	}
 	if result.role != .Pending {
 		return result
 	}
 	result.held_seconds += frame_seconds
 	switch {
+	case linalg.length(result.position - result.origin) > slop && stick >= 0:
+		result.role, result.element = .Stick, stick
 	case linalg.length(result.position - result.origin) > slop:
 		result.role = .Look
 		result.previous = result.origin
@@ -1332,7 +1421,7 @@ update_touch_overlay :: proc(state: ^Touch_Overlay_State, points: []Touch_Point,
 		point, found := find_touch_point(points, slot.id)
 		if !found {
 			if lifted_touch_taps(state^, slot, layout, world_shown) {
-				state.tap = Touch_Tap{phase = .Aiming, point = slot.position, element = slot.element}
+				state.tap = lifted_touch_tap(layout, slot, screen_size)
 			}
 			if lifted_hotbar_taps(slot, world_shown) {
 				hotbar_tap = slot.hotbar_slot
@@ -1350,8 +1439,8 @@ update_touch_overlay :: proc(state: ^Touch_Overlay_State, points: []Touch_Point,
 		// Not under a screen, where the held stick reads nothing: a rim
 		// crossing there would be a fresh press the frame it closes.
 		if world_shown {
+			slot = advance_pending_touch(slot, slop, inputs.frame_seconds, pending_drag_stick(state^, layout, slot.origin, screen_size))
 			slot.sprint_latched = stick_sprint_latched(slot, layout, screen_size)
-			slot = advance_pending_touch(slot, slop, inputs.frame_seconds)
 			long_press_tap: int
 			if slot, long_press_tap = advance_hotbar_touch(slot, slop, inputs.frame_seconds, inputs.selected_hotbar_slot); long_press_tap >= 0 {
 				hotbar_tap = long_press_tap
@@ -1371,7 +1460,7 @@ update_touch_overlay :: proc(state: ^Touch_Overlay_State, points: []Touch_Point,
 		if free_index < 0 {
 			return hotbar_tap
 		}
-		role, element, hotbar_slot := classify_touch(state^, layout, placed, point.position, screen_size, world_shown, inputs)
+		role, element, hotbar_slot, hud_control := classify_touch(state^, layout, placed, point.position, screen_size, world_shown, inputs)
 		origin := touch_origin(layout, role, element, point.position, screen_size)
 		toggle_spent: bool
 		if role == .Button && inputs.double_tap_latches {
@@ -1380,7 +1469,7 @@ update_touch_overlay :: proc(state: ^Touch_Overlay_State, points: []Touch_Point,
 		if toggle_spent {
 			state.double_tap = {}
 		}
-		state.slots[free_index] = Touch_Slot{active = true, id = point.id, role = role, element = element, hotbar_slot = hotbar_slot, origin = origin, position = point.position, previous = point.position, toggle_spent = toggle_spent}
+		state.slots[free_index] = Touch_Slot{active = true, id = point.id, role = role, element = element, hotbar_slot = hotbar_slot, origin = origin, position = point.position, previous = point.position, toggle_spent = toggle_spent, hud_control = hud_control}
 	}
 	return hotbar_tap
 }
@@ -1429,7 +1518,7 @@ add_touch_slot_output :: proc(output: ^Touch_Overlay_Output, slot: Touch_Slot, e
 		return
 	}
 	switch slot.role {
-	case .Ignored, .Hotbar:
+	case .Ignored, .Hotbar, .Hud_Button:
 	case .Button:
 		press_touch_control(output, element.control)
 	case .Stick:
@@ -1452,21 +1541,27 @@ add_touch_tap_output :: proc(output: ^Touch_Overlay_Output, tap: Touch_Tap) {
 		return
 	case .Aiming:
 	case .Pressing:
-		press_touch_control(output, tap.control)
+		if tap.jumps {
+			output.jump_tap, output.jump_tap_edge = true, tap.fresh
+		} else {
+			press_touch_control(output, tap.control)
+		}
 	}
-	output.aims, output.aim_point = true, tap.point
+	if tap.aims {
+		output.aims, output.aim_point = true, tap.point
+	}
 }
 
-// False for an ignored finger, a hotbar finger (it reads no layout
-// element), and for one whose element a data reload removed or replaced
-// with another kind.
+// False for an ignored finger, a hotbar or HUD button finger (it reads no
+// layout element), and for one whose element a data reload removed or
+// replaced with another kind.
 touch_slot_reads :: proc(slot: Touch_Slot, layout: Touch_Overlay_Layout) -> bool {
 	if !slot.active || slot.element < 0 || slot.element >= len(layout.elements) {
 		return false
 	}
 	kind := layout.elements[slot.element].kind
 	switch slot.role {
-	case .Ignored, .Hotbar:
+	case .Ignored, .Hotbar, .Hud_Button:
 		return false
 	case .Button:
 		return kind == .Button
@@ -1491,6 +1586,9 @@ touch_overlay_output :: proc(state: Touch_Overlay_State, layout: Touch_Overlay_L
 		}
 		if world_shown && slot.active && slot.role == .Hotbar && slot.hotbar_drops {
 			press_touch_control(&output, layout.hotbar_drop_control)
+		}
+		if world_shown && slot.active && slot.role == .Hud_Button {
+			press_touch_control(&output, slot.hud_control)
 		}
 	}
 	for element in state.latched {
@@ -1606,8 +1704,9 @@ apply_touch_overlay_aim :: proc(frame: Input_Frame, overlay: Touch_Overlay_Frame
 	return result
 }
 
-// The hotbar's slot selection into the input frame (0119), the one place
-// the overlay presses an action rather than a gamepad control: selecting a
+// The hotbar's slot selection into the input frame (0119), one of the two
+// places the overlay presses an action rather than a gamepad control (the
+// jump tap is the other): selecting a
 // given slot has no gamepad control to press (the drop has, d-pad down).
 // An edge only: the tick accumulator carries just_pressed to the next
 // tick over frames that run none, and the simulation reads it as an edge.
@@ -1619,6 +1718,26 @@ apply_touch_overlay_hotbar :: proc(frame: Input_Frame, overlay: Touch_Overlay_Fr
 	slot_actions := HOTBAR_SLOT_ACTIONS
 	if overlay.hotbar_tap >= 0 && overlay.hotbar_tap < HOTBAR_SLOT_COUNT {
 		result.just_pressed += {slot_actions[overlay.hotbar_tap]}
+	}
+	return result
+}
+
+// A jump zone tap into the input frame as the Jump action (0134), the
+// other place the overlay presses an action: SOUTH is Interact too, and
+// Interact wins over Jump on an entity with a panel (resolve_interact), so
+// a jump tap through the gamepad would open a machine under the view's
+// centre. Held until a tick has run with it, like the tap's press, and
+// just_pressed on its first frame, which the tick accumulator carries.
+apply_touch_overlay_jump :: proc(frame: Input_Frame, overlay: Touch_Overlay_Frame) -> Input_Frame {
+	result := frame
+	if !touch_overlay_drives_world(overlay) {
+		return result
+	}
+	if overlay.output.jump_tap {
+		result.pressed += {.Jump}
+	}
+	if overlay.output.jump_tap_edge {
+		result.just_pressed += {.Jump}
 	}
 	return result
 }
@@ -1669,7 +1788,58 @@ touch_interaction_frame :: proc(state: ^Frame_State) -> Touch_Interaction_Frame 
 		hotbar_slots = hud_hotbar_pixel_rectangles(&state.ui, selected),
 		selected_hotbar_slot = selected,
 		double_tap_latches = state.settings.sneak_hold == .Hold,
+		hud_buttons = frame_hud_touch_buttons(state),
 	}
+}
+
+// The first gamepad control bound to the action outside the menus on
+// this backend that the overlay can press (0134), so a rebound action
+// keeps its HUD touch button.
+touch_control_for_action :: proc(bindings: []Binding, action: Action, backend: Input_Backend) -> (control: Touch_Overlay_Control, found: bool) {
+	for binding in bindings {
+		if binding.action != action || binding.device != .Gamepad || binding.binding_context == .Menu || backend not_in binding.backends {
+			continue
+		}
+		if control, found = touch_overlay_control_from_name(binding.control); found {
+			return control, true
+		}
+	}
+	return {}, false
+}
+
+// The HUD touch buttons drawn and read this frame: none unless the
+// overlay is on in a world without the layout editor, else those whose
+// action has a control to press, Rotate only while the selection rotates.
+frame_hud_touch_buttons_shown :: proc(state: ^Frame_State) -> bit_set[Hud_Touch_Button] {
+	if state.session == nil || !touch_overlay_on(state) || touch_layout_editor_shown(state.ui.screens) {
+		return {}
+	}
+	content := state.content
+	simulation := &state.session.simulation
+	player := simulation.players[0]
+	rotates := selected_placement_rotates(player, content.machines, content.blocks, content.items) || entity_rotates(&simulation.world.entities, player.target.entity)
+	shown: bit_set[Hud_Touch_Button]
+	for button in hud_touch_buttons_shown(rotates) {
+		if _, bound := touch_control_for_action(state.bindings, hud_touch_button_actions[button], state.input_backend); bound {
+			shown += {button}
+		}
+	}
+	return shown
+}
+
+// The shown buttons in render pixels, where the overlay hit tests them,
+// as the HUD last laid them out (like hud_hotbar_pixel_rectangles).
+frame_hud_touch_buttons :: proc(state: ^Frame_State) -> (buttons: [Hud_Touch_Button]Touch_Hud_Button) {
+	rectangles := hud_touch_button_rectangles(ui_safe_area(&state.ui))
+	for button in frame_hud_touch_buttons_shown(state) {
+		control, _ := touch_control_for_action(state.bindings, hud_touch_button_actions[button], state.input_backend)
+		buttons[button] = Touch_Hud_Button{shown = true, rectangle = units_to_pixels_rectangle(rectangles[button], state.ui.pixels_per_unit), control = control}
+	}
+	return buttons
+}
+
+units_to_pixels_rectangle :: proc(rectangle: Ui_Rectangle, pixels_per_unit: f32) -> Ui_Rectangle {
+	return Ui_Rectangle{rectangle.x * pixels_per_unit, rectangle.y * pixels_per_unit, rectangle.width * pixels_per_unit, rectangle.height * pixels_per_unit}
 }
 
 // The render camera's ray through a point in render pixels, as a
@@ -1740,18 +1910,28 @@ touch_overlay_frame :: proc(state: ^Touch_Overlay_State, layout: Touch_Overlay_L
 	return Touch_Overlay_Frame {
 		active = true,
 		world_shown = world_shown,
-		output = touch_overlay_output(state^, layout, screen_size, world_shown),
+		output = touch_scheme_output(touch_overlay_output(state^, layout, screen_size, world_shown), inputs.interaction),
 		pointer_claimed = len(points) > 0 && touch_claims_pointer(state^, layout, points[0].id),
 		hotbar_tap = hotbar_tap,
 	}
 }
 
+// The crosshair scheme keeps the gestures and aims them at the view's
+// centre (0134): the output carries no aim.
+touch_scheme_output :: proc(output: Touch_Overlay_Output, interaction: Touch_Interaction) -> Touch_Overlay_Output {
+	result := output
+	if interaction == .Crosshair {
+		result.aims, result.aim_point = false, {}
+	}
+	return result
+}
+
 // A finger on one of the overlay's buttons, in the world or over a screen,
-// or on a hotbar slot.
+// on a hotbar slot or on a HUD touch button.
 touch_claims_pointer :: proc(state: Touch_Overlay_State, layout: Touch_Overlay_Layout, id: i32) -> bool {
 	for slot in state.slots {
 		if slot.active && slot.id == id {
-			return slot.role == .Hotbar || (slot.role == .Button && touch_slot_reads(slot, layout))
+			return slot.role == .Hotbar || slot.role == .Hud_Button || (slot.role == .Button && touch_slot_reads(slot, layout))
 		}
 	}
 	return false

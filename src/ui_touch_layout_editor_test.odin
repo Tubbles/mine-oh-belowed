@@ -5,6 +5,13 @@ import sdl "vendor:sdl3"
 
 // The touch layout editor (work item 0121).
 
+// The editor on a draft of GameNative's buttons, standing in for Default,
+// which has none since 0134.
+use_button_touch_layout :: proc(audit: ^Ui_Audit) {
+	audit.default_touch_layout = gamenative_touch_layout()
+	start_touch_layout_draft(&audit.touch_layout_editor, DEFAULT_TOUCH_LAYOUT_NAME, audit.default_touch_layout)
+}
+
 touch_element_index :: proc(layout: Touch_Overlay_Layout, label: string) -> int {
 	for element, index in layout.elements {
 		if element.label == label {
@@ -16,7 +23,7 @@ touch_element_index :: proc(layout: Touch_Overlay_Layout, label: string) -> int 
 
 @(test)
 test_a_move_keeps_the_anchor_and_recomputes_the_position :: proc(t: ^testing.T) {
-	layout := shipped_touch_overlay(t)
+	layout := button_touch_overlay(t)
 	a := layout.elements[touch_element_index(layout, "A")]
 	for screen in ([?][2]f32{PHONE_SCREEN, {1280, 720}}) {
 		target := [2]f32{screen.x * 0.7, screen.y * 0.4}
@@ -52,7 +59,7 @@ test_a_move_keeps_the_anchor_and_recomputes_the_position :: proc(t: ^testing.T) 
 @(test)
 test_a_rebind_changes_the_control_the_button_presses :: proc(t: ^testing.T) {
 	context.allocator = context.temp_allocator
-	layout := clone_touch_overlay_layout(shipped_touch_overlay(t))
+	layout := clone_touch_overlay_layout(button_touch_overlay(t))
 	index := touch_element_index(layout, "A")
 	control := next_touch_overlay_control(layout.elements[index].control)
 	testing.expect_value(t, control, Touch_Overlay_Control{button = .EAST})
@@ -75,7 +82,7 @@ test_a_rebind_changes_the_control_the_button_presses :: proc(t: ^testing.T) {
 
 @(test)
 test_resize_keeps_a_circle_round_and_opacity_steps_by_a_tenth :: proc(t: ^testing.T) {
-	layout := shipped_touch_overlay(t)
+	layout := button_touch_overlay(t)
 	a := layout.elements[touch_element_index(layout, "A")]
 	larger := resize_touch_element(a, 1)
 	testing.expect_value(t, larger.size, a.size + 10)
@@ -104,6 +111,7 @@ test_resize_keeps_a_circle_round_and_opacity_steps_by_a_tenth :: proc(t: ^testin
 test_the_touch_layout_editor_with_the_gamepad :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)
+	use_button_touch_layout(audit)
 	editor, layouts := &audit.touch_layout_editor, &audit.touch_layouts
 	state := Ui_State{theme = audit.theme}
 	defer destroy_ui_state(&state)
@@ -186,6 +194,7 @@ test_the_touch_layout_row_cycles_the_selection_and_opens_the_editor :: proc(t: ^
 test_the_touch_layout_editor_drags_an_element :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)
+	use_button_touch_layout(audit)
 	editor := &audit.touch_layout_editor
 	state := Ui_State{theme = audit.theme}
 	defer destroy_ui_state(&state)
@@ -223,6 +232,7 @@ draw_list_text_checksum :: proc(state: Ui_State) -> int {
 test_a_save_as_leaves_the_frames_text_readable :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)
+	use_button_touch_layout(audit)
 	editor, layouts := &audit.touch_layout_editor, &audit.touch_layouts
 	state := Ui_State{theme = audit.theme}
 	defer destroy_ui_state(&state)
@@ -237,13 +247,14 @@ test_a_save_as_leaves_the_frames_text_readable :: proc(t: ^testing.T) {
 	testing.expect_value(t, selected_touch_layout_name(layouts^), "Mine")
 }
 
-// A layout without START is refused, since the phone could not reach the
-// pause menu; while the broken file from the start stands, neither the
+// A layout without START saves (0134: the HUD's pause button opens the
+// pause menu); while the broken file from the start stands, neither the
 // row nor the editor changes anything.
 @(test)
-test_the_editor_refuses_a_layout_without_start_and_a_locked_file :: proc(t: ^testing.T) {
+test_the_editor_saves_a_layout_without_start_and_refuses_a_locked_file :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)
+	use_button_touch_layout(audit)
 	editor, layouts := &audit.touch_layout_editor, &audit.touch_layouts
 	state := Ui_State{theme = audit.theme}
 	defer destroy_ui_state(&state)
@@ -252,17 +263,20 @@ test_the_editor_refuses_a_layout_without_start_and_a_locked_file :: proc(t: ^tes
 	text_field_set(&editor.name_field, "Mine")
 	editor.request = .Save_As
 	apply_touch_layout_request(&state, editor, layouts, audit.default_touch_layout)
-	testing.expect_value(t, len(layouts.layouts), 0)
-	testing.expect(t, !layouts.write_requested)
+	testing.expect_value(t, len(layouts.layouts), 1)
+	testing.expect(t, layouts.write_requested)
+	testing.expect_value(t, touch_element_index(layouts.layouts[0].layout, "Start"), -1)
+	layouts.write_requested = false
 	reset_touch_layout(editor, audit.default_touch_layout)
 	layouts.locked_path = "touch_overlay.sjson"
 	defer layouts.locked_path = ""
-	text_field_set(&editor.name_field, "Mine")
+	text_field_set(&editor.name_field, "Other")
 	editor.request = .Save_As
 	apply_touch_layout_request(&state, editor, layouts, audit.default_touch_layout)
-	testing.expect_value(t, len(layouts.layouts), 0)
+	testing.expect_value(t, len(layouts.layouts), 1)
+	selection := layouts.selection
 	step_touch_layout_selection(&state, layouts)
-	testing.expect_value(t, layouts.selection, 0)
+	testing.expect_value(t, layouts.selection, selection)
 	testing.expect(t, !layouts.write_requested)
 }
 
@@ -272,6 +286,7 @@ test_the_editor_refuses_a_layout_without_start_and_a_locked_file :: proc(t: ^tes
 test_the_double_tap_row_turns_the_latch_off :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)
+	use_button_touch_layout(audit)
 	editor := &audit.touch_layout_editor
 	state := Ui_State{theme = audit.theme}
 	defer destroy_ui_state(&state)
@@ -288,7 +303,7 @@ test_the_double_tap_row_turns_the_latch_off :: proc(t: ^testing.T) {
 // A resize is held to the screen like a move.
 @(test)
 test_a_resize_keeps_the_element_on_the_screen :: proc(t: ^testing.T) {
-	layout := shipped_touch_overlay(t)
+	layout := button_touch_overlay(t)
 	lt := layout.elements[touch_element_index(layout, "LT")]
 	larger := constrain_touch_element(layout, resize_touch_element(lt, 10), PHONE_SCREEN)
 	// Against the corner, in whole reference pixels (463 wide: 232 in).

@@ -1,6 +1,6 @@
 # 0134: The touch overlay without gamepad buttons
 
-Status: todo
+Status: implemented
 
 ## Goal
 
@@ -19,3 +19,18 @@ Asked on 2026-09-30, in two steps: "I want the whole screen to react to taps and
 
 - `./build.sh check`, `./build.sh check-android`, `./build.sh test`. Tests (`touch_overlay_test.odin`, the frame driven tests of 0118 to 0120 as the pattern): a tap on the left half places; a hold on the left half mines and aims at the finger; a finger on the left half that moves past the slop drives the stick with the whole drag so far and never taps; a second finger on the left half while the stick is held becomes the look drag; a tap in the rightmost 20 percent presses SOUTH with no aim; a tap at 79 percent places; a tap outside a static stick's base on its half places; in `crosshair` a hold aims at the view's centre; the Default layout has no button; a user layout with an LT button and without START still loads; the backpack, pause and rotate buttons press their controls and claim the pointer; the rotate button shows only while the selected slot holds a rotatable building; the HUD buttons cover no hotbar slot.
 - The user, on the phone: tap and hold anywhere to place and mine, jump with a tap at the right edge, walk with the stick, sprint over the rim, open the inventory and the pause menu from the hotbar's buttons, rotate a belt with the rotate button.
+
+## Implemented
+
+- Gestures (`src/touch_overlay.odin`): `classify_touch` makes every free finger `Pending` with the look element's controls; `advance_pending_touch` turns a drag into the floating stick (`pending_drag_stick`) or the look drag, and a hold on the stick's half that then moves into the stick (review). `lifted_touch_tap` makes a jump zone tap (`jump_zone_contains`) that the frame carries as `jump_tap` and `apply_touch_overlay_jump` turns into the Jump action, without an aim, `touch_scheme_output` drops the aim in `crosshair`. `jump_zone_share` is loaded, validated (0 to below 1) and written by the editor's file writer.
+- HUD touch buttons (backpack, map, pause, rotate; the map button and the rotate button for a targeted belt, splitter, inserter or drill, `entity_rotates`, came from the review): `Hud_Touch_Button`, `hud_touch_button_rectangles` and `draw_hud_touch_buttons` in `src/hud.odin`; `frame_hud_touch_buttons_shown` and `frame_hud_touch_buttons` in `src/touch_overlay.odin` feed both the HUD (`Screen_Context.touch_hud_buttons`) and the overlay (`Touch_Interaction_Frame.hud_buttons`). Rotate uses the new `selected_placement_rotates` (`src/player_interaction.odin`). Icons `backpack`, `pause`, `rotate` (new `Ui_Icon` values, placeholders from `tools/make_placeholder_textures.py`; `inventory.png` is a chest).
+- `data/touch_overlay.sjson` keeps the stick and the look (`jump_zone_share = 0.2`). The START rule and its string are gone. Docs: `doc/input.md`, `doc/ui.md`, `doc/content.md`, `DESIGN.md`, `doc/log/2026-09-30.md`.
+- Tests: the button tests of 0115 to 0121 read GameNative's layout from a test constant (`GAMENATIVE_TOUCH_LAYOUT`), the editor tests and the UI audit's editor cases draft it; new tests cover every case of Verify. The UI audit draws the HUD touch buttons on its touch cases.
+
+Deviations:
+
+- The HUD buttons have their own role, `Hud_Button`, instead of `Button`: `Button` indexes a layout element, which they are not. They behave as the item describes (the finger is the button's for its life, claims the pointer, presses the bound control).
+- The control a HUD button presses is looked up in the effective bindings (`touch_control_for_action`) rather than fixed to WEST, START and NORTH, so a rebinding keeps the button working; a button whose action has no gamepad binding is not shown.
+- The buttons wrap into rows going up when the room right of the hotbar is too narrow: the UI audit found the row of three off the screen at 1280 by 800 and UI scale 1.5.
+- The item says the editor can still add buttons; it never could (it moves, resizes, rebinds and toggles existing elements). With Default buttonless, the editor has only the stick to edit unless a user layout from before 0134 is loaded. Left as is and noted in `doc/input.md`.
+- The jump tap presses the Jump action (`apply_touch_overlay_jump`, the hotbar's precedent) instead of `SOUTH`: `SOUTH` is Interact too, which wins over Jump on an entity with a panel, so a `SOUTH` jump tap with a machine at the view's centre opened it.

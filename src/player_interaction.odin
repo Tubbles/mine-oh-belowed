@@ -239,6 +239,12 @@ selected_placed_block :: proc(player: Player, items: Item_Registry) -> Block_Id 
 	return item_places_block(items, stack.item)
 }
 
+// The selected hotbar slot holds what Rotate_Building turns before it is
+// placed (place_with_player): a machine or a stairs block.
+selected_placement_rotates :: proc(player: Player, machines: Machine_Registry, blocks: Block_Registry, items: Item_Registry) -> bool {
+	return selected_placed_machine(player, machines) != NO_MACHINE || block_shape(blocks, selected_placed_block(player, items)) == .Stairs
+}
+
 // pressed is the held state, for dragging belts.
 place_with_player :: proc(world: ^World, content: Simulation_Content, players: []Player, index: int, just_pressed: Action_Set, pressed := Action_Set{}) {
 	if selected_placed_machine(players[index], content.machines) != NO_MACHINE {

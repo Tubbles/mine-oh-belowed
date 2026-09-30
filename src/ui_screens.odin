@@ -100,6 +100,9 @@ Screen_Context :: struct {
 	// mining_ring_centre is in render pixels.
 	touch_aims:           bool,
 	mining_ring_centre:   [2]f32,
+	// The HUD's touch buttons shown (0134, frame_hud_touch_buttons_shown):
+	// none unless the touch overlay is on in a world.
+	touch_hud_buttons:    bit_set[Hud_Touch_Button],
 	// The discovery card's lowest top, a UI y below the touch overlay's
 	// Back and Start while it is drawn, else 0 (0123).
 	discovery_card_clearance: f32,

@@ -9,7 +9,8 @@ package game
 // ui_journal.odin) or, once every quest is done, the oldest open contract
 // (ui_contracts.odin), the brownout warning (top centre, ui_power.odin),
 // the biome banner below it (biome_banner.odin) and the glyph bar, and the magnetometer's dial while one is selected
-// (ui_prospecting.odin). With no screen open, Mission Control's panel at
+// (ui_prospecting.odin). With the touch overlay driving the world, the
+// touch buttons right of the hotbar (0134): inventory, map, pause, rotate. With no screen open, Mission Control's panel at
 // the top left, the toasts moved below it, and the discovery card at the
 // top centre (ui_mission_control.odin).
 
@@ -91,6 +92,70 @@ hud_hotbar_pixel_rectangles :: proc(state: ^Ui_State, selected: int) -> [HOTBAR_
 		rectangle.height *= state.pixels_per_unit
 	}
 	return rectangles
+}
+
+// The HUD's touch buttons (0134), right of the hotbar: the touch
+// overlay's way to the inventory, the map, the pause menu and a rotation,
+// since its default layout has no gamepad buttons. Each presses the
+// gamepad control bound to its action (frame_hud_touch_buttons), so the
+// actions stay bindings. Rotate shows only while Rotate_Building acts:
+// the selected hotbar slot holds what it turns before placing
+// (selected_placement_rotates) or the target is an entity it turns
+// (entity_rotates).
+Hud_Touch_Button :: enum u8 {
+	Inventory,
+	Map,
+	Pause,
+	Rotate,
+}
+
+@(rodata)
+hud_touch_button_actions := [Hud_Touch_Button]Action {
+	.Inventory = .Open_Inventory,
+	.Map       = .Open_Map,
+	.Pause     = .Pause,
+	.Rotate    = .Rotate_Building,
+}
+
+@(rodata)
+hud_touch_button_icons := [Hud_Touch_Button]Ui_Icon {
+	.Inventory = .Backpack,
+	.Map       = .Map,
+	.Pause     = .Pause,
+	.Rotate    = .Rotate,
+}
+
+// Right of the hotbar on its baseline, a slot's size each, in the enum's
+// order, so Rotate coming and going moves no other button; in rows going
+// up when the room beside the hotbar is narrower than the row, like the
+// craft queue on the left. The hotbar's width does not depend on the
+// selected slot.
+hud_touch_button_rectangles :: proc(area: Ui_Rectangle) -> [Hud_Touch_Button]Ui_Rectangle {
+	last := hud_hotbar_rectangles(area, 0)[HOTBAR_SLOT_COUNT - 1]
+	left := last.x + last.width + 3 * UI_GAP
+	bottom := last.y + last.height
+	step := f32(UI_SLOT_SIZE + UI_GAP)
+	columns := max(int((area.x + area.width - left + UI_GAP) / step), 1)
+	rectangles: [Hud_Touch_Button]Ui_Rectangle
+	for &rectangle, button in rectangles {
+		index := int(button)
+		rectangle = {left + f32(index % columns) * step, bottom - UI_SLOT_SIZE - f32(index / columns) * step, UI_SLOT_SIZE, UI_SLOT_SIZE}
+	}
+	return rectangles
+}
+
+// Inventory, map and pause always, rotate while Rotate_Building acts.
+hud_touch_buttons_shown :: proc(rotates: bool) -> bit_set[Hud_Touch_Button] {
+	return rotates ? {.Inventory, .Map, .Pause, .Rotate} : {.Inventory, .Map, .Pause}
+}
+
+draw_hud_touch_buttons :: proc(state: ^Ui_State, shown: bit_set[Hud_Touch_Button]) {
+	rectangles := hud_touch_button_rectangles(ui_safe_area(state))
+	for button in shown {
+		draw_fill(state, rectangles[button], HUD_SLOT_COLOR)
+		draw_outline(state, rectangles[button], UI_PANEL_BORDER_COLOR, UI_BORDER)
+		draw_ui_icon(state, inset(rectangles[button], UI_SLOT_SIZE / 6), hud_touch_button_icons[button])
+	}
 }
 
 draw_hud_hotbar :: proc(state: ^Ui_State, player: Player, items: Item_Registry) {
@@ -284,6 +349,7 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		draw_contract_objective(state, screen_context)
 	case .None:
 	}
+	draw_hud_touch_buttons(state, screen_context.touch_hud_buttons)
 	draw_brownout_warning(state, screen_context.world)
 	draw_biome_banner(state, screen_context)
 	if height := draw_mission_control_panel(state); height > 0 {

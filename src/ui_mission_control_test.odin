@@ -193,10 +193,11 @@ test_the_satellite_crosses_the_map_through_the_pad :: proc(t: ^testing.T) {
 }
 
 // 0123: at 2272 by 1080 and ui scale 1 the card, even at its widest,
-// clears Back and Start; with no clearance it sits where it did before.
+// clears Back and Start (a user layout's since 0134); with no clearance
+// it sits where it did before.
 @(test)
 test_the_discovery_card_sits_below_back_and_start :: proc(t: ^testing.T) {
-	layout := shipped_touch_overlay(t)
+	layout := button_touch_overlay(t)
 	screen := [2]f32{2272, 1080}
 	ui: Ui_State
 	ui.pixels_per_unit = ui_pixels_per_unit(screen.y, 1)

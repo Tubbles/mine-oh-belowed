@@ -55,7 +55,8 @@ match the Ui_Icon enum in src/ui_theme.odin (a test checks the files).
 Gamepad buttons are drawn by position (the face button's dot lit in the
 accent among four), bumpers carry L1 or R1, triggers LT or RT and sticks
 an L or an R in a 3 by 5 pixel font, the key is a blank dark key cap the game draws the
-key's name on, and the categories and screens are small pictures.
+key's name on, and the categories, screens and HUD touch buttons (a
+backpack, pause bars, a turning arrow) are small pictures.
 
 The whole set is a placeholder: hand made art replaces the files later.
 """
@@ -868,6 +869,9 @@ UI_ICON_NAMES = [
     "inventory",
     "recipes",
     "technologies",
+    "backpack",
+    "pause",
+    "rotate",
 ]
 
 UI_FACE = (58, 62, 78)
@@ -1059,6 +1063,43 @@ def draw_research_tree(key: str) -> list:
     return image
 
 
+def draw_backpack(key: str) -> list:
+    """A pack with a carry loop on top, a flap and a front pocket."""
+    image = blank()
+    canvas = (120, 150, 90)
+    loop = {(x, y) for x, y in disc_mask(7.5, 3.5, 2.6) if math.hypot(x - 7.5, y - 3.5) > 1.4 and y <= 3}
+    paint(image, loop, scaled(canvas, 0.6), key + "/loop", 2)
+    paint(image, rounded_rectangle_mask(2, 3, 13, 14), canvas, key + "/body", 5)
+    paint(image, rounded_rectangle_mask(2, 3, 13, 6), scaled(canvas, 0.8), key + "/flap", 3)
+    paint(image, rounded_rectangle_mask(4, 9, 11, 13), scaled(canvas, 0.75), key + "/pocket", 3)
+    for x, y in rectangle_mask(7, 6, 8, 7):
+        image[y][x] = opaque(UI_ACCENT)
+    return image
+
+
+def draw_pause_button(key: str) -> list:
+    """Two bars on a round button."""
+    image = blank()
+    paint(image, disc_mask(7.5, 7.5, 7.2), UI_FACE, key, 2)
+    for left in (4, 9):
+        for x, y in rectangle_mask(left, 4, left + 2, 11):
+            image[y][x] = opaque(UI_LIGHT)
+    return image
+
+
+def draw_rotate_arrow(key: str) -> list:
+    """Three quarters of a ring turning clockwise, an arrow head at its end."""
+    image = blank()
+    paint(image, disc_mask(7.5, 7.5, 7.2), UI_FACE, key, 2)
+    for x, y in disc_mask(7.5, 7.5, 5.2):
+        distance = math.hypot(x - 7.5, y - 7.5)
+        if distance > 3.2 and not (x > 7.5 and y < 7.5):
+            image[y][x] = opaque(UI_LIGHT)
+    for x, y in ((8, 1), (8, 2), (9, 2), (8, 3), (9, 3), (10, 3), (8, 4), (9, 4), (8, 5)):
+        image[y][x] = opaque(UI_ACCENT)
+    return image
+
+
 def ui_icon_image(name: str) -> list:
     if name.startswith("button_"):
         return draw_face_button(name.removeprefix("button_"), name)
@@ -1090,6 +1131,9 @@ def ui_icon_image(name: str) -> list:
         "inventory": lambda: draw_chest(name),
         "recipes": lambda: draw_schematic(name),
         "technologies": lambda: draw_research_tree(name),
+        "backpack": lambda: draw_backpack(name),
+        "pause": lambda: draw_pause_button(name),
+        "rotate": lambda: draw_rotate_arrow(name),
     }
     return pictures[name]()
 

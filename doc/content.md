@@ -252,7 +252,7 @@ Block textures and item icons are 16 by 16 RGBA PNG files under `data/textures/`
 The UI's look is presentation data under `data/ui/` (0071, `doc/ui.md`, Theme), reloaded while the game runs like the textures:
 
 - `ui/theme.sjson`: the colours (`[r, g, b, a]`, 0 to 255) and the `border`, `corner` and `focus_pulse` lengths in UI units. Every key is optional and defaults to the look from before the file; an unknown key, a wrong type or a value out of range refuses the file.
-- `ui/icons/<name>.png`: one 16 by 16 RGBA icon per `Ui_Icon` in `src/ui_theme.odin` (pad buttons, the key cap, item and recipe categories, screens), packed into the UI atlas. A test fails on a missing icon or a file that is no icon. `tools/make_placeholder_textures.py` writes the placeholders (its ui family); hand made files replace them one by one.
+- `ui/icons/<name>.png`: one 16 by 16 RGBA icon per `Ui_Icon` in `src/ui_theme.odin` (pad buttons, the key cap, item and recipe categories, screens, the HUD's touch buttons), packed into the UI atlas. A test fails on a missing icon or a file that is no icon. `tools/make_placeholder_textures.py` writes the placeholders (its ui family); hand made files replace them one by one.
 
 ## Sounds
 

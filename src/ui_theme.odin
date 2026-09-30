@@ -239,6 +239,10 @@ Ui_Icon :: enum u8 {
 	Inventory,
 	Recipes,
 	Technologies,
+	// The HUD's touch buttons (0134, hud.odin).
+	Backpack,
+	Pause,
+	Rotate,
 }
 
 @(rodata)
@@ -273,6 +277,9 @@ ui_icon_names := [Ui_Icon]string {
 	.Inventory             = "inventory",
 	.Recipes               = "recipes",
 	.Technologies          = "technologies",
+	.Backpack              = "backpack",
+	.Pause                 = "pause",
+	.Rotate                = "rotate",
 }
 
 // The loaded theme, or the defaults before one is loaded (tests).

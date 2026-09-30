@@ -245,13 +245,9 @@ apply_touch_layout_request :: proc(ui: ^Ui_State, editor: ^Touch_Layout_Editor, 
 }
 
 // The draft under name: replaced or added, selected, and asked to be
-// written. The draft starts again from the stored copy. A layout without
-// START is refused, since it could not open the pause menu.
+// written. The draft starts again from the stored copy. A layout needs no
+// START button (0134): the HUD's pause button opens the pause menu.
 store_touch_layout :: proc(state: ^Ui_State, editor: ^Touch_Layout_Editor, layouts: ^Touch_Layouts, name: string) {
-	if touch_overlay_start_problem(editor.draft) != "" {
-		ui_toast(state, text("touch_layout_needs_start"))
-		return
-	}
 	named, selection := touch_layouts_with(layouts.layouts, name, editor.draft)
 	replace_touch_layouts(layouts, named, selection)
 	layouts.write_requested, layouts.changed = true, true
