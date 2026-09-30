@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The game's manifest (work item 0114, doc/build.md). build.sh android
-     fills the version code (the commit count) and the version name (the
-     build stamp). -->
+<!-- The game's manifest (work item 0114, doc/android.md, Building the
+     APK). build.sh android fills the version code (the commit count) and
+     the version name (the build stamp). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
 	package="io.github.tubbles.mineohbelowed"
 	android:versionCode="@VERSION_CODE@"

@@ -1,8 +1,8 @@
 #+build linux:android
 package game
 
-// The phone's vibrator through JNI (work item 0122, doc/build.md, Android
-// app). The game thread is raylib's android_main thread, which the VM
+// The phone's vibrator through JNI (work item 0122, doc/android.md,
+// Haptics). The game thread is raylib's android_main thread, which the VM
 // does not know, so every use attaches it first: attaching an attached
 // thread only returns its JNIEnv, and raylib's GetCurrentMonitor
 // (rcore_android.c, called by current_monitor_size) detaches the thread

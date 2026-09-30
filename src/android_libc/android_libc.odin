@@ -11,7 +11,7 @@ package android_libc
 // core:c/libc, core:thread, core:debug/trace, logging_posix.odin), and the
 // compiler emits only one of the two, not always the same one. Found with
 // llvm-nm -D --undefined-only on libmain.so against the NDK's API 28
-// libraries (doc/build.md, Android). A package of its own, since the game
+// libraries (doc/android.md, Link). A package of its own, since the game
 // package declares backtrace itself.
 
 foreign import bionic "system:c"

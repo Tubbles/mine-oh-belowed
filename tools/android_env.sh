@@ -1,6 +1,6 @@
 # Android SDK and NDK locations for Odin's android subtarget and
-# `odin bundle android`. Work item 0113, see doc/build.md (Android
-# toolchain). Source it, do not run it:
+# `odin bundle android`. Work item 0113, see doc/android.md
+# (Toolchain). Source it, do not run it:
 #   . tools/android_env.sh
 # The versions match the GitHub ubuntu-24.04 runner, whose ANDROID_HOME
 # (/usr/local/lib/android/sdk) holds the same NDK under ndk/, so the file

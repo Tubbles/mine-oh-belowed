@@ -89,11 +89,11 @@ jobs:
           path: dist/
           if-no-files-found: error
 
-  # The native Android app (work items 0113 and 0114, doc/build.md). The
-  # runner's ANDROID_HOME holds the NDK, build-tools and platform
-  # tools/android_env.sh names, and JDK 17 for apksigner, so build.sh runs
-  # on the runner directly. The full history gives the commit count, which
-  # is the APK's version code.
+  # The native Android app (work items 0113 and 0114, doc/android.md, CI
+  # and installing). The runner's ANDROID_HOME holds the NDK, build-tools
+  # and platform tools/android_env.sh names, and JDK 17 for apksigner, so
+  # build.sh runs on the runner directly. The full history gives the
+  # commit count, which is the APK's version code.
   android:
     runs-on: ubuntu-latest
     env:

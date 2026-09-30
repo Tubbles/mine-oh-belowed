@@ -4,7 +4,7 @@
 # Desktop: both GLFW backends (Wayland and X11, GLFW picks at run time)
 # into shared/raylib/linux/libraylib.a, work item 0085. Android: arm64-v8a
 # with OpenGL ES 3.0 into shared/raylib/android/libraylib.a, work item
-# 0113. See doc/build.md.
+# 0113. See doc/build.md (desktop) and doc/android.md (Android).
 #   tools/build_raylib.sh          build inside the distrobox
 #                                  mine-oh-belowed-raylib (Fedora 44),
 #                                  created on first use

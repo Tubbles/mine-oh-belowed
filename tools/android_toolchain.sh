@@ -4,7 +4,7 @@
 # build-tools, one platform and the NDK, under
 # ${ODIN_ANDROID_SDK:-$HOME/opt/android/sdk}. The versions are the GitHub
 # ubuntu-24.04 runner's (tools/android_env.sh). Re-running skips what is
-# installed. Work item 0113, see doc/build.md (Android toolchain).
+# installed. Work item 0113, see doc/android.md (Toolchain).
 #   tools/android_toolchain.sh          install inside the distrobox
 #                                       mine-oh-belowed-android (Fedora 44
 #                                       with a headless JDK), created on

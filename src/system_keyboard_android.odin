@@ -2,7 +2,7 @@
 package game
 
 // The phone's keyboard, the IME, for text fields (work item 0133,
-// doc/build.md, Android app). The NDK shows and hides it for the native
+// doc/android.md, Keyboard). The NDK shows and hides it for the native
 // activity (android/native_activity.h, NDK 27.3.13750724); flags 0 is an
 // explicit request, as a tap on the field is, and hides it however it
 // was shown. The IME's text reaches raylib as key events

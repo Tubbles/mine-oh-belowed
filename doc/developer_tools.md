@@ -4,7 +4,7 @@ The screens a developer uses in a running game: the Developer screen, the diagno
 
 - Developer mode (0043) is the Developer mode toggle on the Display tab (`settings.developer_mode`) or `--dev`. It adds a Developer entry to the pause menu, F8 reloads the data, and a Jump double tap toggles flying ([input.md](input.md)).
 - Every developer screen is reachable with focus navigation and the pointer, and pauses the simulation like the pause menu under it.
-- The editors never write a data file: the texture editor writes its own edits file, the Data files screen writes the data edits overlay ([architecture.md](architecture.md), Data driven content).
+- The editors never write a data file: the texture editor writes its own edits file, the Data files screen writes the data edits overlay ([architecture.md](architecture.md), Data edits overlay).
 
 ## Developer screen
 
@@ -78,7 +78,7 @@ Rule: edits change the tree in the file's memory; Save writes the overlay copy, 
 `data_export.odin` (0131). Over the tree, above the buttons: the Export to field (the `export_directory` setting, "not set" while empty) and the Export on save toggle (`export_on_save`), written to the settings file at once.
 
 - Confirm on the field opens the keyboard with "Export to" dimmed over the path; Done trims spaces, expands a leading `~/` and sets the setting.
-- Export runs between frames (`export_requested`). It refuses an empty directory ("Set the export directory first"), a relative one ("The export directory must be an absolute path"), and one that is, contains or lies inside the data or data edits directory ("The export directory must lie outside the data and edits directories", compared cleaned and absolute), since a copy onto its own source would empty it. On Android without All files access it opens that setting's page and toasts "Allow All files access, then export again" ([build.md](build.md), Android app).
+- Export runs between frames (`export_requested`). It refuses an empty directory ("Set the export directory first"), a relative one ("The export directory must be an absolute path"), and one that is, contains or lies inside the data or data edits directory ("The export directory must lie outside the data and edits directories", compared cleaned and absolute), since a copy onto its own source would empty it. On Android without All files access it opens that setting's page and toasts "Allow All files access, then export again" ([android.md](android.md), Export and storage access).
 - Otherwise it copies the data directory to `<directory>/data/` and the overlay to `<directory>/data_edits/` at their relative paths, each file through `<name>.tmp` with default permissions and a rename, so a failed copy leaves no cut off file and a read only source exports again. Nothing is deleted. It writes `<directory>/export.txt` (build stamp, UTC time, counts), logs, and toasts "Exported to <directory>: N data files, M data edits", or "Export failed:" with the first problem and its path, where it stops.
 - With Export on save and a directory set, every Save and Discard edit also writes or deletes that file's copy under `<directory>/data_edits/`. A failure is logged every time and toasted once ("Could not export the edit:") until a sync or an export succeeds; without All files access the settings page opens with that first toast only.
 - The export copies every file (about 475) in one frame on the main thread, so the game stands still meanwhile, a second or more on the phone's shared storage. Nothing is read back from the directory.

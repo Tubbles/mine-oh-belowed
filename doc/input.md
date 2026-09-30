@@ -95,7 +95,7 @@ Input on the phone is raylib's (0114). A Bluetooth or USB gamepad works at once 
 - Touch is the pointer: raylib holds the left mouse button while a finger is down, and `read_raylib_mouse` takes the first touch's position, keeping the last one after the lift (`touch_pointer_position`), so a tap clicks where it lands.
 - With the touch overlay off, a drag moves the mouse delta and turns the view as a mouse would. The overlay is on by default there and takes the touches in the world ([touch_overlay.md](touch_overlay.md)).
 - Haptics play on the phone's vibrator (0122): each frame with a strength above 0 renews a 100 ms one shot at `vibration_amplitude` (1 to 255, 0.5 is 128), or the default amplitude on a vibrator without amplitude control; the first frame at 0 cancels it. A gamepad attached to the phone does not rumble, and the raylib backend plays no haptics outside Android.
-- Text entry through the phone's IME: [ui.md](ui.md) (On-screen keyboard) and [build.md](build.md) (Android app).
+- Text entry through the phone's IME: [ui.md](ui.md) (On-screen keyboard) and [android.md](android.md) (Keyboard).
 
 ## Bindings
 

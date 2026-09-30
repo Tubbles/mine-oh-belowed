@@ -4,8 +4,8 @@ package game
 import "base:runtime"
 import "core:os"
 
-// The Android entry point (work item 0114, facts in doc/build.md, Android
-// toolchain). The library is built with -build-mode:shared -no-entry-point
+// The Android entry point (work item 0114, facts in doc/android.md, Entry
+// point). The library is built with -build-mode:shared -no-entry-point
 // and -Wl,--wrap=main, so raylib's android_main, which calls the C main,
 // lands here. The runtime does not start itself in a shared library, so
 // this sets the arguments and the context, starts the runtime and runs the

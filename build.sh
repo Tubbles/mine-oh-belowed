@@ -109,10 +109,10 @@ check_android() {
 	"$odin" check src "$collection" -target:linux_arm64 -subtarget:android -vet -strict-style
 }
 
-# The bundle layout odin bundle android packages (doc/build.md, Android):
-# lib/lib/arm64-v8a/libmain.so lands at lib/arm64-v8a/libmain.so in the
-# APK, data/ goes to the assets with the list of its files (the asset
-# manager cannot list directories), the manifest gets the version.
+# The bundle layout odin bundle android packages (doc/android.md, Building
+# the APK): lib/lib/arm64-v8a/libmain.so lands at lib/arm64-v8a/libmain.so
+# in the APK, data/ goes to the assets with the list of its files (the
+# asset manager cannot list directories), the manifest gets the version.
 # The link: --no-undefined, since a shared library otherwise links with
 # undefined symbols and Android's loader refuses it on the phone.
 # --wrap=main reaches the game's entry point. --wrap=fopen routes raylib's

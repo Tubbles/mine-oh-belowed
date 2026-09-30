@@ -9,14 +9,15 @@ import "core:reflect"
 import "core:slice"
 import "core:strings"
 
-// Player configuration (doc/architecture.md, Configuration). Layers, lowest
-// precedence first: <dir>/mine-oh-belowed/config.sjson for each entry of
-// $XDG_CONFIG_DIRS applied last to first, $XDG_CONFIG_HOME/mine-oh-belowed/
-// config.sjson, its config.d/*.sjson sorted by file name, then --set flags.
-// Every file is parsed into a generic tree and the trees are merged:
-// objects merge recursively, scalars and arrays replace the value below
-// wholesale. The merged tree is then mapped onto Configuration by
-// reflection, so an unknown key or a wrong type names the file that set it.
+// Player configuration (doc/architecture.md, Configuration and
+// directories). Layers, lowest precedence first:
+// <dir>/mine-oh-belowed/config.sjson for each entry of $XDG_CONFIG_DIRS
+// applied last to first, $XDG_CONFIG_HOME/mine-oh-belowed/config.sjson,
+// its config.d/*.sjson sorted by file name, then --set flags. Every file
+// is parsed into a generic tree and the trees are merged: objects merge
+// recursively, scalars and arrays replace the value below wholesale. The
+// merged tree is then mapped onto Configuration by reflection, so an
+// unknown key or a wrong type names the file that set it.
 
 CONFIGURATION_FILE_NAME :: "config.sjson"
 CONFIGURATION_DROP_IN_DIRECTORY :: "config.d"

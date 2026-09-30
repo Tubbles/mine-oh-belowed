@@ -20,11 +20,12 @@ import "core:os"
 // than a Unix style fallback, and a leading ~/ in a configured path stays
 // as written.
 //
-// Android (work item 0114, no environment at all, doc/build.md): the
-// activity's external files folder (Android/data/<package>/files, which a
-// USB connection and file managers reach) holds config, share and state
-// in place of the three XDG homes, the internal data folder when there is
-// no external one. No runtime directory and no home.
+// Android (work item 0114, no environment at all, doc/android.md, Files
+// on the phone): the activity's external files folder
+// (Android/data/<package>/files, which a USB connection and file managers
+// reach) holds config, share and state in place of the three XDG homes,
+// the internal data folder when there is no external one. No runtime
+// directory and no home.
 Platform_Directories :: struct {
 	config_home:       string,
 	config_dirs:       string,
