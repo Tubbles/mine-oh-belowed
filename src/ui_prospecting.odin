@@ -126,8 +126,8 @@ item_use_hint_keys := [Item_Use]string {
 	.Seismic_Shot = "hint_fire_charge",
 }
 
-// The rumble the SDL3 backend plays this frame: the magnetometer's
-// strength while the world is shown, nothing otherwise.
+// The rumble the SDL3 backend plays this frame (on Android the vibrator):
+// the magnetometer's strength while the world is shown, nothing otherwise.
 haptic_request_for :: proc(player: Player, world_shown: bool) -> Haptic_Request {
 	if !world_shown || !player.magnetometer.found {
 		return {}

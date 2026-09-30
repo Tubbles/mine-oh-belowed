@@ -23,10 +23,6 @@ STEAM_CONTROLLER_LEFT_GRIP_TOUCH :: sdl.GamepadButton.MISC5
 STEAM_CONTROLLER_RIGHT_GRIP_TOUCH :: sdl.GamepadButton.MISC6
 STEAM_CONTROLLER_RIGHT_PAD_CLICK :: sdl.GamepadButton.MISC2
 
-// A rumble lasts this long unless the next frame renews it, so it stops
-// by itself when frames stop.
-HAPTIC_RUMBLE_MILLISECONDS :: 100
-
 Sdl3_Input_State :: struct {
 	gamepad:          ^sdl.Gamepad,
 	// A rumble was started and not yet stopped.

@@ -77,8 +77,10 @@ Frame_State :: struct {
 	// The touch overlay's fingers (touch_overlay.odin), and --touch-overlay.
 	touch_overlay:        Touch_Overlay_State,
 	touch_overlay_forced: bool,
-	// The rumble for this frame, applied by the SDL3 backend.
+	// The rumble for this frame, applied by the SDL3 backend or, on
+	// Android, by the raylib backend through the phone's vibrator.
 	haptic:             Haptic_Request,
+	vibrator:           Vibrator_State,
 	previous_input:     Input_Frame,
 	frame_seconds:      f32,
 	// The sprint field of view kick's progress, 0 to 1 (advance_sprint_kick).
@@ -404,8 +406,11 @@ update_frame :: proc(state: ^Frame_State) {
 		state.reload_requested = true
 	}
 	serve_command_socket(state)
-	if state.input_backend == .Sdl3 {
+	switch state.input_backend {
+	case .Sdl3:
 		apply_sdl3_haptics(&state.sdl3_input, state.haptic)
+	case .Raylib:
+		apply_vibrator_haptics(&state.vibrator, state.haptic)
 	}
 }
 
@@ -1076,6 +1081,8 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	defer if input_backend == .Sdl3 {
 		shutdown_sdl3_input(&state.sdl3_input)
 	}
+	state.vibrator = start_vibrator()
+	defer stop_vibrator(&state.vibrator)
 	defer destroy_chunk_renderer(&state.renderer)
 	state.item_atlas = upload_item_atlas(&state.content.items, data_directory)
 	defer destroy_item_atlas(&state.item_atlas)
