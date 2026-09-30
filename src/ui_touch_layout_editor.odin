@@ -334,18 +334,18 @@ touch_layout_editor_screen :: proc(state: ^Ui_State, screen_context: Screen_Cont
 // screen shows them.
 touch_layout_name_entry :: proc(state: ^Ui_State, editor: ^Touch_Layout_Editor, label: string) {
 	width := f32(max(TOUCH_LAYOUT_PANEL_WIDTH, KEYBOARD_WIDTH + 2 * UI_PADDING))
-	panel := fitted_panel(ui_panel_area(state), width, panel_height(1, KEYBOARD_HEIGHT))
+	panel := fitted_panel(ui_panel_area(state), width, panel_height(1, keyboard_keys_height(state.keyboard)))
 	ui_panel_begin(state, "touch_layout_name_entry", panel)
 	content := inset(panel, UI_PADDING)
-	draw_text_field_content(state, settings_row(&content), label, &editor.name_field, true)
-	if ui_on_screen_keyboard(state, {content.x + (content.width - KEYBOARD_WIDTH) / 2, content.y}, &editor.name_field) {
+	field_row := settings_row(&content)
+	draw_text_field_content(state, field_row, label, &editor.name_field, true)
+	if ui_on_screen_keyboard(state, field_row, {content.x + (content.width - KEYBOARD_WIDTH) / 2, content.y}, &editor.name_field) {
 		state.keyboard = Keyboard_State {
 			return_focus = state.keyboard.field,
 		}
 	}
 	ui_panel_end(state)
-	hints := keyboard_glyph_hints()
-	ui_glyph_bar(state, hints[:])
+	ui_glyph_bar(state, keyboard_glyph_hints(state.keyboard))
 }
 
 // Every editable element as a widget: a click or Confirm selects it, a

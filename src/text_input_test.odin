@@ -96,3 +96,146 @@ test_seed_field_takes_digits_only :: proc(t: ^testing.T) {
 	text_field_set(&setup.seed, "123456789012345678901234")
 	testing.expect_value(t, setup.seed.length, SEED_MAXIMUM_LENGTH)
 }
+
+// Work item 0133: the system keyboard.
+
+@(test)
+test_the_system_keyboard_shows_once_the_field_is_drawn_and_hides_after :: proc(t: ^testing.T) {
+	state := Ui_State{system_keyboard = true}
+	defer destroy_ui_state(&state)
+	open_keyboard(&state, 7)
+	testing.expect(t, state.keyboard.system)
+	testing.expect_value(t, system_keyboard_change(state.keyboard, false), System_Keyboard_Change.None)
+	state.keyboard.field_rectangle = {100, 100, 400, 56}
+	testing.expect_value(t, system_keyboard_change(state.keyboard, false), System_Keyboard_Change.Show)
+	testing.expect_value(t, system_keyboard_change(state.keyboard, true), System_Keyboard_Change.None)
+	state.keyboard.show_requested = true
+	testing.expect_value(t, system_keyboard_change(state.keyboard, true), System_Keyboard_Change.Show)
+	testing.expect_value(t, system_keyboard_change(Keyboard_State{return_focus = 7}, true), System_Keyboard_Change.Hide)
+	testing.expect_value(t, system_keyboard_change(Keyboard_State{}, false), System_Keyboard_Change.None)
+	// The game's keys never involve the system keyboard.
+	state.system_keyboard = false
+	open_keyboard(&state, 7)
+	state.keyboard.field_rectangle = {100, 100, 400, 56}
+	testing.expect(t, !state.keyboard.system)
+	testing.expect_value(t, system_keyboard_change(state.keyboard, false), System_Keyboard_Change.None)
+}
+
+typed_input :: proc(typed: string) -> Ui_Input {
+	input: Ui_Input
+	copy(input.typed_text[:], typed)
+	input.typed_text_length = len(typed)
+	return input
+}
+
+// The widgets of the frame outside the glyph bar.
+panel_widget_count :: proc(state: Ui_State) -> int {
+	count := 0
+	for widget in state.widgets {
+		if widget.panel != UI_GLYPH_BAR_PANEL {
+			count += 1
+		}
+	}
+	return count
+}
+
+// The new world screen with its name field open, through the system
+// keyboard or the game's keys, drawn once.
+open_new_world_name_entry :: proc(audit: ^Ui_Audit, state: ^Ui_State, system: bool) {
+	text_field_set(&audit.title.setup.name, "")
+	push_screen(&state.screens, .Title)
+	push_screen(&state.screens, .New_World)
+	state.keyboard = Keyboard_State {
+		field  = 1,
+		system = system,
+	}
+	screen_test_frame(audit, state, {})
+}
+
+@(test)
+test_a_field_with_the_system_keyboard_draws_no_keys_and_takes_typed_text :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	game_keys := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&game_keys)
+	open_new_world_name_entry(audit, &game_keys, false)
+	testing.expect(t, panel_widget_count(game_keys) > 0, "the game's keys are widgets")
+	state := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&state)
+	open_new_world_name_entry(audit, &state, true)
+	testing.expect_value(t, panel_widget_count(state), 0)
+	testing.expect(t, state.keyboard.field_rectangle != {}, "the field's place is known")
+	testing.expect_value(t, system_keyboard_change(state.keyboard, false), System_Keyboard_Change.Show)
+	screen_test_frame(audit, &state, typed_input("Deep"))
+	screen_test_frame(audit, &state, {backspace_key = true})
+	screen_test_frame(audit, &state, typed_input("p mine"))
+	testing.expect_value(t, text_field_text(&audit.title.setup.name), "Deep mine")
+	testing.expect_value(t, top_screen(state.screens), Screen.New_World)
+	screen_test_frame(audit, &state, {enter_key = true})
+	testing.expect_value(t, state.keyboard.field, 0)
+	testing.expect_value(t, system_keyboard_change(state.keyboard, true), System_Keyboard_Change.Hide)
+	testing.expect_value(t, top_screen(state.screens), Screen.New_World)
+	testing.expect_value(t, text_field_text(&audit.title.setup.name), "Deep mine")
+}
+
+// A tap on the field shows the system keyboard again, a tap elsewhere
+// ends the entry like Done; B ends it too.
+@(test)
+test_taps_and_back_with_the_system_keyboard :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	state := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&state)
+	open_new_world_name_entry(audit, &state, true)
+	on_field := rectangle_centre(state.keyboard.field_rectangle)
+	screen_test_frame(audit, &state, touch_input(on_field, true, pressed = true))
+	screen_test_frame(audit, &state, touch_input(on_field, false, moved = false))
+	testing.expect(t, state.keyboard.show_requested)
+	testing.expect_value(t, system_keyboard_change(state.keyboard, true), System_Keyboard_Change.Show)
+	testing.expect(t, state.keyboard.field != 0)
+	// Confirm (A with a gamepad only) asks for the keyboard again too;
+	// the frame loop clears the request once it acted (sync_system_keyboard).
+	state.keyboard.show_requested = false
+	screen_test_frame(audit, &state, {})
+	testing.expect_value(t, system_keyboard_change(state.keyboard, true), System_Keyboard_Change.None)
+	screen_test_frame(audit, &state, {confirm = true, device = .Gamepad, device_seen = true})
+	testing.expect(t, state.keyboard.show_requested)
+	testing.expect_value(t, system_keyboard_change(state.keyboard, true), System_Keyboard_Change.Show)
+	testing.expect(t, state.keyboard.field != 0)
+	state.keyboard.show_requested = false
+	// Enter is also Confirm in the bindings: the entry ends, and the frame
+	// loop hides the keyboard rather than showing it.
+	screen_test_frame(audit, &state, {enter_key = true, confirm = true})
+	testing.expect_value(t, state.keyboard.field, 0)
+	testing.expect_value(t, system_keyboard_change(state.keyboard, true), System_Keyboard_Change.Hide)
+	state.keyboard = Keyboard_State {
+		field  = 1,
+		system = true,
+	}
+	screen_test_frame(audit, &state, {})
+	elsewhere := on_field + [2]f32{0, 300}
+	screen_test_frame(audit, &state, touch_input(elsewhere, true, pressed = true))
+	screen_test_frame(audit, &state, touch_input(elsewhere, false, moved = false))
+	testing.expect_value(t, state.keyboard.field, 0)
+	testing.expect_value(t, top_screen(state.screens), Screen.New_World)
+	state.keyboard = Keyboard_State {
+		field  = 1,
+		system = true,
+	}
+	screen_test_frame(audit, &state, {})
+	screen_test_frame(audit, &state, {back = true})
+	testing.expect_value(t, state.keyboard.field, 0)
+	testing.expect_value(t, top_screen(state.screens), Screen.New_World)
+}
+
+// Each Backspace the phone's IME pressed in a frame deletes one character,
+// in its place, and the Backspace key's edge adds none on top.
+@(test)
+test_backspaces_in_typed_text_each_delete_once :: proc(t: ^testing.T) {
+	field := make_text_field("mine", 32)
+	keyboard: Keyboard_State
+	advance_keyboard(&field, &keyboard, Keyboard_Input{typed_text = "\b\bxy\bz", backspace_key = true})
+	testing.expect_value(t, text_field_text(&field), "mixz")
+	advance_keyboard(&field, &keyboard, Keyboard_Input{backspace_key = true})
+	testing.expect_value(t, text_field_text(&field), "mix")
+}

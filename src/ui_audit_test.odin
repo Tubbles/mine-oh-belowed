@@ -83,6 +83,8 @@ Ui_Audit_Case :: struct {
 	machine:      Entity_Handle,
 	selecting:    Entity_Handle,
 	keyboard:     bool,
+	// The keyboard types through the system keyboard: no keys (0133).
+	system_keyboard: bool,
 	radial:       bool,
 	// String keys shown as toasts from the first frame.
 	toasts:       []string,
@@ -349,6 +351,7 @@ audit_case_at_size :: proc(audit: ^Ui_Audit, audit_case: Ui_Audit_Case, size: Ui
 	}
 	if audit_case.keyboard {
 		state.keyboard.field = 1
+		state.keyboard.system = audit_case.system_keyboard
 	}
 	for toast in audit_case.toasts {
 		ui_toast(&state, text(toast))
@@ -627,6 +630,7 @@ audit_touch_layout_editor :: proc(audit: ^Ui_Audit) {
 	}
 	editor.selected = -1
 	audit_case(audit, {name = "touch layout name entry", screens = {.Pause, .Settings, .Touch_Layout}, keyboard = true, walk_focus = true})
+	audit_case(audit, {name = "touch layout name entry, system keyboard", screens = {.Pause, .Settings, .Touch_Layout}, keyboard = true, system_keyboard = true})
 }
 
 UI_AUDIT_TOASTS :: [?]string{"mc_extraction_rights_done", "inventory_full", "developer_applies_on_resume"}
@@ -636,6 +640,7 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 	audit_case(audit, {name = "title", screens = {.Title}, walk_focus = true})
 	audit_case(audit, {name = "new world", screens = {.Title, .New_World}, walk_focus = true})
 	audit_case(audit, {name = "on-screen keyboard", screens = {.Title, .New_World}, keyboard = true, walk_focus = true})
+	audit_case(audit, {name = "system keyboard", screens = {.Title, .New_World}, keyboard = true, system_keyboard = true})
 	audit_case(audit, {name = "load", screens = {.Title, .Load_World}, walk_focus = true})
 	audit_case(audit, {name = "confirm delete", screens = {.Title, .Load_World, .Confirm_Delete}, walk_focus = true})
 	audit_case(audit, {name = "hud", hud = true, toasts = toasts[:]})

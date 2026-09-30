@@ -1,5 +1,6 @@
 package game
 
+import "core:slice"
 import "core:strings"
 
 // The text field widget and the on-screen keyboard drawn under it
@@ -34,11 +35,19 @@ draw_text_field_content :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label
 	draw_text(state, content, value, UI_BODY_TEXT_SIZE, .Right, editing ? UI_ACCENT_COLOR : UI_TEXT_COLOR)
 }
 
-// The field with this id takes the keyboard's input from the next frame.
+// The field with this id takes the keyboard's input from the next frame,
+// through the system keyboard where the frame loop allows it
+// (Ui_State.system_keyboard).
 open_keyboard :: proc(state: ^Ui_State, field: Ui_Id) {
 	state.keyboard = Keyboard_State {
-		field = field,
+		field  = field,
+		system = state.system_keyboard,
 	}
+}
+
+// The height the keys take below the field, none with the system keyboard.
+keyboard_keys_height :: proc(keyboard: Keyboard_State) -> f32 {
+	return keyboard.system ? -UI_GAP : KEYBOARD_HEIGHT
 }
 
 keyboard_key_label :: proc(key: Keyboard_Key, shift: bool) -> string {
@@ -111,13 +120,35 @@ declare_keyboard_keys :: proc(state: ^Ui_State, origin: [2]f32) -> (key: Keyboar
 	return
 }
 
+// A tap this frame, and whether it landed in the rectangle.
+pointer_tap :: proc(state: Ui_State, rectangle: Ui_Rectangle) -> (tapped, inside: bool) {
+	tapped = state.pointer_released && !state.pointer_press.moved
+	return tapped, tapped && rectangle_contains(rectangle, state.pointer_press.position)
+}
+
 // The keys with their top left at the origin, inside the caller's panel,
 // so focus moves only between keys. Returns true when the entry is done;
-// the caller then closes the keyboard (state.keyboard = {}).
-ui_on_screen_keyboard :: proc(state: ^Ui_State, origin: [2]f32, field: ^Text_Field) -> bool {
+// the caller then closes the keyboard (state.keyboard = {}). With the
+// system keyboard no keys are drawn and the field takes the physical
+// keyboard's path; a tap on the field or Confirm (the field is all the
+// entry shows) shows the system keyboard again (the phone's Back hides
+// it and Steam may close it by itself, leaving the entry open), a tap
+// elsewhere ends the entry.
+ui_on_screen_keyboard :: proc(state: ^Ui_State, field_rectangle: Ui_Rectangle, origin: [2]f32, field: ^Text_Field) -> bool {
 	ui_push_id(state, "keyboard")
 	defer ui_pop_id(state)
-	key, pressed := declare_keyboard_keys(state, origin)
+	key: Keyboard_Key
+	pressed: bool
+	if state.keyboard.system {
+		state.keyboard.field_rectangle = field_rectangle
+		tapped, on_field := pointer_tap(state^, field_rectangle)
+		if tapped && !on_field {
+			return true
+		}
+		state.keyboard.show_requested ||= on_field || state.confirm
+	} else {
+		key, pressed = declare_keyboard_keys(state, origin)
+	}
 	input := state.input
 	keyboard_input := Keyboard_Input {
 		key_pressed      = pressed,
@@ -132,6 +163,11 @@ ui_on_screen_keyboard :: proc(state: ^Ui_State, origin: [2]f32, field: ^Text_Fie
 	return advance_keyboard(field, &state.keyboard, keyboard_input)
 }
 
-keyboard_glyph_hints :: proc() -> [4]Glyph_Hint {
-	return {{.Confirm, text("hint_type")}, {.Context_Action, text("keyboard_backspace")}, {.Info, text("keyboard_shift")}, {.Back, text("keyboard_done")}}
+// Without keys, Confirm shows the system keyboard again and Shift has
+// nothing to shift.
+keyboard_glyph_hints :: proc(keyboard: Keyboard_State) -> []Glyph_Hint {
+	if keyboard.system {
+		return slice.clone([]Glyph_Hint{{.Confirm, text("keyboard_show")}, {.Context_Action, text("keyboard_backspace")}, {.Back, text("keyboard_done")}}, context.temp_allocator)
+	}
+	return slice.clone([]Glyph_Hint{{.Confirm, text("hint_type")}, {.Context_Action, text("keyboard_backspace")}, {.Info, text("keyboard_shift")}, {.Back, text("keyboard_done")}}, context.temp_allocator)
 }

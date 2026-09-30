@@ -188,7 +188,8 @@ Raw_Keyboard :: struct {
 	keys_down:      [RAW_KEYS_DOWN_CAPACITY]i32,
 	keys_truncated: bool,
 	// Printable ASCII characters typed this frame, with shift and layout
-	// applied, for text fields.
+	// applied, for text fields. On Android also TEXT_BACKSPACE for each
+	// Backspace of the key queue, in order (read_raylib_typed_text).
 	text:           [RAW_TEXT_CAPACITY]u8,
 	text_length:    int,
 }

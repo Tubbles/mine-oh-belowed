@@ -121,8 +121,9 @@ Ui_Input :: struct {
 	move:           [2]f32,
 	// A letter key pressed this frame (lower case), 0 for none.
 	typed_letter:   rune,
-	// Printable characters a physical keyboard typed this frame, and the
-	// Backspace and Enter keys, for text fields.
+	// Printable characters a physical keyboard typed this frame (on
+	// Android with TEXT_BACKSPACE among them), and the Backspace and Enter
+	// keys, for text fields.
 	typed_text:        [RAW_TEXT_CAPACITY]u8,
 	typed_text_length: int,
 	backspace_key:     bool,
@@ -422,6 +423,10 @@ Ui_State :: struct {
 	radial:           Radial_State,
 	// The on-screen keyboard. While it is open, B, X and Y belong to it.
 	keyboard:         Keyboard_State,
+	// A text field opens the system keyboard (open_keyboard, work item
+	// 0133): one is available and settings.on_screen_keyboard is system.
+	// Set by the frame loop.
+	system_keyboard:  bool,
 	distribute:       Distribute_Gesture,
 	quick_move:       Quick_Move_State,
 	// The slot screens' active grid (0125), forgotten with the focus.

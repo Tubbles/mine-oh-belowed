@@ -171,7 +171,7 @@ new_world_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	setup := &screen_context.title.setup
 	area := ui_panel_area(state)
 	typing := state.keyboard.field != 0
-	height := typing ? panel_height(2, KEYBOARD_HEIGHT) : panel_height(NEW_WORLD_ROW_COUNT, -UI_GAP)
+	height := typing ? panel_height(2, keyboard_keys_height(state.keyboard)) : panel_height(NEW_WORLD_ROW_COUNT, -UI_GAP)
 	panel := fitted_panel(area, NEW_WORLD_PANEL_WIDTH, height)
 	ui_panel_begin(state, "new_world", panel)
 	content := inset(panel, UI_PADDING)
@@ -181,15 +181,15 @@ new_world_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	if typing {
 		editing_seed := state.keyboard.field == seed_id
 		field := editing_seed ? &setup.seed : &setup.name
-		draw_text_field_content(state, title_row(&content), editing_seed ? seed_label : name_label, field, true)
-		if ui_on_screen_keyboard(state, {content.x + (content.width - KEYBOARD_WIDTH) / 2, content.y}, field) {
+		field_row := title_row(&content)
+		draw_text_field_content(state, field_row, editing_seed ? seed_label : name_label, field, true)
+		if ui_on_screen_keyboard(state, field_row, {content.x + (content.width - KEYBOARD_WIDTH) / 2, content.y}, field) {
 			state.keyboard = Keyboard_State {
 				return_focus = state.keyboard.field,
 			}
 		}
 		ui_panel_end(state)
-		hints := keyboard_glyph_hints()
-		ui_glyph_bar(state, hints[:])
+		ui_glyph_bar(state, keyboard_glyph_hints(state.keyboard))
 		return
 	}
 	if state.keyboard.return_focus != 0 {

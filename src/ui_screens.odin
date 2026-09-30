@@ -14,7 +14,7 @@ SETTINGS_ROW_COUNT :: 14
 DISPLAY_SETTINGS_ROW_COUNT :: 17
 AUDIO_SETTINGS_ROW_COUNT :: 3
 CONTROL_SETTINGS_ROW_COUNT :: 5
-ACCESSIBILITY_SETTINGS_ROW_COUNT :: 9
+ACCESSIBILITY_SETTINGS_ROW_COUNT :: 10
 
 Screen_Context :: struct {
 	settings:        ^Settings,
@@ -597,6 +597,9 @@ accessibility_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, setting
 	if ui_choice(state, settings_row(content), text("settings_touch_interaction"), text(touch_interaction_keys[settings.touch_interaction]), text("settings_touch_interaction_tooltip")) {
 		settings.touch_interaction = settings.touch_interaction == .Tap ? .Crosshair : .Tap
 	}
+	if ui_choice(state, settings_row(content), text("settings_on_screen_keyboard"), text(on_screen_keyboard_keys[settings.on_screen_keyboard]), text("settings_on_screen_keyboard_tooltip")) {
+		settings.on_screen_keyboard = settings.on_screen_keyboard == .System ? .Game : .System
+	}
 	touch_layout_rows(state, content, screen_context)
 }
 
@@ -629,6 +632,12 @@ touch_layout_rows :: proc(state: ^Ui_State, content: ^Ui_Rectangle, screen_conte
 touch_interaction_keys := [Touch_Interaction]string {
 	.Tap       = "settings_touch_interaction_tap",
 	.Crosshair = "settings_touch_interaction_crosshair",
+}
+
+@(rodata)
+on_screen_keyboard_keys := [On_Screen_Keyboard]string {
+	.System = "settings_on_screen_keyboard_system",
+	.Game   = "settings_on_screen_keyboard_game",
 }
 
 @(rodata)

@@ -258,6 +258,7 @@ test_settings_file_round_trip :: proc(t: ^testing.T) {
 	settings.sprint_hold = .Hold
 	settings.touch_overlay = .Off
 	settings.touch_interaction = .Crosshair
+	settings.on_screen_keyboard = .Game
 	settings.deck_preset_applied = true
 	testing.expect_value(t, write_settings_file(environment, settings), "")
 
@@ -286,6 +287,7 @@ test_settings_file_round_trip :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(string(written_data), "\tsneak_hold = \"toggle\"\n"), string(written_data))
 	testing.expect(t, strings.contains(string(written_data), "\ttouch_overlay = \"off\"\n"), string(written_data))
 	testing.expect(t, strings.contains(string(written_data), "\ttouch_interaction = \"crosshair\"\n"), string(written_data))
+	testing.expect(t, strings.contains(string(written_data), "\ton_screen_keyboard = \"game\"\n"), string(written_data))
 	testing.expect(t, strings.contains(string(written_data), "\tdeck_preset_applied = true\n"), string(written_data))
 }
 
@@ -404,7 +406,7 @@ test_configuration_accessibility_settings :: proc(t: ^testing.T) {
 	defer os.remove_all(root)
 	drop_in := join_save_path(root, "home", GAME_DIRECTORY_NAME, CONFIGURATION_DROP_IN_DIRECTORY, "50-accessibility.sjson")
 
-	write_test_file(drop_in, `settings = {text_scale = 1.6 palette = "colour_blind" reduced_motion = true sneak_hold = "toggle" sprint_hold = "hold" touch_overlay = "on" touch_interaction = "crosshair"}`)
+	write_test_file(drop_in, `settings = {text_scale = 1.6 palette = "colour_blind" reduced_motion = true sneak_hold = "toggle" sprint_hold = "hold" touch_overlay = "on" touch_interaction = "crosshair" on_screen_keyboard = "game"}`)
 	loaded, problem := load_configuration(test_environment(root), {})
 	testing.expect_value(t, problem, "")
 	settings := loaded.configuration.settings
@@ -416,6 +418,8 @@ test_configuration_accessibility_settings :: proc(t: ^testing.T) {
 	testing.expect_value(t, settings.touch_overlay, Touch_Overlay_Mode.On)
 	testing.expect_value(t, settings.touch_interaction, Touch_Interaction.Crosshair)
 	testing.expect_value(t, DEFAULT_SETTINGS.touch_interaction, Touch_Interaction.Tap)
+	testing.expect_value(t, settings.on_screen_keyboard, On_Screen_Keyboard.Game)
+	testing.expect_value(t, DEFAULT_SETTINGS.on_screen_keyboard, On_Screen_Keyboard.System)
 	write_test_file(drop_in, "settings = {text_scale = 0.8}")
 	_, problem = load_configuration(test_environment(root), {})
 	testing.expect_value(t, problem, "")
@@ -435,6 +439,7 @@ test_configuration_accessibility_settings :: proc(t: ^testing.T) {
 		{"settings = {sprint_hold = true}", "settings.sprint_hold must be one of"},
 		{`settings = {touch_overlay = "always"}`, `settings.touch_overlay is "always", not one of auto, on, off`},
 		{`settings = {touch_interaction = "swipe"}`, `settings.touch_interaction is "swipe", not one of tap, crosshair`},
+		{`settings = {on_screen_keyboard = "steam"}`, `settings.on_screen_keyboard is "steam", not one of system, game`},
 	}
 	for case_value in invalid {
 		write_test_file(drop_in, case_value.text)

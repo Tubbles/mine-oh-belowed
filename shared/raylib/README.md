@@ -25,7 +25,8 @@ Rewritten by `tools/build_raylib.sh`: each platform's block runs from its marker
 <!-- android build record -->
 - android raylib tag: 6.0 (https://github.com/raysan5/raylib), commit dbc56a87da87d973a9c5baa4e7438a9d20121d28
 - android source patch: src/rlgl.h, the two OpenGL ES3 default shader lines "precision mediump float;" become "precision highp float;" (work item 0126)
+- android source patch: src/platforms/rcore_android.c, the key branch's keyPressedQueue append is bounded by MAX_KEY_PRESSED_QUEUE as on the desktop (work item 0133)
 - android cmake flags: -G "Unix Makefiles" -DCMAKE_TOOLCHAIN_FILE=<ndk>/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-28 -DPLATFORM=Android -DOPENGL_VERSION="ES 3.0" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DBUILD_EXAMPLES=OFF
 - android compiler: NDK 27.3.13750724, Android (13691557, +pgo, +bolt, +lto, +mlgo, based on r522817d) clang version 18.0.4 (https://android.googlesource.com/toolchain/llvm-project d8003a456d14a3deb8054cdaa529ffbf02d9b262)
-- android built: 2026-09-30T07:41Z
+- android built: 2026-09-30T10:04Z
 - android archive: android/libraylib.a, 2550222 bytes after llvm-strip --strip-debug

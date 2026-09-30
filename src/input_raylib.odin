@@ -109,15 +109,152 @@ read_raylib_keyboard :: proc() -> Raw_Keyboard {
 	return keyboard
 }
 
-// Drains raylib's character queue every frame, so no stale characters
-// reach a text field opened later.
+// raylib's MAX_KEY_PRESSED_QUEUE.
+RAYLIB_KEY_QUEUE_CAPACITY :: 16
+
+// Drains raylib's queues every frame, so no stale characters reach a
+// text field opened later. A key in the pressed queue counts as down for
+// the frame on every platform: raylib sets and clears a key's state
+// within one poll when the press and the release arrive together (the
+// GLFW backend's key callback, a virtual keyboard such as Steam's; the
+// phone's IME), and the text fields' Backspace and Enter edges read the
+// keys down. raylib's Android backend fills no character queue
+// (rcore_android.c queues key codes only), so on the phone (work item
+// 0133) the text comes from the pressed keys, which the IME's text
+// reaches as key events.
 read_raylib_typed_text :: proc(keyboard: ^Raw_Keyboard) {
-	for character := rl.GetCharPressed(); character != 0; character = rl.GetCharPressed() {
-		if character >= ' ' && character <= '~' && keyboard.text_length < RAW_TEXT_CAPACITY {
-			keyboard.text[keyboard.text_length] = u8(character)
+	keys: [RAYLIB_KEY_QUEUE_CAPACITY]rl.KeyboardKey
+	count := 0
+	for key := rl.GetKeyPressed(); key != .KEY_NULL; key = rl.GetKeyPressed() {
+		if count < len(keys) {
+			keys[count] = key
+			count += 1
+		}
+	}
+	add_pressed_keys(keyboard, keys[:count])
+	append_typed_characters(keyboard, keys[:count])
+}
+
+when ODIN_PLATFORM_SUBTARGET == .Android {
+	// A Shift of the key queue whose character has not come yet: the
+	// IME's Shift and its letter can arrive in two polls.
+	@(private = "file")
+	pending_shift: bool
+
+	append_typed_characters :: proc(keyboard: ^Raw_Keyboard, keys: []rl.KeyboardKey) {
+		shift_held := rl.IsKeyDown(.LEFT_SHIFT) || rl.IsKeyDown(.RIGHT_SHIFT)
+		pending_shift = append_characters_for_keys(keyboard, keys, shift_held, pending_shift)
+	}
+
+	// A second main in the same process runs without the global
+	// initialisers (work item 0116).
+	reset_raylib_typed_text :: proc() {
+		pending_shift = false
+	}
+} else {
+	append_typed_characters :: proc(keyboard: ^Raw_Keyboard, keys: []rl.KeyboardKey) {
+		for character := rl.GetCharPressed(); character != 0; character = rl.GetCharPressed() {
+			if character >= ' ' && character <= '~' && keyboard.text_length < RAW_TEXT_CAPACITY {
+				keyboard.text[keyboard.text_length] = u8(character)
+				keyboard.text_length += 1
+			}
+		}
+	}
+
+	reset_raylib_typed_text :: proc() {}
+}
+
+add_pressed_keys :: proc(keyboard: ^Raw_Keyboard, keys: []rl.KeyboardKey) {
+	for key in keys {
+		if keyboard_holds_key(keyboard^, i32(key)) {
+			continue
+		}
+		if keyboard.key_count == RAW_KEYS_DOWN_CAPACITY {
+			keyboard.keys_truncated = true
+			return
+		}
+		keyboard.keys_down[keyboard.key_count] = i32(key)
+		keyboard.key_count += 1
+	}
+}
+
+// The IME types an upper case letter as Shift pressed, the letter pressed
+// and both released, often in one frame, so a Shift of the queue applies
+// to the next character, also when that character comes in a later
+// frame; a frame with no key at all drops it. A shift key held down (a
+// physical keyboard) applies to every character. Each Backspace becomes
+// TEXT_BACKSPACE in its place, so every one the IME presses in a frame
+// deletes a character. Returns the Shift still pending.
+append_characters_for_keys :: proc(keyboard: ^Raw_Keyboard, keys: []rl.KeyboardKey, shift_held, shift_pending: bool) -> (shift_still_pending: bool) {
+	if len(keys) == 0 {
+		return false
+	}
+	shift_still_pending = shift_pending
+	for key in keys {
+		if key == .LEFT_SHIFT || key == .RIGHT_SHIFT {
+			shift_still_pending = true
+			continue
+		}
+		character := key == .BACKSPACE ? TEXT_BACKSPACE : character_for_key(key, shift_held || shift_still_pending)
+		if character == 0 {
+			continue
+		}
+		shift_still_pending = false
+		if keyboard.text_length < RAW_TEXT_CAPACITY {
+			keyboard.text[keyboard.text_length] = character
 			keyboard.text_length += 1
 		}
 	}
+	return shift_still_pending
+}
+
+Key_Character :: struct {
+	key:     rl.KeyboardKey,
+	shifted: u8,
+}
+
+// The digit and punctuation keys raylib's Android table maps, with the
+// character Shift gives on Android's virtual keyboard map (the US
+// layout). A key's code is its unshifted character.
+@(rodata)
+key_characters := [?]Key_Character {
+	{.ZERO, ')'},
+	{.ONE, '!'},
+	{.TWO, '@'},
+	{.THREE, '#'},
+	{.FOUR, '$'},
+	{.FIVE, '%'},
+	{.SIX, '^'},
+	{.SEVEN, '&'},
+	{.EIGHT, '*'},
+	{.NINE, '('},
+	{.MINUS, '_'},
+	{.PERIOD, '>'},
+	{.SLASH, '?'},
+	{.COMMA, '<'},
+	{.APOSTROPHE, '"'},
+	{.SEMICOLON, ':'},
+	{.EQUAL, '+'},
+	{.LEFT_BRACKET, '{'},
+	{.RIGHT_BRACKET, '}'},
+	{.GRAVE, '~'},
+	{.BACKSLASH, '|'},
+}
+
+// The printable character a key types, 0 for a key that types none.
+character_for_key :: proc(key: rl.KeyboardKey, shift: bool) -> u8 {
+	if key >= .A && key <= .Z {
+		return shift ? u8(key) : u8(key) - 'A' + 'a'
+	}
+	if key == .SPACE {
+		return ' '
+	}
+	for entry in key_characters {
+		if entry.key == key {
+			return shift ? entry.shifted : u8(key)
+		}
+	}
+	return 0
 }
 
 read_raylib_raw_input :: proc() -> Raw_Input {

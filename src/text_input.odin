@@ -5,6 +5,9 @@ package game
 // draws the keys is in ui_keyboard.odin.
 
 TEXT_FIELD_CAPACITY :: 64
+// In typed text, one Backspace in its place among the characters: the
+// phone's IME can press Backspace more than once in a frame (0133).
+TEXT_BACKSPACE :: '\b'
 
 // Printable ASCII only: the default font draws nothing else, and world
 // names become directory names.
@@ -40,11 +43,38 @@ keyboard_action_row := [?]Keyboard_Key{{kind = .Shift, width = 2}, {kind = .Spac
 
 // The field the keyboard types into (0 while closed) and the shift state.
 // return_focus is the field to focus once the screen shows it again after
-// the keyboard closed.
+// the keyboard closed. With system set the entry types through the system
+// keyboard (work item 0133, system_keyboard_*.odin) and the screens draw
+// no keys: field_rectangle is where the field was drawn, in UI units, for
+// the system keyboard's position, and show_requested asks the frame loop
+// to show it again (sync_system_keyboard).
 Keyboard_State :: struct {
-	field:        Ui_Id,
-	shift:        bool,
-	return_focus: Ui_Id,
+	field:           Ui_Id,
+	shift:           bool,
+	return_focus:    Ui_Id,
+	system:          bool,
+	field_rectangle: Ui_Rectangle,
+	show_requested:  bool,
+}
+
+System_Keyboard_Change :: enum u8 {
+	None,
+	Show,
+	Hide,
+}
+
+// What the frame loop does with the system keyboard, shown or not, for
+// this frame's keyboard state. It shows once the field has been drawn,
+// so the keyboard knows where the field is.
+system_keyboard_change :: proc(keyboard: Keyboard_State, shown: bool) -> System_Keyboard_Change {
+	open := keyboard.field != 0 && keyboard.system
+	switch {
+	case open && keyboard.field_rectangle != {} && (!shown || keyboard.show_requested):
+		return .Show
+	case !open && shown:
+		return .Hide
+	}
+	return .None
 }
 
 // What one frame asks of the keyboard. The buttons: X backspace, Y shift,
@@ -133,13 +163,20 @@ apply_keyboard_key :: proc(field: ^Text_Field, keyboard: ^Keyboard_State, key: K
 // Returns true when the entry is done. Physical keys also trigger the
 // actions bound to them (F is the context action, R the info panel,
 // Backspace is Back, Enter is Confirm), so in a frame with physical
-// typing the button meanings are ignored.
+// typing the button meanings are ignored. Typed text that carries its
+// Backspaces (TEXT_BACKSPACE) counts those instead of the Backspace key.
 advance_keyboard :: proc(field: ^Text_Field, keyboard: ^Keyboard_State, input: Keyboard_Input) -> bool {
 	if input.typed_text != "" || input.backspace_key || input.enter_key {
+		backspaces_in_text := false
 		for character in transmute([]u8)input.typed_text {
-			text_field_type(field, character)
+			if character == TEXT_BACKSPACE {
+				text_field_backspace(field)
+				backspaces_in_text = true
+			} else {
+				text_field_type(field, character)
+			}
 		}
-		if input.backspace_key {
+		if input.backspace_key && !backspaces_in_text {
 			text_field_backspace(field)
 		}
 		return input.enter_key

@@ -81,6 +81,10 @@ Frame_State :: struct {
 	// Android, by the raylib backend through the phone's vibrator.
 	haptic:             Haptic_Request,
 	vibrator:           Vibrator_State,
+	// The system keyboard for text fields (work item 0133), read once at
+	// start, and whether the game has shown it.
+	system_keyboard_available: bool,
+	system_keyboard_shown:     bool,
 	previous_input:     Input_Frame,
 	frame_seconds:      f32,
 	// The sprint field of view kick's progress, 0 to 1 (advance_sprint_kick).
@@ -809,6 +813,7 @@ run_ui_frame :: proc(state: ^Frame_State) {
 	// overlay on, the desktop's mouse stands in for a finger (0124).
 	input.pointer_is_touch = ODIN_PLATFORM_SUBTARGET == .Android || touch_overlay_on(state)
 	ui_begin(&state.ui, input, screen_pixels, state.frame_seconds, state.settings.ui_scale, state.settings.pointer_speed, ui_accessibility(state.settings))
+	state.ui.system_keyboard = state.system_keyboard_available && state.settings.on_screen_keyboard == .System
 	sync_font_cache(&state.font_cache, state.settings, state.ui.pixels_per_unit)
 	screen_context := make_screen_context(state)
 	if state.session != nil {
@@ -830,8 +835,39 @@ run_ui_frame :: proc(state: ^Frame_State) {
 		ui_layout    = state.ui_icon_atlas.layout,
 	}
 	ui_end(&state.ui, icon_atlas, &state.ui_images)
+	sync_system_keyboard(state)
 	play_ui_sounds(&state.audio, &state.ui)
 	apply_cursor_mode(state)
+}
+
+// Shows the system keyboard for the field that types through it and hides
+// it once the entry ended, however it ended (Done, a tap elsewhere, a
+// screen change).
+sync_system_keyboard :: proc(state: ^Frame_State) {
+	keyboard := &state.ui.keyboard
+	switch system_keyboard_change(keyboard^, state.system_keyboard_shown) {
+	case .Show:
+		show_system_keyboard(units_to_window_rectangle(keyboard.field_rectangle, state.ui.pixels_per_unit, cursor_window_size(), render_size()))
+		state.system_keyboard_shown = true
+	case .Hide:
+		hide_system_keyboard()
+		state.system_keyboard_shown = false
+	case .None:
+	}
+	keyboard.show_requested = false
+}
+
+// A UI rectangle in the window's coordinates, as SDL hands Steam the text
+// input rectangle: render pixels scaled per axis by the window's size over
+// the framebuffer's, the inverse of pointer_to_render_pixels. The identity
+// on X11, where both are pixels; a zero size (a minimised window) leaves
+// the pixels alone.
+units_to_window_rectangle :: proc(rectangle: Ui_Rectangle, pixels_per_unit: f32, window_size, render_size: [2]int) -> Ui_Rectangle {
+	factor := [2]f32{pixels_per_unit, pixels_per_unit}
+	if window_size.x > 0 && window_size.y > 0 && render_size.x > 0 && render_size.y > 0 {
+		factor *= [2]f32{f32(window_size.x) / f32(render_size.x), f32(window_size.y) / f32(render_size.y)}
+	}
+	return {rectangle.x * factor.x, rectangle.y * factor.y, rectangle.width * factor.x, rectangle.height * factor.y}
 }
 
 show_simulation_events :: proc(state: ^Ui_State, events: ^[dynamic]Simulation_Event) {
@@ -1090,6 +1126,8 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	}
 	state.vibrator = start_vibrator()
 	defer stop_vibrator(&state.vibrator)
+	state.system_keyboard_available = system_keyboard_available()
+	log_printf("keyboard: system keyboard %s", state.system_keyboard_available ? "available" : "not available")
 	defer destroy_chunk_renderer(&state.renderer)
 	state.item_atlas = upload_item_atlas(&state.content.items, data_directory)
 	defer destroy_item_atlas(&state.item_atlas)

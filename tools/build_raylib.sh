@@ -86,6 +86,43 @@ patch_default_shader_precision() {
 	mv "$header.new" "$header"
 }
 
+# The key branch of AndroidInputCallback (rcore_android.c) appends every
+# key down to keyPressedQueue without checking MAX_KEY_PRESSED_QUEUE, and
+# an IME committing a long word delivers every character's key down in
+# one poll, so a text field on the system keyboard (work item 0133) could
+# write past the queue. The append becomes bounded in the form the GLFW
+# desktop platform uses (rcore_desktop_glfw.c): an if on the count below
+# MAX_KEY_PRESSED_QUEUE around the store and the increment. Anything but
+# one rewrite fails, so a raylib upgrade that moves the text is noticed.
+patch_android_key_queue_bound() {
+	local source_file="$source_directory/src/platforms/rcore_android.c"
+	awk '
+		/^[ \t]*CORE\.Input\.Keyboard\.keyPressedQueue\[CORE\.Input\.Keyboard\.keyPressedQueueCount\] = key;$/ && before_previous !~ /keyPressedQueueCount < MAX_KEY_PRESSED_QUEUE/ {
+			store = $0
+			if ((getline increment) <= 0 || increment !~ /^[ \t]*CORE\.Input\.Keyboard\.keyPressedQueueCount\+\+;$/) {
+				exit 1
+			}
+			indentation = store
+			sub(/[^ \t].*$/, "", indentation)
+			print indentation "if (CORE.Input.Keyboard.keyPressedQueueCount < MAX_KEY_PRESSED_QUEUE)"
+			print indentation "{"
+			print "    " store
+			print "    " increment
+			print indentation "}"
+			rewrites++
+			before_previous = previous = ""
+			next
+		}
+		{ print; before_previous = previous; previous = $0 }
+		END { if (rewrites != 1) exit 1 }
+	' "$source_file" > "$source_file.new" || {
+		echo "rcore_android.c: expected one unbounded keyPressedQueue append" >&2
+		rm -f "$source_file.new"
+		exit 1
+	}
+	mv "$source_file.new" "$source_file"
+}
+
 # raylib's cmake forces OpenGL ES 2.0 for PLATFORM=Android; OPENGL_VERSION
 # "ES 3.0" overrides it with a warning ("You are overriding the suggested
 # GRAPHICS"), which is expected. The archive holds rcore_android.c with
@@ -143,6 +180,7 @@ write_android_build_record() {
 $android_record_marker
 - android raylib tag: $raylib_tag ($raylib_url), commit $commit
 - android source patch: src/rlgl.h, the two OpenGL ES3 default shader lines "precision mediump float;" become "precision highp float;" (work item 0126)
+- android source patch: src/platforms/rcore_android.c, the key branch's keyPressedQueue append is bounded by MAX_KEY_PRESSED_QUEUE as on the desktop (work item 0133)
 - android cmake flags: -G "Unix Makefiles" -DCMAKE_TOOLCHAIN_FILE=<ndk>/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-$ANDROID_API_LEVEL -DPLATFORM=Android -DOPENGL_VERSION="ES 3.0" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DBUILD_EXAMPLES=OFF
 - android compiler: NDK $ANDROID_NDK_VERSION, $compiler
 - android built: $(date -u +%Y-%m-%dT%H:%MZ)
@@ -164,6 +202,7 @@ android_build_on_host() {
 	. "$repository_root/tools/android_env.sh"
 	fetch_source
 	patch_default_shader_precision
+	patch_android_key_queue_bound
 	android_configure_and_build
 	mkdir -p "$collection_directory/android"
 	# The NDK compiles with -g even in Release; without the debug sections

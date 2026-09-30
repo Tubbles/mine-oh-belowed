@@ -84,10 +84,19 @@ Settings :: struct {
 	// world (work item 0118): tap at the touched point, or crosshair with
 	// the view as in 0115.
 	touch_interaction:         Touch_Interaction,
+	// Where a text field types (work item 0133): system uses the phone's
+	// or Steam's keyboard where one is available, game always the game's
+	// own keys (ui_keyboard.odin).
+	on_screen_keyboard:        On_Screen_Keyboard,
 	// Set by the Steam Deck preset (deck_preset.odin, work item 0076)
 	// when it applied, so it applies once and later starts leave the
 	// player's choices alone.
 	deck_preset_applied:       bool,
+}
+
+On_Screen_Keyboard :: enum u8 {
+	System,
+	Game,
 }
 
 // Hold acts while the button is held, Toggle switches on a press.
@@ -135,6 +144,7 @@ DEFAULT_SETTINGS :: Settings {
 	sprint_hold               = .Toggle,
 	touch_overlay             = .Auto,
 	touch_interaction         = .Tap,
+	on_screen_keyboard        = .System,
 	deck_preset_applied       = false,
 }
 
