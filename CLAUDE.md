@@ -32,7 +32,7 @@ Follows the project structure from the global preferences: `doc/` (detail docs),
 
 ## Work flow
 
-Work items live in `doc/work/NNNN-slug.md` with a `Status` line and a `Verify` section. Subagents get one item at a time with the files they may touch and the verify commands. The main agent reviews the diff and commits.
+Work items live in `doc/work/NNNN-slug.md` with a `Status` line and a `Verify` section. Subagents get one item at a time with the files they may touch and the verify commands. A second subagent reviews the diff afterwards (the global instructions, Subagents); the main agent weighs the review, has the implementer fix what holds, and commits.
 
 The factory benchmark (`./build.sh bench`, `--benchmark=<size>`) runs sizes up to 16; larger factories are read off size 16, never built (user, 2026-09-28). Heavy benchmark runs follow the window and lock rules of the global instructions.
 
