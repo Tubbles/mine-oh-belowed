@@ -280,7 +280,3 @@ load_voxel_model_file :: proc(path: string, allocator := context.allocator) -> (
 	}
 	return model, ""
 }
-
-destroy_voxel_model :: proc(model: Voxel_Model, allocator := context.allocator) {
-	delete(model.cells, allocator)
-}

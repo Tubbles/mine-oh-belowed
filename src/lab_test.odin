@@ -56,9 +56,8 @@ test_lab_and_technology_data_load :: proc(t: ^testing.T) {
 	testing.expect_value(t, len(automation.prerequisites), 0)
 	optics := technologies.technologies[test_technology(technologies, "optics")]
 	testing.expect(t, slice.equal(optics.prerequisites, []int{test_technology(technologies, "electric_mining")}))
-	// Every technology with recipes in the data unlocks them; since the
-	// launch pad arrived (work item 0040) none is a placeholder. Infinite
-	// technologies (work item 0041) unlock nothing.
+	// Every technology with recipes in the data unlocks them, and none is
+	// a placeholder. Infinite technologies (work item 0041) unlock nothing.
 	for technology in technologies.technologies {
 		testing.expectf(t, (technology.placeholder || technology.infinite) == (len(technology.unlocks) == 0), "%s", technology.id)
 	}
@@ -87,7 +86,7 @@ test_technology_data_rejects_bad_prerequisites_and_empty_unlocks :: proc(t: ^tes
 	testing.expect(t, resolve(definitions, items, recipes) != "")
 	definitions[0].prerequisites = nil
 	// A technology unlocking nothing needs placeholder = true. The data
-	// has none since work item 0037, so one is appended.
+	// has none, so one is appended.
 	with_empty := make([dynamic]Technology_Definition, context.temp_allocator)
 	append(&with_empty, ..definitions)
 	append(&with_empty, Technology_Definition{id = "empty", name_key = "technology_fast_belts", packs = 1, seconds = 1, science_packs = {"science_pack_1"}})
@@ -284,7 +283,9 @@ test_technology_screen_filters_and_orders :: proc(t: ^testing.T) {
 	hidden := filter_technologies(technologies, test.unlocks, order, {hide_researched = true}, context.temp_allocator)
 	testing.expect_value(t, len(hidden), len(expected) - 1)
 	testing.expect(t, !slice.contains(hidden, automation))
-	testing.expect_value(t, technology_total_seconds(technologies.technologies[automation]), 100)
+	// Units times milliseconds per unit in a speed 1 lab.
+	automation_cost := technologies.technologies[automation]
+	testing.expect_value(t, int(automation_cost.pack_count) * int(automation_cost.milliseconds_per_pack), 100_000)
 }
 
 // Assemblers and labs over 1200 ticks give the same state twice.

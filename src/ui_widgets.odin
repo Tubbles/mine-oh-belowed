@@ -3,7 +3,6 @@ package game
 import "core:fmt"
 import "core:math"
 import "core:strings"
-import "core:unicode"
 
 // Sizes in UI units (1080 per screen height). Text sizes follow doc/ui.md.
 UI_BODY_TEXT_SIZE :: 24
@@ -655,20 +654,6 @@ ui_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, labels
 	return selected
 }
 
-// Index of the first item whose text starts with the letter, ignoring case.
-list_index_for_letter :: proc(items: []string, letter: rune) -> int {
-	wanted := unicode.to_lower(letter)
-	for item, index in items {
-		for first in item {
-			if unicode.to_lower(first) == wanted {
-				return index
-			}
-			break
-		}
-	}
-	return -1
-}
-
 // The scroll offset that keeps the row visible.
 scroll_to_show :: proc(scroll, row_top, row_height, view_height: f32) -> f32 {
 	if row_top < scroll {
@@ -681,9 +666,8 @@ scroll_to_show :: proc(scroll, row_top, row_height, view_height: f32) -> f32 {
 }
 
 // A scrolling vertical list. The right stick, the wheel and a pointer drag
-// scroll it like a Scroll_Region, the focus keeps itself in view, and ui_request_letter_jump (the letter wheel)
-// moves the focus to the first item starting with a letter. Returns the
-// activated item or -1.
+// scroll it like a Scroll_Region and the focus keeps itself in view.
+// Returns the activated item or -1.
 ui_list :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, items: []string, tooltip := "") -> int {
 	list_id := ui_push_id(state, label)
 	defer ui_pop_id(state)
@@ -715,11 +699,6 @@ ui_list :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, items:
 	if focus_inside || ui_pointer_over(state, rectangle) {
 		scroll -= state.input.scroll_stick * UI_LIST_STICK_ROWS_PER_SECOND * UI_ROW_HEIGHT * state.frame_seconds
 		scroll -= state.input.scroll_wheel * UI_ROW_HEIGHT
-	}
-	if focus_inside && state.letter_jump != 0 {
-		if jump := list_index_for_letter(items, state.letter_jump); jump >= 0 {
-			state.requested_focus = ui_id(state, "item", jump)
-		}
 	}
 	state.scroll_offsets[list_id] = clamp(scroll, 0, maximum_scroll)
 	return activated
@@ -782,10 +761,6 @@ scroll_region_end :: proc(state: ^Ui_State, region: Scroll_Region) {
 		scroll -= state.input.scroll_wheel * UI_ROW_HEIGHT
 	}
 	state.scroll_offsets[region.id] = clamp(scroll, 0, content_height - region.area.height)
-}
-
-ui_request_letter_jump :: proc(state: ^Ui_State, letter: rune) {
-	state.letter_jump = letter
 }
 
 // The item's icon tile, its block's atlas tile, or a coloured square with
@@ -1396,32 +1371,6 @@ radial_input :: proc(input: Ui_Input, source: Radial_Source) -> (touching: bool,
 		return input.hotbar_radial_down, stick_to_pad_position(input.right_stick)
 	}
 	return false, {}
-}
-
-// A wheel of slots around the screen centre while the pad is touched (or
-// the stick deflected). One radial is open at a time.
-ui_radial :: proc(state: ^Ui_State, labels: []string, source: Radial_Source) -> Radial_Result {
-	touching, position := radial_input(state.input, source)
-	result: Radial_Result
-	state.radial, result = advance_radial(state.radial, touching, position, source, len(labels))
-	if state.radial.open {
-		draw_radial(state, labels)
-	}
-	return result
-}
-
-draw_radial :: proc(state: ^Ui_State, labels: []string) {
-	centre := state.screen_units / 2
-	radius := f32(UI_SLOT_SIZE * 2.5)
-	count := len(labels)
-	theme := ui_theme(state)
-	for label, index in labels {
-		point := radial_slot_offset(index, count) * radius + centre
-		box := Ui_Rectangle{point.x - UI_SLOT_SIZE, point.y - UI_ROW_HEIGHT / 2, UI_SLOT_SIZE * 2, UI_ROW_HEIGHT}
-		highlighted := index == state.radial.highlight
-		draw_fill(state, box, highlighted ? theme.colors[.Accent] : theme.colors[.Panel])
-		draw_text(state, box, label, UI_BODY_TEXT_SIZE, .Centre, highlighted ? theme.colors[.Panel] : theme.colors[.Text])
-	}
 }
 
 // Unit offset of a slot's centre, slot 0 at the top, clockwise, y down.

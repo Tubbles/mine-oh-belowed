@@ -31,11 +31,6 @@ filter_technologies :: proc(technologies: Technology_Registry, unlocks: Recipe_U
 	return visible[:]
 }
 
-// Units times seconds per unit in a speed 1 lab.
-technology_total_seconds :: proc(technology: Technology) -> f32 {
-	return f32(technology.pack_count) * f32(technology.milliseconds_per_pack) / 1000
-}
-
 @(rodata)
 technology_status_keys := [Technology_Status]string {
 	.Researched = "technologies_status_researched",

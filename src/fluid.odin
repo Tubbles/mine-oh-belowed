@@ -134,10 +134,6 @@ resolve_fluid_registry :: proc(file: Fluids_File, allocator := context.allocator
 	return registry, ""
 }
 
-destroy_fluid_registry :: proc(registry: Fluid_Registry, allocator := context.allocator) {
-	delete(registry.fluids, allocator)
-}
-
 find_fluid_id :: proc(registry: Fluid_Registry, id: string) -> (fluid: Fluid_Id, found: bool) {
 	for candidate, index in registry.fluids {
 		if candidate.id == id {

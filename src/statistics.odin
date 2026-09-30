@@ -5,7 +5,7 @@ import "core:math"
 // Production statistics, the day one system of doc/architecture.md. Every
 // counter is a u64 in the simulation, bumped where its event happens:
 // crafting completion, furnace output, mining, placement. The quest
-// runtime, the journal and later the statistics screen read them.
+// runtime, the journal and the statistics screen read them.
 //
 // Rates (work item 0028): per item rings of produced and consumed
 // counts at three resolutions, RATE_BUCKET_COUNT buckets each. The fine

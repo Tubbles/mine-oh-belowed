@@ -5,7 +5,11 @@ import "core:testing"
 @(test)
 test_belt_drag_path_plans_turns_and_ramps :: proc(t: ^testing.T) {
 	cells := []World_Coordinate{{0, 1, 0}, {1, 1, 0}, {1, 1, 1}, {1, 2, 2}, {2, 2, 2}, {3, 1, 2}}
-	plan := plan_belt_run(cells, 3)
+	plan := make([]Planned_Belt, len(cells), context.temp_allocator)
+	plan[0] = Planned_Belt{cell = cells[0], direction = 3, shape = .Flat}
+	for index in 1 ..< len(cells) {
+		plan[index - 1], plan[index] = belt_drag_step(plan[index - 1], cells[index])
+	}
 	expected := []Planned_Belt {
 		{{0, 1, 0}, 0, .Flat},
 		// Turns towards +z.
@@ -21,7 +25,6 @@ test_belt_drag_path_plans_turns_and_ramps :: proc(t: ^testing.T) {
 	for entry, index in expected {
 		testing.expect_value(t, plan[index], entry)
 	}
-	testing.expect_value(t, plan_belt_run(cells[:1], 3)[0], Planned_Belt{{0, 1, 0}, 3, .Flat})
 }
 
 @(test)

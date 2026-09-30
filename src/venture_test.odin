@@ -102,8 +102,8 @@ test_contract_data_loads :: proc(t: ^testing.T) {
 	testing.expect(t, problem != "")
 }
 
-// Carry over from 0040: a launch posts the launch line with its cargo to
-// the message log and as a toast.
+// A launch posts the launch line with its cargo to the message log and
+// as a toast (0040).
 @(test)
 test_launch_posts_a_message_and_a_toast :: proc(t: ^testing.T) {
 	context.allocator = context.temp_allocator

@@ -5,7 +5,8 @@ import "core:testing"
 
 expect_round_trip :: proc(t: ^testing.T, chunk: ^Chunk) -> []byte {
 	bytes := serialize_chunk(chunk, context.temp_allocator)
-	restored, ok := deserialize_chunk(bytes)
+	restored := new(Chunk, context.temp_allocator)
+	ok := deserialize_chunk_blocks(bytes, &restored.blocks)
 	testing.expect(t, ok)
 	testing.expect(t, slice.equal(restored.blocks[:], chunk.blocks[:]))
 	return bytes
@@ -45,26 +46,27 @@ test_deserialize_rejects_malformed_input :: proc(t: ^testing.T) {
 	chunk_set_block(chunk, {1, 2, 3}, Block_Id(7))
 	bytes := serialize_chunk(chunk, context.temp_allocator)
 
-	_, ok := deserialize_chunk(nil)
+	restored := new(Chunk, context.temp_allocator)
+	ok := deserialize_chunk_blocks(nil, &restored.blocks)
 	testing.expect(t, !ok)
-	_, ok = deserialize_chunk(bytes[:len(bytes) - 1])
+	ok = deserialize_chunk_blocks(bytes[:len(bytes) - 1], &restored.blocks)
 	testing.expect(t, !ok, "truncated")
 
 	wrong_version := slice.clone(bytes, context.temp_allocator)
 	wrong_version[0] = 99
-	_, ok = deserialize_chunk(wrong_version)
+	ok = deserialize_chunk_blocks(wrong_version, &restored.blocks)
 	testing.expect(t, !ok, "unknown version")
 
 	// The first run's palette index sits right after the two entry palette
 	// and the run count.
 	bad_index := slice.clone(bytes, context.temp_allocator)
 	bad_index[4 + 2 * 2 + 4] = 2
-	_, ok = deserialize_chunk(bad_index)
+	ok = deserialize_chunk_blocks(bad_index, &restored.blocks)
 	testing.expect(t, !ok, "palette index out of range")
 
 	// Shortening the first run leaves the runs one block short of a chunk.
 	short_runs := slice.clone(bytes, context.temp_allocator)
 	short_runs[4 + 2 * 2 + 4 + 2] -= 1
-	_, ok = deserialize_chunk(short_runs)
+	ok = deserialize_chunk_blocks(short_runs, &restored.blocks)
 	testing.expect(t, !ok, "runs do not cover the chunk")
 }

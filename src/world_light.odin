@@ -112,11 +112,6 @@ brighter_light_color :: proc(first, second: Light_Color) -> Light_Color {
 	return {max(first.r, second.r), max(first.g, second.g), max(first.b, second.b)}
 }
 
-// A colour's largest channel, the one level that stands for it.
-light_color_level :: proc(color: Light_Color) -> u8 {
-	return max(color.r, color.g, color.b)
-}
-
 // Full sky light keeps its level going down, everything else loses one.
 light_falls_straight :: proc(channel: Light_Channel, direction: Direction, level: u8) -> bool {
 	return channel == .Sky && direction == .Negative_Y && level == MAXIMUM_LIGHT

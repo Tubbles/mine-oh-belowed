@@ -134,22 +134,13 @@ parse_item_category :: proc(name: string) -> (category: Item_Category, found: bo
 	return .Raw, false
 }
 
-find_item_definition_index :: proc(definitions: []Item_Definition, id: string) -> int {
-	for definition, index in definitions {
-		if definition.id == id {
-			return index
-		}
-	}
-	return -1
-}
-
 // Checks the fields that need no block registry.
 validate_item_definition :: proc(definitions: []Item_Definition, index: int) -> string {
 	definition := definitions[index]
 	if definition.id == "" {
 		return fmt.tprintf("item %d has no id", index)
 	}
-	if find_item_definition_index(definitions, definition.id) != index {
+	if find_definition_index(definitions, definition.id) != index {
 		return fmt.tprintf("item id %q is defined twice", definition.id)
 	}
 	if definition.name_key == "" {

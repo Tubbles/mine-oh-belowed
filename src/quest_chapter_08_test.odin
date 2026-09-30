@@ -250,8 +250,8 @@ test_chapter_08_hints_fire_once :: proc(t: ^testing.T) {
 	testing.expect_value(t, test.state.hints_fired, 2)
 }
 
-// Carry over from chapter 7: the bore drill schematics exist since work
-// items 0035 and 0036.
+// Carry over from chapter 7: the bore drill schematics exist (work items
+// 0035 and 0036).
 @(test)
 test_deep_mining_permit_line_is_current :: proc(t: ^testing.T) {
 	table, error := parse_string_table(#load("../data/strings/en.sjson"), context.temp_allocator)

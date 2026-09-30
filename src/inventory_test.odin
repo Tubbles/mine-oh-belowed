@@ -68,22 +68,6 @@ test_remove_takes_from_the_back_first :: proc(t: ^testing.T) {
 }
 
 @(test)
-test_move_swaps_and_merges :: proc(t: ^testing.T) {
-	items := make_small_items()
-	slots := []Item_Stack{{TEST_ORE, 40}, {TEST_GEAR, 7}, {TEST_ORE, 30}, EMPTY_STACK}
-	move_or_swap(slots, 0, 1, items)
-	testing.expect_value(t, slots[0], Item_Stack{TEST_GEAR, 7})
-	testing.expect_value(t, slots[1], Item_Stack{TEST_ORE, 40})
-	// Merging stops at the stack size and leaves the rest behind.
-	move_or_swap(slots, 2, 1, items)
-	testing.expect_value(t, slots[1], Item_Stack{TEST_ORE, 50})
-	testing.expect_value(t, slots[2], Item_Stack{TEST_ORE, 20})
-	move_or_swap(slots, 2, 3, items)
-	testing.expect_value(t, slots[2], EMPTY_STACK)
-	testing.expect_value(t, slots[3], Item_Stack{TEST_ORE, 20})
-}
-
-@(test)
 test_split_takes_the_larger_half :: proc(t: ^testing.T) {
 	kept, taken := split_stack(Item_Stack{TEST_ORE, 7})
 	testing.expect_value(t, kept, Item_Stack{TEST_ORE, 3})

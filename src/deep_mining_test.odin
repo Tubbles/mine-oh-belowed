@@ -6,8 +6,6 @@ import "core:testing"
 
 // Deep veins, bore drills, vein revival and the deep ores (work item 0035).
 
-DEEP_TEST_VEIN :: [MAXIMUM_VEIN_OUTPUTS]i64{8500, 1500, 0, 0}
-
 // Registered like a loaded chunk column registers a deep vein: the record
 // and the column entries, no outcrop.
 add_test_deep_vein :: proc(world: ^World, content: Simulation_Content, type_id: string, centre: [2]i32, radius: i32, remaining: [MAXIMUM_VEIN_OUTPUTS]i64, index: i32 = 0) -> Vein_Id {
@@ -65,7 +63,7 @@ test_deep_veins_are_placed_below_the_surface :: proc(t: ^testing.T) {
 	for region_z in i32(-4) ..< 4 {
 		for region_x in i32(-4) ..< 4 {
 			region := Region_Coordinate{region_x, region_z}
-			for vein, index in region_deep_veins(&generator, region, context.temp_allocator) {
+			for vein, index in layer_veins(&generator, region, .Deep, context.temp_allocator) {
 				definition := tables.types[vein.type].definition
 				testing.expect(t, definition.deep)
 				testing.expect(t, vein_is_deep(vein))
@@ -96,7 +94,7 @@ test_deep_veins_are_placed_below_the_surface :: proc(t: ^testing.T) {
 @(test)
 test_deep_vein_column_lookup :: proc(t: ^testing.T) {
 	generator := make_test_generator(DEFAULT_WORLD_SEED)
-	veins := region_deep_veins(&generator, {1, -1}, context.temp_allocator)
+	veins := layer_veins(&generator, {1, -1}, .Deep, context.temp_allocator)
 	testing.expect(t, len(veins) > 0)
 	for vein in veins {
 		testing.expect(t, expect_vein_in_every_overlapping_column(t, &generator, vein) > 0)
@@ -377,9 +375,9 @@ test_deep_mining_technologies :: proc(t: ^testing.T) {
 	}
 }
 
-// Carried over from 0035: while a bore drill is placed, the HUD's vein
-// line names the deep vein its ghost would tap, the same one the
-// placement taps, or says there is none.
+// While a bore drill is placed, the HUD's vein line names the deep vein
+// its ghost would tap, the same one the placement taps, or says there is
+// none (0035).
 @(test)
 test_bore_drill_ghost_names_the_deep_vein :: proc(t: ^testing.T) {
 	// No string table is loaded in tests, so text() records missing keys.
@@ -412,8 +410,8 @@ test_bore_drill_ghost_names_the_deep_vein :: proc(t: ^testing.T) {
 	testing.expect(t, !shown)
 }
 
-// Carried over from 0035: a revived vein is spent, so its draws keep the
-// depleted end share of low grade ore (60 percent), not the full vein's.
+// A revived vein is spent, so its draws keep the depleted end share of
+// low grade ore (60 percent), not the full vein's (0035).
 @(test)
 test_revived_draws_keep_the_depleted_low_grade_share :: proc(t: ^testing.T) {
 	content := make_test_content()

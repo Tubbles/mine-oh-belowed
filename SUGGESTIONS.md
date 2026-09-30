@@ -103,3 +103,8 @@ Written at the end of the Android app series (0112 to 0115), each with why it wa
 
 - `tools/check_docs.py` runs by hand and is not part of `build.sh` or CI, so a stale link or name in a doc surfaces only when someone runs it. A CI step (the nix check) or a test that shells out to it would catch it on every push.
 - The belt surface scroll, the splitter's speed and the loose item's look have no doc since the pass; the old text was stale. `presentation.md` is the home if they are ever written up (cluster C review).
+
+## Follow ups from the architecture cleanup (0142 onwards)
+
+- The save round trip test never covered oil machines: an oil fixture procedure sat in `save_test.odin` without a caller, and 0142 removed it as dead. A save test that places a pumpjack, a refinery and a pipe run and compares the state hash after a reload would close the gap (`save_test.odin`, `simulation_state_hash`).
+- `tools/check_dead_code.py` and `tools/code_graph.py` run by hand like `check_docs.py`; the same CI step would keep all three honest.

@@ -421,7 +421,6 @@ Ui_State :: struct {
 	pointer_moved:    bool,
 	active_device:    Input_Device,
 	tooltip_open:     bool,
-	letter_jump:      rune,
 	screens:          Screen_Stack,
 	radial:           Radial_State,
 	// The on-screen keyboard. While it is open, B, X and Y belong to it.
@@ -1006,7 +1005,6 @@ ui_resolve :: proc(state: ^Ui_State) {
 		state.focus = state.requested_focus
 	}
 	state.requested_focus = 0
-	state.letter_jump = 0
 	focus_index := widget_index(widgets, state.focus)
 	if focus_index < 0 {
 		state.focus = fallback_focus(widgets, state.preferred_focus)

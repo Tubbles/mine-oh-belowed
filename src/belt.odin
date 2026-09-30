@@ -641,10 +641,6 @@ rebuild_belt_lines :: proc(entities: ^Entities, machines: Machine_Registry, reco
 	restore_belt_items(entities, records)
 }
 
-refresh_belt_lines :: proc(entities: ^Entities, machines: Machine_Registry) {
-	rebuild_belt_lines(entities, machines, belt_cell_items(entities))
-}
-
 // Adding, changing and removing belts.
 
 make_belt :: proc(common: Entity_Common, shape: Belt_Shape) -> Belt {

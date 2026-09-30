@@ -24,6 +24,11 @@ make_crafting_test :: proc(unlock_all := false) -> Crafting_Test {
 	}
 }
 
+queue_test_craft :: proc(test: ^Crafting_Test, recipe: int) -> Craft_Refusal {
+	refusal, _ := queue_crafts(&test.queue, test.inventory, test.recipes, test.unlocks, recipe, 1)
+	return refusal
+}
+
 test_available :: proc(test: Crafting_Test, id: string) -> bool {
 	return recipe_is_available(test.unlocks, test_recipe(test.recipes, id))
 }
@@ -102,8 +107,8 @@ test_crafting_takes_ingredients_when_a_craft_starts :: proc(t: ^testing.T) {
 	gear := test_item(test.items, "iron_gear")
 	gear_recipe := test_recipe(test.recipes, "iron_gear")
 	inventory_add(test.inventory, test.items, plate, 5)
-	testing.expect_value(t, queue_craft(&test.queue, test.inventory, test.recipes, test.unlocks, gear_recipe), Craft_Refusal.None)
-	testing.expect_value(t, queue_craft(&test.queue, test.inventory, test.recipes, test.unlocks, gear_recipe), Craft_Refusal.None)
+	testing.expect_value(t, queue_test_craft(&test, gear_recipe), Craft_Refusal.None)
+	testing.expect_value(t, queue_test_craft(&test, gear_recipe), Craft_Refusal.None)
 	// Queuing takes nothing, but plans against the two gears queued.
 	testing.expect_value(t, inventory_count(test.inventory, plate), 5)
 	refusal, shortage := queue_crafts(&test.queue, test.inventory, test.recipes, test.unlocks, gear_recipe, 1)
@@ -133,18 +138,18 @@ test_crafting_takes_ingredients_when_a_craft_starts :: proc(t: ^testing.T) {
 test_crafting_queue_refusals :: proc(t: ^testing.T) {
 	test := make_crafting_test()
 	inventory_add(test.inventory, test.items, test_item(test.items, "hematite"), 5)
-	testing.expect_value(t, queue_craft(&test.queue, test.inventory, test.recipes, test.unlocks, test_recipe(test.recipes, "iron_plate")), Craft_Refusal.Not_Hand_Craftable)
-	testing.expect_value(t, queue_craft(&test.queue, test.inventory, test.recipes, test.unlocks, test_recipe(test.recipes, "electronic_circuit")), Craft_Refusal.Locked)
+	testing.expect_value(t, queue_test_craft(&test, test_recipe(test.recipes, "iron_plate")), Craft_Refusal.Not_Hand_Craftable)
+	testing.expect_value(t, queue_test_craft(&test, test_recipe(test.recipes, "electronic_circuit")), Craft_Refusal.Locked)
 	// A full queue refuses a new run but grows its last one.
 	plank := test_recipe(test.recipes, "plank")
 	stick := test_recipe(test.recipes, "stick")
 	inventory_add(test.inventory, test.items, test_item(test.items, "log"), 50)
 	for index in 0 ..< HAND_CRAFT_QUEUE_RUNS {
-		testing.expect_value(t, queue_craft(&test.queue, test.inventory, test.recipes, test.unlocks, index % 2 == 0 ? plank : stick), Craft_Refusal.None)
+		testing.expect_value(t, queue_test_craft(&test, index % 2 == 0 ? plank : stick), Craft_Refusal.None)
 	}
 	testing.expect_value(t, test.queue.count, HAND_CRAFT_QUEUE_RUNS)
-	testing.expect_value(t, queue_craft(&test.queue, test.inventory, test.recipes, test.unlocks, plank), Craft_Refusal.Queue_Full)
-	testing.expect_value(t, queue_craft(&test.queue, test.inventory, test.recipes, test.unlocks, stick), Craft_Refusal.None)
+	testing.expect_value(t, queue_test_craft(&test, plank), Craft_Refusal.Queue_Full)
+	testing.expect_value(t, queue_test_craft(&test, stick), Craft_Refusal.None)
 	testing.expect_value(t, test.queue.runs[HAND_CRAFT_QUEUE_RUNS - 1], Craft_Run{stick, 2})
 }
 
@@ -302,7 +307,7 @@ test_a_waiting_front_is_repaired_by_the_next_queue_action :: proc(t: ^testing.T)
 	plank := test_recipe(test.recipes, "plank")
 	stick := test_recipe(test.recipes, "stick")
 	inventory_add(test.inventory, test.items, plank_item, 1)
-	testing.expect_value(t, queue_craft(&test.queue, test.inventory, test.recipes, test.unlocks, stick), Craft_Refusal.None)
+	testing.expect_value(t, queue_test_craft(&test, stick), Craft_Refusal.None)
 	inventory_remove(test.inventory, plank_item, 1)
 	advance_crafting_ticks(&test, 1)
 	testing.expect_value(t, test.queue.waiting_for, plank_item)
@@ -311,7 +316,7 @@ test_a_waiting_front_is_repaired_by_the_next_queue_action :: proc(t: ^testing.T)
 	testing.expect_value(t, refusal, Craft_Refusal.None)
 	testing.expectf(t, slice.equal(ahead, []Craft_Run{{plank, 1}}), "%v", ahead)
 	testing.expectf(t, slice.equal(runs, []Craft_Run{{stick, 1}}), "%v", runs)
-	testing.expect_value(t, queue_craft(&test.queue, test.inventory, test.recipes, test.unlocks, stick), Craft_Refusal.None)
+	testing.expect_value(t, queue_test_craft(&test, stick), Craft_Refusal.None)
 	testing.expect_value(t, test.queue.count, 2)
 	testing.expect_value(t, test.queue.runs[0], Craft_Run{plank, 1})
 	testing.expect_value(t, test.queue.runs[1], Craft_Run{stick, 2})
@@ -332,7 +337,7 @@ test_a_front_deficit_without_a_maker_keeps_waiting :: proc(t: ^testing.T) {
 	stick := test_recipe(test.recipes, "stick")
 	stone_slab := test_recipe(test.recipes, "stone_slab")
 	inventory_add(test.inventory, test.items, plank_item, 1)
-	queue_craft(&test.queue, test.inventory, test.recipes, test.unlocks, stick)
+	queue_test_craft(&test, stick)
 	inventory_remove(test.inventory, plank_item, 1)
 	advance_crafting_ticks(&test, 1)
 	inventory_add(test.inventory, test.items, test_item(test.items, "stone"), 1)
@@ -340,7 +345,7 @@ test_a_front_deficit_without_a_maker_keeps_waiting :: proc(t: ^testing.T) {
 	testing.expect_value(t, refusal, Craft_Refusal.None)
 	testing.expect_value(t, len(ahead), 0)
 	testing.expectf(t, slice.equal(runs, []Craft_Run{{stone_slab, 1}}), "%v", runs)
-	testing.expect_value(t, queue_craft(&test.queue, test.inventory, test.recipes, test.unlocks, stone_slab), Craft_Refusal.None)
+	testing.expect_value(t, queue_test_craft(&test, stone_slab), Craft_Refusal.None)
 	testing.expect_value(t, test.queue.count, 2)
 	testing.expect(t, craft_queue_waits_for_input(test.queue))
 	testing.expect_value(t, test.queue.waiting_for, plank_item)
@@ -362,7 +367,7 @@ test_the_repair_covers_the_whole_front_run :: proc(t: ^testing.T) {
 	testing.expect(t, craft_queue_waits_for_input(test.queue))
 	inventory_add(test.inventory, test.items, test_item(test.items, "log"), 2)
 	inventory_add(test.inventory, test.items, test_item(test.items, "stone"), 1)
-	testing.expect_value(t, queue_craft(&test.queue, test.inventory, test.recipes, test.unlocks, stone_slab), Craft_Refusal.None)
+	testing.expect_value(t, queue_test_craft(&test, stone_slab), Craft_Refusal.None)
 	testing.expect_value(t, test.queue.runs[0], Craft_Run{plank, 2})
 	testing.expect_value(t, test.queue.runs[1], Craft_Run{stick, 6})
 	advance_crafting_ticks(&test, 900)
@@ -418,7 +423,7 @@ test_crafting_waits_on_a_full_inventory :: proc(t: ^testing.T) {
 	log := test_item(test.items, "log")
 	plank := test_item(test.items, "plank")
 	inventory_add(test.inventory, test.items, log, 2)
-	queue_craft(&test.queue, test.inventory, test.recipes, test.unlocks, test_recipe(test.recipes, "plank"))
+	queue_test_craft(&test, test_recipe(test.recipes, "plank"))
 	// The one slot still holds a log, so the planks cannot go anywhere.
 	advance_crafting_ticks(&test, 40)
 	testing.expect(t, test.queue.waiting)
@@ -438,7 +443,7 @@ test_cancel_refused_when_ingredients_do_not_fit :: proc(t: ^testing.T) {
 	test := make_crafting_test()
 	test.inventory = make_inventory(1, context.temp_allocator)
 	inventory_add(test.inventory, test.items, test_item(test.items, "log"), 1)
-	queue_craft(&test.queue, test.inventory, test.recipes, test.unlocks, test_recipe(test.recipes, "plank"))
+	queue_test_craft(&test, test_recipe(test.recipes, "plank"))
 	advance_crafting_ticks(&test, 1)
 	inventory_add(test.inventory, test.items, test_item(test.items, "stone"), 1)
 	testing.expect(t, !cancel_last_craft(&test.queue, test.inventory, test.recipes, test.items))
@@ -515,7 +520,8 @@ test_hand_crafting_runs_in_the_player_tick :: proc(t: ^testing.T) {
 	_, technologies := make_test_recipes(content.items)
 	unlocks := make_recipe_unlocks(len(content.items.items), content.recipes, technologies, false, context.temp_allocator)
 	inventory_add(player.inventory, content.items, test_item(content.items, "stone"), 5)
-	testing.expect_value(t, queue_craft(&player.crafting, player.inventory, content.recipes, unlocks, test_recipe(content.recipes, "stone_furnace")), Craft_Refusal.None)
+	refusal, _ := queue_crafts(&player.crafting, player.inventory, content.recipes, unlocks, test_recipe(content.recipes, "stone_furnace"), 1)
+	testing.expect_value(t, refusal, Craft_Refusal.None)
 	for _ in 0 ..< 2 * TEST_TICK_RATE {
 		tick_player(&world, content, players, 0, {}, TEST_TICK_RATE)
 	}

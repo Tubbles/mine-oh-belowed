@@ -92,14 +92,6 @@ bytes_left :: proc(reader: Byte_Reader) -> int {
 	return len(reader.data) - reader.offset
 }
 
-skip_bytes :: proc(reader: ^Byte_Reader, count: int) -> bool {
-	if count < 0 || count > bytes_left(reader^) {
-		return false
-	}
-	reader.offset += count
-	return true
-}
-
 // The value of an integer like field of 1, 2, 4 or 8 bytes.
 load_unsigned :: proc(pointer: rawptr, size: int) -> u64 {
 	switch size {

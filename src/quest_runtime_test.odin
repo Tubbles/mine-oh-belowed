@@ -88,6 +88,16 @@ progress_of :: proc(test: ^Quest_Test, objective: Objective, progress: Quest_Pro
 	return objective_progress(objective, 0, progress, view)
 }
 
+// Every quest of the chapter is done.
+chapter_done :: proc(state: Quest_State, chapter: Chapter) -> bool {
+	for index in chapter.first_quest ..< chapter.first_quest + chapter.quest_count {
+		if state.progress[index].status != .Done {
+			return false
+		}
+	}
+	return true
+}
+
 @(test)
 test_every_objective_type_against_counters :: proc(t: ^testing.T) {
 	test := make_quest_test(nil, nil)
@@ -217,14 +227,14 @@ test_chapters_complete_in_order_and_deliver_rewards :: proc(t: ^testing.T) {
 	test.statistics.obtained[log] = 1
 	run_quest_tick(&test)
 	testing.expect_value(t, test.state.active, 1)
-	testing.expect_value(t, quest_status(test.state, 0), Quest_Status.Done)
+	testing.expect_value(t, test.state.progress[0].status, Quest_Status.Done)
 	testing.expect(t, !chapter_done(test.state, chapters[0]))
 	testing.expect(t, !recipe_is_available(test.unlocks, test_recipe(recipes, "steam_engine")))
 	test.statistics.obtained[log] = 2
 	run_quest_tick(&test)
 	testing.expect_value(t, test.state.active, 2)
 	testing.expect(t, chapter_done(test.state, chapters[0]))
-	testing.expect_value(t, quest_status(test.state, 2), Quest_Status.Active)
+	testing.expect_value(t, test.state.progress[2].status, Quest_Status.Active)
 	testing.expect(t, recipe_is_available(test.unlocks, test_recipe(recipes, "steam_engine")))
 	slots := capsule_slots(&test)
 	testing.expect_value(t, slots[0], Item_Stack{coal, 50})
@@ -367,7 +377,7 @@ test_quest_simulation_is_deterministic :: proc(t: ^testing.T) {
 	}
 	expect_same_quest_state(t, first, second)
 	bearings := test_quest_index(content.quests, "bearings")
-	testing.expect_value(t, quest_status(first.quests, 0), Quest_Status.Done)
-	testing.expectf(t, quest_status(first.quests, bearings) == .Done, "walked %d mm", first.world.statistics.distance_walked_millimetres)
+	testing.expect_value(t, first.quests.progress[0].status, Quest_Status.Done)
+	testing.expectf(t, first.quests.progress[bearings].status == .Done, "walked %d mm", first.world.statistics.distance_walked_millimetres)
 	testing.expect(t, first.quests.active > bearings)
 }

@@ -36,6 +36,16 @@ Game_Config :: struct {
 	loose_item_despawn_minutes: int,
 }
 
+// The index of the first definition with the id, -1 for none.
+find_definition_index :: proc(definitions: []$T, id: string) -> int {
+	for definition, index in definitions {
+		if definition.id == id {
+			return index
+		}
+	}
+	return -1
+}
+
 // An explicitly set environment variable wins even if the directory is
 // missing, so that a typo fails loudly instead of silently falling back.
 // Then ./data, data beside the executable (the unzipped Windows build, work

@@ -298,15 +298,6 @@ parse_machine_kind :: proc(name: string) -> (kind: Machine_Kind, found: bool) {
 	return .Chest, false
 }
 
-find_machine_definition_index :: proc(definitions: []Machine_Definition, id: string) -> int {
-	for definition, index in definitions {
-		if definition.id == id {
-			return index
-		}
-	}
-	return -1
-}
-
 validate_footprint :: proc(definition: Machine_Definition) -> string {
 	footprint := definition.footprint
 	for size in ([3]int{footprint.width, footprint.depth, footprint.height}) {
@@ -472,7 +463,7 @@ validate_machine_definition :: proc(definitions: []Machine_Definition, index: in
 	if definition.id == "" {
 		return fmt.tprintf("machine %d has no id", index)
 	}
-	if find_machine_definition_index(definitions, definition.id) != index {
+	if find_definition_index(definitions, definition.id) != index {
 		return fmt.tprintf("machine id %q is defined twice", definition.id)
 	}
 	if definition.name_key == "" {

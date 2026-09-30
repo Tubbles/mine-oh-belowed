@@ -56,9 +56,8 @@ test_chapter_07_loads :: proc(t: ^testing.T) {
 	testing.expect_value(t, permit.reward_items[1], Item_Stack{test_item(items, "plastic_bar"), 100})
 }
 
-// A quest gate: since work item 0040 it unlocks the launch pad and two
-// rocket parts, and the labs refuse it even with its prerequisites
-// researched.
+// A quest gate: it unlocks the launch pad and two rocket parts (work item
+// 0040), and the labs refuse it even with its prerequisites researched.
 @(test)
 test_rocket_program_is_a_quest_gate :: proc(t: ^testing.T) {
 	test := make_crafting_test()

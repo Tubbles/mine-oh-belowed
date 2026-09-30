@@ -125,7 +125,7 @@ Rule: on Android and while the touch overlay is on (`Ui_Input.pointer_is_touch`)
 
 ## Widgets
 
-Label, button, toggle (a switch whose knob slides over an eighth of a second), slider, stepper, choice, tabs, list with letter jump, slot grid, item slot, progress bar, tooltip, radial menu, text field, glyph bar, touch row, toast.
+Label, button, toggle (a switch whose knob slides over an eighth of a second), slider, stepper, choice, tabs, list, slot grid, item slot, progress bar, tooltip, radial menu, text field, glyph bar, touch row, toast.
 
 - Single line labels ellipsise; descriptions and tooltips wrap. Toasts show top left for 4 s, at most 4, wrapped to three lines within 0.55 of the safe width.
 - The glyph bar sits bottom right and drops hints from the end, keeping Back. It shows the pad button's icon on a gamepad (`glyph_icon`) and the key's name on a key cap on the keyboard.

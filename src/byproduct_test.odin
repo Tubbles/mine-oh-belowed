@@ -337,7 +337,7 @@ test_recycler_is_validated :: proc(t: ^testing.T) {
 	testing.expect(t, validate_recycler_returns(narrow, content.recipes) != "")
 	file, error := parse_machines_file(#load("../data/machines.sjson"), context.temp_allocator)
 	assert(error == nil)
-	index := find_machine_definition_index(file.machines, "recycler")
+	index := find_definition_index(file.machines, "recycler")
 	chosen := file.machines[index]
 	chosen.recipe_choice = "chosen"
 	chosen.input_slots, chosen.output_slots = 0, 0

@@ -6,14 +6,13 @@ import "core:math"
 
 // The UI theme (work item 0071): colours and art metrics from
 // data/ui/theme.sjson, loaded at start and on a presentation reload
-// (hot_reload.odin). A key the file leaves out keeps its default, and
-// the defaults are the colours the UI was drawn with before the file
-// existed, so a file that sets nothing changes nothing. An unknown key,
-// a wrong type or a value out of range refuses the whole file, naming
-// it. A colour whose alpha is 0 turns its element off (the highlight
-// line, the pressed state, dividers). The icon set the theme's art uses
-// (Ui_Icon) lives under data/ui/icons/ (render_icons.odin). The theme
-// also holds the marker palettes (work item 0074): the bottleneck
+// (hot_reload.odin). A key the file leaves out keeps its default
+// (DEFAULT_UI_THEME), so a file that sets nothing changes nothing. An
+// unknown key, a wrong type or a value out of range refuses the whole
+// file, naming it. A colour whose alpha is 0 turns its element off (the
+// highlight line, the pressed state, dividers). The icon set the theme's
+// art uses (Ui_Icon) lives under data/ui/icons/ (render_icons.odin). The
+// theme also holds the marker palettes (work item 0074): the bottleneck
 // overlay's and the map's colours, one set per palette setting.
 
 UI_THEME_DIRECTORY :: "ui"
@@ -102,11 +101,6 @@ Palette_Color :: enum u8 {
 	Map_Resolved,
 }
 
-// The bottleneck colours and the map colours are shown apart, so each
-// set only needs to be distinct within itself.
-BOTTLENECK_PALETTE_COLORS :: bit_set[Palette_Color]{.Working, .Waiting, .Missing, .Idle}
-MAP_PALETTE_COLORS :: bit_set[Palette_Color]{.Map_Player, .Map_Machine, .Map_Assayed, .Map_Magnetometer, .Map_Core_Sample, .Map_Core_Sample_Vein, .Map_Seismic, .Map_Resolved}
-
 // The theme file's keys: palettes = {default = {working = ...}}.
 @(rodata)
 marker_palette_names := [Marker_Palette]string {
@@ -140,8 +134,6 @@ Ui_Theme :: struct {
 	focus_pulse: f32,
 	palettes:    [Marker_Palette][Palette_Color]Ui_Color,
 }
-
-UI_THEME_METRIC_NAMES :: [?]string{"border", "corner", "focus_pulse"}
 
 DEFAULT_UI_THEME :: Ui_Theme {
 	colors = {

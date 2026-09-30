@@ -666,16 +666,6 @@ tick_fluid_networks :: proc(entities: ^Entities, fluids: Fluid_Registry, limit: 
 	}
 }
 
-// The network a pipe or a machine port belongs to, or -1.
-fluid_network_of :: proc(networks: ^Fluid_Networks, owner: Entity_Handle, port: int) -> int {
-	for segment in networks.segments {
-		if segment.owner == owner && segment.port == port {
-			return segment.network
-		}
-	}
-	return -1
-}
-
 // The segment of a pipe or a machine port, or -1.
 find_fluid_segment :: proc(networks: ^Fluid_Networks, owner: Entity_Handle, port: int) -> int {
 	for segment, index in networks.segments {

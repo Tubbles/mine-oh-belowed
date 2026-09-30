@@ -96,21 +96,12 @@ parse_technologies_file :: proc(data: []byte, allocator := context.allocator) ->
 	return
 }
 
-find_technology_definition_index :: proc(definitions: []Technology_Definition, id: string) -> int {
-	for definition, index in definitions {
-		if definition.id == id {
-			return index
-		}
-	}
-	return -1
-}
-
 validate_technology_definition :: proc(definitions: []Technology_Definition, index: int) -> string {
 	definition := definitions[index]
 	switch {
 	case definition.id == "":
 		return fmt.tprintf("technology %d has no id", index)
-	case find_technology_definition_index(definitions, definition.id) != index:
+	case find_definition_index(definitions, definition.id) != index:
 		return fmt.tprintf("technology id %q is defined twice", definition.id)
 	case definition.name_key == "":
 		return fmt.tprintf("technology %q has no name_key", definition.id)
@@ -155,7 +146,7 @@ validate_technology_levels :: proc(definition: Technology_Definition) -> string 
 validate_technology_prerequisites :: proc(definitions: []Technology_Definition, index: int) -> string {
 	definition := definitions[index]
 	for prerequisite in definition.prerequisites {
-		found := find_technology_definition_index(definitions, prerequisite)
+		found := find_definition_index(definitions, prerequisite)
 		switch {
 		case found < 0:
 			return fmt.tprintf("technology %q needs unknown technology %q", definition.id, prerequisite)
@@ -169,7 +160,7 @@ validate_technology_prerequisites :: proc(definitions: []Technology_Definition, 
 resolve_technology_prerequisites :: proc(definitions: []Technology_Definition, definition: Technology_Definition, allocator := context.allocator) -> []int {
 	prerequisites := make([]int, len(definition.prerequisites), allocator)
 	for prerequisite, index in definition.prerequisites {
-		prerequisites[index] = find_technology_definition_index(definitions, prerequisite)
+		prerequisites[index] = find_definition_index(definitions, prerequisite)
 	}
 	return prerequisites
 }

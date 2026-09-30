@@ -276,15 +276,6 @@ validate_block_name_keys :: proc(definitions: []Block_Definition, strings: map[s
 	return ""
 }
 
-find_definition_index :: proc(definitions: []Block_Definition, id: string) -> int {
-	for definition, index in definitions {
-		if definition.id == id {
-			return index
-		}
-	}
-	return -1
-}
-
 find_block_id :: proc(registry: Block_Registry, id: string) -> (block: Block_Id, found: bool) {
 	index := find_definition_index(registry.definitions, id)
 	if index < 0 {

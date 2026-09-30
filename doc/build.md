@@ -64,6 +64,14 @@ Gotcha: Bazzite ships runtime libraries without the development symlinks (`libX1
 - `bench` runs `test_factory_benchmark` with `-o:speed`: sizes 1 and 4, both tables logged, a failure when size 4 averages 8 ms per tick or more, half the 60 Hz budget. Plain `test` (and CI) runs it unoptimised and only logs. `bench` is a heavy benchmark and follows the benchmark rules in [CLAUDE.md](../CLAUDE.md).
 - On a Windows host (Git Bash) `build.sh` makes no shims, writes `build/mine-oh-belowed.exe` and adds `-subsystem:windows` to `release`.
 
+## Source checks
+
+Python 3 scripts without dependencies, run by hand from anywhere; none is part of `build.sh` or CI.
+
+- `python3 tools/check_docs.py` checks the Markdown docs against the repository: relative links, backticked paths, file names and identifiers. Exit 1 lists each finding.
+- `python3 tools/check_dead_code.py` lists the definitions of `src/*.odin` that nothing references, and those outside the test files that only `*_test.odin` files reference. It scans the declarations at file level, including those inside file level `when` and `foreign` blocks, and counts whole word uses in the code of every `.odin` file under `src/` (comments and strings stripped, the definition's own body and every definition line of the same name left out) plus `build.sh`, `tools/` and `data/shaders/`. `@(test)`, `@(export)`, `@(init)` and `@(fini)` definitions are exempt; its allow lists hold what no attribute covers (`main`) and the test seams, each with its reason. Exit 1 when it finds anything.
+- `python3 tools/code_graph.py` prints the file dependency graph of `src/` grouped into clusters by file name prefix: the cluster edges with reference counts, the clusters that reference each other, the strongly connected components with the files outside the largest, and the files of the largest with the fewest edges into it. `--files` adds each file's edges, `--json` dumps the graph, `--tests` includes the test files. Always exits 0.
+
 ## Command line
 
 Parsed with `core:flags` in Unix style; `--help` or `-h` prints the usage page. A bad command line (unknown items and chapters included) exits 2, a failed start 1.

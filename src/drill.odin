@@ -240,7 +240,8 @@ drill_drop_lane :: proc(entities: ^Entities, drill: Drill, target: Entity_Handle
 // Seeded by the world seed, the vein and its draw count, so a draw never
 // depends on which drill or which tick takes it. A deep vein mixes in its
 // layer, so it never shares a stream with the surface vein of the same
-// region and index; surface veins keep the stream of work item 0016.
+// region and index. Surface veins mix in no layer, so they keep their own
+// draw stream and an existing world draws the same units from them.
 vein_draw_hash :: proc(seed: u64, vein: Vein) -> u64 {
 	hash := hash_combine(hash_combine(seed, VEIN_DRAW_SALT), pack_pair(vein.id.region.x, vein.id.region.y))
 	hash = hash_combine(hash_combine(hash, u64(vein.id.index)), vein.draws)

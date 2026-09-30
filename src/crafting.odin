@@ -337,11 +337,6 @@ queue_crafts :: proc(queue: ^Craft_Queue, inventory: Inventory, recipes: Recipe_
 	return .None, {}
 }
 
-queue_craft :: proc(queue: ^Craft_Queue, inventory: Inventory, recipes: Recipe_Registry, unlocks: Recipe_Unlocks, recipe: int) -> Craft_Refusal {
-	refusal, _ := queue_crafts(queue, inventory, recipes, unlocks, recipe, 1)
-	return refusal
-}
-
 // The newest craft is the one in progress, holding its ingredients.
 newest_craft_is_in_progress :: proc(queue: Craft_Queue) -> bool {
 	return queue.count == 1 && queue.runs[0].count == 1 && queue.started

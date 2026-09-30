@@ -6,7 +6,7 @@ import sdl "vendor:sdl3"
 // The touch layout editor (work item 0121).
 
 // The editor on a draft of GameNative's buttons, standing in for Default,
-// which has none since 0134.
+// which has none (0134).
 use_button_touch_layout :: proc(audit: ^Ui_Audit) {
 	audit.default_touch_layout = gamenative_touch_layout()
 	start_touch_layout_draft(&audit.touch_layout_editor, DEFAULT_TOUCH_LAYOUT_NAME, audit.default_touch_layout)

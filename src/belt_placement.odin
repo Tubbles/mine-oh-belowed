@@ -46,20 +46,6 @@ belt_drag_step :: proc(previous: Planned_Belt, next_cell: World_Coordinate) -> (
 	return
 }
 
-// The belts a drag along `cells` (each a horizontal step from the one
-// before, at most one block up or down) places.
-plan_belt_run :: proc(cells: []World_Coordinate, initial_direction: u8, allocator := context.temp_allocator) -> []Planned_Belt {
-	plan := make([]Planned_Belt, len(cells), allocator)
-	if len(cells) == 0 {
-		return plan
-	}
-	plan[0] = Planned_Belt{cell = cells[0], direction = initial_direction, shape = .Flat}
-	for index in 1 ..< len(cells) {
-		plan[index - 1], plan[index] = belt_drag_step(plan[index - 1], cells[index])
-	}
-	return plan
-}
-
 // Horizontal columns from `from` (excluded) to `to` (included), one axis
 // at a time, the axis of the current direction first so a run keeps going
 // straight before it turns.

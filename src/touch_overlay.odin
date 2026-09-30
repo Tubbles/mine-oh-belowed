@@ -17,7 +17,7 @@ import sdl "vendor:sdl3"
 // The layout is data/touch_overlay.sjson, whose Default has only the
 // stick and the look (0134); a user layout may add buttons. A touch that
 // begins on a button holds that button until it lifts. Every other touch
-// on free screen, on either half, is undecided at first (0134): moving
+// on free screen, on either half, is undecided at first: moving
 // past the slop makes it a drag (the floating stick, centred where it
 // landed, when it landed on the stick's half and the stick is free, else
 // the look drag), resting makes it a hold (Mine) and a lift before either
@@ -31,7 +31,7 @@ import sdl "vendor:sdl3"
 // action (apply_touch_overlay_hotbar; the jump tap is the other), since
 // selecting a given slot has no gamepad control; held on the selected slot it presses
 // hotbar_drop_control (Drop_Stack). A touch on one of the HUD's touch
-// buttons beside the hotbar (0134, hud.odin: inventory, pause, rotate)
+// buttons beside the hotbar (hud.odin: inventory, pause, rotate)
 // presses the gamepad control bound to its action. A static stick (0120)
 // sits at a fixed place and reads only a touch that begins inside its
 // base; a button with double_tap_toggles latches down on a double tap

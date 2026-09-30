@@ -102,18 +102,6 @@ lay_save_test_research :: proc(world: ^World, content: Simulation_Content, offse
 	entity_insert(&world.entities, content, second, {pack, 6})
 }
 
-// Oil machines holding the new fluids (work item 0030), without power: a
-// tar pit pump on a tar pit, a refinery with crude oil and a flare stack
-// on its gas port holding gas.
-lay_save_test_oil :: proc(world: ^World, content: Simulation_Content, offset: World_Coordinate) {
-	world_set_block(world, World_Coordinate{-2, 0, 10} + offset, test_block(content.blocks, "tar_pit"))
-	place_test_entity(world, content, "tar_pit_pump", World_Coordinate{-4, 1, 10} + offset)
-	refinery := place_test_entity(world, content, "refinery", World_Coordinate{-10, 1, 10} + offset)
-	pool_get(&world.entities.assemblers, refinery).buffers[0] = {fluid = test_fluid(content, "crude_oil"), level = 150}
-	flare := place_test_entity(world, content, "flare_stack", World_Coordinate{-11, 1, 12} + offset)
-	pool_get(&world.entities.fluid_machines, flare).buffers[0] = {fluid = test_fluid(content, "petroleum_gas"), level = 70}
-}
-
 SAVE_TEST_CRATE :: World_Coordinate{-28, 1, -28}
 SAVE_TEST_GOLD_QUARTZ :: World_Coordinate{-29, 0, -28}
 

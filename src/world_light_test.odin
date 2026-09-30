@@ -29,6 +29,11 @@ sky_at :: proc(world: ^World, position: World_Coordinate) -> u8 {
 	return light_level(world_get_light(world, position), .Sky)
 }
 
+// A colour's largest channel, the one level that stands for it.
+light_color_level :: proc(color: Light_Color) -> u8 {
+	return max(color.r, color.g, color.b)
+}
+
 // The largest block light channel.
 block_light_at :: proc(world: ^World, position: World_Coordinate) -> u8 {
 	return light_color_level(block_color_at(world, position))

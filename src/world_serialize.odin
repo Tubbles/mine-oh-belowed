@@ -110,11 +110,6 @@ read_runs :: proc(reader: ^Byte_Reader, palette_length: int, allocator := contex
 	return runs, true
 }
 
-deserialize_chunk :: proc(data: []byte) -> (chunk: Chunk, ok: bool) {
-	ok = deserialize_chunk_blocks(data, &chunk.blocks)
-	return chunk, ok
-}
-
 // Leaves blocks untouched when the data is malformed. Takes the blocks by
 // pointer so that worker threads keep a chunk off their stack.
 deserialize_chunk_blocks :: proc(data: []byte, blocks: ^[CHUNK_BLOCK_COUNT]Block_Id) -> bool {

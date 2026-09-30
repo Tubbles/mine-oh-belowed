@@ -137,18 +137,6 @@ apply_fog :: proc(renderer: ^Chunk_Renderer, fog: Fog) {
 	rl.SetShaderValue(water_shader, water.fog_color_location, &color, .VEC3)
 }
 
-begin_water_pass :: proc() {
-	rlgl.DrawRenderBatchActive()
-	rlgl.DisableDepthMask()
-	rlgl.DisableBackfaceCulling()
-}
-
-end_water_pass :: proc() {
-	rlgl.DrawRenderBatchActive()
-	rlgl.EnableBackfaceCulling()
-	rlgl.EnableDepthMask()
-}
-
 // Must run between BeginMode3D and EndMode3D, after everything solid.
 // seconds is the render time.
 draw_water_chunks :: proc(renderer: ^Chunk_Renderer, camera: rl.Camera3D, seconds: f64) {
@@ -159,8 +147,8 @@ draw_water_chunks :: proc(renderer: ^Chunk_Renderer, camera: rl.Camera3D, second
 	time := water_time(seconds)
 	rl.SetShaderValue(water.material.shader, water.camera_position_location, &position, .VEC3)
 	rl.SetShaderValue(water.material.shader, water.time_location, &time, .FLOAT)
-	begin_water_pass()
-	defer end_water_pass()
+	begin_translucent_pass()
+	defer end_translucent_pass()
 	for coordinate, chunk_render in renderer.chunk_meshes {
 		if len(chunk_render.water_meshes) == 0 || !chunk_in_frustum(frustum, coordinate) {
 			continue

@@ -22,7 +22,7 @@ make_test_voxel_model :: proc(size: [3]i32, filled: [][3]i32, allocator := conte
 test_a_single_voxel_has_six_faces :: proc(t: ^testing.T) {
 	filled := [?][3]i32{{0, 0, 0}}
 	model := make_test_voxel_model({1, 1, 1}, filled[:])
-	defer destroy_voxel_model(model)
+	defer delete(model.cells)
 	meshes, problem := mesh_voxel_model(model, {1, 1, 1})
 	defer destroy_model_layers(meshes)
 	mesh := meshes[.Lit]
@@ -47,7 +47,7 @@ in_slice :: proc(value: [4]u8, values: [][4]u8) -> bool {
 test_a_bar_merges_its_long_faces :: proc(t: ^testing.T) {
 	filled := [?][3]i32{{0, 0, 0}, {1, 0, 0}}
 	model := make_test_voxel_model({2, 1, 1}, filled[:])
-	defer destroy_voxel_model(model)
+	defer delete(model.cells)
 	meshes, problem := mesh_voxel_model(model, {1, 1, 1})
 	defer destroy_model_layers(meshes)
 	mesh := meshes[.Lit]
@@ -69,7 +69,7 @@ test_a_model_scales_to_the_footprint :: proc(t: ^testing.T) {
 	// eighth of a block, at the footprint's minimum corner.
 	filled := [?][3]i32{{0, 0, 0}}
 	model := make_test_voxel_model({16, 16, 16}, filled[:])
-	defer destroy_voxel_model(model)
+	defer delete(model.cells)
 	testing.expect_value(t, model_scale(model.size, {2, 2, 2}), [3]f32{0.125, 0.125, 0.125})
 	testing.expect_value(t, model_scale({16, 8, 8}, {2, 1, 1}), [3]f32{0.125, 0.125, 0.125})
 	meshes, problem := mesh_voxel_model(model, {2, 2, 2})
@@ -88,7 +88,7 @@ test_a_model_scales_to_the_footprint :: proc(t: ^testing.T) {
 @(test)
 test_an_empty_model_is_refused :: proc(t: ^testing.T) {
 	model := make_test_voxel_model({2, 2, 2}, nil)
-	defer destroy_voxel_model(model)
+	defer delete(model.cells)
 	meshes, problem := mesh_voxel_model(model, {1, 1, 1})
 	defer destroy_model_layers(meshes)
 	testing.expect_value(t, problem, "no voxels")
@@ -113,7 +113,7 @@ test_the_model_turns_with_the_entity :: proc(t: ^testing.T) {
 test_emissive_faces_mesh_apart_without_the_shade :: proc(t: ^testing.T) {
 	filled := [?][3]i32{{0, 0, 0}, {1, 0, 0}}
 	model := make_test_voxel_model({2, 1, 1}, filled[:])
-	defer destroy_voxel_model(model)
+	defer delete(model.cells)
 	model.cells[voxel_cell_index(model.size, {1, 0, 0})] = EMISSIVE_PALETTE_START
 	model.palette[EMISSIVE_PALETTE_START] = {200, 100, 50, 255}
 	meshes, problem := mesh_voxel_model(model, {1, 1, 1})
@@ -133,10 +133,10 @@ test_emissive_faces_mesh_apart_without_the_shade :: proc(t: ^testing.T) {
 test_the_model_top_is_its_highest_voxel :: proc(t: ^testing.T) {
 	filled := [?][3]i32{{0, 0, 0}, {1, 5, 1}}
 	model := make_test_voxel_model({2, 8, 2}, filled[:])
-	defer destroy_voxel_model(model)
+	defer delete(model.cells)
 	testing.expect_value(t, voxel_model_top(model), 6)
 	empty := make_test_voxel_model({2, 2, 2}, nil)
-	defer destroy_voxel_model(empty)
+	defer delete(empty.cells)
 	testing.expect_value(t, voxel_model_top(empty), 0)
 }
 

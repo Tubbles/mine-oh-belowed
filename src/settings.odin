@@ -81,8 +81,8 @@ Settings :: struct {
 	// on for a run.
 	touch_overlay:             Touch_Overlay_Mode,
 	// How the overlay aims Mine, Place and Interact while it drives the
-	// world (work item 0118): tap at the touched point, or crosshair with
-	// the view as in 0115.
+	// world (work item 0118): tap at the touched point, or crosshair at
+	// the view's centre.
 	touch_interaction:         Touch_Interaction,
 	// Where a text field types (work item 0133): system uses the phone's
 	// or Steam's keyboard where one is available, game always the game's

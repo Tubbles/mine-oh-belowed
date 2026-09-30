@@ -27,7 +27,7 @@ MAGNETOMETER_FULL :: 1000
 // A known vein, drawn on the map. from_spent_outcrop marks a record made
 // only because its outcrop was mined away (work item 0096): the vein is
 // known but not assayed. outcrop_spent marks that Mission Control said so,
-// once per vein. Saves from before 0096 read both as false.
+// once per vein. Older saves read both as false.
 Assayed_Vein :: struct {
 	vein:               Vein_Id,
 	type:               int,

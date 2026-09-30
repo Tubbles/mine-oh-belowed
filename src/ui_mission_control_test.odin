@@ -193,8 +193,8 @@ test_the_satellite_crosses_the_map_through_the_pad :: proc(t: ^testing.T) {
 }
 
 // 0123: at 2272 by 1080 and ui scale 1 the card, even at its widest,
-// clears Back and Start (a user layout's since 0134); with no clearance
-// it sits where it did before.
+// clears Back and Start (a user layout's, 0134); with no clearance it
+// sits centred at the top of the safe area.
 @(test)
 test_the_discovery_card_sits_below_back_and_start :: proc(t: ^testing.T) {
 	layout := button_touch_overlay(t)
@@ -211,7 +211,7 @@ test_the_discovery_card_sits_below_back_and_start :: proc(t: ^testing.T) {
 		rectangle := pixels_to_units_rectangle(pill.centre, pill.size, ui.pixels_per_unit)
 		testing.expectf(t, !rectangles_overlap(card, rectangle), "the card %v overlaps %v at %v", card, label, rectangle)
 	}
-	// Before 0123: x centred in the safe area, y its top, 54.
+	// Without clearance: x centred in the safe area, y its top, 54.
 	unmoved := discovery_card_rectangle(safe, 300, 0)
 	expect_near(t, {unmoved.x, unmoved.y}, {986, 54})
 	expect_near(t, {unmoved.width, unmoved.height}, {300, UI_ROW_HEIGHT})

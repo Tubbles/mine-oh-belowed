@@ -5,6 +5,8 @@ import "core:testing"
 
 // The UI theme and its art (work item 0071). None of these touch raylib.
 
+UI_THEME_METRIC_NAMES :: [?]string{"border", "corner", "focus_pulse"}
+
 @(test)
 test_default_theme_is_the_old_look :: proc(t: ^testing.T) {
 	colors := DEFAULT_UI_THEME.colors

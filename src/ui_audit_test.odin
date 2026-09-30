@@ -643,7 +643,7 @@ audit_every_note :: proc(audit: ^Ui_Audit) {
 
 // The touch layout editor (work item 0121) with nothing, a button and the
 // stick selected, and its name entry, on GameNative's buttons (Default has
-// none since 0134).
+// none, 0134).
 audit_touch_layout_editor :: proc(audit: ^Ui_Audit) {
 	editor := &audit.touch_layout_editor
 	start_touch_layout_draft(editor, DEFAULT_TOUCH_LAYOUT_NAME, gamenative_touch_layout())

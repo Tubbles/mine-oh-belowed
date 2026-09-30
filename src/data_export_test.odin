@@ -216,11 +216,10 @@ test_export_paths_resolve_and_nest :: proc(t: ^testing.T) {
 	testing.expect_value(t, export_directory_refusal("/home/player/.local/state/mine-oh-belowed", "data", "", working), "")
 }
 
-// Review of 0131: a copy onto its own source would have emptied it (os
-// opens the destination truncated before reading). An export into the
-// parent of the data directory is refused and the data keeps its bytes,
-// as is a copy whose source is its destination, and a sync into the
-// overlay's parent.
+// A copy onto its own source would empty it (os opens the destination
+// truncated before reading, 0131). An export into the parent of the data
+// directory is refused and the data keeps its bytes, as is a copy whose
+// source is its destination, and a sync into the overlay's parent.
 @(test)
 test_an_export_onto_its_sources_is_refused :: proc(t: ^testing.T) {
 	base, error := os.make_directory_temp("", "mine-oh-belowed-export-overlap-test-*", context.temp_allocator)

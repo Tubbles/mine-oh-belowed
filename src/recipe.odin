@@ -197,15 +197,6 @@ parse_named_enum :: proc(names: [$E]string, name: string) -> (value: E, found: b
 	return {}, false
 }
 
-find_recipe_definition_index :: proc(definitions: []Recipe_Definition, id: string) -> int {
-	for definition, index in definitions {
-		if definition.id == id {
-			return index
-		}
-	}
-	return -1
-}
-
 validate_recipe_makers :: proc(definition: Recipe_Definition) -> string {
 	if len(definition.made_in) == 0 {
 		return fmt.tprintf("recipe %q has no made_in", definition.id)
@@ -268,7 +259,7 @@ validate_recipe_definition :: proc(definitions: []Recipe_Definition, index: int)
 	switch {
 	case definition.id == "":
 		return fmt.tprintf("recipe %d has no id", index)
-	case find_recipe_definition_index(definitions, definition.id) != index:
+	case find_definition_index(definitions, definition.id) != index:
 		return fmt.tprintf("recipe id %q is defined twice", definition.id)
 	case len(definition.inputs) == 0 && len(definition.fluid_inputs) == 0:
 		return fmt.tprintf("recipe %q has no inputs", definition.id)
@@ -356,7 +347,8 @@ resolve_recipe_tags :: proc(tags: []string, tag_names: ^[dynamic]string) -> (set
 	return set, ""
 }
 
-resolve_recipe_byproducts :: proc(outputs: []Recipe_Ingredient_Definition) -> Recipe_Output_Set {
+// The outputs flagged byproduct, item and fluid outputs alike.
+resolve_byproducts :: proc(outputs: []$T) -> Recipe_Output_Set {
 	byproducts: Recipe_Output_Set
 	for output, index in outputs {
 		if output.byproduct {
@@ -410,24 +402,14 @@ recipe_fluids_contain :: proc(list: []Recipe_Fluid, fluid: Fluid_Id) -> bool {
 	return false
 }
 
-resolve_fluid_byproducts :: proc(outputs: []Recipe_Fluid_Definition) -> Recipe_Output_Set {
-	byproducts: Recipe_Output_Set
-	for output, index in outputs {
-		if output.byproduct {
-			byproducts += {index}
-		}
-	}
-	return byproducts
-}
-
 resolve_recipe :: proc(definition: Recipe_Definition, items: Item_Registry, fluids: Fluid_Registry, tag_names: ^[dynamic]string, allocator := context.allocator) -> (recipe: Recipe, problem: string) {
 	recipe = Recipe {
 		id            = definition.id,
 		name_key      = definition.name_key,
 		milliseconds  = u32(math.round(definition.seconds * 1000)),
 		made_in       = resolve_recipe_makers(definition.made_in),
-		byproducts    = resolve_recipe_byproducts(definition.outputs),
-		fluid_byproducts = resolve_fluid_byproducts(definition.fluid_outputs),
+		byproducts    = resolve_byproducts(definition.outputs),
+		fluid_byproducts = resolve_byproducts(definition.fluid_outputs),
 		technology_id = definition.technology,
 		technology    = NO_TECHNOLOGY,
 		schematic     = NO_ITEM,

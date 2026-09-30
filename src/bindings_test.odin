@@ -5,9 +5,8 @@ import "core:testing"
 import rl "shared:raylib"
 import sdl "vendor:sdl3"
 
-// The binding tables as they were hardcoded in input_raylib.odin and
-// input_sdl3.odin before work item 0025. data/bindings.sjson must produce
-// exactly these.
+// The reference binding tables (work item 0025). data/bindings.sjson must
+// produce exactly these.
 
 Reference_Raylib_Button :: struct {
 	button: rl.GamepadButton,
@@ -35,8 +34,8 @@ reference_raylib_buttons := [?]Reference_Raylib_Button {
 	{.RIGHT_FACE_DOWN, .Interact},
 	{.RIGHT_FACE_DOWN, .Confirm},
 	{.RIGHT_FACE_RIGHT, .Back},
-	// Sneak on B and Sprint on the stick click reach the raylib backend
-	// since the touch overlay (0115), which presses them on Android.
+	// Sneak on B and Sprint on the stick click reach the raylib backend:
+	// the touch overlay (0115) presses them on Android.
 	{.RIGHT_FACE_RIGHT, .Sneak},
 	{.LEFT_THUMB, .Sprint},
 	{.RIGHT_FACE_LEFT, .Open_Inventory},

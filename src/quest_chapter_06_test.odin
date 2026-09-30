@@ -52,8 +52,8 @@ test_chapter_06_loads :: proc(t: ^testing.T) {
 	testing.expect_value(t, permit.reward_items[1], Item_Stack{test_item(items, "electronic_circuit"), 50})
 }
 
-// deep_mining unlocks the bore drill and the mining fluid since work item
-// 0035, and the labs still refuse it.
+// deep_mining unlocks the bore drill and the mining fluid (work item
+// 0035), and the labs refuse it.
 @(test)
 test_deep_mining_is_a_quest_gate :: proc(t: ^testing.T) {
 	test := make_crafting_test()

@@ -79,7 +79,7 @@ test_furnace_recipes_with_two_inputs_are_refused :: proc(t: ^testing.T) {
 test_crafting_machine_definitions_are_validated :: proc(t: ^testing.T) {
 	file, error := parse_machines_file(#load("../data/machines.sjson"), context.temp_allocator)
 	assert(error == nil)
-	index := find_machine_definition_index(file.machines, "alloy_furnace")
+	index := find_definition_index(file.machines, "alloy_furnace")
 	expect_refused :: proc(t: ^testing.T, file: Machines_File, index: int, definition: Machine_Definition, location := #caller_location) {
 		file.machines[index] = definition
 		_, problem := resolve_machine_registry(file, make_test_items(), make_test_fluids(), context.temp_allocator)
@@ -292,14 +292,14 @@ test_washer_port_takes_water_from_pipes :: proc(t: ^testing.T) {
 	tank := place_test_fluid_entity(&world, content, "storage_tank", {5, 1, -4})
 	test_fluid_machine(&world, tank).buffers[0] = {fluid = test_fluid(content, "water"), level = 1000}
 	networks := &world.entities.fluid_networks
-	testing.expect(t, fluid_network_of(networks, washer, 0) >= 0)
-	testing.expect_value(t, fluid_network_of(networks, washer, 0), fluid_network_of(networks, pipes[0], -1))
+	testing.expect(t, test_fluid_network_of(networks, washer, 0) >= 0)
+	testing.expect_value(t, test_fluid_network_of(networks, washer, 0), test_fluid_network_of(networks, pipes[0], -1))
 	testing.expect(t, pipe_connects_through(&world.entities, content.machines, {6, 1, -1}, .Positive_Z))
 	tick_test_fluids(&world, content, 60)
 	testing.expect(t, pool_get(&world.entities.assemblers, washer).buffers[0].level > 0)
 	// Picking the washer up rebuilds the networks without it.
 	remove_entity(&world.entities, content.machines, washer)
-	testing.expect_value(t, fluid_network_of(networks, washer, 0), -1)
+	testing.expect_value(t, test_fluid_network_of(networks, washer, 0), -1)
 }
 
 @(test)
@@ -451,7 +451,7 @@ test_ore_processing_is_researched :: proc(t: ^testing.T) {
 	}
 }
 
-// Carry over from work item 0026: the alloy furnace is a stone and brick
+// The alloy furnace (work item 0026) is a stone and brick
 // building on the start channel, so bronze is reachable in phase 2; steel
 // stays under steel processing, and the steel furnace has a machine.
 @(test)

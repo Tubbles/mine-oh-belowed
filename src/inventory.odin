@@ -176,22 +176,6 @@ inventory_count :: proc(inventory: Inventory, item: Item_Id) -> int {
 	return total
 }
 
-// Onto an empty slot the stack moves, onto the same item it merges up to
-// the stack size (the rest stays behind), onto a different item the two
-// swap.
-move_or_swap :: proc(slots: []Item_Stack, from, to: int, registry: Item_Registry) {
-	if from == to || stack_is_empty(slots[from]) {
-		return
-	}
-	source, target := &slots[from], &slots[to]
-	if !stack_is_empty(target^) && target.item != source.item {
-		source^, target^ = target^, source^
-		return
-	}
-	left := fill_slot(target, source.item, int(source.count), item_stack_size(registry, source.item))
-	take_from_slot(source, int(source.count) - left)
-}
-
 // The larger half is taken, so a stack of one is taken whole.
 split_stack :: proc(stack: Item_Stack) -> (kept: Item_Stack, taken: Item_Stack) {
 	if stack_is_empty(stack) {

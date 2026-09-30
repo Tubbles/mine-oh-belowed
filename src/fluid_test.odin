@@ -10,7 +10,7 @@ place_test_fluid_entity :: proc(world: ^World, content: Simulation_Content, id: 
 }
 
 // An offshore pump with full power, which tick_test_fluids leaves as it
-// is (the offshore pump draws electricity since 0140).
+// is (the offshore pump draws electricity, 0140).
 place_powered_offshore_pump :: proc(world: ^World, content: Simulation_Content, origin: World_Coordinate, rotation: u8 = 0) -> Entity_Handle {
 	pump := place_test_fluid_entity(world, content, "offshore_pump", origin, rotation)
 	test_fluid_machine(world, pump).power.satisfaction = POWER_FULL
@@ -37,6 +37,12 @@ test_fluid :: proc(content: Simulation_Content, id: string) -> Fluid_Id {
 	fluid, found := find_fluid_id(content.fluids, id)
 	assert(found, id)
 	return fluid
+}
+
+// The network a pipe or a machine port belongs to, or -1.
+test_fluid_network_of :: proc(networks: ^Fluid_Networks, owner: Entity_Handle, port: int) -> int {
+	segment := find_fluid_segment(networks, owner, port)
+	return segment < 0 ? -1 : networks.segments[segment].network
 }
 
 pipe_levels :: proc(world: ^World, pipes: []Entity_Handle) -> []i32 {
@@ -645,7 +651,7 @@ test_fluid_networks_rebuild_after_removing_a_middle_pipe :: proc(t: ^testing.T) 
 	networks := &world.entities.fluid_networks
 	testing.expect_value(t, len(networks.networks), 2)
 	testing.expect_value(t, len(networks.connections), 2)
-	testing.expect(t, fluid_network_of(networks, pipes[0], -1) != fluid_network_of(networks, pipes[4], -1))
+	testing.expect(t, test_fluid_network_of(networks, pipes[0], -1) != test_fluid_network_of(networks, pipes[4], -1))
 	testing.expect_value(t, networks.networks[0].fluid, water)
 	testing.expect_value(t, pipe_levels(&world, pipes[3:])[0], 40)
 	lay_pipes(&world, content, {2, 1, 0})

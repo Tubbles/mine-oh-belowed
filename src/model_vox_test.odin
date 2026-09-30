@@ -56,7 +56,7 @@ make_vox_file :: proc(size: [3]i32, voxels: [][4]u8, palette: [][4]u8 = nil) -> 
 @(test)
 test_the_shipped_chest_model_loads :: proc(t: ^testing.T) {
 	model, problem := parse_voxel_model(#load("../data/models/wooden_chest.vox"))
-	defer destroy_voxel_model(model)
+	defer delete(model.cells)
 	testing.expect_value(t, problem, "")
 	// 16 voxels per block for a machine one block across.
 	testing.expect_value(t, model.size, [3]i32{16, 16, 16})
@@ -71,7 +71,7 @@ test_the_shipped_chest_model_loads :: proc(t: ^testing.T) {
 @(test)
 test_the_shipped_furnace_glow_is_emissive :: proc(t: ^testing.T) {
 	model, problem := parse_voxel_model(#load("../data/models/stone_furnace.vox"))
-	defer destroy_voxel_model(model)
+	defer delete(model.cells)
 	testing.expect_value(t, problem, "")
 	// The glow patch in the mouth takes the first emissive index, the
 	// stone does not.
@@ -84,7 +84,7 @@ test_the_shipped_furnace_glow_is_emissive :: proc(t: ^testing.T) {
 test_vox_z_up_becomes_the_game_y_up :: proc(t: ^testing.T) {
 	voxels := [?][4]u8{{1, 2, 3, 5}}
 	model, problem := parse_voxel_model(make_vox_file({2, 3, 4}, voxels[:]))
-	defer destroy_voxel_model(model)
+	defer delete(model.cells)
 	testing.expect_value(t, problem, "")
 	// Vox y runs away from the viewer, game z towards them: vox y 2 of 3
 	// is game z 0, so the model turns about x and is not mirrored.
@@ -98,7 +98,7 @@ test_vox_z_up_becomes_the_game_y_up :: proc(t: ^testing.T) {
 test_vox_palette_is_the_default_without_rgba :: proc(t: ^testing.T) {
 	voxels := [?][4]u8{{0, 0, 0, 1}}
 	model, problem := parse_voxel_model(make_vox_file({1, 1, 1}, voxels[:]))
-	defer destroy_voxel_model(model)
+	defer delete(model.cells)
 	testing.expect_value(t, problem, "")
 	testing.expect_value(t, model.palette[1], [4]u8{255, 255, 255, 255})
 	testing.expect_value(t, model.palette[216], [4]u8{0xee, 0, 0, 255})
@@ -107,7 +107,7 @@ test_vox_palette_is_the_default_without_rgba :: proc(t: ^testing.T) {
 	// RGBA entry 0 is palette index 1.
 	palette := [?][4]u8{{10, 20, 30, 255}}
 	with_palette, palette_problem := parse_voxel_model(make_vox_file({1, 1, 1}, voxels[:], palette[:]))
-	defer destroy_voxel_model(with_palette)
+	defer delete(with_palette.cells)
 	testing.expect_value(t, palette_problem, "")
 	testing.expect_value(t, with_palette.palette[1], [4]u8{10, 20, 30, 255})
 }
@@ -130,7 +130,7 @@ test_malformed_vox_files_are_refused_naming_the_chunk :: proc(t: ^testing.T) {
 	}
 	for entry in cases {
 		model, problem := parse_voxel_model(entry.data)
-		destroy_voxel_model(model)
+		delete(model.cells)
 		testing.expectf(t, strings.has_prefix(problem, entry.chunk), "%q does not start with %q", problem, entry.chunk)
 	}
 }
@@ -163,7 +163,7 @@ test_a_file_of_several_models_reads_the_first :: proc(t: ^testing.T) {
 	append(&file, ..second_children)
 	endian.put_i32(file[VOX_HEADER_SIZE + 8:][:4], .Little, i32(len(file) - VOX_HEADER_SIZE - VOX_CHUNK_HEADER_SIZE))
 	model, problem := parse_voxel_model(file[:])
-	defer destroy_voxel_model(model)
+	defer delete(model.cells)
 	testing.expect_value(t, problem, "")
 	testing.expect_value(t, model.model_count, 2)
 	testing.expect_value(t, model.size, [3]i32{1, 1, 1})

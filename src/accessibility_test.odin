@@ -6,6 +6,11 @@ import "core:testing"
 // motion rule. The hold and toggle rules are in player_test.odin, the
 // settings' configuration in configuration_test.odin.
 
+// The bottleneck colours and the map colours are shown apart, so each
+// set only needs to be distinct within itself.
+BOTTLENECK_PALETTE_COLORS :: bit_set[Palette_Color]{.Working, .Waiting, .Missing, .Idle}
+MAP_PALETTE_COLORS :: bit_set[Palette_Color]{.Map_Player, .Map_Machine, .Map_Assayed, .Map_Magnetometer, .Map_Core_Sample, .Map_Core_Sample_Vein, .Map_Seismic, .Map_Resolved}
+
 @(test)
 test_text_scale_multiplies_measured_and_drawn_sizes :: proc(t: ^testing.T) {
 	settings := DEFAULT_SETTINGS

@@ -51,21 +51,7 @@ life_color :: proc(color: rl.Color, share: f32) -> rl.Color {
 	return faded
 }
 
-// No depth writes, so a faded silhouette never hides what is drawn after
-// it, and both sides of every triangle.
-begin_life_pass :: proc() {
-	rlgl.DrawRenderBatchActive()
-	rlgl.DisableDepthMask()
-	rlgl.DisableBackfaceCulling()
-}
-
-end_life_pass :: proc() {
-	rlgl.DrawRenderBatchActive()
-	rlgl.EnableBackfaceCulling()
-	rlgl.EnableDepthMask()
-}
-
-// Two triangles, drawn within begin_life_pass and end_life_pass.
+// Two triangles, drawn within begin_translucent_pass and end_translucent_pass.
 draw_life_quad :: proc(corners: [4][3]f32, color: rl.Color) {
 	rl.DrawTriangle3D(corners[0], corners[1], corners[2], color)
 	rl.DrawTriangle3D(corners[0], corners[2], corners[3], color)
@@ -124,8 +110,8 @@ draw_bird_flocks :: proc(generator: ^Generator, frame: Life_Frame) {
 		return
 	}
 	minimum, maximum := flock_cells_around(frame.camera.position.xz, BIRD_DRAW_DISTANCE)
-	begin_life_pass()
-	defer end_life_pass()
+	begin_translucent_pass()
+	defer end_translucent_pass()
 	for z in minimum.y ..= maximum.y {
 		for x in minimum.x ..= maximum.x {
 			if flock, found := find_flock(generator, frame.seed, {x, z}, maximum_density); found {
@@ -187,8 +173,8 @@ draw_fish_shadow :: proc(pose: Fish_Pose, color: rl.Color) {
 // over them tints them.
 draw_fish_shadows :: proc(renderer: ^Chunk_Renderer, frame: Life_Frame) {
 	position := frame.camera.position
-	begin_life_pass()
-	defer end_life_pass()
+	begin_translucent_pass()
+	defer end_translucent_pass()
 	for coordinate, chunk_render in renderer.chunk_meshes {
 		if len(chunk_render.fish) == 0 || chunk_distance_squared(position, coordinate) > FISH_DRAW_DISTANCE * FISH_DRAW_DISTANCE {
 			continue

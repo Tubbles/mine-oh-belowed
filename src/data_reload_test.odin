@@ -186,7 +186,7 @@ test_a_reload_with_an_inserted_item_keeps_stacks_and_makes_it_usable :: proc(t: 
 	log_item := test_item(new_content.items, "log")
 	testing.expect_value(t, inventory_add(player.inventory, new_content.items, log_item, 1), 0)
 	player.crafting = {}
-	refusal := queue_craft(&player.crafting, player.inventory, new_content.recipes, reloaded.unlocks, test_recipe(new_content.recipes, "reload_test_recipe"))
+	refusal, _ := queue_crafts(&player.crafting, player.inventory, new_content.recipes, reloaded.unlocks, test_recipe(new_content.recipes, "reload_test_recipe"), 1)
 	testing.expect_value(t, refusal, Craft_Refusal.None)
 	for _ in 0 ..< 60 {
 		simulation_tick(&reloaded, new_content, {})

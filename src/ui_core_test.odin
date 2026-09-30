@@ -344,18 +344,17 @@ test_tabs_follow_bumpers :: proc(t: ^testing.T) {
 }
 
 @(test)
-test_list_letter_jump :: proc(t: ^testing.T) {
+test_list_scrolls_the_focus_into_view :: proc(t: ^testing.T) {
 	items := [?]string{"Coal", "copper ore", "Iron ore", "Limestone"}
-	testing.expect_value(t, list_index_for_letter(items[:], 'i'), 2)
-	testing.expect_value(t, list_index_for_letter(items[:], 'C'), 0)
-	testing.expect_value(t, list_index_for_letter(items[:], 'z'), -1)
 	state: Ui_State
 	defer destroy_ui_state(&state)
 	area := Ui_Rectangle{0, 0, 400, UI_ROW_HEIGHT * 2}
 	test_ui_frame(&state, {})
 	ui_list(&state, area, "ores", items[:])
 	ui_resolve(&state)
-	ui_request_letter_jump(&state, 'l')
+	ui_push_id(&state, "ores")
+	state.requested_focus = ui_id(&state, "item", 3)
+	ui_pop_id(&state)
 	test_ui_frame(&state, {})
 	ui_list(&state, area, "ores", items[:])
 	ui_resolve(&state)
@@ -369,42 +368,47 @@ test_list_letter_jump :: proc(t: ^testing.T) {
 }
 
 @(test)
-test_radial_selects_through_widget :: proc(t: ^testing.T) {
+test_radial_selects_and_cancels :: proc(t: ^testing.T) {
+	// A four slot wheel: up, right, down, left.
+	step :: proc(state: ^Ui_State, source: Radial_Source) -> Radial_Result {
+		touching, position := radial_input(state.input, source)
+		result: Radial_Result
+		state.radial, result = advance_radial(state.radial, touching, position, source, 4)
+		return result
+	}
 	state: Ui_State
 	defer destroy_ui_state(&state)
-	labels := [?]string{"up", "right", "down", "left"}
 	// Touch at the top, slide right, release: the right slot.
 	test_ui_frame(&state, {left_touchpad = {down = true, position = {0.5, 0.1}}})
-	result := ui_radial(&state, labels[:], .Touchpad)
+	result := step(&state, .Touchpad)
 	testing.expect(t, !result.closed)
 	testing.expect_value(t, state.radial.highlight, 0)
-	testing.expect(t, len(state.draw_list) > 0)
 	test_ui_frame(&state, {left_touchpad = {down = true, position = {0.9, 0.5}}})
-	ui_radial(&state, labels[:], .Touchpad)
+	step(&state, .Touchpad)
 	test_ui_frame(&state, {left_touchpad = {down = false, position = {0.9, 0.5}}})
-	result = ui_radial(&state, labels[:], .Touchpad)
+	result = step(&state, .Touchpad)
 	testing.expect(t, result.closed)
 	testing.expect_value(t, result.selected, 1)
 	testing.expect(t, !state.radial.open)
 	// Sliding back to the dead centre and releasing cancels.
 	test_ui_frame(&state, {left_touchpad = {down = true, position = {0.5, 0.9}}})
-	ui_radial(&state, labels[:], .Touchpad)
+	step(&state, .Touchpad)
 	test_ui_frame(&state, {left_touchpad = {down = true, position = {0.5, 0.5}}})
-	ui_radial(&state, labels[:], .Touchpad)
+	step(&state, .Touchpad)
 	test_ui_frame(&state, {})
-	result = ui_radial(&state, labels[:], .Touchpad)
+	result = step(&state, .Touchpad)
 	testing.expect(t, result.closed)
 	testing.expect_value(t, result.selected, -1)
 	// Stick: letting go keeps the last highlight.
 	test_ui_frame(&state, {right_stick = {0, -1}})
-	ui_radial(&state, labels[:], .Stick)
+	step(&state, .Stick)
 	test_ui_frame(&state, {})
-	result = ui_radial(&state, labels[:], .Stick)
+	result = step(&state, .Stick)
 	testing.expect(t, result.closed)
 	testing.expect_value(t, result.selected, 2)
 	// Nothing touched: nothing happens.
 	test_ui_frame(&state, {})
-	result = ui_radial(&state, labels[:], .Touchpad)
+	result = step(&state, .Touchpad)
 	testing.expect(t, !result.closed)
 }
 

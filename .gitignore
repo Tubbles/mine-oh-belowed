@@ -9,5 +9,8 @@
 /result
 /result-*
 
+# Python bytecode, wherever a script is imported from
+__pycache__/
+
 # Nix direnv
 /.direnv/

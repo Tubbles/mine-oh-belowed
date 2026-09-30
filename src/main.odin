@@ -507,8 +507,8 @@ debug_terrain_landing_pad :: proc() -> Landing_Pad_Site {
 }
 
 // A loaded world keeps the pad it was created with (world.sjson, 0049), so
-// a change to the spawn rules never moves it. A file without a pad (saved
-// before 0049) falls back to the search.
+// a change to the spawn rules never moves it. A file without a pad (an
+// older save) falls back to the search.
 saved_world_start :: proc(generator: ^Generator, loading: bool, file: World_File) -> (start: World_Start, found: bool) {
 	if !loading || !file.landing_pad_present {
 		return {}, false

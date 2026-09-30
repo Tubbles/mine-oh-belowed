@@ -521,16 +521,3 @@ tick_quests :: proc(state: ^Quest_State, tick_context: Quest_Tick_Context, entit
 	}
 	snapshot_capsule(tick_context.statistics, capsule_slots)
 }
-
-quest_status :: proc(state: Quest_State, index: int) -> Quest_Status {
-	return state.progress[index].status
-}
-
-chapter_done :: proc(state: Quest_State, chapter: Chapter) -> bool {
-	for index in chapter.first_quest ..< chapter.first_quest + chapter.quest_count {
-		if state.progress[index].status != .Done {
-			return false
-		}
-	}
-	return true
-}

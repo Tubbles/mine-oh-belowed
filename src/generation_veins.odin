@@ -263,10 +263,6 @@ region_veins :: proc(generator: ^Generator, region: Region_Coordinate, allocator
 	return layer_veins(generator, region, .Surface, allocator)
 }
 
-region_deep_veins :: proc(generator: ^Generator, region: Region_Coordinate, allocator := context.allocator) -> [dynamic]Vein {
-	return layer_veins(generator, region, .Deep, allocator)
-}
-
 // Veins of every region that touches the box, minimum and maximum
 // inclusive in block x and z.
 veins_near_box :: proc(generator: ^Generator, minimum, maximum: [2]i32, allocator := context.allocator) -> [dynamic]Vein {
