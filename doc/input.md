@@ -102,7 +102,7 @@ Input on the phone is raylib's (0114). A Bluetooth or USB gamepad works at once 
 Rule: every action a control triggers is a line in `data/bindings.sjson` (0025); the file's header documents the vocabulary.
 
 - An entry names an action (the `Action` enum), a device (`gamepad`, `keyboard`, `mouse`, `trackpad`), a control, a context and an optional backend (`sdl3` or `raylib`).
-- The context (`world`, `menu`, `both`) documents the layout and switches nothing: which actions reach the world while a screen is open is `WORLD_ACTIONS`.
+- The context (`world`, `menu`, `both`) documents the layout and switches nothing in the input frame: which actions reach the world while a screen is open is `WORLD_ACTIONS`. The touch overlay's control lookup (`touch_control_for_action`) skips `menu` bindings.
 - A configuration file may list `bindings` in the same shape; every action it lists loses all of its defaults (`effective_bindings`). The settings' Bindings tab shows the effective list read only (`binding_rows`).
 - One control carries a world and a menu meaning. A is Jump, Interact and Confirm; while the target has a panel Interact wins and the Jump is dropped for that tick (`resolve_interact`).
 - On a power switch Interact turns it and on a launch pad with a rocket ready and cargo loaded it launches; Sneak with Interact opens their panels.

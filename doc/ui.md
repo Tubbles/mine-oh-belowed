@@ -1,6 +1,6 @@
 # User interface
 
-How every screen is built, so "couch first" and "one coherent game" hold on every panel. The screen list is in [DESIGN.md](../DESIGN.md); input in [input.md](input.md); the touch overlay in [touch_overlay.md](touch_overlay.md); the HUD in [hud.md](hud.md); the developer screens in [developer_tools.md](developer_tools.md).
+How every screen is built, so "couch first" and "one coherent game" hold on every panel. The design intent is in [DESIGN.md](../DESIGN.md), User interface; input in [input.md](input.md); the touch overlay in [touch_overlay.md](touch_overlay.md); the HUD in [hud.md](hud.md); the developer screens in [developer_tools.md](developer_tools.md).
 
 - An immediate mode UI in Odin over raylib draw calls (no raygui: mouse centric, no focus navigation), laid out in UI units where 1080 span the screen height.
 - One focus model for every device: the d-pad and sticks move a focus cursor; the pointer (mouse, right trackpad, finger) focuses what it hovers and activates by a tap.

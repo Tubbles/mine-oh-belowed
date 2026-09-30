@@ -1,6 +1,6 @@
 # 0141: Documentation pass: lean, current, layered
 
-Status: todo
+Status: implemented
 
 ## Goal
 
@@ -32,3 +32,11 @@ One subagent each, in series, each reviewed before its commit:
 - Every cluster reports the size of each file before and after; the aim is under half, without losing a fact.
 - The reviewer samples fifteen claims per document against the code, lists every rule, value or gotcha that went missing, and checks the links and the index.
 - `./build.sh check` and `./build.sh test` still pass.
+
+## Implementation notes
+
+- Commits: cluster A `16a9123`, B `2406534`, C `a930d33`, D with this note. Each cluster was reviewed by a second agent that walked the whole old text for lost facts and sampled the claims against the code; every review found a few, and they went back before the commit.
+- Sizes, reference docs without the log and the work items: 374 KB in 17 files before, 290 KB in 22 files after. The files that were rewritten halved or better (`ui.md` 68 to 32 KB, `input.md` 46 to 17, `architecture.md` 48 to 26, `build.md` 48 to 19, `content.md` 42 to 18, `quests.md` 18 to 10, `DESIGN.md` 26 to 19). The total fell less, since dense verified content moved into files with a reader of their own (`touch_overlay.md`, `hud.md`, `developer_tools.md`, `presentation.md`, `android.md`) instead of being cut. The "under half" aim held per file, not per cluster, under the no-loss rule.
+- `tools/check_docs.py` guards links, backticked paths and file names, and backticked `snake_case` names, with a short allow list for external names and a list of generated files. It exits 0 for the whole tree and runs by hand; it is not part of `build.sh`.
+- Corrections of substance found on the way: the raylib binding carries an Android import branch that must be put back after an Odin upgrade (it was documented as copied unchanged); SDL runs the joystick and gamepad subsystems, not a sensor subsystem; two assemblers of science pack 1 cover two labs; a fifth assembler causes no brownout; deposit lifetimes were overstated by about a fifth; only ore smelts and alloys give slag; the fog distance stops following the weather under reduced motion; `reload` needs no loaded world.
+- Left as they were: `doc/log/` and `doc/work/` (history), `TODO.md` (the user's).

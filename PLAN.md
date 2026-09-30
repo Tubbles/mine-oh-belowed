@@ -10,13 +10,34 @@ All eight gameplay phases of [DESIGN.md](DESIGN.md), from landing to the first r
 
 Verify: a fresh player on the couch follows the quest journal from landing to the first rocket shipment over several sessions, saving and resuming between them, with no keyboard except for the world name and no outside help.
 
+## Where it stands
+
+- Every phase of the alpha is in code: M0 to M9 are implemented, and the alpha's content is complete (`doc/log/2026-09-27.md`, M9 complete). Of their verify statements only M0's and couch test 1's have been run on the couch.
+- M10's couch findings (0043 to 0052) and M11's presentation campaign are implemented: the planned items 0053 to 0082, then the couch, Deck and phone findings 0083 to 0140 (texture and sound cadence, the Windows build for GameNative, the native Android app, the touch overlay, the data file editors, the hand crafting queue, pump head, the fuel generator).
+- Next: the documentation pass (0141), then M10's remaining passes and the couch tests 2 to 5 as the user plays.
+
 ## Couch tests
 
-Pre-alpha builds the user plays on the couch to try the core loop long before the alpha is complete. A couch test follows every milestone from M3 on. Each has its own verify statement, and the feedback goes into `TODO.md` and from there into work items. The first couch test needs M5's save and load, so M5 is pulled forward: it is usability, not polish.
+Pre-alpha builds the user plays on the couch to try the core loop long before the alpha is complete. A couch test follows every milestone from M3 on, each with its own verify statement, and the feedback goes into `TODO.md` and from there into work items. Couch test 1 needed M5's save and load, so M5 came before M6.
 
 ## Milestones
 
 Each milestone has a single verify statement. Work items in `doc/work/` reference their milestone. Milestones are in dependency order, and the phase numbers refer to the gameplay phases in DESIGN.md.
+
+| Milestone | Work items | Status |
+| --- | --- | --- |
+| M0 Foundation | 0001 to 0004 | Done: nix build in CI (0004 verified), the game opens the Steam Controller from the Steam library in Game Mode (`doc/log/2026-09-27.md`) |
+| M1 World | 0005 to 0008 | Implemented |
+| M2 Hand crafting loop | 0009 to 0013 | Implemented |
+| M3 Burner automation | 0014 to 0018 | Implemented, except selection assist ([doc/input.md](doc/input.md), Not built yet) |
+| M4 Power and research | 0019 to 0022 | Implemented |
+| M5 Pre-alpha usability | 0023 to 0025, 0034 | Implemented. Couch test 1 ran over two sessions and found 0043 to 0046, 0048 |
+| M6 Intermediates and byproducts | 0026 to 0029 | Implemented |
+| M7 Fluids and plastics | 0030 to 0033 | Implemented |
+| M8 Scale | 0035 to 0039 | Implemented |
+| M9 Rocket program | 0040 to 0042 | Implemented |
+| M10 Alpha polish and release | 0043 to 0052, then the passes | Couch findings implemented. The passes and the release are open |
+| M11 Presentation campaign | 0053 to 0082, then 0083 to 0140 | Implemented |
 
 ### M0 Foundation
 
@@ -76,17 +97,21 @@ Verify: couch test 4. A base with several veins, a deep vein tapped from the sur
 
 Launch pad, rocket parts, contracts and trade with Mission Control, infinite research, chapter 8.
 
-Verify: couch test 5. The first rocket shipment leaves and the returns arrive. Implemented with 0040 to 0042 (2026-09-27): the alpha's content is complete in code, M10 is the whole job.
+Verify: couch test 5. The first rocket shipment leaves and the returns arrive.
 
 ### M10 Alpha polish and release
 
-Art consistency pass, performance pass, 10 foot UI pass, full playthrough on the couch. Tag `alpha-1` and publish a GitHub release. Couch test findings become work items here: 0043 developer mode, 0044 quick fixes (overlay, sprint, cheat speed, world deletion), 0045 landing site (starter outcrops, flat ground), 0046 UI bounds pass, 0047 saves that survive builds, 0048 drills by footprint, 0049 pinned landing pad, 0050 factory benchmark, 0051 tool tiers. Order within M10 (user, 2026-09-27): play experience first (sound, textures, models, animations), then lore and depth; balance and design decisions belong to late beta, just before the first release, and are not taken arbitrarily before the first alpha.
+Art consistency pass, performance pass, 10 foot UI pass, full playthrough on the couch. Tag `alpha-1` and publish a GitHub release. Couch test findings become work items here.
+
+Order within M10 (user, 2026-09-27): play experience first (sound, textures, models, animations), then lore and depth; balance and design decisions belong to late beta, just before the first release, and are not taken arbitrarily before the first alpha.
 
 Verify: the alpha verify statement above.
 
 ### M11 Presentation campaign
 
-The user's direction (2026-09-27): the alpha mechanics are in place, so the game gets fleshed out as a background campaign with continuous deliveries to the couch, one work item per subagent, each installed as it lands. Two enablers come first, because they change how the campaign is tested: 0053 the command socket (the assistant injects commands into the running world: advance a chapter, build a factory from a blueprint, spawn a vein, take a screenshot the assistant can look at) and 0054 hot reload of data (presentation data on file change, content tables on request through the save codec). Then, in this order: 0055 model pipeline, 0056 machine models and motion, 0077 fonts, 0078 quick transfer, 0079 the inserter's hand slot, 0080 display settings and 0081 model ghosts (couch requests of 2026-09-27 that jumped the queue), 0062 loose items (moved up on 2026-09-27: belts off a ledge, spills, chest contents), 0057 terrain shaping, 0058 climate biomes, 0059 trees, 0060 textures and icons, 0061 block shapes, 0082 ground cover (split out of 0058 and 0061), 0064 sky (before the weather, which modulates the sky's fog and colours), 0063 weather, 0065 water, 0066 player presence, 0067 particles, 0068 sound, 0069 Mission Control presentation, 0070 lore and descriptions, 0071 UI skin and map, 0072 lighting, 0073 camera, 0074 accessibility, 0075 ambient life, 0076 Steam Deck verification. The Steam Deck is a supported target (user, 2026-09-27): every rendering item budgets for its APU at 1280 by 800 (effects behind settings, particle and shadow costs measured with the benchmark), the UI audit keeps 1280 by 800 in its matrix, and the Deck's built in controls go through Steam Input the way the couch does. The order puts the pipeline and the world first because everything after them lands into it; anything the couch shows as more urgent jumps the queue.
+The game fleshed out as a background campaign with continuous deliveries to the couch, one work item per subagent, each installed as it lands (user, 2026-09-27). The command socket (0053) and hot reload of data (0054) came first, since they change how the campaign is tested. Then came the model pipeline and the world, since everything after them lands into it; anything the couch shows as more urgent jumps the queue.
+
+The Steam Deck is a supported target (user, 2026-09-27): every rendering item budgets for its APU at 1280 by 800 (effects behind settings, particle and shadow costs measured with the benchmark), the UI audit keeps 1280 by 800 in its matrix, and the Deck's built in controls go through Steam Input the way the couch does.
 
 Verify: each item's own line, on the couch and on the Steam Deck, with screenshots read by the assistant.
 
