@@ -44,7 +44,7 @@ F3 steps Input, Render, World and off (0086); each draws over a full screen back
 - Right, below: the seed row (Reroll, a new seed from a hash of the tick and the old seed; then the seed, stepped by one with wrapping) and one slider per parameter with the range and step of `ore_texture_parameter_ranges`; they scroll where the column is short.
 - Focus: right from a list row enters the controls beside it, left from Reroll returns to the list, down runs through the sliders; on a slider or the seed left and right change the value; right from Reset, Save or Back goes to the slider in their row, up from Reset to the list.
 - Every change regenerates the tile on the CPU. While the screen is open the frame loop copies every texture's tile into the block atlas each frame (`update_atlas_block_tile`), so the world shows the change next frame and a data reload's rebuilt atlas takes the edits back.
-- Save writes every texture's parameters to `$XDG_STATE_HOME/mine-oh-belowed/texture_edits.sjson` ([content.md](content.md)), logs one `texture: {block = ...}` line per texture and toasts the path. Unsaved edits last until the game exits; a reload keeps the entries changed since the last save. `tools/moc query textures` answers the current parameters.
+- Save writes every texture's parameters to `$XDG_STATE_HOME/mine-oh-belowed/texture_edits.sjson` ([content.md](content.md)), a file read when the editor opens and on atlas builds, never watched, logs one `texture: {block = ...}` line per texture and toasts the path. Unsaved edits last until the game exits; a reload keeps the entries changed since the last save. `tools/moc query textures` answers the current parameters.
 
 ## Data files screen
 

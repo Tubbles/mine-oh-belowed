@@ -2,7 +2,7 @@ package game
 
 import "core:fmt"
 
-// The pure part of the technology screen (doc/fluids.md): the list is the
+// The pure part of the technology screen (doc/ui.md): the list is the
 // technologies sorted by name, optionally without the researched ones, and
 // jumps by letter like the recipe browser (recipe_position_for_letter).
 // ui_technologies.odin draws it.

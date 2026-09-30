@@ -1,78 +1,89 @@
-# Fluids and power
+# Fluids, power and research
 
-The M4 model: pipes with liquids and gases, steam power, electric networks, and the first electric machines. Rates are in [content.md](content.md).
+How liquids, gases and electricity move, and how assemblers and labs turn them into work. Everything runs per tick in integers: litres, joules and per mille. The values (rates, buffers, heads, powers) are in `data/machines.sjson` and `data/fluids.sjson`, whose headers explain each key. The phase and ratio rules are in [content.md](content.md).
 
-## Fluids
+- A fluid network is a connected set of pipes and machine ports holding one fluid. An electric network is a connected set of poles. Every consumer in it gets the same share of its demand.
+- Networks are rebuilt when a member is placed or removed and evaluated every tick in a fixed order, so the result never depends on timing.
 
-- A fluid is data in `data/fluids.sjson`: name key, phase (liquid or gas), colour. Water and steam in M4, the oil products in phase 6. Fluids are never items.
-- Pipes are 1 by 1 by 1 entities connecting in six directions to adjacent pipes and to the fluid ports of machines. A connected set of pipes and ports is a fluid network, rebuilt when a pipe or a machine with ports is placed or removed. A network carries one fluid at a time; a port that would mix fluids stays closed and the panel says why.
-- Every segment (a pipe block, a tank, a machine buffer) has a capacity in whole litres and a level. Per tick, each connection moves litres from the fuller segment to the emptier one in proportion to the level difference, capped by a flow limit per connection (1200 litres per second for pipes, 20 litres per tick). Integers only, deterministic order (connections sorted by coordinate).
-- Gravity applies to liquids, up to a pump's head (0139): every pump kind has a head in whole metres (one block is one metre): offshore pump 6, tar pit pump 6, pump 30. A network's head line is the highest `outlet height + head` of the running pumps whose output port is in it. A pump runs when it can push: its output port is open (not closed for mixing), it has power or needs none, and its input side holds fluid. The offshore and tar pit pumps stand at their source, so their input side always does; the electric pump's input buffer must hold at least a litre, or the pump moved fluid this tick. A pump pushing against a full output still runs, as a real pump holds its head against a closed pipe. A liquid moves into a higher segment only while that segment is at or below the head line; level and downhill moves are always fine. A network without a running pump outlet (a machine fed network such as a refinery output) never moves liquid upwards. A pump moves its rate from its input side to its output side whatever the heights, and its input and output ports sit in different networks, so pumps in series chain by themselves: the second pump's outlet plus its head is its network's line. Gases ignore height and fill any connected volume. The phase comes from the fluid, so the same pipe network code serves both.
-- Sources and sinks in M4: the offshore pump stands next to a water source block and pushes 1200 litres per second of water into its output port. Since 0140 it needs electricity (60 kW) and pushes nothing without it; the fuel generator (Power) bootstraps it for the first boiler. The boiler takes water and fuel and outputs steam at 60 litres per second. The steam engine takes up to 30 litres of steam per second. The storage tank holds 25,000 litres and connects on every side. The pump moves 1200 litres per second and lifts up to 30 metres above its outlet, and needs electricity (30 kW), so it arrives with the grid.
-- Panels show the fluid, the level and the flow in and out; a pipe or fluid machine port above its network's head line says "Above the pump's head" in place of the flow, and pump panels show the head. Rendering: pipes as thin boxes with connection stubs and a coloured band showing the level; machine ports as coloured squares on the footprint.
+## Fluid networks
 
-### As implemented in 0019
+`fluid_network.odin`. A segment is one pipe block or one port buffer of a machine. The litres live on the entities, so a rebuild keeps them.
 
-- Balancing compares fill fractions rather than litres, so a pipe can fill a tank past its own capacity; between equal capacities it is exactly half the difference. Amounts round up when moving away from the network's output ports and down otherwise, so a long run fills a tank to the brim without a litre bouncing between two segments. A network holding a running pump's output ignores height (replaced by the head line, 0139), since a pump moving only between its own buffers could lift water one block. Tanks count at their bottom layer for gravity. The offshore pump is two wide along its facing and valid with a water source in front of its intake at its height or one below, checked at placement. Pipes may stand on pipes. Placed pipes and fluid machines do not rotate, picking one up loses its fluid, and joining networks that hold different fluids loses the second fluid. Known defect handed to 0020: connections run in coordinate order, so fluid flowing towards lower coordinates crosses one connection per tick and throughput depends on direction.
+- Pipes connect on all six faces to pipes and to ports facing them. Pipes stand on solid blocks or on other pipes, so they climb in columns.
+- A network holds one fluid: the first that enters, kept until the network is empty. A port holding another fluid, only taking another, or refusing the fluid by its phase filter is closed and moves nothing. Each closing counts as a mixing refusal (`mixing_refusals`) and the panel says why. When two networks join, pipes holding the other fluid lose it.
+- Per tick the connections run outwards from the output ports, breadth first, ties in coordinate order. Along a connection leading away from the output ports the fuller segment pushes everything it can within the flow limit and the room, so a pump's rate crosses a whole run in one tick in either direction.
+- Every other connection evens the fill fractions, rounded down, so a pipe can fill a tank past its own capacity and a litre never bounces between two full segments.
+- The flow limit per connection is the pipe's `flow_litres_per_second` in whole litres per tick.
+- Gotcha: at a branch the first downstream neighbour in coordinate order is served first, so a tank on one branch can starve an engine on the other until the tank's fill fraction passes the junction's.
+- Picking up a machine loses its fluid. Placed pipes and fluid machines do not rotate.
 
-### As implemented in 0139
+### Height and pump head
 
-- `head_metres` is a machine key, required (1 to 1000, so a port height plus the head stays far inside a 32 bit integer) for the offshore pump, the tar pit pump and the pump and refused on any other kind. The head line is an integer computed per network every tick (`tick_head_line`), replacing the gravity flag of 0019: gases get no limit and a network without a running outlet gets none to climb. Whether a pump runs is read from its power only when the machine draws electricity, so the offshore pump runs always until 0140 powers it. The mixing check runs before the line, so a pump whose port closed this tick sets none. The electric pump also counts on the tick it moved fluid, because it may have drained its input to zero doing so before the line is computed; without that, a pump that empties its input every tick would lose its line on exactly the ticks it works hardest. The "Above the pump's head" note shows on pipes and on every port in a fluid machine's panel, not only tanks, since a boiler input set too high is dry for the same reason (crafting machine, drill and launch pad panels do not show it); the note needs a running pump in the network, so a network whose only pump is off shows the flow as before. Placement is not checked against the head.
+Rule: a liquid rises only as high as a running pump's head allows (0139). Gases ignore height.
+
+- A segment's height is its cell's y. A storage tank's port on every face counts at the tank's bottom.
+- Every pump kind has `head_metres` (one block is one metre), required on those kinds and refused on others. A network's head line is the highest outlet height plus head of the running pumps whose output port is in it (`tick_head_line`).
+- A liquid moves into a higher segment only while that segment is at or below the head line. Level and downhill moves are always allowed. A network without a running pump outlet, such as a refinery's output, never lifts liquid.
+- A pump runs when its output port is open, it has power or needs none, and its input side holds fluid. The offshore and tar pit pumps stand at their source, so their input side always does. The electric pump needs a litre in its input buffer, or to have moved fluid this tick, since it may have drained its input to zero doing so.
+- A pump pushing against a full output still runs, as a real pump holds its head against a closed pipe.
+- A pump moves its rate from its input side to its output side whatever the heights, and its ports sit in different networks, so pumps in series chain: each outlet sets its own network's line.
+- Pipes and every port in a fluid machine's panel show "Above the pump's head" in place of the flow when they stand above the line of a network with a running pump. Crafting machine, drill and launch pad panels do not. Pump panels show the head. Placement is not checked against the head.
+
+### Fluid machines
+
+`fluid_machine.odin`. One pool, the machine's kind decides the tick. Machines run before the networks, so what they make flows on in the same tick.
+
+- Offshore pump: two blocks wide along its facing, valid with a water source in front of its intake end at its height or one below, checked at placement. It needs electricity: it pumps a full tick's litres once per power credit step, so over a second it yields its rate times its network's satisfaction exactly, and starts Unpowered.
+- Tar pit pump: placed like the offshore pump, with a block whose `fluid_source` is crude oil in front (the tar flats' pits, infinite). Its rate is litres per minute, whole litres as the minute adds up, one tick of pumping per power credit step.
+- Electric pump: its rate times the satisfaction per tick, truncated, from its input port to its output port.
+- Boiler: turns water into as much steam, burning fuel only on the ticks it produces.
+- Steam engine: input ports only. A litre of steam is `electric_output_kilowatts` times 1000 over `fluid_litres_per_second` joules (30 kJ), drawn a whole litre at a time only for the energy delivered.
+- Storage tank: one port on every face. Its buffer is the tank. It holds gases too.
+- Flare stack: a relief valve that burns gas only while its port is at least `FLARE_RELIEF_PERCENT` full. The network evens fill fractions, so generators and chemical plants on the same gas are served first. Burned gas counts as voided.
+- Rendering (`render_fluids.odin`): a pipe shows a stub per connection and a band at its level in the fluid's colour. Ports are coloured squares on the footprint.
+
+### Oil and chemistry
+
+The recipes are in `data/recipes.sjson`, the port layouts in the header of `data/machines.sjson`.
+
+- A crafting machine may have fluid inputs, fluid outputs and no item slots at all. A fixed choice machine picks its recipe by the loaded items, then by the fluids in its input ports.
+- A craft starts only when every fluid input is fully present and every output would fit, and takes its fluids at the start like items, so it never stalls part way.
+- The refinery's three outputs leave by fixed faces, each filtered to its fluid. Under strict byproducts a refinery whose gas has nowhere to go stops: the flare stack and the combustion generator are the sinks.
+- The chemical plant's second input and its output port have no filter, so the fluids present and the loaded item pick the recipe. Wood gas alone picks the schematic's wood gas plastic.
 
 ## Power
 
-- Poles are entities with a supply volume (the small pole covers a 5 by 5 footprint 4 blocks high) and a wire reach (7 blocks). Poles within reach connect automatically. A connected set of poles is an electric network, rebuilt on topology change. An electric machine belongs to the network of any pole whose supply volume covers one of its cells, and to no network otherwise (state "no power").
-- Per tick, generators offer energy and consumers demand it. A steam engine offers up to 900 kW scaled by the steam it can draw; consumers demand their machine power while working. Satisfaction is supply over demand, capped at one, and every consumer receives that fraction: a proportional brownout that slows every machine equally, as in Factorio. Generators burn fuel or steam only for the energy delivered. Since 0140 they serve in dispatch order: the lowest order gives up to its offers first (hydro turbine 0, steam engine 1, combustion generator 2, fuel generator 3) and each next order only what is left, so the fuel generator burns nothing while the engines cover the load. Integers in joules per tick.
-- The power switch is a pole like entity that joins two networks while on and splits them while off.
-- Consumers in M4: electric mining drill 90 kW, inserter and filter inserter 13 kW, assembler 75 kW, lab 60 kW, lamp 5 kW, pump 30 kW, offshore pump 60 kW (0140). Generators: the fuel generator and the steam engine.
-- The fuel generator (0140) is the first electricity: 2 by 2 by 2, one fuel slot, up to 75 kW from any fuel item (coal, logs, planks) at 25 percent efficiency, hand crafted on the start channel. Deliberately poor: it covers the offshore pump and little else, and its fuel goes four times as fast as a boiler's for the same energy, so the steam plant is the goal and the generator only its starter.
-- The power overview screen lists each network with supply, demand, satisfaction, its generators and its largest consumers. The HUD shows a brownout warning while any network is below full satisfaction, and machines outside any network say so in their panel.
+`power_network.odin`, `power_machine.odin`.
 
-### As implemented in 0020
+- Poles and power switches are the nodes. Two nodes are wired when their footprint centres (across, at the bottom) are at most the shorter of their two `wire_reach` apart. A switch that is off takes part in no network.
+- A pole's `supply_volume` is centred across its footprint and starts at its bottom. An electric machine or generator belongs to the network of the first pole whose volume covers one of its cells, and to none otherwise. Its panel then says so.
+- Networks and memberships are rebuilt when a pole, a switch or an electric machine is placed or removed, or a switch turns. Interact turns a switch. Sneak with Interact opens its panel.
 
-- Fluid flow now runs outwards from the network's output ports, and a connection leading away from them pushes everything the fuller side holds within the flow cap; other connections balance by fill fraction. Throughput no longer depends on direction (19.7 L per tick either way), at the cost of a known fairness gap: at a branch the first downstream neighbour by coordinate is served first, so a tank on one branch can starve an engine on the other until the tank's fill fraction passes the junction's. Recorded as a follow up.
-- Brownout slowdown is a per machine power credit in per mille, one tick of work per thousand, so existing tick counts stay exact. Generators share only the energy consumers received, so produced always equals consumed; steam converts at 30 kJ per litre, whole litres at a time. The supply volume starts at the pole's bottom and reaches four blocks up. Wire reach is straight line distance between origins using the shorter of the two reaches. Lamps are entity light sources read by the light code next to block emission, cleared through the removal queue when dark. The power switch is a lever: Interact turns it, Sneak plus Interact opens its panel. The electric drill draws 37.5 vein units per minute (30 ore on an 80 percent vein).
+### Balance
+
+Rule: satisfaction is supply over demand, capped at one, and every consumer receives that share: a proportional brownout that slows every machine alike, as in Factorio.
+
+- Per tick in joules: consumers ask for their power while they have work (an inserter only while its arm moves, an offshore pump while its port has room), generators offer what they can give.
+- Brownout slowdown is power credit: every tick adds the satisfaction in per mille, and a machine takes one tick of work per `POWER_FULL` collected, so tick counts stay exact.
+- Generators serve in `dispatch_order`: the lowest order gives up to its offers first and each next order only what is left. Within an order the energy splits in proportion to the offers, the leftover joules in pool order. Hydro turbine 0, steam engine 1, combustion generator 2, fuel generator 3.
+- Generators share only what the consumers received and burn fuel, steam or gas only for their share, so produced equals consumed.
+- A lamp shines while its network gives more than `LAMP_ON_ABOVE` per mille. Lamps are entity light sources beside block light.
+- The power overview lists each network with supply, demand, satisfaction, its generators and largest consumers. The HUD warns while any network is below full.
+
+### Generators
+
+- Combustion generator: burns the gas in its one `burnable_gas` port first, whole litres at the gas's `fuel_kilojoules_per_litre`, then fuel items at `fuel_efficiency_percent`. Steam never enters the port.
+- Fuel generator (0140): a combustion generator without ports at 25 percent, hand crafted from the start. It carries the offshore pump for the first boiler and little else: its fuel goes four times as fast as a boiler's for the same energy, so the steam plant is the goal.
+- Every combustion generator's panel shows its efficiency and the burn time left at full output.
+- A steam plant whose engines power its own offshore pump restarts only through a generator with fuel: the benchmark's power module and the developer kits of chapters 4 and 5 carry one. The benchmark counts a generator in the Idle state as a reserve ([architecture.md](architecture.md), Performance).
+- Hydro turbine: no fuel and no ports. `hydro_kilowatts_per_water_level` times the flowing water levels in its eight cells, up to its output, read from the blocks every tick. It needs support below and one cell of flowing water at `hydro_minimum_water_level` or more. Source water counts nothing, and every flowing block counts as moving since the water has no velocity. Water keeps flowing through it.
 
 ## Assembler, lab and research
 
-- The assembler makes recipes with `assembler` in `made_in` at speed 0.5. Its recipe is chosen in the machine panel through the recipe browser filtered to assembler recipes and available ones. It has an input slot per ingredient and an output slot per output, and the slot rules feed the transfer interface so inserters put each ingredient in the right slot.
-- The lab consumes science packs for the technology queued in the technology screen, one technology at a time per lab, at speed 1, and marks it researched on completion, which opens research channel recipes.
-- The technology screen lists the technologies with status (researched, available, locked), cost in packs and seconds, what each unlocks, and lets the player queue one. It is the same graph browsing style as the recipe browser: no search box, letter wheel, focus and pointer.
-
-### As implemented in 0021
-
-- Technologies name their pack items and their prerequisites in the data; a prerequisite must be listed earlier in the file, which rules out cycles. The chain proposed by the implementation: logistics, electric mining and steel processing need automation; optics needs electric mining; fluid handling and prospecting need steel processing; logistics science needs logistics and fast belts need logistics science. Technologies that unlock nothing yet are marked placeholder and the loader rejects any other empty one.
-- The research queue lives on the world so labs and power demand reach it. Switching research restarts the new technology from zero (keeping progress per technology is a follow up), several labs share progress and never overshoot. The technology list is sorted by name with a hide researched toggle so the letter jump stays useful. Machine panels stay open under the recipe browser and the technology screen, which is how an assembler chooses its recipe and a lab reaches the tree. Assembler slots are one per ingredient with per ingredient filters; there is no insertion limit yet, and research completion has no toast yet.
-
-### As implemented in 0022
-
-- Research progress is kept per technology across switches (a unit in progress is still dropped), research completion posts a toast and a message log line, automated insertion into an assembler stops at twice the ingredient count and into a lab at two pack sets while the player's hand is unlimited, and placeholder technologies show as locked and cannot be queued.
-
-### As implemented in 0030
-
-- Crude oil, petroleum gas, light oil and heavy oil exist as fluids. Tar flats place tar pit blocks (a fluid source like water) in low spots, the tar pit pump draws crude oil from them, the refinery splits 100 litres of crude into 45 of gas, 30 of light and 25 of heavy oil through three fluid filtered output ports on fixed faces (gas on the left, light oil ahead, heavy oil on the right of the crude inlet), the cracking unit turns heavy oil plus water into light oil and light oil plus water into gas, and the flare stack burns any gas at 60 litres per second for 10 kW, counting it voided. Crafting machines may have fluid outputs and no item slots at all; fixed recipe choice looks at the fluids present first. Technologies gated by a main quest carry a `quest_gate` flag that labs refuse, so oil processing stays a quest gate while it unlocks real recipes. Under strict byproducts a refinery whose gas has nowhere to go stops, which is the byproduct rule at work: the flare and the combustion generator are the sinks. Two follow ups handed to 0031: a craft should wait for its full fluid input before starting rather than start on one litre and stall, and the tar pit pump's 200 litres per minute means six pumps per refinery, which is too many.
-
-### As implemented in 0031
-
-- A craft with fluid inputs starts only when every fluid input is fully present and takes them at the start like items; the tar pit pump gives 600 litres per minute so two feed a refinery. The chemical plant (gas port by phase, second input unfiltered, fixed choice by fluids) makes plastic from petroleum gas and coal, sulfur from gas and water, bitumen from heavy oil, and syngas plastic from wood gas and charcoal; the wood gasifier turns logs into wood gas plus charcoal as a byproduct; asphalt is an assembler recipe from bitumen and gravel. Science pack 2 is plastic based and labs have two pack slots. Fast belts stay a placeholder because a second belt speed is not a data only change. Sulfur has no consumer yet.
-
-### As implemented in 0032
-
-- The combustion generator offers up to 600 kW capped by the gas in its port and the fuel in its slot, draws gas first in whole litres and then burns fuel items, and subtracts exactly the energy delivered so produced equals consumed. Petroleum gas is worth 200 kJ per litre and wood gas 100. The power overview and the statistics Power tab list generators by type. Science pack 2 now requires plastics research. Handed to 0033: the flare stack has no lower priority than a generator on the same gas network, and a gas without fuel value (steam) is accepted by the generator's port and sits there.
-
-### As implemented in 0033
-
-- The flare stack is a relief valve: it burns only while its port is at least 90 percent full, so generators and chemical plants on the same network are served first in practice (the network evens fill fractions, so the flare's port only fills once the rest is nearly full); it keeps up to 179 litres it never burns. The combustion generator's port carries a `burnable_gas` filter, so steam closes the port and stays in the pipe. A port closing for any reason counts as a mixing refusal.
-
-### As implemented in 0140
-
-- The fuel generator is a `combustion_generator` without fluid ports: the kind now takes one burnable gas input port or none, and the gas path simply finds nothing to burn. `fuel_efficiency_percent` is a machine key, required (1 to 100) on combustion generators and refused elsewhere: the combustion generator has 100 and is unchanged, the fuel generator 25. A fuel item is lit at `fuel joules * percent / 100` in integers, so a coal gives the fuel generator 1 MJ, the offer is capped by that scaled value, and produced still equals consumed. Every combustion generator's panel shows its efficiency and the burn time left at full output (gas, fuel items and what is already drawn). The offshore pump draws 60 kW while its port has room, scales its 20 litres a tick by its network's satisfaction like the pump, starts Unpowered, and with 0139's head line pressurises its network only while powered. The offshore pump pumps a full tick's 20 litres once per power credit step, like the tar pit pump, so over a second it yields its rate times the satisfaction exactly (at 990 per mille 99 ticks in 100, at 40 per mille 4) and shows Producing between steps; the electric pump keeps its per tick truncation. `dispatch_order` (0 to 9) is required on every generator kind and refused elsewhere; `share_generator_energy` walks the orders from the lowest, each taking up to the sum of its offers of what the consumers received and not yet assigned, split within the order in proportion to the offers with the leftover joules in participant order as before. So the fuel generator gives only what the engines cannot, burns nothing beside running engines, and carries the pump when they stall; the factory benchmark counts a generator in the Idle state as a reserve, not idle. A steam plant whose engines power its own offshore pump restarts only through a generator with fuel, so the test plant, the benchmark's power module (a fuel generator with 20 coal) and the dev kits of chapters 4 and 5 carry one; the benchmark's oil module gained a pole over its second offshore pump. The steam quest of chapter 4 asks for the fuel generator first.
-
-### As implemented in 0037
-
-- The hydro turbine is a fuel free generator giving 10 kW per level of flowing water in its eight cells, capped at 400 kW, read from the blocks every tick; water flows on through it; it needs solid ground and at least one cell of flowing water at level 3 or more (source water does not count, and since the water model has no velocity every flowing block counts as moving). Big pole and substation come from the pole code with reach and volume from data; wide footprints centre their supply volume, and since 0038 wire reach measures between footprint centres. No placeholder technology remains.
-
-### As implemented in 0040
-
-- Rocket fuel is a chemical plant fluid (light oil and sulfur, or wood gas and coal on the schematic channel; wood gas alone already selects the wood gas plastic recipe), so the chemical plant's output port lost its mining fluid filter. The launch pad has a 400 litre rocket fuel port and takes each of ten assembly stages' share of parts and fuel when the stage starts, pausing without power when a share is missing.
-
+- A crafting machine with a chosen recipe (the assembler) picks it in its panel through the recipe browser, filtered to its category. It has one input slot per ingredient and one output slot per product. Machine panels stay open under the recipe browser and the technology screen.
+- Inserters stop filling an input slot at `INSERTION_LIMIT_CRAFTS` crafts or pack sets ([logistics.md](logistics.md), Item transfer).
+- One technology is queued at a time (`lab.odin`). A lab with power and one of each of its packs takes a pack set, works the time per unit at its speed and adds a unit to the shared progress. Labs start a unit only while the units done plus those in progress are short of the cost, so they never overshoot.
+- Progress is kept per technology across switches. A unit in progress for the old queue is dropped with its packs. A lab has one slot per pack item any technology consumes.
+- A finished technology opens its research channel recipes, posts a toast and a message log line. A finished infinite level empties the queue like any other.
+- Labs refuse `placeholder` and `quest_gate` technologies. The screen shows them locked. The screen itself: [ui.md](ui.md), Technology screen.
+- The launch pad has a rocket fuel port and takes each of its ten assembly stages' share of parts and fuel when the stage starts, pausing where a share is missing (`launch_pad.odin`).

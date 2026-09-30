@@ -87,7 +87,7 @@ Rule: generation is a pure function of the world seed and the chunk coordinate, 
 
 ## Data driven content
 
-- `data/*.sjson` holds blocks (`name_key`; `discoverable` for an ore that reads "Unknown ore" until its drop was obtained), items, recipes, machines, fluids, technologies, vein types and ore tables, biomes, tree species, quest chapters (`data/quests/`), contracts, developer kits and the touch overlay's layout (`touch_overlay.sjson`, loaded with the tables though only the input layer reads it). Values: [content.md](content.md).
+- `data/*.sjson` holds blocks (`name_key`; `discoverable` for an ore that reads "Unknown ore" until its drop was obtained), items, recipes, machines, fluids, technologies, vein types and ore tables, biomes, tree species, quest chapters (`data/quests/`), contracts, developer kits and the touch overlay's layout (`touch_overlay.sjson`, loaded with the tables though only the input layer reads it). The values live in `data/*.sjson`, the rules behind them in [content.md](content.md).
 - `load_game_data` parses them with `core:encoding/json` (`Specification.SJSON`) into prototype tables in an arena the frame state owns, one per load. String ids resolve to dense indices once.
 
 ### Hot reload

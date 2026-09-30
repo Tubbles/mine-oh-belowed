@@ -1,6 +1,7 @@
-// Surface veins (work item 0006), numbers from doc/content.md "Veins
-// (phases 1 to 4)". Veins are placed per region of 8 by 8 chunk columns
-// (256 by 256 blocks). Every footprint lies wholly inside its region.
+// Surface veins (work item 0006); the rules behind these numbers are in
+// doc/content.md "Veins". Veins are placed per region of 8 by 8 chunk
+// columns (256 by 256 blocks). Every footprint lies wholly inside its
+// region.
 //
 // size_classes: units are the vein's total output before the richness
 // factor, split over the vein type's outputs by percent. Each region holds

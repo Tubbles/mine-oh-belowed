@@ -65,7 +65,7 @@
 // picked by the vein type's output mix, and drop it into the cell in
 // front of their arrow. items_per_minute is the ore rate on a vein whose
 // ore share is rate_reference_ore_percent (the iron vein of
-// doc/content.md, 80 percent hematite), so the cycle is
+// veins.sjson, 80 percent hematite), so the cycle is
 // 60 * tick rate * rate_reference_ore_percent / (100 * items_per_minute)
 // ticks (192 at 15 per minute and 80 percent), and the spoil comes on top.
 // The footprint must be square, so turning a placed drill moves no cell.

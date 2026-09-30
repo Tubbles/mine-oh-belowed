@@ -1,5 +1,6 @@
-// Chapter 1, Arrival (doc/quests.md, one quest per beat). Chapters load
-// in file name order and play in sequence, one active quest at a time.
+// Chapter 1, Arrival (doc/quests.md, Chapters), one quest per beat.
+// Chapters load in file name order and play in sequence, one active quest
+// at a time.
 //
 // A quest: id, title_key, text_key (the objective text), objectives,
 // message_key (Mission Control when the quest becomes active) and
@@ -22,8 +23,8 @@
 //                              makes the player wait is not fun (user, 2026-09-27)
 //   research  technology      marked researched; an infinite technology
 //                              counts once its first level is done
-//   deliver   item, count      put into the capsule on the landing pad; the
-//                              capsule keeps them when the quest completes
+//   deliver   item, count      put into the capsule on the landing pad,
+//                              taken out when the quest completes
 //   discover  recipe           the recipe is available
 //   walk      count            blocks walked on foot
 //   counter   counter, label_key, count
@@ -62,8 +63,11 @@
 // bore_drill_units (units bore drills put out),
 // bore_drill_no_vein_attempts (times Place was refused only because no
 // deep vein lies below a bore drill), turbine_kilojoules (energy hydro
-// turbines gave their networks) and turbine_still_water_ticks (times a
-// hydro turbine reached ten seconds in a row with no flowing water).
+// turbines gave their networks), turbine_still_water_ticks (times a
+// hydro turbine reached ten seconds in a row with no flowing water),
+// contracts_late (contracts fulfilled after their deadline),
+// credit_earned (venture credit from free trade) and surveys_bought (every
+// orbital survey run, contract rewards included).
 // A hint with on_activation = true and no counter or threshold fires as
 // soon as its quest becomes active.
 //

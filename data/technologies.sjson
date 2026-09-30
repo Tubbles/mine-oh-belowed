@@ -1,7 +1,8 @@
-// Technologies (work items 0012 and 0021) from doc/content.md, science
-// pack 1 tier. Labs research them one at a time (lab.odin); the research
-// recipes stay locked until then unless every recipe is unlocked
-// (--unlock-all or the all_recipes_unlocked setting in game.sjson).
+// Technologies (work items 0012 and 0021); the gates and phase budgets
+// are in doc/content.md. Labs research them one at a time (lab.odin);
+// the research recipes stay locked until then unless every recipe is
+// unlocked (--unlock-all or the all_recipes_unlocked setting in
+// game.sjson).
 // name_key is a key into data/strings/en.sjson.
 // description_key (optional, work item 0070) is the key of the text the
 // technology screen shows under the cost: describe_technology_<id> by

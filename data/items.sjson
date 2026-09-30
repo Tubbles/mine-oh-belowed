@@ -1,6 +1,7 @@
-// Item prototypes (work item 0010): every item of doc/content.md phases 1
-// to 4 plus the blocks that drop themselves, in one table. Loaded and
-// resolved to a dense Item_Id at startup, like the blocks.
+// Item prototypes (work item 0010): every item and the blocks that drop
+// themselves, in one table; the stack and price classes and the phase
+// budgets behind them are in doc/content.md. Loaded and resolved to a
+// dense Item_Id at startup, like the blocks.
 // name_key is a key into data/strings/en.sjson.
 // description_key (optional, work item 0070) is the key of one to three
 // sentences the recipe browser shows under a recipe's facts for its first
@@ -17,9 +18,10 @@
 // Fluids (water, steam) are not items: fluids do not stack.
 // Ore grades (work item 0026): every ore except coal has a low grade twin
 // (id ending in _low_grade) that veins yield more of as they deplete. Low
-// grade ore does not smelt: the crusher turns it into crushed ore and the
-// washer crushed ore into ore. Coal stays single grade, since it is
-// burned rather than refined.
+// grade ore does not smelt, except through the low grade iron plate
+// schematic: the crusher turns it into crushed ore and the washer crushed
+// ore into ore. Coal stays single grade, since it is burned rather than
+// refined.
 // Byproducts (work item 0027): slag from smelting stacks to 100, gravel
 // and mud as before; each has a use (gravel, concrete, clay, brick).
 // Slag also places as a slag heap block (work item 0028), the early sink

@@ -16,9 +16,9 @@ MAXIMUM_QUEST_OBJECTIVES :: 8
 MAXIMUM_QUEST_HINTS :: 8
 NO_QUEST :: -1
 
-// walk and counter are not in doc/quests.md's table: chapter 1's "get
-// your bearings" needs walk, chapter 3's coal loop needs counter (the
-// growth of a hint counter since the quest became active). produce_fluid
+// doc/quests.md's table lists every type. Chapter 1's "get your
+// bearings" needs walk, chapter 3's coal loop needs counter (the growth
+// of a hint counter since the quest became active). produce_fluid
 // (chapter 6) counts litres of a fluid produced since activation. ship
 // (chapter 8) counts items rockets carried away since the game began, of
 // one item or, without an item, of every item.

@@ -71,7 +71,7 @@ Rule: a tile never repeats identically from block to block (0088). `texture_vari
 
 ## Ambient life
 
-`ambient_life.odin` (pure) and `render_life.odin` (drawing), 0075: a function of the world seed, the tick, the render time and the camera. Depth tested without depth writes. Biome densities are in [content.md](content.md).
+`ambient_life.odin` (pure) and `render_life.odin` (drawing), 0075: a function of the world seed, the tick, the render time and the camera. Depth tested without depth writes. Biome densities are each biome's `bird_density` in `data/biomes.sjson`.
 
 - Birds: a world aligned grid of flock cells holds a flock where a hash lies below the `bird_density` of the biome at the loop's centre. A flock flies a rounded rectangle above the surface (`sample_column`) on tick time (`loop_seconds`), so it is at the same place at the same tick on every run. Every period and phase comes from a hash of the flock and the bird.
 - Birds draw only by day and not in heavy rain (`life_presence`).

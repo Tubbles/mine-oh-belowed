@@ -203,12 +203,12 @@ Crafting queue (0138):
 
 ### Technology screen
 
-The browser's shape: a sorted list with the letter wheel, a detail panel with status, cost, description (dim), prerequisites and unlocks; Confirm queues research. An infinite technology shows "Level n", the next level's cost and the effect per level.
+The browser's shape: a sorted list with the letter wheel and a "Hide researched" toggle, a detail panel with status, cost, description (dim), prerequisites and unlocks; Confirm queues research. An infinite technology shows "Level n", the next level's cost and the effect per level.
 
 ### Other screens
 
 - **Machine panel**: the machine's description dim under its name, wrapped, which makes the machine side scroll sooner.
-- **Statistics** (0028): Production (a 1, 10 or 60 minute window, items by produced per minute with consumed beside, a detail row with the machines making and using the item and the voided total), Power (the power overview), Shipments (launches newest first with cargo).
+- **Statistics** (0028): Production (a 1, 10 or 60 minute window, items by produced per minute with consumed beside, a detail row with the machines making and using the item and the voided total), Power (the power overview, generators and consumers grouped by machine type), Shipments (launches newest first with cargo).
 - **Bottleneck overlay**: a marker over every machine, green working, yellow output full, red starved of input, fuel or power, grey idle (colour blind: blue, orange, white, black), near constant screen size beyond 15 blocks (`marker_size`).
 - **Map** (0038, View or M): the explored area as one 256 by 256 image at 1 to 16 blocks per pixel, the surface block tinted half way to its biome's `map_color` (0058), with the player, machines and the prospecting layers (vein footprints, magnetometer readings, core samples, seismic circles). The legend lists the palette's marker colours, then the image's biomes, the player's in the accent marked "you are here", in a second column when short of height.
 - On the map, biomes are sampled only when the frame moves or zooms, and a pan keeps the pixels it had. Bumpers or right stick zoom, left stick or drag pans.

@@ -1,5 +1,6 @@
-// Recipes (work item 0012): every recipe of doc/content.md phases 1 to 4,
-// loaded after items.sjson and resolved to a dense recipe index.
+// Recipes (work item 0012), costed to the phase budgets in
+// doc/content.md. Loaded after items.sjson and resolved to a dense
+// recipe index.
 // id is unique. name_key (optional) is a key into data/strings/en.sjson;
 // without it the recipe is named after its first output item.
 // inputs and outputs are lists of {item, count}. Byproducts are ordinary

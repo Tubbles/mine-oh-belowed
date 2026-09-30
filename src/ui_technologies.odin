@@ -3,7 +3,7 @@ package game
 import "core:fmt"
 import "core:slice"
 
-// The technology screen (doc/fluids.md, Assembler, lab and research): the
+// The technology screen (doc/ui.md, Technology screen): the
 // queued technology and its progress on the left with the filter toggle,
 // the technologies sorted by name in the middle with the letter wheel,
 // and the focused one's status, cost, description, prerequisites and
