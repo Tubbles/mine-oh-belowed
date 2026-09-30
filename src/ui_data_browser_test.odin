@@ -1,5 +1,7 @@
 package game
 
+import "core:encoding/json"
+import "core:os"
 import "core:testing"
 
 // Work item 0129: Back (B, and the touch row's Back) closes an open file
@@ -109,4 +111,127 @@ test_data_files_confirm_expands_a_directory_and_opens_a_file :: proc(t: ^testing
 // The id the tree gives a row inside the screen's panel.
 data_row_id :: proc(row: int) -> Ui_Id {
 	return ui_hash(ui_hash(0, "data_files", -1), "data_row", row)
+}
+
+// The id the value tree gives a row, and a button's, inside the panel.
+value_row_id :: proc(row: int) -> Ui_Id {
+	return ui_hash(ui_hash(0, "data_files", -1), "value_row", row)
+}
+
+data_files_button_id :: proc(key: string) -> Ui_Id {
+	return ui_hash(ui_hash(0, "data_files", -1), text(key), -1)
+}
+
+state_has_toast :: proc(state: Ui_State, key: string) -> bool {
+	for toast in state.toasts {
+		if toast.text == text(key) {
+			return true
+		}
+	}
+	return false
+}
+
+// Work item 0130: Confirm flips a boolean in the frame, but Save only
+// asks: the frame loop saves between frames (the save reloads what the
+// file feeds, the strings among them, which the frame's draw list may
+// point into). Every text of the Save frame reads as the draw reads it;
+// then serve_data_browser saves into the test's edits directory and the
+// next frame's texts read too.
+@(test)
+test_data_files_save_waits_for_the_frame_loop :: proc(t: ^testing.T) {
+	edits_directory, error := os.make_directory_temp("", "mine-oh-belowed-save-frame-test-*", context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	defer os.remove_all(edits_directory)
+	data_edits_reading.directory = edits_directory
+	defer reset_data_edits_reading()
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	browser := &audit.data_browser
+	browser.selected = find_data_tree_row(browser.rows, "game.sjson")
+	open_data_browser_file(browser, test_data_directory())
+	defer close_data_browser_file(browser)
+	state := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&state)
+	push_screen(&state.screens, .Data_Files)
+	flag := find_data_value_row(browser.value_rows, "all_recipes_unlocked")
+	testing.expect(t, flag >= 0)
+	screen_test_frame(audit, &state, {})
+	state.focus = value_row_id(flag)
+	screen_test_frame(audit, &state, {confirm = true})
+	testing.expect(t, json_values_equal(data_value_at_row(browser.value, browser.value_rows, flag), json.Boolean(true)))
+	testing.expect(t, browser.unsaved)
+	testing.expect_value(t, browser.value_selected, flag)
+	loaded_text := browser.loaded_text
+	state.focus = data_files_button_id("data_files_save")
+	screen_test_frame(audit, &state, {confirm = true})
+	testing.expect(t, browser.save_requested)
+	testing.expect(t, browser.open)
+	testing.expect(t, browser.unsaved)
+	testing.expect_value(t, browser.loaded_text, loaded_text)
+	testing.expect(t, draw_list_has_text(state.draw_list[:], text("data_files_unsaved")))
+	testing.expect(t, draw_list_text_checksum(state) > 0)
+
+	// The frame loop's turn, on a Frame_State holding the audit's browser.
+	frame := new(Frame_State)
+	defer free(frame)
+	defer destroy_ui_state(&frame.ui)
+	frame.data_directory = test_data_directory()
+	frame.data_browser = audit.data_browser
+	serve_data_browser(frame)
+	audit.data_browser = frame.data_browser
+	testing.expect(t, !browser.save_requested)
+	testing.expect(t, !browser.unsaved)
+	testing.expect(t, browser.open)
+	testing.expect(t, os.is_file(join_save_path(edits_directory, "game.sjson")))
+	screen_test_frame(audit, &state, {})
+	testing.expect(t, draw_list_text_checksum(state) > 0)
+	testing.expect(t, draw_list_has_text(state.draw_list[:], text("data_files_edited")))
+	testing.expect(t, !draw_list_has_text(state.draw_list[:], text("data_files_unsaved")))
+}
+
+// Confirm on a number opens the keyboard with its value; Done sets it,
+// the focus returns to the row; a value that does not parse keeps the old
+// one and toasts; Back with unsaved changes drops them and says so.
+@(test)
+test_data_files_keyboard_sets_a_value :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	browser := &audit.data_browser
+	browser.selected = find_data_tree_row(browser.rows, "game.sjson")
+	open_data_browser_file(browser, test_data_directory())
+	defer close_data_browser_file(browser)
+	state := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&state)
+	push_screen(&state.screens, .Data_Files)
+	tick_rate := find_data_value_row(browser.value_rows, "tick_rate")
+	testing.expect(t, tick_rate >= 0)
+	screen_test_frame(audit, &state, {})
+	state.focus = value_row_id(tick_rate)
+	screen_test_frame(audit, &state, {confirm = true})
+	testing.expect_value(t, state.keyboard.field, value_row_id(tick_rate))
+	testing.expect_value(t, browser.editing_row, tick_rate)
+	testing.expect_value(t, text_field_text(&browser.value_field), "60")
+	testing.expect_value(t, browser.value_field.characters, Text_Field_Characters.Number)
+	screen_test_frame(audit, &state, {})
+	testing.expect(t, draw_list_has_text(state.draw_list[:], "tick_rate"))
+	text_field_set(&browser.value_field, "30")
+	screen_test_frame(audit, &state, {back = true})
+	testing.expect_value(t, state.keyboard.field, Ui_Id(0))
+	testing.expect_value(t, browser.editing_row, -1)
+	testing.expect(t, json_values_equal(data_value_at_row(browser.value, browser.value_rows, tick_rate), json.Integer(30)))
+	testing.expect(t, browser.unsaved)
+	testing.expect_value(t, top_screen(state.screens), Screen.Data_Files)
+	testing.expect(t, !browser.close_requested, "Done ends the entry, not the file")
+	screen_test_frame(audit, &state, {})
+	testing.expect_value(t, state.focus, value_row_id(tick_rate))
+
+	screen_test_frame(audit, &state, {confirm = true})
+	text_field_set(&browser.value_field, "-")
+	screen_test_frame(audit, &state, {back = true})
+	testing.expect(t, state_has_toast(state, "data_files_bad_number"))
+	testing.expect(t, json_values_equal(data_value_at_row(browser.value, browser.value_rows, tick_rate), json.Integer(30)))
+
+	screen_test_frame(audit, &state, {back = true})
+	testing.expect(t, browser.close_requested)
+	testing.expect(t, state_has_toast(state, "data_files_changes_dropped"))
 }

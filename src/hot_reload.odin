@@ -54,7 +54,7 @@ reload_strings :: proc(state: ^Frame_State) -> string {
 	if problem != "" {
 		return problem
 	}
-	old_entries, error := replace_string_entries(&global_string_table, data)
+	old_entries, error := replace_string_entries(active_string_table(), data)
 	if error != nil {
 		return fmt.tprintf("cannot parse %s: %v", path, error)
 	}

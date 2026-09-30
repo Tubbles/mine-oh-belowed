@@ -681,6 +681,26 @@ audit_data_browser :: proc(audit: ^Ui_Audit) {
 	expand_first_data_values(browser)
 	audit_case(audit, {name = "data files, a chapter open", screens = screens, walk_focus = true})
 	audit_case(audit, {name = "data files, a chapter open, touch row", screens = screens, hud = true, touch = true})
+	// Work item 0130: both tags in the heading, Duplicate and Remove live
+	// on a selected element, and a string under either keyboard.
+	element := first_data_value_element(browser^)
+	assert(element >= 0, "no array element in quests/chapter_01.sjson")
+	browser.value_selected, browser.unsaved, browser.shows_overlay = element, true, true
+	audit_case(audit, {name = "data files, a chapter edited", screens = screens, walk_focus = true})
+	// A failed start load turned the data edits off: the notice over the
+	// rows (the audit's own thread, so no other test sees it).
+	data_edits_reading.off = true
+	data_edits_reading.off_problem = "invalid /storage/emulated/0/Android/data/io.github.tubbles.mineohbelowed/files/state/mine-oh-belowed/data_edits/recipes.sjson: recipe \"plank\" has seconds 0"
+	audit_case(audit, {name = "data files, data edits off", screens = screens, walk_focus = true})
+	audit_case(audit, {name = "data files, data edits off, touch row", screens = screens, hud = true, touch = true})
+	data_edits_reading = {}
+	string_row := longest_editable_data_string(browser^)
+	assert(string_row >= 0, "no editable string in quests/chapter_01.sjson")
+	field_text, characters, _ := data_value_field_text(data_value_at_row(browser.value, browser.value_rows, string_row))
+	browser.editing_row, browser.value_field = string_row, make_text_field(field_text, TEXT_FIELD_CAPACITY, characters)
+	audit_case(audit, {name = "data files, a value under the keyboard", screens = screens, keyboard = true, walk_focus = true})
+	audit_case(audit, {name = "data files, a value under the system keyboard", screens = screens, keyboard = true, system_keyboard = true})
+	browser.editing_row, browser.value_selected, browser.unsaved, browser.shows_overlay = -1, -1, false, false
 	set_data_browser_selection(browser, -1, false)
 	browser.selected = find_data_tree_row(browser.rows, "shaders/chunk.fs")
 	open_data_browser_file(browser, test_data_directory())
@@ -696,6 +716,32 @@ set_data_browser_selection :: proc(browser: ^Data_Browser, row: int, edited: boo
 		browser.rows[row].edited = edited
 	}
 	browser.selected = row
+}
+
+// The first array element among the value rows, -1 for none.
+first_data_value_element :: proc(browser: Data_Browser) -> int {
+	for _, index in browser.value_rows {
+		if data_value_row_is_element(browser.value_rows, index) {
+			return index
+		}
+	}
+	return -1
+}
+
+// The value row of the longest string the keyboard can edit, -1 for none.
+longest_editable_data_string :: proc(browser: Data_Browser) -> int {
+	longest, longest_length := -1, -1
+	for row, index in browser.value_rows {
+		if row.expandable {
+			continue
+		}
+		value := data_value_at_row(browser.value, browser.value_rows, index)
+		field_text, characters, editable := data_value_field_text(value)
+		if editable && characters == .Printable && len(field_text) > longest_length {
+			longest, longest_length = index, len(field_text)
+		}
+	}
+	return longest
 }
 
 // The first object or array and the first one inside it.

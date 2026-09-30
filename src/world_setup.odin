@@ -52,7 +52,7 @@ choice_index :: proc(choices: []int, value, fallback: int) -> int {
 make_world_setup :: proc(defaults: World_File_Settings, name: string, seed: u64) -> World_Setup {
 	return World_Setup {
 		name = make_text_field(name, WORLD_NAME_MAXIMUM_LENGTH),
-		seed = make_text_field(fmt.tprint(seed), SEED_MAXIMUM_LENGTH, digits_only = true),
+		seed = make_text_field(fmt.tprint(seed), SEED_MAXIMUM_LENGTH, characters = .Digits),
 		veins_infinite = defaults.veins_infinite,
 		vein_richness_choice = choice_index(setting_percent_choices[:], defaults.vein_richness_percent, DEFAULT_PERCENT_CHOICE),
 		research_cost_choice = choice_index(setting_percent_choices[:], defaults.research_cost_percent, DEFAULT_PERCENT_CHOICE),

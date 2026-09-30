@@ -66,7 +66,7 @@ texture_editor_back = "Back"
 texture_editor_saved = "Texture edits saved to"
 texture_editor_save_failed = "Texture edits not saved"
 
-// The data file browser (work item 0129)
+// The data file browser (work items 0129 and 0130)
 data_files_title = "Data files"
 data_files_none = "No data files found"
 data_files_edited = "edited"
@@ -78,6 +78,18 @@ data_files_parse_failed = "Cannot parse"
 data_files_empty_file = "The file is empty"
 data_files_discarded = "Edit discarded:"
 data_files_discard_failed = "Could not discard the edit of"
+data_files_save = "Save"
+data_files_duplicate = "Duplicate"
+data_files_remove = "Remove"
+data_files_unsaved = "unsaved"
+data_files_saved = "Saved to the data edits:"
+data_files_save_failed = "Could not save the edit of"
+data_files_changes_dropped = "Unsaved changes dropped"
+data_files_bad_number = "Not a number, the value is kept"
+data_files_not_editable = "This value cannot be edited here"
+data_files_edits_off = "Data edits are off after a failed load:"
+data_files_edits_off_hint = "Discard the file and restart"
+data_files_edits_off_toast = "Data edits are off: an edited file did not load"
 
 // Hot reload of the data files (work item 0054)
 reload_failed = "Could not reload"

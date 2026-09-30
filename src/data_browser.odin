@@ -2,9 +2,11 @@ package game
 
 import "core:encoding/json"
 import "core:fmt"
+import "core:math"
 import "core:mem/virtual"
 import "core:os"
 import "core:slice"
+import "core:strconv"
 import "core:strings"
 
 // The Data files screen's data (work item 0129, ui_data_browser.odin):
@@ -14,6 +16,12 @@ import "core:strings"
 // ones (visible_row_indices). The rows are pure data built here; the
 // frame loop reads the directory and the files (serve_data_browser in
 // loop.odin) when the screen asks.
+//
+// Editing (work item 0130): an edit changes the parsed json.Value, in the
+// file's arena, and builds the value rows again from it; each row knows
+// its parent row, which leads from the root to the value it shows. The
+// file is unsaved while the tree's SJSON text (sjson_text) differs from
+// the text of the tree as it was loaded or last saved.
 
 Data_File_Kind :: enum u8 {
 	// Never opened: png, wav, vox, ttf and anything else.
@@ -46,15 +54,20 @@ Data_Tree_Row :: struct {
 }
 
 Data_Value_Row :: struct {
-	depth:       int,
+	depth:         int,
 	// The object key, or the array element's index.
-	label:       string,
+	label:         string,
 	// A leaf's value as SJSON writes it, "" for an object or an array.
-	value:       string,
+	value:         string,
 	// An object or an array.
-	expandable:  bool,
-	array:       bool,
-	child_count: int,
+	expandable:    bool,
+	array:         bool,
+	child_count:   int,
+	// The row of the containing object or array, -1 for a member of the
+	// root.
+	parent:        int,
+	// The index in the containing array, -1 for an object member.
+	element_index: int,
 }
 
 Data_Browser :: struct {
@@ -71,24 +84,38 @@ Data_Browser :: struct {
 	file_kind:         Data_File_Kind,
 	// The open file was read from the data edits overlay.
 	shows_overlay:     bool,
+	// An SJSON file's tree, in file_arena; the rows show it.
+	value:             json.Value,
 	value_rows:        []Data_Value_Row,
 	value_expanded:    []bool,
+	// The value row last activated, which Duplicate and Remove act on;
+	// -1 for none.
+	value_selected:    int,
+	// The value row the keyboard edits (value_field), -1 for none.
+	editing_row:       int,
+	value_field:       Text_Field,
+	// The tree's SJSON text as loaded or last saved, and whether the tree
+	// differs from it.
+	loaded_text:       string,
+	unsaved:           bool,
 	lines:             []string,
 	// Shown in place of the rows when the file cannot be read or parsed.
 	file_problem:      string,
 	// Set by the screens, served by the frame loop before the next frame's
 	// screens: close the open file, read the tree again, open the selected
-	// file, discard the selected file's overlay copy. The file closes
-	// between frames because the frame's draw list points into its arena
-	// until the frame is drawn.
+	// file, discard the selected file's overlay copy, save the open file
+	// to the overlay. The file closes between frames because the frame's
+	// draw list points into its arena until the frame is drawn; the save
+	// reloads what the file feeds, strings among them.
 	close_requested:   bool,
 	refresh_requested: bool,
 	open_requested:    bool,
 	discard_requested: bool,
+	save_requested:    bool,
 }
 
 make_data_browser :: proc() -> Data_Browser {
-	return Data_Browser{selected = -1}
+	return Data_Browser{selected = -1, value_selected = -1, editing_row = -1}
 }
 
 destroy_data_browser :: proc(browser: ^Data_Browser) {
@@ -218,28 +245,30 @@ data_value_rows :: proc(value: json.Value, allocator := context.allocator) -> []
 	rows := make([dynamic]Data_Value_Row, allocator)
 	#partial switch _ in value {
 	case json.Object, json.Array:
-		append_data_value_children(&rows, value, 0, allocator)
+		append_data_value_children(&rows, value, 0, -1, allocator)
 	case:
-		append(&rows, Data_Value_Row{value = data_leaf_text(value, allocator)})
+		append(&rows, Data_Value_Row{value = data_leaf_text(value, allocator), parent = -1, element_index = -1})
 	}
 	return rows[:]
 }
 
-append_data_value_children :: proc(rows: ^[dynamic]Data_Value_Row, value: json.Value, depth: int, allocator := context.allocator) {
+append_data_value_children :: proc(rows: ^[dynamic]Data_Value_Row, value: json.Value, depth, parent: int, allocator := context.allocator) {
 	#partial switch container in value {
 	case json.Object:
 		for key in sorted_object_keys(container) {
-			append_data_value_row(rows, strings.clone(key, allocator), container[key], depth, allocator)
+			row := Data_Value_Row{depth = depth, label = strings.clone(key, allocator), parent = parent, element_index = -1}
+			append_data_value_row(rows, row, container[key], allocator)
 		}
 	case json.Array:
 		for element, index in container {
-			append_data_value_row(rows, fmt.aprintf("%d", index, allocator = allocator), element, depth, allocator)
+			row := Data_Value_Row{depth = depth, label = fmt.aprintf("%d", index, allocator = allocator), parent = parent, element_index = index}
+			append_data_value_row(rows, row, element, allocator)
 		}
 	}
 }
 
-append_data_value_row :: proc(rows: ^[dynamic]Data_Value_Row, label: string, value: json.Value, depth: int, allocator := context.allocator) {
-	row := Data_Value_Row{depth = depth, label = label}
+append_data_value_row :: proc(rows: ^[dynamic]Data_Value_Row, row: Data_Value_Row, value: json.Value, allocator := context.allocator) {
+	row := row
 	#partial switch container in value {
 	case json.Object:
 		row.expandable, row.child_count = true, len(container)
@@ -248,25 +277,17 @@ append_data_value_row :: proc(rows: ^[dynamic]Data_Value_Row, label: string, val
 	case:
 		row.value = data_leaf_text(value, allocator)
 	}
+	index := len(rows^)
 	append(rows, row)
 	if row.expandable {
-		append_data_value_children(rows, value, depth + 1, allocator)
+		append_data_value_children(rows, value, row.depth + 1, index, allocator)
 	}
 }
 
-// A leaf as SJSON writes it: strings quoted.
+// A leaf as SJSON writes it (sjson_leaf_text): strings quoted, a float
+// with a point.
 data_leaf_text :: proc(value: json.Value, allocator := context.allocator) -> string {
-	#partial switch leaf in value {
-	case json.Integer:
-		return fmt.aprintf("%d", leaf, allocator = allocator)
-	case json.Float:
-		return fmt.aprintf("%v", leaf, allocator = allocator)
-	case json.Boolean:
-		return fmt.aprintf("%v", leaf, allocator = allocator)
-	case json.String:
-		return fmt.aprintf("%q", leaf, allocator = allocator)
-	}
-	return "null"
+	return sjson_leaf_text(value, allocator)
 }
 
 // "key = value" for a leaf, the key alone for an object or an array.
@@ -343,6 +364,32 @@ append_data_directory_files :: proc(entries: ^[dynamic]Data_File_Entry, director
 	}
 }
 
+// Writes the text to the relative path under the edits directory, making
+// the directories it needs. The problem, or "".
+write_data_edit :: proc(edits_directory, relative_path, file_text: string) -> string {
+	if edits_directory == "" {
+		return "no state directory"
+	}
+	path := join_save_path(edits_directory, relative_path)
+	directory, _ := os.split_path(path)
+	if error := make_directory_path(directory); error != nil {
+		return fmt.tprintf("%v: %s", error, directory)
+	}
+	// Beside it first, then renamed over it, so a crash or a full disk
+	// never leaves a cut off copy the next start would fail on.
+	temporary := strings.concatenate({path, ".tmp"}, context.temp_allocator)
+	if error := os.write_entire_file(temporary, file_text); error != nil {
+		os.remove(temporary)
+		return fmt.tprintf("%v: %s", error, temporary)
+	}
+	if error := os.rename(temporary, path); error != nil {
+		os.remove(temporary)
+		return fmt.tprintf("%v: %s", error, path)
+	}
+	log_printf("data: saved the data edit %s", path)
+	return ""
+}
+
 // The tree built again from the files, keeping the expansion and the
 // selection by path; an open file whose row is gone closes.
 rebuild_data_tree :: proc(browser: ^Data_Browser, entries: []Data_File_Entry) {
@@ -379,6 +426,7 @@ close_data_browser_file :: proc(browser: ^Data_Browser) {
 	destroy_arena(browser.file_arena)
 	browser.file_arena = nil
 	browser.open, browser.shows_overlay, browser.value_rows, browser.value_expanded, browser.lines, browser.file_problem = false, false, nil, nil, nil, ""
+	browser.value, browser.value_selected, browser.editing_row, browser.loaded_text, browser.unsaved = nil, -1, -1, "", false
 }
 
 // The selected file read through the overlay and shown: an SJSON file as
@@ -409,8 +457,7 @@ open_data_browser_file :: proc(browser: ^Data_Browser, data_directory: string) {
 			browser.file_problem = fmt.aprintf("%s %v: %s", text("data_files_parse_failed"), parse_error, path, allocator = allocator)
 			return
 		}
-		browser.value_rows = data_value_rows(value, allocator)
-		browser.value_expanded = make([]bool, len(browser.value_rows), allocator)
+		show_data_browser_value(browser, value, allocator)
 	case .Text:
 		browser.lines = data_text_lines(string(data), allocator)
 	case .Binary:
@@ -418,4 +465,246 @@ open_data_browser_file :: proc(browser: ^Data_Browser, data_directory: string) {
 	if len(browser.value_rows) == 0 && len(browser.lines) == 0 {
 		browser.file_problem = text("data_files_empty_file")
 	}
+}
+
+// The parsed tree shown, as loaded: nothing selected, all collapsed,
+// nothing unsaved. allocator is the file's arena.
+show_data_browser_value :: proc(browser: ^Data_Browser, value: json.Value, allocator := context.allocator) {
+	browser.value = value
+	browser.value_rows = data_value_rows(value, allocator)
+	browser.value_expanded = make([]bool, len(browser.value_rows), allocator)
+	browser.loaded_text = sjson_text(value, allocator)
+	browser.value_selected, browser.editing_row, browser.unsaved = -1, -1, false
+}
+
+// Editing the tree (work item 0130). Every edit allocates in the file's
+// arena and frees nothing, so the rows a frame drew stay readable until
+// the file closes.
+
+Data_Value_Edit :: enum u8 {
+	Duplicate,
+	Remove,
+}
+
+// The rows from the outermost ancestor down to the row itself, none for
+// -1 (the root). In the temp allocator.
+data_value_row_chain :: proc(rows: []Data_Value_Row, index: int) -> []int {
+	chain := make([dynamic]int, context.temp_allocator)
+	for row := index; row >= 0; row = rows[row].parent {
+		inject_at(&chain, 0, row)
+	}
+	return chain[:]
+}
+
+// The value's place in the file, its labels from the root joined by dots
+// (recipes.3.seconds). In the temp allocator.
+data_value_row_path_text :: proc(rows: []Data_Value_Row, index: int) -> string {
+	chain := data_value_row_chain(rows, index)
+	labels := make([]string, len(chain), context.temp_allocator)
+	for row, position in chain {
+		labels[position] = rows[row].label
+	}
+	return strings.join(labels, ".", context.temp_allocator)
+}
+
+// The member a row names in its container.
+data_value_member :: proc(container: json.Value, row: Data_Value_Row) -> json.Value {
+	#partial switch members in container {
+	case json.Object:
+		return members[row.label]
+	case json.Array:
+		if row.element_index >= 0 && row.element_index < len(members) {
+			return members[row.element_index]
+		}
+	}
+	return nil
+}
+
+// The value a row shows.
+data_value_at_row :: proc(root: json.Value, rows: []Data_Value_Row, index: int) -> json.Value {
+	value := root
+	for row in data_value_row_chain(rows, index) {
+		value = data_value_member(value, rows[row])
+	}
+	return value
+}
+
+// The container with the value at the end of the chain replaced. The
+// containers along the chain are written in place: an object keeps its
+// keys and an array its length, so their memory is not moved.
+data_value_replaced :: proc(container: json.Value, rows: []Data_Value_Row, chain: []int, replacement: json.Value) -> json.Value {
+	if len(chain) == 0 {
+		return replacement
+	}
+	row := rows[chain[0]]
+	member := data_value_replaced(data_value_member(container, row), rows, chain[1:], replacement)
+	container := container
+	#partial switch &members in container {
+	case json.Object:
+		members[row.label] = member
+	case json.Array:
+		members[row.element_index] = member
+	}
+	return container
+}
+
+// The root with the row's value replaced.
+data_value_set :: proc(root: json.Value, rows: []Data_Value_Row, index: int, replacement: json.Value) -> json.Value {
+	return data_value_replaced(root, rows, data_value_row_chain(rows, index), replacement)
+}
+
+// Whether Duplicate and Remove act on the row: an array element.
+data_value_row_is_element :: proc(rows: []Data_Value_Row, index: int) -> bool {
+	return index >= 0 && index < len(rows) && rows[index].element_index >= 0
+}
+
+// The root with the array element duplicated (the copy after it) or
+// removed. The array is made anew in allocator, the copy cloned into it.
+data_value_edit_element :: proc(root: json.Value, rows: []Data_Value_Row, index: int, edit: Data_Value_Edit, allocator := context.allocator) -> json.Value {
+	row := rows[index]
+	elements, is_array := data_value_at_row(root, rows, row.parent).(json.Array)
+	if !is_array {
+		return root
+	}
+	edited := make(json.Array, 0, len(elements) + 1, allocator)
+	for element, element_index in elements {
+		if element_index != row.element_index || edit == .Duplicate {
+			append(&edited, element)
+		}
+		if element_index == row.element_index && edit == .Duplicate {
+			append(&edited, json.clone_value(element, allocator))
+		}
+	}
+	return data_value_replaced(root, rows, data_value_row_chain(rows, row.parent), edited)
+}
+
+// The row after the row's members: the end of its subtree.
+data_value_subtree_end :: proc(rows: []Data_Value_Row, index: int) -> int {
+	end := index + 1
+	for end < len(rows) && rows[end].depth > rows[index].depth {
+		end += 1
+	}
+	return end
+}
+
+// The expansion after an element's rows were duplicated (the copy's
+// rows follow them, expanded alike) or removed. In allocator.
+data_value_expansion_after :: proc(expanded: []bool, rows: []Data_Value_Row, index: int, edit: Data_Value_Edit, allocator := context.allocator) -> []bool {
+	end := data_value_subtree_end(rows, index)
+	result := make([dynamic]bool, 0, len(expanded) + end - index, allocator)
+	switch edit {
+	case .Duplicate:
+		append(&result, ..expanded[:end])
+		append(&result, ..expanded[index:end])
+	case .Remove:
+		append(&result, ..expanded[:index])
+	}
+	append(&result, ..expanded[end:])
+	return result[:]
+}
+
+// The most digits an i64 has; a longer run of digits is out of range
+// before parse_i128 could wrap it.
+INTEGER_MAXIMUM_DIGITS :: 19
+
+// A leaf from the text typed for it: a number keeps its kind, except
+// that a point or an exponent makes a float (an integer typed without
+// them stays an integer); a string takes the text as it is. ok is false
+// for a number that does not parse, an integer outside the i64 range, a
+// float that is not finite, and for a boolean, a null or a container.
+data_value_from_text :: proc(old: json.Value, typed: string, allocator := context.allocator) -> (value: json.Value, ok: bool) {
+	#partial switch _ in old {
+	case json.Integer, json.Float:
+		_, is_integer := old.(json.Integer)
+		if is_integer && !strings.contains_any(typed, ".eE") {
+			return data_integer_from_text(typed)
+		}
+		float, parsed := strconv.parse_f64(typed)
+		return json.Float(float), parsed && !math.is_inf(float) && !math.is_nan(float)
+	case json.String:
+		return json.String(strings.clone(typed, allocator)), true
+	}
+	return nil, false
+}
+
+// An integer inside the i64 range; strconv.parse_i64 wraps a longer one
+// and says it parsed.
+data_integer_from_text :: proc(typed: string) -> (value: json.Value, ok: bool) {
+	digits := strings.trim_left(typed, "+-")
+	if len(digits) > INTEGER_MAXIMUM_DIGITS {
+		return nil, false
+	}
+	integer, parsed := strconv.parse_i128(typed)
+	if !parsed || integer < i128(min(i64)) || integer > i128(max(i64)) {
+		return nil, false
+	}
+	return json.Integer(i64(integer)), true
+}
+
+// The characters the keyboard takes for a leaf, and the text it starts
+// from. editable is false for a boolean (Confirm flips it), a null, a
+// container, and a leaf whose text the field cannot hold unchanged (a
+// string with characters past printable ASCII or longer than the field).
+data_value_field_text :: proc(value: json.Value) -> (text: string, characters: Text_Field_Characters, editable: bool) {
+	#partial switch leaf in value {
+	case json.Integer, json.Float:
+		text, characters = sjson_leaf_text(value, context.temp_allocator), .Number
+	case json.String:
+		text, characters = leaf, .Printable
+	case:
+		return "", .Printable, false
+	}
+	return text, characters, text_field_holds(characters, text)
+}
+
+// The rows built again after the tree changed shape (Duplicate, Remove),
+// and whether it now differs from the text last loaded or saved.
+refresh_data_browser_value :: proc(browser: ^Data_Browser, value: json.Value, expanded: []bool) {
+	allocator := virtual.arena_allocator(browser.file_arena)
+	browser.value = value
+	browser.value_rows = data_value_rows(value, allocator)
+	browser.value_expanded = expanded
+	browser.unsaved = sjson_text(value, context.temp_allocator) != browser.loaded_text
+}
+
+// A leaf replaced: the tree keeps its shape, so only the row's text is
+// written again, not every row (the strings file has about 1,700).
+replace_data_browser_leaf :: proc(browser: ^Data_Browser, index: int, leaf: json.Value) {
+	browser.value = data_value_set(browser.value, browser.value_rows, index, leaf)
+	browser.value_rows[index].value = data_leaf_text(leaf, virtual.arena_allocator(browser.file_arena))
+	browser.unsaved = sjson_text(browser.value, context.temp_allocator) != browser.loaded_text
+}
+
+// A boolean flipped; any other row is left alone.
+flip_data_browser_value :: proc(browser: ^Data_Browser, index: int) {
+	flag, is_boolean := data_value_at_row(browser.value, browser.value_rows, index).(json.Boolean)
+	if is_boolean {
+		replace_data_browser_leaf(browser, index, json.Boolean(!flag))
+	}
+}
+
+// The typed text set as the row's value; false (and the value kept) when
+// it does not parse.
+set_data_browser_value :: proc(browser: ^Data_Browser, index: int, typed: string) -> bool {
+	old := data_value_at_row(browser.value, browser.value_rows, index)
+	value, ok := data_value_from_text(old, typed, virtual.arena_allocator(browser.file_arena))
+	if ok {
+		replace_data_browser_leaf(browser, index, value)
+	}
+	return ok
+}
+
+// The selected element duplicated (the copy selected) or removed (nothing
+// selected); nothing while the selection is no array element.
+edit_data_browser_element :: proc(browser: ^Data_Browser, edit: Data_Value_Edit) {
+	index := browser.value_selected
+	if !data_value_row_is_element(browser.value_rows, index) {
+		return
+	}
+	allocator := virtual.arena_allocator(browser.file_arena)
+	expanded := data_value_expansion_after(browser.value_expanded, browser.value_rows, index, edit, allocator)
+	end := data_value_subtree_end(browser.value_rows, index)
+	value := data_value_edit_element(browser.value, browser.value_rows, index, edit, allocator)
+	refresh_data_browser_value(browser, value, expanded)
+	browser.value_selected = edit == .Duplicate ? end : -1
 }

@@ -1079,7 +1079,7 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	log_gl_info()
 	update_display(&window_settings, player_configuration.settings, monitor_size, platform)
 
-	renderer, renderer_ok := init_chunk_renderer(content.blocks, data_directory)
+	renderer, renderer_ok := init_chunk_renderer_or_without_edits(content.blocks, data_directory)
 	if !renderer_ok {
 		os.exit(1)
 	}
@@ -1117,11 +1117,17 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	state.ui.fonts, state.ui.measure_text = &state.font_cache, measure_font_text
 	defer destroy_font_cache(&state.font_cache)
 	theme, theme_problem := load_ui_theme(data_directory)
+	if theme_problem != "" && turn_data_edits_off(theme_problem) {
+		theme, theme_problem = load_ui_theme(data_directory)
+	}
 	if theme_problem != "" {
 		log_printf("error: %s", theme_problem)
 		os.exit(1)
 	}
 	apply_ui_theme(&state.ui, theme)
+	if data_edits_reading.off {
+		ui_toast(&state.ui, text("data_files_edits_off_toast"))
+	}
 	state.ui_icon_atlas = upload_ui_icon_atlas(data_directory)
 	defer destroy_item_atlas(&state.ui_icon_atlas)
 	defer destroy_title_state(&state.title)
@@ -1372,13 +1378,27 @@ texture_edits_path :: proc() -> string {
 	return path
 }
 
+// The chunk renderer, loaded again without the data edits overlay when
+// its shaders failed with it (turn_data_edits_off).
+init_chunk_renderer_or_without_edits :: proc(blocks: Block_Registry, data_directory: string) -> (renderer: Chunk_Renderer, ok: bool) {
+	capture: Log_Capture
+	begin_log_capture(&capture)
+	renderer, ok = init_chunk_renderer(blocks, data_directory)
+	problem := end_log_capture(&capture, "the chunk shaders did not load")
+	if !ok && turn_data_edits_off(problem) {
+		renderer, ok = init_chunk_renderer(blocks, data_directory)
+	}
+	return renderer, ok
+}
+
 // $XDG_STATE_HOME/mine-oh-belowed/data_edits (work item 0129,
 // read_data_file) in the temp allocator, "" without a state directory.
-// Always "" under odin test, so the tests read the shipped data whatever
-// overlay the machine holds.
+// Under odin test the test thread's own directory
+// (data_edits_reading.directory), "" unless a test gives one, so the tests
+// read the shipped data whatever overlay the machine holds.
 data_edits_directory :: proc() -> string {
 	when ODIN_TEST {
-		return ""
+		return data_edits_reading.directory
 	} else {
 		directories := platform_directories(context.temp_allocator)
 		directory, _ := data_edits_directory_from_environment(directories.state_home, directories.home, context.temp_allocator)
@@ -1410,14 +1430,19 @@ serve_texture_editor :: proc(state: ^Frame_State) {
 
 // The Data files screen (work item 0129), before the frame's screens: a
 // close first (the last frame's draw list pointed into the file), then a
-// discard, which reads the tree again, then the tree when the Developer
-// screen asked, then the file the screen opens.
+// discard, which reads the tree again, then a save (0130), then the tree
+// when the Developer screen or the save asked, then the file the screen
+// opens.
 serve_data_browser :: proc(state: ^Frame_State) {
 	browser := &state.data_browser
 	apply_data_browser_close_request(browser)
 	if browser.discard_requested {
 		browser.discard_requested = false
 		discard_data_edit(state)
+	}
+	if browser.save_requested {
+		browser.save_requested = false
+		save_data_edit(state, data_edits_directory())
 	}
 	if browser.refresh_requested {
 		browser.refresh_requested = false
@@ -1446,10 +1471,36 @@ discard_data_edit :: proc(state: ^Frame_State) {
 		return
 	}
 	log_printf("data: discarded the data edit %s", overlay)
+	if browser.open && browser.unsaved {
+		ui_toast(&state.ui, text("data_files_changes_dropped"))
+	}
 	ui_toast(&state.ui, fmt.tprintf("%s %s", text("data_files_discarded"), relative_path))
 	apply_data_edit_change(state, relative_path)
 	browser.refresh_requested = true
 	browser.open_requested = browser.open
+}
+
+// Writes the open SJSON file's tree to the edits directory (0130) and
+// applies the change as the watcher would (apply_data_edit_change); the
+// tree is read again for its edited tag. A failed write is logged and
+// toasted, and the file stays unsaved. The edits directory is a parameter
+// for the test (data_edits_directory is "" under odin test).
+save_data_edit :: proc(state: ^Frame_State, edits_directory: string) {
+	browser := &state.data_browser
+	if !browser.open || browser.file_kind != .Sjson || browser.file_problem != "" || browser.selected < 0 || browser.selected >= len(browser.rows) {
+		return
+	}
+	relative_path := strings.clone(browser.rows[browser.selected].path, context.temp_allocator)
+	file_text := sjson_text(browser.value, virtual.arena_allocator(browser.file_arena))
+	if problem := write_data_edit(edits_directory, relative_path, file_text); problem != "" {
+		log_printf("error: cannot save the data edit %s: %s", relative_path, problem)
+		ui_toast(&state.ui, fmt.tprintf("%s %s", text("data_files_save_failed"), relative_path))
+		return
+	}
+	browser.loaded_text, browser.unsaved, browser.shows_overlay = file_text, false, true
+	browser.refresh_requested = true
+	ui_toast(&state.ui, fmt.tprintf("%s %s", text("data_files_saved"), relative_path))
+	apply_data_edit_change(state, relative_path)
 }
 
 // The touch layouts (0121), between frames: the editor's request, served

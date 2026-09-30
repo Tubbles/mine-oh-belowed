@@ -4,18 +4,29 @@ package game
 // keyboard), free of the UI so tests drive it directly. The widget that
 // draws the keys is in ui_keyboard.odin.
 
-TEXT_FIELD_CAPACITY :: 64
+// Long enough for the longest string of data/strings/en.sjson, which the
+// Data files screen edits (work item 0130); a field's maximum_length is
+// what limits a world name or a seed.
+TEXT_FIELD_CAPACITY :: 512
 // In typed text, one Backspace in its place among the characters: the
 // phone's IME can press Backspace more than once in a frame (0133).
 TEXT_BACKSPACE :: '\b'
 
-// Printable ASCII only: the default font draws nothing else, and world
-// names become directory names.
+// What a field takes. Printable is printable ASCII: the default font
+// draws nothing else, and world names become directory names. Number is
+// the digits, '-', '+', '.', 'e' and 'E' (a value in the Data files
+// screen, 0130, where a float may print as 1e-05).
+Text_Field_Characters :: enum u8 {
+	Printable,
+	Digits,
+	Number,
+}
+
 Text_Field :: struct {
 	buffer:         [TEXT_FIELD_CAPACITY]u8,
 	length:         int,
 	maximum_length: int,
-	digits_only:    bool,
+	characters:     Text_Field_Characters,
 }
 
 Keyboard_Key_Kind :: enum u8 {
@@ -91,10 +102,10 @@ Keyboard_Input :: struct {
 	enter_key:        bool,
 }
 
-make_text_field :: proc(value: string, maximum_length: int, digits_only := false) -> Text_Field {
+make_text_field :: proc(value: string, maximum_length: int, characters := Text_Field_Characters.Printable) -> Text_Field {
 	field := Text_Field {
 		maximum_length = min(maximum_length, TEXT_FIELD_CAPACITY),
-		digits_only    = digits_only,
+		characters     = characters,
 	}
 	text_field_set(&field, value)
 	return field
@@ -117,10 +128,33 @@ text_field_accepts :: proc(field: Text_Field, character: u8) -> bool {
 	if field.length >= field.maximum_length {
 		return false
 	}
-	if field.digits_only {
-		return character >= '0' && character <= '9'
+	return text_field_character_accepted(field.characters, character)
+}
+
+text_field_character_accepted :: proc(characters: Text_Field_Characters, character: u8) -> bool {
+	digit := character >= '0' && character <= '9'
+	switch characters {
+	case .Digits:
+		return digit
+	case .Number:
+		return digit || character == '-' || character == '+' || character == '.' || character == 'e' || character == 'E'
+	case .Printable:
 	}
 	return character >= ' ' && character <= '~'
+}
+
+// Whether a field of these characters holds the value unchanged: every
+// character accepted and no longer than the capacity.
+text_field_holds :: proc(characters: Text_Field_Characters, value: string) -> bool {
+	if len(value) > TEXT_FIELD_CAPACITY {
+		return false
+	}
+	for character in transmute([]u8)value {
+		if !text_field_character_accepted(characters, character) {
+			return false
+		}
+	}
+	return true
 }
 
 text_field_type :: proc(field: ^Text_Field, character: u8) -> bool {

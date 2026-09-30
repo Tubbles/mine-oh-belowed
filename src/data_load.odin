@@ -179,7 +179,53 @@ data_edits_directory_from_environment :: proc(state_home, home: string, allocato
 // read, for the caller's problem lines. The data is in allocator, the path
 // in the temp allocator.
 read_data_file :: proc(data_directory, relative_path: string, allocator := context.allocator) -> (data: []byte, path: string, error: os.Error) {
-	return read_data_file_with_edits(data_directory, data_edits_directory(), relative_path, allocator)
+	return read_data_file_with_edits(data_directory, reading_data_edits_directory(), relative_path, allocator)
+}
+
+// How read_data_file uses the data edits overlay, per thread: the game
+// reads its data files on the main thread only, and the tests, which run
+// in parallel, give their own thread a directory. After a start-up load
+// failed with the overlay on (work item 0130's review), the overlay is off
+// for the run; the Data files screen still lists the copies and Discard
+// still deletes them, since both use data_edits_directory.
+Data_Edits_Reading :: struct {
+	// Under odin test, what data_edits_directory returns: a test's own
+	// temporary directory, else "".
+	directory:   string,
+	off:         bool,
+	// The failed load's problem, on the heap for the run.
+	off_problem: string,
+}
+
+@(thread_local)
+data_edits_reading: Data_Edits_Reading
+
+// The overlay read_data_file takes, "" for none.
+reading_data_edits_directory :: proc() -> string {
+	if data_edits_reading.off {
+		return ""
+	}
+	return data_edits_directory()
+}
+
+// After a start-up load failed: when the overlay was read, it goes off for
+// the run (logged) and the caller loads again. False when it was off
+// already or there is no overlay directory, so the caller gives up.
+turn_data_edits_off :: proc(problem: string) -> bool {
+	directory := reading_data_edits_directory()
+	if directory == "" || !os.is_dir(directory) {
+		return false
+	}
+	data_edits_reading.off = true
+	data_edits_reading.off_problem = strings.clone(problem)
+	log_printf("data: the data edits are off for this run after a failed load: %s", problem)
+	return true
+}
+
+// The thread's overlay reading back to the default, for the tests.
+reset_data_edits_reading :: proc() {
+	delete(data_edits_reading.off_problem)
+	data_edits_reading = {}
 }
 
 // read_data_file with the overlay directory given; "" reads no overlay.

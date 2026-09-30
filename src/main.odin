@@ -3,6 +3,7 @@ package game
 import "core:flags"
 import "core:fmt"
 import "core:io"
+import "core:mem/virtual"
 import "core:os"
 
 GAME_VERSION :: "0.0.0"
@@ -211,34 +212,20 @@ main :: proc() {
 	}
 	apply_deck_preset_at_start(environment, &loaded_configuration)
 	data_directory := require_data_directory()
-	fonts, fonts_problem := load_checked_fonts(data_directory, loaded_configuration)
-	if fonts_problem != "" {
-		log_printf("error: %s", fonts_problem)
-		os.exit(1)
-	}
 	binding_overrides, overrides_problem := resolve_bindings(loaded_configuration.configuration.bindings, loaded_configuration.provenance)
 	if overrides_problem != "" {
 		log_printf("error: %s", overrides_problem)
 		os.exit(1)
 	}
-	bindings, bindings_problem := load_bindings(data_directory, binding_overrides)
-	if bindings_problem != "" {
-		log_printf("error: %s", bindings_problem)
+	start, start_problem := load_start_data(data_directory, loaded_configuration, binding_overrides)
+	if start_problem != "" && turn_data_edits_off(start_problem) {
+		start, start_problem = load_start_data(data_directory, loaded_configuration, binding_overrides)
+	}
+	if start_problem != "" {
 		os.exit(1)
 	}
-	config, loaded := load_game_config(data_directory)
-	if !loaded {
-		os.exit(1)
-	}
-	string_table, strings_loaded := load_string_table(data_directory)
-	if !strings_loaded {
-		os.exit(1)
-	}
-	global_string_table = string_table
-	game_data, data_problem := load_game_data(data_directory, config, global_string_table.entries)
-	if data_problem != "" {
-		os.exit(1)
-	}
+	fonts, bindings, config, game_data := start.fonts, start.bindings, start.config, start.game_data
+	global_string_table = start.string_table
 	game_data.content.unlock_all = command_line.unlock_all
 	game_data.content.developer_mode = command_line.developer_mode
 	content := game_data.content
@@ -272,6 +259,73 @@ main :: proc() {
 		touch_overlay_forced = command_line.touch_overlay,
 	}
 	run_game(config, input_backend, game_data, data_directory, fonts, session, make_title_state(config, saves_directory, saves_found, make_save_header()), player_configuration)
+}
+
+// The data main loads before the window: the fonts, the bindings, the
+// game config, the strings and the game data. The config and the bindings
+// live in arena, for the run.
+Start_Data :: struct {
+	arena:        ^virtual.Arena,
+	fonts:        Loaded_Fonts,
+	bindings:     []Binding,
+	config:       Game_Config,
+	string_table: String_Table,
+	game_data:    Game_Data,
+}
+
+// Loads the start data, each problem logged. On a problem nothing stays
+// loaded and the problem (the failing loader's error line, which names
+// the file read, the overlay's copy when that was taken) is returned, so
+// main can load again without the data edits overlay
+// (turn_data_edits_off).
+load_start_data :: proc(data_directory: string, loaded: Loaded_Configuration, binding_overrides: []Binding) -> (start: Start_Data, problem: string) {
+	start.arena = new_growing_arena()
+	if start.arena == nil {
+		return {}, "cannot reserve memory for the start data"
+	}
+	problem = load_start_data_into(&start, data_directory, loaded, binding_overrides)
+	if problem != "" {
+		destroy_start_data(&start)
+	}
+	return start, problem
+}
+
+// In order, stopping at the first problem. The game data's names read
+// the strings just loaded (text, through thread_string_table).
+load_start_data_into :: proc(start: ^Start_Data, data_directory: string, loaded: Loaded_Configuration, binding_overrides: []Binding) -> (problem: string) {
+	allocator := virtual.arena_allocator(start.arena)
+	if start.fonts, problem = load_checked_fonts(data_directory, loaded); problem != "" {
+		log_printf("error: %s", problem)
+		return problem
+	}
+	if start.bindings, problem = load_bindings(data_directory, binding_overrides, allocator); problem != "" {
+		log_printf("error: %s", problem)
+		return problem
+	}
+	capture: Log_Capture
+	begin_log_capture(&capture)
+	config_loaded, strings_loaded: bool
+	start.config, config_loaded = load_game_config(data_directory, allocator)
+	if config_loaded {
+		start.string_table, strings_loaded = load_string_table(data_directory)
+	}
+	problem = end_log_capture(&capture, "")
+	if !config_loaded || !strings_loaded {
+		return problem != "" ? problem : "the game config or the strings did not load"
+	}
+	previous_table := thread_string_table
+	thread_string_table = &start.string_table
+	defer thread_string_table = previous_table
+	start.game_data, problem = load_game_data(data_directory, start.config, start.string_table.entries)
+	return problem
+}
+
+destroy_start_data :: proc(start: ^Start_Data) {
+	destroy_game_data(&start.game_data)
+	destroy_string_table(&start.string_table)
+	destroy_arena(start.fonts.arena)
+	destroy_arena(start.arena)
+	start^ = {}
 }
 
 // data/fonts/fonts.sjson, and the font settings checked against it.
