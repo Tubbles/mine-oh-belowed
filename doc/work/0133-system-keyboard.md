@@ -1,0 +1,25 @@
+# 0133: The system keyboard for text fields on the phone and under Steam
+
+Status: todo
+
+## Goal
+
+Asked on 2026-09-30, for the string editing of 0130 and 0131 and every text field: "the system keyboard for now, both for android and if possible, steam os as well (the steam ui keyboard)". The game's own on-screen keyboard (`ui_keyboard.odin`, `text_input.odin`) stays as the fallback where no system keyboard exists (Windows, Linux outside Steam).
+
+## What was checked
+
+- Android: the NDK's `ANativeActivity_showSoftInput(activity, flags)` and `ANativeActivity_hideSoftInput` (`native_activity.h`, `libandroid`) show and hide the IME for a native activity; the activity pointer is `Android_App.activity` (`platform_android.odin`). raylib 6.0's Android backend (`rcore_android.c`, the key branch of `AndroidInputCallback`) queues key codes only: `keyPressedQueue` gets the mapped `KEY_*` on every key down and `charPressedQueue` is never filled, so `GetCharPressed` returns nothing on the phone and `Raw_Keyboard.text` (`read_raylib_raw_input`) stays empty. Android's `BaseInputConnection` turns the text an IME commits into key events when it can (letters, digits, space, the punctuation on the keyboard's first pages), so those reach raylib as key downs, an upper case letter with a shift key down around it.
+- Steam: SDL's X11 backend shows the Steam keyboard by opening the deep link `steam://open/keyboard?XPosition=<x>&YPosition=<y>&Width=<w>&Height=<h>&Mode=0` and hides it with `steam://close/keyboard`, both through `SDL_OpenURL`, when the hint `SDL_HINT_ENABLE_STEAM_SCREEN_KEYBOARD` is on (Steam sets its environment variable, `SDL_ENABLE_STEAM_SCREEN_KEYBOARD`, for games it launches in gaming mode). The Steam keyboard types through a virtual keyboard device, so its text reaches the game as GLFW key and character events, which `Raw_Keyboard.text`, Backspace and Enter already carry. `vendor:sdl3` binds `OpenURL` (`sdl3_misc.odin`), which needs no SDL window. Steam+X opens the same keyboard by hand.
+
+## Change
+
+- `system_keyboard_available()`, `show_system_keyboard(field rectangle in pixels)` and `hide_system_keyboard()` in a file per platform: `system_keyboard_android.odin` (`#+build linux:android`, the two NDK calls declared against `system:android`), `system_keyboard_linux.odin` (`#+build linux, !android`: available when `SDL_ENABLE_STEAM_SCREEN_KEYBOARD` is `1` or `SteamDeck` is `1`, opening the deep links above through `sdl.OpenURL`; the field's rectangle in screen pixels fills the position and size so the keyboard docks away from it), `system_keyboard_windows.odin` (never available). The pure parts (availability from the two variables' values, the deep link text from a rectangle) have tests.
+- `open_keyboard` (`ui_keyboard.odin`) shows the system keyboard when one is available and marks the keyboard state as system; the screens then draw no keys, keep the field's caret and take the physical keyboard path (`typed_text`, `backspace_key`, `enter_key`). Enter or Back ends the entry as Done does and hides the system keyboard; so does a tap on another widget. Every field that opens the keyboard (new world name and seed, the touch layout name, 0130's values, 0131's export directory) behaves the same, since they all go through `ui_text_field` and `open_keyboard`.
+- Android characters: `read_raylib_raw_input` (`input_raylib.odin`) derives `Raw_Keyboard.text` from `GetKeyPressed` on Android only (`when ODIN_PLATFORM_SUBTARGET == .Android`): letters (upper case while a shift key is down), digits, space and the punctuation keys raylib's table maps (minus, period, slash, comma, apostrophe, semicolon, equal, the brackets), through a pure `character_for_key(key, shift)` with a test; other keys are dropped. Backspace and Enter arrive as `KEY_BACKSPACE` and `KEY_ENTER` (verify raylib's `mapKeycode` table for `AKEYCODE_DEL` and `AKEYCODE_ENTER`). The desktop keeps `GetCharPressed`.
+- A setting on the Accessibility tab, `on_screen_keyboard` (`system` default, `game`), so the user can fall back to the game's keys where the system keyboard does not show (a phone IME in an extract mode that covers the field, a Steam session without the deep link). With `game`, nothing changes from today.
+- Docs: `doc/ui.md` (On-screen keyboard: the system keyboard, the fallback, the setting), `doc/build.md` (Android app: the IME, what the key path carries and what it drops), `doc/input.md` if the keyboard is described there, `doc/log/2026-09-30.md`.
+
+## Verify
+
+- `./build.sh check`, `./build.sh check-android`, `./build.sh test`. Tests: availability from the environment values; the deep link text for a rectangle; `character_for_key` for a letter with and without shift, a digit, space, minus, slash and an unmapped key; a field opened with a system keyboard draws no keys, takes typed text, and Enter closes it (the headless screen helpers with `typed_text`); the audit covers a field open with the system keyboard.
+- The user: on the phone, New world, tap the name field, the IME shows, type a name with a capital, Done; on the couch under Steam, the same field opens the Steam keyboard and closes it on Enter.
