@@ -63,15 +63,23 @@ load_chunk_shader :: proc(data_directory: string) -> (shader: rl.Shader, ok: boo
 	return load_shader_pair(data_directory, CHUNK_VERTEX_SHADER_PATH, CHUNK_FRAGMENT_SHADER_PATH, "chunk")
 }
 
-// name says which shader failed in the log.
+// name says which shader failed in the log. The files are read here and
+// handed to raylib as source, one path on every platform; on Android
+// (work item 0114) the source is rewritten for GLSL ES first.
 load_shader_pair :: proc(data_directory, vertex_file, fragment_file, name: string) -> (shader: rl.Shader, ok: bool) {
 	vertex_path, vertex_error := os.join_path({data_directory, vertex_file}, context.temp_allocator)
 	fragment_path, fragment_error := os.join_path({data_directory, fragment_file}, context.temp_allocator)
 	if vertex_error != nil || fragment_error != nil {
 		return {}, false
 	}
-	vertex_cstring := strings.clone_to_cstring(vertex_path, context.temp_allocator)
-	fragment_cstring := strings.clone_to_cstring(fragment_path, context.temp_allocator)
+	vertex_source, vertex_read_error := os.read_entire_file(vertex_path, context.temp_allocator)
+	fragment_source, fragment_read_error := os.read_entire_file(fragment_path, context.temp_allocator)
+	if vertex_read_error != nil || fragment_read_error != nil {
+		log_printf("error: cannot read the %s shader from %s and %s", name, vertex_path, fragment_path)
+		return {}, false
+	}
+	vertex_cstring := strings.clone_to_cstring(platform_shader_source(string(vertex_source)), context.temp_allocator)
+	fragment_cstring := strings.clone_to_cstring(platform_shader_source(string(fragment_source)), context.temp_allocator)
 	shader, ok = load_shader_with_retry(vertex_cstring, fragment_cstring, name)
 	if !ok {
 		log_printf("error: cannot load the %s shader from %s and %s", name, vertex_path, fragment_path)
@@ -79,13 +87,36 @@ load_shader_pair :: proc(data_directory, vertex_file, fragment_file, name: strin
 	return shader, ok
 }
 
+platform_shader_source :: proc(source: string) -> string {
+	when ODIN_PLATFORM_SUBTARGET == .Android {
+		return shader_source_for_gles(source)
+	} else {
+		return source
+	}
+}
+
+// The shipped shaders are GLSL 3.30 (#version 330); OpenGL ES 3.0 takes
+// them once the version line says 300 es and default precisions are
+// declared, highp int so the hashes multiply in 32 bits. A source without
+// a version line is returned as is. In the temp allocator.
+shader_source_for_gles :: proc(source: string) -> string {
+	first_line_end := strings.index_byte(source, '\n')
+	first_line := source if first_line_end < 0 else source[:first_line_end]
+	remainder := "" if first_line_end < 0 else source[first_line_end:]
+	fields := strings.fields(first_line, context.temp_allocator)
+	if len(fields) < 2 || fields[0] != "#version" || fields[1] != "330" {
+		return source
+	}
+	return strings.concatenate({"#version 300 es\nprecision highp float;\nprecision highp int;", remainder}, context.temp_allocator)
+}
+
 // Winlator's Gladio fails a shader compile now and then and compiles the
-// same files on the next try (work item 0109), so a failed load is tried
-// again. A failed rl.LoadShader returns raylib's default shader, which
-// must never be unloaded, so nothing is released between attempts.
-load_shader_with_retry :: proc(vertex_path, fragment_path: cstring, name: string) -> (shader: rl.Shader, ok: bool) {
+// same source on the next try (work item 0109), so a failed load is tried
+// again. A failed rl.LoadShaderFromMemory returns raylib's default shader,
+// which must never be unloaded, so nothing is released between attempts.
+load_shader_with_retry :: proc(vertex_source, fragment_source: cstring, name: string) -> (shader: rl.Shader, ok: bool) {
 	for attempt in 1 ..= SHADER_LOAD_ATTEMPTS {
-		shader = rl.LoadShader(vertex_path, fragment_path)
+		shader = rl.LoadShaderFromMemory(vertex_source, fragment_source)
 		if shader_loaded(shader) {
 			return shader, true
 		}

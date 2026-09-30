@@ -7,9 +7,10 @@ Read this together with the global `~/.claude/CLAUDE.md`. This file only adds wh
 - Language: Odin. Toolchain at `~/opt/odin` (release dev-2026-09). Do not install another Odin.
 - Rendering, windowing, audio: raylib 6.0 through the repository collection `shared:raylib` (the toolchain's binding copied, linking `shared/raylib/linux/libraylib.a`, built from source with GLFW's Wayland and X11 backends by `tools/build_raylib.sh`; for Android `shared/raylib/android/libraylib.a`, arm64 with OpenGL ES 3.0, built by `tools/build_raylib.sh --android`). Never import `vendor:raylib`.
 - Controller input: SDL3 through `vendor:sdl3`, linked against the host `libSDL3.so.0` (3.4.16 on the couch machine). SDL is used for joystick, gamepad and sensor subsystems only, never for video.
+- Android target (0114, `doc/build.md` Android app): the same `game` package built as `libmain.so` for arm64. Input is raylib's only (no SDL: `input_sdl3.odin` is `#+build !linux:android`, `input_sdl3_android.odin` stands in). Android-only code goes into `#+build linux:android` files (`main_android.odin`, `platform_android.odin`) or behind `when ODIN_PLATFORM_SUBTARGET == .Android`. Never a GLFW call outside a `when ODIN_PLATFORM_SUBTARGET != .Android` guard: the binding declares none on Android, so `./build.sh check-android` fails on one.
 - File watching: through `shared:fsw` (odin-fsw vendored in `shared/fsw`, inotify on Linux, ReadDirectoryChangesW on Windows). Never a polling scan of the data directory.
 - Content: SJSON files under `data/`, parsed with `core:encoding/json` using `Specification.SJSON`. Never hardcode a recipe, block, machine or technology in Odin code.
-- Build and verify commands: see `doc/build.md`. The session that runs agents is usually headless, so a window cannot be opened. Agents verify through `build.sh` (`./build.sh check`, `./build.sh test`, `./build.sh release`), which passes the `shared` collection; a bare `odin check src` no longer compiles. The user playtests.
+- Build and verify commands: see `doc/build.md`. The session that runs agents is usually headless, so a window cannot be opened. Agents verify through `build.sh` (`./build.sh check`, `./build.sh check-android`, `./build.sh test`, `./build.sh release`), which passes the `shared` collection; a bare `odin check src` no longer compiles. The user playtests.
 
 ## Layout
 

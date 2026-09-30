@@ -88,3 +88,47 @@ jobs:
           name: mine-oh-belowed-windows-x64-${{ env.SHORT_SHA }}
           path: dist/
           if-no-files-found: error
+
+  # The native Android app (work items 0113 and 0114, doc/build.md). The
+  # runner's ANDROID_HOME holds the NDK, build-tools and platform
+  # tools/android_env.sh names, and JDK 17 for apksigner, so build.sh runs
+  # on the runner directly. The full history gives the commit count, which
+  # is the APK's version code.
+  android:
+    runs-on: ubuntu-latest
+    env:
+      ODIN_URL: https://github.com/odin-lang/Odin/releases/download/dev-2026-09/odin-linux-amd64-dev-2026-09.tar.gz
+      ODIN_SHA256: 167c3e1d7056419dad2e04bb3bd98715b7ff286d4c125f3c5a5ee337c6254283
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Short commit
+        run: echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
+      - name: Download Odin dev-2026-09
+        run: |
+          curl --fail --location --silent --show-error --output "$RUNNER_TEMP/odin.tar.gz" "$ODIN_URL"
+          echo "$ODIN_SHA256  $RUNNER_TEMP/odin.tar.gz" | sha256sum --check -
+          mkdir -p "$RUNNER_TEMP/odin"
+          tar -xzf "$RUNNER_TEMP/odin.tar.gz" -C "$RUNNER_TEMP/odin"
+          odin_executable="$(find "$RUNNER_TEMP/odin" -name odin -type f -perm -u+x -print -quit)"
+          if [ -z "$odin_executable" ]; then
+            echo "odin not found in the release tarball" >&2
+            exit 1
+          fi
+          echo "ODIN=$odin_executable" >> "$GITHUB_ENV"
+          "$odin_executable" version
+      - name: Tools
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls "$ANDROID_HOME/ndk" "$ANDROID_HOME/build-tools" "$ANDROID_HOME/platforms"
+          java -version
+      - name: Check
+        run: MINE_OH_BELOWED_COMMIT="$SHORT_SHA" ./build.sh check-android
+      - name: Build the APK
+        run: MINE_OH_BELOWED_COMMIT="$SHORT_SHA" ./build.sh android
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mine-oh-belowed-android-arm64-${{ env.SHORT_SHA }}
+          path: build/android/mine-oh-belowed.apk
+          if-no-files-found: error

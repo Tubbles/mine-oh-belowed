@@ -10,6 +10,13 @@
 #   ./build.sh test      odin test src
 #   ./build.sh bench     the factory benchmark test, optimised, with the
 #                        size 4 budget (work item 0050)
+#   ./build.sh check-android
+#                        the same check for Android arm64 (work item 0114),
+#                        with tools/android_env.sh sourced
+#   ./build.sh android   the signed APK build/android/mine-oh-belowed.apk
+#                        (work item 0114); apksigner needs Java, so without
+#                        java on the PATH it re-runs itself inside the
+#                        distrobox mine-oh-belowed-android (work item 0113)
 # Every command passes the shared collection, which holds the raylib
 # binding and the library tools/build_raylib.sh builds (work item 0085),
 # so a bare odin check src no longer compiles.
@@ -79,6 +86,63 @@ build() {
 		"${platform_flags[@]}" "$@"
 }
 
+android_container_name=mine-oh-belowed-android
+android_directory="$repository_root/build/android"
+android_bundle="$android_directory/bundle"
+
+check_android() {
+	. "$repository_root/tools/android_env.sh"
+	"$odin" check src "$collection" -target:linux_arm64 -subtarget:android -vet -strict-style
+}
+
+# The bundle layout odin bundle android packages (doc/build.md, Android):
+# lib/lib/arm64-v8a/libmain.so lands at lib/arm64-v8a/libmain.so in the
+# APK, data/ goes to the assets with the list of its files (the asset
+# manager cannot list directories), the manifest gets the version.
+# The link: --no-undefined, since a shared library otherwise links with
+# undefined symbols and Android's loader refuses it on the phone.
+# --wrap=main reaches the game's entry point. --wrap=fopen routes raylib's
+# file reads through its asset reader (rcore_android.c); a static archive
+# cannot apply the wrap itself, and without it __real_fopen stays
+# undefined. The other wraps send glibc functions bionic lacks to
+# src/android_libc/. Odin's core:thread and core:sys/posix link
+# system:pthread on Linux, but Android keeps the pthread functions in libc
+# and the NDK has no libpthread, so an empty archive stands in.
+build_android() {
+	if ! command -v java >/dev/null 2>&1; then
+		exec distrobox enter "$android_container_name" -- "$repository_root/build.sh" android
+	fi
+	. "$repository_root/tools/android_env.sh"
+	local build_info version_code android_linker_flags
+	android_linker_flags="-Wl,--no-undefined -L$android_directory/linker-shims -Wl,--wrap=main -Wl,--wrap=fopen"
+	for name in __errno_location pthread_setcancelstate pthread_setcanceltype backtrace backtrace_symbols backtrace_symbols_fd; do
+		android_linker_flags+=" -Wl,--wrap=$name"
+	done
+	build_info="$(build_commit) $(date -u +%Y-%m-%dT%H:%MZ)"
+	version_code="$(git rev-list --count HEAD)"
+	rm -rf "$android_bundle"
+	mkdir -p "$android_bundle/lib/lib/arm64-v8a" "$android_bundle/assets" "$android_directory/linker-shims"
+	printf '!<arch>\n' > "$android_directory/linker-shims/libpthread.a"
+	"$odin" build src "$collection" -target:linux_arm64 -subtarget:android \
+		-minimum-os-version:"$ANDROID_API_LEVEL" -build-mode:shared -no-entry-point \
+		-extra-linker-flags:"$android_linker_flags" -o:speed -vet -strict-style \
+		-define:BUILD_INFO="$build_info" -out:"$android_bundle/lib/lib/arm64-v8a/libmain.so"
+	cp -r data "$android_bundle/assets/data"
+	find data -type f | sort > "$android_bundle/assets/data_files.txt"
+	cp -r tools/android/res "$android_bundle/res"
+	sed -e "s|@VERSION_CODE@|$version_code|" -e "s|@VERSION_NAME@|$build_info|" \
+		tools/android/AndroidManifest.xml > "$android_bundle/AndroidManifest.xml"
+	cd "$android_directory"
+	rm -f test.apk test.apk-build test.apk.idsig mine-oh-belowed.apk
+	"$odin" bundle android bundle \
+		-android-keystore:"$repository_root/tools/android/debug.keystore" \
+		-android-keystore-alias:androiddebugkey -android-keystore-password:android \
+		-minimum-os-version:"$ANDROID_API_LEVEL"
+	mv test.apk mine-oh-belowed.apk
+	rm -f test.apk-build test.apk.idsig
+	echo "$android_directory/mine-oh-belowed.apk: $(wc -c < mine-oh-belowed.apk) bytes (version code $version_code, $build_info)"
+}
+
 release_flags=(-o:speed)
 if [ "$windows_host" = true ]; then
 	release_flags+=(-subsystem:windows)
@@ -91,8 +155,10 @@ case "$mode" in
 	check-windows) "$odin" check src "$collection" -target:windows_amd64 -vet -strict-style ;;
 	test) "$odin" test src "$collection" ;;
 	bench) "$odin" test src "$collection" -o:speed -define:ODIN_TEST_NAMES=game.test_factory_benchmark ;;
+	check-android) check_android ;;
+	android) build_android ;;
 	*)
-		echo "usage: $0 [debug|release|check|check-windows|test|bench]" >&2
+		echo "usage: $0 [debug|release|check|check-windows|test|bench|check-android|android]" >&2
 		exit 2
 		;;
 esac

@@ -1,3 +1,4 @@
+#+build !linux:android
 package game
 
 import "core:fmt"
@@ -13,15 +14,6 @@ import sdl "vendor:sdl3"
 VALVE_VENDOR_ID :: 0x28de
 SDL3_AXIS_COUNT :: int(sdl.GamepadAxis.RIGHT_TRIGGER) + 1
 SDL3_BUTTON_COUNT :: int(sdl.GamepadButton.MISC6) + 1
-
-// The Triton driver adds the left pad first, then the right pad.
-LEFT_TOUCHPAD_INDEX :: 0
-RIGHT_TOUCHPAD_INDEX :: 1
-
-TRIGGER_PRESS_THRESHOLD :: 0.5
-// Base look rates, scaled by the sensitivities in Settings.
-TOUCHPAD_LOOK_PIXELS_PER_PAD_WIDTH :: 1200
-GYRO_LOOK_PIXELS_PER_DEGREE :: 20
 
 // Which SDL gamepad button the Triton mapping puts each extra input on,
 // from the mapping string in SDL_gamepad.c (SDL_IsJoystickSteamTriton).
@@ -179,11 +171,6 @@ poll_sdl3_events :: proc(state: ^Sdl3_Input_State) {
 	}
 }
 
-// Maps -32768..32767 to -1..1; triggers only use 0..32767.
-normalize_sdl_axis :: proc(value: i16) -> f32 {
-	return max(f32(value) / 32767, -1)
-}
-
 read_sdl3_sensor :: proc(gamepad: ^sdl.Gamepad, type: sdl.SensorType) -> Raw_Sensor {
 	sensor := Raw_Sensor {
 		available = sdl.GamepadHasSensor(gamepad, type),
@@ -260,13 +247,6 @@ read_sdl3_gamepad :: proc(gamepad: ^sdl.Gamepad) -> Raw_Gamepad {
 	return raw
 }
 
-touchpad_finger :: proc(gamepad: Raw_Gamepad, touchpad_index: int) -> Touchpad_Finger {
-	if touchpad_index >= gamepad.touchpad_count {
-		return {}
-	}
-	return gamepad.touchpads[touchpad_index].fingers[0]
-}
-
 sdl3_stick :: proc(gamepad: Raw_Gamepad, x_axis, y_axis: sdl.GamepadAxis) -> [2]f32 {
 	// SDL reports stick up as negative y, the action layer uses up as positive.
 	stick := [2]f32{gamepad.axis_values[int(x_axis)], -gamepad.axis_values[int(y_axis)]}
@@ -283,30 +263,6 @@ calibrate_frame_gyro :: proc(calibration: ^Gyro_Calibration, gamepad: ^Raw_Gamep
 	aiming := gyro_look_active(gamepad.touch_sense, touchpad_finger(gamepad^, RIGHT_TOUCHPAD_INDEX))
 	gyro.corrected = calibrate_gyro(calibration, gyro.values, aiming)
 	gyro.bias, gyro.settled = calibration.bias, calibration.settled
-}
-
-// doc/input.md: the gyro aims while the right stick or right pad is touched.
-// Pads without touch sense keep it always on.
-gyro_look_active :: proc(touch_sense: Raw_Touch_Sense, right_finger: Touchpad_Finger) -> bool {
-	if !touch_sense.available {
-		return true
-	}
-	return touch_sense.right_stick_touched || right_finger.down
-}
-
-// The gyro setting only stops the gyro from aiming; the sensor stays on so
-// the diagnostics screen still shows it. With gyro_from_sdl false (Steam's
-// layer present) SDL's gyro never turns the view; Steam's mouse movement,
-// added by the caller, carries the gyro instead.
-sdl3_look_delta :: proc(previous, current: Raw_Gamepad, frame_seconds: f32, settings: Settings, gyro_from_sdl := true) -> [2]f32 {
-	right_finger := touchpad_finger(current, RIGHT_TOUCHPAD_INDEX)
-	pad_delta := touchpad_delta(touchpad_finger(previous, RIGHT_TOUCHPAD_INDEX), right_finger)
-	look_delta := pad_delta * TOUCHPAD_LOOK_PIXELS_PER_PAD_WIDTH * settings.trackpad_look_sensitivity
-	gyro := current.motion.gyro
-	if gyro_from_sdl && settings.gyro_enabled && gyro.enabled && gyro_look_active(current.touch_sense, right_finger) {
-		look_delta += gyro_to_look_delta(gyro.corrected, frame_seconds) * GYRO_LOOK_PIXELS_PER_DEGREE * settings.gyro_look_sensitivity
-	}
-	return look_delta
 }
 
 read_sdl3_input_frame :: proc(state: ^Sdl3_Input_State, previous: Input_Frame, frame_seconds: f32, settings: Settings, bindings: Input_Bindings) -> Input_Frame {
@@ -338,10 +294,6 @@ read_sdl3_input_frame :: proc(state: ^Sdl3_Input_State, previous: Input_Frame, f
 		just_pressed = actions_just_pressed(previous.pressed, pressed) + wheel_actions,
 		raw = raw,
 	}
-}
-
-rumble_level :: proc(strength: f32) -> u16 {
-	return u16(clamp(strength, 0, 1) * f32(max(u16)))
 }
 
 // Both motors at the requested strength, renewed every frame; a request

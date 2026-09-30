@@ -3,6 +3,9 @@ package game
 import "core:encoding/json"
 import "core:fmt"
 import "core:os"
+import "core:slice"
+import "core:strings"
+import rl "shared:raylib"
 
 DATA_DIRECTORY_ENVIRONMENT_VARIABLE :: "MINE_OH_BELOWED_DATA"
 WORKING_DIRECTORY_DATA :: "data"
@@ -36,8 +39,18 @@ Game_Config :: struct {
 // An explicitly set environment variable wins even if the directory is
 // missing, so that a typo fails loudly instead of silently falling back.
 // Then ./data, data beside the executable (the unzipped Windows build, work
-// item 0102, from any working directory) and the installed layout.
+// item 0102, from any working directory) and the installed layout. On
+// Android (work item 0114) the copy of the APK's data under the app's
+// internal folder, refreshed when the build changed.
 resolve_data_directory :: proc(allocator := context.allocator) -> (directory: string, ok: bool) {
+	when ODIN_PLATFORM_SUBTARGET == .Android {
+		internal, _ := android_data_paths()
+		if !sync_android_assets(internal, BUILD_INFO) {
+			return "", false
+		}
+		joined, error := os.join_path({internal, WORKING_DIRECTORY_DATA}, allocator)
+		return joined, error == nil
+	}
 	if value, found := os.lookup_env(DATA_DIRECTORY_ENVIRONMENT_VARIABLE, allocator); found && value != "" {
 		return value, true
 	}
@@ -60,6 +73,91 @@ data_directory_relative_to_executable :: proc(relative: string, allocator := con
 		return "", false
 	}
 	return joined, true
+}
+
+// The APK carries data/ as assets and the list of its files, since the
+// asset manager cannot list directories (build.sh android). core:os reads
+// the real file system only, so the files are copied under the internal
+// folder once per build; raylib's fopen wrapper reads a relative name from
+// the assets first.
+ANDROID_ASSET_LIST :: "data_files.txt"
+ANDROID_BUILD_STAMP_FILE :: ".build_stamp"
+
+// One path per line, relative to the repository (data/strings/en.sjson).
+// Blank lines are skipped. In the temp allocator.
+android_asset_paths :: proc(list: string) -> []string {
+	paths := make([dynamic]string, context.temp_allocator)
+	for line in strings.split_lines(list, context.temp_allocator) {
+		path := strings.trim_space(line)
+		if path != "" {
+			append(&paths, path)
+		}
+	}
+	return paths[:]
+}
+
+// The copy is current when its stamp holds this build's info.
+android_assets_current :: proc(stamp, build_info: string) -> bool {
+	return strings.trim_space(stamp) == build_info
+}
+
+// Copies the listed assets under internal and writes the stamp last, so an
+// interrupted copy is redone on the next start. False after logging the
+// problem.
+sync_android_assets :: proc(internal, build_info: string) -> bool {
+	data_directory, _ := os.join_path({internal, WORKING_DIRECTORY_DATA}, context.temp_allocator)
+	stamp_path, _ := os.join_path({data_directory, ANDROID_BUILD_STAMP_FILE}, context.temp_allocator)
+	if stamp, error := os.read_entire_file(stamp_path, context.temp_allocator); error == nil && android_assets_current(string(stamp), build_info) {
+		return true
+	}
+	// Files a newer build dropped must not linger in the copy.
+	os.remove_all(data_directory)
+	list, list_ok := read_android_asset(ANDROID_ASSET_LIST)
+	if !list_ok {
+		log_printf("error: cannot copy %s from the app: not in the APK", ANDROID_ASSET_LIST)
+		return false
+	}
+	for path in android_asset_paths(string(list)) {
+		if problem := copy_android_asset(internal, path); problem != "" {
+			log_printf("error: cannot copy %s from the app: %s", path, problem)
+			return false
+		}
+	}
+	if error := os.write_entire_file(stamp_path, build_info); error != nil {
+		log_printf("error: cannot copy %s from the app: %v", stamp_path, error)
+		return false
+	}
+	log_printf("data: copied the app's data to %s", data_directory)
+	return true
+}
+
+// Through raylib's fopen wrapper, which reads the asset. In the temp
+// allocator.
+read_android_asset :: proc(path: string) -> (data: []byte, ok: bool) {
+	size: i32
+	loaded := rl.LoadFileData(strings.clone_to_cstring(path, context.temp_allocator), &size)
+	if loaded == nil {
+		return nil, false
+	}
+	defer rl.UnloadFileData(loaded)
+	return slice.clone(loaded[:size], context.temp_allocator), true
+}
+
+// An empty string, or the problem.
+copy_android_asset :: proc(internal, path: string) -> string {
+	data, ok := read_android_asset(path)
+	if !ok {
+		return "not in the APK"
+	}
+	target, _ := os.join_path({internal, path}, context.temp_allocator)
+	directory, _ := os.split_path(target)
+	if error := os.make_directory_all(directory); error != nil && error != .Exist {
+		return fmt.tprintf("%v", error)
+	}
+	if error := os.write_entire_file(target, data); error != nil {
+		return fmt.tprintf("%v", error)
+	}
+	return ""
 }
 
 parse_game_config :: proc(data: []byte, allocator := context.allocator) -> (config: Game_Config, error: json.Unmarshal_Error) {

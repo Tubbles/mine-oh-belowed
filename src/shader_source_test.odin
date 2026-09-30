@@ -102,3 +102,45 @@ test_shipped_shaders_have_no_bare_integer_literals :: proc(t: ^testing.T) {
 	}
 	testing.expect(t, checked >= 4, "found fewer than the four shipped shaders")
 }
+
+// The GLSL ES rewrite for Android (work item 0114).
+@(test)
+test_shader_source_for_gles_rewrites_the_version_line :: proc(t: ^testing.T) {
+	testing.expect_value(t, shader_source_for_gles("#version 330\nout vec4 finalColor;"), "#version 300 es\nprecision highp float;\nprecision highp int;\nout vec4 finalColor;")
+	testing.expect_value(t, shader_source_for_gles("#version 330 core\nvoid main() {}\n"), "#version 300 es\nprecision highp float;\nprecision highp int;\nvoid main() {}\n")
+}
+
+@(test)
+test_shader_source_for_gles_keeps_the_remainder :: proc(t: ^testing.T) {
+	remainder := "\n// #version 330 in a comment\nflat in uint cell;\nuint hash = cell * 0x7feb352du;\n"
+	rewritten := shader_source_for_gles(strings.concatenate({"#version 330", remainder}, context.temp_allocator))
+	testing.expect(t, strings.has_suffix(rewritten, remainder))
+	testing.expect_value(t, strings.count(rewritten, "#version"), 2)
+}
+
+@(test)
+test_shader_source_for_gles_leaves_a_source_without_version :: proc(t: ^testing.T) {
+	source := "void main() {}\n"
+	testing.expect_value(t, shader_source_for_gles(source), source)
+	testing.expect_value(t, shader_source_for_gles(""), "")
+	testing.expect_value(t, shader_source_for_gles("#version 100\nvoid main() {}"), "#version 100\nvoid main() {}")
+}
+
+@(test)
+test_shipped_shaders_begin_with_a_version_line :: proc(t: ^testing.T) {
+	directory := join_save_path(test_data_directory(), CHUNK_SHADER_DIRECTORY)
+	entries, error := os.read_all_directory_by_path(directory, context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	checked := 0
+	for entry in entries {
+		if !strings.has_suffix(entry.name, ".vs") && !strings.has_suffix(entry.name, ".fs") {
+			continue
+		}
+		data, read_error := os.read_entire_file(entry.fullpath, context.temp_allocator)
+		testing.expect_value(t, read_error, nil)
+		testing.expectf(t, strings.has_prefix(string(data), "#version 330"), "data/shaders/%s does not begin with #version 330, so the Android build would not rewrite it for GLSL ES", entry.name)
+		testing.expectf(t, strings.has_prefix(shader_source_for_gles(string(data)), "#version 300 es\n"), "data/shaders/%s", entry.name)
+		checked += 1
+	}
+	testing.expect(t, checked >= 4, "found fewer than the four shipped shaders")
+}

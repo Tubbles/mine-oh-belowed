@@ -65,6 +65,10 @@ What to set in the Deck's controller layout for the shortcut (Game Mode, the sho
 - Trackpads: no mouse or other output, so they reach SDL alone (they drive the radial hotbar and the pointer only when SDL opened the controller through HIDAPI).
 - Back grips: if SDL got the real controller they arrive as the paddles and need no binding in Steam. If SDL got the virtual pad (no paddles), bind them in the layout to the buttons of the same actions: L4 to A, R4 to B, L5 to Y, R5 to d-pad up.
 
+## Android
+
+Work item 0114. The Android build has no SDL (`input_sdl3.odin` is left out, `input_sdl3_android.odin` stands in and `init_sdl3_input` fails with "no SDL on Android"), so `start_input_backend` takes the raylib backend and logs why. A Bluetooth or USB gamepad works at once through raylib, with the raylib bindings; the Steam Controller features (trackpads, gyro, rumble, grip sense) are SDL only. Touch is the pointer: raylib holds the left mouse button down while a finger is on the screen, and `read_raylib_mouse` takes `GetTouchPosition(0)` while `GetTouchPointCount()` is above zero and keeps the last position after the finger lifts (`touch_pointer_position`), so a tap moves the pointer and clicks where it lands and the title screen, the menus and the settings can be tapped. A drag moves the mouse delta, which in the world turns the camera as a mouse would. Movement and the other world actions on a touch screen wait for the overlay (work item 0115).
+
 ## Layout proposal for the alpha
 
 Everything below is a binding table in configuration, not code. Same physical input, two contexts.

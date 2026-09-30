@@ -19,6 +19,12 @@ import "core:os"
 // directory and no home, so a missing variable means no directory rather
 // than a Unix style fallback, and a leading ~/ in a configured path stays
 // as written.
+//
+// Android (work item 0114, no environment at all, doc/build.md): the
+// activity's external files folder (Android/data/<package>/files, which a
+// USB connection and file managers reach) holds config, share and state
+// in place of the three XDG homes, the internal data folder when there is
+// no external one. No runtime directory and no home.
 Platform_Directories :: struct {
 	config_home:       string,
 	config_dirs:       string,
@@ -33,6 +39,10 @@ when ODIN_OS == .Windows {
 	CONFIG_HOME_VARIABLES :: "APPDATA"
 	DATA_HOME_VARIABLES :: "APPDATA"
 	STATE_HOME_VARIABLES :: "LOCALAPPDATA"
+} else when ODIN_PLATFORM_SUBTARGET == .Android {
+	CONFIG_HOME_VARIABLES :: "the app's files folder, which Android did not report"
+	DATA_HOME_VARIABLES :: "the app's files folder, which Android did not report"
+	STATE_HOME_VARIABLES :: "the app's files folder, which Android did not report"
 } else {
 	CONFIG_HOME_VARIABLES :: "XDG_CONFIG_HOME or HOME"
 	DATA_HOME_VARIABLES :: "XDG_DATA_HOME or HOME"
@@ -45,6 +55,9 @@ NO_STATE_DIRECTORY_PROBLEM :: "no state directory (set " + STATE_HOME_VARIABLES 
 platform_directories :: proc(allocator := context.allocator) -> Platform_Directories {
 	when ODIN_OS == .Windows {
 		return windows_platform_directories(os.get_env("APPDATA", allocator), os.get_env("LOCALAPPDATA", allocator))
+	} else when ODIN_PLATFORM_SUBTARGET == .Android {
+		internal, external := android_data_paths()
+		return android_platform_directories(internal, external, allocator)
 	} else {
 		return Platform_Directories {
 			config_home = os.get_env("XDG_CONFIG_HOME", allocator),
@@ -60,4 +73,17 @@ platform_directories :: proc(allocator := context.allocator) -> Platform_Directo
 // Pure, so the Windows mapping is tested on any host.
 windows_platform_directories :: proc(application_data, local_application_data: string) -> Platform_Directories {
 	return Platform_Directories{config_home = application_data, data_home = application_data, state_home = local_application_data}
+}
+
+// Pure, so the Android mapping is tested on any host. In the given
+// allocator.
+android_platform_directories :: proc(internal, external: string, allocator := context.allocator) -> Platform_Directories {
+	base := external if external != "" else internal
+	if base == "" {
+		return {}
+	}
+	config_home, _ := os.join_path({base, "config"}, allocator)
+	data_home, _ := os.join_path({base, "share"}, allocator)
+	state_home, _ := os.join_path({base, "state"}, allocator)
+	return Platform_Directories{config_home = config_home, data_home = data_home, state_home = state_home}
 }

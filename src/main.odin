@@ -292,6 +292,10 @@ make_backend_bindings :: proc(bindings: []Binding, backend: Input_Backend) -> In
 
 require_data_directory :: proc() -> string {
 	data_directory, found := resolve_data_directory()
+	if !found && ODIN_PLATFORM_SUBTARGET == .Android {
+		log_printf("error: no data directory: the copy from the app failed (see above)")
+		os.exit(1)
+	}
 	if !found {
 		log_printf(
 			"error: no data directory found. Set %s, run from the repository root (./%s), put %s beside the executable, or install to <executable directory>/%s",

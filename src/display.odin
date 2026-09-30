@@ -183,7 +183,16 @@ current_monitor_size :: proc() -> [2]int {
 	return {int(rl.GetMonitorWidth(monitor)), int(rl.GetMonitorHeight(monitor))}
 }
 
+// On Android (work item 0114) the window is the screen: the mode and the
+// resolution changes do nothing there, vsync and the frame rate cap apply.
 apply_display_changes :: proc(changes: Display_Changes, monitor_size: [2]int) {
+	when ODIN_PLATFORM_SUBTARGET != .Android {
+		apply_window_mode_changes(changes, monitor_size)
+	}
+	apply_vsync_and_frame_rate_changes(changes)
+}
+
+apply_window_mode_changes :: proc(changes: Display_Changes, monitor_size: [2]int) {
 	if changes.leave_borderless && rl.IsWindowState({.BORDERLESS_WINDOWED_MODE}) {
 		rl.ToggleBorderlessWindowed()
 	}
@@ -203,6 +212,9 @@ apply_display_changes :: proc(changes: Display_Changes, monitor_size: [2]int) {
 			centre_window(size, monitor_size)
 		}
 	}
+}
+
+apply_vsync_and_frame_rate_changes :: proc(changes: Display_Changes) {
 	if changes.change_vsync {
 		if changes.vsync {
 			rl.SetWindowState({.VSYNC_HINT})
@@ -246,11 +258,13 @@ update_display :: proc(applied: ^Settings, next: Settings, monitor_size: [2]int,
 // WAYLAND_DISPLAY set; XWayland hands X11 applications the scaled screen
 // when the desktop is scaled and upscales them (work item 0084). The
 // launcher's MINE_OH_BELOWED_X11 unsets WAYLAND_DISPLAY, so that route
-// reports x11 although XWayland serves it.
+// reports x11 although XWayland serves it. Android (work item 0114) has
+// no GLFW: raylib's own platform draws to the activity's surface.
 Window_Platform :: enum u8 {
 	X11,
 	XWayland,
 	Wayland,
+	Android,
 }
 
 // The name the display log line and the Render page show.
@@ -262,6 +276,8 @@ window_platform_name :: proc(platform: Window_Platform) -> string {
 		return "xwayland"
 	case .Wayland:
 		return "wayland"
+	case .Android:
+		return "android"
 	}
 	return "?"
 }
@@ -280,7 +296,11 @@ window_platform_from_glfw :: proc(glfw_platform: int, wayland_session: bool) -> 
 
 // Read once after InitWindow: GLFW does not change its platform.
 current_window_platform :: proc() -> Window_Platform {
-	return window_platform_from_glfw(int(rl.glfwGetPlatform()), wayland_display_set())
+	when ODIN_PLATFORM_SUBTARGET == .Android {
+		return .Android
+	} else {
+		return window_platform_from_glfw(int(rl.glfwGetPlatform()), wayland_display_set())
+	}
 }
 
 // The desktop scales the window: under XWayland the Resolution row cannot
@@ -331,11 +351,16 @@ pointer_to_render_pixels :: proc(position: [2]f32, window_size, render_size: [2]
 // The window's size in the cursor's coordinates, from GLFW. raylib's
 // GetScreenWidth is not that on Wayland in fullscreen, where raylib 6.0
 // sets it to the framebuffer's size while GLFW keeps the cursor in the
-// window's logical coordinates.
+// window's logical coordinates. On Android the screen's size, which is
+// the render size there.
 cursor_window_size :: proc() -> [2]int {
-	width, height: i32
-	rl.glfwGetWindowSize(rl.glfwGetCurrentContext(), &width, &height)
-	return {int(width), int(height)}
+	when ODIN_PLATFORM_SUBTARGET == .Android {
+		return {int(rl.GetScreenWidth()), int(rl.GetScreenHeight())}
+	} else {
+		width, height: i32
+		rl.glfwGetWindowSize(rl.glfwGetCurrentContext(), &width, &height)
+		return {int(width), int(height)}
+	}
 }
 
 log_display_diagnostics :: proc(platform: Window_Platform) {
@@ -377,8 +402,13 @@ gl_string :: proc(get_string: Gl_Get_String, name: u32) -> string {
 }
 
 // Through GLFW's loader, so the game links neither libGL nor opengl32.
+// On Android from libGLESv3, which raylib's archive links anyway.
 log_gl_info :: proc() {
-	get_string := cast(Gl_Get_String)rl.glfwGetProcAddress("glGetString")
+	when ODIN_PLATFORM_SUBTARGET == .Android {
+		get_string: Gl_Get_String = glGetString
+	} else {
+		get_string := cast(Gl_Get_String)rl.glfwGetProcAddress("glGetString")
+	}
 	log_printf(
 		"%s",
 		gl_info_text(

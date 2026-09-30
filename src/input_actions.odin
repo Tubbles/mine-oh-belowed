@@ -220,7 +220,60 @@ Haptic_Request :: struct {
 	strength: f32,
 }
 
+rumble_level :: proc(strength: f32) -> u16 {
+	return u16(clamp(strength, 0, 1) * f32(max(u16)))
+}
+
 STICK_DEADZONE :: 0.15
+
+// The SDL-free parts of the SDL3 backend (input_sdl3.odin), here so the
+// bindings and the tests compile on Android, where that file is left out.
+
+// The Triton driver adds the left pad first, then the right pad.
+LEFT_TOUCHPAD_INDEX :: 0
+RIGHT_TOUCHPAD_INDEX :: 1
+
+TRIGGER_PRESS_THRESHOLD :: 0.5
+
+// Base look rates, scaled by the sensitivities in Settings.
+TOUCHPAD_LOOK_PIXELS_PER_PAD_WIDTH :: 1200
+GYRO_LOOK_PIXELS_PER_DEGREE :: 20
+
+// Maps -32768..32767 to -1..1; triggers only use 0..32767.
+normalize_sdl_axis :: proc(value: i16) -> f32 {
+	return max(f32(value) / 32767, -1)
+}
+
+touchpad_finger :: proc(gamepad: Raw_Gamepad, touchpad_index: int) -> Touchpad_Finger {
+	if touchpad_index >= gamepad.touchpad_count {
+		return {}
+	}
+	return gamepad.touchpads[touchpad_index].fingers[0]
+}
+
+// doc/input.md: the gyro aims while the right stick or right pad is touched.
+// Pads without touch sense keep it always on.
+gyro_look_active :: proc(touch_sense: Raw_Touch_Sense, right_finger: Touchpad_Finger) -> bool {
+	if !touch_sense.available {
+		return true
+	}
+	return touch_sense.right_stick_touched || right_finger.down
+}
+
+// The gyro setting only stops the gyro from aiming; the sensor stays on so
+// the diagnostics screen still shows it. With gyro_from_sdl false (Steam's
+// layer present) SDL's gyro never turns the view; Steam's mouse movement,
+// added by the caller, carries the gyro instead.
+sdl3_look_delta :: proc(previous, current: Raw_Gamepad, frame_seconds: f32, settings: Settings, gyro_from_sdl := true) -> [2]f32 {
+	right_finger := touchpad_finger(current, RIGHT_TOUCHPAD_INDEX)
+	pad_delta := touchpad_delta(touchpad_finger(previous, RIGHT_TOUCHPAD_INDEX), right_finger)
+	look_delta := pad_delta * TOUCHPAD_LOOK_PIXELS_PER_PAD_WIDTH * settings.trackpad_look_sensitivity
+	gyro := current.motion.gyro
+	if gyro_from_sdl && settings.gyro_enabled && gyro.enabled && gyro_look_active(current.touch_sense, right_finger) {
+		look_delta += gyro_to_look_delta(gyro.corrected, frame_seconds) * GYRO_LOOK_PIXELS_PER_DEGREE * settings.gyro_look_sensitivity
+	}
+	return look_delta
+}
 
 // What the player's body and hands react to. While a screen is open the
 // world gets none of these; the menu meanings of the same buttons belong to

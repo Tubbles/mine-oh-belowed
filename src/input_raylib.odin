@@ -50,7 +50,7 @@ read_raylib_gamepad :: proc() -> Raw_Gamepad {
 read_raylib_mouse :: proc() -> Raw_Mouse {
 	rl.SetMouseScale(1, 1)
 	mouse := Raw_Mouse {
-		position     = pointer_to_render_pixels(rl.GetMousePosition(), cursor_window_size(), render_size()),
+		position     = pointer_to_render_pixels(raylib_pointer_position(), cursor_window_size(), render_size()),
 		delta        = rl.GetMouseDelta(),
 		wheel        = rl.GetMouseWheelMoveV(),
 		button_count = min(len(rl.MouseButton), RAW_MOUSE_BUTTON_CAPACITY),
@@ -59,6 +59,28 @@ read_raylib_mouse :: proc() -> Raw_Mouse {
 		mouse.button_down[button_index] = rl.IsMouseButtonDown(rl.MouseButton(button_index))
 	}
 	return mouse
+}
+
+// On Android (work item 0114) the first touch is the pointer: its
+// position while a finger is down, the last one after it lifts, so a tap
+// lands where the finger was. The first touch also holds the left mouse
+// button down (raylib's rcore.c), which is the click.
+when ODIN_PLATFORM_SUBTARGET == .Android {
+	@(private = "file")
+	last_touch_position: [2]f32
+
+	raylib_pointer_position :: proc() -> [2]f32 {
+		last_touch_position = touch_pointer_position(int(rl.GetTouchPointCount()), rl.GetTouchPosition(0), last_touch_position)
+		return last_touch_position
+	}
+} else {
+	raylib_pointer_position :: proc() -> [2]f32 {
+		return rl.GetMousePosition()
+	}
+}
+
+touch_pointer_position :: proc(touch_count: int, first_touch, last_position: [2]f32) -> [2]f32 {
+	return first_touch if touch_count > 0 else last_position
 }
 
 read_raylib_keyboard :: proc() -> Raw_Keyboard {

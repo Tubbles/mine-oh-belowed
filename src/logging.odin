@@ -31,7 +31,9 @@ import "core:time"
 // (logging_windows.odin, work item 0102) the console lines go to stderr as
 // they are, with no redirect and no signal handlers. Build tags, not a
 // `when` block: the posix package links the static C runtime on Windows
-// by its import alone, so only a build tag keeps it out.
+// by its import alone, so only a build tag keeps it out. On Android (work
+// item 0114) every line also goes to logcat (platform_android.odin), where
+// adb logcat -s mine-oh-belowed shows it.
 
 LOG_FILE_NAME :: "log.txt"
 STATE_HOME_UNDER_HOME :: ".local/state"
@@ -139,6 +141,9 @@ log_printf :: proc(format: string, arguments: ..any) {
 	sync.mutex_lock(&global_log.mutex)
 	defer sync.mutex_unlock(&global_log.mutex)
 	write_console(fmt.tprintf("%s\n", line))
+	when ODIN_PLATFORM_SUBTARGET == .Android {
+		write_logcat(line)
+	}
 	if global_log.file != nil {
 		write_log_line(global_log.file, line)
 	}

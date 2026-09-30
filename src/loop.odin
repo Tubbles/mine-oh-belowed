@@ -969,7 +969,12 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	// report the monitor.
 	window_settings := initial_window_settings(player_configuration.settings)
 	rl.SetConfigFlags(window_config_flags(window_settings))
-	rl.InitWindow(i32(window_settings.resolution.x), i32(window_settings.resolution.y), "Mine oh Belowed")
+	when ODIN_PLATFORM_SUBTARGET == .Android {
+		// raylib sizes the window to the screen (work item 0114).
+		rl.InitWindow(0, 0, "Mine oh Belowed")
+	} else {
+		rl.InitWindow(i32(window_settings.resolution.x), i32(window_settings.resolution.y), "Mine oh Belowed")
+	}
 	// raylib returns from a failed InitWindow instead of reporting it, and
 	// the first draw call would then crash. A missing display is the usual cause.
 	if !rl.IsWindowReady() {

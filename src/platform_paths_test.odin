@@ -39,6 +39,41 @@ test_windows_platform_directories_missing :: proc(t: ^testing.T) {
 	testing.expect(t, !saves_ok)
 }
 
+// The Android mapping (work item 0114) through the same helpers.
+@(test)
+test_android_platform_directories_use_the_external_folder :: proc(t: ^testing.T) {
+	external := "/storage/emulated/0/Android/data/io.github.tubbles.mineohbelowed/files"
+	directories := android_platform_directories("/data/user/0/io.github.tubbles.mineohbelowed/files", external, context.temp_allocator)
+	testing.expect_value(t, directories.config_home, "/storage/emulated/0/Android/data/io.github.tubbles.mineohbelowed/files/config")
+	testing.expect_value(t, directories.data_home, "/storage/emulated/0/Android/data/io.github.tubbles.mineohbelowed/files/share")
+	testing.expect_value(t, directories.state_home, "/storage/emulated/0/Android/data/io.github.tubbles.mineohbelowed/files/state")
+	testing.expect_value(t, directories.config_dirs, "")
+	testing.expect_value(t, directories.runtime_directory, "")
+	testing.expect_value(t, directories.home, "")
+
+	log_directory, log_ok := log_directory_from_environment(directories.state_home, directories.home, context.temp_allocator)
+	testing.expect(t, log_ok)
+	testing.expect_value(t, log_directory, "/storage/emulated/0/Android/data/io.github.tubbles.mineohbelowed/files/state/mine-oh-belowed")
+	saves, saves_ok := saves_directory_from_environment("", directories.data_home, directories.home, context.temp_allocator)
+	testing.expect(t, saves_ok)
+	testing.expect_value(t, saves, "/storage/emulated/0/Android/data/io.github.tubbles.mineohbelowed/files/share/mine-oh-belowed/saves")
+	environment := Configuration_Environment{config_home = directories.config_home, config_dirs = directories.config_dirs, home = directories.home}
+	configuration_directory, configuration_ok := user_configuration_directory(environment)
+	testing.expect(t, configuration_ok)
+	testing.expect_value(t, configuration_directory, "/storage/emulated/0/Android/data/io.github.tubbles.mineohbelowed/files/config/mine-oh-belowed")
+}
+
+@(test)
+test_android_platform_directories_fall_back_to_the_internal_folder :: proc(t: ^testing.T) {
+	directories := android_platform_directories("/data/user/0/app/files", "", context.temp_allocator)
+	testing.expect_value(t, directories.state_home, "/data/user/0/app/files/state")
+	testing.expect_value(t, directories.data_home, "/data/user/0/app/files/share")
+	testing.expect_value(t, directories.config_home, "/data/user/0/app/files/config")
+	none := android_platform_directories("", "", context.temp_allocator)
+	_, log_ok := log_directory_from_environment(none.state_home, none.home, context.temp_allocator)
+	testing.expect(t, !log_ok)
+}
+
 // Imports that link the static C runtime (libucrt.lib) on Windows by their
 // mere presence, which clashes with raylib's release library, built for
 // the dynamic runtime (work item 0102, the first two CI runs). A `when`

@@ -1,3 +1,4 @@
+#+build !linux:android
 package game
 
 import "core:testing"
