@@ -1,6 +1,6 @@
 # 0143: Architecture audit, one report per cluster
 
-Status: todo
+Status: implemented
 
 ## Goal
 
@@ -37,3 +37,24 @@ The main agent reads each report, spot checks its claims, and appends the key fi
 - `python3 tools/check_docs.py` passes with the reports in the tree (every name they cite exists).
 - The main agent's spot check: five claims per report against the code.
 - `./build.sh check` and `./build.sh test` unchanged (audits change no code).
+
+## Implementation notes
+
+Six reports under `doc/audit/` (loop 163 lines, ui 224, world 174, simulation 241, presentation 201, content 205), one Opus agent each in series, five claims per report spot checked by the main agent against the code (all thirty held), each report's findings appended to `doc/log/2026-09-30.md` as it landed. `python3 tools/check_docs.py` passes with the reports; no code changed.
+
+Decisions the audits settle:
+
+- No entity component system. The simulation audit sizes it against the code: sixteen kinds with few fields, multi pool systems that already go through accessors, pool index order as part of the determinism, and coupling that no storage layout touches. The middle path is a `[Entity_Kind]` table with pool views and component locations over the existing pools, then shared component structs once the save codec reads `using` fields.
+- The engine or game cut, as the six reports draw it: engine is the frame loop and the request pattern, the input layer and the UI toolkit (which makes no raylib call), world storage with light, water, meshing, streaming and the save codec, the generation framework, the atlas, meshes, shaders and the audio device, the loader framework, strings, configuration, logging, the command transport and the platform pairs. Game is the tick order and the machines, placement rules, the screens and the HUD's meaning, the vein tables, biomes and spawn, the per kind draws and sound choices, the registries' semantics, quests, contracts, the venture and the dev kits. The seams a plugin boundary needs, none of which exists yet: a queue for the simulation writes that land outside the tick (the screens' 22 procedures and 9 field writes, chunk arrivals, the command socket), a per frame machine view for the renderer and the panels, a draw list instead of direct raylib calls, a per tick event list instead of the memories diffing counters, and ticks that take the simulation records instead of `^World`. 0146 builds on this.
+- Cluster corrections for `tools/code_graph.py`: `hot_reload.odin` to loop; `developer.odin`, `quest_runtime.odin`, `recipe_unlocks.odin`, `venture.odin`, `recycler.odin`, `schematic.odin`, `prospecting.odin` to simulation; `player_animation.odin` and `weather.odin` to presentation; `quick_transfer.odin` to ui; `platform` and `tools` (command socket, data browser, export) as clusters of their own. 0144 writes the map from this.
+
+Bugs found on the way, queued in `SUGGESTIONS.md`: three files written in place against the hand-back rule (settings, touch layouts, texture edits) with `main` exiting on a malformed settings file; water never scheduled when a machine leaves a cell; the glyph bar ignoring rebindings; belt items positioned per tick under an interpolating belt surface (to be seen on the couch first); the shader copies of the variation hash and light curve untested; the content loaders accepting unknown keys; the generator naming blocks in code.
+
+The refactor queue across the reports, in the order the prerequisites suggest (each entry is ranked in its report with files, guards, gain and risk):
+
+1. Pure moves and the cluster table, no behaviour change: the simulation state out of `loop.odin`; rename `column` and move `world_settings_from_file` and the JNI helpers; `Box` and the coordinate helpers to the world files; `join_save_path`, `sorted_object_keys` and the build stamp parameter to free the platform leaves; the toolkit pieces out of the screen files. This is the 0145 prerequisite.
+2. The bug fixes above.
+3. The hubs: embed `Simulation_Content` in `Game_Content`; narrow the serve procedures; the game's records off `World` (byte compatible); ticks without `^World`; `Frame_State` into groups; `Screen_Context` by consumer; the UI views out of `Session`.
+4. The tables: the `[Entity_Kind]` table with component locations; one burner step; the screen table; one theme copy; one loader body with unknown key refusal and the hand written lookups on `find_definition_index`; one request table in the loop.
+5. The seams: the per frame machine view; the cell change and topology seam; chunk arrivals as a list the tick drains; one per tick event detector; the draw list.
+6. Decisions for the user: the name framed save top level; shared component structs after codec support; the furnace as a crafting machine; a full package split after 0145.
