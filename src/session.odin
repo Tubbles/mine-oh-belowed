@@ -26,10 +26,6 @@ Session :: struct {
 	ticks_since_save:   u64,
 	accumulator:        Tick_Accumulator,
 	tick_input:         Tick_Input_Accumulator,
-	recipe_browser:     Recipe_Browser,
-	technology_browser: Technology_Browser,
-	statistics_view:    Statistics_View,
-	map_view:           Map_View,
 	debug_edit_counter: u64,
 	// The weather command's forced kind (work item 0063), nil for the
 	// schedule. Not saved.
@@ -114,8 +110,6 @@ start_session :: proc(plan: Session_Plan, config: Game_Config, content: Game_Con
 	}
 	session.save = clone_save_setup(plan.save)
 	session.accumulator = make_tick_accumulator(config.tick_rate)
-	session.recipe_browser = make_recipe_browser()
-	session.technology_browser = make_technology_browser()
 	session.streaming = start_chunk_streaming(&session.generator, content.blocks, !plan.debug_terrain, default_worker_count())
 	return session, ""
 }
@@ -132,8 +126,6 @@ build_session_debug_terrain :: proc(world: ^World, registry: Block_Registry) -> 
 // Workers read the session's generator, so they stop first.
 end_session :: proc(session: ^Session) {
 	stop_chunk_streaming(&session.streaming)
-	destroy_map_view(&session.map_view)
-	destroy_recipe_browser(&session.recipe_browser)
 	destroy_simulation(&session.simulation)
 	delete(session.technologies.technologies)
 	delete(session.save.location.directory_name)

@@ -325,6 +325,9 @@ reload_content :: proc(state: ^Frame_State) -> (summary: string, problem: string
 		summary = content_changes_text(changes)
 		if state.session != nil {
 			problem = reload_session(state.session, state.content, data, state.config)
+			if problem == "" {
+				reset_session_views(&state.interaction.session_views, &state.session.simulation)
+			}
 		}
 	}
 	if problem != "" {

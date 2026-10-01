@@ -322,8 +322,8 @@ reloaded_session_generator :: proc(base, current: Generator) -> Generator {
 // Rebuilds the session under new data: the technologies with the world's
 // research cost, the simulation (reload_simulation), the generator, and
 // the streaming workers, which read the generator and the block registry.
-// The views that hold content indices start over. On a problem the
-// session is unchanged.
+// On a problem the session is unchanged. The views beside the session are
+// reset by the caller (reload_content).
 reload_session :: proc(session: ^Session, old_content: Game_Content, data: Game_Data, config: Game_Config) -> string {
 	technologies := scaled_technology_registry(data.content.technologies, session.simulation.world.settings.research_cost_percent)
 	old_simulation_content := session_simulation_content(old_content, session.technologies)
@@ -341,17 +341,7 @@ reload_session :: proc(session: ^Session, old_content: Game_Content, data: Game_
 	session.technologies = technologies
 	session.generator = reloaded_session_generator(data.base_generator, session.generator)
 	session.streaming = start_chunk_streaming(&session.generator, data.content.blocks, load_around_camera, default_worker_count())
-	reset_session_views(session)
 	return ""
-}
-
-reset_session_views :: proc(session: ^Session) {
-	reset_recipe_browser(&session.recipe_browser)
-	session.technology_browser = make_technology_browser()
-	session.statistics_view.has_focus = false
-	session.statistics_view.fluid_has_focus = false
-	collect_explored_surfaces(&session.simulation.world, session.simulation.records.explored, &session.map_view.surfaces)
-	session.map_view.painted_frame = {}
 }
 
 new_growing_arena :: proc() -> ^virtual.Arena {

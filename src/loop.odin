@@ -82,6 +82,9 @@ Frame_Interaction :: struct {
 	ui:                 Ui_State,
 	// The map's texture (ui_draw.odin).
 	ui_images:          Ui_Image_Cache,
+	// The played world's browsers, statistics and map, beside the session
+	// rather than in it (ui_session_views.odin); destroyed on the title.
+	session_views:      Session_Views,
 	// The font families and the fonts loaded from them (ui_font.odin, work
 	// item 0077); ui.fonts points at font_cache. A fonts reload retires
 	// the old families' arena until exit (Frame_Reload), settings.font may
@@ -713,10 +716,10 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 	screen_context.unlocks = &session.simulation.unlocks
 	screen_context.recipes = content_with_found_schematics(content.simulation_content, session.simulation.unlocks).recipes
 	screen_context.quest_state = &session.simulation.quests
-	screen_context.browser = &session.recipe_browser
-	screen_context.technology_browser = &session.technology_browser
-	screen_context.statistics_view = &session.statistics_view
-	screen_context.map_view = &session.map_view
+	screen_context.browser = &state.interaction.session_views.recipe_browser
+	screen_context.technology_browser = &state.interaction.session_views.technology_browser
+	screen_context.statistics_view = &state.interaction.session_views.statistics_view
+	screen_context.map_view = &state.interaction.session_views.map_view
 	screen_context.generator = &session.generator
 	screen_context.biome_banner = &state.interaction.biome_banner
 	screen_context.developer_requests = &session.simulation.developer_requests
@@ -901,6 +904,7 @@ enter_planned_session :: proc(state: ^Frame_State, plan: Session_Plan) {
 
 enter_session :: proc(state: ^Frame_State, session: ^Session) {
 	state.session = session
+	state.interaction.session_views = make_session_views()
 	state.presentation.particles = {}
 	state.presentation.particle_memory = {}
 	state.presentation.player_animation = {}
@@ -922,6 +926,7 @@ leave_session :: proc(state: ^Frame_State) {
 	}
 	unload_all_chunk_meshes(&state.presentation.renderer)
 	end_session(session)
+	destroy_session_views(&state.interaction.session_views)
 	state.session = nil
 	state.developer.diagnostics_page = .Off
 	state.developer.show_world_overlay = false

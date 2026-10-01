@@ -114,10 +114,7 @@ Ui_Audit :: struct {
 	fonts:              Loaded_Fonts,
 	bindings:           []Binding,
 	title:              Title_State,
-	browser:            Recipe_Browser,
-	technology_browser: Technology_Browser,
-	statistics_view:    Statistics_View,
-	map_view:           Map_View,
+	views:              Session_Views,
 	generator:          Generator,
 	biome_banner:       Biome_Banner,
 	recipe_names:       []string,
@@ -283,10 +280,10 @@ audit_screen_context :: proc(audit: ^Ui_Audit) -> Screen_Context {
 		tick = simulation.tick,
 		recipe_names = audit.recipe_names,
 		recipe_order = audit.recipe_order,
-		browser = &audit.browser,
-		technology_browser = &audit.technology_browser,
-		statistics_view = &audit.statistics_view,
-		map_view = &audit.map_view,
+		browser = &audit.views.recipe_browser,
+		technology_browser = &audit.views.technology_browser,
+		statistics_view = &audit.views.statistics_view,
+		map_view = &audit.views.map_view,
 		generator = &audit.generator,
 		biome_banner = &audit.biome_banner,
 		developer_mode = true,
@@ -311,7 +308,7 @@ audit_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, size: Ui_Audit_Size, aud
 	defer free_all(context.temp_allocator)
 	audit.simulation.players[0].open_machine = audit_case.machine
 	if audit_case.selecting != NO_ENTITY {
-		audit.browser.selecting_for = audit_case.selecting
+		audit.views.recipe_browser.selecting_for = audit_case.selecting
 	}
 	frame_input := input
 	frame_input.pointer_is_touch = audit_case.touch
@@ -364,7 +361,7 @@ audit_case_at_size :: proc(audit: ^Ui_Audit, audit_case: Ui_Audit_Case, size: Ui
 	if audit_case.mission_control {
 		audit_mission_control(audit, &state)
 	}
-	audit.browser.selecting_for = NO_ENTITY
+	audit.views.recipe_browser.selecting_for = NO_ENTITY
 	audit_frame(audit, &state, size, audit_case, {}, "first frame")
 	for step in 0 ..< audit_case.tab_next {
 		audit_frame(audit, &state, size, audit_case, {tab_next = true}, fmt.tprintf("tab step %d", step + 1))
@@ -539,8 +536,7 @@ make_ui_audit :: proc() -> ^Ui_Audit {
 	assert(problem == "", problem)
 	audit.bindings = bindings
 	audit.title = audit_title_state()
-	audit.browser = make_recipe_browser()
-	audit.technology_browser = make_technology_browser()
+	audit.views = make_session_views()
 	audit.recipe_names = recipe_display_names(audit.content.recipes, context.temp_allocator)
 	audit.recipe_order = recipe_name_order(audit.recipe_names, context.temp_allocator)
 	audit.item_sort_ranks = item_sort_ranks(audit.content.items, item_display_names(audit.content.items, context.temp_allocator), context.temp_allocator)
@@ -563,8 +559,7 @@ destroy_ui_audit :: proc(audit: ^Ui_Audit) {
 	destroy_arena(audit.fonts.arena)
 	destroy_save_summaries(&audit.title.saves)
 	delete(audit.title.saves)
-	destroy_map_view(&audit.map_view)
-	destroy_recipe_browser(&audit.browser)
+	destroy_session_views(&audit.views)
 	destroy_texture_editor(&audit.texture_editor)
 	destroy_data_browser(&audit.data_browser)
 	destroy_touch_layouts(&audit.touch_layouts)
@@ -925,13 +920,13 @@ test_inventory_strip_pause_menu_and_initial_focus :: proc(t: ^testing.T) {
 		state := Ui_State{theme = audit.theme}
 		push_screen(&state.screens, .Machine)
 		push_screen(&state.screens, .Recipes)
-		audit.browser.selecting_for = assembler.handle
+		audit.views.recipe_browser.selecting_for = assembler.handle
 		simulation.players[0].open_machine = assembler.handle
-		category := audit.browser.filter.category
+		category := audit.views.recipe_browser.filter.category
 		screen_test_frame(audit, &state, {tab_next = true})
 		testing.expect_value(t, top_screen(state.screens), Screen.Recipes)
 		testing.expect_value(t, state.screens.count, 2)
-		testing.expect_value(t, audit.browser.filter.category, category)
+		testing.expect_value(t, audit.views.recipe_browser.filter.category, category)
 		testing.expect(t, !draw_list_has_text(state.draw_list[:], text("inventory_tab_technologies")))
 		destroy_ui_state(&state)
 		break
@@ -1070,12 +1065,12 @@ test_inventory_screen_quick_move_and_drop :: proc(t: ^testing.T) {
 // furnace missing. Returns what restore_recipe_ingredient_states puts back.
 set_recipe_ingredient_states :: proc(audit: ^Ui_Audit) -> (slots: []Item_Stack, queue: Craft_Queue, browser: Recipe_Browser) {
 	player := &audit.simulation.players[0]
-	slots, queue, browser = slice.clone(player.inventory.slots, context.temp_allocator), player.crafting, audit.browser
+	slots, queue, browser = slice.clone(player.inventory.slots, context.temp_allocator), player.crafting, audit.views.recipe_browser
 	slice.fill(player.inventory.slots, EMPTY_STACK)
 	inventory_add(player.inventory, audit.content.items, test_item(audit.content.items, "iron_plate"), 9)
 	player.crafting = make_craft_queue()
-	audit.browser.filter = {category = .Machines, available_only = true}
-	audit.browser.focused_recipe = test_recipe(audit.content.recipes, "burner_mining_drill")
+	audit.views.recipe_browser.filter = {category = .Machines, available_only = true}
+	audit.views.recipe_browser.focused_recipe = test_recipe(audit.content.recipes, "burner_mining_drill")
 	return slots, queue, browser
 }
 
@@ -1083,7 +1078,7 @@ restore_recipe_ingredient_states :: proc(audit: ^Ui_Audit, slots: []Item_Stack, 
 	player := &audit.simulation.players[0]
 	copy(player.inventory.slots, slots)
 	player.crafting = queue
-	audit.browser.filter, audit.browser.focused_recipe = browser.filter, browser.focused_recipe
+	audit.views.recipe_browser.filter, audit.views.recipe_browser.focused_recipe = browser.filter, browser.focused_recipe
 }
 
 audit_recipe_ingredient_states :: proc(audit: ^Ui_Audit) {
@@ -1145,7 +1140,7 @@ test_recipe_screen_shows_have_and_need :: proc(t: ^testing.T) {
 	player := &audit.simulation.players[0]
 	plank := test_recipe(audit.content.recipes, "plank")
 	log_item := test_item(audit.content.items, "log")
-	audit.browser.focused_recipe = plank
+	audit.views.recipe_browser.focused_recipe = plank
 	state := Ui_State{theme = audit.theme}
 	defer destroy_ui_state(&state)
 	push_screen(&state.screens, .Recipes)
