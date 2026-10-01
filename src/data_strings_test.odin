@@ -38,6 +38,7 @@ test_shipped_strings_cover_the_ui :: proc(t: ^testing.T) {
 	testing.expect_value(t, error, nil)
 	sources := [?]string {
 		#load("ui_screens.odin", string),
+		#load("ui_widgets.odin", string),
 		#load("hud.odin", string),
 		#load("ui_journal.odin", string),
 		#load("ui_technologies.odin", string),
@@ -56,11 +57,8 @@ test_shipped_strings_cover_the_ui :: proc(t: ^testing.T) {
 		}
 	}
 	testing.expect(t, key_count > 10)
-	for device in Input_Device {
-		for button in Glyph_Button {
-			key := glyph_key(device, button)
-			testing.expectf(t, key in table.entries, "glyph key %q is not in en.sjson", key)
-		}
+	for entry in control_label_keys {
+		testing.expectf(t, entry.key in table.entries, "glyph key %q is not in en.sjson", entry.key)
 	}
 	state_keys := make([dynamic]string, context.temp_allocator)
 	for key in assembler_state_keys {

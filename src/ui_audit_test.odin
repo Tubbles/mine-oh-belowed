@@ -347,6 +347,7 @@ audit_case_at_size :: proc(audit: ^Ui_Audit, audit_case: Ui_Audit_Case, size: Ui
 	state := Ui_State {
 		theme         = audit.theme,
 		active_device = device,
+		bindings      = audit.bindings,
 	}
 	defer destroy_ui_state(&state)
 	for screen in audit_case.screens {

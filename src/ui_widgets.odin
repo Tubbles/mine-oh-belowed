@@ -68,7 +68,8 @@ Slider_Range :: struct {
 	step:    f32,
 }
 
-// Logical buttons the glyph bar can show; glyph_key maps them per device.
+// Logical buttons the glyph bar can show; glyph shows the control bound
+// to each one's action (glyph_action).
 Glyph_Button :: enum u8 {
 	Confirm,
 	Back,
@@ -876,73 +877,186 @@ ui_progress_bar :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, fraction: f32
 	draw_outline(state, rectangle, theme.colors[.Panel_Edge], theme.border)
 }
 
-// String key of a button's glyph on the active device.
-glyph_key :: proc(device: Input_Device, button: Glyph_Button) -> string {
+// A glyph: the pad button's icon, or a key cap (Ui_Icon.Key) with the
+// control's label on it.
+Glyph :: struct {
+	icon:  Ui_Icon,
+	label: string,
+}
+
+@(rodata)
+glyph_button_actions := [Glyph_Button]Action {
+	.Confirm        = .Confirm,
+	.Back           = .Back,
+	.Tab_Previous   = .Tab_Previous,
+	.Tab_Next       = .Tab_Next,
+	.Info           = .Info_Panel,
+	.Context_Action = .Context_Action,
+	.Pause          = .Pause,
+	.Inventory      = .Open_Inventory,
+	.Secondary      = .Menu_Secondary,
+	.Interact       = .Interact,
+	.Use_Item       = .Use_Item,
+	.Sprint         = .Sprint,
+	.Quick_Move     = .Menu_Quick_Move,
+	.Drop           = .Menu_Drop,
+}
+
+// The action whose control a glyph shows first. On the keyboard Back shows
+// Pause's key (Esc), which steps back a screen as Back does
+// (handle_screen_keys), and Sprint shows Sprint_Hold, the keyboard's sprint;
+// glyph falls back to the button's own action when those have no key.
+glyph_action :: proc(device: Input_Device, button: Glyph_Button) -> Action {
+	if device == .Keyboard_Mouse && button == .Back {
+		return .Pause
+	}
+	if device == .Keyboard_Mouse && button == .Sprint {
+		return .Sprint_Hold
+	}
+	return glyph_button_actions[button]
+}
+
+binding_on_device :: proc(binding: Binding, device: Input_Device) -> bool {
 	switch device {
 	case .Gamepad:
-		switch button {
-		case .Confirm:
-			return "glyph_gamepad_confirm"
-		case .Back:
-			return "glyph_gamepad_back"
-		case .Tab_Previous:
-			return "glyph_gamepad_tab_previous"
-		case .Tab_Next:
-			return "glyph_gamepad_tab_next"
-		case .Info:
-			return "glyph_gamepad_info"
-		case .Context_Action:
-			return "glyph_gamepad_context_action"
-		case .Pause:
-			return "glyph_gamepad_pause"
-		case .Inventory:
-			return "glyph_gamepad_inventory"
-		case .Secondary:
-			return "glyph_gamepad_secondary"
-		case .Interact:
-			return "glyph_gamepad_interact"
-		case .Use_Item:
-			return "glyph_gamepad_use_item"
-		case .Sprint:
-			return "glyph_gamepad_sprint"
-		case .Quick_Move:
-			return "glyph_gamepad_quick_move"
-		case .Drop:
-			return "glyph_gamepad_drop"
-		}
+		return binding.device == .Gamepad
 	case .Keyboard_Mouse:
-		switch button {
-		case .Confirm:
-			return "glyph_keyboard_confirm"
-		case .Back:
-			return "glyph_keyboard_back"
-		case .Tab_Previous:
-			return "glyph_keyboard_tab_previous"
-		case .Tab_Next:
-			return "glyph_keyboard_tab_next"
-		case .Info:
-			return "glyph_keyboard_info"
-		case .Context_Action:
-			return "glyph_keyboard_context_action"
-		case .Pause:
-			return "glyph_keyboard_pause"
-		case .Inventory:
-			return "glyph_keyboard_inventory"
-		case .Secondary:
-			return "glyph_keyboard_secondary"
-		case .Interact:
-			return "glyph_keyboard_interact"
-		case .Use_Item:
-			return "glyph_keyboard_use_item"
-		case .Sprint:
-			return "glyph_keyboard_sprint"
-		case .Quick_Move:
-			return "glyph_keyboard_quick_move"
-		case .Drop:
-			return "glyph_keyboard_drop"
+		return binding.device == .Keyboard || binding.device == .Mouse
+	}
+	return false
+}
+
+// The backend reads the binding: it is not limited to the other backend,
+// and raylib reads its gamepad control (bind_gamepad_control).
+binding_on_backend :: proc(binding: Binding, backend: Input_Backend) -> bool {
+	if backend not_in binding.backends {
+		return false
+	}
+	return backend != .Raylib || binding.device != .Gamepad || raylib_reads_gamepad_control(binding.control)
+}
+
+// The action's first binding on the device and backend: the glyph bar has
+// room for one control per hint.
+first_binding_on_device :: proc(bindings: []Binding, action: Action, device: Input_Device, backend: Input_Backend) -> (binding: Binding, found: bool) {
+	for candidate in bindings {
+		if candidate.action == action && binding_on_backend(candidate, backend) && binding_on_device(candidate, device) {
+			return candidate, true
 		}
 	}
-	return ""
+	return {}, false
+}
+
+// The icon of a gamepad control that has one.
+gamepad_control_icon :: proc(binding: Binding) -> (icon: Ui_Icon, found: bool) {
+	if binding.device != .Gamepad {
+		return .Key, false
+	}
+	switch binding.control {
+	case "SOUTH":
+		return .Button_South, true
+	case "EAST":
+		return .Button_East, true
+	case "WEST":
+		return .Button_West, true
+	case "NORTH":
+		return .Button_North, true
+	case "LEFT_SHOULDER":
+		return .Bumper_Left, true
+	case "RIGHT_SHOULDER":
+		return .Bumper_Right, true
+	case GAMEPAD_LEFT_TRIGGER_NAME:
+		return .Trigger_Left, true
+	case GAMEPAD_RIGHT_TRIGGER_NAME:
+		return .Trigger_Right, true
+	case "LEFT_STICK":
+		return .Stick_Left, true
+	case "RIGHT_STICK":
+		return .Stick_Right, true
+	case "DPAD_UP", "DPAD_DOWN", "DPAD_LEFT", "DPAD_RIGHT":
+		return .Dpad, true
+	case "START":
+		return .Menu, true
+	case "BACK":
+		return .View, true
+	}
+	return .Key, false
+}
+
+Control_Label_Key :: struct {
+	device:  Binding_Device,
+	control: string,
+	key:     string,
+}
+
+// The controls whose names read poorly on a key cap, and their labels'
+// string keys.
+@(rodata)
+control_label_keys := [?]Control_Label_Key {
+	{.Keyboard, "ENTER", "glyph_keyboard_enter"},
+	{.Keyboard, "ESCAPE", "glyph_keyboard_escape"},
+	{.Keyboard, "LEFT_SHIFT", "glyph_keyboard_left_shift"},
+	{.Keyboard, "LEFT_CONTROL", "glyph_keyboard_left_control"},
+	{.Mouse, "LEFT", "glyph_mouse_left"},
+	{.Mouse, "RIGHT", "glyph_mouse_right"},
+	{.Mouse, "MIDDLE", "glyph_mouse_middle"},
+	{.Mouse, "SIDE", "glyph_mouse_side"},
+	{.Mouse, "EXTRA", "glyph_mouse_extra"},
+	{.Mouse, "FORWARD", "glyph_mouse_forward"},
+	{.Mouse, "BACK", "glyph_mouse_back"},
+}
+
+// "PAGE_DOWN" as "Page Down" and "LEFT_PADDLE1" as "Left Paddle 1",
+// while "F3" stays, in the temp allocator.
+readable_control_name :: proc(control: string) -> string {
+	builder := strings.builder_make(context.temp_allocator)
+	for word, index in strings.split(control, "_", context.temp_allocator) {
+		if index > 0 {
+			strings.write_byte(&builder, ' ')
+		}
+		strings.write_string(&builder, readable_control_word(word))
+	}
+	return strings.to_string(builder)
+}
+
+// One word: the first letter kept, the rest lower case, a space before a
+// trailing number after more than one letter.
+readable_control_word :: proc(word: string) -> string {
+	letters_end := len(word)
+	for letters_end > 0 && word[letters_end - 1] >= '0' && word[letters_end - 1] <= '9' {
+		letters_end -= 1
+	}
+	first_end := min(1, letters_end)
+	letters := strings.concatenate({word[:first_end], strings.to_lower(word[first_end:letters_end], context.temp_allocator)}, context.temp_allocator)
+	if letters_end > 1 && letters_end < len(word) {
+		return strings.concatenate({letters, " ", word[letters_end:]}, context.temp_allocator)
+	}
+	return strings.concatenate({letters, word[letters_end:]}, context.temp_allocator)
+}
+
+control_label :: proc(binding: Binding) -> string {
+	for entry in control_label_keys {
+		if entry.device == binding.device && entry.control == binding.control {
+			return text(entry.key)
+		}
+	}
+	return readable_control_name(binding.control)
+}
+
+// The glyph of the control bound to the button's action on the active
+// device (0151): the pad button's icon where it has one, else a key cap
+// with the control's label.
+glyph :: proc(state: ^Ui_State, button: Glyph_Button) -> Glyph {
+	binding, found := first_binding_on_device(state.bindings, glyph_action(state.active_device, button), state.active_device, state.input_backend)
+	if !found {
+		binding, found = first_binding_on_device(state.bindings, glyph_button_actions[button], state.active_device, state.input_backend)
+	}
+	if !found {
+		return {.Key, text("glyph_unbound")}
+	}
+	if icon, has_icon := gamepad_control_icon(binding); has_icon {
+		return {icon, ""}
+	}
+	return {.Key, control_label(binding)}
 }
 
 UI_GLYPH_BAR_HEIGHT :: UI_GLYPH_TEXT_SIZE + 2 * UI_GAP
@@ -954,47 +1068,14 @@ ui_panel_area :: proc(state: ^Ui_State) -> Ui_Rectangle {
 	return area
 }
 
-// The icon of a button's glyph: the pad button on the gamepad, the blank
-// key cap the key's name is drawn on for the keyboard and mouse.
-glyph_icon :: proc(device: Input_Device, button: Glyph_Button) -> Ui_Icon {
-	if device == .Keyboard_Mouse {
-		return .Key
-	}
-	switch button {
-	case .Confirm, .Interact:
-		return .Button_South
-	case .Back:
-		return .Button_East
-	case .Context_Action, .Inventory:
-		return .Button_West
-	case .Info:
-		return .Button_North
-	case .Tab_Previous:
-		return .Bumper_Left
-	case .Tab_Next:
-		return .Bumper_Right
-	case .Secondary, .Use_Item:
-		return .Trigger_Left
-	case .Quick_Move:
-		return .Trigger_Right
-	case .Sprint:
-		return .Stick_Left
-	case .Drop:
-		return .Stick_Right
-	case .Pause:
-		return .Menu
-	}
-	return .Key
-}
-
 // Width of a hint's glyph box: the pad button's square icon, or the key
-// cap with the key's name and a margin, at least square.
+// cap with the control's label and a margin, at least square.
 glyph_box_width :: proc(state: ^Ui_State, button: Glyph_Button) -> f32 {
-	if state.active_device == .Gamepad {
+	shown := glyph(state, button)
+	if shown.icon != .Key {
 		return UI_GLYPH_BAR_HEIGHT
 	}
-	glyph := text(glyph_key(state.active_device, button))
-	return max(ui_text_width(state, glyph, UI_GLYPH_TEXT_SIZE) + 2 * UI_GAP, UI_GLYPH_BAR_HEIGHT)
+	return max(ui_text_width(state, shown.label, UI_GLYPH_TEXT_SIZE) + 2 * UI_GAP, UI_GLYPH_BAR_HEIGHT)
 }
 
 glyph_bar_width :: proc(state: ^Ui_State, hints: []Glyph_Hint) -> f32 {
@@ -1024,8 +1105,8 @@ glyph_hints_that_fit :: proc(state: ^Ui_State, hints: []Glyph_Hint, width: f32) 
 }
 
 // Glyph and label pairs, right aligned along the bottom of the safe area:
-// the pad button's icon on the gamepad, the key's name on a key cap
-// icon on the keyboard,
+// the bound pad button's icon on the gamepad, the bound key's name on a
+// key cap icon on the keyboard (glyph),
 // as many as fit its width (glyph_hints_that_fit). The bar registers the
 // safe area as its panel, so the bounds audit holds its commands to it.
 ui_glyph_bar :: proc(state: ^Ui_State, hints: []Glyph_Hint) {
@@ -1044,9 +1125,10 @@ ui_glyph_bar :: proc(state: ^Ui_State, hints: []Glyph_Hint) {
 		box_width := glyph_box_width(state, hint.button)
 		x -= box_width + UI_GAP
 		box := Ui_Rectangle{x, y, box_width, height}
-		draw_ui_icon(state, box, glyph_icon(state.active_device, hint.button))
-		if state.active_device == .Keyboard_Mouse {
-			draw_text(state, box, text(glyph_key(state.active_device, hint.button)), UI_GLYPH_TEXT_SIZE, .Centre, UI_GLYPH_COLOR)
+		shown := glyph(state, hint.button)
+		draw_ui_icon(state, box, shown.icon)
+		if shown.icon == .Key {
+			draw_text(state, box, shown.label, UI_GLYPH_TEXT_SIZE, .Centre, UI_GLYPH_COLOR)
 		}
 		x -= 3 * UI_GAP
 	}

@@ -420,6 +420,10 @@ Ui_State :: struct {
 	pointer_source:   Pointer_Source,
 	pointer_moved:    bool,
 	active_device:    Input_Device,
+	// The effective bindings and the input backend, whose controls the
+	// glyphs show (glyph). Set by the frame loop.
+	bindings:         []Binding,
+	input_backend:    Input_Backend,
 	tooltip_open:     bool,
 	screens:          Screen_Stack,
 	radial:           Radial_State,

@@ -671,6 +671,7 @@ run_ui_frame :: proc(state: ^Frame_State) {
 	input.pointer_is_touch = ODIN_PLATFORM_SUBTARGET == .Android || touch_overlay_on(state)
 	ui_begin(&state.ui, input, screen_pixels, state.frame_seconds, state.settings.ui_scale, state.settings.pointer_speed, ui_accessibility(state.settings))
 	state.ui.system_keyboard = state.system_keyboard_available && state.settings.on_screen_keyboard == .System
+	state.ui.bindings, state.ui.input_backend = state.bindings, state.input_backend
 	sync_font_cache(&state.font_cache, state.settings, state.ui.pixels_per_unit)
 	screen_context := make_screen_context(state)
 	if state.session != nil {

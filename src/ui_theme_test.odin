@@ -109,22 +109,117 @@ test_theme_reaches_the_screens_names :: proc(t: ^testing.T) {
 	testing.expect_value(t, theme_color(&state, .Panel), Ui_Color{1, 2, 3, 4})
 }
 
+// The glyphs before 0151 (the old glyph_icon and glyph_keyboard_*
+// strings); the shipped bindings must keep showing them, so a reorder of
+// data/bindings.sjson that changes a first binding fails here.
+@(rodata)
+default_gamepad_glyph_icons := [Glyph_Button]Ui_Icon {
+	.Confirm        = .Button_South,
+	.Back           = .Button_East,
+	.Tab_Previous   = .Bumper_Left,
+	.Tab_Next       = .Bumper_Right,
+	.Info           = .Button_North,
+	.Context_Action = .Button_West,
+	.Pause          = .Menu,
+	.Inventory      = .Button_West,
+	.Secondary      = .Trigger_Left,
+	.Interact       = .Button_South,
+	.Use_Item       = .Trigger_Left,
+	.Sprint         = .Stick_Left,
+	.Quick_Move     = .Trigger_Right,
+	.Drop           = .Stick_Right,
+}
+
+@(rodata)
+default_keyboard_glyph_labels := [Glyph_Button]string {
+	.Confirm        = "Enter",
+	.Back           = "Esc",
+	.Tab_Previous   = "Q",
+	.Tab_Next       = "E",
+	.Info           = "R",
+	.Context_Action = "F",
+	.Pause          = "Esc",
+	.Inventory      = "E",
+	.Secondary      = "Shift",
+	.Interact       = "F",
+	.Use_Item       = "Right mouse",
+	.Sprint         = "Ctrl",
+	.Quick_Move     = "Q",
+	.Drop           = "X",
+}
+
 @(test)
 test_glyph_icon_per_button_and_device :: proc(t: ^testing.T) {
-	for button in Glyph_Button {
-		testing.expect_value(t, glyph_icon(.Keyboard_Mouse, button), Ui_Icon.Key)
-		testing.expectf(t, glyph_icon(.Gamepad, button) != .Key, "%v has a pad icon", button)
+	table, error := parse_string_table(#load("../data/strings/en.sjson"))
+	defer destroy_string_table(&table)
+	testing.expect_value(t, error, nil)
+	thread_string_table = &table
+	defer thread_string_table = nil
+	for backend in Input_Backend {
+		keyboard := Ui_State {
+			active_device = .Keyboard_Mouse,
+			bindings      = shipped_default_bindings(t),
+			input_backend = backend,
+		}
+		gamepad := keyboard
+		gamepad.active_device = .Gamepad
+		for button in Glyph_Button {
+			testing.expectf(t, glyph(&keyboard, button) == Glyph{.Key, default_keyboard_glyph_labels[button]}, "%v %v keyboard: %v", backend, button, glyph(&keyboard, button))
+			testing.expectf(t, glyph(&gamepad, button) == Glyph{default_gamepad_glyph_icons[button], ""}, "%v %v gamepad: %v", backend, button, glyph(&gamepad, button))
+		}
 	}
-	testing.expect_value(t, glyph_icon(.Gamepad, .Confirm), Ui_Icon.Button_South)
-	testing.expect_value(t, glyph_icon(.Gamepad, .Back), Ui_Icon.Button_East)
-	testing.expect_value(t, glyph_icon(.Gamepad, .Context_Action), Ui_Icon.Button_West)
-	testing.expect_value(t, glyph_icon(.Gamepad, .Info), Ui_Icon.Button_North)
-	testing.expect_value(t, glyph_icon(.Gamepad, .Tab_Previous), Ui_Icon.Bumper_Left)
-	testing.expect_value(t, glyph_icon(.Gamepad, .Tab_Next), Ui_Icon.Bumper_Right)
-	testing.expect_value(t, glyph_icon(.Gamepad, .Secondary), Ui_Icon.Trigger_Left)
-	testing.expect_value(t, glyph_icon(.Gamepad, .Quick_Move), Ui_Icon.Trigger_Right)
-	testing.expect_value(t, glyph_icon(.Gamepad, .Sprint), Ui_Icon.Stick_Left)
-	testing.expect_value(t, glyph_icon(.Gamepad, .Pause), Ui_Icon.Menu)
+}
+
+@(test)
+test_glyphs_follow_a_rebinding :: proc(t: ^testing.T) {
+	defer clear_missing_reports(&global_string_table)
+	configuration := `bindings = [
+		{action = "Confirm" device = "gamepad" control = "NORTH" context = "menu"}
+		{action = "Confirm" device = "keyboard" control = "PAGE_DOWN" context = "menu"}
+		{action = "Confirm" device = "keyboard" control = "SPACE" context = "menu"}
+		{action = "Info_Panel" device = "gamepad" control = "LEFT_PADDLE1" context = "menu"}
+		{action = "Info_Panel" device = "gamepad" control = "WEST" context = "menu"}
+		{action = "Pause" device = "gamepad" control = "START" context = "both"}
+	]`
+	overrides, problem := parse_bindings_file(transmute([]byte)configuration, "configuration", context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	defaults := shipped_default_bindings(t)
+	keyboard := Ui_State {
+		active_device = .Keyboard_Mouse,
+		bindings      = defaults,
+		input_backend = .Sdl3,
+	}
+	gamepad := keyboard
+	gamepad.active_device = .Gamepad
+	default_keyboard_confirm := glyph(&keyboard, .Confirm)
+	testing.expect_value(t, glyph(&gamepad, .Confirm), Glyph{.Button_South, ""})
+	keyboard.bindings = effective_bindings(defaults, overrides, context.temp_allocator)
+	gamepad.bindings = keyboard.bindings
+	// The first of several bindings.
+	testing.expect_value(t, glyph(&keyboard, .Confirm), Glyph{.Key, "Page Down"})
+	testing.expect(t, default_keyboard_confirm.label != "Page Down")
+	testing.expect_value(t, glyph(&gamepad, .Confirm), Glyph{.Button_North, ""})
+	// A control without an icon shows its name on a key cap.
+	testing.expect_value(t, glyph(&gamepad, .Info), Glyph{.Key, "Left Paddle 1"})
+	// raylib cannot read the paddle, so the next binding shows.
+	gamepad.input_backend = .Raylib
+	testing.expect_value(t, glyph(&gamepad, .Info), Glyph{.Button_West, ""})
+	// An action the configuration leaves alone keeps its default.
+	testing.expect_value(t, glyph(&gamepad, .Back), Glyph{.Button_East, ""})
+	// Pause lost its Esc, so the keyboard's Back shows Back's own key.
+	testing.expect_value(t, glyph(&keyboard, .Back), Glyph{.Key, "Backspace"})
+	// An action without a control on the device.
+	keyboard.bindings = overrides
+	testing.expect_value(t, glyph(&keyboard, .Back), Glyph{.Key, text("glyph_unbound")})
+}
+
+@(test)
+test_readable_control_names :: proc(t: ^testing.T) {
+	testing.expect_value(t, readable_control_name("PAGE_DOWN"), "Page Down")
+	testing.expect_value(t, readable_control_name("LEFT_PADDLE1"), "Left Paddle 1")
+	testing.expect_value(t, readable_control_name("MISC2"), "Misc 2")
+	testing.expect_value(t, readable_control_name("F3"), "F3")
+	testing.expect_value(t, readable_control_name("KP_1"), "Kp 1")
 }
 
 @(test)
@@ -133,6 +228,7 @@ test_glyph_bar_draws_icons_and_key_caps :: proc(t: ^testing.T) {
 	for device in Input_Device {
 		state := Ui_State {
 			active_device = device,
+			bindings      = shipped_default_bindings(t),
 		}
 		defer destroy_ui_state(&state)
 		test_ui_frame(&state, {})
@@ -144,7 +240,7 @@ test_glyph_bar_draws_icons_and_key_caps :: proc(t: ^testing.T) {
 			#partial switch command.kind {
 			case .Ui_Icon:
 				icons += 1
-				testing.expect_value(t, Ui_Icon(command.tile), glyph_icon(device, hints[len(hints) - icons].button))
+				testing.expect_value(t, Ui_Icon(command.tile), glyph(&state, hints[len(hints) - icons].button).icon)
 			case .Text:
 				texts += 1
 			case .Fill, .Outline:

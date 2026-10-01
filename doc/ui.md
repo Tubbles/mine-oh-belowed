@@ -128,7 +128,7 @@ Rule: on Android and while the touch overlay is on (`Ui_Input.pointer_is_touch`)
 Label, button, toggle (a switch whose knob slides over an eighth of a second), slider, stepper, choice, tabs, list, slot grid, item slot, progress bar, tooltip, radial menu, text field, glyph bar, touch row, toast.
 
 - Single line labels ellipsise; descriptions and tooltips wrap. Toasts show top left for 4 s, at most 4, wrapped to three lines within 0.55 of the safe width.
-- The glyph bar sits bottom right and drops hints from the end, keeping Back. It shows the pad button's icon on a gamepad (`glyph_icon`) and the key's name on a key cap on the keyboard.
+- The glyph bar sits bottom right and drops hints from the end, keeping Back. It shows the bound control (0151, `glyph`), the first binding when an action has several ([input.md](input.md), Bindings): the pad button's icon on a gamepad, a key cap with the key's name on the keyboard and for a pad control without an icon (a paddle). The names that read poorly have labels in the string table (`control_label_keys`), others read as written (`PAGE_DOWN` as Page Down, `LEFT_PADDLE1` as Left Paddle 1).
 - Tooltips dock beside the panel, else below or above the focused widget, inside the safe area.
 - Panels sit in the safe area above the glyph bar; a taller panel is clamped and its rows scroll with the focus kept in view (the pause menu, new world, developer, a machine panel's machine side, which wraps its slot rows).
 

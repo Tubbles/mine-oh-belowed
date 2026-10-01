@@ -331,7 +331,22 @@ raylib_trigger_buttons := [Gamepad_Trigger]rl.GamepadButton {
 	.Right = .RIGHT_TRIGGER_2,
 }
 
+// The raylib backend reads the triggers and the buttons
+// raylib_gamepad_button maps, not the paddles, MISC buttons, GUIDE or
+// TOUCHPAD.
+raylib_reads_gamepad_control :: proc(control: string) -> bool {
+	if _, is_trigger := gamepad_trigger_from_name(control); is_trigger {
+		return true
+	}
+	button, _ := sdl_gamepad_button_from_name(control)
+	_, mapped := raylib_gamepad_button(button)
+	return mapped
+}
+
 bind_gamepad_control :: proc(tables: ^Input_Bindings, binding: Binding, backend: Input_Backend) -> bool {
+	if backend == .Raylib && !raylib_reads_gamepad_control(binding.control) {
+		return false
+	}
 	if trigger, is_trigger := gamepad_trigger_from_name(binding.control); is_trigger {
 		switch backend {
 		case .Sdl3:
@@ -344,10 +359,7 @@ bind_gamepad_control :: proc(tables: ^Input_Bindings, binding: Binding, backend:
 	button, _ := sdl_gamepad_button_from_name(binding.control)
 	index := int(button)
 	if backend == .Raylib {
-		raylib_button, mapped := raylib_gamepad_button(button)
-		if !mapped {
-			return false
-		}
+		raylib_button, _ := raylib_gamepad_button(button)
 		index = int(raylib_button)
 	}
 	tables.gamepad_buttons[index] += {binding.action}
