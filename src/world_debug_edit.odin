@@ -1,14 +1,9 @@
 package game
 
-import "core:math"
 import "generation_seed"
 
 // How many chunks below the camera the debug edit searches for a solid block.
 DEBUG_EDIT_SEARCH_DEPTH :: 8
-
-camera_world_coordinate :: proc(position: [3]f32) -> World_Coordinate {
-	return {i32(math.floor(position.x)), i32(math.floor(position.y)), i32(math.floor(position.z))}
-}
 
 // Topmost solid block of one column of a chunk, so that the removed block
 // is visible from above.

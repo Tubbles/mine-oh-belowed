@@ -4,20 +4,6 @@ import "core:fmt"
 import "core:slice"
 import "generation_seed"
 
-// Chosen at world creation (DESIGN.md, World settings). The seed also
-// seeds the drills' reservoir draws (drill.odin).
-World_Settings :: struct {
-	seed:                  u64,
-	veins_infinite:        bool,
-	// Written to world.sjson here; the generator and the technology
-	// registry of the session apply them (session.odin).
-	vein_richness_percent: int,
-	research_cost_percent: int,
-	// Lenient: byproducts without room are voided instead of stalling the
-	// machine (furnace.odin, assembler.odin).
-	byproducts_lenient:    bool,
-}
-
 // What the simulation needs of a vein type: its id (for saves), its name,
 // its outcrop blocks and its outputs as items with their percent weights,
 // and per output the low grade twin or NO_ITEM.

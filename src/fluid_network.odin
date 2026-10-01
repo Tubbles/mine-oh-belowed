@@ -287,16 +287,6 @@ assign_fluid_networks :: proc(segments: []Fluid_Segment, connections: []Fluid_Co
 	return count
 }
 
-coordinate_before :: proc(first, second: World_Coordinate) -> bool {
-	if first.y != second.y {
-		return first.y < second.y
-	}
-	if first.z != second.z {
-		return first.z < second.z
-	}
-	return first.x < second.x
-}
-
 // The nearer end's distance from an output port: running connections in
 // this order is a breadth first walk from the output ports.
 connection_source_distance :: proc(segments: []Fluid_Segment, connection: Fluid_Connection) -> i32 {

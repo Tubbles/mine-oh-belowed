@@ -63,14 +63,14 @@ CLUSTERS = GAME_CLUSTERS + PACKAGE_CLUSTERS
 IMPORT_LINE = re.compile(r'^\s*(?:@\([^)]*\)\s*)?import\s+(?:([A-Za-z_]\w*)\s+)?"([^"]+)"')
 
 PREFIX_CLUSTERS = {
-    "loop": ("loop", "main", "session", "simulation", "hot"),
+    "loop": ("loop", "main", "session", "hot"),
     "ui": ("hud", "touch", "input", "bindings", "text", "quick", "biome", "haptics", "system"),
     "world": ("generation", "save", "block", "landing"),
     "simulation": (
         "entity", "belt", "splitter", "inserter", "fluid", "power", "machine", "assembler",
         "furnace", "drill", "lab", "launch", "crafting", "inventory", "item", "player",
         "loose", "statistics", "production", "developer", "venture", "recycler", "schematic",
-        "prospecting", "tree", "tick",
+        "prospecting", "tree", "tick", "simulation",
     ),
     "presentation": (
         "render", "model", "texture", "particles", "ambient", "audio", "sound", "display", "weather",

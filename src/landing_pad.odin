@@ -61,12 +61,3 @@ close_landing_pad_columns :: proc(site: Landing_Pad_Site, coordinate: Chunk_Coor
 		}
 	}
 }
-
-// The capsule on the pad, or NO_ENTITY without a site or a capsule machine.
-place_capsule :: proc(entities: ^Entities, machines: Machine_Registry, site: Landing_Pad_Site) -> Entity_Handle {
-	machine := find_machine_of_kind(machines, .Capsule)
-	if !site.present || machine == NO_MACHINE {
-		return NO_ENTITY
-	}
-	return add_entity(entities, machines, machine, site.centre + CAPSULE_OFFSET, 0)
-}

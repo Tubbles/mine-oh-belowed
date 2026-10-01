@@ -17,40 +17,6 @@ MAXIMUM_FRAME_SECONDS :: 0.25
 // window keeps drawing and answering while it runs.
 COMMAND_TICK_WALL_BUDGET :: 1 * time.Second
 
-// The simulation owns the world and the players. players[index] reads
-// inputs[index] in simulation_tick; the alpha has one player.
-Simulation_State :: struct {
-	tick:             u64,
-	tick_rate:        int,
-	day_length_ticks: u64,
-	// Added to the tick for the day cycle, so the developer menu can set
-	// the time of day without moving the tick every counter reads. Saved
-	// through world.sjson's day_time_ticks.
-	day_offset_ticks: u64,
-	world:            World,
-	players:          [dynamic]Player,
-	// Items obtained, technologies researched and the recipes they unlock.
-	unlocks:          Recipe_Unlocks,
-	quests:           Quest_State,
-	// Filled by ticks, emptied by the UI each frame (toasts). The
-	// simulation never calls the UI itself.
-	events:           [dynamic]Simulation_Event,
-	// Filled by the developer menu and the command line, served and
-	// emptied at the start of the next tick (developer.odin).
-	developer_requests: [dynamic]Developer_Request,
-	// Developer cheat speed (0044): faster movement and hand mining. Not
-	// saved.
-	cheat_speed:        bool,
-	// The pad the world was created with, written to world.sjson so a loaded
-	// world keeps it whatever the spawn rules do later (0049).
-	landing_pad:        Landing_Pad_Site,
-}
-
-Simulation_Event :: struct {
-	player: int,
-	kind:   Player_Event,
-}
-
 Save_Setup :: struct {
 	location: Save_Location,
 	enabled:  bool,
@@ -198,127 +164,11 @@ INITIAL_FLY_CAMERA :: Fly_Camera {
 	pitch    = -30,
 }
 
-// The config's starting items must have passed validate_starting_items.
-// unlock_all makes every recipe available (--unlock-all or the setting).
-// The capsule stands on the landing pad from the start, and the first
-// quest is active at tick 0.
-make_simulation :: proc(config: Game_Config, start: Player_Start, content: Simulation_Content, technologies: Technology_Registry, unlock_all: bool, landing_pad: Landing_Pad_Site) -> Simulation_State {
-	state := Simulation_State {
-		tick_rate        = config.tick_rate,
-		day_length_ticks = u64(config.day_length_seconds) * u64(config.tick_rate),
-		unlocks          = make_recipe_unlocks(len(content.items.items), content.recipes, technologies, unlock_all),
-		landing_pad      = landing_pad,
-	}
-	state.world.statistics = make_statistics(len(content.items.items), len(content.machines.machines), len(content.blocks.definitions))
-	state.world.statistics.fluids = make_fluid_statistics(len(content.fluids.fluids))
-	state.world.entities.loose_items.despawn_ticks = loose_item_despawn_ticks(config.loose_item_despawn_minutes, config.tick_rate)
-	capsule := place_capsule(&state.world.entities, content.machines, landing_pad)
-	state.quests = make_quest_state(content.quests, capsule)
-	player := make_player(start)
-	give_starting_items(&player, content.items, config.starting_items)
-	append(&state.players, player)
-	update_recipe_unlocks(&state.unlocks, content.recipes, state.players[:])
-	observe_player_holdings(&state.world.statistics, state.players[:], false)
-	start_quests(&state.quests, content.quests, state.world.statistics, 0)
-	return state
-}
-
-destroy_simulation :: proc(state: ^Simulation_State) {
-	for player in state.players {
-		destroy_player(player)
-	}
-	delete(state.players)
-	delete(state.events)
-	delete(state.developer_requests)
-	destroy_recipe_unlocks(state.unlocks)
-	destroy_quest_state(state.quests)
-	destroy_world(&state.world)
-}
-
-// A player without an input entry gets an empty one. Entities tick after
-// the players, so a stack dropped into a furnace this tick is seen at once.
-// Machines see the found schematics through the recipe registry
-// (recipe_runs_in_machines). A profile (tick_profile.odin) gets the wall
-// time of each step.
-simulation_tick :: proc(state: ^Simulation_State, content_tables: Simulation_Content, inputs: []Input_Frame, profile: ^Tick_Profile = nil) {
-	clock := profile_now(profile)
-	content := content_tables
-	content.recipes = with_schematics_found(content.recipes, state.unlocks.schematics_found)
-	clock = profile_section(profile, .Unlocks, clock)
-	state.tick += 1
-	advance_statistics_clock(&state.world.statistics, state.tick, state.tick_rate)
-	clock = profile_section(profile, .Statistics, clock)
-	serve_developer_requests(state, content)
-	for index in 0 ..< len(state.players) {
-		input, used := resolve_use_item(&state.players[index], &state.world.entities, content.items, index < len(inputs) ? inputs[index] : Input_Frame{})
-		if used != NO_ITEM {
-			if event, happened := apply_item_use(state, content, index, used); happened {
-				append(&state.events, Simulation_Event{player = index, kind = event})
-			}
-		}
-		before := movement_toggles(state.players[index])
-		events := tick_player(&state.world, content, state.players[:], index, input, state.tick_rate, state.cheat_speed)
-		log_movement_toggles(before, state.players[index], player_tick_toggle_cause(input.just_pressed), state.tick)
-		update_magnetometer(&state.world, content, &state.players[index])
-		for kind in events {
-			append(&state.events, Simulation_Event{player = index, kind = kind})
-		}
-	}
-	clock = profile_section(profile, .Players, clock)
-	newly_obtained := update_recipe_unlocks(&state.unlocks, content.recipes, state.players[:])
-	log_discoveries(&state.quests, content.blocks, content.items, newly_obtained, state.tick)
-	clock = profile_section(profile, .Unlocks, clock)
-	tick_entities(&state.world, content, state.tick_rate, profile)
-	clock = profile_now(profile)
-	shipments_before := len(state.world.shipments)
-	apply_launch_requests(&state.world, state.tick)
-	clock = profile_section(profile, .Launch_Pads, clock)
-	tick_venture(state, content, shipments_before)
-	clock = profile_section(profile, .Venture, clock)
-	apply_research_result(state, content)
-	clock = profile_section(profile, .Research, clock)
-	observe_player_holdings(&state.world.statistics, state.players[:], true)
-	observe_full_inventories(&state.world.statistics, state.players[:])
-	clock = profile_section(profile, .Statistics, clock)
-	tick_quests(&state.quests, simulation_quest_context(state, content), &state.world.entities)
-	clock = profile_section(profile, .Quests, clock)
-	tick_world(&state.world, content.blocks, state.tick, simulation_tree_felling(content))
-	profile_section(profile, .World, clock)
-	if profile != nil {
-		profile.ticks += 1
-	}
-}
-
-// Opens the recipes of a technology the labs finished this tick and says
-// so in the message log.
-apply_research_result :: proc(state: ^Simulation_State, content: Simulation_Content) {
-	if technology, finished := apply_finished_research(&state.world.research, &state.unlocks, content.recipes); finished {
-		log_research_complete(&state.quests, state.tick, content.technologies.technologies[technology].name_key)
-	}
-}
-
-simulation_quest_context :: proc(state: ^Simulation_State, content: Simulation_Content) -> Quest_Tick_Context {
-	return Quest_Tick_Context {
-		registry = content.quests,
-		recipes = content.recipes,
-		items = content.items,
-		statistics = &state.world.statistics,
-		unlocks = &state.unlocks,
-		tick = state.tick,
-		tick_rate = state.tick_rate,
-	}
-}
-
 // With the session's generator, for the orbital survey.
 frame_simulation_content :: proc(state: ^Frame_State) -> Simulation_Content {
 	content := session_simulation_content(state.content, state.session.technologies)
 	content.generator = &state.session.generator
 	return content
-}
-
-// The tick the day cycle shows.
-simulation_day_ticks :: proc(state: Simulation_State) -> u64 {
-	return state.tick + state.day_offset_ticks
 }
 
 make_tick_accumulator :: proc(tick_rate: int) -> Tick_Accumulator {

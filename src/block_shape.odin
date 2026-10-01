@@ -17,6 +17,11 @@ POST_HEIGHT :: 10.0 / 16
 // height, so a torch can be aimed at with a gamepad.
 POST_TARGET_HALF_WIDTH :: 4.0 / 16
 
+Box :: struct {
+	minimum: [3]f32,
+	maximum: [3]f32,
+}
+
 @(rodata)
 full_cell_boxes := [1]Box{{minimum = {0, 0, 0}, maximum = {1, 1, 1}}}
 @(rodata)

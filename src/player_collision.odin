@@ -13,11 +13,6 @@ import "core:math"
 // resting flush against a block must not count as overlapping it.
 COLLISION_EPSILON :: 1e-3
 
-Box :: struct {
-	minimum: [3]f32,
-	maximum: [3]f32,
-}
-
 // The position is the centre of the bottom face (the feet).
 player_box :: proc(position: [3]f32) -> Box {
 	half_width := f32(PLAYER_WIDTH / 2)

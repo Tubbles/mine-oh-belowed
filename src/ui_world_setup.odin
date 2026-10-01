@@ -82,16 +82,6 @@ world_file_settings_from_setup :: proc(setup: World_Setup) -> World_File_Setting
 	}
 }
 
-world_settings_from_file :: proc(seed: u64, settings: World_File_Settings) -> World_Settings {
-	return World_Settings {
-		seed = seed,
-		veins_infinite = settings.veins_infinite,
-		vein_richness_percent = settings.vein_richness_percent,
-		research_cost_percent = settings.research_cost_percent,
-		byproducts_lenient = settings.byproducts_lenient,
-	}
-}
-
 next_choice :: proc(choice, count: int) -> int {
 	return (choice + 1) % count
 }

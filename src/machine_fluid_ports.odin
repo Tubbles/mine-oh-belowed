@@ -295,21 +295,6 @@ validate_fluid_machine_definition :: proc(definition: Machine_Definition, kind: 
 	return ""
 }
 
-// The horizontal directions in the order of belt directions 0 to 3.
-@(rodata)
-quarter_turn_ring := [4]Direction{.Positive_X, .Positive_Z, .Negative_X, .Negative_Z}
-
-// Quarter turns about y, the same way rotate_footprint_cell turns cells:
-// one turn takes +x to +z.
-rotate_direction :: proc(direction: Direction, rotation: u8) -> Direction {
-	for candidate, index in quarter_turn_ring {
-		if candidate == direction {
-			return quarter_turn_ring[(index + int(rotation % 4)) % 4]
-		}
-	}
-	return direction
-}
-
 @(rodata)
 opposite_directions := [Direction]Direction {
 	.Negative_X = .Positive_X,

@@ -1,5 +1,7 @@
 package game
 
+import "core:math"
+
 CHUNK_SIZE :: 32
 CHUNK_BLOCK_COUNT :: CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE
 
@@ -19,6 +21,30 @@ Chunk :: struct {
 	dirty:      bool,
 	// Differs from what generation makes, so a save stores it (save_world.odin).
 	modified:   bool,
+}
+
+// Chosen at world creation (DESIGN.md, World settings). The seed also
+// seeds the drills' reservoir draws (drill.odin).
+World_Settings :: struct {
+	seed:                  u64,
+	veins_infinite:        bool,
+	// Written to world.sjson here; the generator and the technology
+	// registry of the session apply them (session.odin).
+	vein_richness_percent: int,
+	research_cost_percent: int,
+	// Lenient: byproducts without room are voided instead of stalling the
+	// machine (furnace.odin, assembler.odin).
+	byproducts_lenient:    bool,
+}
+
+world_settings_from_file :: proc(seed: u64, settings: World_File_Settings) -> World_Settings {
+	return World_Settings {
+		seed = seed,
+		veins_infinite = settings.veins_infinite,
+		vein_richness_percent = settings.vein_richness_percent,
+		research_cost_percent = settings.research_cost_percent,
+		byproducts_lenient = settings.byproducts_lenient,
+	}
 }
 
 // Chunks are heap allocated and referenced by pointer, so growing the map
@@ -102,6 +128,21 @@ direction_offsets := [Direction][3]i32 {
 	.Positive_Z = {0, 0, 1},
 }
 
+// The horizontal directions in the order of belt directions 0 to 3.
+@(rodata)
+quarter_turn_ring := [4]Direction{.Positive_X, .Positive_Z, .Negative_X, .Negative_Z}
+
+// Quarter turns about y, the same way rotate_footprint_cell turns cells:
+// one turn takes +x to +z.
+rotate_direction :: proc(direction: Direction, rotation: u8) -> Direction {
+	for candidate, index in quarter_turn_ring {
+		if candidate == direction {
+			return quarter_turn_ring[(index + int(rotation % 4)) % 4]
+		}
+	}
+	return direction
+}
+
 floor_divide :: proc(value, divisor: i32) -> i32 {
 	return (value - value %% divisor) / divisor
 }
@@ -133,6 +174,20 @@ local_to_index :: proc(local: Local_Coordinate) -> int {
 
 index_to_local :: proc(index: int) -> Local_Coordinate {
 	return {i32(index % CHUNK_SIZE), i32(index / (CHUNK_SIZE * CHUNK_SIZE)), i32(index / CHUNK_SIZE % CHUNK_SIZE)}
+}
+
+camera_world_coordinate :: proc(position: [3]f32) -> World_Coordinate {
+	return {i32(math.floor(position.x)), i32(math.floor(position.y)), i32(math.floor(position.z))}
+}
+
+coordinate_before :: proc(first, second: World_Coordinate) -> bool {
+	if first.y != second.y {
+		return first.y < second.y
+	}
+	if first.z != second.z {
+		return first.z < second.z
+	}
+	return first.x < second.x
 }
 
 chunk_get_block :: proc(chunk: ^Chunk, local: Local_Coordinate) -> Block_Id {
