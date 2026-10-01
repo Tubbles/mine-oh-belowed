@@ -29,19 +29,40 @@ Tick_Accumulator :: struct {
 
 // The process: window, renderer, UI and input live for the whole run, the
 // session only while a world is played. Without a session the title
-// screen shows.
+// screen shows. The loop's own fields are top level; the rest is in four
+// groups by the cluster that reads and writes them (work item 0158).
 Frame_State :: struct {
 	config:             Game_Config,
 	content:            Game_Content,
 	// The generator data every session copies (session_generator).
 	base_generator:     Generator,
 	session:            ^Session,
+	frame_seconds:      f32,
+	// The Render page's frame time average and the ticks update_session
+	// ran this frame (work item 0086).
+	frame_times:        Frame_Time_Ring,
+	frame_tick_count:   int,
+	quit_requested:     bool,
+	data_directory:     string,
+	environment:        Configuration_Environment,
+	settings:           Settings,
+	// The settings as last read or written, see write_changed_settings.
+	stored_settings:    Settings,
+	interaction:        Frame_Interaction,
+	presentation:       Frame_Presentation,
+	developer:          Frame_Developer_Tools,
+	reload:             Frame_Reload,
+}
+
+// Input, the UI and its fonts, the touch overlay and the title.
+Frame_Interaction :: struct {
 	// The HUD's biome banner, rendering state across frames.
 	biome_banner:       Biome_Banner,
 	title:              Title_State,
 	input_backend:      Input_Backend,
 	sdl3_input:         Sdl3_Input_State,
 	input:              Input_Frame,
+	previous_input:     Input_Frame,
 	// The touch overlay's fingers (touch_overlay.odin), and --touch-overlay.
 	touch_overlay:        Touch_Overlay_State,
 	touch_overlay_forced: bool,
@@ -53,31 +74,8 @@ Frame_State :: struct {
 	// start, and whether the game has shown it.
 	system_keyboard_available: bool,
 	system_keyboard_shown:     bool,
-	previous_input:     Input_Frame,
-	frame_seconds:      f32,
-	// The sprint field of view kick's progress, 0 to 1 (advance_sprint_kick).
-	sprint_kick:        f32,
-	// The camera the world was last drawn with: the touch overlay's aim
-	// ray (touch_aim_direction) and the HUD's mining ring.
-	render_camera:      rl.Camera3D,
-	// The Render page's frame time average and the ticks update_session
-	// ran this frame (work item 0086).
-	frame_times:        Frame_Time_Ring,
-	frame_tick_count:   int,
 	// World actions still held since a screen closed, see update_world_action_guard.
 	world_action_guard: Action_Set,
-	settings:           Settings,
-	// The settings as last read or written, see write_changed_settings.
-	stored_settings:    Settings,
-	// The settings as last applied to the window (display.odin), and the
-	// monitor's size read while the window was still windowed.
-	window_settings:    Settings,
-	monitor_size:       [2]int,
-	// The window's scale, read every frame, and the windowing platform GLFW
-	// took (display.odin, work items 0084 and 0085).
-	window_scale:       [2]f32,
-	platform:           Window_Platform,
-	environment:        Configuration_Environment,
 	// The effective bindings, for the settings screen's Controls list.
 	bindings:           []Binding,
 	input_bindings:     Input_Bindings,
@@ -86,12 +84,33 @@ Frame_State :: struct {
 	ui_images:          Ui_Image_Cache,
 	// The font families and the fonts loaded from them (ui_font.odin, work
 	// item 0077); ui.fonts points at font_cache. A fonts reload retires
-	// the old families' arena until exit, settings.font may point into it.
+	// the old families' arena until exit (Frame_Reload), settings.font may
+	// point into it.
 	fonts:              Loaded_Fonts,
 	font_cache:         Font_Cache,
-	retired_font_arenas: [dynamic]^virtual.Arena,
 	cursor_enabled:     bool,
-	quit_requested:     bool,
+	// The user touch layouts (0121, touch_overlay.odin), read at start and
+	// written by serve_touch_layouts, and the layout editor's draft
+	// (ui_touch_layout_editor.odin).
+	touch_layouts:        Touch_Layouts,
+	touch_layout_editor:  Touch_Layout_Editor,
+}
+
+// The renderers, the atlases, the window's display state and the sound.
+Frame_Presentation :: struct {
+	// The sprint field of view kick's progress, 0 to 1 (advance_sprint_kick).
+	sprint_kick:        f32,
+	// The camera the world was last drawn with: the touch overlay's aim
+	// ray (touch_aim_direction) and the HUD's mining ring.
+	render_camera:      rl.Camera3D,
+	// The settings as last applied to the window (display.odin), and the
+	// monitor's size read while the window was still windowed.
+	window_settings:    Settings,
+	monitor_size:       [2]int,
+	// The window's scale, read every frame, and the windowing platform GLFW
+	// took (display.odin, work items 0084 and 0085).
+	window_scale:       [2]f32,
+	platform:           Window_Platform,
 	renderer:           Chunk_Renderer,
 	// The item icons (render_icons.odin), rebuilt with the block atlas;
 	// content.items.icon_loaded points into it.
@@ -117,6 +136,10 @@ Frame_State :: struct {
 	// frame, reset with the session.
 	audio:              Audio_Mixer,
 	sound_memory:       Sound_Memory,
+}
+
+// The diagnostics pages, the command socket and the developer screens.
+Frame_Developer_Tools :: struct {
 	// F3 and the Developer screen (diagnostics.odin, work item 0086).
 	diagnostics_page:   Diagnostics_Page,
 	// The world statistics overlay (draw_world_overlay), off by default.
@@ -130,9 +153,17 @@ Frame_State :: struct {
 	screenshot_directory: string,
 	// The Developer screen's Screenshot button.
 	screenshot_requested: bool,
-	// Hot reload (work item 0054, hot_reload.odin). content and
-	// base_generator live in content_arena, which a content reload frees.
-	data_directory:       string,
+	// The texture editor's entries (work item 0100, ui_texture_editor.odin),
+	// read at start and served by serve_texture_editor.
+	texture_editor:       Texture_Editor,
+	// The Data files screen's tree and open file (work item 0129,
+	// ui_data_browser.odin), served by serve_data_browser.
+	data_browser:         Data_Browser,
+}
+
+// Hot reload's own state (work item 0054, hot_reload.odin). content and
+// base_generator live in content_arena, which a content reload frees.
+Frame_Reload :: struct {
 	content_arena:        ^virtual.Arena,
 	data_watch:           Data_Watch,
 	watch_data_flag:      Watch_Data_Mode,
@@ -141,19 +172,10 @@ Frame_State :: struct {
 	bindings_arena:       ^virtual.Arena,
 	// String entries a strings reload replaced, freed at exit.
 	retired_strings:      [dynamic]map[string]string,
+	// The font arenas a fonts reload replaced, freed at exit.
+	retired_font_arenas:  [dynamic]^virtual.Arena,
 	// F8, the Developer screen's Reload data button, watch_data all.
 	reload_requested:     bool,
-	// The texture editor's entries (work item 0100, ui_texture_editor.odin),
-	// read at start and served by serve_texture_editor.
-	texture_editor:       Texture_Editor,
-	// The Data files screen's tree and open file (work item 0129,
-	// ui_data_browser.odin), served by serve_data_browser.
-	data_browser:         Data_Browser,
-	// The user touch layouts (0121, touch_overlay.odin), read at start and
-	// written by serve_touch_layouts, and the layout editor's draft
-	// (ui_touch_layout_editor.odin).
-	touch_layouts:        Touch_Layouts,
-	touch_layout_editor:  Touch_Layout_Editor,
 }
 
 // Above the middle of the debug terrain, looking down at an angle. The
@@ -203,14 +225,29 @@ interpolation_alpha :: proc(accumulator: Tick_Accumulator) -> f64 {
 	return accumulator.accumulated_seconds / accumulator.seconds_per_tick
 }
 
+// Built at each use, so the overlay reads the fields as they are at that
+// point of the frame (the render camera and tick count are the last
+// frame's while the input is read).
+touch_overlay_context :: proc(state: ^Frame_State) -> Touch_Overlay_Context {
+	return Touch_Overlay_Context {
+		interaction = &state.interaction,
+		session = state.session,
+		content = &state.content,
+		settings = &state.settings,
+		render_camera = state.presentation.render_camera,
+		frame_seconds = state.frame_seconds,
+		frame_tick_count = state.frame_tick_count,
+	}
+}
+
 read_input_frame :: proc(state: ^Frame_State, frame_seconds: f32) -> Input_Frame {
-	overlay := read_touch_overlay_frame(state)
+	overlay := read_touch_overlay_frame(touch_overlay_context(state))
 	frame: Input_Frame
-	switch state.input_backend {
+	switch state.interaction.input_backend {
 	case .Sdl3:
-		frame = read_sdl3_input_frame(&state.sdl3_input, state.input, frame_seconds, state.settings, state.input_bindings, overlay)
+		frame = read_sdl3_input_frame(&state.interaction.sdl3_input, state.interaction.input, frame_seconds, state.settings, state.interaction.input_bindings, overlay)
 	case .Raylib:
-		frame = read_raylib_input_frame(state.input.pressed, state.input_bindings, overlay)
+		frame = read_raylib_input_frame(state.interaction.input.pressed, state.interaction.input_bindings, overlay)
 	}
 	return apply_touch_overlay_jump(apply_touch_overlay_hotbar(apply_touch_overlay_aim(frame, overlay), overlay), overlay)
 }
@@ -219,11 +256,11 @@ read_input_frame :: proc(state: ^Frame_State, frame_seconds: f32) -> Input_Frame
 // diagnostics screen and the menus. With the touch overlay on it stays
 // free, since on the desktop the mouse is the overlay's touch point.
 apply_cursor_mode :: proc(state: ^Frame_State) {
-	wanted := state.diagnostics_page != .Off || state.ui.screens.count > 0 || touch_overlay_on(state)
-	if wanted == state.cursor_enabled {
+	wanted := state.developer.diagnostics_page != .Off || state.interaction.ui.screens.count > 0 || touch_overlay_on(touch_overlay_context(state))
+	if wanted == state.interaction.cursor_enabled {
 		return
 	}
-	state.cursor_enabled = wanted
+	state.interaction.cursor_enabled = wanted
 	if wanted {
 		rl.EnableCursor()
 	} else {
@@ -236,17 +273,17 @@ toggle_on_press :: proc(value: bool, just_pressed: Action_Set, action: Action) -
 }
 
 apply_debug_actions :: proc(state: ^Frame_State, content: Simulation_Content) {
-	if .Toggle_Diagnostics in state.input.just_pressed {
-		state.diagnostics_page = next_diagnostics_page(state.diagnostics_page)
+	if .Toggle_Diagnostics in state.interaction.input.just_pressed {
+		state.developer.diagnostics_page = next_diagnostics_page(state.developer.diagnostics_page)
 	}
-	state.show_world_overlay = toggle_on_press(state.show_world_overlay, state.input.just_pressed, .Toggle_World_Overlay)
+	state.developer.show_world_overlay = toggle_on_press(state.developer.show_world_overlay, state.interaction.input.just_pressed, .Toggle_World_Overlay)
 	session := state.session
-	if .Debug_Remove_Block in state.input.just_pressed {
+	if .Debug_Remove_Block in state.interaction.input.just_pressed {
 		session.debug_edit_counter += 1
 		eye := player_eye(session.simulation.players[0].position)
 		debug_remove_block(&session.simulation.world, state.content.blocks, eye, session.debug_edit_counter)
 	}
-	if .Debug_Drop_Item in state.input.just_pressed {
+	if .Debug_Drop_Item in state.interaction.input.just_pressed {
 		debug_drop_item_on_belt(&session.simulation.world, content, session.simulation.players[0])
 	}
 }
@@ -257,27 +294,27 @@ apply_debug_actions :: proc(state: ^Frame_State, content: Simulation_Content) {
 update_frame :: proc(state: ^Frame_State) {
 	state.frame_seconds = rl.GetFrameTime()
 	state.frame_times = push_frame_time(state.frame_times, state.frame_seconds)
-	state.previous_input = state.input
-	state.input = read_input_frame(state, state.frame_seconds)
-	world_blocked := ui_blocks_world(state.ui.screens)
-	state.world_action_guard = update_world_action_guard(state.world_action_guard, world_blocked, state.input.pressed)
-	state.haptic = {}
+	state.interaction.previous_input = state.interaction.input
+	state.interaction.input = read_input_frame(state, state.frame_seconds)
+	world_blocked := ui_blocks_world(state.interaction.ui.screens)
+	state.interaction.world_action_guard = update_world_action_guard(state.interaction.world_action_guard, world_blocked, state.interaction.input.pressed)
+	state.interaction.haptic = {}
 	if state.session != nil {
 		content := frame_simulation_content(state)
 		apply_debug_actions(state, content)
 		apply_overlay_toggle(state, world_blocked)
 		update_session(state, world_blocked, content)
-		state.haptic = haptic_request_for(state.session.simulation.players[0], !world_blocked)
+		state.interaction.haptic = haptic_request_for(state.session.simulation.players[0], !world_blocked)
 	}
-	if .Reload_Data in state.input.just_pressed && developer_mode_on(state) {
-		state.reload_requested = true
+	if .Reload_Data in state.interaction.input.just_pressed && developer_mode_on(state) {
+		state.reload.reload_requested = true
 	}
 	serve_command_socket(state)
-	switch state.input_backend {
+	switch state.interaction.input_backend {
 	case .Sdl3:
-		apply_sdl3_haptics(&state.sdl3_input, state.haptic)
+		apply_sdl3_haptics(&state.interaction.sdl3_input, state.interaction.haptic)
 	case .Raylib:
-		apply_vibrator_haptics(&state.vibrator, state.haptic)
+		apply_vibrator_haptics(&state.interaction.vibrator, state.interaction.haptic)
 	}
 }
 
@@ -285,7 +322,7 @@ update_frame :: proc(state: ^Frame_State) {
 // in a menu does nothing. The setting is written like any other changed
 // setting.
 apply_overlay_toggle :: proc(state: ^Frame_State, world_blocked: bool) {
-	if .Toggle_Bottleneck_Overlay in state.input.just_pressed && !world_blocked {
+	if .Toggle_Bottleneck_Overlay in state.interaction.input.just_pressed && !world_blocked {
 		state.settings.bottleneck_overlay = !state.settings.bottleneck_overlay
 	}
 }
@@ -294,11 +331,11 @@ apply_overlay_toggle :: proc(state: ^Frame_State, world_blocked: bool) {
 // replaces the frame's ticks with its own (run_command_ticks).
 update_session :: proc(state: ^Frame_State, world_blocked: bool, content: Simulation_Content) {
 	session := state.session
-	paused := ui_pauses_simulation(state.ui.screens) || state.command_control.paused
-	fast := state.command_control.pending_ticks > 0
-	frame_for_world := world_input(state.input, world_blocked, state.world_action_guard, state.settings, developer_mode_on(state))
+	paused := ui_pauses_simulation(state.interaction.ui.screens) || state.developer.command_control.paused
+	fast := state.developer.command_control.pending_ticks > 0
+	frame_for_world := world_input(state.interaction.input, world_blocked, state.interaction.world_action_guard, state.settings, developer_mode_on(state))
 	// The right stick drives an open hotbar radial instead of the camera.
-	if state.ui.radial.open {
+	if state.interaction.ui.radial.open {
 		frame_for_world = without_actions(frame_for_world, {.Look})
 	}
 	session.tick_input = paused ? paused_frame_input(session.tick_input, frame_for_world) : accumulate_frame_input(session.tick_input, frame_for_world)
@@ -333,9 +370,9 @@ save_when_due :: proc(state: ^Frame_State) {
 		return
 	}
 	if save_session(session, state.content) != "" {
-		ui_toast(&state.ui, text("save_failed"))
+		ui_toast(&state.interaction.ui, text("save_failed"))
 	} else {
-		ui_toast(&state.ui, text(requested ? "save_done" : "autosave_done"))
+		ui_toast(&state.interaction.ui, text(requested ? "save_done" : "autosave_done"))
 	}
 }
 
@@ -363,10 +400,10 @@ render_frame :: proc(state: ^Frame_State) {
 	session := state.session
 	// Every mesh result taken lowers the pending jobs by one.
 	pending_before_upload := session.streaming.pending_jobs
-	upload_streamed_meshes(&state.renderer, &session.streaming)
+	upload_streamed_meshes(&state.presentation.renderer, &session.streaming)
 	weather := session_weather(session, state.settings.weather)
 	sky := weathered_day_sky(day_sky(simulation_day_ticks(session.simulation), session.simulation.day_length_ticks), weather)
-	apply_daylight(&state.renderer, sky)
+	apply_daylight(&state.presentation.renderer, sky)
 	rl.BeginDrawing()
 	defer rl.EndDrawing()
 	// The horizon colour, which is the fog colour: the dome covers the
@@ -379,10 +416,10 @@ render_frame :: proc(state: ^Frame_State) {
 	if counts.underwater {
 		draw_underwater_overlay()
 	}
-	play_frame_sounds(&state.audio, &state.sound_memory, session_sound_frame(state, content, weather))
-	switch state.diagnostics_page {
+	play_frame_sounds(&state.presentation.audio, &state.presentation.sound_memory, session_sound_frame(state, content, weather))
+	switch state.developer.diagnostics_page {
 	case .Off:
-		if state.show_world_overlay {
+		if state.developer.show_world_overlay {
 			draw_world_overlay(diagnostics_context(state))
 		}
 	case .Input:
@@ -408,7 +445,7 @@ session_sound_frame :: proc(state: ^Frame_State, content: Simulation_Content, we
 		player = session.simulation.players[0],
 		tick = session.simulation.tick,
 		quests = &session.simulation.quests,
-		particle_memory = state.particle_memory,
+		particle_memory = state.presentation.particle_memory,
 		weather = weather,
 		cheat_speed = session.simulation.cheat_speed,
 		daylight = daylight_blend(simulation_day_ticks(session.simulation), session.simulation.day_length_ticks),
@@ -480,12 +517,12 @@ render_facts :: proc(state: ^Frame_State, sky: Day_Sky, weather: Weather, counts
 	}
 	return Render_Facts {
 		build_stamp = BUILD_STAMP,
-		window_mode = state.window_settings.window_mode,
-		monitor_size = state.monitor_size,
+		window_mode = state.presentation.window_settings.window_mode,
+		monitor_size = state.presentation.monitor_size,
 		window_size = {int(rl.GetScreenWidth()), int(rl.GetScreenHeight())},
 		render_size = {int(rl.GetRenderWidth()), int(rl.GetRenderHeight())},
-		window_scale = state.window_scale,
-		platform = state.platform,
+		window_scale = state.presentation.window_scale,
+		platform = state.presentation.platform,
 		vsync = state.settings.vsync,
 		frame_rate_cap = state.settings.frame_rate_cap,
 		frames_per_second = int(rl.GetFPS()),
@@ -497,17 +534,17 @@ render_facts :: proc(state: ^Frame_State, sky: Day_Sky, weather: Weather, counts
 		weather = weather,
 		day_fraction = sky.fraction,
 		loaded_chunk_count = len(session.simulation.world.chunks),
-		drawn_chunk_count = state.renderer.drawn_chunk_count,
-		vertex_count = state.renderer.vertex_count,
+		drawn_chunk_count = state.presentation.renderer.drawn_chunk_count,
+		vertex_count = state.presentation.renderer.vertex_count,
 		uploaded_mesh_count = counts.uploaded_meshes,
 		pending_job_count = session.streaming.pending_jobs,
 		drawn_water_mesh_count = counts.water_meshes,
-		live_particle_count = live_particle_count(&state.particles),
+		live_particle_count = live_particle_count(&state.presentation.particles),
 		weather_particle_count = counts.weather_particles,
-		flame_count = flame_count(state.renderer),
-		block_atlas_size = texture_size(chunk_atlas_texture(state.renderer)),
-		item_atlas_size = texture_size(state.item_atlas.texture),
-		ui_atlas_size = texture_size(state.ui_icon_atlas.texture),
+		flame_count = flame_count(state.presentation.renderer),
+		block_atlas_size = texture_size(chunk_atlas_texture(state.presentation.renderer)),
+		item_atlas_size = texture_size(state.presentation.item_atlas.texture),
+		ui_atlas_size = texture_size(state.presentation.ui_icon_atlas.texture),
 		underwater = counts.underwater,
 	}
 }
@@ -521,15 +558,15 @@ diagnostics_context :: proc(state: ^Frame_State) -> Diagnostics_Context {
 		blocks = state.content.blocks,
 		items = state.content.items,
 		quests = state.content.quests,
-		input = state.input,
-		fonts = state.ui.fonts,
-		page = state.diagnostics_page,
+		input = state.interaction.input,
+		fonts = state.interaction.ui.fonts,
+		page = state.developer.diagnostics_page,
 		bottleneck_overlay = state.settings.bottleneck_overlay,
 		pending_job_count = session.streaming.pending_jobs,
 		seed = session.generator.seed,
 		tick_interpolation = interpolation_alpha(session.accumulator),
-		drawn_chunk_count = state.renderer.drawn_chunk_count,
-		vertex_count = state.renderer.vertex_count,
+		drawn_chunk_count = state.presentation.renderer.drawn_chunk_count,
+		vertex_count = state.presentation.renderer.vertex_count,
 	}
 }
 
@@ -559,53 +596,53 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session, content: Simu
 	player := session.simulation.players[0]
 	alpha := f32(interpolation_alpha(session.accumulator))
 	seconds := rl.GetTime()
-	update_player_presence(&state.player_animation, &state.particles, state.particle_memory, world, session.simulation.records.statistics, content.blocks, player, session.simulation.tick, seconds, session.simulation.cheat_speed)
+	update_player_presence(&state.presentation.player_animation, &state.presentation.particles, state.presentation.particle_memory, world, session.simulation.records.statistics, content.blocks, player, session.simulation.tick, seconds, session.simulation.cheat_speed)
 	pose := interpolate_player_pose(player, alpha)
-	animation := player_animation_state(state.player_animation, player, pose.pitch, seconds)
+	animation := player_animation_state(state.presentation.player_animation, player, pose.pitch, seconds)
 	bob := head_bob_offset(animation.walk_phase, head_bob_amplitude(animation.moving, animation.sprinting, head_bob_enabled(state.settings)))
 	view := player_view_camera(world, content.blocks, player, alpha, bob, state.settings)
-	state.sprint_kick = advance_sprint_kick(state.sprint_kick, animation.moving && player_sprints(player, state.input.pressed), state.frame_seconds)
-	camera := fly_camera_to_raylib(view, sprint_field_of_view(state.settings.field_of_view, sprint_kick_degrees(state.settings), state.sprint_kick))
-	state.render_camera = camera
+	state.presentation.sprint_kick = advance_sprint_kick(state.presentation.sprint_kick, animation.moving && player_sprints(player, state.interaction.input.pressed), state.frame_seconds)
+	camera := fly_camera_to_raylib(view, sprint_field_of_view(state.settings.field_of_view, sprint_kick_degrees(state.settings), state.presentation.sprint_kick))
+	state.presentation.render_camera = camera
 	still_seconds := flicker_seconds(seconds, state.settings.reduced_motion)
 	look := weather_look(weather, weather_motion_enabled(state.settings), sky.blend)
-	apply_weather(&state.renderer, look, still_seconds)
+	apply_weather(&state.presentation.renderer, look, still_seconds)
 	counts.underwater = camera_underwater(world, content.blocks, camera.position)
 	if counts.underwater {
-		apply_fog(&state.renderer, underwater_fog())
+		apply_fog(&state.presentation.renderer, underwater_fog())
 	}
 	rl.BeginMode3D(camera)
-	draw_sky(&state.renderer.sky, camera, sky, state.particle_memory.satellite)
-	draw_chunks(&state.renderer, camera)
+	draw_sky(&state.presentation.renderer.sky, camera, sky, state.presentation.particle_memory.satellite)
+	draw_chunks(&state.presentation.renderer, camera)
 	frame := Model_Frame{world = world, tick = session.simulation.tick, alpha = alpha, tick_rate = tick_rate, day_factor = day_factor(sky.blend), sky_tint = color_to_vector3(sky.colors.sun_tint)}
-	draw_entities(world, content.machines, state.model_renderer, content.items, frame)
+	draw_entities(world, content.machines, state.presentation.model_renderer, content.items, frame)
 	if state.settings.bottleneck_overlay {
-		draw_machine_markers(world, content.machines, state.model_renderer, camera.position, bottleneck_marker_colors(ui_theme(&state.ui), state.settings.palette))
+		draw_machine_markers(world, content.machines, state.presentation.model_renderer, camera.position, bottleneck_marker_colors(ui_theme(&state.interaction.ui), state.settings.palette))
 	}
-	draw_fluid_entities(world, content.machines, state.model_renderer, content.fluids, frame)
-	draw_power_entities(world, content.machines, state.model_renderer, frame)
-	draw_belts(&state.belt_renderer, world, content.items, content.machines, state.model_renderer, frame, Item_Billboards{camera = camera, atlas = state.item_atlas})
-	draw_loose_items(world, content.items, frame, Item_Billboards{camera = camera, atlas = state.item_atlas})
-	draw_torch_flames(&state.renderer, camera, still_seconds)
+	draw_fluid_entities(world, content.machines, state.presentation.model_renderer, content.fluids, frame)
+	draw_power_entities(world, content.machines, state.presentation.model_renderer, frame)
+	draw_belts(&state.presentation.belt_renderer, world, content.items, content.machines, state.presentation.model_renderer, frame, Item_Billboards{camera = camera, atlas = state.presentation.item_atlas})
+	draw_loose_items(world, content.items, frame, Item_Billboards{camera = camera, atlas = state.presentation.item_atlas})
+	draw_torch_flames(&state.presentation.renderer, camera, still_seconds)
 	life := session_life_frame(session, camera, sky, weather, look, alpha, seconds)
-	draw_fish_shadows(&state.renderer, life)
-	draw_water_chunks(&state.renderer, camera, seconds)
+	draw_fish_shadows(&state.presentation.renderer, life)
+	draw_water_chunks(&state.presentation.renderer, camera, seconds)
 	draw_bird_flocks(&session.generator, life)
-	draw_insect_motes(&state.renderer, session.generator.biomes, life)
-	if state.diagnostics_page == .Render {
-		counts.water_meshes = water_meshes_in_view(state.renderer, camera)
+	draw_insect_motes(&state.presentation.renderer, session.generator.biomes, life)
+	if state.developer.diagnostics_page == .Render {
+		counts.water_meshes = water_meshes_in_view(state.presentation.renderer, camera)
 	}
-	update_particles(&state.particles, &state.particle_memory, world, session.simulation.records.shipments[:], content, state.model_renderer, session.simulation.players[:], tick_rate, state.frame_seconds)
-	update_satellite_pass(&state.particle_memory, session.simulation.quests.messages[:], state.frame_seconds)
-	draw_particles(&state.particle_renderer, camera, &state.particles, state.particle_memory, world, state.model_renderer, color_to_vector3(sky.colors.sun_tint) * day_factor(sky.blend))
+	update_particles(&state.presentation.particles, &state.presentation.particle_memory, world, session.simulation.records.shipments[:], content, state.presentation.model_renderer, session.simulation.players[:], tick_rate, state.frame_seconds)
+	update_satellite_pass(&state.presentation.particle_memory, session.simulation.quests.messages[:], state.frame_seconds)
+	draw_particles(&state.presentation.particle_renderer, camera, &state.presentation.particles, state.presentation.particle_memory, world, state.presentation.model_renderer, color_to_vector3(sky.colors.sun_tint) * day_factor(sky.blend))
 	if weather_motion_enabled(state.settings) {
 		counts.weather_particles = draw_session_weather(session, camera, weather, sky, seconds)
 	}
-	body := Player_Body_Draw{renderer = state.model_renderer, model = state.player_model, animation = animation, light = player_body_light(frame, player_eye(pose.position))}
-	draw_player_world_overlay(world, content, state.model_renderer, &state.belt_renderer, session.simulation.players[:], 0, alpha, body)
+	body := Player_Body_Draw{renderer = state.presentation.model_renderer, model = state.presentation.player_model, animation = animation, light = player_body_light(frame, player_eye(pose.position))}
+	draw_player_world_overlay(world, content, state.presentation.model_renderer, &state.presentation.belt_renderer, session.simulation.players[:], 0, alpha, body)
 	rl.EndMode3D()
 	if player.camera_mode == .First_Person {
-		draw_first_person_hands(view, body, Item_Billboards{camera = camera, atlas = state.item_atlas}, Held_Block_Tiles{texture = chunk_atlas_texture(state.renderer), layout = state.renderer.atlas_layout, blocks = content.blocks}, content.items, selected_hotbar_stack(player))
+		draw_first_person_hands(view, body, Item_Billboards{camera = camera, atlas = state.presentation.item_atlas}, Held_Block_Tiles{texture = chunk_atlas_texture(state.presentation.renderer), layout = state.presentation.renderer.atlas_layout, blocks = content.blocks}, content.items, selected_hotbar_stack(player))
 	}
 	return counts
 }
@@ -617,7 +654,7 @@ mining_ring_centre :: proc(state: ^Frame_State, mining: Mining_State) -> [2]f32 
 		return {}
 	}
 	size := render_size()
-	return rl.GetWorldToScreenEx(block_centre(mining.block), state.render_camera, i32(size.x), i32(size.y))
+	return rl.GetWorldToScreenEx(block_centre(mining.block), state.presentation.render_camera, i32(size.x), i32(size.y))
 }
 
 // The context every screen gets. Without a session the world fields stay
@@ -626,13 +663,13 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 	content := state.content
 	screen_context := Screen_Context {
 		settings        = &state.settings,
-		monitor_size    = state.monitor_size,
-		platform        = state.platform,
-		font_families   = state.fonts.families,
-		screenshot_requested = &state.screenshot_requested,
-		bindings        = state.bindings,
+		monitor_size    = state.presentation.monitor_size,
+		platform        = state.presentation.platform,
+		font_families   = state.interaction.fonts.families,
+		screenshot_requested = &state.developer.screenshot_requested,
+		bindings        = state.interaction.bindings,
 		quit_requested  = &state.quit_requested,
-		title           = &state.title,
+		title           = &state.interaction.title,
 		items           = content.items,
 		blocks          = content.blocks,
 		item_sort_ranks = content.item_sort_ranks,
@@ -648,13 +685,13 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 		recipe_names    = content.recipe_names,
 		recipe_order    = content.recipe_order,
 		developer_mode  = content.developer_mode,
-		diagnostics_page = &state.diagnostics_page,
-		show_world_overlay = &state.show_world_overlay,
+		diagnostics_page = &state.developer.diagnostics_page,
+		show_world_overlay = &state.developer.show_world_overlay,
 		developer_chapter_count = len(content.developer_kits.kits),
-		texture_editor  = &state.texture_editor,
-		data_browser    = &state.data_browser,
-		touch_layouts   = &state.touch_layouts,
-		touch_layout_editor = &state.touch_layout_editor,
+		texture_editor  = &state.developer.texture_editor,
+		data_browser    = &state.developer.data_browser,
+		touch_layouts   = &state.interaction.touch_layouts,
+		touch_layout_editor = &state.interaction.touch_layout_editor,
 		default_touch_layout = content.touch_overlay,
 	}
 	session := state.session
@@ -662,10 +699,10 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 		return screen_context
 	}
 	screen_context.save_requested = &session.save_requested
-	screen_context.touch_aims = touch_overlay_aims(state)
-	screen_context.touch_hud_buttons = frame_hud_touch_buttons_shown(state)
+	screen_context.touch_aims = touch_overlay_aims(touch_overlay_context(state))
+	screen_context.touch_hud_buttons = frame_hud_touch_buttons_shown(touch_overlay_context(state))
 	screen_context.mining_ring_centre = mining_ring_centre(state, session.simulation.players[0].mining)
-	screen_context.discovery_card_clearance = discovery_card_clearance(state)
+	screen_context.discovery_card_clearance = discovery_card_clearance(touch_overlay_context(state))
 	screen_context.player = &session.simulation.players[0]
 	screen_context.player_index = 0
 	screen_context.world = &session.simulation.world
@@ -681,13 +718,13 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 	screen_context.statistics_view = &session.statistics_view
 	screen_context.map_view = &session.map_view
 	screen_context.generator = &session.generator
-	screen_context.biome_banner = &state.biome_banner
+	screen_context.biome_banner = &state.interaction.biome_banner
 	screen_context.developer_requests = &session.simulation.developer_requests
 	screen_context.cheat_speed = session.simulation.cheat_speed
 	screen_context.landing_pad = session.start.landing_pad
-	screen_context.particle_memory = &state.particle_memory
-	screen_context.reload_requested = &state.reload_requested
-	screen_context.data_changed = state.data_watch.content_changed
+	screen_context.particle_memory = &state.presentation.particle_memory
+	screen_context.reload_requested = &state.reload.reload_requested
+	screen_context.data_changed = state.reload.data_watch.content_changed
 	return screen_context
 }
 
@@ -695,36 +732,36 @@ run_ui_frame :: proc(state: ^Frame_State) {
 	// Render pixels (work item 0085): with the high DPI flag the UI follows
 	// the panel's pixels and its text rasterises at their size.
 	screen_pixels := [2]f32{f32(rl.GetRenderWidth()), f32(rl.GetRenderHeight())}
-	input := make_ui_input(state.previous_input, state.input)
+	input := make_ui_input(state.interaction.previous_input, state.interaction.input)
 	// The phone's pointer is its first touch (input_raylib.odin); with the
 	// overlay on, the desktop's mouse stands in for a finger (0124).
-	input.pointer_is_touch = ODIN_PLATFORM_SUBTARGET == .Android || touch_overlay_on(state)
-	ui_begin(&state.ui, input, screen_pixels, state.frame_seconds, state.settings.ui_scale, state.settings.pointer_speed, ui_accessibility(state.settings))
-	state.ui.system_keyboard = state.system_keyboard_available && state.settings.on_screen_keyboard == .System
-	state.ui.bindings, state.ui.input_backend = state.bindings, state.input_backend
-	sync_font_cache(&state.font_cache, state.settings, state.ui.pixels_per_unit)
+	input.pointer_is_touch = ODIN_PLATFORM_SUBTARGET == .Android || touch_overlay_on(touch_overlay_context(state))
+	ui_begin(&state.interaction.ui, input, screen_pixels, state.frame_seconds, state.settings.ui_scale, state.settings.pointer_speed, ui_accessibility(state.settings))
+	state.interaction.ui.system_keyboard = state.interaction.system_keyboard_available && state.settings.on_screen_keyboard == .System
+	state.interaction.ui.bindings, state.interaction.ui.input_backend = state.interaction.bindings, state.interaction.input_backend
+	sync_font_cache(&state.interaction.font_cache, state.settings, state.interaction.ui.pixels_per_unit)
 	screen_context := make_screen_context(state)
 	if state.session != nil {
-		show_simulation_events(&state.ui, &state.session.simulation.events)
-		show_quest_notices(&state.ui, &state.session.simulation.quests.notices, state.session.simulation.records.shipments[:], state.content.items)
-		draw_hud(&state.ui, screen_context)
+		show_simulation_events(&state.interaction.ui, &state.session.simulation.events)
+		show_quest_notices(&state.interaction.ui, &state.session.simulation.quests.notices, state.session.simulation.records.shipments[:], state.content.items)
+		draw_hud(&state.interaction.ui, screen_context)
 	}
-	run_screens(&state.ui, screen_context)
+	run_screens(&state.interaction.ui, screen_context)
 	// After the screens, so Start and Back show over an open one.
-	if state.session != nil && touch_overlay_on(state) && !touch_layout_editor_shown(state.ui.screens) {
-		draw_touch_overlay(&state.ui, state.touch_overlay, frame_touch_layout(state), screen_pixels, !ui_blocks_world(state.ui.screens))
+	if state.session != nil && touch_overlay_on(touch_overlay_context(state)) && !touch_layout_editor_shown(state.interaction.ui.screens) {
+		draw_touch_overlay(&state.interaction.ui, state.interaction.touch_overlay, frame_touch_layout(touch_overlay_context(state)), screen_pixels, !ui_blocks_world(state.interaction.ui.screens))
 	}
 	icon_atlas := Icon_Atlas {
-		texture      = chunk_atlas_texture(state.renderer),
-		layout       = state.renderer.atlas_layout,
-		item_texture = state.item_atlas.texture,
-		item_layout  = state.item_atlas.layout,
-		ui_texture   = state.ui_icon_atlas.texture,
-		ui_layout    = state.ui_icon_atlas.layout,
+		texture      = chunk_atlas_texture(state.presentation.renderer),
+		layout       = state.presentation.renderer.atlas_layout,
+		item_texture = state.presentation.item_atlas.texture,
+		item_layout  = state.presentation.item_atlas.layout,
+		ui_texture   = state.presentation.ui_icon_atlas.texture,
+		ui_layout    = state.presentation.ui_icon_atlas.layout,
 	}
-	ui_end(&state.ui, icon_atlas, &state.ui_images)
+	ui_end(&state.interaction.ui, icon_atlas, &state.interaction.ui_images)
 	sync_system_keyboard(state)
-	play_ui_sounds(&state.audio, &state.ui)
+	play_ui_sounds(&state.presentation.audio, &state.interaction.ui)
 	apply_cursor_mode(state)
 }
 
@@ -732,15 +769,15 @@ run_ui_frame :: proc(state: ^Frame_State) {
 // it once the entry ended, however it ended (Done, a tap elsewhere, a
 // screen change).
 sync_system_keyboard :: proc(state: ^Frame_State) {
-	keyboard := &state.ui.keyboard
-	switch system_keyboard_change(keyboard^, state.system_keyboard_shown) {
+	keyboard := &state.interaction.ui.keyboard
+	switch system_keyboard_change(keyboard^, state.interaction.system_keyboard_shown) {
 	case .Show:
-		field := units_to_window_rectangle(keyboard.field_rectangle, state.ui.pixels_per_unit, cursor_window_size(), render_size())
+		field := units_to_window_rectangle(keyboard.field_rectangle, state.interaction.ui.pixels_per_unit, cursor_window_size(), render_size())
 		show_system_keyboard(System_Keyboard_Field{field.x, field.y, field.width, field.height})
-		state.system_keyboard_shown = true
+		state.interaction.system_keyboard_shown = true
 	case .Hide:
 		hide_system_keyboard()
-		state.system_keyboard_shown = false
+		state.interaction.system_keyboard_shown = false
 	case .None:
 	}
 	keyboard.show_requested = false
@@ -822,17 +859,17 @@ Game_Content :: struct {
 // world that cannot be made or loaded leaves the title showing with a
 // toast.
 apply_session_request :: proc(state: ^Frame_State) {
-	request := state.title.request
-	state.title.request = {}
+	request := state.interaction.title.request
+	state.interaction.title.request = {}
 	switch request.kind {
 	case .None:
 	case .New_World:
-		setup := &state.title.setup
+		setup := &state.interaction.title.setup
 		seed, _ := world_setup_seed(setup)
-		plan := new_world_plan(strings.trim_space(text_field_text(&setup.name)), seed, world_file_settings_from_setup(setup^), state.title.saves_directory, state.title.saves_found, false)
+		plan := new_world_plan(strings.trim_space(text_field_text(&setup.name)), seed, world_file_settings_from_setup(setup^), state.interaction.title.saves_directory, state.interaction.title.saves_found, false)
 		enter_planned_session(state, plan)
 	case .Load:
-		plan, problem := saved_world_plan(state.title.saves_directory, request.directory_name)
+		plan, problem := saved_world_plan(state.interaction.title.saves_directory, request.directory_name)
 		if problem != "" {
 			report_session_problem(state, problem)
 			return
@@ -846,7 +883,7 @@ apply_session_request :: proc(state: ^Frame_State) {
 
 report_session_problem :: proc(state: ^Frame_State, problem: string) {
 	platform.log_printf("error: %s", problem)
-	ui_toast(&state.ui, fmt.tprintf("%s: %s", text("title_world_failed"), problem))
+	ui_toast(&state.interaction.ui, fmt.tprintf("%s: %s", text("title_world_failed"), problem))
 }
 
 // A new world saves at once, so it exists on disk from the start.
@@ -864,14 +901,14 @@ enter_planned_session :: proc(state: ^Frame_State, plan: Session_Plan) {
 
 enter_session :: proc(state: ^Frame_State, session: ^Session) {
 	state.session = session
-	state.particles = {}
-	state.particle_memory = {}
-	state.player_animation = {}
-	state.sound_memory = {}
-	clear_mission_control(&state.ui.mission_control)
-	state.ui.screens = {}
-	state.ui.keyboard = {}
-	state.ui.tooltip_open = false
+	state.presentation.particles = {}
+	state.presentation.particle_memory = {}
+	state.presentation.player_animation = {}
+	state.presentation.sound_memory = {}
+	clear_mission_control(&state.interaction.ui.mission_control)
+	state.interaction.ui.screens = {}
+	state.interaction.ui.keyboard = {}
+	state.interaction.ui.tooltip_open = false
 }
 
 // Saves first when the world saves.
@@ -883,13 +920,13 @@ leave_session :: proc(state: ^Frame_State) {
 	if session.save.enabled && save_session(session, state.content) == "" {
 		platform.log_printf("world: saved %q", session.save.location.display_name)
 	}
-	unload_all_chunk_meshes(&state.renderer)
+	unload_all_chunk_meshes(&state.presentation.renderer)
 	end_session(session)
 	state.session = nil
-	state.diagnostics_page = .Off
-	state.show_world_overlay = false
+	state.developer.diagnostics_page = .Off
+	state.developer.show_world_overlay = false
 	// A pause command holds only the world it was given in.
-	state.command_control.paused = false
+	state.developer.command_control.paused = false
 }
 
 // Once the settings screen is closed (and on exit), changed settings go to
@@ -905,10 +942,10 @@ write_changed_settings :: proc(state: ^Frame_State) {
 }
 
 show_title :: proc(state: ^Frame_State) {
-	state.ui.screens = {}
-	state.ui.keyboard = {}
-	push_screen(&state.ui.screens, .Title)
-	refresh_title_saves(&state.title)
+	state.interaction.ui.screens = {}
+	state.interaction.ui.keyboard = {}
+	push_screen(&state.interaction.ui.screens, .Title)
+	refresh_title_saves(&state.interaction.title)
 }
 
 // Takes ownership of the session, or shows the title when there is none.
@@ -950,35 +987,41 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 		config          = config,
 		content         = content,
 		base_generator  = game_data.base_generator,
-		content_arena   = game_data.arena,
 		data_directory  = data_directory,
-		watch_data_flag = player_configuration.watch_data,
-		binding_overrides = player_configuration.binding_overrides,
-		touch_overlay_forced = player_configuration.touch_overlay_forced,
-		title           = title,
-		input_backend   = input_backend,
-		renderer        = renderer,
 		settings        = player_configuration.settings,
 		stored_settings = player_configuration.settings,
-		window_settings = window_settings,
-		monitor_size    = monitor_size,
-		window_scale    = window_scale(),
-		platform        = window_platform,
 		environment     = player_configuration.environment,
-		bindings        = player_configuration.bindings,
-		input_bindings  = player_configuration.input_bindings,
-		fonts           = fonts,
-		// raylib starts with the cursor shown; the first apply hides it.
-		cursor_enabled  = true,
+		interaction = {
+			touch_overlay_forced = player_configuration.touch_overlay_forced,
+			title           = title,
+			input_backend   = input_backend,
+			bindings        = player_configuration.bindings,
+			input_bindings  = player_configuration.input_bindings,
+			fonts           = fonts,
+			// raylib starts with the cursor shown; the first apply hides it.
+			cursor_enabled  = true,
+		},
+		presentation = {
+			renderer        = renderer,
+			window_settings = window_settings,
+			monitor_size    = monitor_size,
+			window_scale    = window_scale(),
+			platform        = window_platform,
+		},
+		reload = {
+			content_arena   = game_data.arena,
+			watch_data_flag = player_configuration.watch_data,
+			binding_overrides = player_configuration.binding_overrides,
+		},
 	}
 	// After the session left, which saves with the content.
 	defer destroy_hot_reload_state(&state)
-	defer destroy_ui_state(&state.ui)
-	defer release_ui_images(&state.ui_images)
+	defer destroy_ui_state(&state.interaction.ui)
+	defer release_ui_images(&state.interaction.ui_images)
 	strings_text, _, _ := read_strings_file(data_directory)
-	init_font_cache(&state.font_cache, data_directory, state.fonts.families, string(strings_text), state.settings)
-	state.ui.fonts, state.ui.measure_text = &state.font_cache, measure_font_text
-	defer destroy_font_cache(&state.font_cache)
+	init_font_cache(&state.interaction.font_cache, data_directory, state.interaction.fonts.families, string(strings_text), state.settings)
+	state.interaction.ui.fonts, state.interaction.ui.measure_text = &state.interaction.font_cache, measure_font_text
+	defer destroy_font_cache(&state.interaction.font_cache)
 	theme, theme_problem := load_ui_theme(data_directory)
 	if theme_problem != "" && turn_data_edits_off(theme_problem) {
 		theme, theme_problem = load_ui_theme(data_directory)
@@ -987,52 +1030,52 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 		platform.log_printf("error: %s", theme_problem)
 		os.exit(1)
 	}
-	apply_ui_theme(&state.ui, theme)
+	apply_ui_theme(&state.interaction.ui, theme)
 	if data_edits_reading.off {
-		ui_toast(&state.ui, text("data_files_edits_off_toast"))
+		ui_toast(&state.interaction.ui, text("data_files_edits_off_toast"))
 	}
 	if player_configuration.settings_set_aside {
-		ui_toast(&state.ui, text("settings_file_set_aside_toast"))
+		ui_toast(&state.interaction.ui, text("settings_file_set_aside_toast"))
 	}
 	if player_configuration.fonts_fell_back {
-		ui_toast(&state.ui, text("settings_font_default_toast"))
+		ui_toast(&state.interaction.ui, text("settings_font_default_toast"))
 	}
-	state.ui_icon_atlas = upload_ui_icon_atlas(data_directory)
-	defer destroy_item_atlas(&state.ui_icon_atlas)
-	defer destroy_title_state(&state.title)
+	state.presentation.ui_icon_atlas = upload_ui_icon_atlas(data_directory)
+	defer destroy_item_atlas(&state.presentation.ui_icon_atlas)
+	defer destroy_title_state(&state.interaction.title)
 	defer write_changed_settings(&state)
 	defer if input_backend == .Sdl3 {
-		shutdown_sdl3_input(&state.sdl3_input)
+		shutdown_sdl3_input(&state.interaction.sdl3_input)
 	}
-	state.vibrator = start_vibrator()
-	defer stop_vibrator(&state.vibrator)
-	state.system_keyboard_available = system_keyboard_available()
-	platform.log_printf("keyboard: system keyboard %s", state.system_keyboard_available ? "available" : "not available")
-	defer destroy_chunk_renderer(&state.renderer)
-	state.item_atlas = upload_item_atlas(&state.content.items, data_directory)
-	defer destroy_item_atlas(&state.item_atlas)
-	state.belt_renderer = init_belt_renderer(content.machines)
-	defer destroy_belt_renderer(&state.belt_renderer)
-	state.model_renderer = init_model_renderer(content.machines, data_directory)
-	defer destroy_model_renderer(&state.model_renderer)
-	state.particle_renderer = init_particle_renderer()
-	defer destroy_particle_renderer(&state.particle_renderer)
-	state.player_model = init_player_model(data_directory)
-	defer unload_player_model(&state.player_model)
-	state.audio = init_audio(data_directory, content.blocks, game_data.base_generator.biomes, state.settings)
-	defer shutdown_audio(&state.audio)
+	state.interaction.vibrator = start_vibrator()
+	defer stop_vibrator(&state.interaction.vibrator)
+	state.interaction.system_keyboard_available = system_keyboard_available()
+	platform.log_printf("keyboard: system keyboard %s", state.interaction.system_keyboard_available ? "available" : "not available")
+	defer destroy_chunk_renderer(&state.presentation.renderer)
+	state.presentation.item_atlas = upload_item_atlas(&state.content.items, data_directory)
+	defer destroy_item_atlas(&state.presentation.item_atlas)
+	state.presentation.belt_renderer = init_belt_renderer(content.machines)
+	defer destroy_belt_renderer(&state.presentation.belt_renderer)
+	state.presentation.model_renderer = init_model_renderer(content.machines, data_directory)
+	defer destroy_model_renderer(&state.presentation.model_renderer)
+	state.presentation.particle_renderer = init_particle_renderer()
+	defer destroy_particle_renderer(&state.presentation.particle_renderer)
+	state.presentation.player_model = init_player_model(data_directory)
+	defer unload_player_model(&state.presentation.player_model)
+	state.presentation.audio = init_audio(data_directory, content.blocks, game_data.base_generator.biomes, state.settings)
+	defer shutdown_audio(&state.presentation.audio)
 	start_command_frame_state(&state)
 	defer destroy_command_frame_state(&state)
-	load_texture_editor(&state.texture_editor, data_directory, texture_edits_path(), state.content.blocks)
-	defer destroy_texture_editor(&state.texture_editor)
-	state.data_browser = make_data_browser()
-	defer destroy_data_browser(&state.data_browser)
+	load_texture_editor(&state.developer.texture_editor, data_directory, texture_edits_path(), state.content.blocks)
+	defer destroy_texture_editor(&state.developer.texture_editor)
+	state.developer.data_browser = make_data_browser()
+	defer destroy_data_browser(&state.developer.data_browser)
 	touch_layouts_problem: string
-	if state.touch_layouts, touch_layouts_problem = load_touch_layouts(state.environment); touch_layouts_problem != "" {
-		ui_toast(&state.ui, touch_layouts_locked_text(state.touch_layouts))
+	if state.interaction.touch_layouts, touch_layouts_problem = load_touch_layouts(state.environment); touch_layouts_problem != "" {
+		ui_toast(&state.interaction.ui, touch_layouts_locked_text(state.interaction.touch_layouts))
 	}
-	defer destroy_touch_layouts(&state.touch_layouts)
-	defer destroy_touch_layout_editor(&state.touch_layout_editor)
+	defer destroy_touch_layouts(&state.interaction.touch_layouts)
+	defer destroy_touch_layout_editor(&state.interaction.touch_layout_editor)
 	if session != nil {
 		enter_session(&state, session)
 	} else {
@@ -1042,21 +1085,21 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	apply_cursor_mode(&state)
 	for !rl.WindowShouldClose() && !state.quit_requested {
 		update_frame(&state)
-		serve_texture_editor(&state.texture_editor, &state.ui, state.renderer, state.data_directory, state.content.blocks)
-		data_browser := Data_Browser_Context{browser = &state.data_browser, ui = &state.ui, settings = &state.settings, data_directory = state.data_directory}
+		serve_texture_editor(&state.developer.texture_editor, &state.interaction.ui, state.presentation.renderer, state.data_directory, state.content.blocks)
+		data_browser := Data_Browser_Context{browser = &state.developer.data_browser, ui = &state.interaction.ui, settings = &state.settings, data_directory = state.data_directory}
 		apply_data_edit_change(&state, serve_data_browser(data_browser))
-		if serve_touch_layouts(&state.touch_layouts, &state.touch_layout_editor, &state.ui, state.content.touch_overlay, state.environment) {
-			state.touch_overlay = release_touch_latches(state.touch_overlay)
+		if serve_touch_layouts(&state.interaction.touch_layouts, &state.interaction.touch_layout_editor, &state.interaction.ui, state.content.touch_overlay, state.environment) {
+			state.interaction.touch_overlay = release_touch_latches(state.interaction.touch_overlay)
 		}
 		render_frame(&state)
-		update_audio(&state.audio, state.settings, state.frame_seconds)
+		update_audio(&state.presentation.audio, state.settings, state.frame_seconds)
 		apply_session_request(&state)
 		update_data_watch(&state)
 		apply_reload_request(&state)
 		// Applied at once, like the font choice.
-		update_display(&state.window_settings, state.settings, state.monitor_size, state.platform)
-		state.window_scale = window_scale()
-		if !screen_stack_contains(state.ui.screens, .Settings) {
+		update_display(&state.presentation.window_settings, state.settings, state.presentation.monitor_size, state.presentation.platform)
+		state.presentation.window_scale = window_scale()
+		if !screen_stack_contains(state.interaction.ui.screens, .Settings) {
 			write_changed_settings(&state)
 		}
 		free_all(context.temp_allocator)
@@ -1066,28 +1109,28 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 // Command socket (work item 0053, command_socket.odin, command.odin).
 
 start_command_frame_state :: proc(state: ^Frame_State) {
-	state.command_server = make_command_server()
+	state.developer.command_server = make_command_server()
 	directories := platform.platform_directories(context.temp_allocator)
-	state.command_socket_path, _ = command_socket_path_from_environment(directories.runtime_directory, directories.state_home, directories.home)
-	state.screenshot_directory, _ = screenshot_directory_from_environment(directories.state_home, directories.home)
+	state.developer.command_socket_path, _ = command_socket_path_from_environment(directories.runtime_directory, directories.state_home, directories.home)
+	state.developer.screenshot_directory, _ = screenshot_directory_from_environment(directories.state_home, directories.home)
 }
 
 destroy_command_frame_state :: proc(state: ^Frame_State) {
-	destroy_command_server(&state.command_server)
-	delete(state.command_socket_path)
-	delete(state.screenshot_directory)
-	delete(state.command_control.screenshot_path)
+	destroy_command_server(&state.developer.command_server)
+	delete(state.developer.command_socket_path)
+	delete(state.developer.screenshot_directory)
+	delete(state.developer.command_control.screenshot_path)
 }
 
 // Listens while developer mode is on (--dev or the setting), and stops
 // when the setting is switched off. A failure to listen is logged once.
 // Does nothing where there is no command socket (Windows, 0108).
 update_command_server_open :: proc(state: ^Frame_State) {
-	server := &state.command_server
+	server := &state.developer.command_server
 	wanted := state.content.developer_mode || state.settings.developer_mode
 	switch {
 	case COMMAND_SOCKET_SUPPORTED && wanted && server.listening == -1 && !server.open_failed:
-		problem := state.command_socket_path == "" ? "no directory for it (set XDG_RUNTIME_DIR, XDG_STATE_HOME or HOME)" : open_command_server(server, state.command_socket_path)
+		problem := state.developer.command_socket_path == "" ? "no directory for it (set XDG_RUNTIME_DIR, XDG_STATE_HOME or HOME)" : open_command_server(server, state.developer.command_socket_path)
 		if problem != "" {
 			platform.log_printf("error: command socket: %s", problem)
 			server.open_failed = true
@@ -1106,13 +1149,13 @@ update_command_server_open :: proc(state: ^Frame_State) {
 // executes the queued lines in order until one starts a tick command.
 serve_command_socket :: proc(state: ^Frame_State) {
 	update_command_server_open(state)
-	server := &state.command_server
+	server := &state.developer.command_server
 	if server.listening == -1 {
 		return
 	}
 	poll_command_server(server)
 	answer_command_ticks(state)
-	for !state.command_control.ticks_waiting {
+	for !state.developer.command_control.ticks_waiting {
 		queued := take_command_line(server) or_break
 		execute_queued_command(state, queued)
 		delete(queued.line)
@@ -1121,34 +1164,34 @@ serve_command_socket :: proc(state: ^Frame_State) {
 }
 
 answer_command_ticks :: proc(state: ^Frame_State) {
-	control := &state.command_control
+	control := &state.developer.command_control
 	if control.ticks_waiting && state.session == nil {
 		control.pending_ticks, control.ticks_waiting = 0, false
-		send_logged_response(state, state.command_server.tick_client, "tick", command_error("the world was closed"))
-		state.command_server.tick_client = 0
+		send_logged_response(state, state.developer.command_server.tick_client, "tick", command_error("the world was closed"))
+		state.developer.command_server.tick_client = 0
 		return
 	}
 	if state.session == nil {
 		return
 	}
 	if response, finished := finish_command_ticks(control, state.session.simulation.tick); finished {
-		send_logged_response(state, state.command_server.tick_client, "tick", response)
-		state.command_server.tick_client = 0
+		send_logged_response(state, state.developer.command_server.tick_client, "tick", response)
+		state.developer.command_server.tick_client = 0
 	}
 }
 
 send_logged_response :: proc(state: ^Frame_State, client: u64, line: string, response: Command_Response) {
 	text := format_command_response(response)
 	log_command_exchange(line, text)
-	send_command_response(&state.command_server, client, text)
+	send_command_response(&state.developer.command_server, client, text)
 }
 
 frame_command_context :: proc(state: ^Frame_State) -> Command_Context {
 	command_context := Command_Context {
 		content              = state.content.simulation_content,
-		control              = &state.command_control,
-		textures             = state.texture_editor.entries[:],
-		screenshot_directory = state.screenshot_directory,
+		control              = &state.developer.command_control,
+		textures             = state.developer.texture_editor.entries[:],
+		screenshot_directory = state.developer.screenshot_directory,
 		now                  = time.now(),
 	}
 	if state.session != nil {
@@ -1176,7 +1219,7 @@ execute_queued_command :: proc(state: ^Frame_State, queued: Queued_Command_Line)
 	}
 	if response.deferred {
 		platform.log_printf("command: %s", queued.line)
-		state.command_server.tick_client = queued.client
+		state.developer.command_server.tick_client = queued.client
 		return
 	}
 	send_logged_response(state, queued.client, queued.line, response)
@@ -1197,8 +1240,8 @@ command_save :: proc(state: ^Frame_State) -> Command_Response {
 run_command_ticks :: proc(state: ^Frame_State, content: Simulation_Content) -> int {
 	start := time.tick_now()
 	count := 0
-	for state.command_control.pending_ticks > 0 && time.tick_since(start) < COMMAND_TICK_WALL_BUDGET {
-		run_command_tick(&state.session.simulation, content, &state.command_control)
+	for state.developer.command_control.pending_ticks > 0 && time.tick_since(start) < COMMAND_TICK_WALL_BUDGET {
+		run_command_tick(&state.session.simulation, content, &state.developer.command_control)
 		count += 1
 	}
 	return count
@@ -1206,28 +1249,28 @@ run_command_ticks :: proc(state: ^Frame_State, content: Simulation_Content) -> i
 
 // The Developer screen's button, queued like the screenshot command.
 queue_requested_screenshot :: proc(state: ^Frame_State) {
-	if !state.screenshot_requested {
+	if !state.developer.screenshot_requested {
 		return
 	}
-	state.screenshot_requested = false
-	path, problem := queue_screenshot(&state.command_control, state.screenshot_directory, "", time.now())
+	state.developer.screenshot_requested = false
+	path, problem := queue_screenshot(&state.developer.command_control, state.developer.screenshot_directory, "", time.now())
 	if problem != "" {
 		platform.log_printf("error: screenshot: %s", problem)
-		ui_toast(&state.ui, fmt.tprintf("%s: %s", text("developer_screenshot_failed"), problem))
+		ui_toast(&state.interaction.ui, fmt.tprintf("%s: %s", text("developer_screenshot_failed"), problem))
 		return
 	}
-	ui_toast(&state.ui, fmt.tprintf("%s %s", text("developer_screenshot_saved"), path))
+	ui_toast(&state.interaction.ui, fmt.tprintf("%s %s", text("developer_screenshot_saved"), path))
 }
 
 // At the end of the frame, before EndDrawing shows it: the drawn frame
 // read back and written as PNG. ExportImage takes the absolute path as
 // given (TakeScreenshot would put the file in the working directory).
 capture_pending_screenshot :: proc(state: ^Frame_State) {
-	path := state.command_control.screenshot_path
+	path := state.developer.command_control.screenshot_path
 	if path == "" {
 		return
 	}
-	state.command_control.screenshot_path = ""
+	state.developer.command_control.screenshot_path = ""
 	defer delete(path)
 	rlgl.DrawRenderBatchActive()
 	image := rl.LoadImageFromScreen()

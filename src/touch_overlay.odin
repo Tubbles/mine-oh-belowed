@@ -1737,10 +1737,24 @@ apply_touch_overlay_jump :: proc(frame: Input_Frame, overlay: Touch_Overlay_Fram
 	return result
 }
 
+// What the overlay reads of the frame, built by the loop at each use
+// (touch_overlay_context): the input group, whose touch_overlay it
+// writes, and the session, content, settings, the camera the world was
+// last drawn with and the tick count, which live outside that group.
+Touch_Overlay_Context :: struct {
+	interaction:      ^Frame_Interaction,
+	session:          ^Session,
+	content:          ^Game_Content,
+	settings:         ^Settings,
+	render_camera:    rl.Camera3D,
+	frame_seconds:    f32,
+	frame_tick_count: int,
+}
+
 // The tap scheme hides the crosshair and rings the mined block instead
 // (draw_hud), whenever the overlay is on in a world.
-touch_overlay_aims :: proc(state: ^Frame_State) -> bool {
-	return state.session != nil && touch_overlay_on(state) && state.settings.touch_interaction == .Tap
+touch_overlay_aims :: proc(touch_context: Touch_Overlay_Context) -> bool {
+	return touch_context.session != nil && touch_overlay_on(touch_context) && touch_context.settings.touch_interaction == .Tap
 }
 
 // The frame.
@@ -1765,25 +1779,25 @@ read_touch_points :: proc(buffer: []Touch_Point) -> []Touch_Point {
 	}
 }
 
-touch_overlay_on :: proc(state: ^Frame_State) -> bool {
-	return touch_overlay_enabled(state.settings.touch_overlay, state.touch_overlay_forced, ODIN_PLATFORM_SUBTARGET == .Android)
+touch_overlay_on :: proc(touch_context: Touch_Overlay_Context) -> bool {
+	return touch_overlay_enabled(touch_context.settings.touch_overlay, touch_context.interaction.touch_overlay_forced, ODIN_PLATFORM_SUBTARGET == .Android)
 }
 
 // The tap scheme's inputs: frame_tick_count is still the previous frame's
 // here (update_session sets it after the input is read), and the target is
 // the one that frame's last tick found.
-touch_interaction_frame :: proc(state: ^Frame_State) -> Touch_Interaction_Frame {
-	simulation := &state.session.simulation
+touch_interaction_frame :: proc(touch_context: Touch_Overlay_Context) -> Touch_Interaction_Frame {
+	simulation := &touch_context.session.simulation
 	selected := simulation.players[0].selected_hotbar_slot
 	return Touch_Interaction_Frame {
-		interaction = state.settings.touch_interaction,
-		frame_seconds = state.frame_seconds,
-		ticked = state.frame_tick_count > 0,
+		interaction = touch_context.settings.touch_interaction,
+		frame_seconds = touch_context.frame_seconds,
+		ticked = touch_context.frame_tick_count > 0,
 		target_takes_interaction = entity_takes_interact(&simulation.world.entities, simulation.players[0].target.entity),
-		hotbar_slots = hud_hotbar_pixel_rectangles(&state.ui, selected),
+		hotbar_slots = hud_hotbar_pixel_rectangles(&touch_context.interaction.ui, selected),
 		selected_hotbar_slot = selected,
-		double_tap_latches = state.settings.sneak_hold == .Hold,
-		hud_buttons = frame_hud_touch_buttons(state),
+		double_tap_latches = touch_context.settings.sneak_hold == .Hold,
+		hud_buttons = frame_hud_touch_buttons(touch_context),
 	}
 }
 
@@ -1805,17 +1819,17 @@ touch_control_for_action :: proc(bindings: []Binding, action: Action, backend: I
 // The HUD touch buttons drawn and read this frame: none unless the
 // overlay is on in a world without the layout editor, else those whose
 // action has a control to press, Rotate only while the selection rotates.
-frame_hud_touch_buttons_shown :: proc(state: ^Frame_State) -> bit_set[Hud_Touch_Button] {
-	if state.session == nil || !touch_overlay_on(state) || touch_layout_editor_shown(state.ui.screens) {
+frame_hud_touch_buttons_shown :: proc(touch_context: Touch_Overlay_Context) -> bit_set[Hud_Touch_Button] {
+	if touch_context.session == nil || !touch_overlay_on(touch_context) || touch_layout_editor_shown(touch_context.interaction.ui.screens) {
 		return {}
 	}
-	content := state.content
-	simulation := &state.session.simulation
+	content := touch_context.content
+	simulation := &touch_context.session.simulation
 	player := simulation.players[0]
 	rotates := selected_placement_rotates(player, content.machines, content.blocks, content.items) || entity_rotates(&simulation.world.entities, player.target.entity)
 	shown: bit_set[Hud_Touch_Button]
 	for button in hud_touch_buttons_shown(rotates) {
-		if _, bound := touch_control_for_action(state.bindings, hud_touch_button_actions[button], state.input_backend); bound {
+		if _, bound := touch_control_for_action(touch_context.interaction.bindings, hud_touch_button_actions[button], touch_context.interaction.input_backend); bound {
 			shown += {button}
 		}
 	}
@@ -1824,11 +1838,11 @@ frame_hud_touch_buttons_shown :: proc(state: ^Frame_State) -> bit_set[Hud_Touch_
 
 // The shown buttons in render pixels, where the overlay hit tests them,
 // as the HUD last laid them out (like hud_hotbar_pixel_rectangles).
-frame_hud_touch_buttons :: proc(state: ^Frame_State) -> (buttons: [Hud_Touch_Button]Touch_Hud_Button) {
-	rectangles := hud_touch_button_rectangles(ui_safe_area(&state.ui))
-	for button in frame_hud_touch_buttons_shown(state) {
-		control, _ := touch_control_for_action(state.bindings, hud_touch_button_actions[button], state.input_backend)
-		buttons[button] = Touch_Hud_Button{shown = true, rectangle = units_to_pixels_rectangle(rectangles[button], state.ui.pixels_per_unit), control = control}
+frame_hud_touch_buttons :: proc(touch_context: Touch_Overlay_Context) -> (buttons: [Hud_Touch_Button]Touch_Hud_Button) {
+	rectangles := hud_touch_button_rectangles(ui_safe_area(&touch_context.interaction.ui))
+	for button in frame_hud_touch_buttons_shown(touch_context) {
+		control, _ := touch_control_for_action(touch_context.interaction.bindings, hud_touch_button_actions[button], touch_context.interaction.input_backend)
+		buttons[button] = Touch_Hud_Button{shown = true, rectangle = units_to_pixels_rectangle(rectangles[button], touch_context.interaction.ui.pixels_per_unit), control = control}
 	}
 	return buttons
 }
@@ -1839,7 +1853,7 @@ units_to_pixels_rectangle :: proc(rectangle: Ui_Rectangle, pixels_per_unit: f32)
 
 // The render camera's ray through a point in render pixels, as a
 // direction from the eye the simulation casts the target from. The camera
-// is the last frame's (Frame_State.render_camera); before the first world
+// is the last frame's (Frame_Presentation.render_camera); before the first world
 // frame it is empty and the aim stays off.
 touch_aim_direction :: proc(point: [2]f32, camera: rl.Camera3D, screen_size: [2]int, world: ^World, registry: Block_Registry, eye: [3]f32) -> (direction: [3]f32, ok: bool) {
 	if camera.fovy <= 0 {
@@ -1867,8 +1881,8 @@ eye_aim_direction :: proc(world: ^World, registry: Block_Registry, eye, ray_orig
 
 // The layout the overlay reads: the selected user layout, else Default
 // (0121).
-frame_touch_layout :: proc(state: ^Frame_State) -> Touch_Overlay_Layout {
-	return active_touch_layout(state.touch_layouts, state.content.touch_overlay)
+frame_touch_layout :: proc(touch_context: Touch_Overlay_Context) -> Touch_Overlay_Layout {
+	return active_touch_layout(touch_context.interaction.touch_layouts, touch_context.content.touch_overlay)
 }
 
 // The layout editor on top draws the layout itself and takes every touch
@@ -1878,20 +1892,20 @@ touch_layout_editor_shown :: proc(screens: Screen_Stack) -> bool {
 }
 
 // Only in a world: the title screens take touch as the pointer alone.
-read_touch_overlay_frame :: proc(state: ^Frame_State) -> Touch_Overlay_Frame {
-	if !touch_overlay_on(state) || state.session == nil || touch_layout_editor_shown(state.ui.screens) {
-		state.touch_overlay = {}
+read_touch_overlay_frame :: proc(touch_context: Touch_Overlay_Context) -> Touch_Overlay_Frame {
+	if !touch_overlay_on(touch_context) || touch_context.session == nil || touch_layout_editor_shown(touch_context.interaction.ui.screens) {
+		touch_context.interaction.touch_overlay = {}
 		return {}
 	}
 	screen_size := render_size()
 	screen := [2]f32{f32(screen_size.x), f32(screen_size.y)}
 	buffer: [TOUCH_POINT_CAPACITY]Touch_Point
-	frame := touch_overlay_frame(&state.touch_overlay, frame_touch_layout(state), read_touch_points(buffer[:]), screen, !ui_blocks_world(state.ui.screens), touch_interaction_frame(state))
+	frame := touch_overlay_frame(&touch_context.interaction.touch_overlay, frame_touch_layout(touch_context), read_touch_points(buffer[:]), screen, !ui_blocks_world(touch_context.interaction.ui.screens), touch_interaction_frame(touch_context))
 	frame.output.look_delta = render_pixels_to_window_units(frame.output.look_delta, cursor_window_size(), screen_size)
 	if frame.output.aims {
-		simulation := &state.session.simulation
+		simulation := &touch_context.session.simulation
 		eye := player_eye(simulation.players[0].position)
-		frame.aim_direction, frame.output.aims = touch_aim_direction(frame.output.aim_point, state.render_camera, screen_size, &simulation.world, state.content.blocks, eye)
+		frame.aim_direction, frame.output.aims = touch_aim_direction(frame.output.aim_point, touch_context.render_camera, screen_size, &simulation.world, touch_context.content.blocks, eye)
 	}
 	return frame
 }
@@ -1983,14 +1997,14 @@ touch_overlay_top_center_clearance :: proc(layout: Touch_Overlay_Layout, placed:
 
 // The clearance of the layout in use while the overlay is drawn (the
 // condition run_ui_frame draws it under), else 0.
-discovery_card_clearance :: proc(state: ^Frame_State) -> f32 {
-	if state.session == nil || !touch_overlay_on(state) || touch_layout_editor_shown(state.ui.screens) {
+discovery_card_clearance :: proc(touch_context: Touch_Overlay_Context) -> f32 {
+	if touch_context.session == nil || !touch_overlay_on(touch_context) || touch_layout_editor_shown(touch_context.interaction.ui.screens) {
 		return 0
 	}
 	size := render_size()
 	screen_pixels := [2]f32{f32(size.x), f32(size.y)}
-	layout := frame_touch_layout(state)
-	return touch_overlay_top_center_clearance(layout, overlay_layout(layout, screen_pixels, context.temp_allocator), state.ui.pixels_per_unit)
+	layout := frame_touch_layout(touch_context)
+	return touch_overlay_top_center_clearance(layout, overlay_layout(layout, screen_pixels, context.temp_allocator), touch_context.interaction.ui.pixels_per_unit)
 }
 
 // The overlay's colour with an element's opacity (0121) on its alpha.

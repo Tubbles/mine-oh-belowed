@@ -50,18 +50,18 @@ test_a_data_edit_reports_its_category :: proc(t: ^testing.T) {
 	defer clear_missing_reports(&global_string_table)
 	state := new(Frame_State)
 	defer free(state)
-	defer destroy_ui_state(&state.ui)
+	defer destroy_ui_state(&state.interaction.ui)
 	state.data_directory = "/nonexistent/mine-oh-belowed-data"
 	testing.expect_value(t, data_file_category("blocks.sjson"), Data_File_Category.Content)
 	apply_data_edit_change(state, {.Content})
-	testing.expect(t, state.reload_requested)
-	state.reload_requested = false
+	testing.expect(t, state.reload.reload_requested)
+	state.reload.reload_requested = false
 	testing.expect_value(t, data_file_category("strings/en.sjson"), Data_File_Category.Strings)
 	apply_data_edit_change(state, {.Strings})
-	testing.expect(t, !state.reload_requested)
+	testing.expect(t, !state.reload.reload_requested)
 	testing.expect_value(t, data_file_category("game.sjson"), Data_File_Category.Restart)
 	apply_data_edit_change(state, {.Restart})
-	testing.expect(t, !state.reload_requested)
+	testing.expect(t, !state.reload.reload_requested)
 }
 
 @(test)
@@ -414,27 +414,27 @@ test_a_saved_strings_edit_shows_at_once :: proc(t: ^testing.T) {
 	defer thread_string_table = nil
 	state := new(Frame_State)
 	defer free(state)
-	defer destroy_ui_state(&state.ui)
+	defer destroy_ui_state(&state.interaction.ui)
 	defer destroy_hot_reload_state(state)
-	defer destroy_font_cache(&state.font_cache)
+	defer destroy_font_cache(&state.interaction.font_cache)
 	state.data_directory = test_data_directory()
-	state.content_arena = new_growing_arena()
+	state.reload.content_arena = new_growing_arena()
 	source, read_error := os.read_entire_file(platform.join_path(test_data_directory(), "strings", "en.sjson"), context.temp_allocator)
 	testing.expect_value(t, read_error, nil)
-	state.data_browser = open_test_data_value(t, string(source))
-	defer destroy_data_browser(&state.data_browser)
-	browser := &state.data_browser
+	state.developer.data_browser = open_test_data_value(t, string(source))
+	defer destroy_data_browser(&state.developer.data_browser)
+	browser := &state.developer.data_browser
 	entries := [?]Data_File_Entry{{path = "strings/en.sjson"}}
 	browser.rows = data_tree_rows(entries[:], context.temp_allocator)
 	defer browser.rows = nil
 	browser.selected = find_data_tree_row(browser.rows, "strings/en.sjson")
 	testing.expect_value(t, text("data_files_title"), "Data files")
 	testing.expect(t, set_data_browser_value(browser, find_data_value_row(browser.value_rows, "data_files_title"), "Edited files"))
-	data_browser := Data_Browser_Context{browser = browser, ui = &state.ui, settings = &state.settings, data_directory = state.data_directory}
+	data_browser := Data_Browser_Context{browser = browser, ui = &state.interaction.ui, settings = &state.settings, data_directory = state.data_directory}
 	apply_data_edit_change(state, save_data_edit(data_browser, edits_directory))
 	testing.expect(t, !browser.unsaved)
 	testing.expect_value(t, text("data_files_title"), "Edited files")
-	testing.expect(t, !state.reload_requested)
+	testing.expect(t, !state.reload.reload_requested)
 	testing.expect(t, os.is_file(platform.join_path(edits_directory, "strings", "en.sjson")))
 	testing.expect(t, !os.exists(platform.join_path(edits_directory, "strings", "en.sjson.tmp")), "the temporary copy was renamed")
 }

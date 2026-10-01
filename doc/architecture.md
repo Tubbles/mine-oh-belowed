@@ -26,6 +26,7 @@ Rule: frames render as fast as allowed, the simulation advances in fixed ticks, 
 ## Sessions
 
 - The window, renderer, UI and input backend exist once per process. A `Session` holds one world: the simulation, a copy of the generator with the world's seed and richness, the streaming state, the save location, the tick accumulator and the forced weather.
+- The process state is `Frame_State` (`loop.odin`): the loop's own fields (configuration, content, session, frame timing, directories, settings) at the top, the rest in four groups, `interaction` (input, the UI and its fonts, the touch overlay, the title), `presentation` (the renderers, atlases, display state and sound), `developer` (diagnostics, the command socket, the texture editor and data browser) and `reload` (hot reload's watcher, arenas and request).
 - The title state has no session. Starting or loading a world creates one; quit to title saves it, destroys it and drops the chunk meshes.
 - Menus request session changes and the frame loop applies them after the frame, so a failed start toasts and leaves the menus in place.
 - Biomes and vein tables load once and are copied per session; the research cost setting makes a per session scaled copy of the technology registry.

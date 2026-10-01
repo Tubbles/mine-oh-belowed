@@ -21,29 +21,29 @@ developer_mode_on :: proc(state: ^Frame_State) -> bool {
 
 // At exit, after the session left.
 destroy_hot_reload_state :: proc(state: ^Frame_State) {
-	destroy_data_watch(&state.data_watch)
-	for arena in state.retired_font_arenas {
+	destroy_data_watch(&state.reload.data_watch)
+	for arena in state.reload.retired_font_arenas {
 		destroy_arena(arena)
 	}
-	delete(state.retired_font_arenas)
-	destroy_arena(state.fonts.arena)
-	for entries in state.retired_strings {
+	delete(state.reload.retired_font_arenas)
+	destroy_arena(state.interaction.fonts.arena)
+	for entries in state.reload.retired_strings {
 		destroy_string_entries(entries)
 	}
-	delete(state.retired_strings)
-	destroy_arena(state.bindings_arena)
-	destroy_arena(state.content_arena)
+	delete(state.reload.retired_strings)
+	destroy_arena(state.reload.bindings_arena)
+	destroy_arena(state.reload.content_arena)
 }
 
 report_reload :: proc(state: ^Frame_State, message: string) {
 	platform.log_printf("data: %s", message)
-	ui_toast(&state.ui, message)
+	ui_toast(&state.interaction.ui, message)
 }
 
 // Loaders log their own error line too; this one says what was kept.
 report_reload_problem :: proc(state: ^Frame_State, what, problem: string) {
 	platform.log_printf("error: could not reload %s, keeping the old data: %s", what, problem)
-	ui_toast(&state.ui, fmt.tprintf("%s %s: %s", text("reload_failed"), what, problem))
+	ui_toast(&state.interaction.ui, fmt.tprintf("%s %s: %s", text("reload_failed"), what, problem))
 }
 
 // Presentation.
@@ -60,10 +60,10 @@ reload_strings :: proc(state: ^Frame_State) -> string {
 	if error != nil {
 		return fmt.tprintf("cannot parse %s: %v", path, error)
 	}
-	append(&state.retired_strings, old_entries)
-	refresh_content_names(&state.content, virtual.arena_allocator(state.content_arena))
+	append(&state.reload.retired_strings, old_entries)
+	refresh_content_names(&state.content, virtual.arena_allocator(state.reload.content_arena))
 	// New text may need glyphs the fonts were not loaded with.
-	replace_font_cache_sources(&state.font_cache, state.fonts.families, string(data), state.settings)
+	replace_font_cache_sources(&state.interaction.font_cache, state.interaction.fonts.families, string(data), state.settings)
 	return ""
 }
 
@@ -74,10 +74,10 @@ reload_fonts :: proc(state: ^Frame_State) -> string {
 	if problem != "" {
 		return problem
 	}
-	append(&state.retired_font_arenas, state.fonts.arena)
-	state.fonts = fonts
+	append(&state.reload.retired_font_arenas, state.interaction.fonts.arena)
+	state.interaction.fonts = fonts
 	strings_text, _, _ := read_strings_file(state.data_directory)
-	replace_font_cache_sources(&state.font_cache, fonts.families, string(strings_text), state.settings)
+	replace_font_cache_sources(&state.interaction.font_cache, fonts.families, string(strings_text), state.settings)
 	return ""
 }
 
@@ -87,15 +87,15 @@ reload_bindings :: proc(state: ^Frame_State) -> string {
 	if arena == nil {
 		return "cannot reserve memory for the bindings"
 	}
-	bindings, problem := load_bindings(state.data_directory, state.binding_overrides, virtual.arena_allocator(arena))
+	bindings, problem := load_bindings(state.data_directory, state.reload.binding_overrides, virtual.arena_allocator(arena))
 	if problem != "" {
 		destroy_arena(arena)
 		return problem
 	}
-	state.bindings = bindings
-	state.input_bindings = make_backend_bindings(bindings, state.input_backend)
-	destroy_arena(state.bindings_arena)
-	state.bindings_arena = arena
+	state.interaction.bindings = bindings
+	state.interaction.input_bindings = make_backend_bindings(bindings, state.interaction.input_backend)
+	destroy_arena(state.reload.bindings_arena)
+	state.reload.bindings_arena = arena
 	return ""
 }
 
@@ -103,7 +103,7 @@ reload_bindings :: proc(state: ^Frame_State) -> string {
 reload_developer_kits :: proc(state: ^Frame_State) -> string {
 	capture: platform.Log_Capture
 	platform.begin_log_capture(&capture)
-	kits, loaded := load_developer_kits(state.data_directory, state.content.items, virtual.arena_allocator(state.content_arena))
+	kits, loaded := load_developer_kits(state.data_directory, state.content.items, virtual.arena_allocator(state.reload.content_arena))
 	problem := platform.end_log_capture(&capture, fmt.tprintf("%s did not load", DEVELOPER_KITS_FILE_NAME))
 	if !loaded {
 		return problem
@@ -118,8 +118,8 @@ reload_developer_kits :: proc(state: ^Frame_State) -> string {
 reload_shaders :: proc(state: ^Frame_State) -> string {
 	capture: platform.Log_Capture
 	platform.begin_log_capture(&capture)
-	chunk_reloaded := reload_chunk_shader(&state.renderer, state.data_directory)
-	water_reloaded := reload_water_shader(&state.renderer.water, state.renderer.atlas_layout, state.data_directory)
+	chunk_reloaded := reload_chunk_shader(&state.presentation.renderer, state.data_directory)
+	water_reloaded := reload_water_shader(&state.presentation.renderer.water, state.presentation.renderer.atlas_layout, state.data_directory)
 	problem := platform.end_log_capture(&capture, "a shader did not load")
 	return chunk_reloaded && water_reloaded ? "" : problem
 }
@@ -129,8 +129,8 @@ reload_shaders :: proc(state: ^Frame_State) -> string {
 // old machine mesh, a limb that does not load keeps the old player; the
 // other still reloads.
 reload_models :: proc(state: ^Frame_State) -> string {
-	machine_problem := replace_machine_models(&state.model_renderer, state.content.machines, state.data_directory)
-	player_problem := replace_player_model(&state.player_model, state.data_directory)
+	machine_problem := replace_machine_models(&state.presentation.model_renderer, state.content.machines, state.data_directory)
+	player_problem := replace_player_model(&state.presentation.player_model, state.data_directory)
 	return machine_problem != "" ? machine_problem : player_problem
 }
 
@@ -147,25 +147,25 @@ reload_textures :: proc(state: ^Frame_State) -> string {
 // The theme file and the icon atlas (work item 0071). A theme that does
 // not load keeps the old theme; the icons load again either way.
 reload_theme :: proc(state: ^Frame_State) -> string {
-	destroy_item_atlas(&state.ui_icon_atlas)
-	state.ui_icon_atlas = upload_ui_icon_atlas(state.data_directory)
+	destroy_item_atlas(&state.presentation.ui_icon_atlas)
+	state.presentation.ui_icon_atlas = upload_ui_icon_atlas(state.data_directory)
 	theme, problem := load_ui_theme(state.data_directory)
 	if problem != "" {
 		return problem
 	}
-	apply_ui_theme(&state.ui, theme)
+	apply_ui_theme(&state.interaction.ui, theme)
 	return ""
 }
 
 // The table and every file load again; a table that does not load, or
 // names a missing file, keeps the old sounds.
 reload_sounds :: proc(state: ^Frame_State) -> string {
-	return load_mixer_sounds(&state.audio, state.data_directory, state.content.blocks, state.base_generator.biomes)
+	return load_mixer_sounds(&state.presentation.audio, state.data_directory, state.content.blocks, state.base_generator.biomes)
 }
 
 rebuild_atlases :: proc(state: ^Frame_State) {
-	replace_chunk_atlas(&state.renderer, state.content.blocks, state.data_directory)
-	replace_item_atlas(&state.item_atlas, &state.content.items, state.data_directory)
+	replace_chunk_atlas(&state.presentation.renderer, state.content.blocks, state.data_directory)
+	replace_item_atlas(&state.presentation.item_atlas, &state.content.items, state.data_directory)
 }
 
 @(rodata)
@@ -248,7 +248,7 @@ apply_presentation_changes :: proc(state: ^Frame_State, changed: Data_File_Categ
 apply_data_edit_change :: proc(state: ^Frame_State, changed: Data_File_Categories) {
 	apply_presentation_changes(state, changed)
 	if .Content in changed {
-		state.reload_requested = true
+		state.reload.reload_requested = true
 	}
 	if .Restart in changed {
 		report_reload(state, text("reload_restart_needed"))
@@ -261,8 +261,8 @@ apply_data_edit_change :: proc(state: ^Frame_State, changed: Data_File_Categorie
 // Content changes are only announced, except with watch_data all, where a
 // second without another content event asks for the reload.
 update_data_watch :: proc(state: ^Frame_State) {
-	watch := &state.data_watch
-	mode := effective_watch_data_mode(state.watch_data_flag, state.settings.watch_data, developer_mode_on(state))
+	watch := &state.reload.data_watch
+	mode := effective_watch_data_mode(state.reload.watch_data_flag, state.settings.watch_data, developer_mode_on(state))
 	if mode == .Off {
 		if watch.open {
 			destroy_data_watch(watch)
@@ -285,7 +285,7 @@ update_data_watch :: proc(state: ^Frame_State) {
 	if data_watch_content_settled(watch^, now) {
 		watch.content_settling = false
 		if mode == .All && watch.content_changed {
-			state.reload_requested = true
+			state.reload.reload_requested = true
 		}
 	}
 }
@@ -297,18 +297,18 @@ update_data_watch :: proc(state: ^Frame_State) {
 // that were made from the content (block and item atlases, belts, machine
 // models) are made again.
 replace_frame_content :: proc(state: ^Frame_State, data: Game_Data) {
-	old_arena := state.content_arena
+	old_arena := state.reload.content_arena
 	state.content = data.content
-	state.touch_overlay = release_touch_latches(state.touch_overlay)
+	state.interaction.touch_overlay = release_touch_latches(state.interaction.touch_overlay)
 	state.base_generator = data.base_generator
-	state.content_arena = data.arena
+	state.reload.content_arena = data.arena
 	rebuild_atlases(state)
-	destroy_belt_renderer(&state.belt_renderer)
-	state.belt_renderer = init_belt_renderer(state.content.machines)
-	use_machine_models(&state.model_renderer, state.content.machines, state.data_directory)
+	destroy_belt_renderer(&state.presentation.belt_renderer)
+	state.presentation.belt_renderer = init_belt_renderer(state.content.machines)
+	use_machine_models(&state.presentation.model_renderer, state.content.machines, state.data_directory)
 	destroy_arena(old_arena)
-	state.data_watch.content_changed = false
-	state.data_watch.content_settling = false
+	state.reload.data_watch.content_changed = false
+	state.reload.data_watch.content_settling = false
 }
 
 // Loads and validates every content file, then rebuilds the session under
@@ -342,10 +342,10 @@ reload_content :: proc(state: ^Frame_State) -> (summary: string, problem: string
 
 // F8 in developer mode, the Developer screen's button and watch_data all.
 apply_reload_request :: proc(state: ^Frame_State) {
-	if !state.reload_requested {
+	if !state.reload.reload_requested {
 		return
 	}
-	state.reload_requested = false
+	state.reload.reload_requested = false
 	reload_content(state)
 }
 

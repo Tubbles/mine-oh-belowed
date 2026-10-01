@@ -58,11 +58,11 @@ The process: the loop decides when things run, the clusters decide what runs.
 - Entry: `loop.odin`, `run_game` (the window and the frame order), from `main`.
 - Files in reading order:
   - `main.odin`: `Command_Line`, `main`, `load_start_data` with the overlay fallback, the world start.
-  - `loop.odin`: `Frame_State`, `run_game` and `update_frame`, `make_screen_context`, the serve procedures, `Game_Content`.
+  - `loop.odin`: `Frame_State` and its four groups, `run_game` and `update_frame`, `make_screen_context`, the serve procedures, `Game_Content`.
   - `session.odin`: `Session`, `start_session`, `end_session`, `save_session`.
   - `hot_reload.odin`: the reload per data category on `Frame_State`, served between frames.
   - `main_android.odin`: the Android C entry wrapping `main`.
-- State: `Frame_State` (69 fields, 57 of them other clusters' parked here), `Session`, `Game_Content`.
+- State: `Frame_State` (16 top level fields: the loop's 12 and four groups holding the 57 other clusters' fields, `Frame_Interaction` 22, `Frame_Presentation` 18, `Frame_Developer_Tools` 9, `Frame_Reload` 8), `Session`, `Game_Content`.
 - Tests: `main_test.odin`; the frame, the session lifecycle and the reloads are untested (loop audit, section 8).
 - Reaches into: nothing.
 
@@ -95,7 +95,7 @@ The toolkit turns an input frame into a draw list; the screens decide what the w
   - `system_keyboard.odin`, `system_keyboard_linux.odin`, `system_keyboard_android.odin`, `system_keyboard_windows.odin`: `System_Keyboard_Field`, a text field's window rectangle; show and hide the platform keyboard for it.
 - State: `Ui_State` (57 fields), `Screen_Context` (55), `Input_Frame`, `Touch_Overlay_State`, `Title_State`; the four session views (`Map_View` and the browsers) sit on `Session`.
 - Tests: every `*_test.odin` beside its file; `ui_audit_test.odin` draws every screen at every audit size, `ui_pointer_test.odin` the pointer and taps, `accessibility_test.odin`.
-- Reaches into: tools 43 (accepted: the Data files screen on `Data_Browser` 31, the diagnostics page names 3, a `block_name` field as noise 9), loop 14 (queued 3: `Frame_State` in `touch_overlay.odin` 8; accepted 6: `mining_ring_centre`, `BUILD_STAMP`, `parse_seed`, noise).
+- Reaches into: tools 43 (accepted: the Data files screen on `Data_Browser` 31, the diagnostics page names 3, a `block_name` field as noise 9), loop 9 (accepted 3: `Touch_Overlay_Context` in `touch_overlay.odin` names `Frame_Interaction`, `Game_Content` and `Session`, 0158; accepted 6: `mining_ring_centre`, `BUILD_STAMP`, `parse_seed`, noise).
 
 ## world
 
@@ -194,7 +194,7 @@ Content turns files under `data/` and the configuration into typed tables once, 
   - `quest.odin`, `contract.odin`, `notes.odin`, `discovery.odin`: `Quest_Registry` and chapter files; `Contract_Registry`; `Note_Registry`; discoverable ores and `log_discoveries`.
   - `configuration.odin`, `configuration_output.odin`: `Loaded_Configuration`, layers, provenance, strict assignment; the dump and the settings file.
   - `settings.odin`, `deck_preset.odin`: `Settings` and ranges; the Steam Deck preset.
-- State: the registries, one arena per load (`content_arena` on `Frame_State`), the global `String_Table`, `Settings`, `Game_Config`, `Data_Watch`.
+- State: the registries, one arena per load (`content_arena` in `Frame_Reload`), the global `String_Table`, `Settings`, `Game_Config`, `Data_Watch`.
 - Tests: every `*_test.odin` beside its file; the shipped chapters in `quest_chapter_02_test.odin` to `quest_chapter_08_test.odin`; most simulation tests build content through `make_test_content` (`machine_test.odin`).
 - Reaches into: world 93 (accepted: item, quest and discovery definitions naming blocks 48, the content reload remapping the world 41, data file names 4), simulation 96 (accepted 87: the registries' cross links and value types such as `Item_Stack`, `Furnace`, `Quest_State`; queued 1: `reload_simulation` rebuilding `Simulation_State` through `make_simulation` and `destroy_simulation` with `Simulation_Content` 9, the reload route of a content file that belongs to the loop), ui 42 (accepted 40: settings typed by `Slider_Range`, `Binding` and the overlay enums, UI data file names and colours; queued 3: the session's UI views made by `data_reload.odin` 2), loop 19 (accepted: `Game_Content` and `Session` in the reload, `data_edits_directory`, `BUILD_INFO`, noise), presentation 16 (accepted: data file names, display limits), tools 12 (accepted: a `block_name` parameter, noise).
 
