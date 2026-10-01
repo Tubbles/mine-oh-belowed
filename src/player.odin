@@ -500,7 +500,7 @@ carry_player_on_belt :: proc(world: ^World, content: Simulation_Content, player:
 
 // cheat_speed is the developer flag on the simulation (0044). Walking
 // over loose items picks them up (pick_up_loose_items).
-tick_player :: proc(world: ^World, content: Simulation_Content, players: []Player, index: int, frame: Input_Frame, tick_rate: int, cheat_speed := false) -> Player_Events {
+tick_player :: proc(world: ^World, content: Simulation_Content, players: []Player, index: int, frame: Input_Frame, tick_rate: int, tick: u64, cheat_speed := false) -> Player_Events {
 	player := &players[index]
 	seconds := 1 / f32(tick_rate)
 	player.sneaking = update_sneaking(player.sneaking, frame)
@@ -527,7 +527,7 @@ tick_player :: proc(world: ^World, content: Simulation_Content, players: []Playe
 	}
 	player.target_direction = player_target_direction(player^, input)
 	player.target = raycast_blocks(world, content.blocks, player_eye(player.position), player.target_direction, PLAYER_REACH)
-	events += mine_with_player(world, content, player, .Mine in input.pressed, tick_rate, cheat_speed)
+	events += mine_with_player(world, content, player, .Mine in input.pressed, tick_rate, tick, cheat_speed)
 	place_with_player(world, content, players, index, input.just_pressed, input.pressed)
 	// Drop_Stack (0119) drops the selected hotbar slot's stack, the hotbar
 	// being the first slots; before the selection changes, since the long

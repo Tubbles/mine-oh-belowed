@@ -523,7 +523,7 @@ test_hand_crafting_runs_in_the_player_tick :: proc(t: ^testing.T) {
 	refusal, _ := queue_crafts(&player.crafting, player.inventory, content.recipes, unlocks, test_recipe(content.recipes, "stone_furnace"), 1)
 	testing.expect_value(t, refusal, Craft_Refusal.None)
 	for _ in 0 ..< 2 * TEST_TICK_RATE {
-		tick_player(&world, content, players, 0, {}, TEST_TICK_RATE)
+		tick_player(&world, content, players, 0, {}, TEST_TICK_RATE, 0)
 	}
 	testing.expect_value(t, inventory_count(player.inventory, test_item(content.items, "stone_furnace")), 1)
 	testing.expect_value(t, player.crafting.count, 0)

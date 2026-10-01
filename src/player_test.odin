@@ -47,7 +47,7 @@ tick_test_player :: proc(world: ^World, registry: Block_Registry, player: ^Playe
 	content := make_test_content()
 	content.blocks = registry
 	for _ in 0 ..< ticks {
-		events += tick_player(world, content, slice.from_ptr(player, 1), 0, input, TEST_TICK_RATE)
+		events += tick_player(world, content, slice.from_ptr(player, 1), 0, input, TEST_TICK_RATE, 0)
 	}
 	return events
 }
@@ -457,10 +457,10 @@ test_cheat_speed_multiplies_movement :: proc(t: ^testing.T) {
 	content := make_test_content()
 	content.blocks = registry
 	player := make_test_player(registry, {0.5, 1, 0.5})
-	tick_player(&world, content, slice.from_ptr(&player, 1), 0, WALK_FORWARD, TEST_TICK_RATE, true)
+	tick_player(&world, content, slice.from_ptr(&player, 1), 0, WALK_FORWARD, TEST_TICK_RATE, 0, true)
 	testing.expect(t, abs(player.velocity.x - PLAYER_WALK_SPEED * CHEAT_SPEED_FACTOR) < TEST_TOLERANCE)
 	player.flying = true
-	tick_player(&world, content, slice.from_ptr(&player, 1), 0, Input_Frame{move = {0, 1}, pressed = {.Sprint_Hold}}, TEST_TICK_RATE, true)
+	tick_player(&world, content, slice.from_ptr(&player, 1), 0, Input_Frame{move = {0, 1}, pressed = {.Sprint_Hold}}, TEST_TICK_RATE, 0, true)
 	testing.expect(t, abs(player.velocity.x - FLY_CAMERA_SPEED * FLY_CAMERA_SPRINT_FACTOR * CHEAT_SPEED_FACTOR) < TEST_TOLERANCE)
 }
 
@@ -616,7 +616,7 @@ tick_cheat_test_player :: proc(world: ^World, registry: Block_Registry, player: 
 	content := make_test_content()
 	content.blocks = registry
 	for _ in 0 ..< ticks {
-		tick_player(world, content, slice.from_ptr(player, 1), 0, input, TEST_TICK_RATE, true)
+		tick_player(world, content, slice.from_ptr(player, 1), 0, input, TEST_TICK_RATE, 0, true)
 	}
 }
 

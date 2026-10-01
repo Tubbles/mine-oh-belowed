@@ -70,6 +70,7 @@ Rule: generation is a pure function of the world seed and the chunk coordinate, 
 ### Water
 
 - Minecraft style cellular flow on the main thread: a change next to water schedules the cell `WATER_FLOW_DELAY_TICKS` (10) later, updates run in scheduling order, at most 256 per tick.
+- A machine's cells stay dry (a hydro turbine excepted), and an entity picked up or removed by the developer menu schedules water around the cells it leaves (`schedule_water_around_freed_cells`), so a pool flows into them.
 
 ## Simulation
 

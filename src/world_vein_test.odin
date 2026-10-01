@@ -12,7 +12,7 @@ SPENT_OUTCROP_TEST_CELLS :: [5]World_Coordinate{{5, 0, 5}, {4, 0, 5}, {6, 0, 5},
 mine_test_cell :: proc(world: ^World, content: Simulation_Content, player: ^Player, cell: World_Coordinate) {
 	player.target = Raycast_Hit{hit = true, block = cell}
 	for _ in 0 ..< 600 {
-		mine_with_player(world, content, player, true, TEST_TICK_RATE, true)
+		mine_with_player(world, content, player, true, TEST_TICK_RATE, 0, true)
 		if world_get_block(world, cell) == AIR_BLOCK {
 			return
 		}

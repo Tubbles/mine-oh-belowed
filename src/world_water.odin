@@ -142,6 +142,14 @@ schedule_water_around :: proc(world: ^World, registry: Block_Registry, position:
 	}
 }
 
+// A cell an entity leaves: update_water_cell skipped it while the
+// entity stood there, so water there and around it is checked again.
+schedule_water_around_freed_cells :: proc(world: ^World, registry: Block_Registry, cells: []World_Coordinate, tick: u64) {
+	for cell in cells {
+		schedule_water_around(world, registry, cell, tick)
+	}
+}
+
 // The delay is the same for every update, so the queue is in due order.
 run_water_updates :: proc(world: ^World, registry: Block_Registry, tick: u64, maximum_updates: int) -> int {
 	flow := &world.water

@@ -311,7 +311,7 @@ test_capsule_is_not_picked_up :: proc(t: ^testing.T) {
 	testing.expect(t, entity_is_alive(&world.entities, handle))
 	testing.expect_value(t, len(entity_slots(&world.entities, handle)), CAPSULE_SLOT_COUNT)
 	player := make_test_player(content.blocks, {})
-	testing.expect(t, !pick_up_entity(&world, content, &player, handle))
+	testing.expect(t, !pick_up_entity(&world, content, &player, handle, 0))
 	testing.expect(t, entity_is_alive(&world.entities, handle))
 }
 

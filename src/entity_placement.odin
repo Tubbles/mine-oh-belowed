@@ -410,22 +410,24 @@ entity_pickup_stacks :: proc(world: ^World, content: Simulation_Content, handle:
 // The entity's contents and then its item go into the inventory as far
 // as they fit; the rest spills at the entity's origin once it is gone
 // (loose_item.odin), so a full inventory never keeps an entity in place.
-pick_up_entity :: proc(world: ^World, content: Simulation_Content, player: ^Player, handle: Entity_Handle) -> bool {
+// Water is checked again in the cells the entity leaves.
+pick_up_entity :: proc(world: ^World, content: Simulation_Content, player: ^Player, handle: Entity_Handle, tick: u64) -> bool {
 	if !entity_can_be_picked_up(world, content.machines, handle) {
 		return false
 	}
-	origin := entity_common(&world.entities, handle).origin
+	common := entity_common(&world.entities, handle)^
 	returned := entity_pickup_stacks(world, content, handle)
 	if !remove_entity(&world.entities, content.machines, handle) {
 		return false
 	}
+	schedule_water_around_freed_cells(world, content.blocks, common_cells(common, content.machines), tick)
 	record_world_action(&world.statistics)
 	for stack in returned {
 		if stack_is_empty(stack) {
 			continue
 		}
 		if leftover := inventory_add_picked_up(player.inventory, content.items, stack.item, int(stack.count)); leftover > 0 {
-			spill_stack(world, content.blocks, origin, Item_Stack{item = stack.item, count = u16(leftover)})
+			spill_stack(world, content.blocks, common.origin, Item_Stack{item = stack.item, count = u16(leftover)})
 		}
 	}
 	return true

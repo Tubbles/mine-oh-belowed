@@ -49,6 +49,22 @@ test_water_stays_out_of_entity_cells :: proc(t: ^testing.T) {
 	testing.expect_value(t, water_level_at(&world, registry, {9, 1, 10}), WATER_SOURCE_LEVEL - 1)
 }
 
+// Picking up a chest standing beside a source lets the water into its
+// cell.
+@(test)
+test_water_flows_into_the_cell_a_machine_leaves :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_water_world(content.blocks, 0)
+	player := make_test_player(content.blocks, {2.5, 1, 2.5})
+	chest := place_test_entity(&world, content, "wooden_chest", {11, 1, 10})
+	world_set_block(&world, {10, 1, 10}, test_block(content.blocks, "water"))
+	tick := settle_world(t, &world, content.blocks, 0)
+	testing.expect_value(t, water_level_at(&world, content.blocks, {11, 1, 10}), 0)
+	testing.expect(t, pick_up_entity(&world, content, &player, chest, tick))
+	settle_world(t, &world, content.blocks, tick)
+	testing.expect_value(t, water_level_at(&world, content.blocks, {11, 1, 10}), WATER_SOURCE_LEVEL - 1)
+}
+
 @(test)
 test_water_drains_when_source_is_removed :: proc(t: ^testing.T) {
 	registry := make_test_registry()

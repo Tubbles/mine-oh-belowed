@@ -666,7 +666,7 @@ test_picking_up_a_boiler_returns_its_fuel :: proc(t: ^testing.T) {
 	test_fluid_machine(&world, boiler).slots[BOILER_FUEL_SLOT] = Item_Stack{item = test_item(content.items, "coal"), count = 5}
 	test_fluid_machine(&world, boiler).buffers[0] = {fluid = test_fluid(content, "water"), level = 100}
 	player := make_test_player(content.blocks, {10, 1, 10})
-	testing.expect(t, pick_up_entity(&world, content, &player, boiler))
+	testing.expect(t, pick_up_entity(&world, content, &player, boiler, 0))
 	testing.expect_value(t, inventory_count(player.inventory, test_item(content.items, "coal")), 5)
 	testing.expect_value(t, inventory_count(player.inventory, test_item(content.items, "boiler")), 1)
 	testing.expect_value(t, len(world.entities.cells), 0)

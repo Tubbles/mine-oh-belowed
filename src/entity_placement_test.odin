@@ -22,7 +22,7 @@ test_pick_up_with_a_full_inventory_spills_the_rest :: proc(t: ^testing.T) {
 	players[0].pitch, players[0].yaw = -30, 90
 	events: Player_Events
 	for _ in 0 ..< 60 {
-		events += tick_player(&world, content, players, 0, Input_Frame{pressed = {.Mine}}, TEST_TICK_RATE)
+		events += tick_player(&world, content, players, 0, Input_Frame{pressed = {.Mine}}, TEST_TICK_RATE, 0)
 	}
 	testing.expect(t, !entity_is_alive(&world.entities, handle))
 	testing.expect_value(t, events, Player_Events{.Inventory_Full})
@@ -35,7 +35,7 @@ test_pick_up_with_a_full_inventory_spills_the_rest :: proc(t: ^testing.T) {
 	// With room, nothing spills.
 	players[0].inventory.slots[20] = EMPTY_STACK
 	other := place_test_entity(&world, content, "wooden_chest", {6, 1, 6})
-	testing.expect(t, pick_up_entity(&world, content, &players[0], other))
+	testing.expect(t, pick_up_entity(&world, content, &players[0], other, 0))
 	testing.expect_value(t, len(world.entities.loose_items.items), 3)
 	testing.expect_value(t, players[0].inventory.slots[20], Item_Stack{chest_item, 1})
 }

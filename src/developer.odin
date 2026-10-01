@@ -391,7 +391,7 @@ serve_developer_request :: proc(state: ^Simulation_State, content: Simulation_Co
 	case .Place_Machine:
 		return place_for_developer(state, content, request.machine, request.cell, request.rotation)
 	case .Remove_At:
-		return remove_for_developer(&state.world, content, request.cell)
+		return remove_for_developer(&state.world, content, request.cell, state.tick)
 	case .Set_Block:
 		return set_block_for_developer(&state.world, request.block, request.cell)
 	case .Insert_Items:
@@ -463,7 +463,7 @@ place_for_developer :: proc(state: ^Simulation_State, content: Simulation_Conten
 
 // The entity covering the cell, its contents discarded, or else the
 // block there.
-remove_for_developer :: proc(world: ^World, content: Simulation_Content, cell: World_Coordinate) -> string {
+remove_for_developer :: proc(world: ^World, content: Simulation_Content, cell: World_Coordinate, tick: u64) -> string {
 	if world_to_chunk_coordinate(cell) not_in world.chunks {
 		return "the chunk is not loaded"
 	}
@@ -471,7 +471,9 @@ remove_for_developer :: proc(world: ^World, content: Simulation_Content, cell: W
 		if !entity_can_be_picked_up(world, content.machines, handle) {
 			return "this entity cannot be picked up"
 		}
+		common := entity_common(&world.entities, handle)^
 		remove_entity(&world.entities, content.machines, handle)
+		schedule_water_around_freed_cells(world, content.blocks, common_cells(common, content.machines), tick)
 		return ""
 	}
 	if world_get_block(world, cell) == AIR_BLOCK {

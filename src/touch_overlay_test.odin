@@ -764,22 +764,22 @@ test_the_touch_aim_picks_the_players_target :: proc(t: ^testing.T) {
 	players := []Player{make_test_player(content.blocks, {4.5, 1, 1.5})}
 	// Looking up at the sky: no target.
 	players[0].pitch, players[0].yaw = 60, 90
-	tick_player(&world, content, players, 0, {}, TEST_TICK_RATE)
+	tick_player(&world, content, players, 0, {}, TEST_TICK_RATE, 0)
 	testing.expect(t, !players[0].target.hit)
 	// Aimed at the chest.
 	eye := player_eye(players[0].position)
 	aimed := Input_Frame{aim_direction = linalg.normalize(block_centre({4, 1, 4}) - eye), aim_overrides = true}
-	tick_player(&world, content, players, 0, aimed, TEST_TICK_RATE)
+	tick_player(&world, content, players, 0, aimed, TEST_TICK_RATE, 0)
 	testing.expect_value(t, players[0].target.entity, handle)
 	testing.expect(t, entity_takes_interact(&world.entities, players[0].target.entity))
 	// The press that follows opens it.
 	players[0].on_ground = true
 	aimed.pressed, aimed.just_pressed = {.Jump, .Interact}, {.Jump, .Interact}
-	events := tick_player(&world, content, players, 0, aimed, TEST_TICK_RATE)
+	events := tick_player(&world, content, players, 0, aimed, TEST_TICK_RATE, 0)
 	testing.expect_value(t, events, Player_Events{.Open_Machine})
 	// Aimed at the floor: a block, no interaction.
 	floor := Input_Frame{aim_direction = linalg.normalize(block_centre({4, 0, 2}) - eye), aim_overrides = true}
-	tick_player(&world, content, players, 0, floor, TEST_TICK_RATE)
+	tick_player(&world, content, players, 0, floor, TEST_TICK_RATE, 0)
 	testing.expect_value(t, players[0].target.block, World_Coordinate{4, 0, 2})
 	testing.expect(t, !entity_takes_interact(&world.entities, players[0].target.entity))
 }
@@ -943,7 +943,7 @@ test_a_touch_aimed_slab_takes_its_half_from_the_aim :: proc(t: ^testing.T) {
 	players[0].pitch = -60
 	eye := player_eye(players[0].position)
 	aimed := Input_Frame{aim_direction = linalg.normalize([3]f32{3, 2.8, 0.5} - eye), aim_overrides = true, pressed = {.Place}, just_pressed = {.Place}}
-	tick_player(&world, content, players, 0, aimed, TEST_TICK_RATE)
+	tick_player(&world, content, players, 0, aimed, TEST_TICK_RATE, 0)
 	testing.expect_value(t, players[0].target.face, Direction.Negative_X)
 	testing.expect_value(t, world_get_block(&world, {2, 2, 0}), test_block(content.blocks, "stone_slab_upper"))
 }
@@ -1536,14 +1536,14 @@ test_a_jump_tap_jumps_with_a_machine_under_the_views_centre :: proc(t: ^testing.
 	eye := player_eye(players[0].position)
 	// The view's aim at the chest, standing in for looking at it.
 	view := Input_Frame{aim_direction = linalg.normalize(block_centre({4, 1, 4}) - eye), aim_overrides = true}
-	tick_player(&world, content, players, 0, view, TEST_TICK_RATE)
+	tick_player(&world, content, players, 0, view, TEST_TICK_RATE, 0)
 	testing.expect(t, entity_takes_interact(&world.entities, players[0].target.entity))
 	layout := shipped_touch_overlay(t)
 	state: Touch_Overlay_State
 	output := tap_at(&state, layout, 0, {PHONE_SCREEN.x * 0.9, 500}, TAP_TOUCH)
 	jump := apply_touch_overlay_jump(view, Touch_Overlay_Frame{active = true, world_shown = true, output = output})
 	players[0].on_ground = true
-	events := tick_player(&world, content, players, 0, jump, TEST_TICK_RATE)
+	events := tick_player(&world, content, players, 0, jump, TEST_TICK_RATE, 0)
 	testing.expect_value(t, events, Player_Events{})
 	testing.expect(t, players[0].velocity.y > 0)
 }

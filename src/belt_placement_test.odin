@@ -136,7 +136,7 @@ test_belt_pick_up_returns_its_items :: proc(t: ^testing.T) {
 	belt_insert_item(&world.entities, belts[1], .Right, plate)
 	belt_insert_item(&world.entities, belts[2], .Left, plate)
 	player := make_test_player(content.blocks, {-3.5, 1, 0.5})
-	testing.expect(t, pick_up_entity(&world, content, &player, belts[1]))
+	testing.expect(t, pick_up_entity(&world, content, &player, belts[1], 0))
 	testing.expect_value(t, inventory_count(player.inventory, plate), 2)
 	testing.expect_value(t, inventory_count(player.inventory, test_item(content.items, "belt")), 1)
 	testing.expect_value(t, len(world.entities.belt_network.lines), 2)

@@ -351,13 +351,13 @@ test_player_walks_over_and_rides_a_belt :: proc(t: ^testing.T) {
 	testing.expect(t, cell_is_solid_or_entity(&world, content.blocks, {3, 1, 0}))
 	players := []Player{make_test_player(content.blocks, {4.5, 1, 0.5})}
 	players[0].on_ground = true
-	tick_player(&world, content, players, 0, {}, TEST_TICK_RATE)
+	tick_player(&world, content, players, 0, {}, TEST_TICK_RATE, 0)
 	// One tick of 8 units is 1/32 block, exact in f32.
 	testing.expect_value(t, players[0].position.x, 4.53125)
 	testing.expect_value(t, players[0].position.y, 1)
 	// Standing beside the belt does nothing.
 	players[0].position = {4.5, 1, 1.5}
-	tick_player(&world, content, players, 0, {}, TEST_TICK_RATE)
+	tick_player(&world, content, players, 0, {}, TEST_TICK_RATE, 0)
 	testing.expect_value(t, players[0].position.x, 4.5)
 	_ = belts
 }

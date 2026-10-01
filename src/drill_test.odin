@@ -328,7 +328,7 @@ test_picking_up_a_drill_returns_its_fuel_and_held_unit :: proc(t: ^testing.T) {
 	handle := place_test_drill(&world, content, {0, 1, 0}, 0, vein)
 	tick_test_entities(&world, content, 192)
 	player := make_test_player(content.blocks, {10, 1, 10})
-	testing.expect(t, pick_up_entity(&world, content, &player, handle))
+	testing.expect(t, pick_up_entity(&world, content, &player, handle, 0))
 	testing.expect_value(t, inventory_count(player.inventory, test_item(content.items, "hematite")), 1)
 	testing.expect_value(t, inventory_count(player.inventory, test_item(content.items, "coal")), 4)
 	testing.expect_value(t, inventory_count(player.inventory, test_item(content.items, "burner_mining_drill")), 1)

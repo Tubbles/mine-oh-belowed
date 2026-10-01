@@ -144,7 +144,7 @@ test_walking_over_loose_items_picks_them_up_when_they_fit :: proc(t: ^testing.T)
 	spill_stack(&world, content.blocks, {6, 1, 0}, {stone, 2})
 	// Walking along +x (yaw 0) over both cells.
 	for _ in 0 ..< 120 {
-		tick_player(&world, content, players, 0, WALK_FORWARD, TEST_TICK_RATE)
+		tick_player(&world, content, players, 0, WALK_FORWARD, TEST_TICK_RATE, 0)
 	}
 	testing.expect(t, players[0].position.x > 7)
 	testing.expect_value(t, len(world.entities.loose_items.items), 0)
@@ -166,7 +166,7 @@ test_a_full_inventory_leaves_loose_items_lying :: proc(t: ^testing.T) {
 	players[0].inventory.slots[7] = Item_Stack{coal, item_stack_size(content.items, coal) - 2}
 	spill_stack(&world, content.blocks, {2, 1, 2}, {stone, 1})
 	spill_stack(&world, content.blocks, {2, 1, 2}, {coal, 5})
-	tick_player(&world, content, players, 0, {}, TEST_TICK_RATE)
+	tick_player(&world, content, players, 0, {}, TEST_TICK_RATE, 0)
 	// Two coal fit, the rest and the stone stay.
 	testing.expect_value(t, players[0].inventory.slots[7].count, item_stack_size(content.items, coal))
 	items := world.entities.loose_items.items[:]
@@ -211,7 +211,7 @@ test_drop_stack_drops_the_selected_hotbar_stack_in_the_world :: proc(t: ^testing
 	players[0].inventory.slots[4] = Item_Stack{stone, 2}
 	// With a slot select in the same tick, the drop takes the slot
 	// selected until then.
-	tick_player(&world, content, players, 0, {just_pressed = {.Drop_Stack, .Hotbar_Slot_5}}, TEST_TICK_RATE)
+	tick_player(&world, content, players, 0, {just_pressed = {.Drop_Stack, .Hotbar_Slot_5}}, TEST_TICK_RATE, 0)
 	testing.expect_value(t, players[0].inventory.slots[3], EMPTY_STACK)
 	testing.expect_value(t, players[0].inventory.slots[4], Item_Stack{stone, 2})
 	testing.expect_value(t, players[0].selected_hotbar_slot, 4)
@@ -220,7 +220,7 @@ test_drop_stack_drops_the_selected_hotbar_stack_in_the_world :: proc(t: ^testing
 	testing.expect_value(t, items[0], Loose_Item{item = coal, count = 6, cell = {2, 1, 3}, dropping_player = dropping_player_value(0)})
 	// An empty selected slot drops nothing.
 	players[0].selected_hotbar_slot = 3
-	tick_player(&world, content, players, 0, {just_pressed = {.Drop_Stack}}, TEST_TICK_RATE)
+	tick_player(&world, content, players, 0, {just_pressed = {.Drop_Stack}}, TEST_TICK_RATE, 0)
 	testing.expect_value(t, len(world.entities.loose_items.items), 1)
 }
 
@@ -248,7 +248,7 @@ test_standing_next_to_loose_items_picks_them_up :: proc(t: ^testing.T) {
 	players := []Player{make_test_player(content.blocks, {2.5, 1, 2.5})}
 	spill_stack(&world, content.blocks, {3, 1, 2}, {coal, 2})
 	spill_stack(&world, content.blocks, {4, 1, 2}, {coal, 3})
-	tick_player(&world, content, players, 0, {}, TEST_TICK_RATE)
+	tick_player(&world, content, players, 0, {}, TEST_TICK_RATE, 0)
 	testing.expect_value(t, inventory_count(players[0].inventory, coal), 2)
 	testing.expect_value(t, len(world.entities.loose_items.items), 1)
 	testing.expect_value(t, world.entities.loose_items.items[0].cell, World_Coordinate{4, 1, 2})
@@ -264,27 +264,27 @@ test_a_dropped_stack_waits_until_its_player_leaves_the_range :: proc(t: ^testing
 	players := []Player{make_test_player(content.blocks, {2.5, 1, 2.5}), make_test_player(content.blocks, {8.5, 1, 8.5})}
 	players[0].yaw = 90
 	players[0].inventory.slots[0] = Item_Stack{coal, 4}
-	tick_player(&world, content, players, 0, {just_pressed = {.Drop_Stack}}, TEST_TICK_RATE)
+	tick_player(&world, content, players, 0, {just_pressed = {.Drop_Stack}}, TEST_TICK_RATE, 0)
 	// Standing still next to the drop never takes it back.
 	for _ in 0 ..< 200 {
-		tick_player(&world, content, players, 0, {}, TEST_TICK_RATE)
+		tick_player(&world, content, players, 0, {}, TEST_TICK_RATE, 0)
 		tick_entities(&world, content, TEST_TICK_RATE)
 	}
 	testing.expect_value(t, len(world.entities.loose_items.items), 1)
 	// Two blocks away and back.
 	players[0].position = {2.5, 1, 0.5}
-	tick_player(&world, content, players, 0, {}, TEST_TICK_RATE)
+	tick_player(&world, content, players, 0, {}, TEST_TICK_RATE, 0)
 	testing.expect_value(t, len(world.entities.loose_items.items), 1)
 	testing.expect_value(t, world.entities.loose_items.items[0].dropping_player, NO_DROPPING_PLAYER)
 	players[0].position = {2.5, 1, 2.5}
-	tick_player(&world, content, players, 0, {}, TEST_TICK_RATE)
+	tick_player(&world, content, players, 0, {}, TEST_TICK_RATE, 0)
 	testing.expect_value(t, len(world.entities.loose_items.items), 0)
 	testing.expect_value(t, inventory_count(players[0].inventory, coal), 4)
 	// The second player is not held back by the first one's drop.
 	players[0].inventory.slots[0] = Item_Stack{coal, 4}
-	tick_player(&world, content, players, 0, {just_pressed = {.Drop_Stack}}, TEST_TICK_RATE)
+	tick_player(&world, content, players, 0, {just_pressed = {.Drop_Stack}}, TEST_TICK_RATE, 0)
 	players[1].position = players[0].position
-	tick_player(&world, content, players, 1, {}, TEST_TICK_RATE)
+	tick_player(&world, content, players, 1, {}, TEST_TICK_RATE, 0)
 	testing.expect_value(t, inventory_count(players[1].inventory, coal), 4)
 }
 

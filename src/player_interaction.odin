@@ -163,7 +163,7 @@ block_drop_stacks :: proc(items: Item_Registry, block: Block_Id) -> []Item_Stack
 
 // A long press of Mine on an entity picks it up with its contents; what
 // does not fit spills (pick_up_entity) and reports the full inventory.
-mine_entity :: proc(world: ^World, content: Simulation_Content, player: ^Player, holding: bool, tick_rate: int) -> Player_Events {
+mine_entity :: proc(world: ^World, content: Simulation_Content, player: ^Player, holding: bool, tick_rate: int, tick: u64) -> Player_Events {
 	if !entity_can_be_picked_up(world, content.machines, player.target.entity) {
 		player.mining = {}
 		return {}
@@ -178,7 +178,7 @@ mine_entity :: proc(world: ^World, content: Simulation_Content, player: ^Player,
 	}
 	player.mining = {}
 	spills := !inventory_fits_all_picked_up(player.inventory, content.items, entity_pickup_stacks(world, content, player.target.entity))
-	if !pick_up_entity(world, content, player, player.target.entity) || !spills {
+	if !pick_up_entity(world, content, player, player.target.entity, tick) || !spills {
 		return {}
 	}
 	return {.Inventory_Full}
@@ -187,9 +187,9 @@ mine_entity :: proc(world: ^World, content: Simulation_Content, player: ^Player,
 // cheat_speed shortens digging blocks, not picking up entities. An
 // outcrop block mined away is checked for the spent outcrop (work item
 // 0096).
-mine_with_player :: proc(world: ^World, content: Simulation_Content, player: ^Player, holding: bool, tick_rate: int, cheat_speed: bool) -> Player_Events {
+mine_with_player :: proc(world: ^World, content: Simulation_Content, player: ^Player, holding: bool, tick_rate: int, tick: u64, cheat_speed: bool) -> Player_Events {
 	if player.target.entity != NO_ENTITY {
-		return mine_entity(world, content, player, holding, tick_rate)
+		return mine_entity(world, content, player, holding, tick_rate, tick)
 	}
 	cell := player.target.block
 	vein, on_outcrop := registered_outcrop_vein_at(world, content.veins, cell)
