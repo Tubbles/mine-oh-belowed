@@ -1,0 +1,20 @@
+# 0166: Queue the screens' simulation writes as player commands
+
+Status: todo (after 0165; the user weighs the one frame of latency before it starts)
+
+## Goal
+
+Refactor 8 of the UI audit (`doc/audit/ui.md`, sections 3 and 5). During the UI pass the screens write the simulation directly: research (`queue_research`), crafting (`queue_crafts`, `cancel_last_craft`), the assembler's recipe (`change_assembler_recipe`), the power switch (`toggle_power_switch`), assembly and launch (`start_assembly`, `request_launch`, `record_launch_refusal`), catalogue orders (`order_from_catalogue`), the splitter's and inserter's settings (`ui_machine.odin`), and the hotbar radial's `player.selected_hotbar_slot` (`hud.odin`). The one queued exception today is the Developer screen, whose `Developer_Request` entries `serve_developer_requests` applies inside the tick. For the cut, the simulation ticks from queued inputs only: a plugin boundary and a replay see the screens' actions as tick input, never as writes from the frame.
+
+## Change
+
+- One player command list on the simulation state (full-word names, for example `Player_Command` as a tagged union or an enum with a payload struct, `player_commands` as the list), filled by the screens in the UI pass and drained at the start of the next tick where `serve_developer_requests` runs today, in order. Commands: research, craft (count), cancel craft, assembler recipe, power switch, assembly, launch, catalogue order, splitter filter, priorities and side, inserter filter, hotbar slot. The slot transfers (`apply_slot_*`, quick move, distribute, sort, the held stack, `take_inserter_hand`, the transfer buttons, `drop_player_stack`) stay immediate for now, since the drag shows their result the same frame; the item's notes list them as the next step.
+- Refusal toasts stay immediate: the screens call the pure refusal checks they already call (`assembly_refusal`, `launch_refusal`, the planner's acceptance from 0156, the research affordability) before queuing, so a refused action toasts in the frame and never queues; the tick's application cannot refuse what the check accepted one frame earlier except through a race with the tick (the inventory changed in between), which it reports through the existing refusal paths (a toast from the tick's events, as a shipment does today).
+- The hotbar radial emits the hotbar slot command (or the touch overlay's hotbar action, `apply_touch_overlay_hotbar`, if that path fits better; say which and why), so `hud.odin` writes no player field.
+- The list is not saved; a save between the UI pass and the tick loses the queued commands, which a save after the ticks (`save_when_due` runs after them) never sees.
+- Latency: an action shows its result one frame later than today (at 60 Hz, one tick). The user plays it before the item closes and says whether any screen feels late; the notes name the screens that read back their own write in the same frame today (a research start showing as queued, a crafting row) and how each reads the queued state instead (the command list is readable by the screens for a "pending" state if needed).
+- `doc/architecture.md` (Simulation: beside the developer requests) and `doc/ui.md` state the rule in one place each; `doc/code_map.md`: ui -> simulation falls by the mutating calls; never raised silently.
+
+## Verify
+
+- `./build.sh check`, `./build.sh check-android`, `./build.sh check-windows`, `./build.sh test`, `python3 tools/check_docs.py`, `python3 tools/check_dead_code.py`, `python3 tools/code_graph.py --check doc/code_map.md`; the guards the audit names (`test_a_tap_on_a_technology_selects_it_and_research_starts_it`, `test_a_tap_on_a_recipe_selects_it_and_the_row_crafts`, `test_radial_selects_hotbar_slot` rewritten to read the command, `launch_pad_test.odin`, `power_test.odin`, `lab_test.odin`) run a tick after the UI frame where they asserted the write before; a new test that a refused action never queues and an accepted one applies at the next tick; a save and load round trip with a command queued is covered by the note above; a playtest (the user) of every screen action, with attention to felt latency.
