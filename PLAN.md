@@ -17,7 +17,7 @@ Verify: a fresh player on the couch follows the quest journal from landing to th
 - Every phase of the alpha is in code: M0 to M9 are implemented, and the alpha's content is complete (`doc/log/2026-09-27.md`, M9 complete). Of their verify statements only M0's and couch test 1's have been run on the couch.
 - M10's couch findings (0043 to 0052) and M11's presentation campaign are implemented: the planned items 0053 to 0082, then the couch, Deck and phone findings 0083 to 0140 (texture and sound cadence, the Windows build for GameNative, the native Android app, the touch overlay, the data file editors, the hand crafting queue, pump head, the fuel generator).
 - The documentation pass (0141) and the architecture cleanup (0142 to 0145: dead code, six audits under `doc/audit/`, the code map, the pilot package split) are done (`doc/log/2026-09-30.md`). Of M12's refactor queue, the pure moves and bug fixes (0147 to 0151) and the hubs (0152 to 0161) are done (`doc/log/2026-10-01.md`).
-- Next: M12's seams (0162 onwards), then the 0146 engine and plugin design with the user; M10's remaining passes and the couch tests 2 to 5 as the user plays.
+- Next: smaller items the user meets while playing; the M12 queue is paused after 0162 (the remaining list is in `SUGGESTIONS.md`, The paused audit queue) and resumes when the user says so, then the 0146 engine and plugin design with the user; M10's remaining passes and the couch tests 2 to 5 as the user plays.
 
 ## Couch tests
 
