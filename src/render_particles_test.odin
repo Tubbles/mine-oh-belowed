@@ -193,18 +193,19 @@ test_shipment_starts_a_descent :: proc(t: ^testing.T) {
 	context.allocator = context.temp_allocator
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
-	world.shipments = make([dynamic]Shipment)
-	append(&world.shipments, Shipment{})
+	records: Game_Records
+	records.shipments = make([dynamic]Shipment)
+	append(&records.shipments, Shipment{})
 	place_test_entity(&world, content, "drop_capsule", {0, 1, 0})
 	system := new(Particle_System, context.temp_allocator)
 	memory: Particle_Memory
-	update_capsule_descent(system, &memory, &world, {}, 0.1)
+	update_capsule_descent(system, &memory, &world, records.shipments[:], {}, 0.1)
 	testing.expect(t, !memory.descent.active, "loaded shipments start nothing")
-	append(&world.shipments, Shipment{})
-	update_capsule_descent(system, &memory, &world, {}, 0.1)
+	append(&records.shipments, Shipment{})
+	update_capsule_descent(system, &memory, &world, records.shipments[:], {}, 0.1)
 	testing.expect(t, memory.descent.active, "a new shipment starts a descent")
 	for _ in 0 ..< 80 {
-		update_capsule_descent(system, &memory, &world, {}, 0.1)
+		update_capsule_descent(system, &memory, &world, records.shipments[:], {}, 0.1)
 	}
 	testing.expect(t, !memory.descent.active, "landed")
 	testing.expect_value(t, live_particle_count(system), BREAK_PUFF_COUNT)

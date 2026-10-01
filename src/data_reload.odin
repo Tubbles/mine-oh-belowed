@@ -350,7 +350,7 @@ reset_session_views :: proc(session: ^Session) {
 	session.technology_browser = make_technology_browser()
 	session.statistics_view.has_focus = false
 	session.statistics_view.fluid_has_focus = false
-	collect_explored_surfaces(&session.simulation.world, &session.map_view.surfaces)
+	collect_explored_surfaces(&session.simulation.world, session.simulation.records.explored, &session.map_view.surfaces)
 	session.map_view.painted_frame = {}
 }
 

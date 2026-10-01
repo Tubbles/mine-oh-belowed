@@ -662,11 +662,12 @@ test_fluid_networks_rebuild_after_removing_a_middle_pipe :: proc(t: ^testing.T) 
 test_picking_up_a_boiler_returns_its_fuel :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
 	boiler := place_test_fluid_entity(&world, content, "boiler", {0, 1, 0})
 	test_fluid_machine(&world, boiler).slots[BOILER_FUEL_SLOT] = Item_Stack{item = test_item(content.items, "coal"), count = 5}
 	test_fluid_machine(&world, boiler).buffers[0] = {fluid = test_fluid(content, "water"), level = 100}
 	player := make_test_player(content.blocks, {10, 1, 10})
-	testing.expect(t, pick_up_entity(&world, content, &player, boiler, 0))
+	testing.expect(t, pick_up_entity(&world, &records.statistics, content, &player, boiler, 0))
 	testing.expect_value(t, inventory_count(player.inventory, test_item(content.items, "coal")), 5)
 	testing.expect_value(t, inventory_count(player.inventory, test_item(content.items, "boiler")), 1)
 	testing.expect_value(t, len(world.entities.cells), 0)

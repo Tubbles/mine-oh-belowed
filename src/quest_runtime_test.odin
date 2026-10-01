@@ -306,12 +306,14 @@ test_deliver_counts_items_put_into_the_capsule :: proc(t: ^testing.T) {
 test_capsule_is_not_picked_up :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world: World
+	records: Game_Records
 	defer destroy_world(&world)
+	defer destroy_game_records(&records)
 	handle := place_capsule(&world.entities, content.machines, TEST_LANDING_PAD)
 	testing.expect(t, entity_is_alive(&world.entities, handle))
 	testing.expect_value(t, len(entity_slots(&world.entities, handle)), CAPSULE_SLOT_COUNT)
 	player := make_test_player(content.blocks, {})
-	testing.expect(t, !pick_up_entity(&world, content, &player, handle, 0))
+	testing.expect(t, !pick_up_entity(&world, &records.statistics, content, &player, handle, 0))
 	testing.expect(t, entity_is_alive(&world.entities, handle))
 }
 
@@ -321,7 +323,6 @@ make_quest_simulation :: proc(generator: ^Generator, content: Simulation_Content
 	_, technologies := make_test_recipes(content.items)
 	simulation := make_simulation(test_game_config(), player_start_on(surface), content, technologies, false, generator.landing_pad)
 	generated := make_generated_world(generator, world_to_chunk_coordinate(surface))
-	generated.statistics = simulation.world.statistics
 	generated.entities = simulation.world.entities
 	simulation.world = generated
 	return simulation
@@ -345,14 +346,14 @@ expect_same_quest_state :: proc(t: ^testing.T, a, b: Simulation_State) {
 	for progress, index in a.quests.progress {
 		testing.expect_value(t, progress, b.quests.progress[index])
 	}
-	for value, index in a.world.statistics.obtained {
-		testing.expect_value(t, value, b.world.statistics.obtained[index])
+	for value, index in a.records.statistics.obtained {
+		testing.expect_value(t, value, b.records.statistics.obtained[index])
 	}
-	for value, index in a.world.statistics.mining_ticks {
-		testing.expect_value(t, value, b.world.statistics.mining_ticks[index])
+	for value, index in a.records.statistics.mining_ticks {
+		testing.expect_value(t, value, b.records.statistics.mining_ticks[index])
 	}
-	testing.expect_value(t, a.world.statistics.distance_walked_millimetres, b.world.statistics.distance_walked_millimetres)
-	testing.expect_value(t, a.world.statistics.world_actions, b.world.statistics.world_actions)
+	testing.expect_value(t, a.records.statistics.distance_walked_millimetres, b.records.statistics.distance_walked_millimetres)
+	testing.expect_value(t, a.records.statistics.world_actions, b.records.statistics.world_actions)
 }
 
 @(test)
@@ -378,6 +379,6 @@ test_quest_simulation_is_deterministic :: proc(t: ^testing.T) {
 	expect_same_quest_state(t, first, second)
 	bearings := test_quest_index(content.quests, "bearings")
 	testing.expect_value(t, first.quests.progress[0].status, Quest_Status.Done)
-	testing.expectf(t, first.quests.progress[bearings].status == .Done, "walked %d mm", first.world.statistics.distance_walked_millimetres)
+	testing.expectf(t, first.quests.progress[bearings].status == .Done, "walked %d mm", first.records.statistics.distance_walked_millimetres)
 	testing.expect(t, first.quests.active > bearings)
 }

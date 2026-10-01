@@ -54,11 +54,11 @@ LOOSE_ITEM_SETTLE_TICKS :: 120
 
 // Runs the world and the loose items until the decay queue is empty and
 // the items had time to land, or for ticks at most.
-run_test_decay :: proc(world: ^World, content: Simulation_Content, felling: Tree_Felling, ticks: int) {
+run_test_decay :: proc(world: ^World, records: ^Game_Records, content: Simulation_Content, felling: Tree_Felling, ticks: int) {
 	for tick in 1 ..= ticks {
-		tick_world(world, content.blocks, u64(tick), felling)
-		tick_entities(world, content, TEST_TICK_RATE)
-		if tick >= LOOSE_ITEM_SETTLE_TICKS && len(world.leaf_decay.updates) == 0 && len(world.leaf_decay.felled) == 0 {
+		tick_world(world, &records.leaf_decay, content.blocks, u64(tick), felling)
+		tick_entities(world, records, content, TEST_TICK_RATE)
+		if tick >= LOOSE_ITEM_SETTLE_TICKS && len(records.leaf_decay.updates) == 0 && len(records.leaf_decay.felled) == 0 {
 			return
 		}
 	}
@@ -82,7 +82,8 @@ test_felling_leaves_no_floating_blocks :: proc(t: ^testing.T) {
 
 expect_felled_tree_gone :: proc(t: ^testing.T, content: Simulation_Content, felling: Tree_Felling, generator: ^Generator, tree: Tree) {
 	world := make_loose_item_test_world(content)
-	defer destroy_leaf_decay(&world.leaf_decay)
+	records: Game_Records
+	defer destroy_leaf_decay(&records.leaf_decay)
 	place_test_tree(&world, generator, tree)
 	box := tree_box(tree)
 	logs_before, leaves_before := count_tree_blocks_in_box(&world, felling.blocks, box)
@@ -90,13 +91,13 @@ expect_felled_tree_gone :: proc(t: ^testing.T, content: Simulation_Content, fell
 	testing.expect_value(t, leaves_before > 0, tree.crown != .None)
 	lowest := tree.root + {0, 1, 0}
 	world_set_block(&world, lowest, AIR_BLOCK)
-	fell_tree(&world, content.blocks, felling, lowest)
+	fell_tree(&world, &records.leaf_decay, content.blocks, felling, lowest)
 	logs_after, _ := count_tree_blocks_in_box(&world, felling.blocks, box)
 	testing.expectf(t, logs_after == 0, "species %d: %d logs left", tree.species, logs_after)
-	run_test_decay(&world, content, felling, LEAF_DECAY_TEST_TICKS)
+	run_test_decay(&world, &records, content, felling, LEAF_DECAY_TEST_TICKS)
 	_, leaves_left := count_tree_blocks_in_box(&world, felling.blocks, box)
 	testing.expectf(t, leaves_left == 0, "species %d: %d of %d leaves left", tree.species, leaves_left, leaves_before)
-	testing.expect_value(t, len(world.leaf_decay.scheduled), 0)
+	testing.expect_value(t, len(records.leaf_decay.scheduled), 0)
 	log_item := test_item(content.items, "log")
 	fallen_logs := 0
 	for loose in world.entities.loose_items.items {
@@ -117,24 +118,25 @@ test_supported_leaves_survive_decay :: proc(t: ^testing.T) {
 	content.generator = &generator
 	felling := make_test_tree_felling(&generator, content.items)
 	world := make_loose_item_test_world(content)
-	defer destroy_leaf_decay(&world.leaf_decay)
+	records: Game_Records
+	defer destroy_leaf_decay(&records.leaf_decay)
 	registry := content.blocks
 	leaves := test_block(registry, "leaves")
 	world_set_block(&world, {0, 5, 0}, leaves)
 	world_set_block(&world, {2, 3, 0}, test_block(registry, "birch_log"))
 	world_set_block(&world, {10, 5, 10}, leaves)
 	world_set_block(&world, {-10, 5, -10}, leaves)
-	schedule_leaf_decay(&world.leaf_decay, {0, 5, 0}, 5)
-	schedule_leaf_decay(&world.leaf_decay, {10, 5, 10}, 5)
-	run_test_decay(&world, content, felling, 20)
+	schedule_leaf_decay(&records.leaf_decay, {0, 5, 0}, 5)
+	schedule_leaf_decay(&records.leaf_decay, {10, 5, 10}, 5)
+	run_test_decay(&world, &records, content, felling, 20)
 	testing.expect_value(t, world_get_block(&world, {0, 5, 0}), leaves)
 	testing.expect_value(t, world_get_block(&world, {10, 5, 10}), AIR_BLOCK)
 	testing.expect_value(t, world_get_block(&world, {-10, 5, -10}), leaves)
 	// Six blocks away the log no longer holds the leaf.
 	world_set_block(&world, {2, 3, 0}, AIR_BLOCK)
 	world_set_block(&world, {3, 2, 0}, test_block(registry, "birch_log"))
-	schedule_leaf_decay(&world.leaf_decay, {0, 5, 0}, 30)
-	run_test_decay(&world, content, felling, 40)
+	schedule_leaf_decay(&records.leaf_decay, {0, 5, 0}, 30)
+	run_test_decay(&world, &records, content, felling, 40)
 	testing.expect_value(t, world_get_block(&world, {0, 5, 0}), AIR_BLOCK)
 }
 

@@ -59,20 +59,21 @@ test_combustion_data_loads :: proc(t: ^testing.T) {
 test_combustion_generator_burns_gas_for_delivered_energy :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world, generator := make_combustion_world(content)
+	records := make_fluid_test_records(content)
 	gas := test_fluid(content, "petroleum_gas")
 	set_generator_gas(&world, content, generator, "petroleum_gas", 50)
-	tick_test_entities(&world, content, 3000)
+	tick_test_entities(&world, &records, content, 3000)
 	machine := test_fluid_machine(&world, generator)
-	testing.expect_value(t, world.statistics.energy_produced_joules, 166 * 3000)
-	testing.expect_value(t, world.statistics.energy_consumed_joules, world.statistics.energy_produced_joules)
+	testing.expect_value(t, records.statistics.energy_produced_joules, 166 * 3000)
+	testing.expect_value(t, records.statistics.energy_consumed_joules, records.statistics.energy_produced_joules)
 	testing.expect_value(t, machine.buffers[0].level, 47)
-	testing.expect_value(t, fluid_counter(world.statistics.fluids.consumed, gas), 3)
-	testing.expect_value(t, world.statistics.generator_gas_litres, 3)
-	testing.expect_value(t, hint_counter_value(world.statistics, Hint{counter = .Generator_Gas_Litres}), 3)
-	testing.expect_value(t, world.statistics.energy_produced_joules + u64(machine.fuel_joules), 3 * 200_000)
+	testing.expect_value(t, fluid_counter(records.statistics.fluids.consumed, gas), 3)
+	testing.expect_value(t, records.statistics.generator_gas_litres, 3)
+	testing.expect_value(t, hint_counter_value(records.statistics, Hint{counter = .Generator_Gas_Litres}), 3)
+	testing.expect_value(t, records.statistics.energy_produced_joules + u64(machine.fuel_joules), 3 * 200_000)
 	testing.expect_value(t, machine.state, Fluid_Machine_State.Generating)
 	testing.expect_value(t, machine.generated_joules, 166)
-	testing.expect_value(t, world.statistics.fuel_burned, 0)
+	testing.expect_value(t, records.statistics.fuel_burned, 0)
 }
 
 // Wood gas is worth half as much: 1 MJ per 10 litres.
@@ -80,12 +81,13 @@ test_combustion_generator_burns_gas_for_delivered_energy :: proc(t: ^testing.T) 
 test_combustion_generator_burns_wood_gas :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world, generator := make_combustion_world(content)
+	records := make_fluid_test_records(content)
 	set_generator_gas(&world, content, generator, "wood_gas", 50)
-	tick_test_entities(&world, content, 3000)
+	tick_test_entities(&world, &records, content, 3000)
 	machine := test_fluid_machine(&world, generator)
 	testing.expect_value(t, machine.buffers[0].level, 45)
-	testing.expect_value(t, fluid_counter(world.statistics.fluids.consumed, test_fluid(content, "wood_gas")), 5)
-	testing.expect_value(t, world.statistics.energy_produced_joules + u64(machine.fuel_joules), 5 * 100_000)
+	testing.expect_value(t, fluid_counter(records.statistics.fluids.consumed, test_fluid(content, "wood_gas")), 5)
+	testing.expect_value(t, records.statistics.energy_produced_joules + u64(machine.fuel_joules), 5 * 100_000)
 }
 
 // Solid fuel: a coal is lit whole (4 MJ) and counted burned once.
@@ -93,15 +95,16 @@ test_combustion_generator_burns_wood_gas :: proc(t: ^testing.T) {
 test_combustion_generator_burns_solid_fuel :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world, generator := make_combustion_world(content)
+	records := make_fluid_test_records(content)
 	coal := test_item(content.items, "coal")
 	test_fluid_machine(&world, generator).slots[COMBUSTION_FUEL_SLOT] = {coal, 3}
-	tick_test_entities(&world, content, 1000)
+	tick_test_entities(&world, &records, content, 1000)
 	machine := test_fluid_machine(&world, generator)
 	testing.expect_value(t, machine.slots[COMBUSTION_FUEL_SLOT], Item_Stack{coal, 2})
-	testing.expect_value(t, world.statistics.fuel_burned, 1)
-	testing.expect_value(t, item_counter(world.statistics.consumed, coal), 1)
-	testing.expect_value(t, u64(machine.fuel_joules), 4_000_000 - world.statistics.energy_produced_joules)
-	testing.expect_value(t, world.statistics.energy_produced_joules, 166 * 1000)
+	testing.expect_value(t, records.statistics.fuel_burned, 1)
+	testing.expect_value(t, item_counter(records.statistics.consumed, coal), 1)
+	testing.expect_value(t, u64(machine.fuel_joules), 4_000_000 - records.statistics.energy_produced_joules)
+	testing.expect_value(t, records.statistics.energy_produced_joules, 166 * 1000)
 	testing.expect_value(t, machine.state, Fluid_Machine_State.Generating)
 }
 
@@ -111,23 +114,24 @@ test_combustion_generator_burns_solid_fuel :: proc(t: ^testing.T) {
 test_combustion_generator_prefers_gas :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world, generator := make_combustion_world(content)
+	records := make_fluid_test_records(content)
 	coal := test_item(content.items, "coal")
 	test_fluid_machine(&world, generator).slots[COMBUSTION_FUEL_SLOT] = {coal, 5}
 	set_generator_gas(&world, content, generator, "petroleum_gas", 2)
-	tick_test_entities(&world, content, 2000)
+	tick_test_entities(&world, &records, content, 2000)
 	machine := test_fluid_machine(&world, generator)
 	testing.expect_value(t, machine.slots[COMBUSTION_FUEL_SLOT].count, 5)
 	testing.expect_value(t, machine.buffers[0].level, 0)
-	testing.expect_value(t, world.statistics.brownout_ticks, 0)
-	tick_test_entities(&world, content, 1000)
+	testing.expect_value(t, records.statistics.brownout_ticks, 0)
+	tick_test_entities(&world, &records, content, 1000)
 	testing.expect_value(t, machine.slots[COMBUSTION_FUEL_SLOT].count, 4)
-	testing.expect_value(t, world.statistics.brownout_ticks, 0)
-	testing.expect_value(t, world.statistics.energy_produced_joules, 166 * 3000)
-	testing.expect_value(t, world.statistics.energy_produced_joules + u64(machine.fuel_joules), 2 * 200_000 + 4_000_000)
+	testing.expect_value(t, records.statistics.brownout_ticks, 0)
+	testing.expect_value(t, records.statistics.energy_produced_joules, 166 * 3000)
+	testing.expect_value(t, records.statistics.energy_produced_joules + u64(machine.fuel_joules), 2 * 200_000 + 4_000_000)
 	// Nothing left to burn: no fuel while the lamps ask.
 	machine.slots[COMBUSTION_FUEL_SLOT] = EMPTY_STACK
 	machine.fuel_joules = 0
-	tick_test_entities(&world, content, 1)
+	tick_test_entities(&world, &records, content, 1)
 	testing.expect_value(t, machine.state, Fluid_Machine_State.No_Fuel)
 }
 
@@ -138,21 +142,22 @@ test_combustion_generator_prefers_gas :: proc(t: ^testing.T) {
 test_combustion_generator_port_refuses_steam :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world, generator := make_combustion_world(content)
+	records := make_fluid_test_records(content)
 	pipe := lay_pipes(&world, content, {2, 1, 0})[0]
 	test_pipe(&world, pipe).buffer = {fluid = test_fluid(content, "steam"), level = 100}
-	tick_test_fluids_with_statistics(&world, content, 30)
+	tick_test_fluids_with_statistics(&world, &records, content, 30)
 	testing.expect_value(t, test_fluid_machine(&world, generator).buffers[0].level, 0)
 	testing.expect(t, test_fluid_machine(&world, generator).closed[0])
 	testing.expect_value(t, test_pipe(&world, pipe).buffer.level, 100)
-	testing.expect_value(t, world.statistics.mixing_refusals, 1)
+	testing.expect_value(t, records.statistics.mixing_refusals, 1)
 	// Emptied, the network forgets the steam and takes the wood gas.
 	test_pipe(&world, pipe).buffer = EMPTY_FLUID_BUFFER
-	tick_test_fluids_with_statistics(&world, content, 1)
+	tick_test_fluids_with_statistics(&world, &records, content, 1)
 	test_pipe(&world, pipe).buffer = {fluid = test_fluid(content, "wood_gas"), level = 100}
-	tick_test_fluids_with_statistics(&world, content, 30)
+	tick_test_fluids_with_statistics(&world, &records, content, 30)
 	testing.expect(t, !test_fluid_machine(&world, generator).closed[0])
 	testing.expect(t, test_fluid_machine(&world, generator).buffers[0].level > 0)
-	testing.expect_value(t, world.statistics.mixing_refusals, 1)
+	testing.expect_value(t, records.statistics.mixing_refusals, 1)
 }
 
 // A gas that does not burn offers nothing, and the slot still works, even
@@ -161,13 +166,14 @@ test_combustion_generator_port_refuses_steam :: proc(t: ^testing.T) {
 test_combustion_generator_ignores_gas_without_fuel_value :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world, generator := make_combustion_world(content)
+	records := make_fluid_test_records(content)
 	set_generator_gas(&world, content, generator, "steam", 100)
-	tick_test_entities(&world, content, 1)
+	tick_test_entities(&world, &records, content, 1)
 	machine := test_fluid_machine(&world, generator)
 	testing.expect_value(t, machine.state, Fluid_Machine_State.No_Fuel)
 	testing.expect_value(t, machine.buffers[0].level, 100)
 	machine.slots[COMBUSTION_FUEL_SLOT] = {test_item(content.items, "plank"), 1}
-	tick_test_entities(&world, content, 1)
+	tick_test_entities(&world, &records, content, 1)
 	testing.expect_value(t, machine.state, Fluid_Machine_State.Generating)
 	testing.expect_value(t, machine.buffers[0].level, 100)
 }
@@ -180,13 +186,14 @@ test_combustion_generator_ignores_gas_without_fuel_value :: proc(t: ^testing.T) 
 test_brownout_is_shared_between_steam_and_combustion :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world, generator := make_combustion_world(content)
+	records := make_fluid_test_records(content)
 	engine := place_test_entity(&world, content, "steam_engine", {-3, 1, -2})
 	networks := &world.entities.electric_networks
 	testing.expect_value(t, entity_network(networks, engine), entity_network(networks, generator))
 	for _ in 0 ..< 10 {
 		test_fluid_machine(&world, engine).fuel_joules = 60
 		test_fluid_machine(&world, generator).fuel_joules = 40
-		tick_test_entities(&world, content, 1)
+		tick_test_entities(&world, &records, content, 1)
 	}
 	network := networks.networks[0]
 	testing.expect_value(t, network.supply, 100)
@@ -196,9 +203,9 @@ test_brownout_is_shared_between_steam_and_combustion :: proc(t: ^testing.T) {
 	testing.expect_value(t, test_fluid_machine(&world, engine).generated_joules, 60)
 	testing.expect_value(t, test_fluid_machine(&world, generator).generated_joules, 38)
 	testing.expect_value(t, test_fluid_machine(&world, generator).state, Fluid_Machine_State.Generating)
-	testing.expect_value(t, world.statistics.energy_produced_joules, 98 * 10)
-	testing.expect_value(t, world.statistics.energy_consumed_joules, 98 * 10)
-	testing.expect_value(t, world.statistics.brownout_ticks, 10)
+	testing.expect_value(t, records.statistics.energy_produced_joules, 98 * 10)
+	testing.expect_value(t, records.statistics.energy_consumed_joules, 98 * 10)
+	testing.expect_value(t, records.statistics.brownout_ticks, 10)
 	// The overview groups the generators by type with their output.
 	groups := largest_participant_groups(networks.participants[:], 0, true, POWER_GENERATOR_TYPE_COUNT)
 	testing.expect_value(t, len(groups), 2)
@@ -257,10 +264,11 @@ build_combustion_plant :: proc(world: ^World, content: Simulation_Content) -> (g
 test_combustion_simulation_is_deterministic :: proc(t: ^testing.T) {
 	content := make_test_content()
 	worlds := [2]World{make_oil_world(content), make_oil_world(content)}
+	records := [2]Game_Records{make_fluid_test_records(content), make_fluid_test_records(content)}
 	generator, chest: Entity_Handle
-	for &world in worlds {
+	for &world, index in worlds {
 		generator, chest = build_combustion_plant(&world, content)
-		tick_test_entities(&world, content, 1200)
+		tick_test_entities(&world, &records[index], content, 1200)
 	}
 	first, second := &worlds[0].entities, &worlds[1].entities
 	for machine, index in first.fluid_machines.entries {
@@ -278,11 +286,11 @@ test_combustion_simulation_is_deterministic :: proc(t: ^testing.T) {
 	for pipe, index in first.pipes.entries {
 		testing.expect_value(t, pipe.buffer, second.pipes.entries[index].buffer)
 	}
-	testing.expect_value(t, worlds[0].statistics.energy_produced_joules, worlds[1].statistics.energy_produced_joules)
+	testing.expect_value(t, records[0].statistics.energy_produced_joules, records[1].statistics.energy_produced_joules)
 	// The plant runs on its own gas: more burned than the 10 L seed, the
 	// energy all accounted for, ore mined.
 	world := &worlds[0]
-	statistics := world.statistics
+	statistics := records[0].statistics
 	wood_gas := test_fluid(content, "wood_gas")
 	burned := fluid_counter(statistics.fluids.consumed, wood_gas)
 	testing.expectf(t, burned > 10, "wood gas burned %d", burned)
@@ -333,24 +341,25 @@ test_fuel_generator_data_loads :: proc(t: ^testing.T) {
 test_fuel_generator_burns_coal_at_a_quarter :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world, generator := make_fuel_generator_world(content)
+	records := make_fluid_test_records(content)
 	coal := test_item(content.items, "coal")
 	test_fluid_machine(&world, generator).slots[COMBUSTION_FUEL_SLOT] = {coal, 3}
 	prototype := content.machines.machines[test_machine(content.machines, "fuel_generator")]
 	testing.expect_value(t, combustion_slot_joules(test_fluid_machine(&world, generator)^, prototype, content.items), 3_000_000)
 	testing.expect_value(t, generator_available_joules(&world, test_fluid_machine(&world, generator)^, prototype, content, TEST_TICK_RATE), 1250)
-	tick_test_entities(&world, content, 1000)
+	tick_test_entities(&world, &records, content, 1000)
 	machine := test_fluid_machine(&world, generator)
 	testing.expect_value(t, machine.slots[COMBUSTION_FUEL_SLOT], Item_Stack{coal, 2})
 	testing.expect_value(t, machine.fuel_item_joules, 1_000_000)
-	testing.expect_value(t, world.statistics.energy_produced_joules, 166 * 1000)
-	testing.expect_value(t, world.statistics.energy_consumed_joules, world.statistics.energy_produced_joules)
-	testing.expect_value(t, u64(machine.fuel_joules), 1_000_000 - world.statistics.energy_produced_joules)
-	testing.expect_value(t, world.statistics.fuel_burned, 1)
+	testing.expect_value(t, records.statistics.energy_produced_joules, 166 * 1000)
+	testing.expect_value(t, records.statistics.energy_consumed_joules, records.statistics.energy_produced_joules)
+	testing.expect_value(t, u64(machine.fuel_joules), 1_000_000 - records.statistics.energy_produced_joules)
+	testing.expect_value(t, records.statistics.fuel_burned, 1)
 	testing.expect_value(t, machine.state, Fluid_Machine_State.Generating)
 	// The first coal runs out after 6024 ticks and the second is lit.
-	tick_test_entities(&world, content, 6000)
+	tick_test_entities(&world, &records, content, 6000)
 	testing.expect_value(t, machine.slots[COMBUSTION_FUEL_SLOT], Item_Stack{coal, 1})
-	testing.expect_value(t, world.statistics.energy_produced_joules + u64(machine.fuel_joules), 2 * 1_000_000)
+	testing.expect_value(t, records.statistics.energy_produced_joules + u64(machine.fuel_joules), 2 * 1_000_000)
 }
 
 // An offshore pump filling a tank and an electric drill ask 1000 and
@@ -360,6 +369,7 @@ test_fuel_generator_burns_coal_at_a_quarter :: proc(t: ^testing.T) {
 test_fuel_generator_browns_out_under_a_pump_and_a_drill :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_oil_world(content)
+	records := make_fluid_test_records(content)
 	vein := add_test_vein(&world, content, "iron", {1, 1}, 2, IRON_TEST_VEIN)
 	drill := place_test_entity(&world, content, "electric_mining_drill", {0, 1, 0})
 	test_drill(&world, drill).vein = vein
@@ -370,18 +380,18 @@ test_fuel_generator_browns_out_under_a_pump_and_a_drill :: proc(t: ^testing.T) {
 	pump := place_test_entity(&world, content, "offshore_pump", {3, 1, 5})
 	lay_pipes(&world, content, {2, 1, 5})
 	place_test_entity(&world, content, "storage_tank", {-1, 1, 4})
-	tick_test_entities(&world, content, 60)
+	tick_test_entities(&world, &records, content, 60)
 	network := world.entities.electric_networks.networks[0]
 	testing.expect_value(t, len(world.entities.electric_networks.networks), 1)
 	testing.expect_value(t, network.supply, 1250)
 	testing.expect_value(t, network.demand, 2500)
 	testing.expect_value(t, network.satisfaction, 500)
-	testing.expect_value(t, world.statistics.brownout_ticks, 60)
+	testing.expect_value(t, records.statistics.brownout_ticks, 60)
 	testing.expect_value(t, test_fluid_machine(&world, pump).state, Fluid_Machine_State.Producing)
-	testing.expect_value(t, world.statistics.energy_produced_joules, 1250 * 60)
-	testing.expect_value(t, world.statistics.energy_consumed_joules, world.statistics.energy_produced_joules)
+	testing.expect_value(t, records.statistics.energy_produced_joules, 1250 * 60)
+	testing.expect_value(t, records.statistics.energy_consumed_joules, records.statistics.energy_produced_joules)
 	water := test_fluid(content, "water")
-	testing.expect_value(t, fluid_counter(world.statistics.fluids.produced, water), 10 * 60)
+	testing.expect_value(t, fluid_counter(records.statistics.fluids.produced, water), 10 * 60)
 }
 
 // fuel_efficiency_percent: 1 to 100 on a combustion generator, which may

@@ -268,6 +268,7 @@ audit_screen_context :: proc(audit: ^Ui_Audit) -> Screen_Context {
 		blocks = audit.content.blocks,
 		item_sort_ranks = audit.item_sort_ranks,
 		world = &simulation.world,
+		records = &simulation.records,
 		machines = audit.content.machines,
 		fluids = audit.content.fluids,
 		veins = audit.content.veins,
@@ -506,7 +507,7 @@ make_ui_audit :: proc() -> ^Ui_Audit {
 	generator := &audit.generator
 	audit.simulation = make_save_test_simulation(generator, audit.content)
 	simulation := &audit.simulation
-	load_save_test_chunks(&simulation.world, generator)
+	load_save_test_chunks(&simulation.world, &simulation.records, generator)
 	// The HUD cases show the biome banner at full strength.
 	plains := find_biome_index(generator.biomes, "plains")
 	audit.biome_banner = Biome_Banner{settled = plains, candidate = plains, shown = plains, shown_seconds = 1, showing = true}

@@ -23,8 +23,8 @@ hydro_placement_valid :: proc(world: ^World, content: Simulation_Content, origin
 }
 
 // The supply of the only network after one electric tick.
-network_supply_after_tick :: proc(world: ^World, content: Simulation_Content) -> u64 {
-	tick_electric_networks(world, content, TEST_TICK_RATE)
+network_supply_after_tick :: proc(world: ^World, records: ^Game_Records, content: Simulation_Content) -> u64 {
+	tick_electric_networks(world, records, content, TEST_TICK_RATE)
 	return world.entities.electric_networks.networks[0].supply
 }
 
@@ -87,24 +87,25 @@ test_hydro_turbine_placement_needs_flowing_water :: proc(t: ^testing.T) {
 test_hydro_turbine_output_follows_the_water_level :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
 	add_settled_source(t, &world, content, {0, 1, 0})
 	turbine := place_test_entity(&world, content, "hydro_turbine", {1, 1, 0})
 	place_test_entity(&world, content, "small_pole", {1, 1, 3})
 	place_test_entity(&world, content, "lamp", {2, 1, 3})
 	// 7 + 6 + 6 + 5 = 24 levels, 240 kW, 4000 J a tick.
-	testing.expect_value(t, network_supply_after_tick(&world, content), 4000)
+	testing.expect_value(t, network_supply_after_tick(&world, &records, content), 4000)
 	testing.expect_value(t, test_fluid_machine(&world, turbine).state, Fluid_Machine_State.Generating)
 	testing.expect_value(t, test_fluid_machine(&world, turbine).generated_joules, 83)
 	// Draining one cell takes its 7 levels away at once.
 	world_set_block(&world, {1, 1, 0}, AIR_BLOCK)
-	testing.expect_value(t, network_supply_after_tick(&world, content), 2833)
+	testing.expect_value(t, network_supply_after_tick(&world, &records, content), 2833)
 	// Deep water in all eight cells is 56 levels, capped at 400 kW.
 	cells := common_cells(test_fluid_machine(&world, turbine).common, content.machines)
 	set_water_level(&world, content, cells, WATER_FALLING_LEVEL)
-	testing.expect_value(t, network_supply_after_tick(&world, content), 6666)
+	testing.expect_value(t, network_supply_after_tick(&world, &records, content), 6666)
 	// Dry: nothing to give while the lamp asks.
 	set_water_level(&world, content, cells, 0)
-	testing.expect_value(t, network_supply_after_tick(&world, content), 0)
+	testing.expect_value(t, network_supply_after_tick(&world, &records, content), 0)
 	testing.expect_value(t, test_fluid_machine(&world, turbine).state, Fluid_Machine_State.No_Water)
 }
 
@@ -291,6 +292,7 @@ test_mixed_speed_belts_hand_off_exactly :: proc(t: ^testing.T) {
 test_fast_belt_drag_uses_fast_ramps :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
 	set_blocks(&world, test_block(content.blocks, "stone"), {3, 1, 0})
 	players := []Player{make_test_player(content.blocks, {-3.5, 1, 0.5})}
 	player := &players[0]
@@ -298,10 +300,10 @@ test_fast_belt_drag_uses_fast_ramps :: proc(t: ^testing.T) {
 	give_test_items(player, content.items, "belt_ramp", 2)
 	give_test_items(player, content.items, "belt_ramp_2", 2)
 	player.target = Raycast_Hit{hit = true, block = {0, 0, 0}, face = .Positive_Y, adjacent = {0, 1, 0}}
-	place_with_player(&world, content, players, 0, {.Place}, {.Place})
+	place_with_player(&world, &records.statistics, content, players, 0, {.Place}, {.Place})
 	for column in ([?][2]i32{{2, 0}, {3, 1}}) {
 		player.target = Raycast_Hit{hit = true, block = {column.x, 0, column.y}, face = .Positive_Y, adjacent = {column.x, 1, column.y}}
-		place_with_player(&world, content, players, 0, {}, {.Place})
+		place_with_player(&world, &records.statistics, content, players, 0, {}, {.Place})
 	}
 	Expected_Belt :: struct {
 		cell: World_Coordinate,
@@ -340,6 +342,7 @@ test_fast_and_long_inserter_data :: proc(t: ^testing.T) {
 test_long_inserter_reaches_two_cells :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
 	source := place_test_entity(&world, content, "wooden_chest", {0, 1, 0})
 	near_behind := place_test_entity(&world, content, "wooden_chest", {1, 1, 0})
 	inserter := place_test_entity(&world, content, "long_inserter", {2, 1, 0}, 0)
@@ -351,7 +354,7 @@ test_long_inserter_reaches_two_cells :: proc(t: ^testing.T) {
 	entity_insert(&world.entities, content, near_behind, Item_Stack{coal, 5})
 	testing.expect_value(t, inserter_pickup_cell(test_inserter(&world, inserter)^), World_Coordinate{0, 1, 0})
 	testing.expect_value(t, inserter_drop_cell(test_inserter(&world, inserter)^), World_Coordinate{4, 1, 0})
-	tick_test_entities(&world, content, 6 * 72)
+	tick_test_entities(&world, &records, content, 6 * 72)
 	testing.expect_value(t, chest_count_of(&world, target, plate), 5)
 	testing.expect_value(t, chest_count_of(&world, source, plate), 0)
 	testing.expect_value(t, chest_count_of(&world, near_behind, coal), 5)
@@ -419,14 +422,15 @@ lay_hydro_factory :: proc(t: ^testing.T, world: ^World, content: Simulation_Cont
 test_hydro_factory_is_deterministic :: proc(t: ^testing.T) {
 	content := make_test_content()
 	worlds := [2]World{make_floor_world(content.blocks, 32), make_floor_world(content.blocks, 32)}
+	all_records: [2]Game_Records
 	plate_chests: [2]Entity_Handle
 	for &world, index in worlds {
 		tick: u64
 		plate_chests[index], tick = lay_hydro_factory(t, &world, content)
 		for _ in 0 ..< 1200 {
 			tick += 1
-			tick_world(&world, content.blocks, tick)
-			tick_entities(&world, content, TEST_TICK_RATE)
+			tick_world(&world, &all_records[index].leaf_decay, content.blocks, tick)
+			tick_entities(&world, &all_records[index], content, TEST_TICK_RATE)
 		}
 	}
 	first, second := &worlds[0].entities, &worlds[1].entities
@@ -447,7 +451,7 @@ test_hydro_factory_is_deterministic :: proc(t: ^testing.T) {
 	delivered := chest_count_of(&worlds[0], plate_chests[0], plate)
 	testing.expectf(t, delivered >= 10, "only %d plates delivered", delivered)
 	testing.expect_value(t, delivered, chest_count_of(&worlds[1], plate_chests[1], plate))
-	testing.expect(t, worlds[0].statistics.energy_produced_joules > 0)
-	testing.expect_value(t, worlds[0].statistics.energy_produced_joules, worlds[1].statistics.energy_produced_joules)
-	testing.expect_value(t, worlds[0].statistics.brownout_ticks, 0)
+	testing.expect(t, all_records[0].statistics.energy_produced_joules > 0)
+	testing.expect_value(t, all_records[0].statistics.energy_produced_joules, all_records[1].statistics.energy_produced_joules)
+	testing.expect_value(t, all_records[0].statistics.brownout_ticks, 0)
 }

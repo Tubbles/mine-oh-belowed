@@ -43,11 +43,11 @@ make_test_player :: proc(registry: Block_Registry, position: [3]f32) -> Player {
 	return make_player(Player_Start{position = position}, context.temp_allocator)
 }
 
-tick_test_player :: proc(world: ^World, registry: Block_Registry, player: ^Player, input: Input_Frame, ticks: int) -> (events: Player_Events) {
+tick_test_player :: proc(world: ^World, records: ^Game_Records, registry: Block_Registry, player: ^Player, input: Input_Frame, ticks: int) -> (events: Player_Events) {
 	content := make_test_content()
 	content.blocks = registry
 	for _ in 0 ..< ticks {
-		events += tick_player(world, content, slice.from_ptr(player, 1), 0, input, TEST_TICK_RATE, 0)
+		events += tick_player(world, records, content, slice.from_ptr(player, 1), 0, input, TEST_TICK_RATE, 0)
 	}
 	return events
 }
@@ -60,9 +60,10 @@ WALK_FORWARD :: Input_Frame {
 test_player_walks_into_wall_and_stops_flush :: proc(t: ^testing.T) {
 	registry := make_test_registry()
 	world := make_floor_world(registry, 32)
+	records: Game_Records
 	set_blocks(&world, test_block(registry, "stone"), {3, 1, 0}, {3, 2, 0})
 	player := make_test_player(registry, {0.5, 1, 0.5})
-	tick_test_player(&world, registry, &player, WALK_FORWARD, 120)
+	tick_test_player(&world, &records, registry, &player, WALK_FORWARD, 120)
 	testing.expectf(t, abs(player.position.x - (3 - PLAYER_WIDTH / 2)) < 1e-3, "x %v", player.position.x)
 	testing.expect_value(t, player.velocity.x, 0)
 	testing.expect(t, player.on_ground)
@@ -73,8 +74,9 @@ test_player_walks_into_wall_and_stops_flush :: proc(t: ^testing.T) {
 test_player_falls_onto_floor_and_lands_on_top :: proc(t: ^testing.T) {
 	registry := make_test_registry()
 	world := make_floor_world(registry, 32)
+	records: Game_Records
 	player := make_test_player(registry, {0.5, 20, 0.5})
-	tick_test_player(&world, registry, &player, {}, 180)
+	tick_test_player(&world, &records, registry, &player, {}, 180)
 	testing.expect(t, player.on_ground)
 	testing.expectf(t, abs(player.position.y - 1) < 1e-3, "y %v", player.position.y)
 	testing.expect_value(t, player.velocity.y, 0)
@@ -84,12 +86,13 @@ test_player_falls_onto_floor_and_lands_on_top :: proc(t: ^testing.T) {
 test_player_jump_reaches_one_block_not_two :: proc(t: ^testing.T) {
 	registry := make_test_registry()
 	world := make_floor_world(registry, 32)
+	records: Game_Records
 	player := make_test_player(registry, {0.5, 1, 0.5})
-	tick_test_player(&world, registry, &player, {}, 1)
-	tick_test_player(&world, registry, &player, Input_Frame{pressed = {.Jump}}, 1)
+	tick_test_player(&world, &records, registry, &player, {}, 1)
+	tick_test_player(&world, &records, registry, &player, Input_Frame{pressed = {.Jump}}, 1)
 	apex := player.position.y
 	for _ in 0 ..< 60 {
-		tick_test_player(&world, registry, &player, {}, 1)
+		tick_test_player(&world, &records, registry, &player, {}, 1)
 		apex = max(apex, player.position.y)
 	}
 	testing.expectf(t, apex - 1 > 1 && apex - 1 < 1.5, "apex %v", apex - 1)
@@ -101,16 +104,17 @@ test_player_climbs_one_block_step_but_not_two :: proc(t: ^testing.T) {
 	registry := make_test_registry()
 	stone := test_block(registry, "stone")
 	world := make_floor_world(registry, 32)
+	records: Game_Records
 	set_blocks(&world, stone, {3, 1, 0}, {3, 1, 2}, {3, 2, 2})
 	input := Input_Frame {
 		move    = {0, 1},
 		pressed = {.Jump},
 	}
 	low := make_test_player(registry, {0.5, 1, 0.5})
-	tick_test_player(&world, registry, &low, input, 90)
+	tick_test_player(&world, &records, registry, &low, input, 90)
 	testing.expectf(t, low.position.x > 3.3, "x %v", low.position.x)
 	high := make_test_player(registry, {0.5, 1, 2.5})
-	tick_test_player(&world, registry, &high, input, 90)
+	tick_test_player(&world, &records, registry, &high, input, 90)
 	testing.expectf(t, high.position.x < 3, "x %v", high.position.x)
 }
 
@@ -118,18 +122,19 @@ test_player_climbs_one_block_step_but_not_two :: proc(t: ^testing.T) {
 test_sneaking_stops_at_edge :: proc(t: ^testing.T) {
 	registry := make_test_registry()
 	world := make_floor_world(registry, 3)
+	records: Game_Records
 	sneaking := Input_Frame {
 		move    = {0, 1},
 		pressed = {.Sneak},
 	}
 	player := make_test_player(registry, {0.5, 1, 0.5})
-	tick_test_player(&world, registry, &player, {}, 1)
-	tick_test_player(&world, registry, &player, sneaking, 240)
+	tick_test_player(&world, &records, registry, &player, {}, 1)
+	tick_test_player(&world, &records, registry, &player, sneaking, 240)
 	testing.expectf(t, player.position.x > 3 && player.position.x < 3 + PLAYER_WIDTH / 2, "x %v", player.position.x)
 	testing.expect(t, player.on_ground)
 	testing.expectf(t, abs(player.position.y - 1) < 1e-3, "y %v", player.position.y)
 	walking := make_test_player(registry, {0.5, 1, 0.5})
-	tick_test_player(&world, registry, &walking, WALK_FORWARD, 120)
+	tick_test_player(&world, &records, registry, &walking, WALK_FORWARD, 120)
 	testing.expect(t, walking.position.y < 0)
 }
 
@@ -137,8 +142,9 @@ test_sneaking_stops_at_edge :: proc(t: ^testing.T) {
 test_player_waits_for_missing_ground_chunk :: proc(t: ^testing.T) {
 	registry := make_test_registry()
 	world := make_test_world({})
+	records: Game_Records
 	player := make_test_player(registry, {0.5, 20, 0.5})
-	tick_test_player(&world, registry, &player, {}, 60)
+	tick_test_player(&world, &records, registry, &player, {}, 60)
 	testing.expect_value(t, player.position.y, 20)
 	testing.expect_value(t, player.velocity.y, 0)
 }
@@ -147,9 +153,10 @@ test_player_waits_for_missing_ground_chunk :: proc(t: ^testing.T) {
 test_player_inside_blocks_rises_out :: proc(t: ^testing.T) {
 	registry := make_test_registry()
 	world := make_floor_world(registry, 32)
+	records: Game_Records
 	set_blocks(&world, test_block(registry, "log"), {0, 1, 0}, {0, 2, 0})
 	player := make_test_player(registry, {0.5, 1, 0.5})
-	tick_test_player(&world, registry, &player, {}, 30)
+	tick_test_player(&world, &records, registry, &player, {}, 30)
 	testing.expectf(t, abs(player.position.y - 3) < 1e-3, "y %v", player.position.y)
 	testing.expect(t, player.on_ground)
 }
@@ -158,12 +165,13 @@ test_player_inside_blocks_rises_out :: proc(t: ^testing.T) {
 test_fly_mode_ignores_gravity_and_blocks :: proc(t: ^testing.T) {
 	registry := make_test_registry()
 	world := make_floor_world(registry, 32)
+	records: Game_Records
 	set_blocks(&world, test_block(registry, "stone"), {3, 1, 0}, {3, 2, 0})
 	player := make_test_player(registry, {0.5, 1, 0.5})
-	tick_test_player(&world, registry, &player, Input_Frame{just_pressed = {.Toggle_Fly_Mode, .Toggle_No_Clip}}, 1)
+	tick_test_player(&world, &records, registry, &player, Input_Frame{just_pressed = {.Toggle_Fly_Mode, .Toggle_No_Clip}}, 1)
 	testing.expect(t, player.flying)
 	testing.expect(t, player.no_clip)
-	tick_test_player(&world, registry, &player, WALK_FORWARD, 60)
+	tick_test_player(&world, &records, registry, &player, WALK_FORWARD, 60)
 	testing.expectf(t, abs(player.position.x - (0.5 + FLY_CAMERA_SPEED)) < 1e-2, "x %v", player.position.x)
 	testing.expect_value(t, player.position.y, 1)
 }
@@ -173,17 +181,18 @@ test_fly_mode_ignores_gravity_and_blocks :: proc(t: ^testing.T) {
 test_flying_without_no_clip_stops_at_blocks :: proc(t: ^testing.T) {
 	registry := make_test_registry()
 	world := make_floor_world(registry, 32)
+	records: Game_Records
 	set_blocks(&world, test_block(registry, "stone"), {3, 1, 0}, {3, 2, 0})
 	player := make_test_player(registry, {0.5, 1, 0.5})
-	tick_test_player(&world, registry, &player, Input_Frame{just_pressed = {.Toggle_Fly_Mode}}, 1)
+	tick_test_player(&world, &records, registry, &player, Input_Frame{just_pressed = {.Toggle_Fly_Mode}}, 1)
 	testing.expect(t, player.flying)
 	testing.expect(t, !player.no_clip)
-	tick_test_player(&world, registry, &player, WALK_FORWARD, 60)
+	tick_test_player(&world, &records, registry, &player, WALK_FORWARD, 60)
 	testing.expectf(t, abs(player.position.x - (3 - PLAYER_WIDTH / 2)) < 1e-3, "x %v", player.position.x)
 	testing.expect_value(t, player.velocity.x, 0)
 	testing.expect_value(t, player.position.y, 1)
 	player.position = {0.5, 3, 0.5}
-	tick_test_player(&world, registry, &player, Input_Frame{pressed = {.Sneak}}, 60)
+	tick_test_player(&world, &records, registry, &player, Input_Frame{pressed = {.Sneak}}, 60)
 	testing.expectf(t, abs(player.position.y - 1) < 1e-3, "y %v", player.position.y)
 	testing.expect(t, player.flying)
 }
@@ -195,10 +204,10 @@ JUMP_TAP :: Input_Frame {
 }
 
 // Two Jump presses gap_ticks apart, the frames between them empty.
-double_tap_jump :: proc(world: ^World, registry: Block_Registry, player: ^Player, tap: Input_Frame, gap_ticks: int) {
-	tick_test_player(world, registry, player, tap, 1)
-	tick_test_player(world, registry, player, Input_Frame{developer = tap.developer}, gap_ticks - 1)
-	tick_test_player(world, registry, player, tap, 1)
+double_tap_jump :: proc(world: ^World, records: ^Game_Records, registry: Block_Registry, player: ^Player, tap: Input_Frame, gap_ticks: int) {
+	tick_test_player(world, records, registry, player, tap, 1)
+	tick_test_player(world, records, registry, player, Input_Frame{developer = tap.developer}, gap_ticks - 1)
+	tick_test_player(world, records, registry, player, tap, 1)
 }
 
 // 0112: a Jump double tap toggles flying in developer mode only.
@@ -206,12 +215,13 @@ double_tap_jump :: proc(world: ^World, registry: Block_Registry, player: ^Player
 test_double_tap_jump_toggles_flying :: proc(t: ^testing.T) {
 	registry := make_test_registry()
 	world := make_floor_world(registry, 32)
+	records: Game_Records
 	player := make_test_player(registry, {0.5, 1, 0.5})
-	tick_test_player(&world, registry, &player, {}, 1)
-	double_tap_jump(&world, registry, &player, JUMP_TAP, JUMP_DOUBLE_TAP_TICKS)
+	tick_test_player(&world, &records, registry, &player, {}, 1)
+	double_tap_jump(&world, &records, registry, &player, JUMP_TAP, JUMP_DOUBLE_TAP_TICKS)
 	testing.expect(t, player.flying)
 	testing.expect_value(t, player.jump_tap_ticks, 0)
-	double_tap_jump(&world, registry, &player, JUMP_TAP, 5)
+	double_tap_jump(&world, &records, registry, &player, JUMP_TAP, 5)
 	testing.expect(t, !player.flying)
 }
 
@@ -219,9 +229,10 @@ test_double_tap_jump_toggles_flying :: proc(t: ^testing.T) {
 test_slow_double_tap_jump_does_not_fly :: proc(t: ^testing.T) {
 	registry := make_test_registry()
 	world := make_floor_world(registry, 32)
+	records: Game_Records
 	player := make_test_player(registry, {0.5, 1, 0.5})
-	tick_test_player(&world, registry, &player, {}, 1)
-	double_tap_jump(&world, registry, &player, JUMP_TAP, JUMP_DOUBLE_TAP_TICKS + 1)
+	tick_test_player(&world, &records, registry, &player, {}, 1)
+	double_tap_jump(&world, &records, registry, &player, JUMP_TAP, JUMP_DOUBLE_TAP_TICKS + 1)
 	testing.expect(t, !player.flying)
 }
 
@@ -229,11 +240,12 @@ test_slow_double_tap_jump_does_not_fly :: proc(t: ^testing.T) {
 test_double_tap_jump_without_developer_does_not_fly :: proc(t: ^testing.T) {
 	registry := make_test_registry()
 	world := make_floor_world(registry, 32)
+	records: Game_Records
 	player := make_test_player(registry, {0.5, 1, 0.5})
-	tick_test_player(&world, registry, &player, {}, 1)
+	tick_test_player(&world, &records, registry, &player, {}, 1)
 	tap := JUMP_TAP
 	tap.developer = false
-	double_tap_jump(&world, registry, &player, tap, 5)
+	double_tap_jump(&world, &records, registry, &player, tap, 5)
 	testing.expect(t, !player.flying)
 }
 
@@ -333,7 +345,6 @@ make_generated_simulation :: proc(generator: ^Generator, content: Simulation_Con
 	_, technologies := make_test_recipes(content.items)
 	simulation := make_simulation(test_game_config(), player_start_on(surface), content, technologies, false, {})
 	generated := make_generated_world(generator, world_to_chunk_coordinate(surface))
-	generated.statistics = simulation.world.statistics
 	simulation.world = generated
 	return simulation
 }
@@ -390,6 +401,7 @@ test_player_ticks_are_deterministic :: proc(t: ^testing.T) {
 test_player_swims_in_water :: proc(t: ^testing.T) {
 	registry := make_test_registry()
 	world := make_floor_world(registry, 32)
+	records: Game_Records
 	water := test_block(registry, "water")
 	for y in i32(1) ..= 8 {
 		for z in i32(-4) ..= 4 {
@@ -399,17 +411,17 @@ test_player_swims_in_water :: proc(t: ^testing.T) {
 		}
 	}
 	player := make_test_player(registry, {2.5, 5, 0.5})
-	tick_test_player(&world, registry, &player, {}, 30)
+	tick_test_player(&world, &records, registry, &player, {}, 30)
 	testing.expectf(t, player.velocity.y >= -PLAYER_SINK_SPEED && player.velocity.y < 0, "sinking at %v", player.velocity.y)
 	testing.expect(t, player.position.y > 4)
 
 	start_x := player.position.x
-	tick_test_player(&world, registry, &player, WALK_FORWARD, 60)
+	tick_test_player(&world, &records, registry, &player, WALK_FORWARD, 60)
 	walked := player.position.x - start_x
 	testing.expectf(t, abs(walked - PLAYER_WALK_SPEED * PLAYER_WATER_SPEED_FACTOR) < 0.05, "walked %v in one second", walked)
 
 	start_y := player.position.y
-	tick_test_player(&world, registry, &player, Input_Frame{pressed = {.Jump}}, 30)
+	tick_test_player(&world, &records, registry, &player, Input_Frame{pressed = {.Jump}}, 30)
 	testing.expectf(t, player.position.y - start_y > 1, "rose %v", player.position.y - start_y)
 }
 
@@ -437,13 +449,14 @@ test_sprint_toggles_and_stops_with_movement :: proc(t: ^testing.T) {
 test_sprint_press_keeps_the_player_sprinting :: proc(t: ^testing.T) {
 	registry := make_test_registry()
 	world := make_floor_world(registry, 32)
+	records: Game_Records
 	player := make_test_player(registry, {0.5, 1, 0.5})
-	tick_test_player(&world, registry, &player, Input_Frame{move = {0, 1}, just_pressed = {.Sprint}}, 1)
+	tick_test_player(&world, &records, registry, &player, Input_Frame{move = {0, 1}, just_pressed = {.Sprint}}, 1)
 	testing.expect(t, player.sprinting)
-	tick_test_player(&world, registry, &player, WALK_FORWARD, 1)
+	tick_test_player(&world, &records, registry, &player, WALK_FORWARD, 1)
 	testing.expect(t, player.sprinting)
 	testing.expect(t, abs(player.velocity.x - PLAYER_SPRINT_SPEED) < TEST_TOLERANCE)
-	tick_test_player(&world, registry, &player, Input_Frame{}, 1)
+	tick_test_player(&world, &records, registry, &player, Input_Frame{}, 1)
 	testing.expect(t, !player.sprinting)
 }
 
@@ -454,13 +467,14 @@ test_cheat_speed_multiplies_movement :: proc(t: ^testing.T) {
 	testing.expect_value(t, cheat_speed_factor(true), CHEAT_SPEED_FACTOR)
 	registry := make_test_registry()
 	world := make_floor_world(registry, 32)
+	records: Game_Records
 	content := make_test_content()
 	content.blocks = registry
 	player := make_test_player(registry, {0.5, 1, 0.5})
-	tick_player(&world, content, slice.from_ptr(&player, 1), 0, WALK_FORWARD, TEST_TICK_RATE, 0, true)
+	tick_player(&world, &records, content, slice.from_ptr(&player, 1), 0, WALK_FORWARD, TEST_TICK_RATE, 0, true)
 	testing.expect(t, abs(player.velocity.x - PLAYER_WALK_SPEED * CHEAT_SPEED_FACTOR) < TEST_TOLERANCE)
 	player.flying = true
-	tick_player(&world, content, slice.from_ptr(&player, 1), 0, Input_Frame{move = {0, 1}, pressed = {.Sprint_Hold}}, TEST_TICK_RATE, 0, true)
+	tick_player(&world, &records, content, slice.from_ptr(&player, 1), 0, Input_Frame{move = {0, 1}, pressed = {.Sprint_Hold}}, TEST_TICK_RATE, 0, true)
 	testing.expect(t, abs(player.velocity.x - FLY_CAMERA_SPEED * FLY_CAMERA_SPRINT_FACTOR * CHEAT_SPEED_FACTOR) < TEST_TOLERANCE)
 }
 
@@ -496,9 +510,10 @@ test_sweep_stops_on_a_slab_at_half_height :: proc(t: ^testing.T) {
 test_player_falls_onto_a_slab_and_stands_on_it :: proc(t: ^testing.T) {
 	registry := make_shape_test_registry()
 	world := make_floor_world(registry, 32)
+	records: Game_Records
 	set_blocks(&world, SHAPE_TEST_SLAB, {0, 1, 0})
 	player := make_test_player(registry, {0.5, 6, 0.5})
-	tick_test_player(&world, registry, &player, {}, 120)
+	tick_test_player(&world, &records, registry, &player, {}, 120)
 	testing.expect(t, player.on_ground)
 	testing.expectf(t, abs(player.position.y - 1.5) < 1e-3, "y %v", player.position.y)
 }
@@ -576,17 +591,18 @@ test_sneak_hold_and_toggle :: proc(t: ^testing.T) {
 test_toggled_sneak_keeps_the_player_slow :: proc(t: ^testing.T) {
 	registry := make_test_registry()
 	world := make_floor_world(registry, 32)
+	records: Game_Records
 	player := make_test_player(registry, {0.5, 1, 0.5})
 	press := Input_Frame{move = {0, 1}, pressed = {.Sneak}, just_pressed = {.Sneak}, sneak_toggles = true}
-	tick_test_player(&world, registry, &player, press, 1)
+	tick_test_player(&world, &records, registry, &player, press, 1)
 	testing.expect(t, player.sneaking)
 	released := Input_Frame{move = {0, 1}, sneak_toggles = true}
-	tick_test_player(&world, registry, &player, released, 1)
+	tick_test_player(&world, &records, registry, &player, released, 1)
 	testing.expect(t, player.sneaking)
 	testing.expect(t, abs(player.velocity.x - PLAYER_SNEAK_SPEED) < TEST_TOLERANCE)
-	tick_test_player(&world, registry, &player, press, 1)
+	tick_test_player(&world, &records, registry, &player, press, 1)
 	testing.expect(t, !player.sneaking)
-	tick_test_player(&world, registry, &player, released, 1)
+	tick_test_player(&world, &records, registry, &player, released, 1)
 	testing.expect(t, abs(player.velocity.x - PLAYER_WALK_SPEED) < TEST_TOLERANCE)
 }
 
@@ -603,20 +619,21 @@ test_sprint_hold_and_toggle :: proc(t: ^testing.T) {
 
 	registry := make_test_registry()
 	world := make_floor_world(registry, 32)
+	records: Game_Records
 	player := make_test_player(registry, {0.5, 1, 0.5})
-	tick_test_player(&world, registry, &player, holding, 1)
+	tick_test_player(&world, &records, registry, &player, holding, 1)
 	testing.expect(t, player.sprinting)
 	testing.expect(t, abs(player.velocity.x - PLAYER_SPRINT_SPEED) < TEST_TOLERANCE)
-	tick_test_player(&world, registry, &player, Input_Frame{move = {0, 1}, sprint_holds = true}, 1)
+	tick_test_player(&world, &records, registry, &player, Input_Frame{move = {0, 1}, sprint_holds = true}, 1)
 	testing.expect(t, !player.sprinting)
 	testing.expect(t, abs(player.velocity.x - PLAYER_WALK_SPEED) < TEST_TOLERANCE)
 }
 
-tick_cheat_test_player :: proc(world: ^World, registry: Block_Registry, player: ^Player, input: Input_Frame, ticks: int) {
+tick_cheat_test_player :: proc(world: ^World, records: ^Game_Records, registry: Block_Registry, player: ^Player, input: Input_Frame, ticks: int) {
 	content := make_test_content()
 	content.blocks = registry
 	for _ in 0 ..< ticks {
-		tick_player(world, content, slice.from_ptr(player, 1), 0, input, TEST_TICK_RATE, 0, true)
+		tick_player(world, records, content, slice.from_ptr(player, 1), 0, input, TEST_TICK_RATE, 0, true)
 	}
 }
 
@@ -636,19 +653,20 @@ test_cheat_speed_steps_up_one_block_not_two :: proc(t: ^testing.T) {
 	registry := make_test_registry()
 	stone := test_block(registry, "stone")
 	world := make_floor_world(registry, 32)
+	records: Game_Records
 	set_ledge(&world, stone, 0, 1)
 	set_ledge(&world, stone, 2, 2)
 	low := make_test_player(registry, {0.5, 1, 0.5})
-	tick_cheat_test_player(&world, registry, &low, WALK_FORWARD, 20)
+	tick_cheat_test_player(&world, &records, registry, &low, WALK_FORWARD, 20)
 	testing.expectf(t, low.position.x > 3.3, "x %v", low.position.x)
 	testing.expectf(t, abs(low.position.y - 2) < 1e-3, "y %v", low.position.y)
 	testing.expect(t, low.on_ground)
 	high := make_test_player(registry, {0.5, 1, 2.5})
-	tick_cheat_test_player(&world, registry, &high, WALK_FORWARD, 20)
+	tick_cheat_test_player(&world, &records, registry, &high, WALK_FORWARD, 20)
 	testing.expectf(t, abs(high.position.x - (3 - PLAYER_WIDTH / 2)) < 1e-3, "x %v", high.position.x)
 	testing.expectf(t, abs(high.position.y - 1) < 1e-3, "y %v", high.position.y)
 	normal := make_test_player(registry, {0.5, 1, 0.5})
-	tick_test_player(&world, registry, &normal, WALK_FORWARD, 60)
+	tick_test_player(&world, &records, registry, &normal, WALK_FORWARD, 60)
 	testing.expectf(t, abs(normal.position.x - (3 - PLAYER_WIDTH / 2)) < 1e-3, "x %v", normal.position.x)
 	testing.expectf(t, abs(normal.position.y - 1) < 1e-3, "y %v", normal.position.y)
 }
@@ -660,9 +678,10 @@ test_cheat_step_up_needs_room_above_the_ledge :: proc(t: ^testing.T) {
 	registry := make_test_registry()
 	stone := test_block(registry, "stone")
 	world := make_floor_world(registry, 32)
+	records: Game_Records
 	set_blocks(&world, stone, {3, 1, 0}, {3, 3, 0}, {4, 3, 0})
 	player := make_test_player(registry, {0.5, 1, 0.5})
-	tick_cheat_test_player(&world, registry, &player, WALK_FORWARD, 60)
+	tick_cheat_test_player(&world, &records, registry, &player, WALK_FORWARD, 60)
 	testing.expectf(t, abs(player.position.x - (3 - PLAYER_WIDTH / 2)) < 1e-3, "x %v", player.position.x)
 	testing.expectf(t, abs(player.position.y - 1) < 1e-3, "y %v", player.position.y)
 }
@@ -674,12 +693,13 @@ test_cheat_jump_reaches_two_blocks :: proc(t: ^testing.T) {
 	registry := make_test_registry()
 	stone := test_block(registry, "stone")
 	world := make_floor_world(registry, 32)
+	records: Game_Records
 	player := make_test_player(registry, {0.5, 1, 0.5})
-	tick_cheat_test_player(&world, registry, &player, {}, 1)
-	tick_cheat_test_player(&world, registry, &player, Input_Frame{pressed = {.Jump}}, 1)
+	tick_cheat_test_player(&world, &records, registry, &player, {}, 1)
+	tick_cheat_test_player(&world, &records, registry, &player, Input_Frame{pressed = {.Jump}}, 1)
 	apex := player.position.y
 	for _ in 0 ..< 90 {
-		tick_cheat_test_player(&world, registry, &player, {}, 1)
+		tick_cheat_test_player(&world, &records, registry, &player, {}, 1)
 		apex = max(apex, player.position.y)
 	}
 	testing.expectf(t, abs(apex - 1 - 2.2) < 0.02, "apex %v", apex - 1)
@@ -691,7 +711,7 @@ test_cheat_jump_reaches_two_blocks :: proc(t: ^testing.T) {
 		move    = {0, 1},
 		pressed = {.Jump},
 	}
-	tick_cheat_test_player(&world, registry, &climber, input, 40)
+	tick_cheat_test_player(&world, &records, registry, &climber, input, 40)
 	testing.expectf(t, climber.position.x > 3.3, "x %v", climber.position.x)
 	testing.expectf(t, climber.position.y > 3 - 1e-3, "y %v", climber.position.y)
 }
@@ -703,13 +723,14 @@ test_cheat_jump_reaches_two_blocks :: proc(t: ^testing.T) {
 test_a_blocked_world_closes_the_double_tap_window :: proc(t: ^testing.T) {
 	registry := make_test_registry()
 	world := make_floor_world(registry, 32)
+	records: Game_Records
 	player := make_test_player(registry, {0.5, 1, 0.5})
-	tick_test_player(&world, registry, &player, {}, 1)
-	tick_test_player(&world, registry, &player, JUMP_TAP, 1)
-	tick_test_player(&world, registry, &player, Input_Frame{developer = true, world_blocked = true}, 1)
-	tick_test_player(&world, registry, &player, JUMP_TAP, 1)
+	tick_test_player(&world, &records, registry, &player, {}, 1)
+	tick_test_player(&world, &records, registry, &player, JUMP_TAP, 1)
+	tick_test_player(&world, &records, registry, &player, Input_Frame{developer = true, world_blocked = true}, 1)
+	tick_test_player(&world, &records, registry, &player, JUMP_TAP, 1)
 	testing.expect(t, !player.flying)
-	tick_test_player(&world, registry, &player, {}, JUMP_DOUBLE_TAP_TICKS + 1)
-	double_tap_jump(&world, registry, &player, JUMP_TAP, 10)
+	tick_test_player(&world, &records, registry, &player, {}, JUMP_DOUBLE_TAP_TICKS + 1)
+	double_tap_jump(&world, &records, registry, &player, JUMP_TAP, 10)
 	testing.expect(t, player.flying)
 }

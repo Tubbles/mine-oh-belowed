@@ -43,7 +43,7 @@ simulation_tick :: proc(state: ^Simulation_State, content_tables: Simulation_Con
 	content := content_with_found_schematics(content_tables, state.unlocks)
 	clock = profile_section(profile, .Unlocks, clock)
 	state.tick += 1
-	advance_statistics_clock(&state.world.statistics, state.tick, state.tick_rate)
+	advance_statistics_clock(&state.records.statistics, state.tick, state.tick_rate)
 	clock = profile_section(profile, .Statistics, clock)
 	serve_developer_requests(state, content)
 	for index in 0 ..< len(state.players) {
@@ -54,7 +54,7 @@ simulation_tick :: proc(state: ^Simulation_State, content_tables: Simulation_Con
 			}
 		}
 		before := movement_toggles(state.players[index])
-		events := tick_player(&state.world, content, state.players[:], index, input, state.tick_rate, state.tick, state.cheat_speed)
+		events := tick_player(&state.world, &state.records, content, state.players[:], index, input, state.tick_rate, state.tick, state.cheat_speed)
 		log_movement_toggles(before, state.players[index], player_tick_toggle_cause(input.just_pressed), state.tick)
 		update_magnetometer(&state.world, content, &state.players[index])
 		for kind in events {
@@ -65,21 +65,21 @@ simulation_tick :: proc(state: ^Simulation_State, content_tables: Simulation_Con
 	newly_obtained := update_recipe_unlocks(&state.unlocks, content.recipes, state.players[:])
 	log_discoveries(&state.quests, content.blocks, content.items, newly_obtained, state.tick)
 	clock = profile_section(profile, .Unlocks, clock)
-	tick_entities(&state.world, content, state.tick_rate, profile)
+	tick_entities(&state.world, &state.records, content, state.tick_rate, profile)
 	clock = profile_now(profile)
-	shipments_before := len(state.world.shipments)
-	apply_launch_requests(&state.world, state.tick)
+	shipments_before := len(state.records.shipments)
+	apply_launch_requests(&state.world, &state.records, state.tick)
 	clock = profile_section(profile, .Launch_Pads, clock)
 	tick_venture(state, content, shipments_before)
 	clock = profile_section(profile, .Venture, clock)
 	apply_research_result(state, content)
 	clock = profile_section(profile, .Research, clock)
-	observe_player_holdings(&state.world.statistics, state.players[:], true)
-	observe_full_inventories(&state.world.statistics, state.players[:])
+	observe_player_holdings(&state.records.statistics, state.players[:], true)
+	observe_full_inventories(&state.records.statistics, state.players[:])
 	clock = profile_section(profile, .Statistics, clock)
 	tick_quests(&state.quests, simulation_quest_context(state, content), &state.world.entities)
 	clock = profile_section(profile, .Quests, clock)
-	tick_world(&state.world, content.blocks, state.tick, simulation_tree_felling(content))
+	tick_world(&state.world, &state.records.leaf_decay, content.blocks, state.tick, simulation_tree_felling(content))
 	profile_section(profile, .World, clock)
 	if profile != nil {
 		profile.ticks += 1
@@ -89,7 +89,7 @@ simulation_tick :: proc(state: ^Simulation_State, content_tables: Simulation_Con
 // Opens the recipes of a technology the labs finished this tick and says
 // so in the message log.
 apply_research_result :: proc(state: ^Simulation_State, content: Simulation_Content) {
-	if technology, finished := apply_finished_research(&state.world.research, &state.unlocks, content.recipes); finished {
+	if technology, finished := apply_finished_research(&state.records.research, &state.unlocks, content.recipes); finished {
 		log_research_complete(&state.quests, state.tick, content.technologies.technologies[technology].name_key)
 	}
 }
@@ -99,7 +99,7 @@ simulation_quest_context :: proc(state: ^Simulation_State, content: Simulation_C
 		registry = content.quests,
 		recipes = content.recipes,
 		items = content.items,
-		statistics = &state.world.statistics,
+		statistics = &state.records.statistics,
 		unlocks = &state.unlocks,
 		tick = state.tick,
 		tick_rate = state.tick_rate,

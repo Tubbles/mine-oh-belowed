@@ -232,11 +232,12 @@ test_power_counters_count_brownouts_and_unpowered_machines :: proc(t: ^testing.T
 	// A lamp in the world with no pole near it counts every tick.
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
 	place_test_entity(&world, content, "lamp", {3, 1, 3})
-	tick_test_entities(&world, content, 10)
-	testing.expect_value(t, world.statistics.unpowered_machine_ticks, 10)
-	testing.expect_value(t, world.statistics.unpowered_machines, 1)
-	testing.expect_value(t, world.statistics.brownout_ticks, 0)
+	tick_test_entities(&world, &records, content, 10)
+	testing.expect_value(t, records.statistics.unpowered_machine_ticks, 10)
+	testing.expect_value(t, records.statistics.unpowered_machines, 1)
+	testing.expect_value(t, records.statistics.brownout_ticks, 0)
 }
 
 // Completes steam and first_pole, so first_research is active.
@@ -356,7 +357,7 @@ test_finished_research_is_announced :: proc(t: ^testing.T) {
 	apply_research_result(&state, content)
 	testing.expect_value(t, len(state.quests.messages), 0)
 	automation := test_technology(content.technologies, "automation")
-	state.world.research.finished, state.world.research.finished_technology = true, automation
+	state.records.research.finished, state.records.research.finished_technology = true, automation
 	apply_research_result(&state, content)
 	testing.expect(t, state.unlocks.researched[automation])
 	expected := Quest_Message{tick = 42, text_key = RESEARCH_COMPLETE_KEY, argument_key = "technology_automation"}

@@ -3,13 +3,11 @@ package game
 import "core:testing"
 
 // Oil, gases and the refinery (work item 0030). Oil worlds stand on the
-// stone floor of make_floor_world (top at y 1) with fluid statistics.
+// stone floor of make_floor_world (top at y 1), with fluid statistics in
+// their records (make_fluid_test_records).
 
 make_oil_world :: proc(content: Simulation_Content) -> World {
-	world := make_floor_world(content.blocks, 32)
-	world.statistics = make_statistics(len(content.items.items), len(content.machines.machines), len(content.blocks.definitions), context.temp_allocator)
-	world.statistics.fluids = make_fluid_statistics(len(content.fluids.fluids), context.temp_allocator)
-	return world
+	return make_floor_world(content.blocks, 32)
 }
 
 test_oil_assembler :: proc(world: ^World, handle: Entity_Handle) -> ^Assembler {
@@ -23,9 +21,9 @@ place_powered_crafting_machine :: proc(world: ^World, content: Simulation_Conten
 	return handle
 }
 
-tick_test_assemblers :: proc(world: ^World, content: Simulation_Content, ticks: int) {
+tick_test_assemblers :: proc(world: ^World, records: ^Game_Records, content: Simulation_Content, ticks: int) {
 	for _ in 0 ..< ticks {
-		tick_assemblers(world, content, TEST_TICK_RATE)
+		tick_assemblers(world, &records.statistics, content, TEST_TICK_RATE)
 	}
 }
 
@@ -103,22 +101,23 @@ make_refinery_world :: proc(content: Simulation_Content) -> (world: World, refin
 test_refinery_splits_crude_oil :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world, refinery := make_refinery_world(content)
-	tick_test_assemblers(&world, content, 299)
+	records := make_fluid_test_records(content)
+	tick_test_assemblers(&world, &records, content, 299)
 	machine := test_oil_assembler(&world, refinery)
 	testing.expect_value(t, machine.state, Assembler_State.Working)
 	testing.expect_value(t, machine.buffers[1].level, 0)
-	tick_test_assemblers(&world, content, 1)
+	tick_test_assemblers(&world, &records, content, 1)
 	machine = test_oil_assembler(&world, refinery)
 	testing.expect_value(t, machine.buffers[0].level, 100)
 	testing.expect_value(t, machine.buffers[1], Fluid_Buffer{fluid = test_fluid(content, "petroleum_gas"), level = 45})
 	testing.expect_value(t, machine.buffers[2], Fluid_Buffer{fluid = test_fluid(content, "light_oil"), level = 30})
 	testing.expect_value(t, machine.buffers[3], Fluid_Buffer{fluid = test_fluid(content, "heavy_oil"), level = 25})
-	fluids := world.statistics.fluids
+	fluids := records.statistics.fluids
 	testing.expect_value(t, fluid_counter(fluids.consumed, test_fluid(content, "crude_oil")), 100)
 	testing.expect_value(t, fluid_counter(fluids.produced, test_fluid(content, "petroleum_gas")), 45)
 	testing.expect_value(t, fluid_counter(fluids.produced, test_fluid(content, "heavy_oil")), 25)
 	// A second craft, then no crude oil left.
-	tick_test_assemblers(&world, content, 301)
+	tick_test_assemblers(&world, &records, content, 301)
 	machine = test_oil_assembler(&world, refinery)
 	testing.expect_value(t, machine.buffers[1].level, 90)
 	testing.expect_value(t, machine.buffers[0].level, 0)
@@ -131,9 +130,10 @@ test_refinery_splits_crude_oil :: proc(t: ^testing.T) {
 test_refinery_outputs_leave_by_their_faces :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world, refinery := make_refinery_world(content)
+	records := make_fluid_test_records(content)
 	pipes := lay_pipes(&world, content, {-1, 1, 2}, {2, 1, 5}, {5, 1, 2})
 	testing.expect_value(t, len(world.entities.fluid_networks.networks), 4)
-	tick_test_assemblers(&world, content, 300)
+	tick_test_assemblers(&world, &records, content, 300)
 	tick_test_fluids(&world, content, 10)
 	expected := [3]string{"petroleum_gas", "light_oil", "heavy_oil"}
 	for id, index in expected {
@@ -149,10 +149,11 @@ test_refinery_outputs_leave_by_their_faces :: proc(t: ^testing.T) {
 test_refinery_refuses_to_mix_on_a_wrong_port :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world, refinery := make_refinery_world(content)
+	records := make_fluid_test_records(content)
 	pipe := lay_pipes(&world, content, {-1, 1, 2})[0]
 	test_pipe(&world, pipe).buffer = {fluid = test_fluid(content, "light_oil"), level = 50}
 	rebuild_fluid_networks(&world.entities, content.machines)
-	tick_test_assemblers(&world, content, 300)
+	tick_test_assemblers(&world, &records, content, 300)
 	tick_test_fluids(&world, content, 10)
 	testing.expect_value(t, test_pipe(&world, pipe).buffer, Fluid_Buffer{fluid = test_fluid(content, "light_oil"), level = 50})
 	testing.expect_value(t, test_oil_assembler(&world, refinery).buffers[1].level, 45)
@@ -166,25 +167,26 @@ test_fluid_byproducts_follow_the_strictness :: proc(t: ^testing.T) {
 	content := make_test_content()
 	gas := test_fluid(content, "petroleum_gas")
 	world, refinery := make_refinery_world(content)
+	records := make_fluid_test_records(content)
 	test_oil_assembler(&world, refinery).buffers[1] = {fluid = gas, level = 200}
-	tick_test_assemblers(&world, content, 10)
+	tick_test_assemblers(&world, &records, content, 10)
 	testing.expect_value(t, test_oil_assembler(&world, refinery).state, Assembler_State.Output_Full)
 	testing.expect_value(t, test_oil_assembler(&world, refinery).buffers[0].level, 200)
 	// Only a flagged byproduct is voided, even in a lenient world.
 	world.settings.byproducts_lenient = true
-	tick_test_assemblers(&world, content, 10)
+	tick_test_assemblers(&world, &records, content, 10)
 	testing.expect_value(t, test_oil_assembler(&world, refinery).state, Assembler_State.Output_Full)
 	refining := content.recipes.recipes[test_recipe(content.recipes, "refining")]
 	refining.fluid_byproducts = {0}
 	lenient_content := content
 	lenient_content.recipes = Recipe_Registry{recipes = {refining}}
-	tick_test_assemblers(&world, lenient_content, 300)
+	tick_test_assemblers(&world, &records, lenient_content, 300)
 	machine := test_oil_assembler(&world, refinery)
 	testing.expect_value(t, machine.buffers[0].level, 100)
 	testing.expect_value(t, machine.buffers[1].level, 200)
 	testing.expect_value(t, machine.buffers[2].level, 30)
-	testing.expect_value(t, fluid_counter(world.statistics.fluids.voided, gas), 45)
-	testing.expect_value(t, fluid_counter(world.statistics.fluids.produced, gas), 0)
+	testing.expect_value(t, fluid_counter(records.statistics.fluids.voided, gas), 45)
+	testing.expect_value(t, fluid_counter(records.statistics.fluids.produced, gas), 0)
 }
 
 // A flare stack beside a pipe; a liquid never enters.
@@ -196,9 +198,9 @@ make_flare_world :: proc(content: Simulation_Content, fluid: string) -> (world: 
 	return
 }
 
-tick_test_fluids_with_statistics :: proc(world: ^World, content: Simulation_Content, ticks: int) {
+tick_test_fluids_with_statistics :: proc(world: ^World, records: ^Game_Records, content: Simulation_Content, ticks: int) {
 	for _ in 0 ..< ticks {
-		tick_fluids(&world.entities, content, TEST_TICK_RATE, &world.statistics)
+		tick_fluids(&world.entities, content, TEST_TICK_RATE, &records.statistics)
 	}
 }
 
@@ -211,23 +213,24 @@ test_flare_stack_burns_gas_with_power :: proc(t: ^testing.T) {
 	content := make_test_content()
 	gas := test_fluid(content, "petroleum_gas")
 	world := make_oil_world(content)
+	records := make_fluid_test_records(content)
 	flare := place_test_fluid_entity(&world, content, "flare_stack", {0, 1, 0})
 	machine := content.machines.machines[test_machine(content.machines, "flare_stack")]
 	test_fluid_machine(&world, flare).buffers[0] = {fluid = gas, level = 200}
-	tick_test_fluids_with_statistics(&world, content, 20)
+	tick_test_fluids_with_statistics(&world, &records, content, 20)
 	testing.expect_value(t, test_fluid_machine(&world, flare).state, Fluid_Machine_State.Unpowered)
 	testing.expect_value(t, test_fluid_machine(&world, flare).buffers[0].level, 200)
 	testing.expect(t, fluid_machine_wants_power(test_fluid_machine(&world, flare)^, machine, content.fluids))
 	test_fluid_machine(&world, flare).power.satisfaction = POWER_FULL
-	tick_test_fluids_with_statistics(&world, content, 10)
+	tick_test_fluids_with_statistics(&world, &records, content, 10)
 	testing.expect_value(t, test_fluid_machine(&world, flare).state, Fluid_Machine_State.Flaring)
 	testing.expect_value(t, test_fluid_machine(&world, flare).buffers[0].level, 190)
-	tick_test_fluids_with_statistics(&world, content, 50)
+	tick_test_fluids_with_statistics(&world, &records, content, 50)
 	testing.expect_value(t, test_fluid_machine(&world, flare).buffers[0].level, 179)
-	testing.expect_value(t, fluid_counter(world.statistics.fluids.voided, gas), 21)
-	testing.expect_value(t, fluid_counter(world.statistics.fluids.consumed, gas), 21)
-	testing.expect_value(t, world.statistics.flared_litres, 21)
-	testing.expect_value(t, hint_counter_value(world.statistics, Hint{counter = .Flared_Litres}), 21)
+	testing.expect_value(t, fluid_counter(records.statistics.fluids.voided, gas), 21)
+	testing.expect_value(t, fluid_counter(records.statistics.fluids.consumed, gas), 21)
+	testing.expect_value(t, records.statistics.flared_litres, 21)
+	testing.expect_value(t, hint_counter_value(records.statistics, Hint{counter = .Flared_Litres}), 21)
 	testing.expect_value(t, test_fluid_machine(&world, flare).state, Fluid_Machine_State.Idle)
 	testing.expect(t, !fluid_machine_wants_power(test_fluid_machine(&world, flare)^, machine, content.fluids))
 }
@@ -240,18 +243,19 @@ test_flare_stack_relieves_only_a_full_network :: proc(t: ^testing.T) {
 	content := make_test_content()
 	gas := test_fluid(content, "petroleum_gas")
 	world := make_oil_world(content)
+	records := make_fluid_test_records(content)
 	flare := place_test_fluid_entity(&world, content, "flare_stack", {0, 1, 0})
 	lay_pipes(&world, content, {1, 1, 0})
 	tank := place_test_fluid_entity(&world, content, "storage_tank", {2, 1, -1})
 	test_fluid_machine(&world, tank).buffers[0] = {fluid = gas, level = 20_000}
 	test_fluid_machine(&world, flare).power.satisfaction = POWER_FULL
-	tick_test_fluids_with_statistics(&world, content, 600)
+	tick_test_fluids_with_statistics(&world, &records, content, 600)
 	testing.expect(t, test_fluid_machine(&world, flare).buffers[0].level > 0)
-	testing.expect_value(t, world.statistics.flared_litres, 0)
+	testing.expect_value(t, records.statistics.flared_litres, 0)
 	testing.expect_value(t, test_fluid_machine(&world, flare).state, Fluid_Machine_State.Idle)
 	test_fluid_machine(&world, tank).buffers[0].level = 24_500
-	tick_test_fluids_with_statistics(&world, content, 600)
-	testing.expect(t, world.statistics.flared_litres > 0)
+	tick_test_fluids_with_statistics(&world, &records, content, 600)
+	testing.expect(t, records.statistics.flared_litres > 0)
 	testing.expect_value(t, test_fluid_machine(&world, flare).state, Fluid_Machine_State.Flaring)
 }
 
@@ -259,15 +263,16 @@ test_flare_stack_relieves_only_a_full_network :: proc(t: ^testing.T) {
 test_flare_stack_refuses_liquids :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world, flare, pipe := make_flare_world(content, "light_oil")
+	records := make_fluid_test_records(content)
 	test_fluid_machine(&world, flare).power.satisfaction = POWER_FULL
-	tick_test_fluids_with_statistics(&world, content, 60)
+	tick_test_fluids_with_statistics(&world, &records, content, 60)
 	testing.expect_value(t, test_pipe(&world, pipe).buffer.level, 100)
 	testing.expect_value(t, test_fluid_machine(&world, flare).buffers[0].level, 0)
 	testing.expect(t, test_fluid_machine(&world, flare).closed[0])
 	testing.expect_value(t, test_fluid_machine(&world, flare).state, Fluid_Machine_State.Idle)
 	// The port closed once, and stays closed without counting again.
-	testing.expect_value(t, world.statistics.mixing_refusals, 1)
-	testing.expect_value(t, hint_counter_value(world.statistics, Hint{counter = .Mixing_Refusals}), 1)
+	testing.expect_value(t, records.statistics.mixing_refusals, 1)
+	testing.expect_value(t, hint_counter_value(records.statistics, Hint{counter = .Mixing_Refusals}), 1)
 }
 
 // Heavy oil 40 and water 30 make 30 light oil, light oil 30 and water 30
@@ -281,11 +286,12 @@ test_cracking_ratios :: proc(t: ^testing.T) {
 	made := [2]i32{30, 20}
 	for pair, index in cases {
 		world := make_oil_world(content)
+		records := make_fluid_test_records(content)
 		unit := place_powered_crafting_machine(&world, content, "cracking_unit", {0, 1, 0})
 		machine := test_oil_assembler(&world, unit)
 		machine.buffers[0] = {fluid = test_fluid(content, pair[0]), level = 200}
 		machine.buffers[1] = {fluid = water, level = 200}
-		tick_test_assemblers(&world, content, 120)
+		tick_test_assemblers(&world, &records, content, 120)
 		machine = test_oil_assembler(&world, unit)
 		testing.expect_value(t, machine.recipe, test_recipe(content.recipes, index == 0 ? "heavy_oil_cracking" : "light_oil_cracking"))
 		testing.expect_value(t, machine.buffers[0].level, 200 - used[index])
@@ -300,11 +306,12 @@ test_cracking_ratios :: proc(t: ^testing.T) {
 test_cracking_unit_does_not_draw_from_its_output :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_oil_world(content)
+	records := make_fluid_test_records(content)
 	unit := place_powered_crafting_machine(&world, content, "cracking_unit", {0, 1, 0})
 	machine := test_oil_assembler(&world, unit)
 	machine.buffers[1] = {fluid = test_fluid(content, "water"), level = 200}
 	machine.buffers[2] = {fluid = test_fluid(content, "light_oil"), level = 100}
-	tick_test_assemblers(&world, content, 200)
+	tick_test_assemblers(&world, &records, content, 200)
 	machine = test_oil_assembler(&world, unit)
 	testing.expect_value(t, machine.buffers[2].level, 100)
 	testing.expect_value(t, machine.state, Assembler_State.No_Fluid)
@@ -332,20 +339,21 @@ test_tar_pit_pump_placement :: proc(t: ^testing.T) {
 test_tar_pit_pump_pumps_crude_oil :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_oil_world(content)
+	records := make_fluid_test_records(content)
 	pump := place_test_fluid_entity(&world, content, "tar_pit_pump", {0, 1, 0})
-	tick_test_fluids_with_statistics(&world, content, 100)
+	tick_test_fluids_with_statistics(&world, &records, content, 100)
 	testing.expect_value(t, test_fluid_machine(&world, pump).state, Fluid_Machine_State.Unpowered)
 	testing.expect_value(t, test_fluid_machine(&world, pump).buffers[0].level, 0)
 	test_fluid_machine(&world, pump).power.satisfaction = POWER_FULL
-	tick_test_fluids_with_statistics(&world, content, 600)
+	tick_test_fluids_with_statistics(&world, &records, content, 600)
 	crude := test_fluid(content, "crude_oil")
 	testing.expect_value(t, test_fluid_machine(&world, pump).buffers[0], Fluid_Buffer{fluid = crude, level = 100})
-	testing.expect_value(t, fluid_counter(world.statistics.fluids.produced, crude), 100)
+	testing.expect_value(t, fluid_counter(records.statistics.fluids.produced, crude), 100)
 	// At half power it pumps every other tick.
 	test_fluid_machine(&world, pump).power.satisfaction = POWER_FULL / 2
-	tick_test_fluids_with_statistics(&world, content, 1200)
+	tick_test_fluids_with_statistics(&world, &records, content, 1200)
 	testing.expect_value(t, test_fluid_machine(&world, pump).buffers[0].level, 200)
-	tick_test_fluids_with_statistics(&world, content, 100)
+	tick_test_fluids_with_statistics(&world, &records, content, 100)
 	testing.expect_value(t, test_fluid_machine(&world, pump).state, Fluid_Machine_State.Output_Full)
 	testing.expect_value(t, test_fluid_machine(&world, pump).buffers[0].level, 200)
 }
@@ -468,10 +476,11 @@ build_oil_plant :: proc(world: ^World, content: Simulation_Content) -> (refinery
 test_oil_simulation_is_deterministic :: proc(t: ^testing.T) {
 	content := make_test_content()
 	worlds := [2]World{make_oil_world(content), make_oil_world(content)}
+	all_records := [2]Game_Records{make_fluid_test_records(content), make_fluid_test_records(content)}
 	refinery, unit, flare: Entity_Handle
-	for &world in worlds {
+	for &world, index in worlds {
 		refinery, unit, flare = build_oil_plant(&world, content)
-		tick_test_entities(&world, content, 1200)
+		tick_test_entities(&world, &all_records[index], content, 1200)
 	}
 	first, second := &worlds[0].entities, &worlds[1].entities
 	for machine, index in first.fluid_machines.entries {
@@ -488,8 +497,8 @@ test_oil_simulation_is_deterministic :: proc(t: ^testing.T) {
 	for pipe, index in first.pipes.entries {
 		testing.expect_value(t, pipe.buffer, second.pipes.entries[index].buffer)
 	}
-	world := &worlds[0]
-	fluids := world.statistics.fluids
+	world, records := &worlds[0], &all_records[0]
+	fluids := records.statistics.fluids
 	testing.expect(t, fluid_counter(fluids.produced, test_fluid(content, "crude_oil")) > 0)
 	gas := test_fluid(content, "petroleum_gas")
 	testing.expectf(t, fluid_counter(fluids.produced, gas) == 90, "gas produced %d", fluid_counter(fluids.produced, gas))

@@ -41,16 +41,16 @@ make_venture_test :: proc() -> Venture_Test {
 }
 
 start_test_venture :: proc(test: ^Venture_Test) {
-	test.state.world.statistics.placed[find_machine_of_kind(test.content.machines, .Launch_Pad)] = 1
+	test.state.records.statistics.placed[find_machine_of_kind(test.content.machines, .Launch_Pad)] = 1
 }
 
 // A shipment of the stacks at the current tick, served like a launch.
 launch_test_cargo :: proc(test: ^Venture_Test, stacks: []Item_Stack) {
-	world := &test.state.world
+	records := &test.state.records
 	shipment := make_shipment(stacks, test.state.tick)
-	append(&world.shipments, shipment)
-	record_shipment(&world.statistics, shipment)
-	tick_venture(&test.state, test.content, len(world.shipments) - 1)
+	append(&records.shipments, shipment)
+	record_shipment(&records.statistics, shipment)
+	tick_venture(&test.state, test.content, len(records.shipments) - 1)
 }
 
 test_stack :: proc(test: ^Venture_Test, id: string, count: u16) -> Item_Stack {
@@ -117,7 +117,7 @@ test_launch_posts_a_message_and_a_toast :: proc(t: ^testing.T) {
 	// tests, so a key that is its own template shows the substitution.
 	table, _ := parse_string_table(#load("../data/strings/en.sjson"), context.temp_allocator)
 	testing.expect(t, strings.contains(table.entries[SHIPMENT_LAUNCHED_KEY], MESSAGE_CARGO_MARK))
-	rendered := quest_message_text(Quest_Message{text_key = "Shipped {cargo} for {value}", value = 5, shipment = 1}, test.state.world.shipments[:], test.content.items)
+	rendered := quest_message_text(Quest_Message{text_key = "Shipped {cargo} for {value}", value = 5, shipment = 1}, test.state.records.shipments[:], test.content.items)
 	testing.expect_value(t, rendered, "Shipped item_iron_plate 50, item_steel 20 for 5")
 }
 
@@ -127,13 +127,13 @@ test_contract_offers_are_gated_and_deterministic :: proc(t: ^testing.T) {
 	tests := [2]Venture_Test{make_venture_test(), make_venture_test()}
 	registry := tests[0].content.contracts
 	// No launch pad placed yet: no offers.
-	offer_contracts(&tests[0].state.world, &tests[0].state.quests, tests[0].content, 100)
-	testing.expect_value(t, tests[0].state.world.contracts.open_count, 0)
+	offer_contracts(&tests[0].state.records, tests[0].state.world.settings.seed, &tests[0].state.quests, tests[0].content, 100)
+	testing.expect_value(t, tests[0].state.records.contracts.open_count, 0)
 	for &test in tests {
 		start_test_venture(&test)
-		offer_contracts(&test.state.world, &test.state.quests, test.content, 100)
+		offer_contracts(&test.state.records, test.state.world.settings.seed, &test.state.quests, test.content, 100)
 	}
-	first, second := tests[0].state.world.contracts, tests[1].state.world.contracts
+	first, second := tests[0].state.records.contracts, tests[1].state.records.contracts
 	testing.expect_value(t, first, second)
 	testing.expect_value(t, first.open_count, MAXIMUM_OPEN_CONTRACTS)
 	for open in first.open {
@@ -176,9 +176,9 @@ test_contract_pool_cycles_without_repeats :: proc(t: ^testing.T) {
 	test := make_venture_test()
 	start_test_venture(&test)
 	registry := test.content.contracts
-	contracts := &test.state.world.contracts
+	contracts := &test.state.records.contracts
 	for round in 0 ..< 40 {
-		offer_contracts(&test.state.world, &test.state.quests, test.content, u64(round) * 997)
+		offer_contracts(&test.state.records, test.state.world.settings.seed, &test.state.quests, test.content, u64(round) * 997)
 		open := open_contracts(contracts)
 		testing.expect_value(t, len(open), MAXIMUM_OPEN_CONTRACTS)
 		for entry, index in open {
@@ -206,16 +206,17 @@ test_contract_completes_on_time :: proc(t: ^testing.T) {
 	context.allocator = context.temp_allocator
 	test := make_venture_test()
 	boards := test_contract(test.content.contracts, "control_boards")
-	offer_contract(&test.state.world.contracts, boards, 0)
+	offer_contract(&test.state.records.contracts, boards, 0)
 	test.state.tick = 60 * TEST_TICK_RATE
 	launch_test_cargo(&test, {test_stack(&test, "electronic_circuit", 300), test_stack(&test, "iron_plate", 10)})
 	world := &test.state.world
-	testing.expect_value(t, world.contracts.open_count, 0)
-	testing.expect_value(t, world.statistics.contracts_completed, 1)
-	testing.expect_value(t, world.statistics.contracts_late, 0)
+	records := &test.state.records
+	testing.expect_value(t, records.contracts.open_count, 0)
+	testing.expect_value(t, records.statistics.contracts_completed, 1)
+	testing.expect_value(t, records.statistics.contracts_late, 0)
 	testing.expect(t, slice.equal(test.state.quests.pending_rewards[:], []Item_Stack{test_stack(&test, "silicon", 60), test_stack(&test, "aluminium_plate", 40)}))
-	testing.expect_value(t, world.venture_credit, 20)
-	testing.expect_value(t, world.statistics.credit_earned, 20)
+	testing.expect_value(t, records.venture_credit, 20)
+	testing.expect_value(t, records.statistics.credit_earned, 20)
 	fulfilled, found := message_logged(test.state.quests, CONTRACT_FULFILLED_KEY)
 	testing.expect(t, found)
 	testing.expect_value(t, fulfilled.argument_key, "contract_control_boards")
@@ -237,11 +238,11 @@ test_contract_completes_late_with_the_late_share :: proc(t: ^testing.T) {
 	test := make_venture_test()
 	registry := test.content.contracts
 	boards := test_contract(registry, "control_boards")
-	offer_contract(&test.state.world.contracts, boards, 0)
-	test.state.tick = contract_deadline_tick(test.state.world.contracts.open[0], registry.contracts[boards], TEST_TICK_RATE) + 1
+	offer_contract(&test.state.records.contracts, boards, 0)
+	test.state.tick = contract_deadline_tick(test.state.records.contracts.open[0], registry.contracts[boards], TEST_TICK_RATE) + 1
 	testing.expect_value(t, test.state.tick, 30 * 60 * TEST_TICK_RATE + 1)
 	launch_test_cargo(&test, {test_stack(&test, "electronic_circuit", 300)})
-	statistics := test.state.world.statistics
+	statistics := test.state.records.statistics
 	testing.expect_value(t, statistics.contracts_completed, 1)
 	testing.expect_value(t, statistics.contracts_late, 1)
 	testing.expect(t, slice.equal(test.state.quests.pending_rewards[:], []Item_Stack{test_stack(&test, "silicon", 30), test_stack(&test, "aluminium_plate", 20)}))
@@ -260,27 +261,27 @@ test_partial_deliveries_accumulate_oldest_first :: proc(t: ^testing.T) {
 	context.allocator = context.temp_allocator
 	test := make_venture_test()
 	registry := test.content.contracts
-	world := &test.state.world
-	offer_contract(&world.contracts, test_contract(registry, "survey_fee"), 0)
+	records := &test.state.records
+	offer_contract(&records.contracts, test_contract(registry, "survey_fee"), 0)
 	launch_test_cargo(&test, {test_stack(&test, "concrete", 150), test_stack(&test, "iron_plate", 100)})
-	testing.expect_value(t, world.contracts.open_count, 1)
-	testing.expect_value(t, world.contracts.open[0].delivered, [MAXIMUM_CONTRACT_REQUESTS]u32{150, 100, 0, 0})
-	testing.expect_value(t, world.venture_credit, 0)
+	testing.expect_value(t, records.contracts.open_count, 1)
+	testing.expect_value(t, records.contracts.open[0].delivered, [MAXIMUM_CONTRACT_REQUESTS]u32{150, 100, 0, 0})
+	testing.expect_value(t, records.venture_credit, 0)
 	launch_test_cargo(&test, {test_stack(&test, "concrete", 60)})
-	testing.expect_value(t, world.contracts.open_count, 0)
-	testing.expect_value(t, world.statistics.contracts_completed, 1)
-	testing.expect_value(t, world.statistics.surveys_bought, 1)
-	testing.expect_value(t, world.venture_credit, 10 * 3)
+	testing.expect_value(t, records.contracts.open_count, 0)
+	testing.expect_value(t, records.statistics.contracts_completed, 1)
+	testing.expect_value(t, records.statistics.surveys_bought, 1)
+	testing.expect_value(t, records.venture_credit, 10 * 3)
 	_, surveyed := message_logged(test.state.quests, ORBITAL_SURVEY_KEY)
 	testing.expect(t, surveyed)
 	// Two contracts want steel: the older one is served first.
 	girders, expansion := test_contract(registry, "station_girders"), test_contract(registry, "station_expansion")
-	offer_contract(&world.contracts, girders, 10)
-	offer_contract(&world.contracts, expansion, 20)
+	offer_contract(&records.contracts, girders, 10)
+	offer_contract(&records.contracts, expansion, 20)
 	launch_test_cargo(&test, {test_stack(&test, "steel", 250)})
-	testing.expect_value(t, world.contracts.open_count, 1)
-	testing.expect_value(t, int(world.contracts.open[0].contract), expansion)
-	testing.expect_value(t, world.contracts.open[0].delivered[0], 50)
+	testing.expect_value(t, records.contracts.open_count, 1)
+	testing.expect_value(t, int(records.contracts.open[0].contract), expansion)
+	testing.expect_value(t, records.contracts.open[0].delivered[0], 50)
 }
 
 @(test)
@@ -295,8 +296,8 @@ test_venture_credit_arithmetic :: proc(t: ^testing.T) {
 	testing.expect_value(t, cargo_value(cargo, items), 100)
 	launch_test_cargo(&test, {test_stack(&test, "iron_plate", 50), test_stack(&test, "steel", 20)})
 	launch_test_cargo(&test, {test_stack(&test, "gold_plate", 3)})
-	testing.expect_value(t, test.state.world.venture_credit, 340 + 60)
-	testing.expect_value(t, test.state.world.statistics.credit_earned, 400)
+	testing.expect_value(t, test.state.records.venture_credit, 340 + 60)
+	testing.expect_value(t, test.state.records.statistics.credit_earned, 400)
 	sold, found := message_logged(test.state.quests, FREE_TRADE_KEY)
 	testing.expect(t, found)
 	testing.expect_value(t, sold.value, 340)
@@ -310,7 +311,8 @@ test_catalogue_purchase_lands_in_the_capsule :: proc(t: ^testing.T) {
 	test := make_venture_test()
 	registry := test.content.contracts
 	world := &test.state.world
-	world.venture_credit = 1000
+	records := &test.state.records
+	records.venture_credit = 1000
 	silicon, aluminium := -1, -1
 	for entry, index in registry.catalogue {
 		if !entry.orbital_survey && entry.item == test_item(test.content.items, "silicon") {
@@ -320,13 +322,13 @@ test_catalogue_purchase_lands_in_the_capsule :: proc(t: ^testing.T) {
 			aluminium = index
 		}
 	}
-	testing.expect(t, order_from_catalogue(world, registry, silicon, {}))
+	testing.expect(t, order_from_catalogue(records, registry, silicon, {}))
 	// 600 is promised already, 750 more is not covered.
-	testing.expect(t, !order_from_catalogue(world, registry, aluminium, {}))
-	testing.expect_value(t, world.venture_credit, 1000)
-	tick_venture(&test.state, test.content, len(world.shipments))
-	testing.expect_value(t, world.venture_credit, 400)
-	testing.expect_value(t, len(world.catalogue_orders), 0)
+	testing.expect(t, !order_from_catalogue(records, registry, aluminium, {}))
+	testing.expect_value(t, records.venture_credit, 1000)
+	tick_venture(&test.state, test.content, len(records.shipments))
+	testing.expect_value(t, records.venture_credit, 400)
+	testing.expect_value(t, len(records.catalogue_orders), 0)
 	tick_quests(&test.state.quests, simulation_quest_context(&test.state, test.content), &world.entities)
 	capsule := entity_slots(&world.entities, test.state.quests.capsule)
 	testing.expect_value(t, slots_count_of(capsule, test_item(test.content.items, "silicon")), 50)
@@ -335,11 +337,11 @@ test_catalogue_purchase_lands_in_the_capsule :: proc(t: ^testing.T) {
 	testing.expect_value(t, ordered.argument_key, "item_silicon")
 	testing.expect_value(t, ordered.value, 600)
 	// The survey from the catalogue.
-	world.venture_credit = 3000
-	testing.expect(t, order_from_catalogue(world, registry, len(registry.catalogue) - 1, {}))
-	tick_venture(&test.state, test.content, len(world.shipments))
-	testing.expect_value(t, world.venture_credit, 0)
-	testing.expect_value(t, world.statistics.surveys_bought, 1)
+	records.venture_credit = 3000
+	testing.expect(t, order_from_catalogue(records, registry, len(registry.catalogue) - 1, {}))
+	tick_venture(&test.state, test.content, len(records.shipments))
+	testing.expect_value(t, records.venture_credit, 0)
+	testing.expect_value(t, records.statistics.surveys_bought, 1)
 }
 
 // Surface veins whose centre is within the radius join the assayed
@@ -349,26 +351,26 @@ test_catalogue_purchase_lands_in_the_capsule :: proc(t: ^testing.T) {
 test_orbital_survey_reveals_surface_veins :: proc(t: ^testing.T) {
 	context.allocator = context.temp_allocator
 	test := make_venture_test()
-	world := &test.state.world
+	records := &test.state.records
 	veins := []Vein {
 		{id = {region = {0, 0}, index = 0}, centre = {100, 40, 100}, radius = 5},
 		{id = {region = {2, 0}, index = 0}, centre = {300, 40, 0}, radius = 5},
 		{id = {region = {0, 0}, index = 1, layer = .Deep}, centre = {10, -40, 10}, radius = 5},
 		{id = {region = {0, -2}, index = 0}, centre = {0, 40, -256}, radius = 3},
 	}
-	testing.expect_value(t, reveal_surface_veins(world, veins, {0, 0, 0}, ORBITAL_SURVEY_RADIUS), 2)
-	testing.expect_value(t, reveal_surface_veins(world, veins, {0, 0, 0}, ORBITAL_SURVEY_RADIUS), 0)
-	testing.expect_value(t, len(world.assayed_veins), 2)
-	testing.expect_value(t, world.assayed_veins[0].centre, World_Coordinate{100, 40, 100})
+	testing.expect_value(t, reveal_surface_veins(&records.assayed_veins, veins, {0, 0, 0}, ORBITAL_SURVEY_RADIUS), 2)
+	testing.expect_value(t, reveal_surface_veins(&records.assayed_veins, veins, {0, 0, 0}, ORBITAL_SURVEY_RADIUS), 0)
+	testing.expect_value(t, len(records.assayed_veins), 2)
+	testing.expect_value(t, records.assayed_veins[0].centre, World_Coordinate{100, 40, 100})
 	generator := make_test_generator(DEFAULT_WORLD_SEED)
 	content := test.content
 	content.generator = &generator
-	clear(&world.assayed_veins)
+	clear(&records.assayed_veins)
 	run_orbital_survey(&test.state, content, {0, 60, 0})
 	charted, _ := message_logged(test.state.quests, ORBITAL_SURVEY_KEY)
 	testing.expect(t, charted.value > 0)
-	testing.expect_value(t, u64(len(world.assayed_veins)), charted.value)
-	for assayed in world.assayed_veins {
+	testing.expect_value(t, u64(len(records.assayed_veins)), charted.value)
+	for assayed in records.assayed_veins {
 		testing.expect(t, assayed.vein.layer == .Surface)
 		testing.expect(t, i64(assayed.centre.x) * i64(assayed.centre.x) + i64(assayed.centre.z) * i64(assayed.centre.z) <= ORBITAL_SURVEY_RADIUS * ORBITAL_SURVEY_RADIUS)
 	}
@@ -433,12 +435,13 @@ test_mining_productivity_multiplies_drill_output :: proc(t: ^testing.T) {
 	context.allocator = context.temp_allocator
 	content := make_test_content()
 	world := make_drill_world(content)
-	world.research.levels[test_technology(content.technologies, "mining_productivity")] = 5
+	records := make_test_records(content)
+	records.research.levels[test_technology(content.technologies, "mining_productivity")] = 5
 	vein := add_test_vein(&world, content, "iron", {1, 1}, 2, IRON_TEST_VEIN)
 	place_test_drill(&world, content, {0, 1, 0}, 0, vein)
 	chest := place_test_entity(&world, content, "wooden_chest", {2, 1, 0})
 	hematite, gravel := test_item(content.items, "hematite"), test_item(content.items, "gravel")
-	tick_test_entities(&world, content, 3600)
+	tick_test_entities(&world, &records, content, 3600)
 	testing.expect_value(t, vein_remaining_total(registered_vein(&world, vein)^), 10_000 - 18)
 	testing.expect_value(t, chest_count_of(&world, chest, hematite) + chest_count_of(&world, chest, gravel), 27)
 	// Past 100 percent a draw can bring two bonus units.

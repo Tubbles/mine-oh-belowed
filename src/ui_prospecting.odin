@@ -20,9 +20,9 @@ core_sample_area_size :: proc() -> [2]f32 {
 }
 
 // Report, sampling, or waiting for power.
-core_sample_state_text :: proc(world: ^World, drill: Core_Sample_Drill) -> string {
+core_sample_state_text :: proc(core_samples: []Core_Sample, drill: Core_Sample_Drill) -> string {
 	switch {
-	case core_sample_of(world, drill) != nil:
+	case core_sample_of(core_samples, drill) != nil:
 		return text("core_sample_reported")
 	case !power_is_on(drill.power):
 		return text("power_no_network")
@@ -71,11 +71,11 @@ core_sample_vein_lines :: proc(sample: Core_Sample, veins: Vein_Content, items: 
 
 core_sample_panel_region :: proc(state: ^Ui_State, area: Ui_Rectangle, drill: Core_Sample_Drill, screen_context: Screen_Context) {
 	content := area
-	world := screen_context.world
+	core_samples := screen_context.records.core_samples[:]
 	machine := screen_context.machines.machines[drill.machine]
-	detail_line(state, &content, core_sample_state_text(world, drill), UI_DIM_TEXT_COLOR)
+	detail_line(state, &content, core_sample_state_text(core_samples, drill), UI_DIM_TEXT_COLOR)
 	machine_bar(state, cut_top(&content, UI_ROW_HEIGHT), core_sample_fraction(drill, machine, screen_context.tick_rate))
-	sample := core_sample_of(world, drill)
+	sample := core_sample_of(core_samples, drill)
 	if sample == nil {
 		return
 	}

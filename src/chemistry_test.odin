@@ -125,28 +125,29 @@ test_wood_gasifier_and_its_byproduct :: proc(t: ^testing.T) {
 	content := make_test_content()
 	wood_gas, charcoal := test_fluid(content, "wood_gas"), test_item(content.items, "charcoal")
 	world := make_oil_world(content)
+	records := make_fluid_test_records(content)
 	handle := place_powered_crafting_machine(&world, content, "wood_gasifier", {0, 1, 0})
 	gasifier := test_oil_assembler(&world, handle)
 	gasifier.slots[0] = {test_item(content.items, "log"), 12}
-	tick_test_assemblers(&world, content, 300)
+	tick_test_assemblers(&world, &records, content, 300)
 	gasifier = test_oil_assembler(&world, handle)
 	testing.expect_value(t, gasifier.recipe, test_recipe(content.recipes, "wood_gasification"))
 	testing.expect_value(t, gasifier.slots[0].count, 8)
 	testing.expect_value(t, gasifier.slots[1], Item_Stack{charcoal, 1})
 	testing.expect_value(t, gasifier.buffers[0], Fluid_Buffer{fluid = wood_gas, level = 60})
-	testing.expect_value(t, fluid_counter(world.statistics.fluids.produced, wood_gas), 60)
-	testing.expect_value(t, item_counter(world.statistics.produced, charcoal), 1)
+	testing.expect_value(t, fluid_counter(records.statistics.fluids.produced, wood_gas), 60)
+	testing.expect_value(t, item_counter(records.statistics.produced, charcoal), 1)
 	gasifier.slots[1].count = 100
-	tick_test_assemblers(&world, content, 10)
+	tick_test_assemblers(&world, &records, content, 10)
 	gasifier = test_oil_assembler(&world, handle)
 	testing.expect_value(t, gasifier.state, Assembler_State.Output_Full)
 	testing.expect_value(t, gasifier.slots[0].count, 8)
 	world.settings.byproducts_lenient = true
-	tick_test_assemblers(&world, content, 300)
+	tick_test_assemblers(&world, &records, content, 300)
 	gasifier = test_oil_assembler(&world, handle)
 	testing.expect_value(t, gasifier.slots[0].count, 4)
 	testing.expect_value(t, gasifier.buffers[0].level, 120)
-	testing.expect_value(t, item_counter(world.statistics.voided, charcoal), 1)
+	testing.expect_value(t, item_counter(records.statistics.voided, charcoal), 1)
 }
 
 // Asphalt and science pack 2 are assembler recipes at speed 0.5.
@@ -281,10 +282,11 @@ build_chemistry_plant :: proc(world: ^World, content: Simulation_Content) -> (pl
 test_chemistry_simulation_is_deterministic :: proc(t: ^testing.T) {
 	content := make_test_content()
 	worlds := [2]World{make_oil_world(content), make_oil_world(content)}
+	all_records := [2]Game_Records{make_fluid_test_records(content), make_fluid_test_records(content)}
 	plant: Chemistry_Plant
-	for &world in worlds {
+	for &world, index in worlds {
 		plant = build_chemistry_plant(&world, content)
-		tick_test_entities(&world, content, 1200)
+		tick_test_entities(&world, &all_records[index], content, 1200)
 	}
 	first, second := &worlds[0].entities, &worlds[1].entities
 	for machine, index in first.assemblers.entries {
@@ -300,15 +302,15 @@ test_chemistry_simulation_is_deterministic :: proc(t: ^testing.T) {
 	for pipe, index in first.pipes.entries {
 		testing.expect_value(t, pipe.buffer, second.pipes.entries[index].buffer)
 	}
-	world := &worlds[0]
+	world, records := &worlds[0], &all_records[0]
 	plastic := test_item(content.items, "plastic_bar")
 	fossil := pool_get(&world.entities.assemblers, plant.fossil_plant)
 	renewable := pool_get(&world.entities.assemblers, plant.renewable_plant)
 	testing.expectf(t, fossil.slots[1].item == plastic && fossil.slots[1].count > 0, "fossil plastic %v", fossil.slots[1])
 	testing.expectf(t, renewable.slots[1].item == plastic && renewable.slots[1].count > 0, "renewable plastic %v", renewable.slots[1])
 	testing.expect(t, fossil.slots[0].count < 10 && renewable.slots[0].count < 10)
-	testing.expect(t, fluid_counter(world.statistics.fluids.consumed, test_fluid(content, "petroleum_gas")) > 0)
-	testing.expect(t, fluid_counter(world.statistics.fluids.consumed, test_fluid(content, "wood_gas")) > 0)
-	testing.expect(t, fluid_counter(world.statistics.fluids.produced, test_fluid(content, "crude_oil")) > 0)
-	testing.expect_value(t, item_counter(world.statistics.produced, plastic), u64(fossil.slots[1].count + renewable.slots[1].count))
+	testing.expect(t, fluid_counter(records.statistics.fluids.consumed, test_fluid(content, "petroleum_gas")) > 0)
+	testing.expect(t, fluid_counter(records.statistics.fluids.consumed, test_fluid(content, "wood_gas")) > 0)
+	testing.expect(t, fluid_counter(records.statistics.fluids.produced, test_fluid(content, "crude_oil")) > 0)
+	testing.expect_value(t, item_counter(records.statistics.produced, plastic), u64(fossil.slots[1].count + renewable.slots[1].count))
 }

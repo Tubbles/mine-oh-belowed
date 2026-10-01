@@ -67,9 +67,9 @@ simulation_tree_felling :: proc(content: Simulation_Content) -> Tree_Felling {
 }
 
 // After the log at position was mined.
-fell_tree :: proc(world: ^World, registry: Block_Registry, felling: Tree_Felling, position: World_Coordinate) {
+fell_tree :: proc(world: ^World, leaf_decay: ^Leaf_Decay, registry: Block_Registry, felling: Tree_Felling, position: World_Coordinate) {
 	top := drop_logs_above(world, registry, felling, position)
-	queue_felled_leaves(world, felling.blocks, position, top)
+	queue_felled_leaves(world, leaf_decay, felling.blocks, position, top)
 }
 
 // Every log straight above position, up to FEATURE_MAXIMUM_HEIGHT, turns
@@ -92,14 +92,14 @@ drop_logs_above :: proc(world: ^World, registry: Block_Registry, felling: Tree_F
 // Every leaves block within LEAF_REACH of the felled column horizontally,
 // from LEAF_SUPPORT_DISTANCE below the mined block to LEAF_REACH above the
 // highest felled log.
-queue_felled_leaves :: proc(world: ^World, blocks: Tree_Blocks, position: World_Coordinate, top: i32) {
+queue_felled_leaves :: proc(world: ^World, leaf_decay: ^Leaf_Decay, blocks: Tree_Blocks, position: World_Coordinate, top: i32) {
 	for y in position.y - LEAF_SUPPORT_DISTANCE ..= top + LEAF_REACH {
 		for dz in i32(-LEAF_REACH) ..= LEAF_REACH {
 			for dx in i32(-LEAF_REACH) ..= LEAF_REACH {
 				cell := World_Coordinate{position.x + dx, y, position.z + dz}
-				if block_is_tree_leaves(blocks, world_get_block(world, cell)) && cell not_in world.leaf_decay.scheduled {
-					world.leaf_decay.scheduled[cell] = {}
-					append(&world.leaf_decay.felled, cell)
+				if block_is_tree_leaves(blocks, world_get_block(world, cell)) && cell not_in leaf_decay.scheduled {
+					leaf_decay.scheduled[cell] = {}
+					append(&leaf_decay.felled, cell)
 				}
 			}
 		}
@@ -146,7 +146,7 @@ leaf_is_supported :: proc(world: ^World, blocks: Tree_Blocks, position: World_Co
 	return false
 }
 
-decay_leaf :: proc(world: ^World, registry: Block_Registry, felling: Tree_Felling, position: World_Coordinate, tick: u64) {
+decay_leaf :: proc(world: ^World, leaf_decay: ^Leaf_Decay, registry: Block_Registry, felling: Tree_Felling, position: World_Coordinate, tick: u64) {
 	block := world_get_block(world, position)
 	if !block_is_tree_leaves(felling.blocks, block) || leaf_is_supported(world, felling.blocks, position) {
 		return
@@ -164,7 +164,7 @@ decay_leaf :: proc(world: ^World, registry: Block_Registry, felling: Tree_Fellin
 	for offset in direction_offsets {
 		neighbour := position + World_Coordinate(offset)
 		if block_is_tree_leaves(felling.blocks, world_get_block(world, neighbour)) {
-			schedule_leaf_decay(&world.leaf_decay, neighbour, leaf_decay_due_tick(neighbour, tick))
+			schedule_leaf_decay(leaf_decay, neighbour, leaf_decay_due_tick(neighbour, tick))
 		}
 	}
 }
@@ -187,8 +187,7 @@ take_due_leaf_decays :: proc(decay: ^Leaf_Decay, tick: u64, maximum: int) -> []W
 
 // Gives this tick's felled leaves their due ticks, then decays the due
 // ones. Returns how many updates ran.
-run_leaf_decay :: proc(world: ^World, registry: Block_Registry, felling: Tree_Felling, tick: u64, maximum_decays: int) -> int {
-	decay := &world.leaf_decay
+run_leaf_decay :: proc(world: ^World, decay: ^Leaf_Decay, registry: Block_Registry, felling: Tree_Felling, tick: u64, maximum_decays: int) -> int {
 	for position in decay.felled {
 		append(&decay.updates, Leaf_Decay_Update{due_tick = leaf_decay_due_tick(position, tick), position = position})
 	}
@@ -199,7 +198,7 @@ run_leaf_decay :: proc(world: ^World, registry: Block_Registry, felling: Tree_Fe
 	due := take_due_leaf_decays(decay, tick, maximum_decays)
 	for position in due {
 		delete_key(&decay.scheduled, position)
-		decay_leaf(world, registry, felling, position, tick)
+		decay_leaf(world, decay, registry, felling, position, tick)
 	}
 	return len(due)
 }

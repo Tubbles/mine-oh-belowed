@@ -18,8 +18,8 @@ import "generation_seed"
 //   orbital survey runs), cut to late_percent (rounded down, at least one
 //   of each item) past its deadline. Contracts never fail.
 // - Cargo no contract took is sold at the items' prices into
-//   World.venture_credit.
-// - Catalogue orders from the pad panel wait on the world until the next
+//   Game_Records.venture_credit.
+// - Catalogue orders from the pad panel wait in the records until the next
 //   tick, which deducts the credit and queues the items for the capsule
 //   or runs the survey.
 // - The orbital survey adds every surface vein whose centre lies within
@@ -131,18 +131,18 @@ offer_contract :: proc(state: ^Contract_State, contract: int, tick: u64) {
 }
 
 // Fills every free slot it can, each with Mission Control's line.
-offer_contracts :: proc(world: ^World, quests: ^Quest_State, content: Simulation_Content, tick: u64) {
-	if !venture_started(world.statistics, content.machines) {
+offer_contracts :: proc(records: ^Game_Records, seed: u64, quests: ^Quest_State, content: Simulation_Content, tick: u64) {
+	if !venture_started(records.statistics, content.machines) {
 		return
 	}
-	tier := contract_tier(content.contracts, world.statistics.rockets_launched)
-	for world.contracts.open_count < MAXIMUM_OPEN_CONTRACTS {
-		candidates := offer_candidates(content.contracts, world.contracts, tier)
-		chosen := choose_contract(candidates, world.settings.seed, tick, int(world.contracts.open_count))
+	tier := contract_tier(content.contracts, records.statistics.rockets_launched)
+	for records.contracts.open_count < MAXIMUM_OPEN_CONTRACTS {
+		candidates := offer_candidates(content.contracts, records.contracts, tier)
+		chosen := choose_contract(candidates, seed, tick, int(records.contracts.open_count))
 		if chosen < 0 {
 			return
 		}
-		offer_contract(&world.contracts, chosen, tick)
+		offer_contract(&records.contracts, chosen, tick)
 		log_quest_message(quests, tick, content.contracts.contracts[chosen].message_key)
 	}
 }
@@ -217,7 +217,7 @@ remove_open_contract :: proc(state: ^Contract_State, index: int) {
 complete_contract :: proc(state: ^Simulation_State, content: Simulation_Content, open: Open_Contract, survey_centre: World_Coordinate) {
 	contract := content.contracts.contracts[open.contract]
 	late := contract_is_late(open, contract, state.tick, state.tick_rate)
-	statistics := &state.world.statistics
+	statistics := &state.records.statistics
 	statistics.contracts_completed += 1
 	statistics.contracts_late += late ? 1 : 0
 	key := late ? CONTRACT_FULFILLED_LATE_KEY : CONTRACT_FULFILLED_KEY
@@ -229,7 +229,7 @@ complete_contract :: proc(state: ^Simulation_State, content: Simulation_Content,
 }
 
 complete_covered_contracts :: proc(state: ^Simulation_State, content: Simulation_Content, survey_centre: World_Coordinate) {
-	contracts := &state.world.contracts
+	contracts := &state.records.contracts
 	index := 0
 	for index < int(contracts.open_count) {
 		open := contracts.open[index]
@@ -257,17 +257,17 @@ sell_cargo :: proc(state: ^Simulation_State, content: Simulation_Content, cargo:
 	if value == 0 {
 		return
 	}
-	state.world.venture_credit += value
-	state.world.statistics.credit_earned += value
+	state.records.venture_credit += value
+	state.records.statistics.credit_earned += value
 	log_message(&state.quests, Quest_Message{tick = state.tick, text_key = FREE_TRADE_KEY, value = value})
 }
 
 // A launched shipment: the launch line, the contracts, then free trade.
 serve_shipment :: proc(state: ^Simulation_State, content: Simulation_Content, index: int) {
-	shipment := state.world.shipments[index]
+	shipment := state.records.shipments[index]
 	log_message(&state.quests, Quest_Message{tick = state.tick, text_key = SHIPMENT_LAUNCHED_KEY, shipment = u32(index + 1)})
 	cargo := shipment.cargo
-	deliver_cargo(&state.world.contracts, content.contracts, cargo[:shipment.cargo_count])
+	deliver_cargo(&state.records.contracts, content.contracts, cargo[:shipment.cargo_count])
 	complete_covered_contracts(state, content, shipment.pad_centre)
 	sell_cargo(state, content, cargo[:shipment.cargo_count])
 }
@@ -292,23 +292,22 @@ survey_candidate_veins :: proc(world: ^World, generator: ^Generator, centre: Wor
 
 // Adds the surface veins within the radius that are not assayed yet;
 // returns how many.
-reveal_surface_veins :: proc(world: ^World, veins: []Vein, centre: World_Coordinate, radius: i32) -> int {
+reveal_surface_veins :: proc(assayed_veins: ^[dynamic]Assayed_Vein, veins: []Vein, centre: World_Coordinate, radius: i32) -> int {
 	revealed := 0
 	for vein in veins {
-		if vein_is_deep(vein) || !centre_within(vein, centre, radius) || vein_is_assayed(world, vein.id) {
+		if vein_is_deep(vein) || !centre_within(vein, centre, radius) || vein_is_assayed(assayed_veins[:], vein.id) {
 			continue
 		}
-		append(&world.assayed_veins, Assayed_Vein{vein = vein.id, type = vein.type, size_class = vein.size_class, centre = vein.centre, radius = vein.radius})
+		append(assayed_veins, Assayed_Vein{vein = vein.id, type = vein.type, size_class = vein.size_class, centre = vein.centre, radius = vein.radius})
 		revealed += 1
 	}
 	return revealed
 }
 
 run_orbital_survey :: proc(state: ^Simulation_State, content: Simulation_Content, centre: World_Coordinate) {
-	world := &state.world
-	veins := survey_candidate_veins(world, content.generator, centre, ORBITAL_SURVEY_RADIUS)
-	revealed := reveal_surface_veins(world, veins, centre, ORBITAL_SURVEY_RADIUS)
-	world.statistics.surveys_bought += 1
+	veins := survey_candidate_veins(&state.world, content.generator, centre, ORBITAL_SURVEY_RADIUS)
+	revealed := reveal_surface_veins(&state.records.assayed_veins, veins, centre, ORBITAL_SURVEY_RADIUS)
+	state.records.statistics.surveys_bought += 1
 	log_message(&state.quests, Quest_Message{tick = state.tick, text_key = ORBITAL_SURVEY_KEY, value = u64(revealed)})
 }
 
@@ -323,16 +322,16 @@ ordered_credit :: proc(orders: []Catalogue_Order, catalogue: []Catalogue_Entry) 
 	return total
 }
 
-catalogue_entry_affordable :: proc(world: ^World, registry: Contract_Registry, entry: int) -> bool {
-	return world.venture_credit >= ordered_credit(world.catalogue_orders[:], registry.catalogue) + registry.catalogue[entry].price
+catalogue_entry_affordable :: proc(records: ^Game_Records, registry: Contract_Registry, entry: int) -> bool {
+	return records.venture_credit >= ordered_credit(records.catalogue_orders[:], registry.catalogue) + registry.catalogue[entry].price
 }
 
 // The pad panel's order: false when the credit does not cover it.
-order_from_catalogue :: proc(world: ^World, registry: Contract_Registry, entry: int, survey_centre: World_Coordinate) -> bool {
-	if entry < 0 || entry >= len(registry.catalogue) || !catalogue_entry_affordable(world, registry, entry) {
+order_from_catalogue :: proc(records: ^Game_Records, registry: Contract_Registry, entry: int, survey_centre: World_Coordinate) -> bool {
+	if entry < 0 || entry >= len(registry.catalogue) || !catalogue_entry_affordable(records, registry, entry) {
 		return false
 	}
-	append(&world.catalogue_orders, Catalogue_Order{entry = i32(entry), survey_centre = survey_centre})
+	append(&records.catalogue_orders, Catalogue_Order{entry = i32(entry), survey_centre = survey_centre})
 	return true
 }
 
@@ -342,10 +341,10 @@ catalogue_entry_name_key :: proc(entry: Catalogue_Entry, items: Item_Registry) -
 
 serve_catalogue_order :: proc(state: ^Simulation_State, content: Simulation_Content, order: Catalogue_Order) {
 	entry := content.contracts.catalogue[order.entry]
-	if state.world.venture_credit < entry.price {
+	if state.records.venture_credit < entry.price {
 		return
 	}
-	state.world.venture_credit -= entry.price
+	state.records.venture_credit -= entry.price
 	log_message(&state.quests, Quest_Message{tick = state.tick, text_key = CATALOGUE_ORDERED_KEY, argument_key = catalogue_entry_name_key(entry, content.items), value = entry.price})
 	if entry.orbital_survey {
 		run_orbital_survey(state, content, order.survey_centre)
@@ -355,33 +354,33 @@ serve_catalogue_order :: proc(state: ^Simulation_State, content: Simulation_Cont
 }
 
 serve_catalogue_orders :: proc(state: ^Simulation_State, content: Simulation_Content) {
-	for order in state.world.catalogue_orders {
+	for order in state.records.catalogue_orders {
 		serve_catalogue_order(state, content, order)
 	}
-	clear(&state.world.catalogue_orders)
+	clear(&state.records.catalogue_orders)
 }
 
 // Every shipment launched this tick (from first_new_shipment on), the
 // catalogue orders, then new offers for the freed slots.
 tick_venture :: proc(state: ^Simulation_State, content: Simulation_Content, first_new_shipment: int) {
-	for index in first_new_shipment ..< len(state.world.shipments) {
+	for index in first_new_shipment ..< len(state.records.shipments) {
 		serve_shipment(state, content, index)
 	}
 	serve_catalogue_orders(state, content)
-	offer_contracts(&state.world, &state.quests, content, state.tick)
+	offer_contracts(&state.records, state.world.settings.seed, &state.quests, content, state.tick)
 }
 
 // A loaded state names only contracts and catalogue entries the data has.
-venture_state_is_consistent :: proc(world: ^World, registry: Contract_Registry) -> bool {
-	if world.contracts.open_count < 0 || world.contracts.open_count > MAXIMUM_OPEN_CONTRACTS {
+venture_state_is_consistent :: proc(records: ^Game_Records, registry: Contract_Registry) -> bool {
+	if records.contracts.open_count < 0 || records.contracts.open_count > MAXIMUM_OPEN_CONTRACTS {
 		return false
 	}
-	for open in open_contracts(&world.contracts) {
+	for open in open_contracts(&records.contracts) {
 		if open.contract < 0 || int(open.contract) >= len(registry.contracts) {
 			return false
 		}
 	}
-	for order in world.catalogue_orders {
+	for order in records.catalogue_orders {
 		if order.entry < 0 || int(order.entry) >= len(registry.catalogue) {
 			return false
 		}

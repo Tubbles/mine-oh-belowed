@@ -574,7 +574,7 @@ test_a_tap_on_a_recipe_selects_it_and_the_row_crafts :: proc(t: ^testing.T) {
 test_a_tap_on_a_technology_selects_it_and_research_starts_it :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)
-	research := &audit.simulation.world.research
+	research := &audit.simulation.records.research
 	research.queued = false
 	available := NO_TECHNOLOGY
 	for _, index in audit.content.technologies.technologies {
@@ -655,7 +655,7 @@ test_the_row_ignores_a_hidden_selection :: proc(t: ^testing.T) {
 	audit.simulation.unlocks.researched[researched] = true
 	audit.technology_browser.focused = researched
 	audit.technology_browser.filter.hide_researched = true
-	audit.simulation.world.research.queued = false
+	audit.simulation.records.research.queued = false
 	technologies := Ui_State{theme = audit.theme}
 	defer destroy_ui_state(&technologies)
 	push_screen(&technologies.screens, .Technologies)
@@ -666,7 +666,7 @@ test_the_row_ignores_a_hidden_selection :: proc(t: ^testing.T) {
 	audit.technology_browser.focused = researched
 	technologies.focus = slot_button_id("touch_button_research")
 	tap_widget(audit, &technologies, slot_button_id("touch_button_research"))
-	testing.expect(t, !audit.simulation.world.research.queued)
+	testing.expect(t, !audit.simulation.records.research.queued)
 	testing.expect_value(t, len(technologies.toasts), 0)
 }
 

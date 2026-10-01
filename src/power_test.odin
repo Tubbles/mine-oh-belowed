@@ -167,14 +167,15 @@ test_generators_serve_in_dispatch_order :: proc(t: ^testing.T) {
 test_fuel_generator_only_covers_what_the_engines_cannot :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_drill_world(content)
+	records := make_test_records(content)
 	build_power_plant(&world, content)
 	generator := entity_at(&world.entities, {4, 1, -2})
 	pump := entity_at(&world.entities, {2, 1, -3})
 	prototype := content.machines.machines[test_machine(content.machines, "fuel_generator")]
-	tick_test_entities(&world, content, 1200)
+	tick_test_entities(&world, &records, content, 1200)
 	stored := combustion_generator_stored_joules(test_fluid_machine(&world, generator)^, prototype, content.fluids, content.items)
 	testing.expect(t, stored < 5 * 1_000_000)
-	tick_test_entities(&world, content, 6000)
+	tick_test_entities(&world, &records, content, 6000)
 	testing.expect_value(t, combustion_generator_stored_joules(test_fluid_machine(&world, generator)^, prototype, content.fluids, content.items), stored)
 	testing.expect_value(t, test_fluid_machine(&world, generator).generated_joules, 0)
 	// Cut the steam: no coal in the boiler and none of its steam left.
@@ -186,7 +187,7 @@ test_fuel_generator_only_covers_what_the_engines_cannot :: proc(t: ^testing.T) {
 	engine.buffers = {}
 	engine.fuel_joules = 0
 	test_pipe(&world, entity_at(&world.entities, {1, 1, 2})).buffer = EMPTY_FLUID_BUFFER
-	tick_test_entities(&world, content, 60)
+	tick_test_entities(&world, &records, content, 60)
 	testing.expect(t, test_fluid_machine(&world, generator).generated_joules > 0)
 	testing.expect(t, combustion_generator_stored_joules(test_fluid_machine(&world, generator)^, prototype, content.fluids, content.items) < stored)
 	testing.expect(t, power_is_on(test_fluid_machine(&world, pump).power))
@@ -195,15 +196,17 @@ test_fuel_generator_only_covers_what_the_engines_cannot :: proc(t: ^testing.T) {
 // An electric drill on an iron vein dropping into a chest, a pole and a
 // steam engine whose offer the test sets every tick.
 Drill_Power_Test :: struct {
-	world:  World,
-	drill:  Entity_Handle,
-	chest:  Entity_Handle,
-	engine: Entity_Handle,
+	world:   World,
+	records: Game_Records,
+	drill:   Entity_Handle,
+	chest:   Entity_Handle,
+	engine:  Entity_Handle,
 }
 
 make_drill_power_test :: proc(content: Simulation_Content) -> Drill_Power_Test {
 	test := Drill_Power_Test {
-		world = make_drill_world(content),
+		world   = make_drill_world(content),
+		records = make_test_records(content),
 	}
 	vein := add_test_vein(&test.world, content, "iron", {1, 1}, 2, IRON_TEST_VEIN)
 	test.drill = place_test_entity(&test.world, content, "electric_mining_drill", {0, 1, 0})
@@ -220,7 +223,7 @@ tick_with_engine_offer :: proc(test: ^Drill_Power_Test, content: Simulation_Cont
 		engine := test_fluid_machine(&test.world, test.engine)
 		engine.buffers[0], engine.buffers[1] = EMPTY_FLUID_BUFFER, EMPTY_FLUID_BUFFER
 		engine.fuel_joules = joules
-		tick_test_entities(&test.world, content, 1)
+		tick_test_entities(&test.world, &test.records, content, 1)
 	}
 }
 
@@ -242,15 +245,15 @@ test_brownout_slows_an_electric_drill :: proc(t: ^testing.T) {
 	tick_with_engine_offer(&full, content, 1500, 960)
 	testing.expect_value(t, chest_total(&full.world, full.chest), 10)
 	testing.expect_value(t, networks.networks[0].satisfaction, 1000)
-	testing.expect_value(t, full.world.statistics.brownout_ticks, 0)
+	testing.expect_value(t, full.records.statistics.brownout_ticks, 0)
 	// Half the drill's 1500 J: it mines every other tick, five units.
 	half := make_drill_power_test(content)
 	tick_with_engine_offer(&half, content, 750, 960)
 	testing.expect_value(t, chest_total(&half.world, half.chest), 5)
 	testing.expect_value(t, half.world.entities.electric_networks.networks[0].satisfaction, 500)
 	testing.expect_value(t, test_drill(&half.world, half.drill).state, Drill_State.Mining)
-	testing.expect_value(t, half.world.statistics.brownout_ticks, 960)
-	testing.expect_value(t, half.world.statistics.energy_consumed_joules, 960 * 750)
+	testing.expect_value(t, half.records.statistics.brownout_ticks, 960)
+	testing.expect_value(t, half.records.statistics.energy_consumed_joules, 960 * 750)
 	// No offer at all: unpowered, nothing mined.
 	none := make_drill_power_test(content)
 	tick_with_engine_offer(&none, content, 0, 200)
@@ -262,15 +265,16 @@ test_brownout_slows_an_electric_drill :: proc(t: ^testing.T) {
 test_steam_is_drawn_only_for_delivered_energy :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_drill_world(content)
+	records := make_test_records(content)
 	_, engine := add_test_power_plant(&world, content, {4, 1, 3}, {5, 1, -2})
 	lamps := [2]Entity_Handle{place_test_entity(&world, content, "lamp", {3, 1, 2}), place_test_entity(&world, content, "lamp", {3, 1, 4})}
 	// Nothing asks yet except the lamps: 166 J a tick, a litre every
 	// 180 ticks and a bit.
-	tick_test_entities(&world, content, 1000)
+	tick_test_entities(&world, &records, content, 1000)
 	machine := test_fluid_machine(&world, engine)
 	litres_used := 400 - i64(machine.buffers[0].level) - i64(machine.buffers[1].level)
-	testing.expect_value(t, world.statistics.energy_produced_joules, 166 * 1000)
-	testing.expect_value(t, litres_used * 30_000, i64(world.statistics.energy_produced_joules) + i64(machine.fuel_joules))
+	testing.expect_value(t, records.statistics.energy_produced_joules, 166 * 1000)
+	testing.expect_value(t, litres_used * 30_000, i64(records.statistics.energy_produced_joules) + i64(machine.fuel_joules))
 	testing.expect_value(t, litres_used, 6)
 	testing.expect_value(t, machine.state, Fluid_Machine_State.Producing)
 	testing.expect_value(t, machine.generated_joules, 166)
@@ -278,16 +282,17 @@ test_steam_is_drawn_only_for_delivered_energy :: proc(t: ^testing.T) {
 	// Out of steam the engine gives nothing and the lamps go dark.
 	machine.buffers[0], machine.buffers[1] = EMPTY_FLUID_BUFFER, EMPTY_FLUID_BUFFER
 	machine.fuel_joules = 0
-	tick_test_entities(&world, content, 1)
+	tick_test_entities(&world, &records, content, 1)
 	testing.expect_value(t, machine.state, Fluid_Machine_State.No_Steam)
 	testing.expect(t, !test_lamp(&world, lamps[0]).lit)
-	testing.expect_value(t, world.statistics.brownout_ticks, 1)
+	testing.expect_value(t, records.statistics.brownout_ticks, 1)
 }
 
 @(test)
 test_power_switch_splits_a_network :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
 	near, _ := add_test_power_plant(&world, content, {0, 1, 0}, {-3, 1, -2})
 	far := place_test_entity(&world, content, "small_pole", {10, 1, 0})
 	lamp := place_test_entity(&world, content, "lamp", {11, 1, 0})
@@ -296,7 +301,7 @@ test_power_switch_splits_a_network :: proc(t: ^testing.T) {
 	switch_handle := place_test_entity(&world, content, "power_switch", {5, 1, 0})
 	testing.expect_value(t, len(networks.networks), 1)
 	testing.expect_value(t, entity_network(networks, far), entity_network(networks, near))
-	tick_test_entities(&world, content, 2)
+	tick_test_entities(&world, &records, content, 2)
 	testing.expect(t, test_lamp(&world, lamp).lit)
 	testing.expect(t, toggle_power_switch(&world.entities, content.machines, switch_handle))
 	testing.expect(t, !test_pole(&world, switch_handle).on)
@@ -305,7 +310,7 @@ test_power_switch_splits_a_network :: proc(t: ^testing.T) {
 	testing.expect_value(t, entity_network(networks, switch_handle), -1)
 	// The wires stay, they carry nothing while the switch is off.
 	testing.expect_value(t, len(networks.wires), 2)
-	tick_test_entities(&world, content, 2)
+	tick_test_entities(&world, &records, content, 2)
 	testing.expect(t, !test_lamp(&world, lamp).lit)
 	testing.expect_value(t, test_lamp(&world, lamp).power.satisfaction, 0)
 	testing.expect(t, toggle_power_switch(&world.entities, content.machines, switch_handle))
@@ -317,9 +322,10 @@ test_power_switch_splits_a_network :: proc(t: ^testing.T) {
 test_lamp_lights_and_darkens_with_power :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
 	pole, _ := add_test_power_plant(&world, content, {0, 1, 0}, {-3, 1, -2})
 	lamp := place_test_entity(&world, content, "lamp", {2, 1, 2})
-	tick_test_entities(&world, content, 1)
+	tick_test_entities(&world, &records, content, 1)
 	propagate_light(&world, content.blocks, 100_000)
 	testing.expect_value(t, block_light_at(&world, {2, 1, 2}), 15)
 	testing.expect_value(t, block_light_at(&world, {2, 2, 2}), 14)
@@ -327,7 +333,7 @@ test_lamp_lights_and_darkens_with_power :: proc(t: ^testing.T) {
 	// Without its pole the lamp is unpowered, and its light goes out
 	// through the removal queue.
 	testing.expect(t, remove_entity(&world.entities, content.machines, pole))
-	tick_test_entities(&world, content, 1)
+	tick_test_entities(&world, &records, content, 1)
 	testing.expect(t, !test_lamp(&world, lamp).lit)
 	propagate_light(&world, content.blocks, 100_000)
 	testing.expect_value(t, block_light_at(&world, {2, 1, 2}), 0)
@@ -335,11 +341,11 @@ test_lamp_lights_and_darkens_with_power :: proc(t: ^testing.T) {
 	testing.expect_value(t, len(world.entity_lights), 0)
 	// Back on, then picked up while lit: the light goes with it.
 	place_test_entity(&world, content, "small_pole", {0, 1, 0})
-	tick_test_entities(&world, content, 1)
+	tick_test_entities(&world, &records, content, 1)
 	propagate_light(&world, content.blocks, 100_000)
 	testing.expect_value(t, block_light_at(&world, {2, 1, 2}), 15)
 	testing.expect(t, remove_entity(&world.entities, content.machines, lamp))
-	tick_test_entities(&world, content, 1)
+	tick_test_entities(&world, &records, content, 1)
 	propagate_light(&world, content.blocks, 100_000)
 	testing.expect_value(t, block_light_at(&world, {3, 1, 2}), 0)
 }
@@ -375,9 +381,10 @@ build_power_plant :: proc(world: ^World, content: Simulation_Content) {
 test_power_simulation_is_deterministic :: proc(t: ^testing.T) {
 	content := make_test_content()
 	worlds := [2]World{make_drill_world(content), make_drill_world(content)}
-	for &world in worlds {
+	all_records := [2]Game_Records{make_test_records(content), make_test_records(content)}
+	for &world, index in worlds {
 		build_power_plant(&world, content)
-		tick_test_entities(&world, content, 1200)
+		tick_test_entities(&world, &all_records[index], content, 1200)
 	}
 	first, second := &worlds[0].entities, &worlds[1].entities
 	for drill, index in first.drills.entries {
@@ -395,12 +402,12 @@ test_power_simulation_is_deterministic :: proc(t: ^testing.T) {
 	for chest, index in first.chests.entries {
 		testing.expect_value(t, chest.slots, second.chests.entries[index].slots)
 	}
-	testing.expect_value(t, worlds[0].statistics.energy_produced_joules, worlds[1].statistics.energy_produced_joules)
+	testing.expect_value(t, all_records[0].statistics.energy_produced_joules, all_records[1].statistics.energy_produced_joules)
 	// The plant runs: one network, power made, ore mined, plates moved.
-	world := &worlds[0]
+	world, records := &worlds[0], &all_records[0]
 	testing.expect_value(t, len(first.electric_networks.networks), 1)
-	testing.expect(t, world.statistics.energy_produced_joules > 0)
-	testing.expect_value(t, world.statistics.unpowered_machines, 0)
+	testing.expect(t, records.statistics.energy_produced_joules > 0)
+	testing.expect_value(t, records.statistics.unpowered_machines, 0)
 	testing.expect(t, chest_total(world, entity_at(first, {10, 1, 8})) > 0)
 	testing.expect(t, chest_total(world, entity_at(first, {6, 1, 10})) > 0)
 	testing.expect(t, first.lamps.entries[0].lit)

@@ -393,7 +393,7 @@ build_benchmark_factory :: proc(simulation: ^Simulation_State, content: Simulati
 // would pick it in the technology screen.
 queue_first_available_research :: proc(simulation: ^Simulation_State, technologies: Technology_Registry) -> bool {
 	for _, technology in technologies.technologies {
-		if queue_research(&simulation.world.research, technologies, simulation.unlocks, technology) == .None {
+		if queue_research(&simulation.records.research, technologies, simulation.unlocks, technology) == .None {
 			return true
 		}
 	}
@@ -456,9 +456,8 @@ idle_machine_of :: proc(common: Entity_Common) -> Idle_Machine {
 // idle: its supply runs, the target is just stocked. Storage tanks hold
 // fluid and do no work, so they are left out. In the temp allocator, by
 // cell.
-benchmark_idle_machines :: proc(world: ^World, content: Simulation_Content, activity: Machine_Activity, tick_rate: int) -> []Idle_Machine {
+benchmark_idle_machines :: proc(world: ^World, second: u64, content: Simulation_Content, activity: Machine_Activity, tick_rate: int) -> []Idle_Machine {
 	idle := make([dynamic]Idle_Machine, context.temp_allocator)
-	second := world.statistics.current_second
 	for inserter in world.entities.inserters.entries {
 		if inserter.alive && int(inserter.idle_streak) >= BENCHMARK_IDLE_WINDOW_SECONDS * tick_rate {
 			append(&idle, idle_machine_of(inserter.common))
@@ -566,7 +565,7 @@ warm_up_benchmark :: proc(simulation: ^Simulation_State, content: Simulation_Con
 			virtual.arena_free_all(tick_arena)
 		}
 	}
-	return slice.clone(benchmark_idle_machines(&simulation.world, content, activity, simulation.tick_rate))
+	return slice.clone(benchmark_idle_machines(&simulation.world, simulation.records.statistics.current_second, content, activity, simulation.tick_rate))
 }
 
 measure_benchmark :: proc(simulation: ^Simulation_State, content: Simulation_Content, report: ^Benchmark_Report, tick_arena: ^virtual.Arena) {

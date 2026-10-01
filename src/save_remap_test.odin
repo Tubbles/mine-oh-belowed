@@ -21,7 +21,7 @@ queue_save_test_crafts :: proc(simulation: ^Simulation_State, content: Simulatio
 save_remap_test_original :: proc(t: ^testing.T, content: Simulation_Content, directory: string) -> Simulation_State {
 	generator := make_test_generator(DEFAULT_WORLD_SEED)
 	original := make_save_test_simulation(&generator, content)
-	load_save_test_chunks(&original.world, &generator)
+	load_save_test_chunks(&original.world, &original.records, &generator)
 	build_save_test_site(&original, content)
 	run_save_test_ticks(&original, content, 0, 300)
 	queue_save_test_crafts(&original, content)
@@ -157,7 +157,7 @@ test_an_inserted_item_keeps_every_stack_and_statistic :: proc(t: ^testing.T) {
 			testing.expect_value(t, loaded_belt[index], id)
 		}
 	}
-	statistics, original_statistics := loaded.world.statistics, original.world.statistics
+	statistics, original_statistics := loaded.records.statistics, original.records.statistics
 	testing.expect_value(t, statistics.produced[0], 0)
 	testing.expect_value(t, statistics.obtained[0], 0)
 	for count, item in original_statistics.produced {
@@ -186,7 +186,7 @@ test_a_removed_item_empties_its_stacks :: proc(t: ^testing.T) {
 	defer destroy_simulation(&loaded)
 	expect_stacks_kept(t, &original, &loaded, content.items, changed.items, "hematite")
 	coal := test_item(content.items, "coal")
-	testing.expect_value(t, loaded.world.statistics.consumed[test_item(changed.items, "coal")], original.world.statistics.consumed[coal])
+	testing.expect_value(t, loaded.records.statistics.consumed[test_item(changed.items, "coal")], original.records.statistics.consumed[coal])
 }
 
 recipe_id :: proc(recipes: Recipe_Registry, recipe: int) -> string {
@@ -235,10 +235,10 @@ test_an_inserted_technology_keeps_research :: proc(t: ^testing.T) {
 	changed.technologies.technologies = with_inserted(content.technologies.technologies, 0, Technology{id = "inserted_technology"})
 	loaded := load_save_test_simulation(t, save_test_location(directory), changed)
 	defer destroy_simulation(&loaded)
-	research := loaded.world.research
+	research := loaded.records.research
 	testing.expect(t, research.queued)
 	testing.expect_value(t, changed.technologies.technologies[research.technology].id, "automation")
-	testing.expect_value(t, research.units_done, original.world.research.units_done)
+	testing.expect_value(t, research.units_done, original.records.research.units_done)
 	testing.expect_value(t, research.levels[test_technology(changed.technologies, "mining_productivity")], 2)
 	testing.expect_value(t, research.levels[0], 0)
 	for researched, technology in original.unlocks.researched {
@@ -275,23 +275,23 @@ test_a_removed_contract_frees_its_open_slot :: proc(t: ^testing.T) {
 	original := save_remap_test_original(t, content, directory)
 	defer destroy_simulation(&original)
 
-	open := open_contracts(&original.world.contracts)
+	open := open_contracts(&original.records.contracts)
 	testing.expect_value(t, len(open), MAXIMUM_OPEN_CONTRACTS)
 	removed := int(open[0].contract)
 	changed := content
 	changed.contracts.contracts = without(content.contracts.contracts, removed)
 	loaded := load_save_test_simulation(t, save_test_location(directory), changed)
 	defer destroy_simulation(&loaded)
-	loaded_open := open_contracts(&loaded.world.contracts)
+	loaded_open := open_contracts(&loaded.records.contracts)
 	testing.expect_value(t, len(loaded_open), len(open) - 1)
 	for entry, index in loaded_open {
 		kept := open[index + 1]
 		testing.expect_value(t, changed.contracts.contracts[entry.contract].id, content.contracts.contracts[kept.contract].id)
 		testing.expect_value(t, entry.delivered, kept.delivered)
 	}
-	for count, contract in original.world.contracts.offer_counts[:len(content.contracts.contracts)] {
+	for count, contract in original.records.contracts.offer_counts[:len(content.contracts.contracts)] {
 		if contract != removed {
-			testing.expect_value(t, loaded.world.contracts.offer_counts[contract > removed ? contract - 1 : contract], count)
+			testing.expect_value(t, loaded.records.contracts.offer_counts[contract > removed ? contract - 1 : contract], count)
 		}
 	}
 }

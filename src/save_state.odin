@@ -107,33 +107,35 @@ fluid_network_fluids :: proc(networks: Fluid_Networks) -> []Fluid_Id {
 	return fluids
 }
 
-write_world_state :: proc(bytes: ^[dynamic]byte, world: ^World) {
+// The world's lists and the records interleave in the order of the
+// format, which predates Game_Records.
+write_world_state :: proc(bytes: ^[dynamic]byte, world: ^World, records: ^Game_Records) {
 	write_list(bytes, world.veins[:])
 	write_list(bytes, sorted_outcrop_cells(world))
 	write_list(bytes, world.spent_outcrops[:])
-	write_list(bytes, world.crate_sites[:])
-	write_prospecting_records(bytes, world)
+	write_list(bytes, records.crate_sites[:])
+	write_prospecting_records(bytes, records)
 	write_list(bytes, world.block_changes[:])
 	write_list(bytes, water_update_list(&world.water))
 	write_entity_pools(bytes, &world.entities)
 	write_list(bytes, belt_cell_items(&world.entities))
 	write_list(bytes, fluid_network_fluids(world.entities.fluid_networks))
-	write_value_of(bytes, &world.statistics)
-	write_value_of(bytes, &world.research)
-	write_list(bytes, world.shipments[:])
-	write_value_of(bytes, &world.contracts)
-	append_u64(bytes, world.venture_credit)
-	write_list(bytes, world.catalogue_orders[:])
+	write_value_of(bytes, &records.statistics)
+	write_value_of(bytes, &records.research)
+	write_list(bytes, records.shipments[:])
+	write_value_of(bytes, &records.contracts)
+	append_u64(bytes, records.venture_credit)
+	write_list(bytes, records.catalogue_orders[:])
 }
 
 // The explored map and the prospecting records (work item 0038).
-write_prospecting_records :: proc(bytes: ^[dynamic]byte, world: ^World) {
-	write_list(bytes, sorted_explored_columns(world))
-	write_list(bytes, world.assayed_veins[:])
-	write_list(bytes, world.magnetometer_readings[:])
-	write_list(bytes, world.core_samples[:])
-	write_list(bytes, world.seismic_shots[:])
-	write_list(bytes, world.seismic_outlines[:])
+write_prospecting_records :: proc(bytes: ^[dynamic]byte, records: ^Game_Records) {
+	write_list(bytes, sorted_explored_columns(records.explored))
+	write_list(bytes, records.assayed_veins[:])
+	write_list(bytes, records.magnetometer_readings[:])
+	write_list(bytes, records.core_samples[:])
+	write_list(bytes, records.seismic_shots[:])
+	write_list(bytes, records.seismic_outlines[:])
 }
 
 write_quest_state :: proc(bytes: ^[dynamic]byte, quests: ^Quest_State) {
@@ -155,14 +157,14 @@ write_quest_state :: proc(bytes: ^[dynamic]byte, quests: ^Quest_State) {
 // The body of entities.bin, without the header. Tables added since
 // format version 2 follow the players (write_later_tables).
 write_simulation_state :: proc(bytes: ^[dynamic]byte, state: ^Simulation_State) {
-	write_world_state(bytes, &state.world)
+	write_world_state(bytes, &state.world, &state.records)
 	write_value_of(bytes, &state.unlocks)
 	write_quest_state(bytes, &state.quests)
 	append_u32(bytes, u32(len(state.players)))
 	for &player in state.players {
 		write_value_of(bytes, &player)
 	}
-	write_later_tables(bytes, &state.world)
+	write_later_tables(bytes, &state.world, &state.records)
 }
 
 // Tables added after format version 2, in the order they were added. A
@@ -171,9 +173,9 @@ write_simulation_state :: proc(bytes: ^[dynamic]byte, state: ^Simulation_State) 
 // newer tables empty, without a format version step. The loose items
 // (work item 0062) are the first, the leaf decay queue (work item 0059)
 // the second; its felled list is always empty between ticks.
-write_later_tables :: proc(bytes: ^[dynamic]byte, world: ^World) {
+write_later_tables :: proc(bytes: ^[dynamic]byte, world: ^World, records: ^Game_Records) {
 	write_list(bytes, world.entities.loose_items.items[:])
-	write_list(bytes, world.leaf_decay.updates[:])
+	write_list(bytes, records.leaf_decay.updates[:])
 }
 
 // Reading.
@@ -232,7 +234,7 @@ Loaded_Derived_State :: struct {
 	network_fluids: [dynamic]Fluid_Id,
 }
 
-read_world_lists :: proc(reader: ^Byte_Reader, world: ^World) -> bool {
+read_world_lists :: proc(reader: ^Byte_Reader, world: ^World, records: ^Game_Records) -> bool {
 	read_list(reader, &world.veins) or_return
 	outcrops := make([dynamic]Outcrop_Cell, context.temp_allocator)
 	read_list(reader, &outcrops) or_return
@@ -241,8 +243,8 @@ read_world_lists :: proc(reader: ^Byte_Reader, world: ^World) -> bool {
 		world.outcrop_cells[cell.position] = cell.vein
 	}
 	read_list(reader, &world.spent_outcrops) or_return
-	read_list(reader, &world.crate_sites) or_return
-	read_prospecting_records(reader, world) or_return
+	read_list(reader, &records.crate_sites) or_return
+	read_prospecting_records(reader, records) or_return
 	read_list(reader, &world.block_changes) or_return
 	updates := make([dynamic]Water_Update, context.temp_allocator)
 	read_list(reader, &updates) or_return
@@ -254,25 +256,25 @@ read_world_lists :: proc(reader: ^Byte_Reader, world: ^World) -> bool {
 	return true
 }
 
-read_prospecting_records :: proc(reader: ^Byte_Reader, world: ^World) -> bool {
+read_prospecting_records :: proc(reader: ^Byte_Reader, records: ^Game_Records) -> bool {
 	explored := make([dynamic]Explored_Column, context.temp_allocator)
 	read_list(reader, &explored) or_return
-	clear(&world.explored)
+	clear(&records.explored)
 	for column in explored {
-		world.explored[column.column] = column.surface
+		records.explored[column.column] = column.surface
 	}
-	read_list(reader, &world.assayed_veins) or_return
-	read_list(reader, &world.magnetometer_readings) or_return
-	read_list(reader, &world.core_samples) or_return
-	read_list(reader, &world.seismic_shots) or_return
-	read_list(reader, &world.seismic_outlines) or_return
+	read_list(reader, &records.assayed_veins) or_return
+	read_list(reader, &records.magnetometer_readings) or_return
+	read_list(reader, &records.core_samples) or_return
+	read_list(reader, &records.seismic_shots) or_return
+	read_list(reader, &records.seismic_outlines) or_return
 	return true
 }
 
-read_world_state :: proc(reader: ^Byte_Reader, world: ^World, content: Simulation_Content, derived: ^Loaded_Derived_State) -> bool {
+read_world_state :: proc(reader: ^Byte_Reader, world: ^World, records: ^Game_Records, content: Simulation_Content, derived: ^Loaded_Derived_State) -> bool {
 	remap := reader.remap
-	read_world_lists(reader, world) or_return
-	if problem, ok := remap_vein_types(world, remap^); !ok {
+	read_world_lists(reader, world, records) or_return
+	if problem, ok := remap_vein_types(world, records, remap^); !ok {
 		reader.problem = problem
 		return false
 	}
@@ -283,18 +285,18 @@ read_world_state :: proc(reader: ^Byte_Reader, world: ^World, content: Simulatio
 	read_list(reader, &derived.network_fluids) or_return
 	statistics := saved_statistics(remap^)
 	read_value_of(reader, &statistics) or_return
-	remap_statistics(&world.statistics, statistics, remap^)
+	remap_statistics(&records.statistics, statistics, remap^)
 	research: Research_State
 	read_value_of(reader, &research) or_return
-	world.research = remapped_research(research, remap^)
-	read_list(reader, &world.shipments) or_return
-	remap_shipments(world.shipments[:])
+	records.research = remapped_research(research, remap^)
+	read_list(reader, &records.shipments) or_return
+	remap_shipments(records.shipments[:])
 	contracts: Contract_State
 	read_value_of(reader, &contracts) or_return
-	world.contracts = remapped_contracts(contracts, remap^) or_return
-	world.venture_credit = read_u64(reader) or_return
-	read_list(reader, &world.catalogue_orders) or_return
-	return remap_catalogue_orders(&world.catalogue_orders, remap^)
+	records.contracts = remapped_contracts(contracts, remap^) or_return
+	records.venture_credit = read_u64(reader) or_return
+	read_list(reader, &records.catalogue_orders) or_return
+	return remap_catalogue_orders(&records.catalogue_orders, remap^)
 }
 
 // The key strings of the message log point into the game data; a key the
@@ -373,22 +375,22 @@ read_quest_state :: proc(reader: ^Byte_Reader, state: ^Simulation_State, content
 			append(&quests.messages, message)
 		}
 	}
-	return settle_active_quest(quests, saved_active, remap^, content.quests, state.world.statistics, state.tick)
+	return settle_active_quest(quests, saved_active, remap^, content.quests, state.records.statistics, state.tick)
 }
 
 // See write_later_tables. A table the file ends before stays empty.
-read_later_tables :: proc(reader: ^Byte_Reader, world: ^World) -> bool {
+read_later_tables :: proc(reader: ^Byte_Reader, world: ^World, records: ^Game_Records) -> bool {
 	clear(&world.entities.loose_items.items)
 	if bytes_left(reader^) > 0 {
 		read_list(reader, &world.entities.loose_items.items) or_return
 		drop_gone_loose_items(&world.entities.loose_items.items)
 	}
-	clear_leaf_decay(&world.leaf_decay)
+	clear_leaf_decay(&records.leaf_decay)
 	if bytes_left(reader^) > 0 {
 		updates := make([dynamic]Leaf_Decay_Update, context.temp_allocator)
 		read_list(reader, &updates) or_return
 		for update in updates {
-			schedule_leaf_decay(&world.leaf_decay, update.position, update.due_tick)
+			schedule_leaf_decay(&records.leaf_decay, update.position, update.due_tick)
 		}
 	}
 	return true
@@ -423,7 +425,7 @@ read_simulation_state :: proc(reader: ^Byte_Reader, state: ^Simulation_State, co
 		belt_items     = make([dynamic]Belt_Cell_Item, context.temp_allocator),
 		network_fluids = make([dynamic]Fluid_Id, context.temp_allocator),
 	}
-	read_world_state(reader, &state.world, content, &derived) or_return
+	read_world_state(reader, &state.world, &state.records, content, &derived) or_return
 	unlocks := saved_recipe_unlocks(reader.remap^)
 	read_value_of(reader, &unlocks) or_return
 	remap_recipe_unlocks(&state.unlocks, unlocks, reader.remap^, content.recipes)
@@ -432,8 +434,8 @@ read_simulation_state :: proc(reader: ^Byte_Reader, state: ^Simulation_State, co
 	for &player in state.players {
 		remap_craft_queue(&player.crafting, reader.remap^) or_return
 	}
-	read_later_tables(reader, &state.world) or_return
-	if bytes_left(reader^) != 0 || !venture_state_is_consistent(&state.world, content.contracts) {
+	read_later_tables(reader, &state.world, &state.records) or_return
+	if bytes_left(reader^) != 0 || !venture_state_is_consistent(&state.records, content.contracts) {
 		return false
 	}
 	rebuild_loaded_world(&state.world, content.machines, derived)

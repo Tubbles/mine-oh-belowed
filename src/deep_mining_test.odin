@@ -30,11 +30,10 @@ add_test_deep_vein :: proc(world: ^World, content: Simulation_Content, type_id: 
 	return vein.id
 }
 
-// A drill world with fluid statistics, so fluid use is counted.
+// A drill world; its records come from make_fluid_test_records, so fluid
+// use is counted.
 make_deep_mining_world :: proc(content: Simulation_Content) -> World {
-	world := make_drill_world(content)
-	world.statistics.fluids = make_fluid_statistics(len(content.fluids.fluids), context.temp_allocator)
-	return world
+	return make_drill_world(content)
 }
 
 // A bore drill over a bauxite vein at (1, 1), dropping into a chest at
@@ -42,7 +41,8 @@ make_deep_mining_world :: proc(content: Simulation_Content) -> World {
 // every tick (tick_with_engine_offer).
 make_bore_drill_test :: proc(content: Simulation_Content) -> Drill_Power_Test {
 	test := Drill_Power_Test {
-		world = make_deep_mining_world(content),
+		world   = make_deep_mining_world(content),
+		records = make_fluid_test_records(content),
 	}
 	test.world.settings.seed = 4242
 	vein := add_test_deep_vein(&test.world, content, "bauxite", {1, 1}, 3, {85_000, 15_000, 0, 0})
@@ -220,7 +220,7 @@ test_bore_drill_line_is_deterministic :: proc(t: ^testing.T) {
 	testing.expect(t, first.entities.chests.entries[0] == second.entities.chests.entries[0])
 	testing.expect(t, first.veins[0] == second.veins[0])
 	testing.expect_value(t, chest_total(first, tests[0].chest), 15)
-	testing.expect(t, slice.equal(first.statistics.produced, second.statistics.produced))
+	testing.expect(t, slice.equal(tests[0].records.statistics.produced, tests[1].records.statistics.produced))
 }
 
 // An electric drill on a nearly empty iron vein: exhausted, then revived
@@ -230,7 +230,7 @@ test_bore_drill_line_is_deterministic :: proc(t: ^testing.T) {
 test_vein_revival_with_mining_fluid :: proc(t: ^testing.T) {
 	content := make_test_content()
 	test := make_drill_power_test(content)
-	test.world.statistics.fluids = make_fluid_statistics(len(content.fluids.fluids), context.temp_allocator)
+	test.records.statistics.fluids = make_fluid_statistics(len(content.fluids.fluids), context.temp_allocator)
 	drill := test_drill(&test.world, test.drill)
 	vein := registered_vein(&test.world, drill.vein)
 	vein.remaining = {1, 0, 0, 0}
@@ -251,7 +251,7 @@ test_vein_revival_with_mining_fluid :: proc(t: ^testing.T) {
 	testing.expect_value(t, drill.state, Drill_State.Revived)
 	testing.expect_value(t, chest_total(&test.world, test.chest), 1 + 5)
 	testing.expect_value(t, drill.buffers[REVIVAL_PORT].level, 200 - 5 * REVIVAL_LITRES_PER_UNIT)
-	testing.expect_value(t, test.world.statistics.fluids.consumed[mining_fluid], 5 * REVIVAL_LITRES_PER_UNIT)
+	testing.expect_value(t, test.records.statistics.fluids.consumed[mining_fluid], 5 * REVIVAL_LITRES_PER_UNIT)
 	vein = registered_vein(&test.world, drill.vein)
 	testing.expect_value(t, vein_remaining_total(vein^), 0)
 	testing.expect(t, vein.exhausted)
@@ -350,11 +350,12 @@ test_deep_ore_recipes :: proc(t: ^testing.T) {
 	testing.expect_value(t, furnace_recipe_for(recipes, test_item(items, "gold_ore")), test_recipe(recipes, "gold_plate"))
 	testing.expect_value(t, furnace_recipe_for(recipes, test_item(items, "quartz")), test_recipe(recipes, "quartz_glass"))
 	world := make_drill_world(content)
+	records := make_test_records(content)
 	furnace := place_test_entity(&world, content, "stone_furnace", {0, 1, 0})
 	slots := entity_slots(&world.entities, furnace)
 	slots[FURNACE_FUEL_SLOT] = {test_item(items, "coal"), 5}
 	slots[FURNACE_INPUT_SLOT] = {test_item(items, "gold_ore"), 1}
-	tick_test_entities(&world, content, 200)
+	tick_test_entities(&world, &records, content, 200)
 	slots = entity_slots(&world.entities, furnace)
 	testing.expect_value(t, slots[FURNACE_OUTPUT_SLOT], Item_Stack{test_item(items, "gold_plate"), 1})
 	testing.expect_value(t, slots[FURNACE_BYPRODUCT_SLOT], Item_Stack{test_item(items, "slag"), 1})
@@ -384,6 +385,7 @@ test_bore_drill_ghost_names_the_deep_vein :: proc(t: ^testing.T) {
 	defer clear_missing_reports(&global_string_table)
 	content := make_test_content()
 	world := make_deep_mining_world(content)
+	records := make_fluid_test_records(content)
 	vein := add_test_deep_vein(&world, content, "bauxite", {2, 2}, 2, {100, 20, 0, 0})
 	players := []Player{make_test_player(content.blocks, {10, 1, 10})}
 	player := &players[0]
@@ -395,18 +397,18 @@ test_bore_drill_ghost_names_the_deep_vein :: proc(t: ^testing.T) {
 	testing.expect(t, selected && found && placement.valid)
 	testing.expect_value(t, ghost_vein, vein)
 	testing.expect_value(t, placement.vein, vein)
-	line, shown := bore_drill_ghost_line(&world, content.machines, content.veins, content.blocks, content.items, nil, player^)
+	line, shown := bore_drill_ghost_line(&world, records.assayed_veins[:], content.machines, content.veins, content.blocks, content.items, nil, player^)
 	testing.expect(t, shown)
-	testing.expect_value(t, line, vein_status_text(&world, content.veins, content.blocks, content.items, nil, vein))
+	testing.expect_value(t, line, vein_status_text(&world, records.assayed_veins[:], content.veins, content.blocks, content.items, nil, vein))
 	testing.expect_value(t, line, fmt.tprintf("%s  120 %s", text("vein_type_bauxite"), text("drill_remaining")))
 	player.target = Raycast_Hit{hit = true, block = {20, 0, 20}, face = .Positive_Y, adjacent = {20, 1, 20}}
-	line, shown = bore_drill_ghost_line(&world, content.machines, content.veins, content.blocks, content.items, nil, player^)
+	line, shown = bore_drill_ghost_line(&world, records.assayed_veins[:], content.machines, content.veins, content.blocks, content.items, nil, player^)
 	testing.expect(t, shown)
 	testing.expect_value(t, line, text("bore_drill_no_deep_vein"))
 	testing.expect(t, !placement_for_player(&world, content, players, 0).valid)
 	// Any other selection leaves the line alone.
 	player.selected_hotbar_slot = 1
-	_, shown = bore_drill_ghost_line(&world, content.machines, content.veins, content.blocks, content.items, nil, player^)
+	_, shown = bore_drill_ghost_line(&world, records.assayed_veins[:], content.machines, content.veins, content.blocks, content.items, nil, player^)
 	testing.expect(t, !shown)
 }
 
@@ -416,13 +418,14 @@ test_bore_drill_ghost_names_the_deep_vein :: proc(t: ^testing.T) {
 test_revived_draws_keep_the_depleted_low_grade_share :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_drill_world(content)
+	records := make_test_records(content)
 	world.settings.seed = 777
 	id := add_test_vein(&world, content, "iron", {1, 1}, 2, {0, 0, 0, 0})
 	hematite, low_grade := test_item(content.items, "hematite"), test_item(content.items, "hematite_low_grade")
 	port := Fluid_Buffer{level = 1_000_000}
 	high, low := 0, 0
 	for _ in 0 ..< 4000 {
-		switch draw_revived_unit(&world, content.veins, registered_vein(&world, id), &port) {
+		switch draw_revived_unit(&world, &records.statistics, content.veins, registered_vein(&world, id), &port) {
 		case hematite:
 			high += 1
 		case low_grade:

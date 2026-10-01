@@ -235,10 +235,10 @@ bore_drill_ghost_vein :: proc(world: ^World, machines: Machine_Registry, player:
 
 // Rotate_Building turns the ghost a quarter turn; Place puts the machine
 // down and uses up one item. Belts also follow the held Place.
-place_entity_with_player :: proc(world: ^World, content: Simulation_Content, players: []Player, index: int, just_pressed, pressed: Action_Set) {
+place_entity_with_player :: proc(world: ^World, statistics: ^Statistics, content: Simulation_Content, players: []Player, index: int, just_pressed, pressed: Action_Set) {
 	player := &players[index]
 	if machine := selected_placed_machine(player^, content.machines); content.machines.machines[machine].kind == .Belt {
-		place_belt_with_player(world, content, players, index, machine, just_pressed, pressed)
+		place_belt_with_player(world, statistics, content, players, index, machine, just_pressed, pressed)
 		return
 	}
 	if .Rotate_Building in just_pressed {
@@ -249,14 +249,14 @@ place_entity_with_player :: proc(world: ^World, content: Simulation_Content, pla
 	}
 	placement := placement_for_player(world, content, players, index)
 	if placement.no_deep_vein {
-		world.statistics.bore_drill_no_vein_attempts += 1
+		statistics.bore_drill_no_vein_attempts += 1
 	}
 	if !placement.valid {
 		return
 	}
 	commit_placement(world, content.machines, placement)
 	take_from_slot(&inventory_hotbar(player.inventory)[player.selected_hotbar_slot], 1)
-	record_placed(&world.statistics, placement.machine)
+	record_placed(statistics, placement.machine)
 }
 
 // Puts a valid placement's machine down: a belt with its planned shape
@@ -351,17 +351,17 @@ entity_rotates :: proc(entities: ^Entities, handle: Entity_Handle) -> bool {
 // or drill a quarter turn. A drill's footprint is square, so no cell moves,
 // but its revival port does, so its fluid networks are rebuilt.
 // A splitter turns half way round on its two cells.
-rotate_targeted_entity :: proc(world: ^World, content: Simulation_Content, player: ^Player) -> bool {
+rotate_targeted_entity :: proc(world: ^World, statistics: ^Statistics, content: Simulation_Content, player: ^Player) -> bool {
 	if !entity_rotates(&world.entities, player.target.entity) {
 		return false
 	}
 	#partial switch player.target.entity.kind {
 	case .Belt:
-		rotate_targeted_belt(world, content, player)
+		rotate_targeted_belt(world, statistics, content, player)
 		return true
 	case .Splitter:
 		rotate_splitter(&world.entities, content.machines, player.target.entity)
-		record_world_action(&world.statistics)
+		record_world_action(statistics)
 		return true
 	case .Inserter, .Drill:
 		common := entity_common(&world.entities, player.target.entity)
@@ -372,7 +372,7 @@ rotate_targeted_entity :: proc(world: ^World, content: Simulation_Content, playe
 		if content.machines.machines[common.machine].fluid_port_count > 0 {
 			rebuild_fluid_networks(&world.entities, content.machines)
 		}
-		record_world_action(&world.statistics)
+		record_world_action(statistics)
 		return true
 	}
 	return false
@@ -411,7 +411,7 @@ entity_pickup_stacks :: proc(world: ^World, content: Simulation_Content, handle:
 // as they fit; the rest spills at the entity's origin once it is gone
 // (loose_item.odin), so a full inventory never keeps an entity in place.
 // Water is checked again in the cells the entity leaves.
-pick_up_entity :: proc(world: ^World, content: Simulation_Content, player: ^Player, handle: Entity_Handle, tick: u64) -> bool {
+pick_up_entity :: proc(world: ^World, statistics: ^Statistics, content: Simulation_Content, player: ^Player, handle: Entity_Handle, tick: u64) -> bool {
 	if !entity_can_be_picked_up(world, content.machines, handle) {
 		return false
 	}
@@ -421,7 +421,7 @@ pick_up_entity :: proc(world: ^World, content: Simulation_Content, player: ^Play
 		return false
 	}
 	schedule_water_around_freed_cells(world, content.blocks, common_cells(common, content.machines), tick)
-	record_world_action(&world.statistics)
+	record_world_action(statistics)
 	for stack in returned {
 		if stack_is_empty(stack) {
 			continue

@@ -291,8 +291,8 @@ update_break_puff :: proc(system: ^Particle_System, memory: ^Particle_Memory, wo
 }
 
 // A puff where the capsule lands; no descent without a capsule to land on.
-update_capsule_descent :: proc(system: ^Particle_System, memory: ^Particle_Memory, world: ^World, models: Model_Renderer, seconds: f32) {
-	count := len(world.shipments)
+update_capsule_descent :: proc(system: ^Particle_System, memory: ^Particle_Memory, world: ^World, shipments: []Shipment, models: Model_Renderer, seconds: f32) {
+	count := len(shipments)
 	if shipment_starts_descent(memory^, count) {
 		memory.descent = {active = true}
 	}
@@ -347,14 +347,14 @@ update_satellite_pass :: proc(memory: ^Particle_Memory, messages: []Quest_Messag
 }
 
 // The frame's spawning, memory and movement, with the frame time capped.
-update_particles :: proc(system: ^Particle_System, memory: ^Particle_Memory, world: ^World, content: Simulation_Content, models: Model_Renderer, players: []Player, tick_rate: int, frame_seconds: f32) {
+update_particles :: proc(system: ^Particle_System, memory: ^Particle_Memory, world: ^World, shipments: []Shipment, content: Simulation_Content, models: Model_Renderer, players: []Player, tick_rate: int, frame_seconds: f32) {
 	seconds := clamp(frame_seconds, 0, PARTICLE_MAXIMUM_FRAME_SECONDS)
 	memory.frame_count += 1
 	for emitter in emitters_for_frame(world, content, models, players, tick_rate) {
 		spawn_particles(system, emitter, seconds, emitter_random_key(memory.frame_count, emitter))
 	}
 	update_break_puff(system, memory, world, content.blocks, players)
-	update_capsule_descent(system, memory, world, models, seconds)
+	update_capsule_descent(system, memory, world, shipments, models, seconds)
 	advance_particles(system, seconds)
 }
 

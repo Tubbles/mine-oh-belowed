@@ -4,7 +4,7 @@ import "core:fmt"
 import "core:math"
 
 // The prospecting ladder of DESIGN.md (work item 0038). Each tool reveals
-// one attribute and leaves a record on the world, drawn on the map
+// one attribute and leaves a record in the game records, drawn on the map
 // (ui_map.odin) and saved:
 // - The geologist's hammer, used on an outcrop block, assays its vein:
 //   type (hence the ore mix), size class and footprint disc.
@@ -74,7 +74,7 @@ Seismic_Outline :: struct {
 	resolved:   bool,
 }
 
-// sample indexes World.core_samples once reported, -1 before.
+// sample indexes Game_Records.core_samples once reported, -1 before.
 Core_Sample_Drill :: struct {
 	using common: Entity_Common,
 	power:        Power_State,
@@ -103,9 +103,9 @@ validate_core_sample_drill_definition :: proc(definition: Machine_Definition) ->
 
 // The geologist's hammer.
 
-// The index of the vein's record in World.assayed_veins, or -1.
-known_vein_index :: proc(world: ^World, id: Vein_Id) -> int {
-	for assayed, index in world.assayed_veins {
+// The index of the vein's record in Game_Records.assayed_veins, or -1.
+known_vein_index :: proc(assayed_veins: []Assayed_Vein, id: Vein_Id) -> int {
+	for assayed, index in assayed_veins {
 		if assayed.vein == id {
 			return index
 		}
@@ -114,9 +114,9 @@ known_vein_index :: proc(world: ^World, id: Vein_Id) -> int {
 }
 
 // Known from a spent outcrop alone does not count.
-vein_is_assayed :: proc(world: ^World, id: Vein_Id) -> bool {
-	index := known_vein_index(world, id)
-	return index >= 0 && !world.assayed_veins[index].from_spent_outcrop
+vein_is_assayed :: proc(assayed_veins: []Assayed_Vein, id: Vein_Id) -> bool {
+	index := known_vein_index(assayed_veins, id)
+	return index >= 0 && !assayed_veins[index].from_spent_outcrop
 }
 
 assayed_vein_record :: proc(vein: Vein) -> Assayed_Vein {
@@ -126,17 +126,17 @@ assayed_vein_record :: proc(vein: Vein) -> Assayed_Vein {
 // Assays the vein whose outcrop the cell is; false for any other block
 // and for a vein assayed before. A record from a spent outcrop becomes
 // an assayed one.
-assay_vein :: proc(world: ^World, veins: Vein_Content, cell: World_Coordinate) -> bool {
+assay_vein :: proc(world: ^World, records: ^Game_Records, veins: Vein_Content, cell: World_Coordinate) -> bool {
 	id, found := outcrop_vein_at(world, veins, cell)
-	if !found || vein_is_assayed(world, id) {
+	if !found || vein_is_assayed(records.assayed_veins[:], id) {
 		return false
 	}
-	if index := known_vein_index(world, id); index >= 0 {
-		world.assayed_veins[index].from_spent_outcrop = false
+	if index := known_vein_index(records.assayed_veins[:], id); index >= 0 {
+		records.assayed_veins[index].from_spent_outcrop = false
 	} else {
-		append(&world.assayed_veins, assayed_vein_record(registered_vein(world, id)^))
+		append(&records.assayed_veins, assayed_vein_record(registered_vein(world, id)^))
 	}
-	world.statistics.veins_assayed += 1
+	records.statistics.veins_assayed += 1
 	return true
 }
 
@@ -144,19 +144,19 @@ assay_vein :: proc(world: ^World, veins: Vein_Content, cell: World_Coordinate) -
 // with units left, so the vein counts as known and the map keeps its
 // footprint. Returns true, and counts it for Mission Control, the first
 // time for the vein.
-record_spent_outcrop :: proc(world: ^World, id: Vein_Id) -> bool {
-	index := known_vein_index(world, id)
-	if index >= 0 && world.assayed_veins[index].outcrop_spent {
+record_spent_outcrop :: proc(world: ^World, records: ^Game_Records, id: Vein_Id) -> bool {
+	index := known_vein_index(records.assayed_veins[:], id)
+	if index >= 0 && records.assayed_veins[index].outcrop_spent {
 		return false
 	}
 	if index < 0 {
 		record := assayed_vein_record(registered_vein(world, id)^)
 		record.from_spent_outcrop = true
-		append(&world.assayed_veins, record)
-		index = len(world.assayed_veins) - 1
+		append(&records.assayed_veins, record)
+		index = len(records.assayed_veins) - 1
 	}
-	world.assayed_veins[index].outcrop_spent = true
-	world.statistics.outcrops_spent += 1
+	records.assayed_veins[index].outcrop_spent = true
+	records.statistics.outcrops_spent += 1
 	return true
 }
 
@@ -250,12 +250,12 @@ record_seismic_outline :: proc(outlines: ^[dynamic]Seismic_Outline, statistics: 
 	}
 }
 
-fire_seismic_shot :: proc(world: ^World, position: World_Coordinate, range: i32) {
-	append(&world.seismic_shots, Seismic_Shot{position = position})
-	world.statistics.seismic_shots += 1
+fire_seismic_shot :: proc(world: ^World, records: ^Game_Records, position: World_Coordinate, range: i32) {
+	append(&records.seismic_shots, Seismic_Shot{position = position})
+	records.statistics.seismic_shots += 1
 	for vein in world.veins {
 		if vein_is_deep(vein) && disc_within_reach(position, range, vein) {
-			record_seismic_outline(&world.seismic_outlines, &world.statistics, vein)
+			record_seismic_outline(&records.seismic_outlines, &records.statistics, vein)
 		}
 	}
 }
@@ -280,23 +280,23 @@ use_consumes_item :: proc(use: Item_Use, target_hit: bool) -> bool {
 // previous tick like resolve_use_item. Returns the event for the toast,
 // if any.
 apply_item_use :: proc(state: ^Simulation_State, content: Simulation_Content, index: int, used: Item_Id) -> (event: Player_Event, happened: bool) {
-	world := &state.world
+	world, records := &state.world, &state.records
 	player := &state.players[index]
 	target := player.target
 	item := content.items.items[used]
 	switch item.use {
 	case .Read:
-		read_schematic(&state.unlocks, &state.quests, &world.statistics, content.recipes, used, state.tick)
+		read_schematic(&state.unlocks, &state.quests, &records.statistics, content.recipes, used, state.tick)
 	case .Assay:
-		if target.hit && target.entity == NO_ENTITY && assay_vein(world, content.veins, target.block) {
+		if target.hit && target.entity == NO_ENTITY && assay_vein(world, records, content.veins, target.block) {
 			return .Vein_Assayed, true
 		}
 	case .Magnetometer:
-		append(&world.magnetometer_readings, player.magnetometer)
+		append(&records.magnetometer_readings, player.magnetometer)
 		return .Magnetometer_Recorded, true
 	case .Seismic_Shot:
 		if target.hit {
-			fire_seismic_shot(world, target.block, item.use_range)
+			fire_seismic_shot(world, records, target.block, item.use_range)
 			return .Seismic_Shot_Fired, true
 		}
 	}
@@ -362,24 +362,24 @@ take_core_sample :: proc(world: ^World, block_count: int, position: World_Coordi
 
 // Works one tick per full tick of power until the sampling time is done,
 // then reports once.
-tick_core_sample_drills :: proc(world: ^World, content: Simulation_Content, tick_rate: int) {
+tick_core_sample_drills :: proc(world: ^World, records: ^Game_Records, content: Simulation_Content, tick_rate: int) {
 	for &drill in world.entities.core_sample_drills.entries {
 		if !drill.alive || !core_sample_drill_wants_power(drill) || !take_power_step(&drill.power) {
 			continue
 		}
 		drill.work_ticks += 1
 		if drill.work_ticks >= core_sample_ticks(content.machines.machines[drill.machine], tick_rate) {
-			drill.sample = i32(len(world.core_samples))
-			append(&world.core_samples, take_core_sample(world, len(content.blocks.definitions), drill.origin))
-			world.statistics.core_samples_taken += 1
+			drill.sample = i32(len(records.core_samples))
+			append(&records.core_samples, take_core_sample(world, len(content.blocks.definitions), drill.origin))
+			records.statistics.core_samples_taken += 1
 		}
 	}
 }
 
 // The drill's report, nil before it is taken.
-core_sample_of :: proc(world: ^World, drill: Core_Sample_Drill) -> ^Core_Sample {
-	if drill.sample < 0 || int(drill.sample) >= len(world.core_samples) {
+core_sample_of :: proc(core_samples: []Core_Sample, drill: Core_Sample_Drill) -> ^Core_Sample {
+	if drill.sample < 0 || int(drill.sample) >= len(core_samples) {
 		return nil
 	}
-	return &world.core_samples[drill.sample]
+	return &core_samples[drill.sample]
 }

@@ -40,6 +40,8 @@ Screen_Context :: struct {
 	blocks:          Block_Registry,
 	item_sort_ranks: []u16,
 	world:           ^World,
+	// The simulation's records beside the world.
+	records:         ^Game_Records,
 	machines:        Machine_Registry,
 	fluids:          Fluid_Registry,
 	veins:           Vein_Content,

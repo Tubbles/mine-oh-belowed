@@ -19,9 +19,9 @@ test_inserter :: proc(world: ^World, handle: Entity_Handle) -> ^Inserter {
 	return pool_get(&world.entities.inserters, handle)
 }
 
-tick_test_entities :: proc(world: ^World, content: Simulation_Content, ticks: int) {
+tick_test_entities :: proc(world: ^World, records: ^Game_Records, content: Simulation_Content, ticks: int) {
 	for _ in 0 ..< ticks {
-		tick_entities(world, content, TEST_TICK_RATE)
+		tick_entities(world, records, content, TEST_TICK_RATE)
 	}
 }
 
@@ -64,24 +64,25 @@ test_inserter_cycle_matches_the_rate :: proc(t: ^testing.T) {
 	testing.expect_value(t, inserter_cycle_ticks(content.machines.machines[test_machine(content.machines, "inserter")], TEST_TICK_RATE), 72)
 	testing.expect_value(t, fuel_joules_per_tick(burner, TEST_TICK_RATE), 1566)
 	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
 	pair := make_chest_pair(&world, content)
 	plate := test_item(content.items, "iron_plate")
 	entity_insert(&world.entities, content, pair.source, Item_Stack{plate, 50})
 	// Pick on tick 1, 50 ticks of swing, drop on arrival at tick 51.
-	tick_test_entities(&world, content, 1)
+	tick_test_entities(&world, &records, content, 1)
 	inserter := test_inserter(&world, pair.inserter)
 	testing.expect_value(t, inserter.held, Item_Stack{plate, 1})
 	testing.expect_value(t, inserter.state, Inserter_State.Moving)
-	tick_test_entities(&world, content, 49)
+	tick_test_entities(&world, &records, content, 49)
 	testing.expect_value(t, chest_count_of(&world, pair.target, plate), 0)
 	testing.expect_value(t, inserter_arm_fraction(inserter^, burner, TEST_TICK_RATE), f32(49) / 50)
-	tick_test_entities(&world, content, 1)
+	tick_test_entities(&world, &records, content, 1)
 	testing.expect_value(t, chest_count_of(&world, pair.target, plate), 1)
 	testing.expect_value(t, inserter.phase, Inserter_Phase.Swinging_Back)
 	// Back at tick 101 with the next pick; one minute moves 36.
-	tick_test_entities(&world, content, 50)
+	tick_test_entities(&world, &records, content, 50)
 	testing.expect_value(t, inserter.held, Item_Stack{plate, 1})
-	tick_test_entities(&world, content, 3600 - 101)
+	tick_test_entities(&world, &records, content, 3600 - 101)
 	testing.expect_value(t, chest_count_of(&world, pair.target, plate), 36)
 	testing.expect_value(t, chest_count_of(&world, pair.source, plate) + chest_count_of(&world, pair.target, plate) + int(inserter.held.count), 50)
 }
@@ -90,21 +91,22 @@ test_inserter_cycle_matches_the_rate :: proc(t: ^testing.T) {
 test_inserter_moves_from_a_belt_to_a_chest :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
 	belts := lay_belt_row(&world, content, {0, 1, 0}, 2, 0)
 	inserter := place_fuelled_inserter(&world, content, {1, 1, 1}, 1)
 	chest := place_test_entity(&world, content, "wooden_chest", {1, 1, 2})
 	plate, coal := test_item(content.items, "iron_plate"), test_item(content.items, "coal")
 	testing.expect(t, belt_insert_item(&world.entities, belts[1], .Left, plate))
 	testing.expect(t, belt_insert_item(&world.entities, belts[0], .Right, coal))
-	tick_test_entities(&world, content, 51)
+	tick_test_entities(&world, &records, content, 51)
 	testing.expect_value(t, chest_count_of(&world, chest, plate), 1)
 	// The coal rolls on to the second belt and is picked there next.
-	tick_test_entities(&world, content, 100)
+	tick_test_entities(&world, &records, content, 100)
 	testing.expect_value(t, chest_count_of(&world, chest, coal), 1)
 	testing.expect_value(t, len(line_of(&world, belts[0]).lanes[.Left]) + len(line_of(&world, belts[0]).lanes[.Right]), 0)
-	tick_test_entities(&world, content, 60)
+	tick_test_entities(&world, &records, content, 60)
 	testing.expect_value(t, test_inserter(&world, inserter).state, Inserter_State.Idle)
-	testing.expect(t, world.statistics.inserter_idle_ticks > 0)
+	testing.expect(t, records.statistics.inserter_idle_ticks > 0)
 }
 
 @(test)
@@ -122,6 +124,7 @@ test_far_belt_lane :: proc(t: ^testing.T) {
 expect_drop_lane :: proc(t: ^testing.T, inserter_direction, belt_direction: u8, expected: Belt_Lane, location := #caller_location) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
 	belt_cell := World_Coordinate{5, 1, 5}
 	step := belt_direction_offset(inserter_direction)
 	belt := lay_belt(&world, content, belt_cell, belt_direction)
@@ -129,7 +132,7 @@ expect_drop_lane :: proc(t: ^testing.T, inserter_direction, belt_direction: u8, 
 	chest := place_test_entity(&world, content, "wooden_chest", belt_cell - step * 2)
 	plate := test_item(content.items, "iron_plate")
 	entity_insert(&world.entities, content, chest, Item_Stack{plate, 1})
-	tick_test_entities(&world, content, 51)
+	tick_test_entities(&world, &records, content, 51)
 	line := line_of(&world, belt)
 	other := expected == .Left ? Belt_Lane.Right : Belt_Lane.Left
 	testing.expect_value(t, len(line.lanes[expected]), 1, location)
@@ -154,6 +157,7 @@ test_inserter_drops_onto_the_far_lane :: proc(t: ^testing.T) {
 test_inserter_feeds_a_furnace_by_its_slot_rules :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
 	belts := lay_belt_row(&world, content, {0, 1, 0}, 2, 0)
 	inserter := place_fuelled_inserter(&world, content, {1, 1, 1}, 1)
 	furnace := place_test_entity(&world, content, "stone_furnace", {1, 1, 2})
@@ -161,16 +165,16 @@ test_inserter_feeds_a_furnace_by_its_slot_rules :: proc(t: ^testing.T) {
 	// The plate is nearer the pickup point on a tie, but no furnace slot takes it.
 	belt_insert_item(&world.entities, belts[1], .Left, plate)
 	belt_insert_item(&world.entities, belts[1], .Right, hematite)
-	tick_test_entities(&world, content, 51)
+	tick_test_entities(&world, &records, content, 51)
 	slots := entity_slots(&world.entities, furnace)
 	testing.expect_value(t, slots[FURNACE_INPUT_SLOT], Item_Stack{hematite, 1})
 	testing.expect_value(t, len(line_of(&world, belts[1]).lanes[.Left]), 1)
 	belt_insert_item(&world.entities, belts[1], .Right, coal)
-	tick_test_entities(&world, content, 100)
+	tick_test_entities(&world, &records, content, 100)
 	// The coal went into the fuel slot and the furnace lit it at once.
 	testing.expect_value(t, pool_get(&world.entities.furnaces, furnace).fuel_item_joules, 4_000_000)
 	testing.expect_value(t, slots[FURNACE_FUEL_SLOT], EMPTY_STACK)
-	tick_test_entities(&world, content, 100)
+	tick_test_entities(&world, &records, content, 100)
 	testing.expect_value(t, test_inserter(&world, inserter).state, Inserter_State.Idle)
 	testing.expect_value(t, test_inserter(&world, inserter).held, EMPTY_STACK)
 	testing.expect_value(t, len(line_of(&world, belts[1]).lanes[.Left]), 1)
@@ -180,6 +184,7 @@ test_inserter_feeds_a_furnace_by_its_slot_rules :: proc(t: ^testing.T) {
 test_inserter_takes_only_from_the_furnace_output :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
 	furnace := place_test_entity(&world, content, "stone_furnace", {2, 1, 0})
 	stone, coal, plate := test_item(content.items, "stone"), test_item(content.items, "coal"), test_item(content.items, "iron_plate")
 	slots := entity_slots(&world.entities, furnace)
@@ -193,7 +198,7 @@ test_inserter_takes_only_from_the_furnace_output :: proc(t: ^testing.T) {
 	// Taking out into a chest: only the output.
 	taking := place_fuelled_inserter(&world, content, {4, 1, 0}, 0)
 	chest := place_test_entity(&world, content, "wooden_chest", {5, 1, 0})
-	tick_test_entities(&world, content, 600)
+	tick_test_entities(&world, &records, content, 600)
 	testing.expect_value(t, slots[FURNACE_OUTPUT_SLOT], EMPTY_STACK)
 	testing.expect_value(t, chest_count_of(&world, chest, plate), 2)
 	testing.expect_value(t, slots[FURNACE_INPUT_SLOT], Item_Stack{stone, 1})
@@ -204,7 +209,7 @@ test_inserter_takes_only_from_the_furnace_output :: proc(t: ^testing.T) {
 	slots[FURNACE_OUTPUT_SLOT] = Item_Stack{plate, 2}
 	remove_entity(&world.entities, content.machines, chest)
 	place_test_entity(&world, content, "stone_furnace", {5, 1, 0})
-	tick_test_entities(&world, content, 200)
+	tick_test_entities(&world, &records, content, 200)
 	testing.expect_value(t, slots[FURNACE_OUTPUT_SLOT], Item_Stack{plate, 2})
 }
 
@@ -212,22 +217,23 @@ test_inserter_takes_only_from_the_furnace_output :: proc(t: ^testing.T) {
 test_filter_inserter_moves_only_its_filter_item :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
 	pair := make_chest_pair(&world, content, "filter_inserter")
 	coal, plate := test_item(content.items, "coal"), test_item(content.items, "iron_plate")
 	entity_insert(&world.entities, content, pair.source, Item_Stack{coal, 3})
 	entity_insert(&world.entities, content, pair.source, Item_Stack{plate, 3})
 	inserter := test_inserter(&world, pair.inserter)
 	// Outside every power network it stays unpowered.
-	tick_test_entities(&world, content, 100)
+	tick_test_entities(&world, &records, content, 100)
 	testing.expect_value(t, inserter.state, Inserter_State.Unpowered)
 	add_test_power_plant(&world, content, {1, 1, 2}, {3, 1, 0})
-	tick_test_entities(&world, content, 100)
+	tick_test_entities(&world, &records, content, 100)
 	testing.expect_value(t, inserter.state, Inserter_State.No_Filter)
 	testing.expect_value(t, inserter.held, EMPTY_STACK)
 	inserter.filter = inserter_filter_after_input(inserter.filter, Item_Stack{plate, 7}, true, false)
 	testing.expect_value(t, inserter.filter, plate)
 	// 72 ticks a cycle: three plates in 3 * 72, then nothing more.
-	tick_test_entities(&world, content, 4 * 72)
+	tick_test_entities(&world, &records, content, 4 * 72)
 	testing.expect_value(t, chest_count_of(&world, pair.target, plate), 3)
 	testing.expect_value(t, chest_count_of(&world, pair.target, coal), 0)
 	testing.expect_value(t, chest_count_of(&world, pair.source, coal), 3)
@@ -239,38 +245,40 @@ test_filter_inserter_moves_only_its_filter_item :: proc(t: ^testing.T) {
 test_burner_inserter_stalls_when_fuel_runs_out :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
 	pair := make_chest_pair(&world, content)
 	plate, coal := test_item(content.items, "iron_plate"), test_item(content.items, "coal")
 	inserter := test_inserter(&world, pair.inserter)
 	inserter.slots[INSERTER_FUEL_SLOT] = EMPTY_STACK
 	inserter.fuel_joules = 1566 * 10
 	// Idle burns nothing.
-	tick_test_entities(&world, content, 20)
+	tick_test_entities(&world, &records, content, 20)
 	testing.expect_value(t, inserter.state, Inserter_State.Idle)
 	testing.expect_value(t, inserter.fuel_joules, 1566 * 10)
-	testing.expect_value(t, world.statistics.inserter_idle_ticks, 20)
+	testing.expect_value(t, records.statistics.inserter_idle_ticks, 20)
 	entity_insert(&world.entities, content, pair.source, Item_Stack{plate, 5})
 	// Pick, then ten ticks of swing, then it stops in place.
-	tick_test_entities(&world, content, 11)
+	tick_test_entities(&world, &records, content, 11)
 	testing.expect_value(t, inserter.state, Inserter_State.Moving)
 	testing.expect_value(t, inserter.phase_ticks, 10)
-	tick_test_entities(&world, content, 30)
+	tick_test_entities(&world, &records, content, 30)
 	testing.expect_value(t, inserter.state, Inserter_State.No_Fuel)
 	testing.expect_value(t, inserter.phase, Inserter_Phase.Swinging_To_Drop)
 	testing.expect_value(t, inserter.phase_ticks, 10)
 	testing.expect_value(t, inserter.held, Item_Stack{plate, 1})
-	testing.expect_value(t, world.statistics.stalls[.Inserter_Out_Of_Fuel], 1)
+	testing.expect_value(t, records.statistics.stalls[.Inserter_Out_Of_Fuel], 1)
 	// Refuelled, it carries on from where it stopped.
 	entity_insert(&world.entities, content, pair.inserter, Item_Stack{coal, 1})
-	tick_test_entities(&world, content, 40)
+	tick_test_entities(&world, &records, content, 40)
 	testing.expect_value(t, chest_count_of(&world, pair.target, plate), 1)
-	testing.expect_value(t, world.statistics.fuel_burned, 1)
+	testing.expect_value(t, records.statistics.fuel_burned, 1)
 }
 
 @(test)
 test_inserter_waits_for_room_with_the_item_in_hand :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
 	pair := make_chest_pair(&world, content)
 	plate, stone := test_item(content.items, "iron_plate"), test_item(content.items, "stone")
 	entity_insert(&world.entities, content, pair.source, Item_Stack{plate, 5})
@@ -278,14 +286,14 @@ test_inserter_waits_for_room_with_the_item_in_hand :: proc(t: ^testing.T) {
 	for &slot in target {
 		slot = Item_Stack{stone, item_stack_size(content.items, stone)}
 	}
-	tick_test_entities(&world, content, 80)
+	tick_test_entities(&world, &records, content, 80)
 	inserter := test_inserter(&world, pair.inserter)
 	testing.expect_value(t, inserter.state, Inserter_State.Waiting_For_Room)
 	testing.expect_value(t, inserter.phase, Inserter_Phase.At_Drop)
 	testing.expect_value(t, inserter.held, Item_Stack{plate, 1})
-	testing.expect_value(t, world.statistics.stalls[.Inserter_Waiting_For_Room], 1)
+	testing.expect_value(t, records.statistics.stalls[.Inserter_Waiting_For_Room], 1)
 	target[3] = EMPTY_STACK
-	tick_test_entities(&world, content, 1)
+	tick_test_entities(&world, &records, content, 1)
 	testing.expect_value(t, target[3], Item_Stack{plate, 1})
 	testing.expect_value(t, inserter.state, Inserter_State.Moving)
 }
@@ -294,12 +302,13 @@ test_inserter_waits_for_room_with_the_item_in_hand :: proc(t: ^testing.T) {
 test_picking_up_an_inserter_returns_its_fuel_and_held_item :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
 	pair := make_chest_pair(&world, content)
 	plate := test_item(content.items, "iron_plate")
 	entity_insert(&world.entities, content, pair.source, Item_Stack{plate, 5})
-	tick_test_entities(&world, content, 10)
+	tick_test_entities(&world, &records, content, 10)
 	player := make_test_player(content.blocks, {10, 1, 10})
-	testing.expect(t, pick_up_entity(&world, content, &player, pair.inserter, 0))
+	testing.expect(t, pick_up_entity(&world, &records.statistics, content, &player, pair.inserter, 0))
 	testing.expect_value(t, inventory_count(player.inventory, plate), 1)
 	testing.expect_value(t, inventory_count(player.inventory, test_item(content.items, "coal")), 4)
 	testing.expect_value(t, inventory_count(player.inventory, test_item(content.items, "burner_inserter")), 1)
@@ -338,10 +347,11 @@ lay_smelting_line :: proc(world: ^World, content: Simulation_Content) -> (ore_ch
 test_inserter_smelting_line_is_deterministic :: proc(t: ^testing.T) {
 	content := make_test_content()
 	worlds := [2]World{make_floor_world(content.blocks, 32), make_floor_world(content.blocks, 32)}
+	all_records: [2]Game_Records
 	plate_chests: [2]Entity_Handle
 	for &world, index in worlds {
 		_, plate_chests[index] = lay_smelting_line(&world, content)
-		tick_test_entities(&world, content, 1200)
+		tick_test_entities(&world, &all_records[index], content, 1200)
 	}
 	first, second := &worlds[0].entities, &worlds[1].entities
 	testing.expect_value(t, len(first.inserters.entries), len(second.inserters.entries))
@@ -365,8 +375,8 @@ test_inserter_smelting_line_is_deterministic :: proc(t: ^testing.T) {
 	delivered := chest_count_of(&worlds[0], plate_chests[0], plate)
 	testing.expect(t, delivered >= 3)
 	testing.expect_value(t, delivered, chest_count_of(&worlds[1], plate_chests[1], plate))
-	testing.expect_value(t, worlds[0].statistics.stalls, worlds[1].statistics.stalls)
-	testing.expect_value(t, worlds[0].statistics.inserter_idle_ticks, worlds[1].statistics.inserter_idle_ticks)
+	testing.expect_value(t, all_records[0].statistics.stalls, all_records[1].statistics.stalls)
+	testing.expect_value(t, all_records[0].statistics.inserter_idle_ticks, all_records[1].statistics.inserter_idle_ticks)
 }
 
 // Work item 0079: the player takes the item from the inserter's hand
@@ -375,6 +385,7 @@ test_inserter_smelting_line_is_deterministic :: proc(t: ^testing.T) {
 test_taking_the_hand_lets_a_waiting_inserter_swing_back :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
 	pair := make_chest_pair(&world, content)
 	gravel, stone := test_item(content.items, "gravel"), test_item(content.items, "stone")
 	entity_insert(&world.entities, content, pair.source, Item_Stack{gravel, 5})
@@ -382,7 +393,7 @@ test_taking_the_hand_lets_a_waiting_inserter_swing_back :: proc(t: ^testing.T) {
 	for &slot in target {
 		slot = Item_Stack{stone, item_stack_size(content.items, stone)}
 	}
-	tick_test_entities(&world, content, 80)
+	tick_test_entities(&world, &records, content, 80)
 	inserter := test_inserter(&world, pair.inserter)
 	testing.expect_value(t, inserter.state, Inserter_State.Waiting_For_Room)
 	cursor: Held_Stack
@@ -390,12 +401,12 @@ test_taking_the_hand_lets_a_waiting_inserter_swing_back :: proc(t: ^testing.T) {
 	testing.expect_value(t, inserter.held, EMPTY_STACK)
 	testing.expect_value(t, cursor, Held_Stack{Item_Stack{gravel, 1}, MACHINE_SLOT_ORIGIN})
 	// The empty hand drops nothing and swings back on the next tick.
-	tick_test_entities(&world, content, 1)
+	tick_test_entities(&world, &records, content, 1)
 	testing.expect_value(t, inserter.phase, Inserter_Phase.Swinging_Back)
 	testing.expect_value(t, inserter.state, Inserter_State.Moving)
 	testing.expect_value(t, chest_count_of(&world, pair.target, gravel), 0)
 	// Back over the pickup cell 50 ticks later, it picks the next gravel.
-	tick_test_entities(&world, content, 50)
+	tick_test_entities(&world, &records, content, 50)
 	testing.expect_value(t, inserter.held, Item_Stack{gravel, 1})
 	testing.expect_value(t, chest_count_of(&world, pair.source, gravel), 3)
 }
@@ -406,14 +417,15 @@ test_taking_the_hand_lets_a_waiting_inserter_swing_back :: proc(t: ^testing.T) {
 test_inserter_hand_emptied_mid_swing_swings_back :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
 	pair := make_chest_pair(&world, content)
 	plate := test_item(content.items, "iron_plate")
 	entity_insert(&world.entities, content, pair.source, Item_Stack{plate, 5})
-	tick_test_entities(&world, content, 10)
+	tick_test_entities(&world, &records, content, 10)
 	inserter := test_inserter(&world, pair.inserter)
 	testing.expect_value(t, inserter.phase, Inserter_Phase.Swinging_To_Drop)
 	inserter.held = EMPTY_STACK
-	tick_test_entities(&world, content, 41)
+	tick_test_entities(&world, &records, content, 41)
 	testing.expect_value(t, inserter.phase, Inserter_Phase.Swinging_Back)
 	testing.expect_value(t, inserter.state, Inserter_State.Moving)
 	testing.expect_value(t, chest_count_of(&world, pair.target, plate), 0)

@@ -130,11 +130,11 @@ crate_site_chunks :: proc(site: Crate_Site) -> []Chunk_Coordinate {
 	return chunks[:]
 }
 
-load_crate_world :: proc(world: ^World, generator: ^Generator, content: Simulation_Content, chunks: []Chunk_Coordinate) {
+load_crate_world :: proc(world: ^World, records: ^Game_Records, generator: ^Generator, content: Simulation_Content, chunks: []Chunk_Coordinate) {
 	for coordinate in chunks {
-		load_chunk_now(world, generator, coordinate)
+		load_chunk_now(world, records, generator, coordinate)
 	}
-	place_pending_crates(world, content)
+	place_pending_crates(world, records.crate_sites[:], content)
 }
 
 @(test)
@@ -149,14 +149,18 @@ test_crate_placement_does_not_depend_on_load_order :: proc(t: ^testing.T) {
 		testing.expect_value(t, len(generated.crates), coordinate == world_to_chunk_coordinate(site.position) ? 1 : 0)
 	}
 	forward, backward: World
+	forward_records, backward_records: Game_Records
 	defer destroy_world(&forward)
 	defer destroy_world(&backward)
-	load_crate_world(&forward, &generator, content, chunks)
+	defer destroy_game_records(&forward_records)
+	defer destroy_game_records(&backward_records)
+	load_crate_world(&forward, &forward_records, &generator, content, chunks)
 	reversed := slice.clone(chunks, context.temp_allocator)
 	slice.reverse(reversed)
-	load_crate_world(&backward, &generator, content, reversed)
-	for world in ([2]^World{&forward, &backward}) {
-		testing.expect_value(t, len(world.crate_sites), 1)
+	load_crate_world(&backward, &backward_records, &generator, content, reversed)
+	for world, index in ([2]^World{&forward, &backward}) {
+		records := ([2]^Game_Records{&forward_records, &backward_records})[index]
+		testing.expect_value(t, len(records.crate_sites), 1)
 		testing.expect_value(t, len(world.entities.schematic_crates.entries), 1)
 		crate := pool_get(&world.entities.schematic_crates, entity_at(&world.entities, site.position))
 		testing.expect(t, crate != nil)
@@ -176,8 +180,8 @@ test_crate_placement_does_not_depend_on_load_order :: proc(t: ^testing.T) {
 	coordinate := world_to_chunk_coordinate(site.position)
 	free(forward.chunks[coordinate])
 	delete_key(&forward.chunks, coordinate)
-	load_crate_world(&forward, &generator, content, {coordinate})
-	testing.expect_value(t, len(forward.crate_sites), 1)
+	load_crate_world(&forward, &forward_records, &generator, content, {coordinate})
+	testing.expect_value(t, len(forward_records.crate_sites), 1)
 	testing.expect_value(t, len(forward.entities.schematic_crates.entries), 1)
 	testing.expect(t, stack_is_empty(forward.entities.schematic_crates.entries[0].slots[0]))
 }
@@ -211,14 +215,14 @@ test_use_action_reads_exactly_its_recipe :: proc(t: ^testing.T) {
 	}
 	testing.expect_value(t, count_true(simulation.unlocks.schematics_found), 1)
 	testing.expect(t, simulation.unlocks.schematics_found[recipe])
-	testing.expect_value(t, simulation.world.statistics.schematics_found, 1)
-	testing.expect_value(t, hint_counter_value(simulation.world.statistics, Hint{counter = .Schematics_Found}), 1)
+	testing.expect_value(t, simulation.records.statistics.schematics_found, 1)
+	testing.expect_value(t, hint_counter_value(simulation.records.statistics, Hint{counter = .Schematics_Found}), 1)
 	message := simulation.quests.messages[len(simulation.quests.messages) - 1]
 	testing.expect_value(t, message, Quest_Message{tick = 1, text_key = SCHEMATIC_READ_KEY, argument_key = "recipe_charcoal_steel"})
 	testing.expect(t, slice.contains(simulation.quests.notices[:], message))
 	// Without a schematic selected, the same press does nothing more.
 	simulation_tick(&simulation, content, {press({.Place, .Use_Item})})
-	testing.expect_value(t, simulation.world.statistics.schematics_found, 1)
+	testing.expect_value(t, simulation.records.statistics.schematics_found, 1)
 }
 
 clear_inventory :: proc(inventory: Inventory) {
@@ -233,6 +237,7 @@ clear_inventory :: proc(inventory: Inventory) {
 test_use_item_resolution :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_drill_world(content)
+	records := make_test_records(content)
 	player := make_test_player(content.blocks, {10, 1, 10})
 	inventory_add(player.inventory, content.items, test_item(content.items, "iron_plate"), 1)
 	input, used := resolve_use_item(&player, &world.entities, content.items, press({.Place, .Use_Item}))
@@ -247,8 +252,8 @@ test_use_item_resolution :: proc(t: ^testing.T) {
 	testing.expect_value(t, inventory_count(player.inventory, schematic), 0)
 
 	sites := [1]Crate_Site{{region = {0, 0}, position = {4, 1, 4}, choice = 3}}
-	register_crate_sites(&world, sites[:])
-	place_pending_crates(&world, content)
+	register_crate_sites(&records.crate_sites, sites[:])
+	place_pending_crates(&world, records.crate_sites[:], content)
 	crate := entity_at(&world.entities, {4, 1, 4})
 	testing.expect_value(t, crate.kind, Entity_Kind.Schematic_Crate)
 	testing.expect(t, !entity_has_panel(&world.entities, crate))

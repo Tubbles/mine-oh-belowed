@@ -16,6 +16,7 @@ Simulation_State :: struct {
 	// through world.sjson's day_time_ticks.
 	day_offset_ticks: u64,
 	world:            World,
+	records:          Game_Records,
 	players:          [dynamic]Player,
 	// Items obtained, technologies researched and the recipes they unlock.
 	unlocks:          Recipe_Unlocks,
@@ -34,6 +35,37 @@ Simulation_State :: struct {
 	landing_pad:        Landing_Pad_Site,
 }
 
+// The game's records the tick keeps beside the world's blocks.
+Game_Records :: struct {
+	// Production statistics (statistics.odin).
+	statistics:            Statistics,
+	// The queued technology and its progress (lab.odin).
+	research:              Research_State,
+	// Every rocket launched, oldest first (launch_pad.odin).
+	shipments:             [dynamic]Shipment,
+	// The open contracts, the venture credit and the catalogue orders
+	// waiting for the next tick (venture.odin).
+	contracts:             Contract_State,
+	venture_credit:        u64,
+	catalogue_orders:      [dynamic]Catalogue_Order,
+	// The prospecting records drawn on the map (prospecting.odin).
+	assayed_veins:         [dynamic]Assayed_Vein,
+	magnetometer_readings: [dynamic]Magnetometer_Reading,
+	core_samples:          [dynamic]Core_Sample,
+	seismic_shots:         [dynamic]Seismic_Shot,
+	seismic_outlines:      [dynamic]Seismic_Outline,
+	// The schematic crate site of every region whose crate chunk loaded,
+	// placed or not yet (schematic.odin). Kept after the crate is emptied,
+	// so a reloaded chunk never places it again.
+	crate_sites:           [dynamic]Crate_Site,
+	// Every chunk column loaded at least once, with the surface seen there
+	// (world_explored.odin).
+	explored:              map[Chunk_Column]Column_Surface,
+	// Leaves waiting to decay after a felling (tree_felling.odin); the
+	// world tick runs them on the world's blocks.
+	leaf_decay:            Leaf_Decay,
+}
+
 Simulation_Event :: struct {
 	player: int,
 	kind:   Player_Event,
@@ -50,8 +82,8 @@ make_simulation :: proc(config: Game_Config, start: Player_Start, content: Simul
 		unlocks          = make_recipe_unlocks(len(content.items.items), content.recipes, technologies, unlock_all),
 		landing_pad      = landing_pad,
 	}
-	state.world.statistics = make_statistics(len(content.items.items), len(content.machines.machines), len(content.blocks.definitions))
-	state.world.statistics.fluids = make_fluid_statistics(len(content.fluids.fluids))
+	state.records.statistics = make_statistics(len(content.items.items), len(content.machines.machines), len(content.blocks.definitions))
+	state.records.statistics.fluids = make_fluid_statistics(len(content.fluids.fluids))
 	state.world.entities.loose_items.despawn_ticks = loose_item_despawn_ticks(config.loose_item_despawn_minutes, config.tick_rate)
 	capsule := place_capsule(&state.world.entities, content.machines, landing_pad)
 	state.quests = make_quest_state(content.quests, capsule)
@@ -59,8 +91,8 @@ make_simulation :: proc(config: Game_Config, start: Player_Start, content: Simul
 	give_starting_items(&player, content.items, config.starting_items)
 	append(&state.players, player)
 	update_recipe_unlocks(&state.unlocks, content.recipes, state.players[:])
-	observe_player_holdings(&state.world.statistics, state.players[:], false)
-	start_quests(&state.quests, content.quests, state.world.statistics, 0)
+	observe_player_holdings(&state.records.statistics, state.players[:], false)
+	start_quests(&state.quests, content.quests, state.records.statistics, 0)
 	return state
 }
 
@@ -74,6 +106,21 @@ destroy_simulation :: proc(state: ^Simulation_State) {
 	destroy_recipe_unlocks(state.unlocks)
 	destroy_quest_state(state.quests)
 	destroy_world(&state.world)
+	destroy_game_records(&state.records)
+}
+
+destroy_game_records :: proc(records: ^Game_Records) {
+	destroy_statistics(records.statistics)
+	delete(records.shipments)
+	delete(records.catalogue_orders)
+	delete(records.assayed_veins)
+	delete(records.magnetometer_readings)
+	delete(records.core_samples)
+	delete(records.seismic_shots)
+	delete(records.seismic_outlines)
+	delete(records.crate_sites)
+	delete(records.explored)
+	destroy_leaf_decay(&records.leaf_decay)
 }
 
 // The capsule on the pad, or NO_ENTITY without a site or a capsule machine.

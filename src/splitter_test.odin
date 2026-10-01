@@ -389,6 +389,7 @@ lay_splitter_to_chests :: proc(world: ^World, content: Simulation_Content) -> (i
 test_splitter_to_chests_is_deterministic :: proc(t: ^testing.T) {
 	content := make_test_content()
 	worlds := [2]World{make_floor_world(content.blocks, 32), make_floor_world(content.blocks, 32)}
+	all_records: [2]Game_Records
 	chests: [2][Splitter_Side]Entity_Handle
 	plate, copper := test_item(content.items, "iron_plate"), test_item(content.items, "copper_plate")
 	for &world, index in worlds {
@@ -396,7 +397,7 @@ test_splitter_to_chests_is_deterministic :: proc(t: ^testing.T) {
 		input, chests[index] = lay_splitter_to_chests(&world, content)
 		for tick in 0 ..< 1200 {
 			belt_insert_item(&world.entities, input, Belt_Lane(tick % 2), tick % 3 == 0 ? copper : plate)
-			tick_test_entities(&world, content, 1)
+			tick_test_entities(&world, &all_records[index], content, 1)
 		}
 	}
 	first, second := &worlds[0].entities, &worlds[1].entities

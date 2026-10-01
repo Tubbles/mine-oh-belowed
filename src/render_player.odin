@@ -370,9 +370,9 @@ spawn_footstep_dust :: proc(particles: ^Particle_System, particle_memory: Partic
 
 // Once a frame, before the camera: the animation memory learns the
 // frame, and a step puts dust into the particle pool.
-update_player_presence :: proc(memory: ^Player_Animation_Memory, particles: ^Particle_System, particle_memory: Particle_Memory, world: ^World, blocks: Block_Registry, player: Player, tick: u64, render_seconds: f64, cheat_speed: bool) {
+update_player_presence :: proc(memory: ^Player_Animation_Memory, particles: ^Particle_System, particle_memory: Particle_Memory, world: ^World, statistics: Statistics, blocks: Block_Registry, player: Player, tick: u64, render_seconds: f64, cheat_speed: bool) {
 	footstep: bool
-	memory^, footstep = advance_player_animation_memory(memory^, world.statistics.distance_walked_millimetres, placed_total(world.statistics), tick, render_seconds, cheat_speed)
+	memory^, footstep = advance_player_animation_memory(memory^, statistics.distance_walked_millimetres, placed_total(statistics), tick, render_seconds, cheat_speed)
 	in_water := footstep && box_touches_water(world, blocks, player_box(player.position))
 	if footstep_dust_due(footstep, player.on_ground, in_water) {
 		spawn_footstep_dust(particles, particle_memory, world, blocks, player.position)

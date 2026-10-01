@@ -520,22 +520,22 @@ cell_blocks_movement :: proc(world: ^World, registry: Block_Registry, cell: Worl
 // deterministic. Outcrops of veins exhausted in this tick turn to spent
 // rock at the end, and crates of newly loaded cave sites appear. A
 // profile (tick_profile.odin) gets the wall time of each step.
-tick_entities :: proc(world: ^World, content: Simulation_Content, tick_rate: int, profile: ^Tick_Profile = nil) {
+tick_entities :: proc(world: ^World, records: ^Game_Records, content: Simulation_Content, tick_rate: int, profile: ^Tick_Profile = nil) {
 	clock := profile_now(profile)
 	tick_belt_network(&world.entities.belt_network, tick_rate, world.entities.splitters.entries[:])
 	drop_items_off_belt_ends(world, content.blocks)
 	clock = profile_section(profile, .Belts, clock)
 	tick_loose_items(world, content)
 	clock = profile_section(profile, .Loose_Items, clock)
-	record_belt_dead_ends(&world.statistics, &world.entities)
+	record_belt_dead_ends(&records.statistics, &world.entities)
 	clock = profile_section(profile, .Statistics, clock)
-	tick_electric_networks(world, content, tick_rate)
+	tick_electric_networks(world, records, content, tick_rate)
 	clock = profile_section(profile, .Power, clock)
 	for &drill in world.entities.drills.entries {
 		if drill.alive {
 			before := drill
-			advance_drill(world, content, &drill, tick_rate)
-			record_drill_tick(&world.statistics, before, drill)
+			advance_drill(world, records, content, &drill, tick_rate)
+			record_drill_tick(&records.statistics, before, drill)
 		}
 	}
 	clock = profile_section(profile, .Drills, clock)
@@ -544,7 +544,7 @@ tick_entities :: proc(world: ^World, content: Simulation_Content, tick_rate: int
 			before := inserter
 			advance_inserter(&world.entities, content, &inserter, tick_rate)
 			inserter.idle_streak = next_idle_streak(before.idle_streak, inserter.state)
-			record_inserter_tick(&world.statistics, before, inserter, tick_rate)
+			record_inserter_tick(&records.statistics, before, inserter, tick_rate)
 		}
 	}
 	clock = profile_section(profile, .Inserters, clock)
@@ -552,25 +552,25 @@ tick_entities :: proc(world: ^World, content: Simulation_Content, tick_rate: int
 		if furnace.alive {
 			before := furnace
 			furnace = advance_furnace(furnace, content.machines.machines[furnace.machine], content.items, content.recipes, tick_rate, world.settings.byproducts_lenient)
-			record_furnace_tick(&world.statistics, before, furnace, content.recipes)
+			record_furnace_tick(&records.statistics, before, furnace, content.recipes)
 			grown := stack_growth(before.slots[FURNACE_OUTPUT_SLOT], furnace.slots[FURNACE_OUTPUT_SLOT])
-			record_machine_output(&furnace.output_rate, world.statistics.current_second, grown)
+			record_machine_output(&furnace.output_rate, records.statistics.current_second, grown)
 		}
 	}
 	clock = profile_section(profile, .Furnaces, clock)
-	tick_assemblers(world, content, tick_rate)
+	tick_assemblers(world, &records.statistics, content, tick_rate)
 	clock = profile_section(profile, .Assemblers, clock)
-	tick_labs(world, content, tick_rate)
+	tick_labs(world, records, content, tick_rate)
 	clock = profile_section(profile, .Labs, clock)
-	tick_core_sample_drills(world, content, tick_rate)
+	tick_core_sample_drills(world, records, content, tick_rate)
 	clock = profile_section(profile, .Core_Sample_Drills, clock)
-	tick_launch_pads(world, content, tick_rate)
+	tick_launch_pads(world, &records.statistics, content, tick_rate)
 	clock = profile_section(profile, .Launch_Pads, clock)
-	tick_fluids(&world.entities, content, tick_rate, &world.statistics)
+	tick_fluids(&world.entities, content, tick_rate, &records.statistics)
 	clock = profile_section(profile, .Fluids, clock)
 	tick_lamps(world, content.machines)
 	clock = profile_section(profile, .Lamps, clock)
 	apply_spent_outcrops(world, content.veins)
-	place_pending_crates(world, content)
+	place_pending_crates(world, records.crate_sites[:], content)
 	profile_section(profile, .Outcrops_And_Crates, clock)
 }

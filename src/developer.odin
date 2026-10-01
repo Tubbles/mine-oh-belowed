@@ -371,9 +371,9 @@ serve_developer_request :: proc(state: ^Simulation_State, content: Simulation_Co
 	case .Give_Item:
 		give_to_player(player, &state.quests.pending_rewards, content.items, request.grant)
 	case .Complete_Quests_To_Chapter:
-		complete_quests_to_chapter(&state.quests, content.quests, &state.unlocks, content.recipes, state.world.statistics, state.tick, request.chapter)
+		complete_quests_to_chapter(&state.quests, content.quests, &state.unlocks, content.recipes, state.records.statistics, state.tick, request.chapter)
 	case .Finish_Active_Quest:
-		finish_active_quest(&state.quests, content.quests, &state.unlocks, content.recipes, state.world.statistics, state.tick)
+		finish_active_quest(&state.quests, content.quests, &state.unlocks, content.recipes, state.records.statistics, state.tick)
 	case .Unlock_All:
 		unlock_everything(&state.unlocks, content.recipes)
 	case .Set_Time_Of_Day:
@@ -423,7 +423,7 @@ serve_developer_requests :: proc(state: ^Simulation_State, content: Simulation_C
 // infinite technology gains a level like a finished lab research.
 research_for_developer :: proc(state: ^Simulation_State, content: Simulation_Content, technology: int) {
 	if content.technologies.technologies[technology].infinite {
-		state.world.research.levels[technology] += 1
+		state.records.research.levels[technology] += 1
 	}
 	mark_technology_researched(&state.unlocks, content.recipes, technology)
 }

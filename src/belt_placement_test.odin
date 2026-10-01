@@ -65,6 +65,7 @@ give_test_items :: proc(player: ^Player, items: Item_Registry, id: string, count
 test_belt_drag_places_a_run_in_the_world :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
 	set_blocks(&world, test_block(content.blocks, "stone"), {3, 1, 0})
 	players := []Player{make_test_player(content.blocks, {-3.5, 1, 0.5})}
 	player := &players[0]
@@ -72,11 +73,11 @@ test_belt_drag_places_a_run_in_the_world :: proc(t: ^testing.T) {
 	give_test_items(player, content.items, "belt_ramp", 2)
 	// Facing +x, rotation 0: the first belt points away from the player.
 	player.target = Raycast_Hit{hit = true, block = {0, 0, 0}, face = .Positive_Y, adjacent = {0, 1, 0}}
-	place_with_player(&world, content, players, 0, {.Place}, {.Place})
+	place_with_player(&world, &records.statistics, content, players, 0, {.Place}, {.Place})
 	testing.expect(t, player.belt_drag.active)
 	for column in ([?][2]i32{{2, 0}, {3, 1}}) {
 		player.target = Raycast_Hit{hit = true, block = {column.x, 0, column.y}, face = .Positive_Y, adjacent = {column.x, 1, column.y}}
-		place_with_player(&world, content, players, 0, {}, {.Place})
+		place_with_player(&world, &records.statistics, content, players, 0, {}, {.Place})
 	}
 	expected := []Planned_Belt {
 		{{0, 1, 0}, 0, .Flat},
@@ -98,7 +99,7 @@ test_belt_drag_places_a_run_in_the_world :: proc(t: ^testing.T) {
 	testing.expect_value(t, inventory_count(player.inventory, test_item(content.items, "belt")), 7)
 	testing.expect_value(t, inventory_count(player.inventory, test_item(content.items, "belt_ramp")), 0)
 	// Releasing Place ends the drag.
-	place_with_player(&world, content, players, 0, {}, {})
+	place_with_player(&world, &records.statistics, content, players, 0, {}, {})
 	testing.expect(t, !player.belt_drag.active)
 }
 
@@ -130,13 +131,14 @@ test_belt_placed_at_a_run_end_continues_it :: proc(t: ^testing.T) {
 test_belt_pick_up_returns_its_items :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
 	belts := lay_belt_row(&world, content, {0, 1, 0}, 3, 0)
 	plate := test_item(content.items, "iron_plate")
 	belt_insert_item(&world.entities, belts[1], .Left, plate)
 	belt_insert_item(&world.entities, belts[1], .Right, plate)
 	belt_insert_item(&world.entities, belts[2], .Left, plate)
 	player := make_test_player(content.blocks, {-3.5, 1, 0.5})
-	testing.expect(t, pick_up_entity(&world, content, &player, belts[1], 0))
+	testing.expect(t, pick_up_entity(&world, &records.statistics, content, &player, belts[1], 0))
 	testing.expect_value(t, inventory_count(player.inventory, plate), 2)
 	testing.expect_value(t, inventory_count(player.inventory, test_item(content.items, "belt")), 1)
 	testing.expect_value(t, len(world.entities.belt_network.lines), 2)
@@ -147,6 +149,7 @@ test_belt_pick_up_returns_its_items :: proc(t: ^testing.T) {
 test_rotate_and_debug_drop_on_a_targeted_belt :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
 	belts := lay_belt_row(&world, content, {0, 1, 0}, 2, 0)
 	players := []Player{make_test_player(content.blocks, {1.5, 1, 2.5})}
 	players[0].target = Raycast_Hit{hit = true, block = {1, 1, 0}, face = .Positive_Z, adjacent = {1, 1, 1}, entity = belts[1]}
@@ -155,7 +158,7 @@ test_rotate_and_debug_drop_on_a_targeted_belt :: proc(t: ^testing.T) {
 	line := line_of(&world, belts[1])
 	expect_positions(t, lane_positions(line^, .Right), {256 + 128})
 	// Rotate with an empty hand turns the belt; its item stays on it.
-	place_with_player(&world, content, players, 0, {.Rotate_Building})
+	place_with_player(&world, &records.statistics, content, players, 0, {.Rotate_Building})
 	testing.expect_value(t, pool_get(&world.entities.belts, belts[1]).rotation, 1)
 	testing.expect_value(t, len(line_of(&world, belts[1]).lanes[.Right]), 1)
 	testing.expect_value(t, len(line_of(&world, belts[1]).lanes[.Left]), 0)
@@ -169,16 +172,17 @@ test_rotate_and_debug_drop_on_a_targeted_belt :: proc(t: ^testing.T) {
 test_belts_placed_over_ground_cover_replace_it :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
 	tuft := test_block(content.blocks, "grass_tuft")
 	set_blocks(&world, tuft, {0, 1, 0}, {1, 1, 0}, {2, 1, 0})
 	players := []Player{make_test_player(content.blocks, {-3.5, 1, 0.5})}
 	player := &players[0]
 	give_test_items(player, content.items, "belt", 10)
 	player.target = Raycast_Hit{hit = true, block = {0, 1, 0}, face = .Positive_Y, adjacent = {0, 2, 0}}
-	place_with_player(&world, content, players, 0, {.Place}, {.Place})
+	place_with_player(&world, &records.statistics, content, players, 0, {.Place}, {.Place})
 	testing.expect(t, player.belt_drag.active)
 	player.target = Raycast_Hit{hit = true, block = {2, 1, 0}, face = .Positive_Y, adjacent = {2, 2, 0}}
-	place_with_player(&world, content, players, 0, {}, {.Place})
+	place_with_player(&world, &records.statistics, content, players, 0, {}, {.Place})
 	for x in i32(0) ..= 2 {
 		cell := World_Coordinate{x, 1, 0}
 		testing.expectf(t, belt_at(&world.entities, cell) != nil, "no belt at %v", cell)

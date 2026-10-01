@@ -308,13 +308,14 @@ stop_chunk_streaming :: proc(streaming: ^Chunk_Streaming) {
 }
 
 // An all air chunk under open sky looks like a missing one to the mesher,
-// so its arrival changes no neighbour's mesh.
-insert_generated_chunk :: proc(world: ^World, result: Chunk_Job_Result) {
+// so its arrival changes no neighbour's mesh. The explored column and
+// the crate sites go into the records.
+insert_generated_chunk :: proc(world: ^World, records: ^Game_Records, result: Chunk_Job_Result) {
 	world.chunks[result.coordinate] = result.chunk
-	mark_column_explored(world, chunk_column_of(result.coordinate))
+	mark_column_explored(&records.explored, chunk_column_of(result.coordinate))
 	register_column_veins(world, chunk_column_of(result.coordinate), result.veins[:])
 	register_outcrop_cells(world, result.outcrops[:])
-	register_crate_sites(world, result.crates[:])
+	register_crate_sites(&records.crate_sites, result.crates[:])
 	queue.push_back(&world.lighting.arrived_chunks, result.coordinate)
 	seed_entity_lights_in_chunk(world, result.chunk)
 	if chunk_is_all_air(result.chunk) && chunk_is_open_sky(result.chunk) {
@@ -327,8 +328,8 @@ insert_generated_chunk :: proc(world: ^World, result: Chunk_Job_Result) {
 
 // A chunk with saved blocks leaves World.saved_chunks while it is loaded,
 // stays modified, and its light emitting blocks light up again.
-insert_saved_chunk :: proc(world: ^World, registry: Block_Registry, result: Chunk_Job_Result) {
-	insert_generated_chunk(world, result)
+insert_saved_chunk :: proc(world: ^World, records: ^Game_Records, registry: Block_Registry, result: Chunk_Job_Result) {
+	insert_generated_chunk(world, records, result)
 	if saved, found := world.saved_chunks[result.coordinate]; found {
 		delete(saved)
 		delete_key(&world.saved_chunks, result.coordinate)
@@ -338,7 +339,7 @@ insert_saved_chunk :: proc(world: ^World, registry: Block_Registry, result: Chun
 
 // Generation and insertion of one chunk on the calling thread, the way
 // streaming does it on a worker and the main thread. For tests and tools.
-load_chunk_now :: proc(world: ^World, generator: ^Generator, coordinate: Chunk_Coordinate) {
+load_chunk_now :: proc(world: ^World, records: ^Game_Records, generator: ^Generator, coordinate: Chunk_Coordinate) {
 	result := Chunk_Job_Result {
 		kind       = .Generate,
 		coordinate = coordinate,
@@ -351,9 +352,9 @@ load_chunk_now :: proc(world: ^World, generator: ^Generator, coordinate: Chunk_C
 	}
 	result.chunk, result.veins, result.outcrops, result.crates = generated.chunk, generated.veins, generated.outcrops, generated.crates
 	if result.restored {
-		insert_saved_chunk(world, generator.registry, result)
+		insert_saved_chunk(world, records, generator.registry, result)
 	} else {
-		insert_generated_chunk(world, result)
+		insert_generated_chunk(world, records, result)
 	}
 	apply_added_veins_to_chunk(world, generator, coordinate, result.restored)
 	delete(result.veins)
@@ -373,7 +374,7 @@ store_modified_chunk :: proc(world: ^World, chunk: ^Chunk) {
 	world.saved_chunks[chunk.coordinate] = serialize_chunk(chunk)
 }
 
-receive_generated_chunks :: proc(streaming: ^Chunk_Streaming, world: ^World, camera_chunk: Chunk_Coordinate) {
+receive_generated_chunks :: proc(streaming: ^Chunk_Streaming, world: ^World, records: ^Game_Records, camera_chunk: Chunk_Coordinate) {
 	results := take_generated_results(&streaming.shared.jobs, MAXIMUM_GENERATED_PER_FRAME, context.temp_allocator)
 	for result in results {
 		streaming.pending_jobs -= 1
@@ -383,9 +384,9 @@ receive_generated_chunks :: proc(streaming: ^Chunk_Streaming, world: ^World, cam
 			continue
 		}
 		if result.restored {
-			insert_saved_chunk(world, streaming.shared.registry, result)
+			insert_saved_chunk(world, records, streaming.shared.registry, result)
 		} else {
-			insert_generated_chunk(world, result)
+			insert_generated_chunk(world, records, result)
 		}
 		apply_added_veins_to_chunk(world, streaming.shared.generator, result.coordinate, result.restored)
 		delete(result.veins)
@@ -394,13 +395,13 @@ receive_generated_chunks :: proc(streaming: ^Chunk_Streaming, world: ^World, cam
 	}
 }
 
-unload_distant_chunks :: proc(streaming: ^Chunk_Streaming, world: ^World, camera_chunk: Chunk_Coordinate) {
+unload_distant_chunks :: proc(streaming: ^Chunk_Streaming, world: ^World, explored: ^map[Chunk_Column]Column_Surface, camera_chunk: Chunk_Coordinate) {
 	for coordinate in world.chunks {
 		if !in_keep_volume(camera_chunk, coordinate) {
 			append(&streaming.unloaded, coordinate)
 		}
 	}
-	refresh_unloading_surfaces(world, streaming.unloaded[:])
+	refresh_unloading_surfaces(world, explored, streaming.unloaded[:])
 	for coordinate in streaming.unloaded {
 		store_modified_chunk(world, world.chunks[coordinate])
 		free(world.chunks[coordinate])
@@ -479,11 +480,11 @@ schedule_chunk_jobs :: proc(streaming: ^Chunk_Streaming, world: ^World, camera_c
 }
 
 // Main thread, once per frame, before take_current_meshes.
-update_chunk_streaming :: proc(streaming: ^Chunk_Streaming, world: ^World, camera_chunk: Chunk_Coordinate) {
+update_chunk_streaming :: proc(streaming: ^Chunk_Streaming, world: ^World, records: ^Game_Records, camera_chunk: Chunk_Coordinate) {
 	clear(&streaming.unloaded)
 	if streaming.load_around_camera {
-		receive_generated_chunks(streaming, world, camera_chunk)
-		unload_distant_chunks(streaming, world, camera_chunk)
+		receive_generated_chunks(streaming, world, records, camera_chunk)
+		unload_distant_chunks(streaming, world, &records.explored, camera_chunk)
 	}
 	schedule_chunk_jobs(streaming, world, camera_chunk)
 }

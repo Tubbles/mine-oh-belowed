@@ -316,7 +316,7 @@ update_session :: proc(state: ^Frame_State, world_blocked: bool, content: Simula
 	session.ticks_since_save += u64(tick_count)
 	save_when_due(state)
 	player_chunk := world_to_chunk_coordinate(camera_world_coordinate(session.simulation.players[0].position))
-	update_chunk_streaming(&session.streaming, &session.simulation.world, player_chunk)
+	update_chunk_streaming(&session.streaming, &session.simulation.world, &session.simulation.records, player_chunk)
 }
 
 autosave_due :: proc(ticks_since_save: u64, autosave_minutes, tick_rate: int) -> bool {
@@ -401,6 +401,7 @@ session_sound_frame :: proc(state: ^Frame_State, content: Simulation_Content, we
 	session := state.session
 	return Sound_Frame {
 		world = &session.simulation.world,
+		statistics = &session.simulation.records.statistics,
 		content = content,
 		generator = &session.generator,
 		player = session.simulation.players[0],
@@ -526,7 +527,7 @@ world_facts :: proc(state: ^Frame_State) -> World_Facts {
 		loose_item_count = len(world.entities.loose_items.items),
 		belt_line_count = len(world.entities.belt_network.lines),
 		belt_item_count = belt_item_count(world.entities.belt_network),
-		leaf_decay_count = len(world.leaf_decay.updates),
+		leaf_decay_count = len(session.simulation.records.leaf_decay.updates),
 	}
 }
 
@@ -536,7 +537,7 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session, content: Simu
 	player := session.simulation.players[0]
 	alpha := f32(interpolation_alpha(session.accumulator))
 	seconds := rl.GetTime()
-	update_player_presence(&state.player_animation, &state.particles, state.particle_memory, world, content.blocks, player, session.simulation.tick, seconds, session.simulation.cheat_speed)
+	update_player_presence(&state.player_animation, &state.particles, state.particle_memory, world, session.simulation.records.statistics, content.blocks, player, session.simulation.tick, seconds, session.simulation.cheat_speed)
 	pose := interpolate_player_pose(player, alpha)
 	animation := player_animation_state(state.player_animation, player, pose.pitch, seconds)
 	bob := head_bob_offset(animation.walk_phase, head_bob_amplitude(animation.moving, animation.sprinting, head_bob_enabled(state.settings)))
@@ -572,7 +573,7 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session, content: Simu
 	if state.diagnostics_page == .Render {
 		counts.water_meshes = water_meshes_in_view(state.renderer, camera)
 	}
-	update_particles(&state.particles, &state.particle_memory, world, content, state.model_renderer, session.simulation.players[:], tick_rate, state.frame_seconds)
+	update_particles(&state.particles, &state.particle_memory, world, session.simulation.records.shipments[:], content, state.model_renderer, session.simulation.players[:], tick_rate, state.frame_seconds)
 	update_satellite_pass(&state.particle_memory, session.simulation.quests.messages[:], state.frame_seconds)
 	draw_particles(&state.particle_renderer, camera, &state.particles, state.particle_memory, world, state.model_renderer, color_to_vector3(sky.colors.sun_tint) * day_factor(sky.blend))
 	if weather_motion_enabled(state.settings) {
@@ -646,6 +647,7 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 	screen_context.player = &session.simulation.players[0]
 	screen_context.player_index = 0
 	screen_context.world = &session.simulation.world
+	screen_context.records = &session.simulation.records
 	screen_context.tick = session.simulation.tick
 	screen_context.tick_rate = session.simulation.tick_rate
 	screen_context.technologies = session.technologies
@@ -682,7 +684,7 @@ run_ui_frame :: proc(state: ^Frame_State) {
 	screen_context := make_screen_context(state)
 	if state.session != nil {
 		show_simulation_events(&state.ui, &state.session.simulation.events)
-		show_quest_notices(&state.ui, &state.session.simulation.quests.notices, state.session.simulation.world.shipments[:], state.content.items)
+		show_quest_notices(&state.ui, &state.session.simulation.quests.notices, state.session.simulation.records.shipments[:], state.content.items)
 		draw_hud(&state.ui, screen_context)
 	}
 	run_screens(&state.ui, screen_context)

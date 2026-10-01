@@ -15,10 +15,10 @@ apply_block_changes :: proc(world: ^World, registry: Block_Registry, tick: u64) 
 }
 
 // felling is empty in tests without trees, which turns leaf decay off.
-tick_world :: proc(world: ^World, registry: Block_Registry, tick: u64, felling := Tree_Felling{}) {
+tick_world :: proc(world: ^World, leaf_decay: ^Leaf_Decay, registry: Block_Registry, tick: u64, felling := Tree_Felling{}) {
 	apply_block_changes(world, registry, tick)
 	run_water_updates(world, registry, tick, MAXIMUM_WATER_UPDATES_PER_TICK)
-	run_leaf_decay(world, registry, felling, tick, MAXIMUM_LEAF_DECAYS_PER_TICK)
+	run_leaf_decay(world, leaf_decay, registry, felling, tick, MAXIMUM_LEAF_DECAYS_PER_TICK)
 	seed_arrived_chunks(world, registry, MAXIMUM_LIGHT_CHUNK_SEEDS_PER_TICK)
 	propagate_light(world, registry, MAXIMUM_LIGHT_STEPS_PER_TICK)
 }

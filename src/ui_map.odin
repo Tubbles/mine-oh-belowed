@@ -341,24 +341,24 @@ paint_map_entities :: proc(pixels: []Ui_Color, frame: Map_Frame, entities: ^Enti
 // The prospecting layers over the ground: assayed footprints, seismic
 // outlines, core samples and magnetometer readings, in that order, in
 // the palette's colours.
-paint_map_records :: proc(pixels: []Ui_Color, frame: Map_Frame, world: ^World, colors: [Palette_Color]Ui_Color) {
-	for assayed in world.assayed_veins {
+paint_map_records :: proc(pixels: []Ui_Color, frame: Map_Frame, records: ^Game_Records, colors: [Palette_Color]Ui_Color) {
+	for assayed in records.assayed_veins {
 		paint_map_disc(pixels, frame, assayed.centre, assayed.radius, colors[.Map_Assayed], MAP_ASSAYED_BLEND)
 	}
-	for outline in world.seismic_outlines {
+	for outline in records.seismic_outlines {
 		paint_map_circle(pixels, frame, outline.centre, outline.radius, colors[outline.resolved ? .Map_Resolved : .Map_Seismic])
 	}
-	for sample in world.core_samples {
+	for sample in records.core_samples {
 		paint_map_cross(pixels, frame, sample.position.x, sample.position.z, colors[sample.vein_found ? .Map_Core_Sample_Vein : .Map_Core_Sample])
 	}
-	for reading in world.magnetometer_readings {
+	for reading in records.magnetometer_readings {
 		paint_map_reading(pixels, frame, reading, colors[.Map_Magnetometer])
 	}
 }
 
 // Without a generator the surface has no biome tint. marker_colors is
 // indexed by Machine_Id (machine_marker_colors); colors is the palette's.
-paint_map :: proc(view: ^Map_View, frame: Map_Frame, world: ^World, blocks: Block_Registry, generator: ^Generator, marker_colors: []Ui_Color, colors: [Palette_Color]Ui_Color) {
+paint_map :: proc(view: ^Map_View, frame: Map_Frame, world: ^World, records: ^Game_Records, blocks: Block_Registry, generator: ^Generator, marker_colors: []Ui_Color, colors: [Palette_Color]Ui_Color) {
 	resize(&view.pixels, int(frame.size * frame.size))
 	layer: Map_Biome_Layer
 	if generator != nil {
@@ -369,7 +369,7 @@ paint_map :: proc(view: ^Map_View, frame: Map_Frame, world: ^World, blocks: Bloc
 	}
 	paint_map_surface(view.pixels[:], frame, view.surfaces, map_block_colors(blocks), layer)
 	paint_map_entities(view.pixels[:], frame, &world.entities, marker_colors)
-	paint_map_records(view.pixels[:], frame, world, colors)
+	paint_map_records(view.pixels[:], frame, records, colors)
 	view.painted_frame = frame
 	view.revision += 1
 	view.repaint_seconds = 0
@@ -416,14 +416,14 @@ pan_map :: proc(view: ^Map_View, state: ^Ui_State, image: Ui_Rectangle) {
 }
 
 // Opening centres on the player and reads the surfaces.
-activate_map_view :: proc(view: ^Map_View, world: ^World, player: Player) {
+activate_map_view :: proc(view: ^Map_View, world: ^World, explored: map[Chunk_Column]Column_Surface, player: Player) {
 	view.active = true
 	view.centre = {player.position.x, player.position.z}
 	if view.zoom == 0 && view.revision == 0 {
 		view.zoom = MAP_DEFAULT_ZOOM
 	}
 	view.dragging = false
-	collect_explored_surfaces(world, &view.surfaces)
+	collect_explored_surfaces(world, explored, &view.surfaces)
 	view.painted_frame = {}
 	// The biome table may have been reloaded since the map was last open.
 	view.biome_frame = {}
@@ -572,7 +572,7 @@ map_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		return
 	}
 	if !view.active {
-		activate_map_view(view, world, screen_context.player^)
+		activate_map_view(view, world, screen_context.records.explored, screen_context.player^)
 	}
 	ui_backdrop(state)
 	panel := ui_panel_area(state)
@@ -590,7 +590,7 @@ map_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	frame := map_frame_for(view.centre, view.zoom)
 	view.repaint_seconds += state.frame_seconds
 	if frame != view.painted_frame || view.repaint_seconds >= MAP_REPAINT_SECONDS {
-		paint_map(view, frame, world, screen_context.blocks, screen_context.generator, machine_marker_colors(ui_theme(state), screen_context.machines, screen_context.items, palette), colors)
+		paint_map(view, frame, world, screen_context.records, screen_context.blocks, screen_context.generator, machine_marker_colors(ui_theme(state), screen_context.machines, screen_context.items, palette), colors)
 	}
 	draw_image(state, image, view.pixels[:], {frame.size, frame.size}, view.revision)
 	draw_outline(state, image, UI_PANEL_BORDER_COLOR)

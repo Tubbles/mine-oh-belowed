@@ -125,7 +125,7 @@ Item_Machine_Counts :: struct {
 	consumers: int,
 }
 
-count_item_machines :: proc(world: ^World, content: Simulation_Content, item: Item_Id) -> Item_Machine_Counts {
+count_item_machines :: proc(world: ^World, research: Research_State, content: Simulation_Content, item: Item_Id) -> Item_Machine_Counts {
 	counts: Item_Machine_Counts
 	entities := &world.entities
 	for furnace in entities.furnaces.entries {
@@ -146,7 +146,7 @@ count_item_machines :: proc(world: ^World, content: Simulation_Content, item: It
 		}
 	}
 	for lab in entities.labs.entries {
-		if lab.alive && lab_uses_pack(world.research, content.technologies, item) {
+		if lab.alive && lab_uses_pack(research, content.technologies, item) {
 			counts.consumers += 1
 		}
 	}

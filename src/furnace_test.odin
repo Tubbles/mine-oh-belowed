@@ -126,12 +126,13 @@ test_furnace_stalls_on_a_full_output :: proc(t: ^testing.T) {
 test_furnaces_tick_in_the_simulation :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
 	handle := add_entity(&world.entities, content.machines, test_machine(content.machines, "stone_furnace"), {4, 1, 4}, 0)
 	furnace := pool_get(&world.entities.furnaces, handle)
 	furnace.slots[FURNACE_FUEL_SLOT] = Item_Stack{test_item(content.items, "log"), 1}
 	furnace.slots[FURNACE_INPUT_SLOT] = Item_Stack{test_item(content.items, "log"), 4}
 	for _ in 0 ..< 2 * 192 {
-		tick_entities(&world, content, TEST_TICK_RATE)
+		tick_entities(&world, &records, content, TEST_TICK_RATE)
 	}
 	furnace = pool_get(&world.entities.furnaces, handle)
 	testing.expect_value(t, furnace.slots[FURNACE_OUTPUT_SLOT], Item_Stack{test_item(content.items, "charcoal"), 2})

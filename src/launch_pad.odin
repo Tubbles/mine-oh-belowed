@@ -17,7 +17,7 @@ import "core:slice"
 // - rocket ready;
 // - launching, started by the panel's Launch button or Interact while the
 //   cargo holds something: the cargo is taken, a shipment {tick, items and
-//   counts} is recorded on the world with the statistics, and the ascent
+//   counts} is recorded in the game records with the statistics, and the ascent
 //   runs for launch_seconds before the pad waits for parts again.
 //
 // A launch is requested (launch_requested) and served after the entity
@@ -302,10 +302,10 @@ advance_launch_pad :: proc(pad: ^Launch_Pad, machine: Machine, statistics: ^Stat
 	}
 }
 
-tick_launch_pads :: proc(world: ^World, content: Simulation_Content, tick_rate: int) {
+tick_launch_pads :: proc(world: ^World, statistics: ^Statistics, content: Simulation_Content, tick_rate: int) {
 	for &pad in world.entities.launch_pads.entries {
 		if pad.alive {
-			advance_launch_pad(&pad, content.machines.machines[pad.machine], &world.statistics, tick_rate)
+			advance_launch_pad(&pad, content.machines.machines[pad.machine], statistics, tick_rate)
 		}
 	}
 }
@@ -409,14 +409,14 @@ record_shipment :: proc(statistics: ^Statistics, shipment: Shipment) {
 
 // Takes the rocket and the cargo, records the shipment and starts the
 // ascent. False without a rocket or without cargo.
-launch_rocket :: proc(world: ^World, pad: ^Launch_Pad, tick: u64) -> bool {
+launch_rocket :: proc(records: ^Game_Records, pad: ^Launch_Pad, tick: u64) -> bool {
 	if !launch_pad_can_launch(pad) {
 		return false
 	}
 	shipment := make_shipment(launch_pad_cargo(pad), tick)
 	shipment.pad_centre = launch_pad_centre(pad^)
-	append(&world.shipments, shipment)
-	record_shipment(&world.statistics, shipment)
+	append(&records.shipments, shipment)
+	record_shipment(&records.statistics, shipment)
 	for &slot in launch_pad_cargo(pad) {
 		slot = EMPTY_STACK
 	}
@@ -492,11 +492,11 @@ record_launch_refusal :: proc(statistics: ^Statistics, refusal: Launch_Refusal) 
 	}
 }
 
-apply_launch_requests :: proc(world: ^World, tick: u64) {
+apply_launch_requests :: proc(world: ^World, records: ^Game_Records, tick: u64) {
 	for &pad in world.entities.launch_pads.entries {
 		if pad.alive && pad.launch_requested {
 			pad.launch_requested = false
-			launch_rocket(world, &pad, tick)
+			launch_rocket(records, &pad, tick)
 		}
 	}
 }

@@ -42,6 +42,7 @@ test_statistics_letter_jump_follows_list_order :: proc(t: ^testing.T) {
 test_count_item_machines :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_drill_world(content)
+	records := make_test_records(content)
 	items, recipes := content.items, content.recipes
 	hematite, plate, gear, coal := test_item(items, "hematite"), test_item(items, "iron_plate"), test_item(items, "iron_gear"), test_item(items, "coal")
 	pack := test_item(items, "science_pack_1")
@@ -56,17 +57,17 @@ test_count_item_machines :: proc(t: ^testing.T) {
 	place_test_drill(&world, content, {-20, 1, 20}, 0, vein)
 	place_test_entity(&world, content, "lab", {4, 1, -10})
 	simulation_content := content
-	counts := count_item_machines(&world, simulation_content, hematite)
+	counts := count_item_machines(&world, records.research, simulation_content, hematite)
 	testing.expect_value(t, counts, Item_Machine_Counts{producers = 1, consumers = 1})
-	testing.expect_value(t, count_item_machines(&world, simulation_content, test_item(items, "hematite_low_grade")).producers, 1)
-	testing.expect_value(t, count_item_machines(&world, simulation_content, plate), Item_Machine_Counts{producers = 1, consumers = 1})
-	testing.expect_value(t, count_item_machines(&world, simulation_content, gear), Item_Machine_Counts{producers = 1, consumers = 0})
+	testing.expect_value(t, count_item_machines(&world, records.research, simulation_content, test_item(items, "hematite_low_grade")).producers, 1)
+	testing.expect_value(t, count_item_machines(&world, records.research, simulation_content, plate), Item_Machine_Counts{producers = 1, consumers = 1})
+	testing.expect_value(t, count_item_machines(&world, records.research, simulation_content, gear), Item_Machine_Counts{producers = 1, consumers = 0})
 	// The furnace and the drill burn coal.
-	testing.expect_value(t, count_item_machines(&world, simulation_content, coal), Item_Machine_Counts{producers = 0, consumers = 2})
+	testing.expect_value(t, count_item_machines(&world, records.research, simulation_content, coal), Item_Machine_Counts{producers = 0, consumers = 2})
 	// Labs use packs only while research is queued.
-	testing.expect_value(t, count_item_machines(&world, simulation_content, pack).consumers, 0)
-	world.research = Research_State{queued = true, technology = test_technology(content.technologies, "automation")}
-	testing.expect_value(t, count_item_machines(&world, simulation_content, pack).consumers, 1)
+	testing.expect_value(t, count_item_machines(&world, records.research, simulation_content, pack).consumers, 0)
+	records.research = Research_State{queued = true, technology = test_technology(content.technologies, "automation")}
+	testing.expect_value(t, count_item_machines(&world, records.research, simulation_content, pack).consumers, 1)
 }
 
 @(test)
@@ -156,13 +157,14 @@ test_marker_size_grows_with_distance :: proc(t: ^testing.T) {
 test_running_line_counts_consumption_and_output_rate :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
-	world.statistics = make_statistics(len(content.items.items), len(content.machines.machines), len(content.blocks.definitions), context.temp_allocator)
+	records: Game_Records
+	records.statistics = make_statistics(len(content.items.items), len(content.machines.machines), len(content.blocks.definitions), context.temp_allocator)
 	_, handle, _ := lay_gear_line_at(&world, content, {})
-	tick_test_entities(&world, content, 1200)
+	tick_test_entities(&world, &records, content, 1200)
 	gear, plate := test_item(content.items, "iron_gear"), test_item(content.items, "iron_plate")
 	// Six crafts started (the sixth at tick 1151), two plates each.
-	testing.expect_value(t, item_counter(world.statistics.consumed, plate), 12)
-	testing.expect(t, item_counter(world.statistics.consumed, test_item(content.items, "coal")) > 0)
+	testing.expect_value(t, item_counter(records.statistics.consumed, plate), 12)
+	testing.expect(t, item_counter(records.statistics.consumed, test_item(content.items, "coal")) > 0)
 	assembler := test_assembler(&world, handle)
-	testing.expect_value(t, machine_output_per_minute(assembler.output_rate, world.statistics.current_second), item_counter(world.statistics.produced, gear))
+	testing.expect_value(t, machine_output_per_minute(assembler.output_rate, records.statistics.current_second), item_counter(records.statistics.produced, gear))
 }

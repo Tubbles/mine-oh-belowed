@@ -142,9 +142,9 @@ test_lenient_furnace_voids_slag :: proc(t: ^testing.T) {
 
 // An alloy furnace in a world whose slag slot is full: strict stalls,
 // lenient reads the world setting and voids the slag at completion.
-alloy_furnace_with_full_slag :: proc(content: Simulation_Content, lenient: bool) -> (world: World, furnace: ^Assembler) {
+alloy_furnace_with_full_slag :: proc(content: Simulation_Content, lenient: bool) -> (world: World, records: Game_Records, furnace: ^Assembler) {
 	world = make_floor_world(content.blocks, 32)
-	world.statistics = make_statistics(len(content.items.items), len(content.machines.machines), len(content.blocks.definitions), context.temp_allocator)
+	records = make_test_records(content)
 	world.settings.byproducts_lenient = lenient
 	handle := place_test_entity(&world, content, "alloy_furnace", {1, 1, 0})
 	furnace = pool_get(&world.entities.assemblers, handle)
@@ -160,49 +160,50 @@ alloy_furnace_with_full_slag :: proc(content: Simulation_Content, lenient: bool)
 test_crafting_machine_byproduct_strictness :: proc(t: ^testing.T) {
 	content := make_test_content()
 	bronze, slag := test_item(content.items, "bronze_plate"), test_item(content.items, "slag")
-	strict_world, strict := alloy_furnace_with_full_slag(content, false)
-	tick_test_entities(&strict_world, content, 400)
+	strict_world, strict_records, strict := alloy_furnace_with_full_slag(content, false)
+	tick_test_entities(&strict_world, &strict_records, content, 400)
 	testing.expect_value(t, strict.state, Assembler_State.Output_Full)
 	testing.expect_value(t, strict.slots[3], EMPTY_STACK)
-	testing.expect_value(t, strict_world.statistics.stalls[.Crafting_Output_Full], 1)
-	lenient_world, lenient := alloy_furnace_with_full_slag(content, true)
-	tick_test_entities(&lenient_world, content, 400)
+	testing.expect_value(t, strict_records.statistics.stalls[.Crafting_Output_Full], 1)
+	lenient_world, lenient_records, lenient := alloy_furnace_with_full_slag(content, true)
+	tick_test_entities(&lenient_world, &lenient_records, content, 400)
 	testing.expect_value(t, lenient.slots[3], Item_Stack{bronze, 4})
 	testing.expect_value(t, lenient.slots[4], Item_Stack{slag, 100})
-	testing.expect_value(t, lenient_world.statistics.produced[bronze], 4)
-	testing.expect_value(t, lenient_world.statistics.produced[slag], 0)
-	testing.expect_value(t, lenient_world.statistics.voided[slag], 1)
+	testing.expect_value(t, lenient_records.statistics.produced[bronze], 4)
+	testing.expect_value(t, lenient_records.statistics.produced[slag], 0)
+	testing.expect_value(t, lenient_records.statistics.voided[slag], 1)
 	// It lit coal, and ran out of ingredients after the craft.
-	testing.expect_value(t, lenient_world.statistics.fuel_burned, 1)
-	testing.expect_value(t, lenient_world.statistics.stalls[.Crafting_Missing_Input], 1)
+	testing.expect_value(t, lenient_records.statistics.fuel_burned, 1)
+	testing.expect_value(t, lenient_records.statistics.stalls[.Crafting_Missing_Input], 1)
 	// The main output still waits under lenient.
 	lenient.slots[1] = {test_item(content.items, "copper_plate"), 3}
 	lenient.slots[2] = {test_item(content.items, "tin_plate"), 1}
 	lenient.slots[3] = {bronze, 48}
-	tick_test_entities(&lenient_world, content, 1)
+	tick_test_entities(&lenient_world, &lenient_records, content, 1)
 	testing.expect_value(t, lenient.state, Assembler_State.Output_Full)
-	testing.expect_value(t, lenient_world.statistics.stalls[.Crafting_Output_Full], 1)
+	testing.expect_value(t, lenient_records.statistics.stalls[.Crafting_Output_Full], 1)
 }
 
 @(test)
 test_crafting_machine_stalls_are_counted :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
-	world.statistics = make_statistics(len(content.items.items), len(content.machines.machines), len(content.blocks.definitions), context.temp_allocator)
+	records: Game_Records
+	records.statistics = make_statistics(len(content.items.items), len(content.machines.machines), len(content.blocks.definitions), context.temp_allocator)
 	handle := place_test_entity(&world, content, "crusher", {1, 1, 0})
 	crusher := pool_get(&world.entities.assemblers, handle)
 	crusher.slots[0] = {test_item(content.items, "hematite_low_grade"), 2}
 	// No pole: the crusher has no power.
-	tick_test_entities(&world, content, 10)
+	tick_test_entities(&world, &records, content, 10)
 	testing.expect_value(t, crusher.state, Assembler_State.No_Power)
-	testing.expect_value(t, world.statistics.stalls[.Crafting_No_Power], 1)
+	testing.expect_value(t, records.statistics.stalls[.Crafting_No_Power], 1)
 	furnace := place_test_entity(&world, content, "alloy_furnace", {5, 1, 0})
 	alloy := pool_get(&world.entities.assemblers, furnace)
 	alloy.slots[1] = {test_item(content.items, "copper_plate"), 3}
 	alloy.slots[2] = {test_item(content.items, "tin_plate"), 1}
-	tick_test_entities(&world, content, 1)
+	tick_test_entities(&world, &records, content, 1)
 	testing.expect_value(t, alloy.state, Assembler_State.No_Fuel)
-	testing.expect_value(t, world.statistics.stalls[.Crafting_No_Fuel], 1)
+	testing.expect_value(t, records.statistics.stalls[.Crafting_No_Fuel], 1)
 }
 
 // The byproduct uses: slag to gravel in the crusher, gravel and water to
@@ -360,12 +361,13 @@ test_concrete_brick_and_slag_place_and_mine :: proc(t: ^testing.T) {
 		testing.expect_value(t, item_places_block(items, item), block)
 		testing.expect_value(t, block_drop(items, block), item)
 		world := make_floor_world(registry, 32)
+		records: Game_Records
 		players := []Player{make_test_player(registry, {0.5, 1, 0.5})}
 		player := &players[0]
 		player.inventory.slots[0] = Item_Stack{item, 1}
 		player.selected_hotbar_slot = 0
 		player.target = Raycast_Hit{hit = true, block = {2, 0, 0}, face = .Positive_Y, adjacent = {2, 1, 0}}
-		place_with_player(&world, Simulation_Content{blocks = registry, items = items, machines = make_test_machines()}, players, 0, {.Place})
+		place_with_player(&world, &records.statistics, Simulation_Content{blocks = registry, items = items, machines = make_test_machines()}, players, 0, {.Place})
 		testing.expect_value(t, world_get_block(&world, {2, 1, 0}), block)
 		testing.expect_value(t, player.inventory.slots[0], EMPTY_STACK)
 		// Mined from above, it takes its hardness and comes back. The
@@ -374,9 +376,9 @@ test_concrete_brick_and_slag_place_and_mine :: proc(t: ^testing.T) {
 		player.held.stack = Item_Stack{test_item(items, "wooden_pickaxe"), 1}
 		player.pitch = -89
 		required := int(mining_required_ticks(hardness[index], TEST_TICK_RATE))
-		tick_test_player(&world, registry, player, Input_Frame{pressed = {.Mine}}, required - 1)
+		tick_test_player(&world, &records, registry, player, Input_Frame{pressed = {.Mine}}, required - 1)
 		testing.expect_value(t, world_get_block(&world, {0, 0, 0}), block)
-		tick_test_player(&world, registry, player, Input_Frame{pressed = {.Mine}}, 1)
+		tick_test_player(&world, &records, registry, player, Input_Frame{pressed = {.Mine}}, 1)
 		testing.expect_value(t, world_get_block(&world, {0, 0, 0}), AIR_BLOCK)
 		// A block item without a stack on the hotbar goes to the main grid.
 		testing.expect_value(t, player.inventory.slots[HOTBAR_SLOT_COUNT], Item_Stack{item, 1})

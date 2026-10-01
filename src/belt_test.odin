@@ -346,18 +346,19 @@ test_belt_movement_is_deterministic :: proc(t: ^testing.T) {
 test_player_walks_over_and_rides_a_belt :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
 	belts := lay_belt_row(&world, content, {2, 1, 0}, 8, 0)
 	testing.expect(t, !cell_blocks_movement(&world, content.blocks, {3, 1, 0}))
 	testing.expect(t, cell_is_solid_or_entity(&world, content.blocks, {3, 1, 0}))
 	players := []Player{make_test_player(content.blocks, {4.5, 1, 0.5})}
 	players[0].on_ground = true
-	tick_player(&world, content, players, 0, {}, TEST_TICK_RATE, 0)
+	tick_player(&world, &records, content, players, 0, {}, TEST_TICK_RATE, 0)
 	// One tick of 8 units is 1/32 block, exact in f32.
 	testing.expect_value(t, players[0].position.x, 4.53125)
 	testing.expect_value(t, players[0].position.y, 1)
 	// Standing beside the belt does nothing.
 	players[0].position = {4.5, 1, 1.5}
-	tick_player(&world, content, players, 0, {}, TEST_TICK_RATE, 0)
+	tick_player(&world, &records, content, players, 0, {}, TEST_TICK_RATE, 0)
 	testing.expect_value(t, players[0].position.x, 4.5)
 	_ = belts
 }
@@ -369,6 +370,7 @@ test_player_walks_over_and_rides_a_belt :: proc(t: ^testing.T) {
 test_belt_end_over_a_ledge_drops_and_a_level_dead_end_holds :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 3)
+	records: Game_Records
 	use_temporary_loose_items(&world)
 	plate := test_item(content.items, "iron_plate")
 	set_blocks(&world, test_block(content.blocks, "stone"), {3, -3, 0}, {4, -3, 0}, {0, 0, 4}, {1, 0, 4}, {2, 0, 4}, {3, 0, 4})
@@ -385,12 +387,12 @@ test_belt_end_over_a_ledge_drops_and_a_level_dead_end_holds :: proc(t: ^testing.
 	testing.expect(t, !drops)
 	// 76 ticks to the end, then one falling cell per period from y 1 to
 	// the belt at y -2.
-	tick_loose_item_test(&world, content, 76)
+	tick_loose_item_test(&world, &records, content, 76)
 	testing.expect_value(t, len(line_of(&world, ledge[0]).lanes[.Left]), 0)
 	testing.expect_value(t, len(world.entities.loose_items.items), 2)
 	testing.expect_value(t, world.entities.loose_items.items[0].offset, [2]i8{0, -1})
 	testing.expect_value(t, world.entities.loose_items.items[1].offset, [2]i8{0, 1})
-	tick_loose_item_test(&world, content, 3 * LOOSE_ITEM_FALL_TICKS + 1)
+	tick_loose_item_test(&world, &records, content, 3 * LOOSE_ITEM_FALL_TICKS + 1)
 	testing.expect_value(t, len(world.entities.loose_items.items), 0)
 	lower := line_of(&world, below)
 	testing.expect_value(t, len(lower.lanes[.Left]), 1)

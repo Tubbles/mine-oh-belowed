@@ -458,12 +458,12 @@ launching_pad_count :: proc(world: ^World) -> int {
 	return count
 }
 
-observe_sounds :: proc(memory: Sound_Memory, world: ^World, player: Player, tick: u64, quests: ^Quest_State, particle_memory: Particle_Memory, cheat_speed: bool) -> Sound_Observation {
+observe_sounds :: proc(memory: Sound_Memory, world: ^World, statistics: Statistics, player: Player, tick: u64, quests: ^Quest_State, particle_memory: Particle_Memory, cheat_speed: bool) -> Sound_Observation {
 	return Sound_Observation {
 		tick = tick,
-		distance_millimetres = world.statistics.distance_walked_millimetres,
-		placed_total = placed_total(world.statistics),
-		blocks_mined = world.statistics.blocks_mined,
+		distance_millimetres = statistics.distance_walked_millimetres,
+		placed_total = placed_total(statistics),
+		blocks_mined = statistics.blocks_mined,
 		mining = mining_sound_memory_of(player.mining),
 		launching_count = launching_pad_count(world),
 		descent_active = particle_memory.descent.active,
@@ -514,6 +514,7 @@ working_hum_sources :: proc(world: ^World, machines: Machine_Registry) -> []Hum_
 // What play_frame_sounds reads.
 Sound_Frame :: struct {
 	world:           ^World,
+	statistics:      ^Statistics,
 	content:         Simulation_Content,
 	generator:       ^Generator,
 	player:          Player,
@@ -529,7 +530,7 @@ Sound_Frame :: struct {
 // Once a frame in a session, after the particles.
 play_frame_sounds :: proc(mixer: ^Audio_Mixer, memory: ^Sound_Memory, frame: Sound_Frame) {
 	cues: Sound_Cues
-	memory^, cues = advance_sound_memory(memory^, observe_sounds(memory^, frame.world, frame.player, frame.tick, frame.quests, frame.particle_memory, frame.cheat_speed))
+	memory^, cues = advance_sound_memory(memory^, observe_sounds(memory^, frame.world, frame.statistics^, frame.player, frame.tick, frame.quests, frame.particle_memory, frame.cheat_speed))
 	play_sound_cues(mixer, memory^, cues, frame)
 	eye := player_eye(frame.player.position)
 	set_hum_target(mixer, memory^, frame, eye)

@@ -54,6 +54,7 @@ world_settings_from_file :: proc(seed: u64, settings: World_File_Settings) -> Wo
 // Every world_set_block is recorded in block_changes, and the next
 // simulation tick turns the changes into light and water updates.
 // Entities keep their cells in entities.cells; those cells stay air here.
+// The game's records are on Simulation_State (Game_Records).
 World :: struct {
 	chunks:         map[Chunk_Coordinate]^Chunk,
 	settings:       World_Settings,
@@ -64,44 +65,16 @@ World :: struct {
 	outcrop_cells:  map[World_Coordinate]Vein_Id,
 	// Outcrop cells of exhausted veins still to turn into spent rock.
 	spent_outcrops: [dynamic]World_Coordinate,
-	// The schematic crate site of every region whose crate chunk loaded,
-	// placed or not yet (schematic.odin). Kept after the crate is emptied,
-	// so a reloaded chunk never places it again.
-	crate_sites:    [dynamic]Crate_Site,
 	block_changes:  [dynamic]Block_Change,
 	lighting:       Lighting,
 	// Block light sources that are entities, by cell (world_light.odin).
 	entity_lights:  map[World_Coordinate]Light_Color,
 	water:          Water_Flow,
-	// Leaves waiting to decay after a felling (tree_felling.odin).
-	leaf_decay:     Leaf_Decay,
 	entities:       Entities,
 	// Modified chunks that are not loaded, serialised (world_serialize.odin):
 	// unloaded ones and those read from a save. Streaming inserts these
 	// blocks instead of generated ones (world_streaming.odin).
 	saved_chunks:   map[Chunk_Coordinate][]byte,
-	// Production statistics (statistics.odin), here like the entities so
-	// that the player and entity ticks reach them through the world.
-	statistics:     Statistics,
-	// The queued technology and its progress (lab.odin), here so the lab
-	// tick reaches it through the world.
-	research:       Research_State,
-	// Every chunk column loaded at least once, with the surface seen there
-	// (world_explored.odin), and the prospecting records drawn on the map
-	// (prospecting.odin). All saved.
-	explored:              map[Chunk_Column]Column_Surface,
-	assayed_veins:         [dynamic]Assayed_Vein,
-	magnetometer_readings: [dynamic]Magnetometer_Reading,
-	core_samples:          [dynamic]Core_Sample,
-	seismic_shots:         [dynamic]Seismic_Shot,
-	seismic_outlines:      [dynamic]Seismic_Outline,
-	// Every rocket launched, oldest first (launch_pad.odin). Saved.
-	shipments:             [dynamic]Shipment,
-	// The open contracts, the venture credit and the catalogue orders
-	// waiting for the next tick (venture.odin). Saved.
-	contracts:             Contract_State,
-	venture_credit:        u64,
-	catalogue_orders:      [dynamic]Catalogue_Order,
 }
 
 Block_Change :: struct {
@@ -286,22 +259,11 @@ destroy_world :: proc(world: ^World) {
 	delete(world.veins)
 	delete(world.outcrop_cells)
 	delete(world.spent_outcrops)
-	delete(world.crate_sites)
-	delete(world.explored)
-	delete(world.assayed_veins)
-	delete(world.magnetometer_readings)
-	delete(world.core_samples)
-	delete(world.seismic_shots)
-	delete(world.seismic_outlines)
-	delete(world.shipments)
-	delete(world.catalogue_orders)
 	delete(world.block_changes)
 	destroy_lighting(&world.lighting)
 	delete(world.entity_lights)
 	destroy_water_flow(&world.water)
-	destroy_leaf_decay(&world.leaf_decay)
 	destroy_entities(&world.entities)
-	destroy_statistics(world.statistics)
 }
 
 chunk_is_all_air :: proc(chunk: ^Chunk) -> bool {

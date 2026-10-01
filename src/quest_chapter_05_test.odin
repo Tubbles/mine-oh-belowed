@@ -213,15 +213,16 @@ test_blocks_placed_and_recycled_counters :: proc(t: ^testing.T) {
 	items := make_test_items()
 	concrete := test_item(items, "concrete")
 	world := make_floor_world(registry, 32)
-	world.statistics = make_statistics(len(items.items), 1, len(registry.definitions), context.temp_allocator)
+	records: Game_Records
+	records.statistics = make_statistics(len(items.items), 1, len(registry.definitions), context.temp_allocator)
 	players := []Player{make_test_player(registry, {0.5, 1, 0.5})}
 	player := &players[0]
 	player.inventory.slots[0] = Item_Stack{concrete, 2}
 	player.selected_hotbar_slot = 0
 	player.target = Raycast_Hit{hit = true, block = {2, 0, 0}, face = .Positive_Y, adjacent = {2, 1, 0}}
-	place_with_player(&world, Simulation_Content{blocks = registry, items = items, machines = make_test_machines()}, players, 0, {.Place})
-	testing.expect_value(t, world.statistics.blocks_placed[concrete], 1)
-	testing.expect_value(t, world.statistics.world_actions, 1)
+	place_with_player(&world, &records.statistics, Simulation_Content{blocks = registry, items = items, machines = make_test_machines()}, players, 0, {.Place})
+	testing.expect_value(t, records.statistics.blocks_placed[concrete], 1)
+	testing.expect_value(t, records.statistics.world_actions, 1)
 	statistics := make_statistics(len(items.items), 1, 1, context.temp_allocator)
 	assembler, gear := test_item(items, "assembler_1"), test_item(items, "iron_gear")
 	inputs := []Item_Stack{{assembler, 1}}

@@ -552,7 +552,7 @@ craft_queue_has_empty_runs :: proc(queue: Craft_Queue) -> bool {
 // A registered vein of a vanished type cannot be dropped (drills and
 // outcrops name it), so it refuses the file. Prospecting records of one
 // are dropped.
-remap_vein_types :: proc(world: ^World, remap: Content_Remap) -> (problem: string, ok: bool) {
+remap_vein_types :: proc(world: ^World, records: ^Game_Records, remap: Content_Remap) -> (problem: string, ok: bool) {
 	for &vein in world.veins {
 		saved := vein.type
 		vein.type = remapped_index(remap, .Vein_Types, saved) or_return
@@ -561,16 +561,16 @@ remap_vein_types :: proc(world: ^World, remap: Content_Remap) -> (problem: strin
 		}
 	}
 	kept := 0
-	for assayed in world.assayed_veins {
+	for assayed in records.assayed_veins {
 		type := remapped_index(remap, .Vein_Types, assayed.type) or_return
 		if type != CONTENT_GONE {
-			world.assayed_veins[kept] = assayed
-			world.assayed_veins[kept].type = type
+			records.assayed_veins[kept] = assayed
+			records.assayed_veins[kept].type = type
 			kept += 1
 		}
 	}
-	resize(&world.assayed_veins, kept)
-	for &sample in world.core_samples {
+	resize(&records.assayed_veins, kept)
+	for &sample in records.core_samples {
 		if !sample.vein_found {
 			continue
 		}

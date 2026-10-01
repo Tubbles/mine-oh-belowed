@@ -43,10 +43,10 @@ make_save_test_simulation :: proc(generator: ^Generator, content: Simulation_Con
 	return simulation
 }
 
-load_save_test_chunks :: proc(world: ^World, generator: ^Generator) {
+load_save_test_chunks :: proc(world: ^World, records: ^Game_Records, generator: ^Generator) {
 	chunks := TEST_WORLD_CHUNKS
 	for coordinate in chunks {
-		load_chunk_now(world, generator, coordinate)
+		load_chunk_now(world, records, generator, coordinate)
 	}
 }
 
@@ -111,23 +111,25 @@ SAVE_TEST_GOLD_QUARTZ :: World_Coordinate{-29, 0, -28}
 // schematic read.
 lay_save_test_schematics :: proc(simulation: ^Simulation_State, content: Simulation_Content) {
 	world := &simulation.world
+	records := &simulation.records
 	sites := [2]Crate_Site{{region = {40, 40}, position = SAVE_TEST_CRATE, choice = 1}, {region = {41, 40}, position = {10_000, -40, 10_000}, choice = 2}}
-	register_crate_sites(world, sites[:])
-	place_pending_crates(world, content)
+	register_crate_sites(&records.crate_sites, sites[:])
+	place_pending_crates(world, records.crate_sites[:], content)
 	world_set_block(world, SAVE_TEST_GOLD_QUARTZ, test_block(content.blocks, "gold_quartz"))
 	schematic := test_item(content.items, "schematic_slag_concrete")
-	read_schematic(&simulation.unlocks, &simulation.quests, &world.statistics, content.recipes, schematic, 0)
+	read_schematic(&simulation.unlocks, &simulation.quests, &records.statistics, content.recipes, schematic, 0)
 }
 
 // The crate, the pending site, the gold quartz and the found schematic
 // came through a save.
 schematics_loaded :: proc(simulation: ^Simulation_State, content: Simulation_Content) -> bool {
 	world := &simulation.world
+	records := &simulation.records
 	crate := pool_get(&world.entities.schematic_crates, entity_at(&world.entities, SAVE_TEST_CRATE))
 	found := simulation.unlocks.schematics_found[test_recipe(content.recipes, "slag_concrete")]
-	sites_kept := len(world.crate_sites) == 2 && world.crate_sites[0].placed && !world.crate_sites[1].placed
+	sites_kept := len(records.crate_sites) == 2 && records.crate_sites[0].placed && !records.crate_sites[1].placed
 	gold_quartz := world_get_block(world, SAVE_TEST_GOLD_QUARTZ) == test_block(content.blocks, "gold_quartz")
-	return crate != nil && !stack_is_empty(crate.slots[0]) && found && sites_kept && gold_quartz && world.statistics.schematics_found == 1
+	return crate != nil && !stack_is_empty(crate.slots[0]) && found && sites_kept && gold_quartz && records.statistics.schematics_found == 1
 }
 
 SAVE_TEST_CORE_SAMPLE_DRILL :: World_Coordinate{-28, 1, 28}
@@ -135,20 +137,20 @@ SAVE_TEST_CORE_SAMPLE_DRILL :: World_Coordinate{-28, 1, 28}
 // Prospecting (work item 0038): an assayed vein, a magnetometer reading, a
 // core sample over the deep vein, a seismic shot imaging it, and a core
 // sample drill part way through its sampling.
-lay_save_test_prospecting :: proc(world: ^World, content: Simulation_Content) {
-	assayed := assay_vein(world, content.veins, {-19, 0, 21})
+lay_save_test_prospecting :: proc(world: ^World, records: ^Game_Records, content: Simulation_Content) {
+	assayed := assay_vein(world, records, content.veins, {-19, 0, 21})
 	assert(assayed)
 	hematite := test_item(content.items, "hematite")
-	append(&world.magnetometer_readings, magnetometer_reading(world.veins[:], content.veins, hematite, 30, {-10, 1, 18}))
-	append(&world.core_samples, take_core_sample(world, len(content.blocks.definitions), {21, 1, -10}))
-	fire_seismic_shot(world, {10, 0, -10}, 32)
+	append(&records.magnetometer_readings, magnetometer_reading(world.veins[:], content.veins, hematite, 30, {-10, 1, 18}))
+	append(&records.core_samples, take_core_sample(world, len(content.blocks.definitions), {21, 1, -10}))
+	fire_seismic_shot(world, records, {10, 0, -10}, 32)
 	drill := pool_get(&world.entities.core_sample_drills, place_test_entity(world, content, "core_sample_drill", SAVE_TEST_CORE_SAMPLE_DRILL))
 	drill.work_ticks = 77
 }
 
 // The prospecting records, the drill and the explored set came through.
-prospecting_loaded :: proc(loaded, original: ^World) -> bool {
-	drill := pool_get(&loaded.entities.core_sample_drills, entity_at(&loaded.entities, SAVE_TEST_CORE_SAMPLE_DRILL))
+prospecting_loaded :: proc(loaded_world: ^World, loaded, original: ^Game_Records) -> bool {
+	drill := pool_get(&loaded_world.entities.core_sample_drills, entity_at(&loaded_world.entities, SAVE_TEST_CORE_SAMPLE_DRILL))
 	records := len(loaded.assayed_veins) == 1 && len(loaded.magnetometer_readings) == 1 && loaded.magnetometer_readings[0].found
 	records &&= len(loaded.core_samples) == 1 && loaded.core_samples[0].vein_found && len(loaded.seismic_shots) == 1 && len(loaded.seismic_outlines) == 1
 	counters := loaded.statistics.veins_assayed == 1 && loaded.statistics.seismic_shots == 1
@@ -158,8 +160,8 @@ prospecting_loaded :: proc(loaded, original: ^World) -> bool {
 SAVE_TEST_LAUNCH_PAD :: World_Coordinate{22, 1, 0}
 
 // A launch pad (work item 0040) assembling without power, with its parts,
-// fuel and cargo, and one shipment on the world.
-lay_save_test_launch_pad :: proc(world: ^World, content: Simulation_Content) {
+// fuel and cargo, and one shipment in the records.
+lay_save_test_launch_pad :: proc(world: ^World, records: ^Game_Records, content: Simulation_Content) {
 	handle := place_test_entity(world, content, "launch_pad", SAVE_TEST_LAUNCH_PAD)
 	for id in ([?]string{"rocket_structure", "guidance_unit", "cargo_capsule", "steel"}) {
 		entity_insert(&world.entities, content, handle, {test_item(content.items, id), 10})
@@ -169,22 +171,22 @@ lay_save_test_launch_pad :: proc(world: ^World, content: Simulation_Content) {
 	started := start_assembly(pad, content.machines.machines[pad.machine])
 	assert(started)
 	shipment := make_shipment([]Item_Stack{{test_item(content.items, "iron_plate"), 40}}, 77)
-	append(&world.shipments, shipment)
-	record_shipment(&world.statistics, shipment)
+	append(&records.shipments, shipment)
+	record_shipment(&records.statistics, shipment)
 	// The venture (work item 0041): offers fill the slots on the first
 	// tick, a catalogue order is served then, and two mining productivity
 	// levels make every drill put out more.
-	world.statistics.placed[pad.machine] += 1
-	world.venture_credit = 2000
-	ordered := order_from_catalogue(world, content.contracts, 0, launch_pad_centre(pad^))
+	records.statistics.placed[pad.machine] += 1
+	records.venture_credit = 2000
+	ordered := order_from_catalogue(records, content.contracts, 0, launch_pad_centre(pad^))
 	assert(ordered)
-	world.research.levels[test_technology(content.technologies, "mining_productivity")] = 2
+	records.research.levels[test_technology(content.technologies, "mining_productivity")] = 2
 }
 
 // The pad kept its assembly and cargo, the shipment and its statistics
 // came through.
-launch_pad_loaded :: proc(loaded, original: ^World) -> bool {
-	pad := pool_get(&loaded.entities.launch_pads, entity_at(&loaded.entities, SAVE_TEST_LAUNCH_PAD))
+launch_pad_loaded :: proc(loaded_world: ^World, loaded, original: ^Game_Records) -> bool {
+	pad := pool_get(&loaded_world.entities.launch_pads, entity_at(&loaded_world.entities, SAVE_TEST_LAUNCH_PAD))
 	if pad == nil || len(loaded.shipments) != 1 {
 		return false
 	}
@@ -194,7 +196,7 @@ launch_pad_loaded :: proc(loaded, original: ^World) -> bool {
 
 // Open contracts, the credit left after the order and the levels came
 // through.
-venture_loaded :: proc(loaded, original: ^World, technologies: Technology_Registry) -> bool {
+venture_loaded :: proc(loaded, original: ^Game_Records, technologies: Technology_Registry) -> bool {
 	contracts := loaded.contracts.open_count == MAXIMUM_OPEN_CONTRACTS && loaded.contracts == original.contracts
 	credit := loaded.venture_credit == original.venture_credit && loaded.venture_credit < 2000
 	return contracts && credit && loaded.research.levels[test_technology(technologies, "mining_productivity")] == 2
@@ -218,6 +220,7 @@ lay_save_test_loose_items :: proc(world: ^World, content: Simulation_Content) {
 
 build_save_test_site :: proc(simulation: ^Simulation_State, content: Simulation_Content) {
 	world := &simulation.world
+	records := &simulation.records
 	carve_save_test_floor(world, test_block(content.blocks, "stone"))
 	build_power_plant(world, content)
 	place_test_entity(world, content, "power_switch", {12, 1, 6})
@@ -233,11 +236,11 @@ build_save_test_site :: proc(simulation: ^Simulation_State, content: Simulation_
 	bore := test_drill(world, place_test_entity(world, content, "bore_drill", {20, 1, -12}))
 	bore.vein, bore.bored_ticks = deep, 1234
 	lay_save_test_schematics(simulation, content)
-	lay_save_test_prospecting(world, content)
-	lay_save_test_launch_pad(world, content)
+	lay_save_test_prospecting(world, records, content)
+	lay_save_test_launch_pad(world, records, content)
 	lay_save_test_loose_items(world, content)
 	technology := test_technology(content.technologies, "automation")
-	testing_refusal := queue_research(&world.research, content.technologies, simulation.unlocks, technology)
+	testing_refusal := queue_research(&records.research, content.technologies, simulation.unlocks, technology)
 	assert(testing_refusal == .None)
 }
 
@@ -333,7 +336,7 @@ test_save_load_run_matches_the_original :: proc(t: ^testing.T) {
 	generator := make_test_generator(DEFAULT_WORLD_SEED)
 	original := make_save_test_simulation(&generator, content)
 	defer destroy_simulation(&original)
-	load_save_test_chunks(&original.world, &generator)
+	load_save_test_chunks(&original.world, &original.records, &generator)
 	build_save_test_site(&original, content)
 	expect_every_pool_used(t, &original.world.entities)
 	run_save_test_ticks(&original, content, 0, 300)
@@ -348,7 +351,7 @@ test_save_load_run_matches_the_original :: proc(t: ^testing.T) {
 	defer destroy_simulation(&loaded)
 	testing.expect_value(t, loaded.tick, original.tick)
 	testing.expect_value(t, len(loaded.world.saved_chunks), modified_chunk_count(&original.world))
-	load_save_test_chunks(&loaded.world, &generator)
+	load_save_test_chunks(&loaded.world, &loaded.records, &generator)
 	testing.expect_value(t, len(loaded.world.saved_chunks), 0)
 	loaded_hash := simulation_state_hash(&loaded)
 	testing.expect_value(t, loaded_hash, simulation_state_hash(&original))
@@ -359,14 +362,14 @@ test_save_load_run_matches_the_original :: proc(t: ^testing.T) {
 
 	// What the save carried is really there.
 	testing.expect(t, len(belt_cell_items(&loaded.world.entities)) > 0)
-	testing.expect(t, loaded.world.research.queued && labs_in_progress(&loaded.world.entities) > 0)
+	testing.expect(t, loaded.records.research.queued && labs_in_progress(&loaded.world.entities) > 0)
 	testing.expect(t, len(loaded.quests.messages) > 0)
 	testing.expect(t, pipes_holding_fluid(&loaded.world.entities) > 0)
 	testing.expect(t, deep_veins_and_bore_drill_loaded(&loaded.world))
 	testing.expect(t, schematics_loaded(&loaded, content))
-	testing.expect(t, prospecting_loaded(&loaded.world, &original.world))
-	testing.expect(t, launch_pad_loaded(&loaded.world, &original.world))
-	testing.expect(t, venture_loaded(&loaded.world, &original.world, content.technologies))
+	testing.expect(t, prospecting_loaded(&loaded.world, &loaded.records, &original.records))
+	testing.expect(t, launch_pad_loaded(&loaded.world, &loaded.records, &original.records))
+	testing.expect(t, venture_loaded(&loaded.records, &original.records, content.technologies))
 	testing.expect(t, len(loaded.world.entities.loose_items.items) > 0)
 	testing.expect(t, slice.equal(loaded.world.entities.loose_items.items[:], original.world.entities.loose_items.items[:]))
 	testing.expect_value(t, len(loaded.world.entities.fluid_networks.networks), len(original.world.entities.fluid_networks.networks))
@@ -385,7 +388,7 @@ test_save_load_run_matches_the_original :: proc(t: ^testing.T) {
 	testing.expect(t, simulation_state_hash(&loaded) != before_running, "the simulation moved on")
 	// The rate rings (work item 0028) came through and closed a ten
 	// second span after loading, the same in both.
-	statistics, original_statistics := loaded.world.statistics, original.world.statistics
+	statistics, original_statistics := loaded.records.statistics, original.records.statistics
 	testing.expect(t, slice.any_of_proc(statistics.produced_rates.per_ten_seconds, proc(count: u32) -> bool {return count > 0}))
 	testing.expect(t, slice.equal(statistics.produced_rates.per_ten_seconds, original_statistics.produced_rates.per_ten_seconds))
 	testing.expect(t, slice.equal(statistics.consumed_rates.per_second, original_statistics.consumed_rates.per_second))
@@ -404,8 +407,10 @@ test_saved_torch_lit_cave_is_lit_after_load :: proc(t: ^testing.T) {
 	origin := chunk_origin(coordinate)
 	centre := origin + {16, 16, 16}
 	dug: World
+	dug_records: Game_Records
 	defer destroy_world(&dug)
-	load_chunk_now(&dug, &generator, coordinate)
+	defer destroy_game_records(&dug_records)
+	load_chunk_now(&dug, &dug_records, &generator, coordinate)
 	for y in i32(-1) ..= 1 {
 		for z in i32(-3) ..= 3 {
 			for x in i32(-3) ..= 3 {
@@ -419,9 +424,11 @@ test_saved_torch_lit_cave_is_lit_after_load :: proc(t: ^testing.T) {
 	testing.expect_value(t, block_light_at(&dug, centre + {3, 0, 0}), 12)
 
 	loaded: World
+	loaded_records: Game_Records
 	defer destroy_world(&loaded)
+	defer destroy_game_records(&loaded_records)
 	loaded.saved_chunks[coordinate] = serialize_chunk(dug.chunks[coordinate])
-	load_chunk_now(&loaded, &generator, coordinate)
+	load_chunk_now(&loaded, &loaded_records, &generator, coordinate)
 	chunk := loaded.chunks[coordinate]
 	testing.expect(t, chunk.modified)
 	testing.expect_value(t, world_get_block(&loaded, centre), torch)
@@ -440,8 +447,10 @@ test_modified_chunk_survives_unloading :: proc(t: ^testing.T) {
 	coordinate := Chunk_Coordinate{1, 3, 1}
 	cell := chunk_origin(coordinate) + {4, 4, 4}
 	world: World
+	records: Game_Records
 	defer destroy_world(&world)
-	load_chunk_now(&world, &generator, coordinate)
+	defer destroy_game_records(&records)
+	load_chunk_now(&world, &records, &generator, coordinate)
 	testing.expect(t, !world.chunks[coordinate].modified)
 	world_set_block(&world, cell, test_block(registry, "stone"))
 	testing.expect(t, world.chunks[coordinate].modified)
@@ -449,7 +458,7 @@ test_modified_chunk_survives_unloading :: proc(t: ^testing.T) {
 	store_modified_chunk(&world, world.chunks[coordinate])
 	free(world.chunks[coordinate])
 	delete_key(&world.chunks, coordinate)
-	load_chunk_now(&world, &generator, coordinate)
+	load_chunk_now(&world, &records, &generator, coordinate)
 	testing.expect_value(t, world_get_block(&world, cell), test_block(registry, "stone"))
 	testing.expect_value(t, block_light_at(&world, cell + {0, 1, 0}), 9)
 }
@@ -722,7 +731,7 @@ test_a_save_without_the_loose_item_table_loads :: proc(t: ^testing.T) {
 	without_table := encode_entities(&original, content, header)
 	// The empty table (a count and the schema) ends the file.
 	table := make([dynamic]byte, context.temp_allocator)
-	write_later_tables(&table, &original.world)
+	write_later_tables(&table, &original.world, &original.records)
 	without_table = without_table[:len(without_table) - len(table)]
 	spill_stack(&original.world, content.blocks, {2, 1, 2}, {test_item(content.items, "coal"), 5}, {-1, 1})
 	with_table := encode_entities(&original, content, header)
@@ -794,25 +803,25 @@ test_leaf_decay_queue_round_trips :: proc(t: ^testing.T) {
 	generator := make_test_generator(DEFAULT_WORLD_SEED)
 	original := make_save_test_simulation(&generator, content)
 	defer destroy_simulation(&original)
-	schedule_leaf_decay(&original.world.leaf_decay, {4, 12, -3}, 130)
-	schedule_leaf_decay(&original.world.leaf_decay, {5, 12, -3}, 95)
+	schedule_leaf_decay(&original.records.leaf_decay, {4, 12, -3}, 130)
+	schedule_leaf_decay(&original.records.leaf_decay, {5, 12, -3}, 95)
 	header := make_save_header()
 	with_table := encode_entities(&original, content, header)
 	table := make([dynamic]byte, context.temp_allocator)
-	write_list(&table, original.world.leaf_decay.updates[:])
+	write_list(&table, original.records.leaf_decay.updates[:])
 	without_table := with_table[:len(with_table) - len(table)]
 
 	remap: Content_Remap
 	newer := make_save_test_simulation(&generator, content)
 	defer destroy_simulation(&newer)
 	testing.expect_value(t, decode_entities(&newer, content, with_table, "entities.bin", header, &remap), "")
-	testing.expect(t, slice.equal(newer.world.leaf_decay.updates[:], original.world.leaf_decay.updates[:]))
-	testing.expect(t, World_Coordinate{5, 12, -3} in newer.world.leaf_decay.scheduled)
+	testing.expect(t, slice.equal(newer.records.leaf_decay.updates[:], original.records.leaf_decay.updates[:]))
+	testing.expect(t, World_Coordinate{5, 12, -3} in newer.records.leaf_decay.scheduled)
 
 	older := make_save_test_simulation(&generator, content)
 	defer destroy_simulation(&older)
-	schedule_leaf_decay(&older.world.leaf_decay, {1, 1, 1}, 1)
+	schedule_leaf_decay(&older.records.leaf_decay, {1, 1, 1}, 1)
 	testing.expect_value(t, decode_entities(&older, content, without_table, "entities.bin", header, &remap), "")
-	testing.expect_value(t, len(older.world.leaf_decay.updates), 0)
-	testing.expect_value(t, len(older.world.leaf_decay.scheduled), 0)
+	testing.expect_value(t, len(older.records.leaf_decay.updates), 0)
+	testing.expect_value(t, len(older.records.leaf_decay.scheduled), 0)
 }

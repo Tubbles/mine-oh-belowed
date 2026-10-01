@@ -93,7 +93,7 @@ The toolkit turns an input frame into a draw list; the screens decide what the w
   - `touch_overlay.odin`: the virtual gamepad, its layout files, gestures, drawing ([touch_overlay.md](touch_overlay.md)).
   - `haptics.odin`, `haptics_android.odin`, `haptics_desktop.odin`: `Haptic_Request` and the rumble constants for every target; the phone's vibrator, through the JNI helpers of the platform package; the desktop stub.
   - `system_keyboard.odin`, `system_keyboard_linux.odin`, `system_keyboard_android.odin`, `system_keyboard_windows.odin`: `System_Keyboard_Field`, a text field's window rectangle; show and hide the platform keyboard for it.
-- State: `Ui_State` (57 fields), `Screen_Context` (54), `Input_Frame`, `Touch_Overlay_State`, `Title_State`; the four session views (`Map_View` and the browsers) sit on `Session`.
+- State: `Ui_State` (57 fields), `Screen_Context` (55), `Input_Frame`, `Touch_Overlay_State`, `Title_State`; the four session views (`Map_View` and the browsers) sit on `Session`.
 - Tests: every `*_test.odin` beside its file; `ui_audit_test.odin` draws every screen at every audit size, `ui_pointer_test.odin` the pointer and taps, `accessibility_test.odin`.
 - Reaches into: tools 43 (accepted: the Data files screen on `Data_Browser` 31, the diagnostics page names 3, a `block_name` field as noise 9), loop 14 (queued 3: `Frame_State` in `touch_overlay.odin` 8; accepted 6: `mining_ring_centre`, `BUILD_STAMP`, `parse_seed`, noise).
 
@@ -121,9 +121,9 @@ The world owns blocks and what is derived from blocks; generation is a pure func
   - `save_binary.odin`: the type driven codec (schemas, enums by name, lists).
   - `save_state.odin`, `save_remap.odin`: the entities.bin body and `simulation_state_hash`; content tables and the id remap.
   - `save_world.odin`, `save_list.odin`: world.sjson, region files, staging and swap; the save list.
-- State: `World` (27 fields; 13 are the simulation's records parked here), `Chunk`, `Chunk_Streaming` (on `Session`), `Generator`, `Block_Registry`, `World_Settings`.
+- State: `World` (13 fields: chunks, settings, veins and their indices, outcrops, block changes, light, water, saved chunks and, until the cell occupant index, `entities`), `Chunk`, `Chunk_Streaming` (on `Session`), `Generator`, `Block_Registry`, `World_Settings`.
 - Tests: every `*_test.odin` beside its file; `save_test.odin` and `save_codec_test.odin` (save, load and run to the same hash).
-- Reaches into: simulation 220 (accepted 197: the save codec encoding pools, records, `Simulation_State` and `Simulation_Content`, and `save_world.odin` calling `make_simulation` and `simulation_day_ticks` 193, `vein_is_exhausted` 1, `tick_world` running the leaf decay of `tree_felling.odin` 3; queued 3: the game's records on `World` 15; queued 5: raycast and water reading entities, the crate sites at chunk arrival 8), presentation 12 (accepted: the mesher's atlas and tile variation).
+- Reaches into: simulation 221 (accepted 206: the save codec encoding pools, `Game_Records`, `Simulation_State` and `Simulation_Content`, and `save_world.odin` calling `make_simulation` and `simulation_day_ticks` 201, `vein_is_exhausted` 1, `tick_world` running the leaf decay queue of `tree_felling.odin` 4; queued 4: streaming registering the crate sites and the explored column into `Game_Records` at chunk arrival 6; queued 5: `World.entities` and raycast and water reading entities 9), presentation 12 (accepted: the mesher's atlas and tile variation).
 
 ## simulation
 
@@ -131,7 +131,7 @@ The factory: what changes per tick; blocks belong to the world, prototypes to co
 
 - Entry: `entity.odin`, `tick_entities` (called by `simulation_tick` in `simulation_world.odin`).
 - Files in reading order:
-  - `simulation_state.odin`: `Simulation_State`, `Simulation_Event`, `make_simulation` with `place_capsule`, `destroy_simulation`, `simulation_day_ticks`.
+  - `simulation_state.odin`: `Simulation_State`, `Game_Records` (the game's records beside the world), `Simulation_Event`, `make_simulation` with `place_capsule`, `destroy_simulation` and `destroy_game_records`, `simulation_day_ticks`.
   - `simulation_world.odin`: `Simulation_Content`, `simulation_tick`, `apply_research_result`, `simulation_quest_context`.
   - `entity.odin`: `Entity_Kind`, `Entity_Handle`, `Entity_Common`, `Entity_Pool`, `Entities`, add and remove, `tick_entities`.
   - `entity_placement.odin`: placement rules, `commit_placement`, rotation, pick up.
@@ -152,7 +152,7 @@ The factory: what changes per tick; blocks belong to the world, prototypes to co
   - `venture.odin`, `tree_felling.odin`: `Contract_State`, shipments served, the orbital survey; felling and leaf decay.
   - `developer.odin`: developer kits and `serve_developer_requests`, run inside the tick.
   - `tick_profile.odin`: `Tick_Profile`, wall time per tick section.
-- State: `Simulation_State`, `Simulation_Content`, `Entities` (16 pools, the belt, fluid and electric networks, the cell map, loose items), `Player`, `Inventory`, `Statistics`, `Research_State`, `Quest_State`, `Recipe_Unlocks`, `Contract_State`, `Tick_Profile`.
+- State: `Simulation_State`, `Game_Records` (the records beside the world), `Simulation_Content`, `Entities` (16 pools, the belt, fluid and electric networks, the cell map, loose items), `Player`, `Inventory`, `Statistics`, `Research_State`, `Quest_State`, `Recipe_Unlocks`, `Contract_State`, `Tick_Profile`.
 - Tests: every `*_test.odin` beside its file; `simulation_tick` through the simulation and save tests; the systems in `byproduct_test.odin`, `chemistry_test.odin`, `combustion_test.odin`, `deep_mining_test.odin`, `hydro_grid_test.odin`, `oil_test.odin`, `ore_processing_test.odin`, `power_test.odin`; the whole chain in `benchmark_test.odin` (tools).
 - Reaches into: loop 1 (accepted: `parse_seed`), ui 29 (accepted: the tick's input types `Input_Frame`, `Action_Set`, `Action`), presentation 18 (accepted: machine models and motion 6, `Fly_Camera` 6, `block_centre` and `line_block_belt` 5, `DAY_START_FRACTION` 1).
 

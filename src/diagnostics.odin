@@ -587,7 +587,7 @@ append_player_lines :: proc(lines: ^[dynamic]Diagnostics_Line, state: Frame_Stat
 }
 
 research_diagnostics_text :: proc(state: Frame_State) -> string {
-	research := state.session.simulation.world.research
+	research := state.session.simulation.records.research
 	labs := len(state.session.simulation.world.entities.labs.entries) - len(state.session.simulation.world.entities.labs.free)
 	if !research.queued {
 		return fmt.tprintf("research none queued  labs %d", labs)
@@ -614,7 +614,7 @@ quest_diagnostics_text :: proc(state: Frame_State) -> string {
 // The counters of the active quest's first item objective.
 objective_counters_text :: proc(state: Frame_State) -> string {
 	quests := state.session.simulation.quests
-	statistics := state.session.simulation.world.statistics
+	statistics := state.session.simulation.records.statistics
 	if quests.active == NO_QUEST {
 		return fmt.tprintf("walked %d mm  world actions %d", statistics.distance_walked_millimetres, statistics.world_actions)
 	}

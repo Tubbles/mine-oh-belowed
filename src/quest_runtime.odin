@@ -59,7 +59,7 @@ Quest_Progress :: struct {
 
 // argument_key, when set, is the text that replaces MESSAGE_ARGUMENT_MARK.
 // value replaces MESSAGE_VALUE_MARK. shipment, when not 0, is one more
-// than the index into World.shipments whose cargo replaces
+// than the index into Game_Records.shipments whose cargo replaces
 // MESSAGE_CARGO_MARK (work item 0041). item is the discovered item of an
 // item_discovered message, for the HUD's discovery card (work item 0069);
 // it is not saved, so a loaded message has none.

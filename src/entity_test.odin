@@ -148,26 +148,27 @@ test_placement_validity :: proc(t: ^testing.T) {
 test_player_places_rotates_and_picks_up_a_machine :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
 	players := []Player{make_test_player(content.blocks, {0.5, 1, 0.5})}
 	player := &players[0]
 	furnace_item := test_item(content.items, "stone_furnace")
 	player.inventory.slots[0] = Item_Stack{furnace_item, 2}
 	player.target = Raycast_Hit{hit = true, block = {4, 0, 4}, face = .Positive_Y, adjacent = {4, 1, 4}}
-	place_with_player(&world, content, players, 0, {.Rotate_Building})
+	place_with_player(&world, &records.statistics, content, players, 0, {.Rotate_Building})
 	testing.expect_value(t, player.placement_rotation, 1)
 	testing.expect_value(t, len(world.entities.cells), 0)
-	place_with_player(&world, content, players, 0, {.Place})
+	place_with_player(&world, &records.statistics, content, players, 0, {.Place})
 	handle := entity_at(&world.entities, {4, 1, 4})
 	testing.expect_value(t, handle.kind, Entity_Kind.Furnace)
 	testing.expect_value(t, entity_common(&world.entities, handle).rotation, 1)
 	testing.expect_value(t, player.inventory.slots[0].count, 1)
 	// The same spot is now occupied: nothing more is placed.
-	place_with_player(&world, content, players, 0, {.Place})
+	place_with_player(&world, &records.statistics, content, players, 0, {.Place})
 	testing.expect_value(t, player.inventory.slots[0].count, 1)
 	// Pick up returns the contents first, then the machine.
 	furnace := pool_get(&world.entities.furnaces, handle)
 	furnace.slots[FURNACE_OUTPUT_SLOT] = Item_Stack{test_item(content.items, "iron_plate"), 7}
-	testing.expect(t, pick_up_entity(&world, content, player, handle, 0))
+	testing.expect(t, pick_up_entity(&world, &records.statistics, content, player, handle, 0))
 	testing.expect(t, !entity_is_alive(&world.entities, handle))
 	testing.expect_value(t, len(world.entities.cells), 0)
 	testing.expect_value(t, player.inventory.slots[0], Item_Stack{furnace_item, 2})
@@ -178,22 +179,23 @@ test_player_places_rotates_and_picks_up_a_machine :: proc(t: ^testing.T) {
 test_interact_opens_an_entity_instead_of_jumping :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
 	handle := add_entity(&world.entities, content.machines, test_machine(content.machines, "wooden_chest"), {4, 1, 4}, 0)
 	players := []Player{make_test_player(content.blocks, {4.5, 1, 1.5})}
 	players[0].pitch, players[0].yaw = -30, 90
-	tick_player(&world, content, players, 0, {}, TEST_TICK_RATE, 0)
+	tick_player(&world, &records, content, players, 0, {}, TEST_TICK_RATE, 0)
 	testing.expect_value(t, players[0].target.entity, handle)
 	players[0].on_ground = true
 	press := Input_Frame{pressed = {.Jump, .Interact}, just_pressed = {.Jump, .Interact}}
-	events := tick_player(&world, content, players, 0, press, TEST_TICK_RATE, 0)
+	events := tick_player(&world, &records, content, players, 0, press, TEST_TICK_RATE, 0)
 	testing.expect_value(t, events, Player_Events{.Open_Machine})
 	testing.expect_value(t, players[0].open_machine, handle)
 	testing.expect(t, players[0].velocity.y <= 0)
 	// Looking away, the same press jumps.
 	players[0].pitch = 60
-	tick_player(&world, content, players, 0, {}, TEST_TICK_RATE, 0)
+	tick_player(&world, &records, content, players, 0, {}, TEST_TICK_RATE, 0)
 	players[0].on_ground = true
-	events = tick_player(&world, content, players, 0, press, TEST_TICK_RATE, 0)
+	events = tick_player(&world, &records, content, players, 0, press, TEST_TICK_RATE, 0)
 	testing.expect_value(t, events, Player_Events{})
 	testing.expect(t, players[0].velocity.y > 0)
 }

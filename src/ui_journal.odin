@@ -69,7 +69,7 @@ journal_shows_contracts_continue :: proc(quest_state: Quest_State, tab, chapter_
 
 journal_quest_view :: proc(screen_context: Screen_Context) -> Quest_View {
 	return Quest_View {
-		statistics = screen_context.world.statistics,
+		statistics = screen_context.records.statistics,
 		unlocks = screen_context.unlocks^,
 		capsule_slots = entity_slots(&screen_context.world.entities, screen_context.quest_state.capsule),
 		tick_rate = screen_context.tick_rate,
@@ -111,7 +111,7 @@ objective_label :: proc(objective: Objective, screen_context: Screen_Context) ->
 }
 
 sustain_progress_text :: proc(objective: Objective, value: Objective_Progress, screen_context: Screen_Context) -> string {
-	rate := production_rate_per_minute(screen_context.world.statistics, objective.item)
+	rate := production_rate_per_minute(screen_context.records.statistics, objective.item)
 	held := format_game_time(value.current, screen_context.tick_rate)
 	target := format_game_time(value.required, screen_context.tick_rate)
 	return fmt.tprintf("%s / %s   %s / %s", format_per_minute(f32(rate)), format_per_minute(f32(objective.rate_per_minute)), held, target)
@@ -320,7 +320,7 @@ journal_message_log :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("journal_messages"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	messages := screen_context.quest_state.messages[:]
 	#reverse for message in messages {
-		line := fmt.tprintf("%s  %s", format_game_time(message.tick, screen_context.tick_rate), quest_message_text(message, screen_context.world.shipments[:], screen_context.items))
+		line := fmt.tprintf("%s  %s", format_game_time(message.tick, screen_context.tick_rate), quest_message_text(message, screen_context.records.shipments[:], screen_context.items))
 		if !is_mission_control_key(message.text_key) {
 			wrapped := wrap_text(state, line, UI_BODY_TEXT_SIZE, content.width)
 			if f32(len(wrapped)) * UI_LINE_HEIGHT > content.height {

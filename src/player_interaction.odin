@@ -108,10 +108,10 @@ mining_tool_line :: proc(blocks: Block_Registry, items: Item_Registry, block: Bl
 // spills at the block's cell as loose items (loose_item.odin), and the
 // full inventory is reported once for the block. A log fells the tree
 // above it (tree_felling.odin).
-mine_block :: proc(world: ^World, registry: Block_Registry, items: Item_Registry, felling: Tree_Felling, player: ^Player, holding: bool, tick_rate: int, cheat_speed: bool) -> Player_Events {
+mine_block :: proc(world: ^World, records: ^Game_Records, registry: Block_Registry, items: Item_Registry, felling: Tree_Felling, player: ^Player, holding: bool, tick_rate: int, cheat_speed: bool) -> Player_Events {
 	block_id := world_get_block(world, player.target.block)
 	if holding && player.target.hit {
-		record_mining_tick(&world.statistics, block_id)
+		record_mining_tick(&records.statistics, block_id)
 	}
 	next, finished := advance_mining(player.mining, holding, player.target, block_id, cheat_mining_ticks(required_ticks_for(registry, block_id, effective_tool_tier(player^, items, cheat_speed), tick_rate), cheat_speed))
 	if !finished {
@@ -122,9 +122,9 @@ mine_block :: proc(world: ^World, registry: Block_Registry, items: Item_Registry
 	if !world_set_block(world, player.target.block, AIR_BLOCK) {
 		return {}
 	}
-	record_block_mined(&world.statistics)
+	record_block_mined(&records.statistics)
 	if block_is_tree_log(felling.blocks, block_id) {
-		fell_tree(world, registry, felling, player.target.block)
+		fell_tree(world, &records.leaf_decay, registry, felling, player.target.block)
 	}
 	drop_unsupported_cover(world, registry, items, player.target.block + UP)
 	spilled := false
@@ -163,7 +163,7 @@ block_drop_stacks :: proc(items: Item_Registry, block: Block_Id) -> []Item_Stack
 
 // A long press of Mine on an entity picks it up with its contents; what
 // does not fit spills (pick_up_entity) and reports the full inventory.
-mine_entity :: proc(world: ^World, content: Simulation_Content, player: ^Player, holding: bool, tick_rate: int, tick: u64) -> Player_Events {
+mine_entity :: proc(world: ^World, statistics: ^Statistics, content: Simulation_Content, player: ^Player, holding: bool, tick_rate: int, tick: u64) -> Player_Events {
 	if !entity_can_be_picked_up(world, content.machines, player.target.entity) {
 		player.mining = {}
 		return {}
@@ -178,7 +178,7 @@ mine_entity :: proc(world: ^World, content: Simulation_Content, player: ^Player,
 	}
 	player.mining = {}
 	spills := !inventory_fits_all_picked_up(player.inventory, content.items, entity_pickup_stacks(world, content, player.target.entity))
-	if !pick_up_entity(world, content, player, player.target.entity, tick) || !spills {
+	if !pick_up_entity(world, statistics, content, player, player.target.entity, tick) || !spills {
 		return {}
 	}
 	return {.Inventory_Full}
@@ -187,15 +187,15 @@ mine_entity :: proc(world: ^World, content: Simulation_Content, player: ^Player,
 // cheat_speed shortens digging blocks, not picking up entities. An
 // outcrop block mined away is checked for the spent outcrop (work item
 // 0096).
-mine_with_player :: proc(world: ^World, content: Simulation_Content, player: ^Player, holding: bool, tick_rate: int, tick: u64, cheat_speed: bool) -> Player_Events {
+mine_with_player :: proc(world: ^World, records: ^Game_Records, content: Simulation_Content, player: ^Player, holding: bool, tick_rate: int, tick: u64, cheat_speed: bool) -> Player_Events {
 	if player.target.entity != NO_ENTITY {
-		return mine_entity(world, content, player, holding, tick_rate, tick)
+		return mine_entity(world, &records.statistics, content, player, holding, tick_rate, tick)
 	}
 	cell := player.target.block
 	vein, on_outcrop := registered_outcrop_vein_at(world, content.veins, cell)
-	events := mine_block(world, content.blocks, content.items, simulation_tree_felling(content), player, holding, tick_rate, cheat_speed)
+	events := mine_block(world, records, content.blocks, content.items, simulation_tree_felling(content), player, holding, tick_rate, cheat_speed)
 	if on_outcrop {
-		note_outcrop_block_gone(world, content.veins, cell, vein)
+		note_outcrop_block_gone(world, records, content.veins, cell, vein)
 	}
 	return events
 }
@@ -203,12 +203,12 @@ mine_with_player :: proc(world: ^World, content: Simulation_Content, player: ^Pl
 // Once the cell holds no outcrop block any more and it was the vein's
 // last, the vein becomes known and Mission Control says so, once per
 // vein (record_spent_outcrop, announce_spent_outcrops).
-note_outcrop_block_gone :: proc(world: ^World, veins: Vein_Content, cell: World_Coordinate, vein: Vein_Id) {
+note_outcrop_block_gone :: proc(world: ^World, records: ^Game_Records, veins: Vein_Content, cell: World_Coordinate, vein: Vein_Id) {
 	if _, still_outcrop := registered_outcrop_vein_at(world, veins, cell); still_outcrop {
 		return
 	}
 	if outcrop_spent_with_units_left(world, veins, vein) {
-		record_spent_outcrop(world, vein)
+		record_spent_outcrop(world, records, vein)
 	}
 }
 
@@ -246,10 +246,10 @@ selected_placement_rotates :: proc(player: Player, machines: Machine_Registry, b
 }
 
 // pressed is the held state, for dragging belts.
-place_with_player :: proc(world: ^World, content: Simulation_Content, players: []Player, index: int, just_pressed: Action_Set, pressed := Action_Set{}) {
+place_with_player :: proc(world: ^World, statistics: ^Statistics, content: Simulation_Content, players: []Player, index: int, just_pressed: Action_Set, pressed := Action_Set{}) {
 	if selected_placed_machine(players[index], content.machines) != NO_MACHINE {
-		record_drill_no_vein_attempt(world, content, players, index, just_pressed)
-		place_entity_with_player(world, content, players, index, just_pressed, pressed)
+		record_drill_no_vein_attempt(world, statistics, content, players, index, just_pressed)
+		place_entity_with_player(world, statistics, content, players, index, just_pressed, pressed)
 		return
 	}
 	players[index].belt_drag = {}
@@ -257,17 +257,17 @@ place_with_player :: proc(world: ^World, content: Simulation_Content, players: [
 		players[index].placement_rotation = (players[index].placement_rotation + 1) % 4
 		return
 	}
-	if .Rotate_Building in just_pressed && rotate_targeted_entity(world, content, &players[index]) {
+	if .Rotate_Building in just_pressed && rotate_targeted_entity(world, statistics, content, &players[index]) {
 		return
 	}
-	place_block_with_player(world, content.blocks, content.items, players, index, just_pressed)
+	place_block_with_player(world, statistics, content.blocks, content.items, players, index, just_pressed)
 }
 
 // A pressed Place of a surface drill refused only because no vein lies
 // under its footprint, which is otherwise valid (work item 0096, chapter
 // 2's drill hint). Like bore_drill_no_vein_attempts it is counted on the
 // press, not in placement_at, which runs every frame for the ghost.
-record_drill_no_vein_attempt :: proc(world: ^World, content: Simulation_Content, players: []Player, index: int, just_pressed: Action_Set) {
+record_drill_no_vein_attempt :: proc(world: ^World, statistics: ^Statistics, content: Simulation_Content, players: []Player, index: int, just_pressed: Action_Set) {
 	machine := selected_placed_machine(players[index], content.machines)
 	if .Place not_in just_pressed || content.machines.machines[machine].kind != .Drill || drill_is_bore(content.machines.machines[machine]) {
 		return
@@ -278,11 +278,11 @@ record_drill_no_vein_attempt :: proc(world: ^World, content: Simulation_Content,
 	}
 	cells := footprint_cells(placement.origin, content.machines.machines[machine].footprint, placement.rotation)
 	if footprint_is_valid(world, content.blocks, players, cells, placement.origin.y) {
-		world.statistics.drill_no_vein_attempts += 1
+		statistics.drill_no_vein_attempts += 1
 	}
 }
 
-place_block_with_player :: proc(world: ^World, registry: Block_Registry, items: Item_Registry, players: []Player, index: int, just_pressed: Action_Set) {
+place_block_with_player :: proc(world: ^World, statistics: ^Statistics, registry: Block_Registry, items: Item_Registry, players: []Player, index: int, just_pressed: Action_Set) {
 	player := &players[index]
 	block := selected_placed_block(player^, items)
 	if .Place not_in just_pressed || !player.target.hit || block == AIR_BLOCK {
@@ -297,7 +297,7 @@ place_block_with_player :: proc(world: ^World, registry: Block_Registry, items: 
 	block = placed_block_variant(registry, block, target, hit_point, player.yaw, player.placement_rotation)
 	if world_set_block(world, target.adjacent, block) {
 		take_from_slot(&inventory_hotbar(player.inventory)[player.selected_hotbar_slot], 1)
-		record_block_placed(&world.statistics, item)
+		record_block_placed(statistics, item)
 	}
 }
 

@@ -211,7 +211,7 @@ test_command_research_and_unlock_all :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(response.text, "already"), response.text)
 	for level in u32(1) ..= 2 {
 		expect_command_ok(t, test, strings.concatenate({"research ", technologies[infinite].id}, context.temp_allocator))
-		testing.expect_value(t, test.simulation.world.research.levels[infinite], level)
+		testing.expect_value(t, test.simulation.records.research.levels[infinite], level)
 	}
 	expect_command_error(t, test, "research no_such_technology")
 
@@ -275,7 +275,7 @@ find_clear_vein_column :: proc(test: ^Command_Test, type_index: int, start_x: i3
 load_vein_chunks :: proc(test: ^Command_Test, vein: Vein) {
 	for cell in added_vein_cells(&test.generator, vein) {
 		if coordinate := world_to_chunk_coordinate(cell); coordinate not_in test.simulation.world.chunks {
-			load_chunk_now(&test.simulation.world, &test.generator, coordinate)
+			load_chunk_now(&test.simulation.world, &test.simulation.records, &test.generator, coordinate)
 		}
 	}
 }
@@ -515,7 +515,7 @@ test_tier1_factory_blueprint_places_and_smelts :: proc(t: ^testing.T) {
 	_, finished := finish_command_ticks(&test.control, test.simulation.tick)
 	testing.expect(t, finished)
 	plates := test_item(test.content.items, "iron_plate")
-	produced := item_counter(test.simulation.world.statistics.produced, plates)
+	produced := item_counter(test.simulation.records.statistics.produced, plates)
 	testing.expectf(t, produced > 0, "no plates after a minute")
 	stored: u64
 	for &chest in entities.chests.entries {

@@ -234,7 +234,7 @@ output_rate_line :: proc(rate: Machine_Output_Rate, second: u64) -> string {
 }
 
 output_rate_label :: proc(state: ^Ui_State, content: ^Ui_Rectangle, rate: Machine_Output_Rate, screen_context: Screen_Context) {
-	detail_line(state, content, output_rate_line(rate, screen_context.world.statistics.current_second))
+	detail_line(state, content, output_rate_line(rate, screen_context.records.statistics.current_second))
 }
 
 // The fuel slot and burn bar of a burner, or the filter slot of a filter

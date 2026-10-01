@@ -120,7 +120,7 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	apply_grid_transfer(nil, {items = items}, NO_ENTITY, player.inventory, transfer)
 	if screen_context.world != nil && (state.input.drop || button == .Drop) {
 		dropped_slot := button == .Drop ? player_slot_index(active) : slots.focused
-		drop_player_stack(screen_context.world, screen_context.blocks, player, screen_context.player_index, dropped_slot)
+		drop_player_stack(screen_context.world, &screen_context.records.statistics, screen_context.blocks, player, screen_context.player_index, dropped_slot)
 	}
 	player.held = finish_slot_drag(state, player.inventory, player.held, items)
 	draw_held_stack(state, player.held.stack, items)

@@ -419,7 +419,7 @@ command_research :: proc(command_context: Command_Context, arguments: []string) 
 	}
 	serve_command_request(command_context, Developer_Request{action = .Research_Technology, technology = technology})
 	if infinite {
-		return command_ok("%s level %d", arguments[0], simulation.world.research.levels[technology])
+		return command_ok("%s level %d", arguments[0], simulation.records.research.levels[technology])
 	}
 	return command_ok("researched %s", arguments[0])
 }
@@ -1103,7 +1103,7 @@ query_quests :: proc(command_context: Command_Context) -> Command_Response {
 		quest := registry.quests[state.active]
 		fmt.sbprintf(&builder, "\nactive %s chapter %d", quest.id, quest.chapter + 1)
 		view := Quest_View {
-			statistics    = simulation.world.statistics,
+			statistics    = simulation.records.statistics,
 			unlocks       = simulation.unlocks,
 			capsule_slots = entity_slots(&simulation.world.entities, state.capsule),
 			tick_rate     = simulation.tick_rate,
@@ -1122,12 +1122,12 @@ query_quests :: proc(command_context: Command_Context) -> Command_Response {
 }
 
 query_contracts :: proc(command_context: Command_Context) -> Command_Response {
-	world := &command_context.simulation.world
+	records := &command_context.simulation.records
 	contracts := command_context.content.contracts
 	items := command_context.content.items
 	builder := strings.builder_make(context.temp_allocator)
-	fmt.sbprintf(&builder, "contracts\ncredit %d", world.venture_credit)
-	for open in open_contracts(&world.contracts) {
+	fmt.sbprintf(&builder, "contracts\ncredit %d", records.venture_credit)
+	for open in open_contracts(&records.contracts) {
 		contract := contracts.contracts[open.contract]
 		fmt.sbprintf(&builder, "\ncontract %s tier %d offered_tick %d", contract.id, contract.tier, open.offered_tick)
 		for request, index in contract.requests[:contract.request_count] {
@@ -1146,7 +1146,7 @@ query_stats :: proc(command_context: Command_Context, arguments: []string) -> Co
 		return command_error("unknown item %q", arguments[0])
 	}
 	simulation := command_context.simulation
-	statistics := simulation.world.statistics
+	statistics := simulation.records.statistics
 	builder := strings.builder_make(context.temp_allocator)
 	fmt.sbprintf(&builder, "stats %s\nproduced %d\nconsumed %d", arguments[0], item_counter(statistics.produced, item), item_counter(statistics.consumed, item))
 	fmt.sbprintf(&builder, "\nobtained %d\ndelivered %d\nvoided %d", item_counter(statistics.obtained, item), item_counter(statistics.delivered, item), item_counter(statistics.voided, item))

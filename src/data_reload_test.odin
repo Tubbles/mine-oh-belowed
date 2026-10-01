@@ -89,7 +89,7 @@ make_reload_test_directory :: proc() -> string {
 make_reload_test_world :: proc(content: Simulation_Content) -> Simulation_State {
 	generator := make_test_generator(DEFAULT_WORLD_SEED)
 	simulation := make_save_test_simulation(&generator, content)
-	load_save_test_chunks(&simulation.world, &generator)
+	load_save_test_chunks(&simulation.world, &simulation.records, &generator)
 	build_save_test_site(&simulation, content)
 	run_save_test_ticks(&simulation, content, 0, 300)
 	return simulation

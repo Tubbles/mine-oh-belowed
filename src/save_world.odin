@@ -430,7 +430,7 @@ swap_in_save :: proc(target, staging, previous: string) -> os.Error {
 // simulation is paused for the write. Returns an empty string on success,
 // otherwise the problem.
 save_world :: proc(state: ^Simulation_State, content: Simulation_Content, location: Save_Location, last_played_unix_seconds: i64) -> string {
-	refresh_loaded_surfaces(&state.world)
+	refresh_loaded_surfaces(&state.world, &state.records.explored)
 	files := encode_save_files(state, content, location.display_name, last_played_unix_seconds)
 	target := platform.join_path(location.saves_directory, location.directory_name)
 	staging := strings.concatenate({target, STAGING_DIRECTORY_SUFFIX}, context.temp_allocator)

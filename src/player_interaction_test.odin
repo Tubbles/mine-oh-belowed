@@ -61,6 +61,7 @@ test_player_mines_block_onto_its_hotbar_stack :: proc(t: ^testing.T) {
 	registry := make_test_registry()
 	items := make_test_items()
 	world := make_floor_world(registry, 32)
+	records: Game_Records
 	stone := test_block(registry, "stone")
 	stone_item := test_item(items, "stone")
 	player := make_test_player(registry, {0.5, 1, 0.5})
@@ -68,9 +69,9 @@ test_player_mines_block_onto_its_hotbar_stack :: proc(t: ^testing.T) {
 	player.pitch = -89
 	player.held.stack = Item_Stack{test_item(items, "wooden_pickaxe"), 1}
 	required := int(mining_required_ticks(registry.definitions[stone].hardness_seconds, TEST_TICK_RATE))
-	tick_test_player(&world, registry, &player, Input_Frame{pressed = {.Mine}}, required - 1)
+	tick_test_player(&world, &records, registry, &player, Input_Frame{pressed = {.Mine}}, required - 1)
 	testing.expect_value(t, world_get_block(&world, {0, 0, 0}), stone)
-	tick_test_player(&world, registry, &player, Input_Frame{pressed = {.Mine}}, 1)
+	tick_test_player(&world, &records, registry, &player, Input_Frame{pressed = {.Mine}}, 1)
 	testing.expect_value(t, world_get_block(&world, {0, 0, 0}), AIR_BLOCK)
 	testing.expect_value(t, player.inventory.slots[0], Item_Stack{item = stone_item, count = 2})
 	testing.expect_value(t, selected_placed_block(player, items), stone)
@@ -94,6 +95,7 @@ test_mining_drops_the_mapped_item :: proc(t: ^testing.T) {
 test_mining_with_a_full_inventory_spills :: proc(t: ^testing.T) {
 	registry := make_test_registry()
 	world := make_floor_world(registry, 32)
+	records: Game_Records
 	use_temporary_loose_items(&world)
 	player := make_test_player(registry, {0.5, 1, 0.5})
 	player.pitch = -89
@@ -104,7 +106,7 @@ test_mining_with_a_full_inventory_spills :: proc(t: ^testing.T) {
 	stone := test_block(registry, "stone")
 	stone_item := test_item(make_test_items(), "stone")
 	required := int(mining_required_ticks(registry.definitions[stone].hardness_seconds, TEST_TICK_RATE))
-	events := tick_test_player(&world, registry, &player, Input_Frame{pressed = {.Mine}}, required)
+	events := tick_test_player(&world, &records, registry, &player, Input_Frame{pressed = {.Mine}}, required)
 	testing.expect_value(t, world_get_block(&world, {0, 0, 0}), AIR_BLOCK)
 	testing.expect_value(t, events, Player_Events{.Inventory_Full})
 	testing.expect_value(t, player.mining, Mining_State{})
@@ -113,10 +115,10 @@ test_mining_with_a_full_inventory_spills :: proc(t: ^testing.T) {
 	testing.expect_value(t, world.entities.loose_items.items[0].count, 1)
 	testing.expect_value(t, world.entities.loose_items.items[0].cell, World_Coordinate{0, 0, 0})
 	// Still full: the stone stays where the player stands.
-	tick_test_player(&world, registry, &player, {}, 1)
+	tick_test_player(&world, &records, registry, &player, {}, 1)
 	testing.expect_value(t, len(world.entities.loose_items.items), 1)
 	player.inventory.slots[5] = EMPTY_STACK
-	tick_test_player(&world, registry, &player, {}, 1)
+	tick_test_player(&world, &records, registry, &player, {}, 1)
 	testing.expect_value(t, len(world.entities.loose_items.items), 0)
 	testing.expect_value(t, player.inventory.slots[5], Item_Stack{item = stone_item, count = 1})
 }
@@ -148,6 +150,7 @@ test_place_uses_selected_hotbar_slot_and_respects_player_box :: proc(t: ^testing
 	registry := make_test_registry()
 	items := make_test_items()
 	world := make_floor_world(registry, 32)
+	records: Game_Records
 	dirt := test_block(registry, "dirt")
 	players := []Player{make_test_player(registry, {0.5, 1, 0.5})}
 	player := &players[0]
@@ -155,25 +158,25 @@ test_place_uses_selected_hotbar_slot_and_respects_player_box :: proc(t: ^testing
 	player.inventory.slots[3] = Item_Stack{item = test_item(items, "hematite"), count = 5}
 	player.selected_hotbar_slot = 2
 	player.target = Raycast_Hit{hit = true, block = {0, 0, 0}, face = .Positive_Y, adjacent = {0, 1, 0}}
-	place_with_player(&world, Simulation_Content{blocks = registry, items = items, machines = make_test_machines()}, players, 0, {.Place})
+	place_with_player(&world, &records.statistics, Simulation_Content{blocks = registry, items = items, machines = make_test_machines()}, players, 0, {.Place})
 	testing.expect_value(t, world_get_block(&world, {0, 1, 0}), AIR_BLOCK)
 	testing.expect_value(t, player.inventory.slots[2].count, 2)
 	player.target = Raycast_Hit{hit = true, block = {2, 0, 0}, face = .Positive_Y, adjacent = {2, 1, 0}}
-	place_with_player(&world, Simulation_Content{blocks = registry, items = items, machines = make_test_machines()}, players, 0, {})
+	place_with_player(&world, &records.statistics, Simulation_Content{blocks = registry, items = items, machines = make_test_machines()}, players, 0, {})
 	testing.expect_value(t, world_get_block(&world, {2, 1, 0}), AIR_BLOCK)
-	place_with_player(&world, Simulation_Content{blocks = registry, items = items, machines = make_test_machines()}, players, 0, {.Place})
+	place_with_player(&world, &records.statistics, Simulation_Content{blocks = registry, items = items, machines = make_test_machines()}, players, 0, {.Place})
 	testing.expect_value(t, world_get_block(&world, {2, 1, 0}), dirt)
 	testing.expect_value(t, player.inventory.slots[2].count, 1)
 	testing.expect(t, world.chunks[{0, 0, 0}].dirty)
 	// An item that places nothing is not consumed.
 	player.selected_hotbar_slot = 3
 	player.target = Raycast_Hit{hit = true, block = {4, 0, 0}, face = .Positive_Y, adjacent = {4, 1, 0}}
-	place_with_player(&world, Simulation_Content{blocks = registry, items = items, machines = make_test_machines()}, players, 0, {.Place})
+	place_with_player(&world, &records.statistics, Simulation_Content{blocks = registry, items = items, machines = make_test_machines()}, players, 0, {.Place})
 	testing.expect_value(t, world_get_block(&world, {4, 1, 0}), AIR_BLOCK)
 	testing.expect_value(t, player.inventory.slots[3].count, 5)
 	// The last one empties the slot.
 	player.selected_hotbar_slot = 2
-	place_with_player(&world, Simulation_Content{blocks = registry, items = items, machines = make_test_machines()}, players, 0, {.Place})
+	place_with_player(&world, &records.statistics, Simulation_Content{blocks = registry, items = items, machines = make_test_machines()}, players, 0, {.Place})
 	testing.expect_value(t, player.inventory.slots[2], EMPTY_STACK)
 }
 
@@ -255,9 +258,10 @@ test_player_tool_tier_is_the_best_pickaxe_held :: proc(t: ^testing.T) {
 test_bare_hands_make_no_progress_on_stone :: proc(t: ^testing.T) {
 	registry := make_test_registry()
 	world := make_floor_world(registry, 32)
+	records: Game_Records
 	player := make_test_player(registry, {0.5, 1, 0.5})
 	player.pitch = -89
-	tick_test_player(&world, registry, &player, Input_Frame{pressed = {.Mine}}, 200)
+	tick_test_player(&world, &records, registry, &player, Input_Frame{pressed = {.Mine}}, 200)
 	testing.expect_value(t, world_get_block(&world, {0, 0, 0}), test_block(registry, "stone"))
 	testing.expect_value(t, player.mining, Mining_State{})
 }
@@ -270,13 +274,14 @@ test_hud_names_the_pickaxe_a_block_needs :: proc(t: ^testing.T) {
 	defer thread_string_table = nil
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
 	target := Raycast_Hit{hit = true, block = {0, 0, 0}}
-	_, line, _ := target_status_lines(&world, content.machines, content.fluids, content.veins, content.blocks, content.items, nil, 0, target)
+	_, line, _ := target_status_lines(&world, &records, content.machines, content.fluids, content.veins, content.blocks, content.items, nil, 0, target)
 	testing.expect_value(t, line, "Needs a tool: Wooden pickaxe")
-	_, line, _ = target_status_lines(&world, content.machines, content.fluids, content.veins, content.blocks, content.items, nil, 1, target)
+	_, line, _ = target_status_lines(&world, &records, content.machines, content.fluids, content.veins, content.blocks, content.items, nil, 1, target)
 	testing.expect_value(t, line, "")
 	world_set_block(&world, {0, 0, 0}, test_block(content.blocks, "deep_stone"))
-	_, line, _ = target_status_lines(&world, content.machines, content.fluids, content.veins, content.blocks, content.items, nil, 1, target)
+	_, line, _ = target_status_lines(&world, &records, content.machines, content.fluids, content.veins, content.blocks, content.items, nil, 1, target)
 	testing.expect_value(t, line, "Needs a tool: Iron pickaxe")
 }
 
@@ -300,14 +305,15 @@ test_mining_a_log_fells_the_tree :: proc(t: ^testing.T) {
 	content := make_test_content()
 	content.generator = &generator
 	world := make_loose_item_test_world(content)
-	defer destroy_leaf_decay(&world.leaf_decay)
+	records: Game_Records
+	defer destroy_leaf_decay(&records.leaf_decay)
 	tree := make_test_tree(&generator, "birch", 9)
 	place_test_tree(&world, &generator, tree)
 	player := make_test_player(content.blocks, {3.5, 1, 0.5})
 	player.target = Raycast_Hit{hit = true, block = tree.root + {0, 1, 0}}
 	felling := simulation_tree_felling(content)
 	for _ in 0 ..< 600 {
-		mine_block(&world, content.blocks, content.items, felling, &player, true, TEST_TICK_RATE, false)
+		mine_block(&world, &records, content.blocks, content.items, felling, &player, true, TEST_TICK_RATE, false)
 		if world_get_block(&world, player.target.block) == AIR_BLOCK {
 			break
 		}
@@ -318,7 +324,7 @@ test_mining_a_log_fells_the_tree :: proc(t: ^testing.T) {
 		testing.expect_value(t, world_get_block(&world, tree.root + {0, height, 0}), AIR_BLOCK)
 	}
 	testing.expect_value(t, len(world.entities.loose_items.items), int(tree.trunk_height) - 1)
-	testing.expect(t, len(world.leaf_decay.felled) > 0)
+	testing.expect(t, len(records.leaf_decay.felled) > 0)
 }
 
 // A slab goes up against an underside or high on a side face, down on a
@@ -353,6 +359,7 @@ test_placing_slabs_and_rotated_stairs :: proc(t: ^testing.T) {
 	items := make_test_items()
 	content := Simulation_Content{blocks = registry, items = items, machines = make_test_machines()}
 	world := make_floor_world(registry, 32)
+	records: Game_Records
 	set_blocks(&world, test_block(registry, "stone"), {3, 4, 0})
 	players := []Player{make_test_player(registry, {0.5, 1, 0.5})}
 	player := &players[0]
@@ -362,26 +369,26 @@ test_placing_slabs_and_rotated_stairs :: proc(t: ^testing.T) {
 	player.pitch = -60
 	player.target = raycast_blocks(&world, registry, player_eye(player.position), player_look_direction(player^), PLAYER_REACH)
 	testing.expect_value(t, player.target.face, Direction.Positive_Y)
-	place_with_player(&world, content, players, 0, {.Place})
+	place_with_player(&world, &records.statistics, content, players, 0, {.Place})
 	testing.expect_value(t, world_get_block(&world, player.target.adjacent), test_block(registry, "stone_slab"))
 	// Looking up at the underside of the stone at y 4.
 	player.position = {3.5, 1, 0.5}
 	player.pitch = 89
 	player.target = raycast_blocks(&world, registry, player_eye(player.position), player_look_direction(player^), PLAYER_REACH)
 	testing.expect_value(t, player.target.face, Direction.Negative_Y)
-	place_with_player(&world, content, players, 0, {.Place})
+	place_with_player(&world, &records.statistics, content, players, 0, {.Place})
 	testing.expect_value(t, world_get_block(&world, {3, 3, 0}), test_block(registry, "stone_slab_upper"))
 	// Stairs placed looking along +z rise towards +z; one Rotate turns
 	// them a quarter further.
 	player.selected_hotbar_slot = 1
 	player.yaw = 90
 	player.target = Raycast_Hit{hit = true, block = {6, 0, 6}, face = .Positive_Y, adjacent = {6, 1, 6}, distance = 2}
-	place_with_player(&world, content, players, 0, {.Place})
+	place_with_player(&world, &records.statistics, content, players, 0, {.Place})
 	testing.expect_value(t, world_get_block(&world, {6, 1, 6}), test_block(registry, "stone_stairs_r1"))
-	place_with_player(&world, content, players, 0, {.Rotate_Building})
+	place_with_player(&world, &records.statistics, content, players, 0, {.Rotate_Building})
 	testing.expect_value(t, player.placement_rotation, 1)
 	player.target = Raycast_Hit{hit = true, block = {8, 0, 6}, face = .Positive_Y, adjacent = {8, 1, 6}, distance = 2}
-	place_with_player(&world, content, players, 0, {.Place})
+	place_with_player(&world, &records.statistics, content, players, 0, {.Place})
 	testing.expect_value(t, world_get_block(&world, {8, 1, 6}), test_block(registry, "stone_stairs_r2"))
 	testing.expect_value(t, player.inventory.slots[1].count, 2)
 }
@@ -395,6 +402,7 @@ test_placing_a_block_replaces_ground_cover :: proc(t: ^testing.T) {
 	items := make_test_items()
 	content := Simulation_Content{blocks = registry, items = items, machines = make_test_machines()}
 	world := make_floor_world(registry, 32)
+	records: Game_Records
 	tuft := test_block(registry, "grass_tuft")
 	players := []Player{make_test_player(registry, {0.5, 1, 0.5})}
 	player := &players[0]
@@ -404,7 +412,7 @@ test_placing_a_block_replaces_ground_cover :: proc(t: ^testing.T) {
 	set_blocks(&world, tuft, floor.adjacent)
 	player.target = raycast_blocks(&world, registry, player_eye(player.position), player_look_direction(player^), PLAYER_REACH)
 	testing.expect_value(t, player.target.block, floor.adjacent)
-	place_with_player(&world, content, players, 0, {.Place})
+	place_with_player(&world, &records.statistics, content, players, 0, {.Place})
 	testing.expect_value(t, world_get_block(&world, floor.adjacent), test_block(registry, "dirt"))
 	testing.expect_value(t, player.inventory.slots[0].count, 1)
 	testing.expect(t, placement_allowed(&world, registry, players[:0], {6, 1, 0}))
@@ -420,13 +428,14 @@ test_placing_a_block_replaces_ground_cover :: proc(t: ^testing.T) {
 test_mining_under_ground_cover_spills_the_cover :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_loose_item_test_world(content)
+	records: Game_Records
 	tuft := test_block(content.blocks, "grass_tuft")
 	set_blocks(&world, tuft, {2, 1, 0})
 	player := make_test_player(content.blocks, {0.5, 1, 0.5})
 	player.held.stack = Item_Stack{test_item(content.items, "wooden_pickaxe"), 1}
 	player.target = Raycast_Hit{hit = true, block = {2, 0, 0}}
 	for _ in 0 ..< 600 {
-		mine_block(&world, content.blocks, content.items, {}, &player, true, TEST_TICK_RATE, false)
+		mine_block(&world, &records, content.blocks, content.items, {}, &player, true, TEST_TICK_RATE, false)
 		if world_get_block(&world, player.target.block) == AIR_BLOCK {
 			break
 		}

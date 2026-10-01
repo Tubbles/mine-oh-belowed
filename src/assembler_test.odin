@@ -240,10 +240,11 @@ lay_gear_line_at :: proc(world: ^World, content: Simulation_Content, offset: Wor
 test_inserters_feed_an_assembler :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
-	world.statistics = make_statistics(len(content.items.items), len(content.machines.machines), len(content.blocks.definitions), context.temp_allocator)
+	records: Game_Records
+	records.statistics = make_statistics(len(content.items.items), len(content.machines.machines), len(content.blocks.definitions), context.temp_allocator)
 	source, handle, target := lay_gear_line_at(&world, content, {})
 	testing.expect(t, entity_network(&world.entities.electric_networks, handle) >= 0)
-	tick_test_entities(&world, content, 1200)
+	tick_test_entities(&world, &records, content, 1200)
 	gear := test_item(content.items, "iron_gear")
 	plate := test_item(content.items, "iron_plate")
 	assembler := test_assembler(&world, handle)
@@ -252,7 +253,7 @@ test_inserters_feed_an_assembler :: proc(t: ^testing.T) {
 	// at 1151), and the output inserter a cycle behind.
 	testing.expect_value(t, chest_count_of(&world, source, plate), 28)
 	testing.expect(t, chest_count_of(&world, target, gear) >= 4)
-	testing.expect_value(t, item_counter(world.statistics.produced, gear), 5)
+	testing.expect_value(t, item_counter(records.statistics.produced, gear), 5)
 	testing.expect_value(t, chest_count_of(&world, target, gear) + slots_count_of(assembler.slots[:], gear), 5)
 	testing.expect(t, assembler.working)
 }

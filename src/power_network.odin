@@ -388,7 +388,7 @@ make_participant :: proc(networks: ^Electric_Networks, common: Entity_Common, ge
 }
 
 // What every electric entity asks for or offers this tick, in pool order.
-collect_electric_participants :: proc(world: ^World, content: Simulation_Content, tick_rate: int) {
+collect_electric_participants :: proc(world: ^World, research: Research_State, content: Simulation_Content, tick_rate: int) {
 	machines := content.machines
 	entities := &world.entities
 	networks := &entities.electric_networks
@@ -427,12 +427,12 @@ collect_electric_participants :: proc(world: ^World, content: Simulation_Content
 			append(&networks.participants, make_participant(networks, lamp.common, false, demand))
 		}
 	}
-	collect_crafting_participants(world, content, tick_rate)
+	collect_crafting_participants(world, research, content, tick_rate)
 }
 
 // Electric crafting machines, labs, core sample drills and launch pads,
 // while they have work.
-collect_crafting_participants :: proc(world: ^World, content: Simulation_Content, tick_rate: int) {
+collect_crafting_participants :: proc(world: ^World, research: Research_State, content: Simulation_Content, tick_rate: int) {
 	entities := &world.entities
 	networks := &entities.electric_networks
 	for assembler in entities.assemblers.entries {
@@ -447,7 +447,7 @@ collect_crafting_participants :: proc(world: ^World, content: Simulation_Content
 	for lab in entities.labs.entries {
 		if lab.alive {
 			watts := content.machines.machines[lab.machine].electric_power_watts
-			wants := lab_wants_power(lab, world.research, content.technologies, content.machines.lab_packs)
+			wants := lab_wants_power(lab, research, content.technologies, content.machines.lab_packs)
 			append(&networks.participants, make_participant(networks, lab.common, false, wants ? electric_joules_per_tick(watts, tick_rate) : 0))
 		}
 	}
@@ -575,11 +575,11 @@ any_network_in_brownout :: proc(networks: ^Electric_Networks) -> bool {
 }
 
 // Before the machines tick, so they work at this tick's satisfaction.
-tick_electric_networks :: proc(world: ^World, content: Simulation_Content, tick_rate: int) {
+tick_electric_networks :: proc(world: ^World, records: ^Game_Records, content: Simulation_Content, tick_rate: int) {
 	networks := &world.entities.electric_networks
 	set_electric_allocators(networks)
-	collect_electric_participants(world, content, tick_rate)
+	collect_electric_participants(world, records.research, content, tick_rate)
 	balance_electric_energy(networks.participants[:], networks.networks[:])
-	apply_electric_balance(&world.entities, content, &world.statistics, tick_rate)
-	record_electric_tick(&world.statistics, networks)
+	apply_electric_balance(&world.entities, content, &records.statistics, tick_rate)
+	record_electric_tick(&records.statistics, networks)
 }

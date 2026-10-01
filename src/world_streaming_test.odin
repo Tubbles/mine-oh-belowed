@@ -48,11 +48,11 @@ Stream_Counts :: struct {
 
 // Runs the main thread side of streaming until nothing is pending and every
 // chunk of the load volume is loaded and meshed.
-stream_until_settled :: proc(t: ^testing.T, streaming: ^Chunk_Streaming, world: ^World, camera_chunk: Chunk_Coordinate) -> Stream_Counts {
+stream_until_settled :: proc(t: ^testing.T, streaming: ^Chunk_Streaming, world: ^World, records: ^Game_Records, camera_chunk: Chunk_Coordinate) -> Stream_Counts {
 	counts: Stream_Counts
 	start := time.tick_now()
 	for time.tick_since(start) < TEST_STREAMING_TIMEOUT {
-		update_chunk_streaming(streaming, world, camera_chunk)
+		update_chunk_streaming(streaming, world, records, camera_chunk)
 		for result in take_current_meshes(streaming, MAXIMUM_MESH_UPLOADS_PER_FRAME, context.temp_allocator) {
 			counts.meshes += 1
 			counts.non_empty_meshes += len(result.mesh.parts) > 0 ? 1 : 0
@@ -80,18 +80,20 @@ volume_settled :: proc(streaming: ^Chunk_Streaming, world: ^World, camera_chunk:
 test_streaming_loads_meshes_and_unloads :: proc(t: ^testing.T) {
 	generator := make_test_generator(DEFAULT_WORLD_SEED)
 	world: World
+	records: Game_Records
 	defer destroy_world(&world)
+	defer destroy_game_records(&records)
 	streaming := start_chunk_streaming(&generator, make_test_registry(), true, TEST_WORKER_COUNT)
 	defer stop_chunk_streaming(&streaming)
 	start := time.tick_now()
-	counts := stream_until_settled(t, &streaming, &world, {0, 1, 0})
+	counts := stream_until_settled(t, &streaming, &world, &records, {0, 1, 0})
 	elapsed := time.tick_since(start)
 	testing.expect_value(t, len(world.chunks), len(streaming.offsets))
 	testing.expect(t, counts.meshes >= len(streaming.offsets))
 	testing.expect(t, len(world.veins) > 0)
 	log.infof("streamed %d chunks (%d meshes, %d non empty) with %d workers in %v, %d veins", len(world.chunks), counts.meshes, counts.non_empty_meshes, TEST_WORKER_COUNT, elapsed, len(world.veins))
 	moved := Chunk_Coordinate{3, 1, 0}
-	stream_until_settled(t, &streaming, &world, moved)
+	stream_until_settled(t, &streaming, &world, &records, moved)
 	for coordinate in world.chunks {
 		testing.expect(t, in_keep_volume(moved, coordinate))
 	}
@@ -104,11 +106,12 @@ test_streaming_loads_meshes_and_unloads :: proc(t: ^testing.T) {
 test_arriving_neighbour_marks_border_chunk_dirty :: proc(t: ^testing.T) {
 	context.allocator = context.temp_allocator
 	world := make_test_world({{0, 0, 0}})
+	records: Game_Records
 	world.chunks[{0, 0, 0}].dirty = false
 	neighbour := new(Chunk)
 	neighbour.coordinate = {1, 0, 0}
 	chunk_set_block(neighbour, {0, 0, 0}, TEST_STONE)
-	insert_generated_chunk(&world, Chunk_Job_Result{kind = .Generate, coordinate = {1, 0, 0}, chunk = neighbour})
+	insert_generated_chunk(&world, &records, Chunk_Job_Result{kind = .Generate, coordinate = {1, 0, 0}, chunk = neighbour})
 	testing.expect(t, world.chunks[{0, 0, 0}].dirty)
 }
 

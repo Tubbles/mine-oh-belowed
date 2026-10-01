@@ -217,13 +217,13 @@ test_contract_objective_lines_show_the_oldest_contract :: proc(t: ^testing.T) {
 	context.allocator = context.temp_allocator
 	items := make_test_items()
 	registry := make_test_contracts(items)
-	world: World
-	_, _, found := contract_objective_lines(&world, registry, items, 0, TEST_TICK_RATE)
+	records: Game_Records
+	_, _, found := contract_objective_lines(records.contracts, registry, items, 0, TEST_TICK_RATE)
 	testing.expect(t, !found)
 	boards, girders := test_contract(registry, "control_boards"), test_contract(registry, "station_girders")
-	offer_contract(&world.contracts, boards, 0)
-	offer_contract(&world.contracts, girders, 0)
-	title, detail, shown := contract_objective_lines(&world, registry, items, 0, TEST_TICK_RATE)
+	offer_contract(&records.contracts, boards, 0)
+	offer_contract(&records.contracts, girders, 0)
+	title, detail, shown := contract_objective_lines(records.contracts, registry, items, 0, TEST_TICK_RATE)
 	testing.expect(t, shown)
 	testing.expect_value(t, title, text(registry.contracts[boards].name_key))
 	testing.expect(t, detail != "")

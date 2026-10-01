@@ -3,7 +3,7 @@
 How the game is put together. The agent rules (stack, imports, determinism, naming) are in [CLAUDE.md](../CLAUDE.md), what is drawn and heard in [presentation.md](presentation.md), building and shipping in [build.md](build.md).
 
 - One `game` package, data oriented: procedures over arrays of structs, no entity component system.
-- The simulation ticks at a fixed rate, owns the `World` and never reads the wall clock, the frame time, the settings or the socket.
+- The simulation ticks at a fixed rate, owns the `World` and the game's records (`Game_Records`) and never reads the wall clock, the frame time, the settings or the socket.
 - Worker threads only generate and mesh chunks; everything else runs on the main thread.
 
 ## Stack
@@ -60,6 +60,7 @@ Rule: generation is a pure function of the world seed and the chunk coordinate, 
 - Water levels are block ids: the source and seven flowing ids marked by `water_level` in `data/blocks.sjson` (8 the source, 7 to 1 flowing), so the chunk layout and the save hold them for free.
 - Every `world_set_block` records a block change; the next tick turns the changes into light and water updates.
 - Entities (machines, belts, inserters, chests) are not blocks: each occupied cell maps to the entity handle in `World.entities.cells` and stays air in the chunk, so a raycast hits the entity and placement checks are cell lookups.
+- `World` holds the chunks, the saved chunks, the block changes, the settings, the veins and their outcrops, light, water and, for now, the entities. The game's records are not on it (Simulation).
 
 ### Light
 
@@ -79,9 +80,10 @@ Rule: generation is a pure function of the world seed and the chunk coordinate, 
 - Recipes have any number of item or fluid inputs and outputs; crafting machines hold a recipe index and a progress counter. Recipes resolve to dense indices at load.
 - Veins are entities, not block data: a reservoir with per ore amounts, centre, radius and size class, placed per region of 8 by 8 chunk columns (`REGION_SIZE_IN_CHUNKS`) so each footprint lies inside its region. Workers compute footprints; the main thread registers a vein once when the first chunk of an overlapping column loads. Drills hold a vein handle; there are no per block ore counters.
 - `vein_at_column` finds the registered surface vein under a column for drill placement and the HUD; the geologist's hammer asks for an outcrop block. While the landing pad exists, a region's surface veins also include the starter veins centred in it, after the natural veins and without the natural veins they overlap.
-- Statistics live on the `World` beside the pools (`statistics.odin`): produced, obtained, delivered, consumed, voided per item, placed per machine, stalls, fuel burned, blocks mined, distance walked, and per item rate rings of 60 buckets each at one second, ten seconds and one minute, the coarser fed from the finer, all saved. Furnaces, crafting machines and drills keep a 60 bucket ring of their own output for the panel rate. The quests, the statistics screen and the bottleneck overlay read them.
-- Shipments (tick and cargo of every launch) live on the `World` and are saved. The UI's launch requests are served inside the tick, since a shipment needs the tick.
-- The venture (`venture.odin`: open contracts, deliveries, offer counts, credit, catalogue orders) lives on the `World` and is saved. Shipments are served right after the launches: contracts oldest first, then free trade. Levels of infinite technologies live in the research state, since drills and labs read them every tick.
+- The game's records are one struct on `Simulation_State` beside the `World` (`Game_Records`, `simulation_state.odin`): statistics, research, shipments, contracts, venture credit, catalogue orders, the five prospecting lists, crate sites, the explored columns and the leaf decay queue. A tick procedure takes the record it writes (`statistics: ^Statistics`) or the records beside `^World`; the screens reach them through `Screen_Context.records`. Chunk arrival registers the crate sites and the explored column into them (`insert_generated_chunk`), and the world tick runs the leaf decay queue on the world's blocks (`tick_world`).
+- Statistics live in the records (`statistics.odin`): produced, obtained, delivered, consumed, voided per item, placed per machine, stalls, fuel burned, blocks mined, distance walked, and per item rate rings of 60 buckets each at one second, ten seconds and one minute, the coarser fed from the finer, all saved. Furnaces, crafting machines and drills keep a 60 bucket ring of their own output for the panel rate. The quests, the statistics screen and the bottleneck overlay read them.
+- Shipments (tick and cargo of every launch) live in the records and are saved. The UI's launch requests are served inside the tick, since a shipment needs the tick.
+- The venture (`venture.odin`: open contracts, deliveries, offer counts, credit, catalogue orders) lives in the records and is saved. Shipments are served right after the launches: contracts oldest first, then free trade. Levels of infinite technologies live in the research state, since drills and labs read them every tick.
 - `Simulation_Content.generator` points at the session's generator (nil in tests), so the orbital survey can chart veins in chunks never loaded.
 - Quests are data evaluated against the statistics, entity counts and research state every tick ([quests.md](quests.md)).
 - Developer requests are a list on the simulation state (`developer_requests`), filled by the Developer screen, `--chapter` and `--give`, served at the start of the next tick and never saved. The command socket serves the same requests between ticks ([commands.md](commands.md)). Veins added by command live in `World.veins` with `added` set.
@@ -131,6 +133,7 @@ Worlds live under `$XDG_DATA_HOME/mine-oh-belowed/saves/<world>/` (`MINE_OH_BELO
 
 - `entities.bin` is written by a codec driven by Odin type information (`save_binary.odin`), so a new field cannot be left out silently. Structs carry a schema of field names, shallow kinds and sizes: fields can be added, removed or reordered, and only a retyped field refuses the file. Enums and bit sets go by name; an unknown name reads as zero.
 - A fixed array saved shorter than this build's fills its start; a longer one refuses. A slice of fixed length, such as the inventory, refuses on any length change.
+- The body writes the world's lists and the records interleaved in the order of format version 2 (`write_world_state` takes both), so moving the records off `World` (0154) left the bytes unchanged.
 - Tables added after format version 2 follow the players at the end in the order they were added, each read only while bytes are left (`write_later_tables`, `read_later_tables`): the loose items, then the leaf decay queue. An older file loads with them empty without a version step.
 - Loading maps every saved id to this build's by name (`save_remap.odin`): the distinct id types inside the codec, every id indexed array and plain index explicitly, chunk palettes as regions load. What vanished is dropped (a stack empties, a queued technology dequeues, a gone active quest gives way to the first quest not done); a placed machine, a registered vein's type or a chunk block that vanished refuses the file.
 - Kept by index, not remapped: vein size classes, quest objective and hint arrays, contract deliveries.

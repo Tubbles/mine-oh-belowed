@@ -267,7 +267,7 @@ player_drop_cell :: proc(player: Player) -> World_Coordinate {
 // focused slot's (-1 for none), goes onto the ground in front of the
 // player, where that player picks it up only after leaving its pickup
 // range once. Returns whether anything was dropped.
-drop_player_stack :: proc(world: ^World, registry: Block_Registry, player: ^Player, player_index: int, focused: int) -> bool {
+drop_player_stack :: proc(world: ^World, statistics: ^Statistics, registry: Block_Registry, player: ^Player, player_index: int, focused: int) -> bool {
 	stack := player.held.stack
 	switch {
 	case !stack_is_empty(stack):
@@ -281,7 +281,7 @@ drop_player_stack :: proc(world: ^World, registry: Block_Registry, player: ^Play
 	spill_stack(world, registry, player_drop_cell(player^), stack)
 	dropped := &world.entities.loose_items.items[len(world.entities.loose_items.items) - 1]
 	dropped.dropping_player = dropping_player_value(player_index)
-	record_world_action(&world.statistics)
+	record_world_action(statistics)
 	return true
 }
 

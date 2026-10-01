@@ -13,6 +13,7 @@ LAUNCH_PAD_TEST_ORIGIN :: World_Coordinate{3, 1, -8}
 Launch_Pad_Test :: struct {
 	content: Simulation_Content,
 	world:   World,
+	records: Game_Records,
 	pad:     Entity_Handle,
 	engine:  Entity_Handle,
 }
@@ -22,7 +23,7 @@ make_launch_pad_test :: proc() -> Launch_Pad_Test {
 		content = make_test_content(),
 	}
 	test.world = make_drill_world(test.content)
-	test.world.statistics.fluids = make_fluid_statistics(len(test.content.fluids.fluids), context.temp_allocator)
+	test.records = make_fluid_test_records(test.content)
 	_, test.engine = add_test_power_plant(&test.world, test.content, {2, 1, 2}, {0, 1, 3})
 	test.pad = place_test_entity(&test.world, test.content, "launch_pad", LAUNCH_PAD_TEST_ORIGIN)
 	return test
@@ -51,7 +52,7 @@ tick_launch_pad_test :: proc(test: ^Launch_Pad_Test, ticks: int) {
 		for &buffer in test_fluid_machine(&test.world, test.engine).buffers[:2] {
 			buffer = {fluid = steam, level = 200}
 		}
-		tick_entities(&test.world, test.content, TEST_TICK_RATE)
+		tick_entities(&test.world, &test.records, test.content, TEST_TICK_RATE)
 	}
 }
 
@@ -162,7 +163,7 @@ test_launch_pad_assembly_timing :: proc(t: ^testing.T) {
 		testing.expect(t, stack_is_empty(slot))
 	}
 	testing.expect_value(t, pad.buffers[LAUNCH_PAD_FUEL_PORT], Fluid_Buffer{fluid = NO_FLUID})
-	statistics := test.world.statistics
+	statistics := test.records.statistics
 	testing.expect_value(t, statistics.consumed[test_item(test.content.items, "rocket_structure")], 10)
 	testing.expect_value(t, statistics.consumed[test_item(test.content.items, "cargo_capsule")], 1)
 	testing.expect_value(t, statistics.fluids.consumed[test_fluid(test.content, "rocket_fuel")], 200)
@@ -206,22 +207,22 @@ test_launch_consumes_rocket_and_cargo :: proc(t: ^testing.T) {
 	pad := test_launch_pad(&test)
 	items := test.content.items
 	plate, steel := test_item(items, "iron_plate"), test_item(items, "steel")
-	testing.expect(t, !launch_rocket(&test.world, pad, 10))
+	testing.expect(t, !launch_rocket(&test.records, pad, 10))
 	pad.state = .Rocket_Ready
-	testing.expect(t, !launch_rocket(&test.world, pad, 10))
+	testing.expect(t, !launch_rocket(&test.records, pad, 10))
 	entity_insert(&test.world.entities, test.content, test.pad, {plate, 50})
 	entity_insert(&test.world.entities, test.content, test.pad, {steel, 20})
 	entity_insert(&test.world.entities, test.content, test.pad, {plate, 30})
-	testing.expect(t, launch_rocket(&test.world, pad, 1234))
+	testing.expect(t, launch_rocket(&test.records, pad, 1234))
 	testing.expect_value(t, pad.state, Launch_Pad_State.Launching)
 	testing.expect(t, cargo_is_empty(pad))
-	testing.expect_value(t, len(test.world.shipments), 1)
-	shipment := test.world.shipments[0]
+	testing.expect_value(t, len(test.records.shipments), 1)
+	shipment := test.records.shipments[0]
 	testing.expect_value(t, shipment.tick, 1234)
 	testing.expect_value(t, shipment.cargo_count, 2)
 	testing.expect_value(t, shipment.cargo[0], Shipped_Item{plate, 80})
 	testing.expect_value(t, shipment.cargo[1], Shipped_Item{steel, 20})
-	statistics := test.world.statistics
+	statistics := test.records.statistics
 	testing.expect_value(t, statistics.rockets_launched, 1)
 	testing.expect_value(t, statistics.shipped[plate], 80)
 	testing.expect_value(t, statistics.shipped[steel], 20)
@@ -254,10 +255,10 @@ test_interact_launches_a_ready_rocket :: proc(t: ^testing.T) {
 	_, events = resolve_interact(&player, &test.world.entities, test.content.machines, press({.Interact}))
 	testing.expect_value(t, events, Player_Events{.Launch_Requested})
 	testing.expect(t, pad.launch_requested)
-	apply_launch_requests(&test.world, 99)
+	apply_launch_requests(&test.world, &test.records, 99)
 	testing.expect(t, !pad.launch_requested)
 	testing.expect_value(t, pad.state, Launch_Pad_State.Launching)
-	testing.expect_value(t, test.world.shipments[0].tick, 99)
+	testing.expect_value(t, test.records.shipments[0].tick, 99)
 }
 
 @(test)

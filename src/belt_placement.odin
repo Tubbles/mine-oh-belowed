@@ -199,7 +199,7 @@ belt_shape_item_shape :: proc(shape: Belt_Shape) -> Belt_Item_Shape {
 // Takes the item of the planned shape in the tier of `speed` from the
 // inventory and places the belt. A ramp without a ramp item of that tier
 // in the inventory is placed flat. Ground cover in the cell is cleared.
-place_planned_belt :: proc(world: ^World, content: Simulation_Content, player: ^Player, planned: Planned_Belt, speed: u32) -> (handle: Entity_Handle, ok: bool) {
+place_planned_belt :: proc(world: ^World, statistics: ^Statistics, content: Simulation_Content, player: ^Player, planned: Planned_Belt, speed: u32) -> (handle: Entity_Handle, ok: bool) {
 	plan := planned
 	machine := find_belt_machine_of_speed(content.machines, belt_shape_item_shape(plan.shape), speed)
 	if machine == NO_MACHINE || inventory_count(player.inventory, content.machines.machines[machine].item) == 0 {
@@ -215,7 +215,7 @@ place_planned_belt :: proc(world: ^World, content: Simulation_Content, player: ^
 	cells := [1]World_Coordinate{plan.cell}
 	clear_cover_from(world, cells[:])
 	handle = add_belt(&world.entities, content.machines, machine, plan.cell, plan.direction, plan.shape)
-	record_placed(&world.statistics, machine)
+	record_placed(statistics, machine)
 	return handle, true
 }
 
@@ -254,7 +254,7 @@ swap_belt_item :: proc(player: ^Player, content: Simulation_Content, current: Ma
 
 // One step of the drag into the resolved cell, placing belts of the tier
 // of `speed`.
-apply_drag_step :: proc(world: ^World, content: Simulation_Content, player: ^Player, cell: World_Coordinate, speed: u32) -> bool {
+apply_drag_step :: proc(world: ^World, statistics: ^Statistics, content: Simulation_Content, player: ^Player, cell: World_Coordinate, speed: u32) -> bool {
 	drag := &player.belt_drag
 	previous := pool_get(&world.entities.belts, drag.last)
 	if previous == nil {
@@ -269,7 +269,7 @@ apply_drag_step :: proc(world: ^World, content: Simulation_Content, player: ^Pla
 		drag.last, drag.last_cell, drag.last_placed = existing.handle, cell, false
 		return true
 	}
-	handle, placed := place_planned_belt(world, content, player, next, speed)
+	handle, placed := place_planned_belt(world, statistics, content, player, next, speed)
 	if !placed {
 		return false
 	}
@@ -287,7 +287,7 @@ drag_target_column :: proc(target: Raycast_Hit) -> [2]i32 {
 	return {cell.x, cell.z}
 }
 
-continue_belt_drag :: proc(world: ^World, content: Simulation_Content, player: ^Player, machine: Machine_Id) {
+continue_belt_drag :: proc(world: ^World, statistics: ^Statistics, content: Simulation_Content, player: ^Player, machine: Machine_Id) {
 	if !player.target.hit {
 		return
 	}
@@ -302,14 +302,14 @@ continue_belt_drag :: proc(world: ^World, content: Simulation_Content, player: ^
 	columns := belt_drag_columns(from, column, x_first)
 	for step in columns[:min(len(columns), MAXIMUM_DRAG_STEPS_PER_TICK)] {
 		cell, ok := resolve_drag_cell(world, content.blocks, drag.last_cell, step)
-		if !ok || !apply_drag_step(world, content, player, cell, content.machines.machines[machine].belt_speed_units_per_second) {
+		if !ok || !apply_drag_step(world, statistics, content, player, cell, content.machines.machines[machine].belt_speed_units_per_second) {
 			return
 		}
 	}
 }
 
 // Place pressed: start on the targeted belt, or place the first belt.
-start_belt_drag :: proc(world: ^World, content: Simulation_Content, players: []Player, index: int, machine: Machine_Id) {
+start_belt_drag :: proc(world: ^World, statistics: ^Statistics, content: Simulation_Content, players: []Player, index: int, machine: Machine_Id) {
 	player := &players[index]
 	item_shape := content.machines.machines[machine].belt_shape
 	if player.target.entity.kind == .Belt && item_shape == .Flat {
@@ -321,13 +321,13 @@ start_belt_drag :: proc(world: ^World, content: Simulation_Content, players: []P
 		return
 	}
 	plan := Planned_Belt{cell = placement.origin, direction = placement.rotation, shape = placement.belt_shape}
-	handle, placed := place_planned_belt(world, content, player, plan, content.machines.machines[machine].belt_speed_units_per_second)
+	handle, placed := place_planned_belt(world, statistics, content, player, plan, content.machines.machines[machine].belt_speed_units_per_second)
 	if placed && item_shape == .Flat {
 		player.belt_drag = Belt_Drag{active = true, last = handle, last_cell = plan.cell, last_placed = true}
 	}
 }
 
-place_belt_with_player :: proc(world: ^World, content: Simulation_Content, players: []Player, index: int, machine: Machine_Id, just_pressed, pressed: Action_Set) {
+place_belt_with_player :: proc(world: ^World, statistics: ^Statistics, content: Simulation_Content, players: []Player, index: int, machine: Machine_Id, just_pressed, pressed: Action_Set) {
 	player := &players[index]
 	if .Rotate_Building in just_pressed {
 		count := belt_rotation_count(content.machines.machines[machine].belt_shape)
@@ -336,9 +336,9 @@ place_belt_with_player :: proc(world: ^World, content: Simulation_Content, playe
 	switch {
 	case .Place in just_pressed:
 		player.belt_drag = {}
-		start_belt_drag(world, content, players, index, machine)
+		start_belt_drag(world, statistics, content, players, index, machine)
 	case .Place in pressed && player.belt_drag.active:
-		continue_belt_drag(world, content, player, machine)
+		continue_belt_drag(world, statistics, content, player, machine)
 	case .Place not_in pressed:
 		player.belt_drag = {}
 	}
@@ -346,7 +346,7 @@ place_belt_with_player :: proc(world: ^World, content: Simulation_Content, playe
 
 // Rotate with no machine selected turns the targeted belt a quarter turn,
 // a lift together with its column.
-rotate_targeted_belt :: proc(world: ^World, content: Simulation_Content, player: ^Player) {
+rotate_targeted_belt :: proc(world: ^World, statistics: ^Statistics, content: Simulation_Content, player: ^Player) {
 	belt := pool_get(&world.entities.belts, player.target.entity)
 	if belt == nil {
 		return
@@ -365,7 +365,7 @@ rotate_targeted_belt :: proc(world: ^World, content: Simulation_Content, player:
 		member := pool_get(&world.entities.belts, handle)
 		reshape_belt(&world.entities, content.machines, handle, member.machine, direction, member.shape)
 	}
-	record_world_action(&world.statistics)
+	record_world_action(statistics)
 }
 
 // F7: one iron plate onto the targeted belt's lane on the player's side.

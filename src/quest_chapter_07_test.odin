@@ -83,14 +83,14 @@ test_bore_drill_units_are_counted :: proc(t: ^testing.T) {
 	machine := test_crafting_machine(content, "bore_drill")
 	test_drill(&test.world, test.drill).bored_ticks = drill_boring_ticks(machine, TEST_TICK_RATE) - 60
 	tick_with_engine_offer(&test, content, 15_000, 60)
-	testing.expect_value(t, test.world.statistics.bore_drill_units, 0)
+	testing.expect_value(t, test.records.statistics.bore_drill_units, 0)
 	tick_with_engine_offer(&test, content, 15_000, 600)
-	testing.expect_value(t, test.world.statistics.bore_drill_units, 10)
+	testing.expect_value(t, test.records.statistics.bore_drill_units, 10)
 	testing.expect_value(t, chest_total(&test.world, test.chest), 10)
 }
 
-press_place :: proc(world: ^World, content: Simulation_Content, players: []Player) {
-	place_entity_with_player(world, content, players, 0, {.Place}, {.Place})
+press_place :: proc(world: ^World, records: ^Game_Records, content: Simulation_Content, players: []Player) {
+	place_entity_with_player(world, &records.statistics, content, players, 0, {.Place}, {.Place})
 }
 
 // Place with a bore drill over no deep vein counts; a footprint that is
@@ -99,25 +99,26 @@ press_place :: proc(world: ^World, content: Simulation_Content, players: []Playe
 test_bore_drill_no_vein_attempts_are_counted :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_deep_mining_world(content)
+	records := make_fluid_test_records(content)
 	add_test_deep_vein(&world, content, "bauxite", {2, 2}, 2, {100, 20, 0, 0})
 	players := []Player{make_test_player(content.blocks, {10, 1, 10})}
 	player := &players[0]
 	inventory_add(player.inventory, content.items, test_item(content.items, "bore_drill"), 1)
 	player.target = Raycast_Hit{hit = true, block = {20, 0, 20}, face = .Positive_Y, adjacent = {20, 1, 20}}
-	press_place(&world, content, players)
-	press_place(&world, content, players)
-	testing.expect_value(t, world.statistics.bore_drill_no_vein_attempts, 2)
+	press_place(&world, &records, content, players)
+	press_place(&world, &records, content, players)
+	testing.expect_value(t, records.statistics.bore_drill_no_vein_attempts, 2)
 	// Holding Place without a new press counts nothing.
-	place_entity_with_player(&world, content, players, 0, {}, {.Place})
+	place_entity_with_player(&world, &records.statistics, content, players, 0, {}, {.Place})
 	// No ground under the footprint: refused, but not for the vein.
 	world_set_block(&world, {20, 0, 20}, AIR_BLOCK)
-	press_place(&world, content, players)
-	testing.expect_value(t, world.statistics.bore_drill_no_vein_attempts, 2)
+	press_place(&world, &records, content, players)
+	testing.expect_value(t, records.statistics.bore_drill_no_vein_attempts, 2)
 	// Over the vein the drill is placed and nothing more is counted.
 	player.target = Raycast_Hit{hit = true, block = {1, 0, 1}, face = .Positive_Y, adjacent = {1, 1, 1}}
-	press_place(&world, content, players)
+	press_place(&world, &records, content, players)
 	testing.expect_value(t, len(world.entities.drills.entries), 1)
-	testing.expect_value(t, world.statistics.bore_drill_no_vein_attempts, 2)
+	testing.expect_value(t, records.statistics.bore_drill_no_vein_attempts, 2)
 }
 
 // Energy a turbine gives its network is counted, and a turbine standing
@@ -126,35 +127,36 @@ test_bore_drill_no_vein_attempts_are_counted :: proc(t: ^testing.T) {
 test_turbine_counters :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
 	add_settled_source(t, &world, content, {0, 1, 0})
 	turbine := place_test_entity(&world, content, "hydro_turbine", {1, 1, 0})
 	place_test_entity(&world, content, "small_pole", {1, 1, 3})
 	place_test_entity(&world, content, "lamp", {2, 1, 3})
-	tick_electric_networks(&world, content, TEST_TICK_RATE)
-	testing.expect_value(t, world.statistics.turbine_joules, 83)
-	tick_electric_networks(&world, content, TEST_TICK_RATE)
-	testing.expect_value(t, world.statistics.turbine_joules, 166)
+	tick_electric_networks(&world, &records, content, TEST_TICK_RATE)
+	testing.expect_value(t, records.statistics.turbine_joules, 83)
+	tick_electric_networks(&world, &records, content, TEST_TICK_RATE)
+	testing.expect_value(t, records.statistics.turbine_joules, 166)
 	cells := common_cells(test_fluid_machine(&world, turbine).common, content.machines)
 	set_water_level(&world, content, cells, 0)
 	still_ticks := TURBINE_STILL_WATER_SECONDS * TEST_TICK_RATE
 	for _ in 0 ..< still_ticks - 1 {
-		tick_electric_networks(&world, content, TEST_TICK_RATE)
+		tick_electric_networks(&world, &records, content, TEST_TICK_RATE)
 	}
-	testing.expect_value(t, world.statistics.turbine_still_water_ticks, 0)
-	testing.expect_value(t, world.statistics.turbine_joules, 166)
+	testing.expect_value(t, records.statistics.turbine_still_water_ticks, 0)
+	testing.expect_value(t, records.statistics.turbine_joules, 166)
 	for _ in 0 ..< still_ticks + 1 {
-		tick_electric_networks(&world, content, TEST_TICK_RATE)
+		tick_electric_networks(&world, &records, content, TEST_TICK_RATE)
 	}
-	testing.expect_value(t, world.statistics.turbine_still_water_ticks, 1)
+	testing.expect_value(t, records.statistics.turbine_still_water_ticks, 1)
 	// Water back breaks the streak; a new one counts again.
 	set_water_level(&world, content, cells, WATER_FALLING_LEVEL)
-	tick_electric_networks(&world, content, TEST_TICK_RATE)
+	tick_electric_networks(&world, &records, content, TEST_TICK_RATE)
 	testing.expect_value(t, test_fluid_machine(&world, turbine).still_water_ticks, 0)
 	set_water_level(&world, content, cells, 0)
 	for _ in 0 ..< still_ticks {
-		tick_electric_networks(&world, content, TEST_TICK_RATE)
+		tick_electric_networks(&world, &records, content, TEST_TICK_RATE)
 	}
-	testing.expect_value(t, world.statistics.turbine_still_water_ticks, 2)
+	testing.expect_value(t, records.statistics.turbine_still_water_ticks, 2)
 }
 
 complete_second_vein_to_aluminium :: proc(t: ^testing.T, test: ^Quest_Test) {

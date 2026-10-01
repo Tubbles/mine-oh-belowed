@@ -15,9 +15,11 @@ world_is_idle :: proc(world: ^World) -> bool {
 // Ticks the world until nothing is pending. Returns the last tick run.
 settle_world :: proc(t: ^testing.T, world: ^World, registry: Block_Registry, first_tick: u64) -> u64 {
 	tick := first_tick
+	// No trees fall here, so the leaf decay queue stays empty.
+	leaf_decay: Leaf_Decay
 	for _ in 0 ..< TEST_SETTLE_TICKS {
 		tick += 1
-		tick_world(world, registry, tick)
+		tick_world(world, &leaf_decay, registry, tick)
 		if world_is_idle(world) {
 			return tick
 		}
@@ -233,12 +235,14 @@ test_report_light_settling_on_generated_terrain :: proc(t: ^testing.T) {
 	generator := make_test_generator(DEFAULT_WORLD_SEED)
 	registry := make_test_registry()
 	world: World
+	records: Game_Records
 	defer destroy_world(&world)
+	defer destroy_game_records(&records)
 	for z in i32(-2) ..= 2 {
 		for x in i32(-2) ..= 2 {
 			for y in i32(-1) ..= 2 {
 				generated := generate_chunk(&generator, {x, y, z})
-				insert_generated_chunk(&world, Chunk_Job_Result{kind = .Generate, coordinate = {x, y, z}, chunk = generated.chunk, veins = generated.veins, outcrops = generated.outcrops})
+				insert_generated_chunk(&world, &records, Chunk_Job_Result{kind = .Generate, coordinate = {x, y, z}, chunk = generated.chunk, veins = generated.veins, outcrops = generated.outcrops})
 				delete(generated.veins)
 				delete(generated.outcrops)
 				delete(generated.crates)

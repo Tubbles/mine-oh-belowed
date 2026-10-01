@@ -123,6 +123,7 @@ test_low_grade_share_follows_the_reservoir :: proc(t: ^testing.T) {
 // of the gravel graded.
 low_grade_draw_share :: proc(content: Simulation_Content, remaining: [MAXIMUM_VEIN_OUTPUTS]i64, draws_before: u64, infinite: bool) -> f64 {
 	world := make_drill_world(content)
+	records := make_test_records(content)
 	world.settings.seed = 777
 	world.settings.veins_infinite = infinite
 	id := add_test_vein(&world, content, "iron", {1, 1}, 2, remaining)
@@ -133,7 +134,7 @@ low_grade_draw_share :: proc(content: Simulation_Content, remaining: [MAXIMUM_VE
 		vein := registered_vein(&world, id)
 		// Hold the reservoir still, so the share under test barely moves.
 		saved := vein.remaining
-		switch draw_from_vein(&world, content.veins, vein) {
+		switch draw_from_vein(&world, &records.statistics, content.veins, vein) {
 		case hematite:
 			high += 1
 		case low_grade:
@@ -182,12 +183,13 @@ test_new_vein_types_load_and_place :: proc(t: ^testing.T) {
 	}
 	// A drill on a lead outcrop draws galena, sphalerite and gravel.
 	world := make_drill_world(content)
+	records := make_test_records(content)
 	vein := add_test_vein(&world, content, "lead", {1, 1}, 2, {700, 100, 200, 0})
 	machine := test_machine(content.machines, "burner_mining_drill")
 	testing.expect(t, placement_at(&world, content, nil, machine, {0, 1, 0}, 0).valid)
 	drill := place_test_drill(&world, content, {0, 1, 0}, 0, vein)
 	chest := place_test_entity(&world, content, "iron_chest", {2, 1, 0})
-	tick_test_entities(&world, content, 20 * 192)
+	tick_test_entities(&world, &records, content, 20 * 192)
 	galena := chest_count_of(&world, chest, test_item(content.items, "galena")) + chest_count_of(&world, chest, test_item(content.items, "galena_low_grade"))
 	testing.expect(t, galena > 0)
 	testing.expect_value(t, test_drill(&world, drill).state, Drill_State.Mining)
@@ -496,13 +498,14 @@ lay_ore_processing_line :: proc(world: ^World, content: Simulation_Content) -> (
 test_ore_processing_line_is_deterministic :: proc(t: ^testing.T) {
 	content := make_test_content()
 	worlds := [2]World{make_drill_world(content), make_drill_world(content)}
+	all_records := [2]Game_Records{make_test_records(content), make_test_records(content)}
 	outputs: [2]Entity_Handle
 	for &world, index in worlds {
 		crusher, washer: Entity_Handle
 		crusher, washer, outputs[index] = lay_ore_processing_line(&world, content)
 		testing.expect(t, entity_network(&world.entities.electric_networks, crusher) >= 0)
 		testing.expect(t, entity_network(&world.entities.electric_networks, washer) >= 0)
-		tick_test_entities(&world, content, 1200)
+		tick_test_entities(&world, &all_records[index], content, 1200)
 	}
 	first, second := &worlds[0], &worlds[1]
 	for entry, index in first.entities.assemblers.entries {
@@ -515,12 +518,12 @@ test_ore_processing_line_is_deterministic :: proc(t: ^testing.T) {
 		testing.expect(t, entry == second.entities.fluid_machines.entries[index])
 	}
 	hematite, mud := test_item(content.items, "hematite"), test_item(content.items, "mud")
-	made := int(first.statistics.produced[hematite])
+	made := int(all_records[0].statistics.produced[hematite])
 	testing.expect(t, made > 0)
-	testing.expect_value(t, int(first.statistics.produced[mud]), made)
+	testing.expect_value(t, int(all_records[0].statistics.produced[mud]), made)
 	testing.expect(t, chest_count_of(first, outputs[0], hematite) > 0)
 	testing.expect_value(t, chest_count_of(first, outputs[0], hematite), chest_count_of(second, outputs[1], hematite))
-	testing.expect_value(t, first.statistics.produced[hematite], second.statistics.produced[hematite])
+	testing.expect_value(t, all_records[0].statistics.produced[hematite], all_records[1].statistics.produced[hematite])
 	// Every wash drew 30 L from the tank through the pipe.
 	tank := first.entities.fluid_machines.entries[0]
 	in_pipes := first.entities.pipes.entries[0].buffer.level

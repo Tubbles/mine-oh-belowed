@@ -81,7 +81,7 @@ launch_pad_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, pad: ^Launc
 	machine_slot_rows(state, &content, pad.part_count, LAUNCH_PAD_CARGO_SLOTS, slots, items, &result)
 	machine_bar(state, cut_top(&content, UI_ROW_HEIGHT), launch_pad_progress(pad^, machine, screen_context.tick_rate))
 	detail_line(state, &content, launch_pad_state_text(pad), UI_DIM_TEXT_COLOR)
-	statistics := &screen_context.world.statistics
+	statistics := &screen_context.records.statistics
 	if ui_button(state, cut_row(&content), text("launch_pad_assemble")) {
 		record_launch_refusal(statistics, assembly_refusal(pad^, machine))
 		start_assembly(pad, machine)
@@ -101,7 +101,7 @@ shipment_line :: proc(shipment: Shipment, items: Item_Registry, tick_rate: int) 
 }
 
 shipment_list :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context) {
-	shipments := screen_context.world.shipments[:]
+	shipments := screen_context.records.shipments[:]
 	if len(shipments) == 0 {
 		ui_label(state, {area.x, area.y, area.width, UI_ROW_HEIGHT}, text("statistics_no_shipments"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	}
@@ -122,7 +122,7 @@ shipment_list :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Scre
 
 shipments_tab :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context) {
 	content := area
-	statistics := screen_context.world.statistics
+	statistics := screen_context.records.statistics
 	list_area := cut_left(&content, statistics_list_width(content))
 	cut_left(&content, 2 * UI_PADDING)
 	header := cut_top(&list_area, UI_ROW_HEIGHT)

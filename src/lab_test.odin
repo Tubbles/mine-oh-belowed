@@ -237,6 +237,7 @@ lay_research_site :: proc(world: ^World, content: Simulation_Content) -> (first,
 test_research_in_the_world_unlocks_recipes :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
 	first, second := lay_research_site(&world, content)
 	networks := &world.entities.electric_networks
 	testing.expect(t, entity_network(networks, first) >= 0 && entity_network(networks, second) >= 0)
@@ -247,11 +248,11 @@ test_research_in_the_world_unlocks_recipes :: proc(t: ^testing.T) {
 	unlocks := make_recipe_unlocks(len(content.items.items), content.recipes, content.technologies, false, context.temp_allocator)
 	assembler_recipe := test_recipe(content.recipes, "assembler_1")
 	testing.expect(t, !recipe_is_available(unlocks, assembler_recipe))
-	queue_research(&world.research, content.technologies, unlocks, test_technology(content.technologies, "automation"))
+	queue_research(&records.research, content.technologies, unlocks, test_technology(content.technologies, "automation"))
 	// Five units of 600 ticks in each lab, and one tick to settle.
 	for _ in 0 ..< 3001 {
-		tick_entities(&world, content, TEST_TICK_RATE)
-		apply_finished_research(&world.research, &unlocks, content.recipes)
+		tick_entities(&world, &records, content, TEST_TICK_RATE)
+		apply_finished_research(&records.research, &unlocks, content.recipes)
 	}
 	testing.expect(t, unlocks.researched[test_technology(content.technologies, "automation")])
 	testing.expect(t, recipe_is_available(unlocks, assembler_recipe))
@@ -293,16 +294,17 @@ test_technology_screen_filters_and_orders :: proc(t: ^testing.T) {
 test_assemblers_and_labs_are_deterministic :: proc(t: ^testing.T) {
 	run :: proc(content: Simulation_Content) -> (gears: int, units: int, labs: [2]Lab, produced: u64) {
 		world := make_floor_world(content.blocks, 32)
+		records: Game_Records
 		first, second := lay_research_site(&world, content)
 		unlocks := make_recipe_unlocks(len(content.items.items), content.recipes, content.technologies, false, context.temp_allocator)
-		queue_research(&world.research, content.technologies, unlocks, test_technology(content.technologies, "automation"))
+		queue_research(&records.research, content.technologies, unlocks, test_technology(content.technologies, "automation"))
 		_, assembler, target := lay_gear_line_at(&world, content, {8, 0, 8})
 		for _ in 0 ..< 1200 {
-			tick_entities(&world, content, TEST_TICK_RATE)
+			tick_entities(&world, &records, content, TEST_TICK_RATE)
 		}
 		gears = chest_count_of(&world, target, test_item(content.items, "iron_gear"))
 		gears += slots_count_of(test_assembler(&world, assembler).slots[:], test_item(content.items, "iron_gear"))
-		return gears, world.research.units_done, {test_lab(&world, first)^, test_lab(&world, second)^}, item_counter(world.statistics.produced, test_item(content.items, "iron_gear"))
+		return gears, records.research.units_done, {test_lab(&world, first)^, test_lab(&world, second)^}, item_counter(records.statistics.produced, test_item(content.items, "iron_gear"))
 	}
 	content := make_test_content()
 	first_gears, first_units, first_labs, first_produced := run(content)

@@ -119,7 +119,7 @@ lab_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, lab: Lab, screen_c
 		grid = {activated = -1, focused = -1},
 	}
 	machine := screen_context.machines.machines[lab.machine]
-	research := screen_context.world.research
+	research := screen_context.records.research
 	slots := lab.slots
 	content := area
 	machine_slot_rows(state, &content, 0, lab.slot_count, slots[:], screen_context.items, &result.grid)

@@ -81,37 +81,39 @@ test_chapter_03_loads :: proc(t: ^testing.T) {
 test_belt_dead_end_counts_held_ticks :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
 	belts := lay_belt_row(&world, content, {0, 1, 0}, 2, 0)
 	plate := test_item(content.items, "iron_plate")
 	testing.expect(t, belt_insert_item(&world.entities, belts[0], .Left, plate))
-	tick_test_entities(&world, content, 43)
-	testing.expect_value(t, world.statistics.belt_dead_end_ticks, 0)
-	tick_test_entities(&world, content, 57)
-	testing.expect_value(t, world.statistics.belt_dead_end_ticks, 57)
+	tick_test_entities(&world, &records, content, 43)
+	testing.expect_value(t, records.statistics.belt_dead_end_ticks, 0)
+	tick_test_entities(&world, &records, content, 57)
+	testing.expect_value(t, records.statistics.belt_dead_end_ticks, 57)
 	// An inserter over the last block (unfuelled, so it leaves the plate)
 	// makes the end a feed.
 	place_test_entity(&world, content, "burner_inserter", {1, 1, 1}, 1)
-	tick_test_entities(&world, content, 100)
-	testing.expect_value(t, world.statistics.belt_dead_end_ticks, 57)
+	tick_test_entities(&world, &records, content, 100)
+	testing.expect_value(t, records.statistics.belt_dead_end_ticks, 57)
 }
 
 @(test)
 test_inserter_idle_minute_counts_uninterrupted_idling :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
 	pair := make_chest_pair(&world, content)
-	tick_test_entities(&world, content, 3599)
-	testing.expect_value(t, world.statistics.inserters_idle_a_minute, 0)
-	tick_test_entities(&world, content, 1)
-	testing.expect_value(t, world.statistics.inserters_idle_a_minute, 1)
-	tick_test_entities(&world, content, 3600)
-	testing.expect_value(t, world.statistics.inserters_idle_a_minute, 1)
+	tick_test_entities(&world, &records, content, 3599)
+	testing.expect_value(t, records.statistics.inserters_idle_a_minute, 0)
+	tick_test_entities(&world, &records, content, 1)
+	testing.expect_value(t, records.statistics.inserters_idle_a_minute, 1)
+	tick_test_entities(&world, &records, content, 3600)
+	testing.expect_value(t, records.statistics.inserters_idle_a_minute, 1)
 	// Work breaks the streak; the next full minute counts again.
 	entity_insert(&world.entities, content, pair.source, Item_Stack{test_item(content.items, "iron_plate"), 1})
-	tick_test_entities(&world, content, 1)
+	tick_test_entities(&world, &records, content, 1)
 	testing.expect_value(t, test_inserter(&world, pair.inserter).idle_streak, 0)
-	tick_test_entities(&world, content, 100 + 3600)
-	testing.expect_value(t, world.statistics.inserters_idle_a_minute, 2)
+	tick_test_entities(&world, &records, content, 100 + 3600)
+	testing.expect_value(t, records.statistics.inserters_idle_a_minute, 2)
 }
 
 @(test)

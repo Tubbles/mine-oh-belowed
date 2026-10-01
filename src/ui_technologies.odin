@@ -41,7 +41,7 @@ status_color :: proc(status: Technology_Status) -> Ui_Color {
 }
 
 draw_technology_row :: proc(state: ^Ui_State, row: Ui_Rectangle, screen_context: Screen_Context, names: []string, technology: int) {
-	research := screen_context.world.research
+	research := screen_context.records.research
 	if research.queued && research.technology == technology {
 		draw_fill(state, {row.x, row.y, RECIPE_CRAFTABLE_MARK_WIDTH, row.height}, UI_ACCENT_COLOR)
 	}
@@ -94,7 +94,7 @@ technology_status_column :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_co
 	browser := screen_context.technology_browser
 	ui_toggle(state, cut_row(&content), text("technologies_hide_researched"), &browser.filter.hide_researched)
 	detail_line(state, &content, text("technologies_queued"), UI_DIM_TEXT_COLOR)
-	research := screen_context.world.research
+	research := screen_context.records.research
 	if !research.queued {
 		detail_line(state, &content, text("technologies_none_queued"))
 		return
@@ -129,7 +129,7 @@ technology_detail_panel :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_con
 	status := technology_status(screen_context.technologies, screen_context.unlocks^, technology)
 	draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), names[technology], UI_HEADING_TEXT_SIZE, .Left)
 	detail_line(state, &content, text(technology_status_keys[status]), status_color(status))
-	levels := screen_context.world.research.levels
+	levels := screen_context.records.research.levels
 	if definition.infinite {
 		detail_line(state, &content, fmt.tprintf("%s %d", text("technologies_level"), levels[technology]), UI_ACCENT_COLOR)
 	}
@@ -177,7 +177,7 @@ settle_technology_focus :: proc(state: ^Ui_State, browser: ^Technology_Browser, 
 }
 
 queue_focused_research :: proc(state: ^Ui_State, screen_context: Screen_Context, technology: int) {
-	refusal := queue_research(&screen_context.world.research, screen_context.technologies, screen_context.unlocks^, technology)
+	refusal := queue_research(&screen_context.records.research, screen_context.technologies, screen_context.unlocks^, technology)
 	if refusal != .None {
 		ui_toast(state, text(research_refusal_keys[refusal]))
 	}

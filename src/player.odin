@@ -500,7 +500,7 @@ carry_player_on_belt :: proc(world: ^World, content: Simulation_Content, player:
 
 // cheat_speed is the developer flag on the simulation (0044). Walking
 // over loose items picks them up (pick_up_loose_items).
-tick_player :: proc(world: ^World, content: Simulation_Content, players: []Player, index: int, frame: Input_Frame, tick_rate: int, tick: u64, cheat_speed := false) -> Player_Events {
+tick_player :: proc(world: ^World, records: ^Game_Records, content: Simulation_Content, players: []Player, index: int, frame: Input_Frame, tick_rate: int, tick: u64, cheat_speed := false) -> Player_Events {
 	player := &players[index]
 	seconds := 1 / f32(tick_rate)
 	player.sneaking = update_sneaking(player.sneaking, frame)
@@ -519,26 +519,26 @@ tick_player :: proc(world: ^World, content: Simulation_Content, players: []Playe
 		walk_player(world, content.blocks, player, input, player_walk_speed(input.pressed, sprinting) * cheat_speed_factor(cheat_speed), cheat_speed, seconds)
 	}
 	if !player.flying {
-		record_walked(&world.statistics, walk_start, player.position)
+		record_walked(&records.statistics, walk_start, player.position)
 	}
 	pick_up_loose_items(world, content.items, player, index)
 	if .Open_Machine in events || .Toggled_Switch in events || .Launch_Requested in events {
-		record_world_action(&world.statistics)
+		record_world_action(&records.statistics)
 	}
 	player.target_direction = player_target_direction(player^, input)
 	player.target = raycast_blocks(world, content.blocks, player_eye(player.position), player.target_direction, PLAYER_REACH)
-	events += mine_with_player(world, content, player, .Mine in input.pressed, tick_rate, tick, cheat_speed)
-	place_with_player(world, content, players, index, input.just_pressed, input.pressed)
+	events += mine_with_player(world, records, content, player, .Mine in input.pressed, tick_rate, tick, cheat_speed)
+	place_with_player(world, &records.statistics, content, players, index, input.just_pressed, input.pressed)
 	// Drop_Stack (0119) drops the selected hotbar slot's stack, the hotbar
 	// being the first slots; before the selection changes, since the long
 	// press that sent it was on the slot selected until now.
 	if .Drop_Stack in input.just_pressed {
-		drop_player_stack(world, content.blocks, player, index, player.selected_hotbar_slot)
+		drop_player_stack(world, &records.statistics, content.blocks, player, index, player.selected_hotbar_slot)
 	}
 	player.selected_hotbar_slot = cycle_hotbar_slot(player.selected_hotbar_slot, input.just_pressed)
 	if finished := advance_crafting(&player.crafting, player.inventory, content.recipes, content.items, tick_rate); finished != NO_RECIPE {
-		record_produced_stacks(&world.statistics, content.recipes.recipes[finished].outputs)
-		record_consumed_stacks(&world.statistics, content.recipes.recipes[finished].inputs)
+		record_produced_stacks(&records.statistics, content.recipes.recipes[finished].outputs)
+		record_consumed_stacks(&records.statistics, content.recipes.recipes[finished].inputs)
 	}
 	return events
 }

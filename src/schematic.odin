@@ -15,8 +15,8 @@ Schematic_Crate :: struct {
 	slots:        [SCHEMATIC_CRATE_SLOT_COUNT]Item_Stack,
 }
 
-crate_site_known :: proc(world: ^World, region: Region_Coordinate) -> bool {
-	for site in world.crate_sites {
+crate_site_known :: proc(crate_sites: []Crate_Site, region: Region_Coordinate) -> bool {
+	for site in crate_sites {
 		if site.region == region {
 			return true
 		}
@@ -26,10 +26,10 @@ crate_site_known :: proc(world: ^World, region: Region_Coordinate) -> bool {
 
 // Called on the main thread for every inserted chunk. A region's site is
 // kept once, so a reloaded chunk never brings back a crate already placed.
-register_crate_sites :: proc(world: ^World, sites: []Crate_Site) {
+register_crate_sites :: proc(crate_sites: ^[dynamic]Crate_Site, sites: []Crate_Site) {
 	for site in sites {
-		if !crate_site_known(world, site.region) {
-			append(&world.crate_sites, site)
+		if !crate_site_known(crate_sites[:], site.region) {
+			append(crate_sites, site)
 		}
 	}
 }
@@ -47,9 +47,9 @@ schematic_for_choice :: proc(recipes: Recipe_Registry, choice: u64) -> Item_Id {
 // Crates of sites whose chunk is loaded. A site without a crate machine,
 // without schematics or with an entity in its cell is marked placed
 // without a crate, so it is not tried again.
-place_pending_crates :: proc(world: ^World, content: Simulation_Content) {
+place_pending_crates :: proc(world: ^World, crate_sites: []Crate_Site, content: Simulation_Content) {
 	machine := find_machine_of_kind(content.machines, .Schematic_Crate)
-	for &site in world.crate_sites {
+	for &site in crate_sites {
 		if site.placed || world_to_chunk_coordinate(site.position) not_in world.chunks {
 			continue
 		}

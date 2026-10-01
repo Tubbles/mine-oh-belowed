@@ -832,7 +832,7 @@ assembler_burn_fraction :: proc(assembler: Assembler) -> f32 {
 // rest as voided, ingredients and fuel as consumed, and stalls and fuel
 // like the furnace's. Fluids drawn from the input ports count as
 // consumed, fluid outputs delivered as produced (record_buffer_changes).
-tick_assemblers :: proc(world: ^World, content: Simulation_Content, tick_rate: int) {
+tick_assemblers :: proc(world: ^World, statistics: ^Statistics, content: Simulation_Content, tick_rate: int) {
 	lenient := world.settings.byproducts_lenient
 	for &assembler in world.entities.assemblers.entries {
 		if !assembler.alive {
@@ -842,13 +842,13 @@ tick_assemblers :: proc(world: ^World, content: Simulation_Content, tick_rate: i
 		before := assembler
 		if advance_assembler(&assembler, machine, content.items, content.recipes, tick_rate, lenient) {
 			craft := machine_craft(machine, content.recipes, assembler.recipe)
-			record_craft_outputs(&world.statistics, craft, before, assembler)
-			record_voided_fluid_outputs(&world.statistics, machine, craft, before, assembler)
-			record_machine_output(&assembler.output_rate, world.statistics.current_second, craft_main_output_count(craft))
+			record_craft_outputs(statistics, craft, before, assembler)
+			record_voided_fluid_outputs(statistics, machine, craft, before, assembler)
+			record_machine_output(&assembler.output_rate, statistics.current_second, craft_main_output_count(craft))
 		}
-		record_crafting_machine_tick(&world.statistics, before, assembler)
+		record_crafting_machine_tick(statistics, before, assembler)
 		buffers_before, buffers_after := before.buffers, assembler.buffers
-		record_buffer_changes(&world.statistics, buffers_before[:], buffers_after[:])
+		record_buffer_changes(statistics, buffers_before[:], buffers_after[:])
 	}
 }
 

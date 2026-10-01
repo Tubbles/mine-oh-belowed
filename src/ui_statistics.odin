@@ -120,7 +120,7 @@ statistics_item_list :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_contex
 statistics_fluid_detail :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context) {
 	view := screen_context.statistics_view
 	content := area
-	rate := fluid_rate_row(screen_context.world.statistics, view.focused_fluid, view.window)
+	rate := fluid_rate_row(screen_context.records.statistics, view.focused_fluid, view.window)
 	draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), fluid_name(screen_context.fluids, view.focused_fluid), UI_HEADING_TEXT_SIZE, .Left)
 	detail_line(state, &content, fmt.tprintf("%s: %s", text("statistics_produced"), format_fluid_window_rate(rate.produced, view.window)))
 	detail_line(state, &content, fmt.tprintf("%s: %s", text("statistics_consumed"), format_fluid_window_rate(rate.consumed, view.window)))
@@ -149,9 +149,9 @@ statistics_detail :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: 
 		return
 	}
 	content := area
-	statistics := screen_context.world.statistics
+	statistics := screen_context.records.statistics
 	rate := item_rate_row(statistics, view.focused, view.window)
-	counts := count_item_machines(screen_context.world, statistics_simulation_content(screen_context), view.focused)
+	counts := count_item_machines(screen_context.world, screen_context.records.research, statistics_simulation_content(screen_context), view.focused)
 	draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), names[view.focused], UI_HEADING_TEXT_SIZE, .Left)
 	detail_line(state, &content, fmt.tprintf("%s: %s", text("statistics_produced"), format_window_rate(rate.produced, view.window)))
 	detail_line(state, &content, fmt.tprintf("%s: %s", text("statistics_consumed"), format_window_rate(rate.consumed, view.window)))
@@ -189,8 +189,8 @@ production_tab :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Scr
 	view := screen_context.statistics_view
 	content := area
 	names := item_display_names(screen_context.items, context.temp_allocator)
-	rows := statistics_rows(screen_context.world.statistics, view.window, context.temp_allocator)
-	fluid_rows := fluid_statistics_rows(screen_context.world.statistics, view.window, context.temp_allocator)
+	rows := statistics_rows(screen_context.records.statistics, view.window, context.temp_allocator)
+	fluid_rows := fluid_statistics_rows(screen_context.records.statistics, view.window, context.temp_allocator)
 	list_area := cut_left(&content, statistics_list_width(content))
 	cut_left(&content, 2 * UI_PADDING)
 	if ui_choice(state, cut_row(&list_area), text("statistics_window"), text(rate_window_keys[view.window])) {

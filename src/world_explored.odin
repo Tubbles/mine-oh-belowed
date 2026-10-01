@@ -47,9 +47,9 @@ surface_cell_is_known :: proc(cell: Surface_Cell) -> bool {
 }
 
 // Called for every inserted chunk.
-mark_column_explored :: proc(world: ^World, column: Chunk_Column) {
-	if column not_in world.explored {
-		world.explored[column] = unknown_column_surface()
+mark_column_explored :: proc(explored: ^map[Chunk_Column]Column_Surface, column: Chunk_Column) {
+	if column not_in explored {
+		explored[column] = unknown_column_surface()
 	}
 }
 
@@ -108,9 +108,9 @@ scanned_column_surface :: proc(world: ^World, column: Chunk_Column, stored: Colu
 	return result
 }
 
-refresh_column_surface :: proc(world: ^World, column: Chunk_Column) {
-	if stored, found := world.explored[column]; found {
-		world.explored[column] = scanned_column_surface(world, column, stored)
+refresh_column_surface :: proc(world: ^World, explored: ^map[Chunk_Column]Column_Surface, column: Chunk_Column) {
+	if stored, found := explored[column]; found {
+		explored[column] = scanned_column_surface(world, column, stored)
 	}
 }
 
@@ -127,19 +127,19 @@ columns_of_chunks :: proc(coordinates: []Chunk_Coordinate) -> []Chunk_Column {
 }
 
 // Before chunks unload, while the column's other chunks are still there.
-refresh_unloading_surfaces :: proc(world: ^World, unloading: []Chunk_Coordinate) {
+refresh_unloading_surfaces :: proc(world: ^World, explored: ^map[Chunk_Column]Column_Surface, unloading: []Chunk_Coordinate) {
 	for column in columns_of_chunks(unloading) {
-		refresh_column_surface(world, column)
+		refresh_column_surface(world, explored, column)
 	}
 }
 
 // Before a save, so the record holds what the loaded chunks show.
-refresh_loaded_surfaces :: proc(world: ^World) {
+refresh_loaded_surfaces :: proc(world: ^World, explored: ^map[Chunk_Column]Column_Surface) {
 	coordinates := make([dynamic]Chunk_Coordinate, 0, len(world.chunks), context.temp_allocator)
 	for coordinate in world.chunks {
 		append(&coordinates, coordinate)
 	}
-	refresh_unloading_surfaces(world, coordinates[:])
+	refresh_unloading_surfaces(world, explored, coordinates[:])
 }
 
 // The surface of one block column: live for a loaded column (through the
@@ -158,9 +158,9 @@ surface_at :: proc(surfaces: map[Chunk_Column]Column_Surface, x, z: i32) -> Surf
 
 // Every explored column with its surface as the loaded chunks show it
 // now, into surfaces (cleared first).
-collect_explored_surfaces :: proc(world: ^World, surfaces: ^map[Chunk_Column]Column_Surface) {
+collect_explored_surfaces :: proc(world: ^World, explored: map[Chunk_Column]Column_Surface, surfaces: ^map[Chunk_Column]Column_Surface) {
 	clear(surfaces)
-	for column, stored in world.explored {
+	for column, stored in explored {
 		surfaces[column] = scanned_column_surface(world, column, stored)
 	}
 }
@@ -173,9 +173,9 @@ explored_column_before :: proc(first, second: Explored_Column) -> bool {
 }
 
 // In column order, since map order is not stable.
-sorted_explored_columns :: proc(world: ^World) -> []Explored_Column {
-	columns := make([dynamic]Explored_Column, 0, len(world.explored), context.temp_allocator)
-	for column, surface in world.explored {
+sorted_explored_columns :: proc(explored: map[Chunk_Column]Column_Surface) -> []Explored_Column {
+	columns := make([dynamic]Explored_Column, 0, len(explored), context.temp_allocator)
+	for column, surface in explored {
 		append(&columns, Explored_Column{column = column, surface = surface})
 	}
 	slice.sort_by(columns[:], explored_column_before)
