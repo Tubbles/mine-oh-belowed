@@ -1,6 +1,6 @@
 # 0160: One request table between frames
 
-Status: todo (after 0159)
+Status: implemented
 
 ## Goal
 
@@ -17,3 +17,13 @@ Refactor 7 of the loop audit (`doc/audit/loop.md`, section 5) and the engine's r
 ## Verify
 
 - `./build.sh check`, `./build.sh check-android`, `./build.sh check-windows`, `./build.sh test`, `python3 tools/check_docs.py`, `python3 tools/check_dead_code.py`, `python3 tools/code_graph.py --check doc/code_map.md`; `ui_data_browser_test.odin` (draw list after the serve), `ui_touch_layout_editor_test.odin`, `developer_test.odin`; a playtest (the user) of a data edit save and discard, a texture editor save, a touch layout edit, a screenshot, a reload and a quit.
+
+## Notes
+
+- Members: `Frame_Request` with `Frame_Requests :: bit_set[Frame_Request; u16]`, in serve order: `Refresh_Texture_Editor`, `Save_Texture_Edits`, `Close_Data_File`, `Discard_Data_Edit`, `Save_Data_Edit`, `Export_Data_Files`, `Refresh_Data_Tree`, `Open_Data_File`, `Write_Touch_Layouts`, `Take_Screenshot`, `Reload_Data`, `Quit`. The set is `Frame_State.requests`, top level, since the loop serves it (it replaces `quit_requested` there). The type is declared in `ui_screens.odin` beside `Screen_Context`, not in `loop.odin`: ui, tools (`data_browser.odin`, `data_export.odin`) and the touch layouts name it, and none of them may reference the loop, so a loop declaration would have grown `ui -> loop` and `tools -> loop`.
+- Per flag. Joined the set, each set by a screen in the UI pass and served by the loop between frames: the quit (pause menu, title), the screenshot and the reload (Developer screen; the reload also from F8, a data edit's content category and the data watch), the texture editor's refresh (Developer screen) and save, the data browser's six (close, discard, save, export, refresh, open; discard and save add refresh and open themselves inside the serve, through `Data_Browser_Context.requests`), the touch layouts' write (the settings row in the UI pass, the editor's request inside the serve). `apply_data_browser_close_request` is called by `serve_data_browser`, not inside the screen's own pass, so the close joined too.
+- Stayed: the pause menu's save on `Session` (`Screen_Context.save_requested`): the frame's ticks take it in `save_when_due`, merged with the autosave decision, and it lives and dies with the session, so no save request survives into the next world. `Title_State.request` and `Touch_Layout_Editor.request` are enum requests with a choice (new, load, leave; save, save as, delete, reset), not flags. `Command_Control.screenshot_path` carries the path. `Touch_Layouts.changed` is a notification the loop reads to release the latches, not a request.
+- Order: unchanged. Before the draw (`serve_frame_requests_before_draw`): texture editor, data browser (close, discard, save, export, refresh, open, then `apply_data_edit_change`), touch layouts. In `render_frame` after the UI pass and before the frame is shown: the screenshot (`queue_requested_screenshot` stays there, so the picture is this frame's). After the draw and `update_audio` (`serve_frame_requests_after_draw`): the session request, the data watch, the reload. The quit ends the loop. Written as the comment on `serve_frame_requests_before_draw` and in `doc/architecture.md` (Frame and tick); `serve_data_browser`'s comment now points there instead of listing the order.
+- A discard used to assign `open_requested = browser.open`; it removes `Open_Data_File` and adds it back while a file is open, the same.
+- Records: `python3 tools/code_graph.py --check doc/code_map.md` reports 0 new or grown and no edge fell, so no record changed. `doc/code_map.md` names `serve_frame_requests_before_draw` in the `loop.odin` entry and `Frame_Request` in the `ui_screens.odin` entry, and the field counts (`Frame_Developer_Tools` 8, `Frame_Reload` 7, `Screen_Context` 53).
+- Files beyond the item's list: `ui_title.odin` (the title's Quit), `touch_overlay.odin` (where `Touch_Layouts` lives), `ui_audit_test.odin` (the audit's Screen_Context), `doc/developer_tools.md` and `doc/audit/loop.md` (names `check_docs.py` flagged).

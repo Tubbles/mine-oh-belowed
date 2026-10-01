@@ -103,19 +103,6 @@ Data_Browser :: struct {
 	lines:             []string,
 	// Shown in place of the rows when the file cannot be read or parsed.
 	file_problem:      string,
-	// Set by the screens, served by the frame loop before the next frame's
-	// screens: close the open file, read the tree again, open the selected
-	// file, discard the selected file's overlay copy, save the open file
-	// to the overlay, export the data files (0131, data_export.odin). The
-	// file closes between frames because the frame's draw list points into
-	// its arena until the frame is drawn; the save reloads what the file
-	// feeds, strings among them.
-	close_requested:   bool,
-	refresh_requested: bool,
-	open_requested:    bool,
-	discard_requested: bool,
-	save_requested:    bool,
-	export_requested:  bool,
 	// The export directory under the keyboard (0131); Done sets the
 	// setting (set_export_directory).
 	editing_export_directory: bool,
@@ -414,15 +401,15 @@ rebuild_data_tree :: proc(browser: ^Data_Browser, entries: []Data_File_Entry) {
 }
 
 // Between frames: the close the screen asked for.
-apply_data_browser_close_request :: proc(browser: ^Data_Browser) {
-	if browser.close_requested {
-		browser.close_requested = false
+apply_data_browser_close_request :: proc(browser: ^Data_Browser, requests: ^Frame_Requests) {
+	if .Close_Data_File in requests^ {
+		requests^ -= {.Close_Data_File}
 		close_data_browser_file(browser)
 	}
 }
 
 // Back to the tree; the file's memory goes, so never during a frame's UI
-// pass (close_requested).
+// pass (Close_Data_File).
 close_data_browser_file :: proc(browser: ^Data_Browser) {
 	destroy_arena(browser.file_arena)
 	browser.file_arena = nil

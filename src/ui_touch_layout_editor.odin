@@ -221,7 +221,7 @@ Touch_Layout_Request :: enum u8 {
 }
 
 // The request the screen made, if any, then none. Toasts through ui.
-apply_touch_layout_request :: proc(ui: ^Ui_State, editor: ^Touch_Layout_Editor, layouts: ^Touch_Layouts, default_layout: Touch_Overlay_Layout) {
+apply_touch_layout_request :: proc(ui: ^Ui_State, editor: ^Touch_Layout_Editor, layouts: ^Touch_Layouts, default_layout: Touch_Overlay_Layout, requests: ^Frame_Requests) {
 	request := editor.request
 	editor.request = .None
 	if request == .None || editor.arena == nil {
@@ -234,11 +234,11 @@ apply_touch_layout_request :: proc(ui: ^Ui_State, editor: ^Touch_Layout_Editor, 
 	switch request {
 	case .None:
 	case .Save:
-		save_touch_layout(ui, editor, layouts)
+		save_touch_layout(ui, editor, layouts, requests)
 	case .Save_As:
-		save_touch_layout_as(ui, editor, layouts)
+		save_touch_layout_as(ui, editor, layouts, requests)
 	case .Delete:
-		delete_touch_layout(ui, editor, layouts, default_layout)
+		delete_touch_layout(ui, editor, layouts, default_layout, requests)
 	case .Reset:
 		reset_touch_layout(editor, default_layout)
 	}
@@ -247,35 +247,36 @@ apply_touch_layout_request :: proc(ui: ^Ui_State, editor: ^Touch_Layout_Editor, 
 // The draft under name: replaced or added, selected, and asked to be
 // written. The draft starts again from the stored copy. A layout needs no
 // START button (0134): the HUD's pause button opens the pause menu.
-store_touch_layout :: proc(state: ^Ui_State, editor: ^Touch_Layout_Editor, layouts: ^Touch_Layouts, name: string) {
+store_touch_layout :: proc(state: ^Ui_State, editor: ^Touch_Layout_Editor, layouts: ^Touch_Layouts, name: string, requests: ^Frame_Requests) {
 	named, selection := touch_layouts_with(layouts.layouts, name, editor.draft)
 	replace_touch_layouts(layouts, named, selection)
-	layouts.write_requested, layouts.changed = true, true
+	layouts.changed = true
+	requests^ += {.Write_Touch_Layouts}
 	stored := layouts.layouts[selection - 1]
 	start_touch_layout_draft(editor, stored.name, stored.layout, editor.selected)
 	ui_toast(state, fmt.tprintf("%s %s", text("touch_layout_saved"), stored.name))
 }
 
 // Default cannot change, only be copied with Save as.
-save_touch_layout :: proc(state: ^Ui_State, editor: ^Touch_Layout_Editor, layouts: ^Touch_Layouts) {
+save_touch_layout :: proc(state: ^Ui_State, editor: ^Touch_Layout_Editor, layouts: ^Touch_Layouts, requests: ^Frame_Requests) {
 	if editor.name == DEFAULT_TOUCH_LAYOUT_NAME {
 		ui_toast(state, text("touch_layout_default_fixed"))
 		return
 	}
-	store_touch_layout(state, editor, layouts, editor.name)
+	store_touch_layout(state, editor, layouts, editor.name, requests)
 }
 
-save_touch_layout_as :: proc(state: ^Ui_State, editor: ^Touch_Layout_Editor, layouts: ^Touch_Layouts) {
+save_touch_layout_as :: proc(state: ^Ui_State, editor: ^Touch_Layout_Editor, layouts: ^Touch_Layouts, requests: ^Frame_Requests) {
 	name := strings.trim_space(text_field_text(&editor.name_field))
 	if touch_layout_name_problem(name) != "" {
 		ui_toast(state, text("touch_layout_name_invalid"))
 		return
 	}
-	store_touch_layout(state, editor, layouts, name)
+	store_touch_layout(state, editor, layouts, name, requests)
 }
 
 // The edited user layout goes; Default is selected and drafted.
-delete_touch_layout :: proc(state: ^Ui_State, editor: ^Touch_Layout_Editor, layouts: ^Touch_Layouts, default_layout: Touch_Overlay_Layout) {
+delete_touch_layout :: proc(state: ^Ui_State, editor: ^Touch_Layout_Editor, layouts: ^Touch_Layouts, default_layout: Touch_Overlay_Layout, requests: ^Frame_Requests) {
 	selection, found := touch_layout_selection(layouts.layouts, editor.name)
 	if !found || selection == 0 {
 		ui_toast(state, text("touch_layout_default_fixed"))
@@ -283,7 +284,8 @@ delete_touch_layout :: proc(state: ^Ui_State, editor: ^Touch_Layout_Editor, layo
 	}
 	ui_toast(state, fmt.tprintf("%s %s", text("touch_layout_deleted"), editor.name))
 	replace_touch_layouts(layouts, touch_layouts_without(layouts.layouts, selection), 0)
-	layouts.write_requested, layouts.changed = true, true
+	layouts.changed = true
+	requests^ += {.Write_Touch_Layouts}
 	start_touch_layout_draft(editor, DEFAULT_TOUCH_LAYOUT_NAME, default_layout)
 }
 

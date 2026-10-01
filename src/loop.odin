@@ -42,7 +42,10 @@ Frame_State :: struct {
 	// ran this frame (work item 0086).
 	frame_times:        Frame_Time_Ring,
 	frame_tick_count:   int,
-	quit_requested:     bool,
+	// What the screens and the frame asked for (F8, the data watch and a
+	// data edit add Reload_Data), served between frames
+	// (serve_frame_requests_before_draw). Top level: the loop serves it.
+	requests:           Frame_Requests,
 	data_directory:     string,
 	environment:        Configuration_Environment,
 	settings:           Settings,
@@ -154,8 +157,6 @@ Frame_Developer_Tools :: struct {
 	command_control:      Command_Control,
 	command_socket_path:  string,
 	screenshot_directory: string,
-	// The Developer screen's Screenshot button.
-	screenshot_requested: bool,
 	// The texture editor's entries (work item 0100, ui_texture_editor.odin),
 	// read at start and served by serve_texture_editor.
 	texture_editor:       Texture_Editor,
@@ -177,8 +178,6 @@ Frame_Reload :: struct {
 	retired_strings:      [dynamic]map[string]string,
 	// The font arenas a fonts reload replaced, freed at exit.
 	retired_font_arenas:  [dynamic]^virtual.Arena,
-	// F8, the Developer screen's Reload data button, watch_data all.
-	reload_requested:     bool,
 }
 
 // Above the middle of the debug terrain, looking down at an angle. The
@@ -310,7 +309,7 @@ update_frame :: proc(state: ^Frame_State) {
 		state.interaction.haptic = haptic_request_for(state.session.simulation.players[0], !world_blocked)
 	}
 	if .Reload_Data in state.interaction.input.just_pressed && developer_mode_on(state) {
-		state.reload.reload_requested = true
+		state.requests += {.Reload_Data}
 	}
 	serve_command_socket(state)
 	switch state.interaction.input_backend {
@@ -669,9 +668,8 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 		monitor_size    = state.presentation.monitor_size,
 		platform        = state.presentation.platform,
 		font_families   = state.interaction.fonts.families,
-		screenshot_requested = &state.developer.screenshot_requested,
 		bindings        = state.interaction.bindings,
-		quit_requested  = &state.quit_requested,
+		requests        = &state.requests,
 		title           = &state.interaction.title,
 		items           = content.items,
 		blocks          = content.blocks,
@@ -726,7 +724,6 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 	screen_context.cheat_speed = session.simulation.cheat_speed
 	screen_context.landing_pad = session.start.landing_pad
 	screen_context.particle_memory = &state.presentation.particle_memory
-	screen_context.reload_requested = &state.reload.reload_requested
 	screen_context.data_changed = state.reload.data_watch.content_changed
 	return screen_context
 }
@@ -1088,19 +1085,12 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	}
 	defer leave_session(&state)
 	apply_cursor_mode(&state)
-	for !rl.WindowShouldClose() && !state.quit_requested {
+	for !rl.WindowShouldClose() && (.Quit not_in state.requests) {
 		update_frame(&state)
-		serve_texture_editor(&state.developer.texture_editor, &state.interaction.ui, state.presentation.renderer, state.data_directory, state.content.blocks)
-		data_browser := Data_Browser_Context{browser = &state.developer.data_browser, ui = &state.interaction.ui, settings = &state.settings, data_directory = state.data_directory}
-		apply_data_edit_change(&state, serve_data_browser(data_browser))
-		if serve_touch_layouts(&state.interaction.touch_layouts, &state.interaction.touch_layout_editor, &state.interaction.ui, state.content.touch_overlay, state.environment) {
-			state.interaction.touch_overlay = release_touch_latches(state.interaction.touch_overlay)
-		}
+		serve_frame_requests_before_draw(&state)
 		render_frame(&state)
 		update_audio(&state.presentation.audio, state.settings, state.frame_seconds)
-		apply_session_request(&state)
-		update_data_watch(&state)
-		apply_reload_request(&state)
+		serve_frame_requests_after_draw(&state)
 		// Applied at once, like the font choice.
 		update_display(&state.presentation.window_settings, state.settings, state.presentation.monitor_size, state.presentation.platform)
 		state.presentation.window_scale = window_scale()
@@ -1109,6 +1099,28 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 		}
 		free_all(context.temp_allocator)
 	}
+}
+
+// The requests in state.requests served before the draw. The order is in
+// doc/architecture.md, Frame and tick. Two constraints: the data
+// browser's close comes before its discard, and the reload runs after the
+// draw (serve_frame_requests_after_draw), since it frees memory a frame
+// draws from.
+serve_frame_requests_before_draw :: proc(state: ^Frame_State) {
+	serve_texture_editor(&state.developer.texture_editor, &state.interaction.ui, state.presentation.renderer, state.data_directory, state.content.blocks, &state.requests)
+	data_browser := Data_Browser_Context{browser = &state.developer.data_browser, ui = &state.interaction.ui, settings = &state.settings, data_directory = state.data_directory, requests = &state.requests}
+	apply_data_edit_change(state, serve_data_browser(data_browser))
+	if serve_touch_layouts(&state.interaction.touch_layouts, &state.interaction.touch_layout_editor, &state.interaction.ui, state.content.touch_overlay, state.environment, &state.requests) {
+		state.interaction.touch_overlay = release_touch_latches(state.interaction.touch_overlay)
+	}
+}
+
+// The requests served after the draw: the session request, the data
+// watch, the reload.
+serve_frame_requests_after_draw :: proc(state: ^Frame_State) {
+	apply_session_request(state)
+	update_data_watch(state)
+	apply_reload_request(state)
 }
 
 // Command socket (work item 0053, command_socket.odin, command.odin).
@@ -1254,10 +1266,10 @@ run_command_ticks :: proc(state: ^Frame_State, content: Simulation_Content) -> i
 
 // The Developer screen's button, queued like the screenshot command.
 queue_requested_screenshot :: proc(state: ^Frame_State) {
-	if !state.developer.screenshot_requested {
+	if .Take_Screenshot not_in state.requests {
 		return
 	}
-	state.developer.screenshot_requested = false
+	state.requests -= {.Take_Screenshot}
 	path, problem := queue_screenshot(&state.developer.command_control, state.developer.screenshot_directory, "", time.now())
 	if problem != "" {
 		platform.log_printf("error: screenshot: %s", problem)
@@ -1330,9 +1342,9 @@ data_edits_directory :: proc() -> string {
 // editor is open every entry's tile copied into the block atlas, which
 // also puts the edits back after a reload rebuilt the atlas from the
 // files; a Save written.
-serve_texture_editor :: proc(editor: ^Texture_Editor, ui: ^Ui_State, renderer: Chunk_Renderer, data_directory: string, blocks: Block_Registry) {
-	if editor.refresh_requested || !texture_editor_matches_registry(editor^, blocks) {
-		editor.refresh_requested = false
+serve_texture_editor :: proc(editor: ^Texture_Editor, ui: ^Ui_State, renderer: Chunk_Renderer, data_directory: string, blocks: Block_Registry, requests: ^Frame_Requests) {
+	if .Refresh_Texture_Editor in requests^ || !texture_editor_matches_registry(editor^, blocks) {
+		requests^ -= {.Refresh_Texture_Editor}
 		load_texture_editor(editor, data_directory, texture_edits_path(), blocks)
 	}
 	if screen_stack_contains(ui.screens, .Textures) {
@@ -1340,40 +1352,39 @@ serve_texture_editor :: proc(editor: ^Texture_Editor, ui: ^Ui_State, renderer: C
 			update_atlas_block_tile(chunk_atlas_texture(renderer), renderer.atlas_layout, entry.block, entry.tile)
 		}
 	}
-	if editor.save_requested {
-		editor.save_requested = false
+	if .Save_Texture_Edits in requests^ {
+		requests^ -= {.Save_Texture_Edits}
 		save_texture_edits(editor, ui)
 	}
 }
 
-// The Data files screen (work item 0129), before the frame's screens: a
-// close first (the last frame's draw list pointed into the file), then a
-// discard, which reads the tree again, then a save (0130), then an export
-// (0131, data_export.odin), then the tree when the Developer screen or the
-// save asked, then the file the screen opens. The categories a discard
-// or a save changed, which the frame loop applies right after, still
-// between frames (apply_data_edit_change).
+// The Data files screen's requests (work item 0129; the save 0130, the
+// export 0131, data_export.odin), before the frame's screens in the order
+// of serve_frame_requests_before_draw; a discard or a save asks for the
+// tree again. Returns the categories a discard or a save changed, which
+// the frame loop applies right after, still between frames
+// (apply_data_edit_change).
 serve_data_browser :: proc(data: Data_Browser_Context) -> (changed: Data_File_Categories) {
-	browser := data.browser
-	apply_data_browser_close_request(browser)
-	if browser.discard_requested {
-		browser.discard_requested = false
+	browser, requests := data.browser, data.requests
+	apply_data_browser_close_request(browser, requests)
+	if .Discard_Data_Edit in requests^ {
+		requests^ -= {.Discard_Data_Edit}
 		changed |= discard_data_edit(data)
 	}
-	if browser.save_requested {
-		browser.save_requested = false
+	if .Save_Data_Edit in requests^ {
+		requests^ -= {.Save_Data_Edit}
 		changed |= save_data_edit(data, data_edits_directory())
 	}
-	if browser.export_requested {
-		browser.export_requested = false
+	if .Export_Data_Files in requests^ {
+		requests^ -= {.Export_Data_Files}
 		export_data_browser_files(data, data_edits_directory())
 	}
-	if browser.refresh_requested {
-		browser.refresh_requested = false
+	if .Refresh_Data_Tree in requests^ {
+		requests^ -= {.Refresh_Data_Tree}
 		rebuild_data_tree(browser, list_data_files(data.data_directory, data_edits_directory()))
 	}
-	if browser.open_requested {
-		browser.open_requested = false
+	if .Open_Data_File in requests^ {
+		requests^ -= {.Open_Data_File}
 		open_data_browser_file(browser, data.data_directory)
 	}
 	return changed
@@ -1403,8 +1414,11 @@ discard_data_edit :: proc(data: Data_Browser_Context) -> Data_File_Categories {
 	}
 	ui_toast(data.ui, fmt.tprintf("%s %s", text("data_files_discarded"), relative_path))
 	sync_data_edit_export(data, edits_directory, relative_path)
-	browser.refresh_requested = true
-	browser.open_requested = browser.open
+	data.requests^ += {.Refresh_Data_Tree}
+	data.requests^ -= {.Open_Data_File}
+	if browser.open {
+		data.requests^ += {.Open_Data_File}
+	}
 	return {data_file_category(relative_path)}
 }
 
@@ -1428,7 +1442,7 @@ save_data_edit :: proc(data: Data_Browser_Context, edits_directory: string) -> D
 		return {}
 	}
 	browser.loaded_text, browser.unsaved, browser.shows_overlay = file_text, false, true
-	browser.refresh_requested = true
+	data.requests^ += {.Refresh_Data_Tree}
 	ui_toast(data.ui, fmt.tprintf("%s %s", text("data_files_saved"), relative_path))
 	sync_data_edit_export(data, edits_directory, relative_path)
 	return {data_file_category(relative_path)}
@@ -1442,14 +1456,14 @@ save_data_edit :: proc(data: Data_Browser_Context, edits_directory: string) -> D
 // or the editor made is written to the user file whole. A failed write is
 // logged and toasted, and not retried. While a broken file from the start
 // stands, nothing is written.
-serve_touch_layouts :: proc(layouts: ^Touch_Layouts, editor: ^Touch_Layout_Editor, ui: ^Ui_State, default_layout: Touch_Overlay_Layout, environment: Configuration_Environment) -> (changed: bool) {
-	apply_touch_layout_request(ui, editor, layouts, default_layout)
+serve_touch_layouts :: proc(layouts: ^Touch_Layouts, editor: ^Touch_Layout_Editor, ui: ^Ui_State, default_layout: Touch_Overlay_Layout, environment: Configuration_Environment, requests: ^Frame_Requests) -> (changed: bool) {
+	apply_touch_layout_request(ui, editor, layouts, default_layout, requests)
 	changed = layouts.changed
 	layouts.changed = false
-	if !layouts.write_requested {
+	if .Write_Touch_Layouts not_in requests^ {
 		return changed
 	}
-	layouts.write_requested = false
+	requests^ -= {.Write_Touch_Layouts}
 	if layouts.locked_path != "" {
 		ui_toast(ui, touch_layouts_locked_text(layouts^))
 		return changed

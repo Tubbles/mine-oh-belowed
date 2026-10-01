@@ -248,7 +248,7 @@ apply_presentation_changes :: proc(state: ^Frame_State, changed: Data_File_Categ
 apply_data_edit_change :: proc(state: ^Frame_State, changed: Data_File_Categories) {
 	apply_presentation_changes(state, changed)
 	if .Content in changed {
-		state.reload.reload_requested = true
+		state.requests += {.Reload_Data}
 	}
 	if .Restart in changed {
 		report_reload(state, text("reload_restart_needed"))
@@ -285,7 +285,7 @@ update_data_watch :: proc(state: ^Frame_State) {
 	if data_watch_content_settled(watch^, now) {
 		watch.content_settling = false
 		if mode == .All && watch.content_changed {
-			state.reload.reload_requested = true
+			state.requests += {.Reload_Data}
 		}
 	}
 }
@@ -345,10 +345,10 @@ reload_content :: proc(state: ^Frame_State) -> (summary: string, problem: string
 
 // F8 in developer mode, the Developer screen's button and watch_data all.
 apply_reload_request :: proc(state: ^Frame_State) {
-	if !state.reload.reload_requested {
+	if .Reload_Data not_in state.requests {
 		return
 	}
-	state.reload.reload_requested = false
+	state.requests -= {.Reload_Data}
 	reload_content(state)
 }
 

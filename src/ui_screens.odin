@@ -16,6 +16,28 @@ AUDIO_SETTINGS_ROW_COUNT :: 3
 CONTROL_SETTINGS_ROW_COUNT :: 5
 ACCESSIBILITY_SETTINGS_ROW_COUNT :: 10
 
+// What a screen asks of the frame loop, which takes each member between
+// frames (Take_Screenshot inside render_frame, after the UI pass), in the
+// order doc/architecture.md (Frame and tick) gives.
+// Declared beside Screen_Context, which hands the set to the screens: the
+// clusters below the loop may not name the loop's types.
+Frame_Request :: enum u8 {
+	Refresh_Texture_Editor,
+	Save_Texture_Edits,
+	Close_Data_File,
+	Discard_Data_Edit,
+	Save_Data_Edit,
+	Export_Data_Files,
+	Refresh_Data_Tree,
+	Open_Data_File,
+	Write_Touch_Layouts,
+	Take_Screenshot,
+	Reload_Data,
+	Quit,
+}
+
+Frame_Requests :: bit_set[Frame_Request; u16]
+
 Screen_Context :: struct {
 	settings:        ^Settings,
 	// The monitor's size (display.odin): the Resolution choices up to it,
@@ -28,8 +50,10 @@ Screen_Context :: struct {
 	font_families:   []Font_Family,
 	// The effective bindings, shown read only.
 	bindings:        []Binding,
-	quit_requested:  ^bool,
-	// Nil without a world.
+	// The frame loop's request set (Frame_Request).
+	requests:        ^Frame_Requests,
+	// Nil without a world. On the session, not in requests: the frame's
+	// ticks take it (save_when_due).
 	save_requested:  ^bool,
 	// The title screens' state and the requests to start or leave a world.
 	title:           ^Title_State,
@@ -85,13 +109,6 @@ Screen_Context :: struct {
 	// the map draws the capsule descent and the satellite pass from it.
 	// Nil without a world and in tests.
 	particle_memory:    ^Particle_Memory,
-	// The Developer screen's Screenshot button sets it; the frame loop
-	// takes the picture (work item 0053).
-	screenshot_requested: ^bool,
-	// The Developer screen's Reload data button sets it; the frame loop
-	// reloads the content tables (hot_reload.odin, work item 0054). Nil
-	// without a world.
-	reload_requested:     ^bool,
 	// Content files changed since the content was loaded.
 	data_changed:         bool,
 	// The texture editor's entries (ui_texture_editor.odin), kept by the
@@ -329,7 +346,7 @@ pause_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 	cut_top(&content, UI_GAP)
 	if ui_button(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_quit")) {
-		screen_context.quit_requested^ = true
+		screen_context.requests^ += {.Quit}
 	}
 	cut_top(&content, UI_GAP)
 	// Which build this is, for bug reports from the couch.
@@ -605,13 +622,14 @@ accessibility_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, setting
 
 // The next layout, unless the broken file from the start stands: then it
 // says so and changes nothing.
-step_touch_layout_selection :: proc(state: ^Ui_State, layouts: ^Touch_Layouts) {
+step_touch_layout_selection :: proc(state: ^Ui_State, layouts: ^Touch_Layouts, requests: ^Frame_Requests) {
 	if layouts.locked_path != "" {
 		ui_toast(state, touch_layouts_locked_text(layouts^))
 		return
 	}
 	layouts.selection = next_touch_layout_selection(layouts^)
-	layouts.write_requested, layouts.changed = true, true
+	layouts.changed = true
+	requests^ += {.Write_Touch_Layouts}
 }
 
 // The touch layout (0121): the row steps the selection through Default and
@@ -621,7 +639,7 @@ touch_layout_rows :: proc(state: ^Ui_State, content: ^Ui_Rectangle, screen_conte
 	layouts := screen_context.touch_layouts
 	name := layouts != nil ? selected_touch_layout_name(layouts^) : DEFAULT_TOUCH_LAYOUT_NAME
 	if ui_choice(state, cut_row(content), text("settings_touch_layout"), touch_layout_display_name(name), text("settings_touch_layout_tooltip")) && layouts != nil {
-		step_touch_layout_selection(state, layouts)
+		step_touch_layout_selection(state, layouts, screen_context.requests)
 	}
 	if ui_button(state, cut_row(content), text("settings_edit_touch_layout"), text("settings_edit_touch_layout_tooltip")) && layouts != nil && screen_context.touch_layout_editor != nil {
 		open_touch_layout_editor(state, screen_context.touch_layout_editor, layouts^, screen_context.default_touch_layout)

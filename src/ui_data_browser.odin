@@ -47,7 +47,7 @@ DATA_BROWSER_ENTRY_LINE_HEIGHT :: 32
 DATA_BROWSER_ENTRY_LINES :: 2
 
 data_browser_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
-	browser := screen_context.data_browser
+	browser, requests := screen_context.data_browser, screen_context.requests
 	if browser == nil {
 		pop_screen(&state.screens)
 		return
@@ -84,12 +84,12 @@ data_browser_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	if browser.open {
 		data_file_view(state, content, browser)
 	} else {
-		data_tree_view(state, content, browser)
+		data_tree_view(state, content, browser, requests)
 	}
 	if export_row != {} {
 		data_export_row(state, export_row, browser, settings)
 	}
-	data_browser_buttons(state, buttons, browser)
+	data_browser_buttons(state, buttons, browser, requests)
 	ui_panel_end(state)
 	hints := [?]Glyph_Hint{{.Confirm, text("hint_select")}, {.Back, text("hint_back")}}
 	ui_glyph_bar_or_back_row(state, hints[:])
@@ -99,17 +99,17 @@ data_browser_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	// frame loop closes it between frames: this frame's draw list points
 	// into the file's memory.
 	if browser.open && (state.input.back || state.input.pause) && !state.tooltip_open {
-		request_data_file_close(state, browser)
+		request_data_file_close(state, browser, requests)
 		state.input.back, state.input.pause = false, false
 	}
 }
 
 // Back to the tree between frames; unsaved changes go, with a toast.
-request_data_file_close :: proc(state: ^Ui_State, browser: ^Data_Browser) {
+request_data_file_close :: proc(state: ^Ui_State, browser: ^Data_Browser, requests: ^Frame_Requests) {
 	if browser.unsaved {
 		ui_toast(state, text("data_files_changes_dropped"))
 	}
-	browser.close_requested = true
+	requests^ += {.Close_Data_File}
 }
 
 // The heading, the unsaved tag while the tree differs from the file, and
@@ -149,7 +149,7 @@ data_browser_rows_height :: proc(count: int) -> f32 {
 // The visible rows of the tree. A file row activated becomes the
 // selection (not one merely focused, which a passing pointer does); the
 // selected file's row is where the focus returns from the file.
-data_tree_view :: proc(state: ^Ui_State, area: Ui_Rectangle, browser: ^Data_Browser) {
+data_tree_view :: proc(state: ^Ui_State, area: Ui_Rectangle, browser: ^Data_Browser, requests: ^Frame_Requests) {
 	if len(browser.rows) == 0 {
 		ui_label(state, {area.x, area.y, area.width, UI_ROW_HEIGHT}, text("data_files_none"))
 		return
@@ -157,12 +157,12 @@ data_tree_view :: proc(state: ^Ui_State, area: Ui_Rectangle, browser: ^Data_Brow
 	visible := visible_row_indices(browser.rows, browser.expanded)
 	region, rows := scroll_region_begin(state, "data_tree", area, data_browser_rows_height(len(visible)))
 	for index in visible {
-		data_tree_row_widget(state, cut_top(&rows, UI_ROW_HEIGHT), region.area, browser, index)
+		data_tree_row_widget(state, cut_top(&rows, UI_ROW_HEIGHT), region.area, browser, index, requests)
 	}
 	scroll_region_end(state, region)
 }
 
-data_tree_row_widget :: proc(state: ^Ui_State, row, view: Ui_Rectangle, browser: ^Data_Browser, index: int) {
+data_tree_row_widget :: proc(state: ^Ui_State, row, view: Ui_Rectangle, browser: ^Data_Browser, index: int, requests: ^Frame_Requests) {
 	entry := browser.rows[index]
 	id := ui_id(state, "data_row", index)
 	if index == browser.selected {
@@ -170,7 +170,7 @@ data_tree_row_widget :: proc(state: ^Ui_State, row, view: Ui_Rectangle, browser:
 	}
 	interaction := ui_interact(state, id, row)
 	if interaction.activated {
-		activate_data_tree_row(state, browser, index)
+		activate_data_tree_row(state, browser, index, requests)
 	}
 	if !row_in_view(row, view) {
 		return
@@ -207,7 +207,7 @@ data_tree_row_detail :: proc(state: ^Ui_State, area: Ui_Rectangle, entry: Data_T
 
 // A directory expands or collapses; a text file opens (the frame loop
 // reads it before the next frame); a binary file says it cannot.
-activate_data_tree_row :: proc(state: ^Ui_State, browser: ^Data_Browser, index: int) {
+activate_data_tree_row :: proc(state: ^Ui_State, browser: ^Data_Browser, index: int, requests: ^Frame_Requests) {
 	entry := browser.rows[index]
 	if entry.expandable {
 		browser.expanded[index] = !browser.expanded[index]
@@ -218,7 +218,7 @@ activate_data_tree_row :: proc(state: ^Ui_State, browser: ^Data_Browser, index: 
 		ui_toast(state, text("data_files_binary"))
 		return
 	}
-	browser.open_requested = true
+	requests^ += {.Open_Data_File}
 }
 
 // The open file: the problem, the visible values, or the lines.
@@ -401,19 +401,19 @@ data_text_view :: proc(state: ^Ui_State, area: Ui_Rectangle, lines: []string) {
 // while the selection is an array element) first, over the tree Export;
 // Discard edit, live while the selected file has an overlay copy; Back,
 // which closes the file first.
-data_browser_buttons :: proc(state: ^Ui_State, row: Ui_Rectangle, browser: ^Data_Browser) {
+data_browser_buttons :: proc(state: ^Ui_State, row: Ui_Rectangle, browser: ^Data_Browser, requests: ^Frame_Requests) {
 	count := browser.open ? 5 : 3
 	next := 0
 	if !browser.open {
 		if ui_button(state, column_rectangle(row, count, 0, UI_GAP), text("data_files_export")) {
-			browser.export_requested = true
+			requests^ += {.Export_Data_Files}
 		}
 		next = 1
 	}
 	if browser.open {
 		element := data_value_row_is_element(browser.value_rows, browser.value_selected)
 		if data_browser_button(state, column_rectangle(row, count, 0, UI_GAP), text("data_files_save"), browser.unsaved) {
-			browser.save_requested = true
+			requests^ += {.Save_Data_Edit}
 		}
 		if data_browser_button(state, column_rectangle(row, count, 1, UI_GAP), text("data_files_duplicate"), element) {
 			edit_data_browser_element(browser, .Duplicate)
@@ -425,11 +425,11 @@ data_browser_buttons :: proc(state: ^Ui_State, row: Ui_Rectangle, browser: ^Data
 	}
 	edited := browser.selected >= 0 && browser.selected < len(browser.rows) && browser.rows[browser.selected].edited
 	if data_browser_button(state, column_rectangle(row, count, next, UI_GAP), text("data_files_discard"), edited) {
-		browser.discard_requested = true
+		requests^ += {.Discard_Data_Edit}
 	}
 	if ui_button(state, column_rectangle(row, count, next + 1, UI_GAP), text("data_files_back")) {
 		if browser.open {
-			request_data_file_close(state, browser)
+			request_data_file_close(state, browser, requests)
 		} else {
 			pop_screen(&state.screens)
 		}

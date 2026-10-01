@@ -54,14 +54,14 @@ test_a_data_edit_reports_its_category :: proc(t: ^testing.T) {
 	state.data_directory = "/nonexistent/mine-oh-belowed-data"
 	testing.expect_value(t, data_file_category("blocks.sjson"), Data_File_Category.Content)
 	apply_data_edit_change(state, {.Content})
-	testing.expect(t, state.reload.reload_requested)
-	state.reload.reload_requested = false
+	testing.expect(t, .Reload_Data in state.requests)
+	state.requests -= {.Reload_Data}
 	testing.expect_value(t, data_file_category("strings/en.sjson"), Data_File_Category.Strings)
 	apply_data_edit_change(state, {.Strings})
-	testing.expect(t, !state.reload.reload_requested)
+	testing.expect(t, .Reload_Data not_in state.requests)
 	testing.expect_value(t, data_file_category("game.sjson"), Data_File_Category.Restart)
 	apply_data_edit_change(state, {.Restart})
-	testing.expect(t, !state.reload.reload_requested)
+	testing.expect(t, .Reload_Data not_in state.requests)
 }
 
 @(test)
@@ -368,7 +368,8 @@ test_a_data_edit_save_writes_the_overlay_and_asks_for_the_reload :: proc(t: ^tes
 	defer destroy_ui_state(&ui)
 	settings: Settings
 	browser: Data_Browser
-	data_browser := Data_Browser_Context{browser = &browser, ui = &ui, settings = &settings}
+	requests: Frame_Requests
+	data_browser := Data_Browser_Context{browser = &browser, ui = &ui, settings = &settings, requests = &requests}
 	entries := [?]Data_File_Entry{{path = "blocks.sjson"}, {path = "quests/chapter_09.sjson"}}
 	for relative_path in ([]string{"blocks.sjson", "quests/chapter_09.sjson"}) {
 		browser = open_test_data_value(t, `blocks = [{id = "stone", hardness = 1.5}]`)
@@ -384,7 +385,7 @@ test_a_data_edit_save_writes_the_overlay_and_asks_for_the_reload :: proc(t: ^tes
 		changed = save_data_edit(data_browser, edits_directory)
 		testing.expect(t, !browser.unsaved)
 		testing.expect(t, browser.shows_overlay)
-		testing.expect(t, browser.refresh_requested)
+		testing.expect(t, .Refresh_Data_Tree in requests)
 		testing.expect_value(t, .Content in changed, data_file_category(relative_path) == .Content)
 		data, read_error := os.read_entire_file(platform.join_path(edits_directory, relative_path), context.temp_allocator)
 		testing.expect_value(t, read_error, nil)
@@ -430,11 +431,11 @@ test_a_saved_strings_edit_shows_at_once :: proc(t: ^testing.T) {
 	browser.selected = find_data_tree_row(browser.rows, "strings/en.sjson")
 	testing.expect_value(t, text("data_files_title"), "Data files")
 	testing.expect(t, set_data_browser_value(browser, find_data_value_row(browser.value_rows, "data_files_title"), "Edited files"))
-	data_browser := Data_Browser_Context{browser = browser, ui = &state.interaction.ui, settings = &state.settings, data_directory = state.data_directory}
+	data_browser := Data_Browser_Context{browser = browser, ui = &state.interaction.ui, settings = &state.settings, data_directory = state.data_directory, requests = &state.requests}
 	apply_data_edit_change(state, save_data_edit(data_browser, edits_directory))
 	testing.expect(t, !browser.unsaved)
 	testing.expect_value(t, text("data_files_title"), "Edited files")
-	testing.expect(t, !state.reload.reload_requested)
+	testing.expect(t, .Reload_Data not_in state.requests)
 	testing.expect(t, os.is_file(platform.join_path(edits_directory, "strings", "en.sjson")))
 	testing.expect(t, !os.exists(platform.join_path(edits_directory, "strings", "en.sjson.tmp")), "the temporary copy was renamed")
 }

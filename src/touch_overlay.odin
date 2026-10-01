@@ -699,18 +699,17 @@ Named_Touch_Layout :: struct {
 }
 
 // The user file's layouts, in arena. selection 0 is Default, n the layout
-// layouts[n - 1]. write_requested: the frame loop writes the file
-// (serve_touch_layouts); changed: the active layout changed, so the frame
-// loop releases the latches, which index its elements. locked_path
+// layouts[n - 1]. changed: the active layout changed, so the frame loop
+// releases the latches, which index its elements (serve_touch_layouts;
+// the file's write is the frame request Write_Touch_Layouts). locked_path
 // (owned): the file at start was broken, so nothing may overwrite it
 // until the user fixed or removed it and started again.
 Touch_Layouts :: struct {
-	layouts:         []Named_Touch_Layout,
-	selection:       int,
-	arena:           ^virtual.Arena,
-	write_requested: bool,
-	changed:         bool,
-	locked_path:     string,
+	layouts:     []Named_Touch_Layout,
+	selection:   int,
+	arena:       ^virtual.Arena,
+	changed:     bool,
+	locked_path: string,
 }
 
 destroy_touch_layouts :: proc(layouts: ^Touch_Layouts) {

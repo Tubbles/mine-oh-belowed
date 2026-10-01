@@ -29,7 +29,7 @@ test_data_files_back_closes_the_file_then_the_screen :: proc(t: ^testing.T) {
 	testing.expect(t, draw_list_has_text(state.draw_list[:], "shaders/chunk.fs"))
 	screen_test_frame(audit, &state, {back = true})
 	testing.expect(t, browser.open)
-	testing.expect(t, browser.close_requested)
+	testing.expect(t, .Close_Data_File in audit.requests)
 	testing.expect_value(t, top_screen(state.screens), Screen.Data_Files)
 	testing.expect(t, draw_list_has_text(state.draw_list[:], browser.lines[0]))
 	checksum: u32
@@ -39,7 +39,7 @@ test_data_files_back_closes_the_file_then_the_screen :: proc(t: ^testing.T) {
 		}
 	}
 	testing.expect(t, checksum > 0)
-	apply_data_browser_close_request(browser)
+	apply_data_browser_close_request(browser, &audit.requests)
 	testing.expect(t, !browser.open)
 	screen_test_frame(audit, &state, {back = true})
 	testing.expect_value(t, top_screen(state.screens), Screen.Developer)
@@ -105,7 +105,7 @@ test_data_files_confirm_expands_a_directory_and_opens_a_file :: proc(t: ^testing
 	testing.expect(t, browser.expanded[quests])
 	state.focus = data_row_id(chapter)
 	screen_test_frame(audit, &state, {confirm = true})
-	testing.expect(t, browser.open_requested)
+	testing.expect(t, .Open_Data_File in audit.requests)
 	testing.expect_value(t, browser.selected, chapter)
 }
 
@@ -165,7 +165,7 @@ test_data_files_save_waits_for_the_frame_loop :: proc(t: ^testing.T) {
 	loaded_text := browser.loaded_text
 	state.focus = data_files_button_id("data_files_save")
 	screen_test_frame(audit, &state, {confirm = true})
-	testing.expect(t, browser.save_requested)
+	testing.expect(t, .Save_Data_Edit in audit.requests)
 	testing.expect(t, browser.open)
 	testing.expect(t, browser.unsaved)
 	testing.expect_value(t, browser.loaded_text, loaded_text)
@@ -176,9 +176,9 @@ test_data_files_save_waits_for_the_frame_loop :: proc(t: ^testing.T) {
 	frame_ui: Ui_State
 	defer destroy_ui_state(&frame_ui)
 	settings: Settings
-	changed := serve_data_browser({browser = browser, ui = &frame_ui, settings = &settings, data_directory = test_data_directory()})
+	changed := serve_data_browser({browser = browser, ui = &frame_ui, settings = &settings, data_directory = test_data_directory(), requests = &audit.requests})
 	testing.expect_value(t, changed, Data_File_Categories{data_file_category("game.sjson")})
-	testing.expect(t, !browser.save_requested)
+	testing.expect(t, .Save_Data_Edit not_in audit.requests)
 	testing.expect(t, !browser.unsaved)
 	testing.expect(t, browser.open)
 	testing.expect(t, os.is_file(platform.join_path(edits_directory, "game.sjson")))
@@ -220,7 +220,7 @@ test_data_files_keyboard_sets_a_value :: proc(t: ^testing.T) {
 	testing.expect(t, json_values_equal(data_value_at_row(browser.value, browser.value_rows, tick_rate), json.Integer(30)))
 	testing.expect(t, browser.unsaved)
 	testing.expect_value(t, top_screen(state.screens), Screen.Data_Files)
-	testing.expect(t, !browser.close_requested, "Done ends the entry, not the file")
+	testing.expect(t, .Close_Data_File not_in audit.requests, "Done ends the entry, not the file")
 	screen_test_frame(audit, &state, {})
 	testing.expect_value(t, state.focus, value_row_id(tick_rate))
 
@@ -231,7 +231,7 @@ test_data_files_keyboard_sets_a_value :: proc(t: ^testing.T) {
 	testing.expect(t, json_values_equal(data_value_at_row(browser.value, browser.value_rows, tick_rate), json.Integer(30)))
 
 	screen_test_frame(audit, &state, {back = true})
-	testing.expect(t, browser.close_requested)
+	testing.expect(t, .Close_Data_File in audit.requests)
 	testing.expect(t, state_has_toast(state, "data_files_changes_dropped"))
 }
 
@@ -271,6 +271,6 @@ test_data_files_export_directory_toggle_and_button :: proc(t: ^testing.T) {
 	testing.expect(t, audit.settings.export_on_save)
 	state.focus = data_files_button_id("data_files_export")
 	screen_test_frame(audit, &state, {confirm = true})
-	testing.expect(t, browser.export_requested)
-	browser.export_requested = false
+	testing.expect(t, .Export_Data_Files in audit.requests)
+	audit.requests -= {.Export_Data_Files}
 }

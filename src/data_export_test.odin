@@ -119,7 +119,8 @@ test_a_synced_save_writes_the_edit_and_a_synced_discard_removes_it :: proc(t: ^t
 	data_browser := open_test_data_value(t, `blocks = [{id = "stone", hardness = 1.5}]`)
 	defer destroy_data_browser(&data_browser)
 	browser := &data_browser
-	data := Data_Browser_Context{browser = browser, ui = &ui, settings = &settings, data_directory = "/nonexistent/mine-oh-belowed-data"}
+	requests: Frame_Requests
+	data := Data_Browser_Context{browser = browser, ui = &ui, settings = &settings, data_directory = "/nonexistent/mine-oh-belowed-data", requests = &requests}
 	entries := [?]Data_File_Entry{{path = "quests/chapter_09.sjson"}}
 	browser.rows = data_tree_rows(entries[:], context.temp_allocator)
 	defer browser.rows = nil

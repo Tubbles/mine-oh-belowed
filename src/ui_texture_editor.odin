@@ -68,17 +68,12 @@ Texture_Editor_Entry :: struct {
 }
 
 Texture_Editor :: struct {
-	entries:           [dynamic]Texture_Editor_Entry,
-	selected:          int,
+	entries:  [dynamic]Texture_Editor_Entry,
+	selected: int,
 	// Bumped whenever the preview's pixels change: its image revision.
-	revision:          u64,
+	revision: u64,
 	// TEXTURE_EDITOR_PREVIEW_WIDTH by TEXTURE_EDITOR_PREVIEW_HEIGHT, owned.
-	preview:           []Ui_Color,
-	// Set by the Developer screen's button: the frame loop reads the files
-	// again before the next frame's screens.
-	refresh_requested: bool,
-	// Set by the Save button, served by the frame loop.
-	save_requested:    bool,
+	preview:  []Ui_Color,
 }
 
 destroy_texture_editor_entries :: proc(entries: ^[dynamic]Texture_Editor_Entry) {
@@ -273,7 +268,7 @@ texture_editor_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) 
 	} else {
 		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("texture_editor_none"))
 	}
-	texture_editor_buttons(state, buttons, editor, screen_context.blocks, editable)
+	texture_editor_buttons(state, buttons, editor, screen_context.blocks, editable, screen_context.requests)
 	ui_panel_end(state)
 	hints := [?]Glyph_Hint{{.Confirm, text("hint_select")}, {.Back, text("hint_back")}}
 	ui_glyph_bar_or_back_row(state, hints[:])
@@ -359,7 +354,7 @@ texture_parameter_slider :: proc(state: ^Ui_State, row: Ui_Rectangle, parameters
 // Reset (the data file's entry for the selected texture), Save (every
 // texture to the overrides file) and Back, one above the other, Back at
 // the bottom.
-texture_editor_buttons :: proc(state: ^Ui_State, area: Ui_Rectangle, editor: ^Texture_Editor, blocks: Block_Registry, editable: bool) {
+texture_editor_buttons :: proc(state: ^Ui_State, area: Ui_Rectangle, editor: ^Texture_Editor, blocks: Block_Registry, editable: bool, requests: ^Frame_Requests) {
 	rows := area
 	cut_top(&rows, UI_GAP)
 	reset, save := cut_row(&rows), cut_row(&rows)
@@ -368,7 +363,7 @@ texture_editor_buttons :: proc(state: ^Ui_State, area: Ui_Rectangle, editor: ^Te
 		apply_texture_editor_change(editor, blocks)
 	}
 	if editable && ui_button(state, save, text("texture_editor_save")) {
-		editor.save_requested = true
+		requests^ += {.Save_Texture_Edits}
 	}
 	if ui_button(state, cut_top(&rows, UI_ROW_HEIGHT), text("texture_editor_back")) {
 		pop_screen(&state.screens)

@@ -137,8 +137,8 @@ developer_actions :: proc(state: ^Ui_State, content: ^Ui_Rectangle, screen_conte
 	}
 	// Like the screenshot command: the frame loop writes the PNG to the
 	// state directory's screenshots and toasts the path (work item 0053).
-	if ui_button(state, column_rectangle(last_row, 3, 2, UI_GAP), text("developer_screenshot")) && screen_context.screenshot_requested != nil {
-		screen_context.screenshot_requested^ = true
+	if ui_button(state, column_rectangle(last_row, 3, 2, UI_GAP), text("developer_screenshot")) {
+		screen_context.requests^ += {.Take_Screenshot}
 	}
 	developer_reload_row(state, cut_row(content), screen_context)
 	developer_editors_row(state, cut_row(content), screen_context)
@@ -150,11 +150,11 @@ developer_actions :: proc(state: ^Ui_State, content: ^Ui_Rectangle, screen_conte
 // now, the tree shows the files and overlay copies there are now.
 developer_editors_row :: proc(state: ^Ui_State, row: Ui_Rectangle, screen_context: Screen_Context) {
 	if ui_button(state, column_rectangle(row, 3, 0, UI_GAP), text("developer_texture_editor")) && screen_context.texture_editor != nil {
-		screen_context.texture_editor.refresh_requested = true
+		screen_context.requests^ += {.Refresh_Texture_Editor}
 		push_screen(&state.screens, .Textures)
 	}
 	if ui_button(state, column_rectangle(row, 3, 1, UI_GAP), text("developer_data_files")) && screen_context.data_browser != nil {
-		screen_context.data_browser.refresh_requested = true
+		screen_context.requests^ += {.Refresh_Data_Tree}
 		push_screen(&state.screens, .Data_Files)
 	}
 }
@@ -179,7 +179,7 @@ developer_reload_row :: proc(state: ^Ui_State, row: Ui_Rectangle, screen_context
 	button := cut_right(&area, column_rectangle(row, 3, 0, UI_GAP).width)
 	cut_right(&area, UI_GAP)
 	ui_label(state, area, text(screen_context.data_changed ? "developer_data_changed" : "developer_data_current"))
-	if ui_button(state, button, text("developer_reload_data")) && screen_context.reload_requested != nil {
-		screen_context.reload_requested^ = true
+	if ui_button(state, button, text("developer_reload_data")) {
+		screen_context.requests^ += {.Reload_Data}
 	}
 }

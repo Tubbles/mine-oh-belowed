@@ -133,27 +133,27 @@ test_the_touch_layout_editor_with_the_gamepad :: proc(t: ^testing.T) {
 	// Default does not change.
 	state.focus = ui_hash(scope, text("touch_layout_save"), -1)
 	screen_test_frame(audit, &state, {confirm = true})
-	apply_touch_layout_request(&state, editor, layouts, audit.default_touch_layout)
+	apply_touch_layout_request(&state, editor, layouts, audit.default_touch_layout, &audit.requests)
 	testing.expect_value(t, len(layouts.layouts), 0)
-	testing.expect(t, !layouts.write_requested)
+	testing.expect(t, .Write_Touch_Layouts not_in audit.requests)
 	text_field_set(&editor.name_field, "Mine")
 	state.focus = ui_hash(scope, text("touch_layout_save_as"), -1)
 	screen_test_frame(audit, &state, {confirm = true})
 	// Only requested: the frame loop serves it after the draw.
 	testing.expect_value(t, len(layouts.layouts), 0)
-	apply_touch_layout_request(&state, editor, layouts, audit.default_touch_layout)
+	apply_touch_layout_request(&state, editor, layouts, audit.default_touch_layout, &audit.requests)
 	testing.expect_value(t, selected_touch_layout_name(layouts^), "Mine")
-	testing.expect(t, layouts.write_requested && layouts.changed)
+	testing.expect(t, .Write_Touch_Layouts in audit.requests && layouts.changed)
 	testing.expect_value(t, editor.name, "Mine")
 	testing.expect_value(t, active_touch_layout(layouts^, audit.default_touch_layout).elements[index].size, before.size + 10)
 	testing.expect_value(t, audit.default_touch_layout.elements[index].size, before.size)
-	layouts.write_requested = false
+	audit.requests -= {.Write_Touch_Layouts}
 	state.focus = ui_hash(scope, text("touch_layout_delete"), -1)
 	screen_test_frame(audit, &state, {confirm = true})
-	apply_touch_layout_request(&state, editor, layouts, audit.default_touch_layout)
+	apply_touch_layout_request(&state, editor, layouts, audit.default_touch_layout, &audit.requests)
 	testing.expect_value(t, len(layouts.layouts), 0)
 	testing.expect_value(t, selected_touch_layout_name(layouts^), DEFAULT_TOUCH_LAYOUT_NAME)
-	testing.expect(t, layouts.write_requested)
+	testing.expect(t, .Write_Touch_Layouts in audit.requests)
 	testing.expect_value(t, editor.name, DEFAULT_TOUCH_LAYOUT_NAME)
 	testing.expect_value(t, top_screen(state.screens), Screen.Touch_Layout)
 }
@@ -181,7 +181,7 @@ test_the_touch_layout_row_cycles_the_selection_and_opens_the_editor :: proc(t: ^
 	screen_test_frame(audit, &state, {})
 	screen_test_frame(audit, &state, {confirm = true})
 	testing.expect_value(t, selected_touch_layout_name(layouts^), "Mine")
-	testing.expect(t, layouts.write_requested && layouts.changed)
+	testing.expect(t, .Write_Touch_Layouts in audit.requests && layouts.changed)
 	state.focus = ui_hash(panel, text("settings_edit_touch_layout"), -1)
 	screen_test_frame(audit, &state, {confirm = true})
 	testing.expect_value(t, top_screen(state.screens), Screen.Touch_Layout)
@@ -243,7 +243,7 @@ test_a_save_as_leaves_the_frames_text_readable :: proc(t: ^testing.T) {
 	state.focus = ui_hash(scope, text("touch_layout_save_as"), -1)
 	screen_test_frame(audit, &state, {confirm = true})
 	testing.expect(t, draw_list_text_checksum(state) > 0)
-	apply_touch_layout_request(&state, editor, layouts, audit.default_touch_layout)
+	apply_touch_layout_request(&state, editor, layouts, audit.default_touch_layout, &audit.requests)
 	testing.expect_value(t, selected_touch_layout_name(layouts^), "Mine")
 }
 
@@ -262,22 +262,22 @@ test_the_editor_saves_a_layout_without_start_and_refuses_a_locked_file :: proc(t
 	editor.draft.elements[start] = rebind_touch_element(editor.draft.elements[start], {button = .GUIDE}, "Guide")
 	text_field_set(&editor.name_field, "Mine")
 	editor.request = .Save_As
-	apply_touch_layout_request(&state, editor, layouts, audit.default_touch_layout)
+	apply_touch_layout_request(&state, editor, layouts, audit.default_touch_layout, &audit.requests)
 	testing.expect_value(t, len(layouts.layouts), 1)
-	testing.expect(t, layouts.write_requested)
+	testing.expect(t, .Write_Touch_Layouts in audit.requests)
 	testing.expect_value(t, touch_element_index(layouts.layouts[0].layout, "Start"), -1)
-	layouts.write_requested = false
+	audit.requests -= {.Write_Touch_Layouts}
 	reset_touch_layout(editor, audit.default_touch_layout)
 	layouts.locked_path = "touch_overlay.sjson"
 	defer layouts.locked_path = ""
 	text_field_set(&editor.name_field, "Other")
 	editor.request = .Save_As
-	apply_touch_layout_request(&state, editor, layouts, audit.default_touch_layout)
+	apply_touch_layout_request(&state, editor, layouts, audit.default_touch_layout, &audit.requests)
 	testing.expect_value(t, len(layouts.layouts), 1)
 	selection := layouts.selection
-	step_touch_layout_selection(&state, layouts)
+	step_touch_layout_selection(&state, layouts, &audit.requests)
 	testing.expect_value(t, layouts.selection, selection)
-	testing.expect(t, !layouts.write_requested)
+	testing.expect(t, .Write_Touch_Layouts not_in audit.requests)
 }
 
 // The panel's Double tap latches row turns the flag off, so a rebound B

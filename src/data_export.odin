@@ -220,12 +220,14 @@ data_export_toast_text :: proc(export_directory: string, result: Data_Export_Res
 // The frame loop's side (serve_data_browser).
 
 // What the Data files screen's requests read and write between frames:
-// the browser, the toasts, the export settings and the data directory.
+// the browser, the toasts, the export settings, the data directory and
+// the frame's request set (a save or discard asks for the tree again).
 Data_Browser_Context :: struct {
 	browser:        ^Data_Browser,
 	ui:             ^Ui_State,
 	settings:       ^Settings,
 	data_directory: string,
+	requests:       ^Frame_Requests,
 }
 
 // All files access on Android: asked for, and the settings page opened

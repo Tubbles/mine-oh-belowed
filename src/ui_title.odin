@@ -112,7 +112,7 @@ title_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		push_screen(&state.screens, .Settings)
 	}
 	if ui_button(state, cut_row(&content), text("title_quit")) {
-		screen_context.quit_requested^ = true
+		screen_context.requests^ += {.Quit}
 	}
 	ui_panel_end(state)
 	// A finger taps the buttons; there is nothing to go back to.
