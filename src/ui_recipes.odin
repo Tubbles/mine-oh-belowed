@@ -166,7 +166,7 @@ recipe_list :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen
 		interaction := ui_interact(state, id, row)
 		if interaction.focused {
 			scroll_list_keep_visible(&list, position)
-			screen_context.browser.focused_recipe = recipe
+			screen_context.views.recipe_browser.focused_recipe = recipe
 			focused = true
 		}
 		if interaction.activated {
@@ -231,7 +231,7 @@ queue_summary_text :: proc(queue: Craft_Queue) -> string {
 // The craftable and unlocked toggles, one toggle per tag of the category, and the queue
 // length at the bottom. Tags that do not fit are left out.
 recipe_filter_column :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context) {
-	browser := screen_context.browser
+	browser := &screen_context.views.recipe_browser
 	content := area
 	if browser.selecting_for == NO_ENTITY {
 		queue := screen_context.player.crafting
@@ -349,7 +349,7 @@ recipe_description_item :: proc(recipe: Recipe) -> Item_Id {
 // The focused recipe. Returns a recipe reached through the graph lists,
 // or NO_RECIPE.
 recipe_detail_panel :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context, craftable: []bool) -> int {
-	recipe := screen_context.browser.focused_recipe
+	recipe := screen_context.views.recipe_browser.focused_recipe
 	content := area
 	if recipe == NO_RECIPE {
 		return NO_RECIPE
@@ -369,7 +369,7 @@ recipe_detail_panel :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context
 	}
 	cut_top(&content, UI_GAP)
 	inventory := screen_context.player.inventory
-	plans := &screen_context.browser.plans
+	plans := &screen_context.views.recipe_browser.plans
 	refresh_recipe_detail_plan(plans, screen_context.recipes, screen_context.unlocks^, inventory, screen_context.player.crafting, recipe)
 	draw_ingredient_rows(state, &content, "recipes_inputs", detail.inputs, plans.detail_inputs[:], screen_context.items)
 	detail_line(state, &content, can_craft_text(plans.detail_count), plans.detail_count >= 1 ? UI_ACCENT_COLOR : UI_DIM_TEXT_COLOR)
@@ -410,7 +410,7 @@ toast_craft_refusal :: proc(state: ^Ui_State, refusal: Craft_Refusal, shortage: 
 apply_recipe_craft_input :: proc(state: ^Ui_State, screen_context: Screen_Context, activated: int, list_focused, selected_shown: bool, button: Touch_Button) {
 	player := screen_context.player
 	recipes, unlocks := screen_context.recipes, screen_context.unlocks^
-	selected := screen_context.browser.focused_recipe
+	selected := screen_context.views.recipe_browser.focused_recipe
 	crafted := activated
 	if button == .Craft && selected_shown {
 		crafted = selected
@@ -502,7 +502,7 @@ navigate_to_recipe :: proc(browser: ^Recipe_Browser, recipes: Recipe_Registry, u
 // Selection mode: sets the chosen recipe on the assembler, handing its
 // contents to the player, and goes back to its panel.
 choose_assembler_recipe :: proc(state: ^Ui_State, screen_context: Screen_Context, recipe: int) {
-	browser := screen_context.browser
+	browser := &screen_context.views.recipe_browser
 	assembler := pool_get(&screen_context.world.entities.assemblers, browser.selecting_for)
 	if assembler == nil {
 		pop_screen(&state.screens)
@@ -533,7 +533,7 @@ three_column_widths :: proc(content: Ui_Rectangle, filter_width, list_width: f32
 }
 
 recipe_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
-	browser := screen_context.browser
+	browser := &screen_context.views.recipe_browser
 	selecting := browser.selecting_for != NO_ENTITY
 	refresh_craftable_recipes(&browser.plans, screen_context.recipes, screen_context.unlocks^, screen_context.player.inventory, screen_context.player.crafting)
 	craftable := browser.plans.craftable[:]

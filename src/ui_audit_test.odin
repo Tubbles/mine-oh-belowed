@@ -2,6 +2,7 @@ package game
 
 import "core:fmt"
 import "core:log"
+import "core:math"
 import "core:mem/virtual"
 import "core:slice"
 import "core:strings"
@@ -251,6 +252,8 @@ panel_under_glyph_bar :: proc(commands: []Draw_Command, panel: Ui_Rectangle) -> 
 
 audit_screen_context :: proc(audit: ^Ui_Audit) -> Screen_Context {
 	simulation := &audit.simulation
+	content := audit.content
+	content.generator = &audit.generator
 	return Screen_Context {
 		settings = &audit.settings,
 		monitor_size = UI_AUDIT_MONITOR_SIZE,
@@ -260,44 +263,41 @@ audit_screen_context :: proc(audit: ^Ui_Audit) -> Screen_Context {
 		requests = &audit.requests,
 		save_requested = &audit.save_requested,
 		title = &audit.title,
-		player = &simulation.players[0],
-		items = audit.content.items,
-		blocks = audit.content.blocks,
-		item_sort_ranks = audit.item_sort_ranks,
-		world = &simulation.world,
-		records = &simulation.records,
-		machines = audit.content.machines,
-		fluids = audit.content.fluids,
-		veins = audit.content.veins,
-		tick_rate = simulation.tick_rate,
-		recipes = audit.content.recipes,
-		technologies = audit.content.technologies,
-		unlocks = &simulation.unlocks,
-		quests = audit.content.quests,
-		quest_state = &simulation.quests,
-		contracts = audit.content.contracts,
+		content = content,
 		notes = audit.notes,
-		tick = simulation.tick,
+		item_sort_ranks = audit.item_sort_ranks,
 		recipe_names = audit.recipe_names,
 		recipe_order = audit.recipe_order,
-		browser = &audit.views.recipe_browser,
-		technology_browser = &audit.views.technology_browser,
-		statistics_view = &audit.views.statistics_view,
-		map_view = &audit.views.map_view,
-		generator = &audit.generator,
-		biome_banner = &audit.biome_banner,
-		developer_mode = true,
-		diagnostics_page = &audit.diagnostics_page,
-		show_world_overlay = &audit.show_world_overlay,
+		player = &simulation.players[0],
+		world = &simulation.world,
+		records = &simulation.records,
+		tick_rate = simulation.tick_rate,
+		unlocks = &simulation.unlocks,
+		quest_state = &simulation.quests,
+		tick = simulation.tick,
 		developer_requests = &simulation.developer_requests,
-		developer_chapter_count = len(audit.content.quests.chapters),
 		landing_pad = SAVE_TEST_LANDING_PAD,
-		texture_editor = &audit.texture_editor,
-		data_browser = &audit.data_browser,
+		views = &audit.views,
+		developer = Developer_Context {
+			enabled = true,
+			chapter_count = len(audit.content.quests.chapters),
+			diagnostics_page = &audit.diagnostics_page,
+			show_world_overlay = &audit.show_world_overlay,
+			texture_editor = &audit.texture_editor,
+			data_browser = &audit.data_browser,
+		},
 		touch_layouts = &audit.touch_layouts,
 		touch_layout_editor = &audit.touch_layout_editor,
 		default_touch_layout = audit.default_touch_layout,
 	}
+}
+
+// The HUD's derivations as make_hud_context builds them, the biome
+// sampled under the player; no touch overlay.
+audit_hud_context :: proc(audit: ^Ui_Audit) -> Hud_Context {
+	position := audit.simulation.players[0].position
+	column := sample_column(&audit.generator, i32(math.floor(position.x)), i32(math.floor(position.z)))
+	return Hud_Context{biome_banner = &audit.biome_banner, biome = column.biome, biomes = audit.generator.biomes}
 }
 
 // One frame the way run_ui_frame builds it, without the draw layer. The
@@ -315,12 +315,13 @@ audit_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, size: Ui_Audit_Size, aud
 	ui_begin(state, frame_input, size.pixels, 1.0 / 60, size.scale, 1, ui_accessibility(audit.settings))
 	state.focus_pulse = device == .Gamepad ? 1 : 0
 	screen_context := audit_screen_context(audit)
+	hud := audit_hud_context(audit)
 	// On touch the HUD's touch buttons (0134), rotate included.
 	if audit_case.touch {
-		screen_context.touch_hud_buttons = hud_touch_buttons_shown(true)
+		hud.touch_hud_buttons = hud_touch_buttons_shown(true)
 	}
 	if audit_case.hud {
-		draw_hud(state, screen_context)
+		draw_hud(state, screen_context, hud)
 	}
 	run_screens(state, screen_context)
 	ui_resolve(state)
@@ -968,7 +969,7 @@ test_hud_draws_craft_runs_and_the_wait :: proc(t: ^testing.T) {
 	state := Ui_State{theme = audit.theme}
 	defer destroy_ui_state(&state)
 	ui_begin(&state, {}, {1920, 1080}, 1.0 / 60, 1, 1, ui_accessibility(audit.settings))
-	draw_hud(&state, audit_screen_context(audit))
+	draw_hud(&state, audit_screen_context(audit), audit_hud_context(audit))
 	ui_resolve(&state)
 	for run in queue.runs[1:queue.count] {
 		testing.expectf(t, draw_list_has_text(state.draw_list[:], fmt.tprint(run.count)), "no count %d", run.count)

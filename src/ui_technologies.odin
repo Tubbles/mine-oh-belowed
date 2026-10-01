@@ -75,7 +75,7 @@ technology_list :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Sc
 		interaction := ui_interact(state, id, row)
 		if interaction.focused {
 			scroll_list_keep_visible(&list, position)
-			screen_context.technology_browser.focused = technology
+			screen_context.views.technology_browser.focused = technology
 		}
 		if interaction.activated {
 			activated = technology
@@ -91,7 +91,7 @@ technology_list :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Sc
 // units.
 technology_status_column :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context) {
 	content := area
-	browser := screen_context.technology_browser
+	browser := &screen_context.views.technology_browser
 	ui_toggle(state, cut_row(&content), text("technologies_hide_researched"), &browser.filter.hide_researched)
 	detail_line(state, &content, text("technologies_queued"), UI_DIM_TEXT_COLOR)
 	research := screen_context.records.research
@@ -120,7 +120,7 @@ technology_names_text :: proc(technologies: Technology_Registry, indices: []int)
 // The focused technology: status, cost, its description, prerequisites
 // and the recipes it unlocks.
 technology_detail_panel :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context, names: []string) {
-	technology := screen_context.technology_browser.focused
+	technology := screen_context.views.technology_browser.focused
 	if technology == NO_TECHNOLOGY {
 		return
 	}
@@ -184,7 +184,7 @@ queue_focused_research :: proc(state: ^Ui_State, screen_context: Screen_Context,
 }
 
 technology_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
-	browser := screen_context.technology_browser
+	browser := &screen_context.views.technology_browser
 	names := technology_display_names(screen_context.technologies, context.temp_allocator)
 	order := recipe_name_order(names, context.temp_allocator)
 	visible := filter_technologies(screen_context.technologies, screen_context.unlocks^, order, browser.filter, context.temp_allocator)

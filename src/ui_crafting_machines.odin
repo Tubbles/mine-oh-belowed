@@ -73,7 +73,7 @@ assembler_recipe_row :: proc(state: ^Ui_State, content: ^Ui_Rectangle, assembler
 		return
 	}
 	if ui_button(state, recipe_row, fmt.tprintf("%s: %s", text("assembler_choose_recipe"), assembler_recipe_text(assembler, screen_context))) {
-		open_recipe_selection(state, screen_context.browser, assembler.handle)
+		open_recipe_selection(state, &screen_context.views.recipe_browser, assembler.handle)
 	}
 }
 

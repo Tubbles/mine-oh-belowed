@@ -55,3 +55,25 @@ test_biome_banner_fades_and_times_out :: proc(t: ^testing.T) {
 	banner = run_biome_banner(banner, 4, 0.25, 40)
 	testing.expect(t, !banner.showing)
 }
+
+// The banner advances with the biome the frame sampled into the HUD
+// context (make_hud_context), with no generator to sample itself (0161).
+@(test)
+test_biome_banner_draws_the_biome_of_the_hud_context :: proc(t: ^testing.T) {
+	table, error := parse_string_table(#load("../data/strings/en.sjson"))
+	testing.expect(t, error == nil)
+	thread_string_table = &table
+	defer thread_string_table = nil
+	defer destroy_string_table(&table)
+	biomes := []Biome{{definition = {name_key = "biome_lake"}}, {definition = {name_key = "biome_mountains"}}}
+	banner := Biome_Banner{settled = 0, candidate = 0}
+	hud := Hud_Context{biome_banner = &banner, biome = 1, biomes = biomes}
+	state: Ui_State
+	defer destroy_ui_state(&state)
+	for _ in 0 ..< 6 {
+		ui_begin(&state, {}, {1920, 1080}, 0.5, 1, 1)
+		draw_biome_banner(&state, hud)
+	}
+	testing.expect_value(t, banner.shown, 1)
+	testing.expect(t, draw_list_has_text(state.draw_list[:], "Mountains"))
+}

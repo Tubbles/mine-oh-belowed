@@ -1,7 +1,5 @@
 package game
 
-import "core:math"
-
 // The biome banner (work item 0058): once the biome under the player has
 // changed and stayed changed for BIOME_BANNER_DEBOUNCE_SECONDS, its name
 // fades in at top centre, below the brownout warning's line, shows for
@@ -65,21 +63,21 @@ biome_banner_alpha :: proc(banner: Biome_Banner) -> f32 {
 	return clamp(min(fade_in, fade_out), 0, 1)
 }
 
-// Advances the banner with the biome under the player and draws it.
-draw_biome_banner :: proc(state: ^Ui_State, screen_context: Screen_Context) {
-	banner, generator, player := screen_context.biome_banner, screen_context.generator, screen_context.player
-	if banner == nil || generator == nil || player == nil {
+// Advances the banner with the biome under the player, which the frame
+// loop samples once per frame (make_hud_context), and draws it.
+draw_biome_banner :: proc(state: ^Ui_State, hud: Hud_Context) {
+	banner := hud.biome_banner
+	if banner == nil {
 		return
 	}
-	biome := sample_column(generator, i32(math.floor(player.position.x)), i32(math.floor(player.position.z))).biome
-	banner^ = advance_biome_banner(banner^, biome, state.frame_seconds)
+	banner^ = advance_biome_banner(banner^, hud.biome, state.frame_seconds)
 	alpha := biome_banner_alpha(banner^)
-	if alpha <= 0 || banner.shown >= len(generator.biomes) {
+	if alpha <= 0 || banner.shown >= len(hud.biomes) {
 		return
 	}
 	safe := ui_safe_area(state)
 	color := UI_TEXT_COLOR
 	color.a = u8(f32(color.a) * alpha)
 	area := Ui_Rectangle{safe.x, safe.y + 2 * UI_ROW_HEIGHT, safe.width, UI_ROW_HEIGHT}
-	draw_text(state, area, text(generator.biomes[banner.shown].definition.name_key), UI_HEADING_TEXT_SIZE, .Centre, color)
+	draw_text(state, area, text(hud.biomes[banner.shown].definition.name_key), UI_HEADING_TEXT_SIZE, .Centre, color)
 }

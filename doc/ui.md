@@ -21,6 +21,7 @@ How every screen is built, so "couch first" and "one coherent game" hold on ever
 - Activation is decided inside the widget call (Confirm on last frame's focus, or a tap released this frame); only focus moves reach widget results a frame late.
 - The UI runs after the simulation, so a screen opening or closing reaches the world a frame later.
 - `Ui_State` holds the focus and focus panel, scroll offsets and selections keyed by widget id, the screen stack, radial state, repeat timers, the pointer, and the device that moved last (whose glyphs the glyph bar shows). Layout helpers compute rows, columns and grids; no constraint solver.
+- Every screen reads one `Screen_Context` (`ui_screens.odin`, built per frame by `make_screen_context`) grouped by owner: the process fields, the content as the session sees it (an embedded `Simulation_Content` with the session's technologies, found schematics and generator, plus the presentation tables), the simulation fields, the session views (`views`), the developer tools (`Developer_Context`) and the touch layouts; `draw_hud` takes a `Hud_Context` beside it (`hud.odin`: the touch derivations and the biome the frame samples once under the player).
 
 ### Render pixels
 

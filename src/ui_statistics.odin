@@ -85,7 +85,7 @@ draw_fluid_statistics_row :: proc(state: ^Ui_State, row: Ui_Rectangle, screen_co
 
 // Item rows, then fluid rows, in one scrolled list.
 statistics_item_list :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context, names: []string, rows: []Item_Rate_Row, fluid_rows: []Fluid_Rate_Row) {
-	view := screen_context.statistics_view
+	view := &screen_context.views.statistics_view
 	if len(rows) + len(fluid_rows) == 0 {
 		ui_label(state, {area.x, area.y, area.width, UI_ROW_HEIGHT}, text("statistics_nothing_yet"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	}
@@ -118,7 +118,7 @@ statistics_item_list :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_contex
 
 // The focused fluid's litres per minute over the window, voided included.
 statistics_fluid_detail :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context) {
-	view := screen_context.statistics_view
+	view := &screen_context.views.statistics_view
 	content := area
 	rate := fluid_rate_row(screen_context.records.statistics, view.focused_fluid, view.window)
 	draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), fluid_name(screen_context.fluids, view.focused_fluid), UI_HEADING_TEXT_SIZE, .Left)
@@ -128,19 +128,13 @@ statistics_fluid_detail :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_con
 }
 
 statistics_simulation_content :: proc(screen_context: Screen_Context) -> Simulation_Content {
-	return Simulation_Content {
-		items = screen_context.items,
-		machines = screen_context.machines,
-		recipes = screen_context.recipes,
-		technologies = screen_context.technologies,
-		veins = screen_context.veins,
-	}
+	return screen_context.content
 }
 
 // The focused item's rates, the machines making and using it now, and
 // what a lenient world voided of it.
 statistics_detail :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context, names: []string) {
-	view := screen_context.statistics_view
+	view := &screen_context.views.statistics_view
 	if view.fluid_has_focus {
 		statistics_fluid_detail(state, area, screen_context)
 		return
@@ -186,7 +180,7 @@ statistics_list_width :: proc(content: Ui_Rectangle) -> f32 {
 }
 
 production_tab :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context) {
-	view := screen_context.statistics_view
+	view := &screen_context.views.statistics_view
 	content := area
 	names := item_display_names(screen_context.items, context.temp_allocator)
 	rows := statistics_rows(screen_context.records.statistics, view.window, context.temp_allocator)

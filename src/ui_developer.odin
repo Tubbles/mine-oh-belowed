@@ -54,11 +54,11 @@ developer_toggles :: proc(state: ^Ui_State, first_row, second_row: Ui_Rectangle,
 	if ui_toggle(state, column_rectangle(first_row, 3, 2, UI_GAP), text("developer_cheat_speed"), &cheat_speed) {
 		queue_developer_request(state, screen_context, Developer_Request{action = .Toggle_Cheat_Speed})
 	}
-	page := screen_context.diagnostics_page
+	page := screen_context.developer.diagnostics_page
 	if ui_choice(state, column_rectangle(second_row, 3, 0, UI_GAP), text("developer_diagnostics"), text(diagnostics_page_keys[page^])) {
 		page^ = next_diagnostics_page(page^)
 	}
-	ui_toggle(state, column_rectangle(second_row, 3, 1, UI_GAP), text("developer_world_overlay"), screen_context.show_world_overlay)
+	ui_toggle(state, column_rectangle(second_row, 3, 1, UI_GAP), text("developer_world_overlay"), screen_context.developer.show_world_overlay)
 	ui_toggle(state, column_rectangle(second_row, 3, 2, UI_GAP), text("developer_bottleneck_overlay"), &screen_context.settings.bottleneck_overlay)
 }
 
@@ -118,11 +118,11 @@ developer_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 developer_actions :: proc(state: ^Ui_State, content: ^Ui_Rectangle, screen_context: Screen_Context) {
 	developer_toggles(state, cut_row(content), cut_row(content), screen_context)
 	ui_label(state, cut_row(content), text("developer_give_kit"))
-	if chapter := chapter_buttons(state, cut_row(content), "kit", screen_context.developer_chapter_count); chapter > 0 {
+	if chapter := chapter_buttons(state, cut_row(content), "kit", screen_context.developer.chapter_count); chapter > 0 {
 		queue_developer_request(state, screen_context, Developer_Request{action = .Give_Kit, chapter = chapter})
 	}
 	developer_quest_label_row(state, cut_row(content), screen_context)
-	if chapter := chapter_buttons(state, cut_row(content), "quests", screen_context.developer_chapter_count); chapter > 0 {
+	if chapter := chapter_buttons(state, cut_row(content), "quests", screen_context.developer.chapter_count); chapter > 0 {
 		queue_developer_request(state, screen_context, Developer_Request{action = .Complete_Quests_To_Chapter, chapter = chapter})
 	}
 	ui_label(state, cut_row(content), text("developer_time_of_day"))
@@ -149,11 +149,11 @@ developer_actions :: proc(state: ^Ui_State, content: ^Ui_Rectangle, screen_conte
 // loop to read the files again: Reset returns to the data file as it is
 // now, the tree shows the files and overlay copies there are now.
 developer_editors_row :: proc(state: ^Ui_State, row: Ui_Rectangle, screen_context: Screen_Context) {
-	if ui_button(state, column_rectangle(row, 3, 0, UI_GAP), text("developer_texture_editor")) && screen_context.texture_editor != nil {
+	if ui_button(state, column_rectangle(row, 3, 0, UI_GAP), text("developer_texture_editor")) && screen_context.developer.texture_editor != nil {
 		screen_context.requests^ += {.Refresh_Texture_Editor}
 		push_screen(&state.screens, .Textures)
 	}
-	if ui_button(state, column_rectangle(row, 3, 1, UI_GAP), text("developer_data_files")) && screen_context.data_browser != nil {
+	if ui_button(state, column_rectangle(row, 3, 1, UI_GAP), text("developer_data_files")) && screen_context.developer.data_browser != nil {
 		screen_context.requests^ += {.Refresh_Data_Tree}
 		push_screen(&state.screens, .Data_Files)
 	}
@@ -178,7 +178,7 @@ developer_reload_row :: proc(state: ^Ui_State, row: Ui_Rectangle, screen_context
 	area := row
 	button := cut_right(&area, column_rectangle(row, 3, 0, UI_GAP).width)
 	cut_right(&area, UI_GAP)
-	ui_label(state, area, text(screen_context.data_changed ? "developer_data_changed" : "developer_data_current"))
+	ui_label(state, area, text(screen_context.developer.data_changed ? "developer_data_changed" : "developer_data_current"))
 	if ui_button(state, button, text("developer_reload_data")) {
 		screen_context.requests^ += {.Reload_Data}
 	}

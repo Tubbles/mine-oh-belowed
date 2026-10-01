@@ -34,6 +34,31 @@ HUD_MINING_BAR_HEIGHT :: 6.0
 HUD_MINING_RING_DIAMETER :: 3 * CROSSHAIR_SIZE
 HUD_MINING_RING_THICKNESS :: 6.0
 
+// What only the HUD reads, derived by the frame loop (make_hud_context):
+// the touch derivations and the biome under the player. Its world and
+// content reads come through Screen_Context, since the quest objective
+// shares the journal's procedures. The zero value draws no banner.
+Hud_Context :: struct {
+	// The touch overlay's tap scheme is on (touch_overlay_aims): the HUD
+	// draws no crosshair and rings the mined block, whose centre
+	// mining_ring_centre is in render pixels.
+	touch_aims:               bool,
+	mining_ring_centre:       [2]f32,
+	// The HUD's touch buttons shown (0134, frame_hud_touch_buttons_shown):
+	// none unless the touch overlay is on in a world.
+	touch_hud_buttons:        bit_set[Hud_Touch_Button],
+	// The discovery card's lowest top, a UI y below the touch overlay's
+	// Back and Start while it is drawn, else 0 (0123).
+	discovery_card_clearance: f32,
+	// Kept by the frame loop across frames (biome_banner.odin). Nil
+	// without a world.
+	biome_banner:             ^Biome_Banner,
+	// The biome under the player, sampled once per frame, and the
+	// generator's biomes it indexes, for the banner's name.
+	biome:                    int,
+	biomes:                   []Biome,
+}
+
 draw_crosshair :: proc(state: ^Ui_State) {
 	centre := state.screen_units / 2
 	draw_fill(state, {centre.x - CROSSHAIR_SIZE, centre.y - CROSSHAIR_THICKNESS / 2, 2 * CROSSHAIR_SIZE, CROSSHAIR_THICKNESS}, CROSSHAIR_COLOR)
@@ -370,10 +395,10 @@ draw_contract_objective :: proc(state: ^Ui_State, screen_context: Screen_Context
 	}
 }
 
-draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context) {
+draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context, hud: Hud_Context) {
 	player, items := screen_context.player, screen_context.items
-	if screen_context.touch_aims {
-		draw_mining_ring(state, player.mining, screen_context.mining_ring_centre)
+	if hud.touch_aims {
+		draw_mining_ring(state, player.mining, hud.mining_ring_centre)
 	} else {
 		draw_crosshair(state)
 		draw_mining_progress(state, player.mining)
@@ -391,13 +416,13 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		draw_contract_objective(state, screen_context)
 	case .None:
 	}
-	draw_hud_touch_buttons(state, screen_context.touch_hud_buttons)
+	draw_hud_touch_buttons(state, hud.touch_hud_buttons)
 	draw_brownout_warning(state, screen_context.world)
-	draw_biome_banner(state, screen_context)
+	draw_biome_banner(state, hud)
 	if height := draw_mission_control_panel(state); height > 0 {
 		state.toast_top_offset = height + UI_GAP
 	}
-	draw_discovery_card(state, items, screen_context.discovery_card_clearance)
+	draw_discovery_card(state, items, hud.discovery_card_clearance)
 	obtained := screen_context.unlocks.obtained
 	name_status, tool_status, vein_status := target_status_lines(screen_context.world, screen_context.records, screen_context.machines, screen_context.fluids, screen_context.veins, screen_context.blocks, items, obtained, effective_tool_tier(player^, items, screen_context.cheat_speed), player.target)
 	if ghost_line, shown := bore_drill_ghost_line(screen_context.world, screen_context.records.assayed_veins[:], screen_context.machines, screen_context.veins, screen_context.blocks, items, obtained, player^); shown {

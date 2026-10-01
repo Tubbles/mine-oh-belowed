@@ -566,11 +566,11 @@ draw_map_legend :: proc(state: ^Ui_State, area: Ui_Rectangle, view: ^Map_View, g
 }
 
 map_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
-	view, world := screen_context.map_view, screen_context.world
-	if view == nil || world == nil {
+	if screen_context.views == nil || screen_context.world == nil {
 		pop_screen(&state.screens)
 		return
 	}
+	view, world := &screen_context.views.map_view, screen_context.world
 	if !view.active {
 		activate_map_view(view, world, screen_context.records.explored, screen_context.player^)
 	}

@@ -1,6 +1,7 @@
 package game
 
 import "core:fmt"
+import "core:math"
 import "core:mem/virtual"
 import "core:os"
 import "core:strings"
@@ -189,8 +190,9 @@ INITIAL_FLY_CAMERA :: Fly_Camera {
 }
 
 // With the session's generator, for the orbital survey. Built once by
-// update_frame, once by render_frame and once per queued command: a
-// reload command between them replaces the content arena and the
+// update_frame, once by render_frame, once by make_screen_context
+// inside the UI pass and once per queued command: a reload command
+// between them replaces the content arena and the
 // session's technologies, and a texture edit the data browser saves
 // between update and render (serve_data_browser) replaces the item
 // registry's icon_loaded, so a copy never outlives its phase.
@@ -671,26 +673,13 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 		bindings        = state.interaction.bindings,
 		requests        = &state.requests,
 		title           = &state.interaction.title,
-		items           = content.items,
-		blocks          = content.blocks,
-		item_sort_ranks = content.item_sort_ranks,
-		machines        = content.machines,
-		fluids          = content.fluids,
-		veins           = content.veins,
-		tick_rate       = state.config.tick_rate,
-		recipes         = content.recipes,
-		technologies    = content.technologies,
-		quests          = content.quests,
-		contracts       = content.contracts,
+		content         = content.simulation_content,
 		notes           = content.notes,
+		item_sort_ranks = content.item_sort_ranks,
 		recipe_names    = content.recipe_names,
 		recipe_order    = content.recipe_order,
-		developer_mode  = content.developer_mode,
-		diagnostics_page = &state.developer.diagnostics_page,
-		show_world_overlay = &state.developer.show_world_overlay,
-		developer_chapter_count = len(content.developer_kits.kits),
-		texture_editor  = &state.developer.texture_editor,
-		data_browser    = &state.developer.data_browser,
+		tick_rate       = state.config.tick_rate,
+		developer       = make_developer_context(state),
 		touch_layouts   = &state.interaction.touch_layouts,
 		touch_layout_editor = &state.interaction.touch_layout_editor,
 		default_touch_layout = content.touch_overlay,
@@ -700,32 +689,56 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 		return screen_context
 	}
 	screen_context.save_requested = &session.save_requested
-	screen_context.touch_aims = touch_overlay_aims(touch_overlay_context(state))
-	screen_context.touch_hud_buttons = frame_hud_touch_buttons_shown(touch_overlay_context(state))
-	screen_context.mining_ring_centre = mining_ring_centre(state, session.simulation.players[0].mining)
-	screen_context.discovery_card_clearance = discovery_card_clearance(touch_overlay_context(state))
 	screen_context.player = &session.simulation.players[0]
 	screen_context.player_index = 0
 	screen_context.world = &session.simulation.world
 	screen_context.records = &session.simulation.records
 	screen_context.tick = session.simulation.tick
 	screen_context.tick_rate = session.simulation.tick_rate
-	screen_context.technologies = session.technologies
+	screen_context.content = content_with_found_schematics(frame_simulation_content(state), session.simulation.unlocks)
 	screen_context.unlocks = &session.simulation.unlocks
-	screen_context.recipes = content_with_found_schematics(content.simulation_content, session.simulation.unlocks).recipes
 	screen_context.quest_state = &session.simulation.quests
-	screen_context.browser = &state.interaction.session_views.recipe_browser
-	screen_context.technology_browser = &state.interaction.session_views.technology_browser
-	screen_context.statistics_view = &state.interaction.session_views.statistics_view
-	screen_context.map_view = &state.interaction.session_views.map_view
-	screen_context.generator = &session.generator
-	screen_context.biome_banner = &state.interaction.biome_banner
+	screen_context.views = &state.interaction.session_views
 	screen_context.developer_requests = &session.simulation.developer_requests
 	screen_context.cheat_speed = session.simulation.cheat_speed
 	screen_context.landing_pad = session.start.landing_pad
 	screen_context.particle_memory = &state.presentation.particle_memory
-	screen_context.data_changed = state.reload.data_watch.content_changed
 	return screen_context
+}
+
+// What the Developer screen and the two editors read of the frame:
+// the content's developer mode and chapter count, the diagnostics page
+// and overlay switches, the data watch's change flag, and the editors.
+make_developer_context :: proc(state: ^Frame_State) -> Developer_Context {
+	return Developer_Context {
+		enabled            = state.content.developer_mode,
+		chapter_count      = len(state.content.developer_kits.kits),
+		diagnostics_page   = &state.developer.diagnostics_page,
+		show_world_overlay = &state.developer.show_world_overlay,
+		data_changed       = state.session != nil && state.reload.data_watch.content_changed,
+		texture_editor     = &state.developer.texture_editor,
+		data_browser       = &state.developer.data_browser,
+	}
+}
+
+// The HUD's derivations; the zero value without a session. The biome
+// under the player is sampled here, once per frame.
+make_hud_context :: proc(state: ^Frame_State) -> Hud_Context {
+	session := state.session
+	if session == nil {
+		return {}
+	}
+	player := &session.simulation.players[0]
+	column := sample_column(&session.generator, i32(math.floor(player.position.x)), i32(math.floor(player.position.z)))
+	return Hud_Context {
+		touch_aims               = touch_overlay_aims(touch_overlay_context(state)),
+		mining_ring_centre       = mining_ring_centre(state, player.mining),
+		touch_hud_buttons        = frame_hud_touch_buttons_shown(touch_overlay_context(state)),
+		discovery_card_clearance = discovery_card_clearance(touch_overlay_context(state)),
+		biome_banner             = &state.interaction.biome_banner,
+		biome                    = column.biome,
+		biomes                   = session.generator.biomes,
+	}
 }
 
 run_ui_frame :: proc(state: ^Frame_State) {
@@ -744,7 +757,7 @@ run_ui_frame :: proc(state: ^Frame_State) {
 	if state.session != nil {
 		show_simulation_events(&state.interaction.ui, &state.session.simulation.events)
 		show_quest_notices(&state.interaction.ui, &state.session.simulation.quests.notices, state.session.simulation.records.shipments[:], state.content.items)
-		draw_hud(&state.interaction.ui, screen_context)
+		draw_hud(&state.interaction.ui, screen_context, make_hud_context(state))
 	}
 	run_screens(&state.interaction.ui, screen_context)
 	// After the screens, so Start and Back show over an open one.

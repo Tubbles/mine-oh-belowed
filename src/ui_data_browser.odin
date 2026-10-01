@@ -47,7 +47,7 @@ DATA_BROWSER_ENTRY_LINE_HEIGHT :: 32
 DATA_BROWSER_ENTRY_LINES :: 2
 
 data_browser_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
-	browser, requests := screen_context.data_browser, screen_context.requests
+	browser, requests := screen_context.developer.data_browser, screen_context.requests
 	if browser == nil {
 		pop_screen(&state.screens)
 		return

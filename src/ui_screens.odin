@@ -38,6 +38,11 @@ Frame_Request :: enum u8 {
 
 Frame_Requests :: bit_set[Frame_Request; u16]
 
+// What the screens read, grouped by owner: the process, the content (the
+// session's view of it: its technologies, its found schematics, its
+// generator), the simulation, the session views (0159), the developer
+// tools and the touch layouts. The HUD's own derivations are Hud_Context
+// (hud.odin), which draw_hud takes beside it.
 Screen_Context :: struct {
 	settings:        ^Settings,
 	// The monitor's size (display.odin): the Resolution choices up to it,
@@ -57,83 +62,68 @@ Screen_Context :: struct {
 	save_requested:  ^bool,
 	// The title screens' state and the requests to start or leave a world.
 	title:           ^Title_State,
+	// With a world: technologies is the session's copy with the research
+	// cost applied, recipes carries the found schematics and generator is
+	// the session's. Without one generator is nil.
+	using content:   Simulation_Content,
+	// The content's presentation tables beside it (Game_Content). The
+	// journal's Notes tab (notes.odin).
+	notes:           Note_Registry,
+	item_sort_ranks: []u16,
+	recipe_names:    []string,
+	recipe_order:    []int,
 	player:          ^Player,
 	// The player's index in the simulation's players.
 	player_index:    int,
-	items:           Item_Registry,
-	blocks:          Block_Registry,
-	item_sort_ranks: []u16,
 	world:           ^World,
 	// The simulation's records beside the world.
 	records:         ^Game_Records,
-	machines:        Machine_Registry,
-	fluids:          Fluid_Registry,
-	veins:           Vein_Content,
 	tick_rate:       int,
-	recipes:         Recipe_Registry,
-	technologies:    Technology_Registry,
 	unlocks:         ^Recipe_Unlocks,
-	quests:          Quest_Registry,
 	quest_state:     ^Quest_State,
-	contracts:       Contract_Registry,
-	// The journal's Notes tab (notes.odin).
-	notes:           Note_Registry,
 	// The simulation's tick, for the contracts' time left.
 	tick:            u64,
-	recipe_names:    []string,
-	recipe_order:    []int,
-	browser:         ^Recipe_Browser,
-	technology_browser: ^Technology_Browser,
-	statistics_view:    ^Statistics_View,
-	map_view:           ^Map_View,
-	// The session's generator, for the biomes on the map and the HUD
-	// banner. Nil without a world.
-	generator:          ^Generator,
-	// Kept by the frame loop across frames (biome_banner.odin). Nil in
-	// tests that draw no HUD.
-	biome_banner:       ^Biome_Banner,
-	// --dev: the pause menu shows the Developer entry (ui_developer.odin);
-	// the developer_mode setting shows it too.
-	developer_mode:     bool,
-	// The F3 pages (diagnostics.odin), stepped by the Developer screen.
-	diagnostics_page:   ^Diagnostics_Page,
-	show_world_overlay: ^bool,
 	// The simulation's developer cheat speed, before pending requests.
 	cheat_speed:        bool,
 	// Nil without a world.
 	developer_requests: ^[dynamic]Developer_Request,
-	// The chapters the developer screen offers: one per kit.
-	developer_chapter_count: int,
 	landing_pad:        Landing_Pad_Site,
+	// The recipe browser, the technology browser, the statistics and the
+	// map (ui_session_views.odin). Nil without a world.
+	views:              ^Session_Views,
+	developer:          Developer_Context,
 	// The frame loop's particle memory (render_particles.odin), read only:
 	// the map draws the capsule descent and the satellite pass from it.
 	// Nil without a world and in tests.
 	particle_memory:    ^Particle_Memory,
-	// Content files changed since the content was loaded.
-	data_changed:         bool,
-	// The texture editor's entries (ui_texture_editor.odin), kept by the
-	// frame loop. Nil in tests that open no editor.
-	texture_editor:       ^Texture_Editor,
-	// The Data files screen's tree and open file (ui_data_browser.odin),
-	// kept by the frame loop. Nil in tests that open no browser.
-	data_browser:         ^Data_Browser,
-	// The touch overlay's tap scheme is on (touch_overlay_aims): the HUD
-	// draws no crosshair and rings the mined block, whose centre
-	// mining_ring_centre is in render pixels.
-	touch_aims:           bool,
-	mining_ring_centre:   [2]f32,
-	// The HUD's touch buttons shown (0134, frame_hud_touch_buttons_shown):
-	// none unless the touch overlay is on in a world.
-	touch_hud_buttons:    bit_set[Hud_Touch_Button],
-	// The discovery card's lowest top, a UI y below the touch overlay's
-	// Back and Start while it is drawn, else 0 (0123).
-	discovery_card_clearance: f32,
 	// The user touch layouts and the editor's draft (0121,
 	// ui_touch_layout_editor.odin), kept by the frame loop, and the data
 	// file's layout, Default. Nil in tests that edit no layout.
 	touch_layouts:        ^Touch_Layouts,
 	touch_layout_editor:  ^Touch_Layout_Editor,
 	default_touch_layout: Touch_Overlay_Layout,
+}
+
+// What the Developer screen and the two editors read besides the
+// simulation (ui_developer.odin), built by make_screen_context from the
+// content and the loop's developer tools.
+Developer_Context :: struct {
+	// --dev: the pause menu shows the Developer entry; the developer_mode
+	// setting shows it too.
+	enabled:            bool,
+	// The chapters the developer screen offers: one per kit.
+	chapter_count:      int,
+	// The F3 pages (diagnostics.odin), stepped by the Developer screen.
+	diagnostics_page:   ^Diagnostics_Page,
+	show_world_overlay: ^bool,
+	// Content files changed since the content was loaded.
+	data_changed:       bool,
+	// The texture editor's entries (ui_texture_editor.odin), kept by the
+	// frame loop. Nil in tests that open no editor.
+	texture_editor:     ^Texture_Editor,
+	// The Data files screen's tree and open file (ui_data_browser.odin),
+	// kept by the frame loop. Nil in tests that open no browser.
+	data_browser:       ^Data_Browser,
 }
 
 // Pause opens the pause menu from the world, Open_Inventory the inventory,
@@ -256,12 +246,12 @@ run_screens :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	if screen_context.player != nil {
 		close_slot_screens(state, screen_context.player, screen_context.items)
 	}
-	if screen_context.browser != nil && top_screen(state.screens) != .Recipes {
-		screen_context.browser.selecting_for = NO_ENTITY
+	if screen_context.views != nil && top_screen(state.screens) != .Recipes {
+		screen_context.views.recipe_browser.selecting_for = NO_ENTITY
 	}
 	// The next opening centres on the player and reads the surfaces anew.
-	if screen_context.map_view != nil && top_screen(state.screens) != .Map {
-		screen_context.map_view.active = false
+	if screen_context.views != nil && top_screen(state.screens) != .Map {
+		screen_context.views.map_view.active = false
 	}
 }
 
@@ -292,7 +282,7 @@ close_slot_screens :: proc(state: ^Ui_State, player: ^Player, items: Item_Regist
 pause_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	ui_backdrop(state)
 	area := ui_panel_area(state)
-	developer := screen_context.developer_mode || (screen_context.settings != nil && screen_context.settings.developer_mode)
+	developer := screen_context.developer.enabled || (screen_context.settings != nil && screen_context.settings.developer_mode)
 	button_count := developer ? 9 : 8
 	// The title row and the build stamp row besides the buttons; below the
 	// title the rows scroll when the panel is clamped to the safe area.

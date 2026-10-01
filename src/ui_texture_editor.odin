@@ -243,7 +243,7 @@ texture_preview_height :: proc(area: Ui_Rectangle, pixels_per_unit: f32) -> f32 
 }
 
 texture_editor_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
-	editor := screen_context.texture_editor
+	editor := screen_context.developer.texture_editor
 	if editor == nil {
 		pop_screen(&state.screens)
 		return
