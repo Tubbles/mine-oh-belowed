@@ -114,7 +114,7 @@ lay_save_test_schematics :: proc(simulation: ^Simulation_State, content: Simulat
 	records := &simulation.records
 	sites := [2]Crate_Site{{region = {40, 40}, position = SAVE_TEST_CRATE, choice = 1}, {region = {41, 40}, position = {10_000, -40, 10_000}, choice = 2}}
 	register_crate_sites(&records.crate_sites, sites[:])
-	place_pending_crates(world, records.crate_sites[:], content)
+	place_pending_crates(world_tick_context(world, records, content, TEST_TICK_RATE))
 	world_set_block(world, SAVE_TEST_GOLD_QUARTZ, test_block(content.blocks, "gold_quartz"))
 	schematic := test_item(content.items, "schematic_slag_concrete")
 	read_schematic(&simulation.unlocks, &simulation.quests, &records.statistics, content.recipes, schematic, 0)
@@ -142,7 +142,7 @@ lay_save_test_prospecting :: proc(world: ^World, records: ^Game_Records, content
 	assert(assayed)
 	hematite := test_item(content.items, "hematite")
 	append(&records.magnetometer_readings, magnetometer_reading(world.veins[:], content.veins, hematite, 30, {-10, 1, 18}))
-	append(&records.core_samples, take_core_sample(world, len(content.blocks.definitions), {21, 1, -10}))
+	append(&records.core_samples, take_core_sample(world_tick_context(world, records, content, TEST_TICK_RATE), {21, 1, -10}))
 	fire_seismic_shot(world, records, {10, 0, -10}, 32)
 	drill := pool_get(&world.entities.core_sample_drills, place_test_entity(world, content, "core_sample_drill", SAVE_TEST_CORE_SAMPLE_DRILL))
 	drill.work_ticks = 77

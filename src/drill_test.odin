@@ -148,7 +148,7 @@ expect_draw_mix :: proc(t: ^testing.T, type_id: string, location := #caller_loca
 	draws :: 20_000
 	counts: [MAXIMUM_VEIN_OUTPUTS]int
 	for _ in 0 ..< draws {
-		item := draw_from_vein(&world, &records.statistics, content.veins, registered_vein(&world, id))
+		item := draw_from_vein(world_tick_context(&world, &records, content, TEST_TICK_RATE), registered_vein(&world, id))
 		for index in 0 ..< vein_type.output_count {
 			if vein_type.outputs[index] == item || vein_type.low_grades[index] == item {
 				counts[index] += 1

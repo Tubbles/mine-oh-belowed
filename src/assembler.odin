@@ -832,9 +832,10 @@ assembler_burn_fraction :: proc(assembler: Assembler) -> f32 {
 // rest as voided, ingredients and fuel as consumed, and stalls and fuel
 // like the furnace's. Fluids drawn from the input ports count as
 // consumed, fluid outputs delivered as produced (record_buffer_changes).
-tick_assemblers :: proc(world: ^World, statistics: ^Statistics, content: Simulation_Content, tick_rate: int) {
-	lenient := world.settings.byproducts_lenient
-	for &assembler in world.entities.assemblers.entries {
+tick_assemblers :: proc(tick_context: Entity_Tick_Context) {
+	statistics, content, tick_rate := &tick_context.records.statistics, tick_context.content, tick_context.tick_rate
+	lenient := tick_context.settings.byproducts_lenient
+	for &assembler in tick_context.entities.assemblers.entries {
 		if !assembler.alive {
 			continue
 		}

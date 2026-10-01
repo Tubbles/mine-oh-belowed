@@ -297,14 +297,19 @@ validate_hydro_turbine_definition :: proc(definition: Machine_Definition) -> str
 
 // The level of flowing water in the cell, 0 for a source or no water.
 flowing_water_level :: proc(world: ^World, registry: Block_Registry, cell: World_Coordinate) -> int {
-	level := world_water_level(world, registry, cell)
+	return block_flowing_water_level(registry, world_get_block(world, cell))
+}
+
+block_flowing_water_level :: proc(registry: Block_Registry, block: Block_Id) -> int {
+	level := block_water_level(registry, block)
 	return level == WATER_SOURCE_LEVEL ? 0 : level
 }
 
-flowing_water_level_sum :: proc(world: ^World, registry: Block_Registry, cells: []World_Coordinate) -> int {
+flowing_water_level_sum :: proc(tick_context: Entity_Tick_Context, cells: []World_Coordinate) -> int {
 	sum := 0
 	for cell in cells {
-		sum += flowing_water_level(world, registry, cell)
+		block, _ := tick_get_block(tick_context, cell)
+		sum += block_flowing_water_level(tick_context.content.blocks, block)
 	}
 	return sum
 }
@@ -323,10 +328,10 @@ hydro_turbine_watts :: proc(machine: Machine, level_sum: int) -> u32 {
 	return u32(min(u64(level_sum) * u64(machine.hydro_watts_per_water_level), u64(machine.electric_output_watts)))
 }
 
-hydro_turbine_available_joules :: proc(world: ^World, content: Simulation_Content, turbine: Fluid_Machine, tick_rate: int) -> u64 {
-	machine := content.machines.machines[turbine.machine]
-	level_sum := flowing_water_level_sum(world, content.blocks, common_cells(turbine.common, content.machines))
-	return electric_joules_per_tick(hydro_turbine_watts(machine, level_sum), tick_rate)
+hydro_turbine_available_joules :: proc(tick_context: Entity_Tick_Context, turbine: Fluid_Machine) -> u64 {
+	machines := tick_context.content.machines
+	level_sum := flowing_water_level_sum(tick_context, common_cells(turbine.common, machines))
+	return electric_joules_per_tick(hydro_turbine_watts(machines.machines[turbine.machine], level_sum), tick_context.tick_rate)
 }
 
 hydro_turbine_state :: proc(delivered, available: u64) -> Fluid_Machine_State {
@@ -341,12 +346,13 @@ hydro_turbine_state :: proc(delivered, available: u64) -> Fluid_Machine_State {
 
 // Generators of every kind.
 
-generator_available_joules :: proc(world: ^World, generator: Fluid_Machine, machine: Machine, content: Simulation_Content, tick_rate: int) -> u64 {
+generator_available_joules :: proc(tick_context: Entity_Tick_Context, generator: Fluid_Machine, machine: Machine) -> u64 {
+	content, tick_rate := tick_context.content, tick_context.tick_rate
 	#partial switch machine.kind {
 	case .Combustion_Generator:
 		return combustion_generator_available_joules(generator, machine, content.fluids, content.items, tick_rate)
 	case .Hydro_Turbine:
-		return hydro_turbine_available_joules(world, content, generator, tick_rate)
+		return hydro_turbine_available_joules(tick_context, generator)
 	}
 	return steam_engine_available_joules(generator, machine, tick_rate)
 }
@@ -373,15 +379,15 @@ generator_state :: proc(kind: Machine_Kind, delivered, available: u64, network_d
 }
 
 // Lamps: an entity light source (World.entity_lights) in the lamp's cell
-// while lit, through the block light queues of world_light.odin.
+// while lit, through the block light queues of world_light.odin. The
+// entity tick sets lit; tick_entities_on_world then syncs the lights.
 
-tick_lamps :: proc(world: ^World, machines: Machine_Registry) {
-	for &lamp in world.entities.lamps.entries {
+tick_lamps :: proc(entities: ^Entities) {
+	for &lamp in entities.lamps.entries {
 		if lamp.alive {
 			lamp.lit = lamp.power.satisfaction > LAMP_ON_ABOVE
 		}
 	}
-	sync_entity_lights(world, lit_lamp_lights(&world.entities, machines))
 }
 
 // Cell and light colour of every lit lamp, in the temp allocator.

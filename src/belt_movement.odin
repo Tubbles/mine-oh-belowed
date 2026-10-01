@@ -186,19 +186,20 @@ advance_belt_line :: proc(network: ^Belt_Network, line_index: i32, tick_rate: in
 // last belt at its height, when it is loaded, holds no block and no
 // entity, and a stack there can fall (loose_item_can_fall). A dead end
 // against a wall, a machine or level ground holds its items.
-belt_end_drop_cell :: proc(world: ^World, registry: Block_Registry, line: Belt_Line) -> (cell: World_Coordinate, drops: bool) {
+belt_end_drop_cell :: proc(tick_context: Entity_Tick_Context, line: Belt_Line) -> (cell: World_Coordinate, drops: bool) {
 	if line.end.kind != .Dead_End || len(line.belts) == 0 {
 		return {}, false
 	}
-	belt, found := line_block_belt(&world.entities, line, i32(len(line.belts) - 1))
+	belt, found := line_block_belt(tick_context.entities, line, i32(len(line.belts) - 1))
 	if !found {
 		return {}, false
 	}
 	cell = belt_output_cell(belt)
-	if world_to_chunk_coordinate(cell) not_in world.chunks || cell in world.entities.cells || block_is_solid(registry, world_get_block(world, cell)) {
+	block, loaded := tick_get_block(tick_context, cell)
+	if !loaded || cell in tick_context.entities.cells || block_is_solid(tick_context.content.blocks, block) {
 		return cell, false
 	}
-	return cell, loose_item_can_fall(world, registry, cell)
+	return cell, loose_item_can_fall(tick_context, cell)
 }
 
 // Quarter blocks from the cell centre towards the lane's side of the belt.
@@ -212,20 +213,20 @@ lane_side_offset :: proc(belt: Belt, lane: Belt_Lane) -> [2]i8 {
 // over a drop leaves its lane as a loose item in the cell in front,
 // which then falls (loose_item.odin). The line no longer holds anything
 // at its end.
-drop_items_off_belt_ends :: proc(world: ^World, registry: Block_Registry) {
-	for &line in world.entities.belt_network.lines {
+drop_items_off_belt_ends :: proc(tick_context: Entity_Tick_Context) {
+	for &line in tick_context.entities.belt_network.lines {
 		if !line.front_held_at_dead_end {
 			continue
 		}
-		cell, drops := belt_end_drop_cell(world, registry, line)
+		cell, drops := belt_end_drop_cell(tick_context, line)
 		if !drops {
 			continue
 		}
-		belt, _ := line_block_belt(&world.entities, line, i32(len(line.belts) - 1))
+		belt, _ := line_block_belt(tick_context.entities, line, i32(len(line.belts) - 1))
 		for lane in Belt_Lane {
 			if lane_front_at_dead_end(line, lane) {
 				front := pop(&line.lanes[lane])
-				spill_stack(world, registry, cell, Item_Stack{item = front.item, count = 1}, lane_side_offset(belt, lane))
+				spill_stack_in_context(tick_context, cell, Item_Stack{item = front.item, count = 1}, lane_side_offset(belt, lane))
 			}
 		}
 		line.front_held_at_dead_end = false

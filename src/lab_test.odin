@@ -251,7 +251,7 @@ test_research_in_the_world_unlocks_recipes :: proc(t: ^testing.T) {
 	queue_research(&records.research, content.technologies, unlocks, test_technology(content.technologies, "automation"))
 	// Five units of 600 ticks in each lab, and one tick to settle.
 	for _ in 0 ..< 3001 {
-		tick_entities(&world, &records, content, TEST_TICK_RATE)
+		tick_entities_on_world(&world, &records, content, TEST_TICK_RATE)
 		apply_finished_research(&records.research, &unlocks, content.recipes)
 	}
 	testing.expect(t, unlocks.researched[test_technology(content.technologies, "automation")])
@@ -300,7 +300,7 @@ test_assemblers_and_labs_are_deterministic :: proc(t: ^testing.T) {
 		queue_research(&records.research, content.technologies, unlocks, test_technology(content.technologies, "automation"))
 		_, assembler, target := lay_gear_line_at(&world, content, {8, 0, 8})
 		for _ in 0 ..< 1200 {
-			tick_entities(&world, &records, content, TEST_TICK_RATE)
+			tick_entities_on_world(&world, &records, content, TEST_TICK_RATE)
 		}
 		gears = chest_count_of(&world, target, test_item(content.items, "iron_gear"))
 		gears += slots_count_of(test_assembler(&world, assembler).slots[:], test_item(content.items, "iron_gear"))

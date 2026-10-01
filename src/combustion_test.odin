@@ -346,7 +346,7 @@ test_fuel_generator_burns_coal_at_a_quarter :: proc(t: ^testing.T) {
 	test_fluid_machine(&world, generator).slots[COMBUSTION_FUEL_SLOT] = {coal, 3}
 	prototype := content.machines.machines[test_machine(content.machines, "fuel_generator")]
 	testing.expect_value(t, combustion_slot_joules(test_fluid_machine(&world, generator)^, prototype, content.items), 3_000_000)
-	testing.expect_value(t, generator_available_joules(&world, test_fluid_machine(&world, generator)^, prototype, content, TEST_TICK_RATE), 1250)
+	testing.expect_value(t, generator_available_joules(world_tick_context(&world, &records, content, TEST_TICK_RATE), test_fluid_machine(&world, generator)^, prototype), 1250)
 	tick_test_entities(&world, &records, content, 1000)
 	machine := test_fluid_machine(&world, generator)
 	testing.expect_value(t, machine.slots[COMBUSTION_FUEL_SLOT], Item_Stack{coal, 2})

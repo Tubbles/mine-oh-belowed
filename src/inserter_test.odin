@@ -21,7 +21,7 @@ test_inserter :: proc(world: ^World, handle: Entity_Handle) -> ^Inserter {
 
 tick_test_entities :: proc(world: ^World, records: ^Game_Records, content: Simulation_Content, ticks: int) {
 	for _ in 0 ..< ticks {
-		tick_entities(world, records, content, TEST_TICK_RATE)
+		tick_entities_on_world(world, records, content, TEST_TICK_RATE)
 	}
 }
 

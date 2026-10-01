@@ -18,7 +18,7 @@ make_loose_item_test_world :: proc(content: Simulation_Content, floor_end_x: i32
 
 tick_loose_item_test :: proc(world: ^World, records: ^Game_Records, content: Simulation_Content, ticks: int) {
 	for _ in 0 ..< ticks {
-		tick_entities(world, records, content, TEST_TICK_RATE)
+		tick_entities_on_world(world, records, content, TEST_TICK_RATE)
 	}
 }
 
@@ -279,7 +279,7 @@ test_a_dropped_stack_waits_until_its_player_leaves_the_range :: proc(t: ^testing
 	// Standing still next to the drop never takes it back.
 	for _ in 0 ..< 200 {
 		tick_player(&world, &records, content, players, 0, {}, TEST_TICK_RATE, 0)
-		tick_entities(&world, &records, content, TEST_TICK_RATE)
+		tick_entities_on_world(&world, &records, content, TEST_TICK_RATE)
 	}
 	testing.expect_value(t, len(world.entities.loose_items.items), 1)
 	// Two blocks away and back.

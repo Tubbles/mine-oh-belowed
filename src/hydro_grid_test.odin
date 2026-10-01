@@ -24,7 +24,7 @@ hydro_placement_valid :: proc(world: ^World, content: Simulation_Content, origin
 
 // The supply of the only network after one electric tick.
 network_supply_after_tick :: proc(world: ^World, records: ^Game_Records, content: Simulation_Content) -> u64 {
-	tick_electric_networks(world, records, content, TEST_TICK_RATE)
+	tick_electric_networks(world_tick_context(world, records, content, TEST_TICK_RATE))
 	return world.entities.electric_networks.networks[0].supply
 }
 
@@ -74,7 +74,7 @@ test_hydro_turbine_placement_needs_flowing_water :: proc(t: ^testing.T) {
 	pool := []World_Coordinate{{-20, 1, -20}, {-19, 1, -20}, {-20, 1, -19}, {-19, 1, -19}}
 	set_blocks(&world, test_block(content.blocks, "water"), ..pool)
 	settle_world(t, &world, content.blocks, 10_000)
-	testing.expect_value(t, flowing_water_level_sum(&world, content.blocks, pool), 0)
+	testing.expect_value(t, flowing_water_level_sum(world_tick_context(&world, nil, content, TEST_TICK_RATE), pool), 0)
 	testing.expect(t, !hydro_placement_valid(&world, content, {-20, 1, -20}))
 	// Another entity in the footprint.
 	place_test_entity(&world, content, "wooden_chest", {2, 1, 1})
@@ -430,7 +430,7 @@ test_hydro_factory_is_deterministic :: proc(t: ^testing.T) {
 		for _ in 0 ..< 1200 {
 			tick += 1
 			tick_world(&world, &all_records[index].leaf_decay, content.blocks, tick)
-			tick_entities(&world, &all_records[index], content, TEST_TICK_RATE)
+			tick_entities_on_world(&world, &all_records[index], content, TEST_TICK_RATE)
 		}
 	}
 	first, second := &worlds[0].entities, &worlds[1].entities

@@ -315,37 +315,38 @@ vein_is_exhausted :: proc(vein: Vein, infinite: bool) -> bool {
 	return true
 }
 
-exhaust_vein :: proc(world: ^World, statistics: ^Statistics, vein: ^Vein) {
+exhaust_vein :: proc(tick_context: Entity_Tick_Context, vein: ^Vein) {
 	vein.exhausted = true
-	statistics.veins_exhausted += 1
-	queue_spent_outcrops(world, vein.id)
+	tick_context.records.statistics.veins_exhausted += 1
+	queue_spent_outcrops(tick_context.outcrop_cells, tick_context.spent_outcrops, vein.id)
 }
 
 // Takes one unit from the vein. The last unit of a finite vein exhausts
 // it, and its outcrop turns to spent rock at the end of the tick.
-draw_from_vein :: proc(world: ^World, statistics: ^Statistics, veins: Vein_Content, vein: ^Vein) -> Item_Id {
-	infinite := world.settings.veins_infinite
-	return draw_vein_unit(world, statistics, veins, vein, infinite, low_grade_share_ppm(vein^, infinite))
+draw_from_vein :: proc(tick_context: Entity_Tick_Context, vein: ^Vein) -> Item_Id {
+	infinite := tick_context.settings.veins_infinite
+	return draw_vein_unit(tick_context, vein, infinite, low_grade_share_ppm(vein^, infinite))
 }
 
 // A unit of an exhausted vein through a drill's revival port: by the vein
 // type's full mix, taking nothing from it, for REVIVAL_LITRES_PER_UNIT of
 // the port's fluid. The grade stays at the depleted end share, since the
 // reservoir is spent.
-draw_revived_unit :: proc(world: ^World, statistics: ^Statistics, veins: Vein_Content, vein: ^Vein, port: ^Fluid_Buffer) -> Item_Id {
+draw_revived_unit :: proc(tick_context: Entity_Tick_Context, vein: ^Vein, port: ^Fluid_Buffer) -> Item_Id {
 	port.level -= REVIVAL_LITRES_PER_UNIT
-	return draw_vein_unit(world, statistics, veins, vein, true, LOW_GRADE_END_PPM)
+	return draw_vein_unit(tick_context, vein, true, LOW_GRADE_END_PPM)
 }
 
 // full draws by the whole mix and takes nothing from the reservoir (an
 // infinite or a revived vein). The draw count always grows, since it
 // seeds the next draw.
-draw_vein_unit :: proc(world: ^World, statistics: ^Statistics, veins: Vein_Content, vein: ^Vein, full: bool, low_grade_ppm: i64) -> Item_Id {
+draw_vein_unit :: proc(tick_context: Entity_Tick_Context, vein: ^Vein, full: bool, low_grade_ppm: i64) -> Item_Id {
+	veins := tick_context.content.veins
 	if vein.type >= len(veins.types) {
 		return NO_ITEM
 	}
 	vein_type := veins.types[vein.type]
-	draw_hash := vein_draw_hash(world.settings.seed, vein^)
+	draw_hash := vein_draw_hash(tick_context.settings.seed, vein^)
 	output := choose_vein_output(vein^, vein_type, full, draw_hash)
 	if output < 0 {
 		return NO_ITEM
@@ -355,7 +356,7 @@ draw_vein_unit :: proc(world: ^World, statistics: ^Statistics, veins: Vein_Conte
 	if !full {
 		vein.remaining[output] -= 1
 		if vein_is_exhausted(vein^, false) {
-			exhaust_vein(world, statistics, vein)
+			exhaust_vein(tick_context, vein)
 		}
 	}
 	return item
@@ -364,12 +365,12 @@ draw_vein_unit :: proc(world: ^World, statistics: ^Statistics, veins: Vein_Conte
 // Into whatever entity stands in the drop cell. Nothing there, or no room,
 // keeps the unit held. Output leaving the drill counts as produced, and
 // for a bore drill as bore drill units.
-output_drill_item :: proc(world: ^World, statistics: ^Statistics, content: Simulation_Content, drill: ^Drill, machine: Machine) -> bool {
-	target := entity_at(&world.entities, drill_drop_cell(drill^, machine))
+output_drill_item :: proc(entities: ^Entities, statistics: ^Statistics, content: Simulation_Content, drill: ^Drill, machine: Machine) -> bool {
+	target := entity_at(entities, drill_drop_cell(drill^, machine))
 	if target == NO_ENTITY {
 		return false
 	}
-	leftover := entity_insert(&world.entities, content, target, drill.held, drill_drop_lane(&world.entities, drill^, target))
+	leftover := entity_insert(entities, content, target, drill.held, drill_drop_lane(entities, drill^, target))
 	if !stack_is_empty(leftover) {
 		return false
 	}
@@ -403,14 +404,15 @@ add_productivity :: proc(drill: ^Drill, bonus_per_mille: u32) {
 // burns (or power is drawn) and progress counts only while the drill
 // works. Veins are never unregistered, so a missing vein only happens to
 // a drill placed without one, and it reads as exhausted.
-advance_drill :: proc(world: ^World, records: ^Game_Records, content: Simulation_Content, drill: ^Drill, tick_rate: int) {
+advance_drill :: proc(tick_context: Entity_Tick_Context, drill: ^Drill) {
+	entities, records, content, tick_rate := tick_context.entities, tick_context.records, tick_context.content, tick_context.tick_rate
 	machine := content.machines.machines[drill.machine]
-	if !stack_is_empty(drill.held) && !output_drill_item(world, &records.statistics, content, drill, machine) {
-		drill.state = drill_blocked_state(&world.entities, content, drill^, machine)
+	if !stack_is_empty(drill.held) && !output_drill_item(entities, &records.statistics, content, drill, machine) {
+		drill.state = drill_blocked_state(entities, content, drill^, machine)
 		return
 	}
-	vein := registered_vein(world, drill.vein)
-	activity := drill_activity(drill^, machine, vein, world.settings.veins_infinite, tick_rate)
+	vein := tick_vein(tick_context, drill.vein)
+	activity := drill_activity(drill^, machine, vein, tick_context.settings.veins_infinite, tick_rate)
 	if activity == .Vein_Exhausted {
 		drill.state = activity
 		return
@@ -427,14 +429,14 @@ advance_drill :: proc(world: ^World, records: ^Game_Records, content: Simulation
 		return
 	}
 	drill.progress_ticks = 0
-	item := activity == .Revived ? draw_revived_unit(world, &records.statistics, content.veins, vein, &drill.buffers[REVIVAL_PORT]) : draw_from_vein(world, &records.statistics, content.veins, vein)
+	item := activity == .Revived ? draw_revived_unit(tick_context, vein, &drill.buffers[REVIVAL_PORT]) : draw_from_vein(tick_context, vein)
 	if item == NO_ITEM {
 		return
 	}
 	drill.held = Item_Stack{item = item, count = 1}
 	add_productivity(drill, technology_effect_per_mille(content.technologies, records.research.levels, .Mining_Productivity))
-	if !output_drill_item(world, &records.statistics, content, drill, machine) {
-		drill.state = drill_blocked_state(&world.entities, content, drill^, machine)
+	if !output_drill_item(entities, &records.statistics, content, drill, machine) {
+		drill.state = drill_blocked_state(entities, content, drill^, machine)
 	}
 }
 

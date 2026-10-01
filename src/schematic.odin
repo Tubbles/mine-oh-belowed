@@ -47,19 +47,23 @@ schematic_for_choice :: proc(recipes: Recipe_Registry, choice: u64) -> Item_Id {
 // Crates of sites whose chunk is loaded. A site without a crate machine,
 // without schematics or with an entity in its cell is marked placed
 // without a crate, so it is not tried again.
-place_pending_crates :: proc(world: ^World, crate_sites: []Crate_Site, content: Simulation_Content) {
+place_pending_crates :: proc(tick_context: Entity_Tick_Context) {
+	content, entities := tick_context.content, tick_context.entities
 	machine := find_machine_of_kind(content.machines, .Schematic_Crate)
-	for &site in crate_sites {
-		if site.placed || world_to_chunk_coordinate(site.position) not_in world.chunks {
+	for &site in tick_context.records.crate_sites {
+		if site.placed {
+			continue
+		}
+		if _, loaded := tick_get_block(tick_context, site.position); !loaded {
 			continue
 		}
 		site.placed = true
 		schematic := schematic_for_choice(content.recipes, site.choice)
-		if machine == NO_MACHINE || schematic == NO_ITEM || site.position in world.entities.cells {
+		if machine == NO_MACHINE || schematic == NO_ITEM || site.position in entities.cells {
 			continue
 		}
-		handle := add_entity(&world.entities, content.machines, machine, site.position, 0)
-		pool_get(&world.entities.schematic_crates, handle).slots[0] = Item_Stack{item = schematic, count = 1}
+		handle := add_entity(entities, content.machines, machine, site.position, 0)
+		pool_get(&entities.schematic_crates, handle).slots[0] = Item_Stack{item = schematic, count = 1}
 	}
 }
 

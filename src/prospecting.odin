@@ -326,14 +326,13 @@ most_counted_block :: proc(counts: []u32) -> Block_Id {
 
 // The most common block of a band from top down, or not known when the
 // band reaches into an unloaded chunk.
-dominant_band_block :: proc(world: ^World, block_count: int, x, z, top: i32) -> (block: Block_Id, known: bool) {
-	counts := make([]u32, max(block_count, 1), context.temp_allocator)
+dominant_band_block :: proc(tick_context: Entity_Tick_Context, x, z, top: i32) -> (block: Block_Id, known: bool) {
+	counts := make([]u32, max(len(tick_context.content.blocks.definitions), 1), context.temp_allocator)
 	for depth in 0 ..< i32(CORE_SAMPLE_BAND_DEPTH) {
-		cell := World_Coordinate{x, top - depth, z}
-		if world_to_chunk_coordinate(cell) not_in world.chunks {
+		sampled, loaded := tick_get_block(tick_context, {x, top - depth, z})
+		if !loaded {
 			return AIR_BLOCK, false
 		}
-		sampled := world_get_block(world, cell)
 		if int(sampled) < len(counts) {
 			counts[sampled] += 1
 		}
@@ -341,19 +340,19 @@ dominant_band_block :: proc(world: ^World, block_count: int, x, z, top: i32) -> 
 	return most_counted_block(counts), true
 }
 
-take_core_sample :: proc(world: ^World, block_count: int, position: World_Coordinate) -> Core_Sample {
+take_core_sample :: proc(tick_context: Entity_Tick_Context, position: World_Coordinate) -> Core_Sample {
 	sample := Core_Sample{position = position}
 	for band in 0 ..< CORE_SAMPLE_BAND_COUNT {
 		top := position.y - 1 - i32(band) * CORE_SAMPLE_BAND_DEPTH
-		block, known := dominant_band_block(world, block_count, position.x, position.z, top)
+		block, known := dominant_band_block(tick_context, position.x, position.z, top)
 		if !known {
 			break
 		}
 		sample.bands[band] = block
 		sample.band_count += 1
 	}
-	if id, found := deep_vein_at_column(world, position.x, position.z); found {
-		vein := registered_vein(world, id)
+	if id, found := deep_vein_in_columns(tick_context.veins, tick_context.vein_indices, tick_context.column_veins, position.x, position.z); found {
+		vein := tick_vein(tick_context, id)
 		sample.vein_found, sample.vein, sample.vein_type = true, id, vein.type
 		sample.vein_depth = position.y - vein.centre.y
 	}
@@ -362,15 +361,16 @@ take_core_sample :: proc(world: ^World, block_count: int, position: World_Coordi
 
 // Works one tick per full tick of power until the sampling time is done,
 // then reports once.
-tick_core_sample_drills :: proc(world: ^World, records: ^Game_Records, content: Simulation_Content, tick_rate: int) {
-	for &drill in world.entities.core_sample_drills.entries {
+tick_core_sample_drills :: proc(tick_context: Entity_Tick_Context) {
+	records, content, tick_rate := tick_context.records, tick_context.content, tick_context.tick_rate
+	for &drill in tick_context.entities.core_sample_drills.entries {
 		if !drill.alive || !core_sample_drill_wants_power(drill) || !take_power_step(&drill.power) {
 			continue
 		}
 		drill.work_ticks += 1
 		if drill.work_ticks >= core_sample_ticks(content.machines.machines[drill.machine], tick_rate) {
 			drill.sample = i32(len(records.core_samples))
-			append(&records.core_samples, take_core_sample(world, len(content.blocks.definitions), drill.origin))
+			append(&records.core_samples, take_core_sample(tick_context, drill.origin))
 			records.statistics.core_samples_taken += 1
 		}
 	}

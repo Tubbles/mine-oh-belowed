@@ -134,7 +134,7 @@ low_grade_draw_share :: proc(content: Simulation_Content, remaining: [MAXIMUM_VE
 		vein := registered_vein(&world, id)
 		// Hold the reservoir still, so the share under test barely moves.
 		saved := vein.remaining
-		switch draw_from_vein(&world, &records.statistics, content.veins, vein) {
+		switch draw_from_vein(world_tick_context(&world, &records, content, TEST_TICK_RATE), vein) {
 		case hematite:
 			high += 1
 		case low_grade:

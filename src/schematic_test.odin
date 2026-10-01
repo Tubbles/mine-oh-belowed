@@ -134,7 +134,7 @@ load_crate_world :: proc(world: ^World, records: ^Game_Records, generator: ^Gene
 	for coordinate in chunks {
 		load_chunk_now(world, records, generator, coordinate)
 	}
-	place_pending_crates(world, records.crate_sites[:], content)
+	place_pending_crates(world_tick_context(world, records, content, TEST_TICK_RATE))
 }
 
 @(test)
@@ -253,7 +253,7 @@ test_use_item_resolution :: proc(t: ^testing.T) {
 
 	sites := [1]Crate_Site{{region = {0, 0}, position = {4, 1, 4}, choice = 3}}
 	register_crate_sites(&records.crate_sites, sites[:])
-	place_pending_crates(&world, records.crate_sites[:], content)
+	place_pending_crates(world_tick_context(&world, &records, content, TEST_TICK_RATE))
 	crate := entity_at(&world.entities, {4, 1, 4})
 	testing.expect_value(t, crate.kind, Entity_Kind.Schematic_Crate)
 	testing.expect(t, !entity_has_panel(&world.entities, crate))

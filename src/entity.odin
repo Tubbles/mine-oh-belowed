@@ -518,59 +518,62 @@ cell_blocks_movement :: proc(world: ^World, registry: Block_Registry, cell: Worl
 // assemble after the inserters fed them. Drills and inserters
 // run in pool order, which keeps two of them sharing a vein or a chest
 // deterministic. Outcrops of veins exhausted in this tick turn to spent
-// rock at the end, and crates of newly loaded cave sites appear. A
+// rock at the end, and crates of newly loaded cave sites appear. The
+// blocks go through the context's block procedures, and the lit lamps
+// reach the world's light after the tick (tick_entities_on_world). A
 // profile (tick_profile.odin) gets the wall time of each step.
-tick_entities :: proc(world: ^World, records: ^Game_Records, content: Simulation_Content, tick_rate: int, profile: ^Tick_Profile = nil) {
+tick_entities :: proc(tick_context: Entity_Tick_Context, profile: ^Tick_Profile = nil) {
+	entities, records, content, tick_rate := tick_context.entities, tick_context.records, tick_context.content, tick_context.tick_rate
 	clock := profile_now(profile)
-	tick_belt_network(&world.entities.belt_network, tick_rate, world.entities.splitters.entries[:])
-	drop_items_off_belt_ends(world, content.blocks)
+	tick_belt_network(&entities.belt_network, tick_rate, entities.splitters.entries[:])
+	drop_items_off_belt_ends(tick_context)
 	clock = profile_section(profile, .Belts, clock)
-	tick_loose_items(world, content)
+	tick_loose_items(tick_context)
 	clock = profile_section(profile, .Loose_Items, clock)
-	record_belt_dead_ends(&records.statistics, &world.entities)
+	record_belt_dead_ends(&records.statistics, entities)
 	clock = profile_section(profile, .Statistics, clock)
-	tick_electric_networks(world, records, content, tick_rate)
+	tick_electric_networks(tick_context)
 	clock = profile_section(profile, .Power, clock)
-	for &drill in world.entities.drills.entries {
+	for &drill in entities.drills.entries {
 		if drill.alive {
 			before := drill
-			advance_drill(world, records, content, &drill, tick_rate)
+			advance_drill(tick_context, &drill)
 			record_drill_tick(&records.statistics, before, drill)
 		}
 	}
 	clock = profile_section(profile, .Drills, clock)
-	for &inserter in world.entities.inserters.entries {
+	for &inserter in entities.inserters.entries {
 		if inserter.alive {
 			before := inserter
-			advance_inserter(&world.entities, content, &inserter, tick_rate)
+			advance_inserter(entities, content, &inserter, tick_rate)
 			inserter.idle_streak = next_idle_streak(before.idle_streak, inserter.state)
 			record_inserter_tick(&records.statistics, before, inserter, tick_rate)
 		}
 	}
 	clock = profile_section(profile, .Inserters, clock)
-	for &furnace in world.entities.furnaces.entries {
+	for &furnace in entities.furnaces.entries {
 		if furnace.alive {
 			before := furnace
-			furnace = advance_furnace(furnace, content.machines.machines[furnace.machine], content.items, content.recipes, tick_rate, world.settings.byproducts_lenient)
+			furnace = advance_furnace(furnace, content.machines.machines[furnace.machine], content.items, content.recipes, tick_rate, tick_context.settings.byproducts_lenient)
 			record_furnace_tick(&records.statistics, before, furnace, content.recipes)
 			grown := stack_growth(before.slots[FURNACE_OUTPUT_SLOT], furnace.slots[FURNACE_OUTPUT_SLOT])
 			record_machine_output(&furnace.output_rate, records.statistics.current_second, grown)
 		}
 	}
 	clock = profile_section(profile, .Furnaces, clock)
-	tick_assemblers(world, &records.statistics, content, tick_rate)
+	tick_assemblers(tick_context)
 	clock = profile_section(profile, .Assemblers, clock)
-	tick_labs(world, records, content, tick_rate)
+	tick_labs(tick_context)
 	clock = profile_section(profile, .Labs, clock)
-	tick_core_sample_drills(world, records, content, tick_rate)
+	tick_core_sample_drills(tick_context)
 	clock = profile_section(profile, .Core_Sample_Drills, clock)
-	tick_launch_pads(world, &records.statistics, content, tick_rate)
+	tick_launch_pads(tick_context)
 	clock = profile_section(profile, .Launch_Pads, clock)
-	tick_fluids(&world.entities, content, tick_rate, &records.statistics)
+	tick_fluids(entities, content, tick_rate, &records.statistics)
 	clock = profile_section(profile, .Fluids, clock)
-	tick_lamps(world, content.machines)
+	tick_lamps(entities)
 	clock = profile_section(profile, .Lamps, clock)
-	apply_spent_outcrops(world, content.veins)
-	place_pending_crates(world, records.crate_sites[:], content)
+	apply_spent_outcrops(tick_context)
+	place_pending_crates(tick_context)
 	profile_section(profile, .Outcrops_And_Crates, clock)
 }

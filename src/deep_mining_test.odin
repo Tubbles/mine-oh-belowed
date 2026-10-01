@@ -261,7 +261,7 @@ test_vein_revival_with_mining_fluid :: proc(t: ^testing.T) {
 	tick_with_engine_offer(&test, content, 1500, 10)
 	drill = test_drill(&test.world, test.drill)
 	testing.expect_value(t, drill.state, Drill_State.Vein_Exhausted)
-	testing.expect(t, !drill_wants_power(&test.world, drill^, test_crafting_machine(content, "electric_mining_drill"), TEST_TICK_RATE))
+	testing.expect(t, !drill_wants_power(world_tick_context(&test.world, &test.records, content, TEST_TICK_RATE), drill^, test_crafting_machine(content, "electric_mining_drill")))
 }
 
 // With infinite veins nothing is exhausted, so the port is never used.
@@ -425,7 +425,7 @@ test_revived_draws_keep_the_depleted_low_grade_share :: proc(t: ^testing.T) {
 	port := Fluid_Buffer{level = 1_000_000}
 	high, low := 0, 0
 	for _ in 0 ..< 4000 {
-		switch draw_revived_unit(&world, &records.statistics, content.veins, registered_vein(&world, id), &port) {
+		switch draw_revived_unit(world_tick_context(&world, &records, content, TEST_TICK_RATE), registered_vein(&world, id), &port) {
 		case hematite:
 			high += 1
 		case low_grade:

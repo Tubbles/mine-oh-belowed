@@ -23,7 +23,7 @@ place_powered_crafting_machine :: proc(world: ^World, content: Simulation_Conten
 
 tick_test_assemblers :: proc(world: ^World, records: ^Game_Records, content: Simulation_Content, ticks: int) {
 	for _ in 0 ..< ticks {
-		tick_assemblers(world, &records.statistics, content, TEST_TICK_RATE)
+		tick_assemblers(world_tick_context(world, records, content, TEST_TICK_RATE))
 	}
 }
 

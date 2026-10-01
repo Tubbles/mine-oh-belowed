@@ -380,10 +380,10 @@ test_belt_end_over_a_ledge_drops_and_a_level_dead_end_holds :: proc(t: ^testing.
 	testing.expect(t, belt_insert_item(&world.entities, ledge[0], .Left, plate))
 	testing.expect(t, belt_insert_item(&world.entities, ledge[0], .Right, plate))
 	testing.expect(t, belt_insert_item(&world.entities, level[0], .Left, plate))
-	cell, drops := belt_end_drop_cell(&world, content.blocks, line_of(&world, ledge[0])^)
+	cell, drops := belt_end_drop_cell(world_tick_context(&world, nil, content, TEST_TICK_RATE), line_of(&world, ledge[0])^)
 	testing.expect(t, drops)
 	testing.expect_value(t, cell, World_Coordinate{3, 1, 0})
-	_, drops = belt_end_drop_cell(&world, content.blocks, line_of(&world, level[0])^)
+	_, drops = belt_end_drop_cell(world_tick_context(&world, nil, content, TEST_TICK_RATE), line_of(&world, level[0])^)
 	testing.expect(t, !drops)
 	// 76 ticks to the end, then one falling cell per period from y 1 to
 	// the belt at y -2.

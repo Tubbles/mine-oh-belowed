@@ -290,8 +290,9 @@ advance_lab :: proc(lab: ^Lab, machine: Machine, research: ^Research_State, in_p
 	finish_research_unit(research, technologies)
 }
 
-tick_labs :: proc(world: ^World, records: ^Game_Records, content: Simulation_Content, tick_rate: int) {
-	labs := world.entities.labs.entries[:]
+tick_labs :: proc(tick_context: Entity_Tick_Context) {
+	records, content, tick_rate := tick_context.records, tick_context.content, tick_context.tick_rate
+	labs := tick_context.entities.labs.entries[:]
 	in_progress := units_in_progress(labs, records.research)
 	for &lab in labs {
 		if lab.alive {

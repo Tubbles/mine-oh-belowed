@@ -57,7 +57,7 @@ LOOSE_ITEM_SETTLE_TICKS :: 120
 run_test_decay :: proc(world: ^World, records: ^Game_Records, content: Simulation_Content, felling: Tree_Felling, ticks: int) {
 	for tick in 1 ..= ticks {
 		tick_world(world, &records.leaf_decay, content.blocks, u64(tick), felling)
-		tick_entities(world, records, content, TEST_TICK_RATE)
+		tick_entities_on_world(world, records, content, TEST_TICK_RATE)
 		if tick >= LOOSE_ITEM_SETTLE_TICKS && len(records.leaf_decay.updates) == 0 && len(records.leaf_decay.felled) == 0 {
 			return
 		}

@@ -132,29 +132,29 @@ test_turbine_counters :: proc(t: ^testing.T) {
 	turbine := place_test_entity(&world, content, "hydro_turbine", {1, 1, 0})
 	place_test_entity(&world, content, "small_pole", {1, 1, 3})
 	place_test_entity(&world, content, "lamp", {2, 1, 3})
-	tick_electric_networks(&world, &records, content, TEST_TICK_RATE)
+	tick_electric_networks(world_tick_context(&world, &records, content, TEST_TICK_RATE))
 	testing.expect_value(t, records.statistics.turbine_joules, 83)
-	tick_electric_networks(&world, &records, content, TEST_TICK_RATE)
+	tick_electric_networks(world_tick_context(&world, &records, content, TEST_TICK_RATE))
 	testing.expect_value(t, records.statistics.turbine_joules, 166)
 	cells := common_cells(test_fluid_machine(&world, turbine).common, content.machines)
 	set_water_level(&world, content, cells, 0)
 	still_ticks := TURBINE_STILL_WATER_SECONDS * TEST_TICK_RATE
 	for _ in 0 ..< still_ticks - 1 {
-		tick_electric_networks(&world, &records, content, TEST_TICK_RATE)
+		tick_electric_networks(world_tick_context(&world, &records, content, TEST_TICK_RATE))
 	}
 	testing.expect_value(t, records.statistics.turbine_still_water_ticks, 0)
 	testing.expect_value(t, records.statistics.turbine_joules, 166)
 	for _ in 0 ..< still_ticks + 1 {
-		tick_electric_networks(&world, &records, content, TEST_TICK_RATE)
+		tick_electric_networks(world_tick_context(&world, &records, content, TEST_TICK_RATE))
 	}
 	testing.expect_value(t, records.statistics.turbine_still_water_ticks, 1)
 	// Water back breaks the streak; a new one counts again.
 	set_water_level(&world, content, cells, WATER_FALLING_LEVEL)
-	tick_electric_networks(&world, &records, content, TEST_TICK_RATE)
+	tick_electric_networks(world_tick_context(&world, &records, content, TEST_TICK_RATE))
 	testing.expect_value(t, test_fluid_machine(&world, turbine).still_water_ticks, 0)
 	set_water_level(&world, content, cells, 0)
 	for _ in 0 ..< still_ticks {
-		tick_electric_networks(&world, &records, content, TEST_TICK_RATE)
+		tick_electric_networks(world_tick_context(&world, &records, content, TEST_TICK_RATE))
 	}
 	testing.expect_value(t, records.statistics.turbine_still_water_ticks, 2)
 }

@@ -47,19 +47,20 @@ loose_item_despawn_ticks :: proc(minutes: int, tick_rate: int) -> u64 {
 }
 
 // No solid block and no entity other than a belt: a stack may lie there.
-cell_holds_loose_items :: proc(world: ^World, registry: Block_Registry, cell: World_Coordinate) -> bool {
-	if block_is_solid(registry, world_get_block(world, cell)) {
+cell_holds_loose_items :: proc(tick_context: Entity_Tick_Context, cell: World_Coordinate) -> bool {
+	block, _ := tick_get_block(tick_context, cell)
+	if block_is_solid(tick_context.content.blocks, block) {
 		return false
 	}
-	handle, occupied := world.entities.cells[cell]
+	handle, occupied := tick_context.entities.cells[cell]
 	return !occupied || handle.kind == .Belt
 }
 
 // The cell itself, or the first cell above it a stack may lie in.
-first_open_cell_above :: proc(world: ^World, registry: Block_Registry, cell: World_Coordinate) -> World_Coordinate {
+first_open_cell_above :: proc(tick_context: Entity_Tick_Context, cell: World_Coordinate) -> World_Coordinate {
 	result := cell
 	for _ in 0 ..< LOOSE_ITEM_MAXIMUM_LIFT {
-		if cell_holds_loose_items(world, registry, result) {
+		if cell_holds_loose_items(tick_context, result) {
 			return result
 		}
 		result.y += 1
@@ -70,31 +71,40 @@ first_open_cell_above :: proc(world: ^World, registry: Block_Registry, cell: Wor
 // A stack moves on into the cell below while both cells are dry and the
 // one below is loaded and open. Water holds it at the surface, an
 // unloaded chunk where it is.
-loose_item_can_fall :: proc(world: ^World, registry: Block_Registry, cell: World_Coordinate) -> bool {
+loose_item_can_fall :: proc(tick_context: Entity_Tick_Context, cell: World_Coordinate) -> bool {
 	below := cell - UP
-	if world_to_chunk_coordinate(below) not_in world.chunks {
+	below_block, loaded := tick_get_block(tick_context, below)
+	if !loaded {
 		return false
 	}
-	if block_water_level(registry, world_get_block(world, cell)) > 0 || block_water_level(registry, world_get_block(world, below)) > 0 {
+	block, _ := tick_get_block(tick_context, cell)
+	registry := tick_context.content.blocks
+	if block_water_level(registry, block) > 0 || block_water_level(registry, below_block) > 0 {
 		return false
 	}
-	return cell_holds_loose_items(world, registry, below)
+	return cell_holds_loose_items(tick_context, below)
+}
+
+// spill_stack_in_context for the player's actions and felling, which still
+// hold the world.
+spill_stack :: proc(world: ^World, registry: Block_Registry, cell: World_Coordinate, stack: Item_Stack, offset := [2]i8{}) {
+	spill_stack_in_context(world_tick_context(world, nil, Simulation_Content{blocks = registry}, 0), cell, stack, offset)
 }
 
 // Puts a stack at the cell, or at the first open cell above when the cell
 // is solid or holds a machine. A stack in a belt's cell goes onto the belt
 // as the belt has room (tick_loose_items).
-spill_stack :: proc(world: ^World, registry: Block_Registry, cell: World_Coordinate, stack: Item_Stack, offset := [2]i8{}) {
+spill_stack_in_context :: proc(tick_context: Entity_Tick_Context, cell: World_Coordinate, stack: Item_Stack, offset := [2]i8{}) {
 	if stack_is_empty(stack) {
 		return
 	}
 	loose := Loose_Item {
 		item   = stack.item,
 		count  = stack.count,
-		cell   = first_open_cell_above(world, registry, cell),
+		cell   = first_open_cell_above(tick_context, cell),
 		offset = offset,
 	}
-	append(&world.entities.loose_items.items, loose)
+	append(&tick_context.entities.loose_items.items, loose)
 }
 
 // The point the stack lies at, for the lane of a belt it lands on.
@@ -116,19 +126,19 @@ put_loose_item_on_belt :: proc(entities: ^Entities, loose: ^Loose_Item, handle: 
 
 // A block or a machine put into the stack's cell pushes it up a cell per
 // tick; in a belt's cell it goes onto the belt; otherwise it falls.
-advance_loose_item :: proc(world: ^World, registry: Block_Registry, loose: ^Loose_Item) {
+advance_loose_item :: proc(tick_context: Entity_Tick_Context, loose: ^Loose_Item) {
 	loose.age_ticks += 1
-	if !cell_holds_loose_items(world, registry, loose.cell) {
+	if !cell_holds_loose_items(tick_context, loose.cell) {
 		loose.cell.y += 1
 		loose.fall_ticks = 0
 		return
 	}
-	if handle := entity_at(&world.entities, loose.cell); handle.kind == .Belt {
+	if handle := entity_at(tick_context.entities, loose.cell); handle.kind == .Belt {
 		loose.fall_ticks = 0
-		put_loose_item_on_belt(&world.entities, loose, handle)
+		put_loose_item_on_belt(tick_context.entities, loose, handle)
 		return
 	}
-	if !loose_item_can_fall(world, registry, loose.cell) {
+	if !loose_item_can_fall(tick_context, loose.cell) {
 		loose.fall_ticks = 0
 		return
 	}
@@ -189,12 +199,12 @@ remove_spent_loose_items :: proc(loose_items: ^Loose_Items) {
 
 // After the belts, so a stack that fell off a belt end this tick starts
 // falling at once.
-tick_loose_items :: proc(world: ^World, content: Simulation_Content) {
-	loose_items := &world.entities.loose_items
+tick_loose_items :: proc(tick_context: Entity_Tick_Context) {
+	loose_items := &tick_context.entities.loose_items
 	for &loose in loose_items.items {
-		advance_loose_item(world, content.blocks, &loose)
+		advance_loose_item(tick_context, &loose)
 	}
-	merge_loose_items(loose_items.items[:], content.items)
+	merge_loose_items(loose_items.items[:], tick_context.content.items)
 	remove_spent_loose_items(loose_items)
 }
 

@@ -52,7 +52,7 @@ tick_launch_pad_test :: proc(test: ^Launch_Pad_Test, ticks: int) {
 		for &buffer in test_fluid_machine(&test.world, test.engine).buffers[:2] {
 			buffer = {fluid = steam, level = 200}
 		}
-		tick_entities(&test.world, &test.records, test.content, TEST_TICK_RATE)
+		tick_entities_on_world(&test.world, &test.records, test.content, TEST_TICK_RATE)
 	}
 }
 

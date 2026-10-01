@@ -213,7 +213,7 @@ test_core_sample_reports_strata_and_deep_vein :: proc(t: ^testing.T) {
 		world_set_block(&world, {3, y, 3}, sand)
 	}
 	vein := add_test_deep_vein(&world, content, "deep_iron", {4, 4}, 3, {50_000, 5_000, 0, 0})
-	sample := take_core_sample(&world, len(content.blocks.definitions), {3, 1, 3})
+	sample := take_core_sample(world_tick_context(&world, nil, content, TEST_TICK_RATE), {3, 1, 3})
 	testing.expect_value(t, sample.band_count, 2)
 	testing.expect_value(t, sample.bands[0], dirt)
 	testing.expect_value(t, sample.bands[1], sand)
@@ -221,7 +221,7 @@ test_core_sample_reports_strata_and_deep_vein :: proc(t: ^testing.T) {
 	testing.expect_value(t, sample.vein, vein)
 	testing.expect_value(t, sample.vein_type, test_vein_type(content, "deep_iron"))
 	testing.expect_value(t, sample.vein_depth, 61)
-	outside := take_core_sample(&world, len(content.blocks.definitions), {-20, 1, -20})
+	outside := take_core_sample(world_tick_context(&world, nil, content, TEST_TICK_RATE), {-20, 1, -20})
 	testing.expect(t, !outside.vein_found)
 }
 
@@ -238,17 +238,17 @@ test_core_sample_drill_reports_after_sampling_time :: proc(t: ^testing.T) {
 	testing.expect(t, entity_network(&world.entities.electric_networks, handle) >= 0)
 	sampling := int(core_sample_ticks(content.machines.machines[test_machine(content.machines, "core_sample_drill")], TEST_TICK_RATE))
 	for _ in 0 ..< sampling - 1 {
-		tick_entities(&world, &records, content, TEST_TICK_RATE)
+		tick_entities_on_world(&world, &records, content, TEST_TICK_RATE)
 	}
 	testing.expect_value(t, len(records.core_samples), 0)
-	tick_entities(&world, &records, content, TEST_TICK_RATE)
+	tick_entities_on_world(&world, &records, content, TEST_TICK_RATE)
 	drill := pool_get(&world.entities.core_sample_drills, handle)
 	testing.expect_value(t, drill.sample, 0)
 	testing.expect_value(t, len(records.core_samples), 1)
 	testing.expect_value(t, records.core_samples[0].position, World_Coordinate{4, 1, 0})
 	testing.expect_value(t, records.statistics.core_samples_taken, 1)
 	// Done, it asks for no more power and reports no more.
-	tick_entities(&world, &records, content, TEST_TICK_RATE)
+	tick_entities_on_world(&world, &records, content, TEST_TICK_RATE)
 	testing.expect_value(t, len(records.core_samples), 1)
 	testing.expect(t, remove_entity(&world.entities, content.machines, handle))
 	again := pool_get(&world.entities.core_sample_drills, place_test_entity(&world, content, "core_sample_drill", {4, 1, 1}))

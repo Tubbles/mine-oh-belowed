@@ -302,10 +302,10 @@ advance_launch_pad :: proc(pad: ^Launch_Pad, machine: Machine, statistics: ^Stat
 	}
 }
 
-tick_launch_pads :: proc(world: ^World, statistics: ^Statistics, content: Simulation_Content, tick_rate: int) {
-	for &pad in world.entities.launch_pads.entries {
+tick_launch_pads :: proc(tick_context: Entity_Tick_Context) {
+	for &pad in tick_context.entities.launch_pads.entries {
 		if pad.alive {
-			advance_launch_pad(&pad, content.machines.machines[pad.machine], statistics, tick_rate)
+			advance_launch_pad(&pad, tick_context.content.machines.machines[pad.machine], &tick_context.records.statistics, tick_context.tick_rate)
 		}
 	}
 }

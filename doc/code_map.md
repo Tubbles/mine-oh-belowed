@@ -129,10 +129,10 @@ The world owns blocks and what is derived from blocks; generation is a pure func
 
 The factory: what changes per tick; blocks belong to the world, prototypes to content.
 
-- Entry: `entity.odin`, `tick_entities` (called by `simulation_tick` in `simulation_world.odin`).
+- Entry: `entity.odin`, `tick_entities` (called through `tick_entities_on_world` by `simulation_tick` in `simulation_world.odin`).
 - Files in reading order:
   - `simulation_state.odin`: `Simulation_State`, `Game_Records` (the game's records beside the world), `Simulation_Event`, `make_simulation` with `place_capsule`, `destroy_simulation` and `destroy_game_records`, `simulation_day_ticks`.
-  - `simulation_world.odin`: `Simulation_Content`, `simulation_tick`, `apply_research_result`, `simulation_quest_context`.
+  - `simulation_world.odin`: `Simulation_Content`, `Entity_Tick_Context` with its block procedures, `simulation_tick`, `apply_research_result`, `simulation_quest_context`.
   - `entity.odin`: `Entity_Kind`, `Entity_Handle`, `Entity_Common`, `Entity_Pool`, `Entities`, add and remove, `tick_entities`.
   - `entity_placement.odin`: placement rules, `commit_placement`, rotation, pick up.
   - `machine.odin`: `Machine_Kind`, `Machine`, `Machine_Registry` and per kind validation.

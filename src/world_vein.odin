@@ -107,8 +107,13 @@ vein_is_deep :: proc(vein: Vein) -> bool {
 // The registered deep vein whose disc holds the column (the first in
 // placement order), for a bore drill standing over it.
 deep_vein_at_column :: proc(world: ^World, x, z: i32) -> (id: Vein_Id, found: bool) {
+	return deep_vein_in_columns(world.veins[:], world.vein_indices, world.column_veins, x, z)
+}
+
+deep_vein_in_columns :: proc(veins: []Vein, vein_indices: map[Vein_Id]int, column_veins: map[Chunk_Column][dynamic]Vein_Id, x, z: i32) -> (id: Vein_Id, found: bool) {
 	column := chunk_column_of(world_to_chunk_coordinate({x, 0, z}))
-	for vein in veins_of_column(world, column, context.temp_allocator) {
+	for vein_id in column_veins[column] or_else nil {
+		vein := veins[vein_indices[vein_id]]
 		if vein_is_deep(vein) && column_in_disc(vein.centre, vein.radius, x, z) {
 			return vein.id, true
 		}
@@ -131,8 +136,12 @@ vein_at_column :: proc(world: ^World, x, z: i32) -> (id: Vein_Id, found: bool) {
 
 // Nil for an id no chunk registered. Valid until the next vein registers.
 registered_vein :: proc(world: ^World, id: Vein_Id) -> ^Vein {
-	index, found := world.vein_indices[id]
-	return found ? &world.veins[index] : nil
+	return vein_of_id(world.veins[:], world.vein_indices, id)
+}
+
+vein_of_id :: proc(veins: []Vein, vein_indices: map[Vein_Id]int, id: Vein_Id) -> ^Vein {
+	index, found := vein_indices[id]
+	return found ? &veins[index] : nil
 }
 
 // False as well for a vein type the content does not have.
@@ -217,26 +226,14 @@ register_outcrop_cells :: proc(world: ^World, cells: []Outcrop_Cell) {
 // chunk is gone drop out in apply_spent_outcrops and come back through
 // register_outcrop_cells when the chunk loads again. Queued in coordinate
 // order, since map order differs between a world and its loaded save.
-queue_spent_outcrops :: proc(world: ^World, id: Vein_Id) {
-	first := len(world.spent_outcrops)
-	for position, vein in world.outcrop_cells {
+queue_spent_outcrops :: proc(outcrop_cells: map[World_Coordinate]Vein_Id, spent_outcrops: ^[dynamic]World_Coordinate, id: Vein_Id) {
+	first := len(spent_outcrops^)
+	for position, vein in outcrop_cells {
 		if vein == id {
-			append(&world.spent_outcrops, position)
+			append(spent_outcrops, position)
 		}
 	}
-	slice.sort_by(world.spent_outcrops[first:], coordinate_before)
-}
-
-// Through world_set_block, so light and remeshing follow. A cell the
-// player mined or built over keeps its block.
-apply_spent_outcrops :: proc(world: ^World, veins: Vein_Content) {
-	for position in world.spent_outcrops {
-		vein := registered_vein(world, world.outcrop_cells[position])
-		if vein != nil && vein_block_is_outcrop(veins, vein^, world_get_block(world, position)) {
-			world_set_block(world, position, veins.spent_block)
-		}
-	}
-	clear(&world.spent_outcrops)
+	slice.sort_by(spent_outcrops^[first:], coordinate_before)
 }
 
 // Added veins (work item 0053): the developer command `vein` puts a new
