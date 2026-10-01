@@ -574,3 +574,18 @@ load_configuration :: proc(environment: Configuration_Environment, assignments: 
 	loaded.configuration.paths.saves = expand_home(loaded.configuration.paths.saves, environment.home, allocator)
 	return loaded, ""
 }
+
+store_unsigned :: proc(pointer: rawptr, size: int, value: u64) {
+	switch size {
+	case 1:
+		(^u8)(pointer)^ = u8(value)
+	case 2:
+		(^u16)(pointer)^ = u16(value)
+	case 4:
+		(^u32)(pointer)^ = u32(value)
+	case 8:
+		(^u64)(pointer)^ = value
+	case:
+		panic("save: unsupported integer size")
+	}
+}

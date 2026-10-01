@@ -82,28 +82,17 @@ launch_pad_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, pad: ^Launc
 	machine_bar(state, cut_top(&content, UI_ROW_HEIGHT), launch_pad_progress(pad^, machine, screen_context.tick_rate))
 	detail_line(state, &content, launch_pad_state_text(pad), UI_DIM_TEXT_COLOR)
 	statistics := &screen_context.world.statistics
-	if ui_button(state, choice_row(&content), text("launch_pad_assemble")) {
+	if ui_button(state, cut_row(&content), text("launch_pad_assemble")) {
 		record_launch_refusal(statistics, assembly_refusal(pad^, machine))
 		start_assembly(pad, machine)
 	}
-	if ui_button(state, choice_row(&content), text("launch_pad_launch")) {
+	if ui_button(state, cut_row(&content), text("launch_pad_launch")) {
 		record_launch_refusal(statistics, launch_refusal(pad, machine))
 		request_launch(&screen_context.world.entities, pad.handle)
 	}
 	power_line := power_status_line(&screen_context.world.entities.electric_networks, pad.handle)
 	detail_line(state, &content, power_line, UI_DIM_TEXT_COLOR)
 	return result
-}
-
-// "Iron plate 50, Steel 20"
-shipment_cargo_text :: proc(shipment: Shipment, items: Item_Registry) -> string {
-	line := ""
-	for index in 0 ..< int(shipment.cargo_count) {
-		shipped := shipment.cargo[index]
-		separator := index == 0 ? "" : ", "
-		line = fmt.tprintf("%s%s%s %d", line, separator, item_name(items, shipped.item), shipped.count)
-	}
-	return line
 }
 
 // "12:05  Iron plate 50, Steel 20"

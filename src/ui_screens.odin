@@ -270,10 +270,6 @@ close_slot_screens :: proc(state: ^Ui_State, player: ^Player, items: Item_Regist
 	}
 }
 
-panel_height :: proc(row_count: int, extra: f32) -> f32 {
-	return f32(row_count) * (UI_ROW_HEIGHT + UI_GAP) + extra + 2 * UI_PADDING
-}
-
 pause_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	ui_backdrop(state)
 	area := ui_panel_area(state)
@@ -399,44 +395,38 @@ settings_rows_height :: proc(row_count: int) -> f32 {
 	return f32(row_count) * (UI_ROW_HEIGHT + UI_GAP)
 }
 
-settings_row :: proc(content: ^Ui_Rectangle) -> Ui_Rectangle {
-	row := cut_top(content, UI_ROW_HEIGHT)
-	cut_top(content, UI_GAP)
-	return row
-}
-
 display_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Settings, monitor_size: [2]int, desktop_scaled: bool, font_families: []Font_Family) {
 	window_settings(state, content, settings, monitor_size, desktop_scaled)
 	camera_settings(state, content, settings)
-	ui_toggle(state, settings_row(content), text("settings_weather"), &settings.weather, text("settings_weather_tooltip"))
-	ui_toggle(state, settings_row(content), text("settings_head_bob"), &settings.head_bob, text("settings_head_bob_tooltip"))
+	ui_toggle(state, cut_row(content), text("settings_weather"), &settings.weather, text("settings_weather_tooltip"))
+	ui_toggle(state, cut_row(content), text("settings_head_bob"), &settings.head_bob, text("settings_head_bob_tooltip"))
 	// Applied on the release of a drag (ui_layout_slider), since it
 	// changes the layout under the finger.
-	ui_layout_slider(state, settings_row(content), text("settings_ui_scale"), &settings.ui_scale, UI_SCALE_RANGE, multiplier_text, text("settings_ui_scale_tooltip"))
+	ui_layout_slider(state, cut_row(content), text("settings_ui_scale"), &settings.ui_scale, UI_SCALE_RANGE, multiplier_text, text("settings_ui_scale_tooltip"))
 	ui_slider(
 		state,
-		settings_row(content),
+		cut_row(content),
 		text("settings_pointer_speed"),
 		&settings.pointer_speed,
 		POINTER_SPEED_RANGE,
 		multiplier_text(settings.pointer_speed),
 		text("settings_pointer_speed_tooltip"),
 	)
-	ui_toggle(state, settings_row(content), text("settings_bottleneck_overlay"), &settings.bottleneck_overlay, text("settings_bottleneck_overlay_tooltip"))
+	ui_toggle(state, cut_row(content), text("settings_bottleneck_overlay"), &settings.bottleneck_overlay, text("settings_bottleneck_overlay_tooltip"))
 	autosave := f32(settings.autosave_minutes)
-	if ui_slider(state, settings_row(content), text("settings_autosave"), &autosave, AUTOSAVE_MINUTES_RANGE, autosave_minutes_text(settings.autosave_minutes), text("settings_autosave_tooltip")) {
+	if ui_slider(state, cut_row(content), text("settings_autosave"), &autosave, AUTOSAVE_MINUTES_RANGE, autosave_minutes_text(settings.autosave_minutes), text("settings_autosave_tooltip")) {
 		settings.autosave_minutes = int(math.round(autosave))
 	}
-	ui_toggle(state, settings_row(content), text("settings_developer_mode"), &settings.developer_mode, text("settings_developer_mode_tooltip"))
-	font_choice(state, settings_row(content), "settings_font", &settings.font, font_families, false)
-	font_choice(state, settings_row(content), "settings_monospace_font", &settings.monospace_font, font_families, true)
+	ui_toggle(state, cut_row(content), text("settings_developer_mode"), &settings.developer_mode, text("settings_developer_mode_tooltip"))
+	font_choice(state, cut_row(content), "settings_font", &settings.font, font_families, false)
+	font_choice(state, cut_row(content), "settings_monospace_font", &settings.monospace_font, font_families, true)
 }
 
 // Applied at once: the mixer reads the volumes every frame (update_audio).
 audio_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Settings) {
-	ui_slider(state, settings_row(content), text("settings_master_volume"), &settings.master_volume, VOLUME_RANGE, volume_text(settings.master_volume), text("settings_master_volume_tooltip"))
-	ui_slider(state, settings_row(content), text("settings_effects_volume"), &settings.effects_volume, VOLUME_RANGE, volume_text(settings.effects_volume), text("settings_effects_volume_tooltip"))
-	ui_slider(state, settings_row(content), text("settings_ambience_volume"), &settings.ambience_volume, VOLUME_RANGE, volume_text(settings.ambience_volume), text("settings_ambience_volume_tooltip"))
+	ui_slider(state, cut_row(content), text("settings_master_volume"), &settings.master_volume, VOLUME_RANGE, volume_text(settings.master_volume), text("settings_master_volume_tooltip"))
+	ui_slider(state, cut_row(content), text("settings_effects_volume"), &settings.effects_volume, VOLUME_RANGE, volume_text(settings.effects_volume), text("settings_effects_volume_tooltip"))
+	ui_slider(state, cut_row(content), text("settings_ambience_volume"), &settings.ambience_volume, VOLUME_RANGE, volume_text(settings.ambience_volume), text("settings_ambience_volume_tooltip"))
 }
 
 // A volume as a whole percentage.
@@ -448,13 +438,13 @@ volume_text :: proc(volume: f32) -> string {
 // (update_display) after this frame.
 window_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Settings, monitor_size: [2]int, desktop_scaled: bool) {
 	mode_text := text(window_mode_keys[settings.window_mode])
-	if ui_choice(state, settings_row(content), text("settings_window_mode"), mode_text, text("settings_window_mode_tooltip")) {
+	if ui_choice(state, cut_row(content), text("settings_window_mode"), mode_text, text("settings_window_mode_tooltip")) {
 		settings.window_mode = next_window_mode(settings.window_mode)
 	}
-	resolution_choice(state, settings_row(content), settings, monitor_size, desktop_scaled)
-	ui_toggle(state, settings_row(content), text("settings_vsync"), &settings.vsync, text("settings_vsync_tooltip"))
+	resolution_choice(state, cut_row(content), settings, monitor_size, desktop_scaled)
+	ui_toggle(state, cut_row(content), text("settings_vsync"), &settings.vsync, text("settings_vsync_tooltip"))
 	cap_text := frame_rate_cap_text(settings.frame_rate_cap)
-	if ui_choice(state, settings_row(content), text("settings_frame_rate_cap"), cap_text, text("settings_frame_rate_cap_tooltip")) {
+	if ui_choice(state, cut_row(content), text("settings_frame_rate_cap"), cap_text, text("settings_frame_rate_cap_tooltip")) {
 		settings.frame_rate_cap = next_frame_rate_cap(settings.frame_rate_cap)
 	}
 }
@@ -464,7 +454,7 @@ window_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Set
 camera_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Settings) {
 	ui_slider(
 		state,
-		settings_row(content),
+		cut_row(content),
 		text("settings_field_of_view"),
 		&settings.field_of_view,
 		FIELD_OF_VIEW_RANGE,
@@ -473,7 +463,7 @@ camera_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Set
 	)
 	ui_slider(
 		state,
-		settings_row(content),
+		cut_row(content),
 		text("settings_sprint_field_of_view_kick"),
 		&settings.sprint_field_of_view_kick,
 		SPRINT_FIELD_OF_VIEW_KICK_RANGE,
@@ -482,7 +472,7 @@ camera_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Set
 	)
 	ui_slider(
 		state,
-		settings_row(content),
+		cut_row(content),
 		text("settings_third_person_distance"),
 		&settings.third_person_distance,
 		THIRD_PERSON_DISTANCE_RANGE,
@@ -491,7 +481,7 @@ camera_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Set
 	)
 	ui_slider(
 		state,
-		settings_row(content),
+		cut_row(content),
 		text("settings_third_person_shoulder"),
 		&settings.third_person_shoulder,
 		THIRD_PERSON_SHOULDER_RANGE,
@@ -576,15 +566,15 @@ autosave_minutes_text :: proc(minutes: int) -> string {
 }
 
 control_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Settings) {
-	ui_toggle(state, settings_row(content), text("settings_gyro"), &settings.gyro_enabled, text("settings_gyro_tooltip"))
+	ui_toggle(state, cut_row(content), text("settings_gyro"), &settings.gyro_enabled, text("settings_gyro_tooltip"))
 	sensitivity_slider(state, content, "settings_stick_sensitivity", &settings.stick_look_sensitivity)
 	sensitivity_slider(state, content, "settings_gyro_sensitivity", &settings.gyro_look_sensitivity)
 	sensitivity_slider(state, content, "settings_trackpad_sensitivity", &settings.trackpad_look_sensitivity)
-	ui_toggle(state, settings_row(content), text("settings_invert_pitch"), &settings.invert_pitch, text("settings_invert_pitch_tooltip"))
+	ui_toggle(state, cut_row(content), text("settings_invert_pitch"), &settings.invert_pitch, text("settings_invert_pitch_tooltip"))
 }
 
 sensitivity_slider :: proc(state: ^Ui_State, content: ^Ui_Rectangle, key: string, value: ^f32) {
-	ui_slider(state, settings_row(content), text(key), value, LOOK_SENSITIVITY_RANGE, multiplier_text(value^), text("settings_sensitivity_tooltip"))
+	ui_slider(state, cut_row(content), text(key), value, LOOK_SENSITIVITY_RANGE, multiplier_text(value^), text("settings_sensitivity_tooltip"))
 }
 
 // Applied at once: the frame loop reads them each frame (ui_begin, the
@@ -592,20 +582,20 @@ sensitivity_slider :: proc(state: ^Ui_State, content: ^Ui_Rectangle, key: string
 // (apply_hold_settings).
 accessibility_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Settings, screen_context: Screen_Context) {
 	// Applied on the release of a drag, like the UI scale.
-	ui_layout_slider(state, settings_row(content), text("settings_text_scale"), &settings.text_scale, TEXT_SCALE_RANGE, multiplier_text, text("settings_text_scale_tooltip"))
-	if ui_choice(state, settings_row(content), text("settings_palette"), text(palette_keys[settings.palette]), text("settings_palette_tooltip")) {
+	ui_layout_slider(state, cut_row(content), text("settings_text_scale"), &settings.text_scale, TEXT_SCALE_RANGE, multiplier_text, text("settings_text_scale_tooltip"))
+	if ui_choice(state, cut_row(content), text("settings_palette"), text(palette_keys[settings.palette]), text("settings_palette_tooltip")) {
 		settings.palette = settings.palette == .Default ? .Colour_Blind : .Default
 	}
-	ui_toggle(state, settings_row(content), text("settings_reduced_motion"), &settings.reduced_motion, text("settings_reduced_motion_tooltip"))
-	hold_mode_choice(state, settings_row(content), "settings_sneak_hold", &settings.sneak_hold)
-	hold_mode_choice(state, settings_row(content), "settings_sprint_hold", &settings.sprint_hold)
-	if ui_choice(state, settings_row(content), text("settings_touch_overlay"), text(touch_overlay_mode_keys[settings.touch_overlay]), text("settings_touch_overlay_tooltip")) {
+	ui_toggle(state, cut_row(content), text("settings_reduced_motion"), &settings.reduced_motion, text("settings_reduced_motion_tooltip"))
+	hold_mode_choice(state, cut_row(content), "settings_sneak_hold", &settings.sneak_hold)
+	hold_mode_choice(state, cut_row(content), "settings_sprint_hold", &settings.sprint_hold)
+	if ui_choice(state, cut_row(content), text("settings_touch_overlay"), text(touch_overlay_mode_keys[settings.touch_overlay]), text("settings_touch_overlay_tooltip")) {
 		settings.touch_overlay = next_touch_overlay_mode(settings.touch_overlay)
 	}
-	if ui_choice(state, settings_row(content), text("settings_touch_interaction"), text(touch_interaction_keys[settings.touch_interaction]), text("settings_touch_interaction_tooltip")) {
+	if ui_choice(state, cut_row(content), text("settings_touch_interaction"), text(touch_interaction_keys[settings.touch_interaction]), text("settings_touch_interaction_tooltip")) {
 		settings.touch_interaction = settings.touch_interaction == .Tap ? .Crosshair : .Tap
 	}
-	if ui_choice(state, settings_row(content), text("settings_on_screen_keyboard"), text(on_screen_keyboard_keys[settings.on_screen_keyboard]), text("settings_on_screen_keyboard_tooltip")) {
+	if ui_choice(state, cut_row(content), text("settings_on_screen_keyboard"), text(on_screen_keyboard_keys[settings.on_screen_keyboard]), text("settings_on_screen_keyboard_tooltip")) {
 		settings.on_screen_keyboard = settings.on_screen_keyboard == .System ? .Game : .System
 	}
 	touch_layout_rows(state, content, screen_context)
@@ -628,10 +618,10 @@ step_touch_layout_selection :: proc(state: ^Ui_State, layouts: ^Touch_Layouts) {
 touch_layout_rows :: proc(state: ^Ui_State, content: ^Ui_Rectangle, screen_context: Screen_Context) {
 	layouts := screen_context.touch_layouts
 	name := layouts != nil ? selected_touch_layout_name(layouts^) : DEFAULT_TOUCH_LAYOUT_NAME
-	if ui_choice(state, settings_row(content), text("settings_touch_layout"), touch_layout_display_name(name), text("settings_touch_layout_tooltip")) && layouts != nil {
+	if ui_choice(state, cut_row(content), text("settings_touch_layout"), touch_layout_display_name(name), text("settings_touch_layout_tooltip")) && layouts != nil {
 		step_touch_layout_selection(state, layouts)
 	}
-	if ui_button(state, settings_row(content), text("settings_edit_touch_layout"), text("settings_edit_touch_layout_tooltip")) && layouts != nil && screen_context.touch_layout_editor != nil {
+	if ui_button(state, cut_row(content), text("settings_edit_touch_layout"), text("settings_edit_touch_layout_tooltip")) && layouts != nil && screen_context.touch_layout_editor != nil {
 		open_touch_layout_editor(state, screen_context.touch_layout_editor, layouts^, screen_context.default_touch_layout)
 	}
 }

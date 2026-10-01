@@ -92,7 +92,7 @@ technology_list :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Sc
 technology_status_column :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context) {
 	content := area
 	browser := screen_context.technology_browser
-	ui_toggle(state, settings_row(&content), text("technologies_hide_researched"), &browser.filter.hide_researched)
+	ui_toggle(state, cut_row(&content), text("technologies_hide_researched"), &browser.filter.hide_researched)
 	detail_line(state, &content, text("technologies_queued"), UI_DIM_TEXT_COLOR)
 	research := screen_context.world.research
 	if !research.queued {

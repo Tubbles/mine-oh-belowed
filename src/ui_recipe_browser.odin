@@ -1,7 +1,6 @@
 package game
 
 import "core:unicode"
-import "core:unicode/utf8"
 
 // The pure part of the recipe browser: filtering, the letter jump and what
 // the detail panel may show. ui_recipes.odin draws it.
@@ -70,14 +69,6 @@ category_tags :: proc(recipes: Recipe_Registry, category: Recipe_Category) -> Re
 		}
 	}
 	return tags
-}
-
-first_letter :: proc(name: string) -> rune {
-	if len(name) == 0 {
-		return 0
-	}
-	letter, _ := utf8.decode_rune_in_string(name)
-	return unicode.to_lower(letter)
 }
 
 // Position in the visible list of the first recipe whose name starts with

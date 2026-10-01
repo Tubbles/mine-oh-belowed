@@ -315,10 +315,10 @@ texture_editor_controls :: proc(state: ^Ui_State, area: Ui_Rectangle, editor: ^T
 	draw_image(state, preview, editor.preview, {TEXTURE_EDITOR_PREVIEW_WIDTH, TEXTURE_EDITOR_PREVIEW_HEIGHT}, editor.revision)
 	region, rows := scroll_region_begin(state, "texture_controls", content, f32(TEXTURE_EDITOR_CONTROL_ROWS) * (UI_ROW_HEIGHT + UI_GAP))
 	entry := &editor.entries[editor.selected]
-	changed := texture_seed_row(state, developer_row(&rows), &entry.parameters, screen_context.tick)
+	changed := texture_seed_row(state, cut_row(&rows), &entry.parameters, screen_context.tick)
 	for parameter in Ore_Texture_Parameter {
 		if parameter != .Seed {
-			changed |= texture_parameter_slider(state, developer_row(&rows), &entry.parameters, parameter)
+			changed |= texture_parameter_slider(state, cut_row(&rows), &entry.parameters, parameter)
 		}
 	}
 	scroll_region_end(state, region)
@@ -331,11 +331,11 @@ texture_editor_controls :: proc(state: ^Ui_State, area: Ui_Rectangle, editor: ^T
 // seed stepper.
 texture_seed_row :: proc(state: ^Ui_State, row: Ui_Rectangle, parameters: ^Ore_Texture_Parameters, tick: u64) -> bool {
 	seed := parameters.seed
-	if ui_button(state, column(row, 3, 0, UI_GAP), text("texture_editor_reroll")) {
+	if ui_button(state, column_rectangle(row, 3, 0, UI_GAP), text("texture_editor_reroll")) {
 		seed = reroll_texture_seed(tick, seed)
 	}
 	stepper := row
-	cut_left(&stepper, column(row, 3, 0, UI_GAP).width + UI_GAP)
+	cut_left(&stepper, column_rectangle(row, 3, 0, UI_GAP).width + UI_GAP)
 	seed_text := format_texture_parameter_value(ore_texture_parameter_ranges[.Seed], f64(seed))
 	seed = step_texture_seed(seed, ui_stepper(state, stepper, text(ore_texture_parameter_label_keys[.Seed]), seed_text))
 	changed := seed != parameters.seed
@@ -362,7 +362,7 @@ texture_parameter_slider :: proc(state: ^Ui_State, row: Ui_Rectangle, parameters
 texture_editor_buttons :: proc(state: ^Ui_State, area: Ui_Rectangle, editor: ^Texture_Editor, blocks: Block_Registry, editable: bool) {
 	rows := area
 	cut_top(&rows, UI_GAP)
-	reset, save := developer_row(&rows), developer_row(&rows)
+	reset, save := cut_row(&rows), cut_row(&rows)
 	if editable && ui_button(state, reset, text("texture_editor_reset")) {
 		editor.entries[editor.selected].parameters = editor.entries[editor.selected].defaults
 		apply_texture_editor_change(editor, blocks)

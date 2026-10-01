@@ -1,6 +1,6 @@
 # Code map
 
-The entry page for the source: 197 files under `src/` plus 138 test files beside them. 179 are the `game` package, grouped into seven clusters; 18 are seven leaf packages under `src/` (section Packages), each a cluster named after its directory. Read the cluster table, pick a cluster, open its entry file; the section of each cluster lists its files in reading order. How the parts work is in [architecture.md](architecture.md), the why of the clusters in the audits under [audit/](audit/).
+The entry page for the source: 199 files under `src/` plus 139 test files beside them. 181 are the `game` package, grouped into seven clusters; 18 are seven leaf packages under `src/` (section Packages), each a cluster named after its directory. Read the cluster table, pick a cluster, open its entry file; the section of each cluster lists its files in reading order. How the parts work is in [architecture.md](architecture.md), the why of the clusters in the audits under [audit/](audit/).
 
 - Rule: a new file goes into a cluster and takes one of its file name prefixes (or a line in the file table of `tools/code_graph.py`); a reference against the allowed dependency table below is a finding until it is refactored away.
 - The map is kept true by two checks: `python3 tools/check_docs.py` checks every backticked file and name in it, and `python3 tools/code_graph.py --check doc/code_map.md` compares every cluster edge the allowed table does not allow with the map's record of it ([build.md](build.md), Source checks).
@@ -11,13 +11,13 @@ The entry page for the source: 197 files under `src/` plus 138 test files beside
 
 | Cluster | Purpose | Entry | Files | Lines | Audit |
 |---|---|---|---|---|---|
-| loop | the process: start-up, the frame, when the tick runs, sessions, the requests served between frames | `loop.odin` | 5 | 2585 | [loop](audit/loop.md) |
-| ui | the input layer, the immediate mode toolkit, every screen, the HUD and the touch overlay | `ui_core.odin` | 46 | 16999 | [ui](audit/ui.md) |
-| world | blocks and what follows a block: chunks, light, water, meshing, streaming, generation, the save codec | `world_chunk.odin` | 34 | 9628 | [world](audit/world.md) |
-| simulation | the factory per tick: entity pools, networks, players, inventories, crafting, statistics, the game's records | `entity.odin` | 40 | 15386 | [simulation](audit/simulation.md) |
+| loop | the process: start-up, the frame, when the tick runs, sessions, the requests served between frames | `loop.odin` | 5 | 2586 | [loop](audit/loop.md) |
+| ui | the input layer, the immediate mode toolkit, every screen, the HUD and the touch overlay | `ui_core.odin` | 48 | 16981 | [ui](audit/ui.md) |
+| world | blocks and what follows a block: chunks, light, water, meshing, streaming, generation, the save codec | `world_chunk.odin` | 34 | 9613 | [world](audit/world.md) |
+| simulation | the factory per tick: entity pools, networks, players, inventories, crafting, statistics, the game's records | `entity.odin` | 40 | 15407 | [simulation](audit/simulation.md) |
 | presentation | pixels and sound from the world and the tick: shaders, atlases, models, sky, weather, particles, audio, the window | `render_chunks.odin` | 31 | 8388 | [presentation](audit/presentation.md) |
-| content | data files into typed tables, the string table, configuration and settings | `data_reload.odin` | 15 | 4962 | [content](audit/content.md) |
-| tools | the command socket, the diagnostics pages, the Data files browser and export, the factory benchmark | `command.odin` | 8 | 3884 | [loop](audit/loop.md), [content](audit/content.md) |
+| content | data files into typed tables, the string table, configuration and settings | `data_reload.odin` | 15 | 4977 | [content](audit/content.md) |
+| tools | the command socket, the diagnostics pages, the Data files browser and export, the factory benchmark | `command.odin` | 8 | 3880 | [loop](audit/loop.md), [content](audit/content.md) |
 | platform | the package `src/platform/`: logging, paths, the time zone, JNI, the export's file access | `logging.odin` | 12 | 975 | [content](audit/content.md) |
 | generation_seed | the package `src/generation_seed/`: purpose seeds and the integer hashes | `generation_seed.odin` | 1 | 74 | [world](audit/world.md) |
 | model_vox | the package `src/model_vox/`: the MagicaVoxel parser | `model_vox.odin` | 1 | 283 | [presentation](audit/presentation.md) |
@@ -49,7 +49,7 @@ Rule: a cluster references only the clusters of its row. The pilot split (0145) 
 
 - The packages sit where the platform cluster sat: every game cluster may reference them, and they reference only the packages of their row (`platform` imports `android_libc` for the link alone, `model_vox` names `platform.join_path`).
 - The order is engine below game only in part: world storage and the platform are engine, the simulation is game, presentation and ui mix both ([audit/](audit/), section 6 of each report).
-- In the records, "accepted" means essential today and named in an audit; "queued" names the entry of the 0143 refactor queue that removes the references (1 pure moves, 3 the hubs, 5 the seams). Graph noise (a field or parameter named like a top level procedure, such as `column`) counts as a reference; the rename that ends it is queued where one is.
+- In the records, "accepted" means essential today and named in an audit; "queued" names the entry of the 0143 refactor queue that removes the references (1 pure moves, 3 the hubs, 5 the seams). Graph noise (a field or parameter named like a top level procedure, such as `block_name`) counts as a reference; the rename that ends it is queued where one is.
 
 ## loop
 
@@ -72,10 +72,10 @@ The toolkit turns an input frame into a draw list; the screens decide what the w
 
 - Entry: `ui_core.odin`, `ui_begin` and `ui_end`; the screens start at `run_screens` in `ui_screens.odin`.
 - Files in reading order:
-  - `ui_core.odin`: `Ui_State`, `Ui_Input`, `Draw_Command`, the screen stack, ids, focus, pointer, slot drag, toasts, layout cuts.
-  - `ui_widgets.odin`: every widget, the theme colour variables, glyph bar, tooltips, radial.
+  - `ui_core.odin`: `Ui_State`, `Ui_Input`, `Draw_Command`, the screen stack, ids, focus, pointer, slot drag, toasts, layout cuts (`column_rectangle`).
+  - `ui_widgets.odin`: every widget, the theme colour variables, glyph bar, tooltips, radial, `cut_row`, `Scroll_List`, `wrap_text` and `detail_line`.
   - `ui_draw.odin`: the draw list to raylib, icon atlases, image cache.
-  - `ui_font.odin`, `ui_theme.odin`, `ui_format.odin`: fonts and `Font_Cache`; the theme loader and icon names; one formatter per unit.
+  - `ui_font.odin`, `ui_theme.odin`, `ui_format.odin`: fonts and `Font_Cache`; the theme loader and icon names; one formatter per unit and `format_game_time`.
   - `input_actions.odin`: `Action`, `Raw_Input`, `Input_Frame`, `Tick_Input_Accumulator`, gyro calibration.
   - `input_raylib.odin`, `input_sdl3.odin`, `input_sdl3_android.odin`: the raylib backend with keyboard and mouse; the SDL3 backend; its Android stubs.
   - `bindings.odin`, `ui_input.odin`: the bindings file and `Input_Bindings`; `make_ui_input`, device detection.
@@ -85,17 +85,17 @@ The toolkit turns an input frame into a draw list; the screens decide what the w
   - `ui_inventory.odin`, `quick_transfer.odin`: the inventory screen and `finish_slot_drag`; quick move and transfer buttons (half ui state, half simulation verbs).
   - `ui_machine.odin`: the machine panel frame, furnace, inserter, drill and splitter sections.
   - `ui_crafting_machines.odin`, `ui_fluid.odin`, `ui_power.odin`, `ui_launch_pad.odin`, `ui_prospecting.odin`, `ui_contracts.odin`: the panel sections for assemblers and labs, fluids, power, launch pads, prospecting, the venture.
-  - `ui_recipes.odin`, `ui_recipe_browser.odin`: the recipe screen with `Scroll_List`; its pure filtering and detail.
+  - `ui_recipes.odin`, `ui_recipe_browser.odin`: the recipe screen; its pure filtering and detail.
   - `ui_technologies.odin`, `ui_technology_browser.odin`: the technology screen; its pure filtering.
-  - `ui_statistics.odin`, `ui_map.odin`, `ui_journal.odin`, `ui_mission_control.odin`: statistics; `Map_View`; the journal and `wrap_text`; Mission Control and the discovery card.
+  - `ui_statistics.odin`, `ui_map.odin`, `ui_journal.odin`, `ui_mission_control.odin`: statistics; `Map_View`; the journal; Mission Control and the discovery card.
   - `ui_developer.odin`, `ui_data_browser.odin`, `ui_texture_editor.odin`, `ui_touch_layout_editor.odin`: the Developer, Data files, Textures and touch layout screens.
-  - `hud.odin`, `biome_banner.odin`: crosshair, hotbar, craft queue, glyph hints; the biome banner.
+  - `hud.odin`, `biome_banner.odin`: crosshair, `target_status_lines`, hotbar, craft queue, glyph hints; the biome banner.
   - `touch_overlay.odin`: the virtual gamepad, its layout files, gestures, drawing ([touch_overlay.md](touch_overlay.md)).
-  - `haptics_android.odin`, `haptics_desktop.odin`: the phone's vibrator for `Haptic_Request`, through the JNI helpers of the platform package; the desktop stub.
-  - `system_keyboard_linux.odin`, `system_keyboard_android.odin`, `system_keyboard_windows.odin`: show and hide the platform keyboard for a text field's `Ui_Rectangle`.
+  - `haptics.odin`, `haptics_android.odin`, `haptics_desktop.odin`: `Haptic_Request` and the rumble constants for every target; the phone's vibrator, through the JNI helpers of the platform package; the desktop stub.
+  - `system_keyboard.odin`, `system_keyboard_linux.odin`, `system_keyboard_android.odin`, `system_keyboard_windows.odin`: `System_Keyboard_Field`, a text field's window rectangle; show and hide the platform keyboard for it.
 - State: `Ui_State` (57 fields), `Screen_Context` (54), `Input_Frame`, `Touch_Overlay_State`, `Title_State`; the four session views (`Map_View` and the browsers) sit on `Session`.
 - Tests: every `*_test.odin` beside its file; `ui_audit_test.odin` draws every screen at every audit size, `ui_pointer_test.odin` the pointer and taps, `accessibility_test.odin`.
-- Reaches into: tools 49 (accepted 43: the Data files screen on `Data_Browser` 31, the diagnostics page names 3, a `block_name` field as noise 9; queued 1: `enum_label` 6), loop 14 (queued 3: `Frame_State` in `touch_overlay.odin` 8; accepted 6: `mining_ring_centre`, `BUILD_STAMP`, `parse_seed`, noise).
+- Reaches into: tools 43 (accepted: the Data files screen on `Data_Browser` 31, the diagnostics page names 3, a `block_name` field as noise 9), loop 14 (queued 3: `Frame_State` in `touch_overlay.odin` 8; accepted 6: `mining_ring_centre`, `BUILD_STAMP`, `parse_seed`, noise).
 
 ## world
 
@@ -123,7 +123,7 @@ The world owns blocks and what is derived from blocks; generation is a pure func
   - `save_world.odin`, `save_list.odin`: world.sjson, region files, staging and swap; the save list.
 - State: `World` (27 fields; 13 are the simulation's records parked here), `Chunk`, `Chunk_Streaming` (on `Session`), `Generator`, `Block_Registry`, `World_Settings`.
 - Tests: every `*_test.odin` beside its file; `save_test.odin` and `save_codec_test.odin` (save, load and run to the same hash).
-- Reaches into: simulation 220 (accepted 197: the save codec encoding pools, records, `Simulation_State` and `Simulation_Content`, and `save_world.odin` calling `make_simulation` and `simulation_day_ticks` 193, `vein_is_exhausted` 1, `tick_world` running the leaf decay of `tree_felling.odin` 3; queued 3: the game's records on `World` 15; queued 5: raycast and water reading entities, the crate sites at chunk arrival 8), ui 117 (queued 1: `column` noise), presentation 12 (accepted: the mesher's atlas and tile variation).
+- Reaches into: simulation 220 (accepted 197: the save codec encoding pools, records, `Simulation_State` and `Simulation_Content`, and `save_world.odin` calling `make_simulation` and `simulation_day_ticks` 193, `vein_is_exhausted` 1, `tick_world` running the leaf decay of `tree_felling.odin` 3; queued 3: the game's records on `World` 15; queued 5: raycast and water reading entities, the crate sites at chunk arrival 8), presentation 12 (accepted: the mesher's atlas and tile variation).
 
 ## simulation
 
@@ -154,7 +154,7 @@ The factory: what changes per tick; blocks belong to the world, prototypes to co
   - `tick_profile.odin`: `Tick_Profile`, wall time per tick section.
 - State: `Simulation_State`, `Simulation_Content`, `Entities` (16 pools, the belt, fluid and electric networks, the cell map, loose items), `Player`, `Inventory`, `Statistics`, `Research_State`, `Quest_State`, `Recipe_Unlocks`, `Contract_State`, `Tick_Profile`.
 - Tests: every `*_test.odin` beside its file; `simulation_tick` through the simulation and save tests; the systems in `byproduct_test.odin`, `chemistry_test.odin`, `combustion_test.odin`, `deep_mining_test.odin`, `hydro_grid_test.odin`, `oil_test.odin`, `ore_processing_test.odin`, `power_test.odin`; the whole chain in `benchmark_test.odin` (tools).
-- Reaches into: loop 1 (accepted: `parse_seed`), ui 45 (accepted 29: the tick's input types `Input_Frame`, `Action_Set`, `Action`; queued 1: `column` noise 14, `first_letter` and `shipment_cargo_text` 2), presentation 18 (accepted: machine models and motion 6, `Fly_Camera` 6, `block_centre` and `line_block_belt` 5, `DAY_START_FRACTION` 1).
+- Reaches into: loop 1 (accepted: `parse_seed`), ui 29 (accepted: the tick's input types `Input_Frame`, `Action_Set`, `Action`), presentation 18 (accepted: machine models and motion 6, `Fly_Camera` 6, `block_centre` and `line_block_belt` 5, `DAY_START_FRACTION` 1).
 
 ## presentation
 
@@ -178,7 +178,7 @@ Presentation turns the world, the tick and the render time into pixels and sound
   - `display.odin`, `raylib_log.odin`: window modes, resolutions, scale, GL info; raylib's log into the game log.
 - State: the GPU resources (`Chunk_Renderer`, `Item_Atlas`, `Belt_Renderer`, `Model_Renderer`) and `Audio_Mixer` for the run, the memories (`Particle_System`, `Particle_Memory`, `Player_Animation_Memory`, `Sound_Memory`) for a session; nothing is saved.
 - Tests: every `*_test.odin` beside its file; `shader_source_test.odin` (the `u` suffix rule), `render_ghost_test.odin`, `texture_periodicity_test.odin`; the draw procedures are untested.
-- Reaches into: ui 28 (accepted 17: theme colours and marker palettes 13, `Input_Frame` for the fly camera 2, `Ui_Sound_Event` 2; queued 1: `column` noise 11), loop 1 (accepted: `texture_edits_path`), tools 2 (accepted: a `block_name` parameter, noise).
+- Reaches into: ui 17 (accepted: theme colours and marker palettes 13, `Input_Frame` for the fly camera 2, `Ui_Sound_Event` 2), loop 1 (accepted: `texture_edits_path`), tools 2 (accepted: a `block_name` parameter, noise).
 
 ## content
 
@@ -196,7 +196,7 @@ Content turns files under `data/` and the configuration into typed tables once, 
   - `settings.odin`, `deck_preset.odin`: `Settings` and ranges; the Steam Deck preset.
 - State: the registries, one arena per load (`content_arena` on `Frame_State`), the global `String_Table`, `Settings`, `Game_Config`, `Data_Watch`.
 - Tests: every `*_test.odin` beside its file; the shipped chapters in `quest_chapter_02_test.odin` to `quest_chapter_08_test.odin`; most simulation tests build content through `make_test_content` (`machine_test.odin`).
-- Reaches into: world 94 (accepted 93: item, quest and discovery definitions naming blocks 48, the content reload remapping the world 41, data file names 4; queued 1: `store_unsigned` 1), simulation 96 (accepted 87: the registries' cross links and value types such as `Item_Stack`, `Furnace`, `Quest_State`; queued 1: `reload_simulation` rebuilding `Simulation_State` through `make_simulation` and `destroy_simulation` with `Simulation_Content` 9, the reload route of a content file that belongs to the loop), ui 42 (accepted 40: settings typed by `Slider_Range`, `Binding` and the overlay enums, UI data file names and colours; queued 3: the session's UI views made by `data_reload.odin` 2), loop 19 (accepted: `Game_Content` and `Session` in the reload, `data_edits_directory`, `BUILD_INFO`, noise), presentation 16 (accepted: data file names, display limits), tools 12 (accepted: a `block_name` parameter, noise).
+- Reaches into: world 93 (accepted: item, quest and discovery definitions naming blocks 48, the content reload remapping the world 41, data file names 4), simulation 96 (accepted 87: the registries' cross links and value types such as `Item_Stack`, `Furnace`, `Quest_State`; queued 1: `reload_simulation` rebuilding `Simulation_State` through `make_simulation` and `destroy_simulation` with `Simulation_Content` 9, the reload route of a content file that belongs to the loop), ui 42 (accepted 40: settings typed by `Slider_Range`, `Binding` and the overlay enums, UI data file names and colours; queued 3: the session's UI views made by `data_reload.odin` 2), loop 19 (accepted: `Game_Content` and `Session` in the reload, `data_edits_directory`, `BUILD_INFO`, noise), presentation 16 (accepted: data file names, display limits), tools 12 (accepted: a `block_name` parameter, noise).
 
 ## tools
 

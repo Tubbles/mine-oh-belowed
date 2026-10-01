@@ -38,34 +38,28 @@ queue_developer_request :: proc(state: ^Ui_State, screen_context: Screen_Context
 	ui_toast(state, text("developer_applies_on_resume"))
 }
 
-developer_row :: proc(content: ^Ui_Rectangle) -> Ui_Rectangle {
-	row := cut_top(content, UI_ROW_HEIGHT)
-	cut_top(content, UI_GAP)
-	return row
-}
-
 // The queued toggles on the first row, the frame state overlays on the
 // second: the diagnostics page steps like F3.
 developer_toggles :: proc(state: ^Ui_State, first_row, second_row: Ui_Rectangle, screen_context: Screen_Context) {
 	requests := screen_context.developer_requests[:]
 	flying := pending_toggle(screen_context.player.flying, requests, .Toggle_Fly_Mode)
-	if ui_toggle(state, column(first_row, 3, 0, UI_GAP), text("developer_fly_mode"), &flying) {
+	if ui_toggle(state, column_rectangle(first_row, 3, 0, UI_GAP), text("developer_fly_mode"), &flying) {
 		queue_developer_request(state, screen_context, Developer_Request{action = .Toggle_Fly_Mode})
 	}
 	no_clip := pending_toggle(screen_context.player.no_clip, requests, .Toggle_No_Clip)
-	if ui_toggle(state, column(first_row, 3, 1, UI_GAP), text("developer_no_clip"), &no_clip) {
+	if ui_toggle(state, column_rectangle(first_row, 3, 1, UI_GAP), text("developer_no_clip"), &no_clip) {
 		queue_developer_request(state, screen_context, Developer_Request{action = .Toggle_No_Clip})
 	}
 	cheat_speed := pending_toggle(screen_context.cheat_speed, requests, .Toggle_Cheat_Speed)
-	if ui_toggle(state, column(first_row, 3, 2, UI_GAP), text("developer_cheat_speed"), &cheat_speed) {
+	if ui_toggle(state, column_rectangle(first_row, 3, 2, UI_GAP), text("developer_cheat_speed"), &cheat_speed) {
 		queue_developer_request(state, screen_context, Developer_Request{action = .Toggle_Cheat_Speed})
 	}
 	page := screen_context.diagnostics_page
-	if ui_choice(state, column(second_row, 3, 0, UI_GAP), text("developer_diagnostics"), text(diagnostics_page_keys[page^])) {
+	if ui_choice(state, column_rectangle(second_row, 3, 0, UI_GAP), text("developer_diagnostics"), text(diagnostics_page_keys[page^])) {
 		page^ = next_diagnostics_page(page^)
 	}
-	ui_toggle(state, column(second_row, 3, 1, UI_GAP), text("developer_world_overlay"), screen_context.show_world_overlay)
-	ui_toggle(state, column(second_row, 3, 2, UI_GAP), text("developer_bottleneck_overlay"), &screen_context.settings.bottleneck_overlay)
+	ui_toggle(state, column_rectangle(second_row, 3, 1, UI_GAP), text("developer_world_overlay"), screen_context.show_world_overlay)
+	ui_toggle(state, column_rectangle(second_row, 3, 2, UI_GAP), text("developer_bottleneck_overlay"), &screen_context.settings.bottleneck_overlay)
 }
 
 // One numbered button per chapter; returns the chapter pressed, or 0.
@@ -73,7 +67,7 @@ chapter_buttons :: proc(state: ^Ui_State, row: Ui_Rectangle, label: string, chap
 	pressed := 0
 	ui_push_id(state, label)
 	for index in 0 ..< chapter_count {
-		if ui_button(state, column(row, chapter_count, index, UI_GAP), fmt.tprintf("%d", index + 1)) {
+		if ui_button(state, column_rectangle(row, chapter_count, index, UI_GAP), fmt.tprintf("%d", index + 1)) {
 			pressed = index + 1
 		}
 	}
@@ -91,7 +85,7 @@ time_of_day_label_keys := [Time_Of_Day]string {
 
 time_of_day_buttons :: proc(state: ^Ui_State, row: Ui_Rectangle, screen_context: Screen_Context) {
 	for time_of_day in Time_Of_Day {
-		if ui_button(state, column(row, len(Time_Of_Day), int(time_of_day), UI_GAP), text(time_of_day_label_keys[time_of_day])) {
+		if ui_button(state, column_rectangle(row, len(Time_Of_Day), int(time_of_day), UI_GAP), text(time_of_day_label_keys[time_of_day])) {
 			queue_developer_request(state, screen_context, Developer_Request{action = .Set_Time_Of_Day, time_of_day = time_of_day})
 		}
 	}
@@ -103,7 +97,7 @@ developer_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	panel := fitted_panel(area, DEVELOPER_PANEL_WIDTH, panel_height(DEVELOPER_ROW_COUNT, 0))
 	ui_panel_begin(state, "developer", panel)
 	content := inset(panel, UI_PADDING)
-	ui_label(state, developer_row(&content), text("developer_title"), UI_HEADING_TEXT_SIZE, .Centre)
+	ui_label(state, cut_row(&content), text("developer_title"), UI_HEADING_TEXT_SIZE, .Centre)
 	back_row := cut_bottom(&content, UI_ROW_HEIGHT)
 	cut_bottom(&content, UI_GAP)
 	// The action rows between the title and Back scroll when the panel is
@@ -122,32 +116,32 @@ developer_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 }
 
 developer_actions :: proc(state: ^Ui_State, content: ^Ui_Rectangle, screen_context: Screen_Context) {
-	developer_toggles(state, developer_row(content), developer_row(content), screen_context)
-	ui_label(state, developer_row(content), text("developer_give_kit"))
-	if chapter := chapter_buttons(state, developer_row(content), "kit", screen_context.developer_chapter_count); chapter > 0 {
+	developer_toggles(state, cut_row(content), cut_row(content), screen_context)
+	ui_label(state, cut_row(content), text("developer_give_kit"))
+	if chapter := chapter_buttons(state, cut_row(content), "kit", screen_context.developer_chapter_count); chapter > 0 {
 		queue_developer_request(state, screen_context, Developer_Request{action = .Give_Kit, chapter = chapter})
 	}
-	developer_quest_label_row(state, developer_row(content), screen_context)
-	if chapter := chapter_buttons(state, developer_row(content), "quests", screen_context.developer_chapter_count); chapter > 0 {
+	developer_quest_label_row(state, cut_row(content), screen_context)
+	if chapter := chapter_buttons(state, cut_row(content), "quests", screen_context.developer_chapter_count); chapter > 0 {
 		queue_developer_request(state, screen_context, Developer_Request{action = .Complete_Quests_To_Chapter, chapter = chapter})
 	}
-	ui_label(state, developer_row(content), text("developer_time_of_day"))
-	time_of_day_buttons(state, developer_row(content), screen_context)
-	last_row := developer_row(content)
-	if ui_button(state, column(last_row, 3, 0, UI_GAP), text("developer_unlock_all")) {
+	ui_label(state, cut_row(content), text("developer_time_of_day"))
+	time_of_day_buttons(state, cut_row(content), screen_context)
+	last_row := cut_row(content)
+	if ui_button(state, column_rectangle(last_row, 3, 0, UI_GAP), text("developer_unlock_all")) {
 		queue_developer_request(state, screen_context, Developer_Request{action = .Unlock_All})
 	}
-	if ui_button(state, column(last_row, 3, 1, UI_GAP), text("developer_teleport")) {
+	if ui_button(state, column_rectangle(last_row, 3, 1, UI_GAP), text("developer_teleport")) {
 		position := landing_pad_standing_position(screen_context.landing_pad)
 		queue_developer_request(state, screen_context, Developer_Request{action = .Teleport, position = position})
 	}
 	// Like the screenshot command: the frame loop writes the PNG to the
 	// state directory's screenshots and toasts the path (work item 0053).
-	if ui_button(state, column(last_row, 3, 2, UI_GAP), text("developer_screenshot")) && screen_context.screenshot_requested != nil {
+	if ui_button(state, column_rectangle(last_row, 3, 2, UI_GAP), text("developer_screenshot")) && screen_context.screenshot_requested != nil {
 		screen_context.screenshot_requested^ = true
 	}
-	developer_reload_row(state, developer_row(content), screen_context)
-	developer_editors_row(state, developer_row(content), screen_context)
+	developer_reload_row(state, cut_row(content), screen_context)
+	developer_editors_row(state, cut_row(content), screen_context)
 }
 
 // The game's editors (DESIGN.md, Editors): the texture editor (work item
@@ -155,11 +149,11 @@ developer_actions :: proc(state: ^Ui_State, content: ^Ui_Rectangle, screen_conte
 // loop to read the files again: Reset returns to the data file as it is
 // now, the tree shows the files and overlay copies there are now.
 developer_editors_row :: proc(state: ^Ui_State, row: Ui_Rectangle, screen_context: Screen_Context) {
-	if ui_button(state, column(row, 3, 0, UI_GAP), text("developer_texture_editor")) && screen_context.texture_editor != nil {
+	if ui_button(state, column_rectangle(row, 3, 0, UI_GAP), text("developer_texture_editor")) && screen_context.texture_editor != nil {
 		screen_context.texture_editor.refresh_requested = true
 		push_screen(&state.screens, .Textures)
 	}
-	if ui_button(state, column(row, 3, 1, UI_GAP), text("developer_data_files")) && screen_context.data_browser != nil {
+	if ui_button(state, column_rectangle(row, 3, 1, UI_GAP), text("developer_data_files")) && screen_context.data_browser != nil {
 		screen_context.data_browser.refresh_requested = true
 		push_screen(&state.screens, .Data_Files)
 	}
@@ -169,7 +163,7 @@ developer_editors_row :: proc(state: ^Ui_State, row: Ui_Rectangle, screen_contex
 // finishes the active quest (work item 0098).
 developer_quest_label_row :: proc(state: ^Ui_State, row: Ui_Rectangle, screen_context: Screen_Context) {
 	area := row
-	button := cut_right(&area, column(row, 3, 0, UI_GAP).width)
+	button := cut_right(&area, column_rectangle(row, 3, 0, UI_GAP).width)
 	cut_right(&area, UI_GAP)
 	ui_label(state, area, text("developer_complete_quests"))
 	if ui_button(state, button, text("developer_finish_active_quest")) {
@@ -182,7 +176,7 @@ developer_quest_label_row :: proc(state: ^Ui_State, row: Ui_Rectangle, screen_co
 // the reload command. The frame loop reloads after the frame.
 developer_reload_row :: proc(state: ^Ui_State, row: Ui_Rectangle, screen_context: Screen_Context) {
 	area := row
-	button := cut_right(&area, column(row, 3, 0, UI_GAP).width)
+	button := cut_right(&area, column_rectangle(row, 3, 0, UI_GAP).width)
 	cut_right(&area, UI_GAP)
 	ui_label(state, area, text(screen_context.data_changed ? "developer_data_changed" : "developer_data_current"))
 	if ui_button(state, button, text("developer_reload_data")) && screen_context.reload_requested != nil {

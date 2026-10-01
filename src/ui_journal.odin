@@ -47,34 +47,6 @@ quest_status_keys := [Quest_Status]string {
 	.Done   = "journal_status_done",
 }
 
-// m:ss, or h:mm:ss from the first hour.
-format_game_time :: proc(tick: u64, tick_rate: int) -> string {
-	seconds := tick / u64(max(tick_rate, 1))
-	if seconds >= SECONDS_PER_HOUR {
-		return fmt.tprintf("%d:%02d:%02d", seconds / SECONDS_PER_HOUR, seconds % SECONDS_PER_HOUR / SECONDS_PER_MINUTE, seconds % SECONDS_PER_MINUTE)
-	}
-	return fmt.tprintf("%d:%02d", seconds / SECONDS_PER_MINUTE, seconds % SECONDS_PER_MINUTE)
-}
-
-// Greedy word wrap to a width in UI units, in the temp allocator. A word
-// longer than the width gets a line of its own.
-wrap_text :: proc(state: ^Ui_State, value: string, size, width: f32) -> []string {
-	lines := make([dynamic]string, context.temp_allocator)
-	line := ""
-	for word in strings.fields(value, context.temp_allocator) {
-		candidate := line == "" ? word : strings.concatenate({line, " ", word}, context.temp_allocator)
-		if line != "" && ui_text_width(state, candidate, size) > width {
-			append(&lines, line)
-			candidate = word
-		}
-		line = candidate
-	}
-	if line != "" {
-		append(&lines, line)
-	}
-	return lines[:]
-}
-
 // The quests of a chapter in journal order: active first, then done,
 // then locked, each group in play order.
 journal_quest_order :: proc(quest_state: Quest_State, chapter: Chapter, allocator := context.temp_allocator) -> []int {
@@ -285,22 +257,6 @@ journal_note_list :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: 
 	}
 	scroll_list_end(state, &list)
 	return focused
-}
-
-// A strip off the top of the content, or false when less is left.
-take_line :: proc(content: ^Ui_Rectangle, height: f32) -> (line: Ui_Rectangle, fits: bool) {
-	if content.height < height {
-		return {}, false
-	}
-	return cut_top(content, height), true
-}
-
-// Wrapped lines from the top of the content, as many as fit.
-draw_wrapped :: proc(state: ^Ui_State, content: ^Ui_Rectangle, value: string, color := UI_TEXT_COLOR) {
-	for line in wrap_text(state, value, UI_BODY_TEXT_SIZE, content.width) {
-		row := take_line(content, UI_LINE_HEIGHT) or_break
-		ui_label(state, row, line, UI_BODY_TEXT_SIZE, .Left, color)
-	}
 }
 
 rewards_text :: proc(quest: Quest, screen_context: Screen_Context) -> string {

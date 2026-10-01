@@ -140,7 +140,7 @@ Edges in (546; loop -> ui 212 is in the loop audit):
 
 ## 4. Abstraction gaps
 
-- Four copies of one row helper: `settings_row`, `choice_row`, `developer_row`, `title_row` (cut a row, cut a gap).
+- Four copies of one row helper: settings_row, choice_row, developer_row, title_row (cut a row, cut a gap; one `cut_row` since 0148).
 - Toolkit pieces live in screen files: `Scroll_List` and `scroll_list_begin` in `ui_recipes.odin`; `wrap_text`, `take_line`, `draw_wrapped`, `format_game_time` in `ui_journal.odin`; `detail_line` in `ui_power.odin`; `panel_height` in `ui_screens.odin`; `target_status_lines` (HUD) in `ui_machine.odin`.
 - List plus detail is written per screen: `focus_recipe_row` and `settle_recipe_focus`, `focus_technology_row` and `settle_technology_focus`, `focus_statistics_row` and `settle_statistics_focus` are the same two procedures over a different browser struct.
 - Slot screens: `inventory_screen` and `machine_screen` repeat one sequence (quick move input, active slot, slot input, touch row button, transfer, `finish_slot_drag`, `draw_held_stack`, glyph bar), with twin quick move adapters (`apply_inventory_quick_move_input`, `apply_quick_move_input`).

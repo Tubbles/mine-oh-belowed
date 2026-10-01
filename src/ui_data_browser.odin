@@ -199,9 +199,9 @@ data_chevron :: proc(expanded: bool) -> string {
 
 // The size on the right, the edited tag left of it.
 data_tree_row_detail :: proc(state: ^Ui_State, area: Ui_Rectangle, entry: Data_Tree_Row) {
-	draw_text_fitted(state, column(area, 2, 1, UI_GAP), data_file_size_text(entry.size), UI_BODY_TEXT_SIZE, .Right, UI_DIM_TEXT_COLOR)
+	draw_text_fitted(state, column_rectangle(area, 2, 1, UI_GAP), data_file_size_text(entry.size), UI_BODY_TEXT_SIZE, .Right, UI_DIM_TEXT_COLOR)
 	if entry.edited {
-		draw_text_fitted(state, column(area, 2, 0, UI_GAP), text("data_files_edited"), UI_BODY_TEXT_SIZE, .Right, ui_theme(state).colors[.Accent])
+		draw_text_fitted(state, column_rectangle(area, 2, 0, UI_GAP), text("data_files_edited"), UI_BODY_TEXT_SIZE, .Right, ui_theme(state).colors[.Accent])
 	}
 }
 
@@ -405,29 +405,29 @@ data_browser_buttons :: proc(state: ^Ui_State, row: Ui_Rectangle, browser: ^Data
 	count := browser.open ? 5 : 3
 	next := 0
 	if !browser.open {
-		if ui_button(state, column(row, count, 0, UI_GAP), text("data_files_export")) {
+		if ui_button(state, column_rectangle(row, count, 0, UI_GAP), text("data_files_export")) {
 			browser.export_requested = true
 		}
 		next = 1
 	}
 	if browser.open {
 		element := data_value_row_is_element(browser.value_rows, browser.value_selected)
-		if data_browser_button(state, column(row, count, 0, UI_GAP), text("data_files_save"), browser.unsaved) {
+		if data_browser_button(state, column_rectangle(row, count, 0, UI_GAP), text("data_files_save"), browser.unsaved) {
 			browser.save_requested = true
 		}
-		if data_browser_button(state, column(row, count, 1, UI_GAP), text("data_files_duplicate"), element) {
+		if data_browser_button(state, column_rectangle(row, count, 1, UI_GAP), text("data_files_duplicate"), element) {
 			edit_data_browser_element(browser, .Duplicate)
 		}
-		if data_browser_button(state, column(row, count, 2, UI_GAP), text("data_files_remove"), element) {
+		if data_browser_button(state, column_rectangle(row, count, 2, UI_GAP), text("data_files_remove"), element) {
 			edit_data_browser_element(browser, .Remove)
 		}
 		next = 3
 	}
 	edited := browser.selected >= 0 && browser.selected < len(browser.rows) && browser.rows[browser.selected].edited
-	if data_browser_button(state, column(row, count, next, UI_GAP), text("data_files_discard"), edited) {
+	if data_browser_button(state, column_rectangle(row, count, next, UI_GAP), text("data_files_discard"), edited) {
 		browser.discard_requested = true
 	}
-	if ui_button(state, column(row, count, next + 1, UI_GAP), text("data_files_back")) {
+	if ui_button(state, column_rectangle(row, count, next + 1, UI_GAP), text("data_files_back")) {
 		if browser.open {
 			request_data_file_close(state, browser)
 		} else {

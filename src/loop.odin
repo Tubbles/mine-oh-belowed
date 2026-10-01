@@ -704,7 +704,8 @@ sync_system_keyboard :: proc(state: ^Frame_State) {
 	keyboard := &state.ui.keyboard
 	switch system_keyboard_change(keyboard^, state.system_keyboard_shown) {
 	case .Show:
-		show_system_keyboard(units_to_window_rectangle(keyboard.field_rectangle, state.ui.pixels_per_unit, cursor_window_size(), render_size()))
+		field := units_to_window_rectangle(keyboard.field_rectangle, state.ui.pixels_per_unit, cursor_window_size(), render_size())
+		show_system_keyboard(System_Keyboard_Field{field.x, field.y, field.width, field.height})
 		state.system_keyboard_shown = true
 	case .Hide:
 		hide_system_keyboard()

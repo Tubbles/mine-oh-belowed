@@ -244,10 +244,6 @@ texture_size :: proc(texture: rl.Texture2D) -> [2]int {
 	return {int(texture.width), int(texture.height)}
 }
 
-enum_label :: proc(value: $T) -> string {
-	return fmt.tprint(value)
-}
-
 // 20 pixels at 720 lines, 30 at 1080, so the text stays readable from the couch.
 diagnostics_font_size :: proc(screen_height: i32) -> i32 {
 	return max(20, screen_height / 36)

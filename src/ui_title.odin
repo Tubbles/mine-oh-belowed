@@ -83,12 +83,6 @@ refresh_title_saves :: proc(title: ^Title_State) {
 	}
 }
 
-title_row :: proc(content: ^Ui_Rectangle) -> Ui_Rectangle {
-	row := cut_top(content, UI_ROW_HEIGHT)
-	cut_top(content, UI_GAP)
-	return row
-}
-
 // Continue shows only when a save exists. Back does nothing here.
 title_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	title := screen_context.title
@@ -102,22 +96,22 @@ title_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	panel.y = area.y
 	ui_panel_begin(state, "title", panel)
 	content := inset(panel, UI_PADDING)
-	if has_save && ui_button(state, title_row(&content), text("title_continue")) {
+	if has_save && ui_button(state, cut_row(&content), text("title_continue")) {
 		title.request = {kind = .Load, directory_name = title.saves[newest].directory_name}
 	}
-	if ui_button(state, title_row(&content), text("title_new_world")) {
+	if ui_button(state, cut_row(&content), text("title_new_world")) {
 		name := default_new_world_name(text("new_world_default_name"), title.saves_directory, title.saves_found)
 		title.setup = make_world_setup(title.default_settings, name, 0)
 		randomise_seed(&title.setup)
 		push_screen(&state.screens, .New_World)
 	}
-	if ui_button(state, title_row(&content), text("title_load")) {
+	if ui_button(state, cut_row(&content), text("title_load")) {
 		push_screen(&state.screens, .Load_World)
 	}
-	if ui_button(state, title_row(&content), text("title_settings")) {
+	if ui_button(state, cut_row(&content), text("title_settings")) {
 		push_screen(&state.screens, .Settings)
 	}
-	if ui_button(state, title_row(&content), text("title_quit")) {
+	if ui_button(state, cut_row(&content), text("title_quit")) {
 		screen_context.quit_requested^ = true
 	}
 	ui_panel_end(state)
@@ -135,24 +129,24 @@ on_off_key :: proc(value: bool, on_key, off_key: string) -> string {
 // The rows of the world settings; each choice steps forward on Confirm.
 world_setting_rows :: proc(state: ^Ui_State, content: ^Ui_Rectangle, setup: ^World_Setup) {
 	veins := on_off_key(setup.veins_infinite, "new_world_veins_infinite", "new_world_veins_finite")
-	if ui_choice(state, title_row(content), text("new_world_veins"), veins, text("new_world_veins_tooltip")) {
+	if ui_choice(state, cut_row(content), text("new_world_veins"), veins, text("new_world_veins_tooltip")) {
 		setup.veins_infinite = !setup.veins_infinite
 	}
 	richness := percent_multiplier_text(setting_percent_choices[setup.vein_richness_choice])
-	if ui_choice(state, title_row(content), text("new_world_richness"), richness, text("new_world_richness_tooltip")) {
+	if ui_choice(state, cut_row(content), text("new_world_richness"), richness, text("new_world_richness_tooltip")) {
 		setup.vein_richness_choice = next_choice(setup.vein_richness_choice, len(setting_percent_choices))
 	}
 	cost := percent_multiplier_text(setting_percent_choices[setup.research_cost_choice])
-	if ui_choice(state, title_row(content), text("new_world_research_cost"), cost, text("new_world_research_cost_tooltip")) {
+	if ui_choice(state, cut_row(content), text("new_world_research_cost"), cost, text("new_world_research_cost_tooltip")) {
 		setup.research_cost_choice = next_choice(setup.research_cost_choice, len(setting_percent_choices))
 	}
 	byproducts := on_off_key(setup.byproducts_lenient, "new_world_byproducts_lenient", "new_world_byproducts_strict")
-	if ui_choice(state, title_row(content), text("new_world_byproducts"), byproducts, text("new_world_byproducts_tooltip")) {
+	if ui_choice(state, cut_row(content), text("new_world_byproducts"), byproducts, text("new_world_byproducts_tooltip")) {
 		setup.byproducts_lenient = !setup.byproducts_lenient
 	}
-	ui_toggle(state, title_row(content), text("new_world_all_recipes"), &setup.all_recipes_unlocked, text("new_world_all_recipes_tooltip"))
+	ui_toggle(state, cut_row(content), text("new_world_all_recipes"), &setup.all_recipes_unlocked, text("new_world_all_recipes_tooltip"))
 	day_length := format_message_text(text("new_world_minutes"), fmt.tprint(day_length_minute_choices[setup.day_length_choice]))
-	if ui_choice(state, title_row(content), text("new_world_day_length"), day_length, text("new_world_day_length_tooltip")) {
+	if ui_choice(state, cut_row(content), text("new_world_day_length"), day_length, text("new_world_day_length_tooltip")) {
 		setup.day_length_choice = next_choice(setup.day_length_choice, len(day_length_minute_choices))
 	}
 }
@@ -179,13 +173,13 @@ new_world_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	panel := fitted_panel(area, NEW_WORLD_PANEL_WIDTH, height)
 	ui_panel_begin(state, "new_world", panel)
 	content := inset(panel, UI_PADDING)
-	ui_label(state, title_row(&content), text("new_world_title"), UI_HEADING_TEXT_SIZE, .Centre)
+	ui_label(state, cut_row(&content), text("new_world_title"), UI_HEADING_TEXT_SIZE, .Centre)
 	name_label, seed_label := text("new_world_name"), text("new_world_seed")
 	name_id, seed_id := ui_id(state, name_label), ui_id(state, seed_label)
 	if typing {
 		editing_seed := state.keyboard.field == seed_id
 		field := editing_seed ? &setup.seed : &setup.name
-		field_row := title_row(&content)
+		field_row := cut_row(&content)
 		draw_text_field_content(state, field_row, editing_seed ? seed_label : name_label, field, true)
 		if ui_on_screen_keyboard(state, field_row, {content.x + (content.width - KEYBOARD_WIDTH) / 2, content.y}, field) {
 			state.keyboard = Keyboard_State {
@@ -204,10 +198,10 @@ new_world_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	// Name, seed and the settings scroll when the panel is clamped to the
 	// safe area; the heading and the buttons stay.
 	region, rows := scroll_region_begin(state, "new_world_rows", content, f32(NEW_WORLD_ROW_COUNT - 2) * (UI_ROW_HEIGHT + UI_GAP) - UI_GAP)
-	if ui_text_field(state, title_row(&rows), name_label, &setup.name) {
+	if ui_text_field(state, cut_row(&rows), name_label, &setup.name) {
 		open_keyboard(state, name_id)
 	}
-	seed_row := title_row(&rows)
+	seed_row := cut_row(&rows)
 	if ui_text_field(state, cut_left(&seed_row, seed_row.width * SEED_FIELD_SHARE), seed_label, &setup.seed) {
 		open_keyboard(state, seed_id)
 	}
@@ -217,10 +211,10 @@ new_world_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 	world_setting_rows(state, &rows, setup)
 	scroll_region_end(state, region)
-	if ui_button(state, column(button_row, 2, 0, UI_GAP), text("new_world_create")) {
+	if ui_button(state, column_rectangle(button_row, 2, 0, UI_GAP), text("new_world_create")) {
 		create_world(state, screen_context.title)
 	}
-	if ui_button(state, column(button_row, 2, 1, UI_GAP), text("new_world_back")) {
+	if ui_button(state, column_rectangle(button_row, 2, 1, UI_GAP), text("new_world_back")) {
 		pop_screen(&state.screens)
 	}
 	ui_panel_end(state)
@@ -347,7 +341,7 @@ load_world_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	panel := fitted_panel(area, LOAD_PANEL_WIDTH, panel_height(LOAD_LIST_ROWS + 3, -UI_GAP))
 	ui_panel_begin(state, "load", panel)
 	content := inset(panel, UI_PADDING)
-	ui_label(state, title_row(&content), text("load_title"), UI_HEADING_TEXT_SIZE, .Centre)
+	ui_label(state, cut_row(&content), text("load_title"), UI_HEADING_TEXT_SIZE, .Centre)
 	back_row := cut_bottom(&content, UI_ROW_HEIGHT)
 	cut_bottom(&content, UI_GAP)
 	headings := Save_Row_Cells {
@@ -371,10 +365,10 @@ load_world_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	if focused >= 0 && state.input.context_action {
 		confirm_save_deletion(state, title, focused)
 	}
-	if ui_button(state, column(back_row, 2, 0, UI_GAP), text("load_delete")) {
+	if ui_button(state, column_rectangle(back_row, 2, 0, UI_GAP), text("load_delete")) {
 		confirm_save_deletion(state, title, title.load_selection)
 	}
-	if ui_button(state, column(back_row, 2, 1, UI_GAP), text("load_back")) {
+	if ui_button(state, column_rectangle(back_row, 2, 1, UI_GAP), text("load_back")) {
 		pop_screen(&state.screens)
 	}
 	ui_panel_end(state)
@@ -394,12 +388,12 @@ confirm_delete_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) 
 	panel := fitted_panel(ui_panel_area(state), CONFIRM_PANEL_WIDTH, panel_height(2, -UI_GAP))
 	ui_panel_begin(state, "confirm_delete", panel)
 	content := inset(panel, UI_PADDING)
-	ui_label(state, title_row(&content), format_message_text(text("load_delete_question"), save.name), UI_BODY_TEXT_SIZE, .Centre)
-	button_row := title_row(&content)
-	if ui_button(state, column(button_row, 2, 1, UI_GAP), text("confirm_no")) {
+	ui_label(state, cut_row(&content), format_message_text(text("load_delete_question"), save.name), UI_BODY_TEXT_SIZE, .Centre)
+	button_row := cut_row(&content)
+	if ui_button(state, column_rectangle(button_row, 2, 1, UI_GAP), text("confirm_no")) {
 		pop_screen(&state.screens)
 	}
-	if ui_button(state, column(button_row, 2, 0, UI_GAP), text("confirm_yes")) {
+	if ui_button(state, column_rectangle(button_row, 2, 0, UI_GAP), text("confirm_yes")) {
 		delete_title_save(state, title, save.directory_name)
 		pop_screen(&state.screens)
 	}

@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+
 // The world HUD, drawn through the UI draw list under any open screen:
 // crosshair, under it the targeted entity's name and state or the
 // targeted block's name (dim, "Unknown ore" for an ore not discovered
@@ -432,4 +434,106 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 	hints := [?]Glyph_Hint{{.Inventory, text("hint_inventory")}, {.Pause, text("hint_pause")}}
 	ui_glyph_bar(state, hints[:])
+}
+
+// The vein's name and what is left of it in total, for the HUD.
+vein_size_class_name :: proc(veins: Vein_Content, size_class: int) -> string {
+	if size_class < 0 || size_class >= len(veins.size_class_ids) {
+		return ""
+	}
+	return text(fmt.tprintf("vein_size_%s", veins.size_class_ids[size_class]))
+}
+
+// The vein's type reads "Unknown ore" until one of its ores was obtained
+// (discovery.odin); the size and what is left show either way.
+vein_status_text :: proc(world: ^World, veins: Vein_Content, blocks: Block_Registry, items: Item_Registry, obtained: []bool, id: Vein_Id) -> string {
+	vein := registered_vein(world, id)
+	if vein == nil || vein.type >= len(veins.types) {
+		return ""
+	}
+	vein_type := veins.types[vein.type]
+	name := text(vein_type_is_discovered(vein_type, blocks, items, obtained) ? vein_type.name_key : UNKNOWN_ORE_KEY)
+	if vein_is_assayed(world, id) {
+		name = fmt.tprintf("%s  %s  %s", name, vein_size_class_name(veins, vein.size_class), text("vein_assayed"))
+	}
+	if world.settings.veins_infinite {
+		return fmt.tprintf("%s  %s", name, text("drill_infinite"))
+	}
+	return fmt.tprintf("%s  %d %s", name, vein_remaining_total(vein^), text("drill_remaining"))
+}
+
+// The name and state of an entity for the HUD, "" when it has none.
+entity_status_text :: proc(world: ^World, machines: Machine_Registry, fluids: Fluid_Registry, items: Item_Registry, handle: Entity_Handle) -> string {
+	common := entity_common(&world.entities, handle)
+	if common == nil {
+		return ""
+	}
+	name := machine_name(machines, common.machine)
+	#partial switch handle.kind {
+	case .Furnace:
+		furnace := pool_get(&world.entities.furnaces, handle)
+		return fmt.tprintf("%s  %s", name, text(furnace_state_keys[furnace.state]))
+	case .Inserter:
+		inserter := pool_get(&world.entities.inserters, handle)
+		return fmt.tprintf("%s  %s", name, inserter_state_text(inserter^, items))
+	case .Drill:
+		drill := pool_get(&world.entities.drills, handle)
+		return fmt.tprintf("%s  %s", name, drill_state_text(drill^, items))
+	case .Pipe, .Fluid_Machine:
+		return fluid_status_text(world, machines, fluids, handle, name)
+	case .Pole, .Lamp:
+		return power_entity_status_text(world, machines, handle, name)
+	case .Assembler:
+		assembler := pool_get(&world.entities.assemblers, handle)
+		return fmt.tprintf("%s  %s", name, text(assembler_state_keys[assembler.state]))
+	case .Lab:
+		lab := pool_get(&world.entities.labs, handle)
+		return fmt.tprintf("%s  %s", name, text(lab_state_keys[lab.state]))
+	case .Schematic_Crate:
+		crate := pool_get(&world.entities.schematic_crates, handle)
+		return stack_is_empty(crate.slots[0]) ? fmt.tprintf("%s  %s", name, text("schematic_crate_empty")) : name
+	case .Core_Sample_Drill:
+		return fmt.tprintf("%s  %s", name, core_sample_state_text(world, pool_get(&world.entities.core_sample_drills, handle)^))
+	case .Launch_Pad:
+		return fmt.tprintf("%s  %s", name, launch_pad_state_text(pool_get(&world.entities.launch_pads, handle)))
+	}
+	return name
+}
+
+// While a bore drill is being placed, the HUD's vein line names the deep
+// vein its ghost would tap, since nothing on the surface marks deep veins.
+bore_drill_ghost_line :: proc(world: ^World, machines: Machine_Registry, veins: Vein_Content, blocks: Block_Registry, items: Item_Registry, obtained: []bool, player: Player) -> (line: string, shown: bool) {
+	vein, found, selected := bore_drill_ghost_vein(world, machines, player)
+	if !selected {
+		return "", false
+	}
+	if !found {
+		return text("bore_drill_no_deep_vein"), true
+	}
+	return vein_status_text(world, veins, blocks, items, obtained, vein), true
+}
+
+// What the HUD shows under the crosshair, one line each and "" where
+// nothing applies: the targeted entity's name and state, else the block's
+// name ("Unknown ore" for an ore not discovered yet, discovery.odin); the
+// pickaxe a block above the player's tool_tier needs; and for a drill or
+// any block over a surface vein's footprint (mined outcrop or not) the
+// vein and what is left. obtained is Recipe_Unlocks.obtained.
+target_status_lines :: proc(world: ^World, machines: Machine_Registry, fluids: Fluid_Registry, veins: Vein_Content, blocks: Block_Registry, items: Item_Registry, obtained: []bool, tool_tier: int, target: Raycast_Hit) -> (name_line, tool_line, vein_line: string) {
+	if drill := pool_get(&world.entities.drills, target.entity); drill != nil {
+		return entity_status_text(world, machines, fluids, items, target.entity), "", vein_status_text(world, veins, blocks, items, obtained, drill.vein)
+	}
+	if target.entity != NO_ENTITY {
+		return entity_status_text(world, machines, fluids, items, target.entity), "", ""
+	}
+	if !target.hit {
+		return "", "", ""
+	}
+	block := world_get_block(world, target.block)
+	name_line = target_block_name(blocks, items, obtained, block)
+	tool_line = mining_tool_line(blocks, items, block, tool_tier)
+	if vein, found := vein_at_column(world, target.block.x, target.block.z); found {
+		vein_line = vein_status_text(world, veins, blocks, items, obtained, vein)
+	}
+	return
 }

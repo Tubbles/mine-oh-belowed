@@ -65,7 +65,7 @@ focus_step :: proc(widgets: []Ui_Widget, from_id: Ui_Id, direction: Ui_Direction
 append_focus_row :: proc(widgets: ^[dynamic]Ui_Widget, first_id: Ui_Id, count: int, y: f32) {
 	row := Ui_Rectangle{0, y, 960, UI_ROW_HEIGHT}
 	for index in 0 ..< count {
-		append(widgets, Ui_Widget{id = first_id + Ui_Id(index), panel = 1, rectangle = column(row, count, index, UI_GAP)})
+		append(widgets, Ui_Widget{id = first_id + Ui_Id(index), panel = 1, rectangle = column_rectangle(row, count, index, UI_GAP)})
 	}
 }
 

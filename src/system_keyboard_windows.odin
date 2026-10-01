@@ -6,6 +6,6 @@ package game
 
 system_keyboard_available :: proc() -> bool {return false}
 
-show_system_keyboard :: proc(field_window: Ui_Rectangle) {}
+show_system_keyboard :: proc(field_window: System_Keyboard_Field) {}
 
 hide_system_keyboard :: proc() {}

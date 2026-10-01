@@ -98,7 +98,7 @@ launch_pad_catalogue_tab :: proc(state: ^Ui_State, area: Ui_Rectangle, pad: ^Lau
 	detail_line(state, &content, venture_credit_text(world))
 	for entry, index in screen_context.contracts.catalogue {
 		ui_push_id(state, "catalogue", index)
-		clicked := ui_button(state, choice_row(&content), catalogue_entry_label(entry, screen_context.items))
+		clicked := ui_button(state, cut_row(&content), catalogue_entry_label(entry, screen_context.items))
 		ui_pop_id(state)
 		if clicked && !order_from_catalogue(world, screen_context.contracts, index, launch_pad_centre(pad^)) {
 			ui_toast(state, text("catalogue_not_enough_credit"))

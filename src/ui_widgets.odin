@@ -631,7 +631,7 @@ ui_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, labels
 	}
 	theme := ui_theme(state)
 	for tab_label, index in labels {
-		tab := column(rectangle, count, index, UI_GAP)
+		tab := column_rectangle(rectangle, count, index, UI_GAP)
 		if state.click && ui_pointer_over(state, tab) {
 			selected = index
 		}
@@ -645,7 +645,7 @@ ui_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, label: string, labels
 	}
 	strip := rectangle
 	draw_divider(state, cut_bottom(&strip, theme.border))
-	underline := column(rectangle, count, selected, UI_GAP)
+	underline := column_rectangle(rectangle, count, selected, UI_GAP)
 	draw_fill(state, cut_bottom(&underline, 4), theme.colors[.Accent])
 	if mode == .Focus {
 		draw_focus_outline(state, rectangle, id)
@@ -1377,4 +1377,100 @@ radial_input :: proc(input: Ui_Input, source: Radial_Source) -> (touching: bool,
 radial_slot_offset :: proc(index, count: int) -> [2]f32 {
 	angle := f32(index) * math.TAU / f32(max(count, 1))
 	return {math.sin(angle), -math.cos(angle)}
+}
+
+// A row off the top of the content and the gap below it.
+cut_row :: proc(content: ^Ui_Rectangle) -> Ui_Rectangle {
+	row := cut_top(content, UI_ROW_HEIGHT)
+	cut_top(content, UI_GAP)
+	return row
+}
+
+panel_height :: proc(row_count: int, extra: f32) -> f32 {
+	return f32(row_count) * (UI_ROW_HEIGHT + UI_GAP) + extra + 2 * UI_PADDING
+}
+
+// A strip off the top of the content, or false when less is left.
+take_line :: proc(content: ^Ui_Rectangle, height: f32) -> (line: Ui_Rectangle, fits: bool) {
+	if content.height < height {
+		return {}, false
+	}
+	return cut_top(content, height), true
+}
+
+// One line of text, ending with an ellipsis where it does not fit, or
+// nothing once the content has no room left.
+detail_line :: proc(state: ^Ui_State, content: ^Ui_Rectangle, line: string, color := UI_TEXT_COLOR, height: f32 = UI_ROW_HEIGHT) {
+	if row, fits := take_line(content, height); fits {
+		draw_text_fitted(state, row, line, UI_BODY_TEXT_SIZE, .Left, color)
+	}
+}
+
+// Greedy word wrap to a width in UI units, in the temp allocator. A word
+// longer than the width gets a line of its own.
+wrap_text :: proc(state: ^Ui_State, value: string, size, width: f32) -> []string {
+	lines := make([dynamic]string, context.temp_allocator)
+	line := ""
+	for word in strings.fields(value, context.temp_allocator) {
+		candidate := line == "" ? word : strings.concatenate({line, " ", word}, context.temp_allocator)
+		if line != "" && ui_text_width(state, candidate, size) > width {
+			append(&lines, line)
+			candidate = word
+		}
+		line = candidate
+	}
+	if line != "" {
+		append(&lines, line)
+	}
+	return lines[:]
+}
+
+// Wrapped lines from the top of the content, as many as fit.
+draw_wrapped :: proc(state: ^Ui_State, content: ^Ui_Rectangle, value: string, color := UI_TEXT_COLOR) {
+	for line in wrap_text(state, value, UI_BODY_TEXT_SIZE, content.width) {
+		row := take_line(content, UI_LINE_HEIGHT) or_break
+		ui_label(state, row, line, UI_BODY_TEXT_SIZE, .Left, color)
+	}
+}
+
+// A scrolling column of rows. The right stick, the wheel and a pointer
+// drag scroll it and a focused row keeps itself in view, until a drag
+// scrolls it away, like ui_list.
+Scroll_List :: struct {
+	id:           Ui_Id,
+	area:         Ui_Rectangle,
+	scroll:       f32,
+	count:        int,
+	focus_inside: bool,
+	// False after a pointer drag scrolled the focus away (focus_scrolled_away).
+	keeps_focus_in_view: bool,
+}
+
+scroll_list_begin :: proc(state: ^Ui_State, label: string, area: Ui_Rectangle, count: int) -> Scroll_List {
+	id := ui_push_id(state, label)
+	push_command(state, {kind = .Clip_Begin, rectangle = area})
+	return Scroll_List{id = id, area = area, scroll = state.scroll_offsets[id], count = count, keeps_focus_in_view = !state.focus_scrolled_away}
+}
+
+scroll_list_row :: proc(list: Scroll_List, position: int) -> Ui_Rectangle {
+	return {list.area.x, list.area.y + f32(position) * UI_ROW_HEIGHT - list.scroll, list.area.width, UI_ROW_HEIGHT}
+}
+
+scroll_list_keep_visible :: proc(list: ^Scroll_List, position: int) {
+	list.focus_inside = true
+	if list.keeps_focus_in_view {
+		list.scroll = scroll_to_show(list.scroll, f32(position) * UI_ROW_HEIGHT, UI_ROW_HEIGHT, list.area.height)
+	}
+}
+
+scroll_list_end :: proc(state: ^Ui_State, list: ^Scroll_List) {
+	push_command(state, {kind = .Clip_End})
+	list.scroll -= pointer_drag_scroll(state, list.area)
+	if list.focus_inside || ui_pointer_over(state, list.area) {
+		list.scroll -= state.input.scroll_stick * UI_LIST_STICK_ROWS_PER_SECOND * UI_ROW_HEIGHT * state.frame_seconds
+		list.scroll -= state.input.scroll_wheel * UI_ROW_HEIGHT
+	}
+	maximum_scroll := max(f32(list.count) * UI_ROW_HEIGHT - list.area.height, 0)
+	state.scroll_offsets[list.id] = clamp(list.scroll, 0, maximum_scroll)
+	ui_pop_id(state)
 }

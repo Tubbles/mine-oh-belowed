@@ -74,48 +74,6 @@ make_recipe_browser :: proc() -> Recipe_Browser {
 	return Recipe_Browser{filter = {available_only = true}, focused_recipe = NO_RECIPE, pending_focus = NO_RECIPE}
 }
 
-// A scrolling column of rows. The right stick, the wheel and a pointer
-// drag scroll it and a focused row keeps itself in view, until a drag
-// scrolls it away, like ui_list.
-Scroll_List :: struct {
-	id:           Ui_Id,
-	area:         Ui_Rectangle,
-	scroll:       f32,
-	count:        int,
-	focus_inside: bool,
-	// False after a pointer drag scrolled the focus away (focus_scrolled_away).
-	keeps_focus_in_view: bool,
-}
-
-scroll_list_begin :: proc(state: ^Ui_State, label: string, area: Ui_Rectangle, count: int) -> Scroll_List {
-	id := ui_push_id(state, label)
-	push_command(state, {kind = .Clip_Begin, rectangle = area})
-	return Scroll_List{id = id, area = area, scroll = state.scroll_offsets[id], count = count, keeps_focus_in_view = !state.focus_scrolled_away}
-}
-
-scroll_list_row :: proc(list: Scroll_List, position: int) -> Ui_Rectangle {
-	return {list.area.x, list.area.y + f32(position) * UI_ROW_HEIGHT - list.scroll, list.area.width, UI_ROW_HEIGHT}
-}
-
-scroll_list_keep_visible :: proc(list: ^Scroll_List, position: int) {
-	list.focus_inside = true
-	if list.keeps_focus_in_view {
-		list.scroll = scroll_to_show(list.scroll, f32(position) * UI_ROW_HEIGHT, UI_ROW_HEIGHT, list.area.height)
-	}
-}
-
-scroll_list_end :: proc(state: ^Ui_State, list: ^Scroll_List) {
-	push_command(state, {kind = .Clip_End})
-	list.scroll -= pointer_drag_scroll(state, list.area)
-	if list.focus_inside || ui_pointer_over(state, list.area) {
-		list.scroll -= state.input.scroll_stick * UI_LIST_STICK_ROWS_PER_SECOND * UI_ROW_HEIGHT * state.frame_seconds
-		list.scroll -= state.input.scroll_wheel * UI_ROW_HEIGHT
-	}
-	maximum_scroll := max(f32(list.count) * UI_ROW_HEIGHT - list.area.height, 0)
-	state.scroll_offsets[list.id] = clamp(list.scroll, 0, maximum_scroll)
-	ui_pop_id(state)
-}
-
 // The id of a recipe's row in the list, from outside the list's scope.
 recipe_row_id :: proc(list_id: Ui_Id, recipe: int) -> Ui_Id {
 	return ui_hash(list_id, "row", recipe)
@@ -269,8 +227,8 @@ recipe_filter_column :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_contex
 		queue_row := cut_bottom(&content, UI_ROW_HEIGHT)
 		waits := queue.waiting || craft_queue_waits_for_input(queue)
 		draw_text_fitted(state, queue_row, queue_summary_text(queue), UI_BODY_TEXT_SIZE, .Left, waits ? UI_ACCENT_COLOR : UI_DIM_TEXT_COLOR)
-		ui_toggle(state, settings_row(&content), text("recipes_can_craft"), &browser.filter.craftable_only)
-		ui_toggle(state, settings_row(&content), text("recipes_unlocked_only"), &browser.filter.available_only)
+		ui_toggle(state, cut_row(&content), text("recipes_can_craft"), &browser.filter.craftable_only)
+		ui_toggle(state, cut_row(&content), text("recipes_unlocked_only"), &browser.filter.available_only)
 	}
 	draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), text("recipes_tags"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	tags := category_tags(screen_context.recipes, browser.filter.category)
@@ -279,7 +237,7 @@ recipe_filter_column :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_contex
 			continue
 		}
 		selected := index in browser.filter.tags
-		if ui_toggle(state, settings_row(&content), text(recipe_tag_key(name)), &selected) {
+		if ui_toggle(state, cut_row(&content), text(recipe_tag_key(name)), &selected) {
 			browser.filter.tags ~= {index}
 		}
 	}
@@ -403,8 +361,8 @@ recipe_detail_panel :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context
 	if content.height < 2 * UI_ROW_HEIGHT {
 		return NO_RECIPE
 	}
-	made_by := recipe_link_list(state, column(content, 2, 0, UI_GAP), "recipes_made_by", detail.made_by, screen_context, craftable)
-	used_in := recipe_link_list(state, column(content, 2, 1, UI_GAP), "recipes_used_in", detail.used_in, screen_context, craftable)
+	made_by := recipe_link_list(state, column_rectangle(content, 2, 0, UI_GAP), "recipes_made_by", detail.made_by, screen_context, craftable)
+	used_in := recipe_link_list(state, column_rectangle(content, 2, 1, UI_GAP), "recipes_used_in", detail.used_in, screen_context, craftable)
 	return made_by != NO_RECIPE ? made_by : used_in
 }
 

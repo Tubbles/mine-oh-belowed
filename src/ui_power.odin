@@ -69,8 +69,8 @@ power_panel_region :: proc(state: ^Ui_State, area: Ui_Rectangle, handle: Entity_
 	entities := &screen_context.world.entities
 	networks := &entities.electric_networks
 	if lamp := pool_get(&entities.lamps, handle); lamp != nil {
-		draw_text_fitted(state, choice_row(&content), power_status_line(networks, handle), UI_BODY_TEXT_SIZE, .Left)
-		draw_text_fitted(state, choice_row(&content), text(lamp.lit ? "lamp_lit" : "lamp_dark"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+		draw_text_fitted(state, cut_row(&content), power_status_line(networks, handle), UI_BODY_TEXT_SIZE, .Left)
+		draw_text_fitted(state, cut_row(&content), text(lamp.lit ? "lamp_lit" : "lamp_dark"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 		return
 	}
 	pole := pool_get(&entities.poles, handle)
@@ -78,13 +78,13 @@ power_panel_region :: proc(state: ^Ui_State, area: Ui_Rectangle, handle: Entity_
 		return
 	}
 	network := entity_network(networks, handle)
-	draw_text_fitted(state, choice_row(&content), network < 0 ? text("power_switch_open") : network_name(network), UI_BODY_TEXT_SIZE, .Left)
-	draw_text_fitted(state, choice_row(&content), power_status_line(networks, handle), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	draw_text_fitted(state, cut_row(&content), network < 0 ? text("power_switch_open") : network_name(network), UI_BODY_TEXT_SIZE, .Left)
+	draw_text_fitted(state, cut_row(&content), power_status_line(networks, handle), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	if screen_context.machines.machines[pole.machine].kind != .Power_Switch {
 		return
 	}
 	value := text(pole.on ? "power_switch_on" : "power_switch_off")
-	if ui_choice(state, choice_row(&content), text("power_switch_state"), value) {
+	if ui_choice(state, cut_row(&content), text("power_switch_state"), value) {
 		toggle_power_switch(entities, screen_context.machines, handle)
 	}
 }
@@ -228,14 +228,6 @@ participant_group_lines :: proc(state: ^Ui_State, content: ^Ui_Rectangle, screen
 	for group in largest_participant_groups(participants, network, generators, limit) {
 		name := machine_name(screen_context.machines, group.machine)
 		detail_line(state, content, fmt.tprintf("%s x%d  %s", name, group.count, format_joules_per_tick(group.joules, screen_context.tick_rate)), UI_TEXT_COLOR, UI_LINE_HEIGHT)
-	}
-}
-
-// One line of text, ending with an ellipsis where it does not fit, or
-// nothing once the content has no room left.
-detail_line :: proc(state: ^Ui_State, content: ^Ui_Rectangle, line: string, color := UI_TEXT_COLOR, height: f32 = UI_ROW_HEIGHT) {
-	if row, fits := take_line(content, height); fits {
-		draw_text_fitted(state, row, line, UI_BODY_TEXT_SIZE, .Left, color)
 	}
 }
 

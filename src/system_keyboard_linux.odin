@@ -26,7 +26,7 @@ steam_keyboard_available :: proc(screen_keyboard, steam_deck: string) -> bool {
 // The field's rectangle in window coordinates, as SDL's X11 backend
 // sends it, so Steam docks the keyboard away from it. Mode 0 is a single
 // line.
-steam_keyboard_link :: proc(field_window: Ui_Rectangle) -> string {
+steam_keyboard_link :: proc(field_window: System_Keyboard_Field) -> string {
 	return fmt.tprintf(
 		"steam://open/keyboard?XPosition=%d&YPosition=%d&Width=%d&Height=%d&Mode=0",
 		int(field_window.x),
@@ -42,7 +42,7 @@ system_keyboard_available :: proc() -> bool {
 	return steam_keyboard_available(screen_keyboard, steam_deck)
 }
 
-show_system_keyboard :: proc(field_window: Ui_Rectangle) {
+show_system_keyboard :: proc(field_window: System_Keyboard_Field) {
 	open_steam_link(steam_keyboard_link(field_window))
 }
 

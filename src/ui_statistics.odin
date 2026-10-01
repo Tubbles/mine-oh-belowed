@@ -193,7 +193,7 @@ production_tab :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Scr
 	fluid_rows := fluid_statistics_rows(screen_context.world.statistics, view.window, context.temp_allocator)
 	list_area := cut_left(&content, statistics_list_width(content))
 	cut_left(&content, 2 * UI_PADDING)
-	if ui_choice(state, settings_row(&list_area), text("statistics_window"), text(rate_window_keys[view.window])) {
+	if ui_choice(state, cut_row(&list_area), text("statistics_window"), text(rate_window_keys[view.window])) {
 		view.window = next_rate_window(view.window)
 	}
 	header := cut_top(&list_area, UI_ROW_HEIGHT)

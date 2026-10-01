@@ -21,7 +21,7 @@ foreign android {
 system_keyboard_available :: proc() -> bool {return true}
 
 // The IME places itself; the field's rectangle is Steam's concern.
-show_system_keyboard :: proc(field_window: Ui_Rectangle) {
+show_system_keyboard :: proc(field_window: System_Keyboard_Field) {
 	ANativeActivity_showSoftInput(platform.GetAndroidApp().activity, 0)
 }
 

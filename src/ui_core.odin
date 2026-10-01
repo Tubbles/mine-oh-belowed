@@ -1127,7 +1127,7 @@ inset :: proc(rectangle: Ui_Rectangle, margin: f32) -> Ui_Rectangle {
 	return {rectangle.x + margin, rectangle.y + margin, max(rectangle.width - 2 * margin, 0), max(rectangle.height - 2 * margin, 0)}
 }
 
-column :: proc(rectangle: Ui_Rectangle, count, index: int, gap: f32) -> Ui_Rectangle {
+column_rectangle :: proc(rectangle: Ui_Rectangle, count, index: int, gap: f32) -> Ui_Rectangle {
 	width := (rectangle.width - gap * f32(count - 1)) / f32(count)
 	return {rectangle.x + f32(index) * (width + gap), rectangle.y, width, rectangle.height}
 }

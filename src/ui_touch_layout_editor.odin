@@ -336,7 +336,7 @@ touch_layout_name_entry :: proc(state: ^Ui_State, editor: ^Touch_Layout_Editor, 
 	panel := fitted_panel(ui_panel_area(state), width, panel_height(1, keyboard_keys_height(state.keyboard)))
 	ui_panel_begin(state, "touch_layout_name_entry", panel)
 	content := inset(panel, UI_PADDING)
-	field_row := settings_row(&content)
+	field_row := cut_row(&content)
 	draw_text_field_content(state, field_row, label, &editor.name_field, true)
 	if ui_on_screen_keyboard(state, field_row, {content.x + (content.width - KEYBOARD_WIDTH) / 2, content.y}, &editor.name_field) {
 		state.keyboard = Keyboard_State {
@@ -420,9 +420,9 @@ touch_layout_panel :: proc(state: ^Ui_State, panel: Ui_Rectangle, editor: ^Touch
 	draw_panel_art(state, panel, theme_color(state, .Panel), theme_color(state, .Panel_Edge))
 	content := inset(panel, UI_PADDING)
 	heading := fmt.tprintf("%s: %s", text("touch_layout_editor_title"), touch_layout_display_name(editor.name))
-	draw_text_fitted(state, settings_row(&content), heading, UI_HEADING_TEXT_SIZE, .Centre)
+	draw_text_fitted(state, cut_row(&content), heading, UI_HEADING_TEXT_SIZE, .Centre)
 	touch_layout_element_rows(state, &content, editor, screen_size)
-	name_row := settings_row(&content)
+	name_row := cut_row(&content)
 	save_as := cut_right(&name_row, (name_row.width - UI_GAP) / 3)
 	cut_right(&name_row, UI_GAP)
 	if ui_text_field(state, name_row, name_label, &editor.name_field, text("touch_layout_name_tooltip")) {
@@ -431,17 +431,17 @@ touch_layout_panel :: proc(state: ^Ui_State, panel: Ui_Rectangle, editor: ^Touch
 	if ui_button(state, save_as, text("touch_layout_save_as"), text("touch_layout_save_as_tooltip")) {
 		editor.request = .Save_As
 	}
-	row := settings_row(&content)
-	if ui_button(state, column(row, 3, 0, UI_GAP), text("touch_layout_save"), text("touch_layout_save_tooltip")) {
+	row := cut_row(&content)
+	if ui_button(state, column_rectangle(row, 3, 0, UI_GAP), text("touch_layout_save"), text("touch_layout_save_tooltip")) {
 		editor.request = .Save
 	}
-	if ui_button(state, column(row, 3, 1, UI_GAP), text("touch_layout_delete"), text("touch_layout_delete_tooltip")) {
+	if ui_button(state, column_rectangle(row, 3, 1, UI_GAP), text("touch_layout_delete"), text("touch_layout_delete_tooltip")) {
 		editor.request = .Delete
 	}
-	if ui_button(state, column(row, 3, 2, UI_GAP), text("touch_layout_reset"), text("touch_layout_reset_tooltip")) {
+	if ui_button(state, column_rectangle(row, 3, 2, UI_GAP), text("touch_layout_reset"), text("touch_layout_reset_tooltip")) {
 		editor.request = .Reset
 	}
-	if ui_button(state, settings_row(&content), text("touch_layout_close"), text("touch_layout_close_tooltip")) {
+	if ui_button(state, cut_row(&content), text("touch_layout_close"), text("touch_layout_close_tooltip")) {
 		pop_screen(&state.screens)
 	}
 }
@@ -451,8 +451,8 @@ touch_layout_panel :: proc(state: ^Ui_State, panel: Ui_Rectangle, editor: ^Touch
 // flag. Five rows whatever is selected, so the buttons below stay put.
 // A change of size or place is held to the screen as a move is.
 touch_layout_element_rows :: proc(state: ^Ui_State, content: ^Ui_Rectangle, editor: ^Touch_Layout_Editor, screen_size: [2]f32) {
-	name_row := settings_row(content)
-	rows := [4]Ui_Rectangle{settings_row(content), settings_row(content), settings_row(content), settings_row(content)}
+	name_row := cut_row(content)
+	rows := [4]Ui_Rectangle{cut_row(content), cut_row(content), cut_row(content), cut_row(content)}
 	if editor.selected < 0 || editor.selected >= len(editor.draft.elements) {
 		draw_text_fitted(state, inset(name_row, UI_PADDING), text("touch_layout_nothing_selected"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 		return

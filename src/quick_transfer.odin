@@ -438,9 +438,9 @@ transfer_button_rows :: proc(state: ^Ui_State, content: ^Ui_Rectangle, machine: 
 	index := 0
 	for button in buttons {
 		if index % columns == 0 {
-			row = choice_row(content)
+			row = cut_row(content)
 		}
-		if ui_button(state, column(row, columns, index % columns, UI_GAP), text(transfer_button_keys[button])) {
+		if ui_button(state, column_rectangle(row, columns, index % columns, UI_GAP), text(transfer_button_keys[button])) {
 			pressed = button
 		}
 		index += 1

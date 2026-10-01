@@ -382,6 +382,17 @@ shipped_item_index :: proc(shipment: Shipment, item: Item_Id) -> int {
 	return -1
 }
 
+// "Iron plate 50, Steel 20"
+shipment_cargo_text :: proc(shipment: Shipment, items: Item_Registry) -> string {
+	line := ""
+	for index in 0 ..< int(shipment.cargo_count) {
+		shipped := shipment.cargo[index]
+		separator := index == 0 ? "" : ", "
+		line = fmt.tprintf("%s%s%s %d", line, separator, item_name(items, shipped.item), shipped.count)
+	}
+	return line
+}
+
 // Shipped cargo also counts as consumed, so the production statistics
 // see where it went.
 record_shipment :: proc(statistics: ^Statistics, shipment: Shipment) {

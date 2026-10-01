@@ -67,7 +67,7 @@ assembler_recipe_text :: proc(assembler: Assembler, screen_context: Screen_Conte
 
 // A button for a chosen recipe, a plain line for a fixed one.
 assembler_recipe_row :: proc(state: ^Ui_State, content: ^Ui_Rectangle, assembler: Assembler, machine: Machine, screen_context: Screen_Context) {
-	recipe_row := choice_row(content)
+	recipe_row := cut_row(content)
 	if machine.recipe_choice == .Fixed {
 		draw_text_fitted(state, recipe_row, fmt.tprintf("%s: %s", text("assembler_recipe"), assembler_recipe_text(assembler, screen_context)), UI_BODY_TEXT_SIZE, .Left)
 		return
@@ -127,7 +127,7 @@ lab_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, lab: Lab, screen_c
 	machine_bar(state, cut_top(&content, UI_ROW_HEIGHT), lab_progress_fraction(lab, machine, research, screen_context.technologies, screen_context.tick_rate))
 	detail_line(state, &content, lab_research_text(research, screen_context.technologies))
 	machine_bar(state, cut_top(&content, UI_ROW_HEIGHT), research_progress_fraction(research, screen_context.technologies))
-	if ui_button(state, choice_row(&content), text("lab_open_technologies")) {
+	if ui_button(state, cut_row(&content), text("lab_open_technologies")) {
 		push_screen(&state.screens, .Technologies)
 	}
 	detail_line(state, &content, text(lab_state_keys[lab.state]), UI_DIM_TEXT_COLOR)

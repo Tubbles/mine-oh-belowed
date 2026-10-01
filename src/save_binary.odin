@@ -107,21 +107,6 @@ load_unsigned :: proc(pointer: rawptr, size: int) -> u64 {
 	panic("save: unsupported integer size")
 }
 
-store_unsigned :: proc(pointer: rawptr, size: int, value: u64) {
-	switch size {
-	case 1:
-		(^u8)(pointer)^ = u8(value)
-	case 2:
-		(^u16)(pointer)^ = u16(value)
-	case 4:
-		(^u32)(pointer)^ = u32(value)
-	case 8:
-		(^u64)(pointer)^ = value
-	case:
-		panic("save: unsupported integer size")
-	}
-}
-
 append_unsigned :: proc(bytes: ^[dynamic]byte, value: u64, size: int) {
 	for index in 0 ..< size {
 		append(bytes, byte(value >> (8 * uint(index))))

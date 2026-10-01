@@ -58,3 +58,12 @@ format_blocks_with :: proc(table: ^String_Table, count: int) -> string {
 format_blocks :: proc(count: int) -> string {
 	return format_blocks_with(active_string_table(), count)
 }
+
+// m:ss, or h:mm:ss from the first hour.
+format_game_time :: proc(tick: u64, tick_rate: int) -> string {
+	seconds := tick / u64(max(tick_rate, 1))
+	if seconds >= SECONDS_PER_HOUR {
+		return fmt.tprintf("%d:%02d:%02d", seconds / SECONDS_PER_HOUR, seconds % SECONDS_PER_HOUR / SECONDS_PER_MINUTE, seconds % SECONDS_PER_MINUTE)
+	}
+	return fmt.tprintf("%d:%02d", seconds / SECONDS_PER_MINUTE, seconds % SECONDS_PER_MINUTE)
+}

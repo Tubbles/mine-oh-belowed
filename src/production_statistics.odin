@@ -2,6 +2,7 @@ package game
 
 import "core:slice"
 import "core:unicode"
+import "core:unicode/utf8"
 
 // The pure part of the production statistics screen and the bottleneck
 // overlay (work item 0028): the rows of the item list, the machines that
@@ -104,6 +105,14 @@ row_position_for_letter :: proc(names: []string, rows: []Item_Rate_Row, letter: 
 		}
 	}
 	return -1
+}
+
+first_letter :: proc(name: string) -> rune {
+	if len(name) == 0 {
+		return 0
+	}
+	letter, _ := utf8.decode_rune_in_string(name)
+	return unicode.to_lower(letter)
 }
 
 // How many machines make and use an item right now: furnaces and crafting
