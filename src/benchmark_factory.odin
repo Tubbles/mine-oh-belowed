@@ -655,7 +655,7 @@ run_command_line_benchmark :: proc(size: int, data_directory: string, config: Ga
 	}
 	defer destroy_benchmark_plan(&plan)
 	generator := session_generator(game_data.base_generator, DEFAULT_WORLD_SEED, 100)
-	content := game_simulation_content(game_data.content)
+	content := game_data.content.simulation_content
 	ticks_per_minute := 60 * config.tick_rate
 	report := run_factory_benchmark(size, &generator, content, config, plan, BENCHMARK_COMMAND_WARM_UP_MINUTES * ticks_per_minute, BENCHMARK_COMMAND_MEASURED_MINUTES * ticks_per_minute)
 	defer destroy_benchmark_report(report)

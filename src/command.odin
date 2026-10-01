@@ -232,18 +232,12 @@ execute_command_line :: proc(command_context: Command_Context, line: string) -> 
 	return execute_command(command_context, words), false
 }
 
-// The content with the found schematics, as simulation_tick serves
-// developer requests.
-command_content :: proc(command_context: Command_Context) -> Simulation_Content {
-	content := command_context.content
-	content.recipes = with_schematics_found(content.recipes, command_context.simulation.unlocks.schematics_found)
-	return content
-}
-
 serve_command_request :: proc(command_context: Command_Context, request: Developer_Request) -> (problem: string) {
 	simulation := command_context.simulation
 	before := movement_toggles(simulation.players[0])
-	problem = serve_developer_request(simulation, command_content(command_context), request)
+	// With the found schematics, as simulation_tick serves developer
+	// requests.
+	problem = serve_developer_request(simulation, content_with_found_schematics(command_context.content, simulation.unlocks), request)
 	log_movement_toggles(before, simulation.players[0], "a command", simulation.tick)
 	return
 }

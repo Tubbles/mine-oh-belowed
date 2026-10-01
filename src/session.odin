@@ -50,7 +50,7 @@ Session_Plan :: struct {
 
 // The content with the world's technologies.
 session_simulation_content :: proc(content: Game_Content, technologies: Technology_Registry) -> Simulation_Content {
-	simulation_content := game_simulation_content(content)
+	simulation_content := content.simulation_content
 	simulation_content.technologies = technologies
 	return simulation_content
 }

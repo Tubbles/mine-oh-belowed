@@ -165,7 +165,7 @@ test_a_reload_with_an_inserted_item_keeps_stacks_and_makes_it_usable :: proc(t: 
 	if problem != "" {
 		return
 	}
-	new_content := game_simulation_content(data.content)
+	new_content := data.content.simulation_content
 	testing.expect_value(t, new_content.items.items[0].id, "reload_test_item")
 
 	old_content := make_save_test_content()

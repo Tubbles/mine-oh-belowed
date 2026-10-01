@@ -91,6 +91,7 @@ Rule: generation is a pure function of the world seed and the chunk coordinate, 
 
 - `data/*.sjson` holds blocks (`name_key`; `discoverable` for an ore that reads "Unknown ore" until its drop was obtained), items, recipes, machines, fluids, technologies, vein types and ore tables, biomes, tree species, quest chapters (`data/quests/`), contracts, developer kits and the touch overlay's layout (`touch_overlay.sjson`, loaded with the tables though only the input layer reads it). The values live in `data/*.sjson`, the rules behind them in [content.md](content.md).
 - `load_game_data` parses them with `core:encoding/json` (`Specification.SJSON`) into prototype tables in an arena the frame state owns, one per load. String ids resolve to dense indices once.
+- `Game_Content` embeds the registries the simulation reads (`Simulation_Content`) and adds the presentation tables (notes, the touch layout, display names and orders) and the process flags. A session hands the simulation that embedded value with its scaled technologies and its generator (`frame_simulation_content`), and the tick, the command socket's developer requests and the screens see the recipes with the found schematics (`content_with_found_schematics`).
 
 ### Hot reload
 

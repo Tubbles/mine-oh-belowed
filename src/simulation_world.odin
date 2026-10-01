@@ -23,6 +23,16 @@ Simulation_Content :: struct {
 	generator:    ^Generator,
 }
 
+// The content as a simulation sees it: the recipe registry carries the
+// simulation's found schematics (with_schematics_found). The tick, the
+// command socket's developer requests and the screens read the recipes
+// through it.
+content_with_found_schematics :: proc(content: Simulation_Content, unlocks: Recipe_Unlocks) -> Simulation_Content {
+	result := content
+	result.recipes = with_schematics_found(content.recipes, unlocks.schematics_found)
+	return result
+}
+
 // A player without an input entry gets an empty one. Entities tick after
 // the players, so a stack dropped into a furnace this tick is seen at once.
 // Machines see the found schematics through the recipe registry
@@ -30,8 +40,7 @@ Simulation_Content :: struct {
 // time of each step.
 simulation_tick :: proc(state: ^Simulation_State, content_tables: Simulation_Content, inputs: []Input_Frame, profile: ^Tick_Profile = nil) {
 	clock := profile_now(profile)
-	content := content_tables
-	content.recipes = with_schematics_found(content.recipes, state.unlocks.schematics_found)
+	content := content_with_found_schematics(content_tables, state.unlocks)
 	clock = profile_section(profile, .Unlocks, clock)
 	state.tick += 1
 	advance_statistics_clock(&state.world.statistics, state.tick, state.tick_rate)

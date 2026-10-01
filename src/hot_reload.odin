@@ -324,7 +324,7 @@ reload_content :: proc(state: ^Frame_State) -> (summary: string, problem: string
 	if problem == "" {
 		data.content.unlock_all = state.content.unlock_all
 		data.content.developer_mode = state.content.developer_mode
-		changes := content_table_changes(content_tables(game_simulation_content(state.content)), content_tables(game_simulation_content(data.content)))
+		changes := content_table_changes(content_tables(state.content.simulation_content), content_tables(data.content.simulation_content))
 		summary = content_changes_text(changes)
 		if state.session != nil {
 			problem = reload_session(state.session, state.content, data, state.config)

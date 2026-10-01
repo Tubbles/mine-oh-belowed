@@ -164,7 +164,12 @@ INITIAL_FLY_CAMERA :: Fly_Camera {
 	pitch    = -30,
 }
 
-// With the session's generator, for the orbital survey.
+// With the session's generator, for the orbital survey. Built once by
+// update_frame, once by render_frame and once per queued command: a
+// reload command between them replaces the content arena and the
+// session's technologies, and a texture edit the data browser saves
+// between update and render (serve_data_browser) replaces the item
+// registry's icon_loaded, so a copy never outlives its phase.
 frame_simulation_content :: proc(state: ^Frame_State) -> Simulation_Content {
 	content := session_simulation_content(state.content, state.session.technologies)
 	content.generator = &state.session.generator
@@ -230,7 +235,7 @@ toggle_on_press :: proc(value: bool, just_pressed: Action_Set, action: Action) -
 	return action in just_pressed ? !value : value
 }
 
-apply_debug_actions :: proc(state: ^Frame_State) {
+apply_debug_actions :: proc(state: ^Frame_State, content: Simulation_Content) {
 	if .Toggle_Diagnostics in state.input.just_pressed {
 		state.diagnostics_page = next_diagnostics_page(state.diagnostics_page)
 	}
@@ -242,7 +247,7 @@ apply_debug_actions :: proc(state: ^Frame_State) {
 		debug_remove_block(&session.simulation.world, state.content.blocks, eye, session.debug_edit_counter)
 	}
 	if .Debug_Drop_Item in state.input.just_pressed {
-		debug_drop_item_on_belt(&session.simulation.world, frame_simulation_content(state), session.simulation.players[0])
+		debug_drop_item_on_belt(&session.simulation.world, content, session.simulation.players[0])
 	}
 }
 
@@ -258,9 +263,10 @@ update_frame :: proc(state: ^Frame_State) {
 	state.world_action_guard = update_world_action_guard(state.world_action_guard, world_blocked, state.input.pressed)
 	state.haptic = {}
 	if state.session != nil {
-		apply_debug_actions(state)
+		content := frame_simulation_content(state)
+		apply_debug_actions(state, content)
 		apply_overlay_toggle(state, world_blocked)
-		update_session(state, world_blocked)
+		update_session(state, world_blocked, content)
 		state.haptic = haptic_request_for(state.session.simulation.players[0], !world_blocked)
 	}
 	if .Reload_Data in state.input.just_pressed && developer_mode_on(state) {
@@ -286,7 +292,7 @@ apply_overlay_toggle :: proc(state: ^Frame_State, world_blocked: bool) {
 
 // A pause command holds the ticks like a pausing screen; a tick command
 // replaces the frame's ticks with its own (run_command_ticks).
-update_session :: proc(state: ^Frame_State, world_blocked: bool) {
+update_session :: proc(state: ^Frame_State, world_blocked: bool, content: Simulation_Content) {
 	session := state.session
 	paused := ui_pauses_simulation(state.ui.screens) || state.command_control.paused
 	fast := state.command_control.pending_ticks > 0
@@ -301,10 +307,10 @@ update_session :: proc(state: ^Frame_State, world_blocked: bool) {
 	for _ in 0 ..< tick_count {
 		tick_input: Input_Frame
 		tick_input, session.tick_input = take_tick_input(session.tick_input, frame_for_world)
-		simulation_tick(&session.simulation, frame_simulation_content(state), {tick_input})
+		simulation_tick(&session.simulation, content, {tick_input})
 	}
 	if fast {
-		tick_count = run_command_ticks(state)
+		tick_count = run_command_ticks(state, content)
 	}
 	state.frame_tick_count = tick_count
 	session.ticks_since_save += u64(tick_count)
@@ -366,13 +372,14 @@ render_frame :: proc(state: ^Frame_State) {
 	// The horizon colour, which is the fog colour: the dome covers the
 	// upper hemisphere alone, so the clear colour shows below the horizon.
 	rl.ClearBackground(sky.colors.horizon)
-	counts := draw_session_world(state, session, sky, weather)
+	content := frame_simulation_content(state)
+	counts := draw_session_world(state, session, content, sky, weather)
 	counts.uploaded_meshes = pending_before_upload - session.streaming.pending_jobs
 	begin_render_pixel_drawing()
 	if counts.underwater {
 		draw_underwater_overlay()
 	}
-	play_frame_sounds(&state.audio, &state.sound_memory, session_sound_frame(state, weather))
+	play_frame_sounds(&state.audio, &state.sound_memory, session_sound_frame(state, content, weather))
 	switch state.diagnostics_page {
 	case .Off:
 		if state.show_world_overlay {
@@ -390,11 +397,11 @@ render_frame :: proc(state: ^Frame_State) {
 	capture_pending_screenshot(state)
 }
 
-session_sound_frame :: proc(state: ^Frame_State, weather: Weather) -> Sound_Frame {
+session_sound_frame :: proc(state: ^Frame_State, content: Simulation_Content, weather: Weather) -> Sound_Frame {
 	session := state.session
 	return Sound_Frame {
 		world = &session.simulation.world,
-		content = frame_simulation_content(state),
+		content = content,
 		generator = &session.generator,
 		player = session.simulation.players[0],
 		tick = session.simulation.tick,
@@ -523,8 +530,7 @@ world_facts :: proc(state: ^Frame_State) -> World_Facts {
 	}
 }
 
-draw_session_world :: proc(state: ^Frame_State, session: ^Session, sky: Day_Sky, weather: Weather) -> (counts: Frame_Render_Counts) {
-	content := state.content
+draw_session_world :: proc(state: ^Frame_State, session: ^Session, content: Simulation_Content, sky: Day_Sky, weather: Weather) -> (counts: Frame_Render_Counts) {
 	world := &session.simulation.world
 	tick_rate := session.simulation.tick_rate
 	player := session.simulation.players[0]
@@ -566,14 +572,14 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session, sky: Day_Sky,
 	if state.diagnostics_page == .Render {
 		counts.water_meshes = water_meshes_in_view(state.renderer, camera)
 	}
-	update_particles(&state.particles, &state.particle_memory, world, frame_simulation_content(state), state.model_renderer, session.simulation.players[:], tick_rate, state.frame_seconds)
+	update_particles(&state.particles, &state.particle_memory, world, content, state.model_renderer, session.simulation.players[:], tick_rate, state.frame_seconds)
 	update_satellite_pass(&state.particle_memory, session.simulation.quests.messages[:], state.frame_seconds)
 	draw_particles(&state.particle_renderer, camera, &state.particles, state.particle_memory, world, state.model_renderer, color_to_vector3(sky.colors.sun_tint) * day_factor(sky.blend))
 	if weather_motion_enabled(state.settings) {
 		counts.weather_particles = draw_session_weather(session, camera, weather, sky, seconds)
 	}
 	body := Player_Body_Draw{renderer = state.model_renderer, model = state.player_model, animation = animation, light = player_body_light(frame, player_eye(pose.position))}
-	draw_player_world_overlay(world, frame_simulation_content(state), state.model_renderer, &state.belt_renderer, session.simulation.players[:], 0, alpha, body)
+	draw_player_world_overlay(world, content, state.model_renderer, &state.belt_renderer, session.simulation.players[:], 0, alpha, body)
 	rl.EndMode3D()
 	if player.camera_mode == .First_Person {
 		draw_first_person_hands(view, body, Item_Billboards{camera = camera, atlas = state.item_atlas}, Held_Block_Tiles{texture = chunk_atlas_texture(state.renderer), layout = state.renderer.atlas_layout, blocks = content.blocks}, content.items, selected_hotbar_stack(player))
@@ -644,7 +650,7 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 	screen_context.tick_rate = session.simulation.tick_rate
 	screen_context.technologies = session.technologies
 	screen_context.unlocks = &session.simulation.unlocks
-	screen_context.recipes = with_schematics_found(content.recipes, session.simulation.unlocks.schematics_found)
+	screen_context.recipes = content_with_found_schematics(content.simulation_content, session.simulation.unlocks).recipes
 	screen_context.quest_state = &session.simulation.quests
 	screen_context.browser = &session.recipe_browser
 	screen_context.technology_browser = &session.technology_browser
@@ -770,20 +776,14 @@ show_quest_notices :: proc(state: ^Ui_State, notices: ^[dynamic]Quest_Message, s
 	clear(notices)
 }
 
+// The registries the simulation reads (Simulation_Content, whose
+// generator stays nil here: a session's content points at the session's
+// generator, frame_simulation_content) and the presentation tables.
 Game_Content :: struct {
-	blocks:          Block_Registry,
-	items:           Item_Registry,
-	machines:        Machine_Registry,
-	fluids:          Fluid_Registry,
-	recipes:         Recipe_Registry,
-	technologies:    Technology_Registry,
-	quests:          Quest_Registry,
-	veins:           Vein_Content,
-	contracts:       Contract_Registry,
+	using simulation_content: Simulation_Content,
 	// The journal's Notes tab (notes.odin); presentation only, so the
 	// simulation never sees it.
 	notes:           Note_Registry,
-	developer_kits:  Developer_Kits,
 	// The touch overlay's layout (touch_overlay.odin); presentation only.
 	touch_overlay:   Touch_Overlay_Layout,
 	item_sort_ranks: []u16,
@@ -792,21 +792,6 @@ Game_Content :: struct {
 	unlock_all:      bool,
 	// --dev: the pause menu shows the Developer entry.
 	developer_mode:  bool,
-}
-
-game_simulation_content :: proc(content: Game_Content) -> Simulation_Content {
-	return Simulation_Content {
-		blocks = content.blocks,
-		items = content.items,
-		machines = content.machines,
-		fluids = content.fluids,
-		recipes = content.recipes,
-		technologies = content.technologies,
-		quests = content.quests,
-		veins = content.veins,
-		contracts = content.contracts,
-		developer_kits = content.developer_kits,
-	}
 }
 
 // Between frames: starts, loads or leaves a world as the menus asked. A
@@ -1133,7 +1118,7 @@ send_logged_response :: proc(state: ^Frame_State, client: u64, line: string, res
 
 frame_command_context :: proc(state: ^Frame_State) -> Command_Context {
 	command_context := Command_Context {
-		content              = game_simulation_content(state.content),
+		content              = state.content.simulation_content,
 		control              = &state.command_control,
 		textures             = state.texture_editor.entries[:],
 		screenshot_directory = state.screenshot_directory,
@@ -1182,9 +1167,8 @@ command_save :: proc(state: ^Frame_State) -> Command_Response {
 
 // Ticks of a tick command with no player input, as many as fit in
 // COMMAND_TICK_WALL_BUDGET. Returns how many ran.
-run_command_ticks :: proc(state: ^Frame_State) -> int {
+run_command_ticks :: proc(state: ^Frame_State, content: Simulation_Content) -> int {
 	start := time.tick_now()
-	content := frame_simulation_content(state)
 	count := 0
 	for state.command_control.pending_ticks > 0 && time.tick_since(start) < COMMAND_TICK_WALL_BUDGET {
 		run_command_tick(&state.session.simulation, content, &state.command_control)
