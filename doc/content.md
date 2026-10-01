@@ -17,7 +17,7 @@ The rules behind the numbers in `data/*.sjson`. Every value lives in its data fi
 
 `data/items.sjson`.
 
-- Stacks are small, so pockets fill in phase 2 and belts win early. Classes: raw material, ore, spoils, blocks, plates, alloys, steel, crushed ore, alumina, sulfur and bitumen 50, slag 100, the other intermediates (planks, gears, wire, circuits, glass, silicon, plastic, science packs) 100, machines and tools 10, rocket parts 10 (which also caps a launch pad slot), thumper charges 50, schematics 1. `item_test.odin` pins a plate, a gear and a machine.
+- Nothing stacks below 50 (user, 2026-10-01), so a pocket holds a useful amount of anything. Classes: raw material, ore, spoils, blocks, plates, alloys, steel, crushed ore, alumina, sulfur and bitumen 50, slag 100, the other intermediates (planks, gears, wire, circuits, glass, silicon, plastic, science packs) 100, machines, tools, rocket parts (the stack also caps a launch pad slot, and a rocket takes at most 10), thumper charges and schematics 50, the machines placed by the dozen (inserters, belts with ramps and lifts, poles, pipes, lamps) 100. `item_test.odin` pins a plate, a gear and a machine.
 - Mining a block yields exactly one item: the item whose `places_block` it is, or whose `mined_from` lists it. `also_mined_from` adds a second drop (gold quartz gives quartz and gold ore).
 - Prices in venture credit grow with recipe depth. The classes are in the header of `data/items.sjson`.
 

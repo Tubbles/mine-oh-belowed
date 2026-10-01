@@ -25,7 +25,7 @@ test_shipped_items_resolve :: proc(t: ^testing.T) {
 	testing.expect_value(t, iron_plate.category, Item_Category.Intermediate)
 	testing.expect_value(t, iron_plate.stack_size, 50)
 	testing.expect_value(t, items.items[test_item(items, "iron_gear")].stack_size, 100)
-	testing.expect_value(t, items.items[test_item(items, "stone_furnace")].stack_size, 10)
+	testing.expect_value(t, items.items[test_item(items, "stone_furnace")].stack_size, 50)
 	testing.expect_value(t, items.items[test_item(items, "stick")].fuel_kilojoules, 500)
 	testing.expect_value(t, items.items[test_item(items, "coal")].fuel_kilojoules, 4000)
 	testing.expect_value(t, item_places_block(items, test_item(items, "torch")), test_block(blocks, "torch"))

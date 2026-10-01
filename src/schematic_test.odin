@@ -285,7 +285,7 @@ test_schematic_channel_in_recipe_unlocks :: proc(t: ^testing.T) {
 		testing.expect_value(t, test.items.items[item].id, fmt.tprintf("schematic_%s", definition.id))
 		testing.expect(t, item_is_usable(test.items, item))
 		testing.expect_value(t, test.items.items[item].category, Item_Category.Tool)
-		testing.expect_value(t, test.items.items[item].stack_size, 1)
+		testing.expect_value(t, test.items.items[item].stack_size, 50)
 		testing.expect(t, test.items.items[item].cannot_recycle)
 		testing.expect(t, !recipe_is_available(test.unlocks, recipe))
 		testing.expect(t, record_found_schematic(&test.unlocks, test.recipes, recipe))

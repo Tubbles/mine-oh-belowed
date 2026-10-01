@@ -8,8 +8,10 @@
 // output item: describe_item_<id> by convention. A set key must exist.
 // category is raw, intermediate, tool, machine or block; the inventory
 // sorts by category in that order, then by name.
-// stack_size follows doc/content.md: ore, plates and spoils 50,
-// intermediates 100, machines and tools 10. Blocks stack like raw material.
+// stack_size follows doc/content.md: nothing stacks below 50; ore, plates,
+// spoils, machines and tools 50, intermediates 100, and the machines placed
+// by the dozen (inserters, belts, poles, lamps) 100. Blocks stack like raw
+// material.
 // places_block (optional) is the block the item places, and mining that
 // block yields the item. mined_from (optional) lists further blocks whose
 // mining yields the item (grass gives dirt, ore blocks give the ore).
@@ -57,7 +59,7 @@
 // use_range is the radius it images).
 // Rocket program (work item 0040): the launch pad, and the rocket parts
 // it assembles a rocket from (rocket fuel is a fluid). A part stacks to
-// 10, which also caps what one pad slot holds.
+// 50, which also caps what one pad slot holds; a rocket takes at most 10.
 // tool_tier (optional, tool items only, work item 0051) is the highest
 // blocks.sjson tool_tier the item mines by hand while anywhere in the
 // player's inventory. Every block tier needs a tool that reaches it.
@@ -131,59 +133,59 @@ items = [
 	{id = "bitumen", name_key = "item_bitumen", description_key = "describe_item_bitumen", category = "intermediate", stack_size = 50, cannot_recycle = true, price = 3}
 	{id = "science_pack_2", name_key = "item_science_pack_2", description_key = "describe_item_science_pack_2", category = "intermediate", stack_size = 100, price = 15}
 	// Tools
-	{id = "wooden_pickaxe", name_key = "item_wooden_pickaxe", description_key = "describe_item_wooden_pickaxe", category = "tool", stack_size = 10, tool_tier = 1, price = 5}
-	{id = "stone_pickaxe", name_key = "item_stone_pickaxe", description_key = "describe_item_stone_pickaxe", category = "tool", stack_size = 10, tool_tier = 2, price = 5}
-	{id = "iron_pickaxe", name_key = "item_iron_pickaxe", description_key = "describe_item_iron_pickaxe", category = "tool", stack_size = 10, tool_tier = 3, price = 8}
-	{id = "geologists_hammer", name_key = "item_geologists_hammer", description_key = "describe_item_geologists_hammer", category = "tool", stack_size = 10, usable = true, use = "assay", price = 6, tool_tier = 2}
-	{id = "magnetometer", name_key = "item_magnetometer", description_key = "describe_item_magnetometer", category = "tool", stack_size = 10, usable = true, use = "magnetometer", detects = "hematite", use_range = 30, price = 35}
+	{id = "wooden_pickaxe", name_key = "item_wooden_pickaxe", description_key = "describe_item_wooden_pickaxe", category = "tool", stack_size = 50, tool_tier = 1, price = 5}
+	{id = "stone_pickaxe", name_key = "item_stone_pickaxe", description_key = "describe_item_stone_pickaxe", category = "tool", stack_size = 50, tool_tier = 2, price = 5}
+	{id = "iron_pickaxe", name_key = "item_iron_pickaxe", description_key = "describe_item_iron_pickaxe", category = "tool", stack_size = 50, tool_tier = 3, price = 8}
+	{id = "geologists_hammer", name_key = "item_geologists_hammer", description_key = "describe_item_geologists_hammer", category = "tool", stack_size = 50, usable = true, use = "assay", price = 6, tool_tier = 2}
+	{id = "magnetometer", name_key = "item_magnetometer", description_key = "describe_item_magnetometer", category = "tool", stack_size = 50, usable = true, use = "magnetometer", detects = "hematite", use_range = 30, price = 35}
 	{id = "thumper_charge", name_key = "item_thumper_charge", description_key = "describe_item_thumper_charge", category = "tool", stack_size = 50, usable = true, use = "seismic_shot", use_range = 32, cannot_recycle = true, price = 5}
 	// Machines
-	{id = "stone_furnace", name_key = "item_stone_furnace", description_key = "describe_item_stone_furnace", category = "machine", stack_size = 10, price = 5}
-	{id = "steel_furnace", name_key = "item_steel_furnace", description_key = "describe_item_steel_furnace", category = "machine", stack_size = 10, price = 90}
-	{id = "burner_mining_drill", name_key = "item_burner_mining_drill", description_key = "describe_item_burner_mining_drill", category = "machine", stack_size = 10, price = 25}
-	{id = "electric_mining_drill", name_key = "item_electric_mining_drill", description_key = "describe_item_electric_mining_drill", category = "machine", stack_size = 10, price = 60}
-	{id = "burner_inserter", name_key = "item_burner_inserter", description_key = "describe_item_burner_inserter", category = "machine", stack_size = 10, price = 6}
-	{id = "inserter", name_key = "item_inserter", description_key = "describe_item_inserter", category = "machine", stack_size = 10, price = 12}
-	{id = "filter_inserter", name_key = "item_filter_inserter", description_key = "describe_item_filter_inserter", category = "machine", stack_size = 10, price = 25}
-	{id = "fast_inserter", name_key = "item_fast_inserter", description_key = "describe_item_fast_inserter", category = "machine", stack_size = 10, price = 30}
-	{id = "long_inserter", name_key = "item_long_inserter", description_key = "describe_item_long_inserter", category = "machine", stack_size = 10, price = 18}
-	{id = "belt", name_key = "item_belt", description_key = "describe_item_belt", category = "machine", stack_size = 10, price = 4}
-	{id = "belt_ramp", name_key = "item_belt_ramp", description_key = "describe_item_belt_ramp", category = "machine", stack_size = 10, price = 6}
-	{id = "belt_lift", name_key = "item_belt_lift", description_key = "describe_item_belt_lift", category = "machine", stack_size = 10, price = 16}
-	{id = "belt_2", name_key = "item_belt_2", description_key = "describe_item_belt_2", category = "machine", stack_size = 10, price = 20}
-	{id = "belt_ramp_2", name_key = "item_belt_ramp_2", description_key = "describe_item_belt_ramp_2", category = "machine", stack_size = 10, price = 22}
-	{id = "belt_lift_2", name_key = "item_belt_lift_2", description_key = "describe_item_belt_lift_2", category = "machine", stack_size = 10, price = 50}
-	{id = "splitter", name_key = "item_splitter", description_key = "describe_item_splitter", category = "machine", stack_size = 10, price = 55}
-	{id = "wooden_chest", name_key = "item_wooden_chest", description_key = "describe_item_wooden_chest", category = "machine", stack_size = 10, price = 4}
-	{id = "iron_chest", name_key = "item_iron_chest", description_key = "describe_item_iron_chest", category = "machine", stack_size = 10, price = 16}
-	{id = "offshore_pump", name_key = "item_offshore_pump", description_key = "describe_item_offshore_pump", category = "machine", stack_size = 10, price = 20}
-	{id = "pump", name_key = "item_pump", description_key = "describe_item_pump", category = "machine", stack_size = 10, price = 20}
-	{id = "storage_tank", name_key = "item_storage_tank", description_key = "describe_item_storage_tank", category = "machine", stack_size = 10, price = 250}
-	{id = "boiler", name_key = "item_boiler", description_key = "describe_item_boiler", category = "machine", stack_size = 10, price = 13}
-	{id = "fuel_generator", name_key = "item_fuel_generator", description_key = "describe_item_fuel_generator", category = "machine", stack_size = 10, price = 31}
-	{id = "steam_engine", name_key = "item_steam_engine", description_key = "describe_item_steam_engine", category = "machine", stack_size = 10, price = 62}
-	{id = "small_pole", name_key = "item_small_pole", description_key = "describe_item_small_pole", category = "machine", stack_size = 10, price = 3}
-	{id = "big_pole", name_key = "item_big_pole", description_key = "describe_item_big_pole", category = "machine", stack_size = 10, price = 28}
-	{id = "substation", name_key = "item_substation", description_key = "describe_item_substation", category = "machine", stack_size = 10, price = 160}
-	{id = "lamp", name_key = "item_lamp", description_key = "describe_item_lamp", category = "machine", stack_size = 10, price = 12}
-	{id = "power_switch", name_key = "item_power_switch", description_key = "describe_item_power_switch", category = "machine", stack_size = 10, price = 22}
-	{id = "assembler_1", name_key = "item_assembler_1", description_key = "describe_item_assembler_1", category = "machine", stack_size = 10, price = 56}
-	{id = "lab", name_key = "item_lab", description_key = "describe_item_lab", category = "machine", stack_size = 10, price = 120}
-	{id = "core_sample_drill", name_key = "item_core_sample_drill", description_key = "describe_item_core_sample_drill", category = "machine", stack_size = 10, price = 100}
-	{id = "crusher", name_key = "item_crusher", description_key = "describe_item_crusher", category = "machine", stack_size = 10, price = 80}
-	{id = "washer", name_key = "item_washer", description_key = "describe_item_washer", category = "machine", stack_size = 10, price = 60}
-	{id = "alloy_furnace", name_key = "item_alloy_furnace", description_key = "describe_item_alloy_furnace", category = "machine", stack_size = 10, price = 46}
-	{id = "recycler", name_key = "item_recycler", description_key = "describe_item_recycler", category = "machine", stack_size = 10, price = 130}
-	{id = "tar_pit_pump", name_key = "item_tar_pit_pump", description_key = "describe_item_tar_pit_pump", category = "machine", stack_size = 10, price = 90}
-	{id = "refinery", name_key = "item_refinery", description_key = "describe_item_refinery", category = "machine", stack_size = 10, price = 320}
-	{id = "cracking_unit", name_key = "item_cracking_unit", description_key = "describe_item_cracking_unit", category = "machine", stack_size = 10, price = 210}
-	{id = "flare_stack", name_key = "item_flare_stack", description_key = "describe_item_flare_stack", category = "machine", stack_size = 10, price = 85}
-	{id = "combustion_generator", name_key = "item_combustion_generator", description_key = "describe_item_combustion_generator", category = "machine", stack_size = 10, price = 210}
-	{id = "hydro_turbine", name_key = "item_hydro_turbine", description_key = "describe_item_hydro_turbine", category = "machine", stack_size = 10, price = 200}
-	{id = "chemical_plant", name_key = "item_chemical_plant", description_key = "describe_item_chemical_plant", category = "machine", stack_size = 10, price = 120}
-	{id = "wood_gasifier", name_key = "item_wood_gasifier", description_key = "describe_item_wood_gasifier", category = "machine", stack_size = 10, price = 60}
-	{id = "bore_drill", name_key = "item_bore_drill", description_key = "describe_item_bore_drill", category = "machine", stack_size = 10, price = 460}
-	{id = "electrolyser", name_key = "item_electrolyser", description_key = "describe_item_electrolyser", category = "machine", stack_size = 10, price = 230}
+	{id = "stone_furnace", name_key = "item_stone_furnace", description_key = "describe_item_stone_furnace", category = "machine", stack_size = 50, price = 5}
+	{id = "steel_furnace", name_key = "item_steel_furnace", description_key = "describe_item_steel_furnace", category = "machine", stack_size = 50, price = 90}
+	{id = "burner_mining_drill", name_key = "item_burner_mining_drill", description_key = "describe_item_burner_mining_drill", category = "machine", stack_size = 50, price = 25}
+	{id = "electric_mining_drill", name_key = "item_electric_mining_drill", description_key = "describe_item_electric_mining_drill", category = "machine", stack_size = 50, price = 60}
+	{id = "burner_inserter", name_key = "item_burner_inserter", description_key = "describe_item_burner_inserter", category = "machine", stack_size = 100, price = 6}
+	{id = "inserter", name_key = "item_inserter", description_key = "describe_item_inserter", category = "machine", stack_size = 100, price = 12}
+	{id = "filter_inserter", name_key = "item_filter_inserter", description_key = "describe_item_filter_inserter", category = "machine", stack_size = 100, price = 25}
+	{id = "fast_inserter", name_key = "item_fast_inserter", description_key = "describe_item_fast_inserter", category = "machine", stack_size = 100, price = 30}
+	{id = "long_inserter", name_key = "item_long_inserter", description_key = "describe_item_long_inserter", category = "machine", stack_size = 100, price = 18}
+	{id = "belt", name_key = "item_belt", description_key = "describe_item_belt", category = "machine", stack_size = 100, price = 4}
+	{id = "belt_ramp", name_key = "item_belt_ramp", description_key = "describe_item_belt_ramp", category = "machine", stack_size = 100, price = 6}
+	{id = "belt_lift", name_key = "item_belt_lift", description_key = "describe_item_belt_lift", category = "machine", stack_size = 100, price = 16}
+	{id = "belt_2", name_key = "item_belt_2", description_key = "describe_item_belt_2", category = "machine", stack_size = 100, price = 20}
+	{id = "belt_ramp_2", name_key = "item_belt_ramp_2", description_key = "describe_item_belt_ramp_2", category = "machine", stack_size = 100, price = 22}
+	{id = "belt_lift_2", name_key = "item_belt_lift_2", description_key = "describe_item_belt_lift_2", category = "machine", stack_size = 100, price = 50}
+	{id = "splitter", name_key = "item_splitter", description_key = "describe_item_splitter", category = "machine", stack_size = 50, price = 55}
+	{id = "wooden_chest", name_key = "item_wooden_chest", description_key = "describe_item_wooden_chest", category = "machine", stack_size = 50, price = 4}
+	{id = "iron_chest", name_key = "item_iron_chest", description_key = "describe_item_iron_chest", category = "machine", stack_size = 50, price = 16}
+	{id = "offshore_pump", name_key = "item_offshore_pump", description_key = "describe_item_offshore_pump", category = "machine", stack_size = 50, price = 20}
+	{id = "pump", name_key = "item_pump", description_key = "describe_item_pump", category = "machine", stack_size = 50, price = 20}
+	{id = "storage_tank", name_key = "item_storage_tank", description_key = "describe_item_storage_tank", category = "machine", stack_size = 50, price = 250}
+	{id = "boiler", name_key = "item_boiler", description_key = "describe_item_boiler", category = "machine", stack_size = 50, price = 13}
+	{id = "fuel_generator", name_key = "item_fuel_generator", description_key = "describe_item_fuel_generator", category = "machine", stack_size = 50, price = 31}
+	{id = "steam_engine", name_key = "item_steam_engine", description_key = "describe_item_steam_engine", category = "machine", stack_size = 50, price = 62}
+	{id = "small_pole", name_key = "item_small_pole", description_key = "describe_item_small_pole", category = "machine", stack_size = 100, price = 3}
+	{id = "big_pole", name_key = "item_big_pole", description_key = "describe_item_big_pole", category = "machine", stack_size = 100, price = 28}
+	{id = "substation", name_key = "item_substation", description_key = "describe_item_substation", category = "machine", stack_size = 50, price = 160}
+	{id = "lamp", name_key = "item_lamp", description_key = "describe_item_lamp", category = "machine", stack_size = 100, price = 12}
+	{id = "power_switch", name_key = "item_power_switch", description_key = "describe_item_power_switch", category = "machine", stack_size = 50, price = 22}
+	{id = "assembler_1", name_key = "item_assembler_1", description_key = "describe_item_assembler_1", category = "machine", stack_size = 50, price = 56}
+	{id = "lab", name_key = "item_lab", description_key = "describe_item_lab", category = "machine", stack_size = 50, price = 120}
+	{id = "core_sample_drill", name_key = "item_core_sample_drill", description_key = "describe_item_core_sample_drill", category = "machine", stack_size = 50, price = 100}
+	{id = "crusher", name_key = "item_crusher", description_key = "describe_item_crusher", category = "machine", stack_size = 50, price = 80}
+	{id = "washer", name_key = "item_washer", description_key = "describe_item_washer", category = "machine", stack_size = 50, price = 60}
+	{id = "alloy_furnace", name_key = "item_alloy_furnace", description_key = "describe_item_alloy_furnace", category = "machine", stack_size = 50, price = 46}
+	{id = "recycler", name_key = "item_recycler", description_key = "describe_item_recycler", category = "machine", stack_size = 50, price = 130}
+	{id = "tar_pit_pump", name_key = "item_tar_pit_pump", description_key = "describe_item_tar_pit_pump", category = "machine", stack_size = 50, price = 90}
+	{id = "refinery", name_key = "item_refinery", description_key = "describe_item_refinery", category = "machine", stack_size = 50, price = 320}
+	{id = "cracking_unit", name_key = "item_cracking_unit", description_key = "describe_item_cracking_unit", category = "machine", stack_size = 50, price = 210}
+	{id = "flare_stack", name_key = "item_flare_stack", description_key = "describe_item_flare_stack", category = "machine", stack_size = 50, price = 85}
+	{id = "combustion_generator", name_key = "item_combustion_generator", description_key = "describe_item_combustion_generator", category = "machine", stack_size = 50, price = 210}
+	{id = "hydro_turbine", name_key = "item_hydro_turbine", description_key = "describe_item_hydro_turbine", category = "machine", stack_size = 50, price = 200}
+	{id = "chemical_plant", name_key = "item_chemical_plant", description_key = "describe_item_chemical_plant", category = "machine", stack_size = 50, price = 120}
+	{id = "wood_gasifier", name_key = "item_wood_gasifier", description_key = "describe_item_wood_gasifier", category = "machine", stack_size = 50, price = 60}
+	{id = "bore_drill", name_key = "item_bore_drill", description_key = "describe_item_bore_drill", category = "machine", stack_size = 50, price = 460}
+	{id = "electrolyser", name_key = "item_electrolyser", description_key = "describe_item_electrolyser", category = "machine", stack_size = 50, price = 230}
 	// Blocks that drop themselves
 	{id = "leaves", name_key = "item_leaves", description_key = "describe_item_leaves", category = "block", stack_size = 50, places_block = "leaves", mined_from = ["birch_leaves", "pine_leaves", "acacia_leaves", "palm_leaves"], price = 1}
 	{id = "tar", name_key = "item_tar", description_key = "describe_item_tar", category = "block", stack_size = 50, places_block = "tar", price = 1}
@@ -211,15 +213,15 @@ items = [
 	{id = "snow", name_key = "item_snow", description_key = "describe_item_snow", category = "block", stack_size = 50, places_block = "snow", cannot_recycle = true, price = 1}
 
 	// Schematics (work item 0036), read with Use_Item.
-	{id = "schematic_low_grade_iron_plate", name_key = "item_schematic_low_grade_iron_plate", description_key = "describe_item_schematic_low_grade_iron_plate", category = "tool", stack_size = 1, usable = true, cannot_recycle = true, price = 50}
-	{id = "schematic_charcoal_steel", name_key = "item_schematic_charcoal_steel", description_key = "describe_item_schematic_charcoal_steel", category = "tool", stack_size = 1, usable = true, cannot_recycle = true, price = 50}
-	{id = "schematic_wood_gas_plastic", name_key = "item_schematic_wood_gas_plastic", description_key = "describe_item_schematic_wood_gas_plastic", category = "tool", stack_size = 1, usable = true, cannot_recycle = true, price = 50}
-	{id = "schematic_slag_concrete", name_key = "item_schematic_slag_concrete", description_key = "describe_item_schematic_slag_concrete", category = "tool", stack_size = 1, usable = true, cannot_recycle = true, price = 50}
-	{id = "schematic_wood_gas_rocket_fuel", name_key = "item_schematic_wood_gas_rocket_fuel", description_key = "describe_item_schematic_wood_gas_rocket_fuel", category = "tool", stack_size = 1, usable = true, cannot_recycle = true, price = 50}
+	{id = "schematic_low_grade_iron_plate", name_key = "item_schematic_low_grade_iron_plate", description_key = "describe_item_schematic_low_grade_iron_plate", category = "tool", stack_size = 50, usable = true, cannot_recycle = true, price = 50}
+	{id = "schematic_charcoal_steel", name_key = "item_schematic_charcoal_steel", description_key = "describe_item_schematic_charcoal_steel", category = "tool", stack_size = 50, usable = true, cannot_recycle = true, price = 50}
+	{id = "schematic_wood_gas_plastic", name_key = "item_schematic_wood_gas_plastic", description_key = "describe_item_schematic_wood_gas_plastic", category = "tool", stack_size = 50, usable = true, cannot_recycle = true, price = 50}
+	{id = "schematic_slag_concrete", name_key = "item_schematic_slag_concrete", description_key = "describe_item_schematic_slag_concrete", category = "tool", stack_size = 50, usable = true, cannot_recycle = true, price = 50}
+	{id = "schematic_wood_gas_rocket_fuel", name_key = "item_schematic_wood_gas_rocket_fuel", description_key = "describe_item_schematic_wood_gas_rocket_fuel", category = "tool", stack_size = 50, usable = true, cannot_recycle = true, price = 50}
 
 	// Rocket program (work item 0040).
-	{id = "launch_pad", name_key = "item_launch_pad", description_key = "describe_item_launch_pad", category = "machine", stack_size = 10, price = 1800}
-	{id = "rocket_structure", name_key = "item_rocket_structure", description_key = "describe_item_rocket_structure", category = "intermediate", stack_size = 10, price = 160}
-	{id = "guidance_unit", name_key = "item_guidance_unit", description_key = "describe_item_guidance_unit", category = "intermediate", stack_size = 10, price = 80}
-	{id = "cargo_capsule", name_key = "item_cargo_capsule", description_key = "describe_item_cargo_capsule", category = "intermediate", stack_size = 10, price = 290}
+	{id = "launch_pad", name_key = "item_launch_pad", description_key = "describe_item_launch_pad", category = "machine", stack_size = 50, price = 1800}
+	{id = "rocket_structure", name_key = "item_rocket_structure", description_key = "describe_item_rocket_structure", category = "intermediate", stack_size = 50, price = 160}
+	{id = "guidance_unit", name_key = "item_guidance_unit", description_key = "describe_item_guidance_unit", category = "intermediate", stack_size = 50, price = 80}
+	{id = "cargo_capsule", name_key = "item_cargo_capsule", description_key = "describe_item_cargo_capsule", category = "intermediate", stack_size = 50, price = 290}
 ]
