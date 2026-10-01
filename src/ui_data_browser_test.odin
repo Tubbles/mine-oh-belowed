@@ -172,14 +172,12 @@ test_data_files_save_waits_for_the_frame_loop :: proc(t: ^testing.T) {
 	testing.expect(t, draw_list_has_text(state.draw_list[:], text("data_files_unsaved")))
 	testing.expect(t, draw_list_text_checksum(state) > 0)
 
-	// The frame loop's turn, on a Frame_State holding the audit's browser.
-	frame := new(Frame_State)
-	defer free(frame)
-	defer destroy_ui_state(&frame.ui)
-	frame.data_directory = test_data_directory()
-	frame.data_browser = audit.data_browser
-	serve_data_browser(frame)
-	audit.data_browser = frame.data_browser
+	// The frame loop's turn, on the audit's browser.
+	frame_ui: Ui_State
+	defer destroy_ui_state(&frame_ui)
+	settings: Settings
+	changed := serve_data_browser({browser = browser, ui = &frame_ui, settings = &settings, data_directory = test_data_directory()})
+	testing.expect_value(t, changed, Data_File_Categories{data_file_category("game.sjson")})
 	testing.expect(t, !browser.save_requested)
 	testing.expect(t, !browser.unsaved)
 	testing.expect(t, browser.open)

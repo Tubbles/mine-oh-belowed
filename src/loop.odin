@@ -1018,9 +1018,12 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	apply_cursor_mode(&state)
 	for !rl.WindowShouldClose() && !state.quit_requested {
 		update_frame(&state)
-		serve_texture_editor(&state)
-		serve_data_browser(&state)
-		serve_touch_layouts(&state)
+		serve_texture_editor(&state.texture_editor, &state.ui, state.renderer, state.data_directory, state.content.blocks)
+		data_browser := Data_Browser_Context{browser = &state.data_browser, ui = &state.ui, settings = &state.settings, data_directory = state.data_directory}
+		apply_data_edit_change(&state, serve_data_browser(data_browser))
+		if serve_touch_layouts(&state.touch_layouts, &state.touch_layout_editor, &state.ui, state.content.touch_overlay, state.environment) {
+			state.touch_overlay = release_touch_latches(state.touch_overlay)
+		}
 		render_frame(&state)
 		update_audio(&state.audio, state.settings, state.frame_seconds)
 		apply_session_request(&state)
@@ -1255,20 +1258,19 @@ data_edits_directory :: proc() -> string {
 // editor is open every entry's tile copied into the block atlas, which
 // also puts the edits back after a reload rebuilt the atlas from the
 // files; a Save written.
-serve_texture_editor :: proc(state: ^Frame_State) {
-	editor := &state.texture_editor
-	if editor.refresh_requested || !texture_editor_matches_registry(editor^, state.content.blocks) {
+serve_texture_editor :: proc(editor: ^Texture_Editor, ui: ^Ui_State, renderer: Chunk_Renderer, data_directory: string, blocks: Block_Registry) {
+	if editor.refresh_requested || !texture_editor_matches_registry(editor^, blocks) {
 		editor.refresh_requested = false
-		load_texture_editor(editor, state.data_directory, texture_edits_path(), state.content.blocks)
+		load_texture_editor(editor, data_directory, texture_edits_path(), blocks)
 	}
-	if screen_stack_contains(state.ui.screens, .Textures) {
+	if screen_stack_contains(ui.screens, .Textures) {
 		for entry in editor.entries {
-			update_atlas_block_tile(chunk_atlas_texture(state.renderer), state.renderer.atlas_layout, entry.block, entry.tile)
+			update_atlas_block_tile(chunk_atlas_texture(renderer), renderer.atlas_layout, entry.block, entry.tile)
 		}
 	}
 	if editor.save_requested {
 		editor.save_requested = false
-		save_texture_edits(state)
+		save_texture_edits(editor, ui)
 	}
 }
 
@@ -1276,117 +1278,120 @@ serve_texture_editor :: proc(state: ^Frame_State) {
 // close first (the last frame's draw list pointed into the file), then a
 // discard, which reads the tree again, then a save (0130), then an export
 // (0131, data_export.odin), then the tree when the Developer screen or the
-// save asked, then the file the screen opens.
-serve_data_browser :: proc(state: ^Frame_State) {
-	browser := &state.data_browser
+// save asked, then the file the screen opens. The categories a discard
+// or a save changed, which the frame loop applies right after, still
+// between frames (apply_data_edit_change).
+serve_data_browser :: proc(data: Data_Browser_Context) -> (changed: Data_File_Categories) {
+	browser := data.browser
 	apply_data_browser_close_request(browser)
 	if browser.discard_requested {
 		browser.discard_requested = false
-		discard_data_edit(state)
+		changed |= discard_data_edit(data)
 	}
 	if browser.save_requested {
 		browser.save_requested = false
-		save_data_edit(state, data_edits_directory())
+		changed |= save_data_edit(data, data_edits_directory())
 	}
 	if browser.export_requested {
 		browser.export_requested = false
-		export_data_browser_files(state, data_edits_directory())
+		export_data_browser_files(data, data_edits_directory())
 	}
 	if browser.refresh_requested {
 		browser.refresh_requested = false
-		rebuild_data_tree(browser, list_data_files(state.data_directory, data_edits_directory()))
+		rebuild_data_tree(browser, list_data_files(data.data_directory, data_edits_directory()))
 	}
 	if browser.open_requested {
 		browser.open_requested = false
-		open_data_browser_file(browser, state.data_directory)
+		open_data_browser_file(browser, data.data_directory)
 	}
+	return changed
 }
 
-// Deletes the selected file's overlay copy and applies the change as the
-// watcher would (apply_data_edit_change); the tree and an open file are
-// read again. A copy that cannot be deleted is logged and toasted. With
-// export_on_save the export's copy goes too (sync_data_edit_export).
-discard_data_edit :: proc(state: ^Frame_State) {
-	browser := &state.data_browser
+// Deletes the selected file's overlay copy and returns its category, for
+// the frame loop to apply as the watcher would (apply_data_edit_change);
+// the tree and an open file are read again. A copy that cannot be deleted
+// is logged and toasted, and changes nothing. With export_on_save the
+// export's copy goes too (sync_data_edit_export).
+discard_data_edit :: proc(data: Data_Browser_Context) -> Data_File_Categories {
+	browser := data.browser
 	edits_directory := data_edits_directory()
 	if browser.selected < 0 || browser.selected >= len(browser.rows) || edits_directory == "" {
-		return
+		return {}
 	}
 	relative_path := strings.clone(browser.rows[browser.selected].path, context.temp_allocator)
 	overlay := platform.join_path(edits_directory, relative_path)
 	if error := os.remove(overlay); error != nil {
 		platform.log_printf("error: cannot discard the data edit %s: %v", overlay, error)
-		ui_toast(&state.ui, fmt.tprintf("%s %s", text("data_files_discard_failed"), relative_path))
-		return
+		ui_toast(data.ui, fmt.tprintf("%s %s", text("data_files_discard_failed"), relative_path))
+		return {}
 	}
 	platform.log_printf("data: discarded the data edit %s", overlay)
 	if browser.open && browser.unsaved {
-		ui_toast(&state.ui, text("data_files_changes_dropped"))
+		ui_toast(data.ui, text("data_files_changes_dropped"))
 	}
-	ui_toast(&state.ui, fmt.tprintf("%s %s", text("data_files_discarded"), relative_path))
-	sync_data_edit_export(state, edits_directory, relative_path)
-	apply_data_edit_change(state, relative_path)
+	ui_toast(data.ui, fmt.tprintf("%s %s", text("data_files_discarded"), relative_path))
+	sync_data_edit_export(data, edits_directory, relative_path)
 	browser.refresh_requested = true
 	browser.open_requested = browser.open
+	return {data_file_category(relative_path)}
 }
 
 // Writes the open SJSON file's tree to the edits directory (0130) and
-// applies the change as the watcher would (apply_data_edit_change); the
-// tree is read again for its edited tag. A failed write is logged and
-// toasted, and the file stays unsaved. With export_on_save the copy goes
-// to the export too (sync_data_edit_export). The edits directory is a
-// parameter for the test (data_edits_directory is "" under odin test).
-save_data_edit :: proc(state: ^Frame_State, edits_directory: string) {
-	browser := &state.data_browser
+// returns its category, for the frame loop to apply as the watcher would
+// (apply_data_edit_change); the tree is read again for its edited tag. A
+// failed write is logged and toasted, the file stays unsaved, and nothing
+// changed. With export_on_save the copy goes to the export too
+// (sync_data_edit_export). The edits directory is a parameter for the
+// test (data_edits_directory is "" under odin test).
+save_data_edit :: proc(data: Data_Browser_Context, edits_directory: string) -> Data_File_Categories {
+	browser := data.browser
 	if !browser.open || browser.file_kind != .Sjson || browser.file_problem != "" || browser.selected < 0 || browser.selected >= len(browser.rows) {
-		return
+		return {}
 	}
 	relative_path := strings.clone(browser.rows[browser.selected].path, context.temp_allocator)
 	file_text := sjson_text.sjson_text(browser.value, virtual.arena_allocator(browser.file_arena))
 	if problem := write_data_edit(edits_directory, relative_path, file_text); problem != "" {
 		platform.log_printf("error: cannot save the data edit %s: %s", relative_path, problem)
-		ui_toast(&state.ui, fmt.tprintf("%s %s", text("data_files_save_failed"), relative_path))
-		return
+		ui_toast(data.ui, fmt.tprintf("%s %s", text("data_files_save_failed"), relative_path))
+		return {}
 	}
 	browser.loaded_text, browser.unsaved, browser.shows_overlay = file_text, false, true
 	browser.refresh_requested = true
-	ui_toast(&state.ui, fmt.tprintf("%s %s", text("data_files_saved"), relative_path))
-	sync_data_edit_export(state, edits_directory, relative_path)
-	apply_data_edit_change(state, relative_path)
+	ui_toast(data.ui, fmt.tprintf("%s %s", text("data_files_saved"), relative_path))
+	sync_data_edit_export(data, edits_directory, relative_path)
+	return {data_file_category(relative_path)}
 }
 
 // The touch layouts (0121), between frames: the editor's request, served
 // after the frame's draw list ran, since it may free the draft's arena
-// the frame's text pointed into; a change of the active layout releases
-// the overlay's latches, which index its elements; a change the settings
+// the frame's text pointed into; a change of the active layout is
+// returned, for the frame loop to release the overlay's latches, which
+// index its elements; a change the settings
 // or the editor made is written to the user file whole. A failed write is
 // logged and toasted, and not retried. While a broken file from the start
 // stands, nothing is written.
-serve_touch_layouts :: proc(state: ^Frame_State) {
-	layouts := &state.touch_layouts
-	apply_touch_layout_request(&state.ui, &state.touch_layout_editor, layouts, state.content.touch_overlay)
-	if layouts.changed {
-		layouts.changed = false
-		state.touch_overlay = release_touch_latches(state.touch_overlay)
-	}
+serve_touch_layouts :: proc(layouts: ^Touch_Layouts, editor: ^Touch_Layout_Editor, ui: ^Ui_State, default_layout: Touch_Overlay_Layout, environment: Configuration_Environment) -> (changed: bool) {
+	apply_touch_layout_request(ui, editor, layouts, default_layout)
+	changed = layouts.changed
+	layouts.changed = false
 	if !layouts.write_requested {
-		return
+		return changed
 	}
 	layouts.write_requested = false
 	if layouts.locked_path != "" {
-		ui_toast(&state.ui, touch_layouts_locked_text(layouts^))
-		return
+		ui_toast(ui, touch_layouts_locked_text(layouts^))
+		return changed
 	}
-	if problem := write_touch_layouts_file(state.environment, layouts^); problem != "" {
+	if problem := write_touch_layouts_file(environment, layouts^); problem != "" {
 		platform.log_printf("error: cannot save the touch layouts: %s", problem)
-		ui_toast(&state.ui, text("touch_layout_save_failed"))
+		ui_toast(ui, text("touch_layout_save_failed"))
 	}
+	return changed
 }
 
 // Every texture's current parameters to the overrides file, one log line
 // per texture in the data file's form, and a toast naming the file.
-save_texture_edits :: proc(state: ^Frame_State) {
-	editor := &state.texture_editor
+save_texture_edits :: proc(editor: ^Texture_Editor, ui: ^Ui_State) {
 	path := texture_edits_path()
 	problem := path == "" ? platform.NO_STATE_DIRECTORY_PROBLEM : ""
 	lines := texture_editor_lines(editor.entries[:])
@@ -1395,7 +1400,7 @@ save_texture_edits :: proc(state: ^Frame_State) {
 	}
 	if problem != "" {
 		platform.log_printf("error: texture edits: %s", problem)
-		ui_toast(&state.ui, fmt.tprintf("%s: %s", text("texture_editor_save_failed"), problem))
+		ui_toast(ui, fmt.tprintf("%s: %s", text("texture_editor_save_failed"), problem))
 		return
 	}
 	platform.log_printf("texture edits saved to %s", path)
@@ -1405,5 +1410,5 @@ save_texture_edits :: proc(state: ^Frame_State) {
 	for &entry in editor.entries {
 		entry.edited = false
 	}
-	ui_toast(&state.ui, fmt.tprintf("%s %s", text("texture_editor_saved"), path))
+	ui_toast(ui, fmt.tprintf("%s %s", text("texture_editor_saved"), path))
 }

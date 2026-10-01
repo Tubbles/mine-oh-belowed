@@ -241,21 +241,18 @@ apply_presentation_changes :: proc(state: ^Frame_State, changed: Data_File_Categ
 
 // The data edits overlay (work item 0129, read_data_file) is not
 // watched: a change to it comes through here, from the Data files
-// screen's Discard (and 0130's Save), and does what the watcher does for
-// the same file in the data directory. A presentation file reloads in
-// place, a content file asks for the content reload, game.sjson says a
-// restart is needed. The category, for the caller and the tests.
-apply_data_edit_change :: proc(state: ^Frame_State, relative_path: string) -> Data_File_Category {
-	category := data_file_category(relative_path)
-	switch {
-	case category in PRESENTATION_CATEGORIES:
-		apply_presentation_changes(state, {category})
-	case category == .Content:
+// screen's Discard (and 0130's Save), whose categories serve_data_browser
+// returns, and does what the watcher does for the same files in the data
+// directory. A presentation file reloads in place, a content file asks
+// for the content reload, game.sjson says a restart is needed.
+apply_data_edit_change :: proc(state: ^Frame_State, changed: Data_File_Categories) {
+	apply_presentation_changes(state, changed)
+	if .Content in changed {
 		state.reload_requested = true
-	case category == .Restart:
+	}
+	if .Restart in changed {
 		report_reload(state, text("reload_restart_needed"))
 	}
-	return category
 }
 
 // The watcher.

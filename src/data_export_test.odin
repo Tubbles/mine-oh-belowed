@@ -81,13 +81,13 @@ test_an_export_writes_the_data_the_edits_and_the_stamp :: proc(t: ^testing.T) {
 // be made stops the export with the path.
 @(test)
 test_an_empty_export_directory_exports_nothing_and_says_so :: proc(t: ^testing.T) {
-	state := new(Frame_State)
-	defer free(state)
-	defer destroy_ui_state(&state.ui)
-	state.data_directory = test_data_directory()
-	export_data_browser_files(state, "")
-	testing.expect_value(t, len(state.ui.toasts), 1)
-	testing.expect_value(t, state.ui.toasts[0].text, text("data_files_export_no_directory"))
+	ui: Ui_State
+	defer destroy_ui_state(&ui)
+	settings: Settings
+	browser: Data_Browser
+	export_data_browser_files({browser = &browser, ui = &ui, settings = &settings, data_directory = test_data_directory()}, "")
+	testing.expect_value(t, len(ui.toasts), 1)
+	testing.expect_value(t, ui.toasts[0].text, text("data_files_export_no_directory"))
 	testing.expect(t, export_data_files(test_data_directory(), "", "", {}).problem != "")
 
 	base, error := os.make_directory_temp("", "mine-oh-belowed-export-blocked-test-*", context.temp_allocator)
@@ -113,13 +113,13 @@ test_a_synced_save_writes_the_edit_and_a_synced_discard_removes_it :: proc(t: ^t
 	data_edits_reading.directory = edits_directory
 	defer reset_data_edits_reading()
 	defer clear_missing_reports(&global_string_table)
-	state := new(Frame_State)
-	defer free(state)
-	defer destroy_ui_state(&state.ui)
-	state.data_directory = "/nonexistent/mine-oh-belowed-data"
-	state.data_browser = open_test_data_value(t, `blocks = [{id = "stone", hardness = 1.5}]`)
-	defer destroy_data_browser(&state.data_browser)
-	browser := &state.data_browser
+	ui: Ui_State
+	defer destroy_ui_state(&ui)
+	settings: Settings
+	data_browser := open_test_data_value(t, `blocks = [{id = "stone", hardness = 1.5}]`)
+	defer destroy_data_browser(&data_browser)
+	browser := &data_browser
+	data := Data_Browser_Context{browser = browser, ui = &ui, settings = &settings, data_directory = "/nonexistent/mine-oh-belowed-data"}
 	entries := [?]Data_File_Entry{{path = "quests/chapter_09.sjson"}}
 	browser.rows = data_tree_rows(entries[:], context.temp_allocator)
 	defer browser.rows = nil
@@ -127,23 +127,24 @@ test_a_synced_save_writes_the_edit_and_a_synced_discard_removes_it :: proc(t: ^t
 	exported := platform.join_path(export_directory, "data_edits", "quests", "chapter_09.sjson")
 
 	testing.expect(t, set_data_browser_value(browser, find_data_value_row(browser.value_rows, "blocks.0.hardness"), "3"))
-	state.settings.export_directory = export_directory
-	save_data_edit(state, edits_directory)
+	settings.export_directory = export_directory
+	save_data_edit(data, edits_directory)
 	testing.expect(t, !os.exists(exported), "export on save is off")
 
-	state.settings.export_on_save = true
+	settings.export_on_save = true
 	testing.expect(t, set_data_browser_value(browser, find_data_value_row(browser.value_rows, "blocks.0.hardness"), "4"))
-	save_data_edit(state, edits_directory)
+	save_data_edit(data, edits_directory)
 	overlay, read_error := os.read_entire_file(platform.join_path(edits_directory, "quests", "chapter_09.sjson"), context.temp_allocator)
 	testing.expect_value(t, read_error, nil)
 	expect_file_text(t, exported, string(overlay))
 	testing.expect(t, !browser.export_sync_failed)
 
 	browser.rows[browser.selected].edited = true
-	discard_data_edit(state)
+	testing.expect_value(t, discard_data_edit(data), Data_File_Categories{data_file_category("quests/chapter_09.sjson")})
 	testing.expect(t, !os.exists(platform.join_path(edits_directory, "quests", "chapter_09.sjson")))
 	testing.expect(t, !os.exists(exported), "the discard deleted the exported copy")
 	testing.expect(t, !browser.export_sync_failed)
+	testing.expect_value(t, discard_data_edit(data), Data_File_Categories{})
 }
 
 // A failed sync toasts once, not at every save; a sync or an export that
@@ -157,25 +158,25 @@ test_a_failed_export_sync_toasts_once :: proc(t: ^testing.T) {
 	testing.expect_value(t, write_data_edit(edits_directory, "blocks.sjson", "blocks = []"), "")
 	blocked := platform.join_path(base, "file")
 	testing.expect_value(t, os.write_entire_file(blocked, "not a directory"), nil)
-	state := new(Frame_State)
-	defer free(state)
-	defer destroy_ui_state(&state.ui)
-	state.settings.export_on_save = true
-	state.settings.export_directory = blocked
-	sync_data_edit_export(state, edits_directory, "blocks.sjson")
-	sync_data_edit_export(state, edits_directory, "blocks.sjson")
-	testing.expect_value(t, len(state.ui.toasts), 1)
-	testing.expect(t, state.data_browser.export_sync_failed)
+	ui: Ui_State
+	defer destroy_ui_state(&ui)
+	browser: Data_Browser
+	settings := Settings{export_on_save = true, export_directory = blocked}
+	data := Data_Browser_Context{browser = &browser, ui = &ui, settings = &settings}
+	sync_data_edit_export(data, edits_directory, "blocks.sjson")
+	sync_data_edit_export(data, edits_directory, "blocks.sjson")
+	testing.expect_value(t, len(ui.toasts), 1)
+	testing.expect(t, browser.export_sync_failed)
 	// A successful export ends the run of failures too.
-	state.data_directory, _ = make_data_export_test_files(t, platform.join_path(base, "export_source"))
-	state.settings.export_directory = platform.join_path(base, "exported")
-	export_data_browser_files(state, "")
+	data.data_directory, _ = make_data_export_test_files(t, platform.join_path(base, "export_source"))
+	settings.export_directory = platform.join_path(base, "exported")
+	export_data_browser_files(data, "")
 	testing.expect(t, os.is_file(platform.join_path(base, "exported", "export.txt")))
-	testing.expect(t, !state.data_browser.export_sync_failed)
-	state.data_browser.export_sync_failed = true
-	state.settings.export_directory = platform.join_path(base, "sync")
-	sync_data_edit_export(state, edits_directory, "blocks.sjson")
-	testing.expect(t, !state.data_browser.export_sync_failed)
+	testing.expect(t, !browser.export_sync_failed)
+	browser.export_sync_failed = true
+	settings.export_directory = platform.join_path(base, "sync")
+	sync_data_edit_export(data, edits_directory, "blocks.sjson")
+	testing.expect(t, !browser.export_sync_failed)
 	testing.expect(t, os.is_file(platform.join_path(base, "sync", "data_edits", "blocks.sjson")))
 }
 

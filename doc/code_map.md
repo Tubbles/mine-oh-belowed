@@ -211,7 +211,7 @@ The developer's and the assistant's instruments: they drive, inspect or measure 
   - `benchmark_factory.odin`: the factory benchmark, a second driver of `simulation_tick`.
 - State: `Command_Context`, `Command_Server`, `Data_Browser`, `Frame_Time_Ring`; they live on `Frame_State` or the stack of a run.
 - Tests: every `*_test.odin` beside its file; `benchmark_test.odin` runs sizes 1 and 4 and requires no idle machine.
-- Reaches into: loop 18 (queued 3: `Frame_State` in `diagnostics.odin` and `data_export.odin` 14; accepted 4: `session_generator`, `interpolation_alpha`, `parse_seed`, `BUILD_STAMP`).
+- Reaches into: loop 16 (queued 3: `Frame_State` in `diagnostics.odin` 12; accepted 4: `session_generator`, `interpolation_alpha`, `parse_seed`, `BUILD_STAMP`).
 
 ## platform
 

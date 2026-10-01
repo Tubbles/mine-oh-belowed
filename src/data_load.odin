@@ -175,7 +175,8 @@ copy_android_asset :: proc(internal, path: string) -> string {
 // <state>/mine-oh-belowed/data_edits/<relative path> wins over the data
 // file. The Data files screen (ui_data_browser.odin) shows which files
 // have one, work item 0130 writes them. The overlay is not watched: the
-// screen that changes it calls apply_data_edit_change (hot_reload.odin).
+// frame loop applies what the screen changed through
+// apply_data_edit_change (hot_reload.odin).
 DATA_EDITS_DIRECTORY_NAME :: "data_edits"
 
 // $XDG_STATE_HOME/mine-oh-belowed/data_edits. In the given allocator.

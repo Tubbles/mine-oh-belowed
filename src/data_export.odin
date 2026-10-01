@@ -219,6 +219,15 @@ data_export_toast_text :: proc(export_directory: string, result: Data_Export_Res
 
 // The frame loop's side (serve_data_browser).
 
+// What the Data files screen's requests read and write between frames:
+// the browser, the toasts, the export settings and the data directory.
+Data_Browser_Context :: struct {
+	browser:        ^Data_Browser,
+	ui:             ^Ui_State,
+	settings:       ^Settings,
+	data_directory: string,
+}
+
 // All files access on Android: asked for, and the settings page opened
 // with a toast when it is missing. Always granted elsewhere.
 export_access_granted :: proc(ui: ^Ui_State) -> bool {
@@ -241,23 +250,23 @@ export_directory_setting :: proc(settings: Settings) -> string {
 // success ends a run of failed syncs (export_sync_failed), so the next
 // failure toasts again. The export runs in one frame: the game stands
 // still while it copies.
-export_data_browser_files :: proc(state: ^Frame_State, edits_directory: string) {
-	export_directory := export_directory_setting(state.settings)
+export_data_browser_files :: proc(data: Data_Browser_Context, edits_directory: string) {
+	export_directory := export_directory_setting(data.settings^)
 	if export_directory == "" {
-		ui_toast(&state.ui, text("data_files_export_no_directory"))
+		ui_toast(data.ui, text("data_files_export_no_directory"))
 		return
 	}
-	if !export_access_granted(&state.ui) {
+	if !export_access_granted(data.ui) {
 		return
 	}
-	result := export_data_files(state.data_directory, edits_directory, export_directory, time.now())
+	result := export_data_files(data.data_directory, edits_directory, export_directory, time.now())
 	if result.problem != "" {
 		platform.log_printf("error: the data export to %s stopped: %s", export_directory, result.problem)
 	} else {
 		platform.log_printf("data: exported %d data files and %d data edits to %s", result.data_count, result.edit_count, export_directory)
-		state.data_browser.export_sync_failed = false
+		data.browser.export_sync_failed = false
 	}
-	ui_toast(&state.ui, data_export_toast_text(export_directory, result))
+	ui_toast(data.ui, data_export_toast_text(export_directory, result))
 }
 
 // After a save or a discard: with export_on_save and a directory, the
@@ -265,12 +274,12 @@ export_data_browser_files :: proc(state: ^Frame_State, edits_directory: string) 
 // and toasted once, until a sync succeeds again, so a missing volume does
 // not toast at every save; the settings page for All files access opens
 // with that toast only.
-sync_data_edit_export :: proc(state: ^Frame_State, edits_directory, relative_path: string) {
-	export_directory := export_directory_setting(state.settings)
-	if !state.settings.export_on_save || export_directory == "" {
+sync_data_edit_export :: proc(data: Data_Browser_Context, edits_directory, relative_path: string) {
+	export_directory := export_directory_setting(data.settings^)
+	if !data.settings.export_on_save || export_directory == "" {
 		return
 	}
-	browser := &state.data_browser
+	browser := data.browser
 	problem: string
 	if !platform.all_files_access_granted() {
 		problem = text("data_files_export_access")
@@ -278,7 +287,7 @@ sync_data_edit_export :: proc(state: ^Frame_State, edits_directory, relative_pat
 			platform.open_all_files_access_settings()
 		}
 	} else {
-		problem = sync_exported_data_edit(state.data_directory, edits_directory, export_directory, relative_path)
+		problem = sync_exported_data_edit(data.data_directory, edits_directory, export_directory, relative_path)
 	}
 	if problem == "" {
 		browser.export_sync_failed = false
@@ -286,7 +295,7 @@ sync_data_edit_export :: proc(state: ^Frame_State, edits_directory, relative_pat
 	}
 	platform.log_printf("error: cannot export the data edit %s: %s", relative_path, problem)
 	if !browser.export_sync_failed {
-		ui_toast(&state.ui, fmt.tprintf("%s %s", text("data_files_export_sync_failed"), problem))
+		ui_toast(data.ui, fmt.tprintf("%s %s", text("data_files_export_sync_failed"), problem))
 		browser.export_sync_failed = true
 	}
 }
