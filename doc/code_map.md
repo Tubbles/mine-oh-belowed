@@ -15,7 +15,7 @@ The entry page for the source: 199 files under `src/` plus 139 test files beside
 | ui | the input layer, the immediate mode toolkit, every screen, the HUD and the touch overlay | `ui_core.odin` | 48 | 16975 | [ui](audit/ui.md) |
 | world | blocks and what follows a block: chunks, light, water, meshing, streaming, generation, the save codec | `world_chunk.odin` | 34 | 9613 | [world](audit/world.md) |
 | simulation | the factory per tick: entity pools, networks, players, inventories, crafting, statistics, the game's records | `entity.odin` | 40 | 15407 | [simulation](audit/simulation.md) |
-| presentation | pixels and sound from the world and the tick: shaders, atlases, models, sky, weather, particles, audio, the window | `render_chunks.odin` | 31 | 8381 | [presentation](audit/presentation.md) |
+| presentation | pixels and sound from the world and the tick: shaders, atlases, models, sky, weather, particles, audio, the window | `render_chunks.odin` | 32 | 8440 | [presentation](audit/presentation.md) |
 | content | data files into typed tables, the string table, configuration and settings | `data_reload.odin` | 15 | 5024 | [content](audit/content.md) |
 | tools | the command socket, the diagnostics pages, the Data files browser and export, the factory benchmark | `command.odin` | 8 | 3859 | [loop](audit/loop.md), [content](audit/content.md) |
 | platform | the package `src/platform/`: logging, paths, the time zone, JNI, the export's file access, the replacing file write | `logging.odin` | 13 | 1014 | [content](audit/content.md) |
@@ -172,12 +172,13 @@ Presentation turns the world, the tick and the render time into pixels and sound
   - `model_mesh.odin`, `model_motion.odin`: the voxel mesher over the `model_vox` package's parser (Packages); `Machine_Motion` and part transforms.
   - `render_belts.odin`, `render_fluids.odin`, `render_power.odin`, `render_loose_items.odin`: belts and lane items; pipes and ports; poles and wires; loose stacks.
   - `render_icons.odin`: `Item_Atlas` for items and UI icons, item billboards.
+  - `cues.odin`: `Cue_Memory`, `detect_cues`, the frame's cues from the simulation's counters that the player, the particles and the sounds read.
   - `render_player.odin`, `render_player_model.odin`, `player_animation.odin`, `render_fly_camera.odin`: pose, camera, ghosts, hands; limb models; walk cadence and limb angles; `Fly_Camera`.
   - `particles.odin`, `render_particles.odin`: `Particle_System`; emitters, `Particle_Memory`, capsule descent.
   - `ambient_life.odin`, `render_life.odin`, `render_flames.odin`: flocks, insects, fish; their draws; torch flames.
-  - `audio.odin`, `sound_events.odin`: `Audio_Mixer`, sound table, loop fades; `Sound_Memory`, cues, hum, ambience clusters.
+  - `audio.odin`, `sound_events.odin`: `Audio_Mixer`, sound table, loop fades; `Sound_Memory`, the sounds of the cues, hum, ambience clusters.
   - `display.odin`, `raylib_log.odin`: window modes, resolutions, scale, GL info; raylib's log into the game log.
-- State: the GPU resources (`Chunk_Renderer`, `Item_Atlas`, `Belt_Renderer`, `Model_Renderer`) and `Audio_Mixer` for the run, the memories (`Particle_System`, `Particle_Memory`, `Player_Animation_Memory`, `Sound_Memory`) for a session; nothing is saved.
+- State: the GPU resources (`Chunk_Renderer`, `Item_Atlas`, `Belt_Renderer`, `Model_Renderer`) and `Audio_Mixer` for the run, the memories (`Cue_Memory`, `Particle_System`, `Particle_Memory`, `Player_Animation_Memory`, `Sound_Memory`) for a session; nothing is saved.
 - Tests: every `*_test.odin` beside its file; `shader_source_test.odin` (the `u` suffix rule), `render_ghost_test.odin`, `texture_periodicity_test.odin`; the draw procedures are untested.
 - Reaches into: ui 17 (accepted: theme colours and marker palettes 13, `Input_Frame` for the fly camera 2, `Ui_Sound_Event` 2), loop 1 (accepted: `texture_edits_path`), tools 2 (accepted: a `block_name` parameter, noise).
 

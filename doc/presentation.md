@@ -78,22 +78,32 @@ Rule: a tile never repeats identically from block to block (0088). `texture_vari
 - Insects: one in `INSECT_FLOWER_SHARE` cells of a block a ground cover marks with `insects` gets motes on Lissajous paths (`Chunk_Render.covers`), by day.
 - Fish: source water cells under an open cell with water two cells deep (`water_surface_cell`; the mesh shell reaches past the chunk, so the sea surface on a chunk's bottom layer counts); `apply_chunk_mesh` keeps one in `FISH_CELL_SHARE` (`Chunk_Render.fish`). A shadow glides a lemniscate below the surface, drawn before the water pass so the surface tints it.
 
+## Cues
+
+`cues.odin` (0162).
+
+- Once a frame, before the player's animation, `observe_cue_counters` reads the counters of the local player and the records, and `detect_cues` compares them with `Cue_Memory` (the last frame's): the walked distance, the placed counters (`placed_total`), `blocks_mined`, the dig (`Mining_State`) and the block now at its cell, the blocks at and under the feet, the launching pads, the shipments and the quest messages.
+- It returns `Frame_Cues`: a bit set of `Cue` (footstep, place, block break, dig break with its cell and block, dig quarter, launch, shipment, discovery, survey) and the walk (cadence distance, moving) with the blocks at the feet.
+- The first frame of a session only learns the counters, so a loaded world neither steps, swings, chimes nor drops a capsule.
+- The walk is followed per tick, not per frame, so a display faster than the tick rate neither stops the walk every other frame nor steps twice: a footstep fires once per half walk cycle of the cadence distance, which counts each tick's walk divided by the cheat speed factor, so the cheat never quickens steps or bob (`WALK_CYCLE_MILLIMETRES`).
+- The landing is not a counter: the particles add `Landing` to the frame's cues when the capsule descent ends, before the sounds read them.
+- The player's animation, the particles and the sounds read the cues and keep only their own state between frames.
+
 ## Particles
 
 `particles.odin`, `render_particles.odin` (0067).
 
 - A pool of `PARTICLE_CAPACITY` whose next index wraps, so a new particle replaces the oldest. Each `Particle_Kind` has its gravity, drag, launch speed, lifetime and growth; the step is the frame time capped at `PARTICLE_MAXIMUM_FRAME_SECONDS`.
 - `emitters_for_frame` reads the working machines and the digging player; a fraction of a spawn rounds by a hash of the frame and the cell, so no emitter keeps state.
-- `Particle_Memory` keeps the last dig (a break bursts) and shipment count (a new shipment drops a capsule under a parachute).
+- Read from the cues (Cues): a dig break bursts, a shipment drops a capsule under a parachute (`Particle_Memory` keeps the descent and the survey satellite's pass), a footstep kicks up dust.
 
 ## The player
 
 `player_animation.odin`, `render_player_model.odin`, `render_player.odin` (0066).
 
 - Six limb models (`data/models/player_*.vox`), each the whole frame with its limb filled, swing about pivots read from the voxel bounds; without them a capsule stands in.
-- The walk phase is a cadence distance summed tick by tick from `distance_walked_millimetres`, divided by the cheat speed factor so the cheat never quickens steps or bob (`WALK_CYCLE_MILLIMETRES`).
-- The mine chop runs on the render time while `Mining_State.active`; a place swing starts when the placed counters (`placed`, `blocks_placed`) grew.
-- Whether the player moves is decided per new tick, not per frame, so a display faster than the tick rate does not stop the walk every other frame.
+- The walk phase is the cues' cadence distance (Cues).
+- The mine chop runs on the render time while `Mining_State.active`; a place swing starts on the place cue.
 - First person draws the right arm and the held stack in a second 3D pass with the depth test off; third person draws the body at the interpolated pose.
 
 ## Machine models
@@ -108,7 +118,7 @@ Rule: a tile never repeats identically from block to block (0088). `texture_vari
 
 - Without an audio device every call is a no op. The mixer loads `data/sounds/sounds.sjson`: effects as `Sound`, never twice within `EFFECT_MINIMUM_GAP_SECONDS` (raylib replays a `Sound` on one voice), loops as `Music` fading to the frame's target over `LOOP_FADE_SECONDS`, so a loop nobody asks for fades out.
 - Loops and ambience calls follow the ambience volume, other effects the effects volume, all the master volume.
-- The triggers compare the world with `Sound_Memory` (the first frame of a session only learns): footsteps per half walk cycle by the material underfoot, mining hits per dig quarter by tool tier (at most `MINING_HIT_MAXIMUM_PER_SECOND`), break, place, launch, landing, the discovery chime, the UI sounds (`ui_sound_ids`).
+- The effects follow the cues (Cues): footsteps by the material underfoot, mining hits per dig quarter by tool tier (at most `MINING_HIT_MAXIMUM_PER_SECOND`, paced by `Sound_Memory`), break, place, launch, landing, the discovery chime; the UI sounds follow `ui_sound_ids`.
 - Hum: the nearest working machine (as the bottleneck markers define working) within `HUM_RANGE_BLOCKS` picks its family (fluid, electric, burner), with a drifting level.
 - Ambience: the biome under the player picks a loop, or variants `ambience_<name>_1`, `_2` played in clusters of calls with long hashed pauses; a `day_only` ambience calls only by day.
 - Rain plays at the intensity times the open sky at the eye; snow is silent.

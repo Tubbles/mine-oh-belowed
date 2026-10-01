@@ -74,7 +74,7 @@ PREFIX_CLUSTERS = {
     ),
     "presentation": (
         "render", "model", "texture", "particles", "ambient", "audio", "sound", "display", "weather",
-        "raylib",
+        "raylib", "cues",
     ),
     "content": (
         "data", "recipe", "technology", "quest", "contract", "notes", "configuration",

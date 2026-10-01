@@ -153,19 +153,22 @@ test_break_puff_fires_once :: proc(t: ^testing.T) {
 	stone := test_block(content.blocks, "stone")
 	system := new(Particle_System, context.temp_allocator)
 	memory: Particle_Memory
-	players := make([]Player, 1)
-	players[0].mining = Mining_State{active = true, block = {0, 0, 0}, block_id = stone, progress_ticks = 8, required_ticks = 10}
-	update_break_puff(system, &memory, &world, content.blocks, players)
+	cue_memory: Cue_Memory
+	// The counters as observe_cue_counters reads them.
+	frame :: proc(system: ^Particle_System, memory: ^Particle_Memory, cue_memory: ^Cue_Memory, world: ^World, blocks: Block_Registry, dig: Mining_State) {
+		cues := step_cues(cue_memory, {dig = dig, block_at_last_dig = world_get_block(world, cue_memory.dig.block)})
+		update_break_puff(system, memory, blocks, cues)
+	}
+	frame(system, &memory, &cue_memory, &world, content.blocks, Mining_State{active = true, block = {0, 0, 0}, block_id = stone, progress_ticks = 8, required_ticks = 10})
 	testing.expect_value(t, live_particle_count(system), 0)
 	world_set_block(&world, {0, 0, 0}, AIR_BLOCK)
-	players[0].mining = {}
-	update_break_puff(system, &memory, &world, content.blocks, players)
+	frame(system, &memory, &cue_memory, &world, content.blocks, {})
 	testing.expect_value(t, live_particle_count(system), BREAK_PUFF_COUNT)
 	testing.expect_value(t, system.particles[0].color, [4]u8{128, 128, 128, 255})
-	update_break_puff(system, &memory, &world, content.blocks, players)
+	frame(system, &memory, &cue_memory, &world, content.blocks, {})
 	testing.expect_value(t, live_particle_count(system), BREAK_PUFF_COUNT)
-	testing.expect(t, !break_puff_due(Mining_Memory{cell = {1, 0, 0}, block = stone, fraction = 0.3}, AIR_BLOCK), "given up early")
-	testing.expect(t, !break_puff_due(Mining_Memory{cell = {1, 0, 0}, block = stone, fraction = 0.9}, stone), "still there")
+	testing.expect(t, !dig_broke_block(Mining_State{active = true, block = {1, 0, 0}, block_id = stone, progress_ticks = 3, required_ticks = 10}, AIR_BLOCK), "given up early")
+	testing.expect(t, !dig_broke_block(Mining_State{active = true, block = {1, 0, 0}, block_id = stone, progress_ticks = 9, required_ticks = 10}, stone), "still there")
 }
 
 // From 60 blocks above the landing point down onto it in 8 seconds.
@@ -187,7 +190,8 @@ test_capsule_descent_path :: proc(t: ^testing.T) {
 }
 
 // A shipment during the session starts a descent that ends in a puff on
-// the capsule; the shipments a loaded world starts with do not.
+// the capsule and one Landing cue; the shipments a loaded world starts
+// with do not.
 @(test)
 test_shipment_starts_a_descent :: proc(t: ^testing.T) {
 	context.allocator = context.temp_allocator
@@ -199,14 +203,19 @@ test_shipment_starts_a_descent :: proc(t: ^testing.T) {
 	place_test_entity(&world, content, "drop_capsule", {0, 1, 0})
 	system := new(Particle_System, context.temp_allocator)
 	memory: Particle_Memory
-	update_capsule_descent(system, &memory, &world, records.shipments[:], {}, 0.1)
+	cue_memory: Cue_Memory
+	update_capsule_descent(system, &memory, &world, step_cues(&cue_memory, {shipment_count = len(records.shipments)}), {}, 0.1)
 	testing.expect(t, !memory.descent.active, "loaded shipments start nothing")
 	append(&records.shipments, Shipment{})
-	update_capsule_descent(system, &memory, &world, records.shipments[:], {}, 0.1)
+	update_capsule_descent(system, &memory, &world, step_cues(&cue_memory, {shipment_count = len(records.shipments)}), {}, 0.1)
 	testing.expect(t, memory.descent.active, "a new shipment starts a descent")
+	landings := 0
 	for _ in 0 ..< 80 {
-		update_capsule_descent(system, &memory, &world, records.shipments[:], {}, 0.1)
+		ended := update_capsule_descent(system, &memory, &world, step_cues(&cue_memory, {shipment_count = len(records.shipments)}), {}, 0.1)
+		landings += int(ended)
+		testing.expect(t, !ended || !memory.descent.active, "the Landing cue on the frame it lands")
 	}
 	testing.expect(t, !memory.descent.active, "landed")
+	testing.expect_value(t, landings, 1)
 	testing.expect_value(t, live_particle_count(system), BREAK_PUFF_COUNT)
 }

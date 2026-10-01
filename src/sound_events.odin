@@ -4,13 +4,12 @@ import "core:fmt"
 import "core:math"
 import "core:math/linalg"
 
-// What makes a sound (work item 0068): the frame's changes against the
-// last frame's memory, the nearest working machine for the hum, and the
-// biome and the weather for the ambience. Selection and the detectors are
-// pure; play_frame_sounds reads the world, the mixer (audio.odin) plays.
-// The memory is render state in Frame_State, reset with the session, and
-// the first frame of a session only learns the counters, so a loaded
-// world neither steps nor chimes.
+// What makes a sound (work item 0068): the frame's cues (cues.odin), the
+// nearest working machine for the hum, and the biome and the weather for
+// the ambience. Selection is pure; play_frame_sounds reads the world, the
+// mixer (audio.odin) plays. The memory keeps the step count, the mining
+// hit pace, the ambience clusters and the hum's drift; it is render state
+// in Frame_State, reset with the session.
 //
 // The sparse rule (DESIGN.md): nothing plays continuously but the biome
 // ambience, the rain and one hum; effects are short and never layered
@@ -59,14 +58,6 @@ ROCKET_LAUNCH_SOUND :: "rocket_launch"
 CAPSULE_LANDING_SOUND :: "capsule_landing"
 DISCOVERY_SOUND :: "discovery_chime"
 
-// A dig in quarters: 1 to 3 are the hits, 4 the break.
-Mining_Sound_Memory :: struct {
-	active:  bool,
-	block:   World_Coordinate,
-	entity:  Entity_Handle,
-	quarter: int,
-}
-
 // The ambience cluster scheduler: the tick of the next call, the
 // clusters started so far, the calls left in the current one and the
 // variant last played (1 and up, 0 before the first).
@@ -89,49 +80,12 @@ Hum_Drift_Memory :: struct {
 }
 
 Sound_Memory :: struct {
-	known:                bool,
-	tick:                 u64,
-	distance_millimetres: u64,
-	// The walk cadence's distance (advance_cadence_millimetres).
-	cadence_millimetres:  u64,
+	// Footsteps so far, the pitch's variation.
 	step_count:           u64,
-	placed_total:         u64,
-	blocks_mined:         u64,
-	mining:               Mining_Sound_Memory,
 	// A mining hit plays from this tick on.
 	next_mining_hit_tick: u64,
-	launching_count:      int,
-	descent_active:       bool,
-	message_count:        int,
 	ambience_cluster:     Ambience_Cluster_Memory,
 	hum_drift:            Hum_Drift_Memory,
-}
-
-// What the frame reads from the world, for advance_sound_memory.
-Sound_Observation :: struct {
-	tick:                 u64,
-	distance_millimetres: u64,
-	placed_total:         u64,
-	blocks_mined:         u64,
-	mining:               Mining_Sound_Memory,
-	launching_count:      int,
-	descent_active:       bool,
-	message_count:        int,
-	// A message since the memory's count is a discovery.
-	discovered:           bool,
-	// The steps count the cheat speed's walk divided (work item 0087).
-	cheat_speed:          bool,
-}
-
-// The effects the frame's changes ask for.
-Sound_Cues :: struct {
-	footstep:    bool,
-	mining_hit:  bool,
-	block_break: bool,
-	block_place: bool,
-	launch:      bool,
-	landing:     bool,
-	discovery:   bool,
 }
 
 Hum_Family :: enum u8 {
@@ -337,25 +291,7 @@ rain_volume :: proc(precipitation: Precipitation, intensity, open_sky: f32) -> f
 	return clamp(intensity * open_sky, 0, 1)
 }
 
-// Detectors.
-
-mining_quarter :: proc(state: Mining_State) -> int {
-	return clamp(int(mining_fraction(state) * 4), 0, 4)
-}
-
-mining_sound_memory_of :: proc(state: Mining_State) -> Mining_Sound_Memory {
-	if !state.active {
-		return {}
-	}
-	return Mining_Sound_Memory{active = true, block = state.block, entity = state.entity, quarter = mining_quarter(state)}
-}
-
-// The same dig crossed into quarter 1, 2 or 3 since the last frame; the
-// fourth is the break, which has a sound of its own.
-mining_hit_due :: proc(previous, current: Mining_Sound_Memory) -> bool {
-	same_dig := previous.active && current.active && previous.block == current.block && previous.entity == current.entity
-	return same_dig && current.quarter > previous.quarter && current.quarter < 4
-}
+// Pacing.
 
 // At most MINING_HIT_MAXIMUM_PER_SECOND: the hit a fast dig asks for
 // too early is dropped, not delayed.
@@ -391,87 +327,22 @@ advance_ambience_cluster :: proc(memory: Ambience_Cluster_Memory, tick: u64, var
 	return next, true
 }
 
-// A new message since the count that is a discovery.
-discovery_since :: proc(messages: []Quest_Message, count: int) -> bool {
-	for message in messages[min(count, len(messages)):] {
-		if message.text_key == ITEM_DISCOVERED_KEY {
-			return true
-		}
-	}
-	return false
-}
-
-// The step follows the cadence distance at tick granularity, like the
-// animation (advance_player_animation_memory), so cheat speed steps at the
-// normal rate.
-advance_sound_memory :: proc(memory: Sound_Memory, observation: Sound_Observation) -> (next: Sound_Memory, cues: Sound_Cues) {
-	next = Sound_Memory {
-		known                = true,
-		tick                 = observation.tick,
-		distance_millimetres = observation.distance_millimetres,
-		cadence_millimetres  = memory.cadence_millimetres,
-		step_count           = memory.step_count,
-		placed_total         = observation.placed_total,
-		blocks_mined         = observation.blocks_mined,
-		mining               = observation.mining,
-		next_mining_hit_tick = memory.next_mining_hit_tick,
-		launching_count      = observation.launching_count,
-		descent_active       = observation.descent_active,
-		message_count        = observation.message_count,
-		ambience_cluster     = memory.ambience_cluster,
-		hum_drift            = advance_hum_drift(memory.hum_drift, observation.tick),
-	}
-	if !memory.known {
-		next.cadence_millimetres = observation.distance_millimetres
-		return next, {}
-	}
-	if observation.tick != memory.tick {
-		next.cadence_millimetres = advance_cadence_millimetres(memory.cadence_millimetres, memory.distance_millimetres, observation.distance_millimetres, observation.cheat_speed)
-		cues.footstep = footstep_due(memory.cadence_millimetres, next.cadence_millimetres)
-	} else {
-		next.distance_millimetres = memory.distance_millimetres
-	}
-	if cues.footstep {
+// The step count follows the Footstep cue; a Dig_Quarter cue is a
+// mining hit unless it comes too early after the last one.
+advance_sound_memory :: proc(memory: Sound_Memory, cues: Frame_Cues, tick: u64) -> (next: Sound_Memory, mining_hit: bool) {
+	next = memory
+	next.hum_drift = advance_hum_drift(memory.hum_drift, tick)
+	if .Footstep in cues.fired {
 		next.step_count += 1
 	}
-	cues.mining_hit = mining_hit_due(memory.mining, observation.mining) && mining_hit_allowed(memory.next_mining_hit_tick, observation.tick)
-	if cues.mining_hit {
-		next.next_mining_hit_tick = observation.tick + MINING_HIT_MINIMUM_GAP_TICKS
+	mining_hit = .Dig_Quarter in cues.fired && mining_hit_allowed(memory.next_mining_hit_tick, tick)
+	if mining_hit {
+		next.next_mining_hit_tick = tick + MINING_HIT_MINIMUM_GAP_TICKS
 	}
-	cues.block_break = observation.blocks_mined > memory.blocks_mined
-	cues.block_place = observation.placed_total > memory.placed_total
-	cues.launch = observation.launching_count > memory.launching_count
-	cues.landing = memory.descent_active && !observation.descent_active
-	cues.discovery = observation.discovered
-	return next, cues
+	return next, mining_hit
 }
 
 // Reading the world.
-
-launching_pad_count :: proc(world: ^World) -> int {
-	count := 0
-	for pad in world.entities.launch_pads.entries {
-		if pad.alive && pad.state == .Launching {
-			count += 1
-		}
-	}
-	return count
-}
-
-observe_sounds :: proc(memory: Sound_Memory, world: ^World, statistics: Statistics, player: Player, tick: u64, quests: ^Quest_State, particle_memory: Particle_Memory, cheat_speed: bool) -> Sound_Observation {
-	return Sound_Observation {
-		tick = tick,
-		distance_millimetres = statistics.distance_walked_millimetres,
-		placed_total = placed_total(statistics),
-		blocks_mined = statistics.blocks_mined,
-		mining = mining_sound_memory_of(player.mining),
-		launching_count = launching_pad_count(world),
-		descent_active = particle_memory.descent.active,
-		message_count = len(quests.messages),
-		discovered = discovery_since(quests.messages[:], memory.message_count),
-		cheat_speed = cheat_speed,
-	}
-}
 
 append_hum_source :: proc(sources: ^[dynamic]Hum_Source, common: Entity_Common, machines: Machine_Registry, working, fluid: bool) {
 	if working {
@@ -513,56 +384,54 @@ working_hum_sources :: proc(world: ^World, machines: Machine_Registry) -> []Hum_
 
 // What play_frame_sounds reads.
 Sound_Frame :: struct {
-	world:           ^World,
-	statistics:      ^Statistics,
-	content:         Simulation_Content,
-	generator:       ^Generator,
-	player:          Player,
-	tick:            u64,
-	quests:          ^Quest_State,
-	particle_memory: Particle_Memory,
-	weather:         Weather,
-	cheat_speed:     bool,
+	world:       ^World,
+	content:     Simulation_Content,
+	generator:   ^Generator,
+	player:      Player,
+	tick:        u64,
+	// With the Landing cue the particles add.
+	cues:        Frame_Cues,
+	weather:     Weather,
+	cheat_speed: bool,
 	// 0 at night, 1 by day (daylight_blend).
 	daylight:        f32,
 }
 
 // Once a frame in a session, after the particles.
 play_frame_sounds :: proc(mixer: ^Audio_Mixer, memory: ^Sound_Memory, frame: Sound_Frame) {
-	cues: Sound_Cues
-	memory^, cues = advance_sound_memory(memory^, observe_sounds(memory^, frame.world, frame.statistics^, frame.player, frame.tick, frame.quests, frame.particle_memory, frame.cheat_speed))
-	play_sound_cues(mixer, memory^, cues, frame)
+	mining_hit: bool
+	memory^, mining_hit = advance_sound_memory(memory^, frame.cues, frame.tick)
+	play_sound_cues(mixer, memory^, mining_hit, frame)
 	eye := player_eye(frame.player.position)
 	set_hum_target(mixer, memory^, frame, eye)
 	set_ambience_targets(mixer, memory, frame, eye)
 }
 
-play_sound_cues :: proc(mixer: ^Audio_Mixer, memory: Sound_Memory, cues: Sound_Cues, frame: Sound_Frame) {
-	player, blocks := frame.player, frame.content.blocks
-	if cues.footstep {
-		feet := world_get_block(frame.world, camera_world_coordinate(player.position + {0, COLLISION_EPSILON, 0}))
-		under := world_get_block(frame.world, camera_world_coordinate(player.position - {0, COLLISION_EPSILON, 0}))
+play_sound_cues :: proc(mixer: ^Audio_Mixer, memory: Sound_Memory, mining_hit: bool, frame: Sound_Frame) {
+	player, blocks, cues := frame.player, frame.content.blocks, frame.cues
+	if .Footstep in cues.fired {
+		feet, under := cues.feet_block, cues.under_block
 		wading := int(feet) < len(blocks.definitions) && blocks.definitions[feet].water_level > 0
 		if player.on_ground || wading {
 			play_effect(mixer, footstep_sound_id(footstep_material(blocks, feet, under)), 1, footstep_pitch(memory.step_count))
 		}
 	}
-	if cues.mining_hit {
+	if mining_hit {
 		play_effect(mixer, mining_hit_sound_id(mixer.table, effective_tool_tier(player, frame.content.items, frame.cheat_speed)))
 	}
-	if cues.block_break {
+	if .Block_Break in cues.fired {
 		play_effect(mixer, BLOCK_BREAK_SOUND)
 	}
-	if cues.block_place {
+	if .Place in cues.fired {
 		play_effect(mixer, BLOCK_PLACE_SOUND)
 	}
-	if cues.launch {
+	if .Launch in cues.fired {
 		play_effect(mixer, ROCKET_LAUNCH_SOUND)
 	}
-	if cues.landing {
+	if .Landing in cues.fired {
 		play_effect(mixer, CAPSULE_LANDING_SOUND)
 	}
-	if cues.discovery {
+	if .Discovery in cues.fired {
 		play_effect(mixer, DISCOVERY_SOUND)
 	}
 }

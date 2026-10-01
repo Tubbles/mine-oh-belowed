@@ -127,6 +127,9 @@ Frame_Presentation :: struct {
 	ui_icon_atlas:      Item_Atlas,
 	belt_renderer:      Belt_Renderer,
 	model_renderer:     Model_Renderer,
+	// The frame's cues (work item 0162, cues.odin): the last frame's
+	// counters, reset with the session.
+	cue_memory:         Cue_Memory,
 	// Particles and feedback (work item 0067, render_particles.odin):
 	// render state only, advanced by the frame time, reset with the
 	// session.
@@ -134,13 +137,12 @@ Frame_Presentation :: struct {
 	particle_memory:    Particle_Memory,
 	particle_renderer:  Particle_Renderer,
 	// The player's body and arm (work item 0066, render_player_model.odin)
-	// and what its animation remembers of the last frame, reset with the
-	// session.
+	// and what its animation keeps between frames, reset with the session.
 	player_model:       Player_Model,
 	player_animation:   Player_Animation_Memory,
 	// Sound (work item 0068, audio.odin, sound_events.odin): the mixer
-	// for the whole run, and what the sound triggers remember of the last
-	// frame, reset with the session.
+	// for the whole run, and what the sounds keep between frames, reset
+	// with the session.
 	audio:              Audio_Mixer,
 	sound_memory:       Sound_Memory,
 }
@@ -414,13 +416,15 @@ render_frame :: proc(state: ^Frame_State) {
 	// upper hemisphere alone, so the clear colour shows below the horizon.
 	rl.ClearBackground(sky.colors.horizon)
 	content := frame_simulation_content(state)
-	counts := draw_session_world(state, session, content, sky, weather)
+	cues: Frame_Cues
+	cues, state.presentation.cue_memory = detect_cues(state.presentation.cue_memory, observe_cue_counters(state.presentation.cue_memory, &session.simulation))
+	counts := draw_session_world(state, session, content, sky, weather, &cues)
 	counts.uploaded_meshes = pending_before_upload - session.streaming.pending_jobs
 	begin_render_pixel_drawing()
 	if counts.underwater {
 		draw_underwater_overlay()
 	}
-	play_frame_sounds(&state.presentation.audio, &state.presentation.sound_memory, session_sound_frame(state, content, weather))
+	play_frame_sounds(&state.presentation.audio, &state.presentation.sound_memory, session_sound_frame(state, content, weather, cues))
 	switch state.developer.diagnostics_page {
 	case .Off:
 		if state.developer.show_world_overlay {
@@ -439,17 +443,15 @@ render_frame :: proc(state: ^Frame_State) {
 	capture_pending_screenshot(state)
 }
 
-session_sound_frame :: proc(state: ^Frame_State, content: Simulation_Content, weather: Weather) -> Sound_Frame {
+session_sound_frame :: proc(state: ^Frame_State, content: Simulation_Content, weather: Weather, cues: Frame_Cues) -> Sound_Frame {
 	session := state.session
 	return Sound_Frame {
 		world = &session.simulation.world,
-		statistics = &session.simulation.records.statistics,
 		content = content,
 		generator = &session.generator,
 		player = session.simulation.players[0],
 		tick = session.simulation.tick,
-		quests = &session.simulation.quests,
-		particle_memory = state.presentation.particle_memory,
+		cues = cues,
 		weather = weather,
 		cheat_speed = session.simulation.cheat_speed,
 		daylight = daylight_blend(simulation_day_ticks(session.simulation), session.simulation.day_length_ticks),
@@ -594,13 +596,14 @@ world_facts :: proc(state: ^Frame_State, diagnostics: Diagnostics_Context) -> Wo
 	}
 }
 
-draw_session_world :: proc(state: ^Frame_State, session: ^Session, content: Simulation_Content, sky: Day_Sky, weather: Weather) -> (counts: Frame_Render_Counts) {
+// The particles add the Landing cue to the frame's cues.
+draw_session_world :: proc(state: ^Frame_State, session: ^Session, content: Simulation_Content, sky: Day_Sky, weather: Weather, cues: ^Frame_Cues) -> (counts: Frame_Render_Counts) {
 	world := &session.simulation.world
 	tick_rate := session.simulation.tick_rate
 	player := session.simulation.players[0]
 	alpha := f32(interpolation_alpha(session.accumulator))
 	seconds := rl.GetTime()
-	update_player_presence(&state.presentation.player_animation, &state.presentation.particles, state.presentation.particle_memory, world, session.simulation.records.statistics, content.blocks, player, session.simulation.tick, seconds, session.simulation.cheat_speed)
+	update_player_presence(&state.presentation.player_animation, &state.presentation.particles, state.presentation.particle_memory, world, content.blocks, player, cues^, seconds)
 	pose := interpolate_player_pose(player, alpha)
 	animation := player_animation_state(state.presentation.player_animation, player, pose.pitch, seconds)
 	bob := head_bob_offset(animation.walk_phase, head_bob_amplitude(animation.moving, animation.sprinting, head_bob_enabled(state.settings)))
@@ -636,8 +639,10 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session, content: Simu
 	if state.developer.diagnostics_page == .Render {
 		counts.water_meshes = water_meshes_in_view(state.presentation.renderer, camera)
 	}
-	update_particles(&state.presentation.particles, &state.presentation.particle_memory, world, session.simulation.records.shipments[:], content, state.presentation.model_renderer, session.simulation.players[:], tick_rate, state.frame_seconds)
-	update_satellite_pass(&state.presentation.particle_memory, session.simulation.quests.messages[:], state.frame_seconds)
+	if update_particles(&state.presentation.particles, &state.presentation.particle_memory, world, cues^, content, state.presentation.model_renderer, session.simulation.players[:], tick_rate, state.frame_seconds) {
+		cues.fired += {.Landing}
+	}
+	update_satellite_pass(&state.presentation.particle_memory, cues^, state.frame_seconds)
 	draw_particles(&state.presentation.particle_renderer, camera, &state.presentation.particles, state.presentation.particle_memory, world, state.presentation.model_renderer, color_to_vector3(sky.colors.sun_tint) * day_factor(sky.blend))
 	if weather_motion_enabled(state.settings) {
 		counts.weather_particles = draw_session_weather(session, camera, weather, sky, seconds)
@@ -915,6 +920,7 @@ enter_planned_session :: proc(state: ^Frame_State, plan: Session_Plan) {
 enter_session :: proc(state: ^Frame_State, session: ^Session) {
 	state.session = session
 	state.interaction.session_views = make_session_views()
+	state.presentation.cue_memory = {}
 	state.presentation.particles = {}
 	state.presentation.particle_memory = {}
 	state.presentation.player_animation = {}

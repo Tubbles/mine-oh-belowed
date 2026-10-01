@@ -4,10 +4,11 @@ import "core:math"
 import rl "shared:raylib"
 
 // Particles and feedback (work item 0067): the emitters of a frame, read
-// from the entity states and the players at render time, the memory of
-// the last frame that turns a finished dig into a puff and a new shipment
-// into a capsule descending under a parachute, a new orbital survey into
-// the survey satellite's pass (work item 0069), and the drawing. The
+// from the entity states and the players at render time, the frame's
+// cues (cues.odin) that turn a finished dig into a puff and a new
+// shipment into a capsule descending under a parachute, a new orbital
+// survey into the survey satellite's pass (work item 0069), and the
+// drawing. The
 // simulation never sees any of it. Selection, the memory and the descent
 // path are pure procedures; only the disc upload and the draw calls touch
 // raylib.
@@ -31,8 +32,6 @@ LAUNCH_SMOKE_SPREAD :: 3.0
 // Debris per second at the start of a dig and added at its end.
 DEBRIS_BASE_RATE :: 6.0
 DEBRIS_FRACTION_RATE :: 18.0
-// A dig past this fraction whose block is gone the next frame broke it.
-BREAK_PUFF_MINIMUM_FRACTION :: 0.5
 BREAK_PUFF_COUNT :: 24
 BREAK_PUFF_SPREAD :: 0.4
 // The capsule falls from this far above the landing capsule over this
@@ -56,13 +55,6 @@ SPARK_COLOR :: [4]u8{255, 205, 90, 255}
 LAUNCH_EXHAUST_COLOR :: [4]u8{255, 190, 110, 220}
 LAUNCH_SMOKE_COLOR :: [4]u8{200, 198, 194, 200}
 
-// The last frame's dig of the local player, a block only.
-Mining_Memory :: struct {
-	cell:     World_Coordinate,
-	block:    Block_Id,
-	fraction: f32,
-}
-
 Capsule_Descent :: struct {
 	active:  bool,
 	seconds: f32,
@@ -75,19 +67,12 @@ Satellite_Pass :: struct {
 	seconds: f32,
 }
 
-// What the particles remember of the last frame, in Frame_State, reset
-// with the session. frame_count is the particles' random source. The
-// message count finds a new orbital survey in the quest log as the
-// shipment count finds a new shipment.
+// What the particles keep between frames, in Frame_State, reset with the
+// session. frame_count is the particles' random source.
 Particle_Memory :: struct {
-	frame_count:     u64,
-	mining:          Mining_Memory,
-	shipments_known: bool,
-	shipment_count:  int,
-	descent:         Capsule_Descent,
-	messages_known:  bool,
-	message_count:   int,
-	satellite:       Satellite_Pass,
+	frame_count: u64,
+	descent:     Capsule_Descent,
+	satellite:   Satellite_Pass,
 }
 
 Particle_Renderer :: struct {
@@ -229,24 +214,6 @@ emitters_for_frame :: proc(world: ^World, content: Simulation_Content, models: M
 	return emitters[:]
 }
 
-mining_memory_of :: proc(player: Player) -> Mining_Memory {
-	if !player.mining.active || player.mining.entity != NO_ENTITY {
-		return {}
-	}
-	return Mining_Memory{cell = player.mining.block, block = player.mining.block_id, fraction = mining_fraction(player.mining)}
-}
-
-// The dig was past half way last frame and its block is gone now.
-break_puff_due :: proc(previous: Mining_Memory, block_now: Block_Id) -> bool {
-	return previous.fraction > BREAK_PUFF_MINIMUM_FRACTION && block_now != previous.block
-}
-
-// A new shipment since the last frame; nothing on the first frame of a
-// session, so a loaded world with shipments starts no descent.
-shipment_starts_descent :: proc(memory: Particle_Memory, shipment_count: int) -> bool {
-	return memory.shipments_known && shipment_count > memory.shipment_count
-}
-
 advance_capsule_descent :: proc(descent: Capsule_Descent, seconds: f32) -> (next: Capsule_Descent, landed: bool) {
 	if !descent.active {
 		return {}, false
@@ -282,21 +249,21 @@ particle_burst :: proc(system: ^Particle_System, memory: Particle_Memory, positi
 	spawn_particle_count(system, emitter, BREAK_PUFF_COUNT, emitter_random_key(memory.frame_count, emitter))
 }
 
-update_break_puff :: proc(system: ^Particle_System, memory: ^Particle_Memory, world: ^World, blocks: Block_Registry, players: []Player) {
-	previous := memory.mining
-	memory.mining = len(players) > 0 ? mining_memory_of(players[0]) : {}
-	if break_puff_due(previous, world_get_block(world, previous.cell)) {
-		particle_burst(system, memory^, block_centre(previous.cell), block_debris_color(blocks, previous.block))
+// A Dig_Break cue bursts where the block was, in its colour.
+update_break_puff :: proc(system: ^Particle_System, memory: ^Particle_Memory, blocks: Block_Registry, cues: Frame_Cues) {
+	if .Dig_Break in cues.fired {
+		particle_burst(system, memory^, block_centre(cues.broken_cell), block_debris_color(blocks, cues.broken_block))
 	}
 }
 
-// A puff where the capsule lands; no descent without a capsule to land on.
-update_capsule_descent :: proc(system: ^Particle_System, memory: ^Particle_Memory, world: ^World, shipments: []Shipment, models: Model_Renderer, seconds: f32) {
-	count := len(shipments)
-	if shipment_starts_descent(memory^, count) {
+// A Shipment cue starts a descent; a puff where the capsule lands; no
+// descent without a capsule to land on. ended is true on the frame a
+// descent stops, landed or lost its capsule: the Landing cue.
+update_capsule_descent :: proc(system: ^Particle_System, memory: ^Particle_Memory, world: ^World, cues: Frame_Cues, models: Model_Renderer, seconds: f32) -> (ended: bool) {
+	was_active := memory.descent.active
+	if .Shipment in cues.fired {
 		memory.descent = {active = true}
 	}
-	memory.shipments_known, memory.shipment_count = true, count
 	landing, found := capsule_landing_point(world, models)
 	landed: bool
 	memory.descent, landed = advance_capsule_descent(memory.descent, seconds)
@@ -305,16 +272,7 @@ update_capsule_descent :: proc(system: ^Particle_System, memory: ^Particle_Memor
 	} else if landed {
 		particle_burst(system, memory^, landing, LANDING_PUFF_COLOR)
 	}
-}
-
-// A new orbital survey message since the count.
-orbital_survey_since :: proc(messages: []Quest_Message, count: int) -> bool {
-	for message in messages[min(count, len(messages)):] {
-		if message.text_key == ORBITAL_SURVEY_KEY {
-			return true
-		}
-	}
-	return false
+	return was_active && !memory.descent.active
 }
 
 advance_satellite_pass :: proc(pass: Satellite_Pass, seconds: f32) -> Satellite_Pass {
@@ -334,28 +292,28 @@ satellite_pass_fraction :: proc(pass: Satellite_Pass) -> f32 {
 	return clamp(pass.seconds / SATELLITE_PASS_SECONDS, 0, 1)
 }
 
-// A survey since the last frame starts a pass; nothing on the first frame
-// of a session, so a loaded world starts none.
-update_satellite_pass :: proc(memory: ^Particle_Memory, messages: []Quest_Message, frame_seconds: f32) {
-	surveyed := memory.messages_known && orbital_survey_since(messages, memory.message_count)
-	memory.messages_known, memory.message_count = true, len(messages)
-	if surveyed {
+// A Survey cue starts a pass (none on the first frame of a session, so a
+// loaded world starts none); else the pass goes on.
+update_satellite_pass :: proc(memory: ^Particle_Memory, cues: Frame_Cues, frame_seconds: f32) {
+	if .Survey in cues.fired {
 		memory.satellite = {active = true}
 		return
 	}
 	memory.satellite = advance_satellite_pass(memory.satellite, clamp(frame_seconds, 0, PARTICLE_MAXIMUM_FRAME_SECONDS))
 }
 
-// The frame's spawning, memory and movement, with the frame time capped.
-update_particles :: proc(system: ^Particle_System, memory: ^Particle_Memory, world: ^World, shipments: []Shipment, content: Simulation_Content, models: Model_Renderer, players: []Player, tick_rate: int, frame_seconds: f32) {
+// The frame's spawning, memory and movement, with the frame time capped;
+// descent_ended as update_capsule_descent.
+update_particles :: proc(system: ^Particle_System, memory: ^Particle_Memory, world: ^World, cues: Frame_Cues, content: Simulation_Content, models: Model_Renderer, players: []Player, tick_rate: int, frame_seconds: f32) -> (descent_ended: bool) {
 	seconds := clamp(frame_seconds, 0, PARTICLE_MAXIMUM_FRAME_SECONDS)
 	memory.frame_count += 1
 	for emitter in emitters_for_frame(world, content, models, players, tick_rate) {
 		spawn_particles(system, emitter, seconds, emitter_random_key(memory.frame_count, emitter))
 	}
-	update_break_puff(system, memory, world, content.blocks, players)
-	update_capsule_descent(system, memory, world, shipments, models, seconds)
+	update_break_puff(system, memory, content.blocks, cues)
+	descent_ended = update_capsule_descent(system, memory, world, cues, models, seconds)
 	advance_particles(system, seconds)
+	return descent_ended
 }
 
 // The particle's colour in the frame: its alpha faded, darkened by the

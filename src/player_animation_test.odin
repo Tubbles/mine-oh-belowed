@@ -72,20 +72,21 @@ test_head_pitch_follows_the_look :: proc(t: ^testing.T) {
 // first frame of a session only learns them.
 @(test)
 test_place_swing_fires_once_per_growth :: proc(t: ^testing.T) {
-	memory, _ := advance_player_animation_memory({}, 0, 5, 1, 10)
+	cue_memory: Cue_Memory
+	memory := advance_player_animation_memory({}, step_cues(&cue_memory, {tick = 1, placed_total = 5}), 10)
 	testing.expect(t, !memory.place_swing_active, "the first frame learns the counters")
-	memory, _ = advance_player_animation_memory(memory, 0, 5, 2, 10.1)
+	memory = advance_player_animation_memory(memory, step_cues(&cue_memory, {tick = 2, placed_total = 5}), 10.1)
 	testing.expect(t, !memory.place_swing_active, "unchanged counters")
-	memory, _ = advance_player_animation_memory(memory, 0, 6, 3, 10.2)
+	memory = advance_player_animation_memory(memory, step_cues(&cue_memory, {tick = 3, placed_total = 6}), 10.2)
 	testing.expect(t, memory.place_swing_active, "grown counters")
 	expect_near_value(t, place_swing_elapsed(memory, 10.2), 0)
 	expect_near_value(t, place_swing_angle(PLACE_SWING_SECONDS / 2), -PLACE_SWING_DEGREES)
 	expect_near_value(t, place_swing_angle(-1), 0)
 	expect_near_value(t, place_swing_angle(PLACE_SWING_SECONDS), 0)
-	memory, _ = advance_player_animation_memory(memory, 0, 6, 4, 10.3)
+	memory = advance_player_animation_memory(memory, step_cues(&cue_memory, {tick = 4, placed_total = 6}), 10.3)
 	testing.expect(t, memory.place_swing_active, "still swinging")
 	testing.expect_value(t, memory.place_swing_start, 10.2)
-	memory, _ = advance_player_animation_memory(memory, 0, 6, 5, 10.5)
+	memory = advance_player_animation_memory(memory, step_cues(&cue_memory, {tick = 5, placed_total = 6}), 10.5)
 	testing.expect(t, !memory.place_swing_active, "one swing only")
 	expect_near_value(t, place_swing_elapsed(memory, 10.5), -1)
 
@@ -100,12 +101,13 @@ test_place_swing_fires_once_per_growth :: proc(t: ^testing.T) {
 // it.
 @(test)
 test_moving_follows_the_distance_per_tick :: proc(t: ^testing.T) {
-	memory, _ := advance_player_animation_memory({}, 100, 0, 1, 0)
-	memory, _ = advance_player_animation_memory(memory, 170, 0, 2, 0)
+	cue_memory: Cue_Memory
+	memory := advance_player_animation_memory({}, step_cues(&cue_memory, {tick = 1, distance_millimetres = 100}), 0)
+	memory = advance_player_animation_memory(memory, step_cues(&cue_memory, {tick = 2, distance_millimetres = 170}), 0)
 	testing.expect(t, memory.moving, "walked")
-	memory, _ = advance_player_animation_memory(memory, 170, 0, 2, 0)
+	memory = advance_player_animation_memory(memory, step_cues(&cue_memory, {tick = 2, distance_millimetres = 170}), 0)
 	testing.expect(t, memory.moving, "same tick")
-	memory, _ = advance_player_animation_memory(memory, 170, 0, 3, 0)
+	memory = advance_player_animation_memory(memory, step_cues(&cue_memory, {tick = 3, distance_millimetres = 170}), 0)
 	testing.expect(t, !memory.moving, "stood still")
 }
 
@@ -133,15 +135,13 @@ test_footstep_fires_once_per_half_cycle :: proc(t: ^testing.T) {
 	testing.expect(t, footstep_due(4700, 4900), "at the cycle")
 
 	steps := 0
-	memory, _ := advance_player_animation_memory({}, 0, 0, 0, 0)
-	for tick in 1 ..= 100 {
+	memory: Cue_Memory
+	step_cues(&memory, {tick = 0})
+	for tick in u64(1) ..= 100 {
 		// 72 mm per tick, walking speed at 60 Hz, and a second frame per
 		// tick.
-		footstep: bool
-		memory, footstep = advance_player_animation_memory(memory, u64(tick) * 72, 0, u64(tick), 0)
-		steps += int(footstep)
-		memory, footstep = advance_player_animation_memory(memory, u64(tick) * 72, 0, u64(tick), 0)
-		steps += int(footstep)
+		steps += int(.Footstep in step_cues(&memory, {tick = tick, distance_millimetres = tick * 72}).fired)
+		steps += int(.Footstep in step_cues(&memory, {tick = tick, distance_millimetres = tick * 72}).fired)
 	}
 	testing.expect_value(t, steps, int(math.floor(f32(7200) / 2400)))
 }
@@ -149,11 +149,11 @@ test_footstep_fires_once_per_half_cycle :: proc(t: ^testing.T) {
 // Steps and the final walk phase of ticks of walking, per_tick
 // millimetres a tick.
 walk_cadence :: proc(per_tick: u64, ticks: int, cheat_speed: bool) -> (steps: int, phase: f32) {
-	memory, _ := advance_player_animation_memory({}, 0, 0, 0, 0, cheat_speed)
+	memory: Cue_Memory
+	step_cues(&memory, {tick = 0, cheat_speed = cheat_speed})
 	for tick in 1 ..= ticks {
-		footstep: bool
-		memory, footstep = advance_player_animation_memory(memory, u64(tick) * per_tick, 0, u64(tick), 0, cheat_speed)
-		steps += int(footstep)
+		cues := step_cues(&memory, {tick = u64(tick), distance_millimetres = u64(tick) * per_tick, cheat_speed = cheat_speed})
+		steps += int(.Footstep in cues.fired)
 	}
 	return steps, walk_phase(memory.cadence_millimetres)
 }

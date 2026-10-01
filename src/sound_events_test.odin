@@ -54,63 +54,77 @@ test_mining_hit_per_tool_tier :: proc(t: ^testing.T) {
 	testing.expect_value(t, mining_hit_sound_id({}, 2), "")
 }
 
+// A frame of the counters through the detector into the sound memory.
+sound_step :: proc(cue_memory: ^Cue_Memory, memory: ^Sound_Memory, counters: Cue_Counters) -> (cues: Frame_Cues, mining_hit: bool) {
+	cues = step_cues(cue_memory, counters)
+	memory^, mining_hit = advance_sound_memory(memory^, cues, counters.tick)
+	return cues, mining_hit
+}
+
 @(test)
 test_step_detector_fires_once_per_half_cycle :: proc(t: ^testing.T) {
+	cue_memory: Cue_Memory
+	memory: Sound_Memory
+	messages := [?]Quest_Message{{}, {}}
 	// The first frame only learns the counters.
-	memory, cues := advance_sound_memory({}, {tick = 1, distance_millimetres = 2390, placed_total = 4, blocks_mined = 9, message_count = 2})
-	testing.expect_value(t, cues, Sound_Cues{})
-	memory, cues = advance_sound_memory(memory, {tick = 2, distance_millimetres = 2410, placed_total = 4, blocks_mined = 9, message_count = 2})
-	testing.expect(t, cues.footstep)
+	cues, _ := sound_step(&cue_memory, &memory, {tick = 1, distance_millimetres = 2390, placed_total = 4, blocks_mined = 9, messages = messages[:]})
+	testing.expect_value(t, cues.fired, bit_set[Cue]{})
+	cues, _ = sound_step(&cue_memory, &memory, {tick = 2, distance_millimetres = 2410, placed_total = 4, blocks_mined = 9, messages = messages[:]})
+	testing.expect(t, .Footstep in cues.fired)
 	testing.expect_value(t, memory.step_count, 1)
 	// The same tick again, a frame faster than the tick rate: no step.
-	memory, cues = advance_sound_memory(memory, {tick = 2, distance_millimetres = 2410, placed_total = 4, blocks_mined = 9, message_count = 2})
-	testing.expect(t, !cues.footstep)
-	memory, cues = advance_sound_memory(memory, {tick = 3, distance_millimetres = 4790, placed_total = 4, blocks_mined = 9, message_count = 2})
-	testing.expect(t, !cues.footstep)
-	memory, cues = advance_sound_memory(memory, {tick = 4, distance_millimetres = 4810, placed_total = 4, blocks_mined = 9, message_count = 2})
-	testing.expect(t, cues.footstep)
+	cues, _ = sound_step(&cue_memory, &memory, {tick = 2, distance_millimetres = 2410, placed_total = 4, blocks_mined = 9, messages = messages[:]})
+	testing.expect(t, .Footstep not_in cues.fired)
+	cues, _ = sound_step(&cue_memory, &memory, {tick = 3, distance_millimetres = 4790, placed_total = 4, blocks_mined = 9, messages = messages[:]})
+	testing.expect(t, .Footstep not_in cues.fired)
+	cues, _ = sound_step(&cue_memory, &memory, {tick = 4, distance_millimetres = 4810, placed_total = 4, blocks_mined = 9, messages = messages[:]})
+	testing.expect(t, .Footstep in cues.fired)
 	testing.expect_value(t, memory.step_count, 2)
 }
 
 @(test)
 test_quarter_detector_fires_once_per_quarter :: proc(t: ^testing.T) {
 	block := World_Coordinate{1, 2, 3}
-	dig := proc(block: World_Coordinate, progress: u32) -> Mining_Sound_Memory {
-		return mining_sound_memory_of(Mining_State{active = true, block = block, progress_ticks = progress, required_ticks = 20})
+	dig := proc(block: World_Coordinate, progress: u32) -> Mining_State {
+		return Mining_State{active = true, block = block, progress_ticks = progress, required_ticks = 20}
 	}
-	testing.expect_value(t, dig(block, 4).quarter, 0)
-	testing.expect_value(t, dig(block, 5).quarter, 1)
-	testing.expect_value(t, dig(block, 20).quarter, 4)
-	testing.expect(t, !mining_hit_due({}, dig(block, 5)))
-	testing.expect(t, mining_hit_due(dig(block, 4), dig(block, 5)))
-	testing.expect(t, !mining_hit_due(dig(block, 5), dig(block, 6)))
-	testing.expect(t, mining_hit_due(dig(block, 9), dig(block, 15)))
+	testing.expect_value(t, mining_quarter(dig(block, 4)), 0)
+	testing.expect_value(t, mining_quarter(dig(block, 5)), 1)
+	testing.expect_value(t, mining_quarter(dig(block, 20)), 4)
+	testing.expect(t, !dig_quarter_crossed({}, dig(block, 5)))
+	testing.expect(t, dig_quarter_crossed(dig(block, 4), dig(block, 5)))
+	testing.expect(t, !dig_quarter_crossed(dig(block, 5), dig(block, 6)))
+	testing.expect(t, dig_quarter_crossed(dig(block, 9), dig(block, 15)))
 	// The break is not a hit, nor is a new dig.
-	testing.expect(t, !mining_hit_due(dig(block, 19), dig(block, 20)))
-	testing.expect(t, !mining_hit_due(dig(block, 4), dig({1, 2, 4}, 5)))
-	testing.expect_value(t, mining_sound_memory_of({}), Mining_Sound_Memory{})
+	testing.expect(t, !dig_quarter_crossed(dig(block, 19), dig(block, 20)))
+	testing.expect(t, !dig_quarter_crossed(dig(block, 4), dig({1, 2, 4}, 5)))
+	testing.expect_value(t, mining_quarter({}), 0)
 	// Through the memory, once.
-	memory, _ := advance_sound_memory({}, {tick = 1, mining = dig(block, 4)})
-	cues: Sound_Cues
-	memory, cues = advance_sound_memory(memory, {tick = 2, mining = dig(block, 5)})
-	testing.expect(t, cues.mining_hit)
-	memory, cues = advance_sound_memory(memory, {tick = 3, mining = dig(block, 6)})
-	testing.expect(t, !cues.mining_hit)
+	cue_memory: Cue_Memory
+	memory: Sound_Memory
+	sound_step(&cue_memory, &memory, {tick = 1, dig = dig(block, 4)})
+	_, mining_hit := sound_step(&cue_memory, &memory, {tick = 2, dig = dig(block, 5)})
+	testing.expect(t, mining_hit)
+	_, mining_hit = sound_step(&cue_memory, &memory, {tick = 3, dig = dig(block, 6)})
+	testing.expect(t, !mining_hit)
 }
 
 @(test)
 test_counter_cues :: proc(t: ^testing.T) {
-	memory, _ := advance_sound_memory({}, {tick = 1, placed_total = 3, blocks_mined = 5, launching_count = 0, descent_active = true, message_count = 1})
-	cues: Sound_Cues
-	memory, cues = advance_sound_memory(memory, {tick = 2, placed_total = 4, blocks_mined = 6, launching_count = 1, descent_active = false, message_count = 2, discovered = true})
-	testing.expect_value(t, cues, Sound_Cues{block_break = true, block_place = true, launch = true, landing = true, discovery = true})
-	memory, cues = advance_sound_memory(memory, {tick = 3, placed_total = 4, blocks_mined = 6, launching_count = 1, message_count = 2})
-	testing.expect_value(t, cues, Sound_Cues{})
+	// The landing is the capsule descent's end, which the particles add
+	// (test_shipment_starts_a_descent).
 	messages := [?]Quest_Message{{text_key = "mc_welcome"}, {text_key = ITEM_DISCOVERED_KEY}, {text_key = "research_complete"}}
-	testing.expect(t, discovery_since(messages[:], 0))
-	testing.expect(t, discovery_since(messages[:], 1))
-	testing.expect(t, !discovery_since(messages[:], 2))
-	testing.expect(t, !discovery_since(messages[:], 5))
+	cue_memory: Cue_Memory
+	memory: Sound_Memory
+	sound_step(&cue_memory, &memory, {tick = 1, placed_total = 3, blocks_mined = 5, launching_count = 0, messages = messages[:1]})
+	cues, _ := sound_step(&cue_memory, &memory, {tick = 2, placed_total = 4, blocks_mined = 6, launching_count = 1, messages = messages[:2]})
+	testing.expect_value(t, cues.fired, bit_set[Cue]{.Block_Break, .Place, .Launch, .Discovery})
+	cues, _ = sound_step(&cue_memory, &memory, {tick = 3, placed_total = 4, blocks_mined = 6, launching_count = 1, messages = messages[:2]})
+	testing.expect_value(t, cues.fired, bit_set[Cue]{})
+	testing.expect(t, quest_message_since(messages[:], 0, ITEM_DISCOVERED_KEY))
+	testing.expect(t, quest_message_since(messages[:], 1, ITEM_DISCOVERED_KEY))
+	testing.expect(t, !quest_message_since(messages[:], 2, ITEM_DISCOVERED_KEY))
+	testing.expect(t, !quest_message_since(messages[:], 5, ITEM_DISCOVERED_KEY))
 }
 
 @(test)
@@ -216,14 +230,14 @@ test_ui_records_move_confirm_and_back :: proc(t: ^testing.T) {
 @(test)
 test_mining_hits_capped_at_three_a_second :: proc(t: ^testing.T) {
 	block := World_Coordinate{1, 2, 3}
-	memory, _ := advance_sound_memory({}, {tick = 0})
+	cue_memory: Cue_Memory
+	memory: Sound_Memory
+	sound_step(&cue_memory, &memory, {tick = 0})
 	hits, last_hit := 0, u64(0)
 	for tick in u64(1) ..= 600 {
 		// A new dig of 16 ticks every 16 ticks: quarters at 4, 8 and 12.
 		dig := Mining_State{active = true, block = block, entity = Entity_Handle{index = u32(tick / 16)}, progress_ticks = u32(tick % 16), required_ticks = 16}
-		cues: Sound_Cues
-		memory, cues = advance_sound_memory(memory, {tick = tick, mining = mining_sound_memory_of(dig)})
-		if cues.mining_hit {
+		if _, mining_hit := sound_step(&cue_memory, &memory, {tick = tick, dig = dig}); mining_hit {
 			testing.expectf(t, hits == 0 || tick - last_hit >= MINING_HIT_MINIMUM_GAP_TICKS, "hit at %d after %d", tick, last_hit)
 			hits, last_hit = hits + 1, tick
 		}
@@ -240,9 +254,11 @@ test_mining_hits_capped_at_three_a_second :: proc(t: ^testing.T) {
 @(test)
 test_cheat_speed_footsteps_keep_the_normal_rate :: proc(t: ^testing.T) {
 	steps_of :: proc(per_tick: u64, cheat_speed: bool) -> u64 {
-		memory, _ := advance_sound_memory({}, {tick = 0, cheat_speed = cheat_speed})
+		cue_memory: Cue_Memory
+		memory: Sound_Memory
+		sound_step(&cue_memory, &memory, {tick = 0, cheat_speed = cheat_speed})
 		for tick in u64(1) ..= 600 {
-			memory, _ = advance_sound_memory(memory, {tick = tick, distance_millimetres = tick * per_tick, cheat_speed = cheat_speed})
+			sound_step(&cue_memory, &memory, {tick = tick, distance_millimetres = tick * per_tick, cheat_speed = cheat_speed})
 		}
 		return memory.step_count
 	}

@@ -150,25 +150,26 @@ test_the_mark_stays_inside_its_square :: proc(t: ^testing.T) {
 @(test)
 test_an_orbital_survey_starts_one_satellite_pass :: proc(t: ^testing.T) {
 	memory: Particle_Memory
+	cue_memory: Cue_Memory
 	messages := [dynamic]Quest_Message{}
 	defer delete(messages)
 	append(&messages, Quest_Message{text_key = ORBITAL_SURVEY_KEY})
 	// A loaded world's survey starts nothing.
-	update_satellite_pass(&memory, messages[:], 0.016)
+	update_satellite_pass(&memory, step_cues(&cue_memory, {messages = messages[:]}), 0.016)
 	testing.expect(t, !memory.satellite.active)
 	append(&messages, Quest_Message{text_key = "mc_arrival"})
-	update_satellite_pass(&memory, messages[:], 0.016)
+	update_satellite_pass(&memory, step_cues(&cue_memory, {messages = messages[:]}), 0.016)
 	testing.expect(t, !memory.satellite.active)
 	append(&messages, Quest_Message{text_key = ORBITAL_SURVEY_KEY})
-	update_satellite_pass(&memory, messages[:], 0.016)
+	update_satellite_pass(&memory, step_cues(&cue_memory, {messages = messages[:]}), 0.016)
 	testing.expect(t, memory.satellite.active)
 	testing.expect_value(t, memory.satellite.seconds, 0)
 	// Steps a binary fraction long, so the sum is exact.
 	for _ in 0 ..< 95 {
-		update_satellite_pass(&memory, messages[:], 0.0625)
+		update_satellite_pass(&memory, step_cues(&cue_memory, {messages = messages[:]}), 0.0625)
 	}
 	testing.expect(t, memory.satellite.active)
-	update_satellite_pass(&memory, messages[:], 0.0625)
+	update_satellite_pass(&memory, step_cues(&cue_memory, {messages = messages[:]}), 0.0625)
 	testing.expect(t, !memory.satellite.active)
 }
 

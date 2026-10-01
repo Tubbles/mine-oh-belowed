@@ -362,20 +362,20 @@ footstep_dust_due :: proc(footstep, on_ground, in_water: bool) -> bool {
 	return footstep && on_ground && !in_water
 }
 
-spawn_footstep_dust :: proc(particles: ^Particle_System, particle_memory: Particle_Memory, world: ^World, blocks: Block_Registry, position: [3]f32) {
-	under := world_get_block(world, camera_world_coordinate(position - {0, COLLISION_EPSILON, 0}))
+spawn_footstep_dust :: proc(particles: ^Particle_System, particle_memory: Particle_Memory, blocks: Block_Registry, under: Block_Id, position: [3]f32) {
 	emitter := Emitter{position = position + {0, 0.05, 0}, kind = .Puff, color = block_debris_color(blocks, under), spread = FOOTSTEP_DUST_SPREAD}
 	spawn_particle_count(particles, emitter, FOOTSTEP_DUST_COUNT, emitter_random_key(particle_memory.frame_count, emitter))
 }
 
 // Once a frame, before the camera: the animation memory learns the
-// frame, and a step puts dust into the particle pool.
-update_player_presence :: proc(memory: ^Player_Animation_Memory, particles: ^Particle_System, particle_memory: Particle_Memory, world: ^World, statistics: Statistics, blocks: Block_Registry, player: Player, tick: u64, render_seconds: f64, cheat_speed: bool) {
-	footstep: bool
-	memory^, footstep = advance_player_animation_memory(memory^, statistics.distance_walked_millimetres, placed_total(statistics), tick, render_seconds, cheat_speed)
+// frame's cues (cues.odin), and a footstep puts dust into the particle
+// pool.
+update_player_presence :: proc(memory: ^Player_Animation_Memory, particles: ^Particle_System, particle_memory: Particle_Memory, world: ^World, blocks: Block_Registry, player: Player, cues: Frame_Cues, render_seconds: f64) {
+	memory^ = advance_player_animation_memory(memory^, cues, render_seconds)
+	footstep := .Footstep in cues.fired
 	in_water := footstep && box_touches_water(world, blocks, player_box(player.position))
 	if footstep_dust_due(footstep, player.on_ground, in_water) {
-		spawn_footstep_dust(particles, particle_memory, world, blocks, player.position)
+		spawn_footstep_dust(particles, particle_memory, blocks, cues.under_block, player.position)
 	}
 }
 

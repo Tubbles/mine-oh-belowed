@@ -7,12 +7,12 @@ import "core:math"
 // walk phase comes from the cadence distance: the distance the statistics
 // count (distance_walked_millimetres), each tick's share divided by the
 // cheat speed factor while cheat speed is on (work item 0087), so a walk
-// at three times the speed bobs and steps at the normal rate. What the
-// renderer remembers of the last frame (the distance, the cadence
-// distance, whether the distance moved, the placed counters, a place
-// swing under way) is Player_Animation_Memory in Frame_State: render
-// state, never read by the simulation. The mining chop follows render
-// time, so a faster dig chops at the same period.
+// at three times the speed bobs and steps at the normal rate. The cue
+// detector (cues.odin) follows the cadence and fires the footsteps and
+// place swings; Player_Animation_Memory in Frame_State keeps the walk it
+// reports and a place swing under way: render state, never read by the
+// simulation. The mining chop follows render time, so a faster dig chops
+// at the same period.
 //
 // Angles are degrees about the body's sideways axis, positive swinging a
 // limb forward (and the head up, like the pitch).
@@ -44,19 +44,16 @@ Player_Limb_Angles :: struct {
 	head_pitch: f32,
 }
 
-// moving follows the walked distance at tick granularity: a frame
-// without a new tick keeps it, so a display faster than the tick rate
-// does not stop the walk every other frame. place_swing_start is render
-// time in seconds, valid while place_swing_active.
+// The walk is the cue detector's (cues.odin), copied each frame:
+// moving follows the walked distance at tick granularity, so a display
+// faster than the tick rate does not stop the walk every other frame.
+// place_swing_start is render time in seconds, valid while
+// place_swing_active.
 Player_Animation_Memory :: struct {
-	known:                bool,
-	tick:                 u64,
-	distance_millimetres: u64,
-	cadence_millimetres:  u64,
-	moving:               bool,
-	placed_total:         u64,
-	place_swing_active:   bool,
-	place_swing_start:    f64,
+	cadence_millimetres: u64,
+	moving:              bool,
+	place_swing_active:  bool,
+	place_swing_start:   f64,
 }
 
 // What the pose of a frame is made from.
@@ -150,57 +147,19 @@ head_bob_offset :: proc(phase, amplitude: f32) -> f32 {
 	return amplitude * math.sin(phase * 2 * math.TAU)
 }
 
-// The cadence distance after a tick walked from previous_distance to
-// distance: under cheat speed the tick's walk counts divided by the cheat
-// speed factor, rounded like the statistics round a tick's walk.
-advance_cadence_millimetres :: proc(cadence, previous_distance, distance: u64, cheat_speed: bool) -> u64 {
-	if distance <= previous_distance {
-		return cadence
-	}
-	return cadence + u64(math.round(f64(distance - previous_distance) / f64(cheat_speed_factor(cheat_speed))))
-}
-
-// A foot comes down each half cycle: true when the distance crossed one.
-footstep_due :: proc(previous_millimetres, millimetres: u64) -> bool {
-	half := u64(WALK_CYCLE_MILLIMETRES / 2)
-	return millimetres / half > previous_millimetres / half
-}
-
-// Machines and blocks placed so far, by any player.
-placed_total :: proc(statistics: Statistics) -> u64 {
-	total: u64
-	for count in statistics.placed {
-		total += count
-	}
-	for count in statistics.blocks_placed {
-		total += count
-	}
-	return total
-}
-
-// The frame's memory from the last one. The first frame of a session only
-// learns the counters, so a loaded world neither steps nor swings.
-// footstep is true on the frame whose tick crossed a half cycle of the
-// cadence distance.
-advance_player_animation_memory :: proc(memory: Player_Animation_Memory, distance_millimetres, placed: u64, tick: u64, render_seconds: f64, cheat_speed := false) -> (next: Player_Animation_Memory, footstep: bool) {
-	if !memory.known {
-		return Player_Animation_Memory{known = true, tick = tick, distance_millimetres = distance_millimetres, cadence_millimetres = distance_millimetres, placed_total = placed}, false
-	}
-	next = memory
-	if tick != memory.tick {
-		next.moving = distance_millimetres != memory.distance_millimetres
-		next.cadence_millimetres = advance_cadence_millimetres(memory.cadence_millimetres, memory.distance_millimetres, distance_millimetres, cheat_speed)
-		footstep = footstep_due(memory.cadence_millimetres, next.cadence_millimetres)
-		next.tick, next.distance_millimetres = tick, distance_millimetres
-	}
-	if placed > memory.placed_total {
+// The frame's memory from the last one and the frame's cues
+// (cues.odin): the walk as the detector follows it, and a place swing
+// started by a Place cue.
+advance_player_animation_memory :: proc(memory: Player_Animation_Memory, cues: Frame_Cues, render_seconds: f64) -> Player_Animation_Memory {
+	next := memory
+	next.cadence_millimetres, next.moving = cues.cadence_millimetres, cues.moving
+	if .Place in cues.fired {
 		next.place_swing_active, next.place_swing_start = true, render_seconds
 	}
-	next.placed_total = placed
 	if next.place_swing_active && render_seconds - next.place_swing_start >= PLACE_SWING_SECONDS {
 		next.place_swing_active = false
 	}
-	return next, footstep
+	return next
 }
 
 place_swing_elapsed :: proc(memory: Player_Animation_Memory, render_seconds: f64) -> f32 {
