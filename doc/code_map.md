@@ -206,12 +206,12 @@ The developer's and the assistant's instruments: they drive, inspect or measure 
 - Files in reading order:
   - `command.odin`: the command protocol, usage rows, blueprints, queries ([commands.md](commands.md)).
   - `command_socket.odin`, `command_socket_posix.odin`, `command_socket_windows.odin`: paths and `Queued_Command_Line`; the Unix socket and `Command_Server`; the Windows stub.
-  - `diagnostics.odin`: `Render_Facts`, `World_Facts`, `Frame_Time_Ring`, the diagnostics pages and world overlay.
+  - `diagnostics.odin`: `Render_Facts`, `World_Facts`, `Diagnostics_Context`, `Frame_Time_Ring`, the diagnostics pages and world overlay.
   - `data_browser.odin`, `data_export.odin`: `Data_Browser`, the Data files screen's trees and edits; the export.
   - `benchmark_factory.odin`: the factory benchmark, a second driver of `simulation_tick`.
 - State: `Command_Context`, `Command_Server`, `Data_Browser`, `Frame_Time_Ring`; they live on `Frame_State` or the stack of a run.
 - Tests: every `*_test.odin` beside its file; `benchmark_test.odin` runs sizes 1 and 4 and requires no idle machine.
-- Reaches into: loop 16 (queued 3: `Frame_State` in `diagnostics.odin` 12; accepted 4: `session_generator`, `interpolation_alpha`, `parse_seed`, `BUILD_STAMP`).
+- Reaches into: loop 3 (accepted: `session_generator`, `parse_seed`, `BUILD_STAMP`).
 
 ## platform
 

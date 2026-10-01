@@ -1,6 +1,6 @@
 # 0157: Diagnostics take facts, not the frame state
 
-Status: todo (after 0155)
+Status: implemented
 
 ## Goal
 
@@ -16,3 +16,32 @@ Refactor 4 of the loop audit (`doc/audit/loop.md`, section 5). `diagnostics.odin
 ## Verify
 
 - `./build.sh check`, `./build.sh check-android`, `./build.sh check-windows`, `./build.sh test`, `python3 tools/check_docs.py`, `python3 tools/check_dead_code.py`, `python3 tools/code_graph.py --check doc/code_map.md`; `diagnostics.odin` has no `Frame_State`; the pages themselves need a playtest (the user), named in the wrap-up.
+
+## Notes
+
+`Diagnostics_Context` (`diagnostics.odin`), built by `diagnostics_context` (`loop.odin`) in the frame's diagnostics switch only when a page or the F4 overlay shows; the World page builds it once and hands it to `world_facts` as well.
+
+| Field | Why |
+| --- | --- |
+| `simulation: ^Simulation_State` | live state with many reads (tick, world chunks, veins, light, labs, players, unlocks, quests, records); a pointer instead of the copy `Frame_State` by value made |
+| `technologies: Technology_Registry` | research line; two slices, so a value |
+| `blocks`, `items`, `quests` | the content tables the player, quest and objective lines name |
+| `input: Input_Frame` | the Input page's mapped and raw columns |
+| `fonts: ^Font_Cache` | every page draws through it |
+| `page: Diagnostics_Page` | the header and the page switch |
+| `bottleneck_overlay: bool` | the overlay's bottleneck line |
+| `pending_job_count`, `seed` | the streaming line reads one number of `Chunk_Streaming` and one of `Generator`, so values, no `Session` |
+| `tick_interpolation: f64` | `interpolation_alpha(session.accumulator)`, computed by the builder; the field is not named `interpolation_alpha` because the graph counts a field named like a procedure as a reference |
+| `drawn_chunk_count`, `vertex_count` | the world line; `Render_Facts` has them too but is built on the Render page alone, while the overlay line shows on every page |
+
+Procedures changed: `mapped_lines`, `draw_diagnostics`, `draw_diagnostics_page`, `world_statistics_text`, `streaming_statistics_text`, `world_overlay_statistics_lines`, `draw_world_overlay`, `append_player_lines`, `research_diagnostics_text`, `quest_diagnostics_text`, `objective_counters_text` take the struct; `light_statistics_text` takes `^Simulation_State`, the one field it reads. `light_statistics_text` and `append_player_lines` now read the live world through the pointer instead of a copy of the `World` struct; both only read. `world_facts` takes the context beside the state. `test_diagnostics_lines_print_the_context` (`diagnostics_test.odin`) builds the struct over `make_developer_test_simulation` without a window and pins the overlay's world line (`chunks 0  drawn 3  vertices 9`), its streaming line (`pending jobs 7` ... `seed 42`) and the Input page's tick line (`tick 0`).
+
+`hot_reload.odin` was already in the loop cluster (`"hot"` was in the loop's prefixes when the code map landed in 0144, commit `a7700c6`), so `tools/code_graph.py` is unchanged and content -> loop stays 19.
+
+Records (`doc/code_map.md`):
+
+| Edge | Before | After |
+| --- | --- | --- |
+| tools -> loop | 16 | 3 (the 12 `Frame_State` references and `interpolation_alpha` left) |
+
+No record rose.

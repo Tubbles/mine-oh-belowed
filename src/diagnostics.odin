@@ -94,6 +94,28 @@ World_Facts :: struct {
 	leaf_decay_count: int,
 }
 
+// What the pages and the F4 overlay read besides Render_Facts and
+// World_Facts, filled by the frame loop (diagnostics_context in loop.odin)
+// only while a page or the overlay shows. The simulation is live state
+// behind a pointer; the rest are the frame's values. The overlay needs the
+// two renderer counters on every page, Render_Facts is built on one.
+Diagnostics_Context :: struct {
+	simulation:         ^Simulation_State,
+	technologies:       Technology_Registry,
+	blocks:             Block_Registry,
+	items:              Item_Registry,
+	quests:             Quest_Registry,
+	input:              Input_Frame,
+	fonts:              ^Font_Cache,
+	page:               Diagnostics_Page,
+	bottleneck_overlay: bool,
+	pending_job_count:  int,
+	seed:               u64,
+	tick_interpolation: f64,
+	drawn_chunk_count:  int,
+	vertex_count:       int,
+}
+
 // The entity kinds per line on the World page.
 WORLD_PAGE_KINDS_PER_LINE :: 4
 
@@ -253,16 +275,16 @@ append_line :: proc(lines: ^[dynamic]Diagnostics_Line, active: bool, format: str
 	append(lines, Diagnostics_Line{text = fmt.tprintf(format, ..arguments), active = active})
 }
 
-mapped_lines :: proc(state: Frame_State, config: Game_Config) -> []Diagnostics_Line {
+mapped_lines :: proc(diagnostics: Diagnostics_Context, config: Game_Config) -> []Diagnostics_Line {
 	lines := make([dynamic]Diagnostics_Line, context.temp_allocator)
-	input := state.input
+	input := diagnostics.input
 	append_line(&lines, false, "%s  controller diagnostics", config.name)
-	append_line(&lines, false, "tick %d  fps %d  alpha %.2f", state.session.simulation.tick, rl.GetFPS(), interpolation_alpha(state.session.accumulator))
+	append_line(&lines, false, "tick %d  fps %d  alpha %.2f", diagnostics.simulation.tick, rl.GetFPS(), diagnostics.tick_interpolation)
 	append_line(&lines, false, "backend %v", input.raw.backend)
-	append_line(&lines, false, "%s", world_statistics_text(state))
-	append_line(&lines, false, "%s", streaming_statistics_text(state))
-	append_line(&lines, false, "%s", light_statistics_text(state))
-	append_player_lines(&lines, state)
+	append_line(&lines, false, "%s", world_statistics_text(diagnostics))
+	append_line(&lines, false, "%s", streaming_statistics_text(diagnostics))
+	append_line(&lines, false, "%s", light_statistics_text(diagnostics.simulation))
+	append_player_lines(&lines, diagnostics)
 	append_line(&lines, false, "")
 	append_line(&lines, input.move != {}, "move        % .3f % .3f", input.move.x, input.move.y)
 	append_line(&lines, input.look != {}, "look        % .3f % .3f", input.look.x, input.look.y)
@@ -416,67 +438,66 @@ draw_lines :: proc(fonts: ^Font_Cache, lines: []Diagnostics_Line, x, y, font_siz
 }
 
 // The Input page's columns, from top down.
-draw_diagnostics :: proc(state: Frame_State, config: Game_Config, top: i32) {
+draw_diagnostics :: proc(diagnostics: Diagnostics_Context, config: Game_Config, top: i32) {
 	font_size := diagnostics_font_size(rl.GetRenderHeight())
 	screen_width := rl.GetRenderWidth()
 	button_column_x := screen_width * 35 / 100
 	analog_column_x := screen_width * 64 / 100
-	fonts := state.ui.fonts
-	left_bottom := draw_lines(fonts, mapped_lines(state, config), DIAGNOSTICS_MARGIN, top, font_size)
-	draw_lines(fonts, keyboard_mouse_lines(state.input.raw), DIAGNOSTICS_MARGIN, left_bottom + font_size, font_size)
-	draw_lines(fonts, gamepad_button_lines(state.input.raw), button_column_x, top, font_size)
-	draw_lines(fonts, gamepad_analog_lines(state.input.raw), analog_column_x, top, font_size)
+	fonts := diagnostics.fonts
+	left_bottom := draw_lines(fonts, mapped_lines(diagnostics, config), DIAGNOSTICS_MARGIN, top, font_size)
+	draw_lines(fonts, keyboard_mouse_lines(diagnostics.input.raw), DIAGNOSTICS_MARGIN, left_bottom + font_size, font_size)
+	draw_lines(fonts, gamepad_button_lines(diagnostics.input.raw), button_column_x, top, font_size)
+	draw_lines(fonts, gamepad_analog_lines(diagnostics.input.raw), analog_column_x, top, font_size)
 }
 
 // Over the backdrop: the header line, then the page. render and world are
 // read only on their pages.
-draw_diagnostics_page :: proc(state: Frame_State, config: Game_Config, render: Render_Facts, world: World_Facts) {
+draw_diagnostics_page :: proc(diagnostics: Diagnostics_Context, config: Game_Config, render: Render_Facts, world: World_Facts) {
 	draw_diagnostics_backdrop()
 	font_size := diagnostics_font_size(rl.GetRenderHeight())
-	header := [?]Diagnostics_Line{{text = diagnostics_header_text(state.diagnostics_page), active = true}}
-	top := draw_lines(state.ui.fonts, header[:], DIAGNOSTICS_MARGIN, DIAGNOSTICS_MARGIN, font_size)
-	switch state.diagnostics_page {
+	header := [?]Diagnostics_Line{{text = diagnostics_header_text(diagnostics.page), active = true}}
+	top := draw_lines(diagnostics.fonts, header[:], DIAGNOSTICS_MARGIN, DIAGNOSTICS_MARGIN, font_size)
+	switch diagnostics.page {
 	case .Off:
 	case .Input:
-		draw_diagnostics(state, config, top)
+		draw_diagnostics(diagnostics, config, top)
 	case .Render:
-		draw_lines(state.ui.fonts, render_page_lines(render), DIAGNOSTICS_MARGIN, top, font_size)
+		draw_lines(diagnostics.fonts, render_page_lines(render), DIAGNOSTICS_MARGIN, top, font_size)
 	case .World:
-		draw_lines(state.ui.fonts, world_page_lines(world), DIAGNOSTICS_MARGIN, top, font_size)
+		draw_lines(diagnostics.fonts, world_page_lines(world), DIAGNOSTICS_MARGIN, top, font_size)
 	}
 }
 
-world_statistics_text :: proc(state: Frame_State) -> string {
+world_statistics_text :: proc(diagnostics: Diagnostics_Context) -> string {
 	return fmt.tprintf(
 		"chunks %d  drawn %d  vertices %d",
-		len(state.session.simulation.world.chunks),
-		state.renderer.drawn_chunk_count,
-		state.renderer.vertex_count,
+		len(diagnostics.simulation.world.chunks),
+		diagnostics.drawn_chunk_count,
+		diagnostics.vertex_count,
 	)
 }
 
 // Light of the cell in front of the targeted face: the targeted block
 // itself is usually opaque and holds no light.
-light_statistics_text :: proc(state: Frame_State) -> string {
-	simulation := state.session.simulation
-	world := simulation.world
+light_statistics_text :: proc(simulation: ^Simulation_State) -> string {
+	world := &simulation.world
 	player := simulation.players[0]
-	light := player.target.hit ? world_get_light(&world, player.target.adjacent) : 0
+	light := player.target.hit ? world_get_light(world, player.target.adjacent) : 0
 	return fmt.tprintf(
 		"light sky %d block %d %d %d  day %.2f  queued light %d chunks %d water %d",
 		light_level(light, .Sky),
 		light_level(light, .Red),
 		light_level(light, .Green),
 		light_level(light, .Blue),
-		day_factor(daylight_blend(simulation_day_ticks(simulation), simulation.day_length_ticks)),
+		day_factor(daylight_blend(simulation_day_ticks(simulation^), simulation.day_length_ticks)),
 		pending_light_nodes(world.lighting),
 		queue.len(world.lighting.arrived_chunks),
 		queue.len(world.water.updates),
 	)
 }
 
-streaming_statistics_text :: proc(state: Frame_State) -> string {
-	return fmt.tprintf("pending jobs %d  veins %d  seed %d", state.session.streaming.pending_jobs, len(state.session.simulation.world.veins), state.session.generator.seed)
+streaming_statistics_text :: proc(diagnostics: Diagnostics_Context) -> string {
+	return fmt.tprintf("pending jobs %d  veins %d  seed %d", diagnostics.pending_job_count, len(diagnostics.simulation.world.veins), diagnostics.seed)
 }
 
 // Keeps the diagnostics readable over the bright sky.
@@ -486,27 +507,27 @@ draw_diagnostics_backdrop :: proc() {
 
 // The F4 overlay's world, streaming, light and player lines, which the
 // World page shows too.
-world_overlay_statistics_lines :: proc(state: Frame_State) -> []Diagnostics_Line {
+world_overlay_statistics_lines :: proc(diagnostics: Diagnostics_Context) -> []Diagnostics_Line {
 	lines := make([dynamic]Diagnostics_Line, context.temp_allocator)
-	append_line(&lines, false, "%s", world_statistics_text(state))
-	append_line(&lines, false, "%s", streaming_statistics_text(state))
-	append_line(&lines, false, "%s", light_statistics_text(state))
-	append_player_lines(&lines, state)
+	append_line(&lines, false, "%s", world_statistics_text(diagnostics))
+	append_line(&lines, false, "%s", streaming_statistics_text(diagnostics))
+	append_line(&lines, false, "%s", light_statistics_text(diagnostics.simulation))
+	append_player_lines(&lines, diagnostics)
 	return lines[:]
 }
 
 // Shown while the diagnostics pages are off and the overlay is on (F4 or
 // the Developer screen).
-draw_world_overlay :: proc(state: Frame_State) {
+draw_world_overlay :: proc(diagnostics: Diagnostics_Context) {
 	lines := make([dynamic]Diagnostics_Line, context.temp_allocator)
-	append_line(&lines, false, "fps %d  tick %d", rl.GetFPS(), state.session.simulation.tick)
-	append(&lines, ..world_overlay_statistics_lines(state))
-	append_line(&lines, state.settings.bottleneck_overlay, "bottleneck overlay %s", yes_no(state.settings.bottleneck_overlay))
+	append_line(&lines, false, "fps %d  tick %d", rl.GetFPS(), diagnostics.simulation.tick)
+	append(&lines, ..world_overlay_statistics_lines(diagnostics))
+	append_line(&lines, diagnostics.bottleneck_overlay, "bottleneck overlay %s", yes_no(diagnostics.bottleneck_overlay))
 	append_line(&lines, false, "F3 diagnostics  F4 statistics  F5 remove block  F6 fly  V camera  O bottlenecks")
 	font_size := diagnostics_font_size(rl.GetRenderHeight())
 	backdrop_height := i32(len(lines)) * (font_size + font_size / 5) + DIAGNOSTICS_MARGIN
 	rl.DrawRectangle(0, 0, font_size * 24, backdrop_height + DIAGNOSTICS_MARGIN, DIAGNOSTICS_BACKDROP_COLOR)
-	draw_lines(state.ui.fonts, lines[:], DIAGNOSTICS_MARGIN, DIAGNOSTICS_MARGIN, font_size)
+	draw_lines(diagnostics.fonts, lines[:], DIAGNOSTICS_MARGIN, DIAGNOSTICS_MARGIN, font_size)
 }
 
 block_name :: proc(registry: Block_Registry, block: Block_Id) -> string {
@@ -549,14 +570,14 @@ occupied_slot_count :: proc(inventory: Inventory) -> int {
 	return count
 }
 
-append_player_lines :: proc(lines: ^[dynamic]Diagnostics_Line, state: Frame_State) {
-	player, registry, world := state.session.simulation.players[0], state.content.blocks, state.session.simulation.world
+append_player_lines :: proc(lines: ^[dynamic]Diagnostics_Line, diagnostics: Diagnostics_Context) {
+	player, registry, world := diagnostics.simulation.players[0], diagnostics.blocks, &diagnostics.simulation.world
 	position, velocity := player.position, player.velocity
 	append_line(lines, false, "player % .2f % .2f % .2f  velocity % .2f % .2f % .2f", position.x, position.y, position.z, velocity.x, velocity.y, velocity.z)
-	cheat_speed := state.session.simulation.cheat_speed
+	cheat_speed := diagnostics.simulation.cheat_speed
 	append_line(lines, cheat_speed, "on ground %s  camera %v  flying %s  no clip %s  sprinting %s%s", yes_no(player.on_ground), player.camera_mode, yes_no(player.flying), yes_no(player.no_clip), yes_no(player.sprinting), cheat_speed ? "  cheat speed" : "")
-	append_line(lines, player.mining.active, "%s  mining %.0f%%", target_text(registry, &world, player.target), mining_fraction(player.mining) * 100)
-	items := state.content.items
+	append_line(lines, player.mining.active, "%s  mining %.0f%%", target_text(registry, world, player.target), mining_fraction(player.mining) * 100)
+	items := diagnostics.items
 	append_line(
 		lines,
 		false,
@@ -568,7 +589,7 @@ append_player_lines :: proc(lines: ^[dynamic]Diagnostics_Line, state: Frame_Stat
 		occupied_slot_count(player.inventory),
 		len(player.inventory.slots),
 	)
-	unlocks := state.session.simulation.unlocks
+	unlocks := diagnostics.simulation.unlocks
 	append_line(
 		lines,
 		player.crafting.count > 0,
@@ -581,49 +602,49 @@ append_player_lines :: proc(lines: ^[dynamic]Diagnostics_Line, state: Frame_Stat
 		player.crafting.waiting ? " waiting" : "",
 		craft_queue_waits_for_input(player.crafting) ? " waiting for input" : "",
 	)
-	append_line(lines, false, "%s", research_diagnostics_text(state))
-	append_line(lines, false, "%s", quest_diagnostics_text(state))
-	append_line(lines, false, "%s", objective_counters_text(state))
+	append_line(lines, false, "%s", research_diagnostics_text(diagnostics))
+	append_line(lines, false, "%s", quest_diagnostics_text(diagnostics))
+	append_line(lines, false, "%s", objective_counters_text(diagnostics))
 }
 
-research_diagnostics_text :: proc(state: Frame_State) -> string {
-	research := state.session.simulation.records.research
-	labs := len(state.session.simulation.world.entities.labs.entries) - len(state.session.simulation.world.entities.labs.free)
+research_diagnostics_text :: proc(diagnostics: Diagnostics_Context) -> string {
+	research := diagnostics.simulation.records.research
+	labs := len(diagnostics.simulation.world.entities.labs.entries) - len(diagnostics.simulation.world.entities.labs.free)
 	if !research.queued {
 		return fmt.tprintf("research none queued  labs %d", labs)
 	}
-	technology := state.session.technologies.technologies[research.technology]
-	return fmt.tprintf("research %s %d of %d units  labs %d", technology.id, research.units_done, queued_research_cost(research, state.session.technologies), labs)
+	technology := diagnostics.technologies.technologies[research.technology]
+	return fmt.tprintf("research %s %d of %d units  labs %d", technology.id, research.units_done, queued_research_cost(research, diagnostics.technologies), labs)
 }
 
-quest_diagnostics_text :: proc(state: Frame_State) -> string {
-	quests := state.session.simulation.quests
+quest_diagnostics_text :: proc(diagnostics: Diagnostics_Context) -> string {
+	quests := diagnostics.simulation.quests
 	if quests.active == NO_QUEST {
 		return fmt.tprintf("quest none active  hints fired %d  rewards waiting %d", quests.hints_fired, len(quests.pending_rewards))
 	}
 	return fmt.tprintf(
 		"quest %s (%d of %d)  hints fired %d  rewards waiting %d",
-		state.content.quests.quests[quests.active].id,
+		diagnostics.quests.quests[quests.active].id,
 		quests.active + 1,
-		len(state.content.quests.quests),
+		len(diagnostics.quests.quests),
 		quests.hints_fired,
 		len(quests.pending_rewards),
 	)
 }
 
 // The counters of the active quest's first item objective.
-objective_counters_text :: proc(state: Frame_State) -> string {
-	quests := state.session.simulation.quests
-	statistics := state.session.simulation.records.statistics
+objective_counters_text :: proc(diagnostics: Diagnostics_Context) -> string {
+	quests := diagnostics.simulation.quests
+	statistics := diagnostics.simulation.records.statistics
 	if quests.active == NO_QUEST {
 		return fmt.tprintf("walked %d mm  world actions %d", statistics.distance_walked_millimetres, statistics.world_actions)
 	}
-	for objective in state.content.quests.quests[quests.active].objectives {
+	for objective in diagnostics.quests.quests[quests.active].objectives {
 		if objective.item != NO_ITEM {
 			item := objective.item
 			return fmt.tprintf(
 				"%s produced %d obtained %d delivered %d rate %d/min",
-				item_id_text(state.content.items, item),
+				item_id_text(diagnostics.items, item),
 				item_counter(statistics.produced, item),
 				item_counter(statistics.obtained, item),
 				item_counter(statistics.delivered, item),

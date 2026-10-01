@@ -383,14 +383,15 @@ render_frame :: proc(state: ^Frame_State) {
 	switch state.diagnostics_page {
 	case .Off:
 		if state.show_world_overlay {
-			draw_world_overlay(state^)
+			draw_world_overlay(diagnostics_context(state))
 		}
 	case .Input:
-		draw_diagnostics_page(state^, state.config, {}, {})
+		draw_diagnostics_page(diagnostics_context(state), state.config, {}, {})
 	case .Render:
-		draw_diagnostics_page(state^, state.config, render_facts(state, sky, weather, counts), {})
+		draw_diagnostics_page(diagnostics_context(state), state.config, render_facts(state, sky, weather, counts), {})
 	case .World:
-		draw_diagnostics_page(state^, state.config, {}, world_facts(state))
+		diagnostics := diagnostics_context(state)
+		draw_diagnostics_page(diagnostics, state.config, {}, world_facts(state, diagnostics))
 	}
 	run_ui_frame(state)
 	queue_requested_screenshot(state)
@@ -511,15 +512,36 @@ render_facts :: proc(state: ^Frame_State, sky: Day_Sky, weather: Weather, counts
 	}
 }
 
+// What the diagnostics pages and the F4 overlay read (diagnostics.odin).
+diagnostics_context :: proc(state: ^Frame_State) -> Diagnostics_Context {
+	session := state.session
+	return Diagnostics_Context {
+		simulation = &session.simulation,
+		technologies = session.technologies,
+		blocks = state.content.blocks,
+		items = state.content.items,
+		quests = state.content.quests,
+		input = state.input,
+		fonts = state.ui.fonts,
+		page = state.diagnostics_page,
+		bottleneck_overlay = state.settings.bottleneck_overlay,
+		pending_job_count = session.streaming.pending_jobs,
+		seed = session.generator.seed,
+		tick_interpolation = interpolation_alpha(session.accumulator),
+		drawn_chunk_count = state.renderer.drawn_chunk_count,
+		vertex_count = state.renderer.vertex_count,
+	}
+}
+
 // The World page's facts (diagnostics.odin).
-world_facts :: proc(state: ^Frame_State) -> World_Facts {
+world_facts :: proc(state: ^Frame_State, diagnostics: Diagnostics_Context) -> World_Facts {
 	session := state.session
 	world := &session.simulation.world
 	cell := camera_world_coordinate(session.simulation.players[0].position)
 	biome := sample_column(&session.generator, cell.x, cell.z).biome
 	biome_name := biome < len(session.generator.biomes) ? text(session.generator.biomes[biome].definition.name_key) : "?"
 	return World_Facts {
-		overlay_lines = world_overlay_statistics_lines(state^),
+		overlay_lines = world_overlay_statistics_lines(diagnostics),
 		tick = session.simulation.tick,
 		player_chunk = world_to_chunk_coordinate(cell),
 		biome_name = biome_name,

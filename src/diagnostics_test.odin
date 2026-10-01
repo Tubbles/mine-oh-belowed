@@ -1,6 +1,7 @@
 package game
 
 import "core:fmt"
+import "core:strings"
 import "core:testing"
 
 // The diagnostics pages (work item 0086): the F3 cycle, the header, the
@@ -167,4 +168,27 @@ test_belt_items_count_every_lane :: proc(t: ^testing.T) {
 		delete(network.lines)
 	}
 	testing.expect_value(t, belt_item_count(network), 3)
+}
+
+@(test)
+test_diagnostics_lines_print_the_context :: proc(t: ^testing.T) {
+	simulation, content := make_developer_test_simulation()
+	defer destroy_simulation(&simulation)
+	diagnostics := Diagnostics_Context {
+		simulation        = &simulation,
+		technologies      = content.technologies,
+		blocks            = content.blocks,
+		items             = content.items,
+		quests            = content.quests,
+		pending_job_count = 7,
+		seed              = 42,
+		drawn_chunk_count = 3,
+		vertex_count      = 9,
+	}
+	overlay := world_overlay_statistics_lines(diagnostics)
+	testing.expect(t, strings.has_prefix(overlay[0].text, "chunks 0  drawn 3  vertices 9"), overlay[0].text)
+	testing.expect(t, strings.has_prefix(overlay[1].text, "pending jobs 7"), overlay[1].text)
+	testing.expect(t, strings.has_suffix(overlay[1].text, "seed 42"), overlay[1].text)
+	mapped := mapped_lines(diagnostics, test_game_config())
+	testing.expect(t, strings.has_prefix(mapped[1].text, "tick 0"), mapped[1].text)
 }
