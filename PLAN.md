@@ -4,6 +4,8 @@
 
 A coherent, polished factory game in a voxel world, fully playable from the couch with a gamepad, guided by quests from the first minute to a rocket program. Peaceful mode is the default. After the first alpha: rails, local co-op, and optional enemies with pollution as a game mode.
 
+Beyond the game: a voxel 3D engine on which any style of game can be built, with all game logic and design in WebAssembly plugins, and Mine oh Belowed as its first plugin (user, 2026-10-01; the design brief is [doc/work/0146-engine-and-game-logic-cut.md](doc/work/0146-engine-and-game-logic-cut.md)). The architecture work of M12 moves the code toward that cut while the game stays playable.
+
 ## Alpha 1 definition
 
 All eight gameplay phases of [DESIGN.md](DESIGN.md), from landing to the first rocket shipment, with the quest journal carrying the player the whole way. It is a game, not a technology demonstration: placeholder art is acceptable, missing systems are not. Everything is reachable with the Steam Controller. Worlds save and load.
@@ -14,7 +16,8 @@ Verify: a fresh player on the couch follows the quest journal from landing to th
 
 - Every phase of the alpha is in code: M0 to M9 are implemented, and the alpha's content is complete (`doc/log/2026-09-27.md`, M9 complete). Of their verify statements only M0's and couch test 1's have been run on the couch.
 - M10's couch findings (0043 to 0052) and M11's presentation campaign are implemented: the planned items 0053 to 0082, then the couch, Deck and phone findings 0083 to 0140 (texture and sound cadence, the Windows build for GameNative, the native Android app, the touch overlay, the data file editors, the hand crafting queue, pump head, the fuel generator).
-- Next: the documentation pass (0141), then M10's remaining passes and the couch tests 2 to 5 as the user plays.
+- The documentation pass (0141) and the architecture cleanup (0142 to 0145: dead code, six audits under `doc/audit/`, the code map, the pilot package split) are done (`doc/log/2026-09-30.md`).
+- Next: M12's refactor queue toward the engine cut, M10's remaining passes and the couch tests 2 to 5 as the user plays.
 
 ## Couch tests
 
@@ -38,6 +41,7 @@ Each milestone has a single verify statement. Work items in `doc/work/` referenc
 | M9 Rocket program | 0040 to 0042 | Implemented |
 | M10 Alpha polish and release | 0043 to 0052, then the passes | Couch findings implemented. The passes and the release are open |
 | M11 Presentation campaign | 0053 to 0082, then 0083 to 0140 | Implemented |
+| M12 Architecture toward the engine cut | 0142 to 0145, then the refactor queue from 0147 | Cleanup, audits, code map and pilot split done; the queue is open |
 
 ### M0 Foundation
 
@@ -114,6 +118,12 @@ The game fleshed out as a background campaign with continuous deliveries to the 
 The Steam Deck is a supported target (user, 2026-09-27): every rendering item budgets for its APU at 1280 by 800 (effects behind settings, particle and shadow costs measured with the benchmark), the UI audit keeps 1280 by 800 in its matrix, and the Deck's built in controls go through Steam Input the way the couch does.
 
 Verify: each item's own line, on the couch and on the Steam Deck, with screenshots read by the assistant.
+
+### M12 Architecture toward the engine cut
+
+The cleanup series (0142 to 0145) measured the code and settled two decisions: no entity component system in the engine, and no full package split until the layering holds (`doc/work/0143-architecture-audit.md`, Implementation notes). The refactor queue of 0143 follows in prerequisite order: the pure moves and the bugs the audits found, the hubs (the game's records off `World`, ticks without the world pointer, `Frame_State` in groups), the seams a plugin boundary needs (queued writes, the per frame machine view, the per tick event list, the draw list), then the tables (the kind table as the first piece of the game kit). The engine and plugin design itself is 0146, written with the user after the hubs and the first seams.
+
+Verify: `python3 tools/code_graph.py --check doc/code_map.md` shows no edge from the engine side clusters (loop, world, presentation, platform, tools) into simulation or content beyond the types of the interface, the simulation ticks from queued inputs only (no write into it from the frame side), and the game plays as before on the couch and the phone.
 
 ## Backlog
 
