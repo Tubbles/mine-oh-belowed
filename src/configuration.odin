@@ -26,6 +26,8 @@ CONFIGURATION_DROP_IN_DIRECTORY :: "config.d"
 CONFIGURATION_EXTENSION :: ".sjson"
 // The settings screen writes this drop in and nothing else.
 SETTINGS_FILE_NAME :: "90-settings.sjson"
+// Appended to a settings file that did not load (work item 0149).
+BROKEN_SETTINGS_SUFFIX :: ".broken"
 when ODIN_OS == .Windows {
 	// No system wide configuration directory on Windows.
 	DEFAULT_CONFIG_DIRS :: ""
@@ -72,6 +74,12 @@ Player_Configuration :: struct {
 	watch_data:     Watch_Data_Mode,
 	// --touch-overlay: the touch overlay on for this run (work item 0115).
 	touch_overlay_forced: bool,
+	// The settings file was set aside at start (work item 0149): the title
+	// screen toasts it once.
+	settings_set_aside: bool,
+	// A font setting was not available at start (load_start_fonts): the
+	// title screen toasts it once.
+	fonts_fell_back: bool,
 }
 
 // The environment variables the layering reads, passed in so that tests
@@ -557,7 +565,12 @@ merge_configuration_layers :: proc(files: []Configuration_File, assignments: []s
 // The problem, when there is one, names the file ("error: " is the
 // caller's to add).
 load_configuration :: proc(environment: Configuration_Environment, assignments: []string, allocator := context.allocator) -> (loaded: Loaded_Configuration, problem: string) {
-	loaded.files = find_configuration_files(environment, allocator)
+	return load_configuration_files(find_configuration_files(environment, allocator), environment, assignments, allocator)
+}
+
+// load_configuration over the files given.
+load_configuration_files :: proc(files: []Configuration_File, environment: Configuration_Environment, assignments: []string, allocator := context.allocator) -> (loaded: Loaded_Configuration, problem: string) {
+	loaded.files = files
 	tree: json.Object
 	tree, loaded.provenance, problem = merge_configuration_layers(loaded.files, assignments, allocator)
 	if problem != "" {
@@ -573,6 +586,48 @@ load_configuration :: proc(environment: Configuration_Environment, assignments: 
 	}
 	loaded.configuration.paths.saves = expand_home(loaded.configuration.paths.saves, environment.home, allocator)
 	return loaded, ""
+}
+
+// load_configuration for the start (work item 0149). When the load fails
+// and loads without the settings file the game writes, that file was the
+// problem (cut off, or a value the validation refuses): it is renamed
+// aside with BROKEN_SETTINGS_SUFFIX, logged, and the layers without it
+// are returned with settings_problem set, for the title screen's toast.
+// A problem the other files or the command line cause stays the problem:
+// the user wrote those.
+load_configuration_at_start :: proc(environment: Configuration_Environment, assignments: []string, allocator := context.allocator) -> (loaded: Loaded_Configuration, problem, settings_problem: string) {
+	files := find_configuration_files(environment, allocator)
+	loaded, problem = load_configuration_files(files, environment, assignments, allocator)
+	settings_index := game_settings_file_index(files, environment)
+	if problem == "" || settings_index < 0 {
+		return loaded, problem, ""
+	}
+	without_settings := slice.clone_to_dynamic(files, allocator)
+	ordered_remove(&without_settings, settings_index)
+	fallback, fallback_problem := load_configuration_files(without_settings[:], environment, assignments, allocator)
+	if fallback_problem != "" {
+		return {}, problem, ""
+	}
+	aside, rename_problem := platform.rename_file_aside(files[settings_index].path, BROKEN_SETTINGS_SUFFIX)
+	settings_problem = fmt.aprintf("%s; set aside as %s%s", problem, aside, rename_problem == "" ? "" : fmt.tprintf(" failed (%s)", rename_problem), allocator = allocator)
+	platform.log_printf("configuration: the settings file did not load, the game starts without it: %s", settings_problem)
+	return fallback, "", settings_problem
+}
+
+// The index of the found settings file the game writes, -1 when there is
+// none.
+game_settings_file_index :: proc(files: []Configuration_File, environment: Configuration_Environment) -> int {
+	user_directory, found := user_configuration_directory(environment)
+	if !found {
+		return -1
+	}
+	path := platform.join_path(user_directory, CONFIGURATION_DROP_IN_DIRECTORY, SETTINGS_FILE_NAME)
+	for file, index in files {
+		if file.found && file.path == path {
+			return index
+		}
+	}
+	return -1
 }
 
 store_unsigned :: proc(pointer: rawptr, size: int, value: u64) {

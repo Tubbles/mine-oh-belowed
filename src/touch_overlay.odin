@@ -965,14 +965,8 @@ write_touch_layouts_file :: proc(environment: Configuration_Environment, layouts
 	if !found {
 		return "no configuration directory (set " + platform.CONFIG_HOME_VARIABLES + ")"
 	}
-	if error := platform.make_directory_path(directory); error != nil {
-		return fmt.tprintf("cannot create %s: %v", directory, error)
-	}
 	path := platform.join_path(directory, TOUCH_OVERLAY_FILE_NAME)
-	if error := os.write_entire_file(path, touch_layouts_file_text(layouts)); error != nil {
-		return fmt.tprintf("cannot write %s: %v", path, error)
-	}
-	return ""
+	return platform.write_file_replacing(path, transmute([]byte)touch_layouts_file_text(layouts))
 }
 
 // When it is on.

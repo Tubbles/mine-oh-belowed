@@ -29,6 +29,19 @@ test_environment :: proc(root: string) -> Configuration_Environment {
 	}
 }
 
+// The file holds the text whole and no temporary file stayed beside it
+// (write_file_replacing, work item 0149).
+expect_written_whole :: proc(t: ^testing.T, path, text: string) {
+	data, error := os.read_entire_file(path, context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	testing.expect_value(t, string(data), text)
+	testing.expect(t, !os.exists(strings.concatenate({path, ".tmp"}, context.temp_allocator)), path)
+}
+
+test_settings_file_path :: proc(root: string) -> string {
+	return platform.join_path(root, "home", platform.GAME_DIRECTORY_NAME, CONFIGURATION_DROP_IN_DIRECTORY, SETTINGS_FILE_NAME)
+}
+
 @(test)
 test_configuration_layer_precedence :: proc(t: ^testing.T) {
 	context.allocator = context.temp_allocator
@@ -451,4 +464,97 @@ test_configuration_accessibility_settings :: proc(t: ^testing.T) {
 		_, problem = load_configuration(test_environment(root), {})
 		expect_problem_mentions(t, problem, drop_in, case_value.mention)
 	}
+}
+
+@(test)
+test_the_settings_file_is_written_whole :: proc(t: ^testing.T) {
+	context.allocator = context.temp_allocator
+	root := make_configuration_test_directory()
+	defer os.remove_all(root)
+	settings := DEFAULT_SETTINGS
+	settings.ui_scale = 1.15
+	testing.expect_value(t, write_settings_file(test_environment(root), settings), "")
+	expect_written_whole(t, test_settings_file_path(root), settings_file_text(settings))
+}
+
+// The start loads without the file, sets it aside and names it.
+expect_settings_file_set_aside :: proc(t: ^testing.T, root: string) {
+	user := platform.join_path(root, "home", platform.GAME_DIRECTORY_NAME, CONFIGURATION_FILE_NAME)
+	write_test_file(user, "settings = {ui_scale = 1.1}")
+	settings_path := test_settings_file_path(root)
+	loaded, problem, settings_problem := load_configuration_at_start(test_environment(root), {})
+	testing.expect_value(t, problem, "")
+	testing.expect(t, strings.contains(settings_problem, settings_path), settings_problem)
+	testing.expect_value(t, loaded.configuration.settings.ui_scale, 1.1)
+	testing.expect_value(t, loaded.configuration.settings.text_scale, DEFAULT_SETTINGS.text_scale)
+	testing.expect(t, !os.exists(settings_path), settings_path)
+	testing.expect(t, os.is_file(strings.concatenate({settings_path, BROKEN_SETTINGS_SUFFIX})))
+	// The next start finds no settings file and no problem.
+	_, problem, settings_problem = load_configuration_at_start(test_environment(root), {})
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, settings_problem, "")
+}
+
+@(test)
+test_a_cut_off_settings_file_is_set_aside_at_start :: proc(t: ^testing.T) {
+	context.allocator = context.temp_allocator
+	root := make_configuration_test_directory()
+	defer os.remove_all(root)
+	write_test_file(test_settings_file_path(root), "settings = {\n\ttext_scale = 1.2\n\tui_sca")
+	expect_settings_file_set_aside(t, root)
+}
+
+@(test)
+test_a_settings_file_with_a_refused_value_is_set_aside_at_start :: proc(t: ^testing.T) {
+	context.allocator = context.temp_allocator
+	root := make_configuration_test_directory()
+	defer os.remove_all(root)
+	write_test_file(test_settings_file_path(root), "settings = {text_scale = 1.2, ui_scale = 99}")
+	expect_settings_file_set_aside(t, root)
+}
+
+// The user's own files and the command line still stop the start, and the
+// settings file stays where it is.
+@(test)
+test_a_problem_outside_the_settings_file_still_stops_the_start :: proc(t: ^testing.T) {
+	context.allocator = context.temp_allocator
+	root := make_configuration_test_directory()
+	defer os.remove_all(root)
+	settings_path := test_settings_file_path(root)
+	write_test_file(settings_path, "settings = {ui_scale = 99}")
+	write_test_file(platform.join_path(root, "home", platform.GAME_DIRECTORY_NAME, CONFIGURATION_FILE_NAME), "settings = {ui_scal = 1}")
+	_, problem, settings_problem := load_configuration_at_start(test_environment(root), {})
+	testing.expect(t, strings.contains(problem, "ui_scal"), problem)
+	testing.expect_value(t, settings_problem, "")
+	testing.expect(t, os.is_file(settings_path))
+	write_test_file(settings_path, "settings = {ui_scale = 1.2}")
+	write_test_file(platform.join_path(root, "home", platform.GAME_DIRECTORY_NAME, CONFIGURATION_FILE_NAME), "settings = {}")
+	_, problem, settings_problem = load_configuration_at_start(test_environment(root), {"settings.ui_scale=99"})
+	testing.expect(t, strings.contains(problem, COMMAND_LINE_SOURCE), problem)
+	testing.expect_value(t, settings_problem, "")
+	testing.expect(t, os.is_file(settings_path))
+}
+
+// A font the fonts file does not offer falls back to the default at
+// start instead of stopping it.
+@(test)
+test_an_unavailable_font_setting_falls_back_to_the_default_at_start :: proc(t: ^testing.T) {
+	context.allocator = context.temp_allocator
+	root := make_configuration_test_directory()
+	defer os.remove_all(root)
+	write_test_file(test_settings_file_path(root), "settings = {font = \"dropped_family\", ui_scale = 1.1}")
+	loaded, problem, settings_problem := load_configuration_at_start(test_environment(root), {})
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, settings_problem, "")
+	start, start_problem := load_start_data(test_data_directory(), loaded, nil)
+	defer destroy_start_data(&start)
+	testing.expect_value(t, start_problem, "")
+	testing.expect(t, start.fonts_fell_back)
+	testing.expect(t, len(start.fonts.families) > 0)
+	settings := settings_with_default_fonts(loaded.configuration.settings)
+	testing.expect_value(t, settings.font, DEFAULT_SETTINGS.font)
+	testing.expect_value(t, settings.monospace_font, DEFAULT_SETTINGS.monospace_font)
+	testing.expect_value(t, settings.ui_scale, 1.1)
+	testing.expect_value(t, font_settings_problem(settings, start.fonts.families, loaded.provenance), "")
+	testing.expect(t, os.is_file(test_settings_file_path(root)), "the file stays: only the font was refused")
 }

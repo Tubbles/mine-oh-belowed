@@ -95,7 +95,7 @@ Parsed with `core:flags` in Unix style; `--help` or `-h` prints the usage page. 
 | `--benchmark=<size>` | The headless factory benchmark, size 1 to 16 (below) |
 
 - `--load` cannot be combined with `--seed`, `--name`, `--debug-terrain` or `--chapter`. `--chapter` and `--give` start a new world like `--seed`.
-- `settings.font` and `settings.monospace_font` take family ids from `data/fonts/fonts.sjson`; an unknown id is refused like any configuration error.
+- `settings.font` and `settings.monospace_font` take family ids from `data/fonts/fonts.sjson`; an unknown id is refused like any configuration error by `mine-oh-belowed config`, while the game logs it, starts with the default family and toasts it once on the title screen (`load_start_fonts`, 0149).
 - `--benchmark=<size>` runs no window and no controller: the shipped data, two simulated minutes of warm up and ten measured, then the table on stdout (milliseconds per tick per system, the average and worst tick, the entity counts, the idle machines). It exits 1 when the factory cannot be built or a machine idles, and cannot be combined with `--load`, `--seed`, `--name`, `--chapter` or `--debug-terrain`. Quote numbers from the release build (`./build.sh release`, then `./build/mine-oh-belowed --benchmark=16`), under the same benchmark rules. Method: [architecture.md](architecture.md), Performance.
 
 ## Data directory and build stamp

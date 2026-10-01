@@ -258,3 +258,14 @@ test_write_ore_texture_previews :: proc(t: ^testing.T) {
 		}
 	}
 }
+
+@(test)
+test_the_texture_edits_file_is_written_whole :: proc(t: ^testing.T) {
+	context.allocator = context.temp_allocator
+	directory := make_configuration_test_directory()
+	defer os.remove_all(directory)
+	path := platform.join_path(directory, "state", TEXTURE_EDITS_FILE_NAME)
+	text := format_texture_edits_file({"{block = \"stone\"}"})
+	testing.expect_value(t, write_texture_edits_file(path, text), "")
+	expect_written_whole(t, path, text)
+}

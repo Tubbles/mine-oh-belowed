@@ -384,7 +384,7 @@ write_data_edit :: proc(edits_directory, relative_path, file_text: string) -> st
 	path := platform.join_path(edits_directory, relative_path)
 	// Beside it first, then renamed over it, so a crash or a full disk
 	// never leaves a cut off copy the next start would fail on.
-	if problem := write_file_replacing(path, transmute([]byte)file_text); problem != "" {
+	if problem := platform.write_file_replacing(path, transmute([]byte)file_text); problem != "" {
 		return problem
 	}
 	platform.log_printf("data: saved the data edit %s", path)

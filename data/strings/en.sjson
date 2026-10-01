@@ -90,6 +90,8 @@ data_files_not_editable = "This value cannot be edited here"
 data_files_edits_off = "Data edits are off after a failed load:"
 data_files_edits_off_hint = "Discard the file and restart"
 data_files_edits_off_toast = "Data edits are off: an edited file did not load"
+settings_file_set_aside_toast = "The settings file did not load, the game started without it (the log names it)"
+settings_font_default_toast = "The font in the settings is not available, the default is used"
 // The export (work item 0131)
 data_files_export = "Export"
 data_files_export_directory = "Export to"

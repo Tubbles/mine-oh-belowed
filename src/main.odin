@@ -206,7 +206,7 @@ main :: proc() {
 	context.assertion_failure_proc = platform.log_assertion_failure
 	platform.install_crash_handlers()
 	environment := read_configuration_environment()
-	loaded_configuration, configuration_problem := load_configuration(environment, command_line.set_assignments[:])
+	loaded_configuration, configuration_problem, settings_problem := load_configuration_at_start(environment, command_line.set_assignments[:])
 	if configuration_problem != "" {
 		platform.log_printf("error: %s", configuration_problem)
 		os.exit(1)
@@ -224,6 +224,9 @@ main :: proc() {
 	}
 	if start_problem != "" {
 		os.exit(1)
+	}
+	if start.fonts_fell_back {
+		loaded_configuration.configuration.settings = settings_with_default_fonts(loaded_configuration.configuration.settings)
 	}
 	fonts, bindings, config, game_data := start.fonts, start.bindings, start.config, start.game_data
 	global_string_table = start.string_table
@@ -258,6 +261,8 @@ main :: proc() {
 		input_bindings    = make_backend_bindings(bindings, input_backend),
 		watch_data        = watch_data,
 		touch_overlay_forced = command_line.touch_overlay,
+		settings_set_aside = settings_problem != "",
+		fonts_fell_back = start.fonts_fell_back,
 	}
 	run_game(config, input_backend, game_data, data_directory, fonts, session, make_title_state(config, saves_directory, saves_found, make_save_header()), player_configuration)
 }
@@ -272,6 +277,9 @@ Start_Data :: struct {
 	config:       Game_Config,
 	string_table: String_Table,
 	game_data:    Game_Data,
+	// A font setting the fonts file does not offer was replaced by the
+	// default (load_start_fonts): main applies settings_with_default_fonts.
+	fonts_fell_back: bool,
 }
 
 // Loads the start data, each problem logged. On a problem nothing stays
@@ -295,7 +303,7 @@ load_start_data :: proc(data_directory: string, loaded: Loaded_Configuration, bi
 // the strings just loaded (text, through thread_string_table).
 load_start_data_into :: proc(start: ^Start_Data, data_directory: string, loaded: Loaded_Configuration, binding_overrides: []Binding) -> (problem: string) {
 	allocator := virtual.arena_allocator(start.arena)
-	if start.fonts, problem = load_checked_fonts(data_directory, loaded); problem != "" {
+	if start.fonts, problem, start.fonts_fell_back = load_start_fonts(data_directory, loaded); problem != "" {
 		platform.log_printf("error: %s", problem)
 		return problem
 	}
@@ -339,6 +347,35 @@ load_checked_fonts :: proc(data_directory: string, loaded: Loaded_Configuration)
 		return {}, problem
 	}
 	return fonts, ""
+}
+
+// load_checked_fonts for the start (work item 0149): a font setting the
+// fonts file does not offer (a family a later build dropped, one only the
+// data edits had) is logged and replaced by the default instead of
+// stopping the start; fell_back tells main to do the same to the
+// settings.
+load_start_fonts :: proc(data_directory: string, loaded: Loaded_Configuration) -> (fonts: Loaded_Fonts, problem: string, fell_back: bool) {
+	if fonts, problem = load_fonts(data_directory); problem != "" {
+		return {}, problem, false
+	}
+	font_problem := font_settings_problem(loaded.configuration.settings, fonts.families, loaded.provenance)
+	if font_problem == "" {
+		return fonts, "", false
+	}
+	platform.log_printf("configuration: %s; the default font is used", font_problem)
+	if problem = font_settings_problem(settings_with_default_fonts(loaded.configuration.settings), fonts.families, loaded.provenance); problem != "" {
+		destroy_arena(fonts.arena)
+		return {}, problem, false
+	}
+	return fonts, "", true
+}
+
+// The settings with DEFAULT_SETTINGS's font families.
+settings_with_default_fonts :: proc(settings: Settings) -> Settings {
+	settings := settings
+	settings.font = DEFAULT_SETTINGS.font
+	settings.monospace_font = DEFAULT_SETTINGS.monospace_font
+	return settings
 }
 
 // Builds the backend's tables and reports once what it cannot express.

@@ -145,6 +145,8 @@ Worlds live under `$XDG_DATA_HOME/mine-oh-belowed/saves/<world>/` (`MINE_OH_BELO
 - `mine-oh-belowed config` prints the files in precedence order and the effective values with their source.
 - Every screen that changes a setting writes `config.d/90-settings.sjson`, strings quoted. The export settings `settings.export_directory` (default empty) and `settings.export_on_save` (default false) are ordinary keys, so the phone's file can set them over USB.
 - The touch layout editor writes `touch_overlay.sjson` beside `config.d/`, a file of its own, no configuration layer ([touch_overlay.md](touch_overlay.md)).
+- The files the game writes and reads back (the settings, the touch layouts, the texture edits, the data edits, the export) go through `platform.write_file_replacing`: written beside the path as `<path>.tmp`, then renamed over it, so a crash or a full disk mid write leaves the old file whole. A save gets the same guarantee from its staging directory, renamed whole.
+- A `config.d/90-settings.sjson` that stops the start (cut off, or a value the validation refuses, found by loading again without it) is renamed to `90-settings.sjson.broken`, one `configuration:` log line names it and the problem, the game starts on the other layers, and the title screen toasts it once (`load_configuration_at_start`, 0149). A problem in any other file or in `--set` still logs the error and exits: the user wrote those, and strictness surfaces their typos.
 - `platform_directories` (`platform_paths.odin`) is the one place that reads the base directories from the environment; the pure path helpers apply the rules. Every directory is made through `make_directory_path`, never `os.make_directory_all` ([android.md](android.md) has why).
 
 | Base | Linux | Windows | Android |

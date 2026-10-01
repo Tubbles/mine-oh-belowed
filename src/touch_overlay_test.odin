@@ -1364,6 +1364,20 @@ test_the_user_touch_layouts_file_is_written_and_read_back :: proc(t: ^testing.T)
 }
 
 @(test)
+test_the_touch_layouts_file_is_written_whole :: proc(t: ^testing.T) {
+	context.allocator = context.temp_allocator
+	root := make_configuration_test_directory()
+	defer os.remove_all(root)
+	environment := test_environment(root)
+	written: Touch_Layouts
+	defer destroy_touch_layouts(&written)
+	named, selection := touch_layouts_with(nil, "Mine", edited_touch_layout(t))
+	replace_touch_layouts(&written, named, selection)
+	testing.expect_value(t, write_touch_layouts_file(environment, written), "")
+	expect_written_whole(t, touch_layouts_path(environment), touch_layouts_file_text(written))
+}
+
+@(test)
 test_anchored_offset_inverts_anchored_position :: proc(t: ^testing.T) {
 	for anchor in Touch_Overlay_Anchor {
 		for screen in ([?][2]f32{PHONE_SCREEN, {1280, 720}}) {

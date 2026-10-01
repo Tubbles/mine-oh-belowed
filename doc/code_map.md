@@ -11,14 +11,14 @@ The entry page for the source: 199 files under `src/` plus 139 test files beside
 
 | Cluster | Purpose | Entry | Files | Lines | Audit |
 |---|---|---|---|---|---|
-| loop | the process: start-up, the frame, when the tick runs, sessions, the requests served between frames | `loop.odin` | 5 | 2586 | [loop](audit/loop.md) |
-| ui | the input layer, the immediate mode toolkit, every screen, the HUD and the touch overlay | `ui_core.odin` | 48 | 16981 | [ui](audit/ui.md) |
+| loop | the process: start-up, the frame, when the tick runs, sessions, the requests served between frames | `loop.odin` | 5 | 2629 | [loop](audit/loop.md) |
+| ui | the input layer, the immediate mode toolkit, every screen, the HUD and the touch overlay | `ui_core.odin` | 48 | 16975 | [ui](audit/ui.md) |
 | world | blocks and what follows a block: chunks, light, water, meshing, streaming, generation, the save codec | `world_chunk.odin` | 34 | 9613 | [world](audit/world.md) |
 | simulation | the factory per tick: entity pools, networks, players, inventories, crafting, statistics, the game's records | `entity.odin` | 40 | 15407 | [simulation](audit/simulation.md) |
-| presentation | pixels and sound from the world and the tick: shaders, atlases, models, sky, weather, particles, audio, the window | `render_chunks.odin` | 31 | 8388 | [presentation](audit/presentation.md) |
-| content | data files into typed tables, the string table, configuration and settings | `data_reload.odin` | 15 | 4977 | [content](audit/content.md) |
-| tools | the command socket, the diagnostics pages, the Data files browser and export, the factory benchmark | `command.odin` | 8 | 3880 | [loop](audit/loop.md), [content](audit/content.md) |
-| platform | the package `src/platform/`: logging, paths, the time zone, JNI, the export's file access | `logging.odin` | 12 | 975 | [content](audit/content.md) |
+| presentation | pixels and sound from the world and the tick: shaders, atlases, models, sky, weather, particles, audio, the window | `render_chunks.odin` | 31 | 8381 | [presentation](audit/presentation.md) |
+| content | data files into typed tables, the string table, configuration and settings | `data_reload.odin` | 15 | 5024 | [content](audit/content.md) |
+| tools | the command socket, the diagnostics pages, the Data files browser and export, the factory benchmark | `command.odin` | 8 | 3859 | [loop](audit/loop.md), [content](audit/content.md) |
+| platform | the package `src/platform/`: logging, paths, the time zone, JNI, the export's file access, the replacing file write | `logging.odin` | 13 | 1014 | [content](audit/content.md) |
 | generation_seed | the package `src/generation_seed/`: purpose seeds and the integer hashes | `generation_seed.odin` | 1 | 74 | [world](audit/world.md) |
 | model_vox | the package `src/model_vox/`: the MagicaVoxel parser | `model_vox.odin` | 1 | 283 | [presentation](audit/presentation.md) |
 | render_frustum | the package `src/render_frustum/`: frustum planes and the box test | `render_frustum.odin` | 1 | 35 | [presentation](audit/presentation.md) |
@@ -207,7 +207,7 @@ The developer's and the assistant's instruments: they drive, inspect or measure 
   - `command.odin`: the command protocol, usage rows, blueprints, queries ([commands.md](commands.md)).
   - `command_socket.odin`, `command_socket_posix.odin`, `command_socket_windows.odin`: paths and `Queued_Command_Line`; the Unix socket and `Command_Server`; the Windows stub.
   - `diagnostics.odin`: `Render_Facts`, `World_Facts`, `Frame_Time_Ring`, the diagnostics pages and world overlay.
-  - `data_browser.odin`, `data_export.odin`: `Data_Browser`, the Data files screen's trees and edits; the export and `write_file_replacing`.
+  - `data_browser.odin`, `data_export.odin`: `Data_Browser`, the Data files screen's trees and edits; the export.
   - `benchmark_factory.odin`: the factory benchmark, a second driver of `simulation_tick`.
 - State: `Command_Context`, `Command_Server`, `Data_Browser`, `Frame_Time_Ring`; they live on `Frame_State` or the stack of a run.
 - Tests: every `*_test.odin` beside its file; `benchmark_test.odin` runs sizes 1 and 4 and requires no idle machine.
@@ -220,14 +220,14 @@ The package `src/platform/`, one of the leaf packages below; the leaves over the
 - Entry: `logging.odin`, `log_printf`, called as `platform.log_printf`.
 - Files: section Packages.
 - State: `global_log` (`Log_State`) and `captured_log_error` behind `begin_log_capture` and `end_log_capture`.
-- Tests: `jni_indices_test.odin` and `platform_paths_test.odin` beside the package; the game's `platform_paths_test.odin` checks the directory mappings through the game's path helpers and scans every package for the Windows static runtime imports; the log file, the time zone lookup and the export access are untested.
+- Tests: `jni_indices_test.odin` and `platform_paths_test.odin` beside the package; the game's `platform_paths_test.odin` checks the directory mappings through the game's path helpers and scans every package for the Windows static runtime imports; `write_file_replacing` and `rename_file_aside` are tested through the game's writer and settings fallback tests; the log file, the time zone lookup and the export access are untested.
 - Reaches into: nothing.
 
 ## Packages
 
 Leaf packages under `src/` (work item 0145, the pilot split): each is a directory with its own `package` line, imported by the files that use it (`import "platform"`, `import "../platform"` from a package), its names qualified at every use (`platform.log_printf`). A package imports no game file, so the compiler keeps it a leaf. `./build.sh test` runs their tests with `-all-packages` ([build.md](build.md)).
 
-- `platform`: `logging.odin`, `logging_posix.odin`, `logging_windows.odin` (`Log_State`, the log file and `log_printf`, `Log_Capture`; the stderr redirect and crash traces per system); `platform_paths.odin` (`Platform_Directories`, `join_path`, `make_directory_path`); `platform_android.odin` (the Android entry points and logcat, imports `android_libc` for the link); `local_zone.odin`, `local_zone_posix.odin`, `local_zone_windows.odin` (the local time zone); `jni_indices.odin`, `jni_android.odin` (JNI table indices; `Jni_Calls` and the call helpers); `export_access_android.odin`, `export_access_desktop.odin` (All files access for the export). Tests: `jni_indices_test.odin`, `platform_paths_test.odin`.
+- `platform`: `logging.odin`, `logging_posix.odin`, `logging_windows.odin` (`Log_State`, the log file and `log_printf`, `Log_Capture`; the stderr redirect and crash traces per system); `platform_paths.odin` (`Platform_Directories`, `join_path`, `make_directory_path`); `file_write.odin` (`write_file_replacing`, every file the game writes, and `rename_file_aside`); `platform_android.odin` (the Android entry points and logcat, imports `android_libc` for the link); `local_zone.odin`, `local_zone_posix.odin`, `local_zone_windows.odin` (the local time zone); `jni_indices.odin`, `jni_android.odin` (JNI table indices; `Jni_Calls` and the call helpers); `export_access_android.odin`, `export_access_desktop.odin` (All files access for the export). Tests: `jni_indices_test.odin`, `platform_paths_test.odin`.
 - `generation_seed`: `generation_seed.odin` (`Generation_Purpose`, `Purpose_Seeds`, `hash_u64`, `hash_combine` and the hash helpers).
 - `model_vox`: `model_vox.odin` (`Voxel_Model`, the .vox parser, `model_file_path`), imports `platform`. Tests: `model_vox_test.odin`.
 - `render_frustum`: `render_frustum.odin` (`Frustum`, `frustum_from_matrix`, `frustum_contains_box`). Tests: `render_frustum_test.odin`.

@@ -142,27 +142,6 @@ export_directory_refusal_here :: proc(export_directory, data_directory, edits_di
 	return export_directory_refusal(export_directory, data_directory, edits_directory, working_directory)
 }
 
-// Writes the data beside the path first, then renames it over the path,
-// making the directories it needs, so a failed write never leaves a cut
-// off file (for the next start, or for Syncthing to spread). The file gets
-// the default permissions, whatever its source had. The problem, or "".
-write_file_replacing :: proc(path: string, data: []byte) -> string {
-	directory, _ := os.split_path(path)
-	if error := platform.make_directory_path(directory); error != nil {
-		return fmt.tprintf("%v: %s", error, directory)
-	}
-	temporary := strings.concatenate({path, ".tmp"}, context.temp_allocator)
-	if error := os.write_entire_file(temporary, data); error != nil {
-		os.remove(temporary)
-		return fmt.tprintf("%v: %s", error, temporary)
-	}
-	if error := os.rename(temporary, path); error != nil {
-		os.remove(temporary)
-		return fmt.tprintf("%v: %s", error, path)
-	}
-	return ""
-}
-
 // Copies the file through write_file_replacing; a source that is its own
 // destination is refused, never read and written over. The problem, or
 // "".
@@ -175,7 +154,7 @@ copy_exported_file :: proc(source, destination: string) -> string {
 	if error != nil {
 		return fmt.tprintf("%v: %s", error, source)
 	}
-	return write_file_replacing(destination, data)
+	return platform.write_file_replacing(destination, data)
 }
 
 // Every copy of the export, then export.txt; stops at the first problem.
@@ -199,7 +178,7 @@ export_data_files :: proc(data_directory, edits_directory, export_directory: str
 		result.data_count += planned.edit ? 0 : 1
 	}
 	stamp := platform.join_path(export_directory, DATA_EXPORT_STAMP_FILE)
-	result.problem = write_file_replacing(stamp, transmute([]byte)data_export_stamp_text(BUILD_STAMP, now, result))
+	result.problem = platform.write_file_replacing(stamp, transmute([]byte)data_export_stamp_text(BUILD_STAMP, now, result))
 	return result
 }
 

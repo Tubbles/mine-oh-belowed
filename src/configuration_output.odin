@@ -2,7 +2,6 @@ package game
 
 import "base:runtime"
 import "core:fmt"
-import "core:os"
 import "core:reflect"
 import "core:strings"
 import "platform"
@@ -116,13 +115,6 @@ write_settings_file :: proc(environment: Configuration_Environment, settings: Se
 		return "no configuration directory (set " + platform.CONFIG_HOME_VARIABLES + ")"
 	}
 	text := settings_file_text(settings)
-	directory := platform.join_path(user_directory, CONFIGURATION_DROP_IN_DIRECTORY)
-	if error := platform.make_directory_path(directory); error != nil {
-		return fmt.tprintf("cannot create %s: %v", directory, error)
-	}
-	path := platform.join_path(directory, SETTINGS_FILE_NAME)
-	if error := os.write_entire_file(path, text); error != nil {
-		return fmt.tprintf("cannot write %s: %v", path, error)
-	}
-	return ""
+	path := platform.join_path(user_directory, CONFIGURATION_DROP_IN_DIRECTORY, SETTINGS_FILE_NAME)
+	return platform.write_file_replacing(path, transmute([]byte)text)
 }
