@@ -54,12 +54,14 @@ recipe_category_icons := [Recipe_Category]Ui_Icon {
 // recipe reached through the graph whose list row takes the focus on the
 // next frame, once the filter shows it. selecting_for is the assembler
 // whose recipe is being chosen, NO_ENTITY outside the selection mode.
+// plans owns memory: destroy_recipe_browser.
 Recipe_Browser :: struct {
 	filter:         Recipe_Filter,
 	focused_recipe: int,
 	pending_focus:  int,
 	letter_radial:  Radial_State,
 	selecting_for:  Entity_Handle,
+	plans:          Recipe_Plans,
 }
 
 @(rodata)
@@ -71,7 +73,16 @@ recipe_change_refusal_keys := [Recipe_Change_Refusal]string {
 
 // Unlocked only is on by default (work item 0091).
 make_recipe_browser :: proc() -> Recipe_Browser {
-	return Recipe_Browser{filter = {available_only = true}, focused_recipe = NO_RECIPE, pending_focus = NO_RECIPE}
+	return Recipe_Browser{filter = {available_only = true}, focused_recipe = NO_RECIPE, pending_focus = NO_RECIPE, plans = {detail_recipe = NO_RECIPE}}
+}
+
+destroy_recipe_browser :: proc(browser: ^Recipe_Browser) {
+	destroy_recipe_plans(&browser.plans)
+}
+
+reset_recipe_browser :: proc(browser: ^Recipe_Browser) {
+	destroy_recipe_browser(browser)
+	browser^ = make_recipe_browser()
 }
 
 // The id of a recipe's row in the list, from outside the list's scope.
@@ -257,15 +268,20 @@ product_held_line :: proc(stack: Item_Stack, held: int, items: Item_Registry) ->
 	return replace_message_mark(line, "{name}", item_name(items, stack.item))
 }
 
-// "13 / 5 Stone": what the inventory holds, what one craft needs.
-ingredient_line :: proc(have, need: int, name: string) -> string {
-	line := replace_message_mark(text("recipes_ingredient_line"), "{have}", fmt.tprint(have))
+// "13 / 5 Stone": what the queue leaves for the recipe (0156), what one
+// craft needs; an ingredient the queue would craft says so.
+ingredient_line :: proc(need: int, name: string, planned: Planned_Input) -> string {
+	key := planned.state == .Craftable ? "recipes_ingredient_line_craftable" : "recipes_ingredient_line"
+	line := replace_message_mark(text(key), "{have}", fmt.tprint(planned.available))
 	line = replace_message_mark(line, "{need}", fmt.tprint(need))
 	return replace_message_mark(line, "{name}", name)
 }
 
-ingredient_color :: proc(state: ^Ui_State, have, need: int) -> Ui_Color {
-	return theme_color(state, have >= need ? .Accent : .Danger)
+@(rodata)
+planned_input_colors := [Planned_Input_State]Ui_Theme_Color {
+	.Held      = .Accent,
+	.Craftable = .Text_Dim,
+	.Missing   = .Danger,
 }
 
 // "Can craft 2".
@@ -283,14 +299,15 @@ draw_product_rows :: proc(state: ^Ui_State, content: ^Ui_Rectangle, label: strin
 	}
 }
 
-// The label and a have and need row per ingredient, as many as fit.
-draw_ingredient_rows :: proc(state: ^Ui_State, content: ^Ui_Rectangle, label: string, stacks: []Item_Stack, items: Item_Registry, inventory: Inventory) {
+// The label and a have and need row per ingredient, as many as fit, in
+// the colour of how the queue gets it (planned, one per stack).
+draw_ingredient_rows :: proc(state: ^Ui_State, content: ^Ui_Rectangle, label: string, stacks: []Item_Stack, planned: []Planned_Input, items: Item_Registry) {
 	detail_line(state, content, text(label), UI_DIM_TEXT_COLOR)
-	for stack in stacks {
+	for stack, index in stacks {
 		row := take_line(content, UI_ROW_HEIGHT) or_break
-		have, need := inventory_count(inventory, stack.item), int(stack.count)
+		line := ingredient_line(int(stack.count), item_name(items, stack.item), planned[index])
 		draw_item_icon(state, icon_rectangle(row), item_icon(items, stack.item))
-		draw_text_fitted(state, text_after_icon(row), ingredient_line(have, need, item_name(items, stack.item)), UI_BODY_TEXT_SIZE, .Left, ingredient_color(state, have, need))
+		draw_text_fitted(state, text_after_icon(row), line, UI_BODY_TEXT_SIZE, .Left, theme_color(state, planned_input_colors[planned[index].state]))
 	}
 }
 
@@ -352,9 +369,10 @@ recipe_detail_panel :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context
 	}
 	cut_top(&content, UI_GAP)
 	inventory := screen_context.player.inventory
-	draw_ingredient_rows(state, &content, "recipes_inputs", detail.inputs, screen_context.items, inventory)
-	covered := crafts_covered(inventory, definition)
-	detail_line(state, &content, can_craft_text(covered), covered >= 1 ? UI_ACCENT_COLOR : UI_DIM_TEXT_COLOR)
+	plans := &screen_context.browser.plans
+	refresh_recipe_detail_plan(plans, screen_context.recipes, screen_context.unlocks^, inventory, screen_context.player.crafting, recipe)
+	draw_ingredient_rows(state, &content, "recipes_inputs", detail.inputs, plans.detail_inputs[:], screen_context.items)
+	detail_line(state, &content, can_craft_text(plans.detail_count), plans.detail_count >= 1 ? UI_ACCENT_COLOR : UI_DIM_TEXT_COLOR)
 	draw_product_rows(state, &content, "recipes_outputs", detail.outputs, screen_context.items, inventory)
 	cut_top(&content, UI_GAP)
 	// The graph lists need their label and a row.
@@ -517,7 +535,8 @@ three_column_widths :: proc(content: Ui_Rectangle, filter_width, list_width: f32
 recipe_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	browser := screen_context.browser
 	selecting := browser.selecting_for != NO_ENTITY
-	craftable := craftable_recipes(screen_context.recipes, screen_context.unlocks^, screen_context.player.inventory, context.temp_allocator)
+	refresh_craftable_recipes(&browser.plans, screen_context.recipes, screen_context.unlocks^, screen_context.player.inventory, screen_context.player.crafting)
+	craftable := browser.plans.craftable[:]
 	ui_backdrop(state)
 	panel := ui_panel_area(state)
 	ui_panel_begin(state, "recipes", panel)

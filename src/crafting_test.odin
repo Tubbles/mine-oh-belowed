@@ -529,3 +529,85 @@ test_hand_crafting_runs_in_the_player_tick :: proc(t: ^testing.T) {
 	testing.expect_value(t, inventory_count(player.inventory, test_item(content.items, "stone_furnace")), 1)
 	testing.expect_value(t, player.crafting.count, 0)
 }
+
+// Work item 0156: the browser's count and ingredient states follow the
+// planner. Three planks and a log: the planks are held, the sticks come
+// from the log's planks, and the log covers a second pickaxe.
+@(test)
+test_planned_crafts_count_the_intermediates :: proc(t: ^testing.T) {
+	test := make_crafting_test()
+	pickaxe := test_recipe(test.recipes, "wooden_pickaxe")
+	inventory_add(test.inventory, test.items, test_item(test.items, "plank"), 3)
+	inventory_add(test.inventory, test.items, test_item(test.items, "log"), 1)
+	planned := planned_crafts(test.queue, test.inventory, test.recipes, test.unlocks, pickaxe, context.temp_allocator)
+	testing.expect_value(t, planned.count, 2)
+	testing.expect(t, slice.equal(planned.inputs, []Planned_Input{{.Held, 3}, {.Craftable, 0}}))
+	testing.expect(t, queue_accepts_crafts(test.queue, test.inventory, test.recipes, test.unlocks, pickaxe, 2))
+	testing.expect(t, !queue_accepts_crafts(test.queue, test.inventory, test.recipes, test.unlocks, pickaxe, 3))
+}
+
+// Without the log the sticks lack a raw item: nothing is craftable.
+@(test)
+test_planned_crafts_without_a_raw_item :: proc(t: ^testing.T) {
+	test := make_crafting_test()
+	pickaxe := test_recipe(test.recipes, "wooden_pickaxe")
+	inventory_add(test.inventory, test.items, test_item(test.items, "plank"), 3)
+	planned := planned_crafts(test.queue, test.inventory, test.recipes, test.unlocks, pickaxe, context.temp_allocator)
+	testing.expect_value(t, planned.count, 0)
+	testing.expect(t, slice.equal(planned.inputs, []Planned_Input{{.Held, 3}, {.Missing, 0}}))
+}
+
+// A chain past HAND_CRAFT_PLAN_DEPTH counts 0 as the queue refuses it;
+// a short one counts what its raw item covers.
+@(test)
+test_planned_crafts_honour_the_plan_depth :: proc(t: ^testing.T) {
+	inventory := make_inventory(4, context.temp_allocator)
+	length := HAND_CRAFT_PLAN_DEPTH + 2
+	recipes, available := make_chain_recipes(length, cyclic = false)
+	inventory.slots[0] = Item_Stack{Item_Id(length), 5}
+	unlocks := Recipe_Unlocks{available = available}
+	planned := planned_crafts(make_craft_queue(), inventory, recipes, unlocks, 0, context.temp_allocator)
+	testing.expect_value(t, planned.count, 0)
+	testing.expect(t, slice.equal(planned.inputs, []Planned_Input{{.Missing, 0}}))
+	_, _, refusal, _ := plan_queue_crafts(make_craft_queue(), inventory, recipes, unlocks, 0, 1)
+	testing.expect_value(t, refusal, Craft_Refusal.Plan_Too_Deep)
+	recipes, available = make_chain_recipes(4, cyclic = false)
+	inventory.slots[0] = Item_Stack{Item_Id(4), 5}
+	unlocks = Recipe_Unlocks{available = available}
+	planned = planned_crafts(make_craft_queue(), inventory, recipes, unlocks, 0, context.temp_allocator)
+	testing.expect_value(t, planned.count, 5)
+	testing.expect(t, slice.equal(planned.inputs, []Planned_Input{{.Craftable, 0}}))
+}
+
+// Queued runs use what they will take, and a full queue accepts nothing.
+@(test)
+test_planned_crafts_count_after_the_queue :: proc(t: ^testing.T) {
+	test := make_crafting_test()
+	pickaxe := test_recipe(test.recipes, "wooden_pickaxe")
+	inventory_add(test.inventory, test.items, test_item(test.items, "log"), 2)
+	testing.expect_value(t, planned_craft_count(test.queue, test.inventory, test.recipes, test.unlocks, pickaxe), 2)
+	testing.expect_value(t, queue_test_craft(&test, pickaxe), Craft_Refusal.None)
+	testing.expect_value(t, planned_craft_count(test.queue, test.inventory, test.recipes, test.unlocks, pickaxe), 1)
+	full := make_craft_queue()
+	for index in 0 ..< HAND_CRAFT_QUEUE_RUNS {
+		full.runs[index] = Craft_Run{test_recipe(test.recipes, index % 2 == 0 ? "plank" : "stick"), 0}
+	}
+	full.count = HAND_CRAFT_QUEUE_RUNS
+	testing.expect_value(t, planned_craft_count(full, test.inventory, test.recipes, test.unlocks, pickaxe), 0)
+}
+
+// Every count up to the limit the queue accepts is counted, no more.
+@(test)
+test_planned_craft_count_stops_at_the_limit :: proc(t: ^testing.T) {
+	test := make_crafting_test()
+	plank := test_recipe(test.recipes, "plank")
+	inventory_add(test.inventory, test.items, test_item(test.items, "log"), 37)
+	testing.expect_value(t, planned_craft_count(test.queue, test.inventory, test.recipes, test.unlocks, plank), 37)
+	recipes, available := make_chain_recipes(1, cyclic = false)
+	inventory := make_inventory(4, context.temp_allocator)
+	for &slot in inventory.slots {
+		slot = Item_Stack{Item_Id(1), max(u16)}
+	}
+	planned := planned_craft_count(make_craft_queue(), inventory, recipes, Recipe_Unlocks{available = available}, 0)
+	testing.expect_value(t, planned, PLANNED_CRAFT_COUNT_LIMIT)
+}

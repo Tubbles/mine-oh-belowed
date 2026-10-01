@@ -76,10 +76,6 @@ recipe_is_hand_craftable :: proc(recipe: Recipe) -> bool {
 	return .Hand in recipe.made_in
 }
 
-inventory_holds_inputs :: proc(inventory: Inventory, recipe: Recipe) -> bool {
-	return first_missing_input(inventory, recipe) == NO_ITEM
-}
-
 // The first ingredient the inventory holds too few of, NO_ITEM when it
 // holds them all.
 first_missing_input :: proc(inventory: Inventory, recipe: Recipe) -> Item_Id {
@@ -101,11 +97,6 @@ craft_refusal :: proc(recipe: Recipe, available: bool) -> Craft_Refusal {
 		return .Not_Hand_Craftable
 	}
 	return .None
-}
-
-// Available, by hand and with the inputs at hand; the queue is not asked.
-recipe_craftable_now :: proc(inventory: Inventory, recipe: Recipe, available: bool) -> bool {
-	return available && recipe_is_hand_craftable(recipe) && inventory_holds_inputs(inventory, recipe)
 }
 
 queued_craft_count :: proc(queue: Craft_Queue) -> int {
@@ -205,12 +196,19 @@ append_run :: proc(runs: ^[dynamic]Craft_Run, run: Craft_Run) {
 // off the virtual inventory.
 plan_inputs :: proc(plan: ^Craft_Plan, recipe, crafts: int) -> bool {
 	for input in plan.recipes.recipes[recipe].inputs {
-		need := int(input.count) * crafts
-		if short := need - virtual_count(plan^, input.item); short > 0 {
-			plan_intermediate(plan, input.item, short) or_return
-		}
-		change_virtual(plan, []Item_Stack{input}, -crafts)
+		plan_input(plan, input, crafts) or_return
 	}
+	return true
+}
+
+// Plans the ingredient's shortfall, if any, and takes it off the virtual
+// inventory.
+plan_input :: proc(plan: ^Craft_Plan, input: Item_Stack, crafts: int) -> bool {
+	need := int(input.count) * crafts
+	if short := need - virtual_count(plan^, input.item); short > 0 {
+		plan_intermediate(plan, input.item, short) or_return
+	}
+	change_virtual(plan, []Item_Stack{input}, -crafts)
 	return true
 }
 
@@ -264,14 +262,23 @@ plan_front_repair :: proc(queue: Craft_Queue, inventory: Inventory, recipes: Rec
 // after what the queue holds, intermediates first, or the refusal and the
 // item it names. Pure, in the temp allocator.
 plan_crafts :: proc(queue: Craft_Queue, inventory: Inventory, recipes: Recipe_Registry, available: []bool, recipe, count: int) -> (ahead, runs: []Craft_Run, refusal: Craft_Refusal, shortage: Craft_Shortage) {
-	ahead = plan_front_repair(queue, inventory, recipes, available)
-	plan := make_craft_plan(inventory, recipes, available)
-	add_planned_runs(&plan, ahead)
-	add_queued_runs(&plan, queue)
+	plan: Craft_Plan
+	plan, ahead = make_plan_after_queue(queue, inventory, recipes, available)
 	if !plan_recipe(&plan, recipe, count) {
 		return nil, nil, plan.refusal, plan.shortage
 	}
 	return ahead, plan.runs[:], .None, {}
+}
+
+// A plan that starts after the queue: the repair of a waiting front
+// (plan_front_repair, returned as ahead) and the queued runs already
+// count.
+make_plan_after_queue :: proc(queue: Craft_Queue, inventory: Inventory, recipes: Recipe_Registry, available: []bool) -> (plan: Craft_Plan, ahead: []Craft_Run) {
+	ahead = plan_front_repair(queue, inventory, recipes, available)
+	plan = make_craft_plan(inventory, recipes, available)
+	add_planned_runs(&plan, ahead)
+	add_queued_runs(&plan, queue)
+	return plan, ahead
 }
 
 // The number of runs the queue holds once the runs are appended.
@@ -320,21 +327,133 @@ queue_crafts :: proc(queue: ^Craft_Queue, inventory: Inventory, recipes: Recipe_
 	if count < 1 {
 		return .None, {}
 	}
-	if refusal = craft_refusal(recipes.recipes[recipe], recipe_is_available(unlocks, recipe)); refusal != .None {
-		return refusal, {}
-	}
 	ahead, runs: []Craft_Run
-	if ahead, runs, refusal, shortage = plan_crafts(queue^, inventory, recipes, unlocks.available, recipe, count); refusal != .None {
+	if ahead, runs, refusal, shortage = plan_queue_crafts(queue^, inventory, recipes, unlocks, recipe, count); refusal != .None {
 		return refusal, shortage
-	}
-	if queue_runs_after(queue^, runs) + len(ahead) > HAND_CRAFT_QUEUE_RUNS {
-		return .Queue_Full, {}
 	}
 	insert_runs_ahead(queue, ahead)
 	for run in runs {
 		append_craft_run(queue, run)
 	}
 	return .None, {}
+}
+
+// What queue_crafts would do: the recipe's own refusal, the plan
+// (plan_crafts) and the queue's capacity. Pure, in the temp allocator.
+plan_queue_crafts :: proc(queue: Craft_Queue, inventory: Inventory, recipes: Recipe_Registry, unlocks: Recipe_Unlocks, recipe, count: int) -> (ahead, runs: []Craft_Run, refusal: Craft_Refusal, shortage: Craft_Shortage) {
+	if refusal = craft_refusal(recipes.recipes[recipe], recipe_is_available(unlocks, recipe)); refusal != .None {
+		return nil, nil, refusal, {}
+	}
+	if ahead, runs, refusal, shortage = plan_crafts(queue, inventory, recipes, unlocks.available, recipe, count); refusal != .None {
+		return nil, nil, refusal, shortage
+	}
+	if queue_runs_after(queue, runs) + len(ahead) > HAND_CRAFT_QUEUE_RUNS {
+		return nil, nil, .Queue_Full, {}
+	}
+	return ahead, runs, .None, {}
+}
+
+queue_accepts_crafts :: proc(queue: Craft_Queue, inventory: Inventory, recipes: Recipe_Registry, unlocks: Recipe_Unlocks, recipe, count: int) -> bool {
+	_, _, refusal, _ := plan_queue_crafts(queue, inventory, recipes, unlocks, recipe, count)
+	return refusal == .None
+}
+
+// The recipe browser's view of the planner (0156): how one craft queued
+// now gets each direct ingredient.
+Planned_Input_State :: enum u8 {
+	// What the queue leaves covers the need.
+	Held,
+	// The planner makes the shortfall from what the player holds.
+	Craftable,
+	Missing,
+}
+
+// available is the count the state was judged against: the inventory
+// after what the queue makes and uses and what the recipe's earlier
+// ingredients took.
+Planned_Input :: struct {
+	state:     Planned_Input_State,
+	available: int,
+}
+
+// The browser counts at most this many crafts.
+PLANNED_CRAFT_COUNT_LIMIT :: 999
+
+// How many crafts of the recipe queue_crafts accepts now, intermediates
+// included, and per direct ingredient how one craft gets it. Pure, the
+// inputs in the allocator, the plans in the temp allocator.
+Planned_Crafts :: struct {
+	count:  int,
+	inputs: []Planned_Input,
+}
+
+planned_crafts :: proc(queue: Craft_Queue, inventory: Inventory, recipes: Recipe_Registry, unlocks: Recipe_Unlocks, recipe: int, allocator := context.allocator) -> Planned_Crafts {
+	return Planned_Crafts {
+		count = planned_craft_count(queue, inventory, recipes, unlocks, recipe),
+		inputs = planned_input_states(queue, inventory, recipes, unlocks.available, recipe, allocator),
+	}
+}
+
+// The largest count up to PLANNED_CRAFT_COUNT_LIMIT that queue_crafts
+// accepts, 0 when it refuses one craft: doubling until a count is
+// refused, then halving the gap. Every count returned was accepted.
+planned_craft_count :: proc(queue: Craft_Queue, inventory: Inventory, recipes: Recipe_Registry, unlocks: Recipe_Unlocks, recipe: int) -> int {
+	if !queue_accepts_crafts(queue, inventory, recipes, unlocks, recipe, 1) {
+		return 0
+	}
+	// accepted is accepted, refused refused or past the limit.
+	accepted, refused := 1, PLANNED_CRAFT_COUNT_LIMIT + 1
+	for count := 2; count < refused; count = min(count * 2, refused) {
+		if !queue_accepts_crafts(queue, inventory, recipes, unlocks, recipe, count) {
+			refused = count
+			break
+		}
+		accepted = count
+	}
+	for refused - accepted > 1 {
+		middle := (accepted + refused) / 2
+		if queue_accepts_crafts(queue, inventory, recipes, unlocks, recipe, middle) {
+			accepted = middle
+		} else {
+			refused = middle
+		}
+	}
+	return accepted
+}
+
+// Each ingredient of one craft after the queue, judged once the earlier
+// ingredients that are not missing took theirs, as plan_inputs takes
+// them; so when none is missing, plan_inputs plans the craft.
+planned_input_states :: proc(queue: Craft_Queue, inventory: Inventory, recipes: Recipe_Registry, available: []bool, recipe: int, allocator := context.allocator) -> []Planned_Input {
+	inputs := recipes.recipes[recipe].inputs
+	states := make([]Planned_Input, len(inputs), allocator)
+	for input, index in inputs {
+		plan, _ := make_plan_after_queue(queue, inventory, recipes, available)
+		append(&plan.resolving, recipe)
+		take_planned_inputs(&plan, inputs[:index], states[:index])
+		states[index] = planned_input_state(&plan, input)
+	}
+	return states
+}
+
+take_planned_inputs :: proc(plan: ^Craft_Plan, inputs: []Item_Stack, states: []Planned_Input) {
+	for input, index in inputs {
+		if states[index].state != .Missing {
+			plan_input(plan, input, 1)
+		}
+	}
+}
+
+planned_input_state :: proc(plan: ^Craft_Plan, input: Item_Stack) -> Planned_Input {
+	available := virtual_count(plan^, input.item)
+	short := int(input.count) - available
+	switch {
+	case short <= 0:
+		return {.Held, available}
+	case plan_intermediate(plan, input.item, short):
+		return {.Craftable, available}
+	}
+	return {.Missing, available}
 }
 
 // The newest craft is the one in progress, holding its ingredients.

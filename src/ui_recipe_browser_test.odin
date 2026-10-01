@@ -23,7 +23,7 @@ make_browser_test :: proc(unlock_all := false) -> Browser_Test {
 }
 
 visible_ids :: proc(test: Browser_Test, filter: Recipe_Filter) -> []string {
-	craftable := craftable_recipes(test.recipes, test.unlocks, test.inventory, context.temp_allocator)
+	craftable := craftable_recipes(test.recipes, test.unlocks, test.inventory, test.queue, context.temp_allocator)
 	visible := filter_recipes(test.recipes, test.order, filter, craftable, nil, context.temp_allocator)
 	ids := make([]string, len(visible), context.temp_allocator)
 	for recipe, index in visible {
@@ -53,16 +53,18 @@ test_browser_filters_by_tab_tag_and_craftable :: proc(t: ^testing.T) {
 	testing.expect_value(t, len(visible_ids(test, {category = .Tools, tags = {smelting}})), 0)
 	testing.expect(t, iron in category_tags(test.recipes, .Tools))
 	testing.expect(t, smelting not_in category_tags(test.recipes, .Tools))
-	// Can craft now: available, by hand, ingredients at hand.
+	// Can craft now: the queue accepts a craft, intermediates included
+	// (0156): a log makes the planks the stick and the plank shapes need.
 	testing.expect_value(t, len(visible_ids(test, {category = .Materials, craftable_only = true})), 0)
 	inventory_add(test.inventory, test.items, test_item(test.items, "log"), 1)
-	testing.expect(t, slice.equal(visible_ids(test, {category = .Materials, craftable_only = true}), []string{"plank"}))
+	craftable := visible_ids(test, {category = .Materials, craftable_only = true})
+	testing.expectf(t, slice.equal(craftable, []string{"plank", "plank_slab", "plank_stairs", "stick"}), "%v", craftable)
 }
 
 @(test)
 test_browser_letter_jump :: proc(t: ^testing.T) {
 	test := make_browser_test()
-	craftable := craftable_recipes(test.recipes, test.unlocks, test.inventory, context.temp_allocator)
+	craftable := craftable_recipes(test.recipes, test.unlocks, test.inventory, test.queue, context.temp_allocator)
 	visible := filter_recipes(test.recipes, test.order, {category = .Logistics}, craftable, nil, context.temp_allocator)
 	// belt, belt_2, belt_lift, ..., burner_inserter, fast_inserter, filter_inserter, inserter, iron_chest, ...
 	testing.expect_value(t, test.names[visible[recipe_position_for_letter(test.names, visible, 'f')]], "fast_inserter")
@@ -132,7 +134,7 @@ test_graph_step_to_a_locked_recipe_drops_unlocked_only :: proc(t: ^testing.T) {
 @(test)
 test_default_filter_hides_locked_recipes :: proc(t: ^testing.T) {
 	test := make_browser_test()
-	craftable := craftable_recipes(test.recipes, test.unlocks, test.inventory, context.temp_allocator)
+	craftable := craftable_recipes(test.recipes, test.unlocks, test.inventory, test.queue, context.temp_allocator)
 	filter := make_recipe_browser().filter
 	testing.expect(t, filter.available_only)
 	filter.category = .Science
@@ -146,21 +148,42 @@ test_default_filter_hides_locked_recipes :: proc(t: ^testing.T) {
 	}
 }
 
-// Work item 0091: the smallest have divided by need over the inputs.
+// Work item 0156: the kept plans follow the inventory, the queue and the
+// focused recipe, and not the front craft's progress.
 @(test)
-test_crafts_covered :: proc(t: ^testing.T) {
+test_recipe_plans_follow_what_the_planner_reads :: proc(t: ^testing.T) {
 	test := make_browser_test()
-	gear := test.recipes.recipes[test_recipe(test.recipes, "iron_gear")]
-	testing.expect_value(t, crafts_covered(test.inventory, gear), 0)
-	inventory_add(test.inventory, test.items, test_item(test.items, "iron_plate"), 5)
-	testing.expect_value(t, crafts_covered(test.inventory, gear), 2)
-	testing.expect_value(t, crafts_covered(test.inventory, Recipe{}), 0)
-	two_inputs := Recipe {
-		inputs = []Item_Stack{{test_item(test.items, "iron_plate"), 1}, {test_item(test.items, "stone"), 2}},
-	}
-	testing.expect_value(t, crafts_covered(test.inventory, two_inputs), 0)
-	inventory_add(test.inventory, test.items, test_item(test.items, "stone"), 7)
-	testing.expect_value(t, crafts_covered(test.inventory, two_inputs), 3)
+	plans := make_recipe_browser().plans
+	defer destroy_recipe_plans(&plans)
+	plank := test_recipe(test.recipes, "plank")
+	pickaxe := test_recipe(test.recipes, "wooden_pickaxe")
+	refresh_craftable_recipes(&plans, test.recipes, test.unlocks, test.inventory, test.queue)
+	testing.expect_value(t, len(plans.craftable), len(test.recipes.recipes))
+	testing.expect(t, !plans.craftable[pickaxe])
+	refresh_recipe_detail_plan(&plans, test.recipes, test.unlocks, test.inventory, test.queue, pickaxe)
+	testing.expect_value(t, plans.detail_count, 0)
+	testing.expect(t, slice.equal(plans.detail_inputs[:], []Planned_Input{{.Missing, 0}, {.Missing, 0}}))
+	inventory_add(test.inventory, test.items, test_item(test.items, "log"), 2)
+	refresh_craftable_recipes(&plans, test.recipes, test.unlocks, test.inventory, test.queue)
+	testing.expect(t, plans.craftable[pickaxe])
+	refresh_recipe_detail_plan(&plans, test.recipes, test.unlocks, test.inventory, test.queue, pickaxe)
+	testing.expect_value(t, plans.detail_count, 2)
+	testing.expect(t, slice.equal(plans.detail_inputs[:], []Planned_Input{{.Craftable, 0}, {.Craftable, 0}}))
+	refresh_recipe_detail_plan(&plans, test.recipes, test.unlocks, test.inventory, test.queue, plank)
+	testing.expect_value(t, plans.detail_count, 2)
+	testing.expect(t, slice.equal(plans.detail_inputs[:], []Planned_Input{{.Held, 2}}))
+	// A queued pickaxe leaves one log: one more pickaxe. Its progress
+	// keeps the key.
+	testing.expect_value(t, queue_test_craft(&test.crafting, pickaxe), Craft_Refusal.None)
+	refresh_recipe_detail_plan(&plans, test.recipes, test.unlocks, test.inventory, test.queue, pickaxe)
+	testing.expect_value(t, plans.detail_count, 1)
+	// The plank row shows the log the queue leaves, not the two held.
+	refresh_recipe_detail_plan(&plans, test.recipes, test.unlocks, test.inventory, test.queue, plank)
+	testing.expect_value(t, inventory_count(test.inventory, test_item(test.items, "log")), 2)
+	testing.expect(t, slice.equal(plans.detail_inputs[:], []Planned_Input{{.Held, 1}}))
+	key := recipe_plan_key(test.queue, test.inventory, test.unlocks.available)
+	test.queue.progress_ticks += 5
+	testing.expect_value(t, recipe_plan_key(test.queue, test.inventory, test.unlocks.available), key)
 }
 
 @(test)
@@ -180,7 +203,7 @@ test_newly_pressed_letter :: proc(t: ^testing.T) {
 @(test)
 test_browser_selection_mode_lists_assembler_recipes :: proc(t: ^testing.T) {
 	test := make_browser_test()
-	craftable := craftable_recipes(test.recipes, test.unlocks, test.inventory, context.temp_allocator)
+	craftable := craftable_recipes(test.recipes, test.unlocks, test.inventory, test.queue, context.temp_allocator)
 	selection := selection_filter({category = .Materials, craftable_only = true}, .Assembler)
 	visible := filter_recipes(test.recipes, test.order, selection, craftable, test.unlocks.available, context.temp_allocator)
 	ids := make([]string, len(visible), context.temp_allocator)
@@ -207,7 +230,9 @@ test_recipe_detail_lines :: proc(t: ^testing.T) {
 	defer thread_string_table = nil
 	test := make_browser_test()
 	stone := test_item(test.items, "stone")
-	testing.expect_value(t, ingredient_line(13, 5, item_name(test.items, stone)), "13 / 5 Stone")
+	testing.expect_value(t, ingredient_line(5, item_name(test.items, stone), {.Held, 13}), "13 / 5 Stone")
+	testing.expect_value(t, ingredient_line(5, item_name(test.items, stone), {.Craftable, 0}), "0 / 5 Stone, craftable")
+	testing.expect_value(t, ingredient_line(5, item_name(test.items, stone), {.Missing, 2}), "2 / 5 Stone")
 	testing.expect_value(t, stack_line(Item_Stack{stone, 5}, test.items), "5 × Stone")
 	testing.expect_value(t, can_craft_text(2), "Can craft 2")
 	testing.expect_value(t, can_craft_text(0), "Can craft 0")

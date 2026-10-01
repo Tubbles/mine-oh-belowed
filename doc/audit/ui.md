@@ -119,7 +119,7 @@ ui -> content (1052) by what is referenced:
 | platform | 23 | JNI indices and `Android_Native_Activity` from haptics and the Android keyboard |
 | logging | 22 | `log_printf` |
 
-- Content logic in screens: view models, not rules. The recipe browser's filtering and detail (`filter_recipes`, `recipe_detail`, `crafts_covered`) and the technology filter are pure and tested; the journal orders quests (`journal_quest_order`) and names objectives; `vein_status_text` applies the discovery rule (`vein_type_is_discovered`) for the HUD.
+- Content logic in screens: view models, not rules. The recipe browser's filtering and detail (`filter_recipes`, `recipe_detail`, and the planner's `planned_crafts` since 0156) and the technology filter are pure and tested; the journal orders quests (`journal_quest_order`) and names objectives; `vein_status_text` applies the discovery rule (`vein_type_is_discovered`) for the HUD.
 
 ui -> simulation (631): about 560 are types, constants and read accessors (`Item_Stack` 37, `Inventory` 34, `pool_get` 32, `Machine` 29, the per kind fractions and state texts). The writes during the UI pass:
 

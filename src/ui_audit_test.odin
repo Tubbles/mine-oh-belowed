@@ -564,6 +564,7 @@ destroy_ui_audit :: proc(audit: ^Ui_Audit) {
 	destroy_save_summaries(&audit.title.saves)
 	delete(audit.title.saves)
 	destroy_map_view(&audit.map_view)
+	destroy_recipe_browser(&audit.browser)
 	destroy_texture_editor(&audit.texture_editor)
 	destroy_data_browser(&audit.data_browser)
 	destroy_touch_layouts(&audit.touch_layouts)
@@ -862,6 +863,7 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 	}
 	audit_waiting_inserter(audit)
 	audit_case(audit, {name = "recipes", screens = {.Recipes}, walk_focus = true})
+	audit_recipe_ingredient_states(audit)
 	for &assembler in simulation.world.entities.assemblers.entries {
 		if assembler.alive && audit.content.machines.machines[assembler.machine].recipe_choice != .Fixed {
 			audit_case(audit, {name = "recipe selection", screens = {.Machine, .Recipes}, machine = assembler.handle, selecting = assembler.handle, walk_focus = true})
@@ -1063,6 +1065,77 @@ test_inventory_screen_quick_move_and_drop :: proc(t: ^testing.T) {
 	testing.expect_value(t, player.inventory.slots[3], EMPTY_STACK)
 }
 
+// The burner mining drill focused over nine iron plates and an empty
+// queue (0156): its plates held, its gears craftable from them, its stone
+// furnace missing. Returns what restore_recipe_ingredient_states puts back.
+set_recipe_ingredient_states :: proc(audit: ^Ui_Audit) -> (slots: []Item_Stack, queue: Craft_Queue, browser: Recipe_Browser) {
+	player := &audit.simulation.players[0]
+	slots, queue, browser = slice.clone(player.inventory.slots, context.temp_allocator), player.crafting, audit.browser
+	slice.fill(player.inventory.slots, EMPTY_STACK)
+	inventory_add(player.inventory, audit.content.items, test_item(audit.content.items, "iron_plate"), 9)
+	player.crafting = make_craft_queue()
+	audit.browser.filter = {category = .Machines, available_only = true}
+	audit.browser.focused_recipe = test_recipe(audit.content.recipes, "burner_mining_drill")
+	return slots, queue, browser
+}
+
+restore_recipe_ingredient_states :: proc(audit: ^Ui_Audit, slots: []Item_Stack, queue: Craft_Queue, browser: Recipe_Browser) {
+	player := &audit.simulation.players[0]
+	copy(player.inventory.slots, slots)
+	player.crafting = queue
+	audit.browser.filter, audit.browser.focused_recipe = browser.filter, browser.focused_recipe
+}
+
+audit_recipe_ingredient_states :: proc(audit: ^Ui_Audit) {
+	slots, queue, browser := set_recipe_ingredient_states(audit)
+	defer restore_recipe_ingredient_states(audit, slots, queue, browser)
+	audit_case(audit, {name = "recipes, ingredients held, craftable and missing", screens = {.Recipes}})
+}
+
+// The colour of the first text command reading wanted.
+draw_list_text_color :: proc(commands: []Draw_Command, wanted: string) -> (color: Ui_Color, found: bool) {
+	for command in commands {
+		if command.kind == .Text && command.text == wanted {
+			return command.color, true
+		}
+	}
+	return {}, false
+}
+
+// Work item 0156: the detail paints each ingredient by how the queue gets
+// it and counts the crafts the planner makes.
+@(test)
+test_recipe_detail_shows_how_the_queue_gets_each_ingredient :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	slots, queue, browser := set_recipe_ingredient_states(audit)
+	defer restore_recipe_ingredient_states(audit, slots, queue, browser)
+	state := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&state)
+	push_screen(&state.screens, .Recipes)
+	screen_test_frame(audit, &state, {})
+	items := audit.content.items
+	Expected_Row :: struct {
+		line:  string,
+		color: Ui_Theme_Color,
+	}
+	// The plates read the three the gears leave, not the nine held.
+	rows := [?]Expected_Row {
+		{"0 / 3 Iron gear, craftable", .Text_Dim},
+		{"3 / 3 Iron plate", .Accent},
+		{"0 / 1 Stone furnace", .Danger},
+	}
+	testing.expect_value(t, inventory_count(audit.simulation.players[0].inventory, test_item(items, "iron_plate")), 9)
+	testing.expect(t, !draw_list_has_text(state.draw_list[:], "9 / 3 Iron plate"))
+	for row in rows {
+		line := row.line
+		color, found := draw_list_text_color(state.draw_list[:], line)
+		testing.expectf(t, found, "no row %q", line)
+		testing.expectf(t, color == theme_color(&state, row.color), "%q in %v", line, color)
+	}
+	testing.expect(t, draw_list_has_text(state.draw_list[:], can_craft_text(0)))
+}
+
 // Work item 0091: a focused unlocked recipe's ingredients read have and
 // need, and the filter column offers the unlocked only toggle.
 @(test)
@@ -1077,11 +1150,11 @@ test_recipe_screen_shows_have_and_need :: proc(t: ^testing.T) {
 	defer destroy_ui_state(&state)
 	push_screen(&state.screens, .Recipes)
 	screen_test_frame(audit, &state, {})
-	line := ingredient_line(inventory_count(player.inventory, log_item), 1, item_name(audit.content.items, log_item))
+	planned := planned_crafts(player.crafting, player.inventory, audit.content.recipes, audit.simulation.unlocks, plank, context.temp_allocator)
+	line := ingredient_line(1, item_name(audit.content.items, log_item), planned.inputs[0])
 	testing.expectf(t, draw_list_has_text(state.draw_list[:], line), "no row %q", line)
 	testing.expect(t, draw_list_has_text(state.draw_list[:], text("recipes_unlocked_only")))
-	covered := crafts_covered(player.inventory, audit.content.recipes.recipes[plank])
-	testing.expect(t, draw_list_has_text(state.draw_list[:], can_craft_text(covered)))
+	testing.expect(t, draw_list_has_text(state.draw_list[:], can_craft_text(planned.count)))
 	// 0138: the product line with the count held, the queue summary.
 	product := audit.content.recipes.recipes[plank].outputs[0]
 	held_line := product_held_line(product, inventory_count(player.inventory, product.item), audit.content.items)

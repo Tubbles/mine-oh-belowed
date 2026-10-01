@@ -346,7 +346,7 @@ reload_session :: proc(session: ^Session, old_content: Game_Content, data: Game_
 }
 
 reset_session_views :: proc(session: ^Session) {
-	session.recipe_browser = make_recipe_browser()
+	reset_recipe_browser(&session.recipe_browser)
 	session.technology_browser = make_technology_browser()
 	session.statistics_view.has_focus = false
 	session.statistics_view.fluid_has_focus = false

@@ -133,6 +133,7 @@ build_session_debug_terrain :: proc(world: ^World, registry: Block_Registry) -> 
 end_session :: proc(session: ^Session) {
 	stop_chunk_streaming(&session.streaming)
 	destroy_map_view(&session.map_view)
+	destroy_recipe_browser(&session.recipe_browser)
 	destroy_simulation(&session.simulation)
 	delete(session.technologies.technologies)
 	delete(session.save.location.directory_name)
