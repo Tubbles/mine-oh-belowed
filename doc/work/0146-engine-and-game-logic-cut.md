@@ -1,6 +1,6 @@
 # 0146: The engine and the game: the cut, the plugins and the object model (design brief)
 
-Status: todo (design; the user and the main agent flesh it out together before any item implements it; the refactor queue of 0143 prepares the ground meanwhile)
+Status: todo (design, on the back burner since 2026-10-02: the user wants the smooth world of `doc/log/2026-10-02.md` first and the plugin system kept in mind as the code goes; the cut below stays the guide for where code belongs, and `doc/work/0167-smooth-world-engine-brief.md` carries the engine side forward)
 
 ## The direction (user, 2026-09-30 and 2026-10-01)
 
