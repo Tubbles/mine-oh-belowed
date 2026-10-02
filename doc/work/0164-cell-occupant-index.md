@@ -1,6 +1,6 @@
 # 0164: A cell occupant index owned by the world
 
-Status: todo (after 0163)
+Status: folded into 0174 on 2026-10-02 (the index becomes per foundation frame cell in the smooth world; `doc/log/2026-10-02.md`)
 
 ## Goal
 

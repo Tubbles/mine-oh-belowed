@@ -1,6 +1,6 @@
 # 0167: The smooth world engine with multiplayer (design brief)
 
-Status: todo (design; the user and the main agent flesh it out together before any item implements it; M13's work items are written from it)
+Status: agreed (design; the user agreed to every section and to the recommendations on the open questions in the design session of 2026-10-02; M13's work items 0168 to 0179 are written from it)
 
 Milestone: M13 The first slice ([PLAN.md](../../PLAN.md)). The decisions this brief rests on are in `doc/log/2026-10-02.md`; the design they produced is in `DESIGN.md`. This brief is the technical reading of them in the shape of 0146: what the engine side owns, how each piece works, what it costs, and what is still open. Nothing here is implemented.
 
@@ -14,15 +14,15 @@ The engine side (the loop, world, presentation, platform and tools clusters of `
 
 ## The terrain field
 
-- Storage: samples on a 3D grid aligned with the planet's axes, the planet's centre at the origin, in chunks of 32 by 32 by 32 samples. Each sample holds a density in signed fixed point (one byte to start, the surface where density crosses zero) and a material id. The spacing comes from the world settings (a third of a metre to a metre); the material unit stays one cubic metre per item whatever the spacing. Chunks are generated lazily from the seed around every player and saved as deltas, as today's chunks are.
+- Storage: samples on a 3D grid aligned with the planet's axes, the planet's centre at the origin, in chunks of 32 by 32 by 32 samples. Each sample holds a density in signed fixed point (one byte, decided: the surface to 1/128 of a cell, where density crosses zero), a material id and a tint id, three bytes. The spacing comes from the world settings (a third of a metre to a metre); the material unit stays one cubic metre per item whatever the spacing. Chunks are generated lazily from the seed around every player and saved as deltas, as today's chunks are.
 - Generation: the planet's base surface is its radius plus noise sampled in three dimensions on the sphere (no latitude and longitude parameterisation, so there is no pole singularity), biomes from temperature and moisture read on the sphere, strata by depth below the local surface, caves as three dimensional noise tubes, veins as reservoirs with outcrops as protrusions of ore material, bedrock at the planet's bedrock depth. All noise is integer or fixed point, since every machine in a multiplayer world generates its own chunks and they must agree byte for byte.
 - Edits: brushes, a sphere of a few sizes and a level mode that flattens to a plane, applied in fixed point in a deterministic sample order. A dig sums the density removed per material into cubic metres and credits items, with a fractional remainder kept per player so no volume is lost (the credit pattern of `take_power_step`). A place raises the field from the held material and debits the same way.
 - Coordinates: world positions in fixed point with a resolution finer than the sample (a 1/4096 m unit in 64 bit integers covers a planet of tens of kilometres with room to spare); chunk coordinates in 32 bit integers. The HUD shows longitude, latitude and height from the position.
 
 ## Meshing and level of detail
 
-- Mesher: naive surface nets as the recommendation, smooth and cheap, with normals from the field gradient and the material blended per vertex for the triplanar shader; marching cubes is the fallback if the nets' smoothing hides detail the brushes make. Dual contouring is not wanted, since the terrain is soft by design and the sharp edges belong to the frames' meshes. Meshing runs on the chunk workers that mesh blocks today.
-- Level of detail: an octree over chunks with the field sampled coarser for distant chunks; boundaries between levels stitched with Transvoxel style transition cells or hidden by skirts (open below). The far end is a globe: a sphere mesh with the explored map painted on it, which is also what the launch shows as the terrain fades.
+- Mesher (decided): naive surface nets, smooth and cheap, with normals from the field gradient and the material blended per vertex for the triplanar shader; marching cubes is the fallback if the nets' smoothing hides detail the brushes make. Dual contouring is not wanted, since the terrain is soft by design and the sharp edges belong to the frames' meshes. Meshing runs on the chunk workers that mesh blocks today.
+- Level of detail (decided): an octree over chunks with the field sampled coarser for distant chunks; boundaries between levels hidden by skirts first, transition cells only if the seams show under the soft look. The far end is a globe: a sphere mesh with the explored map painted on it, which is also what the launch shows as the terrain fades.
 - The horizon on a small planet is close, by d = sqrt(2 R h) for an eye at h = 1.6 m:
 
 | Radius | Horizon |
@@ -34,11 +34,11 @@ The engine side (the loop, world, presentation, platform and tools clusters of `
 | 33 km | 325 m |
 | Earth | 4.5 km |
 
-  Ground beyond the horizon is hidden except where it rises, which lightens the drawing but means an 8 km planet never shows a far plain. The radius is a planet value in data; the slice runs at several radii so the user judges the feel, and a sphere of a few hundred metres is too small for that judgement (its horizon is a few steps), so the slice generates a large planet lazily and the user walks a small part of it.
+  Ground beyond the horizon is hidden except where it rises, which lightens the drawing but means an 8 km planet never shows a far plain. The radius is a planet value in data; 8 km is the home world's default record (decided) and the slice is played at 4, 8 and 16 km before the number is fixed. A sphere of a few hundred metres is too small for that judgement (its horizon is a few steps), so the slice generates a large planet lazily and the user walks a small part of it.
 
 ## Light
 
-- Propagation stays a flood fill over samples, as `world_light.odin` does over blocks, which gives occlusion for free and works on the field. Two changes: the level carries further (a byte instead of 0 to 15) and the falloff follows a curve in data, gentle near the source and steep at the edge, so a torch lights a room and a lamp a hall. Sky light is the second channel; on a sphere "up" is radial, so sky light cannot fall down a grid column: it is computed by a short radial march per surface sample, or from a surface height map in planet coordinates (open below).
+- Propagation stays a flood fill over samples, as `world_light.odin` does over blocks, which gives occlusion for free and works on the field. Two changes: the level carries further (a byte instead of 0 to 15) and the falloff follows a curve in data, gentle near the source and steep at the edge, so a torch lights a room and a lamp a hall. Sky light is the second channel; on a sphere "up" is radial, so sky light cannot fall down a grid column: it is computed by a radial march per sample at generation and under an edit's shadow, cached as the sky channel, with the flood fill carrying it into cave mouths (decided); a surface height map per surface chunk is the optimisation if profiling asks.
 - Point lights from the renderer sit on top for working parts (a machine's glow, the arm's light) and never replace the field light.
 
 ## Water
@@ -55,7 +55,7 @@ The engine side (the loop, world, presentation, platform and tools clusters of `
 ## Frames and foundations
 
 - A foundation frame is a record: an origin, an orientation (up along the radial at placement, any yaw), the pitch (0.5 m, in data). Cells are integer triples in the frame; an occupant index per frame cell says what stands there (the cell occupant index of 0164 becomes per frame). An entity's position is a frame id, a cell and a rotation, and its world position is derived; the game's placement rules read cells as they read block coordinates today, so belts, splitters and machines keep their lane and footprint logic.
-- A frame never re-tangents. A foundation placed adjacent and aligned to an existing frame joins it; one that is not starts a new island. The terrain under a frame is not changed by placing it; a fill under tool and supports are the player's.
+- A frame never re-tangents. Joining has no tolerance maths (decided): a foundation placed by snapping to an existing frame inherits that frame exactly and joins it, a foundation placed free starts a new island, and two existing frames never merge. The terrain under a frame is not changed by placing it; a fill under tool and supports are the player's.
 - A sealed room is a flood fill through a frame's cells bounded by floors, walls, hatches and windows, recomputed when one of them changes; a room holds an air budget. Stations are frames without ground under them, in a body's orbit.
 
 ## Belts and pipes between frames
@@ -65,9 +65,9 @@ The engine side (the loop, world, presentation, platform and tools clusters of `
 
 ## Multiplayer: lockstep
 
-- The model is Factorio's: every machine runs the whole simulation; each player's input frame is stamped with the tick it belongs to and relayed through the host; a tick runs when every player's inputs for it are present, with a latency window of a few ticks in which the local player's own movement is simulated ahead and reconciled. A joining player receives the save and catches up by running ticks fast. The host relays and has no authority; a headless dedicated server is the game without a window, which the test suite already runs.
+- The model is Factorio's: every machine runs the whole simulation; each player's input frame is stamped with the tick it belongs to and relayed through the host; a tick runs when every player's inputs for it are present, with a latency window set from the round trip measured at join (about the round trip in ticks plus one) in which only the local player's movement and camera are simulated ahead and reconciled (decided; the brushes join the prediction if a brush start feels late in play). A joining player receives the save and catches up by running ticks fast. The host relays and has no authority; a headless dedicated server is the game without a window, which the test suite already runs.
 - The desync check is the state hash the benchmark compares today, taken every few seconds and compared across machines. Everything a tick reads must be the same on every machine, which includes the loaded chunks: the simulated set of chunks is derived inside the tick from every player's position, and a machine whose worker has not generated one of them yet stalls its tick until it has (generation is deterministic from the seed, so no chunk data crosses the network, only the save's deltas at join).
-- All writes into the simulation become queued inputs applied at the start of a tick (the screens' writes of 0166, the command socket's edits, chunk arrivals as the event that a chunk is ready). Terrain edits made by the game inside a tick are applied at the end of the tick in a fixed order (open below).
+- All writes into the simulation become queued inputs applied at the start of a tick (the screens' writes of 0166, the command socket's edits, chunk arrivals as the event that a chunk is ready). Terrain edits made inside a tick are queued and applied at the end of the tick in a fixed order (decided), so every system reads one consistent world and the writes have one rule with the queued inputs.
 - Transport: TCP for the first slice, since it is the simplest correct choice and a factory game tolerates its latency; UDP with a reliability layer if measurement says so later.
 
 ## Split screen
@@ -86,17 +86,15 @@ One simulation, up to four local players, each with a viewport: a camera, a HUD,
 
 ## The first slice (M13)
 
-The slice is PLAN.md's M13: one large planet generated lazily, the slope walk under radial gravity, two brush sizes digging and placing with item yield, one basin of conserving water, one torch in a dug cave with the new falloff, one foundation with a drill, an arm and a belt into a chest, a day and a night, and lockstep between two machines plus a split screen pair with the state hash as the check. Candidate work items, numbered when written after this brief is agreed: the field's storage and generation; the mesher and level of detail; the player on the field; the brushes and the item yield; the water field; the field light; frames and placement; the arm; curves on poles; the lockstep driver and the transport; the viewports; the slice's content and world settings.
+The slice is PLAN.md's M13, written as items 0168 to 0179: one large planet generated lazily, the slope walk under radial gravity, two brush sizes digging and placing with item yield, one basin of conserving water, one torch in a dug cave with the new falloff, one foundation with a drill, an arm and a belt into a chest, a day and a night, and lockstep between two machines plus a split screen pair with the state hash as the check. The items: 0168 the field's storage and generation; 0169 the mesher and level of detail; 0170 the player on the field; 0171 the brushes and the item yield; 0172 the water field; 0173 the field light; 0174 frames and placement; 0175 the arm; 0176 curves on poles; 0177 lockstep; 0178 viewports; 0179 the slice's content and world settings.
 
-## Open questions for the design session
+## Decided in the design session (2026-10-02)
 
-- The mesher: surface nets as recommended, or marching cubes; and whether the level of detail stitches with transition cells or hides the seam with skirts.
-- Sky light on a sphere: a radial march per surface sample, or a surface height map in planet coordinates kept beside the chunks.
-- The density format: one byte of fixed point, or two for smoother brushes at coarse spacings.
-- Frame joining: the alignment tolerance under which an adjacent foundation joins an island instead of starting one.
-- Terrain edits inside a tick: applied at once (a tick reads what it just dug) or queued to the end of the tick in a fixed order (the recommendation, for one rule of writes).
-- The latency window's size and whether anything but the local player's movement is predicted.
-- The planet radius the slice starts at, with the horizon table above in hand.
+The user took every recommendation: surface nets with skirts; sky light by a radial march cached as the sky channel; one byte of density beside a material and a tint byte; frame joining by snapping only; terrain edits queued to the end of the tick; a latency window from the measured round trip predicting only the local player's movement; 8 km as the default radius with the slice played at 4, 8 and 16 km. No section was reopened.
+
+## Sequencing on `main`
+
+The field world is built as new files beside the block files and is reachable through tests and a developer command until the frames (0174) switch the simulation's grid to frame cells and the slice (0179) switches the session to the field world. The block files are deleted in M14 once the content has come over. This is not a second world type for the player, it is the order the rewrite lands in without breaking the build between items.
 
 ## Verify
 

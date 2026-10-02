@@ -1,6 +1,6 @@
 # 0166: Queue the screens' simulation writes as player commands
 
-Status: todo (after 0165; the user weighs the one frame of latency before it starts)
+Status: folded into 0177 on 2026-10-02 (the queued writes are the first thing lockstep needs, so they land with the driver; the one frame of latency is accepted by the model; `doc/log/2026-10-02.md`)
 
 ## Goal
 

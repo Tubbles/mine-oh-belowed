@@ -1,6 +1,6 @@
 # 0165: Chunk arrivals as an arrival list
 
-Status: todo (after 0164)
+Status: folded into 0177 on 2026-10-02 (a chunk's arrival becomes the chunk ready event of the lockstep driver's queued inputs; `doc/log/2026-10-02.md`)
 
 ## Goal
 
