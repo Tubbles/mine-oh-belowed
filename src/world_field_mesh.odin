@@ -36,13 +36,15 @@ FIELD_FULL_DAYLIGHT :: 255
 // The samples a node meshes from: index 0 is the sample at origin, a grid
 // step is step samples. Filled from the loaded chunks for the finest level
 // (gather_field_grid) and from the generation for the coarser ones
-// (generate_field_grid).
+// (generate_field_grid), which keeps the samples a coarser grid took from
+// loaded chunks (gather_coarse_field_grid, loaded set).
 Field_Grid :: struct {
 	origin:   Sample_Coordinate,
 	step:     i32,
 	density:  [FIELD_GRID_SAMPLE_COUNT]i8,
 	material: [FIELD_GRID_SAMPLE_COUNT]Field_Material,
 	tint:     [FIELD_GRID_SAMPLE_COUNT]u8,
+	loaded:   [FIELD_GRID_SAMPLE_COUNT]bool,
 }
 
 // position is in 1/FIELD_MESH_POSITION_UNITS of a grid cell from the

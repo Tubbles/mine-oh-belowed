@@ -59,6 +59,7 @@ Game_Config :: struct {
 	simulated_chunk_radius_vertical:   int,
 	field_view:           Field_View_Config,
 	field_player:         Field_Player_Config,
+	field_brushes:        []Field_Brush_Config,
 }
 
 // The terrain field's level of detail (work item 0169,
@@ -96,6 +97,37 @@ Field_Player_Config :: struct {
 	fly_speed_millimetres_per_second:        int,
 	fly_sprint_speed_millimetres_per_second: int,
 }
+
+// The shapes of a field brush (work item 0171, world_field_edit.odin): a
+// sphere round the hit, or the level mode, which flattens the sphere
+// round the hit to the plane through it across the player's up.
+Field_Brush_Shape :: enum u8 {
+	Sphere,
+	Level,
+}
+
+// The names of Field_Brush_Shape in data/game.sjson.
+FIELD_BRUSH_SHAPE_NAMES :: [Field_Brush_Shape]string {
+	.Sphere = "sphere",
+	.Level  = "level",
+}
+
+// A brush of the hand tool on the terrain field (work item 0171): the
+// samples within the radius of the hit change by the rate each tick the
+// brush is held, in density steps (DENSITY_STEPS_PER_SAMPLE a spacing).
+Field_Brush_Config :: struct {
+	id:                          string,
+	// A FIELD_BRUSH_SHAPE_NAMES entry.
+	shape:                       string,
+	radius_millimetres:          int,
+	rate_density_steps_per_tick: int,
+}
+
+MAXIMUM_FIELD_BRUSH_COUNT :: 8
+MINIMUM_FIELD_BRUSH_RADIUS_MILLIMETRES :: 100
+MAXIMUM_FIELD_BRUSH_RADIUS_MILLIMETRES :: 4000
+// From full ground to air in one tick: twice the saturated density.
+MAXIMUM_FIELD_BRUSH_RATE :: 254
 
 // A bound of one Field_Player_Config value, for field_player_problem.
 Config_Bound :: struct {
@@ -376,7 +408,45 @@ validate_game_config :: proc(config: Game_Config) -> string {
 	if problem := field_player_problem(config.field_player); problem != "" {
 		return problem
 	}
+	if problem := field_brushes_problem(config.field_brushes); problem != "" {
+		return problem
+	}
 	return field_player_speed_problem(config.field_player, config.tick_rate)
+}
+
+field_brush_shape_from_name :: proc(name: string) -> (shape: Field_Brush_Shape, found: bool) {
+	names := FIELD_BRUSH_SHAPE_NAMES
+	for candidate in Field_Brush_Shape {
+		if names[candidate] == name {
+			return candidate, true
+		}
+	}
+	return .Sphere, false
+}
+
+// One to MAXIMUM_FIELD_BRUSH_COUNT brushes, each with a unique id, a known
+// shape, and the radius and rate inside their bounds; a missing
+// field_brushes list is empty and refused.
+field_brushes_problem :: proc(brushes: []Field_Brush_Config) -> string {
+	if len(brushes) < 1 || len(brushes) > MAXIMUM_FIELD_BRUSH_COUNT {
+		return fmt.tprintf("field_brushes has %d brushes, not 1 to %d", len(brushes), MAXIMUM_FIELD_BRUSH_COUNT)
+	}
+	for brush, index in brushes {
+		switch {
+		case brush.id == "":
+			return fmt.tprintf("field_brushes[%d] has no id", index)
+		case find_definition_index(brushes[:index], brush.id) >= 0:
+			return fmt.tprintf("field_brushes[%d]: id %q is used twice", index, brush.id)
+		case brush.radius_millimetres < MINIMUM_FIELD_BRUSH_RADIUS_MILLIMETRES || brush.radius_millimetres > MAXIMUM_FIELD_BRUSH_RADIUS_MILLIMETRES:
+			return fmt.tprintf("field_brushes[%d].radius_millimetres %d is outside %d to %d", index, brush.radius_millimetres, MINIMUM_FIELD_BRUSH_RADIUS_MILLIMETRES, MAXIMUM_FIELD_BRUSH_RADIUS_MILLIMETRES)
+		case brush.rate_density_steps_per_tick < 1 || brush.rate_density_steps_per_tick > MAXIMUM_FIELD_BRUSH_RATE:
+			return fmt.tprintf("field_brushes[%d].rate_density_steps_per_tick %d is outside 1 to %d", index, brush.rate_density_steps_per_tick, MAXIMUM_FIELD_BRUSH_RATE)
+		}
+		if _, found := field_brush_shape_from_name(brush.shape); !found {
+			return fmt.tprintf("field_brushes[%d].shape %q is not sphere or level", index, brush.shape)
+		}
+	}
+	return ""
 }
 
 // The least gap between the distances of levels L - 1 and L: the diagonal

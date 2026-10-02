@@ -211,8 +211,26 @@ field_grid_generation :: proc(generation: Planet_Generation, step: i32) -> Plane
 	return coarse
 }
 
-// The node's grid straight from the generation, every step-th sample;
-// safe on any thread.
+// A coarse grid's value of a sample taken from a loaded chunk, in the
+// grid's spacing: a saturated sample on the generation's side of the
+// surface keeps the generation's coarse density (a full one would terrace
+// the slopes, see field_grid_generation), any other is its density over
+// the step, floored as depth_to_density floors (ground stays at least 1),
+// so a dig or a place shows; the material and tint are the chunk's.
+coarse_field_sample :: proc(loaded, generated: Field_Sample, step: i32) -> Field_Sample {
+	if abs(loaded.density) == MAXIMUM_DENSITY && (loaded.density > 0) == (generated.density > 0) {
+		return {generated.density, loaded.material, loaded.tint}
+	}
+	density := floor_divide_i64(i64(loaded.density), i64(step))
+	if loaded.density > 0 {
+		density = max(density, 1)
+	}
+	return {i8(density), loaded.material, loaded.tint}
+}
+
+// The node's grid from the generation, every step-th sample; a sample the
+// grid took from a loaded chunk (loaded set) goes through
+// coarse_field_sample. Safe on any thread.
 generate_field_grid :: proc(generation: Planet_Generation, node: Field_Node, grid: ^Field_Grid) {
 	grid.origin = field_node_origin(node)
 	grid.step = field_node_step(node)
@@ -223,10 +241,68 @@ generate_field_grid :: proc(generation: Planet_Generation, node: Field_Node, gri
 				sample := grid.origin + Sample_Coordinate([3]i32{x, y, z} * grid.step)
 				value := planet_sample(density_generation, sample_to_world_position(sample, generation.spacing_millimetres))
 				index := field_grid_index({x, y, z})
+				if grid.loaded[index] {
+					value = coarse_field_sample({grid.density[index], grid.material[index], grid.tint[index]}, value, grid.step)
+				}
 				grid.density[index], grid.material[index], grid.tint[index] = value.density, value.material, value.tint
 			}
 		}
 	}
+}
+
+// Whether any chunk the node's grid reads (the node and one step round
+// it) is loaded.
+field_node_touches_loaded_chunks :: proc(world: ^Field_World, node: Field_Node) -> bool {
+	origin := field_node_origin(node)
+	step := field_node_step(node)
+	first := sample_to_field_chunk_coordinate(origin - {step, step, step})
+	last := sample_to_field_chunk_coordinate(origin + FIELD_GRID_CELLS * step)
+	for z in first.z ..= last.z {
+		for y in first.y ..= last.y {
+			for x in first.x ..= last.x {
+				if (Field_Chunk_Coordinate{x, y, z}) in world.chunks {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// A coarser node's grid with the samples of the loaded chunks it reads,
+// copied on the main thread (loaded set), for generate_field_grid to
+// complete on a worker; nil when it reads no loaded chunk, so the worker
+// generates it whole. The edits then show at every level of detail.
+gather_coarse_field_grid :: proc(world: ^Field_World, node: Field_Node, allocator := context.allocator) -> ^Field_Grid {
+	if !field_node_touches_loaded_chunks(world, node) {
+		return nil
+	}
+	grid := new(Field_Grid, allocator)
+	grid.origin = field_node_origin(node)
+	grid.step = field_node_step(node)
+	// The chunk of the previous sample, so a run of samples in one chunk
+	// looks it up once.
+	cached_coordinate := Field_Chunk_Coordinate{max(i32), max(i32), max(i32)}
+	chunk: ^Field_Chunk
+	for z in i32(-1) ..= FIELD_GRID_CELLS {
+		for y in i32(-1) ..= FIELD_GRID_CELLS {
+			for x in i32(-1) ..= FIELD_GRID_CELLS {
+				sample := grid.origin + Sample_Coordinate([3]i32{x, y, z} * grid.step)
+				if coordinate := sample_to_field_chunk_coordinate(sample); coordinate != cached_coordinate {
+					cached_coordinate = coordinate
+					chunk = world.chunks[coordinate] or_else nil
+				}
+				if chunk == nil {
+					continue
+				}
+				index := field_grid_index({x, y, z})
+				source := sample_to_field_index(sample)
+				grid.density[index], grid.material[index], grid.tint[index] = chunk.density[source], chunk.material[source], chunk.tint[source]
+				grid.loaded[index] = true
+			}
+		}
+	}
+	return grid
 }
 
 // Undirected, the lower index in the high half.

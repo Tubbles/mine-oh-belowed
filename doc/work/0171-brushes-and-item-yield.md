@@ -1,6 +1,6 @@
 # 0171: Brushes: dig, place and the item yield
 
-Status: todo (after 0170)
+Status: implemented
 
 ## Goal
 

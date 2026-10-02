@@ -52,6 +52,12 @@ Field_Player_Button :: enum u8 {
 	Toggle_Fly_Mode,
 	Toggle_No_Clip,
 	Toggle_Camera_Mode,
+	// The hand tool (0171, field_mining.odin): dig or place with the
+	// brush while held; the next brush and the next held material.
+	Dig,
+	Place,
+	Next_Brush,
+	Next_Material,
 }
 
 Field_Player_Buttons :: bit_set[Field_Player_Button]
@@ -122,6 +128,10 @@ Field_Player :: struct {
 	camera_mode:       Camera_Mode,
 	// The field under the reticle within the tool reach.
 	target:            Field_Raycast_Hit,
+	// The hand tool (0171): an index into the brushes of data/game.sjson
+	// and the material a place raises the field from.
+	brush:             u8,
+	held_material:     Field_Material,
 }
 
 Field_Ground :: struct {
@@ -131,10 +141,6 @@ Field_Ground :: struct {
 	cosine:   i64,
 	// The feet above the ground straight under them, negative inside it.
 	below:    i64,
-}
-
-millimetres_to_position_units :: proc(millimetres: int) -> i64 {
-	return i64(millimetres) * POSITION_UNITS_PER_METRE / MILLIMETRES_PER_METRE
 }
 
 speed_to_velocity :: proc(millimetres_per_second: int, tick_rate: int) -> i64 {

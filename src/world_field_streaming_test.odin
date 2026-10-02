@@ -89,3 +89,39 @@ test_a_fresh_stream_generates_the_finest_chunks_first :: proc(t: ^testing.T) {
 		testing.expectf(t, job.kind == .Generate && field_node_chunk(job.node) in wanted, "job %d is %v of %v", index, job.kind, job.node)
 	}
 }
+
+// A chunk edited every frame (a held brush) still gets its mesh: the
+// worker's result lands after the frame's scheduling, as an asynchronous
+// worker's does, and the node is not submitted again while its job is in
+// flight, so the result is current when it is taken.
+@(test)
+test_a_chunk_edited_every_frame_still_meshes :: proc(t: ^testing.T) {
+	planet := make_test_planet()
+	streaming := start_field_streaming(TEST_PLANET_SEED, planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES, 0)
+	defer stop_field_streaming(&streaming)
+	world: Field_World
+	defer destroy_field_world(&world)
+	node := field_chunk_node({0, 249, 0})
+	selection := []Field_Node{node}
+	for _ in 0 ..< 3 {
+		update_field_streaming(&streaming, &world, selection)
+		run_queued_field_jobs(&streaming)
+	}
+	for result in take_current_field_meshes(&streaming, context.temp_allocator) {
+		destroy_field_mesh_data(result.mesh)
+	}
+	testing.expect_value(t, len(world.chunks), 27)
+	taken := 0
+	sample := field_chunk_origin(field_node_chunk(node)) + {5, 5, 5}
+	for frame in 0 ..< 6 {
+		field_world_set_sample(&world, sample, {i8(frame * 10 + 1), .Stone, 0})
+		update_field_streaming(&streaming, &world, selection)
+		for result in take_current_field_meshes(&streaming, context.temp_allocator) {
+			taken += 1
+			destroy_field_mesh_data(result.mesh)
+		}
+		run_queued_field_jobs(&streaming)
+	}
+	testing.expect(t, taken >= 2, "the edits land as results while the chunk stays dirty")
+	testing.expect(t, world.chunks[field_node_chunk(node)].dirty, "the latest edit waits for the job in flight")
+}

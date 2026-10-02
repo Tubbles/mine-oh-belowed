@@ -1,0 +1,13 @@
+// The terrain field's materials (work item 0171, doc/content.md, Field
+// materials): one entry per material of the field but air, every key
+// required. item is what a cubic metre of the material dug by hand yields
+// and placing it takes (items.sjson); an empty item marks a material that
+// cannot be dug or placed. tool_tier is the pickaxe the hand tool needs,
+// as blocks.sjson's tool_tier: 0 hands, 1 wooden, 2 stone, 3 iron.
+// The textures are in textures/field_materials.sjson.
+materials = [
+	{id = "topsoil", item = "dirt", tool_tier = 0}
+	{id = "stone", item = "stone", tool_tier = 1}
+	{id = "deep_stone", item = "deep_stone", tool_tier = 3}
+	{id = "bedrock", item = "", tool_tier = 0}
+]

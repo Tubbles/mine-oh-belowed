@@ -1,5 +1,8 @@
 package game
 
+import "core:fmt"
+import "core:strings"
+
 // The terrain field (work item 0168, doc/architecture.md, World storage):
 // samples on a grid aligned with the planet's axes, the planet's centre at
 // the origin, in chunks of FIELD_CHUNK_SIZE cubed. A sample holds a
@@ -40,6 +43,11 @@ Field_Material :: enum u8 {
 	Bedrock,
 }
 
+// The material's id in the data files: its name in lower case.
+field_material_name :: proc(material: Field_Material) -> string {
+	return strings.to_lower(fmt.tprintf("%v", material), context.temp_allocator)
+}
+
 Field_Sample :: struct {
 	density:  i8,
 	material: Field_Material,
@@ -66,7 +74,11 @@ Field_Chunk :: struct {
 // Chunks are heap allocated, as the block world's are, so growing the map
 // never moves a 96 KiB chunk.
 Field_World :: struct {
-	chunks: map[Field_Chunk_Coordinate]^Field_Chunk,
+	chunks:        map[Field_Chunk_Coordinate]^Field_Chunk,
+	// Chunks a set changed since the streaming last took them, so the
+	// coarser levels of detail over them mesh again
+	// (mark_edited_coarse_nodes).
+	edited_chunks: map[Field_Chunk_Coordinate]struct{},
 }
 
 sample_spacing_is_valid :: proc(millimetres: int) -> bool {
@@ -89,6 +101,10 @@ ceiling_divide_i64 :: proc(value, divisor: i64) -> i64 {
 
 metres_to_position_units :: proc(metres: i64) -> i64 {
 	return metres * POSITION_UNITS_PER_METRE
+}
+
+millimetres_to_position_units :: proc(millimetres: int) -> i64 {
+	return i64(millimetres) * POSITION_UNITS_PER_METRE / MILLIMETRES_PER_METRE
 }
 
 // One sample's index times the spacing, rounded up to the position unit,
@@ -168,6 +184,7 @@ field_world_set_sample :: proc(world: ^Field_World, sample: Sample_Coordinate, v
 	}
 	field_chunk_set_sample(chunk, sample_to_field_index(sample), value)
 	mark_field_chunks_around_sample_dirty(world, chunk.coordinate, sample)
+	world.edited_chunks[chunk.coordinate] = {}
 	return true
 }
 
@@ -209,5 +226,6 @@ destroy_field_world :: proc(world: ^Field_World) {
 		free(chunk)
 	}
 	delete(world.chunks)
+	delete(world.edited_chunks)
 	world^ = {}
 }

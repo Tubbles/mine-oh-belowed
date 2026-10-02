@@ -53,6 +53,18 @@ field_player = {
 	fly_speed_millimetres_per_second = 12000
 	fly_sprint_speed_millimetres_per_second = 36000
 }
+// The hand tool's brushes on the terrain field (work item 0171,
+// doc/content.md, Brushes). Each tick a brush is held, every sample within
+// the radius of the hit changes by the rate, in density steps (128 a
+// sample spacing, 127 the full ground of a sample): a dig lowers the
+// samples towards air, a place raises them towards ground from the held
+// material. A sphere works round the hit; level flattens to the plane
+// through the hit across the player's up. The brush key cycles them.
+field_brushes = [
+	{id = "small", shape = "sphere", radius_millimetres = 1000, rate_density_steps_per_tick = 6}
+	{id = "large", shape = "sphere", radius_millimetres = 2000, rate_density_steps_per_tick = 3}
+	{id = "level", shape = "level", radius_millimetres = 2000, rate_density_steps_per_tick = 6}
+]
 // The chunks every machine of a session simulates: this many chunks
 // around each player's chunk across and up and down (work item 0177).
 // Loading, the tick and the state hash all follow it.

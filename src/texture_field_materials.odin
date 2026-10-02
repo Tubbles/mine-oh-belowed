@@ -2,7 +2,6 @@ package game
 
 import "core:encoding/json"
 import "core:fmt"
-import "core:strings"
 import "sjson_text"
 
 // The textures of the field's materials (work item 0169,
@@ -28,10 +27,6 @@ field_material_texture_key_is_known :: proc(key: string) -> bool {
 		}
 	}
 	return false
-}
-
-field_material_name :: proc(material: Field_Material) -> string {
-	return strings.to_lower(fmt.tprintf("%v", material), context.temp_allocator)
 }
 
 parse_field_material :: proc(object: json.Object) -> (material: Field_Material, problem: string) {

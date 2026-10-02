@@ -11,6 +11,7 @@ The rules behind the numbers in `data/*.sjson`. Every value lives in its data fi
 - A tick is a sixtieth of a second (`tick_rate` in `data/game.sjson`). A recipe's `seconds` is its time at speed 1 and a whole number of ticks. `recipe_ticks` truncates to whole ticks, at least one.
 - Power in kilowatts and megawatts, energy in megajoules. An item's `fuel_megajoules` is what a machine extracts, with no efficiency factor, except a combustion generator's `fuel_efficiency_percent`.
 - Fluids in litres. Fluids are never items and never stack.
+- Terrain in cubic metres: one item of a field material is a cubic metre dug or placed whatever the sample spacing (Field materials and brushes).
 - Factorio's proportions are the anchor, its absolute values are not: where a ratio matches Factorio it does so on purpose.
 
 ## Items
@@ -28,6 +29,7 @@ Tools gate hand mining and nothing else (0051).
 - Each block needs a tool tier that climbs with the hardness of the material, from bare hands for soil and wood to an iron pickaxe for deep rock. The tier list is in the header of `data/blocks.sjson`.
 - The best `tool_tier` of any item in the inventory or on the cursor counts (`player_tool_tier`), so the geologist's hammer mines at tier 2. There is no speed bonus and no durability. The time is the block's `hardness_seconds`.
 - Drills ignore tiers, and the developer cheat speed mines every tier (`effective_tool_tier`). `test_tool_tier_gates_hand_mining` guards the gate.
+- On the terrain field the material's `tool_tier` in `data/materials.sjson` gates the brush the same way, against the best tier carried (`field_tool_tier`); `test_a_brush_over_a_harder_material_digs_nothing` guards it.
 
 ## Recipes
 
@@ -115,6 +117,14 @@ Recomputed from the data. A unit is one draw from a vein, ore or spoil.
 
 - `field_view.level_distances_metres` in `data/game.sjson` (0169) sets the field's levels of detail ([presentation.md](presentation.md), Field meshes). Each distance must exceed the one before by at least the diagonal of a node of the level before at the widest spacing (`field_level_gap_metres`: 56, 111 and 222 m), and the last may not pass `MAXIMUM_FIELD_VIEW_DISTANCE_METRES`. The gap keeps a node chosen at one level from bordering one chosen two levels coarser, which the skirts' reach assumes, and keeps the children of a node split at the last but one distance inside the last one, so the far end has no holes. The shipped 64, 160, 384 and 1024 m pass.
 - `field_player` in `data/game.sjson` (0170) tunes the field player ([architecture.md](architecture.md), The player on the field), every key required and bounded (`field_player_problem`), lengths in millimetres and speeds in millimetres per second: `capsule_radius_millimetres` (100 to 1000), `capsule_height_millimetres` (above two radii, to 4000), `eye_height_millimetres` (inside the capsule), `walkable_angle_degrees` (1 to 89, stored in degrees and turned into its fixed point cosine at load), `slide_speed_millimetres_per_second`, `step_height_samples` (0 to 4 samples of the world's spacing), `jump_height_millimetres` and `mantle_height_millimetres` (from 1 mm; the step at the widest spacing, 1 m a sample, must stay below the mantle), `tool_reach_millimetres`, `walk_speed_millimetres_per_second`, `sprint_speed_millimetres_per_second`, `sneak_speed_millimetres_per_second`, `fall_speed_limit_millimetres_per_second`, `fly_speed_millimetres_per_second`, `fly_sprint_speed_millimetres_per_second`; each speed is refused above `MAXIMUM_FIELD_PLAYER_MILLIMETRES_PER_TICK` (8 m) a tick at the `tick_rate` (`field_player_speed_problem`), which keeps the controller's integers inside an i64. The shipped values: a capsule of 0.3 by 1.8 m with the eye at 1.6 m, 40 degrees walkable, a slide of 6 m/s, a step of one sample, a jump of 1.1 m (a metre and the capsule's clearance), a mantle of 1.5 m, a reach of 4 m, the block player's 4.3, 5.6 and 1.3 m/s and the fly camera's 12 and 36 m/s. Gravity is the planet record's.
+
+## Field materials and brushes
+
+The hand tool on the terrain field (0171; [architecture.md](architecture.md), The terrain field's brushes).
+
+- `data/materials.sjson` holds one record per field material but air: `id` (the material's name, `topsoil`, `stone`, `deep_stone`, `bedrock`), `item` (the `items.sjson` id a cubic metre yields and a place takes; empty for a material that is never dug or placed) and `tool_tier` (the pickaxe the brush needs, 0 to the highest tool's tier, as `blocks.sjson`'s). Held to the configuration's strict keys: an unknown key, a missing key, an unknown material or item, a material listed twice or missing refuses the file. The texture parameters stay in `data/textures/field_materials.sjson` (Textures). The shipped table: topsoil gives dirt by hand, stone gives stone with a wooden pickaxe, deep stone gives deep stone with an iron one, bedrock gives nothing. It is read when the planet preview starts, not on a reload, until the slice (0179) loads it with the tables.
+- The material unit: a cubic metre an item. A sample's ground is the positive part of its density, 127 steps the whole sample, so at a spacing of s metres one step is s^3 / 127 cubic metres; the volume short of a whole item is kept per player and material, so digging at a third of a metre yields as much per cubic metre as at one.
+- `field_brushes` in `data/game.sjson` lists the brushes the brush key cycles, one to `MAXIMUM_FIELD_BRUSH_COUNT`, every key required and bounded (`field_brushes_problem`): `id` (unique), `shape` (`sphere` round the hit, or `level`, which flattens to the plane through the hit across the player's up), `radius_millimetres` (`MINIMUM_FIELD_BRUSH_RADIUS_MILLIMETRES` to `MAXIMUM_FIELD_BRUSH_RADIUS_MILLIMETRES`) and `rate_density_steps_per_tick` (1 to `MAXIMUM_FIELD_BRUSH_RATE`, in steps of 128 a spacing). The shipped brushes: a small sphere of 1 m at 6 steps a tick (a full sample in about a third of a second), a large one of 2 m at 3 and a level brush of 2 m at 6.
 
 ## Blocks
 

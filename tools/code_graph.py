@@ -93,6 +93,7 @@ FILE_CLUSTERS = {
     "data_browser.odin": "tools",
     "data_export.odin": "tools",
     "lockstep.odin": "loop",
+    "field_mining.odin": "simulation",
 }
 
 LARGEST_COMPONENT_REPORT_COUNT = 10
