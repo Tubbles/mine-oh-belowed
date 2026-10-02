@@ -1,6 +1,6 @@
 # Code map
 
-The entry page for the source: 227 files under `src/` plus 160 test files beside them. 205 are the `game` package, grouped into seven clusters; 22 are seven leaf packages under `src/` (section Packages), each a cluster named after its directory. Read the cluster table, pick a cluster, open its entry file; the section of each cluster lists its files in reading order. How the parts work is in [architecture.md](architecture.md), the why of the clusters in the audits under [audit/](audit/).
+The entry page for the source: 228 files under `src/` plus 161 test files beside them. 206 are the `game` package, grouped into seven clusters; 22 are seven leaf packages under `src/` (section Packages), each a cluster named after its directory. Read the cluster table, pick a cluster, open its entry file; the section of each cluster lists its files in reading order. How the parts work is in [architecture.md](architecture.md), the why of the clusters in the audits under [audit/](audit/).
 
 - Rule: a new file goes into a cluster and takes one of its file name prefixes (or a line in the file table of `tools/code_graph.py`); a reference against the allowed dependency table below is a finding until it is refactored away.
 - The map is kept true by two checks: `python3 tools/check_docs.py` checks every backticked file and name in it, and `python3 tools/code_graph.py --check doc/code_map.md` compares every cluster edge the allowed table does not allow with the map's record of it ([build.md](build.md), Source checks).
@@ -11,7 +11,7 @@ The entry page for the source: 227 files under `src/` plus 160 test files beside
 
 | Cluster | Purpose | Entry | Files | Lines | Audit |
 |---|---|---|---|---|---|
-| loop | the process: start-up, the frame, when the tick runs (the lockstep driver), sessions, the network and the server, the requests served between frames | `loop.odin` | 9 | 5269 | [loop](audit/loop.md) |
+| loop | the process: start-up, the frame, when the tick runs (the lockstep driver), sessions, the network and the server, the requests served between frames | `loop.odin` | 10 | 6251 | [loop](audit/loop.md) |
 | ui | the input layer, the immediate mode toolkit, every screen, the HUD and the touch overlay | `ui_core.odin` | 49 | 17211 | [ui](audit/ui.md) |
 | world | blocks and what follows a block: chunks, light, water, meshing, streaming, generation, the save codec; the terrain field beside them (M13) | `world_chunk.odin` | 44 | 11956 | [world](audit/world.md) |
 | simulation | the factory per tick: entity pools, networks, players, inventories, crafting, statistics, the game's records | `entity.odin` | 44 | 17493 | [simulation](audit/simulation.md) |
@@ -60,14 +60,15 @@ The process: the loop decides when things run, the clusters decide what runs.
   - `main.odin`: `Command_Line`, `main`, `load_start_data` with the overlay fallback, the world start.
   - `loop.odin`: `Frame_State` and its four groups, `run_game` and `update_frame`, `make_screen_context`, `serve_frame_requests_before_draw` (the order of the frame requests) and the serve procedures it calls, `Game_Content`.
   - `session.odin`: `Session`, `start_session`, `end_session`, `save_session`.
-  - `lockstep.odin`: `Lockstep`, `Input_Record`, the driver (stamp, receive, `lockstep_records_ready`, `begin_lockstep_tick`), the prediction, `lockstep_state_hash`, and `run_ready_ticks` with the socket lines of a tick.
-  - `session_network.odin`: `Session_Network`, `Session_Join`, the message codec, the host's relay, join, keepalive and hash comparison, the client's side, `Join_Snapshot`.
+  - `viewport.odin`: `Viewport` with `Viewport_Interaction` and `Viewport_Presentation` (the per player halves of the two groups, 0178), `viewport_rectangles`, `viewport_ui_scale`, `pad_claim`, adding and removing a viewport, `collect_global_requests`, the split screen render targets.
+  - `lockstep.odin`: `Lockstep`, `Local_Member`, `Input_Record`, the driver (stamp, receive, `lockstep_records_ready`, `begin_lockstep_tick`), the prediction, `lockstep_state_hash`, and `run_ready_ticks` with the socket lines of a tick.
+  - `session_network.odin`: `Session_Network`, `Session_Join`, the message codec, the host's relay, join, keepalive and hash comparison, the client's side, `Join_Snapshot`, a split screen player's join and leave (`request_local_player`, `leave_local_player`).
   - `session_server.odin`: `Server_State`, `run_server` (`--server`).
   - `hot_reload.odin`: the reload per data category on `Frame_State`, served between frames.
   - `main_android.odin`: the Android C entry wrapping `main`.
   - `loop_planet_preview.odin`: `run_planet_preview`, the `--planet-preview` window over the terrain field (0169) with its walk mode, the field player on a fixed step (0170, `walk_planet_preview`), a viewing tool until the slice (0179).
-- State: `Frame_State` (17 top level fields: the loop's 13, the request set `Frame_Requests` among them, and four groups holding the 56 other clusters' fields, `Frame_Interaction` 23, `Frame_Presentation` 18, `Frame_Developer_Tools` 8, `Frame_Reload` 7), `Session`, `Lockstep`, `Session_Network`, `Game_Content`.
-- Tests: `main_test.odin`; `lockstep_test.odin` (machines through an in-process relay) and `session_network_test.odin` (the join, the server); the frame, the session lifecycle and the reloads are untested (loop audit, section 8).
+- State: `Frame_State` (19 top level fields: the loop's 15, the request set `Frame_Requests` and the viewports among them, and four groups holding 44 other clusters' fields, `Frame_Interaction` 16, `Frame_Presentation` 13, `Frame_Developer_Tools` 8, `Frame_Reload` 7), `Viewport` (9 fields, with `Viewport_Interaction` 7 and `Viewport_Presentation` 7, the per player fields the two groups held before 0178), `Session`, `Lockstep`, `Session_Network`, `Game_Content`.
+- Tests: `main_test.odin`; `lockstep_test.odin` (machines through an in-process relay) and `session_network_test.odin` (the join, the server, a joined machine's split screen player); `viewport_test.odin` (layouts, joining with a pad, two viewports' cameras and draw lists, requests per viewport and once for the game, four viewports and one tick); the draw path, the session lifecycle and the reloads are untested (loop audit, section 8).
 - Reaches into: nothing.
 
 ## ui
@@ -98,7 +99,7 @@ The toolkit turns an input frame into a draw list; the screens decide what the w
   - `touch_overlay.odin`: the virtual gamepad, its layout files, gestures, drawing ([touch_overlay.md](touch_overlay.md)).
   - `haptics.odin`, `haptics_android.odin`, `haptics_desktop.odin`: `Haptic_Request` and the rumble constants for every target; the phone's vibrator, through the JNI helpers of the platform package; the desktop stub.
   - `system_keyboard.odin`, `system_keyboard_linux.odin`, `system_keyboard_android.odin`, `system_keyboard_windows.odin`: `System_Keyboard_Field`, a text field's window rectangle; show and hide the platform keyboard for it.
-- State: `Ui_State` (57 fields), `Screen_Context` (30), `Hud_Context`, `Input_Frame`, `Touch_Overlay_State`, `Title_State`; `Session_Views` (the map and the browsers) sits beside the session on `Frame_Interaction`.
+- State: `Ui_State` (57 fields, one per viewport), `Screen_Context` (31), `Hud_Context`, `Input_Frame`, `Touch_Overlay_State`, `Title_State`; `Session_Views` (the map and the browsers) sits beside the session on each viewport's `Viewport_Interaction`.
 - Tests: every `*_test.odin` beside its file; `ui_audit_test.odin` draws every screen at every audit size, `ui_pointer_test.odin` the pointer and taps, `accessibility_test.odin`.
 - Reaches into: tools 43 (accepted: the Data files screen on `Data_Browser` 31, the diagnostics page names 3, a `block_name` field as noise 9), loop 9 (accepted 3: `Touch_Overlay_Context` in `touch_overlay.odin` names `Frame_Interaction`, `Game_Content` and `Session`, 0158; accepted 6: `mining_ring_centre`, `BUILD_STAMP`, `parse_seed`, noise).
 
@@ -193,7 +194,7 @@ Presentation turns the world, the tick and the render time into pixels and sound
   - `ambient_life.odin`, `render_life.odin`, `render_flames.odin`: flocks, insects, fish; their draws; torch flames.
   - `audio.odin`, `sound_events.odin`: `Audio_Mixer`, sound table, loop fades; `Sound_Memory`, the sounds of the cues, hum, ambience clusters.
   - `display.odin`, `raylib_log.odin`: window modes, resolutions, scale, GL info; raylib's log into the game log.
-- State: the GPU resources (`Chunk_Renderer`, `Item_Atlas`, `Belt_Renderer`, `Model_Renderer`; `Field_Renderer` in the planet preview) and `Audio_Mixer` for the run, the memories (`Cue_Memory`, `Particle_System`, `Particle_Memory`, `Player_Animation_Memory`, `Sound_Memory`) for a session; nothing is saved.
+- State: the GPU resources (`Chunk_Renderer`, `Item_Atlas`, `Belt_Renderer`, `Model_Renderer`; `Field_Renderer` in the planet preview) and `Audio_Mixer` for the run, the memories (`Cue_Memory`, `Particle_System`, `Particle_Memory`, `Player_Animation_Memory` per viewport, `Sound_Memory` once) for a session; nothing is saved.
 - Tests: every `*_test.odin` beside its file; `shader_source_test.odin` (the `u` suffix rule), `render_ghost_test.odin`, `texture_periodicity_test.odin`; the draw procedures are untested.
 - Reaches into: ui 17 (accepted: theme colours and marker palettes 13, `Input_Frame` for the fly camera 2, `Ui_Sound_Event` 2), loop 1 (accepted: `texture_edits_path`), tools 2 (accepted: a `block_name` parameter, noise).
 

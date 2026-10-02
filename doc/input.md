@@ -13,7 +13,7 @@ How input reaches the game: devices, backends, bindings and the input frame. How
 
 | Backend | Reads | Selected |
 | --- | --- | --- |
-| SDL3 (`input_sdl3.odin`) | One gamepad through `vendor:sdl3` (`sdl.Init` with the joystick and gamepad subsystems), with touchpads, sensors and touch sense | Default on the desktop; `--input=sdl3` fails instead of falling back |
+| SDL3 (`input_sdl3.odin`) | Every gamepad through `vendor:sdl3` (`sdl.Init` with the joystick and gamepad subsystems), up to `SDL3_GAMEPAD_CAPACITY` (8) open at once, each with touchpads, sensors, touch sense, its own gyro calibration and rumble | Default on the desktop; `--input=sdl3` fails instead of falling back |
 | raylib (`input_raylib.odin`) | The first of raylib's 4 gamepad slots: sticks, buttons, triggers (as buttons) | `--input=raylib`, when SDL fails to initialise, and always on Android |
 
 - The raylib backend has no paddles, MISC buttons or trackpads. It logs the bindings it cannot express once at start (`unsupported_bindings_report`), so there the hotbar radial comes only from held Tab with the right stick, the keyboard's way on either backend.
@@ -32,7 +32,7 @@ Rule: the input layer puts everything the simulation needs into `Input_Frame`, a
 
 ## Steam Controller through SDL3
 
-The Steam Controller (2026) adds to a standard pad two haptic trackpads (touch, position, pressure, click), capacitive stick and grip touch, a six axis IMU and rear grips L4 L5 R4 R5; Steam and Quick Access belong to Steam. SDL reads it through its HIDAPI driver `SDL_hidapi_steam_triton.c` (host SDL 3.4.16), with hidraw access from udev (`/usr/lib/udev/rules.d/71-valve-controllers.rules`, vendor 28de). `init_sdl3_input` sets `SDL_HINT_JOYSTICK_HIDAPI_STEAM` to 1, as the hint's documented default is off; the game opens the first gamepad SDL adds and enables its gyro and accelerometer.
+The Steam Controller (2026) adds to a standard pad two haptic trackpads (touch, position, pressure, click), capacitive stick and grip touch, a six axis IMU and rear grips L4 L5 R4 R5; Steam and Quick Access belong to Steam. SDL reads it through its HIDAPI driver `SDL_hidapi_steam_triton.c` (host SDL 3.4.16), with hidraw access from udev (`/usr/lib/udev/rules.d/71-valve-controllers.rules`, vendor 28de). `init_sdl3_input` sets `SDL_HINT_JOYSTICK_HIDAPI_STEAM` to 1, as the hint's documented default is off; the game opens every gamepad SDL adds and enables its gyro and accelerometer; which viewport reads which pad is Split screen below.
 
 The Triton mapping string names the extra inputs (`steam_controller_button_name`):
 
@@ -157,6 +157,16 @@ The Accessibility tab's Sneak and Sprint rows (`settings.sneak_hold`, `settings.
 - Every change logs `player: fly mode on at tick N by <cause>` (or no clip), so an unexpected toggle shows in the log or logcat.
 - On the terrain field (0170) the same toggles fly the field player in the planet's frame: the move along the heading and its right on the tangent plane, Jump and Sneak along the planet's up, swept against the field unless no clip is on ([architecture.md](architecture.md), The player on the field). The planet preview's walk mode is a developer tool, so its double tap always flies; there the log line names no cause.
 - The planet preview (`--planet-preview`) switches between its free camera and the field player with G (`PLANET_PREVIEW_WALK_KEY`), a raw key of the preview rather than a binding; V toggles the third person camera there, and Sprint and Sprint_Hold both sprint while held ([build.md](build.md), Command line).
+
+## Split screen
+
+Up to four local players share the window, each in a viewport (`viewport.odin`, work item 0178; the frame side in [architecture.md](architecture.md), Frame and tick).
+
+- Devices: the first viewport reads the keyboard, the mouse and the touch overlay, and takes the first gamepad no viewport owns as soon as it has none, so one pad plays single player as before. Every other viewport reads its own gamepad, by SDL id, and nothing else. The raylib backend tells no pads apart, so it plays one viewport only.
+- Joining: Start (the Pause action) on a gamepad no viewport owns adds a viewport and a local player while a world is played (`pad_claim`, `add_viewport`), through the add player path of a join: the first save entry no member holds, else a new player at the start. The held Start is no fresh press in the new viewport, so its pause menu does not open.
+- A disconnected pad leaves its viewport waiting with its player in the world and a notice ("Controller lost: press Start"); Start on any free pad takes the waiting viewport again (SDL gives a pad plugged in again a new id). The waiting guests come first: while one waits, a keyboard first viewport without a pad takes no free pad, and Start gives the pad to the waiting guest, so a replugged guest pad is never taken silently. A guest viewport leaves through its pause menu's Leave split screen; its player stays in the world and the next join takes that entry.
+- The keyboard and the mouse belong to the first viewport (no setting moves them). Since that viewport takes the first free pad too, the keyboard and one pad are one player, not two; a second player needs a second pad. In split screen the mouse's position is taken in that viewport's own pixels, and the touch overlay is off: a phone is one remote player.
+- Bindings and the input frame are as above, per viewport; each viewport accumulates its own tick input (`Tick_Input_Accumulator`) and rumbles its own pad.
 
 ## Not built yet
 

@@ -37,13 +37,13 @@ destroy_hot_reload_state :: proc(state: ^Frame_State) {
 
 report_reload :: proc(state: ^Frame_State, message: string) {
 	platform.log_printf("data: %s", message)
-	ui_toast(&state.interaction.ui, message)
+	ui_toast(primary_ui(state), message)
 }
 
 // Loaders log their own error line too; this one says what was kept.
 report_reload_problem :: proc(state: ^Frame_State, what, problem: string) {
 	platform.log_printf("error: could not reload %s, keeping the old data: %s", what, problem)
-	ui_toast(&state.interaction.ui, fmt.tprintf("%s %s: %s", text("reload_failed"), what, problem))
+	ui_toast(primary_ui(state), fmt.tprintf("%s %s: %s", text("reload_failed"), what, problem))
 }
 
 // Presentation.
@@ -153,7 +153,9 @@ reload_theme :: proc(state: ^Frame_State) -> string {
 	if problem != "" {
 		return problem
 	}
-	apply_ui_theme(&state.interaction.ui, theme)
+	for &viewport in active_viewports(state) {
+		apply_ui_theme(&viewport.interaction.ui, theme)
+	}
 	return ""
 }
 
@@ -332,7 +334,9 @@ reload_content :: proc(state: ^Frame_State) -> (summary: string, problem: string
 		if state.session != nil {
 			problem = reload_session(state.session, state.content, data, state.config)
 			if problem == "" {
-				reset_session_views(&state.interaction.session_views, &state.session.simulation)
+				for &viewport in active_viewports(state) {
+					reset_session_views(&viewport.interaction.session_views, &state.session.simulation)
+				}
 			}
 		}
 	}

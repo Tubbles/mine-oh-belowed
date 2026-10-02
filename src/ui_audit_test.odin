@@ -43,6 +43,12 @@ UI_AUDIT_SIZES :: [?]Ui_Audit_Size {
 	// pixels (work item 0085): the window is 1694 by 1129 there, the UI
 	// lays out in the framebuffer's 2880 by 1920.
 	{{2880, 1920}, 1.0},
+	// Split screen (work item 0178): a quarter of 1080p (three and four
+	// players), the stacked half, and the side by side half at the scale
+	// viewport_ui_scale gives it.
+	{{960, 540}, 1.0},
+	{{1920, 540}, 1.0},
+	{{960, 1080}, 0.5},
 }
 
 // Each size runs at the default text size and at the largest (work item
@@ -101,6 +107,12 @@ Ui_Audit_Case :: struct {
 	// The pointer is a finger (Ui_Input.pointer_is_touch): the screens
 	// draw the touch row (0125, 0137).
 	touch:        bool,
+	// The screens of a split screen guest's viewport (0178), and of one
+	// whose player has no entry yet.
+	split_screen_guest: bool,
+	waiting_for_player: bool,
+	// The notice of a viewport whose pad was lost (0178).
+	notice:       string,
 }
 
 // Owns everything a Screen_Context points into.
@@ -300,7 +312,7 @@ audit_hud_context :: proc(audit: ^Ui_Audit) -> Hud_Context {
 	return Hud_Context{biome_banner = &audit.biome_banner, biome = column.biome, biomes = audit.generator.biomes}
 }
 
-// One frame the way run_ui_frame builds it, without the draw layer. The
+// One frame the way build_viewport_ui builds it, without the draw layer. The
 // frame's temporary strings live in the audit's arena until it is checked.
 audit_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, size: Ui_Audit_Size, audit_case: Ui_Audit_Case, input: Ui_Input, frame_name: string) {
 	device := state.active_device
@@ -323,7 +335,12 @@ audit_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, size: Ui_Audit_Size, aud
 	if audit_case.hud {
 		draw_hud(state, screen_context, hud)
 	}
+	screen_context.split_screen_guest = audit_case.split_screen_guest
+	screen_context.waiting_for_player = audit_case.waiting_for_player
 	run_screens(state, screen_context)
+	if audit_case.notice != "" {
+		draw_loading_notice(state, text(audit_case.notice))
+	}
 	ui_resolve(state)
 	ui_append_overlays(state)
 	case_text := fmt.tprintf("%s, %.0fx%.0f at scale %.2f, text %.1f, %v glyphs", audit_case.name, size.pixels.x, size.pixels.y, size.scale, audit.settings.text_scale, device)
@@ -802,6 +819,9 @@ audit_touch_rows :: proc(audit: ^Ui_Audit) {
 		audit_case(audit, {name = fmt.tprintf("%s touch row", touch_case.name), screens = touch_case.screens, hud = touch_case.screens[0] != .Title, tab_next = touch_case.tab_next, keyboard = touch_case.keyboard, system_keyboard = touch_case.system_keyboard, touch = true})
 	}
 	audit_case(audit, {name = "hud touch", hud = true, touch = true})
+	audit_case(audit, {name = "pause, split screen guest", screens = {.Pause}, split_screen_guest = true, walk_focus = true})
+	audit_case(audit, {name = "pause, split screen guest joining", screens = {.Pause}, split_screen_guest = true, waiting_for_player = true, walk_focus = true})
+	audit_case(audit, {name = "hud, split screen pad lost", hud = true, notice = "viewport_pad_lost"})
 	simulation := &audit.simulation
 	for &assembler in simulation.world.entities.assemblers.entries {
 		if assembler.alive && audit.content.machines.machines[assembler.machine].recipe_choice != .Fixed {

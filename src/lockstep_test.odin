@@ -27,7 +27,7 @@ make_lockstep_test_machine :: proc(content: Simulation_Content, generator: ^Gene
 	append(&machine.simulation.players, make_player(player_start_on(LOCKSTEP_TEST_SECOND_PLAYER)))
 	machine.lockstep = make_single_player_lockstep(machine.simulation.tick, player_start_on({}))
 	set_lockstep_member(&machine.lockstep, 1, Lockstep_Member{joined_tick = 0, left_tick = NEVER_TICK})
-	machine.lockstep.local_player = local_player
+	machine.lockstep.locals[0].player = local_player
 	machine.lockstep.window = window
 	return machine
 }
@@ -96,7 +96,7 @@ run_lockstep_test_ticks :: proc(machine: ^Lockstep_Test_Machine, content: Simula
 
 // Each player its own input, and now and then a command.
 lockstep_test_input :: proc(machine: ^Lockstep_Test_Machine, frame: int) -> Input_Frame {
-	player := machine.lockstep.local_player
+	player := lockstep_local_player(machine.lockstep)
 	if frame % 50 == 7 {
 		queue_player_command(&machine.simulation.player_commands, player, Hotbar_Slot_Command{slot = (frame / 50 + player) % HOTBAR_SLOT_COUNT})
 	}
@@ -221,8 +221,8 @@ test_the_prediction_matches_and_is_reconciled :: proc(t: ^testing.T) {
 	}
 	testing.expect(t, !stamp_local_record(&machine.lockstep, machine.simulation.tick, walk))
 	rebuild_prediction(&machine.lockstep, &machine.simulation, content)
-	testing.expect(t, machine.lockstep.predicting)
-	predicted := lockstep_view_player(&machine.lockstep, &machine.simulation).position
+	testing.expect(t, machine.lockstep.locals[0].predicting)
+	predicted := lockstep_view_player(&machine.lockstep, &machine.simulation, 0).position
 	start := machine.simulation.players[0].position
 	testing.expect(t, predicted != start)
 	// The inputs match: the remote player only stands.
@@ -234,7 +234,7 @@ test_the_prediction_matches_and_is_reconciled :: proc(t: ^testing.T) {
 	testing.expect_value(t, machine.simulation.tick, 4)
 	testing.expect_value(t, machine.simulation.players[0].position, predicted)
 	rebuild_prediction(&machine.lockstep, &machine.simulation, content)
-	testing.expect_value(t, lockstep_view_player(&machine.lockstep, &machine.simulation).position, predicted)
+	testing.expect_value(t, lockstep_view_player(&machine.lockstep, &machine.simulation, 0).position, predicted)
 
 	// The remote player turns cheat speed on in tick 5, which the
 	// prediction does not know: it falls behind the confirmed walk, and the
@@ -243,7 +243,7 @@ test_the_prediction_matches_and_is_reconciled :: proc(t: ^testing.T) {
 		stamp_local_record(&machine.lockstep, machine.simulation.tick, walk)
 	}
 	rebuild_prediction(&machine.lockstep, &machine.simulation, content)
-	predicted = lockstep_view_player(&machine.lockstep, &machine.simulation).position
+	predicted = lockstep_view_player(&machine.lockstep, &machine.simulation, 0).position
 	relay_in_process([]^Lockstep_Test_Machine{machine})
 	cheat := Input_Record{tick = 5, player = 1}
 	append(&cheat.commands, Developer_Request{action = .Toggle_Cheat_Speed})
@@ -255,7 +255,7 @@ test_the_prediction_matches_and_is_reconciled :: proc(t: ^testing.T) {
 	confirmed := machine.simulation.players[0].position
 	testing.expect(t, confirmed != predicted)
 	rebuild_prediction(&machine.lockstep, &machine.simulation, content)
-	testing.expect_value(t, lockstep_view_player(&machine.lockstep, &machine.simulation).position, confirmed)
+	testing.expect_value(t, lockstep_view_player(&machine.lockstep, &machine.simulation, 0).position, confirmed)
 }
 
 // Single player has a window of zero: no prediction, the confirmed player.
@@ -268,7 +268,7 @@ test_a_window_of_zero_predicts_nothing :: proc(t: ^testing.T) {
 	testing.expect(t, stamp_local_record(&lockstep, simulation.tick, Input_Frame{move = {0, 1}}))
 	testing.expect(t, !stamp_local_record(&lockstep, simulation.tick, Input_Frame{move = {0, 1}}))
 	rebuild_prediction(&lockstep, &simulation, content)
-	testing.expect(t, !lockstep.predicting)
+	testing.expect(t, !lockstep.locals[0].predicting)
 	testing.expect_value(t, latency_window_ticks(0, 60), 1)
 	testing.expect_value(t, latency_window_ticks(0.05, 60), 4)
 }
@@ -324,7 +324,7 @@ test_a_tick_command_applies_the_held_local_commands :: proc(t: ^testing.T) {
 	release_local_commands(&lockstep, &simulation)
 	run_command_tick(&simulation, content, &control)
 	testing.expect_value(t, simulation.players[0].selected_hotbar_slot, 6)
-	testing.expect_value(t, len(lockstep.local_commands), 0)
+	testing.expect_value(t, len(lockstep.locals[0].commands), 0)
 }
 
 // A socket line runs where the commands apply, after the simulated chunk
@@ -355,4 +355,81 @@ run_one_local_tick :: proc(machine: ^Lockstep_Test_Machine, content: Simulation_
 	stamp_local_record(&machine.lockstep, machine.simulation.tick, {})
 	deliver_outgoing_locally(&machine.lockstep, machine.simulation.tick)
 	run_lockstep_test_ticks(machine, content)
+}
+
+// Three players on the save test's site, each its own input; the
+// machine's local players by index (split screen, 0178).
+make_split_screen_test_machine :: proc(content: Simulation_Content, generator: ^Generator, local_players: []int) -> ^Lockstep_Test_Machine {
+	machine := make_lockstep_test_machine(content, generator, local_players[0], 2)
+	append(&machine.simulation.players, make_player(player_start_on({8, 0, -20})))
+	set_lockstep_member(&machine.lockstep, 2, Lockstep_Member{joined_tick = 0, left_tick = NEVER_TICK})
+	for player in local_players[1:] {
+		add_local_member(&machine.lockstep, player, machine.lockstep.locals[0].first_tick)
+	}
+	return machine
+}
+
+// The input of a player in a frame, whichever machine stamps it.
+split_screen_test_input :: proc(simulation: ^Simulation_State, player, frame: int) -> Input_Frame {
+	if frame % 40 == 11 {
+		queue_player_command(&simulation.player_commands, player, Hotbar_Slot_Command{slot = (frame / 40 + player) % HOTBAR_SLOT_COUNT})
+	}
+	return recorded_input(frame + 97 * player)
+}
+
+// Frames of machines: every local player of every machine stamps its
+// record, the records go round, the ready ticks run.
+run_split_screen_test :: proc(machines: []^Lockstep_Test_Machine, content: Simulation_Content, ticks: u64) {
+	for frame := 0; frame < 5000; frame += 1 {
+		done := true
+		for machine in machines {
+			done &&= machine.simulation.tick >= ticks
+		}
+		if done {
+			return
+		}
+		for machine in machines {
+			for local, index in machine.lockstep.locals {
+				input := split_screen_test_input(&machine.simulation, local.player, frame)
+				hold_local_commands(&machine.lockstep, &machine.simulation)
+				stamp_local_record(&machine.lockstep, machine.simulation.tick, input, index)
+			}
+		}
+		relay_in_process(machines)
+		for machine in machines {
+			run_lockstep_test_ticks(machine, content)
+		}
+	}
+}
+
+// Two local players on one machine and one on another keep the state hash
+// of three machines with one local player each fed the same inputs: how
+// many viewports feed a machine changes nothing a tick reads.
+@(test)
+test_two_local_members_keep_the_hash_of_one_member_machines :: proc(t: ^testing.T) {
+	content := make_save_test_content()
+	generator := make_test_generator(DEFAULT_WORLD_SEED)
+	couch := make_split_screen_test_machine(content, &generator, {0, 1})
+	defer destroy_lockstep_test_machine(couch)
+	remote := make_split_screen_test_machine(content, &generator, {2})
+	defer destroy_lockstep_test_machine(remote)
+	split := [?]^Lockstep_Test_Machine{couch, remote}
+	run_split_screen_test(split[:], content, 600)
+	singles: [3]^Lockstep_Test_Machine
+	for &machine, player in singles {
+		machine = make_split_screen_test_machine(content, &generator, {player})
+	}
+	defer for machine in singles {
+		destroy_lockstep_test_machine(machine)
+	}
+	run_split_screen_test(singles[:], content, 600)
+	testing.expect_value(t, couch.simulation.tick, remote.simulation.tick)
+	for machine in singles {
+		testing.expect_value(t, machine.simulation.tick, couch.simulation.tick)
+		testing.expect_value(t, lockstep_state_hash(&machine.simulation), lockstep_state_hash(&couch.simulation))
+	}
+	testing.expect_value(t, lockstep_state_hash(&remote.simulation), lockstep_state_hash(&couch.simulation))
+	testing.expect(t, couch.simulation.players[1].position != couch.simulation.players[0].position)
+	start := make_player(player_start_on(LOCKSTEP_TEST_SECOND_PLAYER)).position
+	testing.expect(t, couch.simulation.players[1].position != start)
 }

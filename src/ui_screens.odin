@@ -11,14 +11,16 @@ SETTINGS_PANEL_WIDTH :: 960
 // Title, tabs, the longest tab's rows and the back button. The tabs
 // scroll where the panel is shorter (UI scale 1.5).
 SETTINGS_ROW_COUNT :: 14
-DISPLAY_SETTINGS_ROW_COUNT :: 17
+DISPLAY_SETTINGS_ROW_COUNT :: 18
 AUDIO_SETTINGS_ROW_COUNT :: 3
 CONTROL_SETTINGS_ROW_COUNT :: 5
 ACCESSIBILITY_SETTINGS_ROW_COUNT :: 10
 
 // What a screen asks of the frame loop, which takes each member between
 // frames (Take_Screenshot inside render_frame, after the UI pass), in the
-// order doc/architecture.md (Frame and tick) gives.
+// order doc/architecture.md (Frame and tick) gives. Each viewport has its
+// own set (split screen, 0178): Reload_Data and Quit belong to the game
+// and serve once, the rest serve the viewport that asked.
 // Declared beside Screen_Context, which hands the set to the screens: the
 // clusters below the loop may not name the loop's types.
 Frame_Request :: enum u8 {
@@ -32,6 +34,9 @@ Frame_Request :: enum u8 {
 	Open_Data_File,
 	Write_Touch_Layouts,
 	Take_Screenshot,
+	// A split screen guest's pause menu: its viewport and local player
+	// leave, after the frame's draw.
+	Remove_Viewport,
 	Reload_Data,
 	Quit,
 }
@@ -55,8 +60,16 @@ Screen_Context :: struct {
 	font_families:   []Font_Family,
 	// The effective bindings, shown read only.
 	bindings:        []Binding,
-	// The frame loop's request set (Frame_Request).
+	// The viewport's request set (Frame_Request).
 	requests:        ^Frame_Requests,
+	// The screens run in a split screen viewport other than the first
+	// (0178): the pause menu leaves split screen instead of quitting.
+	split_screen_guest: bool,
+	// A world is played but the viewport's player has no entry yet (its
+	// join tick has not run): player, world and records are nil, so only
+	// the pause menu (Resume, Settings, Leave split screen) and the settings
+	// run (WAITING_PLAYER_SCREENS).
+	waiting_for_player: bool,
 	// Nil without a world. On the session, not in requests: the frame's
 	// ticks take it (save_when_due).
 	save_requested:  ^bool,
@@ -200,6 +213,9 @@ run_screens :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		state.focus = 0
 		state.active_slot = {}
 	}
+	if screen_context.waiting_for_player {
+		keep_waiting_player_screens(&state.screens)
+	}
 	screen := top_screen(state.screens)
 	// Read before the screen runs: the B press that closes the keyboard
 	// must not also close the screen.
@@ -249,6 +265,9 @@ run_screens :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	if !typing {
 		handle_screen_keys(state)
 	}
+	if screen_context.waiting_for_player {
+		keep_waiting_player_screens(&state.screens)
+	}
 	if screen_context.player != nil {
 		close_slot_screens(state, screen_context)
 	}
@@ -293,8 +312,10 @@ close_slot_screens :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 pause_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	ui_backdrop(state)
 	area := ui_panel_area(state)
-	developer := screen_context.developer.enabled || (screen_context.settings != nil && screen_context.settings.developer_mode)
-	button_count := developer ? 9 : 8
+	waiting := screen_context.waiting_for_player
+	developer := !waiting && (screen_context.developer.enabled || (screen_context.settings != nil && screen_context.settings.developer_mode))
+	guest := screen_context.split_screen_guest
+	button_count := (developer ? 9 : 8) - (guest ? 1 : 0) - (waiting ? 4 : 0)
 	// The title row and the build stamp row besides the buttons; below the
 	// title the rows scroll when the panel is clamped to the safe area.
 	panel := fitted_panel(area, PAUSE_PANEL_WIDTH, panel_height(button_count, 2 * (UI_ROW_HEIGHT + UI_GAP)))
@@ -307,29 +328,9 @@ pause_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		state.screens.count = 0
 	}
 	cut_top(&content, UI_GAP)
-	// The journal replaces the pause menu, so the factory keeps running.
-	if ui_button(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_journal")) {
-		state.screens.count = 0
-		push_screen(&state.screens, .Journal)
+	if !waiting {
+		pause_world_buttons(state, &content, screen_context)
 	}
-	cut_top(&content, UI_GAP)
-	// Nor does the power overview.
-	if ui_button(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_power")) {
-		state.screens.count = 0
-		push_screen(&state.screens, .Power)
-	}
-	cut_top(&content, UI_GAP)
-	// Nor do the production statistics.
-	if ui_button(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_statistics")) {
-		state.screens.count = 0
-		push_screen(&state.screens, .Statistics)
-	}
-	cut_top(&content, UI_GAP)
-	// The frame loop writes the save after this frame's ticks and toasts.
-	if ui_button(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_save")) && screen_context.save_requested != nil {
-		screen_context.save_requested^ = true
-	}
-	cut_top(&content, UI_GAP)
 	if ui_button(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_settings")) {
 		push_screen(&state.screens, .Settings)
 	}
@@ -340,22 +341,73 @@ pause_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		}
 		cut_top(&content, UI_GAP)
 	}
-	// Both quits save first: the frame loop after this frame, the exit
-	// path in run_game.
-	if ui_button(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_quit_title")) {
-		screen_context.title.request = {kind = .Quit_To_Title}
+	if guest {
+		// The guest's player stays in the world for a later join.
+		if ui_button(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_leave_split_screen"), text("pause_leave_split_screen_tooltip")) {
+			screen_context.requests^ += {.Remove_Viewport}
+		}
+		cut_top(&content, UI_GAP)
+	} else {
+		// Both quits save first: the frame loop after this frame, the exit
+		// path in run_game.
+		if ui_button(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_quit_title")) {
+			screen_context.title.request = {kind = .Quit_To_Title}
+		}
+		cut_top(&content, UI_GAP)
+		if ui_button(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_quit")) {
+			screen_context.requests^ += {.Quit}
+		}
+		cut_top(&content, UI_GAP)
 	}
-	cut_top(&content, UI_GAP)
-	if ui_button(state, cut_top(&content, UI_ROW_HEIGHT), text("pause_quit")) {
-		screen_context.requests^ += {.Quit}
-	}
-	cut_top(&content, UI_GAP)
 	// Which build this is, for bug reports from the couch.
 	draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), BUILD_STAMP, UI_BODY_TEXT_SIZE, .Centre, UI_DIM_TEXT_COLOR)
 	scroll_region_end(state, region)
 	ui_panel_end(state)
 	hints := [?]Glyph_Hint{{.Confirm, text("hint_select")}, {.Back, text("hint_resume")}}
 	ui_glyph_bar_or_back_row(state, hints[:])
+}
+
+// The pause menu's rows that read the player's world: the journal, the
+// power overview, the statistics and the save.
+pause_world_buttons :: proc(state: ^Ui_State, content: ^Ui_Rectangle, screen_context: Screen_Context) {
+	// The journal replaces the pause menu, so the factory keeps running.
+	if ui_button(state, cut_top(content, UI_ROW_HEIGHT), text("pause_journal")) {
+		state.screens.count = 0
+		push_screen(&state.screens, .Journal)
+	}
+	cut_top(content, UI_GAP)
+	// Nor does the power overview.
+	if ui_button(state, cut_top(content, UI_ROW_HEIGHT), text("pause_power")) {
+		state.screens.count = 0
+		push_screen(&state.screens, .Power)
+	}
+	cut_top(content, UI_GAP)
+	// Nor do the production statistics.
+	if ui_button(state, cut_top(content, UI_ROW_HEIGHT), text("pause_statistics")) {
+		state.screens.count = 0
+		push_screen(&state.screens, .Statistics)
+	}
+	cut_top(content, UI_GAP)
+	// The frame loop writes the save after this frame's ticks and toasts.
+	if ui_button(state, cut_top(content, UI_ROW_HEIGHT), text("pause_save")) && screen_context.save_requested != nil {
+		screen_context.save_requested^ = true
+	}
+	cut_top(content, UI_GAP)
+}
+
+// The screens a viewport waiting for its player's entry may show.
+WAITING_PLAYER_SCREENS :: bit_set[Screen]{.Pause, .Settings}
+
+// A waiting viewport's stack keeps only WAITING_PLAYER_SCREENS: any other
+// screen (a key opened it, or it was open when the wait began) needs the
+// player and goes, with everything above it.
+keep_waiting_player_screens :: proc(screens: ^Screen_Stack) {
+	for index in 0 ..< screens.count {
+		if screens.screens[index] not_in WAITING_PLAYER_SCREENS {
+			screens.count = index
+			return
+		}
+	}
 }
 
 multiplier_text :: proc(value: f32) -> string {
@@ -440,6 +492,9 @@ display_settings :: proc(state: ^Ui_State, content: ^Ui_Rectangle, settings: ^Se
 	ui_toggle(state, cut_row(content), text("settings_developer_mode"), &settings.developer_mode, text("settings_developer_mode_tooltip"))
 	font_choice(state, cut_row(content), "settings_font", &settings.font, font_families, false)
 	font_choice(state, cut_row(content), "settings_monospace_font", &settings.monospace_font, font_families, true)
+	if ui_choice(state, cut_row(content), text("settings_split_screen"), text(split_screen_layout_keys[settings.split_screen]), text("settings_split_screen_tooltip")) {
+		settings.split_screen = settings.split_screen == .Stacked ? .Side_By_Side : .Stacked
+	}
 }
 
 // Applied at once: the mixer reads the volumes every frame (update_audio).
@@ -645,6 +700,12 @@ touch_layout_rows :: proc(state: ^Ui_State, content: ^Ui_Rectangle, screen_conte
 	if ui_button(state, cut_row(content), text("settings_edit_touch_layout"), text("settings_edit_touch_layout_tooltip")) && layouts != nil && screen_context.touch_layout_editor != nil {
 		open_touch_layout_editor(state, screen_context.touch_layout_editor, layouts^, screen_context.default_touch_layout)
 	}
+}
+
+@(rodata)
+split_screen_layout_keys := [Split_Screen_Layout]string {
+	.Stacked      = "settings_split_screen_stacked",
+	.Side_By_Side = "settings_split_screen_side_by_side",
 }
 
 @(rodata)

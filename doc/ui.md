@@ -34,7 +34,7 @@ Rule: the UI lays out in render pixels, the framebuffer's `GetRenderWidth` by `G
 
 ### Screens
 
-Screens stack over the world and the HUD (`UI_SCREEN_STACK_CAPACITY` 8). Any open screen blocks the world's actions; a pausing screen anywhere in the stack also pauses the simulation (`screen_pauses_simulation`).
+Screens stack over the world and the HUD (`UI_SCREEN_STACK_CAPACITY` 8). Any open screen blocks the world's actions; a pausing screen anywhere in the stack also pauses the simulation (`screen_pauses_simulation`), in split screen only the first viewport's (0178).
 
 | Pause the simulation | Keep it running |
 | --- | --- |
@@ -42,7 +42,7 @@ Screens stack over the world and the HUD (`UI_SCREEN_STACK_CAPACITY` 8). Any ope
 
 - Back (B, Backspace) closes the top screen, first an open tooltip; Pause acts as Back over a screen. A screen's own key closes it (M, J). Open_Inventory closes the inventory, a machine panel, the recipes and technologies, except when the same press is the context action (the gamepad's X sorts).
 - A screen opened from the world focuses the widget it prefers (`ui_prefer_focus`), else its first (0094); the inventory and machine panels prefer the selected hotbar slot. The focus is forgotten on the first frame without a screen (`run_screens`); a screen pushed over another keeps it.
-- The pause menu: Resume, Journal, Power, Statistics, Save, Settings, Developer (developer mode), Quit to title, Quit.
+- The pause menu: Resume, Journal, Power, Statistics, Save, Settings, Developer (developer mode), Quit to title, Quit. A split screen guest's (any viewport but the first, 0178) has Leave split screen in place of the two quits, and its world runs on while it is open; one whose player's join tick has not run yet shows only Resume, Settings and Leave split screen, and no other screen opens there (`WAITING_PLAYER_SCREENS`).
 - Sounds go to `Ui_State.sound_events` for the frame loop: a move click when the focus moves between widgets (not the fallback on opening), a confirm click on an activation, a back click on Back over any screen but the title.
 
 ## Focus and navigation
@@ -140,9 +140,11 @@ Label, button, toggle (a switch whose knob slides over an eighth of a second), s
 | Case | Sizes and scales |
 | --- | --- |
 | Matrix | 1920 by 1080 and 1280 by 800 at UI scale 1.0, 1.2, 1.5; 2880 by 1920 at 1.0 |
+| Split screen | A quarter of 1080p (960 by 540) and the stacked half (1920 by 540) at 1.0; the side by side half (960 by 1080) at 0.5, the scale `viewport_ui_scale` gives it (0178). The UI follows the height, so 960 by 540 at 1.0 and 960 by 1080 at 0.5 lay out in the same units as 1920 by 1080 at 1.0: they check the pixel rounding, not a smaller layout. 1920 by 540 is the one new shape (32:9). Whether text at half the pixel size reads from the couch is the couch's to judge |
 | Text | Each size at text size 1.6 too, widths measured scaled, heights at the layout's size (0074) |
 | Deck | 1280 by 800 at UI scale and text size 1.1 (0076) |
 | Devices | Keyboard and gamepad glyphs, the touch row; also the longer panels with descriptions and a Notes tab with every note unlocked |
+| Viewports | A split screen guest's pause menu, also while its player joins, the HUD under a lost pad's notice (0178) |
 
 ## Settings
 
@@ -161,6 +163,7 @@ Tabs: Display, Audio, Controls, Accessibility, Bindings (the effective bindings,
 | | UI scale (`ui_scale`); Pointer speed (`pointer_speed`) | 0.75 to 1.5 by 0.05, 1; 0.5 to 3, 1.5 |
 | | Bottleneck overlay; Autosave (`autosave_minutes`) | Also O; Off to 60 minutes, 5 |
 | | Developer mode; Font, Diagnostics font (`font`, `monospace_font`) | [developer_tools.md](developer_tools.md); Text, below |
+| | Two player split (`split_screen`) | `stacked` (default, each player keeps the full width and so the field of view) or side by side (`Split_Screen_Layout`); three and four players take quarters (0178) |
 | Audio | Master, Effects, Ambience volume (`master_volume`, `effects_volume`, `ambience_volume`) | 0 to 1, shown as percent in steps of 5; 0.8, 1, 0.7 (0068) |
 | Controls | Gyro, stick, gyro and trackpad sensitivity, invert pitch | Sensitivities 0.25 to 3, 1 |
 | Accessibility | Text size (`text_scale`) | 0.8 to 1.6 by 0.1, 1 |
@@ -220,6 +223,7 @@ The browser's shape: a sorted list with the letter wheel and a "Hide researched"
 - **Journal**: the chapters, Contracts (credit, fulfilled and late tally, open contracts over the message log), Notes (0070: unlocked notes newest first with "n more to find" or "Every note found", the focused note on the right, "Nothing noted yet" without). After the last quest the last chapter starts with "Contracts continue". The log frames Mission Control's rows like its panel.
 - **Load**: name (marked "(other build, cannot load)"), seed, played, last saved; Delete beside Back (or X) acts on the last focused save, loadable or not.
 - **Title**: a sky coloured backdrop with name and version, since a world view would need a session.
+- **Split screen** (0178, [input.md](input.md), Split screen): every viewport runs its own HUD and screens in its rectangle, laid out at the viewport's size like a screen of its own; the UI follows the height, so a quarter of 1080p lays out as 1080p at half the pixels, and a viewport narrower than 16:9 scales its UI down until the 16:9 layout fits its width (`viewport_ui_scale`). A guest's pause menu is under Architecture, Screens. A viewport whose pad was lost shows "Controller lost: press Start" over its HUD, and one whose player's join tick has not run shows "Joining". The touch overlay draws only while one viewport plays.
 
 ### Touch layout editor
 

@@ -10,9 +10,15 @@ Sdl3_Input_State :: struct {}
 
 init_sdl3_input :: proc() -> (ok: bool, error_message: string) {return false, "no SDL on Android"}
 
-read_sdl3_input_frame :: proc(state: ^Sdl3_Input_State, previous: Input_Frame, frame_seconds: f32, settings: Settings, bindings: Input_Bindings, overlay: Touch_Overlay_Frame) -> Input_Frame {return previous}
+read_sdl3_input_frame :: proc(state: ^Sdl3_Input_State, gamepad: u32, keyboard_mouse: bool, previous: Input_Frame, frame_seconds: f32, settings: Settings, bindings: Input_Bindings, overlay: Touch_Overlay_Frame) -> Input_Frame {return previous}
 
-apply_sdl3_haptics :: proc(state: ^Sdl3_Input_State, request: Haptic_Request) {}
+poll_sdl3_events :: proc(state: ^Sdl3_Input_State) -> []u32 {return nil}
+
+sdl3_pad_ids :: proc(state: ^Sdl3_Input_State) -> []u32 {return nil}
+
+sdl3_unowned_pad_presses :: proc(state: ^Sdl3_Input_State, id: u32, bindings: Input_Bindings) -> (pressed, just_pressed: Action_Set) {return {}, {}}
+
+apply_sdl3_haptics :: proc(state: ^Sdl3_Input_State, gamepad: u32, request: Haptic_Request) {}
 
 shutdown_sdl3_input :: proc(state: ^Sdl3_Input_State) {}
 

@@ -326,7 +326,8 @@ test_assertion_failure_text :: proc(t: ^testing.T) {
 // toggles it.
 @(test)
 test_world_overlay_starts_off_and_toggles :: proc(t: ^testing.T) {
-	state: Frame_State
+	state := new(Frame_State)
+	defer free(state)
 	testing.expect(t, !state.developer.show_world_overlay)
 	state.developer.show_world_overlay = toggle_on_press(state.developer.show_world_overlay, {.Toggle_World_Overlay}, .Toggle_World_Overlay)
 	testing.expect(t, state.developer.show_world_overlay)

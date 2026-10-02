@@ -30,6 +30,9 @@ Settings :: struct {
 	// The first person camera rises and falls with each step (work item
 	// 0066); off for reduced motion.
 	head_bob:                  bool,
+	// Two players in split screen (viewport.odin, work item 0178): one
+	// above the other, or side by side. Three and four take quarters.
+	split_screen:              Split_Screen_Layout,
 	// Sound (audio.odin, work item 0068), 0 to 1 each: the master volume
 	// scales everything, the effects volume the short sounds, the
 	// ambience volume the loops (biome ambience, rain, the machine hum).
@@ -105,6 +108,13 @@ On_Screen_Keyboard :: enum u8 {
 	Game,
 }
 
+// Stacked keeps a 16:9 screen's full width for each of two players, so
+// the field of view stays as wide as at full screen.
+Split_Screen_Layout :: enum u8 {
+	Stacked,
+	Side_By_Side,
+}
+
 // Hold acts while the button is held, Toggle switches on a press.
 Hold_Mode :: enum u8 {
 	Toggle,
@@ -126,6 +136,7 @@ DEFAULT_SETTINGS :: Settings {
 	third_person_shoulder     = 0.6,
 	weather                   = true,
 	head_bob                  = true,
+	split_screen              = .Stacked,
 	master_volume             = 0.8,
 	effects_volume            = 1,
 	ambience_volume           = 0.7,

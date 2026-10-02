@@ -28,8 +28,7 @@ Server_State :: struct {
 // waits for a client to take it (joining_player_index).
 make_server_lockstep :: proc(session: ^Session) -> Lockstep {
 	lockstep := Lockstep {
-		local_player = NO_PLAYER,
-		spawn        = session.start.player,
+		spawn = session.start.player,
 	}
 	for _ in session.simulation.players {
 		append(&lockstep.members, Lockstep_Member{joined_tick = NEVER_TICK, left_tick = NEVER_TICK})

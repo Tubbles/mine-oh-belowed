@@ -1,6 +1,6 @@
 # 0178: Viewports: up to four local players on one screen
 
-Status: todo (after 0177)
+Status: implemented
 
 ## Goal
 

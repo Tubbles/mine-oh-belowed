@@ -94,7 +94,7 @@ Rule: a tile never repeats identically from block to block (0088). `texture_vari
 
 `cues.odin` (0162).
 
-- Once a frame, before the player's animation, `observe_cue_counters` reads the counters of the local player and the records, and `detect_cues` compares them with `Cue_Memory` (the last frame's): the walked distance, the placed counters (`placed_total`), `blocks_mined`, the dig (`Mining_State`) and the block now at its cell, the blocks at and under the feet, the launching pads, the shipments and the quest messages.
+- Once a frame per viewport (split screen, 0178), before the player's animation, `observe_cue_counters` reads the counters of the viewport's player and the records, and `detect_cues` compares them with `Cue_Memory` (the last frame's): the walked distance, the placed counters (`placed_total`), `blocks_mined`, the dig (`Mining_State`) and the block now at its cell, the blocks at and under the feet, the launching pads, the shipments and the quest messages.
 - It returns `Frame_Cues`: a bit set of `Cue` (footstep, place, block break, dig break with its cell and block, dig quarter, launch, shipment, discovery, survey) and the walk (cadence distance, moving) with the blocks at the feet.
 - The first frame of a session only learns the counters, so a loaded world neither steps, swings, chimes nor drops a capsule.
 - The walk is followed per tick, not per frame, so a display faster than the tick rate neither stops the walk every other frame nor steps twice: a footstep fires once per half walk cycle of the cadence distance, which counts each tick's walk divided by the cheat speed factor, so the cheat never quickens steps or bob (`WALK_CYCLE_MILLIMETRES`).

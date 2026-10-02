@@ -25,16 +25,31 @@ STEAM_CONTROLLER_LEFT_GRIP_TOUCH :: sdl.GamepadButton.MISC5
 STEAM_CONTROLLER_RIGHT_GRIP_TOUCH :: sdl.GamepadButton.MISC6
 STEAM_CONTROLLER_RIGHT_PAD_CLICK :: sdl.GamepadButton.MISC2
 
-Sdl3_Input_State :: struct {
+// The gamepads open at once: one per split screen viewport (0178) and a
+// few waiting to join.
+SDL3_GAMEPAD_CAPACITY :: 8
+
+// An open gamepad: its SDL id (the JoystickID, which a pad plugged in
+// again gets anew), its rumble and its gyro calibration.
+Sdl3_Gamepad_Slot :: struct {
 	gamepad:          ^sdl.Gamepad,
+	id:               u32,
 	// A rumble was started and not yet stopped.
 	rumbling:         bool,
 	gyro_calibration: Gyro_Calibration,
+	// The actions its buttons held last frame while no viewport read it,
+	// for the press that claims it (sdl3_unowned_pad_presses).
+	unowned_pressed:  Action_Set,
+}
+
+Sdl3_Input_State :: struct {
+	pads:        [SDL3_GAMEPAD_CAPACITY]Sdl3_Gamepad_Slot,
+	pad_count:   int,
 	// Steam Input runs beside the game (Game Mode): Steam and SDL both set
 	// the controller's IMU mode with no arbitration, so SDL's gyro reads
 	// whatever layout Steam left. The view then takes the gyro from Steam's
 	// layout as mouse movement and ignores SDL's (couch test 1).
-	steam_layer:      bool,
+	steam_layer: bool,
 }
 
 // Returns an SDL error message when initialisation fails.
@@ -99,17 +114,24 @@ steam_input_environment_text :: proc(ignore_devices, virtual_gamepad_info: strin
 }
 
 shutdown_sdl3_input :: proc(state: ^Sdl3_Input_State) {
-	close_sdl3_gamepad(state)
+	for state.pad_count > 0 {
+		close_sdl3_gamepad(state, state.pad_count - 1)
+	}
 	sdl.Quit()
 }
 
 open_sdl3_gamepad :: proc(state: ^Sdl3_Input_State, id: sdl.JoystickID) {
+	if state.pad_count == SDL3_GAMEPAD_CAPACITY {
+		platform.log_printf("input: gamepad %d left closed, %d are open", id, SDL3_GAMEPAD_CAPACITY)
+		return
+	}
 	gamepad := sdl.OpenGamepad(id)
 	if gamepad == nil {
 		platform.log_printf("input: cannot open gamepad %d: %s", id, sdl.GetError())
 		return
 	}
-	state.gamepad = gamepad
+	state.pads[state.pad_count] = Sdl3_Gamepad_Slot{gamepad = gamepad, id = u32(id)}
+	state.pad_count += 1
 	state.steam_layer = os.get_env("SteamVirtualGamepadInfo", context.temp_allocator) != ""
 	if state.steam_layer {
 		platform.log_printf("input: Steam's layer runs beside the game, the gyro comes from its layout as mouse movement, SDL's gyro is ignored")
@@ -140,15 +162,29 @@ enable_sdl3_sensor :: proc(gamepad: ^sdl.Gamepad, type: sdl.SensorType) {
 	}
 }
 
-close_sdl3_gamepad :: proc(state: ^Sdl3_Input_State) {
-	if state.gamepad != nil {
-		sdl.CloseGamepad(state.gamepad)
-		state.gamepad = nil
+close_sdl3_gamepad :: proc(state: ^Sdl3_Input_State, index: int) {
+	sdl.CloseGamepad(state.pads[index].gamepad)
+	for after in index + 1 ..< state.pad_count {
+		state.pads[after - 1] = state.pads[after]
 	}
+	state.pad_count -= 1
+	state.pads[state.pad_count] = {}
 }
 
-// SDL reports gamepads present at start up as added events too.
-poll_sdl3_events :: proc(state: ^Sdl3_Input_State) {
+// The open pad of the id, nil for 0 or a pad no longer open.
+find_sdl3_pad :: proc(state: ^Sdl3_Input_State, id: u32) -> ^Sdl3_Gamepad_Slot {
+	for index in 0 ..< state.pad_count {
+		if id != 0 && state.pads[index].id == id {
+			return &state.pads[index]
+		}
+	}
+	return nil
+}
+
+// SDL reports gamepads present at start up as added events too. Returns
+// the ids of the pads removed, in the temp allocator.
+poll_sdl3_events :: proc(state: ^Sdl3_Input_State) -> []u32 {
+	removed := make([dynamic]u32, context.temp_allocator)
 	event: sdl.Event
 	for sdl.PollEvent(&event) {
 		#partial switch event.type {
@@ -157,16 +193,43 @@ poll_sdl3_events :: proc(state: ^Sdl3_Input_State) {
 		case .JOYSTICK_REMOVED:
 			platform.log_printf("input: joystick %d removed", event.jdevice.which)
 		case .GAMEPAD_ADDED:
-			if state.gamepad == nil {
+			if find_sdl3_pad(state, u32(event.gdevice.which)) == nil {
 				open_sdl3_gamepad(state, event.gdevice.which)
 			}
 		case .GAMEPAD_REMOVED:
-			if state.gamepad != nil && sdl.GetGamepadID(state.gamepad) == event.gdevice.which {
-				platform.log_printf("input: gamepad %d removed", event.gdevice.which)
-				close_sdl3_gamepad(state)
+			for index in 0 ..< state.pad_count {
+				if state.pads[index].id == u32(event.gdevice.which) {
+					platform.log_printf("input: gamepad %d removed", event.gdevice.which)
+					close_sdl3_gamepad(state, index)
+					append(&removed, u32(event.gdevice.which))
+					break
+				}
 			}
 		}
 	}
+	return removed[:]
+}
+
+// The ids of the open pads, in the temp allocator.
+sdl3_pad_ids :: proc(state: ^Sdl3_Input_State) -> []u32 {
+	ids := make([]u32, state.pad_count, context.temp_allocator)
+	for index in 0 ..< state.pad_count {
+		ids[index] = state.pads[index].id
+	}
+	return ids
+}
+
+// The actions a pad no viewport reads pressed this frame, for the press
+// that claims it (pad_claim in viewport.odin).
+sdl3_unowned_pad_presses :: proc(state: ^Sdl3_Input_State, id: u32, bindings: Input_Bindings) -> (pressed, just_pressed: Action_Set) {
+	slot := find_sdl3_pad(state, id)
+	if slot == nil {
+		return {}, {}
+	}
+	pressed = gamepad_button_actions(read_sdl3_gamepad(slot.gamepad), bindings)
+	just_pressed = actions_just_pressed(slot.unowned_pressed, pressed)
+	slot.unowned_pressed = pressed
+	return pressed, just_pressed
 }
 
 read_sdl3_sensor :: proc(gamepad: ^sdl.Gamepad, type: sdl.SensorType) -> Raw_Sensor {
@@ -263,21 +326,33 @@ calibrate_frame_gyro :: proc(calibration: ^Gyro_Calibration, gamepad: ^Raw_Gamep
 	gyro.bias, gyro.settled = calibration.bias, calibration.settled
 }
 
-// The touch overlay's gamepad joins the physical one after the gyro's
-// calibration (touch_overlay.odin), so --touch-overlay works on this
-// backend too.
-read_sdl3_input_frame :: proc(state: ^Sdl3_Input_State, previous: Input_Frame, frame_seconds: f32, settings: Settings, bindings: Input_Bindings, overlay: Touch_Overlay_Frame) -> Input_Frame {
-	poll_sdl3_events(state)
+// One viewport's frame (0178): the pad of the id (0 for none) and, for the
+// first viewport, the keyboard, the mouse and the touch overlay, whose
+// gamepad joins the physical one after the gyro's calibration
+// (touch_overlay.odin), so --touch-overlay works on this backend too. The
+// events are polled once a frame before (poll_sdl3_events).
+read_sdl3_input_frame :: proc(state: ^Sdl3_Input_State, gamepad: u32, keyboard_mouse: bool, previous: Input_Frame, frame_seconds: f32, settings: Settings, bindings: Input_Bindings, overlay: Touch_Overlay_Frame) -> Input_Frame {
+	slot := find_sdl3_pad(state, gamepad)
 	raw := Raw_Input {
-		backend  = .Sdl3,
-		gamepad  = read_sdl3_gamepad(state.gamepad),
-		mouse    = touch_overlay_mouse(read_raylib_mouse(), overlay),
-		keyboard = read_raylib_keyboard(),
+		backend = .Sdl3,
+		gamepad = read_sdl3_gamepad(slot != nil ? slot.gamepad : nil),
 	}
-	calibrate_frame_gyro(&state.gyro_calibration, &raw.gamepad)
+	if keyboard_mouse {
+		raw.mouse, raw.keyboard = touch_overlay_mouse(read_raylib_mouse(), overlay), read_raylib_keyboard()
+	}
+	if slot != nil {
+		calibrate_frame_gyro(&slot.gyro_calibration, &raw.gamepad)
+		slot.unowned_pressed = {}
+	}
 	raw.gamepad.motion.gyro_source = state.steam_layer ? .Steam : .Sdl
 	raw.gamepad = touch_overlay_gamepad(raw.gamepad, overlay, .Sdl3)
-	move := clamp_to_unit_length(sdl3_stick(raw.gamepad, .LEFTX, .LEFTY) + keyboard_move())
+	move := sdl3_stick(raw.gamepad, .LEFTX, .LEFTY)
+	keys: Action_Set
+	if keyboard_mouse {
+		move += keyboard_move()
+		keys = keyboard_mouse_actions(bindings, overlay)
+	}
+	move = clamp_to_unit_length(move)
 	look := sdl3_stick(raw.gamepad, .RIGHTX, .RIGHTY)
 	look_delta := pointer_look_delta(raw.mouse.delta, overlay) + sdl3_look_delta(previous.raw.gamepad, raw.gamepad, frame_seconds, settings, !state.steam_layer)
 	wheel_actions := mouse_wheel_actions(raw.mouse.wheel, bindings)
@@ -285,7 +360,7 @@ read_sdl3_input_frame :: proc(state: ^Sdl3_Input_State, previous: Input_Frame, f
 		gamepad_button_actions(raw.gamepad, bindings) +
 		gamepad_trigger_actions(raw.gamepad, bindings) +
 		trackpad_actions(raw.gamepad, bindings) +
-		keyboard_mouse_actions(bindings, overlay) +
+		keys +
 		analog_actions(move, look, look_delta) +
 		wheel_actions
 	return Input_Frame {
@@ -298,23 +373,23 @@ read_sdl3_input_frame :: proc(state: ^Sdl3_Input_State, previous: Input_Frame, f
 	}
 }
 
-// Both motors at the requested strength, renewed every frame; a request
-// of 0 stops a running rumble once.
-apply_sdl3_haptics :: proc(state: ^Sdl3_Input_State, request: Haptic_Request) {
-	if state.gamepad == nil {
-		state.rumbling = false
+// The pad's motors at the requested strength, renewed every frame; a
+// request of 0 stops a running rumble once.
+apply_sdl3_haptics :: proc(state: ^Sdl3_Input_State, gamepad: u32, request: Haptic_Request) {
+	slot := find_sdl3_pad(state, gamepad)
+	if slot == nil {
 		return
 	}
 	if request.strength <= 0 {
-		if state.rumbling {
-			sdl.RumbleGamepad(state.gamepad, 0, 0, 0)
-			state.rumbling = false
+		if slot.rumbling {
+			sdl.RumbleGamepad(slot.gamepad, 0, 0, 0)
+			slot.rumbling = false
 		}
 		return
 	}
 	level := rumble_level(request.strength)
-	sdl.RumbleGamepad(state.gamepad, level, level, HAPTIC_RUMBLE_MILLISECONDS)
-	state.rumbling = true
+	sdl.RumbleGamepad(slot.gamepad, level, level, HAPTIC_RUMBLE_MILLISECONDS)
+	slot.rumbling = true
 }
 
 // The right pad click as a pointer click, separate from the actions it is

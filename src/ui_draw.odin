@@ -11,11 +11,18 @@ import "shared:raylib/rlgl"
 // multiplies the box by the window's DPI scale under the high DPI flag,
 // which would clip a UI already laid out in render pixels at the wrong
 // place; rlgl takes the box as it is, with the origin at the bottom.
-// rl.EndScissorMode ends it.
-begin_render_pixel_scissor :: proc(box: rl.Rectangle) {
+// rl.EndScissorMode ends it. target_height is the height of the target
+// drawn into: the window, or a split screen viewport's render texture
+// (0178), whose bottom is the origin there.
+begin_render_pixel_scissor :: proc(box: rl.Rectangle, target_height: i32) {
 	rlgl.DrawRenderBatchActive()
 	rlgl.EnableScissorTest()
-	rlgl.Scissor(i32(box.x), rl.GetRenderHeight() - i32(box.y) - i32(box.height), i32(box.width), i32(box.height))
+	rlgl.Scissor(i32(box.x), target_height - i32(box.y) - i32(box.height), i32(box.width), i32(box.height))
+}
+
+// The UI's screen in render pixels: the target its draw list goes to.
+ui_target_height :: proc(state: Ui_State) -> i32 {
+	return i32(state.screen_units.y * state.pixels_per_unit + 0.5)
 }
 
 to_pixels :: proc(rectangle: Ui_Rectangle, pixels_per_unit: f32) -> rl.Rectangle {
@@ -95,7 +102,7 @@ execute_image_command :: proc(command: Draw_Command, images: ^Ui_Image_Cache, pi
 	rl.DrawTexturePro(images.texture, source, to_pixels(command.rectangle, pixels_per_unit), {}, 0, rl.WHITE)
 }
 
-execute_draw_command :: proc(command: Draw_Command, focus: Ui_Id, atlas: Icon_Atlas, images: ^Ui_Image_Cache, fonts: ^Font_Cache, pixels_per_unit: f32) {
+execute_draw_command :: proc(command: Draw_Command, focus: Ui_Id, atlas: Icon_Atlas, images: ^Ui_Image_Cache, fonts: ^Font_Cache, pixels_per_unit: f32, target_height: i32) {
 	switch command.kind {
 	case .Fill:
 		rl.DrawRectangleRec(to_pixels(command.rectangle, pixels_per_unit), to_raylib_color(command.color))
@@ -108,7 +115,7 @@ execute_draw_command :: proc(command: Draw_Command, focus: Ui_Id, atlas: Icon_At
 	case .Text:
 		execute_text_command(command, fonts, pixels_per_unit)
 	case .Clip_Begin:
-		begin_render_pixel_scissor(to_pixels(command.rectangle, pixels_per_unit))
+		begin_render_pixel_scissor(to_pixels(command.rectangle, pixels_per_unit), target_height)
 	case .Clip_End:
 		rl.EndScissorMode()
 	case .Atlas_Tile:
@@ -136,6 +143,6 @@ execute_draw_command :: proc(command: Draw_Command, focus: Ui_Id, atlas: Icon_At
 
 execute_draw_list :: proc(state: Ui_State, atlas: Icon_Atlas, images: ^Ui_Image_Cache) {
 	for command in state.draw_list {
-		execute_draw_command(command, state.focus, atlas, images, state.fonts, state.pixels_per_unit)
+		execute_draw_command(command, state.focus, atlas, images, state.fonts, state.pixels_per_unit, ui_target_height(state))
 	}
 }

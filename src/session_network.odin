@@ -33,6 +33,13 @@ import "platform"
 //   machine and sent to every client. Play continues.
 // - Join_Refused: the joiner's build or content tables differ from the
 //   host's (Join_Request carries both); the reason, then the host drops it.
+// - Add_Local_Player and Local_Player_Added: a joined client asks for one
+//   more local player for a split screen viewport (work item 0178); the
+//   host takes an entry as for a join (joining_player_index), announces
+//   the member with Member_Change and answers with the player and its
+//   join tick. Remove_Local_Player: the client's extra local player
+//   leaves from the tick after its last relayed record. One connection
+//   carries every local player of a machine.
 //
 // Every machine pings each peer every NETWORK_KEEPALIVE_INTERVAL; a peer
 // from which no byte arrived for NETWORK_TIMEOUT is dropped (a client
@@ -54,6 +61,9 @@ Lockstep_Message_Kind :: enum u8 {
 	Hash_Report,
 	Hash_Mismatch,
 	Join_Refused,
+	Add_Local_Player,
+	Local_Player_Added,
+	Remove_Local_Player,
 }
 
 // The keepalive ping, and the silence after which a peer is dropped.
@@ -92,14 +102,21 @@ Player_Command_Tag :: enum u8 {
 	Developer,
 }
 
+// A player a client's machine drives, on the host: the newest tick
+// relayed for it and its join tick.
+Peer_Player :: struct {
+	player:      int,
+	last_tick:   u64,
+	joined_tick: u64,
+}
+
 // A client's connection on the host, or the host's on a client.
 Network_Peer :: struct {
 	connection:    platform.Network_Connection,
-	// The player it drives, NO_PLAYER until it joined.
-	player:        int,
-	// The newest tick relayed for its player, and its join tick.
-	last_tick:     u64,
-	joined_tick:   u64,
+	// The players its machine drives, none until it joined: the first
+	// from its join, the others its split screen viewports' (0178).
+	players:       [MAXIMUM_VIEWPORTS]Peer_Player,
+	player_count:  int,
 	// The joiner's window (from its join request) and the size of the
 	// snapshot sent to it, which its backlog may hold besides the cap.
 	window:        int,
@@ -153,6 +170,11 @@ Session_Network :: struct {
 	notices:         [dynamic]string,
 	// State hash mismatches seen (host: compared; client: told).
 	mismatch_count:  int,
+	// Client: split screen players asked of the host (Add_Local_Player)
+	// whose viewport left before the answer came; each answer that lands
+	// while one is counted leaves at once (Remove_Local_Player), since a
+	// local member never exists without a viewport.
+	cancelled_local_players: int,
 }
 
 // A machine joining a host (--join): the connection until the snapshot
@@ -405,6 +427,21 @@ hash_mismatch_message :: proc(tick, host_hash, machine_hash: u64, machine: strin
 
 // Members.
 
+// The peer joined: it drives a player.
+peer_joined :: proc(peer: Network_Peer) -> bool {
+	return peer.player_count > 0
+}
+
+// The index of the player in the peer's players, or -1.
+find_peer_player :: proc(peer: Network_Peer, player: int) -> int {
+	for index in 0 ..< peer.player_count {
+		if peer.players[index].player == player {
+			return index
+		}
+	}
+	return -1
+}
+
 // Sets a member's entry, growing the list with members that never joined.
 set_lockstep_member :: proc(lockstep: ^Lockstep, player: int, member: Lockstep_Member) {
 	for len(lockstep.members) <= player {
@@ -452,7 +489,7 @@ update_host_network :: proc(session: ^Session, content: Simulation_Content, name
 		}
 		platform.log_printf("network: %s connected", connection.address)
 		now := time.tick_now()
-		append(&network.peers, Network_Peer{connection = connection, player = NO_PLAYER, last_heard = now, last_ping = now})
+		append(&network.peers, Network_Peer{connection = connection, last_heard = now, last_ping = now})
 	}
 	for index := 0; index < len(network.peers); index += 1 {
 		peer := &network.peers[index]
@@ -520,7 +557,7 @@ handle_client_message :: proc(session: ^Session, content: Simulation_Content, na
 	case .Join_Request:
 		request, request_ok := decode_join_request(&reader)
 		switch {
-		case peer.player != NO_PLAYER || peer.refused:
+		case peer_joined(peer^) || peer.refused:
 		case !request_ok:
 			platform.close_connection(&peer.connection, "a malformed join request")
 		case:
@@ -533,7 +570,8 @@ handle_client_message :: proc(session: ^Session, content: Simulation_Content, na
 		}
 	case .Input_Record:
 		record, ok := decode_input_record(&reader)
-		if !ok || peer.player == NO_PLAYER || record.player != peer.player || !record_tick_expected(peer^, record.tick, session.simulation.tick) {
+		index := ok ? find_peer_player(peer^, record.player) : -1
+		if !ok || index < 0 || !record_tick_expected(peer.players[index], peer.window, record.tick, session.simulation.tick) {
 			problem := ok ? fmt.tprintf("an input record for player %d tick %d out of order or out of range", record.player, record.tick) : "a malformed input record"
 			if ok {
 				destroy_input_record(record)
@@ -542,6 +580,17 @@ handle_client_message :: proc(session: ^Session, content: Simulation_Content, na
 			return
 		}
 		relay_record(session, record)
+	case .Add_Local_Player:
+		if peer_joined(peer^) && peer.player_count < MAXIMUM_VIEWPORTS {
+			host_add_peer_player(session, peer_index)
+		}
+	case .Remove_Local_Player:
+		player, player_ok := read_u32(&reader)
+		index := player_ok ? find_peer_player(peer^, int(player)) : -1
+		// The machine's own player leaves with its connection.
+		if index > 0 {
+			drop_peer_player(session, peer_index, index)
+		}
 	case .Hash_Report:
 		tick, tick_ok := read_u64(&reader)
 		hash, hash_ok := read_u64(&reader)
@@ -554,12 +603,12 @@ handle_client_message :: proc(session: ^Session, content: Simulation_Content, na
 	}
 }
 
-// A client's records come one tick after another from its join tick, and
-// no further ahead of the host's tick than its window, the other clients'
-// lead (RECORD_TICK_MARGIN) allows: one record far in the future would
-// hold every machine at that tick.
-record_tick_expected :: proc(peer: Network_Peer, tick, host_tick: u64) -> bool {
-	return tick == peer.last_tick + 1 && tick <= max(host_tick, peer.joined_tick) + u64(peer.window) + RECORD_TICK_MARGIN
+// A client player's records come one tick after another from its join
+// tick, and no further ahead of the host's tick than the client's window
+// and the other clients' lead (RECORD_TICK_MARGIN) allow: one record far
+// in the future would hold every machine at that tick.
+record_tick_expected :: proc(peer_player: Peer_Player, window: int, tick, host_tick: u64) -> bool {
+	return tick == peer_player.last_tick + 1 && tick <= max(host_tick, peer_player.joined_tick) + u64(window) + RECORD_TICK_MARGIN
 }
 
 pending_reports_of :: proc(network: Session_Network, machine: string) -> int {
@@ -626,11 +675,11 @@ relay_record :: proc(session: ^Session, record: Input_Record) {
 	network := &session.network
 	message := record_message(record)
 	for &peer in network.peers {
-		if peer.player != NO_PLAYER {
+		if peer_joined(peer) {
 			platform.send_message(&peer.connection, message)
 		}
-		if peer.player == record.player {
-			peer.last_tick = max(peer.last_tick, record.tick)
+		if index := find_peer_player(peer, record.player); index >= 0 {
+			peer.players[index].last_tick = max(peer.players[index].last_tick, record.tick)
 		}
 	}
 	network.frontier = max(network.frontier, record.tick)
@@ -641,25 +690,43 @@ broadcast_member :: proc(session: ^Session, player: int, member: Lockstep_Member
 	set_lockstep_member(&session.lockstep, player, member)
 	message := member_change_message(player, member)
 	for &peer in session.network.peers {
-		if peer.player != NO_PLAYER {
+		if peer_joined(peer) {
 			platform.send_message(&peer.connection, message)
 		}
 	}
 }
 
-// A joined client's player leaves from the tick after its last relayed
-// record, which no machine can have run without it.
+// A client's player leaves from the tick after its last relayed record,
+// which no machine can have run without it.
+leave_peer_player :: proc(session: ^Session, address: string, peer_player: Peer_Player) {
+	if peer_player.player >= len(session.lockstep.members) {
+		return
+	}
+	member := session.lockstep.members[peer_player.player]
+	member.left_tick = max(peer_player.last_tick + 1, member.joined_tick)
+	broadcast_member(session, peer_player.player, member)
+	network_notice(&session.network, "player %d (%s) left at tick %d", peer_player.player, address, member.left_tick)
+}
+
+// A joined client's players leave (leave_peer_player).
 drop_client :: proc(session: ^Session, peer_index: int) {
 	peer := session.network.peers[peer_index]
 	platform.log_printf("network: %s disconnected: %s", peer.connection.address, peer.connection.problem)
-	if peer.player != NO_PLAYER && peer.player < len(session.lockstep.members) {
-		member := session.lockstep.members[peer.player]
-		member.left_tick = max(peer.last_tick + 1, member.joined_tick)
-		broadcast_member(session, peer.player, member)
-		network_notice(&session.network, "player %d (%s) left at tick %d", peer.player, peer.connection.address, member.left_tick)
+	for index in 0 ..< peer.player_count {
+		leave_peer_player(session, peer.connection.address, peer.players[index])
 	}
 	platform.destroy_connection(&session.network.peers[peer_index].connection)
 	ordered_remove(&session.network.peers, peer_index)
+}
+
+// A client's split screen player leaves; its machine's own player stays.
+drop_peer_player :: proc(session: ^Session, peer_index, index: int) {
+	peer := &session.network.peers[peer_index]
+	leave_peer_player(session, peer.connection.address, peer.players[index])
+	for after in index + 1 ..< peer.player_count {
+		peer.players[after - 1] = peer.players[after]
+	}
+	peer.player_count -= 1
 }
 
 Join_Snapshot :: struct {
@@ -803,15 +870,110 @@ destroy_join_records :: proc(records: ^[dynamic]Input_Record) {
 // joiner through the snapshot.
 host_join :: proc(session: ^Session, content: Simulation_Content, name: string, peer_index: int) {
 	network := &session.network
-	join_tick := max(network.frontier, session.simulation.tick) + 1
-	player, adds_entry := joining_player_index(session.lockstep, len(session.simulation.players), join_tick)
-	broadcast_member(session, player, Lockstep_Member{joined_tick = join_tick, left_tick = NEVER_TICK, adds_entry = adds_entry})
+	player, member := next_join(session)
+	join_tick := member.joined_tick
+	broadcast_member(session, player, member)
 	peer := &network.peers[peer_index]
-	peer.player, peer.last_tick, peer.joined_tick = player, join_tick - 1, join_tick
+	peer.players[0] = Peer_Player{player = player, last_tick = join_tick - 1, joined_tick = join_tick}
+	peer.player_count = 1
 	snapshot := encode_join_snapshot(&session.simulation, &session.lockstep, content, name, player, join_tick)
 	peer.snapshot_size = len(snapshot)
 	platform.send_message(&peer.connection, snapshot)
 	network_notice(network, "player %d (%s) joins at tick %d", player, peer.connection.address, join_tick)
+}
+
+// The tick a player joining now takes, and the entry, as for a join: the
+// tick after the newest record relayed (frontier, 0 offline), so no
+// machine has run it yet.
+next_join :: proc(session: ^Session) -> (player: int, member: Lockstep_Member) {
+	join_tick := max(session.network.frontier, session.simulation.tick) + 1
+	adds_entry: bool
+	player, adds_entry = joining_player_index(session.lockstep, len(session.simulation.players), join_tick)
+	return player, Lockstep_Member{joined_tick = join_tick, left_tick = NEVER_TICK, adds_entry = adds_entry}
+}
+
+// A client's machine adds a split screen player (0178): a join's entry
+// over the connection it already has, announced to every machine and
+// answered with the player and its join tick.
+host_add_peer_player :: proc(session: ^Session, peer_index: int) {
+	player, member := next_join(session)
+	broadcast_member(session, player, member)
+	peer := &session.network.peers[peer_index]
+	peer.players[peer.player_count] = Peer_Player{player = player, last_tick = member.joined_tick - 1, joined_tick = member.joined_tick}
+	peer.player_count += 1
+	bytes := message_of(.Local_Player_Added)
+	append_u32(&bytes, u32(player))
+	append_u64(&bytes, member.joined_tick)
+	platform.send_message(&peer.connection, bytes[:])
+	network_notice(&session.network, "player %d (%s) joins at tick %d", player, peer.connection.address, member.joined_tick)
+}
+
+// A local player for a split screen viewport (0178), through the add
+// player path of a join (next_join): offline and on the host it is a
+// local member at once, a client asks the host and the member arrives with
+// Local_Player_Added (handle_host_message). Returns the player, NO_PLAYER
+// while a client waits. The entry exists from the join tick on.
+request_local_player :: proc(session: ^Session) -> int {
+	switch session.network.role {
+	case .Offline, .Host:
+		player, member := next_join(session)
+		if session.network.role == .Host {
+			broadcast_member(session, player, member)
+		} else {
+			set_lockstep_member(&session.lockstep, player, member)
+		}
+		add_local_member(&session.lockstep, player, member.joined_tick)
+		platform.log_printf("network: local player %d joins at tick %d", player, member.joined_tick)
+		return player
+	case .Client:
+		if len(session.network.peers) > 0 {
+			bytes := message_of(.Add_Local_Player)
+			platform.send_message(&session.network.peers[0].connection, bytes[:])
+		}
+	}
+	return NO_PLAYER
+}
+
+// A split screen viewport's player leaves (0178) from the tick after its
+// last stamped record; its entry stays in the world for a later join. The
+// machine's own player never leaves this way. A client's records already
+// went to the host this frame, ahead of the message on the connection.
+leave_local_player :: proc(session: ^Session, player: int) {
+	index := find_local_member(session.lockstep, player)
+	if index <= 0 {
+		return
+	}
+	left_tick := local_member_left_tick(session.lockstep.locals[index])
+	remove_local_member(&session.lockstep, index)
+	member := session.lockstep.members[player]
+	member.left_tick = max(left_tick, member.joined_tick)
+	switch session.network.role {
+	case .Offline:
+		set_lockstep_member(&session.lockstep, player, member)
+	case .Host:
+		broadcast_member(session, player, member)
+	case .Client:
+		send_remove_local_player(&session.network, player)
+	}
+	platform.log_printf("network: local player %d leaves at tick %d", player, member.left_tick)
+}
+
+// A client's split screen player leaves; the host picks the tick
+// (leave_peer_player).
+send_remove_local_player :: proc(network: ^Session_Network, player: int) {
+	if len(network.peers) > 0 {
+		bytes := message_of(.Remove_Local_Player)
+		append_u32(&bytes, u32(player))
+		platform.send_message(&network.peers[0].connection, bytes[:])
+	}
+}
+
+// A viewport that asked the host for a player and leaves before the
+// answer: the answer, when it lands, leaves at once.
+cancel_local_player_request :: proc(session: ^Session) {
+	if session.network.role == .Client {
+		session.network.cancelled_local_players += 1
+	}
 }
 
 // The host's own hashes kept for late reports.
@@ -902,7 +1064,7 @@ finish_dial :: proc(network: ^Session_Network) {
 	case:
 		network.dial = nil
 		now := time.tick_now()
-		append(&network.peers, Network_Peer{connection = connection, player = NO_PLAYER, last_heard = now, last_ping = now})
+		append(&network.peers, Network_Peer{connection = connection, last_heard = now, last_ping = now})
 		network.ping_sent = now
 		ping := message_of(.Ping)
 		platform.send_message(&network.peers[0].connection, ping[:])
@@ -986,6 +1148,22 @@ handle_host_message :: proc(network: ^Session_Network, lockstep: ^Lockstep, simu
 		member: Lockstep_Member
 		if player_ok && read_value_of(&reader, &member) && lockstep != nil && int(player) <= len(lockstep.members) + 64 {
 			set_lockstep_member(lockstep, int(player), member)
+		}
+	case .Local_Player_Added:
+		player, player_ok := read_u32(&reader)
+		join_tick, tick_ok := read_u64(&reader)
+		// The host announced the member first (Member_Change), with the
+		// same join tick.
+		valid := player_ok && tick_ok && lockstep != nil && int(player) < len(lockstep.members) && lockstep.members[int(player)].joined_tick == join_tick
+		switch {
+		case !valid:
+		case network.cancelled_local_players > 0:
+			network.cancelled_local_players -= 1
+			send_remove_local_player(network, int(player))
+			platform.log_printf("network: local player %d left before its join tick %d", player, join_tick)
+		case len(lockstep.locals) < MAXIMUM_VIEWPORTS && find_local_member(lockstep^, int(player)) < 0:
+			add_local_member(lockstep, int(player), join_tick)
+			platform.log_printf("network: local player %d joins at tick %d", player, join_tick)
 		}
 	case .Hash_Mismatch:
 		tick, _ := read_u64(&reader)
@@ -1080,9 +1258,12 @@ adopt_join_snapshot :: proc(simulation: ^Simulation_State, lockstep: ^Lockstep, 
 	}
 	clear(&lockstep.members)
 	append(&lockstep.members, ..snapshot.members)
-	lockstep.local_player = snapshot.player
+	for &local in lockstep.locals {
+		destroy_local_member(&local)
+	}
+	clear(&lockstep.locals)
+	add_local_member(lockstep, snapshot.player, snapshot.join_tick)
 	lockstep.window = window
-	lockstep.first_local_tick, lockstep.next_local_tick = snapshot.join_tick, snapshot.join_tick
 	for record in snapshot.records {
 		receive_input_record(lockstep, record, simulation.tick)
 	}

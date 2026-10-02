@@ -8,19 +8,22 @@ import "core:time"
 // input record for it is there. A record is one player's input for one
 // tick, stamped with the tick: the Input_Frame without the raw device
 // state, the player's queued commands (player_command.odin) and the
-// command socket's lines. Each machine stamps its local player's records,
-// sends them to the host, and the host relays every player's records to
-// everyone, itself included (session_network.odin); single player is the
-// same driver with one player, no network and a window of zero, so its
-// records come straight back and the game ticks as before.
+// command socket's lines. Each machine stamps its local players' records
+// (one, or one per viewport in split screen, work item 0178), sends them
+// to the host over its one connection, and the host relays every player's
+// records to everyone, itself included (session_network.odin); single
+// player is the same driver with one player, no network and a window of
+// zero, so its records come straight back and the game ticks as before.
+// How many local players feed a machine changes nothing a tick reads: a
+// local member is a member like a remote one.
 //
 // The window: a machine stamps its local records up to window ticks
 // ahead of the simulation (set at join from the measured round trip,
 // about the round trip in ticks plus one), so the other players' records
 // for a tick are there by the time it runs. Inside the window the local
-// player's movement and camera are predicted: after the frame's ticks the
-// prediction is the confirmed local player, copied, moved by every local
-// input stamped and not yet run (predict_player_motion). A confirmed tick
+// players' movement and cameras are predicted: after the frame's ticks
+// each local player's prediction is the confirmed player, copied, moved by
+// every input of it stamped and not yet run (predict_player_motion). A confirmed tick
 // whose inputs the prediction already used gives the same position; one
 // where the world differed (another player, a belt, a block placed)
 // replaces the prediction with the confirmed player on the next rebuild,
@@ -93,44 +96,96 @@ Tick_Line :: struct {
 	line:   Socket_Line,
 }
 
-Lockstep :: struct {
-	// The player this machine's input drives, NO_PLAYER on the server.
-	local_player:     int,
-	// Ticks the local records run ahead of the simulation.
-	window:           int,
-	// The tick of the first local record (a joiner's join tick).
-	first_local_tick: u64,
-	next_local_tick:  u64,
-	// Where a joining player's new entry spawns.
-	spawn:            Player_Start,
-	members:          [dynamic]Lockstep_Member,
-	// Received records of ticks not run yet, any order.
-	records:          [dynamic]Input_Record,
-	// Local records for the host (or straight back when offline).
-	outgoing:         [dynamic]Input_Record,
-	// The local player's commands and the socket's lines waiting for the
-	// next local record.
-	local_commands:   [dynamic]Player_Command,
-	local_lines:      [dynamic]Socket_Line,
-	// The local inputs stamped and not yet run, oldest first, and the
-	// predicted local player built from them.
+// A player this machine's input drives: one in single player and on a
+// joined machine, one per viewport in split screen (work item 0178), none
+// on the server. Its records go out like any member's.
+Local_Member :: struct {
+	player:           int,
+	// The tick of its first record (its join tick) and of its next one.
+	first_tick:       u64,
+	next_tick:        u64,
+	// Its commands waiting for its next record.
+	commands:         [dynamic]Player_Command,
+	// Its inputs stamped and not yet run, oldest first, and the predicted
+	// player built from them.
 	predicted_inputs: [dynamic]Stamped_Input,
 	prediction:       Player,
 	predicting:       bool,
+}
+
+Lockstep :: struct {
+	// The players this machine's input drives, the first one the machine's
+	// own (the command socket's lines ride in its records); empty on the
+	// server.
+	locals:      [dynamic]Local_Member,
+	// Ticks the local records run ahead of the simulation.
+	window:      int,
+	// Where a joining player's new entry spawns.
+	spawn:       Player_Start,
+	members:     [dynamic]Lockstep_Member,
+	// Received records of ticks not run yet, any order.
+	records:     [dynamic]Input_Record,
+	// Local records for the host (or straight back when offline).
+	outgoing:    [dynamic]Input_Record,
+	// The socket's lines waiting for the first local player's next record.
+	local_lines: [dynamic]Socket_Line,
 	// The accumulator's ticks not taken yet by a tick no player paces.
-	clock_ticks:      int,
+	clock_ticks: int,
 }
 
 // One local player, connected from the start, window zero.
 make_single_player_lockstep :: proc(simulation_tick: u64, spawn: Player_Start) -> Lockstep {
 	lockstep := Lockstep {
-		local_player     = 0,
-		first_local_tick = simulation_tick + 1,
-		next_local_tick  = simulation_tick + 1,
-		spawn            = spawn,
+		spawn = spawn,
 	}
+	add_local_member(&lockstep, 0, simulation_tick + 1)
 	append(&lockstep.members, Lockstep_Member{joined_tick = 0, left_tick = NEVER_TICK})
 	return lockstep
+}
+
+// The machine's own player, NO_PLAYER on the server.
+lockstep_local_player :: proc(lockstep: Lockstep) -> int {
+	return len(lockstep.locals) > 0 ? lockstep.locals[0].player : NO_PLAYER
+}
+
+// The local member driving the player, or -1.
+find_local_member :: proc(lockstep: Lockstep, player: int) -> int {
+	for local, index in lockstep.locals {
+		if local.player == player {
+			return index
+		}
+	}
+	return -1
+}
+
+// A local player whose records start at first_tick; its member entry is
+// the caller's (set_lockstep_member, or the host's broadcast).
+add_local_member :: proc(lockstep: ^Lockstep, player: int, first_tick: u64) {
+	append(&lockstep.locals, Local_Member{player = player, first_tick = first_tick, next_tick = first_tick})
+}
+
+destroy_local_member :: proc(local: ^Local_Member) {
+	for command in local.commands {
+		destroy_player_command(command)
+	}
+	delete(local.commands)
+	for stamped in local.predicted_inputs {
+		delete(stamped.commands)
+	}
+	delete(local.predicted_inputs)
+}
+
+// Stops stamping for the local member at the index. Its membership ends
+// at local_member_left_tick, which the caller sets before.
+remove_local_member :: proc(lockstep: ^Lockstep, index: int) {
+	destroy_local_member(&lockstep.locals[index])
+	ordered_remove(&lockstep.locals, index)
+}
+
+// A local player leaving: from the tick after its last stamped record, so
+// every record it sent still runs.
+local_member_left_tick :: proc(local: Local_Member) -> u64 {
+	return local.next_tick
 }
 
 destroy_input_record :: proc(record: Input_Record) {
@@ -156,21 +211,17 @@ destroy_lockstep :: proc(lockstep: ^Lockstep) {
 	for record in lockstep.outgoing {
 		destroy_input_record(record)
 	}
-	for command in lockstep.local_commands {
-		destroy_player_command(command)
+	for &local in lockstep.locals {
+		destroy_local_member(&local)
 	}
+	delete(lockstep.locals)
 	for line in lockstep.local_lines {
 		destroy_socket_line(line)
 	}
 	delete(lockstep.members)
 	delete(lockstep.records)
 	delete(lockstep.outgoing)
-	delete(lockstep.local_commands)
 	delete(lockstep.local_lines)
-	for stamped in lockstep.predicted_inputs {
-		delete(stamped.commands)
-	}
-	delete(lockstep.predicted_inputs)
 	lockstep^ = {}
 }
 
@@ -224,14 +275,15 @@ connected_member_count :: proc(lockstep: Lockstep, tick: u64) -> int {
 	return count
 }
 
-// The local player's commands the screens queued on the simulation move
-// to the lockstep until the next local record carries them, so a tick
+// The local players' commands the screens queued on the simulation move
+// to their local members until their next records carry them, so a tick
 // never applies a command no other machine has.
 hold_local_commands :: proc(lockstep: ^Lockstep, simulation: ^Simulation_State) {
 	kept := 0
 	for queued in simulation.player_commands {
-		if lockstep.local_player != NO_PLAYER && queued.player == lockstep.local_player && command_is_relayed(queued.command) {
-			append(&lockstep.local_commands, queued.command)
+		local := queued.player == NO_PLAYER ? -1 : find_local_member(lockstep^, queued.player)
+		if local >= 0 && command_is_relayed(queued.command) {
+			append(&lockstep.locals[local].commands, queued.command)
 		} else {
 			simulation.player_commands[kept] = queued
 			kept += 1
@@ -242,33 +294,41 @@ hold_local_commands :: proc(lockstep: ^Lockstep, simulation: ^Simulation_State) 
 
 // The last tick a local record may be stamped for now: window ticks past
 // the next tick to run, counted from the join while a joiner catches up.
-local_stamp_limit :: proc(lockstep: Lockstep, simulation_tick: u64) -> u64 {
-	return max(simulation_tick, lockstep.first_local_tick - 1) + u64(lockstep.window) + 1
+local_stamp_limit :: proc(lockstep: Lockstep, local: Local_Member, simulation_tick: u64) -> u64 {
+	return max(simulation_tick, local.first_tick - 1) + u64(lockstep.window) + 1
 }
 
-// One local record for the next local tick, with the held commands and
-// lines. False, and nothing taken, without a local player or while the
-// records are window ticks ahead (the input keeps accumulating).
-stamp_local_record :: proc(lockstep: ^Lockstep, simulation_tick: u64, frame: Input_Frame) -> bool {
-	if lockstep.local_player == NO_PLAYER || lockstep.next_local_tick > local_stamp_limit(lockstep^, simulation_tick) {
+// One record of the local member at the index (the machine's own player
+// by default) for its next tick, with its held commands and, for the
+// first, the socket's lines. False, and nothing taken, without that local
+// player or while its records are window ticks ahead (the input keeps
+// accumulating).
+stamp_local_record :: proc(lockstep: ^Lockstep, simulation_tick: u64, frame: Input_Frame, local_index := 0) -> bool {
+	if local_index >= len(lockstep.locals) {
+		return false
+	}
+	local := &lockstep.locals[local_index]
+	if local.next_tick > local_stamp_limit(lockstep^, local^, simulation_tick) {
 		return false
 	}
 	// A tick command ran ticks without records (single player only).
-	lockstep.next_local_tick = max(lockstep.next_local_tick, simulation_tick + 1)
+	local.next_tick = max(local.next_tick, simulation_tick + 1)
 	record := Input_Record {
-		tick   = lockstep.next_local_tick,
-		player = lockstep.local_player,
+		tick   = local.next_tick,
+		player = local.player,
 		input  = record_input_of(frame),
 	}
-	append(&record.commands, ..lockstep.local_commands[:])
-	clear(&lockstep.local_commands)
-	append(&record.lines, ..lockstep.local_lines[:])
-	clear(&lockstep.local_lines)
+	append(&record.commands, ..local.commands[:])
+	clear(&local.commands)
+	if local_index == 0 {
+		append(&record.lines, ..lockstep.local_lines[:])
+		clear(&lockstep.local_lines)
+	}
 	append(&lockstep.outgoing, record)
 	stamped := Stamped_Input{tick = record.tick, input = input_frame_of(record.input)}
 	append(&stamped.commands, ..record.commands[:])
-	append(&lockstep.predicted_inputs, stamped)
-	lockstep.next_local_tick += 1
+	append(&local.predicted_inputs, stamped)
+	local.next_tick += 1
 	return true
 }
 
@@ -348,12 +408,14 @@ begin_lockstep_tick :: proc(lockstep: ^Lockstep, simulation: ^Simulation_State) 
 // After a tick: the inputs it confirmed leave the prediction, records of
 // players not connected at it are dropped.
 finish_lockstep_tick :: proc(lockstep: ^Lockstep, simulation_tick: u64) {
-	confirmed := 0
-	for confirmed < len(lockstep.predicted_inputs) && lockstep.predicted_inputs[confirmed].tick <= simulation_tick {
-		delete(lockstep.predicted_inputs[confirmed].commands)
-		confirmed += 1
+	for &local in lockstep.locals {
+		confirmed := 0
+		for confirmed < len(local.predicted_inputs) && local.predicted_inputs[confirmed].tick <= simulation_tick {
+			delete(local.predicted_inputs[confirmed].commands)
+			confirmed += 1
+		}
+		remove_range(&local.predicted_inputs, 0, confirmed)
 	}
-	remove_range(&lockstep.predicted_inputs, 0, confirmed)
 	for index := len(lockstep.records) - 1; index >= 0; index -= 1 {
 		if lockstep.records[index].tick <= simulation_tick {
 			destroy_input_record(lockstep.records[index])
@@ -362,33 +424,38 @@ finish_lockstep_tick :: proc(lockstep: ^Lockstep, simulation_tick: u64) {
 	}
 }
 
-// The predicted local player: the confirmed one moved by the local inputs
-// not confirmed yet. Off with a window of zero (nothing is ever ahead) or
-// without a local player.
+// Each predicted local player: the confirmed one moved by its inputs not
+// confirmed yet. Off with a window of zero (nothing is ever ahead) and for
+// a local player whose entry does not exist yet.
 rebuild_prediction :: proc(lockstep: ^Lockstep, simulation: ^Simulation_State, content: Simulation_Content) {
-	local := lockstep.local_player
-	lockstep.predicting = lockstep.window > 0 && local != NO_PLAYER && local < len(simulation.players)
-	if !lockstep.predicting {
-		return
-	}
-	lockstep.prediction = simulation.players[local]
-	for stamped in lockstep.predicted_inputs {
-		if stamped.tick > simulation.tick {
-			predict_player_motion(&simulation.world, content, &lockstep.prediction, stamped.input, simulation.tick_rate, simulation.cheat_speed)
+	for &local in lockstep.locals {
+		local.predicting = lockstep.window > 0 && local.player < len(simulation.players)
+		if !local.predicting {
+			continue
+		}
+		local.prediction = simulation.players[local.player]
+		for stamped in local.predicted_inputs {
+			if stamped.tick > simulation.tick {
+				predict_player_motion(&simulation.world, content, &local.prediction, stamped.input, simulation.tick_rate, simulation.cheat_speed)
+			}
 		}
 	}
 }
 
 // The local player's commands no tick has applied yet: the ones waiting
-// for the next record and the ones in records stamped and not run. With
-// the frame's queue (Simulation_State.player_commands) they are what a
-// screen shows as pending. In the temp allocator.
-lockstep_unconfirmed_commands :: proc(lockstep: ^Lockstep) -> []Player_Command {
+// for its next record and the ones in its records stamped and not run.
+// With the frame's queue (Simulation_State.player_commands) they are what
+// a screen shows as pending. In the temp allocator.
+lockstep_unconfirmed_commands :: proc(lockstep: ^Lockstep, player: int) -> []Player_Command {
 	commands := make([dynamic]Player_Command, context.temp_allocator)
-	for stamped in lockstep.predicted_inputs {
+	index := find_local_member(lockstep^, player)
+	if index < 0 {
+		return commands[:]
+	}
+	for stamped in lockstep.locals[index].predicted_inputs {
 		append(&commands, ..stamped.commands[:])
 	}
-	append(&commands, ..lockstep.local_commands[:])
+	append(&commands, ..lockstep.locals[index].commands[:])
 	return commands[:]
 }
 
@@ -396,19 +463,21 @@ lockstep_unconfirmed_commands :: proc(lockstep: ^Lockstep) -> []Player_Command {
 // local commands waiting for a record go back onto the simulation's list,
 // so the tick applies them as it did before the driver.
 release_local_commands :: proc(lockstep: ^Lockstep, simulation: ^Simulation_State) {
-	for command in lockstep.local_commands {
-		queue_player_command(&simulation.player_commands, lockstep.local_player, command)
+	for &local in lockstep.locals {
+		for command in local.commands {
+			queue_player_command(&simulation.player_commands, local.player, command)
+		}
+		clear(&local.commands)
 	}
-	clear(&lockstep.local_commands)
 }
 
-// The local player as the presentation draws it: the prediction while
-// one runs, else the confirmed player.
-lockstep_view_player :: proc(lockstep: ^Lockstep, simulation: ^Simulation_State) -> Player {
-	if lockstep.predicting {
-		return lockstep.prediction
+// A local player as the presentation draws it: the prediction while one
+// runs, else the confirmed player, whose entry must exist.
+lockstep_view_player :: proc(lockstep: ^Lockstep, simulation: ^Simulation_State, player: int) -> Player {
+	if index := find_local_member(lockstep^, player); index >= 0 && lockstep.locals[index].predicting {
+		return lockstep.locals[index].prediction
 	}
-	return simulation.players[max(lockstep.local_player, 0)]
+	return simulation.players[max(player, 0)]
 }
 
 // The window from a round trip: the round trip in ticks, rounded up, plus
@@ -486,7 +555,7 @@ run_tick_lines :: proc(session: ^Session, content: Simulation_Content, control: 
 	for tick_line in lines {
 		command_context := session_command_context(session, content, control, tick_line.player, tick_line.line.blueprint)
 		response, empty := execute_command_line(command_context, tick_line.line.line)
-		if !empty && tick_line.player == session.lockstep.local_player && tick_line.line.client != 0 {
+		if !empty && tick_line.player == lockstep_local_player(session.lockstep) && tick_line.line.client != 0 {
 			append(answers, Line_Answer{client = tick_line.line.client, line = clone_text_temp(tick_line.line.line), response = response})
 		}
 		destroy_socket_line(tick_line.line)
@@ -559,7 +628,7 @@ run_ready_ticks :: proc(session: ^Session, content: Simulation_Content, control:
 run_held_lines :: proc(session: ^Session, content: Simulation_Content, control: ^Command_Control, answers: ^[dynamic]Line_Answer) {
 	lines := make([dynamic]Tick_Line, context.temp_allocator)
 	for line in session.lockstep.local_lines {
-		append(&lines, Tick_Line{player = session.lockstep.local_player, line = line})
+		append(&lines, Tick_Line{player = lockstep_local_player(session.lockstep), line = line})
 	}
 	clear(&session.lockstep.local_lines)
 	run_tick_lines(session, content, control, lines[:], answers)

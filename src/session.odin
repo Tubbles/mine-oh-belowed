@@ -25,7 +25,6 @@ Session :: struct {
 	save_requested:     bool,
 	ticks_since_save:   u64,
 	accumulator:        Tick_Accumulator,
-	tick_input:         Tick_Input_Accumulator,
 	debug_edit_counter: u64,
 	// The weather command's forced kind (work item 0063), nil for the
 	// schedule. Not saved.
