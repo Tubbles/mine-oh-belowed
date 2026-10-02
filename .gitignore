@@ -14,3 +14,6 @@ __pycache__/
 
 # Nix direnv
 /.direnv/
+
+# Git worktrees the agents work in (the Agent tool's worktree isolation)
+/.claude/worktrees/
