@@ -4,4 +4,4 @@ User inbox. Drop new ideas, requests and bug reports here in any shape. Agents t
 
 ## Bigger picture
 
-Consumed on 2026-10-02 into `work/vision-2026-10-02.md` (the agent's reading of the notes, with its additions and the open questions) and the research under `work/research/`. The back and forth continues there; settled parts move to `DESIGN.md` and `PLAN.md`.
+Consumed on 2026-10-02: worked out in a back and forth, decided (`doc/log/2026-10-02.md`) and merged into `DESIGN.md` and `PLAN.md`; the technical brief is `doc/work/0167-smooth-world-engine-brief.md`. The draft and its research stay under `work/` as the archive.

@@ -2,137 +2,116 @@
 
 ## End goal
 
-A coherent, polished factory game in a voxel world, fully playable from the couch with a gamepad, guided by quests from the first minute to a rocket program. Peaceful mode is the default. After the first alpha: rails, local co-op, and optional enemies with pollution as a game mode.
+A coherent, polished factory game across one procedurally generated star system of smooth voxel planets, fully playable from the couch with a gamepad, by many players in one shared world and up to four on one screen, from the landing pod to a shipyard in orbit. Peaceful by default, survival by choice. The design is [DESIGN.md](DESIGN.md); the decisions that set this direction are in `doc/log/2026-10-02.md`.
 
-Beyond the game: a voxel 3D engine on which any style of game can be built, with all game logic and design in WebAssembly plugins, and Mine oh Belowed as its first plugin (user, 2026-10-01; the design brief is [doc/work/0146-engine-and-game-logic-cut.md](doc/work/0146-engine-and-game-logic-cut.md)). The architecture work of M12 moves the code toward that cut while the game stays playable.
+Beyond the game: a voxel 3D engine on which any style of game can be built, with all game logic and design in WebAssembly plugins, and Mine oh Belowed as its first plugin ([doc/work/0146-engine-and-game-logic-cut.md](doc/work/0146-engine-and-game-logic-cut.md)). On the back burner (user, 2026-10-02): the cut it draws stays the guide for where code goes and the architecture seams that lockstep multiplayer needs stay high priority, the plugin system itself waits for the new game.
+
+## The rebuild
+
+The block world of M0 to M12 is replaced by the smooth world of DESIGN.md (user, 2026-10-02): a true sphere of smooth voxels with radial gravity, foundation frames for the factory, free belts on poles, big arm inserters, conserved water, survival modes, a station built by hand, a star system, lockstep multiplayer. Saves break as the rebuild needs, no second world type is kept beside the new one, the work happens on `main`, and multiplayer is in the first slice rather than bolted on. The content carries over (items, recipes, machines, technologies, quests, strings); the world, the player's movement, placement and rendering are rewritten; the engine cut of 0146 already puts the line there. The couch keeps the last block build until the ground game plays on the new world.
 
 ## Alpha 1 definition
 
-All eight gameplay phases of [DESIGN.md](DESIGN.md), from landing to the first rocket shipment, with the quest journal carrying the player the whole way. It is a game, not a technology demonstration: placeholder art is acceptable, missing systems are not. Everything is reachable with the Steam Controller. Worlds save and load.
+The first third of DESIGN.md's phases, 1 to 7, on the smooth starter planet: from the pod to the first capsule in low orbit, with the quest journal carrying the player the whole way, the three modes, and several players in one world from the couch and the network. It is a game, not a technology demonstration: placeholder art is acceptable, missing systems are not. Everything is reachable with the Steam Controller. Worlds save and load.
 
-Verify: a fresh player on the couch follows the quest journal from landing to the first rocket shipment over several sessions, saving and resuming between them, with no keyboard except for the world name and no outside help.
+Verify: a group of players, some on one couch and one remote, follows the quest journal from the pod to the first capsule launch over several sessions, saving and resuming between them, with no keyboard except for the world name and no outside help.
+
+Alpha 2 is phases 8 to 11, the space game, defined when alpha 1 is in sight.
 
 ## Where it stands
 
-- Every phase of the alpha is in code: M0 to M9 are implemented, and the alpha's content is complete (`doc/log/2026-09-27.md`, M9 complete). Of their verify statements only M0's and couch test 1's have been run on the couch.
-- M10's couch findings (0043 to 0052) and M11's presentation campaign are implemented: the planned items 0053 to 0082, then the couch, Deck and phone findings 0083 to 0140 (texture and sound cadence, the Windows build for GameNative, the native Android app, the touch overlay, the data file editors, the hand crafting queue, pump head, the fuel generator).
-- The documentation pass (0141) and the architecture cleanup (0142 to 0145: dead code, six audits under `doc/audit/`, the code map, the pilot package split) are done (`doc/log/2026-09-30.md`). Of M12's refactor queue, the pure moves and bug fixes (0147 to 0151) and the hubs (0152 to 0161) are done (`doc/log/2026-10-01.md`).
-- Next: smaller items the user meets while playing; the M12 queue is paused after 0162 (the remaining list is in `SUGGESTIONS.md`, The paused audit queue) and resumes when the user says so, then the 0146 engine and plugin design with the user; M10's remaining passes and the couch tests 2 to 5 as the user plays.
+- The block world (M0 to M11) reached its alpha content in code and went through the presentation campaign; of its verify statements only M0's and couch test 1's ran on the couch (`doc/log/2026-09-27.md`, `doc/log/2026-09-30.md`). M12's cleanup, audits, code map, pilot split, pure moves and hubs are done (`doc/log/2026-10-01.md`); its queue paused after 0162 and is re-read against the new world before anything of it resumes (`SUGGESTIONS.md`, The paused audit queue).
+- 2026-10-02: the vision was worked out and decided with the user (forty decisions, `doc/log/2026-10-02.md`), merged into DESIGN.md and this plan, and the technical brief for the smooth world engine with multiplayer is [doc/work/0167-smooth-world-engine-brief.md](doc/work/0167-smooth-world-engine-brief.md).
+- Next: the brief fleshed out with the user, then its work items for M13, the first slice. Smaller items the user meets while playing the block build still take priority as they come.
 
 ## Couch tests
 
-Pre-alpha builds the user plays on the couch to try the core loop long before the alpha is complete. A couch test follows every milestone from M3 on, each with its own verify statement, and the feedback goes into `TODO.md` and from there into work items. Couch test 1 needed M5's save and load, so M5 came before M6.
+Pre-alpha builds the user plays on the couch to try the core loop long before the alpha is complete. A couch test follows every milestone from M13 on, each with its own verify statement, and the feedback goes into `TODO.md` and from there into work items. From M13 on a couch test includes at least one remote player, since lockstep is tested by playing.
 
 ## Milestones
 
-Each milestone has a single verify statement. Work items in `doc/work/` reference their milestone. Milestones are in dependency order, and the phase numbers refer to the gameplay phases in DESIGN.md.
+Each milestone has a single verify statement. Work items in `doc/work/` reference their milestone and are written when the milestone is picked, the brief first. Milestones are in dependency order, and the phase numbers refer to the gameplay phases in DESIGN.md.
 
 | Milestone | Work items | Status |
 | --- | --- | --- |
-| M0 Foundation | 0001 to 0004 | Done: nix build in CI (0004 verified), the game opens the Steam Controller from the Steam library in Game Mode (`doc/log/2026-09-27.md`) |
-| M1 World | 0005 to 0008 | Implemented |
-| M2 Hand crafting loop | 0009 to 0013 | Implemented |
-| M3 Burner automation | 0014 to 0018 | Implemented, except selection assist ([doc/input.md](doc/input.md), Not built yet) |
-| M4 Power and research | 0019 to 0022 | Implemented |
-| M5 Pre-alpha usability | 0023 to 0025, 0034 | Implemented. Couch test 1 ran over two sessions and found 0043 to 0046, 0048 |
-| M6 Intermediates and byproducts | 0026 to 0029 | Implemented |
-| M7 Fluids and plastics | 0030 to 0033 | Implemented |
-| M8 Scale | 0035 to 0039 | Implemented |
-| M9 Rocket program | 0040 to 0042 | Implemented |
-| M10 Alpha polish and release | 0043 to 0052, then the passes | Couch findings implemented. The passes and the release are open |
-| M11 Presentation campaign | 0053 to 0082, then 0083 to 0140 | Implemented |
-| M12 Architecture toward the engine cut | 0142 to 0145, then the refactor queue from 0147 | Cleanup, audits, code map and pilot split done; the pure moves and the hubs (0147 to 0161) done; the seams are open |
+| M0 to M11 The block world | 0001 to 0140 | Done in code, couch tests 2 to 5 never run; retired by the rebuild, the content carries over |
+| M12 Architecture toward the engine cut | 0142 to 0166 | Cleanup, audits, code map, pilot split, pure moves and hubs done (0142 to 0162); the seams re-read against the new world, the ones lockstep needs move into M13 |
+| M13 The first slice | 0167, then its items | Todo |
+| M14 The ground game on the smooth world | | Todo |
+| M15 Survival, the suit and the modes | | Todo |
+| M16 Low orbit and the station | | Todo |
+| M17 The first hop | | Todo |
+| M18 The system | | Todo |
+| M19 The yard and the living worlds | | Todo |
+| M20 Signals and logic | | Todo |
 
-### M0 Foundation
+### M0 to M11 The block world
 
-Toolchain, repository layout, nix flake, CI, build script, a window with a live controller diagnostics view, the Steam library shortcut.
-
-Verify: `./build.sh` produces a binary that opens a window showing live values for every Steam Controller input (sticks, pads, gyro, grips, buttons). `nix build` passes in CI. The game starts from the Steam library.
-
-### M1 World
-
-Chunked voxel world, procedural terrain with strata and biomes, trees, flowing water, vein reservoirs with outcrops, lighting, first person player with gyro aim and the third person toggle, dig and place by hand.
-
-Verify: walk 500 blocks in any direction and dig to the deep stone at 60 fps in 1080p without hitches from chunk loading, and find at least three vein outcrops on the way.
-
-### M2 Hand crafting loop (phases 1 and 2)
-
-Inventory, radial hotbar on the trackpad, recipe graph browser without a search box, multi output recipes from the first recipe on, tools, stone furnace, chests, the quest runtime and journal with chapters 1 and 2.
-
-Verify: following the journal only, craft a stone furnace and an iron pickaxe using only the controller, starting from an empty inventory.
-
-### M3 Burner automation (phase 3)
-
-Burner mining drill on a vein reservoir, belts (flat, ramp, lift), splitters, burner and filter inserters, multi block machines with odd footprints, ghost placement with rotation and snapping, pipette, selection assist, chapter 3.
-
-Verify: drill, belt, furnace, inserter, chest runs unattended for ten minutes and the chest fills with plates.
-
-### M4 Power and research (phase 4)
-
-Pipes with fluid phases (water, steam), offshore pump, boiler, steam engine, tanks, poles with supply volumes, networks, proportional brownouts, power switch, power overview, electric mining drill, inserter, assembler, lab, the first research tier, chapter 4.
-
-Verify: following the journal only, an unattended line mines iron ore, smelts it, assembles iron gear wheels into a chest, powered by steam, and completes at least one research.
-
-### M5 Pre-alpha usability
-
-Save and load, world settings, settings screens, pause menu, on-screen keyboard, first performance pass.
-
-Verify: couch test 1. Two consecutive sessions through phases 1 to 4 with no keyboard use and no crash, saved and resumed between sessions.
-
-### M6 Intermediates and byproducts (phase 5)
-
-More ores and alloys, crushing and washing, slag and spoils, the byproduct rule in data, the recycler, production statistics and the bottleneck overlay, chapter 5.
-
-Verify: couch test 2. A line that turns mixed ore into two alloys while every byproduct ends in a use or a sink.
-
-### M7 Fluids and plastics (phase 6)
-
-Oil from tar flats, gases, refinery, cracking, both plastics routes, combustion generators, byproduct strictness setting, chapter 6.
-
-Verify: couch test 3. Plastic is produced on both routes and the waste gas runs a generator.
-
-### M8 Scale (phase 7)
-
-Bore drills, deep veins, vein revival, caves with schematics and alternate recipes, hydro power, factory floors polish, chapter 7.
-
-Verify: couch test 4. A base with several veins, a deep vein tapped from the surface, and a two floor factory keeps 60 ticks per second.
-
-### M9 Rocket program (phase 8)
-
-Launch pad, rocket parts, contracts and trade with Mission Control, infinite research, chapter 8.
-
-Verify: couch test 5. The first rocket shipment leaves and the returns arrive.
-
-### M10 Alpha polish and release
-
-Art consistency pass, performance pass, 10 foot UI pass, full playthrough on the couch. Tag `alpha-1` and publish a GitHub release. Couch test findings become work items here.
-
-Order within M10 (user, 2026-09-27): play experience first (sound, textures, models, animations), then lore and depth; balance and design decisions belong to late beta, just before the first release, and are not taken arbitrarily before the first alpha.
-
-Verify: the alpha verify statement above.
-
-### M11 Presentation campaign
-
-The game fleshed out as a background campaign with continuous deliveries to the couch, one work item per subagent, each installed as it lands (user, 2026-09-27). The command socket (0053) and hot reload of data (0054) came first, since they change how the campaign is tested. Then came the model pipeline and the world, since everything after them lands into it; anything the couch shows as more urgent jumps the queue.
-
-The Steam Deck is a supported target (user, 2026-09-27): every rendering item budgets for its APU at 1280 by 800 (effects behind settings, particle and shadow costs measured with the benchmark), the UI audit keeps 1280 by 800 in its matrix, and the Deck's built in controls go through Steam Input the way the couch does.
-
-Verify: each item's own line, on the couch and on the Steam Deck, with screenshots read by the assistant.
+Toolchain, CI and the Steam shortcut (M0); the chunked block world with veins, water and light (M1); hand crafting, the radial hotbar, the recipe graph and quests (M2); burner automation, belts, inserters and placement (M3); power and research (M4); save and load, settings and the pause menu (M5); intermediates and byproducts (M6); fluids and plastics (M7); bore drills, deep veins, caves and hydro (M8); the rocket program (M9); the couch findings of M10; the presentation campaign of M11 with the command socket, hot reload, the model pipeline, the Windows build, the native Android app, the touch overlay and the editors. The milestone texts live in the git history of this file before 2026-10-02 and in the work items.
 
 ### M12 Architecture toward the engine cut
 
-The cleanup series (0142 to 0145) measured the code and settled two decisions: no entity component system in the engine, and no full package split until the layering holds (`doc/work/0143-architecture-audit.md`, Implementation notes). The refactor queue of 0143 follows in prerequisite order: the pure moves and the bugs the audits found, the hubs (the game's records off `World`, ticks without the world pointer, `Frame_State` in groups), the seams a plugin boundary needs (queued writes, the per frame machine view, the per tick event list, the draw list), then the tables (the kind table as the first piece of the game kit). The engine and plugin design itself is 0146, written with the user after the hubs and the first seams.
+The cleanup series (0142 to 0145) measured the code and settled two decisions: no entity component system in the engine, and no full package split until the layering holds (`doc/work/0143-architecture-audit.md`, Implementation notes). The pure moves and the hubs (0147 to 0162) are done: the game's records off `World`, the kind ticks on a context that reaches blocks through one query and one write, `Frame_State` in groups, the request table, `Screen_Context` by consumer, the cue detector. Of the seams, the queued writes (0166) stop being optional, since a tick that is a pure function of its inputs is what lockstep multiplayer runs on; they and the per tick event list belong to M13. The cell occupant index (0164) and the arrival list (0165) are re-read against the field world before they are kept or closed. The kind table and the game kit wait with the plugin system.
 
-Verify: `python3 tools/code_graph.py --check doc/code_map.md` shows no edge from the engine side clusters (loop, world, presentation, platform, tools) into simulation or content beyond the types of the interface, the simulation ticks from queued inputs only (no write into it from the frame side), and the game plays as before on the couch and the phone.
+Verify: the simulation ticks from queued inputs only (no write into it from the frame side), and `python3 tools/code_graph.py --check doc/code_map.md` holds the layering the code map records.
+
+### M13 The first slice
+
+The smallest build that lets the user judge the direction by feel, on `main`, with multiplayer from the first commit: a sphere of a few hundred metres with the terrain field and its mesh, radial gravity and the slope walk, a dig and place tool with two brush sizes, water in one basin under the conserving rule, one torch in a dug cave with the new falloff, one foundation carrying a drill, an arm and a belt into a chest, a day and a night, and the lockstep of DESIGN.md's Multiplayer section with the state hash as the desync check. No space, no survival, one recipe chain. The brief is 0167; its work items follow it.
+
+Verify: two machines on the home network and a split screen pair on the couch share the sphere for twenty minutes while all four dig, place and run the belt line, with no desync, and the user judges the walk, the digging and the arm.
+
+### M14 The ground game on the smooth world (phases 1 to 7)
+
+Every machine of the current content placed on foundation frames, belts and pipes on poles between islands, veins and outcrops, deep veins and caves on the sphere, water and hydro, the quest chapters 1 to 7 played from the pod, the arm model replacing the inserter, the dev kits rebuilt as field worlds, the benchmark sizes 1 to 16 on the new world, and the play build switched. The block world type is removed from the code at the end.
+
+Verify: couch test 6. Chapters 1 to 7 played through by two players on the couch and one remote, saved and resumed between sessions, at 60 ticks per second at benchmark size 16.
+
+### M15 Survival, the suit and the modes
+
+The three modes at world creation, the suit's tanks and their fill points, the pod's oxygen generator and panels, the slow drain and the quiet death, the respawn action, keep inventory as a setting, the death pack, sealed rooms and the first dome with crops, weather's drains, the repair kit and the first breakdowns.
+
+Verify: couch test 7. A survival world from the pod to the first sealed dome with crops, with one death and the pack recovered, and a peaceful world where none of it shows.
+
+### M16 Low orbit and the station (phase 8)
+
+The rocket equation in the launch screen, solid fuel and the first comms satellite, rocket fuel and the first capsule, the terrain's level of detail fading into the globe, the parking scene in low orbit, EVA with mag boots, the jet pack and the safety line, the station built by hand from lifted material through the outpost stage, the return pod landing at a picked spot, the system map, the contract board, the venture's rare derelicts and their repairs.
+
+Verify: couch test 8. The first capsule launched, the outpost built around it over several launches by two players on EVA, and a return pod landed where the map said.
+
+### M17 The first hop (phase 9)
+
+The dock's sealed rooms and cage, the small ship from lifted kit parts, timed hops on the system map, the moon with its own material, landings refused on steep ground, the lift off line, wrecks and salvage trips.
+
+Verify: a small ship built in the dock lands on the moon, brings back its material, and a ship stranded there is salvaged with its cargo on a second trip.
+
+### M18 The system (phase 10)
+
+The generator's planet roles from the seed, new bases on the ore world and a gas giant's moon, hauling by hand, logistics rockets and the hauler, belt stops with several asteroids from the hand drill to anchored miners, comms relays and ground stations reaching further, the survey satellite replacing the purchased survey, prospecting on a blank planet, contracts that pull the player outward.
+
+Verify: three bases on three bodies linked by logistics rockets, and a contract completed with material only a far body has.
+
+### M19 The yard and the living worlds (phase 11)
+
+Hydrogen and cryogenics, staging, the orbital refinery on belt ore, medium and large ships from the yard, explosives and the deep world's core ores, the second living world's flora and fauna pools, terraforming stages to a breathable home world.
+
+Verify: a large ship leaves the yard built from belt ore, and the home world's atmosphere becomes breathable with the suit's oxygen stat gone.
+
+### M20 Signals and logic
+
+The signal network on wires and poles, machines reading signals, signals between planets over the comms network, the processor machine with its block language on a gamepad, its integer virtual machine and step budget.
+
+Verify: a processor on the ore world launches the home base's logistics rocket when a silo there fills, with every machine in a multiplayer world agreeing.
 
 ## Backlog
 
 Not ordered. Each becomes a milestone when picked.
 
-- Rails and minecarts as the long distance transport layer.
+- The plugin system of 0146: the wasm host, lifetime, interop and intercom, the game kit's kind table.
+- Rails and minecarts as the long distance transport layer on a planet.
 - Blueprints and copy/paste of built areas.
-- Split screen local co-op (the simulation is designed for several players from the start).
+- Free flight of ships, pinned on 2026-10-02.
 - Full Xbox-style controller support without trackpads.
-- Peaceful animals, then optional enemies and pollution as a game mode.
-- Music, and hand made art replacing the generated placeholders of M11.
+- Music, and hand made art replacing the generated placeholders.
 - Modding through the data files.
+- Star travelling NPCs and interstellar travel, possible futures.
