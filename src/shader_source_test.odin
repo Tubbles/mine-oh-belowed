@@ -101,7 +101,7 @@ test_shipped_shaders_have_no_bare_integer_literals :: proc(t: ^testing.T) {
 		}
 		checked += 1
 	}
-	testing.expect(t, checked >= 4, "found fewer than the four shipped shaders")
+	testing.expect(t, checked >= 6, "found fewer than the six shipped shaders (chunk, water and field)")
 }
 
 // The GLSL ES rewrite for Android (work item 0114).
@@ -143,5 +143,5 @@ test_shipped_shaders_begin_with_a_version_line :: proc(t: ^testing.T) {
 		testing.expectf(t, strings.has_prefix(shader_source_for_gles(string(data)), "#version 300 es\n"), "data/shaders/%s", entry.name)
 		checked += 1
 	}
-	testing.expect(t, checked >= 4, "found fewer than the four shipped shaders")
+	testing.expect(t, checked >= 6, "found fewer than the six shipped shaders (chunk, water and field)")
 }

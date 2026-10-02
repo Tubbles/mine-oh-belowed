@@ -17,6 +17,22 @@ MAXIMUM_TICK_RATE :: 1000
 MAXIMUM_DAY_LENGTH_SECONDS :: 24 * 60 * 60
 // A week, which keeps the age in ticks far inside a u32 at any tick rate.
 MAXIMUM_LOOSE_ITEM_DESPAWN_MINUTES :: 7 * 24 * 60
+// Bounds the nodes the field's level of detail walks per frame
+// (select_field_nodes): the walk descends from nodes as wide as the view
+// and visits only those crossing the planet's surface shell: about 40,000
+// at 333 mm and 4096 m (and 19,000 nodes selected), 4,000 at 1 m, where a
+// walk over every coarsest node in the view's cube would visit about
+// 970,000 at 333 mm.
+MAXIMUM_FIELD_VIEW_DISTANCE_METRES :: 4096
+// The finest node's width at the widest sample spacing, FIELD_CHUNK_SIZE
+// samples of 1 m (asserted in world_field_lod.odin); a level's node is
+// twice the width of the level below.
+FIELD_FINEST_NODE_MAXIMUM_METRES :: 32
+// Ten thousand times the square root of three, rounded up.
+SQUARE_ROOT_OF_THREE_TEN_THOUSANDTHS :: 17321
+// The terrain field's levels of detail: full, half, quarter and eighth
+// resolution (world_field_lod.odin).
+FIELD_LEVEL_COUNT :: 4
 
 Starting_Item :: struct {
 	item:  string,
@@ -35,6 +51,17 @@ Game_Config :: struct {
 	// Loose items vanish after lying this long, 0 for never
 	// (loose_item.odin).
 	loose_item_despawn_minutes: int,
+	field_view:           Field_View_Config,
+}
+
+// The terrain field's level of detail (work item 0169,
+// world_field_lod.odin).
+Field_View_Config :: struct {
+	// A node nearer the camera than entry L is meshed at level L (full,
+	// half, quarter, eighth resolution); beyond the last entry only the
+	// globe is drawn. The first entry is also how far the planet preview
+	// streams field chunks.
+	level_distances_metres: [FIELD_LEVEL_COUNT]int,
 }
 
 // The index of the first definition with the id, -1 for none.
@@ -285,6 +312,37 @@ validate_game_config :: proc(config: Game_Config) -> string {
 	}
 	if config.loose_item_despawn_minutes < 0 || config.loose_item_despawn_minutes > MAXIMUM_LOOSE_ITEM_DESPAWN_MINUTES {
 		return fmt.tprintf("loose_item_despawn_minutes %d is outside 0 to %d", config.loose_item_despawn_minutes, MAXIMUM_LOOSE_ITEM_DESPAWN_MINUTES)
+	}
+	return field_view_problem(config.field_view)
+}
+
+// The least gap between the distances of levels L - 1 and L: the diagonal
+// of a level L - 1 node at the widest spacing. Any node touching a level
+// L - 1 node lies within that node's diagonal of it, so with this gap a
+// node chosen at level L - 1 for its own distance never borders one chosen
+// two levels coarser (the 2:1 balance the skirts' reach assumes), and the
+// children of a node split at the last but one distance never lie beyond
+// the last one (no hole at the far end).
+field_level_gap_metres :: proc(level: int) -> int {
+	node_metres := FIELD_FINEST_NODE_MAXIMUM_METRES << uint(level - 1)
+	return (node_metres * SQUARE_ROOT_OF_THREE_TEN_THOUSANDTHS + 9999) / 10000
+}
+
+// Distances from 1 m to MAXIMUM_FIELD_VIEW_DISTANCE_METRES, each above the
+// one before by at least field_level_gap_metres.
+field_view_problem :: proc(field_view: Field_View_Config) -> string {
+	distances := field_view.level_distances_metres
+	if distances[0] < 1 {
+		return fmt.tprintf("field_view.level_distances_metres[0] %d is below 1", distances[0])
+	}
+	for level in 1 ..< FIELD_LEVEL_COUNT {
+		least := distances[level - 1] + field_level_gap_metres(level)
+		if distances[level] < least {
+			return fmt.tprintf("field_view.level_distances_metres[%d] %d is below %d, the distance before it plus a level %d node's diagonal", level, distances[level], least, level - 1)
+		}
+	}
+	if distances[FIELD_LEVEL_COUNT - 1] > MAXIMUM_FIELD_VIEW_DISTANCE_METRES {
+		return fmt.tprintf("field_view.level_distances_metres[%d] %d is above %d", FIELD_LEVEL_COUNT - 1, distances[FIELD_LEVEL_COUNT - 1], MAXIMUM_FIELD_VIEW_DISTANCE_METRES)
 	}
 	return ""
 }

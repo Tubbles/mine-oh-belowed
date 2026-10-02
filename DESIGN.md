@@ -126,7 +126,7 @@ Power is part of the logistics puzzle from the alpha on ([doc/fluids.md](doc/flu
 
 ## Multiplayer
 
-- About 32 concurrent players as a guess and no cap in the design. Up to four players in local split screen on one machine, freely mixed with remote players; the phone joins as one remote player with its touch overlay. A dedicated headless server and a player's machine both host.
+- About 32 concurrent players as a guess and no cap in the design. Up to four players in local split screen on one machine, freely mixed with remote players; the phone joins as one remote player with its touch overlay. A dedicated headless server hosts; a player's machine hosts by running the server beside its own game, so there is one host path and the host never plays.
 - The model is Factorio's lockstep on the deterministic tick: every machine runs the whole simulation, inputs are stamped with their tick and relayed by the host, a joining player receives the save, and the state hash is the desync check. The world has one home: every player starts at the pod and a new player spawns there.
 - One shared clock and one bed rule for everyone (The world). Permissions are a host role that owns the world settings and can kick; everything else is open to every player, and no player can harm another.
 

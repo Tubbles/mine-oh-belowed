@@ -1,0 +1,17 @@
+// The textures of the terrain field's materials (work item 0169,
+// src/texture_field_materials.odin): one tile per material, generated as
+// the ore tiles of procedural.sjson are, flecks of the fleck colour over
+// the ground colour. The renderer projects the tile along the three axes
+// and multiplies the planet palette's tint in, so the colours here carry
+// the material's character and the palette the place's colour.
+// crystal_size must be 1, else the file is refused: round flecks are
+// isotropic, larger sizes make squares that stripe along the projection's
+// axes. Every key is required and every material but air
+// needs one entry. The parameters and their ranges are those of
+// procedural.sjson.
+materials = [
+	{material = "topsoil", ground = [124, 104, 78], fleck = [92, 76, 58], seed = 2101, share = 0.3, blob_width = 0.8, crystal_size = 1, stone_grain = 10, stone_mottle = 18, ore_grain = 8, rim_strength = 0.05}
+	{material = "stone", ground = [128, 126, 122], fleck = [104, 102, 100], seed = 2102, share = 0.25, blob_width = 0.6, crystal_size = 1, stone_grain = 8, stone_mottle = 16, ore_grain = 6, rim_strength = 0.1}
+	{material = "deep_stone", ground = [100, 98, 104], fleck = [126, 124, 132], seed = 2103, share = 0.2, blob_width = 0.5, crystal_size = 1, stone_grain = 8, stone_mottle = 14, ore_grain = 8, rim_strength = 0.1}
+	{material = "bedrock", ground = [62, 60, 66], fleck = [44, 42, 48], seed = 2104, share = 0.35, blob_width = 0.7, crystal_size = 1, stone_grain = 6, stone_mottle = 12, ore_grain = 6, rim_strength = 0.15}
+]

@@ -51,6 +51,9 @@ Command_Line :: struct {
 	touch_overlay:   bool `usage:"the touch overlay on for this run; on the desktop the mouse is its touch while the left button is held"`,
 	// Work item 0050: no window, no controller, the table on stdout.
 	benchmark:       int `usage:"run the headless factory benchmark of this size for ten simulated minutes and print the table"`,
+	// Work item 0169: the terrain field before the session plays it (0179).
+	planet_preview:  bool `usage:"fly over the home planet's terrain field (seed from --seed), drawn with the level of detail; no game"`,
+	planet_preview_screenshot: string `usage:"<path>: the planet preview from a fixed camera without input, the frame saved to the path once the field has streamed (120 frames at least), then exit"`,
 }
 
 // Unix style keeps the documented spellings: --seed=42, --set=<key>=<value>.
@@ -240,6 +243,10 @@ main :: proc() {
 	}
 	if command_line.benchmark > 0 {
 		os.exit(run_command_line_benchmark(command_line.benchmark, data_directory, config, game_data))
+	}
+	if command_line.planet_preview || command_line.planet_preview_screenshot != "" {
+		seed, _ := command_line_seed(command_line)
+		os.exit(run_planet_preview(config, content.planets, bindings, data_directory, seed, command_line.planet_preview_screenshot))
 	}
 	saves_directory, saves_found := resolve_saves_directory(loaded_configuration.configuration.paths.saves)
 	session := start_command_line_session(command_line, config, content, game_data.base_generator, saves_directory, saves_found)

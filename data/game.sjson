@@ -20,3 +20,12 @@ veins_infinite = false
 // not fit, dropped from the inventory, or fallen off a belt end) lies on
 // the ground before it vanishes; 0 keeps loose items forever.
 loose_item_despawn_minutes = 15
+// The terrain field's level of detail (work item 0169): a part of the
+// field nearer the camera than the first distance is meshed at full
+// resolution, nearer than the second at half, the third at a quarter, the
+// fourth at an eighth; beyond the fourth only the globe is drawn. Rising,
+// in metres, at most 4096. The planet preview (--planet-preview) streams
+// field chunks within the first.
+field_view = {
+	level_distances_metres = [64, 160, 384, 1024]
+}

@@ -13,6 +13,7 @@ The first playable slice as PLAN.md's M13 verify statement: a large planet gener
 - World settings: terrain sample spacing (a third of a metre to a metre), the planet radius preset, the mode as a stored value with only peaceful in effect, keep inventory as a stored value; the new world screen shows them. The world file records the planet id and the generation values it was made with (radius, bedrock depth, relief), so a later edit of `data/planets.sjson` cannot reshape the unedited ground around saved chunks (0168's review).
 - The session starts the field world; the block world's start is removed from the title (its files remain for M14's content move, reachable by tests only); the dev kits are not rebuilt here (M14).
 - The day and night from the shared clock over the planet's rotation; sleeping waits for M15.
+- What 0177 left for the slice's multiplayer test: the slot transfers, the held stack and the drags still write the simulation from the frame and would desync a session, so they go through the player command list before the twenty minute test; a joining player spawns at the pod with the starter kit; coarse level of detail nodes read edited chunks (0169 left them generated from the seed; 0171 or here).
 - `doc/architecture.md` (sessions start the field world), `doc/content.md` (materials, planet presets, world settings), `README.md` (what the game is now) updated; `PLAN.md`'s M13 row set to implemented with the date.
 
 ## Verify

@@ -22,6 +22,23 @@ test_game_config_rejects_bad_values :: proc(t: ^testing.T) {
 	testing.expect(t, validate_starting_items(empty[:], make_test_items()) != "")
 }
 
+@(test)
+test_the_field_view_distances_rise_within_the_limit :: proc(t: ^testing.T) {
+	config, _ := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	testing.expect_value(t, config.field_view.level_distances_metres, [FIELD_LEVEL_COUNT]int{64, 160, 384, 1024})
+	testing.expect_value(t, field_view_problem({{64, 160, 384, 1024}}), "")
+	testing.expect(t, field_view_problem({}) != "", "a missing field_view is refused")
+	testing.expect(t, field_view_problem({{64, 64, 384, 1024}}) != "")
+	testing.expect(t, field_view_problem({{64, 160, 384, MAXIMUM_FIELD_VIEW_DISTANCE_METRES + 1}}) != "")
+	// The gaps are the diagonals of a 32, 64 and 128 m node, rounded up.
+	testing.expect_value(t, [3]int{field_level_gap_metres(1), field_level_gap_metres(2), field_level_gap_metres(3)}, [3]int{56, 111, 222})
+	testing.expect_value(t, field_view_problem({{64, 120, 231, 453}}), "")
+	refused := [?][FIELD_LEVEL_COUNT]int{{64, 119, 384, 1024}, {64, 160, 270, 1024}, {64, 160, 384, 605}}
+	for distances in refused {
+		testing.expectf(t, field_view_problem({distances}) != "", "%v lets a node border one two levels coarser", distances)
+	}
+}
+
 // The Android asset copy (work item 0114): the list build.sh writes and
 // the stamp that skips the copy on a later start of the same build.
 @(test)

@@ -1,6 +1,6 @@
 # 0169: The field mesher and the level of detail
 
-Status: todo (after 0168)
+Status: implemented (2026-10-03; seen through the preview's screenshot under a virtual display)
 
 ## Goal
 
@@ -17,5 +17,5 @@ The field drawn: naive surface nets over the samples on the chunk workers, norma
 ## Verify
 
 - The build and check commands of 0168.
-- Tests: a chunk whose field is a flat plane meshes to a plane with normals along the gradient; a chunk with no surface crossing meshes to nothing; a sphere of a few chunks meshes watertight at chunk borders (every border edge shared by two triangles); the half resolution mesh of a chunk has about an eighth of the vertices; the shader source passes `shader_source_test.odin`.
+- Tests: a chunk whose field is a flat plane meshes to a plane with normals along the gradient; a chunk with no surface crossing meshes to nothing; a sphere of a few chunks meshes watertight at chunk borders (every border edge shared by two triangles); the half resolution mesh of a chunk group has about a quarter of the vertices (a surface's vertex count follows its area, not its volume; the item first said an eighth); the shader source passes `shader_source_test.odin`.
 - A headless render test draws a small planet to an image and the main agent reads it (the surface smooth, no holes at chunk borders, the skirt invisible from above).

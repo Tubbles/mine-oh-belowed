@@ -8,7 +8,7 @@ Walking on a sphere: every entity carries an up along the radial, the player col
 
 ## Change
 
-- The player's position and velocity in the planet's fixed point frame, the up as the normalised position (fixed point), the forward kept tangent by re-projecting it each tick. The controller is integer like the rest of the tick.
+- The player's position and velocity in the planet's fixed point frame, the up as the normalised position (fixed point), the forward kept tangent by re-projecting it each tick. The controller is integer like the rest of the tick; the f32 motion of `player.odin` that 0177's prediction factored out goes with it, since floats differ between the phone's arm64 and the desktop's x86 and lockstep needs every machine to agree.
 - Collision: the capsule samples the density around it; the surface normal is the gradient; the slope is the angle between the normal and the up. Values in data: the walkable angle (about 40 degrees), the slide speed past it, the step height (one sample), the jump height (about a metre), the mantle height (about one and a half), the tool reach.
 - Raycasts march the field (the voxel walk of `world_raycast.odin` has a field counterpart).
 - The camera: the first and third person cameras take the player's up as their up, so the horizon tilts as the player walks round the planet; gyro aim unchanged.
