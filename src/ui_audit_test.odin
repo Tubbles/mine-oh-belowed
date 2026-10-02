@@ -275,7 +275,7 @@ audit_screen_context :: proc(audit: ^Ui_Audit) -> Screen_Context {
 		unlocks = &simulation.unlocks,
 		quest_state = &simulation.quests,
 		tick = simulation.tick,
-		developer_requests = &simulation.developer_requests,
+		player_commands = &simulation.player_commands,
 		landing_pad = SAVE_TEST_LANDING_PAD,
 		views = &audit.views,
 		developer = Developer_Context {

@@ -1748,6 +1748,8 @@ Touch_Overlay_Context :: struct {
 	render_camera:    rl.Camera3D,
 	frame_seconds:    f32,
 	frame_tick_count: int,
+	// The session's local player (lockstep.odin).
+	local_player:     int,
 }
 
 // The tap scheme hides the crosshair and rings the mined block instead
@@ -1787,12 +1789,12 @@ touch_overlay_on :: proc(touch_context: Touch_Overlay_Context) -> bool {
 // the one that frame's last tick found.
 touch_interaction_frame :: proc(touch_context: Touch_Overlay_Context) -> Touch_Interaction_Frame {
 	simulation := &touch_context.session.simulation
-	selected := simulation.players[0].selected_hotbar_slot
+	selected := simulation.players[touch_context.local_player].selected_hotbar_slot
 	return Touch_Interaction_Frame {
 		interaction = touch_context.settings.touch_interaction,
 		frame_seconds = touch_context.frame_seconds,
 		ticked = touch_context.frame_tick_count > 0,
-		target_takes_interaction = entity_takes_interact(&simulation.world.entities, simulation.players[0].target.entity),
+		target_takes_interaction = entity_takes_interact(&simulation.world.entities, simulation.players[touch_context.local_player].target.entity),
 		hotbar_slots = hud_hotbar_pixel_rectangles(&touch_context.interaction.ui, selected),
 		selected_hotbar_slot = selected,
 		double_tap_latches = touch_context.settings.sneak_hold == .Hold,
@@ -1824,7 +1826,7 @@ frame_hud_touch_buttons_shown :: proc(touch_context: Touch_Overlay_Context) -> b
 	}
 	content := touch_context.content
 	simulation := &touch_context.session.simulation
-	player := simulation.players[0]
+	player := simulation.players[touch_context.local_player]
 	rotates := selected_placement_rotates(player, content.machines, content.blocks, content.items) || entity_rotates(&simulation.world.entities, player.target.entity)
 	shown: bit_set[Hud_Touch_Button]
 	for button in hud_touch_buttons_shown(rotates) {
@@ -1903,7 +1905,7 @@ read_touch_overlay_frame :: proc(touch_context: Touch_Overlay_Context) -> Touch_
 	frame.output.look_delta = render_pixels_to_window_units(frame.output.look_delta, cursor_window_size(), screen_size)
 	if frame.output.aims {
 		simulation := &touch_context.session.simulation
-		eye := player_eye(simulation.players[0].position)
+		eye := player_eye(simulation.players[touch_context.local_player].position)
 		frame.aim_direction, frame.output.aims = touch_aim_direction(frame.output.aim_point, touch_context.render_camera, screen_size, &simulation.world, touch_context.content.blocks, eye)
 	}
 	return frame

@@ -17,9 +17,9 @@ settings_row_id :: proc(key: string) -> Ui_Id {
 
 
 // The pause menu open over the audit's site and drawn once, without
-// developer requests.
+// queued commands.
 open_pause_menu :: proc(audit: ^Ui_Audit, state: ^Ui_State) {
-	clear(&audit.simulation.developer_requests)
+	clear(&audit.simulation.player_commands)
 	push_screen(&state.screens, .Pause)
 	screen_test_frame(audit, state, {})
 }
@@ -48,7 +48,7 @@ test_confirm_on_developer_toggles_nothing :: proc(t: ^testing.T) {
 		screen_test_frame(audit, &state, {})
 	}
 	testing.expect_value(t, top_screen(state.screens), Screen.Developer)
-	testing.expect_value(t, len(audit.simulation.developer_requests), 0)
+	testing.expect_value(t, len(audit.simulation.player_commands), 0)
 }
 
 @(test)
@@ -70,7 +70,7 @@ test_tap_on_developer_toggles_nothing :: proc(t: ^testing.T) {
 		screen_test_frame(audit, &state, touch_input(at, false, moved = false))
 	}
 	testing.expect_value(t, top_screen(state.screens), Screen.Developer)
-	testing.expect_value(t, len(audit.simulation.developer_requests), 0)
+	testing.expect_value(t, len(audit.simulation.player_commands), 0)
 }
 
 // A press on a toggle flips it on the release over it, once, with the
@@ -555,17 +555,22 @@ test_a_tap_on_a_recipe_selects_it_and_the_row_crafts :: proc(t: ^testing.T) {
 	testing.expect_value(t, audit.views.recipe_browser.focused_recipe, plank)
 	testing.expect_value(t, top_screen(state.screens), Screen.Recipes)
 	tap_widget(audit, &state, slot_button_id("touch_button_craft"))
+	testing.expect_value(t, queued_craft_count(player.crafting), 0)
+	run_audit_tick(audit)
 	testing.expect_value(t, queued_craft_count(player.crafting), 1)
 	testing.expect_value(t, player.crafting.runs[0].recipe, plank)
 	tap_widget(audit, &state, slot_button_id("touch_button_craft_five"))
+	run_audit_tick(audit)
 	testing.expect_value(t, queued_craft_count(player.crafting), 1 + RECIPE_CRAFT_MANY_COUNT)
 	testing.expect_value(t, player.crafting.count, 1)
 	tap_widget(audit, &state, slot_button_id("touch_button_cancel_craft"))
+	run_audit_tick(audit)
 	testing.expect_value(t, queued_craft_count(player.crafting), RECIPE_CRAFT_MANY_COUNT)
 	// The gamepad's Confirm still crafts the focused recipe.
 	state.requested_focus = row
 	touch_screen_frame(audit, &state)
 	screen_test_frame(audit, &state, {confirm = true, pointer_is_touch = true})
+	run_audit_tick(audit)
 	testing.expect_value(t, queued_craft_count(player.crafting), RECIPE_CRAFT_MANY_COUNT + 1)
 }
 
@@ -602,6 +607,8 @@ test_a_tap_on_a_technology_selects_it_and_research_starts_it :: proc(t: ^testing
 	testing.expect(t, !research.queued)
 	testing.expect_value(t, audit.views.technology_browser.focused, available)
 	tap_widget(audit, &state, slot_button_id("touch_button_research"))
+	testing.expect(t, !research.queued)
+	run_audit_tick(audit)
 	testing.expect(t, research.queued)
 	testing.expect_value(t, research.technology, available)
 }
@@ -718,6 +725,8 @@ test_a_tap_in_the_recipe_picker_selects_and_choose_sets_it :: proc(t: ^testing.T
 	testing.expect_value(t, audit.views.recipe_browser.focused_recipe, chosen)
 	tap_widget(audit, &state, slot_button_id("touch_button_choose_recipe"))
 	testing.expect_value(t, top_screen(state.screens), Screen.Machine)
+	testing.expect_value(t, assembler.recipe, before)
+	run_audit_tick(audit)
 	testing.expect_value(t, assembler.recipe, chosen)
 	simulation.players[0].open_machine = NO_ENTITY
 }

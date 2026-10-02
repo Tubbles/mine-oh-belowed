@@ -461,18 +461,24 @@ newest_craft_is_in_progress :: proc(queue: Craft_Queue) -> bool {
 	return queue.count == 1 && queue.runs[0].count == 1 && queue.started
 }
 
+// What cancel_last_craft would do: a craft queued, and the ingredients of
+// the one in progress fit back into the inventory.
+last_craft_cancels :: proc(queue: Craft_Queue, inventory: Inventory, recipes: Recipe_Registry, items: Item_Registry) -> bool {
+	if queue.count == 0 {
+		return false
+	}
+	return !newest_craft_is_in_progress(queue) || inventory_fits_all(inventory, items, recipes.recipes[queue.runs[0].recipe].inputs)
+}
+
 // Takes one craft off the newest run. Only the craft in progress holds
 // ingredients, and gives them back; cancelling it is refused (false) when
 // they no longer fit, so nothing is lost.
 cancel_last_craft :: proc(queue: ^Craft_Queue, inventory: Inventory, recipes: Recipe_Registry, items: Item_Registry) -> bool {
-	if queue.count == 0 {
+	if !last_craft_cancels(queue^, inventory, recipes, items) {
 		return false
 	}
 	if newest_craft_is_in_progress(queue^) {
 		recipe := recipes.recipes[queue.runs[0].recipe]
-		if !inventory_fits_all(inventory, items, recipe.inputs) {
-			return false
-		}
 		for input in recipe.inputs {
 			inventory_add(inventory, items, input.item, int(input.count))
 		}

@@ -1,6 +1,6 @@
 # 0177: Lockstep multiplayer: tick stamped inputs, the host relay and the state hash
 
-Status: todo (after 0170; alongside 0171 to 0176)
+Status: implemented (2026-10-03; the twenty minute two machine run and the split screen pair wait for 0178 and 0179, and the slot transfers still write from the frame, see 0179)
 
 ## Goal
 

@@ -108,34 +108,45 @@ test_radial_selects_hotbar_slot :: proc(t: ^testing.T) {
 	player := Player {
 		inventory = make_test_inventory(PLAYER_INVENTORY_SLOT_COUNT),
 	}
+	commands := make([dynamic]Queued_Player_Command, context.temp_allocator)
 	positions := [HOTBAR_SLOT_COUNT][2]f32{{0.5, 0.05}, {0.85, 0.15}, {0.95, 0.5}, {0.85, 0.85}, {0.5, 0.95}, {0.15, 0.85}, {0.05, 0.5}, {0.15, 0.15}}
 	for position, slot in positions {
 		test_ui_frame(&state, {left_touchpad = {down = true, position = position}})
-		hotbar_radial(&state, &player, items)
+		hotbar_radial(&state, &player, 0, &commands, items)
 		testing.expect_value(t, state.radial.highlight, slot)
 		test_ui_frame(&state, {left_touchpad = {down = false, position = position}})
-		hotbar_radial(&state, &player, items)
-		testing.expect_value(t, player.selected_hotbar_slot, slot)
+		hotbar_radial(&state, &player, 0, &commands, items)
+		testing.expect_value(t, queued_hotbar_slot(commands[:]), slot)
 	}
 	// Released in the dead centre: the selection stays.
 	test_ui_frame(&state, {left_touchpad = {down = true, position = {0.5, 0.5}}})
-	hotbar_radial(&state, &player, items)
+	hotbar_radial(&state, &player, 0, &commands, items)
 	test_ui_frame(&state, {})
-	hotbar_radial(&state, &player, items)
-	testing.expect_value(t, player.selected_hotbar_slot, HOTBAR_SLOT_COUNT - 1)
+	hotbar_radial(&state, &player, 0, &commands, items)
+	testing.expect_value(t, queued_hotbar_slot(commands[:]), HOTBAR_SLOT_COUNT - 1)
 	// Tab held with the right stick pointing down, then released.
 	test_ui_frame(&state, {hotbar_radial_down = true, right_stick = {0, -1}})
-	hotbar_radial(&state, &player, items)
+	hotbar_radial(&state, &player, 0, &commands, items)
 	test_ui_frame(&state, {hotbar_radial_down = true})
-	hotbar_radial(&state, &player, items)
+	hotbar_radial(&state, &player, 0, &commands, items)
 	testing.expect(t, state.radial.open)
 	test_ui_frame(&state, {})
-	hotbar_radial(&state, &player, items)
-	testing.expect_value(t, player.selected_hotbar_slot, 4)
+	hotbar_radial(&state, &player, 0, &commands, items)
+	testing.expect_value(t, queued_hotbar_slot(commands[:]), 4)
 	// The right stick alone does not open the hotbar radial.
 	test_ui_frame(&state, {right_stick = {1, 0}})
-	hotbar_radial(&state, &player, items)
+	hotbar_radial(&state, &player, 0, &commands, items)
 	testing.expect(t, !state.radial.open)
+}
+
+// The slot of the newest hotbar slot command, -1 without one.
+queued_hotbar_slot :: proc(commands: []Queued_Player_Command) -> int {
+	#reverse for queued in commands {
+		if command, is_slot := queued.command.(Hotbar_Slot_Command); is_slot {
+			return command.slot
+		}
+	}
+	return -1
 }
 
 @(test)

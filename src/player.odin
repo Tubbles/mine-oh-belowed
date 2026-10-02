@@ -107,6 +107,9 @@ Player_Event :: enum u8 {
 	Vein_Assayed,
 	Magnetometer_Recorded,
 	Seismic_Shot_Fired,
+	// A queued command the tick could not apply although the screen's
+	// check accepted it a frame earlier (player_command.odin).
+	Action_Refused,
 }
 
 Player_Events :: bit_set[Player_Event]
@@ -462,12 +465,10 @@ entity_takes_interact :: proc(entities: ^Entities, handle: Entity_Handle) -> boo
 // with a rocket ready and cargo loaded it launches; Sneak with Interact
 // opens their panels.
 resolve_interact :: proc(player: ^Player, entities: ^Entities, machines: Machine_Registry, input: Input_Frame) -> (Input_Frame, Player_Events) {
-	result := input
+	result := without_interact_jump(player^, entities, input)
 	if .Interact not_in input.pressed || !entity_has_panel(entities, player.target.entity) {
 		return result, {}
 	}
-	result.pressed -= {.Jump}
-	result.just_pressed -= {.Jump}
 	if .Interact not_in input.just_pressed {
 		return result, {}
 	}
@@ -479,6 +480,16 @@ resolve_interact :: proc(player: ^Player, entities: ^Entities, machines: Machine
 	}
 	player.open_machine = player.target.entity
 	return result, {.Open_Machine}
+}
+
+// Interact on an entity with a panel takes the A press from Jump.
+without_interact_jump :: proc(player: Player, entities: ^Entities, input: Input_Frame) -> Input_Frame {
+	result := input
+	if .Interact in input.pressed && entity_has_panel(entities, player.target.entity) {
+		result.pressed -= {.Jump}
+		result.just_pressed -= {.Jump}
+	}
+	return result
 }
 
 // Standing on a flat belt or a ramp moves the body with the belt before
@@ -498,6 +509,40 @@ carry_player_on_belt :: proc(world: ^World, content: Simulation_Content, player:
 	}
 }
 
+// The first movement steps of a tick: the previous pose for the
+// interpolation, the toggles, the double tap, sprinting and turning.
+// Returns whether the player sprints. Shared by tick_player and the
+// lockstep prediction (predict_player_motion).
+turn_player_for_tick :: proc(player: ^Player, input: Input_Frame, seconds: f32) -> (sprinting: bool) {
+	player.previous_position, player.previous_yaw, player.previous_pitch = player.position, player.yaw, player.pitch
+	apply_player_toggles(player, input.just_pressed)
+	update_jump_double_tap(player, input)
+	player.sprinting = update_sprinting(player.sprinting, input)
+	turn_player(player, input, seconds)
+	return player_sprints(player^, input.pressed)
+}
+
+// Flying or walking, swept against the world's blocks.
+move_player_body :: proc(world: ^World, registry: Block_Registry, player: ^Player, input: Input_Frame, sprinting, cheat_speed: bool, seconds: f32) {
+	if player.flying {
+		fly_player(world, registry, player, input, sprinting, cheat_speed_factor(cheat_speed), seconds)
+	} else {
+		walk_player(world, registry, player, input, player_walk_speed(input.pressed, sprinting) * cheat_speed_factor(cheat_speed), cheat_speed, seconds)
+	}
+}
+
+// The movement of tick_player alone, on a copy of a player: the lockstep
+// prediction (lockstep.odin) runs the local player's unconfirmed inputs
+// through it. Interactions, the belt's carry, mining and placing are left
+// to the tick, which the prediction is rebuilt from once it confirms.
+predict_player_motion :: proc(world: ^World, content: Simulation_Content, player: ^Player, frame: Input_Frame, tick_rate: int, cheat_speed: bool) {
+	seconds := 1 / f32(tick_rate)
+	player.sneaking = update_sneaking(player.sneaking, frame)
+	input := without_interact_jump(player^, &world.entities, with_sneaking(frame, player.sneaking))
+	sprinting := turn_player_for_tick(player, input, seconds)
+	move_player_body(world, content.blocks, player, input, sprinting, cheat_speed, seconds)
+}
+
 // cheat_speed is the developer flag on the simulation (0044). Walking
 // over loose items picks them up (pick_up_loose_items).
 tick_player :: proc(world: ^World, records: ^Game_Records, content: Simulation_Content, players: []Player, index: int, frame: Input_Frame, tick_rate: int, tick: u64, cheat_speed := false) -> Player_Events {
@@ -505,19 +550,10 @@ tick_player :: proc(world: ^World, records: ^Game_Records, content: Simulation_C
 	seconds := 1 / f32(tick_rate)
 	player.sneaking = update_sneaking(player.sneaking, frame)
 	input, events := resolve_interact(player, &world.entities, content.machines, with_sneaking(frame, player.sneaking))
-	player.previous_position, player.previous_yaw, player.previous_pitch = player.position, player.yaw, player.pitch
-	apply_player_toggles(player, input.just_pressed)
-	update_jump_double_tap(player, input)
-	player.sprinting = update_sprinting(player.sprinting, input)
-	sprinting := player_sprints(player^, input.pressed)
-	turn_player(player, input, seconds)
+	sprinting := turn_player_for_tick(player, input, seconds)
 	carry_player_on_belt(world, content, player, tick_rate)
 	walk_start := player.position
-	if player.flying {
-		fly_player(world, content.blocks, player, input, sprinting, cheat_speed_factor(cheat_speed), seconds)
-	} else {
-		walk_player(world, content.blocks, player, input, player_walk_speed(input.pressed, sprinting) * cheat_speed_factor(cheat_speed), cheat_speed, seconds)
-	}
+	move_player_body(world, content.blocks, player, input, sprinting, cheat_speed, seconds)
 	if !player.flying {
 		record_walked(&records.statistics, walk_start, player.position)
 	}

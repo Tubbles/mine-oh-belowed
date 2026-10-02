@@ -136,19 +136,33 @@ tick_entities_on_world :: proc(world: ^World, records: ^Game_Records, content: S
 	profile_section(profile, .Lamps, clock)
 }
 
-// A player without an input entry gets an empty one. Entities tick after
+// A player without an input entry gets an empty one. The simulated chunk
+// set and the queued commands come first (simulation_chunk_set.odin,
+// player_command.odin). Entities tick after
 // the players, so a stack dropped into a furnace this tick is seen at once.
 // Machines see the found schematics through the recipe registry
 // (recipe_runs_in_machines). A profile (tick_profile.odin) gets the wall
 // time of each step.
-simulation_tick :: proc(state: ^Simulation_State, content_tables: Simulation_Content, inputs: []Input_Frame, profile: ^Tick_Profile = nil) {
+// Code outside the simulation run inside the tick, after the simulated
+// chunk set is derived and before the player commands apply: the lockstep
+// driver's socket lines (lockstep.odin).
+Tick_Hook :: struct {
+	procedure: proc(data: rawptr),
+	data:      rawptr,
+}
+
+simulation_tick :: proc(state: ^Simulation_State, content_tables: Simulation_Content, inputs: []Input_Frame, profile: ^Tick_Profile = nil, hook := Tick_Hook{}) {
 	clock := profile_now(profile)
 	content := content_with_found_schematics(content_tables, state.unlocks)
 	clock = profile_section(profile, .Unlocks, clock)
 	state.tick += 1
 	advance_statistics_clock(&state.records.statistics, state.tick, state.tick_rate)
 	clock = profile_section(profile, .Statistics, clock)
-	serve_developer_requests(state, content)
+	update_simulated_chunks(state, content)
+	if hook.procedure != nil {
+		hook.procedure(hook.data)
+	}
+	apply_player_commands(state, content)
 	for index in 0 ..< len(state.players) {
 		input, used := resolve_use_item(&state.players[index], &state.world.entities, content.items, index < len(inputs) ? inputs[index] : Input_Frame{})
 		if used != NO_ITEM {

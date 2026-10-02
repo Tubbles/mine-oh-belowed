@@ -227,9 +227,9 @@ test_finish_active_quest_request_served_by_the_tick :: proc(t: ^testing.T) {
 	simulation, content := make_developer_test_simulation()
 	defer destroy_simulation(&simulation)
 	active := simulation.quests.active
-	append(&simulation.developer_requests, Developer_Request{action = .Finish_Active_Quest})
+	queue_player_command(&simulation.player_commands, 0, Developer_Request{action = .Finish_Active_Quest})
 	simulation_tick(&simulation, content, {})
-	testing.expect_value(t, len(simulation.developer_requests), 0)
+	testing.expect_value(t, len(simulation.player_commands), 0)
 	testing.expect_value(t, simulation.quests.progress[active].status, Quest_Status.Done)
 	testing.expect(t, simulation.quests.active > active)
 }
@@ -240,9 +240,13 @@ test_chapter_requests_served_by_the_tick :: proc(t: ^testing.T) {
 	simulation, content := make_developer_test_simulation()
 	defer destroy_simulation(&simulation)
 	grants := [?]Developer_Grant{{test_item(content.items, "iron_plate"), 3}}
-	command_line_developer_requests(&simulation.developer_requests, 4, grants[:])
+	requests := make([dynamic]Developer_Request, context.temp_allocator)
+	command_line_developer_requests(&requests, 4, grants[:])
+	for request in requests {
+		queue_player_command(&simulation.player_commands, 0, request)
+	}
 	simulation_tick(&simulation, content, {})
-	testing.expect_value(t, len(simulation.developer_requests), 0)
+	testing.expect_value(t, len(simulation.player_commands), 0)
 	testing.expect_value(t, simulation.quests.active, content.quests.chapters[3].first_quest)
 	player := simulation.players[0]
 	testing.expect_value(t, inventory_count(player.inventory, test_item(content.items, "steam_engine")), 2)
@@ -256,20 +260,21 @@ test_chapter_requests_served_by_the_tick :: proc(t: ^testing.T) {
 test_developer_toggles_teleport_and_unlock :: proc(t: ^testing.T) {
 	simulation, content := make_developer_test_simulation()
 	defer destroy_simulation(&simulation)
-	requests := [?]Developer_Request{{action = .Toggle_Fly_Mode}}
-	testing.expect(t, pending_toggle(false, requests[:], .Toggle_Fly_Mode))
-	testing.expect(t, !pending_toggle(true, requests[:], .Toggle_Fly_Mode))
-	no_clip_requests := [?]Developer_Request{{action = .Toggle_No_Clip}}
-	testing.expect(t, pending_toggle(false, no_clip_requests[:], .Toggle_No_Clip))
-	testing.expect(t, !pending_toggle(false, requests[:], .Toggle_No_Clip))
+	requests := [?]Queued_Player_Command{{player = 0, command = Developer_Request{action = .Toggle_Fly_Mode}}}
+	testing.expect(t, pending_toggle(false, requests[:], nil, 0, .Toggle_Fly_Mode))
+	testing.expect(t, !pending_toggle(true, requests[:], nil, 0, .Toggle_Fly_Mode))
+	testing.expect(t, !pending_toggle(false, requests[:], nil, 1, .Toggle_Fly_Mode))
+	no_clip_requests := [?]Queued_Player_Command{{player = 0, command = Developer_Request{action = .Toggle_No_Clip}}}
+	testing.expect(t, pending_toggle(false, no_clip_requests[:], nil, 0, .Toggle_No_Clip))
+	testing.expect(t, !pending_toggle(false, requests[:], nil, 0, .Toggle_No_Clip))
 
 	position := landing_pad_standing_position(TEST_LANDING_PAD)
 	testing.expect_value(t, position, [3]f32{0.5, 11, 0.5})
-	append(&simulation.developer_requests, Developer_Request{action = .Toggle_Fly_Mode})
-	append(&simulation.developer_requests, Developer_Request{action = .Toggle_No_Clip})
-	append(&simulation.developer_requests, Developer_Request{action = .Teleport, position = position})
-	append(&simulation.developer_requests, Developer_Request{action = .Unlock_All})
-	serve_developer_requests(&simulation, content)
+	queue_player_command(&simulation.player_commands, 0, Developer_Request{action = .Toggle_Fly_Mode})
+	queue_player_command(&simulation.player_commands, 0, Developer_Request{action = .Toggle_No_Clip})
+	queue_player_command(&simulation.player_commands, 0, Developer_Request{action = .Teleport, position = position})
+	queue_player_command(&simulation.player_commands, 0, Developer_Request{action = .Unlock_All})
+	apply_player_commands(&simulation, content)
 	player := simulation.players[0]
 	testing.expect(t, player.flying)
 	testing.expect(t, player.no_clip)
@@ -297,8 +302,8 @@ test_time_of_day_sets_the_day_cycle :: proc(t: ^testing.T) {
 	simulation, content := make_developer_test_simulation()
 	defer destroy_simulation(&simulation)
 	simulation.tick = tick
-	append(&simulation.developer_requests, Developer_Request{action = .Set_Time_Of_Day, time_of_day = .Midnight})
-	serve_developer_requests(&simulation, content)
+	queue_player_command(&simulation.player_commands, 0, Developer_Request{action = .Set_Time_Of_Day, time_of_day = .Midnight})
+	apply_player_commands(&simulation, content)
 	testing.expect_value(t, simulation.tick, tick)
 	testing.expect_value(t, daylight_blend(simulation_day_ticks(simulation), simulation.day_length_ticks), 0)
 	// world.sjson keeps the day time, and loading turns it back into the
@@ -334,13 +339,13 @@ test_developer_toggles_cheat_speed :: proc(t: ^testing.T) {
 	simulation, content := make_developer_test_simulation()
 	defer destroy_simulation(&simulation)
 	testing.expect(t, !simulation.cheat_speed)
-	requests := [?]Developer_Request{{action = .Toggle_Cheat_Speed}}
-	testing.expect(t, pending_toggle(false, requests[:], .Toggle_Cheat_Speed))
-	testing.expect(t, !pending_toggle(false, requests[:], .Toggle_Fly_Mode))
-	append(&simulation.developer_requests, Developer_Request{action = .Toggle_Cheat_Speed})
-	serve_developer_requests(&simulation, content)
+	requests := [?]Queued_Player_Command{{player = 0, command = Developer_Request{action = .Toggle_Cheat_Speed}}}
+	testing.expect(t, pending_toggle(false, requests[:], nil, 0, .Toggle_Cheat_Speed))
+	testing.expect(t, !pending_toggle(false, requests[:], nil, 0, .Toggle_Fly_Mode))
+	queue_player_command(&simulation.player_commands, 0, Developer_Request{action = .Toggle_Cheat_Speed})
+	apply_player_commands(&simulation, content)
 	testing.expect(t, simulation.cheat_speed)
-	append(&simulation.developer_requests, Developer_Request{action = .Toggle_Cheat_Speed})
-	serve_developer_requests(&simulation, content)
+	queue_player_command(&simulation.player_commands, 0, Developer_Request{action = .Toggle_Cheat_Speed})
+	apply_player_commands(&simulation, content)
 	testing.expect(t, !simulation.cheat_speed)
 }

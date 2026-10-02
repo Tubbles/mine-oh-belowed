@@ -9,11 +9,12 @@ import "platform"
 // Developer mode (work item 0043): shortcuts that put a tester into a
 // given game state from the couch. The Developer screen (ui_developer.odin,
 // only with --dev) and the command line (--chapter, --give) queue
-// Developer_Requests on the simulation; simulation_tick serves them before
-// the players move, so the UI frame never changes simulation state itself.
-// The command socket (work item 0053, command.odin) builds the same
-// requests and serves them itself between two ticks, so its answer can
-// say whether a request was refused.
+// Developer_Requests as player commands (player_command.odin);
+// simulation_tick serves them before the players move, so the UI frame
+// never changes simulation state itself. The command socket (work item
+// 0053, command.odin) builds the same requests and serves them from the
+// lines the lockstep driver applies at the start of a tick, so its answer
+// can say whether a request was refused.
 //
 // Chapter kits come from data/dev_kits.sjson: one kit per chapter, in
 // chapter order, with the items a player typically holds at that
@@ -359,8 +360,8 @@ landing_pad_standing_position :: proc(site: Landing_Pad_Site) -> [3]f32 {
 // Returns why the request changed nothing, empty when it was served.
 // The requests the menu and the command line queue always succeed; the
 // command socket's may be refused (a placement a player could not make).
-serve_developer_request :: proc(state: ^Simulation_State, content: Simulation_Content, request: Developer_Request) -> (problem: string) {
-	player := &state.players[0]
+serve_developer_request :: proc(state: ^Simulation_State, content: Simulation_Content, request: Developer_Request, player_index := 0) -> (problem: string) {
+	player := &state.players[player_index]
 	switch request.action {
 	case .Toggle_Fly_Mode:
 		apply_player_toggles(player, {.Toggle_Fly_Mode})
@@ -402,21 +403,6 @@ serve_developer_request :: proc(state: ^Simulation_State, content: Simulation_Co
 		return set_filter_for_developer(&state.world, content.machines, request.cell, request.filter)
 	}
 	return ""
-}
-
-// At the start of a tick, oldest first. Without a player nothing is
-// served.
-serve_developer_requests :: proc(state: ^Simulation_State, content: Simulation_Content) {
-	if len(state.players) > 0 {
-		for request in state.developer_requests {
-			before := movement_toggles(state.players[0])
-			if problem := serve_developer_request(state, content, request); problem != "" {
-				platform.log_printf("developer: %v refused: %s", request.action, problem)
-			}
-			log_movement_toggles(before, state.players[0], "the Developer screen's request", state.tick)
-		}
-	}
-	clear(&state.developer_requests)
 }
 
 // Through the path of a quest reward (mark_technology_researched); an

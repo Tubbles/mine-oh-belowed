@@ -420,6 +420,12 @@ touch_input :: proc(position: [2]f32, down: bool, pressed := false, moved := tru
 	return input
 }
 
+// One simulation tick on the audit's world, which applies what the
+// screens queued in the frames before (player_command.odin).
+run_audit_tick :: proc(audit: ^Ui_Audit) {
+	simulation_tick(&audit.simulation, audit.content, {})
+}
+
 // A finger's press and release on a widget of the last frame.
 tap_widget :: proc(audit: ^Ui_Audit, state: ^Ui_State, id: Ui_Id) {
 	at := widget_centre(state^, id)
@@ -713,6 +719,7 @@ test_the_touch_row_clears_a_filter :: proc(t: ^testing.T) {
 		push_screen(&state.screens, .Machine)
 		screen_test_frame(audit, &state, {pointer_is_touch = true})
 		tap_widget(audit, &state, slot_button_id("touch_button_clear_filter"))
+		run_audit_tick(audit)
 		testing.expectf(t, filter^ == NO_ITEM, "%s keeps its filter", machine.id)
 		testing.expect_value(t, top_screen(state.screens), Screen.Machine)
 		destroy_ui_state(&state)

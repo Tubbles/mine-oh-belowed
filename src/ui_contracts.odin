@@ -100,8 +100,12 @@ launch_pad_catalogue_tab :: proc(state: ^Ui_State, area: Ui_Rectangle, pad: ^Lau
 		ui_push_id(state, "catalogue", index)
 		clicked := ui_button(state, cut_row(&content), catalogue_entry_label(entry, screen_context.items))
 		ui_pop_id(state)
-		if clicked && !order_from_catalogue(records, screen_context.contracts, index, launch_pad_centre(pad^)) {
+		switch {
+		case !clicked:
+		case !catalogue_entry_affordable(records, screen_context.contracts, index):
 			ui_toast(state, text("catalogue_not_enough_credit"))
+		case:
+			queue_player_command(screen_context.player_commands, screen_context.player_index, Catalogue_Order_Command{entry = index, survey_centre = launch_pad_centre(pad^)})
 		}
 	}
 }

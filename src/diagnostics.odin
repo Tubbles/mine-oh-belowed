@@ -101,6 +101,8 @@ World_Facts :: struct {
 // two renderer counters on every page, Render_Facts is built on one.
 Diagnostics_Context :: struct {
 	simulation:         ^Simulation_State,
+	// The session's local player.
+	player:             int,
 	technologies:       Technology_Registry,
 	blocks:             Block_Registry,
 	items:              Item_Registry,
@@ -283,7 +285,7 @@ mapped_lines :: proc(diagnostics: Diagnostics_Context, config: Game_Config) -> [
 	append_line(&lines, false, "backend %v", input.raw.backend)
 	append_line(&lines, false, "%s", world_statistics_text(diagnostics))
 	append_line(&lines, false, "%s", streaming_statistics_text(diagnostics))
-	append_line(&lines, false, "%s", light_statistics_text(diagnostics.simulation))
+	append_line(&lines, false, "%s", light_statistics_text(diagnostics.simulation, diagnostics.player))
 	append_player_lines(&lines, diagnostics)
 	append_line(&lines, false, "")
 	append_line(&lines, input.move != {}, "move        % .3f % .3f", input.move.x, input.move.y)
@@ -479,9 +481,9 @@ world_statistics_text :: proc(diagnostics: Diagnostics_Context) -> string {
 
 // Light of the cell in front of the targeted face: the targeted block
 // itself is usually opaque and holds no light.
-light_statistics_text :: proc(simulation: ^Simulation_State) -> string {
+light_statistics_text :: proc(simulation: ^Simulation_State, local_player: int) -> string {
 	world := &simulation.world
-	player := simulation.players[0]
+	player := simulation.players[local_player]
 	light := player.target.hit ? world_get_light(world, player.target.adjacent) : 0
 	return fmt.tprintf(
 		"light sky %d block %d %d %d  day %.2f  queued light %d chunks %d water %d",
@@ -511,7 +513,7 @@ world_overlay_statistics_lines :: proc(diagnostics: Diagnostics_Context) -> []Di
 	lines := make([dynamic]Diagnostics_Line, context.temp_allocator)
 	append_line(&lines, false, "%s", world_statistics_text(diagnostics))
 	append_line(&lines, false, "%s", streaming_statistics_text(diagnostics))
-	append_line(&lines, false, "%s", light_statistics_text(diagnostics.simulation))
+	append_line(&lines, false, "%s", light_statistics_text(diagnostics.simulation, diagnostics.player))
 	append_player_lines(&lines, diagnostics)
 	return lines[:]
 }
@@ -571,7 +573,7 @@ occupied_slot_count :: proc(inventory: Inventory) -> int {
 }
 
 append_player_lines :: proc(lines: ^[dynamic]Diagnostics_Line, diagnostics: Diagnostics_Context) {
-	player, registry, world := diagnostics.simulation.players[0], diagnostics.blocks, &diagnostics.simulation.world
+	player, registry, world := diagnostics.simulation.players[diagnostics.player], diagnostics.blocks, &diagnostics.simulation.world
 	position, velocity := player.position, player.velocity
 	append_line(lines, false, "player % .2f % .2f % .2f  velocity % .2f % .2f % .2f", position.x, position.y, position.z, velocity.x, velocity.y, velocity.z)
 	cheat_speed := diagnostics.simulation.cheat_speed

@@ -81,14 +81,12 @@ launch_pad_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, pad: ^Launc
 	machine_slot_rows(state, &content, pad.part_count, LAUNCH_PAD_CARGO_SLOTS, slots, items, &result)
 	machine_bar(state, cut_top(&content, UI_ROW_HEIGHT), launch_pad_progress(pad^, machine, screen_context.tick_rate))
 	detail_line(state, &content, launch_pad_state_text(pad), UI_DIM_TEXT_COLOR)
-	statistics := &screen_context.records.statistics
+	// The tick counts a refused press (Assembly_Command, Launch_Command).
 	if ui_button(state, cut_row(&content), text("launch_pad_assemble")) {
-		record_launch_refusal(statistics, assembly_refusal(pad^, machine))
-		start_assembly(pad, machine)
+		queue_player_command(screen_context.player_commands, screen_context.player_index, Assembly_Command{pad = pad.handle})
 	}
 	if ui_button(state, cut_row(&content), text("launch_pad_launch")) {
-		record_launch_refusal(statistics, launch_refusal(pad, machine))
-		request_launch(&screen_context.world.entities, pad.handle)
+		queue_player_command(screen_context.player_commands, screen_context.player_index, Launch_Command{pad = pad.handle})
 	}
 	power_line := power_status_line(&screen_context.world.entities.electric_networks, pad.handle)
 	detail_line(state, &content, power_line, UI_DIM_TEXT_COLOR)

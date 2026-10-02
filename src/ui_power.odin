@@ -85,7 +85,7 @@ power_panel_region :: proc(state: ^Ui_State, area: Ui_Rectangle, handle: Entity_
 	}
 	value := text(pole.on ? "power_switch_on" : "power_switch_off")
 	if ui_choice(state, cut_row(&content), text("power_switch_state"), value) {
-		toggle_power_switch(entities, screen_context.machines, handle)
+		queue_player_command(screen_context.player_commands, screen_context.player_index, Power_Switch_Command{switch_handle = handle})
 	}
 }
 

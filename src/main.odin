@@ -8,6 +8,8 @@ import "core:os"
 import "platform"
 
 GAME_VERSION :: "0.0.0"
+// The highest TCP port --port takes.
+MAXIMUM_PORT :: 65_535
 // From build.sh or the flake through -define: the short commit ("+dirty"
 // with uncommitted changes) and the UTC build time in one string, since a
 // define holding only digits (a date, or an unlucky hash) would arrive as
@@ -55,6 +57,10 @@ Command_Line :: struct {
 	planet_preview:  bool `usage:"fly over the home planet's terrain field (seed from --seed), drawn with the level of detail; no game"`,
 	planet_preview_screenshot: string `usage:"<path>: the planet preview from a fixed camera without input, the frame saved to the path once the field has streamed (120 frames at least), then exit"`,
 	planet_preview_walk: bool `usage:"start the planet preview (or its screenshot) in the walk mode, the field player standing on the ground (G switches in the preview)"`,
+	// Work item 0177: lockstep multiplayer.
+	server:          bool `usage:"run the world (--load, or a new one) without a window or a local player and host it for --join (doc/commands.md)"`,
+	port:            int `usage:"the port --server listens on (default 47317)"`,
+	join_address:    string `args:"name=join" usage:"join the session a --server hosts at <address>[:port] (an IP address on the phone)"`,
 }
 
 // Unix style keeps the documented spellings: --seed=42, --set=<key>=<value>.
@@ -134,6 +140,9 @@ command_line_value_problem :: proc(command_line: Command_Line) -> string {
 	}
 	if command_line.benchmark < 0 || command_line.benchmark > BENCHMARK_LARGEST_SIZE {
 		return fmt.tprintf("invalid --benchmark=%d (expected a size from 1 to %d)", command_line.benchmark, BENCHMARK_LARGEST_SIZE)
+	}
+	if command_line.port < 0 || command_line.port > MAXIMUM_PORT {
+		return fmt.tprintf("invalid --port=%d (expected a port from 1 to %d)", command_line.port, MAXIMUM_PORT)
 	}
 	return give_arguments_problem(command_line.give_arguments[:])
 }
@@ -250,9 +259,16 @@ main :: proc() {
 		os.exit(run_planet_preview(config, content.planets, bindings, data_directory, seed, command_line.planet_preview_screenshot, command_line.planet_preview_walk))
 	}
 	saves_directory, saves_found := resolve_saves_directory(loaded_configuration.configuration.paths.saves)
+	if command_line.server {
+		os.exit(run_command_line_server(command_line, config, content, game_data.base_generator, saves_directory, saves_found, loaded_configuration.configuration.settings.autosave_minutes))
+	}
 	session := start_command_line_session(command_line, config, content, game_data.base_generator, saves_directory, saves_found)
 	if session != nil {
-		command_line_developer_requests(&session.simulation.developer_requests, command_line.chapter, developer_grants)
+		requests := make([dynamic]Developer_Request, context.temp_allocator)
+		command_line_developer_requests(&requests, command_line.chapter, developer_grants)
+		for request in requests {
+			queue_player_command(&session.simulation.player_commands, 0, request)
+		}
 	}
 	input_request, _ := parse_input_request(command_line.input)
 	input_backend, input_started := start_input_backend(input_request)
@@ -271,6 +287,7 @@ main :: proc() {
 		touch_overlay_forced = command_line.touch_overlay,
 		settings_set_aside = settings_problem != "",
 		fonts_fell_back = start.fonts_fell_back,
+		join_address = command_line.join_address,
 	}
 	run_game(config, input_backend, game_data, data_directory, fonts, session, make_title_state(config, saves_directory, saves_found, make_save_header()), player_configuration)
 }
@@ -481,6 +498,31 @@ start_command_line_session :: proc(command_line: Command_Line, config: Game_Conf
 	return session
 }
 
+// --server: the world of the command line (a new one by default), hosted
+// without a window until the process is stopped (session_server.odin).
+run_command_line_server :: proc(command_line: Command_Line, config: Game_Config, content: Game_Content, base_generator: Generator, saves_directory: string, saves_found: bool, autosave_minutes: int) -> int {
+	plan, problem := command_line_plan(command_line, config, saves_directory, saves_found)
+	if problem != "" {
+		platform.log_printf("error: %s", problem)
+		return 1
+	}
+	session: ^Session
+	if session, problem = start_session(plan, config, content, base_generator); problem != "" {
+		platform.log_printf("error: cannot start the world: %s", problem)
+		return 1
+	}
+	defer end_session(session)
+	if !plan.loading && session.save.enabled {
+		save_session(session, content)
+	}
+	server: Server_State
+	if problem = start_server(&server, session, content, autosave_minutes, command_line.port != 0 ? command_line.port : platform.DEFAULT_NETWORK_PORT); problem != "" {
+		platform.log_printf("error: %s", problem)
+		return 1
+	}
+	return run_server(&server)
+}
+
 command_line_plan :: proc(command_line: Command_Line, config: Game_Config, saves_directory: string, saves_found: bool) -> (plan: Session_Plan, problem: string) {
 	if command_line.load_name != "" {
 		if !saves_found {
@@ -499,6 +541,9 @@ command_line_conflict :: proc(command_line: Command_Line) -> string {
 	if command_line.benchmark > 0 {
 		return benchmark_conflict(command_line)
 	}
+	if problem := network_conflict(command_line); problem != "" {
+		return problem
+	}
 	if command_line.load_name == "" {
 		return ""
 	}
@@ -511,6 +556,26 @@ command_line_conflict :: proc(command_line: Command_Line) -> string {
 		return "--load and --debug-terrain cannot be combined"
 	case command_line.chapter > 0:
 		return "--load and --chapter cannot be combined (--chapter starts a new world)"
+	}
+	return ""
+}
+
+// A joining machine gets the host's world; the server hosts the world it
+// starts, and only it listens on a port.
+network_conflict :: proc(command_line: Command_Line) -> string {
+	switch {
+	case command_line.server && command_line.join_address != "":
+		return "--server and --join cannot be combined (a server hosts, a client joins)"
+	case command_line.join_address != "" && command_line_starts_world(command_line):
+		return "--join cannot be combined with the flags that start a world (the host's world is joined)"
+	case command_line.port != 0 && !command_line.server:
+		return "--port needs --server"
+	case command_line.server && command_line.debug_terrain:
+		return "--server and --debug-terrain cannot be combined"
+	case command_line.server && (command_line.chapter > 0 || len(command_line.give_arguments) > 0):
+		// Their requests are queued for the local player, which a server
+		// does not have.
+		return "--server cannot be combined with --chapter or --give"
 	}
 	return ""
 }

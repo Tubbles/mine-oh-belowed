@@ -77,6 +77,9 @@ Player_Configuration :: struct {
 	// The settings file was set aside at start (work item 0149): the title
 	// screen toasts it once.
 	settings_set_aside: bool,
+	// --join: the host to join instead of showing the title (work item
+	// 0177, session_network.odin).
+	join_address: string,
 	// A font setting was not available at start (load_start_fonts): the
 	// title screen toasts it once.
 	fonts_fell_back: bool,

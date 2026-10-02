@@ -318,17 +318,22 @@ drill_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, drill: Drill, sc
 }
 
 // The input and output priority toggles, the filter slot and the side the
-// filter item goes to. The toggles change the splitter directly.
+// filter item goes to. The toggles queue their new values for the tick
+// (Splitter_Priorities_Command, Splitter_Side_Command).
 splitter_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, splitter: ^Splitter, screen_context: Screen_Context) -> Machine_Slot_Result {
 	result := Machine_Slot_Result {
 		grid = {activated = -1, focused = -1},
 	}
 	content := area
+	priorities := Splitter_Priorities_Command{splitter = splitter.handle, input = splitter.input_priority, output = splitter.output_priority}
 	if ui_choice(state, cut_row(&content), text("splitter_input_priority"), text(splitter_priority_keys[splitter.input_priority])) {
-		splitter.input_priority = next_splitter_priority(splitter.input_priority)
+		priorities.input = next_splitter_priority(splitter.input_priority)
 	}
 	if ui_choice(state, cut_row(&content), text("splitter_output_priority"), text(splitter_priority_keys[splitter.output_priority])) {
-		splitter.output_priority = next_splitter_priority(splitter.output_priority)
+		priorities.output = next_splitter_priority(splitter.output_priority)
+	}
+	if priorities.input != splitter.input_priority || priorities.output != splitter.output_priority {
+		queue_player_command(screen_context.player_commands, screen_context.player_index, priorities)
 	}
 	first := cut_top(&content, UI_SLOT_SIZE + UI_GAP)
 	shown := splitter.filter == NO_ITEM ? EMPTY_STACK : Item_Stack{item = splitter.filter, count = 1}
@@ -336,7 +341,7 @@ splitter_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, splitter: ^Sp
 	result.filter_activated, result.filter_focused, result.filter_shown = interaction.activated, interaction.focused, true
 	draw_text_fitted(state, {first.x + UI_SLOT_SIZE + UI_GAP, first.y, MACHINE_BAR_WIDTH, UI_SLOT_SIZE}, text("inserter_filter"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	if ui_choice(state, cut_row(&content), text("splitter_filter_side"), text(splitter_side_keys[splitter.filter_side])) {
-		splitter.filter_side = other_side(splitter.filter_side)
+		queue_player_command(screen_context.player_commands, screen_context.player_index, Splitter_Side_Command{splitter = splitter.handle, side = other_side(splitter.filter_side)})
 	}
 	return result
 }
@@ -494,12 +499,12 @@ machine_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	apply_transfer_button(&screen_context.world.entities, statistics_simulation_content(screen_context), handle, player.inventory, machine_slots.transfer)
 	if inserter := pool_get(&screen_context.world.entities.inserters, handle); inserter != nil {
 		clear_filter := (machine_slots.filter_focused && state.input.context_action) || button == .Clear_Filter
-		inserter.filter = inserter_filter_after_input(inserter.filter, player.held.stack, machine_slots.filter_activated, clear_filter)
+		queue_filter_change(screen_context, handle, inserter.filter, inserter_filter_after_input(inserter.filter, player.held.stack, machine_slots.filter_activated, clear_filter))
 		inserter.held, player.held = inserter_hand_after_input(inserter.held, player.held, machine_slots.hand_activated)
 	}
 	if splitter := pool_get(&screen_context.world.entities.splitters, handle); splitter != nil {
 		clear_filter := (machine_slots.filter_focused && state.input.context_action) || button == .Clear_Filter
-		splitter.filter = inserter_filter_after_input(splitter.filter, player.held.stack, machine_slots.filter_activated, clear_filter)
+		queue_filter_change(screen_context, handle, splitter.filter, inserter_filter_after_input(splitter.filter, player.held.stack, machine_slots.filter_activated, clear_filter))
 	}
 	player.held = finish_slot_drag(state, player.inventory, player.held, items)
 	draw_held_stack(state, player.held.stack, items)
@@ -515,6 +520,13 @@ machine_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		focused = inserter.held
 	}
 	machine_glyph_bar(state, player.held.stack, focused)
+}
+
+// A filter the panel changed goes to the tick (Machine_Filter_Command).
+queue_filter_change :: proc(screen_context: Screen_Context, handle: Entity_Handle, current, wanted: Item_Id) {
+	if wanted != current {
+		queue_player_command(screen_context.player_commands, screen_context.player_index, Machine_Filter_Command{machine = handle, filter = wanted})
+	}
 }
 
 // The quick move (quick_transfer.odin): R2 or Q on a slot, or Left

@@ -73,6 +73,28 @@ test_command_line_benchmark_size_and_conflicts :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_command_line_server_join_and_port :: proc(t: ^testing.T) {
+	server, error := parse_command_line({"--server", "--port=4000", "--load=a"})
+	testing.expect_value(t, error, nil)
+	testing.expect(t, server.server)
+	testing.expect_value(t, server.port, 4000)
+	testing.expect_value(t, command_line_value_problem(server), "")
+	testing.expect_value(t, command_line_conflict(server), "")
+	joining, _ := parse_command_line({"--join=192.168.1.20:4000"})
+	testing.expect_value(t, joining.join_address, "192.168.1.20:4000")
+	testing.expect_value(t, command_line_conflict(joining), "")
+	for port in ([?]string{"--port=-1", "--port=65536"}) {
+		invalid, _ := parse_command_line({"--server", port})
+		testing.expectf(t, strings.has_prefix(command_line_value_problem(invalid), "invalid --port"), "%s accepted", port)
+	}
+	conflicts := [?][2]string{{"--server", "--join=a"}, {"--join=a", "--seed=7"}, {"--port=4000", "--load=a"}, {"--server", "--debug-terrain"}, {"--server", "--chapter=2"}, {"--server", "--give=iron_plate:1"}}
+	for pair in conflicts {
+		combined, _ := parse_command_line({pair[0], pair[1]})
+		testing.expectf(t, command_line_conflict(combined) != "", "%s with %s accepted", pair[0], pair[1])
+	}
+}
+
+@(test)
 test_command_line_repeated_set :: proc(t: ^testing.T) {
 	command_line, error := parse_command_line({"config", "--set=settings.ui_scale=1.25", "--set=paths.saves=/tmp/saves"})
 	defer delete(command_line.set_assignments)

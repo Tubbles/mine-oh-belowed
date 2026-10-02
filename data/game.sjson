@@ -53,3 +53,8 @@ field_player = {
 	fly_speed_millimetres_per_second = 12000
 	fly_sprint_speed_millimetres_per_second = 36000
 }
+// The chunks every machine of a session simulates: this many chunks
+// around each player's chunk across and up and down (work item 0177).
+// Loading, the tick and the state hash all follow it.
+simulated_chunk_radius_horizontal = 6
+simulated_chunk_radius_vertical = 3

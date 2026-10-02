@@ -85,8 +85,14 @@ Screen_Context :: struct {
 	tick:            u64,
 	// The simulation's developer cheat speed, before pending requests.
 	cheat_speed:        bool,
-	// Nil without a world.
-	developer_requests: ^[dynamic]Developer_Request,
+	// The simulation's command list (player_command.odin): the screens
+	// queue every change of the simulation here for the next tick instead
+	// of writing it. Nil without a world.
+	player_commands:    ^[dynamic]Queued_Player_Command,
+	// The local player's commands already taken from that list and not
+	// applied yet (lockstep_unconfirmed_commands), for the pending state
+	// a screen shows.
+	unconfirmed_commands: []Player_Command,
 	landing_pad:        Landing_Pad_Site,
 	// The recipe browser, the technology browser, the statistics and the
 	// map (ui_session_views.odin). Nil without a world.
@@ -244,7 +250,7 @@ run_screens :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		handle_screen_keys(state)
 	}
 	if screen_context.player != nil {
-		close_slot_screens(state, screen_context.player, screen_context.items)
+		close_slot_screens(state, screen_context)
 	}
 	if screen_context.views != nil && top_screen(state.screens) != .Recipes {
 		screen_context.views.recipe_browser.selecting_for = NO_ENTITY
@@ -265,17 +271,22 @@ screen_stack_contains :: proc(stack: Screen_Stack, screen: Screen) -> bool {
 }
 
 // A stack still on the cursor goes back once the inventory or machine panel
-// is closed or covered, and a closed machine panel forgets its entity. A
-// panel under the recipe browser (choosing an assembler's recipe) or the
-// technology screen stays open.
-close_slot_screens :: proc(state: ^Ui_State, player: ^Player, items: Item_Registry) {
+// is closed or covered, and a closed machine panel forgets its entity
+// through a command for the next tick (Player.open_machine is simulation
+// state). A panel under the recipe browser (choosing an assembler's
+// recipe) or the technology screen stays open.
+close_slot_screens :: proc(state: ^Ui_State, screen_context: Screen_Context) {
+	player := screen_context.player
 	top := top_screen(state.screens)
 	if top != .Inventory && top != .Machine {
-		player.held = return_held_stack(player.inventory, player.held, items)
+		player.held = return_held_stack(player.inventory, player.held, screen_context.items)
 	}
-	if !screen_stack_contains(state.screens, .Machine) {
-		player.open_machine = NO_ENTITY
-		state.distribute = {}
+	if screen_stack_contains(state.screens, .Machine) {
+		return
+	}
+	state.distribute = {}
+	if player.open_machine != NO_ENTITY && screen_context.player_commands != nil && !close_machine_pending(screen_context.player_commands[:], screen_context.unconfirmed_commands, screen_context.player_index) {
+		queue_player_command(screen_context.player_commands, screen_context.player_index, Close_Machine_Command{machine = player.open_machine})
 	}
 }
 

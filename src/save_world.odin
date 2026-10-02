@@ -564,6 +564,12 @@ load_region_file :: proc(world: ^World, path, name: string, expected: Save_Heade
 	if error != nil {
 		return fmt.tprintf("cannot read %s: %v", path, error)
 	}
+	return decode_region_file(world, data, region, path, expected, remap)
+}
+
+// A region file's bytes into World.saved_chunks; path names it in the
+// problems.
+decode_region_file :: proc(world: ^World, data: []byte, region: Region_Coordinate, path: string, expected: Save_Header, remap: ^Content_Remap) -> string {
 	header, ok := decode_region(data, region, &world.saved_chunks, remap)
 	if problem := header_problem(header, expected, path); problem != "" {
 		return problem
@@ -609,6 +615,31 @@ load_world :: proc(state: ^Simulation_State, content: Simulation_Content, direct
 		return problem
 	}
 	return load_region_files(&state.world, directory, expected, &remap)
+}
+
+// load_world from a save's bytes (encode_save_files) instead of its
+// directory: a machine joining a lockstep session loads the host's world
+// this way (session_network.odin). name says where the bytes came from.
+load_world_from_files :: proc(state: ^Simulation_State, content: Simulation_Content, files: Save_Files, file: World_File, name: string) -> string {
+	expected := make_save_header()
+	state.tick = file.tick
+	state.day_length_ticks = u64(file.settings.day_length_seconds) * u64(max(state.tick_rate, 1))
+	state.day_offset_ticks = day_offset_for(file.tick, file.day_time_ticks, state.day_length_ticks)
+	state.world.settings = world_settings_from_file(file.seed, file.settings)
+	remap: Content_Remap
+	if problem := decode_entities(state, content, files.entities, name, expected, &remap); problem != "" {
+		return problem
+	}
+	for region_file in files.regions {
+		region, named := parse_region_file_name(region_file.name)
+		if !named {
+			return fmt.tprintf("%s: unexpected region %s", name, region_file.name)
+		}
+		if problem := decode_region_file(&state.world, region_file.bytes, region, region_file.name, expected, &remap); problem != "" {
+			return problem
+		}
+	}
+	return ""
 }
 
 // A simulation made the way a new world is made (make_simulation with the

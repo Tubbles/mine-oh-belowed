@@ -123,6 +123,7 @@ reload_content_done = "Game data reloaded:"
 reload_chunks_note = "Loaded chunks keep their blocks, generation changes apply to chunks loaded later"
 reload_content_changed = "Game data files changed: F8 or Developer, Reload data applies them"
 reload_restart_needed = "game.sjson changed: it applies at the next start"
+reload_online_refused = "the game data cannot reload while other machines play"
 developer_back = "Back"
 
 // Title screen
@@ -1568,6 +1569,11 @@ touch_button_zoom_out = "Zoom out"
 
 // Prospecting (work item 0038)
 toast_vein_assayed = "Vein assayed, marked on the map"
+toast_action_refused = "That changed before it could happen"
+join_failed = "Cannot join the host"
+loading_joining = "Joining the host"
+loading_joined_world = "Catching up with the host"
+loading_world = "Loading the world"
 toast_magnetometer_recorded = "Magnetometer reading marked on the map"
 toast_seismic_shot = "Seismic shot fired"
 toast_rocket_launch = "Launch sequence started"

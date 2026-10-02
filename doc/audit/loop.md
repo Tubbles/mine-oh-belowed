@@ -28,14 +28,14 @@ Verdict on the edge assigned files (`tools/code_graph.py` puts them by edge coun
 - `hot_reload.odin` (graph: content) belongs to the loop. Every procedure in it takes `^Frame_State`, it is served between frames (`apply_reload_request`, `update_data_watch`), and its 65 content references are the loaders it calls, not state it owns. Add it to the loop's prefixes.
 - `tick_profile.odin` (graph: simulation) is right: `Tick_Section` names the simulation's systems and only `simulation_tick`, `tick_entities` and the benchmark use it.
 - `diagnostics.odin` (graph: simulation) is split: `Render_Facts`, `World_Facts`, `render_page_lines`, `world_page_lines` and `Frame_Time_Ring` are pure developer tool code; `mapped_lines`, `draw_diagnostics_page`, `draw_world_overlay` and the `*_text` procedures take the whole `Frame_State` and reach through `session` 20 times. It belongs to a developer tools group, fed by facts built in the loop.
-- `developer.odin` (graph: content) is simulation: `serve_developer_requests` runs inside `simulation_tick`, and the kits it loads are its data.
+- `developer.odin` (graph: content) is simulation: `serve_developer_request` runs inside `simulation_tick`, and the kits it loads are its data.
 - `benchmark_factory.odin` (graph: world) is a second driver of the simulation (it calls `simulation_tick` from `warm_up_benchmark` and `measure_benchmark`), a game side test harness; it stays out of the engine side of any cut.
 
 ## 2. State
 
 Rule: `Frame_State` lives for the process, `Session` for a world, `Simulation_State` is the saved part.
 
-- `Simulation_State` (`loop.odin:20`, 12 fields): tick, day cycle, `World`, players, unlocks, quests, events, developer requests, cheat speed, landing pad. Written by `simulation_tick`, `serve_developer_requests`, `tick_venture`, `apply_item_use`, the save codec (`read_simulation_state`), `reload_simulation` and the command socket (`Command_Context` holds a pointer).
+- `Simulation_State` (`loop.odin:20`, 12 fields): tick, day cycle, `World`, players, unlocks, quests, events, developer requests (since 0177 the player command list, `player_commands`), cheat speed, landing pad. Written by `simulation_tick`, `serve_developer_request`, `tick_venture`, `apply_item_use`, the save codec (`read_simulation_state`), `reload_simulation` and the command socket (`Command_Context` holds a pointer).
 - `Session` (`session.odin:12`, 16 fields): the simulation, the generator, streaming, the tick accumulator and input, the save location, and four UI views (`Recipe_Browser`, `Technology_Browser`, `Statistics_View`, `Map_View`) that belong to the ui cluster.
 - `Game_Content` (`loop.odin:919`, 17 fields) repeats the ten registries of `Simulation_Content` and adds the presentation only tables; game_simulation_content (the field `simulation_content` since 0152), `session_simulation_content` and `frame_simulation_content` convert between them.
 
@@ -57,7 +57,7 @@ Writers of `Frame_State` outside `loop.odin`:
 - The screens through `Screen_Context` pointers: settings, quit_requested, screenshot_requested, reload_requested, title, diagnostics_page, show_world_overlay, texture_editor, data_browser, touch_layouts, touch_layout_editor, biome_banner.
 - `diagnostics.odin` takes `Frame_State` by value and only reads.
 
-`Screen_Context` (`ui_screens.odin:19`, 54 fields), in groups: 8 process fields (settings, fonts, bindings, quit and save requests, title), 14 content tables copied from `Game_Content`, 10 simulation fields (player, world, unlocks, quest state, tick, generator, cheat speed, developer requests, landing pad), 4 session held UI views, 9 developer tool fields, 9 HUD and touch derivations computed by the loop (`mining_ring_centre`, `discovery_card_clearance`, `touch_overlay_aims`).
+`Screen_Context` (`ui_screens.odin:19`, 54 fields), in groups: 8 process fields (settings, fonts, bindings, quit and save requests, title), 14 content tables copied from `Game_Content`, 10 simulation fields (player, world, unlocks, quest state, tick, generator, cheat speed, developer requests (since 0177 `player_commands`), landing pad), 4 session held UI views, 9 developer tool fields, 9 HUD and touch derivations computed by the loop (`mining_ring_centre`, `discovery_card_clearance`, `touch_overlay_aims`).
 
 `Ui_State` (`ui_core.odin:385`, 57 fields by count; the 0143 item says 58): the loop writes screens, keyboard, tooltip_open, system_keyboard and mission_control (`enter_session`, `show_title`, `run_ui_frame`), drains toasts' sources (`show_simulation_events`, `show_quest_notices`) and sound_events (`play_ui_sounds`). Game specific groups inside it: mission_control, slot_drag, distribute, quick_move, active_slot. The ui audit takes the rest.
 

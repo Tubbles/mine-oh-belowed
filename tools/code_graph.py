@@ -92,6 +92,7 @@ FILE_CLUSTERS = {
     "player_animation.odin": "presentation",
     "data_browser.odin": "tools",
     "data_export.odin": "tools",
+    "lockstep.odin": "loop",
 }
 
 LARGEST_COMPONENT_REPORT_COUNT = 10

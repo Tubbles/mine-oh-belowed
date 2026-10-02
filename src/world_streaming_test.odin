@@ -1,6 +1,7 @@
 package game
 
 import "core:log"
+import "core:slice"
 import "core:testing"
 import "core:time"
 
@@ -46,13 +47,49 @@ Stream_Counts :: struct {
 	non_empty_meshes: int,
 }
 
+// The load volume around the camera in coordinate order, as the simulated
+// chunk set requests it for one player. In the temp allocator.
+test_requested_volume :: proc(camera_chunk: Chunk_Coordinate) -> []Chunk_Coordinate {
+	requested := load_volume_offsets(context.temp_allocator)
+	for &coordinate in requested {
+		coordinate += camera_chunk
+	}
+	slice.sort_by(requested, chunk_coordinate_before)
+	return requested
+}
+
+// What the simulated chunk set's tick does to the chunks outside the
+// requested volume. Returns them, in the temp allocator.
+unload_test_chunks_outside :: proc(world: ^World, requested: []Chunk_Coordinate) -> []Chunk_Coordinate {
+	leaving := make([dynamic]Chunk_Coordinate, context.temp_allocator)
+	for coordinate in world.chunks {
+		if _, found := slice.binary_search_by(requested, coordinate, chunk_coordinate_order); !found {
+			append(&leaving, coordinate)
+		}
+	}
+	for coordinate in leaving {
+		store_modified_chunk(world, world.chunks[coordinate])
+		free(world.chunks[coordinate])
+		delete_key(&world.chunks, coordinate)
+	}
+	return leaving[:]
+}
+
 // Runs the main thread side of streaming until nothing is pending and every
-// chunk of the load volume is loaded and meshed.
+// chunk of the load volume is loaded and meshed. The arrivals go into the
+// world as the tick takes them (insert_chunk_arrival).
 stream_until_settled :: proc(t: ^testing.T, streaming: ^Chunk_Streaming, world: ^World, records: ^Game_Records, camera_chunk: Chunk_Coordinate) -> Stream_Counts {
 	counts: Stream_Counts
 	start := time.tick_now()
+	requested := test_requested_volume(camera_chunk)
+	unloaded := unload_test_chunks_outside(world, requested)
 	for time.tick_since(start) < TEST_STREAMING_TIMEOUT {
-		update_chunk_streaming(streaming, world, records, camera_chunk)
+		arrivals := make([dynamic]Chunk_Job_Result, context.temp_allocator)
+		update_chunk_streaming(streaming, world, Chunk_Stream_Frame{requested = requested, unloaded = unloaded, camera_chunk = camera_chunk}, &arrivals)
+		unloaded = nil
+		for result in arrivals {
+			insert_chunk_arrival(world, records, streaming.shared.registry, streaming.shared.generator, result)
+		}
 		for result in take_current_meshes(streaming, MAXIMUM_MESH_UPLOADS_PER_FRAME, context.temp_allocator) {
 			counts.meshes += 1
 			counts.non_empty_meshes += len(result.mesh.parts) > 0 ? 1 : 0
@@ -95,7 +132,7 @@ test_streaming_loads_meshes_and_unloads :: proc(t: ^testing.T) {
 	moved := Chunk_Coordinate{3, 1, 0}
 	stream_until_settled(t, &streaming, &world, &records, moved)
 	for coordinate in world.chunks {
-		testing.expect(t, in_keep_volume(moved, coordinate))
+		testing.expect(t, within_radius(moved, coordinate, LOAD_RADIUS_HORIZONTAL, LOAD_RADIUS_VERTICAL))
 	}
 	testing.expect(t, Chunk_Coordinate{-LOAD_RADIUS_HORIZONTAL, 1, 0} not_in world.chunks)
 }

@@ -53,7 +53,7 @@ Verdicts on edge assigned and misplaced files:
 - `player_animation.odin` (prefix: simulation) is presentation: 18 of its 24 references in come from presentation files and 6 from the loop, none from the simulation.
 - `production_statistics.odin` (graph: simulation) is split: `statistics_rows`, `fluid_statistics_rows` and `count_item_machines` are called only by `ui_statistics.odin`; the marker colours only by `render_entities.odin`, `render_fluids.odin` and `sound_events.odin`. The rows are ui view models; the marker colours are the simulation's one "is working" rule and stay with it.
 - `inventory_interaction.odin` is split like `quick_transfer.odin`: `Slot_Grid_Kind`, `Active_Slot` and `Distribute_Gesture` are ui state (46 of its 64 references in are ui), `Held_Stack` and the slot verbs are simulation commands.
-- `developer.odin` (graph: content): the kit files are content, `serve_developer_requests` and its verbs (`place_for_developer`, `remove_for_developer`) are simulation, as the loop audit says.
+- `developer.odin` (graph: content): the kit files are content, `serve_developer_request` and its verbs (`place_for_developer`, `remove_for_developer`) are simulation, as the loop audit says.
 
 ## 2. State
 

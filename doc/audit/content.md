@@ -13,7 +13,7 @@ The content cluster (work item 0143) is what the graph left over: 41 files and 1
 Rule: content turns files under `data/` and the configuration into typed tables once, and gives every cluster the string table and the log.
 
 - Entry procedures: the load of all content `load_game_data` (`data_reload.odin:40`, through `load_game_tables` and `load_content_registries`); the reload `reload_content` (`hot_reload.odin:319`) and `reload_simulation` (`data_reload.odin:197`); the string lookup `text` (`data_strings.odin:127`); the configuration merge `load_configuration` (`configuration.odin:566`) with `merge_configuration_layers`; the command dispatch `execute_command_line` (`command.odin:223`) into `execute_command` and `execute_world_command`; the logging entry `log_printf` (`logging.odin:136`) after `open_log_file`.
-- Rules run per tick from content files: `tick_quests`, `update_recipe_unlocks`, `tick_venture`, `log_discoveries`, `serve_developer_requests`.
+- Rules run per tick from content files: `tick_quests`, `update_recipe_unlocks`, `tick_venture`, `log_discoveries`, `serve_developer_request`.
 
 | File | Lines | Commits | Purpose |
 |---|---|---|---|

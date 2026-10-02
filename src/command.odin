@@ -17,10 +17,15 @@ import "platform"
 //
 // Commands that change the simulation go through serve_developer_request
 // (developer.odin), the path the Developer screen's requests take at the
-// start of a tick, served here at once so the answer can say what
-// happened. The frame loop owns what the simulation cannot do itself:
-// running ticks fast (tick), holding them (pause), saving and screenshots;
-// those commands set Command_Control, which the loop reads.
+// start of a tick. Their lines (command_writes_simulation) do not run
+// when the socket reads them: the loop puts them into the local player's
+// next input record (lockstep.odin), and every machine of the session runs
+// them at the start of that record's tick, the one that sent them
+// answering then (work item 0177). While the ticks are held (a pause, a
+// pausing screen) in a session without other machines they run at once.
+// The frame loop owns what the simulation cannot do itself: running ticks
+// fast (tick), holding them (pause), saving and screenshots; those
+// commands set Command_Control, which the loop reads.
 
 // The most ticks one tick command runs: a little over four and a half
 // hours of game time at 60 ticks per second.
@@ -40,13 +45,21 @@ Command_Control :: struct {
 	requested_ticks: int,
 	// The tick command waits for its answer until pending_ticks is 0.
 	ticks_waiting:   bool,
+	// A line that writes the simulation waits for the tick that runs it;
+	// later lines wait behind it. line_client waits for its answer.
+	line_waiting:    bool,
+	line_client:     u64,
 	screenshot_path: string,
 }
 
 // simulation is nil without a world. content has the world's generator
-// and technologies (frame_simulation_content).
+// and technologies (frame_simulation_content). player is the player whose
+// record carried the line (the local one for queries). blueprint_text is
+// the blueprint file a blueprint line read on the machine that sent it.
 Command_Context :: struct {
 	simulation:           ^Simulation_State,
+	player:               int,
+	blueprint_text:       string,
 	content:              Simulation_Content,
 	control:              ^Command_Control,
 	// $XDG_STATE_HOME/mine-oh-belowed/screenshots, empty when unknown.
@@ -232,13 +245,23 @@ execute_command_line :: proc(command_context: Command_Context, line: string) -> 
 	return execute_command(command_context, words), false
 }
 
+// The lines that change the simulation, which run at the start of a tick
+// (the loop's lockstep driver).
+command_writes_simulation :: proc(name: string) -> bool {
+	switch name {
+	case "give", "take", "kit", "chapter", "quest", "research", "unlock_all", "teleport", "time", "fly", "noclip", "cheat_speed", "vein", "place", "remove", "block", "insert", "recipe", "filter", "blueprint":
+		return true
+	}
+	return false
+}
+
 serve_command_request :: proc(command_context: Command_Context, request: Developer_Request) -> (problem: string) {
 	simulation := command_context.simulation
-	before := movement_toggles(simulation.players[0])
+	before := movement_toggles(simulation.players[command_context.player])
 	// With the found schematics, as simulation_tick serves developer
 	// requests.
-	problem = serve_developer_request(simulation, content_with_found_schematics(command_context.content, simulation.unlocks), request)
-	log_movement_toggles(before, simulation.players[0], "a command", simulation.tick)
+	problem = serve_developer_request(simulation, content_with_found_schematics(command_context.content, simulation.unlocks), request, command_context.player)
+	log_movement_toggles(before, simulation.players[command_context.player], "a command", simulation.tick)
 	return
 }
 
@@ -262,7 +285,7 @@ execute_command :: proc(command_context: Command_Context, words: []string) -> Co
 			return query_textures(command_context, arguments[1:])
 		}
 	}
-	if command_context.simulation == nil || len(command_context.simulation.players) == 0 {
+	if command_context.simulation == nil || command_context.player < 0 || command_context.player >= len(command_context.simulation.players) {
 		return command_error("no world is loaded")
 	}
 	return execute_world_command(command_context, name, arguments)
@@ -340,7 +363,7 @@ command_give_or_take :: proc(command_context: Command_Context, name: string, arg
 		serve_command_request(command_context, Developer_Request{action = .Give_Item, grant = grant})
 		return command_ok("gave %d %s", grant.count, arguments[0])
 	}
-	held := inventory_count(command_context.simulation.players[0].inventory, grant.item)
+	held := inventory_count(command_context.simulation.players[command_context.player].inventory, grant.item)
 	serve_command_request(command_context, Developer_Request{action = .Take_Item, grant = grant})
 	return command_ok("took %d %s", min(held, grant.count), arguments[0])
 }
@@ -481,7 +504,7 @@ command_toggle :: proc(command_context: Command_Context, name: string, arguments
 	if !ok {
 		return usage_error(fmt.tprintf("%s <on|off>", name))
 	}
-	current, action := toggle_command_state(command_context.simulation, name)
+	current, action := toggle_command_state(command_context.simulation, command_context.player, name)
 	if current != wanted {
 		serve_command_request(command_context, Developer_Request{action = action})
 	}
@@ -489,12 +512,12 @@ command_toggle :: proc(command_context: Command_Context, name: string, arguments
 }
 
 // The current state and the toggling action of a command_toggle name.
-toggle_command_state :: proc(simulation: ^Simulation_State, name: string) -> (bool, Developer_Action) {
+toggle_command_state :: proc(simulation: ^Simulation_State, player: int, name: string) -> (bool, Developer_Action) {
 	switch name {
 	case "fly":
-		return simulation.players[0].flying, .Toggle_Fly_Mode
+		return simulation.players[player].flying, .Toggle_Fly_Mode
 	case "noclip":
-		return simulation.players[0].no_clip, .Toggle_No_Clip
+		return simulation.players[player].no_clip, .Toggle_No_Clip
 	}
 	return simulation.cheat_speed, .Toggle_Cheat_Speed
 }
@@ -915,9 +938,12 @@ command_blueprint :: proc(command_context: Command_Context, arguments: []string)
 	if len(arguments) != 1 {
 		return usage_error("blueprint <path>")
 	}
-	data, error := os.read_entire_file(arguments[0], context.temp_allocator)
-	if error != nil {
-		return command_error("cannot read %s: %v", arguments[0], error)
+	data := transmute([]byte)command_context.blueprint_text
+	if command_context.blueprint_text == "" {
+		error: os.Error
+		if data, error = os.read_entire_file(arguments[0], context.temp_allocator); error != nil {
+			return command_error("cannot read %s: %v", arguments[0], error)
+		}
 	}
 	blueprint, problem := parse_blueprint(data)
 	if problem != "" {
@@ -970,7 +996,7 @@ query_response :: proc(builder: ^strings.Builder) -> Command_Response {
 
 query_player :: proc(command_context: Command_Context) -> Command_Response {
 	simulation := command_context.simulation
-	player := simulation.players[0]
+	player := simulation.players[command_context.player]
 	items := command_context.content.items
 	builder := strings.builder_make(context.temp_allocator)
 	cell := camera_world_coordinate(player.position)
@@ -1023,7 +1049,7 @@ query_veins :: proc(command_context: Command_Context, arguments: []string) -> Co
 	}
 	simulation := command_context.simulation
 	veins := command_context.content.veins
-	centre := camera_world_coordinate(simulation.players[0].position)
+	centre := camera_world_coordinate(simulation.players[command_context.player].position)
 	builder := strings.builder_make(context.temp_allocator)
 	strings.write_string(&builder, "veins")
 	for vein in simulation.world.veins {
@@ -1069,7 +1095,7 @@ query_entities :: proc(command_context: Command_Context, arguments: []string) ->
 	}
 	world := &command_context.simulation.world
 	machines := command_context.content.machines
-	centre := camera_world_coordinate(command_context.simulation.players[0].position)
+	centre := camera_world_coordinate(command_context.simulation.players[command_context.player].position)
 	seen := make(map[Entity_Handle]bool, context.temp_allocator)
 	listings := make([dynamic]Entity_Listing, context.temp_allocator)
 	for cell, handle in world.entities.cells {
@@ -1150,6 +1176,6 @@ query_stats :: proc(command_context: Command_Context, arguments: []string) -> Co
 	builder := strings.builder_make(context.temp_allocator)
 	fmt.sbprintf(&builder, "stats %s\nproduced %d\nconsumed %d", arguments[0], item_counter(statistics.produced, item), item_counter(statistics.consumed, item))
 	fmt.sbprintf(&builder, "\nobtained %d\ndelivered %d\nvoided %d", item_counter(statistics.obtained, item), item_counter(statistics.delivered, item), item_counter(statistics.voided, item))
-	fmt.sbprintf(&builder, "\nrate_per_minute %d\ninventory %d", production_rate_per_minute(statistics, item), inventory_count(simulation.players[0].inventory, item))
+	fmt.sbprintf(&builder, "\nrate_per_minute %d\ninventory %d", production_rate_per_minute(statistics, item), inventory_count(simulation.players[command_context.player].inventory, item))
 	return query_response(&builder)
 }

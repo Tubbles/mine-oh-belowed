@@ -409,24 +409,38 @@ toast_craft_refusal :: proc(state: ^Ui_State, refusal: Craft_Refusal, shortage: 
 // secondary action.
 apply_recipe_craft_input :: proc(state: ^Ui_State, screen_context: Screen_Context, activated: int, list_focused, selected_shown: bool, button: Touch_Button) {
 	player := screen_context.player
-	recipes, unlocks := screen_context.recipes, screen_context.unlocks^
+	recipes := screen_context.recipes
 	selected := screen_context.views.recipe_browser.focused_recipe
 	crafted := activated
 	if button == .Craft && selected_shown {
 		crafted = selected
 	}
 	if crafted != NO_RECIPE {
-		refusal, shortage := queue_crafts(&player.crafting, player.inventory, recipes, unlocks, crafted, 1)
-		toast_craft_refusal(state, refusal, shortage, screen_context.items)
+		queue_checked_crafts(state, screen_context, crafted, 1)
 	}
 	if (state.input.context_action && list_focused) || (button == .Craft_Five && selected_shown) {
-		refusal, shortage := queue_crafts(&player.crafting, player.inventory, recipes, unlocks, selected, RECIPE_CRAFT_MANY_COUNT)
-		toast_craft_refusal(state, refusal, shortage, screen_context.items)
+		queue_checked_crafts(state, screen_context, selected, RECIPE_CRAFT_MANY_COUNT)
 	}
 	cancels := state.input.secondary || button == .Cancel_Craft
-	if cancels && player.crafting.count > 0 && !cancel_last_craft(&player.crafting, player.inventory, recipes, screen_context.items) {
-		ui_toast(state, text("inventory_full"))
+	if cancels && player.crafting.count > 0 {
+		if last_craft_cancels(player.crafting, player.inventory, recipes, screen_context.items) {
+			queue_player_command(screen_context.player_commands, screen_context.player_index, Cancel_Craft_Command{})
+		} else {
+			ui_toast(state, text("inventory_full"))
+		}
 	}
+}
+
+// The planner's refusal toasts now; an accepted craft queues for the tick
+// (Craft_Command).
+queue_checked_crafts :: proc(state: ^Ui_State, screen_context: Screen_Context, recipe, count: int) {
+	player := screen_context.player
+	_, _, refusal, shortage := plan_queue_crafts(player.crafting, player.inventory, screen_context.recipes, screen_context.unlocks^, recipe, count)
+	if refusal != .None {
+		toast_craft_refusal(state, refusal, shortage, screen_context.items)
+		return
+	}
+	queue_player_command(screen_context.player_commands, screen_context.player_index, Craft_Command{recipe = recipe, count = count})
 }
 
 letter_radial_source :: proc(input: Ui_Input) -> Radial_Source {
@@ -510,11 +524,12 @@ choose_assembler_recipe :: proc(state: ^Ui_State, screen_context: Screen_Context
 	}
 	inventory := screen_context.player.inventory
 	machine := screen_context.machines.machines[assembler.machine]
-	refusal := change_assembler_recipe(assembler, machine, inventory, screen_context.items, screen_context.recipes, recipe)
+	refusal := recipe_change_refusal(assembler, machine, inventory, screen_context.items, screen_context.recipes, recipe)
 	if refusal != .None {
 		ui_toast(state, text(recipe_change_refusal_keys[refusal]))
 		return
 	}
+	queue_player_command(screen_context.player_commands, screen_context.player_index, Assembler_Recipe_Command{assembler = browser.selecting_for, recipe = recipe})
 	browser.selecting_for = NO_ENTITY
 	pop_screen(&state.screens)
 }

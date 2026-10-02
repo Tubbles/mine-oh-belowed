@@ -249,11 +249,11 @@ launching_pad_count :: proc(world: ^World) -> int {
 	return count
 }
 
-// The counters of the frame for the local player (the first); the
-// memory names the cell of the last frame's dig.
-observe_cue_counters :: proc(memory: Cue_Memory, simulation: ^Simulation_State) -> Cue_Counters {
+// The counters of the frame for the local player; the memory names the
+// cell of the last frame's dig.
+observe_cue_counters :: proc(memory: Cue_Memory, simulation: ^Simulation_State, local_player: int) -> Cue_Counters {
 	world := &simulation.world
-	player := simulation.players[0]
+	player := simulation.players[local_player]
 	statistics := simulation.records.statistics
 	return Cue_Counters {
 		tick = simulation.tick,

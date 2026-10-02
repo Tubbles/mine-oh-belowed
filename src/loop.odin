@@ -52,6 +52,9 @@ Frame_State :: struct {
 	settings:           Settings,
 	// The settings as last read or written, see write_changed_settings.
 	stored_settings:    Settings,
+	// --join: the connection to the host until its world arrives and the
+	// session takes it (update_joining).
+	joining:            Session_Join,
 	interaction:        Frame_Interaction,
 	presentation:       Frame_Presentation,
 	developer:          Frame_Developer_Tools,
@@ -243,6 +246,7 @@ touch_overlay_context :: proc(state: ^Frame_State) -> Touch_Overlay_Context {
 		render_camera = state.presentation.render_camera,
 		frame_seconds = state.frame_seconds,
 		frame_tick_count = state.frame_tick_count,
+		local_player = state.session != nil ? session_local_player_index(state.session) : 0,
 	}
 }
 
@@ -286,11 +290,10 @@ apply_debug_actions :: proc(state: ^Frame_State, content: Simulation_Content) {
 	session := state.session
 	if .Debug_Remove_Block in state.interaction.input.just_pressed {
 		session.debug_edit_counter += 1
-		eye := player_eye(session.simulation.players[0].position)
-		debug_remove_block(&session.simulation.world, state.content.blocks, eye, session.debug_edit_counter)
+		queue_player_command(&session.simulation.player_commands, session_local_player_index(session), Debug_Remove_Block_Command{counter = session.debug_edit_counter})
 	}
 	if .Debug_Drop_Item in state.interaction.input.just_pressed {
-		debug_drop_item_on_belt(&session.simulation.world, content, session.simulation.players[0])
+		queue_player_command(&session.simulation.player_commands, session_local_player_index(session), Debug_Drop_Item_Command{})
 	}
 }
 
@@ -310,10 +313,13 @@ update_frame :: proc(state: ^Frame_State) {
 		apply_debug_actions(state, content)
 		apply_overlay_toggle(state, world_blocked)
 		update_session(state, world_blocked, content)
-		state.interaction.haptic = haptic_request_for(state.session.simulation.players[0], !world_blocked)
+		state.interaction.haptic = haptic_request_for(session_local_player(state.session)^, !world_blocked)
 	}
 	if .Reload_Data in state.interaction.input.just_pressed && developer_mode_on(state) {
 		state.requests += {.Reload_Data}
+	}
+	if state.session == nil && join_active(state.joining) {
+		update_joining(state)
 	}
 	serve_command_socket(state)
 	switch state.interaction.input_backend {
@@ -333,33 +339,221 @@ apply_overlay_toggle :: proc(state: ^Frame_State, world_blocked: bool) {
 	}
 }
 
-// A pause command holds the ticks like a pausing screen; a tick command
-// replaces the frame's ticks with its own (run_command_ticks).
+// A pause command holds the ticks like a pausing screen, and a tick
+// command replaces the frame's ticks with its own (run_command_ticks),
+// both only without other machines. The frame's ticks go through the
+// lockstep driver (lockstep.odin): each stamps a local input record, the
+// records go out and come back (session_network.odin), and every tick
+// whose records are there runs.
 update_session :: proc(state: ^Frame_State, world_blocked: bool, content: Simulation_Content) {
 	session := state.session
-	paused := ui_pauses_simulation(state.interaction.ui.screens) || state.developer.command_control.paused
-	fast := state.developer.command_control.pending_ticks > 0
+	lockstep, simulation := &session.lockstep, &session.simulation
+	offline := session.network.role == .Offline
+	holding := offline && (ui_pauses_simulation(state.interaction.ui.screens) || state.developer.command_control.paused)
+	fast := offline && state.developer.command_control.pending_ticks > 0
 	frame_for_world := world_input(state.interaction.input, world_blocked, state.interaction.world_action_guard, state.settings, developer_mode_on(state))
 	// The right stick drives an open hotbar radial instead of the camera.
 	if state.interaction.ui.radial.open {
 		frame_for_world = without_actions(frame_for_world, {.Look})
 	}
-	session.tick_input = paused ? paused_frame_input(session.tick_input, frame_for_world) : accumulate_frame_input(session.tick_input, frame_for_world)
+	session.tick_input = holding ? paused_frame_input(session.tick_input, frame_for_world) : accumulate_frame_input(session.tick_input, frame_for_world)
 	tick_count: int
-	session.accumulator, tick_count = advance_simulation_clock(session.accumulator, f64(state.frame_seconds), paused || fast)
+	session.accumulator, tick_count = advance_simulation_clock(session.accumulator, f64(state.frame_seconds), holding || fast)
+	lockstep.clock_ticks = min(lockstep.clock_ticks + tick_count, simulation.tick_rate)
+	hold_local_commands(lockstep, simulation)
+	answers := make([dynamic]Line_Answer, context.temp_allocator)
+	if holding {
+		run_held_lines(session, content, &state.developer.command_control, &answers)
+	}
+	ran := 0
 	for _ in 0 ..< tick_count {
-		tick_input: Input_Frame
-		tick_input, session.tick_input = take_tick_input(session.tick_input, frame_for_world)
-		simulation_tick(&session.simulation, content, {tick_input})
+		tick_input, next := take_tick_input(session.tick_input, frame_for_world)
+		if !stamp_local_record(lockstep, simulation.tick, tick_input) {
+			break
+		}
+		session.tick_input = next
+		if offline {
+			deliver_outgoing_locally(lockstep, simulation.tick)
+			ran += run_ready_ticks(session, content, &state.developer.command_control, &answers)
+		}
 	}
+	exchange_session_records(session, content)
+	ran += run_ready_ticks(session, content, &state.developer.command_control, &answers)
+	send_line_answers(state, answers[:])
 	if fast {
-		tick_count = run_command_ticks(state, content)
+		ran += run_command_ticks(state, content)
 	}
-	state.frame_tick_count = tick_count
-	session.ticks_since_save += u64(tick_count)
+	rebuild_prediction(lockstep, simulation, content)
+	session.stalled_frames = stalled_frames_after(session.stalled_frames, ran, session.chunk_stalled)
+	state.frame_tick_count = ran
+	session.ticks_since_save += u64(ran)
 	save_when_due(state)
-	player_chunk := world_to_chunk_coordinate(camera_world_coordinate(session.simulation.players[0].position))
-	update_chunk_streaming(&session.streaming, &session.simulation.world, &session.simulation.records, player_chunk)
+	show_network_notices(state)
+	stream_session_chunks(session, world_to_chunk_coordinate(camera_world_coordinate(lockstep_view_player(lockstep, simulation).position)))
+}
+
+// The local player's records out and everyone's in: offline straight
+// back, a host relays, a client sends to the host.
+exchange_session_records :: proc(session: ^Session, content: Simulation_Content) {
+	switch session.network.role {
+	case .Offline:
+		deliver_outgoing_locally(&session.lockstep, session.simulation.tick)
+	case .Host:
+		update_host_network(session, content, session.save.location.display_name)
+	case .Client:
+		update_client_network(&session.network, &session.lockstep, session.simulation.tick, content)
+	}
+}
+
+// The frames in a row the tick waited for its chunks.
+stalled_frames_after :: proc(stalled_frames, ran: int, chunk_stalled: bool) -> int {
+	if ran > 0 || !chunk_stalled {
+		return 0
+	}
+	return stalled_frames + 1
+}
+
+// A tick waiting this many frames for its chunks shows the loading notice.
+LOADING_NOTICE_FRAMES :: 10
+
+// Before the frame shows a joined world: the connection, the ping, the
+// join, the session from the snapshot (start_joined_session), then its
+// catching up (catch_up_joined_session) until the local player's entry
+// exists and no record is left to run. Only then does the session
+// become the frame's, so no frame reads a player the world does not have
+// yet. A host that leaves first, or a world that does not load, leaves
+// the title showing with a toast.
+update_joining :: proc(state: ^Frame_State) {
+	join := &state.joining
+	status, problem := advance_session_join(join, state.config, state.content, state.base_generator, &state.developer.command_control)
+	toast_network_notices(&state.interaction.ui, join.session != nil ? &join.session.network : &join.network)
+	switch status {
+	case .Waiting:
+	case .Failed:
+		report_session_problem(state, problem != "" ? problem : text("join_failed"))
+		destroy_session_join(join)
+	case .Ready:
+		session := join.session
+		join.session = nil
+		destroy_session_network(&join.network)
+		enter_session(state, session)
+	}
+}
+
+Join_Status :: enum u8 {
+	Waiting,
+	Ready,
+	Failed,
+}
+
+// One frame of a join: the network until the snapshot, then the joined
+// world catching up. Ready once joined_session_ready holds; the caller
+// then takes join.session. Failed with the problem ("" for a lost host,
+// whose notice says why); the caller destroys the join.
+advance_session_join :: proc(join: ^Session_Join, config: Game_Config, content: Game_Content, base_generator: Generator, control: ^Command_Control) -> (status: Join_Status, problem: string) {
+	if join.session == nil {
+		update_client_network(&join.network, nil, 0, content.simulation_content)
+		switch {
+		case join.network.snapshot != nil:
+			join.session, problem = start_joined_session(&join.network, config, content, base_generator)
+			if problem != "" {
+				return .Failed, problem
+			}
+		case join.network.host_lost:
+			return .Failed, ""
+		}
+		return .Waiting, ""
+	}
+	session := join.session
+	catch_up_joined_session(session, content, control)
+	switch {
+	case session.network.host_lost:
+		return .Failed, ""
+	case joined_session_ready(session):
+		return .Ready, ""
+	}
+	return .Waiting, ""
+}
+
+// The joined world's ticks while the title still shows: the local
+// player's records stamped empty up to its window, the records in and
+// out, every ready tick, its chunks.
+catch_up_joined_session :: proc(session: ^Session, game_content: Game_Content, control: ^Command_Control) {
+	content := session_simulation_content(game_content, session.technologies)
+	content.generator = &session.generator
+	for stamp_local_record(&session.lockstep, session.simulation.tick, Input_Frame{}) {
+	}
+	exchange_session_records(session, content)
+	answers := make([dynamic]Line_Answer, context.temp_allocator)
+	run_ready_ticks(session, content, control, &answers)
+	stream_session_chunks(session, player_chunk(session.simulation.players[0]))
+}
+
+// The local player's entry exists and the records that were there ran.
+joined_session_ready :: proc(session: ^Session) -> bool {
+	return session.lockstep.local_player < len(session.simulation.players) && !session.chunk_stalled && !lockstep_records_ready(session.lockstep, session.simulation.tick)
+}
+
+// The network's notices as toasts.
+toast_network_notices :: proc(ui: ^Ui_State, network: ^Session_Network) {
+	for notice in network.notices {
+		ui_toast(ui, notice)
+		delete(notice)
+	}
+	clear(&network.notices)
+}
+
+// The network's notices as toasts; a client whose host left goes back
+// to the title.
+show_network_notices :: proc(state: ^Frame_State) {
+	network := &state.session.network
+	toast_network_notices(&state.interaction.ui, network)
+	if network.host_lost && state.interaction.title.request.kind == .None {
+		state.interaction.title.request.kind = .Quit_To_Title
+	}
+}
+
+// What the frame says while no tick can run: a join in progress, or a
+// tick waiting for its chunks a while. "" when the world plays.
+loading_notice :: proc(state: ^Frame_State) -> string {
+	switch {
+	case state.session == nil && state.joining.session != nil:
+		return text("loading_joined_world")
+	case state.session == nil && join_active(state.joining):
+		return text("loading_joining")
+	case state.session != nil && state.session.stalled_frames >= LOADING_NOTICE_FRAMES:
+		return text("loading_world")
+	}
+	return ""
+}
+
+// The session's local player: the one this machine's input drives. The
+// server has none, and nothing on the frame side runs there.
+session_local_player_index :: proc(session: ^Session) -> int {
+	return max(session.lockstep.local_player, 0)
+}
+
+session_local_player :: proc(session: ^Session) -> ^Player {
+	return &session.simulation.players[session_local_player_index(session)]
+}
+
+// The simulated chunk set's chunks to the workers, the generated ones back
+// as chunk ready commands for the next tick, the tick's unloads to the
+// renderer.
+stream_session_chunks :: proc(session: ^Session, camera_chunk: Chunk_Coordinate) {
+	simulation := &session.simulation
+	frame := Chunk_Stream_Frame {
+		requested    = simulated_chunk_requests(simulation),
+		held         = held_chunk_arrivals(simulation),
+		unloaded     = simulation.unloaded_chunks[:],
+		camera_chunk = camera_chunk,
+	}
+	arrivals := make([dynamic]Chunk_Job_Result, context.temp_allocator)
+	update_chunk_streaming(&session.streaming, &simulation.world, frame, &arrivals)
+	clear(&simulation.unloaded_chunks)
+	for result in arrivals {
+		queue_player_command(&simulation.player_commands, NO_PLAYER, Chunk_Ready_Command{result = result})
+	}
 }
 
 autosave_due :: proc(ticks_since_save: u64, autosave_minutes, tick_rate: int) -> bool {
@@ -417,7 +611,7 @@ render_frame :: proc(state: ^Frame_State) {
 	rl.ClearBackground(sky.colors.horizon)
 	content := frame_simulation_content(state)
 	cues: Frame_Cues
-	cues, state.presentation.cue_memory = detect_cues(state.presentation.cue_memory, observe_cue_counters(state.presentation.cue_memory, &session.simulation))
+	cues, state.presentation.cue_memory = detect_cues(state.presentation.cue_memory, observe_cue_counters(state.presentation.cue_memory, &session.simulation, session_local_player_index(session)))
 	counts := draw_session_world(state, session, content, sky, weather, &cues)
 	counts.uploaded_meshes = pending_before_upload - session.streaming.pending_jobs
 	begin_render_pixel_drawing()
@@ -449,7 +643,7 @@ session_sound_frame :: proc(state: ^Frame_State, content: Simulation_Content, we
 		world = &session.simulation.world,
 		content = content,
 		generator = &session.generator,
-		player = session.simulation.players[0],
+		player = session_local_player(session)^,
 		tick = session.simulation.tick,
 		cues = cues,
 		weather = weather,
@@ -560,6 +754,7 @@ diagnostics_context :: proc(state: ^Frame_State) -> Diagnostics_Context {
 	session := state.session
 	return Diagnostics_Context {
 		simulation = &session.simulation,
+		player = session_local_player_index(session),
 		technologies = session.technologies,
 		blocks = state.content.blocks,
 		items = state.content.items,
@@ -580,7 +775,7 @@ diagnostics_context :: proc(state: ^Frame_State) -> Diagnostics_Context {
 world_facts :: proc(state: ^Frame_State, diagnostics: Diagnostics_Context) -> World_Facts {
 	session := state.session
 	world := &session.simulation.world
-	cell := camera_world_coordinate(session.simulation.players[0].position)
+	cell := camera_world_coordinate(session_local_player(session).position)
 	biome := sample_column(&session.generator, cell.x, cell.z).biome
 	biome_name := biome < len(session.generator.biomes) ? text(session.generator.biomes[biome].definition.name_key) : "?"
 	return World_Facts {
@@ -600,7 +795,8 @@ world_facts :: proc(state: ^Frame_State, diagnostics: Diagnostics_Context) -> Wo
 draw_session_world :: proc(state: ^Frame_State, session: ^Session, content: Simulation_Content, sky: Day_Sky, weather: Weather, cues: ^Frame_Cues) -> (counts: Frame_Render_Counts) {
 	world := &session.simulation.world
 	tick_rate := session.simulation.tick_rate
-	player := session.simulation.players[0]
+	// The predicted local player while the lockstep window runs ahead.
+	player := lockstep_view_player(&session.lockstep, &session.simulation)
 	alpha := f32(interpolation_alpha(session.accumulator))
 	seconds := rl.GetTime()
 	update_player_presence(&state.presentation.player_animation, &state.presentation.particles, state.presentation.particle_memory, world, content.blocks, player, cues^, seconds)
@@ -648,7 +844,7 @@ draw_session_world :: proc(state: ^Frame_State, session: ^Session, content: Simu
 		counts.weather_particles = draw_session_weather(session, camera, weather, sky, seconds)
 	}
 	body := Player_Body_Draw{renderer = state.presentation.model_renderer, model = state.presentation.player_model, animation = animation, light = player_body_light(frame, player_eye(pose.position))}
-	draw_player_world_overlay(world, content, state.presentation.model_renderer, &state.presentation.belt_renderer, session.simulation.players[:], 0, alpha, body)
+	draw_player_world_overlay(world, content, state.presentation.model_renderer, &state.presentation.belt_renderer, session.simulation.players[:], session_local_player_index(session), alpha, body)
 	rl.EndMode3D()
 	if player.camera_mode == .First_Person {
 		draw_first_person_hands(view, body, Item_Billboards{camera = camera, atlas = state.presentation.item_atlas}, Held_Block_Tiles{texture = chunk_atlas_texture(state.presentation.renderer), layout = state.presentation.renderer.atlas_layout, blocks = content.blocks}, content.items, selected_hotbar_stack(player))
@@ -694,8 +890,8 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 		return screen_context
 	}
 	screen_context.save_requested = &session.save_requested
-	screen_context.player = &session.simulation.players[0]
-	screen_context.player_index = 0
+	screen_context.player = session_local_player(session)
+	screen_context.player_index = session_local_player_index(session)
 	screen_context.world = &session.simulation.world
 	screen_context.records = &session.simulation.records
 	screen_context.tick = session.simulation.tick
@@ -704,7 +900,8 @@ make_screen_context :: proc(state: ^Frame_State) -> Screen_Context {
 	screen_context.unlocks = &session.simulation.unlocks
 	screen_context.quest_state = &session.simulation.quests
 	screen_context.views = &state.interaction.session_views
-	screen_context.developer_requests = &session.simulation.developer_requests
+	screen_context.player_commands = &session.simulation.player_commands
+	screen_context.unconfirmed_commands = lockstep_unconfirmed_commands(&session.lockstep)
 	screen_context.cheat_speed = session.simulation.cheat_speed
 	screen_context.landing_pad = session.start.landing_pad
 	screen_context.particle_memory = &state.presentation.particle_memory
@@ -733,7 +930,7 @@ make_hud_context :: proc(state: ^Frame_State) -> Hud_Context {
 	if session == nil {
 		return {}
 	}
-	player := &session.simulation.players[0]
+	player := session_local_player(session)
 	column := sample_column(&session.generator, i32(math.floor(player.position.x)), i32(math.floor(player.position.z)))
 	return Hud_Context {
 		touch_aims               = touch_overlay_aims(touch_overlay_context(state)),
@@ -760,11 +957,14 @@ run_ui_frame :: proc(state: ^Frame_State) {
 	sync_font_cache(&state.interaction.font_cache, state.settings, state.interaction.ui.pixels_per_unit)
 	screen_context := make_screen_context(state)
 	if state.session != nil {
-		show_simulation_events(&state.interaction.ui, &state.session.simulation.events)
+		show_simulation_events(&state.interaction.ui, &state.session.simulation.events, state.session.lockstep.local_player)
 		show_quest_notices(&state.interaction.ui, &state.session.simulation.quests.notices, state.session.simulation.records.shipments[:], state.content.items)
 		draw_hud(&state.interaction.ui, screen_context, make_hud_context(state))
 	}
 	run_screens(&state.interaction.ui, screen_context)
+	if notice := loading_notice(state); notice != "" {
+		draw_loading_notice(&state.interaction.ui, notice)
+	}
 	// After the screens, so Start and Back show over an open one.
 	if state.session != nil && touch_overlay_on(touch_overlay_context(state)) && !touch_layout_editor_shown(state.interaction.ui.screens) {
 		draw_touch_overlay(&state.interaction.ui, state.interaction.touch_overlay, frame_touch_layout(touch_overlay_context(state)), screen_pixels, !ui_blocks_world(state.interaction.ui.screens))
@@ -814,8 +1014,13 @@ units_to_window_rectangle :: proc(rectangle: Ui_Rectangle, pixels_per_unit: f32,
 	return {rectangle.x * factor.x, rectangle.y * factor.y, rectangle.width * factor.x, rectangle.height * factor.y}
 }
 
-show_simulation_events :: proc(state: ^Ui_State, events: ^[dynamic]Simulation_Event) {
+// Only the local player's events: another machine's player toasts on its
+// own screen.
+show_simulation_events :: proc(state: ^Ui_State, events: ^[dynamic]Simulation_Event, local_player: int) {
 	for event in events {
+		if event.player != local_player {
+			continue
+		}
 		switch event.kind {
 		case .Inventory_Full:
 			ui_toast(state, text("inventory_full"))
@@ -833,6 +1038,8 @@ show_simulation_events :: proc(state: ^Ui_State, events: ^[dynamic]Simulation_Ev
 			ui_toast(state, text("toast_magnetometer_recorded"))
 		case .Seismic_Shot_Fired:
 			ui_toast(state, text("toast_seismic_shot"))
+		case .Action_Refused:
+			ui_toast(state, text("toast_action_refused"))
 		}
 	}
 	clear(events)
@@ -921,6 +1128,10 @@ enter_planned_session :: proc(state: ^Frame_State, plan: Session_Plan) {
 }
 
 enter_session :: proc(state: ^Frame_State, session: ^Session) {
+	if join_active(state.joining) {
+		platform.log_printf("network: the join was cancelled by a local world")
+		destroy_session_join(&state.joining)
+	}
 	state.session = session
 	state.interaction.session_views = make_session_views()
 	state.presentation.cue_memory = {}
@@ -1106,6 +1317,10 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 		show_title(&state)
 	}
 	defer leave_session(&state)
+	defer destroy_session_join(&state.joining)
+	if player_configuration.join_address != "" {
+		start_joining(&state.joining.network, player_configuration.join_address, config.tick_rate)
+	}
 	apply_cursor_mode(&state)
 	for !rl.WindowShouldClose() && (.Quit not_in state.requests) {
 		update_frame(&state)
@@ -1194,7 +1409,7 @@ serve_command_socket :: proc(state: ^Frame_State) {
 	}
 	poll_command_server(server)
 	answer_command_ticks(state)
-	for !state.developer.command_control.ticks_waiting {
+	for !state.developer.command_control.ticks_waiting && !state.developer.command_control.line_waiting {
 		queued := take_command_line(server) or_break
 		execute_queued_command(state, queued)
 		delete(queued.line)
@@ -1204,6 +1419,10 @@ serve_command_socket :: proc(state: ^Frame_State) {
 
 answer_command_ticks :: proc(state: ^Frame_State) {
 	control := &state.developer.command_control
+	if control.line_waiting && state.session == nil {
+		control.line_waiting = false
+		send_logged_response(state, control.line_client, "a waiting line", command_error("the world was closed"))
+	}
 	if control.ticks_waiting && state.session == nil {
 		control.pending_ticks, control.ticks_waiting = 0, false
 		send_logged_response(state, state.developer.command_server.tick_client, "tick", command_error("the world was closed"))
@@ -1235,6 +1454,7 @@ frame_command_context :: proc(state: ^Frame_State) -> Command_Context {
 	}
 	if state.session != nil {
 		command_context.simulation = &state.session.simulation
+		command_context.player = session_local_player_index(state.session)
 		command_context.content = frame_simulation_content(state)
 		command_context.weather_override = &state.session.weather_override
 	}
@@ -1246,6 +1466,18 @@ frame_command_context :: proc(state: ^Frame_State) -> Command_Context {
 execute_queued_command :: proc(state: ^Frame_State, queued: Queued_Command_Line) {
 	words, _ := split_command_words(queued.line)
 	response: Command_Response
+	switch {
+	case len(words) == 0 || state.session == nil:
+	case command_writes_simulation(words[0]):
+		response = queue_socket_line(state, queued, words)
+		if !response.deferred {
+			send_logged_response(state, queued.client, queued.line, response)
+		}
+		return
+	case (words[0] == "tick" || words[0] == "pause" || words[0] == "reload") && state.session.network.role != .Offline:
+		send_logged_response(state, queued.client, queued.line, command_error("%s runs only without other machines", words[0]))
+		return
+	}
 	if len(words) > 0 && words[0] == "save" {
 		response = command_save(state)
 	} else if len(words) > 0 && words[0] == "reload" {
@@ -1264,6 +1496,33 @@ execute_queued_command :: proc(state: ^Frame_State, queued: Queued_Command_Line)
 	send_logged_response(state, queued.client, queued.line, response)
 }
 
+// A line that writes the simulation goes into the local player's next
+// input record and is answered once its tick ran it (send_line_answers);
+// a blueprint's file is read here, so every machine runs the same text.
+queue_socket_line :: proc(state: ^Frame_State, queued: Queued_Command_Line, words: []string) -> Command_Response {
+	blueprint: string
+	if words[0] == "blueprint" && len(words) == 2 {
+		data, error := os.read_entire_file(words[1], context.allocator)
+		if error != nil {
+			return command_error("cannot read %s: %v", words[1], error)
+		}
+		blueprint = string(data)
+	}
+	append(&state.session.lockstep.local_lines, Socket_Line{line = strings.clone(queued.line), blueprint = blueprint, client = queued.client})
+	state.developer.command_control.line_waiting = true
+	state.developer.command_control.line_client = queued.client
+	platform.log_printf("command: %s", queued.line)
+	return Command_Response{ok = true, deferred = true}
+}
+
+// The answers of the local socket lines a tick ran.
+send_line_answers :: proc(state: ^Frame_State, answers: []Line_Answer) {
+	for answer in answers {
+		send_logged_response(state, answer.client, answer.line, answer.response)
+		state.developer.command_control.line_waiting = false
+	}
+}
+
 command_save :: proc(state: ^Frame_State) -> Command_Response {
 	if state.session == nil {
 		return command_error("no world is loaded")
@@ -1280,6 +1539,7 @@ run_command_ticks :: proc(state: ^Frame_State, content: Simulation_Content) -> i
 	start := time.tick_now()
 	count := 0
 	for state.developer.command_control.pending_ticks > 0 && time.tick_since(start) < COMMAND_TICK_WALL_BUDGET {
+		release_local_commands(&state.session.lockstep, &state.session.simulation)
 		run_command_tick(&state.session.simulation, content, &state.developer.command_control)
 		count += 1
 	}

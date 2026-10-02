@@ -96,6 +96,8 @@ Parsed with `core:flags` in Unix style; `--help` or `-h` prints the usage page. 
 | `--planet-preview` | A window flying over the home planet's terrain field, no game (below) |
 | `--planet-preview-screenshot=<path>` | The planet preview from a fixed camera without input, the frame saved to the path (below) |
 | `--planet-preview-walk` | The planet preview, or its screenshot, starting in the walk mode (below) |
+| `--server`, `--port=<n>` | Host the world of the command line without a window ([commands.md](commands.md), Multiplayer) |
+| `--join=<address>[:port]` | Join a server's world instead of showing the title ([commands.md](commands.md), Multiplayer) |
 
 - `--load` cannot be combined with `--seed`, `--name`, `--debug-terrain` or `--chapter`. `--chapter` and `--give` start a new world like `--seed`.
 - `settings.font` and `settings.monospace_font` take family ids from `data/fonts/fonts.sjson`; an unknown id is refused like any configuration error by `mine-oh-belowed config`, while the game logs it, starts with the default family and toasts it once on the title screen (`load_start_fonts`, 0149).

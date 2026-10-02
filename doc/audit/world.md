@@ -14,7 +14,7 @@ Rule: the world owns blocks and what is derived from blocks; generation is a pur
 
 - Responsibilities: block storage in 32 cubed chunks (`Chunk`, a map of chunk pointers), the block registry and shapes, sky and coloured block light, cellular water, greedy meshing on workers, loading and unloading around the camera, the raycast, chunk bytes (palette plus runs), terrain, biomes, caves, features, trees, veins, starter veins, spawn, and the save files with the content remap.
 - Block get and set: `world_get_block`, `world_set_block` (records a `Block_Change`, marks the chunk and its border neighbours dirty), `chunk_get_block`, `world_get_light`.
-- Chunks: `world_create_chunk`, `insert_generated_chunk`, `insert_saved_chunk`, `load_chunk_now` (tests and tools), `unload_distant_chunks`, `store_modified_chunk`, `destroy_world`.
+- Chunks: `world_create_chunk`, `insert_generated_chunk`, `insert_saved_chunk`, `load_chunk_now` (tests and tools), `insert_chunk_arrival`, `unload_left_chunks` (0177: the simulated chunk set unloads), `store_modified_chunk`, `destroy_world`.
 - Streaming: `start_chunk_streaming`, `update_chunk_streaming` (main thread, once per frame after the ticks), `take_current_meshes` (called by `render_chunks.odin`), `stop_chunk_streaming`; workers run `run_chunk_job`.
 - Generation: `load_generator`, `make_generator`, `generate_chunk`, `generate_saved_chunk`, `find_spawn`, `sample_column`, `region_veins`, `column_veins`.
 - Light and water scheduling: `tick_world` (`simulation_world.odin:37`, in the loop cluster's file) runs `apply_block_changes`, `run_water_updates`, `run_leaf_decay`, `seed_arrived_chunks`, `propagate_light`; `set_entity_light` from the lamps.

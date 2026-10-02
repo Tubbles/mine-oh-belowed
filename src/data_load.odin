@@ -17,6 +17,8 @@ MAXIMUM_TICK_RATE :: 1000
 MAXIMUM_DAY_LENGTH_SECONDS :: 24 * 60 * 60
 // A week, which keeps the age in ticks far inside a u32 at any tick rate.
 MAXIMUM_LOOSE_ITEM_DESPAWN_MINUTES :: 7 * 24 * 60
+// The simulated chunk set's largest radius in chunks (data/game.sjson).
+MAXIMUM_SIMULATED_CHUNK_RADIUS :: 16
 // Bounds the nodes the field's level of detail walks per frame
 // (select_field_nodes): the walk descends from nodes as wide as the view
 // and visits only those crossing the planet's surface shell: about 40,000
@@ -51,6 +53,10 @@ Game_Config :: struct {
 	// Loose items vanish after lying this long, 0 for never
 	// (loose_item.odin).
 	loose_item_despawn_minutes: int,
+	// The simulated chunk set's radius in chunks around every player's
+	// chunk (simulation_chunk_set.odin).
+	simulated_chunk_radius_horizontal: int,
+	simulated_chunk_radius_vertical:   int,
 	field_view:           Field_View_Config,
 	field_player:         Field_Player_Config,
 }
@@ -357,6 +363,12 @@ validate_game_config :: proc(config: Game_Config) -> string {
 	}
 	if config.loose_item_despawn_minutes < 0 || config.loose_item_despawn_minutes > MAXIMUM_LOOSE_ITEM_DESPAWN_MINUTES {
 		return fmt.tprintf("loose_item_despawn_minutes %d is outside 0 to %d", config.loose_item_despawn_minutes, MAXIMUM_LOOSE_ITEM_DESPAWN_MINUTES)
+	}
+	if config.simulated_chunk_radius_horizontal < 1 || config.simulated_chunk_radius_horizontal > MAXIMUM_SIMULATED_CHUNK_RADIUS {
+		return fmt.tprintf("simulated_chunk_radius_horizontal %d is outside 1 to %d", config.simulated_chunk_radius_horizontal, MAXIMUM_SIMULATED_CHUNK_RADIUS)
+	}
+	if config.simulated_chunk_radius_vertical < 1 || config.simulated_chunk_radius_vertical > MAXIMUM_SIMULATED_CHUNK_RADIUS {
+		return fmt.tprintf("simulated_chunk_radius_vertical %d is outside 1 to %d", config.simulated_chunk_radius_vertical, MAXIMUM_SIMULATED_CHUNK_RADIUS)
 	}
 	if problem := field_view_problem(config.field_view); problem != "" {
 		return problem

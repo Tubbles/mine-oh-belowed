@@ -176,11 +176,13 @@ settle_technology_focus :: proc(state: ^Ui_State, browser: ^Technology_Browser, 
 	}
 }
 
+// The tick queues the research (Research_Command); a refusal toasts now.
 queue_focused_research :: proc(state: ^Ui_State, screen_context: Screen_Context, technology: int) {
-	refusal := queue_research(&screen_context.records.research, screen_context.technologies, screen_context.unlocks^, technology)
-	if refusal != .None {
+	if refusal := research_refusal(screen_context.technologies, screen_context.unlocks^, technology); refusal != .None {
 		ui_toast(state, text(research_refusal_keys[refusal]))
+		return
 	}
+	queue_player_command(screen_context.player_commands, screen_context.player_index, Research_Command{technology = technology})
 }
 
 technology_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {

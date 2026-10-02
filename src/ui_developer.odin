@@ -7,8 +7,8 @@ import "core:fmt"
 // choice, so the focus cursor and the trackpad pointer reach all of them.
 // The diagnostics page choice (work item 0086) and the statistics
 // overlay and bottleneck overlay toggles are frame state and change at once; everything else (fly mode and cheat
-// speed among them) queues a Developer_Request that the next
-// simulation tick serves (developer.odin). The pause menu below keeps the
+// speed among them) queues a Developer_Request as a player command that
+// the next simulation tick serves (player_command.odin, developer.odin). The pause menu below keeps the
 // simulation paused, so those apply once the game resumes. Screenshot and
 // Reload data are frame requests the frame loop serves after the frame.
 
@@ -20,37 +20,31 @@ DEVELOPER_ROW_COUNT :: 13
 
 // Pending toggle requests (fly mode, cheat speed) flip the shown state, so
 // the check box shows the state once the requests are served.
-pending_toggle :: proc(value: bool, requests: []Developer_Request, action: Developer_Action) -> bool {
-	result := value
-	for request in requests {
-		if request.action == action {
-			result = !result
-		}
-	}
-	return result
+pending_toggle :: proc(value: bool, commands: []Queued_Player_Command, unconfirmed: []Player_Command, player: int, action: Developer_Action) -> bool {
+	return pending_developer_toggles(commands, unconfirmed, player, action) % 2 == 1 ? !value : value
 }
 
 queue_developer_request :: proc(state: ^Ui_State, screen_context: Screen_Context, request: Developer_Request) {
-	if screen_context.developer_requests == nil {
+	if screen_context.player_commands == nil {
 		return
 	}
-	append(screen_context.developer_requests, request)
+	queue_player_command(screen_context.player_commands, screen_context.player_index, request)
 	ui_toast(state, text("developer_applies_on_resume"))
 }
 
 // The queued toggles on the first row, the frame state overlays on the
 // second: the diagnostics page steps like F3.
 developer_toggles :: proc(state: ^Ui_State, first_row, second_row: Ui_Rectangle, screen_context: Screen_Context) {
-	requests := screen_context.developer_requests[:]
-	flying := pending_toggle(screen_context.player.flying, requests, .Toggle_Fly_Mode)
+	commands, unconfirmed, player := screen_context.player_commands[:], screen_context.unconfirmed_commands, screen_context.player_index
+	flying := pending_toggle(screen_context.player.flying, commands, unconfirmed, player, .Toggle_Fly_Mode)
 	if ui_toggle(state, column_rectangle(first_row, 3, 0, UI_GAP), text("developer_fly_mode"), &flying) {
 		queue_developer_request(state, screen_context, Developer_Request{action = .Toggle_Fly_Mode})
 	}
-	no_clip := pending_toggle(screen_context.player.no_clip, requests, .Toggle_No_Clip)
+	no_clip := pending_toggle(screen_context.player.no_clip, commands, unconfirmed, player, .Toggle_No_Clip)
 	if ui_toggle(state, column_rectangle(first_row, 3, 1, UI_GAP), text("developer_no_clip"), &no_clip) {
 		queue_developer_request(state, screen_context, Developer_Request{action = .Toggle_No_Clip})
 	}
-	cheat_speed := pending_toggle(screen_context.cheat_speed, requests, .Toggle_Cheat_Speed)
+	cheat_speed := pending_toggle(screen_context.cheat_speed, commands, unconfirmed, player, .Toggle_Cheat_Speed)
 	if ui_toggle(state, column_rectangle(first_row, 3, 2, UI_GAP), text("developer_cheat_speed"), &cheat_speed) {
 		queue_developer_request(state, screen_context, Developer_Request{action = .Toggle_Cheat_Speed})
 	}
@@ -103,7 +97,7 @@ developer_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	// The action rows between the title and Back scroll when the panel is
 	// clamped to the safe area.
 	region, actions := scroll_region_begin(state, "developer_actions", content, f32(DEVELOPER_ROW_COUNT - 2) * (UI_ROW_HEIGHT + UI_GAP))
-	if screen_context.player != nil && screen_context.developer_requests != nil {
+	if screen_context.player != nil && screen_context.player_commands != nil {
 		developer_actions(state, &actions, screen_context)
 	}
 	scroll_region_end(state, region)

@@ -209,6 +209,9 @@ reload_simulation :: proc(old: ^Simulation_State, old_content, new_content: Simu
 		destroy_simulation(&reloaded)
 		return {}, problem
 	}
+	// The loaded chunks moved, so the set that holds them moves too; the
+	// arrived chunks carry the old block ids and go with the old state.
+	reloaded.chunk_set, old.chunk_set = old.chunk_set, reloaded.chunk_set
 	return reloaded, ""
 }
 

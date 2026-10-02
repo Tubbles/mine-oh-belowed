@@ -1,6 +1,6 @@
 # Code map
 
-The entry page for the source: 217 files under `src/` plus 154 test files beside them. 198 are the `game` package, grouped into seven clusters; 19 are seven leaf packages under `src/` (section Packages), each a cluster named after its directory. Read the cluster table, pick a cluster, open its entry file; the section of each cluster lists its files in reading order. How the parts work is in [architecture.md](architecture.md), the why of the clusters in the audits under [audit/](audit/).
+The entry page for the source: 225 files under `src/` plus 158 test files beside them. 203 are the `game` package, grouped into seven clusters; 22 are seven leaf packages under `src/` (section Packages), each a cluster named after its directory. Read the cluster table, pick a cluster, open its entry file; the section of each cluster lists its files in reading order. How the parts work is in [architecture.md](architecture.md), the why of the clusters in the audits under [audit/](audit/).
 
 - Rule: a new file goes into a cluster and takes one of its file name prefixes (or a line in the file table of `tools/code_graph.py`); a reference against the allowed dependency table below is a finding until it is refactored away.
 - The map is kept true by two checks: `python3 tools/check_docs.py` checks every backticked file and name in it, and `python3 tools/code_graph.py --check doc/code_map.md` compares every cluster edge the allowed table does not allow with the map's record of it ([build.md](build.md), Source checks).
@@ -11,14 +11,14 @@ The entry page for the source: 217 files under `src/` plus 154 test files beside
 
 | Cluster | Purpose | Entry | Files | Lines | Audit |
 |---|---|---|---|---|---|
-| loop | the process: start-up, the frame, when the tick runs, sessions, the requests served between frames | `loop.odin` | 6 | 3151 | [loop](audit/loop.md) |
+| loop | the process: start-up, the frame, when the tick runs (the lockstep driver), sessions, the network and the server, the requests served between frames | `loop.odin` | 9 | 5269 | [loop](audit/loop.md) |
 | ui | the input layer, the immediate mode toolkit, every screen, the HUD and the touch overlay | `ui_core.odin` | 49 | 17211 | [ui](audit/ui.md) |
 | world | blocks and what follows a block: chunks, light, water, meshing, streaming, generation, the save codec; the terrain field beside them (M13) | `world_chunk.odin` | 43 | 11572 | [world](audit/world.md) |
-| simulation | the factory per tick: entity pools, networks, players, inventories, crafting, statistics, the game's records | `entity.odin` | 41 | 16373 | [simulation](audit/simulation.md) |
+| simulation | the factory per tick: entity pools, networks, players, inventories, crafting, statistics, the game's records | `entity.odin` | 43 | 17008 | [simulation](audit/simulation.md) |
 | presentation | pixels and sound from the world and the tick: shaders, atlases, models, sky, weather, particles, audio, the window | `render_chunks.odin` | 35 | 8820 | [presentation](audit/presentation.md) |
 | content | data files into typed tables, the string table, configuration and settings | `data_reload.odin` | 16 | 5339 | [content](audit/content.md) |
 | tools | the command socket, the diagnostics pages, the Data files browser and export, the factory benchmark | `command.odin` | 8 | 3871 | [loop](audit/loop.md), [content](audit/content.md) |
-| platform | the package `src/platform/`: logging, paths, the time zone, JNI, the export's file access, the replacing file write | `logging.odin` | 13 | 1014 | [content](audit/content.md) |
+| platform | the package `src/platform/`: logging, paths, the time zone, JNI, the export's file access, the replacing file write, the TCP transport, the stop signal | `logging.odin` | 16 | 1362 | [content](audit/content.md) |
 | generation_seed | the package `src/generation_seed/`: purpose seeds and the integer hashes | `generation_seed.odin` | 1 | 77 | [world](audit/world.md) |
 | model_vox | the package `src/model_vox/`: the MagicaVoxel parser | `model_vox.odin` | 1 | 283 | [presentation](audit/presentation.md) |
 | render_frustum | the package `src/render_frustum/`: frustum planes and the box test | `render_frustum.odin` | 1 | 35 | [presentation](audit/presentation.md) |
@@ -60,11 +60,14 @@ The process: the loop decides when things run, the clusters decide what runs.
   - `main.odin`: `Command_Line`, `main`, `load_start_data` with the overlay fallback, the world start.
   - `loop.odin`: `Frame_State` and its four groups, `run_game` and `update_frame`, `make_screen_context`, `serve_frame_requests_before_draw` (the order of the frame requests) and the serve procedures it calls, `Game_Content`.
   - `session.odin`: `Session`, `start_session`, `end_session`, `save_session`.
+  - `lockstep.odin`: `Lockstep`, `Input_Record`, the driver (stamp, receive, `lockstep_records_ready`, `begin_lockstep_tick`), the prediction, `lockstep_state_hash`, and `run_ready_ticks` with the socket lines of a tick.
+  - `session_network.odin`: `Session_Network`, `Session_Join`, the message codec, the host's relay, join, keepalive and hash comparison, the client's side, `Join_Snapshot`.
+  - `session_server.odin`: `Server_State`, `run_server` (`--server`).
   - `hot_reload.odin`: the reload per data category on `Frame_State`, served between frames.
   - `main_android.odin`: the Android C entry wrapping `main`.
   - `loop_planet_preview.odin`: `run_planet_preview`, the `--planet-preview` window over the terrain field (0169) with its walk mode, the field player on a fixed step (0170, `walk_planet_preview`), a viewing tool until the slice (0179).
-- State: `Frame_State` (16 top level fields: the loop's 12, the request set `Frame_Requests` among them, and four groups holding the 56 other clusters' fields, `Frame_Interaction` 23, `Frame_Presentation` 18, `Frame_Developer_Tools` 8, `Frame_Reload` 7), `Session`, `Game_Content`.
-- Tests: `main_test.odin`; the frame, the session lifecycle and the reloads are untested (loop audit, section 8).
+- State: `Frame_State` (17 top level fields: the loop's 13, the request set `Frame_Requests` among them, and four groups holding the 56 other clusters' fields, `Frame_Interaction` 23, `Frame_Presentation` 18, `Frame_Developer_Tools` 8, `Frame_Reload` 7), `Session`, `Lockstep`, `Session_Network`, `Game_Content`.
+- Tests: `main_test.odin`; `lockstep_test.odin` (machines through an in-process relay) and `session_network_test.odin` (the join, the server); the frame, the session lifecycle and the reloads are untested (loop audit, section 8).
 - Reaches into: nothing.
 
 ## ui
@@ -129,7 +132,7 @@ The world owns blocks and what is derived from blocks; generation is a pure func
   - `save_world.odin`, `save_list.odin`: world.sjson, region files, staging and swap; the save list.
 - State: `World` (13 fields: chunks, settings, veins and their indices, outcrops, block changes, light, water, saved chunks and, until the cell occupant index, `entities`), `Chunk`, `Chunk_Streaming` (on `Session`), `Generator`, `Block_Registry`, `World_Settings`, `Field_World` and `Field_Streaming` (reached by tests and the planet preview only until the slice switches the session to it, 0179).
 - Tests: every `*_test.odin` beside its file; `save_test.odin` and `save_codec_test.odin` (save, load and run to the same hash).
-- Reaches into: simulation 221 (accepted 206: the save codec encoding pools, `Game_Records`, `Simulation_State` and `Simulation_Content`, and `save_world.odin` calling `make_simulation` and `simulation_day_ticks` 201, `vein_is_exhausted` 1, `tick_world` running the leaf decay queue of `tree_felling.odin` 4; queued 4: streaming registering the crate sites and the explored column into `Game_Records` at chunk arrival 6; queued 5: `World.entities` and raycast and water reading entities 9), presentation 12 (accepted: the mesher's atlas and tile variation).
+- Reaches into: simulation 223 (accepted 209: the save codec encoding pools, `Game_Records`, `Simulation_State` and `Simulation_Content`, and `save_world.odin` calling `make_simulation` and `simulation_day_ticks` 204, `vein_is_exhausted` 1, `tick_world` running the leaf decay queue of `tree_felling.odin` 4; queued 4: streaming registering the crate sites and the explored column into `Game_Records` at chunk arrival 5; queued 5: `World.entities` and raycast and water reading entities 9), presentation 12 (accepted: the mesher's atlas and tile variation).
 
 ## simulation
 
@@ -137,6 +140,8 @@ The factory: what changes per tick; blocks belong to the world, prototypes to co
 
 - Entry: `entity.odin`, `tick_entities` (called through `tick_entities_on_world` by `simulation_tick` in `simulation_world.odin`).
 - Files in reading order:
+  - `player_command.odin`: `Player_Command`, the queue every write from outside the tick goes through, applied at the start of `simulation_tick`.
+  - `simulation_chunk_set.odin`: `Simulated_Chunk_Set`, the chunks the tick may read, derived from the players.
   - `simulation_state.odin`: `Simulation_State`, `Game_Records` (the game's records beside the world), `Simulation_Event`, `make_simulation` with `place_capsule`, `destroy_simulation` and `destroy_game_records`, `simulation_day_ticks`.
   - `simulation_world.odin`: `Simulation_Content`, `Entity_Tick_Context` with its block procedures, `simulation_tick`, `apply_research_result`, `simulation_quest_context`.
   - `entity.odin`: `Entity_Kind`, `Entity_Handle`, `Entity_Common`, `Entity_Pool`, `Entities`, add and remove, `tick_entities`.
@@ -157,11 +162,11 @@ The factory: what changes per tick; blocks belong to the world, prototypes to co
   - `statistics.odin`, `production_statistics.odin`: `Statistics` and rate rings; statistics rows and the marker colours.
   - `recipe_unlocks.odin`, `quest_runtime.odin`: `Recipe_Unlocks` per tick; `Quest_State`, objectives, rewards, messages.
   - `venture.odin`, `tree_felling.odin`: `Contract_State`, shipments served, the orbital survey; felling and leaf decay.
-  - `developer.odin`: developer kits and `serve_developer_requests`, run inside the tick.
+  - `developer.odin`: developer kits and `serve_developer_request`, run inside the tick for a `Developer_Request` command.
   - `tick_profile.odin`: `Tick_Profile`, wall time per tick section.
-- State: `Simulation_State`, `Game_Records` (the records beside the world), `Simulation_Content`, `Entities` (16 pools, the belt, fluid and electric networks, the cell map, loose items), `Player`, `Field_Player` (driven by the planet preview until the slice, 0179), `Inventory`, `Statistics`, `Research_State`, `Quest_State`, `Recipe_Unlocks`, `Contract_State`, `Tick_Profile`.
+- State: `Simulation_State`, `Game_Records` (the records beside the world), `Simulation_Content`, `Player_Command`, `Simulated_Chunk_Set`, `Entities` (16 pools, the belt, fluid and electric networks, the cell map, loose items), `Player`, `Field_Player` (driven by the planet preview until the slice, 0179), `Inventory`, `Statistics`, `Research_State`, `Quest_State`, `Recipe_Unlocks`, `Contract_State`, `Tick_Profile`.
 - Tests: every `*_test.odin` beside its file; `simulation_tick` through the simulation and save tests; the systems in `byproduct_test.odin`, `chemistry_test.odin`, `combustion_test.odin`, `deep_mining_test.odin`, `hydro_grid_test.odin`, `oil_test.odin`, `ore_processing_test.odin`, `power_test.odin`; the whole chain in `benchmark_test.odin` (tools).
-- Reaches into: loop 1 (accepted: `parse_seed`), ui 29 (accepted: the tick's input types `Input_Frame`, `Action_Set`, `Action`), presentation 18 (accepted: machine models and motion 6, `Fly_Camera` 6, `block_centre` and `line_block_belt` 5, `DAY_START_FRACTION` 1).
+- Reaches into: loop 1 (accepted: `parse_seed`), ui 34 (accepted: the tick's input types `Input_Frame`, `Action_Set`, `Action`), presentation 18 (accepted: machine models and motion 6, `Fly_Camera` 6, `block_centre` and `line_block_belt` 5, `DAY_START_FRACTION` 1).
 
 ## presentation
 
@@ -231,14 +236,14 @@ The package `src/platform/`, one of the leaf packages below; the leaves over the
 - Entry: `logging.odin`, `log_printf`, called as `platform.log_printf`.
 - Files: section Packages.
 - State: `global_log` (`Log_State`) and `captured_log_error` behind `begin_log_capture` and `end_log_capture`.
-- Tests: `jni_indices_test.odin` and `platform_paths_test.odin` beside the package; the game's `platform_paths_test.odin` checks the directory mappings through the game's path helpers and scans every package for the Windows static runtime imports; `write_file_replacing` and `rename_file_aside` are tested through the game's writer and settings fallback tests; the log file, the time zone lookup and the export access are untested.
+- Tests: `jni_indices_test.odin`, `platform_paths_test.odin` and `network_test.odin` beside the package; the game's `platform_paths_test.odin` checks the directory mappings through the game's path helpers and scans every package for the Windows static runtime imports; `write_file_replacing` and `rename_file_aside` are tested through the game's writer and settings fallback tests; the log file, the time zone lookup and the export access are untested.
 - Reaches into: nothing.
 
 ## Packages
 
 Leaf packages under `src/` (work item 0145, the pilot split): each is a directory with its own `package` line, imported by the files that use it (`import "platform"`, `import "../platform"` from a package), its names qualified at every use (`platform.log_printf`). A package imports no game file, so the compiler keeps it a leaf. `./build.sh test` runs their tests with `-all-packages` ([build.md](build.md)).
 
-- `platform`: `logging.odin`, `logging_posix.odin`, `logging_windows.odin` (`Log_State`, the log file and `log_printf`, `Log_Capture`; the stderr redirect and crash traces per system); `platform_paths.odin` (`Platform_Directories`, `join_path`, `make_directory_path`); `file_write.odin` (`write_file_replacing`, every file the game writes, and `rename_file_aside`); `platform_android.odin` (the Android entry points and logcat, imports `android_libc` for the link); `local_zone.odin`, `local_zone_posix.odin`, `local_zone_windows.odin` (the local time zone); `jni_indices.odin`, `jni_android.odin` (JNI table indices; `Jni_Calls` and the call helpers); `export_access_android.odin`, `export_access_desktop.odin` (All files access for the export). Tests: `jni_indices_test.odin`, `platform_paths_test.odin`.
+- `platform`: `logging.odin`, `logging_posix.odin`, `logging_windows.odin` (`Log_State`, the log file and `log_printf`, `Log_Capture`; the stderr redirect and crash traces per system); `platform_paths.odin` (`Platform_Directories`, `join_path`, `make_directory_path`); `file_write.odin` (`write_file_replacing`, every file the game writes, and `rename_file_aside`); `network.odin` (`Network_Listener`, `Network_Connection`, length prefixed messages over TCP, `Network_Dial`, the connect on a thread); `stop_signal_posix.odin`, `stop_signal_windows.odin` (SIGINT and SIGTERM ask the server to stop; a stub on Windows); `platform_android.odin` (the Android entry points and logcat, imports `android_libc` for the link); `local_zone.odin`, `local_zone_posix.odin`, `local_zone_windows.odin` (the local time zone); `jni_indices.odin`, `jni_android.odin` (JNI table indices; `Jni_Calls` and the call helpers); `export_access_android.odin`, `export_access_desktop.odin` (All files access for the export). Tests: `jni_indices_test.odin`, `platform_paths_test.odin`, `network_test.odin` (a loopback connection).
 - `generation_seed`: `generation_seed.odin` (`Generation_Purpose`, `Purpose_Seeds`, `hash_u64`, `hash_combine` and the hash helpers).
 - `model_vox`: `model_vox.odin` (`Voxel_Model`, the .vox parser, `model_file_path`), imports `platform`. Tests: `model_vox_test.odin`.
 - `render_frustum`: `render_frustum.odin` (`Frustum`, `frustum_from_matrix`, `frustum_contains_box`). Tests: `render_frustum_test.odin`.

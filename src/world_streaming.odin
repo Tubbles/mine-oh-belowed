@@ -8,15 +8,17 @@ import "core:sync"
 import "core:thread"
 
 // Chunk streaming: worker threads generate and mesh chunks, the main thread
-// inserts, unloads and schedules. Workers never touch the World. A mesh job
+// schedules them and hands the generated chunks to the simulation, whose
+// tick inserts and unloads them (simulation_chunk_set.odin). Workers never
+// touch the World. A mesh job
 // carries a private copy of the chunk and of the cells around it (blocks
 // and light), so edits and unloads on the main thread cannot race with it.
 
+// The meshing order around the camera; the chunks loaded are the
+// simulation's (simulated_chunk_radius_horizontal and _vertical in
+// data/game.sjson).
 LOAD_RADIUS_HORIZONTAL :: 6
 LOAD_RADIUS_VERTICAL :: 3
-// Chunks unload once they are this many chunks beyond the load radius, so
-// that moving back and forth across a border does not reload them.
-UNLOAD_MARGIN :: 1
 // Jobs submitted and not yet received. Keeps the queue short, so that jobs
 // for far chunks do not pile up ahead of near ones when the camera moves.
 MAXIMUM_PENDING_JOBS :: 48
@@ -84,6 +86,8 @@ Chunk_Streaming :: struct {
 	// Off for the debug terrain: nothing is generated or unloaded, and
 	// only dirty chunks are meshed.
 	load_around_camera: bool,
+	// Off on the headless server, which draws nothing (session_server.odin).
+	mesh_chunks:        bool,
 	// The load volume around the camera chunk, nearest first.
 	offsets:            []Chunk_Coordinate,
 	generating:         map[Chunk_Coordinate]struct{},
@@ -249,14 +253,6 @@ within_radius :: proc(centre, coordinate: Chunk_Coordinate, horizontal, vertical
 	return abs(offset.x) <= horizontal && abs(offset.z) <= horizontal && abs(offset.y) <= vertical
 }
 
-in_load_volume :: proc(centre, coordinate: Chunk_Coordinate) -> bool {
-	return within_radius(centre, coordinate, LOAD_RADIUS_HORIZONTAL, LOAD_RADIUS_VERTICAL)
-}
-
-in_keep_volume :: proc(centre, coordinate: Chunk_Coordinate) -> bool {
-	return within_radius(centre, coordinate, LOAD_RADIUS_HORIZONTAL + UNLOAD_MARGIN, LOAD_RADIUS_VERTICAL + UNLOAD_MARGIN)
-}
-
 start_chunk_streaming :: proc(generator: ^Generator, registry: Block_Registry, load_around_camera: bool, worker_count: int) -> Chunk_Streaming {
 	shared := new(Worker_Shared)
 	shared.generator = generator
@@ -269,6 +265,7 @@ start_chunk_streaming :: proc(generator: ^Generator, registry: Block_Registry, l
 	streaming := Chunk_Streaming {
 		shared             = shared,
 		load_around_camera = load_around_camera,
+		mesh_chunks        = true,
 		offsets            = load_volume_offsets(),
 	}
 	for _ in 0 ..< worker_count {
@@ -374,51 +371,75 @@ store_modified_chunk :: proc(world: ^World, chunk: ^Chunk) {
 	world.saved_chunks[chunk.coordinate] = serialize_chunk(chunk)
 }
 
-receive_generated_chunks :: proc(streaming: ^Chunk_Streaming, world: ^World, records: ^Game_Records, camera_chunk: Chunk_Coordinate) {
+// What the frame hands the streaming (update_chunk_streaming): the
+// chunks the simulation wants loaded next (simulated_chunk_requests, in
+// coordinate order), the ones it holds already arrived and not yet
+// inserted, the ones its tick unloaded, and the camera's chunk, which
+// orders the generation and the meshing nearest first.
+Chunk_Stream_Frame :: struct {
+	requested:    []Chunk_Coordinate,
+	held:         map[Chunk_Coordinate]struct{},
+	unloaded:     []Chunk_Coordinate,
+	camera_chunk: Chunk_Coordinate,
+}
+
+chunk_requested :: proc(frame: Chunk_Stream_Frame, coordinate: Chunk_Coordinate) -> bool {
+	_, found := slice.binary_search_by(frame.requested, coordinate, chunk_coordinate_order)
+	return found
+}
+
+chunk_coordinate_order :: proc(first, second: Chunk_Coordinate) -> slice.Ordering {
+	switch {
+	case chunk_coordinate_before(first, second):
+		return .Less
+	case chunk_coordinate_before(second, first):
+		return .Greater
+	}
+	return .Equal
+}
+
+// The generated chunks still requested go to arrivals, owned by the
+// caller, which queues each as a chunk ready command (the tick inserts
+// them, simulation_chunk_set.odin); the rest are freed.
+receive_generated_chunks :: proc(streaming: ^Chunk_Streaming, world: ^World, frame: Chunk_Stream_Frame, arrivals: ^[dynamic]Chunk_Job_Result) {
 	results := take_generated_results(&streaming.shared.jobs, MAXIMUM_GENERATED_PER_FRAME, context.temp_allocator)
 	for result in results {
 		streaming.pending_jobs -= 1
 		delete_key(&streaming.generating, result.coordinate)
-		if result.coordinate in world.chunks || !in_keep_volume(camera_chunk, result.coordinate) {
+		if result.coordinate in world.chunks || result.coordinate in frame.held || !chunk_requested(frame, result.coordinate) {
 			free_job_result(result)
 			continue
 		}
-		if result.restored {
-			insert_saved_chunk(world, records, streaming.shared.registry, result)
-		} else {
-			insert_generated_chunk(world, records, result)
-		}
-		apply_added_veins_to_chunk(world, streaming.shared.generator, result.coordinate, result.restored)
-		delete(result.veins)
-		delete(result.outcrops)
-		delete(result.crates)
+		append(arrivals, result)
 	}
 }
 
-unload_distant_chunks :: proc(streaming: ^Chunk_Streaming, world: ^World, explored: ^map[Chunk_Column]Column_Surface, camera_chunk: Chunk_Coordinate) {
-	for coordinate in world.chunks {
-		if !in_keep_volume(camera_chunk, coordinate) {
-			append(&streaming.unloaded, coordinate)
-		}
+// One generated chunk into the world: the blocks, its records, and the
+// developer veins added over it. The result's lists are freed, its chunk
+// belongs to the world.
+insert_chunk_arrival :: proc(world: ^World, records: ^Game_Records, registry: Block_Registry, generator: ^Generator, result: Chunk_Job_Result) {
+	if result.restored {
+		insert_saved_chunk(world, records, registry, result)
+	} else {
+		insert_generated_chunk(world, records, result)
 	}
-	refresh_unloading_surfaces(world, explored, streaming.unloaded[:])
-	for coordinate in streaming.unloaded {
-		store_modified_chunk(world, world.chunks[coordinate])
-		free(world.chunks[coordinate])
-		delete_key(&world.chunks, coordinate)
-		delete_key(&streaming.mesh_revisions, coordinate)
+	if generator != nil {
+		apply_added_veins_to_chunk(world, generator, result.coordinate, result.restored)
 	}
+	delete(result.veins)
+	delete(result.outcrops)
+	delete(result.crates)
 }
 
 // A neighbour counts as settled when it is loaded or will not be loaded
 // soon, so that a chunk is meshed once instead of once per arriving neighbour.
-neighbours_settled :: proc(streaming: ^Chunk_Streaming, world: ^World, camera_chunk, coordinate: Chunk_Coordinate) -> bool {
+neighbours_settled :: proc(streaming: ^Chunk_Streaming, world: ^World, frame: Chunk_Stream_Frame, coordinate: Chunk_Coordinate) -> bool {
 	for direction in Direction {
 		neighbour := coordinate + Chunk_Coordinate(direction_offsets[direction])
 		if neighbour in world.chunks {
 			continue
 		}
-		if streaming.load_around_camera && in_load_volume(camera_chunk, neighbour) {
+		if streaming.load_around_camera && chunk_requested(frame, neighbour) {
 			return false
 		}
 	}
@@ -458,35 +479,59 @@ submit_generate_job :: proc(streaming: ^Chunk_Streaming, world: ^World, coordina
 	streaming.pending_jobs += 1
 }
 
-// Nearest first, so the chunks around the camera appear before far ones.
-schedule_chunk_jobs :: proc(streaming: ^Chunk_Streaming, world: ^World, camera_chunk: Chunk_Coordinate) {
-	mesh_submissions := 0
-	for offset in streaming.offsets {
-		if streaming.pending_jobs >= MAXIMUM_PENDING_JOBS {
-			return
-		}
-		coordinate := camera_chunk + offset
-		chunk := world.chunks[coordinate] or_else nil
-		switch {
-		case chunk == nil:
-			if streaming.load_around_camera && coordinate not_in streaming.generating {
+// The requested chunks nearest the camera first. In the temp allocator.
+requests_nearest_first :: proc(frame: Chunk_Stream_Frame) -> []Chunk_Coordinate {
+	ordered := slice.clone(frame.requested, context.temp_allocator)
+	camera_chunk := frame.camera_chunk
+	context.user_ptr = &camera_chunk
+	slice.sort_by(ordered, proc(first, second: Chunk_Coordinate) -> bool {
+		camera := (^Chunk_Coordinate)(context.user_ptr)^
+		return offset_before(first - camera, second - camera)
+	})
+	return ordered
+}
+
+// Generation for the requested chunks not loaded, held or generating,
+// nearest first; meshing for the dirty chunks around the camera.
+schedule_chunk_jobs :: proc(streaming: ^Chunk_Streaming, world: ^World, frame: Chunk_Stream_Frame) {
+	if streaming.load_around_camera {
+		for coordinate in requests_nearest_first(frame) {
+			if streaming.pending_jobs >= MAXIMUM_PENDING_JOBS {
+				return
+			}
+			if coordinate not_in world.chunks && coordinate not_in frame.held && coordinate not_in streaming.generating {
 				submit_generate_job(streaming, world, coordinate)
 			}
-		case chunk.dirty && mesh_submissions < MAXIMUM_MESH_SUBMISSIONS_PER_FRAME && neighbours_settled(streaming, world, camera_chunk, coordinate):
+		}
+	}
+	mesh_submissions := 0
+	for offset in streaming.offsets {
+		if !streaming.mesh_chunks {
+			return
+		}
+		if streaming.pending_jobs >= MAXIMUM_PENDING_JOBS || mesh_submissions >= MAXIMUM_MESH_SUBMISSIONS_PER_FRAME {
+			return
+		}
+		chunk := world.chunks[frame.camera_chunk + offset] or_else nil
+		if chunk != nil && chunk.dirty && neighbours_settled(streaming, world, frame, chunk.coordinate) {
 			submit_mesh_job(streaming, world, chunk)
 			mesh_submissions += 1
 		}
 	}
 }
 
-// Main thread, once per frame, before take_current_meshes.
-update_chunk_streaming :: proc(streaming: ^Chunk_Streaming, world: ^World, records: ^Game_Records, camera_chunk: Chunk_Coordinate) {
+// Main thread, once per frame, before take_current_meshes. The chunks the
+// tick unloaded go to streaming.unloaded for the renderer.
+update_chunk_streaming :: proc(streaming: ^Chunk_Streaming, world: ^World, frame: Chunk_Stream_Frame, arrivals: ^[dynamic]Chunk_Job_Result) {
 	clear(&streaming.unloaded)
-	if streaming.load_around_camera {
-		receive_generated_chunks(streaming, world, records, camera_chunk)
-		unload_distant_chunks(streaming, world, &records.explored, camera_chunk)
+	for coordinate in frame.unloaded {
+		append(&streaming.unloaded, coordinate)
+		delete_key(&streaming.mesh_revisions, coordinate)
 	}
-	schedule_chunk_jobs(streaming, world, camera_chunk)
+	if streaming.load_around_camera {
+		receive_generated_chunks(streaming, world, frame, arrivals)
+	}
+	schedule_chunk_jobs(streaming, world, frame)
 }
 
 // Mesh results still current for a loaded chunk. Stale ones are freed here,

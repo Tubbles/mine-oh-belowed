@@ -290,14 +290,15 @@ hotbar_radial_source :: proc(input: Ui_Input) -> Radial_Source {
 }
 
 // The left pad (or Tab and the right stick) shows the hotbar as a wheel
-// around the screen centre, slot 0 at the top, clockwise. Release selects.
-hotbar_radial :: proc(state: ^Ui_State, player: ^Player, items: Item_Registry) {
+// around the screen centre, slot 0 at the top, clockwise. Release selects
+// through a Hotbar_Slot_Command for the tick.
+hotbar_radial :: proc(state: ^Ui_State, player: ^Player, player_index: int, commands: ^[dynamic]Queued_Player_Command, items: Item_Registry) {
 	source := hotbar_radial_source(state.input)
 	touching, position := radial_input(state.input, source)
 	result: Radial_Result
 	state.radial, result = advance_radial(state.radial, touching, position, source, HOTBAR_SLOT_COUNT)
 	if result.closed && result.selected >= 0 {
-		player.selected_hotbar_slot = result.selected
+		queue_player_command(commands, player_index, Hotbar_Slot_Command{slot = result.selected})
 	}
 	if state.radial.open {
 		draw_hotbar_radial(state, inventory_hotbar(player.inventory), items)
@@ -436,7 +437,7 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context, hud: Hud_Cont
 	if selected := selected_hotbar_stack(player^); !stack_is_empty(selected) && item_has_use(items, selected.item, .Magnetometer) {
 		draw_magnetometer(state, player^)
 	}
-	hotbar_radial(state, player, items)
+	hotbar_radial(state, player, screen_context.player_index, screen_context.player_commands, items)
 	// On touch the gestures and the overlay's buttons are the hints (0137).
 	if touch_row_shows(state) {
 		return
@@ -562,3 +563,15 @@ target_status_lines :: proc(world: ^World, records: ^Game_Records, machines: Mac
 	}
 	return
 }
+
+// The loading notice (loading_notice in loop.odin): a panel in the
+// middle of the safe area while no tick can run, the text fitted to it.
+draw_loading_notice :: proc(state: ^Ui_State, notice: string) {
+	safe := ui_safe_area(state)
+	width := min(safe.width - 2 * UI_PADDING, LOADING_NOTICE_WIDTH)
+	panel := Ui_Rectangle{safe.x + (safe.width - width) / 2, safe.y + (safe.height - UI_ROW_HEIGHT) / 2 - UI_PADDING, width, UI_ROW_HEIGHT + 2 * UI_PADDING}
+	draw_panel_art(state, panel, UI_PANEL_COLOR, UI_PANEL_BORDER_COLOR)
+	draw_text_fitted(state, inset(panel, UI_PADDING), notice, UI_HEADING_TEXT_SIZE, .Centre)
+}
+
+LOADING_NOTICE_WIDTH :: 600

@@ -30,6 +30,15 @@ Session :: struct {
 	// The weather command's forced kind (work item 0063), nil for the
 	// schedule. Not saved.
 	weather_override:   Maybe(Weather_Kind),
+	// Who drives the simulation and when a tick runs (lockstep.odin), and
+	// the other machines of the session (session_network.odin).
+	lockstep:           Lockstep,
+	network:            Session_Network,
+	// The last ready check stopped on a missing chunk of the simulated set
+	// (run_ready_ticks), and the frames in a row no tick ran because of it:
+	// the frame shows the loading notice after a few.
+	chunk_stalled:      bool,
+	stalled_frames:     int,
 }
 
 // What a session starts from: a new world's seed and settings, or a save.
@@ -42,6 +51,9 @@ Session_Plan :: struct {
 	file:          World_File,
 	directory:     string,
 	save:          Save_Setup,
+	// A host's world joined over the network (session_network.odin): the
+	// save's bytes instead of directory.
+	files:         ^Save_Files,
 }
 
 // The content with the world's technologies.
@@ -75,6 +87,11 @@ make_session_simulation :: proc(plan: Session_Plan, config: Game_Config, content
 	world_config.day_length_seconds = plan.settings.day_length_seconds
 	simulation_content := session_simulation_content(content, session.technologies)
 	start := session.start
+	if plan.loading && plan.files != nil {
+		simulation = make_simulation(world_config, start.player, simulation_content, simulation_content.technologies, plan.file.settings.all_recipes_unlocked, start.landing_pad)
+		problem = load_world_from_files(&simulation, simulation_content, plan.files^, plan.file, "the host's world")
+		return simulation, problem
+	}
 	if plan.loading {
 		simulation, problem = make_simulation_from_save(world_config, start.player, simulation_content, start.landing_pad, plan.directory, plan.file)
 		if problem == "" {
@@ -110,6 +127,10 @@ start_session :: proc(plan: Session_Plan, config: Game_Config, content: Game_Con
 	}
 	session.save = clone_save_setup(plan.save)
 	session.accumulator = make_tick_accumulator(config.tick_rate)
+	if !plan.debug_terrain {
+		session.simulation.chunk_set = make_simulated_chunk_set(config.simulated_chunk_radius_horizontal, config.simulated_chunk_radius_vertical)
+	}
+	session.lockstep = make_single_player_lockstep(session.simulation.tick, session.start.player)
 	session.streaming = start_chunk_streaming(&session.generator, content.blocks, !plan.debug_terrain, default_worker_count())
 	return session, ""
 }
@@ -126,6 +147,8 @@ build_session_debug_terrain :: proc(world: ^World, registry: Block_Registry) -> 
 // Workers read the session's generator, so they stop first.
 end_session :: proc(session: ^Session) {
 	stop_chunk_streaming(&session.streaming)
+	destroy_session_network(&session.network)
+	destroy_lockstep(&session.lockstep)
 	destroy_simulation(&session.simulation)
 	delete(session.technologies.technologies)
 	delete(session.save.location.directory_name)

@@ -529,6 +529,21 @@ Recipe_Change_Refusal :: enum u8 {
 	Contents_Do_Not_Fit,
 }
 
+// Why change_assembler_recipe would refuse the recipe, without changing
+// anything.
+recipe_change_refusal :: proc(assembler: ^Assembler, machine: Machine, inventory: Inventory, items: Item_Registry, recipes: Recipe_Registry, recipe: int) -> Recipe_Change_Refusal {
+	if recipe == assembler.recipe {
+		return .None
+	}
+	if machine.recipe_choice == .Fixed || recipe != NO_RECIPE && !recipe_fits_crafting_machine(recipes.recipes[recipe], machine) {
+		return .Not_For_Assembler
+	}
+	if !inventory_fits_all(inventory, items, assembler_contents(assembler, machine, recipes)) {
+		return .Contents_Do_Not_Fit
+	}
+	return .None
+}
+
 // A recipe change from the panel: the contents go to the player's
 // inventory, and when they do not fit nothing changes. A fixed choice
 // machine takes no recipe from the panel.
@@ -536,13 +551,10 @@ change_assembler_recipe :: proc(assembler: ^Assembler, machine: Machine, invento
 	if recipe == assembler.recipe {
 		return .None
 	}
-	if machine.recipe_choice == .Fixed || recipe != NO_RECIPE && !recipe_fits_crafting_machine(recipes.recipes[recipe], machine) {
-		return .Not_For_Assembler
+	if refusal := recipe_change_refusal(assembler, machine, inventory, items, recipes, recipe); refusal != .None {
+		return refusal
 	}
 	contents := assembler_contents(assembler, machine, recipes)
-	if !inventory_fits_all(inventory, items, contents) {
-		return .Contents_Do_Not_Fit
-	}
 	for stack in contents {
 		if !stack_is_empty(stack) {
 			inventory_add(inventory, items, stack.item, int(stack.count))

@@ -24,9 +24,22 @@ Simulation_State :: struct {
 	// Filled by ticks, emptied by the UI each frame (toasts). The
 	// simulation never calls the UI itself.
 	events:           [dynamic]Simulation_Event,
-	// Filled by the developer menu and the command line, served and
-	// emptied at the start of the next tick (developer.odin).
-	developer_requests: [dynamic]Developer_Request,
+	// Every write from outside the tick: the screens, the developer menu,
+	// the command line and socket, the lockstep driver's joins and the
+	// chunk arrivals, applied and emptied at the start of the next tick
+	// (player_command.odin). Not saved.
+	player_commands:    [dynamic]Queued_Player_Command,
+	// Generated chunks waiting for the simulated chunk set to take them
+	// (simulation_chunk_set.odin). Not saved: they differ per machine and
+	// the tick reads none of them.
+	arrived_chunks:     map[Chunk_Coordinate]Chunk_Job_Result,
+	// The chunks the tick simulates, derived from every player's position
+	// at the start of each tick while chunk_set.enabled; World.chunks holds
+	// exactly these. Sent to a joining machine with the save.
+	chunk_set:          Simulated_Chunk_Set,
+	// The chunks the tick unloaded since the frame last took them, for the
+	// renderer and the streaming (take_unloaded_chunks).
+	unloaded_chunks:    [dynamic]Chunk_Coordinate,
 	// Developer cheat speed (0044): faster movement and hand mining. Not
 	// saved.
 	cheat_speed:        bool,
@@ -102,7 +115,8 @@ destroy_simulation :: proc(state: ^Simulation_State) {
 	}
 	delete(state.players)
 	delete(state.events)
-	delete(state.developer_requests)
+	destroy_player_commands(&state.player_commands)
+	destroy_simulated_chunk_set(state)
 	destroy_recipe_unlocks(state.unlocks)
 	destroy_quest_state(state.quests)
 	destroy_world(&state.world)

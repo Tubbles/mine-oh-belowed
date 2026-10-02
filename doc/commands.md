@@ -4,7 +4,7 @@ A running game in developer mode listens on a Unix domain socket for command lin
 
 - Source: `command_socket.odin` (paths, queue, command log), `command_socket_posix.odin` (the socket), `command.odin` (protocol and commands), `developer.odin` (the requests the commands serve), `loop.odin` (`save`, `reload`, ticks, screenshots).
 - Linux only, not on Windows ([build.md](build.md), What the Windows build lacks).
-- The simulation never reads the socket: lines run on the main thread after the frame's ticks, through the same `serve_developer_request` the Developer screen uses ([developer_tools.md](developer_tools.md)).
+- The simulation never reads the socket. A line that changes the world (`command_writes_simulation`: every command of the table below from `give` to `blueprint` except `weather`, which only the local session keeps) goes into the local player's next input record and runs at the start of that tick, through the same `serve_developer_request` the Developer screen uses ([developer_tools.md](developer_tools.md)); its answer comes once that tick ran, and later lines wait for it. Other lines (queries, `screenshot`, `save`, `tick`) run on the main thread after the frame's ticks.
 
 ## For the assistant
 
@@ -28,7 +28,7 @@ A running game in developer mode listens on a Unix domain socket for command lin
 - A response is `ok`, `ok <text>` or `error <text>`, then further lines for queries, then a line holding only `.`.
 - Coordinates are world block coordinates as the diagnostics show them. Rotations: 0 points to +x, 1 to +z, 2 to -x, 3 to -z. Names are the ids in the data files.
 - Commands other than `help`, `pause`, `resume`, `screenshot`, `reload` and `query textures` need a loaded world (`error no world is loaded`).
-- Changes land between two ticks. While a pausing screen is open the world changes at once but time does not move.
+- Changes land at the start of the next tick. While a pausing screen is open in single player the world changes at once but time does not move.
 
 ## Commands
 
@@ -71,6 +71,15 @@ A running game in developer mode listens on a Unix domain socket for command lin
 | `query textures` | `textures <n>`, then one line per procedural texture with the texture editor's current parameters (saved or not) in the form of `data/textures/procedural.sjson`. Copy a line into the data file to make it the default. |
 
 A query radius is 1 to 4096 (`MAXIMUM_QUERY_RADIUS`).
+
+## Multiplayer
+
+A lockstep session ([architecture.md](architecture.md), Multiplayer) runs every machine from the same input records, so a command must reach every machine to keep them equal.
+
+- `--server` runs the world of the command line (`--load=<world>`, or a new one from `--seed` and `--name`) without a window, an input backend or a local player, and hosts it on `--port=<n>` (default 47317, `DEFAULT_NETWORK_PORT`). It logs `server: running` and runs until SIGINT or SIGTERM stops it, saving on the autosave interval of the settings and once more when stopped (on Windows Ctrl+C ends it without that save). It does not open the command socket.
+- `--join=<address>[:port]` starts the game, joins the server at that address instead of showing the title, and plays the host's world; the phone needs an IP address, since it has no resolver. The title shows a notice while the join runs; a host that does not answer within ten seconds, or refuses another build or other game data, leaves the title with a toast.
+- `--server` cannot be combined with `--join`, `--debug-terrain`, `--chapter` or `--give`, `--join` not with the flags that start a world, `--port` only with `--server`.
+- On a joined machine the socket's world changing lines travel in the local player's input record, so every machine runs them at the same tick, for the local player; a blueprint's file is read on the machine that sent the line. `tick` and `pause` answer `error` there, since one machine cannot hold the others' ticks, and so does `reload` (every machine must run the same content; F8 and the Developer screen's reload are refused with a toast too).
 
 ## Blueprints
 
