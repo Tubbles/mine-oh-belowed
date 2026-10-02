@@ -37,6 +37,7 @@ default_world_file_settings :: proc(config: Game_Config) -> World_File_Settings 
 		day_length_seconds = config.day_length_seconds,
 		vein_richness_percent = 100,
 		research_cost_percent = 100,
+		sample_spacing_millimetres = DEFAULT_SAMPLE_SPACING_MILLIMETRES,
 	}
 }
 
@@ -79,6 +80,8 @@ world_file_settings_from_setup :: proc(setup: World_Setup) -> World_File_Setting
 		vein_richness_percent = setting_percent_choices[setup.vein_richness_choice],
 		research_cost_percent = setting_percent_choices[setup.research_cost_choice],
 		byproducts_lenient = setup.byproducts_lenient,
+		// The New world screen gains the choice with the slice (0179).
+		sample_spacing_millimetres = DEFAULT_SAMPLE_SPACING_MILLIMETRES,
 	}
 }
 

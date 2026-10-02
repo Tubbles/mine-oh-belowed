@@ -865,6 +865,9 @@ Game_Content :: struct {
 	notes:           Note_Registry,
 	// The touch overlay's layout (touch_overlay.odin); presentation only.
 	touch_overlay:   Touch_Overlay_Layout,
+	// The planet records (data_planet.odin); the terrain field generates
+	// from them (generation_planet.odin).
+	planets:         []Planet,
 	item_sort_ranks: []u16,
 	recipe_names:    []string,
 	recipe_order:    []int,

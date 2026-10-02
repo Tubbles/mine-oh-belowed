@@ -105,6 +105,14 @@ Recomputed from the data. A unit is one draw from a vein, ore or spoil.
 - Ground cover (a biome's `ground_cover`, 0082): one hash of the column (the `Ground_Cover` sub seed) picks at most one entry, in order against the running sum of the chances. The cover goes into the cell above the surface when it is still air after trees and boulders and the column is outside every vein footprint. The landing pad clears its own cells, and mining under cover spills it ([hud.md](hud.md), Targeting).
 - Ambient life (render only): a biome's `bird_density` and a ground cover entry's `insects` ([presentation.md](presentation.md), Ambient life).
 
+## Planets
+
+`data/planets.sjson` holds the planet records the terrain field generates from (0168; [architecture.md](architecture.md), World generation). The slice ships one, `home`.
+
+- Keys, all required: `id`, `radius_metres` (the mean surface, 1 to `MAXIMUM_PLANET_RADIUS_METRES`), `surface_gravity_centimetres_per_second_squared` (1 to 5000, 981 is Earth's), `bedrock_depth_metres` (below the radius, from `MINIMUM_BEDROCK_DEPTH_METRES`, the maximum relief plus the deep stone band, so bedrock never stands in a valley in place of topsoil, to the radius less one), `sea_level_metres` (above the radius, negative below it, within the radius), `rotation_period_seconds` (game seconds, 60 to 86400), `palette` (1 to 256 red, green, blue triples of 0 to 255; a sample's tint indexes it).
+- The file is held to the configuration's strict keys: an unknown key, a wrong type or a missing field refuses the content load with the key's name. Sea level, gravity and rotation are recorded for the items that use them (water 0172, the player 0170, the day 0179); generation reads the radius, the bedrock depth and the palette.
+- The world setting `sample_spacing_millimetres` (333, 500 or 1000, default `DEFAULT_SAMPLE_SPACING_MILLIMETRES`) sets the field's grid in `world.sjson`; a file without it reads the default. The New world screen does not offer it yet (0179).
+
 ## Blocks
 
 `data/blocks.sjson` holds the shapes, orientation flags, light and sound materials.

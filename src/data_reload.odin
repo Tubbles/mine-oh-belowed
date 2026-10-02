@@ -9,7 +9,7 @@ import "platform"
 // Loading the game data, at start and again on a content reload (work
 // item 0054). The content tables (blocks, items, fluids, machines,
 // recipes, technologies, quests, contracts, notes, developer kits,
-// the touch overlay, biomes, tree species and veins) load into one arena, so a reload frees the data it replaces in
+// the touch overlay, planets, biomes, tree species and veins) load into one arena, so a reload frees the data it replaces in
 // one go once nothing points into it any more.
 //
 // A content reload runs between frames, never during a tick: the new data
@@ -67,6 +67,7 @@ load_game_tables :: proc(data_directory: string, config: Game_Config, string_ent
 	}
 	content.developer_kits = load_developer_kits(data_directory, content.items) or_return
 	content.touch_overlay = load_touch_overlay(data_directory) or_return
+	content.planets = load_planets(data_directory) or_return
 	base_generator = load_generator(data_directory, content.blocks, DEFAULT_WORLD_SEED) or_return
 	veins, problem := resolve_vein_content(base_generator.veins, content.items)
 	if problem != "" {

@@ -26,15 +26,17 @@ Chunk :: struct {
 // Chosen at world creation (DESIGN.md, World settings). The seed also
 // seeds the drills' reservoir draws (drill.odin).
 World_Settings :: struct {
-	seed:                  u64,
-	veins_infinite:        bool,
+	seed:                       u64,
+	veins_infinite:             bool,
 	// Written to world.sjson here; the generator and the technology
 	// registry of the session apply them (session.odin).
-	vein_richness_percent: int,
-	research_cost_percent: int,
+	vein_richness_percent:      int,
+	research_cost_percent:      int,
 	// Lenient: byproducts without room are voided instead of stalling the
 	// machine (furnace.odin, assembler.odin).
-	byproducts_lenient:    bool,
+	byproducts_lenient:         bool,
+	// The terrain field's sample spacing (world_field.odin).
+	sample_spacing_millimetres: int,
 }
 
 world_settings_from_file :: proc(seed: u64, settings: World_File_Settings) -> World_Settings {
@@ -44,6 +46,7 @@ world_settings_from_file :: proc(seed: u64, settings: World_File_Settings) -> Wo
 		vein_richness_percent = settings.vein_richness_percent,
 		research_cost_percent = settings.research_cost_percent,
 		byproducts_lenient = settings.byproducts_lenient,
+		sample_spacing_millimetres = settings.sample_spacing_millimetres,
 	}
 }
 

@@ -1,0 +1,23 @@
+// The planets (work item 0168, doc/content.md, Planets). Every key is
+// required; the terrain field generates a planet from its record, the
+// world seed and the sample spacing (generation_planet.odin).
+planets = [
+	{
+		id = "home"
+		radius_metres = 8000
+		// 981 is Earth's.
+		surface_gravity_centimetres_per_second_squared = 981
+		// Below the radius, where bedrock starts.
+		bedrock_depth_metres = 256
+		// Above the radius.
+		sea_level_metres = 0
+		rotation_period_seconds = 1200
+		// The tints of the ground, red, green and blue from 0 to 255.
+		palette = [
+			[142, 118, 86]
+			[124, 108, 92]
+			[156, 128, 96]
+			[112, 100, 88]
+		]
+	}
+]

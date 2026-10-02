@@ -43,6 +43,16 @@ ALLOWED_TEST_ONLY = {
     "simulation_state_hash": "the determinism and save round trip tests compare worlds by it",
     "face_tile_orientation": "the Odin mirror of the chunk shader's tile orientation",
     "TILE_ORIENTATION_COUNT": "the number of orientations the chunk shader picks from",
+    # The terrain field's entry points (0168), reached only through tests
+    # until the field world is wired into the session (0167, Sequencing).
+    "generate_field_chunk": "the terrain field's generation, wired in by M13",
+    "world_position_to_sample": "the terrain field's position conversion, wired in by M13",
+    "field_world_get_sample": "the terrain field's read, wired in by M13",
+    "field_world_set_sample": "the terrain field's write, wired in by M13",
+    "field_world_insert_chunk": "the terrain field's chunk insert, wired in by M13",
+    "destroy_field_world": "the terrain field's teardown, wired in by M13",
+    "encode_field_chunk_delta": "the terrain field's save codec, wired in by M13",
+    "decode_field_chunk_delta": "the terrain field's load codec, wired in by M13",
 }
 
 ENTRY_ATTRIBUTES = ("test", "export", "init", "fini")

@@ -1,6 +1,6 @@
 # Code map
 
-The entry page for the source: 199 files under `src/` plus 139 test files beside them. 181 are the `game` package, grouped into seven clusters; 18 are seven leaf packages under `src/` (section Packages), each a cluster named after its directory. Read the cluster table, pick a cluster, open its entry file; the section of each cluster lists its files in reading order. How the parts work is in [architecture.md](architecture.md), the why of the clusters in the audits under [audit/](audit/).
+The entry page for the source: 203 files under `src/` plus 142 test files beside them. 185 are the `game` package, grouped into seven clusters; 18 are seven leaf packages under `src/` (section Packages), each a cluster named after its directory. Read the cluster table, pick a cluster, open its entry file; the section of each cluster lists its files in reading order. How the parts work is in [architecture.md](architecture.md), the why of the clusters in the audits under [audit/](audit/).
 
 - Rule: a new file goes into a cluster and takes one of its file name prefixes (or a line in the file table of `tools/code_graph.py`); a reference against the allowed dependency table below is a finding until it is refactored away.
 - The map is kept true by two checks: `python3 tools/check_docs.py` checks every backticked file and name in it, and `python3 tools/code_graph.py --check doc/code_map.md` compares every cluster edge the allowed table does not allow with the map's record of it ([build.md](build.md), Source checks).
@@ -13,13 +13,13 @@ The entry page for the source: 199 files under `src/` plus 139 test files beside
 |---|---|---|---|---|---|
 | loop | the process: start-up, the frame, when the tick runs, sessions, the requests served between frames | `loop.odin` | 5 | 2629 | [loop](audit/loop.md) |
 | ui | the input layer, the immediate mode toolkit, every screen, the HUD and the touch overlay | `ui_core.odin` | 48 | 16975 | [ui](audit/ui.md) |
-| world | blocks and what follows a block: chunks, light, water, meshing, streaming, generation, the save codec | `world_chunk.odin` | 34 | 9613 | [world](audit/world.md) |
+| world | blocks and what follows a block: chunks, light, water, meshing, streaming, generation, the save codec; the terrain field beside them (M13) | `world_chunk.odin` | 37 | 10123 | [world](audit/world.md) |
 | simulation | the factory per tick: entity pools, networks, players, inventories, crafting, statistics, the game's records | `entity.odin` | 40 | 15407 | [simulation](audit/simulation.md) |
 | presentation | pixels and sound from the world and the tick: shaders, atlases, models, sky, weather, particles, audio, the window | `render_chunks.odin` | 32 | 8440 | [presentation](audit/presentation.md) |
-| content | data files into typed tables, the string table, configuration and settings | `data_reload.odin` | 15 | 5024 | [content](audit/content.md) |
+| content | data files into typed tables, the string table, configuration and settings | `data_reload.odin` | 16 | 5164 | [content](audit/content.md) |
 | tools | the command socket, the diagnostics pages, the Data files browser and export, the factory benchmark | `command.odin` | 8 | 3859 | [loop](audit/loop.md), [content](audit/content.md) |
 | platform | the package `src/platform/`: logging, paths, the time zone, JNI, the export's file access, the replacing file write | `logging.odin` | 13 | 1014 | [content](audit/content.md) |
-| generation_seed | the package `src/generation_seed/`: purpose seeds and the integer hashes | `generation_seed.odin` | 1 | 74 | [world](audit/world.md) |
+| generation_seed | the package `src/generation_seed/`: purpose seeds and the integer hashes | `generation_seed.odin` | 1 | 77 | [world](audit/world.md) |
 | model_vox | the package `src/model_vox/`: the MagicaVoxel parser | `model_vox.odin` | 1 | 283 | [presentation](audit/presentation.md) |
 | render_frustum | the package `src/render_frustum/`: frustum planes and the box test | `render_frustum.odin` | 1 | 35 | [presentation](audit/presentation.md) |
 | run_length | the package `src/run_length/`: the chunk run length codec | `run_length.odin` | 1 | 39 | [world](audit/world.md) |
@@ -112,6 +112,7 @@ The world owns blocks and what is derived from blocks; generation is a pure func
   - `world_mesh.odin`, `world_mesh_light.odin`, `world_mesh_border.odin`: the greedy mesher, vertex light, the border copy.
   - `world_raycast.odin`, `world_serialize.odin`: the voxel walk; `Byte_Reader`, chunk palette and runs.
   - `world_streaming.odin`: `Chunk_Streaming`, workers, insert, unload, mesh revisions.
+  - `world_field.odin`, `world_field_codec.odin`: the terrain field (0168): `Field_Chunk`, `Field_World`, `World_Position` and the sample conversions, get and set, dirty marking; the field chunk's delta bytes.
   - `world_vein.odin`, `world_explored.odin`: the vein registry and outcrops; explored columns for the map.
   - `world_debug_edit.odin`, `world_debug_terrain.odin`: the F-key dig; the flat debug terrain.
   - `generation.odin`: `Generator`, `DEFAULT_WORLD_SEED`; the purpose seeds and the hashes are the `generation_seed` package (Packages).
@@ -119,10 +120,11 @@ The world owns blocks and what is derived from blocks; generation is a pure func
   - `generation_biome.odin`, `generation_trees.odin`, `generation_features.odin`: biomes and species, trees, boulders and ground cover.
   - `generation_veins.odin`, `generation_vein_tables.odin`, `generation_starter_veins.odin`: vein placement and outcrops, the vein file, starter veins.
   - `generation_spawn.odin`, `landing_pad.odin`: the spawn search; the landing pad stamp.
+  - `generation_planet.odin`: the terrain field's planet generation, `generate_field_chunk`, `integer_square_root`.
   - `save_binary.odin`: the type driven codec (schemas, enums by name, lists).
   - `save_state.odin`, `save_remap.odin`: the entities.bin body and `simulation_state_hash`; content tables and the id remap.
   - `save_world.odin`, `save_list.odin`: world.sjson, region files, staging and swap; the save list.
-- State: `World` (13 fields: chunks, settings, veins and their indices, outcrops, block changes, light, water, saved chunks and, until the cell occupant index, `entities`), `Chunk`, `Chunk_Streaming` (on `Session`), `Generator`, `Block_Registry`, `World_Settings`.
+- State: `World` (13 fields: chunks, settings, veins and their indices, outcrops, block changes, light, water, saved chunks and, until the cell occupant index, `entities`), `Chunk`, `Chunk_Streaming` (on `Session`), `Generator`, `Block_Registry`, `World_Settings`, `Field_World` (reached by tests only until the slice switches the session to it, 0179).
 - Tests: every `*_test.odin` beside its file; `save_test.odin` and `save_codec_test.odin` (save, load and run to the same hash).
 - Reaches into: simulation 221 (accepted 206: the save codec encoding pools, `Game_Records`, `Simulation_State` and `Simulation_Content`, and `save_world.odin` calling `make_simulation` and `simulation_day_ticks` 201, `vein_is_exhausted` 1, `tick_world` running the leaf decay queue of `tree_felling.odin` 4; queued 4: streaming registering the crate sites and the explored column into `Game_Records` at chunk arrival 6; queued 5: `World.entities` and raycast and water reading entities 9), presentation 12 (accepted: the mesher's atlas and tile variation).
 
@@ -196,9 +198,10 @@ Content turns files under `data/` and the configuration into typed tables once, 
   - `quest.odin`, `contract.odin`, `notes.odin`, `discovery.odin`: `Quest_Registry` and chapter files; `Contract_Registry`; `Note_Registry`; discoverable ores and `log_discoveries`.
   - `configuration.odin`, `configuration_output.odin`: `Loaded_Configuration`, layers, provenance, strict assignment; the dump and the settings file.
   - `settings.odin`, `deck_preset.odin`: `Settings` and ranges; the Steam Deck preset.
+  - `data_planet.odin`: `Planet`, the planet records of `data/planets.sjson`.
 - State: the registries, one arena per load (`content_arena` in `Frame_Reload`), the global `String_Table`, `Settings`, `Game_Config`, `Data_Watch`.
 - Tests: every `*_test.odin` beside its file; the shipped chapters in `quest_chapter_02_test.odin` to `quest_chapter_08_test.odin`; most simulation tests build content through `make_test_content` (`machine_test.odin`).
-- Reaches into: world 92 (accepted: item, quest and discovery definitions naming blocks 48, the content reload remapping the world 40, data file names 4), simulation 96 (accepted 87: the registries' cross links and value types such as `Item_Stack`, `Furnace`, `Quest_State`; queued 1: `reload_simulation` rebuilding `Simulation_State` through `make_simulation` and `destroy_simulation` with `Simulation_Content` 9, the reload route of a content file that belongs to the loop), ui 40 (accepted: settings typed by `Slider_Range`, `Binding` and the overlay enums, UI data file names and colours), loop 18 (accepted: `Game_Content` and `Session` in the reload, `data_edits_directory`, `BUILD_INFO`, noise), presentation 16 (accepted: data file names, display limits), tools 12 (accepted: a `block_name` parameter, noise).
+- Reaches into: world 94 (accepted: item, quest and discovery definitions naming blocks 48, the content reload remapping the world 40, data file names 4, the planet record's bedrock floor reading generation's relief and deep stone band 2), simulation 96 (accepted 87: the registries' cross links and value types such as `Item_Stack`, `Furnace`, `Quest_State`; queued 1: `reload_simulation` rebuilding `Simulation_State` through `make_simulation` and `destroy_simulation` with `Simulation_Content` 9, the reload route of a content file that belongs to the loop), ui 40 (accepted: settings typed by `Slider_Range`, `Binding` and the overlay enums, UI data file names and colours), loop 18 (accepted: `Game_Content` and `Session` in the reload, `data_edits_directory`, `BUILD_INFO`, noise), presentation 16 (accepted: data file names, display limits), tools 12 (accepted: a `block_name` parameter, noise).
 
 ## tools
 

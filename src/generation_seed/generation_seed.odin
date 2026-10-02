@@ -29,6 +29,9 @@ Generation_Purpose :: enum u8 {
 	Clearings,
 	// The ground cover of work item 0082.
 	Ground_Cover,
+	// The planet's surface relief and tint regions of work item 0168.
+	Planet_Surface,
+	Planet_Tint,
 }
 
 Purpose_Seeds :: [Generation_Purpose]u64

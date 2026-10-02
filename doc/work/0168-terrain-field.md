@@ -1,6 +1,6 @@
 # 0168: The terrain field: storage, planet frame and generation
 
-Status: todo (first of M13; the brief is 0167)
+Status: implemented (2026-10-02; the field is reachable through its procedures and tests until 0179 wires the save and the session)
 
 ## Goal
 
@@ -17,4 +17,4 @@ The smooth world's storage: a density field with a material and a tint per sampl
 ## Verify
 
 - `./build.sh check`, `./build.sh check-android`, `./build.sh check-windows`, `./build.sh test`, `python3 tools/check_docs.py`, `python3 tools/check_dead_code.py`, `python3 tools/code_graph.py --check doc/code_map.md`.
-- Tests: generating the same chunk twice from the same seed gives identical bytes; a chunk at the planet's surface has air outside the radius band and stone inside; a sample at the bedrock depth is bedrock; a delta round trips through the codec; an edited sample survives save and load while an unedited chunk writes nothing; a planet record with a missing field is refused with a message naming it.
+- Tests: generating the same chunk twice from the same seed gives identical bytes; a chunk at the planet's surface has air outside the radius band and stone inside; a sample at the bedrock depth is bedrock; a delta round trips through the codec; an edited sample survives encode and decode while an unedited chunk writes nothing (at the codec level; the session's save takes the field in 0179); a planet record with a missing field is refused with a message naming it.

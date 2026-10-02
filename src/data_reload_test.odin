@@ -52,6 +52,7 @@ write_test_data_directory :: proc(directory, items, recipes: string) {
 		{BIOMES_FILE_NAME, #load("../data/biomes.sjson", string)},
 		{TREES_FILE_NAME, #load("../data/trees.sjson", string)},
 		{VEINS_FILE_NAME, #load("../data/veins.sjson", string)},
+		{PLANETS_FILE_NAME, #load("../data/planets.sjson", string)},
 		{"quests/chapter_01.sjson", #load("../data/quests/chapter_01.sjson", string)},
 		{"quests/chapter_02.sjson", #load("../data/quests/chapter_02.sjson", string)},
 		{"quests/chapter_03.sjson", #load("../data/quests/chapter_03.sjson", string)},

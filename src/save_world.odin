@@ -36,14 +36,17 @@ MAXIMUM_WORLD_DIRECTORY_NAME_LENGTH :: 64
 MAXIMUM_SETTING_PERCENT :: 1000
 
 World_File_Settings :: struct {
-	veins_infinite:        bool,
-	all_recipes_unlocked:  bool,
-	day_length_seconds:    int,
+	veins_infinite:             bool,
+	all_recipes_unlocked:       bool,
+	day_length_seconds:         int,
 	// Percent of the size class units every vein holds.
-	vein_richness_percent: int,
+	vein_richness_percent:      int,
 	// Percent of every technology's pack count.
-	research_cost_percent: int,
-	byproducts_lenient:    bool,
+	research_cost_percent:      int,
+	byproducts_lenient:         bool,
+	// The terrain field's sample spacing (world_field.odin), one of
+	// SAMPLE_SPACING_CHOICES_MILLIMETRES.
+	sample_spacing_millimetres: int,
 }
 
 World_File :: struct {
@@ -171,6 +174,7 @@ make_world_file :: proc(state: ^Simulation_State, display_name: string, last_pla
 			vein_richness_percent = state.world.settings.vein_richness_percent,
 			research_cost_percent = state.world.settings.research_cost_percent,
 			byproducts_lenient = state.world.settings.byproducts_lenient,
+			sample_spacing_millimetres = state.world.settings.sample_spacing_millimetres,
 		},
 		tick = state.tick,
 		day_time_ticks = simulation_day_ticks(state^) % day_length_ticks,
@@ -191,7 +195,7 @@ parse_world_file :: proc(data: []byte, allocator := context.allocator) -> (file:
 	if error := json.unmarshal(data, &file, .SJSON, allocator); error != nil {
 		return {}, fmt.tprintf("cannot parse %s: %v", WORLD_FILE_NAME, error)
 	}
-	file.settings = with_percent_defaults(file.settings)
+	file.settings = with_setting_defaults(file.settings)
 	file.generator_version = max(file.generator_version, 1)
 	switch {
 	case file.format_version > SAVE_FORMAT_VERSION:
@@ -204,14 +208,20 @@ parse_world_file :: proc(data: []byte, allocator := context.allocator) -> (file:
 		return file, fmt.tprintf("vein_richness_percent %d is outside 1 to %d", file.settings.vein_richness_percent, MAXIMUM_SETTING_PERCENT)
 	case !setting_percent_valid(file.settings.research_cost_percent):
 		return file, fmt.tprintf("research_cost_percent %d is outside 1 to %d", file.settings.research_cost_percent, MAXIMUM_SETTING_PERCENT)
+	case !sample_spacing_is_valid(file.settings.sample_spacing_millimetres):
+		return file, fmt.tprintf("sample_spacing_millimetres %d is not one of %v", file.settings.sample_spacing_millimetres, SAMPLE_SPACING_CHOICES_MILLIMETRES)
 	}
 	return file, ""
 }
 
 // Worlds saved before the percent settings existed, and simulations made
-// without them, count as 100 percent.
-with_percent_defaults :: proc(settings: World_File_Settings) -> World_File_Settings {
+// without them, count as 100 percent; before the sample spacing existed,
+// as DEFAULT_SAMPLE_SPACING_MILLIMETRES.
+with_setting_defaults :: proc(settings: World_File_Settings) -> World_File_Settings {
 	result := settings
+	if result.sample_spacing_millimetres == 0 {
+		result.sample_spacing_millimetres = DEFAULT_SAMPLE_SPACING_MILLIMETRES
+	}
 	if result.vein_richness_percent == 0 {
 		result.vein_richness_percent = 100
 	}
