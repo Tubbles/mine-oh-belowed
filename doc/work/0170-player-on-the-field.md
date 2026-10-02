@@ -1,6 +1,6 @@
 # 0170: The player on the field: radial up, collision and the slope walk
 
-Status: todo (after 0169; 0177 may start after this item)
+Status: implemented (2026-10-03; seen in the preview's walk mode under a virtual display; the block controller stays until 0179)
 
 ## Goal
 

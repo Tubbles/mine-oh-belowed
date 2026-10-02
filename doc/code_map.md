@@ -1,6 +1,6 @@
 # Code map
 
-The entry page for the source: 212 files under `src/` plus 148 test files beside them. 193 are the `game` package, grouped into seven clusters; 19 are seven leaf packages under `src/` (section Packages), each a cluster named after its directory. Read the cluster table, pick a cluster, open its entry file; the section of each cluster lists its files in reading order. How the parts work is in [architecture.md](architecture.md), the why of the clusters in the audits under [audit/](audit/).
+The entry page for the source: 217 files under `src/` plus 154 test files beside them. 198 are the `game` package, grouped into seven clusters; 19 are seven leaf packages under `src/` (section Packages), each a cluster named after its directory. Read the cluster table, pick a cluster, open its entry file; the section of each cluster lists its files in reading order. How the parts work is in [architecture.md](architecture.md), the why of the clusters in the audits under [audit/](audit/).
 
 - Rule: a new file goes into a cluster and takes one of its file name prefixes (or a line in the file table of `tools/code_graph.py`); a reference against the allowed dependency table below is a finding until it is refactored away.
 - The map is kept true by two checks: `python3 tools/check_docs.py` checks every backticked file and name in it, and `python3 tools/code_graph.py --check doc/code_map.md` compares every cluster edge the allowed table does not allow with the map's record of it ([build.md](build.md), Source checks).
@@ -11,12 +11,12 @@ The entry page for the source: 212 files under `src/` plus 148 test files beside
 
 | Cluster | Purpose | Entry | Files | Lines | Audit |
 |---|---|---|---|---|---|
-| loop | the process: start-up, the frame, when the tick runs, sessions, the requests served between frames | `loop.odin` | 6 | 2943 | [loop](audit/loop.md) |
+| loop | the process: start-up, the frame, when the tick runs, sessions, the requests served between frames | `loop.odin` | 6 | 3151 | [loop](audit/loop.md) |
 | ui | the input layer, the immediate mode toolkit, every screen, the HUD and the touch overlay | `ui_core.odin` | 49 | 17211 | [ui](audit/ui.md) |
-| world | blocks and what follows a block: chunks, light, water, meshing, streaming, generation, the save codec; the terrain field beside them (M13) | `world_chunk.odin` | 40 | 11232 | [world](audit/world.md) |
-| simulation | the factory per tick: entity pools, networks, players, inventories, crafting, statistics, the game's records | `entity.odin` | 40 | 15718 | [simulation](audit/simulation.md) |
-| presentation | pixels and sound from the world and the tick: shaders, atlases, models, sky, weather, particles, audio, the window | `render_chunks.odin` | 34 | 8773 | [presentation](audit/presentation.md) |
-| content | data files into typed tables, the string table, configuration and settings | `data_reload.odin` | 16 | 5228 | [content](audit/content.md) |
+| world | blocks and what follows a block: chunks, light, water, meshing, streaming, generation, the save codec; the terrain field beside them (M13) | `world_chunk.odin` | 43 | 11572 | [world](audit/world.md) |
+| simulation | the factory per tick: entity pools, networks, players, inventories, crafting, statistics, the game's records | `entity.odin` | 41 | 16373 | [simulation](audit/simulation.md) |
+| presentation | pixels and sound from the world and the tick: shaders, atlases, models, sky, weather, particles, audio, the window | `render_chunks.odin` | 35 | 8820 | [presentation](audit/presentation.md) |
+| content | data files into typed tables, the string table, configuration and settings | `data_reload.odin` | 16 | 5339 | [content](audit/content.md) |
 | tools | the command socket, the diagnostics pages, the Data files browser and export, the factory benchmark | `command.odin` | 8 | 3871 | [loop](audit/loop.md), [content](audit/content.md) |
 | platform | the package `src/platform/`: logging, paths, the time zone, JNI, the export's file access, the replacing file write | `logging.odin` | 13 | 1014 | [content](audit/content.md) |
 | generation_seed | the package `src/generation_seed/`: purpose seeds and the integer hashes | `generation_seed.odin` | 1 | 77 | [world](audit/world.md) |
@@ -62,7 +62,7 @@ The process: the loop decides when things run, the clusters decide what runs.
   - `session.odin`: `Session`, `start_session`, `end_session`, `save_session`.
   - `hot_reload.odin`: the reload per data category on `Frame_State`, served between frames.
   - `main_android.odin`: the Android C entry wrapping `main`.
-  - `loop_planet_preview.odin`: `run_planet_preview`, the `--planet-preview` window over the terrain field (0169), a viewing tool until the slice (0179).
+  - `loop_planet_preview.odin`: `run_planet_preview`, the `--planet-preview` window over the terrain field (0169) with its walk mode, the field player on a fixed step (0170, `walk_planet_preview`), a viewing tool until the slice (0179).
 - State: `Frame_State` (16 top level fields: the loop's 12, the request set `Frame_Requests` among them, and four groups holding the 56 other clusters' fields, `Frame_Interaction` 23, `Frame_Presentation` 18, `Frame_Developer_Tools` 8, `Frame_Reload` 7), `Session`, `Game_Content`.
 - Tests: `main_test.odin`; the frame, the session lifecycle and the reloads are untested (loop audit, section 8).
 - Reaches into: nothing.
@@ -115,6 +115,7 @@ The world owns blocks and what is derived from blocks; generation is a pure func
   - `world_streaming.odin`: `Chunk_Streaming`, workers, insert, unload, mesh revisions.
   - `world_field.odin`, `world_field_codec.odin`: the terrain field (0168): `Field_Chunk`, `Field_World`, `World_Position` and the sample conversions, get and set, dirty marking; the field chunk's delta bytes.
   - `world_field_mesh.odin`, `world_field_lod.odin`, `world_field_streaming.odin`: the field mesher (0169), `Field_Grid`, `gather_field_grid`, `mesh_field_surface`, `field_mesh_from_surface`; the level of detail, `Field_Node`, `select_field_nodes`, `generate_field_grid`, `append_field_skirts`; `Field_Streaming`, its workers and mesh revisions.
+  - `world_field_vector.odin`, `world_field_distance.odin`, `world_field_raycast.odin`: fixed point unit vectors and angles, `fixed_sine` (0170); the field as a signed distance, `field_density_at` and `field_surface_probe`; `raycast_field`, the field's counterpart of the voxel walk.
   - `world_vein.odin`, `world_explored.odin`: the vein registry and outcrops; explored columns for the map.
   - `world_debug_edit.odin`, `world_debug_terrain.odin`: the F-key dig; the flat debug terrain.
   - `generation.odin`: `Generator`, `DEFAULT_WORLD_SEED`; the purpose seeds and the hashes are the `generation_seed` package (Packages).
@@ -151,13 +152,14 @@ The factory: what changes per tick; blocks belong to the world, prototypes to co
   - `fluid.odin`, `fluid_machine.odin`, `machine_fluid_ports.odin`, `fluid_network.odin`: the fluid registry; pipes and fluid machines; port layouts; segments and flow.
   - `power_machine.odin`, `power_network.odin`: generators, poles, lamps; nodes, memberships, balance.
   - `player.odin`, `player_interaction.odin`, `player_collision.odin`: `Player` and movement; mining and placing; swept collision.
+  - `player_field.odin`: `Field_Player` on the terrain field (0170), `tick_field_player`, the capsule against the signed distance, slopes, step, jump, mantle and fly mode in the planet's frame; beside `Player` until the slice (0179).
   - `inventory.odin`, `inventory_interaction.odin`, `crafting.odin`: `Item_Stack`, `Inventory`; slot clicks; `Craft_Queue` and hand crafting.
   - `statistics.odin`, `production_statistics.odin`: `Statistics` and rate rings; statistics rows and the marker colours.
   - `recipe_unlocks.odin`, `quest_runtime.odin`: `Recipe_Unlocks` per tick; `Quest_State`, objectives, rewards, messages.
   - `venture.odin`, `tree_felling.odin`: `Contract_State`, shipments served, the orbital survey; felling and leaf decay.
   - `developer.odin`: developer kits and `serve_developer_requests`, run inside the tick.
   - `tick_profile.odin`: `Tick_Profile`, wall time per tick section.
-- State: `Simulation_State`, `Game_Records` (the records beside the world), `Simulation_Content`, `Entities` (16 pools, the belt, fluid and electric networks, the cell map, loose items), `Player`, `Inventory`, `Statistics`, `Research_State`, `Quest_State`, `Recipe_Unlocks`, `Contract_State`, `Tick_Profile`.
+- State: `Simulation_State`, `Game_Records` (the records beside the world), `Simulation_Content`, `Entities` (16 pools, the belt, fluid and electric networks, the cell map, loose items), `Player`, `Field_Player` (driven by the planet preview until the slice, 0179), `Inventory`, `Statistics`, `Research_State`, `Quest_State`, `Recipe_Unlocks`, `Contract_State`, `Tick_Profile`.
 - Tests: every `*_test.odin` beside its file; `simulation_tick` through the simulation and save tests; the systems in `byproduct_test.odin`, `chemistry_test.odin`, `combustion_test.odin`, `deep_mining_test.odin`, `hydro_grid_test.odin`, `oil_test.odin`, `ore_processing_test.odin`, `power_test.odin`; the whole chain in `benchmark_test.odin` (tools).
 - Reaches into: loop 1 (accepted: `parse_seed`), ui 29 (accepted: the tick's input types `Input_Frame`, `Action_Set`, `Action`), presentation 18 (accepted: machine models and motion 6, `Fly_Camera` 6, `block_centre` and `line_block_belt` 5, `DAY_START_FRACTION` 1).
 
@@ -179,6 +181,7 @@ Presentation turns the world, the tick and the render time into pixels and sound
   - `render_icons.odin`: `Item_Atlas` for items and UI icons, item billboards.
   - `cues.odin`: `Cue_Memory`, `detect_cues`, the frame's cues from the simulation's counters that the player, the particles and the sounds read.
   - `render_player.odin`, `render_player_model.odin`, `player_animation.odin`, `render_fly_camera.odin`: pose, camera, ghosts, hands; limb models; walk cadence and limb angles; `Fly_Camera`.
+  - `render_field_camera.odin`: `field_camera`, the field player's first and third person cameras with the player's up (0170).
   - `particles.odin`, `render_particles.odin`: `Particle_System`; emitters, `Particle_Memory`, capsule descent.
   - `ambient_life.odin`, `render_life.odin`, `render_flames.odin`: flocks, insects, fish; their draws; torch flames.
   - `audio.odin`, `sound_events.odin`: `Audio_Mixer`, sound table, loop fades; `Sound_Memory`, the sounds of the cues, hum, ambience clusters.

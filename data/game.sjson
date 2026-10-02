@@ -29,3 +29,27 @@ loose_item_despawn_minutes = 15
 field_view = {
 	level_distances_metres = [64, 160, 384, 1024]
 }
+// The player on the terrain field (work item 0170, doc/content.md, World):
+// lengths in millimetres, speeds in millimetres per second, gravity from
+// the planet record. Ground steeper than the walkable angle slows the walk
+// and slides the player down at up to the slide speed; a ledge of the step
+// height (in samples of the world's spacing) is walked over, a jump rises
+// the jump height, and Jump while walking into a ledge up to the mantle
+// height lifts onto it.
+field_player = {
+	capsule_radius_millimetres = 300
+	capsule_height_millimetres = 1800
+	eye_height_millimetres = 1600
+	walkable_angle_degrees = 40
+	slide_speed_millimetres_per_second = 6000
+	step_height_samples = 1
+	jump_height_millimetres = 1100
+	mantle_height_millimetres = 1500
+	tool_reach_millimetres = 4000
+	walk_speed_millimetres_per_second = 4300
+	sprint_speed_millimetres_per_second = 5600
+	sneak_speed_millimetres_per_second = 1300
+	fall_speed_limit_millimetres_per_second = 50000
+	fly_speed_millimetres_per_second = 12000
+	fly_sprint_speed_millimetres_per_second = 36000
+}

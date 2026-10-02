@@ -52,6 +52,7 @@ Game_Config :: struct {
 	// (loose_item.odin).
 	loose_item_despawn_minutes: int,
 	field_view:           Field_View_Config,
+	field_player:         Field_Player_Config,
 }
 
 // The terrain field's level of detail (work item 0169,
@@ -63,6 +64,50 @@ Field_View_Config :: struct {
 	// streams field chunks.
 	level_distances_metres: [FIELD_LEVEL_COUNT]int,
 }
+
+// The player on the terrain field (work item 0170, player_field.odin):
+// lengths in millimetres, speeds in millimetres per second; gravity is the
+// planet record's.
+Field_Player_Config :: struct {
+	capsule_radius_millimetres:              int,
+	capsule_height_millimetres:              int,
+	eye_height_millimetres:                  int,
+	// Ground steeper than this slows the walk and slides the player down;
+	// converted to its cosine in fixed point at load (fixed_cosine).
+	walkable_angle_degrees:                  int,
+	// The speed a slide down ground past the walkable angle reaches.
+	slide_speed_millimetres_per_second:      int,
+	// A ledge up to this many samples is walked over without a jump.
+	step_height_samples:                     int,
+	jump_height_millimetres:                 int,
+	// Jump while walking into a ledge up to this high lifts onto it.
+	mantle_height_millimetres:               int,
+	tool_reach_millimetres:                  int,
+	walk_speed_millimetres_per_second:       int,
+	sprint_speed_millimetres_per_second:     int,
+	sneak_speed_millimetres_per_second:      int,
+	fall_speed_limit_millimetres_per_second: int,
+	fly_speed_millimetres_per_second:        int,
+	fly_sprint_speed_millimetres_per_second: int,
+}
+
+// A bound of one Field_Player_Config value, for field_player_problem.
+Config_Bound :: struct {
+	name:    string,
+	value:   int,
+	minimum: int,
+	maximum: int,
+}
+
+MAXIMUM_FIELD_PLAYER_LENGTH_MILLIMETRES :: 20000
+MAXIMUM_FIELD_PLAYER_SPEED_MILLIMETRES_PER_SECOND :: 200000
+MAXIMUM_STEP_HEIGHT_SAMPLES :: 4
+// 8 m a tick: 2^31 velocity units (field_player_speed_problem).
+MAXIMUM_FIELD_PLAYER_MILLIMETRES_PER_TICK :: 8000
+// The widest of the world setting's sample spacings
+// (SAMPLE_SPACING_CHOICES_MILLIMETRES, asserted in world_field.odin), here
+// so the content checks need not reach into the world.
+WIDEST_SAMPLE_SPACING_MILLIMETRES :: 1000
 
 // The index of the first definition with the id, -1 for none.
 find_definition_index :: proc(definitions: []$T, id: string) -> int {
@@ -313,7 +358,13 @@ validate_game_config :: proc(config: Game_Config) -> string {
 	if config.loose_item_despawn_minutes < 0 || config.loose_item_despawn_minutes > MAXIMUM_LOOSE_ITEM_DESPAWN_MINUTES {
 		return fmt.tprintf("loose_item_despawn_minutes %d is outside 0 to %d", config.loose_item_despawn_minutes, MAXIMUM_LOOSE_ITEM_DESPAWN_MINUTES)
 	}
-	return field_view_problem(config.field_view)
+	if problem := field_view_problem(config.field_view); problem != "" {
+		return problem
+	}
+	if problem := field_player_problem(config.field_player); problem != "" {
+		return problem
+	}
+	return field_player_speed_problem(config.field_player, config.tick_rate)
 }
 
 // The least gap between the distances of levels L - 1 and L: the diagonal
@@ -343,6 +394,66 @@ field_view_problem :: proc(field_view: Field_View_Config) -> string {
 	}
 	if distances[FIELD_LEVEL_COUNT - 1] > MAXIMUM_FIELD_VIEW_DISTANCE_METRES {
 		return fmt.tprintf("field_view.level_distances_metres[%d] %d is above %d", FIELD_LEVEL_COUNT - 1, distances[FIELD_LEVEL_COUNT - 1], MAXIMUM_FIELD_VIEW_DISTANCE_METRES)
+	}
+	return ""
+}
+
+// Every value inside its bound, the capsule taller than its two end caps
+// and the eye inside it; a missing field_player block reads as zeros and
+// fails the first bound.
+field_player_problem :: proc(player: Field_Player_Config) -> string {
+	length := MAXIMUM_FIELD_PLAYER_LENGTH_MILLIMETRES
+	speed := MAXIMUM_FIELD_PLAYER_SPEED_MILLIMETRES_PER_SECOND
+	bounds := [?]Config_Bound {
+		{"capsule_radius_millimetres", player.capsule_radius_millimetres, 100, 1000},
+		{"capsule_height_millimetres", player.capsule_height_millimetres, 2 * player.capsule_radius_millimetres + 1, 4000},
+		{"eye_height_millimetres", player.eye_height_millimetres, 1, player.capsule_height_millimetres},
+		{"walkable_angle_degrees", player.walkable_angle_degrees, 1, 89},
+		{"slide_speed_millimetres_per_second", player.slide_speed_millimetres_per_second, 1, speed},
+		{"step_height_samples", player.step_height_samples, 0, MAXIMUM_STEP_HEIGHT_SAMPLES},
+		{"jump_height_millimetres", player.jump_height_millimetres, 1, length},
+		{"mantle_height_millimetres", player.mantle_height_millimetres, 1, length},
+		{"tool_reach_millimetres", player.tool_reach_millimetres, 1, length},
+		{"walk_speed_millimetres_per_second", player.walk_speed_millimetres_per_second, 1, speed},
+		{"sprint_speed_millimetres_per_second", player.sprint_speed_millimetres_per_second, 1, speed},
+		{"sneak_speed_millimetres_per_second", player.sneak_speed_millimetres_per_second, 1, speed},
+		{"fall_speed_limit_millimetres_per_second", player.fall_speed_limit_millimetres_per_second, 1, speed},
+		{"fly_speed_millimetres_per_second", player.fly_speed_millimetres_per_second, 1, speed},
+		{"fly_sprint_speed_millimetres_per_second", player.fly_sprint_speed_millimetres_per_second, 1, speed},
+	}
+	for bound in bounds {
+		if bound.value < bound.minimum || bound.value > bound.maximum {
+			return fmt.tprintf("field_player.%s %d is outside %d to %d", bound.name, bound.value, bound.minimum, bound.maximum)
+		}
+	}
+	// The step must stay below the mantle at the widest spacing, or a
+	// mantle (a ledge above the step) could never happen.
+	widest_step := player.step_height_samples * WIDEST_SAMPLE_SPACING_MILLIMETRES
+	if widest_step >= player.mantle_height_millimetres {
+		return fmt.tprintf("field_player.step_height_samples %d reaches %d mm at the widest spacing, not below mantle_height_millimetres %d", player.step_height_samples, widest_step, player.mantle_height_millimetres)
+	}
+	return ""
+}
+
+// Each speed within MAXIMUM_FIELD_PLAYER_MILLIMETRES_PER_TICK at the tick
+// rate: the controller's velocities (1/65536 of a 1/4096 m unit per tick)
+// then stay below 2^31, so their products with unit vectors and their
+// squares stay inside an i64 (player_field.odin).
+field_player_speed_problem :: proc(player: Field_Player_Config, tick_rate: int) -> string {
+	speeds := [?]Config_Bound {
+		{"slide_speed_millimetres_per_second", player.slide_speed_millimetres_per_second, 0, 0},
+		{"walk_speed_millimetres_per_second", player.walk_speed_millimetres_per_second, 0, 0},
+		{"sprint_speed_millimetres_per_second", player.sprint_speed_millimetres_per_second, 0, 0},
+		{"sneak_speed_millimetres_per_second", player.sneak_speed_millimetres_per_second, 0, 0},
+		{"fall_speed_limit_millimetres_per_second", player.fall_speed_limit_millimetres_per_second, 0, 0},
+		{"fly_speed_millimetres_per_second", player.fly_speed_millimetres_per_second, 0, 0},
+		{"fly_sprint_speed_millimetres_per_second", player.fly_sprint_speed_millimetres_per_second, 0, 0},
+	}
+	limit := MAXIMUM_FIELD_PLAYER_MILLIMETRES_PER_TICK * tick_rate
+	for speed in speeds {
+		if speed.value > limit {
+			return fmt.tprintf("field_player.%s %d moves more than %d mm a tick at tick_rate %d (at most %d)", speed.name, speed.value, MAXIMUM_FIELD_PLAYER_MILLIMETRES_PER_TICK, tick_rate, limit)
+		}
 	}
 	return ""
 }

@@ -16,6 +16,7 @@ MILLIMETRES_PER_METRE :: 1000
 // The world setting "sample spacing" (DESIGN.md, The world).
 SAMPLE_SPACING_CHOICES_MILLIMETRES :: [3]int{333, 500, 1000}
 DEFAULT_SAMPLE_SPACING_MILLIMETRES :: 1000
+#assert(SAMPLE_SPACING_CHOICES_MILLIMETRES[len(SAMPLE_SPACING_CHOICES_MILLIMETRES) - 1] == WIDEST_SAMPLE_SPACING_MILLIMETRES, "field_player_problem checks the step at the widest spacing")
 // The surface to 1/128 of a sample spacing (0167); a density saturates
 // one spacing away from the surface.
 DENSITY_STEPS_PER_SAMPLE :: 128

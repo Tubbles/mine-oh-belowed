@@ -155,6 +155,8 @@ The Accessibility tab's Sneak and Sprint rows (`settings.sneak_hold`, `settings.
 - In developer mode a second Jump press within `JUMP_DOUBLE_TAP_TICKS` (18 ticks, 300 ms) toggles fly mode (0112); outside it a double tap is two jumps. A tick after any blocked frame closes the window (`Input_Frame.world_blocked`), so a Jump before the pause menu and one after it are no double tap.
 - F6 and the Developer screen toggle flying too. Flight is swept against blocks like walking; no clip (F9, the Developer screen, `noclip on`) lets flight pass through blocks. Walking ignores no clip, and neither is saved.
 - Every change logs `player: fly mode on at tick N by <cause>` (or no clip), so an unexpected toggle shows in the log or logcat.
+- On the terrain field (0170) the same toggles fly the field player in the planet's frame: the move along the heading and its right on the tangent plane, Jump and Sneak along the planet's up, swept against the field unless no clip is on ([architecture.md](architecture.md), The player on the field). The planet preview's walk mode is a developer tool, so its double tap always flies; there the log line names no cause.
+- The planet preview (`--planet-preview`) switches between its free camera and the field player with G (`PLANET_PREVIEW_WALK_KEY`), a raw key of the preview rather than a binding; V toggles the third person camera there, and Sprint and Sprint_Hold both sprint while held ([build.md](build.md), Command line).
 
 ## Not built yet
 
