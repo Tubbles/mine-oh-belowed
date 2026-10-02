@@ -94,7 +94,7 @@ The user took every recommendation: surface nets with skirts; sky light by a rad
 
 ## Sequencing on `main`
 
-The field world is built as new files beside the block files and is reachable through tests and a developer command until the frames (0174) switch the simulation's grid to frame cells and the slice (0179) switches the session to the field world. The block files are deleted in M14 once the content has come over. This is not a second world type for the player, it is the order the rewrite lands in without breaking the build between items.
+The field world is built as new files beside the block files and is reachable through tests and a developer command until the frames (0174) switch the simulation's grid to frame cells and the slice (0179) switches the session to the field world. The block files are deleted in M14 once the content has come over, or earlier where keeping them costs more than removing them: the user allowed the block world to stop being playable from 0168 until 0179 plays (2026-10-02), so an item may disable or delete block code it replaces rather than keep both paths alive, as long as `./build.sh check` and `./build.sh test` stay green for every commit. The play build is not installed until 0179 plays.
 
 ## Verify
 

@@ -40,7 +40,7 @@ Before handing back, an implementer walks the hand-back check below and says in 
 
 The factory benchmark (`./build.sh bench`, `--benchmark=<size>`) runs sizes up to 16; larger factories are read off size 16, never built (user, 2026-09-28). Heavy benchmark runs follow the window and lock rules of the global instructions.
 
-The couch always runs the latest build. After every commit that lands on `main` and changes `src/` or `data/`, run `tools/install_play_build.sh` ([doc/build.md](doc/build.md), Play build); it never waits for the game. A work item or a bug fix is not done until the play build is installed, and the wrap-up names the installed commit. The user reads the build stamp (commit and build time) from the title screen or the pause menu when reporting a bug.
+The couch always runs the latest build. After every commit that lands on `main` and changes `src/` or `data/`, run `tools/install_play_build.sh` ([doc/build.md](doc/build.md), Play build); it never waits for the game. A work item or a bug fix is not done until the play build is installed, and the wrap-up names the installed commit. Exception during the M13 rebuild (user, 2026-10-02): from 0168 until 0179 plays, the block world may stop being playable and the play build is not installed; `./build.sh check` and `./build.sh test` stay green for every commit so the reviews can verify, and the couch keeps the last block build (7ce7e94). The user reads the build stamp (commit and build time) from the title screen or the pause menu when reporting a bug.
 
 ## Hand-back check
 
