@@ -2,6 +2,7 @@ package game
 
 import "core:container/queue"
 import "core:slice"
+import "platform"
 
 // The simulation state of a save (entities.bin): every entity pool as
 // plain values, the belt items per cell, the loose items, the vein records and outcrop
@@ -474,6 +475,9 @@ read_simulation_state :: proc(reader: ^Byte_Reader, state: ^Simulation_State, co
 	// (work item 0198), so the rebuild sees only the new pod.
 	upgraded := upgrade_resized_pods(&state.world.entities, content.machines)
 	rebuild_loaded_world(&state.world, content.machines, derived)
+	if kept := count_entities_keeping_saved_size(&state.world.entities, content.machines); kept > 0 {
+		platform.log_printf("save: %d machines keep the footprint they were saved with; pick them up and place them again for the new size", kept)
+	}
 	finish_pod_upgrades(state, content.machines, upgraded)
 	// The reward target is derived from the restored pools (0210).
 	settle_quest_reward_target(&state.quests, &state.records.statistics, &state.world.entities, content.machines, state.field.enabled)

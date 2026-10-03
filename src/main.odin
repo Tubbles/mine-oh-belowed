@@ -62,7 +62,7 @@ Command_Line :: struct {
 	planet_preview_pitch: int `usage:"<degrees>: the walk screenshot's camera tilt once the pit is dug, from -89 to 89 (default -50, down into the pit)"`,
 	// Work item 0207: the model workbench.
 	model_check:     string `usage:"<machine|all>: check the machine's model (all: every OBJ model and the arm) in the game's mesher and motion, one line per problem, exit 1 on any; no window"`,
-	model_preview:   string `usage:"<machine>[,<machine>]: render each machine's model from four cameras at rest and at three phases into --model-preview-directory, then exit"`,
+	model_preview:   string `usage:"<machine>[,<machine>]: render each machine's model from five cameras at rest and at three phases into --model-preview-directory, then exit"`,
 	model_preview_directory: string `usage:"<path>: where --model-preview writes <machine>_<camera>_<phase>.png"`,
 	// Work item 0177: lockstep multiplayer.
 	server:          bool `usage:"run the world (--load, or a new one) without a window or a local player and host it for --join (doc/commands.md)"`,

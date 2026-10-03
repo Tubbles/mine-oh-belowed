@@ -50,8 +50,8 @@ test_count_item_machines :: proc(t: ^testing.T) {
 	furnace := pool_get(&world.entities.furnaces, smelting)
 	furnace.recipe = furnace_recipe_for(recipes, hematite)
 	furnace.slots[FURNACE_FUEL_SLOT] = {coal, 3}
-	place_test_entity(&world, content, "stone_furnace", {10, 1, 12})
-	assembler := place_test_entity(&world, content, "assembler_1", {14, 1, 10})
+	place_test_entity(&world, content, "stone_furnace", {10, 1, 20})
+	assembler := place_test_entity(&world, content, "assembler_1", {22, 1, 10})
 	set_assembler_recipe(test_assembler(&world, assembler), recipes, test_recipe(recipes, "iron_gear"))
 	vein := add_test_vein(&world, content, "iron", {-19, 21}, 1, IRON_TEST_VEIN, 1000)
 	place_test_drill(&world, content, {-20, 1, 20}, 0, vein)

@@ -61,7 +61,7 @@ test_snapped_foundations_join_and_free_ones_fifty_metres_apart_are_two_frames ::
 test_a_machine_on_a_frame_occupies_its_footprint_and_a_second_is_refused :: proc(t: ^testing.T) {
 	machines := make_test_machines()
 	foundation := test_foundation(machines)
-	furnace := test_machine(machines, "stone_furnace")
+	furnace := test_machine(machines, "steel_furnace")
 	entities: Entities
 	defer destroy_entities(&entities)
 	_, frame := place_free_foundation(&entities, machines, foundation, TEST_FRAME_HIT, {UNIT_VECTOR_ONE, 0, 0}, 500)
@@ -599,7 +599,7 @@ test_a_foundation_under_a_furnace_refuses_until_the_furnace_is_gone :: proc(t: ^
 	for cell in ([?]World_Coordinate{{0, 0, 2}, {1, 0, 2}, {0, 0, 3}, {1, 0, 3}}) {
 		place_on_frame(entities, content.machines, content.field.pad_foundation, frame.id, cell, 0)
 	}
-	furnace := test_machine(content.machines, "stone_furnace")
+	furnace := test_machine(content.machines, "steel_furnace")
 	_, refusal := place_on_frame(entities, content.machines, furnace, frame.id, {0, 1, 2}, 0)
 	testing.expect_value(t, refusal, Frame_Placement_Refusal.None)
 	stand_test_player_on_cell(&simulation, content, items, frame, {})
@@ -613,7 +613,7 @@ test_a_foundation_under_a_furnace_refuses_until_the_furnace_is_gone :: proc(t: ^
 	testing.expect(t, aim_test_player_at_cell(&simulation, content, frame.id, {0, 1, 2}) || aim_test_player_at_cell(&simulation, content, frame.id, {0, 2, 2}), "the reticle meets the furnace")
 	hold_test_mine(&simulation, content, PICK_UP_TEST_TICKS)
 	testing.expect_value(t, entity_at(entities, {0, 1, 2}, frame.id), NO_ENTITY)
-	testing.expect_value(t, inventory_count(player.inventory, test_item(items, "stone_furnace")), 1)
+	testing.expect_value(t, inventory_count(player.inventory, test_item(items, "steel_furnace")), 1)
 	testing.expect(t, aim_test_player_at_cell(&simulation, content, frame.id, held), "the reticle meets the foundation again")
 	hold_test_mine(&simulation, content, PICK_UP_TEST_TICKS)
 	testing.expect_value(t, player.field_refusal, Field_Edit_Refusal.None)
@@ -792,7 +792,7 @@ test_a_mixed_frame_holds_all_three_foundations :: proc(t: ^testing.T) {
 		}
 	}
 	testing.expect_value(t, held, [3]bool{true, true, true})
-	furnace, refusal := place_on_frame(&entities, machines, test_machine(machines, "stone_furnace"), frame, {0, 1, 0}, 0)
+	furnace, refusal := place_on_frame(&entities, machines, test_machine(machines, "steel_furnace"), frame, {0, 1, 0}, 0)
 	testing.expect_value(t, refusal, Frame_Placement_Refusal.None)
 	testing.expect(t, machine_is_founded(&entities, machines, entity_common(&entities, furnace)^))
 }

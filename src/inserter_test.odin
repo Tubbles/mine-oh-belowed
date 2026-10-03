@@ -196,8 +196,8 @@ test_inserter_takes_only_from_the_furnace_output :: proc(t: ^testing.T) {
 	place_test_entity(&world, content, "wooden_chest", {0, 1, 0})
 	feeding := place_fuelled_inserter(&world, content, {1, 1, 0}, 0)
 	// Taking out into a chest: only the output.
-	taking := place_fuelled_inserter(&world, content, {4, 1, 0}, 0)
-	chest := place_test_entity(&world, content, "wooden_chest", {5, 1, 0})
+	taking := place_fuelled_inserter(&world, content, {12, 1, 0}, 0)
+	chest := place_test_entity(&world, content, "wooden_chest", {13, 1, 0})
 	tick_test_entities(&world, &records, content, 600)
 	testing.expect_value(t, slots[FURNACE_OUTPUT_SLOT], EMPTY_STACK)
 	testing.expect_value(t, chest_count_of(&world, chest, plate), 2)
@@ -208,7 +208,7 @@ test_inserter_takes_only_from_the_furnace_output :: proc(t: ^testing.T) {
 	// A furnace behind a furnace: nothing the output holds goes in.
 	slots[FURNACE_OUTPUT_SLOT] = Item_Stack{plate, 2}
 	remove_entity(&world.entities, content.machines, chest)
-	place_test_entity(&world, content, "stone_furnace", {5, 1, 0})
+	place_test_entity(&world, content, "stone_furnace", {13, 1, 0})
 	tick_test_entities(&world, &records, content, 200)
 	testing.expect_value(t, slots[FURNACE_OUTPUT_SLOT], Item_Stack{plate, 2})
 }
@@ -336,10 +336,10 @@ lay_smelting_line :: proc(world: ^World, content: Simulation_Content) -> (ore_ch
 	place_fuelled_inserter(world, content, {1, 1, 0}, 0)
 	furnace := place_test_entity(world, content, "stone_furnace", {2, 1, 0})
 	entity_slots(&world.entities, furnace)[FURNACE_FUEL_SLOT] = Item_Stack{test_item(content.items, "coal"), 10}
-	place_fuelled_inserter(world, content, {4, 1, 0}, 0)
-	lay_belt_row(world, content, {5, 1, 0}, 3, 0)
-	place_fuelled_inserter(world, content, {8, 1, 0}, 0)
-	plate_chest = place_test_entity(world, content, "wooden_chest", {9, 1, 0})
+	place_fuelled_inserter(world, content, {12, 1, 0}, 0)
+	lay_belt_row(world, content, {13, 1, 0}, 3, 0)
+	place_fuelled_inserter(world, content, {16, 1, 0}, 0)
+	plate_chest = place_test_entity(world, content, "wooden_chest", {17, 1, 0})
 	return
 }
 

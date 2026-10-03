@@ -11,8 +11,8 @@ import "platform"
 // the precedent of --planet-preview-screenshot: a window, a fixed scene,
 // frames drawn, the screen exported, exit. The machine alone on a pad of
 // foundation cells under the field's full sky light, the player's capsule
-// beside it for scale, from four cameras at rest and at three phases of
-// its motion (an arm at its grab, lift and drop fractions): 16 PNG files
+// beside it for scale, from five cameras at rest and at three phases of
+// its motion (an arm at its grab, lift and drop fractions): 20 PNG files
 // per machine named <machine>_<camera>_<phase>.png. The scene is metres,
 // the frame's cells scaled by the pitch about the origin, up +y; no
 // world, no session, no field.
@@ -42,6 +42,7 @@ MODEL_PREVIEW_CAPSULE_HEIGHT_METRES :: 1.8
 
 Model_Preview_View :: enum u8 {
 	Front,
+	Front_Left,
 	Back,
 	Top,
 	Close,
@@ -49,10 +50,11 @@ Model_Preview_View :: enum u8 {
 
 @(rodata)
 model_preview_view_names := [Model_Preview_View]string {
-	.Front = "front",
-	.Back  = "back",
-	.Top   = "top",
-	.Close = "close",
+	.Front      = "front",
+	.Front_Left = "front_left",
+	.Back       = "back",
+	.Top        = "top",
+	.Close      = "close",
 }
 
 Model_Preview_Phase :: enum u8 {
@@ -132,9 +134,10 @@ model_preview_bounds :: proc(machine: Machine, top_cells: f32, pitch_millimetres
 	return bounds
 }
 
-// The three quarter cameras and the top one frame the scene's bounding
-// sphere; the close one stands MODEL_PREVIEW_CLOSE_METRES in front of
-// the model's front face.
+// The three three quarter cameras and the top one frame the scene's
+// bounding sphere; the close one stands MODEL_PREVIEW_CLOSE_METRES in front of
+// the model's front face at half its height, no higher than a player's
+// eye (0212: a tall machine's mouth is where the player looks).
 model_preview_camera :: proc(view: Model_Preview_View, bounds: Model_Preview_Bounds) -> Model_Preview_Camera {
 	centre := (bounds.scene_minimum + bounds.scene_maximum) / 2
 	radius := linalg.length(bounds.scene_maximum - bounds.scene_minimum) / 2
@@ -142,6 +145,8 @@ model_preview_camera :: proc(view: Model_Preview_View, bounds: Model_Preview_Bou
 	switch view {
 	case .Front:
 		return {centre + linalg.normalize([3]f32{1, MODEL_PREVIEW_THREE_QUARTER_RISE, -1}) * distance, centre, {0, 1, 0}}
+	case .Front_Left:
+		return {centre + linalg.normalize([3]f32{1, MODEL_PREVIEW_THREE_QUARTER_RISE, 1}) * distance, centre, {0, 1, 0}}
 	case .Back:
 		return {centre + linalg.normalize([3]f32{-1, MODEL_PREVIEW_THREE_QUARTER_RISE, 1}) * distance, centre, {0, 1, 0}}
 	case .Top:
@@ -149,7 +154,7 @@ model_preview_camera :: proc(view: Model_Preview_View, bounds: Model_Preview_Bou
 	case .Close:
 	}
 	minimum, maximum := bounds.model_minimum, bounds.model_maximum
-	target := [3]f32{maximum.x, maximum.y / 2, (minimum.z + maximum.z) / 2}
+	target := [3]f32{maximum.x, min(maximum.y / 2, PLAYER_EYE_HEIGHT), (minimum.z + maximum.z) / 2}
 	return {target + {MODEL_PREVIEW_CLOSE_METRES, 0, 0}, target, {0, 1, 0}}
 }
 

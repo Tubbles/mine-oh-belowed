@@ -427,6 +427,8 @@ machine_occupant_flags :: proc(machine: Machine) -> Occupant_Flags {
 // open cells (0186) are occupied too, without Solid. A pod leaves its
 // fixtures' cells to them (machine_held_cells), and an open hatch
 // occupies its cells as occupy_open_hatch_cells says (work item 0198).
+// A machine saved at an older size holds its saved box, all solid
+// (entity_held_cells).
 occupy_entity_cells :: proc(entities: ^Entities, machines: Machine_Registry, common: Entity_Common) {
 	machine := machines.machines[common.machine]
 	occupant := Occupant{handle = entity_occupant_handle(common.handle), flags = machine_occupant_flags(machine)}
@@ -434,8 +436,11 @@ occupy_entity_cells :: proc(entities: ^Entities, machines: Machine_Registry, com
 		occupy_open_hatch_cells(entities, common, occupant)
 		return
 	}
-	for cell in machine_held_cells(common.origin, machine, common.rotation) {
+	for cell in entity_held_cells(common, machine) {
 		occupy_frame_cell(&entities.frames, common.frame, cell, occupant)
+	}
+	if entity_keeps_saved_size(common, machine) {
+		return
 	}
 	open := Occupant{handle = occupant.handle, flags = occupant.flags - {.Solid} + {.Open}}
 	for cell in machine_open_cells(common.origin, machine, common.rotation) {
@@ -445,10 +450,42 @@ occupy_entity_cells :: proc(entities: ^Entities, machines: Machine_Registry, com
 
 // A pod vacates its held cells only, so its fixtures keep theirs.
 vacate_entity_cells :: proc(entities: ^Entities, machines: Machine_Registry, common: Entity_Common) {
-	for cell in machine_held_cells(common.origin, machines.machines[common.machine], common.rotation) {
+	for cell in entity_held_cells(common, machines.machines[common.machine]) {
 		vacate_frame_cell(&entities.frames, common.frame, cell)
 	}
 	release_empty_frame(entities, common.frame)
+}
+
+// Whether an entity was saved at a footprint its record no longer has
+// (work item 0212, the stone furnace grew): it keeps the cells it was
+// saved with until it is picked up and placed again. A pod is upgraded
+// by upgrade_resized_pods instead.
+entity_keeps_saved_size :: proc(common: Entity_Common, machine: Machine) -> bool {
+	return machine.kind != .Pod && common.size != rotated_footprint_size(machine.footprint, common.rotation)
+}
+
+// The cells an entity holds: its record's (machine_held_cells), or the
+// box it was saved with when entity_keeps_saved_size. Temp allocator.
+entity_held_cells :: proc(common: Entity_Common, machine: Machine) -> []World_Coordinate {
+	if !entity_keeps_saved_size(common, machine) {
+		return machine_held_cells(common.origin, machine, common.rotation)
+	}
+	saved := rotated_footprint_size(common.size, common.rotation)
+	return footprint_cells(common.origin, saved, common.rotation)
+}
+
+// The alive entities that keep the size they were saved with.
+count_entities_keeping_saved_size :: proc(entities: ^Entities, machines: Machine_Registry) -> int {
+	count := 0
+	for kind in Entity_Kind {
+		for index in 0 ..< entity_pool_length(entities, kind) {
+			common := entity_common_at(entities, kind, index)
+			if common != nil && common.alive && entity_keeps_saved_size(common^, machines.machines[common.machine]) {
+				count += 1
+			}
+		}
+	}
+	return count
 }
 
 // Footprint rotation.
@@ -545,8 +582,16 @@ machine_held_cells :: proc(origin: World_Coordinate, machine: Machine, rotation:
 	return cells[:]
 }
 
+// Every cell of an entity's footprint, or the box it was saved with when
+// it keeps its saved size (entity_keeps_saved_size, 0212), so the founded
+// flag, the pick up's held up test, the trees and the water read the cells
+// it holds.
 common_cells :: proc(common: Entity_Common, machines: Machine_Registry) -> []World_Coordinate {
-	return footprint_cells(common.origin, machines.machines[common.machine].footprint, common.rotation)
+	machine := machines.machines[common.machine]
+	if entity_keeps_saved_size(common, machine) {
+		return entity_held_cells(common, machine)
+	}
+	return footprint_cells(common.origin, machine.footprint, common.rotation)
 }
 
 // Adding and removing.

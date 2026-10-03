@@ -255,15 +255,20 @@ shipped_machine :: proc(machines: []Machine, id: string) -> (machine: Machine, f
 	return {}, false
 }
 
-// The emissive layer's colours are all colour, its centroid is returned.
-emissive_layer_centroid :: proc(t: ^testing.T, mesh: Model_Mesh, colour: [4]u8) -> (centroid: [3]f32) {
-	for position in mesh.positions {
-		centroid += position / f32(len(mesh.positions))
+// The centroid of the mesh's vertices of one colour and their count
+// (0212: the furnace glows orange in its mouth and on its console, cyan
+// and green on the console).
+emissive_colour_centroid :: proc(mesh: Model_Mesh, colour: [4]u8) -> (centroid: [3]f32, count: int) {
+	for position, index in mesh.positions {
+		if mesh.colors[index] == colour {
+			centroid += position
+			count += 1
+		}
 	}
-	for vertex_colour in mesh.colors {
-		testing.expect_value(t, vertex_colour, colour)
+	if count > 0 {
+		centroid /= f32(count)
 	}
-	return centroid
+	return centroid, count
 }
 
 // A shipped OBJ machine and whether its model glows (work item 0205).
@@ -323,9 +328,25 @@ test_the_shipped_obj_machines_load :: proc(t: ^testing.T) {
 		glow_vertices := len(mesh.body[.Emissive].positions) + len(mesh.part[.Emissive].positions)
 		testing.expectf(t, (glow_vertices > 0) == entry.glows, "%s: %d glowing vertices, glows %v", id, glow_vertices, entry.glows)
 		if id == "stone_furnace" {
-			// The glow faces the front (+x): the export axes.
-			centroid := emissive_layer_centroid(t, mesh.body[.Emissive], {255, 140, 48, 255})
-			testing.expectf(t, centroid.x > 0.5, "the furnace's glow centroid %v", centroid)
+			// The fire faces the front (+x): the export axes. The
+			// console's orange buttons on the left face glow too and
+			// pull the centroid back, so it is held to the front half.
+			emissive := mesh.body[.Emissive]
+			centroid, count := emissive_colour_centroid(emissive, {255, 140, 48, 255})
+			testing.expect(t, count > 0, "the furnace's fire glows")
+			testing.expectf(t, centroid.x > 0, "the furnace's fire centroid %v", centroid)
+			// And the mouth itself: fire past the body's front face,
+			// centred on it, whatever the console carries.
+			mouth := 0
+			for position, index in emissive.positions {
+				if emissive.colors[index] == {255, 140, 48, 255} && position.x > 1.5 && abs(position.z) < 1.5 {
+					mouth += 1
+				}
+			}
+			testing.expectf(t, mouth > 0, "no fire in the furnace's mouth (%d heat glow vertices)", count)
+			_, signal := emissive_colour_centroid(emissive, {110, 240, 120, 255})
+			_, electric := emissive_colour_centroid(emissive, {80, 220, 240, 255})
+			testing.expect(t, signal > 0 && electric > 0, "the console's lights glow")
 		}
 		library, error := os.read_entire_file(platform.join_path(test_data_directory(), model_obj.MODELS_DIRECTORY, strings.concatenate({id, model_obj.MATERIAL_FILE_EXTENSION}, context.temp_allocator)), context.temp_allocator)
 		testing.expect_value(t, error, nil)

@@ -13,20 +13,21 @@ import "model_obj"
 // code run two ways. Models are presentation: nothing here touches the
 // simulation.
 //
-// Cost: a body of at most 800 and a part of at most 200 triangles give at
-// most 16 x 200 x 800 (about 2.6 million) box tests per machine, exact
+// Cost: a body of at most 3200 and a part of at most 200 triangles give
+// at most 16 x 200 x 3200 (about 10 million) box tests per machine, exact
 // tests only where the boxes overlap, and the moving part's bounds filter
 // the body first; over the budget the sweep does not run. The open cells
-// are at most 4 boxes x 1000 triangles x 18 tests. The arm's voxel parts
+// are at most 4 boxes x 3400 triangles x 18 tests. The arm's voxel parts
 // are a few hundred triangles each: 16 fractions x 5 moving sets against
 // the base, well under a second unoptimised.
 
 // The motion and the arm's cycle are checked at index / 16 for index 0
 // to 15; 0 is the rest.
 MODEL_CHECK_PHASE_COUNT :: 16
-// DESIGN.md, Art direction: the maxima are enforced; 200 triangles per
-// body is a guide, not a bound (0207, the approval).
-MODEL_BODY_TRIANGLES_MAXIMUM :: 800
+// DESIGN.md, Art direction: the maxima are enforced. The body's is the
+// user's 3200 (2026-10-04, 0212): a machine at its real size spends it on
+// its surface, a pole or a lamp stays far under it.
+MODEL_BODY_TRIANGLES_MAXIMUM :: 3200
 MODEL_PART_TRIANGLES_MAXIMUM :: 200
 MODEL_MATERIAL_LIMIT :: 8
 // The share of an edge and of a triangle's barycentric range a crossing

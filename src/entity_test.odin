@@ -94,7 +94,7 @@ test_footprint_origin_extends_away_from_the_face :: proc(t: ^testing.T) {
 test_add_and_remove_entity_updates_cells :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
-	furnace := test_machine(content.machines, "stone_furnace")
+	furnace := test_machine(content.machines, "steel_furnace")
 	handle := add_entity(&world.entities, content.machines, furnace, {2, 1, 2}, 1)
 	testing.expect_value(t, handle.kind, Entity_Kind.Furnace)
 	for cell in ([?]World_Coordinate{{2, 1, 2}, {3, 1, 2}, {2, 2, 3}, {3, 2, 3}}) {
@@ -144,6 +144,44 @@ test_placement_validity :: proc(t: ^testing.T) {
 	testing.expect(t, !footprint_is_valid(&world, content.blocks, {}, far, 1))
 }
 
+// Work item 0212: a furnace saved at the old 2 by 2 by 2 keeps those
+// cells after the record grew, until it is picked up.
+@(test)
+test_a_machine_saved_at_an_older_size_keeps_its_cells :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	furnace := test_machine(content.machines, "stone_furnace")
+	handle := add_entity(&world.entities, content.machines, furnace, {4, 1, 4}, 0)
+	common := entity_common(&world.entities, handle)
+	vacate_entity_cells(&world.entities, content.machines, common^)
+	common.size = {2, 2, 2}
+	occupy_entity_cells(&world.entities, content.machines, common^)
+	testing.expect(t, entity_keeps_saved_size(common^, content.machines.machines[furnace]))
+	saved := footprint_cells({4, 1, 4}, {2, 2, 2}, 0)
+	for cell in saved {
+		testing.expect_value(t, entity_at(&world.entities, cell), handle)
+	}
+	testing.expect_value(t, len(world.entities.frames.occupants), 8)
+	testing.expect_value(t, entity_at(&world.entities, {6, 1, 4}), NO_ENTITY)
+	testing.expect_value(t, entity_at(&world.entities, {4, 1, 6}), NO_ENTITY)
+	vacate_entity_cells(&world.entities, content.machines, common^)
+	for cell in saved {
+		testing.expect_value(t, entity_at(&world.entities, cell), NO_ENTITY)
+	}
+}
+
+// A pod of an older size is upgraded instead (upgrade_resized_pods), and
+// a machine at its record's size keeps nothing.
+@(test)
+test_entity_keeps_saved_size_spares_the_pod :: proc(t: ^testing.T) {
+	machines := make_test_machines()
+	pod := machines.machines[test_machine(machines, "pod")]
+	furnace := machines.machines[test_machine(machines, "stone_furnace")]
+	testing.expect(t, !entity_keeps_saved_size(Entity_Common{size = pod.footprint + {1, 0, 1}}, pod))
+	testing.expect(t, !entity_keeps_saved_size(Entity_Common{size = furnace.footprint}, furnace))
+	testing.expect(t, entity_keeps_saved_size(Entity_Common{size = {2, 2, 2}}, furnace))
+}
+
 @(test)
 test_player_places_rotates_and_picks_up_a_machine :: proc(t: ^testing.T) {
 	content := make_test_content()
@@ -151,7 +189,7 @@ test_player_places_rotates_and_picks_up_a_machine :: proc(t: ^testing.T) {
 	records: Game_Records
 	players := []Player{make_test_player(content.blocks, {0.5, 1, 0.5})}
 	player := &players[0]
-	furnace_item := test_item(content.items, "stone_furnace")
+	furnace_item := test_item(content.items, "steel_furnace")
 	player.inventory.slots[0] = Item_Stack{furnace_item, 2}
 	player.target = Raycast_Hit{hit = true, block = {4, 0, 4}, face = .Positive_Y, adjacent = {4, 1, 4}}
 	place_with_player(&world, &records.statistics, content, players, 0, {.Rotate_Building})
@@ -183,7 +221,7 @@ test_open_aimed_opens_an_entity_and_interact_turns_a_switch :: proc(t: ^testing.
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
 	records: Game_Records
-	handle := add_entity(&world.entities, content.machines, test_machine(content.machines, "stone_furnace"), {4, 1, 4}, 0)
+	handle := add_entity(&world.entities, content.machines, test_machine(content.machines, "steel_furnace"), {4, 1, 4}, 0)
 	players := []Player{make_test_player(content.blocks, {4.5, 1, 1.5})}
 	players[0].pitch, players[0].yaw = -30, 90
 	tick_player(&world, &records, content, players, 0, {}, TEST_TICK_RATE, 0)
@@ -225,7 +263,7 @@ test_open_aimed_opens_an_entity_and_interact_turns_a_switch :: proc(t: ^testing.
 test_aims_at_panel_reads_the_target_the_hud_shows :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
-	furnace := add_entity(&world.entities, content.machines, test_machine(content.machines, "stone_furnace"), {4, 1, 4}, 0)
+	furnace := add_entity(&world.entities, content.machines, test_machine(content.machines, "steel_furnace"), {4, 1, 4}, 0)
 	belt := add_entity(&world.entities, content.machines, test_machine(content.machines, "belt"), {6, 1, 4}, 0)
 	testing.expect(t, aims_at_panel(&world.entities, content.machines, furnace, {}))
 	testing.expect(t, !aims_at_panel(&world.entities, content.machines, belt, {}))

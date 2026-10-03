@@ -1830,7 +1830,7 @@ test_a_tap_opens_a_machine_turns_a_switch_and_places_on_the_ground :: proc(t: ^t
 	content := make_test_content()
 	for interaction in ([2]Touch_Interaction{.Tap, .Crosshair}) {
 		world := make_floor_world(content.blocks, 32)
-		furnace := add_entity(&world.entities, content.machines, test_machine(content.machines, "stone_furnace"), {4, 1, 4}, 0)
+		furnace := add_entity(&world.entities, content.machines, test_machine(content.machines, "steel_furnace"), {4, 1, 4}, 0)
 		power_switch := add_entity(&world.entities, content.machines, test_machine(content.machines, "power_switch"), {6, 1, 4}, 0)
 		players := []Player{make_test_player(content.blocks, {4.5, 1, 1.5})}
 		records: Game_Records
@@ -1879,7 +1879,7 @@ test_a_tap_on_the_field_turns_a_switch_and_opens_a_furnace :: proc(t: ^testing.T
 	feet := simulation.players[0].field.position
 	frame := add_frame(&simulation.world.entities.frames, feet + {0, 0, 5 * POSITION_UNITS_PER_METRE}, frame_axes({0, UNIT_VECTOR_ONE, 0}, 0), 500)
 	entities := &simulation.world.entities
-	furnace := add_entity(entities, simulation_content.machines, test_machine(simulation_content.machines, "stone_furnace"), {}, 0, frame)
+	furnace := add_entity(entities, simulation_content.machines, test_machine(simulation_content.machines, "steel_furnace"), {}, 0, frame)
 	power_switch := add_entity(entities, simulation_content.machines, test_machine(simulation_content.machines, "power_switch"), {3, 0, 0}, 0, frame)
 	layout := shipped_touch_overlay(t)
 	tables, _ := build_input_bindings(shipped_default_bindings(t), .Sdl3, context.temp_allocator)

@@ -36,4 +36,13 @@ MATERIALS = {
     "needles_dark": ((38, 70, 46), False),
     "needles": ((50, 88, 56), False),
     "needles_light": ((70, 108, 66), False),
+    # The stone furnace: rubble stone, its dark joints, rusted iron, the
+    # rust brown of the hood and the pipes, the dirty white console and
+    # a green signal light.
+    "furnace_stone": ((128, 96, 78), False),
+    "furnace_mortar": ((54, 42, 38), False),
+    "furnace_iron": ((90, 70, 62), False),
+    "furnace_rust": ((126, 86, 66), False),
+    "console_white": ((196, 190, 180), False),
+    "signal_glow": ((110, 240, 120), True),
 }

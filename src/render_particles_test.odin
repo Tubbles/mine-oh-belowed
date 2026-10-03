@@ -130,8 +130,8 @@ test_emitters_for_frame_from_the_world :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_drill_world(content)
 	furnace := place_test_entity(&world, content, "stone_furnace", {0, 1, 0})
-	alloy := place_test_entity(&world, content, "alloy_furnace", {4, 1, 0})
-	place_test_entity(&world, content, "boiler", {10, 1, 0})
+	alloy := place_test_entity(&world, content, "alloy_furnace", {12, 1, 0})
+	place_test_entity(&world, content, "boiler", {18, 1, 0})
 	pool_get(&world.entities.furnaces, furnace).state = .Burning
 	pool_get(&world.entities.assemblers, alloy).state = .Working
 	emitters := emitters_for_frame(&world, content, {}, nil, TEST_TICK_RATE)

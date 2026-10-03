@@ -72,10 +72,10 @@ lay_save_test_smelting :: proc(world: ^World, content: Simulation_Content, offse
 	place_fuelled_inserter(world, content, World_Coordinate{1, 1, 0} + offset, 0)
 	furnace := place_test_entity(world, content, "stone_furnace", World_Coordinate{2, 1, 0} + offset)
 	entity_slots(&world.entities, furnace)[FURNACE_FUEL_SLOT] = Item_Stack{test_item(content.items, "coal"), 10}
-	place_fuelled_inserter(world, content, World_Coordinate{4, 1, 0} + offset, 0)
-	lay_belt_row(world, content, World_Coordinate{5, 1, 0} + offset, 3, 0)
-	place_fuelled_inserter(world, content, World_Coordinate{8, 1, 0} + offset, 0)
-	place_test_entity(world, content, "wooden_chest", World_Coordinate{9, 1, 0} + offset)
+	place_fuelled_inserter(world, content, World_Coordinate{12, 1, 0} + offset, 0)
+	lay_belt_row(world, content, World_Coordinate{13, 1, 0} + offset, 3, 0)
+	place_fuelled_inserter(world, content, World_Coordinate{16, 1, 0} + offset, 0)
+	place_test_entity(world, content, "wooden_chest", World_Coordinate{17, 1, 0} + offset)
 }
 
 // A chest feeding a belt into a splitter whose halves end in chests.
@@ -302,7 +302,7 @@ build_save_test_site :: proc(simulation: ^Simulation_State, content: Simulation_
 	lay_gear_line_at(world, content, {-20, 0, 0})
 	lay_save_test_research(world, content, {-10, 0, -20})
 	lay_save_test_smelting(world, content, {12, 0, 14})
-	lay_save_test_splitter(world, content, {12, 0, 20})
+	lay_save_test_splitter(world, content, {12, 0, 26})
 	vein := add_test_vein(world, content, "iron", {-19, 21}, 1, IRON_TEST_VEIN, 1000)
 	place_test_drill(world, content, {-20, 1, 20}, 0, vein)
 	lay_belt_row(world, content, {-18, 1, 20}, 4, 0)

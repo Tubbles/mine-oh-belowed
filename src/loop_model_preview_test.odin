@@ -8,16 +8,17 @@ import "core:testing"
 // window and is run by tools/model_preview.sh.
 
 @(test)
-test_the_preview_writes_sixteen_names :: proc(t: ^testing.T) {
+test_the_preview_writes_twenty_names :: proc(t: ^testing.T) {
 	names := make(map[string]bool, context.temp_allocator)
 	for phase in Model_Preview_Phase {
 		for view in Model_Preview_View {
 			names[model_preview_file_name("burner_mining_drill", view, phase)] = true
 		}
 	}
-	testing.expect_value(t, len(names), 16)
+	testing.expect_value(t, len(names), 20)
 	testing.expect(t, "burner_mining_drill_front_0.5.png" in names)
 	testing.expect(t, "burner_mining_drill_top_rest.png" in names)
+	testing.expect(t, "burner_mining_drill_front_left_rest.png" in names)
 }
 
 @(test)
@@ -44,6 +45,9 @@ test_the_preview_cameras_frame_the_scene :: proc(t: ^testing.T) {
 	front := model_preview_camera(.Front, bounds)
 	testing.expect(t, front.position.x > bounds.model_maximum.x && front.position.z < centre.z)
 	testing.expect(t, linalg.length(front.position - centre) >= least)
+	front_left := model_preview_camera(.Front_Left, bounds)
+	testing.expect(t, front_left.position.x > bounds.model_maximum.x && front_left.position.z > centre.z)
+	testing.expect(t, linalg.length(front_left.position - centre) >= least)
 	back := model_preview_camera(.Back, bounds)
 	testing.expect(t, back.position.x < bounds.model_minimum.x && back.position.z > centre.z)
 	testing.expect(t, linalg.length(back.position - centre) >= least)
@@ -54,6 +58,9 @@ test_the_preview_cameras_frame_the_scene :: proc(t: ^testing.T) {
 	face := [3]f32{bounds.model_maximum.x, bounds.model_maximum.y / 2, (bounds.model_minimum.z + bounds.model_maximum.z) / 2}
 	testing.expect_value(t, close.target, face)
 	testing.expect_value(t, close.position - face, [3]f32{2, 0, 0})
+	// A machine taller than two eye heights is seen close at eye height.
+	tall := model_preview_bounds(Machine{footprint = {10, 12, 10}}, 12.6, 500)
+	testing.expect_value(t, model_preview_camera(.Close, tall).target.y, f32(PLAYER_EYE_HEIGHT))
 	feet := model_preview_capsule_feet(0.5)
 	for point in ([2][3]f32{feet - {0.3, 0, 0.3}, feet + {0.3, 1.8, 0.3}}) {
 		testing.expect(t, point == linalg.clamp(point, bounds.scene_minimum, bounds.scene_maximum), "the capsule inside the scene")

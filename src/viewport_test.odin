@@ -382,7 +382,7 @@ test_the_inventory_binding_aimed_at_a_furnace_opens_its_panel :: proc(t: ^testin
 	simulation := &state.session.simulation
 	content := frame_simulation_content(state)
 	cell := camera_world_coordinate(simulation.players[0].position) + {2, 0, 0}
-	furnace := add_entity(&simulation.world.entities, content.machines, test_machine(content.machines, "stone_furnace"), cell, 0)
+	furnace := add_entity(&simulation.world.entities, content.machines, test_machine(content.machines, "steel_furnace"), cell, 0)
 	clear(&simulation.events)
 	press_open_inventory_frame(state, furnace)
 	testing.expect(t, frame_has_event(state, .Open_Machine))

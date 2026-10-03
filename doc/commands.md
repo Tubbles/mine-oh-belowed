@@ -98,7 +98,7 @@ commands = [
 - `origin`: `"pad"` is the cell above the landing pad's centre; `{vein = "<type>"}` the cell above the centre of the registered surface vein of that type nearest the pad (the starter vein once its chunks loaded); `[x, y, z]` a world cell. Relative y 0 stands on the surface.
 - `commands`: `place`, `block`, `remove`, `insert`, `recipe` and `filter` lines with coordinates relative to the origin, run in order. The first failure stops the run with `error blueprint command <n> (<line>): <reason>` (n from 1); what ran before stays.
 - The game reads the path as given; `tools/moc blueprint <path>` sends it absolute.
-- `data/blueprints/tier1_factory.sjson` builds a burner iron line east of the iron starter vein: two drills onto a belt, two stone furnaces fed from it, a coal chest per furnace, output chests and an overflow chest at the belt's end, with starting coal. It needs flat ground over about 12 by 11 blocks east of the vein centre.
+- `data/blueprints/tier1_factory.sjson` builds a burner iron line east of the iron starter vein: two drills onto a belt, two stone furnaces fed from it, a coal chest per furnace, output chests and an overflow chest at the belt's end, with starting coal. It needs flat ground over about 20 by 27 blocks round the vein centre (x -2 to 17, z -13 to 13), since a stone furnace is 10 by 10 by 12 blocks (0212).
 - The factory benchmark ([architecture.md](architecture.md), Performance) runs its modules through the same `run_blueprint`.
 
 ## Safety

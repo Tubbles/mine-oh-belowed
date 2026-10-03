@@ -60,8 +60,8 @@ run_test_entities :: proc(simulation: ^Simulation_State, content: Simulation_Con
 }
 
 // A stone furnace on flat bare ground stands on a new frame of its own
-// with no foundation, unfounded, and smelts; on a ten degree slope (176 mm
-// across its metre) it stands too, on a thirty degree one (577 mm) it is
+// with no foundation, unfounded, and smelts; on a two degree slope (175 mm
+// across its 5 m, 0212) it stands too, on a ten degree one (882 mm) it is
 // refused Too_Steep and nothing is placed or paid.
 @(test)
 test_a_furnace_stands_on_flat_bare_ground_and_is_refused_on_a_slope :: proc(t: ^testing.T) {
@@ -87,7 +87,7 @@ test_a_furnace_stands_on_flat_bare_ground_and_is_refused_on_a_slope :: proc(t: ^
 	for entry in ([?]struct {
 			degrees: int,
 			refusal: Field_Edit_Refusal,
-		}{{10, .None}, {30, .Too_Steep}}) {
+		}{{2, .None}, {10, .Too_Steep}}) {
 		simulation, content, items := make_wear_test(Test_Terrain{kind = .Slope, slope_degrees = entry.degrees})
 		defer destroy_simulation(&simulation)
 		refusal, handle := place_test_machine_on_bare_ground(&simulation, content, items, "stone_furnace")
@@ -131,7 +131,7 @@ test_a_furnace_on_bare_ground_breaks_after_its_operation_and_one_on_foundations_
 	defer destroy_simulation(&simulation)
 	_, handle := place_test_machine_on_bare_ground(&simulation, content, items, "stone_furnace")
 	entities := &simulation.world.entities
-	pad := lay_test_pad(entities, content.machines, metres_to_position_units(20), 0, {0, 0, 0}, {1, 0, 1})
+	pad := lay_test_pad(entities, content.machines, metres_to_position_units(20), 0, {0, 0, 0}, {9, 0, 9})
 	founded, pad_refusal := place_on_frame(entities, content.machines, test_machine(content.machines, "stone_furnace"), pad.id, {0, 1, 0}, 0)
 	testing.expect_value(t, pad_refusal, Frame_Placement_Refusal.None)
 	testing.expect(t, pool_get(&entities.furnaces, founded).founded)
@@ -198,7 +198,7 @@ test_tearing_a_worn_furnace_down_returns_its_salvage_and_contents :: proc(t: ^te
 	testing.expect_value(t, inventory_count(player.inventory, ore), 7)
 	testing.expect_value(t, len(entities.frames.frames), 0)
 
-	pad := lay_test_pad(entities, content.machines, metres_to_position_units(20), 0, {0, 0, 0}, {1, 0, 1})
+	pad := lay_test_pad(entities, content.machines, metres_to_position_units(20), 0, {0, 0, 0}, {9, 0, 9})
 	founded, _ := place_on_frame(entities, content.machines, test_machine(content.machines, "stone_furnace"), pad.id, {0, 1, 0}, 0)
 	load_test_furnace(pool_get(&entities.furnaces, founded), items, 3, 7)
 	run_test_entities(&simulation, content, 10)
@@ -222,6 +222,28 @@ test_salvage_rounds_down_per_item_made :: proc(t: ^testing.T) {
 	testing.expect_value(t, salvaged_count(3, 1, 100), 3)
 }
 
+// Work item 0212: a stone furnace saved at the old 2 by 2 by 2 on its
+// 2 by 2 pad stays founded after a load's refresh, and a machine 3 cells
+// away on +x (inside the record's 10 by 10 box, outside the saved one)
+// does not hold it up.
+@(test)
+test_a_machine_saved_at_an_older_size_is_founded_and_held_by_its_saved_cells :: proc(t: ^testing.T) {
+	simulation, content, _ := make_wear_test()
+	defer destroy_simulation(&simulation)
+	entities := &simulation.world.entities
+	pad := lay_test_pad(entities, content.machines, 0, 0, {0, 0, 0}, {1, 0, 1})
+	handle := add_entity(entities, content.machines, test_machine(content.machines, "stone_furnace"), {0, 1, 0}, 0, pad.id)
+	common := entity_common(entities, handle)
+	vacate_entity_cells(entities, content.machines, common^)
+	common.size = {2, 2, 2}
+	occupy_entity_cells(entities, content.machines, common^)
+	testing.expect_value(t, len(common_cells(common^, content.machines)), 8)
+	refresh_all_founded(entities, content.machines)
+	testing.expect(t, pool_get(&entities.furnaces, handle).founded, "founded on its old pad")
+	add_entity(entities, content.machines, test_machine(content.machines, "steel_furnace"), {3, 1, 0}, 0, pad.id)
+	testing.expect(t, !field_entity_is_held_up(&simulation, content, handle), "nothing stands on its saved box")
+}
+
 // The founded flag follows the cells under the bottom row: a furnace with
 // one bottom cell on a chest is unfounded, and becomes founded once the
 // chest gives way to a foundation.
@@ -236,7 +258,7 @@ test_the_founded_flag_follows_the_foundations_under_a_machine :: proc(t: ^testin
 	}
 	chest, chest_refusal := place_on_frame(entities, content.machines, test_machine(content.machines, "wooden_chest"), pad.id, {1, 1, 1}, 0)
 	testing.expect_value(t, chest_refusal, Frame_Placement_Refusal.None)
-	furnace, refusal := place_on_frame(entities, content.machines, test_machine(content.machines, "stone_furnace"), pad.id, {0, 2, 0}, 0)
+	furnace, refusal := place_on_frame(entities, content.machines, test_machine(content.machines, "steel_furnace"), pad.id, {0, 2, 0}, 0)
 	testing.expect_value(t, refusal, Frame_Placement_Refusal.None)
 	testing.expect(t, !pool_get(&entities.furnaces, furnace).founded)
 	remove_entity(entities, content.machines, chest)
@@ -278,7 +300,7 @@ test_the_wear_round_trips_a_save_and_an_older_save_loads_unworn :: proc(t: ^test
 	tick_field_test_simulation(state, simulation_content, {})
 	feet := state.players[0].field.position
 	frame := add_frame(&state.world.entities.frames, feet + {0, 0, 5 * POSITION_UNITS_PER_METRE}, frame_axes({0, UNIT_VECTOR_ONE, 0}, 0), 500)
-	handle := add_entity(&state.world.entities, simulation_content.machines, test_machine(simulation_content.machines, "stone_furnace"), {}, 0, frame)
+	handle := add_entity(&state.world.entities, simulation_content.machines, test_machine(simulation_content.machines, "steel_furnace"), {}, 0, frame)
 	furnace := pool_get(&state.world.entities.furnaces, handle)
 	testing.expect(t, !furnace.founded)
 	furnace.wear_ticks, furnace.broken = 4321, true
@@ -320,8 +342,8 @@ test_the_wear_round_trips_a_save_and_an_older_save_loads_unworn :: proc(t: ^test
 }
 
 // A new frame never stands inside another's entities: a furnace on bare
-// ground half a metre from another is refused Frame_Cell_Taken, one two
-// metres away stands, and a free foundation on the first furnace's spot
+// ground half a metre from another is refused Frame_Cell_Taken, one six
+// metres away stands (the 5 m stone furnace, 0212), and a free foundation on the first furnace's spot
 // is refused the same way.
 @(test)
 test_a_new_frame_is_refused_inside_another_frames_entities :: proc(t: ^testing.T) {
@@ -333,7 +355,7 @@ test_a_new_frame_is_refused_inside_another_frames_entities :: proc(t: ^testing.T
 	refusal, overlapping := place_test_machine_on_bare_ground(&simulation, content, items, "stone_furnace", half)
 	testing.expect_value(t, refusal, Field_Edit_Refusal.Frame_Cell_Taken)
 	testing.expect_value(t, overlapping, NO_ENTITY)
-	apart_refusal, apart := place_test_machine_on_bare_ground(&simulation, content, items, "stone_furnace", i64(2 * POSITION_UNITS_PER_METRE))
+	apart_refusal, apart := place_test_machine_on_bare_ground(&simulation, content, items, "stone_furnace", i64(6 * POSITION_UNITS_PER_METRE))
 	testing.expect_value(t, apart_refusal, Field_Edit_Refusal.None)
 	testing.expect(t, apart != NO_ENTITY)
 	add_test_miner(&simulation, items, FAR_FEET, {"wooden_foundation", 1})

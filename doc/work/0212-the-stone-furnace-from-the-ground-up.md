@@ -1,6 +1,6 @@
 # 0212: The stone furnace, redone from the ground up under supervision
 
-Status: implementing (2026-10-03, worktree `.claude/worktrees/0212` on `item/0212` from `main`, the specification approved the same day with the decisions below; user, 2026-10-03: the 0205 models "are fine for very rough placeholder ideas ... but they are very flat, both geometry and color wise ... they need to be completely scrapped ... i want us to completely scrap a single machine and redo it from the ground up, with my supervision ... Lets do the stone furnace first. I want it to be larger, feeling awe-inspiring, formidable, and intimidating through sheer presence, more akin to satisfactory style machine sizes"; after 0211)
+Status: verified (2026-10-04, the lab model integrated and reviewed, ready to land; worktree `.claude/worktrees/0212` on `item/0212` from `main`, the specification approved the same day with the decisions below; user, 2026-10-03: the 0205 models "are fine for very rough placeholder ideas ... but they are very flat, both geometry and color wise ... they need to be completely scrapped ... i want us to completely scrap a single machine and redo it from the ground up, with my supervision ... Lets do the stone furnace first. I want it to be larger, feeling awe-inspiring, formidable, and intimidating through sheer presence, more akin to satisfactory style machine sizes"; after 0211)
 
 ## Goal
 
@@ -9,8 +9,8 @@ The stone furnace is the first machine made in the chosen art direction, from no
 ## Change
 
 - The footprint grows (the user chooses the size on the reference sheet; a candidate is 4 by 4 by 5 cells, 2 by 2 by 2.5 m, with the record's `footprint`, ports and open cells changed to match; the recipes, the quests and the dev kits that place it are checked for the new size, and an old save's furnace keeps its saved footprint through the remap of 0196's kind).
-- The modeller never sees the old model (user, 2026-10-03: "When the subagent works on the new model it shall not have seen the old one"): before its worktree is handed over, the old `tools/models/machines/stone_furnace.py`, `data/models/stone_furnace.obj` and `.mtl` are deleted from it, and its brief names the reference sheet, the record, the kit and the workbench only, never the old script, the old previews or 0204's log entry. The design stage writes the block from the reference sheet.
-- Rounds: the implementer hands back previews from the workbench (0207); the main agent sends them; the user says what to change; the same agent iterates until the user accepts. The accepted model lands with its reference sheet in `doc/art/`.
+- The modeller never sees the old model (user, 2026-10-03: "When the subagent works on the new model it shall not have seen the old one"): before its worktree is handed over, the old `tools/models/machines/stone_furnace.py`, `data/models/stone_furnace.obj` and `.mtl` are deleted from it, and its brief names the reference sheet, the record, the kit and the workbench only, never the old script, the old previews or 0204's log entry. The model is made in a sealed lab (The workflow that produced the model, below), not from a specification.
+- Rounds: the modeller hands back previews from its lab; the main agent renders the game's previews and sends them with the hero image; the user says what to change; the same modeller iterates until the user accepts; an implementer integrates the accepted script. The accepted model gets its page in `doc/art/booklet.md` with the user's sign off.
 - What is learned about the kit (primitives the look needs, a material or shading rule) goes into `tools/models/kit.py`, `DESIGN.md` and the log, so the next machine starts from it. The other machines follow one at a time, each its own item.
 
 ## Controls
@@ -22,7 +22,17 @@ The stone furnace is the first machine made in the chosen art direction, from no
 - The workbench's check passes, the previews read as the reference sheet, the suite passes with the new footprint, an old save loads.
 - The couch: the user stands next to it and it feels formidable.
 
-## Specification (design, 2026-10-03)
+## The workflow that produced the model
+
+The specification above was tried once (round one, 2026-10-03) through the pipeline's design and implement stages and gave a model as flat as the placeholders; why is in `doc/log/2026-10-03.md`, "The stone furnace from the ground up (0212)". The model the user accepted on 2026-10-04 came from this workflow instead, which is the one for every machine after it (`CLAUDE.md`, Work flow, Model items):
+
+1. **Engineering by the design stage, no part table.** The design stage settles the footprint, the record, the tests and the old save rule. It does not describe the model.
+2. **A sealed lab, built by the main agent.** `tools/model_lab/make_furnace_lab.sh` builds `tmp/furnace_lab/`: `BRIEF.md` (the user's words on the look, the footprint in cells, the renderer's limits, the budget of 3200 triangles and 8 materials, the commands), the reference images at full size, copies of the Blender wrapper, the kit, the palette and the record reader, the records (the machine's `open_cells` stripped first when it has any), a registry with one machine and a stub script, `check.py` (the budget, the materials, the footprint bounds) and `render.py` (the workbench's five cameras in Blender, a capsule for scale). Nothing else of the repository: no sibling script, no modelling rule from `DESIGN.md`, no old model, no log.
+3. **The modeller, alone in the lab.** An Opus agent told that the lab is sealed: it reads, writes and runs only inside it and ignores instructions that reach it from elsewhere. It reads every reference image, builds with the kit or with Blender directly, checks, renders, looks and iterates on its own until its previews read as the sheet, then reports the triangle count, the materials, the cells it left empty, its choices where the sheet was ambiguous and what it would add with more budget.
+4. **The hand back through the game.** The main agent copies the lab's OBJ and MTL into the item's worktree, runs the game's check and `tools/model_preview.sh`, and sends the game's previews with the hero image. The user's notes go back to the same modeller; the loop runs until the user accepts.
+5. **The integration by an implementer.** The accepted script and palette entries are copied into the worktree, the OBJ regenerated and compared byte for byte with the lab's, the record's open cells set to what the model leaves empty, the tests and docs adapted; the verifier reads that, the main agent lands it, and the booklet gets the machine's page with the sign off.
+
+## Specification (design, 2026-10-03; round one, superseded by the lab model)
 
 Written from the reference sheet (`work/art/2026-10-03-round-4/furnace/banana2_0.png`, the hero view; `work/art/2026-10-03-furnace-sheet/`: `turnaround`, `plan`, `rear_quarter`, `detail_mouth`, `detail_top`, `sheet.png`), the record, the kit and the workbench. The designer did not open the old script, the old OBJ or MTL, or any preview of the old furnace, and this section does not describe them.
 
@@ -205,3 +215,13 @@ A fifth workbench camera, so the sheet's hero angle (the mouth and the console t
 - `loop_model_preview_test.odin`, `test_the_preview_cameras_frame_the_scene`: `front_left := model_preview_camera(.Front_Left, bounds)` expecting `position.x > bounds.model_maximum.x && position.z > centre.z` and a distance from the centre of at least `least`.
 - Five cameras at four phases give 20 files per machine. Docs in the same commit: `doc/build.md`, Models (the `--model-preview` bullet: "Five cameras (`front` from the front right, `front_left` from the front left, `back` ... give 20 files per machine") and the flags table ("five cameras"); `doc/code_map.md`, the `loop_model_preview.odin` line ("five cameras"); the header comment of `tools/model_preview.sh`.
 - The previews to report become six: `stone_furnace_front_left_rest.png` must show the hearth and the coals on the right, the console with its screens and lever on the left, the feed pipe above it and the chimney on top, read against the hero image (`work/art/2026-10-03-round-4/furnace/banana2_0.png`).
+
+### Round two (2026-10-04)
+
+The model the specification above describes (round one, 800 triangles) was replaced by a model made in a sealed lab from the reference images alone, which the user accepted on 2026-10-04; the specification reads as history. What changed in the tree because of it:
+
+- The budget: `MODEL_BODY_TRIANGLES_MAXIMUM` is 3200 for every body (`src/model_check.odin`, `DESIGN.md`, `doc/build.md`); the furnace's body is 3173 triangles.
+- The open cells: removed from the record, since the model fills its whole footprint; `machine_test.odin` and `records_test.py` follow.
+- The palette: round one's six entries gave way to the lab's (`furnace_stone`, `furnace_mortar`, `furnace_iron`, `furnace_rust`, `console_white`, `signal_glow`).
+- The kit helpers `square_frustum`, `quad_prism` and `stud` were removed unused; `kit.py` is as on `main`.
+- The furnace's emissive test holds only the fire's centroid to the front (the console's buttons glow orange too) and asserts the console's green and cyan lights.

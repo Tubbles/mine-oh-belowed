@@ -119,16 +119,16 @@ test_a_clean_spinning_part_passes :: proc(t: ^testing.T) {
 	testing.expect_value(t, len(problems), 0)
 }
 
-// The maxima only: 200 triangles per body is a guide (0207, the
-// approval).
+// The maxima only: a body of 3200 (0212) and a part of 200.
 @(test)
 test_a_model_over_the_budget_is_reported :: proc(t: ^testing.T) {
 	empty := empty_test_layers()
-	over := model_budget_problems(triangles_layers(801), empty, 1)
+	over := model_budget_problems(triangles_layers(MODEL_BODY_TRIANGLES_MAXIMUM + 1), empty, 1)
 	testing.expect_value(t, len(over), 1)
 	if len(over) == 1 {
-		testing.expect(t, strings.contains(over[0].detail, "801"), over[0].detail)
+		testing.expect(t, strings.contains(over[0].detail, "3201"), over[0].detail)
 	}
+	testing.expect_value(t, len(model_budget_problems(triangles_layers(MODEL_BODY_TRIANGLES_MAXIMUM), empty, 1)), 0)
 	testing.expect_value(t, len(model_budget_problems(triangles_layers(199), empty, 1)), 0)
 	part := model_budget_problems(triangles_layers(300), triangles_layers(201), 1)
 	testing.expect_value(t, len(part), 1)

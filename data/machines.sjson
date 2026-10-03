@@ -327,7 +327,7 @@ machines = [
 		motion = {kind = "glow", period_seconds = 2}
 		item = "stone_furnace"
 		kind = "furnace"
-		footprint = {width = 2, depth = 2, height = 2}
+		footprint = {width = 10, depth = 10, height = 12}
 		fuel_slots = 1
 		input_slots = 1
 		output_slots = 2

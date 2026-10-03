@@ -51,7 +51,7 @@ test_placing_a_machine_lifts_loose_items_onto_it :: proc(t: ^testing.T) {
 	coal := test_item(content.items, "coal")
 	spill_stack(&world, content.blocks, {4, 1, 4}, {coal, 3})
 	spill_stack(&world, content.blocks, {8, 1, 4}, {coal, 1})
-	machine := test_machine(content.machines, "stone_furnace")
+	machine := test_machine(content.machines, "steel_furnace")
 	placement := placement_at(&world, content, {}, machine, {4, 1, 4}, 0)
 	testing.expect(t, placement.valid)
 	commit_placement(&world, content.machines, placement)
@@ -70,7 +70,7 @@ test_placing_a_machine_clears_ground_cover :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_loose_item_test_world(content)
 	tuft := test_block(content.blocks, "grass_tuft")
-	machine := test_machine(content.machines, "stone_furnace")
+	machine := test_machine(content.machines, "steel_furnace")
 	set_blocks(&world, tuft, {4, 1, 4}, {5, 1, 5})
 	placement := placement_at(&world, content, {}, machine, {4, 1, 4}, 0)
 	testing.expect(t, placement.valid)
@@ -84,7 +84,7 @@ test_placing_a_machine_clears_ground_cover :: proc(t: ^testing.T) {
 	testing.expect(t, !cell_takes_machine(&world, content.blocks, {4, 2, 4}))
 	set_blocks(&world, tuft, {10, 1, 10})
 	players := []Player{make_test_player(content.blocks, {16.5, 1, 16.5})}
-	players[0].inventory.slots[0] = Item_Stack{test_item(content.items, "stone_furnace"), 1}
+	players[0].inventory.slots[0] = Item_Stack{test_item(content.items, "steel_furnace"), 1}
 	players[0].target = Raycast_Hit{hit = true, block = {10, 1, 10}, face = .Positive_Y, adjacent = {10, 2, 10}}
 	aimed := placement_for_player(&world, content, players, 0)
 	testing.expect_value(t, aimed.origin.y, 1)

@@ -85,10 +85,10 @@ class RecordsTest(unittest.TestCase):
         self.assertEqual((motion.kind, motion.axis, motion.amplitude, motion.period_seconds), ("pump", "y", -0.25, 0.8))
         self.assertEqual(records.pivot(MACHINES["bore_drill"]), (0.0, 0.0, 0.0))
         furnace = MACHINES["stone_furnace"]
-        self.assertEqual(furnace.footprint, records.Footprint(2, 2, 2))
+        self.assertEqual(furnace.footprint, records.Footprint(10, 10, 12))
         self.assertEqual(furnace.ports, ())
         self.assertEqual(records.machine_for_model(MACHINES, "arm").id, "burner_inserter")
-        self.assertEqual(records.footprint_box(furnace), ((-1.0, -1.0, 0.0), (1.0, 1.0, 2.0)))
+        self.assertEqual(records.footprint_box(furnace), ((-5.0, -5.0, 0.0), (5.0, 5.0, 12.0)))
 
 
 if __name__ == "__main__":

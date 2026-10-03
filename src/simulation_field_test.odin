@@ -1171,7 +1171,7 @@ test_the_field_opens_a_panel_on_open_aimed_and_turns_a_switch_on_interact :: pro
 	feet := state.players[0].field.position
 	frame := add_frame(&state.world.entities.frames, feet + {0, 0, 5 * POSITION_UNITS_PER_METRE}, frame_axes({0, UNIT_VECTOR_ONE, 0}, 0), 500)
 	entities := &state.world.entities
-	furnace := add_entity(entities, simulation_content.machines, test_machine(simulation_content.machines, "stone_furnace"), {}, 0, frame)
+	furnace := add_entity(entities, simulation_content.machines, test_machine(simulation_content.machines, "steel_furnace"), {}, 0, frame)
 	power_switch := add_entity(entities, simulation_content.machines, test_machine(simulation_content.machines, "power_switch"), {3, 0, 0}, 0, frame)
 	aim := proc(state: ^Simulation_State, frame: Frame_Id, handle: Entity_Handle) {
 		state.players[0].field.frame_target = Frame_Raycast_Hit{hit = true, frame = frame, occupant = {handle = entity_occupant_handle(handle)}}

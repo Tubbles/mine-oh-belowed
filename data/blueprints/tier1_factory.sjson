@@ -11,8 +11,9 @@
 // Coordinates are relative to the cell above the origin: {vein = "iron"}
 // is the registered iron vein nearest the landing pad (the starter vein),
 // "pad" the landing pad's centre, [x, y, z] a world cell. y = 0 stands on
-// the surface, so the layout needs flat ground over about 12 by 11 blocks
-// east of the vein centre. place takes the machine's minimum corner and a
+// the surface, so the layout needs flat ground over about 20 by 27 blocks
+// round the vein centre (x -2 to 17, z -13 to 13): a stone furnace is 10 by
+// 10 by 12 blocks (work item 0212). place takes the machine's minimum corner and a
 // rotation (0 +x, 1 +z, 2 -x, 3 -z): a belt's direction, an inserter's
 // drop side, a drill's output side. See doc/commands.md.
 origin = {vein = "iron"}
@@ -33,29 +34,29 @@ commands = [
 	// Furnace one south of the belt: input, coal and output.
 	"place stone_furnace 4 0 2 0"
 	"place burner_inserter 4 0 1 1"
-	"place burner_inserter 6 0 2 2"
-	"place wooden_chest 7 0 2 0"
-	"place burner_inserter 5 0 4 1"
-	"place wooden_chest 5 0 5 0"
+	"place burner_inserter 14 0 2 2"
+	"place wooden_chest 15 0 2 0"
+	"place burner_inserter 5 0 12 1"
+	"place wooden_chest 5 0 13 0"
 	// Furnace two north of the belt: input, coal and output.
-	"place stone_furnace 6 0 -3 0"
+	"place stone_furnace 6 0 -11 0"
 	"place burner_inserter 6 0 -1 3"
-	"place burner_inserter 8 0 -2 2"
-	"place wooden_chest 9 0 -2 0"
-	"place burner_inserter 7 0 -4 3"
-	"place wooden_chest 7 0 -5 0"
+	"place burner_inserter 16 0 -2 2"
+	"place wooden_chest 17 0 -2 0"
+	"place burner_inserter 7 0 -12 3"
+	"place wooden_chest 7 0 -13 0"
 	// The belt's end into an overflow chest.
 	"place burner_inserter 8 0 0 0"
 	"place wooden_chest 9 0 0 0"
 	// Coal: the furnaces' chests, the drills and the inserters that move
 	// no fuel of their own.
-	"insert coal 50 7 0 2"
-	"insert coal 50 9 0 -2"
+	"insert coal 50 15 0 2"
+	"insert coal 50 17 0 -2"
 	"insert coal 20 -2 0 -2"
 	"insert coal 20 0 0 1"
 	"insert coal 5 4 0 1"
 	"insert coal 5 6 0 -1"
-	"insert coal 5 5 0 4"
-	"insert coal 5 7 0 -4"
+	"insert coal 5 5 0 12"
+	"insert coal 5 7 0 -12"
 	"insert coal 5 8 0 0"
 ]

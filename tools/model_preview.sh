@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Renders the machines' models from the workbench's four cameras at rest
-# and at three phases (work item 0207, doc/build.md, The workbench): 16
+# Renders the machines' models from the workbench's five cameras at rest
+# and at three phases (work item 0207, doc/build.md, The workbench): 20
 # PNG files per machine in $MODEL_PREVIEW_DIRECTORY, tmp/model_preview by
 # default. Always under a virtual display of its own (xvfb-run picks a
 # free one and stops it), also when a display is set, so no window opens

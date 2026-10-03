@@ -63,7 +63,8 @@ test_machine_data_loads :: proc(t: ^testing.T) {
 	testing.expect_value(t, machines.machines[test_machine(machines, "iron_chest")].slot_count, 32)
 	furnace := machines.machines[test_machine(machines, "stone_furnace")]
 	testing.expect_value(t, furnace.kind, Machine_Kind.Furnace)
-	testing.expect_value(t, furnace.footprint, [3]i32{2, 2, 2})
+	testing.expect_value(t, furnace.footprint, [3]i32{10, 12, 10})
+	testing.expect_value(t, furnace.open_cell_box_count, 0)
 	testing.expect_value(t, furnace.speed_percent, 100)
 	testing.expect_value(t, furnace.fuel_power_watts, 90_000)
 	testing.expect_value(t, furnace.item, test_item(items, "stone_furnace"))
