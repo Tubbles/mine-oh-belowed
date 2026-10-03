@@ -23,3 +23,67 @@ What the genre research of 2026-09-26 changes in our design, with the sources th
 - Spaghetti and the rebuild spiral: players get bored by their own mess and start over, and a teardown stops the factory ([forum](https://forums.factorio.com/viewtopic.php?t=32190), [forum](https://forums.factorio.com/viewtopic.php?t=103321)). Blueprints are post alpha. Foundations and floors leave room, and the quests teach building the new line beside the old one.
 - Controller weak spots. Factorio's Switch port made every widget stick navigable and added a radial quick panel, and picking one entity among dense neighbours stays the weak point ([FFF-370](https://factorio.com/blog/post/fff-370), [GamingOnLinux](https://www.gamingonlinux.com/2023/06/factorio-adds-controller-support-in-experimental-update/)). A Satisfactory console review praised the radial menus but found first person placement "harder than it needs to be" ([review](https://lootlevelchill.com/reviews/satisfactory-console-edition-review/)). FOUNDRY and Dyson Sphere Program have no real gamepad support. Techtonica was developed controller only at first "to make sure we did the controls well" ([developer post](https://techtonicagame.com/techtonica-has-an-early-access-release-date-controller-support-and-more/)). We do the same, add selection assist for dense clusters, and keep third person for placement.
 - Pace. Wube cut their first Space Age playthrough from 370 hours with "lower the cost of stuff, reduce unnecessary recipe steps" ([FFF-417](https://factorio.com/blog/post/fff-417)). Our depth comes from byproducts and alternative routes, not step count.
+
+## How machines look in the genre (0211)
+
+Source research for the art direction booklet (0211), judged against the direction the session found: astro-industrial punk, clean space technology and rough dirty industry interleaved all over every machine, the ratio sliding from 80 rough at the wood and coal stage to 80 clean late, everything dirty and used, automated machines nobody enters, Satisfactory's sense of size and the readable shapes of Techtonica and Astroneer ([log](log/2026-10-03.md), The art direction). The look notes come from the official screenshots on each game's store page or press kit, the numbers and quotes from the wikis and developer posts linked.
+
+### Satisfactory
+
+- Look: tall boxy machines in the default FICSIT swatch, orange (#FA9549) panels on blue grey (#5F668C), over dark steel frames with grilles and hazard stripes ([Customizer](https://satisfactory.wiki.gg/wiki/Customizer), [store screenshots](https://store.steampowered.com/app/526870/)). Smelting buildings stand in long rows with black smoke from their stacks.
+- Scale: the Pioneer is 1.8 m tall ([Pioneer](https://satisfactory.wiki.gg/wiki/Pioneer)). The first machines already tower over the player: a smelter is 8.5 m high ([Smelter](https://satisfactory.wiki.gg/wiki/Smelter)), a biomass burner 10 m ([Biomass Burner](https://satisfactory.wiki.gg/wiki/Biomass_Burner)), a miner 18 m ([Miner](https://satisfactory.wiki.gg/wiki/Miner)). The late ones are landmarks: a coal generator 36 m with its chimney ([Coal-Powered Generator](https://satisfactory.wiki.gg/wiki/Coal-Powered_Generator)), a nuclear plant 39 m ([Nuclear Power Plant](https://satisfactory.wiki.gg/wiki/Nuclear_Power_Plant)), the space elevator 118 m and visible from all parts of the map ([Space Elevator](https://satisfactory.wiki.gg/wiki/Space_Elevator)).
+- State: one indicator light per building with four meanings, solid green working, blinking yellow standby, blinking red no power, white or blue overclocked ([Indicator Light](https://satisfactory.wiki.gg/wiki/Indicator_Light)). Smoke and animation run only while a machine processes. The nuclear plant's tower steams when it has fuel and a blue glow lies on the floor under it.
+- Tiers: Miner Mk.1 to Mk.3 keep one 6 by 14 by 18 m footprint while the cost moves from iron plates and concrete to supercomputers and fused modular frames. Progress shows mostly as new and bigger buildings, all in the same paint.
+- What we take: the size. The furnace stands well over the astronaut from the start and the late machines read as landmarks from far away. One status light per machine with a few fixed colours.
+- What we leave: one painted swatch on every machine and plating that stays clean. Our machines are dirty and used, and their mix of rough and clean changes with the tier.
+
+### Techtonica
+
+- Look: squat, rounded machines with one big readable feature each ([press kit](https://techtonicagame.com/press-kit/)). Smelters are slate blue drums with copper orange lids and a glowing grille window. Assemblers carry worn red paint with chipped edges, chrome pistons, hazard stripes and yellow welding arms. Accumulators show their copper coils. Small screens, cyan holograms and fluorescent tubes sit on and around the machines. The world is a set of caverns lit by "bioluminescent flora", with "Eco-Brutalist" building parts ([store](https://store.steampowered.com/app/1457320/Techtonica/)).
+- Scale: machines stand about chest to head height of the player. The smelter takes 2 by 2 cells with 4 by 4 blocked, and Mk.II and Mk.III keep that footprint ([Smelter](https://techtonica-calculator.com/seiten/Items_page.php?id=Smelter), [Smelter MKIII](https://www.techtonica-calculator.com/seiten/Items_page.php?id=Smelter_MKIII)).
+- State: the furnace window and lid glow orange with heat rising over the top, welding arms throw sparks, and a hall of smelters reads by its rows of lit windows.
+- Tiers: the same footprint with an "enhanced" description and electricity from Mk.III on. Tiers differ in detail more than in shape or size.
+- What we take: shapes that read at a glance, the glowing mouth as the face of a furnace, chipped paint over metal, coils, pistons and small screens as the clean and rough parts of a mid tier machine.
+- What we leave: machines at human scale, since ours grow big, and the cavern glow as the main light, since our factories stand on the surface and in space.
+
+### Factorio
+
+- Look: seen from above, in muted brown, grey and rust ([store screenshots](https://store.steampowered.com/app/427520/)). Boilers and steam engines trail white plumes, furnaces glow orange in the dark. For the Space Age foundry Wube wanted "heavy, industrial, powerful", with "massive moving parts" blocked out in 3D before the paint, and the big mining drill exaggerates "aggressive ground penetration" with rails pressed into the ground ([FFF-387](https://www.factorio.com/blog/post/fff-387)). The rule Wube states for Vulcanus: "when we diverge from reality we do it intentionally", and usability wins over realism ([FFF-386](https://factorio.com/blog/post/fff-386)).
+- Scale: the character is small beside a 3 by 3 assembler ([Assembling machine 3](https://wiki.factorio.com/Assembling_machine_3)) and tiny beside the 9 by 9 rocket silo ([Rocket silo](https://wiki.factorio.com/Rocket_silo)). Size comes from the top down view of the whole base more than from one machine.
+- State: glow, smoke, steam and looping animation while working. The silo shows its progress as a sequence: doors open, the rocket rises, launches, the doors close.
+- Tiers: the Space Age machines take the theme of their planet (the foundry is the metallurgy of Vulcanus), so a late machine looks like where it was made.
+- What we take: machines that show their work with big moving parts and heat, drills that grip the ground, a rocket launch told as a sequence, and the rule that every departure from realism is chosen for readability.
+- What we leave: the uniform dieselpunk brown without a clean counterpart, and the top down reading. Our machines are seen up close by a player beside them.
+
+### Dyson Sphere Program
+
+- Look: clean science fiction, dark grey and white plating with cyan and blue light, glowing towers and beams, the whole factory lit at night ([store screenshots](https://store.steampowered.com/app/1366540/)). A review calls it "vibrant and colourful" next to "Factorio's brownish aesthetic" and the night lighting "fantastic" ([bit-tech](https://bit-tech.net/reviews/dyson-sphere-program-review/1/)).
+- Scale: the factory wraps a small planet seen from the player's mecha, other planets hang in the sky, and the end game is a sphere around a star. Size comes from the planet and the star rather than from one machine.
+- State: light. Machines, belts and power lines glow, blue beams rise from buildings to the sky.
+- Tiers: the screenshots go from a few machines on a bare globe to a planet covered in lit structures and the sphere itself.
+- What we take: light as the main state cue at the high end, panel lines and light strips as the clean world at its 80 percent, and beams to the sky for the launch machines.
+- What we leave: the spotless finish. Our high tier is smudged and keeps a vent, a pipe or a cog.
+
+### Astroneer
+
+- Look: low poly with "bold geometric shapes and vibrant color palettes" and no textures at all, the made objects with "less of a faceted look" than the terrain ([The Art of Astroneer](https://blog.astroneer.space/p/the-art-of-astroneer-low-poly/)), "curved geometric, sort of broad vibrant colors" ([Wikipedia](https://en.wikipedia.org/wiki/Astroneer)). The modules are white rounded shells with blue stripes, orange trim, round hatches and big dials ([store screenshots](https://store.steampowered.com/app/361420/)).
+- Scale: every object has a size class, small, medium, large or extra large, and plugs into a slot of that size ([Items](https://astroneer.wiki.gg/wiki/Items)). The smelting furnace is a large module ([Smelting Furnace](https://astroneer.wiki.gg/wiki/Smelting_Furnace)), the biggest modules stand two to three astronauts high.
+- State: the pages read do not describe state cues beyond the furnace stopping when its storage is full.
+- Tiers: progression is the size class, each printer making the next size up. The material and finish stay the same.
+- What we take: silhouettes made of a few large shapes, round hatches and oversized handles and dials, and white panels with one coloured stripe as the clean world of a machine.
+- What we leave: the untextured toy finish and the playful palette. Our clean parts carry grime, and our rough parts carry rivets, iron and stone.
+
+### FOUNDRY
+
+- Look: "soft, vibrant, and cleanly illustrated", metal with "weathered, chipped edges" that stays clean rather than grimy, each building with "unique shapes and colour palettes" so categories stay apart when "placed in multiple rows of hundreds", and soft biomes behind "heavy, bulky, industrial" machines ([80.lv interview](https://80.lv/articles/channel-3-entertainment-on-creating-the-robot-factory-builder-game-foundry)). The screenshots show navy and yellow robot arms on arches welding robots with sparks, cyan neon strips, smokestacks with dark smoke and cooling towers ([store screenshots](https://store.steampowered.com/app/983870/)).
+- Scale: a voxel world where the player robot stands beside machines several times its height and towers far above.
+- State: sparks, smoke and moving arms on the assembly lines, neon on the floors and walls.
+- Tiers: the research tree unlocks "more advanced, complex and faster technology" after manual crafting ([Paradox](https://www.paradoxinteractive.com/games/foundry/about)).
+- What we take: the assembly line of robot arms throwing sparks, close to the assembler the user asked for, and the habit of checking a machine both alone and in a row of many, each family with its own shape.
+- What we leave: chipped but clean metal and neon as decoration. Our metal is dirty and our lights mean something.
+
+### Across the six
+
+- In the material read, none of the six mixes clean and rough on one machine as a rule. Satisfactory, Techtonica and FOUNDRY sit on painted industry with a clean edge, Dyson Sphere Program and Astroneer on clean technology. The interleave and its sliding ratio are ours.
+- Size is Satisfactory's alone among them at the scale of one machine. Readability comes from a few large shapes (Astroneer, Techtonica) and from one shape and palette per family (FOUNDRY).
+- Every game shows a working machine by motion, heat or light. Satisfactory adds one status light with fixed colours on every building.
