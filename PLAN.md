@@ -74,6 +74,8 @@ Verify: couch test 6. Chapters 1 to 7 played through by two players on the couch
 
 The three modes at world creation, the suit's tanks and their fill points, the pod's oxygen generator and panels, the slow drain and the quiet death, the respawn action, keep inventory as a setting, the death pack, sealed rooms and the first dome with crops, weather's drains, the repair kit and the first breakdowns.
 
+The pod's sealed room (the cabin and the airlock behind its hatches) and its oxygen generator with an unlimited supply exist since 0198; M15 adds the suit's drain reading `sealed_room_at_feet`, the generator's water and rate, and the bench as the place crafting happens in survival.
+
 Verify: couch test 7. A survival world from the pod to the first sealed dome with crops, with one death and the pack recovered, and a peaceful world where none of it shows.
 
 ### M16 Low orbit and the station (phase 8)

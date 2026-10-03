@@ -32,6 +32,10 @@ Motion_Kind :: enum u8 {
 	// The inserter's arm (model_arm.odin): its parts follow the cycle,
 	// not the clock, so it needs no axis and no period.
 	Arm,
+	// Moves the part along the axis by amplitude blocks times the open
+	// fraction a hatch's state gives (hatch_open_fraction, work item
+	// 0198), not the clock.
+	Slide,
 }
 
 @(rodata)
@@ -43,6 +47,7 @@ motion_kind_names := [Motion_Kind]string {
 	.Bob   = "bob",
 	.Glow  = "glow",
 	.Arm   = "arm",
+	.Slide = "slide",
 }
 
 @(rodata)
@@ -117,6 +122,10 @@ validate_motion_definition :: proc(definition: Machine_Definition) -> string {
 		return fmt.tprintf("machine %q has a motion but no model", definition.id)
 	case kind == .Arm:
 		return definition.kind == "inserter" ? "" : fmt.tprintf("machine %q has an arm motion but is no inserter", definition.id)
+	case kind == .Slide && definition.kind != "hatch":
+		return fmt.tprintf("machine %q has a slide motion but is no hatch", definition.id)
+	case kind == .Slide && (motion.amplitude <= 0 || motion.amplitude > MAXIMUM_FOOTPRINT_SIZE):
+		return fmt.tprintf("machine %q has a slide amplitude outside 0 to %d cells", definition.id, MAXIMUM_FOOTPRINT_SIZE)
 	case motion.period_seconds <= 0:
 		return fmt.tprintf("machine %q needs a positive motion period_seconds", definition.id)
 	}
@@ -151,6 +160,19 @@ motion_phase :: proc(tick: u64, alpha: f32, tick_rate: int, period_seconds: f32,
 	}
 	cycles := (f64(tick) + f64(alpha)) / period_ticks + f64(offset)
 	return f32(cycles - math.floor(cycles))
+}
+
+// How far open a hatch's door is drawn (work item 0198), from its state,
+// not the clock: eased from the tick of its last toggle (toggle_tick is
+// that tick plus one, 0 when never toggled) over period_seconds, flat at
+// both ends. Presentation only.
+hatch_open_fraction :: proc(open: bool, toggle_tick: u64, tick: u64, alpha: f32, tick_rate: int, period_seconds: f32) -> f32 {
+	if toggle_tick == 0 || period_seconds <= 0 || tick_rate <= 0 {
+		return open ? 1 : 0
+	}
+	elapsed := (f32(f64(tick) - f64(toggle_tick - 1)) + alpha) / (period_seconds * f32(tick_rate))
+	eased := motion_stroke(clamp(elapsed, 0, 1) / 2)
+	return open ? eased : 1 - eased
 }
 
 // A fixed share of a period from 0 up to 1 per entity, hashed from its
@@ -230,6 +252,8 @@ motion_transform :: proc(motion: Machine_Motion, footprint: [3]i32, phase: f32) 
 		return rotation_about_pivot(motion.axis, 2 * math.PI * motion.amplitude * phase, pivot)
 	case .Swing:
 		return rotation_about_pivot(motion.axis, 2 * math.PI * motion.amplitude * motion_stroke(phase), pivot)
+	case .Slide:
+		return translation_matrix(direction * motion.amplitude * phase)
 	case .None, .Glow, .Arm:
 	}
 	return translation_matrix({})

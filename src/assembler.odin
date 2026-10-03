@@ -198,6 +198,30 @@ validate_crafting_station_definition :: proc(definition: Machine_Definition) -> 
 	return ""
 }
 
+// The pod's crafting bench (work item 0198): a crafting station placed by
+// the world with the hand maker, so its panel offers the hand recipes.
+validate_crafting_bench_definition :: proc(definition: Machine_Definition) -> string {
+	maker, maker_found := parse_named_enum(recipe_maker_names, definition.recipe_maker)
+	if !maker_found || maker != .Hand {
+		return fmt.tprintf("crafting bench %q needs the recipe_maker hand", definition.id)
+	}
+	no_power := definition.fuel_slots == 0 && definition.fuel_power_kilowatts == 0 && definition.electric_power_kilowatts == 0
+	no_slots := definition.slots == 0 && definition.input_slots == 0 && definition.output_slots == 0
+	if !no_power || !no_slots || definition.speed != 0 || len(definition.fluid_ports) > 0 {
+		return fmt.tprintf("crafting bench %q may not list slots, fuel, power, speed or fluid ports", definition.id)
+	}
+	if definition.item != "" {
+		return fmt.tprintf("crafting bench %q cannot be placed by an item", definition.id)
+	}
+	return ""
+}
+
+// A crafting station or the pod's crafting bench: a place the player
+// crafts at, whose panel is the recipe browser's station mode.
+machine_is_crafting_station :: proc(machine: Machine) -> bool {
+	return machine.kind == .Crafting_Station || machine.kind == .Crafting_Bench
+}
+
 // The hand queue moves no fluid, so a station's recipes take and give
 // items only.
 crafting_station_recipes_problem :: proc(machines: Machine_Registry, recipes: Recipe_Registry) -> string {

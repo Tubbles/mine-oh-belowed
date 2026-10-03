@@ -453,7 +453,7 @@ place_missing_machines :: proc(world: ^World, content: Simulation_Content) {
 		if present[index] || machine.kind == .Belt || machine.kind == .Schematic_Crate {
 			continue
 		}
-		add_entity(&world.entities, content.machines, Machine_Id(index), {200 + i32(index) * 8, 1, 200}, 0)
+		add_entity(&world.entities, content.machines, Machine_Id(index), {200 + i32(index) * MAXIMUM_FOOTPRINT_SIZE, 1, 200}, 0)
 	}
 }
 
@@ -463,9 +463,9 @@ machines_with_panels :: proc(world: ^World, content: Simulation_Content) -> []En
 	for _, occupant in world.entities.frames.occupants {
 		handle := entity_from_occupant(occupant.handle)
 		common := entity_common(&world.entities, handle)
-		// A crafting station's machine screen only forwards to the recipe
-		// browser, audited as its own case.
-		station := common != nil && content.machines.machines[common.machine].kind == .Crafting_Station
+		// A crafting station's or bench's machine screen only forwards to
+		// the recipe browser, audited as its own case.
+		station := common != nil && machine_is_crafting_station(content.machines.machines[common.machine])
 		if common != nil && !station && entity_has_panel(&world.entities, content.machines, handle) && handles[common.machine] == NO_ENTITY {
 			handles[common.machine] = handle
 		}
@@ -959,6 +959,13 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 		if foundation.alive && audit.content.machines.machines[foundation.machine].kind == .Crafting_Station {
 			audit_case(audit, {name = "crafting station", screens = {.Machine, .Recipes}, machine = foundation.handle, station = foundation.handle, walk_focus = true})
 			audit_case(audit, {name = "crafting station touch row", screens = {.Machine, .Recipes}, hud = true, machine = foundation.handle, station = foundation.handle, touch = true})
+			break
+		}
+	}
+	// The pod's crafting bench (0198): the station mode with the hand maker.
+	for foundation in simulation.world.entities.foundations.entries {
+		if foundation.alive && audit.content.machines.machines[foundation.machine].kind == .Crafting_Bench {
+			audit_case(audit, {name = "crafting bench", screens = {.Machine, .Recipes}, machine = foundation.handle, station = foundation.handle, walk_focus = true})
 			break
 		}
 	}

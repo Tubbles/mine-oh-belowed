@@ -93,6 +93,11 @@ World_Facts :: struct {
 	belt_line_count:  int,
 	belt_item_count:  int,
 	leaf_decay_count: int,
+	// A field session (work item 0198): whether the local player's feet
+	// are in a pod's sealed room and its supply.
+	field_session:      bool,
+	sealed_room_inside: bool,
+	sealed_room_oxygen: Oxygen_Supply,
 }
 
 // What the pages and the F4 overlay read besides Render_Facts and
@@ -183,10 +188,21 @@ world_page_lines :: proc(facts: World_Facts) -> []Diagnostics_Line {
 	append_line(&lines, false, "")
 	chunk := facts.player_chunk
 	append_line(&lines, false, "tick %d  chunk %d %d %d  biome %s", facts.tick, chunk.x, chunk.y, chunk.z, facts.biome_name)
+	if facts.field_session {
+		append_line(&lines, false, "%s", sealed_room_line(facts.sealed_room_inside, facts.sealed_room_oxygen))
+	}
 	append_entity_count_lines(&lines, facts.entity_counts)
 	append_line(&lines, false, "loose items %d  belt lines %d  items on belts %d", facts.loose_item_count, facts.belt_line_count, facts.belt_item_count)
 	append_line(&lines, facts.leaf_decay_count > 0, "leaf decay queued %d", facts.leaf_decay_count)
 	return lines[:]
+}
+
+// Whether the feet are in the pod's sealed room and its supply (0198).
+sealed_room_line :: proc(inside: bool, oxygen: Oxygen_Supply) -> string {
+	if !inside {
+		return "sealed room: outside"
+	}
+	return oxygen == .Unlimited ? "sealed room: inside the pod, oxygen unlimited" : "sealed room: inside the pod, no oxygen"
 }
 
 // WORLD_PAGE_KINDS_PER_LINE kinds per line, without None.

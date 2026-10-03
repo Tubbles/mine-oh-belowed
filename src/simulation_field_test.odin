@@ -35,6 +35,17 @@ start_field_test_session :: proc(config: Game_Config, content: Game_Content, rad
 	return session
 }
 
+// Opens the pod's closed hatches, as the end of the fall will (0200), so
+// a script walks out of the cabin (0198: a new world starts with them
+// closed).
+open_test_pod_hatches :: proc(state: ^Simulation_State, machines: Machine_Registry) {
+	for entry in state.world.entities.foundations.entries {
+		if entry.alive && machines.machines[entry.machine].kind == .Hatch && !entry.hatch_open {
+			toggle_hatch(&state.world.entities, machines, entry.handle, state.tick, nil)
+		}
+	}
+}
+
 field_test_content :: proc(session: ^Session, content: Game_Content) -> Simulation_Content {
 	simulation_content := session_simulation_content(content, session.technologies, session.field_content)
 	simulation_content.generator = &session.generator
@@ -125,6 +136,8 @@ test_two_field_simulations_hash_alike_and_part_on_one_input :: proc(t: ^testing.
 	second := start_field_test_session(config, content)
 	defer end_session(second)
 	first_content, second_content := field_test_content(first, content), field_test_content(second, content)
+	open_test_pod_hatches(&first.simulation, first_content.machines)
+	open_test_pod_hatches(&second.simulation, second_content.machines)
 	// The dug topsoil held, its items and the credit (a place turns an
 	// item into credit first, so the credit alone may rise).
 	held_topsoil :: proc(session: ^Session, content: Simulation_Content) -> i64 {
@@ -169,6 +182,8 @@ test_two_field_simulations_hash_alike_after_a_walk_over_dug_ground :: proc(t: ^t
 	second := start_field_test_session(config, content)
 	defer end_session(second)
 	first_content, second_content := field_test_content(first, content), field_test_content(second, content)
+	open_test_pod_hatches(&first.simulation, first_content.machines)
+	open_test_pod_hatches(&second.simulation, second_content.machines)
 	walk := Input_Frame{move = {0, 1}, pressed = {.Move}}
 	dig: Field_Raycast_Hit
 	dig_radius: i64
@@ -440,9 +455,16 @@ test_a_new_world_sinks_the_pod_in_its_crater_and_players_spawn_in_the_cabin :: p
 	machine := content.machines.machines[pod.machine]
 	testing.expect_value(t, pod.origin, pod_origin(machine))
 	testing.expect_value(t, frame_cell_count(&state.world.entities.frames, frame.id), int(pod.size.x * pod.size.y * pod.size.z))
+	hatches := 0
 	for foundation in state.world.entities.foundations.entries {
 		testing.expect(t, !foundation.alive || content.machines.machines[foundation.machine].kind != .Foundation, "a foundation was laid")
+		if foundation.alive && content.machines.machines[foundation.machine].kind == .Hatch {
+			hatches += 1
+			testing.expect(t, !foundation.hatch_open, "a new world's hatch starts closed")
+		}
 	}
+	testing.expect_value(t, hatches, 2)
+	testing.expect_value(t, len(state.world.entities.sealed_rooms), 1)
 	generation := make_planet_generation(state.world.settings.seed, state.world.planet, state.field.spacing_millimetres)
 	site, heading := field_home_site(generation, state.world.planet)
 	// Cell (0, 0, 0)'s base stands on the site (free_frame_at).
@@ -502,9 +524,10 @@ test_two_new_worlds_from_one_seed_agree :: proc(t: ^testing.T) {
 
 // A world saved before 0199, its pod on a pad of a hundred foundations
 // and its record without the crater, loads: the record takes the data's
-// crater, the pod and the pad stay, the spawn stands in the cabin on the
-// pad, a pad foundation beside the pod picks up and returns a foundation
-// and one under it is refused.
+// crater, the pad stays, the old pod (6 by 8 by 6) is replaced by the
+// record's on a frame of its own standing on the pad's top (0198), the
+// spawn stands in its cabin, and a pad foundation beside the old pod
+// picks up and returns a foundation.
 @(test)
 test_an_old_save_with_a_pad_still_loads :: proc(t: ^testing.T) {
 	config := test_field_game_config()
@@ -516,8 +539,18 @@ test_an_old_save_with_a_pad_still_loads :: proc(t: ^testing.T) {
 	machines := simulation_content.machines
 	new_pod, _, _ := find_test_pod(entities, machines)
 	pod_machine := new_pod.machine
-	testing.expect(t, remove_entity(entities, machines, entity_at(entities, new_pod.origin, new_pod.frame)))
-	release_empty_frame(entities, new_pod.frame)
+	for &entry in entities.foundations.entries {
+		if entry.alive && entry.frame == new_pod.frame {
+			testing.expect(t, remove_entity(entities, machines, entry.handle))
+		}
+	}
+	for entry in entities.chests.entries {
+		if entry.alive && entry.frame == new_pod.frame {
+			testing.expect(t, remove_entity(entities, machines, entry.handle))
+		}
+	}
+	_, pod_frame_left := find_frame(&entities.frames, new_pod.frame)
+	testing.expect(t, !pod_frame_left, "the new pod's frame goes with it and its fixtures")
 	generation := make_planet_generation(state.world.settings.seed, state.world.planet, state.field.spacing_millimetres)
 	site, heading := field_home_site(generation, state.world.planet)
 	foundation := field_pad_foundation(simulation_content)
@@ -530,7 +563,13 @@ test_an_old_save_with_a_pad_still_loads :: proc(t: ^testing.T) {
 			}
 		}
 	}
-	add_entity(entities, machines, pod_machine, {-4 + (10 - 6) / 2, 1, -4 + (10 - 6) / 2}, POD_ROTATION, frame_id)
+	old_origin := World_Coordinate{-4 + (10 - 6) / 2, 1, -4 + (10 - 6) / 2}
+	old_size := [3]i32{6, 8, 6}
+	old_pod := add_entity(entities, machines, pod_machine, old_origin, POD_ROTATION, frame_id)
+	// The bytes an older build wrote: the pod of 6 by 8 by 6 cells.
+	pool_get(&entities.foundations, old_pod).size = old_size
+	pad_frame, _ := find_frame(&entities.frames, frame_id)
+	old_floor := pod_floor_centre(pad_frame, old_origin, old_size)
 	files := encode_save_files(state, simulation_content, "old pad", 0)
 	end_session(session)
 	file, problem := parse_world_file(files.world, context.temp_allocator)
@@ -547,10 +586,15 @@ test_an_old_save_with_a_pad_still_loads :: proc(t: ^testing.T) {
 	restored := &loaded.simulation
 	testing.expect_value(t, restored.world.planet.crater, default_planet(content.planets).crater)
 	pod, frame, found := find_test_pod(&restored.world.entities, machines)
-	testing.expect(t, found, "the old pod loads")
+	testing.expect(t, found, "the old pod is replaced")
 	if !found {
 		return
 	}
+	testing.expect(t, pod.frame != frame_id, "the new pod stands on a frame of its own")
+	expected_origin, expected_axes := free_frame_at(old_floor, pad_frame.axes[FRAME_FORWARD], pad_frame.pitch_millimetres)
+	testing.expect_value(t, frame.origin, expected_origin)
+	testing.expect_value(t, frame.axes, expected_axes)
+	testing.expect_value(t, pod.size, rotated_footprint_size(machines.machines[pod.machine].footprint, POD_ROTATION))
 	laid := 0
 	for entry in restored.world.entities.foundations.entries {
 		if entry.alive && machines.machines[entry.machine].kind == .Foundation {
@@ -562,18 +606,101 @@ test_an_old_save_with_a_pad_still_loads :: proc(t: ^testing.T) {
 	spawn, spawn_found := field_pod_spawn(&restored.world.entities, machines)
 	testing.expect(t, spawn_found)
 	testing.expectf(t, feet_in_test_cabin(frame, pod, machine, spawn), "the spawn stands in cell %v", world_to_frame_cell(frame, spawn.position))
-	above := fixed_dot(cast([3]i64)(spawn.position - frame_cell_centre(frame, {0, 1, 0})), frame.axes[FRAME_UP]) + frame_pitch_units(frame) / 2
+	above := fixed_dot(cast([3]i64)(spawn.position - frame_cell_centre(frame, {0, 0, 0})), frame.axes[FRAME_UP]) + frame_pitch_units(frame) / 2
 	testing.expectf(t, abs(above - millimetres_to_position_units(FIELD_SPAWN_CLEARANCE_MILLIMETRES)) <= 4, "the spawn stands %d units over the pad's top", above)
 	restored_content := field_test_content(loaded, content)
 	player := &restored.players[0]
 	before := inventory_count(player.inventory, machines.machines[foundation].item)
-	drain_field_pick_up(restored, restored_content, player, frame.id, {-4, 0, -4})
+	drain_field_pick_up(restored, restored_content, player, frame_id, {-4, 0, -4})
 	testing.expect_value(t, inventory_count(player.inventory, machines.machines[foundation].item), before + 1)
-	testing.expect_value(t, entity_at(&restored.world.entities, {-4, 0, -4}, frame.id), NO_ENTITY)
-	player.field_refusal = .None
-	drain_field_pick_up(restored, restored_content, player, frame.id, {0, 0, 0})
-	testing.expect_value(t, player.field_refusal, Field_Edit_Refusal.Something_Stands_On_It)
-	testing.expect(t, entity_at(&restored.world.entities, {0, 0, 0}, frame.id) != NO_ENTITY)
+	testing.expect_value(t, entity_at(&restored.world.entities, {-4, 0, -4}, frame_id), NO_ENTITY)
+}
+
+// Interact on the inner hatch from the cabin opens it on two sessions of
+// one seed alike: the toggle tick, the event and the hash after a second
+// agree, a session without the press hashes otherwise, and the opened
+// world round trips its save.
+@(test)
+test_toggling_a_hatch_is_lockstep_state :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	sessions := [3]^Session{start_field_test_session(config, content), start_field_test_session(config, content), start_field_test_session(config, content)}
+	defer for session, index in sessions {
+		if index < 2 {
+			end_session(session)
+		}
+	}
+	interact := Input_Frame{pressed = {.Interact}, just_pressed = {.Interact}}
+	toggle_ticks: [2]u64
+	for session, index in sessions {
+		simulation_content := field_test_content(session, content)
+		state := &session.simulation
+		stage_generated_field_set(state)
+		pod, frame, found := find_test_pod(&state.world.entities, content.machines)
+		testing.expect(t, found)
+		if !found {
+			return
+		}
+		state.players[0].field = make_field_player(frame_floor_point(frame, 1, 0, 0), frame.axes[FRAME_FORWARD])
+		tick_field_test_simulation(state, simulation_content, {})
+		clear(&state.events)
+		tick_field_test_simulation(state, simulation_content, index < 2 ? interact : {})
+		machine := content.machines.machines[pod.machine]
+		inner_origin, _ := pod_fixture_placement(machine, pod.origin, pod.rotation, 1)
+		inner := pool_get(&state.world.entities.foundations, entity_at(&state.world.entities, inner_origin, frame.id))
+		testing.expect(t, inner != nil)
+		if index < 2 && inner != nil {
+			testing.expectf(t, inner.hatch_open, "session %d: the inner hatch opens", index)
+			toggle_ticks[index] = inner.hatch_toggle_tick
+			raised := false
+			for event in state.events {
+				raised ||= event.kind == .Toggled_Switch
+			}
+			testing.expect(t, raised, "the toggle raises its event")
+		}
+		for _ in 0 ..< 60 {
+			tick_field_test_simulation(state, simulation_content, {})
+		}
+	}
+	testing.expect(t, toggle_ticks[0] != 0)
+	testing.expect_value(t, toggle_ticks[0], toggle_ticks[1])
+	hash := simulation_state_hash(&sessions[0].simulation)
+	testing.expect_value(t, simulation_state_hash(&sessions[1].simulation), hash)
+	testing.expect(t, simulation_state_hash(&sessions[2].simulation) != hash, "no press, another hash")
+	end_session(sessions[2])
+
+	files := encode_save_files(&sessions[0].simulation, field_test_content(sessions[0], content), "hatch", 0)
+	file, problem := parse_world_file(files.world, context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	plan := Session_Plan{loading = true, seed = file.seed, settings = file.settings, file = file, files = &files}
+	loaded: ^Session
+	loaded, problem = start_session(plan, config, content, make_test_generator(DEFAULT_WORLD_SEED))
+	testing.expect_value(t, problem, "")
+	if loaded == nil {
+		return
+	}
+	defer end_session(loaded)
+	restored := &loaded.simulation
+	stage_generated_field_set(restored)
+	testing.expect(t, restore_arrived_field_set(&restored.field), "the staged set restores")
+	testing.expect_value(t, simulation_state_hash(restored), hash)
+	pod, frame, _ := find_test_pod(&restored.world.entities, content.machines)
+	machine := content.machines.machines[pod.machine]
+	inner_origin, _ := pod_fixture_placement(machine, pod.origin, pod.rotation, 1)
+	handle := entity_at(&restored.world.entities, inner_origin, frame.id)
+	inner := pool_get(&restored.world.entities.foundations, handle)
+	testing.expect(t, inner != nil && inner.hatch_open && inner.hatch_toggle_tick == toggle_ticks[0], "the hatch loads open with its tick")
+	cells := common_cells(entity_common(&restored.world.entities, handle)^, content.machines)
+	for cell in cells {
+		testing.expect(t, !frame_cell_is_solid(&restored.world.entities.frames, frame.id, cell))
+	}
+	room := make([dynamic]World_Coordinate, context.temp_allocator)
+	append(&room, ..machine_open_cells(pod.origin, machine, pod.rotation))
+	append(&room, ..cells)
+	testing.expect_value(t, len(restored.world.entities.sealed_rooms), 1)
+	if len(restored.world.entities.sealed_rooms) == 1 {
+		testing.expect(t, slice.equal(sorted_cells(restored.world.entities.sealed_rooms[0].cells[:]), sorted_cells(room[:])), "the room is the cabin, the airlock and the inner hatch")
+	}
 }
 
 // A pad of foundations on a free frame at the surface position, eleven
@@ -930,6 +1057,7 @@ test_a_held_refused_dig_raises_one_event :: proc(t: ^testing.T) {
 		record.tool_tier = 99
 	}
 	state := &session.simulation
+	open_test_pod_hatches(state, simulation_content.machines)
 	tick_field_test_simulation(state, simulation_content, Input_Frame{look_delta = {0, 300}})
 	clear(&state.events)
 	for tick in 0 ..< 10 {
@@ -953,6 +1081,7 @@ test_a_field_walk_counts_and_a_flight_does_not :: proc(t: ^testing.T) {
 	defer end_session(session)
 	simulation_content := field_test_content(session, content)
 	state := &session.simulation
+	open_test_pod_hatches(state, simulation_content.machines)
 	tick_field_test_simulation(state, simulation_content, {})
 	walk := Input_Frame{move = {0, 1}, pressed = {.Move}}
 	state.players[0].field.flying = true
@@ -970,7 +1099,7 @@ test_a_field_walk_counts_and_a_flight_does_not :: proc(t: ^testing.T) {
 }
 
 // Place with a stone furnace held over the bare ground in front of the
-// spawn (0201): the tool line says what bare_ground_line reads there, and
+// pod (0201): the tool line says what bare_ground_line reads there, and
 // Place either stands the furnace on a new frame of its own with no
 // foundation or raises one Too_Steep event and places nothing, as the
 // ghost's refusal says.
@@ -983,6 +1112,12 @@ test_a_machine_placed_on_bare_ground_stands_or_is_too_steep :: proc(t: ^testing.
 	simulation_content := field_test_content(session, content)
 	state := &session.simulation
 	player := &state.players[0]
+	// Out of the pod first (0198: the spawn lies 2.75 m behind the outer
+	// hatch).
+	open_test_pod_hatches(state, simulation_content.machines)
+	for _ in 0 ..< 90 {
+		tick_field_test_simulation(state, simulation_content, Input_Frame{move = {0, 1}, pressed = {.Move}})
+	}
 	furnace := test_machine(simulation_content.machines, "stone_furnace")
 	inventory_hotbar(player.inventory)[player.selected_hotbar_slot] = Item_Stack{simulation_content.machines.machines[furnace].item, 1}
 	tick_field_test_simulation(state, simulation_content, Input_Frame{look_delta = {0, 300}})

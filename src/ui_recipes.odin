@@ -599,7 +599,7 @@ browser_station_machine :: proc(screen_context: Screen_Context) -> (machine: Mac
 		return {}, false
 	}
 	machine = screen_context.machines.machines[common.machine]
-	return machine, machine.kind == .Crafting_Station
+	return machine, machine_is_crafting_station(machine)
 }
 
 // Opens the browser in the selection mode for an assembler.

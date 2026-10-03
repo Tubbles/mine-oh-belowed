@@ -94,6 +94,11 @@ Chest :: struct {
 
 Foundation :: struct {
 	using common: Entity_Common,
+	// A hatch's state (work item 0198, entity_pod.odin): open or closed,
+	// and the tick of its last toggle plus one, 0 when never toggled.
+	// Zero for every other entry and in a save from before 0198.
+	hatch_open:        bool,
+	hatch_toggle_tick: u64,
 }
 
 // The drop capsule on the landing pad (landing_pad.odin).
@@ -149,6 +154,9 @@ Entities :: struct {
 	// told and emptied after the entity tick (log_machine_breakdowns);
 	// empty between ticks, never saved.
 	breakdowns:     [dynamic]Machine_Id,
+	// The pods' sealed rooms (work item 0198, entity_pod.odin): derived
+	// from the occupancy, rebuilt by rebuild_sealed_rooms, never saved.
+	sealed_rooms:   [dynamic]Sealed_Room,
 }
 
 pool_add :: proc(pool: ^Entity_Pool($T), kind: Entity_Kind, value: T) -> Entity_Handle {
@@ -220,6 +228,7 @@ destroy_entities :: proc(entities: ^Entities) {
 	destroy_frame_table(&entities.frames)
 	delete(entities.loose_items.items)
 	delete(entities.breakdowns)
+	destroy_sealed_rooms(entities)
 }
 
 entity_common :: proc(entities: ^Entities, handle: Entity_Handle) -> ^Entity_Common {
@@ -304,14 +313,19 @@ entity_common :: proc(entities: ^Entities, handle: Entity_Handle) -> ^Entity_Com
 	return nil
 }
 
-// Belts, foundations, the pod and belt poles have no panel: Open_Aimed
-// does nothing on them (the inventory opens instead, 0194). A crafting
-// station in the foundations' pool has one (work item 0196). Interact on
-// a schematic crate takes its schematic (schematic.odin).
+// Belts, foundations, the pod, its hatches and belt poles have no panel:
+// Open_Aimed does nothing on them (the inventory opens instead, 0194).
+// In the foundations' pool a crafting station (work item 0196), the pod's
+// crafting bench and its oxygen generator (work item 0198) have one.
+// Interact on a schematic crate takes its schematic (schematic.odin).
 entity_has_panel :: proc(entities: ^Entities, machines: Machine_Registry, handle: Entity_Handle) -> bool {
 	if handle.kind == .Foundation {
 		common := entity_common(entities, handle)
-		return common != nil && int(common.machine) < len(machines.machines) && machines.machines[common.machine].kind == .Crafting_Station
+		if common == nil || int(common.machine) >= len(machines.machines) {
+			return false
+		}
+		kind := machines.machines[common.machine].kind
+		return kind == .Crafting_Station || kind == .Crafting_Bench || kind == .Oxygen_Generator
 	}
 	return handle.kind != .Belt && handle.kind != .Belt_Pole && handle.kind != .Schematic_Crate && entity_is_alive(entities, handle)
 }
@@ -410,11 +424,17 @@ machine_occupant_flags :: proc(machine: Machine) -> Occupant_Flags {
 }
 
 // The occupant index through the two world procedures. The machine's
-// open cells (0186) are occupied too, without Solid.
+// open cells (0186) are occupied too, without Solid. A pod leaves its
+// fixtures' cells to them (machine_held_cells), and an open hatch
+// occupies its cells as occupy_open_hatch_cells says (work item 0198).
 occupy_entity_cells :: proc(entities: ^Entities, machines: Machine_Registry, common: Entity_Common) {
 	machine := machines.machines[common.machine]
 	occupant := Occupant{handle = entity_occupant_handle(common.handle), flags = machine_occupant_flags(machine)}
-	for cell in common_cells(common, machines) {
+	if machine.kind == .Hatch && hatch_is_open(entities, common.handle) {
+		occupy_open_hatch_cells(entities, common, occupant)
+		return
+	}
+	for cell in machine_held_cells(common.origin, machine, common.rotation) {
 		occupy_frame_cell(&entities.frames, common.frame, cell, occupant)
 	}
 	open := Occupant{handle = occupant.handle, flags = occupant.flags - {.Solid} + {.Open}}
@@ -423,8 +443,9 @@ occupy_entity_cells :: proc(entities: ^Entities, machines: Machine_Registry, com
 	}
 }
 
+// A pod vacates its held cells only, so its fixtures keep theirs.
 vacate_entity_cells :: proc(entities: ^Entities, machines: Machine_Registry, common: Entity_Common) {
-	for cell in common_cells(common, machines) {
+	for cell in machine_held_cells(common.origin, machines.machines[common.machine], common.rotation) {
 		vacate_frame_cell(&entities.frames, common.frame, cell)
 	}
 	release_empty_frame(entities, common.frame)
@@ -477,9 +498,47 @@ machine_open_cells :: proc(origin: World_Coordinate, machine: Machine, rotation:
 		for y in box.from.y ..= box.to.y {
 			for z in box.from.z ..= box.to.z {
 				for x in box.from.x ..= box.to.x {
+					if cell_in_fixture_box(machine, {x, y, z}) {
+						continue
+					}
 					offset := rotate_footprint_cell({x, z}, footprint.x, footprint.z, rotation)
 					append(&cells, origin + {offset.x, y, offset.y})
 				}
+			}
+		}
+	}
+	return cells[:]
+}
+
+// Whether a cell of the unrotated footprint lies in one of a pod's
+// fixture boxes (work item 0198).
+cell_in_fixture_box :: proc(machine: Machine, cell: [3]i32) -> bool {
+	boxes := machine.fixture_boxes
+	for box in boxes[:machine.fixture_count] {
+		if cell_box_contains(box, cell) {
+			return true
+		}
+	}
+	return false
+}
+
+// The cells a machine holds itself: its footprint less its fixtures'
+// boxes (work item 0198), in footprint_cells' order and the temp
+// allocator. footprint_cells for a machine without fixtures.
+machine_held_cells :: proc(origin: World_Coordinate, machine: Machine, rotation: u8) -> []World_Coordinate {
+	if machine.fixture_count == 0 {
+		return footprint_cells(origin, machine.footprint, rotation)
+	}
+	footprint := machine.footprint
+	cells := make([dynamic]World_Coordinate, 0, footprint.x * footprint.y * footprint.z, context.temp_allocator)
+	for y in 0 ..< footprint.y {
+		for z in 0 ..< footprint.z {
+			for x in 0 ..< footprint.x {
+				if cell_in_fixture_box(machine, {x, y, z}) {
+					continue
+				}
+				offset := rotate_footprint_cell({x, z}, footprint.x, footprint.z, rotation)
+				append(&cells, origin + {offset.x, y, offset.y})
 			}
 		}
 	}
@@ -512,7 +571,7 @@ add_entity :: proc(entities: ^Entities, machines: Machine_Registry, machine: Mac
 	switch machines.machines[machine].kind {
 	case .Belt:
 		return add_belt(entities, machines, machine, origin, rotation, default_belt_shape(machines.machines[machine].belt_shape), frame)
-	case .Chest:
+	case .Chest, .Locker:
 		chest := Chest{common = common, slot_count = machines.machines[machine].slot_count}
 		for &slot in chest.slots {
 			slot = EMPTY_STACK
@@ -551,7 +610,7 @@ add_entity :: proc(entities: ^Entities, machines: Machine_Registry, machine: Mac
 		handle = pool_add(&entities.core_sample_drills, .Core_Sample_Drill, make_core_sample_drill(common))
 	case .Launch_Pad:
 		handle = pool_add(&entities.launch_pads, .Launch_Pad, make_launch_pad(common, machines.machines[machine]))
-	case .Foundation, .Pod, .Crafting_Station:
+	case .Foundation, .Pod, .Crafting_Station, .Hatch, .Crafting_Bench, .Oxygen_Generator:
 		handle = pool_add(&entities.foundations, .Foundation, Foundation{common = common})
 	case .Belt_Pole:
 		handle = pool_add(&entities.belt_poles, .Belt_Pole, Belt_Pole{common = common})

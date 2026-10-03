@@ -155,6 +155,19 @@ test_world_page_lines_from_facts :: proc(t: ^testing.T) {
 	}
 }
 
+// Work item 0198: in a field session the World page says whether the
+// feet are in the pod's sealed room; a block world says nothing of it.
+@(test)
+test_the_world_page_tells_the_sealed_room :: proc(t: ^testing.T) {
+	inside := World_Facts{field_session = true, sealed_room_inside = true, sealed_room_oxygen = .Unlimited}
+	testing.expect(t, contains_line(world_page_lines(inside), "sealed room: inside the pod, oxygen unlimited"))
+	outside := World_Facts{field_session = true}
+	testing.expect(t, contains_line(world_page_lines(outside), "sealed room: outside"))
+	for line in world_page_lines(World_Facts{}) {
+		testing.expect(t, !strings.has_prefix(line.text, "sealed room"), line.text)
+	}
+}
+
 @(test)
 test_belt_items_count_every_lane :: proc(t: ^testing.T) {
 	network: Belt_Network

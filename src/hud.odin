@@ -481,6 +481,12 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context, hud: Hud_Cont
 		ui_glyph_bar(state, hints[:])
 		return
 	}
+	// Interact opens or closes the pod's hatch (0198).
+	if open, is_hatch := field_target_hatch(screen_context, hud); is_hatch {
+		hints := [?]Glyph_Hint{{.Interact, text(open ? "hint_close" : "hint_open")}, {.Inventory, text("hint_inventory")}, {.Pause, text("hint_pause")}}
+		ui_glyph_bar(state, hints[:])
+		return
+	}
 	if entity_has_panel(&screen_context.world.entities, screen_context.machines, player.target.entity) {
 		// Inventory opens the panel (0194); Interact turns a power switch.
 		if entity_is_power_switch(&screen_context.world.entities, screen_context.machines, player.target.entity) {
@@ -533,6 +539,15 @@ inventory_hint_key :: proc(screen_context: Screen_Context, hud: Hud_Context) -> 
 field_target_is_power_switch :: proc(screen_context: Screen_Context, hud: Hud_Context) -> bool {
 	target := hud_field_player(screen_context, hud).frame_target
 	return target.hit && entity_is_power_switch(&screen_context.world.entities, screen_context.machines, entity_from_occupant(target.occupant.handle))
+}
+
+// The aimed frame cell holds a hatch of the pod (0198), open or closed.
+field_target_hatch :: proc(screen_context: Screen_Context, hud: Hud_Context) -> (open: bool, is_hatch: bool) {
+	target := hud_field_player(screen_context, hud).frame_target
+	if !target.hit || screen_context.world == nil {
+		return false, false
+	}
+	return hatch_state(&screen_context.world.entities, screen_context.machines, entity_from_occupant(target.occupant.handle))
 }
 
 // The aimed frame cell holds a broken machine (0201): its pick up hint

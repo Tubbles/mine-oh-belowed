@@ -123,7 +123,7 @@ inventory_quick_move_target :: proc(focused: int) -> (target: Quick_Move_Target,
 // The transfer buttons a machine's panel shows.
 machine_transfer_buttons :: proc(machine: Machine) -> Transfer_Buttons {
 	#partial switch machine.kind {
-	case .Chest, .Capsule:
+	case .Chest, .Capsule, .Locker:
 		return {.Take_All, .Store_All}
 	case .Furnace:
 		return {.Take_All, .Fill}

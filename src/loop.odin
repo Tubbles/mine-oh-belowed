@@ -1032,7 +1032,12 @@ world_facts :: proc(state: ^Frame_State, diagnostics: Diagnostics_Context) -> Wo
 	cell := camera_world_coordinate(session_local_player(session).position)
 	biome := sample_column(&session.generator, cell.x, cell.z).biome
 	biome_name := biome < len(session.generator.biomes) ? text(session.generator.biomes[biome].definition.name_key) : "?"
+	field_session := session.simulation.field.enabled
+	room, inside := sealed_room_at_feet(&world.entities, session_local_player(session).field.position)
 	return World_Facts {
+		field_session = field_session,
+		sealed_room_inside = field_session && inside,
+		sealed_room_oxygen = room.oxygen,
 		overlay_lines = world_overlay_statistics_lines(diagnostics),
 		tick = session.simulation.tick,
 		player_chunk = world_to_chunk_coordinate(cell),
@@ -1382,7 +1387,7 @@ show_simulation_events :: proc(state: ^Ui_State, events: []Simulation_Event, loc
 				push_screen(&state.screens, .Machine)
 			}
 		case .Toggled_Switch:
-		// The switch's colour shows the change.
+		// The switch's colour or the hatch's model shows the change.
 		case .Launch_Requested:
 			ui_toast(state, text("toast_rocket_launch"))
 		case .Vein_Assayed:

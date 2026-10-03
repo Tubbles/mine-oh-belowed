@@ -4,9 +4,10 @@ Blender's Python by tools/make_models.py and by records_test.py on the
 host, with tools/ on sys.path for sjson.
 
 A script takes its footprint, motion and pivot, ports by name, open
-cells and light from here, so the record and the model cannot disagree.
-The dataclasses mirror the record as written (the Odin
-Machine_Definition's names, defaults its zero values). Points come in
+cells, a pod's fixture boxes (work item 0198) and light from here, so
+the record and the model cannot disagree. The dataclasses mirror the
+record as written (the Odin Machine_Definition's names, defaults its
+zero values). Points come in
 the footprint's frame (from its minimum corner: x the width, y up, z the
 depth) and go out in the kit's Blender frame (kit.py: x the front, y the
 game's -z, z up, centred on the footprint).
@@ -35,7 +36,7 @@ FACE_STEPS = {
     "negative_z": (0.0, 0.0, -0.5),
 }
 # The motions whose part moves (motion_has_part in model_motion.odin).
-PART_MOTIONS = ("pump", "bob", "spin", "swing")
+PART_MOTIONS = ("pump", "bob", "spin", "swing", "slide")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -73,6 +74,18 @@ class CellBox:
 
 
 @dataclasses.dataclass(frozen=True)
+class Fixture:
+    """A pod's fixture (work item 0198): the machine's id, its minimum
+    cell in the pod's footprint, its quarter turns and its rotated size
+    (width, height, depth), filled from the named record."""
+
+    machine: str
+    cell: tuple
+    rotation: int
+    size: tuple = (0, 0, 0)
+
+
+@dataclasses.dataclass(frozen=True)
 class Machine:
     id: str
     model: str
@@ -83,6 +96,7 @@ class Machine:
     open_cells: tuple
     light_level: int
     light_color: tuple
+    fixtures: tuple = ()
 
 
 def cell(record):
@@ -126,12 +140,32 @@ def read_machine(record):
         open_cells=tuple(CellBox(cell(box["from"]), cell(box["to"])) for box in record.get("open_cells", [])),
         light_level=record.get("light_level", 0),
         light_color=tuple(record.get("light_color", (0, 0, 0))),
+        fixtures=tuple(Fixture(fixture["machine"], cell(fixture.get("cell", {})), fixture.get("rotation", 0)) for fixture in record.get("fixtures", [])),
     )
+
+
+def rotated_size(footprint, rotation):
+    """A footprint's (width, height, depth) after rotation quarter turns."""
+    if rotation % 2 == 1:
+        return (footprint.depth, footprint.height, footprint.width)
+    return (footprint.width, footprint.height, footprint.depth)
+
+
+def with_fixture_sizes(machine, machines):
+    """The machine with each fixture's rotated size from its record."""
+    if not machine.fixtures:
+        return machine
+    fixtures = tuple(
+        dataclasses.replace(fixture, size=rotated_size(machines[fixture.machine].footprint, fixture.rotation))
+        for fixture in machine.fixtures
+    )
+    return dataclasses.replace(machine, fixtures=fixtures)
 
 
 def load_machines(path):
     """Machine id to Machine, in file order."""
-    return {machine.id: machine for machine in map(read_machine, sjson.load(path)["machines"])}
+    machines = {machine.id: machine for machine in map(read_machine, sjson.load(path)["machines"])}
+    return {identifier: with_fixture_sizes(machine, machines) for identifier, machine in machines.items()}
 
 
 def machine_for_model(machines, model):
@@ -181,4 +215,12 @@ def open_cell_box(machine, index):
     box = machine.open_cells[index]
     first = to_blender(machine, box.first)
     last = to_blender(machine, tuple(coordinate + 1 for coordinate in box.last))
+    return tuple(map(min, first, last)), tuple(map(max, first, last))
+
+
+def fixture_box(machine, index):
+    """A pod's fixture box's (minimum, maximum) in the Blender frame."""
+    fixture = machine.fixtures[index]
+    first = to_blender(machine, fixture.cell)
+    last = to_blender(machine, tuple(coordinate + size for coordinate, size in zip(fixture.cell, fixture.size)))
     return tuple(map(min, first, last)), tuple(map(max, first, last))

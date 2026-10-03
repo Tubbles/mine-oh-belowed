@@ -296,6 +296,11 @@ test_the_shipped_obj_machines_load :: proc(t: ^testing.T) {
 		{"lab", true},
 		{"stone_cutting_table", false},
 		{"stone_cutter", true},
+		{"pod", false},
+		{"pod_hatch", true},
+		{"pod_locker", false},
+		{"crafting_bench", false},
+		{"oxygen_generator", true},
 	}
 	machines := shipped_machines()
 	defer delete(machines)

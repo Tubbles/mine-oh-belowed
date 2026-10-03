@@ -252,4 +252,11 @@ test_a_crafting_station_has_a_panel :: proc(t: ^testing.T) {
 	testing.expect(t, !entity_has_panel(&world.entities, content.machines, foundation))
 	testing.expect(t, !entity_has_panel(&world.entities, content.machines, pod))
 	testing.expect(t, !entity_has_panel(&world.entities, content.machines, pole))
+	// The pod's bench and oxygen generator have one, its hatch none (0198).
+	bench := add_entity(&world.entities, content.machines, test_machine(content.machines, "crafting_bench"), {2, 1, 20}, 0)
+	generator := add_entity(&world.entities, content.machines, test_machine(content.machines, "oxygen_generator"), {4, 1, 20}, 0)
+	hatch := add_entity(&world.entities, content.machines, test_machine(content.machines, "pod_hatch"), {6, 1, 20}, 0)
+	testing.expect(t, entity_has_panel(&world.entities, content.machines, bench))
+	testing.expect(t, entity_has_panel(&world.entities, content.machines, generator))
+	testing.expect(t, !entity_has_panel(&world.entities, content.machines, hatch))
 }

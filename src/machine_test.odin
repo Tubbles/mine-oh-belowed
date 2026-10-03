@@ -1,5 +1,6 @@
 package game
 
+import "core:strings"
 import "core:testing"
 import rl "shared:raylib"
 
@@ -54,7 +55,7 @@ test_machine :: proc(machines: Machine_Registry, id: string) -> Machine_Id {
 test_machine_data_loads :: proc(t: ^testing.T) {
 	items := make_test_items()
 	machines := make_test_machines()
-	testing.expect_value(t, len(machines.machines), 58)
+	testing.expect_value(t, len(machines.machines), 62)
 	wooden := machines.machines[test_machine(machines, "wooden_chest")]
 	testing.expect_value(t, wooden.kind, Machine_Kind.Chest)
 	testing.expect_value(t, wooden.slot_count, 16)
@@ -261,8 +262,192 @@ test_machine_open_cells_are_boxes_inside_the_footprint :: proc(t: ^testing.T) {
 
 	machines := make_test_machines()
 	pod := machines.machines[find_machine_of_kind(machines, .Pod)]
-	testing.expect_value(t, pod.open_cell_box_count, 3)
-	testing.expect_value(t, pod.open_cells[2], Cell_Box{from = {5, 0, 2}, to = {5, 3, 3}})
+	testing.expect_value(t, pod.open_cell_box_count, 4)
+	testing.expect_value(t, pod.open_cells[3], Cell_Box{from = {9, 0, 1}, to = {10, 5, 6}})
+}
+
+// Work item 0198: a footprint side may be 12 cells (the pod's length),
+// not 13.
+@(test)
+test_a_footprint_side_of_twelve_is_accepted :: proc(t: ^testing.T) {
+	chest := Machine_Definition {
+		id = "chest",
+		name_key = "machine_wooden_chest",
+		item = "wooden_chest",
+		kind = "chest",
+		footprint = {width = 12, depth = 1, height = 1},
+		slots = 16,
+	}
+	testing.expect_value(t, resolve_test_machines({chest}), "")
+	chest.footprint.width = 13
+	testing.expect_value(t, resolve_test_machines({chest}), `machine "chest" has a footprint side outside 1 to 12`)
+}
+
+// A test pod of 6 by 4 by 3 cells with a cabin from (1, 0, 1) to (4, 1,
+// 2), and a locker of 1 by 2 by 2 cells to list as its fixture.
+test_fixture_definitions :: proc(fixtures: []Pod_Fixture_Definition) -> []Machine_Definition {
+	cabin := make([]Machine_Cell_Box_Definition, 1, context.temp_allocator)
+	cabin[0] = {from = Machine_Cell_Definition{1, 0, 1}, to = Machine_Cell_Definition{4, 1, 2}}
+	pod := Machine_Definition {
+		id = "room",
+		name_key = "machine_pod",
+		kind = "pod",
+		footprint = {width = 6, depth = 4, height = 3},
+		open_cells = cabin,
+		fixtures = fixtures,
+	}
+	locker := Machine_Definition {
+		id = "locker",
+		name_key = "machine_pod_locker",
+		kind = "locker",
+		footprint = {width = 1, depth = 2, height = 2},
+		slots = 4,
+	}
+	chest := Machine_Definition {
+		id = "chest",
+		name_key = "machine_wooden_chest",
+		item = "wooden_chest",
+		kind = "chest",
+		footprint = {1, 1, 1},
+		slots = 16,
+	}
+	definitions := make([]Machine_Definition, 3, context.temp_allocator)
+	definitions[0], definitions[1], definitions[2] = pod, locker, chest
+	return definitions
+}
+
+// Work item 0198: validate_pod_fixtures refuses each wrong list, a valid
+// one resolves to its machines and boxes, and the shipped pod lists its
+// five.
+@(test)
+test_the_pod_fixtures_are_checked :: proc(t: ^testing.T) {
+	refusals := []struct {
+		fixtures: []Pod_Fixture_Definition,
+		words:    string,
+	} {
+		{{{machine = "nothing", cell = {0, 0, 0}}}, "names unknown machine"},
+		{{{machine = "chest", cell = {0, 0, 0}}}, "not a hatch, locker"},
+		{{{machine = "locker", cell = {0, 0, 0}, rotation = 4}}, "outside 0 to 3"},
+		{{{machine = "locker", cell = {5, 0, 3}}}, "is not inside the footprint"},
+		{{{machine = "locker", cell = {0, 0, 0}}, {machine = "locker", cell = {0, 0, 1}}}, "fixtures 0 and 1 overlap"},
+		{{{machine = "locker", cell = {2, 0, 1}, rotation = 1}}, "stands on the cabin's spawn"},
+	}
+	for refusal in refusals {
+		problem := resolve_test_machines(test_fixture_definitions(refusal.fixtures))
+		testing.expectf(t, strings.contains(problem, refusal.words), "%q lacks %q", problem, refusal.words)
+	}
+	nine := make([]Pod_Fixture_Definition, MAXIMUM_POD_FIXTURES + 1, context.temp_allocator)
+	testing.expect(t, strings.contains(resolve_test_machines(test_fixture_definitions(nine)), "more than 8 fixtures"))
+	not_a_pod := test_fixture_definitions({{machine = "locker", cell = {0, 0, 0}}})
+	not_a_pod[2].fixtures = not_a_pod[0].fixtures
+	testing.expect(t, strings.contains(resolve_test_machines(not_a_pod), "which only a pod may"))
+
+	valid := test_fixture_definitions({{machine = "locker", cell = {0, 0, 0}}, {machine = "locker", cell = {4, 0, 3}, rotation = 1}})
+	registry, problem := resolve_machine_registry(Machines_File{machines = valid}, make_test_items(), make_test_fluids(), context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	if problem == "" {
+		room := registry.machines[0]
+		testing.expect_value(t, room.fixture_count, 2)
+		testing.expect_value(t, room.fixtures[1], Pod_Fixture{machine = 1, cell = {4, 0, 3}, rotation = 1})
+		testing.expect_value(t, room.fixture_boxes[0], Cell_Box{from = {0, 0, 0}, to = {0, 1, 1}})
+		testing.expect_value(t, room.fixture_boxes[1], Cell_Box{from = {4, 0, 3}, to = {5, 1, 3}})
+	}
+
+	machines := make_test_machines()
+	pod := machines.machines[find_machine_of_kind(machines, .Pod)]
+	testing.expect_value(t, pod.fixture_count, 5)
+	testing.expect_value(t, pod.fixture_boxes[0], Cell_Box{from = {11, 0, 3}, to = {11, 3, 4}})
+	testing.expect_value(t, pod.fixture_boxes[2], Cell_Box{from = {1, 0, 1}, to = {2, 3, 1}})
+	testing.expect_value(t, machines.machines[pod.fixtures[0].machine].kind, Machine_Kind.Hatch)
+}
+
+// Work item 0198: the kinds placed in the pod refuse an item and the
+// fields they do not use; a slide motion belongs to a hatch alone.
+@(test)
+test_the_world_placed_fixture_kinds_are_validated :: proc(t: ^testing.T) {
+	hatch := Machine_Definition {
+		id = "hatch",
+		name_key = "machine_pod_hatch",
+		kind = "hatch",
+		model = "pod_hatch",
+		footprint = {width = 1, depth = 2, height = 4},
+		motion = {kind = "slide", axis = "y", amplitude = 3.95, period_seconds = 0.8},
+	}
+	testing.expect_value(t, validate_machine_definition({hatch}, 0), "")
+	refused := make([dynamic]Machine_Definition, context.temp_allocator)
+	with_item := hatch
+	with_item.item = "wooden_chest"
+	low := hatch
+	low.footprint.height = 1
+	with_open_cells := hatch
+	with_open_cells.open_cells = {{from = Machine_Cell_Definition{0, 0, 0}, to = Machine_Cell_Definition{0, 0, 0}}}
+	spinning := hatch
+	spinning.motion = {kind = "spin", axis = "y", amplitude = 1, period_seconds = 1}
+	still := hatch
+	still.motion.amplitude = 0
+	far := hatch
+	far.motion.amplitude = 13
+	append(&refused, with_item, low, with_open_cells, spinning, still, far)
+	sliding_chest := Machine_Definition {
+		id = "chest",
+		name_key = "machine_wooden_chest",
+		item = "wooden_chest",
+		kind = "chest",
+		model = "wooden_chest",
+		footprint = {1, 1, 1},
+		slots = 16,
+		motion = hatch.motion,
+	}
+	locker := Machine_Definition {
+		id = "locker",
+		name_key = "machine_pod_locker",
+		kind = "locker",
+		footprint = {width = 1, depth = 2, height = 4},
+		slots = 16,
+	}
+	testing.expect_value(t, validate_machine_definition({locker}, 0), "")
+	empty_locker := locker
+	empty_locker.slots = 0
+	big_locker := locker
+	big_locker.slots = MAXIMUM_CHEST_SLOTS + 1
+	carried_locker := locker
+	carried_locker.item = "wooden_chest"
+	bench := Machine_Definition {
+		id = "bench",
+		name_key = "machine_crafting_bench",
+		kind = "crafting_bench",
+		footprint = {width = 1, depth = 2, height = 2},
+		recipe_maker = "hand",
+	}
+	testing.expect_value(t, validate_machine_definition({bench}, 0), "")
+	assembling_bench := bench
+	assembling_bench.recipe_maker = "assembler"
+	slotted_bench := bench
+	slotted_bench.slots = 2
+	carried_bench := bench
+	carried_bench.item = "wooden_chest"
+	generator := Machine_Definition {
+		id = "generator",
+		name_key = "machine_oxygen_generator",
+		kind = "oxygen_generator",
+		footprint = {width = 1, depth = 2, height = 3},
+	}
+	testing.expect_value(t, validate_machine_definition({generator}, 0), "")
+	slotted_generator := generator
+	slotted_generator.slots = 1
+	carried_generator := generator
+	carried_generator.item = "wooden_chest"
+	append(&refused, sliding_chest, empty_locker, big_locker, carried_locker, assembling_bench, slotted_bench, carried_bench, slotted_generator, carried_generator)
+	for definition in refused {
+		testing.expectf(t, validate_machine_definition({definition}, 0) != "", "%s %v passes", definition.id, definition)
+	}
+
+	machines := make_test_machines()
+	for id in ([4]string{"pod_hatch", "pod_locker", "crafting_bench", "oxygen_generator"}) {
+		machine := machines.machines[test_machine(machines, id)]
+		testing.expect(t, machine_kind_is_placed_by_world(machine_kind_names[machine.kind]), id)
+		testing.expect_value(t, machine.item, NO_ITEM)
+	}
 }
 
 // Work item 0199: a pod's first open_cells box is its cabin, on the

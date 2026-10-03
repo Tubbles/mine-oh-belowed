@@ -251,6 +251,12 @@ clock_pose :: proc(frame: Model_Frame, common: Entity_Common, machine: Machine, 
 	return {phase = motion_phase(frame.tick, frame.alpha, frame.tick_rate, machine.motion.period_seconds, working, offset), working = working}
 }
 
+// A hatch's pose (0198): the door's slide follows the hatch's state, not
+// the clock, and its strips glow while it is open.
+hatch_pose :: proc(frame: Model_Frame, hatch: Foundation, machine: Machine) -> Model_Pose {
+	return {phase = hatch_open_fraction(hatch.hatch_open, hatch.hatch_toggle_tick, frame.tick, frame.alpha, frame.tick_rate, machine.motion.period_seconds), working = hatch.hatch_open}
+}
+
 // False when the machine has no model, so the caller draws the box.
 draw_machine_model :: proc(renderer: Model_Renderer, machines: Machine_Registry, common: Entity_Common, frame: Model_Frame, working: bool) -> bool {
 	model := machine_model(renderer, common.machine) or_return

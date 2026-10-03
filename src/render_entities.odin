@@ -273,13 +273,37 @@ draw_entities :: proc(world: ^World, machines: Machine_Registry, models: Model_R
 			draw_launch_pad(pad, machines, models, frame)
 		}
 	}
-	// The pod and the crafting stations ride in the foundations' pool
-	// (entity_pod.odin); the foundations themselves are draw_frames' boxes.
+	// The pod, its hatches, its crafting bench and its oxygen generator
+	// and the crafting stations ride in the foundations' pool
+	// (entity_pod.odin); the foundations themselves are draw_frames'
+	// boxes. A hatch's door follows its state (draw_hatch), the
+	// generator glows while it supplies a sealed room.
 	for foundation in world.entities.foundations.entries {
-		if foundation.alive && machines.machines[foundation.machine].kind != .Foundation {
+		if !foundation.alive {
+			continue
+		}
+		machine := machines.machines[foundation.machine]
+		#partial switch machine.kind {
+		case .Foundation:
+		case .Hatch:
+			draw_hatch(foundation, machine, machines, models, frame)
+		case .Oxygen_Generator:
+			working := oxygen_generator_supplies_a_room(&frame.world.entities, foundation.handle)
+			draw_entity_cells(foundation.common, machines, models, frame, working, FRAME_FOUNDATION_COLOR, FRAME_FOUNDATION_COLOR)
+		case:
 			draw_entity_cells(foundation.common, machines, models, frame, false, FRAME_FOUNDATION_COLOR, FRAME_FOUNDATION_COLOR)
 		}
 	}
+}
+
+// A hatch of the pod (0198): its door posed from its state (hatch_pose),
+// or the box without a model.
+draw_hatch :: proc(hatch: Foundation, machine: Machine, machines: Machine_Registry, models: Model_Renderer, frame: Model_Frame) {
+	if model, found := machine_model(models, hatch.machine); found {
+		draw_posed_model(models, model, hatch.common, machine, frame, hatch_pose(frame, hatch, machine))
+		return
+	}
+	draw_entity_cells(hatch.common, machines, models, frame, false, FRAME_FOUNDATION_COLOR, FRAME_FOUNDATION_COLOR)
 }
 
 // How far the rocket has climbed and how opaque it is: it speeds up as it

@@ -679,7 +679,9 @@ test_a_field_prediction_into_a_wall_snaps_to_the_confirmed_feet :: proc(t: ^test
 	session, simulation_content := start_field_lockstep_test_session(content, 3)
 	defer end_session(session)
 	state := &session.simulation
-	walk := Input_Frame{move = {0, 1}, pressed = {.Move}}
+	// Backwards, into the cabin: the closed inner hatch stands 0.75 m
+	// ahead of the spawn (0198), between the player and a wall ahead.
+	walk := Input_Frame{move = {0, -1}, pressed = {.Move}}
 	for _ in 0 ..< 3 {
 		testing.expect(t, stamp_local_record(&session.lockstep, state.tick, walk))
 	}
@@ -689,11 +691,12 @@ test_a_field_prediction_into_a_wall_snaps_to_the_confirmed_feet :: proc(t: ^test
 	player := state.players[0].field
 	tuning := simulation_content.field.tuning
 	wall_radius := metres_to_position_units(1)
-	ahead := tuning.capsule_radius + wall_radius
+	behind := -field_player_heading(player)
+	wall_distance := tuning.capsule_radius + wall_radius
 	wall := Field_Edit {
 		mode     = .Place,
 		brush    = Field_Brush{shape = .Sphere, radius = wall_radius, rate = 127},
-		centre   = player.position + World_Position(fixed_scale(field_player_heading(player), ahead) + fixed_scale(player.up, tuning.capsule_height / 2)),
+		centre   = player.position + World_Position(fixed_scale(behind, wall_distance) + fixed_scale(player.up, tuning.capsule_height / 2)),
 		up       = player.up,
 		material = .Stone,
 		budget   = max(i64),
@@ -711,9 +714,8 @@ test_a_field_prediction_into_a_wall_snaps_to_the_confirmed_feet :: proc(t: ^test
 	run_field_lockstep_test_ticks(session, simulation_content)
 	confirmed := state.players[0].field.position
 	testing.expect_value(t, mid_window, confirmed)
-	heading := field_player_heading(player)
-	predicted_progress := fixed_dot(cast([3]i64)(predicted - player.position), heading)
-	confirmed_progress := fixed_dot(cast([3]i64)(confirmed - player.position), heading)
+	predicted_progress := fixed_dot(cast([3]i64)(predicted - player.position), behind)
+	confirmed_progress := fixed_dot(cast([3]i64)(confirmed - player.position), behind)
 	testing.expectf(t, confirmed_progress < predicted_progress, "the wall stops the walk: confirmed %d, predicted %d", confirmed_progress, predicted_progress)
 	rebuild_prediction(&session.lockstep, state, simulation_content)
 	testing.expect_value(t, lockstep_view_player(&session.lockstep, state, 0).field.position, confirmed)

@@ -339,7 +339,7 @@ triangles_in_box :: proc(triangles: []Check_Triangle, minimum, maximum: [3]f32) 
 
 // The body and the part at rest against each open cell box: one line per
 // box with triangles inside.
-model_open_cell_problems :: proc(boxes: []Cell_Box, footprint: [3]i32, body, part: Model_Layers, allocator := context.temp_allocator) -> []Model_Check_Problem {
+model_open_cell_problems :: proc(boxes: []Cell_Box, footprint: [3]i32, body, part: Model_Layers, label: string, allocator := context.temp_allocator) -> []Model_Check_Problem {
 	problems := make([dynamic]Model_Check_Problem, allocator)
 	sets := [2][dynamic]Check_Triangle{model_layers_check_triangles(body, 1), model_layers_check_triangles(part, 1)}
 	set_names := [2]string{"body", "part"}
@@ -358,7 +358,7 @@ model_open_cell_problems :: proc(boxes: []Cell_Box, footprint: [3]i32, body, par
 		}
 		corners := sets[first_set][first].corners
 		near := (corners[0] + corners[1] + corners[2]) / 3
-		detail := fmt.tprintf("box %d (cells %v to %v): %d triangles inside, the first (%s %d) near (%.3f, %.3f, %.3f)", box_index, box.from, box.to, total, set_names[first_set], first, near.x, near.y, near.z)
+		detail := fmt.tprintf("%s %d (cells %v to %v): %d triangles inside, the first (%s %d) near (%.3f, %.3f, %.3f)", label, box_index, box.from, box.to, total, set_names[first_set], first, near.x, near.y, near.z)
 		append(&problems, Model_Check_Problem{.Open_Cells, detail})
 	}
 	return problems[:]
@@ -457,7 +457,10 @@ check_obj_machine_model :: proc(data_directory: string, machine: Machine, alloca
 	}
 	append(&problems, ..model_sweep_problems(machine.motion, machine.footprint, mesh.body, mesh.part))
 	open_cells := machine.open_cells
-	append(&problems, ..model_open_cell_problems(open_cells[:machine.open_cell_box_count], machine.footprint, mesh.body, mesh.part))
+	append(&problems, ..model_open_cell_problems(open_cells[:machine.open_cell_box_count], machine.footprint, mesh.body, mesh.part, "open cells box"))
+	// No pod geometry where a fixture's model stands (0198).
+	fixture_boxes := machine.fixture_boxes
+	append(&problems, ..model_open_cell_problems(fixture_boxes[:machine.fixture_count], machine.footprint, mesh.body, mesh.part, "fixture box"))
 	return problems[:]
 }
 

@@ -463,14 +463,16 @@ update_jump_double_tap :: proc(player: ^Player, input: Input_Frame) {
 	player.jump_tap_ticks = JUMP_DOUBLE_TAP_TICKS
 }
 
-// What Interact acts on (0194): a power switch it turns and a launch pad
-// it launches from. Panels open through Open_Aimed instead.
+// What Interact acts on (0194): a power switch it turns, a pod's hatch it
+// opens or closes on the field (0198) and a launch pad it launches from.
+// Panels open through Open_Aimed instead.
 entity_answers_interact :: proc(entities: ^Entities, machines: Machine_Registry, handle: Entity_Handle) -> bool {
-	return entity_is_power_switch(entities, machines, handle) || pool_get(&entities.launch_pads, handle) != nil
+	_, is_hatch := hatch_state(entities, machines, handle)
+	return entity_is_power_switch(entities, machines, handle) || is_hatch || pool_get(&entities.launch_pads, handle) != nil
 }
 
 // Whether Interact acts on the entity, so a gamepad's A does not jump:
-// a switch or a launch pad (entity_answers_interact) or a schematic crate
+// a switch, a hatch or a launch pad (entity_answers_interact) or a schematic crate
 // (resolve_use_item). The touch overlay's tap presses Interact on such a
 // target and Place on any other (tap_control).
 entity_takes_interact :: proc(entities: ^Entities, machines: Machine_Registry, handle: Entity_Handle) -> bool {

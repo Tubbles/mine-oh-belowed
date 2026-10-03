@@ -107,7 +107,7 @@ machine_slot_secondary_commands :: proc(machine: Entity_Handle, slots: []Item_St
 	if input.secondary && input.focused >= 0 && !stack_is_empty(slots[input.focused]) {
 		append(&commands, Slot_Split_Command{target = {machine, input.focused}, expects = shown_expectation(held, slots[input.focused])})
 	}
-	if input.context_action && kind == .Chest {
+	if input.context_action && (kind == .Chest || kind == .Locker) {
 		append(&commands, slot_sort_command(machine, slots, ranks))
 	}
 	return commands[:]
@@ -116,7 +116,7 @@ machine_slot_secondary_commands :: proc(machine: Entity_Handle, slots: []Item_St
 // The machine side's natural width: its widest row of slots or text.
 machine_area_width :: proc(machine: Machine) -> f32 {
 	switch machine.kind {
-	case .Chest, .Capsule:
+	case .Chest, .Capsule, .Locker:
 		return slot_grid_width(MACHINE_CHEST_COLUMNS)
 	case .Furnace, .Inserter:
 		return FURNACE_AREA_WIDTH
@@ -134,7 +134,9 @@ machine_area_width :: proc(machine: Machine) -> f32 {
 		return core_sample_area_size().x
 	case .Launch_Pad:
 		return launch_pad_area_width()
-	case .Belt, .Schematic_Crate, .Foundation, .Belt_Pole, .Pod, .Crafting_Station, .Tree:
+	case .Oxygen_Generator:
+		return oxygen_generator_area_size().x
+	case .Belt, .Schematic_Crate, .Foundation, .Belt_Pole, .Pod, .Crafting_Station, .Tree, .Hatch, .Crafting_Bench:
 	}
 	return 0
 }
@@ -143,7 +145,7 @@ machine_area_width :: proc(machine: Machine) -> f32 {
 // rows wrap.
 machine_area_height :: proc(machine: Machine, slot_count: int, width: f32) -> f32 {
 	switch machine.kind {
-	case .Chest, .Capsule:
+	case .Chest, .Capsule, .Locker:
 		return UI_ROW_HEIGHT + slot_rows_height(slot_count, chest_columns(width))
 	case .Furnace:
 		return UI_ROW_HEIGHT + 2 * (UI_SLOT_SIZE + UI_GAP) + 2 * UI_ROW_HEIGHT
@@ -164,7 +166,9 @@ machine_area_height :: proc(machine: Machine, slot_count: int, width: f32) -> f3
 		return core_sample_area_size().y
 	case .Launch_Pad:
 		return launch_pad_area_height(machine, width)
-	case .Belt, .Schematic_Crate, .Foundation, .Belt_Pole, .Pod, .Crafting_Station, .Tree:
+	case .Oxygen_Generator:
+		return oxygen_generator_area_size().y
+	case .Belt, .Schematic_Crate, .Foundation, .Belt_Pole, .Pod, .Crafting_Station, .Tree, .Hatch, .Crafting_Bench:
 	}
 	return 0
 }
@@ -439,6 +443,11 @@ machine_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, handle: Entity
 		return {grid = {activated = -1, focused = -1}}
 	case .Launch_Pad:
 		return {grid = launch_pad_slot_region(state, content, pool_get(&screen_context.world.entities.launch_pads, handle), screen_context)}
+	case .Foundation:
+		if screen_context.machines.machines[common.machine].kind == .Oxygen_Generator {
+			oxygen_generator_panel_region(state, content)
+		}
+		return {grid = {activated = -1, focused = -1}}
 	}
 	// A chest or the capsule: the slots, then Take all and Store all.
 	columns := chest_columns(content.width)
@@ -450,6 +459,17 @@ machine_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, handle: Entity
 	return result
 }
 
+// The pod's oxygen generator's panel (work item 0198): one row under the
+// name and the description, the supply.
+oxygen_generator_area_size :: proc() -> [2]f32 {
+	return {slot_grid_width(MACHINE_CHEST_COLUMNS), UI_ROW_HEIGHT}
+}
+
+oxygen_generator_panel_region :: proc(state: ^Ui_State, area: Ui_Rectangle) {
+	content := area
+	draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), text("oxygen_generator_supply_unlimited"), UI_BODY_TEXT_SIZE, .Left)
+}
+
 machine_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	player, items := screen_context.player, screen_context.items
 	handle := player.open_machine
@@ -459,7 +479,7 @@ machine_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		return
 	}
 	machine := screen_context.machines.machines[common.machine]
-	if machine.kind == .Crafting_Station {
+	if machine_is_crafting_station(machine) {
 		browser := &screen_context.views.recipe_browser
 		open_station_recipes(state, browser, handle, station_recipe_category(screen_context.recipes, machine.recipe_maker, browser.filter.category))
 		return

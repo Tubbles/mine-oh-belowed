@@ -30,6 +30,30 @@ test_a_pump_strokes_along_its_axis_and_back :: proc(t: ^testing.T) {
 	expect_near_point(t, posed_point(motion, {2, 2, 2}, 1, {0, 1, 0}), {0, 1, 0}, "phase 1")
 }
 
+// Work item 0198: a slide moves its part by the open fraction, which a
+// hatch's state and its last toggle give, eased over the period.
+@(test)
+test_a_slide_moves_its_part_by_the_open_fraction :: proc(t: ^testing.T) {
+	motion := Machine_Motion{kind = .Slide, axis = 1, amplitude = 3.95, period_seconds = 0.8}
+	expect_near_point(t, posed_point(motion, {1, 4, 2}, 0, {0, 1, 0}), {0, 1, 0}, "shut")
+	expect_near_point(t, posed_point(motion, {1, 4, 2}, 0.5, {0, 1, 0}), {0, 2.975, 0}, "half open")
+	expect_near_point(t, posed_point(motion, {1, 4, 2}, 1, {0, 1, 0}), {0, 4.95, 0}, "open")
+	testing.expect_value(t, hatch_open_fraction(true, 0, 500, 0.5, 60, 0.8), 1)
+	testing.expect_value(t, hatch_open_fraction(false, 0, 500, 0.5, 60, 0.8), 0)
+	// Opened at tick 100 (stored 101): 0.8 s at 60 Hz is 48 ticks.
+	testing.expect(t, math.abs(hatch_open_fraction(true, 101, 100, 0, 60, 0.8)) < MOTION_TEST_TOLERANCE)
+	testing.expect(t, math.abs(hatch_open_fraction(true, 101, 124, 0, 60, 0.8) - 0.5) < MOTION_TEST_TOLERANCE)
+	testing.expect_value(t, hatch_open_fraction(true, 101, 148, 0, 60, 0.8), 1)
+	testing.expect_value(t, hatch_open_fraction(true, 101, 1000, 0.3, 60, 0.8), 1)
+	previous := f32(-1)
+	for tick in u64(100) ..= 150 {
+		opening := hatch_open_fraction(true, 101, tick, 0, 60, 0.8)
+		testing.expectf(t, opening >= previous, "tick %d: %f after %f", tick, opening, previous)
+		testing.expect(t, math.abs(hatch_open_fraction(false, 101, tick, 0, 60, 0.8) - (1 - opening)) < MOTION_TEST_TOLERANCE)
+		previous = opening
+	}
+}
+
 @(test)
 test_a_bob_moves_both_ways :: proc(t: ^testing.T) {
 	motion := Machine_Motion{kind = .Bob, axis = 1, amplitude = 0.1, period_seconds = 1}

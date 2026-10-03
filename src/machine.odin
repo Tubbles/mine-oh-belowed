@@ -12,8 +12,11 @@ import "platform"
 // nothing about machines, and machine_for_item is derived here.
 
 MACHINES_FILE_NAME :: "machines.sjson"
-MAXIMUM_FOOTPRINT_SIZE :: 9
+MAXIMUM_FOOTPRINT_SIZE :: 12
 MAXIMUM_OPEN_CELL_BOXES :: 4
+// A pod's hatches and fixtures (work item 0198, Pod_Fixture).
+MAXIMUM_POD_FIXTURES :: 8
+MINIMUM_HATCH_HEIGHT :: 2
 
 // Dense index into Machine_Registry.machines.
 Machine_Id :: distinct u16
@@ -98,6 +101,19 @@ Machine_Kind :: enum u8 {
 	// planet's generation, never by an item, and never an entity
 	// (add_entity refuses it).
 	Tree,
+	// A door of the pod (work item 0198, entity_pod.odin): placed by the
+	// world in the pod's wall, its open or closed state on Foundation.
+	// It rides in the foundations' pool.
+	Hatch,
+	// A chest placed by the world in the pod (work item 0198): the
+	// chests' pool, so every chest path works on it.
+	Locker,
+	// The pod's crafting station with the hand maker (work item 0198),
+	// placed by the world: the foundations' pool.
+	Crafting_Bench,
+	// Supplies the sealed room it touches with oxygen (work item 0198,
+	// entity_pod.odin), placed by the world: the foundations' pool.
+	Oxygen_Generator,
 }
 
 @(rodata)
@@ -132,6 +148,10 @@ machine_kind_names := [Machine_Kind]string {
 	.Pod           = "pod",
 	.Crafting_Station = "crafting_station",
 	.Tree          = "tree",
+	.Hatch         = "hatch",
+	.Locker        = "locker",
+	.Crafting_Bench = "crafting_bench",
+	.Oxygen_Generator = "oxygen_generator",
 }
 
 // The shape family a belt item places. Ramps become up or down and lifts
@@ -171,6 +191,15 @@ Machine_Cell_Definition :: struct {
 Machine_Cell_Box_Definition :: struct {
 	from: Maybe(Machine_Cell_Definition),
 	to:   Maybe(Machine_Cell_Definition),
+}
+
+// A pod's fixture as written in the file (work item 0198): a machine
+// placed by the world with its minimum corner at cell of the pod's
+// unrotated footprint, turned by rotation quarter turns against the pod.
+Pod_Fixture_Definition :: struct {
+	machine:  string,
+	cell:     Machine_Cell_Definition,
+	rotation: int,
 }
 
 // As written in the file, before references are resolved.
@@ -223,6 +252,7 @@ Machine_Definition :: struct {
 	model:                        string,
 	motion:                       Motion_Definition,
 	open_cells:                   []Machine_Cell_Box_Definition,
+	fixtures:                     []Pod_Fixture_Definition,
 	stands_on_ground:             bool,
 	bare_ground_life_minutes:     int,
 	color:                        [3]int,
@@ -330,6 +360,13 @@ Machine :: struct {
 	// nothing is placed on them, but not Solid (machine_open_cells).
 	open_cells:                  [MAXIMUM_OPEN_CELL_BOXES]Cell_Box,
 	open_cell_box_count:         int,
+	// Pods (work item 0198): the hatches and fixtures the world places in
+	// the pod's footprint, and each one's cells in the unrotated
+	// footprint, inclusive. The pod leaves those cells to them
+	// (machine_held_cells).
+	fixtures:                    [MAXIMUM_POD_FIXTURES]Pod_Fixture,
+	fixture_boxes:               [MAXIMUM_POD_FIXTURES]Cell_Box,
+	fixture_count:               int,
 	// Machines on bare ground (0201, machine_wear.odin): never refused for
 	// slope and never worn (poles, pipes, belts, the pod); the minutes of
 	// operation on bare ground before a breakdown, 0 for game.sjson's.
@@ -339,6 +376,14 @@ Machine :: struct {
 	color:                       [3]u8,
 	// The ids the machine had in an older build (save_remap.odin, 0196).
 	former_ids:                  []string,
+}
+
+// A resolved pod fixture: the machine, its minimum corner in the pod's
+// unrotated footprint and its quarter turns against the pod.
+Pod_Fixture :: struct {
+	machine:  Machine_Id,
+	cell:     [3]i32,
+	rotation: u8,
 }
 
 // Cells of the unrotated footprint, from and to inclusive.
@@ -441,6 +486,54 @@ validate_machine_kind_fields :: proc(definition: Machine_Definition, kind: Machi
 		if definition.item != "" {
 			return fmt.tprintf("tree %q cannot be placed by an item", definition.id)
 		}
+	case .Hatch:
+		return validate_hatch_definition(definition)
+	case .Locker:
+		if definition.slots < 1 || definition.slots > MAXIMUM_CHEST_SLOTS {
+			return fmt.tprintf("locker %q has slots %d outside 1 to %d", definition.id, definition.slots, MAXIMUM_CHEST_SLOTS)
+		}
+		if definition.item != "" {
+			return fmt.tprintf("locker %q cannot be placed by an item", definition.id)
+		}
+	case .Crafting_Bench:
+		return validate_crafting_bench_definition(definition)
+	case .Oxygen_Generator:
+		if definition.item != "" {
+			return fmt.tprintf("oxygen generator %q cannot be placed by an item", definition.id)
+		}
+		if definition_lists_slots_power_or_ports(definition) {
+			return fmt.tprintf("oxygen generator %q may not list slots, power or fluid ports", definition.id)
+		}
+	}
+	return ""
+}
+
+// Whether a definition lists any slots, power or fluid ports.
+definition_lists_slots_power_or_ports :: proc(definition: Machine_Definition) -> bool {
+	slots := definition.slots != 0 || definition.fuel_slots != 0 || definition.input_slots != 0 || definition.output_slots != 0
+	power := definition.fuel_power_kilowatts != 0 || definition.electric_power_kilowatts != 0 || definition.electric_output_kilowatts != 0
+	return slots || power || len(definition.fluid_ports) > 0
+}
+
+// A hatch of the pod (work item 0198): placed by the world, at least
+// MINIMUM_HATCH_HEIGHT cells high, opening its own cells (no open_cells),
+// with a slide motion or none.
+validate_hatch_definition :: proc(definition: Machine_Definition) -> string {
+	if definition.item != "" {
+		return fmt.tprintf("hatch %q cannot be placed by an item", definition.id)
+	}
+	if definition.footprint.height < MINIMUM_HATCH_HEIGHT {
+		return fmt.tprintf("hatch %q needs a footprint at least %d cells high", definition.id, MINIMUM_HATCH_HEIGHT)
+	}
+	if len(definition.open_cells) > 0 {
+		return fmt.tprintf("hatch %q lists open_cells; it opens its own cells", definition.id)
+	}
+	if definition_lists_slots_power_or_ports(definition) {
+		return fmt.tprintf("hatch %q may not list slots, power or fluid ports", definition.id)
+	}
+	kind, _ := parse_named_enum(motion_kind_names, definition.motion.kind)
+	if kind != .None && kind != .Slide {
+		return fmt.tprintf("hatch %q may only have a slide motion", definition.id)
 	}
 	return ""
 }
@@ -593,6 +686,9 @@ validate_machine_definition :: proc(definitions: []Machine_Definition, index: in
 	if problem := validate_pod_cabin(definition, kind); problem != "" {
 		return problem
 	}
+	if problem := validate_pod_fixtures(definitions, index); problem != "" {
+		return problem
+	}
 	if problem := validate_pump_head(definition, kind); problem != "" {
 		return problem
 	}
@@ -634,9 +730,16 @@ validate_machine_models :: proc(registry: Machine_Registry, data_directory: stri
 	return ""
 }
 
-// The capsule, schematic crates, the pod and the trees have no item.
+// The capsule, schematic crates, the pod, the trees and the pod's
+// hatches and fixtures have no item.
 machine_kind_is_placed_by_world :: proc(kind_name: string) -> bool {
-	return kind_name == machine_kind_names[.Capsule] || kind_name == machine_kind_names[.Schematic_Crate] || kind_name == machine_kind_names[.Pod] || kind_name == machine_kind_names[.Tree]
+	world_kinds := [?]Machine_Kind{.Capsule, .Schematic_Crate, .Pod, .Tree, .Hatch, .Locker, .Crafting_Bench, .Oxygen_Generator}
+	for kind in world_kinds {
+		if kind_name == machine_kind_names[kind] {
+			return true
+		}
+	}
+	return false
 }
 
 // One by one by one with one slot, and no item.
@@ -774,6 +877,113 @@ validate_pod_cabin :: proc(definition: Machine_Definition, kind: Machine_Kind) -
 	return fmt.tprintf("machine %q is a pod whose first open_cells box is no cabin on its floor (y 0, 2 by 2 cells at least)", definition.id)
 }
 
+// A fixture's box in the pod's unrotated footprint: from the cell to the
+// cell plus its footprint turned by rotation, minus one.
+pod_fixture_box :: proc(cell: Machine_Cell_Definition, rotation: int, footprint: Machine_Footprint_Definition) -> Cell_Box {
+	size := rotated_footprint_size({i32(footprint.width), i32(footprint.height), i32(footprint.depth)}, u8(rotation % 4))
+	from := [3]i32{i32(cell.x), i32(cell.y), i32(cell.z)}
+	return Cell_Box{from = from, to = from + size - 1}
+}
+
+// The kinds a pod's fixtures may be.
+pod_fixture_kind_name_ok :: proc(kind_name: string) -> bool {
+	kinds := [?]Machine_Kind{.Hatch, .Locker, .Crafting_Bench, .Oxygen_Generator}
+	for kind in kinds {
+		if kind_name == machine_kind_names[kind] {
+			return true
+		}
+	}
+	return false
+}
+
+cell_boxes_overlap :: proc(first, second: Cell_Box) -> bool {
+	for axis in 0 ..< 3 {
+		if first.to[axis] < second.from[axis] || second.to[axis] < first.from[axis] {
+			return false
+		}
+	}
+	return true
+}
+
+cell_box_contains :: proc(box: Cell_Box, cell: [3]i32) -> bool {
+	for axis in 0 ..< 3 {
+		if cell[axis] < box.from[axis] || cell[axis] > box.to[axis] {
+			return false
+		}
+	}
+	return true
+}
+
+// The floor cells a pod's spawn point (the centre of the cabin's floor,
+// field_pod_spawn) touches: the first open box's floor centre, rounded
+// down and up on each axis, so one to four cells.
+pod_spawn_cells :: proc(cabin: Machine_Cell_Box_Definition) -> Cell_Box {
+	from, to := cabin.from.? or_else {}, cabin.to.? or_else {}
+	low := [3]i32{i32((from.x + to.x) / 2), 0, i32((from.z + to.z) / 2)}
+	high := [3]i32{i32((from.x + to.x + 1) / 2), 0, i32((from.z + to.z + 1) / 2)}
+	return Cell_Box{from = low, to = high}
+}
+
+// A pod's fixtures (work item 0198): only a pod lists them, at most
+// MAXIMUM_POD_FIXTURES, each a known machine of a fixture kind with a
+// rotation 0 to 3, its box inside the footprint, overlapping no earlier
+// fixture and not on the cabin's spawn cells. Runs after
+// validate_pod_cabin, so a pod's cabin box exists.
+validate_pod_fixtures :: proc(definitions: []Machine_Definition, index: int) -> string {
+	definition := definitions[index]
+	if len(definition.fixtures) == 0 {
+		return ""
+	}
+	if definition.kind != machine_kind_names[.Pod] {
+		return fmt.tprintf("machine %q lists fixtures, which only a pod may", definition.id)
+	}
+	if len(definition.fixtures) > MAXIMUM_POD_FIXTURES {
+		return fmt.tprintf("pod %q has more than %d fixtures", definition.id, MAXIMUM_POD_FIXTURES)
+	}
+	footprint := Cell_Box{to = {i32(definition.footprint.width) - 1, i32(definition.footprint.height) - 1, i32(definition.footprint.depth) - 1}}
+	spawn := pod_spawn_cells(definition.open_cells[0])
+	boxes: [MAXIMUM_POD_FIXTURES]Cell_Box
+	for fixture, fixture_index in definition.fixtures {
+		machine_index := find_definition_index(definitions, fixture.machine)
+		if machine_index < 0 {
+			return fmt.tprintf("pod %q fixture %d names unknown machine %q", definition.id, fixture_index, fixture.machine)
+		}
+		fixture_definition := definitions[machine_index]
+		if !pod_fixture_kind_name_ok(fixture_definition.kind) {
+			return fmt.tprintf("pod %q fixture %d is a %q, not a hatch, locker, crafting_bench or oxygen_generator", definition.id, fixture_index, fixture_definition.kind)
+		}
+		if fixture.rotation < 0 || fixture.rotation > 3 {
+			return fmt.tprintf("pod %q fixture %d has rotation %d outside 0 to 3", definition.id, fixture_index, fixture.rotation)
+		}
+		box := pod_fixture_box(fixture.cell, fixture.rotation, fixture_definition.footprint)
+		if !cell_box_contains(footprint, box.from) || !cell_box_contains(footprint, box.to) {
+			return fmt.tprintf("pod %q fixture %d is not inside the footprint", definition.id, fixture_index)
+		}
+		for earlier in 0 ..< fixture_index {
+			if cell_boxes_overlap(boxes[earlier], box) {
+				return fmt.tprintf("pod %q fixtures %d and %d overlap", definition.id, earlier, fixture_index)
+			}
+		}
+		if cell_boxes_overlap(box, spawn) {
+			return fmt.tprintf("pod %q fixture %d stands on the cabin's spawn", definition.id, fixture_index)
+		}
+		boxes[fixture_index] = box
+	}
+	return ""
+}
+
+// Validated before (validate_pod_fixtures); the registry is dense in
+// file order, so a fixture's machine id is its definition's index.
+resolve_pod_fixtures :: proc(definitions: []Machine_Definition, definition: Machine_Definition) -> (fixtures: [MAXIMUM_POD_FIXTURES]Pod_Fixture, boxes: [MAXIMUM_POD_FIXTURES]Cell_Box, count: int) {
+	for fixture, index in definition.fixtures {
+		machine_index := find_definition_index(definitions, fixture.machine)
+		cell := fixture.cell
+		fixtures[index] = Pod_Fixture{machine = Machine_Id(machine_index), cell = {i32(cell.x), i32(cell.y), i32(cell.z)}, rotation = u8(fixture.rotation)}
+		boxes[index] = pod_fixture_box(cell, fixture.rotation, definitions[machine_index].footprint)
+	}
+	return fixtures, boxes, len(definition.fixtures)
+}
+
 // Validated before (validate_open_cells).
 resolve_open_cells :: proc(boxes: []Machine_Cell_Box_Definition) -> (resolved: [MAXIMUM_OPEN_CELL_BOXES]Cell_Box) {
 	for box, index in boxes {
@@ -804,6 +1014,7 @@ resolve_machine_registry :: proc(file: Machines_File, items: Item_Registry, flui
 		machine: Machine
 		if problem == "" {
 			machine = resolve_machine(definition, item)
+			machine.fixtures, machine.fixture_boxes, machine.fixture_count = resolve_pod_fixtures(file.machines, definition)
 			problem = resolve_fluid_ports(&machine, definition, fluids)
 		}
 		if problem == "" {

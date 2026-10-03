@@ -464,7 +464,11 @@ read_simulation_state :: proc(reader: ^Byte_Reader, state: ^Simulation_State, co
 	if bytes_left(reader^) != 0 || !venture_state_is_consistent(&state.records, content.contracts) {
 		return false
 	}
+	// An older build's pod is replaced before the occupancy is built
+	// (work item 0198), so the rebuild sees only the new pod.
+	upgraded := upgrade_resized_pods(&state.world.entities, content.machines)
 	rebuild_loaded_world(&state.world, content.machines, derived)
+	finish_pod_upgrades(state, content.machines, upgraded)
 	clear(&state.events)
 	return true
 }
@@ -605,6 +609,7 @@ rebuild_loaded_world :: proc(world: ^World, machines: Machine_Registry, derived:
 	rebuild_vein_indices(world)
 	entities := &world.entities
 	rebuild_entity_cells(entities, machines)
+	rebuild_sealed_rooms(entities, machines)
 	refresh_all_founded(entities, machines)
 	rebuild_belt_lines(entities, machines, derived.belt_items[:])
 	rebuild_fluid_networks(entities, machines)

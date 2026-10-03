@@ -301,9 +301,12 @@ drain_field_torch_removal :: proc(state: ^Simulation_State, content: Simulation_
 
 // Open_Aimed on a frame cell whose machine has a panel opens it, as the
 // block world's does (resolve_interact, 0194); Interact turns a power
-// switch or launches from a launch pad there, and the gamepad's A then
-// does not jump (without_field_interact_jump).
-interact_on_field :: proc(player: ^Player, entities: ^Entities, machines: Machine_Registry, frame: Input_Frame) -> (input: Input_Frame, events: Player_Events) {
+// switch, opens or closes a hatch of the pod (toggle_hatch, 0198) or
+// launches from a launch pad there, and the gamepad's A then does not
+// jump (without_field_interact_jump).
+interact_on_field :: proc(state: ^Simulation_State, content: Simulation_Content, index: int, frame: Input_Frame) -> (input: Input_Frame, events: Player_Events) {
+	player := &state.players[index]
+	entities, machines := &state.world.entities, content.machines
 	input = without_field_interact_jump(player^, entities, machines, frame)
 	handle := aimed_entity(NO_ENTITY, player.field.frame_target)
 	if .Open_Aimed in frame.just_pressed && entity_has_panel(entities, machines, handle) {
@@ -316,14 +319,17 @@ interact_on_field :: proc(player: ^Player, entities: ^Entities, machines: Machin
 	if toggle_power_switch(entities, machines, handle) {
 		return input, {.Toggled_Switch}
 	}
+	if toggle_hatch(entities, machines, handle, state.tick, field_player_capsules(state.players[:], content.field.tuning)) {
+		return input, {.Toggled_Switch}
+	}
 	if request_launch(entities, handle) {
 		return input, {.Launch_Requested}
 	}
 	return input, {}
 }
 
-// Interact on a frame cell holding a switch or a launch pad takes the A
-// press from Jump; anywhere else A jumps.
+// Interact on a frame cell holding a switch, a hatch or a launch pad
+// takes the A press from Jump; anywhere else A jumps.
 without_field_interact_jump :: proc(player: Player, entities: ^Entities, machines: Machine_Registry, frame: Input_Frame) -> Input_Frame {
 	result := frame
 	if .Interact in frame.pressed && entity_answers_interact(entities, machines, aimed_entity(NO_ENTITY, player.field.frame_target)) {
@@ -337,7 +343,7 @@ without_field_interact_jump :: proc(player: Player, entities: ^Entities, machine
 // tool, the move and the queued edits and placements, the hand crafting.
 tick_field_session_player :: proc(state: ^Simulation_State, content: Simulation_Content, index: int, frame: Input_Frame) -> Player_Events {
 	player := &state.players[index]
-	resolved, events := interact_on_field(player, &state.world.entities, content.machines, frame)
+	resolved, events := interact_on_field(state, content, index, frame)
 	// Counted as tick_player counts the block world's.
 	if events & {.Open_Machine, .Toggled_Switch, .Launch_Requested} != {} {
 		record_world_action(&state.records.statistics)

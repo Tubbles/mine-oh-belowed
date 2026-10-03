@@ -94,7 +94,7 @@ player_craft_makers :: proc(entities: ^Entities, machines: Machine_Registry, pla
 		return HAND_MAKERS
 	}
 	machine := machines.machines[common.machine]
-	if machine.kind != .Crafting_Station {
+	if !machine_is_crafting_station(machine) {
 		return HAND_MAKERS
 	}
 	return HAND_MAKERS + {machine.recipe_maker}

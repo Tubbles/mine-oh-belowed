@@ -7,7 +7,7 @@
 // machine panel shows under the name: describe_machine_<id> by
 // convention. A set key must exist.
 // footprint is width (x), depth (z) and height (y) in blocks before
-// rotation, each from 1 to 9; a quarter turn swaps width and depth.
+// rotation, each from 1 to 12; a quarter turn swaps width and depth.
 // model (optional, work item 0055) names data/models/<model>.obj with its
 // .mtl when that file exists (work item 0204), else data/models/
 // <model>.vox, drawn in place of the coloured box and turned with the
@@ -36,30 +36,49 @@
 // names the arm's part files instead, <model>.vox for the base and
 // <model>_turret.vox and the rest (doc/presentation.md, Machine models),
 // posed from the inserter's cycle, not the clock, so it takes no other
-// field.
+// field. kind slide (hatches only, work item 0198) moves the part along
+// axis by amplitude blocks (0 to 12) times the hatch's open fraction,
+// eased over period_seconds from its last toggle, and needs the part
+// group of its OBJ.
 // kind selects the panel and the simulation: chest, furnace, capsule,
 // belt, inserter, drill, splitter, pipe, offshore_pump, boiler,
 // steam_engine, storage_tank, pump, tar_pit_pump, flare_stack,
 // combustion_generator, hydro_turbine, pole, power_switch, lamp,
 // crafting_machine, lab, schematic_crate, core_sample_drill,
-// launch_pad, foundation, belt_pole, pod, crafting_station or tree.
+// launch_pad, foundation, belt_pole, pod, crafting_station, tree, hatch,
+// locker, crafting_bench or oxygen_generator.
 // tree (work item 0197, doc/content.md, Trees) is a tree's model:
 // placed by the planet's generation, never by an item, never an entity;
 // only footprint and model are read.
 // former_ids (optional, work item 0196) lists ids this record had in an
 // older build: a save naming one loads it as this record, with one log
 // line. A former id is never a current id of the table, nor listed twice.
-// The pod (work item 0179, doc/content.md, The pod) is the start on the
-// field: the session places it on a pad of foundations at the home. It
-// has no item, cannot be picked up, and has no panel and no slots; its
-// footprint is in cells of the pad's pitch.
+// The pod (work items 0179, 0199, 0198, doc/content.md, The pod) is the
+// start on the field: the session stands it on the floor of the home's
+// crater on a free frame of its own, no pad under it. It has no item,
+// cannot be picked up, and has no panel and no slots; its footprint is in
+// cells of the foundation pitch. fixtures (pods only, at most 8) lists
+// {machine, cell = {x, y, z}, rotation}: a machine of kind hatch, locker,
+// crafting_bench or oxygen_generator placed by the world with its minimum
+// corner at cell of the pod's unrotated footprint and turned by rotation
+// quarter turns against the pod. Its box (the rotated footprint from
+// cell) lies inside the pod's footprint, overlaps no other fixture's box
+// and not the cabin's spawn cells; the pod leaves those cells to it.
+// Hatches (kind hatch, work item 0198): no item, at least 2 cells high,
+// no open_cells, a slide motion or none. Closed its cells are solid; open
+// none is, and every row but the top is an open cell. Lockers (kind
+// locker): a chest placed by the world, slots 1 to 48. Crafting benches
+// (kind crafting_bench): recipe_maker hand, no slots, power, speed or
+// ports; the panel is the crafting station's. Oxygen generators (kind
+// oxygen_generator): no slots, power or ports; a sealed room one touches
+// has an unlimited supply.
 // open_cells (optional, work item 0186, at most 4) lists boxes of
 // footprint cells the player walks through: {from = {x, y, z}, to = {x,
 // y, z}}, both inclusive, in cells of the unrotated footprint (x along the
 // width, y up, z along the depth). The cells are still the machine's, so
 // nothing is placed on them, but they are not solid. The pod opens its
-// door (the model's front, +x) and its interior but the bed; the player
-// stands on the pad's foundations under it.
+// cabin and its airlock but the bed; the player stands on the crater's
+// floor under them.
 // The capsule (work item 0013) stands on the landing pad from the start:
 // it has no item, cannot be picked up, and holds 8 slots for quest
 // rewards and deliveries.
@@ -1056,17 +1075,29 @@ machines = [
 		description_key = "describe_machine_pod"
 		kind = "pod"
 		stands_on_ground = true
-		footprint = {width = 6, depth = 6, height = 8}
+		// 12 cells from the outer hatch (the front, +x) to the back wall,
+		// 8 across, 8 high: 6 by 4 by 4 m at the 500 mm pitch.
+		footprint = {width = 12, depth = 8, height = 8}
 		model = "pod"
-		// Beside the bed, over the bed, the door. The first box is the
-		// cabin (work item 0199): it must start on the floor row and span
-		// 2 by 2 cells at least, and new players spawn at its floor's
-		// centre. The pod stands on the floor of the home's crater, its
-		// floor row on the ground.
+		// The cabin past the bed's foot (the first box: players spawn at
+		// the centre of its floor, validate_pod_cabin, on the hatches'
+		// centre line), the cabin beside the bed, over the bed, the
+		// airlock between the hatches.
 		open_cells = [
-			{from = {x = 3, y = 0, z = 1}, to = {x = 4, y = 6, z = 4}}
-			{from = {x = 1, y = 1, z = 1}, to = {x = 2, y = 6, z = 4}}
-			{from = {x = 5, y = 0, z = 2}, to = {x = 5, y = 3, z = 3}}
+			{from = {x = 5, y = 0, z = 1}, to = {x = 7, y = 5, z = 6}}
+			{from = {x = 1, y = 0, z = 1}, to = {x = 4, y = 5, z = 4}}
+			{from = {x = 1, y = 1, z = 5}, to = {x = 4, y = 5, z = 6}}
+			{from = {x = 9, y = 0, z = 1}, to = {x = 10, y = 5, z = 6}}
+		]
+		// The outer hatch in the front wall, the inner hatch between the
+		// airlock and the cabin, then the locker, the bench and the
+		// oxygen generator along the cabin's z 0 wall, facing in.
+		fixtures = [
+			{machine = "pod_hatch", cell = {x = 11, y = 0, z = 3}, rotation = 0}
+			{machine = "pod_hatch", cell = {x = 8, y = 0, z = 3}, rotation = 0}
+			{machine = "pod_locker", cell = {x = 1, y = 0, z = 1}, rotation = 1}
+			{machine = "crafting_bench", cell = {x = 3, y = 0, z = 1}, rotation = 1}
+			{machine = "oxygen_generator", cell = {x = 5, y = 0, z = 1}, rotation = 1}
 		]
 	}
 	{
@@ -1075,10 +1106,50 @@ machines = [
 		description_key = "describe_machine_pine_tree"
 		kind = "tree"
 		// The crown's reach in cells (2.6 of 3); the model rises to 15
-		// cells, above the footprint's 9 (the most a footprint may
-		// have). The model's bottom is the trunk's base, sunk 300 mm into
-		// the ground.
+		// cells above the footprint's height of 9, the most a footprint
+		// had before the pod's 12 (0198). The model's bottom is the
+		// trunk's base, sunk 300 mm into the ground.
 		footprint = {width = 6, depth = 6, height = 9}
 		model = "pine_tree"
+	}
+	{
+		id = "pod_hatch"
+		name_key = "machine_pod_hatch"
+		description_key = "describe_machine_pod_hatch"
+		model = "pod_hatch"
+		// The door panel rises 3.95 cells into the wall's pocket.
+		motion = {kind = "slide", axis = "y", amplitude = 3.95, period_seconds = 0.8}
+		kind = "hatch"
+		stands_on_ground = true
+		footprint = {width = 1, depth = 2, height = 4}
+	}
+	{
+		id = "pod_locker"
+		name_key = "machine_pod_locker"
+		description_key = "describe_machine_pod_locker"
+		model = "pod_locker"
+		kind = "locker"
+		stands_on_ground = true
+		footprint = {width = 1, depth = 2, height = 4}
+		slots = 16
+	}
+	{
+		id = "crafting_bench"
+		name_key = "machine_crafting_bench"
+		description_key = "describe_machine_crafting_bench"
+		model = "crafting_bench"
+		kind = "crafting_bench"
+		stands_on_ground = true
+		footprint = {width = 1, depth = 2, height = 2}
+		recipe_maker = "hand"
+	}
+	{
+		id = "oxygen_generator"
+		name_key = "machine_oxygen_generator"
+		description_key = "describe_machine_oxygen_generator"
+		model = "oxygen_generator"
+		kind = "oxygen_generator"
+		stands_on_ground = true
+		footprint = {width = 1, depth = 2, height = 3}
 	}
 ]

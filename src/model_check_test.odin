@@ -145,21 +145,48 @@ test_a_triangle_inside_an_open_cell_is_reported :: proc(t: ^testing.T) {
 	boxes := []Cell_Box{{from = {1, 0, 0}, to = {1, 1, 1}}}
 	footprint := [3]i32{2, 2, 2}
 	empty := empty_test_layers()
-	testing.expect_value(t, len(model_open_cell_problems(boxes, footprint, box_layers({-1, 0, -1}, {0, 2, 1}), empty)), 0)
+	testing.expect_value(t, len(model_open_cell_problems(boxes, footprint, box_layers({-1, 0, -1}, {0, 2, 1}), empty, "open cells box")), 0)
 	small := empty_test_layers()
 	append_model_triangle(&small[.Lit], {{0.4, 1, 0}, {0.6, 1, 0}, {0.5, 1.1, 0}}, {255, 255, 255, 255})
-	inside := model_open_cell_problems(boxes, footprint, small, empty)
+	inside := model_open_cell_problems(boxes, footprint, small, empty, "open cells box")
 	testing.expect_value(t, len(inside), 1)
 	if len(inside) == 1 {
-		testing.expect(t, strings.has_prefix(inside[0].detail, "box 0 "), inside[0].detail)
+		testing.expect(t, strings.has_prefix(inside[0].detail, "open cells box 0 "), inside[0].detail)
 		testing.expect(t, strings.contains(inside[0].detail, "(body 0)"), inside[0].detail)
 	}
 	wall := empty_test_layers()
 	append_test_quad(&wall[.Lit], {{0.5, -0.4, -1.3}, {0.5, -0.4, 1.7}, {0.5, 2.6, 1.7}, {0.5, 2.6, -1.3}})
-	testing.expect_value(t, len(model_open_cell_problems(boxes, footprint, wall, empty)), 1)
+	testing.expect_value(t, len(model_open_cell_problems(boxes, footprint, wall, empty, "open cells box")), 1)
 	flush := empty_test_layers()
 	append_test_quad(&flush[.Lit], {{0, 0, -1}, {0, 0, 1}, {0, 2, 1}, {0, 2, -1}})
-	testing.expect_value(t, len(model_open_cell_problems(boxes, footprint, flush, empty)), 0)
+	testing.expect_value(t, len(model_open_cell_problems(boxes, footprint, flush, empty, "open cells box")), 0)
+}
+
+// Work item 0198: a body triangle in a pod's fixture box is reported
+// with the fixture box's label.
+@(test)
+test_a_body_in_a_fixture_box_is_found :: proc(t: ^testing.T) {
+	boxes := []Cell_Box{{from = {1, 0, 0}, to = {1, 1, 1}}}
+	footprint := [3]i32{2, 2, 2}
+	small := empty_test_layers()
+	append_model_triangle(&small[.Lit], {{0.4, 1, 0}, {0.6, 1, 0}, {0.5, 1.1, 0}}, {255, 255, 255, 255})
+	problems := model_open_cell_problems(boxes, footprint, small, empty_test_layers(), "fixture box")
+	testing.expect_value(t, len(problems), 1)
+	if len(problems) == 1 {
+		testing.expect_value(t, problems[0].check, Model_Check.Open_Cells)
+		testing.expect(t, strings.has_prefix(problems[0].detail, "fixture box 0"), problems[0].detail)
+	}
+	// The whole OBJ check reads a machine's fixture boxes: the shipped
+	// pod with a fixture box laid over its bed.
+	machines := make_test_machines()
+	walled := machines.machines[find_machine_of_kind(machines, .Pod)]
+	walled.fixture_boxes[0] = Cell_Box{from = {1, 0, 5}, to = {4, 0, 6}}
+	walled.fixture_count = 1
+	found := false
+	for problem in check_obj_machine_model(test_data_directory(), walled) {
+		found ||= problem.check == .Open_Cells && strings.has_prefix(problem.detail, "fixture box 0")
+	}
+	testing.expect(t, found, "the pod's bed in a fixture box is found")
 }
 
 // The gripper's main box of arm_gripper (tools/make_placeholder_models.py)
@@ -206,5 +233,5 @@ test_the_shipped_models_pass_the_checks :: proc(t: ^testing.T) {
 			testing.expect(t, false, model_check_report_line(machine.id, problem))
 		}
 	}
-	testing.expectf(t, counts[.Obj] >= 21 && counts[.Arm] >= 5, "%d obj and %d arm subjects", counts[.Obj], counts[.Arm])
+	testing.expectf(t, counts[.Obj] >= 26 && counts[.Arm] >= 5, "%d obj and %d arm subjects", counts[.Obj], counts[.Arm])
 }
