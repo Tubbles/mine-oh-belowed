@@ -16,6 +16,7 @@ Balance and design numbers wait for late beta, just before the first release (us
 
 ## Decisions needed
 
+- The role accents under astro-industrial punk (0211): the 0205 pass gave every machine role an accent colour (mining ochre, smelting brick red, power yellow with black hazard, fluids teal, logistics grey with yellow edges, science white with cyan). The booklet's kept images carry no such accents: the clean world's colour is pale alloy with cyan, green and amber lights, the rough world's is iron and stone. Decide whether a role accent survives as a marking on the clean parts (a painted band, a trim colour) so a machine's role still reads at 30 m, or whether the silhouette and the lights carry it alone. Recommendation: keep one accent per role as a thin trim on the clean parts, decided per machine on its reference sheet, and let the furnace (0212) be the first test.
 - Benchmark launch pad module (0050): the benchmark base has no launch pad, because a pad assembles and launches only from its panel's buttons (`start_assembly`, `request_launch` have no simulation caller) and its rocket fuel needs a sulfur and light oil chain of its own. May the benchmark press those buttons in code, or should the pad get an automatic mode?
 - Sneak on touch (0134): the Default touch layout has no sneak control. A sneak zone, a hold on the jump zone, or a HUD button beside the hotbar would give touch players the sneak edge walk; none was asked for.
 

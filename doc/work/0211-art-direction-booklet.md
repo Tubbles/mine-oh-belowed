@@ -1,6 +1,6 @@
 # 0211: The art direction booklet: images of how the machines could look
 
-Status: implementing (2026-10-03, the session runs with the user, three rounds generated under work/art/, the direction named astro-industrial punk, doc/log/2026-10-03.md; user, 2026-10-03: "i want to draft a set of images first, akin to art direction booklet where we can get a feel for different ways these machines could look"; before 0212)
+Status: implemented (2026-10-03, five rounds and the furnace reference sheet done with the user, the booklet at doc/art/booklet.md, DESIGN.md updated, doc/inspiration.md in progress; user, 2026-10-03: "i want to draft a set of images first, akin to art direction booklet where we can get a feel for different ways these machines could look"; before 0212)
 
 ## Goal
 
