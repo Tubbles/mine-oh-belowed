@@ -237,7 +237,7 @@ test_the_field_material_table :: proc(t: ^testing.T) {
 	testing.expect_value(t, table[.Topsoil].item, test_item(items, "dirt"))
 	testing.expect_value(t, table[.Bedrock].item, NO_ITEM)
 	testing.expect_value(t, table[.Air].item, NO_ITEM)
-	testing.expect_value(t, field_diggable_materials(table, 1), bit_set[Field_Material]{.Topsoil, .Stone})
+	testing.expect_value(t, field_diggable_materials(table, 1), bit_set[Field_Material]{.Topsoil, .Stone, .Coal_Ore})
 	// The dig rates (0179): soft topsoil faster, deep stone slower.
 	testing.expect_value(t, table[.Topsoil].dig_rate_percent, 150)
 	testing.expect_value(t, table[.Stone].dig_rate_percent, 100)
@@ -264,7 +264,7 @@ test_the_field_material_table :: proc(t: ^testing.T) {
 }
 
 // The brush key cycles the brushes, the material key the materials with
-// an item.
+// an item (bedrock has none, so deep stone is followed by the first ore).
 @(test)
 test_the_tool_keys_cycle_brushes_and_materials :: proc(t: ^testing.T) {
 	items := make_test_items()
@@ -279,7 +279,7 @@ test_the_tool_keys_cycle_brushes_and_materials :: proc(t: ^testing.T) {
 	testing.expect_value(t, player.held_material, Field_Material.Deep_Stone)
 	update_field_tool(&player, Field_Player_Input{just_pressed = {.Next_Brush, .Next_Material}}, content)
 	testing.expect_value(t, player.brush, 0)
-	testing.expect_value(t, player.held_material, Field_Material.Topsoil)
+	testing.expect_value(t, player.held_material, Field_Material.Hematite_Ore)
 }
 
 // The shipped brushes pass; an empty list, an unknown shape, a twice used

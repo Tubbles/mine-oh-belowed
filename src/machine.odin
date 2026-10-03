@@ -83,6 +83,11 @@ Machine_Kind :: enum u8 {
 	// A post a belt or pipe run ends on (belt_run.odin, work item 0176):
 	// one cell, its run end height_millimetres over its bottom.
 	Belt_Pole,
+	// The player's start on the field (entity_pod.odin, work item 0179):
+	// placed by the session on its pad, never by an item, never picked
+	// up, with no panel and no inventory. It rides in the foundations'
+	// pool, an entity of its common data only.
+	Pod,
 }
 
 @(rodata)
@@ -114,6 +119,7 @@ machine_kind_names := [Machine_Kind]string {
 	.Launch_Pad    = "launch_pad",
 	.Foundation    = "foundation",
 	.Belt_Pole     = "belt_pole",
+	.Pod           = "pod",
 }
 
 // The shape family a belt item places. Ramps become up or down and lifts
@@ -371,6 +377,10 @@ validate_machine_kind_fields :: proc(definition: Machine_Definition, kind: Machi
 		}
 	case .Belt_Pole:
 		return validate_belt_pole_definition(definition)
+	case .Pod:
+		if definition.item != "" {
+			return fmt.tprintf("pod %q cannot be placed by an item", definition.id)
+		}
 	}
 	return ""
 }
@@ -544,9 +554,9 @@ validate_machine_models :: proc(registry: Machine_Registry, data_directory: stri
 	return ""
 }
 
-// The capsule and schematic crates have no item.
+// The capsule, schematic crates and the pod have no item.
 machine_kind_is_placed_by_world :: proc(kind_name: string) -> bool {
-	return kind_name == machine_kind_names[.Capsule] || kind_name == machine_kind_names[.Schematic_Crate]
+	return kind_name == machine_kind_names[.Capsule] || kind_name == machine_kind_names[.Schematic_Crate] || kind_name == machine_kind_names[.Pod]
 }
 
 // One by one by one with one slot, and no item.

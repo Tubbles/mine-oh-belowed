@@ -56,13 +56,12 @@ test_shipped_quest_chapters_load :: proc(t: ^testing.T) {
 	testing.expect_value(t, registry.chapters[0].quest_count, 9)
 	testing.expect_value(t, registry.chapters[1].first_quest, 9)
 	testing.expect_value(t, registry.chapters[1].quest_count, 8)
-	tools := registry.quests[test_quest_index(registry, "tools")]
-	testing.expect_value(t, len(tools.objectives), 3)
-	testing.expect_value(t, tools.objectives[2].type, Objective_Type.Craft)
-	testing.expect_value(t, tools.objectives[2].item, test_item(references.items, "wooden_pickaxe"))
-	timber := registry.quests[test_quest_index(registry, "timber")]
-	testing.expect_value(t, timber.hints[0].counter, Hint_Counter.Mining_Ticks)
-	testing.expect_value(t, timber.hints[0].block, test_block(references.blocks, "grass"))
+	line := registry.quests[test_quest_index(registry, "line")]
+	testing.expect_value(t, len(line.objectives), 4)
+	testing.expect_value(t, line.objectives[0].type, Objective_Type.Place)
+	testing.expect_value(t, line.objectives[0].machine, test_machine(references.machines, "burner_mining_drill"))
+	coal := registry.quests[test_quest_index(registry, "coal")]
+	testing.expect_value(t, coal.objectives[0].item, test_item(references.items, "coal"))
 	furnace := registry.quests[test_quest_index(registry, "furnace")]
 	testing.expect_value(t, furnace.objectives[1].machine, test_machine(references.machines, "stone_furnace"))
 	stock := registry.quests[test_quest_index(registry, "stock")]
@@ -85,8 +84,8 @@ test_chapter :: proc() -> Chapter_File {
 	objectives[0] = {type = "obtain", item = "log", count = 10}
 	quests[0] = Quest_Definition {
 		id         = "timber",
-		title_key  = "quest_timber_title",
-		text_key   = "quest_timber_text",
+		title_key  = "quest_coal_title",
+		text_key   = "quest_coal_text",
 		objectives = objectives,
 	}
 	return Chapter_File{id = "chapter", title_key = "chapter_01_title", quests = quests}
@@ -150,8 +149,8 @@ test_quest_data_rejects_bad_definitions :: proc(t: ^testing.T) {
 		// Not a quest channel recipe.
 		with_reward(quest, {unlocks_recipe = "plank"}),
 		with_reward(quest, {item = "coal", count = 1, unlocks_recipe = "steam_engine"}),
-		with_hint(quest, {counter = "no_such_counter", threshold = 1, text_key = "mc_hint_grass"}),
-		with_hint(quest, {counter = "mining_ticks", block = "no_such_block", threshold = 1, text_key = "mc_hint_grass"}),
+		with_hint(quest, {counter = "no_such_counter", threshold = 1, text_key = "mc_smelting"}),
+		with_hint(quest, {counter = "mining_ticks", block = "no_such_block", threshold = 1, text_key = "mc_smelting"}),
 		with_hint(quest, {counter = "blocks_mined", threshold = 1, text_key = "no_such_key"}),
 		with_objective(quest, {type = "counter", counter = "no_such_counter", label_key = "objective_drill_fuel", count = 1}),
 		with_objective(quest, {type = "counter", counter = "mining_ticks", label_key = "objective_drill_fuel", count = 1}),
@@ -163,10 +162,10 @@ test_quest_data_rejects_bad_definitions :: proc(t: ^testing.T) {
 		with_objective(quest, {type = "place", count = 1}),
 		with_objective(quest, {type = "place", entity = "stone_furnace", item = "concrete", count = 1}),
 		with_objective(quest, {type = "place", item = "iron_plate", count = 1}),
-		with_hint(quest, {on_activation = true, counter = "blocks_mined", text_key = "mc_hint_grass"}),
-		with_hint(quest, {on_activation = true, threshold = 1, text_key = "mc_hint_grass"}),
+		with_hint(quest, {on_activation = true, counter = "blocks_mined", text_key = "mc_smelting"}),
+		with_hint(quest, {on_activation = true, threshold = 1, text_key = "mc_smelting"}),
 		with_hint(quest, {on_activation = true, text_key = "no_such_key"}),
-		with_hint(quest, {counter = "blocks_mined", text_key = "mc_hint_grass"}),
+		with_hint(quest, {counter = "blocks_mined", text_key = "mc_smelting"}),
 		with_reward(quest, {unlocks_technology = "no_such_technology"}),
 		with_reward(quest, {unlocks_recipe = "steam_engine", unlocks_technology = "oil_processing"}),
 		// produce_fluid names a known fluid and litres, never a count.
@@ -193,7 +192,7 @@ test_quest_data_rejects_bad_definitions :: proc(t: ^testing.T) {
 	testing.expect_value(t, resolve_test_chapter(chapter_with(paving), references), "")
 	gas := with_objective(quest, {type = "produce_fluid", fluid = "petroleum_gas", litres = 10})
 	testing.expect_value(t, resolve_test_chapter(chapter_with(gas), references), "")
-	announced := with_hint(quest, {on_activation = true, text_key = "mc_hint_grass"})
+	announced := with_hint(quest, {on_activation = true, text_key = "mc_smelting"})
 	testing.expect_value(t, resolve_test_chapter(chapter_with(announced), references), "")
 	twice := []Chapter_File{good, good}
 	_, twice_problem := resolve_quest_registry(twice, references, context.temp_allocator)

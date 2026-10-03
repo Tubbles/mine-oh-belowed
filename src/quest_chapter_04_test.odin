@@ -165,7 +165,8 @@ quest_granted_tool_tier :: proc(quest: Quest, items: Item_Registry, tool_tier: i
 // Played in order, no quest asks for an item whose every recipe is still
 // locked, and research objectives come after their prerequisites. Reward
 // technologies count as researched from the next quest on. No quest asks
-// for a block above the pickaxe the earlier quests put in hand.
+// for a block above the pickaxe the starter kit and the earlier quests put
+// in hand.
 @(test)
 test_shipped_quests_never_need_a_locked_recipe :: proc(t: ^testing.T) {
 	references := make_test_quest_references()
@@ -174,7 +175,7 @@ test_shipped_quests_never_need_a_locked_recipe :: proc(t: ^testing.T) {
 		researched     = make([]bool, len(references.technologies.technologies), context.temp_allocator),
 		quest_unlocked = make([]bool, len(references.recipes.recipes), context.temp_allocator),
 	}
-	tool_tier := 0
+	tool_tier := starter_kit_tool_tier(references.items)
 	for quest in registry.quests {
 		testing.expect_value(t, quest_tool_tier_problem(quest, references, tool_tier), "")
 		tool_tier = quest_granted_tool_tier(quest, references.items, tool_tier)
@@ -194,21 +195,28 @@ test_shipped_quests_never_need_a_locked_recipe :: proc(t: ^testing.T) {
 	}
 }
 
-// Chapter 1's stone quest passes only because the tools quest before it
-// crafts the wooden pickaxe.
+// The tool tier the quests start from: the slice's starter kit carries a
+// stone pickaxe (work item 0179), since the field has no wood for the
+// wooden one until M14.
+starter_kit_tool_tier :: proc(items: Item_Registry) -> int {
+	return items.items[test_item(items, "stone_pickaxe")].tool_tier
+}
+
+// Chapter 1's stone and ore quests come before any pickaxe quest, so they
+// pass only with the starter kit's pickaxe; without one the stone quest
+// asks too much. A deep stone hint asks more than the kit gives.
 @(test)
-test_stone_quest_needs_the_tools_quest_first :: proc(t: ^testing.T) {
+test_chapter_one_needs_the_starter_kits_pickaxe :: proc(t: ^testing.T) {
 	references := make_test_quest_references()
 	registry := make_test_quests(references)
-	tools := registry.quests[test_quest_index(registry, "tools")]
 	stone := registry.quests[test_quest_index(registry, "stone")]
+	rocks := registry.quests[test_quest_index(registry, "rocks")]
+	starter := starter_kit_tool_tier(references.items)
 	testing.expect(t, quest_tool_tier_problem(stone, references, 0) != "")
-	testing.expect_value(t, quest_granted_tool_tier(tools, references.items, 0), 1)
-	testing.expect_value(t, quest_tool_tier_problem(stone, references, 1), "")
-	timber := registry.quests[test_quest_index(registry, "timber")]
-	testing.expect_value(t, quest_tool_tier_problem(timber, references, 0), "")
+	testing.expect_value(t, quest_tool_tier_problem(stone, references, starter), "")
+	testing.expect_value(t, quest_tool_tier_problem(rocks, references, starter), "")
 	hints := []Hint{{counter = .Mining_Ticks, block = test_block(references.blocks, "deep_stone"), threshold = 1}}
-	testing.expect(t, quest_tool_tier_problem(Quest{id = "deep", hints = hints}, references, 2) != "")
+	testing.expect(t, quest_tool_tier_problem(Quest{id = "deep", hints = hints}, references, starter) != "")
 }
 
 @(test)

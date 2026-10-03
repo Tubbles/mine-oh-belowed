@@ -509,7 +509,7 @@ add_entity :: proc(entities: ^Entities, machines: Machine_Registry, machine: Mac
 		handle = pool_add(&entities.core_sample_drills, .Core_Sample_Drill, make_core_sample_drill(common))
 	case .Launch_Pad:
 		handle = pool_add(&entities.launch_pads, .Launch_Pad, make_launch_pad(common, machines.machines[machine]))
-	case .Foundation:
+	case .Foundation, .Pod:
 		handle = pool_add(&entities.foundations, .Foundation, Foundation{common = common})
 	case .Belt_Pole:
 		handle = pool_add(&entities.belt_poles, .Belt_Pole, Belt_Pole{common = common})

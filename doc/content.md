@@ -40,6 +40,7 @@ Tools gate hand mining and nothing else (0051).
 - Low grade ore goes back to ore through the crusher and the washer (the chain is in the header of `data/recipes.sjson`). It smelts directly only through the low grade iron plate schematic.
 - Crushers, washers, the alloy furnace and the assembler, among them, are one kind: `crafting_machine` (`data/machines.sjson`).
 - The recycler reverses the first recipe that makes its input and returns 25 percent of each input, rounded down.
+- The slice's chain (0179): the field yields dirt, stone, deep stone, hematite, chalcopyrite and coal (Field materials and brushes) and no wood until M14, so everything chapter 1 and the first line need is made from those by hand and in the stone furnace: the stone furnace (5 stone), stone bricks and plates in it, the foundation, the belt pole, gears, the burner mining drill, the burner inserter, the belt and the iron chest, as before. The torch, which had no recipe, is made by hand from a coal and a stone (four torches). The wooden chest and the wooden tools still need wood. `test_the_slice_recipe_chain_is_reachable_from_the_fields_yield` walks the recipes from the materials' items.
 
 ### Hand crafting
 
@@ -58,7 +59,7 @@ Target playtime and what the player owns at the end of each phase. They drive re
 
 | Phase | Target | End state |
 | --- | --- | --- |
-| 1 Arrival | 10 min | Wooden pickaxe, a stack of logs, stone, one stone furnace placed |
+| 1 Arrival | 10 min | Stone, hematite and coal dug, one stone furnace placed, ten plates, a drill, an arm, a belt and a chest placed |
 | 2 Workshop | 30 min | 3 stone furnaces, 2 burner drills, 200 plates, first gears, belts discovered |
 | 3 Automation | 45 min | One self feeding coal drill, 4 drills feeding 3 furnaces, inserters, chests, ten unattended minutes |
 | 4 Power | 75 min | 1 fuel generator, 1 offshore pump, 1 boiler, 2 steam engines, 10 poles, 4 electric drills, 4 assemblers, 2 labs, 5 technologies |
@@ -82,6 +83,15 @@ Budgets for phases 5 to 8 come with their couch tests. Planned machines not in t
 - A finite vein drained by drills turns its outcrop to `spent_block`.
 - The low grade share of a draw rises linearly from `LOW_GRADE_START_PPM` at a full reservoir to `LOW_GRADE_END_PPM` with `LOW_GRADE_END_REMAINING_PERCENT` left (`drill.odin`). Infinite veins stay at the start.
 - The starter veins by the landing pad: [quests.md](quests.md), Spawn requirements.
+
+### Veins on the sphere
+
+The terrain field's veins (0179, `generation_planet_veins.odin`): a vein is a disc on the planet, a unit direction and a radius along the sphere of the planet's radius, not voxels.
+
+- The outcrop: within the disc, from the local surface down `OUTCROP_DEPTH_METRES` (2 m), generation makes the ground the vein's ore material (`planet_sample`), never bedrock, so hand mining the outcrop yields the ore through the material table. Below it the strata go on.
+- The slice places the three starter veins only, one per ore of `PLANET_STARTER_VEIN_MATERIALS` (hematite, chalcopyrite, coal), round the home direction (the pod's, a parameter of `make_planet_generation`, `DEFAULT_PLANET_HOME` over +y until the planet record carries one): each in its own third of the circle round the home, turned by up to a quarter of the third from a seeded rotation, at `PLANET_VEIN_MINIMUM_DISTANCE_METRES` to `PLANET_VEIN_MAXIMUM_DISTANCE_METRES` (30 to 80 m), with a radius of 3 to 5 m (the scattering class), all from the `Planet_Veins` sub seed. The rest of the sphere has none until M14 scatters veins.
+- The discs come from the seed, the planet's radius and the home only, not from `data/veins.sjson`: they shape the ground, which a data edit must not reshape round saved chunks. The reservoir does come from it: `register_planet_veins` makes one `Vein` per disc, of the spawn vein type whose outcrop block has the ore's name (`hematite_ore` is the iron type's) and holding the starter size class's units by the type's mix. A file whose spawn types lack an ore refuses the registration.
+- A `Vein` keeps its block footprint and gains the disc (`sphere_centre`, `sphere_radius`, zero for a block world vein), which the save leaves out: the session registers the veins again at start, which keeps a loaded reservoir and restores its disc. `vein_under_world_position` finds the vein whose disc holds a world position projected onto the sphere; a drill on a frame taps it ([logistics.md](logistics.md), Drills).
 
 ## Ratio checks
 
@@ -124,7 +134,7 @@ Recomputed from the data. A unit is one draw from a vein, ore or spoil.
 
 The hand tool on the terrain field (0171; [architecture.md](architecture.md), The terrain field's brushes).
 
-- `data/materials.sjson` holds one record per field material but air: `id` (the material's name, `topsoil`, `stone`, `deep_stone`, `bedrock`), `item` (the `items.sjson` id a cubic metre yields and a place takes; empty for a material that is never dug or placed), `tool_tier` (the pickaxe the brush needs, 0 to the highest tool's tier, as `blocks.sjson`'s) and `dig_rate_percent` (0179, `MINIMUM_DIG_RATE_PERCENT` to `MAXIMUM_DIG_RATE_PERCENT`, 10 to 400: the brush's rate on the material in percent, `scaled_dig_rate`; a place keeps the brush's rate). Held to the configuration's strict keys: an unknown key, a missing key, an unknown material or item, a material listed twice or missing refuses the file. The texture parameters stay in `data/textures/field_materials.sjson` (Textures). The shipped table: topsoil gives dirt by hand at 150 percent, stone gives stone with a wooden pickaxe at 100, deep stone gives deep stone with an iron one at 60, bedrock gives nothing (100, never dug). It is read when the planet preview starts, not on a reload, until the slice (0179) loads it with the tables.
+- `data/materials.sjson` holds one record per field material but air: `id` (the material's name, `topsoil`, `stone`, `deep_stone`, `bedrock` and the ores `hematite_ore`, `chalcopyrite_ore`, `coal_ore`), `item` (the `items.sjson` id a cubic metre yields and a place takes; empty for a material that is never dug or placed), `tool_tier` (the pickaxe the brush needs, 0 to the highest tool's tier, as `blocks.sjson`'s) and `dig_rate_percent` (0179, `MINIMUM_DIG_RATE_PERCENT` to `MAXIMUM_DIG_RATE_PERCENT`, 10 to 400: the brush's rate on the material in percent, `scaled_dig_rate`; a place keeps the brush's rate). Held to the configuration's strict keys: an unknown key, a missing key, an unknown material or item, a material listed twice or missing refuses the file. The texture parameters stay in `data/textures/field_materials.sjson` (Textures). The shipped table: topsoil gives dirt by hand at 150 percent, stone gives stone with a wooden pickaxe at 100, deep stone gives deep stone with an iron one at 60, bedrock gives nothing (100, never dug); the ores of the outcrops (0179, Veins on the sphere) give hematite and chalcopyrite with a stone pickaxe and coal with a wooden one, at 80. It is read when the planet preview starts, not on a reload, until the slice (0179) loads it with the tables.
 - The material unit: a cubic metre an item. A sample's ground is the positive part of its density, 127 steps the whole sample, so at a spacing of s metres one step is s^3 / 127 cubic metres; the volume short of a whole item is kept per player and material, so digging at a third of a metre yields as much per cubic metre as at one.
 - `field_brushes` in `data/game.sjson` lists the brushes the brush key cycles, one to `MAXIMUM_FIELD_BRUSH_COUNT`, every key required and bounded (`field_brushes_problem`): `id` (unique), `shape` (`sphere` round the hit, or `level`, which flattens to the plane through the hit across the player's up), `radius_millimetres` (`MINIMUM_FIELD_BRUSH_RADIUS_MILLIMETRES` to `MAXIMUM_FIELD_BRUSH_RADIUS_MILLIMETRES`) and `rate_density_steps_per_tick` (1 to `MAXIMUM_FIELD_BRUSH_RATE`, in steps of 128 a spacing). The shipped brushes: a small sphere of 1 m at 6 steps a tick (a full sample in about a third of a second), a large one of 2 m at 3 and a level brush of 2 m at 6.
 
@@ -154,6 +164,13 @@ Runs between poles (0176; [logistics.md](logistics.md), Runs).
 - A belt run moves at the speed of the first flat belt of the data (`find_belt_machine`), a pipe run looks like the first pipe; the slice's content (0179) gives them items and costs.
 - `belt_runs` in `data/game.sjson`, each key required and bounded (`belt_runs_problem`): `maximum_span_millimetres` (1000 to 100000, shipped 30000), `maximum_slope_percent` (1 to 100, shipped 70), `maximum_turn_degrees` (15 to 135, shipped 90), `level_tolerance_millimetres` (0 to 1000, shipped 250) and `aligned_degrees` (8 to 30, shipped 8), how far an incline's facings and chord may turn apart. A new free pole faces the nearest of the 24 yaw steps of 15 degrees, up to 7.5 degrees off the chord, so the bound's floor is half a step plus one (asserted against `FRAME_YAW_STEPS`): below it a third of the aim directions would refuse an incline to a new pole. The slope limit holds along the whole belt, not only its chord. The bounds keep the polyline and the arc length inside an i64 and the length in line units inside an i32 at the finest pitch.
 
+## The pod
+
+The start on the field (0179, `entity_pod.odin`).
+
+- The pod is a machine of kind `pod` in `data/machines.sjson` (`id` `pod`): no item (`machine_kind_is_placed_by_world`, so it is never crafted, held or picked up), no panel and no slots, a footprint of 6 by 6 by 8 cells, 3 by 3 by 4 m at the 500 mm pitch, and the model `pod`. Its oxygen and bed wait for M15. It rides in the foundations' pool, an entity of its common data only.
+- `place_pod` lays it at the surface position: a free frame whose forward is the heading's yaw step, a pad of `POD_PAD_SIZE` by `POD_PAD_SIZE` (10 by 10) foundations that cost nothing, and the pod centred on the pad with its door, the model's front, towards the forward (`POD_ROTATION`).
+
 ## Blocks
 
 `data/blocks.sjson` holds the shapes, orientation flags, light and sound materials.
@@ -170,7 +187,7 @@ Block tiles and item icons are 16 by 16 RGBA PNG files under `data/textures/`, o
 - `textures/items/<id>.png` is the item's icon ([ui.md](ui.md), Text and theme).
 - A file that is not 16 by 16 with 8 bit channels, or does not decode, is logged and takes the fallback.
 - `data/textures/procedural.sjson` (0099) lists the blocks whose tile the game generates (`texture_generate.odin`, pure): the seven ores. Its header gives the parameters and ranges. A generated tile serves every face group and wins over any file.
-- `data/textures/field_materials.sjson` (0169) holds one entry per field material but air (topsoil, stone, deep stone, bedrock): `material`, `ground` and `fleck` (red, green, blue), and the ore parameters of `procedural.sjson` with their ranges, every key required, except that `crystal_size` must be 1: round flecks are isotropic, while larger sizes make squares whose edges stripe along the axes of the triplanar projection, so the file is refused. The tile is generated as an ore's, flecks over the ground. The planet palette's tint multiplies it ([presentation.md](presentation.md), Field meshes); it is read when the planet preview starts, not on a reload.
+- `data/textures/field_materials.sjson` (0169) holds one entry per field material but air (topsoil, stone, deep stone, bedrock and the three ores): `material`, `ground` and `fleck` (red, green, blue), and the ore parameters of `procedural.sjson` with their ranges, every key required, except that `crystal_size` must be 1: round flecks are isotropic, while larger sizes make squares whose edges stripe along the axes of the triplanar projection, so the file is refused. The tile is generated as an ore's, flecks over the ground; the ores (0179) take the stone's ground with rust red, brassy and black flecks. How they are drawn: [presentation.md](presentation.md), Textures. The planet palette's tint multiplies it ([presentation.md](presentation.md), Field meshes); it is read when the planet preview starts, not on a reload.
 - `blob_width` below about 0.55 blurs little, and the blobs join diagonally into a checkerboard. Above about 0.8 a tile holds a few large blobs that read per block.
 - The texture editor ([developer_tools.md](developer_tools.md)) saves `$XDG_STATE_HOME/mine-oh-belowed/texture_edits.sjson` in the data file's form. Its entries replace the data file's per block on every atlas build, so once the chosen values are copied into `procedural.sjson`, delete the edits file. A file that does not load is logged and ignored whole.
 - `tools/make_placeholder_textures.py` writes the placeholder block tiles, item icons and UI icons from the ids and colours in the data, skipping the procedural blocks. Rerun it after adding a block or item. Hand made files replace its output one by one.
@@ -181,6 +198,7 @@ Block tiles and item icons are 16 by 16 RGBA PNG files under `data/textures/`, o
 How models are loaded, lit and moved: [presentation.md](presentation.md), Machine models and The player.
 
 - A machine model is authored at 8 or 16 voxels per block, z up, with its +x side as the front. The keys are in the header of `data/machines.sjson`.
+- The pod (0179) is authored at 8 voxels per cell, 62.5 mm at the 500 mm pitch: a hull on a base plate, a door opening on the front and a bed inside (`tools/make_placeholder_models.py`, `pod()`).
 - The arm (0175) is authored at real scale instead, six files at 25 mm per voxel, one per part; the files and the authored pose are in [presentation.md](presentation.md), The arm. Every inserter record names it with `model = "arm"` and `motion = {kind = "arm"}`.
 - The player is six files (`player_torso.vox` and the limbs), each the whole `PLAYER_MODEL_FRAME` at 16 voxels per block with only its limb filled, +x the front and +z the right side. A replacement keeps the frame and puts the shoulders at the tops of the arms, the hips at the tops of the legs and the neck under the head.
 

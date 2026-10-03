@@ -34,7 +34,11 @@
 // steam_engine, storage_tank, pump, tar_pit_pump, flare_stack,
 // combustion_generator, hydro_turbine, pole, power_switch, lamp,
 // crafting_machine, lab, schematic_crate, core_sample_drill,
-// launch_pad, foundation or belt_pole.
+// launch_pad, foundation, belt_pole or pod.
+// The pod (work item 0179, doc/content.md, The pod) is the start on the
+// field: the session places it on a pad of foundations at the home. It
+// has no item, cannot be picked up, and has no panel and no slots; its
+// footprint is in cells of the pad's pitch.
 // The capsule (work item 0013) stands on the landing pad from the start:
 // it has no item, cannot be picked up, and holds 8 slots for quest
 // rewards and deliveries.
@@ -946,5 +950,13 @@ machines = [
 		kind = "belt_pole"
 		footprint = {width = 1, depth = 1, height = 1}
 		height_millimetres = 1500
+	}
+	{
+		id = "pod"
+		name_key = "machine_pod"
+		description_key = "describe_machine_pod"
+		kind = "pod"
+		footprint = {width = 6, depth = 6, height = 8}
+		model = "pod"
 	}
 ]

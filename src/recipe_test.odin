@@ -25,7 +25,7 @@ test_recipe :: proc(recipes: Recipe_Registry, id: string) -> int {
 test_shipped_recipes_resolve :: proc(t: ^testing.T) {
 	items := make_test_items()
 	recipes, technologies := make_test_recipes(items)
-	testing.expect_value(t, len(recipes.recipes), 124)
+	testing.expect_value(t, len(recipes.recipes), 125)
 	testing.expect_value(t, len(technologies.technologies), 27)
 	plank := recipes.recipes[test_recipe(recipes, "plank")]
 	testing.expect_value(t, plank.outputs[0], Item_Stack{test_item(items, "plank"), 4})
@@ -42,6 +42,65 @@ test_shipped_recipes_resolve :: proc(t: ^testing.T) {
 	testing.expect_value(t, furnace_recipe_for(recipes, test_item(items, "log")), test_recipe(recipes, "charcoal"))
 	testing.expect_value(t, furnace_recipe_for(recipes, test_item(items, "copper_plate")), NO_RECIPE)
 	testing.expect(t, !item_is_smeltable(recipes, test_item(items, "coal")))
+}
+
+// A recipe the slice's player makes from the held items: by hand, or in
+// a stone furnace once one is held, unlocked from the start or by
+// discovery, without fluids.
+slice_recipe_is_makeable :: proc(recipe: Recipe, held: []bool, furnace: Item_Id) -> bool {
+	if recipe.channel != .Start && recipe.channel != .Discovery || len(recipe.fluid_inputs) > 0 {
+		return false
+	}
+	if .Hand not_in recipe.made_in && (.Furnace not_in recipe.made_in || !held[furnace]) {
+		return false
+	}
+	for input in recipe.inputs {
+		if !held[input.item] {
+			return false
+		}
+	}
+	return true
+}
+
+// Every item made from the start set until nothing new comes.
+slice_reachable_items :: proc(recipes: Recipe_Registry, start: []bool, furnace: Item_Id) -> []bool {
+	held := slice.clone(start, context.temp_allocator)
+	for grew := true; grew; {
+		grew = false
+		for recipe in recipes.recipes {
+			if !slice_recipe_is_makeable(recipe, held, furnace) {
+				continue
+			}
+			for output in recipe.outputs {
+				grew = grew || !held[output.item]
+				held[output.item] = true
+			}
+		}
+	}
+	return held
+}
+
+// The slice's recipe chain (work item 0179): from the items the field's
+// materials yield (data/materials.sjson; no wood until M14) by hand and in
+// the stone furnace to every building chapter 1 and the first line need.
+@(test)
+test_the_slice_recipe_chain_is_reachable_from_the_fields_yield :: proc(t: ^testing.T) {
+	items := make_test_items()
+	recipes, _ := make_test_recipes(items)
+	table, problem := parse_field_material_table(#load("../data/materials.sjson"), FIELD_MATERIALS_FILE_NAME, items)
+	testing.expect_value(t, problem, "")
+	start := make([]bool, len(items.items), context.temp_allocator)
+	for record in table {
+		if record.item != NO_ITEM {
+			start[record.item] = true
+		}
+	}
+	testing.expect(t, !start[test_item(items, "log")], "the field yields no wood")
+	held := slice_reachable_items(recipes, start, test_item(items, "stone_furnace"))
+	for id in ([?]string{"stone_furnace", "foundation", "torch", "belt_pole", "burner_mining_drill", "burner_inserter", "belt", "iron_chest"}) {
+		testing.expectf(t, held[test_item(items, id)], "%s is out of reach", id)
+	}
+	testing.expect(t, !held[test_item(items, "wooden_chest")], "the wooden chest needs wood")
 }
 
 @(test)

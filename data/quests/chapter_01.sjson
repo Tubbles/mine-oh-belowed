@@ -1,6 +1,9 @@
 // Chapter 1, Arrival (doc/quests.md, Chapters), one quest per beat.
 // Chapters load in file name order and play in sequence, one active quest
-// at a time.
+// at a time. The slice's chapter (work item 0179): the field has no trees
+// until M14 and the starter kit carries a stone pickaxe, so the chapter
+// digs stone and the outcrops, smelts plates and ends with the first line
+// of a drill, an arm, a belt and a chest.
 //
 // A quest: id, title_key, text_key (the objective text), objectives,
 // message_key (Mission Control when the quest becomes active) and
@@ -95,29 +98,6 @@ quests = [
 		complete_key = "mc_bearings_done"
 	}
 	{
-		id = "timber"
-		title_key = "quest_timber_title"
-		text_key = "quest_timber_text"
-		objectives = [
-			{type = "obtain", item = "log", count = 10}
-		]
-		message_key = "mc_timber"
-		hints = [
-			{counter = "mining_ticks", block = "grass", threshold = 120, text_key = "mc_hint_grass"}
-		]
-	}
-	{
-		id = "tools"
-		title_key = "quest_tools_title"
-		text_key = "quest_tools_text"
-		objectives = [
-			{type = "craft", item = "plank", count = 4}
-			{type = "craft", item = "stick", count = 4}
-			{type = "craft", item = "wooden_pickaxe", count = 1}
-		]
-		message_key = "mc_tools"
-	}
-	{
 		id = "stone"
 		title_key = "quest_stone_title"
 		text_key = "quest_stone_text"
@@ -135,6 +115,15 @@ quests = [
 		]
 		message_key = "mc_rocks"
 		complete_key = "mc_rocks_done"
+	}
+	{
+		id = "coal"
+		title_key = "quest_coal_title"
+		text_key = "quest_coal_text"
+		objectives = [
+			{type = "obtain", item = "coal", count = 10}
+		]
+		message_key = "mc_coal"
 	}
 	{
 		id = "furnace"
@@ -171,5 +160,18 @@ quests = [
 			{item = "iron_plate", count = 10}
 		]
 		main = true
+	}
+	{
+		id = "line"
+		title_key = "quest_line_title"
+		text_key = "quest_line_text"
+		objectives = [
+			{type = "place", entity = "burner_mining_drill", count = 1}
+			{type = "place", entity = "burner_inserter", count = 1}
+			{type = "place", entity = "belt", count = 1}
+			{type = "place", entity = "iron_chest", count = 1}
+		]
+		message_key = "mc_line"
+		complete_key = "mc_line_done"
 	}
 ]

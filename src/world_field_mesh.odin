@@ -28,8 +28,12 @@ FIELD_VERTEX_CELL_COUNT :: FIELD_VERTEX_CELL_SIZE * FIELD_VERTEX_CELL_SIZE * FIE
 // A vertex position is in this fraction of a grid cell; a power of two,
 // so the positions convert to floats exactly.
 FIELD_MESH_POSITION_UNITS :: 256
-// Every material but air has a texture and a weight per vertex.
-FIELD_TEXTURED_MATERIAL_COUNT :: len(Field_Material) - 1
+// The material slots of a vertex, the first four materials but air
+// (field_material_slot), one weight each, which the renderer binds to a
+// texture each (render_field.odin). The ores of the veins' outcrops (0179)
+// share the stone's slot until the renderer takes more slots: their
+// tiles are generated (FIELD_MATERIAL_TILE_COUNT) but not yet bound.
+FIELD_TEXTURED_MATERIAL_COUNT :: 4
 
 // The samples a node meshes from: index 0 is the sample at origin, a grid
 // step is step samples. Filled from the loaded chunks for the finest level
@@ -53,8 +57,8 @@ Field_Grid :: struct {
 // position is in 1/FIELD_MESH_POSITION_UNITS of a grid cell from the
 // grid's origin. gradient is the density's change across the cell, the
 // central difference at the cell's centre; the surface faces against it.
-// weights is the share of the cell's ground corners per material, Topsoil
-// first (field_material_slot), summing to about 255; color is the mean
+// weights is the share of the cell's ground corners per material slot,
+// Topsoil first (field_material_slot), summing to about 255; color is the mean
 // palette colour of the ground corners; light is the mean block light and
 // sky light of the air corners (field_vertex_light).
 Field_Surface_Vertex :: struct {
@@ -106,6 +110,9 @@ field_sample_is_ground :: proc(density: i8) -> bool {
 }
 
 field_material_slot :: proc(material: Field_Material) -> int {
+	if int(material) > FIELD_TEXTURED_MATERIAL_COUNT {
+		return field_material_slot(.Stone)
+	}
 	return int(material) - 1
 }
 

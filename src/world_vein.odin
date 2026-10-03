@@ -134,6 +134,27 @@ vein_at_column :: proc(world: ^World, x, z: i32) -> (id: Vein_Id, found: bool) {
 	return {}, false
 }
 
+// The registered vein whose disc on the sphere (0179) holds the world
+// position projected onto the sphere through the disc's centre (the
+// first in registration order); block world veins have no disc.
+vein_under_world_position :: proc(veins: []Vein, position: World_Position) -> (id: Vein_Id, found: bool) {
+	for vein in veins {
+		if vein.sphere_radius > 0 && position_in_sphere_disc(vein.sphere_centre, vein.sphere_radius, position) {
+			return vein.id, true
+		}
+	}
+	return {}, false
+}
+
+position_in_sphere_disc :: proc(centre: [3]i64, radius: i64, position: World_Position) -> bool {
+	length := vector_length(cast([3]i64)position)
+	if length == 0 {
+		return false
+	}
+	projected := cast([3]i64)position * vector_length(centre) / length
+	return vector_length(projected - centre) <= radius
+}
+
 // Nil for an id no chunk registered. Valid until the next vein registers.
 registered_vein :: proc(world: ^World, id: Vein_Id) -> ^Vein {
 	return vein_of_id(world.veins[:], world.vein_indices, id)

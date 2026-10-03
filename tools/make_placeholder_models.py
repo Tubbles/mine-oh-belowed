@@ -109,6 +109,9 @@ SWITCH_BODY = (80, 80, 86)
 SUIT = (60, 110, 200)
 SUIT_DARK = (38, 62, 110)
 VISOR = (24, 30, 44)
+BED_FRAME = (90, 92, 100)
+BED_BLANKET = (70, 90, 130)
+PILLOW = (220, 220, 210)
 
 FIRE = glow((240, 150, 60))
 FLAME = glow((255, 190, 80))
@@ -861,6 +864,29 @@ def launch_pad():
     return {"": model}
 
 
+def pod():
+    """6 by 8 by 6 cells of 0.5 m (work item 0179): a white hull of about 3
+    by 3 by 4 m on a base plate, an orange band and windows on the sides,
+    a door opening on the front (+x) and a bed as a block inside, seen
+    through the door."""
+    model = Model((6, 8, 6))
+    model.box((0, 0, 0), (47, 1, 47), BASE)
+    model.box((2, 2, 2), (45, 57, 45), CAPSULE_WHITE)
+    model.clear((4, 2, 4), (43, 55, 43))
+    model.box((4, 58, 4), (43, 59, 43), CAPSULE_WHITE)
+    model.box((14, 60, 14), (33, 61, 33), CAPSULE_TOP)
+    model.box((2, 40, 2), (45, 43, 45), CAPSULE_TOP)
+    model.clear((4, 40, 4), (43, 43, 43))
+    for z in (2, 3, 44, 45):
+        model.box((16, 24, z), (31, 33, z), WINDOW)
+    model.clear((44, 2, 17), (45, 35, 30))
+    model.box((44, 36, 16), (45, 37, 31), CAPSULE_TOP)
+    model.box((8, 2, 6), (23, 7, 37), BED_FRAME)
+    model.box((9, 8, 7), (22, 9, 30), BED_BLANKET)
+    model.box((9, 8, 31), (22, 10, 36), PILLOW)
+    return {"": model}
+
+
 # The player (work item 0066): six limbs in one frame of 10 by 29 by 10
 # voxels at 16 per block, about the 0.6 by 1.8 by 0.6 blocks of the
 # collision box. Every limb file has the whole frame's size, so the limbs
@@ -956,6 +982,7 @@ MODELS = {
     "electrolyser": electrolyser,
     "core_sample_drill": core_sample_drill,
     "launch_pad": launch_pad,
+    "pod": pod,
     "lab": lab,
     "player": player,
 }

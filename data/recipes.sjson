@@ -55,6 +55,9 @@ recipes = [
 	{id = "concrete_stairs", inputs = [{item = "concrete", count = 3}], outputs = [{item = "concrete_stairs", count = 4}], seconds = 0.5, made_in = ["hand", "assembler"], category = "materials", tags = ["building"], channel = "start"}
 	{id = "plank_slab", inputs = [{item = "plank", count = 1}], outputs = [{item = "plank_slab", count = 2}], seconds = 0.5, made_in = ["hand", "assembler"], category = "materials", tags = ["wood", "building"], channel = "start"}
 	{id = "plank_stairs", inputs = [{item = "plank", count = 3}], outputs = [{item = "plank_stairs", count = 4}], seconds = 0.5, made_in = ["hand", "assembler"], category = "materials", tags = ["wood", "building"], channel = "start"}
+	// The torch (work item 0179): coal on a stone, by hand from what the
+	// slice's ground yields, before the first furnace.
+	{id = "torch", inputs = [{item = "coal", count = 1}, {item = "stone", count = 1}], outputs = [{item = "torch", count = 4}], seconds = 0.5, made_in = ["hand"], category = "materials", tags = ["building", "stone"], channel = "start"}
 	{id = "stone_brick", inputs = [{item = "stone", count = 2}], outputs = [{item = "stone_brick", count = 1}], seconds = 3.2, made_in = ["furnace"], category = "materials", tags = ["smelting", "stone"], channel = "start"}
 	{id = "charcoal", inputs = [{item = "log", count = 2}], outputs = [{item = "charcoal", count = 1}], seconds = 3.2, made_in = ["furnace"], category = "materials", tags = ["smelting", "wood", "fuel"], channel = "discovery"}
 	{id = "iron_plate", inputs = [{item = "hematite", count = 1}], outputs = [{item = "iron_plate", count = 1}, {item = "slag", count = 1, byproduct = true}], seconds = 3.2, made_in = ["furnace"], category = "materials", tags = ["smelting", "iron"], channel = "start"}

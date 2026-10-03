@@ -656,3 +656,74 @@ test_coal_line_dead_end_clogs_with_gravel :: proc(t: ^testing.T) {
 	testing.expect(t, fuel_after_five_minutes > 0)
 	testing.expect_value(t, pool_get(&world.entities.inserters, inserter).state, Inserter_State.Idle)
 }
+
+// A pad of three by two foundations on a free frame at the hit: room for
+// a two by two drill at (0, 1, 0) facing +x and a chest at its drop cell
+// (2, 1, 0).
+lay_test_drill_pad :: proc(world: ^World, machines: Machine_Registry, hit: World_Position) -> Frame_Id {
+	foundation := test_foundation(machines)
+	_, frame := place_free_foundation(&world.entities, machines, foundation, hit, {UNIT_VECTOR_ONE, 0, 0}, 500)
+	for x in i32(0) ..< 3 {
+		for z in i32(0) ..< 2 {
+			if x != 0 || z != 0 {
+				place_on_frame(&world.entities, machines, foundation, frame, {x, 0, z}, 0)
+			}
+		}
+	}
+	return frame
+}
+
+// The world's veins are the field's: the test planet's starter veins.
+register_test_planet_veins :: proc(world: ^World) -> Planet_Generation {
+	generation := make_test_planet_generation()
+	problem := register_planet_veins(&world.veins, &world.vein_indices, generation, make_test_generator(DEFAULT_WORLD_SEED).veins)
+	assert(problem == "", problem)
+	return generation
+}
+
+// On a pad over the coal outcrop the drill takes the coal vein and puts
+// one unit of the vein's mix into the chest on its drop cell within its
+// cycle.
+@(test)
+test_a_drill_on_a_frame_over_an_outcrop_taps_its_vein :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_drill_world(content)
+	records := make_test_records(content)
+	generation := register_test_planet_veins(&world)
+	coal_vein := generation.veins.veins[2]
+	testing.expect_value(t, coal_vein.material, Field_Material.Coal_Ore)
+	frame := lay_test_drill_pad(&world, content.machines, World_Position(coal_vein.centre))
+	drill_machine := test_machine(content.machines, "burner_mining_drill")
+	drill, refusal, vein_found := place_drill_on_frame(&world.entities, content.machines, world.veins[:], drill_machine, frame, {0, 1, 0}, 0)
+	testing.expect(t, vein_found)
+	testing.expect_value(t, refusal, Frame_Placement_Refusal.None)
+	testing.expect_value(t, pool_get(&world.entities.drills, drill).vein, planet_vein_id(2))
+	chest, chest_refusal := place_on_frame(&world.entities, content.machines, test_machine(content.machines, "iron_chest"), frame, {2, 1, 0}, 0)
+	testing.expect_value(t, chest_refusal, Frame_Placement_Refusal.None)
+	testing.expect_value(t, drill_drop_cell(pool_get(&world.entities.drills, drill)^, content.machines.machines[drill_machine]), World_Coordinate{2, 1, 0})
+	coal := test_item(content.items, "coal")
+	pool_get(&world.entities.drills, drill).slots[DRILL_FUEL_SLOT] = Item_Stack{coal, 5}
+	cycle := int(drill_cycle_ticks(content.machines.machines[drill_machine], TEST_TICK_RATE))
+	tick_test_entities(&world, &records, content, cycle + 1)
+	vein_type := content.veins.types[world.veins[world.vein_indices[planet_vein_id(2)]].type]
+	total := 0
+	for output in vein_type.outputs[:vein_type.output_count] {
+		total += chest_count_of(&world, chest, output)
+	}
+	testing.expect_value(t, total, 1)
+}
+
+// A drill on a frame off every outcrop (the far side of the planet) is
+// refused and leaves the frame's cells as they were.
+@(test)
+test_a_drill_on_a_frame_off_every_outcrop_is_refused :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_drill_world(content)
+	generation := register_test_planet_veins(&world)
+	frame := lay_test_drill_pad(&world, content.machines, World_Position(fixed_scale(-DEFAULT_PLANET_HOME, generation.radius)))
+	handle, refusal, vein_found := place_drill_on_frame(&world.entities, content.machines, world.veins[:], test_machine(content.machines, "burner_mining_drill"), frame, {0, 1, 0}, 0)
+	testing.expect(t, !vein_found)
+	testing.expect_value(t, handle, NO_ENTITY)
+	testing.expect_value(t, refusal, Frame_Placement_Refusal.None)
+	testing.expect_value(t, frame_cell_count(&world.entities.frames, frame), 6)
+}

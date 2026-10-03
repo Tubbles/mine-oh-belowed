@@ -32,6 +32,8 @@ Generation_Purpose :: enum u8 {
 	// The planet's surface relief and tint regions of work item 0168.
 	Planet_Surface,
 	Planet_Tint,
+	// The veins on the sphere of work item 0179.
+	Planet_Veins,
 }
 
 Purpose_Seeds :: [Generation_Purpose]u64

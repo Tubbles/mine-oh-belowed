@@ -13,21 +13,21 @@ test_field_material_entry :: proc(material: string) -> string {
 test_the_shipped_field_material_textures_load :: proc(t: ^testing.T) {
 	tiles, problem := parse_field_material_textures(#load("../data/textures/field_materials.sjson"), "field_materials.sjson")
 	testing.expect_value(t, problem, "")
-	for slot in 1 ..< FIELD_TEXTURED_MATERIAL_COUNT {
-		testing.expectf(t, tiles[slot] != tiles[0], "material slot %d has the first slot's tile", slot)
+	for tile in 1 ..< FIELD_MATERIAL_TILE_COUNT {
+		testing.expectf(t, tiles[tile] != tiles[0], "material tile %d is the first material's tile", tile)
 	}
 }
 
 @(test)
 test_field_material_textures_need_every_material_once :: proc(t: ^testing.T) {
-	complete := strings.concatenate({test_field_material_entry("topsoil"), test_field_material_entry("stone"), test_field_material_entry("deep_stone"), test_field_material_entry("bedrock")}, context.temp_allocator)
+	complete := strings.concatenate({test_field_material_entry("topsoil"), test_field_material_entry("stone"), test_field_material_entry("deep_stone"), test_field_material_entry("bedrock"), test_field_material_entry("hematite_ore"), test_field_material_entry("chalcopyrite_ore"), test_field_material_entry("coal_ore")}, context.temp_allocator)
 	_, problem := parse_field_material_textures(transmute([]byte)strings.concatenate({"materials = [\n", complete, "]"}, context.temp_allocator), "test")
 	testing.expect_value(t, problem, "")
 	cases := [?]struct {
 		entries:  string,
 		expected: string,
 	} {
-		{strings.concatenate({test_field_material_entry("topsoil"), test_field_material_entry("stone"), test_field_material_entry("deep_stone")}, context.temp_allocator), "no entry for bedrock"},
+		{strings.concatenate({test_field_material_entry("topsoil"), test_field_material_entry("stone"), test_field_material_entry("deep_stone"), test_field_material_entry("hematite_ore"), test_field_material_entry("chalcopyrite_ore"), test_field_material_entry("coal_ore")}, context.temp_allocator), "no entry for bedrock"},
 		{strings.concatenate({complete, test_field_material_entry("stone")}, context.temp_allocator), "repeats stone"},
 		{test_field_material_entry("air"), "unknown material air"},
 		{"{material = \"stone\", ground = [1, 2], fleck = [1, 2, 3], " + TEST_FIELD_MATERIAL_PARAMETERS + "}", "ground must be an array"},

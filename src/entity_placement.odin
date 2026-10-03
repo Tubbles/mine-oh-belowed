@@ -279,6 +279,45 @@ commit_placement :: proc(world: ^World, machines: Machine_Registry, placement: P
 	return handle
 }
 
+// A drill on a frame (work item 0179) taps the vein on the sphere under
+// its footprint: the first bottom cell, in footprint order, whose centre
+// (the frame's transform of the cell) lies on a vein's disc
+// (vein_under_world_position). A bore drill finds none, since the sphere
+// has no deep veins yet.
+frame_drill_vein_under :: proc(frame: Frame, veins: []Vein, machine: Machine, origin: World_Coordinate, rotation: u8) -> (vein: Vein_Id, found: bool) {
+	if drill_is_bore(machine) {
+		return {}, false
+	}
+	for cell in footprint_cells(origin, machine.footprint, rotation) {
+		if cell.y != origin.y {
+			continue
+		}
+		if vein, found = vein_under_world_position(veins, frame_cell_centre(frame, cell)); found {
+			return
+		}
+	}
+	return {}, false
+}
+
+// A drill placed on a frame as place_on_frame places a machine, tapping
+// the vein under it. With no vein under any bottom cell it is refused, as
+// a block world drill off a vein is: vein_found is false and nothing is
+// placed.
+place_drill_on_frame :: proc(entities: ^Entities, machines: Machine_Registry, veins: []Vein, machine: Machine_Id, frame: Frame_Id, origin: World_Coordinate, rotation: u8) -> (handle: Entity_Handle, refusal: Frame_Placement_Refusal, vein_found: bool) {
+	record, frame_found := find_frame(&entities.frames, frame)
+	if !frame_found {
+		return NO_ENTITY, .Unknown_Frame, false
+	}
+	vein: Vein_Id
+	if vein, vein_found = frame_drill_vein_under(record, veins, machines.machines[machine], origin, rotation); !vein_found {
+		return NO_ENTITY, .None, false
+	}
+	if handle, refusal = place_on_frame(entities, machines, machine, frame, origin, rotation); refusal == .None {
+		pool_get(&entities.drills, handle).vein = vein
+	}
+	return handle, refusal, true
+}
+
 // A valid placement's footprint holds only air and ground cover
 // (cell_takes_machine; hydro turbines refuse cover), so every block left
 // in it is cover.

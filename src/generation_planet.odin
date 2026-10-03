@@ -11,6 +11,8 @@ import "platform"
 // projected onto the sphere of the radius (three dimensional, so no
 // latitude and longitude and no pole). Strata go by depth below the local
 // surface; bedrock starts at the planet's bedrock depth below the radius.
+// The veins' outcrops replace the strata near the surface within their
+// discs (0179, generation_planet_veins.odin).
 // The relief's octaves are the planet record's (data/planets.sjson), at
 // most MAXIMUM_RELIEF_METRES in all (data_planet.odin).
 
@@ -38,20 +40,26 @@ Planet_Generation :: struct {
 	// The sea's surface, the radius plus the sea level (0172).
 	sea_radius:          i64,
 	relief_octaves:      [RELIEF_OCTAVE_COUNT]Relief_Octave,
+	// The veins' discs round the home (0179, generation_planet_veins.odin).
+	veins:               Planet_Veins,
 }
 
-make_planet_generation :: proc(seed: u64, planet: Planet, spacing_millimetres: int) -> Planet_Generation {
+// home is the direction the starter veins are placed round (the pod's,
+// 0179): any non-zero vector along it, the zero vector the default.
+make_planet_generation :: proc(seed: u64, planet: Planet, spacing_millimetres: int, home := DEFAULT_PLANET_HOME) -> Planet_Generation {
 	seeds := generation_seed.derive_purpose_seeds(seed)
+	radius := metres_to_position_units(i64(planet.radius_metres))
 	return Planet_Generation {
 		surface_seed = seeds[.Planet_Surface],
 		tint_seed = seeds[.Planet_Tint],
-		radius = metres_to_position_units(i64(planet.radius_metres)),
+		radius = radius,
 		bedrock_radius = metres_to_position_units(i64(planet.radius_metres - planet.bedrock_depth_metres)),
 		spacing_millimetres = spacing_millimetres,
 		spacing = sample_axis_to_position(1, spacing_millimetres),
 		palette_length = len(planet.palette),
 		sea_radius = metres_to_position_units(i64(planet.radius_metres + planet.sea_level_metres)),
 		relief_octaves = planet.relief_octaves,
+		veins = plan_planet_veins(seed, home, radius),
 	}
 }
 
@@ -175,13 +183,15 @@ planet_sample :: proc(generation: Planet_Generation, position: World_Position) -
 		material := distance <= generation.bedrock_radius ? Field_Material.Bedrock : Field_Material.Deep_Stone
 		return {MAXIMUM_DENSITY, material, planet_tint(generation, position)}
 	}
-	surface := generation.radius + surface_relief(generation, project_onto_sphere(position, distance, generation.radius))
+	on_sphere := project_onto_sphere(position, distance, generation.radius)
+	surface := generation.radius + surface_relief(generation, on_sphere)
 	depth := surface - distance
 	density := depth_to_density(depth, generation.spacing_millimetres)
 	if density <= 0 {
 		return {density, .Air, 0}
 	}
-	return {density, planet_stratum(depth, distance, generation.bedrock_radius), planet_tint(generation, position)}
+	material := planet_outcrop_material(generation.veins, planet_stratum(depth, distance, generation.bedrock_radius), depth, on_sphere)
+	return {density, material, planet_tint(generation, position)}
 }
 
 // Whether any sample of the chunk can hold sea: the nearest sample to

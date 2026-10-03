@@ -14,7 +14,14 @@ import "sjson_text"
 
 FIELD_MATERIALS_TEXTURE_FILE :: "textures/field_materials.sjson"
 
-Field_Material_Tiles :: [FIELD_TEXTURED_MATERIAL_COUNT]Tile_Pixels
+// One tile per material but air, in the material's order.
+FIELD_MATERIAL_TILE_COUNT :: len(Field_Material) - 1
+
+Field_Material_Tiles :: [FIELD_MATERIAL_TILE_COUNT]Tile_Pixels
+
+field_material_tile :: proc(material: Field_Material) -> int {
+	return int(material) - 1
+}
 
 field_material_texture_key_is_known :: proc(key: string) -> bool {
 	switch key {
@@ -39,7 +46,7 @@ parse_field_material :: proc(object: json.Object) -> (material: Field_Material, 
 			return candidate, ""
 		}
 	}
-	return .Air, fmt.tprintf("unknown material %s (expected topsoil, stone, deep_stone or bedrock)", name)
+	return .Air, fmt.tprintf("unknown material %s (expected a material of the field but air)", name)
 }
 
 parse_texture_color :: proc(object: json.Object, key: string) -> (color: [3]u8, problem: string) {
@@ -110,7 +117,7 @@ parse_field_material_textures :: proc(data: []byte, source: string) -> (tiles: F
 			return {}, fmt.tprintf("%s: materials[%d] repeats %s", source, index, field_material_name(material))
 		}
 		seen[material] = true
-		tiles[field_material_slot(material)] = tile
+		tiles[field_material_tile(material)] = tile
 	}
 	for material in Field_Material {
 		if material != .Air && !seen[material] {

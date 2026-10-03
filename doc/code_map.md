@@ -1,6 +1,6 @@
 # Code map
 
-The entry page for the source: 247 files under `src/` plus 172 test files beside them. 225 are the `game` package, grouped into seven clusters; 22 are seven leaf packages under `src/` (section Packages), each a cluster named after its directory. Read the cluster table, pick a cluster, open its entry file; the section of each cluster lists its files in reading order. How the parts work is in [architecture.md](architecture.md), the why of the clusters in the audits under [audit/](audit/).
+The entry page for the source: 249 files under `src/` plus 174 test files beside them. 227 are the `game` package, grouped into seven clusters; 22 are seven leaf packages under `src/` (section Packages), each a cluster named after its directory. Read the cluster table, pick a cluster, open its entry file; the section of each cluster lists its files in reading order. How the parts work is in [architecture.md](architecture.md), the why of the clusters in the audits under [audit/](audit/).
 
 - Rule: a new file goes into a cluster and takes one of its file name prefixes (or a line in the file table of `tools/code_graph.py`); a reference against the allowed dependency table below is a finding until it is refactored away.
 - The map is kept true by two checks: `python3 tools/check_docs.py` checks every backticked file and name in it, and `python3 tools/code_graph.py --check doc/code_map.md` compares every cluster edge the allowed table does not allow with the map's record of it ([build.md](build.md), Source checks).
@@ -13,13 +13,13 @@ The entry page for the source: 247 files under `src/` plus 172 test files beside
 |---|---|---|---|---|---|
 | loop | the process: start-up, the frame, when the tick runs (the lockstep driver), sessions, the network and the server, the requests served between frames | `loop.odin` | 12 | 6803 | [loop](audit/loop.md) |
 | ui | the input layer, the immediate mode toolkit, every screen, the HUD and the touch overlay | `ui_core.odin` | 49 | 17288 | [ui](audit/ui.md) |
-| world | blocks and what follows a block: chunks, light, water, meshing, streaming, generation, the save codec; the terrain field and the foundation frames beside them (M13) | `world_chunk.odin` | 50 | 14350 | [world](audit/world.md) |
-| simulation | the factory per tick: entity pools, networks, players, inventories, crafting, statistics, the game's records | `entity.odin` | 49 | 20121 | [simulation](audit/simulation.md) |
-| presentation | pixels and sound from the world and the tick: shaders, atlases, models, sky, weather, particles, audio, the window | `render_chunks.odin` | 40 | 9738 | [presentation](audit/presentation.md) |
+| world | blocks and what follows a block: chunks, light, water, meshing, streaming, generation, the save codec; the terrain field and the foundation frames beside them (M13) | `world_chunk.odin` | 51 | 14597 | [world](audit/world.md) |
+| simulation | the factory per tick: entity pools, networks, players, inventories, crafting, statistics, the game's records | `entity.odin` | 50 | 20226 | [simulation](audit/simulation.md) |
+| presentation | pixels and sound from the world and the tick: shaders, atlases, models, sky, weather, particles, audio, the window | `render_chunks.odin` | 40 | 9746 | [presentation](audit/presentation.md) |
 | content | data files into typed tables, the string table, configuration and settings | `data_reload.odin` | 17 | 5816 | [content](audit/content.md) |
 | tools | the command socket, the diagnostics pages, the Data files browser and export, the factory benchmark | `command.odin` | 8 | 3903 | [loop](audit/loop.md), [content](audit/content.md) |
 | platform | the package `src/platform/`: logging, paths, the time zone, JNI, the export's file access, the replacing file write, the TCP transport, the stop signal | `logging.odin` | 16 | 1362 | [content](audit/content.md) |
-| generation_seed | the package `src/generation_seed/`: purpose seeds and the integer hashes | `generation_seed.odin` | 1 | 77 | [world](audit/world.md) |
+| generation_seed | the package `src/generation_seed/`: purpose seeds and the integer hashes | `generation_seed.odin` | 1 | 79 | [world](audit/world.md) |
 | model_vox | the package `src/model_vox/`: the MagicaVoxel parser | `model_vox.odin` | 1 | 283 | [presentation](audit/presentation.md) |
 | render_frustum | the package `src/render_frustum/`: frustum planes and the box test | `render_frustum.odin` | 1 | 35 | [presentation](audit/presentation.md) |
 | run_length | the package `src/run_length/`: the chunk run length codec | `run_length.odin` | 1 | 39 | [world](audit/world.md) |
@@ -126,7 +126,7 @@ The world owns blocks and what is derived from blocks; generation is a pure func
   - `world_field_edit.odin`: the brush edits (0171), `Field_Edit`, `apply_field_edit` in one sample order, the level plane, `field_place_meets_capsule` (the bury dry run), `field_ground_sample_at`.
   - `world_frame.odin`, `world_frame_raycast.odin`, `world_frame_collision.odin`: the foundation frames (0174), `Frame`, `Frame_Table` with the occupant index (`occupy_frame_cell`, `vacate_frame_cell`, `frame_occupant`), `remove_frame`, `BLOCK_FRAME`, the cell and world transforms, `frame_axes` and `free_frame_at`; `raycast_frames`, the voxel walk in each frame's axes; the solid cells as boxes for the field player (`field_solid_probe`, `field_solid_raycast`).
   - `world_field_vector.odin`, `world_field_distance.odin`, `world_field_raycast.odin`: fixed point unit vectors and angles, `fixed_sine` (0170); the field as a signed distance, `field_density_at` and `field_surface_probe`; `raycast_field`, the field's counterpart of the voxel walk.
-  - `world_vein.odin`, `world_explored.odin`: the vein registry and outcrops; explored columns for the map.
+  - `world_vein.odin`, `world_explored.odin`: the vein registry and outcrops, `vein_under_world_position` for the discs on the sphere (0179); explored columns for the map.
   - `world_debug_edit.odin`, `world_debug_terrain.odin`: the F-key dig; the flat debug terrain.
   - `generation.odin`: `Generator`, `DEFAULT_WORLD_SEED`; the purpose seeds and the hashes are the `generation_seed` package (Packages).
   - `generation_chunk.odin`, `generation_terrain.odin`, `generation_caves.odin`: the per chunk steps; height, climate, the column grid and the cave carving; the crate site search in cave pockets.
@@ -134,6 +134,7 @@ The world owns blocks and what is derived from blocks; generation is a pure func
   - `generation_veins.odin`, `generation_vein_tables.odin`, `generation_starter_veins.odin`: vein placement and outcrops, the vein file, starter veins.
   - `generation_spawn.odin`, `landing_pad.odin`: the spawn search; the landing pad stamp.
   - `generation_planet.odin`: the terrain field's planet generation, `generate_field_chunk`, `integer_square_root`.
+  - `generation_planet_veins.odin`: the veins on the sphere (0179): `Planet_Veins` in `Planet_Generation`, `plan_planet_veins` round the home, the outcrop material of `planet_sample`, `register_planet_veins` into the vein registry.
   - `generation_planet_record.odin`: `Planet_Generation_Record`, the generation values a world file records, and `resolve_world_planet`, the world's planet against the data (0179).
   - `save_binary.odin`: the type driven codec (schemas, enums by name, lists).
   - `save_state.odin`, `save_remap.odin`: the entities.bin body and `simulation_state_hash`; content tables and the id remap.
@@ -154,7 +155,8 @@ The factory: what changes per tick; blocks belong to the world, prototypes to co
   - `simulation_state.odin`: `Simulation_State`, `Game_Records` (the game's records beside the world), `Simulation_Event`, `make_simulation` with `place_capsule`, `destroy_simulation` and `destroy_game_records`, `simulation_day_ticks`.
   - `simulation_world.odin`: `Simulation_Content`, `Entity_Tick_Context` with its block procedures, `simulation_tick`, `apply_research_result`, `simulation_quest_context`.
   - `entity.odin`: `Entity_Kind`, `Entity_Handle`, `Entity_Common`, `Entity_Pool`, `Entities`, add and remove, `tick_entities`.
-  - `entity_placement.odin`: placement rules, `commit_placement`, rotation, pick up.
+  - `entity_placement.odin`: placement rules, `commit_placement`, rotation, pick up; a drill on a frame (`place_drill_on_frame`, 0179).
+  - `entity_pod.odin`: the pod and its pad of foundations, `place_pod` (0179).
   - `entity_frames.odin`: placement on foundation frames (0174), `place_on_frame`, `place_free_foundation`, `frame_placement_refusal`; the field's place commands (`Field_Placement`, `drain_field_placements`, `aim_field_player_at_frames`); the frame tables of the save (`write_frame_tables`, `read_frame_tables`).
   - `machine.odin`: `Machine_Kind`, `Machine`, `Machine_Registry` and per kind validation.
   - `item_transfer.odin`: `entity_accepts`, `entity_insert`, `entity_extract`.

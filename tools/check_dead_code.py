@@ -53,6 +53,11 @@ ALLOWED_TEST_ONLY = {
     "destroy_field_world": "the terrain field's teardown, wired in by M13",
     "encode_field_chunk_delta": "the terrain field's save codec, wired in by M13",
     "decode_field_chunk_delta": "the terrain field's load codec, wired in by M13",
+    # The slice's content (0179), called by the session in 0179's wiring
+    # round, after the switch to the field world.
+    "register_planet_veins": "the veins on the sphere into the registry, wired in by 0179",
+    "place_drill_on_frame": "the drill on a frame, wired in by 0179",
+    "place_pod": "the pod and its pad at the home, wired in by 0179",
 }
 
 ENTRY_ATTRIBUTES = ("test", "export", "init", "fini")

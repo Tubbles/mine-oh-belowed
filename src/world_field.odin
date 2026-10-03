@@ -34,13 +34,18 @@ Sample_Coordinate :: distinct [3]i32
 World_Position :: distinct [3]i64
 
 // The generator's fixed roles until the material table replaces them (0167,
-// What changes per cluster).
+// What changes per cluster). The ores of the veins' outcrops (0179,
+// generation_planet_veins.odin) come after bedrock, so a saved material
+// byte keeps its meaning.
 Field_Material :: enum u8 {
 	Air,
 	Topsoil,
 	Stone,
 	Deep_Stone,
 	Bedrock,
+	Hematite_Ore,
+	Chalcopyrite_Ore,
+	Coal_Ore,
 }
 
 // The material's id in the data files: its name in lower case.

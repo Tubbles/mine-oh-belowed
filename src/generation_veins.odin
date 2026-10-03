@@ -45,18 +45,26 @@ Vein_Id :: struct {
 // deep vein the blocks from the surface height at its centre down to
 // centre.y. added marks a vein the developer command added (work item
 // 0053, world_vein.odin): generation does not know it, so the world
-// stamps its outcrop into chunks as they arrive.
+// stamps its outcrop into chunks as they arrive. sphere_centre and
+// sphere_radius are the disc of a vein on the field's sphere (work item
+// 0179, generation_planet_veins.odin): its centre on the sphere of the
+// planet's radius and its radius along it, in position units, which
+// vein_under_world_position reads; zero for a block world vein. They are
+// a function of the seed and the home, set again by register_planet_veins
+// at session start, so the save leaves them out.
 Vein :: struct {
-	id:         Vein_Id,
-	type:       int,
-	size_class: int,
-	centre:     World_Coordinate,
-	radius:     i32,
-	depth:      i32,
-	remaining:  [MAXIMUM_VEIN_OUTPUTS]i64,
-	draws:      u64,
-	exhausted:  bool,
-	added:      bool,
+	id:            Vein_Id,
+	type:          int,
+	size_class:    int,
+	centre:        World_Coordinate,
+	radius:        i32,
+	depth:         i32,
+	remaining:     [MAXIMUM_VEIN_OUTPUTS]i64,
+	draws:         u64,
+	exhausted:     bool,
+	added:         bool,
+	sphere_centre: [3]i64 `save:"-"`,
+	sphere_radius: i64 `save:"-"`,
 }
 
 // A surface block generation turned into a vein's outcrop block. The main
