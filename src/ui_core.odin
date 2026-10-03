@@ -253,6 +253,8 @@ Screen :: enum u8 {
 	New_World,
 	Load_World,
 	Confirm_Delete,
+	// The LAN's games to join (ui_multiplayer.odin, 0188).
+	Multiplayer,
 }
 
 Screen_Stack :: struct {
@@ -1192,7 +1194,7 @@ screen_pauses_simulation :: proc(screen: Screen) -> bool {
 	switch screen {
 	case .None, .Inventory, .Machine, .Recipes, .Journal, .Power, .Statistics, .Technologies, .Map:
 		return false
-	case .Pause, .Settings, .Developer, .Textures, .Data_Files, .Touch_Layout, .Title, .New_World, .Load_World, .Confirm_Delete:
+	case .Pause, .Settings, .Developer, .Textures, .Data_Files, .Touch_Layout, .Title, .New_World, .Load_World, .Confirm_Delete, .Multiplayer:
 		return true
 	}
 	return false

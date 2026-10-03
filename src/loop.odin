@@ -54,9 +54,14 @@ Frame_State :: struct {
 	settings:           Settings,
 	// The settings as last read or written, see write_changed_settings.
 	stored_settings:    Settings,
-	// --join: the connection to the host until its world arrives and the
-	// session takes it (update_joining).
+	// --join or the Multiplayer screen: the connection to the host until
+	// its world arrives and the session takes it (update_joining).
 	joining:            Session_Join,
+	// Where the game's own worlds host (session_discovery.odin, 0188);
+	// zero in the tests' frames, which then stay offline.
+	hosting:            Hosting_Plan,
+	// The Multiplayer screen's LAN query while it shows (serve_lan_query).
+	lan_query:          Lan_Query,
 	// One per local player, the first always there (the title runs in
 	// it); viewport_count are in use.
 	viewports:          [MAXIMUM_VIEWPORTS]Viewport,
@@ -464,7 +469,8 @@ stamp_viewport_records :: proc(state: ^Frame_State, worlds: []Input_Frame) -> bo
 update_session :: proc(state: ^Frame_State, content: Simulation_Content) {
 	session := state.session
 	lockstep, simulation := &session.lockstep, &session.simulation
-	offline := session.network.role == .Offline
+	// A host no machine joined yet plays as single player.
+	offline := session_alone(session.network)
 	// Only the first viewport's pausing screen holds the world: a guest's
 	// pause menu and settings run with the world going on, as online.
 	holding := offline && (ui_pauses_simulation(state.viewports[0].interaction.ui.screens) || state.developer.command_control.paused)
@@ -488,14 +494,16 @@ update_session :: proc(state: ^Frame_State, content: Simulation_Content) {
 			break
 		}
 		if offline {
-			deliver_outgoing_locally(lockstep, simulation.tick)
+			deliver_records_alone(session)
 			ran += run_ready_ticks(session, content, &state.developer.command_control, &answers)
 		}
 	}
 	exchange_session_records(session, content)
 	ran += run_ready_ticks(session, content, &state.developer.command_control, &answers)
 	send_line_answers(state, answers[:])
-	if fast {
+	// A machine that joined during the exchange runs from the join tick
+	// on, so the tick command's ticks without records stop here.
+	if fast && session_alone(session.network) {
 		ran += run_command_ticks(state, content)
 	}
 	rebuild_prediction(lockstep, simulation, content)
@@ -506,6 +514,19 @@ update_session :: proc(state: ^Frame_State, content: Simulation_Content) {
 	show_network_notices(state)
 	own := session_local_player_index(session)
 	stream_session_chunks(session, world_to_chunk_coordinate(camera_world_coordinate(lockstep_view_player(lockstep, simulation, own).position)), frame_field_selection(state))
+}
+
+// Alone the local records come straight back; a host relays them, which
+// keeps its frontier (the next join's tick) true.
+deliver_records_alone :: proc(session: ^Session) {
+	if session.network.role != .Host {
+		deliver_outgoing_locally(&session.lockstep, session.simulation.tick)
+		return
+	}
+	for record in session.lockstep.outgoing {
+		relay_record(session, record)
+	}
+	clear(&session.lockstep.outgoing)
 }
 
 // The local player's records out and everyone's in: offline straight
@@ -1391,7 +1412,20 @@ apply_session_request :: proc(state: ^Frame_State) {
 	case .Quit_To_Title:
 		leave_session(state)
 		show_title(state)
+	case .Join:
+		start_title_join(state, text_field_text(&state.interaction.title.join_address))
 	}
+}
+
+// A join from the Multiplayer screen or --join, while no world plays and
+// no other join runs.
+start_title_join :: proc(state: ^Frame_State, address: string) {
+	if state.session != nil || join_active(state.joining) {
+		platform.log_printf("network: a join to %s was asked while a world or a join runs", address)
+		ui_toast(primary_ui(state), text("multiplayer_already_joining"))
+		return
+	}
+	start_joining(&state.joining.network, address, state.config.tick_rate)
 }
 
 report_session_problem :: proc(state: ^Frame_State, problem: string) {
@@ -1418,6 +1452,7 @@ enter_session :: proc(state: ^Frame_State, session: ^Session) {
 		destroy_session_join(&state.joining)
 	}
 	state.session = session
+	host_windowed_session(session, state.hosting)
 	state.presentation.sound_memory = {}
 	if session.simulation.field.enabled {
 		start_field_presentation(state)
@@ -1621,8 +1656,10 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	}
 	defer leave_session(state)
 	defer destroy_session_join(&state.joining)
+	state.hosting = default_hosting_plan()
+	defer close_lan_query(&state.lan_query)
 	if player_configuration.join_address != "" {
-		start_joining(&state.joining.network, player_configuration.join_address, config.tick_rate)
+		request_join(&state.interaction.title, player_configuration.join_address)
 	}
 	apply_cursor_mode(state)
 	for !rl.WindowShouldClose() && (.Quit not_in state.requests) {
@@ -1682,6 +1719,7 @@ serve_viewport_requests_before_draw :: proc(state: ^Frame_State, index: int) {
 serve_frame_requests_after_draw :: proc(state: ^Frame_State) {
 	serve_viewport_removals(state)
 	apply_session_request(state)
+	serve_lan_query(state)
 	update_data_watch(state)
 	apply_reload_request(state)
 }
@@ -1769,6 +1807,14 @@ answer_command_ticks :: proc(state: ^Frame_State) {
 	if state.session == nil {
 		return
 	}
+	// A machine joined the host while the ticks ran: the rest would run
+	// without its records.
+	if control.ticks_waiting && !session_alone(state.session.network) {
+		control.pending_ticks, control.ticks_waiting = 0, false
+		send_logged_response(state, state.developer.command_server.tick_client, "tick", command_error("stopped: another machine joined"))
+		state.developer.command_server.tick_client = 0
+		return
+	}
 	if response, finished := finish_command_ticks(control, state.session.simulation.tick); finished {
 		send_logged_response(state, state.developer.command_server.tick_client, "tick", response)
 		state.developer.command_server.tick_client = 0
@@ -1811,7 +1857,7 @@ execute_queued_command :: proc(state: ^Frame_State, queued: Queued_Command_Line)
 			send_logged_response(state, queued.client, queued.line, response)
 		}
 		return
-	case (words[0] == "tick" || words[0] == "pause" || words[0] == "reload") && state.session.network.role != .Offline:
+	case (words[0] == "tick" || words[0] == "pause" || words[0] == "reload") && !session_alone(state.session.network):
 		send_logged_response(state, queued.client, queued.line, command_error("%s runs only without other machines", words[0]))
 		return
 	}

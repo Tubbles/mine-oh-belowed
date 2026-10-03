@@ -62,7 +62,7 @@ Command_Line :: struct {
 	planet_preview_pitch: int `usage:"<degrees>: the walk screenshot's camera tilt once the pit is dug, from -89 to 89 (default -50, down into the pit)"`,
 	// Work item 0177: lockstep multiplayer.
 	server:          bool `usage:"run the world (--load, or a new one) without a window or a local player and host it for --join (doc/commands.md)"`,
-	port:            int `usage:"the port --server listens on (default 47317)"`,
+	port:            int `usage:"the one port --server listens on (default: the first free of 47317 to 47326)"`,
 	join_address:    string `args:"name=join" usage:"join the session a --server hosts at <address>[:port] (an IP address on the phone)"`,
 }
 
@@ -524,7 +524,7 @@ run_command_line_server :: proc(command_line: Command_Line, config: Game_Config,
 		save_session(session, content)
 	}
 	server: Server_State
-	if problem = start_server(&server, session, content, autosave_minutes, command_line.port != 0 ? command_line.port : platform.DEFAULT_NETWORK_PORT); problem != "" {
+	if problem = start_server(&server, session, content, autosave_minutes, server_hosting_plan(command_line.port)); problem != "" {
 		platform.log_printf("error: %s", problem)
 		return 1
 	}

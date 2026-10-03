@@ -12,7 +12,8 @@ import "core:thread"
 // system calls, Windows through Winsock), messages framed by a little
 // endian u32 length, sockets non blocking, polled once per frame. A host
 // listens and accepts, a client connects. The messages are bytes here; the
-// game encodes them (session_network.odin). No UDP.
+// game encodes them (session_network.odin). The LAN discovery's UDP is
+// in network_discovery.odin.
 //
 // Addresses are host:port; the port may be left out for the default. A
 // host name needs the system's resolver: on the phone, which has no
@@ -70,6 +71,18 @@ listen_on_port :: proc(port: int, address := Listen_Address.Any) -> (listener: N
 		return {}, fmt.tprintf("cannot read the port of the listener: %v", bound_error)
 	}
 	return Network_Listener{socket = socket, open = true, port = bound.port}, ""
+}
+
+// The first port of first .. first + count - 1 that is free (another game
+// on the machine holds the one before). The problem is the last port's
+// when none is.
+listen_on_free_port :: proc(first, count: int, address := Listen_Address.Any) -> (listener: Network_Listener, problem: string) {
+	for port in first ..< first + max(count, 1) {
+		if listener, problem = listen_on_port(port, address); problem == "" {
+			return listener, ""
+		}
+	}
+	return {}, problem
 }
 
 close_listener :: proc(listener: ^Network_Listener) {

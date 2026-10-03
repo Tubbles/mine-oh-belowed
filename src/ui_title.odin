@@ -5,7 +5,7 @@ import "core:strings"
 import "platform"
 
 // The title screen and its screens: New world, Load and the delete
-// confirmation. They run without a world behind them, over a plain
+// confirmation (Multiplayer is ui_multiplayer.odin). They run without a world behind them, over a plain
 // backdrop in the day sky colour (render_frame), since a generated view
 // would need a session.
 
@@ -31,6 +31,8 @@ Session_Request_Kind :: enum u8 {
 	Load,
 	// Save and end the world, then show the title.
 	Quit_To_Title,
+	// Join the game at Title_State.join_address, as --join does.
+	Join,
 }
 
 // Handled by the frame loop after the frame that made it
@@ -59,6 +61,10 @@ Title_State :: struct {
 	// This build's save header, to mark saves it cannot load.
 	expected_header:  Save_Header,
 	request:          Session_Request,
+	// The Multiplayer screen's list and address field, and the address a
+	// Join request joins.
+	multiplayer:      Multiplayer_State,
+	join_address:     Text_Field,
 }
 
 make_title_state :: proc(config: Game_Config, saves_directory: string, saves_found: bool, expected_header: Save_Header) -> Title_State {
@@ -68,6 +74,8 @@ make_title_state :: proc(config: Game_Config, saves_directory: string, saves_fou
 		default_settings = default_world_file_settings(config),
 		local_zone = platform.load_local_zone(),
 		expected_header = expected_header,
+		multiplayer = make_multiplayer_state(),
+		join_address = make_text_field("", TEXT_FIELD_CAPACITY),
 	}
 }
 
@@ -75,6 +83,7 @@ destroy_title_state :: proc(title: ^Title_State) {
 	destroy_save_summaries(&title.saves)
 	delete(title.saves)
 	platform.destroy_local_zone(&title.local_zone)
+	destroy_multiplayer_state(&title.multiplayer)
 }
 
 refresh_title_saves :: proc(title: ^Title_State) {
@@ -91,7 +100,7 @@ title_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	ui_label(state, cut_top(&heading, heading.height * 0.7), text("title_game_name"), TITLE_NAME_TEXT_SIZE, .Centre)
 	ui_label(state, heading, format_message_text(text("title_version"), BUILD_STAMP), UI_BODY_TEXT_SIZE, .Centre, UI_DIM_TEXT_COLOR)
 	newest, has_save := newest_save(title.saves[:])
-	button_count := has_save ? 5 : 4
+	button_count := has_save ? 6 : 5
 	panel := centred_rectangle(area, TITLE_PANEL_WIDTH, panel_height(button_count, -UI_GAP))
 	panel.y = area.y
 	ui_panel_begin(state, "title", panel)
@@ -107,6 +116,9 @@ title_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 	if ui_button(state, cut_row(&content), text("title_load")) {
 		push_screen(&state.screens, .Load_World)
+	}
+	if ui_button(state, cut_row(&content), text("title_multiplayer")) {
+		push_screen(&state.screens, .Multiplayer)
 	}
 	if ui_button(state, cut_row(&content), text("title_settings")) {
 		push_screen(&state.screens, .Settings)

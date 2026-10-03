@@ -7,6 +7,7 @@ import "core:mem/virtual"
 import "core:slice"
 import "core:strings"
 import "core:testing"
+import "platform"
 
 // The UI bounds audit (work item 0046). Every screen and the HUD run
 // headless over the save test's site with the shipped strings, at the
@@ -488,7 +489,9 @@ audit_title_state :: proc() -> Title_State {
 		saves_found = true,
 		default_settings = default_world_file_settings(test_game_config()),
 		delete_index = 0,
+		multiplayer = make_multiplayer_state(),
 	}
+	text_field_set(&title.multiplayer.address, "192.168.100.200:47326")
 	title.setup = make_world_setup(title.default_settings, shipped_test_planets(), UI_AUDIT_LONG_WORLD_NAME, 18_446_744_073_709_551_615)
 	append(&title.saves, Save_Summary{directory_name = strings.clone("long"), name = strings.clone(UI_AUDIT_LONG_WORLD_NAME), seed = 18_446_744_073_709_551_615, tick = 60 * 60 * 60 * 123, last_played_unix_seconds = 1_790_000_000, loadable = true, load_problem = strings.clone("")})
 	append(&title.saves, Save_Summary{directory_name = strings.clone("old"), name = strings.clone(UI_AUDIT_LONG_WORLD_NAME), seed = 20260927, tick = 60 * 60 * 7, last_played_unix_seconds = 1_780_000_000, loadable = false, load_problem = strings.clone("header")})
@@ -583,6 +586,7 @@ destroy_ui_audit :: proc(audit: ^Ui_Audit) {
 	destroy_arena(audit.fonts.arena)
 	destroy_save_summaries(&audit.title.saves)
 	delete(audit.title.saves)
+	destroy_multiplayer_state(&audit.title.multiplayer)
 	destroy_session_views(&audit.views)
 	destroy_texture_editor(&audit.texture_editor)
 	destroy_data_browser(&audit.data_browser)
@@ -808,6 +812,8 @@ audit_touch_rows :: proc(audit: ^Ui_Audit) {
 		{name = "system keyboard", screens = {.Title, .New_World}, keyboard = true, system_keyboard = true},
 		{name = "load", screens = {.Title, .Load_World}},
 		{name = "confirm delete", screens = {.Title, .Load_World, .Confirm_Delete}},
+		{name = "multiplayer", screens = {.Title, .Multiplayer}},
+		{name = "multiplayer address keyboard", screens = {.Title, .Multiplayer}, keyboard = true},
 		{name = "pause", screens = {.Pause}},
 		{name = "settings", screens = {.Pause, .Settings}},
 		{name = "developer", screens = {.Pause, .Developer}},
@@ -837,6 +843,23 @@ audit_touch_rows :: proc(audit: ^Ui_Audit) {
 	}
 }
 
+// The Multiplayer screen empty, with three games (the longest texts an
+// answer carries, one of another build), and its address under either
+// keyboard.
+audit_multiplayer :: proc(audit: ^Ui_Audit) {
+	audit_case(audit, {name = "multiplayer, no games", screens = {.Title, .Multiplayer}, walk_focus = true})
+	multiplayer := &audit.title.multiplayer
+	defer clear_lan_games(multiplayer)
+	long_text := strings.repeat("W", platform.MAXIMUM_DISCOVERY_TEXT_SIZE, context.temp_allocator)
+	for index in 0 ..< 3 {
+		answer := platform.Discovery_Message{kind = .Answer, world = long_text, host = long_text, build = long_text, players = platform.MAXIMUM_DISCOVERY_PLAYERS, port = 47_326}
+		add_lan_answer(multiplayer, answer, fmt.tprintf("192.168.100.%d", 200 + index), index != 1, {})
+	}
+	audit_case(audit, {name = "multiplayer, three games", screens = {.Title, .Multiplayer}, walk_focus = true})
+	audit_case(audit, {name = "multiplayer, the address under the keyboard", screens = {.Title, .Multiplayer}, keyboard = true, walk_focus = true})
+	audit_case(audit, {name = "multiplayer, the address under the system keyboard", screens = {.Title, .Multiplayer}, keyboard = true, system_keyboard = true})
+}
+
 UI_AUDIT_TOASTS :: [?]string{"mc_extraction_rights_done", "inventory_full", "developer_applies_on_resume"}
 
 // The HUD with the front craft finished and its outputs waiting for room
@@ -857,6 +880,7 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 	audit_case(audit, {name = "system keyboard", screens = {.Title, .New_World}, keyboard = true, system_keyboard = true})
 	audit_case(audit, {name = "load", screens = {.Title, .Load_World}, walk_focus = true})
 	audit_case(audit, {name = "confirm delete", screens = {.Title, .Load_World, .Confirm_Delete}, walk_focus = true})
+	audit_multiplayer(audit)
 	audit_case(audit, {name = "hud", hud = true, toasts = toasts[:]})
 	audit_crafting_waits_on_a_full_inventory(audit)
 	audit_case(audit, {name = "hud radial", hud = true, radial = true})

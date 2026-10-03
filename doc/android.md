@@ -91,7 +91,7 @@ Gotcha: a shared library links with undefined symbols without complaint, and the
 - Gotcha: it hands aapt `<dir>/lib` as a directory, and aapt adds its contents at the APK root, so the library sits at `<dir>/lib/lib/arm64-v8a/libmain.so` to land at `lib/arm64-v8a/libmain.so`.
 - An `android:label` given as a literal string does not show in `aapt dump badging`; the `@string` resource from `res/values/strings.xml` does.
 - `tools/android/debug.keystore` (alias `androiddebugkey`, passwords `android`, RSA 2048, 10000 days, `CN=Android Debug, O=Android, C=US`, made with `keytool -genkeypair`) is committed on purpose: Android installs an update only over an app with the same signature, so the couch and CI must sign alike, and a debug key guards nothing.
-- The manifest (`io.github.tubbles.mineohbelowed`, `NativeActivity` with `lib_name` main, landscape, GL ES 3.0 required) asks for `android.permission.VIBRATE` (a normal permission granted at install) and `android.permission.MANAGE_EXTERNAL_STORAGE` (Export below).
+- The manifest (`io.github.tubbles.mineohbelowed`, `NativeActivity` with `lib_name` main, landscape, GL ES 3.0 required) asks for `android.permission.VIBRATE` and `android.permission.INTERNET` (normal permissions granted at install; without the second every socket is refused, so the phone could neither join nor host) and `android.permission.MANAGE_EXTERNAL_STORAGE` (Export below).
 - Checking an APK: `llvm-nm -D libmain.so` shows `__wrap_main`, `android_main` and `ANativeActivity_onCreate`; `aapt dump badging <apk>` names the package, SDK levels, `uses-gl-es: '0x30000'` and `native-code: 'arm64-v8a'`; `apksigner verify --print-certs <apk>` passes (v3 scheme).
 
 ## Files on the phone
@@ -149,6 +149,10 @@ The Data files screen's Export and its refusals are in [developer_tools.md](deve
 - The CI job `android` on `ubuntu-latest` checks out with `fetch-depth: 0` (the commit count), downloads `odin-linux-amd64-dev-2026-09.tar.gz` (SHA-256 checked), prints the runner's Android tools and Java, and runs `MINE_OH_BELOWED_COMMIT=<short commit> ./build.sh check-android` and `./build.sh android` with the runner's `ANDROID_HOME`. The APK is uploaded as `mine-oh-belowed-android-arm64-<short commit>`.
 - Download it from the workflow run (Actions, the run, Artifacts) or `gh run download <run id> --name mine-oh-belowed-android-arm64-<short commit>`; it arrives as a zip holding `mine-oh-belowed.apk`. Copy it to the phone, open it, allow installs from that source, install. Couch and CI builds install over each other, since both sign with the committed key and the version code only grows.
 - With USB debugging on, `adb install -r build/android/mine-oh-belowed.apk` and `adb logcat -s mine-oh-belowed raylib` work from the container (`platform-tools` is on the `PATH` after sourcing `tools/android_env.sh`).
+
+## Multiplayer
+
+The phone hosts its own world and lists the LAN's games like every game ([architecture.md](architecture.md), Multiplayer). The interfaces' broadcast addresses come from the same `SIOCGIFCONF` requests as on Linux; when they are refused the query goes to the limited broadcast address alone. The machine's name in an answer is the kernel's host name, usually `localhost` on a phone. A game the list misses joins by IP address (the phone has no resolver).
 
 ## What the Android build lacks
 

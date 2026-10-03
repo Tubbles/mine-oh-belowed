@@ -6,6 +6,10 @@ import "core:testing"
 import "core:time"
 import "platform"
 
+LOOPBACK_TEST_WORLD_NAME :: "Loopback world"
+// A host on a loopback port the system picks, without the discovery.
+LOOPBACK_HOSTING_PLAN :: Hosting_Plan{port_count = 1, address = .Loopback}
+
 // A third machine joins two playing ones: it loads the host's snapshot,
 // starts at the host's hash and keeps it while all three play on.
 @(test)
@@ -88,7 +92,7 @@ test_a_server_ticks_without_a_window :: proc(t: ^testing.T) {
 	defer destroy_lockstep(&session.lockstep)
 	defer destroy_session_network(&session.network)
 	server: Server_State
-	if !testing.expect_value(t, start_server(&server, session, Game_Content{simulation_content = content}, 0, 0, .Loopback), "") {
+	if !testing.expect_value(t, start_server(&server, session, Game_Content{simulation_content = content}, 0, LOOPBACK_HOSTING_PLAN), "") {
 		return
 	}
 	testing.expect_value(t, session.network.role, Network_Role.Host)
@@ -150,7 +154,16 @@ test_two_clients_join_a_server_over_the_loopback :: proc(t: ^testing.T) {
 // the way the game starts a saved world (start_session from the save's
 // bytes, as a joiner does), its simulated chunk set radius 1 and streamed
 // by real workers, on a loopback port the system chose.
-make_loopback_test_server :: proc(content: Simulation_Content) -> ^Server_State {
+make_loopback_test_server :: proc(content: Simulation_Content, plan := LOOPBACK_HOSTING_PLAN) -> ^Server_State {
+	session := make_loopback_test_session(content)
+	server := new(Server_State)
+	problem := start_server(server, session, Game_Content{simulation_content = content}, 0, plan)
+	assert(problem == "", problem)
+	return server
+}
+
+// The session of make_loopback_test_server, offline.
+make_loopback_test_session :: proc(content: Simulation_Content) -> ^Session {
 	config := test_game_config()
 	config.simulated_chunk_radius_horizontal, config.simulated_chunk_radius_vertical = 1, 1
 	generator := make_test_generator(DEFAULT_WORLD_SEED)
@@ -167,10 +180,9 @@ make_loopback_test_server :: proc(content: Simulation_Content) -> ^Server_State 
 	session: ^Session
 	session, problem = start_session(plan, config, game_content, generator)
 	assert(problem == "", problem)
-	server := new(Server_State)
-	problem = start_server(server, session, game_content, 0, 0, .Loopback)
-	assert(problem == "", problem)
-	return server
+	delete(session.save.location.display_name)
+	session.save.location.display_name = strings.clone(LOOPBACK_TEST_WORLD_NAME)
+	return session
 }
 
 destroy_loopback_test_server :: proc(server: ^Server_State) {
@@ -323,8 +335,8 @@ test_a_guest_leaving_before_the_hosts_answer_stalls_nothing :: proc(t: ^testing.
 // A game hosting its world (the pause menu's way, not --server), on a
 // loopback port the system chose: the save test's site, its own player
 // the save's entry.
-make_hosting_test_frame :: proc(content: Simulation_Content) -> ^Frame_State {
-	server := make_loopback_test_server(content)
+make_hosting_test_frame :: proc(content: Simulation_Content, plan := LOOPBACK_HOSTING_PLAN) -> ^Frame_State {
+	server := make_loopback_test_server(content, plan)
 	session := server.session
 	free(server)
 	// The server's network keeps hosting; its driver gets the game's own

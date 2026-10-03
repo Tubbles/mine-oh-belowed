@@ -594,9 +594,10 @@ run_session_tick :: proc(session: ^Session, content: Simulation_Content, control
 
 // Every tick whose records and chunks are there, within the wall budget.
 // A tick no connected player paces (a server alone) takes one of the
-// clock's ticks. Offline, a tick waiting for its chunks still takes the
-// ones that arrived, so a new world fills in while it waits; with other
-// machines that would make the order of the insertions differ.
+// clock's ticks. Alone (offline, or a host nobody joined), a tick waiting
+// for its chunks still takes the ones that arrived, so a new world fills
+// in while it waits; with other machines that would make the order of
+// the insertions differ, and a joiner takes the world as it is.
 run_ready_ticks :: proc(session: ^Session, content: Simulation_Content, control: ^Command_Control, answers: ^[dynamic]Line_Answer) -> int {
 	lockstep, simulation := &session.lockstep, &session.simulation
 	start := time.tick_now()
@@ -607,7 +608,7 @@ run_ready_ticks :: proc(session: ^Session, content: Simulation_Content, control:
 			break
 		}
 		if !simulated_chunks_ready(simulation) {
-			if session.network.role == .Offline {
+			if session_alone(session.network) {
 				update_simulated_chunks(simulation, content)
 			}
 			session.chunk_stalled = true

@@ -10,6 +10,9 @@
 	<uses-feature android:glEsVersion="0x00030000" android:required="true" />
 	<!-- The magnetometer's haptics on the phone's vibrator (work item 0122). -->
 	<uses-permission android:name="android.permission.VIBRATE" />
+	<!-- Sockets: the lockstep's TCP and the LAN discovery's UDP (work
+	     items 0177 and 0188); without it every socket call is refused. -->
+	<uses-permission android:name="android.permission.INTERNET" />
 	<!-- The data export to a shared storage folder, a Syncthing folder
 	     (work item 0131); granted by the user on the All files access
 	     settings page, which the game opens when it is missing. -->

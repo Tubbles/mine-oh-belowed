@@ -5,9 +5,10 @@ import "platform"
 
 // The headless server (work item 0177, --server): the game without a
 // window, an input backend or a local player, hosting a lockstep session
-// (session_network.odin) on the port of --port. It runs the same driver
-// as every machine: the clients' records pace the ticks, and while nobody
-// is connected the clock does (run_ready_ticks). It saves on the autosave
+// (session_network.odin) on --port, or the first free port of the game's
+// range, and answering the LAN's discovery (session_discovery.odin). It
+// runs the same driver as every machine: the clients' records pace the
+// ticks, and while nobody is connected the clock does (run_ready_ticks). It saves on the autosave
 // interval of the settings and when SIGINT or SIGTERM stops it
 // (platform.install_stop_handlers; not on Windows).
 // The command socket is not served here; the clients' socket lines in
@@ -36,13 +37,17 @@ make_server_lockstep :: proc(session: ^Session) -> Lockstep {
 	return lockstep
 }
 
-// Hosts the session on the port. Returns the problem, or "".
-start_server :: proc(server: ^Server_State, session: ^Session, content: Game_Content, autosave_minutes, port: int, address := platform.Listen_Address.Any) -> string {
+// Hosts the session as the plan says. Returns the problem, or "".
+start_server :: proc(server: ^Server_State, session: ^Session, content: Game_Content, autosave_minutes: int, plan: Hosting_Plan) -> string {
 	destroy_lockstep(&session.lockstep)
 	session.lockstep = make_server_lockstep(session)
 	session.streaming.mesh_chunks = false
 	server^ = Server_State{session = session, content = content, autosave_minutes = autosave_minutes}
-	return start_hosting(&session.network, port, address)
+	if problem := start_hosting(&session.network, plan); problem != "" {
+		return problem
+	}
+	platform.log_printf("server: hosting on port %d", session.network.listener.port)
+	return ""
 }
 
 // One frame: the clock, the clients, the ready ticks, the chunks, the

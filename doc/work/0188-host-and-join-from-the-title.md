@@ -1,6 +1,6 @@
 # 0188: The Multiplayer screen: every game hosts, the LAN lists the games to join
 
-Status: todo (playtest 1 of the slice, 2026-10-03; the user's priority before the rest of the playtest)
+Status: implemented (playtest 1 of the slice, 2026-10-03; the user's priority before the rest of the playtest)
 
 ## Goal
 

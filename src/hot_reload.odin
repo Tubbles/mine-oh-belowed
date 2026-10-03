@@ -319,7 +319,7 @@ replace_frame_content :: proc(state: ^Frame_State, data: Game_Data) {
 // stays as it was.
 reload_content :: proc(state: ^Frame_State) -> (summary: string, problem: string) {
 	// Every machine of a session must run the same content.
-	if (state.session != nil && state.session.network.role != .Offline) || join_active(state.joining) {
+	if (state.session != nil && !session_alone(state.session.network)) || join_active(state.joining) {
 		problem = text("reload_online_refused")
 		report_reload_problem(state, text("reload_content"), problem)
 		return "", problem

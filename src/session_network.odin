@@ -149,6 +149,9 @@ Pending_Hash_Report :: struct {
 Session_Network :: struct {
 	role:            Network_Role,
 	listener:        platform.Network_Listener,
+	// Host: the LAN discovery's socket the queries reach (0188), closed
+	// when it could not open (joins by address still work).
+	discovery:       platform.Discovery_Socket,
 	peers:           [dynamic]Network_Peer,
 	// Host: the newest tick of any record relayed.
 	frontier:        u64,
@@ -210,6 +213,7 @@ destroy_session_join :: proc(join: ^Session_Join) {
 
 destroy_session_network :: proc(network: ^Session_Network) {
 	platform.close_listener(&network.listener)
+	platform.close_discovery_socket(&network.discovery)
 	for &peer in network.peers {
 		platform.destroy_connection(&peer.connection)
 	}
@@ -517,15 +521,41 @@ joining_player_index :: proc(lockstep: Lockstep, player_count: int, join_tick: u
 
 // Hosting.
 
-// Listens on the port for clients; the local driver keeps its members.
-start_hosting :: proc(network: ^Session_Network, port: int, address := platform.Listen_Address.Any) -> string {
-	listener, problem := platform.listen_on_port(port, address)
+// Listens on the plan's first free port for clients and answers the
+// LAN's queries (session_discovery.odin); the local driver keeps its
+// members. The caller logs the port. A discovery port that cannot open is logged and the session
+// hosts without it.
+start_hosting :: proc(network: ^Session_Network, plan: Hosting_Plan) -> string {
+	listener, problem := platform.listen_on_free_port(plan.first_port, plan.port_count, plan.address)
 	if problem != "" {
 		return problem
 	}
 	network.role, network.listener = .Host, listener
-	platform.log_printf("network: hosting on port %d", port)
+	if plan.discovery {
+		discovery_problem: string
+		if network.discovery, discovery_problem = platform.open_discovery_responder(plan.discovery_port); discovery_problem != "" {
+			platform.log_printf("error: network: %s; the game is joined by address only", discovery_problem)
+		}
+	}
 	return ""
+}
+
+// No other machine plays: offline, or a host no client has joined yet.
+// The frame holds and runs such a session's ticks as single player.
+session_alone :: proc(network: Session_Network) -> bool {
+	switch network.role {
+	case .Offline:
+		return true
+	case .Host:
+		for peer in network.peers {
+			if peer_joined(peer) {
+				return false
+			}
+		}
+		return true
+	case .Client:
+	}
+	return false
 }
 
 // The host's frame: new clients, their messages, its own records out to
@@ -541,6 +571,7 @@ update_host_network :: proc(session: ^Session, content: Simulation_Content, name
 		now := time.tick_now()
 		append(&network.peers, Network_Peer{connection = connection, last_heard = now, last_ping = now})
 	}
+	answer_discovery_queries(session, name)
 	for index := 0; index < len(network.peers); index += 1 {
 		peer := &network.peers[index]
 		platform.poll_connection(&peer.connection)
@@ -767,6 +798,9 @@ drop_client :: proc(session: ^Session, peer_index: int) {
 	}
 	platform.destroy_connection(&session.network.peers[peer_index].connection)
 	ordered_remove(&session.network.peers, peer_index)
+	if peer_joined(peer) {
+		notice_player_count(session)
+	}
 }
 
 // A client's split screen player leaves; its machine's own player stays.
@@ -932,6 +966,7 @@ host_join :: proc(session: ^Session, content: Simulation_Content, name: string, 
 	peer.snapshot_size = len(snapshot)
 	platform.send_message(&peer.connection, snapshot)
 	network_notice(network, "player %d (%s) joins at tick %d", player, peer.connection.address, join_tick)
+	notice_player_count(session)
 }
 
 // The tick a player joining now takes, and the entry, as for a join: the
