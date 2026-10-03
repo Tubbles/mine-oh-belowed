@@ -187,8 +187,9 @@ test_the_shipped_machine_models_mesh :: proc(t: ^testing.T) {
 	}
 	for machine, index in machines {
 		mesh := meshes[index]
-		// Foundations are drawn per cell by the frame renderer (render_frames.odin).
-		without_model := machine.kind == .Belt || machine.kind == .Pipe || machine.kind == .Foundation
+		// Foundations are drawn per cell by the frame renderer (render_frames.odin),
+		// belt poles as posts (render_belt_runs.odin).
+		without_model := machine.kind == .Belt || machine.kind == .Pipe || machine.kind == .Foundation || machine.kind == .Belt_Pole
 		testing.expectf(t, (machine.model == "") == without_model, "%s: model %q", machine.id, machine.model)
 		if machine.motion.kind == .Arm {
 			for layers, part in mesh.arm {

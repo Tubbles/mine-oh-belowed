@@ -52,7 +52,8 @@ draw_frame_cell :: proc(cell: World_Coordinate, color: rl.Color) {
 // Inside BeginMode3D. One pass over the occupied cells, each under its
 // frame's matrix (made once per frame), so the cost follows the cells and
 // not the cells times the frames. An inserter whose arm model loaded is
-// drawn as its arm (render_arm.odin), not as a box.
+// drawn as its arm (render_arm.odin), not as a box, and a belt pole as its
+// post (render_belt_runs.odin).
 draw_frames :: proc(entities: ^Entities, models: Model_Renderer) {
 	matrices := make(map[Frame_Id][16]f32, len(entities.frames.frames), context.temp_allocator)
 	for frame in entities.frames.frames {
@@ -61,7 +62,7 @@ draw_frames :: proc(entities: ^Entities, models: Model_Renderer) {
 	for key, occupant in entities.frames.occupants {
 		flat, found := matrices[key.frame]
 		handle := entity_from_occupant(occupant.handle)
-		if !found || frame_cell_draws_an_arm(entities, models, handle) {
+		if !found || handle.kind == .Belt_Pole || frame_cell_draws_an_arm(entities, models, handle) {
 			continue
 		}
 		kind := handle.kind

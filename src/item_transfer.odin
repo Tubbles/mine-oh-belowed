@@ -242,7 +242,7 @@ entity_takes_item_kind :: proc(entities: ^Entities, content: Simulation_Content,
 		return slot >= 0 && slot < len(entity_slots(entities, handle))
 	case .Launch_Pad:
 		return true
-	case .Splitter, .Pipe, .Pole, .Lamp, .Schematic_Crate, .Core_Sample_Drill, .Foundation:
+	case .Splitter, .Pipe, .Pole, .Lamp, .Schematic_Crate, .Core_Sample_Drill, .Foundation, .Belt_Pole, .Belt_Run:
 		return false
 	}
 	return false

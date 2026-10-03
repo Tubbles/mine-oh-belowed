@@ -43,6 +43,12 @@ Entity_Kind :: enum u8 {
 	// Foundations (entity_frames.odin): the solid cells of a frame that
 	// machines stand on.
 	Foundation,
+	// Belt poles and the runs between them (belt_run.odin, work item
+	// 0176). A run is no entity: its pool entries have a handle, a
+	// machine and no Entity_Common, and it occupies no cell; the kind
+	// lets a run stand in a belt line beside the belts.
+	Belt_Pole,
+	Belt_Run,
 }
 
 // index is into the pool of `kind`. Generations start at 1, so the zero
@@ -113,6 +119,10 @@ Entities :: struct {
 	core_sample_drills: Entity_Pool(Core_Sample_Drill),
 	launch_pads:    Entity_Pool(Launch_Pad),
 	foundations:    Entity_Pool(Foundation),
+	// Saved in a later table (write_belt_run_tables), so a world without
+	// them keeps its bytes.
+	belt_poles:     Entity_Pool(Belt_Pole),
+	belt_runs:      Entity_Pool(Belt_Run),
 	// Transport lines derived from the belts and splitters (belt.odin).
 	belt_network:   Belt_Network,
 	// Derived from the pipes and fluid ports (fluid_network.odin).
@@ -190,6 +200,8 @@ destroy_entities :: proc(entities: ^Entities) {
 	destroy_pool(&entities.core_sample_drills)
 	destroy_pool(&entities.launch_pads)
 	destroy_pool(&entities.foundations)
+	destroy_pool(&entities.belt_poles)
+	destroy_pool(&entities.belt_runs)
 	destroy_belt_network(&entities.belt_network)
 	destroy_fluid_networks(&entities.fluid_networks)
 	destroy_electric_networks(&entities.electric_networks)
@@ -269,15 +281,21 @@ entity_common :: proc(entities: ^Entities, handle: Entity_Handle) -> ^Entity_Com
 		if foundation := pool_get(&entities.foundations, handle); foundation != nil {
 			return &foundation.common
 		}
+	case .Belt_Pole:
+		if pole := pool_get(&entities.belt_poles, handle); pole != nil {
+			return &pole.common
+		}
+	case .Belt_Run:
+		return nil
 	}
 	return nil
 }
 
-// Belts and foundations have no panel: Interact does nothing on them.
-// Interact on a schematic crate takes its schematic instead
+// Belts, foundations and belt poles have no panel: Interact does nothing
+// on them. Interact on a schematic crate takes its schematic instead
 // (schematic.odin).
 entity_has_panel :: proc(entities: ^Entities, handle: Entity_Handle) -> bool {
-	return handle.kind != .Belt && handle.kind != .Foundation && handle.kind != .Schematic_Crate && entity_is_alive(entities, handle)
+	return handle.kind != .Belt && handle.kind != .Foundation && handle.kind != .Belt_Pole && handle.kind != .Schematic_Crate && entity_is_alive(entities, handle)
 }
 
 entity_is_alive :: proc(entities: ^Entities, handle: Entity_Handle) -> bool {
@@ -385,6 +403,7 @@ vacate_entity_cells :: proc(entities: ^Entities, machines: Machine_Registry, com
 	for cell in common_cells(common, machines) {
 		vacate_frame_cell(&entities.frames, common.frame, cell)
 	}
+	release_empty_frame(entities, common.frame)
 }
 
 // Footprint rotation.
@@ -492,6 +511,8 @@ add_entity :: proc(entities: ^Entities, machines: Machine_Registry, machine: Mac
 		handle = pool_add(&entities.launch_pads, .Launch_Pad, make_launch_pad(common, machines.machines[machine]))
 	case .Foundation:
 		handle = pool_add(&entities.foundations, .Foundation, Foundation{common = common})
+	case .Belt_Pole:
+		handle = pool_add(&entities.belt_poles, .Belt_Pole, Belt_Pole{common = common})
 	}
 	common.handle = handle
 	occupy_entity_cells(entities, machines, common)
@@ -510,6 +531,12 @@ remove_entity :: proc(entities: ^Entities, machines: Machine_Registry, handle: E
 	}
 	if handle.kind == .Splitter {
 		return remove_splitter(entities, machines, handle)
+	}
+	if handle.kind == .Belt_Run {
+		return remove_belt_run(entities, machines, handle)
+	}
+	if handle.kind == .Belt_Pole {
+		remove_belt_runs_on_pole(entities, machines, handle)
 	}
 	common := entity_common(entities, handle)
 	if common == nil {
@@ -567,8 +594,10 @@ remove_entity :: proc(entities: ^Entities, machines: Machine_Registry, handle: E
 		return true
 	case .Foundation:
 		return pool_remove(&entities.foundations, handle)
-	case .Belt, .Splitter:
-		// Handled by remove_belt and remove_splitter above.
+	case .Belt_Pole:
+		return pool_remove(&entities.belt_poles, handle)
+	case .Belt, .Splitter, .Belt_Run:
+		// Handled by remove_belt, remove_splitter and remove_belt_run above.
 		return false
 	}
 	return false

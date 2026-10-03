@@ -33,8 +33,8 @@
 // belt, inserter, drill, splitter, pipe, offshore_pump, boiler,
 // steam_engine, storage_tank, pump, tar_pit_pump, flare_stack,
 // combustion_generator, hydro_turbine, pole, power_switch, lamp,
-// crafting_machine, lab, schematic_crate, core_sample_drill or
-// launch_pad.
+// crafting_machine, lab, schematic_crate, core_sample_drill,
+// launch_pad, foundation or belt_pole.
 // The capsule (work item 0013) stands on the landing pad from the start:
 // it has no item, cannot be picked up, and holds 8 slots for quest
 // rewards and deliveries.
@@ -230,6 +230,11 @@
 // high, no other fields. Its cells are the solid floor of a frame that
 // machines stand on (doc/content.md, Foundations); placed free it starts
 // a frame at foundation_pitch_millimetres (game.sjson).
+// Belt pole (work item 0176, kind belt_pole): a 1 by 1 by 1 footprint and
+// height_millimetres (250 to 4000), how high over its bottom a belt or
+// pipe run ends on it (doc/content.md, Belt poles and runs). Placed free
+// it is a one cell frame of its own facing the run; snapped it stands on
+// a frame's foundation.
 machines = [
 	{
 		id = "wooden_chest"
@@ -932,5 +937,14 @@ machines = [
 		item = "foundation"
 		kind = "foundation"
 		footprint = {width = 1, depth = 1, height = 1}
+	}
+	{
+		id = "belt_pole"
+		name_key = "machine_belt_pole"
+		description_key = "describe_machine_belt_pole"
+		item = "belt_pole"
+		kind = "belt_pole"
+		footprint = {width = 1, depth = 1, height = 1}
+		height_millimetres = 1500
 	}
 ]

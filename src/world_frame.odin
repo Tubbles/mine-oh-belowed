@@ -130,6 +130,18 @@ add_frame :: proc(table: ^Frame_Table, origin: World_Position, axes: [3][3]i64, 
 	return id
 }
 
+// A frame's record and its extent, once its cells are empty (the
+// simulation's release_empty_frame decides when).
+remove_frame :: proc(table: ^Frame_Table, id: Frame_Id) {
+	for frame, index in table.frames {
+		if frame.id == id {
+			ordered_remove(&table.frames, index)
+			break
+		}
+	}
+	delete_key(&table.extents, id)
+}
+
 // The occupant index.
 
 occupy_frame_cell :: proc(table: ^Frame_Table, frame: Frame_Id, cell: World_Coordinate, occupant: Occupant) {

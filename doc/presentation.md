@@ -122,7 +122,7 @@ Rule: a tile never repeats identically from block to block (0088). `texture_vari
 
 ## Machine models
 
-- A machine names a MagicaVoxel file in `data/models` by its `model` key (`model_vox.odin`: the first model's `SIZE`, `XYZI` and `RGBA`, z up mapped to y up), meshed once with a shade per face direction (`model_mesh.odin`) and drawn scaled to the footprint (`render_models.odin`). A machine without a model keeps the box `draw_entity_cells` draws; every machine but belts and pipes has one.
+- A machine names a MagicaVoxel file in `data/models` by its `model` key (`model_vox.odin`: the first model's `SIZE`, `XYZI` and `RGBA`, z up mapped to y up), meshed once with a shade per face direction (`model_mesh.odin`) and drawn scaled to the footprint (`render_models.odin`). A machine without a model keeps the box `draw_entity_cells` draws; every machine but belts, pipes, foundations and belt poles has one.
 - A model takes the world light of one cell above its footprint's centre (in front of a 1 by 1 machine). Palette indices from `EMISSIVE_PALETTE_START` glow; an optional `<model>_part.vox` moves per the machine's `motion` from the tick and entity state (`model_motion.odin`).
 - `tools/make_placeholder_models.py` writes the placeholder models deterministically; rerun it after changing it and commit the files.
 
@@ -137,6 +137,15 @@ The inserter's arm (0175, `model_arm.odin`, `render_arm.odin`), the first model 
 - Light: the lamp lights only while the arm moves (`Inserter_State.Moving`): at rest its emissive voxels are dark (`ARM_LAMP_DARK_SHARE` of the light round it), while the other machines' emissive voxels keep their old look at rest, lit like the rest of the model. While it moves a point light shines from the lamp (`arm_point_light`, `ARM_LIGHT_COLOR`, `ARM_LIGHT_RADIUS_METRES`) for the field shader (The field shader, above). The block world's renderer takes no point lights.
 - Ghosts: an arm's placement ghost is the arm at rest, and its model top (`machine_model_top`) is the folded arm's on the block frame, so the ghost's chevron clears it.
 - Without its models an inserter is drawn as the post and bar it had before, in its frame's cells, and the frame renderer draws an inserter's cell as a box unless its arm model loaded.
+
+## Runs
+
+Belt and pipe runs between poles (0176, `render_belt_runs.odin`; the curve: [logistics.md](logistics.md), Runs), drawn by the planet preview after the frames until the slice (0179) draws the field session.
+
+- Swept meshes: one cross section per polyline point (`belt_run_sections`), its up blended from the start frame's up to the end frame's along the run, its right across the tangent (the neighbouring points' difference). A belt run is one quad per subdivision between two sections, a cell of the start frame's pitch wide at `BELT_SURFACE_HEIGHT` of a cell over the polyline, textured with the belt texture, its v counting cells along the run so the stripes keep the block belt's spacing, and scrolled at the run's belt speed as the belt meshes are (`belt_scroll_offset`); its sides hang `BELT_RUN_SIDE_DEPTH_SHARE` of the pitch below the surface, so a run seen edge on reads as a belt. Both windings, like the belt quad. A pipe run is a cylinder of `PIPE_COLOR` per subdivision, its radius `PIPE_RUN_RADIUS_SHARE` of the pitch, lying on the polyline.
+- Items on a run stand at their distance through `belt_run_point_at`, offset across the section to their lane by `BELT_LANE_OFFSET` of the pitch, drawn as cubes of their category's colour.
+- A belt pole is a post from its cell's bottom to the run end (`draw_belt_poles`); the frame renderer skips its cell.
+- The ghost (`draw_belt_run_ghost`): once the run tool's start is picked, the curve to the reticle's candidate as an untextured see-through surface, white, red when the shape would be refused.
 
 ## Sound
 

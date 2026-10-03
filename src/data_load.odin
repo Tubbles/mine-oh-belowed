@@ -68,7 +68,35 @@ Game_Config :: struct {
 	field_water:          Field_Water_Config,
 	// The cell of a foundation frame (work item 0174, world_frame.odin).
 	foundation_pitch_millimetres: int,
+	// The constraints of a belt or pipe run between poles (work item
+	// 0176, belt_run.odin).
+	belt_runs:            Belt_Runs_Config,
 }
+
+// A run either inclines (its ends differ in height by more than the
+// level tolerance, its facings aligned) or turns (level, its facings
+// turning up to the maximum), never both, and spans at most the maximum.
+Belt_Runs_Config :: struct {
+	maximum_span_millimetres:    int,
+	maximum_slope_percent:       int,
+	maximum_turn_degrees:        int,
+	level_tolerance_millimetres: int,
+	// How far an incline's facings and chord may turn.
+	aligned_degrees:             int,
+}
+
+// A run's polyline and arc length stay far inside an i64 and its length
+// in line units inside an i32 at the finest pitch.
+MINIMUM_BELT_RUN_SPAN_MILLIMETRES :: 1000
+MAXIMUM_BELT_RUN_SPAN_MILLIMETRES :: 100_000
+MAXIMUM_BELT_RUN_SLOPE_PERCENT :: 100
+MINIMUM_BELT_RUN_TURN_DEGREES :: 15
+MAXIMUM_BELT_RUN_TURN_DEGREES :: 135
+MAXIMUM_BELT_RUN_LEVEL_TOLERANCE_MILLIMETRES :: 1000
+// Half the 15 degree yaw step a free pole faces the chord by, plus one
+// (asserted against FRAME_YAW_STEPS in belt_run.odin).
+MINIMUM_BELT_RUN_ALIGNED_DEGREES :: 8
+MAXIMUM_BELT_RUN_ALIGNED_DEGREES :: 30
 
 // The terrain field's level of detail (work item 0169,
 // world_field_lod.odin).
@@ -446,6 +474,9 @@ validate_game_config :: proc(config: Game_Config) -> string {
 	if config.foundation_pitch_millimetres < MINIMUM_FOUNDATION_PITCH_MILLIMETRES || config.foundation_pitch_millimetres > MAXIMUM_FOUNDATION_PITCH_MILLIMETRES {
 		return fmt.tprintf("foundation_pitch_millimetres %d is outside %d to %d", config.foundation_pitch_millimetres, MINIMUM_FOUNDATION_PITCH_MILLIMETRES, MAXIMUM_FOUNDATION_PITCH_MILLIMETRES)
 	}
+	if problem := belt_runs_problem(config.belt_runs); problem != "" {
+		return problem
+	}
 	return field_player_speed_problem(config.field_player, config.tick_rate)
 }
 
@@ -554,6 +585,22 @@ field_player_problem :: proc(player: Field_Player_Config) -> string {
 
 // Every value inside its bound; a missing field_water block reads as zeros
 // and fails the first bound.
+belt_runs_problem :: proc(runs: Belt_Runs_Config) -> string {
+	bounds := [?]Config_Bound {
+		{"maximum_span_millimetres", runs.maximum_span_millimetres, MINIMUM_BELT_RUN_SPAN_MILLIMETRES, MAXIMUM_BELT_RUN_SPAN_MILLIMETRES},
+		{"maximum_slope_percent", runs.maximum_slope_percent, 1, MAXIMUM_BELT_RUN_SLOPE_PERCENT},
+		{"maximum_turn_degrees", runs.maximum_turn_degrees, MINIMUM_BELT_RUN_TURN_DEGREES, MAXIMUM_BELT_RUN_TURN_DEGREES},
+		{"level_tolerance_millimetres", runs.level_tolerance_millimetres, 0, MAXIMUM_BELT_RUN_LEVEL_TOLERANCE_MILLIMETRES},
+		{"aligned_degrees", runs.aligned_degrees, MINIMUM_BELT_RUN_ALIGNED_DEGREES, MAXIMUM_BELT_RUN_ALIGNED_DEGREES},
+	}
+	for bound in bounds {
+		if bound.value < bound.minimum || bound.value > bound.maximum {
+			return fmt.tprintf("belt_runs.%s %d is outside %d to %d", bound.name, bound.value, bound.minimum, bound.maximum)
+		}
+	}
+	return ""
+}
+
 field_water_problem :: proc(water: Field_Water_Config) -> string {
 	bounds := [?]Config_Bound {
 		{"fill_rate_per_tick", water.fill_rate_per_tick, 1, FIELD_WATER_FULL},

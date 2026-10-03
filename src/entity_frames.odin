@@ -80,8 +80,16 @@ find_foundation_machine :: proc(machines: Machine_Registry) -> Machine_Id {
 // The field.
 
 // A place command: a snapped placement names the frame and the cell, a
-// free one the hit and the heading its new frame takes.
+// free one the hit and the heading its new frame takes; a run (0176,
+// belt_run_placement.odin) its two candidates instead.
+Field_Placement_Kind :: enum u8 {
+	Machine,
+	Run,
+}
+
 Field_Placement :: struct {
+	kind:      Field_Placement_Kind,
+	run:       Field_Run_Placement,
 	machine:   Machine_Id,
 	new_frame: bool,
 	frame:     Frame_Id,
@@ -113,7 +121,7 @@ aim_field_player_at_frames :: proc(player: ^Field_Player, frames: ^Frame_Table, 
 // frame's face, or free on the targeted ground.
 field_player_placement :: proc(player: Field_Player, foundation: Machine_Id) -> (placement: Field_Placement, wanted: bool) {
 	switch {
-	case foundation == NO_MACHINE || !player.holding_foundation:
+	case foundation == NO_MACHINE || player.tool != .Foundation:
 		return {}, false
 	case player.frame_target.hit:
 		return Field_Placement{machine = foundation, frame = player.frame_target.frame, cell = player.frame_target.adjacent}, true
@@ -175,6 +183,10 @@ drain_field_placements :: proc(simulation: ^Field_Simulation, content: Field_Sim
 	for queued in simulation.placements {
 		player := &simulation.players[queued.player]
 		placement := queued.placement
+		if placement.kind == .Run {
+			drain_field_run_placement(simulation, content, player, placement.run)
+			continue
+		}
 		if refusal := field_placement_refusal(simulation, content, player^, placement); refusal != .None {
 			player.refusal, player.refused_material = refusal, .Air
 			continue
@@ -198,10 +210,14 @@ Entity_Frame_Record :: struct {
 	frame:  Frame_Id,
 }
 
-// Every live entity off frame 0, in pool order.
+// Every live entity off frame 0, in pool order. The belt poles' frames
+// are saved with their pool after these tables (write_belt_run_tables).
 entity_frame_records :: proc(entities: ^Entities) -> []Entity_Frame_Record {
 	records := make([dynamic]Entity_Frame_Record, context.temp_allocator)
 	for kind in Entity_Kind {
+		if kind == .Belt_Pole {
+			continue
+		}
 		for index in 0 ..< entity_pool_length(entities, kind) {
 			common := entity_common_at(entities, kind, index)
 			if common != nil && common.alive && common.frame != BLOCK_FRAME {
@@ -213,17 +229,19 @@ entity_frame_records :: proc(entities: ^Entities) -> []Entity_Frame_Record {
 }
 
 // The foundations, the frame records, the frame id counter and the
-// entities off frame 0. A world that never had a frame or a foundation
-// writes nothing, so its bytes and its state hash are those of a build
-// before frames.
+// entities off frame 0, then the belt poles and runs (0176,
+// write_belt_run_tables). A world that never had a frame, a foundation, a
+// pole or a run writes nothing, so its bytes and its state hash are those
+// of a build before frames.
 write_frame_tables :: proc(bytes: ^[dynamic]byte, entities: ^Entities) {
-	if len(entities.frames.frames) == 0 && len(entities.foundations.entries) == 0 {
+	if len(entities.frames.frames) == 0 && len(entities.foundations.entries) == 0 && len(entities.belt_poles.entries) == 0 && len(entities.belt_runs.entries) == 0 {
 		return
 	}
 	write_pool(bytes, &entities.foundations)
 	write_list(bytes, entities.frames.frames[:])
 	append_u32(bytes, entities.frames.last_id)
 	write_list(bytes, entity_frame_records(entities))
+	write_belt_run_tables(bytes, entities)
 }
 
 // Ids rising from 1 up to the counter, and a pitch the transforms can
@@ -250,7 +268,7 @@ read_frame_tables :: proc(reader: ^Byte_Reader, entities: ^Entities, machines: M
 	clear(&entities.frames.frames)
 	entities.frames.last_id = 0
 	if bytes_left(reader^) == 0 {
-		return true
+		return read_belt_run_tables(reader, entities, machines)
 	}
 	read_pool(reader, &entities.foundations, .Foundation, machines) or_return
 	read_list(reader, &entities.frames.frames) or_return
@@ -265,5 +283,5 @@ read_frame_tables :: proc(reader: ^Byte_Reader, entities: ^Entities, machines: M
 		}
 		common.frame = record.frame
 	}
-	return true
+	return read_belt_run_tables(reader, entities, machines)
 }

@@ -230,6 +230,8 @@ entity_counts :: proc(entities: ^Entities) -> [Entity_Kind]int {
 		.Core_Sample_Drill = pool_alive_count(entities.core_sample_drills),
 		.Launch_Pad = pool_alive_count(entities.launch_pads),
 		.Foundation = pool_alive_count(entities.foundations),
+		.Belt_Pole = pool_alive_count(entities.belt_poles),
+		.Belt_Run = pool_alive_count(entities.belt_runs),
 	}
 }
 

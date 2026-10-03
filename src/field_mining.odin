@@ -68,6 +68,9 @@ Field_Edit_Refusal :: enum u8 {
 	Frame_Cell_Taken,
 	// The frame a foundation snaps to is gone.
 	Unknown_Frame,
+	// A belt or pipe run was refused (0176): the reason is the miner's
+	// run_refusal.
+	Run_Refused,
 }
 
 Field_Miner :: struct {
@@ -78,6 +81,7 @@ Field_Miner :: struct {
 	credit:           [Field_Material]i64,
 	refusal:          Field_Edit_Refusal,
 	refused_material: Field_Material,
+	run_refusal:      Belt_Run_Refusal,
 }
 
 Queued_Field_Edit :: struct {
@@ -111,6 +115,14 @@ Field_Simulation_Content :: struct {
 	machines:  Machine_Registry,
 	foundation: Machine_Id,
 	foundation_pitch_millimetres: int,
+	// The run tools (0176, belt_run_placement.odin): the pole a new
+	// endpoint places, the belt a belt run moves at, the pipe a pipe run
+	// looks like (each read through field_content_machine) and the
+	// constraints of data/game.sjson.
+	belt_pole: Machine_Id,
+	run_belt:  Machine_Id,
+	run_pipe:  Machine_Id,
+	belt_runs: Belt_Run_Constraints,
 }
 
 destroy_field_simulation :: proc(simulation: ^Field_Simulation) {
@@ -320,7 +332,7 @@ field_player_edit :: proc(world: ^Field_World, spacing_millimetres: int, player:
 	switch {
 	case .Dig in input.held:
 		mode = .Dig
-	case .Place in input.held && !player.holding_foundation:
+	case .Place in input.held && player.tool == .Material:
 		mode = .Place
 	case:
 		return {}, false
@@ -340,8 +352,9 @@ field_player_edit :: proc(world: ^Field_World, spacing_millimetres: int, player:
 }
 
 // The brush and held material keys. The held material cycles through
-// the placeable materials and, when the data has one, the foundation after
-// the last of them.
+// the placeable materials and after the last of them the tools the data
+// has machines for (field_tool_available), then the materials again. A
+// change of tool forgets a run's first endpoint.
 update_field_tool :: proc(player: ^Field_Player, input: Field_Player_Input, content: Field_Simulation_Content) {
 	if .Next_Brush in input.just_pressed && len(content.brushes) > 0 {
 		player.brush = u8((int(player.brush) + 1) % len(content.brushes))
@@ -349,16 +362,40 @@ update_field_tool :: proc(player: ^Field_Player, input: Field_Player_Input, cont
 	if .Next_Material not_in input.just_pressed {
 		return
 	}
+	player.run_started = false
 	next := next_placeable_field_material(content.materials, player.held_material)
-	switch {
-	case player.holding_foundation:
-		player.holding_foundation = false
-		player.held_material = next
-	case field_foundation(content) != NO_MACHINE && int(next) <= int(player.held_material):
-		player.holding_foundation = true
-	case:
+	tool := player.tool
+	if tool != .Material || int(next) <= int(player.held_material) {
+		tool = next_field_tool(content, tool)
+	}
+	if tool == .Material {
 		player.held_material = next
 	}
+	player.tool = tool
+}
+
+// The first tool after the given one whose machines the data has,
+// Material past the last.
+next_field_tool :: proc(content: Field_Simulation_Content, after: Field_Held_Tool) -> Field_Held_Tool {
+	for candidate := int(after) + 1; candidate < len(Field_Held_Tool); candidate += 1 {
+		if field_tool_available(content, Field_Held_Tool(candidate)) {
+			return Field_Held_Tool(candidate)
+		}
+	}
+	return .Material
+}
+
+field_tool_available :: proc(content: Field_Simulation_Content, tool: Field_Held_Tool) -> bool {
+	switch tool {
+	case .Material:
+		return true
+	case .Foundation:
+		return field_foundation(content) != NO_MACHINE
+	case .Belt_Run, .Pipe_Run:
+		_, _, found := field_run_tool(content, tool)
+		return found
+	}
+	return false
 }
 
 // The first blocked material reported: Undiggable when it has no item,
@@ -437,6 +474,9 @@ queue_field_player_edits :: proc(simulation: ^Field_Simulation, content: Field_S
 			append(&simulation.edits, Queued_Field_Edit{player = index, edit = edit})
 		}
 		if placement, wanted := field_player_placement(player.body, field_foundation(content)); wanted && .Place in input.just_pressed {
+			append(&simulation.placements, Queued_Field_Placement{player = index, placement = placement})
+		}
+		if placement, wanted := update_field_run_tool(&player.body, &simulation.entities, content, input); wanted {
 			append(&simulation.placements, Queued_Field_Placement{player = index, placement = placement})
 		}
 	}

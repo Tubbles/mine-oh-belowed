@@ -146,6 +146,14 @@ Foundation frames (0174; [architecture.md](architecture.md), Frames).
 - An inserter's arm reaches `reach_millimetres` unfolded (0175), required on every inserter record and bounded from `MINIMUM_ARM_REACH_MILLIMETRES` (250) to `MAXIMUM_ARM_REACH_MILLIMETRES` (8000): 2000 on the shipped inserters (the design's 2 m), 4000 on the long inserter, which keeps twice the reach it has on the block frame. On a frame the reach in cells is that over the pitch ([logistics.md](logistics.md), Inserters).
 - Machine footprints are counted in cells, so on a 500 mm frame every machine stands at half its block size until the slice's content (0179) sets the real sizes in frame cells; the footprints of `data/machines.sjson` are unchanged until then.
 
+## Belt poles and runs
+
+Runs between poles (0176; [logistics.md](logistics.md), Runs).
+
+- The belt pole is a machine of kind `belt_pole` in `data/machines.sjson` (`id` `belt_pole`, placed by the `belt_pole` item of `data/items.sjson`, made by hand or in an assembler from two iron plates and a stone brick): a 1 by 1 by 1 footprint and `height_millimetres`, how high over its bottom a run meets it, required and bounded from `MINIMUM_BELT_POLE_HEIGHT_MILLIMETRES` (250) to `MAXIMUM_BELT_POLE_HEIGHT_MILLIMETRES` (4000) (`validate_belt_pole_definition`); the shipped 1500. No model and no panel: it is drawn as a post. The electric poles are kind `pole`, so the run's poles took `belt_pole`.
+- A belt run moves at the speed of the first flat belt of the data (`find_belt_machine`), a pipe run looks like the first pipe; the slice's content (0179) gives them items and costs.
+- `belt_runs` in `data/game.sjson`, each key required and bounded (`belt_runs_problem`): `maximum_span_millimetres` (1000 to 100000, shipped 30000), `maximum_slope_percent` (1 to 100, shipped 70), `maximum_turn_degrees` (15 to 135, shipped 90), `level_tolerance_millimetres` (0 to 1000, shipped 250) and `aligned_degrees` (8 to 30, shipped 8), how far an incline's facings and chord may turn apart. A new free pole faces the nearest of the 24 yaw steps of 15 degrees, up to 7.5 degrees off the chord, so the bound's floor is half a step plus one (asserted against `FRAME_YAW_STEPS`): below it a third of the aim directions would refuse an incline to a new pole. The slope limit holds along the whole belt, not only its chord. The bounds keep the polyline and the arc length inside an i64 and the length in line units inside an i32 at the finest pitch.
+
 ## Blocks
 
 `data/blocks.sjson` holds the shapes, orientation flags, light and sound materials.

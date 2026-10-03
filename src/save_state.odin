@@ -173,7 +173,8 @@ write_simulation_state :: proc(bytes: ^[dynamic]byte, state: ^Simulation_State) 
 // newer tables empty, without a format version step. The loose items
 // (work item 0062) are the first, the leaf decay queue (work item 0059)
 // the second; its felled list is always empty between ticks. The frame
-// tables (work item 0174, write_frame_tables) follow.
+// tables (work item 0174, write_frame_tables) follow, ending with the
+// belt poles and runs (work item 0176, write_belt_run_tables).
 write_later_tables :: proc(bytes: ^[dynamic]byte, world: ^World, records: ^Game_Records) {
 	write_list(bytes, world.entities.loose_items.items[:])
 	write_list(bytes, records.leaf_decay.updates[:])
@@ -496,6 +497,10 @@ entity_pool_length :: proc(entities: ^Entities, kind: Entity_Kind) -> int {
 		return len(entities.launch_pads.entries)
 	case .Foundation:
 		return len(entities.foundations.entries)
+	case .Belt_Pole:
+		return len(entities.belt_poles.entries)
+	case .Belt_Run:
+		return len(entities.belt_runs.entries)
 	}
 	return 0
 }
@@ -539,6 +544,11 @@ entity_common_at :: proc(entities: ^Entities, kind: Entity_Kind, index: int) -> 
 		return &entities.launch_pads.entries[index].common
 	case .Foundation:
 		return &entities.foundations.entries[index].common
+	case .Belt_Pole:
+		return &entities.belt_poles.entries[index].common
+	case .Belt_Run:
+		// A run has no Entity_Common: it occupies no cell.
+		return nil
 	}
 	return nil
 }

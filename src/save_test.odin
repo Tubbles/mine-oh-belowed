@@ -196,12 +196,66 @@ lay_save_test_frame :: proc(world: ^World, content: Simulation_Content) {
 
 frame_loaded :: proc(loaded_world, original_world: ^World) -> bool {
 	frames := loaded_world.entities.frames.frames[:]
-	if !slice.equal(frames, original_world.entities.frames.frames[:]) || len(frames) != 1 {
+	if !slice.equal(frames, original_world.entities.frames.frames[:]) || len(frames) == 0 {
 		return false
 	}
 	frame := frames[0].id
 	chest := entity_at(&loaded_world.entities, {0, 1, 0}, frame)
 	return frame_cell_count(&loaded_world.entities.frames, frame) == 3 && chest.kind == .Chest && entity_at(&loaded_world.entities, {1, 0, 0}, frame).kind == .Foundation && loaded_world.entities.frames.last_id == original_world.entities.frames.last_id
+}
+
+// Three free poles in a row with a belt run carrying plates from the
+// first to the second and a pipe run from the second to the third (work
+// item 0176).
+lay_save_test_runs :: proc(world: ^World, content: Simulation_Content) {
+	entities := &world.entities
+	machines := content.machines
+	metre := i64(POSITION_UNITS_PER_METRE)
+	hits := [3]World_Position{SAVE_TEST_FRAME_HIT + {0, 0, 3 * metre}, SAVE_TEST_FRAME_HIT + {8 * metre, 0, 3 * metre}, SAVE_TEST_FRAME_HIT + {16 * metre, 0, 3 * metre}}
+	chord := [3]i64{metre, 0, 0}
+	endpoints: [3]Belt_Run_Endpoint
+	for hit, index in hits {
+		pole, _ := place_free_belt_pole(entities, machines, test_machine(machines, "belt_pole"), hit, chord, 500)
+		endpoints[index], _ = belt_pole_endpoint(entities, pole, chord, .Belt, BELT_RUN_START)
+	}
+	constraints := data_belt_run_constraints()
+	belt_run, belt_refusal := add_belt_run(entities, machines, constraints, .Belt, find_belt_machine(machines, .Flat), {endpoints[0], endpoints[1]})
+	_, pipe_refusal := add_belt_run(entities, machines, constraints, .Pipe, find_machine_of_kind(machines, .Pipe), {endpoints[1], endpoints[2]})
+	assert(belt_refusal == .None && pipe_refusal == .None)
+	run := pool_get(&entities.belt_runs, belt_run)
+	line := &entities.belt_network.lines[run.line]
+	start := belt_line_segment_start(line^, run.line_index)
+	for index in i32(0) ..< 3 {
+		lane_insert(&line.lanes[.Right], test_item(content.items, "iron_plate"), start + BELT_INSERT_OFFSET + index * BELT_ITEM_SPACING)
+	}
+}
+
+// The poles with their frames and the runs with their control points
+// came through, the curves derived again alike, and the belt run's items
+// stand on it.
+belt_runs_loaded :: proc(loaded_world, original_world: ^World) -> bool {
+	loaded, original := &loaded_world.entities, &original_world.entities
+	if len(loaded.belt_poles.entries) != 3 || len(loaded.belt_runs.entries) != 2 {
+		return false
+	}
+	for pole, index in loaded.belt_poles.entries {
+		if pole.frame != original.belt_poles.entries[index].frame || pole.frame == BLOCK_FRAME {
+			return false
+		}
+	}
+	for run, index in loaded.belt_runs.entries {
+		before := original.belt_runs.entries[index]
+		if run.endpoints != before.endpoints || run.control_points != before.control_points || run.curve != before.curve || run.kind != before.kind {
+			return false
+		}
+	}
+	belt_run := loaded.belt_runs.entries[0]
+	line := loaded.belt_network.lines[belt_run.line]
+	on_run := 0
+	for entry in line.lanes[.Right] {
+		on_run += belt_line_segment_at(line, entry.position) == belt_run.line_index ? 1 : 0
+	}
+	return on_run == 3
 }
 
 // The pad kept its assembly and cargo, the shipment and its statistics
@@ -260,6 +314,7 @@ build_save_test_site :: proc(simulation: ^Simulation_State, content: Simulation_
 	lay_save_test_prospecting(world, records, content)
 	lay_save_test_launch_pad(world, records, content)
 	lay_save_test_frame(world, content)
+	lay_save_test_runs(world, content)
 	lay_save_test_loose_items(world, content)
 	technology := test_technology(content.technologies, "automation")
 	testing_refusal := queue_research(&records.research, content.technologies, simulation.unlocks, technology)
@@ -392,6 +447,7 @@ test_save_load_run_matches_the_original :: proc(t: ^testing.T) {
 	testing.expect(t, prospecting_loaded(&loaded.world, &loaded.records, &original.records))
 	testing.expect(t, launch_pad_loaded(&loaded.world, &loaded.records, &original.records))
 	testing.expect(t, frame_loaded(&loaded.world, &original.world))
+	testing.expect(t, belt_runs_loaded(&loaded.world, &original.world))
 	testing.expect(t, venture_loaded(&loaded.records, &original.records, content.technologies))
 	testing.expect(t, len(loaded.world.entities.loose_items.items) > 0)
 	testing.expect(t, slice.equal(loaded.world.entities.loose_items.items[:], original.world.entities.loose_items.items[:]))

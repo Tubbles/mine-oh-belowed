@@ -131,7 +131,7 @@ test_the_field_places_foundations_through_the_queue :: proc(t: ^testing.T) {
 	tick_field_simulation(&simulation, content, {})
 	testing.expect(t, simulation.players[0].body.target.hit)
 	update_field_tool(&simulation.players[0].body, Field_Player_Input{just_pressed = {.Next_Material}}, content)
-	for !simulation.players[0].body.holding_foundation {
+	for simulation.players[0].body.tool != .Foundation {
 		update_field_tool(&simulation.players[0].body, Field_Player_Input{just_pressed = {.Next_Material}}, content)
 	}
 	place := [1]Field_Player_Input{{held = {.Place}, just_pressed = {.Place}}}

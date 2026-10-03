@@ -80,6 +80,9 @@ Machine_Kind :: enum u8 {
 	// The solid cells of a foundation frame that machines stand on
 	// (entity_frames.odin, work item 0174): one cell thick.
 	Foundation,
+	// A post a belt or pipe run ends on (belt_run.odin, work item 0176):
+	// one cell, its run end height_millimetres over its bottom.
+	Belt_Pole,
 }
 
 @(rodata)
@@ -110,6 +113,7 @@ machine_kind_names := [Machine_Kind]string {
 	.Core_Sample_Drill = "core_sample_drill",
 	.Launch_Pad    = "launch_pad",
 	.Foundation    = "foundation",
+	.Belt_Pole     = "belt_pole",
 }
 
 // The shape family a belt item places. Ramps become up or down and lifts
@@ -175,6 +179,7 @@ Machine_Definition :: struct {
 	revival_port:                 bool,
 	inserter_reach:               int,
 	reach_millimetres:            int,
+	height_millimetres:           int,
 	hydro_kilowatts_per_water_level: f32,
 	hydro_minimum_water_level:    int,
 	sampling_seconds:             int,
@@ -263,6 +268,8 @@ Machine :: struct {
 	// on any other frame (inserter_reach_on_frame).
 	inserter_reach:              i32,
 	reach_millimetres:           i32,
+	// Belt poles: the height of the run end over the pole's bottom.
+	height_millimetres:          i32,
 	// Hydro turbines: the power per level of flowing water in the
 	// footprint, and the level one footprint cell needs at placement.
 	hydro_watts_per_water_level: u32,
@@ -362,6 +369,8 @@ validate_machine_kind_fields :: proc(definition: Machine_Definition, kind: Machi
 		if definition.footprint.height != 1 {
 			return fmt.tprintf("foundation %q must be one cell thick", definition.id)
 		}
+	case .Belt_Pole:
+		return validate_belt_pole_definition(definition)
 	}
 	return ""
 }
@@ -616,6 +625,7 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 		revival_port = definition.revival_port,
 		inserter_reach = i32(max(definition.inserter_reach, 1)),
 		reach_millimetres = i32(clamp(definition.reach_millimetres, 0, MAXIMUM_ARM_REACH_MILLIMETRES)),
+		height_millimetres = i32(clamp(definition.height_millimetres, 0, MAXIMUM_BELT_POLE_HEIGHT_MILLIMETRES)),
 		hydro_watts_per_water_level = u32(math.round(definition.hydro_kilowatts_per_water_level * 1000)),
 		hydro_minimum_water_level = definition.hydro_minimum_water_level,
 		sampling_seconds = u32(max(definition.sampling_seconds, 0)),

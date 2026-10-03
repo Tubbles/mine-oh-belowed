@@ -214,7 +214,7 @@ draw_belt_line_items :: proc(world: ^World, items: Item_Registry, line: Belt_Lin
 	drawn := make([]u8, len(line.belts), context.temp_allocator)
 	for lane in Belt_Lane {
 		for entry in line.lanes[lane] {
-			block := entry.position / BELT_UNITS_PER_BLOCK
+			block := belt_line_segment_at(line, entry.position)
 			if drawn[block] >= MAXIMUM_BELT_ITEMS_DRAWN_PER_BLOCK {
 				continue
 			}
@@ -223,7 +223,7 @@ draw_belt_line_items :: proc(world: ^World, items: Item_Registry, line: Belt_Lin
 				continue
 			}
 			drawn[block] += 1
-			point := belt_item_point(belt, lane, entry.position % BELT_UNITS_PER_BLOCK)
+			point := belt_item_point(belt, lane, entry.position - belt_line_segment_start(line, block))
 			if !draw_item_billboard(billboards, entry.item, point) {
 				rl.DrawCube(point + {0, BELT_ITEM_SIZE / 2, 0}, BELT_ITEM_SIZE, BELT_ITEM_SIZE, BELT_ITEM_SIZE, item_cube_color(items, entry.item))
 			}

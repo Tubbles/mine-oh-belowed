@@ -90,6 +90,10 @@ Belt_Line :: struct {
 	side:                   Splitter_Side,
 	// Set by each tick: a lane's front item stands at the dead end.
 	front_held_at_dead_end: bool,
+	// Only on a line holding a run (belt_run.odin): the position each
+	// segment starts at, then the line's length. A line of belts alone
+	// leaves it empty and counts BELT_UNITS_PER_BLOCK a segment.
+	segment_starts:         [dynamic]i32,
 }
 
 Belt_Network :: struct {
@@ -285,6 +289,13 @@ Belt_Links :: struct {
 	belts:     []Belt_Link,
 	// Per splitter pool index, where each half's items go.
 	splitters: [][Splitter_Side]Belt_Link,
+	// Per run pool index (belt_run.odin, link_belt_runs).
+	runs:      []Belt_Link,
+}
+
+// The link of a belt or a run.
+belt_node_link :: proc(links: Belt_Links, node: Entity_Handle) -> ^Belt_Link {
+	return node.kind == .Belt_Run ? &links.runs[node.index] : &links.belts[node.index]
 }
 
 // The belts or splitter halves that side load onto a belt.
@@ -309,15 +320,18 @@ belt_link :: proc(entities: ^Entities, belt: Belt) -> Belt_Link {
 
 // Every belt's and splitter half's target and connection. Where two
 // feeders would continue into the same belt or splitter half, the first
-// wins (splitters, then belts, each in pool order) and the other ends
-// there. A flat belt that nothing continues into and that exactly one
-// feeder side loads onto becomes a curve: that feeder continues into it.
+// wins (splitters, then belts, then runs, each in pool order) and the
+// other ends there. A flat belt that nothing continues into and that
+// exactly one feeder side loads onto becomes a curve: that feeder
+// continues into it. A belt a run starts at feeds the run
+// (link_belt_runs).
 compute_belt_links :: proc(entities: ^Entities) -> Belt_Links {
 	belts := entities.belts.entries[:]
 	splitters := entities.splitters.entries[:]
 	links := Belt_Links {
 		belts     = make([]Belt_Link, len(belts), context.temp_allocator),
 		splitters = make([][Splitter_Side]Belt_Link, len(splitters), context.temp_allocator),
+		runs      = make([]Belt_Link, len(entities.belt_runs.entries), context.temp_allocator),
 	}
 	for &belt, index in belts {
 		if belt.alive {
@@ -339,8 +353,12 @@ compute_belt_links :: proc(entities: ^Entities) -> Belt_Links {
 			claim_belt_link(links, side_feeders, claimed_halves, &link, splitters[index].handle, splitters[index].rotation)
 		}
 	}
+	link_belt_runs(entities, links)
 	for &link, index in links.belts {
 		claim_belt_link(links, side_feeders, claimed_halves, &link, belts[index].handle, belts[index].rotation)
+	}
+	for &link, index in links.runs {
+		claim_belt_link(links, side_feeders, claimed_halves, &link, entities.belt_runs.entries[index].handle, 0)
 	}
 	for &belt, index in belts {
 		feeders := side_feeders[index]
@@ -359,8 +377,8 @@ claim_belt_link :: proc(links: Belt_Links, side_feeders: []Side_Feeders, claimed
 	switch link.connection {
 	case .None:
 	case .Straight:
-		if links.belts[target].previous == NO_ENTITY {
-			links.belts[target].previous = feeder
+		if previous := &belt_node_link(links, link.target).previous; previous^ == NO_ENTITY {
+			previous^ = feeder
 		} else {
 			link.connection = .None
 		}
@@ -384,6 +402,7 @@ network_allocator :: proc(network: ^Belt_Network) -> runtime.Allocator {
 destroy_belt_lines :: proc(network: ^Belt_Network) {
 	for &line in network.lines {
 		delete(line.belts)
+		delete(line.segment_starts)
 		for lane in Belt_Lane {
 			delete(line.lanes[lane])
 		}
@@ -403,6 +422,7 @@ make_belt_line :: proc(network: ^Belt_Network, speed: u32) -> Belt_Line {
 	line := Belt_Line {
 		belts                  = make([dynamic]Entity_Handle, allocator),
 		speed_units_per_second = speed,
+		segment_starts         = make([dynamic]i32, allocator),
 	}
 	for lane in Belt_Lane {
 		line.lanes[lane] = make([dynamic]Lane_Item, allocator)
@@ -414,43 +434,130 @@ belt_speed :: proc(machines: Machine_Registry, belt: Belt) -> u32 {
 	return machines.machines[belt.machine].belt_speed_units_per_second
 }
 
-// A line starts where no belt continues into the belt (nothing or a
-// splitter does) or the speed changes.
-belt_starts_line :: proc(entities: ^Entities, machines: Machine_Registry, links: []Belt_Link, index: int) -> bool {
-	previous := links[index].previous
-	if previous.kind != .Belt {
-		return true
+// A belt's or a run's speed.
+belt_node_speed :: proc(entities: ^Entities, machines: Machine_Registry, node: Entity_Handle) -> u32 {
+	if node.kind == .Belt_Run {
+		return machines.machines[entities.belt_runs.entries[node.index].machine].belt_speed_units_per_second
 	}
-	belts := entities.belts.entries[:]
-	return belt_speed(machines, belts[previous.index]) != belt_speed(machines, belts[index])
+	return belt_speed(machines, entities.belts.entries[node.index])
 }
 
-// Appends the belts from start along the links. A walk that comes back to
-// its start is a loop and continues into itself.
-walk_belt_line :: proc(entities: ^Entities, machines: Machine_Registry, links: []Belt_Link, visited: []bool, start: int) {
+// A line starts where no belt or run continues into the belt or run
+// (nothing or a splitter does) or the speed changes.
+belt_node_starts_line :: proc(entities: ^Entities, machines: Machine_Registry, links: Belt_Links, node: Entity_Handle) -> bool {
+	previous := belt_node_link(links, node).previous
+	if previous.kind != .Belt && previous.kind != .Belt_Run {
+		return true
+	}
+	return belt_node_speed(entities, machines, previous) != belt_node_speed(entities, machines, node)
+}
+
+// Per belt and per run pool index.
+Belt_Visited :: struct {
+	belts: []bool,
+	runs:  []bool,
+}
+
+belt_node_visited :: proc(visited: Belt_Visited, node: Entity_Handle) -> ^bool {
+	return node.kind == .Belt_Run ? &visited.runs[node.index] : &visited.belts[node.index]
+}
+
+set_belt_node_line :: proc(entities: ^Entities, node: Entity_Handle, line, line_index: i32) {
+	if node.kind == .Belt_Run {
+		run := &entities.belt_runs.entries[node.index]
+		run.line, run.line_index = line, line_index
+	} else {
+		belt := &entities.belts.entries[node.index]
+		belt.line, belt.line_index = line, line_index
+	}
+}
+
+// Adds the segment of the node just appended to the line after length and
+// returns the new length. The first run of a line fills in the starts of
+// the belts before it, which count one block each.
+append_belt_segment :: proc(line: ^Belt_Line, entities: ^Entities, node: Entity_Handle, length: i32) -> i32 {
+	segment := i32(BELT_UNITS_PER_BLOCK)
+	if node.kind == .Belt_Run {
+		segment = entities.belt_runs.entries[node.index].curve.length_units
+	}
+	switch {
+	case node.kind == .Belt_Run && len(line.segment_starts) == 0:
+		// The last of these is the run's own start, length.
+		for index in 0 ..< len(line.belts) {
+			append(&line.segment_starts, i32(index) * BELT_UNITS_PER_BLOCK)
+		}
+	case len(line.segment_starts) > 0:
+		append(&line.segment_starts, length)
+	}
+	return length + segment
+}
+
+// Appends the belts and runs from start along the links. A walk that
+// comes back to its start is a loop and continues into itself.
+walk_belt_line :: proc(entities: ^Entities, machines: Machine_Registry, links: Belt_Links, visited: Belt_Visited, start: Entity_Handle) {
 	network := &entities.belt_network
-	belts := entities.belts.entries[:]
 	line_number := i32(len(network.lines))
-	line := make_belt_line(network, belt_speed(machines, belts[start]))
-	index := start
+	line := make_belt_line(network, belt_node_speed(entities, machines, start))
+	node := start
+	length := i32(0)
 	for {
-		belts[index].line, belts[index].line_index = line_number, i32(len(line.belts))
-		visited[index] = true
-		append(&line.belts, belts[index].handle)
-		if links[index].connection != .Straight {
+		set_belt_node_line(entities, node, line_number, i32(len(line.belts)))
+		belt_node_visited(visited, node)^ = true
+		append(&line.belts, node)
+		length = append_belt_segment(&line, entities, node, length)
+		link := belt_node_link(links, node)^
+		if link.connection != .Straight {
 			break
 		}
-		next := int(links[index].target.index)
-		if belt_starts_line(entities, machines, links, next) {
+		if belt_node_starts_line(entities, machines, links, link.target) {
 			break
 		}
-		if visited[next] {
+		if belt_node_visited(visited, link.target)^ {
 			line.end = Belt_Line_End{kind = .Straight, line = line_number}
 			break
 		}
-		index = next
+		node = link.target
+	}
+	if len(line.segment_starts) > 0 {
+		append(&line.segment_starts, length)
 	}
 	append(&network.lines, line)
+}
+
+// The line and the index in it of a belt or a run.
+belt_node_line :: proc(entities: ^Entities, node: Entity_Handle) -> (line, line_index: i32) {
+	if node.kind == .Belt_Run {
+		run := entities.belt_runs.entries[node.index]
+		return run.line, run.line_index
+	}
+	belt := entities.belts.entries[node.index]
+	return belt.line, belt.line_index
+}
+
+// Where segment index of the line starts.
+belt_line_segment_start :: proc(line: Belt_Line, index: i32) -> i32 {
+	if len(line.segment_starts) == 0 {
+		return index * BELT_UNITS_PER_BLOCK
+	}
+	return line.segment_starts[index]
+}
+
+// The segment holding position; a position at or past the end is in the
+// last segment.
+belt_line_segment_at :: proc(line: Belt_Line, position: i32) -> i32 {
+	if len(line.segment_starts) == 0 {
+		return position / BELT_UNITS_PER_BLOCK
+	}
+	low, high := 0, len(line.belts) - 1
+	for low < high {
+		middle := (low + high + 1) / 2
+		if line.segment_starts[middle] <= position {
+			low = middle
+		} else {
+			high = middle - 1
+		}
+	}
+	return i32(low)
 }
 
 // Where the items of a line whose last block has this link go, once
@@ -462,16 +569,16 @@ link_line_end :: proc(entities: ^Entities, link: Belt_Link) -> Belt_Line_End {
 	if link.connection == .None {
 		return {}
 	}
-	target := entities.belts.entries[link.target.index]
-	block_start := target.line_index * BELT_UNITS_PER_BLOCK
+	target_line, target_index := belt_node_line(entities, link.target)
+	block_start := belt_line_segment_start(entities.belt_network.lines[target_line], target_index)
 	switch link.connection {
 	case .None, .Into_Splitter:
 	case .Straight:
-		return Belt_Line_End{kind = .Straight, line = target.line, position = block_start}
+		return Belt_Line_End{kind = .Straight, line = target_line, position = block_start}
 	case .Side_Left:
-		return Belt_Line_End{kind = .Side_Load, line = target.line, lane = .Left, position = block_start + BELT_INSERT_OFFSET}
+		return Belt_Line_End{kind = .Side_Load, line = target_line, lane = .Left, position = block_start + BELT_INSERT_OFFSET}
 	case .Side_Right:
-		return Belt_Line_End{kind = .Side_Load, line = target.line, lane = .Right, position = block_start + BELT_INSERT_OFFSET}
+		return Belt_Line_End{kind = .Side_Load, line = target_line, lane = .Right, position = block_start + BELT_INSERT_OFFSET}
 	}
 	return {}
 }
@@ -483,7 +590,7 @@ resolve_line_end :: proc(entities: ^Entities, links: Belt_Links, line_index: int
 		return
 	}
 	last := line.belts[len(line.belts) - 1]
-	link := last.kind == .Splitter ? links.splitters[last.index][line.side] : links.belts[last.index]
+	link := last.kind == .Splitter ? links.splitters[last.index][line.side] : belt_node_link(links, last)^
 	line.end = link_line_end(entities, link)
 	if line.end.kind == .Splitter {
 		entities.splitters.entries[line.end.splitter.index].input_lines[line.end.side] = i32(line_index)
@@ -570,8 +677,9 @@ belt_cell_items :: proc(entities: ^Entities, allocator := context.temp_allocator
 	for line in entities.belt_network.lines {
 		for lane in Belt_Lane {
 			for entry in line.lanes[lane] {
-				block := entry.position / BELT_UNITS_PER_BLOCK
-				append(&records, Belt_Cell_Item{belt = line.belts[block], lane = lane, offset = entry.position % BELT_UNITS_PER_BLOCK, item = entry.item, side = line.side})
+				segment := belt_line_segment_at(line, entry.position)
+				offset := entry.position - belt_line_segment_start(line, segment)
+				append(&records, Belt_Cell_Item{belt = line.belts[segment], lane = lane, offset = offset, item = entry.item, side = line.side})
 			}
 		}
 	}
@@ -589,11 +697,18 @@ record_line_position :: proc(entities: ^Entities, record: Belt_Cell_Item) -> (li
 		}
 		return &lines[splitter.output_lines[record.side]], record.offset, true
 	}
+	if record.belt.kind == .Belt_Run {
+		run := pool_get(&entities.belt_runs, record.belt)
+		if run == nil || !belt_run_in_lines(run^) {
+			return nil, 0, false
+		}
+		return &lines[run.line], belt_line_segment_start(lines[run.line], run.line_index) + record.offset, true
+	}
 	belt := pool_get(&entities.belts, record.belt)
 	if belt == nil {
 		return nil, 0, false
 	}
-	return &lines[belt.line], belt.line_index * BELT_UNITS_PER_BLOCK + record.offset, true
+	return &lines[belt.line], belt_line_segment_start(lines[belt.line], belt.line_index) + record.offset, true
 }
 
 restore_belt_items :: proc(entities: ^Entities, records: []Belt_Cell_Item) {
@@ -622,15 +737,28 @@ rebuild_belt_lines :: proc(entities: ^Entities, machines: Machine_Registry, reco
 		network.lines.allocator, network.order.allocator = allocator, allocator
 	}
 	links := compute_belt_links(entities)
-	visited := make([]bool, len(links.belts), context.temp_allocator)
-	for belt, index in entities.belts.entries {
-		if belt.alive && belt_starts_line(entities, machines, links.belts, index) {
-			walk_belt_line(entities, machines, links.belts, visited, index)
+	visited := Belt_Visited {
+		belts = make([]bool, len(links.belts), context.temp_allocator),
+		runs  = make([]bool, len(links.runs), context.temp_allocator),
+	}
+	for belt in entities.belts.entries {
+		if belt.alive && belt_node_starts_line(entities, machines, links, belt.handle) {
+			walk_belt_line(entities, machines, links, visited, belt.handle)
+		}
+	}
+	for run in entities.belt_runs.entries {
+		if belt_run_in_lines(run) && belt_node_starts_line(entities, machines, links, run.handle) {
+			walk_belt_line(entities, machines, links, visited, run.handle)
 		}
 	}
 	for belt, index in entities.belts.entries {
-		if belt.alive && !visited[index] {
-			walk_belt_line(entities, machines, links.belts, visited, index)
+		if belt.alive && !visited.belts[index] {
+			walk_belt_line(entities, machines, links, visited, belt.handle)
+		}
+	}
+	for run, index in entities.belt_runs.entries {
+		if belt_run_in_lines(run) && !visited.runs[index] {
+			walk_belt_line(entities, machines, links, visited, run.handle)
 		}
 	}
 	add_splitter_output_lines(entities, machines)
@@ -710,7 +838,7 @@ belt_block_stacks :: proc(entities: ^Entities, handle: Entity_Handle, allocator 
 	}
 	for lane in Belt_Lane {
 		for entry in line.lanes[lane] {
-			if entry.position / BELT_UNITS_PER_BLOCK == belt.line_index {
+			if belt_line_segment_at(line^, entry.position) == belt.line_index {
 				append(&stacks, Item_Stack{item = entry.item, count = 1})
 			}
 		}

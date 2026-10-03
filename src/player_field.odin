@@ -58,6 +58,18 @@ Field_Player_Button :: enum u8 {
 	Place,
 	Next_Brush,
 	Next_Material,
+	// Cancels a run's first endpoint (0176, belt_run_placement.odin).
+	Back,
+}
+
+// What the held material cycle holds: a material, or past the last one a
+// foundation (0174), the belt run tool and the pipe run tool (0176), each
+// when the data has its machines.
+Field_Held_Tool :: enum u8 {
+	Material,
+	Foundation,
+	Belt_Run,
+	Pipe_Run,
 }
 
 Field_Player_Buttons :: bit_set[Field_Player_Button]
@@ -132,11 +144,14 @@ Field_Player :: struct {
 	target:            Field_Raycast_Hit,
 	frame_target:      Frame_Raycast_Hit,
 	// The hand tool (0171): an index into the brushes of data/game.sjson
-	// and the material a place raises the field from, or a foundation
-	// held instead of the material (0174).
+	// and the material a place raises the field from, or the tool held
+	// instead of the material (0174, 0176).
 	brush:             u8,
 	held_material:     Field_Material,
-	holding_foundation: bool,
+	tool:              Field_Held_Tool,
+	// A run tool's first endpoint, chosen by the first Place (0176).
+	run_started:       bool,
+	run_start:         Belt_Run_Candidate,
 }
 
 Field_Ground :: struct {

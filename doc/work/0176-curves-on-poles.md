@@ -1,6 +1,6 @@
 # 0176: Belt and pipe curves between frames on free poles
 
-Status: todo (after 0175)
+Status: implemented
 
 ## Goal
 

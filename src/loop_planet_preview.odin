@@ -58,7 +58,17 @@ import "platform"
 //
 // Once the player stands, a pad of foundations is laid 9 m ahead as well
 // (0174, lay_planet_preview_foundations), past the pit, so a shot tilted
-// less shows a frame.
+// less shows a frame, and a second pad beyond it joined to the first by a
+// belt run between two free poles (0176, loop_planet_preview_runs.odin).
+// --planet-preview-pitch sets the walk screenshot's tilt once the pit is
+// dug (default PLANET_PREVIEW_PIT_PITCH_DEGREES, down into the pit), so a
+// level shot shows the pads, the arms and the run.
+//
+// Past the foundation the held material cycle holds the belt run tool and
+// the pipe run tool (0176, belt_run_placement.odin): Place picks the
+// run's start, the ghost draws the curve to the reticle's candidate, the
+// second Place lays the run and Back forgets the start. The player
+// carries PLANET_PREVIEW_POLE_COUNT poles.
 
 PLANET_PREVIEW_PLANET :: "home"
 PLANET_PREVIEW_START_HEIGHT_METRES :: 40
@@ -102,12 +112,14 @@ PLANET_PREVIEW_PIT_RADIUS_MILLIMETRES :: 2500
 PLANET_PREVIEW_PIT_AHEAD_MILLIMETRES :: 3300
 PLANET_PREVIEW_PIT_DEPTH_MILLIMETRES :: 1500
 PLANET_PREVIEW_PIT_PITCH_DEGREES :: -50
+PLANET_PREVIEW_PITCH_LIMIT_DEGREES :: 89
 PLANET_PREVIEW_FOUNDATION_COUNT :: 100
 // The walk screenshot's pad: this far ahead of the feet (past the pit), this many cells
 // either side of the first foundation, and a column this high on it.
 PLANET_PREVIEW_PAD_DISTANCE_MILLIMETRES :: 9000
 PLANET_PREVIEW_PAD_HALF_WIDTH :: 2
 PLANET_PREVIEW_PAD_COLUMN_HEIGHT :: 3
+PLANET_PREVIEW_POLE_COUNT :: 50
 
 Planet_Preview :: struct {
 	planet:          Planet,
@@ -147,6 +159,10 @@ Planet_Preview :: struct {
 	models:          Model_Renderer,
 	items:           Item_Registry,
 	reaching_arm:    Entity_Handle,
+	// The walk screenshot's tilt once the pit is dug, and the belt's
+	// texture for the runs (0176).
+	pitch_degrees:   int,
+	belts:           Belt_Renderer,
 }
 
 planet_preview_speed_scale :: proc(height_metres: f32) -> f32 {
@@ -242,7 +258,7 @@ field_player_input_from_frame :: proc(frame: Input_Frame, turn: [2]i32) -> Field
 	buttons := [?]struct {
 		action: Action,
 		button: Field_Player_Button,
-	}{{.Jump, .Jump}, {.Sneak, .Sneak}, {.Sprint, .Sprint}, {.Sprint_Hold, .Sprint}, {.Toggle_Fly_Mode, .Toggle_Fly_Mode}, {.Toggle_No_Clip, .Toggle_No_Clip}, {.Toggle_Camera_Mode, .Toggle_Camera_Mode}, {.Mine, .Dig}, {.Place, .Place}, {.Rotate_Building, .Next_Brush}, {.Hotbar_Next, .Next_Material}}
+	}{{.Jump, .Jump}, {.Sneak, .Sneak}, {.Sprint, .Sprint}, {.Sprint_Hold, .Sprint}, {.Toggle_Fly_Mode, .Toggle_Fly_Mode}, {.Toggle_No_Clip, .Toggle_No_Clip}, {.Toggle_Camera_Mode, .Toggle_Camera_Mode}, {.Mine, .Dig}, {.Place, .Place}, {.Rotate_Building, .Next_Brush}, {.Hotbar_Next, .Next_Material}, {.Back, .Back}}
 	for entry in buttons {
 		if entry.action in frame.pressed {
 			input.held += {entry.button}
@@ -273,10 +289,10 @@ start_planet_preview_walk :: proc(preview: ^Planet_Preview) {
 	feet := field_surface_under(generation, metres_to_world_position(preview.camera.position), clearance)
 	forward := fly_camera_forward(preview.camera)
 	look := [3]i64{i64(forward.x * UNIT_VECTOR_ONE), i64(forward.y * UNIT_VECTOR_ONE), i64(forward.z * UNIT_VECTOR_ONE)}
-	held, holding_foundation := preview.field.players[0].body.held_material, preview.field.players[0].body.holding_foundation
+	held, tool := preview.field.players[0].body.held_material, preview.field.players[0].body.tool
 	preview.field.players[0].body = make_field_player(feet, look)
 	preview.field.players[0].body.held_material = held
-	preview.field.players[0].body.holding_foundation = holding_foundation
+	preview.field.players[0].body.tool = tool
 	preview.walking = true
 	preview.tick_seconds = 0
 	preview.pending = {}
@@ -395,7 +411,7 @@ dig_planet_preview_pit :: proc(preview: ^Planet_Preview) {
 		torch = nearest_field_sample(floor, spacing)
 	}
 	add_field_light_source(world, torch, preview.torch_level)
-	player.pitch = degrees_to_angle_units(PLANET_PREVIEW_PIT_PITCH_DEGREES)
+	player.pitch = degrees_to_angle_units(preview.pitch_degrees)
 	preview.pit_dug = true
 	platform.log_printf("planet preview: pit dug, torch at %v", torch)
 }
@@ -479,13 +495,25 @@ field_edit_refusal_text :: proc(refusal: Field_Edit_Refusal, material: Field_Mat
 		return "  the foundation's cell is taken"
 	case .Unknown_Frame:
 		return "  the foundation's frame is gone"
+	case .Run_Refused:
+		return "  the run is refused"
 	}
 	return ""
 }
 
 // What the held material cycle holds now.
 field_held_name :: proc(player: Field_Player) -> string {
-	return player.holding_foundation ? "foundation" : field_material_name(player.held_material)
+	switch player.tool {
+	case .Material:
+		return field_material_name(player.held_material)
+	case .Foundation:
+		return "foundation"
+	case .Belt_Run:
+		return player.run_started ? "belt run, start picked" : "belt run"
+	case .Pipe_Run:
+		return player.run_started ? "pipe run, start picked" : "pipe run"
+	}
+	return ""
 }
 
 // The walk mode's tool line: the brush, the held material, the material
@@ -511,8 +539,13 @@ planet_preview_tool_text :: proc(preview: ^Planet_Preview) -> string {
 		target = fmt.tprintf("frame %d cell %v", miner.body.frame_target.frame, miner.body.frame_target.cell)
 	}
 	held = fmt.tprintf("%s  foundations %d, frames %d", held, inventory_count(miner.inventory, content.machines.machines[content.foundation].item) if field_foundation(content) != NO_MACHINE else 0, len(preview.field.entities.frames.frames))
+	held = fmt.tprintf("%s  poles %d, runs %d", held, planet_preview_pole_count(miner, content), pool_alive_count(preview.field.entities.belt_runs))
+	refusal := field_edit_refusal_text(miner.refusal, miner.refused_material)
+	if miner.refusal == .Run_Refused {
+		refusal = fmt.tprintf("%s: %v", refusal, miner.run_refusal)
+	}
 	shapes := FIELD_BRUSH_SHAPE_NAMES
-	return fmt.tprintf("brush %s %.1f m, holding %s  target %s %s%s", shapes[brush.shape], f64(brush.radius) / POSITION_UNITS_PER_METRE, field_held_name(miner.body), target, held, field_edit_refusal_text(miner.refusal, miner.refused_material))
+	return fmt.tprintf("brush %s %.1f m, holding %s  target %s %s%s", shapes[brush.shape], f64(brush.radius) / POSITION_UNITS_PER_METRE, field_held_name(miner.body), target, held, refusal)
 }
 
 // With capture set, the frame is saved before it is shown; saved says
@@ -525,6 +558,7 @@ draw_planet_preview :: proc(preview: ^Planet_Preview, selection: []Field_Node, c
 	set_planet_preview_point_lights(preview, camera)
 	draw_field(&preview.renderer, camera, selection)
 	draw_frames(&preview.field.entities, preview.models)
+	draw_belt_runs(&preview.belts, &preview.field.entities, preview.field_content.machines, preview.items, preview.tick, preview.tick_rate)
 	draw_planet_preview_arms(preview)
 	draw_planet_preview_ghost(preview)
 	rl.EndMode3D()
@@ -562,6 +596,9 @@ draw_planet_preview_ghost :: proc(preview: ^Planet_Preview) {
 	if !preview.walking {
 		return
 	}
+	if curve, geometry, refusal, found := field_run_ghost(preview.field.players[0].body, &preview.field.entities, preview.field_content); found {
+		draw_belt_run_ghost(curve, geometry, refusal == .None)
+	}
 	placement, wanted := field_player_placement(preview.field.players[0].body, field_foundation(preview.field_content))
 	if !wanted {
 		return
@@ -596,6 +633,7 @@ lay_planet_preview_foundations :: proc(preview: ^Planet_Preview) {
 	}
 	platform.log_printf("planet preview: laid %d foundations on frame %d", frame_cell_count(&entities.frames, frame), frame)
 	lay_planet_preview_arms(preview, frame)
+	lay_planet_preview_run(preview, frame)
 }
 
 // Returns the exit code: 0, or 1 when the screenshot could not be saved.
@@ -653,14 +691,18 @@ make_planet_preview_field :: proc(items: Item_Registry, materials: Field_Materia
 	if foundation := find_foundation_machine(machines); foundation != NO_MACHINE {
 		inventory_add(miner.inventory, items, machines.machines[foundation].item, PLANET_PREVIEW_FOUNDATION_COUNT)
 	}
+	if pole := find_machine_of_kind(machines, .Belt_Pole); pole != NO_MACHINE {
+		inventory_add(miner.inventory, items, machines.machines[pole].item, PLANET_PREVIEW_POLE_COUNT)
+	}
 	append(&field.players, miner)
 	return field
 }
 
 // Returns the process's exit code.
 // screenshot_path empty runs the interactive preview; walk starts it in
-// the walk mode; daylight_percent is the sky light's share.
-run_planet_preview :: proc(config: Game_Config, planets: []Planet, items: Item_Registry, machines: Machine_Registry, bindings: []Binding, data_directory: string, seed: u64, screenshot_path: string, walk: bool, daylight_percent: int) -> int {
+// the walk mode; daylight_percent is the sky light's share; pitch_degrees
+// the walk screenshot's tilt once the pit is dug.
+run_planet_preview :: proc(config: Game_Config, planets: []Planet, items: Item_Registry, machines: Machine_Registry, bindings: []Binding, data_directory: string, seed: u64, screenshot_path: string, walk: bool, daylight_percent: int, pitch_degrees: int) -> int {
 	planet, found := find_planet(planets, PLANET_PREVIEW_PLANET)
 	if !found {
 		platform.log_printf("error: %s has no planet %q to preview", PLANETS_FILE_NAME, PLANET_PREVIEW_PLANET)
@@ -677,6 +719,10 @@ run_planet_preview :: proc(config: Game_Config, planets: []Planet, items: Item_R
 	}
 	if daylight_percent < 0 || daylight_percent > 100 {
 		platform.log_printf("error: --planet-preview-daylight=%d is outside 0 to 100", daylight_percent)
+		return 1
+	}
+	if pitch_degrees < -PLANET_PREVIEW_PITCH_LIMIT_DEGREES || pitch_degrees > PLANET_PREVIEW_PITCH_LIMIT_DEGREES {
+		platform.log_printf("error: --planet-preview-pitch=%d is outside %d to %d", pitch_degrees, -PLANET_PREVIEW_PITCH_LIMIT_DEGREES, PLANET_PREVIEW_PITCH_LIMIT_DEGREES)
 		return 1
 	}
 	lighting, lighting_ok := load_lighting_file(data_directory)
@@ -722,6 +768,10 @@ run_planet_preview :: proc(config: Game_Config, planets: []Planet, items: Item_R
 			machines = machines,
 			foundation = find_foundation_machine(machines),
 			foundation_pitch_millimetres = config.foundation_pitch_millimetres,
+			belt_pole = find_machine_of_kind(machines, .Belt_Pole),
+			run_belt = find_belt_machine(machines, .Flat),
+			run_pipe = find_machine_of_kind(machines, .Pipe),
+			belt_runs = make_belt_run_constraints(config.belt_runs),
 		},
 		streaming       = start_field_streaming(seed, planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES, default_worker_count()),
 		renderer        = renderer,
@@ -732,6 +782,8 @@ run_planet_preview :: proc(config: Game_Config, planets: []Planet, items: Item_R
 		torch_level     = u8(torch_level),
 		models          = init_model_renderer(machines, data_directory),
 		items           = items,
+		pitch_degrees   = pitch_degrees,
+		belts           = init_belt_renderer(machines),
 	}
 	preview.field.world.water_planet = make_field_water_planet(seed, planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES)
 	if screenshot_path != "" {
@@ -745,6 +797,7 @@ run_planet_preview :: proc(config: Game_Config, planets: []Planet, items: Item_R
 	stop_field_streaming(&preview.streaming)
 	destroy_field_renderer(&preview.renderer)
 	destroy_model_renderer(&preview.models)
+	destroy_belt_renderer(&preview.belts)
 	destroy_field_simulation(&preview.field)
 	delete(preview.field_content.brushes)
 	return exit_code

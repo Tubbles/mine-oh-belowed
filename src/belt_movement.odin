@@ -11,7 +11,11 @@ package game
 // runs just before it (splitter.odin).
 // Cost is proportional to the items, not to the belt length.
 
+// A run counts its length in line units (belt_run.odin), a belt one block.
 belt_line_length :: proc(line: Belt_Line) -> i32 {
+	if len(line.segment_starts) > 0 {
+		return line.segment_starts[len(line.segment_starts) - 1]
+	}
 	return i32(len(line.belts)) * BELT_UNITS_PER_BLOCK
 }
 
@@ -250,7 +254,7 @@ belt_insert_item :: proc(entities: ^Entities, handle: Entity_Handle, lane: Belt_
 	if line == nil {
 		return false
 	}
-	return lane_insert(&line.lanes[lane], item, belt.line_index * BELT_UNITS_PER_BLOCK + BELT_INSERT_OFFSET)
+	return lane_insert(&line.lanes[lane], item, belt_line_segment_start(line^, belt.line_index) + BELT_INSERT_OFFSET)
 }
 
 belt_has_room :: proc(entities: ^Entities, handle: Entity_Handle, lane: Belt_Lane) -> bool {
@@ -258,7 +262,7 @@ belt_has_room :: proc(entities: ^Entities, handle: Entity_Handle, lane: Belt_Lan
 	if line == nil {
 		return false
 	}
-	_, room := lane_insert_index(line.lanes[lane][:], belt.line_index * BELT_UNITS_PER_BLOCK + BELT_INSERT_OFFSET)
+	_, room := lane_insert_index(line.lanes[lane][:], belt_line_segment_start(line^, belt.line_index) + BELT_INSERT_OFFSET)
 	return room
 }
 
@@ -307,12 +311,12 @@ belt_offered_items :: proc(entities: ^Entities, handle: Entity_Handle, filter: I
 
 // nearest_belt_item skipping the items already listed.
 nearest_belt_item_excluding :: proc(line: Belt_Line, block: i32, filter: Item_Id, excluded: []Item_Id) -> Belt_Item_Location {
-	middle := block * BELT_UNITS_PER_BLOCK + BELT_INSERT_OFFSET
+	middle := belt_line_segment_start(line, block) + BELT_INSERT_OFFSET
 	best: Belt_Item_Location
 	best_distance := i32(max(i32))
 	for lane in Belt_Lane {
 		for entry, index in line.lanes[lane] {
-			if entry.position / BELT_UNITS_PER_BLOCK != block || (filter != NO_ITEM && entry.item != filter) || slice_contains_item(excluded, entry.item) {
+			if belt_line_segment_at(line, entry.position) != block || (filter != NO_ITEM && entry.item != filter) || slice_contains_item(excluded, entry.item) {
 				continue
 			}
 			if distance := abs(entry.position - middle); distance < best_distance {
