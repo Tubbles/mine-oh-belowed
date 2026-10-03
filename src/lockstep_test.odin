@@ -430,8 +430,9 @@ test_two_local_members_keep_the_hash_of_one_member_machines :: proc(t: ^testing.
 	}
 	testing.expect_value(t, lockstep_state_hash(&remote.simulation), lockstep_state_hash(&couch.simulation))
 	testing.expect(t, couch.simulation.players[1].position != couch.simulation.players[0].position)
-	start := make_player(player_start_on(LOCKSTEP_TEST_SECOND_PLAYER)).position
-	testing.expect(t, couch.simulation.players[1].position != start)
+	start_player := make_player(player_start_on(LOCKSTEP_TEST_SECOND_PLAYER))
+	defer destroy_player(start_player)
+	testing.expect(t, couch.simulation.players[1].position != start_player.position)
 }
 
 // The test's own burner inserter far above the site, without fuel or

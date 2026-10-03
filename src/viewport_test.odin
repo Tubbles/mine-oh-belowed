@@ -171,7 +171,9 @@ test_a_pad_press_adds_a_viewport_and_a_player_at_the_start :: proc(t: ^testing.T
 		return
 	}
 	testing.expect_value(t, len(session.simulation.players), 2)
-	testing.expect_value(t, session.simulation.players[1].position, make_player(session.start.player).position)
+	start_player := make_player(session.start.player)
+	defer destroy_player(start_player)
+	testing.expect_value(t, session.simulation.players[1].position, start_player.position)
 }
 
 // Two viewports, one simulation: each camera follows its own player, and

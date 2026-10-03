@@ -106,6 +106,18 @@ make_test_world :: proc(coordinates: []Chunk_Coordinate) -> World {
 	world.entities.schematic_crates.free = make([dynamic]u32, context.temp_allocator)
 	world.entities.foundations.entries = make([dynamic]Foundation, context.temp_allocator)
 	world.entities.foundations.free = make([dynamic]u32, context.temp_allocator)
+	world.entities.capsules.entries = make([dynamic]Capsule, context.temp_allocator)
+	world.entities.capsules.free = make([dynamic]u32, context.temp_allocator)
+	world.entities.core_sample_drills.entries = make([dynamic]Core_Sample_Drill, context.temp_allocator)
+	world.entities.core_sample_drills.free = make([dynamic]u32, context.temp_allocator)
+	world.entities.launch_pads.entries = make([dynamic]Launch_Pad, context.temp_allocator)
+	world.entities.launch_pads.free = make([dynamic]u32, context.temp_allocator)
+	world.entities.belt_poles.entries = make([dynamic]Belt_Pole, context.temp_allocator)
+	world.entities.belt_poles.free = make([dynamic]u32, context.temp_allocator)
+	world.entities.belt_runs.entries = make([dynamic]Belt_Run, context.temp_allocator)
+	world.entities.belt_runs.free = make([dynamic]u32, context.temp_allocator)
+	world.entities.loose_items.items = make([dynamic]Loose_Item, context.temp_allocator)
+	world.entities.breakdowns = make([dynamic]Machine_Id, context.temp_allocator)
 	world.entities.electric_networks.allocator = context.temp_allocator
 	world.entity_lights = make(map[World_Coordinate]Light_Color, context.temp_allocator)
 	for coordinate in coordinates {

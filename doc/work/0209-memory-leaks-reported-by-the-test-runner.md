@@ -1,6 +1,6 @@
 # 0209: Fix the memory leaks the test runner reports
 
-Status: todo (main agent, 2026-10-03: the 0204 verifier saw the test runner's leak warnings from the inventory, machine_wear and rtti tests, none from 0204's diff)
+Status: implemented (2026-10-03)
 
 ## Goal
 

@@ -101,6 +101,7 @@ test_command_line_server_join_and_port :: proc(t: ^testing.T) {
 	conflicts := [?][2]string{{"--server", "--join=a"}, {"--join=a", "--seed=7"}, {"--port=4000", "--load=a"}, {"--server", "--debug-terrain"}, {"--server", "--chapter=2"}, {"--server", "--give=iron_plate:1"}}
 	for pair in conflicts {
 		combined, _ := parse_command_line({pair[0], pair[1]})
+		defer delete(combined.give_arguments)
 		testing.expectf(t, command_line_conflict(combined) != "", "%s with %s accepted", pair[0], pair[1])
 	}
 }
