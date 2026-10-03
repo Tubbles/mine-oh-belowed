@@ -1,6 +1,6 @@
 # 0208: Re-record the code map's grown edges from the field series
 
-Status: verified (2026-10-03, the main agent read the diff: two moves and four record lines; implemented 2026-10-03)
+Status: landed (2026-10-03, 9580427; verified 2026-10-03 by the main agent reading the diff, two moves and four record lines)
 
 ## Goal
 
