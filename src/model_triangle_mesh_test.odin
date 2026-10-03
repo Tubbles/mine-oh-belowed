@@ -227,7 +227,7 @@ test_an_obj_model_wins_over_a_voxel_model :: proc(t: ^testing.T) {
 	obj := platform.join_path(models, "box.obj")
 	testing.expect_value(t, os.write_entire_file(obj, TEST_OBJ_BOX), nil)
 	testing.expect_value(t, os.write_entire_file(platform.join_path(models, "box.mtl"), TEST_OBJ_MATERIALS), nil)
-	testing.expect_value(t, os.write_entire_file(platform.join_path(models, "box.vox"), #load("../data/models/wooden_chest.vox")), nil)
+	testing.expect_value(t, os.write_entire_file(platform.join_path(models, "box.vox"), #load("../data/models/steel_furnace.vox")), nil)
 	machine := Machine{id = "box", model = "box", footprint = {1, 1, 1}}
 
 	mesh, problem := load_machine_model_mesh(directory, machine)
@@ -266,11 +266,41 @@ emissive_layer_centroid :: proc(t: ^testing.T, mesh: Model_Mesh, colour: [4]u8) 
 	return centroid
 }
 
+// A shipped OBJ machine and whether its model glows (work item 0205).
+Shipped_Obj_Machine :: struct {
+	id:    string,
+	glows: bool,
+}
+
 @(test)
 test_the_shipped_obj_machines_load :: proc(t: ^testing.T) {
+	shipped := [?]Shipped_Obj_Machine {
+		{"stone_furnace", true},
+		{"burner_mining_drill", true},
+		{"wooden_chest", false},
+		{"iron_chest", false},
+		{"electric_mining_drill", true},
+		{"small_pole", false},
+		{"big_pole", false},
+		{"boiler", true},
+		{"steam_engine", true},
+		{"offshore_pump", false},
+		{"assembler_1", true},
+		{"splitter", false},
+		{"lamp", true},
+		{"power_switch", true},
+		{"schematic_crate", true},
+		{"wood_gasifier", true},
+		{"storage_tank", false},
+		{"pump", false},
+		{"lab", true},
+		{"stone_cutting_table", false},
+		{"stone_cutter", true},
+	}
 	machines := shipped_machines()
 	defer delete(machines)
-	for id in ([2]string{"stone_furnace", "burner_mining_drill"}) {
+	for entry in shipped {
+		id := entry.id
 		machine, found := shipped_machine(machines, id)
 		testing.expectf(t, found, "%s is shipped", id)
 		testing.expectf(t, os.is_file(model_obj.model_file_path(test_data_directory(), machine.model)), "%s has an .obj", id)
@@ -278,23 +308,27 @@ test_the_shipped_obj_machines_load :: proc(t: ^testing.T) {
 		defer destroy_machine_model_mesh(mesh)
 		testing.expectf(t, problem == "", "%s: %q", id, problem)
 		body_triangles := model_layers_triangle_count(mesh.body)
-		testing.expectf(t, body_triangles >= 1 && body_triangles <= 800, "%s: %d body triangles", id, body_triangles)
-		testing.expectf(t, len(mesh.body[.Emissive].positions) > 0, "%s has no glow", id)
+		testing.expectf(t, body_triangles >= 1 && body_triangles <= MODEL_BODY_TRIANGLES_MAXIMUM, "%s: %d body triangles", id, body_triangles)
 		part_triangles := model_layers_triangle_count(mesh.part)
+		if motion_has_part(machine.motion.kind) {
+			testing.expectf(t, part_triangles >= 1 && part_triangles <= MODEL_PART_TRIANGLES_MAXIMUM, "%s: %d part triangles", id, part_triangles)
+		} else {
+			testing.expectf(t, part_triangles == 0, "%s: %d part triangles without a moving part", id, part_triangles)
+		}
+		glow_vertices := len(mesh.body[.Emissive].positions) + len(mesh.part[.Emissive].positions)
+		testing.expectf(t, (glow_vertices > 0) == entry.glows, "%s: %d glowing vertices, glows %v", id, glow_vertices, entry.glows)
 		if id == "stone_furnace" {
-			testing.expect_value(t, part_triangles, 0)
 			// The glow faces the front (+x): the export axes.
 			centroid := emissive_layer_centroid(t, mesh.body[.Emissive], {255, 140, 48, 255})
 			testing.expectf(t, centroid.x > 0.5, "the furnace's glow centroid %v", centroid)
-		} else {
-			testing.expectf(t, part_triangles >= 1 && part_triangles <= 200, "%s: %d part triangles", id, part_triangles)
 		}
 		library, error := os.read_entire_file(platform.join_path(test_data_directory(), model_obj.MODELS_DIRECTORY, strings.concatenate({id, model_obj.MATERIAL_FILE_EXTENSION}, context.temp_allocator)), context.temp_allocator)
 		testing.expect_value(t, error, nil)
 		materials := strings.count(string(library), "newmtl ")
-		testing.expectf(t, materials >= 1 && materials <= 8, "%s: %d materials", id, materials)
-	}
-	for gone in ([3]string{"stone_furnace", "burner_mining_drill", "burner_mining_drill_part"}) {
-		testing.expectf(t, !os.is_file(model_vox.model_file_path(test_data_directory(), gone)), "%s.vox is gone", gone)
+		testing.expectf(t, materials >= 1 && materials <= MODEL_MATERIAL_LIMIT, "%s: %d materials", id, materials)
+		for suffix in ([2]string{"", "_part"}) {
+			gone := strings.concatenate({id, suffix}, context.temp_allocator)
+			testing.expectf(t, !os.is_file(model_vox.model_file_path(test_data_directory(), gone)), "%s.vox is gone", gone)
+		}
 	}
 }

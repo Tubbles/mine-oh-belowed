@@ -55,18 +55,18 @@ make_vox_file :: proc(size: [3]i32, voxels: [][4]u8, palette: [][4]u8 = nil) -> 
 }
 
 @(test)
-test_the_shipped_chest_model_loads :: proc(t: ^testing.T) {
-	model, problem := parse_voxel_model(#load("../../data/models/wooden_chest.vox"))
+test_the_shipped_capsule_model_loads :: proc(t: ^testing.T) {
+	model, problem := parse_voxel_model(#load("../../data/models/drop_capsule.vox"))
 	defer delete(model.cells)
 	testing.expect_value(t, problem, "")
-	// 16 voxels per block for a machine one block across.
-	testing.expect_value(t, model.size, [3]i32{16, 16, 16})
+	// 16 voxels per block for a machine one block across, two blocks high.
+	testing.expect_value(t, model.size, [3]i32{16, 32, 16})
 	testing.expect_value(t, model.model_count, 1)
-	// The latch on the front (+x), metal grey; the corner column is empty.
-	testing.expect_value(t, model.palette[voxel_at(model, {14, 7, 7})], [4]u8{170, 170, 176, 255})
+	// The corner column is empty; the base plate is dark grey and the
+	// window on the front (+x) blue.
 	testing.expect_value(t, voxel_at(model, {0, 0, 0}), 0)
-	// The lid line is the dark row at height 8.
-	testing.expect_value(t, model.palette[voxel_at(model, {2, 8, 2})], [4]u8{70, 45, 25, 255})
+	testing.expect_value(t, model.palette[voxel_at(model, {2, 0, 2})], [4]u8{60, 60, 66, 255})
+	testing.expect_value(t, model.palette[voxel_at(model, {14, 14, 7})], [4]u8{40, 60, 90, 255})
 }
 
 @(test)

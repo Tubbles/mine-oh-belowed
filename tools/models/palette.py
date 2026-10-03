@@ -5,6 +5,11 @@ MATERIALS maps a material name to its sRGB bytes and whether it glows.
 The game reads Kd as display bytes without gamma (doc/presentation.md,
 Machine models), so kit.material writes bytes / 255 straight into Base
 Color. Only the materials a machine uses are written to its .mtl.
+
+Work item 0205 added timber, timber_dark and stone for the hand built
+pieces (the wooden chest, the schematic crate, the small pole, the stone
+cutting table and the stone cutter), which the steel palette has no
+colour for, and lamp_glow, the warm white of a lamp's head.
 """
 
 MATERIALS = {
@@ -21,4 +26,8 @@ MATERIALS = {
     "science_white": ((208, 212, 214), False),
     "heat_glow": ((255, 140, 48), True),
     "electric_glow": ((80, 220, 240), True),
+    "timber": ((122, 88, 56), False),
+    "timber_dark": ((82, 58, 38), False),
+    "stone": ((128, 126, 120), False),
+    "lamp_glow": ((255, 236, 190), True),
 }

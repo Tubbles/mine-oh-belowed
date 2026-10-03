@@ -206,5 +206,5 @@ test_the_shipped_models_pass_the_checks :: proc(t: ^testing.T) {
 			testing.expect(t, false, model_check_report_line(machine.id, problem))
 		}
 	}
-	testing.expectf(t, counts[.Obj] >= 2 && counts[.Arm] >= 5, "%d obj and %d arm subjects", counts[.Obj], counts[.Arm])
+	testing.expectf(t, counts[.Obj] >= 21 && counts[.Arm] >= 5, "%d obj and %d arm subjects", counts[.Obj], counts[.Arm])
 }

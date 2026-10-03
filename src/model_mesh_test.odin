@@ -211,7 +211,7 @@ test_the_shipped_machine_models_mesh :: proc(t: ^testing.T) {
 @(test)
 test_a_missing_model_or_part_file_is_refused :: proc(t: ^testing.T) {
 	machines := [?]Machine {
-		{id = "wooden_chest", footprint = {1, 1, 1}, model = "wooden_chest"},
+		{id = "steel_furnace", footprint = {1, 1, 1}, model = "steel_furnace"},
 		{id = "iron_chest", footprint = {1, 1, 1}},
 	}
 	meshes, problem := load_machine_model_meshes(Machine_Registry{machines = machines[:]}, test_data_directory())
@@ -220,7 +220,7 @@ test_a_missing_model_or_part_file_is_refused :: proc(t: ^testing.T) {
 
 	machines[0].motion = {kind = .Spin, period_seconds = 1}
 	_, problem = load_machine_model_meshes(Machine_Registry{machines = machines[:]}, test_data_directory())
-	testing.expect(t, strings.contains(problem, "wooden_chest_part.vox"), problem)
+	testing.expect(t, strings.contains(problem, "steel_furnace_part.vox"), problem)
 
 	machines[0].motion = {}
 	machines[0].model = "no_such_model"
@@ -229,14 +229,21 @@ test_a_missing_model_or_part_file_is_refused :: proc(t: ^testing.T) {
 	testing.expect(t, is_model_id("wooden_chest") && !is_model_id("../chest") && !is_model_id(""))
 }
 
-// A spinning part turns about the middle of its voxels, so it does not
-// wobble: the pivot names that middle on the two other axes.
+// A spinning part turns about the middle of its voxels, or of its
+// triangles for an OBJ model, so it does not wobble: the pivot names that
+// middle on the two other axes.
 @(test)
 test_shipped_spinning_parts_turn_about_their_middle :: proc(t: ^testing.T) {
 	machines := shipped_machines()
 	defer delete(machines)
+	obj_spins := 0
 	for machine in machines {
 		if machine.motion.kind != .Spin {
+			continue
+		}
+		if os.is_file(model_obj.model_file_path(test_data_directory(), machine.model)) {
+			obj_spins += 1
+			expect_obj_part_turns_about_its_middle(t, machine)
 			continue
 		}
 		path := model_vox.model_file_path(test_data_directory(), model_part_id(machine.model))
@@ -261,5 +268,31 @@ test_shipped_spinning_parts_turn_about_their_middle :: proc(t: ^testing.T) {
 			middle := f32(minimum[axis] + maximum[axis] + 1) / 2 * scale[axis]
 			testing.expectf(t, abs(middle - machine.motion.pivot[axis]) < 0.01, "%s: pivot %v, the part's middle on axis %d is %v", machine.id, machine.motion.pivot, axis, middle)
 		}
+	}
+	// The steam engine, the assembler and the stone cutter (work item
+	// 0205), so the OBJ branch is never vacuous.
+	testing.expectf(t, obj_spins >= 3, "%d OBJ machines spin", obj_spins)
+}
+
+// An OBJ part's bounds, in the model's frame, are centred on the pivot on
+// every axis but the one it turns about.
+expect_obj_part_turns_about_its_middle :: proc(t: ^testing.T, machine: Machine) {
+	mesh, problem := load_machine_model_mesh(test_data_directory(), machine)
+	defer destroy_machine_model_mesh(mesh)
+	testing.expectf(t, problem == "", "%s: %q", machine.id, problem)
+	minimum, maximum := [3]f32{max(f32), max(f32), max(f32)}, [3]f32{min(f32), min(f32), min(f32)}
+	for layer in mesh.part {
+		for position in layer.positions {
+			minimum = {min(minimum.x, position.x), min(minimum.y, position.y), min(minimum.z, position.z)}
+			maximum = {max(maximum.x, position.x), max(maximum.y, position.y), max(maximum.z, position.z)}
+		}
+	}
+	pivot := footprint_point_to_model(machine.motion.pivot, machine.footprint)
+	for axis in 0 ..< 3 {
+		if axis == machine.motion.axis {
+			continue
+		}
+		middle := (minimum[axis] + maximum[axis]) / 2
+		testing.expectf(t, abs(middle - pivot[axis]) < 0.01, "%s: pivot %v, the part's middle on axis %d is %v", machine.id, pivot, axis, middle)
 	}
 }
