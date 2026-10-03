@@ -1649,6 +1649,9 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	}
 	defer destroy_touch_layouts(&state.interaction.touch_layouts)
 	defer destroy_touch_layout_editor(&state.interaction.touch_layout_editor)
+	// Before the first session is entered: a world from the command line
+	// hosts like one from the title.
+	state.hosting = default_hosting_plan()
 	if session != nil {
 		enter_session(state, session)
 	} else {
@@ -1656,7 +1659,6 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	}
 	defer leave_session(state)
 	defer destroy_session_join(&state.joining)
-	state.hosting = default_hosting_plan()
 	defer close_lan_query(&state.lan_query)
 	if player_configuration.join_address != "" {
 		request_join(&state.interaction.title, player_configuration.join_address)
