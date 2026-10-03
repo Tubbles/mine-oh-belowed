@@ -1,6 +1,6 @@
 # 0164: A cell occupant index owned by the world
 
-Status: folded into 0174 on 2026-10-02 (the index becomes per foundation frame cell in the smooth world; `doc/log/2026-10-02.md`)
+Status: closed in 0174 on 2026-10-03 (folded into it on 2026-10-02: the index is per foundation frame cell, `Frame_Table.occupants` in `world_frame.odin`; the raycast and the water read it, the light keeps `World.entity_lights`; `doc/log/2026-10-03.md`)
 
 ## Goal
 

@@ -161,3 +161,32 @@ test_array_counts_may_grow_but_not_shrink :: proc(t: ^testing.T) {
 	testing.expect(t, !read_value_of(&reader, &two))
 	testing.expect(t, strings.contains(reader.problem, "values of Save_Test_Two holds 4 saved elements, this build's array has 2"), reader.problem)
 }
+
+Save_Test_Without_Skipped :: struct {
+	kept:  u32,
+	other: i16,
+}
+
+Save_Test_With_Skipped :: struct {
+	kept:    u32,
+	skipped: u64 `save:"-"`,
+	other:   i16,
+}
+
+// A field tagged save:"-" (Entity_Common.frame, 0174) leaves no trace: the
+// struct encodes to the bytes of the struct without it, and reading leaves
+// the field as it was.
+@(test)
+test_a_field_tagged_save_dash_is_left_out :: proc(t: ^testing.T) {
+	without := Save_Test_Without_Skipped{kept = 7, other = -3}
+	with := Save_Test_With_Skipped{kept = 7, skipped = 99, other = -3}
+	without_bytes := make([dynamic]byte, context.temp_allocator)
+	with_bytes := make([dynamic]byte, context.temp_allocator)
+	write_value_of(&without_bytes, &without)
+	write_value_of(&with_bytes, &with)
+	testing.expect_value(t, string(with_bytes[:]), string(without_bytes[:]))
+	read := Save_Test_With_Skipped{skipped = 5}
+	reader := Byte_Reader{data = with_bytes[:]}
+	testing.expect(t, read_value_of(&reader, &read))
+	testing.expect_value(t, read, Save_Test_With_Skipped{kept = 7, skipped = 5, other = -3})
+}

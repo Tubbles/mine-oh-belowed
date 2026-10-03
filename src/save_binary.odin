@@ -3,6 +3,7 @@ package game
 import "base:runtime"
 import "core:fmt"
 import "core:hash"
+import "core:reflect"
 
 // The value codec of the save files, driven by Odin type information.
 // Integers, floats and bit sets over an integer range are little endian
@@ -36,6 +37,8 @@ import "core:hash"
 // Values of the content id types (Item_Id, Block_Id, Fluid_Id, Machine_Id)
 // are remapped from the ids the file was written with to this build's
 // through the reader's Content_Remap (save_remap.odin).
+//
+// A field tagged save:"-" is left out (field_is_saved).
 //
 // Nothing is copied as raw memory, so padding, pointers and the host byte
 // order never reach a file. Dynamic arrays, maps, strings and pointers are
@@ -178,9 +181,26 @@ enum_value_of_name :: proc(variant: runtime.Type_Info_Enum, name: string) -> (va
 	return 0, false
 }
 
+// A field tagged save:"-" stays out of the files: the save writes it
+// elsewhere when it matters (Entity_Common.frame, save_state.odin), so a
+// state without it keeps its bytes.
+field_is_saved :: proc(variant: runtime.Type_Info_Struct, field: int) -> bool {
+	return reflect.struct_tag_get(reflect.Struct_Tag(variant.tags[field]), "save") != "-"
+}
+
+saved_field_count :: proc(variant: runtime.Type_Info_Struct) -> int {
+	count := 0
+	for field in 0 ..< int(variant.field_count) {
+		if field_is_saved(variant, field) {
+			count += 1
+		}
+	}
+	return count
+}
+
 struct_field_index :: proc(variant: runtime.Type_Info_Struct, name: string) -> int {
 	for field in 0 ..< int(variant.field_count) {
-		if variant.names[field] == name {
+		if variant.names[field] == name && field_is_saved(variant, field) {
 			return field
 		}
 	}
@@ -324,8 +344,11 @@ write_elements :: proc(bytes: ^[dynamic]byte, pointer: rawptr, elem: ^runtime.Ty
 }
 
 write_struct_schema :: proc(bytes: ^[dynamic]byte, variant: runtime.Type_Info_Struct) {
-	append_u16(bytes, u16(variant.field_count))
+	append_u16(bytes, u16(saved_field_count(variant)))
 	for field in 0 ..< int(variant.field_count) {
+		if !field_is_saved(variant, field) {
+			continue
+		}
 		append_string(bytes, variant.names[field])
 		append_u64(bytes, shallow_kind(variant.types[field]))
 		append_u32(bytes, u32(fixed_encoding_size(variant.types[field])))
@@ -335,6 +358,9 @@ write_struct_schema :: proc(bytes: ^[dynamic]byte, variant: runtime.Type_Info_St
 write_struct_body :: proc(bytes: ^[dynamic]byte, pointer: rawptr, variant: runtime.Type_Info_Struct) {
 	for field in 0 ..< int(variant.field_count) {
 		info := variant.types[field]
+		if !field_is_saved(variant, field) {
+			continue
+		}
 		if fixed_encoding_size(info) > 0 {
 			write_value(bytes, field_pointer(pointer, variant, field), info)
 			continue

@@ -218,7 +218,7 @@ drill_drop_cell_at :: proc(origin: World_Coordinate, rotation: u8, machine: Mach
 // Why a held unit did not go out: nothing stands in the drop cell, what
 // stands there never takes the item's kind, or it has no room right now.
 drill_blocked_state :: proc(entities: ^Entities, content: Simulation_Content, drill: Drill, machine: Machine) -> Drill_State {
-	target := entity_at(entities, drill_drop_cell(drill, machine))
+	target := entity_at(entities, drill_drop_cell(drill, machine), drill.frame)
 	switch {
 	case target == NO_ENTITY:
 		return .No_Output
@@ -366,7 +366,7 @@ draw_vein_unit :: proc(tick_context: Entity_Tick_Context, vein: ^Vein, full: boo
 // keeps the unit held. Output leaving the drill counts as produced, and
 // for a bore drill as bore drill units.
 output_drill_item :: proc(entities: ^Entities, statistics: ^Statistics, content: Simulation_Content, drill: ^Drill, machine: Machine) -> bool {
-	target := entity_at(entities, drill_drop_cell(drill^, machine))
+	target := entity_at(entities, drill_drop_cell(drill^, machine), drill.frame)
 	if target == NO_ENTITY {
 		return false
 	}

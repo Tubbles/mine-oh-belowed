@@ -2,10 +2,12 @@ package game
 
 // Entities (doc/architecture.md, Simulation): typed pools with generational
 // handles, one pool per type and no general component system. Entities are
-// not blocks. The cells they occupy stay air in the chunk data, and the
-// World's cell map holds the handle of the entity in each occupied cell, so
-// the raycast, collision and placement checks are cell lookups. Light and
-// water still treat those cells as air.
+// not blocks. An entity stands on a frame (world_frame.odin, work item
+// 0174): its origin is a cell of its frame, frame 0 being the block world.
+// The cells they occupy stay air in the chunk data, and the frame table's
+// occupant index holds the packed handle of the entity in each occupied
+// cell with the flags the world reads, so the raycast, collision, water and
+// placement checks are cell lookups. Light still treats those cells as air.
 //
 // Entity data is plain values (no pointers into chunks or other entities),
 // so the pools are saved as they are (save_state.odin).
@@ -38,6 +40,9 @@ Entity_Kind :: enum u8 {
 	Core_Sample_Drill,
 	// Launch pads (launch_pad.odin).
 	Launch_Pad,
+	// Foundations (entity_frames.odin): the solid cells of a frame that
+	// machines stand on.
+	Foundation,
 }
 
 // index is into the pool of `kind`. Generations start at 1, so the zero
@@ -51,11 +56,16 @@ Entity_Handle :: struct {
 NO_ENTITY :: Entity_Handle{}
 
 // Shared by every entity type. origin is the minimum corner of the
-// footprint, size is the footprint after rotation (x, y, z), rotation
-// counts quarter turns.
+// footprint, a cell of frame, size is the footprint after rotation (x, y,
+// z), rotation counts quarter turns round the frame's up. The frame is
+// left out of the pools' bytes and saved as a list of the entities off
+// frame 0 (save_state.odin, write_later_tables), so a world on frame 0
+// alone keeps its bytes and its state hash, and a save written before
+// frames loads with every entity on frame 0.
 Entity_Common :: struct {
 	handle:   Entity_Handle,
 	machine:  Machine_Id,
+	frame:    Frame_Id `save:"-"`,
 	origin:   World_Coordinate,
 	rotation: u8,
 	size:     [3]i32,
@@ -66,6 +76,10 @@ Chest :: struct {
 	using common: Entity_Common,
 	slot_count:   int,
 	slots:        [MAXIMUM_CHEST_SLOTS]Item_Stack,
+}
+
+Foundation :: struct {
+	using common: Entity_Common,
 }
 
 // The drop capsule on the landing pad (landing_pad.odin).
@@ -98,15 +112,20 @@ Entities :: struct {
 	schematic_crates: Entity_Pool(Schematic_Crate),
 	core_sample_drills: Entity_Pool(Core_Sample_Drill),
 	launch_pads:    Entity_Pool(Launch_Pad),
+	foundations:    Entity_Pool(Foundation),
 	// Transport lines derived from the belts and splitters (belt.odin).
 	belt_network:   Belt_Network,
 	// Derived from the pipes and fluid ports (fluid_network.odin).
 	fluid_networks: Fluid_Networks,
 	// Derived from the poles and electric machines (power_network.odin).
 	electric_networks: Electric_Networks,
-	cells:          map[World_Coordinate]Entity_Handle,
+	// The frames and their occupant index (world_frame.odin): the frame
+	// records are saved, the index is derived from the pools. It rides on
+	// Entities, which sits on World, so entity_at and add_entity keep
+	// their parameters.
+	frames:         Frame_Table,
 	// Stacks lying in the world (loose_item.odin). Not machines: never in
-	// cells, so they block nothing.
+	// the occupant index, so they block nothing.
 	loose_items:    Loose_Items,
 }
 
@@ -170,10 +189,11 @@ destroy_entities :: proc(entities: ^Entities) {
 	destroy_pool(&entities.schematic_crates)
 	destroy_pool(&entities.core_sample_drills)
 	destroy_pool(&entities.launch_pads)
+	destroy_pool(&entities.foundations)
 	destroy_belt_network(&entities.belt_network)
 	destroy_fluid_networks(&entities.fluid_networks)
 	destroy_electric_networks(&entities.electric_networks)
-	delete(entities.cells)
+	destroy_frame_table(&entities.frames)
 	delete(entities.loose_items.items)
 }
 
@@ -245,14 +265,19 @@ entity_common :: proc(entities: ^Entities, handle: Entity_Handle) -> ^Entity_Com
 		if pad := pool_get(&entities.launch_pads, handle); pad != nil {
 			return &pad.common
 		}
+	case .Foundation:
+		if foundation := pool_get(&entities.foundations, handle); foundation != nil {
+			return &foundation.common
+		}
 	}
 	return nil
 }
 
-// Belts have no panel: Interact does nothing on them. Interact on a
-// schematic crate takes its schematic instead (schematic.odin).
+// Belts and foundations have no panel: Interact does nothing on them.
+// Interact on a schematic crate takes its schematic instead
+// (schematic.odin).
 entity_has_panel :: proc(entities: ^Entities, handle: Entity_Handle) -> bool {
-	return handle.kind != .Belt && handle.kind != .Schematic_Crate && entity_is_alive(entities, handle)
+	return handle.kind != .Belt && handle.kind != .Foundation && handle.kind != .Schematic_Crate && entity_is_alive(entities, handle)
 }
 
 entity_is_alive :: proc(entities: ^Entities, handle: Entity_Handle) -> bool {
@@ -307,8 +332,59 @@ entity_slots :: proc(entities: ^Entities, handle: Entity_Handle) -> []Item_Stack
 	return nil
 }
 
-entity_at :: proc(entities: ^Entities, cell: World_Coordinate) -> Entity_Handle {
-	return entities.cells[cell] or_else NO_ENTITY
+// The entity in a cell of a frame, the block world's by default.
+entity_at :: proc(entities: ^Entities, cell: World_Coordinate, frame := BLOCK_FRAME) -> Entity_Handle {
+	occupant, found := frame_occupant(&entities.frames, frame, cell)
+	if !found {
+		return NO_ENTITY
+	}
+	return entity_from_occupant(occupant.handle)
+}
+
+// The handle packed for the occupant index: the kind in the top byte, the
+// index in the next three, the generation in the low four. A live handle's
+// generation is at least 1, so it never packs to NO_OCCUPANT.
+OCCUPANT_INDEX_LIMIT :: 1 << 24
+
+entity_occupant_handle :: proc(handle: Entity_Handle) -> Occupant_Handle {
+	assert(handle.index < OCCUPANT_INDEX_LIMIT, "entity pools stay below 2^24 entries")
+	return Occupant_Handle(u64(handle.kind) << 56 | u64(handle.index) << 32 | u64(handle.generation))
+}
+
+entity_from_occupant :: proc(occupant: Occupant_Handle) -> Entity_Handle {
+	value := u64(occupant)
+	return Entity_Handle{kind = Entity_Kind(value >> 56), index = u32(value >> 32) & (OCCUPANT_INDEX_LIMIT - 1), generation = u32(value)}
+}
+
+// What the world reads of a machine in a cell: belts and splitters are
+// walked over, a hydro turbine lets water through, a foundation is what
+// the field light will stop at.
+machine_occupant_flags :: proc(machine: Machine) -> Occupant_Flags {
+	flags: Occupant_Flags
+	if machine.kind != .Belt && machine.kind != .Splitter {
+		flags += {.Solid}
+	}
+	if machine.kind != .Hydro_Turbine {
+		flags += {.Blocks_Water}
+	}
+	if machine.kind == .Foundation {
+		flags += {.Blocks_Light}
+	}
+	return flags
+}
+
+// The occupant index through the two world procedures.
+occupy_entity_cells :: proc(entities: ^Entities, machines: Machine_Registry, common: Entity_Common) {
+	occupant := Occupant{handle = entity_occupant_handle(common.handle), flags = machine_occupant_flags(machines.machines[common.machine])}
+	for cell in common_cells(common, machines) {
+		occupy_frame_cell(&entities.frames, common.frame, cell, occupant)
+	}
+}
+
+vacate_entity_cells :: proc(entities: ^Entities, machines: Machine_Registry, common: Entity_Common) {
+	for cell in common_cells(common, machines) {
+		vacate_frame_cell(&entities.frames, common.frame, cell)
+	}
 }
 
 // Footprint rotation.
@@ -355,9 +431,10 @@ common_cells :: proc(common: Entity_Common, machines: Machine_Registry) -> []Wor
 
 // Adding and removing.
 
-make_entity_common :: proc(machines: Machine_Registry, machine: Machine_Id, origin: World_Coordinate, rotation: u8) -> Entity_Common {
+make_entity_common :: proc(machines: Machine_Registry, machine: Machine_Id, origin: World_Coordinate, rotation: u8, frame := BLOCK_FRAME) -> Entity_Common {
 	return Entity_Common {
 		machine = machine,
+		frame = frame,
 		origin = origin,
 		rotation = rotation % 4,
 		size = rotated_footprint_size(machines.machines[machine].footprint, rotation),
@@ -366,13 +443,14 @@ make_entity_common :: proc(machines: Machine_Registry, machine: Machine_Id, orig
 
 // The caller has checked that the footprint is free. A belt gets the
 // default shape of its item (belt_placement.odin picks others), a drill
-// no vein (place_entity_with_player sets the one under it).
-add_entity :: proc(entities: ^Entities, machines: Machine_Registry, machine: Machine_Id, origin: World_Coordinate, rotation: u8) -> Entity_Handle {
-	common := make_entity_common(machines, machine, origin, rotation)
+// no vein (place_entity_with_player sets the one under it). origin is a
+// cell of frame, the block world's by default.
+add_entity :: proc(entities: ^Entities, machines: Machine_Registry, machine: Machine_Id, origin: World_Coordinate, rotation: u8, frame := BLOCK_FRAME) -> Entity_Handle {
+	common := make_entity_common(machines, machine, origin, rotation, frame)
 	handle: Entity_Handle
 	switch machines.machines[machine].kind {
 	case .Belt:
-		return add_belt(entities, machines, machine, origin, rotation, default_belt_shape(machines.machines[machine].belt_shape))
+		return add_belt(entities, machines, machine, origin, rotation, default_belt_shape(machines.machines[machine].belt_shape), frame)
 	case .Chest:
 		chest := Chest{common = common, slot_count = machines.machines[machine].slot_count}
 		for &slot in chest.slots {
@@ -392,7 +470,7 @@ add_entity :: proc(entities: ^Entities, machines: Machine_Registry, machine: Mac
 	case .Drill:
 		handle = pool_add(&entities.drills, .Drill, make_drill(common, {}, machines.machines[machine].slot_count))
 	case .Splitter:
-		return add_splitter(entities, machines, machine, origin, rotation)
+		return add_splitter(entities, machines, machine, origin, rotation, frame)
 	case .Pipe:
 		handle = pool_add(&entities.pipes, .Pipe, make_pipe(common))
 	case .Offshore_Pump, .Boiler, .Steam_Engine, .Storage_Tank, .Pump, .Tar_Pit_Pump, .Flare_Stack, .Combustion_Generator, .Hydro_Turbine:
@@ -411,10 +489,11 @@ add_entity :: proc(entities: ^Entities, machines: Machine_Registry, machine: Mac
 		handle = pool_add(&entities.core_sample_drills, .Core_Sample_Drill, make_core_sample_drill(common))
 	case .Launch_Pad:
 		handle = pool_add(&entities.launch_pads, .Launch_Pad, make_launch_pad(common, machines.machines[machine]))
+	case .Foundation:
+		handle = pool_add(&entities.foundations, .Foundation, Foundation{common = common})
 	}
-	for cell in footprint_cells(origin, machines.machines[machine].footprint, rotation) {
-		entities.cells[cell] = handle
-	}
+	common.handle = handle
+	occupy_entity_cells(entities, machines, common)
 	if handle.kind == .Pipe || machines.machines[machine].fluid_port_count > 0 {
 		rebuild_fluid_networks(entities, machines)
 	}
@@ -435,9 +514,7 @@ remove_entity :: proc(entities: ^Entities, machines: Machine_Registry, handle: E
 	if common == nil {
 		return false
 	}
-	for cell in common_cells(common^, machines) {
-		delete_key(&entities.cells, cell)
-	}
+	vacate_entity_cells(entities, machines, common^)
 	touches_power := machine_touches_power(machines.machines[common.machine])
 	defer if touches_power {
 		rebuild_electric_networks(entities, machines)
@@ -487,6 +564,8 @@ remove_entity :: proc(entities: ^Entities, machines: Machine_Registry, handle: E
 		pool_remove(&entities.launch_pads, handle)
 		rebuild_fluid_networks(entities, machines)
 		return true
+	case .Foundation:
+		return pool_remove(&entities.foundations, handle)
 	case .Belt, .Splitter:
 		// Handled by remove_belt and remove_splitter above.
 		return false
@@ -496,7 +575,7 @@ remove_entity :: proc(entities: ^Entities, machines: Machine_Registry, handle: E
 
 // A solid block or an entity: what the ray stops at and blocks cannot go into.
 cell_is_solid_or_entity :: proc(world: ^World, registry: Block_Registry, cell: World_Coordinate) -> bool {
-	return block_is_solid(registry, world_get_block(world, cell)) || cell in world.entities.cells
+	return block_is_solid(registry, world_get_block(world, cell)) || frame_cell_is_occupied(&world.entities.frames, BLOCK_FRAME, cell)
 }
 
 // What the player collides with: belts and splitters are walked over,
@@ -505,8 +584,8 @@ cell_blocks_movement :: proc(world: ^World, registry: Block_Registry, cell: Worl
 	if block_is_solid(registry, world_get_block(world, cell)) {
 		return true
 	}
-	handle, occupied := world.entities.cells[cell]
-	return occupied && handle.kind != .Belt && handle.kind != .Splitter
+	occupant, occupied := frame_occupant(&world.entities.frames, BLOCK_FRAME, cell)
+	return occupied && .Solid in occupant.flags
 }
 
 // Belts and splitters, then items falling off belt ends over a drop and

@@ -186,7 +186,8 @@ test_the_shipped_machine_models_mesh :: proc(t: ^testing.T) {
 	}
 	for machine, index in machines {
 		mesh := meshes[index]
-		without_model := machine.kind == .Belt || machine.kind == .Pipe
+		// Foundations are drawn per cell by the frame renderer (render_frames.odin).
+		without_model := machine.kind == .Belt || machine.kind == .Pipe || machine.kind == .Foundation
 		testing.expectf(t, (machine.model == "") == without_model, "%s: model %q", machine.id, machine.model)
 		body_vertices := len(mesh.body[.Lit].positions) + len(mesh.body[.Emissive].positions)
 		testing.expectf(t, (body_vertices > 0) == !without_model, "%s has %d vertices", machine.id, body_vertices)

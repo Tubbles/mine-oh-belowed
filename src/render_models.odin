@@ -200,7 +200,7 @@ draw_ghost_model :: proc(renderer: Model_Renderer, machines: Machine_Registry, p
 draw_posed_model :: proc(renderer: Model_Renderer, model: Uploaded_Machine_Model, common: Entity_Common, machine: Machine, frame: Model_Frame, pose: Model_Pose) {
 	light_tint := model_light_tint(world_get_light(frame.world, model_light_cell(common)), frame.day_factor, frame.sky_tint)
 	glow := emissive_brightness(machine.motion.kind, pose.phase, pose.working, light_tint)
-	body := model_transform(common.origin, common.size, common.rotation)
+	body := entity_frame_matrix(&frame.world.entities, common.frame) * model_transform(common.origin, common.size, common.rotation)
 	draw_model_layers(renderer, model.body, body, light_tint, glow)
 	part := body * motion_transform(machine.motion, machine.footprint, pose.phase)
 	draw_model_layers(renderer, model.part, part, light_tint, glow)

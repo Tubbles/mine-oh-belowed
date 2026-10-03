@@ -196,7 +196,7 @@ belt_end_drop_cell :: proc(tick_context: Entity_Tick_Context, line: Belt_Line) -
 	}
 	cell = belt_output_cell(belt)
 	block, loaded := tick_get_block(tick_context, cell)
-	if !loaded || cell in tick_context.entities.cells || block_is_solid(tick_context.content.blocks, block) {
+	if !loaded || entity_at(tick_context.entities, cell, belt.frame) != NO_ENTITY || block_is_solid(tick_context.content.blocks, block) {
 		return cell, false
 	}
 	return cell, loose_item_can_fall(tick_context, cell)

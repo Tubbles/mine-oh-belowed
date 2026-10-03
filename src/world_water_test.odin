@@ -42,7 +42,7 @@ test_water_spreads_seven_blocks_from_source :: proc(t: ^testing.T) {
 test_water_stays_out_of_entity_cells :: proc(t: ^testing.T) {
 	registry := make_test_registry()
 	world := make_water_world(registry, 0)
-	world.entities.cells[{11, 1, 10}] = Entity_Handle{kind = .Chest, index = 0, generation = 1}
+	occupy_frame_cell(&world.entities.frames, BLOCK_FRAME, {11, 1, 10}, Occupant{handle = entity_occupant_handle(Entity_Handle{kind = .Chest, index = 0, generation = 1}), flags = {.Solid, .Blocks_Water}})
 	world_set_block(&world, {10, 1, 10}, test_block(registry, "water"))
 	settle_world(t, &world, registry, 0)
 	testing.expect_value(t, water_level_at(&world, registry, {11, 1, 10}), 0)

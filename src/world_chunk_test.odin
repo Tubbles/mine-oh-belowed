@@ -68,7 +68,9 @@ make_test_world :: proc(coordinates: []Chunk_Coordinate) -> World {
 	queue.init(&world.lighting.removals, allocator = context.temp_allocator)
 	queue.init(&world.lighting.additions, allocator = context.temp_allocator)
 	queue.init(&world.lighting.arrived_chunks, allocator = context.temp_allocator)
-	world.entities.cells = make(map[World_Coordinate]Entity_Handle, context.temp_allocator)
+	world.entities.frames.occupants = make(map[Frame_Cell]Occupant, context.temp_allocator)
+	world.entities.frames.extents = make(map[Frame_Id]Frame_Extent, context.temp_allocator)
+	world.entities.frames.frames = make([dynamic]Frame, context.temp_allocator)
 	world.entities.chests.entries = make([dynamic]Chest, context.temp_allocator)
 	world.entities.chests.free = make([dynamic]u32, context.temp_allocator)
 	world.entities.furnaces.entries = make([dynamic]Furnace, context.temp_allocator)
@@ -102,6 +104,8 @@ make_test_world :: proc(coordinates: []Chunk_Coordinate) -> World {
 	world.entities.labs.free = make([dynamic]u32, context.temp_allocator)
 	world.entities.schematic_crates.entries = make([dynamic]Schematic_Crate, context.temp_allocator)
 	world.entities.schematic_crates.free = make([dynamic]u32, context.temp_allocator)
+	world.entities.foundations.entries = make([dynamic]Foundation, context.temp_allocator)
+	world.entities.foundations.free = make([dynamic]u32, context.temp_allocator)
 	world.entities.electric_networks.allocator = context.temp_allocator
 	world.entity_lights = make(map[World_Coordinate]Light_Color, context.temp_allocator)
 	for coordinate in coordinates {

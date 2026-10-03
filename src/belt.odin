@@ -163,8 +163,8 @@ belt_output_cell :: proc(belt: Belt) -> World_Coordinate {
 	return belt.origin + forward
 }
 
-belt_at :: proc(entities: ^Entities, cell: World_Coordinate) -> ^Belt {
-	handle := entity_at(entities, cell)
+belt_at :: proc(entities: ^Entities, cell: World_Coordinate, frame := BLOCK_FRAME) -> ^Belt {
+	handle := entity_at(entities, cell, frame)
 	if handle.kind != .Belt {
 		return nil
 	}
@@ -184,7 +184,7 @@ lift_column_previous :: proc(entities: ^Entities, belt: Belt) -> ^Belt {
 }
 
 matching_lift :: proc(entities: ^Entities, belt: Belt, cell: World_Coordinate) -> ^Belt {
-	other := belt_at(entities, cell)
+	other := belt_at(entities, cell, belt.frame)
 	if other == nil || other.shape != belt.shape || other.rotation != belt.rotation {
 		return nil
 	}
@@ -215,10 +215,10 @@ belt_target :: proc(entities: ^Entities, belt: Belt) -> Belt_Target {
 		}
 	}
 	output := belt_output_cell(belt)
-	if next := belt_at(entities, output); next != nil {
+	if next := belt_at(entities, output, belt.frame); next != nil {
 		return {next.handle, .Direct}
 	}
-	below := belt_at(entities, output - UP)
+	below := belt_at(entities, output - UP, belt.frame)
 	if below != nil && (below.shape == .Ramp_Down || below.shape == .Lift_Down) {
 		return {below.handle, .Descending}
 	}
@@ -660,11 +660,12 @@ default_belt_shape :: proc(item_shape: Belt_Item_Shape) -> Belt_Shape {
 }
 
 // The caller has checked that the cell is free.
-add_belt :: proc(entities: ^Entities, machines: Machine_Registry, machine: Machine_Id, cell: World_Coordinate, direction: u8, shape: Belt_Shape) -> Entity_Handle {
+add_belt :: proc(entities: ^Entities, machines: Machine_Registry, machine: Machine_Id, cell: World_Coordinate, direction: u8, shape: Belt_Shape, frame := BLOCK_FRAME) -> Entity_Handle {
 	records := belt_cell_items(entities)
-	common := make_entity_common(machines, machine, cell, direction)
-	handle := pool_add(&entities.belts, .Belt, make_belt(common, shape))
-	entities.cells[cell] = handle
+	common := make_entity_common(machines, machine, cell, direction, frame)
+	common.handle = pool_add(&entities.belts, .Belt, make_belt(common, shape))
+	handle := common.handle
+	occupy_entity_cells(entities, machines, common)
 	rebuild_belt_lines(entities, machines, records)
 	return handle
 }
@@ -686,7 +687,7 @@ remove_belt :: proc(entities: ^Entities, machines: Machine_Registry, handle: Ent
 		return false
 	}
 	records := belt_cell_items(entities)
-	delete_key(&entities.cells, belt.origin)
+	vacate_entity_cells(entities, machines, belt.common)
 	pool_remove(&entities.belts, handle)
 	rebuild_belt_lines(entities, machines, records)
 	return true

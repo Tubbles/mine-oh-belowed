@@ -61,6 +61,10 @@ Field_Edit_Refusal :: enum u8 {
 	Nothing_Held,
 	// The raised volume would overlap a player's capsule.
 	Would_Bury_Player,
+	// A foundation's cell is taken (0174).
+	Frame_Cell_Taken,
+	// The frame a foundation snaps to is gone.
+	Unknown_Frame,
 }
 
 Field_Miner :: struct {
@@ -85,6 +89,10 @@ Field_Simulation :: struct {
 	// The edit queue: filled by the players' ticks, drained at the end of
 	// the tick in order. Not saved; empty between ticks.
 	edits:               [dynamic]Queued_Field_Edit,
+	// The foundations and their frames (0174, entity_frames.odin) and
+	// the place commands, drained after the edits.
+	entities:            Entities,
+	placements:          [dynamic]Queued_Field_Placement,
 	tick:                u64,
 }
 
@@ -95,6 +103,11 @@ Field_Simulation_Content :: struct {
 	tuning:    Field_Player_Tuning,
 	water:     Field_Water_Tuning,
 	light:     Field_Light_Tuning,
+	// The foundation (0174): its machine (read through field_foundation)
+	// and the pitch of a new frame (data/game.sjson).
+	machines:  Machine_Registry,
+	foundation: Machine_Id,
+	foundation_pitch_millimetres: int,
 }
 
 destroy_field_simulation :: proc(simulation: ^Field_Simulation) {
@@ -103,6 +116,8 @@ destroy_field_simulation :: proc(simulation: ^Field_Simulation) {
 	}
 	delete(simulation.players)
 	delete(simulation.edits)
+	delete(simulation.placements)
+	destroy_entities(&simulation.entities)
 	destroy_field_world(&simulation.world)
 	simulation^ = {}
 }
@@ -299,7 +314,7 @@ field_player_edit :: proc(world: ^Field_World, spacing_millimetres: int, player:
 	switch {
 	case .Dig in input.held:
 		mode = .Dig
-	case .Place in input.held:
+	case .Place in input.held && !player.holding_foundation:
 		mode = .Place
 	case:
 		return {}, false
@@ -318,13 +333,25 @@ field_player_edit :: proc(world: ^Field_World, spacing_millimetres: int, player:
 		true
 }
 
-// The brush and held material keys.
+// The brush and held material keys. The held material cycles through
+// the placeable materials and, when the data has one, the foundation after
+// the last of them.
 update_field_tool :: proc(player: ^Field_Player, input: Field_Player_Input, content: Field_Simulation_Content) {
 	if .Next_Brush in input.just_pressed && len(content.brushes) > 0 {
 		player.brush = u8((int(player.brush) + 1) % len(content.brushes))
 	}
-	if .Next_Material in input.just_pressed {
-		player.held_material = next_placeable_field_material(content.materials, player.held_material)
+	if .Next_Material not_in input.just_pressed {
+		return
+	}
+	next := next_placeable_field_material(content.materials, player.held_material)
+	switch {
+	case player.holding_foundation:
+		player.holding_foundation = false
+		player.held_material = next
+	case field_foundation(content) != NO_MACHINE && int(next) <= int(player.held_material):
+		player.holding_foundation = true
+	case:
+		player.held_material = next
 	}
 }
 
@@ -397,10 +424,14 @@ queue_field_player_edits :: proc(simulation: ^Field_Simulation, content: Field_S
 	for &player, index in simulation.players {
 		input := index < len(inputs) ? inputs[index] : Field_Player_Input{}
 		player.refusal, player.refused_material = .None, .Air
-		tick_field_player(&simulation.world, content.tuning, &player.body, input)
+		tick_field_player(&simulation.world, &simulation.entities.frames, content.tuning, &player.body, input)
+		aim_field_player_at_frames(&player.body, &simulation.entities.frames, content.tuning)
 		update_field_tool(&player.body, input, content)
 		if edit, wanted := field_player_edit(&simulation.world, simulation.spacing_millimetres, player.body, input, content.brushes); wanted {
 			append(&simulation.edits, Queued_Field_Edit{player = index, edit = edit})
+		}
+		if placement, wanted := field_player_placement(player.body, field_foundation(content)); wanted && .Place in input.just_pressed {
+			append(&simulation.placements, Queued_Field_Placement{player = index, placement = placement})
 		}
 	}
 }
@@ -411,6 +442,7 @@ tick_field_simulation :: proc(simulation: ^Field_Simulation, content: Field_Simu
 	simulation.tick += 1
 	queue_field_player_edits(simulation, content, inputs)
 	drain_field_edits(simulation, content)
+	drain_field_placements(simulation, content)
 	step_field_water(&simulation.world, content.water, simulation.tick)
 	tick_field_light(&simulation.world, content.light)
 }

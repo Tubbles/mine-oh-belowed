@@ -258,7 +258,7 @@ main :: proc() {
 	}
 	if command_line.planet_preview || command_line.planet_preview_screenshot != "" || command_line.planet_preview_walk {
 		seed, _ := command_line_seed(command_line)
-		os.exit(run_planet_preview(config, content.planets, content.items, bindings, data_directory, seed, command_line.planet_preview_screenshot, command_line.planet_preview_walk, command_line.planet_preview_daylight))
+		os.exit(run_planet_preview(config, content.planets, content.items, content.machines, bindings, data_directory, seed, command_line.planet_preview_screenshot, command_line.planet_preview_walk, command_line.planet_preview_daylight))
 	}
 	saves_directory, saves_found := resolve_saves_directory(loaded_configuration.configuration.paths.saves)
 	if command_line.server {

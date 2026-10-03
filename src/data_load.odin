@@ -35,6 +35,11 @@ SQUARE_ROOT_OF_THREE_TEN_THOUSANDTHS :: 17321
 // The terrain field's levels of detail: full, half, quarter and eighth
 // resolution (world_field_lod.odin).
 FIELD_LEVEL_COUNT :: 4
+// The cell of a foundation frame (world_frame.odin): from a quarter metre
+// to two metres, which keeps a cell several position units wide and a
+// cell's centre a few thousand cells out inside an i64.
+MINIMUM_FOUNDATION_PITCH_MILLIMETRES :: 250
+MAXIMUM_FOUNDATION_PITCH_MILLIMETRES :: 2000
 
 Starting_Item :: struct {
 	item:  string,
@@ -61,6 +66,8 @@ Game_Config :: struct {
 	field_player:         Field_Player_Config,
 	field_brushes:        []Field_Brush_Config,
 	field_water:          Field_Water_Config,
+	// The cell of a foundation frame (work item 0174, world_frame.odin).
+	foundation_pitch_millimetres: int,
 }
 
 // The terrain field's level of detail (work item 0169,
@@ -435,6 +442,9 @@ validate_game_config :: proc(config: Game_Config) -> string {
 	}
 	if problem := field_water_problem(config.field_water); problem != "" {
 		return problem
+	}
+	if config.foundation_pitch_millimetres < MINIMUM_FOUNDATION_PITCH_MILLIMETRES || config.foundation_pitch_millimetres > MAXIMUM_FOUNDATION_PITCH_MILLIMETRES {
+		return fmt.tprintf("foundation_pitch_millimetres %d is outside %d to %d", config.foundation_pitch_millimetres, MINIMUM_FOUNDATION_PITCH_MILLIMETRES, MAXIMUM_FOUNDATION_PITCH_MILLIMETRES)
 	}
 	return field_player_speed_problem(config.field_player, config.tick_rate)
 }

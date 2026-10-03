@@ -1,6 +1,6 @@
 # 0174: Foundation frames and placement on them
 
-Status: todo (after 0173; the switch of the simulation's grid to frame cells)
+Status: implemented (2026-10-03; the fluid networks, the loose items, the entity tick's block query and the block drag placement stay on frame 0 until the slice, 0179)
 
 ## Goal
 

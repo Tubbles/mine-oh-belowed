@@ -82,3 +82,7 @@ field_water = {
 // Loading, the tick and the state hash all follow it.
 simulated_chunk_radius_horizontal = 6
 simulated_chunk_radius_vertical = 3
+// The cell of a foundation frame in millimetres, from 250 to 2000 (work
+// item 0174, doc/content.md, Foundations): a foundation is one cell thick
+// and machines stand on its cells.
+foundation_pitch_millimetres = 500

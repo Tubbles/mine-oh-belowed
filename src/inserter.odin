@@ -196,8 +196,8 @@ pick_with_inserter :: proc(entities: ^Entities, content: Simulation_Content, ins
 		inserter.state = .No_Filter
 		return
 	}
-	source := entity_at(entities, inserter_pickup_cell(inserter^))
-	target := entity_at(entities, inserter_drop_cell(inserter^))
+	source := entity_at(entities, inserter_pickup_cell(inserter^), inserter.frame)
+	target := entity_at(entities, inserter_drop_cell(inserter^), inserter.frame)
 	item := inserter_pickable_item(entities, content, source, target, inserter.filter)
 	if item == NO_ITEM {
 		inserter.state = .Idle
@@ -221,7 +221,7 @@ pick_with_inserter :: proc(entities: ^Entities, content: Simulation_Content, ins
 // nothing and swings back.
 drop_with_inserter :: proc(entities: ^Entities, content: Simulation_Content, inserter: ^Inserter) {
 	if !stack_is_empty(inserter.held) {
-		target := entity_at(entities, inserter_drop_cell(inserter^))
+		target := entity_at(entities, inserter_drop_cell(inserter^), inserter.frame)
 		leftover := entity_insert(entities, content, target, inserter.held, inserter_drop_lane(entities, inserter^, target))
 		if !stack_is_empty(leftover) {
 			inserter.state = .Waiting_For_Room

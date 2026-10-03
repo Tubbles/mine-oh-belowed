@@ -74,8 +74,8 @@ splitter_side_at :: proc(splitter: Splitter, cell: World_Coordinate) -> Splitter
 	return splitter_half_cell(splitter.origin, splitter.rotation, .Right) == cell ? .Right : .Left
 }
 
-splitter_at :: proc(entities: ^Entities, cell: World_Coordinate) -> ^Splitter {
-	handle := entity_at(entities, cell)
+splitter_at :: proc(entities: ^Entities, cell: World_Coordinate, frame := BLOCK_FRAME) -> ^Splitter {
+	handle := entity_at(entities, cell, frame)
 	if handle.kind != .Splitter {
 		return nil
 	}
@@ -99,7 +99,7 @@ splitter_input_link :: proc(entities: ^Entities, belt: Belt) -> (link: Belt_Link
 		return {}, false
 	}
 	cell := belt_output_cell(belt)
-	splitter := splitter_at(entities, cell)
+	splitter := splitter_at(entities, cell, belt.frame)
 	if splitter == nil {
 		return {}, false
 	}
@@ -225,13 +225,12 @@ advance_splitter :: proc(network: ^Belt_Network, splitter: ^Splitter, tick_rate:
 // Adding, turning and removing.
 
 // The caller has checked that the footprint is free.
-add_splitter :: proc(entities: ^Entities, machines: Machine_Registry, machine: Machine_Id, origin: World_Coordinate, direction: u8) -> Entity_Handle {
+add_splitter :: proc(entities: ^Entities, machines: Machine_Registry, machine: Machine_Id, origin: World_Coordinate, direction: u8, frame := BLOCK_FRAME) -> Entity_Handle {
 	records := belt_cell_items(entities)
-	common := make_entity_common(machines, machine, origin, direction)
-	handle := pool_add(&entities.splitters, .Splitter, make_splitter(common))
-	for cell in common_cells(common, machines) {
-		entities.cells[cell] = handle
-	}
+	common := make_entity_common(machines, machine, origin, direction, frame)
+	common.handle = pool_add(&entities.splitters, .Splitter, make_splitter(common))
+	handle := common.handle
+	occupy_entity_cells(entities, machines, common)
 	rebuild_belt_lines(entities, machines, records)
 	return handle
 }
@@ -242,9 +241,7 @@ remove_splitter :: proc(entities: ^Entities, machines: Machine_Registry, handle:
 		return false
 	}
 	records := belt_cell_items(entities)
-	for cell in common_cells(splitter.common, machines) {
-		delete_key(&entities.cells, cell)
-	}
+	vacate_entity_cells(entities, machines, splitter.common)
 	pool_remove(&entities.splitters, handle)
 	rebuild_belt_lines(entities, machines, records)
 	return true

@@ -6,7 +6,9 @@ import "core:math"
 // Algorithm for Ray Tracing" (1987): step from cell to cell across the
 // nearest cell boundary, so no solid block along the ray is skipped.
 
-Raycast_Hit :: struct {
+// The simulation's Raycast_Hit (player_interaction.odin) is this with the
+// occupant unpacked into an entity handle.
+Cell_Raycast_Hit :: struct {
 	hit:      bool,
 	block:    World_Coordinate,
 	// The face of the hit block the ray entered through.
@@ -14,8 +16,9 @@ Raycast_Hit :: struct {
 	// The cell in front of that face, where a placed block goes.
 	adjacent: World_Coordinate,
 	distance: f32,
-	// The entity occupying the hit cell, or NO_ENTITY for a block.
-	entity:   Entity_Handle,
+	// What occupies the hit cell in the occupant index of the block
+	// frame, or NO_OCCUPANT for a block.
+	occupant: Occupant_Handle,
 }
 
 Raycast_Axis :: struct {
@@ -56,7 +59,7 @@ entered_face :: proc(axis: int, step: i32) -> Direction {
 // only where the ray meets its shape, else the ray goes on through it.
 // The cell holding the origin is never reported. Missing chunks read as
 // air, so rays pass through unloaded space.
-raycast_blocks :: proc(world: ^World, registry: Block_Registry, origin, direction: [3]f32, reach: f32) -> Raycast_Hit {
+raycast_cells :: proc(world: ^World, registry: Block_Registry, origin, direction: [3]f32, reach: f32) -> Cell_Raycast_Hit {
 	cell := camera_world_coordinate(origin)
 	axes: [3]Raycast_Axis
 	for axis in 0 ..< 3 {
@@ -71,10 +74,10 @@ raycast_blocks :: proc(world: ^World, registry: Block_Registry, origin, directio
 		previous := cell
 		cell[axis] += axes[axis].step
 		axes[axis].distance_to_border += axes[axis].distance_per_cell
-		entity := entity_at(&world.entities, cell)
+		occupant, occupied := frame_occupant(&world.entities.frames, BLOCK_FRAME, cell)
 		block := world_get_block(world, cell)
-		if entity != NO_ENTITY || (block_is_targetable(registry, block) && block_shape(registry, block) == .Cube) {
-			return Raycast_Hit{hit = true, block = cell, face = entered_face(axis, axes[axis].step), adjacent = previous, distance = distance, entity = entity}
+		if occupied || (block_is_targetable(registry, block) && block_shape(registry, block) == .Cube) {
+			return Cell_Raycast_Hit{hit = true, block = cell, face = entered_face(axis, axes[axis].step), adjacent = previous, distance = distance, occupant = occupant.handle}
 		}
 		if block_is_targetable(registry, block) {
 			if hit := shaped_block_hit(registry, block, cell, origin, direction); hit.hit && hit.distance <= reach {
@@ -113,14 +116,14 @@ ray_box_entry :: proc(origin, direction: [3]f32, box: Box) -> (distance: f32, fa
 // A slab, stairs, a torch: the ray hits the block only where it meets one
 // of its target boxes (block_target_boxes), the nearest, and a block
 // placed against the hit face goes into the cell in front of it.
-shaped_block_hit :: proc(registry: Block_Registry, block: Block_Id, cell: World_Coordinate, origin, direction: [3]f32) -> Raycast_Hit {
+shaped_block_hit :: proc(registry: Block_Registry, block: Block_Id, cell: World_Coordinate, origin, direction: [3]f32) -> Cell_Raycast_Hit {
 	cell_origin := [3]f32{f32(cell.x), f32(cell.y), f32(cell.z)}
 	targets := block_target_boxes(registry, block)
-	nearest := Raycast_Hit{distance = math.INF_F32}
+	nearest := Cell_Raycast_Hit{distance = math.INF_F32}
 	for box in targets.boxes[:targets.count] {
 		distance, face, hit := ray_box_entry(origin, direction, Box{minimum = cell_origin + box.minimum, maximum = cell_origin + box.maximum})
 		if hit && distance < nearest.distance {
-			nearest = Raycast_Hit{hit = true, block = cell, face = face, adjacent = cell + World_Coordinate(direction_offsets[face]), distance = distance, entity = NO_ENTITY}
+			nearest = Cell_Raycast_Hit{hit = true, block = cell, face = face, adjacent = cell + World_Coordinate(direction_offsets[face]), distance = distance}
 		}
 	}
 	return nearest

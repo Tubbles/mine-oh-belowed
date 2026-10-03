@@ -126,12 +126,17 @@ Field_Player :: struct {
 	no_clip:           bool,
 	jump_tap_ticks:    u8,
 	camera_mode:       Camera_Mode,
-	// The field under the reticle within the tool reach.
+	// The field under the reticle within the tool reach, and the
+	// foundation frames' cell (0174); the nearer of the two is kept
+	// (aim_field_player_at_frames).
 	target:            Field_Raycast_Hit,
+	frame_target:      Frame_Raycast_Hit,
 	// The hand tool (0171): an index into the brushes of data/game.sjson
-	// and the material a place raises the field from.
+	// and the material a place raises the field from, or a foundation
+	// held instead of the material (0174).
 	brush:             u8,
 	held_material:     Field_Material,
+	holding_foundation: bool,
 }
 
 Field_Ground :: struct {
@@ -324,10 +329,33 @@ field_capsule_centre :: proc(tuning: Field_Player_Tuning, feet: World_Position, 
 	return feet + World_Position(fixed_scale(up, tuning.capsule_radius + span * index / (field_capsule_sphere_count(tuning) - 1)))
 }
 
+// The surface nearest a point of the capsule: the field's, or a solid
+// frame cell's (world_frame_collision.odin) within a radius and half a
+// spacing, the farthest a sweep or a drop step moves before probing again.
+field_player_probe :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Field_Player_Tuning, position: World_Position) -> Field_Surface_Probe {
+	return field_solid_probe(world, frames, tuning.spacing_millimetres, position, field_frame_probe_reach(tuning))
+}
+
+field_frame_probe_reach :: proc(tuning: Field_Player_Tuning) -> i64 {
+	return tuning.capsule_radius + sample_axis_to_position(1, tuning.spacing_millimetres) / 2 + FIELD_GROUND_TOLERANCE
+}
+
+// The step against a frame: a solid cell in front of the bottom sphere is
+// stepped onto when one pitch high, whatever the field's step height, so
+// a foundation pad is a step at every spacing.
+field_step_height :: proc(frames: ^Frame_Table, tuning: Field_Player_Tuning, feet: World_Position, up, direction: [3]i64) -> i64 {
+	bottom := feet + World_Position(fixed_scale(up, tuning.capsule_radius) + fixed_scale(direction, tuning.capsule_radius / 2))
+	cells, pitch := frame_solid_probe(frames, bottom, tuning.capsule_radius + FIELD_GROUND_TOLERANCE)
+	if !cells.found {
+		return tuning.step_height
+	}
+	return max(tuning.step_height, pitch + FIELD_GROUND_TOLERANCE)
+}
+
 // Whether any sphere of the capsule at feet overlaps the ground.
-field_capsule_overlaps :: proc(world: ^Field_World, tuning: Field_Player_Tuning, feet: World_Position, up: [3]i64) -> bool {
+field_capsule_overlaps :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Field_Player_Tuning, feet: World_Position, up: [3]i64) -> bool {
 	for index in 0 ..< field_capsule_sphere_count(tuning) {
-		if field_surface_probe(world, tuning.spacing_millimetres, field_capsule_centre(tuning, feet, up, index)).distance < tuning.capsule_radius - FIELD_PENETRATION_TOLERANCE {
+		if field_player_probe(world, frames, tuning, field_capsule_centre(tuning, feet, up, index)).distance < tuning.capsule_radius - FIELD_PENETRATION_TOLERANCE {
 			return true
 		}
 	}
@@ -355,22 +383,27 @@ field_push_direction :: proc(normal, up: [3]i64, depth, flatten_below: i64) -> (
 // Pushes each overlapping sphere out along the surface normal (along the
 // up deep in the ground, where the normal is unknown) and takes the part
 // of velocity running into the surface away.
-resolve_field_penetration :: proc(world: ^Field_World, tuning: Field_Player_Tuning, feet: ^World_Position, up: [3]i64, velocity: ^[3]i64, flatten_below: i64 = FIELD_PUSH_ALONG_NORMAL) {
+resolve_field_penetration :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Field_Player_Tuning, feet: ^World_Position, up: [3]i64, velocity: ^[3]i64, flatten_below: i64 = FIELD_PUSH_ALONG_NORMAL) {
 	for _ in 0 ..< FIELD_COLLISION_ITERATIONS {
 		pushed := false
 		for index in 0 ..< field_capsule_sphere_count(tuning) {
-			probe := field_surface_probe(world, tuning.spacing_millimetres, field_capsule_centre(tuning, feet^, up, index))
-			depth := tuning.capsule_radius - probe.distance
-			if depth <= FIELD_PENETRATION_TOLERANCE {
-				continue
+			centre := field_capsule_centre(tuning, feet^, up, index)
+			cells, _ := frame_solid_probe(frames, centre, field_frame_probe_reach(tuning))
+			// The field and the frames each push, so a floor nearer than a
+			// wall never hides the wall.
+			for probe in ([2]Field_Surface_Probe{field_surface_probe(world, tuning.spacing_millimetres, centre), cells}) {
+				depth := tuning.capsule_radius - probe.distance
+				if depth <= FIELD_PENETRATION_TOLERANCE {
+					continue
+				}
+				normal := probe.normal
+				direction, push := field_push_direction(normal, up, depth, flatten_below)
+				feet^ += World_Position(fixed_scale(direction, push))
+				if into := fixed_dot(velocity^, normal); into < 0 {
+					velocity^ -= fixed_scale(normal, into)
+				}
+				pushed = true
 			}
-			normal := probe.normal
-			direction, push := field_push_direction(normal, up, depth, flatten_below)
-			feet^ += World_Position(fixed_scale(direction, push))
-			if into := fixed_dot(velocity^, normal); into < 0 {
-				velocity^ -= fixed_scale(normal, into)
-			}
-			pushed = true
 		}
 		if !pushed {
 			return
@@ -380,11 +413,11 @@ resolve_field_penetration :: proc(world: ^Field_World, tuning: Field_Player_Tuni
 
 // Moves the feet by displacement (position units) in steps of half a
 // radius, resolving the collision after each.
-sweep_field_capsule :: proc(world: ^Field_World, tuning: Field_Player_Tuning, feet: ^World_Position, up: [3]i64, displacement: [3]i64, velocity: ^[3]i64, flatten_below: i64 = FIELD_PUSH_ALONG_NORMAL) {
+sweep_field_capsule :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Field_Player_Tuning, feet: ^World_Position, up: [3]i64, displacement: [3]i64, velocity: ^[3]i64, flatten_below: i64 = FIELD_PUSH_ALONG_NORMAL) {
 	steps := 1 + vector_length(displacement) / max(tuning.capsule_radius / 2, 1)
 	for index in 0 ..< steps {
 		feet^ += World_Position(displacement * (index + 1) / steps - displacement * index / steps)
-		resolve_field_penetration(world, tuning, feet, up, velocity, flatten_below)
+		resolve_field_penetration(world, frames, tuning, feet, up, velocity, flatten_below)
 	}
 }
 
@@ -402,10 +435,10 @@ take_field_motion :: proc(velocity: [3]i64, fraction: ^[3]i64) -> [3]i64 {
 // The ground straight under the feet: a ray down from the bottom
 // sphere's centre, so feet up to a radius inside the ground still find
 // it. below is the feet's height over the hit, normal the field's there.
-field_ground_under :: proc(world: ^Field_World, tuning: Field_Player_Tuning, feet: World_Position, up: [3]i64) -> (below: i64, normal: [3]i64, found: bool) {
+field_ground_under :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Field_Player_Tuning, feet: World_Position, up: [3]i64) -> (below: i64, normal: [3]i64, found: bool) {
 	centre := feet + World_Position(fixed_scale(up, tuning.capsule_radius))
 	reach := tuning.capsule_radius + max(tuning.step_height, sample_axis_to_position(1, tuning.spacing_millimetres))
-	hit := raycast_field(world, tuning.spacing_millimetres, centre, -up, reach)
+	hit := field_solid_raycast(world, frames, tuning.spacing_millimetres, centre, -up, reach)
 	if !hit.hit {
 		return 0, {}, false
 	}
@@ -422,8 +455,8 @@ field_resting_height :: proc(tuning: Field_Player_Tuning, cosine: i64) -> i64 {
 // not moving away from it and stand within the tolerance of their resting
 // height over it: a sixteenth of a spacing to land, a quarter to stay
 // (was_on), the hysteresis. below counts from the resting height.
-probe_field_ground :: proc(world: ^Field_World, tuning: Field_Player_Tuning, feet: World_Position, up, velocity: [3]i64, was_on: bool) -> Field_Ground {
-	below, normal, found := field_ground_under(world, tuning, feet, up)
+probe_field_ground :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Field_Player_Tuning, feet: World_Position, up, velocity: [3]i64, was_on: bool) -> Field_Ground {
+	below, normal, found := field_ground_under(world, frames, tuning, feet, up)
 	cosine := fixed_dot(normal, up)
 	if !found || fixed_dot(velocity, up) > 0 || cosine <= 0 {
 		return {}
@@ -440,13 +473,13 @@ probe_field_ground :: proc(world: ^Field_World, tuning: Field_Player_Tuning, fee
 // Lowers the capsule by sphere tracing its bottom sphere, at most half a
 // spacing a step, until it rests on the ground; landed is false when that
 // lies farther than limit.
-drop_field_capsule :: proc(world: ^Field_World, tuning: Field_Player_Tuning, feet: World_Position, up: [3]i64, limit: i64) -> (result: World_Position, landed: bool) {
+drop_field_capsule :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Field_Player_Tuning, feet: World_Position, up: [3]i64, limit: i64) -> (result: World_Position, landed: bool) {
 	result = feet
 	dropped: i64 = 0
 	step := max(sample_axis_to_position(1, tuning.spacing_millimetres) / 2, 1)
 	for _ in 0 ..< FIELD_DROP_ITERATIONS {
 		bottom := result + World_Position(fixed_scale(up, tuning.capsule_radius))
-		gap := field_surface_probe(world, tuning.spacing_millimetres, bottom).distance - tuning.capsule_radius
+		gap := field_player_probe(world, frames, tuning, bottom).distance - tuning.capsule_radius
 		if gap <= FIELD_GROUND_TOLERANCE {
 			return result, true
 		}
@@ -469,30 +502,47 @@ drop_field_capsule :: proc(world: ^Field_World, tuning: Field_Player_Tuning, fee
 // blurs a ledge's face over a sample (the walk stops up to that far short
 // of it), and the normal is the top's only half a sample past the edge,
 // so the move is that long; the step and the mantle take one tick.
-find_field_ledge :: proc(world: ^Field_World, tuning: Field_Player_Tuning, feet: World_Position, up, direction: [3]i64, height, min_gain, below: i64) -> (landing: World_Position, found: bool) {
+find_field_ledge :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Field_Player_Tuning, feet: World_Position, up, direction: [3]i64, height, min_gain, below: i64) -> (landing: World_Position, found: bool) {
 	clearance := i64(2 * FIELD_PENETRATION_TOLERANCE)
 	lift := height - below + clearance
 	if lift <= 0 {
 		return feet, false
 	}
 	raised := feet + World_Position(fixed_scale(up, lift))
-	if field_capsule_overlaps(world, tuning, raised, up) {
+	if field_capsule_overlaps(world, frames, tuning, raised, up) {
 		return feet, false
 	}
-	ahead := raised + World_Position(fixed_scale(direction, tuning.capsule_radius + sample_axis_to_position(1, tuning.spacing_millimetres)))
-	if field_capsule_overlaps(world, tuning, ahead, up) {
+	ahead_distance := tuning.capsule_radius + sample_axis_to_position(1, tuning.spacing_millimetres)
+	if !field_capsule_path_clear(world, frames, tuning, raised, up, direction, ahead_distance) {
 		return feet, false
 	}
-	dropped, landed := drop_field_capsule(world, tuning, ahead, up, lift)
+	ahead := raised + World_Position(fixed_scale(direction, ahead_distance))
+	dropped, landed := drop_field_capsule(world, frames, tuning, ahead, up, lift)
 	if !landed {
 		return feet, false
 	}
 	gain := fixed_dot(cast([3]i64)(dropped - feet), up) + below
-	ground := probe_field_ground(world, tuning, dropped, up, {}, true)
+	ground := probe_field_ground(world, frames, tuning, dropped, up, {}, true)
 	if gain <= min_gain || !ground.walkable {
 		return feet, false
 	}
 	return dropped, true
+}
+
+// Whether the capsule moved from start along direction by distance
+// overlaps nothing on the way, checked every radius, so the ledge's move
+// does not pass through a solid frame cell thinner than a sample.
+field_capsule_path_clear :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Field_Player_Tuning, start: World_Position, up, direction: [3]i64, distance: i64) -> bool {
+	stride := max(tuning.capsule_radius, 1)
+	for travelled := stride; ; travelled += stride {
+		travelled = min(travelled, distance)
+		if field_capsule_overlaps(world, frames, tuning, start + World_Position(fixed_scale(direction, travelled)), up) {
+			return false
+		}
+		if travelled == distance {
+			return true
+		}
+	}
 }
 
 // Past the walkable angle the walk loses its uphill part and slows with
@@ -541,9 +591,9 @@ field_walk_blocked :: proc(start, end: World_Position, displacement: [3]i64) -> 
 // and takes a jump or a mantle, steep ground slides it, the air lets it
 // fall. A blocked walk on walkable ground tries the step, and the feet
 // follow the ground down a step's height.
-walk_field_player :: proc(world: ^Field_World, tuning: Field_Player_Tuning, player: ^Field_Player, input: Field_Player_Input) {
-	resolve_field_penetration(world, tuning, &player.position, player.up, &player.velocity)
-	ground := probe_field_ground(world, tuning, player.position, player.up, player.velocity, player.on_ground)
+walk_field_player :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Field_Player_Tuning, player: ^Field_Player, input: Field_Player_Input) {
+	resolve_field_penetration(world, frames, tuning, &player.position, player.up, &player.velocity)
+	ground := probe_field_ground(world, frames, tuning, player.position, player.up, player.velocity, player.on_ground)
 	walk := field_walk_velocity(player^, input.move, field_walk_speed(tuning, input.held))
 	walk_direction, walking := normalize_fixed(walk)
 	held_on_ground := ground.on && ground.walkable
@@ -553,7 +603,7 @@ walk_field_player :: proc(world: ^Field_World, tuning: Field_Player_Tuning, play
 		walk = ground_walk_velocity(walk, ground.normal)
 		if .Jump in input.held {
 			if walking {
-				if landing, found := find_field_ledge(world, tuning, player.position, player.up, walk_direction, tuning.mantle_height, tuning.step_height, ground.below); found {
+				if landing, found := find_field_ledge(world, frames, tuning, player.position, player.up, walk_direction, tuning.mantle_height, tuning.step_height, ground.below); found {
 					player.position = landing
 					player.on_ground = true
 					player.ground_normal = player.up
@@ -574,22 +624,23 @@ walk_field_player :: proc(world: ^Field_World, tuning: Field_Player_Tuning, play
 	fall_motion := player.velocity / VELOCITY_FRACTION_ONE
 	walk_motion := motion - fall_motion
 	unused_velocity: [3]i64
-	sweep_field_capsule(world, tuning, &player.position, player.up, walk_motion, &unused_velocity, tuning.walkable_cosine)
-	sweep_field_capsule(world, tuning, &player.position, player.up, fall_motion, &player.velocity)
+	sweep_field_capsule(world, frames, tuning, &player.position, player.up, walk_motion, &unused_velocity, tuning.walkable_cosine)
+	sweep_field_capsule(world, frames, tuning, &player.position, player.up, fall_motion, &player.velocity)
 	if held_on_ground {
 		if walking && field_walk_blocked(start, player.position, walk_motion) {
-			if landing, found := find_field_ledge(world, tuning, start, player.up, walk_direction, tuning.step_height, 0, ground.below); found {
+			step := field_step_height(frames, tuning, start, player.up, walk_direction)
+			if landing, found := find_field_ledge(world, frames, tuning, start, player.up, walk_direction, step, 0, ground.below); found {
 				player.position = landing
 			}
 		}
-		if dropped, landed := drop_field_capsule(world, tuning, player.position, player.up, tuning.step_height + FIELD_GROUND_TOLERANCE); landed {
+		if dropped, landed := drop_field_capsule(world, frames, tuning, player.position, player.up, tuning.step_height + FIELD_GROUND_TOLERANCE); landed {
 			player.position = dropped
 		}
 	}
-	after := probe_field_ground(world, tuning, player.position, player.up, player.velocity, held_on_ground || ground.on)
+	after := probe_field_ground(world, frames, tuning, player.position, player.up, player.velocity, held_on_ground || ground.on)
 	if held_on_ground && after.on && after.below > 0 {
-		settle_field_player(world, tuning, player, after.below)
-		after = probe_field_ground(world, tuning, player.position, player.up, player.velocity, true)
+		settle_field_player(world, frames, tuning, player, after.below)
+		after = probe_field_ground(world, frames, tuning, player.position, player.up, player.velocity, true)
 	}
 	player.on_ground = after.on
 	player.ground_normal = after.normal
@@ -600,10 +651,10 @@ walk_field_player :: proc(world: ^Field_World, tuning: Field_Player_Tuning, play
 // them across the up only: a walk pushed up a face's rounded foot never
 // climbs on without the step, and a player left there settles to the
 // floor.
-settle_field_player :: proc(world: ^Field_World, tuning: Field_Player_Tuning, player: ^Field_Player, over: i64) {
+settle_field_player :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Field_Player_Tuning, player: ^Field_Player, over: i64) {
 	lowered := player.position - World_Position(fixed_scale(player.up, over))
 	unused_velocity: [3]i64
-	resolve_field_penetration(world, tuning, &lowered, player.up, &unused_velocity, FIELD_FLOOR_COSINE)
+	resolve_field_penetration(world, frames, tuning, &lowered, player.up, &unused_velocity, FIELD_FLOOR_COSINE)
 	if fixed_dot(cast([3]i64)(player.position - lowered), player.up) > 0 {
 		player.position = lowered
 	}
@@ -612,7 +663,7 @@ settle_field_player :: proc(world: ^Field_World, tuning: Field_Player_Tuning, pl
 // The developer fly mode in the planet's frame: the heading and its right
 // across, Jump and Sneak along the up, no gravity. The field stops it like
 // walking unless no clip is on.
-fly_field_player :: proc(world: ^Field_World, tuning: Field_Player_Tuning, player: ^Field_Player, input: Field_Player_Input) {
+fly_field_player :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Field_Player_Tuning, player: ^Field_Player, input: Field_Player_Input) {
 	speed := .Sprint in input.held ? tuning.fly_sprint_speed : tuning.fly_speed
 	velocity := field_walk_velocity(player^, input.move, speed)
 	if .Jump in input.held {
@@ -628,7 +679,7 @@ fly_field_player :: proc(world: ^Field_World, tuning: Field_Player_Tuning, playe
 		player.position += World_Position(motion)
 		return
 	}
-	sweep_field_capsule(world, tuning, &player.position, player.up, motion, &player.velocity)
+	sweep_field_capsule(world, frames, tuning, &player.position, player.up, motion, &player.velocity)
 	player.velocity = {}
 }
 
@@ -639,7 +690,7 @@ field_ground_loaded :: proc(world: ^Field_World, tuning: Field_Player_Tuning, pl
 	return sample_to_field_chunk_coordinate(world_position_to_sample(below, tuning.spacing_millimetres)) in world.chunks
 }
 
-tick_field_player :: proc(world: ^Field_World, tuning: Field_Player_Tuning, player: ^Field_Player, input: Field_Player_Input) {
+tick_field_player :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Field_Player_Tuning, player: ^Field_Player, input: Field_Player_Input) {
 	player.previous_position = player.position
 	apply_field_player_toggles(player, input.just_pressed)
 	update_field_jump_double_tap(player, input)
@@ -647,13 +698,13 @@ tick_field_player :: proc(world: ^Field_World, tuning: Field_Player_Tuning, play
 	turn_field_player(player, input.turn)
 	switch {
 	case player.flying && player.no_clip:
-		fly_field_player(world, tuning, player, input)
+		fly_field_player(world, frames, tuning, player, input)
 	case !field_ground_loaded(world, tuning, player^):
 		player.velocity = {}
 	case player.flying:
-		fly_field_player(world, tuning, player, input)
+		fly_field_player(world, frames, tuning, player, input)
 	case:
-		walk_field_player(world, tuning, player, input)
+		walk_field_player(world, frames, tuning, player, input)
 	}
 	orient_field_player(player)
 	look := field_look_direction(player.forward, player.up, player.yaw, player.pitch)

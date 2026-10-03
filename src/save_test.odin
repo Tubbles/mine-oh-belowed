@@ -183,6 +183,27 @@ lay_save_test_launch_pad :: proc(world: ^World, records: ^Game_Records, content:
 	records.research.levels[test_technology(content.technologies, "mining_productivity")] = 2
 }
 
+// A free foundation frame with a second foundation and a chest on it
+// (work item 0174).
+SAVE_TEST_FRAME_HIT :: World_Position{0, 8000 * POSITION_UNITS_PER_METRE, 0}
+
+lay_save_test_frame :: proc(world: ^World, content: Simulation_Content) {
+	foundation := test_machine(content.machines, "foundation")
+	_, frame := place_free_foundation(&world.entities, content.machines, foundation, SAVE_TEST_FRAME_HIT, {UNIT_VECTOR_ONE, 0, 0}, 500)
+	place_on_frame(&world.entities, content.machines, foundation, frame, {1, 0, 0}, 0)
+	place_on_frame(&world.entities, content.machines, test_machine(content.machines, "wooden_chest"), frame, {0, 1, 0}, 0)
+}
+
+frame_loaded :: proc(loaded_world, original_world: ^World) -> bool {
+	frames := loaded_world.entities.frames.frames[:]
+	if !slice.equal(frames, original_world.entities.frames.frames[:]) || len(frames) != 1 {
+		return false
+	}
+	frame := frames[0].id
+	chest := entity_at(&loaded_world.entities, {0, 1, 0}, frame)
+	return frame_cell_count(&loaded_world.entities.frames, frame) == 3 && chest.kind == .Chest && entity_at(&loaded_world.entities, {1, 0, 0}, frame).kind == .Foundation && loaded_world.entities.frames.last_id == original_world.entities.frames.last_id
+}
+
 // The pad kept its assembly and cargo, the shipment and its statistics
 // came through.
 launch_pad_loaded :: proc(loaded_world: ^World, loaded, original: ^Game_Records) -> bool {
@@ -238,6 +259,7 @@ build_save_test_site :: proc(simulation: ^Simulation_State, content: Simulation_
 	lay_save_test_schematics(simulation, content)
 	lay_save_test_prospecting(world, records, content)
 	lay_save_test_launch_pad(world, records, content)
+	lay_save_test_frame(world, content)
 	lay_save_test_loose_items(world, content)
 	technology := test_technology(content.technologies, "automation")
 	testing_refusal := queue_research(&records.research, content.technologies, simulation.unlocks, technology)
@@ -369,13 +391,14 @@ test_save_load_run_matches_the_original :: proc(t: ^testing.T) {
 	testing.expect(t, schematics_loaded(&loaded, content))
 	testing.expect(t, prospecting_loaded(&loaded.world, &loaded.records, &original.records))
 	testing.expect(t, launch_pad_loaded(&loaded.world, &loaded.records, &original.records))
+	testing.expect(t, frame_loaded(&loaded.world, &original.world))
 	testing.expect(t, venture_loaded(&loaded.records, &original.records, content.technologies))
 	testing.expect(t, len(loaded.world.entities.loose_items.items) > 0)
 	testing.expect(t, slice.equal(loaded.world.entities.loose_items.items[:], original.world.entities.loose_items.items[:]))
 	testing.expect_value(t, len(loaded.world.entities.fluid_networks.networks), len(original.world.entities.fluid_networks.networks))
 	testing.expect_value(t, len(loaded.world.entities.electric_networks.networks), len(original.world.entities.electric_networks.networks))
 	testing.expect_value(t, len(loaded.world.entities.belt_network.lines), len(original.world.entities.belt_network.lines))
-	testing.expect_value(t, len(loaded.world.entities.cells), len(original.world.entities.cells))
+	testing.expect_value(t, len(loaded.world.entities.frames.occupants), len(original.world.entities.frames.occupants))
 	testing.expect_value(t, len(loaded.world.entity_lights), len(original.world.entity_lights))
 
 	before_running := loaded_hash
@@ -824,4 +847,30 @@ test_leaf_decay_queue_round_trips :: proc(t: ^testing.T) {
 	testing.expect_value(t, decode_entities(&older, content, without_table, "entities.bin", header, &remap), "")
 	testing.expect_value(t, len(older.records.leaf_decay.updates), 0)
 	testing.expect_value(t, len(older.records.leaf_decay.scheduled), 0)
+}
+
+// A world that never had a frame writes no frame tables, so its file is
+// the layout of a save from before frames (work item 0174); it loads with
+// every entity on frame 0 and the occupant index rebuilt from the pools.
+@(test)
+test_a_save_without_frame_tables_loads_on_frame_0 :: proc(t: ^testing.T) {
+	content := make_save_test_content()
+	generator := make_test_generator(DEFAULT_WORLD_SEED)
+	original := make_save_test_simulation(&generator, content)
+	defer destroy_simulation(&original)
+	chest := place_test_entity(&original.world, content, "wooden_chest", {3, 1, 3})
+	tables := make([dynamic]byte, context.temp_allocator)
+	write_frame_tables(&tables, &original.world.entities)
+	testing.expect_value(t, len(tables), 0)
+	header := make_save_header()
+	bytes := encode_entities(&original, content, header)
+
+	remap: Content_Remap
+	loaded := make_save_test_simulation(&generator, content)
+	defer destroy_simulation(&loaded)
+	testing.expect_value(t, decode_entities(&loaded, content, bytes, "entities.bin", header, &remap), "")
+	testing.expect_value(t, len(loaded.world.entities.frames.frames), 0)
+	testing.expect_value(t, entity_at(&loaded.world.entities, {3, 1, 3}), chest)
+	testing.expect_value(t, entity_common(&loaded.world.entities, chest).frame, BLOCK_FRAME)
+	testing.expect_value(t, len(loaded.world.entities.frames.occupants), len(original.world.entities.frames.occupants))
 }

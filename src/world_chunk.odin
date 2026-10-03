@@ -56,7 +56,8 @@ world_settings_from_file :: proc(seed: u64, settings: World_File_Settings) -> Wo
 // column they overlap is loaded, and they stay when chunks unload.
 // Every world_set_block is recorded in block_changes, and the next
 // simulation tick turns the changes into light and water updates.
-// Entities keep their cells in entities.cells; those cells stay air here.
+// Entities keep their cells in the frame table's occupant index
+// (entities.frames, world_frame.odin); those cells stay air here.
 // The game's records are on Simulation_State (Game_Records).
 World :: struct {
 	chunks:         map[Chunk_Coordinate]^Chunk,

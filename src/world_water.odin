@@ -80,9 +80,9 @@ update_water_cell :: proc(world: ^World, registry: Block_Registry, position: Wor
 	if world_to_chunk_coordinate(position) not_in world.chunks {
 		return
 	}
-	// Entity cells are air in the chunk data but a machine stands there,
-	// except in a hydro turbine, which water flows through.
-	if handle, found := world.entities.cells[position]; found && !entity_lets_water_through(&world.entities, handle) {
+	// Occupied cells are air in the chunk data but a machine stands there,
+	// except in a hydro turbine, whose occupant does not block water.
+	if occupant, found := frame_occupant(&world.entities.frames, BLOCK_FRAME, position); found && .Blocks_Water in occupant.flags {
 		return
 	}
 	block := world_get_block(world, position)
@@ -103,11 +103,6 @@ update_water_cell :: proc(world: ^World, registry: Block_Registry, position: Wor
 		}
 	}
 	world_set_block(world, position, next)
-}
-
-entity_lets_water_through :: proc(entities: ^Entities, handle: Entity_Handle) -> bool {
-	fluid_machine := pool_get(&entities.fluid_machines, handle)
-	return fluid_machine != nil && fluid_machine.lets_water_through
 }
 
 schedule_water_update :: proc(flow: ^Water_Flow, position: World_Coordinate, due_tick: u64) {

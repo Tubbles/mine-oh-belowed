@@ -670,7 +670,7 @@ test_picking_up_a_boiler_returns_its_fuel :: proc(t: ^testing.T) {
 	testing.expect(t, pick_up_entity(&world, &records.statistics, content, &player, boiler, 0))
 	testing.expect_value(t, inventory_count(player.inventory, test_item(content.items, "coal")), 5)
 	testing.expect_value(t, inventory_count(player.inventory, test_item(content.items, "boiler")), 1)
-	testing.expect_value(t, len(world.entities.cells), 0)
+	testing.expect_value(t, len(world.entities.frames.occupants), 0)
 	testing.expect_value(t, len(world.entities.fluid_networks.segments), 0)
 }
 

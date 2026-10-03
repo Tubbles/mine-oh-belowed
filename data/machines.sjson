@@ -219,6 +219,10 @@
 // Lab (work item 0021): speed and electric_power_kilowatts, no slot
 // fields. A lab has one slot per science pack item any technology in
 // technologies.sjson consumes.
+// Foundation (work item 0174, kind foundation): a footprint one cell
+// high, no other fields. Its cells are the solid floor of a frame that
+// machines stand on (doc/content.md, Foundations); placed free it starts
+// a frame at foundation_pitch_millimetres (game.sjson).
 machines = [
 	{
 		id = "wooden_chest"
@@ -908,5 +912,13 @@ machines = [
 		footprint = {width = 3, depth = 3, height = 2}
 		speed = 1
 		electric_power_kilowatts = 60
+	}
+	{
+		id = "foundation"
+		name_key = "machine_foundation"
+		description_key = "describe_machine_foundation"
+		item = "foundation"
+		kind = "foundation"
+		footprint = {width = 1, depth = 1, height = 1}
 	}
 ]

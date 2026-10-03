@@ -7,7 +7,7 @@ import "core:slice"
 // plain values, the belt items per cell, the loose items, the vein records and outcrop
 // cells, pending block changes, water updates and leaf decay, statistics, research,
 // shipments, recipe unlocks, quest state and players. Derived data (belt
-// lines, fluid and electric networks, the entity cell map, vein lookups,
+// lines, fluid and electric networks, the occupant index, vein lookups,
 // entity lights) is rebuilt after reading. The same bytes feed simulation_state_hash.
 //
 // The file is the magic, the header, the content tables of the game data
@@ -172,10 +172,12 @@ write_simulation_state :: proc(bytes: ^[dynamic]byte, state: ^Simulation_State) 
 // bytes are left (read_later_tables) and an older save loads with the
 // newer tables empty, without a format version step. The loose items
 // (work item 0062) are the first, the leaf decay queue (work item 0059)
-// the second; its felled list is always empty between ticks.
+// the second; its felled list is always empty between ticks. The frame
+// tables (work item 0174, write_frame_tables) follow.
 write_later_tables :: proc(bytes: ^[dynamic]byte, world: ^World, records: ^Game_Records) {
 	write_list(bytes, world.entities.loose_items.items[:])
 	write_list(bytes, records.leaf_decay.updates[:])
+	write_frame_tables(bytes, &world.entities)
 }
 
 // Reading.
@@ -379,7 +381,7 @@ read_quest_state :: proc(reader: ^Byte_Reader, state: ^Simulation_State, content
 }
 
 // See write_later_tables. A table the file ends before stays empty.
-read_later_tables :: proc(reader: ^Byte_Reader, world: ^World, records: ^Game_Records) -> bool {
+read_later_tables :: proc(reader: ^Byte_Reader, world: ^World, records: ^Game_Records, machines: Machine_Registry) -> bool {
 	clear(&world.entities.loose_items.items)
 	if bytes_left(reader^) > 0 {
 		read_list(reader, &world.entities.loose_items.items) or_return
@@ -393,7 +395,7 @@ read_later_tables :: proc(reader: ^Byte_Reader, world: ^World, records: ^Game_Re
 			schedule_leaf_decay(&records.leaf_decay, update.position, update.due_tick)
 		}
 	}
-	return true
+	return read_frame_tables(reader, &world.entities, machines)
 }
 
 // Players read into fresh ones (make_player), so fields the file lacks
@@ -434,7 +436,7 @@ read_simulation_state :: proc(reader: ^Byte_Reader, state: ^Simulation_State, co
 	for &player in state.players {
 		remap_craft_queue(&player.crafting, reader.remap^) or_return
 	}
-	read_later_tables(reader, &state.world, &state.records) or_return
+	read_later_tables(reader, &state.world, &state.records, content.machines) or_return
 	if bytes_left(reader^) != 0 || !venture_state_is_consistent(&state.records, content.contracts) {
 		return false
 	}
@@ -443,15 +445,14 @@ read_simulation_state :: proc(reader: ^Byte_Reader, state: ^Simulation_State, co
 	return true
 }
 
+// The occupant index from the pools; the frame records stay.
 rebuild_entity_cells :: proc(entities: ^Entities, machines: Machine_Registry) {
-	clear(&entities.cells)
+	clear_frame_occupants(&entities.frames)
 	for kind in Entity_Kind {
 		for index in 0 ..< entity_pool_length(entities, kind) {
 			common := entity_common_at(entities, kind, index)
 			if common != nil && common.alive {
-				for cell in common_cells(common^, machines) {
-					entities.cells[cell] = common.handle
-				}
+				occupy_entity_cells(entities, machines, common^)
 			}
 		}
 	}
@@ -493,6 +494,8 @@ entity_pool_length :: proc(entities: ^Entities, kind: Entity_Kind) -> int {
 		return len(entities.core_sample_drills.entries)
 	case .Launch_Pad:
 		return len(entities.launch_pads.entries)
+	case .Foundation:
+		return len(entities.foundations.entries)
 	}
 	return 0
 }
@@ -534,6 +537,8 @@ entity_common_at :: proc(entities: ^Entities, kind: Entity_Kind, index: int) -> 
 		return &entities.core_sample_drills.entries[index].common
 	case .Launch_Pad:
 		return &entities.launch_pads.entries[index].common
+	case .Foundation:
+		return &entities.foundations.entries[index].common
 	}
 	return nil
 }

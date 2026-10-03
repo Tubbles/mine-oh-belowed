@@ -329,10 +329,10 @@ machine_marker_colors :: proc(theme: Ui_Theme, machines: Machine_Registry, items
 }
 
 paint_map_entities :: proc(pixels: []Ui_Color, frame: Map_Frame, entities: ^Entities, marker_colors: []Ui_Color) {
-	for cell, handle in entities.cells {
-		pixel, inside := map_pixel_of(frame, cell.x, cell.z)
-		common := entity_common(entities, handle)
-		if inside && common != nil && int(common.machine) < len(marker_colors) {
+	for key, occupant in entities.frames.occupants {
+		pixel, inside := map_pixel_of(frame, key.cell.x, key.cell.z)
+		common := entity_common(entities, entity_from_occupant(occupant.handle))
+		if key.frame == BLOCK_FRAME && inside && common != nil && int(common.machine) < len(marker_colors) {
 			pixels[pixel.y * frame.size + pixel.x] = marker_colors[common.machine]
 		}
 	}

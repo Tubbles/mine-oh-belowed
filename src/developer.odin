@@ -473,7 +473,7 @@ set_block_for_developer :: proc(world: ^World, block: Block_Id, cell: World_Coor
 	switch {
 	case world_to_chunk_coordinate(cell) not_in world.chunks:
 		return "the chunk is not loaded"
-	case cell in world.entities.cells:
+	case entity_at(&world.entities, cell) != NO_ENTITY:
 		return "an entity stands there"
 	}
 	world_set_block(world, cell, block)

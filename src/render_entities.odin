@@ -3,6 +3,7 @@ package game
 import "core:math"
 import "core:math/linalg"
 import rl "shared:raylib"
+import "shared:raylib/rlgl"
 
 // Placeholder entity models: a coloured cube per footprint cell, with a
 // brighter top layer on a burning furnace, for inserters a post with an
@@ -94,6 +95,16 @@ box_centre :: proc(minimum: World_Coordinate, size: [3]i32) -> [3]f32 {
 draw_entity_cells :: proc(common: Entity_Common, machines: Machine_Registry, models: Model_Renderer, frame: Model_Frame, working: bool, color, top_color: rl.Color) -> bool {
 	if draw_machine_model(models, machines, common, frame, working) {
 		return true
+	}
+	// On a frame the cubes go under its matrix, as the model's do
+	// (draw_posed_model); the block frame's is the identity and is skipped.
+	if common.frame != BLOCK_FRAME {
+		flat := transmute([16]f32)entity_frame_matrix(&frame.world.entities, common.frame)
+		rlgl.PushMatrix()
+		rlgl.MultMatrixf(raw_data(flat[:]))
+	}
+	defer if common.frame != BLOCK_FRAME {
+		rlgl.PopMatrix()
 	}
 	top := common.origin.y + common.size.y - 1
 	for cell in common_cells(common, machines) {

@@ -1098,8 +1098,9 @@ query_entities :: proc(command_context: Command_Context, arguments: []string) ->
 	centre := camera_world_coordinate(command_context.simulation.players[command_context.player].position)
 	seen := make(map[Entity_Handle]bool, context.temp_allocator)
 	listings := make([dynamic]Entity_Listing, context.temp_allocator)
-	for cell, handle in world.entities.cells {
-		if handle in seen || !horizontal_distance_within(centre, cell, radius) {
+	for key, occupant in world.entities.frames.occupants {
+		cell, handle := key.cell, entity_from_occupant(occupant.handle)
+		if key.frame != BLOCK_FRAME || handle in seen || !horizontal_distance_within(centre, cell, radius) {
 			continue
 		}
 		seen[handle] = true

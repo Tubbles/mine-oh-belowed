@@ -158,6 +158,7 @@ items = [
 	{id = "splitter", name_key = "item_splitter", description_key = "describe_item_splitter", category = "machine", stack_size = 50, price = 55}
 	{id = "wooden_chest", name_key = "item_wooden_chest", description_key = "describe_item_wooden_chest", category = "machine", stack_size = 50, price = 4}
 	{id = "iron_chest", name_key = "item_iron_chest", description_key = "describe_item_iron_chest", category = "machine", stack_size = 50, price = 16}
+	{id = "foundation", name_key = "item_foundation", description_key = "describe_item_foundation", category = "machine", stack_size = 100, price = 3}
 	{id = "offshore_pump", name_key = "item_offshore_pump", description_key = "describe_item_offshore_pump", category = "machine", stack_size = 50, price = 20}
 	{id = "pump", name_key = "item_pump", description_key = "describe_item_pump", category = "machine", stack_size = 50, price = 20}
 	{id = "storage_tank", name_key = "item_storage_tank", description_key = "describe_item_storage_tank", category = "machine", stack_size = 50, price = 250}

@@ -151,7 +151,7 @@ make_test_field :: proc(terrain: Test_Terrain, spacing_millimetres: int) -> Fiel
 
 run_field_player :: proc(world: ^Field_World, tuning: Field_Player_Tuning, player: ^Field_Player, input: Field_Player_Input, ticks: int) {
 	for _ in 0 ..< ticks {
-		tick_field_player(world, tuning, player, input)
+		tick_field_player(world, nil, tuning, player, input)
 	}
 }
 
@@ -227,7 +227,7 @@ test_a_field_player_stands_on_flat_ground_at_every_spacing :: proc(t: ^testing.T
 		run_field_player(&world, tuning, &player, {}, 60)
 		testing.expectf(t, player.on_ground, "%d mm: not on the ground", spacing)
 		testing.expectf(t, abs(site_height(player.position)) <= tenth_sample(spacing), "%d mm: feet at %d", spacing, site_height(player.position))
-		testing.expectf(t, !field_capsule_overlaps(&world, tuning, player.position, player.up), "%d mm: the capsule overlaps the ground", spacing)
+		testing.expectf(t, !field_capsule_overlaps(&world, nil, tuning, player.position, player.up), "%d mm: the capsule overlaps the ground", spacing)
 	}
 }
 
@@ -323,11 +323,11 @@ test_walking_into_a_wall_stays_on_the_floor_and_clear :: proc(t: ^testing.T) {
 		run_field_player(&world, tuning, &player, FIELD_WALK_FORWARD, 40)
 		for tick in 0 ..< 60 {
 			before := site_height(player.position)
-			tick_field_player(&world, tuning, &player, FIELD_WALK_FORWARD)
+			tick_field_player(&world, nil, tuning, &player, FIELD_WALK_FORWARD)
 			height := site_height(player.position)
 			testing.expectf(t, player.on_ground, "%d mm tick %d: off the ground", spacing, tick)
 			testing.expectf(t, abs(height) <= tenth_sample(spacing) && abs(height - before) <= FIELD_GROUND_TOLERANCE, "%d mm tick %d: feet at %d after %d", spacing, tick, height, before)
-			testing.expectf(t, !field_capsule_overlaps(&world, tuning, player.position, player.up), "%d mm tick %d: the capsule overlaps the wall", spacing, tick)
+			testing.expectf(t, !field_capsule_overlaps(&world, nil, tuning, player.position, player.up), "%d mm tick %d: the capsule overlaps the wall", spacing, tick)
 		}
 		testing.expectf(t, player.position.x < metres_to_position_units(TEST_LEDGE_FACE_METRES), "%d mm: the wall was passed", spacing)
 		run_field_player(&world, tuning, &player, {}, 30)
@@ -347,7 +347,7 @@ test_the_jump_rises_its_height :: proc(t: ^testing.T) {
 	run_field_player(&world, tuning, &player, {held = {.Jump}}, 1)
 	apex: i64 = 0
 	for _ in 0 ..< 90 {
-		tick_field_player(&world, tuning, &player, {})
+		tick_field_player(&world, nil, tuning, &player, {})
 		apex = max(apex, site_height(player.position))
 	}
 	wanted := millimetres_to_position_units(test_field_player_config().jump_height_millimetres)

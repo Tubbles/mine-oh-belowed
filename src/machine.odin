@@ -77,6 +77,9 @@ Machine_Kind :: enum u8 {
 	// Assembles a rocket from parts and fuel and launches it with its
 	// cargo (launch_pad.odin).
 	Launch_Pad,
+	// The solid cells of a foundation frame that machines stand on
+	// (entity_frames.odin, work item 0174): one cell thick.
+	Foundation,
 }
 
 @(rodata)
@@ -106,6 +109,7 @@ machine_kind_names := [Machine_Kind]string {
 	.Schematic_Crate = "schematic_crate",
 	.Core_Sample_Drill = "core_sample_drill",
 	.Launch_Pad    = "launch_pad",
+	.Foundation    = "foundation",
 }
 
 // The shape family a belt item places. Ramps become up or down and lifts
@@ -351,6 +355,10 @@ validate_machine_kind_fields :: proc(definition: Machine_Definition, kind: Machi
 		return validate_core_sample_drill_definition(definition)
 	case .Launch_Pad:
 		return validate_launch_pad_definition(definition)
+	case .Foundation:
+		if definition.footprint.height != 1 {
+			return fmt.tprintf("foundation %q must be one cell thick", definition.id)
+		}
 	}
 	return ""
 }

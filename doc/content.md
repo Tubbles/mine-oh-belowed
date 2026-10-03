@@ -137,6 +137,14 @@ The field light's numbers (0173; [architecture.md](architecture.md), The field l
 - `steps_per_tick` (8192) and `chunk_seeds_per_tick` (4): the queue nodes the light runs per tick over both channels, and the arrived chunks whose borders are compared per tick.
 - `emitters`: the light sources by `id` with their `level` at the source sample, 1 to 255, ids unique, `torch` and `lamp` required. The lamp's level lives here rather than on its machine record until the slice (0179) moves it there. The torch (192) reaches about 11 m along a corridor and lights every sample of an 8 m room, the lamp (255) about 21 m and a 16 m hall (`test_the_light_radius_in_metres_is_the_same_at_every_spacing`). The torch moves to the material table's torch entry in the slice (0179). The file is read when the planet preview starts, not on a reload, until the slice loads it with the tables.
 
+## Foundations
+
+Foundation frames (0174; [architecture.md](architecture.md), Frames).
+
+- The foundation is a machine of kind `foundation` in `data/machines.sjson` (`id` `foundation`, placed by the `foundation` item of `data/items.sjson`, made by hand or in an assembler from two stone bricks): its footprint must be one cell high (`validate_machine_kind_fields`) and it has no other fields and no model; the frame renderer draws its cells as grey slabs. Placed free it starts a new frame, snapped to a frame's cell it joins that frame, and machines on a frame stand on foundation cells.
+- `foundation_pitch_millimetres` in `data/game.sjson` is the cell of a new frame, required and bounded from `MINIMUM_FOUNDATION_PITCH_MILLIMETRES` (250) to `MAXIMUM_FOUNDATION_PITCH_MILLIMETRES` (2000); the shipped 500 mm. A saved frame keeps the pitch it was made with.
+- Machine footprints are counted in cells, so on a 500 mm frame every machine stands at half its block size until the slice's content (0179) sets the real sizes in frame cells; the footprints of `data/machines.sjson` are unchanged until then.
+
 ## Blocks
 
 `data/blocks.sjson` holds the shapes, orientation flags, light and sound materials.

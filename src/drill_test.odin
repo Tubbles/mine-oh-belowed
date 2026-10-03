@@ -353,7 +353,7 @@ test_picking_up_a_drill_returns_its_fuel_and_held_unit :: proc(t: ^testing.T) {
 	testing.expect_value(t, inventory_count(player.inventory, test_item(content.items, "hematite")), 1)
 	testing.expect_value(t, inventory_count(player.inventory, test_item(content.items, "coal")), 4)
 	testing.expect_value(t, inventory_count(player.inventory, test_item(content.items, "burner_mining_drill")), 1)
-	testing.expect_value(t, len(world.entities.cells), 0)
+	testing.expect_value(t, len(world.entities.frames.occupants), 0)
 }
 
 @(test)
@@ -370,7 +370,7 @@ test_rotate_turns_a_placed_inserter_and_drill :: proc(t: ^testing.T) {
 		place_with_player(&world, &records.statistics, content, players, 0, {.Rotate_Building})
 		testing.expect_value(t, entity_common(&world.entities, handle).rotation, 1)
 	}
-	testing.expect_value(t, len(world.entities.cells), 9)
+	testing.expect_value(t, len(world.entities.frames.occupants), 9)
 	for cell in footprint_cells({0, 1, 0}, {2, 2, 2}, 0) {
 		testing.expect_value(t, entity_at(&world.entities, cell), drill)
 	}

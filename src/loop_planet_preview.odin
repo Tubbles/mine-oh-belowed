@@ -28,6 +28,14 @@ import "platform"
 // brush, the held material, the material and tint under the reticle, the
 // volume held per material and why the latest edit was refused.
 //
+// Past the last material the held material cycle holds a foundation
+// (0174, entity_frames.odin): Place puts one against the face of the
+// targeted frame's cell, which joins that frame, or free on the targeted
+// ground, which starts a new frame. The player carries
+// PLANET_PREVIEW_FOUNDATION_COUNT of them. The frames are drawn as boxes
+// per cell (render_frames.odin) with a see-through ghost where Place
+// would put the next one.
+//
 // With a screenshot path (--planet-preview-screenshot) it takes no input:
 // the camera stays above the pole's ground just inside the finest level's
 // distance, so the finest nodes lie under it and the horizon as far out as
@@ -47,6 +55,10 @@ import "platform"
 // torch entity to the light in the slice (0179). --planet-preview-daylight
 // sets the sky light's share in percent (the field shader's daylight), so
 // a torch's room shows at night (0).
+//
+// Once the player stands, a pad of foundations is laid 9 m ahead as well
+// (0174, lay_planet_preview_foundations), past the pit, so a shot tilted
+// less shows a frame.
 
 PLANET_PREVIEW_PLANET :: "home"
 PLANET_PREVIEW_START_HEIGHT_METRES :: 40
@@ -90,6 +102,12 @@ PLANET_PREVIEW_PIT_RADIUS_MILLIMETRES :: 2500
 PLANET_PREVIEW_PIT_AHEAD_MILLIMETRES :: 3300
 PLANET_PREVIEW_PIT_DEPTH_MILLIMETRES :: 1500
 PLANET_PREVIEW_PIT_PITCH_DEGREES :: -50
+PLANET_PREVIEW_FOUNDATION_COUNT :: 100
+// The walk screenshot's pad: this far ahead of the feet (past the pit), this many cells
+// either side of the first foundation, and a column this high on it.
+PLANET_PREVIEW_PAD_DISTANCE_MILLIMETRES :: 9000
+PLANET_PREVIEW_PAD_HALF_WIDTH :: 2
+PLANET_PREVIEW_PAD_COLUMN_HEIGHT :: 3
 
 Planet_Preview :: struct {
 	planet:          Planet,
@@ -122,6 +140,8 @@ Planet_Preview :: struct {
 	// pit is dug (0173).
 	torch_level:     u8,
 	pit_dug:         bool,
+	// The walk screenshot's foundations are laid (once).
+	pad_laid:        bool,
 }
 
 planet_preview_speed_scale :: proc(height_metres: f32) -> f32 {
@@ -248,9 +268,10 @@ start_planet_preview_walk :: proc(preview: ^Planet_Preview) {
 	feet := field_surface_under(generation, metres_to_world_position(preview.camera.position), clearance)
 	forward := fly_camera_forward(preview.camera)
 	look := [3]i64{i64(forward.x * UNIT_VECTOR_ONE), i64(forward.y * UNIT_VECTOR_ONE), i64(forward.z * UNIT_VECTOR_ONE)}
-	held := preview.field.players[0].body.held_material
+	held, holding_foundation := preview.field.players[0].body.held_material, preview.field.players[0].body.holding_foundation
 	preview.field.players[0].body = make_field_player(feet, look)
 	preview.field.players[0].body.held_material = held
+	preview.field.players[0].body.holding_foundation = holding_foundation
 	preview.walking = true
 	preview.tick_seconds = 0
 	preview.pending = {}
@@ -449,8 +470,17 @@ field_edit_refusal_text :: proc(refusal: Field_Edit_Refusal, material: Field_Mat
 		return fmt.tprintf("  no %s to place", name)
 	case .Would_Bury_Player:
 		return "  the place would bury a player"
+	case .Frame_Cell_Taken:
+		return "  the foundation's cell is taken"
+	case .Unknown_Frame:
+		return "  the foundation's frame is gone"
 	}
 	return ""
+}
+
+// What the held material cycle holds now.
+field_held_name :: proc(player: Field_Player) -> string {
+	return player.holding_foundation ? "foundation" : field_material_name(player.held_material)
 }
 
 // The walk mode's tool line: the brush, the held material, the material
@@ -472,8 +502,12 @@ planet_preview_tool_text :: proc(preview: ^Planet_Preview) -> string {
 			held = fmt.tprintf("%s  %s %.2f m3", held, field_material_name(material), field_held_cubic_metres(miner, content, material))
 		}
 	}
+	if miner.body.frame_target.hit {
+		target = fmt.tprintf("frame %d cell %v", miner.body.frame_target.frame, miner.body.frame_target.cell)
+	}
+	held = fmt.tprintf("%s  foundations %d, frames %d", held, inventory_count(miner.inventory, content.machines.machines[content.foundation].item) if field_foundation(content) != NO_MACHINE else 0, len(preview.field.entities.frames.frames))
 	shapes := FIELD_BRUSH_SHAPE_NAMES
-	return fmt.tprintf("brush %s %.1f m, holding %s  target %s %s%s", shapes[brush.shape], f64(brush.radius) / POSITION_UNITS_PER_METRE, field_material_name(miner.body.held_material), target, held, field_edit_refusal_text(miner.refusal, miner.refused_material))
+	return fmt.tprintf("brush %s %.1f m, holding %s  target %s %s%s", shapes[brush.shape], f64(brush.radius) / POSITION_UNITS_PER_METRE, field_held_name(miner.body), target, held, field_edit_refusal_text(miner.refusal, miner.refused_material))
 }
 
 // With capture set, the frame is saved before it is shown; saved says
@@ -484,6 +518,8 @@ draw_planet_preview :: proc(preview: ^Planet_Preview, selection: []Field_Node, c
 	rl.ClearBackground(FIELD_FOG_COLOR)
 	rl.BeginMode3D(camera)
 	draw_field(&preview.renderer, camera, selection)
+	draw_frames(&preview.field.entities)
+	draw_planet_preview_ghost(preview)
 	rl.EndMode3D()
 	height := planet_preview_height_metres(preview)
 	line := fmt.ctprintf("%d fps  %s  height %.0f m  nodes %d of %d  vertices %d  chunks %d", rl.GetFPS(), planet_preview_mode_text(preview), height, preview.renderer.drawn_node_count, len(selection), preview.renderer.vertex_count, len(preview.field.world.chunks))
@@ -514,6 +550,46 @@ planet_preview_pit_lit :: proc(preview: ^Planet_Preview, selection: []Field_Node
 	return true
 }
 
+// Where Place would put a foundation while one is held.
+draw_planet_preview_ghost :: proc(preview: ^Planet_Preview) {
+	if !preview.walking {
+		return
+	}
+	placement, wanted := field_player_placement(preview.field.players[0].body, field_foundation(preview.field_content))
+	if !wanted {
+		return
+	}
+	if frame, cell, found := field_placement_frame(&preview.field.entities.frames, placement, preview.field_content.foundation_pitch_millimetres); found {
+		draw_frame_ghost(frame, cell)
+	}
+}
+
+// The walk screenshot's pad, once the player stands: a free foundation on
+// the ground ahead, the square round it snapped to its frame, and a column
+// of foundations on one corner.
+lay_planet_preview_foundations :: proc(preview: ^Planet_Preview) {
+	content := preview.field_content
+	player := preview.field.players[0].body
+	if preview.pad_laid || !player.on_ground || field_foundation(content) == NO_MACHINE {
+		return
+	}
+	preview.pad_laid = true
+	heading := field_player_heading(player)
+	ahead := player.position + World_Position(fixed_scale(heading, millimetres_to_position_units(PLANET_PREVIEW_PAD_DISTANCE_MILLIMETRES)))
+	generation := make_planet_generation(preview.seed, preview.planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES)
+	entities := &preview.field.entities
+	_, frame := place_free_foundation(entities, content.machines, content.foundation, field_surface_under(generation, ahead, 0), heading, content.foundation_pitch_millimetres)
+	for x in -PLANET_PREVIEW_PAD_HALF_WIDTH ..= PLANET_PREVIEW_PAD_HALF_WIDTH {
+		for z in -PLANET_PREVIEW_PAD_HALF_WIDTH ..= PLANET_PREVIEW_PAD_HALF_WIDTH {
+			place_on_frame(entities, content.machines, content.foundation, frame, {i32(x), 0, i32(z)}, 0)
+		}
+	}
+	for y in 1 ..= PLANET_PREVIEW_PAD_COLUMN_HEIGHT {
+		place_on_frame(entities, content.machines, content.foundation, frame, {PLANET_PREVIEW_PAD_HALF_WIDTH, i32(y), PLANET_PREVIEW_PAD_HALF_WIDTH}, 0)
+	}
+	platform.log_printf("planet preview: laid %d foundations on frame %d", frame_cell_count(&entities.frames, frame), frame)
+}
+
 // Returns the exit code: 0, or 1 when the screenshot could not be saved.
 run_planet_preview_frames :: proc(preview: ^Planet_Preview) -> int {
 	screenshot := preview.screenshot_path != ""
@@ -524,6 +600,7 @@ run_planet_preview_frames :: proc(preview: ^Planet_Preview) -> int {
 			alpha = update_planet_preview_input(preview, rl.GetFrameTime())
 		case preview.walking:
 			tick_planet_preview_player(preview)
+			lay_planet_preview_foundations(preview)
 		}
 		view := make_field_view(planet_preview_viewpoint(preview), preview.planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES, preview.level_distances)
 		selection := select_field_nodes(view, context.temp_allocator)
@@ -551,9 +628,10 @@ run_planet_preview_frames :: proc(preview: ^Planet_Preview) -> int {
 	return 0
 }
 
-// One player with PLANET_PREVIEW_TOOL_ITEM, holding the first placeable
-// material.
-make_planet_preview_field :: proc(items: Item_Registry, materials: Field_Material_Table) -> Field_Simulation {
+// One player with PLANET_PREVIEW_TOOL_ITEM and
+// PLANET_PREVIEW_FOUNDATION_COUNT foundations, holding the first
+// placeable material.
+make_planet_preview_field :: proc(items: Item_Registry, materials: Field_Material_Table, machines: Machine_Registry) -> Field_Simulation {
 	field := Field_Simulation {
 		spacing_millimetres = DEFAULT_SAMPLE_SPACING_MILLIMETRES,
 	}
@@ -564,6 +642,9 @@ make_planet_preview_field :: proc(items: Item_Registry, materials: Field_Materia
 	if tool, found := find_item_id(items, PLANET_PREVIEW_TOOL_ITEM); found {
 		inventory_add(miner.inventory, items, tool, 1)
 	}
+	if foundation := find_foundation_machine(machines); foundation != NO_MACHINE {
+		inventory_add(miner.inventory, items, machines.machines[foundation].item, PLANET_PREVIEW_FOUNDATION_COUNT)
+	}
 	append(&field.players, miner)
 	return field
 }
@@ -571,7 +652,7 @@ make_planet_preview_field :: proc(items: Item_Registry, materials: Field_Materia
 // Returns the process's exit code.
 // screenshot_path empty runs the interactive preview; walk starts it in
 // the walk mode; daylight_percent is the sky light's share.
-run_planet_preview :: proc(config: Game_Config, planets: []Planet, items: Item_Registry, bindings: []Binding, data_directory: string, seed: u64, screenshot_path: string, walk: bool, daylight_percent: int) -> int {
+run_planet_preview :: proc(config: Game_Config, planets: []Planet, items: Item_Registry, machines: Machine_Registry, bindings: []Binding, data_directory: string, seed: u64, screenshot_path: string, walk: bool, daylight_percent: int) -> int {
 	planet, found := find_planet(planets, PLANET_PREVIEW_PLANET)
 	if !found {
 		platform.log_printf("error: %s has no planet %q to preview", PLANETS_FILE_NAME, PLANET_PREVIEW_PLANET)
@@ -622,7 +703,7 @@ run_planet_preview :: proc(config: Game_Config, planets: []Planet, items: Item_R
 		planet          = planet,
 		level_distances = level_distances,
 		camera          = planet_preview_start_camera(planet),
-		field           = make_planet_preview_field(items, materials),
+		field           = make_planet_preview_field(items, materials, machines),
 		field_content   = Field_Simulation_Content {
 			items = items,
 			materials = materials,
@@ -630,6 +711,9 @@ run_planet_preview :: proc(config: Game_Config, planets: []Planet, items: Item_R
 			tuning = make_field_player_tuning(config.field_player, planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES, config.tick_rate),
 			water = make_field_water_tuning(config.field_water),
 			light = make_field_light_tuning(lighting, DEFAULT_SAMPLE_SPACING_MILLIMETRES),
+			machines = machines,
+			foundation = find_foundation_machine(machines),
+			foundation_pitch_millimetres = config.foundation_pitch_millimetres,
 		},
 		streaming       = start_field_streaming(seed, planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES, default_worker_count()),
 		renderer        = renderer,

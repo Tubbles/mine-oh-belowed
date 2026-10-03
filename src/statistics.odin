@@ -860,7 +860,7 @@ record_belt_dead_ends :: proc(statistics: ^Statistics, entities: ^Entities) {
 
 inserter_picks_from :: proc(entities: ^Entities, handle: Entity_Handle) -> bool {
 	for inserter in entities.inserters.entries {
-		if inserter.alive && entity_at(entities, inserter_pickup_cell(inserter)) == handle {
+		if inserter.alive && entity_at(entities, inserter_pickup_cell(inserter), inserter.frame) == handle {
 			return true
 		}
 	}

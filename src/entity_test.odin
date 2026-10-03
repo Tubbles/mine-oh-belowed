@@ -101,7 +101,7 @@ test_add_and_remove_entity_updates_cells :: proc(t: ^testing.T) {
 		testing.expect_value(t, entity_at(&world.entities, cell), handle)
 	}
 	testing.expect_value(t, entity_at(&world.entities, {4, 1, 2}), NO_ENTITY)
-	testing.expect_value(t, len(world.entities.cells), 8)
+	testing.expect_value(t, len(world.entities.frames.occupants), 8)
 	testing.expect_value(t, entity_common(&world.entities, handle).size, [3]i32{2, 2, 2})
 	testing.expect_value(t, len(entity_slots(&world.entities, handle)), FURNACE_SLOT_COUNT)
 	// The cells stay air in the chunk, but the ray and the body stop there.
@@ -112,7 +112,7 @@ test_add_and_remove_entity_updates_cells :: proc(t: ^testing.T) {
 	testing.expect_value(t, hit.entity, handle)
 	testing.expect_value(t, hit.block, World_Coordinate{2, 1, 2})
 	testing.expect(t, remove_entity(&world.entities, content.machines, handle))
-	testing.expect_value(t, len(world.entities.cells), 0)
+	testing.expect_value(t, len(world.entities.frames.occupants), 0)
 	testing.expect(t, !entity_is_alive(&world.entities, handle))
 }
 
@@ -156,7 +156,7 @@ test_player_places_rotates_and_picks_up_a_machine :: proc(t: ^testing.T) {
 	player.target = Raycast_Hit{hit = true, block = {4, 0, 4}, face = .Positive_Y, adjacent = {4, 1, 4}}
 	place_with_player(&world, &records.statistics, content, players, 0, {.Rotate_Building})
 	testing.expect_value(t, player.placement_rotation, 1)
-	testing.expect_value(t, len(world.entities.cells), 0)
+	testing.expect_value(t, len(world.entities.frames.occupants), 0)
 	place_with_player(&world, &records.statistics, content, players, 0, {.Place})
 	handle := entity_at(&world.entities, {4, 1, 4})
 	testing.expect_value(t, handle.kind, Entity_Kind.Furnace)
@@ -170,7 +170,7 @@ test_player_places_rotates_and_picks_up_a_machine :: proc(t: ^testing.T) {
 	furnace.slots[FURNACE_OUTPUT_SLOT] = Item_Stack{test_item(content.items, "iron_plate"), 7}
 	testing.expect(t, pick_up_entity(&world, &records.statistics, content, player, handle, 0))
 	testing.expect(t, !entity_is_alive(&world.entities, handle))
-	testing.expect_value(t, len(world.entities.cells), 0)
+	testing.expect_value(t, len(world.entities.frames.occupants), 0)
 	testing.expect_value(t, player.inventory.slots[0], Item_Stack{furnace_item, 2})
 	testing.expect_value(t, player.inventory.slots[HOTBAR_SLOT_COUNT], Item_Stack{test_item(content.items, "iron_plate"), 7})
 }

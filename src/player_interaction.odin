@@ -6,6 +6,30 @@ import "core:math"
 // so it stays integer like every accumulating simulation quantity. Entity
 // placement and pick up are in entity_placement.odin.
 
+// The world's cell raycast (world_raycast.odin) with the occupant
+// unpacked: the entity occupying the hit cell, or NO_ENTITY for a block.
+Raycast_Hit :: struct {
+	hit:      bool,
+	block:    World_Coordinate,
+	// The face of the hit block the ray entered through.
+	face:     Direction,
+	// The cell in front of that face, where a placed block goes.
+	adjacent: World_Coordinate,
+	distance: f32,
+	entity:   Entity_Handle,
+}
+
+// Finds the first targetable block or entity cell along a normalised
+// direction within reach (raycast_cells).
+raycast_blocks :: proc(world: ^World, registry: Block_Registry, origin, direction: [3]f32, reach: f32) -> Raycast_Hit {
+	hit := raycast_cells(world, registry, origin, direction, reach)
+	entity := NO_ENTITY
+	if hit.occupant != NO_OCCUPANT {
+		entity = entity_from_occupant(hit.occupant)
+	}
+	return Raycast_Hit{hit = hit.hit, block = hit.block, face = hit.face, adjacent = hit.adjacent, distance = hit.distance, entity = entity}
+}
+
 // block is the mined cell, or the entity's origin while picking up an
 // entity.
 Mining_State :: struct {

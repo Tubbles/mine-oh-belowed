@@ -430,8 +430,8 @@ audit_case :: proc(audit: ^Ui_Audit, audit_case: Ui_Audit_Case) {
 // One of every machine the site lacks, away from it; panels only read them.
 place_missing_machines :: proc(world: ^World, content: Simulation_Content) {
 	present := make([]bool, len(content.machines.machines), context.temp_allocator)
-	for _, handle in world.entities.cells {
-		if common := entity_common(&world.entities, handle); common != nil {
+	for _, occupant in world.entities.frames.occupants {
+		if common := entity_common(&world.entities, entity_from_occupant(occupant.handle)); common != nil {
 			present[common.machine] = true
 		}
 	}
@@ -446,7 +446,8 @@ place_missing_machines :: proc(world: ^World, content: Simulation_Content) {
 // The first entity of every machine with a panel, in machine order.
 machines_with_panels :: proc(world: ^World, content: Simulation_Content) -> []Entity_Handle {
 	handles := make([]Entity_Handle, len(content.machines.machines), context.temp_allocator)
-	for _, handle in world.entities.cells {
+	for _, occupant in world.entities.frames.occupants {
+		handle := entity_from_occupant(occupant.handle)
 		common := entity_common(&world.entities, handle)
 		if common != nil && entity_has_panel(&world.entities, handle) && handles[common.machine] == NO_ENTITY {
 			handles[common.machine] = handle

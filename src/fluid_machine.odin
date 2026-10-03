@@ -63,8 +63,9 @@ fluid_machine_state_keys := [Fluid_Machine_State]string {
 // its network in the last tick. A tar pit pump keeps the
 // part of a litre it has pumped so far in litre_remainder, in litres per
 // minute times ticks (accumulate_litres). lets_water_through marks a
-// hydro turbine, whose cells flowing water keeps updating
-// (world_water.odin), and still_water_ticks counts its ticks in a row
+// hydro turbine, whose cells flowing water keeps updating; the water reads
+// it from the occupant flags (machine_occupant_flags), and the field stays
+// for the save layout and the state hash. still_water_ticks counts its ticks in a row
 // with no flowing water, for the quest hint.
 Fluid_Machine :: struct {
 	using common:     Entity_Common,

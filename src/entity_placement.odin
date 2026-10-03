@@ -55,13 +55,13 @@ cell_is_free :: proc(world: ^World, cell: World_Coordinate) -> bool {
 	if world_to_chunk_coordinate(cell) not_in world.chunks {
 		return false
 	}
-	return world_get_block(world, cell) == AIR_BLOCK && cell not_in world.entities.cells
+	return world_get_block(world, cell) == AIR_BLOCK && !frame_cell_is_occupied(&world.entities.frames, BLOCK_FRAME, cell)
 }
 
 // Free, or ground cover with no entity in it, which a machine replaces
 // (work item 0082).
 cell_takes_machine :: proc(world: ^World, registry: Block_Registry, cell: World_Coordinate) -> bool {
-	return cell_is_free(world, cell) || (cell_holds_cover(world, registry, cell) && cell not_in world.entities.cells)
+	return cell_is_free(world, cell) || (cell_holds_cover(world, registry, cell) && !frame_cell_is_occupied(&world.entities.frames, BLOCK_FRAME, cell))
 }
 
 cell_holds_cover :: proc(world: ^World, registry: Block_Registry, cell: World_Coordinate) -> bool {
@@ -191,7 +191,7 @@ placement_at :: proc(world: ^World, content: Simulation_Content, players: []Play
 
 // Loaded, no entity, and air or water: a turbine stands in the stream.
 cell_takes_hydro_turbine :: proc(world: ^World, registry: Block_Registry, cell: World_Coordinate) -> bool {
-	if world_to_chunk_coordinate(cell) not_in world.chunks || cell in world.entities.cells {
+	if world_to_chunk_coordinate(cell) not_in world.chunks || frame_cell_is_occupied(&world.entities.frames, BLOCK_FRAME, cell) {
 		return false
 	}
 	block := world_get_block(world, cell)

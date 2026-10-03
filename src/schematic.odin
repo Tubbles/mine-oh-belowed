@@ -59,7 +59,7 @@ place_pending_crates :: proc(tick_context: Entity_Tick_Context) {
 		}
 		site.placed = true
 		schematic := schematic_for_choice(content.recipes, site.choice)
-		if machine == NO_MACHINE || schematic == NO_ITEM || site.position in entities.cells {
+		if machine == NO_MACHINE || schematic == NO_ITEM || frame_cell_is_occupied(&entities.frames, BLOCK_FRAME, site.position) {
 			continue
 		}
 		handle := add_entity(entities, content.machines, machine, site.position, 0)

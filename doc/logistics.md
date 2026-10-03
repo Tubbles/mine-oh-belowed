@@ -28,6 +28,7 @@ How items move without hands: belts as transport lines, inserters, splitters, mi
 - Holding Place with a flat belt drags a run along the reticle's path with automatic turns. A one block step of the ground becomes a ramp of the same speed taken from the inventory. Without one the belt stays flat. Only belts this drag placed are turned or reshaped.
 - Ramp and lift items place one at a time. A lift placed on a lift continues the column.
 - Rotate with no machine selected turns the targeted belt a quarter turn, a lift together with its column.
+- On a foundation frame (0174, [architecture.md](architecture.md), Frames) a belt is a cell of the frame: its output cell, the belt or splitter there and a lift's column are looked up in the belt's own frame (`belt_at` and `splitter_at` with the frame), so the lines, the lanes and the side loading run on a frame as on the block world, which is frame 0. A belt never connects to a cell of another frame; belts between frames are runs between poles (0176). The drag placement above is the block world's, and placing belts on a frame from the field waits for the slice (0179).
 
 ## Inserters
 
@@ -75,7 +76,7 @@ How items move without hands: belts as transport lines, inserters, splitters, mi
 
 ## Loose items
 
-`loose_item.odin` (0062). Item stacks lying in world cells: their own list beside the entity pools, never in the cell map, so they block no placement, movement or ray.
+`loose_item.odin` (0062). Item stacks lying in world cells: their own list beside the entity pools, never in the occupant index, so they block no placement, movement or ray.
 
 - Sources: a felled tree's logs and its decaying leaves' drops ([content.md](content.md), World), a mined block whose item does not fit, a machine picked up with contents that do not fit, the inventory's Drop, and a belt dead end over a drop. Drills never spill.
 - A mined block breaks even with a full inventory and spills what does not fit, with the "Inventory full" toast once. A machine pick up spills at the machine's origin, the machine item last, so a pickup never refuses.

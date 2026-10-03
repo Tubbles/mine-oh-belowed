@@ -591,6 +591,7 @@ item_belt_ramp_2 = "Fast belt ramp"
 item_belt_lift_2 = "Fast belt lift"
 item_splitter = "Splitter"
 item_wooden_chest = "Wooden chest"
+item_foundation = "Foundation"
 item_iron_chest = "Iron chest"
 item_offshore_pump = "Offshore pump"
 item_pump = "Pump"
@@ -713,6 +714,7 @@ describe_item_belt_2 = "Twice the speed: 3.75 blocks a second, 1800 items a minu
 describe_item_belt_ramp_2 = "A ramp at fast belt speed, one block of rise per block of run."
 describe_item_belt_lift_2 = "A lift at fast belt speed, stacking vertically at 3.75 blocks a second."
 describe_item_splitter = "Stands across two belts and shares their items, with an input priority, an output priority and a filter. Five circuits and four belts."
+describe_item_foundation = "A slab one cell thick. Placed free it starts a new grid along the ground; placed against another it joins that grid."
 describe_item_wooden_chest = "Four planks, sixteen slots. Enough to keep a furnace's output off the ground."
 describe_item_iron_chest = "Eight iron plates, thirty two slots. Twice the wooden chest in the same cubic metre."
 describe_item_offshore_pump = "Set at the water's edge, it lifts 1200 litres a second on 60 kW, up to 6 metres above its outlet. Rivers and lakes never run dry for it."
@@ -799,6 +801,7 @@ hint_sprint = "Sprint"
 
 // Machines (data/machines.sjson) and their panels
 machine_wooden_chest = "Wooden chest"
+machine_foundation = "Foundation"
 machine_iron_chest = "Iron chest"
 machine_stone_furnace = "Stone furnace"
 machine_drop_capsule = "Drop capsule"
@@ -852,6 +855,7 @@ machine_electrolyser = "Electrolyser"
 
 // Machine descriptions (work item 0070), dim under the name in the
 // machine panel: how the machine runs.
+describe_machine_foundation = "Machines on a grid stand on foundations."
 describe_machine_wooden_chest = "Sixteen slots of storage the venture does not charge rent for, yet."
 describe_machine_iron_chest = "Thirty two slots in one cubic metre."
 describe_machine_stone_furnace = "Ore above, fuel below, plate and slag out. 18.75 plates a minute while the fire lasts."

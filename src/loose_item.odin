@@ -6,7 +6,7 @@ import "core:slice"
 // cells. Mining and pickups spill what does not fit into the inventory,
 // the inventory's Drop puts a stack down, and a belt that ends over a drop
 // lets its items fall off. Loose items are not machines: they live in
-// their own list in Entities, never in the cell map, so they block
+// their own list in Entities, never in the occupant index, so they block
 // nothing. Their state is integer: a stack falls one cell per
 // LOOSE_ITEM_FALL_TICKS and counts its age in ticks.
 
@@ -52,8 +52,8 @@ cell_holds_loose_items :: proc(tick_context: Entity_Tick_Context, cell: World_Co
 	if block_is_solid(tick_context.content.blocks, block) {
 		return false
 	}
-	handle, occupied := tick_context.entities.cells[cell]
-	return !occupied || handle.kind == .Belt
+	handle := entity_at(tick_context.entities, cell)
+	return handle == NO_ENTITY || handle.kind == .Belt
 }
 
 // The cell itself, or the first cell above it a stack may lie in.
