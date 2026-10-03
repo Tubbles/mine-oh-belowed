@@ -1,6 +1,6 @@
 # 0198: The landing pod: larger, an airlock, a chest, a bench, an oxygen generator
 
-Status: designed (2026-10-03, the specification approved; after 0197 and 0205; user, 2026-10-03: "the landing pod should be larger, with an airlock, chest, crafting bench, it needs to house an oxygen generator and have infinite oxygen on board"; after 0197)
+Status: implementing (2026-10-03, worktree item/0198 on the 0197 snapshot; designed 2026-10-03; user, 2026-10-03: "the landing pod should be larger, with an airlock, chest, crafting bench, it needs to house an oxygen generator and have infinite oxygen on board"; after 0197)
 
 ## Goal
 
