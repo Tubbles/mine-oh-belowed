@@ -1,0 +1,21 @@
+# 0195: Pick up machines and foundations on the field
+
+Status: todo (user, 2026-10-03: "how do i remove foundations?"; after 0193, before 0194)
+
+## Goal
+
+A placed machine or foundation can be taken back. Today the field's Dig acts on the terrain target only (`field_player_edit`, `field_mining.odin`: it needs `player.target.hit`, and a frame cell nearer than the terrain clears that target in `aim_field_player_at_frames`), and nothing on the field calls `pick_up_entity` (`entity_placement.odin`, the block world's hold Mine on a machine for `PICK_UP_SECONDS`). A foundation or machine placed on the field stays forever.
+
+## Change
+
+- Mine held on a frame cell in reach picks the entity up as the block world does: the same `PICK_UP_SECONDS`, the mining progress shown as for a block (the reticle's progress, `hud.odin`), the entity's stacks and the item itself into the inventory, what does not fit spilled as loose items at the cell, `Inventory_Full` toasted as today.
+- A foundation is picked up only when nothing stands on it or hangs from it (a machine on the cell above, a belt or pipe through it, a torch on it); otherwise the refusal says what holds it (a new `Field_Edit_Refusal`, "Something stands on it"). A frame whose last cell goes is removed from the frame table, so a pad can be undone entirely; the pod and its pad (`machine_kind_is_placed_by_world`) refuse.
+- A block placed by 0193 is picked up one cell at a time (one press per cell); a size cycle for picking up is not part of this item.
+- Online every machine runs the pick up from the records, so the hash agrees; the prediction (0182) does not pick up.
+- `doc/architecture.md` (Frames, the field player's edits), `doc/hud.md` (the hint beside a frame cell: "Pick up" with the Mine glyph) updated.
+
+## Verify
+
+- The build and check commands of 0168.
+- Tests: Mine held on a lone foundation for `PICK_UP_SECONDS` removes it, returns the item and removes the empty frame; a foundation under a furnace refuses with the new refusal and the furnace is picked up first; the pod refuses; a full inventory spills; the hash matches on two sessions.
+- The couch: the user places a foundation, picks it up, and the pad is gone.
