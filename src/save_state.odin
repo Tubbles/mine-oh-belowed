@@ -157,8 +157,9 @@ write_quest_state :: proc(bytes: ^[dynamic]byte, quests: ^Quest_State) {
 // The body of entities.bin, without the header. Tables added since
 // format version 2 follow the players (write_later_tables); a field world
 // then writes its field tables, the machines' wear (0201,
-// write_machine_wear_table) and the felled trees (0197,
-// write_felled_tree_table).
+// write_machine_wear_table), the felled trees (0197,
+// write_felled_tree_table) and the arrival (0200,
+// write_field_arrival_table).
 write_simulation_state :: proc(bytes: ^[dynamic]byte, state: ^Simulation_State) {
 	write_world_state(bytes, &state.world, &state.records)
 	write_value_of(bytes, &state.unlocks)
@@ -172,6 +173,7 @@ write_simulation_state :: proc(bytes: ^[dynamic]byte, state: ^Simulation_State) 
 		write_field_tables(bytes, &state.field)
 		write_machine_wear_table(bytes, &state.world.entities)
 		write_felled_tree_table(bytes, &state.field)
+		write_field_arrival_table(bytes, &state.field)
 	}
 }
 
@@ -463,6 +465,7 @@ read_simulation_state :: proc(reader: ^Byte_Reader, state: ^Simulation_State, co
 		state.field.enabled = true
 		read_machine_wear_table(reader, &state.world.entities) or_return
 		read_felled_tree_table(reader, &state.field) or_return
+		read_field_arrival_table(reader, &state.field) or_return
 	}
 	if bytes_left(reader^) != 0 || !venture_state_is_consistent(&state.records, content.contracts) {
 		return false

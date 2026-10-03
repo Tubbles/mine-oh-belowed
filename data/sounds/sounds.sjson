@@ -17,7 +17,10 @@
 // of two or three calls with 20 to 60 seconds between clusters and the
 // pitch varied (work item 0089); rain;
 // rocket_launch, capsule_landing, discovery_chime; mission_control_chime
-// (a Mission Control line starting on the HUD, work item 0069).
+// (a Mission Control line starting on the HUD, work item 0069);
+// arrival_roar (a loop, the drag as a new world's pod falls),
+// arrival_crash (its hit) and hatch_slide (any hatch opening or closing,
+// work item 0200).
 // The placeholder files are written by tools/make_placeholder_sounds.py.
 sounds = [
 	{id = "footstep_stone", file = "footstep_stone.wav", volume = 0.5, kind = "effect"}
@@ -50,6 +53,9 @@ sounds = [
 	{id = "rain", file = "rain.wav", volume = 0.5, kind = "loop"}
 	{id = "rocket_launch", file = "rocket_launch.wav", volume = 0.9, kind = "effect"}
 	{id = "capsule_landing", file = "capsule_landing.wav", volume = 0.8, kind = "effect"}
+	{id = "arrival_roar", file = "arrival_roar.wav", volume = 0.7, kind = "loop"}
+	{id = "arrival_crash", file = "arrival_crash.wav", volume = 1.0, kind = "effect"}
+	{id = "hatch_slide", file = "hatch_slide.wav", volume = 0.6, kind = "effect"}
 	{id = "discovery_chime", file = "discovery_chime.wav", volume = 0.5, kind = "effect"}
 	{id = "mission_control_chime", file = "mission_control_chime.wav", volume = 0.45, kind = "effect"}
 ]

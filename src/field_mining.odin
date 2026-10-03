@@ -158,6 +158,9 @@ Field_Simulation :: struct {
 	// the trees in its frames cleared (clear_trees_of_an_old_save).
 	felled_trees:          map[Tree_Key]struct{},
 	felled_trees_recorded: bool,
+	// A new world's fall (0200, simulation_arrival.odin), saved in its
+	// table, hashed.
+	arrival:               Field_Arrival,
 }
 
 // A chunk kept outside the set: its codec bytes (encode_field_chunk) and

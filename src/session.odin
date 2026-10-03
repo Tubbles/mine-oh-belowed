@@ -105,6 +105,7 @@ start_field_world :: proc(session: ^Session, plan: Session_Plan, config: Game_Co
 	session.field_content = make_field_content(config, content.items, content.machines, content.field_materials, content.lighting, session.planet, spacing)
 	if !plan.loading {
 		enable_new_field_world(simulation, config, content.machines, session.field_content, session.planet, spacing)
+		begin_field_arrival(field, simulation.tick, config.arrival_ticks)
 	}
 	field.world.water_planet = make_field_water_planet(seed, session.planet, field.spacing_millimetres)
 	field.chunk_set.restoring = plan.loading && len(field.chunk_set.chunks) > 0

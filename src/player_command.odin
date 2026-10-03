@@ -92,6 +92,12 @@ Close_Machine_Command :: struct {
 	machine: Entity_Handle,
 }
 
+// The pause menu's Skip arrival (0200): lands a new world's fall on every
+// machine at the tick it applies (land_field_arrival); idempotent.
+Skip_Arrival_Command :: struct {
+	unused: u8,
+}
+
 // The F-key debug edits (apply_debug_actions in loop.odin).
 Debug_Remove_Block_Command :: struct {
 	counter: u64,
@@ -152,6 +158,7 @@ Player_Command :: union {
 	Transfer_Button_Command,
 	Grid_Transfer_Command,
 	Inserter_Hand_Command,
+	Skip_Arrival_Command,
 }
 
 // player indexes the simulation's players; a chunk arrival has no player
@@ -290,6 +297,10 @@ apply_player_command :: proc(state: ^Simulation_State, content: Simulation_Conte
 		debug_remove_block(&state.world, content.blocks, eye, command.counter)
 	case Debug_Drop_Item_Command:
 		debug_drop_item_on_belt(&state.world, content, state.players[queued.player])
+	case Skip_Arrival_Command:
+		if field_arrival_falling(state.field.arrival) {
+			land_field_arrival(state, content)
+		}
 	case Slot_Primary_Command, Slot_Split_Command, Slot_Sort_Command, Distribute_Command, Return_Held_Command, Drop_Stack_Command, Quick_Move_Command, Transfer_Button_Command, Grid_Transfer_Command, Inserter_Hand_Command:
 		refused = apply_slot_command(state, content, queued.player, queued.command)
 	}
@@ -442,7 +453,7 @@ player_command_valid :: proc(command: Player_Command, content: Simulation_Conten
 		return developer_request_valid(value, content)
 	case Slot_Primary_Command, Slot_Split_Command, Slot_Sort_Command, Distribute_Command, Return_Held_Command, Drop_Stack_Command, Quick_Move_Command, Transfer_Button_Command, Grid_Transfer_Command, Inserter_Hand_Command:
 		return slot_command_valid(value, content)
-	case Cancel_Craft_Command, Power_Switch_Command, Assembly_Command, Launch_Command, Hotbar_Slot_Command, Close_Machine_Command, Debug_Remove_Block_Command, Debug_Drop_Item_Command, Add_Player_Command, Chunk_Ready_Command, Field_Chunk_Ready_Command:
+	case Cancel_Craft_Command, Power_Switch_Command, Assembly_Command, Launch_Command, Hotbar_Slot_Command, Close_Machine_Command, Debug_Remove_Block_Command, Debug_Drop_Item_Command, Add_Player_Command, Chunk_Ready_Command, Field_Chunk_Ready_Command, Skip_Arrival_Command:
 		return true
 	}
 	return false

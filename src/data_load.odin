@@ -2,6 +2,7 @@ package game
 
 import "core:encoding/json"
 import "core:fmt"
+import "core:math"
 import "core:os"
 import "core:slice"
 import "core:strings"
@@ -89,6 +90,17 @@ Game_Config :: struct {
 	bare_ground_flatness_millimetres: int,
 	bare_ground_life_minutes:         int,
 	salvage_percent:                  int,
+	// The arrival (work item 0200, simulation_arrival.odin,
+	// render_arrival.odin): a new world's fall in ticks (0 for none), the
+	// ticks between the hit and the landing, the flames' ticks before the
+	// hit, and the fall's start above the crater's floor and its tilt; the
+	// window's look pitched up from the path, so the horizon shows.
+	arrival_ticks:                    int,
+	arrival_settle_ticks:             int,
+	arrival_flame_ticks:              int,
+	arrival_start_metres:             int,
+	arrival_angle_degrees:            int,
+	arrival_window_pitch_degrees:     int,
 }
 
 // The field's simulated chunk set: every chunk within chunk_radius chunks
@@ -525,6 +537,9 @@ validate_game_config :: proc(config: Game_Config) -> string {
 	if problem := bare_ground_problem(config); problem != "" {
 		return problem
 	}
+	if problem := arrival_problem(config); problem != "" {
+		return problem
+	}
 	return field_player_speed_problem(config.field_player, config.tick_rate)
 }
 
@@ -544,6 +559,48 @@ bare_ground_problem :: proc(config: Game_Config) -> string {
 		if bound.value < bound.minimum || bound.value > bound.maximum {
 			return fmt.tprintf("%s %d is outside %d to %d", bound.name, bound.value, bound.minimum, bound.maximum)
 		}
+	}
+	return ""
+}
+
+// The bounds of data/game.sjson's arrival values (arrival_problem, work
+// item 0200). MAXIMUM_ARRIVAL_TICKS bounds the saved fall too
+// (read_field_arrival_table).
+MAXIMUM_ARRIVAL_TICKS :: 3600
+MAXIMUM_ARRIVAL_SETTLE_TICKS :: 300
+MAXIMUM_ARRIVAL_FLAME_TICKS :: 1200
+MINIMUM_ARRIVAL_START_METRES :: 20
+MAXIMUM_ARRIVAL_START_METRES :: 4096
+MAXIMUM_ARRIVAL_ANGLE_DEGREES :: 60
+MAXIMUM_ARRIVAL_WINDOW_PITCH_DEGREES :: 60
+
+// Every arrival value inside its bound; arrival_ticks 0 is no fall, else
+// it holds the hit and the flames and one tick of descent. Last the
+// path: the camera looks along it at the crater, so its length stays
+// inside the share of the coarsest level's distance where the field's fog
+// starts (FOG_START_SHARE), or the crater would start in fog. In f64, at
+// load.
+arrival_problem :: proc(config: Game_Config) -> string {
+	least_ticks := config.arrival_settle_ticks + config.arrival_flame_ticks + 1
+	if config.arrival_ticks != 0 && (config.arrival_ticks < least_ticks || config.arrival_ticks > MAXIMUM_ARRIVAL_TICKS) {
+		return fmt.tprintf("arrival_ticks %d is neither 0 nor inside %d to %d", config.arrival_ticks, least_ticks, MAXIMUM_ARRIVAL_TICKS)
+	}
+	bounds := [?]Config_Bound {
+		{"arrival_settle_ticks", config.arrival_settle_ticks, 0, MAXIMUM_ARRIVAL_SETTLE_TICKS},
+		{"arrival_flame_ticks", config.arrival_flame_ticks, 0, MAXIMUM_ARRIVAL_FLAME_TICKS},
+		{"arrival_start_metres", config.arrival_start_metres, MINIMUM_ARRIVAL_START_METRES, MAXIMUM_ARRIVAL_START_METRES},
+		{"arrival_angle_degrees", config.arrival_angle_degrees, 0, MAXIMUM_ARRIVAL_ANGLE_DEGREES},
+		{"arrival_window_pitch_degrees", config.arrival_window_pitch_degrees, 0, MAXIMUM_ARRIVAL_WINDOW_PITCH_DEGREES},
+	}
+	for bound in bounds {
+		if bound.value < bound.minimum || bound.value > bound.maximum {
+			return fmt.tprintf("%s %d is outside %d to %d", bound.name, bound.value, bound.minimum, bound.maximum)
+		}
+	}
+	path := f64(config.arrival_start_metres) / math.cos(f64(config.arrival_angle_degrees) * math.RAD_PER_DEG)
+	fog := FOG_START_SHARE * f64(config.field_view.level_distances_metres[FIELD_COARSEST_LEVEL])
+	if path > fog {
+		return fmt.tprintf("arrival_start_metres %d at arrival_angle_degrees %d makes a path of %d m, above %d m where the coarsest level's fog starts", config.arrival_start_metres, config.arrival_angle_degrees, int(path), int(fog))
 	}
 	return ""
 }

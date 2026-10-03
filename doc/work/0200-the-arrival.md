@@ -1,6 +1,6 @@
 # 0200: The arrival: the fall, the flames, the crash, the doors open
 
-Status: implementing (2026-10-03, worktree item/0200 on the 0210 snapshot; designed 2026-10-03, approved with two changes; user, 2026-10-03: "when starting a new world the first 10 seconds is falling down towards the planet from an angle, we can see it approaching through a window, and then getting closer and flames start erupt from atmospheric drag, and then a violent crash down and the doors open"; after 0199)
+Status: verified (2026-10-03, the eight findings fixed, the fall geometry retaken at 45 degrees from 400 m with the window pitched 20 degrees up; implemented 2026-10-03; designed 2026-10-03, approved with two changes; user, 2026-10-03: "when starting a new world the first 10 seconds is falling down towards the planet from an angle, we can see it approaching through a window, and then getting closer and flames start erupt from atmospheric drag, and then a violent crash down and the doors open"; after 0199)
 
 ## Goal
 

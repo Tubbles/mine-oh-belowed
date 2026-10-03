@@ -378,7 +378,8 @@ tick_field_session_players :: proc(state: ^Simulation_State, content: Simulation
 	previous := make([]Field_Edit_Refusal, len(state.players), context.temp_allocator)
 	pressed := make([]bool, len(state.players), context.temp_allocator)
 	for index in 0 ..< len(state.players) {
-		frame := index < len(inputs) ? inputs[index] : Input_Frame{}
+		// Nothing moves a player while the world falls (0200).
+		frame := arrival_input(state.field.arrival, index < len(inputs) ? inputs[index] : Input_Frame{})
 		previous[index] = state.players[index].field_refusal
 		pressed[index] = frame.just_pressed & {.Mine, .Place} != {}
 		events := tick_field_session_player(state, content, index, frame)
@@ -392,6 +393,10 @@ tick_field_session_players :: proc(state: ^Simulation_State, content: Simulation
 			counts := index < len(state.field.refused_foundation_counts) ? state.field.refused_foundation_counts[index] : {}
 			append(&state.events, Simulation_Event{player = index, kind = .Field_Refused, field_refusal = refusal, needed = counts[0], held = counts[1]})
 		}
+	}
+	// The fall's last tick: it lands and the hatches open (0200).
+	if field_arrival_due(state.field.arrival, state.tick) {
+		land_field_arrival(state, content)
 	}
 }
 

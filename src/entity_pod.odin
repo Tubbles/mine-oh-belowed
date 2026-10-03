@@ -91,6 +91,18 @@ pod_locker :: proc(entities: ^Entities, machines: Machine_Registry) -> (locker: 
 	return NO_ENTITY, false
 }
 
+// The frame of the first alive pod in the foundations' pool order (the
+// one field_pod_spawn spawns in), for the arrival's presentation (0200).
+// found is false without a pod.
+find_pod_frame :: proc(entities: ^Entities, machines: Machine_Registry) -> (frame: Frame, found: bool) {
+	for foundation in entities.foundations.entries {
+		if foundation.alive && int(foundation.machine) < len(machines.machines) && machines.machines[foundation.machine].kind == .Pod {
+			return find_frame(&entities.frames, foundation.frame)
+		}
+	}
+	return {}, false
+}
+
 // The hatches.
 
 // A hatch's foundations' entry says whether it is open; false for any

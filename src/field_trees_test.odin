@@ -325,8 +325,11 @@ test_an_old_save_without_the_tree_table_loads_with_no_tree_felled :: proc(t: ^te
 	files := encode_save_files(state, test.content, "before trees", 0)
 	table := make([dynamic]byte, context.temp_allocator)
 	write_felled_tree_table(&table, &state.field)
+	// The arrival's table (0200) follows; a save from before the trees
+	// ends before both.
+	write_field_arrival_table(&table, &state.field)
 	end_session(test.session)
-	testing.expect(t, slice.equal(files.entities[len(files.entities) - len(table):], table[:]), "the save ends with the felled table")
+	testing.expect(t, slice.equal(files.entities[len(files.entities) - len(table):], table[:]), "the save ends with the felled and the arrival tables")
 	files.entities = files.entities[:len(files.entities) - len(table)]
 	loaded := load_test_field_save(config, content, &files)
 	defer end_session(loaded)

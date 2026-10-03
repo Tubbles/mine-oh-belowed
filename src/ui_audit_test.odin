@@ -114,6 +114,9 @@ Ui_Audit_Case :: struct {
 	// whose player has no entry yet.
 	split_screen_guest: bool,
 	waiting_for_player: bool,
+	// The pause menu during a new world's fall before its hit, with Skip
+	// arrival and without the rows that open screens (0200).
+	arrival_falling: bool,
 	// The notice of a viewport whose pad was lost (0178).
 	notice:       string,
 	// The item the configure pop-up configures (0202).
@@ -349,6 +352,8 @@ audit_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, size: Ui_Audit_Size, aud
 	}
 	screen_context.split_screen_guest = audit_case.split_screen_guest
 	screen_context.waiting_for_player = audit_case.waiting_for_player
+	screen_context.arrival_falling = audit_case.arrival_falling
+	screen_context.arrival_skippable = audit_case.arrival_falling
 	run_screens(state, screen_context)
 	if audit_case.notice != "" {
 		draw_loading_notice(state, text(audit_case.notice))
@@ -862,6 +867,7 @@ audit_touch_rows :: proc(audit: ^Ui_Audit) {
 	audit_case(audit, {name = "hud touch", hud = true, touch = true})
 	audit_case(audit, {name = "pause, split screen guest", screens = {.Pause}, split_screen_guest = true, walk_focus = true})
 	audit_case(audit, {name = "pause, split screen guest joining", screens = {.Pause}, split_screen_guest = true, waiting_for_player = true, walk_focus = true})
+	audit_case(audit, {name = "pause, arrival", screens = {.Pause}, arrival_falling = true, walk_focus = true})
 	audit_case(audit, {name = "hud, split screen pad lost", hud = true, notice = "viewport_pad_lost"})
 	simulation := &audit.simulation
 	for &assembler in simulation.world.entities.assemblers.entries {

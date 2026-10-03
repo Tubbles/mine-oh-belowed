@@ -127,6 +127,9 @@ Frame_Presentation :: struct {
 	// load.
 	field_renderer:       Field_Renderer,
 	field_renderer_ready: bool,
+	// The arrival's window shader and its sounds' memory (0200,
+	// render_arrival.odin), made with the field renderer.
+	arrival:              Arrival_Presentation,
 	// The frame's field node selection over every viewport's eye, made
 	// once (frame_field_selection) and cleared at the end of render_frame;
 	// in the temp allocator.
@@ -480,14 +483,20 @@ stamp_viewport_records :: proc(state: ^Frame_State, worlds: []Input_Frame) -> bo
 // record for its player, the records go out and come back
 // (session_network.odin), and every tick whose records are there runs,
 // once for the frame however many viewports feed it.
+// The frame's ticks stand: only offline, and only for the first
+// viewport's pausing screen (a guest's pause menu and settings run with
+// the world going on, as online) or the command socket's pause.
+session_ticks_held :: proc(state: ^Frame_State) -> bool {
+	offline := session_alone(state.session.network)
+	return offline && (ui_pauses_simulation(state.viewports[0].interaction.ui.screens) || state.developer.command_control.paused)
+}
+
 update_session :: proc(state: ^Frame_State, content: Simulation_Content) {
 	session := state.session
 	lockstep, simulation := &session.lockstep, &session.simulation
 	// A host no machine joined yet plays as single player.
 	offline := session_alone(session.network)
-	// Only the first viewport's pausing screen holds the world: a guest's
-	// pause menu and settings run with the world going on, as online.
-	holding := offline && (ui_pauses_simulation(state.viewports[0].interaction.ui.screens) || state.developer.command_control.paused)
+	holding := session_ticks_held(state)
 	fast := offline && state.developer.command_control.pending_ticks > 0
 	worlds: [MAXIMUM_VIEWPORTS]Input_Frame
 	for &viewport, index in active_viewports(state) {
@@ -772,8 +781,9 @@ draw_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, content: S
 		return
 	}
 	if session.simulation.field.enabled {
-		draw_field_viewport_world(state, viewport, content, sky)
+		view := draw_field_viewport_world(state, viewport, content, sky)
 		begin_render_pixel_drawing()
+		draw_arrival_window(&state.presentation.arrival, view, {f32(viewport.rectangle.width), f32(viewport.rectangle.height)}, session.simulation.world.settings.seed)
 		return
 	}
 	memory := &viewport.presentation.cue_memory
@@ -859,9 +869,13 @@ render_frame :: proc(state: ^Frame_State) {
 		counts, cues = draw_viewport_world(state, &state.viewports[0], content, sky, weather)
 	}
 	counts.uploaded_meshes = pending_before_upload - session.streaming.pending_jobs
-	// The sounds read the block world; a field session has none yet.
+	// The sounds read the block world; a field session has the arrival's
+	// and the hatches' (0200) until the field's cues come.
 	if viewport_player_ready(session, state.viewports[0]) && !field {
 		play_frame_sounds(&state.presentation.audio, &state.presentation.sound_memory, session_sound_frame(state, content, weather, cues))
+	}
+	if viewport_player_ready(session, state.viewports[0]) && field {
+		play_field_session_sounds(state, session)
 	}
 	switch state.developer.diagnostics_page {
 	case .Off:
@@ -885,6 +899,19 @@ render_frame :: proc(state: ^Frame_State) {
 		queue_requested_screenshot(state, index)
 	}
 	capture_pending_screenshot(state)
+}
+
+// A field session's sounds once a frame (0200): the arrival's, read at
+// the first viewport's frame (the roar fades while the ticks stand), and
+// every hatch's slide.
+play_field_session_sounds :: proc(state: ^Frame_State, session: ^Session) {
+	arrival := session.simulation.field.arrival
+	view := arrival_view(arrival, session.simulation.tick, f32(interpolation_alpha(session.accumulator)), state.config)
+	paused := session_ticks_held(state)
+	seed := session.simulation.world.settings.seed
+	memory := &state.presentation.arrival.sound_memory
+	play_arrival_sounds(&state.presentation.audio, memory, view, arrival, paused, seed)
+	play_hatch_sounds(&state.presentation.audio, memory, &session.simulation.world.entities, session.simulation.tick, seed)
 }
 
 // Sounds play once a frame, heard at the first viewport's player, with
@@ -1204,6 +1231,8 @@ make_screen_context :: proc(state: ^Frame_State, index: int) -> Screen_Context {
 	screen_context.cheat_speed = session.simulation.cheat_speed
 	screen_context.landing_pad = session.start.landing_pad
 	screen_context.particle_memory = &viewport.presentation.particle_memory
+	screen_context.arrival_falling = field_arrival_falling(session.simulation.field.arrival)
+	screen_context.arrival_skippable = field_arrival_skippable(session.simulation.field.arrival, session.simulation.tick, state.config.arrival_settle_ticks)
 	return screen_context
 }
 
@@ -1518,6 +1547,10 @@ enter_session :: proc(state: ^Frame_State, session: ^Session) {
 	if session.simulation.field.enabled {
 		start_field_presentation(state)
 	}
+	// Toggles before the entry (a loaded or joined world's) never sound;
+	// toggle_hatch stores the tick after the toggle, so a save taken on that
+	// tick holds it as tick + 1.
+	state.presentation.arrival.sound_memory = {last_hatch_tick = session.simulation.tick + 1}
 	// The world starts in the first viewport alone, its player the
 	// machine's own.
 	viewport := &state.viewports[0]

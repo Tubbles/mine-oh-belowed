@@ -443,7 +443,13 @@ rebuild_prediction :: proc(lockstep: ^Lockstep, simulation: ^Simulation_State, c
 		local.prediction = simulation.players[local.player]
 		for stamped in local.predicted_inputs {
 			if stamped.tick > simulation.tick {
-				predict_local_player(simulation, content, &local.prediction, stamped.input)
+				// Held as the tick holds it while the world falls (0200),
+				// up to the fall's last tick.
+				input := stamped.input
+				if stamped.tick <= simulation.field.arrival.start_tick + simulation.field.arrival.fall_ticks {
+					input = arrival_input(simulation.field.arrival, input)
+				}
+				predict_local_player(simulation, content, &local.prediction, input)
 			}
 		}
 	}

@@ -785,3 +785,77 @@ test_the_machine_row_keeps_its_places_at_the_deck_size :: proc(t: ^testing.T) {
 	testing.expect_value(t, sort_x[0], sort_x[1])
 	audit.simulation.players[0].open_machine = NO_ENTITY
 }
+
+// A screen frame of the audit's site with the world falling or not and
+// the fall skippable or not (Screen_Context.arrival_falling and
+// arrival_skippable, 0200).
+arrival_screen_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, input: Ui_Input, falling: bool, skippable := false) {
+	ui_begin(state, input, {1920, 1080}, 1.0 / 60, 1, 1, ui_accessibility(audit.settings))
+	screen_context := audit_screen_context(audit)
+	screen_context.arrival_falling = falling
+	screen_context.arrival_skippable = skippable
+	run_screens(state, screen_context)
+	ui_resolve(state)
+}
+
+// Before the hit the pause menu has Skip arrival and no Journal: Confirm
+// on Skip queues one Skip_Arrival_Command for the viewport's player and
+// closes the menu. In the settle second (tick 560) there is no Skip row;
+// without the fall there is none and the Journal is back.
+@(test)
+test_the_pause_menu_offers_skip_during_the_fall :: proc(t: ^testing.T) {
+	config, _ := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	arrival := Field_Arrival{fall_ticks = u64(config.arrival_ticks)}
+	testing.expect(t, field_arrival_skippable(arrival, 300, config.arrival_settle_ticks), "skippable at tick 300")
+	testing.expect(t, !field_arrival_skippable(arrival, 560, config.arrival_settle_ticks), "not skippable at tick 560")
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	state := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&state)
+	clear(&audit.simulation.player_commands)
+	skip := pause_button_id("pause_skip_arrival")
+	journal := pause_button_id("pause_journal")
+	push_screen(&state.screens, .Pause)
+	arrival_screen_frame(audit, &state, {}, false)
+	testing.expect(t, widget_index(state.widgets[:], skip) < 0, "no Skip arrival without a fall")
+	testing.expect(t, widget_index(state.widgets[:], journal) >= 0, "the Journal without a fall")
+	arrival_screen_frame(audit, &state, {}, true, false)
+	testing.expect(t, widget_index(state.widgets[:], skip) < 0, "no Skip arrival in the settle second")
+	testing.expect(t, widget_index(state.widgets[:], journal) < 0, "no Journal during the fall")
+	arrival_screen_frame(audit, &state, {}, true, true)
+	testing.expect(t, widget_index(state.widgets[:], skip) >= 0, "Skip arrival before the hit")
+	testing.expect(t, widget_index(state.widgets[:], journal) < 0, "no Journal during the fall")
+	state.requested_focus = skip
+	arrival_screen_frame(audit, &state, {device = .Gamepad, device_seen = true}, true, true)
+	testing.expect_value(t, state.focus, skip)
+	arrival_screen_frame(audit, &state, {confirm = true, confirm_down = true, device = .Gamepad, device_seen = true}, true, true)
+	testing.expect_value(t, state.screens.count, 0)
+	testing.expect_value(t, len(audit.simulation.player_commands), 1)
+	if len(audit.simulation.player_commands) == 1 {
+		queued := audit.simulation.player_commands[0]
+		_, is_skip := queued.command.(Skip_Arrival_Command)
+		testing.expect(t, is_skip)
+		testing.expect_value(t, queued.player, 0)
+	}
+}
+
+// During the fall the inventory binding opens nothing and Pause still
+// opens the menu; after the landing the inventory binding opens the
+// inventory (the approval of 0200).
+@(test)
+test_the_screens_are_held_during_the_fall :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	state := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&state)
+	arrival_screen_frame(audit, &state, {open_inventory = true}, true)
+	testing.expect_value(t, top_screen(state.screens), Screen.None)
+	arrival_screen_frame(audit, &state, {open_map = true}, true)
+	testing.expect_value(t, top_screen(state.screens), Screen.None)
+	arrival_screen_frame(audit, &state, {pause = true}, true)
+	testing.expect_value(t, top_screen(state.screens), Screen.Pause)
+	state.screens.count = 0
+	arrival_screen_frame(audit, &state, {}, false)
+	arrival_screen_frame(audit, &state, {open_inventory = true}, false)
+	testing.expect_value(t, top_screen(state.screens), Screen.Inventory)
+}

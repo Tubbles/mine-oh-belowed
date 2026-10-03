@@ -630,6 +630,10 @@ start_planet_preview_session :: proc(config: Game_Config, content: Game_Content,
 		end_session(session)
 		return nil, "the data has no planet to preview"
 	}
+	if problem == "" {
+		// The preview's walk has no fall (0200).
+		session.simulation.field.arrival = {}
+	}
 	return session, problem
 }
 

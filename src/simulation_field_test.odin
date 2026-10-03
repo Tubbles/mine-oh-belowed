@@ -35,15 +35,11 @@ start_field_test_session :: proc(config: Game_Config, content: Game_Content, rad
 	return session
 }
 
-// Opens the pod's closed hatches, as the end of the fall will (0200), so
-// a script walks out of the cabin (0198: a new world starts with them
-// closed).
+// Opens the pod's closed hatches, as the end of the fall does
+// (land_field_arrival), so a script walks out of the cabin (0198: a new
+// world of the tests starts with them closed and no fall).
 open_test_pod_hatches :: proc(state: ^Simulation_State, machines: Machine_Registry) {
-	for entry in state.world.entities.foundations.entries {
-		if entry.alive && machines.machines[entry.machine].kind == .Hatch && !entry.hatch_open {
-			toggle_hatch(&state.world.entities, machines, entry.handle, state.tick, nil)
-		}
-	}
+	open_closed_hatches(state, machines)
 }
 
 field_test_content :: proc(session: ^Session, content: Game_Content) -> Simulation_Content {

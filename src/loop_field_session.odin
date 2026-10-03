@@ -41,6 +41,10 @@ Field_Scene :: struct {
 	frame:        Model_Frame,
 	viewer:       int,
 	lockstep:     ^Lockstep,
+	// The arrival's descent (0200): every viewer is inside the pod, whose
+	// hull would hide the window's view, so the frames, the machines, the
+	// players and the ghosts are not drawn.
+	hide_frames:  bool,
 }
 
 // A player as the scene draws it: the prediction of a local one while the
@@ -145,6 +149,7 @@ start_field_presentation :: proc(state: ^Frame_State) -> bool {
 	}
 	state.presentation.field_renderer = renderer
 	state.presentation.field_renderer_ready = true
+	state.presentation.arrival = init_arrival_presentation(state.data_directory)
 	return true
 }
 
@@ -153,6 +158,7 @@ stop_field_presentation :: proc(presentation: ^Frame_Presentation) {
 		destroy_field_renderer(&presentation.field_renderer)
 	}
 	presentation.field_renderer_ready = false
+	destroy_arrival_presentation(&presentation.arrival)
 }
 
 // A rotation that takes the up to +y, so the sky drawn round +y stands
@@ -274,13 +280,17 @@ draw_field_scene :: proc(scene: Field_Scene, camera: rl.Camera3D, selection: []F
 	set_field_scene_point_lights(scene, camera)
 	draw_field(scene.renderer, camera, selection)
 	world := &scene.state.world
-	draw_frames(&world.entities, scene.content.machines)
-	draw_entities(world, scene.content.machines, scene.models, scene.content.items, scene.frame)
+	if !scene.hide_frames {
+		draw_frames(&world.entities, scene.content.machines)
+		draw_entities(world, scene.content.machines, scene.models, scene.content.items, scene.frame)
+	}
 	draw_field_trees(scene, camera)
 	draw_belt_runs(scene.belts, &world.entities, scene.content.machines, scene.content.items, scene.state.tick, scene.state.tick_rate)
 	draw_field_torches(scene.state.field.torches[:], scene.state.field.spacing_millimetres)
-	draw_field_players(scene)
-	draw_field_ghosts(scene)
+	if !scene.hide_frames {
+		draw_field_players(scene)
+		draw_field_ghosts(scene)
+	}
 }
 
 // The sky about the camera's up, before the scene.
@@ -298,16 +308,48 @@ field_viewport_camera :: proc(state: ^Frame_State, viewport: ^Viewport, player: 
 	return camera
 }
 
+// The viewport's camera during the arrival (0200, render_arrival.odin):
+// on the tilted path to the resting eye during the descent, along the
+// pod's axes (the player's without a pod); shaken after the hit unless
+// motion is reduced. Stored for the HUD's projections as
+// field_viewport_camera stores it.
+arrival_viewport_camera :: proc(state: ^Frame_State, viewport: ^Viewport, player: Player, camera: rl.Camera3D, view: Arrival_View, pod: Frame, pod_found: bool, alpha: f32) -> rl.Camera3D {
+	camera := camera
+	switch view.phase {
+	case .None:
+		return camera
+	case .Descent:
+		up, forward := unit_vector_to_f32(player.field.up), unit_vector_to_f32(player.field.forward)
+		if pod_found {
+			up, forward = unit_vector_to_f32(pod.axes[FRAME_UP]), unit_vector_to_f32(pod.axes[FRAME_FORWARD])
+		}
+		eye := world_position_to_metres(field_player_view(player.field, state.session.field_content.tuning, alpha).eye)
+		camera = arrival_descent_camera(eye, view, up, forward, state.config, state.settings.field_of_view)
+	case .Settled:
+		if state.settings.reduced_motion {
+			return camera
+		}
+		position, look := arrival_shake_offset(view.seconds_since_hit, state.session.simulation.world.settings.seed)
+		camera.position += position
+		camera.target += position + look
+	}
+	viewport.presentation.camera = camera
+	return camera
+}
+
 // One viewport of a field session, with the field camera's clip planes
-// (the block world's are restored after).
-draw_field_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, content: Simulation_Content, sky: Day_Sky) {
+// (the block world's are restored after). Returns the arrival's view for
+// the window overlay drawn after the 3D pass (draw_arrival_window).
+draw_field_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, content: Simulation_Content, sky: Day_Sky) -> Arrival_View {
 	session := state.session
 	if !state.presentation.field_renderer_ready {
-		return
+		return {}
 	}
 	alpha := f32(interpolation_alpha(session.accumulator))
 	player := lockstep_view_player(&session.lockstep, &session.simulation, viewport.player)
-	camera := field_viewport_camera(state, viewport, player, alpha)
+	view := arrival_view(session.simulation.field.arrival, session.simulation.tick, alpha, state.config)
+	pod, pod_found := find_pod_frame(&session.simulation.world.entities, content.machines)
+	camera := arrival_viewport_camera(state, viewport, player, field_viewport_camera(state, viewport, player, alpha), view, pod, pod_found, alpha)
 	near, far := rlgl.GetCullDistanceNear(), rlgl.GetCullDistanceFar()
 	defer rlgl.SetClipPlanes(near, far)
 	draw_field_sky(&state.presentation.renderer.sky, camera, sky, viewport.presentation.particle_memory.satellite)
@@ -322,10 +364,15 @@ draw_field_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, cont
 		frame        = Model_Frame{world = &session.simulation.world, tick = session.simulation.tick, alpha = alpha, tick_rate = session.simulation.tick_rate, day_factor = day_factor(sky.blend), sky_tint = color_to_vector3(sky.colors.sun_tint), open_sky = true, reaching_arm = NO_ENTITY},
 		viewer       = viewport.player,
 		lockstep     = &session.lockstep,
+		hide_frames  = view.phase == .Descent,
 	}
 	rl.BeginMode3D(camera)
 	draw_field_scene(scene, camera, frame_field_selection(state))
+	if view.phase == .Settled && pod_found {
+		draw_arrival_dust(pod, view, session.simulation.world.settings.seed, rl.ColorBrightness(field_globe_color(session.planet.palette), 0.3))
+	}
 	rl.EndMode3D()
+	return view
 }
 
 // Before the viewports draw: the finished meshes up, the trees round the

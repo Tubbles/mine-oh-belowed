@@ -1,5 +1,6 @@
 package game
 
+import "core:strings"
 import "core:testing"
 
 @(test)
@@ -56,4 +57,22 @@ test_android_assets_current_compares_the_build_stamp :: proc(t: ^testing.T) {
 	testing.expect(t, android_assets_current("abc1234 2026-09-29T12:00Z\n", "abc1234 2026-09-29T12:00Z"))
 	testing.expect(t, !android_assets_current("abc1234 2026-09-29T12:00Z", "def5678 2026-09-29T13:00Z"))
 	testing.expect(t, !android_assets_current("", "abc1234 2026-09-29T12:00Z"))
+}
+
+// The arrival's values (0200): the shipped ones pass, a path past the
+// coarsest level's fog fails naming the path, a fall too short for its
+// hit and flames fails, and no fall passes.
+@(test)
+test_arrival_values_are_bounded :: proc(t: ^testing.T) {
+	config, _ := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	testing.expect_value(t, arrival_problem(config), "")
+	high := config
+	high.arrival_start_metres = 700
+	testing.expect(t, strings.contains(arrival_problem(high), "makes a path of"), "700 m at 30 degrees names the path")
+	short := config
+	short.arrival_ticks = 200
+	testing.expect(t, strings.contains(arrival_problem(short), "arrival_ticks"), "200 ticks cannot hold the hit and the flames")
+	none := config
+	none.arrival_ticks = 0
+	testing.expect_value(t, arrival_problem(none), "")
 }

@@ -31,6 +31,10 @@ loop. This script only writes the files, one per id below:
   the landing thud and the chime of a discovered ore.
 - mission_control_chime: two short rising notes as a Mission Control line
   starts on the HUD (work item 0069).
+- arrival_roar, arrival_crash: the drag's low roar loop as the pod falls
+  and the thump of its hit (work item 0200).
+- hatch_slide: a hatch sliding open or shut, a hiss over a low rumble
+  (work item 0200).
 
 A loop ends where it starts: its tail is crossfaded into its head, and
 its tones have a whole number of cycles over the loop. The whole set is a
@@ -242,6 +246,20 @@ def mission_control_chime() -> list:
     return normalised(mix((first, 1.0), (second, 1.0)), 0.4)
 
 
+def arrival_crash() -> list:
+    # A falling low thump under a burst of debris (work item 0200).
+    thump = shaped(sweep(40.0, 25.0, 0.9), 0.004, 0.35)
+    debris = shaped(band_noise("arrival_crash", 1.4, 80.0, 2500.0), 0.002, 0.5)
+    return normalised(mix((thump, 1.0), (debris, 0.6)), 0.85)
+
+
+def hatch_slide() -> list:
+    # A hiss of air over the low rumble of the sliding door (work item 0200).
+    hiss = shaped(band_noise("hatch_slide", 0.9, 1500.0, 6000.0), 0.02, 0.4)
+    rumble = shaped(band_noise("hatch_slide_rumble", 0.8, 60.0, 300.0), 0.05, 0.4)
+    return normalised(mix((hiss, 0.6), (rumble, 1.0)), 0.6)
+
+
 # Loops.
 
 
@@ -308,6 +326,11 @@ def ambience_water() -> list:
     return normalised(seamless([sample * gain for sample, gain in zip(lapping, waves)]), 0.4)
 
 
+def arrival_roar() -> list:
+    # The drag's low roar while the pod falls (work item 0200).
+    return normalised(seamless(loop_noise("arrival_roar", 4.0, 30.0, 600.0)), 0.6)
+
+
 def rain() -> list:
     hiss = seamless(loop_noise("rain", 4.0, 1000.0, 6000.0))
     patter = seamless(loop_noise("rain_patter", 4.0, 300.0, 2000.0))
@@ -334,6 +357,9 @@ def sound_set() -> dict:
     sounds["capsule_landing"] = capsule_landing()
     sounds["discovery_chime"] = discovery_chime()
     sounds["mission_control_chime"] = mission_control_chime()
+    sounds["arrival_roar"] = arrival_roar()
+    sounds["arrival_crash"] = arrival_crash()
+    sounds["hatch_slide"] = hatch_slide()
     return sounds
 
 

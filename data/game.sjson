@@ -132,6 +132,25 @@ belt_runs = {
 bare_ground_flatness_millimetres = 250
 bare_ground_life_minutes = 60
 salvage_percent = 80
+// The arrival (work item 0200, doc/content.md, The arrival): a new world's
+// first arrival_ticks (0 for no fall, else up to 3600 and more than the
+// settle and flame ticks together) are the pod's fall, the players held
+// in its cabin; at the last one the hatches open. The hit comes
+// arrival_settle_ticks (0 to 300) before that, the flames rise over the
+// arrival_flame_ticks (0 to 1200) before the hit. The fall starts
+// arrival_start_metres (20 to 4096) above the crater's floor on a path
+// tilted arrival_angle_degrees (0 to 60) from the crater's up; the path,
+// arrival_start_metres over the angle's cosine, stays inside 0.6 of
+// field_view.level_distances_metres' last entry, where the far terrain's
+// fog starts. The window's view looks along the path pitched up by
+// arrival_window_pitch_degrees (0 to 60), so the horizon shows in the
+// window's upper part and the crater below its centre.
+arrival_ticks = 600
+arrival_settle_ticks = 60
+arrival_flame_ticks = 240
+arrival_start_metres = 400
+arrival_angle_degrees = 45
+arrival_window_pitch_degrees = 20
 // The field session (work item 0179, doc/content.md, World): every
 // machine simulates the terrain field's chunks within chunk_radius chunks
 // of each player's chunk on each axis (a chunk is 32 samples, 32 m at

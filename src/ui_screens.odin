@@ -70,6 +70,12 @@ Screen_Context :: struct {
 	// the pause menu (Resume, Settings, Leave split screen) and the settings
 	// run (WAITING_PLAYER_SCREENS).
 	waiting_for_player: bool,
+	// The world's fall runs (0200): no screen binding but Pause opens a
+	// screen and the pause menu opens none.
+	arrival_falling: bool,
+	// The fall is before its hit (field_arrival_skippable): the pause menu
+	// offers Skip arrival.
+	arrival_skippable: bool,
 	// Nil without a world. On the session, not in requests: the frame's
 	// ticks take it (save_when_due).
 	save_requested:  ^bool,
@@ -159,10 +165,17 @@ Developer_Context :: struct {
 // except on the gamepad, where the same X press is the context action;
 // Open_Recipes closes the recipe browser. The pause menu opens neither
 // the recipe browser nor the technology screen: the inventory's tab strip
-// reaches them (work item 0094).
-handle_screen_keys :: proc(state: ^Ui_State) {
+// reaches them (work item 0094). While the world falls (only_pause, 0200)
+// Pause is the one binding that opens a screen from the world.
+handle_screen_keys :: proc(state: ^Ui_State, only_pause := false) {
 	input := state.input
 	if state.screens.count == 0 {
+		if only_pause {
+			if input.pause {
+				push_screen(&state.screens, .Pause)
+			}
+			return
+		}
 		switch {
 		case input.pause:
 			push_screen(&state.screens, .Pause)
@@ -270,7 +283,7 @@ run_screens :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	// and the screen change land in the same frame. While the keyboard is
 	// open, Back and Pause belong to it.
 	if !typing {
-		handle_screen_keys(state)
+		handle_screen_keys(state, screen_context.arrival_falling)
 	}
 	if screen_context.waiting_for_player {
 		keep_waiting_player_screens(&state.screens)
@@ -329,7 +342,9 @@ pause_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	waiting := screen_context.waiting_for_player
 	developer := !waiting && (screen_context.developer.enabled || (screen_context.settings != nil && screen_context.settings.developer_mode))
 	guest := screen_context.split_screen_guest
-	button_count := (developer ? 9 : 8) - (guest ? 1 : 0) - (waiting ? 4 : 0)
+	// During the fall the journal, the power overview and the statistics
+	// rows go (0200), and Skip arrival shows while the fall is skippable.
+	button_count := (developer ? 9 : 8) - (guest ? 1 : 0) - (waiting ? 4 : 0) - (!waiting && screen_context.arrival_falling ? 3 : 0) + (!waiting && screen_context.arrival_skippable ? 1 : 0)
 	// The title row and the build stamp row besides the buttons; below the
 	// title the rows scroll when the panel is clamped to the safe area.
 	panel := fitted_panel(area, PAUSE_PANEL_WIDTH, panel_height(button_count, 2 * (UI_ROW_HEIGHT + UI_GAP)))
@@ -381,9 +396,33 @@ pause_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	ui_glyph_bar_or_back_row(state, hints[:])
 }
 
-// The pause menu's rows that read the player's world: the journal, the
-// power overview, the statistics and the save.
+// The pause menu's rows that read the player's world: Skip arrival
+// while a new world's fall is skippable, the journal, the power overview
+// and the statistics (none of them during the fall, when only the pause
+// menu opens) and the save.
 pause_world_buttons :: proc(state: ^Ui_State, content: ^Ui_Rectangle, screen_context: Screen_Context) {
+	// Any player may end the fall; it ends for all (0200). The menu closes,
+	// so an offline world's ticks run again and apply it.
+	if screen_context.arrival_skippable {
+		if ui_button(state, cut_top(content, UI_ROW_HEIGHT), text("pause_skip_arrival")) && screen_context.player_commands != nil {
+			queue_player_command(screen_context.player_commands, screen_context.player_index, Skip_Arrival_Command{})
+			state.screens.count = 0
+		}
+		cut_top(content, UI_GAP)
+	}
+	if !screen_context.arrival_falling {
+		pause_screen_buttons(state, content)
+	}
+	// The frame loop writes the save after this frame's ticks and toasts.
+	if ui_button(state, cut_top(content, UI_ROW_HEIGHT), text("pause_save")) && screen_context.save_requested != nil {
+		screen_context.save_requested^ = true
+	}
+	cut_top(content, UI_GAP)
+}
+
+// The pause menu's rows that open a screen in its place: the journal,
+// the power overview and the production statistics.
+pause_screen_buttons :: proc(state: ^Ui_State, content: ^Ui_Rectangle) {
 	// The journal replaces the pause menu, so the factory keeps running.
 	if ui_button(state, cut_top(content, UI_ROW_HEIGHT), text("pause_journal")) {
 		state.screens.count = 0
@@ -400,11 +439,6 @@ pause_world_buttons :: proc(state: ^Ui_State, content: ^Ui_Rectangle, screen_con
 	if ui_button(state, cut_top(content, UI_ROW_HEIGHT), text("pause_statistics")) {
 		state.screens.count = 0
 		push_screen(&state.screens, .Statistics)
-	}
-	cut_top(content, UI_GAP)
-	// The frame loop writes the save after this frame's ticks and toasts.
-	if ui_button(state, cut_top(content, UI_ROW_HEIGHT), text("pause_save")) && screen_context.save_requested != nil {
-		screen_context.save_requested^ = true
 	}
 	cut_top(content, UI_GAP)
 }

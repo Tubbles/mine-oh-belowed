@@ -115,6 +115,8 @@ Player_Command_Tag :: enum u8 {
 	Grid_Transfer,
 	Inserter_Hand,
 	Foundation_Block,
+	// The pause menu's Skip arrival (0200).
+	Skip_Arrival,
 }
 
 // A player a client's machine drives, on the host: the newest tick
@@ -330,6 +332,8 @@ encode_player_command :: proc(bytes: ^[dynamic]byte, command: Player_Command) {
 		write_tagged_command(bytes, .Inserter_Hand, variant)
 	case Foundation_Block_Command:
 		write_tagged_command(bytes, .Foundation_Block, variant)
+	case Skip_Arrival_Command:
+		write_tagged_command(bytes, .Skip_Arrival, variant)
 	case Add_Player_Command, Chunk_Ready_Command, Field_Chunk_Ready_Command:
 		panic("a join's entry and a chunk arrival are never relayed")
 	}
@@ -397,6 +401,8 @@ decode_player_command :: proc(reader: ^Byte_Reader) -> (command: Player_Command,
 		return read_command_value(reader, Inserter_Hand_Command)
 	case .Foundation_Block:
 		return read_command_value(reader, Foundation_Block_Command)
+	case .Skip_Arrival:
+		return read_command_value(reader, Skip_Arrival_Command)
 	}
 	return nil, false
 }
