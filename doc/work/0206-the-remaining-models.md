@@ -1,6 +1,6 @@
 # 0206: The remaining machines, the arm and the player in the new models
 
-Status: todo (0204 and 0205; after 0198, so the pod's model is written once, with the kit)
+Status: todo (on hold, user, 2026-10-03: the models are redone one machine at a time under supervision, 0211 and 0212, never in a batch; this item keeps only the voxel reader's removal once every model is OBJ; 0204 and 0205; after 0198, so the pod's model is written once, with the kit)
 
 ## Goal
 
