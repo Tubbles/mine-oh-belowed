@@ -17,7 +17,7 @@ make_field_test_game_content :: proc() -> Game_Content {
 		planets            = shipped_test_planets(),
 	}
 	content.field_materials = test_field_materials(content.items)
-	lighting, problem := parse_lighting_file(#load("../data/lighting.sjson"), LIGHTING_FILE_NAME)
+	lighting, problem := parse_lighting_file(#load("../data/lighting.sjson"), LIGHTING_FILE_NAME, context.temp_allocator)
 	assert(problem == "", problem)
 	content.lighting = lighting
 	return content

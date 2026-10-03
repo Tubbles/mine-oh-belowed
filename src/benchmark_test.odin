@@ -93,7 +93,7 @@ test_benchmark_world_is_a_flat_lit_floor :: proc(t: ^testing.T) {
 
 // The field of the benchmark from the shipped planet and tables.
 test_benchmark_field :: proc(items: Item_Registry) -> Benchmark_Field {
-	lighting, problem := parse_lighting_file(#load("../data/lighting.sjson"), LIGHTING_FILE_NAME)
+	lighting, problem := parse_lighting_file(#load("../data/lighting.sjson"), LIGHTING_FILE_NAME, context.temp_allocator)
 	assert(problem == "", problem)
 	return Benchmark_Field{planet = shipped_test_planets()[0], materials = test_field_materials(items), lighting = lighting}
 }

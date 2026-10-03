@@ -109,14 +109,19 @@ missing_lighting_key_problem :: proc(tree: json.Object, source: string) -> strin
 // Held to the configuration's strict keys, every key required. The slices
 // and strings are temporary: the world keeps the tuning made from them
 // (make_field_light_tuning) and the caller the levels it needs.
-parse_lighting_file :: proc(data: []byte, source: string) -> (lighting: Lighting_File, problem: string) {
+// The file's lists (the falloff, the emitters and their ids) live in
+// allocator, the content's arena when the tables load: the frame's
+// temporary memory is freed at the end of the frame, and a world started
+// from the title reads the emitters frames after the load (a new world
+// crashed in find_lighting_emitter on 2026-10-03, doc/log/2026-10-03.md).
+parse_lighting_file :: proc(data: []byte, source: string, allocator := context.allocator) -> (lighting: Lighting_File, problem: string) {
 	tree, parse_problem := parse_configuration_layer(data, source, context.temp_allocator)
 	if parse_problem != "" {
 		return {}, parse_problem
 	}
 	provenance := make(Configuration_Provenance, context.temp_allocator)
 	provenance[""] = source
-	if problem = assign_configuration_value(any{&lighting, typeid_of(Lighting_File)}, json.Value(tree), "", provenance, context.temp_allocator); problem != "" {
+	if problem = assign_configuration_value(any{&lighting, typeid_of(Lighting_File)}, json.Value(tree), "", provenance, allocator); problem != "" {
 		return {}, problem
 	}
 	if problem = missing_lighting_key_problem(tree, source); problem != "" {
@@ -128,10 +133,10 @@ parse_lighting_file :: proc(data: []byte, source: string) -> (lighting: Lighting
 	return lighting, ""
 }
 
-load_lighting_file :: proc(data_directory: string) -> (lighting: Lighting_File, ok: bool) {
+load_lighting_file :: proc(data_directory: string, allocator := context.allocator) -> (lighting: Lighting_File, ok: bool) {
 	data, path := read_logged_data_file(data_directory, LIGHTING_FILE_NAME) or_return
 	problem: string
-	if lighting, problem = parse_lighting_file(data, path); problem != "" {
+	if lighting, problem = parse_lighting_file(data, path, allocator); problem != "" {
 		platform.log_printf("error: invalid %s", problem)
 		return {}, false
 	}

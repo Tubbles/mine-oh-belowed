@@ -10,7 +10,7 @@ LIGHT_TEST_SPACINGS :: [3]int{333, 500, 1000}
 LIGHT_TEST_STONE :: Field_Sample{MAXIMUM_DENSITY, .Stone, 0}
 
 test_lighting_file :: proc() -> Lighting_File {
-	lighting, problem := parse_lighting_file(#load("../data/lighting.sjson"), LIGHTING_FILE_NAME)
+	lighting, problem := parse_lighting_file(#load("../data/lighting.sjson"), LIGHTING_FILE_NAME, context.temp_allocator)
 	assert(problem == "", problem)
 	return lighting
 }

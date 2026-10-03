@@ -1,5 +1,6 @@
 package game
 
+import "core:mem"
 import "core:strings"
 import "core:testing"
 
@@ -14,7 +15,7 @@ test_the_lighting_file_parses_and_names_the_torch_and_the_lamp :: proc(t: ^testi
 @(test)
 test_the_lighting_file_refuses_what_would_break_the_fill :: proc(t: ^testing.T) {
 	valid := "falloff = [24, 18, 12, 6]\ndark_level = 24\nsteps_per_tick = 100\nchunk_seeds_per_tick = 2\nemitters = [{id = \"torch\", level = 192}, {id = \"lamp\", level = 255}]\n"
-	_, problem := parse_lighting_file(transmute([]byte)valid, "lighting.sjson")
+	_, problem := parse_lighting_file(transmute([]byte)valid, "lighting.sjson", context.temp_allocator)
 	testing.expect_value(t, problem, "")
 	cases := [?]struct {
 		text:     string,
@@ -32,7 +33,7 @@ test_the_lighting_file_refuses_what_would_break_the_fill :: proc(t: ^testing.T) 
 		{"falloff = [24]\ndark_level = 24\nsteps_per_tick = 100\nchunk_seeds_per_tick = 2\nemitters = [{id = \"torch\", level = 9}]\n", "emitters has no lamp"},
 	}
 	for entry in cases {
-		_, problem = parse_lighting_file(transmute([]byte)entry.text, "lighting.sjson")
+		_, problem = parse_lighting_file(transmute([]byte)entry.text, "lighting.sjson", context.temp_allocator)
 		testing.expectf(t, strings.contains(problem, entry.expected), "%q: %q", entry.expected, problem)
 	}
 }
@@ -53,4 +54,23 @@ test_the_falloff_scales_with_the_spacing :: proc(t: ^testing.T) {
 	}
 	testing.expect_value(t, field_light_step_loss(24, 333), 8)
 	testing.expect_value(t, field_light_step_loss(1, 333), 1)
+}
+
+// A new world started from the title read the emitters frames after
+// the tables loaded and crashed (2026-10-03): the file's lists must live
+// in the caller's allocator, never in the frame's temporary memory.
+@(test)
+test_the_lighting_file_lives_in_the_callers_allocator :: proc(t: ^testing.T) {
+	tracking: mem.Tracking_Allocator
+	mem.tracking_allocator_init(&tracking, context.temp_allocator)
+	defer mem.tracking_allocator_destroy(&tracking)
+	lighting, problem := parse_lighting_file(#load("../data/lighting.sjson"), LIGHTING_FILE_NAME, mem.tracking_allocator(&tracking))
+	testing.expect_value(t, problem, "")
+	testing.expect(t, len(lighting.emitters) > 0 && len(lighting.falloff) > 0)
+	_, emitters_tracked := tracking.allocation_map[raw_data(lighting.emitters)]
+	_, falloff_tracked := tracking.allocation_map[raw_data(lighting.falloff)]
+	_, id_tracked := tracking.allocation_map[raw_data(lighting.emitters[0].id)]
+	testing.expect(t, emitters_tracked, "the emitters are not in the caller's allocator")
+	testing.expect(t, falloff_tracked, "the falloff is not in the caller's allocator")
+	testing.expect(t, id_tracked, "an emitter's id is not in the caller's allocator")
 }
