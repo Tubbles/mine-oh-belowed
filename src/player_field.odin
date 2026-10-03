@@ -15,7 +15,12 @@ package game
 // on steeper ground the walk loses its uphill part and slows with the
 // grade, and gravity slides the player down at up to the slide speed. Jump
 // on walkable ground rises the jump height, or, walking into a ledge up to
-// the mantle height, lifts onto it.
+// the mantle height, lifts onto it. The ground is steep only when it is
+// steep across the footprint too (the plane through the ground heights at
+// the feet and a radius round them, 0203), an impeded walk also tries the
+// same move a step height higher and keeps the farther one that ends on
+// walkable ground, and steep ground with walkable ground a step up and a
+// stride ahead is stepped onto instead of slid down.
 
 VELOCITY_FRACTION_ONE :: 65536
 // Full stick in Field_Player_Input.move.
@@ -29,11 +34,9 @@ FIELD_PENETRATION_TOLERANCE :: POSITION_UNITS_PER_METRE / 256
 // a quarter, so on_ground cannot toggle every tick.
 FIELD_GROUND_LAND_SPACING_DIVISOR :: 16
 FIELD_GROUND_LEAVE_SPACING_DIVISOR :: 4
-// field_push_direction's thresholds: no cosine is below the first, so
-// every contact pushes along its normal; a contact flatter than the second
-// is a floor.
+// field_push_direction's threshold below every cosine, so every contact
+// pushes along its normal.
 FIELD_PUSH_ALONG_NORMAL :: -2 * UNIT_VECTOR_ONE
-FIELD_FLOOR_COSINE :: UNIT_VECTOR_ONE * 99 / 100
 // Passes over the capsule's spheres per collision step.
 FIELD_COLLISION_ITERATIONS :: 4
 // Sphere tracing steps of a drop onto the ground, each at most half a
@@ -42,6 +45,12 @@ FIELD_DROP_ITERATIONS :: 64
 // A walk is blocked (and tries the step) when it went less than this
 // fraction of its displacement, in 1/4.
 FIELD_BLOCKED_QUARTERS :: 2
+// A walk is impeded (and tries the move a step higher) when it went less
+// than this fraction of its displacement, in 1/16.
+FIELD_IMPEDED_SIXTEENTHS :: 15
+// The feet and the four points a capsule radius ahead, behind, right and
+// left of them, where the footprint's ground heights are probed.
+FIELD_FOOTPRINT_POINT_COUNT :: 5
 FIELD_PITCH_LIMIT :: 89 * ANGLE_UNITS_PER_TURN / 360
 
 Field_Player_Button :: enum u8 {
@@ -172,6 +181,14 @@ Field_Ground :: struct {
 	cosine:   i64,
 	// The feet above the ground straight under them, negative inside it.
 	below:    i64,
+}
+
+// The ground heights over the ground under the feet (along the up,
+// position units) at offsets across the up (along the forward and the
+// right, position units).
+Field_Footprint :: struct {
+	offsets: [FIELD_FOOTPRINT_POINT_COUNT][2]i64,
+	heights: [FIELD_FOOTPRINT_POINT_COUNT]i64,
 }
 
 speed_to_velocity :: proc(millimetres_per_second: int, tick_rate: int) -> i64 {
@@ -392,7 +409,7 @@ field_capsule_overlaps :: proc(world: ^Field_World, frames: ^Frame_Table, tuning
 // up lies below flatten_below pushes along the tangent plane only: the
 // walk flattens what is steeper than walkable, so walking into it never
 // lifts the player (gravity's move slides down it with the full normal),
-// and the settle flattens all but a floor. A ceiling keeps its normal.
+// and the settle does the same. A ceiling keeps its normal.
 // depth comes back as the push along that way.
 field_push_direction :: proc(normal, up: [3]i64, depth, flatten_below: i64) -> (direction: [3]i64, push: i64) {
 	if fixed_dot(normal, up) >= flatten_below {
@@ -494,6 +511,112 @@ probe_field_ground :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Fi
 		return {}
 	}
 	return {on = true, walkable = cosine >= tuning.walkable_cosine, normal = normal, cosine = cosine, below = over}
+}
+
+// The least squares plane through the footprint's heights, as its normal
+// in the footprint's frame (x along the first offset axis, y along the
+// up, z along the second) in UNIT_VECTOR_ONE. A bump narrower than the
+// offsets raises the plane without tilting it. Offsets up to 2^13 and
+// heights up to 2^16 position units keep the products inside an i64.
+footprint_plane_normal :: proc(footprint: Field_Footprint) -> [3]i64 {
+	sum_offset: [2]i64
+	sum_height: i64
+	for index in 0 ..< FIELD_FOOTPRINT_POINT_COUNT {
+		sum_offset += footprint.offsets[index]
+		sum_height += footprint.heights[index]
+	}
+	mean_offset := sum_offset / FIELD_FOOTPRINT_POINT_COUNT
+	mean_height := sum_height / FIELD_FOOTPRINT_POINT_COUNT
+	xx, xz, zz, xh, zh: i64
+	for index in 0 ..< FIELD_FOOTPRINT_POINT_COUNT {
+		offset := footprint.offsets[index] - mean_offset
+		height := footprint.heights[index] - mean_height
+		xx += offset.x * offset.x
+		xz += offset.x * offset.y
+		zz += offset.y * offset.y
+		xh += offset.x * height
+		zh += offset.y * height
+	}
+	// The slopes are these over the determinant.
+	determinant := xx * zz - xz * xz
+	if determinant <= 0 {
+		return {0, UNIT_VECTOR_ONE, 0}
+	}
+	normal := shift_below_unit_scale({-(xh * zz - zh * xz), determinant, -(zh * xx - xh * xz)})
+	unit, _ := normalize_fixed(normal)
+	return unit
+}
+
+// The vector shifted down until no component reaches 2^30, so
+// normalize_fixed's product with UNIT_VECTOR_ONE stays inside an i64.
+shift_below_unit_scale :: proc(vector: [3]i64) -> [3]i64 {
+	result := vector
+	for max(abs(result.x), abs(result.y), abs(result.z)) >= VECTOR_LENGTH_EXACT_LIMIT {
+		result = {result.x >> 1, result.y >> 1, result.z >> 1}
+	}
+	return result
+}
+
+// The ground's height over base (the ground under the feet) at a point
+// offset across the up: a ray down from the step height (at least a
+// sample) over it, twice that long, and the ray's end without ground on
+// it. clear is false when the ray starts inside the ground, a face taller
+// than the step, which no plane through the footprint stands for.
+field_ground_height_at :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Field_Player_Tuning, base: World_Position, up, offset: [3]i64) -> (height: i64, clear: bool) {
+	lift := max(tuning.step_height, sample_axis_to_position(1, tuning.spacing_millimetres))
+	origin := base + World_Position(offset + fixed_scale(up, lift))
+	hit := field_solid_raycast(world, frames, tuning.spacing_millimetres, origin, -up, 2 * lift)
+	if !hit.hit {
+		return -lift, true
+	}
+	return lift - hit.distance, hit.distance > 0
+}
+
+// The ground heights over the ground under the feet, there and a capsule
+// radius ahead, behind, right and left of it; found is false beside a
+// face taller than the step.
+probe_field_footprint :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Field_Player_Tuning, feet: World_Position, up, forward: [3]i64, ground: Field_Ground) -> (footprint: Field_Footprint, found: bool) {
+	radius := tuning.capsule_radius
+	right := fixed_cross(forward, up)
+	base := feet - World_Position(fixed_scale(up, ground.below + field_resting_height(tuning, ground.cosine)))
+	footprint.offsets = {{0, 0}, {radius, 0}, {-radius, 0}, {0, radius}, {0, -radius}}
+	for index in 1 ..< FIELD_FOOTPRINT_POINT_COUNT {
+		across := footprint.offsets[index]
+		offset := fixed_scale(forward, across.x) + fixed_scale(right, across.y)
+		height, clear := field_ground_height_at(world, frames, tuning, base, up, offset)
+		if !clear {
+			return footprint, false
+		}
+		footprint.heights[index] = height
+	}
+	return footprint, true
+}
+
+// Steep ground under the feet is judged again over the footprint: the
+// flatter of the two planes is the ground's, so a bump narrower than the
+// capsule is walkable and only ground steep across it slides, while the
+// feet's plane keeps a player at a drop's edge standing. Walkable ground
+// under the feet is not probed further, since the flatter plane is
+// walkable then anyway, and beside a face taller than the step the feet's
+// plane stays.
+judge_ground_over_footprint :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Field_Player_Tuning, feet: World_Position, up, forward: [3]i64, ground: Field_Ground) -> Field_Ground {
+	if !ground.on || ground.walkable {
+		return ground
+	}
+	axis := tangent_of(up, forward)
+	footprint, found := probe_field_footprint(world, frames, tuning, feet, up, axis, ground)
+	if !found {
+		return ground
+	}
+	local := footprint_plane_normal(footprint)
+	normal := fixed_scale(axis, local.x) + fixed_scale(up, local.y) + fixed_scale(fixed_cross(axis, up), local.z)
+	cosine := fixed_dot(normal, up)
+	if cosine <= ground.cosine {
+		return ground
+	}
+	result := ground
+	result.normal, result.cosine, result.walkable = normal, cosine, cosine >= tuning.walkable_cosine
+	return result
 }
 
 // Lowers the capsule by sphere tracing its bottom sphere, at most half a
@@ -613,16 +736,79 @@ field_walk_blocked :: proc(start, end: World_Position, displacement: [3]i64) -> 
 	return 4 * went < FIELD_BLOCKED_QUARTERS * wanted
 }
 
-// The ground before the move decides: walkable ground holds the player
-// and takes a jump or a mantle, steep ground slides it, the air lets it
-// fall. A blocked walk on walkable ground tries the step, and the feet
-// follow the ground down a step's height.
+// How far a walk from start to end went along its displacement, in
+// position units squared times the displacement's length.
+field_walk_progress :: proc(start, end: World_Position, displacement: [3]i64) -> i64 {
+	moved := cast([3]i64)(end - start)
+	return moved.x * displacement.x + moved.y * displacement.y + moved.z * displacement.z
+}
+
+// Whether a walk from start went less than FIELD_IMPEDED_SIXTEENTHS of
+// displacement along it.
+field_walk_impeded :: proc(start, end: World_Position, displacement: [3]i64) -> bool {
+	wanted := field_walk_progress(start, start + World_Position(displacement), displacement)
+	return wanted > 0 && 16 * field_walk_progress(start, end, displacement) < FIELD_IMPEDED_SIXTEENTHS * wanted
+}
+
+// The walk's move a step higher: the capsule raised to height over the
+// ground under the feet (below, probe_field_ground) where nothing overlaps
+// it, swept by motion and dropped back, at most a step height under the
+// start. Taken when it went
+// farther along motion than the plain walk's end and stands on walkable
+// ground (judged over the footprint, so a lip lower than the step whose
+// own face is steep counts by the ground round it).
+step_field_walk :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Field_Player_Tuning, start, plain_end: World_Position, up, forward, motion: [3]i64, height, below: i64) -> (end: World_Position, taken: bool) {
+	lift := height - below + 2 * FIELD_PENETRATION_TOLERANCE
+	if lift <= 0 {
+		return plain_end, false
+	}
+	raised := start + World_Position(fixed_scale(up, lift))
+	if field_capsule_overlaps(world, frames, tuning, raised, up) {
+		return plain_end, false
+	}
+	unused_velocity: [3]i64
+	sweep_field_capsule(world, frames, tuning, &raised, up, motion, &unused_velocity, tuning.walkable_cosine)
+	risen := fixed_dot(cast([3]i64)(raised - start), up)
+	dropped, landed := drop_field_capsule(world, frames, tuning, raised, up, risen + tuning.step_height + FIELD_GROUND_TOLERANCE)
+	if !landed || field_walk_progress(start, dropped, motion) <= field_walk_progress(start, plain_end, motion) {
+		return plain_end, false
+	}
+	ground := probe_field_ground(world, frames, tuning, dropped, up, {}, true)
+	ground = judge_ground_over_footprint(world, frames, tuning, dropped, up, forward, ground)
+	if !ground.on || !ground.walkable {
+		return plain_end, false
+	}
+	return dropped, true
+}
+
+// A step or a mantle's landing: the player stands there, still.
+stand_on_field_landing :: proc(player: ^Field_Player, landing: World_Position) {
+	player.position = landing
+	player.velocity = {}
+	player.on_ground = true
+	player.ground_normal = player.up
+}
+
+// The ground before the move decides: walkable ground (judged over the
+// footprint where the feet's reads steep) holds the player and takes a
+// jump or a mantle, steep ground slides it, the air lets it fall. On
+// steep ground a walk first tries the ledge a step up and a stride ahead.
+// An impeded walk on either ground also tries its move a step higher and
+// keeps the farther end on walkable ground; a walk still blocked on
+// walkable ground tries the ledge, and the feet follow the ground down a
+// step's height.
 walk_field_player :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Field_Player_Tuning, player: ^Field_Player, input: Field_Player_Input) {
 	resolve_field_penetration(world, frames, tuning, &player.position, player.up, &player.velocity)
 	ground := probe_field_ground(world, frames, tuning, player.position, player.up, player.velocity, player.on_ground)
+	ground = judge_ground_over_footprint(world, frames, tuning, player.position, player.up, player.forward, ground)
 	walk := field_walk_velocity(player^, input.move, field_walk_speed(tuning, input.held))
+	raw_walk_motion := walk / VELOCITY_FRACTION_ONE
 	walk_direction, walking := normalize_fixed(walk)
 	held_on_ground := ground.on && ground.walkable
+	step_height := tuning.step_height
+	if walking {
+		step_height = field_step_height(frames, tuning, player.position, player.up, walk_direction)
+	}
 	switch {
 	case held_on_ground:
 		player.velocity = {}
@@ -630,9 +816,7 @@ walk_field_player :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Fie
 		if .Jump in input.held {
 			if walking {
 				if landing, found := find_field_ledge(world, frames, tuning, player.position, player.up, walk_direction, tuning.mantle_height, tuning.step_height, ground.below); found {
-					player.position = landing
-					player.on_ground = true
-					player.ground_normal = player.up
+					stand_on_field_landing(player, landing)
 					return
 				}
 			}
@@ -640,22 +824,43 @@ walk_field_player :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Fie
 			held_on_ground = false
 		}
 	case ground.on:
+		if walking {
+			if landing, found := find_field_ledge(world, frames, tuning, player.position, player.up, walk_direction, step_height, 0, ground.below); found {
+				stand_on_field_landing(player, landing)
+				return
+			}
+		}
 		walk = steep_walk_velocity(walk, ground, player.up, tuning.walkable_cosine)
 		player.velocity = limit_speed(player.velocity - fixed_scale(player.up, tuning.gravity), tuning.slide_speed)
 	case:
 		player.velocity = limit_speed(player.velocity - fixed_scale(player.up, tuning.gravity), tuning.fall_speed_limit)
 	}
+	held_on_walkable := held_on_ground
 	start := player.position
 	motion := take_field_motion(walk + player.velocity, &player.motion_fraction)
 	fall_motion := player.velocity / VELOCITY_FRACTION_ONE
 	walk_motion := motion - fall_motion
 	unused_velocity: [3]i64
 	sweep_field_capsule(world, frames, tuning, &player.position, player.up, walk_motion, &unused_velocity, tuning.walkable_cosine)
+	// On steep ground the walk lost its uphill part, so the step tries
+	// the walk the stick asked for.
+	wanted := held_on_ground ? walk_motion : raw_walk_motion
+	stepped_up := false
+	if walking && ground.on && fixed_dot(player.velocity, player.up) <= 0 && field_walk_impeded(start, player.position, wanted) {
+		if stepped, taken := step_field_walk(world, frames, tuning, start, player.position, player.up, player.forward, wanted, step_height, ground.below); taken {
+			player.position = stepped
+			stepped_up = true
+			if !held_on_ground {
+				player.velocity = {}
+				fall_motion = {}
+				held_on_ground = true
+			}
+		}
+	}
 	sweep_field_capsule(world, frames, tuning, &player.position, player.up, fall_motion, &player.velocity)
 	if held_on_ground {
-		if walking && field_walk_blocked(start, player.position, walk_motion) {
-			step := field_step_height(frames, tuning, start, player.up, walk_direction)
-			if landing, found := find_field_ledge(world, frames, tuning, start, player.up, walk_direction, step, 0, ground.below); found {
+		if held_on_walkable && walking && field_walk_blocked(start, player.position, walk_motion) {
+			if landing, found := find_field_ledge(world, frames, tuning, start, player.up, walk_direction, step_height, 0, ground.below); found {
 				player.position = landing
 			}
 		}
@@ -664,7 +869,7 @@ walk_field_player :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Fie
 		}
 	}
 	after := probe_field_ground(world, frames, tuning, player.position, player.up, player.velocity, held_on_ground || ground.on)
-	if held_on_ground && after.on && after.below > 0 {
+	if held_on_ground && !stepped_up && after.on && after.below > 0 {
 		settle_field_player(world, frames, tuning, player, after.below)
 		after = probe_field_ground(world, frames, tuning, player.position, player.up, player.velocity, true)
 	}
@@ -673,14 +878,16 @@ walk_field_player :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Fie
 }
 
 // On walkable ground the feet go down to their resting height over the
-// ground straight under them, and whatever else they then touch pushes
-// them across the up only: a walk pushed up a face's rounded foot never
-// climbs on without the step, and a player left there settles to the
-// floor.
+// ground straight under them, and whatever steeper than walkable they
+// then touch pushes them across the up only: a walk pushed up a face's
+// rounded foot never climbs on without the step, and a player left there
+// settles to the floor, while walkable ground lifts them (a lip lower
+// than the step whose blurred face is walkable is walked up, 0203). A
+// tick whose walk took the move a step higher stands where that landed.
 settle_field_player :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Field_Player_Tuning, player: ^Field_Player, over: i64) {
 	lowered := player.position - World_Position(fixed_scale(player.up, over))
 	unused_velocity: [3]i64
-	resolve_field_penetration(world, frames, tuning, &lowered, player.up, &unused_velocity, FIELD_FLOOR_COSINE)
+	resolve_field_penetration(world, frames, tuning, &lowered, player.up, &unused_velocity, tuning.walkable_cosine)
 	if fixed_dot(cast([3]i64)(player.position - lowered), player.up) > 0 {
 		player.position = lowered
 	}

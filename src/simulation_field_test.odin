@@ -155,6 +155,48 @@ test_two_field_simulations_hash_alike_and_part_on_one_input :: proc(t: ^testing.
 	testing.expect(t, simulation_state_hash(&first.simulation) != simulation_state_hash(&second.simulation), "one extra input parts the hashes")
 }
 
+// After the script's dig two sessions walk on across the ground (0203:
+// the footprint probes and the step a step height higher run on both)
+// and hash alike.
+@(test)
+test_two_field_simulations_hash_alike_after_a_walk_over_dug_ground :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	first := start_field_test_session(config, content)
+	defer end_session(first)
+	second := start_field_test_session(config, content)
+	defer end_session(second)
+	first_content, second_content := field_test_content(first, content), field_test_content(second, content)
+	walk := Input_Frame{move = {0, 1}, pressed = {.Move}}
+	dig: Field_Raycast_Hit
+	dig_radius: i64
+	walk_start: World_Position
+	heading: [3]i64
+	for tick in 0 ..< 630 {
+		frame := tick < 480 ? field_test_script_frame(tick) : walk
+		tick_field_test_simulation(&first.simulation, first_content, frame)
+		tick_field_test_simulation(&second.simulation, second_content, frame)
+		player := first.simulation.players[0].field
+		switch tick {
+		case 400:
+			brushes := first_content.field.brushes
+			dig, dig_radius = player.target, brushes[int(player.brush) % len(brushes)].radius
+		case 479:
+			testing.expect_value(t, simulation_state_hash(&first.simulation), simulation_state_hash(&second.simulation))
+			walk_start, heading = player.position, field_player_heading(player)
+		}
+	}
+	testing.expect_value(t, simulation_state_hash(&first.simulation), simulation_state_hash(&second.simulation))
+	testing.expect_value(t, first.simulation.players[0].field.position, second.simulation.players[0].field.position)
+	// The dig's first target (the hole soon deepens past the reach); the
+	// walk keeps the dig's heading (the script turns only at 490), so the
+	// dig lies ahead and the walk ends past its far rim.
+	testing.expect(t, dig.hit, "the script dug the ground")
+	rim := fixed_dot(cast([3]i64)(dig.position - walk_start), heading) + dig_radius
+	walked := fixed_dot(cast([3]i64)(first.simulation.players[0].field.position - walk_start), heading)
+	testing.expectf(t, walked > rim, "the walk went %d along its heading, the dig's far rim lies at %d", walked, rim)
+}
+
 // A field world's save round trips an edited chunk, a torch, a frame
 // with a foundation, the pod with its pad, the light's queues and the
 // players' field state; a planet vein keeps its drawn reservoir and gets

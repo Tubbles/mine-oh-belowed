@@ -4,8 +4,9 @@ import "core:testing"
 
 // Test terrains of the field player, written straight into a Field_World
 // as the density of a signed distance: a small sphere planet round the
-// origin, and flat ground, a slope or a ledge at a site TEST_SITE_RADIUS_METRES
-// out along +y, where the up is +y within a tenth of a degree.
+// origin, and flat ground, a slope, a ledge, a dug hole or a ridge at a
+// site TEST_SITE_RADIUS_METRES out along +y, where the up is +y within a
+// tenth of a degree.
 
 TEST_SITE_RADIUS_METRES :: 8000
 TEST_SMALL_PLANET_RADIUS_METRES :: 64
@@ -18,14 +19,20 @@ Test_Terrain_Kind :: enum {
 	Slope,
 	Ledge,
 	Sphere,
+	Hole,
+	Ridge,
 }
 
 Test_Terrain :: struct {
 	kind:          Test_Terrain_Kind,
 	// Slope: rising along +x.
 	slope_degrees: int,
-	// Ledge: in position units.
+	// Ledge, Hole (its depth) and Ridge: in position units.
 	ledge_height:  i64,
+	// Hole: a square pit round the site, this far to each side. Ridge: a
+	// wall along z centred TEST_LEDGE_FACE_METRES along x, this far to
+	// each side.
+	half_width:    i64,
 }
 
 test_field_player_config :: proc() -> Field_Player_Config {
@@ -86,6 +93,12 @@ test_terrain_depth :: proc(terrain: Test_Terrain, position: World_Position) -> i
 		return (fixed_sine(angle) * x - fixed_cosine(angle) * y) / UNIT_VECTOR_ONE
 	case .Ledge:
 		return max(-y, quadrant_depth(x - metres_to_position_units(TEST_LEDGE_FACE_METRES), y - terrain.ledge_height))
+	case .Hole:
+		pit := min(y + terrain.ledge_height, terrain.half_width - abs(x), terrain.half_width - abs(position.z))
+		return min(-y, -pit)
+	case .Ridge:
+		across := abs(x - metres_to_position_units(TEST_LEDGE_FACE_METRES))
+		return max(-y, min(terrain.ledge_height - y, terrain.half_width - across))
 	case .Flat, .Sphere:
 	}
 	return -y
@@ -254,14 +267,21 @@ test_a_walkable_slope_is_climbed_and_a_steep_one_slides_back :: proc(t: ^testing
 	}
 }
 
-// Walks 70 ticks along +x from 2 m before a ledge of height (position
-// units), holding Jump when asked, then stands for a second (a jump lasts
-// about that); reports whether the player ended on the top past the face.
-walk_at_test_ledge :: proc(height: i64, spacing_millimetres: int, jump: bool, config := Field_Player_Config{}) -> bool {
+// Along x turned towards +z by degrees.
+test_heading :: proc(degrees: int) -> [3]i64 {
+	angle := degrees_to_angle_units(degrees)
+	return {fixed_cosine(angle), 0, fixed_sine(angle)}
+}
+
+// Walks 70 ticks along +x (or turned towards +z) from 2 m before a ledge
+// of height (position units), holding Jump when asked, then stands for a
+// second (a jump lasts about that); reports whether the player ended on
+// the top past the face.
+walk_at_test_ledge :: proc(height: i64, spacing_millimetres: int, jump: bool, config := Field_Player_Config{}, heading_degrees := 0) -> bool {
 	world := make_test_field(Test_Terrain{kind = .Ledge, ledge_height = height}, spacing_millimetres)
 	defer destroy_field_world(&world)
 	tuning := test_field_tuning(spacing_millimetres, config)
-	player := make_field_player(test_site_point(0, POSITION_UNITS_PER_METRE / 4, 0), {UNIT_VECTOR_ONE, 0, 0})
+	player := make_field_player(test_site_point(0, POSITION_UNITS_PER_METRE / 4, 0), test_heading(heading_degrees))
 	run_field_player(&world, tuning, &player, {}, 20)
 	input := FIELD_WALK_FORWARD
 	if jump {
@@ -446,4 +466,202 @@ test_the_field_player_saves_its_foundation_block :: proc(t: ^testing.T) {
 	testing.expect_value(t, read.yaw, 5)
 	testing.expect_value(t, read.foundation_size_index, 0)
 	testing.expect_value(t, read.foundation_height_index, 0)
+}
+
+// The footprint's ground heights at the feet and a radius of 1229 units
+// ahead, behind, right and left.
+test_footprint :: proc(centre, ahead, behind, right, left: i64) -> Field_Footprint {
+	radius: i64 = 1229
+	return Field_Footprint {
+		offsets = {{0, 0}, {radius, 0}, {-radius, 0}, {0, radius}, {0, -radius}},
+		heights = {centre, ahead, behind, right, left},
+	}
+}
+
+// Flat ground faces the up, a slope rising one in two along the first
+// axis tilts back by its angle, and a bump under the feet only (the
+// points round it flat) faces the up.
+@(test)
+test_the_footprint_plane_averages_a_bump_away :: proc(t: ^testing.T) {
+	testing.expect_value(t, footprint_plane_normal(test_footprint(0, 0, 0, 0, 0)), [3]i64{0, UNIT_VECTOR_ONE, 0})
+	half := i64(1229 / 2)
+	slope := footprint_plane_normal(test_footprint(0, half, -half, 0, 0))
+	expected, _ := normalize_fixed({-1 * UNIT_VECTOR_ONE, 2 * UNIT_VECTOR_ONE, 0})
+	testing.expectf(t, vector_length(slope - expected) <= UNIT_VECTOR_ONE / 1000, "a one in two slope's normal %v, expected %v", slope, expected)
+	sideways := footprint_plane_normal(test_footprint(0, 0, 0, half, -half))
+	testing.expectf(t, sideways.x == 0 && sideways.z < 0, "a slope rising along the second axis tilts along it: %v", sideways)
+	testing.expect_value(t, footprint_plane_normal(test_footprint(2000, 0, 0, 0, 0)), [3]i64{0, UNIT_VECTOR_ONE, 0})
+}
+
+// Walking 60 ticks from 2 m before a decimetre wall, head on and at 45
+// degrees: no tick goes less than seven eighths of the full walk along the
+// heading, and the player ends on top past the face.
+@(test)
+test_a_decimetre_wall_is_walked_over_without_slowing :: proc(t: ^testing.T) {
+	height := millimetres_to_position_units(100)
+	for spacing in TEST_FIELD_SPACINGS {
+		tuning := test_field_tuning(spacing)
+		full := tuning.walk_speed / VELOCITY_FRACTION_ONE
+		for degrees in ([2]int{0, 45}) {
+			world := make_test_field(Test_Terrain{kind = .Ledge, ledge_height = height}, spacing)
+			defer destroy_field_world(&world)
+			heading := test_heading(degrees)
+			player := make_field_player(test_site_point(0, POSITION_UNITS_PER_METRE / 4, 0), heading)
+			run_field_player(&world, tuning, &player, {}, 20)
+			slowest := full
+			for _ in 0 ..< 60 {
+				before := player.position
+				tick_field_player(&world, nil, tuning, &player, FIELD_WALK_FORWARD)
+				slowest = min(slowest, fixed_dot(cast([3]i64)(player.position - before), heading))
+			}
+			testing.expectf(t, 8 * slowest >= 7 * full, "%d mm at %d degrees: a tick went %d of %d", spacing, degrees, slowest, full)
+			testing.expectf(t, abs(site_height(player.position) - height) <= tenth_sample(spacing), "%d mm at %d degrees: the feet end at %d", spacing, degrees, site_height(player.position))
+			testing.expectf(t, player.position.x > metres_to_position_units(TEST_LEDGE_FACE_METRES), "%d mm at %d degrees: the face was not passed", spacing, degrees)
+		}
+	}
+}
+
+// A wall a sample above the step stops a walk at 45 degrees too, and is
+// mantled with Jump where it lies below the 1.5 m mantle height.
+@(test)
+test_a_wall_above_the_step_stops_a_slanted_walk :: proc(t: ^testing.T) {
+	for spacing in TEST_FIELD_SPACINGS {
+		tuning := test_field_tuning(spacing)
+		height := tuning.step_height + sample_axis_to_position(1, spacing)
+		testing.expectf(t, !walk_at_test_ledge(height, spacing, false, heading_degrees = 45), "%d mm: the walk at 45 degrees climbed the wall", spacing)
+		if height <= tuning.mantle_height {
+			testing.expectf(t, walk_at_test_ledge(height, spacing, true, heading_degrees = 45), "%d mm: the wall was not mantled at 45 degrees", spacing)
+		}
+	}
+}
+
+// A ridge half a sample high and a sample wide, its blurred sides
+// steeper than a 20 degree walkable angle, under a capsule of radius three
+// quarters of a sample, so the footprint's points lie on the flat ground
+// round the ridge's steep sides: the walk goes over it and on past it. By
+// the feet's plane alone it held the player at the ridge's foot.
+@(test)
+test_a_steep_bump_narrower_than_the_footprint_is_walked_over :: proc(t: ^testing.T) {
+	for spacing in TEST_FIELD_SPACINGS {
+		config := test_field_player_config()
+		config.walkable_angle_degrees = 20
+		config.capsule_radius_millimetres = 3 * spacing / 4
+		tuning := test_field_tuning(spacing, config)
+		sample := sample_axis_to_position(1, spacing)
+		world := make_test_field(Test_Terrain{kind = .Ridge, ledge_height = sample / 2, half_width = sample / 2}, spacing)
+		defer destroy_field_world(&world)
+		player := make_field_player(test_site_point(0, POSITION_UNITS_PER_METRE / 4, 0), {UNIT_VECTOR_ONE, 0, 0})
+		run_field_player(&world, tuning, &player, {}, 20)
+		steepest := i64(UNIT_VECTOR_ONE)
+		for _ in 0 ..< 80 {
+			tick_field_player(&world, nil, tuning, &player, FIELD_WALK_FORWARD)
+			ground := probe_field_ground(&world, nil, tuning, player.position, player.up, {}, true)
+			if ground.on {
+				steepest = min(steepest, ground.cosine)
+			}
+		}
+		testing.expectf(t, steepest < tuning.walkable_cosine, "%d mm: the feet never stood on ground past the angle (cosine %d)", spacing, steepest)
+		past := metres_to_position_units(TEST_LEDGE_FACE_METRES) + tuning.capsule_radius + sample
+		testing.expectf(t, player.position.x > past, "%d mm: the walk ended at %d, short of %d past the ridge", spacing, player.position.x, past)
+		testing.expectf(t, abs(site_height(player.position)) <= tenth_sample(spacing), "%d mm: the feet end at %d", spacing, site_height(player.position))
+	}
+}
+
+// Standing in a dug pit three quarters of the step deep, the player walks
+// out over its lip onto the ground round it, along x and at 45 degrees.
+@(test)
+test_a_player_walks_out_of_a_hole_lower_than_the_step :: proc(t: ^testing.T) {
+	for spacing in TEST_FIELD_SPACINGS {
+		tuning := test_field_tuning(spacing)
+		half_width := metres_to_position_units(3) / 2
+		depth := tuning.step_height * 3 / 4
+		for degrees in ([2]int{0, 45}) {
+			world := make_test_field(Test_Terrain{kind = .Hole, ledge_height = depth, half_width = half_width}, spacing)
+			defer destroy_field_world(&world)
+			player := make_field_player(test_site_point(0, 0, 0), test_heading(degrees))
+			run_field_player(&world, tuning, &player, {}, 30)
+			testing.expectf(t, site_height(player.position) < -depth / 2, "%d mm at %d degrees: the player stands at %d, not in the pit", spacing, degrees, site_height(player.position))
+			run_field_player(&world, tuning, &player, FIELD_WALK_FORWARD, 90)
+			testing.expectf(t, player.position.x > half_width, "%d mm at %d degrees: the walk ended at %d, inside the pit", spacing, degrees, player.position.x)
+			testing.expectf(t, abs(site_height(player.position)) <= tenth_sample(spacing), "%d mm at %d degrees: the feet end at %d", spacing, degrees, site_height(player.position))
+		}
+	}
+}
+
+// The shipped data's field player (data/game.sjson): the test tuning with
+// the 60 degree walkable angle the user plays at.
+shipped_field_player_config :: proc() -> Field_Player_Config {
+	config := test_field_player_config()
+	config.walkable_angle_degrees = 60
+	return config
+}
+
+// At the shipped tuning, holding forward into a 4 m wall for a second
+// keeps the feet within a tenth of a sample of the floor and short of
+// the face: neither the settle nor the step lifts the player up the
+// wall's blurred foot.
+@(test)
+test_walking_into_a_wall_stays_on_the_floor_at_the_shipped_angle :: proc(t: ^testing.T) {
+	for spacing in TEST_FIELD_SPACINGS {
+		for degrees in ([2]int{0, 45}) {
+			world := make_test_field(Test_Terrain{kind = .Ledge, ledge_height = metres_to_position_units(4)}, spacing)
+			defer destroy_field_world(&world)
+			tuning := test_field_tuning(spacing, shipped_field_player_config())
+			player := make_field_player(test_site_point(0, POSITION_UNITS_PER_METRE / 4, 0), test_heading(degrees))
+			run_field_player(&world, tuning, &player, {}, 20)
+			run_field_player(&world, tuning, &player, FIELD_WALK_FORWARD, 40)
+			highest: i64 = 0
+			for _ in 0 ..< 60 {
+				tick_field_player(&world, nil, tuning, &player, FIELD_WALK_FORWARD)
+				highest = max(highest, abs(site_height(player.position)))
+			}
+			testing.expectf(t, highest <= tenth_sample(spacing), "%d mm at %d degrees: the feet rose to %d", spacing, degrees, highest)
+			testing.expectf(t, player.position.x < metres_to_position_units(TEST_LEDGE_FACE_METRES), "%d mm at %d degrees: the wall was passed", spacing, degrees)
+		}
+	}
+}
+
+// At the shipped tuning, on top of a 2 m cliff (above the mantle height)
+// 1 m back from its edge: walking towards the edge, head on and at 45
+// degrees, the player leaves it and lands below within three seconds;
+// standing still at the edge of the top's walkable ground the player
+// stays on top.
+@(test)
+test_a_walk_off_a_cliff_falls_at_the_shipped_angle :: proc(t: ^testing.T) {
+	height := metres_to_position_units(2)
+	face := metres_to_position_units(TEST_LEDGE_FACE_METRES)
+	for spacing in ([2]int{500, 1000}) {
+		tuning := test_field_tuning(spacing, shipped_field_player_config())
+		for degrees in ([2]int{180, 135}) {
+			world := make_test_field(Test_Terrain{kind = .Ledge, ledge_height = height}, spacing)
+			defer destroy_field_world(&world)
+			player := make_field_player(test_site_point(face + POSITION_UNITS_PER_METRE, height + POSITION_UNITS_PER_METRE / 4, 0), test_heading(degrees))
+			run_field_player(&world, tuning, &player, {}, 20)
+			testing.expectf(t, abs(site_height(player.position) - height) <= tenth_sample(spacing), "%d mm: the start stands at %d", spacing, site_height(player.position))
+			run_field_player(&world, tuning, &player, FIELD_WALK_FORWARD, 180)
+			testing.expectf(t, player.position.x < face, "%d mm at %d degrees: the walk stayed on the cliff at %d", spacing, degrees, player.position.x)
+			testing.expectf(t, player.on_ground && abs(site_height(player.position)) <= tenth_sample(spacing), "%d mm at %d degrees: the feet end at %d, not on the ground below", spacing, degrees, site_height(player.position))
+		}
+		world := make_test_field(Test_Terrain{kind = .Ledge, ledge_height = height}, spacing)
+		defer destroy_field_world(&world)
+		player := make_field_player(test_site_point(face + POSITION_UNITS_PER_METRE, height + POSITION_UNITS_PER_METRE / 4, 0), test_heading(180))
+		run_field_player(&world, tuning, &player, {}, 20)
+		// Sneak to the edge: the last tick whose feet stand on the top's
+		// walkable ground (past it the feet's own plane is the blurred
+		// lip, and a capsule balanced there slides off).
+		sneak := FIELD_WALK_FORWARD
+		sneak.held = {.Sneak}
+		for _ in 0 ..< 240 {
+			next := player
+			tick_field_player(&world, nil, tuning, &next, sneak)
+			under := probe_field_ground(&world, nil, tuning, next.position, next.up, {}, true)
+			if !under.walkable || site_height(next.position) < height - tenth_sample(spacing) {
+				break
+			}
+			player = next
+		}
+		testing.expectf(t, player.position.x < face + tuning.capsule_radius + sample_axis_to_position(1, spacing), "%d mm: the sneak stopped at %d, short of the edge", spacing, player.position.x)
+		run_field_player(&world, tuning, &player, {}, 120)
+		testing.expectf(t, player.on_ground && abs(site_height(player.position) - height) <= tenth_sample(spacing), "%d mm: standing at the edge the feet end at %d", spacing, site_height(player.position))
+	}
 }
