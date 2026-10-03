@@ -67,7 +67,7 @@
 // Hatches (kind hatch, work item 0198): no item, at least 2 cells high,
 // no open_cells, a slide motion or none. Closed its cells are solid; open
 // none is, and every row but the top is an open cell. Lockers (kind
-// locker): a chest placed by the world, slots 1 to 48. Crafting benches
+// locker): a chest placed by the world, slots 8 to 48. Crafting benches
 // (kind crafting_bench): recipe_maker hand, no slots, power, speed or
 // ports; the panel is the crafting station's. Oxygen generators (kind
 // oxygen_generator): no slots, power or ports; a sealed room one touches

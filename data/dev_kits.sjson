@@ -4,8 +4,9 @@
 // --chapter=<n>. One kit per chapter, in chapter order, so every chapter
 // in data/quests has one; chapter 8 has no quest file yet. Items come
 // from items.sjson (an unknown item stops the game at load), counts from
-// 1 to 10000. What does not fit into the inventory waits for the drop
-// capsule like a quest reward.
+// 1 to 10000. What does not fit into the inventory waits for the quest
+// reward target (the drop capsule, the pod's locker on a field world)
+// like a quest reward.
 //
 // Guessed generously from doc/quests.md and the chapter files, not
 // balanced: each kit stays under about 40 inventory slots (machines

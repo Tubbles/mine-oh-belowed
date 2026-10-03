@@ -1,6 +1,6 @@
 # 0210: The pod's locker takes the capsule's quest rewards on a field world
 
-Status: implementing (2026-10-03, worktree item/0210 from main; designed 2026-10-03; main agent, from the 0198 design's question 2; after 0198)
+Status: verified (2026-10-03, verifier: land as is, the log wording and two nits fixed at landing; implemented 2026-10-03; designed 2026-10-03; main agent, from the 0198 design's question 2; after 0198)
 
 ## Goal
 

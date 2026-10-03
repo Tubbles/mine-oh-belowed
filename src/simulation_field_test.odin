@@ -1227,3 +1227,43 @@ test_the_pad_foundation_must_be_a_foundation :: proc(t: ^testing.T) {
 	testing.expect_value(t, shipped.field_simulation.pad_foundation, "wooden_foundation")
 	testing.expect_value(t, field_pad_foundation_problem(shipped.field_simulation, machines), "")
 }
+
+// Work item 0210: a field world's quest reward target is the pod's
+// locker, and a save round trips it. The load derives it again from the
+// pools; an equal hash shows the load's settle moved no baseline.
+@(test)
+test_a_field_world_save_round_trips_the_reward_target :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	session := start_field_test_session(config, content)
+	simulation_content := field_test_content(session, content)
+	state := &session.simulation
+	tick_field_test_simulation(state, simulation_content, {})
+	tick_field_test_simulation(state, simulation_content, {})
+	locker, locker_found := pod_locker(&state.world.entities, simulation_content.machines)
+	testing.expect(t, locker_found, "the pod has a locker")
+	testing.expect_value(t, state.quests.reward_target, locker)
+	testing.expect(t, state.quests.reward_target != state.quests.capsule, "the target is the capsule")
+	capsule := state.quests.capsule
+	add_to_slots(entity_slots(&state.world.entities, locker), test_item(simulation_content.items, "coal"), 3, item_stack_size(simulation_content.items, test_item(simulation_content.items, "coal")))
+	tick_field_test_simulation(state, simulation_content, {})
+	hash := simulation_state_hash(state)
+	files := encode_save_files(state, simulation_content, "round trip", 0)
+	end_session(session)
+	file, problem := parse_world_file(files.world, context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	plan := Session_Plan{loading = true, seed = file.seed, settings = file.settings, file = file, files = &files}
+	loaded: ^Session
+	loaded, problem = start_session(plan, config, content, make_test_generator(DEFAULT_WORLD_SEED))
+	testing.expect_value(t, problem, "")
+	if loaded == nil {
+		return
+	}
+	defer end_session(loaded)
+	restored := &loaded.simulation
+	stage_generated_field_set(restored)
+	testing.expect(t, restore_arrived_field_set(&restored.field), "the staged set restores")
+	testing.expect_value(t, restored.quests.reward_target, locker)
+	testing.expect_value(t, restored.quests.capsule, capsule)
+	testing.expect_value(t, simulation_state_hash(restored), hash)
+}

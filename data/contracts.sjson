@@ -11,7 +11,8 @@
 // (the share of the reward paid past the deadline, rounded down, at least
 // one of each item), requests (1 to 4 items with counts; deliveries add
 // up over several launches), and either rewards (1 to 4 items with counts
-// landing in the drop capsule) or orbital_survey = true. A late survey
+// landing in the quest reward target: the drop capsule, the pod's locker
+// on a field world) or orbital_survey = true. A late survey
 // still runs in full. The venture keeps up to three contracts open and
 // cycles through the pool.
 //

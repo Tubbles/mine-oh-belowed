@@ -226,7 +226,7 @@ The start on the field (0179, 0199, 0198, `entity_pod.odin`).
 
 ### The pod's fixtures
 
-- The locker (kind `locker`, `pod_locker`): a chest of 16 slots placed by the world, in the chests' pool, so every chest path (the panel, Take all and Store all, sorting, inserters) works on it. The capsule keeps the quest rewards (0210 moves them).
+- The locker (kind `locker`, `pod_locker`): a chest of 16 slots (at least the capsule's 8, so every delivery fits) placed by the world, in the chests' pool, so every chest path (the panel, Take all and Store all, sorting, inserters) works on it. On a field world it is the quests' reward target: rewards land in it and deliveries count in it ([quests.md](quests.md), Runtime).
 - The crafting bench (kind `crafting_bench`, `crafting_bench`): a crafting station placed by the world with the `hand` maker (`validate_crafting_bench_definition`: no slots, fuel, power, speed or ports). Its panel is the recipe browser's station mode with the hand recipes ([ui.md](ui.md), Recipe browser). Hand crafting stays available everywhere in peaceful; in survival (M15) the bench is where crafting happens.
 - The oxygen generator (kind `oxygen_generator`, `oxygen_generator`): no slots, power or ports. Its panel says what it does and "Oxygen: unlimited". A sealed room one of its footprint cells is face adjacent to has an unlimited supply ([architecture.md](architecture.md), Sealed rooms).
 - All three refuse pick up and placement over them, like the pod and the hatches (0195, `field_entity_is_placed_by_world`), and open their panel with the inventory binding (0194).

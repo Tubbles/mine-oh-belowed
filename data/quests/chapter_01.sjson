@@ -27,8 +27,10 @@
 //                              makes the player wait is not fun (user, 2026-09-27)
 //   research  technology      marked researched; an infinite technology
 //                              counts once its first level is done
-//   deliver   item, count      put into the capsule on the landing pad,
-//                              taken out when the quest completes
+//   deliver   item, count      put into the reward target (the capsule
+//                              on the landing pad, the pod's locker on
+//                              a field world), taken out when the
+//                              quest completes
 //   discover  recipe           the recipe is available
 //   walk      count            blocks walked on foot
 //   counter   counter, label_key, count
@@ -75,7 +77,8 @@
 // A hint with on_activation = true and no counter or threshold fires as
 // soon as its quest becomes active.
 //
-// A reward is {item, count}, landing in the capsule, {unlocks_recipe}
+// A reward is {item, count}, landing in the reward target (the capsule
+// on the landing pad, the pod's locker on a field world), {unlocks_recipe}
 // for a recipe of the quest channel, or {unlocks_technology}, which marks
 // the technology researched (the quest_gate technologies
 // the labs refuse).

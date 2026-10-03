@@ -117,7 +117,7 @@ test_launch_posts_a_message_and_a_toast :: proc(t: ^testing.T) {
 	// tests, so a key that is its own template shows the substitution.
 	table, _ := parse_string_table(#load("../data/strings/en.sjson"), context.temp_allocator)
 	testing.expect(t, strings.contains(table.entries[SHIPMENT_LAUNCHED_KEY], MESSAGE_CARGO_MARK))
-	rendered := quest_message_text(Quest_Message{text_key = "Shipped {cargo} for {value}", value = 5, shipment = 1}, test.state.records.shipments[:], test.content.items)
+	rendered := quest_message_text(Quest_Message{text_key = "Shipped {cargo} for {value}", value = 5, shipment = 1}, test.state.records.shipments[:], test.content.items, NO_ENTITY)
 	testing.expect_value(t, rendered, "Shipped item_iron_plate 50, item_steel 20 for 5")
 }
 

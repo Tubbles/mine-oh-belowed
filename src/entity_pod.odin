@@ -19,7 +19,8 @@ import "platform"
 // hatches seal off from the outside are the pod's sealed room, derived
 // from the occupancy (rebuild_sealed_rooms) and never saved. A pod of
 // another size in a save (an older build's) is replaced at load
-// (upgrade_resized_pods).
+// (upgrade_resized_pods). The first pod's locker is the field world's
+// quest reward target (work item 0210, pod_locker).
 
 // A quarter turn takes the model's front (+x) to the frame's forward (+z),
 // so the door faces the heading.
@@ -69,6 +70,25 @@ place_pod_fixtures :: proc(entities: ^Entities, machines: Machine_Registry, pod:
 		fixture_origin, fixture_rotation := pod_fixture_placement(pod, origin, rotation, index)
 		add_entity(entities, machines, pod.fixtures[index].machine, fixture_origin, fixture_rotation, frame)
 	}
+}
+
+// The first pod's locker, the field world's quest reward target (0210):
+// the first alive pod of the foundations' pool in index order, and the
+// first alive locker of the chests' pool in index order on its frame.
+// found is false when there is no pod or it has no locker.
+pod_locker :: proc(entities: ^Entities, machines: Machine_Registry) -> (locker: Entity_Handle, found: bool) {
+	for pod in entities.foundations.entries {
+		if !pod.alive || int(pod.machine) >= len(machines.machines) || machines.machines[pod.machine].kind != .Pod {
+			continue
+		}
+		for entry in entities.chests.entries {
+			if entry.alive && entry.frame == pod.frame && int(entry.machine) < len(machines.machines) && machines.machines[entry.machine].kind == .Locker {
+				return entry.handle, true
+			}
+		}
+		return NO_ENTITY, false
+	}
+	return NO_ENTITY, false
 }
 
 // The hatches.

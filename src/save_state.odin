@@ -320,6 +320,8 @@ known_message_key :: proc(content: Simulation_Content, key: string) -> (known: s
 		return "", true
 	case CAPSULE_LANDED_KEY:
 		return CAPSULE_LANDED_KEY, true
+	case LOCKER_STOCKED_KEY:
+		return LOCKER_STOCKED_KEY, true
 	case RESEARCH_COMPLETE_KEY:
 		return RESEARCH_COMPLETE_KEY, true
 	case SCHEMATIC_READ_KEY:
@@ -383,6 +385,7 @@ read_quest_state :: proc(reader: ^Byte_Reader, state: ^Simulation_State, content
 	saved_active := int(i64(read_u64(reader) or_return))
 	quests.capsule = {}
 	read_value_of(reader, &quests.capsule) or_return
+	quests.reward_target = quests.capsule
 	quests.hints_fired = int(read_u64(reader) or_return)
 	read_list(reader, &quests.pending_rewards) or_return
 	drop_gone_item_stacks(&quests.pending_rewards)
@@ -469,6 +472,8 @@ read_simulation_state :: proc(reader: ^Byte_Reader, state: ^Simulation_State, co
 	upgraded := upgrade_resized_pods(&state.world.entities, content.machines)
 	rebuild_loaded_world(&state.world, content.machines, derived)
 	finish_pod_upgrades(state, content.machines, upgraded)
+	// The reward target is derived from the restored pools (0210).
+	settle_quest_reward_target(&state.quests, &state.records.statistics, &state.world.entities, content.machines, state.field.enabled)
 	clear(&state.events)
 	return true
 }

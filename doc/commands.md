@@ -35,10 +35,10 @@ A running game in developer mode listens on a Unix domain socket for command lin
 | Command | What it does |
 |---|---|
 | `help` | The command list. |
-| `give <item> <count>` | Items into the inventory, the rest into the drop capsule's pending rewards. Count 1 to 10000 (`MAXIMUM_DEVELOPER_GRANT_COUNT`). |
+| `give <item> <count>` | Items into the inventory, the rest into the pending rewards, which land in the reward target. Count 1 to 10000 (`MAXIMUM_DEVELOPER_GRANT_COUNT`). |
 | `take <item> <count>` | Items out of the inventory; the answer says how many were taken. |
 | `kit <chapter>` | The chapter's kit from `data/dev_kits.sjson`. |
-| `chapter <n>` | Completes every quest before chapter n with its rewards (items to the capsule, recipes and technologies unlocked). One past the last chapter completes all. Gives no kit. |
+| `chapter <n>` | Completes every quest before chapter n with its rewards (items to the reward target, recipes and technologies unlocked). One past the last chapter completes all. Gives no kit. |
 | `quest finish` | Completes the active quest with its rewards (deliveries not taken), logs its message and activates the next. An error once every quest is done. |
 | `research <technology>` | Marked researched as a quest reward does; an infinite technology gains one level. |
 | `unlock_all` | Every recipe and technology. |

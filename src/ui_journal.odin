@@ -71,7 +71,7 @@ journal_quest_view :: proc(screen_context: Screen_Context) -> Quest_View {
 	return Quest_View {
 		statistics = screen_context.records.statistics,
 		unlocks = screen_context.unlocks^,
-		capsule_slots = entity_slots(&screen_context.world.entities, screen_context.quest_state.capsule),
+		capsule_slots = entity_slots(&screen_context.world.entities, screen_context.quest_state.reward_target),
 		tick_rate = screen_context.tick_rate,
 	}
 }
@@ -154,7 +154,7 @@ draw_quest_objective :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	area := hud_objective_area(state)
 	width := area.width
 	draw_text_fitted(state, cut_top(&area, UI_ROW_HEIGHT), text(quest.title_key), UI_BODY_TEXT_SIZE, .Right, UI_ACCENT_COLOR, emphasis = true)
-	for line in wrap_text(state, text(quest.text_key), UI_BODY_TEXT_SIZE, width) {
+	for line in wrap_text(state, reward_target_text(text(quest.text_key), quest_state.reward_target), UI_BODY_TEXT_SIZE, width) {
 		draw_text(state, cut_top(&area, UI_LINE_HEIGHT), line, UI_BODY_TEXT_SIZE, .Right)
 	}
 	for _, index in quest.objectives {
@@ -292,7 +292,7 @@ journal_quest_detail :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_contex
 			ui_label(state, row, text("journal_main_quest"), UI_BODY_TEXT_SIZE, .Left, UI_ACCENT_COLOR)
 		}
 	}
-	draw_wrapped(state, &content, text(quest.text_key))
+	draw_wrapped(state, &content, reward_target_text(text(quest.text_key), screen_context.quest_state.reward_target))
 	cut_top(&content, UI_GAP)
 	for _, index in quest.objectives {
 		label, progress_text, done := objective_line(quest, index, progress, screen_context)
@@ -320,7 +320,7 @@ journal_message_log :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context
 	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("journal_messages"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	messages := screen_context.quest_state.messages[:]
 	#reverse for message in messages {
-		line := fmt.tprintf("%s  %s", format_game_time(message.tick, screen_context.tick_rate), quest_message_text(message, screen_context.records.shipments[:], screen_context.items))
+		line := fmt.tprintf("%s  %s", format_game_time(message.tick, screen_context.tick_rate), quest_message_text(message, screen_context.records.shipments[:], screen_context.items, screen_context.quest_state.reward_target))
 		if !is_mission_control_key(message.text_key) {
 			wrapped := wrap_text(state, line, UI_BODY_TEXT_SIZE, content.width)
 			if f32(len(wrapped)) * UI_LINE_HEIGHT > content.height {

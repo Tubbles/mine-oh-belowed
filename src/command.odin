@@ -91,7 +91,7 @@ Command_Usage :: struct {
 @(rodata)
 command_usages := [?]Command_Usage {
 	{"help", "list the commands"},
-	{"give <item> <count>", "items into the inventory, the rest into the drop capsule"},
+	{"give <item> <count>", "items into the inventory, the rest to the quest reward target"},
 	{"take <item> <count>", "items out of the inventory"},
 	{"kit <chapter>", "the chapter's developer kit (data/dev_kits.sjson)"},
 	{"chapter <n>", "complete the quests before chapter n with their rewards"},
@@ -1132,7 +1132,7 @@ query_quests :: proc(command_context: Command_Context) -> Command_Response {
 		view := Quest_View {
 			statistics    = simulation.records.statistics,
 			unlocks       = simulation.unlocks,
-			capsule_slots = entity_slots(&simulation.world.entities, state.capsule),
+			capsule_slots = entity_slots(&simulation.world.entities, state.reward_target),
 			tick_rate     = simulation.tick_rate,
 		}
 		for objective, index in quest.objectives {

@@ -82,7 +82,7 @@ test_shipped_strings_cover_the_ui :: proc(t: ^testing.T) {
 	for key in state_keys {
 		testing.expectf(t, key == "" || key in table.entries, "key %q is not in en.sjson", key)
 	}
-	for key in ([?]string{"settings_stick_sensitivity", "settings_gyro_sensitivity", "settings_trackpad_sensitivity", "unit_block", "unit_blocks"}) {
+	for key in ([?]string{"settings_stick_sensitivity", "settings_gyro_sensitivity", "settings_trackpad_sensitivity", "unit_block", "unit_blocks", REWARD_TARGET_CAPSULE_KEY, REWARD_TARGET_LOCKER_KEY, LOCKER_STOCKED_KEY, CAPSULE_LANDED_KEY}) {
 		testing.expectf(t, key in table.entries, "key %q is not in en.sjson", key)
 	}
 }

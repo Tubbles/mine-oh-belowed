@@ -489,8 +489,10 @@ validate_machine_kind_fields :: proc(definition: Machine_Definition, kind: Machi
 	case .Hatch:
 		return validate_hatch_definition(definition)
 	case .Locker:
-		if definition.slots < 1 || definition.slots > MAXIMUM_CHEST_SLOTS {
-			return fmt.tprintf("locker %q has slots %d outside 1 to %d", definition.id, definition.slots, MAXIMUM_CHEST_SLOTS)
+		// At least the capsule's slots, so a delivery of eight full stacks
+		// fits the locker as the field world's reward target (0210).
+		if definition.slots < CAPSULE_SLOT_COUNT || definition.slots > MAXIMUM_CHEST_SLOTS {
+			return fmt.tprintf("locker %q has slots %d outside %d to %d", definition.id, definition.slots, CAPSULE_SLOT_COUNT, MAXIMUM_CHEST_SLOTS)
 		}
 		if definition.item != "" {
 			return fmt.tprintf("locker %q cannot be placed by an item", definition.id)

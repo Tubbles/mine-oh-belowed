@@ -10,14 +10,14 @@ The design rules are in [DESIGN.md](../DESIGN.md), Research, quests and rockets.
 - Every objective asks for what the player has just done by hand, or for what the current pain suggests. The journal never introduces a mechanic before the player has felt the need for it.
 - One active objective on the HUD. The journal holds the rest.
 - No quest makes the player wait: a sustain window is seconds, not minutes (user, 2026-09-27).
-- Rewards arrive physically: a drop capsule on the landing pad holds the items, and schematics arrive as a message that unlocks the technology.
+- Rewards arrive physically: a drop capsule on the landing pad holds the items, on a field world the pod's locker (0210), and schematics arrive as a message that unlocks the technology.
 - Contextual hints fire once, on counters the simulation already keeps.
 - World building lives in the journal's Notes tab (`data/notes.sjson`), not in quest text.
 - Chapters measure placements and production, not layout: nothing checks that a belt feeds the same furnace or that a pump lifts water. A chapter whose intent is a layout says so in its header and measures a stand in (ten lifts for a second floor).
 
 ## Objective types
 
-Evaluated every tick against the statistics counters, placed counts, recipe unlocks, research state and the capsule.
+Evaluated every tick against the statistics counters, placed counts, recipe unlocks, research state and the reward target.
 
 | Type | Counts | Example |
 | --- | --- | --- |
@@ -26,7 +26,7 @@ Evaluated every tick against the statistics counters, placed counts, recipe unlo
 | place | Placements of a machine, or blocks placed with an item | Place 3 stone furnaces |
 | sustain | Ticks in a row at a rate, optionally hands off | 40 iron plates per minute for 5 seconds |
 | research | The technology researched, an infinite one at its first level | Research automation |
-| deliver | Items in the capsule since activation | 100 electronic circuits |
+| deliver | Items in the reward target since activation | 100 electronic circuits |
 | discover | The recipe available | Discover charcoal |
 | walk | Blocks walked on foot | Walk 10 blocks |
 | counter | Growth of a hint counter since activation | Drills burn 10 fuel items |
@@ -37,10 +37,11 @@ Evaluated every tick against the statistics counters, placed counts, recipe unlo
 
 - One quest is active at a time, chapter after chapter in data order. A quest without objectives completes on its first tick and carries its opening message.
 - Counting since the game began means work done ahead of the journal counts. Obtained is growth of what players hold between ticks, so crafted items and items taken back out of a chest count.
-- Completion logs Mission Control's line, queues the rewards, unlocks quest channel recipes and `unlocks_technology` rewards, and activates the next quest in the same tick. Delivered items leave the capsule then.
+- Completion logs Mission Control's line, queues the rewards, unlocks quest channel recipes and `unlocks_technology` rewards, and activates the next quest in the same tick. Delivered items leave the reward target then.
 - The landing pad is stamped by world generation at the spawn, so it returns identically on every load. Its drop capsule is never picked up. Rewards that do not fit wait for room and are never dropped.
-- A message key starting with `mc_` is Mission Control speaking (`MISSION_CONTROL_KEY_PREFIX`), shown in the HUD panel and framed in the journal. The venture's notices (research done, contracts, trade, surveys, the capsule landing) stay toasts and plain journal rows. A new Mission Control line needs only the prefix.
-- In a message text `{value}` takes the message's number and `{cargo}` the cargo of the shipment it names.
+- The reward target (0210, `quest_reward_target`): the capsule on a block world, the first pod's locker on a field world (first in the pools' index order), derived at a new world and at load and never saved, the delivery baseline snapshotted from it when it changes, and the capsule with one log line when the pod has no locker.
+- A message key starting with `mc_` is Mission Control speaking (`MISSION_CONTROL_KEY_PREFIX`), shown in the HUD panel and framed in the journal. The venture's notices (research done, contracts, trade, surveys, the capsule landing or, on a field world, the locker's drop) stay toasts and plain journal rows. A new Mission Control line needs only the prefix.
+- In a message text `{value}` takes the message's number and `{cargo}` the cargo of the shipment it names. In a message or quest text `{target}` takes the reward target's phrase, `reward_target_capsule` or `reward_target_locker`.
 - Ore discovery (`discovery.odin`): the first time a discoverable block's drop is obtained, "{name} discovered!" (`item_discovered`) shows as the HUD's discovery card, once per world. Starting items and unlock all do not trigger it. Developer kits and `--give` do.
 - Mining a vein's last outcrop block with units left logs `mc_outcrop_spent` once per vein, whatever quest is active ([content.md](content.md), Veins).
 - After the last quest the journal's last chapter tab starts with "Contracts continue" and the HUD's objective column shows the oldest open contract.

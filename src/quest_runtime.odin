@@ -2,13 +2,15 @@ package game
 
 import "core:fmt"
 import "core:strings"
+import "platform"
 
 // The quest runtime, ticked in the simulation. One quest is active at a
 // time, chapter after chapter in data order. Every tick the active
 // quest's objectives are compared with the statistics counters, the
-// recipe unlocks and the capsule; hints fire once when their counter has
-// grown by the threshold since the quest became active. Completion logs
-// Mission Control's line, queues the rewards for the capsule, unlocks
+// recipe unlocks and the reward target (the capsule, or the pod's locker
+// on a field world); hints fire once when their counter has grown by the
+// threshold since the quest became active. Completion logs Mission
+// Control's line, queues the rewards for the reward target, unlocks
 // quest channel recipes and technologies and activates the next quest in
 // the same tick.
 //
@@ -16,14 +18,19 @@ import "core:strings"
 // began, so work done ahead of the journal counts ("quests guide, never
 // block"), except a craft objective with produced_since_active. That one,
 // counter and produce_fluid objectives count from activation. deliver
-// counts what players put into the capsule since the quest became active
-// and is still in it. sustain counts consecutive ticks at the rate, and
+// counts what players put into the reward target since the quest became
+// active and is still in it. sustain counts consecutive ticks at the rate, and
 // with hands_off also without a world action. research is done once the
 // technology is marked researched; for an infinite technology that
 // happens when its first level finishes (apply_finished_research), even
 // though technology_status never calls an infinite technology researched.
 
 CAPSULE_LANDED_KEY :: "capsule_landed"
+// The toast when rewards land in the pod's locker (work item 0210).
+LOCKER_STOCKED_KEY :: "locker_stocked"
+// The reward target's phrase in a quest text (work item 0210).
+REWARD_TARGET_CAPSULE_KEY :: "reward_target_capsule"
+REWARD_TARGET_LOCKER_KEY :: "reward_target_locker"
 RESEARCH_COMPLETE_KEY :: "research_complete"
 // Mission Control's line for a vein whose outcrop was mined away with
 // units left (work item 0096).
@@ -33,6 +40,7 @@ OUTCROP_SPENT_KEY :: "mc_outcrop_spent"
 MESSAGE_ARGUMENT_MARK :: "{name}"
 MESSAGE_VALUE_MARK :: "{value}"
 MESSAGE_CARGO_MARK :: "{cargo}"
+MESSAGE_TARGET_MARK :: "{target}"
 
 Quest_Status :: enum u8 {
 	Locked,
@@ -78,7 +86,11 @@ Quest_State :: struct {
 	// The active quest, or NO_QUEST once every quest is done.
 	active:          int,
 	capsule:         Entity_Handle,
-	// Reward items waiting for room in the capsule, never dropped.
+	// Where rewards land and deliveries count (0210): the capsule, or the
+	// pod's locker on a field world. Derived (settle_quest_reward_target),
+	// never saved.
+	reward_target:   Entity_Handle,
+	// Reward items waiting for room in the reward target, never dropped.
 	pending_rewards: [dynamic]Item_Stack,
 	// Mission Control's lines, oldest first, for the journal.
 	messages:        [dynamic]Quest_Message,
@@ -101,7 +113,50 @@ Objective_Progress :: struct {
 }
 
 make_quest_state :: proc(registry: Quest_Registry, capsule: Entity_Handle, allocator := context.allocator) -> Quest_State {
-	return Quest_State{progress = make([]Quest_Progress, len(registry.quests), allocator), active = NO_QUEST, capsule = capsule}
+	return Quest_State{progress = make([]Quest_Progress, len(registry.quests), allocator), active = NO_QUEST, capsule = capsule, reward_target = capsule}
+}
+
+// Pure: the pod's locker on a field world that has one, otherwise the
+// capsule.
+quest_reward_target :: proc(entities: ^Entities, machines: Machine_Registry, capsule: Entity_Handle, field_enabled: bool) -> Entity_Handle {
+	if !field_enabled {
+		return capsule
+	}
+	if locker, found := pod_locker(entities, machines); found {
+		return locker
+	}
+	return capsule
+}
+
+// Derives the reward target at a new world and at load. When it changes,
+// the delivery baseline is taken from the new target, so its contents do
+// not count as delivered. A field world without a locker logs one line.
+settle_quest_reward_target :: proc(quests: ^Quest_State, statistics: ^Statistics, entities: ^Entities, machines: Machine_Registry, field_enabled: bool) {
+	target := quest_reward_target(entities, machines, quests.capsule, field_enabled)
+	if field_enabled && target.kind != .Chest {
+		platform.log_printf("quests: the pod has no locker; quest rewards go to the drop capsule")
+	}
+	if target != quests.reward_target {
+		quests.reward_target = target
+		snapshot_capsule(statistics, entity_slots(entities, target))
+	}
+}
+
+// The string key of the reward target's phrase; NO_ENTITY reads as the
+// capsule.
+reward_target_name_key :: proc(target: Entity_Handle) -> string {
+	return target.kind == .Chest ? REWARD_TARGET_LOCKER_KEY : REWARD_TARGET_CAPSULE_KEY
+}
+
+// The string key of the toast when rewards land in the target.
+reward_landed_key :: proc(target: Entity_Handle) -> string {
+	return target.kind == .Chest ? LOCKER_STOCKED_KEY : CAPSULE_LANDED_KEY
+}
+
+// The template with the reward target's phrase at MESSAGE_TARGET_MARK, in
+// the temp allocator.
+reward_target_text :: proc(template: string, target: Entity_Handle) -> string {
+	return replace_message_mark(template, MESSAGE_TARGET_MARK, text(reward_target_name_key(target)))
 }
 
 destroy_quest_state :: proc(state: Quest_State, allocator := context.allocator) {
@@ -340,13 +395,15 @@ log_research_complete :: proc(state: ^Quest_State, tick: u64, technology_name_ke
 	log_quest_message(state, tick, RESEARCH_COMPLETE_KEY, technology_name_key)
 }
 
-// The shipments and items fill in a shipment's cargo.
-quest_message_text :: proc(message: Quest_Message, shipments: []Shipment, items: Item_Registry) -> string {
+// The shipments and items fill in a shipment's cargo, the reward target
+// its phrase.
+quest_message_text :: proc(message: Quest_Message, shipments: []Shipment, items: Item_Registry, reward_target: Entity_Handle) -> string {
 	result := text(message.text_key)
 	if message.argument_key != "" {
 		result = format_message_text(result, text(message.argument_key))
 	}
 	result = replace_message_mark(result, MESSAGE_VALUE_MARK, fmt.tprintf("%d", message.value))
+	result = reward_target_text(result, reward_target)
 	if message.shipment > 0 && int(message.shipment) <= len(shipments) {
 		result = replace_message_mark(result, MESSAGE_CARGO_MARK, shipment_cargo_text(shipments[message.shipment - 1], items))
 	}
@@ -416,7 +473,8 @@ remove_from_slots :: proc(slots: []Item_Stack, item: Item_Id, count: u64) {
 	}
 }
 
-// Delivered items leave the capsule when their quest completes.
+// Delivered items leave the reward target (the capsule, or the pod's
+// locker on a field world) when their quest completes.
 consume_deliveries :: proc(quest: Quest, capsule_slots: []Item_Stack) {
 	for objective in quest.objectives {
 		if objective.type == .Deliver {
@@ -482,7 +540,8 @@ advance_active_quests :: proc(state: ^Quest_State, tick_context: Quest_Tick_Cont
 	}
 }
 
-// Rewards land in the capsule as far as they fit; the rest waits for room.
+// Rewards land in the reward target (the capsule, or the pod's locker on
+// a field world) as far as they fit; the rest waits for room.
 // Returns whether anything landed.
 land_rewards :: proc(pending: ^[dynamic]Item_Stack, capsule_slots: []Item_Stack, items: Item_Registry) -> bool {
 	landed := false
@@ -513,11 +572,11 @@ announce_spent_outcrops :: proc(state: ^Quest_State, statistics: ^Statistics, ti
 
 tick_quests :: proc(state: ^Quest_State, tick_context: Quest_Tick_Context, entities: ^Entities) {
 	announce_spent_outcrops(state, tick_context.statistics, tick_context.tick)
-	capsule_slots := entity_slots(entities, state.capsule)
-	observe_capsule(tick_context.statistics, capsule_slots)
-	advance_active_quests(state, tick_context, capsule_slots)
-	if land_rewards(&state.pending_rewards, capsule_slots, tick_context.items) {
-		append(&state.notices, Quest_Message{tick = tick_context.tick, text_key = CAPSULE_LANDED_KEY})
+	target_slots := entity_slots(entities, state.reward_target)
+	observe_capsule(tick_context.statistics, target_slots)
+	advance_active_quests(state, tick_context, target_slots)
+	if land_rewards(&state.pending_rewards, target_slots, tick_context.items) {
+		append(&state.notices, Quest_Message{tick = tick_context.tick, text_key = reward_landed_key(state.reward_target)})
 	}
-	snapshot_capsule(tick_context.statistics, capsule_slots)
+	snapshot_capsule(tick_context.statistics, target_slots)
 }

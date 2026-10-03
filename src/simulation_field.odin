@@ -470,8 +470,10 @@ field_spawn_player :: proc(entities: ^Entities, machines: Machine_Registry, seed
 
 // A new world's field (a session's, the benchmark's): the spacing, the
 // simulated set of data/game.sjson, the planet, the pod on the crater's
-// floor at the home (place_pod, when the machines have one), every player
-// in its cabin and the water's planet. The world's seed is set before.
+// floor at the home (place_pod, when the machines have one), the quests'
+// reward target (the pod's locker, settle_quest_reward_target), every
+// player in its cabin and the water's planet. The world's seed is set
+// before.
 enable_new_field_world :: proc(state: ^Simulation_State, config: Game_Config, machines: Machine_Registry, field_content: Field_Content, planet: Planet, spacing_millimetres: int) {
 	field := &state.field
 	field.enabled = true
@@ -481,6 +483,7 @@ enable_new_field_world :: proc(state: ^Simulation_State, config: Game_Config, ma
 	seed := state.world.settings.seed
 	site, heading := field_home_site(make_planet_generation(seed, planet, spacing_millimetres), planet)
 	place_pod(&state.world.entities, machines, site, heading, field_content.foundation_pitch_millimetres)
+	settle_quest_reward_target(&state.quests, &state.records.statistics, &state.world.entities, machines, true)
 	for &player in state.players {
 		player.field = field_spawn_player(&state.world.entities, machines, seed, planet, spacing_millimetres)
 	}

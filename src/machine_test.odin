@@ -301,7 +301,7 @@ test_fixture_definitions :: proc(fixtures: []Pod_Fixture_Definition) -> []Machin
 		name_key = "machine_pod_locker",
 		kind = "locker",
 		footprint = {width = 1, depth = 2, height = 2},
-		slots = 4,
+		slots = CAPSULE_SLOT_COUNT,
 	}
 	chest := Machine_Definition {
 		id = "chest",
@@ -408,6 +408,8 @@ test_the_world_placed_fixture_kinds_are_validated :: proc(t: ^testing.T) {
 	testing.expect_value(t, validate_machine_definition({locker}, 0), "")
 	empty_locker := locker
 	empty_locker.slots = 0
+	small_locker := locker
+	small_locker.slots = CAPSULE_SLOT_COUNT - 1
 	big_locker := locker
 	big_locker.slots = MAXIMUM_CHEST_SLOTS + 1
 	carried_locker := locker
@@ -437,7 +439,7 @@ test_the_world_placed_fixture_kinds_are_validated :: proc(t: ^testing.T) {
 	slotted_generator.slots = 1
 	carried_generator := generator
 	carried_generator.item = "wooden_chest"
-	append(&refused, sliding_chest, empty_locker, big_locker, carried_locker, assembling_bench, slotted_bench, carried_bench, slotted_generator, carried_generator)
+	append(&refused, sliding_chest, empty_locker, small_locker, big_locker, carried_locker, assembling_bench, slotted_bench, carried_bench, slotted_generator, carried_generator)
 	for definition in refused {
 		testing.expectf(t, validate_machine_definition({definition}, 0) != "", "%s %v passes", definition.id, definition)
 	}

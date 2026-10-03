@@ -1,5 +1,6 @@
 package game
 
+import "core:strings"
 import "core:testing"
 
 // A synthetic chapter setup: statistics, unlocks and a capsule in its own
@@ -381,4 +382,116 @@ test_quest_simulation_is_deterministic :: proc(t: ^testing.T) {
 	testing.expect_value(t, first.quests.progress[0].status, Quest_Status.Done)
 	testing.expectf(t, first.quests.progress[bearings].status == .Done, "walked %d mm", first.records.statistics.distance_walked_millimetres)
 	testing.expect(t, first.quests.active > bearings)
+}
+
+// Work item 0210: a quest that takes 5 iron plates and rewards 7 coal, on
+// a test with the pod placed beside the capsule, and the pod's locker.
+make_locker_quest_test :: proc() -> (test: Quest_Test, locker: Entity_Handle) {
+	items := make_test_items()
+	quest := objective_quest(item_objective(.Deliver, test_item(items, "iron_plate"), 5))
+	quest.reward_items = slice_clone_temp([]Item_Stack{{test_item(items, "coal"), 7}})
+	// The quests in the temp allocator: a literal slice would not outlive
+	// this procedure.
+	test = make_quest_test(slice_clone_temp([]Quest{quest}), one_chapter(1))
+	frame, pod := place_test_pod(&test.entities, test.machines)
+	return test, test_pod_fixture(&test.entities, frame, pod, TEST_LOCKER)
+}
+
+settle_quest_test_target :: proc(test: ^Quest_Test, field_enabled: bool) {
+	settle_quest_reward_target(&test.state, &test.statistics, &test.entities, test.machines, field_enabled)
+}
+
+slots_are_empty :: proc(slots: []Item_Stack) -> bool {
+	for slot in slots {
+		if !stack_is_empty(slot) {
+			return false
+		}
+	}
+	return true
+}
+
+// Work item 0210: on a field world the reward lands in the pod's locker,
+// and plates put into the locker count as delivered.
+@(test)
+test_a_field_worlds_quest_reward_lands_in_the_locker_and_its_delivery_counts :: proc(t: ^testing.T) {
+	test, locker := make_locker_quest_test()
+	defer destroy_quest_test(&test)
+	plate, coal := test_item(test.items, "iron_plate"), test_item(test.items, "coal")
+	testing.expect_value(t, locker.kind, Entity_Kind.Chest)
+	settle_quest_test_target(&test, true)
+	testing.expect_value(t, test.state.reward_target, locker)
+	locker_slots := entity_slots(&test.entities, locker)
+	locker_slots[0] = {plate, 5}
+	run_quest_tick(&test)
+	testing.expect_value(t, test.state.active, NO_QUEST)
+	testing.expect_value(t, test.statistics.delivered[plate], 5)
+	testing.expect_value(t, slots_item_count(locker_slots, coal), 7)
+	testing.expect_value(t, slots_item_count(locker_slots, plate), 0)
+	testing.expect(t, slots_are_empty(capsule_slots(&test)), "the capsule holds an item")
+	testing.expect_value(t, test.state.notices[len(test.state.notices) - 1].text_key, LOCKER_STOCKED_KEY)
+}
+
+// Work item 0210: what the locker holds when it becomes the target is the
+// new baseline, not a delivery.
+@(test)
+test_settling_on_the_locker_does_not_count_its_contents_as_delivered :: proc(t: ^testing.T) {
+	test, locker := make_locker_quest_test()
+	defer destroy_quest_test(&test)
+	plate := test_item(test.items, "iron_plate")
+	locker_slots := entity_slots(&test.entities, locker)
+	locker_slots[0] = {plate, 5}
+	settle_quest_test_target(&test, true)
+	run_quest_tick(&test)
+	testing.expect_value(t, test.state.active, 0)
+	locker_slots[1] = {plate, 5}
+	run_quest_tick(&test)
+	testing.expect_value(t, test.state.active, NO_QUEST)
+}
+
+// Work item 0210: a block world keeps the capsule as the target, pod or
+// not.
+@(test)
+test_a_block_worlds_quest_reward_still_lands_in_the_capsule :: proc(t: ^testing.T) {
+	test, locker := make_locker_quest_test()
+	defer destroy_quest_test(&test)
+	plate, coal := test_item(test.items, "iron_plate"), test_item(test.items, "coal")
+	settle_quest_test_target(&test, false)
+	testing.expect_value(t, test.state.reward_target, test.state.capsule)
+	slots := capsule_slots(&test)
+	slots[0] = {plate, 5}
+	run_quest_tick(&test)
+	testing.expect_value(t, test.state.active, NO_QUEST)
+	testing.expect_value(t, slots_item_count(slots, coal), 7)
+	testing.expect(t, slots_are_empty(entity_slots(&test.entities, locker)), "the locker holds an item")
+	testing.expect_value(t, test.state.notices[len(test.state.notices) - 1].text_key, CAPSULE_LANDED_KEY)
+}
+
+// Work item 0210: a field world whose pod has no locker keeps the
+// capsule as the target, and rewards still land.
+@(test)
+test_a_field_world_without_a_locker_falls_back_to_the_capsule :: proc(t: ^testing.T) {
+	test, locker := make_locker_quest_test()
+	defer destroy_quest_test(&test)
+	coal := test_item(test.items, "coal")
+	testing.expect(t, remove_entity(&test.entities, test.machines, locker))
+	settle_quest_test_target(&test, true)
+	testing.expect_value(t, test.state.reward_target, test.state.capsule)
+	append(&test.state.pending_rewards, Item_Stack{coal, 7})
+	run_quest_tick(&test)
+	testing.expect_value(t, slots_item_count(capsule_slots(&test), coal), 7)
+	testing.expect_value(t, len(test.state.pending_rewards), 0)
+}
+
+// Work item 0210: {target} in a quest text takes the target's phrase.
+@(test)
+test_quest_texts_name_the_reward_target :: proc(t: ^testing.T) {
+	test, locker := make_locker_quest_test()
+	defer destroy_quest_test(&test)
+	message := Quest_Message{text_key = "Deliver to {target}."}
+	in_locker := quest_message_text(message, nil, test.items, locker)
+	testing.expect(t, strings.contains(in_locker, text(REWARD_TARGET_LOCKER_KEY)), in_locker)
+	testing.expect(t, !strings.contains(in_locker, MESSAGE_TARGET_MARK), in_locker)
+	in_capsule := quest_message_text(message, nil, test.items, test.state.capsule)
+	testing.expect(t, strings.contains(in_capsule, text(REWARD_TARGET_CAPSULE_KEY)), in_capsule)
+	testing.expect_value(t, reward_target_text("{target}", NO_ENTITY), text(REWARD_TARGET_CAPSULE_KEY))
 }
