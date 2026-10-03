@@ -1,6 +1,6 @@
 # 0189: Terrain sculpting: ledges, basins and where the sea lies
 
-Status: todo (playtest 1 of the slice, 2026-10-03; the look is the user's call, the bullets below are the proposal)
+Status: todo (playtest 1 of the slice, 2026-10-03; the user approved the proposal below on 2026-10-03, "so i can try out the slope movement"; after 0193 and 0194)
 
 ## Goal
 
