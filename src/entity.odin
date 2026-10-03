@@ -304,11 +304,16 @@ entity_common :: proc(entities: ^Entities, handle: Entity_Handle) -> ^Entity_Com
 	return nil
 }
 
-// Belts, foundations and belt poles have no panel: Open_Aimed does
-// nothing on them (the inventory opens instead, 0194). Interact on a
-// schematic crate takes its schematic (schematic.odin).
-entity_has_panel :: proc(entities: ^Entities, handle: Entity_Handle) -> bool {
-	return handle.kind != .Belt && handle.kind != .Foundation && handle.kind != .Belt_Pole && handle.kind != .Schematic_Crate && entity_is_alive(entities, handle)
+// Belts, foundations, the pod and belt poles have no panel: Open_Aimed
+// does nothing on them (the inventory opens instead, 0194). A crafting
+// station in the foundations' pool has one (work item 0196). Interact on
+// a schematic crate takes its schematic (schematic.odin).
+entity_has_panel :: proc(entities: ^Entities, machines: Machine_Registry, handle: Entity_Handle) -> bool {
+	if handle.kind == .Foundation {
+		common := entity_common(entities, handle)
+		return common != nil && int(common.machine) < len(machines.machines) && machines.machines[common.machine].kind == .Crafting_Station
+	}
+	return handle.kind != .Belt && handle.kind != .Belt_Pole && handle.kind != .Schematic_Crate && entity_is_alive(entities, handle)
 }
 
 entity_is_alive :: proc(entities: ^Entities, handle: Entity_Handle) -> bool {
@@ -546,7 +551,7 @@ add_entity :: proc(entities: ^Entities, machines: Machine_Registry, machine: Mac
 		handle = pool_add(&entities.core_sample_drills, .Core_Sample_Drill, make_core_sample_drill(common))
 	case .Launch_Pad:
 		handle = pool_add(&entities.launch_pads, .Launch_Pad, make_launch_pad(common, machines.machines[machine]))
-	case .Foundation, .Pod:
+	case .Foundation, .Pod, .Crafting_Station:
 		handle = pool_add(&entities.foundations, .Foundation, Foundation{common = common})
 	case .Belt_Pole:
 		handle = pool_add(&entities.belt_poles, .Belt_Pole, Belt_Pole{common = common})

@@ -179,6 +179,41 @@ validate_crafting_machine_definition :: proc(definition: Machine_Definition) -> 
 	return ""
 }
 
+// A crafting station (work item 0196): a recipe_maker of a crafting
+// category, and nothing a machine that runs by itself needs, since its
+// crafts run in the player's hand queue. An item places it.
+validate_crafting_station_definition :: proc(definition: Machine_Definition) -> string {
+	maker, maker_found := parse_named_enum(recipe_maker_names, definition.recipe_maker)
+	if !maker_found || maker == .Hand || maker == .Furnace || maker == .Recycler {
+		return fmt.tprintf("crafting station %q needs a recipe_maker of a crafting category", definition.id)
+	}
+	no_power := definition.fuel_slots == 0 && definition.fuel_power_kilowatts == 0 && definition.electric_power_kilowatts == 0
+	no_slots := definition.slots == 0 && definition.input_slots == 0 && definition.output_slots == 0
+	if !no_power || !no_slots || definition.speed != 0 || len(definition.fluid_ports) > 0 {
+		return fmt.tprintf("crafting station %q may not list slots, fuel, power, speed or fluid ports", definition.id)
+	}
+	if definition.item == "" {
+		return fmt.tprintf("crafting station %q needs an item", definition.id)
+	}
+	return ""
+}
+
+// The hand queue moves no fluid, so a station's recipes take and give
+// items only.
+crafting_station_recipes_problem :: proc(machines: Machine_Registry, recipes: Recipe_Registry) -> string {
+	for machine in machines.machines {
+		if machine.kind != .Crafting_Station {
+			continue
+		}
+		for recipe in recipes.recipes {
+			if machine.recipe_maker in recipe.made_in && (len(recipe.fluid_inputs) > 0 || len(recipe.fluid_outputs) > 0) {
+				return fmt.tprintf("recipe %q of crafting station %q takes or gives a fluid", recipe.id, machine.id)
+			}
+		}
+	}
+	return ""
+}
+
 // Whether every input item of first is also one of second.
 recipe_inputs_within :: proc(first, second: Recipe) -> bool {
 	for input in first.inputs {

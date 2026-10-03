@@ -1809,13 +1809,13 @@ touch_tap_into_tick :: proc(t: ^testing.T, world: ^World, content: Simulation_Co
 	inputs := interaction == .Tap ? TAP_TOUCH : CROSSHAIR_TOUCH
 	target := players[0].target.entity
 	inputs.target_takes_interaction = entity_takes_interact(&world.entities, content.machines, target)
-	inputs.target_has_panel = aims_at_panel(&world.entities, target, {})
+	inputs.target_has_panel = aims_at_panel(&world.entities, content.machines, target, {})
 	tap_at(&state, layout, 0, TAP_POINT, inputs)
 	output := touch_frame(&state, layout, {}, inputs = inputs)
 	tables, _ := build_input_bindings(shipped_default_bindings(t), .Sdl3, context.temp_allocator)
 	gamepad := touch_overlay_raw_gamepad(output, .Sdl3)
 	actions := gamepad_button_actions(gamepad, tables) + gamepad_trigger_actions(gamepad, tables)
-	frame := route_open_inventory_press(Input_Frame{pressed = actions, just_pressed = actions}, false, aims_at_panel(&world.entities, target, {}))
+	frame := route_open_inventory_press(Input_Frame{pressed = actions, just_pressed = actions}, false, aims_at_panel(&world.entities, content.machines, target, {}))
 	records: Game_Records
 	players[0].on_ground = true
 	events = tick_player(world, &records, content, players, 0, frame, TEST_TICK_RATE, 0)
@@ -1894,7 +1894,7 @@ test_a_tap_on_the_field_turns_a_switch_and_opens_a_furnace :: proc(t: ^testing.T
 		output := touch_frame(&state, layout, {}, inputs = inputs)
 		gamepad := touch_overlay_raw_gamepad(output, .Sdl3)
 		actions := gamepad_button_actions(gamepad, tables) + gamepad_trigger_actions(gamepad, tables)
-		pressed := route_open_inventory_press(Input_Frame{pressed = actions, just_pressed = actions}, false, aims_at_panel(entities, block_target, field_target))
+		pressed := route_open_inventory_press(Input_Frame{pressed = actions, just_pressed = actions}, false, aims_at_panel(entities, simulation_content.machines, block_target, field_target))
 		was_on := pool_get(&entities.poles, power_switch).on
 		clear(&simulation.events)
 		tick_field_test_simulation(simulation, simulation_content, pressed)

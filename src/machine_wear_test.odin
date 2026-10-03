@@ -16,7 +16,7 @@ make_wear_test :: proc(terrain := Test_Terrain{kind = .Flat}) -> (simulation: Si
 	content = test_field_simulation_content(items, test_brush(.Sphere, 1000, 10))
 	content.machines = make_test_machines()
 	content.recipes, content.technologies = make_test_recipes(items)
-	content.field.foundation = find_foundation_machine(content.machines)
+	content.field.pad_foundation = find_foundation_machine(content.machines)
 	content.field.foundation_pitch_millimetres = 500
 	shipped := test_field_game_config()
 	content.field.bare_ground = make_bare_ground_tuning(shipped)
@@ -99,7 +99,8 @@ test_a_furnace_stands_on_flat_bare_ground_and_is_refused_on_a_slope :: proc(t: ^
 }
 
 // A small pole stands on the thirty degree slope (stands_on_ground), and
-// a belt pole and a pipe never count wear however they are ticked.
+// a belt pole, a pipe and the stone cutting table (0196) never count wear
+// however they are ticked.
 @(test)
 test_poles_and_pipes_stand_on_any_slope_and_never_wear :: proc(t: ^testing.T) {
 	simulation, content, items := make_wear_test(Test_Terrain{kind = .Slope, slope_degrees = 30})
@@ -107,7 +108,7 @@ test_poles_and_pipes_stand_on_any_slope_and_never_wear :: proc(t: ^testing.T) {
 	refusal, handle := place_test_machine_on_bare_ground(&simulation, content, items, "small_pole")
 	testing.expect_value(t, refusal, Field_Edit_Refusal.None)
 	testing.expect(t, handle != NO_ENTITY)
-	for id in ([?]string{"belt_pole", "pipe", "small_pole"}) {
+	for id in ([?]string{"belt_pole", "pipe", "small_pole", "stone_cutting_table"}) {
 		machine := content.machines.machines[test_machine(content.machines, id)]
 		testing.expectf(t, machine.stands_on_ground, "%s stands on the ground", id)
 		common := Entity_Common{machine = test_machine(content.machines, id), frame = Frame_Id(1)}
@@ -231,7 +232,7 @@ test_the_founded_flag_follows_the_foundations_under_a_machine :: proc(t: ^testin
 	entities := &simulation.world.entities
 	pad := lay_test_pad(entities, content.machines, 0, 0, {0, 0, 0}, {1, 0, 1})
 	for cell in ([?]World_Coordinate{{0, 1, 0}, {1, 1, 0}, {0, 1, 1}}) {
-		place_on_frame(entities, content.machines, content.field.foundation, pad.id, cell, 0)
+		place_on_frame(entities, content.machines, content.field.pad_foundation, pad.id, cell, 0)
 	}
 	chest, chest_refusal := place_on_frame(entities, content.machines, test_machine(content.machines, "wooden_chest"), pad.id, {1, 1, 1}, 0)
 	testing.expect_value(t, chest_refusal, Frame_Placement_Refusal.None)
@@ -239,7 +240,7 @@ test_the_founded_flag_follows_the_foundations_under_a_machine :: proc(t: ^testin
 	testing.expect_value(t, refusal, Frame_Placement_Refusal.None)
 	testing.expect(t, !pool_get(&entities.furnaces, furnace).founded)
 	remove_entity(entities, content.machines, chest)
-	place_on_frame(entities, content.machines, content.field.foundation, pad.id, {1, 1, 1}, 0)
+	place_on_frame(entities, content.machines, content.field.pad_foundation, pad.id, {1, 1, 1}, 0)
 	testing.expect(t, pool_get(&entities.furnaces, furnace).founded)
 	remove_entity(entities, content.machines, entity_at(entities, {1, 1, 1}, pad.id))
 	testing.expect(t, !pool_get(&entities.furnaces, furnace).founded)
@@ -331,9 +332,9 @@ test_a_new_frame_is_refused_inside_another_frames_entities :: proc(t: ^testing.T
 	apart_refusal, apart := place_test_machine_on_bare_ground(&simulation, content, items, "stone_furnace", i64(2 * POSITION_UNITS_PER_METRE))
 	testing.expect_value(t, apart_refusal, Field_Edit_Refusal.None)
 	testing.expect(t, apart != NO_ENTITY)
-	add_test_miner(&simulation, items, FAR_FEET, {"foundation", 1})
+	add_test_miner(&simulation, items, FAR_FEET, {"wooden_foundation", 1})
 	player := len(simulation.players) - 1
-	free := Field_Placement{machine = content.field.foundation, new_frame = true, hit = test_site_point(0, 0, 0), heading = {UNIT_VECTOR_ONE, 0, 0}}
+	free := Field_Placement{machine = content.field.pad_foundation, new_frame = true, hit = test_site_point(0, 0, 0), heading = {UNIT_VECTOR_ONE, 0, 0}}
 	frames_before := len(simulation.world.entities.frames.frames)
 	append(&simulation.field.placements, Queued_Field_Placement{player = player, placement = free})
 	drain_field_placements(&simulation, content)
@@ -389,4 +390,17 @@ test_an_inserter_breaks_after_its_minutes_of_moving_and_not_while_idle :: proc(t
 	testing.expect(t, moved > 0 && moved < 100, "some plates moved before the breakdown")
 	tick_test_entities(&world, &records, content, 500)
 	testing.expect_value(t, chest_count_of(&world, pair.target, plate), moved)
+}
+
+// Work item 0196: a worn stone cutter returns 80 percent of its recipe's
+// inputs rounded down: 2 iron gears and 4 stone bricks, no furnace.
+@(test)
+test_a_worn_stone_cutter_returns_its_inputs_share :: proc(t: ^testing.T) {
+	simulation, content, items := make_wear_test()
+	defer destroy_simulation(&simulation)
+	common := Entity_Common{machine = test_machine(content.machines, "stone_cutter"), wear_ticks = 1}
+	returned := machine_return_stacks(content, common)
+	testing.expect_value(t, len(returned), 2)
+	testing.expect_value(t, returned[0], Item_Stack{test_item(items, "iron_gear"), 2})
+	testing.expect_value(t, returned[1], Item_Stack{test_item(items, "stone_brick"), 4})
 }

@@ -74,6 +74,10 @@ load_game_tables :: proc(data_directory: string, config: Game_Config, string_ent
 		platform.log_printf("error: invalid %s: %s", GAME_CONFIG_FILE_NAME, problem)
 		return {}, {}, false
 	}
+	if problem := field_pad_foundation_problem(config.field_simulation, content.machines); problem != "" {
+		platform.log_printf("error: invalid %s: %s", GAME_CONFIG_FILE_NAME, problem)
+		return {}, {}, false
+	}
 	base_generator = load_generator(data_directory, content.blocks, DEFAULT_WORLD_SEED) or_return
 	veins, problem := resolve_vein_content(base_generator.veins, content.items)
 	if problem != "" {
@@ -97,6 +101,14 @@ load_content_registries :: proc(data_directory: string, string_entries: map[stri
 	content.recipes = load_recipe_registry(data_directory, content.items, content.fluids) or_return
 	if problem := validate_crafting_machine_recipes(content.machines, content.recipes); problem != "" {
 		platform.log_printf("error: invalid %s: %s", MACHINES_FILE_NAME, problem)
+		return {}, false
+	}
+	if problem := crafting_station_recipes_problem(content.machines, content.recipes); problem != "" {
+		platform.log_printf("error: invalid %s: %s", MACHINES_FILE_NAME, problem)
+		return {}, false
+	}
+	if problem := content_former_id_problem(content); problem != "" {
+		platform.log_printf("error: invalid %s", problem)
 		return {}, false
 	}
 	content.technologies = load_technology_registry(data_directory, content.items, content.recipes) or_return

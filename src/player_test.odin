@@ -8,7 +8,7 @@ import "generation_seed"
 TEST_TICK_RATE :: 60
 
 test_game_config :: proc() -> Game_Config {
-	return Game_Config{name = "test", tick_rate = TEST_TICK_RATE, day_length_seconds = 1200, field_simulation = {chunk_radius = 2, chunk_margin = 1, torch_item = "torch", torch_emitter = "torch"}}
+	return Game_Config{name = "test", tick_rate = TEST_TICK_RATE, day_length_seconds = 1200, field_simulation = {chunk_radius = 2, chunk_margin = 1, torch_item = "torch", torch_emitter = "torch", pad_foundation = "wooden_foundation"}}
 }
 
 // The test config with the shipped field blocks of data/game.sjson (the

@@ -256,7 +256,7 @@ test_use_item_resolution :: proc(t: ^testing.T) {
 	place_pending_crates(world_tick_context(&world, &records, content, TEST_TICK_RATE))
 	crate := entity_at(&world.entities, {4, 1, 4})
 	testing.expect_value(t, crate.kind, Entity_Kind.Schematic_Crate)
-	testing.expect(t, !entity_has_panel(&world.entities, crate))
+	testing.expect(t, !entity_has_panel(&world.entities, content.machines, crate))
 	testing.expect(t, !entity_can_be_picked_up(&world, content.machines, crate))
 	player.target = Raycast_Hit{hit = true, block = {4, 1, 4}, entity = crate}
 	input, used = resolve_use_item(&player, &world.entities, content.items, press({.Jump, .Interact}))

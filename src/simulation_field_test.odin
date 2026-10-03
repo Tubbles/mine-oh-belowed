@@ -218,7 +218,7 @@ test_a_field_world_save_round_trips :: proc(t: ^testing.T) {
 	torch := sample + {0, 3, 0}
 	add_field_light_source(&field.world, torch, 12)
 	append(&field.torches, Field_Torch{sample = torch})
-	foundation := field_foundation(simulation_content)
+	foundation := field_pad_foundation(simulation_content)
 	testing.expect(t, foundation != NO_MACHINE)
 	place_free_foundation(&state.world.entities, simulation_content.machines, foundation, feet + {0, 0, 5 * POSITION_UNITS_PER_METRE}, {UNIT_VECTOR_ONE, 0, 0}, simulation_content.field.foundation_pitch_millimetres)
 	state.players[0].field.yaw = 1234
@@ -458,7 +458,7 @@ TEST_FIELD_PAD_LENGTH :: 11
 
 lay_test_field_pad :: proc(state: ^Simulation_State, content: Simulation_Content, surface: World_Position) -> Frame_Id {
 	entities := &state.world.entities
-	foundation := field_foundation(content)
+	foundation := field_pad_foundation(content)
 	_, frame := place_free_foundation(entities, content.machines, foundation, surface, {UNIT_VECTOR_ONE, 0, 0}, content.field.foundation_pitch_millimetres)
 	for x in i32(0) ..< TEST_FIELD_PAD_LENGTH {
 		for z in i32(0) ..< 2 {
@@ -765,7 +765,7 @@ test_a_foundation_block_short_of_foundations_places_nothing :: proc(t: ^testing.
 	generation := make_planet_generation(state.world.settings.seed, state.world.planet, state.field.spacing_millimetres)
 	home := planet_home_direction(state.world.planet.home)
 	pad := lay_test_field_pad(state, simulation_content, field_surface_under(generation, World_Position(fixed_scale(-home, generation.radius)), 0))
-	foundation := field_foundation(simulation_content)
+	foundation := field_pad_foundation(simulation_content)
 	item := simulation_content.machines.machines[foundation].item
 	inventory := state.players[0].inventory
 	inventory_remove(inventory, item, inventory_count(inventory, item))
@@ -951,4 +951,17 @@ test_the_field_opens_a_panel_on_open_aimed_and_turns_a_switch_on_interact :: pro
 	testing.expect_value(t, pool_get(&entities.poles, power_switch).on, !was_on)
 	testing.expect_value(t, state.records.statistics.world_actions, actions_before + 2)
 	testing.expect_value(t, state.players[0].open_machine, NO_ENTITY)
+}
+
+// Work item 0196: field_simulation.pad_foundation names a machine of kind
+// foundation; the shipped one is the wooden foundation.
+@(test)
+test_the_pad_foundation_must_be_a_foundation :: proc(t: ^testing.T) {
+	machines := make_test_machines()
+	testing.expect(t, field_pad_foundation_problem({pad_foundation = "no_such_machine"}, machines) != "")
+	testing.expect(t, field_pad_foundation_problem({pad_foundation = "stone_furnace"}, machines) != "")
+	shipped, error := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	testing.expect(t, error == nil)
+	testing.expect_value(t, shipped.field_simulation.pad_foundation, "wooden_foundation")
+	testing.expect_value(t, field_pad_foundation_problem(shipped.field_simulation, machines), "")
 }

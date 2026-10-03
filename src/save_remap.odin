@@ -1,6 +1,8 @@
 package game
 
 import "core:fmt"
+import "core:slice"
+import "core:strings"
 import "platform"
 
 // Content tables and remapping (work item 0047). Saved values index the
@@ -75,6 +77,23 @@ Content_Remap :: struct {
 	first_gone:       [Content_Table]string,
 	// A block of a saved chunk this build has no more.
 	gone_chunk_block: string,
+	// Saved ids that are former ids of a current one (work item 0196), in
+	// table order then saved order, in the temp allocator.
+	renamed:          [dynamic]Content_Renamed_Id,
+}
+
+// A record that was renamed lists its old ids as former_ids (items,
+// machines and recipes, work item 0196): a save naming the old id loads
+// it as the record.
+Content_Former_Id :: struct {
+	former, current: string,
+}
+
+Content_Former_Ids :: [Content_Table][]Content_Former_Id
+
+Content_Renamed_Id :: struct {
+	table:           Content_Table,
+	former, current: string,
 }
 
 // Tables of the game data.
@@ -191,12 +210,100 @@ read_content_tables :: proc(reader: ^Byte_Reader) -> (tables: Content_Tables, ok
 	return tables, bytes_left(section) == 0
 }
 
+// Former ids (work item 0196).
+
+// The items', machines' and recipes' former ids, in the temp allocator.
+content_former_ids :: proc(content: Simulation_Content) -> (former: Content_Former_Ids) {
+	items := make([dynamic]Content_Former_Id, context.temp_allocator)
+	for item in content.items.items {
+		for id in item.former_ids {
+			append(&items, Content_Former_Id{id, item.id})
+		}
+	}
+	machines := make([dynamic]Content_Former_Id, context.temp_allocator)
+	for machine in content.machines.machines {
+		for id in machine.former_ids {
+			append(&machines, Content_Former_Id{id, machine.id})
+		}
+	}
+	recipes := make([dynamic]Content_Former_Id, context.temp_allocator)
+	for recipe in content.recipes.recipes {
+		for id in recipe.former_ids {
+			append(&recipes, Content_Former_Id{id, recipe.id})
+		}
+	}
+	former[.Items], former[.Machines], former[.Recipes] = items[:], machines[:], recipes[:]
+	return former
+}
+
+// A former id that is also a current id of its table, or listed twice in
+// one table, would make a saved id ambiguous; "" when there is none.
+content_former_id_problem :: proc(content: Game_Content) -> string {
+	former := content_former_ids(content.simulation_content)
+	current := content_tables(content.simulation_content)
+	for table in Content_Table {
+		for entry, index in former[table] {
+			if slice.contains(current[table], entry.former) {
+				return fmt.tprintf("%s: %s %q lists the former id %q, which is also an id", former_id_file_name(table), content_table_names[table], entry.current, entry.former)
+			}
+			for other in former[table][index + 1:] {
+				if other.former == entry.former {
+					return fmt.tprintf("%s: %s list the former id %q twice", former_id_file_name(table), content_table_names[table], entry.former)
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// The file of a table that has former ids, for the load's error line.
+former_id_file_name :: proc(table: Content_Table) -> string {
+	#partial switch table {
+	case .Items:
+		return ITEMS_FILE_NAME
+	case .Recipes:
+		return RECIPES_FILE_NAME
+	}
+	return MACHINES_FILE_NAME
+}
+
+// The current id a saved id was renamed to, or "".
+former_id_current :: proc(former: []Content_Former_Id, id: string) -> string {
+	for entry in former {
+		if entry.former == id {
+			return entry.current
+		}
+	}
+	return ""
+}
+
+// "" without renames, else the one line the load logs.
+renamed_content_line :: proc(remap: Content_Remap) -> string {
+	if len(remap.renamed) == 0 {
+		return ""
+	}
+	parts := make([dynamic]string, context.temp_allocator)
+	last_table := Content_Table(len(Content_Table))
+	for entry in remap.renamed {
+		if entry.table != last_table {
+			append(&parts, fmt.tprintf("%s %s as %s", content_table_names[entry.table], entry.former, entry.current))
+		} else {
+			append(&parts, fmt.tprintf("%s as %s", entry.former, entry.current))
+		}
+		last_table = entry.table
+	}
+	return fmt.tprintf("save: loaded under renamed ids: %s", strings.join(parts[:], ", ", context.temp_allocator))
+}
+
 // The remap.
 
-make_content_remap :: proc(saved, current: Content_Tables) -> Content_Remap {
+// A saved id missing from the current table that is a former id maps to
+// the record that lists it, noted in renamed.
+make_content_remap :: proc(saved, current: Content_Tables, former: Content_Former_Ids = {}) -> Content_Remap {
 	remap := Content_Remap {
 		saved   = saved,
 		current = current,
+		renamed = make([dynamic]Content_Renamed_Id, context.temp_allocator),
 	}
 	for table in Content_Table {
 		index_of_id := make(map[string]int, len(current[table]), context.temp_allocator)
@@ -205,7 +312,15 @@ make_content_remap :: proc(saved, current: Content_Tables) -> Content_Remap {
 		}
 		remap.new_indices[table] = make([]int, len(saved[table]), context.temp_allocator)
 		for id, old_index in saved[table] {
-			remap.new_indices[table][old_index] = index_of_id[id] or_else CONTENT_GONE
+			new_index, found := index_of_id[id]
+			renamed_to := found ? "" : former_id_current(former[table], id)
+			if renamed_to != "" {
+				new_index, found = index_of_id[renamed_to]
+				if found {
+					append(&remap.renamed, Content_Renamed_Id{table, id, renamed_to})
+				}
+			}
+			remap.new_indices[table][old_index] = found ? new_index : CONTENT_GONE
 		}
 	}
 	return remap

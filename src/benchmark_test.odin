@@ -130,3 +130,30 @@ test_factory_benchmark :: proc(t: ^testing.T) {
 	defer destroy_benchmark_report(larger)
 	testing.expect(t, strings.contains(larger.problem, "M14"), larger.problem)
 }
+
+// Work item 0196: the benchmark's pad and the pod's pad are laid in the
+// content's pad foundation, the wooden one.
+@(test)
+test_the_benchmark_pad_is_the_contents_pad_foundation :: proc(t: ^testing.T) {
+	content := make_test_content()
+	generator := make_test_generator(DEFAULT_WORLD_SEED)
+	content.generator = &generator
+	config := test_field_game_config()
+	config.starting_items = nil
+	field := test_benchmark_field(content.items)
+	content.field = make_field_content(config, content.items, content.machines, field.materials, field.lighting, field.planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES)
+	defer delete(content.field.brushes)
+	testing.expect_value(t, content.machines.machines[field_pad_foundation(content)].id, "wooden_foundation")
+	simulation := make_benchmark_simulation(config, content, Benchmark_Floor{})
+	defer destroy_simulation(&simulation)
+	start_benchmark_field(&simulation, content, config, field.planet)
+	laid := 0
+	for foundation in simulation.world.entities.foundations.entries {
+		if foundation.alive && content.machines.machines[foundation.machine].kind == .Foundation {
+			testing.expect_value(t, foundation.machine, content.field.pad_foundation)
+			laid += 1
+		}
+	}
+	pad := (2 * BENCHMARK_PAD_HALF_WIDTH + 1) * (2 * BENCHMARK_PAD_HALF_WIDTH + 1)
+	testing.expect_value(t, laid, pad + POD_PAD_SIZE * POD_PAD_SIZE)
+}

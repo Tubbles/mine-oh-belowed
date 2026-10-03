@@ -70,22 +70,22 @@ place_free_foundation :: proc(entities: ^Entities, machines: Machine_Registry, m
 	return add_entity(entities, machines, machine, {}, 0, frame), frame
 }
 
-// The field content's foundation, NO_MACHINE when its machines have none
-// (a content without machines, as the field tests make).
-field_foundation :: proc(content: Simulation_Content) -> Machine_Id {
-	if int(content.field.foundation) >= len(content.machines.machines) || content.machines.machines[content.field.foundation].kind != .Foundation {
+// The field content's pad foundation (the benchmark's pad and the pod's,
+// work item 0196), NO_MACHINE when its machines have none (a content
+// without machines, as the field tests make).
+field_pad_foundation :: proc(content: Simulation_Content) -> Machine_Id {
+	if int(content.field.pad_foundation) >= len(content.machines.machines) || content.machines.machines[content.field.pad_foundation].kind != .Foundation {
 		return NO_MACHINE
 	}
-	return content.field.foundation
+	return content.field.pad_foundation
 }
 
-// The machine Place puts on a frame with the held tool: the foundation,
-// or the held machine (0179); NO_MACHINE for any other tool.
+// The machine Place puts on a frame with the held tool: the held
+// foundation (its tier, 0196) or the held machine (0179); NO_MACHINE for
+// any other tool.
 field_placed_machine :: proc(player: Field_Player, content: Simulation_Content) -> Machine_Id {
 	#partial switch player.tool {
-	case .Foundation:
-		return field_foundation(content)
-	case .Machine:
+	case .Foundation, .Machine:
 		if int(player.held_machine) < len(content.machines.machines) {
 			return player.held_machine
 		}

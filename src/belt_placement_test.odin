@@ -163,7 +163,7 @@ test_rotate_and_debug_drop_on_a_targeted_belt :: proc(t: ^testing.T) {
 	testing.expect_value(t, len(line_of(&world, belts[1]).lanes[.Right]), 1)
 	testing.expect_value(t, len(line_of(&world, belts[1]).lanes[.Left]), 0)
 	// The inventory binding on a belt opens the inventory, no panel.
-	testing.expect(t, !entity_has_panel(&world.entities, belts[1]))
+	testing.expect(t, !entity_has_panel(&world.entities, content.machines, belts[1]))
 }
 
 // Work item 0082: a belt aimed at ground cover takes the cover's cell, and

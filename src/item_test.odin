@@ -20,14 +20,14 @@ test_item :: proc(items: Item_Registry, id: string) -> Item_Id {
 test_shipped_items_resolve :: proc(t: ^testing.T) {
 	items := make_test_items()
 	blocks := make_test_registry()
-	testing.expect_value(t, len(items.items), 145)
+	testing.expect_value(t, len(items.items), 149)
 	iron_plate := items.items[test_item(items, "iron_plate")]
 	testing.expect_value(t, iron_plate.category, Item_Category.Intermediate)
 	testing.expect_value(t, iron_plate.stack_size, 50)
 	testing.expect_value(t, items.items[test_item(items, "iron_gear")].stack_size, 100)
 	testing.expect_value(t, items.items[test_item(items, "stone_furnace")].stack_size, 50)
 	testing.expect_value(t, items.items[test_item(items, "stick")].fuel_kilojoules, 500)
-	testing.expect_value(t, items.items[test_item(items, "foundation")].configurable, Item_Configuration.Foundation_Block)
+	testing.expect_value(t, items.items[test_item(items, "wooden_foundation")].configurable, Item_Configuration.Foundation_Block)
 	testing.expect_value(t, items.items[test_item(items, "stone_furnace")].configurable, Item_Configuration.None)
 	testing.expect_value(t, items.items[test_item(items, "coal")].fuel_kilojoules, 4000)
 	testing.expect_value(t, item_places_block(items, test_item(items, "torch")), test_block(blocks, "torch"))

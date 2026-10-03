@@ -53,12 +53,46 @@ selection_filter :: proc(filter: Recipe_Filter, maker: Recipe_Maker) -> Recipe_F
 	return result
 }
 
+// The browser at a crafting station (work item 0196): the available
+// recipes of the station's maker, craftable_only kept.
+station_filter :: proc(filter: Recipe_Filter, maker: Recipe_Maker) -> Recipe_Filter {
+	result := filter
+	result.makers = {maker}
+	result.available_only = true
+	return result
+}
+
+Recipe_Categories :: bit_set[Recipe_Category]
+
+// The categories holding a recipe of the maker: the tabs a station's
+// browser shows.
+station_categories :: proc(recipes: Recipe_Registry, maker: Recipe_Maker) -> (categories: Recipe_Categories) {
+	for recipe in recipes.recipes {
+		if maker in recipe.made_in {
+			categories += {recipe.category}
+		}
+	}
+	return categories
+}
+
+// The first category holding a recipe of the maker, so a station's panel
+// opens on its recipes; the filter's own category when none does.
+station_recipe_category :: proc(recipes: Recipe_Registry, maker: Recipe_Maker, fallback: Recipe_Category) -> Recipe_Category {
+	categories := station_categories(recipes, maker)
+	for category in Recipe_Category {
+		if category in categories {
+			return category
+		}
+	}
+	return fallback
+}
+
 // Per recipe, whether the queue accepts one craft now, intermediates
-// included (0156).
-craftable_recipes :: proc(recipes: Recipe_Registry, unlocks: Recipe_Unlocks, inventory: Inventory, queue: Craft_Queue, allocator := context.allocator) -> []bool {
+// included (0156), with the makers the player crafts with.
+craftable_recipes :: proc(recipes: Recipe_Registry, unlocks: Recipe_Unlocks, inventory: Inventory, queue: Craft_Queue, allocator := context.allocator, makers := HAND_MAKERS) -> []bool {
 	craftable := make([]bool, len(recipes.recipes), allocator)
 	for _, index in recipes.recipes {
-		craftable[index] = queue_accepts_crafts(queue, inventory, recipes, unlocks, index, 1)
+		craftable[index] = queue_accepts_crafts(queue, inventory, recipes, unlocks, index, 1, makers)
 	}
 	return craftable
 }
@@ -83,11 +117,12 @@ destroy_recipe_plans :: proc(plans: ^Recipe_Plans) {
 }
 
 // Changes when what the planner reads changes: the inventory, the queued
-// runs, the front's state and the available recipes; not the front's
-// progress, which moves every tick.
-recipe_plan_key :: proc(queue: Craft_Queue, inventory: Inventory, available: []bool) -> u64 {
+// runs, the front's state, the available recipes and the makers (the
+// inventory's or a station's); not the front's progress, which moves
+// every tick.
+recipe_plan_key :: proc(queue: Craft_Queue, inventory: Inventory, available: []bool, makers := HAND_MAKERS) -> u64 {
 	queue := queue
-	front := [2]u64{u64(queue.started), u64(queue.waiting_for)}
+	front := [3]u64{u64(queue.started), u64(queue.waiting_for), u64(transmute(u16)makers)}
 	key := hash.fnv64a(slice.to_bytes(inventory.slots))
 	key = hash.fnv64a(slice.to_bytes(queue.runs[:queue.count]), key)
 	key = hash.fnv64a(slice.to_bytes(available), key)
@@ -95,24 +130,24 @@ recipe_plan_key :: proc(queue: Craft_Queue, inventory: Inventory, available: []b
 }
 
 // Plans the craftable marks again when the key or the registry changed.
-refresh_craftable_recipes :: proc(plans: ^Recipe_Plans, recipes: Recipe_Registry, unlocks: Recipe_Unlocks, inventory: Inventory, queue: Craft_Queue) {
-	key := recipe_plan_key(queue, inventory, unlocks.available)
+refresh_craftable_recipes :: proc(plans: ^Recipe_Plans, recipes: Recipe_Registry, unlocks: Recipe_Unlocks, inventory: Inventory, queue: Craft_Queue, makers := HAND_MAKERS) {
+	key := recipe_plan_key(queue, inventory, unlocks.available, makers)
 	if key == plans.craftable_key && len(plans.craftable) == len(recipes.recipes) {
 		return
 	}
 	clear(&plans.craftable)
-	append(&plans.craftable, ..craftable_recipes(recipes, unlocks, inventory, queue, context.temp_allocator))
+	append(&plans.craftable, ..craftable_recipes(recipes, unlocks, inventory, queue, context.temp_allocator, makers))
 	plans.craftable_key = key
 }
 
 // Plans the focused recipe's count and ingredients again when the key or
 // the recipe changed.
-refresh_recipe_detail_plan :: proc(plans: ^Recipe_Plans, recipes: Recipe_Registry, unlocks: Recipe_Unlocks, inventory: Inventory, queue: Craft_Queue, recipe: int) {
-	key := recipe_plan_key(queue, inventory, unlocks.available)
+refresh_recipe_detail_plan :: proc(plans: ^Recipe_Plans, recipes: Recipe_Registry, unlocks: Recipe_Unlocks, inventory: Inventory, queue: Craft_Queue, recipe: int, makers := HAND_MAKERS) {
+	key := recipe_plan_key(queue, inventory, unlocks.available, makers)
 	if key == plans.detail_key && recipe == plans.detail_recipe {
 		return
 	}
-	planned := planned_crafts(queue, inventory, recipes, unlocks, recipe, context.temp_allocator)
+	planned := planned_crafts(queue, inventory, recipes, unlocks, recipe, makers, context.temp_allocator)
 	clear(&plans.detail_inputs)
 	append(&plans.detail_inputs, ..planned.inputs)
 	plans.detail_key, plans.detail_recipe, plans.detail_count = key, recipe, planned.count

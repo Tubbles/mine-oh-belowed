@@ -1,6 +1,7 @@
 package game
 
 import "core:testing"
+import rl "shared:raylib"
 
 make_test_machines :: proc() -> Machine_Registry {
 	file, error := parse_machines_file(#load("../data/machines.sjson"), context.temp_allocator)
@@ -53,7 +54,7 @@ test_machine :: proc(machines: Machine_Registry, id: string) -> Machine_Id {
 test_machine_data_loads :: proc(t: ^testing.T) {
 	items := make_test_items()
 	machines := make_test_machines()
-	testing.expect_value(t, len(machines.machines), 53)
+	testing.expect_value(t, len(machines.machines), 57)
 	wooden := machines.machines[test_machine(machines, "wooden_chest")]
 	testing.expect_value(t, wooden.kind, Machine_Kind.Chest)
 	testing.expect_value(t, wooden.slot_count, 16)
@@ -262,4 +263,24 @@ test_machine_open_cells_are_boxes_inside_the_footprint :: proc(t: ^testing.T) {
 	pod := machines.machines[find_machine_of_kind(machines, .Pod)]
 	testing.expect_value(t, pod.open_cell_box_count, 3)
 	testing.expect_value(t, pod.open_cells[2], Cell_Box{from = {5, 0, 2}, to = {5, 3, 3}})
+}
+
+// Work item 0196: a foundation needs a colour of three channels from 0 to
+// 255, not all zero, and the shipped tiers draw in theirs.
+@(test)
+test_a_foundation_needs_a_colour :: proc(t: ^testing.T) {
+	definition := Machine_Definition{id = "test_foundation", kind = "foundation", footprint = {1, 1, 1}}
+	testing.expect(t, validate_machine_kind_fields(definition, .Foundation) != "")
+	definition.color = {256, 0, 0}
+	testing.expect(t, validate_machine_kind_fields(definition, .Foundation) != "")
+	definition.color = {150, 108, 66}
+	testing.expect_value(t, validate_machine_kind_fields(definition, .Foundation), "")
+	machines := make_test_machines()
+	expected := [3]struct {
+		id:    string,
+		color: rl.Color,
+	}{{"wooden_foundation", {150, 108, 66, 255}}, {"stone_brick_foundation", {150, 146, 138, 255}}, {"iron_foundation", {104, 112, 122, 255}}}
+	for entry in expected {
+		testing.expect_value(t, foundation_slab_color(machines.machines[test_machine(machines, entry.id)]), entry.color)
+	}
 }

@@ -281,7 +281,7 @@ test_the_hotbar_decides_the_field_tool :: proc(t: ^testing.T) {
 	items := make_test_items()
 	content := test_field_simulation_content(items, test_brush(.Sphere, 1000, 10))
 	content.machines = make_test_machines()
-	content.field.foundation = find_foundation_machine(content.machines)
+	content.field.pad_foundation = find_foundation_machine(content.machines)
 	content.field.torch_item = test_item(items, "torch")
 	brushes := [2]Field_Brush{test_brush(.Sphere, 1000, 10), test_brush(.Level, 2000, 5)}
 	content.field.brushes = brushes[:]
@@ -290,7 +290,7 @@ test_the_hotbar_decides_the_field_tool :: proc(t: ^testing.T) {
 	cases := [?]struct {
 		item: string,
 		tool: Field_Held_Tool,
-	}{{"stone", .Material}, {"foundation", .Foundation}, {"torch", .Torch}, {"wooden_pickaxe", .Hand}, {"wooden_chest", .Machine}}
+	}{{"stone", .Material}, {"wooden_foundation", .Foundation}, {"torch", .Torch}, {"wooden_pickaxe", .Hand}, {"wooden_chest", .Machine}}
 	for entry, slot in cases {
 		inventory_add(player.inventory, items, test_item(items, entry.item), 1)
 		player.selected_hotbar_slot = slot
@@ -343,7 +343,7 @@ test_the_foundation_block_command_sets_the_indices :: proc(t: ^testing.T) {
 	testing.expect(t, ok)
 	testing.expect_value(t, decoded.(Foundation_Block_Command), Foundation_Block_Command{size_index = 3, height_index = 2})
 	player := &simulation.players[0]
-	inventory_hotbar(player.inventory)[player.selected_hotbar_slot] = Item_Stack{test_item(items, "foundation"), 1}
+	inventory_hotbar(player.inventory)[player.selected_hotbar_slot] = Item_Stack{test_item(items, "wooden_foundation"), 1}
 	update_field_held_tool(player, content, {held = {.Sneak}, just_pressed = {.Next_Brush}})
 	testing.expect_value(t, field.tool, Field_Held_Tool.Foundation)
 	testing.expect_value(t, field.brush, 1)

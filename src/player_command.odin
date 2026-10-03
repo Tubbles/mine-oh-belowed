@@ -247,7 +247,8 @@ apply_player_command :: proc(state: ^Simulation_State, content: Simulation_Conte
 		refused = queue_research(&state.records.research, content.technologies, state.unlocks, command.technology) != .None
 	case Craft_Command:
 		player := &state.players[queued.player]
-		refusal, _ := queue_crafts(&player.crafting, player.inventory, content.recipes, state.unlocks, command.recipe, command.count)
+		makers := player_craft_makers(&state.world.entities, content.machines, player^)
+		refusal, _ := queue_crafts(&player.crafting, player.inventory, content.recipes, state.unlocks, command.recipe, command.count, makers)
 		refused = refusal != .None
 	case Cancel_Craft_Command:
 		player := &state.players[queued.player]

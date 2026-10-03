@@ -529,7 +529,7 @@ lay_planet_preview_foundations :: proc(preview: ^Planet_Preview) {
 	simulation := planet_preview_simulation(preview)
 	content := planet_preview_content(preview)
 	player := simulation.players[0].field
-	foundation := field_foundation(content)
+	foundation := field_pad_foundation(content)
 	if preview.pad_laid || !player.on_ground || foundation == NO_MACHINE {
 		return
 	}

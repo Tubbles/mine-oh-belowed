@@ -3,7 +3,8 @@
 // at a time. The slice's chapter (work item 0179): the field has no trees
 // until M14 and the starter kit carries a stone pickaxe, so the chapter
 // digs stone and the outcrops, smelts plates and ends with the first line
-// of a drill, an arm, a belt and a chest.
+// of a drill, an arm, a belt and a chest. The line's belt poles need
+// bricks, cut at the stone cutting table (work item 0196, quest cutting).
 //
 // A quest: id, title_key, text_key (the objective text), objectives,
 // message_key (Mission Control when the quest becomes active) and
@@ -160,6 +161,17 @@ quests = [
 			{item = "iron_plate", count = 10}
 		]
 		main = true
+	}
+	{
+		id = "cutting"
+		title_key = "quest_cutting_title"
+		text_key = "quest_cutting_text"
+		objectives = [
+			{type = "craft", item = "stone_cutting_table", count = 1}
+			{type = "place", entity = "stone_cutting_table", count = 1}
+			{type = "craft", item = "stone_brick", count = 2}
+		]
+		message_key = "mc_cutting"
 	}
 	{
 		id = "line"

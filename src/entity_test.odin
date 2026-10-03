@@ -227,12 +227,29 @@ test_aims_at_panel_reads_the_target_the_hud_shows :: proc(t: ^testing.T) {
 	world := make_floor_world(content.blocks, 32)
 	furnace := add_entity(&world.entities, content.machines, test_machine(content.machines, "stone_furnace"), {4, 1, 4}, 0)
 	belt := add_entity(&world.entities, content.machines, test_machine(content.machines, "belt"), {6, 1, 4}, 0)
-	testing.expect(t, aims_at_panel(&world.entities, furnace, {}))
-	testing.expect(t, !aims_at_panel(&world.entities, belt, {}))
-	testing.expect(t, !aims_at_panel(&world.entities, NO_ENTITY, {}))
+	testing.expect(t, aims_at_panel(&world.entities, content.machines, furnace, {}))
+	testing.expect(t, !aims_at_panel(&world.entities, content.machines, belt, {}))
+	testing.expect(t, !aims_at_panel(&world.entities, content.machines, NO_ENTITY, {}))
 	on_frame := Frame_Raycast_Hit{hit = true, occupant = {handle = entity_occupant_handle(furnace)}}
 	testing.expect_value(t, aimed_entity(NO_ENTITY, on_frame), furnace)
-	testing.expect(t, aims_at_panel(&world.entities, NO_ENTITY, on_frame))
+	testing.expect(t, aims_at_panel(&world.entities, content.machines, NO_ENTITY, on_frame))
 	on_belt := Frame_Raycast_Hit{hit = true, occupant = {handle = entity_occupant_handle(belt)}}
-	testing.expect(t, !aims_at_panel(&world.entities, furnace, on_belt))
+	testing.expect(t, !aims_at_panel(&world.entities, content.machines, furnace, on_belt))
+}
+
+// Work item 0196: a crafting station in the foundations' pool has a
+// panel; a foundation, the pod and a belt pole have none.
+@(test)
+test_a_crafting_station_has_a_panel :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	table := add_entity(&world.entities, content.machines, test_machine(content.machines, "stone_cutting_table"), {2, 1, 2}, 0)
+	foundation := add_entity(&world.entities, content.machines, test_machine(content.machines, "wooden_foundation"), {6, 1, 2}, 0)
+	pod := add_entity(&world.entities, content.machines, find_machine_of_kind(content.machines, .Pod), {10, 1, 10}, 0)
+	pole := add_entity(&world.entities, content.machines, test_machine(content.machines, "belt_pole"), {2, 1, 6}, 0)
+	testing.expect_value(t, table.kind, Entity_Kind.Foundation)
+	testing.expect(t, entity_has_panel(&world.entities, content.machines, table))
+	testing.expect(t, !entity_has_panel(&world.entities, content.machines, foundation))
+	testing.expect(t, !entity_has_panel(&world.entities, content.machines, pod))
+	testing.expect(t, !entity_has_panel(&world.entities, content.machines, pole))
 }

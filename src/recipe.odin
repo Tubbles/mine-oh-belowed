@@ -33,6 +33,9 @@ Recipe_Maker :: enum u8 {
 	Gasifier,
 	Electrolysis,
 	Recycler,
+	// The stone cutting table (a crafting station, its crafts in the hand
+	// queue) and the stone cutter (work item 0196).
+	Stone_Cutting,
 }
 
 Recipe_Makers :: bit_set[Recipe_Maker]
@@ -51,6 +54,7 @@ recipe_maker_names := [Recipe_Maker]string {
 	.Gasifier      = "gasifier",
 	.Electrolysis  = "electrolysis",
 	.Recycler      = "recycler",
+	.Stone_Cutting = "stone_cutting",
 }
 
 // The recipe browser tabs, in tab order.
@@ -138,6 +142,7 @@ Recipe_Definition :: struct {
 	channel:    string,
 	technology: string,
 	schematic:  string,
+	former_ids: []string,
 }
 
 Recipes_File :: struct {
@@ -168,6 +173,8 @@ Recipe :: struct {
 	technology_id: string,
 	technology:    int,
 	schematic:     Item_Id,
+	// The ids the recipe had in an older build (save_remap.odin, 0196).
+	former_ids:    []string,
 }
 
 Recipe_Registry :: struct {
@@ -414,6 +421,7 @@ resolve_recipe :: proc(definition: Recipe_Definition, items: Item_Registry, flui
 		technology_id = definition.technology,
 		technology    = NO_TECHNOLOGY,
 		schematic     = NO_ITEM,
+		former_ids    = definition.former_ids,
 	}
 	recipe.category, _ = parse_named_enum(recipe_category_names, definition.category)
 	recipe.channel, _ = parse_named_enum(recipe_channel_names, definition.channel)

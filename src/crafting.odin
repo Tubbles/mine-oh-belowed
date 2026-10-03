@@ -76,6 +76,30 @@ recipe_is_hand_craftable :: proc(recipe: Recipe) -> bool {
 	return .Hand in recipe.made_in
 }
 
+// The makers the hand queue crafts with away from a crafting station.
+HAND_MAKERS :: Recipe_Makers{.Hand}
+
+// Whether one of the makers makes the recipe.
+recipe_is_made_by :: proc(recipe: Recipe, makers: Recipe_Makers) -> bool {
+	return recipe.made_in & makers != {}
+}
+
+// The makers the player's hand queue takes recipes of: the hand, and the
+// recipe_maker of the crafting station whose panel is open (work item
+// 0196). The station gates queuing only: a queued run keeps crafting
+// after the panel closes.
+player_craft_makers :: proc(entities: ^Entities, machines: Machine_Registry, player: Player) -> Recipe_Makers {
+	common := entity_common(entities, player.open_machine)
+	if common == nil || int(common.machine) >= len(machines.machines) {
+		return HAND_MAKERS
+	}
+	machine := machines.machines[common.machine]
+	if machine.kind != .Crafting_Station {
+		return HAND_MAKERS
+	}
+	return HAND_MAKERS + {machine.recipe_maker}
+}
+
 // The first ingredient the inventory holds too few of, NO_ITEM when it
 // holds them all.
 first_missing_input :: proc(inventory: Inventory, recipe: Recipe) -> Item_Id {
@@ -89,11 +113,11 @@ first_missing_input :: proc(inventory: Inventory, recipe: Recipe) -> Item_Id {
 
 // Whether the recipe itself may be crafted by hand; the plan checks the
 // ingredients.
-craft_refusal :: proc(recipe: Recipe, available: bool) -> Craft_Refusal {
+craft_refusal :: proc(recipe: Recipe, available: bool, makers: Recipe_Makers) -> Craft_Refusal {
 	switch {
 	case !available:
 		return .Locked
-	case !recipe_is_hand_craftable(recipe):
+	case !recipe_is_made_by(recipe, makers):
 		return .Not_Hand_Craftable
 	}
 	return .None
@@ -113,11 +137,11 @@ craft_queue_waits_for_input :: proc(queue: Craft_Queue) -> bool {
 	return queue.count > 0 && !queue.started && queue.waiting_for != NO_ITEM
 }
 
-// The first available hand recipe in registry order whose first product
-// is the item, NO_RECIPE when there is none.
-hand_recipe_making :: proc(recipes: Recipe_Registry, available: []bool, item: Item_Id) -> int {
+// The first available recipe of the makers in registry order whose first
+// product is the item, NO_RECIPE when there is none.
+hand_recipe_making :: proc(recipes: Recipe_Registry, available: []bool, item: Item_Id, makers := HAND_MAKERS) -> int {
 	for recipe, index in recipes.recipes {
-		if len(recipe.outputs) > 0 && recipe.outputs[0].item == item && recipe_is_hand_craftable(recipe) && index < len(available) && available[index] {
+		if len(recipe.outputs) > 0 && recipe.outputs[0].item == item && recipe_is_made_by(recipe, makers) && index < len(available) && available[index] {
 			return index
 		}
 	}
@@ -131,6 +155,9 @@ Craft_Plan :: struct {
 	inventory: Inventory,
 	recipes:   Recipe_Registry,
 	available: []bool,
+	// The makers whose recipes plan as intermediates (HAND_MAKERS, plus a
+	// station's).
+	makers:    Recipe_Makers,
 	virtual:   map[Item_Id]int,
 	resolving: [dynamic]int,
 	runs:      [dynamic]Craft_Run,
@@ -138,11 +165,12 @@ Craft_Plan :: struct {
 	shortage:  Craft_Shortage,
 }
 
-make_craft_plan :: proc(inventory: Inventory, recipes: Recipe_Registry, available: []bool) -> Craft_Plan {
+make_craft_plan :: proc(inventory: Inventory, recipes: Recipe_Registry, available: []bool, makers := HAND_MAKERS) -> Craft_Plan {
 	return Craft_Plan {
 		inventory = inventory,
 		recipes = recipes,
 		available = available,
+		makers = makers,
 		virtual = make(map[Item_Id]int, context.temp_allocator),
 		resolving = make([dynamic]int, context.temp_allocator),
 		runs = make([dynamic]Craft_Run, context.temp_allocator),
@@ -224,7 +252,7 @@ plan_recipe :: proc(plan: ^Craft_Plan, recipe, crafts: int) -> bool {
 
 // Enough crafts of the item's hand recipe to cover the shortage.
 plan_intermediate :: proc(plan: ^Craft_Plan, item: Item_Id, short: int) -> bool {
-	maker := hand_recipe_making(plan.recipes, plan.available, item)
+	maker := hand_recipe_making(plan.recipes, plan.available, item, plan.makers)
 	switch {
 	case maker == NO_RECIPE:
 		plan.refusal, plan.shortage = .Missing_Ingredients, {item, short}
@@ -244,11 +272,11 @@ plan_intermediate :: proc(plan: ^Craft_Plan, item: Item_Id, short: int) -> bool 
 // all its crafts, planned against the inventory alone, to go in ahead of
 // it. Empty when the front does not wait or the plan fails (no maker, a
 // raw shortage, a cycle): the front keeps waiting.
-plan_front_repair :: proc(queue: Craft_Queue, inventory: Inventory, recipes: Recipe_Registry, available: []bool) -> []Craft_Run {
+plan_front_repair :: proc(queue: Craft_Queue, inventory: Inventory, recipes: Recipe_Registry, available: []bool, makers := HAND_MAKERS) -> []Craft_Run {
 	if !craft_queue_waits_for_input(queue) {
 		return nil
 	}
-	plan := make_craft_plan(inventory, recipes, available)
+	plan := make_craft_plan(inventory, recipes, available, makers)
 	front := queue.runs[0]
 	append(&plan.resolving, front.recipe)
 	if !plan_inputs(&plan, front.recipe, front.count) {
@@ -261,9 +289,9 @@ plan_front_repair :: proc(queue: Craft_Queue, inventory: Inventory, recipes: Rec
 // (plan_front_repair), and the runs that queue count crafts of the recipe
 // after what the queue holds, intermediates first, or the refusal and the
 // item it names. Pure, in the temp allocator.
-plan_crafts :: proc(queue: Craft_Queue, inventory: Inventory, recipes: Recipe_Registry, available: []bool, recipe, count: int) -> (ahead, runs: []Craft_Run, refusal: Craft_Refusal, shortage: Craft_Shortage) {
+plan_crafts :: proc(queue: Craft_Queue, inventory: Inventory, recipes: Recipe_Registry, available: []bool, recipe, count: int, makers := HAND_MAKERS) -> (ahead, runs: []Craft_Run, refusal: Craft_Refusal, shortage: Craft_Shortage) {
 	plan: Craft_Plan
-	plan, ahead = make_plan_after_queue(queue, inventory, recipes, available)
+	plan, ahead = make_plan_after_queue(queue, inventory, recipes, available, makers)
 	if !plan_recipe(&plan, recipe, count) {
 		return nil, nil, plan.refusal, plan.shortage
 	}
@@ -273,9 +301,9 @@ plan_crafts :: proc(queue: Craft_Queue, inventory: Inventory, recipes: Recipe_Re
 // A plan that starts after the queue: the repair of a waiting front
 // (plan_front_repair, returned as ahead) and the queued runs already
 // count.
-make_plan_after_queue :: proc(queue: Craft_Queue, inventory: Inventory, recipes: Recipe_Registry, available: []bool) -> (plan: Craft_Plan, ahead: []Craft_Run) {
-	ahead = plan_front_repair(queue, inventory, recipes, available)
-	plan = make_craft_plan(inventory, recipes, available)
+make_plan_after_queue :: proc(queue: Craft_Queue, inventory: Inventory, recipes: Recipe_Registry, available: []bool, makers := HAND_MAKERS) -> (plan: Craft_Plan, ahead: []Craft_Run) {
+	ahead = plan_front_repair(queue, inventory, recipes, available, makers)
+	plan = make_craft_plan(inventory, recipes, available, makers)
 	add_planned_runs(&plan, ahead)
 	add_queued_runs(&plan, queue)
 	return plan, ahead
@@ -323,12 +351,12 @@ insert_runs_ahead :: proc(queue: ^Craft_Queue, runs: []Craft_Run) {
 // Queues count crafts of the recipe with the intermediates they need, all
 // or nothing, and repairs a waiting front (plan_front_repair). Takes no
 // ingredients. A count below one queues nothing.
-queue_crafts :: proc(queue: ^Craft_Queue, inventory: Inventory, recipes: Recipe_Registry, unlocks: Recipe_Unlocks, recipe, count: int) -> (refusal: Craft_Refusal, shortage: Craft_Shortage) {
+queue_crafts :: proc(queue: ^Craft_Queue, inventory: Inventory, recipes: Recipe_Registry, unlocks: Recipe_Unlocks, recipe, count: int, makers := HAND_MAKERS) -> (refusal: Craft_Refusal, shortage: Craft_Shortage) {
 	if count < 1 {
 		return .None, {}
 	}
 	ahead, runs: []Craft_Run
-	if ahead, runs, refusal, shortage = plan_queue_crafts(queue^, inventory, recipes, unlocks, recipe, count); refusal != .None {
+	if ahead, runs, refusal, shortage = plan_queue_crafts(queue^, inventory, recipes, unlocks, recipe, count, makers); refusal != .None {
 		return refusal, shortage
 	}
 	insert_runs_ahead(queue, ahead)
@@ -340,11 +368,11 @@ queue_crafts :: proc(queue: ^Craft_Queue, inventory: Inventory, recipes: Recipe_
 
 // What queue_crafts would do: the recipe's own refusal, the plan
 // (plan_crafts) and the queue's capacity. Pure, in the temp allocator.
-plan_queue_crafts :: proc(queue: Craft_Queue, inventory: Inventory, recipes: Recipe_Registry, unlocks: Recipe_Unlocks, recipe, count: int) -> (ahead, runs: []Craft_Run, refusal: Craft_Refusal, shortage: Craft_Shortage) {
-	if refusal = craft_refusal(recipes.recipes[recipe], recipe_is_available(unlocks, recipe)); refusal != .None {
+plan_queue_crafts :: proc(queue: Craft_Queue, inventory: Inventory, recipes: Recipe_Registry, unlocks: Recipe_Unlocks, recipe, count: int, makers := HAND_MAKERS) -> (ahead, runs: []Craft_Run, refusal: Craft_Refusal, shortage: Craft_Shortage) {
+	if refusal = craft_refusal(recipes.recipes[recipe], recipe_is_available(unlocks, recipe), makers); refusal != .None {
 		return nil, nil, refusal, {}
 	}
-	if ahead, runs, refusal, shortage = plan_crafts(queue, inventory, recipes, unlocks.available, recipe, count); refusal != .None {
+	if ahead, runs, refusal, shortage = plan_crafts(queue, inventory, recipes, unlocks.available, recipe, count, makers); refusal != .None {
 		return nil, nil, refusal, shortage
 	}
 	if queue_runs_after(queue, runs) + len(ahead) > HAND_CRAFT_QUEUE_RUNS {
@@ -353,8 +381,8 @@ plan_queue_crafts :: proc(queue: Craft_Queue, inventory: Inventory, recipes: Rec
 	return ahead, runs, .None, {}
 }
 
-queue_accepts_crafts :: proc(queue: Craft_Queue, inventory: Inventory, recipes: Recipe_Registry, unlocks: Recipe_Unlocks, recipe, count: int) -> bool {
-	_, _, refusal, _ := plan_queue_crafts(queue, inventory, recipes, unlocks, recipe, count)
+queue_accepts_crafts :: proc(queue: Craft_Queue, inventory: Inventory, recipes: Recipe_Registry, unlocks: Recipe_Unlocks, recipe, count: int, makers := HAND_MAKERS) -> bool {
+	_, _, refusal, _ := plan_queue_crafts(queue, inventory, recipes, unlocks, recipe, count, makers)
 	return refusal == .None
 }
 
@@ -387,24 +415,24 @@ Planned_Crafts :: struct {
 	inputs: []Planned_Input,
 }
 
-planned_crafts :: proc(queue: Craft_Queue, inventory: Inventory, recipes: Recipe_Registry, unlocks: Recipe_Unlocks, recipe: int, allocator := context.allocator) -> Planned_Crafts {
+planned_crafts :: proc(queue: Craft_Queue, inventory: Inventory, recipes: Recipe_Registry, unlocks: Recipe_Unlocks, recipe: int, makers: Recipe_Makers, allocator := context.allocator) -> Planned_Crafts {
 	return Planned_Crafts {
-		count = planned_craft_count(queue, inventory, recipes, unlocks, recipe),
-		inputs = planned_input_states(queue, inventory, recipes, unlocks.available, recipe, allocator),
+		count = planned_craft_count(queue, inventory, recipes, unlocks, recipe, makers),
+		inputs = planned_input_states(queue, inventory, recipes, unlocks.available, recipe, makers, allocator),
 	}
 }
 
 // The largest count up to PLANNED_CRAFT_COUNT_LIMIT that queue_crafts
 // accepts, 0 when it refuses one craft: doubling until a count is
 // refused, then halving the gap. Every count returned was accepted.
-planned_craft_count :: proc(queue: Craft_Queue, inventory: Inventory, recipes: Recipe_Registry, unlocks: Recipe_Unlocks, recipe: int) -> int {
-	if !queue_accepts_crafts(queue, inventory, recipes, unlocks, recipe, 1) {
+planned_craft_count :: proc(queue: Craft_Queue, inventory: Inventory, recipes: Recipe_Registry, unlocks: Recipe_Unlocks, recipe: int, makers := HAND_MAKERS) -> int {
+	if !queue_accepts_crafts(queue, inventory, recipes, unlocks, recipe, 1, makers) {
 		return 0
 	}
 	// accepted is accepted, refused refused or past the limit.
 	accepted, refused := 1, PLANNED_CRAFT_COUNT_LIMIT + 1
 	for count := 2; count < refused; count = min(count * 2, refused) {
-		if !queue_accepts_crafts(queue, inventory, recipes, unlocks, recipe, count) {
+		if !queue_accepts_crafts(queue, inventory, recipes, unlocks, recipe, count, makers) {
 			refused = count
 			break
 		}
@@ -412,7 +440,7 @@ planned_craft_count :: proc(queue: Craft_Queue, inventory: Inventory, recipes: R
 	}
 	for refused - accepted > 1 {
 		middle := (accepted + refused) / 2
-		if queue_accepts_crafts(queue, inventory, recipes, unlocks, recipe, middle) {
+		if queue_accepts_crafts(queue, inventory, recipes, unlocks, recipe, middle, makers) {
 			accepted = middle
 		} else {
 			refused = middle
@@ -424,11 +452,11 @@ planned_craft_count :: proc(queue: Craft_Queue, inventory: Inventory, recipes: R
 // Each ingredient of one craft after the queue, judged once the earlier
 // ingredients that are not missing took theirs, as plan_inputs takes
 // them; so when none is missing, plan_inputs plans the craft.
-planned_input_states :: proc(queue: Craft_Queue, inventory: Inventory, recipes: Recipe_Registry, available: []bool, recipe: int, allocator := context.allocator) -> []Planned_Input {
+planned_input_states :: proc(queue: Craft_Queue, inventory: Inventory, recipes: Recipe_Registry, available: []bool, recipe: int, makers := HAND_MAKERS, allocator := context.allocator) -> []Planned_Input {
 	inputs := recipes.recipes[recipe].inputs
 	states := make([]Planned_Input, len(inputs), allocator)
 	for input, index in inputs {
-		plan, _ := make_plan_after_queue(queue, inventory, recipes, available)
+		plan, _ := make_plan_after_queue(queue, inventory, recipes, available, makers)
 		append(&plan.resolving, recipe)
 		take_planned_inputs(&plan, inputs[:index], states[:index])
 		states[index] = planned_input_state(&plan, input)

@@ -73,6 +73,10 @@
 // foundation_block (the foundation's block size and height, whose choices
 // are in game.sjson). The hint row offers Configure for such an item.
 // Any other value is an error.
+// former_ids (optional, work item 0196) lists ids the item had in an
+// older build: a save naming one loads it as this item, with one log line
+// (doc/architecture.md, Saves). A former id is never a current id of the
+// table, nor listed twice.
 items = [
 	// Raw materials
 	{id = "log", name_key = "item_log", description_key = "describe_item_log", category = "raw", stack_size = 50, places_block = "log", mined_from = ["birch_log", "pine_log", "palm_log", "dead_log"], fuel_megajoules = 2, cannot_recycle = true, price = 1}
@@ -163,7 +167,11 @@ items = [
 	{id = "splitter", name_key = "item_splitter", description_key = "describe_item_splitter", category = "machine", stack_size = 50, price = 55}
 	{id = "wooden_chest", name_key = "item_wooden_chest", description_key = "describe_item_wooden_chest", category = "machine", stack_size = 50, price = 4}
 	{id = "iron_chest", name_key = "item_iron_chest", description_key = "describe_item_iron_chest", category = "machine", stack_size = 50, price = 16}
-	{id = "foundation", name_key = "item_foundation", description_key = "describe_item_foundation", category = "machine", stack_size = 100, price = 3, configurable = "foundation_block"}
+	{id = "wooden_foundation", name_key = "item_wooden_foundation", description_key = "describe_item_wooden_foundation", category = "machine", stack_size = 100, price = 2, configurable = "foundation_block"}
+	{id = "stone_brick_foundation", former_ids = ["foundation"], name_key = "item_stone_brick_foundation", description_key = "describe_item_stone_brick_foundation", category = "machine", stack_size = 100, price = 3, configurable = "foundation_block"}
+	{id = "iron_foundation", name_key = "item_iron_foundation", description_key = "describe_item_iron_foundation", category = "machine", stack_size = 100, price = 4, configurable = "foundation_block"}
+	{id = "stone_cutting_table", name_key = "item_stone_cutting_table", description_key = "describe_item_stone_cutting_table", category = "machine", stack_size = 50, price = 8}
+	{id = "stone_cutter", name_key = "item_stone_cutter", description_key = "describe_item_stone_cutter", category = "machine", stack_size = 50, price = 27}
 	{id = "belt_pole", name_key = "item_belt_pole", description_key = "describe_item_belt_pole", category = "machine", stack_size = 100, price = 6}
 	{id = "offshore_pump", name_key = "item_offshore_pump", description_key = "describe_item_offshore_pump", category = "machine", stack_size = 50, price = 20}
 	{id = "pump", name_key = "item_pump", description_key = "describe_item_pump", category = "machine", stack_size = 50, price = 20}

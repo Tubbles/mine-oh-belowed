@@ -5,13 +5,16 @@ tick_rate = 60
 day_length_seconds = 1200
 // Items every player starts with, by item id from items.sjson, the first
 // and every joining one (work item 0179): a stone pickaxe digs stone,
-// foundations start a pad, torches light a dug cave. More torches are
-// made by hand from a coal and a stone (0179); machines are crafted by
-// hand (work item 0012).
+// wooden foundations start a pad (work item 0196), torches light a dug
+// cave, the planks build the stone cutting table. No other wood exists
+// until trees stand on the planet (0197). More torches are made by hand
+// from a coal and a stone (0179); machines are crafted by hand (work item
+// 0012).
 starting_items = [
 	{item = "stone_pickaxe", count = 1}
-	{item = "foundation", count = 16}
+	{item = "wooden_foundation", count = 16}
 	{item = "torch", count = 4}
+	{item = "plank", count = 8}
 ]
 // World setting "all recipes unlocked at start", for repeat playthroughs:
 // every technology counts as researched and every item as discovered.
@@ -136,10 +139,13 @@ salvage_percent = 80
 // chunk_margin more, so a player walking along a chunk border does not
 // unload and reload a slab each step. Radius 1 to 3, margin 0 to 2. Place
 // with the torch item puts the torch emitter of data/lighting.sjson at
-// the air in front of the targeted ground.
+// the air in front of the targeted ground. pad_foundation (work item
+// 0196) is the foundation of the benchmark's pad and of the pod's pad; it
+// must name a machine of kind foundation.
 field_simulation = {
 	chunk_radius = 2
 	chunk_margin = 1
 	torch_item = "torch"
 	torch_emitter = "torch"
+	pad_foundation = "wooden_foundation"
 }

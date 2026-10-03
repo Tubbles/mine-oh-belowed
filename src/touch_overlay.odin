@@ -1812,7 +1812,7 @@ touch_overlay_on :: proc(touch_context: Touch_Overlay_Context) -> bool {
 // or the field's aimed frame cell, as the routing of the inventory
 // binding reads it (aimed_entity, 0194).
 touch_tap_target :: proc(entities: ^Entities, machines: Machine_Registry, block_target: Entity_Handle, field_target: Frame_Raycast_Hit) -> (takes_interaction, has_panel: bool) {
-	return entity_takes_interact(entities, machines, aimed_entity(block_target, field_target)), aims_at_panel(entities, block_target, field_target)
+	return entity_takes_interact(entities, machines, aimed_entity(block_target, field_target)), aims_at_panel(entities, machines, block_target, field_target)
 }
 
 // The tap scheme's inputs: frame_tick_count is still the previous frame's

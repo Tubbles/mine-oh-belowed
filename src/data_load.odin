@@ -94,12 +94,14 @@ Game_Config :: struct {
 // The field's simulated chunk set: every chunk within chunk_radius chunks
 // of a player's chunk on each axis, and the chunks it held within
 // chunk_margin more; the torch item and the emitter of
-// data/lighting.sjson it places.
+// data/lighting.sjson it places; the foundation of the benchmark's pad
+// and the pod's (work item 0196, field_pad_foundation_problem).
 Field_Simulation_Config :: struct {
-	chunk_radius:  int,
-	chunk_margin:  int,
-	torch_item:    string,
-	torch_emitter: string,
+	chunk_radius:   int,
+	chunk_margin:   int,
+	torch_item:     string,
+	torch_emitter:  string,
+	pad_foundation: string,
 }
 
 // A field chunk is about 270 KiB with its water and light: radius 3 is

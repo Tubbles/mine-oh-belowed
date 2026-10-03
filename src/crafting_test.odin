@@ -539,7 +539,7 @@ test_planned_crafts_count_the_intermediates :: proc(t: ^testing.T) {
 	pickaxe := test_recipe(test.recipes, "wooden_pickaxe")
 	inventory_add(test.inventory, test.items, test_item(test.items, "plank"), 3)
 	inventory_add(test.inventory, test.items, test_item(test.items, "log"), 1)
-	planned := planned_crafts(test.queue, test.inventory, test.recipes, test.unlocks, pickaxe, context.temp_allocator)
+	planned := planned_crafts(test.queue, test.inventory, test.recipes, test.unlocks, pickaxe, HAND_MAKERS, context.temp_allocator)
 	testing.expect_value(t, planned.count, 2)
 	testing.expect(t, slice.equal(planned.inputs, []Planned_Input{{.Held, 3}, {.Craftable, 0}}))
 	testing.expect(t, queue_accepts_crafts(test.queue, test.inventory, test.recipes, test.unlocks, pickaxe, 2))
@@ -552,7 +552,7 @@ test_planned_crafts_without_a_raw_item :: proc(t: ^testing.T) {
 	test := make_crafting_test()
 	pickaxe := test_recipe(test.recipes, "wooden_pickaxe")
 	inventory_add(test.inventory, test.items, test_item(test.items, "plank"), 3)
-	planned := planned_crafts(test.queue, test.inventory, test.recipes, test.unlocks, pickaxe, context.temp_allocator)
+	planned := planned_crafts(test.queue, test.inventory, test.recipes, test.unlocks, pickaxe, HAND_MAKERS, context.temp_allocator)
 	testing.expect_value(t, planned.count, 0)
 	testing.expect(t, slice.equal(planned.inputs, []Planned_Input{{.Held, 3}, {.Missing, 0}}))
 }
@@ -566,7 +566,7 @@ test_planned_crafts_honour_the_plan_depth :: proc(t: ^testing.T) {
 	recipes, available := make_chain_recipes(length, cyclic = false)
 	inventory.slots[0] = Item_Stack{Item_Id(length), 5}
 	unlocks := Recipe_Unlocks{available = available}
-	planned := planned_crafts(make_craft_queue(), inventory, recipes, unlocks, 0, context.temp_allocator)
+	planned := planned_crafts(make_craft_queue(), inventory, recipes, unlocks, 0, HAND_MAKERS, context.temp_allocator)
 	testing.expect_value(t, planned.count, 0)
 	testing.expect(t, slice.equal(planned.inputs, []Planned_Input{{.Missing, 0}}))
 	_, _, refusal, _ := plan_queue_crafts(make_craft_queue(), inventory, recipes, unlocks, 0, 1)
@@ -574,7 +574,7 @@ test_planned_crafts_honour_the_plan_depth :: proc(t: ^testing.T) {
 	recipes, available = make_chain_recipes(4, cyclic = false)
 	inventory.slots[0] = Item_Stack{Item_Id(4), 5}
 	unlocks = Recipe_Unlocks{available = available}
-	planned = planned_crafts(make_craft_queue(), inventory, recipes, unlocks, 0, context.temp_allocator)
+	planned = planned_crafts(make_craft_queue(), inventory, recipes, unlocks, 0, HAND_MAKERS, context.temp_allocator)
 	testing.expect_value(t, planned.count, 5)
 	testing.expect(t, slice.equal(planned.inputs, []Planned_Input{{.Craftable, 0}}))
 }
@@ -610,4 +610,73 @@ test_planned_craft_count_stops_at_the_limit :: proc(t: ^testing.T) {
 	}
 	planned := planned_craft_count(make_craft_queue(), inventory, recipes, Recipe_Unlocks{available = available}, 0)
 	testing.expect_value(t, planned, PLANNED_CRAFT_COUNT_LIMIT)
+}
+
+// Work item 0196: the stone cutting table's maker joins the hand queue's
+// while its panel is open. Without it stone_brick is refused; at the
+// table two bricks are cut in two runs of 96 ticks; a stone brick
+// foundation queued at the table plans its bricks ahead of it, and the
+// inventory view's makers refuse it for want of bricks.
+@(test)
+test_a_crafting_station_lets_the_hand_queue_cut_stone :: proc(t: ^testing.T) {
+	content := make_test_content()
+	simulation := make_simulation(test_game_config(), player_start_on({4, 0, 4}), content, content.technologies, false, {})
+	defer destroy_simulation(&simulation)
+	player := &simulation.players[0]
+	stone, brick := test_item(content.items, "stone"), test_item(content.items, "stone_brick")
+	brick_recipe := test_recipe(content.recipes, "stone_brick")
+	inventory_add(player.inventory, content.items, stone, 4)
+	craft := Queued_Player_Command{player = 0, command = Craft_Command{recipe = brick_recipe, count = 2}}
+	apply_player_command(&simulation, content, craft)
+	testing.expect_value(t, player.crafting.count, 0)
+	table := add_entity(&simulation.world.entities, content.machines, test_machine(content.machines, "stone_cutting_table"), {8, 1, 8}, 0)
+	player.open_machine = table
+	testing.expect_value(t, player_craft_makers(&simulation.world.entities, content.machines, player^), Recipe_Makers{.Hand, .Stone_Cutting})
+	apply_player_command(&simulation, content, craft)
+	testing.expect_value(t, player.crafting.count, 1)
+	for _ in 0 ..< 2 * 96 {
+		advance_crafting(&player.crafting, player.inventory, content.recipes, content.items, TEST_TICK_RATE)
+	}
+	testing.expect_value(t, inventory_count(player.inventory, brick), 2)
+	testing.expect_value(t, inventory_count(player.inventory, stone), 0)
+
+	clear_inventory(player.inventory)
+	inventory_add(player.inventory, content.items, stone, 4)
+	record_obtained_item(&simulation.unlocks, brick)
+	refresh_available_recipes(&simulation.unlocks, content.recipes)
+	foundation := test_recipe(content.recipes, "stone_brick_foundation")
+	_, _, refusal, shortage := plan_queue_crafts(player.crafting, player.inventory, content.recipes, simulation.unlocks, foundation, 1)
+	testing.expect_value(t, refusal, Craft_Refusal.Missing_Ingredients)
+	testing.expect_value(t, shortage.item, brick)
+	makers := player_craft_makers(&simulation.world.entities, content.machines, player^)
+	refusal, _ = queue_crafts(&player.crafting, player.inventory, content.recipes, simulation.unlocks, foundation, 1, makers)
+	testing.expect_value(t, refusal, Craft_Refusal.None)
+	testing.expect_value(t, player.crafting.count, 2)
+	testing.expect_value(t, player.crafting.runs[0], Craft_Run{brick_recipe, 2})
+	testing.expect_value(t, player.crafting.runs[1], Craft_Run{foundation, 1})
+
+	// The station's browser keeps the inventory browser's filter: opened,
+	// then closed with Back or by the pause menu's Resume, the filter is
+	// what it was.
+	state: Ui_State
+	browser := make_recipe_browser()
+	defer destroy_recipe_browser(&browser)
+	browser.filter.category, browser.filter.tags = .Logistics, {1}
+	before := browser.filter
+	maker_category := station_recipe_category(content.recipes, .Stone_Cutting, browser.filter.category)
+	testing.expect_value(t, station_categories(content.recipes, .Stone_Cutting), Recipe_Categories{.Materials})
+	push_screen(&state.screens, .Machine)
+	open_station_recipes(&state, &browser, table, maker_category)
+	testing.expect_value(t, top_screen(state.screens), Screen.Recipes)
+	testing.expect_value(t, browser.filter.category, Recipe_Category.Materials)
+	testing.expect_value(t, browser.filter.tags, Recipe_Tag_Set{})
+	pop_screen(&state.screens)
+	open_station_recipes(&state, &browser, table, maker_category)
+	testing.expect_value(t, state.screens.count, 0)
+	testing.expect_value(t, browser.station, NO_ENTITY)
+	testing.expect_value(t, browser.filter, before)
+	push_screen(&state.screens, .Machine)
+	open_station_recipes(&state, &browser, table, maker_category)
+	close_station_recipes(&browser)
+	testing.expect_value(t, browser.filter, before)
 }

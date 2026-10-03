@@ -556,6 +556,37 @@ def recycler():
     return {"": model, "_part": part}
 
 
+def stone_cutting_table():
+    """2 by 2 by 1 (width 2, depth 1, height 2, work item 0196): a plank
+    top on four legs, a stone block and a chisel on the top."""
+    model = Model((2, 2, 1))
+    for x in (1, 13):
+        for z in (1, 5):
+            model.box((x, 0, z), (x + 1, 10, z + 1), WOOD_DARK)
+    model.box((0, 11, 0), (15, 12, 7), plank_texture)
+    model.box((3, 13, 2), (7, 15, 5), stone_texture)
+    model.box((10, 13, 3), (13, 13, 3), IRON_DARK)
+    model.box((9, 13, 3), (9, 13, 3), WOOD)
+    return {"": model}
+
+
+def stone_cutter():
+    """2 by 2 by 2 (work item 0196): a stone body with a glowing fire door
+    on the front (+x) and a slot on the top, through which the round
+    blade (the part) spins about z."""
+    model = Model((2, 2, 2))
+    base_plate(model, BASE, 0)
+    model.box((1, 1, 1), (14, 9, 14), stone_texture)
+    model.clear((4, 9, 6), (12, 9, 9))
+    model.clear((14, 2, 5), (14, 5, 10))
+    model.box((13, 2, 5), (13, 5, 10), FURNACE_MOUTH)
+    model.box((14, 2, 6), (14, 3, 9), FIRE)
+    part = Model((2, 2, 2))
+    part.cylinder(2, (8, 12), 4, 7, 8, BLADE)
+    spokes(part, 2, (8, 12), 3, 7, 8, MOVING)
+    return {"": model, "_part": part}
+
+
 def lab():
     """3 by 2 by 3: a white body with a glass top whose lights glow."""
     model = Model((3, 2, 3))
@@ -984,6 +1015,8 @@ MODELS = {
     "launch_pad": launch_pad,
     "pod": pod,
     "lab": lab,
+    "stone_cutting_table": stone_cutting_table,
+    "stone_cutter": stone_cutter,
     "player": player,
 }
 

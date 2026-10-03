@@ -29,6 +29,8 @@ kits = [
 			{item = "log", count = 50}
 			{item = "hematite", count = 50}
 			{item = "chalcopyrite", count = 50}
+			{item = "stone_cutting_table", count = 1}
+			{item = "wooden_foundation", count = 50}
 		]
 	}
 	{
@@ -46,6 +48,8 @@ kits = [
 			{item = "iron_gear", count = 50}
 			{item = "coal", count = 100}
 			{item = "stone", count = 50}
+			{item = "stone_cutter", count = 2}
+			{item = "stone_brick_foundation", count = 100}
 		]
 	}
 	{
@@ -67,6 +71,7 @@ kits = [
 			{item = "copper_plate", count = 100}
 			{item = "iron_gear", count = 100}
 			{item = "coal", count = 200}
+			{item = "iron_foundation", count = 100}
 		]
 	}
 	{
@@ -91,6 +96,7 @@ kits = [
 			{item = "electronic_circuit", count = 100}
 			{item = "science_pack_1", count = 100}
 			{item = "coal", count = 100}
+			{item = "iron_foundation", count = 100}
 		]
 	}
 	{
@@ -118,6 +124,7 @@ kits = [
 			{item = "science_pack_2", count = 50}
 			{item = "coal", count = 100}
 			{item = "concrete", count = 50}
+			{item = "iron_foundation", count = 100}
 		]
 	}
 	{
@@ -144,6 +151,7 @@ kits = [
 			{item = "electronic_circuit", count = 200}
 			{item = "iron_plate", count = 200}
 			{item = "science_pack_2", count = 100}
+			{item = "iron_foundation", count = 100}
 		]
 	}
 	{
@@ -167,6 +175,7 @@ kits = [
 			{item = "concrete", count = 100}
 			{item = "iron_plate", count = 200}
 			{item = "science_pack_2", count = 100}
+			{item = "iron_foundation", count = 100}
 		]
 	}
 ]

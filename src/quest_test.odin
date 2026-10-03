@@ -53,8 +53,8 @@ test_shipped_quest_chapters_load :: proc(t: ^testing.T) {
 	references := make_test_quest_references()
 	registry := make_test_quests(references)
 	testing.expect_value(t, len(registry.chapters), 8)
-	testing.expect_value(t, registry.chapters[0].quest_count, 9)
-	testing.expect_value(t, registry.chapters[1].first_quest, 9)
+	testing.expect_value(t, registry.chapters[0].quest_count, 10)
+	testing.expect_value(t, registry.chapters[1].first_quest, 10)
 	testing.expect_value(t, registry.chapters[1].quest_count, 8)
 	line := registry.quests[test_quest_index(registry, "line")]
 	testing.expect_value(t, len(line.objectives), 4)
@@ -74,7 +74,7 @@ test_shipped_quest_chapters_load :: proc(t: ^testing.T) {
 	testing.expect_value(t, invoice.reward_items[0], Item_Stack{test_item(references.items, "belt"), 20})
 	survey := registry.quests[test_quest_index(registry, "survey")]
 	testing.expect_value(t, survey.objectives[2].recipe, test_recipe(references.recipes, "electronic_circuit"))
-	testing.expect_value(t, registry.chapters[2].first_quest, 17)
+	testing.expect_value(t, registry.chapters[2].first_quest, 18)
 	testing.expect_value(t, registry.chapters[2].quest_count, 6)
 }
 

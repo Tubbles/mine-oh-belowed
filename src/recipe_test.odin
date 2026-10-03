@@ -25,7 +25,7 @@ test_recipe :: proc(recipes: Recipe_Registry, id: string) -> int {
 test_shipped_recipes_resolve :: proc(t: ^testing.T) {
 	items := make_test_items()
 	recipes, technologies := make_test_recipes(items)
-	testing.expect_value(t, len(recipes.recipes), 125)
+	testing.expect_value(t, len(recipes.recipes), 129)
 	testing.expect_value(t, len(technologies.technologies), 27)
 	plank := recipes.recipes[test_recipe(recipes, "plank")]
 	testing.expect_value(t, plank.outputs[0], Item_Stack{test_item(items, "plank"), 4})
@@ -44,14 +44,15 @@ test_shipped_recipes_resolve :: proc(t: ^testing.T) {
 	testing.expect(t, !item_is_smeltable(recipes, test_item(items, "coal")))
 }
 
-// A recipe the slice's player makes from the held items: by hand, or in
-// a stone furnace once one is held, unlocked from the start or by
-// discovery, without fluids.
-slice_recipe_is_makeable :: proc(recipe: Recipe, held: []bool, furnace: Item_Id) -> bool {
+// A recipe the slice's player makes from the held items: by hand, in a
+// stone furnace once one is held, or at a crafting station once its item
+// is held (work item 0196), unlocked from the start or by discovery,
+// without fluids.
+slice_recipe_is_makeable :: proc(recipe: Recipe, held: []bool, furnace: Item_Id, machines: Machine_Registry) -> bool {
 	if recipe.channel != .Start && recipe.channel != .Discovery || len(recipe.fluid_inputs) > 0 {
 		return false
 	}
-	if .Hand not_in recipe.made_in && (.Furnace not_in recipe.made_in || !held[furnace]) {
+	if !slice_recipe_has_maker(recipe, held, furnace, machines) {
 		return false
 	}
 	for input in recipe.inputs {
@@ -62,13 +63,25 @@ slice_recipe_is_makeable :: proc(recipe: Recipe, held: []bool, furnace: Item_Id)
 	return true
 }
 
+slice_recipe_has_maker :: proc(recipe: Recipe, held: []bool, furnace: Item_Id, machines: Machine_Registry) -> bool {
+	if .Hand in recipe.made_in || .Furnace in recipe.made_in && held[furnace] {
+		return true
+	}
+	for machine in machines.machines {
+		if machine.kind == .Crafting_Station && machine.recipe_maker in recipe.made_in && held[machine.item] {
+			return true
+		}
+	}
+	return false
+}
+
 // Every item made from the start set until nothing new comes.
-slice_reachable_items :: proc(recipes: Recipe_Registry, start: []bool, furnace: Item_Id) -> []bool {
+slice_reachable_items :: proc(recipes: Recipe_Registry, start: []bool, furnace: Item_Id, machines: Machine_Registry) -> []bool {
 	held := slice.clone(start, context.temp_allocator)
 	for grew := true; grew; {
 		grew = false
 		for recipe in recipes.recipes {
-			if !slice_recipe_is_makeable(recipe, held, furnace) {
+			if !slice_recipe_is_makeable(recipe, held, furnace, machines) {
 				continue
 			}
 			for output in recipe.outputs {
@@ -81,12 +94,16 @@ slice_reachable_items :: proc(recipes: Recipe_Registry, start: []bool, furnace: 
 }
 
 // The slice's recipe chain (work item 0179): from the items the field's
-// materials yield (data/materials.sjson; no wood until M14) by hand and in
-// the stone furnace to every building chapter 1 and the first line need.
+// materials yield (data/materials.sjson; no wood until M14) and the
+// starting items of data/game.sjson, by hand, in the stone furnace and at
+// the stone cutting table (0196), to every building chapter 1 and the
+// first line need, and the three foundations. The kit's planks are the
+// only wood: nothing reachable makes a log.
 @(test)
 test_the_slice_recipe_chain_is_reachable_from_the_fields_yield :: proc(t: ^testing.T) {
 	items := make_test_items()
 	recipes, _ := make_test_recipes(items)
+	machines := make_test_machines()
 	table, problem := parse_field_material_table(#load("../data/materials.sjson"), FIELD_MATERIALS_FILE_NAME, items)
 	testing.expect_value(t, problem, "")
 	start := make([]bool, len(items.items), context.temp_allocator)
@@ -96,11 +113,17 @@ test_the_slice_recipe_chain_is_reachable_from_the_fields_yield :: proc(t: ^testi
 		}
 	}
 	testing.expect(t, !start[test_item(items, "log")], "the field yields no wood")
-	held := slice_reachable_items(recipes, start, test_item(items, "stone_furnace"))
-	for id in ([?]string{"stone_furnace", "foundation", "torch", "belt_pole", "burner_mining_drill", "burner_inserter", "belt", "iron_chest"}) {
+	config, error := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	testing.expect(t, error == nil)
+	for stack in config.starting_items {
+		start[test_item(items, stack.item)] = true
+	}
+	held := slice_reachable_items(recipes, start, test_item(items, "stone_furnace"), machines)
+	reachable := [?]string{"stone_furnace", "wooden_foundation", "stone_cutting_table", "stone_brick", "stone_brick_foundation", "torch", "belt_pole", "burner_mining_drill", "burner_inserter", "belt", "iron_chest", "iron_foundation", "stone_cutter"}
+	for id in reachable {
 		testing.expectf(t, held[test_item(items, id)], "%s is out of reach", id)
 	}
-	testing.expect(t, !held[test_item(items, "wooden_chest")], "the wooden chest needs wood")
+	testing.expect(t, !held[test_item(items, "log")], "no recipe within reach makes wood")
 }
 
 @(test)
@@ -255,4 +278,41 @@ test_recipe_name_order :: proc(t: ^testing.T) {
 	names := []string{"Iron gear", "Belt", "Iron gear", "Anvil"}
 	order := recipe_name_order(names, context.temp_allocator)
 	testing.expect(t, slice.equal(order, []int{3, 1, 0, 2}))
+}
+
+// Work item 0196: the foundations are discovered, each by its own
+// ingredient: planks the wooden one, a stone brick the stone brick one,
+// an iron plate the iron one.
+@(test)
+test_foundation_recipes_are_discovered_by_their_ingredients :: proc(t: ^testing.T) {
+	test := make_crafting_test()
+	ids := [3]string{"wooden_foundation", "stone_brick_foundation", "iron_foundation"}
+	ingredients := [3]string{"plank", "stone_brick", "iron_plate"}
+	for id in ids {
+		testing.expectf(t, !test_available(test, id), "%s is undiscovered", id)
+	}
+	for ingredient, index in ingredients {
+		record_obtained_item(&test.unlocks, test_item(test.items, ingredient))
+		refresh_available_recipes(&test.unlocks, test.recipes)
+		for id, other in ids {
+			testing.expectf(t, test_available(test, id) == (other <= index), "%s after %s", id, ingredient)
+		}
+	}
+}
+
+// Work item 0196: stone is cut, not smelted, at the stone cutting table
+// (a crafting station) and the stone cutter (a crafting machine).
+@(test)
+test_stone_bricks_are_cut_not_smelted :: proc(t: ^testing.T) {
+	items := make_test_items()
+	recipes, _ := make_test_recipes(items)
+	machines := make_test_machines()
+	testing.expect_value(t, furnace_recipe_for(recipes, test_item(items, "stone")), NO_RECIPE)
+	testing.expect_value(t, recipes.recipes[test_recipe(recipes, "stone_brick")].made_in, Recipe_Makers{.Stone_Cutting})
+	table := machines.machines[test_machine(machines, "stone_cutting_table")]
+	cutter := machines.machines[test_machine(machines, "stone_cutter")]
+	testing.expect_value(t, table.kind, Machine_Kind.Crafting_Station)
+	testing.expect_value(t, cutter.kind, Machine_Kind.Crafting_Machine)
+	testing.expect_value(t, table.recipe_maker, Recipe_Maker.Stone_Cutting)
+	testing.expect_value(t, cutter.recipe_maker, Recipe_Maker.Stone_Cutting)
 }

@@ -1,6 +1,7 @@
 package game
 
 import "core:fmt"
+import "core:slice"
 import "core:strings"
 import "core:testing"
 
@@ -347,4 +348,79 @@ test_vanished_machines_blocks_and_vein_types_refuse :: proc(t: ^testing.T) {
 	changed.veins.types = without(content.veins.types, vein_type)
 	problem = save_test_load_problem(location, changed)
 	testing.expect(t, strings.contains(problem, fmt.tprintf("veins of type %s,", content.veins.types[vein_type].id)), problem)
+}
+
+// The shipped content as an older build had it (work item 0196): the
+// stone brick foundation's item, machine and recipe under the id
+// foundation, without former ids.
+content_before_the_foundation_rename :: proc(content: Simulation_Content) -> Simulation_Content {
+	old := content
+	old.items.items = slice.clone(content.items.items, context.temp_allocator)
+	old.machines.machines = slice.clone(content.machines.machines, context.temp_allocator)
+	old.recipes.recipes = slice.clone(content.recipes.recipes, context.temp_allocator)
+	item, machine, recipe := &old.items.items[test_item(content.items, "stone_brick_foundation")], &old.machines.machines[test_machine(content.machines, "stone_brick_foundation")], &old.recipes.recipes[test_recipe(content.recipes, "stone_brick_foundation")]
+	item.id, item.former_ids = "foundation", nil
+	machine.id, machine.former_ids = "foundation", nil
+	recipe.id, recipe.former_ids = "foundation", nil
+	return old
+}
+
+// Work item 0196: a world saved by the build whose stone brick foundation
+// was called foundation loads its placed foundation, its stack and its
+// craft run under stone_brick_foundation, and the load names the rename
+// in one line.
+@(test)
+test_an_old_foundation_loads_as_the_stone_brick_foundation :: proc(t: ^testing.T) {
+	content := make_save_test_content()
+	old := content_before_the_foundation_rename(content)
+	directory := make_save_test_directory()
+	defer remove_save_test_directory(directory)
+	generator := make_test_generator(DEFAULT_WORLD_SEED)
+	original := make_save_test_simulation(&generator, old)
+	defer destroy_simulation(&original)
+	load_save_test_chunks(&original.world, &original.records, &generator)
+	old_machine := test_machine(old.machines, "foundation")
+	place_free_foundation(&original.world.entities, old.machines, old_machine, SAVE_TEST_FRAME_HIT, {UNIT_VECTOR_ONE, 0, 0}, 500)
+	old_item := test_item(old.items, "foundation")
+	testing.expect_value(t, inventory_add(original.players[0].inventory, old.items, old_item, 5), 0)
+	crafting := &original.players[0].crafting
+	crafting.runs[0] = {test_recipe(old.recipes, "foundation"), 2}
+	crafting.count = 1
+	testing.expect_value(t, save_world(&original, old, save_test_location(directory), 1_700_000_000), "")
+
+	loaded := load_save_test_simulation(t, save_test_location(directory), content)
+	defer destroy_simulation(&loaded)
+	placed := 0
+	for foundation in loaded.world.entities.foundations.entries {
+		if foundation.alive && content.machines.machines[foundation.machine].id == "stone_brick_foundation" {
+			placed += 1
+		}
+	}
+	testing.expect_value(t, placed, 1)
+	testing.expect_value(t, inventory_count(loaded.players[0].inventory, test_item(content.items, "stone_brick_foundation")), 5)
+	testing.expect_value(t, loaded.players[0].crafting.count, 1)
+	testing.expect_value(t, recipe_id(content.recipes, loaded.players[0].crafting.runs[0].recipe), "stone_brick_foundation")
+	testing.expect_value(t, loaded.players[0].crafting.runs[0].count, 2)
+
+	remap := make_content_remap(content_tables(old), content_tables(content), content_former_ids(content))
+	testing.expect_value(t, renamed_content_line(remap), "save: loaded under renamed ids: items foundation as stone_brick_foundation, machines foundation as stone_brick_foundation, recipes foundation as stone_brick_foundation")
+	same := make_content_remap(content_tables(content), content_tables(content), content_former_ids(content))
+	testing.expect_value(t, renamed_content_line(same), "")
+}
+
+// A former id that is also a current id, or one listed twice in a table,
+// would make a saved id ambiguous; the shipped content has neither.
+@(test)
+test_a_former_id_that_is_also_an_id_is_refused :: proc(t: ^testing.T) {
+	content := make_save_test_content()
+	testing.expect_value(t, content_former_id_problem(Game_Content{simulation_content = content}), "")
+	clashing := content
+	clashing.items.items = slice.clone(content.items.items, context.temp_allocator)
+	clashing.items.items[test_item(content.items, "iron_foundation")].former_ids = {"wooden_foundation"}
+	problem := content_former_id_problem(Game_Content{simulation_content = clashing})
+	testing.expectf(t, strings.contains(problem, "iron_foundation") && strings.contains(problem, "wooden_foundation"), "%q names both", problem)
+	twice := content
+	twice.recipes.recipes = slice.clone(content.recipes.recipes, context.temp_allocator)
+	twice.recipes.recipes[test_recipe(content.recipes, "iron_foundation")].former_ids = {"foundation"}
+	testing.expect(t, strings.contains(content_former_id_problem(Game_Content{simulation_content = twice}), "twice"))
 }

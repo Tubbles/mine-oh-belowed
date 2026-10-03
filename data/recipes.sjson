@@ -20,7 +20,10 @@
 // seconds is the time at speed 1 (a hand crafts at speed 1).
 // made_in lists what can make the recipe: hand, furnace, or a crafting
 // machine category (assembler, crusher, washer, alloy_furnace, refinery,
-// cracking, chemistry, gasifier, electrolysis; see machines.sjson). Furnace recipes must have one input, one main output
+// cracking, chemistry, gasifier, electrolysis, stone_cutting; see
+// machines.sjson). stone_cutting (work item 0196) is made at the stone
+// cutting table, a crafting station whose crafts run in the hand queue,
+// and in the stone cutter. Furnace recipes must have one input, one main output
 // and at most one byproduct output (the slag slot), and two of them may
 // not share an input item; two input alloys are made in the alloy
 // furnace. Hand and furnace recipes take no fluid_inputs. No recipe is
@@ -44,6 +47,9 @@
 // schematic recipe only once it is found, since its inputs are common.
 // Machine recipes take 2 s, inserters, belts, pipes, poles and chests
 // 0.5 s (doc/content.md). Tools take 1 s.
+// former_ids (optional, work item 0196) lists ids the recipe had in an
+// older build: a save naming one loads it as this recipe, with one log
+// line. A former id is never a current id of the table, nor listed twice.
 recipes = [
 	// Materials
 	{id = "plank", inputs = [{item = "log", count = 1}], outputs = [{item = "plank", count = 4}], seconds = 0.5, made_in = ["hand", "assembler"], category = "materials", tags = ["wood"], channel = "start"}
@@ -58,7 +64,7 @@ recipes = [
 	// The torch (work item 0179): coal on a stone, by hand from what the
 	// slice's ground yields, before the first furnace.
 	{id = "torch", inputs = [{item = "coal", count = 1}, {item = "stone", count = 1}], outputs = [{item = "torch", count = 4}], seconds = 0.5, made_in = ["hand"], category = "materials", tags = ["building", "stone"], channel = "start"}
-	{id = "stone_brick", inputs = [{item = "stone", count = 2}], outputs = [{item = "stone_brick", count = 1}], seconds = 3.2, made_in = ["furnace"], category = "materials", tags = ["smelting", "stone"], channel = "start"}
+	{id = "stone_brick", inputs = [{item = "stone", count = 2}], outputs = [{item = "stone_brick", count = 1}], seconds = 1.6, made_in = ["stone_cutting"], category = "materials", tags = ["stone"], channel = "start"}
 	{id = "charcoal", inputs = [{item = "log", count = 2}], outputs = [{item = "charcoal", count = 1}], seconds = 3.2, made_in = ["furnace"], category = "materials", tags = ["smelting", "wood", "fuel"], channel = "discovery"}
 	{id = "iron_plate", inputs = [{item = "hematite", count = 1}], outputs = [{item = "iron_plate", count = 1}, {item = "slag", count = 1, byproduct = true}], seconds = 3.2, made_in = ["furnace"], category = "materials", tags = ["smelting", "iron"], channel = "start"}
 	{id = "copper_plate", inputs = [{item = "chalcopyrite", count = 1}], outputs = [{item = "copper_plate", count = 1}, {item = "slag", count = 1, byproduct = true}], seconds = 3.2, made_in = ["furnace"], category = "materials", tags = ["smelting", "copper"], channel = "start"}
@@ -167,7 +173,11 @@ recipes = [
 	{id = "belt_ramp_2", inputs = [{item = "belt_2", count = 1}, {item = "iron_plate", count = 1}], outputs = [{item = "belt_ramp_2", count = 1}], seconds = 0.5, made_in = ["hand", "assembler"], category = "logistics", tags = ["belt"], channel = "research", technology = "fast_belts"}
 	{id = "belt_lift_2", inputs = [{item = "belt_2", count = 2}, {item = "iron_gear", count = 2}], outputs = [{item = "belt_lift_2", count = 1}], seconds = 0.5, made_in = ["hand", "assembler"], category = "logistics", tags = ["belt"], channel = "research", technology = "fast_belts"}
 	{id = "splitter", inputs = [{item = "electronic_circuit", count = 5}, {item = "iron_plate", count = 5}, {item = "belt", count = 4}], outputs = [{item = "splitter", count = 1}], seconds = 2, made_in = ["hand", "assembler"], category = "logistics", tags = ["belt", "electric"], channel = "research", technology = "logistics"}
-	{id = "foundation", inputs = [{item = "stone_brick", count = 2}], outputs = [{item = "foundation", count = 1}], seconds = 0.5, made_in = ["hand", "assembler"], category = "logistics", tags = ["storage", "stone"], channel = "start"}
+	{id = "wooden_foundation", inputs = [{item = "plank", count = 2}], outputs = [{item = "wooden_foundation", count = 1}], seconds = 0.5, made_in = ["hand", "assembler"], category = "logistics", tags = ["building", "wood"], channel = "discovery"}
+	{id = "stone_brick_foundation", former_ids = ["foundation"], inputs = [{item = "stone_brick", count = 2}], outputs = [{item = "stone_brick_foundation", count = 1}], seconds = 0.5, made_in = ["hand", "assembler"], category = "logistics", tags = ["building", "stone"], channel = "discovery"}
+	{id = "iron_foundation", inputs = [{item = "iron_plate", count = 2}], outputs = [{item = "iron_foundation", count = 1}], seconds = 0.5, made_in = ["hand", "assembler"], category = "logistics", tags = ["building", "iron"], channel = "discovery"}
+	{id = "stone_cutting_table", inputs = [{item = "plank", count = 4}, {item = "stone", count = 4}], outputs = [{item = "stone_cutting_table", count = 1}], seconds = 2, made_in = ["hand", "assembler"], category = "machines", tags = ["stone", "wood"], channel = "discovery"}
+	{id = "stone_cutter", inputs = [{item = "stone_furnace", count = 1}, {item = "iron_gear", count = 3}, {item = "stone_brick", count = 5}], outputs = [{item = "stone_cutter", count = 1}], seconds = 2, made_in = ["hand", "assembler"], category = "machines", tags = ["stone", "iron"], channel = "discovery"}
 	{id = "belt_pole", inputs = [{item = "iron_plate", count = 2}, {item = "stone_brick", count = 1}], outputs = [{item = "belt_pole", count = 1}], seconds = 0.5, made_in = ["hand", "assembler"], category = "logistics", tags = ["belt"], channel = "start"}
 	{id = "wooden_chest", inputs = [{item = "plank", count = 4}], outputs = [{item = "wooden_chest", count = 1}], seconds = 0.5, made_in = ["hand", "assembler"], category = "logistics", tags = ["storage", "wood"], channel = "start"}
 	{id = "iron_chest", inputs = [{item = "iron_plate", count = 8}], outputs = [{item = "iron_chest", count = 1}], seconds = 0.5, made_in = ["hand", "assembler"], category = "logistics", tags = ["storage", "iron"], channel = "start"}

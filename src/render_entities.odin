@@ -66,6 +66,7 @@ crafting_machine_colors := [Recipe_Maker]rl.Color {
 	.Gasifier      = {120, 100, 80, 255},
 	.Electrolysis  = {170, 150, 60, 255},
 	.Recycler      = {90, 120, 70, 255},
+	.Stone_Cutting = {128, 122, 112, 255},
 }
 LAB_COLOR :: rl.Color{200, 204, 210, 255}
 LAB_RESEARCHING_TOP_COLOR :: rl.Color{90, 150, 240, 255}
@@ -272,10 +273,10 @@ draw_entities :: proc(world: ^World, machines: Machine_Registry, models: Model_R
 			draw_launch_pad(pad, machines, models, frame)
 		}
 	}
-	// The pod rides in the foundations' pool (entity_pod.odin); the
-	// foundations themselves are draw_frames' boxes.
+	// The pod and the crafting stations ride in the foundations' pool
+	// (entity_pod.odin); the foundations themselves are draw_frames' boxes.
 	for foundation in world.entities.foundations.entries {
-		if foundation.alive && machines.machines[foundation.machine].kind == .Pod {
+		if foundation.alive && machines.machines[foundation.machine].kind != .Foundation {
 			draw_entity_cells(foundation.common, machines, models, frame, false, FRAME_FOUNDATION_COLOR, FRAME_FOUNDATION_COLOR)
 		}
 	}

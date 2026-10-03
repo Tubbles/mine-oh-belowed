@@ -54,6 +54,10 @@ recipe_category_icons := [Recipe_Category]Ui_Icon {
 // recipe reached through the graph whose list row takes the focus on the
 // next frame, once the filter shows it. selecting_for is the assembler
 // whose recipe is being chosen, NO_ENTITY outside the selection mode.
+// station is the crafting station whose panel the browser is (work item
+// 0196, open_station_recipes), NO_ENTITY outside the station mode;
+// filter_before_station is the filter it restores on leaving the mode
+// (close_station_recipes).
 // plans owns memory: destroy_recipe_browser.
 Recipe_Browser :: struct {
 	filter:         Recipe_Filter,
@@ -61,6 +65,8 @@ Recipe_Browser :: struct {
 	pending_focus:  int,
 	letter_radial:  Radial_State,
 	selecting_for:  Entity_Handle,
+	station:        Entity_Handle,
+	filter_before_station: Recipe_Filter,
 	plans:          Recipe_Plans,
 }
 
@@ -73,7 +79,7 @@ recipe_change_refusal_keys := [Recipe_Change_Refusal]string {
 
 // Unlocked only is on by default (work item 0091).
 make_recipe_browser :: proc() -> Recipe_Browser {
-	return Recipe_Browser{filter = {available_only = true}, focused_recipe = NO_RECIPE, pending_focus = NO_RECIPE, plans = {detail_recipe = NO_RECIPE}}
+	return Recipe_Browser{filter = {available_only = true}, focused_recipe = NO_RECIPE, pending_focus = NO_RECIPE, station = NO_ENTITY, plans = {detail_recipe = NO_RECIPE}}
 }
 
 destroy_recipe_browser :: proc(browser: ^Recipe_Browser) {
@@ -209,14 +215,26 @@ recipe_link_list :: proc(state: ^Ui_State, area: Ui_Rectangle, label: string, re
 
 // A focusable row: left and right switch the category while it holds the
 // focus (the bumpers belong to the inventory tab strip). Switching drops
-// the tag filter, since tags belong to the recipes of one category.
-recipe_category_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, browser: ^Recipe_Browser) {
+// the tag filter, since tags belong to the recipes of one category. Only
+// the shown categories get a tab (a station's, 0196).
+recipe_category_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle, browser: ^Recipe_Browser, shown := ~Recipe_Categories{}) {
 	labels: [len(Recipe_Category)]string
+	icons: [len(Recipe_Category)]Ui_Icon
+	categories: [len(Recipe_Category)]Recipe_Category
+	count, selected := 0, 0
 	for category in Recipe_Category {
-		labels[int(category)] = text(recipe_category_key(category))
+		if category not_in shown {
+			continue
+		}
+		selected = category == browser.filter.category ? count : selected
+		labels[count], icons[count], categories[count] = text(recipe_category_key(category)), recipe_category_icons[category], category
+		count += 1
 	}
-	state.selections[ui_id(state, "recipe_tabs")] = int(browser.filter.category)
-	category := Recipe_Category(ui_tabs(state, rectangle, "recipe_tabs", labels[:], slice.enumerated_array(&recipe_category_icons), .Focus))
+	if count == 0 {
+		return
+	}
+	state.selections[ui_id(state, "recipe_tabs")] = selected
+	category := categories[ui_tabs(state, rectangle, "recipe_tabs", labels[:count], icons[:count], .Focus)]
 	if category != browser.filter.category {
 		browser.filter.category = category
 		browser.filter.tags = {}
@@ -239,7 +257,10 @@ recipe_filter_column :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_contex
 		waits := queue.waiting || craft_queue_waits_for_input(queue)
 		draw_text_fitted(state, queue_row, queue_summary_text(queue), UI_BODY_TEXT_SIZE, .Left, waits ? UI_ACCENT_COLOR : UI_DIM_TEXT_COLOR)
 		ui_toggle(state, cut_row(&content), text("recipes_can_craft"), &browser.filter.craftable_only)
-		ui_toggle(state, cut_row(&content), text("recipes_unlocked_only"), &browser.filter.available_only)
+		// A station shows only unlocked recipes (station_filter).
+		if browser.station == NO_ENTITY {
+			ui_toggle(state, cut_row(&content), text("recipes_unlocked_only"), &browser.filter.available_only)
+		}
 	}
 	draw_text_fitted(state, cut_top(&content, UI_ROW_HEIGHT), text("recipes_tags"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	tags := category_tags(screen_context.recipes, browser.filter.category)
@@ -370,7 +391,7 @@ recipe_detail_panel :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context
 	cut_top(&content, UI_GAP)
 	inventory := screen_context.player.inventory
 	plans := &screen_context.views.recipe_browser.plans
-	refresh_recipe_detail_plan(plans, screen_context.recipes, screen_context.unlocks^, inventory, screen_context.player.crafting, recipe)
+	refresh_recipe_detail_plan(plans, screen_context.recipes, screen_context.unlocks^, inventory, screen_context.player.crafting, recipe, screen_craft_makers(screen_context))
 	draw_ingredient_rows(state, &content, "recipes_inputs", detail.inputs, plans.detail_inputs[:], screen_context.items)
 	detail_line(state, &content, can_craft_text(plans.detail_count), plans.detail_count >= 1 ? UI_ACCENT_COLOR : UI_DIM_TEXT_COLOR)
 	draw_product_rows(state, &content, "recipes_outputs", detail.outputs, screen_context.items, inventory)
@@ -435,7 +456,7 @@ apply_recipe_craft_input :: proc(state: ^Ui_State, screen_context: Screen_Contex
 // (Craft_Command).
 queue_checked_crafts :: proc(state: ^Ui_State, screen_context: Screen_Context, recipe, count: int) {
 	player := screen_context.player
-	_, _, refusal, shortage := plan_queue_crafts(player.crafting, player.inventory, screen_context.recipes, screen_context.unlocks^, recipe, count)
+	_, _, refusal, shortage := plan_queue_crafts(player.crafting, player.inventory, screen_context.recipes, screen_context.unlocks^, recipe, count, screen_craft_makers(screen_context))
 	if refusal != .None {
 		toast_craft_refusal(state, refusal, shortage, screen_context.items)
 		return
@@ -534,6 +555,53 @@ choose_assembler_recipe :: proc(state: ^Ui_State, screen_context: Screen_Context
 	pop_screen(&state.screens)
 }
 
+// The makers the tick queues the player's crafts with
+// (player_craft_makers), so what the browser offers is what it accepts.
+screen_craft_makers :: proc(screen_context: Screen_Context) -> Recipe_Makers {
+	return player_craft_makers(&screen_context.world.entities, screen_context.machines, screen_context.player^)
+}
+
+// The machine screen of a crafting station (work item 0196) forwards to
+// the browser in the station mode: on its first frame the browser opens
+// on the station's recipes; once the browser is closed (Back) and the
+// machine screen runs again, it closes too, so close_slot_screens closes
+// the panel as for any machine.
+open_station_recipes :: proc(state: ^Ui_State, browser: ^Recipe_Browser, station: Entity_Handle, category: Recipe_Category) {
+	if browser.station != station {
+		close_station_recipes(browser)
+		browser.station = station
+		browser.filter_before_station = browser.filter
+		browser.filter.tags = {}
+		browser.filter.category = category
+		push_screen(&state.screens, .Recipes)
+		return
+	}
+	close_station_recipes(browser)
+	pop_screen(&state.screens)
+}
+
+// Leaves the station mode, giving the browser back the filter it had
+// before (Back, the pause menu's Resume, the station gone). Nothing
+// outside the mode.
+close_station_recipes :: proc(browser: ^Recipe_Browser) {
+	if browser.station == NO_ENTITY {
+		return
+	}
+	browser.filter = browser.filter_before_station
+	browser.station = NO_ENTITY
+}
+
+// The station whose panel the browser is, with its machine; ok is false
+// outside the station mode or once the station is gone.
+browser_station_machine :: proc(screen_context: Screen_Context) -> (machine: Machine, ok: bool) {
+	common := entity_common(&screen_context.world.entities, screen_context.views.recipe_browser.station)
+	if common == nil || int(common.machine) >= len(screen_context.machines.machines) {
+		return {}, false
+	}
+	machine = screen_context.machines.machines[common.machine]
+	return machine, machine.kind == .Crafting_Station
+}
+
 // Opens the browser in the selection mode for an assembler.
 open_recipe_selection :: proc(state: ^Ui_State, browser: ^Recipe_Browser, assembler: Entity_Handle) {
 	browser.selecting_for = assembler
@@ -550,25 +618,46 @@ three_column_widths :: proc(content: Ui_Rectangle, filter_width, list_width: f32
 recipe_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	browser := &screen_context.views.recipe_browser
 	selecting := browser.selecting_for != NO_ENTITY
-	refresh_craftable_recipes(&browser.plans, screen_context.recipes, screen_context.unlocks^, screen_context.player.inventory, screen_context.player.crafting)
+	station, at_station := browser_station_machine(screen_context)
+	// The station vanished under its browser: close the browser, the
+	// machine screen under it closes next.
+	if browser.station != NO_ENTITY && !at_station {
+		close_station_recipes(browser)
+		pop_screen(&state.screens)
+		return
+	}
+	at_station = at_station && !selecting
+	makers := screen_craft_makers(screen_context)
+	refresh_craftable_recipes(&browser.plans, screen_context.recipes, screen_context.unlocks^, screen_context.player.inventory, screen_context.player.crafting, makers)
 	craftable := browser.plans.craftable[:]
 	ui_backdrop(state)
 	panel := ui_panel_area(state)
 	ui_panel_begin(state, "recipes", panel)
 	content := inset(panel, UI_PADDING)
-	if !selecting {
+	if !selecting && !at_station {
 		inventory_tabs(state, cut_top(&content, UI_ROW_HEIGHT))
 		cut_top(&content, UI_GAP)
 	}
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text(selecting ? "recipes_choose_title" : "recipes_title"), UI_HEADING_TEXT_SIZE, .Centre)
-	recipe_category_tabs(state, cut_top(&content, UI_ROW_HEIGHT), browser)
+	title := text(selecting ? "recipes_choose_title" : "recipes_title")
+	if at_station {
+		title = text(station.name_key)
+	}
+	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), title, UI_HEADING_TEXT_SIZE, .Centre)
+	shown := at_station ? station_categories(screen_context.recipes, station.recipe_maker) : ~Recipe_Categories{}
+	recipe_category_tabs(state, cut_top(&content, UI_ROW_HEIGHT), browser, shown)
 	cut_top(&content, UI_GAP)
 	filter_width, list_width := three_column_widths(content, RECIPE_FILTER_COLUMN_WIDTH, RECIPE_LIST_COLUMN_WIDTH)
 	recipe_filter_column(state, cut_left(&content, filter_width), screen_context)
 	cut_left(&content, 2 * UI_PADDING)
 	list_area := cut_left(&content, list_width)
 	cut_left(&content, 2 * UI_PADDING)
-	filter := selecting ? selection_filter(browser.filter, .Assembler) : browser.filter
+	filter := browser.filter
+	switch {
+	case selecting:
+		filter = selection_filter(browser.filter, .Assembler)
+	case at_station:
+		filter = station_filter(browser.filter, station.recipe_maker)
+	}
 	visible := filter_recipes(screen_context.recipes, screen_context.recipe_order, filter, craftable, screen_context.unlocks.available, context.temp_allocator)
 	list_id := ui_id(state, "recipe_list")
 	letter := letter_input(state, &browser.letter_radial)

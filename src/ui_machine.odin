@@ -134,7 +134,7 @@ machine_area_width :: proc(machine: Machine) -> f32 {
 		return core_sample_area_size().x
 	case .Launch_Pad:
 		return launch_pad_area_width()
-	case .Belt, .Schematic_Crate, .Foundation, .Belt_Pole, .Pod:
+	case .Belt, .Schematic_Crate, .Foundation, .Belt_Pole, .Pod, .Crafting_Station:
 	}
 	return 0
 }
@@ -164,7 +164,7 @@ machine_area_height :: proc(machine: Machine, slot_count: int, width: f32) -> f3
 		return core_sample_area_size().y
 	case .Launch_Pad:
 		return launch_pad_area_height(machine, width)
-	case .Belt, .Schematic_Crate, .Foundation, .Belt_Pole, .Pod:
+	case .Belt, .Schematic_Crate, .Foundation, .Belt_Pole, .Pod, .Crafting_Station:
 	}
 	return 0
 }
@@ -459,6 +459,11 @@ machine_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		return
 	}
 	machine := screen_context.machines.machines[common.machine]
+	if machine.kind == .Crafting_Station {
+		browser := &screen_context.views.recipe_browser
+		open_station_recipes(state, browser, handle, station_recipe_category(screen_context.recipes, machine.recipe_maker, browser.filter.category))
+		return
+	}
 	slots := entity_slots(&screen_context.world.entities, handle)
 	// Q is also Tab_Previous; while it quick moves it does not turn the
 	// launch pad's tabs.

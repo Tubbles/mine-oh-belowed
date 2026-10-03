@@ -37,7 +37,7 @@ planet_preview_ground_along :: proc(preview: ^Planet_Preview, frame: Frame, mill
 lay_planet_preview_second_pad :: proc(preview: ^Planet_Preview, first: Frame) {
 	content := planet_preview_content(preview)
 	entities := &planet_preview_simulation(preview).world.entities
-	foundation := field_foundation(content)
+	foundation := field_pad_foundation(content)
 	hit := planet_preview_ground_along(preview, first, PLANET_PREVIEW_SECOND_PAD_DISTANCE_MILLIMETRES)
 	_, frame := place_free_foundation(entities, content.machines, foundation, hit, first.axes[FRAME_FORWARD], content.field.foundation_pitch_millimetres)
 	for x in -PLANET_PREVIEW_PAD_HALF_WIDTH ..= PLANET_PREVIEW_PAD_HALF_WIDTH {

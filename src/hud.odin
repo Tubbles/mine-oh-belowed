@@ -476,7 +476,7 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context, hud: Hud_Cont
 		ui_glyph_bar(state, hints[:])
 		return
 	}
-	if entity_has_panel(&screen_context.world.entities, player.target.entity) {
+	if entity_has_panel(&screen_context.world.entities, screen_context.machines, player.target.entity) {
 		// Inventory opens the panel (0194); Interact turns a power switch.
 		if entity_is_power_switch(&screen_context.world.entities, screen_context.machines, player.target.entity) {
 			hints := [?]Glyph_Hint{{.Interact, text("hint_toggle")}, {.Inventory, text("hint_open")}, {.Pause, text("hint_pause")}}
@@ -510,7 +510,7 @@ field_pick_up_hint_shown :: proc(screen_context: Screen_Context, hud: Hud_Contex
 // What the Inventory glyph says: Open while it opens the aimed machine's
 // panel (0194, aims_at_panel), else Inventory.
 inventory_hint_key :: proc(screen_context: Screen_Context, hud: Hud_Context) -> string {
-	aimed := aims_at_panel(&screen_context.world.entities, screen_context.player.target.entity, hud_field_player(screen_context, hud).frame_target)
+	aimed := aims_at_panel(&screen_context.world.entities, screen_context.machines, screen_context.player.target.entity, hud_field_player(screen_context, hud).frame_target)
 	return aimed ? "hint_open" : "hint_inventory"
 }
 

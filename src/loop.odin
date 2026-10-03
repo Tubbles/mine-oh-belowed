@@ -435,7 +435,7 @@ viewport_aims_at_panel :: proc(state: ^Frame_State, viewport: Viewport) -> bool 
 		return false
 	}
 	view := lockstep_view_player(&session.lockstep, &session.simulation, viewport.player)
-	return aims_at_panel(&session.simulation.world.entities, session.simulation.players[viewport.player].target.entity, view.field.frame_target)
+	return aims_at_panel(&session.simulation.world.entities, state.content.machines, session.simulation.players[viewport.player].target.entity, view.field.frame_target)
 }
 
 // The viewport's frame input as the world takes it.

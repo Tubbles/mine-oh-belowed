@@ -89,6 +89,7 @@ Item_Definition :: struct {
 	price:           int,
 	tool_tier:       int,
 	configurable:    string,
+	former_ids:      []string,
 }
 
 Items_File :: struct {
@@ -107,6 +108,8 @@ Items_File :: struct {
 // every item but the pickaxes (work item 0051). description_key is the
 // string shown under the facts in the recipe browser, "" for none (work
 // item 0070). configurable is what the configure pop-up sets (0202).
+// former_ids are the ids the item had in an older build, which a save
+// may still name (save_remap.odin, work item 0196).
 Item :: struct {
 	id:              string,
 	name_key:        string,
@@ -123,6 +126,7 @@ Item :: struct {
 	price:           u64,
 	tool_tier:       int,
 	configurable:    Item_Configuration,
+	former_ids:      []string,
 }
 
 Item_Registry :: struct {
@@ -258,6 +262,7 @@ resolve_item :: proc(definition: Item_Definition, blocks: Block_Registry) -> (it
 		price           = u64(definition.price),
 		tool_tier       = definition.tool_tier,
 		configurable    = configurable,
+		former_ids      = definition.former_ids,
 	}
 	return item, ""
 }

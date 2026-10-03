@@ -546,7 +546,7 @@ start_benchmark_field :: proc(simulation: ^Simulation_State, content: Simulation
 	spacing := DEFAULT_SAMPLE_SPACING_MILLIMETRES
 	enable_new_field_world(simulation, config, content.machines, content.field, planet, spacing)
 	stage_generated_field_set(simulation)
-	foundation := field_foundation(content)
+	foundation := field_pad_foundation(content)
 	if foundation == NO_MACHINE {
 		return
 	}

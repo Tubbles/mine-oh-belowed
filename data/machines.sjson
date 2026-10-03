@@ -34,7 +34,10 @@
 // steam_engine, storage_tank, pump, tar_pit_pump, flare_stack,
 // combustion_generator, hydro_turbine, pole, power_switch, lamp,
 // crafting_machine, lab, schematic_crate, core_sample_drill,
-// launch_pad, foundation, belt_pole or pod.
+// launch_pad, foundation, belt_pole, pod or crafting_station.
+// former_ids (optional, work item 0196) lists ids this record had in an
+// older build: a save naming one loads it as this record, with one log
+// line. A former id is never a current id of the table, nor listed twice.
 // The pod (work item 0179, doc/content.md, The pod) is the start on the
 // field: the session places it on a pad of foundations at the home. It
 // has no item, cannot be picked up, and has no panel and no slots; its
@@ -185,7 +188,8 @@
 // light_color as for blocks (blocks.sjson), white when left out.
 // Crafting machines (work items 0021 and 0026): speed, recipe_maker (the
 // made_in category of recipes.sjson it makes: assembler, crusher, washer,
-// alloy_furnace, refinery, cracking, chemistry, gasifier or electrolysis) and either
+// alloy_furnace, refinery, cracking, chemistry, gasifier, electrolysis or
+// stone_cutting) and either
 // electric_power_kilowatts or fuel_slots = 1 with fuel_power_kilowatts.
 // recipe_choice chosen: the player picks the
 // recipe in the panel, with one input slot per ingredient and one output
@@ -238,18 +242,27 @@
 // fields. A lab has one slot per science pack item any technology in
 // technologies.sjson consumes.
 // Foundation (work item 0174, kind foundation): a footprint one cell
-// high, no other fields. Its cells are the solid floor of a frame that
-// machines stand on (doc/content.md, Foundations); placed free it starts
-// a frame at foundation_pitch_millimetres (game.sjson).
+// high and color = [r, g, b] (work item 0196, required, each 0 to 255 and
+// not all zero), the flat colour its slab is drawn in. Its cells are the
+// solid floor of a frame that machines stand on (doc/content.md,
+// Foundations); placed free it starts a frame at
+// foundation_pitch_millimetres (game.sjson). The tiers are listed wooden,
+// stone brick, iron: the first one is the planet preview's.
+// Crafting station (work item 0196, kind crafting_station): a place the
+// player crafts at by hand. recipe_maker names the made_in category its
+// panel offers (not hand, furnace or recycler); its crafts run in the
+// player's hand queue. No slots, fuel, power, speed or fluid ports; an
+// item is required.
 // Machines on bare ground (work item 0201, doc/content.md, Machines on
 // bare ground): stands_on_ground (optional, default false) marks a
 // machine that stands on the ground without a foundation for good: it is
 // never refused for slope and never wears. Set on the belts, the pipe,
-// the electric poles, the belt pole and the pod. Every other machine
-// placed on bare ground breaks down after bare_ground_life_minutes of
-// operation (game.sjson) unless it stands on foundations;
-// bare_ground_life_minutes (optional, 1 to 10080) overrides that for the
-// machine.
+// the electric poles, the belt pole, the pod and the stone cutting table
+// (a crafting station never operates, so it never wears either way).
+// Every other machine placed on bare ground breaks down after
+// bare_ground_life_minutes of operation (game.sjson) unless it stands
+// on foundations; bare_ground_life_minutes (optional, 1 to 10080)
+// overrides that for the machine.
 // Belt pole (work item 0176, kind belt_pole): a 1 by 1 by 1 footprint and
 // height_millimetres (250 to 4000), how high over its bottom a belt or
 // pipe run ends on it (doc/content.md, Belt poles and runs). Placed free
@@ -808,6 +821,23 @@ machines = [
 		output_slots = 2
 	}
 	{
+		id = "stone_cutter"
+		name_key = "machine_stone_cutter"
+		description_key = "describe_machine_stone_cutter"
+		model = "stone_cutter"
+		motion = {kind = "spin", axis = "z", amplitude = 1, period_seconds = 0.6, pivot = [1, 1.5, 1]}
+		item = "stone_cutter"
+		kind = "crafting_machine"
+		footprint = {width = 2, depth = 2, height = 2}
+		speed = 0.5
+		fuel_slots = 1
+		fuel_power_kilowatts = 90
+		recipe_maker = "stone_cutting"
+		recipe_choice = "fixed"
+		input_slots = 1
+		output_slots = 1
+	}
+	{
 		id = "recycler"
 		name_key = "machine_recycler"
 		description_key = "describe_machine_recycler"
@@ -961,12 +991,43 @@ machines = [
 		electric_power_kilowatts = 60
 	}
 	{
-		id = "foundation"
-		name_key = "machine_foundation"
-		description_key = "describe_machine_foundation"
-		item = "foundation"
+		id = "wooden_foundation"
+		name_key = "machine_wooden_foundation"
+		description_key = "describe_machine_wooden_foundation"
+		item = "wooden_foundation"
 		kind = "foundation"
 		footprint = {width = 1, depth = 1, height = 1}
+		color = [150, 108, 66]
+	}
+	{
+		id = "stone_brick_foundation"
+		former_ids = ["foundation"]
+		name_key = "machine_stone_brick_foundation"
+		description_key = "describe_machine_stone_brick_foundation"
+		item = "stone_brick_foundation"
+		kind = "foundation"
+		footprint = {width = 1, depth = 1, height = 1}
+		color = [150, 146, 138]
+	}
+	{
+		id = "iron_foundation"
+		name_key = "machine_iron_foundation"
+		description_key = "describe_machine_iron_foundation"
+		item = "iron_foundation"
+		kind = "foundation"
+		footprint = {width = 1, depth = 1, height = 1}
+		color = [104, 112, 122]
+	}
+	{
+		id = "stone_cutting_table"
+		name_key = "machine_stone_cutting_table"
+		description_key = "describe_machine_stone_cutting_table"
+		model = "stone_cutting_table"
+		item = "stone_cutting_table"
+		kind = "crafting_station"
+		stands_on_ground = true
+		footprint = {width = 2, depth = 1, height = 2}
+		recipe_maker = "stone_cutting"
 	}
 	{
 		id = "belt_pole"

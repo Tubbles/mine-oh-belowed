@@ -491,8 +491,8 @@ aimed_entity :: proc(block_target: Entity_Handle, field_target: Frame_Raycast_Hi
 // Whether an Open_Inventory press opens the aimed machine's panel rather
 // than the inventory (0194, route_open_inventory_press). Both targets
 // only reach as far as the player does.
-aims_at_panel :: proc(entities: ^Entities, block_target: Entity_Handle, field_target: Frame_Raycast_Hit) -> bool {
-	return entity_has_panel(entities, aimed_entity(block_target, field_target))
+aims_at_panel :: proc(entities: ^Entities, machines: Machine_Registry, block_target: Entity_Handle, field_target: Frame_Raycast_Hit) -> bool {
+	return entity_has_panel(entities, machines, aimed_entity(block_target, field_target))
 }
 
 // Open_Aimed (an Open_Inventory press the presentation routed, 0194)
@@ -503,7 +503,7 @@ aims_at_panel :: proc(entities: ^Entities, block_target: Entity_Handle, field_ta
 // interacts.
 resolve_interact :: proc(player: ^Player, entities: ^Entities, machines: Machine_Registry, input: Input_Frame) -> (Input_Frame, Player_Events) {
 	result := without_interact_jump(player^, entities, machines, input)
-	if .Open_Aimed in input.just_pressed && entity_has_panel(entities, player.target.entity) {
+	if .Open_Aimed in input.just_pressed && entity_has_panel(entities, machines, player.target.entity) {
 		player.open_machine = player.target.entity
 		return result, {.Open_Machine}
 	}

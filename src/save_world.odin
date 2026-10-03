@@ -619,13 +619,16 @@ decode_entities :: proc(state: ^Simulation_State, content: Simulation_Content, d
 	if !tables_ok {
 		return fmt.tprintf("%s is malformed or truncated", name)
 	}
-	remap^ = make_content_remap(saved_tables, content_tables(content))
+	remap^ = make_content_remap(saved_tables, content_tables(content), content_former_ids(content))
 	reader.remap = remap
 	if !read_simulation_state(&reader, state, content) {
 		if reader.problem != "" {
 			return fmt.tprintf("%s cannot be loaded: %s", name, reader.problem)
 		}
 		return fmt.tprintf("%s is malformed or truncated", name)
+	}
+	if line := renamed_content_line(remap^); line != "" {
+		platform.log_printf("%s", line)
 	}
 	return ""
 }

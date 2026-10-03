@@ -44,7 +44,7 @@ make_field_content :: proc(config: Game_Config, items: Item_Registry, machines: 
 		tuning = make_field_player_tuning(config.field_player, planet, spacing_millimetres, config.tick_rate),
 		water = make_field_water_tuning(config.field_water),
 		light = make_field_light_tuning(lighting, spacing_millimetres),
-		foundation = find_foundation_machine(machines),
+		pad_foundation = find_pad_foundation(machines, config.field_simulation.pad_foundation),
 		foundation_pitch_millimetres = config.foundation_pitch_millimetres,
 		foundation_sizes = config.foundation_sizes,
 		foundation_heights = config.foundation_heights,
@@ -68,6 +68,21 @@ field_torch_problem :: proc(field: Field_Simulation_Config, items: Item_Registry
 		return "field_simulation.torch_emitter is not an emitter of lighting.sjson"
 	}
 	return ""
+}
+
+// The pad foundation names a machine of kind foundation (load_game_tables).
+field_pad_foundation_problem :: proc(field: Field_Simulation_Config, machines: Machine_Registry) -> string {
+	machine, found := find_machine_id(machines, field.pad_foundation)
+	if !found || machines.machines[machine].kind != .Foundation {
+		return "field_simulation.pad_foundation is not a machine of kind foundation"
+	}
+	return ""
+}
+
+// NO_MACHINE when the machines have no such id.
+find_pad_foundation :: proc(machines: Machine_Registry, id: string) -> Machine_Id {
+	machine, _ := find_machine_id(machines, id)
+	return machine
 }
 
 // The input.
@@ -288,7 +303,7 @@ drain_field_torch_removal :: proc(state: ^Simulation_State, content: Simulation_
 interact_on_field :: proc(player: ^Player, entities: ^Entities, machines: Machine_Registry, frame: Input_Frame) -> (input: Input_Frame, events: Player_Events) {
 	input = without_field_interact_jump(player^, entities, machines, frame)
 	handle := aimed_entity(NO_ENTITY, player.field.frame_target)
-	if .Open_Aimed in frame.just_pressed && entity_has_panel(entities, handle) {
+	if .Open_Aimed in frame.just_pressed && entity_has_panel(entities, machines, handle) {
 		player.open_machine = handle
 		return input, {.Open_Machine}
 	}
@@ -422,7 +437,7 @@ enable_new_field_world :: proc(state: ^Simulation_State, config: Game_Config, ma
 	seed := state.world.settings.seed
 	site, heading := field_home_site(make_planet_generation(seed, planet, spacing_millimetres), planet)
 	pitch := field_content.foundation_pitch_millimetres
-	place_pod(&state.world.entities, machines, site, heading, pitch)
+	place_pod(&state.world.entities, machines, field_content.pad_foundation, site, heading, pitch)
 	for &player in state.players {
 		player.field = field_home_player(seed, planet, spacing_millimetres, pitch)
 	}

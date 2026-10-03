@@ -273,3 +273,21 @@ test_assembler_refuses_a_third_ingredient_set :: proc(t: ^testing.T) {
 	testing.expect_value(t, entity_insert(&world.entities, content, handle, {plate, 2}), Item_Stack{plate, 2})
 	testing.expect_value(t, test_assembler(&world, handle).slots[0], Item_Stack{plate, 4})
 }
+
+// Work item 0196: the stone cutter, a burner crafting machine at speed
+// 0.5, cuts two stone into a brick in 192 ticks (1.6 s at half speed).
+@(test)
+test_the_stone_cutter_cuts_bricks :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	handle := place_test_entity(&world, content, "stone_cutter", {1, 1, 0})
+	cutter := pool_get(&world.entities.assemblers, handle)
+	machine := test_crafting_machine(content, "stone_cutter")
+	coal, stone, brick := test_item(content.items, "coal"), test_item(content.items, "stone"), test_item(content.items, "stone_brick")
+	testing.expect_value(t, entity_insert(&world.entities, content, handle, {coal, 1}), EMPTY_STACK)
+	testing.expect_value(t, entity_insert(&world.entities, content, handle, {stone, 2}), EMPTY_STACK)
+	testing.expect_value(t, ticks_until_crafted(cutter, machine, content, 191), -1)
+	testing.expect_value(t, cutter.slots[2], EMPTY_STACK)
+	testing.expect_value(t, ticks_until_crafted(cutter, machine, content, 1), 1)
+	testing.expect_value(t, cutter.slots[2], Item_Stack{brick, 1})
+}

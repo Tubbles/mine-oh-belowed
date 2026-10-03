@@ -281,6 +281,11 @@ run_screens :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	if screen_context.views != nil && top_screen(state.screens) != .Recipes {
 		screen_context.views.recipe_browser.selecting_for = NO_ENTITY
 	}
+	// A station's panel closed by anything but Back (the pause menu's
+	// Resume) leaves no station mode behind for the next opening.
+	if screen_context.views != nil && !screen_stack_contains(state.screens, .Machine) {
+		close_station_recipes(&screen_context.views.recipe_browser)
+	}
 	// The next opening centres on the player and reads the surfaces anew.
 	if screen_context.views != nil && top_screen(state.screens) != .Map {
 		screen_context.views.map_view.active = false

@@ -168,9 +168,11 @@ Field_Content :: struct {
 	tuning:     Field_Player_Tuning,
 	water:      Field_Water_Tuning,
 	light:      Field_Light_Tuning,
-	// The foundation (0174): its machine (read through field_foundation)
-	// and the pitch of a new frame (data/game.sjson).
-	foundation: Machine_Id,
+	// The content's pad foundation (0196, read through
+	// field_pad_foundation): the benchmark's pad and the pod's; Place puts
+	// down the held foundation. And the pitch of a new frame
+	// (data/game.sjson).
+	pad_foundation: Machine_Id,
 	foundation_pitch_millimetres: int,
 	// The block sizes and heights a held foundation cycles (0193,
 	// field_foundation_block); empty lists place one cell.

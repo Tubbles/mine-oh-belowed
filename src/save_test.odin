@@ -188,7 +188,7 @@ lay_save_test_launch_pad :: proc(world: ^World, records: ^Game_Records, content:
 SAVE_TEST_FRAME_HIT :: World_Position{0, 8000 * POSITION_UNITS_PER_METRE, 0}
 
 lay_save_test_frame :: proc(world: ^World, content: Simulation_Content) {
-	foundation := test_machine(content.machines, "foundation")
+	foundation := test_machine(content.machines, "wooden_foundation")
 	_, frame := place_free_foundation(&world.entities, content.machines, foundation, SAVE_TEST_FRAME_HIT, {UNIT_VECTOR_ONE, 0, 0}, 500)
 	place_on_frame(&world.entities, content.machines, foundation, frame, {1, 0, 0}, 0)
 	place_on_frame(&world.entities, content.machines, test_machine(content.machines, "wooden_chest"), frame, {0, 1, 0}, 0)

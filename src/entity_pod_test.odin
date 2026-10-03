@@ -17,7 +17,7 @@ test_place_pod_lays_the_pad_and_the_pod_with_its_door_to_the_heading :: proc(t: 
 	defer destroy_entities(&entities)
 	up, _ := normalize_fixed(cast([3]i64)(TEST_FRAME_HIT))
 	heading := test_tangent_at(up, {UNIT_VECTOR_ONE, 0, 0})
-	frame, ok := place_pod(&entities, machines, TEST_FRAME_HIT, heading, 500)
+	frame, ok := place_pod(&entities, machines, foundation, TEST_FRAME_HIT, heading, 500)
 	testing.expect(t, ok)
 	record, found := find_frame(&entities.frames, frame)
 	testing.expect(t, found && frame != BLOCK_FRAME)
@@ -41,7 +41,7 @@ test_place_pod_lays_the_pad_and_the_pod_with_its_door_to_the_heading :: proc(t: 
 	testing.expect_value(t, origin.x - POD_PAD_FIRST_CELL, POD_PAD_FIRST_CELL + POD_PAD_SIZE - (origin.x + size.x))
 	testing.expect_value(t, origin.z - POD_PAD_FIRST_CELL, POD_PAD_FIRST_CELL + POD_PAD_SIZE - (origin.z + size.z))
 	testing.expect_value(t, frame_cell_count(&entities.frames, frame), POD_PAD_SIZE * POD_PAD_SIZE + int(size.x * size.y * size.z))
-	testing.expect(t, !entity_has_panel(&entities, pod_handle))
+	testing.expect(t, !entity_has_panel(&entities, machines, pod_handle))
 	front := rotate_footprint_cell({pod.footprint.x - 1, pod.footprint.z / 2}, pod.footprint.x, pod.footprint.z, POD_ROTATION)
 	back := rotate_footprint_cell({0, pod.footprint.z / 2}, pod.footprint.x, pod.footprint.z, POD_ROTATION)
 	door := frame_cell_centre(record, origin + {front.x, 0, front.y})
@@ -53,7 +53,7 @@ test_place_pod_lays_the_pad_and_the_pod_with_its_door_to_the_heading :: proc(t: 
 
 // The pod on the flat test site, its door towards +x, and its record.
 place_test_pod :: proc(entities: ^Entities, machines: Machine_Registry) -> (frame: Frame, pod: Machine) {
-	frame_id, ok := place_pod(entities, machines, test_site_point(0, 0, 0), {UNIT_VECTOR_ONE, 0, 0}, 500)
+	frame_id, ok := place_pod(entities, machines, find_foundation_machine(machines), test_site_point(0, 0, 0), {UNIT_VECTOR_ONE, 0, 0}, 500)
 	assert(ok)
 	frame, _ = find_frame(&entities.frames, frame_id)
 	return frame, machines.machines[find_machine_of_kind(machines, .Pod)]

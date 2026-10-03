@@ -5,13 +5,16 @@ import "shared:raylib/rlgl"
 
 // The foundation frames' placeholder look (work item 0174): every
 // foundation cell of a frame other than the block frame is drawn as a
-// stone grey box at its frame's transform. The machines on the frames,
-// the pod among them (it rides in the foundations' pool, 0179), are drawn
+// box at its frame's transform, in the flat colour of its record (the
+// tier's, work item 0196, foundation_slab_color). The machines on the
+// frames, the pod and the crafting stations among them (they ride in the
+// foundations' pool, 0179 and 0196), are drawn
 // by draw_entities under the same matrices (draw_entity_cells: the
 // model scaled to its footprint's cells by model_transform, or a box per
 // cell), since the field session draws them (0179). Floats are made here
 // only; the frames themselves are integers.
 
+// The pod's and the stations' box fallback (render_entities.odin).
 FRAME_FOUNDATION_COLOR :: rl.Color{150, 146, 138, 255}
 FRAME_EDGE_COLOR :: rl.Color{60, 58, 54, 255}
 FRAME_GHOST_COLOR :: rl.Color{240, 240, 240, 90}
@@ -64,15 +67,21 @@ draw_frames :: proc(entities: ^Entities, machines: Machine_Registry) {
 		if !found || handle.kind != .Foundation {
 			continue
 		}
-		// The pod's cells are its model's (draw_entities).
-		if common := entity_common(entities, handle); common == nil || machines.machines[common.machine].kind != .Foundation {
+		// The pod's and the stations' cells are their models' (draw_entities).
+		common := entity_common(entities, handle)
+		if common == nil || machines.machines[common.machine].kind != .Foundation {
 			continue
 		}
 		rlgl.PushMatrix()
 		rlgl.MultMatrixf(raw_data(flat[:]))
-		draw_frame_cell(key.cell, FRAME_FOUNDATION_COLOR)
+		draw_frame_cell(key.cell, foundation_slab_color(machines.machines[common.machine]))
 		rlgl.PopMatrix()
 	}
+}
+
+// A foundation's slab in its record's colour, opaque.
+foundation_slab_color :: proc(machine: Machine) -> rl.Color {
+	return rl.Color{machine.color[0], machine.color[1], machine.color[2], 255}
 }
 
 // The ghost's colour: the block ghost's refused colour when the

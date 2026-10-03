@@ -45,18 +45,18 @@ pod_origin :: proc(pod: Machine) -> World_Coordinate {
 }
 
 // The pad and the pod at the surface position, the frame's forward the
-// heading's yaw step (a tangent at the surface position). ok is false
-// when the machines have no foundation or no pod, or the pod does not fit
-// the pad; the pad stays then.
-place_pod :: proc(entities: ^Entities, machines: Machine_Registry, surface_position: World_Position, heading: [3]i64, pitch_millimetres: int) -> (frame: Frame_Id, ok: bool) {
-	foundation := find_foundation_machine(machines)
+// heading's yaw step (a tangent at the surface position), of the pad
+// foundation (work item 0196). ok is false when pad_foundation is not a
+// foundation, the machines have no pod, or the pod does not fit the pad;
+// the pad stays then.
+place_pod :: proc(entities: ^Entities, machines: Machine_Registry, pad_foundation: Machine_Id, surface_position: World_Position, heading: [3]i64, pitch_millimetres: int) -> (frame: Frame_Id, ok: bool) {
 	pod := find_machine_of_kind(machines, .Pod)
-	if foundation == NO_MACHINE || pod == NO_MACHINE {
+	if int(pad_foundation) >= len(machines.machines) || machines.machines[pad_foundation].kind != .Foundation || pod == NO_MACHINE {
 		return BLOCK_FRAME, false
 	}
-	_, frame = place_free_foundation(entities, machines, foundation, surface_position, heading, pitch_millimetres)
+	_, frame = place_free_foundation(entities, machines, pad_foundation, surface_position, heading, pitch_millimetres)
 	for cell in pod_pad_cells() {
-		place_on_frame(entities, machines, foundation, frame, cell, 0)
+		place_on_frame(entities, machines, pad_foundation, frame, cell, 0)
 	}
 	_, refusal := place_on_frame(entities, machines, pod, frame, pod_origin(machines.machines[pod]), POD_ROTATION)
 	return frame, refusal == .None

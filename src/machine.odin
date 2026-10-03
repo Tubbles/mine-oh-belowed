@@ -89,6 +89,11 @@ Machine_Kind :: enum u8 {
 	// up, with no panel and no inventory. It rides in the foundations'
 	// pool, an entity of its common data only.
 	Pod,
+	// A place the player crafts at (work item 0196): its panel is the
+	// recipe browser filtered to its recipe_maker, its crafts run in the
+	// player's hand queue. It rides in the foundations' pool, an entity of
+	// its common data only, like the pod.
+	Crafting_Station,
 }
 
 @(rodata)
@@ -121,6 +126,7 @@ machine_kind_names := [Machine_Kind]string {
 	.Foundation    = "foundation",
 	.Belt_Pole     = "belt_pole",
 	.Pod           = "pod",
+	.Crafting_Station = "crafting_station",
 }
 
 // The shape family a belt item places. Ramps become up or down and lifts
@@ -214,6 +220,8 @@ Machine_Definition :: struct {
 	open_cells:                   []Machine_Cell_Box_Definition,
 	stands_on_ground:             bool,
 	bare_ground_life_minutes:     int,
+	color:                        [3]int,
+	former_ids:                   []string,
 }
 
 Machines_File :: struct {
@@ -322,6 +330,10 @@ Machine :: struct {
 	// operation on bare ground before a breakdown, 0 for game.sjson's.
 	stands_on_ground:            bool,
 	bare_ground_life_minutes:    int,
+	// Foundations: the flat colour of the slab (work item 0196).
+	color:                       [3]u8,
+	// The ids the machine had in an older build (save_remap.odin, 0196).
+	former_ids:                  []string,
 }
 
 // Cells of the unrotated footprint, from and to inclusive.
@@ -409,6 +421,11 @@ validate_machine_kind_fields :: proc(definition: Machine_Definition, kind: Machi
 		if definition.footprint.height != 1 {
 			return fmt.tprintf("foundation %q must be one cell thick", definition.id)
 		}
+		if !foundation_color_is_valid(definition.color) {
+			return fmt.tprintf("foundation %q needs a color of three channels from 0 to 255", definition.id)
+		}
+	case .Crafting_Station:
+		return validate_crafting_station_definition(definition)
 	case .Belt_Pole:
 		return validate_belt_pole_definition(definition)
 	case .Pod:
@@ -498,6 +515,17 @@ validate_drill_definition :: proc(definition: Machine_Definition) -> string {
 		return fmt.tprintf("drill %q has a negative boring_seconds", definition.id)
 	}
 	return ""
+}
+
+// Each channel 0 to 255 and not all zero: a missing color reads as
+// black, which no foundation is.
+foundation_color_is_valid :: proc(color: [3]int) -> bool {
+	for channel in color {
+		if channel < 0 || channel > 255 {
+			return false
+		}
+	}
+	return color != {0, 0, 0}
 }
 
 // One along its flow and two across it, so each half stands where a belt
@@ -688,6 +716,8 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 		open_cell_box_count = len(definition.open_cells),
 		stands_on_ground = definition.stands_on_ground,
 		bare_ground_life_minutes = definition.bare_ground_life_minutes,
+		color = {u8(clamp(definition.color[0], 0, 255)), u8(clamp(definition.color[1], 0, 255)), u8(clamp(definition.color[2], 0, 255))},
+		former_ids = definition.former_ids,
 	}
 }
 

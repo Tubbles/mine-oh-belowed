@@ -93,6 +93,8 @@ Ui_Audit_Case :: struct {
 	tab_next:     int,
 	machine:      Entity_Handle,
 	selecting:    Entity_Handle,
+	// The crafting station whose recipe browser is audited (0196).
+	station:      Entity_Handle,
 	keyboard:     bool,
 	// The keyboard types through the system keyboard: no keys (0133).
 	system_keyboard: bool,
@@ -329,6 +331,9 @@ audit_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, size: Ui_Audit_Size, aud
 	if audit_case.selecting != NO_ENTITY {
 		audit.views.recipe_browser.selecting_for = audit_case.selecting
 	}
+	if audit_case.station != NO_ENTITY {
+		audit.views.recipe_browser.station = audit_case.station
+	}
 	frame_input := input
 	frame_input.pointer_is_touch = audit_case.touch
 	ui_begin(state, frame_input, size.pixels, 1.0 / 60, size.scale, 1, ui_accessibility(audit.settings))
@@ -388,6 +393,7 @@ audit_case_at_size :: proc(audit: ^Ui_Audit, audit_case: Ui_Audit_Case, size: Ui
 		audit_mission_control(audit, &state)
 	}
 	audit.views.recipe_browser.selecting_for = NO_ENTITY
+	audit.views.recipe_browser.station = NO_ENTITY
 	audit_frame(audit, &state, size, audit_case, {}, "first frame")
 	for step in 0 ..< audit_case.tab_next {
 		audit_frame(audit, &state, size, audit_case, {tab_next = true}, fmt.tprintf("tab step %d", step + 1))
@@ -457,7 +463,10 @@ machines_with_panels :: proc(world: ^World, content: Simulation_Content) -> []En
 	for _, occupant in world.entities.frames.occupants {
 		handle := entity_from_occupant(occupant.handle)
 		common := entity_common(&world.entities, handle)
-		if common != nil && entity_has_panel(&world.entities, handle) && handles[common.machine] == NO_ENTITY {
+		// A crafting station's machine screen only forwards to the recipe
+		// browser, audited as its own case.
+		station := common != nil && content.machines.machines[common.machine].kind == .Crafting_Station
+		if common != nil && !station && entity_has_panel(&world.entities, content.machines, handle) && handles[common.machine] == NO_ENTITY {
 			handles[common.machine] = handle
 		}
 	}
@@ -945,6 +954,14 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 			break
 		}
 	}
+	// The stone cutting table's panel: the browser in the station mode.
+	for foundation in simulation.world.entities.foundations.entries {
+		if foundation.alive && audit.content.machines.machines[foundation.machine].kind == .Crafting_Station {
+			audit_case(audit, {name = "crafting station", screens = {.Machine, .Recipes}, machine = foundation.handle, station = foundation.handle, walk_focus = true})
+			audit_case(audit, {name = "crafting station touch row", screens = {.Machine, .Recipes}, hud = true, machine = foundation.handle, station = foundation.handle, touch = true})
+			break
+		}
+	}
 	audit_case(audit, {name = "technologies", screens = {.Technologies}, walk_focus = true})
 	// The chapters, the contracts and the notes (work item 0070).
 	for tab in 0 ..= len(audit.content.quests.chapters) + 1 {
@@ -967,7 +984,7 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 	// checked at every size down to the smallest, and the inventory's
 	// touch row with Configure in Sort's place.
 	with_audit_foundation_blocks(audit)
-	foundation := audit.content.machines.machines[audit.content.field.foundation].item
+	foundation := audit.content.machines.machines[audit.content.field.pad_foundation].item
 	inventory_hotbar(player.inventory)[player.selected_hotbar_slot] = Item_Stack{foundation, 1}
 	audit_case(audit, {name = "configure foundation block", screens = {.Inventory, .Configure}, configure_item = foundation, walk_focus = true})
 	audit_case(audit, {name = "configure foundation block touch row", screens = {.Inventory, .Configure}, configure_item = foundation, hud = true, touch = true})
@@ -1244,7 +1261,7 @@ test_recipe_screen_shows_have_and_need :: proc(t: ^testing.T) {
 	defer destroy_ui_state(&state)
 	push_screen(&state.screens, .Recipes)
 	screen_test_frame(audit, &state, {})
-	planned := planned_crafts(player.crafting, player.inventory, audit.content.recipes, audit.simulation.unlocks, plank, context.temp_allocator)
+	planned := planned_crafts(player.crafting, player.inventory, audit.content.recipes, audit.simulation.unlocks, plank, HAND_MAKERS, context.temp_allocator)
 	line := ingredient_line(1, item_name(audit.content.items, log_item), planned.inputs[0])
 	testing.expectf(t, draw_list_has_text(state.draw_list[:], line), "no row %q", line)
 	testing.expect(t, draw_list_has_text(state.draw_list[:], text("recipes_unlocked_only")))
@@ -1261,7 +1278,7 @@ test_recipe_screen_shows_have_and_need :: proc(t: ^testing.T) {
 with_audit_foundation_blocks :: proc(audit: ^Ui_Audit) {
 	config, error := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
 	assert(error == nil)
-	audit.content.field.foundation = find_foundation_machine(audit.content.machines)
+	audit.content.field.pad_foundation = find_foundation_machine(audit.content.machines)
 	audit.content.field.foundation_sizes = config.foundation_sizes
 	audit.content.field.foundation_heights = config.foundation_heights
 }
@@ -1290,7 +1307,7 @@ make_configure_test :: proc(audit: ^Ui_Audit, state: ^Ui_State) -> Configure_Tes
 	player := &audit.simulation.players[0]
 	player.held = EMPTY_HELD_STACK
 	test := Configure_Test {
-		foundation = audit.content.machines.machines[audit.content.field.foundation].item,
+		foundation = audit.content.machines.machines[audit.content.field.pad_foundation].item,
 		furnace    = audit.content.machines.machines[test_machine(audit.content.machines, "stone_furnace")].item,
 	}
 	hotbar := inventory_hotbar(player.inventory)
