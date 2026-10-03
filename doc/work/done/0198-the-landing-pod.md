@@ -1,6 +1,6 @@
 # 0198: The landing pod: larger, an airlock, a chest, a bench, an oxygen generator
 
-Status: verified (2026-10-03, verifier: land after a fix round, the fix round done: the pod paragraph, the spawn on the hatches' centre line, the fixture box guard, the nits; implemented 2026-10-03; designed 2026-10-03; user, 2026-10-03: "the landing pod should be larger, with an airlock, chest, crafting bench, it needs to house an oxygen generator and have infinite oxygen on board"; after 0197)
+Status: landed (2026-10-03, 6169d29; verifier: land after a fix round, the fix round done: the pod paragraph, the spawn on the hatches' centre line, the fixture box guard, the nits; implemented 2026-10-03; designed 2026-10-03; user, 2026-10-03: "the landing pod should be larger, with an airlock, chest, crafting bench, it needs to house an oxygen generator and have infinite oxygen on board"; after 0197)
 
 ## Goal
 
