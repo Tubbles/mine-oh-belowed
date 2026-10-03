@@ -10,10 +10,13 @@ LOOPBACK_TEST_WORLD_NAME :: "Loopback world"
 // A host on a loopback port the system picks, without the discovery.
 LOOPBACK_HOSTING_PLAN :: Hosting_Plan{port_count = 1, address = .Loopback}
 
-// A third machine joins two playing ones: it loads the host's snapshot,
-// starts at the host's hash and keeps it while all three play on.
+// A third machine joins two playing ones (0190): it gets the host's
+// world without a player, the two play on past the snapshot's tick while
+// it restores (no record of it exists), it runs the relayed ticks, and its
+// entry is added at the join tick every machine agrees on, after which
+// all three keep one hash.
 @(test)
-test_a_joiner_reaches_the_hosts_hash :: proc(t: ^testing.T) {
+test_a_joiner_restores_while_the_others_play_and_reaches_their_hash :: proc(t: ^testing.T) {
 	content := make_save_test_content()
 	generator := make_test_generator(DEFAULT_WORLD_SEED)
 	host := make_lockstep_test_machine(content, &generator, 0, 0)
@@ -23,15 +26,8 @@ test_a_joiner_reaches_the_hosts_hash :: proc(t: ^testing.T) {
 	playing := [?]^Lockstep_Test_Machine{host, guest}
 	play_lockstep_test_frames(playing[:], content, 0, 120)
 
-	join_tick := host.simulation.tick + 1
-	player, adds_entry := joining_player_index(host.lockstep, len(host.simulation.players), join_tick)
-	testing.expect_value(t, player, 2)
-	member := Lockstep_Member{joined_tick = join_tick, left_tick = NEVER_TICK, adds_entry = adds_entry}
-	for machine in playing {
-		set_lockstep_member(&machine.lockstep, player, member)
-	}
-	payload := encode_join_snapshot(&host.simulation, &host.lockstep, content, "joined", player, join_tick)
-
+	snapshot_tick := host.simulation.tick
+	payload := encode_join_snapshot(&host.simulation, &host.lockstep, content, "joined")
 	joiner := new(Lockstep_Test_Machine)
 	defer destroy_lockstep_test_machine(joiner)
 	snapshot, chunk_set_enabled, ok := decode_join_snapshot(payload)
@@ -48,15 +44,53 @@ test_a_joiner_reaches_the_hosts_hash :: proc(t: ^testing.T) {
 	load_save_test_chunks(&joiner.simulation.world, &joiner.simulation.records, &generator)
 	joiner.lockstep = make_single_player_lockstep(joiner.simulation.tick, player_start_on({}))
 	adopt_join_snapshot(&joiner.simulation, &joiner.lockstep, snapshot, chunk_set_enabled, 1)
+	testing.expect_value(t, len(joiner.lockstep.locals), 0)
+	testing.expect_value(t, len(joiner.lockstep.members), 2)
+	testing.expect_value(t, joiner.simulation.tick, snapshot_tick)
+	testing.expect_value(t, lockstep_state_hash(&joiner.simulation), lockstep_state_hash(&host.simulation))
+
+	// The joiner restores: the others play on, their records reach it.
+	machines := [?]^Lockstep_Test_Machine{host, guest, joiner}
+	for frame in 120 ..< 240 {
+		for machine in playing {
+			hold_local_commands(&machine.lockstep, &machine.simulation)
+			stamp_local_record(&machine.lockstep, machine.simulation.tick, lockstep_test_input(machine, frame))
+		}
+		relay_in_process(machines[:])
+		for machine in playing {
+			run_lockstep_test_ticks(machine, content)
+		}
+	}
+	testing.expect(t, host.simulation.tick > snapshot_tick + 100)
+	testing.expect_value(t, joiner.simulation.tick, snapshot_tick)
+
+	// Restored, it runs the relayed ticks and catches up.
+	run_lockstep_test_ticks(joiner, content)
 	testing.expect_value(t, joiner.simulation.tick, host.simulation.tick)
 	testing.expect_value(t, lockstep_state_hash(&joiner.simulation), lockstep_state_hash(&host.simulation))
 
-	machines := [?]^Lockstep_Test_Machine{host, guest, joiner}
-	play_lockstep_test_frames(machines[:], content, 120, 420)
+	// Its player, as the host's next_join gives it: from the tick after
+	// the newest record relayed.
+	frontier := host.simulation.tick
+	for record in host.lockstep.records {
+		frontier = max(frontier, record.tick)
+	}
+	join_tick := frontier + 1
+	player, adds_entry := joining_player_index(host.lockstep, len(host.simulation.players), join_tick)
+	testing.expect_value(t, player, 2)
+	member := Lockstep_Member{joined_tick = join_tick, left_tick = NEVER_TICK, adds_entry = adds_entry}
+	for machine in machines {
+		set_lockstep_member(&machine.lockstep, player, member)
+	}
+	add_local_member(&joiner.lockstep, player, join_tick)
+	play_lockstep_test_frames(machines[:], content, 240, 540)
 	testing.expect(t, joiner.simulation.tick > join_tick + 200)
-	testing.expect_value(t, len(joiner.simulation.players), 3)
+	for machine in machines {
+		testing.expect_value(t, len(machine.simulation.players), 3)
+	}
 	testing.expect_value(t, host.simulation.tick, joiner.simulation.tick)
 	testing.expect_value(t, lockstep_state_hash(&joiner.simulation), lockstep_state_hash(&host.simulation))
+	testing.expect_value(t, lockstep_state_hash(&guest.simulation), lockstep_state_hash(&host.simulation))
 }
 
 // The frames of an in-process session: every machine stamps, the relay
@@ -403,6 +437,108 @@ test_a_host_adds_and_removes_a_local_guest_with_a_client_playing :: proc(t: ^tes
 	testing.expect_value(t, client.session.lockstep.members[guest].left_tick, host.session.lockstep.members[guest].left_tick)
 	testing.expect_value(t, host.session.network.mismatch_count, 0)
 	testing.expect_value(t, client.session.network.mismatch_count, 0)
+	testing.expect(t, len(host.session.network.hashes) > 0)
+}
+
+// Host and client frames until the host sent the client its world (the
+// snapshot), false after a minute.
+run_until_world_sent :: proc(host: ^Frame_State, client: ^Frame_State) -> bool {
+	network := &host.session.network
+	start := time.tick_now()
+	for time.tick_since(start) < time.Minute {
+		run_client_test_frame(host)
+		if len(network.peers) > 0 && network.peers[len(network.peers) - 1].receives_records {
+			return true
+		}
+		run_client_test_frame(client)
+		time.sleep(100 * time.Microsecond)
+	}
+	return false
+}
+
+// Host frames alone (the joiners restoring) until it reached the tick,
+// false after a minute.
+run_host_alone_until :: proc(host: ^Frame_State, tick: u64) -> bool {
+	start := time.tick_now()
+	for host.session.simulation.tick < tick && time.tick_since(start) < time.Minute {
+		run_client_test_frame(host)
+		time.sleep(100 * time.Microsecond)
+	}
+	return host.session.simulation.tick >= tick
+}
+
+// A joiner that drops while it restores (0190): the host played on past
+// the snapshot's tick without a record of it, and its leaving changes no
+// member and holds no tick; the host is alone again.
+@(test)
+test_a_joiner_dropped_while_it_restores_leaves_nothing_behind :: proc(t: ^testing.T) {
+	content := make_save_test_content()
+	host := make_hosting_test_frame(content)
+	defer destroy_joining_test_frame(host)
+	address := fmt.tprintf("127.0.0.1:%d", host.session.network.listener.port)
+	client := make_joining_test_frame(content, address)
+	defer destroy_joining_test_frame(client)
+	if !testing.expect(t, run_until_world_sent(host, client)) {
+		return
+	}
+	members := len(host.session.lockstep.members)
+	snapshot_tick := host.session.simulation.tick
+	testing.expect(t, !session_alone(host.session.network))
+	if !testing.expect(t, run_host_alone_until(host, snapshot_tick + 60)) {
+		return
+	}
+	testing.expect_value(t, host.session.network.peers[0].player_count, 0)
+	testing.expect_value(t, session_player_count(host.session.lockstep), 1)
+	destroy_session_join(&client.joining)
+	dropped_tick := host.session.simulation.tick
+	testing.expect(t, run_host_alone_until(host, dropped_tick + 60))
+	testing.expect_value(t, len(host.session.network.peers), 0)
+	testing.expect(t, session_alone(host.session.network))
+	testing.expect_value(t, len(host.session.lockstep.members), members)
+	testing.expect_value(t, session_player_count(host.session.lockstep), 1)
+}
+
+// Two joiners (0190): the first gets the world and restores (its frames
+// do not run) while the host plays on and the second joins and arrives;
+// then the first arrives too, and all three keep one hash.
+@(test)
+test_a_second_joiner_arrives_while_the_first_restores :: proc(t: ^testing.T) {
+	content := make_save_test_content()
+	host := make_hosting_test_frame(content)
+	defer destroy_joining_test_frame(host)
+	address := fmt.tprintf("127.0.0.1:%d", host.session.network.listener.port)
+	first := make_joining_test_frame(content, address)
+	defer destroy_joining_test_frame(first)
+	second := make_joining_test_frame(content, "")
+	defer destroy_joining_test_frame(second)
+	if !testing.expect(t, run_until_world_sent(host, first)) {
+		return
+	}
+	snapshot_tick := host.session.simulation.tick
+	start_joining(&second.joining.network, address, TEST_TICK_RATE)
+	start := time.tick_now()
+	for second.session == nil && time.tick_since(start) < time.Minute {
+		run_client_test_frame(host)
+		run_client_test_frame(second)
+		time.sleep(100 * time.Microsecond)
+	}
+	if !testing.expect(t, second.session != nil) {
+		return
+	}
+	testing.expect(t, host.session.simulation.tick > snapshot_tick)
+	testing.expect_value(t, host.session.network.peers[0].player_count, 0)
+	testing.expect_value(t, lockstep_local_player(second.session.lockstep), 1)
+	testing.expect_value(t, session_player_count(host.session.lockstep), 2)
+	played_to := host.session.simulation.tick + 2 * STATE_HASH_INTERVAL_TICKS
+	if !testing.expect(t, run_hosting_test_frames(host, {first, second}, played_to)) {
+		return
+	}
+	testing.expect_value(t, lockstep_local_player(first.session.lockstep), 2)
+	for machine in ([?]^Frame_State{host, first, second}) {
+		testing.expect_value(t, len(machine.session.simulation.players), 3)
+		testing.expect_value(t, machine.session.network.mismatch_count, 0)
+	}
+	testing.expect_value(t, session_player_count(host.session.lockstep), 3)
 	testing.expect(t, len(host.session.network.hashes) > 0)
 }
 

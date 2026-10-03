@@ -8,7 +8,8 @@ import "platform"
 // (session_network.odin) on --port, or the first free port of the game's
 // range, and answering the LAN's discovery (session_discovery.odin). It
 // runs the same driver as every machine: the clients' records pace the
-// ticks, and while nobody is connected the clock does (run_ready_ticks). It saves on the autosave
+// ticks, and while nobody is connected the clock does (run_ready_ticks),
+// except while a joiner restores without a player (0190). It saves on the autosave
 // interval of the settings and when SIGINT or SIGTERM stops it
 // (platform.install_stop_handlers; not on Windows).
 // The command socket is not served here; the clients' socket lines in

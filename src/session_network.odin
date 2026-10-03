@@ -19,11 +19,13 @@ import "platform"
 //   its window comes from it (latency_window_ticks).
 // - Join_Request and Join_Snapshot: the host serialises its world as the
 //   save does (encode_save_files), with the simulated chunk set, the
-//   members, the joiner's player and the join tick, and every record it
-//   holds for the ticks after its own; the joiner loads it
-//   (start_joined_session) and runs the held records fast until it is
-//   inside its window. The join tick is one past the newest record the
-//   host relayed, so no machine has run it yet.
+//   members and every record it holds for the ticks after its own; the
+//   joiner loads it (start_joined_session). The joiner has no player yet
+//   (work item 0190): the host relays every record and member change to
+//   it like to any client and plays on while it restores and runs the
+//   relayed ticks. Once its world is restored and no relayed tick is left
+//   to run, it asks for its player with Add_Local_Player, and only from
+//   that player's join tick does any machine wait for its records.
 // - Member_Change: a player joined (from the join tick) or left (from the
 //   tick after its last relayed record); every machine changes its
 //   members alike.
@@ -33,13 +35,15 @@ import "platform"
 //   machine and sent to every client. Play continues.
 // - Join_Refused: the joiner's build or content tables differ from the
 //   host's (Join_Request carries both); the reason, then the host drops it.
-// - Add_Local_Player and Local_Player_Added: a joined client asks for one
-//   more local player for a split screen viewport (work item 0178); the
-//   host takes an entry as for a join (joining_player_index), announces
-//   the member with Member_Change and answers with the player and its
-//   join tick. Remove_Local_Player: the client's extra local player
-//   leaves from the tick after its last relayed record. One connection
-//   carries every local player of a machine.
+// - Add_Local_Player and Local_Player_Added: a client that has the
+//   snapshot asks for a local player, its own once it caught up (0190) or
+//   one more for a split screen viewport (work item 0178); the host takes
+//   an entry (joining_player_index) from the tick after the newest record
+//   relayed (next_join), announces the member with Member_Change and
+//   answers with the player and its join tick. Remove_Local_Player: the
+//   client's extra local player leaves from the tick after its last
+//   relayed record. One connection carries every local player of a
+//   machine.
 //
 // Every machine pings each peer every NETWORK_KEEPALIVE_INTERVAL; a peer
 // from which no byte arrived for NETWORK_TIMEOUT is dropped (a client
@@ -138,6 +142,9 @@ Network_Peer :: struct {
 	received_mark: int,
 	// Refused at its join: dropped once the reason is sent.
 	refused:       bool,
+	// The snapshot went out: from then on every record and member change
+	// goes to it, with a player or (while it restores, 0190) without.
+	receives_records: bool,
 }
 
 Pending_Hash_Report :: struct {
@@ -188,6 +195,9 @@ Session_Network :: struct {
 	// while one is counted leaves at once (Remove_Local_Player), since a
 	// local member never exists without a viewport.
 	cancelled_local_players: int,
+	// Client: the joiner asked for its own player (0190), once its world
+	// caught up (request_own_player).
+	own_player_requested: bool,
 }
 
 // A machine joining a host (--join): the connection until the snapshot
@@ -547,8 +557,10 @@ session_alone :: proc(network: Session_Network) -> bool {
 	case .Offline:
 		return true
 	case .Host:
+		// A joiner restoring without a player follows the records too,
+		// so the host no longer runs ticks no record carries.
 		for peer in network.peers {
-			if peer_joined(peer) {
+			if peer.receives_records {
 				return false
 			}
 		}
@@ -638,7 +650,7 @@ handle_client_message :: proc(session: ^Session, content: Simulation_Content, na
 	case .Join_Request:
 		request, request_ok := decode_join_request(&reader)
 		switch {
-		case peer_joined(peer^) || peer.refused:
+		case peer.receives_records || peer.refused:
 		case !request_ok:
 			platform.close_connection(&peer.connection, "a malformed join request")
 		case:
@@ -662,7 +674,7 @@ handle_client_message :: proc(session: ^Session, content: Simulation_Content, na
 		}
 		relay_record(session, record)
 	case .Add_Local_Player:
-		if peer_joined(peer^) && peer.player_count < MAXIMUM_VIEWPORTS {
+		if peer.receives_records && peer.player_count < MAXIMUM_VIEWPORTS {
 			host_add_peer_player(session, peer_index)
 		}
 	case .Remove_Local_Player:
@@ -756,7 +768,7 @@ relay_record :: proc(session: ^Session, record: Input_Record) {
 	network := &session.network
 	message := record_message(record)
 	for &peer in network.peers {
-		if peer_joined(peer) {
+		if peer.receives_records {
 			platform.send_message(&peer.connection, message)
 		}
 		if index := find_peer_player(peer, record.player); index >= 0 {
@@ -771,7 +783,7 @@ broadcast_member :: proc(session: ^Session, player: int, member: Lockstep_Member
 	set_lockstep_member(&session.lockstep, player, member)
 	message := member_change_message(player, member)
 	for &peer in session.network.peers {
-		if peer_joined(peer) {
+		if peer.receives_records {
 			platform.send_message(&peer.connection, message)
 		}
 	}
@@ -814,8 +826,6 @@ drop_peer_player :: proc(session: ^Session, peer_index, index: int) {
 }
 
 Join_Snapshot :: struct {
-	player:      int,
-	join_tick:   u64,
 	cheat_speed: bool,
 	files:       Save_Files,
 	// The host's simulated chunk radii: every machine derives the set
@@ -826,16 +836,15 @@ Join_Snapshot :: struct {
 	records:     [dynamic]Input_Record,
 }
 
-// The joiner's player, the join tick, the save, the simulated chunk set,
-// the members and the records after the host's tick, in the temp
-// allocator. The loaded columns' surfaces are refreshed first, as a save
-// does (lockstep_state_hash does the same on every machine).
-encode_join_snapshot :: proc(simulation: ^Simulation_State, lockstep: ^Lockstep, content: Simulation_Content, name: string, player: int, join_tick: u64) -> []byte {
+// The save, the simulated chunk set, the members and the records after
+// the host's tick, in the temp allocator. The joiner's player comes
+// later (request_own_player). The loaded columns' surfaces are refreshed
+// first, as a save does (lockstep_state_hash does the same on every
+// machine).
+encode_join_snapshot :: proc(simulation: ^Simulation_State, lockstep: ^Lockstep, content: Simulation_Content, name: string) -> []byte {
 	refresh_loaded_surfaces(&simulation.world, &simulation.records.explored)
 	files := encode_save_files(simulation, content, name, 0)
 	bytes := message_of(.Join_Snapshot)
-	append_u32(&bytes, u32(player))
-	append_u64(&bytes, join_tick)
 	append_u8(&bytes, simulation.cheat_speed ? 1 : 0)
 	append_bytes(&bytes, files.world)
 	append_bytes(&bytes, files.entities)
@@ -883,8 +892,6 @@ decode_join_snapshot :: proc(payload: []byte) -> (snapshot: Join_Snapshot, chunk
 	if Lockstep_Message_Kind(read_u8(&reader) or_return) != .Join_Snapshot {
 		return {}, false, false
 	}
-	snapshot.player = int(read_u32(&reader) or_return)
-	snapshot.join_tick = read_u64(&reader) or_return
 	snapshot.cheat_speed = (read_u8(&reader) or_return) == 1
 	snapshot.files.world = read_bytes(&reader) or_return
 	snapshot.files.entities = read_bytes(&reader) or_return
@@ -951,22 +958,17 @@ destroy_join_records :: proc(records: ^[dynamic]Input_Record) {
 	delete(records^)
 }
 
-// The joiner takes the first free entry from the tick after the newest
-// record relayed; every machine learns it through Member_Change, the
-// joiner through the snapshot.
+// The joiner gets the world and from then on every record, but no member
+// (0190): no machine waits for it while it restores, and one that drops
+// before it asked for its player (Add_Local_Player) leaves nothing behind.
 host_join :: proc(session: ^Session, content: Simulation_Content, name: string, peer_index: int) {
 	network := &session.network
-	player, member := next_join(session)
-	join_tick := member.joined_tick
-	broadcast_member(session, player, member)
 	peer := &network.peers[peer_index]
-	peer.players[0] = Peer_Player{player = player, last_tick = join_tick - 1, joined_tick = join_tick}
-	peer.player_count = 1
-	snapshot := encode_join_snapshot(&session.simulation, &session.lockstep, content, name, player, join_tick)
+	snapshot := encode_join_snapshot(&session.simulation, &session.lockstep, content, name)
 	peer.snapshot_size = len(snapshot)
+	peer.receives_records = true
 	platform.send_message(&peer.connection, snapshot)
-	network_notice(network, "player %d (%s) joins at tick %d", player, peer.connection.address, join_tick)
-	notice_player_count(session)
+	platform.log_printf("network: %s gets the world at tick %d", peer.connection.address, session.simulation.tick)
 }
 
 // The tick a player joining now takes, and the entry, as for a join: the
@@ -979,13 +981,15 @@ next_join :: proc(session: ^Session) -> (player: int, member: Lockstep_Member) {
 	return player, Lockstep_Member{joined_tick = join_tick, left_tick = NEVER_TICK, adds_entry = adds_entry}
 }
 
-// A client's machine adds a split screen player (0178): a join's entry
-// over the connection it already has, announced to every machine and
-// answered with the player and its join tick.
+// A client's machine adds a player: its own once its world caught up
+// (0190), or a split screen player (0178), over the connection it already
+// has, announced to every machine and answered with the player and its
+// join tick. The machine's own player is counted in the host's notice.
 host_add_peer_player :: proc(session: ^Session, peer_index: int) {
 	player, member := next_join(session)
 	broadcast_member(session, player, member)
 	peer := &session.network.peers[peer_index]
+	own := peer.player_count == 0
 	peer.players[peer.player_count] = Peer_Player{player = player, last_tick = member.joined_tick - 1, joined_tick = member.joined_tick}
 	peer.player_count += 1
 	bytes := message_of(.Local_Player_Added)
@@ -993,6 +997,9 @@ host_add_peer_player :: proc(session: ^Session, peer_index: int) {
 	append_u64(&bytes, member.joined_tick)
 	platform.send_message(&peer.connection, bytes[:])
 	network_notice(&session.network, "player %d (%s) joins at tick %d", player, peer.connection.address, member.joined_tick)
+	if own {
+		notice_player_count(session)
+	}
 }
 
 // A local player for a split screen viewport (0178), through the add
@@ -1053,6 +1060,17 @@ send_remove_local_player :: proc(network: ^Session_Network, player: int) {
 		append_u32(&bytes, u32(player))
 		platform.send_message(&network.peers[0].connection, bytes[:])
 	}
+}
+
+// A joiner without a player (0190) asks for its own once, through the
+// add player path (Local_Player_Added makes it the first local member).
+request_own_player :: proc(session: ^Session) {
+	if session.network.role != .Client || session.network.own_player_requested || len(session.lockstep.locals) > 0 {
+		return
+	}
+	session.network.own_player_requested = true
+	request_local_player(session)
+	platform.log_printf("network: caught up at tick %d, asking for a player", session.simulation.tick)
 }
 
 // A viewport that asked the host for a player and leaves before the
@@ -1287,7 +1305,8 @@ report_state_hash :: proc(network: ^Session_Network, simulation: ^Simulation_Sta
 
 // The joiner's session from the host's snapshot: the world loaded from
 // the save's bytes, the host's simulated chunk set and members, the
-// records it held, the local player and the window from the round trip.
+// records it held and the window from the round trip; no local player
+// until it asks for one (request_own_player).
 // Returns nil and the problem when the snapshot does not load.
 start_joined_session :: proc(network: ^Session_Network, config: Game_Config, content: Game_Content, base_generator: Generator) -> (session: ^Session, problem: string) {
 	payload := network.snapshot
@@ -1334,7 +1353,7 @@ take_held_messages :: proc(network: ^Session_Network, lockstep: ^Lockstep, simul
 }
 
 // The parts of the snapshot the save does not hold. The records move into
-// the driver.
+// the driver. The machine drives no player yet.
 adopt_join_snapshot :: proc(simulation: ^Simulation_State, lockstep: ^Lockstep, snapshot: Join_Snapshot, chunk_set_enabled: bool, window: int) {
 	simulation.cheat_speed = snapshot.cheat_speed
 	simulation.chunk_set.enabled = chunk_set_enabled
@@ -1349,11 +1368,10 @@ adopt_join_snapshot :: proc(simulation: ^Simulation_State, lockstep: ^Lockstep, 
 		destroy_local_member(&local)
 	}
 	clear(&lockstep.locals)
-	add_local_member(lockstep, snapshot.player, snapshot.join_tick)
 	lockstep.window = window
 	for record in snapshot.records {
 		receive_input_record(lockstep, record, simulation.tick)
 	}
 	delete(snapshot.records)
-	platform.log_printf("network: joined as player %d at tick %d (world at tick %d), window %d ticks", snapshot.player, snapshot.join_tick, simulation.tick, window)
+	platform.log_printf("network: got the world at tick %d, window %d ticks", simulation.tick, window)
 }

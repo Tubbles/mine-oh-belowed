@@ -614,7 +614,10 @@ advance_session_join :: proc(join: ^Session_Join, config: Game_Config, content: 
 
 // The joined world's ticks while the title still shows: the local
 // player's records stamped empty up to its window, the records in and
-// out, every ready tick, its chunks.
+// out, every ready tick, its chunks. Without a player yet (0190) the
+// machine follows the relayed records and asks for its player once it
+// caught up (joined_world_caught_up), so the host waits for its records
+// only from then on.
 catch_up_joined_session :: proc(session: ^Session, game_content: Game_Content, control: ^Command_Control) {
 	content := session_simulation_content(game_content, session.technologies, session.field_content)
 	content.generator = &session.generator
@@ -625,12 +628,23 @@ catch_up_joined_session :: proc(session: ^Session, game_content: Game_Content, c
 	exchange_session_records(session, content)
 	answers := make([dynamic]Line_Answer, context.temp_allocator)
 	run_ready_ticks(session, content, control, &answers)
+	if !session.network.own_player_requested && joined_world_caught_up(session) {
+		request_own_player(session)
+	}
 	stream_session_chunks(session, player_chunk(session.simulation.players[0]), nil)
+}
+
+// The joined world is restored and every relayed tick it could run ran:
+// the next one waits for a record, or for nothing but an empty server's
+// clock.
+joined_world_caught_up :: proc(session: ^Session) -> bool {
+	return simulated_chunks_ready(&session.simulation) && !lockstep_paced_tick_ready(session.lockstep, session.simulation.tick)
 }
 
 // The local player's entry exists and the records that were there ran.
 joined_session_ready :: proc(session: ^Session) -> bool {
-	return lockstep_local_player(session.lockstep) < len(session.simulation.players) && !session.chunk_stalled && !lockstep_records_ready(session.lockstep, session.simulation.tick)
+	local_player := lockstep_local_player(session.lockstep)
+	return local_player != NO_PLAYER && local_player < len(session.simulation.players) && !session.chunk_stalled && !lockstep_records_ready(session.lockstep, session.simulation.tick)
 }
 
 // The network's notices as toasts.

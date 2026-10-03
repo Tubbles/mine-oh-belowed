@@ -372,6 +372,12 @@ lockstep_records_ready :: proc(lockstep: Lockstep, simulation_tick: u64) -> bool
 	return true
 }
 
+// The next tick would run but for its chunks: its records are there and a
+// connected player paces it.
+lockstep_paced_tick_ready :: proc(lockstep: Lockstep, simulation_tick: u64) -> bool {
+	return lockstep_records_ready(lockstep, simulation_tick) && connected_member_count(lockstep, simulation_tick + 1) > 0
+}
+
 // Takes the next tick's records: a joining player's entry and every
 // player's commands go onto the simulation's list in player order, the
 // inputs (in the temp allocator) and the socket lines are returned for
@@ -620,8 +626,10 @@ run_session_tick :: proc(session: ^Session, content: Simulation_Content, control
 }
 
 // Every tick whose records and chunks are there, within the wall budget.
-// A tick no connected player paces (a server alone) takes one of the
-// clock's ticks. Alone (offline, or a host nobody joined), a tick waiting
+// A tick no connected player paces takes one of the clock's ticks on a
+// server alone, and waits on any machine another one follows (a joiner
+// restoring on an empty server, 0190: no record would tell it the tick
+// ran). Alone (offline, or a host nobody joined), a tick waiting
 // for its chunks still takes the ones that arrived, so a new world fills
 // in while it waits; with other machines that would make the order of
 // the insertions differ, and a joiner takes the world as it is.
@@ -631,7 +639,7 @@ run_ready_ticks :: proc(session: ^Session, content: Simulation_Content, control:
 	count := 0
 	for time.tick_since(start) < LOCKSTEP_TICK_WALL_BUDGET && lockstep_records_ready(lockstep^, simulation.tick) {
 		unpaced := connected_member_count(lockstep^, simulation.tick + 1) == 0
-		if unpaced && lockstep.clock_ticks == 0 {
+		if unpaced && (lockstep.clock_ticks == 0 || !session_alone(session.network)) {
 			break
 		}
 		if !simulated_chunks_ready(simulation) {
