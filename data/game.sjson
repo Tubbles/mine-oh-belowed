@@ -3,10 +3,14 @@ name = "Mine oh Belowed"
 tick_rate = 60
 // Length of one cosmetic day and night cycle.
 day_length_seconds = 1200
-// Items every player starts with, by item id from items.sjson. Torches
-// have no recipe yet; machines are crafted by hand (work item 0012).
+// Items every player starts with, by item id from items.sjson, the first
+// and every joining one (work item 0179): a stone pickaxe digs stone,
+// foundations start a pad, torches light a dug cave. Torches have no
+// recipe yet; machines are crafted by hand (work item 0012).
 starting_items = [
-	{item = "torch", count = 64}
+	{item = "stone_pickaxe", count = 1}
+	{item = "foundation", count = 16}
+	{item = "torch", count = 4}
 ]
 // World setting "all recipes unlocked at start", for repeat playthroughs:
 // every technology counts as researched and every item as discovered.
@@ -101,4 +105,18 @@ belt_runs = {
 	maximum_turn_degrees = 90
 	level_tolerance_millimetres = 250
 	aligned_degrees = 8
+}
+// The field session (work item 0179, doc/content.md, World): every
+// machine simulates the terrain field's chunks within chunk_radius chunks
+// of each player's chunk on each axis (a chunk is 32 samples, 32 m at
+// 1000 mm and 10.7 m at 333 mm), and keeps the chunks it held within
+// chunk_margin more, so a player walking along a chunk border does not
+// unload and reload a slab each step. Radius 1 to 3, margin 0 to 2. Place
+// with the torch item puts the torch emitter of data/lighting.sjson at
+// the air in front of the targeted ground.
+field_simulation = {
+	chunk_radius = 2
+	chunk_margin = 1
+	torch_item = "torch"
+	torch_emitter = "torch"
 }

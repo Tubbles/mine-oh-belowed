@@ -19,6 +19,16 @@ import "platform"
 // floor, adds the veins, runs the blueprints and measures. The test
 // (benchmark_test.odin) and --benchmark=<size> (main.odin) share the
 // runner and the table.
+//
+// Since the slice (0179) the benchmark world is a field world: its player
+// stands at the planet's home on the field (the simulated set generated
+// before the first tick, stage_generated_field_set) beside a pad of
+// foundations, so every tick runs the field's part (the players, the
+// edit queues, the water and the light) as a session's does. The
+// modules still stand on the block floor (frame 0): their drills mine the
+// block world's veins, and the factories on frames over the field's veins
+// come with M14, so sizes above BENCHMARK_FIELD_LARGEST_SIZE are refused
+// until then. The table ends with the state hash after the ticks.
 
 BENCHMARK_MANIFEST_FILE :: "blueprints/benchmark.sjson"
 BENCHMARK_MODULE_DIRECTORY :: "blueprints/benchmark"
@@ -38,6 +48,13 @@ BENCHMARK_RESEARCH_COST_PERCENT :: 100_000
 // tick is close to linear in the size, and a size 64 build took minutes,
 // nearly all of it network rebuilds.
 BENCHMARK_LARGEST_SIZE :: 16
+// The sizes the field world runs (0179); the larger ones wait for the
+// factories on frames (M14).
+BENCHMARK_FIELD_LARGEST_SIZE :: 1
+// The foundation pad at the home: this far ahead of the player, this many
+// cells either side of its first foundation.
+BENCHMARK_PAD_DISTANCE_MILLIMETRES :: 6000
+BENCHMARK_PAD_HALF_WIDTH :: 2
 // The window over which a machine must show progress at the end of the
 // warm up.
 BENCHMARK_IDLE_WINDOW_SECONDS :: 60
@@ -103,6 +120,16 @@ Benchmark_Report :: struct {
 	average_milliseconds: f64,
 	worst_milliseconds:   f64,
 	idle:                 []Idle_Machine,
+	// simulation_state_hash after the measured ticks.
+	state_hash:           u64,
+}
+
+// The field the benchmark world plays (0179): the planet and the field's
+// tables.
+Benchmark_Field :: struct {
+	planet:    Planet,
+	materials: Field_Material_Table,
+	lighting:  Lighting_File,
 }
 
 destroy_benchmark_report :: proc(report: Benchmark_Report) {
@@ -512,6 +539,29 @@ make_benchmark_simulation :: proc(config: Game_Config, content: Simulation_Conte
 	return simulation
 }
 
+// The field world at the home: the player there, its set generated, and
+// a pad of foundations ahead of it.
+start_benchmark_field :: proc(simulation: ^Simulation_State, content: Simulation_Content, config: Game_Config, planet: Planet) {
+	spacing := DEFAULT_SAMPLE_SPACING_MILLIMETRES
+	enable_new_field_world(simulation, config, planet, spacing)
+	stage_generated_field_set(simulation)
+	foundation := field_foundation(content)
+	if foundation == NO_MACHINE {
+		return
+	}
+	player := simulation.players[0].field
+	heading := field_player_heading(player)
+	ahead := player.position + World_Position(fixed_scale(heading, millimetres_to_position_units(BENCHMARK_PAD_DISTANCE_MILLIMETRES)))
+	generation := make_planet_generation(simulation.world.settings.seed, planet, spacing)
+	entities := &simulation.world.entities
+	_, frame := place_free_foundation(entities, content.machines, foundation, field_surface_under(generation, ahead, 0), heading, content.field.foundation_pitch_millimetres)
+	for x in -BENCHMARK_PAD_HALF_WIDTH ..= BENCHMARK_PAD_HALF_WIDTH {
+		for z in -BENCHMARK_PAD_HALF_WIDTH ..= BENCHMARK_PAD_HALF_WIDTH {
+			place_on_frame(entities, content.machines, foundation, frame, {i32(x), 0, i32(z)}, 0)
+		}
+	}
+}
+
 // Builds the world and the factory of the size, ticks the warm up (the
 // last BENCHMARK_IDLE_WINDOW_SECONDS of it watching for idle machines),
 // then the measured ticks with the profile the report keeps. content's
@@ -519,12 +569,18 @@ make_benchmark_simulation :: proc(config: Game_Config, content: Simulation_Conte
 // The build and the ticks run with a temp allocator of their own,
 // emptied after every module copy and every tick as a frame does, so the
 // caller's temp allocations (the test content lives there) survive.
-run_factory_benchmark :: proc(size: int, generator: ^Generator, base_content: Simulation_Content, config: Game_Config, plan: Benchmark_Plan, warm_up_ticks, measured_ticks: int) -> (report: Benchmark_Report) {
+run_factory_benchmark :: proc(size: int, generator: ^Generator, base_content: Simulation_Content, field: Benchmark_Field, config: Game_Config, plan: Benchmark_Plan, warm_up_ticks, measured_ticks: int) -> (report: Benchmark_Report) {
 	report.size, report.warm_up_ticks, report.measured_ticks, report.tick_rate = size, warm_up_ticks, measured_ticks, config.tick_rate
 	content := base_content
 	content.generator = generator
 	content.technologies = scaled_technology_registry(base_content.technologies, BENCHMARK_RESEARCH_COST_PERCENT)
 	defer delete(content.technologies.technologies)
+	content.field = make_field_content(config, content.items, content.machines, field.materials, field.lighting, field.planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES)
+	defer delete(content.field.brushes)
+	if size > BENCHMARK_FIELD_LARGEST_SIZE {
+		report.problem = strings.clone(benchmark_size_problem(size))
+		return
+	}
 	if problem := validate_benchmark_plan(plan, content); problem != "" {
 		report.problem = strings.clone(problem)
 		return
@@ -533,6 +589,7 @@ run_factory_benchmark :: proc(size: int, generator: ^Generator, base_content: Si
 	simulation := make_benchmark_simulation(config, content, benchmark_floor(placements))
 	defer destroy_simulation(&simulation)
 	build_benchmark_world(&simulation.world, content.blocks, benchmark_floor(placements))
+	start_benchmark_field(&simulation, content, config, field.planet)
 	queue_first_available_research(&simulation, content.technologies)
 	tick_arena: virtual.Arena
 	if virtual.arena_init_growing(&tick_arena) != nil {
@@ -547,7 +604,16 @@ run_factory_benchmark :: proc(size: int, generator: ^Generator, base_content: Si
 	report.entity_counts = entity_counts(&simulation.world.entities)
 	measure_benchmark(&simulation, content, &report, &tick_arena)
 	report.belt_items = belt_item_count(simulation.world.entities.belt_network)
+	report.state_hash = simulation_state_hash(&simulation)
 	return
+}
+
+// A size the field world does not run yet, "" for one it runs.
+benchmark_size_problem :: proc(size: int) -> string {
+	if size > BENCHMARK_FIELD_LARGEST_SIZE {
+		return fmt.tprintf("size %d: the field world runs size %d only; the larger factories come back on frames with M14", size, BENCHMARK_FIELD_LARGEST_SIZE)
+	}
+	return ""
 }
 
 // The idle machines at the end of the warm up, owned.
@@ -599,6 +665,7 @@ format_benchmark_report :: proc(report: Benchmark_Report, machines: Machine_Regi
 	fmt.sbprintf(&builder, ", %.1f minutes warm up, %.1f minutes measured", f64(report.warm_up_ticks) / seconds_per_minute, f64(report.measured_ticks) / seconds_per_minute)
 	write_benchmark_sections(&builder, report)
 	write_benchmark_counts(&builder, report)
+	fmt.sbprintf(&builder, "\nstate hash %016x", report.state_hash)
 	fmt.sbprintf(&builder, "\nidle machines after the warm up: %d", len(report.idle))
 	for machine in report.idle {
 		fmt.sbprintf(&builder, "\n  %s at %d %d %d", machines.machines[machine.machine].id, machine.cell.x, machine.cell.y, machine.cell.z)
@@ -653,10 +720,16 @@ run_command_line_benchmark :: proc(size: int, data_directory: string, config: Ga
 		return 1
 	}
 	defer destroy_benchmark_plan(&plan)
+	planet, found := find_planet(game_data.content.planets, DEFAULT_PLANET_ID)
+	if !found {
+		platform.log_printf("error: %s has no planet %q for the benchmark's field", PLANETS_FILE_NAME, DEFAULT_PLANET_ID)
+		return 1
+	}
 	generator := session_generator(game_data.base_generator, DEFAULT_WORLD_SEED, 100)
 	content := game_data.content.simulation_content
+	field := Benchmark_Field{planet = planet, materials = game_data.content.field_materials, lighting = game_data.content.lighting}
 	ticks_per_minute := 60 * config.tick_rate
-	report := run_factory_benchmark(size, &generator, content, config, plan, BENCHMARK_COMMAND_WARM_UP_MINUTES * ticks_per_minute, BENCHMARK_COMMAND_MEASURED_MINUTES * ticks_per_minute)
+	report := run_factory_benchmark(size, &generator, content, field, config, plan, BENCHMARK_COMMAND_WARM_UP_MINUTES * ticks_per_minute, BENCHMARK_COMMAND_MEASURED_MINUTES * ticks_per_minute)
 	defer destroy_benchmark_report(report)
 	fmt.println(format_benchmark_report(report, content.machines))
 	return report.problem == "" && len(report.idle) == 0 ? 0 : 1

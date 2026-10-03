@@ -810,7 +810,7 @@ test_a_save_without_the_loose_item_table_loads :: proc(t: ^testing.T) {
 	without_table := encode_entities(&original, content, header)
 	// The empty table (a count and the schema) ends the file.
 	table := make([dynamic]byte, context.temp_allocator)
-	write_later_tables(&table, &original.world, &original.records)
+	write_later_tables(&table, &original.world, &original.records, false)
 	without_table = without_table[:len(without_table) - len(table)]
 	spill_stack(&original.world, content.blocks, {2, 1, 2}, {test_item(content.items, "coal"), 5}, {-1, 1})
 	with_table := encode_entities(&original, content, header)

@@ -64,9 +64,9 @@ test_command_line_rejects_unknown_values :: proc(t: ^testing.T) {
 
 @(test)
 test_command_line_benchmark_size_and_conflicts :: proc(t: ^testing.T) {
-	command_line, error := parse_command_line({"--benchmark=4"})
+	command_line, error := parse_command_line({"--benchmark=1"})
 	testing.expect_value(t, error, nil)
-	testing.expect_value(t, command_line.benchmark, 4)
+	testing.expect_value(t, command_line.benchmark, 1)
 	testing.expect_value(t, command_line_value_problem(command_line), "")
 	testing.expect_value(t, command_line_conflict(command_line), "")
 	testing.expect(t, !command_line_starts_world(command_line))
@@ -74,6 +74,9 @@ test_command_line_benchmark_size_and_conflicts :: proc(t: ^testing.T) {
 		invalid, _ := parse_command_line({size})
 		testing.expectf(t, strings.has_prefix(command_line_value_problem(invalid), "invalid --benchmark"), "%s accepted", size)
 	}
+	// The field world runs size 1 until M14 (0179).
+	larger, _ := parse_command_line({"--benchmark=4"})
+	testing.expect(t, strings.contains(command_line_value_problem(larger), "M14"), command_line_value_problem(larger))
 	for other in ([?]string{"--load=a", "--seed=7", "--name=a", "--chapter=2", "--debug-terrain"}) {
 		combined, _ := parse_command_line({"--benchmark=1", other})
 		testing.expectf(t, strings.has_prefix(command_line_conflict(combined), "--benchmark and"), "--benchmark with %s accepted", other)

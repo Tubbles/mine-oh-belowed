@@ -2,12 +2,12 @@
 
 A voxel automation game: Minecraft's diggable, procedurally generated open world with Factorio's build-a-factory game loop. Couch first: designed around the 2026 Steam Controller (trackpads, gyro aim, grip buttons). No keyboard needed beyond the occasional name field.
 
-Status: pre-alpha and playable. All eight gameplay phases, from landing to the first rocket shipment, are in the game with placeholder art; the polish pass towards the first alpha is under way ([PLAN.md](PLAN.md)).
+Status: pre-alpha, in a rebuild. The block world (all eight gameplay phases, from landing to the first rocket shipment) is retired; since the first slice (M13) a new world is a small planet of smooth, diggable terrain with water, light, a day and night, and factories on foundation frames joined by belts and pipes on poles, shared in lockstep between machines and split screen players. The ground game returns on it with M14 ([PLAN.md](PLAN.md)).
 
 ## What it is
 
 - A factory game first: the Factorio loop of mining and crafting by hand once, then automating with drills, belts, inserters, assemblers, power and research, guided by quests from landing to a rocket program.
-- In an open voxel world where every block can be dug, placed or built on. Ore comes from surface veins at Factorio scale, finite or infinite as a world setting; the underground is optional.
+- On a small planet of smooth voxel terrain that can be dug and filled anywhere, walked round with gravity towards its centre; factories stand on foundation frames laid on the ground at any angle. Ore comes from surface veins at Factorio scale, finite or infinite as a world setting; the underground is optional.
 - Deep recipes: many ores and alloys, byproducts that must go somewhere, recycling, liquids and gases in pipes, plastics, and power as part of the puzzle.
 - Peaceful: no enemies and no pollution in the first alpha. Built to be played while the kids watch.
 - Written in Odin with raylib. Content (blocks, items, recipes, machines, technologies, quests) is data driven in SJSON.

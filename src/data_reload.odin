@@ -68,6 +68,12 @@ load_game_tables :: proc(data_directory: string, config: Game_Config, string_ent
 	content.developer_kits = load_developer_kits(data_directory, content.items) or_return
 	content.touch_overlay = load_touch_overlay(data_directory) or_return
 	content.planets = load_planets(data_directory) or_return
+	content.field_materials = load_field_material_table(data_directory, content.items) or_return
+	content.lighting = load_lighting_file(data_directory) or_return
+	if problem := field_torch_problem(config.field_simulation, content.items, content.lighting); problem != "" {
+		platform.log_printf("error: invalid %s: %s", GAME_CONFIG_FILE_NAME, problem)
+		return {}, {}, false
+	}
 	base_generator = load_generator(data_directory, content.blocks, DEFAULT_WORLD_SEED) or_return
 	veins, problem := resolve_vein_content(base_generator.veins, content.items)
 	if problem != "" {
@@ -205,6 +211,9 @@ reload_simulation :: proc(old: ^Simulation_State, old_content, new_content: Simu
 	if problem == "" {
 		problem = move_world_chunks(&reloaded.world, &old.world, &remap)
 	}
+	if problem == "" {
+		move_field_chunks(&reloaded.field, &old.field)
+	}
 	if problem != "" {
 		destroy_simulation(&reloaded)
 		return {}, problem
@@ -253,6 +262,18 @@ move_world_chunks :: proc(target, source: ^World, remap: ^Content_Remap) -> stri
 	target.lighting, source.lighting = source.lighting, target.lighting
 	target.column_veins, source.column_veins = source.column_veins, target.column_veins
 	return ""
+}
+
+// The field's chunks, the changed ones outside the set and the arrivals
+// move to the reloaded field, whose tables decode_entities read; the water
+// planet goes with them. The field holds no content ids.
+move_field_chunks :: proc(target, source: ^Field_Simulation) {
+	target.world.chunks, source.world.chunks = source.world.chunks, target.world.chunks
+	target.world.water_awake_chunks, source.world.water_awake_chunks = source.world.water_awake_chunks, target.world.water_awake_chunks
+	target.world.edited_chunks, source.world.edited_chunks = source.world.edited_chunks, target.world.edited_chunks
+	target.world.water_planet = source.world.water_planet
+	target.saved_chunks, source.saved_chunks = source.saved_chunks, target.saved_chunks
+	target.arrived_chunks, source.arrived_chunks = source.arrived_chunks, target.arrived_chunks
 }
 
 block_remap_is_identity :: proc(block_indices: []int) -> bool {
@@ -331,13 +352,20 @@ reloaded_session_generator :: proc(base, current: Generator) -> Generator {
 // reset by the caller (reload_content).
 reload_session :: proc(session: ^Session, old_content: Game_Content, data: Game_Data, config: Game_Config) -> string {
 	technologies := scaled_technology_registry(data.content.technologies, session.simulation.world.settings.research_cost_percent)
-	old_simulation_content := session_simulation_content(old_content, session.technologies)
-	new_simulation_content := session_simulation_content(data.content, technologies)
+	field_content: Field_Content
+	if session.simulation.field.enabled {
+		field_content = make_field_content(config, data.content.items, data.content.machines, data.content.field_materials, data.content.lighting, session.planet, session.simulation.field.spacing_millimetres)
+	}
+	old_simulation_content := session_simulation_content(old_content, session.technologies, session.field_content)
+	new_simulation_content := session_simulation_content(data.content, technologies, field_content)
 	reloaded, problem := reload_simulation(&session.simulation, old_simulation_content, new_simulation_content, config)
 	if problem != "" {
 		delete(technologies.technologies)
+		delete(field_content.brushes)
 		return problem
 	}
+	delete(session.field_content.brushes)
+	session.field_content = field_content
 	load_around_camera := session.streaming.load_around_camera
 	stop_chunk_streaming(&session.streaming)
 	destroy_simulation(&session.simulation)

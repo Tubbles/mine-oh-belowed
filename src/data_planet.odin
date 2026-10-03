@@ -54,6 +54,13 @@ Planet_Spring :: struct {
 	longitude_degrees: int,
 }
 
+// Where a field session's players spawn (work item 0179): the surface
+// under the point, in whole degrees as a spring's.
+Planet_Home :: struct {
+	latitude_degrees:  int,
+	longitude_degrees: int,
+}
+
 Planet :: struct {
 	id:                                             string,
 	radius_metres:                                  int,
@@ -65,6 +72,7 @@ Planet :: struct {
 	// Above the radius; negative lies below it.
 	sea_level_metres:                               int,
 	springs:                                        []Planet_Spring,
+	home:                                           Planet_Home,
 	// Fill per surface sample per minute; read and bounded, applied by
 	// nothing until the weather (M15).
 	rain_fill_per_minute:                           int,
@@ -103,6 +111,11 @@ missing_planet_key_problem :: proc(tree: json.Object, source: string) -> string 
 		for spring, spring_index in record.(json.Object)["springs"].(json.Array) {
 			if key, missing := missing_struct_key(Planet_Spring, spring.(json.Object)); missing {
 				return fmt.tprintf("%s: planets[%d].springs[%d] is missing %s", source, index, spring_index, key)
+			}
+		}
+		if home, is_object := record.(json.Object)["home"].(json.Object); is_object {
+			if key, missing := missing_struct_key(Planet_Home, home); missing {
+				return fmt.tprintf("%s: planets[%d].home is missing %s", source, index, key)
 			}
 		}
 		for octave, octave_index in record.(json.Object)["relief_octaves"].(json.Array) {
@@ -187,6 +200,9 @@ planet_problem :: proc(planet: Planet) -> string {
 	if problem := springs_problem(planet.springs); problem != "" {
 		return problem
 	}
+	if problem := home_problem(planet.home); problem != "" {
+		return problem
+	}
 	if problem := relief_problem(planet.relief_octaves); problem != "" {
 		return problem
 	}
@@ -207,6 +223,16 @@ springs_problem :: proc(springs: []Planet_Spring) -> string {
 		if spring.longitude_degrees < -180 || spring.longitude_degrees > 180 {
 			return fmt.tprintf("springs[%d].longitude_degrees %d is outside -180 to 180", index, spring.longitude_degrees)
 		}
+	}
+	return ""
+}
+
+home_problem :: proc(home: Planet_Home) -> string {
+	if home.latitude_degrees < -90 || home.latitude_degrees > 90 {
+		return fmt.tprintf("home.latitude_degrees %d is outside -90 to 90", home.latitude_degrees)
+	}
+	if home.longitude_degrees < -180 || home.longitude_degrees > 180 {
+		return fmt.tprintf("home.longitude_degrees %d is outside -180 to 180", home.longitude_degrees)
 	}
 	return ""
 }

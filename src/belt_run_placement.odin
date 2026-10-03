@@ -56,7 +56,7 @@ Belt_Run_Option :: struct {
 
 // The content's machine when it is of the kind, NO_MACHINE otherwise (a
 // test content leaves the ids zero).
-field_content_machine :: proc(content: Field_Simulation_Content, machine: Machine_Id, kind: Machine_Kind) -> Machine_Id {
+field_content_machine :: proc(content: Simulation_Content, machine: Machine_Id, kind: Machine_Kind) -> Machine_Id {
 	if int(machine) >= len(content.machines.machines) || content.machines.machines[machine].kind != kind {
 		return NO_MACHINE
 	}
@@ -64,15 +64,15 @@ field_content_machine :: proc(content: Field_Simulation_Content, machine: Machin
 }
 
 // The run a tool lays, found false for another tool or missing machines.
-field_run_tool :: proc(content: Field_Simulation_Content, tool: Field_Held_Tool) -> (kind: Belt_Run_Kind, machine: Machine_Id, found: bool) {
-	if field_content_machine(content, content.belt_pole, .Belt_Pole) == NO_MACHINE {
+field_run_tool :: proc(content: Simulation_Content, tool: Field_Held_Tool) -> (kind: Belt_Run_Kind, machine: Machine_Id, found: bool) {
+	if field_content_machine(content, content.field.belt_pole, .Belt_Pole) == NO_MACHINE {
 		return
 	}
 	#partial switch tool {
 	case .Belt_Run:
-		kind, machine = .Belt, field_content_machine(content, content.run_belt, .Belt)
+		kind, machine = .Belt, field_content_machine(content, content.field.run_belt, .Belt)
 	case .Pipe_Run:
-		kind, machine = .Pipe, field_content_machine(content, content.run_pipe, .Pipe)
+		kind, machine = .Pipe, field_content_machine(content, content.field.run_pipe, .Pipe)
 	case:
 		return
 	}
@@ -127,11 +127,11 @@ belt_run_options :: proc(entities: ^Entities, machines: Machine_Registry, kind: 
 
 // What Place would pick as the role's endpoint: the assist's option, else
 // a new pole on the targeted frame cell, else one on the targeted ground.
-field_run_candidate :: proc(player: Field_Player, entities: ^Entities, content: Field_Simulation_Content, kind: Belt_Run_Kind, role: int) -> (candidate: Belt_Run_Candidate, found: bool) {
+field_run_candidate :: proc(player: Field_Player, entities: ^Entities, content: Simulation_Content, kind: Belt_Run_Kind, role: int) -> (candidate: Belt_Run_Candidate, found: bool) {
 	options := belt_run_options(entities, content.machines, kind, role)
-	eye := field_player_eye(player, content.tuning)
+	eye := field_player_eye(player, content.field.tuning)
 	look := field_look_direction(player.forward, player.up, player.yaw, player.pitch)
-	nearest := nearest_belt_run_option(options, eye, look, content.tuning.reach, millimetres_to_position_units(BELT_RUN_ASSIST_RADIUS_MILLIMETRES))
+	nearest := nearest_belt_run_option(options, eye, look, content.field.tuning.reach, millimetres_to_position_units(BELT_RUN_ASSIST_RADIUS_MILLIMETRES))
 	switch {
 	case nearest >= 0:
 		return Belt_Run_Candidate{kind = .Existing, endpoint = options[nearest].endpoint}, true
@@ -147,8 +147,8 @@ field_run_candidate :: proc(player: Field_Player, entities: ^Entities, content: 
 
 // A candidate's point and up before its facing is known: a pole's top
 // does not depend on it, and a belt end's facing is the belt's.
-belt_run_candidate_point :: proc(entities: ^Entities, content: Field_Simulation_Content, candidate: Belt_Run_Candidate, role: int) -> (point: World_Position, found: bool) {
-	height := int(content.machines.machines[content.belt_pole].height_millimetres)
+belt_run_candidate_point :: proc(entities: ^Entities, content: Simulation_Content, candidate: Belt_Run_Candidate, role: int) -> (point: World_Position, found: bool) {
+	height := int(content.machines.machines[content.field.belt_pole].height_millimetres)
 	switch candidate.kind {
 	case .Existing:
 		point, _ = belt_run_endpoint_point(entities, content.machines, candidate.endpoint, role) or_return
@@ -167,7 +167,7 @@ belt_run_candidate_point :: proc(entities: ^Entities, content: Field_Simulation_
 // chord is known: an existing pole faces as belt_pole_endpoint says, a
 // new free pole the yaw step of the chord, a new snapped pole the frame
 // direction nearest it.
-belt_run_candidate_endpoint :: proc(entities: ^Entities, content: Field_Simulation_Content, kind: Belt_Run_Kind, candidate: Belt_Run_Candidate, role: int, chord: [3]i64) -> (endpoint: Belt_Run_Endpoint, frame: Frame, found: bool) {
+belt_run_candidate_endpoint :: proc(entities: ^Entities, content: Simulation_Content, kind: Belt_Run_Kind, candidate: Belt_Run_Candidate, role: int, chord: [3]i64) -> (endpoint: Belt_Run_Endpoint, frame: Frame, found: bool) {
 	switch candidate.kind {
 	case .Existing:
 		endpoint = candidate.endpoint
@@ -177,8 +177,8 @@ belt_run_candidate_endpoint :: proc(entities: ^Entities, content: Field_Simulati
 		frame = find_frame(&entities.frames, endpoint.frame) or_return
 		return endpoint, frame, true
 	case .Free_Pole:
-		origin, axes := free_frame_at(candidate.hit, chord, content.foundation_pitch_millimetres)
-		frame = Frame{origin = origin, axes = axes, pitch_millimetres = content.foundation_pitch_millimetres}
+		origin, axes := free_frame_at(candidate.hit, chord, content.field.foundation_pitch_millimetres)
+		frame = Frame{origin = origin, axes = axes, pitch_millimetres = content.field.foundation_pitch_millimetres}
 		return Belt_Run_Endpoint{facing = BELT_POLE_FREE_ROTATION}, frame, true
 	case .Snapped_Pole:
 		frame = find_frame(&entities.frames, candidate.endpoint.frame) or_return
@@ -190,7 +190,7 @@ belt_run_candidate_endpoint :: proc(entities: ^Entities, content: Field_Simulati
 }
 
 // The run two candidates would make, found false when one is gone.
-plan_belt_run :: proc(entities: ^Entities, content: Field_Simulation_Content, kind: Belt_Run_Kind, candidates: [2]Belt_Run_Candidate) -> (plan: Belt_Run_Plan, found: bool) {
+plan_belt_run :: proc(entities: ^Entities, content: Simulation_Content, kind: Belt_Run_Kind, candidates: [2]Belt_Run_Candidate) -> (plan: Belt_Run_Plan, found: bool) {
 	for candidate, role in candidates {
 		plan.geometry.positions[role] = belt_run_candidate_point(entities, content, candidate, role) or_return
 	}
@@ -217,13 +217,13 @@ new_pole_count :: proc(candidates: [2]Belt_Run_Candidate) -> int {
 
 // The refusal of a run command, as the field reports it and as the run
 // reports it.
-field_run_placement_refusal :: proc(simulation: ^Field_Simulation, content: Field_Simulation_Content, player: Field_Miner, run: Field_Run_Placement) -> (refusal: Field_Edit_Refusal, run_refusal: Belt_Run_Refusal) {
-	entities := &simulation.entities
+field_run_placement_refusal :: proc(state: ^Simulation_State, content: Simulation_Content, player: Player, run: Field_Run_Placement) -> (refusal: Field_Edit_Refusal, run_refusal: Belt_Run_Refusal) {
+	entities := &state.world.entities
 	plan, found := plan_belt_run(entities, content, run.kind, run.candidates)
 	if !found {
 		return .Run_Refused, .Unknown_Endpoint
 	}
-	if inventory_count(player.inventory, content.machines.machines[content.belt_pole].item) < new_pole_count(run.candidates) {
+	if inventory_count(player.inventory, content.machines.machines[content.field.belt_pole].item) < new_pole_count(run.candidates) {
 		return .Nothing_Held, .None
 	}
 	for candidate, role in run.candidates {
@@ -233,12 +233,12 @@ field_run_placement_refusal :: proc(simulation: ^Field_Simulation, content: Fiel
 				return .Run_Refused, endpoint_refusal
 			}
 		case .Snapped_Pole:
-			if frame_placement_refusal(entities, content.machines, content.belt_pole, candidate.endpoint.frame, candidate.endpoint.cell, plan.endpoints[role].facing) != .None {
+			if frame_placement_refusal(entities, content.machines, content.field.belt_pole, candidate.endpoint.frame, candidate.endpoint.cell, plan.endpoints[role].facing) != .None {
 				return .Run_Refused, .Pole_Blocked
 			}
 		case .Free_Pole:
-			origin, axes := free_frame_at(candidate.hit, plan.chord, content.foundation_pitch_millimetres)
-			if field_placement_buries_a_player(simulation, content.tuning, Frame{origin = origin, axes = axes, pitch_millimetres = content.foundation_pitch_millimetres}, {}) {
+			origin, axes := free_frame_at(candidate.hit, plan.chord, content.field.foundation_pitch_millimetres)
+			if field_placement_buries_a_player(state, content.field.tuning, Frame{origin = origin, axes = axes, pitch_millimetres = content.field.foundation_pitch_millimetres}, {}) {
 				return .Would_Bury_Player, .None
 			}
 		}
@@ -246,7 +246,7 @@ field_run_placement_refusal :: proc(simulation: ^Field_Simulation, content: Fiel
 	if run.candidates[BELT_RUN_START].kind == .Existing && run.candidates[BELT_RUN_END].kind == .Existing && same_run_endpoint(plan.endpoints[BELT_RUN_START], plan.endpoints[BELT_RUN_END]) {
 		return .Run_Refused, .Too_Short
 	}
-	if shape := belt_run_shape_refusal(plan.geometry, content.belt_runs); shape != .None {
+	if shape := belt_run_shape_refusal(plan.geometry, content.field.belt_runs); shape != .None {
 		return .Run_Refused, shape
 	}
 	return .None, .None
@@ -254,16 +254,16 @@ field_run_placement_refusal :: proc(simulation: ^Field_Simulation, content: Fiel
 
 // The new poles of a run command, placed; the endpoints with their
 // handles.
-place_planned_poles :: proc(entities: ^Entities, content: Field_Simulation_Content, run: Field_Run_Placement, plan: Belt_Run_Plan) -> (endpoints: [2]Belt_Run_Endpoint, placed: [2]Entity_Handle) {
+place_planned_poles :: proc(entities: ^Entities, content: Simulation_Content, run: Field_Run_Placement, plan: Belt_Run_Plan) -> (endpoints: [2]Belt_Run_Endpoint, placed: [2]Entity_Handle) {
 	endpoints = plan.endpoints
 	for candidate, role in run.candidates {
 		switch candidate.kind {
 		case .Existing:
 			continue
 		case .Free_Pole:
-			placed[role], _ = place_free_belt_pole(entities, content.machines, content.belt_pole, candidate.hit, plan.chord, content.foundation_pitch_millimetres)
+			placed[role], _ = place_free_belt_pole(entities, content.machines, content.field.belt_pole, candidate.hit, plan.chord, content.field.foundation_pitch_millimetres)
 		case .Snapped_Pole:
-			placed[role], _ = place_on_frame(entities, content.machines, content.belt_pole, candidate.endpoint.frame, candidate.endpoint.cell, plan.endpoints[role].facing)
+			placed[role], _ = place_on_frame(entities, content.machines, content.field.belt_pole, candidate.endpoint.frame, candidate.endpoint.cell, plan.endpoints[role].facing)
 		}
 		if endpoint, found := belt_pole_endpoint(entities, placed[role], plan.chord, run.kind, role); found {
 			endpoints[role] = endpoint
@@ -286,27 +286,27 @@ remove_planned_poles :: proc(entities: ^Entities, machines: Machine_Registry, pl
 // placed (one pole item each) and the run added. Should the run refuse
 // after all (the poles stand a rounding off the plan), the poles are taken
 // away again and nothing is paid.
-drain_field_run_placement :: proc(simulation: ^Field_Simulation, content: Field_Simulation_Content, player: ^Field_Miner, run: Field_Run_Placement) {
-	if refusal, run_refusal := field_run_placement_refusal(simulation, content, player^, run); refusal != .None {
-		player.refusal, player.refused_material, player.run_refusal = refusal, .Air, run_refusal
+drain_field_run_placement :: proc(state: ^Simulation_State, content: Simulation_Content, player: ^Player, run: Field_Run_Placement) {
+	if refusal, run_refusal := field_run_placement_refusal(state, content, player^, run); refusal != .None {
+		player.field_refusal, player.field_refused_material, player.field_run_refusal = refusal, .Air, run_refusal
 		return
 	}
-	entities := &simulation.entities
+	entities := &state.world.entities
 	plan, _ := plan_belt_run(entities, content, run.kind, run.candidates)
 	endpoints, placed := place_planned_poles(entities, content, run, plan)
-	if _, refusal := add_belt_run(entities, content.machines, content.belt_runs, run.kind, run.machine, endpoints); refusal != .None {
+	if _, refusal := add_belt_run(entities, content.machines, content.field.belt_runs, run.kind, run.machine, endpoints); refusal != .None {
 		remove_planned_poles(entities, content.machines, placed)
-		player.refusal, player.refused_material, player.run_refusal = .Run_Refused, .Air, refusal
+		player.field_refusal, player.field_refused_material, player.field_run_refusal = .Run_Refused, .Air, refusal
 		return
 	}
-	inventory_remove(player.inventory, content.machines.machines[content.belt_pole].item, new_pole_count(run.candidates))
+	inventory_remove(player.inventory, content.machines.machines[content.field.belt_pole].item, new_pole_count(run.candidates))
 }
 
 // The tool.
 
 // Place with a run tool held picks the start, then queues the run to the
 // end; Back or a change of tool forgets the start.
-update_field_run_tool :: proc(player: ^Field_Player, entities: ^Entities, content: Field_Simulation_Content, input: Field_Player_Input) -> (placement: Field_Placement, wanted: bool) {
+update_field_run_tool :: proc(player: ^Field_Player, entities: ^Entities, content: Simulation_Content, input: Field_Player_Input) -> (placement: Field_Placement, wanted: bool) {
 	kind, machine, found := field_run_tool(content, player.tool)
 	switch {
 	case !found || .Back in input.just_pressed:
@@ -327,7 +327,7 @@ update_field_run_tool :: proc(player: ^Field_Player, entities: ^Entities, conten
 
 // The ghost: once the start is picked, the run to the reticle's candidate
 // and why it would be refused (shape only; the drain checks the rest).
-field_run_ghost :: proc(player: Field_Player, entities: ^Entities, content: Field_Simulation_Content) -> (curve: Belt_Run_Curve, geometry: Belt_Run_Geometry, refusal: Belt_Run_Refusal, found: bool) {
+field_run_ghost :: proc(player: Field_Player, entities: ^Entities, content: Simulation_Content) -> (curve: Belt_Run_Curve, geometry: Belt_Run_Geometry, refusal: Belt_Run_Refusal, found: bool) {
 	kind, _, tool_found := field_run_tool(content, player.tool)
 	if !tool_found || !player.run_started {
 		return
@@ -335,5 +335,5 @@ field_run_ghost :: proc(player: Field_Player, entities: ^Entities, content: Fiel
 	end := field_run_candidate(player, entities, content, kind, BELT_RUN_END) or_return
 	plan := plan_belt_run(entities, content, kind, {player.run_start, end}) or_return
 	curve = belt_run_curve(belt_run_control_points(plan.geometry), plan.geometry.pitch_millimetres)
-	return curve, plan.geometry, belt_run_shape_refusal(plan.geometry, content.belt_runs), true
+	return curve, plan.geometry, belt_run_shape_refusal(plan.geometry, content.field.belt_runs), true
 }

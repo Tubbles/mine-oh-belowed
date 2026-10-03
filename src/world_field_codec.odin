@@ -32,7 +32,10 @@ FIELD_RUN_BYTE_SIZE :: 5
 FIELD_SAMPLE_BIT_BYTES :: FIELD_CHUNK_SAMPLE_COUNT / 8
 FIELD_CHUNK_PLANE_COUNT :: 9
 
-field_chunk_equals :: proc(first, second: ^Field_Chunk) -> bool {
+// The terrain and the water alike: what a tick changes and generation
+// makes. The light is left out, since an arrival seeds it and the
+// generation leaves it dark (0179, unload_left_field_chunks).
+field_chunk_terrain_and_water_equal :: proc(first, second: ^Field_Chunk) -> bool {
 	return(
 		slice.equal(first.density[:], second.density[:]) &&
 		slice.equal(first.material[:], second.material[:]) &&
@@ -40,7 +43,13 @@ field_chunk_equals :: proc(first, second: ^Field_Chunk) -> bool {
 		slice.equal(first.water[:], second.water[:]) &&
 		slice.equal(first.water_still[:], second.water_still[:]) &&
 		first.water_awake == second.water_awake &&
-		first.water_source == second.water_source &&
+		first.water_source == second.water_source \
+	)
+}
+
+field_chunk_equals :: proc(first, second: ^Field_Chunk) -> bool {
+	return(
+		field_chunk_terrain_and_water_equal(first, second) &&
 		slice.equal(first.block_light[:], second.block_light[:]) &&
 		slice.equal(first.sky_light[:], second.sky_light[:]) \
 	)
@@ -86,6 +95,13 @@ encode_field_chunk_delta :: proc(chunk, generated: ^Field_Chunk, allocator := co
 	if field_chunk_equals(chunk, generated) {
 		return nil
 	}
+	return encode_field_chunk(chunk, allocator)
+}
+
+// The chunk whole. The session's save (0179) writes every chunk a tick
+// changed (Field_Chunk.modified) this way, without generating the chunk
+// again to compare.
+encode_field_chunk :: proc(chunk: ^Field_Chunk, allocator := context.allocator) -> []byte {
 	bytes := make([dynamic]byte, allocator)
 	append_u16(&bytes, FIELD_CHUNK_FORMAT_VERSION)
 	for axis in 0 ..< 3 {

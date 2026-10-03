@@ -164,7 +164,10 @@ write_simulation_state :: proc(bytes: ^[dynamic]byte, state: ^Simulation_State) 
 	for &player in state.players {
 		write_value_of(bytes, &player)
 	}
-	write_later_tables(bytes, &state.world, &state.records)
+	write_later_tables(bytes, &state.world, &state.records, state.field.enabled)
+	if state.field.enabled {
+		write_field_tables(bytes, &state.field)
+	}
 }
 
 // Tables added after format version 2, in the order they were added. A
@@ -174,11 +177,13 @@ write_simulation_state :: proc(bytes: ^[dynamic]byte, state: ^Simulation_State) 
 // (work item 0062) are the first, the leaf decay queue (work item 0059)
 // the second; its felled list is always empty between ticks. The frame
 // tables (work item 0174, write_frame_tables) follow, ending with the
-// belt poles and runs (work item 0176, write_belt_run_tables).
-write_later_tables :: proc(bytes: ^[dynamic]byte, world: ^World, records: ^Game_Records) {
+// belt poles and runs (work item 0176, write_belt_run_tables). A field
+// world (0179) writes them even empty, since its field tables follow
+// (write_field_tables).
+write_later_tables :: proc(bytes: ^[dynamic]byte, world: ^World, records: ^Game_Records, field_follows: bool) {
 	write_list(bytes, world.entities.loose_items.items[:])
 	write_list(bytes, records.leaf_decay.updates[:])
-	write_frame_tables(bytes, &world.entities)
+	write_frame_tables(bytes, &world.entities, field_follows)
 }
 
 // Reading.
@@ -438,6 +443,10 @@ read_simulation_state :: proc(reader: ^Byte_Reader, state: ^Simulation_State, co
 		remap_craft_queue(&player.crafting, reader.remap^) or_return
 	}
 	read_later_tables(reader, &state.world, &state.records, content.machines) or_return
+	if bytes_left(reader^) > 0 {
+		read_field_tables(reader, &state.field) or_return
+		state.field.enabled = true
+	}
 	if bytes_left(reader^) != 0 || !venture_state_is_consistent(&state.records, content.contracts) {
 		return false
 	}
@@ -591,8 +600,10 @@ rebuild_loaded_world :: proc(world: ^World, machines: Machine_Registry, derived:
 
 // The deterministic state as one number: the tick, everything
 // entities.bin holds, and the blocks of the loaded chunks in coordinate
-// order. Light, meshes and UI state are left out. Two runs from the same
-// seed and inputs, or a world and its loaded save, hash the same.
+// order; in a field world the field's chunks too (field_state_hash), and
+// the field light's emitters and pending queues with the field tables.
+// The light planes, meshes and UI state are left out. Two runs from the same seed
+// and inputs, or a world and its loaded save, hash the same.
 simulation_state_hash :: proc(state: ^Simulation_State) -> u64 {
 	bytes := make([dynamic]byte, context.temp_allocator)
 	write_simulation_state(&bytes, state)
@@ -607,6 +618,9 @@ simulation_state_hash :: proc(state: ^Simulation_State) -> u64 {
 		result = fingerprint_u64(result, u64(u32(coordinate.x)) | u64(u32(coordinate.z)) << 32)
 		result = fingerprint_u64(result, u64(u32(coordinate.y)))
 		result = fingerprint_bytes(result, slice.to_bytes(chunk.blocks[:]))
+	}
+	if state.field.enabled {
+		result = field_state_hash(&state.field, result)
 	}
 	return result
 }

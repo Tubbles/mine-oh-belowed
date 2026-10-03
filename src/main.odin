@@ -146,6 +146,9 @@ command_line_value_problem :: proc(command_line: Command_Line) -> string {
 	if command_line.benchmark < 0 || command_line.benchmark > BENCHMARK_LARGEST_SIZE {
 		return fmt.tprintf("invalid --benchmark=%d (expected a size from 1 to %d)", command_line.benchmark, BENCHMARK_LARGEST_SIZE)
 	}
+	if problem := benchmark_size_problem(command_line.benchmark); problem != "" {
+		return fmt.tprintf("--benchmark=%d: %s", command_line.benchmark, problem)
+	}
 	if command_line.port < 0 || command_line.port > MAXIMUM_PORT {
 		return fmt.tprintf("invalid --port=%d (expected a port from 1 to %d)", command_line.port, MAXIMUM_PORT)
 	}
@@ -261,7 +264,7 @@ main :: proc() {
 	}
 	if command_line.planet_preview || command_line.planet_preview_screenshot != "" || command_line.planet_preview_walk {
 		seed, _ := command_line_seed(command_line)
-		os.exit(run_planet_preview(config, content.planets, content.items, content.machines, bindings, data_directory, seed, command_line.planet_preview_screenshot, command_line.planet_preview_walk, command_line.planet_preview_daylight, command_line.planet_preview_pitch))
+		os.exit(run_planet_preview(config, content, game_data.base_generator, bindings, data_directory, seed, command_line.planet_preview_screenshot, command_line.planet_preview_walk, command_line.planet_preview_daylight, command_line.planet_preview_pitch))
 	}
 	saves_directory, saves_found := resolve_saves_directory(loaded_configuration.configuration.paths.saves)
 	if command_line.server {

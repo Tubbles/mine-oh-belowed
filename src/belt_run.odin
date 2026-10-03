@@ -634,8 +634,8 @@ belt_pole_frame_records :: proc(entities: ^Entities) -> []Entity_Frame_Record {
 // The pole pool, the poles' frames and the run pool, at the end of the
 // frame tables. A world that never had a pole or a run writes nothing
 // here, so its bytes and its state hash are those of a build before runs.
-write_belt_run_tables :: proc(bytes: ^[dynamic]byte, entities: ^Entities) {
-	if len(entities.belt_poles.entries) == 0 && len(entities.belt_runs.entries) == 0 {
+write_belt_run_tables :: proc(bytes: ^[dynamic]byte, entities: ^Entities, always := false) {
+	if !always && len(entities.belt_poles.entries) == 0 && len(entities.belt_runs.entries) == 0 {
 		return
 	}
 	write_pool(bytes, &entities.belt_poles)

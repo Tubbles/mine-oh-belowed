@@ -7,9 +7,8 @@ package game
 // machine of a lockstep game (0177) must agree: positions in
 // 1/POSITION_UNITS_PER_METRE m, velocities in 1/VELOCITY_FRACTION_ONE of a
 // position unit per tick, directions in UNIT_VECTOR_ONE, angles in
-// ANGLE_UNITS_PER_TURN. It lives beside the block world's Player until the
-// slice switches the session to the field (0179); the planet preview's walk
-// mode drives it until then.
+// ANGLE_UNITS_PER_TURN. It is the field part of the session's Player
+// (Player.field, 0179), ticked by simulation_field.odin.
 //
 // Movement: on ground at most the walkable angle steep the walk follows the
 // ground at full speed, and a ledge up to the step height is walked over;
@@ -53,29 +52,33 @@ Field_Player_Button :: enum u8 {
 	Toggle_No_Clip,
 	Toggle_Camera_Mode,
 	// The hand tool (0171, field_mining.odin): dig or place with the
-	// brush while held; the next brush and the next held material.
+	// brush while held; the next brush, or with a machine held its next
+	// quarter turn (0179).
 	Dig,
 	Place,
 	Next_Brush,
-	Next_Material,
 	// Cancels a run's first endpoint (0176, belt_run_placement.odin).
 	Back,
 }
 
-// What the held material cycle holds: a material, or past the last one a
-// foundation (0174), the belt run tool and the pipe run tool (0176), each
-// when the data has its machines.
+// What the selected hotbar stack holds (0179, field_tool_for_item): a
+// material's item, the foundation (0174), a belt or a pipe for the run
+// tools (0176), another machine to place on a frame, the torch, or
+// nothing Place uses (the hand, which still digs).
 Field_Held_Tool :: enum u8 {
 	Material,
 	Foundation,
 	Belt_Run,
 	Pipe_Run,
+	Machine,
+	Torch,
+	Hand,
 }
 
 Field_Player_Buttons :: bit_set[Field_Player_Button]
 
 // One tick's input, quantised from the input frame before the tick
-// (field_player_input_from_frame in the preview), so the tick reads
+// (field_tick_input, simulation_field.odin), so the tick reads
 // integers only.
 Field_Player_Input :: struct {
 	// FIELD_MOVE_ONE is full stick: x right, y forward.
@@ -145,10 +148,13 @@ Field_Player :: struct {
 	frame_target:      Frame_Raycast_Hit,
 	// The hand tool (0171): an index into the brushes of data/game.sjson
 	// and the material a place raises the field from, or the tool held
-	// instead of the material (0174, 0176).
+	// instead of the material (0174, 0176), the machine a Machine tool
+	// places and its quarter turns (0179).
 	brush:             u8,
 	held_material:     Field_Material,
 	tool:              Field_Held_Tool,
+	held_machine:      Machine_Id,
+	placement_rotation: u8,
 	// A run tool's first endpoint, chosen by the first Place (0176).
 	run_started:       bool,
 	run_start:         Belt_Run_Candidate,

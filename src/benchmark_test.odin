@@ -1,15 +1,17 @@
 package game
 
 import "core:log"
+import "core:strings"
 import "core:testing"
 
 // The factory benchmark (work item 0050): the plan, the layout and the
-// floor as pure pieces, and the run of sizes 1 and 4 that logs the table.
-// ./build.sh bench runs the last one optimised, where the size 4 budget
-// holds; the plain test build only logs the numbers.
+// floor as pure pieces, and the run of size 1 on the field world (0179)
+// that logs the table. ./build.sh bench runs the last one optimised,
+// where the budget holds; the plain test build only logs the numbers.
+// Size 4 comes back with the factories on frames (M14).
 
 // Half the 60 Hz budget, so CI runners have room.
-BENCHMARK_SIZE_4_BUDGET_MILLISECONDS :: 8.0
+BENCHMARK_SIZE_1_BUDGET_MILLISECONDS :: 8.0
 // Two minutes like the command line: machines at the end of a chain
 // (the flare stack behind two cracking units, the lab behind two
 // assemblers) first work well into the first minute.
@@ -89,28 +91,39 @@ test_benchmark_world_is_a_flat_lit_floor :: proc(t: ^testing.T) {
 	testing.expect(t, world_to_chunk_coordinate({0, 96, 0}) not_in world.chunks)
 }
 
-// Builds and runs sizes 1 and 4 and logs their tables. Every machine
-// must work at the end of the warm up; the size 4 budget holds only in
-// the optimised build (./build.sh bench), the plain build logs.
+// The field of the benchmark from the shipped planet and tables.
+test_benchmark_field :: proc(items: Item_Registry) -> Benchmark_Field {
+	lighting, problem := parse_lighting_file(#load("../data/lighting.sjson"), LIGHTING_FILE_NAME)
+	assert(problem == "", problem)
+	return Benchmark_Field{planet = shipped_test_planets()[0], materials = test_field_materials(items), lighting = lighting}
+}
+
+// Builds and runs size 1 on the field world and logs its table. Every
+// machine must work at the end of the warm up, and the player stands on
+// the field at the home beside the pad; the budget holds only in the
+// optimised build (./build.sh bench), the plain build logs. Size 2 is
+// refused with the M14 message.
 @(test)
 test_factory_benchmark :: proc(t: ^testing.T) {
 	plan := load_test_benchmark_plan(t)
 	defer destroy_benchmark_plan(&plan)
 	content := make_test_content()
 	generator := make_test_generator(DEFAULT_WORLD_SEED)
-	config := test_game_config()
+	config := test_field_game_config()
+	config.starting_items = nil
+	field := test_benchmark_field(content.items)
 	ticks_per_minute := 60 * config.tick_rate
-	for size in ([?]int{1, 4}) {
-		report := run_factory_benchmark(size, &generator, content, config, plan, BENCHMARK_TEST_WARM_UP_MINUTES * ticks_per_minute, BENCHMARK_TEST_MEASURED_MINUTES * ticks_per_minute)
-		defer destroy_benchmark_report(report)
-		log.infof("\n%s", format_benchmark_report(report, content.machines))
-		testing.expect_value(t, report.problem, "")
-		testing.expect_value(t, len(report.idle), 0)
-		testing.expect_value(t, report.profile.ticks, report.measured_ticks)
-		when ODIN_OPTIMIZATION_MODE == .Speed {
-			if size == 4 {
-				testing.expectf(t, report.average_milliseconds < BENCHMARK_SIZE_4_BUDGET_MILLISECONDS, "size 4 averages %.3f ms per tick, over the %.1f ms budget", report.average_milliseconds, BENCHMARK_SIZE_4_BUDGET_MILLISECONDS)
-			}
-		}
+	report := run_factory_benchmark(1, &generator, content, field, config, plan, BENCHMARK_TEST_WARM_UP_MINUTES * ticks_per_minute, BENCHMARK_TEST_MEASURED_MINUTES * ticks_per_minute)
+	defer destroy_benchmark_report(report)
+	log.infof("\n%s", format_benchmark_report(report, content.machines))
+	testing.expect_value(t, report.problem, "")
+	testing.expect_value(t, len(report.idle), 0)
+	testing.expect_value(t, report.profile.ticks, report.measured_ticks)
+	testing.expect_value(t, report.entity_counts[.Foundation], (2 * BENCHMARK_PAD_HALF_WIDTH + 1) * (2 * BENCHMARK_PAD_HALF_WIDTH + 1))
+	when ODIN_OPTIMIZATION_MODE == .Speed {
+		testing.expectf(t, report.average_milliseconds < BENCHMARK_SIZE_1_BUDGET_MILLISECONDS, "size 1 averages %.3f ms per tick, over the %.1f ms budget", report.average_milliseconds, BENCHMARK_SIZE_1_BUDGET_MILLISECONDS)
 	}
+	larger := run_factory_benchmark(2, &generator, content, field, config, plan, 0, 0)
+	defer destroy_benchmark_report(larger)
+	testing.expect(t, strings.contains(larger.problem, "M14"), larger.problem)
 }

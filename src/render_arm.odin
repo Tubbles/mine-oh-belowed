@@ -62,6 +62,16 @@ inserter_arm_placement :: proc(entities: ^Entities, inserter: Inserter, machine:
 	}
 }
 
+// The inserter's placement this frame, the frame's reaching arm held at
+// its drop.
+model_frame_arm_placement :: proc(frame: Model_Frame, inserter: Inserter, machine: Machine) -> Arm_Placement {
+	placement := inserter_arm_placement(&frame.world.entities, inserter, machine, frame.tick_rate)
+	if frame.reaching_arm != NO_ENTITY && inserter.handle == frame.reaching_arm {
+		placement.fraction, placement.working = ARM_DROP_FRACTION, true
+	}
+	return placement
+}
+
 // The arm at its placement; the held item hangs at the hand between the
 // grab and the release.
 draw_placed_arm :: proc(renderer: Model_Renderer, arm: [Arm_Part]Uploaded_Layers, placement: Arm_Placement, light_tint: [3]f32, held: Item_Stack, items: Item_Registry) {

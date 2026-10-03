@@ -60,14 +60,40 @@ choice_index :: proc(choices: []int, value, fallback: int) -> int {
 	return fallback
 }
 
+// The index of the choice nearest value, the first of two as near.
+nearest_choice_index :: proc(choices: []int, value: int) -> int {
+	nearest := 0
+	for choice, index in choices {
+		if abs(choice - value) < abs(choices[nearest] - value) {
+			nearest = index
+		}
+	}
+	return nearest
+}
+
+// The day length choice nearest a planet's rotation period (0179), in
+// seconds against the minute choices.
+planet_day_length_choice :: proc(planet: Planet) -> int {
+	seconds := make([]int, len(day_length_minute_choices), context.temp_allocator)
+	for minutes, index in day_length_minute_choices {
+		seconds[index] = minutes * 60
+	}
+	return nearest_choice_index(seconds, planet.rotation_period_seconds)
+}
+
 // planets are the content's: the setup starts on the defaults' planet
-// (or the first) at its default radius.
+// (or the first) at its default radius, with the day as long as the
+// planet's rotation (the setting stays and the player may change it).
 make_world_setup :: proc(defaults: World_File_Settings, planets: []Planet, name: string, seed: u64) -> World_Setup {
 	planet_choice := 0
 	for planet, index in planets {
 		if planet.id == defaults.planet_id {
 			planet_choice = index
 		}
+	}
+	day_length_choice := choice_index(day_length_minute_choices[:], defaults.day_length_seconds / 60, DEFAULT_DAY_LENGTH_CHOICE)
+	if len(planets) > 0 {
+		day_length_choice = planet_day_length_choice(planets[planet_choice])
 	}
 	return World_Setup {
 		name = make_text_field(name, WORLD_NAME_MAXIMUM_LENGTH),
@@ -77,7 +103,7 @@ make_world_setup :: proc(defaults: World_File_Settings, planets: []Planet, name:
 		research_cost_choice = choice_index(setting_percent_choices[:], defaults.research_cost_percent, DEFAULT_PERCENT_CHOICE),
 		byproducts_lenient = defaults.byproducts_lenient,
 		all_recipes_unlocked = defaults.all_recipes_unlocked,
-		day_length_choice = choice_index(day_length_minute_choices[:], defaults.day_length_seconds / 60, DEFAULT_DAY_LENGTH_CHOICE),
+		day_length_choice = day_length_choice,
 		planet_choice = planet_choice,
 		planet_radius_metres = len(planets) > 0 ? planets[planet_choice].radius_metres : 0,
 		sample_spacing_millimetres = defaults.sample_spacing_millimetres,
@@ -95,13 +121,14 @@ world_setup_planet :: proc(setup: World_Setup, planets: []Planet) -> (planet: Pl
 	return planets[clamp(setup.planet_choice, 0, len(planets) - 1)], true
 }
 
-// The next planet, at its default radius.
+// The next planet, at its default radius and its day length.
 step_world_setup_planet :: proc(setup: ^World_Setup, planets: []Planet) {
 	if len(planets) == 0 {
 		return
 	}
 	setup.planet_choice = next_choice(clamp(setup.planet_choice, 0, len(planets) - 1), len(planets))
 	setup.planet_radius_metres = planets[setup.planet_choice].radius_metres
+	setup.day_length_choice = planet_day_length_choice(planets[setup.planet_choice])
 }
 
 // The preset after the current radius, round the planet's list.

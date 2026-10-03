@@ -29,6 +29,9 @@ planets = [
 		springs = [
 			{latitude_degrees = 88, longitude_degrees = -120}
 		]
+		// Where a field session's players spawn, facing the first spring
+		// (work item 0179): the surface under the point, in whole degrees.
+		home = {latitude_degrees = 86, longitude_degrees = -115}
 		// Fill per surface sample per minute (254 a sample), applied by
 		// the weather (M15).
 		rain_fill_per_minute = 2

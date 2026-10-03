@@ -87,6 +87,12 @@ Field_Chunk :: struct {
 	block_light:  [FIELD_CHUNK_SAMPLE_COUNT]u8,
 	sky_light:    [FIELD_CHUNK_SAMPLE_COUNT]u8,
 	dirty:        bool,
+	// A tick wrote the chunk since it was generated (note_field_chunk_change):
+	// the save writes it whole (0179). The hash of its terrain and water
+	// (field_chunk_state_hash), current while hash_current.
+	modified:     bool,
+	hash_current: bool,
+	state_hash:   u64,
 }
 
 // Chunks are heap allocated, as the block world's are, so growing the map
@@ -194,6 +200,15 @@ field_chunk_set_sample :: proc(chunk: ^Field_Chunk, index: int, sample: Field_Sa
 	chunk.material[index] = sample.material
 	chunk.tint[index] = sample.tint
 	chunk.dirty = true
+	note_field_chunk_change(chunk)
+}
+
+// Every write of the tick into a loaded chunk's terrain, water or light
+// comes through here: the save then writes the chunk, and the state hash
+// of its samples is taken again.
+note_field_chunk_change :: proc(chunk: ^Field_Chunk) {
+	chunk.modified = true
+	chunk.hash_current = false
 }
 
 // Missing chunks read as air.

@@ -35,7 +35,10 @@ test_world_setup_defaults_follow_the_config :: proc(t: ^testing.T) {
 	testing.expect_value(t, kilometres_number_text(4500), "4.5")
 	testing.expect_value(t, metres_number_text(333), "0.33")
 	testing.expect_value(t, metres_number_text(500), "0.5")
-	testing.expect_value(t, settings.day_length_seconds, 600)
+	// The day follows the planet's rotation (1200 s), not the config (0179).
+	testing.expect_value(t, settings.day_length_seconds, planets[0].rotation_period_seconds)
+	without_planets := make_world_setup(default_world_file_settings(config), nil, "Name", 1)
+	testing.expect_value(t, world_file_settings_from_setup(without_planets, nil).day_length_seconds, 600)
 	testing.expect(t, settings.veins_infinite)
 	testing.expect_value(t, settings.vein_richness_percent, 100)
 	testing.expect_value(t, settings.research_cost_percent, 100)
@@ -274,4 +277,16 @@ test_continue_picks_the_newest_save :: proc(t: ^testing.T) {
 	// Stockholm in summer: bias -60, daylight bias -60.
 	testing.expect_value(t, platform.local_zone_offset_seconds(-60, 0, -60, true), 7200)
 	testing.expect_value(t, platform.local_zone_offset_seconds(-60, 0, -60, false), 3600)
+}
+
+// A rotation period between the minute choices takes the nearest one
+// (0179), not the previous choice.
+@(test)
+test_the_day_length_takes_the_choice_nearest_the_rotation :: proc(t: ^testing.T) {
+	planet := Planet{rotation_period_seconds = 1500}
+	testing.expect_value(t, day_length_minute_choices[planet_day_length_choice(planet)], 20)
+	planet.rotation_period_seconds = 100000
+	testing.expect_value(t, day_length_minute_choices[planet_day_length_choice(planet)], 40)
+	planet.rotation_period_seconds = 1
+	testing.expect_value(t, day_length_minute_choices[planet_day_length_choice(planet)], 5)
 }

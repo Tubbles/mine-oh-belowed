@@ -30,14 +30,28 @@ Model_Renderer :: struct {
 
 // What every model drawn this frame shares: the world for the light, the
 // render time for the motion, and the day factor and sky tint for the sky
-// light.
+// light. open_sky lights every model with the full sky light: a field
+// session's machines stand on frames the block light does not reach
+// (work item 0179). reaching_arm is an arm drawn held at full reach and
+// working whatever its cycle (the planet preview's screenshot), NO_ENTITY
+// otherwise.
 Model_Frame :: struct {
-	world:      ^World,
-	tick:       u64,
-	alpha:      f32,
-	tick_rate:  int,
-	day_factor: f32,
-	sky_tint:   [3]f32,
+	world:        ^World,
+	tick:         u64,
+	alpha:        f32,
+	tick_rate:    int,
+	day_factor:   f32,
+	sky_tint:     [3]f32,
+	open_sky:     bool,
+	reaching_arm: Entity_Handle,
+}
+
+// The light a model at the cell takes.
+model_frame_light :: proc(frame: Model_Frame, cell: World_Coordinate) -> u16 {
+	if frame.open_sky {
+		return with_light_level(0, .Sky, MAXIMUM_LIGHT)
+	}
+	return world_get_light(frame.world, cell)
 }
 
 // The pose of one entity's model this frame.
@@ -215,7 +229,7 @@ draw_ghost_model :: proc(renderer: Model_Renderer, machines: Machine_Registry, p
 
 // The entity's model at the pose, lit by the cell model_light_cell names.
 draw_posed_model :: proc(renderer: Model_Renderer, model: Uploaded_Machine_Model, common: Entity_Common, machine: Machine, frame: Model_Frame, pose: Model_Pose) {
-	light_tint := model_light_tint(world_get_light(frame.world, model_light_cell(common)), frame.day_factor, frame.sky_tint)
+	light_tint := model_light_tint(model_frame_light(frame, model_light_cell(common)), frame.day_factor, frame.sky_tint)
 	glow := emissive_brightness(machine.motion.kind, pose.phase, pose.working, light_tint)
 	body := entity_frame_matrix(&frame.world.entities, common.frame) * model_transform(common.origin, common.size, common.rotation)
 	draw_model_layers(renderer, model.body, body, light_tint, glow)

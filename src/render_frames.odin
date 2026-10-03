@@ -3,15 +3,14 @@ package game
 import rl "shared:raylib"
 import "shared:raylib/rlgl"
 
-// The foundation frames' placeholder look (work item 0174): every occupied
-// cell of a frame other than the block frame is drawn as a box at its
-// frame's transform, a slab of stone grey for a foundation and a box of
-// orange for a machine, so the planet preview and the slice see frames
-// before machines have meshes at their real sizes (0179). Floats are made
+// The foundation frames' placeholder look (work item 0174): every
+// foundation cell of a frame other than the block frame is drawn as a
+// stone grey box at its frame's transform. The machines on the frames are
+// drawn by draw_entities under the same matrices (their models, or a box
+// per cell), since the field session draws them (0179). Floats are made
 // here only; the frames themselves are integers.
 
 FRAME_FOUNDATION_COLOR :: rl.Color{150, 146, 138, 255}
-FRAME_MACHINE_COLOR :: rl.Color{214, 128, 52, 255}
 FRAME_EDGE_COLOR :: rl.Color{60, 58, 54, 255}
 FRAME_GHOST_COLOR :: rl.Color{240, 240, 240, 90}
 // A drawn box is this much of its cell, so neighbours show a seam.
@@ -49,37 +48,24 @@ draw_frame_cell :: proc(cell: World_Coordinate, color: rl.Color) {
 	rl.DrawCubeWiresV(centre, FRAME_CELL_FILL, FRAME_EDGE_COLOR)
 }
 
-// Inside BeginMode3D. One pass over the occupied cells, each under its
-// frame's matrix (made once per frame), so the cost follows the cells and
-// not the cells times the frames. An inserter whose arm model loaded is
-// drawn as its arm (render_arm.odin), not as a box, and a belt pole as its
-// post (render_belt_runs.odin).
-draw_frames :: proc(entities: ^Entities, models: Model_Renderer) {
+// Inside BeginMode3D. One pass over the occupied cells, each foundation
+// under its frame's matrix (made once per frame), so the cost follows the
+// cells and not the cells times the frames.
+draw_frames :: proc(entities: ^Entities) {
 	matrices := make(map[Frame_Id][16]f32, len(entities.frames.frames), context.temp_allocator)
 	for frame in entities.frames.frames {
 		matrices[frame.id] = transmute([16]f32)frame_render_matrix(frame)
 	}
 	for key, occupant in entities.frames.occupants {
 		flat, found := matrices[key.frame]
-		handle := entity_from_occupant(occupant.handle)
-		if !found || handle.kind == .Belt_Pole || frame_cell_draws_an_arm(entities, models, handle) {
+		if !found || entity_from_occupant(occupant.handle).kind != .Foundation {
 			continue
 		}
-		kind := handle.kind
 		rlgl.PushMatrix()
 		rlgl.MultMatrixf(raw_data(flat[:]))
-		draw_frame_cell(key.cell, kind == .Foundation ? FRAME_FOUNDATION_COLOR : FRAME_MACHINE_COLOR)
+		draw_frame_cell(key.cell, FRAME_FOUNDATION_COLOR)
 		rlgl.PopMatrix()
 	}
-}
-
-frame_cell_draws_an_arm :: proc(entities: ^Entities, models: Model_Renderer, handle: Entity_Handle) -> bool {
-	inserter := pool_get(&entities.inserters, handle)
-	if inserter == nil {
-		return false
-	}
-	_, found := machine_arm_model(models, inserter.machine)
-	return found
 }
 
 // Where Place would put a foundation, see-through.

@@ -313,7 +313,7 @@ encode_player_command :: proc(bytes: ^[dynamic]byte, command: Player_Command) {
 		write_tagged_command(bytes, .Grid_Transfer, variant)
 	case Inserter_Hand_Command:
 		write_tagged_command(bytes, .Inserter_Hand, variant)
-	case Add_Player_Command, Chunk_Ready_Command:
+	case Add_Player_Command, Chunk_Ready_Command, Field_Chunk_Ready_Command:
 		panic("a join's entry and a chunk arrival are never relayed")
 	}
 }
@@ -810,6 +810,7 @@ encode_join_snapshot :: proc(simulation: ^Simulation_State, lockstep: ^Lockstep,
 		append_string(&bytes, region.name)
 		append_bytes(&bytes, region.bytes)
 	}
+	append_bytes(&bytes, files.field)
 	chunks := make([dynamic]Chunk_Coordinate, 0, len(simulation.chunk_set.chunks), context.temp_allocator)
 	for coordinate in simulation.chunk_set.chunks {
 		append(&chunks, coordinate)
@@ -863,6 +864,7 @@ decode_join_snapshot :: proc(payload: []byte) -> (snapshot: Join_Snapshot, chunk
 		region_bytes := read_bytes(&reader) or_return
 		append(&snapshot.files.regions, Region_File{name = region_name, bytes = region_bytes})
 	}
+	snapshot.files.field = read_bytes(&reader) or_return
 	chunk_set_enabled = (read_u8(&reader) or_return) == 1
 	snapshot.chunk_radius.x = i32(read_u32(&reader) or_return)
 	snapshot.chunk_radius.y = i32(read_u32(&reader) or_return)

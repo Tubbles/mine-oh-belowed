@@ -24,6 +24,10 @@ Planet_Generation_Record :: struct {
 	palette_length:                                 int,
 	relief_octaves:                                 [RELIEF_OCTAVE_COUNT]Relief_Octave,
 	springs:                                        []Planet_Spring,
+	// The home spawn (0179); home_recorded is false in a file written
+	// before it, which takes the data's home (resolve_world_planet).
+	home:                                           Planet_Home,
+	home_recorded:                                  bool,
 }
 
 // Borrows the planet's springs.
@@ -37,6 +41,8 @@ planet_generation_record :: proc(planet: Planet) -> Planet_Generation_Record {
 		palette_length = len(planet.palette),
 		relief_octaves = planet.relief_octaves,
 		springs = planet.springs,
+		home = planet.home,
+		home_recorded = true,
 	}
 }
 
@@ -59,6 +65,9 @@ make_recorded_planet :: proc(planet: Planet, record: Planet_Generation_Record, a
 	result.rotation_period_seconds = record.rotation_period_seconds
 	result.relief_octaves = record.relief_octaves
 	result.springs = slice.clone(record.springs, allocator)
+	if record.home_recorded {
+		result.home = record.home
+	}
 	result.palette = make([][3]int, record.palette_length, allocator)
 	for &color, index in result.palette {
 		color = planet.palette[index % len(planet.palette)]
@@ -87,6 +96,13 @@ planet_generation_record_problem :: proc(record: Planet_Generation_Record) -> st
 		palette = {{0, 0, 0}},
 	}
 	return planet_problem(make_recorded_planet(stand_in, record, context.temp_allocator))
+}
+
+// The home's direction from the centre, a unit vector, as a spring's
+// (planet_spring_direction): latitude 90 is +y, longitude 0 lies towards
+// +x and 90 towards +z.
+planet_home_direction :: proc(home: Planet_Home) -> [3]i64 {
+	return planet_spring_direction(Planet_Spring{latitude_degrees = home.latitude_degrees, longitude_degrees = home.longitude_degrees})
 }
 
 // A preset of the planet, or the planet's default radius for zero (a new
@@ -130,6 +146,10 @@ resolve_world_planet :: proc(settings: World_File_Settings, recorded: Planet_Gen
 		planet = default_planet(planets)
 		resolved.planet_id = planet.id
 		platform.log_printf("world: the planet %q is not in %s, the world takes %q", settings.planet_id, PLANETS_FILE_NAME, planet.id)
+	}
+	if planet_generation_is_recorded(recorded) && !recorded.home_recorded {
+		platform.log_printf("world: the world file records no home, it takes the home of %q from %s", planet.id, PLANETS_FILE_NAME)
+		record.home, record.home_recorded = planet.home, true
 	}
 	if !planet_generation_is_recorded(recorded) {
 		if loading {

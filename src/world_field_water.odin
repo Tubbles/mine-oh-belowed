@@ -274,6 +274,7 @@ wake_field_water_sample :: proc(world: ^Field_World, chunk: ^Field_Chunk, index:
 		return
 	}
 	chunk.water_still[index] = 0
+	note_field_chunk_change(chunk)
 	if !field_sample_bit(&chunk.water_awake, index) {
 		set_field_sample_bit(&chunk.water_awake, index)
 		world.water_awake_chunks[chunk.coordinate] = {}
@@ -285,6 +286,7 @@ wake_field_water_sample :: proc(world: ^Field_World, chunk: ^Field_Chunk, index:
 sleep_field_water_sample :: proc(chunk: ^Field_Chunk, index: int) {
 	clear_field_sample_bit(&chunk.water_awake, index)
 	chunk.water_still[index] = 0
+	note_field_chunk_change(chunk)
 }
 
 // The sample and its six neighbours in loaded chunks.
@@ -301,6 +303,7 @@ wake_field_water_around :: proc(world: ^Field_World, chunk: ^Field_Chunk, index:
 // sample are marked, and the sample and its neighbours wake.
 set_field_water :: proc(world: ^Field_World, chunk: ^Field_Chunk, index: int, sample: Sample_Coordinate, fill: i32) {
 	chunk.water[index] = u8(fill)
+	note_field_chunk_change(chunk)
 	mark_field_chunks_around_sample_dirty(world, chunk.coordinate, sample)
 	world.edited_chunks[chunk.coordinate] = {}
 	wake_field_water_around(world, chunk, index, sample)
@@ -546,6 +549,8 @@ step_field_water :: proc(world: ^Field_World, tuning: Field_Water_Tuning, tick: 
 		}
 		pass := new(Field_Water_Pass, context.temp_allocator)
 		pass.chunk, pass.awake, pass.start = chunk, chunk.water_awake, chunk.water
+		// The pass counts the still ticks of its awake samples.
+		note_field_chunk_change(chunk)
 		append(&passes, pass)
 	}
 	for pass in passes {

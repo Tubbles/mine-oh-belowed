@@ -50,7 +50,7 @@ start_server :: proc(server: ^Server_State, session: ^Session, content: Game_Con
 run_server_frame :: proc(server: ^Server_State, frame_seconds: f64) -> int {
 	session := server.session
 	simulation := &session.simulation
-	content := session_simulation_content(server.content, session.technologies)
+	content := session_simulation_content(server.content, session.technologies, session.field_content)
 	content.generator = &session.generator
 	tick_count: int
 	session.accumulator, tick_count = advance_tick_accumulator(session.accumulator, frame_seconds)
@@ -69,7 +69,7 @@ run_server_frame :: proc(server: ^Server_State, frame_seconds: f64) -> int {
 	clear(&simulation.events)
 	clear(&simulation.quests.notices)
 	camera_chunk := len(simulation.players) > 0 ? player_chunk(simulation.players[0]) : Chunk_Coordinate{}
-	stream_session_chunks(session, camera_chunk)
+	stream_session_chunks(session, camera_chunk, nil)
 	if session.save.enabled && autosave_due(session.ticks_since_save, server.autosave_minutes, simulation.tick_rate) {
 		save_server_world(server)
 	}

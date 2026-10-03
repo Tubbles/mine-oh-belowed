@@ -6,9 +6,10 @@ import "platform"
 
 // Digging and placing the terrain field by hand and the item yield (work
 // item 0171, doc/architecture.md, The terrain field's brushes; doc/
-// content.md, Field materials). The field's share of the simulation until
-// the slice (0179) puts it on Simulation_State: the field world, its
-// players with their inventories, and the edit queue.
+// content.md, Field materials). The field's share of the simulation state
+// (Simulation_State.field, 0179): the field world, the edit queue, the
+// placements and the torches; the players' credit and refusals are on
+// Player.
 //
 // The one rule of writes inside the tick: a player's tick (and later a
 // drill's) queues its brush edit, and the edits are drained at the end of
@@ -68,20 +69,13 @@ Field_Edit_Refusal :: enum u8 {
 	Frame_Cell_Taken,
 	// The frame a foundation snaps to is gone.
 	Unknown_Frame,
-	// A belt or pipe run was refused (0176): the reason is the miner's
-	// run_refusal.
+	// A belt or pipe run was refused (0176): the reason is the player's
+	// field_run_refusal.
 	Run_Refused,
-}
-
-Field_Miner :: struct {
-	body:             Field_Player,
-	inventory:        Inventory,
-	// Volume short of a whole item per material, in the unit of
-	// FIELD_ITEM_VOLUME.
-	credit:           [Field_Material]i64,
-	refusal:          Field_Edit_Refusal,
-	refused_material: Field_Material,
-	run_refusal:      Belt_Run_Refusal,
+	// A torch's sample holds a torch already or turned to ground (0179).
+	Torch_Blocked,
+	// A torch taken back finds no room in the inventory and stays (0179).
+	Inventory_Full,
 }
 
 Queued_Field_Edit :: struct {
@@ -89,30 +83,59 @@ Queued_Field_Edit :: struct {
 	edit:   Field_Edit,
 }
 
+// A torch on the field (0179): an emitter of data/lighting.sjson at the
+// air sample, placed with the torch item and taken back by Dig.
+Field_Torch :: struct {
+	sample: Sample_Coordinate,
+}
+
+// The field's share of the simulation state (0179): the simulated chunks
+// of the terrain field (simulation_field_chunk_set.odin), the per tick
+// queues and the torches. The players' field state is on Player (field,
+// field_credit, the refusal fields); the foundations, frames, poles and
+// runs are World.entities. enabled is set for a field session; a block
+// world of the tests leaves it false and the tick skips the field.
 Field_Simulation :: struct {
+	enabled:             bool,
 	world:               Field_World,
 	spacing_millimetres: int,
-	players:             [dynamic]Field_Miner,
 	// The edit queue: filled by the players' ticks, drained at the end of
 	// the tick in order. Not saved; empty between ticks.
 	edits:               [dynamic]Queued_Field_Edit,
-	// The foundations and their frames (0174, entity_frames.odin) and
-	// the place commands, drained after the edits.
-	entities:            Entities,
+	// The place commands (foundations, machines, runs), drained after the
+	// edits; empty between ticks.
 	placements:          [dynamic]Queued_Field_Placement,
-	tick:                u64,
+	torches:             [dynamic]Field_Torch,
+	chunk_set:           Field_Chunk_Set,
+	// Generated chunks waiting for the set to take them, as the block
+	// world's arrived_chunks. Not saved: they differ per machine and the
+	// tick reads none of them.
+	arrived_chunks:      map[Field_Chunk_Coordinate]^Field_Chunk,
+	// The chunks outside the set whose terrain or water differs from their
+	// generation, taken again when a chunk enters the set.
+	saved_chunks:        map[Field_Chunk_Coordinate]Field_Saved_Chunk,
 }
 
-Field_Simulation_Content :: struct {
-	items:     Item_Registry,
-	materials: Field_Material_Table,
-	brushes:   []Field_Brush,
-	tuning:    Field_Player_Tuning,
-	water:     Field_Water_Tuning,
-	light:     Field_Light_Tuning,
+// A chunk kept outside the set: its codec bytes (encode_field_chunk) and
+// its field_chunk_state_hash, computed once when it is kept, since the
+// bytes never change while it is away.
+Field_Saved_Chunk :: struct {
+	bytes:      []byte,
+	state_hash: u64,
+}
+
+// The field's content (0179, folded into Simulation_Content as its field
+// member): the material table and the tuning of one planet, spacing and
+// tick rate (make_field_content). The items and machines are the
+// simulation content's own.
+Field_Content :: struct {
+	materials:  Field_Material_Table,
+	brushes:    []Field_Brush,
+	tuning:     Field_Player_Tuning,
+	water:      Field_Water_Tuning,
+	light:      Field_Light_Tuning,
 	// The foundation (0174): its machine (read through field_foundation)
 	// and the pitch of a new frame (data/game.sjson).
-	machines:  Machine_Registry,
 	foundation: Machine_Id,
 	foundation_pitch_millimetres: int,
 	// The run tools (0176, belt_run_placement.odin): the pole a new
@@ -123,16 +146,27 @@ Field_Simulation_Content :: struct {
 	run_belt:  Machine_Id,
 	run_pipe:  Machine_Id,
 	belt_runs: Belt_Run_Constraints,
+	// The torch (0179): its item (NO_ITEM without one) and the level of
+	// the torch emitter of data/lighting.sjson.
+	torch_item:  Item_Id,
+	torch_level: u8,
+	// The starter kit a joining player gets (data/game.sjson).
+	starting_items: []Starting_Item,
 }
 
 destroy_field_simulation :: proc(simulation: ^Field_Simulation) {
-	for player in simulation.players {
-		destroy_inventory(player.inventory)
-	}
-	delete(simulation.players)
 	delete(simulation.edits)
 	delete(simulation.placements)
-	destroy_entities(&simulation.entities)
+	delete(simulation.torches)
+	destroy_field_chunk_set(&simulation.chunk_set)
+	for _, chunk in simulation.arrived_chunks {
+		free(chunk)
+	}
+	delete(simulation.arrived_chunks)
+	for _, saved in simulation.saved_chunks {
+		delete(saved.bytes)
+	}
+	delete(simulation.saved_chunks)
 	destroy_field_world(&simulation.world)
 	simulation^ = {}
 }
@@ -244,19 +278,6 @@ field_diggable_materials :: proc(table: Field_Material_Table, tool_tier: int) ->
 	return diggable
 }
 
-// The material after current that has an item, round the table; Air when
-// none has.
-next_placeable_field_material :: proc(table: Field_Material_Table, current: Field_Material) -> Field_Material {
-	count := len(Field_Material)
-	for offset in 1 ..= count {
-		candidate := Field_Material((int(current) + offset) % count)
-		if table[candidate].item != NO_ITEM {
-			return candidate
-		}
-	}
-	return .Air
-}
-
 // The best tool_tier carried, 0 for bare hands, as player_tool_tier.
 field_tool_tier :: proc(inventory: Inventory, items: Item_Registry) -> int {
 	tier := 0
@@ -315,9 +336,9 @@ field_player_capsule :: proc(tuning: Field_Player_Tuning, player: Field_Player) 
 
 // A place that would raise a sample within its trilinear support of any
 // field player's capsule (field_place_meets_capsule).
-field_place_buries_a_player :: proc(simulation: ^Field_Simulation, tuning: Field_Player_Tuning, edit: Field_Edit) -> bool {
-	for player in simulation.players {
-		if field_place_meets_capsule(&simulation.world, simulation.spacing_millimetres, edit, field_player_capsule(tuning, player.body)) {
+field_place_buries_a_player :: proc(state: ^Simulation_State, tuning: Field_Player_Tuning, edit: Field_Edit) -> bool {
+	for player in state.players {
+		if field_place_meets_capsule(&state.field.world, state.field.spacing_millimetres, edit, field_player_capsule(tuning, player.field)) {
 			return true
 		}
 	}
@@ -351,144 +372,109 @@ field_player_edit :: proc(world: ^Field_World, spacing_millimetres: int, player:
 		true
 }
 
-// The brush and held material keys. The held material cycles through
-// the placeable materials and after the last of them the tools the data
-// has machines for (field_tool_available), then the materials again. A
-// change of tool forgets a run's first endpoint.
-update_field_tool :: proc(player: ^Field_Player, input: Field_Player_Input, content: Field_Simulation_Content) {
-	if .Next_Brush in input.just_pressed && len(content.brushes) > 0 {
-		player.brush = u8((int(player.brush) + 1) % len(content.brushes))
-	}
-	if .Next_Material not_in input.just_pressed {
-		return
-	}
-	player.run_started = false
-	next := next_placeable_field_material(content.materials, player.held_material)
-	tool := player.tool
-	if tool != .Material || int(next) <= int(player.held_material) {
-		tool = next_field_tool(content, tool)
-	}
-	if tool == .Material {
-		player.held_material = next
-	}
-	player.tool = tool
-}
-
-// The first tool after the given one whose machines the data has,
-// Material past the last.
-next_field_tool :: proc(content: Field_Simulation_Content, after: Field_Held_Tool) -> Field_Held_Tool {
-	for candidate := int(after) + 1; candidate < len(Field_Held_Tool); candidate += 1 {
-		if field_tool_available(content, Field_Held_Tool(candidate)) {
-			return Field_Held_Tool(candidate)
-		}
-	}
-	return .Material
-}
-
-field_tool_available :: proc(content: Field_Simulation_Content, tool: Field_Held_Tool) -> bool {
-	switch tool {
-	case .Material:
-		return true
-	case .Foundation:
-		return field_foundation(content) != NO_MACHINE
-	case .Belt_Run, .Pipe_Run:
-		_, _, found := field_run_tool(content, tool)
-		return found
-	}
-	return false
-}
-
 // The first blocked material reported: Undiggable when it has no item,
 // Tool_Tier otherwise.
-report_blocked_dig :: proc(player: ^Field_Miner, table: Field_Material_Table, blocked: bit_set[Field_Material]) {
+report_blocked_dig :: proc(player: ^Player, table: Field_Material_Table, blocked: bit_set[Field_Material]) {
 	for material in Field_Material {
 		if material in blocked {
-			player.refusal = table[material].item == NO_ITEM ? .Undiggable : .Tool_Tier
-			player.refused_material = material
+			player.field_refusal = table[material].item == NO_ITEM ? .Undiggable : .Tool_Tier
+			player.field_refused_material = material
 			return
 		}
 	}
 }
 
-drain_field_dig :: proc(simulation: ^Field_Simulation, content: Field_Simulation_Content, player: ^Field_Miner, edit: Field_Edit) {
-	dig := edit
-	dig.diggable = field_diggable_materials(content.materials, field_tool_tier(player.inventory, content.items))
-	result := apply_field_edit(&simulation.world, simulation.spacing_millimetres, dig)
-	for steps, material in result.steps {
-		if steps > 0 {
-			volume := field_steps_to_volume(steps, simulation.spacing_millimetres)
-			credit_field_volume(player.inventory, content.items, content.materials[material].item, &player.credit[material], volume)
-		}
+// The material table's dig rates, as the edit carries them.
+field_dig_rates :: proc(table: Field_Material_Table) -> [Field_Material]i32 {
+	rates: [Field_Material]i32
+	for record, material in table {
+		rates[material] = i32(record.dig_rate_percent)
 	}
-	report_blocked_dig(player, content.materials, result.blocked)
+	return rates
 }
 
-drain_field_place :: proc(simulation: ^Field_Simulation, content: Field_Simulation_Content, player: ^Field_Miner, edit: Field_Edit) {
+drain_field_dig :: proc(state: ^Simulation_State, content: Simulation_Content, player: ^Player, edit: Field_Edit) {
+	field := &state.field
+	dig := edit
+	dig.diggable = field_diggable_materials(content.field.materials, field_tool_tier(player.inventory, content.items))
+	dig.dig_rate_percent = field_dig_rates(content.field.materials)
+	dig.tick = state.tick
+	result := apply_field_edit(&field.world, field.spacing_millimetres, dig)
+	for steps, material in result.steps {
+		if steps > 0 {
+			volume := field_steps_to_volume(steps, field.spacing_millimetres)
+			credit_field_volume(player.inventory, content.items, content.field.materials[material].item, &player.field_credit[material], volume)
+		}
+	}
+	report_blocked_dig(player, content.field.materials, result.blocked)
+}
+
+drain_field_place :: proc(state: ^Simulation_State, content: Simulation_Content, player: ^Player, edit: Field_Edit) {
+	field := &state.field
 	material := edit.material
-	item := content.materials[material].item
+	item := content.field.materials[material].item
 	place := edit
 	if item != NO_ITEM {
-		place.budget = field_place_volume_available(player.inventory, item, player.credit[material]) / field_steps_to_volume(1, simulation.spacing_millimetres)
+		place.budget = field_place_volume_available(player.inventory, item, player.field_credit[material]) / field_steps_to_volume(1, field.spacing_millimetres)
 	}
 	switch {
 	case place.budget <= 0:
-		player.refusal, player.refused_material = .Nothing_Held, material
+		player.field_refusal, player.field_refused_material = .Nothing_Held, material
 		return
-	case field_place_buries_a_player(simulation, content.tuning, place):
-		player.refusal, player.refused_material = .Would_Bury_Player, material
+	case field_place_buries_a_player(state, content.field.tuning, place):
+		player.field_refusal, player.field_refused_material = .Would_Bury_Player, material
 		return
 	}
-	result := apply_field_edit(&simulation.world, simulation.spacing_millimetres, place)
-	debit_field_volume(player.inventory, item, &player.credit[material], field_steps_to_volume(result.steps[material], simulation.spacing_millimetres))
+	result := apply_field_edit(&field.world, field.spacing_millimetres, place)
+	debit_field_volume(player.inventory, item, &player.field_credit[material], field_steps_to_volume(result.steps[material], field.spacing_millimetres))
 }
 
 // The end of the tick: every queued edit in order, then the queue is
 // empty, then the sky of the edits' shadows marches on the final field
 // (update_field_sky_after_edits). The edited chunks are marked dirty by
 // the world's set and remesh on the next revision.
-drain_field_edits :: proc(simulation: ^Field_Simulation, content: Field_Simulation_Content) {
-	for queued in simulation.edits {
-		player := &simulation.players[queued.player]
-		player.refusal, player.refused_material = .None, .Air
+drain_field_edits :: proc(state: ^Simulation_State, content: Simulation_Content) {
+	for queued in state.field.edits {
+		player := &state.players[queued.player]
+		player.field_refusal, player.field_refused_material = .None, .Air
 		switch queued.edit.mode {
 		case .Dig:
-			drain_field_dig(simulation, content, player, queued.edit)
+			drain_field_dig(state, content, player, queued.edit)
 		case .Place:
-			drain_field_place(simulation, content, player, queued.edit)
+			drain_field_place(state, content, player, queued.edit)
 		}
 	}
-	clear(&simulation.edits)
-	update_field_sky_after_edits(&simulation.world)
+	clear(&state.field.edits)
+	update_field_sky_after_edits(&state.field.world)
 }
 
-// Each player moves and queues its brush edit; nothing edits the field
-// yet. inputs[index] is players[index]'s; a missing one is no input.
-queue_field_player_edits :: proc(simulation: ^Field_Simulation, content: Field_Simulation_Content, inputs: []Field_Player_Input) {
-	for &player, index in simulation.players {
-		input := index < len(inputs) ? inputs[index] : Field_Player_Input{}
-		player.refusal, player.refused_material = .None, .Air
-		tick_field_player(&simulation.world, &simulation.entities.frames, content.tuning, &player.body, input)
-		aim_field_player_at_frames(&player.body, &simulation.entities.frames, content.tuning)
-		update_field_tool(&player.body, input, content)
-		if edit, wanted := field_player_edit(&simulation.world, simulation.spacing_millimetres, player.body, input, content.brushes); wanted {
-			append(&simulation.edits, Queued_Field_Edit{player = index, edit = edit})
-		}
-		if placement, wanted := field_player_placement(player.body, field_foundation(content)); wanted && .Place in input.just_pressed {
-			append(&simulation.placements, Queued_Field_Placement{player = index, placement = placement})
-		}
-		if placement, wanted := update_field_run_tool(&player.body, &simulation.entities, content, input); wanted {
-			append(&simulation.placements, Queued_Field_Placement{player = index, placement = placement})
-		}
+// One player moves and queues its brush edit and its placements; nothing
+// edits the field yet. The tool follows the hotbar (simulation_field.odin)
+// before this runs.
+queue_field_player_edit :: proc(state: ^Simulation_State, content: Simulation_Content, index: int, input: Field_Player_Input) {
+	field := &state.field
+	player := &state.players[index]
+	entities := &state.world.entities
+	player.field_refusal, player.field_refused_material = .None, .Air
+	tick_field_player(&field.world, &entities.frames, content.field.tuning, &player.field, input)
+	aim_field_player_at_frames(&player.field, &entities.frames, content.field.tuning)
+	if edit, wanted := field_player_edit(&field.world, field.spacing_millimetres, player.field, input, content.field.brushes); wanted {
+		append(&field.edits, Queued_Field_Edit{player = index, edit = edit})
+	}
+	if placement, wanted := field_player_placement(player.field, field_placed_machine(player.field, content)); wanted && .Place in input.just_pressed {
+		append(&field.placements, Queued_Field_Placement{player = index, placement = placement})
+	}
+	if placement, wanted := update_field_run_tool(&player.field, entities, content, input); wanted {
+		append(&field.placements, Queued_Field_Placement{player = index, placement = placement})
 	}
 }
 
-// The players, the edits, then the water (0172), so a hole dug this tick
-// floods on the next, then the light (0173) within its budget.
-tick_field_simulation :: proc(simulation: ^Field_Simulation, content: Field_Simulation_Content, inputs: []Field_Player_Input) {
-	simulation.tick += 1
-	queue_field_player_edits(simulation, content, inputs)
-	drain_field_edits(simulation, content)
-	drain_field_placements(simulation, content)
-	step_field_water(&simulation.world, content.water, simulation.tick)
-	tick_field_light(&simulation.world, content.light)
+// The edits, the placements, then the water (0172), so a hole dug this
+// tick floods on the next, then the light (0173) within its budget. Runs
+// after every player queued its edits (simulation_field.odin).
+finish_field_tick :: proc(state: ^Simulation_State, content: Simulation_Content) {
+	drain_field_edits(state, content)
+	drain_field_placements(state, content)
+	step_field_water(&state.field.world, content.field.water, state.tick)
+	tick_field_light(&state.field.world, content.field.light)
 }

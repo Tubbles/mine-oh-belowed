@@ -11,11 +11,13 @@ package game
 // needs no support. The cells are integer triples, so the footprint, belt
 // and lane logic of the block world runs on a frame unchanged.
 //
-// On the field (until the slice, 0179, puts the field on Simulation_State)
-// the field simulation keeps its foundations and frames in an Entities of
-// its own, and a placement is a command queued in the player's tick and
+// On the field the foundations, frames and machines are World.entities
+// (0179), and a placement is a command queued in the player's tick and
 // applied at the end of the tick in order, as the brush edits are
-// (drain_field_placements).
+// (drain_field_placements). The hotbar's item decides what Place puts
+// down (simulation_field.odin): a foundation snaps to a frame or starts
+// one on the ground, any other machine snaps to a frame cell, turned by
+// the player's placement rotation.
 
 Frame_Placement_Refusal :: enum u8 {
 	None,
@@ -60,11 +62,25 @@ place_free_foundation :: proc(entities: ^Entities, machines: Machine_Registry, m
 
 // The field content's foundation, NO_MACHINE when its machines have none
 // (a content without machines, as the field tests make).
-field_foundation :: proc(content: Field_Simulation_Content) -> Machine_Id {
-	if int(content.foundation) >= len(content.machines.machines) || content.machines.machines[content.foundation].kind != .Foundation {
+field_foundation :: proc(content: Simulation_Content) -> Machine_Id {
+	if int(content.field.foundation) >= len(content.machines.machines) || content.machines.machines[content.field.foundation].kind != .Foundation {
 		return NO_MACHINE
 	}
-	return content.foundation
+	return content.field.foundation
+}
+
+// The machine Place puts on a frame with the held tool: the foundation,
+// or the held machine (0179); NO_MACHINE for any other tool.
+field_placed_machine :: proc(player: Field_Player, content: Simulation_Content) -> Machine_Id {
+	#partial switch player.tool {
+	case .Foundation:
+		return field_foundation(content)
+	case .Machine:
+		if int(player.held_machine) < len(content.machines.machines) {
+			return player.held_machine
+		}
+	}
+	return NO_MACHINE
 }
 
 // The first machine of kind foundation, NO_MACHINE when the data has none.
@@ -81,21 +97,27 @@ find_foundation_machine :: proc(machines: Machine_Registry) -> Machine_Id {
 
 // A place command: a snapped placement names the frame and the cell, a
 // free one the hit and the heading its new frame takes; a run (0176,
-// belt_run_placement.odin) its two candidates instead.
+// belt_run_placement.odin) its two candidates instead; a torch and its
+// removal (0179, simulation_field.odin) its sample.
 Field_Placement_Kind :: enum u8 {
 	Machine,
 	Run,
+	Torch,
+	Torch_Removal,
 }
 
 Field_Placement :: struct {
 	kind:      Field_Placement_Kind,
 	run:       Field_Run_Placement,
 	machine:   Machine_Id,
+	// Quarter turns of a machine on its frame (0179).
+	rotation:  u8,
 	new_frame: bool,
 	frame:     Frame_Id,
 	cell:      World_Coordinate,
 	hit:       World_Position,
 	heading:   [3]i64,
+	sample:    Sample_Coordinate,
 }
 
 Queued_Field_Placement :: struct {
@@ -117,16 +139,18 @@ aim_field_player_at_frames :: proc(player: ^Field_Player, frames: ^Frame_Table, 
 	}
 }
 
-// Where Place with the foundation held puts one: against the targeted
-// frame's face, or free on the targeted ground.
-field_player_placement :: proc(player: Field_Player, foundation: Machine_Id) -> (placement: Field_Placement, wanted: bool) {
+// Where Place with a machine held puts it (field_placed_machine): against
+// the targeted frame's face, or, for a foundation, free on the targeted
+// ground. A machine other than a foundation needs a frame under it.
+field_player_placement :: proc(player: Field_Player, machine: Machine_Id) -> (placement: Field_Placement, wanted: bool) {
 	switch {
-	case foundation == NO_MACHINE || player.tool != .Foundation:
+	case machine == NO_MACHINE:
 		return {}, false
 	case player.frame_target.hit:
-		return Field_Placement{machine = foundation, frame = player.frame_target.frame, cell = player.frame_target.adjacent}, true
-	case player.target.hit:
-		return Field_Placement{machine = foundation, new_frame = true, hit = player.target.position, heading = field_player_heading(player)}, true
+		rotation := player.tool == .Foundation ? 0 : player.placement_rotation % 4
+		return Field_Placement{machine = machine, rotation = rotation, frame = player.frame_target.frame, cell = player.frame_target.adjacent}, true
+	case player.target.hit && player.tool == .Foundation:
+		return Field_Placement{machine = machine, new_frame = true, hit = player.target.position, heading = field_player_heading(player)}, true
 	}
 	return {}, false
 }
@@ -152,9 +176,19 @@ frame_cell_meets_capsule :: proc(frame: Frame, cell: World_Coordinate, capsule: 
 	return field_distance_to_capsule_axis(capsule, frame_cell_centre(frame, cell)) < capsule.radius + half_diagonal
 }
 
-field_placement_buries_a_player :: proc(simulation: ^Field_Simulation, tuning: Field_Player_Tuning, frame: Frame, cell: World_Coordinate) -> bool {
-	for player in simulation.players {
-		if frame_cell_meets_capsule(frame, cell, field_player_capsule(tuning, player.body)) {
+field_placement_buries_a_player :: proc(state: ^Simulation_State, tuning: Field_Player_Tuning, frame: Frame, cell: World_Coordinate) -> bool {
+	for player in state.players {
+		if frame_cell_meets_capsule(frame, cell, field_player_capsule(tuning, player.field)) {
+			return true
+		}
+	}
+	return false
+}
+
+// Any of the footprint's cells (field_placement_buries_a_player).
+field_footprint_buries_a_player :: proc(state: ^Simulation_State, content: Simulation_Content, frame: Frame, placement: Field_Placement, cell: World_Coordinate) -> bool {
+	for footprint_cell in footprint_cells(cell, content.machines.machines[placement.machine].footprint, placement.rotation) {
+		if field_placement_buries_a_player(state, content.field.tuning, frame, footprint_cell) {
 			return true
 		}
 	}
@@ -162,43 +196,53 @@ field_placement_buries_a_player :: proc(simulation: ^Field_Simulation, tuning: F
 }
 
 // The refusal of a queued placement, None when it may go ahead.
-field_placement_refusal :: proc(simulation: ^Field_Simulation, content: Field_Simulation_Content, player: Field_Miner, placement: Field_Placement) -> Field_Edit_Refusal {
-	frame, cell, found := field_placement_frame(&simulation.entities.frames, placement, content.foundation_pitch_millimetres)
+field_placement_refusal :: proc(state: ^Simulation_State, content: Simulation_Content, player: Player, placement: Field_Placement) -> Field_Edit_Refusal {
+	entities := &state.world.entities
+	frame, cell, found := field_placement_frame(&entities.frames, placement, content.field.foundation_pitch_millimetres)
 	switch {
 	case !found:
 		return .Unknown_Frame
 	case inventory_count(player.inventory, content.machines.machines[placement.machine].item) == 0:
 		return .Nothing_Held
-	case !placement.new_frame && frame_placement_refusal(&simulation.entities, content.machines, placement.machine, placement.frame, cell, 0) != .None:
+	case !placement.new_frame && frame_placement_refusal(entities, content.machines, placement.machine, placement.frame, cell, placement.rotation) != .None:
 		return .Frame_Cell_Taken
-	case field_placement_buries_a_player(simulation, content.tuning, frame, cell):
+	case field_footprint_buries_a_player(state, content, frame, placement, cell):
 		return .Would_Bury_Player
 	}
 	return .None
 }
 
 // The end of the tick, after the brush edits: every queued placement in
-// order, each taking one foundation item; then the queue is empty.
-drain_field_placements :: proc(simulation: ^Field_Simulation, content: Field_Simulation_Content) {
-	for queued in simulation.placements {
-		player := &simulation.players[queued.player]
+// order, each taking one item of its machine; then the queue is empty.
+drain_field_placements :: proc(state: ^Simulation_State, content: Simulation_Content) {
+	entities := &state.world.entities
+	for queued in state.field.placements {
+		player := &state.players[queued.player]
 		placement := queued.placement
-		if placement.kind == .Run {
-			drain_field_run_placement(simulation, content, player, placement.run)
+		switch placement.kind {
+		case .Run:
+			drain_field_run_placement(state, content, player, placement.run)
 			continue
+		case .Torch:
+			drain_field_torch(state, content, player, placement.sample)
+			continue
+		case .Torch_Removal:
+			drain_field_torch_removal(state, content, player, placement.sample)
+			continue
+		case .Machine:
 		}
-		if refusal := field_placement_refusal(simulation, content, player^, placement); refusal != .None {
-			player.refusal, player.refused_material = refusal, .Air
+		if refusal := field_placement_refusal(state, content, player^, placement); refusal != .None {
+			player.field_refusal, player.field_refused_material = refusal, .Air
 			continue
 		}
 		if placement.new_frame {
-			place_free_foundation(&simulation.entities, content.machines, placement.machine, placement.hit, placement.heading, content.foundation_pitch_millimetres)
+			place_free_foundation(entities, content.machines, placement.machine, placement.hit, placement.heading, content.field.foundation_pitch_millimetres)
 		} else {
-			place_on_frame(&simulation.entities, content.machines, placement.machine, placement.frame, placement.cell, 0)
+			place_on_frame(entities, content.machines, placement.machine, placement.frame, placement.cell, placement.rotation)
 		}
 		inventory_remove(player.inventory, content.machines.machines[placement.machine].item, 1)
 	}
-	clear(&simulation.placements)
+	clear(&state.field.placements)
 }
 
 // The save (save_state.odin, write_later_tables).
@@ -232,16 +276,17 @@ entity_frame_records :: proc(entities: ^Entities) -> []Entity_Frame_Record {
 // entities off frame 0, then the belt poles and runs (0176,
 // write_belt_run_tables). A world that never had a frame, a foundation, a
 // pole or a run writes nothing, so its bytes and its state hash are those
-// of a build before frames.
-write_frame_tables :: proc(bytes: ^[dynamic]byte, entities: ^Entities) {
-	if len(entities.frames.frames) == 0 && len(entities.foundations.entries) == 0 && len(entities.belt_poles.entries) == 0 && len(entities.belt_runs.entries) == 0 {
+// of a build before frames, unless always (a field world, whose field
+// tables follow) asks for them.
+write_frame_tables :: proc(bytes: ^[dynamic]byte, entities: ^Entities, always := false) {
+	if !always && len(entities.frames.frames) == 0 && len(entities.foundations.entries) == 0 && len(entities.belt_poles.entries) == 0 && len(entities.belt_runs.entries) == 0 {
 		return
 	}
 	write_pool(bytes, &entities.foundations)
 	write_list(bytes, entities.frames.frames[:])
 	append_u32(bytes, entities.frames.last_id)
 	write_list(bytes, entity_frame_records(entities))
-	write_belt_run_tables(bytes, entities)
+	write_belt_run_tables(bytes, entities, always)
 }
 
 // Ids rising from 1 up to the counter, and a pitch the transforms can

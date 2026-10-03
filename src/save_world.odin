@@ -27,6 +27,9 @@ SAVES_UNDER_DATA_HOME :: "mine-oh-belowed/saves"
 DATA_HOME_UNDER_HOME :: ".local/share"
 WORLD_FILE_NAME :: "world.sjson"
 ENTITIES_FILE_NAME :: "entities.bin"
+// The changed chunks of a field world (work item 0179,
+// simulation_field_save.odin).
+FIELD_FILE_NAME :: "field.bin"
 REGIONS_DIRECTORY_NAME :: "regions"
 REGION_FILE_MAGIC :: "MOBR"
 REGION_FILE_EXTENSION :: ".bin"
@@ -79,6 +82,10 @@ World_File :: struct {
 	// generation_planet_record.odin); a radius of zero means a file
 	// written before the record, which takes the data's values.
 	planet_generation:        Planet_Generation_Record,
+	// A field world (0179): the session played the terrain field and the
+	// save holds field.bin. A world without it is a block world, which
+	// the title does not load (saved_world_plan).
+	field_world:              bool,
 }
 
 // Where one world's save lives. The display name goes into world.sjson,
@@ -198,6 +205,7 @@ make_world_file :: proc(state: ^Simulation_State, display_name: string, last_pla
 		landing_pad_present = state.landing_pad.present,
 		landing_pad = cast([3]i32)state.landing_pad.centre,
 		planet_generation = planet_generation_record(state.world.planet),
+		field_world = state.field.enabled,
 	}
 }
 
@@ -438,6 +446,8 @@ Save_Files :: struct {
 	world:    []byte,
 	entities: []byte,
 	regions:  [dynamic]Region_File,
+	// field.bin of a field world, empty otherwise.
+	field:    []byte,
 }
 
 // The entities file's bytes, in the temp allocator.
@@ -459,6 +469,9 @@ encode_save_files :: proc(state: ^Simulation_State, content: Simulation_Content,
 	for region, chunks in group_chunks_by_region(collect_saved_chunks(&state.world)) {
 		append(&files.regions, Region_File{name = region_file_name(region), bytes = encode_region(header, region, chunks[:], context.temp_allocator)})
 	}
+	if state.field.enabled {
+		files.field = encode_field_file(&state.field, header)
+	}
 	return files
 }
 
@@ -472,6 +485,12 @@ write_save_files :: proc(directory: string, files: Save_Files) -> os.Error {
 	os.write_entire_file(platform.join_path(directory, ENTITIES_FILE_NAME), files.entities) or_return
 	for region in files.regions {
 		os.write_entire_file(platform.join_path(regions, region.name), region.bytes) or_return
+	}
+	if len(files.field) > 0 {
+		if problem := platform.write_file_replacing(platform.join_path(directory, FIELD_FILE_NAME), files.field); problem != "" {
+			platform.log_printf("error: cannot write the field: %s", problem)
+			return os.General_Error.Invalid_File
+		}
 	}
 	return nil
 }
@@ -670,7 +689,32 @@ load_world :: proc(state: ^Simulation_State, content: Simulation_Content, direct
 	if problem := load_entities_file(state, content, directory, expected, &remap); problem != "" {
 		return problem
 	}
+	if problem := load_field_file(state, directory, file, expected); problem != "" {
+		return problem
+	}
 	return load_region_files(&state.world, directory, expected, &remap)
+}
+
+// field.bin of a field world; a field world without one is refused.
+load_field_file :: proc(state: ^Simulation_State, directory: string, file: World_File, expected: Save_Header) -> string {
+	if !file.field_world {
+		return ""
+	}
+	path := platform.join_path(directory, FIELD_FILE_NAME)
+	data, error := os.read_entire_file(path, context.temp_allocator)
+	if error != nil {
+		return fmt.tprintf("cannot read %s: %v", path, error)
+	}
+	return field_file_problem(state, data, expected)
+}
+
+// A field world's entities hold the field tables (state.field.enabled
+// once read); the bytes go to decode_field_file.
+field_file_problem :: proc(state: ^Simulation_State, data: []byte, expected: Save_Header) -> string {
+	if !state.field.enabled {
+		return "the world file names a field world, but the entities hold no field"
+	}
+	return decode_field_file(&state.field, data, expected)
 }
 
 // load_world from a save's bytes (encode_save_files) instead of its
@@ -685,6 +729,11 @@ load_world_from_files :: proc(state: ^Simulation_State, content: Simulation_Cont
 	remap: Content_Remap
 	if problem := decode_entities(state, content, files.entities, name, expected, &remap); problem != "" {
 		return problem
+	}
+	if file.field_world {
+		if problem := field_file_problem(state, files.field, expected); problem != "" {
+			return problem
+		}
 	}
 	for region_file in files.regions {
 		region, named := parse_region_file_name(region_file.name)

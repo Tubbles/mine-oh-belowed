@@ -132,6 +132,7 @@ field_cell_is_ground :: proc(cell: Field_Light_Cell) -> bool {
 // The chunks that mesh the sample remesh, at every level of detail.
 set_field_cell_light :: proc(world: ^Field_World, cell: Field_Light_Cell, sample: Sample_Coordinate, channel: Field_Light_Channel, level: u8) {
 	field_light_bytes(cell.chunk, channel)[cell.index] = level
+	note_field_chunk_change(cell.chunk)
 	mark_field_chunks_around_sample_dirty(world, cell.chunk.coordinate, sample)
 	world.edited_chunks[cell.chunk.coordinate] = {}
 }

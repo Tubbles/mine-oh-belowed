@@ -119,38 +119,32 @@ test_the_field_places_foundations_through_the_queue :: proc(t: ^testing.T) {
 	items := make_test_items()
 	content := test_field_simulation_content(items, test_brush(.Sphere, 1000, 10))
 	content.machines = make_test_machines()
-	content.foundation = find_foundation_machine(content.machines)
-	content.foundation_pitch_millimetres = 500
-	simulation := Field_Simulation {
-		world               = make_test_field(Test_Terrain{kind = .Flat}, 1000),
-		spacing_millimetres = 1000,
-	}
-	defer destroy_field_simulation(&simulation)
+	content.field.foundation = find_foundation_machine(content.machines)
+	content.field.foundation_pitch_millimetres = 500
+	simulation := make_test_field_state(make_test_field(Test_Terrain{kind = .Flat}, 1000), 1000)
+	defer destroy_simulation(&simulation)
 	add_test_miner(&simulation, items, test_site_point(0, 0, 0), {"foundation", 3})
-	simulation.players[0].body.pitch = degrees_to_angle_units(-45)
+	simulation.players[0].field.pitch = degrees_to_angle_units(-45)
 	tick_field_simulation(&simulation, content, {})
-	testing.expect(t, simulation.players[0].body.target.hit)
-	update_field_tool(&simulation.players[0].body, Field_Player_Input{just_pressed = {.Next_Material}}, content)
-	for simulation.players[0].body.tool != .Foundation {
-		update_field_tool(&simulation.players[0].body, Field_Player_Input{just_pressed = {.Next_Material}}, content)
-	}
+	testing.expect(t, simulation.players[0].field.target.hit)
+	simulation.players[0].field.tool = .Foundation
 	place := [1]Field_Player_Input{{held = {.Place}, just_pressed = {.Place}}}
 	tick_field_simulation(&simulation, content, place[:])
-	testing.expect_value(t, simulation.players[0].refusal, Field_Edit_Refusal.None)
-	testing.expect_value(t, len(simulation.placements), 0)
-	testing.expect_value(t, len(simulation.entities.frames.frames), 1)
-	frame := simulation.entities.frames.frames[0].id
-	testing.expect_value(t, frame_cell_count(&simulation.entities.frames, frame), 1)
+	testing.expect_value(t, simulation.players[0].field_refusal, Field_Edit_Refusal.None)
+	testing.expect_value(t, len(simulation.field.placements), 0)
+	testing.expect_value(t, len(simulation.world.entities.frames.frames), 1)
+	frame := simulation.world.entities.frames.frames[0].id
+	testing.expect_value(t, frame_cell_count(&simulation.world.entities.frames, frame), 1)
 	testing.expect_value(t, inventory_count(simulation.players[0].inventory, test_item(items, "foundation")), 2)
 	// The tick aims before the queue drains, so the next tick sees the frame.
 	tick_field_simulation(&simulation, content, {})
-	testing.expect(t, simulation.players[0].body.frame_target.hit && !simulation.players[0].body.target.hit, "the frame is nearer than the ground under it")
-	snapped := simulation.players[0].body.frame_target.adjacent
+	testing.expect(t, simulation.players[0].field.frame_target.hit && !simulation.players[0].field.target.hit, "the frame is nearer than the ground under it")
+	snapped := simulation.players[0].field.frame_target.adjacent
 	tick_field_simulation(&simulation, content, place[:])
-	testing.expect_value(t, len(simulation.entities.frames.frames), 1)
-	testing.expect_value(t, frame_cell_count(&simulation.entities.frames, frame), 2)
+	testing.expect_value(t, len(simulation.world.entities.frames.frames), 1)
+	testing.expect_value(t, frame_cell_count(&simulation.world.entities.frames, frame), 2)
 	testing.expect(t, snapped != World_Coordinate{})
-	testing.expect_value(t, entity_at(&simulation.entities, snapped, frame).kind, Entity_Kind.Foundation)
+	testing.expect_value(t, entity_at(&simulation.world.entities, snapped, frame).kind, Entity_Kind.Foundation)
 }
 
 // A belt into an inserter into a chest on a foundation pad of frame 1,
@@ -199,20 +193,17 @@ test_a_belt_feeds_an_inserter_into_a_chest_on_frame_1 :: proc(t: ^testing.T) {
 
 // Two field players with a foundation each and one with none, a frame far
 // from them all.
-make_field_placement_test :: proc() -> (simulation: Field_Simulation, content: Field_Simulation_Content, items: Item_Registry, frame: Frame_Id) {
+make_field_placement_test :: proc() -> (simulation: Simulation_State, content: Simulation_Content, items: Item_Registry, frame: Frame_Id) {
 	items = make_test_items()
 	content = test_field_simulation_content(items, test_brush(.Sphere, 1000, 10))
 	content.machines = make_test_machines()
-	content.foundation = find_foundation_machine(content.machines)
-	content.foundation_pitch_millimetres = 500
-	simulation = Field_Simulation {
-		world               = make_test_field(Test_Terrain{kind = .Flat}, 1000),
-		spacing_millimetres = 1000,
-	}
+	content.field.foundation = find_foundation_machine(content.machines)
+	content.field.foundation_pitch_millimetres = 500
+	simulation = make_test_field_state(make_test_field(Test_Terrain{kind = .Flat}, 1000), 1000)
 	add_test_miner(&simulation, items, FAR_FEET, {"foundation", 1})
 	add_test_miner(&simulation, items, FAR_FEET + {0, 0, 10 * POSITION_UNITS_PER_METRE}, {"foundation", 1})
 	add_test_miner(&simulation, items, FAR_FEET + {0, 0, 20 * POSITION_UNITS_PER_METRE})
-	_, frame = place_free_foundation(&simulation.entities, content.machines, content.foundation, TEST_FRAME_HIT, {UNIT_VECTOR_ONE, 0, 0}, 500)
+	_, frame = place_free_foundation(&simulation.world.entities, content.machines, content.field.foundation, TEST_FRAME_HIT, {UNIT_VECTOR_ONE, 0, 0}, 500)
 	return
 }
 
@@ -224,30 +215,30 @@ make_field_placement_test :: proc() -> (simulation: Field_Simulation, content: F
 @(test)
 test_the_drain_validates_each_field_placement :: proc(t: ^testing.T) {
 	simulation, content, items, frame := make_field_placement_test()
-	defer destroy_field_simulation(&simulation)
+	defer destroy_simulation(&simulation)
 	foundation_item := test_item(items, "foundation")
-	snap := Field_Placement{machine = content.foundation, frame = frame, cell = {1, 0, 0}}
-	append(&simulation.placements, Queued_Field_Placement{player = 0, placement = snap}, Queued_Field_Placement{player = 1, placement = snap})
-	append(&simulation.placements, Queued_Field_Placement{player = 2, placement = Field_Placement{machine = content.foundation, frame = frame, cell = {2, 0, 0}}})
+	snap := Field_Placement{machine = content.field.foundation, frame = frame, cell = {1, 0, 0}}
+	append(&simulation.field.placements, Queued_Field_Placement{player = 0, placement = snap}, Queued_Field_Placement{player = 1, placement = snap})
+	append(&simulation.field.placements, Queued_Field_Placement{player = 2, placement = Field_Placement{machine = content.field.foundation, frame = frame, cell = {2, 0, 0}}})
 	drain_field_placements(&simulation, content)
-	testing.expect_value(t, len(simulation.placements), 0)
-	testing.expect_value(t, frame_cell_count(&simulation.entities.frames, frame), 2)
-	testing.expect_value(t, simulation.players[0].refusal, Field_Edit_Refusal.None)
+	testing.expect_value(t, len(simulation.field.placements), 0)
+	testing.expect_value(t, frame_cell_count(&simulation.world.entities.frames, frame), 2)
+	testing.expect_value(t, simulation.players[0].field_refusal, Field_Edit_Refusal.None)
 	testing.expect_value(t, inventory_count(simulation.players[0].inventory, foundation_item), 0)
-	testing.expect_value(t, simulation.players[1].refusal, Field_Edit_Refusal.Frame_Cell_Taken)
+	testing.expect_value(t, simulation.players[1].field_refusal, Field_Edit_Refusal.Frame_Cell_Taken)
 	testing.expect_value(t, inventory_count(simulation.players[1].inventory, foundation_item), 1)
-	testing.expect_value(t, simulation.players[2].refusal, Field_Edit_Refusal.Nothing_Held)
+	testing.expect_value(t, simulation.players[2].field_refusal, Field_Edit_Refusal.Nothing_Held)
 
-	gone := Field_Placement{machine = content.foundation, frame = Frame_Id(99), cell = {0, 1, 0}}
-	append(&simulation.placements, Queued_Field_Placement{player = 1, placement = gone})
+	gone := Field_Placement{machine = content.field.foundation, frame = Frame_Id(99), cell = {0, 1, 0}}
+	append(&simulation.field.placements, Queued_Field_Placement{player = 1, placement = gone})
 	drain_field_placements(&simulation, content)
-	testing.expect_value(t, simulation.players[1].refusal, Field_Edit_Refusal.Unknown_Frame)
+	testing.expect_value(t, simulation.players[1].field_refusal, Field_Edit_Refusal.Unknown_Frame)
 
-	over_feet := Field_Placement{machine = content.foundation, new_frame = true, hit = simulation.players[1].body.position, heading = {UNIT_VECTOR_ONE, 0, 0}}
-	append(&simulation.placements, Queued_Field_Placement{player = 1, placement = over_feet})
+	over_feet := Field_Placement{machine = content.field.foundation, new_frame = true, hit = simulation.players[1].field.position, heading = {UNIT_VECTOR_ONE, 0, 0}}
+	append(&simulation.field.placements, Queued_Field_Placement{player = 1, placement = over_feet})
 	drain_field_placements(&simulation, content)
-	testing.expect_value(t, simulation.players[1].refusal, Field_Edit_Refusal.Would_Bury_Player)
-	testing.expect_value(t, len(simulation.entities.frames.frames), 1)
+	testing.expect_value(t, simulation.players[1].field_refusal, Field_Edit_Refusal.Would_Bury_Player)
+	testing.expect_value(t, len(simulation.world.entities.frames.frames), 1)
 	testing.expect_value(t, inventory_count(simulation.players[1].inventory, foundation_item), 1)
 }
 

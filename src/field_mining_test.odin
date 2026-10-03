@@ -9,20 +9,45 @@ test_field_materials :: proc(items: Item_Registry) -> Field_Material_Table {
 	return table
 }
 
-test_field_simulation_content :: proc(items: Item_Registry, brush: Field_Brush) -> Field_Simulation_Content {
+test_field_simulation_content :: proc(items: Item_Registry, brush: Field_Brush) -> Simulation_Content {
 	brushes := make([]Field_Brush, 1, context.temp_allocator)
 	brushes[0] = brush
-	return Field_Simulation_Content{items = items, materials = test_field_materials(items), brushes = brushes, tuning = test_field_tuning(1000)}
+	content := Simulation_Content {
+		items = items,
+	}
+	content.field = Field_Content {
+		materials = test_field_materials(items),
+		brushes   = brushes,
+		tuning    = test_field_tuning(1000),
+	}
+	return content
 }
 
-// A player standing at feet carrying the stacks, looking straight down.
-add_test_miner :: proc(simulation: ^Field_Simulation, items: Item_Registry, feet: World_Position, stacks: ..Starting_Item) {
-	miner := Field_Miner {
-		body      = make_field_player(feet, {UNIT_VECTOR_ONE, 0, 0}),
-		inventory = make_inventory(PLAYER_INVENTORY_SLOT_COUNT),
+// A field session's state with nothing but the field world and the tick
+// rate; destroy_simulation frees it.
+make_test_field_state :: proc(world: Field_World, spacing_millimetres: int) -> Simulation_State {
+	return Simulation_State{field = Field_Simulation{enabled = true, world = world, spacing_millimetres = spacing_millimetres}, tick_rate = 60}
+}
+
+// The field's part of a tick on field inputs with the tools the test set
+// (the hotbar is not read): each player moves and queues, then the queues
+// drain, the water steps and the light spreads.
+tick_field_simulation :: proc(state: ^Simulation_State, content: Simulation_Content, inputs: []Field_Player_Input) {
+	state.tick += 1
+	for index in 0 ..< len(state.players) {
+		queue_field_player_edit(state, content, index, index < len(inputs) ? inputs[index] : Field_Player_Input{})
 	}
-	miner.body.pitch = -FIELD_PITCH_LIMIT
-	miner.body.held_material = .Stone
+	finish_field_tick(state, content)
+}
+
+// A player standing at feet carrying the stacks, looking straight down,
+// placing stone.
+add_test_miner :: proc(simulation: ^Simulation_State, items: Item_Registry, feet: World_Position, stacks: ..Starting_Item) {
+	miner := make_player(Player_Start{})
+	miner.field = make_field_player(feet, {UNIT_VECTOR_ONE, 0, 0})
+	miner.field.pitch = -FIELD_PITCH_LIMIT
+	miner.field.held_material = .Stone
+	miner.field.tool = .Material
 	for stack in stacks {
 		inventory_add(miner.inventory, items, test_item(items, stack.item), stack.count)
 	}
@@ -32,13 +57,13 @@ add_test_miner :: proc(simulation: ^Field_Simulation, items: Item_Registry, feet
 FAR_FEET :: World_Position{0, 100 * POSITION_UNITS_PER_METRE, 0}
 
 // The volume a player holds of a material, in the credit's unit.
-held_field_volume :: proc(simulation: ^Field_Simulation, content: Field_Simulation_Content, player: int, material: Field_Material) -> i64 {
+held_field_volume :: proc(simulation: ^Simulation_State, content: Simulation_Content, player: int, material: Field_Material) -> i64 {
 	miner := simulation.players[player]
-	return field_place_volume_available(miner.inventory, content.materials[material].item, miner.credit[material])
+	return field_place_volume_available(miner.inventory, content.field.materials[material].item, miner.field_credit[material])
 }
 
-drain_one_field_edit :: proc(simulation: ^Field_Simulation, content: Field_Simulation_Content, player: int, edit: Field_Edit) {
-	append(&simulation.edits, Queued_Field_Edit{player = player, edit = edit})
+drain_one_field_edit :: proc(simulation: ^Simulation_State, content: Simulation_Content, player: int, edit: Field_Edit) {
+	append(&simulation.field.edits, Queued_Field_Edit{player = player, edit = edit})
 	drain_field_edits(simulation, content)
 }
 
@@ -49,23 +74,20 @@ drain_one_field_edit :: proc(simulation: ^Field_Simulation, content: Field_Simul
 test_digging_stone_credits_stone_by_volume_and_carries_the_rest :: proc(t: ^testing.T) {
 	items := make_test_items()
 	content := test_field_simulation_content(items, test_brush(.Sphere, 1500, 50))
-	simulation := Field_Simulation {
-		world               = make_uniform_test_field({MAXIMUM_DENSITY, .Stone, 0}),
-		spacing_millimetres = 1000,
-	}
-	defer destroy_field_simulation(&simulation)
+	simulation := make_test_field_state(make_uniform_test_field({MAXIMUM_DENSITY, .Stone, 0}), 1000)
+	defer destroy_simulation(&simulation)
 	add_test_miner(&simulation, items, FAR_FEET, {"wooden_pickaxe", 1})
 	stone := test_item(items, "stone")
 	step_volume := field_steps_to_volume(1, 1000)
-	drain_one_field_edit(&simulation, content, 0, Field_Edit{mode = .Dig, brush = content.brushes[0], centre = sample_to_world_position({0, 0, 0}, 1000)})
+	drain_one_field_edit(&simulation, content, 0, Field_Edit{mode = .Dig, brush = content.field.brushes[0], centre = sample_to_world_position({0, 0, 0}, 1000)})
 	testing.expect_value(t, inventory_count(simulation.players[0].inventory, stone), 7)
-	testing.expect_value(t, simulation.players[0].credit[.Stone], 950 * step_volume - 7 * FIELD_ITEM_VOLUME)
-	drain_one_field_edit(&simulation, content, 0, Field_Edit{mode = .Dig, brush = content.brushes[0], centre = sample_to_world_position({8, 8, 8}, 1000)})
+	testing.expect_value(t, simulation.players[0].field_credit[.Stone], 950 * step_volume - 7 * FIELD_ITEM_VOLUME)
+	drain_one_field_edit(&simulation, content, 0, Field_Edit{mode = .Dig, brush = content.field.brushes[0], centre = sample_to_world_position({8, 8, 8}, 1000)})
 	count := inventory_count(simulation.players[0].inventory, stone)
 	testing.expect_value(t, count, 14)
-	testing.expect_value(t, simulation.players[0].credit[.Stone], 1900 * step_volume - 14 * FIELD_ITEM_VOLUME)
+	testing.expect_value(t, simulation.players[0].field_credit[.Stone], 1900 * step_volume - 14 * FIELD_ITEM_VOLUME)
 	testing.expect(t, i64(count) * FIELD_ITEM_VOLUME <= 1900 * step_volume && 1900 * step_volume < i64(count + 1) * FIELD_ITEM_VOLUME, "within one item")
-	testing.expect_value(t, simulation.players[0].refusal, Field_Edit_Refusal.None)
+	testing.expect_value(t, simulation.players[0].field_refusal, Field_Edit_Refusal.None)
 }
 
 // One stone is a cubic metre: 127 steps of one sample at 1 m.
@@ -73,25 +95,22 @@ test_digging_stone_credits_stone_by_volume_and_carries_the_rest :: proc(t: ^test
 test_placing_a_cubic_metre_of_stone_takes_one_item :: proc(t: ^testing.T) {
 	items := make_test_items()
 	content := test_field_simulation_content(items, test_brush(.Sphere, 1500, 254))
-	simulation := Field_Simulation {
-		world               = make_uniform_test_field(FIELD_AIR_SAMPLE),
-		spacing_millimetres = 1000,
-	}
-	defer destroy_field_simulation(&simulation)
+	simulation := make_test_field_state(make_uniform_test_field(FIELD_AIR_SAMPLE), 1000)
+	defer destroy_simulation(&simulation)
 	add_test_miner(&simulation, items, FAR_FEET, {"stone", 1})
 	place := Field_Edit {
 		mode     = .Place,
-		brush    = content.brushes[0],
+		brush    = content.field.brushes[0],
 		centre   = sample_to_world_position({0, 0, 0}, 1000),
 		material = .Stone,
 	}
 	drain_one_field_edit(&simulation, content, 0, place)
 	testing.expect_value(t, inventory_count(simulation.players[0].inventory, test_item(items, "stone")), 0)
-	testing.expect_value(t, simulation.players[0].credit[.Stone], 0)
-	testing.expect_value(t, field_steps_to_volume(field_ground_steps(&simulation.world), 1000), FIELD_ITEM_VOLUME)
+	testing.expect_value(t, simulation.players[0].field_credit[.Stone], 0)
+	testing.expect_value(t, field_steps_to_volume(field_ground_steps(&simulation.field.world), 1000), FIELD_ITEM_VOLUME)
 	drain_one_field_edit(&simulation, content, 0, place)
-	testing.expect_value(t, simulation.players[0].refusal, Field_Edit_Refusal.Nothing_Held)
-	testing.expect_value(t, field_ground_steps(&simulation.world), MAXIMUM_DENSITY)
+	testing.expect_value(t, simulation.players[0].field_refusal, Field_Edit_Refusal.Nothing_Held)
+	testing.expect_value(t, field_ground_steps(&simulation.field.world), MAXIMUM_DENSITY)
 }
 
 // Two players dig the same ground in one tick: the queue holds both edits
@@ -102,34 +121,33 @@ test_placing_a_cubic_metre_of_stone_takes_one_item :: proc(t: ^testing.T) {
 test_two_edits_of_one_tick_apply_in_order_at_its_end :: proc(t: ^testing.T) {
 	items := make_test_items()
 	content := test_field_simulation_content(items, test_brush(.Sphere, 1500, 100))
-	simulation := Field_Simulation {
-		world               = make_test_field(Test_Terrain{kind = .Flat}, 1000),
-		spacing_millimetres = 1000,
-	}
-	defer destroy_field_simulation(&simulation)
+	simulation := make_test_field_state(make_test_field(Test_Terrain{kind = .Flat}, 1000), 1000)
+	defer destroy_simulation(&simulation)
 	for _ in 0 ..< 2 {
 		add_test_miner(&simulation, items, test_site_point(0, 0, 0), {"wooden_pickaxe", 1})
 	}
-	before := field_ground_steps(&simulation.world)
+	before := field_ground_steps(&simulation.field.world)
 	inputs := [2]Field_Player_Input{{held = {.Dig}}, {held = {.Dig}}}
-	queue_field_player_edits(&simulation, content, inputs[:])
-	testing.expect_value(t, len(simulation.edits), 2)
-	testing.expect_value(t, field_ground_steps(&simulation.world), before)
+	for input, index in inputs {
+		queue_field_player_edit(&simulation, content, index, input)
+	}
+	testing.expect_value(t, len(simulation.field.edits), 2)
+	testing.expect_value(t, field_ground_steps(&simulation.field.world), before)
 	expected := make_test_field(Test_Terrain{kind = .Flat}, 1000)
 	defer destroy_field_world(&expected)
 	results: [2]Field_Edit_Result
-	for queued, index in simulation.edits {
+	for queued, index in simulation.field.edits {
 		edit := queued.edit
 		edit.diggable = {.Stone}
 		results[index] = apply_field_edit(&expected, 1000, edit)
 	}
 	drain_field_edits(&simulation, content)
-	testing.expect_value(t, len(simulation.edits), 0)
+	testing.expect_value(t, len(simulation.field.edits), 0)
 	testing.expect(t, results[0].steps[.Stone] > results[1].steps[.Stone] && results[1].steps[.Stone] > 0, "the second edit took what the first left")
 	for index in 0 ..< 2 {
 		testing.expect_value(t, held_field_volume(&simulation, content, index, .Stone), field_steps_to_volume(results[index].steps[.Stone], 1000))
 	}
-	testing.expect(t, field_worlds_equal(&simulation.world, &expected), "the field is the two edits in order")
+	testing.expect(t, field_worlds_equal(&simulation.field.world, &expected), "the field is the two edits in order")
 }
 
 // A brush over ground above the carried tool's tier digs nothing and says
@@ -144,23 +162,21 @@ test_a_brush_over_a_harder_material_digs_nothing :: proc(t: ^testing.T) {
 		refusal:  Field_Edit_Refusal,
 	}{{.Deep_Stone, "wooden_pickaxe", .Tool_Tier}, {.Bedrock, "iron_pickaxe", .Undiggable}, {.Deep_Stone, "iron_pickaxe", .None}}
 	for entry in cases {
-		simulation := Field_Simulation {
-			world               = make_uniform_test_field({MAXIMUM_DENSITY, entry.material, 0}),
-			spacing_millimetres = 1000,
-		}
-		defer destroy_field_simulation(&simulation)
+		simulation := make_test_field_state(make_uniform_test_field({MAXIMUM_DENSITY, entry.material, 0}), 1000)
+		defer destroy_simulation(&simulation)
 		add_test_miner(&simulation, items, FAR_FEET, {entry.tool, 1})
-		before := field_ground_steps(&simulation.world)
-		drain_one_field_edit(&simulation, content, 0, Field_Edit{mode = .Dig, brush = content.brushes[0], centre = sample_to_world_position({0, 0, 0}, 1000)})
-		testing.expect_value(t, simulation.players[0].refusal, entry.refusal)
-		dug := before - field_ground_steps(&simulation.world)
+		before := field_ground_steps(&simulation.field.world)
+		drain_one_field_edit(&simulation, content, 0, Field_Edit{mode = .Dig, brush = content.field.brushes[0], centre = sample_to_world_position({0, 0, 0}, 1000)})
+		testing.expect_value(t, simulation.players[0].field_refusal, entry.refusal)
+		dug := before - field_ground_steps(&simulation.field.world)
 		if entry.refusal == .None {
-			testing.expect_value(t, dug, 19 * 50)
+			// Deep stone digs at its dig_rate_percent of 60 (0179).
+			testing.expect_value(t, dug, 19 * 50 * 60 / 100)
 			continue
 		}
 		testing.expect_value(t, dug, 0)
-		testing.expect_value(t, simulation.players[0].refused_material, entry.material)
-		testing.expect_value(t, simulation.players[0].credit[entry.material], 0)
+		testing.expect_value(t, simulation.players[0].field_refused_material, entry.material)
+		testing.expect_value(t, simulation.players[0].field_credit[entry.material], 0)
 	}
 }
 
@@ -171,19 +187,16 @@ test_a_brush_over_a_harder_material_digs_nothing :: proc(t: ^testing.T) {
 test_the_edit_queue_is_empty_between_ticks :: proc(t: ^testing.T) {
 	items := make_test_items()
 	content := test_field_simulation_content(items, test_brush(.Sphere, 1000, 20))
-	simulation := Field_Simulation {
-		world               = make_test_field(Test_Terrain{kind = .Flat}, 1000),
-		spacing_millimetres = 1000,
-	}
-	defer destroy_field_simulation(&simulation)
+	simulation := make_test_field_state(make_test_field(Test_Terrain{kind = .Flat}, 1000), 1000)
+	defer destroy_simulation(&simulation)
 	add_test_miner(&simulation, items, test_site_point(0, 0, 0), {"wooden_pickaxe", 1})
-	before := field_ground_steps(&simulation.world)
+	before := field_ground_steps(&simulation.field.world)
 	inputs := [1]Field_Player_Input{{held = {.Dig}}}
 	for _ in 0 ..< 40 {
 		tick_field_simulation(&simulation, content, inputs[:])
-		testing.expect_value(t, len(simulation.edits), 0)
+		testing.expect_value(t, len(simulation.field.edits), 0)
 	}
-	dug := before - field_ground_steps(&simulation.world)
+	dug := before - field_ground_steps(&simulation.field.world)
 	testing.expect(t, dug > 0, "the player dug")
 	testing.expect_value(t, held_field_volume(&simulation, content, 0, .Stone), field_steps_to_volume(dug, 1000))
 	testing.expect_value(t, simulation.tick, 40)
@@ -199,30 +212,27 @@ test_a_place_that_would_bury_a_player_is_refused :: proc(t: ^testing.T) {
 	items := make_test_items()
 	for spacing in TEST_FIELD_SPACINGS {
 		content := test_field_simulation_content(items, test_brush(.Sphere, 1000, 254))
-		content.tuning = test_field_tuning(spacing)
-		simulation := Field_Simulation {
-			world               = make_test_field(Test_Terrain{kind = .Flat}, spacing),
-			spacing_millimetres = spacing,
-		}
-		defer destroy_field_simulation(&simulation)
+		content.field.tuning = test_field_tuning(spacing)
+		simulation := make_test_field_state(make_test_field(Test_Terrain{kind = .Flat}, spacing), spacing)
+		defer destroy_simulation(&simulation)
 		add_test_miner(&simulation, items, test_site_point(0, 0, 0), {"stone", 10})
-		before := field_ground_steps(&simulation.world)
-		beside := Field_Edit{mode = .Place, brush = content.brushes[0], centre = test_site_point(metres_to_position_units(1), 0, 0), material = .Stone}
+		before := field_ground_steps(&simulation.field.world)
+		beside := Field_Edit{mode = .Place, brush = content.field.brushes[0], centre = test_site_point(metres_to_position_units(1), 0, 0), material = .Stone}
 		drain_one_field_edit(&simulation, content, 0, beside)
-		testing.expectf(t, simulation.players[0].refusal == .Would_Bury_Player, "beside the feet at %d mm", spacing)
-		testing.expect_value(t, field_ground_steps(&simulation.world), before)
+		testing.expectf(t, simulation.players[0].field_refusal == .Would_Bury_Player, "beside the feet at %d mm", spacing)
+		testing.expect_value(t, field_ground_steps(&simulation.field.world), before)
 		testing.expect_value(t, inventory_count(simulation.players[0].inventory, test_item(items, "stone")), 10)
 
 		level := Field_Edit{mode = .Place, brush = test_brush(.Level, 2000, 254), centre = test_site_point(metres_to_position_units(1), 0, 0), up = {0, UNIT_VECTOR_ONE, 0}, material = .Stone}
 		drain_one_field_edit(&simulation, content, 0, level)
-		testing.expectf(t, simulation.players[0].refusal == .None, "a level place at the feet at %d mm", spacing)
-		testing.expect_value(t, field_ground_steps(&simulation.world), before)
+		testing.expectf(t, simulation.players[0].field_refusal == .None, "a level place at the feet at %d mm", spacing)
+		testing.expect_value(t, field_ground_steps(&simulation.field.world), before)
 
 		at_reach := beside
 		at_reach.centre = test_site_point(metres_to_position_units(4), 0, 0)
 		drain_one_field_edit(&simulation, content, 0, at_reach)
-		testing.expectf(t, simulation.players[0].refusal == .None, "at the reach at %d mm", spacing)
-		testing.expectf(t, field_ground_steps(&simulation.world) > before, "the place at the reach raised the field at %d mm", spacing)
+		testing.expectf(t, simulation.players[0].field_refusal == .None, "at the reach at %d mm", spacing)
+		testing.expectf(t, field_ground_steps(&simulation.field.world) > before, "the place at the reach raised the field at %d mm", spacing)
 	}
 }
 
@@ -263,23 +273,37 @@ test_the_field_material_table :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(problem, "missing dig_rate_percent"), problem)
 }
 
-// The brush key cycles the brushes, the material key the materials with
-// an item (bedrock has none, so deep stone is followed by the first ore).
+// The hotbar's stack decides the tool (0179): stone places stone, a
+// foundation the foundation, the torch the torch, a pickaxe is the hand;
+// the brush key cycles the brushes, and turns a held machine instead.
 @(test)
-test_the_tool_keys_cycle_brushes_and_materials :: proc(t: ^testing.T) {
+test_the_hotbar_decides_the_field_tool :: proc(t: ^testing.T) {
 	items := make_test_items()
 	content := test_field_simulation_content(items, test_brush(.Sphere, 1000, 10))
+	content.machines = make_test_machines()
+	content.field.foundation = find_foundation_machine(content.machines)
+	content.field.torch_item = test_item(items, "torch")
 	brushes := [2]Field_Brush{test_brush(.Sphere, 1000, 10), test_brush(.Level, 2000, 5)}
-	content.brushes = brushes[:]
-	player := Field_Player {
-		held_material = .Stone,
+	content.field.brushes = brushes[:]
+	player := make_player(Player_Start{})
+	defer destroy_player(player)
+	cases := [?]struct {
+		item: string,
+		tool: Field_Held_Tool,
+	}{{"stone", .Material}, {"foundation", .Foundation}, {"torch", .Torch}, {"wooden_pickaxe", .Hand}, {"wooden_chest", .Machine}}
+	for entry, slot in cases {
+		inventory_add(player.inventory, items, test_item(items, entry.item), 1)
+		player.selected_hotbar_slot = slot
+		update_field_held_tool(&player, content, {})
+		testing.expectf(t, player.field.tool == entry.tool, "%s: %v", entry.item, player.field.tool)
 	}
-	update_field_tool(&player, Field_Player_Input{just_pressed = {.Next_Brush, .Next_Material}}, content)
-	testing.expect_value(t, player.brush, 1)
-	testing.expect_value(t, player.held_material, Field_Material.Deep_Stone)
-	update_field_tool(&player, Field_Player_Input{just_pressed = {.Next_Brush, .Next_Material}}, content)
-	testing.expect_value(t, player.brush, 0)
-	testing.expect_value(t, player.held_material, Field_Material.Hematite_Ore)
+	update_field_held_tool(&player, content, {just_pressed = {.Next_Brush}})
+	testing.expect_value(t, player.field.placement_rotation, 1)
+	testing.expect_value(t, player.field.brush, 0)
+	player.selected_hotbar_slot = 0
+	update_field_held_tool(&player, content, {just_pressed = {.Next_Brush}})
+	testing.expect_value(t, player.field.held_material, Field_Material.Stone)
+	testing.expect_value(t, player.field.brush, 1)
 }
 
 // The shipped brushes pass; an empty list, an unknown shape, a twice used

@@ -21,6 +21,10 @@ Simulation_Content :: struct {
 	// Chapter kits for the developer menu and --chapter.
 	developer_kits: Developer_Kits,
 	generator:    ^Generator,
+	// The terrain field's tables for the session's planet, spacing and
+	// tick rate (field_mining.odin, make_field_content); zero outside a
+	// field session.
+	field:        Field_Content,
 }
 
 // The content as a simulation sees it: the recipe registry carries the
@@ -142,7 +146,9 @@ tick_entities_on_world :: proc(world: ^World, records: ^Game_Records, content: S
 // the players, so a stack dropped into a furnace this tick is seen at once.
 // Machines see the found schematics through the recipe registry
 // (recipe_runs_in_machines). A profile (tick_profile.odin) gets the wall
-// time of each step.
+// time of each step. A field session's players walk the terrain field
+// instead (tick_field_session_players, simulation_field.odin), whose
+// edits, placements, water and light finish before the entities tick.
 // Code outside the simulation run inside the tick, after the simulated
 // chunk set is derived and before the player commands apply: the lockstep
 // driver's socket lines (lockstep.odin).
@@ -163,7 +169,13 @@ simulation_tick :: proc(state: ^Simulation_State, content_tables: Simulation_Con
 		hook.procedure(hook.data)
 	}
 	apply_player_commands(state, content)
+	if state.field.enabled {
+		tick_field_session_players(state, content, inputs)
+	}
 	for index in 0 ..< len(state.players) {
+		if state.field.enabled {
+			break
+		}
 		input, used := resolve_use_item(&state.players[index], &state.world.entities, content.items, index < len(inputs) ? inputs[index] : Input_Frame{})
 		if used != NO_ITEM {
 			if event, happened := apply_item_use(state, content, index, used); happened {

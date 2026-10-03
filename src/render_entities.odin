@@ -143,8 +143,8 @@ draw_held_item :: proc(position: [3]f32, items: Item_Registry, item: Item_Id) {
 // The arm (render_arm.odin) posed from the cycle, lit like a model.
 draw_inserter_model :: proc(inserter: Inserter, machine: Machine, models: Model_Renderer, items: Item_Registry, frame: Model_Frame) -> bool {
 	arm := machine_arm_model(models, inserter.machine) or_return
-	light_tint := model_light_tint(world_get_light(frame.world, model_light_cell(inserter.common)), frame.day_factor, frame.sky_tint)
-	placement := inserter_arm_placement(&frame.world.entities, inserter, machine, frame.tick_rate)
+	light_tint := model_light_tint(model_frame_light(frame, model_light_cell(inserter.common)), frame.day_factor, frame.sky_tint)
+	placement := model_frame_arm_placement(frame, inserter, machine)
 	draw_placed_arm(models, arm, placement, light_tint, inserter.held, items)
 	return true
 }

@@ -11,6 +11,13 @@ import "platform"
 // one; starting or loading a world makes one and quitting to the title
 // destroys it. Heap allocated, since the streaming workers keep a pointer
 // to its generator.
+//
+// New World and Load start a field session (work item 0179): the players
+// walk the terrain field of the world's planet (Simulation_State.field),
+// whose chunks the field streaming's workers generate and mesh
+// (field_streaming); the block world's set and its streaming stay idle.
+// A world made without planet data (the tests' block worlds) and the debug
+// terrain are block sessions.
 Session :: struct {
 	simulation:         Simulation_State,
 	generator:          Generator,
@@ -42,6 +49,12 @@ Session :: struct {
 	// the world was made with (resolve_world_planet); the world's planet
 	// and its settings' planet id borrow it.
 	planet:             Planet,
+	// A field session's workers (generating the simulated set's chunks and
+	// meshing the level of detail's nodes) and its field tables
+	// (Simulation_Content.field, its brushes owned); zero in a block
+	// session.
+	field_streaming:    Field_Streaming,
+	field_content:      Field_Content,
 }
 
 // What a session starts from: a new world's seed and settings, or a save.
@@ -59,11 +72,43 @@ Session_Plan :: struct {
 	files:         ^Save_Files,
 }
 
-// The content with the world's technologies.
-session_simulation_content :: proc(content: Game_Content, technologies: Technology_Registry) -> Simulation_Content {
+// The content with the world's technologies and field tables.
+session_simulation_content :: proc(content: Game_Content, technologies: Technology_Registry, field: Field_Content) -> Simulation_Content {
 	simulation_content := content.simulation_content
 	simulation_content.technologies = technologies
+	simulation_content.field = field
 	return simulation_content
+}
+
+// A loaded world plays the field when its file says so; a new one when
+// the data has planets and it is not the debug terrain.
+session_plays_field :: proc(plan: Session_Plan, content: Game_Content) -> bool {
+	if plan.loading {
+		return plan.file.field_world
+	}
+	return len(content.planets) > 0 && !plan.debug_terrain
+}
+
+// The field of a field session, once its simulation and planet are set:
+// its tables, a new world's field and its first player at the home, a
+// loaded world's chunks restored (restore_field_chunks), the water's
+// planet and the workers.
+start_field_world :: proc(session: ^Session, plan: Session_Plan, config: Game_Config, content: Game_Content) -> string {
+	simulation := &session.simulation
+	field := &simulation.field
+	seed := simulation.world.settings.seed
+	if !plan.loading {
+		enable_new_field_world(simulation, config, session.planet, plan.settings.sample_spacing_millimetres)
+	}
+	session.field_content = make_field_content(config, content.items, content.machines, content.field_materials, content.lighting, session.planet, field.spacing_millimetres)
+	field.world.water_planet = make_field_water_planet(seed, session.planet, field.spacing_millimetres)
+	if plan.loading {
+		if problem := restore_field_chunks(simulation); problem != "" {
+			return problem
+		}
+	}
+	session.field_streaming = start_field_streaming(seed, session.planet, field.spacing_millimetres, default_worker_count())
+	return ""
 }
 
 // The generator's data is the same for every world; the seed, the vein
@@ -88,7 +133,7 @@ clone_save_setup :: proc(save: Save_Setup) -> Save_Setup {
 make_session_simulation :: proc(plan: Session_Plan, config: Game_Config, content: Game_Content, session: ^Session) -> (simulation: Simulation_State, problem: string) {
 	world_config := config
 	world_config.day_length_seconds = plan.settings.day_length_seconds
-	simulation_content := session_simulation_content(content, session.technologies)
+	simulation_content := session_simulation_content(content, session.technologies, {})
 	start := session.start
 	if plan.loading && plan.files != nil {
 		simulation = make_simulation(world_config, start.player, simulation_content, simulation_content.technologies, plan.file.settings.all_recipes_unlocked, start.landing_pad)
@@ -141,10 +186,18 @@ start_session :: proc(requested_plan: Session_Plan, config: Game_Config, content
 	}
 	session.simulation, problem = make_session_simulation(plan, config, content, session)
 	session.simulation.world.planet = session.planet
+	field := session_plays_field(plan, content)
 	if problem == "" && plan.debug_terrain {
 		problem = build_session_debug_terrain(&session.simulation.world, content.blocks)
 	}
+	if problem == "" && field {
+		problem = start_field_world(session, plan, config, content)
+	}
 	if problem != "" {
+		if session.field_streaming.shared != nil {
+			stop_field_streaming(&session.field_streaming)
+		}
+		delete(session.field_content.brushes)
 		destroy_simulation(&session.simulation)
 		delete(session.technologies.technologies)
 		destroy_recorded_planet(&session.planet)
@@ -153,11 +206,11 @@ start_session :: proc(requested_plan: Session_Plan, config: Game_Config, content
 	}
 	session.save = clone_save_setup(plan.save)
 	session.accumulator = make_tick_accumulator(config.tick_rate)
-	if !plan.debug_terrain {
+	if !plan.debug_terrain && !field {
 		session.simulation.chunk_set = make_simulated_chunk_set(config.simulated_chunk_radius_horizontal, config.simulated_chunk_radius_vertical)
 	}
 	session.lockstep = make_single_player_lockstep(session.simulation.tick, session.start.player)
-	session.streaming = start_chunk_streaming(&session.generator, content.blocks, !plan.debug_terrain, default_worker_count())
+	session.streaming = start_chunk_streaming(&session.generator, content.blocks, !plan.debug_terrain && !field, default_worker_count())
 	return session, ""
 }
 
@@ -173,6 +226,10 @@ build_session_debug_terrain :: proc(world: ^World, registry: Block_Registry) -> 
 // Workers read the session's generator, so they stop first.
 end_session :: proc(session: ^Session) {
 	stop_chunk_streaming(&session.streaming)
+	if session.field_streaming.shared != nil {
+		stop_field_streaming(&session.field_streaming)
+	}
+	delete(session.field_content.brushes)
 	destroy_session_network(&session.network)
 	destroy_lockstep(&session.lockstep)
 	destroy_simulation(&session.simulation)
@@ -189,7 +246,7 @@ save_session :: proc(session: ^Session, content: Game_Content) -> string {
 	if !session.save.enabled {
 		return "saving is off for this world"
 	}
-	simulation_content := session_simulation_content(content, session.technologies)
+	simulation_content := session_simulation_content(content, session.technologies, session.field_content)
 	problem := save_world(&session.simulation, simulation_content, session.save.location, time.to_unix_seconds(time.now()))
 	if problem == "" {
 		session.ticks_since_save = 0
@@ -245,6 +302,9 @@ saved_world_plan :: proc(saves_directory, directory_name: string) -> (plan: Sess
 	file, problem = read_world_file(directory, context.temp_allocator)
 	if problem != "" {
 		return {}, problem
+	}
+	if !file.field_world {
+		return {}, fmt.tprintf("%q is a block world, which this build does not play; the dev kits are not rebuilt here (M14)", file.name)
 	}
 	location.display_name = file.name
 	plan = Session_Plan {

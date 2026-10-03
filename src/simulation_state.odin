@@ -46,6 +46,10 @@ Simulation_State :: struct {
 	// The pad the world was created with, written to world.sjson so a loaded
 	// world keeps it whatever the spawn rules do later (0049).
 	landing_pad:        Landing_Pad_Site,
+	// The terrain field (0179, field_mining.odin): its simulated chunks,
+	// the per tick queues and the torches. A field session sets
+	// field.enabled.
+	field:              Field_Simulation,
 }
 
 // The game's records the tick keeps beside the world's blocks.
@@ -121,6 +125,7 @@ destroy_simulation :: proc(state: ^Simulation_State) {
 	destroy_quest_state(state.quests)
 	destroy_world(&state.world)
 	destroy_game_records(&state.records)
+	destroy_field_simulation(&state.field)
 }
 
 destroy_game_records :: proc(records: ^Game_Records) {

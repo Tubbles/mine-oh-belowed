@@ -50,8 +50,12 @@ Field_Box :: struct {
 // What choosing the nodes reads, in World_Position units. The shell holds
 // every surface the generation can make: the radius plus or minus the
 // relief and a node's margin.
+// more_cameras are the other viewports' eyes (0179): a node's distance is
+// its nearest camera's, so one selection serves every viewport without
+// two nodes covering one place.
 Field_View :: struct {
 	camera:              World_Position,
+	more_cameras:        []World_Position,
 	level_distances:     [FIELD_LEVEL_COUNT]i64,
 	shell_inner:         i64,
 	shell_outer:         i64,
@@ -151,6 +155,9 @@ select_field_node :: proc(view: Field_View, node: Field_Node, selected: ^[dynami
 		return
 	}
 	distance_squared := box_distance_squared(box, view.camera)
+	for camera in view.more_cameras {
+		distance_squared = min(distance_squared, box_distance_squared(box, camera))
+	}
 	level, visible := field_level_for_distance(distance_squared, view.level_distances)
 	if !visible {
 		return
@@ -179,19 +186,27 @@ field_walk_top_level :: proc(view: Field_View) -> i32 {
 }
 
 // The nodes to draw, split down the octree from the 27 nodes of the walk's
-// top level around the camera; nearest first, so streaming serves the near
+// top level around each camera; nearest first, so streaming serves the near
 // ones first.
 select_field_nodes :: proc(view: Field_View, allocator := context.allocator) -> []Field_Node {
 	top := field_walk_top_level(view)
 	node_size := sample_axis_to_position(field_node_samples(top), view.spacing_millimetres)
-	centre: [3]i32
-	for axis in 0 ..< 3 {
-		centre[axis] = i32(floor_divide_i64(view.camera[axis], node_size))
-	}
 	selected := make([dynamic]Field_Node_Distance, context.temp_allocator)
-	for child in 0 ..< 27 {
-		offset := [3]i32{i32(child % 3), i32(child / 3 % 3), i32(child / 9)} - 1
-		select_field_node(view, Field_Node{top, centre + offset}, &selected)
+	walked := make(map[Field_Node]struct{}, context.temp_allocator)
+	for camera_index in -1 ..< len(view.more_cameras) {
+		camera := camera_index < 0 ? view.camera : view.more_cameras[camera_index]
+		centre: [3]i32
+		for axis in 0 ..< 3 {
+			centre[axis] = i32(floor_divide_i64(camera[axis], node_size))
+		}
+		for child in 0 ..< 27 {
+			offset := [3]i32{i32(child % 3), i32(child / 3 % 3), i32(child / 9)} - 1
+			node := Field_Node{top, centre + offset}
+			if node not_in walked {
+				walked[node] = {}
+				select_field_node(view, node, &selected)
+			}
+		}
 	}
 	slice.sort_by(selected[:], field_node_distance_before)
 	nodes := make([]Field_Node, len(selected), allocator)

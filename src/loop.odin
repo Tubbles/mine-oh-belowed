@@ -117,6 +117,15 @@ Frame_Presentation :: struct {
 	window_scale:       [2]f32,
 	platform:           Window_Platform,
 	renderer:           Chunk_Renderer,
+	// A field session's terrain renderer (loop_field_session.odin), made
+	// when the session starts; ready false outside one or when it did not
+	// load.
+	field_renderer:       Field_Renderer,
+	field_renderer_ready: bool,
+	// The frame's field node selection over every viewport's eye, made
+	// once (frame_field_selection) and cleared at the end of render_frame;
+	// in the temp allocator.
+	field_selection:      []Field_Node,
 	// The item icons (render_icons.odin), rebuilt with the block atlas;
 	// content.items.icon_loaded points into it.
 	item_atlas:         Item_Atlas,
@@ -190,7 +199,7 @@ INITIAL_FLY_CAMERA :: Fly_Camera {
 // between update and render (serve_data_browser) replaces the item
 // registry's icon_loaded, so a copy never outlives its phase.
 frame_simulation_content :: proc(state: ^Frame_State) -> Simulation_Content {
-	content := session_simulation_content(state.content, state.session.technologies)
+	content := session_simulation_content(state.content, state.session.technologies, state.session.field_content)
 	content.generator = &state.session.generator
 	return content
 }
@@ -432,8 +441,13 @@ stamp_viewport_records :: proc(state: ^Frame_State, worlds: []Input_Frame) -> bo
 			continue
 		}
 		tick_input, next := take_tick_input(viewport.tick_input, worlds[index])
+		remainder := viewport.field_turn_remainder
+		if session.simulation.field.enabled {
+			tick_input, remainder = carry_field_turn(tick_input, remainder, session.simulation.tick_rate)
+		}
 		if stamp_local_record(&session.lockstep, session.simulation.tick, tick_input, local) {
 			viewport.tick_input = next
+			viewport.field_turn_remainder = remainder
 			stamped = true
 		}
 	}
@@ -491,7 +505,7 @@ update_session :: proc(state: ^Frame_State, content: Simulation_Content) {
 	save_when_due(state)
 	show_network_notices(state)
 	own := session_local_player_index(session)
-	stream_session_chunks(session, world_to_chunk_coordinate(camera_world_coordinate(lockstep_view_player(lockstep, simulation, own).position)))
+	stream_session_chunks(session, world_to_chunk_coordinate(camera_world_coordinate(lockstep_view_player(lockstep, simulation, own).position)), frame_field_selection(state))
 }
 
 // The local player's records out and everyone's in: offline straight
@@ -581,7 +595,7 @@ advance_session_join :: proc(join: ^Session_Join, config: Game_Config, content: 
 // player's records stamped empty up to its window, the records in and
 // out, every ready tick, its chunks.
 catch_up_joined_session :: proc(session: ^Session, game_content: Game_Content, control: ^Command_Control) {
-	content := session_simulation_content(game_content, session.technologies)
+	content := session_simulation_content(game_content, session.technologies, session.field_content)
 	content.generator = &session.generator
 	for local in 0 ..< len(session.lockstep.locals) {
 		for stamp_local_record(&session.lockstep, session.simulation.tick, Input_Frame{}, local) {
@@ -590,7 +604,7 @@ catch_up_joined_session :: proc(session: ^Session, game_content: Game_Content, c
 	exchange_session_records(session, content)
 	answers := make([dynamic]Line_Answer, context.temp_allocator)
 	run_ready_ticks(session, content, control, &answers)
-	stream_session_chunks(session, player_chunk(session.simulation.players[0]))
+	stream_session_chunks(session, player_chunk(session.simulation.players[0]), nil)
 }
 
 // The local player's entry exists and the records that were there ran.
@@ -644,9 +658,13 @@ session_local_player :: proc(session: ^Session) -> ^Player {
 
 // The simulated chunk set's chunks to the workers, the generated ones back
 // as chunk ready commands for the next tick, the tick's unloads to the
-// renderer.
-stream_session_chunks :: proc(session: ^Session, camera_chunk: Chunk_Coordinate) {
+// renderer; in a field session the field's set and the viewports' nodes
+// (stream_field_session).
+stream_session_chunks :: proc(session: ^Session, camera_chunk: Chunk_Coordinate, field_selection: []Field_Node) {
 	simulation := &session.simulation
+	if simulation.field.enabled {
+		stream_field_session(session, field_selection)
+	}
 	frame := Chunk_Stream_Frame {
 		requested    = simulated_chunk_requests(simulation),
 		held         = held_chunk_arrivals(simulation),
@@ -701,6 +719,11 @@ draw_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, content: S
 		begin_render_pixel_drawing()
 		return
 	}
+	if session.simulation.field.enabled {
+		draw_field_viewport_world(state, viewport, content, sky)
+		begin_render_pixel_drawing()
+		return
+	}
 	memory := &viewport.presentation.cue_memory
 	cues, memory^ = detect_cues(memory^, observe_cue_counters(memory^, &session.simulation, viewport.player))
 	counts = draw_session_world(state, viewport, content, sky, weather, &cues)
@@ -732,6 +755,8 @@ draw_split_viewports :: proc(state: ^Frame_State, content: Simulation_Content, s
 }
 
 render_frame :: proc(state: ^Frame_State) {
+	// The selection lives in the frame's temp memory.
+	defer state.presentation.field_selection = nil
 	place_viewports(state, render_size())
 	if state.session == nil {
 		rl.BeginDrawing()
@@ -749,6 +774,10 @@ render_frame :: proc(state: ^Frame_State) {
 	weather := session_weather(session, state.settings.weather)
 	sky := weathered_day_sky(day_sky(simulation_day_ticks(session.simulation), session.simulation.day_length_ticks), weather)
 	apply_daylight(&state.presentation.renderer, sky)
+	field := session.simulation.field.enabled
+	if field {
+		prepare_field_frame(state)
+	}
 	content := frame_simulation_content(state)
 	split := state.viewport_count > 1
 	counts: Frame_Render_Counts
@@ -778,7 +807,8 @@ render_frame :: proc(state: ^Frame_State) {
 		counts, cues = draw_viewport_world(state, &state.viewports[0], content, sky, weather)
 	}
 	counts.uploaded_meshes = pending_before_upload - session.streaming.pending_jobs
-	if viewport_player_ready(session, state.viewports[0]) {
+	// The sounds read the block world; a field session has none yet.
+	if viewport_player_ready(session, state.viewports[0]) && !field {
 		play_frame_sounds(&state.presentation.audio, &state.presentation.sound_memory, session_sound_frame(state, content, weather, cues))
 	}
 	switch state.developer.diagnostics_page {
@@ -1321,6 +1351,11 @@ Game_Content :: struct {
 	// The planet records (data_planet.odin); the terrain field generates
 	// from them (generation_planet.odin).
 	planets:         []Planet,
+	// The terrain field's material table (field_mining.odin) and the
+	// light's curve and emitters (data_lighting.odin), which a field
+	// session's Field_Content is made from (make_field_content).
+	field_materials: Field_Material_Table,
+	lighting:        Lighting_File,
 	item_sort_ranks: []u16,
 	recipe_names:    []string,
 	recipe_order:    []int,
@@ -1380,11 +1415,15 @@ enter_session :: proc(state: ^Frame_State, session: ^Session) {
 	}
 	state.session = session
 	state.presentation.sound_memory = {}
+	if session.simulation.field.enabled {
+		start_field_presentation(state)
+	}
 	// The world starts in the first viewport alone, its player the
 	// machine's own.
 	viewport := &state.viewports[0]
 	viewport.player = session_local_player_index(session)
 	viewport.tick_input = {}
+	viewport.field_turn_remainder = {}
 	viewport.interaction.session_views = make_session_views()
 	viewport.presentation = Viewport_Presentation {
 		target = viewport.presentation.target,
@@ -1406,6 +1445,7 @@ leave_session :: proc(state: ^Frame_State) {
 		platform.log_printf("world: saved %q", session.save.location.display_name)
 	}
 	unload_all_chunk_meshes(&state.presentation.renderer)
+	stop_field_presentation(&state.presentation)
 	end_session(session)
 	remove_extra_viewports(state)
 	destroy_session_views(&state.viewports[0].interaction.session_views)

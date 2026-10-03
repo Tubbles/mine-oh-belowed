@@ -104,6 +104,12 @@ Chunk_Ready_Command :: struct {
 	result: Chunk_Job_Result,
 }
 
+// A generated terrain field chunk (0179), owned by the command until the
+// field's simulated chunk set takes it (simulation_field_chunk_set.odin).
+Field_Chunk_Ready_Command :: struct {
+	chunk: ^Field_Chunk,
+}
+
 Player_Command :: union {
 	Research_Command,
 	Craft_Command,
@@ -123,6 +129,7 @@ Player_Command :: union {
 	Developer_Request,
 	Add_Player_Command,
 	Chunk_Ready_Command,
+	Field_Chunk_Ready_Command,
 	// The slot commands (player_command_slots.odin).
 	Slot_Primary_Command,
 	Slot_Split_Command,
@@ -155,12 +162,16 @@ queue_player_command :: proc(list: ^[dynamic]Queued_Player_Command, player: int,
 // player's and crosses the network in its input record.
 command_is_relayed :: proc(command: Player_Command) -> bool {
 	_, chunk := command.(Chunk_Ready_Command)
-	return !chunk
+	_, field_chunk := command.(Field_Chunk_Ready_Command)
+	return !chunk && !field_chunk
 }
 
 destroy_player_command :: proc(command: Player_Command) {
 	if ready, is_chunk := command.(Chunk_Ready_Command); is_chunk {
 		free_job_result(ready.result)
+	}
+	if ready, is_chunk := command.(Field_Chunk_Ready_Command); is_chunk {
+		free(ready.chunk)
 	}
 }
 
@@ -171,11 +182,16 @@ destroy_player_commands :: proc(list: ^[dynamic]Queued_Player_Command) {
 	delete(list^)
 }
 
-// Moves the chunk arrivals into arrived_chunks and leaves the rest of the
-// list in order. A second arrival of one coordinate replaces the first.
+// Moves the chunk arrivals (block and field) into their arrived chunks
+// and leaves the rest of the list in order. A second arrival of one
+// coordinate replaces the first.
 stage_chunk_arrivals :: proc(state: ^Simulation_State) {
 	kept := 0
 	for queued in state.player_commands {
+		if field_ready, is_field := queued.command.(Field_Chunk_Ready_Command); is_field {
+			stage_field_chunk_arrival(&state.field, field_ready.chunk)
+			continue
+		}
 		ready, is_chunk := queued.command.(Chunk_Ready_Command)
 		if !is_chunk {
 			state.player_commands[kept] = queued
@@ -215,7 +231,7 @@ apply_player_command :: proc(state: ^Simulation_State, content: Simulation_Conte
 		apply_developer_command(state, content, queued.player, command)
 	case Add_Player_Command:
 		add_player_entry(state, content, queued.player, command.start)
-	case Chunk_Ready_Command:
+	case Chunk_Ready_Command, Field_Chunk_Ready_Command:
 	case Research_Command:
 		refused = queue_research(&state.records.research, content.technologies, state.unlocks, command.technology) != .None
 	case Craft_Command:
@@ -277,13 +293,18 @@ apply_developer_command :: proc(state: ^Simulation_State, content: Simulation_Co
 }
 
 // Only at the end of the array, so every machine numbers the players
-// alike.
+// alike. On the field the new player stands at the home with the starter
+// kit (make_field_session_player).
 add_player_entry :: proc(state: ^Simulation_State, content: Simulation_Content, index: int, start: Player_Start) {
 	if index != len(state.players) {
 		platform.log_printf("error: player %d cannot join as entry %d of %d", index, index, len(state.players))
 		return
 	}
-	append(&state.players, make_player(start))
+	if state.field.enabled {
+		append(&state.players, make_field_session_player(state^, content, start))
+	} else {
+		append(&state.players, make_player(start))
+	}
 	platform.log_printf("simulation: player %d joined at tick %d", index, state.tick)
 }
 
@@ -386,7 +407,7 @@ player_command_valid :: proc(command: Player_Command, content: Simulation_Conten
 		return developer_request_valid(value, content)
 	case Slot_Primary_Command, Slot_Split_Command, Slot_Sort_Command, Distribute_Command, Return_Held_Command, Drop_Stack_Command, Quick_Move_Command, Transfer_Button_Command, Grid_Transfer_Command, Inserter_Hand_Command:
 		return slot_command_valid(value, content)
-	case Cancel_Craft_Command, Power_Switch_Command, Assembly_Command, Launch_Command, Hotbar_Slot_Command, Close_Machine_Command, Debug_Remove_Block_Command, Debug_Drop_Item_Command, Add_Player_Command, Chunk_Ready_Command:
+	case Cancel_Craft_Command, Power_Switch_Command, Assembly_Command, Launch_Command, Hotbar_Slot_Command, Close_Machine_Command, Debug_Remove_Block_Command, Debug_Drop_Item_Command, Add_Player_Command, Chunk_Ready_Command, Field_Chunk_Ready_Command:
 		return true
 	}
 	return false

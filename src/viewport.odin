@@ -82,6 +82,9 @@ Viewport :: struct {
 	// Frame input to tick input (Tick_Input_Accumulator), reset with the
 	// session.
 	tick_input:     Tick_Input_Accumulator,
+	// A field session's turn fraction in angle units, carried from one
+	// stamped record to the next (carry_field_turn), reset with the session.
+	field_turn_remainder: [2]f32,
 	// What its screens asked for (Screen_Context.requests). The game's
 	// requests (GLOBAL_FRAME_REQUESTS) move to Frame_State.requests after
 	// the UI pass (collect_global_requests); the rest serve this viewport.

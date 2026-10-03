@@ -237,42 +237,39 @@ test_the_field_lays_a_run_through_the_queue :: proc(t: ^testing.T) {
 	items := make_test_items()
 	content := test_field_simulation_content(items, test_brush(.Sphere, 1000, 10))
 	content.machines = make_test_machines()
-	content.foundation_pitch_millimetres = TEST_RUN_PITCH
-	content.belt_pole = find_machine_of_kind(content.machines, .Belt_Pole)
-	content.run_belt = find_belt_machine(content.machines, .Flat)
-	content.belt_runs = data_belt_run_constraints()
-	simulation := Field_Simulation {
-		world               = make_test_field(Test_Terrain{kind = .Flat}, 1000),
-		spacing_millimetres = 1000,
-	}
-	defer destroy_field_simulation(&simulation)
+	content.field.foundation_pitch_millimetres = TEST_RUN_PITCH
+	content.field.belt_pole = find_machine_of_kind(content.machines, .Belt_Pole)
+	content.field.run_belt = find_belt_machine(content.machines, .Flat)
+	content.field.belt_runs = data_belt_run_constraints()
+	simulation := make_test_field_state(make_test_field(Test_Terrain{kind = .Flat}, 1000), 1000)
+	defer destroy_simulation(&simulation)
 	add_test_miner(&simulation, items, test_site_point(0, 0, 0), {"belt_pole", 2})
 	player := &simulation.players[0]
-	player.body.pitch = degrees_to_angle_units(-45)
-	player.body.tool = .Belt_Run
+	player.field.pitch = degrees_to_angle_units(-45)
+	player.field.tool = .Belt_Run
 	place := [1]Field_Player_Input{{held = {.Place}, just_pressed = {.Place}}}
 	back := [1]Field_Player_Input{{just_pressed = {.Back}}}
 	tick_field_simulation(&simulation, content, place[:])
-	testing.expect(t, player.body.run_started)
-	testing.expect_value(t, player.body.run_start.kind, Belt_Run_Candidate_Kind.Free_Pole)
+	testing.expect(t, player.field.run_started)
+	testing.expect_value(t, player.field.run_start.kind, Belt_Run_Candidate_Kind.Free_Pole)
 	tick_field_simulation(&simulation, content, back[:])
-	testing.expect(t, !player.body.run_started)
+	testing.expect(t, !player.field.run_started)
 	tick_field_simulation(&simulation, content, place[:])
-	testing.expect(t, player.body.run_started)
-	player.body.yaw += ANGLE_UNITS_PER_QUARTER
+	testing.expect(t, player.field.run_started)
+	player.field.yaw += ANGLE_UNITS_PER_QUARTER
 	tick_field_simulation(&simulation, content, place[:])
-	testing.expect_value(t, player.refusal, Field_Edit_Refusal.None)
-	testing.expect(t, !player.body.run_started)
-	testing.expect_value(t, pool_alive_count(simulation.entities.belt_poles), 2)
-	testing.expect_value(t, pool_alive_count(simulation.entities.belt_runs), 1)
+	testing.expect_value(t, player.field_refusal, Field_Edit_Refusal.None)
+	testing.expect(t, !player.field.run_started)
+	testing.expect_value(t, pool_alive_count(simulation.world.entities.belt_poles), 2)
+	testing.expect_value(t, pool_alive_count(simulation.world.entities.belt_runs), 1)
 	testing.expect_value(t, inventory_count(player.inventory, test_item(items, "belt_pole")), 0)
-	testing.expect_value(t, len(simulation.placements), 0)
+	testing.expect_value(t, len(simulation.field.placements), 0)
 	// No poles left: a run needing a new pole is refused Nothing_Held.
 	tick_field_simulation(&simulation, content, place[:])
-	player.body.yaw += ANGLE_UNITS_PER_QUARTER
+	player.field.yaw += ANGLE_UNITS_PER_QUARTER
 	tick_field_simulation(&simulation, content, place[:])
-	testing.expect_value(t, player.refusal, Field_Edit_Refusal.Nothing_Held)
-	testing.expect_value(t, pool_alive_count(simulation.entities.belt_runs), 1)
+	testing.expect_value(t, player.field_refusal, Field_Edit_Refusal.Nothing_Held)
+	testing.expect_value(t, pool_alive_count(simulation.world.entities.belt_runs), 1)
 }
 
 // Four metres up over eight on: the chord climbs 50 percent, under the
@@ -434,9 +431,9 @@ test_undoing_planned_poles_leaves_no_frame :: proc(t: ^testing.T) {
 	items := make_test_items()
 	content := test_field_simulation_content(items, test_brush(.Sphere, 1000, 10))
 	content.machines = make_test_machines()
-	content.foundation_pitch_millimetres = TEST_RUN_PITCH
-	content.belt_pole = find_machine_of_kind(content.machines, .Belt_Pole)
-	content.belt_runs = data_belt_run_constraints()
+	content.field.foundation_pitch_millimetres = TEST_RUN_PITCH
+	content.field.belt_pole = find_machine_of_kind(content.machines, .Belt_Pole)
+	content.field.belt_runs = data_belt_run_constraints()
 	entities: Entities
 	defer destroy_entities(&entities)
 	frames := len(entities.frames.frames)
@@ -463,18 +460,15 @@ test_two_players_running_to_one_pole_in_a_tick :: proc(t: ^testing.T) {
 	items := make_test_items()
 	content := test_field_simulation_content(items, test_brush(.Sphere, 1000, 10))
 	content.machines = make_test_machines()
-	content.foundation_pitch_millimetres = TEST_RUN_PITCH
-	content.belt_pole = find_machine_of_kind(content.machines, .Belt_Pole)
-	content.run_belt = find_belt_machine(content.machines, .Flat)
-	content.belt_runs = data_belt_run_constraints()
-	simulation := Field_Simulation {
-		world               = make_test_field(Test_Terrain{kind = .Flat}, 1000),
-		spacing_millimetres = 1000,
-	}
-	defer destroy_field_simulation(&simulation)
+	content.field.foundation_pitch_millimetres = TEST_RUN_PITCH
+	content.field.belt_pole = find_machine_of_kind(content.machines, .Belt_Pole)
+	content.field.run_belt = find_belt_machine(content.machines, .Flat)
+	content.field.belt_runs = data_belt_run_constraints()
+	simulation := make_test_field_state(make_test_field(Test_Terrain{kind = .Flat}, 1000), 1000)
+	defer destroy_simulation(&simulation)
 	add_test_miner(&simulation, items, test_site_point(0, 0, 0))
 	add_test_miner(&simulation, items, test_site_point(2, 0, 0))
-	entities := &simulation.entities
+	entities := &simulation.world.entities
 	first := add_test_pole(entities, content.machines, {0, 0, 0}, 0)
 	second := add_test_pole(entities, content.machines, {0, 0, 6 * TEST_RUN_METRE}, 0)
 	shared := add_test_pole(entities, content.machines, {10 * TEST_RUN_METRE, 0, 3 * TEST_RUN_METRE}, 0)
@@ -484,13 +478,13 @@ test_two_players_running_to_one_pole_in_a_tick :: proc(t: ^testing.T) {
 			entry := pool_get(&entities.belt_poles, pole)
 			candidates[role] = {kind = .Existing, endpoint = {pole = pole, frame = entry.frame, cell = entry.origin}}
 		}
-		placement := Field_Placement{kind = .Run, run = {kind = .Belt, machine = content.run_belt, candidates = candidates}}
-		append(&simulation.placements, Queued_Field_Placement{player = player, placement = placement})
+		placement := Field_Placement{kind = .Run, run = {kind = .Belt, machine = content.field.run_belt, candidates = candidates}}
+		append(&simulation.field.placements, Queued_Field_Placement{player = player, placement = placement})
 	}
 	drain_field_placements(&simulation, content)
-	testing.expect_value(t, simulation.players[0].refusal, Field_Edit_Refusal.None)
-	testing.expect_value(t, simulation.players[1].refusal, Field_Edit_Refusal.Run_Refused)
-	testing.expect_value(t, simulation.players[1].run_refusal, Belt_Run_Refusal.Endpoint_Taken)
+	testing.expect_value(t, simulation.players[0].field_refusal, Field_Edit_Refusal.None)
+	testing.expect_value(t, simulation.players[1].field_refusal, Field_Edit_Refusal.Run_Refused)
+	testing.expect_value(t, simulation.players[1].field_run_refusal, Belt_Run_Refusal.Endpoint_Taken)
 	testing.expect_value(t, pool_alive_count(entities.belt_runs), 1)
 }
 

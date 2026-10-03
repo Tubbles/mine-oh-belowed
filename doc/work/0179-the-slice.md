@@ -1,6 +1,6 @@
 # 0179: The slice: the content, the world settings and the switch to the field world
 
-Status: todo (last of M13)
+Status: implemented (2026-10-03; the switch to the field world in the third part; the wiring round places the pod at the home spawn, registers the veins at session start and adds the belt line test; the dev kits, the factories on frames and the benchmark above size 1 wait for M14)
 
 ## Goal
 
@@ -21,3 +21,7 @@ The first playable slice as PLAN.md's M13 verify statement: a large planet gener
 - The build and check commands of 0168; the benchmark harness runs on the field world at size 1 (larger sizes in M14).
 - Tests: a new world at each preset generates a planet of that radius; the slice's recipe chain is reachable from an empty inventory; the belt line from the drill through the arm fills the chest; the state hash of two instances agrees over the slice's first thousand ticks.
 - M13's verify statement: two machines on the home network and a split screen pair on the couch share the sphere for twenty minutes while all four dig, place and run the belt line, with no desync, and the user judges the walk, the digging and the arm at the three radii.
+
+## Implementation notes
+
+- The switch (third part, 2026-10-03, `doc/log/2026-10-03.md`): New World and Load start a field session (`start_field_world`, `simulation_field.odin`, `simulation_field_chunk_set.odin`, `simulation_field_save.odin`, `loop_field_session.odin`); the field's state is `Simulation_State.field`, each player's body `Player.field`, the frames in `World.entities`. A block world's save is refused naming M14. The spawn for the wiring round's `place_pod`: `field_home_player` and `make_field_session_player`; the veins register in `start_field_world` (`session.odin`) after `enable_new_field_world` and `make_field_content`. Tests: `simulation_field_test.odin`.

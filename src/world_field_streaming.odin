@@ -7,41 +7,45 @@ import "core:thread"
 
 // Field streaming (work item 0169, doc/architecture.md, Threads and chunk
 // streaming): the block streaming's pattern for the terrain field. Worker
-// threads generate field chunks and mesh nodes; the main thread inserts,
-// unloads and schedules. Workers never touch the Field_World: a mesh job of
-// the finest level carries a private copy of the chunk and its shell
-// (gather_field_grid), a coarser one generates its grid on the worker
-// (generate_field_grid), from the samples of the loaded chunks it reads,
-// copied on the main thread (gather_coarse_field_grid), and the seed for
-// the rest. Each mesh job carries the node's revision; a result
-// whose revision is no longer the node's latest is dropped, so an edited
-// chunk (dirty again) remeshes on the next revision and an old result
-// never overwrites a new one.
+// threads generate field chunks and mesh nodes; the main thread schedules.
+// The chunks the workers generate are the simulated set's (0179,
+// simulation_field_chunk_set.odin): the frame names them (requested), and
+// the generated chunks go back to the caller (arrivals), which hands them
+// to the tick as Field_Chunk_Ready_Command, so only the tick inserts and
+// unloads chunks. Workers never touch the Field_World: a mesh job of the
+// finest level whose chunk and shell are simulated carries a private copy
+// of them (gather_field_grid); any other node, a finest one beyond the set
+// included, generates its grid on the worker (generate_field_grid), from
+// the samples of the loaded chunks it reads, copied on the main thread
+// (gather_coarse_field_grid), and the seed for the rest. A finest node
+// meshed so stays drawn when its chunks leave the set, and meshes again
+// from its chunks once they and their shell are simulated. Each mesh job
+// carries the node's revision; a result whose revision is no longer the
+// node's latest is dropped, so an edited chunk (dirty again) remeshes on
+// the next revision and an old result never overwrites a new one.
 
 MAXIMUM_FIELD_PENDING_JOBS :: 32
 MAXIMUM_FIELD_GENERATED_PER_FRAME :: 16
 // A finest level mesh job copies a chunk and its shell on the main thread.
 MAXIMUM_FIELD_MESH_SUBMISSIONS_PER_FRAME :: 8
 MAXIMUM_FIELD_MESH_RESULTS_PER_FRAME :: 8
-// A chunk's own step first, so a node's chunk is generated before its
-// neighbours.
-FIELD_NEIGHBOUR_STEPS :: [3]i32{0, -1, 1}
 
 Field_Job_Kind :: enum u8 {
 	Generate,
 	Mesh,
 }
 
-// Generate jobs name a chunk (a finest level node). A Mesh job of the
-// finest level carries its grid; a coarser one carries the samples of the
-// loaded chunks it reads, or none, and generates the rest. skirt_faces
-// are the node's faces that border a coarser node or none
-// (field_node_skirt_faces).
+// Generate jobs name a chunk (a finest level node). A Mesh job of a finest
+// node whose chunks are simulated carries its grid whole; any other
+// (generate set) carries the samples of the loaded chunks it reads, or
+// none, and generates the rest. skirt_faces are the node's faces that
+// border a coarser node or none (field_node_skirt_faces).
 Field_Job :: struct {
 	kind:        Field_Job_Kind,
 	node:        Field_Node,
 	revision:    u64,
 	grid:        ^Field_Grid,
+	generate:    bool,
 	skirt_faces: Field_Faces,
 }
 
@@ -92,6 +96,9 @@ Field_Streaming :: struct {
 	// Coarser nodes over an edited chunk, meshed again once nothing of
 	// theirs is in flight (mark_edited_coarse_nodes).
 	remesh:         map[Field_Node]struct{},
+	// Finest nodes last meshed from a generated grid, since their chunks
+	// were not all simulated (schedule_finest_field_mesh).
+	finest_generated: map[Field_Node]struct{},
 	next_revision:  u64,
 	pending_jobs:   int,
 	// Nodes no longer selected this frame, whose meshes the renderer drops.
@@ -155,7 +162,7 @@ run_field_job :: proc(shared: ^Field_Worker_Shared, job: Field_Job) -> Field_Job
 		if grid == nil {
 			grid = new(Field_Grid, context.temp_allocator)
 		}
-		if job.node.level > 0 {
+		if job.generate {
 			generate_field_grid(shared.generation, job.node, grid)
 		}
 		result.mesh = mesh_field_grid(grid, shared.planet.palette, shared.generation.spacing_millimetres, job.skirt_faces)
@@ -224,6 +231,7 @@ stop_field_streaming :: proc(streaming: ^Field_Streaming) {
 	delete(streaming.skirt_faces)
 	delete(streaming.in_flight)
 	delete(streaming.remesh)
+	delete(streaming.finest_generated)
 	delete(streaming.dropped)
 	streaming^ = {}
 }
@@ -241,56 +249,38 @@ mark_field_neighbours_dirty :: proc(world: ^Field_World, coordinate: Field_Chunk
 	}
 }
 
-// The chunks the finest selected nodes mesh from: each and its 26
-// neighbours.
-wanted_field_chunks :: proc(selection: []Field_Node, allocator := context.allocator) -> map[Field_Chunk_Coordinate]struct{} {
-	wanted := make(map[Field_Chunk_Coordinate]struct{}, allocator)
-	for node in selection {
-		if node.level != 0 {
-			continue
-		}
-		for z in i32(-1) ..= 1 {
-			for y in i32(-1) ..= 1 {
-				for x in i32(-1) ..= 1 {
-					wanted[field_node_chunk(node) + {x, y, z}] = {}
-				}
-			}
-		}
+// The generated chunks the tick may take: those still requested and not
+// in the world or held already go to arrivals, the rest are freed.
+receive_field_chunks :: proc(streaming: ^Field_Streaming, world: ^Field_World, frame: Field_Stream_Frame, arrivals: ^[dynamic]^Field_Chunk) {
+	requested := make(map[Field_Chunk_Coordinate]struct{}, len(frame.requested), context.temp_allocator)
+	for coordinate in frame.requested {
+		requested[coordinate] = {}
 	}
-	return wanted
-}
-
-receive_field_chunks :: proc(streaming: ^Field_Streaming, world: ^Field_World, wanted: map[Field_Chunk_Coordinate]struct{}) {
 	for result in take_field_results(streaming.shared, .Generate, MAXIMUM_FIELD_GENERATED_PER_FRAME, context.temp_allocator) {
 		streaming.pending_jobs -= 1
 		coordinate := field_node_chunk(result.node)
 		delete_key(&streaming.generating, coordinate)
-		if coordinate in world.chunks || coordinate not_in wanted {
+		if coordinate in world.chunks || coordinate in frame.held || coordinate not_in requested {
 			free_field_job_result(result)
 			continue
 		}
-		field_world_insert_chunk(world, result.chunk)
-		mark_field_neighbours_dirty(world, coordinate)
+		append(arrivals, result.chunk)
 	}
 }
 
-// Chunks no selected node meshes from leave the world. The field has no
-// save yet (0168), so an edited chunk's changes leave with it. The water
-// beside a leaving chunk below sea level wakes, so it can become a sea
-// edge (wake_field_water_beside_missing).
-unload_unwanted_field_chunks :: proc(world: ^Field_World, wanted: map[Field_Chunk_Coordinate]struct{}) {
-	leaving := make([dynamic]Field_Chunk_Coordinate, context.temp_allocator)
-	for coordinate in world.chunks {
-		if coordinate not_in wanted {
-			append(&leaving, coordinate)
+// The requested chunks not in the world, held or on the workers, in the
+// order given, while the pending budget lasts.
+schedule_field_chunk_generation :: proc(streaming: ^Field_Streaming, world: ^Field_World, frame: Field_Stream_Frame) {
+	for coordinate in frame.requested {
+		if streaming.pending_jobs >= MAXIMUM_FIELD_PENDING_JOBS {
+			return
 		}
-	}
-	for coordinate in leaving {
-		free(world.chunks[coordinate])
-		delete_key(&world.chunks, coordinate)
-	}
-	for coordinate in leaving {
-		wake_field_water_beside_missing(world, coordinate)
+		if coordinate in world.chunks || coordinate in frame.held || coordinate in streaming.generating {
+			continue
+		}
+		streaming.generating[coordinate] = {}
+		submit_field_job(streaming.shared, Field_Job{kind = .Generate, node = field_chunk_node(coordinate)})
+		streaming.pending_jobs += 1
 	}
 }
 
@@ -311,6 +301,7 @@ drop_unselected_field_nodes :: proc(streaming: ^Field_Streaming, selection: []Fi
 		delete_key(&streaming.mesh_revisions, node)
 		delete_key(&streaming.skirt_faces, node)
 		delete_key(&streaming.remesh, node)
+		delete_key(&streaming.finest_generated, node)
 	}
 }
 
@@ -327,31 +318,13 @@ field_chunk_neighbours_loaded :: proc(world: ^Field_World, coordinate: Field_Chu
 	return true
 }
 
-submit_field_mesh_job :: proc(streaming: ^Field_Streaming, node: Field_Node, grid: ^Field_Grid, skirt_faces: Field_Faces) {
+submit_field_mesh_job :: proc(streaming: ^Field_Streaming, node: Field_Node, grid: ^Field_Grid, generate: bool, skirt_faces: Field_Faces) {
 	streaming.next_revision += 1
 	streaming.mesh_revisions[node] = streaming.next_revision
 	streaming.in_flight[node] = streaming.next_revision
 	streaming.skirt_faces[node] = skirt_faces
-	submit_field_job(streaming.shared, Field_Job{kind = .Mesh, node = node, revision = streaming.next_revision, grid = grid, skirt_faces = skirt_faces})
+	submit_field_job(streaming.shared, Field_Job{kind = .Mesh, node = node, revision = streaming.next_revision, grid = grid, generate = generate, skirt_faces = skirt_faces})
 	streaming.pending_jobs += 1
-}
-
-// The node's own chunk first, then its 26 neighbours, while the pending
-// budget lasts.
-schedule_field_node_chunks :: proc(streaming: ^Field_Streaming, world: ^Field_World, node: Field_Node) {
-	for index in 0 ..< 27 {
-		if streaming.pending_jobs >= MAXIMUM_FIELD_PENDING_JOBS {
-			return
-		}
-		steps := FIELD_NEIGHBOUR_STEPS
-		coordinate := field_node_chunk(node) + {steps[index % 3], steps[index / 3 % 3], steps[index / 9]}
-		if coordinate in world.chunks || coordinate in streaming.generating {
-			continue
-		}
-		streaming.generating[coordinate] = {}
-		submit_field_job(streaming.shared, Field_Job{kind = .Generate, node = field_chunk_node(coordinate)})
-		streaming.pending_jobs += 1
-	}
 }
 
 // Whether a meshed node's latest job had other skirt faces.
@@ -360,18 +333,42 @@ field_skirt_faces_changed :: proc(streaming: ^Field_Streaming, node: Field_Node,
 	return found && previous != faces
 }
 
-// A finest node meshes once its chunk and every neighbour are loaded, and
-// again whenever the chunk is dirty or its skirt faces changed. Returns
-// whether a job went out.
+// A finest node whose chunk and every neighbour are simulated meshes from
+// them, and again whenever the chunk is dirty or its skirt faces changed.
+// Any other meshes once from a generated grid with the loaded samples it
+// reads (finest_generated), again when an edit beside it marks it or its
+// skirt faces change, and from its chunks once they are all simulated; a
+// node meshed from its chunks keeps that mesh when they leave the set.
+// Returns whether a job went out.
 schedule_finest_field_mesh :: proc(streaming: ^Field_Streaming, world: ^Field_World, node: Field_Node, faces: Field_Faces) -> bool {
-	coordinate := field_node_chunk(node)
-	chunk := world.chunks[coordinate] or_else nil
-	current := !chunk.dirty && node in streaming.mesh_revisions && !field_skirt_faces_changed(streaming, node, faces) if chunk != nil else false
-	if chunk == nil || node in streaming.in_flight || current || !field_chunk_neighbours_loaded(world, coordinate) {
+	if node in streaming.in_flight {
 		return false
 	}
-	submit_field_mesh_job(streaming, node, gather_field_grid(world, coordinate), faces)
-	chunk.dirty = false
+	coordinate := field_node_chunk(node)
+	chunk := world.chunks[coordinate] or_else nil
+	faces_changed := field_skirt_faces_changed(streaming, node, faces)
+	meshed := node in streaming.mesh_revisions
+	if chunk != nil && field_chunk_neighbours_loaded(world, coordinate) {
+		if !chunk.dirty && meshed && node not_in streaming.finest_generated && !faces_changed {
+			return false
+		}
+		submit_field_mesh_job(streaming, node, gather_field_grid(world, coordinate), false, faces)
+		chunk.dirty = false
+		delete_key(&streaming.finest_generated, node)
+		delete_key(&streaming.remesh, node)
+		return true
+	}
+	if meshed && !faces_changed && node not_in streaming.remesh {
+		return false
+	}
+	delete_key(&streaming.remesh, node)
+	streaming.finest_generated[node] = {}
+	submit_field_mesh_job(streaming, node, gather_coarse_field_grid(world, node), true, faces)
+	// The generated grid read the loaded chunk's samples, so its changes
+	// are in this mesh; a later edit marks the node again (remesh).
+	if chunk != nil {
+		chunk.dirty = false
+	}
 	return true
 }
 
@@ -386,7 +383,6 @@ schedule_field_jobs :: proc(streaming: ^Field_Streaming, world: ^Field_World, se
 		if node.level != 0 {
 			continue
 		}
-		schedule_field_node_chunks(streaming, world, node)
 		if streaming.pending_jobs < MAXIMUM_FIELD_PENDING_JOBS && submissions < MAXIMUM_FIELD_MESH_SUBMISSIONS_PER_FRAME {
 			submissions += schedule_finest_field_mesh(streaming, world, node, field_node_skirt_faces(index, node)) ? 1 : 0
 		}
@@ -401,7 +397,7 @@ schedule_field_jobs :: proc(streaming: ^Field_Streaming, world: ^Field_World, se
 		faces := field_node_skirt_faces(index, node)
 		if node not_in streaming.mesh_revisions || node in streaming.remesh || field_skirt_faces_changed(streaming, node, faces) {
 			delete_key(&streaming.remesh, node)
-			submit_field_mesh_job(streaming, node, gather_coarse_field_grid(world, node), faces)
+			submit_field_mesh_job(streaming, node, gather_coarse_field_grid(world, node), true, faces)
 			submissions += 1
 		}
 	}
@@ -410,14 +406,19 @@ schedule_field_jobs :: proc(streaming: ^Field_Streaming, world: ^Field_World, se
 // The meshed coarser nodes whose grid reads a chunk an edit changed (the
 // chunk or one beside it, since a grid reads a step beyond its node) are
 // marked to mesh again from the edited samples; the old mesh stays drawn
-// until the new one arrives. The finest nodes follow the chunks' dirty
-// flags.
+// until the new one arrives. The finest nodes meshed from their chunks
+// follow the chunks' dirty flags; one meshed from a generated grid
+// (finest_generated) is marked as the coarser ones. The edited chunks are
+// taken every frame, and on a server, which meshes nothing, dropped.
 mark_edited_coarse_nodes :: proc(streaming: ^Field_Streaming, world: ^Field_World) {
 	for coordinate in world.edited_chunks {
 		for z in i32(-1) ..= 1 {
 			for y in i32(-1) ..= 1 {
 				for x in i32(-1) ..= 1 {
 					chunk := coordinate + {x, y, z}
+					if finest := field_chunk_node(chunk); finest in streaming.finest_generated {
+						streaming.remesh[finest] = {}
+					}
 					for level in i32(1) ..= FIELD_COARSEST_LEVEL {
 						width := i32(1) << uint(level)
 						node := Field_Node{level, {floor_divide(chunk.x, width), floor_divide(chunk.y, width), floor_divide(chunk.z, width)}}
@@ -432,15 +433,25 @@ mark_edited_coarse_nodes :: proc(streaming: ^Field_Streaming, world: ^Field_Worl
 	clear(&world.edited_chunks)
 }
 
-// Main thread, once per frame, with the nodes chosen for the camera
-// (select_field_nodes), before take_current_field_meshes.
-update_field_streaming :: proc(streaming: ^Field_Streaming, world: ^Field_World, selection: []Field_Node) {
+// What one frame asks of the streaming: the chunks the next ticks need
+// (field_chunk_requests), the ones generated already and not in the world
+// (held_field_chunk_arrivals), and the nodes the viewports' cameras chose
+// (empty on a server).
+Field_Stream_Frame :: struct {
+	requested: []Field_Chunk_Coordinate,
+	held:      map[Field_Chunk_Coordinate]struct{},
+	selection: []Field_Node,
+}
+
+// Main thread, once per frame, before take_current_field_meshes. The
+// generated chunks the tick may take go to arrivals; the generation goes
+// out before the meshing, so the tick waits on as little as it can.
+update_field_streaming :: proc(streaming: ^Field_Streaming, world: ^Field_World, frame: Field_Stream_Frame, arrivals: ^[dynamic]^Field_Chunk) {
 	mark_edited_coarse_nodes(streaming, world)
-	wanted := wanted_field_chunks(selection, context.temp_allocator)
-	receive_field_chunks(streaming, world, wanted)
-	unload_unwanted_field_chunks(world, wanted)
-	drop_unselected_field_nodes(streaming, selection)
-	schedule_field_jobs(streaming, world, selection)
+	receive_field_chunks(streaming, world, frame, arrivals)
+	drop_unselected_field_nodes(streaming, frame.selection)
+	schedule_field_chunk_generation(streaming, world, frame)
+	schedule_field_jobs(streaming, world, frame.selection)
 }
 
 // Mesh results still current for a selected node. Stale ones are freed

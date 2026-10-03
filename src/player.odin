@@ -92,6 +92,15 @@ Player :: struct {
 	// The selected magnetometer's reading this tick, empty while none is
 	// selected (prospecting.odin).
 	magnetometer:         Magnetometer_Reading,
+	// The terrain field (0179): the body on the planet (player_field.odin),
+	// the volume short of a whole item per material, in the unit of
+	// FIELD_ITEM_VOLUME (field_mining.odin), and why the hand tool's
+	// latest edit or placement did less than asked.
+	field:                  Field_Player,
+	field_credit:           [Field_Material]i64,
+	field_refusal:          Field_Edit_Refusal,
+	field_refused_material: Field_Material,
+	field_run_refusal:      Belt_Run_Refusal,
 }
 
 // What a player tick reports to the UI, which turns it into toasts.

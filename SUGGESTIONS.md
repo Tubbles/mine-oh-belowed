@@ -127,3 +127,17 @@ The M12 refactor queue stopped after 0162 to keep tokens for smaller items. On 2
 - Moot with the world rewrite: the world audit's quality refactors (world 6 to 9) and the presentation entries about chunk meshes (presentation 9 and 10 are re-read with the new mesher).
 - Still to verify, since 0145 and 0147 may have covered them: simulation 1's one electric rule, presentation 2's pure moves, content 2's platform moves.
 - Optional quality refactors the user may pick at any time: loop 6 and 9; simulation 8 (simulation 9, the furnace, is the user's call and not recommended); presentation 5, 6 (half done by 0161), 7, 8; ui 5, 6, 9; content 3, 5, 6, 7, 9.
+
+## Follow ups from the switch to the field world (0179, third part)
+
+- Local time by longitude: the field shader's daylight is the shared clock's at every longitude (`prepare_field_frame`, `loop_field_session.odin`), so a player on the far side of the planet has noon with the others. The sun's direction per viewer would follow from the planet's rotation and the player's up.
+- The home can lie under the sea for another seed: `field_home_player` (`simulation_field.odin`) stands the player on the generated surface at the home whatever its height, and only the default seed was measured (`doc/log/2026-10-03.md`). A search outward for dry ground, or springs and home placed by generation, would cover every seed.
+- Sounds and cues are off in a field session (`render_frame`, `loop.odin`), since they read the block world (footsteps, ambience, the machines' sounds by block position). They need the field's positions and materials.
+- The benchmark's factory still stands on the block floor under the field (`benchmark_factory.odin`), since its drills mine block veins; with the factories on frames and veins on the field (M14) it can run sizes above 1 again.
+- The save writes each changed field chunk whole (`encode_field_chunk` in `encode_field_file`); a delta against a fresh generation would make `field.bin` smaller for a lightly dug chunk at the cost of generating it at save time.
+- Loading restores the saved set synchronously before the first tick (`restore_field_chunks`, `simulation_field_save.odin`), 125 chunks generated on the main thread; a large set or a slow phone would show it as a pause on load.
+- The lockstep's prediction moves the block player only (`rebuild_prediction`, `predict_player_motion`, `lockstep.odin`), so with an input window above zero the field player's view lags by the window. A prediction of `tick_field_player` on a copy would hide it.
+- The command socket's and the diagnostics' block queries (`command.odin`) were not exercised in a field session; the ones that read `World.chunks` answer about an empty block world there.
+- Placing dug material needs a drag from the inventory grid into the hotbar, since a dig credits the inventory as any item (`field_mining.odin`). A dug material could go to the hotbar first, as a block game's pickup does.
+- The spawn stands every new player on the generated surface (`field_surface_under` in `field_home_player`), not on what was built or dug at the home since; a joining player can land in a pit dug there or inside a pad laid there.
+- The field's water and light over the set cost about 1.3 ms a tick for one player in the debug build (the benchmark's players row); a set per player multiplies it in split screen and multiplayer when the players stand apart.

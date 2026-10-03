@@ -37,7 +37,7 @@ Each milestone has a single verify statement. Work items in `doc/work/` referenc
 | --- | --- | --- |
 | M0 to M11 The block world | 0001 to 0140 | Done in code, couch tests 2 to 5 never run; retired by the rebuild, the content carries over |
 | M12 Architecture toward the engine cut | 0142 to 0166 | Cleanup, audits, code map, pilot split, pure moves and hubs done (0142 to 0162); the seams re-read against the new world, the ones lockstep needs move into M13 |
-| M13 The first slice | 0167, then 0168 to 0179 | Brief agreed, items written, nothing started |
+| M13 The first slice | 0167, then 0168 to 0179 | Implemented 2026-10-03 (the session plays the field world); the wiring of the veins and the pod into the session and the couch test remain |
 | M14 The ground game on the smooth world | | Todo |
 | M15 Survival, the suit and the modes | | Todo |
 | M16 Low orbit and the station | | Todo |
@@ -59,6 +59,8 @@ Verify: the simulation ticks from queued inputs only (no write into it from the 
 ### M13 The first slice
 
 The smallest build that lets the user judge the direction by feel, on `main`, with multiplayer from the first commit: a sphere of a few hundred metres with the terrain field and its mesh, radial gravity and the slope walk, a dig and place tool with two brush sizes, water in one basin under the conserving rule, one torch in a dug cave with the new falloff, one foundation carrying a drill, an arm and a belt into a chest, a day and a night, and the lockstep of DESIGN.md's Multiplayer section with the state hash as the desync check. No space, no survival, one recipe chain. The brief is 0167; the items are 0168 (the field), 0169 (the mesher), 0170 (the player), 0171 (the brushes), 0172 (water), 0173 (light), 0174 (frames), 0175 (the arm), 0176 (curves on poles), 0177 (lockstep), 0178 (viewports), 0179 (the slice's content), in that order with 0177 able to start after 0170.
+
+Status: implemented 2026-10-03. New World and Load start a field session on the planet of the world's record; the block world stays for the tests and the dev kits until M14. The wiring round connects the veins and the pod of 0179's content part to the session; then the couch test below.
 
 Verify: two machines on the home network and a split screen pair on the couch share the sphere for twenty minutes while all four dig, place and run the belt line, with no desync, and the user judges the walk, the digging and the arm.
 

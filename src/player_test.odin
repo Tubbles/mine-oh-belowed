@@ -8,7 +8,25 @@ import "generation_seed"
 TEST_TICK_RATE :: 60
 
 test_game_config :: proc() -> Game_Config {
-	return Game_Config{name = "test", tick_rate = TEST_TICK_RATE, day_length_seconds = 1200}
+	return Game_Config{name = "test", tick_rate = TEST_TICK_RATE, day_length_seconds = 1200, field_simulation = {chunk_radius = 2, chunk_margin = 1, torch_item = "torch", torch_emitter = "torch"}}
+}
+
+// The test config with the shipped field blocks of data/game.sjson (the
+// view, the player, the brushes, the water, the foundations, the runs and
+// the simulated set), for the field sessions (0179).
+test_field_game_config :: proc() -> Game_Config {
+	shipped, error := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	assert(error == nil)
+	config := test_game_config()
+	config.field_view = shipped.field_view
+	config.field_player = shipped.field_player
+	config.field_brushes = shipped.field_brushes
+	config.field_water = shipped.field_water
+	config.foundation_pitch_millimetres = shipped.foundation_pitch_millimetres
+	config.belt_runs = shipped.belt_runs
+	config.field_simulation = shipped.field_simulation
+	config.starting_items = shipped.starting_items
+	return config
 }
 
 // Test worlds span chunks -1 and 0 on every axis, so blocks -32 to 31.

@@ -71,7 +71,26 @@ Game_Config :: struct {
 	// The constraints of a belt or pipe run between poles (work item
 	// 0176, belt_run.odin).
 	belt_runs:            Belt_Runs_Config,
+	// The field session's simulated chunks and its torch (work item 0179,
+	// simulation_field_chunk_set.odin, simulation_field.odin).
+	field_simulation:     Field_Simulation_Config,
 }
+
+// The field's simulated chunk set: every chunk within chunk_radius chunks
+// of a player's chunk on each axis, and the chunks it held within
+// chunk_margin more; the torch item and the emitter of
+// data/lighting.sjson it places.
+Field_Simulation_Config :: struct {
+	chunk_radius:  int,
+	chunk_margin:  int,
+	torch_item:    string,
+	torch_emitter: string,
+}
+
+// A field chunk is about 270 KiB with its water and light: radius 3 is
+// 343 chunks round one player.
+MAXIMUM_FIELD_CHUNK_RADIUS :: 3
+MAXIMUM_FIELD_CHUNK_MARGIN :: 2
 
 // A run either inclines (its ends differ in height by more than the
 // level tolerance, its facings aligned) or turns (level, its facings
@@ -477,7 +496,24 @@ validate_game_config :: proc(config: Game_Config) -> string {
 	if problem := belt_runs_problem(config.belt_runs); problem != "" {
 		return problem
 	}
+	if problem := field_simulation_problem(config.field_simulation); problem != "" {
+		return problem
+	}
 	return field_player_speed_problem(config.field_player, config.tick_rate)
+}
+
+// The torch's item and emitter are checked against the items and the
+// lighting file when the content loads (field_torch_problem).
+field_simulation_problem :: proc(field: Field_Simulation_Config) -> string {
+	switch {
+	case field.chunk_radius < 1 || field.chunk_radius > MAXIMUM_FIELD_CHUNK_RADIUS:
+		return fmt.tprintf("field_simulation.chunk_radius %d is outside 1 to %d", field.chunk_radius, MAXIMUM_FIELD_CHUNK_RADIUS)
+	case field.chunk_margin < 0 || field.chunk_margin > MAXIMUM_FIELD_CHUNK_MARGIN:
+		return fmt.tprintf("field_simulation.chunk_margin %d is outside 0 to %d", field.chunk_margin, MAXIMUM_FIELD_CHUNK_MARGIN)
+	case field.torch_item == "" || field.torch_emitter == "":
+		return "field_simulation.torch_item and torch_emitter must not be empty"
+	}
+	return ""
 }
 
 field_brush_shape_from_name :: proc(name: string) -> (shape: Field_Brush_Shape, found: bool) {

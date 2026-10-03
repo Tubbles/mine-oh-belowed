@@ -114,10 +114,14 @@ simulated_chunk_requests :: proc(state: ^Simulation_State) -> []Chunk_Coordinate
 	return next_simulated_chunks(state.chunk_set, player_chunk_centres(state.players[:]), SIMULATED_CHUNK_PREFETCH)
 }
 
-// Whether the next tick can run: every chunk of its set loaded or
-// arrived. Stages the arrivals first, which the tick does not read.
+// Whether the next tick can run: every chunk of its set, and of the
+// field's set (field_chunks_ready, 0179), loaded or arrived. Stages the
+// arrivals first, which the tick does not read.
 simulated_chunks_ready :: proc(state: ^Simulation_State) -> bool {
 	stage_chunk_arrivals(state)
+	if !field_chunks_ready(state) {
+		return false
+	}
 	if !state.chunk_set.enabled {
 		return true
 	}
@@ -136,7 +140,9 @@ simulated_chunks_ready :: proc(state: ^Simulation_State) -> bool {
 // At the start of a tick: unloads what left the set, inserts what
 // entered it, both in coordinate order. A chunk of the set that has not
 // arrived stays missing (the driver checks simulated_chunks_ready first).
+// The field's set first (update_simulated_field_chunks, 0179).
 update_simulated_chunks :: proc(state: ^Simulation_State, content: Simulation_Content) {
+	update_simulated_field_chunks(state)
 	set := &state.chunk_set
 	centres := player_chunk_centres(state.players[:])
 	if !set.enabled || simulated_set_settled(state, centres) {

@@ -237,7 +237,7 @@ Player_Body_Draw :: struct {
 
 // The world light at the eye, like a machine model's.
 player_body_light :: proc(frame: Model_Frame, eye: [3]f32) -> rl.Color {
-	light := world_get_light(frame.world, camera_world_coordinate(eye))
+	light := model_frame_light(frame, camera_world_coordinate(eye))
 	return brightness_color(model_light_tint(light, frame.day_factor, frame.sky_tint))
 }
 
