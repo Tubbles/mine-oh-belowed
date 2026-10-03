@@ -13,8 +13,8 @@ import "platform"
 // about its player's up (a second camera that maps the up to +y, drawn
 // first without depth), the field's terrain and water, the foundations,
 // the machines on their frames (draw_entities, lit by the open sky), the
-// belt and pipe runs, the torches, the players' bodies and the viewing
-// player's placement ghost. The planet preview draws the same scene
+// trees (0197, draw_field_trees), the belt and pipe runs, the torches, the
+// players' bodies and the viewing player's placement ghost. The planet preview draws the same scene
 // (draw_field_scene).
 
 // The clip planes of a field camera: near enough for the hands' reach,
@@ -58,9 +58,9 @@ viewport_field_eye :: proc(session: ^Session, viewport: Viewport) -> World_Posit
 	return field_player_eye(player.field, session.field_content.tuning)
 }
 
-// One selection for every viewport's eye (Field_View.more_cameras), in
-// the temp allocator; none outside a field session.
-field_viewport_selection :: proc(state: ^Frame_State) -> []Field_Node {
+// Every ready viewport's eye, in the temp allocator; none outside a field
+// session.
+field_viewport_eyes :: proc(state: ^Frame_State) -> []World_Position {
 	session := state.session
 	if session == nil || !session.simulation.field.enabled {
 		return nil
@@ -71,6 +71,14 @@ field_viewport_selection :: proc(state: ^Frame_State) -> []Field_Node {
 			append(&eyes, viewport_field_eye(session, viewport))
 		}
 	}
+	return eyes[:]
+}
+
+// One selection for every viewport's eye (Field_View.more_cameras), in
+// the temp allocator; none outside a field session.
+field_viewport_selection :: proc(state: ^Frame_State) -> []Field_Node {
+	session := state.session
+	eyes := field_viewport_eyes(state)
 	if len(eyes) == 0 {
 		return nil
 	}
@@ -268,6 +276,7 @@ draw_field_scene :: proc(scene: Field_Scene, camera: rl.Camera3D, selection: []F
 	world := &scene.state.world
 	draw_frames(&world.entities, scene.content.machines)
 	draw_entities(world, scene.content.machines, scene.models, scene.content.items, scene.frame)
+	draw_field_trees(scene, camera)
 	draw_belt_runs(scene.belts, &world.entities, scene.content.machines, scene.content.items, scene.state.tick, scene.state.tick_rate)
 	draw_field_torches(scene.state.field.torches[:], scene.state.field.spacing_millimetres)
 	draw_field_players(scene)
@@ -319,13 +328,14 @@ draw_field_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, cont
 	rl.EndMode3D()
 }
 
-// Before the viewports draw: the finished meshes up and the daylight of
-// the shared clock.
+// Before the viewports draw: the finished meshes up, the trees round the
+// eyes (update_field_tree_cache) and the daylight of the shared clock.
 prepare_field_frame :: proc(state: ^Frame_State) {
 	session := state.session
 	if !state.presentation.field_renderer_ready {
 		return
 	}
 	upload_streamed_field_meshes(&state.presentation.field_renderer, &session.field_streaming)
+	update_field_tree_cache(&state.presentation.field_renderer.trees, field_tree_generation(&session.simulation.field), field_viewport_eyes(state))
 	state.presentation.field_renderer.daylight = daylight_blend(simulation_day_ticks(session.simulation), session.simulation.day_length_ticks)
 }

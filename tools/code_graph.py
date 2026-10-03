@@ -94,6 +94,7 @@ FILE_CLUSTERS = {
     "data_export.odin": "tools",
     "lockstep.odin": "loop",
     "field_mining.odin": "simulation",
+    "field_trees.odin": "simulation",
     "viewport.odin": "loop",
 }
 

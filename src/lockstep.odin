@@ -463,7 +463,8 @@ predict_local_player :: proc(simulation: ^Simulation_State, content: Simulation_
 // (tick_field_session_player and queue_field_player_edit without the
 // hotbar, the tool, the edits, the placements, the pick up and its
 // progress (0195), the crafting and the walk counter): Interact's jump suppression on a frame's switch or launch pad, the move
-// against the loaded set and the frame table, and the aim. Reads the
+// against the loaded set, the frame table and the trees' trunks (0197),
+// and the aim. Reads the
 // simulation, writes only the copy.
 predict_field_player_motion :: proc(simulation: ^Simulation_State, content: Simulation_Content, player: ^Player, frame: Input_Frame) {
 	frames := &simulation.world.entities.frames
@@ -471,8 +472,7 @@ predict_field_player_motion :: proc(simulation: ^Simulation_State, content: Simu
 	// would open are the tick's.
 	resolved := without_field_interact_jump(player^, &simulation.world.entities, content.machines, frame)
 	input := field_tick_input(resolved, simulation.tick_rate)
-	tick_field_player(&simulation.field.world, frames, content.field.tuning, &player.field, input)
-	aim_field_player_at_frames(&player.field, frames, content.field.tuning)
+	move_and_aim_field_player(&simulation.field, frames, content.field, &player.field, input)
 }
 
 // The local player's commands no tick has applied yet: the ones waiting

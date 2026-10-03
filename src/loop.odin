@@ -1122,18 +1122,24 @@ draw_session_world :: proc(state: ^Frame_State, viewport: ^Viewport, content: Si
 // The mined block's centre in the viewport's render pixels, through the
 // camera its world was drawn with this frame (the HUD draws after the
 // world).
-mining_ring_centre :: proc(viewport: ^Viewport, entities: ^Entities, mining: Mining_State) -> [2]f32 {
-	if !mining.active {
+mining_ring_centre :: proc(viewport: ^Viewport, entities: ^Entities, player: Player, tuning: Field_Player_Tuning) -> [2]f32 {
+	if !player.mining.active {
 		return {}
 	}
 	size := [2]int{viewport.rectangle.width, viewport.rectangle.height}
-	return rl.GetWorldToScreenEx(mining_ring_point(entities, mining), viewport.presentation.camera, i32(size.x), i32(size.y))
+	return rl.GetWorldToScreenEx(mining_ring_point(entities, player, tuning), viewport.presentation.camera, i32(size.x), i32(size.y))
 }
 
 // Where the ring sits in the scene's metres: a block's centre, or for an
 // entity on a frame (a pick up on the field, 0195) the centre of the
-// mined cell on its frame, which the field scene draws in world metres.
-mining_ring_point :: proc(entities: ^Entities, mining: Mining_State) -> [3]f32 {
+// mined cell on its frame, which the field scene draws in world metres;
+// for a tree being felled (0197) the aimed point of its trunk.
+mining_ring_point :: proc(entities: ^Entities, player: Player, tuning: Field_Player_Tuning) -> [3]f32 {
+	mining := player.mining
+	if mining.tree {
+		look := field_look_direction(player.field.forward, player.field.up, player.field.yaw, player.field.pitch)
+		return world_position_to_metres(field_player_eye(player.field, tuning) + World_Position(fixed_scale(look, player.field.tree_target.distance)))
+	}
 	common := entity_common(entities, mining.entity)
 	if common == nil || common.frame == BLOCK_FRAME {
 		return block_centre(mining.block)
@@ -1223,7 +1229,7 @@ make_hud_context :: proc(state: ^Frame_State, index: int) -> Hud_Context {
 	player := &session.simulation.players[viewport.player]
 	column := sample_column(&session.generator, i32(math.floor(player.position.x)), i32(math.floor(player.position.z)))
 	hud := Hud_Context {
-		mining_ring_centre = mining_ring_centre(viewport, &session.simulation.world.entities, player.mining),
+		mining_ring_centre = mining_ring_centre(viewport, &session.simulation.world.entities, player^, session.field_content.tuning),
 		biome_banner       = &viewport.interaction.biome_banner,
 		biome              = column.biome,
 		biomes             = session.generator.biomes,

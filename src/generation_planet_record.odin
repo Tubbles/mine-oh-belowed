@@ -36,6 +36,11 @@ Planet_Generation_Record :: struct {
 	// (resolve_world_planet).
 	crater:                                         Planet_Crater,
 	crater_recorded:                                bool,
+	// The trees' placement and species count (0197); trees_recorded is
+	// false in a file written before them, which takes the data's
+	// (resolve_world_planet).
+	trees:                                          Planet_Tree_Placement,
+	trees_recorded:                                 bool,
 }
 
 // Borrows the planet's springs.
@@ -54,6 +59,8 @@ planet_generation_record :: proc(planet: Planet) -> Planet_Generation_Record {
 		home_recorded = true,
 		crater = planet.crater,
 		crater_recorded = true,
+		trees = planet_tree_placement(planet.trees),
+		trees_recorded = true,
 	}
 }
 
@@ -62,9 +69,10 @@ planet_generation_is_recorded :: proc(record: Planet_Generation_Record) -> bool 
 }
 
 // The record's values over the data's planet, its palette repeated or cut
-// to the recorded length so every generated tint has a colour. The id, the
-// springs and the palette are the result's own, in allocator
-// (destroy_recorded_planet); the presets are left out.
+// to the recorded length so every generated tint has a colour, and its
+// tree species likewise (recorded_tree_species). The id, the springs, the
+// palette and the species with their strings are the result's own, in
+// allocator (destroy_recorded_planet); the presets are left out.
 make_recorded_planet :: proc(planet: Planet, record: Planet_Generation_Record, allocator := context.allocator) -> Planet {
 	result := planet
 	result.id = strings.clone(planet.id, allocator)
@@ -87,14 +95,77 @@ make_recorded_planet :: proc(planet: Planet, record: Planet_Generation_Record, a
 	for &color, index in result.palette {
 		color = planet.palette[index % len(planet.palette)]
 	}
+	if record.trees_recorded {
+		result.trees = recorded_trees(planet.trees, record.trees, allocator)
+	} else {
+		result.trees.species = clone_tree_species(planet.trees.species, len(planet.trees.species), allocator)
+	}
 	return result
+}
+
+// The recorded placement over the data's species, repeated or cut to the
+// recorded count; no species (a count of 0 or a data list of 0) is no
+// trees, so the grove share goes to 0.
+recorded_trees :: proc(data: Planet_Trees, placement: Planet_Tree_Placement, allocator := context.allocator) -> Planet_Trees {
+	trees := Planet_Trees {
+		grove_spacing_metres  = placement.grove_spacing_metres,
+		grove_share_percent   = placement.grove_share_percent,
+		grove_radius_metres   = placement.grove_radius_metres,
+		tree_spacing_metres   = placement.tree_spacing_metres,
+		density_percent       = placement.density_percent,
+		clearing_metres       = placement.clearing_metres,
+		maximum_slope_percent = placement.maximum_slope_percent,
+	}
+	if placement.species_count <= 0 || len(data.species) == 0 {
+		trees.grove_share_percent = 0
+		return trees
+	}
+	trees.species = clone_tree_species(data.species, placement.species_count, allocator)
+	return trees
+}
+
+// count species, entry index the source's index modulo its length, with
+// their strings cloned, since the session's planet outlives the data it
+// was made from (a content reload).
+clone_tree_species :: proc(source: []Planet_Tree_Species, count: int, allocator := context.allocator) -> []Planet_Tree_Species {
+	if count <= 0 || len(source) == 0 {
+		return nil
+	}
+	species := make([]Planet_Tree_Species, count, allocator)
+	for &entry, index in species {
+		entry = source[index % len(source)]
+		entry.id = strings.clone(entry.id, allocator)
+		entry.machine = strings.clone(entry.machine, allocator)
+		entry.item = strings.clone(entry.item, allocator)
+	}
+	return species
 }
 
 destroy_recorded_planet :: proc(planet: ^Planet) {
 	delete(planet.id)
 	delete(planet.springs)
 	delete(planet.palette)
+	for species in planet.trees.species {
+		delete(species.id)
+		delete(species.machine)
+		delete(species.item)
+	}
+	delete(planet.trees.species)
 	planet^ = {}
+}
+
+// A valid species for the stand in planet of
+// planet_generation_record_problem, so a recorded placement passes
+// trees_problem whatever the data's species.
+PLANET_TREE_STAND_IN_SPECIES :: Planet_Tree_Species {
+	id                       = "recorded",
+	machine                  = "recorded",
+	tint                     = {255, 255, 255},
+	item                     = "recorded",
+	count                    = 1,
+	felling_milliseconds     = 1000,
+	trunk_radius_millimetres = 100,
+	trunk_height_millimetres = 1000,
 }
 
 // Empty for an absent record (a file written before it) and for one
@@ -106,9 +177,13 @@ planet_generation_record_problem :: proc(record: Planet_Generation_Record) -> st
 	if record.palette_length < 1 || record.palette_length > MAXIMUM_PALETTE_LENGTH {
 		return fmt.tprintf("palette_length %d is outside 1 to %d", record.palette_length, MAXIMUM_PALETTE_LENGTH)
 	}
+	if record.trees.species_count < 0 || record.trees.species_count > MAXIMUM_TREE_SPECIES {
+		return fmt.tprintf("trees.species_count %d is outside 0 to %d", record.trees.species_count, MAXIMUM_TREE_SPECIES)
+	}
 	stand_in := Planet {
 		id      = "recorded",
 		palette = {{0, 0, 0}},
+		trees   = {species = {PLANET_TREE_STAND_IN_SPECIES}},
 	}
 	return planet_problem(make_recorded_planet(stand_in, record, context.temp_allocator))
 }
@@ -174,6 +249,10 @@ resolve_world_planet :: proc(settings: World_File_Settings, recorded: Planet_Gen
 	if planet_generation_is_recorded(recorded) && !recorded.crater_recorded {
 		platform.log_printf("world: the world file records no crater, it takes the crater of %q from %s", planet.id, PLANETS_FILE_NAME)
 		record.crater, record.crater_recorded = planet.crater, true
+	}
+	if planet_generation_is_recorded(recorded) && !recorded.trees_recorded {
+		platform.log_printf("world: the world file records no trees, it takes the trees of %q from %s", planet.id, PLANETS_FILE_NAME)
+		record.trees, record.trees_recorded = planet_tree_placement(planet.trees), true
 	}
 	if !planet_generation_is_recorded(recorded) {
 		if loading {

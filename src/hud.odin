@@ -463,6 +463,11 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context, hud: Hud_Cont
 		ui_glyph_bar(state, hints)
 		return
 	}
+	if field_fell_hint_shown(screen_context, hud) {
+		hints := field_fell_hints(screen_context, hud)
+		ui_glyph_bar(state, hints[:])
+		return
+	}
 	if field_pick_up_hint_shown(screen_context, hud) {
 		pick_up := field_target_is_broken(screen_context, hud) ? MACHINE_BROKEN_DOWN_KEY : "hint_pick_up"
 		inventory := Glyph_Hint{.Inventory, text(inventory_hint_key(screen_context, hud))}
@@ -494,6 +499,16 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context, hud: Hud_Cont
 	}
 	hints := [?]Glyph_Hint{{.Inventory, text("hint_inventory")}, {.Pause, text("hint_pause")}}
 	ui_glyph_bar(state, hints[:])
+}
+
+// The field player aims at a tree's trunk, which Mine held fells (0197).
+field_fell_hint_shown :: proc(screen_context: Screen_Context, hud: Hud_Context) -> bool {
+	return hud_field_player(screen_context, hud).tree_target.hit
+}
+
+// Mine fells, the inventory glyph, Pause.
+field_fell_hints :: proc(screen_context: Screen_Context, hud: Hud_Context) -> [3]Glyph_Hint {
+	return {{.Mine, text("hint_fell")}, {.Inventory, text(inventory_hint_key(screen_context, hud))}, {.Pause, text("hint_pause")}}
 }
 
 // The field player aims at a frame cell whose entity Mine picks up

@@ -134,7 +134,7 @@ machine_area_width :: proc(machine: Machine) -> f32 {
 		return core_sample_area_size().x
 	case .Launch_Pad:
 		return launch_pad_area_width()
-	case .Belt, .Schematic_Crate, .Foundation, .Belt_Pole, .Pod, .Crafting_Station:
+	case .Belt, .Schematic_Crate, .Foundation, .Belt_Pole, .Pod, .Crafting_Station, .Tree:
 	}
 	return 0
 }
@@ -164,7 +164,7 @@ machine_area_height :: proc(machine: Machine, slot_count: int, width: f32) -> f3
 		return core_sample_area_size().y
 	case .Launch_Pad:
 		return launch_pad_area_height(machine, width)
-	case .Belt, .Schematic_Crate, .Foundation, .Belt_Pole, .Pod, .Crafting_Station:
+	case .Belt, .Schematic_Crate, .Foundation, .Belt_Pole, .Pod, .Crafting_Station, .Tree:
 	}
 	return 0
 }

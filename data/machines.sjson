@@ -42,7 +42,10 @@
 // steam_engine, storage_tank, pump, tar_pit_pump, flare_stack,
 // combustion_generator, hydro_turbine, pole, power_switch, lamp,
 // crafting_machine, lab, schematic_crate, core_sample_drill,
-// launch_pad, foundation, belt_pole, pod or crafting_station.
+// launch_pad, foundation, belt_pole, pod, crafting_station or tree.
+// tree (work item 0197, doc/content.md, Trees) is a tree's model:
+// placed by the planet's generation, never by an item, never an entity;
+// only footprint and model are read.
 // former_ids (optional, work item 0196) lists ids this record had in an
 // older build: a save naming one loads it as this record, with one log
 // line. A former id is never a current id of the table, nor listed twice.
@@ -1065,5 +1068,17 @@ machines = [
 			{from = {x = 1, y = 1, z = 1}, to = {x = 2, y = 6, z = 4}}
 			{from = {x = 5, y = 0, z = 2}, to = {x = 5, y = 3, z = 3}}
 		]
+	}
+	{
+		id = "pine_tree"
+		name_key = "machine_pine_tree"
+		description_key = "describe_machine_pine_tree"
+		kind = "tree"
+		// The crown's reach in cells (2.6 of 3); the model rises to 15
+		// cells, above the footprint's 9 (the most a footprint may
+		// have). The model's bottom is the trunk's base, sunk 300 mm into
+		// the ground.
+		footprint = {width = 6, depth = 6, height = 9}
+		model = "pine_tree"
 	}
 ]

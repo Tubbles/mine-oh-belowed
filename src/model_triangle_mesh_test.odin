@@ -332,3 +332,38 @@ test_the_shipped_obj_machines_load :: proc(t: ^testing.T) {
 		}
 	}
 }
+
+// The pine (work item 0197): a body only, no glow, within its budget, and
+// its trunk where the walk and the aim meet it: every vertex below one
+// cell within 1.05 times the species' trunk radius of the axis.
+@(test)
+test_the_shipped_tree_model_loads :: proc(t: ^testing.T) {
+	machines := shipped_machines()
+	defer delete(machines)
+	machine, found := shipped_machine(machines, "pine_tree")
+	testing.expect(t, found, "the pine is shipped")
+	testing.expect(t, os.is_file(model_obj.model_file_path(test_data_directory(), machine.model)), "the pine has an .obj")
+	mesh, problem := load_machine_model_mesh(test_data_directory(), machine)
+	defer destroy_machine_model_mesh(mesh)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, model_layers_triangle_count(mesh.part), 0)
+	testing.expect_value(t, len(mesh.body[.Emissive].positions), 0)
+	triangles := model_layers_triangle_count(mesh.body)
+	testing.expectf(t, triangles >= 1 && triangles <= 150, "%d triangles", triangles)
+	library, error := os.read_entire_file(platform.join_path(test_data_directory(), model_obj.MODELS_DIRECTORY, strings.concatenate({machine.model, model_obj.MATERIAL_FILE_EXTENSION}, context.temp_allocator)), context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	materials := strings.count(string(library), "newmtl ")
+	testing.expectf(t, materials >= 1 && materials <= 4, "%d materials", materials)
+	species := default_planet(shipped_test_planets()).trees.species[0]
+	pitch, config_error := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	testing.expect(t, config_error == nil)
+	radius := f32(species.trunk_radius_millimetres) / f32(pitch.foundation_pitch_millimetres)
+	trunk_vertices := 0
+	for position in mesh.body[.Lit].positions {
+		if position.y < 1 {
+			trunk_vertices += 1
+			testing.expectf(t, position.x * position.x + position.z * position.z <= (1.05 * radius) * (1.05 * radius), "a trunk vertex at %v", position)
+		}
+	}
+	testing.expect(t, trunk_vertices > 0, "the trunk reaches the base")
+}

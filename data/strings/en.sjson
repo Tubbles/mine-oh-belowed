@@ -843,6 +843,7 @@ inventory_foundation_size_choice = "{size}x{size}"
 inventory_foundation_height_choice = "{height} high"
 inventory_full = "Inventory full"
 hint_pick_up = "Pick up"
+hint_fell = "Fell"
 hint_take_schematic = "Take schematic"
 hint_read_schematic = "Read schematic"
 hint_place_stack = "Place"
@@ -915,6 +916,7 @@ machine_core_sample_drill = "Core sample drill"
 machine_launch_pad = "Launch pad"
 machine_electrolyser = "Electrolyser"
 machine_pod = "Pod"
+machine_pine_tree = "Pine"
 
 // Machine descriptions (work item 0070), dim under the name in the
 // machine panel: how the machine runs.
@@ -975,6 +977,7 @@ describe_machine_core_sample_drill = "After 60 powered seconds it reports what l
 describe_machine_launch_pad = "Parts and fuel are taken in ten stages over 60 powered seconds of assembly. Then the cargo leaves."
 describe_machine_lab = "One slot per science pack. A set per unit of the queued technology."
 describe_machine_pod = "The venture's landing pod. Home, for the length of the lease."
+describe_machine_pine_tree = "A tall conifer of the home planet. Mine held on the trunk fells it for four logs."
 
 // Machine states
 machine_state_no_fluid = "Missing fluid"
@@ -1669,6 +1672,7 @@ field_refused_no_vein = "A drill needs an ore outcrop under it"
 field_refused_too_steep = "Too steep, needs a foundation"
 field_refused_too_few_foundations = "Needs {needed} foundations, {held} held"
 field_refused_something_stands_on_it = "Something stands on it"
+field_refused_tree_in_the_way = "A tree stands there"
 // The tool line with a foundation held (work item 0193): the block
 // Place puts down, chosen on the inventory view.
 field_tool_foundation_block = "Foundation {size}x{size}, {height} high"

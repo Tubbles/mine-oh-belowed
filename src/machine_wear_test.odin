@@ -286,6 +286,9 @@ test_the_wear_round_trips_a_save_and_an_older_save_loads_unworn :: proc(t: ^test
 	files := encode_save_files(state, simulation_content, "wear", 0)
 	table := make([dynamic]byte, context.temp_allocator)
 	write_machine_wear_table(&table, &state.world.entities)
+	// The felled trees' table (0197) follows the wear's; an older save
+	// ends before both.
+	write_felled_tree_table(&table, &state.field)
 	end_session(session)
 
 	for older in ([2]bool{false, true}) {

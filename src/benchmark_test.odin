@@ -142,7 +142,7 @@ test_the_benchmark_pad_is_the_contents_pad_foundation :: proc(t: ^testing.T) {
 	config.starting_items = nil
 	field := test_benchmark_field(content.items)
 	content.field = make_field_content(config, content.items, content.machines, field.materials, field.lighting, field.planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES)
-	defer delete(content.field.brushes)
+	defer destroy_field_content(&content.field)
 	testing.expect_value(t, content.machines.machines[field_pad_foundation(content)].id, "wooden_foundation")
 	simulation := make_benchmark_simulation(config, content, Benchmark_Floor{})
 	defer destroy_simulation(&simulation)

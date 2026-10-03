@@ -14,6 +14,7 @@ TEST_PLANET_RECORD :: `planets = [{
 	springs = [{latitude_degrees = 88, longitude_degrees = -120}]
 	home = {latitude_degrees = 86, longitude_degrees = -115}
 	crater = {radius_metres = 12, depth_metres = 3, floor_radius_metres = 4, rim_metres = 1}
+	trees = {grove_spacing_metres = 40, grove_share_percent = 50, grove_radius_metres = 14, tree_spacing_metres = 4, density_percent = 80, clearing_metres = 24, maximum_slope_percent = 70, species = [{id = "pine", machine = "pine_tree", tint = [236, 232, 214], item = "log", count = 4, felling_milliseconds = 6000, trunk_radius_millimetres = 180, trunk_height_millimetres = 2500}]}
 	rain_fill_per_minute = 2
 	rotation_period_seconds = 1200
 	relief_octaves = [{wavelength_metres = 512, amplitude_metres = 24}, {wavelength_metres = 128, amplitude_metres = 8}, {wavelength_metres = 32, amplitude_metres = 2}]
@@ -92,7 +93,7 @@ test_a_planet_record_parses :: proc(t: ^testing.T) {
 @(test)
 test_a_planet_record_with_a_missing_field_is_refused_naming_it :: proc(t: ^testing.T) {
 	record := string(TEST_PLANET_RECORD)
-	for key in ([?]string{"id", "radius_metres", "radius_presets_metres", "surface_gravity_centimetres_per_second_squared", "bedrock_depth_metres", "sea_level_metres", "springs", "home", "crater", "rain_fill_per_minute", "rotation_period_seconds", "relief_octaves", "palette"}) {
+	for key in ([?]string{"id", "radius_metres", "radius_presets_metres", "surface_gravity_centimetres_per_second_squared", "bedrock_depth_metres", "sea_level_metres", "springs", "home", "crater", "trees", "rain_fill_per_minute", "rotation_period_seconds", "relief_octaves", "palette"}) {
 		line_start := strings.index(record, strings.concatenate({"\t", key, " ="}, context.temp_allocator))
 		line_end := line_start + strings.index_byte(record[line_start:], '\n')
 		without := strings.concatenate({record[:line_start], record[line_end + 1:]}, context.temp_allocator)
@@ -181,4 +182,101 @@ test_a_crater_record_out_of_bounds_is_refused :: proc(t: ^testing.T) {
 	expect_planets_problem(t, missing, "planets[0].crater is missing depth_metres")
 	steep, _ := strings.replace(record, "depth_metres = 3", "depth_metres = 6", 1, context.temp_allocator)
 	expect_planets_problem(t, steep, "crater bowl of 7 m over 8 m is steeper than 45 degrees")
+}
+
+// Work item 0197: each trees key one past each bound is refused with its
+// message; no trees (a share of 0, no species) passes; a clearing inside
+// the crater's reach is refused; the shipped record passes.
+@(test)
+test_a_tree_record_out_of_bounds_is_refused :: proc(t: ^testing.T) {
+	planet := default_planet(shipped_test_planets())
+	shipped := planet.trees
+	testing.expect_value(t, trees_problem(shipped, planet.crater), "")
+	testing.expect_value(t, trees_problem(Planet_Trees{}, planet.crater), "")
+	species := shipped.species[0]
+	cases := [?]struct {
+		change:   proc(trees: ^Planet_Trees),
+		expected: string,
+	} {
+		{proc(trees: ^Planet_Trees) {trees.grove_share_percent = 101}, "trees.grove_share_percent 101 is outside 0 to 100"},
+		{proc(trees: ^Planet_Trees) {trees.grove_share_percent = -1}, "trees.grove_share_percent -1 is outside 0 to 100"},
+		{proc(trees: ^Planet_Trees) {trees.tree_spacing_metres = 1}, "trees.tree_spacing_metres 1 is outside 2 to 16"},
+		{proc(trees: ^Planet_Trees) {trees.tree_spacing_metres = 17}, "trees.tree_spacing_metres 17 is outside 2 to 16"},
+		{proc(trees: ^Planet_Trees) {trees.grove_spacing_metres = 7}, "trees.grove_spacing_metres 7 is outside 8 to 256"},
+		{proc(trees: ^Planet_Trees) {trees.grove_spacing_metres = 257}, "trees.grove_spacing_metres 257 is outside 8 to 256"},
+		{proc(trees: ^Planet_Trees) {trees.grove_radius_metres = 3}, "trees.grove_radius_metres 3 is outside 4 to 40"},
+		{proc(trees: ^Planet_Trees) {trees.grove_radius_metres = 41}, "trees.grove_radius_metres 41 is outside 4 to 40"},
+		{proc(trees: ^Planet_Trees) {trees.density_percent = 0}, "trees.density_percent 0 is outside 1 to 100"},
+		{proc(trees: ^Planet_Trees) {trees.density_percent = 101}, "trees.density_percent 101 is outside 1 to 100"},
+		{proc(trees: ^Planet_Trees) {trees.clearing_metres = -1}, "trees.clearing_metres -1 is outside 0 to 64"},
+		{proc(trees: ^Planet_Trees) {trees.clearing_metres = 65}, "trees.clearing_metres 65 is outside 0 to 64"},
+		{proc(trees: ^Planet_Trees) {trees.clearing_metres = 17}, "trees.clearing_metres 17 is inside the crater's reach of 18 m"},
+		{proc(trees: ^Planet_Trees) {trees.maximum_slope_percent = 0}, "trees.maximum_slope_percent 0 is outside 1 to 173"},
+		{proc(trees: ^Planet_Trees) {trees.maximum_slope_percent = 174}, "trees.maximum_slope_percent 174 is outside 1 to 173"},
+		{proc(trees: ^Planet_Trees) {trees.species = nil}, "trees.species has 0 entries, not 1 to 8"},
+		{proc(trees: ^Planet_Trees) {trees.species = make([]Planet_Tree_Species, 9, context.temp_allocator)}, "trees.species has 9 entries, not 1 to 8"},
+	}
+	for entry in cases {
+		trees := shipped
+		entry.change(&trees)
+		testing.expect_value(t, trees_problem(trees, planet.crater), entry.expected)
+	}
+	inside := shipped
+	inside.clearing_metres = 0
+	testing.expect_value(t, trees_problem(inside, {}), "")
+	species_cases := [?]struct {
+		change:   proc(species: ^Planet_Tree_Species),
+		expected: string,
+	} {
+		{proc(species: ^Planet_Tree_Species) {species.id = "Pine"}, `trees.species[0].id "Pine" is not 1 to 32 bytes of a to z, 0 to 9 and _`},
+		{proc(species: ^Planet_Tree_Species) {species.id = ""}, `trees.species[0].id "" is not 1 to 32 bytes of a to z, 0 to 9 and _`},
+		{proc(species: ^Planet_Tree_Species) {species.machine = ""}, "trees.species[0].machine is empty"},
+		{proc(species: ^Planet_Tree_Species) {species.item = ""}, "trees.species[0].item is empty"},
+		{proc(species: ^Planet_Tree_Species) {species.count = 0}, "trees.species[0].count 0 is outside 1 to 16"},
+		{proc(species: ^Planet_Tree_Species) {species.count = 17}, "trees.species[0].count 17 is outside 1 to 16"},
+		{proc(species: ^Planet_Tree_Species) {species.felling_milliseconds = 99}, "trees.species[0].felling_milliseconds 99 is outside 100 to 60000"},
+		{proc(species: ^Planet_Tree_Species) {species.felling_milliseconds = 60_001}, "trees.species[0].felling_milliseconds 60001 is outside 100 to 60000"},
+		{proc(species: ^Planet_Tree_Species) {species.trunk_radius_millimetres = 49}, "trees.species[0].trunk_radius_millimetres 49 is outside 50 to 1000"},
+		{proc(species: ^Planet_Tree_Species) {species.trunk_radius_millimetres = 1001}, "trees.species[0].trunk_radius_millimetres 1001 is outside 50 to 1000"},
+		{proc(species: ^Planet_Tree_Species) {species.trunk_height_millimetres = 499}, "trees.species[0].trunk_height_millimetres 499 is outside 500 to 20000"},
+		{proc(species: ^Planet_Tree_Species) {species.trunk_height_millimetres = 20_001}, "trees.species[0].trunk_height_millimetres 20001 is outside 500 to 20000"},
+		{proc(species: ^Planet_Tree_Species) {species.tint = {0, 256, 0}}, "trees.species[0].tint has 256, outside 0 to 255"},
+		{proc(species: ^Planet_Tree_Species) {species.tint = {-1, 0, 0}}, "trees.species[0].tint has -1, outside 0 to 255"},
+	}
+	for entry in species_cases {
+		changed := species
+		entry.change(&changed)
+		trees := shipped
+		trees.species = []Planet_Tree_Species{changed}
+		testing.expect_value(t, trees_problem(trees, planet.crater), entry.expected)
+	}
+	twice := shipped
+	twice.species = []Planet_Tree_Species{species, species}
+	testing.expect_value(t, tree_species_ids_problem(twice), `trees.species[1].id "pine" is used twice`)
+	doubled, _ := strings.replace(string(TEST_PLANET_RECORD), "species = [{id = \"pine\"", "species = [{id = \"pine\", machine = \"pine_tree\", tint = [1, 2, 3], item = \"log\", count = 1, felling_milliseconds = 1000, trunk_radius_millimetres = 100, trunk_height_millimetres = 1000}, {id = \"pine\"", 1, context.temp_allocator)
+	expect_planets_problem(t, doubled, `trees.species[1].id "pine" is used twice`)
+	record := string(TEST_PLANET_RECORD)
+	missing, _ := strings.replace(record, "density_percent = 80, ", "", 1, context.temp_allocator)
+	expect_planets_problem(t, missing, "planets[0].trees is missing density_percent")
+	species_missing, _ := strings.replace(record, "count = 4, ", "", 1, context.temp_allocator)
+	expect_planets_problem(t, species_missing, "planets[0].trees.species[0] is missing count")
+}
+
+// Work item 0197: each species names a machine of kind tree and an item.
+@(test)
+test_a_tree_species_must_name_a_tree_model_and_an_item :: proc(t: ^testing.T) {
+	items := make_test_items()
+	machines := make_test_machines()
+	planets := shipped_test_planets()
+	testing.expect_value(t, planet_tree_species_problem(planets, items, machines), "")
+	changed := slice.clone(planets, context.temp_allocator)
+	species := slice.clone(changed[0].trees.species, context.temp_allocator)
+	changed[0].trees.species = species
+	species[0].machine = "no_such_machine"
+	testing.expect_value(t, planet_tree_species_problem(changed, items, machines), `planets[0].trees.species[0].machine "no_such_machine" is not a machine of kind tree`)
+	species[0].machine = "stone_furnace"
+	testing.expect_value(t, planet_tree_species_problem(changed, items, machines), `planets[0].trees.species[0].machine "stone_furnace" is not a machine of kind tree`)
+	species[0].machine = "pine_tree"
+	species[0].item = "no_such_item"
+	testing.expect_value(t, planet_tree_species_problem(changed, items, machines), `planets[0].trees.species[0].item "no_such_item" is not an item`)
 }

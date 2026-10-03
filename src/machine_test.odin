@@ -54,7 +54,7 @@ test_machine :: proc(machines: Machine_Registry, id: string) -> Machine_Id {
 test_machine_data_loads :: proc(t: ^testing.T) {
 	items := make_test_items()
 	machines := make_test_machines()
-	testing.expect_value(t, len(machines.machines), 57)
+	testing.expect_value(t, len(machines.machines), 58)
 	wooden := machines.machines[test_machine(machines, "wooden_chest")]
 	testing.expect_value(t, wooden.kind, Machine_Kind.Chest)
 	testing.expect_value(t, wooden.slot_count, 16)
@@ -308,4 +308,23 @@ test_a_foundation_needs_a_colour :: proc(t: ^testing.T) {
 	for entry in expected {
 		testing.expect_value(t, foundation_slab_color(machines.machines[test_machine(machines, entry.id)]), entry.color)
 	}
+}
+
+// Work item 0197: a tree's record holds a model and no item, and is
+// never an entity.
+@(test)
+test_a_tree_machine_has_no_item_and_no_entity :: proc(t: ^testing.T) {
+	definition := Machine_Definition{id = "test_tree", kind = "tree", footprint = {6, 6, 9}, item = "log"}
+	testing.expect_value(t, validate_machine_kind_fields(definition, .Tree), `tree "test_tree" cannot be placed by an item`)
+	definition.item = ""
+	testing.expect_value(t, validate_machine_kind_fields(definition, .Tree), "")
+	machines := make_test_machines()
+	pine := test_machine(machines, "pine_tree")
+	testing.expect_value(t, machines.machines[pine].kind, Machine_Kind.Tree)
+	testing.expect_value(t, machines.machines[pine].item, NO_ITEM)
+	entities: Entities
+	defer destroy_entities(&entities)
+	testing.expect_value(t, add_entity(&entities, machines, pine, {}, 0), NO_ENTITY)
+	testing.expect_value(t, entity_counts(&entities), [Entity_Kind]int{})
+	testing.expect_value(t, len(entities.frames.occupants), 0)
 }

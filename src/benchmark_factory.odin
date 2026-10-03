@@ -562,6 +562,7 @@ start_benchmark_field :: proc(simulation: ^Simulation_State, content: Simulation
 			place_on_frame(entities, content.machines, foundation, frame, {i32(x), 0, i32(z)}, 0)
 		}
 	}
+	clear_trees_under_frames(simulation, content.machines, content.field)
 }
 
 // Builds the world and the factory of the size, ticks the warm up (the
@@ -578,7 +579,7 @@ run_factory_benchmark :: proc(size: int, generator: ^Generator, base_content: Si
 	content.technologies = scaled_technology_registry(base_content.technologies, BENCHMARK_RESEARCH_COST_PERCENT)
 	defer delete(content.technologies.technologies)
 	content.field = make_field_content(config, content.items, content.machines, field.materials, field.lighting, field.planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES)
-	defer delete(content.field.brushes)
+	defer destroy_field_content(&content.field)
 	if size > BENCHMARK_FIELD_LARGEST_SIZE {
 		report.problem = strings.clone(benchmark_size_problem(size))
 		return

@@ -78,6 +78,10 @@ load_game_tables :: proc(data_directory: string, config: Game_Config, string_ent
 		platform.log_printf("error: invalid %s: %s", GAME_CONFIG_FILE_NAME, problem)
 		return {}, {}, false
 	}
+	if problem := planet_tree_species_problem(content.planets, content.items, content.machines); problem != "" {
+		platform.log_printf("error: invalid %s: %s", PLANETS_FILE_NAME, problem)
+		return {}, {}, false
+	}
 	base_generator = load_generator(data_directory, content.blocks, DEFAULT_WORLD_SEED) or_return
 	veins, problem := resolve_vein_content(base_generator.veins, content.items)
 	if problem != "" {
@@ -375,10 +379,10 @@ reload_session :: proc(session: ^Session, old_content: Game_Content, data: Game_
 	reloaded, problem := reload_simulation(&session.simulation, old_simulation_content, new_simulation_content, config)
 	if problem != "" {
 		delete(technologies.technologies)
-		delete(field_content.brushes)
+		destroy_field_content(&field_content)
 		return problem
 	}
-	delete(session.field_content.brushes)
+	destroy_field_content(&session.field_content)
 	session.field_content = field_content
 	load_around_camera := session.streaming.load_around_camera
 	stop_chunk_streaming(&session.streaming)

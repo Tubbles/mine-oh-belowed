@@ -189,13 +189,15 @@ field_placement_cells :: proc(content: Simulation_Content, placement: Field_Plac
 // free one the hit and the heading its new frame takes; a run (0176,
 // belt_run_placement.odin) its two candidates instead; a torch and its
 // removal (0179, simulation_field.odin) its sample; a pick up (0195,
-// advance_field_pick_up) the frame and the cell held.
+// advance_field_pick_up) the frame and the cell held; a felling (0197,
+// advance_field_felling) the tree's key.
 Field_Placement_Kind :: enum u8 {
 	Machine,
 	Run,
 	Torch,
 	Torch_Removal,
 	Pick_Up,
+	Fell,
 }
 
 Field_Placement :: struct {
@@ -216,6 +218,7 @@ Field_Placement :: struct {
 	hit:       World_Position,
 	heading:   [3]i64,
 	sample:    Sample_Coordinate,
+	tree:      Tree_Key,
 }
 
 Queued_Field_Placement :: struct {
@@ -365,6 +368,9 @@ field_placement_refusal :: proc(state: ^Simulation_State, content: Simulation_Co
 			return .Frame_Cell_Taken
 		}
 	}
+	if placement_cells_meet_a_trunk(state, content, frame, footprint_cells(cell, content.machines.machines[placement.machine].footprint, placement.rotation)) {
+		return .Tree_In_The_Way
+	}
 	if field_footprint_buries_a_player(state, content, frame, placement, cell) {
 		return .Would_Bury_Player
 	}
@@ -403,6 +409,9 @@ foundation_block_refusal :: proc(state: ^Simulation_State, content: Simulation_C
 		}
 	} else if new_frame_cells_meet_a_frame(&entities.frames, frame, cells) {
 		return .Frame_Cell_Taken
+	}
+	if placement_cells_meet_a_trunk(state, content, frame, cells) {
+		return .Tree_In_The_Way
 	}
 	for cell in cells {
 		if field_placement_buries_a_player(state, content.field.tuning, frame, cell) {
@@ -473,6 +482,9 @@ drain_field_placements :: proc(state: ^Simulation_State, content: Simulation_Con
 			continue
 		case .Pick_Up:
 			drain_field_pick_up(state, content, player, placement.frame, placement.cell)
+			continue
+		case .Fell:
+			drain_field_felling(state, content, player, placement.tree)
 			continue
 		case .Machine:
 		}

@@ -76,6 +76,8 @@ Field_Renderer :: struct {
 	meshes:                   map[Field_Node]Field_Node_Render,
 	vertex_count:             int,
 	drawn_node_count:         int,
+	// The trees round the eyes (0197, render_field_trees.odin).
+	trees:                    Field_Tree_Cache,
 }
 
 // Bilinear with mipmaps and repeating, so the tile wraps and stays calm at
@@ -275,6 +277,7 @@ destroy_field_renderer :: proc(renderer: ^Field_Renderer) {
 		unload_field_node_render(render)
 	}
 	delete(renderer.meshes)
+	destroy_field_tree_cache(&renderer.trees)
 	rl.UnloadMesh(renderer.globe)
 	rl.UnloadMaterial(renderer.globe_material)
 	rl.UnloadMaterial(renderer.material)

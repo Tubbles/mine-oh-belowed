@@ -411,6 +411,8 @@ field_edit_refusal_text :: proc(refusal: Field_Edit_Refusal, material: Field_Mat
 		return "  too few foundations for the block"
 	case .Something_Stands_On_It:
 		return "  something stands on it"
+	case .Tree_In_The_Way:
+		return "  a tree stands there"
 	}
 	return ""
 }
@@ -551,6 +553,7 @@ lay_planet_preview_foundations :: proc(preview: ^Planet_Preview) {
 	platform.log_printf("planet preview: laid %d foundations on frame %d", frame_cell_count(&entities.frames, frame), frame)
 	lay_planet_preview_arms(preview, frame)
 	lay_planet_preview_run(preview, frame)
+	clear_trees_under_frames(simulation, content.machines, content.field)
 }
 
 // The frame's streaming: the session's field streaming round the
@@ -561,6 +564,8 @@ stream_planet_preview :: proc(preview: ^Planet_Preview) -> []Field_Node {
 	selection := select_field_nodes(view, context.temp_allocator)
 	stream_field_session(preview.session, selection)
 	upload_streamed_field_meshes(&preview.renderer, &preview.session.field_streaming)
+	eyes := [1]World_Position{planet_preview_viewpoint(preview)}
+	update_field_tree_cache(&preview.renderer.trees, field_tree_generation(&preview.session.simulation.field), eyes[:])
 	return selection
 }
 
@@ -583,7 +588,9 @@ run_planet_preview_frames :: proc(preview: ^Planet_Preview) -> int {
 		if screenshot && preview.walking && !preview.pit_dug && streamed && planet_preview_player(preview).field.on_ground {
 			dig_planet_preview_pit(preview)
 		}
-		settled := streamed && (!preview.walking || planet_preview_pit_lit(preview, selection))
+		eyes := [1]World_Position{planet_preview_viewpoint(preview)}
+		trees_settled := field_tree_cache_settled(&preview.renderer.trees, field_tree_generation(&preview.session.simulation.field), eyes[:])
+		settled := streamed && trees_settled && (!preview.walking || planet_preview_pit_lit(preview, selection))
 		capture := screenshot && planet_preview_screenshot_due(frame, settled)
 		saved := draw_planet_preview(preview, selection, capture, alpha)
 		free_all(context.temp_allocator)

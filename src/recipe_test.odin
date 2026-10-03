@@ -94,11 +94,11 @@ slice_reachable_items :: proc(recipes: Recipe_Registry, start: []bool, furnace: 
 }
 
 // The slice's recipe chain (work item 0179): from the items the field's
-// materials yield (data/materials.sjson; no wood until M14) and the
-// starting items of data/game.sjson, by hand, in the stone furnace and at
-// the stone cutting table (0196), to every building chapter 1 and the
-// first line need, and the three foundations. The kit's planks are the
-// only wood: nothing reachable makes a log.
+// materials yield (data/materials.sjson), the logs the shipped planet's
+// trees yield (0197) and the starting items of data/game.sjson, by hand,
+// in the stone furnace and at the stone cutting table (0196), to every
+// building chapter 1 and the first line need, and the three foundations;
+// the trees' logs make the planks.
 @(test)
 test_the_slice_recipe_chain_is_reachable_from_the_fields_yield :: proc(t: ^testing.T) {
 	items := make_test_items()
@@ -112,7 +112,10 @@ test_the_slice_recipe_chain_is_reachable_from_the_fields_yield :: proc(t: ^testi
 			start[record.item] = true
 		}
 	}
-	testing.expect(t, !start[test_item(items, "log")], "the field yields no wood")
+	for species in default_planet(shipped_test_planets()).trees.species {
+		start[test_item(items, species.item)] = true
+	}
+	testing.expect(t, start[test_item(items, "log")], "the trees yield wood")
 	config, error := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
 	testing.expect(t, error == nil)
 	for stack in config.starting_items {
@@ -123,7 +126,9 @@ test_the_slice_recipe_chain_is_reachable_from_the_fields_yield :: proc(t: ^testi
 	for id in reachable {
 		testing.expectf(t, held[test_item(items, id)], "%s is out of reach", id)
 	}
-	testing.expect(t, !held[test_item(items, "log")], "no recipe within reach makes wood")
+	for id in ([?]string{"plank", "wooden_foundation", "stone_cutting_table"}) {
+		testing.expectf(t, held[test_item(items, id)], "%s is out of reach of the logs", id)
+	}
 }
 
 @(test)

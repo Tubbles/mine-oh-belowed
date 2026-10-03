@@ -155,6 +155,10 @@ Field_Player :: struct {
 	// (aim_field_player_at_frames).
 	target:            Field_Raycast_Hit,
 	frame_target:      Frame_Raycast_Hit,
+	// The trunk under the reticle when it is nearer than both (0197,
+	// aim_field_player_at_trees), which then clears them. A save from
+	// before 0197 loads it clear.
+	tree_target:       Field_Tree_Target,
 	// The hand tool (0171): an index into the brushes of data/game.sjson
 	// and the material a place raises the field from, or the tool held
 	// instead of the material (0174, 0176), the machine a Machine tool

@@ -292,3 +292,40 @@ test_a_world_file_without_a_crater_takes_the_datas :: proc(t: ^testing.T) {
 	recorded.crater.depth_metres = MAXIMUM_CRATER_DEPTH_METRES + 1
 	testing.expect(t, strings.contains(planet_generation_record_problem(recorded), "crater.depth_metres"), "a recorded crater out of bounds is refused")
 }
+
+// Work item 0197: a world file recorded without the trees resolves to
+// the data's placement; a recorded placement survives
+// make_recorded_planet when the data's differs; a recorded species count
+// repeats or cuts the data's species, and a count of 0 grows no trees.
+@(test)
+test_a_world_file_without_trees_takes_the_datas :: proc(t: ^testing.T) {
+	planets := shipped_test_planets()
+	planet := default_planet(planets)
+	record := planet_generation_record(planet)
+	testing.expect(t, record.trees_recorded)
+	record.trees, record.trees_recorded = {}, false
+	settings := World_File_Settings{planet_id = planet.id}
+	_, _, resolved := resolve_world_planet(settings, record, planets, true)
+	testing.expect(t, resolved.trees_recorded)
+	testing.expect_value(t, resolved.trees, planet_tree_placement(planet.trees))
+	recorded := planet_generation_record(planet)
+	recorded.trees.density_percent = 40
+	recorded.trees.species_count = 3
+	testing.expect_value(t, planet_generation_record_problem(recorded), "")
+	_, _, kept := resolve_world_planet(settings, recorded, planets, true)
+	loaded := make_recorded_planet(planet, kept)
+	defer destroy_recorded_planet(&loaded)
+	testing.expect_value(t, loaded.trees.density_percent, 40)
+	testing.expect_value(t, len(loaded.trees.species), 3)
+	for species in loaded.trees.species {
+		testing.expect_value(t, species.id, planet.trees.species[0].id)
+		testing.expect_value(t, species.machine, planet.trees.species[0].machine)
+	}
+	none := planet_generation_record(planet)
+	none.trees.species_count = 0
+	bare := make_recorded_planet(planet, none, context.temp_allocator)
+	testing.expect_value(t, len(bare.trees.species), 0)
+	testing.expect_value(t, make_planet_generation(TEST_PLANET_SEED, bare, 1000).trees, Planet_Tree_Term{})
+	none.trees.species_count = MAXIMUM_TREE_SPECIES + 1
+	testing.expect(t, strings.contains(planet_generation_record_problem(none), "trees.species_count"), "a recorded species count out of bounds is refused")
+}

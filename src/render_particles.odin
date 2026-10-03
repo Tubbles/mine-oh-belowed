@@ -152,11 +152,11 @@ block_debris_color :: proc(blocks: Block_Registry, block: Block_Id) -> [4]u8 {
 }
 
 // Debris off the face the player digs at, more as the dig goes on; none
-// while picking up an entity.
+// while picking up an entity or felling a tree (0197).
 mining_emitter :: proc(player: Player, blocks: Block_Registry) -> (Emitter, bool) {
 	mining := player.mining
 	fraction := mining_fraction(mining)
-	if fraction <= 0 || mining.entity != NO_ENTITY {
+	if fraction <= 0 || mining.entity != NO_ENTITY || mining.tree {
 		return {}, false
 	}
 	face := player.target.block == mining.block ? player.target.face : .Positive_Y

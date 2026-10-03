@@ -94,8 +94,9 @@ session_plays_field :: proc(plan: Session_Plan, content: Game_Content) -> bool {
 // the home, a loaded world's set left restoring for the workers to
 // generate (Field_Chunk_Set.restoring, 0185), the
 // planet's veins registered (register_planet_veins: a new world's
-// reservoirs, a loaded world's discs again), the water's planet and the
-// workers.
+// reservoirs, a loaded world's discs again), the water's planet, an old
+// save's trees in its frames cleared (clear_trees_of_an_old_save, 0197)
+// and the workers.
 start_field_world :: proc(session: ^Session, plan: Session_Plan, config: Game_Config, content: Game_Content) -> string {
 	simulation := &session.simulation
 	field := &simulation.field
@@ -111,6 +112,9 @@ start_field_world :: proc(session: ^Session, plan: Session_Plan, config: Game_Co
 	generation := make_planet_generation(seed, session.planet, field.spacing_millimetres)
 	if problem := register_planet_veins(&world.veins, &world.vein_indices, generation, session.generator.veins); problem != "" {
 		return problem
+	}
+	if plan.loading {
+		clear_trees_of_an_old_save(simulation, content.machines, session.field_content)
 	}
 	session.field_streaming = start_field_streaming(seed, session.planet, field.spacing_millimetres, default_worker_count())
 	return ""
@@ -202,7 +206,7 @@ start_session :: proc(requested_plan: Session_Plan, config: Game_Config, content
 		if session.field_streaming.shared != nil {
 			stop_field_streaming(&session.field_streaming)
 		}
-		delete(session.field_content.brushes)
+		destroy_field_content(&session.field_content)
 		destroy_simulation(&session.simulation)
 		delete(session.technologies.technologies)
 		destroy_recorded_planet(&session.planet)
@@ -234,7 +238,7 @@ end_session :: proc(session: ^Session) {
 	if session.field_streaming.shared != nil {
 		stop_field_streaming(&session.field_streaming)
 	}
-	delete(session.field_content.brushes)
+	destroy_field_content(&session.field_content)
 	destroy_session_network(&session.network)
 	destroy_lockstep(&session.lockstep)
 	destroy_simulation(&session.simulation)

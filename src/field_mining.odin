@@ -87,6 +87,9 @@ Field_Edit_Refusal :: enum u8 {
 	// A pick up of an entity that holds something up (0195,
 	// field_entity_is_held_up).
 	Something_Stands_On_It,
+	// A placement's cell meets a tree's trunk (0197,
+	// placement_cells_meet_a_trunk).
+	Tree_In_The_Way,
 }
 
 // The string keys of the refusals the HUD toasts (Field_Refused, 0179).
@@ -106,6 +109,7 @@ field_refusal_keys := [Field_Edit_Refusal]string {
 	.Too_Steep         = "field_refused_too_steep",
 	.Too_Few_Foundations = "field_refused_too_few_foundations",
 	.Something_Stands_On_It = "field_refused_something_stands_on_it",
+	.Tree_In_The_Way   = "field_refused_tree_in_the_way",
 }
 
 Queued_Field_Edit :: struct {
@@ -148,6 +152,12 @@ Field_Simulation :: struct {
 	// The chunks outside the set whose terrain or water differs from their
 	// generation, taken again when a chunk enters the set.
 	saved_chunks:        map[Field_Chunk_Coordinate]Field_Saved_Chunk,
+	// The trees felled (0197, field_trees.odin), saved in their table;
+	// the standing ones are the generation's. felled_trees_recorded is
+	// false (not saved) while a save written before the trees has not had
+	// the trees in its frames cleared (clear_trees_of_an_old_save).
+	felled_trees:          map[Tree_Key]struct{},
+	felled_trees_recorded: bool,
 }
 
 // A chunk kept outside the set: its codec bytes (encode_field_chunk) and
@@ -194,6 +204,15 @@ Field_Content :: struct {
 	starting_items: []Starting_Item,
 	// Machines on bare ground (0201, machine_wear.odin).
 	bare_ground: Bare_Ground_Tuning,
+	// The planet's tree species (0197, field_trees.odin), in allocator.
+	tree_species: []Field_Tree_Species,
+}
+
+// The lists make_field_content made.
+destroy_field_content :: proc(content: ^Field_Content) {
+	delete(content.brushes)
+	delete(content.tree_species)
+	content.brushes, content.tree_species = nil, nil
 }
 
 destroy_field_simulation :: proc(simulation: ^Field_Simulation) {
@@ -210,6 +229,7 @@ destroy_field_simulation :: proc(simulation: ^Field_Simulation) {
 		delete(saved.bytes)
 	}
 	delete(simulation.saved_chunks)
+	delete(simulation.felled_trees)
 	destroy_field_world(&simulation.world)
 	simulation^ = {}
 }
@@ -450,6 +470,7 @@ drain_field_dig :: proc(state: ^Simulation_State, content: Simulation_Content, p
 		}
 	}
 	report_blocked_dig(player, content.field.materials, result.blocked)
+	fell_trees_over_dug_ground(state, content, dig)
 }
 
 drain_field_place :: proc(state: ^Simulation_State, content: Simulation_Content, player: ^Player, edit: Field_Edit) {
@@ -492,21 +513,26 @@ drain_field_edits :: proc(state: ^Simulation_State, content: Simulation_Content)
 }
 
 // One player moves and queues its brush edit, its placements and a
-// finished pick up (advance_field_pick_up); nothing edits the field yet. The tool follows the hotbar (simulation_field.odin)
-// before this runs. The move counts for the walk counter unless the
-// player flies, as the block world's (0187).
+// finished pick up (advance_field_pick_up) or, aimed at a trunk, a
+// finished felling (advance_field_felling, 0197); nothing edits the field
+// yet. The tool follows the hotbar (simulation_field.odin) before this
+// runs. The move counts for the walk counter unless the player flies, as
+// the block world's (0187).
 queue_field_player_edit :: proc(state: ^Simulation_State, content: Simulation_Content, index: int, input: Field_Player_Input) {
 	field := &state.field
 	player := &state.players[index]
 	entities := &state.world.entities
 	player.field_refusal, player.field_refused_material = .None, .Air
 	walk_start := player.field.position
-	tick_field_player(&field.world, &entities.frames, content.field.tuning, &player.field, input)
+	move_and_aim_field_player(field, &entities.frames, content.field, &player.field, input)
 	if !player.field.flying {
 		record_field_walked(&state.records.statistics, walk_start, player.field.position, player.field.up)
 	}
-	aim_field_player_at_frames(&player.field, &entities.frames, content.field.tuning)
-	if pick_up, finished := advance_field_pick_up(state, content, player, input); finished {
+	if player.field.tree_target.hit {
+		if felling, finished := advance_field_felling(state, content, player, input); finished {
+			append(&field.placements, Queued_Field_Placement{player = index, placement = felling})
+		}
+	} else if pick_up, finished := advance_field_pick_up(state, content, player, input); finished {
 		append(&field.placements, Queued_Field_Placement{player = index, placement = pick_up})
 	}
 	if edit, wanted := field_player_edit(&field.world, field.spacing_millimetres, player.field, input, content.field.brushes); wanted {

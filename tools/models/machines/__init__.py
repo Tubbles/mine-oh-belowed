@@ -10,6 +10,7 @@ from . import (
     lab,
     lamp,
     offshore_pump,
+    pine_tree,
     power_switch,
     pump,
     schematic_crate,
@@ -46,4 +47,5 @@ MACHINES = {
     "lab": lab.build,
     "stone_cutting_table": stone_cutting_table.build,
     "stone_cutter": stone_cutter.build,
+    "pine_tree": pine_tree.build,
 }

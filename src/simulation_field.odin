@@ -32,8 +32,8 @@ FIELD_TORCH_AIM_RADIUS_MILLIMETRES :: 600
 FIELD_SPAWN_CLEARANCE_MILLIMETRES :: 250
 
 // The field's tables for a session (Simulation_Content.field): the
-// tuning of the planet, the spacing and the tick rate; the brushes in
-// allocator.
+// tuning of the planet, the spacing and the tick rate; the brushes and the
+// tree species in allocator (destroy_field_content).
 make_field_content :: proc(config: Game_Config, items: Item_Registry, machines: Machine_Registry, materials: Field_Material_Table, lighting: Lighting_File, planet: Planet, spacing_millimetres: int, allocator := context.allocator) -> Field_Content {
 	torch_level, _ := find_lighting_emitter(lighting, config.field_simulation.torch_emitter)
 	torch_item, torch_found := find_item_id(items, config.field_simulation.torch_item)
@@ -55,6 +55,7 @@ make_field_content :: proc(config: Game_Config, items: Item_Registry, machines: 
 		torch_level = u8(torch_level),
 		starting_items = config.starting_items,
 		bare_ground = make_bare_ground_tuning(config),
+		tree_species = make_field_tree_species(planet.trees, items, machines, config.tick_rate, allocator),
 	}
 }
 
@@ -203,8 +204,8 @@ field_torch_index :: proc(torches: []Field_Torch, sample: Sample_Coordinate) -> 
 	return -1
 }
 
-// How far along the ray the reticle's terrain or frame hit lies, or the
-// reach without one: a torch behind it is out of sight.
+// How far along the ray the reticle's terrain, frame or trunk hit (0197)
+// lies, or the reach without one: a torch behind it is out of sight.
 field_aim_limit :: proc(player: Field_Player, tuning: Field_Player_Tuning) -> i64 {
 	limit := tuning.reach
 	if player.target.hit {
@@ -212,6 +213,9 @@ field_aim_limit :: proc(player: Field_Player, tuning: Field_Player_Tuning) -> i6
 	}
 	if player.frame_target.hit {
 		limit = min(limit, player.frame_target.distance)
+	}
+	if player.tree_target.hit {
+		limit = min(limit, player.tree_target.distance)
 	}
 	return limit
 }
@@ -475,6 +479,7 @@ enable_new_field_world :: proc(state: ^Simulation_State, config: Game_Config, ma
 		player.field = field_spawn_player(&state.world.entities, machines, seed, planet, spacing_millimetres)
 	}
 	field.world.water_planet = make_field_water_planet(seed, planet, spacing_millimetres)
+	field.felled_trees_recorded = true
 }
 
 // The spawn of a field session's new player: the pod's cabin, the starter

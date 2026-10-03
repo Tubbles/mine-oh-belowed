@@ -34,6 +34,9 @@ Generation_Purpose :: enum u8 {
 	Planet_Tint,
 	// The veins on the sphere of work item 0179.
 	Planet_Veins,
+	// The groves and the trees on the sphere of work item 0197.
+	Planet_Groves,
+	Planet_Trees,
 }
 
 Purpose_Seeds :: [Generation_Purpose]u64

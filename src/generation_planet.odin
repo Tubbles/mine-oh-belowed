@@ -64,6 +64,8 @@ Planet_Generation :: struct {
 	veins:               Planet_Veins,
 	// The crater at the home (0199, make_crater_term).
 	crater:              Crater_Term,
+	// The trees on the sphere (0197, generation_planet_trees.odin).
+	trees:               Planet_Tree_Term,
 }
 
 // The starter veins lie round the planet's home (the pod's, 0179,
@@ -85,6 +87,7 @@ make_planet_generation :: proc(seed: u64, planet: Planet, spacing_millimetres: i
 		veins = plan_planet_veins(seed, planet_home_direction(planet.home), radius),
 	}
 	generation.crater = make_crater_term(generation, planet.crater, planet_home_direction(planet.home))
+	generation.trees = make_planet_tree_term(seed, planet.trees, planet.home, radius)
 	return generation
 }
 

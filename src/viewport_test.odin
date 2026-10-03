@@ -325,7 +325,8 @@ test_a_removed_viewport_leaves_and_its_entry_is_taken_again :: proc(t: ^testing.
 }
 
 // The touch ring's point (0195): a block's centre in the block world; for
-// a pick up on a frame, the mined cell's centre on its frame in metres.
+// a pick up on a frame, the mined cell's centre on its frame in metres;
+// for a felling (0197), the aimed point of the trunk.
 @(test)
 test_the_mining_ring_sits_on_a_frame_cell :: proc(t: ^testing.T) {
 	machines := make_test_machines()
@@ -333,10 +334,15 @@ test_the_mining_ring_sits_on_a_frame_cell :: proc(t: ^testing.T) {
 	defer destroy_entities(&entities)
 	handle, frame_id := place_free_foundation(&entities, machines, test_foundation(machines), TEST_FRAME_HIT, {UNIT_VECTOR_ONE, 0, 0}, 500)
 	frame, _ := find_frame(&entities.frames, frame_id)
-	on_frame := Mining_State{active = true, entity = handle}
-	testing.expect_value(t, mining_ring_point(&entities, on_frame), world_position_to_metres(frame_cell_centre(frame, {})))
-	block := Mining_State{active = true, block = {3, 4, 5}}
-	testing.expect_value(t, mining_ring_point(&entities, block), block_centre({3, 4, 5}))
+	tuning: Field_Player_Tuning
+	on_frame := Player{mining = Mining_State{active = true, entity = handle}}
+	testing.expect_value(t, mining_ring_point(&entities, on_frame, tuning), world_position_to_metres(frame_cell_centre(frame, {})))
+	block := Player{mining = Mining_State{active = true, block = {3, 4, 5}}}
+	testing.expect_value(t, mining_ring_point(&entities, block, tuning), block_centre({3, 4, 5}))
+	felling := Player{mining = Mining_State{active = true, tree = true}}
+	felling.field = make_field_player(World_Position{0, 8000 * POSITION_UNITS_PER_METRE, 0}, {UNIT_VECTOR_ONE, 0, 0})
+	felling.field.tree_target = {hit = true, distance = 2 * POSITION_UNITS_PER_METRE}
+	testing.expect_value(t, mining_ring_point(&entities, felling, tuning), [3]f32{2, 8000, 0})
 }
 
 // Work item 0194: one frame with the inventory binding pressed while the

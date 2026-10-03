@@ -31,7 +31,7 @@ raycast_blocks :: proc(world: ^World, registry: Block_Registry, origin, directio
 }
 
 // block is the mined cell, or the entity's origin while picking up an
-// entity.
+// entity, or a tree's key while felling it on the field (tree, 0197).
 Mining_State :: struct {
 	active:         bool,
 	block:          World_Coordinate,
@@ -39,6 +39,7 @@ Mining_State :: struct {
 	entity:         Entity_Handle,
 	progress_ticks: u32,
 	required_ticks: u32,
+	tree:           bool,
 }
 
 // Holding Mine this long on an entity picks it up.

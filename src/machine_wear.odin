@@ -87,8 +87,8 @@ bare_ground_height :: proc(world: ^Field_World, spacing_millimetres: int, frame:
 // A machine other than a foundation on a new frame of its own (a queued
 // placement with new_frame): too steep unless the record stands on the
 // ground, then the item, a drill's vein, another frame's occupied cells
-// (new_frame_cells_meet_a_frame) and the players as for a snapped
-// machine.
+// (new_frame_cells_meet_a_frame), a tree's trunk (0197) and the players
+// as for a snapped machine.
 bare_ground_placement_refusal :: proc(state: ^Simulation_State, content: Simulation_Content, player: Player, placement: Field_Placement, frame: Frame) -> Field_Edit_Refusal {
 	machine := content.machines.machines[placement.machine]
 	size := rotated_footprint_size(machine.footprint, placement.rotation)
@@ -105,6 +105,9 @@ bare_ground_placement_refusal :: proc(state: ^Simulation_State, content: Simulat
 	}
 	if new_frame_cells_meet_a_frame(&state.world.entities.frames, frame, footprint_cells({}, machine.footprint, placement.rotation)) {
 		return .Frame_Cell_Taken
+	}
+	if placement_cells_meet_a_trunk(state, content, frame, footprint_cells({}, machine.footprint, placement.rotation)) {
+		return .Tree_In_The_Way
 	}
 	if field_footprint_buries_a_player(state, content, frame, placement, {}) {
 		return .Would_Bury_Player

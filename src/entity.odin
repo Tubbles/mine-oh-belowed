@@ -555,6 +555,9 @@ add_entity :: proc(entities: ^Entities, machines: Machine_Registry, machine: Mac
 		handle = pool_add(&entities.foundations, .Foundation, Foundation{common = common})
 	case .Belt_Pole:
 		handle = pool_add(&entities.belt_poles, .Belt_Pole, Belt_Pole{common = common})
+	case .Tree:
+		// A tree is the generation's (0197), never an entity.
+		return NO_ENTITY
 	}
 	common.handle = handle
 	occupy_entity_cells(entities, machines, common)

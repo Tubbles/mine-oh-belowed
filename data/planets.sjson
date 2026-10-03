@@ -1,5 +1,6 @@
 // The planets (work item 0168, doc/content.md, Planets). Every key is
 // required but relief_shape (0189), whose terms are off without it; the
+// trees are doc/content.md, Trees (0197); the
 // terrain field generates a planet from its record, the
 // world seed and the sample spacing (generation_planet.odin). A world
 // records the values it was made with in its world.sjson; once the
@@ -50,6 +51,37 @@ planets = [
 		// steepest), the rim falls 1 m over 6 m, and the crater reaches
 		// 18 m from the home.
 		crater = {radius_metres = 12, depth_metres = 3, floor_radius_metres = 4, rim_metres = 1}
+		// Trees (work item 0197, doc/content.md, Trees): groves of trees on
+		// the surface above the sea, none in the home's clearing. A world
+		// records the placement keys and the species count in its
+		// world.sjson.
+		trees = {
+			// The grove lattice's cube edge; a grove centre per cube at most.
+			grove_spacing_metres = 40
+			// The share of the grove cubes that hold a grove.
+			grove_share_percent = 50
+			// A grove's reach; the chance of a tree falls with the square of
+			// the distance from its centre.
+			grove_radius_metres = 14
+			// The tree lattice's cube edge; a tree per cube at most.
+			tree_spacing_metres = 4
+			// The chance of a tree at a grove's centre.
+			density_percent = 80
+			// No tree within this of the home: the crater, which reaches
+			// 18 m, and its rim.
+			clearing_metres = 24
+			// No tree where the ground rises more than this per 100 m (35
+			// degrees).
+			maximum_slope_percent = 70
+			species = [
+				// machine: a machines.sjson record of kind tree, its model.
+				// tint multiplies the model's colours. The yield is count of
+				// item after Mine held felling_milliseconds on the trunk (four
+				// logs at the block world's 1.5 s a log). The trunk is the
+				// capsule the walk, the aim and the placements meet.
+				{id = "pine", machine = "pine_tree", tint = [236, 232, 214], item = "log", count = 4, felling_milliseconds = 6000, trunk_radius_millimetres = 180, trunk_height_millimetres = 2500}
+			]
+		}
 		// Fill per surface sample per minute (254 a sample), applied by
 		// the weather (M15).
 		rain_fill_per_minute = 2

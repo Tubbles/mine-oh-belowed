@@ -94,6 +94,10 @@ Machine_Kind :: enum u8 {
 	// player's hand queue. It rides in the foundations' pool, an entity of
 	// its common data only, like the pod.
 	Crafting_Station,
+	// A tree's model (work item 0197, field_trees.odin): placed by the
+	// planet's generation, never by an item, and never an entity
+	// (add_entity refuses it).
+	Tree,
 }
 
 @(rodata)
@@ -127,6 +131,7 @@ machine_kind_names := [Machine_Kind]string {
 	.Belt_Pole     = "belt_pole",
 	.Pod           = "pod",
 	.Crafting_Station = "crafting_station",
+	.Tree          = "tree",
 }
 
 // The shape family a belt item places. Ramps become up or down and lifts
@@ -432,6 +437,10 @@ validate_machine_kind_fields :: proc(definition: Machine_Definition, kind: Machi
 		if definition.item != "" {
 			return fmt.tprintf("pod %q cannot be placed by an item", definition.id)
 		}
+	case .Tree:
+		if definition.item != "" {
+			return fmt.tprintf("tree %q cannot be placed by an item", definition.id)
+		}
 	}
 	return ""
 }
@@ -625,9 +634,9 @@ validate_machine_models :: proc(registry: Machine_Registry, data_directory: stri
 	return ""
 }
 
-// The capsule, schematic crates and the pod have no item.
+// The capsule, schematic crates, the pod and the trees have no item.
 machine_kind_is_placed_by_world :: proc(kind_name: string) -> bool {
-	return kind_name == machine_kind_names[.Capsule] || kind_name == machine_kind_names[.Schematic_Crate] || kind_name == machine_kind_names[.Pod]
+	return kind_name == machine_kind_names[.Capsule] || kind_name == machine_kind_names[.Schematic_Crate] || kind_name == machine_kind_names[.Pod] || kind_name == machine_kind_names[.Tree]
 }
 
 // One by one by one with one slot, and no item.

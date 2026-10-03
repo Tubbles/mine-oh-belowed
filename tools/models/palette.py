@@ -30,4 +30,10 @@ MATERIALS = {
     "timber_dark": ((82, 58, 38), False),
     "stone": ((128, 126, 120), False),
     "lamp_glow": ((255, 236, 190), True),
+    # Trees (0197): the bark and three greens of a pine's crown, from the
+    # shade underneath to the light top.
+    "bark": ((86, 62, 44), False),
+    "needles_dark": ((38, 70, 46), False),
+    "needles": ((50, 88, 56), False),
+    "needles_light": ((70, 108, 66), False),
 }
