@@ -413,14 +413,14 @@ test_an_old_foundation_loads_as_the_stone_brick_foundation :: proc(t: ^testing.T
 @(test)
 test_a_former_id_that_is_also_an_id_is_refused :: proc(t: ^testing.T) {
 	content := make_save_test_content()
-	testing.expect_value(t, content_former_id_problem(Game_Content{simulation_content = content}), "")
+	testing.expect_value(t, content_former_id_problem(content), "")
 	clashing := content
 	clashing.items.items = slice.clone(content.items.items, context.temp_allocator)
 	clashing.items.items[test_item(content.items, "iron_foundation")].former_ids = {"wooden_foundation"}
-	problem := content_former_id_problem(Game_Content{simulation_content = clashing})
+	problem := content_former_id_problem(clashing)
 	testing.expectf(t, strings.contains(problem, "iron_foundation") && strings.contains(problem, "wooden_foundation"), "%q names both", problem)
 	twice := content
 	twice.recipes.recipes = slice.clone(content.recipes.recipes, context.temp_allocator)
 	twice.recipes.recipes[test_recipe(content.recipes, "iron_foundation")].former_ids = {"foundation"}
-	testing.expect(t, strings.contains(content_former_id_problem(Game_Content{simulation_content = twice}), "twice"))
+	testing.expect(t, strings.contains(content_former_id_problem(twice), "twice"))
 }

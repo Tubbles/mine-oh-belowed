@@ -238,9 +238,9 @@ content_former_ids :: proc(content: Simulation_Content) -> (former: Content_Form
 
 // A former id that is also a current id of its table, or listed twice in
 // one table, would make a saved id ambiguous; "" when there is none.
-content_former_id_problem :: proc(content: Game_Content) -> string {
-	former := content_former_ids(content.simulation_content)
-	current := content_tables(content.simulation_content)
+content_former_id_problem :: proc(content: Simulation_Content) -> string {
+	former := content_former_ids(content)
+	current := content_tables(content)
 	for table in Content_Table {
 		for entry, index in former[table] {
 			if slice.contains(current[table], entry.former) {

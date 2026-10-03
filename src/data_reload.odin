@@ -107,7 +107,7 @@ load_content_registries :: proc(data_directory: string, string_entries: map[stri
 		platform.log_printf("error: invalid %s: %s", MACHINES_FILE_NAME, problem)
 		return {}, false
 	}
-	if problem := content_former_id_problem(content); problem != "" {
+	if problem := content_former_id_problem(content.simulation_content); problem != "" {
 		platform.log_printf("error: invalid %s", problem)
 		return {}, false
 	}

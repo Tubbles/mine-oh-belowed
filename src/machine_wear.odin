@@ -18,9 +18,6 @@ import "platform"
 // recipe (machine_return_stacks). Records with stands_on_ground (poles,
 // pipes, belts, the pod) never wear and are never refused for slope.
 
-// The bounds of data/game.sjson's bare ground values (bare_ground_problem).
-MAXIMUM_BARE_GROUND_FLATNESS_MILLIMETRES :: 2000
-MAXIMUM_BARE_GROUND_LIFE_MINUTES :: 7 * 24 * 60
 // The flatness probe starts this far above the new frame's base along its
 // up and reaches as far below it: ground higher reads as this high, and
 // no ground within reach is too steep. Above the largest flatness, so

@@ -528,6 +528,10 @@ validate_game_config :: proc(config: Game_Config) -> string {
 	return field_player_speed_problem(config.field_player, config.tick_rate)
 }
 
+// The bounds of data/game.sjson's bare ground values (bare_ground_problem).
+MAXIMUM_BARE_GROUND_FLATNESS_MILLIMETRES :: 2000
+MAXIMUM_BARE_GROUND_LIFE_MINUTES :: 7 * 24 * 60
+
 // Every value of the bare ground (0201) inside its bound; a missing key
 // reads as zero and fails the life's and the salvage's.
 bare_ground_problem :: proc(config: Game_Config) -> string {
