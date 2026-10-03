@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
-"""Generate art direction images through fal.ai's queue API (work item 0211).
+"""Generate art direction images for the booklet (work item 0211).
 
-    tools/art/generate.py --model flux2 --prompt "..." --out work/art/2026-10-03-furnace [--count 2] [--ratio 16:9] [--seed 7]
+    tools/art/generate.py --model banana --prompt "..." --out work/art/2026-10-03-furnace [--count 2] [--ratio 16:9] [--seed 7] [--reference image.png ...]
 
-Models: flux2 (fal-ai/flux-2-pro, consistency and detail), banana (fal-ai/nano-banana-pro, world building).
-The key comes from ~/.config/fal/key (one line) or $FAL_KEY and is never printed.
-Every image lands in the output folder as <model>_<index>.<format> with the prompt in prompt.txt beside it.
+Providers and keys, never printed:
+  openrouter (default): ~/.config/openrouter/key or $OPENROUTER_API_KEY; POST https://openrouter.ai/api/v1/images,
+      the cost of every call comes back in usage.cost and is logged.
+  fal: ~/.config/fal/key or $FAL_KEY; the queue API at https://queue.fal.run.
+
+Models (openrouter ids, fal ids): banana (google/gemini-3-pro-image, fal-ai/nano-banana-pro), banana2 (google/gemini-3.1-flash-image),
+  gpt (openai/gpt-image-2.5-sunburst), seedream (bytedance-seed/seedream-4.5), flux2 (black-forest-labs/flux.2-pro, fal-ai/flux-2-pro).
+Every image lands in the output folder as <model>_<index>.<format>; prompt.txt beside it records the model, the seed, the cost and the prompt.
 """
 import argparse
+import base64
 import json
 import os
 import sys
@@ -15,36 +21,62 @@ import time
 import urllib.error
 import urllib.request
 
-MODELS = {
-    "flux2": "fal-ai/flux-2-pro",
-    "banana": "fal-ai/nano-banana-pro",
+OPENROUTER_MODELS = {
+    "banana": "google/gemini-3-pro-image",
+    "banana2": "google/gemini-3.1-flash-image",
+    "gpt": "openai/gpt-image-2.5-sunburst",
+    "seedream": "bytedance-seed/seedream-4.5",
+    "flux2": "black-forest-labs/flux.2-pro",
 }
+FAL_MODELS = {"banana": "fal-ai/nano-banana-pro", "flux2": "fal-ai/flux-2-pro"}
 FLUX_SIZES = {"16:9": (1536, 864), "4:3": (1280, 960), "1:1": (1024, 1024), "3:2": (1536, 1024), "21:9": (1792, 768)}
 
 
-def read_key():
-    key = os.environ.get("FAL_KEY", "").strip()
-    path = os.path.expanduser("~/.config/fal/key")
+def read_key(provider):
+    variable, path = {"openrouter": ("OPENROUTER_API_KEY", "~/.config/openrouter/key"), "fal": ("FAL_KEY", "~/.config/fal/key")}[provider]
+    key = os.environ.get(variable, "").strip()
+    path = os.path.expanduser(path)
     if not key and os.path.isfile(path):
         key = open(path).read().strip()
     if not key:
-        sys.exit("no key: put it in ~/.config/fal/key or $FAL_KEY")
+        sys.exit(f"no {provider} key: put it in {path} or ${variable}")
     return key
 
 
-def request(url, key, body=None, method=None):
+def request(url, headers, body=None, method=None):
     data = json.dumps(body).encode() if body is not None else None
-    headers = {"Authorization": "Key " + key, "Content-Type": "application/json"}
-    call = urllib.request.Request(url, data=data, headers=headers, method=method or ("POST" if data else "GET"))
+    call = urllib.request.Request(url, data=data, headers={**headers, "Content-Type": "application/json"}, method=method or ("POST" if data else "GET"))
     try:
-        with urllib.request.urlopen(call, timeout=120) as response:
+        with urllib.request.urlopen(call, timeout=300) as response:
             return json.loads(response.read())
     except urllib.error.HTTPError as error:
-        detail = error.read().decode(errors="replace")[:600]
-        sys.exit(f"{url}: HTTP {error.code}: {detail}")
+        sys.exit(f"{url}: HTTP {error.code}: {error.read().decode(errors='replace')[:600]}")
 
 
-def build_input(model, prompt, count, ratio, seed):
+def reference_data_uri(path):
+    extension = os.path.splitext(path)[1].lower().lstrip(".")
+    media = {"jpg": "jpeg", "jpeg": "jpeg", "png": "png", "webp": "webp"}[extension]
+    return f"data:image/{media};base64," + base64.b64encode(open(path, "rb").read()).decode()
+
+
+def generate_openrouter(model, prompt, count, ratio, seed, references):
+    headers = {"Authorization": "Bearer " + read_key("openrouter")}
+    body = {"model": OPENROUTER_MODELS[model], "prompt": prompt, "n": count, "aspect_ratio": ratio, "resolution": "2K", "output_format": "png"}
+    if seed is not None:
+        body["seed"] = seed
+    if references:
+        body["input_references"] = [reference_data_uri(path) for path in references]
+    result = request("https://openrouter.ai/api/v1/images", headers, body)
+    images = [base64.b64decode(entry["b64_json"]) for entry in result.get("data", [])]
+    cost = result.get("usage", {}).get("cost")
+    return images, cost, seed
+
+
+def generate_fal(model, prompt, count, ratio, seed, references):
+    if references:
+        sys.exit("references are an openrouter feature in this script")
+    headers = {"Authorization": "Key " + read_key("fal")}
+    endpoint = FAL_MODELS[model]
     if model == "flux2":
         width, height = FLUX_SIZES[ratio]
         body = {"prompt": prompt, "image_size": {"width": width, "height": height}, "num_images": count, "output_format": "png"}
@@ -52,47 +84,55 @@ def build_input(model, prompt, count, ratio, seed):
         body = {"prompt": prompt, "aspect_ratio": ratio, "resolution": "2K", "num_images": count, "output_format": "png"}
     if seed is not None:
         body["seed"] = seed
-    return body
-
-
-def generate(model, prompt, count, ratio, seed, out):
-    key = read_key()
-    endpoint = MODELS[model]
-    submitted = request(f"https://queue.fal.run/{endpoint}", key, build_input(model, prompt, count, ratio, seed))
-    status_url, response_url = submitted["status_url"], submitted["response_url"]
+    submitted = request(f"https://queue.fal.run/{endpoint}", headers, body)
     started = time.time()
-    while True:
-        status = request(status_url, key)
-        if status.get("status") == "COMPLETED":
-            break
+    while request(submitted["status_url"], headers).get("status") != "COMPLETED":
         if time.time() - started > 600:
             sys.exit("timed out waiting for " + submitted.get("request_id", "?"))
         time.sleep(2)
-    result = request(response_url, key)
+    result = request(submitted["response_url"], headers)
+    images = []
+    for image in result.get("images", []):
+        with urllib.request.urlopen(image["url"], timeout=120) as source:
+            images.append(source.read())
+    return images, None, result.get("seed", seed)
+
+
+def write_images(out, model, prompt, ratio, images, cost, seed):
     os.makedirs(out, exist_ok=True)
     existing = len([name for name in os.listdir(out) if name.startswith(model + "_")])
     written = []
-    for index, image in enumerate(result.get("images", [])):
-        extension = "png" if "png" in image.get("content_type", "png") else "jpg"
-        path = os.path.join(out, f"{model}_{existing + index}.{extension}")
-        with urllib.request.urlopen(image["url"], timeout=120) as source, open(path, "wb") as target:
-            target.write(source.read())
+    for index, data in enumerate(images):
+        path = os.path.join(out, f"{model}_{existing + index}.png")
+        with open(path, "wb") as target:
+            target.write(data)
         written.append(path)
+    cost_text = f"${cost:.3f}" if isinstance(cost, (int, float)) else "cost unknown"
     with open(os.path.join(out, "prompt.txt"), "a") as log:
-        log.write(f"{model} seed={result.get('seed', seed)} ratio={ratio}\n{prompt}\n{' '.join(os.path.basename(p) for p in written)}\n\n")
-    return written
+        log.write(f"{model} seed={seed} ratio={ratio} {cost_text}\n{prompt}\n{' '.join(os.path.basename(p) for p in written)}\n\n")
+    return written, cost_text
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--model", choices=MODELS, default="flux2")
+    parser.add_argument("--provider", choices=["openrouter", "fal"], default="openrouter")
+    parser.add_argument("--model", choices=OPENROUTER_MODELS, default="banana")
     parser.add_argument("--prompt", required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--count", type=int, default=2)
     parser.add_argument("--ratio", choices=FLUX_SIZES, default="16:9")
     parser.add_argument("--seed", type=int)
+    parser.add_argument("--reference", action="append", default=[], help="a reference image (openrouter), repeatable")
     arguments = parser.parse_args()
-    for path in generate(arguments.model, arguments.prompt, arguments.count, arguments.ratio, arguments.seed, arguments.out):
+    if arguments.provider == "fal" and arguments.model not in FAL_MODELS:
+        sys.exit(f"fal in this script offers {', '.join(FAL_MODELS)}")
+    generate = generate_openrouter if arguments.provider == "openrouter" else generate_fal
+    images, cost, seed = generate(arguments.model, arguments.prompt, arguments.count, arguments.ratio, arguments.seed, arguments.reference)
+    if not images:
+        sys.exit("the model returned no image")
+    written, cost_text = write_images(arguments.out, arguments.model, arguments.prompt, arguments.ratio, images, cost, seed)
+    print(cost_text)
+    for path in written:
         print(path)
 
 
