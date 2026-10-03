@@ -66,7 +66,7 @@ Verify: two machines on the home network and a split screen pair on the couch sh
 
 ### M14 The ground game on the smooth world (phases 1 to 7)
 
-Every machine of the current content placed on foundation frames, belts and pipes on poles between islands, veins and outcrops, deep veins and caves on the sphere, water and hydro, the quest chapters 1 to 7 played from the pod, the arm model replacing the inserter, the dev kits rebuilt as field worlds, the benchmark sizes 1 to 16 on the new world, and the play build switched. The block world type is removed from the code at the end.
+Every machine of the current content placed on foundation frames, belts and pipes on poles between islands, veins and outcrops, deep veins and caves on the sphere, water and hydro, the quest chapters 1 to 7 played from the pod, the arm model replacing the inserter, the machine models remade as meshes of arbitrary geometry in the art direction's look, the dev kits rebuilt as field worlds, the benchmark sizes 1 to 16 on the new world, and the play build switched. The block world type is removed from the code at the end.
 
 Verify: couch test 6. Chapters 1 to 7 played through by two players on the couch and one remote, saved and resumed between sessions, at 60 ticks per second at benchmark size 16.
 
