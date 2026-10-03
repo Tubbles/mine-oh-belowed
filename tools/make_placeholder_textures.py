@@ -9,13 +9,9 @@ Only the standard library is used (zlib and struct write the PNG files),
 and the output is deterministic: the same script and the same data files
 write the same bytes. Every file is 16 by 16 pixels, 8 bit RGBA.
 
-The ids come from data/blocks.sjson and data/items.sjson, read with small
-regular expressions rather than an SJSON parser. That works because both
-files are regular: every block entry has its id line before its texture
-line, `texture = {top = [r, g, b], side = [...], bottom = [...]}` on one
-line, and every item entry sits on one line with its id first and its
-category and places_block as `key = "value"`. A new block or item gets a
-texture on the next run.
+The ids come from data/blocks.sjson and data/items.sjson, read with
+tools/sjson.py (work item 0207). A new block or item gets a texture on
+the next run.
 
 Blocks: <id>.png holds the side pattern and serves every face group;
 <id>_top.png and <id>_bottom.png are written where the data gives the
@@ -64,9 +60,10 @@ The whole set is a placeholder: hand made art replaces the files later.
 import functools
 import math
 import pathlib
-import re
 import struct
 import zlib
+
+import sjson
 
 REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parent.parent
 DATA_DIRECTORY = REPOSITORY_ROOT / "data"
@@ -76,14 +73,6 @@ UI_ICONS_DIRECTORY = DATA_DIRECTORY / "ui" / "icons"
 SIZE = 16
 TRANSPARENT = (0, 0, 0, 0)
 FALLBACK_STONE = (128, 128, 128)
-
-BLOCK_ID_PATTERN = re.compile(r'^\s*id = "([a-z0-9_]+)"', re.MULTILINE)
-BLOCK_TEXTURE_PATTERN = re.compile(
-    r"texture = \{top = \[(\d+), (\d+), (\d+)\], side = \[(\d+), (\d+), (\d+)\], bottom = \[(\d+), (\d+), (\d+)\]\}"
-)
-ITEM_LINE_PATTERN = re.compile(r'^\s*\{id = "([a-z0-9_]+)"(.*)\}\s*$', re.MULTILINE)
-ITEM_FIELD_PATTERN = re.compile(r'\b(category|places_block) = "([a-z0-9_]+)"')
-PROCEDURAL_BLOCK_PATTERN = re.compile(r'\bblock = "([a-z0-9_]+)"')
 
 MATERIAL_COLOURS = {
     "iron": (160, 160, 168),
@@ -1159,25 +1148,21 @@ def item_image(item: dict, block_images: dict) -> list:
 
 def read_blocks() -> dict:
     """Block id to {top, side, bottom} colours, in file order."""
-    text = (DATA_DIRECTORY / "blocks.sjson").read_text()
-    ids = [(match.start(), match.group(1)) for match in BLOCK_ID_PATTERN.finditer(text)]
     blocks = {}
-    for index, (start, block_id) in enumerate(ids):
-        end = ids[index + 1][0] if index + 1 < len(ids) else len(text)
-        texture = BLOCK_TEXTURE_PATTERN.search(text, start, end)
+    for block in sjson.load(DATA_DIRECTORY / "blocks.sjson")["blocks"]:
+        texture = block.get("texture")
         if texture is None:
-            raise SystemExit(f"blocks.sjson: {block_id} has no texture line")
-        channels = [int(value) for value in texture.groups()]
-        blocks[block_id] = {"top": tuple(channels[0:3]), "side": tuple(channels[3:6]), "bottom": tuple(channels[6:9])}
+            raise SystemExit(f"blocks.sjson: {block['id']} has no texture")
+        blocks[block["id"]] = {face: tuple(texture[face]) for face in ("top", "side", "bottom")}
     return blocks
 
 
 def read_items() -> list:
-    text = (DATA_DIRECTORY / "items.sjson").read_text()
+    """Per item its id, and its category and places_block when present."""
     items = []
-    for match in ITEM_LINE_PATTERN.finditer(text):
-        item = {"id": match.group(1)}
-        item.update(dict(ITEM_FIELD_PATTERN.findall(match.group(2))))
+    for entry in sjson.load(DATA_DIRECTORY / "items.sjson")["items"]:
+        item = {"id": entry["id"]}
+        item.update({key: entry[key] for key in ("category", "places_block") if key in entry})
         items.append(item)
     return items
 
@@ -1187,7 +1172,7 @@ def read_procedural_blocks() -> set:
     path = DATA_DIRECTORY / "textures" / "procedural.sjson"
     if not path.exists():
         return set()
-    return set(PROCEDURAL_BLOCK_PATTERN.findall(path.read_text()))
+    return {texture["block"] for texture in sjson.load(path)["textures"]}
 
 
 def write_image(directory: pathlib.Path, name: str, image: list) -> None:

@@ -60,6 +60,10 @@ Command_Line :: struct {
 	planet_preview_daylight: int `usage:"<percent>: the planet preview's daylight, the sky light's share from 0 (night: only torches light) to 100 (the default)"`,
 	// Work item 0176: a level shot shows the pads, the arms and the run.
 	planet_preview_pitch: int `usage:"<degrees>: the walk screenshot's camera tilt once the pit is dug, from -89 to 89 (default -50, down into the pit)"`,
+	// Work item 0207: the model workbench.
+	model_check:     string `usage:"<machine|all>: check the machine's model (all: every OBJ model and the arm) in the game's mesher and motion, one line per problem, exit 1 on any; no window"`,
+	model_preview:   string `usage:"<machine>[,<machine>]: render each machine's model from four cameras at rest and at three phases into --model-preview-directory, then exit"`,
+	model_preview_directory: string `usage:"<path>: where --model-preview writes <machine>_<camera>_<phase>.png"`,
 	// Work item 0177: lockstep multiplayer.
 	server:          bool `usage:"run the world (--load, or a new one) without a window or a local player and host it for --join (doc/commands.md)"`,
 	port:            int `usage:"the one port --server listens on (default: the first free of 47317 to 47326)"`,
@@ -258,6 +262,12 @@ main :: proc() {
 	if developer_problem != "" {
 		platform.log_printf("error: %s", developer_problem)
 		os.exit(2)
+	}
+	if command_line.model_check != "" {
+		os.exit(run_model_check(command_line.model_check, content.machines, config.foundation_pitch_millimetres, data_directory))
+	}
+	if command_line.model_preview != "" {
+		os.exit(run_model_preview(command_line.model_preview, command_line.model_preview_directory, content.machines, config.foundation_pitch_millimetres, data_directory))
 	}
 	if command_line.benchmark > 0 {
 		os.exit(run_command_line_benchmark(command_line.benchmark, data_directory, config, game_data))
@@ -546,6 +556,9 @@ command_line_plan :: proc(command_line: Command_Line, config: Game_Config, saves
 }
 
 command_line_conflict :: proc(command_line: Command_Line) -> string {
+	if problem := workbench_conflict(command_line); problem != "" {
+		return problem
+	}
 	if command_line.benchmark > 0 {
 		return benchmark_conflict(command_line)
 	}
@@ -584,6 +597,29 @@ network_conflict :: proc(command_line: Command_Line) -> string {
 		// Their requests are queued for the local player, which a server
 		// does not have.
 		return "--server cannot be combined with --chapter or --give"
+	}
+	return ""
+}
+
+// The workbench (0207) runs no world: a check or a preview alone, the
+// preview with its directory.
+workbench_conflict :: proc(command_line: Command_Line) -> string {
+	checking, previewing := command_line.model_check != "", command_line.model_preview != ""
+	switch {
+	case checking && previewing:
+		return "--model-check and --model-preview cannot be combined"
+	case previewing && command_line.model_preview_directory == "":
+		return "--model-preview needs --model-preview-directory"
+	case !previewing && command_line.model_preview_directory != "":
+		return "--model-preview-directory needs --model-preview"
+	case !checking && !previewing:
+		return ""
+	}
+	planet_preview := command_line.planet_preview || command_line.planet_preview_screenshot != "" || command_line.planet_preview_walk
+	planet_preview ||= command_line.planet_preview_daylight != 100 || command_line.planet_preview_pitch != PLANET_PREVIEW_PIT_PITCH_DEGREES
+	world := command_line.benchmark > 0 || command_line.server || command_line.join_address != "" || command_line_starts_world(command_line)
+	if planet_preview || world {
+		return fmt.tprintf("%s runs no world, so it cannot be combined with --benchmark, --planet-preview, --server, --join or a world's flags", checking ? "--model-check" : "--model-preview")
 	}
 	return ""
 }

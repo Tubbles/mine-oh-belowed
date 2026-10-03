@@ -14,6 +14,10 @@
 #   ./build.sh check-android
 #                        the same check for Android arm64 (work item 0114),
 #                        with tools/android_env.sh sourced
+#   ./build.sh model-check [machine]
+#                        the debug build, then --model-check (all by
+#                        default; work item 0207, doc/build.md, The
+#                        workbench)
 #   ./build.sh android   the signed APK build/android/mine-oh-belowed.apk
 #                        (work item 0114); apksigner needs Java, so without
 #                        java on the PATH it re-runs itself inside the
@@ -101,6 +105,14 @@ run_tests() {
 	"$odin" test src -all-packages "$collection" "${platform_flags[@]}" "$@"
 }
 
+# The workbench's checks of the models (work item 0207), from the
+# repository root so the game finds data/.
+model_check() {
+	build -debug
+	cd "$repository_root"
+	"$output" --model-check="$1"
+}
+
 android_container_name=mine-oh-belowed-android
 android_directory="$repository_root/build/android"
 android_bundle="$android_directory/bundle"
@@ -172,8 +184,9 @@ case "$mode" in
 	bench) run_tests -o:speed -define:ODIN_TEST_NAMES=game.test_factory_benchmark ;;
 	check-android) check_android ;;
 	android) build_android ;;
+	model-check) model_check "${2:-all}" ;;
 	*)
-		echo "usage: $0 [debug|release|check|check-windows|test|bench|check-android|android]" >&2
+		echo "usage: $0 [debug|release|check|check-windows|test|bench|check-android|android|model-check]" >&2
 		exit 2
 		;;
 esac

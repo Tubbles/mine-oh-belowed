@@ -246,11 +246,6 @@ test_an_obj_model_wins_over_a_voxel_model :: proc(t: ^testing.T) {
 	destroy_machine_model_mesh(mesh)
 }
 
-// The triangles of both layers.
-model_layers_triangle_count :: proc(meshes: Model_Layers) -> int {
-	return model_layers_vertex_count(meshes) / 3
-}
-
 shipped_machine :: proc(machines: []Machine, id: string) -> (machine: Machine, found: bool) {
 	for candidate in machines {
 		if candidate.id == id {

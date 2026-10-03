@@ -47,16 +47,17 @@ def build_body():
     kit.join(volumes, "body")
 
 
-def build_part():
+def build_part(machine):
     volumes = [
         kit.box((-0.72, -0.20, 1.25), (-0.38, 0.20, 1.60), "galvanised", bevel=0.03),
         kit.cylinder(SHAFT, 1.60, 1.78, 0.12, 10, "steel_dark"),
         kit.cylinder(SHAFT, 0.45, 1.25, 0.06, 8, "steel"),
         kit.cone(SHAFT, 0.25, 0.45, 0.10, 0.0, 8, "mining_ochre"),
     ]
-    kit.join(volumes, "part")
+    kit.join_part(volumes, machine)
 
 
-def build():
+def build(machine):
+    """machine: its record (tools/models/records.py)."""
     build_body()
-    build_part()
+    build_part(machine)

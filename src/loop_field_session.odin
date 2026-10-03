@@ -199,13 +199,18 @@ field_player_body_transform :: proc(feet: [3]f32, player: Field_Player) -> matri
 	}
 }
 
+// The player without the model; the model preview (0207) draws it for
+// scale.
+draw_field_player_capsule :: proc(feet, up: [3]f32) {
+	rl.DrawCapsule(feet + up * 0.3, feet + up * 1.5, 0.3, 8, 4, FIELD_PLAYER_CAPSULE_COLOR)
+}
+
 // The body standing still, or a capsule without the model.
 draw_field_player_body :: proc(scene: Field_Scene, player: Field_Player) {
 	previous := world_position_to_metres(player.previous_position)
 	feet := previous + (world_position_to_metres(player.position) - previous) * scene.frame.alpha
 	if !scene.player_model.loaded {
-		up := unit_vector_to_f32(player.up)
-		rl.DrawCapsule(feet + up * 0.3, feet + up * 1.5, 0.3, 8, 4, FIELD_PLAYER_CAPSULE_COLOR)
+		draw_field_player_capsule(feet, unit_vector_to_f32(player.up))
 		return
 	}
 	light := player_body_light(scene.frame, feet)

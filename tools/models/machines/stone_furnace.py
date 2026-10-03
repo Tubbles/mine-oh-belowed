@@ -7,7 +7,9 @@ import math
 from .. import kit
 
 
-def build():
+def build(machine):
+    """machine: its record (tools/models/records.py); the furnace takes
+    nothing from it, since it has no ports and no moving part."""
     volumes = []
     # Base plate.
     volumes.append(kit.box((-0.96, -0.96, 0.0), (0.96, 0.96, 0.12), "steel_dark", bevel=0.03))

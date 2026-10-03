@@ -124,7 +124,27 @@ test_command_line_usage_lists_every_flag :: proc(t: ^testing.T) {
 	write_command_line_usage(strings.to_writer(&builder))
 	usage := strings.to_string(builder)
 	testing.expect(t, strings.contains(usage, PROGRAM_NAME))
-	for flag in ([?]string{"subcommand", "--version", "--set", "--input", "--seed", "--load", "--name", "--debug-terrain", "--unlock-all", "--benchmark"}) {
+	for flag in ([?]string{"subcommand", "--version", "--set", "--input", "--seed", "--load", "--name", "--debug-terrain", "--unlock-all", "--benchmark", "--model-check", "--model-preview", "--model-preview-directory"}) {
 		testing.expectf(t, strings.contains(usage, flag), "usage lacks %s:\n%s", flag, usage)
+	}
+}
+
+@(test)
+test_command_line_model_workbench_flags :: proc(t: ^testing.T) {
+	check, error := parse_command_line({"--model-check=all"})
+	testing.expect_value(t, error, nil)
+	testing.expect_value(t, check.model_check, "all")
+	testing.expect_value(t, command_line_conflict(check), "")
+	preview, _ := parse_command_line({"--model-preview=a", "--model-preview-directory=d"})
+	testing.expect_value(t, command_line_conflict(preview), "")
+	alone, _ := parse_command_line({"--model-preview=a"})
+	testing.expect_value(t, command_line_conflict(alone), "--model-preview needs --model-preview-directory")
+	directory, _ := parse_command_line({"--model-preview-directory=d"})
+	testing.expect_value(t, command_line_conflict(directory), "--model-preview-directory needs --model-preview")
+	both, _ := parse_command_line({"--model-check=all", "--model-preview=a", "--model-preview-directory=d"})
+	testing.expect_value(t, command_line_conflict(both), "--model-check and --model-preview cannot be combined")
+	for other in ([?]string{"--benchmark=1", "--seed=7", "--server", "--planet-preview"}) {
+		combined, _ := parse_command_line({"--model-check=all", other})
+		testing.expectf(t, strings.has_prefix(command_line_conflict(combined), "--model-check runs no world"), "--model-check with %s accepted", other)
 	}
 }

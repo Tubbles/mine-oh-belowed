@@ -422,11 +422,15 @@ def arm_turret():
 
 
 def arm_upper_arm():
+    """Nothing lies below the shoulder joint (y 22): the segment stretches
+    about the joint at a long reach, which would push anything below it
+    into the base's collar (0207, the workbench's first finding). The hub
+    sits just above the joint."""
     model = Model((1, 1, 1), ARM_FRAME)
     for z in (6, 16):
-        model.box((9, 18, z), (14, 76, z + 1), grimy(ARM_YELLOW))
+        model.box((9, 22, z), (14, 76, z + 1), grimy(ARM_YELLOW))
         model.box((9, 30, z), (14, 35, z + 1), hazard)
-        model.cylinder(2, (12, 22), 4, z, z + 1, ARM_STEEL_DARK)
+        model.cylinder(2, (12, 26), 4, z, z + 1, ARM_STEEL_DARK)
         model.cylinder(2, (12, 72), 4, z, z + 1, ARM_STEEL_DARK)
     return model
 

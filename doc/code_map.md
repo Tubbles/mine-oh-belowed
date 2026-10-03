@@ -11,11 +11,11 @@ The entry page for the source: 261 files under `src/` plus 180 test files beside
 
 | Cluster | Purpose | Entry | Files | Lines | Audit |
 |---|---|---|---|---|---|
-| loop | the process: start-up, the frame, when the tick runs (the lockstep driver), sessions, the network, the LAN discovery and the server, the requests served between frames | `loop.odin` | 14 | 7335 | [loop](audit/loop.md) |
+| loop | the process: start-up, the frame, when the tick runs (the lockstep driver), sessions, the network, the LAN discovery and the server, the requests served between frames | `loop.odin` | 16 | 7887 | [loop](audit/loop.md) |
 | ui | the input layer, the immediate mode toolkit, every screen, the HUD and the touch overlay | `ui_core.odin` | 50 | 17617 | [ui](audit/ui.md) |
 | world | blocks and what follows a block: chunks, light, water, meshing, streaming, generation, the save codec; the terrain field and the foundation frames beside them (M13) | `world_chunk.odin` | 51 | 14758 | [world](audit/world.md) |
 | simulation | the factory per tick: entity pools, networks, players, inventories, crafting, statistics, the game's records | `entity.odin` | 53 | 21399 | [simulation](audit/simulation.md) |
-| presentation | pixels and sound from the world and the tick: shaders, atlases, models, sky, weather, particles, audio, the window | `render_chunks.odin` | 41 | 9980 | [presentation](audit/presentation.md) |
+| presentation | pixels and sound from the world and the tick: shaders, atlases, models, sky, weather, particles, audio, the window | `render_chunks.odin` | 42 | 10467 | [presentation](audit/presentation.md) |
 | content | data files into typed tables, the string table, configuration and settings | `data_reload.odin` | 17 | 6000 | [content](audit/content.md) |
 | tools | the command socket, the diagnostics pages, the Data files browser and export, the factory benchmark | `command.odin` | 8 | 3977 | [loop](audit/loop.md), [content](audit/content.md) |
 | platform | the package `src/platform/`: logging, paths, the time zone, JNI, the export's file access, the replacing file write, the TCP transport and the LAN discovery's UDP, the stop signal | `logging.odin` | 19 | 1843 | [content](audit/content.md) |
@@ -73,6 +73,8 @@ The process: the loop decides when things run, the clusters decide what runs.
   - `loop_planet_preview.odin`: `run_planet_preview`, the `--planet-preview` window over the terrain field (0169) with its walk mode; since 0179 a field session of its own (`start_planet_preview_session`) ticked on a fixed step (`walk_planet_preview`) and drawn through `draw_field_scene`, the walk screenshot's pit and pad (`dig_planet_preview_pit`, `lay_planet_preview_foundations`).
   - `loop_planet_preview_arms.odin`: the walk screenshot's two arms on the pad, one posed at full reach, their models and point lights (0175, `lay_planet_preview_arms`).
   - `loop_planet_preview_runs.odin`: the walk screenshot's second pad and the belt run between a free pole off each pad (0176, `lay_planet_preview_run`).
+  - `loop_model_check.odin`: `run_model_check`, the `--model-check` command (0207), and `model_workbench_selection`, the machines both workbench flags take.
+  - `loop_model_preview.odin`: `run_model_preview`, the `--model-preview` window (0207): a machine on a pad from four cameras at four phases, one PNG per shot.
 - State: `Frame_State` (21 top level fields: the loop's 17, the request set `Frame_Requests` and the viewports among them, and four groups holding 47 other clusters' fields, `Frame_Interaction` 16, `Frame_Presentation` 16, `Frame_Developer_Tools` 8, `Frame_Reload` 7), `Viewport` (10 fields, with `Viewport_Interaction` 7 and `Viewport_Presentation` 7, the per player fields the two groups held before 0178), `Session`, `Lockstep`, `Session_Network`, `Game_Content`.
 - Tests: `main_test.odin`; `lockstep_test.odin` (machines through an in-process relay) and `session_network_test.odin` (the join, a joiner restoring while the others play, dropping or a second one arriving, the server, a joined machine's split screen player); `session_discovery_test.odin` (a host answers the LAN over the loopback, two hosts on one machine, a windowed host alone, a join from the list); `viewport_test.odin` (layouts, joining with a pad, two viewports' cameras and draw lists, requests per viewport and once for the game, four viewports and one tick); the draw path, the session lifecycle and the reloads are untested (loop audit, section 8).
 - Reaches into: nothing.
@@ -208,6 +210,7 @@ Presentation turns the world, the tick and the render time into pixels and sound
   - `render_frames.odin`: the frames' placeholder boxes per occupied cell and the placement ghost (0174), `frame_render_matrix`.
   - `model_mesh.odin`, `model_motion.odin`: the voxel mesher over the `model_vox` package's parser (Packages) and the choice of an .obj over a .vox; `Machine_Motion` and part transforms.
   - `model_triangle_mesh.odin`: the OBJ mesher over the `model_obj` package's reader (Packages): flat shade, footprint check.
+  - `model_check.odin`: the workbench's checks (0207): budget, sweep, arm clearance, open cells.
   - `model_arm.odin`, `render_arm.odin`: the inserter's arm (0175): its part files, `arm_pose_at` from the cycle, the joint transforms; its draw and its lamp's light.
   - `render_point_lights.odin`: `Point_Light`, the nearest working lights for the field shader (0175).
   - `render_belts.odin`, `render_fluids.odin`, `render_power.odin`, `render_loose_items.odin`: belts and lane items; pipes and ports; poles and wires; loose stacks.
@@ -221,7 +224,7 @@ Presentation turns the world, the tick and the render time into pixels and sound
   - `audio.odin`, `sound_events.odin`: `Audio_Mixer`, sound table, loop fades; `Sound_Memory`, the sounds of the cues, hum, ambience clusters.
   - `display.odin`, `raylib_log.odin`: window modes, resolutions, scale, GL info; raylib's log into the game log.
 - State: the GPU resources (`Chunk_Renderer`, `Item_Atlas`, `Belt_Renderer`, `Model_Renderer`; `Field_Renderer` in the planet preview) and `Audio_Mixer` for the run, the memories (`Cue_Memory`, `Particle_System`, `Particle_Memory`, `Player_Animation_Memory` per viewport, `Sound_Memory` once) for a session; nothing is saved.
-- Tests: every `*_test.odin` beside its file; `shader_source_test.odin` (the `u` suffix rule), `render_ghost_test.odin`, `texture_periodicity_test.odin`; the draw procedures are untested; `model_arm_test.odin` tests the arm's poses.
+- Tests: every `*_test.odin` beside its file; `shader_source_test.odin` (the `u` suffix rule), `render_ghost_test.odin`, `texture_periodicity_test.odin`; the draw procedures are untested; `model_arm_test.odin` tests the arm's poses; `model_check_test.odin` the workbench's checks against hand built meshes and over the shipped models.
 - Reaches into: ui 17 (accepted: theme colours and marker palettes 13, `Input_Frame` for the fly camera 2, `Ui_Sound_Event` 2), loop 1 (accepted: `texture_edits_path`), tools 2 (accepted: a `block_name` parameter, noise).
 
 ## content

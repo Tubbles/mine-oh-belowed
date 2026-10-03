@@ -16,7 +16,7 @@ import bmesh
 import bpy
 from mathutils import Matrix, Vector
 
-from . import palette
+from . import palette, records
 
 # The axis a cylinder runs along, as a rotation of Blender's Z onto it.
 AXIS_ROTATIONS = {
@@ -151,6 +151,21 @@ def join(objects, name):
         if data.users == 0:
             bpy.data.meshes.remove(data)
     return created
+
+
+def join_part(objects, machine, pivot=None):
+    """join(objects, "part") for a machine whose motion moves a part.
+    A spin or a swing names the pivot it was built about, which must be
+    the record's (records.pivot); a pump or a bob may leave it out."""
+    kind = machine.motion.kind
+    expected = records.pivot(machine)
+    if kind not in records.PART_MOTIONS:
+        raise SystemExit(f"model {machine.model}: its motion {kind!r} moves no part")
+    if kind in ("spin", "swing") and pivot is None:
+        raise SystemExit(f"model {machine.model}: a {kind} part needs its pivot, the record's is {expected}")
+    if pivot is not None and any(abs(given - wanted) > 1e-6 for given, wanted in zip(pivot, expected)):
+        raise SystemExit(f"model {machine.model}: the part's pivot {tuple(pivot)} is not the record's {expected}")
+    return join(objects, "part")
 
 
 def export(name, directory):
