@@ -32,7 +32,7 @@ F3 steps Input, Render, World and off (0086); each draws over a full screen back
 | --- | --- |
 | Input | Backend; gamepad buttons and axes with the Steam Controller's physical names; touchpads, gyro (raw, bias, corrected, and whether the view's gyro is Steam's or SDL's), accelerometer, touch sense; mouse and keys ([input.md](input.md)) |
 | Render | Build stamp; window mode, monitor, window and render size, window scale, session (x11, xwayland or wayland); vsync, frame cap, fps and frame time over the last second; ticks this frame and the accumulator; fog, weather, day fraction; chunks loaded and drawn with vertices, mesh results and pending jobs, water meshes, torch flames, particles; block, item and UI atlas sizes |
-| World | F4's world, streaming, light and player lines; tick, chunk and biome; live entities of every kind, loose items, belt lines and their items, the leaf decay queue |
+| World | F4's world, streaming, light and player lines (in a field session the feet's latitude, longitude and height above the planet's radius in metres and the sample one spacing under the feet with its material, instead of the block world's position line, 0187); tick, chunk and biome; live entities of every kind, loose items, belt lines and their items, the leaf decay queue |
 
 ## Texture editor
 

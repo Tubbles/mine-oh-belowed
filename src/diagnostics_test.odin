@@ -192,3 +192,37 @@ test_diagnostics_lines_print_the_context :: proc(t: ^testing.T) {
 	mapped := mapped_lines(diagnostics, test_game_config())
 	testing.expect(t, strings.has_prefix(mapped[1].text, "tick 0"), mapped[1].text)
 }
+
+// In a field session the player lines give the feet's latitude,
+// longitude and height and the sample under them (0187).
+@(test)
+test_diagnostics_lines_print_the_field_feet :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	session := start_field_test_session(config, content)
+	defer end_session(session)
+	simulation_content := field_test_content(session, content)
+	state := &session.simulation
+	tick_field_test_simulation(state, simulation_content, {})
+	diagnostics := Diagnostics_Context {
+		simulation   = state,
+		technologies = simulation_content.technologies,
+		blocks       = simulation_content.blocks,
+		items        = simulation_content.items,
+		quests       = simulation_content.quests,
+	}
+	lines := world_overlay_statistics_lines(diagnostics)
+	feet, under := "", ""
+	for line in lines {
+		if strings.has_prefix(line.text, "feet latitude") {
+			feet = line.text
+		}
+		if strings.has_prefix(line.text, "under the feet sample") {
+			under = line.text
+		}
+		testing.expect(t, !strings.has_prefix(line.text, "player "), line.text)
+	}
+	testing.expect(t, strings.contains(feet, " m"), feet)
+	testing.expect(t, under != "", "the sample line shows")
+	testing.expect(t, !strings.contains(under, "air"), under)
+}

@@ -214,7 +214,8 @@ draw_field_players :: proc(scene: Field_Scene) {
 
 // Where the viewer's Place would put a run, a foundation or a machine,
 // red where the drain would refuse it (field_placement_refusal: a drill
-// off every vein, a taken cell, a buried player).
+// off every vein, a taken cell, a buried player) or where Place refuses
+// it (a machine over bare ground, field_bare_ground_placement).
 draw_field_ghosts :: proc(scene: Field_Scene) {
 	if scene.viewer < 0 || scene.viewer >= len(scene.state.players) {
 		return
@@ -226,6 +227,9 @@ draw_field_ghosts :: proc(scene: Field_Scene) {
 	}
 	machine := field_placed_machine(player.field, scene.content)
 	placement, wanted := field_player_placement(player.field, machine)
+	if !wanted {
+		placement, wanted = field_bare_ground_placement(player.field, machine)
+	}
 	if !wanted {
 		return
 	}

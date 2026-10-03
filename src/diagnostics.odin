@@ -2,6 +2,7 @@ package game
 
 import "core:container/queue"
 import "core:fmt"
+import "core:math"
 import "core:strings"
 import rl "shared:raylib"
 import "shared:raylib/rlgl"
@@ -578,7 +579,11 @@ occupied_slot_count :: proc(inventory: Inventory) -> int {
 append_player_lines :: proc(lines: ^[dynamic]Diagnostics_Line, diagnostics: Diagnostics_Context) {
 	player, registry, world := diagnostics.simulation.players[diagnostics.player], diagnostics.blocks, &diagnostics.simulation.world
 	position, velocity := player.position, player.velocity
-	append_line(lines, false, "player % .2f % .2f % .2f  velocity % .2f % .2f % .2f", position.x, position.y, position.z, velocity.x, velocity.y, velocity.z)
+	if diagnostics.simulation.field.enabled {
+		append_field_feet_lines(lines, &diagnostics.simulation.field, player.field)
+	} else {
+		append_line(lines, false, "player % .2f % .2f % .2f  velocity % .2f % .2f % .2f", position.x, position.y, position.z, velocity.x, velocity.y, velocity.z)
+	}
 	cheat_speed := diagnostics.simulation.cheat_speed
 	append_line(lines, cheat_speed, "on ground %s  camera %v  flying %s  no clip %s  sprinting %s%s", yes_no(player.on_ground), player.camera_mode, yes_no(player.flying), yes_no(player.no_clip), yes_no(player.sprinting), cheat_speed ? "  cheat speed" : "")
 	append_line(lines, player.mining.active, "%s  mining %.0f%%", target_text(registry, world, player.target), mining_fraction(player.mining) * 100)
@@ -610,6 +615,26 @@ append_player_lines :: proc(lines: ^[dynamic]Diagnostics_Line, diagnostics: Diag
 	append_line(lines, false, "%s", research_diagnostics_text(diagnostics))
 	append_line(lines, false, "%s", quest_diagnostics_text(diagnostics))
 	append_line(lines, false, "%s", objective_counters_text(diagnostics))
+}
+
+// The field player's feet (0187): latitude and longitude in degrees as
+// planet_spring_direction lays them out (latitude 90 towards +y,
+// longitude 0 towards +x and 90 towards +z), the height above the
+// planet's radius in metres, and the sample one spacing under the feet.
+append_field_feet_lines :: proc(lines: ^[dynamic]Diagnostics_Line, field: ^Field_Simulation, player: Field_Player) {
+	feet := [3]f64{f64(player.position.x), f64(player.position.y), f64(player.position.z)} / POSITION_UNITS_PER_METRE
+	distance := math.sqrt(feet.x * feet.x + feet.y * feet.y + feet.z * feet.z)
+	latitude, longitude: f64
+	if distance > 0 {
+		latitude = math.to_degrees(math.asin(feet.y / distance))
+		longitude = math.to_degrees(math.atan2(feet.z, feet.x))
+	}
+	radius := f64(field.world.water_planet.generation.radius) / POSITION_UNITS_PER_METRE
+	append_line(lines, false, "feet latitude % .4f  longitude % .4f  height % .2f m", latitude, longitude, distance - radius)
+	below := player.position - World_Position(fixed_scale(player.up, sample_axis_to_position(1, field.spacing_millimetres)))
+	sample := nearest_field_sample(below, field.spacing_millimetres)
+	under := field_world_get_sample(&field.world, sample)
+	append_line(lines, false, "under the feet sample %d %d %d  %s  density %d", sample.x, sample.y, sample.z, field_material_name(under.material), under.density)
 }
 
 research_diagnostics_text :: proc(diagnostics: Diagnostics_Context) -> string {

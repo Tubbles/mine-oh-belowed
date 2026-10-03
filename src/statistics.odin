@@ -668,6 +668,18 @@ record_walked :: proc(statistics: ^Statistics, from, to: [3]f32) {
 	statistics.distance_walked_millimetres += u64(math.round(distance * MILLIMETRES_PER_BLOCK))
 }
 
+// The field's walk (0187), the rule of record_walked on a planet: the
+// feet's move less its part along up, so a jump in place walks nowhere,
+// rounded to millimetres as each tick's share is. A metre is a block.
+field_walked_millimetres :: proc(from, to: World_Position, up: [3]i64) -> u64 {
+	along_ground := project_onto_plane(cast([3]i64)(to - from), up)
+	return u64((vector_length(along_ground) * MILLIMETRES_PER_METRE + POSITION_UNITS_PER_METRE / 2) / POSITION_UNITS_PER_METRE)
+}
+
+record_field_walked :: proc(statistics: ^Statistics, from, to: World_Position, up: [3]i64) {
+	statistics.distance_walked_millimetres += field_walked_millimetres(from, to, up)
+}
+
 // Output slots only grow and fuel slots only shrink inside a furnace
 // tick, so the differences are what it smelted and burned. The main
 // output grows exactly when a smelt finishes, and then the byproduct slot

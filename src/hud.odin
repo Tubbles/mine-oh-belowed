@@ -426,6 +426,9 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context, hud: Hud_Cont
 	draw_discovery_card(state, items, hud.discovery_card_clearance)
 	obtained := screen_context.unlocks.obtained
 	name_status, tool_status, vein_status := target_status_lines(screen_context.world, screen_context.records, screen_context.machines, screen_context.fluids, screen_context.veins, screen_context.blocks, items, obtained, effective_tool_tier(player^, items, screen_context.cheat_speed), player.target)
+	if line, shown := field_tool_line(player.field, screen_context.content); shown {
+		tool_status = line
+	}
 	if ghost_line, shown := bore_drill_ghost_line(screen_context.world, screen_context.records.assayed_veins[:], screen_context.machines, screen_context.veins, screen_context.blocks, items, obtained, player^); shown {
 		vein_status = ghost_line
 	}
@@ -562,6 +565,15 @@ target_status_lines :: proc(world: ^World, records: ^Game_Records, machines: Mac
 		vein_line = vein_status_text(world, records.assayed_veins[:], veins, blocks, items, obtained, vein)
 	}
 	return
+}
+
+// On the field (0187): a machine other than a foundation over bare ground
+// says what it needs, as Place's refusal toasts it.
+field_tool_line :: proc(player: Field_Player, content: Simulation_Content) -> (line: string, shown: bool) {
+	if _, bare := field_bare_ground_placement(player, field_placed_machine(player, content)); bare {
+		return text(field_refusal_keys[.Needs_Foundation]), true
+	}
+	return "", false
 }
 
 // The loading notice (loading_notice in loop.odin): a panel in the

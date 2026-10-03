@@ -735,6 +735,69 @@ test_a_held_refused_dig_raises_one_event :: proc(t: ^testing.T) {
 	testing.expect_value(t, count_field_refused_events(state.events[:], .Tool_Tier), 2)
 }
 
+// The field session's walk counter (0187): a walk on the ground counts,
+// a flight counts none.
+@(test)
+test_a_field_walk_counts_and_a_flight_does_not :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	session := start_field_test_session(config, content)
+	defer end_session(session)
+	simulation_content := field_test_content(session, content)
+	state := &session.simulation
+	tick_field_test_simulation(state, simulation_content, {})
+	walk := Input_Frame{move = {0, 1}, pressed = {.Move}}
+	state.players[0].field.flying = true
+	start := state.players[0].field.position
+	for _ in 0 ..< 60 {
+		tick_field_test_simulation(state, simulation_content, walk)
+	}
+	testing.expect(t, state.players[0].field.position != start, "the flight moves")
+	testing.expect_value(t, state.records.statistics.distance_walked_millimetres, 0)
+	state.players[0].field.flying = false
+	for _ in 0 ..< 120 {
+		tick_field_test_simulation(state, simulation_content, walk)
+	}
+	testing.expectf(t, state.records.statistics.distance_walked_millimetres > 1000, "walked %d mm", state.records.statistics.distance_walked_millimetres)
+}
+
+// Place with a stone furnace held over bare ground raises one
+// Needs_Foundation event (0187); the HUD's tool line says so and the
+// ghost there is red.
+@(test)
+test_a_machine_placed_on_bare_ground_needs_a_foundation :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	session := start_field_test_session(config, content)
+	defer end_session(session)
+	simulation_content := field_test_content(session, content)
+	state := &session.simulation
+	player := &state.players[0]
+	furnace := test_machine(simulation_content.machines, "stone_furnace")
+	inventory_hotbar(player.inventory)[player.selected_hotbar_slot] = Item_Stack{simulation_content.machines.machines[furnace].item, 1}
+	tick_field_test_simulation(state, simulation_content, Input_Frame{look_delta = {0, 300}})
+	testing.expect_value(t, player.field.tool, Field_Held_Tool.Machine)
+	testing.expect(t, player.field.target.hit && !player.field.frame_target.hit, "the ground is aimed at")
+	_, bare := field_bare_ground_placement(player.field, furnace)
+	testing.expect(t, bare)
+	testing.expect_value(t, frame_ghost_color(.Needs_Foundation), GHOST_INVALID_COLOR)
+	line, shown := field_tool_line(player.field, simulation_content)
+	testing.expect(t, shown)
+	testing.expect_value(t, line, text("field_refused_needs_foundation"))
+	clear(&state.events)
+	frames_before := len(state.world.entities.frames.frames)
+	tick_field_test_simulation(state, simulation_content, Input_Frame{pressed = {.Place}, just_pressed = {.Place}})
+	tick_field_test_simulation(state, simulation_content, {})
+	testing.expect_value(t, count_field_refused_events(state.events[:], .Needs_Foundation), 1)
+	testing.expect_value(t, len(state.world.entities.frames.frames), frames_before)
+	// Dig held on the press's tick queues a brush edit; the drain's
+	// reset of the refusal runs before the placement's, so it still tells.
+	clear(&state.events)
+	tick_field_test_simulation(state, simulation_content, Input_Frame{pressed = {.Place, .Mine}, just_pressed = {.Place, .Mine}})
+	testing.expect_value(t, count_field_refused_events(state.events[:], .Needs_Foundation), 1)
+	testing.expect_value(t, len(state.world.entities.frames.frames), frames_before)
+}
+
 // The pure rule: told when new against the last tick or on a press.
 @(test)
 test_a_field_refusal_is_news_when_new_or_pressed :: proc(t: ^testing.T) {

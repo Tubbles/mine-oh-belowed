@@ -1,6 +1,6 @@
 # 0187: Playtest 1: the walk counter, placing without a foundation, the position readout
 
-Status: todo (playtest 1 of the slice, 2026-10-03)
+Status: implemented (playtest 1 of the slice, 2026-10-03)
 
 ## Goal
 

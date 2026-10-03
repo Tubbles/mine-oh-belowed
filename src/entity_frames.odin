@@ -164,6 +164,17 @@ field_player_placement :: proc(player: Field_Player, machine: Machine_Id) -> (pl
 	return {}, false
 }
 
+// A machine other than a foundation aimed at bare ground, no frame
+// targeted (0187): a free placement, which the drain refuses with
+// Needs_Foundation (field_placement_refusal), so the ghost is the
+// machine's footprint at the cell a free foundation would take, red.
+field_bare_ground_placement :: proc(player: Field_Player, machine: Machine_Id) -> (placement: Field_Placement, found: bool) {
+	if machine == NO_MACHINE || player.tool == .Foundation || player.frame_target.hit || !player.target.hit {
+		return {}, false
+	}
+	return Field_Placement{machine = machine, rotation = player.placement_rotation % 4, new_frame = true, hit = player.target.position, heading = field_player_heading(player)}, true
+}
+
 // The frame a placement lands in and its cell; for a free one the frame
 // it would start, so the ghost draws where the foundation will be.
 field_placement_frame :: proc(frames: ^Frame_Table, placement: Field_Placement, pitch_millimetres: int) -> (frame: Frame, cell: World_Coordinate, found: bool) {
@@ -221,6 +232,9 @@ field_placement_refusal :: proc(state: ^Simulation_State, content: Simulation_Co
 	frame, cell, found := field_placement_frame(&entities.frames, placement, content.field.foundation_pitch_millimetres)
 	if !found {
 		return .Unknown_Frame
+	}
+	if placement.new_frame && content.machines.machines[placement.machine].kind != .Foundation {
+		return .Needs_Foundation
 	}
 	if inventory_count(player.inventory, content.machines.machines[placement.machine].item) == 0 {
 		return .Nothing_Held

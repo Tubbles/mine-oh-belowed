@@ -78,6 +78,8 @@ Field_Edit_Refusal :: enum u8 {
 	Inventory_Full,
 	// A drill on a frame stands off every vein's disc (0179).
 	No_Vein,
+	// A machine other than a foundation aimed at bare ground (0187).
+	Needs_Foundation,
 }
 
 // The string keys of the refusals the HUD toasts (Field_Refused, 0179).
@@ -94,6 +96,7 @@ field_refusal_keys := [Field_Edit_Refusal]string {
 	.Torch_Blocked     = "field_refused_torch_blocked",
 	.Inventory_Full    = "field_refused_inventory_full",
 	.No_Vein           = "field_refused_no_vein",
+	.Needs_Foundation  = "field_refused_needs_foundation",
 }
 
 Queued_Field_Edit :: struct {
@@ -468,18 +471,27 @@ drain_field_edits :: proc(state: ^Simulation_State, content: Simulation_Content)
 
 // One player moves and queues its brush edit and its placements; nothing
 // edits the field yet. The tool follows the hotbar (simulation_field.odin)
-// before this runs.
+// before this runs. The move counts for the walk counter unless the
+// player flies, as the block world's (0187).
 queue_field_player_edit :: proc(state: ^Simulation_State, content: Simulation_Content, index: int, input: Field_Player_Input) {
 	field := &state.field
 	player := &state.players[index]
 	entities := &state.world.entities
 	player.field_refusal, player.field_refused_material = .None, .Air
+	walk_start := player.field.position
 	tick_field_player(&field.world, &entities.frames, content.field.tuning, &player.field, input)
+	if !player.field.flying {
+		record_field_walked(&state.records.statistics, walk_start, player.field.position, player.field.up)
+	}
 	aim_field_player_at_frames(&player.field, &entities.frames, content.field.tuning)
 	if edit, wanted := field_player_edit(&field.world, field.spacing_millimetres, player.field, input, content.field.brushes); wanted {
 		append(&field.edits, Queued_Field_Edit{player = index, edit = edit})
 	}
-	if placement, wanted := field_player_placement(player.field, field_placed_machine(player.field, content)); wanted && .Place in input.just_pressed {
+	machine := field_placed_machine(player.field, content)
+	if placement, wanted := field_player_placement(player.field, machine); wanted && .Place in input.just_pressed {
+		append(&field.placements, Queued_Field_Placement{player = index, placement = placement})
+	}
+	if placement, bare := field_bare_ground_placement(player.field, machine); bare && .Place in input.just_pressed {
 		append(&field.placements, Queued_Field_Placement{player = index, placement = placement})
 	}
 	if placement, wanted := update_field_run_tool(&player.field, entities, content, input); wanted {

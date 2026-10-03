@@ -108,6 +108,23 @@ test_walking_counts_horizontal_millimetres :: proc(t: ^testing.T) {
 	testing.expect_value(t, statistics.distance_walked_millimetres, 5000)
 }
 
+// The field's walk (0187): ten one metre steps along the ground count
+// ten blocks for the walk objective; a rise along up counts nothing.
+@(test)
+test_field_walking_counts_the_move_along_the_ground :: proc(t: ^testing.T) {
+	statistics := make_test_statistics()
+	up := [3]i64{0, UNIT_VECTOR_ONE, 0}
+	feet := World_Position{0, 1000 * POSITION_UNITS_PER_METRE, 0}
+	for _ in 0 ..< 10 {
+		step := feet + {POSITION_UNITS_PER_METRE, POSITION_UNITS_PER_METRE / 4, 0}
+		record_field_walked(&statistics, feet, step, up)
+		feet = step
+	}
+	testing.expect_value(t, statistics.distance_walked_millimetres / MILLIMETRES_PER_BLOCK, 10)
+	record_field_walked(&statistics, feet, feet + {0, 10 * POSITION_UNITS_PER_METRE, 0}, up)
+	testing.expect_value(t, statistics.distance_walked_millimetres, 10000)
+}
+
 // Work item 0028: the ten second and minute rings are fed from the finer
 // ring when their span ends, and the windows add the open span so far.
 @(test)
