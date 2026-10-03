@@ -46,6 +46,8 @@ make_field_content :: proc(config: Game_Config, items: Item_Registry, machines: 
 		light = make_field_light_tuning(lighting, spacing_millimetres),
 		foundation = find_foundation_machine(machines),
 		foundation_pitch_millimetres = config.foundation_pitch_millimetres,
+		foundation_sizes = config.foundation_sizes,
+		foundation_heights = config.foundation_heights,
 		belt_pole = find_machine_of_kind(machines, .Belt_Pole),
 		run_belt = find_belt_machine(machines, .Flat),
 		run_pipe = find_machine_of_kind(machines, .Pipe),
@@ -348,7 +350,8 @@ tick_field_session_players :: proc(state: ^Simulation_State, content: Simulation
 	finish_field_tick(state, content)
 	for index in 0 ..< len(previous) {
 		if refusal := state.players[index].field_refusal; field_refusal_is_news(refusal, previous[index], pressed[index]) {
-			append(&state.events, Simulation_Event{player = index, kind = .Field_Refused, field_refusal = refusal})
+			counts := index < len(state.field.refused_foundation_counts) ? state.field.refused_foundation_counts[index] : {}
+			append(&state.events, Simulation_Event{player = index, kind = .Field_Refused, field_refusal = refusal, needed = counts[0], held = counts[1]})
 		}
 	}
 }

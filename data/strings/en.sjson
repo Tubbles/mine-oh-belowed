@@ -823,6 +823,13 @@ item_category_block = "Block"
 // Inventory and hotbar
 inventory_title = "Inventory"
 inventory_hotbar = "Hotbar"
+// The foundation block rows under the hotbar while a foundation is
+// selected (work item 0193): the label, then one choice per entry of
+// foundation_sizes and foundation_heights in data/game.sjson.
+inventory_foundation_size = "Block size"
+inventory_foundation_height = "Block height"
+inventory_foundation_size_choice = "{size}x{size}"
+inventory_foundation_height_choice = "{height} high"
 inventory_full = "Inventory full"
 hint_pick_up = "Pick up"
 hint_take_schematic = "Take schematic"
@@ -1634,6 +1641,10 @@ field_refused_torch_blocked = "A torch does not fit there"
 field_refused_inventory_full = "Inventory full"
 field_refused_no_vein = "A drill needs an ore outcrop under it"
 field_refused_needs_foundation = "Needs a foundation under it"
+field_refused_too_few_foundations = "Needs {needed} foundations, {held} held"
+// The tool line with a foundation held (work item 0193): the block
+// Place puts down, chosen on the inventory view.
+field_tool_foundation_block = "Foundation {size}x{size}, {height} high"
 join_failed = "Cannot join the host"
 loading_joining = "Joining the host"
 loading_joined_world = "Catching up with the host"

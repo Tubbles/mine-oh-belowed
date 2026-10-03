@@ -149,12 +149,17 @@ Field_Player :: struct {
 	// The hand tool (0171): an index into the brushes of data/game.sjson
 	// and the material a place raises the field from, or the tool held
 	// instead of the material (0174, 0176), the machine a Machine tool
-	// places and its quarter turns (0179).
+	// places and its quarter turns (0179), and the indices into a held
+	// foundation's block sizes and heights (0193, field_foundation_block).
+	// A save from before 0193 lacks the indices and loads them as 0, the
+	// first of each list.
 	brush:             u8,
 	held_material:     Field_Material,
 	tool:              Field_Held_Tool,
 	held_machine:      Machine_Id,
 	placement_rotation: u8,
+	foundation_size_index:   u8,
+	foundation_height_index: u8,
 	// A run tool's first endpoint, chosen by the first Place (0176).
 	run_started:       bool,
 	run_start:         Belt_Run_Candidate,

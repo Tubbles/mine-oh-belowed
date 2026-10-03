@@ -76,6 +76,14 @@ Hotbar_Slot_Command :: struct {
 	slot: int,
 }
 
+// The foundation block the inventory view's widget picks (0193): indices
+// into the field content's foundation_sizes and foundation_heights, set
+// on the field player as they are; an index past a list is refused.
+Foundation_Block_Command :: struct {
+	size_index:   int,
+	height_index: int,
+}
+
 // A machine panel closed: the player's open_machine forgets the machine,
 // unless another one was opened since.
 Close_Machine_Command :: struct {
@@ -123,6 +131,7 @@ Player_Command :: union {
 	Splitter_Priorities_Command,
 	Splitter_Side_Command,
 	Hotbar_Slot_Command,
+	Foundation_Block_Command,
 	Close_Machine_Command,
 	Debug_Remove_Block_Command,
 	Debug_Drop_Item_Command,
@@ -265,6 +274,9 @@ apply_player_command :: proc(state: ^Simulation_State, content: Simulation_Conte
 		}
 	case Hotbar_Slot_Command:
 		state.players[queued.player].selected_hotbar_slot = clamp(command.slot, 0, HOTBAR_SLOT_COUNT - 1)
+	case Foundation_Block_Command:
+		field := &state.players[queued.player].field
+		field.foundation_size_index, field.foundation_height_index = u8(command.size_index), u8(command.height_index)
 	case Close_Machine_Command:
 		player := &state.players[queued.player]
 		if player.open_machine == command.machine {
@@ -369,6 +381,24 @@ is_developer_toggle :: proc(command: Player_Command, action: Developer_Action) -
 	return is_request && request.action == action
 }
 
+// The foundation block the inventory view shows: the newest
+// Foundation_Block_Command of the player on its way, else the field
+// player's own indices.
+shown_foundation_block :: proc(field: Field_Player, queued: []Queued_Player_Command, unconfirmed: []Player_Command, player: int) -> Foundation_Block_Command {
+	shown := Foundation_Block_Command{size_index = int(field.foundation_size_index), height_index = int(field.foundation_height_index)}
+	for command in unconfirmed {
+		if block, is_block := command.(Foundation_Block_Command); is_block {
+			shown = block
+		}
+	}
+	for entry in queued {
+		if block, is_block := entry.command.(Foundation_Block_Command); is_block && entry.player == player {
+			shown = block
+		}
+	}
+	return shown
+}
+
 close_machine_pending :: proc(queued: []Queued_Player_Command, unconfirmed: []Player_Command, player: int) -> bool {
 	for entry in queued {
 		if _, closes := entry.command.(Close_Machine_Command); closes && entry.player == player {
@@ -403,6 +433,8 @@ player_command_valid :: proc(command: Player_Command, content: Simulation_Conten
 		return enum_in_range(value.input) && enum_in_range(value.output)
 	case Splitter_Side_Command:
 		return enum_in_range(value.side)
+	case Foundation_Block_Command:
+		return index_in_range(value.size_index, len(content.field.foundation_sizes)) && index_in_range(value.height_index, len(content.field.foundation_heights))
 	case Developer_Request:
 		return developer_request_valid(value, content)
 	case Slot_Primary_Command, Slot_Split_Command, Slot_Sort_Command, Distribute_Command, Return_Held_Command, Drop_Stack_Command, Quick_Move_Command, Transfer_Button_Command, Grid_Transfer_Command, Inserter_Hand_Command:

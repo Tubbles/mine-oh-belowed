@@ -17,7 +17,9 @@ package game
 // (drain_field_placements). The hotbar's item decides what Place puts
 // down (simulation_field.odin): a foundation snaps to a frame or starts
 // one on the ground, any other machine snaps to a frame cell, turned by
-// the player's placement rotation.
+// the player's placement rotation. A foundation places a block of cells
+// at once (0193, foundation_block_cells), its size and height chosen on
+// the inventory view from the lists of data/game.sjson.
 
 Frame_Placement_Refusal :: enum u8 {
 	None,
@@ -100,6 +102,86 @@ find_foundation_machine :: proc(machines: Machine_Registry) -> Machine_Id {
 	return NO_MACHINE
 }
 
+// Foundation blocks (0193).
+
+// The entry at index: the first when the index is past the list (the
+// data shrank since the save), one cell for an empty list.
+foundation_block_entry :: proc(values: []int, index: u8) -> i32 {
+	switch {
+	case len(values) == 0:
+		return 1
+	case int(index) >= len(values):
+		return i32(values[0])
+	}
+	return i32(values[index])
+}
+
+// A held foundation's block: size by size cells, height cells high.
+field_foundation_block :: proc(player: Field_Player, field: Field_Content) -> (size, height: i32) {
+	return foundation_block_entry(field.foundation_sizes, player.foundation_size_index), foundation_block_entry(field.foundation_heights, player.foundation_height_index)
+}
+
+// The first offset across a face for a side of side cells: centred on
+// the anchor (the even side's extra cell on the high side, as the pod's
+// pad, pod_pad_cells), or from the anchor upwards along the frame's up.
+foundation_block_first_offset :: proc(side: i32, along_up: bool) -> i32 {
+	return along_up ? 0 : -((side - 1) / 2)
+}
+
+// A foundation block's cells (doc/architecture.md, Frames): a square of
+// size by size cells spans the face whose normal is given (zero reads as
+// the frame's up), and the block runs height cells along the normal from
+// the anchor. Across the face the square is centred on the anchor, but on
+// a side face it rises from the anchor's row, so a wall stands on the
+// pad's level instead of reaching into the ground. The order is fixed (by
+// layer along the normal, then the face's second axis, then its first),
+// so every machine adds the same entities in the same order. In the temp
+// allocator.
+foundation_block_cells :: proc(anchor, normal: World_Coordinate, size, height: i32) -> []World_Coordinate {
+	axis, step := 1, i32(1)
+	for index in 0 ..< 3 {
+		if normal[index] != 0 {
+			axis, step = index, normal[index] < 0 ? -1 : 1
+		}
+	}
+	first_axis := axis == 0 ? 1 : 0
+	second_axis := axis == 2 ? 1 : 2
+	first_offset := foundation_block_first_offset(size, first_axis == 1)
+	second_offset := foundation_block_first_offset(size, second_axis == 1)
+	cells := make([dynamic]World_Coordinate, 0, int(size * size * height), context.temp_allocator)
+	for layer in 0 ..< height {
+		for second in 0 ..< size {
+			for first in 0 ..< size {
+				cell := anchor
+				cell[axis] += step * layer
+				cell[first_axis] += first_offset + first
+				cell[second_axis] += second_offset + second
+				append(&cells, cell)
+			}
+		}
+	}
+	return cells[:]
+}
+
+// A foundation placement's cells: the block from its cell away from the
+// face hit, or a free one's from cell (0, 0, 0) of its new frame up.
+field_placement_block_cells :: proc(placement: Field_Placement) -> []World_Coordinate {
+	if placement.new_frame {
+		return foundation_block_cells({}, UP, max(placement.size, 1), max(placement.height, 1))
+	}
+	return foundation_block_cells(placement.cell, placement.normal, max(placement.size, 1), max(placement.height, 1))
+}
+
+// The cells a placement fills, which its ghost draws: a foundation's
+// block, any other machine's footprint at cell.
+field_placement_cells :: proc(content: Simulation_Content, placement: Field_Placement, cell: World_Coordinate) -> []World_Coordinate {
+	definition := content.machines.machines[placement.machine]
+	if definition.kind == .Foundation {
+		return field_placement_block_cells(placement)
+	}
+	return footprint_cells(cell, definition.footprint, placement.rotation)
+}
+
 // The field.
 
 // A place command: a snapped placement names the frame and the cell, a
@@ -122,6 +204,12 @@ Field_Placement :: struct {
 	new_frame: bool,
 	frame:     Frame_Id,
 	cell:      World_Coordinate,
+	// A foundation's block (0193, field_placement_block_cells): the
+	// normal of the face hit (cell less the hit cell), the square's side
+	// and the height in cells; zeros read as up and one.
+	normal:    World_Coordinate,
+	size:      i32,
+	height:    i32,
 	hit:       World_Position,
 	heading:   [3]i64,
 	sample:    Sample_Coordinate,
@@ -150,16 +238,20 @@ aim_field_player_at_frames :: proc(player: ^Field_Player, frames: ^Frame_Table, 
 
 // Where Place with a machine held puts it (field_placed_machine): against
 // the targeted frame's face, or, for a foundation, free on the targeted
-// ground. A machine other than a foundation needs a frame under it.
-field_player_placement :: proc(player: Field_Player, machine: Machine_Id) -> (placement: Field_Placement, wanted: bool) {
+// ground. A machine other than a foundation needs a frame under it. A
+// foundation takes the player's block (field_foundation_block).
+field_player_placement :: proc(player: Field_Player, machine: Machine_Id, field: Field_Content) -> (placement: Field_Placement, wanted: bool) {
+	size, height := field_foundation_block(player, field)
 	switch {
 	case machine == NO_MACHINE:
 		return {}, false
+	case player.frame_target.hit && player.tool == .Foundation:
+		target := player.frame_target
+		return Field_Placement{machine = machine, frame = target.frame, cell = target.adjacent, normal = target.adjacent - target.cell, size = size, height = height}, true
 	case player.frame_target.hit:
-		rotation := player.tool == .Foundation ? 0 : player.placement_rotation % 4
-		return Field_Placement{machine = machine, rotation = rotation, frame = player.frame_target.frame, cell = player.frame_target.adjacent}, true
+		return Field_Placement{machine = machine, rotation = player.placement_rotation % 4, frame = player.frame_target.frame, cell = player.frame_target.adjacent}, true
 	case player.target.hit && player.tool == .Foundation:
-		return Field_Placement{machine = machine, new_frame = true, hit = player.target.position, heading = field_player_heading(player)}, true
+		return Field_Placement{machine = machine, new_frame = true, hit = player.target.position, heading = field_player_heading(player), size = size, height = height}, true
 	}
 	return {}, false
 }
@@ -236,6 +328,9 @@ field_placement_refusal :: proc(state: ^Simulation_State, content: Simulation_Co
 	if placement.new_frame && content.machines.machines[placement.machine].kind != .Foundation {
 		return .Needs_Foundation
 	}
+	if content.machines.machines[placement.machine].kind == .Foundation {
+		return foundation_block_refusal(state, content, player, placement, frame)
+	}
 	if inventory_count(player.inventory, content.machines.machines[placement.machine].item) == 0 {
 		return .Nothing_Held
 	}
@@ -254,24 +349,87 @@ field_placement_refusal :: proc(state: ^Simulation_State, content: Simulation_Co
 	return .None
 }
 
-// A queued placement that field_placement_refusal let through: a free
-// foundation, a drill with its vein, any other machine on its frame.
-// The placed machine counts for the quests (record_placed).
-apply_field_placement :: proc(state: ^Simulation_State, content: Simulation_Content, placement: Field_Placement) {
+// The counts a Too_Few_Foundations refusal of player names: the refused
+// placement's cells and the foundations held (Field_Simulation.
+// refused_foundation_counts).
+record_refused_foundation_counts :: proc(state: ^Simulation_State, content: Simulation_Content, player: int, placement: Field_Placement) {
+	counts := &state.field.refused_foundation_counts
+	if len(counts) <= player {
+		resize(counts, player + 1)
+	}
+	held := inventory_count(state.players[player].inventory, content.machines.machines[placement.machine].item)
+	counts[player] = {len(field_placement_block_cells(placement)), held}
+}
+
+// A foundation block's refusal: the inventory must hold one foundation
+// per cell, every cell must be free (the frame refusal of the first
+// blocked one), and no cell may reach into a player.
+foundation_block_refusal :: proc(state: ^Simulation_State, content: Simulation_Content, player: Player, placement: Field_Placement, frame: Frame) -> Field_Edit_Refusal {
 	entities := &state.world.entities
+	cells := field_placement_block_cells(placement)
+	switch held := inventory_count(player.inventory, content.machines.machines[placement.machine].item); {
+	case held == 0:
+		return .Nothing_Held
+	case held < len(cells):
+		return .Too_Few_Foundations
+	}
+	if !placement.new_frame {
+		for cell in cells {
+			if frame_placement_refusal(entities, content.machines, placement.machine, placement.frame, cell, 0) != .None {
+				return .Frame_Cell_Taken
+			}
+		}
+	}
+	for cell in cells {
+		if field_placement_buries_a_player(state, content.field.tuning, frame, cell) {
+			return .Would_Bury_Player
+		}
+	}
+	return .None
+}
+
+// A foundation block that foundation_block_refusal let through, its cells
+// in their fixed order; a free one starts its frame with cell (0, 0, 0).
+// Returns the foundations placed.
+apply_foundation_block :: proc(state: ^Simulation_State, content: Simulation_Content, placement: Field_Placement) -> int {
+	entities := &state.world.entities
+	frame := placement.frame
+	if placement.new_frame {
+		_, frame = place_free_foundation(entities, content.machines, placement.machine, placement.hit, placement.heading, content.field.foundation_pitch_millimetres)
+	}
+	cells := field_placement_block_cells(placement)
+	for cell in cells {
+		if !placement.new_frame || cell != {} {
+			place_on_frame(entities, content.machines, placement.machine, frame, cell, 0)
+		}
+	}
+	return len(cells)
+}
+
+// A queued placement that field_placement_refusal let through: a
+// foundation block, a drill with its vein, any other machine on its
+// frame. Each placed machine counts for the quests (record_placed).
+// Returns the machines placed, one item each.
+apply_field_placement :: proc(state: ^Simulation_State, content: Simulation_Content, placement: Field_Placement) -> (placed: int) {
+	entities := &state.world.entities
+	placed = 1
 	switch {
-	case placement.new_frame:
-		place_free_foundation(entities, content.machines, placement.machine, placement.hit, placement.heading, content.field.foundation_pitch_millimetres)
+	case content.machines.machines[placement.machine].kind == .Foundation:
+		placed = apply_foundation_block(state, content, placement)
 	case content.machines.machines[placement.machine].kind == .Drill:
 		place_drill_on_frame(entities, content.machines, state.world.veins[:], placement.machine, placement.frame, placement.cell, placement.rotation)
 	case:
 		place_on_frame(entities, content.machines, placement.machine, placement.frame, placement.cell, placement.rotation)
 	}
-	record_placed(&state.records.statistics, placement.machine)
+	for _ in 0 ..< placed {
+		record_placed(&state.records.statistics, placement.machine)
+	}
+	return
 }
 
 // The end of the tick, after the brush edits: every queued placement in
-// order, each taking one item of its machine; then the queue is empty.
+// order, each taking one item of its machine per machine placed (a
+// foundation block one per cell); then the queue is empty.
 drain_field_placements :: proc(state: ^Simulation_State, content: Simulation_Content) {
 	for queued in state.field.placements {
 		player := &state.players[queued.player]
@@ -290,10 +448,13 @@ drain_field_placements :: proc(state: ^Simulation_State, content: Simulation_Con
 		}
 		if refusal := field_placement_refusal(state, content, player^, placement); refusal != .None {
 			player.field_refusal, player.field_refused_material = refusal, .Air
+			if refusal == .Too_Few_Foundations {
+				record_refused_foundation_counts(state, content, queued.player, placement)
+			}
 			continue
 		}
-		apply_field_placement(state, content, placement)
-		inventory_remove(player.inventory, content.machines.machines[placement.machine].item, 1)
+		placed := apply_field_placement(state, content, placement)
+		inventory_remove(player.inventory, content.machines.machines[placement.machine].item, placed)
 	}
 	clear(&state.field.placements)
 }

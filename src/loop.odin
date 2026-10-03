@@ -1359,7 +1359,8 @@ show_simulation_events :: proc(state: ^Ui_State, events: []Simulation_Event, loc
 			ui_toast(state, text("toast_action_refused"))
 		case .Field_Refused:
 			if key := field_refusal_keys[event.field_refusal]; key != "" {
-				ui_toast(state, text(key))
+				line := replace_message_mark(text(key), "{needed}", fmt.tprint(event.needed))
+				ui_toast(state, replace_message_mark(line, "{held}", fmt.tprint(event.held)))
 			}
 		}
 	}

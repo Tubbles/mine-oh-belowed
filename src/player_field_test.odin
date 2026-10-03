@@ -418,3 +418,32 @@ test_the_field_player_config_is_bounded :: proc(t: ^testing.T) {
 	testing.expect_value(t, field_player_speed_problem(test_field_player_config(), 60), "")
 	testing.expect(t, field_player_speed_problem(test_field_player_config(), 1) != "", "36 m/s flying is 36 m a tick at 1 Hz")
 }
+
+// The field player saves its foundation block indices (0193); a player
+// written before them reads them as 0, the first of each list.
+Field_Player_Before_Foundation_Blocks :: struct {
+	yaw:                i32,
+	placement_rotation: u8,
+}
+
+@(test)
+test_the_field_player_saves_its_foundation_block :: proc(t: ^testing.T) {
+	player := make_field_player(FAR_FEET, {UNIT_VECTOR_ONE, 0, 0})
+	player.foundation_size_index, player.foundation_height_index = 3, 2
+	bytes := make([dynamic]byte, context.temp_allocator)
+	write_value_of(&bytes, &player)
+	read: Field_Player
+	reader := Byte_Reader{data = bytes[:]}
+	testing.expect(t, read_value_of(&reader, &read))
+	testing.expect_value(t, read.foundation_size_index, 3)
+	testing.expect_value(t, read.foundation_height_index, 2)
+	old := Field_Player_Before_Foundation_Blocks{yaw = 5, placement_rotation = 1}
+	clear(&bytes)
+	write_value_of(&bytes, &old)
+	read = {}
+	reader = Byte_Reader{data = bytes[:]}
+	testing.expect(t, read_value_of(&reader, &read))
+	testing.expect_value(t, read.yaw, 5)
+	testing.expect_value(t, read.foundation_size_index, 0)
+	testing.expect_value(t, read.foundation_height_index, 0)
+}

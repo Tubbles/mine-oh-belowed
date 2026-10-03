@@ -80,6 +80,9 @@ Field_Edit_Refusal :: enum u8 {
 	No_Vein,
 	// A machine other than a foundation aimed at bare ground (0187).
 	Needs_Foundation,
+	// A foundation block needs more foundations than are held (0193); the
+	// event carries both counts (record_refused_foundation_counts).
+	Too_Few_Foundations,
 }
 
 // The string keys of the refusals the HUD toasts (Field_Refused, 0179).
@@ -97,6 +100,7 @@ field_refusal_keys := [Field_Edit_Refusal]string {
 	.Inventory_Full    = "field_refused_inventory_full",
 	.No_Vein           = "field_refused_no_vein",
 	.Needs_Foundation  = "field_refused_needs_foundation",
+	.Too_Few_Foundations = "field_refused_too_few_foundations",
 }
 
 Queued_Field_Edit :: struct {
@@ -126,6 +130,10 @@ Field_Simulation :: struct {
 	// The place commands (foundations, machines, runs), drained after the
 	// edits; empty between ticks.
 	placements:          [dynamic]Queued_Field_Placement,
+	// Per player index, the needed and held counts of its latest
+	// Too_Few_Foundations refusal (0193), read when the tick tells it.
+	// Not saved.
+	refused_foundation_counts: [dynamic][2]int,
 	torches:             [dynamic]Field_Torch,
 	chunk_set:           Field_Chunk_Set,
 	// Generated chunks waiting for the set to take them, as the block
@@ -159,6 +167,10 @@ Field_Content :: struct {
 	// and the pitch of a new frame (data/game.sjson).
 	foundation: Machine_Id,
 	foundation_pitch_millimetres: int,
+	// The block sizes and heights a held foundation cycles (0193,
+	// field_foundation_block); empty lists place one cell.
+	foundation_sizes:   []int,
+	foundation_heights: []int,
 	// The run tools (0176, belt_run_placement.odin): the pole a new
 	// endpoint places, the belt a belt run moves at, the pipe a pipe run
 	// looks like (each read through field_content_machine) and the
@@ -178,6 +190,7 @@ Field_Content :: struct {
 destroy_field_simulation :: proc(simulation: ^Field_Simulation) {
 	delete(simulation.edits)
 	delete(simulation.placements)
+	delete(simulation.refused_foundation_counts)
 	delete(simulation.torches)
 	destroy_field_chunk_set(&simulation.chunk_set)
 	for _, chunk in simulation.arrived_chunks {
@@ -488,7 +501,7 @@ queue_field_player_edit :: proc(state: ^Simulation_State, content: Simulation_Co
 		append(&field.edits, Queued_Field_Edit{player = index, edit = edit})
 	}
 	machine := field_placed_machine(player.field, content)
-	if placement, wanted := field_player_placement(player.field, machine); wanted && .Place in input.just_pressed {
+	if placement, wanted := field_player_placement(player.field, machine, content.field); wanted && .Place in input.just_pressed {
 		append(&field.placements, Queued_Field_Placement{player = index, placement = placement})
 	}
 	if placement, bare := field_bare_ground_placement(player.field, machine); bare && .Place in input.just_pressed {

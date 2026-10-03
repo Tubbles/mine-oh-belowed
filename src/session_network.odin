@@ -114,6 +114,7 @@ Player_Command_Tag :: enum u8 {
 	Transfer_Button,
 	Grid_Transfer,
 	Inserter_Hand,
+	Foundation_Block,
 }
 
 // A player a client's machine drives, on the host: the newest tick
@@ -327,6 +328,8 @@ encode_player_command :: proc(bytes: ^[dynamic]byte, command: Player_Command) {
 		write_tagged_command(bytes, .Grid_Transfer, variant)
 	case Inserter_Hand_Command:
 		write_tagged_command(bytes, .Inserter_Hand, variant)
+	case Foundation_Block_Command:
+		write_tagged_command(bytes, .Foundation_Block, variant)
 	case Add_Player_Command, Chunk_Ready_Command, Field_Chunk_Ready_Command:
 		panic("a join's entry and a chunk arrival are never relayed")
 	}
@@ -392,6 +395,8 @@ decode_player_command :: proc(reader: ^Byte_Reader) -> (command: Player_Command,
 		return read_command_value(reader, Grid_Transfer_Command)
 	case .Inserter_Hand:
 		return read_command_value(reader, Inserter_Hand_Command)
+	case .Foundation_Block:
+		return read_command_value(reader, Foundation_Block_Command)
 	}
 	return nil, false
 }

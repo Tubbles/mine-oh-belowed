@@ -352,3 +352,165 @@ test_the_field_target_from_a_pad_hits_the_ground_beside_it :: proc(t: ^testing.T
 		testing.expectf(t, abs(site_height(player.target.position)) <= tenth_sample(spacing), "%d mm: the hit is %d over the ground", spacing, site_height(player.target.position))
 	}
 }
+
+// Foundation blocks (0193).
+
+// The content of make_field_placement_test with the block lists of a
+// shipped game.sjson's shape.
+TEST_FOUNDATION_SIZES := [?]int{1, 2, 5}
+TEST_FOUNDATION_HEIGHTS := [?]int{1, 2}
+
+with_test_foundation_blocks :: proc(content: ^Simulation_Content) {
+	content.field.foundation_sizes = TEST_FOUNDATION_SIZES[:]
+	content.field.foundation_heights = TEST_FOUNDATION_HEIGHTS[:]
+}
+
+// A top face's square is centred on the anchor (an even side's extra cell
+// on the high side) and the block rises along the normal; a side face's
+// square rises from the anchor's row; a bottom face's block runs down.
+@(test)
+test_a_foundation_block_spans_the_face_and_runs_along_its_normal :: proc(t: ^testing.T) {
+	top := foundation_block_cells({0, 1, 0}, UP, 3, 2)
+	testing.expect_value(t, len(top), 18)
+	testing.expect_value(t, top[0], World_Coordinate{-1, 1, -1})
+	testing.expect_value(t, top[17], World_Coordinate{1, 2, 1})
+	even := foundation_block_cells({}, {}, 2, 1)
+	testing.expect_value(t, even[0], World_Coordinate{0, 0, 0})
+	testing.expect_value(t, even[3], World_Coordinate{1, 0, 1})
+	side := foundation_block_cells({1, 0, 0}, {1, 0, 0}, 3, 2)
+	testing.expect_value(t, side[0], World_Coordinate{1, 0, -1})
+	testing.expect_value(t, side[8], World_Coordinate{1, 2, 1})
+	testing.expect_value(t, side[17], World_Coordinate{2, 2, 1})
+	bottom := foundation_block_cells({0, -1, 0}, -UP, 1, 2)
+	testing.expect_value(t, bottom[1], World_Coordinate{0, -2, 0})
+}
+
+// Holding a 2 by 2 foundation block 2 high, Place on the ground ahead
+// starts one frame holding eight foundations in cells (0..1, 0..1, 0..1)
+// and takes eight items.
+@(test)
+test_a_free_foundation_block_fills_its_cells_and_costs_one_each :: proc(t: ^testing.T) {
+	items := make_test_items()
+	content := test_field_simulation_content(items, test_brush(.Sphere, 1000, 10))
+	content.machines = make_test_machines()
+	content.field.foundation = find_foundation_machine(content.machines)
+	content.field.foundation_pitch_millimetres = 500
+	with_test_foundation_blocks(&content)
+	simulation := make_test_field_state(make_test_field(Test_Terrain{kind = .Flat}, 1000), 1000)
+	defer destroy_simulation(&simulation)
+	add_test_miner(&simulation, items, test_site_point(0, 0, 0), {"foundation", 10})
+	player := &simulation.players[0]
+	player.field.pitch = degrees_to_angle_units(-45)
+	player.field.tool = .Foundation
+	player.field.foundation_size_index, player.field.foundation_height_index = 1, 1
+	tick_field_simulation(&simulation, content, {})
+	place := [1]Field_Player_Input{{held = {.Place}, just_pressed = {.Place}}}
+	tick_field_simulation(&simulation, content, place[:])
+	testing.expect_value(t, player.field_refusal, Field_Edit_Refusal.None)
+	testing.expect_value(t, len(simulation.world.entities.frames.frames), 1)
+	frame := simulation.world.entities.frames.frames[0].id
+	testing.expect_value(t, frame_cell_count(&simulation.world.entities.frames, frame), 8)
+	for cell in foundation_block_cells({}, UP, 2, 2) {
+		testing.expectf(t, entity_at(&simulation.world.entities, cell, frame).kind == .Foundation, "cell %v", cell)
+	}
+	testing.expect_value(t, inventory_count(player.inventory, test_item(items, "foundation")), 2)
+}
+
+// A 3 by 3 block on a side face stands as a wall from the adjacent cell's
+// row; on the top face a block rises from the adjacent cell; a block
+// reaching a taken cell is refused whole and places nothing.
+@(test)
+test_a_foundation_block_on_a_top_face_rises_from_the_adjacent_cell :: proc(t: ^testing.T) {
+	simulation, content, items, frame := make_field_placement_test()
+	defer destroy_simulation(&simulation)
+	foundation_item := test_item(items, "foundation")
+	inventory_add(simulation.players[0].inventory, items, foundation_item, 9)
+	entities := &simulation.world.entities
+	over_cell := Field_Placement{machine = content.field.foundation, frame = frame, cell = {1, 0, 0}, normal = {1, 0, 0}, size = 3}
+	append(&simulation.field.placements, Queued_Field_Placement{player = 0, placement = over_cell})
+	drain_field_placements(&simulation, content)
+	testing.expect_value(t, simulation.players[0].field_refusal, Field_Edit_Refusal.None)
+	testing.expect_value(t, frame_cell_count(&entities.frames, frame), 10)
+	single := Field_Placement{machine = content.field.foundation, frame = frame, cell = {0, 1, 0}, normal = UP, size = 1, height = 1}
+	append(&simulation.field.placements, Queued_Field_Placement{player = 0, placement = single})
+	drain_field_placements(&simulation, content)
+	testing.expect_value(t, simulation.players[0].field_refusal, Field_Edit_Refusal.None)
+	top := Field_Placement{machine = content.field.foundation, frame = frame, cell = {0, 1, 0}, normal = UP, size = 2, height = 2}
+	inventory_add(simulation.players[1].inventory, items, foundation_item, 7)
+	append(&simulation.field.placements, Queued_Field_Placement{player = 1, placement = top})
+	drain_field_placements(&simulation, content)
+	testing.expect_value(t, simulation.players[1].field_refusal, Field_Edit_Refusal.Frame_Cell_Taken)
+	testing.expect_value(t, frame_cell_count(&entities.frames, frame), 11)
+	testing.expect_value(t, inventory_count(simulation.players[1].inventory, foundation_item), 8)
+	top.cell = {-2, 1, 0}
+	// The tick resets the refusal before its queue (queue_field_player_edit).
+	simulation.players[1].field_refusal = .None
+	append(&simulation.field.placements, Queued_Field_Placement{player = 1, placement = top})
+	drain_field_placements(&simulation, content)
+	testing.expect_value(t, simulation.players[1].field_refusal, Field_Edit_Refusal.None)
+	testing.expect_value(t, frame_cell_count(&entities.frames, frame), 19)
+	expected := [?]World_Coordinate{{-2, 1, 0}, {-1, 1, 1}, {-2, 2, 0}, {-1, 2, 1}}
+	for cell in expected {
+		testing.expectf(t, entity_at(entities, cell, frame).kind == .Foundation, "cell %v", cell)
+	}
+	testing.expect_value(t, inventory_count(simulation.players[1].inventory, foundation_item), 0)
+}
+
+// Two sessions placing the same block hash the same: the cells enter the
+// entity table in one order.
+@(test)
+test_two_sessions_placing_one_foundation_block_hash_the_same :: proc(t: ^testing.T) {
+	hashes: [2]u64
+	for index in 0 ..< 2 {
+		simulation, content, items, frame := make_field_placement_test()
+		defer destroy_simulation(&simulation)
+		inventory_add(simulation.players[0].inventory, items, test_item(items, "foundation"), 49)
+		block := Field_Placement{machine = content.field.foundation, frame = frame, cell = {0, 1, 0}, normal = UP, size = 5, height = 2}
+		append(&simulation.field.placements, Queued_Field_Placement{player = 0, placement = block})
+		drain_field_placements(&simulation, content)
+		testing.expect_value(t, frame_cell_count(&simulation.world.entities.frames, frame), 51)
+		hashes[index] = simulation_state_hash(&simulation)
+	}
+	testing.expect_value(t, hashes[0], hashes[1])
+}
+
+// A player aimed at a free foundation's top face places a 2 by 2 block
+// through its own aim (field_player_placement): the face's normal is up
+// and the block rises from the adjacent cell, (0..1, 1, 0..1).
+@(test)
+test_an_aimed_foundation_block_rises_from_the_top_face :: proc(t: ^testing.T) {
+	items := make_test_items()
+	content := test_field_simulation_content(items, test_brush(.Sphere, 1000, 10))
+	content.machines = make_test_machines()
+	content.field.foundation = find_foundation_machine(content.machines)
+	content.field.foundation_pitch_millimetres = 500
+	with_test_foundation_blocks(&content)
+	simulation := make_test_field_state(make_test_field(Test_Terrain{kind = .Flat}, 1000), 1000)
+	defer destroy_simulation(&simulation)
+	add_test_miner(&simulation, items, test_site_point(0, 0, 0), {"foundation", 10})
+	player := &simulation.players[0]
+	player.field.pitch = degrees_to_angle_units(-45)
+	player.field.tool = .Foundation
+	place := [1]Field_Player_Input{{held = {.Place}, just_pressed = {.Place}}}
+	tick_field_simulation(&simulation, content, {})
+	tick_field_simulation(&simulation, content, place[:])
+	testing.expect_value(t, len(simulation.world.entities.frames.frames), 1)
+	frame := simulation.world.entities.frames.frames[0].id
+	player.field.pitch = degrees_to_angle_units(-35)
+	player.field.foundation_size_index = 1
+	tick_field_simulation(&simulation, content, {})
+	target := player.field.frame_target
+	testing.expect(t, target.hit && target.frame == frame && target.cell == World_Coordinate{}, "the reticle meets the first foundation")
+	testing.expect_value(t, target.adjacent - target.cell, UP)
+	placement, wanted := field_player_placement(player.field, content.field.foundation, content.field)
+	testing.expect(t, wanted)
+	testing.expect_value(t, placement.normal, UP)
+	tick_field_simulation(&simulation, content, place[:])
+	testing.expect_value(t, player.field_refusal, Field_Edit_Refusal.None)
+	testing.expect_value(t, frame_cell_count(&simulation.world.entities.frames, frame), 5)
+	expected := [?]World_Coordinate{{0, 1, 0}, {1, 1, 0}, {0, 1, 1}, {1, 1, 1}}
+	for cell in expected {
+		testing.expectf(t, entity_at(&simulation.world.entities, cell, frame).kind == .Foundation, "cell %v", cell)
+	}
+	testing.expect_value(t, inventory_count(player.inventory, test_item(items, "foundation")), 5)
+}

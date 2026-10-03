@@ -709,6 +709,45 @@ test_a_refused_field_placement_raises_one_event :: proc(t: ^testing.T) {
 	testing.expect_value(t, count_field_refused_events(state.events[:], .No_Vein), 1)
 }
 
+// A 5 by 5 foundation block queued with 16 foundations held (0193) is
+// refused whole: nothing is placed or taken, one Field_Refused event is
+// raised, and its ghost takes the refused colour.
+@(test)
+test_a_foundation_block_short_of_foundations_places_nothing :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	session := start_field_test_session(config, content)
+	defer end_session(session)
+	simulation_content := field_test_content(session, content)
+	state := &session.simulation
+	generation := make_planet_generation(state.world.settings.seed, state.world.planet, state.field.spacing_millimetres)
+	home := planet_home_direction(state.world.planet.home)
+	pad := lay_test_field_pad(state, simulation_content, field_surface_under(generation, World_Position(fixed_scale(-home, generation.radius)), 0))
+	foundation := field_foundation(simulation_content)
+	item := simulation_content.machines.machines[foundation].item
+	inventory := state.players[0].inventory
+	inventory_remove(inventory, item, inventory_count(inventory, item))
+	inventory_add(inventory, content.items, item, 16)
+	cells_before := frame_cell_count(&state.world.entities.frames, pad)
+	block := Field_Placement{kind = .Machine, machine = foundation, frame = pad, cell = {0, 1, 0}, normal = UP, size = 5, height = 1}
+	refusal := field_placement_refusal(state, simulation_content, state.players[0], block)
+	testing.expect_value(t, refusal, Field_Edit_Refusal.Too_Few_Foundations)
+	testing.expect_value(t, frame_ghost_color(refusal), GHOST_INVALID_COLOR)
+	tick_field_test_simulation(state, simulation_content, {})
+	clear(&state.events)
+	append(&state.field.placements, Queued_Field_Placement{player = 0, placement = block})
+	tick_field_test_simulation(state, simulation_content, {})
+	tick_field_test_simulation(state, simulation_content, {})
+	testing.expect_value(t, count_field_refused_events(state.events[:], refusal), 1)
+	for event in state.events {
+		if event.field_refusal == .Too_Few_Foundations {
+			testing.expect_value(t, [2]int{event.needed, event.held}, [2]int{25, 16})
+		}
+	}
+	testing.expect_value(t, frame_cell_count(&state.world.entities.frames, pad), cells_before)
+	testing.expect_value(t, inventory_count(inventory, item), 16)
+}
+
 // A Dig held on ground the player's tools cannot dig is refused every
 // tick for ten ticks and raises one event; a new press raises another.
 @(test)

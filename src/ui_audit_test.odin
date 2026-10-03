@@ -942,6 +942,12 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 	inventory_hotbar(player.inventory)[player.selected_hotbar_slot] = Item_Stack{test_item(audit.content.items, "magnetometer"), 1}
 	player.magnetometer.found = true
 	audit_case(audit, {name = "hud magnetometer", hud = true, toasts = toasts[:]})
+	// A selected foundation in a field session's content adds the block
+	// rows to the inventory view (0193), checked at every size down to the
+	// smallest.
+	with_audit_foundation_blocks(audit)
+	inventory_hotbar(player.inventory)[player.selected_hotbar_slot] = Item_Stack{audit.content.machines.machines[audit.content.field.foundation].item, 1}
+	audit_case(audit, {name = "inventory foundation block", screens = {.Inventory}, walk_focus = true})
 }
 
 @(test)
@@ -1224,4 +1230,72 @@ test_recipe_screen_shows_have_and_need :: proc(t: ^testing.T) {
 	held_line := product_held_line(product, inventory_count(player.inventory, product.item), audit.content.items)
 	testing.expectf(t, draw_list_has_text(state.draw_list[:], held_line), "no row %q", held_line)
 	testing.expect(t, draw_list_has_text(state.draw_list[:], queue_summary_text(player.crafting)))
+}
+
+// The audit's content as a field session's for the foundation block
+// widget (0193): its foundation and the shipped lists of data/game.sjson.
+with_audit_foundation_blocks :: proc(audit: ^Ui_Audit) {
+	config, error := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	assert(error == nil)
+	audit.content.field.foundation = find_foundation_machine(audit.content.machines)
+	audit.content.field.foundation_sizes = config.foundation_sizes
+	audit.content.field.foundation_heights = config.foundation_heights
+}
+
+// The draw list's text's centre in pixels, for a click on it.
+draw_list_text_pixels :: proc(state: ^Ui_State, wanted: string) -> (pixels: [2]f32, found: bool) {
+	for command in state.draw_list {
+		if command.kind == .Text && command.text == wanted {
+			return rectangle_centre(command.rectangle) * state.pixels_per_unit, true
+		}
+	}
+	return {}, false
+}
+
+// The inventory view shows the foundation block rows with a foundation
+// selected and not with a furnace; a click on 5x5 queues the command,
+// which the tick applies to the field player, and the strip keeps 5x5.
+@(test)
+test_the_inventory_view_picks_the_foundation_block :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	with_audit_foundation_blocks(audit)
+	player := &audit.simulation.players[0]
+	hotbar := inventory_hotbar(player.inventory)
+	furnace := audit.content.machines.machines[test_machine(audit.content.machines, "stone_furnace")].item
+	hotbar[player.selected_hotbar_slot] = Item_Stack{furnace, 1}
+	state := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&state)
+	push_screen(&state.screens, .Inventory)
+	screen_test_frame(audit, &state, {})
+	testing.expect(t, !draw_list_has_text(state.draw_list[:], text("inventory_foundation_size")))
+	foundation := audit.content.machines.machines[audit.content.field.foundation].item
+	hotbar[player.selected_hotbar_slot] = Item_Stack{foundation, 1}
+	screen_test_frame(audit, &state, {})
+	testing.expect(t, draw_list_has_text(state.draw_list[:], text("inventory_foundation_size")))
+	testing.expect(t, draw_list_has_text(state.draw_list[:], text("inventory_foundation_height")))
+	testing.expect(t, draw_list_has_text(state.draw_list[:], "10x10"))
+	pixels, found := draw_list_text_pixels(&state, "5x5")
+	testing.expect(t, found)
+	screen_test_frame(audit, &state, {mouse_position = pixels, mouse_moved = true, mouse_pressed = true, mouse_down = true})
+	queued := len(audit.simulation.player_commands)
+	testing.expect(t, queued > 0)
+	testing.expect_value(t, audit.simulation.player_commands[queued - 1].command.(Foundation_Block_Command), Foundation_Block_Command{size_index = 2, height_index = 0})
+	apply_player_commands(&audit.simulation, audit.content)
+	testing.expect_value(t, player.field.foundation_size_index, 2)
+	screen_test_frame(audit, &state, {mouse_position = pixels})
+	testing.expect_value(t, len(audit.simulation.player_commands), 0)
+	// At 1280 by 800 and interface scale 1.5 with the largest text the
+	// compact row replaces the hotbar's label, every choice whole.
+	text_scale := audit.settings.text_scale
+	defer audit.settings.text_scale = text_scale
+	audit.settings.text_scale = TEXT_SCALE_RANGE.maximum
+	ui_begin(&state, {}, {1280, 800}, 1.0 / 60, 1.5, 1, ui_accessibility(audit.settings))
+	run_screens(&state, audit_screen_context(audit))
+	ui_resolve(&state)
+	testing.expect(t, !draw_list_has_text(state.draw_list[:], text("inventory_hotbar")))
+	testing.expect(t, !draw_list_has_text(state.draw_list[:], text("inventory_foundation_size")))
+	for choice in ([?]string{"1x1", "2x2", "5x5", "10x10", "1 high", "2 high", "5 high"}) {
+		testing.expectf(t, draw_list_has_text(state.draw_list[:], choice), "%s is drawn whole", choice)
+	}
 }

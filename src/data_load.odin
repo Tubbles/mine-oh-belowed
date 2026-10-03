@@ -40,6 +40,11 @@ FIELD_LEVEL_COUNT :: 4
 // cell's centre a few thousand cells out inside an i64.
 MINIMUM_FOUNDATION_PITCH_MILLIMETRES :: 250
 MAXIMUM_FOUNDATION_PITCH_MILLIMETRES :: 2000
+// A foundation block's side or height in cells (at most 4096 cells a
+// block, which the ghost draws every frame), and the entries of each list
+// (work item 0193): the index a player keeps is a u8.
+MAXIMUM_FOUNDATION_BLOCK_CELLS :: 16
+MAXIMUM_FOUNDATION_BLOCK_CHOICES :: 16
 
 Starting_Item :: struct {
 	item:  string,
@@ -68,6 +73,10 @@ Game_Config :: struct {
 	field_water:          Field_Water_Config,
 	// The cell of a foundation frame (work item 0174, world_frame.odin).
 	foundation_pitch_millimetres: int,
+	// The block sizes and heights a held foundation offers (work item
+	// 0193, entity_frames.odin).
+	foundation_sizes:     []int,
+	foundation_heights:   []int,
 	// The constraints of a belt or pipe run between poles (work item
 	// 0176, belt_run.odin).
 	belt_runs:            Belt_Runs_Config,
@@ -493,6 +502,12 @@ validate_game_config :: proc(config: Game_Config) -> string {
 	if config.foundation_pitch_millimetres < MINIMUM_FOUNDATION_PITCH_MILLIMETRES || config.foundation_pitch_millimetres > MAXIMUM_FOUNDATION_PITCH_MILLIMETRES {
 		return fmt.tprintf("foundation_pitch_millimetres %d is outside %d to %d", config.foundation_pitch_millimetres, MINIMUM_FOUNDATION_PITCH_MILLIMETRES, MAXIMUM_FOUNDATION_PITCH_MILLIMETRES)
 	}
+	if problem := foundation_block_list_problem("foundation_sizes", config.foundation_sizes); problem != "" {
+		return problem
+	}
+	if problem := foundation_block_list_problem("foundation_heights", config.foundation_heights); problem != "" {
+		return problem
+	}
 	if problem := belt_runs_problem(config.belt_runs); problem != "" {
 		return problem
 	}
@@ -524,6 +539,21 @@ field_brush_shape_from_name :: proc(name: string) -> (shape: Field_Brush_Shape, 
 		}
 	}
 	return .Sphere, false
+}
+
+// One to MAXIMUM_FOUNDATION_BLOCK_CHOICES entries (0193), each from 1 to
+// MAXIMUM_FOUNDATION_BLOCK_CELLS, so a block and its ghost hold at most
+// 16 by 16 by 16 = 4096 cells; a missing list is empty and refused.
+foundation_block_list_problem :: proc(name: string, values: []int) -> string {
+	if len(values) < 1 || len(values) > MAXIMUM_FOUNDATION_BLOCK_CHOICES {
+		return fmt.tprintf("%s has %d entries, not 1 to %d", name, len(values), MAXIMUM_FOUNDATION_BLOCK_CHOICES)
+	}
+	for value, index in values {
+		if value < 1 || value > MAXIMUM_FOUNDATION_BLOCK_CELLS {
+			return fmt.tprintf("%s[%d] %d is outside 1 to %d", name, index, value, MAXIMUM_FOUNDATION_BLOCK_CELLS)
+		}
+	}
+	return ""
 }
 
 // One to MAXIMUM_FIELD_BRUSH_COUNT brushes, each with a unique id, a known

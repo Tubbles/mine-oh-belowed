@@ -224,10 +224,11 @@ draw_field_players :: proc(scene: Field_Scene) {
 	}
 }
 
-// Where the viewer's Place would put a run, a foundation or a machine,
-// red where the drain would refuse it (field_placement_refusal: a drill
-// off every vein, a taken cell, a buried player) or where Place refuses
-// it (a machine over bare ground, field_bare_ground_placement).
+// Where the viewer's Place would put a run, a foundation's whole block
+// (0193) or a machine, red where the drain would refuse it
+// (field_placement_refusal: a drill off every vein, a taken cell, a
+// buried player, too few foundations) or where Place refuses it (a
+// machine over bare ground, field_bare_ground_placement).
 draw_field_ghosts :: proc(scene: Field_Scene) {
 	if scene.viewer < 0 || scene.viewer >= len(scene.state.players) {
 		return
@@ -238,7 +239,7 @@ draw_field_ghosts :: proc(scene: Field_Scene) {
 		draw_belt_run_ghost(curve, geometry, refusal == .None)
 	}
 	machine := field_placed_machine(player.field, scene.content)
-	placement, wanted := field_player_placement(player.field, machine)
+	placement, wanted := field_player_placement(player.field, machine, scene.content.field)
 	if !wanted {
 		placement, wanted = field_bare_ground_placement(player.field, machine)
 	}
@@ -250,8 +251,8 @@ draw_field_ghosts :: proc(scene: Field_Scene) {
 		return
 	}
 	color := frame_ghost_color(field_placement_refusal(scene.state, scene.content, player, placement))
-	for footprint_cell in footprint_cells(cell, scene.content.machines.machines[machine].footprint, placement.rotation) {
-		draw_frame_ghost(frame, footprint_cell, color)
+	for ghost_cell in field_placement_cells(scene.content, placement, cell) {
+		draw_frame_ghost(frame, ghost_cell, color)
 	}
 }
 

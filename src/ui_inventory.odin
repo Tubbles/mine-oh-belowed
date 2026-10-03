@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+
 // The inventory screen: the 36 slot grid and the hotbar as slot grids, with
 // the slot interaction from doc/ui.md and the quick move between the
 // hotbar and the backpack (quick_transfer.odin). Menu_Drop (the right
@@ -97,24 +99,116 @@ merge_grid_results :: proc(first, second: Slot_Grid_Result) -> Slot_Grid_Result 
 	return Slot_Grid_Result{activated = max(first.activated, second.activated), focused = max(first.focused, second.focused)}
 }
 
-inventory_panel_height :: proc() -> f32 {
+// The foundation block rows (0193) add their rows' height.
+inventory_panel_height :: proc(foundation_rows := 0) -> f32 {
 	return(
 		UI_ROW_HEIGHT +
 		slot_grid_height(INVENTORY_ROWS) +
 		UI_GAP +
 		UI_ROW_HEIGHT +
 		slot_grid_height(1) +
+		f32(foundation_rows) * (UI_GAP + UI_ROW_HEIGHT) +
 		2 * UI_PADDING \
 	)
 }
 
-// The player's grid and hotbar with the hotbar label between them, from
-// the top of the area. Results are inventory slot indices.
-player_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, player: ^Player, items: Item_Registry) -> Slot_Grid_Result {
+// The foundation block widget (0193): with a foundation selected in the
+// hotbar of a field session (whose content has the lists), under the
+// hotbar a row for the block's size and one for its height, each a label
+// and a strip of the content's choices with the current one underlined.
+// Where the two rows do not fit the view (a large interface scale), one
+// row in place of the hotbar's label holds both strips without their
+// labels, the choices saying what they are ("5x5", "2 high"), so the
+// panel keeps its height. Left and right step a focused strip, the
+// pointer and touch pick a choice; a change queues a
+// Foundation_Block_Command, so the choice is lockstep state, and the
+// strips show the command on its way until it applies.
+shows_foundation_block_rows :: proc(player: Player, content: Simulation_Content) -> bool {
+	stack := selected_hotbar_stack(player)
+	foundation := field_foundation(content)
+	return foundation != NO_MACHINE && !stack_is_empty(stack) && item_places_machine(content.machines, stack.item) == foundation && len(content.field.foundation_sizes) > 0 && len(content.field.foundation_heights) > 0
+}
+
+foundation_block_choice_labels :: proc(values: []int, key, mark: string) -> []string {
+	labels := make([]string, len(values), context.temp_allocator)
+	for value, index in values {
+		labels[index] = replace_message_mark(text(key), mark, fmt.tprint(value))
+	}
+	return labels
+}
+
+// A strip whose selection starts at selected each frame (the lockstep
+// state, not the strip's own); returns the selection after the frame's
+// pick or step.
+foundation_block_strip :: proc(state: ^Ui_State, strip: Ui_Rectangle, id_label: string, labels: []string, selected: int) -> int {
+	state.selections[ui_id(state, id_label)] = selected
+	return ui_tabs(state, strip, id_label, labels, mode = .Focus)
+}
+
+// The labelled row: the label on the left third, the strip after it.
+foundation_block_row :: proc(state: ^Ui_State, row: Ui_Rectangle, id_label, label: string, labels: []string, selected: int) -> int {
+	content := row
+	ui_label(state, cut_left(&content, content.width / 3), label, UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	return foundation_block_strip(state, content, id_label, labels, selected)
+}
+
+foundation_block_rows :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context, rows: int) {
+	content := area
+	field := screen_context.content.field
+	queued := screen_context.player_commands != nil ? screen_context.player_commands[:] : nil
+	shown := shown_foundation_block(screen_context.player.field, queued, screen_context.unconfirmed_commands, screen_context.player_index)
+	shown.size_index = shown.size_index < len(field.foundation_sizes) ? shown.size_index : 0
+	shown.height_index = shown.height_index < len(field.foundation_heights) ? shown.height_index : 0
+	sizes := foundation_block_choice_labels(field.foundation_sizes, "inventory_foundation_size_choice", "{size}")
+	heights := foundation_block_choice_labels(field.foundation_heights, "inventory_foundation_height_choice", "{height}")
+	picked := shown
+	if rows >= FOUNDATION_BLOCK_ROW_COUNT {
+		cut_top(&content, UI_GAP)
+		picked.size_index = foundation_block_row(state, cut_top(&content, UI_ROW_HEIGHT), "foundation_size", text("inventory_foundation_size"), sizes, shown.size_index)
+		cut_top(&content, UI_GAP)
+		picked.height_index = foundation_block_row(state, cut_top(&content, UI_ROW_HEIGHT), "foundation_height", text("inventory_foundation_height"), heights, shown.height_index)
+	} else {
+		row := cut_top(&content, UI_ROW_HEIGHT)
+		size_strip := cut_left(&row, (row.width - UI_GAP) * f32(len(sizes)) / f32(len(sizes) + len(heights)))
+		cut_left(&row, UI_GAP)
+		picked.size_index = foundation_block_strip(state, size_strip, "foundation_size", sizes, shown.size_index)
+		picked.height_index = foundation_block_strip(state, row, "foundation_height", heights, shown.height_index)
+	}
+	if picked != shown && screen_context.player_commands != nil {
+		queue_player_command(screen_context.player_commands, screen_context.player_index, picked)
+	}
+}
+
+FOUNDATION_BLOCK_ROW_COUNT :: 2
+
+// The rows the view gives the widget: two where the panel holds them
+// without its heading, else one in place of the hotbar's label, none
+// without a foundation selected.
+foundation_block_row_count :: proc(shown: bool, area_height, tabs_height: f32) -> int {
+	if !shown {
+		return 0
+	}
+	if inventory_panel_height(FOUNDATION_BLOCK_ROW_COUNT) + tabs_height - UI_ROW_HEIGHT <= area_height {
+		return FOUNDATION_BLOCK_ROW_COUNT
+	}
+	return 1
+}
+
+// The panel's extra rows: the compact row takes the hotbar label's.
+foundation_block_extra_rows :: proc(rows: int) -> int {
+	return rows >= FOUNDATION_BLOCK_ROW_COUNT ? rows : 0
+}
+
+// The player's grid and hotbar with the hotbar label between them (left
+// out without hotbar_label, whose row the caller then fills after the
+// hotbar), from the top of the area. Results are inventory slot indices.
+player_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, player: ^Player, items: Item_Registry, hotbar_label := true) -> Slot_Grid_Result {
 	content := area
 	grid_area := cut_top(&content, slot_grid_height(INVENTORY_ROWS) + UI_GAP)
 	grid := ui_slot_grid(state, {grid_area.x, grid_area.y}, "grid", INVENTORY_COLUMNS, inventory_grid(player.inventory), items)
-	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("inventory_hotbar"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	if hotbar_label {
+		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("inventory_hotbar"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	}
 	hotbar := ui_slot_grid(state, {content.x, content.y}, "hotbar", HOTBAR_SLOT_COUNT, inventory_hotbar(player.inventory), items)
 	draw_outline(state, slot_grid_rectangle({content.x, content.y}, HOTBAR_SLOT_COUNT, player.selected_hotbar_slot), UI_ACCENT_COLOR)
 	return merge_grid_results(grid_result_to_inventory(grid, HOTBAR_SLOT_COUNT), grid_result_to_inventory(hotbar, 0))
@@ -138,7 +232,9 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	// would not fit the area.
 	area := ui_panel_area(state)
 	tabs_height := f32(UI_ROW_HEIGHT + UI_GAP)
-	panel_height := inventory_panel_height()
+	foundation_rows := foundation_block_row_count(shows_foundation_block_rows(player^, screen_context.content), area.height, tabs_height)
+	panel_height := inventory_panel_height(foundation_block_extra_rows(foundation_rows))
+	hotbar_label := foundation_rows != 1
 	shows_heading := panel_height + tabs_height <= area.height
 	panel := fitted_panel(area, slot_grid_width(INVENTORY_COLUMNS) + 2 * UI_PADDING, panel_height + (shows_heading ? tabs_height : tabs_height - UI_ROW_HEIGHT))
 	ui_panel_begin(state, "inventory", panel)
@@ -149,7 +245,11 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	if shows_heading {
 		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("inventory_title"), UI_HEADING_TEXT_SIZE, .Centre)
 	}
-	slots := player_slot_region(state, content, player, items)
+	slot_region_height := slot_grid_height(INVENTORY_ROWS) + UI_GAP + (hotbar_label ? UI_ROW_HEIGHT : 0) + slot_grid_height(1)
+	slots := player_slot_region(state, cut_top(&content, slot_region_height), player, items, hotbar_label)
+	if foundation_rows > 0 {
+		foundation_block_rows(state, content, screen_context, foundation_rows)
+	}
 	ui_panel_end(state)
 	touch := touch_row_shows(state)
 	button := touch ? ui_touch_row(state, INVENTORY_TOUCH_BUTTONS) : .None

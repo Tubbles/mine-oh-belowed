@@ -306,6 +306,57 @@ test_the_hotbar_decides_the_field_tool :: proc(t: ^testing.T) {
 	testing.expect_value(t, player.field.brush, 1)
 }
 
+// The inventory view's Foundation_Block_Command (0193) sets the field
+// player's two indices as they are, wrapping nothing; an index past
+// either list is refused with Action_Refused and changes nothing; the
+// command crosses the network unchanged. Rotate_Building with a
+// foundation held still cycles the brush and leaves the block alone. The
+// tool line names the block, and the shipped lists pass their bounds.
+@(test)
+test_the_foundation_block_command_sets_the_indices :: proc(t: ^testing.T) {
+	use_shipped_strings()
+	defer thread_string_table = nil
+	simulation, content, items, _ := make_field_placement_test()
+	defer destroy_simulation(&simulation)
+	with_test_foundation_blocks(&content)
+	brushes := [2]Field_Brush{test_brush(.Sphere, 1000, 10), test_brush(.Level, 2000, 5)}
+	content.field.brushes = brushes[:]
+	queue_player_command(&simulation.player_commands, 0, Foundation_Block_Command{size_index = 2, height_index = 1})
+	apply_player_commands(&simulation, content)
+	field := &simulation.players[0].field
+	testing.expect_value(t, [2]u8{field.foundation_size_index, field.foundation_height_index}, [2]u8{2, 1})
+	size, height := field_foundation_block(field^, content.field)
+	testing.expect_value(t, foundation_block_line(size, height), "Foundation 5x5, 2 high")
+	refused := [?]Foundation_Block_Command{{size_index = len(TEST_FOUNDATION_SIZES), height_index = 0}, {size_index = 0, height_index = len(TEST_FOUNDATION_HEIGHTS)}, {size_index = -1, height_index = 0}}
+	for command in refused {
+		clear(&simulation.events)
+		queue_player_command(&simulation.player_commands, 0, command)
+		apply_player_commands(&simulation, content)
+		testing.expect_value(t, [2]u8{field.foundation_size_index, field.foundation_height_index}, [2]u8{2, 1})
+		testing.expect_value(t, len(simulation.events), 1)
+		testing.expect_value(t, simulation.events[0].kind, Player_Event.Action_Refused)
+	}
+	bytes := make([dynamic]byte, context.temp_allocator)
+	encode_player_command(&bytes, Foundation_Block_Command{size_index = 3, height_index = 2})
+	reader := Byte_Reader{data = bytes[:]}
+	decoded, ok := decode_player_command(&reader)
+	testing.expect(t, ok)
+	testing.expect_value(t, decoded.(Foundation_Block_Command), Foundation_Block_Command{size_index = 3, height_index = 2})
+	player := &simulation.players[0]
+	inventory_hotbar(player.inventory)[player.selected_hotbar_slot] = Item_Stack{test_item(items, "foundation"), 1}
+	update_field_held_tool(player, content, {held = {.Sneak}, just_pressed = {.Next_Brush}})
+	testing.expect_value(t, field.tool, Field_Held_Tool.Foundation)
+	testing.expect_value(t, field.brush, 1)
+	testing.expect_value(t, [2]u8{field.foundation_size_index, field.foundation_height_index}, [2]u8{2, 1})
+	config, error := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	testing.expect_value(t, foundation_block_list_problem("foundation_sizes", config.foundation_sizes), "")
+	testing.expect_value(t, foundation_block_list_problem("foundation_heights", config.foundation_heights), "")
+	too_wide := [?]int{1, MAXIMUM_FOUNDATION_BLOCK_CELLS + 1}
+	testing.expect(t, foundation_block_list_problem("foundation_sizes", too_wide[:]) != "")
+	testing.expect(t, foundation_block_list_problem("foundation_sizes", {}) != "")
+}
+
 // The shipped brushes pass; an empty list, an unknown shape, a twice used
 // id and a rate out of bounds are refused.
 @(test)

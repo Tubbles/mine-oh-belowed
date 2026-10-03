@@ -91,6 +91,13 @@ simulated_chunk_radius_vertical = 3
 // item 0174, doc/content.md, Foundations): a foundation is one cell thick
 // and machines stand on its cells.
 foundation_pitch_millimetres = 500
+// The blocks a held foundation places at once (work item 0193,
+// doc/content.md, Foundations): a square of size by size cells and height
+// cells high, chosen on the inventory view with a foundation selected;
+// the first of each list is a new player's. Each from 1 to 16 (at most
+// 4096 cells a block), at most 16 entries.
+foundation_sizes = [1, 2, 5, 10]
+foundation_heights = [1, 2, 5]
 // Free belt and pipe runs between poles (work item 0176, doc/content.md,
 // Belt poles and runs): a run either inclines (its ends more than the
 // level tolerance apart in height, its facings aligned) or turns (level,

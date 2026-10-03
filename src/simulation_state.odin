@@ -86,8 +86,11 @@ Game_Records :: struct {
 Simulation_Event :: struct {
 	player:        int,
 	kind:          Player_Event,
-	// Why, for Field_Refused.
+	// Why, for Field_Refused, and for Too_Few_Foundations the block's
+	// foundations and the ones held (0193).
 	field_refusal: Field_Edit_Refusal,
+	needed:        int,
+	held:          int,
 }
 
 // The config's starting items must have passed validate_starting_items.

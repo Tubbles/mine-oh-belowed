@@ -579,12 +579,22 @@ target_status_lines :: proc(world: ^World, records: ^Game_Records, machines: Mac
 }
 
 // On the field (0187): a machine other than a foundation over bare ground
-// says what it needs, as Place's refusal toasts it.
+// says what it needs, as Place's refusal toasts it; a held foundation
+// names its block (0193, field_foundation_block).
 field_tool_line :: proc(player: Field_Player, content: Simulation_Content) -> (line: string, shown: bool) {
 	if _, bare := field_bare_ground_placement(player, field_placed_machine(player, content)); bare {
 		return text(field_refusal_keys[.Needs_Foundation]), true
 	}
+	if player.tool == .Foundation {
+		return foundation_block_line(field_foundation_block(player, content.field)), true
+	}
 	return "", false
+}
+
+// "Foundation 5x5, 2 high". In the temp allocator.
+foundation_block_line :: proc(size, height: i32) -> string {
+	line := replace_message_mark(text("field_tool_foundation_block"), "{size}", fmt.tprint(size))
+	return replace_message_mark(line, "{height}", fmt.tprint(height))
 }
 
 // The loading notice (loading_notice in loop.odin): a panel in the
