@@ -73,7 +73,7 @@ test_physical_typing_ignores_the_button_meanings :: proc(t: ^testing.T) {
 
 @(test)
 test_seed_field_takes_digits_only :: proc(t: ^testing.T) {
-	setup := make_world_setup(World_File_Settings{day_length_seconds = 1200}, "New world", 42)
+	setup := make_world_setup(World_File_Settings{day_length_seconds = 1200}, nil, "New world", 42)
 	keyboard: Keyboard_State
 	testing.expect_value(t, text_field_text(&setup.seed), "42")
 	press_key(&setup.seed, &keyboard, character_key('a'))

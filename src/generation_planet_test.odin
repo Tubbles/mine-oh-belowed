@@ -14,6 +14,7 @@ make_test_planet :: proc() -> Planet {
 		bedrock_depth_metres = 256,
 		sea_level_metres = 0,
 		rotation_period_seconds = 1200,
+		relief_octaves = {{512, 24}, {128, 8}, {32, 2}},
 		palette = palette,
 	}
 }

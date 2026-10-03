@@ -1,10 +1,17 @@
 // The planets (work item 0168, doc/content.md, Planets). Every key is
 // required; the terrain field generates a planet from its record, the
-// world seed and the sample spacing (generation_planet.odin).
+// world seed and the sample spacing (generation_planet.odin). A world
+// records the values it was made with in its world.sjson; once the
+// session generates the field from them (0179), an edit here reshapes new
+// worlds only.
 planets = [
 	{
 		id = "home"
 		radius_metres = 8000
+		// The radii a new world offers, radius_metres the default among
+		// them (work item 0179). Each must hold the bedrock depth and the
+		// sea level below.
+		radius_presets_metres = [4000, 8000, 16000]
 		// 981 is Earth's.
 		surface_gravity_centimetres_per_second_squared = 981
 		// Below the radius, where bedrock starts.
@@ -26,6 +33,14 @@ planets = [
 		// the weather (M15).
 		rain_fill_per_minute = 2
 		rotation_period_seconds = 1200
+		// The surface is the radius plus three octaves of value noise read
+		// on the sphere, each its lattice spacing and the most it raises or
+		// lowers the ground; the amplitudes add up to 34 m at most.
+		relief_octaves = [
+			{wavelength_metres = 512, amplitude_metres = 24}
+			{wavelength_metres = 128, amplitude_metres = 8}
+			{wavelength_metres = 32, amplitude_metres = 2}
+		]
 		// The tints of the ground, red, green and blue from 0 to 255.
 		palette = [
 			[142, 118, 86]

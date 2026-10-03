@@ -1,5 +1,6 @@
 package game
 
+import "core:strings"
 import "core:testing"
 
 test_field_materials :: proc(items: Item_Registry) -> Field_Material_Table {
@@ -237,18 +238,29 @@ test_the_field_material_table :: proc(t: ^testing.T) {
 	testing.expect_value(t, table[.Bedrock].item, NO_ITEM)
 	testing.expect_value(t, table[.Air].item, NO_ITEM)
 	testing.expect_value(t, field_diggable_materials(table, 1), bit_set[Field_Material]{.Topsoil, .Stone})
+	// The dig rates (0179): soft topsoil faster, deep stone slower.
+	testing.expect_value(t, table[.Topsoil].dig_rate_percent, 150)
+	testing.expect_value(t, table[.Stone].dig_rate_percent, 100)
+	testing.expect_value(t, table[.Deep_Stone].dig_rate_percent, 60)
 	malformed := [?]string {
-		`materials = [{id = "topsoil", item = "dirt", tool_tier = 0}, {id = "stone", item = "stone", tool_tier = 1}, {id = "deep_stone", item = "deep_stone", tool_tier = 3}]`,
-		`materials = [{id = "topsoil", item = "dirt", tool_tier = 0}, {id = "stone", item = "pebble", tool_tier = 1}, {id = "deep_stone", item = "deep_stone", tool_tier = 3}, {id = "bedrock", item = "", tool_tier = 0}]`,
-		`materials = [{id = "topsoil", item = "dirt", tool_tier = 0, hardness = 2}, {id = "stone", item = "stone", tool_tier = 1}, {id = "deep_stone", item = "deep_stone", tool_tier = 3}, {id = "bedrock", item = "", tool_tier = 0}]`,
-		`materials = [{id = "topsoil", item = "dirt"}, {id = "stone", item = "stone", tool_tier = 1}, {id = "deep_stone", item = "deep_stone", tool_tier = 3}, {id = "bedrock", item = "", tool_tier = 0}]`,
-		`materials = [{id = "topsoil", item = "dirt", tool_tier = 9}, {id = "stone", item = "stone", tool_tier = 1}, {id = "deep_stone", item = "deep_stone", tool_tier = 3}, {id = "bedrock", item = "", tool_tier = 0}]`,
-		`materials = [{id = "topsoil", item = "dirt", tool_tier = 0}, {id = "stone", item = "stone", tool_tier = 1}, {id = "stone", item = "stone", tool_tier = 1}, {id = "deep_stone", item = "deep_stone", tool_tier = 3}, {id = "bedrock", item = "", tool_tier = 0}]`,
+		`materials = [{id = "topsoil", item = "dirt", tool_tier = 0, dig_rate_percent = 100}, {id = "stone", item = "stone", tool_tier = 1, dig_rate_percent = 100}, {id = "deep_stone", item = "deep_stone", tool_tier = 3, dig_rate_percent = 100}]`,
+		`materials = [{id = "topsoil", item = "dirt", tool_tier = 0, dig_rate_percent = 100}, {id = "stone", item = "pebble", tool_tier = 1, dig_rate_percent = 100}, {id = "deep_stone", item = "deep_stone", tool_tier = 3, dig_rate_percent = 100}, {id = "bedrock", item = "", tool_tier = 0, dig_rate_percent = 100}]`,
+		`materials = [{id = "topsoil", item = "dirt", tool_tier = 0, dig_rate_percent = 100, hardness = 2}, {id = "stone", item = "stone", tool_tier = 1, dig_rate_percent = 100}, {id = "deep_stone", item = "deep_stone", tool_tier = 3, dig_rate_percent = 100}, {id = "bedrock", item = "", tool_tier = 0, dig_rate_percent = 100}]`,
+		`materials = [{id = "topsoil", item = "dirt", dig_rate_percent = 100}, {id = "stone", item = "stone", tool_tier = 1, dig_rate_percent = 100}, {id = "deep_stone", item = "deep_stone", tool_tier = 3, dig_rate_percent = 100}, {id = "bedrock", item = "", tool_tier = 0, dig_rate_percent = 100}]`,
+		`materials = [{id = "topsoil", item = "dirt", tool_tier = 9, dig_rate_percent = 100}, {id = "stone", item = "stone", tool_tier = 1, dig_rate_percent = 100}, {id = "deep_stone", item = "deep_stone", tool_tier = 3, dig_rate_percent = 100}, {id = "bedrock", item = "", tool_tier = 0, dig_rate_percent = 100}]`,
+		`materials = [{id = "topsoil", item = "dirt", tool_tier = 0, dig_rate_percent = 100}, {id = "stone", item = "stone", tool_tier = 1, dig_rate_percent = 100}, {id = "stone", item = "stone", tool_tier = 1, dig_rate_percent = 100}, {id = "deep_stone", item = "deep_stone", tool_tier = 3, dig_rate_percent = 100}, {id = "bedrock", item = "", tool_tier = 0, dig_rate_percent = 100}]`,
+		`materials = [{id = "topsoil", item = "dirt", tool_tier = 0}, {id = "stone", item = "stone", tool_tier = 1, dig_rate_percent = 100}, {id = "deep_stone", item = "deep_stone", tool_tier = 3, dig_rate_percent = 100}, {id = "bedrock", item = "", tool_tier = 0, dig_rate_percent = 100}]`,
+		`materials = [{id = "topsoil", item = "dirt", tool_tier = 0, dig_rate_percent = 9}, {id = "stone", item = "stone", tool_tier = 1, dig_rate_percent = 100}, {id = "deep_stone", item = "deep_stone", tool_tier = 3, dig_rate_percent = 100}, {id = "bedrock", item = "", tool_tier = 0, dig_rate_percent = 100}]`,
+		`materials = [{id = "topsoil", item = "dirt", tool_tier = 0, dig_rate_percent = 401}, {id = "stone", item = "stone", tool_tier = 1, dig_rate_percent = 100}, {id = "deep_stone", item = "deep_stone", tool_tier = 3, dig_rate_percent = 100}, {id = "bedrock", item = "", tool_tier = 0, dig_rate_percent = 100}]`,
 	}
 	for text in malformed {
 		_, problem := parse_field_material_table(transmute([]byte)text, "test", items)
 		testing.expect(t, problem != "", text)
 	}
+	_, problem := parse_field_material_table(transmute([]byte)malformed[len(malformed) - 2], "test", items)
+	testing.expect(t, strings.contains(problem, "dig_rate_percent 9 is outside 10 to 400"), problem)
+	_, problem = parse_field_material_table(transmute([]byte)malformed[len(malformed) - 3], "test", items)
+	testing.expect(t, strings.contains(problem, "missing dig_rate_percent"), problem)
 }
 
 // The brush key cycles the brushes, the material key the materials with

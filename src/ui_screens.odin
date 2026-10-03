@@ -75,6 +75,8 @@ Screen_Context :: struct {
 	save_requested:  ^bool,
 	// The title screens' state and the requests to start or leave a world.
 	title:           ^Title_State,
+	// The New world screen's planet choices (data/planets.sjson).
+	planets:         []Planet,
 	// With a world: technologies is the session's copy with the research
 	// cost applied, recipes carries the found schematics and generator is
 	// the session's. Without one generator is nil.

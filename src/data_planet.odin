@@ -3,6 +3,7 @@ package game
 import "core:encoding/json"
 import "core:fmt"
 import "core:reflect"
+import "core:slice"
 import "platform"
 
 // The planet records of data/planets.sjson (work item 0168,
@@ -14,6 +15,18 @@ PLANETS_FILE_NAME :: "planets.sjson"
 // Keeps the squared distances of generation (generation_planet.odin) far
 // inside i64.
 MAXIMUM_PLANET_RADIUS_METRES :: 100_000
+// The radii a new world offers (work item 0179): 1 to this many, each a
+// valid radius of the record, the record's radius_metres among them.
+MAXIMUM_RADIUS_PRESET_COUNT :: 8
+// World_Settings borrows the id; the world file writes it.
+MAXIMUM_PLANET_ID_LENGTH :: 32
+// The relief is three octaves of value noise (generation_planet.odin).
+RELIEF_OCTAVE_COUNT :: 3
+// The most the octaves' amplitudes may add up to: the local surface lies
+// within this of the radius, which the generation's shortcuts, the
+// field's level of detail and its light bound the relief by.
+MAXIMUM_RELIEF_METRES :: 34
+MAXIMUM_RELIEF_WAVELENGTH_METRES :: 100_000
 MAXIMUM_SURFACE_GRAVITY_CENTIMETRES_PER_SECOND_SQUARED :: 5000
 MINIMUM_ROTATION_PERIOD_SECONDS :: 60
 MAXIMUM_ROTATION_PERIOD_SECONDS :: 86_400
@@ -26,6 +39,13 @@ MAXIMUM_SPRING_COUNT :: 64
 MAXIMUM_RAIN_FILL_PER_MINUTE :: FIELD_WATER_FULL
 MAXIMUM_COLOR_COMPONENT :: 255
 
+// One octave of the relief's value noise: its lattice spacing and the
+// most it raises or lowers the surface.
+Relief_Octave :: struct {
+	wavelength_metres: int,
+	amplitude_metres:  int,
+}
+
 // A spring of the water field (work item 0172): the generator makes the
 // first air sample above the surface under the point a source. Latitude
 // 90 is the pole on +y; longitude 0 lies towards +x, 90 towards +z.
@@ -37,6 +57,8 @@ Planet_Spring :: struct {
 Planet :: struct {
 	id:                                             string,
 	radius_metres:                                  int,
+	// The radii a new world offers (0179); radius_metres is the default.
+	radius_presets_metres:                          []int,
 	surface_gravity_centimetres_per_second_squared: int,
 	// Below the radius (the mean surface), where bedrock starts.
 	bedrock_depth_metres:                           int,
@@ -47,6 +69,8 @@ Planet :: struct {
 	// nothing until the weather (M15).
 	rain_fill_per_minute:                           int,
 	rotation_period_seconds:                        int,
+	// The surface is the radius plus their sum, read on the sphere.
+	relief_octaves:                                 [RELIEF_OCTAVE_COUNT]Relief_Octave,
 	// Red, green, blue from 0 to 255; a sample's tint is an index into it.
 	palette:                                        [][3]int,
 }
@@ -81,6 +105,11 @@ missing_planet_key_problem :: proc(tree: json.Object, source: string) -> string 
 				return fmt.tprintf("%s: planets[%d].springs[%d] is missing %s", source, index, spring_index, key)
 			}
 		}
+		for octave, octave_index in record.(json.Object)["relief_octaves"].(json.Array) {
+			if key, missing := missing_struct_key(Relief_Octave, octave.(json.Object)); missing {
+				return fmt.tprintf("%s: planets[%d].relief_octaves[%d] is missing %s", source, index, octave_index, key)
+			}
+		}
 	}
 	return ""
 }
@@ -99,10 +128,51 @@ palette_problem :: proc(palette: [][3]int) -> string {
 	return ""
 }
 
+relief_problem :: proc(octaves: [RELIEF_OCTAVE_COUNT]Relief_Octave) -> string {
+	total := 0
+	for octave, index in octaves {
+		if octave.wavelength_metres < 1 || octave.wavelength_metres > MAXIMUM_RELIEF_WAVELENGTH_METRES {
+			return fmt.tprintf("relief_octaves[%d].wavelength_metres %d is outside 1 to %d", index, octave.wavelength_metres, MAXIMUM_RELIEF_WAVELENGTH_METRES)
+		}
+		if octave.amplitude_metres < 0 || octave.amplitude_metres > MAXIMUM_RELIEF_METRES {
+			return fmt.tprintf("relief_octaves[%d].amplitude_metres %d is outside 0 to %d", index, octave.amplitude_metres, MAXIMUM_RELIEF_METRES)
+		}
+		total += octave.amplitude_metres
+	}
+	if total > MAXIMUM_RELIEF_METRES {
+		return fmt.tprintf("relief_octaves add up to %d m, more than %d", total, MAXIMUM_RELIEF_METRES)
+	}
+	return ""
+}
+
+// Each preset must make a valid record (the bedrock and the sea inside
+// it), and the record's own radius is the default among them.
+radius_presets_problem :: proc(planet: Planet) -> string {
+	if len(planet.radius_presets_metres) < 1 || len(planet.radius_presets_metres) > MAXIMUM_RADIUS_PRESET_COUNT {
+		return fmt.tprintf("radius_presets_metres has %d entries, not 1 to %d", len(planet.radius_presets_metres), MAXIMUM_RADIUS_PRESET_COUNT)
+	}
+	at_preset := planet
+	for preset, index in planet.radius_presets_metres {
+		at_preset.radius_metres = preset
+		if problem := planet_problem(at_preset); problem != "" {
+			return fmt.tprintf("radius_presets_metres[%d]: %s", index, problem)
+		}
+	}
+	if !slice.contains(planet.radius_presets_metres, planet.radius_metres) {
+		return fmt.tprintf("radius_metres %d is not among radius_presets_metres %v", planet.radius_metres, planet.radius_presets_metres)
+	}
+	return ""
+}
+
+// The values one radius makes a planet of; the presets are checked
+// apart (radius_presets_problem), so a world file's recorded planet
+// passes without them.
 planet_problem :: proc(planet: Planet) -> string {
 	switch {
 	case planet.id == "":
 		return "id is empty"
+	case len(planet.id) > MAXIMUM_PLANET_ID_LENGTH:
+		return fmt.tprintf("id is longer than %d bytes", MAXIMUM_PLANET_ID_LENGTH)
 	case planet.radius_metres < 1 || planet.radius_metres > MAXIMUM_PLANET_RADIUS_METRES:
 		return fmt.tprintf("radius_metres %d is outside 1 to %d", planet.radius_metres, MAXIMUM_PLANET_RADIUS_METRES)
 	case planet.surface_gravity_centimetres_per_second_squared < 1 || planet.surface_gravity_centimetres_per_second_squared > MAXIMUM_SURFACE_GRAVITY_CENTIMETRES_PER_SECOND_SQUARED:
@@ -115,6 +185,9 @@ planet_problem :: proc(planet: Planet) -> string {
 		return fmt.tprintf("rotation_period_seconds %d is outside %d to %d", planet.rotation_period_seconds, MINIMUM_ROTATION_PERIOD_SECONDS, MAXIMUM_ROTATION_PERIOD_SECONDS)
 	}
 	if problem := springs_problem(planet.springs); problem != "" {
+		return problem
+	}
+	if problem := relief_problem(planet.relief_octaves); problem != "" {
 		return problem
 	}
 	if planet.rain_fill_per_minute < 0 || planet.rain_fill_per_minute > MAXIMUM_RAIN_FILL_PER_MINUTE {
@@ -143,7 +216,11 @@ planets_problem :: proc(planets: []Planet) -> string {
 		return "planets is empty"
 	}
 	for planet, index in planets {
-		if problem := planet_problem(planet); problem != "" {
+		problem := planet_problem(planet)
+		if problem == "" {
+			problem = radius_presets_problem(planet)
+		}
+		if problem != "" {
 			return fmt.tprintf("planets[%d] (%q): %s", index, planet.id, problem)
 		}
 		if _, found := find_planet(planets[:index], planet.id); found {
@@ -183,6 +260,17 @@ load_planets :: proc(data_directory: string, allocator := context.allocator) -> 
 		return nil, false
 	}
 	return planets, true
+}
+
+DEFAULT_PLANET_ID :: "home"
+
+// The planet a new world starts on and a world whose planet the data no
+// longer has falls back to: home, or the first record without one.
+default_planet :: proc(planets: []Planet) -> Planet {
+	if planet, found := find_planet(planets, DEFAULT_PLANET_ID); found {
+		return planet
+	}
+	return planets[0]
 }
 
 find_planet :: proc(planets: []Planet, id: string) -> (planet: Planet, found: bool) {

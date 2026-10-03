@@ -1064,6 +1064,7 @@ make_screen_context :: proc(state: ^Frame_State, index: int) -> Screen_Context {
 		split_screen_guest = index > 0,
 		waiting_for_player = state.session != nil && !viewport_player_ready(state.session, viewport^),
 		title           = &state.interaction.title,
+		planets         = content.planets,
 		content         = content.simulation_content,
 		notes           = content.notes,
 		item_sort_ranks = content.item_sort_ranks,
@@ -1339,7 +1340,7 @@ apply_session_request :: proc(state: ^Frame_State) {
 	case .New_World:
 		setup := &state.interaction.title.setup
 		seed, _ := world_setup_seed(setup)
-		plan := new_world_plan(strings.trim_space(text_field_text(&setup.name)), seed, world_file_settings_from_setup(setup^), state.interaction.title.saves_directory, state.interaction.title.saves_found, false)
+		plan := new_world_plan(strings.trim_space(text_field_text(&setup.name)), seed, world_file_settings_from_setup(setup^, state.content.planets), state.interaction.title.saves_directory, state.interaction.title.saves_found, false)
 		enter_planned_session(state, plan)
 	case .Load:
 		plan, problem := saved_world_plan(state.interaction.title.saves_directory, request.directory_name)

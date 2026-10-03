@@ -11,17 +11,9 @@ import "platform"
 // projected onto the sphere of the radius (three dimensional, so no
 // latitude and longitude and no pole). Strata go by depth below the local
 // surface; bedrock starts at the planet's bedrock depth below the radius.
+// The relief's octaves are the planet record's (data/planets.sjson), at
+// most MAXIMUM_RELIEF_METRES in all (data_planet.odin).
 
-Relief_Octave :: struct {
-	wavelength_metres: i64,
-	amplitude_metres:  i64,
-}
-
-RELIEF_OCTAVES :: [3]Relief_Octave{{512, 24}, {128, 8}, {32, 2}}
-// The sum of the octaves' amplitudes: the local surface lies within this
-// of the radius.
-MAXIMUM_RELIEF_METRES :: RELIEF_OCTAVES[0].amplitude_metres + RELIEF_OCTAVES[1].amplitude_metres + RELIEF_OCTAVES[2].amplitude_metres
-#assert(len(RELIEF_OCTAVES) == 3, "MAXIMUM_RELIEF_METRES sums every octave")
 TOPSOIL_DEPTH_METRES :: 2
 DEEP_STONE_DEPTH_METRES :: 40
 // The tint is one palette entry per cube of this edge.
@@ -45,6 +37,7 @@ Planet_Generation :: struct {
 	palette_length:      int,
 	// The sea's surface, the radius plus the sea level (0172).
 	sea_radius:          i64,
+	relief_octaves:      [RELIEF_OCTAVE_COUNT]Relief_Octave,
 }
 
 make_planet_generation :: proc(seed: u64, planet: Planet, spacing_millimetres: int) -> Planet_Generation {
@@ -58,6 +51,7 @@ make_planet_generation :: proc(seed: u64, planet: Planet, spacing_millimetres: i
 		spacing = sample_axis_to_position(1, spacing_millimetres),
 		palette_length = len(planet.palette),
 		sea_radius = metres_to_position_units(i64(planet.radius_metres + planet.sea_level_metres)),
+		relief_octaves = planet.relief_octaves,
 	}
 }
 
@@ -120,11 +114,11 @@ value_noise :: proc(seed: u64, point: [3]i64, wavelength: i64) -> i64 {
 }
 
 // The local surface's height above the radius at a point on the sphere.
-surface_relief :: proc(seed: u64, point: [3]i64) -> i64 {
+surface_relief :: proc(generation: Planet_Generation, point: [3]i64) -> i64 {
 	relief: i64 = 0
-	for octave, index in RELIEF_OCTAVES {
-		noise := value_noise(generation_seed.hash_combine(seed, u64(index)), point, metres_to_position_units(octave.wavelength_metres))
-		relief += metres_to_position_units(octave.amplitude_metres) * noise / NOISE_ONE
+	for octave, index in generation.relief_octaves {
+		noise := value_noise(generation_seed.hash_combine(generation.surface_seed, u64(index)), point, metres_to_position_units(i64(octave.wavelength_metres)))
+		relief += metres_to_position_units(i64(octave.amplitude_metres)) * noise / NOISE_ONE
 	}
 	return relief
 }
@@ -181,7 +175,7 @@ planet_sample :: proc(generation: Planet_Generation, position: World_Position) -
 		material := distance <= generation.bedrock_radius ? Field_Material.Bedrock : Field_Material.Deep_Stone
 		return {MAXIMUM_DENSITY, material, planet_tint(generation, position)}
 	}
-	surface := generation.radius + surface_relief(generation.surface_seed, project_onto_sphere(position, distance, generation.radius))
+	surface := generation.radius + surface_relief(generation, project_onto_sphere(position, distance, generation.radius))
 	depth := surface - distance
 	density := depth_to_density(depth, generation.spacing_millimetres)
 	if density <= 0 {
@@ -233,7 +227,7 @@ planet_spring_direction :: proc(spring: Planet_Spring) -> [3]i64 {
 // never becomes a source inside ground.
 planet_spring_sample :: proc(generation: Planet_Generation, spring: Planet_Spring) -> (sample: Sample_Coordinate, found: bool) {
 	direction := planet_spring_direction(spring)
-	surface := generation.radius + surface_relief(generation.surface_seed, fixed_scale(direction, generation.radius))
+	surface := generation.radius + surface_relief(generation, fixed_scale(direction, generation.radius))
 	highest := generation.radius + metres_to_position_units(MAXIMUM_RELIEF_METRES) + generation.spacing
 	half := generation.spacing / 2
 	for height := surface; height <= highest; height += generation.spacing / 4 {

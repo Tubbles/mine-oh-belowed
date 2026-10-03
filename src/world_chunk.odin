@@ -37,6 +37,21 @@ World_Settings :: struct {
 	byproducts_lenient:         bool,
 	// The terrain field's sample spacing (world_field.odin).
 	sample_spacing_millimetres: int,
+	// The planet record of data/planets.sjson the world is on and the
+	// radius preset it was made at (work item 0179). The id borrows the
+	// session's recorded planet (World.planet).
+	planet_id:                  string,
+	planet_radius_metres:       int,
+	// Stored; only peaceful is in effect until the survival stats (M15).
+	mode:                       World_Mode,
+	// Stored; read by death and respawn (M15).
+	keep_inventory:             bool,
+}
+
+World_Mode :: enum u8 {
+	Peaceful,
+	Survival,
+	Creative,
 }
 
 world_settings_from_file :: proc(seed: u64, settings: World_File_Settings) -> World_Settings {
@@ -47,6 +62,10 @@ world_settings_from_file :: proc(seed: u64, settings: World_File_Settings) -> Wo
 		research_cost_percent = settings.research_cost_percent,
 		byproducts_lenient = settings.byproducts_lenient,
 		sample_spacing_millimetres = settings.sample_spacing_millimetres,
+		planet_id = settings.planet_id,
+		planet_radius_metres = settings.planet_radius_metres,
+		mode = settings.mode,
+		keep_inventory = settings.keep_inventory,
 	}
 }
 
@@ -79,6 +98,10 @@ World :: struct {
 	// unloaded ones and those read from a save. Streaming inserts these
 	// blocks instead of generated ones (world_streaming.odin).
 	saved_chunks:   map[Chunk_Coordinate][]byte,
+	// The planet the terrain field generates from: the data's record with
+	// the values the world was made with (generation_planet_record.odin).
+	// Borrowed from the session, which owns it; zero without planet data.
+	planet:         Planet,
 }
 
 Block_Change :: struct {

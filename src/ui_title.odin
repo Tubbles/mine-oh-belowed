@@ -12,8 +12,8 @@ import "platform"
 TITLE_PANEL_WIDTH :: 560
 TITLE_NAME_TEXT_SIZE :: 72
 NEW_WORLD_PANEL_WIDTH :: 960
-// Heading, name, seed, six settings and the button row.
-NEW_WORLD_ROW_COUNT :: 10
+// Heading, name, seed, eleven settings and the button row.
+NEW_WORLD_ROW_COUNT :: 15
 LOAD_PANEL_WIDTH :: 1400
 // Rows of the save list below its column headings.
 LOAD_LIST_ROWS :: 8
@@ -101,7 +101,7 @@ title_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 	if ui_button(state, cut_row(&content), text("title_new_world")) {
 		name := default_new_world_name(text("new_world_default_name"), title.saves_directory, title.saves_found)
-		title.setup = make_world_setup(title.default_settings, name, 0)
+		title.setup = make_world_setup(title.default_settings, screen_context.planets, name, 0)
 		randomise_seed(&title.setup)
 		push_screen(&state.screens, .New_World)
 	}
@@ -124,6 +124,44 @@ title_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 
 on_off_key :: proc(value: bool, on_key, off_key: string) -> string {
 	return text(value ? on_key : off_key)
+}
+
+// The planet's name: the string planet_<id>.
+planet_name_text :: proc(id: string) -> string {
+	return text(fmt.tprintf("planet_%s", id))
+}
+
+world_mode_text :: proc(mode: World_Mode) -> string {
+	switch mode {
+	case .Peaceful:
+		return text("new_world_mode_peaceful")
+	case .Survival:
+		return text("new_world_mode_survival")
+	case .Creative:
+		return text("new_world_mode_creative")
+	}
+	return ""
+}
+
+// The planet rows of the world settings (0179): the planet, its radius
+// preset, the terrain's sample spacing, the mode and keep inventory.
+world_planet_rows :: proc(state: ^Ui_State, content: ^Ui_Rectangle, setup: ^World_Setup, planets: []Planet) {
+	planet, _ := world_setup_planet(setup^, planets)
+	if ui_choice(state, cut_row(content), text("new_world_planet"), planet_name_text(planet.id), text("new_world_planet_tooltip")) {
+		step_world_setup_planet(setup, planets)
+	}
+	radius := format_message_text(text("new_world_kilometres"), kilometres_number_text(setup.planet_radius_metres))
+	if ui_choice(state, cut_row(content), text("new_world_radius"), radius, text("new_world_radius_tooltip")) {
+		step_world_setup_radius(setup, planets)
+	}
+	spacing := format_message_text(text("new_world_metres"), metres_number_text(setup.sample_spacing_millimetres))
+	if ui_choice(state, cut_row(content), text("new_world_spacing"), spacing, text("new_world_spacing_tooltip")) {
+		step_world_setup_spacing(setup)
+	}
+	if ui_choice(state, cut_row(content), text("new_world_mode"), world_mode_text(setup.mode), text("new_world_mode_tooltip")) {
+		step_world_setup_mode(setup)
+	}
+	ui_toggle(state, cut_row(content), text("new_world_keep_inventory"), &setup.keep_inventory, text("new_world_keep_inventory_tooltip"))
 }
 
 // The rows of the world settings; each choice steps forward on Confirm.
@@ -209,6 +247,7 @@ new_world_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	if ui_button(state, seed_row, text("new_world_randomise")) {
 		randomise_seed(setup)
 	}
+	world_planet_rows(state, &rows, setup, screen_context.planets)
 	world_setting_rows(state, &rows, setup)
 	scroll_region_end(state, region)
 	if ui_button(state, column_rectangle(button_row, 2, 0, UI_GAP), text("new_world_create")) {

@@ -140,7 +140,7 @@ Sparse, with a hard cap on simultaneous voices, so a large base is a hum rather 
 
 ## World settings
 
-Chosen at world creation: seed, name, mode (peaceful, survival, creative), terrain sample spacing, keep inventory on death, vein finiteness, vein richness (50, 100, 200 or 400 percent), research cost multiplier, byproduct strictness, all recipes unlocked at start, day length. `data/game.sjson` holds only the defaults for the new world screen.
+Chosen at world creation: seed, name, planet and its radius preset, mode (peaceful, survival, creative), terrain sample spacing, keep inventory on death, vein finiteness, vein richness (50, 100, 200 or 400 percent), research cost multiplier, byproduct strictness, all recipes unlocked at start, day length. `data/game.sjson` holds only the defaults for the new world screen.
 
 ## User interface
 

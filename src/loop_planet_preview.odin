@@ -175,7 +175,7 @@ planet_preview_start_camera :: proc(planet: Planet) -> Fly_Camera {
 planet_preview_screenshot_camera :: proc(planet: Planet, seed: u64, finest_distance_metres: int) -> Fly_Camera {
 	generation := make_planet_generation(seed, planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES)
 	pole := [3]i64{0, generation.radius, 0}
-	ground := f32(generation.radius + surface_relief(generation.surface_seed, pole)) / POSITION_UNITS_PER_METRE
+	ground := f32(generation.radius + surface_relief(generation, pole)) / POSITION_UNITS_PER_METRE
 	return Fly_Camera{position = {0, ground + f32(finest_distance_metres - PLANET_PREVIEW_SCREENSHOT_CLEARANCE_METRES), 0}, yaw = PLANET_PREVIEW_START_YAW, pitch = PLANET_PREVIEW_SCREENSHOT_PITCH}
 }
 

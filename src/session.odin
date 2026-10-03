@@ -38,6 +38,10 @@ Session :: struct {
 	// the frame shows the loading notice after a few.
 	chunk_stalled:      bool,
 	stalled_frames:     int,
+	// The planet the world generates on, the data's record with the values
+	// the world was made with (resolve_world_planet); the world's planet
+	// and its settings' planet id borrow it.
+	planet:             Planet,
 }
 
 // What a session starts from: a new world's seed and settings, or a save.
@@ -104,9 +108,30 @@ make_session_simulation :: proc(plan: Session_Plan, config: Game_Config, content
 	return simulation, ""
 }
 
+// The plan's settings, in the file too when loading, with the planet
+// resolved against the data (resolve_world_planet); the planet goes to the
+// session.
+resolve_session_planet :: proc(plan: Session_Plan, planets: []Planet, session: ^Session) -> Session_Plan {
+	resolved := plan
+	settings, planet, record := resolve_world_planet(plan.settings, plan.file.planet_generation, planets, plan.loading)
+	if len(planets) > 0 {
+		// A loaded world whose planet the data lost keeps its own id.
+		named := planet
+		named.id = settings.planet_id
+		session.planet = make_recorded_planet(named, record)
+		settings.planet_id = session.planet.id
+	}
+	resolved.settings = settings
+	if plan.loading {
+		resolved.file.settings = settings
+	}
+	return resolved
+}
+
 // Returns nil and the problem when the world cannot be made or loaded.
-start_session :: proc(plan: Session_Plan, config: Game_Config, content: Game_Content, base_generator: Generator) -> (session: ^Session, problem: string) {
+start_session :: proc(requested_plan: Session_Plan, config: Game_Config, content: Game_Content, base_generator: Generator) -> (session: ^Session, problem: string) {
 	session = new(Session)
+	plan := resolve_session_planet(requested_plan, content.planets, session)
 	session.generator = session_generator(base_generator, plan.seed, plan.settings.vein_richness_percent)
 	session.technologies = scaled_technology_registry(content.technologies, plan.settings.research_cost_percent)
 	if start, saved := saved_world_start(&session.generator, plan.loading, plan.file); saved {
@@ -115,12 +140,14 @@ start_session :: proc(plan: Session_Plan, config: Game_Config, content: Game_Con
 		session.start = choose_world_start(&session.generator, plan.debug_terrain)
 	}
 	session.simulation, problem = make_session_simulation(plan, config, content, session)
+	session.simulation.world.planet = session.planet
 	if problem == "" && plan.debug_terrain {
 		problem = build_session_debug_terrain(&session.simulation.world, content.blocks)
 	}
 	if problem != "" {
 		destroy_simulation(&session.simulation)
 		delete(session.technologies.technologies)
+		destroy_recorded_planet(&session.planet)
 		free(session)
 		return nil, problem
 	}
@@ -150,6 +177,7 @@ end_session :: proc(session: ^Session) {
 	destroy_lockstep(&session.lockstep)
 	destroy_simulation(&session.simulation)
 	delete(session.technologies.technologies)
+	destroy_recorded_planet(&session.planet)
 	delete(session.save.location.directory_name)
 	delete(session.save.location.display_name)
 	free(session)

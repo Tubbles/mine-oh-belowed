@@ -6,7 +6,11 @@ import "core:testing"
 import "platform"
 
 non_default_world_setup :: proc() -> World_Setup {
-	setup := make_world_setup(World_File_Settings{day_length_seconds = 1200}, "Settings", 7)
+	planets := shipped_test_planets()
+	setup := make_world_setup(World_File_Settings{day_length_seconds = 1200, planet_id = "home", sample_spacing_millimetres = 1000}, planets, "Settings", 7)
+	step_world_setup_radius(&setup, planets)
+	step_world_setup_spacing(&setup)
+	step_world_setup_mode(&setup)
 	setup.veins_infinite = true
 	setup.vein_richness_choice = 3
 	setup.research_cost_choice = 0
@@ -19,8 +23,18 @@ non_default_world_setup :: proc() -> World_Setup {
 @(test)
 test_world_setup_defaults_follow_the_config :: proc(t: ^testing.T) {
 	config := Game_Config{name = "test", tick_rate = TEST_TICK_RATE, day_length_seconds = 600, veins_infinite = true}
-	setup := make_world_setup(default_world_file_settings(config), "Name", 1)
-	settings := world_file_settings_from_setup(setup)
+	planets := shipped_test_planets()
+	setup := make_world_setup(default_world_file_settings(config), planets, "Name", 1)
+	settings := world_file_settings_from_setup(setup, planets)
+	testing.expect_value(t, settings.planet_id, "home")
+	testing.expect_value(t, settings.planet_radius_metres, 8000)
+	testing.expect_value(t, settings.sample_spacing_millimetres, DEFAULT_SAMPLE_SPACING_MILLIMETRES)
+	testing.expect_value(t, settings.mode, World_Mode.Peaceful)
+	testing.expect(t, settings.keep_inventory)
+	testing.expect_value(t, kilometres_number_text(16000), "16")
+	testing.expect_value(t, kilometres_number_text(4500), "4.5")
+	testing.expect_value(t, metres_number_text(333), "0.33")
+	testing.expect_value(t, metres_number_text(500), "0.5")
 	testing.expect_value(t, settings.day_length_seconds, 600)
 	testing.expect(t, settings.veins_infinite)
 	testing.expect_value(t, settings.vein_richness_percent, 100)
@@ -34,8 +48,15 @@ test_world_setup_defaults_follow_the_config :: proc(t: ^testing.T) {
 @(test)
 test_world_settings_round_trip_through_world_file :: proc(t: ^testing.T) {
 	setup := non_default_world_setup()
-	settings := world_file_settings_from_setup(setup)
+	settings := world_file_settings_from_setup(setup, shipped_test_planets())
 	testing.expect_value(t, settings.vein_richness_percent, 400)
+	// The planet rows (0179): home's next preset after 8 km, the spacing
+	// after 1 m wraps to a third of a metre, survival after peaceful.
+	testing.expect_value(t, settings.planet_id, "home")
+	testing.expect_value(t, settings.planet_radius_metres, 16000)
+	testing.expect_value(t, settings.sample_spacing_millimetres, 333)
+	testing.expect_value(t, settings.mode, World_Mode.Survival)
+	testing.expect(t, !settings.keep_inventory)
 	testing.expect_value(t, settings.research_cost_percent, 50)
 	testing.expect_value(t, settings.day_length_seconds, 300)
 

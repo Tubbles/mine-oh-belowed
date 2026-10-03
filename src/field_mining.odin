@@ -36,6 +36,8 @@ Field_Material_Definition :: struct {
 	// An items.sjson id; empty for a material that cannot be dug or placed.
 	item:      string,
 	tool_tier: int,
+	// The brush's rate on this material in percent (0179).
+	dig_rate_percent: int,
 }
 
 Field_Materials_File :: struct {
@@ -46,6 +48,7 @@ Field_Material_Record :: struct {
 	// NO_ITEM: the material cannot be dug or placed (air, bedrock).
 	item:      Item_Id,
 	tool_tier: int,
+	dig_rate_percent: int,
 }
 
 Field_Material_Table :: [Field_Material]Field_Material_Record
@@ -146,7 +149,10 @@ missing_field_material_key_problem :: proc(tree: json.Object, source: string) ->
 }
 
 field_material_record :: proc(definition: Field_Material_Definition, items: Item_Registry) -> (record: Field_Material_Record, problem: string) {
-	record = {item = NO_ITEM, tool_tier = definition.tool_tier}
+	record = {item = NO_ITEM, tool_tier = definition.tool_tier, dig_rate_percent = definition.dig_rate_percent}
+	if definition.dig_rate_percent < MINIMUM_DIG_RATE_PERCENT || definition.dig_rate_percent > MAXIMUM_DIG_RATE_PERCENT {
+		return {}, fmt.tprintf("dig_rate_percent %d is outside %d to %d", definition.dig_rate_percent, MINIMUM_DIG_RATE_PERCENT, MAXIMUM_DIG_RATE_PERCENT)
+	}
 	if definition.item != "" {
 		found: bool
 		if record.item, found = find_item_id(items, definition.item); !found {

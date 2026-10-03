@@ -225,7 +225,7 @@ field_surface_under :: proc(generation: Planet_Generation, position: World_Posit
 		up = {0, UNIT_VECTOR_ONE, 0}
 	}
 	on_sphere := fixed_scale(up, generation.radius)
-	surface := generation.radius + surface_relief(generation.surface_seed, on_sphere)
+	surface := generation.radius + surface_relief(generation, on_sphere)
 	return World_Position(fixed_scale(up, surface + clearance))
 }
 

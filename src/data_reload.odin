@@ -226,6 +226,7 @@ make_reloaded_simulation :: proc(old: Simulation_State, content: Simulation_Cont
 	state.day_offset_ticks = old.day_offset_ticks
 	state.cheat_speed = old.cheat_speed
 	state.world.settings = old.world.settings
+	state.world.planet = old.world.planet
 	return state
 }
 

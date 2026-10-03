@@ -273,3 +273,45 @@ test_an_unedited_loaded_coarse_grid_matches_the_generation :: proc(t: ^testing.T
 	testing.expect_value(t, apart, 0)
 	testing.expect(t, !field_grid_is_uniform(loaded), "the node holds the surface")
 }
+
+// A material's dig rate scales the brush's rate (0179), its fraction
+// carried by the tick: 3 steps at 60 percent take 180 steps over 100
+// ticks, never a truncated 100. A place and an edit without rates keep
+// the brush's rate.
+@(test)
+test_the_dig_rate_scales_the_brush_per_material :: proc(t: ^testing.T) {
+	total: i32 = 0
+	for tick in u64(0) ..< 100 {
+		step := scaled_dig_rate(3, 60, 1000 + tick)
+		testing.expect(t, step == 1 || step == 2, "a step of 1.8 is 1 or 2")
+		total += step
+	}
+	testing.expect_value(t, total, 180)
+	testing.expect_value(t, scaled_dig_rate(3, 0, 7), 3)
+	testing.expect_value(t, scaled_dig_rate(6, 150, 0) + scaled_dig_rate(6, 150, 1), 18)
+	centre := sample_to_world_position({0, 0, 0}, 1000)
+	dig := Field_Edit {
+		mode     = .Dig,
+		brush    = test_brush(.Sphere, 100, 10),
+		centre   = centre,
+		diggable = ~bit_set[Field_Material]{},
+	}
+	dig.dig_rate_percent[.Topsoil], dig.dig_rate_percent[.Deep_Stone] = 150, 60
+	Dig_Case :: struct {
+		material: Field_Material,
+		expected: i8,
+	}
+	for dig_case in ([?]Dig_Case{{.Topsoil, MAXIMUM_DENSITY - 15}, {.Stone, MAXIMUM_DENSITY - 10}, {.Deep_Stone, MAXIMUM_DENSITY - 6}}) {
+		world := make_uniform_test_field({MAXIMUM_DENSITY, dig_case.material, 0})
+		apply_field_edit(&world, 1000, dig)
+		density := field_world_get_sample(&world, {0, 0, 0}).density
+		testing.expectf(t, density == dig_case.expected, "%v digs to %d, not %d", dig_case.material, dig_case.expected, density)
+		destroy_field_world(&world)
+	}
+	place := dig
+	place.mode, place.material, place.budget = .Place, .Deep_Stone, 1000
+	world := make_uniform_test_field({-MAXIMUM_DENSITY, .Air, 0})
+	defer destroy_field_world(&world)
+	apply_field_edit(&world, 1000, place)
+	testing.expect_value(t, field_world_get_sample(&world, {0, 0, 0}).density, -MAXIMUM_DENSITY + 10)
+}

@@ -3,6 +3,7 @@ package game
 import "core:encoding/json"
 import "core:fmt"
 import "core:os"
+import "core:reflect"
 import "core:slice"
 import "core:strconv"
 import "core:strings"
@@ -47,6 +48,13 @@ World_File_Settings :: struct {
 	// The terrain field's sample spacing (world_field.odin), one of
 	// SAMPLE_SPACING_CHOICES_MILLIMETRES.
 	sample_spacing_millimetres: int,
+	// Work item 0179. A file without planet_id was written before them:
+	// home, its default radius (0 here until resolve_world_planet), mode
+	// peaceful and keep_inventory on.
+	planet_id:                  string,
+	planet_radius_metres:       int,
+	mode:                       World_Mode,
+	keep_inventory:             bool,
 }
 
 World_File :: struct {
@@ -67,6 +75,10 @@ World_File :: struct {
 	// the spawn rules change; a file without one falls back to the search.
 	landing_pad_present:      bool,
 	landing_pad:              [3]i32,
+	// The generation values of the world's planet (work item 0179,
+	// generation_planet_record.odin); a radius of zero means a file
+	// written before the record, which takes the data's values.
+	planet_generation:        Planet_Generation_Record,
 }
 
 // Where one world's save lives. The display name goes into world.sjson,
@@ -175,17 +187,22 @@ make_world_file :: proc(state: ^Simulation_State, display_name: string, last_pla
 			research_cost_percent = state.world.settings.research_cost_percent,
 			byproducts_lenient = state.world.settings.byproducts_lenient,
 			sample_spacing_millimetres = state.world.settings.sample_spacing_millimetres,
+			planet_id = state.world.settings.planet_id,
+			planet_radius_metres = state.world.settings.planet_radius_metres,
+			mode = state.world.settings.mode,
+			keep_inventory = state.world.settings.keep_inventory,
 		},
 		tick = state.tick,
 		day_time_ticks = simulation_day_ticks(state^) % day_length_ticks,
 		last_played_unix_seconds = last_played_unix_seconds,
 		landing_pad_present = state.landing_pad.present,
 		landing_pad = cast([3]i32)state.landing_pad.centre,
+		planet_generation = planet_generation_record(state.world.planet),
 	}
 }
 
 encode_world_file :: proc(file: World_File, allocator := context.allocator) -> []byte {
-	data, error := json.marshal(file, json.Marshal_Options{spec = .SJSON, pretty = true}, context.temp_allocator)
+	data, error := json.marshal(file, json.Marshal_Options{spec = .SJSON, pretty = true, use_enum_names = true}, context.temp_allocator)
 	assert(error == nil, "a world file always marshals")
 	return slice.concatenate([][]byte{data, {'\n'}}, allocator)
 }
@@ -194,6 +211,9 @@ encode_world_file :: proc(file: World_File, allocator := context.allocator) -> [
 parse_world_file :: proc(data: []byte, allocator := context.allocator) -> (file: World_File, problem: string) {
 	if error := json.unmarshal(data, &file, .SJSON, allocator); error != nil {
 		return {}, fmt.tprintf("cannot parse %s: %v", WORLD_FILE_NAME, error)
+	}
+	if problem = world_file_mode_problem(data); problem != "" {
+		return file, problem
 	}
 	file.settings = with_setting_defaults(file.settings)
 	file.generator_version = max(file.generator_version, 1)
@@ -211,14 +231,50 @@ parse_world_file :: proc(data: []byte, allocator := context.allocator) -> (file:
 	case !sample_spacing_is_valid(file.settings.sample_spacing_millimetres):
 		return file, fmt.tprintf("sample_spacing_millimetres %d is not one of %v", file.settings.sample_spacing_millimetres, SAMPLE_SPACING_CHOICES_MILLIMETRES)
 	}
+	if problem = planet_generation_record_problem(file.planet_generation); problem != "" {
+		return file, fmt.tprintf("planet_generation: %s", problem)
+	}
 	return file, ""
+}
+
+// The unmarshal reads an unknown enum name as the first value and assigns
+// an integer token unchecked, so the raw tree's mode is checked here: a
+// mode that is not a name is refused, an unknown name reads as peaceful
+// with a log line.
+world_file_mode_problem :: proc(data: []byte) -> string {
+	tree, error := json.parse(data, .SJSON, true, context.temp_allocator)
+	if error != nil {
+		return ""
+	}
+	root, _ := tree.(json.Object)
+	settings, _ := root["settings"].(json.Object)
+	value, present := settings["mode"]
+	if !present {
+		return ""
+	}
+	name, is_name := value.(json.String)
+	if !is_name {
+		return fmt.tprintf("mode must be one of %v", reflect.enum_field_names(World_Mode))
+	}
+	if _, known := reflect.enum_from_name(World_Mode, name); !known {
+		platform.log_printf("world: the mode %q is not one of %v, the world reads it as peaceful", name, reflect.enum_field_names(World_Mode))
+	}
+	return ""
 }
 
 // Worlds saved before the percent settings existed, and simulations made
 // without them, count as 100 percent; before the sample spacing existed,
-// as DEFAULT_SAMPLE_SPACING_MILLIMETRES.
+// as DEFAULT_SAMPLE_SPACING_MILLIMETRES; before the planet settings
+// (0179), on DEFAULT_PLANET_ID in peaceful with keep inventory on. The
+// planet's radius and generation are filled against the data
+// (resolve_world_planet).
 with_setting_defaults :: proc(settings: World_File_Settings) -> World_File_Settings {
 	result := settings
+	if result.planet_id == "" {
+		result.planet_id = DEFAULT_PLANET_ID
+		result.mode = .Peaceful
+		result.keep_inventory = true
+	}
 	if result.sample_spacing_millimetres == 0 {
 		result.sample_spacing_millimetres = DEFAULT_SAMPLE_SPACING_MILLIMETRES
 	}

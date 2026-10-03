@@ -127,6 +127,9 @@ Ui_Audit :: struct {
 	fonts:              Loaded_Fonts,
 	bindings:           []Binding,
 	title:              Title_State,
+	// The shipped planets of the New world screen, in the test's temp
+	// allocator.
+	planets:            []Planet,
 	views:              Session_Views,
 	generator:          Generator,
 	biome_banner:       Biome_Banner,
@@ -275,6 +278,7 @@ audit_screen_context :: proc(audit: ^Ui_Audit) -> Screen_Context {
 		requests = &audit.requests,
 		save_requested = &audit.save_requested,
 		title = &audit.title,
+		planets = audit.planets,
 		content = content,
 		notes = audit.notes,
 		item_sort_ranks = audit.item_sort_ranks,
@@ -485,7 +489,7 @@ audit_title_state :: proc() -> Title_State {
 		default_settings = default_world_file_settings(test_game_config()),
 		delete_index = 0,
 	}
-	title.setup = make_world_setup(title.default_settings, UI_AUDIT_LONG_WORLD_NAME, 18_446_744_073_709_551_615)
+	title.setup = make_world_setup(title.default_settings, shipped_test_planets(), UI_AUDIT_LONG_WORLD_NAME, 18_446_744_073_709_551_615)
 	append(&title.saves, Save_Summary{directory_name = strings.clone("long"), name = strings.clone(UI_AUDIT_LONG_WORLD_NAME), seed = 18_446_744_073_709_551_615, tick = 60 * 60 * 60 * 123, last_played_unix_seconds = 1_790_000_000, loadable = true, load_problem = strings.clone("")})
 	append(&title.saves, Save_Summary{directory_name = strings.clone("old"), name = strings.clone(UI_AUDIT_LONG_WORLD_NAME), seed = 20260927, tick = 60 * 60 * 7, last_played_unix_seconds = 1_780_000_000, loadable = false, load_problem = strings.clone("header")})
 	return title
@@ -554,6 +558,7 @@ make_ui_audit :: proc() -> ^Ui_Audit {
 	bindings, problem := parse_bindings_file(#load("../data/bindings.sjson"), "data/bindings.sjson", context.temp_allocator)
 	assert(problem == "", problem)
 	audit.bindings = bindings
+	audit.planets = shipped_test_planets()
 	audit.title = audit_title_state()
 	audit.views = make_session_views()
 	audit.recipe_names = recipe_display_names(audit.content.recipes, context.temp_allocator)

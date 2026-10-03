@@ -4,10 +4,12 @@
 // and placing it takes (items.sjson); an empty item marks a material that
 // cannot be dug or placed. tool_tier is the pickaxe the hand tool needs,
 // as blocks.sjson's tool_tier: 0 hands, 1 wooden, 2 stone, 3 iron.
+// dig_rate_percent (10 to 400) scales the brush's rate on the material
+// (work item 0179): soft ground digs faster, deep stone slower.
 // The textures are in textures/field_materials.sjson.
 materials = [
-	{id = "topsoil", item = "dirt", tool_tier = 0}
-	{id = "stone", item = "stone", tool_tier = 1}
-	{id = "deep_stone", item = "deep_stone", tool_tier = 3}
-	{id = "bedrock", item = "", tool_tier = 0}
+	{id = "topsoil", item = "dirt", tool_tier = 0, dig_rate_percent = 150}
+	{id = "stone", item = "stone", tool_tier = 1, dig_rate_percent = 100}
+	{id = "deep_stone", item = "deep_stone", tool_tier = 3, dig_rate_percent = 60}
+	{id = "bedrock", item = "", tool_tier = 0, dig_rate_percent = 100}
 ]

@@ -47,7 +47,17 @@ Field_Edit :: struct {
 	material: Field_Material,
 	tint:     u8,
 	budget:   i64,
+	// Dig: the brush's rate in percent per material, the material table's
+	// dig_rate_percent (0179); zero leaves the rate as the brush has it.
+	// The tick spreads a fraction of a step over the ticks
+	// (scaled_dig_rate).
+	dig_rate_percent: [Field_Material]i32,
+	tick:     u64,
 }
+
+// A material's dig rate bounds (data/materials.sjson).
+MINIMUM_DIG_RATE_PERCENT :: 10
+MAXIMUM_DIG_RATE_PERCENT :: 400
 
 Field_Edit_Result :: struct {
 	// Density steps of ground removed (dig) or added (place) per material.
@@ -89,6 +99,19 @@ field_edit_step :: proc(mode: Field_Edit_Mode, old, target: i8, rate: i32) -> i8
 		return i8(max(i32(old) - rate, min(i32(target), i32(old))))
 	}
 	return i8(min(i32(old) + rate, max(i32(target), i32(old))))
+}
+
+// The brush's rate on ground whose dig rate is percent: rate times
+// percent over 100 a tick on average, the fraction carried by the tick
+// instead of dropped, so any 100 ticks in a row take exactly rate times
+// percent steps. Zero percent leaves the rate.
+scaled_dig_rate :: proc(rate, percent: i32, tick: u64) -> i32 {
+	if percent == 0 {
+		return rate
+	}
+	scaled := i64(rate) * i64(percent)
+	phase := i64(tick % 100)
+	return i32(scaled * (phase + 1) / 100 - scaled * phase / 100)
 }
 
 field_ground_volume :: proc(density: i8) -> i64 {
@@ -153,7 +176,11 @@ field_edit_sample_change :: proc(world: ^Field_World, spacing_millimetres: int, 
 		return {}, 0, false
 	}
 	old = field_world_get_sample(world, sample)
-	return old, field_edit_step(edit.mode, old.density, field_edit_target(edit, position, spacing_millimetres), edit.brush.rate), true
+	rate := edit.brush.rate
+	if edit.mode == .Dig && old.density > 0 {
+		rate = scaled_dig_rate(rate, edit.dig_rate_percent[old.material], edit.tick)
+	}
+	return old, field_edit_step(edit.mode, old.density, field_edit_target(edit, position, spacing_millimetres), rate), true
 }
 
 // Applies the edit to the loaded chunks; samples of chunks not loaded are
