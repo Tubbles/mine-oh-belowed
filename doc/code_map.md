@@ -176,8 +176,8 @@ The factory: what changes per tick; blocks belong to the world, prototypes to co
   - `player_field.odin`: `Field_Player` on the terrain field (0170), `tick_field_player`, the capsule against the signed distance, slopes, step, jump, mantle and fly mode in the planet's frame; each player's body in a field session (`Player.field`, 0179).
   - `field_mining.odin`: the hand tool on the field (0171), `Field_Simulation` with its edit queue drained in `finish_field_tick`, the material table of `data/materials.sjson`, the yield and the credit, the tool tier, the place refusals, the torches.
   - `simulation_field.odin`: a field session's tick (0179): `field_tick_input`, the hotbar's tool (`field_tool_for_item`), `tick_field_session_players`, `finish_field_tick`, the pod's site and the spawn at its door (`field_home_site`, `field_home_player`, `make_field_session_player`), `enable_new_field_world`, `make_field_content`.
-  - `simulation_field_chunk_set.odin`: the field's simulated chunk set (0179), `update_simulated_field_chunks`, `field_chunk_requests`, the arrivals (`Field_Chunk_Ready_Command`), `stage_generated_field_set`.
-  - `simulation_field_save.odin`: the field tables at the end of `entities.bin` and `field.bin` (0179), `restore_field_chunks`, the state hash's field part (`field_state_hash`).
+  - `simulation_field_chunk_set.odin`: the field's simulated chunk set (0179), `update_simulated_field_chunks`, `field_chunk_requests` and `needed_field_chunks`, the arrivals (`Field_Chunk_Ready_Command`), `stage_generated_field_set`.
+  - `simulation_field_save.odin`: the field tables at the end of `entities.bin` and `field.bin` (0179), `restore_arrived_field_set` (0185), the state hash's field part (`field_state_hash`).
   - `inventory.odin`, `inventory_interaction.odin`, `crafting.odin`: `Item_Stack`, `Inventory`; slot clicks; `Craft_Queue` and hand crafting.
   - `inventory_transfer.odin`: the verbs the slot commands run: quick moves, the transfer buttons, the grid transfers, the inserter's hand, the slot filters of a machine.
   - `statistics.odin`, `production_statistics.odin`: `Statistics` and rate rings; statistics rows and the marker colours.

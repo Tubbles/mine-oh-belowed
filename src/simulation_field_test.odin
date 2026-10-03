@@ -2,6 +2,7 @@ package game
 
 import "core:container/queue"
 import "core:os"
+import "core:slice"
 import "core:strings"
 import "core:testing"
 import "platform"
@@ -202,6 +203,8 @@ test_a_field_world_save_round_trips :: proc(t: ^testing.T) {
 	defer end_session(loaded)
 	restored := &loaded.simulation
 	testing.expect(t, restored.field.enabled)
+	stage_generated_field_set(restored)
+	testing.expect(t, restore_arrived_field_set(&restored.field), "the staged set restores")
 	testing.expect_value(t, simulation_state_hash(restored), hash)
 	testing.expect_value(t, field_world_get_sample(&restored.field.world, sample), edited)
 	testing.expect_value(t, len(restored.field.torches), 1)
@@ -215,6 +218,141 @@ test_a_field_world_save_round_trips :: proc(t: ^testing.T) {
 	_, _, pod_found := find_test_pod(&restored.world.entities, content.machines)
 	testing.expect(t, pod_found, "the pod is saved with its frame")
 	testing.expect_value(t, restored.players[0].field, original_player)
+}
+
+// A field world after two ticks with an edited sample beside the player,
+// awake water in its chunk and a torch, saved: its files (temp
+// allocator), its state hash, the count of the light's arrived chunks the
+// save holds and the chunk with the awake water.
+make_test_field_save :: proc(config: Game_Config, content: Game_Content) -> (files: Save_Files, hash: u64, light_arrived: int, awake: Field_Chunk_Coordinate) {
+	session := start_field_test_session(config, content)
+	defer end_session(session)
+	simulation_content := field_test_content(session, content)
+	state := &session.simulation
+	tick_field_test_simulation(state, simulation_content, {})
+	tick_field_test_simulation(state, simulation_content, {})
+	field := &state.field
+	sample := nearest_field_sample(state.players[0].field.position, field.spacing_millimetres)
+	field_world_set_sample(&field.world, sample, Field_Sample{MAXIMUM_DENSITY, .Stone, 1})
+	add_field_light_source(&field.world, sample + {0, 3, 0}, 12)
+	append(&field.torches, Field_Torch{sample = sample + {0, 3, 0}})
+	awake = sample_to_field_chunk_coordinate(sample)
+	chunk := field.world.chunks[awake]
+	set_field_sample_bit(&chunk.water_awake, 0)
+	note_field_chunk_change(chunk)
+	field.world.water_awake_chunks[awake] = {}
+	return encode_save_files(state, simulation_content, "restore", 0), simulation_state_hash(state), len(field.world.light.arrived_chunks), awake
+}
+
+load_test_field_save :: proc(config: Game_Config, content: Game_Content, files: ^Save_Files) -> ^Session {
+	file, problem := parse_world_file(files.world, context.temp_allocator)
+	assert(problem == "", problem)
+	plan := Session_Plan{loading = true, seed = file.seed, settings = file.settings, file = file, files = files}
+	session: ^Session
+	session, problem = start_session(plan, config, content, make_test_generator(DEFAULT_WORLD_SEED))
+	assert(problem == "", problem)
+	return session
+}
+
+// The load generates nothing on its thread (0185): the world and the
+// arrivals stay empty until the streaming hands chunks over, the tick
+// waits, and a part of the set does not enter on its own.
+@(test)
+test_a_field_load_leaves_the_set_to_the_workers :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	files, _, _, _ := make_test_field_save(config, content)
+	session := load_test_field_save(config, content, &files)
+	defer end_session(session)
+	field := &session.simulation.field
+	testing.expect(t, field.chunk_set.restoring)
+	testing.expect(t, len(field.chunk_set.chunks) > 0)
+	testing.expect(t, len(field.saved_chunks) > 0, "field.bin holds the edited chunk")
+	testing.expect_value(t, len(field.world.chunks), 0)
+	testing.expect_value(t, len(field.arrived_chunks), 0)
+	testing.expect(t, !field_chunks_ready(&session.simulation))
+	first := sorted_field_chunk_coordinates(field.chunk_set.chunks)[0]
+	chunk := new(Field_Chunk)
+	generate_field_chunk(session.simulation.world.settings.seed, session.simulation.world.planet, field.spacing_millimetres, first, chunk)
+	stage_field_chunk_arrival(field, chunk)
+	update_simulated_field_chunks(&session.simulation)
+	testing.expect(t, field.chunk_set.restoring)
+	testing.expect_value(t, len(field.world.chunks), 0)
+	requested := field_chunk_requests(&session.simulation)
+	for coordinate in field.chunk_set.chunks {
+		_, found := slice.linear_search(requested, coordinate)
+		testing.expect(t, found, "the streaming is asked for every chunk of the set")
+	}
+}
+
+// The restored set (0185) holds every chunk as its generation with the
+// saved bytes over it, seeds no light, and hashes as the saved world
+// whichever order the chunks arrive in.
+@(test)
+test_a_restored_field_set_matches_the_save_in_either_arrival_order :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	files, hash, light_arrived, awake := make_test_field_save(config, content)
+	sessions := [2]^Session{load_test_field_save(config, content, &files), load_test_field_save(config, content, &files)}
+	defer end_session(sessions[0])
+	defer end_session(sessions[1])
+	state := &sessions[0].simulation
+	coordinates := sorted_field_chunk_coordinates(state.field.chunk_set.chunks)
+	expected := make(map[Field_Chunk_Coordinate]u64, context.temp_allocator)
+	for coordinate in coordinates {
+		chunk := new(Field_Chunk, context.temp_allocator)
+		generate_field_chunk(state.world.settings.seed, state.world.planet, state.field.spacing_millimetres, coordinate, chunk)
+		if saved, found := state.field.saved_chunks[coordinate]; found {
+			testing.expect_value(t, decode_field_chunk_delta(saved.bytes, chunk), "")
+		}
+		expected[coordinate] = field_chunk_state_hash(chunk)
+	}
+	for session, order in sessions {
+		simulation := &session.simulation
+		for index in 0 ..< len(coordinates) {
+			coordinate := coordinates[order == 0 ? index : len(coordinates) - 1 - index]
+			chunk := new(Field_Chunk)
+			generate_field_chunk(simulation.world.settings.seed, simulation.world.planet, simulation.field.spacing_millimetres, coordinate, chunk)
+			stage_field_chunk_arrival(&simulation.field, chunk)
+		}
+		testing.expect(t, field_chunks_ready(simulation))
+		update_simulated_field_chunks(simulation)
+		field := &simulation.field
+		testing.expect(t, !field.chunk_set.restoring)
+		testing.expect_value(t, len(field.world.chunks), len(coordinates))
+		for coordinate in coordinates {
+			testing.expect_value(t, field_chunk_state_hash(field.world.chunks[coordinate]), expected[coordinate])
+		}
+		testing.expect_value(t, len(field.world.light.arrived_chunks), light_arrived)
+		testing.expect(t, awake in field.world.water_awake_chunks, "the saved awake water is awake again")
+		testing.expect(t, field_sample_bit(&field.world.chunks[awake].water_awake, 0))
+		testing.expect_value(t, simulation_state_hash(simulation), hash)
+	}
+}
+
+// A tick command waits for a loaded world's set as a lockstep tick does
+// (0185): no tick runs on the empty world, and the ticks left run once
+// the set is in.
+@(test)
+test_a_tick_command_waits_for_a_restoring_field_set :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	files, _, _, _ := make_test_field_save(config, content)
+	session := load_test_field_save(config, content, &files)
+	defer end_session(session)
+	state := new(Frame_State)
+	defer free(state)
+	state.session = session
+	state.developer.command_control.pending_ticks = 3
+	simulation_content := field_test_content(session, content)
+	start := session.simulation.tick
+	testing.expect_value(t, run_command_ticks(state, simulation_content), 0)
+	testing.expect_value(t, session.simulation.tick, start)
+	testing.expect_value(t, state.developer.command_control.pending_ticks, 3)
+	stage_generated_field_set(&session.simulation)
+	testing.expect_value(t, run_command_ticks(state, simulation_content), 3)
+	testing.expect_value(t, session.simulation.tick, start + 3)
+	testing.expect(t, !session.simulation.field.chunk_set.restoring)
 }
 
 // The pod of a field world: its handle and its frame.

@@ -91,7 +91,8 @@ session_plays_field :: proc(plan: Session_Plan, content: Game_Content) -> bool {
 
 // The field of a field session, once its simulation and planet are set:
 // its tables, a new world's field with the pod and its first player at
-// the home, a loaded world's chunks restored (restore_field_chunks), the
+// the home, a loaded world's set left restoring for the workers to
+// generate (Field_Chunk_Set.restoring, 0185), the
 // planet's veins registered (register_planet_veins: a new world's
 // reservoirs, a loaded world's discs again), the water's planet and the
 // workers.
@@ -105,11 +106,7 @@ start_field_world :: proc(session: ^Session, plan: Session_Plan, config: Game_Co
 		enable_new_field_world(simulation, config, content.machines, session.field_content, session.planet, spacing)
 	}
 	field.world.water_planet = make_field_water_planet(seed, session.planet, field.spacing_millimetres)
-	if plan.loading {
-		if problem := restore_field_chunks(simulation); problem != "" {
-			return problem
-		}
-	}
+	field.chunk_set.restoring = plan.loading && len(field.chunk_set.chunks) > 0
 	world := &simulation.world
 	generation := make_planet_generation(seed, session.planet, field.spacing_millimetres)
 	if problem := register_planet_veins(&world.veins, &world.vein_indices, generation, session.generator.veins); problem != "" {

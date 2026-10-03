@@ -56,7 +56,7 @@ A running game in developer mode listens on a Unix domain socket for command lin
 | `recipe <recipe> <x> <y> <z>` | The crafting machine's recipe, through the panel's path: its contents go to the inventory, refused with the panel's reasons (a fixed recipe machine, another category, contents that do not fit). |
 | `filter <item> <x> <y> <z>` | The filter of the filter inserter or splitter at the cell, as its panel sets it. A splitter sends the item to its filter side (the left half unless the panel turned it), the rest to the other half. |
 | `blueprint <path>` | Runs a blueprint file (below). |
-| `tick <n>` | Runs n ticks (1 to 1000000) with no player input, up to one second of wall time per frame, then answers `ok ran n ticks, now at tick T`. Later lines wait for it. |
+| `tick <n>` | Runs n ticks (1 to 1000000) with no player input, up to one second of wall time per frame; a tick whose chunks are not there yet (a loaded field world's set while it generates) waits for a later frame as a lockstep tick does. Then answers `ok ran n ticks, now at tick T`. Later lines wait for it. |
 | `pause`, `resume` | Holds the ticks like a pausing screen, or releases them. `tick` still runs while paused. |
 | `save` | Saves the world like the pause menu's Save. |
 | `reload` | The content reload of F8 and the Developer screen ([architecture.md](architecture.md), Data driven content). Answers `ok reloaded: ...` with the ids added and removed per table, or `error <file and problem>` with the old data and world kept. |

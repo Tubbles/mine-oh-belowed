@@ -20,9 +20,12 @@ import "core:slice"
 //   the ones that left it with terrain or water unlike their generation
 //   (Field_Simulation.saved_chunks, unload_left_field_chunks).
 //
-// Loading restores the set before the first tick (restore_field_chunks):
-// every chunk of the saved set is generated, its saved bytes laid over it,
-// and inserted without the arrival's side effects (the water's wake and
+// Loading restores the set at the start of the first tick (0185,
+// restore_arrived_field_set): the load leaves the world empty and the set
+// restoring (Field_Chunk_Set.restoring), the field streaming generates
+// the set's chunks on its workers while the frames run, and once every one
+// has arrived they enter in coordinate order with their saved bytes laid
+// over them and without the arrival's side effects (the water's wake and
 // the light's seeding ran on the machine that saved, and their results are
 // in the bytes and the queues), so a loaded world and a joining machine
 // hold exactly the chunks and the state of the machine that saved.
@@ -223,30 +226,34 @@ decode_saved_field_chunk :: proc(bytes: []byte, coordinate: Field_Chunk_Coordina
 	return Field_Saved_Chunk{bytes = slice.clone(bytes), state_hash = field_chunk_state_hash(chunk)}, ""
 }
 
-// Loading: every chunk of the saved set generated, its saved bytes laid
-// over it, and inserted as it stood (see the file's comment). Runs once
-// the world's planet and seed are set. The problem names a saved chunk
-// that does not decode.
-restore_field_chunks :: proc(state: ^Simulation_State) -> string {
-	field := &state.field
-	for coordinate in sorted_field_chunk_coordinates(field.chunk_set.chunks) {
-		chunk := new(Field_Chunk)
-		generate_field_chunk(state.world.settings.seed, state.world.planet, field.spacing_millimetres, coordinate, chunk)
-		if saved, found := field.saved_chunks[coordinate]; found {
-			if problem := decode_field_chunk_delta(saved.bytes, chunk); problem != "" || chunk.coordinate != coordinate {
-				free(chunk)
-				return problem != "" ? problem : "field.bin: a chunk's bytes name another chunk"
-			}
-			chunk.modified = true
-			delete(saved.bytes)
-			delete_key(&field.saved_chunks, coordinate)
+// The first tick's start in a loaded world: once every chunk of the
+// saved set has arrived (or is in the world), each enters in coordinate
+// order with its saved bytes (apply_saved_field_chunk) and as it was
+// saved (restore_field_chunk), and the set stops restoring. False while
+// a chunk is missing, and nothing changes.
+restore_arrived_field_set :: proc(field: ^Field_Simulation) -> bool {
+	coordinates := sorted_field_chunk_coordinates(field.chunk_set.chunks)
+	for coordinate in coordinates {
+		if coordinate not_in field.world.chunks && coordinate not_in field.arrived_chunks {
+			return false
 		}
+	}
+	for coordinate in coordinates {
+		chunk, arrived := field.arrived_chunks[coordinate]
+		if !arrived {
+			continue
+		}
+		delete_key(&field.arrived_chunks, coordinate)
+		apply_saved_field_chunk(field, chunk)
 		restore_field_chunk(&field.world, chunk)
 	}
-	return ""
+	field.chunk_set.restoring = false
+	return true
 }
 
-// Into the world as it was saved: no wake and no light seeding.
+// Into the world as it was saved: no wake and no light seeding, which the
+// arrival's insert (field_world_insert_chunk) does; the restored light
+// queues (read_field_tables) already hold the saving machine's seeding.
 restore_field_chunk :: proc(world: ^Field_World, chunk: ^Field_Chunk) {
 	chunk.dirty = true
 	world.chunks[chunk.coordinate] = chunk

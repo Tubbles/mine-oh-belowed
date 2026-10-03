@@ -1,10 +1,12 @@
 # 0185: Restore a loaded field world's set off the main thread
 
-Status: todo (M13 follow up, from the switch of 0179; before the phone plays a field world)
+Status: implemented (M13 follow up, from the switch of 0179; before the phone plays a field world)
 
 ## Goal
 
 Loading a field world shows no pause. Today `restore_field_chunks` (`simulation_field_save.odin`) generates every chunk of the saved set that is not in `field.bin` on the main thread before the first tick, 125 chunks at the shipped radius; a larger set or a slow phone shows it as a freeze on load.
+
+The same restore broke a LAN join (2026-10-03, headless under Xvfb and llvmpipe): the joiner's `start_joined_session` spent 11 s generating the set without a frame, so it sent no keepalive and the host dropped it after `NETWORK_TIMEOUT` (10 s).
 
 ## Change
 

@@ -264,8 +264,8 @@ move_world_chunks :: proc(target, source: ^World, remap: ^Content_Remap) -> stri
 	return ""
 }
 
-// The field's chunks, the changed ones outside the set and the arrivals
-// move to the reloaded field, whose tables decode_entities read; the water
+// The field's chunks, the changed ones outside the set, the arrivals and
+// the set's restoring flag move to the reloaded field, whose tables decode_entities read; the water
 // planet goes with them. The field holds no content ids.
 move_field_chunks :: proc(target, source: ^Field_Simulation) {
 	target.world.chunks, source.world.chunks = source.world.chunks, target.world.chunks
@@ -274,6 +274,8 @@ move_field_chunks :: proc(target, source: ^Field_Simulation) {
 	target.world.water_planet = source.world.water_planet
 	target.saved_chunks, source.saved_chunks = source.saved_chunks, target.saved_chunks
 	target.arrived_chunks, source.arrived_chunks = source.arrived_chunks, target.arrived_chunks
+	// A loaded set still waiting for its chunks (0185) keeps waiting.
+	target.chunk_set.restoring = source.chunk_set.restoring
 }
 
 block_remap_is_identity :: proc(block_indices: []int) -> bool {

@@ -18,7 +18,9 @@ import "platform"
 // them over as Field_Chunk_Ready_Command, so a chunk enters the world only
 // inside a tick; a tick whose set holds a chunk this machine has not
 // generated yet does not run (field_chunks_ready, through
-// simulated_chunks_ready).
+// simulated_chunks_ready). A loaded world's set enters the same way
+// (0185): its chunks generate on the workers and the first tick waits for
+// all of them (Field_Chunk_Set.restoring, restore_arrived_field_set).
 
 // The frame asks the workers for this many chunks more round every
 // player, so a player crossing a chunk border finds the next slab
@@ -32,6 +34,10 @@ Field_Chunk_Set :: struct {
 	// The player chunks the set was last derived from: while they stay,
 	// the set stays.
 	centres: [dynamic]Field_Chunk_Coordinate,
+	// A loaded world's set not in the world yet: the next tick waits until
+	// every chunk of it has arrived, then inserts them as they were saved
+	// (restore_arrived_field_set). Not saved.
+	restoring: bool,
 }
 
 make_field_chunk_set :: proc(radius, margin: int) -> Field_Chunk_Set {
@@ -119,7 +125,27 @@ field_chunk_requests :: proc(state: ^Simulation_State) -> []Field_Chunk_Coordina
 	if !state.field.enabled {
 		return nil
 	}
-	return next_field_chunks(state.field.chunk_set, field_player_chunk_centres(state.players[:], state.field.spacing_millimetres), FIELD_CHUNK_PREFETCH)
+	return needed_field_chunks(state, FIELD_CHUNK_PREFETCH)
+}
+
+// The set the next tick derives (next_field_chunks), and while a loaded
+// world's set is restoring the chunks of that set it lacks, since the
+// restore inserts them before the tick derives its own. In the temp
+// allocator.
+needed_field_chunks :: proc(state: ^Simulation_State, prefetch: i32 = 0) -> []Field_Chunk_Coordinate {
+	field := &state.field
+	next := next_field_chunks(field.chunk_set, field_player_chunk_centres(state.players[:], field.spacing_millimetres), prefetch)
+	if !field.chunk_set.restoring {
+		return next
+	}
+	needed := make([dynamic]Field_Chunk_Coordinate, 0, len(next) + len(field.chunk_set.chunks), context.temp_allocator)
+	append(&needed, ..next)
+	for coordinate in field.chunk_set.chunks {
+		if _, found := slice.binary_search_by(next, coordinate, field_chunk_coordinate_order); !found {
+			append(&needed, coordinate)
+		}
+	}
+	return needed[:]
 }
 
 // A generated chunk waiting for the set; a second arrival of one
@@ -140,10 +166,10 @@ field_chunks_ready :: proc(state: ^Simulation_State) -> bool {
 		return true
 	}
 	centres := field_player_chunk_centres(state.players[:], field.spacing_millimetres)
-	if field_set_settled(field, centres) {
+	if !field.chunk_set.restoring && field_set_settled(field, centres) {
 		return true
 	}
-	for coordinate in next_field_chunks(field.chunk_set, centres) {
+	for coordinate in needed_field_chunks(state) {
 		if coordinate not_in field.world.chunks && coordinate not_in field.arrived_chunks {
 			return false
 		}
@@ -151,30 +177,47 @@ field_chunks_ready :: proc(state: ^Simulation_State) -> bool {
 	return true
 }
 
-// A chunk entering the set: its saved bytes over the generated chunk when
-// a tick changed it before (it stays marked changed, so the next save
-// writes it again), then into the world.
-insert_field_chunk_arrival :: proc(field: ^Field_Simulation, chunk: ^Field_Chunk) {
-	if saved, found := field.saved_chunks[chunk.coordinate]; found {
-		if problem := decode_field_chunk_delta(saved.bytes, chunk); problem != "" {
-			platform.log_printf("error: the saved field chunk %v does not load, it regenerates: %s", chunk.coordinate, problem)
-		} else {
-			chunk.modified = true
-		}
-		delete(saved.bytes)
-		delete_key(&field.saved_chunks, chunk.coordinate)
+// Its saved bytes over a generated chunk that has some, which then stays
+// marked changed, so the next save writes it again. field.bin decoded
+// every saved chunk once already (decode_saved_field_chunk), so a refusal
+// here only logs and the chunk regenerates.
+apply_saved_field_chunk :: proc(field: ^Field_Simulation, chunk: ^Field_Chunk) {
+	saved, found := field.saved_chunks[chunk.coordinate]
+	if !found {
+		return
 	}
+	if problem := decode_field_chunk_delta(saved.bytes, chunk); problem != "" {
+		platform.log_printf("error: the saved field chunk %v does not load, it regenerates: %s", chunk.coordinate, problem)
+	} else {
+		chunk.modified = true
+	}
+	delete(saved.bytes)
+	delete_key(&field.saved_chunks, chunk.coordinate)
+}
+
+// A chunk entering the set: its saved bytes over the generated chunk when
+// a tick changed it before (apply_saved_field_chunk), then into the world
+// with the arrival's wake and light seeding.
+insert_field_chunk_arrival :: proc(field: ^Field_Simulation, chunk: ^Field_Chunk) {
+	apply_saved_field_chunk(field, chunk)
 	field_world_insert_chunk(&field.world, chunk)
 	mark_field_neighbours_dirty(&field.world, chunk.coordinate)
 }
 
-// At the start of a tick: unloads what left the set, inserts what entered
+// At the start of a tick: a loaded world's set restored first, once all
+// of it arrived (until then nothing changes, so a world alone does not
+// take part of it); then unloads what left the set, inserts what entered
 // it, both in coordinate order. A chunk of the set that has not arrived
 // stays missing (the driver checks field_chunks_ready first).
 update_simulated_field_chunks :: proc(state: ^Simulation_State) {
 	field := &state.field
 	if !field.enabled {
 		return
+	}
+	if field.chunk_set.restoring {
+		if !restore_arrived_field_set(field) {
+			return
+		}
 	}
 	centres := field_player_chunk_centres(state.players[:], field.spacing_millimetres)
 	if field_set_settled(field, centres) {
@@ -257,13 +300,12 @@ drop_unwanted_field_arrivals :: proc(field: ^Field_Simulation, centres: []Field_
 	}
 }
 
-// The chunks the next tick's set needs, generated on the calling thread
-// and staged as arrivals, for a world without the workers (the
-// benchmark, the tests).
+// The chunks the next tick needs (needed_field_chunks), generated on the
+// calling thread and staged as arrivals, for a world without the workers
+// (the benchmark, the tests).
 stage_generated_field_set :: proc(state: ^Simulation_State) {
 	field := &state.field
-	centres := field_player_chunk_centres(state.players[:], field.spacing_millimetres)
-	for coordinate in next_field_chunks(field.chunk_set, centres) {
+	for coordinate in needed_field_chunks(state) {
 		if coordinate in field.world.chunks || coordinate in field.arrived_chunks {
 			continue
 		}

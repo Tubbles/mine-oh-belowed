@@ -652,7 +652,8 @@ show_network_notices :: proc(state: ^Frame_State) {
 	}
 }
 
-// What the frame says while no tick can run: a join in progress, or a
+// What the frame says while no tick can run: a join in progress, a
+// loaded world's set still generating (from the first frame, 0185), or a
 // tick waiting for its chunks a while. "" when the world plays.
 loading_notice :: proc(state: ^Frame_State) -> string {
 	switch {
@@ -660,6 +661,8 @@ loading_notice :: proc(state: ^Frame_State) -> string {
 		return text("loading_joined_world")
 	case state.session == nil && join_active(state.joining):
 		return text("loading_joining")
+	case state.session != nil && state.session.simulation.field.chunk_set.restoring:
+		return text("loading_world")
 	case state.session != nil && state.session.stalled_frames >= LOADING_NOTICE_FRAMES:
 		return text("loading_world")
 	}
@@ -1919,11 +1922,17 @@ command_save :: proc(state: ^Frame_State) -> Command_Response {
 }
 
 // Ticks of a tick command with no player input, as many as fit in
-// COMMAND_TICK_WALL_BUDGET. Returns how many ran.
+// COMMAND_TICK_WALL_BUDGET. A tick whose chunks are not there waits as a
+// lockstep tick does (simulated_chunks_ready), so the ticks left run on a
+// later frame, after a loaded world's set restored (0185). Returns how
+// many ran.
 run_command_ticks :: proc(state: ^Frame_State, content: Simulation_Content) -> int {
 	start := time.tick_now()
 	count := 0
 	for state.developer.command_control.pending_ticks > 0 && time.tick_since(start) < COMMAND_TICK_WALL_BUDGET {
+		if !simulated_chunks_ready(&state.session.simulation) {
+			break
+		}
 		release_local_commands(&state.session.lockstep, &state.session.simulation)
 		run_command_tick(&state.session.simulation, content, &state.developer.command_control)
 		count += 1
