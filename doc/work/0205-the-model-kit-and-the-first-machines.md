@@ -12,7 +12,7 @@ The rules live in `DESIGN.md`, Art direction, one place: silhouette first, detai
 
 ## Change
 
-- The kit (`tools/models/`): the primitives of 0204 plus a pipe along axis aligned segments with elbows, a ring (bolt heads and flanges), a wedge, a hatch (a bevelled plate with a handle), a rib row with uneven spacing drawn from a per model seed, a strip (a thin inset plate for emissive indicators), and the palette table from `DESIGN.md` as named constants. A script per machine composes them (`tools/models/machines/<id>.py`).
+- The kit (`tools/models/`, bpy): the helpers of 0204 plus a pipe along a path (a curve with a bevel depth, turned to a mesh, elbows from the curve), a ring (a torus with few segments for bolt heads and flanges), a wedge, a hatch (a bevelled plate with a handle), a rib row with uneven spacing drawn from a per model seed, a strip (a thin inset plate for emissive indicators), openings cut with the boolean modifier, and the palette table from `DESIGN.md` as named constants. A script per machine composes them (`tools/models/machines/<id>.py`), run headless in Blender as 0204 sets up.
 - The models, the machines before oil, each with a `part` group where its record has a motion: wooden_chest, iron_chest, electric_mining_drill, small_pole, big_pole, boiler, steam_engine, offshore_pump, assembler_1, splitter, lamp, power_switch, schematic_crate, wood_gasifier, storage_tank, pump, lab (the stone furnace and the burner mining drill are 0204's). Their .vox files are deleted and `make_placeholder_models.py` stops writing them.
 - `doc/presentation.md` Machine models: the kit's primitives and the seed rule, the look by reference to `DESIGN.md`; the log.
 
