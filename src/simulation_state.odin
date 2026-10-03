@@ -84,8 +84,10 @@ Game_Records :: struct {
 }
 
 Simulation_Event :: struct {
-	player: int,
-	kind:   Player_Event,
+	player:        int,
+	kind:          Player_Event,
+	// Why, for Field_Refused.
+	field_refusal: Field_Edit_Refusal,
 }
 
 // The config's starting items must have passed validate_starting_items.

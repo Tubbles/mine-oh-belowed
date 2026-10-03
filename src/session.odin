@@ -90,22 +90,30 @@ session_plays_field :: proc(plan: Session_Plan, content: Game_Content) -> bool {
 }
 
 // The field of a field session, once its simulation and planet are set:
-// its tables, a new world's field and its first player at the home, a
-// loaded world's chunks restored (restore_field_chunks), the water's
-// planet and the workers.
+// its tables, a new world's field with the pod and its first player at
+// the home, a loaded world's chunks restored (restore_field_chunks), the
+// planet's veins registered (register_planet_veins: a new world's
+// reservoirs, a loaded world's discs again), the water's planet and the
+// workers.
 start_field_world :: proc(session: ^Session, plan: Session_Plan, config: Game_Config, content: Game_Content) -> string {
 	simulation := &session.simulation
 	field := &simulation.field
 	seed := simulation.world.settings.seed
+	spacing := plan.loading ? field.spacing_millimetres : plan.settings.sample_spacing_millimetres
+	session.field_content = make_field_content(config, content.items, content.machines, content.field_materials, content.lighting, session.planet, spacing)
 	if !plan.loading {
-		enable_new_field_world(simulation, config, session.planet, plan.settings.sample_spacing_millimetres)
+		enable_new_field_world(simulation, config, content.machines, session.field_content, session.planet, spacing)
 	}
-	session.field_content = make_field_content(config, content.items, content.machines, content.field_materials, content.lighting, session.planet, field.spacing_millimetres)
 	field.world.water_planet = make_field_water_planet(seed, session.planet, field.spacing_millimetres)
 	if plan.loading {
 		if problem := restore_field_chunks(simulation); problem != "" {
 			return problem
 		}
+	}
+	world := &simulation.world
+	generation := make_planet_generation(seed, session.planet, field.spacing_millimetres)
+	if problem := register_planet_veins(&world.veins, &world.vein_indices, generation, session.generator.veins); problem != "" {
+		return problem
 	}
 	session.field_streaming = start_field_streaming(seed, session.planet, field.spacing_millimetres, default_worker_count())
 	return ""

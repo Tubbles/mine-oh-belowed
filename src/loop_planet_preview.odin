@@ -402,6 +402,8 @@ field_edit_refusal_text :: proc(refusal: Field_Edit_Refusal, material: Field_Mat
 		return "  a torch does not fit there"
 	case .Inventory_Full:
 		return "  the inventory is full"
+	case .No_Vein:
+		return "  a drill needs a vein's outcrop under it"
 	}
 	return ""
 }

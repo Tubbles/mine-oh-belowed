@@ -11,13 +11,13 @@ The entry page for the source: 253 files under `src/` plus 174 test files beside
 
 | Cluster | Purpose | Entry | Files | Lines | Audit |
 |---|---|---|---|---|---|
-| loop | the process: start-up, the frame, when the tick runs (the lockstep driver), sessions, the network and the server, the requests served between frames | `loop.odin` | 13 | 7064 | [loop](audit/loop.md) |
+| loop | the process: start-up, the frame, when the tick runs (the lockstep driver), sessions, the network and the server, the requests served between frames | `loop.odin` | 13 | 7081 | [loop](audit/loop.md) |
 | ui | the input layer, the immediate mode toolkit, every screen, the HUD and the touch overlay | `ui_core.odin` | 49 | 17315 | [ui](audit/ui.md) |
-| world | blocks and what follows a block: chunks, light, water, meshing, streaming, generation, the save codec; the terrain field and the foundation frames beside them (M13) | `world_chunk.odin` | 51 | 14748 | [world](audit/world.md) |
-| simulation | the factory per tick: entity pools, networks, players, inventories, crafting, statistics, the game's records | `entity.odin` | 53 | 21271 | [simulation](audit/simulation.md) |
-| presentation | pixels and sound from the world and the tick: shaders, atlases, models, sky, weather, particles, audio, the window | `render_chunks.odin` | 40 | 9756 | [presentation](audit/presentation.md) |
+| world | blocks and what follows a block: chunks, light, water, meshing, streaming, generation, the save codec; the terrain field and the foundation frames beside them (M13) | `world_chunk.odin` | 51 | 14758 | [world](audit/world.md) |
+| simulation | the factory per tick: entity pools, networks, players, inventories, crafting, statistics, the game's records | `entity.odin` | 53 | 21399 | [simulation](audit/simulation.md) |
+| presentation | pixels and sound from the world and the tick: shaders, atlases, models, sky, weather, particles, audio, the window | `render_chunks.odin` | 40 | 9789 | [presentation](audit/presentation.md) |
 | content | data files into typed tables, the string table, configuration and settings | `data_reload.odin` | 17 | 5906 | [content](audit/content.md) |
-| tools | the command socket, the diagnostics pages, the Data files browser and export, the factory benchmark | `command.odin` | 8 | 3976 | [loop](audit/loop.md), [content](audit/content.md) |
+| tools | the command socket, the diagnostics pages, the Data files browser and export, the factory benchmark | `command.odin` | 8 | 3977 | [loop](audit/loop.md), [content](audit/content.md) |
 | platform | the package `src/platform/`: logging, paths, the time zone, JNI, the export's file access, the replacing file write, the TCP transport, the stop signal | `logging.odin` | 16 | 1362 | [content](audit/content.md) |
 | generation_seed | the package `src/generation_seed/`: purpose seeds and the integer hashes | `generation_seed.odin` | 1 | 79 | [world](audit/world.md) |
 | model_vox | the package `src/model_vox/`: the MagicaVoxel parser | `model_vox.odin` | 1 | 283 | [presentation](audit/presentation.md) |
@@ -156,9 +156,9 @@ The factory: what changes per tick; blocks belong to the world, prototypes to co
   - `simulation_state.odin`: `Simulation_State`, `Game_Records` (the game's records beside the world), `Simulation_Event`, `make_simulation` with `place_capsule`, `destroy_simulation` and `destroy_game_records`, `simulation_day_ticks`.
   - `simulation_world.odin`: `Simulation_Content`, `Entity_Tick_Context` with its block procedures, `simulation_tick`, `apply_research_result`, `simulation_quest_context`.
   - `entity.odin`: `Entity_Kind`, `Entity_Handle`, `Entity_Common`, `Entity_Pool`, `Entities`, add and remove, `tick_entities`.
-  - `entity_placement.odin`: placement rules, `commit_placement`, rotation, pick up; a drill on a frame (`place_drill_on_frame`, 0179).
+  - `entity_placement.odin`: placement rules, `commit_placement`, rotation, pick up; a drill on a frame with its vein (`place_drill_on_frame`, `frame_drill_placement_refusal`, 0179).
   - `entity_pod.odin`: the pod and its pad of foundations, `place_pod` (0179).
-  - `entity_frames.odin`: placement on foundation frames (0174), `place_on_frame`, `place_free_foundation`, `frame_placement_refusal`; the field's place commands (`Field_Placement`, `drain_field_placements`, `aim_field_player_at_frames`); the frame tables of the save (`write_frame_tables`, `read_frame_tables`).
+  - `entity_frames.odin`: placement on foundation frames (0174), `place_on_frame`, `place_free_foundation`, `frame_placement_refusal`; the field's place commands (`Field_Placement`, `drain_field_placements`, `apply_field_placement`, `aim_field_player_at_frames`); the frame tables of the save (`write_frame_tables`, `read_frame_tables`).
   - `machine.odin`: `Machine_Kind`, `Machine`, `Machine_Registry` and per kind validation.
   - `item_transfer.odin`: `entity_accepts`, `entity_insert`, `entity_extract`.
   - `belt.odin`, `belt_movement.odin`, `belt_placement.odin`: transport lines and their rebuild (segments of a run's length, `belt_line_segment_start`), lane movement, drag placement.
@@ -173,7 +173,7 @@ The factory: what changes per tick; blocks belong to the world, prototypes to co
   - `player.odin`, `player_interaction.odin`, `player_collision.odin`: `Player` and movement; mining and placing; swept collision.
   - `player_field.odin`: `Field_Player` on the terrain field (0170), `tick_field_player`, the capsule against the signed distance, slopes, step, jump, mantle and fly mode in the planet's frame; each player's body in a field session (`Player.field`, 0179).
   - `field_mining.odin`: the hand tool on the field (0171), `Field_Simulation` with its edit queue drained in `finish_field_tick`, the material table of `data/materials.sjson`, the yield and the credit, the tool tier, the place refusals, the torches.
-  - `simulation_field.odin`: a field session's tick (0179): `field_tick_input`, the hotbar's tool (`field_tool_for_item`), `tick_field_session_players`, `finish_field_tick`, the spawn (`field_home_player`, `make_field_session_player`), `enable_new_field_world`, `make_field_content`.
+  - `simulation_field.odin`: a field session's tick (0179): `field_tick_input`, the hotbar's tool (`field_tool_for_item`), `tick_field_session_players`, `finish_field_tick`, the pod's site and the spawn at its door (`field_home_site`, `field_home_player`, `make_field_session_player`), `enable_new_field_world`, `make_field_content`.
   - `simulation_field_chunk_set.odin`: the field's simulated chunk set (0179), `update_simulated_field_chunks`, `field_chunk_requests`, the arrivals (`Field_Chunk_Ready_Command`), `stage_generated_field_set`.
   - `simulation_field_save.odin`: the field tables at the end of `entities.bin` and `field.bin` (0179), `restore_field_chunks`, the state hash's field part (`field_state_hash`).
   - `inventory.odin`, `inventory_interaction.odin`, `crafting.odin`: `Item_Stack`, `Inventory`; slot clicks; `Craft_Queue` and hand crafting.

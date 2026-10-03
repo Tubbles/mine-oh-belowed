@@ -299,23 +299,31 @@ frame_drill_vein_under :: proc(frame: Frame, veins: []Vein, machine: Machine, or
 	return {}, false
 }
 
-// A drill placed on a frame as place_on_frame places a machine, tapping
-// the vein under it. With no vein under any bottom cell it is refused, as
-// a block world drill off a vein is: vein_found is false and nothing is
-// placed.
-place_drill_on_frame :: proc(entities: ^Entities, machines: Machine_Registry, veins: []Vein, machine: Machine_Id, frame: Frame_Id, origin: World_Coordinate, rotation: u8) -> (handle: Entity_Handle, refusal: Frame_Placement_Refusal, vein_found: bool) {
+// The refusal of a drill on a frame with the vein it would tap: the
+// frame's refusals, and No_Vein with no vein under any bottom cell, as a
+// block world drill off a vein is refused.
+frame_drill_placement_refusal :: proc(entities: ^Entities, machines: Machine_Registry, veins: []Vein, machine: Machine_Id, frame: Frame_Id, origin: World_Coordinate, rotation: u8) -> (vein: Vein_Id, refusal: Frame_Placement_Refusal) {
 	record, frame_found := find_frame(&entities.frames, frame)
 	if !frame_found {
-		return NO_ENTITY, .Unknown_Frame, false
+		return {}, .Unknown_Frame
 	}
+	found: bool
+	if vein, found = frame_drill_vein_under(record, veins, machines.machines[machine], origin, rotation); !found {
+		return {}, .No_Vein
+	}
+	return vein, frame_placement_refusal(entities, machines, machine, frame, origin, rotation)
+}
+
+// A drill placed on a frame as place_on_frame places a machine, tapping
+// the vein under it; refused as frame_drill_placement_refusal says.
+place_drill_on_frame :: proc(entities: ^Entities, machines: Machine_Registry, veins: []Vein, machine: Machine_Id, frame: Frame_Id, origin: World_Coordinate, rotation: u8) -> (handle: Entity_Handle, refusal: Frame_Placement_Refusal) {
 	vein: Vein_Id
-	if vein, vein_found = frame_drill_vein_under(record, veins, machines.machines[machine], origin, rotation); !vein_found {
-		return NO_ENTITY, .None, false
+	if vein, refusal = frame_drill_placement_refusal(entities, machines, veins, machine, frame, origin, rotation); refusal != .None {
+		return NO_ENTITY, refusal
 	}
-	if handle, refusal = place_on_frame(entities, machines, machine, frame, origin, rotation); refusal == .None {
-		pool_get(&entities.drills, handle).vein = vein
-	}
-	return handle, refusal, true
+	handle = add_entity(entities, machines, machine, origin, rotation, frame)
+	pool_get(&entities.drills, handle).vein = vein
+	return handle, .None
 }
 
 // A valid placement's footprint holds only air and ground cover

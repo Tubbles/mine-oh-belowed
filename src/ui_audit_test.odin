@@ -861,6 +861,14 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 	audit_crafting_waits_on_a_full_inventory(audit)
 	audit_case(audit, {name = "hud radial", hud = true, radial = true})
 	audit_case(audit, {name = "hud mission control", hud = true, toasts = toasts[:], mission_control = true})
+	// The field's refusals as the HUD toasts them (Field_Refused, 0179).
+	field_refusals := make([dynamic]string, context.temp_allocator)
+	for key in field_refusal_keys {
+		if key != "" {
+			append(&field_refusals, key)
+		}
+	}
+	audit_case(audit, {name = "hud field refusals", hud = true, toasts = field_refusals[:]})
 	audit_case(audit, {name = "pause", screens = {.Pause}, walk_focus = true})
 	for tab in 0 ..< 5 {
 		audit_case(audit, {name = fmt.tprintf("settings tab %d", tab), screens = {.Pause, .Settings}, tab_next = tab, walk_focus = true})

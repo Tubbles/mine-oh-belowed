@@ -76,6 +76,9 @@ test_shipped_strings_cover_the_ui :: proc(t: ^testing.T) {
 	for key in recipe_change_refusal_keys {
 		append(&state_keys, key)
 	}
+	for key in field_refusal_keys {
+		append(&state_keys, key)
+	}
 	for key in state_keys {
 		testing.expectf(t, key == "" || key in table.entries, "key %q is not in en.sjson", key)
 	}

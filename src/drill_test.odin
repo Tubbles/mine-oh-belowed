@@ -694,8 +694,7 @@ test_a_drill_on_a_frame_over_an_outcrop_taps_its_vein :: proc(t: ^testing.T) {
 	testing.expect_value(t, coal_vein.material, Field_Material.Coal_Ore)
 	frame := lay_test_drill_pad(&world, content.machines, World_Position(coal_vein.centre))
 	drill_machine := test_machine(content.machines, "burner_mining_drill")
-	drill, refusal, vein_found := place_drill_on_frame(&world.entities, content.machines, world.veins[:], drill_machine, frame, {0, 1, 0}, 0)
-	testing.expect(t, vein_found)
+	drill, refusal := place_drill_on_frame(&world.entities, content.machines, world.veins[:], drill_machine, frame, {0, 1, 0}, 0)
 	testing.expect_value(t, refusal, Frame_Placement_Refusal.None)
 	testing.expect_value(t, pool_get(&world.entities.drills, drill).vein, planet_vein_id(2))
 	chest, chest_refusal := place_on_frame(&world.entities, content.machines, test_machine(content.machines, "iron_chest"), frame, {2, 1, 0}, 0)
@@ -714,16 +713,20 @@ test_a_drill_on_a_frame_over_an_outcrop_taps_its_vein :: proc(t: ^testing.T) {
 }
 
 // A drill on a frame off every outcrop (the far side of the planet) is
-// refused and leaves the frame's cells as they were.
+// refused and leaves the frame's cells as they were; place_on_frame
+// refuses any drill, which enters only with its vein.
 @(test)
 test_a_drill_on_a_frame_off_every_outcrop_is_refused :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_drill_world(content)
 	generation := register_test_planet_veins(&world)
-	frame := lay_test_drill_pad(&world, content.machines, World_Position(fixed_scale(-DEFAULT_PLANET_HOME, generation.radius)))
-	handle, refusal, vein_found := place_drill_on_frame(&world.entities, content.machines, world.veins[:], test_machine(content.machines, "burner_mining_drill"), frame, {0, 1, 0}, 0)
-	testing.expect(t, !vein_found)
+	frame := lay_test_drill_pad(&world, content.machines, World_Position(fixed_scale(-FRAME_NORTH, generation.radius)))
+	drill_machine := test_machine(content.machines, "burner_mining_drill")
+	handle, refusal := place_drill_on_frame(&world.entities, content.machines, world.veins[:], drill_machine, frame, {0, 1, 0}, 0)
 	testing.expect_value(t, handle, NO_ENTITY)
-	testing.expect_value(t, refusal, Frame_Placement_Refusal.None)
+	testing.expect_value(t, refusal, Frame_Placement_Refusal.No_Vein)
+	handle, refusal = place_on_frame(&world.entities, content.machines, drill_machine, frame, {0, 1, 0}, 0)
+	testing.expect_value(t, handle, NO_ENTITY)
+	testing.expect_value(t, refusal, Frame_Placement_Refusal.No_Vein)
 	testing.expect_value(t, frame_cell_count(&world.entities.frames, frame), 6)
 }

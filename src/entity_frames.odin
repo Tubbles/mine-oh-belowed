@@ -26,6 +26,8 @@ Frame_Placement_Refusal :: enum u8 {
 	Occupied,
 	// A bottom cell of a machine has no solid occupant under it.
 	Unsupported,
+	// A drill stands off every vein's disc (0179, place_drill_on_frame).
+	No_Vein,
 }
 
 frame_placement_refusal :: proc(entities: ^Entities, machines: Machine_Registry, machine: Machine_Id, frame: Frame_Id, origin: World_Coordinate, rotation: u8) -> Frame_Placement_Refusal {
@@ -44,8 +46,13 @@ frame_placement_refusal :: proc(entities: ^Entities, machines: Machine_Registry,
 	return .None
 }
 
-// A machine or a snapped foundation at origin in frame.
+// A machine or a snapped foundation at origin in frame. A drill is
+// refused: it enters only through place_drill_on_frame, which gives it
+// its vein.
 place_on_frame :: proc(entities: ^Entities, machines: Machine_Registry, machine: Machine_Id, frame: Frame_Id, origin: World_Coordinate, rotation: u8) -> (handle: Entity_Handle, refusal: Frame_Placement_Refusal) {
+	if machines.machines[machine].kind == .Drill {
+		return NO_ENTITY, .No_Vein
+	}
 	if refusal = frame_placement_refusal(entities, machines, machine, frame, origin, rotation); refusal != .None {
 		return NO_ENTITY, refusal
 	}
@@ -195,27 +202,61 @@ field_footprint_buries_a_player :: proc(state: ^Simulation_State, content: Simul
 	return false
 }
 
+// The frame's refusal of a snapped placement; a drill's also refuses a
+// place off every vein (frame_drill_placement_refusal).
+snapped_placement_refusal :: proc(state: ^Simulation_State, content: Simulation_Content, placement: Field_Placement) -> Frame_Placement_Refusal {
+	entities := &state.world.entities
+	if content.machines.machines[placement.machine].kind == .Drill {
+		_, refusal := frame_drill_placement_refusal(entities, content.machines, state.world.veins[:], placement.machine, placement.frame, placement.cell, placement.rotation)
+		return refusal
+	}
+	return frame_placement_refusal(entities, content.machines, placement.machine, placement.frame, placement.cell, placement.rotation)
+}
+
 // The refusal of a queued placement, None when it may go ahead.
 field_placement_refusal :: proc(state: ^Simulation_State, content: Simulation_Content, player: Player, placement: Field_Placement) -> Field_Edit_Refusal {
 	entities := &state.world.entities
 	frame, cell, found := field_placement_frame(&entities.frames, placement, content.field.foundation_pitch_millimetres)
-	switch {
-	case !found:
+	if !found {
 		return .Unknown_Frame
-	case inventory_count(player.inventory, content.machines.machines[placement.machine].item) == 0:
+	}
+	if inventory_count(player.inventory, content.machines.machines[placement.machine].item) == 0 {
 		return .Nothing_Held
-	case !placement.new_frame && frame_placement_refusal(entities, content.machines, placement.machine, placement.frame, cell, placement.rotation) != .None:
-		return .Frame_Cell_Taken
-	case field_footprint_buries_a_player(state, content, frame, placement, cell):
+	}
+	if !placement.new_frame {
+		#partial switch snapped_placement_refusal(state, content, placement) {
+		case .None:
+		case .No_Vein:
+			return .No_Vein
+		case:
+			return .Frame_Cell_Taken
+		}
+	}
+	if field_footprint_buries_a_player(state, content, frame, placement, cell) {
 		return .Would_Bury_Player
 	}
 	return .None
 }
 
+// A queued placement that field_placement_refusal let through: a free
+// foundation, a drill with its vein, any other machine on its frame.
+// The placed machine counts for the quests (record_placed).
+apply_field_placement :: proc(state: ^Simulation_State, content: Simulation_Content, placement: Field_Placement) {
+	entities := &state.world.entities
+	switch {
+	case placement.new_frame:
+		place_free_foundation(entities, content.machines, placement.machine, placement.hit, placement.heading, content.field.foundation_pitch_millimetres)
+	case content.machines.machines[placement.machine].kind == .Drill:
+		place_drill_on_frame(entities, content.machines, state.world.veins[:], placement.machine, placement.frame, placement.cell, placement.rotation)
+	case:
+		place_on_frame(entities, content.machines, placement.machine, placement.frame, placement.cell, placement.rotation)
+	}
+	record_placed(&state.records.statistics, placement.machine)
+}
+
 // The end of the tick, after the brush edits: every queued placement in
 // order, each taking one item of its machine; then the queue is empty.
 drain_field_placements :: proc(state: ^Simulation_State, content: Simulation_Content) {
-	entities := &state.world.entities
 	for queued in state.field.placements {
 		player := &state.players[queued.player]
 		placement := queued.placement
@@ -235,11 +276,7 @@ drain_field_placements :: proc(state: ^Simulation_State, content: Simulation_Con
 			player.field_refusal, player.field_refused_material = refusal, .Air
 			continue
 		}
-		if placement.new_frame {
-			place_free_foundation(entities, content.machines, placement.machine, placement.hit, placement.heading, content.field.foundation_pitch_millimetres)
-		} else {
-			place_on_frame(entities, content.machines, placement.machine, placement.frame, placement.cell, placement.rotation)
-		}
+		apply_field_placement(state, content, placement)
 		inventory_remove(player.inventory, content.machines.machines[placement.machine].item, 1)
 	}
 	clear(&state.field.placements)

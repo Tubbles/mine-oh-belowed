@@ -94,7 +94,7 @@ test_a_plane_field_meshes_to_the_plane_with_normals_along_the_gradient :: proc(t
 	for vertex in surface.vertices {
 		testing.expectf(t, abs(test_plane_value(test_vertex_samples(vertex))) < 1, "vertex at %v lies off the plane", test_vertex_samples(vertex))
 		testing.expectf(t, linalg.dot(field_vertex_normal(vertex.gradient), outward) > 0.999, "normal %v", field_vertex_normal(vertex.gradient))
-		testing.expect_value(t, vertex.weights, [4]u8{0, 255, 0, 0})
+		testing.expect_value(t, vertex.weights, [FIELD_TEXTURED_MATERIAL_COUNT]u8{0, 255, 0, 0, 0, 0, 0})
 	}
 	// Every triangle faces out of the ground.
 	for triangle := 0; triangle < surface.skirt_index_start; triangle += 3 {
@@ -192,6 +192,34 @@ test_the_vertex_arrays_are_in_metres :: proc(t: ^testing.T) {
 	testing.expect_value(t, data.colors[0].a, surface.vertices[0].light[.Sky])
 	testing.expect_value(t, len(data.lights), len(data.positions))
 	testing.expect_value(t, data.weights[0], [4]f32{0, 1, 0, 0})
+	testing.expect_value(t, data.lights[0].y, 0)
+	testing.expect_value(t, data.ore_weights[0], [2]f32{0, 0})
+}
+
+// Each ore's ground carries its own weight to the vertex arrays, so the
+// shader samples its tile: hematite in the texture coordinate's second
+// component, chalcopyrite and coal in the second texture coordinate.
+@(test)
+test_an_ores_ground_meshes_with_its_own_weight :: proc(t: ^testing.T) {
+	Expected :: struct {
+		material: Field_Material,
+		light:    f32,
+		ores:     [2]f32,
+	}
+	cases := [3]Expected{{.Hematite_Ore, 1, {0, 0}}, {.Chalcopyrite_Ore, 0, {1, 0}}, {.Coal_Ore, 0, {0, 1}}}
+	for expected in cases {
+		grid := fill_test_field_grid({0, 0, 0}, 1, test_plane_density)
+		for &material in grid.material {
+			if material != .Air {
+				material = expected.material
+			}
+		}
+		surface := mesh_field_surface(grid, TEST_FIELD_PALETTE[:], context.temp_allocator)
+		data := field_mesh_from_surface(surface, 1, 1000, context.temp_allocator)
+		testing.expect(t, len(data.positions) > 0)
+		testing.expect_value(t, len(data.ore_weights), len(data.positions))
+		testing.expectf(t, data.weights[0] == {} && data.lights[0].y == expected.light && data.ore_weights[0] == expected.ores, "%v: %v %v %v", expected.material, data.weights[0], data.lights[0], data.ore_weights[0])
+	}
 }
 
 // The vertex light is the mean over the cell's air corners, so a surface

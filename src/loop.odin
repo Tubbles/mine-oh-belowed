@@ -1317,6 +1317,10 @@ show_simulation_events :: proc(state: ^Ui_State, events: []Simulation_Event, loc
 			ui_toast(state, text("toast_seismic_shot"))
 		case .Action_Refused:
 			ui_toast(state, text("toast_action_refused"))
+		case .Field_Refused:
+			if key := field_refusal_keys[event.field_refusal]; key != "" {
+				ui_toast(state, text(key))
+			}
 		}
 	}
 }

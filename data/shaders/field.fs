@@ -7,11 +7,10 @@
 // shows one projection, not a smear of three. The tile is read at two
 // scales whose ratio is not a fraction of small numbers, so the tile's
 // period never shows as a grid (DESIGN.md, No perceivable repetition).
-// The materials blend by the vertex weights, the palette's tint and the
-// vertex light are multiplied in (the brighter of the block light and the
-// sky light times daylight, work item 0173), a gentle sun term shades the
-// slopes,
-// and the fog fades to the sky colour towards the last level of detail
+// The seven materials (every one but air) blend by the vertex weights,
+// the palette's tint and the vertex light are multiplied in (the brighter
+// of the block light and the sky light times daylight, work item 0173), a
+// gentle sun term shades the slopes, and the fog fades to the sky colour towards the last level of detail
 // distance. With water_color's alpha above 0 (the water pass, work item
 // 0172) the surface takes water_color's colour instead of the materials
 // and its alpha as its opacity; the terrain pass sets it to 0.
@@ -23,6 +22,7 @@ in vec3 fragment_world_position;
 in vec3 fragment_normal;
 in vec4 fragment_color;
 in vec4 fragment_weights;
+in vec3 fragment_ore_weights;
 in float fragment_block_light;
 in float fragment_distance;
 
@@ -30,6 +30,9 @@ uniform sampler2D material_texture_topsoil;
 uniform sampler2D material_texture_stone;
 uniform sampler2D material_texture_deep_stone;
 uniform sampler2D material_texture_bedrock;
+uniform sampler2D material_texture_hematite_ore;
+uniform sampler2D material_texture_chalcopyrite_ore;
+uniform sampler2D material_texture_coal_ore;
 uniform vec3 sun_direction;
 uniform vec3 fog_color;
 uniform float fog_start;
@@ -102,7 +105,9 @@ void main()
     vec3 normal = normalize(fragment_normal);
     vec3 blend = pow(abs(normal), vec3(blend_sharpness));
     blend /= dot(blend, vec3(1.0));
-    vec4 weights = fragment_weights / max(dot(fragment_weights, vec4(1.0)), smallest_weight_sum);
+    float weight_sum = dot(fragment_weights, vec4(1.0)) + dot(fragment_ore_weights, vec3(1.0));
+    vec4 weights = fragment_weights / max(weight_sum, smallest_weight_sum);
+    vec3 ore_weights = fragment_ore_weights / max(weight_sum, smallest_weight_sum);
     // Every material is sampled, also at weight 0: a mipmapped sample
     // inside a branch has no defined derivatives where a pixel quad
     // straddles a triangle whose weight is 0 at one end.
@@ -110,6 +115,9 @@ void main()
     albedo += weights.y * material_color(material_texture_stone, blend);
     albedo += weights.z * material_color(material_texture_deep_stone, blend);
     albedo += weights.w * material_color(material_texture_bedrock, blend);
+    albedo += ore_weights.x * material_color(material_texture_hematite_ore, blend);
+    albedo += ore_weights.y * material_color(material_texture_chalcopyrite_ore, blend);
+    albedo += ore_weights.z * material_color(material_texture_coal_ore, blend);
     albedo *= fragment_color.rgb * tint_scale;
     float water = step(smallest_weight_sum, water_color.a);
     albedo = mix(albedo, water_color.rgb, water);

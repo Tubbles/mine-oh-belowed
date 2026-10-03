@@ -44,9 +44,9 @@ Planet_Generation :: struct {
 	veins:               Planet_Veins,
 }
 
-// home is the direction the starter veins are placed round (the pod's,
-// 0179): any non-zero vector along it, the zero vector the default.
-make_planet_generation :: proc(seed: u64, planet: Planet, spacing_millimetres: int, home := DEFAULT_PLANET_HOME) -> Planet_Generation {
+// The starter veins lie round the planet's home (the pod's, 0179,
+// planet_home_direction).
+make_planet_generation :: proc(seed: u64, planet: Planet, spacing_millimetres: int) -> Planet_Generation {
 	seeds := generation_seed.derive_purpose_seeds(seed)
 	radius := metres_to_position_units(i64(planet.radius_metres))
 	return Planet_Generation {
@@ -59,7 +59,7 @@ make_planet_generation :: proc(seed: u64, planet: Planet, spacing_millimetres: i
 		palette_length = len(planet.palette),
 		sea_radius = metres_to_position_units(i64(planet.radius_metres + planet.sea_level_metres)),
 		relief_octaves = planet.relief_octaves,
-		veins = plan_planet_veins(seed, home, radius),
+		veins = plan_planet_veins(seed, planet_home_direction(planet.home), radius),
 	}
 }
 

@@ -31,6 +31,13 @@ pod_pad_cells :: proc() -> []World_Coordinate {
 	return cells[:]
 }
 
+// From the surface position (cell (0, 0, 0)'s centre, free_frame_at) to
+// the pad's front edge along the frame's forward, in position units.
+pod_pad_front_reach :: proc(pitch_millimetres: int) -> i64 {
+	pitch := millimetres_to_position_units(pitch_millimetres)
+	return (POD_PAD_FIRST_CELL + POD_PAD_SIZE) * pitch - pitch / 2
+}
+
 // The pod's minimum corner, centred on the pad and standing on it.
 pod_origin :: proc(pod: Machine) -> World_Coordinate {
 	size := rotated_footprint_size(pod.footprint, POD_ROTATION)

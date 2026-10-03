@@ -76,6 +76,24 @@ Field_Edit_Refusal :: enum u8 {
 	Torch_Blocked,
 	// A torch taken back finds no room in the inventory and stays (0179).
 	Inventory_Full,
+	// A drill on a frame stands off every vein's disc (0179).
+	No_Vein,
+}
+
+// The string keys of the refusals the HUD toasts (Field_Refused, 0179).
+@(rodata)
+field_refusal_keys := [Field_Edit_Refusal]string {
+	.None              = "",
+	.Tool_Tier         = "field_refused_tool_tier",
+	.Undiggable        = "field_refused_undiggable",
+	.Nothing_Held      = "field_refused_nothing_held",
+	.Would_Bury_Player = "field_refused_would_bury_player",
+	.Frame_Cell_Taken  = "field_refused_frame_cell_taken",
+	.Unknown_Frame     = "field_refused_unknown_frame",
+	.Run_Refused       = "field_refused_run",
+	.Torch_Blocked     = "field_refused_torch_blocked",
+	.Inventory_Full    = "field_refused_inventory_full",
+	.No_Vein           = "field_refused_no_vein",
 }
 
 Queued_Field_Edit :: struct {

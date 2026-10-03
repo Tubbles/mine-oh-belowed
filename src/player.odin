@@ -119,6 +119,9 @@ Player_Event :: enum u8 {
 	// A queued command the tick could not apply although the screen's
 	// check accepted it a frame earlier (player_command.odin).
 	Action_Refused,
+	// A field edit or placement was refused (0179); the event's
+	// field_refusal says why (field_refusal_is_news).
+	Field_Refused,
 }
 
 Player_Events :: bit_set[Player_Event]

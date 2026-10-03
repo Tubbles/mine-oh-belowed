@@ -7,7 +7,7 @@ import "render_frustum"
 // The terrain field's renderer (work item 0169, doc/presentation.md, Chunk
 // meshes): one raylib mesh per selected octree node (world_field_lod.odin),
 // drawn with the triplanar shader (data/shaders/field.vs and field.fs) and
-// the four material tiles (texture_field_materials.odin), and the globe, a
+// the seven material tiles (texture_field_materials.odin), and the globe, a
 // sphere in the palette's first colour drawn every frame below the lowest
 // ground the relief can make, so the meshed nodes cover it where they
 // exist and it fills the planet's silhouette beyond the last distance.
@@ -33,10 +33,22 @@ FIELD_GLOBE_MARGIN_METRES :: 8
 // terrain pass sets an opacity of 0.
 FIELD_WATER_COLOR :: [4]f32{0.16, 0.36, 0.52, 0.62}
 
-// The material slots' sampler names, bound to the material's first four
-// maps (DrawMesh binds map i to the shader location MAP_ALBEDO + i).
+// The material slots' sampler names, bound to the material's first seven
+// maps (DrawMesh binds map i to the shader location MAP_ALBEDO + i; maps
+// 0 to 6 are two dimensional, the cube maps start at 7).
 @(rodata)
-field_material_sampler_names := [FIELD_TEXTURED_MATERIAL_COUNT]cstring{"material_texture_topsoil", "material_texture_stone", "material_texture_deep_stone", "material_texture_bedrock"}
+field_material_sampler_names := [FIELD_TEXTURED_MATERIAL_COUNT]cstring {
+	"material_texture_topsoil",
+	"material_texture_stone",
+	"material_texture_deep_stone",
+	"material_texture_bedrock",
+	"material_texture_hematite_ore",
+	"material_texture_chalcopyrite_ore",
+	"material_texture_coal_ore",
+}
+
+#assert(FIELD_MATERIAL_TILE_COUNT == FIELD_TEXTURED_MATERIAL_COUNT, "every generated material tile is bound and sampled")
+#assert(FIELD_TEXTURED_MATERIAL_COUNT <= int(rl.MaterialMapIndex.CUBEMAP), "the material tiles take two dimensional maps only")
 
 // origin is the node's first sample in metres. A node with no water has
 // has_water false and no water mesh.
@@ -127,8 +139,8 @@ init_field_renderer :: proc(data_directory: string, tiles: Field_Material_Tiles,
 }
 
 // Raylib frees the arrays in UnloadMesh, so they are its copies
-// (clone_for_raylib); the block light travels as the texture coordinate
-// attribute and the weights as the tangent attribute.
+// (clone_for_raylib); the block light and the weights travel in the
+// attributes Field_Mesh_Data names.
 upload_field_mesh :: proc(data: Field_Mesh_Data) -> rl.Mesh {
 	mesh := rl.Mesh {
 		vertexCount   = i32(len(data.positions)),
@@ -137,6 +149,7 @@ upload_field_mesh :: proc(data: Field_Mesh_Data) -> rl.Mesh {
 		normals       = cast([^]f32)clone_for_raylib(data.normals[:]),
 		colors        = cast([^]u8)clone_for_raylib(data.colors[:]),
 		texcoords     = cast([^]f32)clone_for_raylib(data.lights[:]),
+		texcoords2    = cast([^]f32)clone_for_raylib(data.ore_weights[:]),
 		tangents      = cast([^]f32)clone_for_raylib(data.weights[:]),
 		indices       = clone_for_raylib(data.indices[:]),
 	}

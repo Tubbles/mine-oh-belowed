@@ -272,6 +272,13 @@ draw_entities :: proc(world: ^World, machines: Machine_Registry, models: Model_R
 			draw_launch_pad(pad, machines, models, frame)
 		}
 	}
+	// The pod rides in the foundations' pool (entity_pod.odin); the
+	// foundations themselves are draw_frames' boxes.
+	for foundation in world.entities.foundations.entries {
+		if foundation.alive && machines.machines[foundation.machine].kind == .Pod {
+			draw_entity_cells(foundation.common, machines, models, frame, false, FRAME_FOUNDATION_COLOR, FRAME_FOUNDATION_COLOR)
+		}
+	}
 }
 
 // How far the rocket has climbed and how opaque it is: it speeds up as it

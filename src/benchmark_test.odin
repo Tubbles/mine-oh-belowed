@@ -100,9 +100,9 @@ test_benchmark_field :: proc(items: Item_Registry) -> Benchmark_Field {
 
 // Builds and runs size 1 on the field world and logs its table. Every
 // machine must work at the end of the warm up, and the player stands on
-// the field at the home beside the pad; the budget holds only in the
-// optimised build (./build.sh bench), the plain build logs. Size 2 is
-// refused with the M14 message.
+// the field at the home beside the pad, with the pod behind it; the
+// budget holds only in the optimised build (./build.sh bench), the plain
+// build logs. Size 2 is refused with the M14 message.
 @(test)
 test_factory_benchmark :: proc(t: ^testing.T) {
 	plan := load_test_benchmark_plan(t)
@@ -119,7 +119,10 @@ test_factory_benchmark :: proc(t: ^testing.T) {
 	testing.expect_value(t, report.problem, "")
 	testing.expect_value(t, len(report.idle), 0)
 	testing.expect_value(t, report.profile.ticks, report.measured_ticks)
-	testing.expect_value(t, report.entity_counts[.Foundation], (2 * BENCHMARK_PAD_HALF_WIDTH + 1) * (2 * BENCHMARK_PAD_HALF_WIDTH + 1))
+	// The benchmark's pad, the pod's pad and the pod, which rides in the
+	// foundations' pool.
+	pad := (2 * BENCHMARK_PAD_HALF_WIDTH + 1) * (2 * BENCHMARK_PAD_HALF_WIDTH + 1)
+	testing.expect_value(t, report.entity_counts[.Foundation], pad + POD_PAD_SIZE * POD_PAD_SIZE + 1)
 	when ODIN_OPTIMIZATION_MODE == .Speed {
 		testing.expectf(t, report.average_milliseconds < BENCHMARK_SIZE_1_BUDGET_MILLISECONDS, "size 1 averages %.3f ms per tick, over the %.1f ms budget", report.average_milliseconds, BENCHMARK_SIZE_1_BUDGET_MILLISECONDS)
 	}

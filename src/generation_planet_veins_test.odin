@@ -57,7 +57,7 @@ test_bearing_degrees :: proc(home, point: [3]i64) -> f64 {
 @(test)
 test_the_starter_veins_ring_the_home_in_distinct_sectors :: proc(t: ^testing.T) {
 	generation := make_test_planet_generation()
-	home := fixed_scale(DEFAULT_PLANET_HOME, generation.radius)
+	home := fixed_scale(FRAME_NORTH, generation.radius)
 	for index in 0 ..< generation.veins.count {
 		vein := generation.veins.veins[index]
 		distance := vector_length(vein.centre - home)
@@ -66,7 +66,7 @@ test_the_starter_veins_ring_the_home_in_distinct_sectors :: proc(t: ^testing.T) 
 		testing.expect(t, vein.radius >= metres_to_position_units(PLANET_VEIN_MINIMUM_RADIUS_METRES) && vein.radius <= metres_to_position_units(PLANET_VEIN_MAXIMUM_RADIUS_METRES))
 		testing.expect(t, abs(vector_length(vein.centre) - generation.radius) <= 2)
 		for other in index + 1 ..< generation.veins.count {
-			turn := abs(test_bearing_degrees(DEFAULT_PLANET_HOME, vein.centre) - test_bearing_degrees(DEFAULT_PLANET_HOME, generation.veins.veins[other].centre))
+			turn := abs(test_bearing_degrees(FRAME_NORTH, vein.centre) - test_bearing_degrees(FRAME_NORTH, generation.veins.veins[other].centre))
 			turn = min(turn, 360 - turn)
 			testing.expectf(t, turn >= 59, "veins %d and %d are %f degrees apart", index, other, turn)
 		}
@@ -74,8 +74,11 @@ test_the_starter_veins_ring_the_home_in_distinct_sectors :: proc(t: ^testing.T) 
 	testing.expect(t, make_test_planet_generation().veins == generation.veins)
 	other := make_planet_generation(TEST_PLANET_SEED + 1, make_test_planet(), 1000)
 	testing.expect(t, other.veins != generation.veins)
-	moved := make_planet_generation(TEST_PLANET_SEED, make_test_planet(), 1000, {UNIT_VECTOR_ONE, 0, 0})
-	testing.expect(t, vector_length(moved.veins.veins[0].centre - fixed_scale([3]i64{UNIT_VECTOR_ONE, 0, 0}, generation.radius)) <= metres_to_position_units(PLANET_VEIN_MAXIMUM_DISTANCE_METRES))
+	moved_planet := make_test_planet()
+	moved_planet.home = {latitude_degrees = 0, longitude_degrees = 90}
+	moved := make_planet_generation(TEST_PLANET_SEED, moved_planet, 1000)
+	moved_home := planet_home_direction(moved_planet.home)
+	testing.expect(t, vector_length(moved.veins.veins[0].centre - fixed_scale(moved_home, generation.radius)) <= metres_to_position_units(PLANET_VEIN_MAXIMUM_DISTANCE_METRES))
 }
 
 // Registered veins carry the starter reservoir of their ore's spawn type
@@ -108,7 +111,7 @@ test_a_position_on_a_veins_disc_finds_it_and_a_metre_outside_none :: proc(t: ^te
 		_, found = vein_under_world_position(veins[:], World_Position(planned.centre + fixed_scale(tangent, planned.radius + metres_to_position_units(1))))
 		testing.expect(t, !found)
 	}
-	_, found := vein_under_world_position(veins[:], World_Position(fixed_scale(DEFAULT_PLANET_HOME, generation.radius)))
+	_, found := vein_under_world_position(veins[:], World_Position(fixed_scale(FRAME_NORTH, generation.radius)))
 	testing.expect(t, !found)
 	veins[0].remaining[0] -= 7
 	drawn := veins[0].remaining
@@ -121,11 +124,11 @@ test_a_position_on_a_veins_disc_finds_it_and_a_metre_outside_none :: proc(t: ^te
 
 // The home is a direction, whatever its length: a home scaled by a
 // thousand (a position) plans the unit home's discs, and the zero vector
-// plans the default home's.
+// and a planet without a home plan the north pole's.
 @(test)
 test_a_scaled_home_plans_the_unit_homes_veins :: proc(t: ^testing.T) {
 	radius := metres_to_position_units(8000)
-	for home in ([?][3]i64{DEFAULT_PLANET_HOME, {UNIT_VECTOR_ONE, 0, 0}, {0, 0, -UNIT_VECTOR_ONE}}) {
+	for home in ([?][3]i64{FRAME_NORTH, {UNIT_VECTOR_ONE, 0, 0}, {0, 0, -UNIT_VECTOR_ONE}}) {
 		testing.expect(t, plan_planet_veins(TEST_PLANET_SEED, home * 1000, radius) == plan_planet_veins(TEST_PLANET_SEED, home, radius))
 	}
 	diagonal, _ := normalize_fixed({1, 2, 3})
@@ -136,5 +139,6 @@ test_a_scaled_home_plans_the_unit_homes_veins :: proc(t: ^testing.T) {
 		testing.expectf(t, vector_length(unit.veins[index].centre - scaled.veins[index].centre) <= 16, "vein %d: %v against %v", index, unit.veins[index].centre, scaled.veins[index].centre)
 		testing.expect_value(t, unit.veins[index].radius, scaled.veins[index].radius)
 	}
-	testing.expect(t, plan_planet_veins(TEST_PLANET_SEED, {}, radius) == plan_planet_veins(TEST_PLANET_SEED, DEFAULT_PLANET_HOME, radius))
+	testing.expect(t, plan_planet_veins(TEST_PLANET_SEED, {}, radius) == plan_planet_veins(TEST_PLANET_SEED, FRAME_NORTH, radius))
+	testing.expect_value(t, planet_home_direction({}), FRAME_NORTH)
 }

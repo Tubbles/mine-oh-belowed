@@ -539,11 +539,12 @@ make_benchmark_simulation :: proc(config: Game_Config, content: Simulation_Conte
 	return simulation
 }
 
-// The field world at the home: the player there, its set generated, and
-// a pad of foundations ahead of it.
+// The field world at the home: the pod and the player in front of its
+// door (enable_new_field_world), its set generated, and a pad of
+// foundations ahead of the player.
 start_benchmark_field :: proc(simulation: ^Simulation_State, content: Simulation_Content, config: Game_Config, planet: Planet) {
 	spacing := DEFAULT_SAMPLE_SPACING_MILLIMETRES
-	enable_new_field_world(simulation, config, planet, spacing)
+	enable_new_field_world(simulation, config, content.machines, content.field, planet, spacing)
 	stage_generated_field_set(simulation)
 	foundation := field_foundation(content)
 	if foundation == NO_MACHINE {

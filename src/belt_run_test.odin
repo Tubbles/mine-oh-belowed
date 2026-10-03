@@ -454,7 +454,8 @@ test_undoing_planned_poles_leaves_no_frame :: proc(t: ^testing.T) {
 }
 
 // Two players confirm runs to the same pole in one tick: the first in the
-// queue lays its run, the second is refused Endpoint_Taken.
+// queue lays its run, which counts as a flat belt placed, the second is
+// refused Endpoint_Taken.
 @(test)
 test_two_players_running_to_one_pole_in_a_tick :: proc(t: ^testing.T) {
 	items := make_test_items()
@@ -481,11 +482,14 @@ test_two_players_running_to_one_pole_in_a_tick :: proc(t: ^testing.T) {
 		placement := Field_Placement{kind = .Run, run = {kind = .Belt, machine = content.field.run_belt, candidates = candidates}}
 		append(&simulation.field.placements, Queued_Field_Placement{player = player, placement = placement})
 	}
+	simulation.records.statistics.placed = make([]u64, len(content.machines.machines))
 	drain_field_placements(&simulation, content)
 	testing.expect_value(t, simulation.players[0].field_refusal, Field_Edit_Refusal.None)
 	testing.expect_value(t, simulation.players[1].field_refusal, Field_Edit_Refusal.Run_Refused)
 	testing.expect_value(t, simulation.players[1].field_run_refusal, Belt_Run_Refusal.Endpoint_Taken)
 	testing.expect_value(t, pool_alive_count(entities.belt_runs), 1)
+	// The laid run counts as one flat belt for the quests, the refused one not.
+	testing.expect_value(t, simulation.records.statistics.placed[content.field.run_belt], 1)
 }
 
 // A fixed quarter turn's arc length against the constant it gave when

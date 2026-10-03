@@ -40,9 +40,6 @@ PLANET_VEIN_BEARING_SPREAD_DIVISOR :: 4
 // The ids of the veins on the sphere: a region no block world vein
 // reaches (block_to_region of an i32 block lies within 2^23).
 PLANET_VEIN_REGION :: Region_Coordinate{max(i32), max(i32)}
-// The home of the shipped planet until the planet record carries one:
-// over the planet's +y, where the planet preview starts.
-DEFAULT_PLANET_HOME :: [3]i64{0, UNIT_VECTOR_ONE, 0}
 
 // centre is the disc's centre on the sphere of the planet's radius, in
 // position units; radius in position units along it. hash seeds the
@@ -91,12 +88,13 @@ plan_planet_vein :: proc(material: Field_Material, home: [3]i64, bearing: i32, r
 }
 
 // The starter veins round the home, any non-zero vector along it (a unit
-// vector or a position); the zero vector takes DEFAULT_PLANET_HOME. radius
-// is the planet's in position units.
+// vector or a position); the zero vector takes the north pole, as a
+// planet without a home does (planet_home_direction). radius is the
+// planet's in position units.
 plan_planet_veins :: proc(seed: u64, home_vector: [3]i64, radius: i64) -> (planned: Planet_Veins) {
 	home, ok := normalize_fixed(home_vector)
 	if !ok {
-		home = DEFAULT_PLANET_HOME
+		home = FRAME_NORTH
 	}
 	hash := generation_seed.derive_purpose_seeds(seed)[.Planet_Veins]
 	rotation := i32(generation_seed.hash_to_range(hash, 0, ANGLE_UNITS_PER_TURN - 1))

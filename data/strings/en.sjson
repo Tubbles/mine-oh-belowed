@@ -1602,6 +1602,18 @@ touch_button_zoom_out = "Zoom out"
 // Prospecting (work item 0038)
 toast_vein_assayed = "Vein assayed, marked on the map"
 toast_action_refused = "That changed before it could happen"
+
+// Field refusals (work item 0179, field_refusal_keys)
+field_refused_tool_tier = "Needs a better pickaxe"
+field_refused_undiggable = "This cannot be dug"
+field_refused_nothing_held = "Nothing to place"
+field_refused_would_bury_player = "That would bury a player"
+field_refused_frame_cell_taken = "That cell is taken"
+field_refused_unknown_frame = "The foundation is gone"
+field_refused_run = "The run does not fit there"
+field_refused_torch_blocked = "A torch does not fit there"
+field_refused_inventory_full = "Inventory full"
+field_refused_no_vein = "A drill needs an ore outcrop under it"
 join_failed = "Cannot join the host"
 loading_joining = "Joining the host"
 loading_joined_world = "Catching up with the host"

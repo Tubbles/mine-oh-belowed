@@ -18,15 +18,19 @@ import "core:math"
 // Dig aimed at a torch within the reach takes it back with its item. Both
 // are placements, so they apply at the end of the tick in order.
 //
-// The home spawn: every new player, the first and a joining one, stands
-// on the generated surface at the planet's home (data/planets.sjson),
-// facing the first spring, with the starter kit (make_field_session_player).
+// The home spawn: a new world lays the pod on the generated surface at
+// the planet's home (data/planets.sjson) with its door towards the first
+// spring; every new player, the first and a joining one, stands on the
+// generated surface in front of the door, facing the spring, with the
+// starter kit (make_field_session_player).
 
 // A torch is aimed at while the reticle's ray passes this close to its
 // sample.
 FIELD_TORCH_AIM_RADIUS_MILLIMETRES :: 600
 // A new player starts this far above the generated surface and drops.
 FIELD_SPAWN_CLEARANCE_MILLIMETRES :: 250
+// A new player stands this far past the front edge of the pod's pad.
+FIELD_SPAWN_BEYOND_PAD_MILLIMETRES :: 3000
 
 // The field's tables for a session (Simulation_Content.field): the
 // tuning of the planet, the spacing and the tick rate; the brushes in
@@ -318,46 +322,91 @@ tick_field_session_player :: proc(state: ^Simulation_State, content: Simulation_
 	return events
 }
 
-// Every field player in player order, then the queues drain. inputs[index]
+// A player's field refusal after the drain is told (a Field_Refused
+// event the HUD toasts) when it is new against the last tick's, or the
+// player pressed Dig or Place this tick: a held Dig refused tick after
+// tick tells it once, a press refused again tells it again.
+field_refusal_is_news :: proc(refusal, previous: Field_Edit_Refusal, pressed: bool) -> bool {
+	return refusal != .None && (refusal != previous || pressed)
+}
+
+// Every field player in player order, then the queues drain, then the
+// refusals the drain left are told (field_refusal_is_news). inputs[index]
 // is players[index]'s; a missing one is no input.
 tick_field_session_players :: proc(state: ^Simulation_State, content: Simulation_Content, inputs: []Input_Frame) {
+	previous := make([]Field_Edit_Refusal, len(state.players), context.temp_allocator)
+	pressed := make([]bool, len(state.players), context.temp_allocator)
 	for index in 0 ..< len(state.players) {
-		events := tick_field_session_player(state, content, index, index < len(inputs) ? inputs[index] : Input_Frame{})
+		frame := index < len(inputs) ? inputs[index] : Input_Frame{}
+		previous[index] = state.players[index].field_refusal
+		pressed[index] = frame.just_pressed & {.Mine, .Place} != {}
+		events := tick_field_session_player(state, content, index, frame)
 		for kind in events {
 			append(&state.events, Simulation_Event{player = index, kind = kind})
 		}
 	}
 	finish_field_tick(state, content)
+	for index in 0 ..< len(previous) {
+		if refusal := state.players[index].field_refusal; field_refusal_is_news(refusal, previous[index], pressed[index]) {
+			append(&state.events, Simulation_Event{player = index, kind = .Field_Refused, field_refusal = refusal})
+		}
+	}
 }
 
 // The home spawn.
 
-// The surface at the planet's home, the feet the clearance above it,
-// heading towards the first spring (towards +x on a planet without one).
-field_home_player :: proc(seed: u64, planet: Planet, spacing_millimetres: int) -> Field_Player {
-	generation := make_planet_generation(seed, planet, spacing_millimetres)
-	home := planet_home_direction(planet.home)
-	clearance := millimetres_to_position_units(FIELD_SPAWN_CLEARANCE_MILLIMETRES)
-	feet := field_surface_under(generation, World_Position(fixed_scale(home, generation.radius)), clearance)
+// The heading at the home towards the first spring (towards +x on a
+// planet without one), a unit tangent. The spring and the home are
+// compared as points on the sphere, since their unit directions differ
+// by too little for tangent_of.
+field_home_heading :: proc(planet: Planet, home: [3]i64, radius: i64) -> [3]i64 {
 	look := [3]i64{UNIT_VECTOR_ONE, 0, 0}
 	if len(planet.springs) > 0 {
-		look = planet_spring_direction(planet.springs[0]) - home
+		look = fixed_scale(planet_spring_direction(planet.springs[0]), radius) - fixed_scale(home, radius)
 	}
-	return make_field_player(feet, look)
+	return tangent_of(home, look)
+}
+
+// The pod's place: the generated surface at the planet's home, and the
+// heading its frame takes the yaw step of.
+field_home_site :: proc(generation: Planet_Generation, planet: Planet) -> (surface: World_Position, heading: [3]i64) {
+	home := planet_home_direction(planet.home)
+	return field_surface_under(generation, World_Position(fixed_scale(home, generation.radius)), 0), field_home_heading(planet, home, generation.radius)
+}
+
+// In front of the pod's door: FIELD_SPAWN_BEYOND_PAD_MILLIMETRES past the
+// pad's front edge along the pod frame's forward (the heading's yaw step,
+// free_frame_at), the feet the clearance above the generated surface
+// there, facing the spring. pitch_millimetres is the pad's.
+field_home_player :: proc(seed: u64, planet: Planet, spacing_millimetres, pitch_millimetres: int) -> Field_Player {
+	generation := make_planet_generation(seed, planet, spacing_millimetres)
+	site, heading := field_home_site(generation, planet)
+	_, axes := free_frame_at(site, heading, pitch_millimetres)
+	distance := pod_pad_front_reach(pitch_millimetres) + millimetres_to_position_units(FIELD_SPAWN_BEYOND_PAD_MILLIMETRES)
+	ahead := site + World_Position(fixed_scale(axes[FRAME_FORWARD], distance))
+	feet := field_surface_under(generation, ahead, millimetres_to_position_units(FIELD_SPAWN_CLEARANCE_MILLIMETRES))
+	up, _ := normalize_fixed(cast([3]i64)feet)
+	return make_field_player(feet, field_home_heading(planet, up, generation.radius))
 }
 
 // A new world's field (a session's, the benchmark's): the spacing, the
-// simulated set of data/game.sjson, the planet, every player at the home
-// and the water's planet. The world's seed is set before.
-enable_new_field_world :: proc(state: ^Simulation_State, config: Game_Config, planet: Planet, spacing_millimetres: int) {
+// simulated set of data/game.sjson, the planet, the pod at the home
+// (place_pod, when the machines have one), every player in front of its
+// door and the water's planet. The world's seed is set before. The pad's
+// pitch is the field content's, as a joining player's spawn reads it
+// (make_field_session_player).
+enable_new_field_world :: proc(state: ^Simulation_State, config: Game_Config, machines: Machine_Registry, field_content: Field_Content, planet: Planet, spacing_millimetres: int) {
 	field := &state.field
 	field.enabled = true
 	field.spacing_millimetres = spacing_millimetres
 	field.chunk_set = make_field_chunk_set(config.field_simulation.chunk_radius, config.field_simulation.chunk_margin)
 	state.world.planet = planet
 	seed := state.world.settings.seed
+	site, heading := field_home_site(make_planet_generation(seed, planet, spacing_millimetres), planet)
+	pitch := field_content.foundation_pitch_millimetres
+	place_pod(&state.world.entities, machines, site, heading, pitch)
 	for &player in state.players {
-		player.field = field_home_player(seed, planet, spacing_millimetres)
+		player.field = field_home_player(seed, planet, spacing_millimetres, pitch)
 	}
 	field.world.water_planet = make_field_water_planet(seed, planet, spacing_millimetres)
 }
@@ -367,7 +416,7 @@ enable_new_field_world :: proc(state: ^Simulation_State, config: Game_Config, pl
 // every joining one come through here.
 make_field_session_player :: proc(state: Simulation_State, content: Simulation_Content, start: Player_Start) -> Player {
 	player := make_player(start)
-	player.field = field_home_player(state.world.settings.seed, state.world.planet, state.field.spacing_millimetres)
+	player.field = field_home_player(state.world.settings.seed, state.world.planet, state.field.spacing_millimetres, content.field.foundation_pitch_millimetres)
 	give_starting_items(&player, content.items, content.field.starting_items)
 	return player
 }

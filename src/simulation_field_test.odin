@@ -122,7 +122,13 @@ test_two_field_simulations_hash_alike_and_part_on_one_input :: proc(t: ^testing.
 	second := start_field_test_session(config, content)
 	defer end_session(second)
 	first_content, second_content := field_test_content(first, content), field_test_content(second, content)
-	credit_before_place: [Field_Material]i64
+	// The dug topsoil held, its items and the credit (a place turns an
+	// item into credit first, so the credit alone may rise).
+	held_topsoil :: proc(session: ^Session, content: Simulation_Content) -> i64 {
+		player := session.simulation.players[0]
+		return field_place_volume_available(player.inventory, content.field.materials[.Topsoil].item, player.field_credit[.Topsoil])
+	}
+	held_before_place: i64
 	for tick in 0 ..< 1000 {
 		tick_field_test_simulation(&first.simulation, first_content, field_test_script_frame(tick))
 		tick_field_test_simulation(&second.simulation, second_content, field_test_script_frame(tick))
@@ -134,22 +140,24 @@ test_two_field_simulations_hash_alike_and_part_on_one_input :: proc(t: ^testing.
 			}
 		}
 		if tick == 519 {
-			credit_before_place = first.simulation.players[0].field_credit
+			held_before_place = held_topsoil(first, first_content)
 		}
 	}
 	testing.expect_value(t, first.simulation.tick, 1000)
 	testing.expect_value(t, simulation_state_hash(&first.simulation), simulation_state_hash(&second.simulation))
 	testing.expect(t, len(first.simulation.world.entities.frames.frames) > 0, "the script laid a foundation")
 	testing.expect_value(t, len(first.simulation.field.torches), 1)
-	testing.expect(t, credit_before_place[.Topsoil] > 0, "the script dug topsoil")
-	testing.expect(t, first.simulation.players[0].field_credit[.Topsoil] < credit_before_place[.Topsoil], "the script placed it back")
+	testing.expect(t, held_before_place > 0, "the script dug topsoil")
+	testing.expect(t, held_topsoil(first, first_content) < held_before_place, "the script placed it back")
 	tick_field_test_simulation(&first.simulation, first_content, Input_Frame{move = {1, 0}, pressed = {.Move}})
 	tick_field_test_simulation(&second.simulation, second_content, {})
 	testing.expect(t, simulation_state_hash(&first.simulation) != simulation_state_hash(&second.simulation), "one extra input parts the hashes")
 }
 
 // A field world's save round trips an edited chunk, a torch, a frame
-// with a foundation, the light's queues and the players' field state.
+// with a foundation, the pod with its pad, the light's queues and the
+// players' field state; a planet vein keeps its drawn reservoir and gets
+// its disc back, which the save leaves out.
 @(test)
 test_a_field_world_save_round_trips :: proc(t: ^testing.T) {
 	config := test_field_game_config()
@@ -173,7 +181,12 @@ test_a_field_world_save_round_trips :: proc(t: ^testing.T) {
 	state.players[0].field.yaw = 1234
 	removals := queue.len(field.world.light.removals[.Block]) + queue.len(field.world.light.additions[.Block])
 	testing.expect(t, removals > 0, "the torch waits in the light's queue")
+	iron := &state.world.veins[state.world.vein_indices[planet_vein_id(0)]]
+	iron.remaining[0] -= 3
+	drawn, disc := iron.remaining, iron.sphere_radius
+	testing.expect(t, disc > 0)
 	hash := simulation_state_hash(state)
+	frame_count, foundation_count := len(state.world.entities.frames.frames), len(state.world.entities.foundations.entries)
 	files := encode_save_files(state, simulation_content, "round trip", 0)
 	original_player := state.players[0].field
 	end_session(session)
@@ -194,30 +207,139 @@ test_a_field_world_save_round_trips :: proc(t: ^testing.T) {
 	testing.expect_value(t, len(restored.field.torches), 1)
 	testing.expect_value(t, restored.field.world.light.sources[torch], 12)
 	testing.expect_value(t, queue.len(restored.field.world.light.removals[.Block]) + queue.len(restored.field.world.light.additions[.Block]), removals)
-	testing.expect_value(t, len(restored.world.entities.frames.frames), 1)
-	testing.expect_value(t, len(restored.world.entities.foundations.entries), 1)
+	testing.expect_value(t, len(restored.world.entities.frames.frames), frame_count)
+	testing.expect_value(t, len(restored.world.entities.foundations.entries), foundation_count)
+	loaded_iron := restored.world.veins[restored.world.vein_indices[planet_vein_id(0)]]
+	testing.expect_value(t, loaded_iron.remaining, drawn)
+	testing.expect_value(t, loaded_iron.sphere_radius, disc)
+	_, _, pod_found := find_test_pod(&restored.world.entities, content.machines)
+	testing.expect(t, pod_found, "the pod is saved with its frame")
 	testing.expect_value(t, restored.players[0].field, original_player)
 }
 
-// A player joining a field world spawns at the home with the starter kit,
-// through the entry every join takes (add_player_entry).
+// The pod of a field world: its handle and its frame.
+find_test_pod :: proc(entities: ^Entities, machines: Machine_Registry) -> (pod: Foundation, frame: Frame, found: bool) {
+	for foundation in entities.foundations.entries {
+		if foundation.alive && machines.machines[foundation.machine].kind == .Pod {
+			frame, found = find_frame(&entities.frames, foundation.frame)
+			return foundation, frame, found
+		}
+	}
+	return {}, {}, false
+}
+
+// A new field world lays the pod at the home with its door to the spring,
+// and a player joining it spawns as the first did, in front of the door
+// (past the pad's front edge, off every pad cell), facing the spring,
+// with the starter kit, through the entry every join takes
+// (add_player_entry).
 @(test)
-test_a_joining_player_spawns_at_the_home_with_the_kit :: proc(t: ^testing.T) {
+test_a_new_world_places_the_pod_and_players_spawn_at_its_door :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
 	session := start_field_test_session(config, content)
 	defer end_session(session)
 	state := &session.simulation
+	pod, frame, found := find_test_pod(&state.world.entities, content.machines)
+	testing.expect(t, found, "the new world has the pod")
+	if !found {
+		return
+	}
+	testing.expect_value(t, pod.origin, pod_origin(content.machines.machines[pod.machine]))
+	testing.expect_value(t, frame_cell_count(&state.world.entities.frames, frame.id), POD_PAD_SIZE * POD_PAD_SIZE + int(pod.size.x * pod.size.y * pod.size.z))
+	generation := make_planet_generation(state.world.settings.seed, state.world.planet, state.field.spacing_millimetres)
+	site, heading := field_home_site(generation, state.world.planet)
+	// Cell (0, 0, 0) stands on the site (free_frame_at), within rounding.
+	standing := World_Position(fixed_scale(frame.axes[FRAME_UP], frame_pitch_units(frame) / 2))
+	testing.expectf(t, vector_length(cast([3]i64)(frame_cell_centre(frame, {}) - site - standing)) <= 4, "the pod's frame stands %v off the site", frame_cell_centre(frame, {}) - site)
+	testing.expectf(t, fixed_dot(frame.axes[FRAME_FORWARD], heading) > UNIT_VECTOR_ONE * 990 / 1000, "the door faces %v against the spring's heading %v", frame.axes[FRAME_FORWARD], heading)
 	add_player_entry(state, field_test_content(session, content), 1, Player_Start{})
 	testing.expect_value(t, len(state.players), 2)
-	home := field_home_player(state.world.settings.seed, state.world.planet, state.field.spacing_millimetres)
+	home := field_home_player(state.world.settings.seed, state.world.planet, state.field.spacing_millimetres, config.foundation_pitch_millimetres)
 	for player in state.players {
 		testing.expect_value(t, player.field.position, home.position)
 		testing.expect_value(t, player.field.forward, home.forward)
+		cell := world_to_frame_cell(frame, player.field.position)
+		testing.expectf(t, cell.z >= POD_PAD_FIRST_CELL + POD_PAD_SIZE, "the player stands in pad row %d", cell.z)
+		testing.expectf(t, cell.x >= POD_PAD_FIRST_CELL && cell.x < POD_PAD_FIRST_CELL + POD_PAD_SIZE, "the player stands beside the pad, column %d", cell.x)
+		testing.expectf(t, fixed_dot(player.field.forward, frame.axes[FRAME_FORWARD]) > UNIT_VECTOR_ONE * 990 / 1000, "the player faces %v, not the spring", player.field.forward)
 		for starting in config.starting_items {
 			testing.expectf(t, inventory_count(player.inventory, test_item(content.items, starting.item)) == starting.count, "%s", starting.item)
 		}
 	}
+}
+
+// A pad of foundations on a free frame at the surface position, eleven
+// cells along +x and two across: room for a drill at (0, 1, 0) facing
+// +x, its drop cell (2, 1, 0), and an arm whose reach spans four cells
+// at the data's pitch (inserter_reach_on_frame) at (6, 1, 0), dropping at
+// (10, 1, 0).
+TEST_FIELD_PAD_LENGTH :: 11
+
+lay_test_field_pad :: proc(state: ^Simulation_State, content: Simulation_Content, surface: World_Position) -> Frame_Id {
+	entities := &state.world.entities
+	foundation := field_foundation(content)
+	_, frame := place_free_foundation(entities, content.machines, foundation, surface, {UNIT_VECTOR_ONE, 0, 0}, content.field.foundation_pitch_millimetres)
+	for x in i32(0) ..< TEST_FIELD_PAD_LENGTH {
+		for z in i32(0) ..< 2 {
+			if x != 0 || z != 0 {
+				place_on_frame(entities, content.machines, foundation, frame, {x, 0, z}, 0)
+			}
+		}
+	}
+	return frame
+}
+
+// The belt line of chapter 1 on the field: a pad over the iron outcrop
+// (the planet's veins, registered by the session), a drill placed through
+// place_drill_on_frame, a flat belt under its drop cell, a burner arm and
+// an iron chest; the session's tick runs it, and the chest fills with the
+// vein's ore.
+@(test)
+test_a_belt_line_on_a_frame_over_an_outcrop_fills_the_chest :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	session := start_field_test_session(config, content)
+	defer end_session(session)
+	simulation_content := field_test_content(session, content)
+	state := &session.simulation
+	machines := simulation_content.machines
+	generation := make_planet_generation(state.world.settings.seed, state.world.planet, state.field.spacing_millimetres)
+	iron := generation.veins.veins[0]
+	testing.expect_value(t, iron.material, Field_Material.Hematite_Ore)
+	vein_index, registered := state.world.vein_indices[planet_vein_id(0)]
+	testing.expect(t, registered, "the session registered the planet's veins")
+	if !registered {
+		return
+	}
+	entities := &state.world.entities
+	frame := lay_test_field_pad(state, simulation_content, field_surface_under(generation, World_Position(iron.centre), 0))
+	drill_machine := test_machine(machines, "burner_mining_drill")
+	drill, drill_refusal := place_drill_on_frame(entities, machines, state.world.veins[:], drill_machine, frame, {0, 1, 0}, 0)
+	testing.expect_value(t, drill_refusal, Frame_Placement_Refusal.None)
+	if drill == NO_ENTITY {
+		return
+	}
+	testing.expect_value(t, pool_get(&entities.drills, drill).vein, planet_vein_id(0))
+	testing.expect_value(t, drill_drop_cell(pool_get(&entities.drills, drill)^, machines.machines[drill_machine]), World_Coordinate{2, 1, 0})
+	_, belt_refusal := place_on_frame(entities, machines, test_machine(machines, "belt"), frame, {2, 1, 0}, 0)
+	inserter, inserter_refusal := place_on_frame(entities, machines, test_machine(machines, "burner_inserter"), frame, {6, 1, 0}, 0)
+	testing.expect_value(t, inserter_pickup_cell(pool_get(&entities.inserters, inserter)^), World_Coordinate{2, 1, 0})
+	chest, chest_refusal := place_on_frame(entities, machines, test_machine(machines, "iron_chest"), frame, inserter_drop_cell(pool_get(&entities.inserters, inserter)^), 0)
+	testing.expect(t, belt_refusal == .None && inserter_refusal == .None && chest_refusal == .None)
+	coal := test_item(content.items, "coal")
+	pool_get(&entities.drills, drill).slots[DRILL_FUEL_SLOT] = Item_Stack{coal, 5}
+	pool_get(&entities.inserters, inserter).slots[INSERTER_FUEL_SLOT] = Item_Stack{coal, 5}
+	cycle := int(drill_cycle_ticks(machines.machines[drill_machine], config.tick_rate))
+	for _ in 0 ..< 3 * cycle {
+		tick_field_test_simulation(state, simulation_content, {})
+	}
+	vein_type := content.veins.types[state.world.veins[vein_index].type]
+	total := 0
+	for output in vein_type.outputs[:vein_type.output_count] {
+		total += chest_count_of(&state.world, chest, output)
+	}
+	testing.expectf(t, total >= 1, "the chest holds %d of the vein's ore after %d ticks", total, 3 * cycle)
 }
 
 // A world saved by a block build (no field) is refused by the title's
@@ -366,4 +488,121 @@ test_the_field_turn_fraction_carries_across_ticks :: proc(t: ^testing.T) {
 	}
 	testing.expect_value(t, total, [2]i32{3, -3})
 	testing.expect_value(t, field_tick_input(frame, 60).turn, [2]i32{0, 0})
+}
+
+// Place on a frame through the player's queue: a drill off every vein is
+// refused with No_Vein and keeps its item, one over the iron outcrop takes
+// the vein, and a placed machine counts for the quests (record_placed).
+@(test)
+test_queued_frame_placements_take_their_vein_and_count_for_the_quests :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	session := start_field_test_session(config, content)
+	defer end_session(session)
+	simulation_content := field_test_content(session, content)
+	state := &session.simulation
+	machines := simulation_content.machines
+	generation := make_planet_generation(state.world.settings.seed, state.world.planet, state.field.spacing_millimetres)
+	home := planet_home_direction(state.world.planet.home)
+	off_vein := lay_test_field_pad(state, simulation_content, field_surface_under(generation, World_Position(fixed_scale(-home, generation.radius)), 0))
+	on_vein := lay_test_field_pad(state, simulation_content, field_surface_under(generation, World_Position(generation.veins.veins[0].centre), 0))
+	drill_machine := test_machine(machines, "burner_mining_drill")
+	chest_machine := test_machine(machines, "iron_chest")
+	player := &state.players[0]
+	inventory_add(player.inventory, content.items, machines.machines[drill_machine].item, 2)
+	inventory_add(player.inventory, content.items, machines.machines[chest_machine].item, 1)
+	queue_placement :: proc(state: ^Simulation_State, machine: Machine_Id, frame: Frame_Id, cell: World_Coordinate) {
+		append(&state.field.placements, Queued_Field_Placement{player = 0, placement = {kind = .Machine, machine = machine, frame = frame, cell = cell}})
+	}
+	queue_placement(state, drill_machine, off_vein, {0, 1, 0})
+	drain_field_placements(state, simulation_content)
+	testing.expect_value(t, player.field_refusal, Field_Edit_Refusal.No_Vein)
+	testing.expect_value(t, inventory_count(player.inventory, machines.machines[drill_machine].item), 2)
+	testing.expect_value(t, state.records.statistics.placed[drill_machine], 0)
+	queue_placement(state, drill_machine, on_vein, {0, 1, 0})
+	queue_placement(state, chest_machine, on_vein, {2, 1, 0})
+	drain_field_placements(state, simulation_content)
+	drill := entity_at(&state.world.entities, {0, 1, 0}, on_vein)
+	testing.expect_value(t, drill.kind, Entity_Kind.Drill)
+	if drill.kind == .Drill {
+		testing.expect_value(t, pool_get(&state.world.entities.drills, drill).vein, planet_vein_id(0))
+	}
+	testing.expect_value(t, state.records.statistics.placed[drill_machine], 1)
+	testing.expect_value(t, state.records.statistics.placed[chest_machine], 1)
+	testing.expect_value(t, inventory_count(player.inventory, machines.machines[drill_machine].item), 1)
+}
+
+// The Field_Refused events of a player in the tick's events.
+count_field_refused_events :: proc(events: []Simulation_Event, refusal: Field_Edit_Refusal) -> int {
+	count := 0
+	for event in events {
+		if event.kind == .Field_Refused && event.field_refusal == refusal {
+			count += 1
+		}
+	}
+	return count
+}
+
+// A drill queued off every vein in a session's tick raises one
+// Field_Refused event with No_Vein, which the HUD toasts; the ghost of
+// that placement takes the refused colour.
+@(test)
+test_a_refused_field_placement_raises_one_event :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	session := start_field_test_session(config, content)
+	defer end_session(session)
+	simulation_content := field_test_content(session, content)
+	state := &session.simulation
+	machines := simulation_content.machines
+	generation := make_planet_generation(state.world.settings.seed, state.world.planet, state.field.spacing_millimetres)
+	home := planet_home_direction(state.world.planet.home)
+	off_vein := lay_test_field_pad(state, simulation_content, field_surface_under(generation, World_Position(fixed_scale(-home, generation.radius)), 0))
+	drill_machine := test_machine(machines, "burner_mining_drill")
+	inventory_add(state.players[0].inventory, content.items, machines.machines[drill_machine].item, 1)
+	placement := Field_Placement{kind = .Machine, machine = drill_machine, frame = off_vein, cell = {0, 1, 0}}
+	testing.expect_value(t, frame_ghost_color(field_placement_refusal(state, simulation_content, state.players[0], placement)), GHOST_INVALID_COLOR)
+	tick_field_test_simulation(state, simulation_content, {})
+	clear(&state.events)
+	append(&state.field.placements, Queued_Field_Placement{player = 0, placement = placement})
+	tick_field_test_simulation(state, simulation_content, {})
+	testing.expect_value(t, count_field_refused_events(state.events[:], .No_Vein), 1)
+	tick_field_test_simulation(state, simulation_content, {})
+	testing.expect_value(t, count_field_refused_events(state.events[:], .No_Vein), 1)
+}
+
+// A Dig held on ground the player's tools cannot dig is refused every
+// tick for ten ticks and raises one event; a new press raises another.
+@(test)
+test_a_held_refused_dig_raises_one_event :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	session := start_field_test_session(config, content)
+	defer end_session(session)
+	simulation_content := field_test_content(session, content)
+	for &record in simulation_content.field.materials {
+		record.tool_tier = 99
+	}
+	state := &session.simulation
+	tick_field_test_simulation(state, simulation_content, Input_Frame{look_delta = {0, 300}})
+	clear(&state.events)
+	for tick in 0 ..< 10 {
+		frame := Input_Frame{pressed = {.Mine}, just_pressed = tick == 0 ? {.Mine} : {}}
+		tick_field_test_simulation(state, simulation_content, frame)
+		testing.expectf(t, state.players[0].field_refusal == .Tool_Tier, "tick %d: %v", tick, state.players[0].field_refusal)
+	}
+	testing.expect_value(t, count_field_refused_events(state.events[:], .Tool_Tier), 1)
+	tick_field_test_simulation(state, simulation_content, {})
+	tick_field_test_simulation(state, simulation_content, Input_Frame{pressed = {.Mine}, just_pressed = {.Mine}})
+	testing.expect_value(t, count_field_refused_events(state.events[:], .Tool_Tier), 2)
+}
+
+// The pure rule: told when new against the last tick or on a press.
+@(test)
+test_a_field_refusal_is_news_when_new_or_pressed :: proc(t: ^testing.T) {
+	testing.expect(t, !field_refusal_is_news(.None, .Tool_Tier, true))
+	testing.expect(t, field_refusal_is_news(.Tool_Tier, .None, false))
+	testing.expect(t, !field_refusal_is_news(.Tool_Tier, .Tool_Tier, false))
+	testing.expect(t, field_refusal_is_news(.Tool_Tier, .Tool_Tier, true))
+	testing.expect(t, field_refusal_is_news(.No_Vein, .Tool_Tier, false))
 }

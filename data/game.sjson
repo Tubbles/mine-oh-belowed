@@ -5,8 +5,9 @@ tick_rate = 60
 day_length_seconds = 1200
 // Items every player starts with, by item id from items.sjson, the first
 // and every joining one (work item 0179): a stone pickaxe digs stone,
-// foundations start a pad, torches light a dug cave. Torches have no
-// recipe yet; machines are crafted by hand (work item 0012).
+// foundations start a pad, torches light a dug cave. More torches are
+// made by hand from a coal and a stone (0179); machines are crafted by
+// hand (work item 0012).
 starting_items = [
 	{item = "stone_pickaxe", count = 1}
 	{item = "foundation", count = 16}

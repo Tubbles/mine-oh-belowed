@@ -28,12 +28,11 @@ FIELD_VERTEX_CELL_COUNT :: FIELD_VERTEX_CELL_SIZE * FIELD_VERTEX_CELL_SIZE * FIE
 // A vertex position is in this fraction of a grid cell; a power of two,
 // so the positions convert to floats exactly.
 FIELD_MESH_POSITION_UNITS :: 256
-// The material slots of a vertex, the first four materials but air
+// The material slots of a vertex, every material but air in enum order
 // (field_material_slot), one weight each, which the renderer binds to a
-// texture each (render_field.odin). The ores of the veins' outcrops (0179)
-// share the stone's slot until the renderer takes more slots: their
-// tiles are generated (FIELD_MATERIAL_TILE_COUNT) but not yet bound.
-FIELD_TEXTURED_MATERIAL_COUNT :: 4
+// texture each (render_field.odin), the ores of the veins' outcrops
+// (0179) included.
+FIELD_TEXTURED_MATERIAL_COUNT :: len(Field_Material) - 1
 
 // The samples a node meshes from: index 0 is the sample at origin, a grid
 // step is step samples. Filled from the loaded chunks for the finest level
@@ -79,21 +78,25 @@ Field_Surface :: struct {
 
 // What render_field.odin uploads: positions in metres from the node's
 // origin; colors carry the tint in red, green and blue and the sky light
-// in alpha; lights carry the block light (0 to 1) in their first
-// component, uploaded as the texture coordinate attribute, the one raylib
-// attribute the field leaves free; weights are the material weights from
-// 0 to 1, uploaded as the tangent attribute, since raylib has no other
-// four float one.
+// in alpha; the material weights run from 0 to 1. raylib's attributes
+// the field leaves free carry the weights: weights (the first four
+// materials, topsoil to bedrock) go up as the tangent attribute, lights
+// as the texture coordinate attribute with the block light (0 to 1)
+// first and the fifth material's weight (hematite ore) second, and
+// ore_weights (the sixth and seventh, chalcopyrite and coal ore) as the
+// second texture coordinate attribute. Every float uploaded is read by
+// field.vs.
 Field_Mesh_Data :: struct {
-	positions: [dynamic][3]f32,
-	normals:   [dynamic][3]f32,
-	colors:    [dynamic][4]u8,
-	lights:    [dynamic][2]f32,
-	weights:   [dynamic][4]f32,
-	indices:   [dynamic]u16,
+	positions:   [dynamic][3]f32,
+	normals:     [dynamic][3]f32,
+	colors:      [dynamic][4]u8,
+	lights:      [dynamic][2]f32,
+	weights:     [dynamic][4]f32,
+	ore_weights: [dynamic][2]f32,
+	indices:     [dynamic]u16,
 }
 
-#assert(FIELD_TEXTURED_MATERIAL_COUNT == 4, "the material weights travel in one four float attribute")
+#assert(FIELD_TEXTURED_MATERIAL_COUNT == 7, "the material weights travel in the tangent, the second texture coordinate and the first's second component")
 
 // Local from -1 to FIELD_GRID_CELLS on every axis.
 field_grid_index :: proc(local: [3]i32) -> int {
@@ -110,9 +113,6 @@ field_sample_is_ground :: proc(density: i8) -> bool {
 }
 
 field_material_slot :: proc(material: Field_Material) -> int {
-	if int(material) > FIELD_TEXTURED_MATERIAL_COUNT {
-		return field_material_slot(.Stone)
-	}
 	return int(material) - 1
 }
 
@@ -380,8 +380,13 @@ field_mesh_from_surface :: proc(surface: Field_Surface, step: i32, spacing_milli
 		append(&data.positions, [3]f32{f32(vertex.position.x), f32(vertex.position.y), f32(vertex.position.z)} * metres_per_unit)
 		append(&data.normals, field_vertex_normal(vertex.gradient))
 		append(&data.colors, [4]u8{vertex.color.r, vertex.color.g, vertex.color.b, vertex.light[.Sky]})
-		append(&data.lights, [2]f32{f32(vertex.light[.Block]) / FIELD_LIGHT_FULL, 0})
-		append(&data.weights, [4]f32{f32(vertex.weights[0]), f32(vertex.weights[1]), f32(vertex.weights[2]), f32(vertex.weights[3])} / 255)
+		weights: [FIELD_TEXTURED_MATERIAL_COUNT]f32
+		for weight, slot in vertex.weights {
+			weights[slot] = f32(weight) / 255
+		}
+		append(&data.lights, [2]f32{f32(vertex.light[.Block]) / FIELD_LIGHT_FULL, weights[4]})
+		append(&data.weights, [4]f32{weights[0], weights[1], weights[2], weights[3]})
+		append(&data.ore_weights, [2]f32{weights[5], weights[6]})
 	}
 	append(&data.indices, ..surface.indices[:])
 	return data
@@ -394,6 +399,7 @@ make_field_mesh_data :: proc(allocator := context.allocator) -> Field_Mesh_Data 
 		colors = make([dynamic][4]u8, allocator),
 		lights = make([dynamic][2]f32, allocator),
 		weights = make([dynamic][4]f32, allocator),
+		ore_weights = make([dynamic][2]f32, allocator),
 		indices = make([dynamic]u16, allocator),
 	}
 }
@@ -428,5 +434,6 @@ destroy_field_mesh_data :: proc(data: Field_Mesh_Data) {
 	delete(data.colors)
 	delete(data.lights)
 	delete(data.weights)
+	delete(data.ore_weights)
 	delete(data.indices)
 }

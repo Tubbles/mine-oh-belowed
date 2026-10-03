@@ -100,8 +100,13 @@ planet_generation_record_problem :: proc(record: Planet_Generation_Record) -> st
 
 // The home's direction from the centre, a unit vector, as a spring's
 // (planet_spring_direction): latitude 90 is +y, longitude 0 lies towards
-// +x and 90 towards +z.
+// +x and 90 towards +z. A planet without a home (the zero record, as a
+// test planet's) takes the north pole, so the latitude 0 longitude 0
+// point is no home a planet can name.
 planet_home_direction :: proc(home: Planet_Home) -> [3]i64 {
+	if home == {} {
+		return FRAME_NORTH
+	}
 	return planet_spring_direction(Planet_Spring{latitude_degrees = home.latitude_degrees, longitude_degrees = home.longitude_degrees})
 }
 

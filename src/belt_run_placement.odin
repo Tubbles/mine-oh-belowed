@@ -283,7 +283,8 @@ remove_planned_poles :: proc(entities: ^Entities, machines: Machine_Registry, pl
 }
 
 // One queued run: refused as the other placements are, or its new poles
-// placed (one pole item each) and the run added. Should the run refuse
+// placed (one pole item each) and the run added; a belt run counts as a
+// flat belt placed for the quests (record_placed). Should the run refuse
 // after all (the poles stand a rounding off the plan), the poles are taken
 // away again and nothing is paid.
 drain_field_run_placement :: proc(state: ^Simulation_State, content: Simulation_Content, player: ^Player, run: Field_Run_Placement) {
@@ -300,6 +301,9 @@ drain_field_run_placement :: proc(state: ^Simulation_State, content: Simulation_
 		return
 	}
 	inventory_remove(player.inventory, content.machines.machines[content.field.belt_pole].item, new_pole_count(run.candidates))
+	if run.kind == .Belt {
+		record_placed(&state.records.statistics, content.field.run_belt)
+	}
 }
 
 // The tool.

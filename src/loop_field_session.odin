@@ -212,7 +212,9 @@ draw_field_players :: proc(scene: Field_Scene) {
 	}
 }
 
-// Where the viewer's Place would put a run, a foundation or a machine.
+// Where the viewer's Place would put a run, a foundation or a machine,
+// red where the drain would refuse it (field_placement_refusal: a drill
+// off every vein, a taken cell, a buried player).
 draw_field_ghosts :: proc(scene: Field_Scene) {
 	if scene.viewer < 0 || scene.viewer >= len(scene.state.players) {
 		return
@@ -231,8 +233,9 @@ draw_field_ghosts :: proc(scene: Field_Scene) {
 	if !found {
 		return
 	}
+	color := frame_ghost_color(field_placement_refusal(scene.state, scene.content, player, placement))
 	for footprint_cell in footprint_cells(cell, scene.content.machines.machines[machine].footprint, placement.rotation) {
-		draw_frame_ghost(frame, footprint_cell)
+		draw_frame_ghost(frame, footprint_cell, color)
 	}
 }
 
@@ -241,7 +244,7 @@ draw_field_scene :: proc(scene: Field_Scene, camera: rl.Camera3D, selection: []F
 	set_field_scene_point_lights(scene, camera)
 	draw_field(scene.renderer, camera, selection)
 	world := &scene.state.world
-	draw_frames(&world.entities)
+	draw_frames(&world.entities, scene.content.machines)
 	draw_entities(world, scene.content.machines, scene.models, scene.content.items, scene.frame)
 	draw_belt_runs(scene.belts, &world.entities, scene.content.machines, scene.content.items, scene.state.tick, scene.state.tick_rate)
 	draw_field_torches(scene.state.field.torches[:], scene.state.field.spacing_millimetres)

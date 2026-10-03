@@ -5,10 +5,12 @@ import "shared:raylib/rlgl"
 
 // The foundation frames' placeholder look (work item 0174): every
 // foundation cell of a frame other than the block frame is drawn as a
-// stone grey box at its frame's transform. The machines on the frames are
-// drawn by draw_entities under the same matrices (their models, or a box
-// per cell), since the field session draws them (0179). Floats are made
-// here only; the frames themselves are integers.
+// stone grey box at its frame's transform. The machines on the frames,
+// the pod among them (it rides in the foundations' pool, 0179), are drawn
+// by draw_entities under the same matrices (draw_entity_cells: the
+// model scaled to its footprint's cells by model_transform, or a box per
+// cell), since the field session draws them (0179). Floats are made here
+// only; the frames themselves are integers.
 
 FRAME_FOUNDATION_COLOR :: rl.Color{150, 146, 138, 255}
 FRAME_EDGE_COLOR :: rl.Color{60, 58, 54, 255}
@@ -51,14 +53,19 @@ draw_frame_cell :: proc(cell: World_Coordinate, color: rl.Color) {
 // Inside BeginMode3D. One pass over the occupied cells, each foundation
 // under its frame's matrix (made once per frame), so the cost follows the
 // cells and not the cells times the frames.
-draw_frames :: proc(entities: ^Entities) {
+draw_frames :: proc(entities: ^Entities, machines: Machine_Registry) {
 	matrices := make(map[Frame_Id][16]f32, len(entities.frames.frames), context.temp_allocator)
 	for frame in entities.frames.frames {
 		matrices[frame.id] = transmute([16]f32)frame_render_matrix(frame)
 	}
 	for key, occupant in entities.frames.occupants {
 		flat, found := matrices[key.frame]
-		if !found || entity_from_occupant(occupant.handle).kind != .Foundation {
+		handle := entity_from_occupant(occupant.handle)
+		if !found || handle.kind != .Foundation {
+			continue
+		}
+		// The pod's cells are its model's (draw_entities).
+		if common := entity_common(entities, handle); common == nil || machines.machines[common.machine].kind != .Foundation {
 			continue
 		}
 		rlgl.PushMatrix()
@@ -68,14 +75,20 @@ draw_frames :: proc(entities: ^Entities) {
 	}
 }
 
-// Where Place would put a foundation, see-through.
-draw_frame_ghost :: proc(frame: Frame, cell: World_Coordinate) {
+// The ghost's colour: the block ghost's refused colour when the
+// placement would be refused.
+frame_ghost_color :: proc(refusal: Field_Edit_Refusal) -> rl.Color {
+	return refusal == .None ? FRAME_GHOST_COLOR : GHOST_INVALID_COLOR
+}
+
+// Where Place would put a foundation or a machine, see-through.
+draw_frame_ghost :: proc(frame: Frame, cell: World_Coordinate, color: rl.Color) {
 	transform := frame_render_matrix(frame)
 	flat := transmute([16]f32)transform
 	rlgl.PushMatrix()
 	rlgl.MultMatrixf(raw_data(flat[:]))
 	centre := [3]f32{f32(cell.x) + 0.5, f32(cell.y) + 0.5, f32(cell.z) + 0.5}
-	rl.DrawCubeV(centre, 1, FRAME_GHOST_COLOR)
+	rl.DrawCubeV(centre, 1, color)
 	rl.DrawCubeWiresV(centre, 1, FRAME_EDGE_COLOR)
 	rlgl.PopMatrix()
 }
