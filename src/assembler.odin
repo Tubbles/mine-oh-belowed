@@ -851,9 +851,16 @@ tick_assemblers :: proc(tick_context: Entity_Tick_Context) {
 		if !assembler.alive {
 			continue
 		}
+		if assembler.broken {
+			continue
+		}
 		machine := content.machines.machines[assembler.machine]
 		before := assembler
-		if advance_assembler(&assembler, machine, content.items, content.recipes, tick_rate, lenient) {
+		crafted := advance_assembler(&assembler, machine, content.items, content.recipes, tick_rate, lenient)
+		if assembler_operated(before, assembler, crafted) {
+			record_operation(tick_context.entities, &assembler.common, machine, content.field.bare_ground, tick_rate)
+		}
+		if crafted {
 			craft := machine_craft(machine, content.recipes, assembler.recipe)
 			record_craft_outputs(statistics, craft, before, assembler)
 			record_voided_fluid_outputs(statistics, machine, craft, before, assembler)

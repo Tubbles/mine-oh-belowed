@@ -63,6 +63,9 @@ Hud_Context :: struct {
 	// false), the line reads the screen context's player.
 	field_view:               Field_Player,
 	field_view_set:           bool,
+	// What the tool line says of field_view's machine over bare ground
+	// (0201, bare_ground_line), read against the field once per frame.
+	bare_ground:              Bare_Ground_Line,
 }
 
 // The field player the tool line describes.
@@ -437,7 +440,7 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context, hud: Hud_Cont
 	draw_discovery_card(state, items, hud.discovery_card_clearance)
 	obtained := screen_context.unlocks.obtained
 	name_status, tool_status, vein_status := target_status_lines(screen_context.world, screen_context.records, screen_context.machines, screen_context.fluids, screen_context.veins, screen_context.blocks, items, obtained, effective_tool_tier(player^, items, screen_context.cheat_speed), player.target)
-	if line, shown := field_tool_line(hud_field_player(screen_context, hud), screen_context.content); shown {
+	if line, shown := field_tool_line(hud_field_player(screen_context, hud), screen_context.content, hud.bare_ground); shown {
 		tool_status = line
 	}
 	if ghost_line, shown := bore_drill_ghost_line(screen_context.world, screen_context.records.assayed_veins[:], screen_context.machines, screen_context.veins, screen_context.blocks, items, obtained, player^); shown {
@@ -461,7 +464,8 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context, hud: Hud_Cont
 		return
 	}
 	if field_pick_up_hint_shown(screen_context, hud) {
-		hints := [?]Glyph_Hint{{.Mine, text("hint_pick_up")}, {.Inventory, text("hint_inventory")}, {.Pause, text("hint_pause")}}
+		pick_up := field_target_is_broken(screen_context, hud) ? MACHINE_BROKEN_DOWN_KEY : "hint_pick_up"
+		hints := [?]Glyph_Hint{{.Mine, text(pick_up)}, {.Inventory, text("hint_inventory")}, {.Pause, text("hint_pause")}}
 		ui_glyph_bar(state, hints[:])
 		return
 	}
@@ -490,6 +494,14 @@ field_pick_up_hint_shown :: proc(screen_context: Screen_Context, hud: Hud_Contex
 		return false
 	}
 	return !field_entity_is_placed_by_world(&screen_context.world.entities, screen_context.machines, entity_from_occupant(target.occupant.handle))
+}
+
+// The aimed frame cell holds a broken machine (0201): its pick up hint
+// says to tear it down.
+field_target_is_broken :: proc(screen_context: Screen_Context, hud: Hud_Context) -> bool {
+	target := hud_field_player(screen_context, hud).frame_target
+	common := entity_common(&screen_context.world.entities, entity_from_occupant(target.occupant.handle))
+	return common != nil && common.broken
 }
 
 // The vein's name and what is left of it in total, for the HUD.
@@ -525,6 +537,9 @@ entity_status_text :: proc(world: ^World, core_samples: []Core_Sample, machines:
 		return ""
 	}
 	name := machine_name(machines, common.machine)
+	if common.broken {
+		return fmt.tprintf("%s  %s", name, text(MACHINE_BROKEN_DOWN_KEY))
+	}
 	#partial switch handle.kind {
 	case .Furnace:
 		furnace := pool_get(&world.entities.furnaces, handle)
@@ -595,16 +610,27 @@ target_status_lines :: proc(world: ^World, records: ^Game_Records, machines: Mac
 }
 
 // On the field (0187): a machine other than a foundation over bare ground
-// says what it needs, as Place's refusal toasts it; a held foundation
+// (0201, bare_ground_line) says how long it lasts there, or the refusal
+// Place would toast where the ground is too steep; a held foundation
 // names its block (0193, field_foundation_block).
-field_tool_line :: proc(player: Field_Player, content: Simulation_Content) -> (line: string, shown: bool) {
-	if _, bare := field_bare_ground_placement(player, field_placed_machine(player, content)); bare {
-		return text(field_refusal_keys[.Needs_Foundation]), true
+field_tool_line :: proc(player: Field_Player, content: Simulation_Content, bare: Bare_Ground_Line) -> (line: string, shown: bool) {
+	switch bare {
+	case .None:
+	case .Wears_Out:
+		machine := content.machines.machines[field_placed_machine(player, content)]
+		return bare_ground_wear_line(bare_ground_life_minutes(machine, content.field.bare_ground)), true
+	case .Too_Steep:
+		return text(field_refusal_keys[.Too_Steep]), true
 	}
 	if player.tool == .Foundation {
 		return foundation_block_line(field_foundation_block(player, content.field)), true
 	}
 	return "", false
+}
+
+// "On bare ground, wears out in 60 min". In the temp allocator.
+bare_ground_wear_line :: proc(minutes: int) -> string {
+	return replace_message_mark(text(FIELD_TOOL_BARE_GROUND_KEY), "{minutes}", fmt.tprint(minutes))
 }
 
 // "Foundation 5x5, 2 high". In the temp allocator.

@@ -237,11 +237,17 @@ drop_items_off_belt_ends :: proc(tick_context: Entity_Tick_Context) {
 	}
 }
 
-// splitters is the splitter pool the network's splitter nodes index.
-tick_belt_network :: proc(network: ^Belt_Network, tick_rate: int, splitters: []Splitter = nil) {
+// splitters is the splitter pool the network's splitter nodes index;
+// passed, when given, is indexed alike and marks the splitters an item
+// passed this tick (0201, their wear).
+tick_belt_network :: proc(network: ^Belt_Network, tick_rate: int, splitters: []Splitter = nil, passed: []bool = nil) {
 	for node in network.order {
 		if node < 0 {
-			advance_splitter(network, &splitters[-node - 1], tick_rate)
+			index := -node - 1
+			moved := advance_splitter(network, &splitters[index], tick_rate)
+			if int(index) < len(passed) {
+				passed[index] = moved
+			}
 		} else {
 			advance_belt_line(network, node, tick_rate, splitters)
 		}

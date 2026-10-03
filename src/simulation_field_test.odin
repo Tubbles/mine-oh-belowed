@@ -800,11 +800,13 @@ test_a_field_walk_counts_and_a_flight_does_not :: proc(t: ^testing.T) {
 	testing.expectf(t, state.records.statistics.distance_walked_millimetres > 1000, "walked %d mm", state.records.statistics.distance_walked_millimetres)
 }
 
-// Place with a stone furnace held over bare ground raises one
-// Needs_Foundation event (0187); the HUD's tool line says so and the
-// ghost there is red.
+// Place with a stone furnace held over the bare ground in front of the
+// spawn (0201): the tool line says what bare_ground_line reads there, and
+// Place either stands the furnace on a new frame of its own with no
+// foundation or raises one Too_Steep event and places nothing, as the
+// ghost's refusal says.
 @(test)
-test_a_machine_placed_on_bare_ground_needs_a_foundation :: proc(t: ^testing.T) {
+test_a_machine_placed_on_bare_ground_stands_or_is_too_steep :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
 	session := start_field_test_session(config, content)
@@ -817,24 +819,30 @@ test_a_machine_placed_on_bare_ground_needs_a_foundation :: proc(t: ^testing.T) {
 	tick_field_test_simulation(state, simulation_content, Input_Frame{look_delta = {0, 300}})
 	testing.expect_value(t, player.field.tool, Field_Held_Tool.Machine)
 	testing.expect(t, player.field.target.hit && !player.field.frame_target.hit, "the ground is aimed at")
-	_, bare := field_bare_ground_placement(player.field, furnace)
+	placement, bare := field_bare_ground_placement(player.field, furnace)
 	testing.expect(t, bare)
-	testing.expect_value(t, frame_ghost_color(.Needs_Foundation), GHOST_INVALID_COLOR)
-	line, shown := field_tool_line(player.field, simulation_content)
+	reading := bare_ground_line(state, simulation_content, player.field)
+	testing.expect(t, reading != .None, "a furnace does not stand on the ground for good")
+	refusal := field_placement_refusal(state, simulation_content, player^, placement)
+	testing.expect_value(t, refusal == .Too_Steep, reading == .Too_Steep)
+	line, shown := field_tool_line(player.field, simulation_content, reading)
 	testing.expect(t, shown)
-	testing.expect_value(t, line, text("field_refused_needs_foundation"))
+	expected := reading == .Too_Steep ? text("field_refused_too_steep") : bare_ground_wear_line(config.bare_ground_life_minutes)
+	testing.expect_value(t, line, expected)
 	clear(&state.events)
 	frames_before := len(state.world.entities.frames.frames)
 	tick_field_test_simulation(state, simulation_content, Input_Frame{pressed = {.Place}, just_pressed = {.Place}})
 	tick_field_test_simulation(state, simulation_content, {})
-	testing.expect_value(t, count_field_refused_events(state.events[:], .Needs_Foundation), 1)
-	testing.expect_value(t, len(state.world.entities.frames.frames), frames_before)
-	// Dig held on the press's tick queues a brush edit; the drain's
-	// reset of the refusal runs before the placement's, so it still tells.
-	clear(&state.events)
-	tick_field_test_simulation(state, simulation_content, Input_Frame{pressed = {.Place, .Mine}, just_pressed = {.Place, .Mine}})
-	testing.expect_value(t, count_field_refused_events(state.events[:], .Needs_Foundation), 1)
-	testing.expect_value(t, len(state.world.entities.frames.frames), frames_before)
+	if reading == .Too_Steep {
+		testing.expect_value(t, count_field_refused_events(state.events[:], .Too_Steep), 1)
+		testing.expect_value(t, len(state.world.entities.frames.frames), frames_before)
+		return
+	}
+	testing.expect_value(t, len(state.world.entities.frames.frames), frames_before + 1)
+	testing.expect_value(t, inventory_count(player.inventory, simulation_content.machines.machines[furnace].item), 0)
+	placed := state.world.entities.frames.frames[frames_before]
+	common := entity_common(&state.world.entities, entity_at(&state.world.entities, {}, placed.id))
+	testing.expect(t, common != nil && common.machine == furnace && !common.founded, "the furnace stands unfounded on its own frame")
 }
 
 // The pure rule: told when new against the last tick or on a press.

@@ -16,8 +16,9 @@ package game
 // applied at the end of the tick in order, as the brush edits are
 // (drain_field_placements). The hotbar's item decides what Place puts
 // down (simulation_field.odin): a foundation snaps to a frame or starts
-// one on the ground, any other machine snaps to a frame cell, turned by
-// the player's placement rotation. A foundation places a block of cells
+// one on the ground, any other machine snaps to a frame cell or stands on
+// flat bare ground on a frame of its own (0201, machine_wear.odin),
+// turned by the player's placement rotation. A foundation places a block of cells
 // at once (0193, foundation_block_cells), its size and height chosen in
 // the configure pop-up (0202) from the lists of data/game.sjson.
 
@@ -240,8 +241,9 @@ aim_field_player_at_frames :: proc(player: ^Field_Player, frames: ^Frame_Table, 
 
 // Where Place with a machine held puts it (field_placed_machine): against
 // the targeted frame's face, or, for a foundation, free on the targeted
-// ground. A machine other than a foundation needs a frame under it. A
-// foundation takes the player's block (field_foundation_block).
+// ground. A machine other than a foundation on bare ground is
+// field_bare_ground_placement's. A foundation takes the player's block
+// (field_foundation_block).
 field_player_placement :: proc(player: Field_Player, machine: Machine_Id, field: Field_Content) -> (placement: Field_Placement, wanted: bool) {
 	size, height := field_foundation_block(player, field)
 	switch {
@@ -259,9 +261,11 @@ field_player_placement :: proc(player: Field_Player, machine: Machine_Id, field:
 }
 
 // A machine other than a foundation aimed at bare ground, no frame
-// targeted (0187): a free placement, which the drain refuses with
-// Needs_Foundation (field_placement_refusal), so the ghost is the
-// machine's footprint at the cell a free foundation would take, red.
+// targeted (0187): a free placement on a new frame of its own (0201,
+// machine_wear.odin), which the drain refuses with Too_Steep where the
+// ground under the footprint is not flat enough
+// (bare_ground_placement_refusal); the ghost is the machine's footprint
+// at cell (0, 0, 0) of that frame, red when refused.
 field_bare_ground_placement :: proc(player: Field_Player, machine: Machine_Id) -> (placement: Field_Placement, found: bool) {
 	if machine == NO_MACHINE || player.tool == .Foundation || player.frame_target.hit || !player.target.hit {
 		return {}, false
@@ -288,6 +292,22 @@ FRAME_CELL_HALF_DIAGONAL_TEN_THOUSANDTHS :: 8661
 frame_cell_meets_capsule :: proc(frame: Frame, cell: World_Coordinate, capsule: Field_Capsule) -> bool {
 	half_diagonal := frame_pitch_units(frame) * FRAME_CELL_HALF_DIAGONAL_TEN_THOUSANDTHS / 10000 + 1
 	return field_distance_to_capsule_axis(capsule, frame_cell_centre(frame, cell)) < capsule.radius + half_diagonal
+}
+
+// A cell of a frame not yet made (a free foundation's, a machine's on
+// bare ground, 0201) whose centre lies in an occupied cell of an existing
+// frame: the new frame would stand inside the other's entities. Frames and
+// cells are few, so every frame is tried.
+new_frame_cells_meet_a_frame :: proc(table: ^Frame_Table, frame: Frame, cells: []World_Coordinate) -> bool {
+	for cell in cells {
+		centre := frame_cell_centre(frame, cell)
+		for other in table.frames {
+			if frame_cell_is_occupied(table, other.id, world_to_frame_cell(other, centre)) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 field_placement_buries_a_player :: proc(state: ^Simulation_State, tuning: Field_Player_Tuning, frame: Frame, cell: World_Coordinate) -> bool {
@@ -328,7 +348,7 @@ field_placement_refusal :: proc(state: ^Simulation_State, content: Simulation_Co
 		return .Unknown_Frame
 	}
 	if placement.new_frame && content.machines.machines[placement.machine].kind != .Foundation {
-		return .Needs_Foundation
+		return bare_ground_placement_refusal(state, content, player, placement, frame)
 	}
 	if content.machines.machines[placement.machine].kind == .Foundation {
 		return foundation_block_refusal(state, content, player, placement, frame)
@@ -381,6 +401,8 @@ foundation_block_refusal :: proc(state: ^Simulation_State, content: Simulation_C
 				return .Frame_Cell_Taken
 			}
 		}
+	} else if new_frame_cells_meet_a_frame(&entities.frames, frame, cells) {
+		return .Frame_Cell_Taken
 	}
 	for cell in cells {
 		if field_placement_buries_a_player(state, content.field.tuning, frame, cell) {
@@ -409,15 +431,18 @@ apply_foundation_block :: proc(state: ^Simulation_State, content: Simulation_Con
 }
 
 // A queued placement that field_placement_refusal let through: a
-// foundation block, a drill with its vein, any other machine on its
-// frame. Each placed machine counts for the quests (record_placed).
-// Returns the machines placed, one item each.
+// foundation block, a machine on bare ground on a frame of its own
+// (0201), a drill with its vein, any other machine on its frame. Each
+// placed machine counts for the quests (record_placed). Returns the
+// machines placed, one item each.
 apply_field_placement :: proc(state: ^Simulation_State, content: Simulation_Content, placement: Field_Placement) -> (placed: int) {
 	entities := &state.world.entities
 	placed = 1
 	switch {
 	case content.machines.machines[placement.machine].kind == .Foundation:
 		placed = apply_foundation_block(state, content, placement)
+	case placement.new_frame:
+		place_on_bare_ground(state, content, placement)
 	case content.machines.machines[placement.machine].kind == .Drill:
 		place_drill_on_frame(entities, content.machines, state.world.veins[:], placement.machine, placement.frame, placement.cell, placement.rotation)
 	case:

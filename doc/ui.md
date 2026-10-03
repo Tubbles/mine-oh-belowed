@@ -81,6 +81,7 @@ One slot code serves the inventory, the machine panels and chests (`ui_item_slot
 - R2 (Q, or Left Control with a click) quick moves (0078): across a machine panel by the inserters' rules (fuel to the fuel slot, ore to the input); in the inventory between the backpack and the hotbar, partial stacks first, then empty slots (0090). A second press within half a second, or a hold, moves every stack of the item. What does not fit stays.
 - Holding A with a stack in hand while the focus crosses machine slots spreads it evenly over them on release (Even Distribution).
 - A held stack follows the focus and the pointer, and returns to its slot when the screen closes. Machine inputs take only what the machine uses; a rejected drop stays in hand.
+- A broken machine's panel (0201, [content.md](content.md), Machines on bare ground) says "Broken down, tear it down" in the danger colour under its description.
 - Machine panels have Take all, Store all and Fill. An inserter's "In hand" slot shows what its arm carries: A or a drag lifts it, R2 moves it to the inventory, it takes nothing in (0079).
 - In the inventory the right stick click (keyboard X, `Menu_Drop`) drops the held stack, else the focused one, on the ground (0062); the glyph bar shows Drop then. Pick up rules: [logistics.md](logistics.md), Loose items.
 - In the world `Drop_Stack` (d-pad down, keyboard X, the touch overlay's long press on the selected hotbar slot) drops the selected hotbar slot's stack in front of the player as a loose item.

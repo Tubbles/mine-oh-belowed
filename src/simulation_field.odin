@@ -55,6 +55,7 @@ make_field_content :: proc(config: Game_Config, items: Item_Registry, machines: 
 		torch_item = torch_found ? torch_item : NO_ITEM,
 		torch_level = u8(torch_level),
 		starting_items = config.starting_items,
+		bare_ground = make_bare_ground_tuning(config),
 	}
 }
 

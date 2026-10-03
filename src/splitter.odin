@@ -208,18 +208,26 @@ splitter_pass_front_item :: proc(network: ^Belt_Network, splitter: ^Splitter, in
 }
 
 // Both lanes, the input whose turn it is (or the priority input) first.
-advance_splitter :: proc(network: ^Belt_Network, splitter: ^Splitter, tick_rate: int) {
+// Returns whether an item passed, which wears a splitter on bare ground
+// (0201); a broken one passes nothing.
+advance_splitter :: proc(network: ^Belt_Network, splitter: ^Splitter, tick_rate: int) -> (passed: bool) {
+	if splitter.broken {
+		return false
+	}
 	for lane in Belt_Lane {
 		first := splitter.next_input[lane]
 		if splitter.input_priority != .None {
 			first = priority_side(splitter.input_priority)
 		}
 		for input in ([2]Splitter_Side{first, other_side(first)}) {
-			if splitter_pass_front_item(network, splitter, input, lane, tick_rate) && splitter.input_priority == .None {
+			moved := splitter_pass_front_item(network, splitter, input, lane, tick_rate)
+			passed = passed || moved
+			if moved && splitter.input_priority == .None {
 				splitter.next_input[lane] = other_side(input)
 			}
 		}
 	}
+	return
 }
 
 // Adding, turning and removing.

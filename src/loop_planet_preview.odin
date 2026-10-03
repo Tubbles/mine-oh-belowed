@@ -404,8 +404,8 @@ field_edit_refusal_text :: proc(refusal: Field_Edit_Refusal, material: Field_Mat
 		return "  the inventory is full"
 	case .No_Vein:
 		return "  a drill needs a vein's outcrop under it"
-	case .Needs_Foundation:
-		return "  the machine needs a foundation under it"
+	case .Too_Steep:
+		return "  the ground is too steep without a foundation"
 	case .Too_Few_Foundations:
 		return "  too few foundations for the block"
 	case .Something_Stands_On_It:

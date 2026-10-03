@@ -215,10 +215,12 @@ lab_wants_power :: proc(lab: Lab, research: Research_State, technologies: Techno
 }
 
 // Units in progress for the current queue, over every lab.
+// A broken lab's unit (0201) is given up, so another lab takes it and
+// the queue does not wait on a lab that never finishes.
 units_in_progress :: proc(labs: []Lab, research: Research_State) -> int {
 	count := 0
 	for lab in labs {
-		if lab.alive && lab_unit_is_current(lab, research) {
+		if lab.alive && !lab.broken && lab_unit_is_current(lab, research) {
 			count += 1
 		}
 	}
@@ -257,7 +259,9 @@ finish_research_unit :: proc(research: ^Research_State, technologies: Technology
 
 // One tick of a lab. in_progress counts the units under way in every lab
 // for the current queue and is kept up to date as units start and end.
-advance_lab :: proc(lab: ^Lab, machine: Machine, research: ^Research_State, in_progress: ^int, technologies: Technology_Registry, lab_packs: []Item_Id, tick_rate: int) {
+// Returns whether the unit's progress moved, which wears a lab on bare
+// ground (0201, record_operation).
+advance_lab :: proc(lab: ^Lab, machine: Machine, research: ^Research_State, in_progress: ^int, technologies: Technology_Registry, lab_packs: []Item_Id, tick_rate: int) -> (operated: bool) {
 	if lab.working && !lab_unit_is_current(lab^, research^) {
 		lab.working, lab.progress_ticks = false, 0
 	}
@@ -281,6 +285,7 @@ advance_lab :: proc(lab: ^Lab, machine: Machine, research: ^Research_State, in_p
 	lab.state = .Researching
 	if take_power_step(&lab.power) {
 		lab.progress_ticks += 1
+		operated = true
 	}
 	if lab.progress_ticks < technology_unit_ticks(technology, lab_speed_percent(machine, research^, technologies), tick_rate) {
 		return
@@ -288,6 +293,7 @@ advance_lab :: proc(lab: ^Lab, machine: Machine, research: ^Research_State, in_p
 	lab.working, lab.progress_ticks = false, 0
 	in_progress^ -= 1
 	finish_research_unit(research, technologies)
+	return
 }
 
 tick_labs :: proc(tick_context: Entity_Tick_Context) {
@@ -295,10 +301,12 @@ tick_labs :: proc(tick_context: Entity_Tick_Context) {
 	labs := tick_context.entities.labs.entries[:]
 	in_progress := units_in_progress(labs, records.research)
 	for &lab in labs {
-		if lab.alive {
+		if lab.alive && !lab.broken {
 			machine := content.machines.machines[lab.machine]
 			before := lab
-			advance_lab(&lab, machine, &records.research, &in_progress, content.technologies, content.machines.lab_packs, tick_rate)
+			if advance_lab(&lab, machine, &records.research, &in_progress, content.technologies, content.machines.lab_packs, tick_rate) {
+				record_operation(tick_context.entities, &lab.common, machine, content.field.bare_ground, tick_rate)
+			}
 			record_slot_consumption(&records.statistics, before.slots[:lab.slot_count], lab.slots[:lab.slot_count])
 		}
 	}

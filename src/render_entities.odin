@@ -174,7 +174,7 @@ draw_inserter :: proc(inserter: Inserter, machine: Machine, models: Model_Render
 // (a model moves its own part instead), and the output arrow on the top
 // face.
 draw_drill :: proc(drill: Drill, machine: Machine, machines: Machine_Registry, models: Model_Renderer, frame: Model_Frame) {
-	working := marker_means_working(machine_marker_colour(drill.state, true))
+	working := marker_means_working(entity_marker_colour(drill.common, machine_marker_colour(drill.state, true)))
 	color, top_color := DRILL_COLOR, DRILL_TOP_COLOR
 	if drill_is_bore(machine) {
 		color, top_color = BORE_DRILL_COLOR, BORE_DRILL_TOP_COLOR
@@ -221,7 +221,7 @@ draw_entities :: proc(world: ^World, machines: Machine_Registry, models: Model_R
 	for furnace in world.entities.furnaces.entries {
 		if furnace.alive {
 			top := furnace.state == .Burning ? FURNACE_BURNING_TOP_COLOR : FURNACE_COLOR
-			working := marker_means_working(machine_marker_colour(furnace.state, furnace_has_fuel(furnace)))
+			working := marker_means_working(entity_marker_colour(furnace.common, machine_marker_colour(furnace.state, furnace_has_fuel(furnace))))
 			draw_entity_cells(furnace.common, machines, models, frame, working, FURNACE_COLOR, top)
 		}
 	}
@@ -251,13 +251,13 @@ draw_entities :: proc(world: ^World, machines: Machine_Registry, models: Model_R
 		if assembler.alive {
 			color := crafting_machine_colors[machines.machines[assembler.machine].recipe_maker]
 			top := assembler.state == .Working ? ASSEMBLER_WORKING_TOP_COLOR : color
-			working := marker_means_working(machine_marker_colour(assembler.state, true))
+			working := marker_means_working(entity_marker_colour(assembler.common, machine_marker_colour(assembler.state, true)))
 			draw_entity_cells(assembler.common, machines, models, frame, working, color, top)
 		}
 	}
 	for lab in world.entities.labs.entries {
 		if lab.alive {
-			working := marker_means_working(machine_marker_colour(lab.state, true))
+			working := marker_means_working(entity_marker_colour(lab.common, machine_marker_colour(lab.state, true)))
 			draw_entity_cells(lab.common, machines, models, frame, working, LAB_COLOR, lab.state == .Researching ? LAB_RESEARCHING_TOP_COLOR : LAB_COLOR)
 		}
 	}
@@ -371,28 +371,28 @@ draw_machine_markers :: proc(world: ^World, machines: Machine_Registry, models: 
 	entities := &world.entities
 	for furnace in entities.furnaces.entries {
 		if furnace.alive {
-			draw_marker(furnace.common, models, colors[machine_marker_colour(furnace.state, furnace_has_fuel(furnace))], eye)
+			draw_marker(furnace.common, models, colors[entity_marker_colour(furnace.common, machine_marker_colour(furnace.state, furnace_has_fuel(furnace)))], eye)
 		}
 	}
 	for assembler in entities.assemblers.entries {
 		if assembler.alive {
-			draw_marker(assembler.common, models, colors[machine_marker_colour(assembler.state, machine_is_connected(entities, assembler.handle))], eye)
+			draw_marker(assembler.common, models, colors[entity_marker_colour(assembler.common, machine_marker_colour(assembler.state, machine_is_connected(entities, assembler.handle)))], eye)
 		}
 	}
 	for drill in entities.drills.entries {
 		if drill.alive {
-			draw_marker(drill.common, models, colors[machine_marker_colour(drill.state, machine_is_connected(entities, drill.handle))], eye)
+			draw_marker(drill.common, models, colors[entity_marker_colour(drill.common, machine_marker_colour(drill.state, machine_is_connected(entities, drill.handle)))], eye)
 		}
 	}
 	for lab in entities.labs.entries {
 		if lab.alive {
-			draw_marker(lab.common, models, colors[machine_marker_colour(lab.state, machine_is_connected(entities, lab.handle))], eye)
+			draw_marker(lab.common, models, colors[entity_marker_colour(lab.common, machine_marker_colour(lab.state, machine_is_connected(entities, lab.handle)))], eye)
 		}
 	}
 	for fluid_machine in entities.fluid_machines.entries {
 		if fluid_machine.alive && fluid_machine_has_marker(machines.machines[fluid_machine.machine].kind) {
 			connected := machine_is_connected(entities, fluid_machine.handle)
-			draw_marker(fluid_machine.common, models, colors[machine_marker_colour(fluid_machine.state, connected)], eye)
+			draw_marker(fluid_machine.common, models, colors[entity_marker_colour(fluid_machine.common, machine_marker_colour(fluid_machine.state, connected))], eye)
 		}
 	}
 }

@@ -404,7 +404,9 @@ add_productivity :: proc(drill: ^Drill, bonus_per_mille: u32) {
 // burns (or power is drawn) and progress counts only while the drill
 // works. Veins are never unregistered, so a missing vein only happens to
 // a drill placed without one, and it reads as exhausted.
-advance_drill :: proc(tick_context: Entity_Tick_Context, drill: ^Drill) {
+// Returns whether the tick advanced the drill's work (boring or its
+// cycle), which wears a drill on bare ground (0201, record_operation).
+advance_drill :: proc(tick_context: Entity_Tick_Context, drill: ^Drill) -> (operated: bool) {
 	entities, records, content, tick_rate := tick_context.entities, tick_context.records, tick_context.content, tick_context.tick_rate
 	machine := content.machines.machines[drill.machine]
 	if !stack_is_empty(drill.held) && !output_drill_item(entities, &records.statistics, content, drill, machine) {
@@ -420,6 +422,7 @@ advance_drill :: proc(tick_context: Entity_Tick_Context, drill: ^Drill) {
 	if !drill_draws_energy(drill, machine, content.items, tick_rate, activity) {
 		return
 	}
+	operated = true
 	if activity == .Boring {
 		drill.bored_ticks += 1
 		return
@@ -438,6 +441,7 @@ advance_drill :: proc(tick_context: Entity_Tick_Context, drill: ^Drill) {
 	if !output_drill_item(entities, &records.statistics, content, drill, machine) {
 		drill.state = drill_blocked_state(entities, content, drill^, machine)
 	}
+	return
 }
 
 // The boring progress while a bore drill bores, else the cycle's.

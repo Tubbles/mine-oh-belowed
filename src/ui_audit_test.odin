@@ -633,6 +633,23 @@ audit_waiting_inserter :: proc(audit: ^Ui_Audit) {
 	}
 }
 
+// A broken furnace (0201): the panel's "Broken down, tear it down" line
+// under the description, and the HUD's state line naming it, at every
+// size. The furnace and the target are restored.
+audit_broken_furnace :: proc(audit: ^Ui_Audit) {
+	player := &audit.simulation.players[0]
+	for &furnace in audit.simulation.world.entities.furnaces.entries {
+		if !furnace.alive {
+			continue
+		}
+		target := player.target
+		furnace.broken, player.target = true, Raycast_Hit{hit = true, entity = furnace.handle}
+		audit_case(audit, {name = "broken furnace", screens = {.Machine}, hud = true, machine = furnace.handle, walk_focus = true})
+		furnace.broken, player.target = false, target
+		return
+	}
+}
+
 // The Display tab with the Resolution row live (not borderless) at a
 // configured size outside the choices and the widest cap (work item 0080).
 // The settings are restored.
@@ -919,6 +936,7 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 		audit_case(audit, {name = fmt.tprintf("machine %s touch row", machine.id), screens = {.Machine}, machine = handle, hud = true, touch = true})
 	}
 	audit_waiting_inserter(audit)
+	audit_broken_furnace(audit)
 	audit_case(audit, {name = "recipes", screens = {.Recipes}, walk_focus = true})
 	audit_recipe_ingredient_states(audit)
 	for &assembler in simulation.world.entities.assemblers.entries {

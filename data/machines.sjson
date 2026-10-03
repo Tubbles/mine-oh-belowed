@@ -241,6 +241,15 @@
 // high, no other fields. Its cells are the solid floor of a frame that
 // machines stand on (doc/content.md, Foundations); placed free it starts
 // a frame at foundation_pitch_millimetres (game.sjson).
+// Machines on bare ground (work item 0201, doc/content.md, Machines on
+// bare ground): stands_on_ground (optional, default false) marks a
+// machine that stands on the ground without a foundation for good: it is
+// never refused for slope and never wears. Set on the belts, the pipe,
+// the electric poles, the belt pole and the pod. Every other machine
+// placed on bare ground breaks down after bare_ground_life_minutes of
+// operation (game.sjson) unless it stands on foundations;
+// bare_ground_life_minutes (optional, 1 to 10080) overrides that for the
+// machine.
 // Belt pole (work item 0176, kind belt_pole): a 1 by 1 by 1 footprint and
 // height_millimetres (250 to 4000), how high over its bottom a belt or
 // pipe run ends on it (doc/content.md, Belt poles and runs). Placed free
@@ -321,6 +330,7 @@ machines = [
 		description_key = "describe_machine_belt"
 		item = "belt"
 		kind = "belt"
+		stands_on_ground = true
 		footprint = {width = 1, depth = 1, height = 1}
 		belt_shape = "flat"
 		belt_speed_blocks_per_second = 1.875
@@ -331,6 +341,7 @@ machines = [
 		description_key = "describe_machine_belt_ramp"
 		item = "belt_ramp"
 		kind = "belt"
+		stands_on_ground = true
 		footprint = {width = 1, depth = 1, height = 1}
 		belt_shape = "ramp"
 		belt_speed_blocks_per_second = 1.875
@@ -341,6 +352,7 @@ machines = [
 		description_key = "describe_machine_belt_lift"
 		item = "belt_lift"
 		kind = "belt"
+		stands_on_ground = true
 		footprint = {width = 1, depth = 1, height = 1}
 		belt_shape = "lift"
 		belt_speed_blocks_per_second = 1.875
@@ -351,6 +363,7 @@ machines = [
 		description_key = "describe_machine_belt_2"
 		item = "belt_2"
 		kind = "belt"
+		stands_on_ground = true
 		footprint = {width = 1, depth = 1, height = 1}
 		belt_shape = "flat"
 		belt_speed_blocks_per_second = 3.75
@@ -361,6 +374,7 @@ machines = [
 		description_key = "describe_machine_belt_ramp_2"
 		item = "belt_ramp_2"
 		kind = "belt"
+		stands_on_ground = true
 		footprint = {width = 1, depth = 1, height = 1}
 		belt_shape = "ramp"
 		belt_speed_blocks_per_second = 3.75
@@ -371,6 +385,7 @@ machines = [
 		description_key = "describe_machine_belt_lift_2"
 		item = "belt_lift_2"
 		kind = "belt"
+		stands_on_ground = true
 		footprint = {width = 1, depth = 1, height = 1}
 		belt_shape = "lift"
 		belt_speed_blocks_per_second = 3.75
@@ -508,6 +523,7 @@ machines = [
 		description_key = "describe_machine_pipe"
 		item = "pipe"
 		kind = "pipe"
+		stands_on_ground = true
 		footprint = {width = 1, depth = 1, height = 1}
 		buffer_litres = 100
 		flow_litres_per_second = 1200
@@ -674,6 +690,7 @@ machines = [
 		model = "small_pole"
 		item = "small_pole"
 		kind = "pole"
+		stands_on_ground = true
 		footprint = {width = 1, depth = 1, height = 3}
 		supply_volume = {width = 5, depth = 5, height = 4}
 		wire_reach = 7
@@ -685,6 +702,7 @@ machines = [
 		model = "big_pole"
 		item = "big_pole"
 		kind = "pole"
+		stands_on_ground = true
 		footprint = {width = 1, depth = 1, height = 6}
 		supply_volume = {width = 3, depth = 3, height = 6}
 		wire_reach = 24
@@ -696,6 +714,7 @@ machines = [
 		model = "substation"
 		item = "substation"
 		kind = "pole"
+		stands_on_ground = true
 		footprint = {width = 2, depth = 2, height = 3}
 		supply_volume = {width = 18, depth = 18, height = 6}
 		wire_reach = 18
@@ -955,6 +974,7 @@ machines = [
 		description_key = "describe_machine_belt_pole"
 		item = "belt_pole"
 		kind = "belt_pole"
+		stands_on_ground = true
 		footprint = {width = 1, depth = 1, height = 1}
 		height_millimetres = 1500
 	}
@@ -963,6 +983,7 @@ machines = [
 		name_key = "machine_pod"
 		description_key = "describe_machine_pod"
 		kind = "pod"
+		stands_on_ground = true
 		footprint = {width = 6, depth = 6, height = 8}
 		model = "pod"
 		// Beside the bed, over the bed, the door.

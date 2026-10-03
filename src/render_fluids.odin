@@ -153,7 +153,7 @@ draw_fluid_machine :: proc(fluid_machine: Fluid_Machine, machines: Machine_Regis
 	if (machine.kind == .Combustion_Generator || machine.kind == .Hydro_Turbine) && fluid_machine.state == .Generating {
 		top_color = GENERATING_TOP_COLOR
 	}
-	working := marker_means_working(machine_marker_colour(fluid_machine.state, true))
+	working := marker_means_working(entity_marker_colour(fluid_machine.common, machine_marker_colour(fluid_machine.state, true)))
 	draw_entity_cells(fluid_machine.common, machines, models, frame, working, color, top_color)
 	buffers := fluid_machine.buffers
 	draw_fluid_ports(fluid_machine.common, machine, buffers[:], fluids)

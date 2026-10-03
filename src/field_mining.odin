@@ -78,8 +78,9 @@ Field_Edit_Refusal :: enum u8 {
 	Inventory_Full,
 	// A drill on a frame stands off every vein's disc (0179).
 	No_Vein,
-	// A machine other than a foundation aimed at bare ground (0187).
-	Needs_Foundation,
+	// A machine other than a foundation aimed at bare ground too steep to
+	// stand on without one (0201, bare_ground_is_flat).
+	Too_Steep,
 	// A foundation block needs more foundations than are held (0193); the
 	// event carries both counts (record_refused_foundation_counts).
 	Too_Few_Foundations,
@@ -102,7 +103,7 @@ field_refusal_keys := [Field_Edit_Refusal]string {
 	.Torch_Blocked     = "field_refused_torch_blocked",
 	.Inventory_Full    = "field_refused_inventory_full",
 	.No_Vein           = "field_refused_no_vein",
-	.Needs_Foundation  = "field_refused_needs_foundation",
+	.Too_Steep         = "field_refused_too_steep",
 	.Too_Few_Foundations = "field_refused_too_few_foundations",
 	.Something_Stands_On_It = "field_refused_something_stands_on_it",
 }
@@ -189,6 +190,8 @@ Field_Content :: struct {
 	torch_level: u8,
 	// The starter kit a joining player gets (data/game.sjson).
 	starting_items: []Starting_Item,
+	// Machines on bare ground (0201, machine_wear.odin).
+	bare_ground: Bare_Ground_Tuning,
 }
 
 destroy_field_simulation :: proc(simulation: ^Field_Simulation) {

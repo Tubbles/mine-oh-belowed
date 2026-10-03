@@ -296,10 +296,15 @@ advance_fluid_machine :: proc(fluid_machine: ^Fluid_Machine, machine: Machine, c
 // moves it. A nil statistics (tests) records nothing.
 tick_fluids :: proc(entities: ^Entities, content: Simulation_Content, tick_rate: int, statistics: ^Statistics = nil) {
 	for &fluid_machine in entities.fluid_machines.entries {
-		if fluid_machine.alive {
+		if fluid_machine.alive && !fluid_machine.broken {
 			before := fluid_machine
 			machine := content.machines.machines[fluid_machine.machine]
 			advance_fluid_machine(&fluid_machine, machine, content, tick_rate)
+			// A generator's operation is its delivered energy, counted in
+			// apply_electric_balance; its Producing state would count twice.
+			if !machine_is_generator(machine) && fluid_machine_operated(fluid_machine.state) {
+				record_operation(entities, &fluid_machine.common, machine, content.field.bare_ground, tick_rate)
+			}
 			if statistics != nil {
 				record_fluid_machine_tick(statistics, machine, before, fluid_machine)
 			}

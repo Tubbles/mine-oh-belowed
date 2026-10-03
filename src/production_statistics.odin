@@ -214,8 +214,9 @@ lab_uses_pack :: proc(research: Research_State, technologies: Technology_Registr
 }
 
 // Bottleneck overlay markers: green working, yellow waiting for room for
-// its output, red missing input, fuel, power or a recipe, grey idle or an
-// electric machine outside every network (nothing to fix on the machine).
+// its output, red missing input, fuel, power or a recipe or broken down
+// (0201, entity_marker_colour), grey idle or an electric machine outside
+// every network (nothing to fix on the machine).
 Marker_Colour :: enum u8 {
 	Green,
 	Yellow,

@@ -1216,6 +1216,7 @@ make_hud_context :: proc(state: ^Frame_State, index: int) -> Hud_Context {
 		field_view         = lockstep_view_player(&session.lockstep, &session.simulation, viewport.player).field,
 		field_view_set     = true,
 	}
+	hud.bare_ground = bare_ground_line(&session.simulation, frame_simulation_content(state), hud.field_view)
 	if index == 0 && frame_touch_overlay_on(state) {
 		touch := touch_overlay_context(state)
 		hud.touch_aims, hud.touch_hud_buttons, hud.discovery_card_clearance = touch_overlay_aims(touch), frame_hud_touch_buttons_shown(touch), discovery_card_clearance(touch)

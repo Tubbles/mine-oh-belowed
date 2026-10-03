@@ -26,6 +26,9 @@ test_field_game_config :: proc() -> Game_Config {
 	config.belt_runs = shipped.belt_runs
 	config.field_simulation = shipped.field_simulation
 	config.starting_items = shipped.starting_items
+	config.bare_ground_flatness_millimetres = shipped.bare_ground_flatness_millimetres
+	config.bare_ground_life_minutes = shipped.bare_ground_life_minutes
+	config.salvage_percent = shipped.salvage_percent
 	return config
 }
 

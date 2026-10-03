@@ -160,6 +160,7 @@ The factory: what changes per tick; blocks belong to the world, prototypes to co
   - `entity.odin`: `Entity_Kind`, `Entity_Handle`, `Entity_Common`, `Entity_Pool`, `Entities`, add and remove, `tick_entities`.
   - `entity_placement.odin`: placement rules, `commit_placement`, rotation, pick up; a drill on a frame with its vein (`place_drill_on_frame`, `frame_drill_placement_refusal`, 0179).
   - `entity_pod.odin`: the pod and its pad of foundations, `place_pod` (0179).
+  - `machine_wear.odin`: machines on bare ground (0201): the flatness check and the placement on a frame of its own (`bare_ground_is_flat`, `place_on_bare_ground`), the founded flag, the wear tick and the breakdown (`record_operation`, `log_machine_breakdowns`), the salvage (`machine_return_stacks`) and the wear table of the save.
   - `entity_frames.odin`: placement on foundation frames (0174), `place_on_frame`, `place_free_foundation`, `frame_placement_refusal`; the field's place commands (`Field_Placement`, `drain_field_placements`, `apply_field_placement`, `aim_field_player_at_frames`); the frame tables of the save (`write_frame_tables`, `read_frame_tables`).
   - `machine.odin`: `Machine_Kind`, `Machine`, `Machine_Registry` and per kind validation.
   - `item_transfer.odin`: `entity_accepts`, `entity_insert`, `entity_extract`.

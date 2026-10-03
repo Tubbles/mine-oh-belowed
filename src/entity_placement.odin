@@ -431,14 +431,14 @@ entity_can_be_picked_up :: proc(world: ^World, machines: Machine_Registry, handl
 	return common != nil && machines.machines[common.machine].item != NO_ITEM
 }
 
-// The entity's contents and then its item, in the temp allocator.
+// The entity's contents and then its item, or a worn machine's salvage
+// in its place (0201, machine_return_stacks), in the temp allocator.
 entity_pickup_stacks :: proc(world: ^World, content: Simulation_Content, handle: Entity_Handle) -> []Item_Stack {
 	returned := make([dynamic]Item_Stack, context.temp_allocator)
 	common := entity_common(&world.entities, handle)
 	if common == nil {
 		return returned[:]
 	}
-	machine_item := content.machines.machines[common.machine].item
 	append(&returned, ..entity_slots(&world.entities, handle))
 	append(&returned, ..belt_block_stacks(&world.entities, handle))
 	append(&returned, ..inserter_held_stacks(&world.entities, handle))
@@ -450,7 +450,7 @@ entity_pickup_stacks :: proc(world: ^World, content: Simulation_Content, handle:
 	if pad := pool_get(&world.entities.launch_pads, handle); pad != nil {
 		append(&returned, ..launch_pad_held_stacks(pad^, content.machines.machines[pad.machine]))
 	}
-	append(&returned, Item_Stack{item = machine_item, count = 1})
+	append(&returned, ..machine_return_stacks(content, common^))
 	return returned[:]
 }
 

@@ -83,6 +83,12 @@ Game_Config :: struct {
 	// The field session's simulated chunks and its torch (work item 0179,
 	// simulation_field_chunk_set.odin, simulation_field.odin).
 	field_simulation:     Field_Simulation_Config,
+	// Machines on bare ground (work item 0201, machine_wear.odin): the
+	// slope a machine stands on without a foundation, its life in minutes
+	// of operation there, and the share of its recipe a worn one returns.
+	bare_ground_flatness_millimetres: int,
+	bare_ground_life_minutes:         int,
+	salvage_percent:                  int,
 }
 
 // The field's simulated chunk set: every chunk within chunk_radius chunks
@@ -514,7 +520,26 @@ validate_game_config :: proc(config: Game_Config) -> string {
 	if problem := field_simulation_problem(config.field_simulation); problem != "" {
 		return problem
 	}
+	if problem := bare_ground_problem(config); problem != "" {
+		return problem
+	}
 	return field_player_speed_problem(config.field_player, config.tick_rate)
+}
+
+// Every value of the bare ground (0201) inside its bound; a missing key
+// reads as zero and fails the life's and the salvage's.
+bare_ground_problem :: proc(config: Game_Config) -> string {
+	bounds := [?]Config_Bound {
+		{"bare_ground_flatness_millimetres", config.bare_ground_flatness_millimetres, 0, MAXIMUM_BARE_GROUND_FLATNESS_MILLIMETRES},
+		{"bare_ground_life_minutes", config.bare_ground_life_minutes, 1, MAXIMUM_BARE_GROUND_LIFE_MINUTES},
+		{"salvage_percent", config.salvage_percent, 1, 100},
+	}
+	for bound in bounds {
+		if bound.value < bound.minimum || bound.value > bound.maximum {
+			return fmt.tprintf("%s %d is outside %d to %d", bound.name, bound.value, bound.minimum, bound.maximum)
+		}
+	}
+	return ""
 }
 
 // The torch's item and emitter are checked against the items and the

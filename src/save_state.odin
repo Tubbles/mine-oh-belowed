@@ -155,7 +155,9 @@ write_quest_state :: proc(bytes: ^[dynamic]byte, quests: ^Quest_State) {
 }
 
 // The body of entities.bin, without the header. Tables added since
-// format version 2 follow the players (write_later_tables).
+// format version 2 follow the players (write_later_tables); a field world
+// then writes its field tables and the machines' wear (0201,
+// write_machine_wear_table).
 write_simulation_state :: proc(bytes: ^[dynamic]byte, state: ^Simulation_State) {
 	write_world_state(bytes, &state.world, &state.records)
 	write_value_of(bytes, &state.unlocks)
@@ -167,6 +169,7 @@ write_simulation_state :: proc(bytes: ^[dynamic]byte, state: ^Simulation_State) 
 	write_later_tables(bytes, &state.world, &state.records, state.field.enabled)
 	if state.field.enabled {
 		write_field_tables(bytes, &state.field)
+		write_machine_wear_table(bytes, &state.world.entities)
 	}
 }
 
@@ -319,6 +322,8 @@ known_message_key :: proc(content: Simulation_Content, key: string) -> (known: s
 		return RESEARCH_COMPLETE_KEY, true
 	case SCHEMATIC_READ_KEY:
 		return SCHEMATIC_READ_KEY, true
+	case MACHINE_BROKE_DOWN_KEY:
+		return MACHINE_BROKE_DOWN_KEY, true
 	}
 	if venture_key, venture_found := known_venture_message_key(content, key); venture_found {
 		return venture_key, true
@@ -343,6 +348,11 @@ known_message_key :: proc(content: Simulation_Content, key: string) -> (known: s
 	for technology in content.technologies.technologies {
 		if technology.name_key == key {
 			return technology.name_key, true
+		}
+	}
+	for machine in content.machines.machines {
+		if machine.name_key == key {
+			return machine.name_key, true
 		}
 	}
 	return "", false
@@ -446,6 +456,7 @@ read_simulation_state :: proc(reader: ^Byte_Reader, state: ^Simulation_State, co
 	if bytes_left(reader^) > 0 {
 		read_field_tables(reader, &state.field) or_return
 		state.field.enabled = true
+		read_machine_wear_table(reader, &state.world.entities) or_return
 	}
 	if bytes_left(reader^) != 0 || !venture_state_is_consistent(&state.records, content.contracts) {
 		return false
@@ -591,6 +602,7 @@ rebuild_loaded_world :: proc(world: ^World, machines: Machine_Registry, derived:
 	rebuild_vein_indices(world)
 	entities := &world.entities
 	rebuild_entity_cells(entities, machines)
+	refresh_all_founded(entities, machines)
 	rebuild_belt_lines(entities, machines, derived.belt_items[:])
 	rebuild_fluid_networks(entities, machines)
 	restore_network_fluids(&entities.fluid_networks, derived.network_fluids[:])

@@ -76,6 +76,14 @@ Entity_Common :: struct {
 	rotation: u8,
 	size:     [3]i32,
 	alive:    bool,
+	// Machines on bare ground (0201, machine_wear.odin): founded is
+	// derived (the block frame, or a foundation under every bottom cell)
+	// and never saved; the ticks of operation off foundations and the
+	// breakdown travel in the wear table (write_machine_wear_table), so a
+	// world without wear keeps the pools' bytes.
+	founded:    bool `save:"-"`,
+	wear_ticks: u32 `save:"-"`,
+	broken:     bool `save:"-"`,
 }
 
 Chest :: struct {
@@ -137,6 +145,10 @@ Entities :: struct {
 	// Stacks lying in the world (loose_item.odin). Not machines: never in
 	// the occupant index, so they block nothing.
 	loose_items:    Loose_Items,
+	// The machines that broke down this tick (0201, record_operation),
+	// told and emptied after the entity tick (log_machine_breakdowns);
+	// empty between ticks, never saved.
+	breakdowns:     [dynamic]Machine_Id,
 }
 
 pool_add :: proc(pool: ^Entity_Pool($T), kind: Entity_Kind, value: T) -> Entity_Handle {
@@ -207,6 +219,7 @@ destroy_entities :: proc(entities: ^Entities) {
 	destroy_electric_networks(&entities.electric_networks)
 	destroy_frame_table(&entities.frames)
 	delete(entities.loose_items.items)
+	delete(entities.breakdowns)
 }
 
 entity_common :: proc(entities: ^Entities, handle: Entity_Handle) -> ^Entity_Common {
@@ -540,6 +553,10 @@ add_entity :: proc(entities: ^Entities, machines: Machine_Registry, machine: Mac
 	}
 	common.handle = handle
 	occupy_entity_cells(entities, machines, common)
+	refresh_founded(entities, machines, handle)
+	if machines.machines[machine].kind == .Foundation {
+		refresh_founded_above(entities, machines, common)
+	}
 	if handle.kind == .Pipe || machines.machines[machine].fluid_port_count > 0 {
 		rebuild_fluid_networks(entities, machines)
 	}
@@ -617,7 +634,9 @@ remove_entity :: proc(entities: ^Entities, machines: Machine_Registry, handle: E
 		rebuild_fluid_networks(entities, machines)
 		return true
 	case .Foundation:
-		return pool_remove(&entities.foundations, handle)
+		removed := pool_remove(&entities.foundations, handle)
+		refresh_founded_above(entities, machines, common^)
+		return removed
 	case .Belt_Pole:
 		return pool_remove(&entities.belt_poles, handle)
 	case .Belt, .Splitter, .Belt_Run:
@@ -658,7 +677,14 @@ cell_blocks_movement :: proc(world: ^World, registry: Block_Registry, cell: Worl
 tick_entities :: proc(tick_context: Entity_Tick_Context, profile: ^Tick_Profile = nil) {
 	entities, records, content, tick_rate := tick_context.entities, tick_context.records, tick_context.content, tick_context.tick_rate
 	clock := profile_now(profile)
-	tick_belt_network(&entities.belt_network, tick_rate, entities.splitters.entries[:])
+	wear := content.field.bare_ground
+	passed := make([]bool, len(entities.splitters.entries), context.temp_allocator)
+	tick_belt_network(&entities.belt_network, tick_rate, entities.splitters.entries[:], passed)
+	for &splitter, index in entities.splitters.entries {
+		if splitter.alive && passed[index] {
+			record_operation(entities, &splitter.common, content.machines.machines[splitter.machine], wear, tick_rate)
+		}
+	}
 	drop_items_off_belt_ends(tick_context)
 	clock = profile_section(profile, .Belts, clock)
 	tick_loose_items(tick_context)
@@ -668,26 +694,34 @@ tick_entities :: proc(tick_context: Entity_Tick_Context, profile: ^Tick_Profile 
 	tick_electric_networks(tick_context)
 	clock = profile_section(profile, .Power, clock)
 	for &drill in entities.drills.entries {
-		if drill.alive {
+		if drill.alive && !drill.broken {
 			before := drill
-			advance_drill(tick_context, &drill)
+			if advance_drill(tick_context, &drill) {
+				record_operation(entities, &drill.common, content.machines.machines[drill.machine], wear, tick_rate)
+			}
 			record_drill_tick(&records.statistics, before, drill)
 		}
 	}
 	clock = profile_section(profile, .Drills, clock)
 	for &inserter in entities.inserters.entries {
-		if inserter.alive {
+		if inserter.alive && !inserter.broken {
 			before := inserter
 			advance_inserter(entities, content, &inserter, tick_rate)
+			if inserter.state == .Moving {
+				record_operation(entities, &inserter.common, content.machines.machines[inserter.machine], wear, tick_rate)
+			}
 			inserter.idle_streak = next_idle_streak(before.idle_streak, inserter.state)
 			record_inserter_tick(&records.statistics, before, inserter, tick_rate)
 		}
 	}
 	clock = profile_section(profile, .Inserters, clock)
 	for &furnace in entities.furnaces.entries {
-		if furnace.alive {
+		if furnace.alive && !furnace.broken {
 			before := furnace
 			furnace = advance_furnace(furnace, content.machines.machines[furnace.machine], content.items, content.recipes, tick_rate, tick_context.settings.byproducts_lenient)
+			if furnace.state == .Burning {
+				record_operation(entities, &furnace.common, content.machines.machines[furnace.machine], wear, tick_rate)
+			}
 			record_furnace_tick(&records.statistics, before, furnace, content.recipes)
 			grown := stack_growth(before.slots[FURNACE_OUTPUT_SLOT], furnace.slots[FURNACE_OUTPUT_SLOT])
 			record_machine_output(&furnace.output_rate, records.statistics.current_second, grown)

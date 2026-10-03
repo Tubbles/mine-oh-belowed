@@ -115,6 +115,20 @@ belt_runs = {
 	level_tolerance_millimetres = 250
 	aligned_degrees = 8
 }
+// Machines on bare ground (work item 0201, doc/content.md, Machines on
+// bare ground): Place with a machine aimed at bare ground stands it on a
+// frame of its own when the ground under its footprint's corners and
+// centre lies within bare_ground_flatness_millimetres (0 to 2000) and
+// refuses it as too steep otherwise. A machine whose bottom cells do not
+// all stand on foundations breaks down after bare_ground_life_minutes (1
+// to 10080) of operation; a record's own bare_ground_life_minutes
+// overrides it. A worn or broken machine torn down returns
+// salvage_percent (1 to 100) of the inputs of the hand recipe making it,
+// rounded down. A record with stands_on_ground (poles, pipes, belts, the
+// belt pole, the pod) never wears and is never refused for slope.
+bare_ground_flatness_millimetres = 250
+bare_ground_life_minutes = 60
+salvage_percent = 80
 // The field session (work item 0179, doc/content.md, World): every
 // machine simulates the terrain field's chunks within chunk_radius chunks
 // of each player's chunk on each axis (a chunk is 32 samples, 32 m at

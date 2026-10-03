@@ -227,9 +227,16 @@ draw_ghost_model :: proc(renderer: Model_Renderer, machines: Machine_Registry, p
 	return true
 }
 
-// The entity's model at the pose, lit by the cell model_light_cell names.
+// A broken machine's model (0201) is drawn this much of its light.
+BROKEN_MODEL_TINT :: 0.35
+
+// The entity's model at the pose, lit by the cell model_light_cell names,
+// darkened while broken.
 draw_posed_model :: proc(renderer: Model_Renderer, model: Uploaded_Machine_Model, common: Entity_Common, machine: Machine, frame: Model_Frame, pose: Model_Pose) {
 	light_tint := model_light_tint(model_frame_light(frame, model_light_cell(common)), frame.day_factor, frame.sky_tint)
+	if common.broken {
+		light_tint *= BROKEN_MODEL_TINT
+	}
 	glow := emissive_brightness(machine.motion.kind, pose.phase, pose.working, light_tint)
 	body := entity_frame_matrix(&frame.world.entities, common.frame) * model_transform(common.origin, common.size, common.rotation)
 	draw_model_layers(renderer, model.body, body, light_tint, glow)

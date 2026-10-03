@@ -212,6 +212,8 @@ Machine_Definition :: struct {
 	model:                        string,
 	motion:                       Motion_Definition,
 	open_cells:                   []Machine_Cell_Box_Definition,
+	stands_on_ground:             bool,
+	bare_ground_life_minutes:     int,
 }
 
 Machines_File :: struct {
@@ -315,6 +317,11 @@ Machine :: struct {
 	// nothing is placed on them, but not Solid (machine_open_cells).
 	open_cells:                  [MAXIMUM_OPEN_CELL_BOXES]Cell_Box,
 	open_cell_box_count:         int,
+	// Machines on bare ground (0201, machine_wear.odin): never refused for
+	// slope and never worn (poles, pipes, belts, the pod); the minutes of
+	// operation on bare ground before a breakdown, 0 for game.sjson's.
+	stands_on_ground:            bool,
+	bare_ground_life_minutes:    int,
 }
 
 // Cells of the unrotated footprint, from and to inclusive.
@@ -555,6 +562,9 @@ validate_machine_definition :: proc(definitions: []Machine_Definition, index: in
 	if problem := validate_dispatch_order(definition, kind); problem != "" {
 		return problem
 	}
+	if definition.bare_ground_life_minutes < 0 || definition.bare_ground_life_minutes > MAXIMUM_BARE_GROUND_LIFE_MINUTES {
+		return fmt.tprintf("machine %q has bare_ground_life_minutes %d, not 0 or 1 to %d", definition.id, definition.bare_ground_life_minutes, MAXIMUM_BARE_GROUND_LIFE_MINUTES)
+	}
 	return validate_machine_kind_fields(definition, kind)
 }
 
@@ -676,6 +686,8 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 		motion = resolve_machine_motion(definition.motion),
 		open_cells = resolve_open_cells(definition.open_cells),
 		open_cell_box_count = len(definition.open_cells),
+		stands_on_ground = definition.stands_on_ground,
+		bare_ground_life_minutes = definition.bare_ground_life_minutes,
 	}
 }
 

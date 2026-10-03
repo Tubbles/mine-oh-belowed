@@ -195,6 +195,7 @@ simulation_tick :: proc(state: ^Simulation_State, content_tables: Simulation_Con
 	log_discoveries(&state.quests, content.blocks, content.items, newly_obtained, state.tick)
 	clock = profile_section(profile, .Unlocks, clock)
 	tick_entities_on_world(&state.world, &state.records, content, state.tick_rate, profile)
+	log_machine_breakdowns(state, content)
 	clock = profile_now(profile)
 	shipments_before := len(state.records.shipments)
 	apply_launch_requests(&state.world, &state.records, state.tick)

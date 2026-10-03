@@ -356,27 +356,27 @@ working_hum_sources :: proc(world: ^World, machines: Machine_Registry) -> []Hum_
 	entities := &world.entities
 	for furnace in entities.furnaces.entries {
 		if furnace.alive {
-			append_hum_source(&sources, furnace.common, machines, marker_means_working(machine_marker_colour(furnace.state, furnace_has_fuel(furnace))), false)
+			append_hum_source(&sources, furnace.common, machines, marker_means_working(entity_marker_colour(furnace.common, machine_marker_colour(furnace.state, furnace_has_fuel(furnace)))), false)
 		}
 	}
 	for assembler in entities.assemblers.entries {
 		if assembler.alive {
-			append_hum_source(&sources, assembler.common, machines, marker_means_working(machine_marker_colour(assembler.state, true)), false)
+			append_hum_source(&sources, assembler.common, machines, marker_means_working(entity_marker_colour(assembler.common, machine_marker_colour(assembler.state, true))), false)
 		}
 	}
 	for drill in entities.drills.entries {
 		if drill.alive {
-			append_hum_source(&sources, drill.common, machines, marker_means_working(machine_marker_colour(drill.state, true)), false)
+			append_hum_source(&sources, drill.common, machines, marker_means_working(entity_marker_colour(drill.common, machine_marker_colour(drill.state, true))), false)
 		}
 	}
 	for lab in entities.labs.entries {
 		if lab.alive {
-			append_hum_source(&sources, lab.common, machines, marker_means_working(machine_marker_colour(lab.state, true)), false)
+			append_hum_source(&sources, lab.common, machines, marker_means_working(entity_marker_colour(lab.common, machine_marker_colour(lab.state, true))), false)
 		}
 	}
 	for fluid_machine in entities.fluid_machines.entries {
 		if fluid_machine.alive && fluid_machine_has_marker(machines.machines[fluid_machine.machine].kind) {
-			append_hum_source(&sources, fluid_machine.common, machines, marker_means_working(machine_marker_colour(fluid_machine.state, true)), true)
+			append_hum_source(&sources, fluid_machine.common, machines, marker_means_working(entity_marker_colour(fluid_machine.common, machine_marker_colour(fluid_machine.state, true))), true)
 		}
 	}
 	return sources[:]

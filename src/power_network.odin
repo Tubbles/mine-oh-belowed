@@ -383,8 +383,10 @@ fluid_machine_wants_power :: proc(fluid_machine: Fluid_Machine, machine: Machine
 	return false
 }
 
+// A broken machine (0201) asks for and offers nothing, so it takes no
+// share of its network.
 make_participant :: proc(networks: ^Electric_Networks, common: Entity_Common, generator: bool, offered: u64) -> Electric_Participant {
-	return Electric_Participant{handle = common.handle, machine = common.machine, network = entity_network(networks, common.handle), generator = generator, offered = offered}
+	return Electric_Participant{handle = common.handle, machine = common.machine, network = entity_network(networks, common.handle), generator = generator, offered = common.broken ? 0 : offered}
 }
 
 // What every electric entity asks for or offers this tick, in pool order.
@@ -508,6 +510,9 @@ apply_electric_balance :: proc(entities: ^Entities, content: Simulation_Content,
 		deliver_generator_energy(generator, machine, content, participant.delivered)
 		record_generator_tick(statistics, machine.kind, before, generator^)
 		generator.state = generator_state(machine.kind, participant.delivered, participant.offered, network.demand)
+		if participant.delivered > 0 {
+			record_operation(entities, &generator.common, machine, content.field.bare_ground, tick_rate)
+		}
 		if machine.kind == .Hydro_Turbine {
 			record_turbine_still_water(statistics, generator, tick_rate)
 		}
