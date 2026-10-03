@@ -68,13 +68,13 @@ frame_within_reach :: proc(frame: Frame, extent: Frame_Extent, origin: World_Pos
 }
 
 // direction is a unit vector, reach in position units. A cell counts
-// when its occupant has every flag of required.
-raycast_frame :: proc(table: ^Frame_Table, frame: Frame, origin: World_Position, direction: [3]i64, reach: i64, required: Occupant_Flags = {}) -> Frame_Raycast_Hit {
+// when its occupant has every flag of required and none of excluded.
+raycast_frame :: proc(table: ^Frame_Table, frame: Frame, origin: World_Position, direction: [3]i64, reach: i64, required: Occupant_Flags = {}, excluded: Occupant_Flags = {}) -> Frame_Raycast_Hit {
 	pitch := frame_pitch_units(frame)
 	local_origin := frame_local_position(frame, origin)
 	local_direction := frame_local_direction(frame, direction)
 	cell := world_to_frame_cell(frame, origin)
-	if occupant, found := frame_occupant(table, frame.id, cell); found && required <= occupant.flags {
+	if occupant, found := frame_occupant(table, frame.id, cell); found && occupant_counts(occupant, required, excluded) {
 		return {hit = true, frame = frame.id, cell = cell, face = .Positive_Y, adjacent = cell + {0, 1, 0}, occupant = occupant}
 	}
 	axes: [3]Frame_Ray_Axis
@@ -90,16 +90,21 @@ raycast_frame :: proc(table: ^Frame_Table, frame: Frame, origin: World_Position,
 		previous := cell
 		cell[axis] += axes[axis].step
 		axes[axis].distance_to_border += axes[axis].distance_per_cell
-		if occupant, found := frame_occupant(table, frame.id, cell); found && required <= occupant.flags {
+		if occupant, found := frame_occupant(table, frame.id, cell); found && occupant_counts(occupant, required, excluded) {
 			return {hit = true, frame = frame.id, cell = cell, face = entered_face(axis, axes[axis].step), adjacent = previous, distance = max(distance, 0), occupant = occupant}
 		}
 	}
 	return {}
 }
 
+// Whether a ray stops at the occupant: every flag of required, none of excluded.
+occupant_counts :: proc(occupant: Occupant, required, excluded: Occupant_Flags) -> bool {
+	return required <= occupant.flags && excluded & occupant.flags == {}
+}
+
 // The nearest hit over every frame with a cell, in frame order; none for
 // a nil table.
-raycast_frames :: proc(table: ^Frame_Table, origin: World_Position, direction: [3]i64, reach: i64, required: Occupant_Flags = {}) -> Frame_Raycast_Hit {
+raycast_frames :: proc(table: ^Frame_Table, origin: World_Position, direction: [3]i64, reach: i64, required: Occupant_Flags = {}, excluded: Occupant_Flags = {}) -> Frame_Raycast_Hit {
 	nearest: Frame_Raycast_Hit
 	if table == nil {
 		return nearest
@@ -109,7 +114,7 @@ raycast_frames :: proc(table: ^Frame_Table, origin: World_Position, direction: [
 		if extent.cell_count == 0 || !frame_within_reach(frame, extent, origin, reach) {
 			continue
 		}
-		if hit := raycast_frame(table, frame, origin, direction, reach, required); hit.hit && (!nearest.hit || hit.distance < nearest.distance) {
+		if hit := raycast_frame(table, frame, origin, direction, reach, required, excluded); hit.hit && (!nearest.hit || hit.distance < nearest.distance) {
 			nearest = hit
 		}
 	}

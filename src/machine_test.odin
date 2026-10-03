@@ -225,3 +225,41 @@ test_machine_data_rejects_bad_definitions :: proc(t: ^testing.T) {
 	two_filters.filter_slots = 2
 	testing.expect(t, resolve_test_machines({two_filters}) != "")
 }
+
+// open_cells (0186): boxes inside the footprint with from no greater than
+// to, at most MAXIMUM_OPEN_CELL_BOXES; the pod's file record parses to
+// its boxes.
+@(test)
+test_machine_open_cells_are_boxes_inside_the_footprint :: proc(t: ^testing.T) {
+	room := Machine_Definition {
+		id = "room",
+		name_key = "machine_pod",
+		kind = "pod",
+		footprint = {width = 3, depth = 4, height = 2},
+		open_cells = {{from = Machine_Cell_Definition{1, 0, 1}, to = Machine_Cell_Definition{2, 1, 3}}},
+	}
+	testing.expect_value(t, resolve_test_machines({room}), "")
+	reversed := room
+	reversed.open_cells = {{from = Machine_Cell_Definition{2, 0, 1}, to = Machine_Cell_Definition{1, 1, 3}}}
+	testing.expect(t, resolve_test_machines({reversed}) != "")
+	outside := room
+	outside.open_cells = {{from = Machine_Cell_Definition{0, 0, 0}, to = Machine_Cell_Definition{2, 2, 3}}}
+	testing.expect(t, resolve_test_machines({outside}) != "")
+	negative := room
+	negative.open_cells = {{from = Machine_Cell_Definition{-1, 0, 0}, to = Machine_Cell_Definition{0, 0, 0}}}
+	testing.expect(t, resolve_test_machines({negative}) != "")
+	no_to := room
+	no_to.open_cells = {{from = Machine_Cell_Definition{1, 0, 1}}}
+	testing.expect(t, resolve_test_machines({no_to}) != "")
+	no_from := room
+	no_from.open_cells = {{to = Machine_Cell_Definition{2, 1, 3}}}
+	testing.expect(t, resolve_test_machines({no_from}) != "")
+	too_many := room
+	too_many.open_cells = make([]Machine_Cell_Box_Definition, MAXIMUM_OPEN_CELL_BOXES + 1, context.temp_allocator)
+	testing.expect(t, resolve_test_machines({too_many}) != "")
+
+	machines := make_test_machines()
+	pod := machines.machines[find_machine_of_kind(machines, .Pod)]
+	testing.expect_value(t, pod.open_cell_box_count, 3)
+	testing.expect_value(t, pod.open_cells[2], Cell_Box{from = {5, 0, 2}, to = {5, 3, 3}})
+}

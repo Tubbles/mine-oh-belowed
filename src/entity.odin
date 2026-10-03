@@ -391,11 +391,17 @@ machine_occupant_flags :: proc(machine: Machine) -> Occupant_Flags {
 	return flags
 }
 
-// The occupant index through the two world procedures.
+// The occupant index through the two world procedures. The machine's
+// open cells (0186) are occupied too, without Solid.
 occupy_entity_cells :: proc(entities: ^Entities, machines: Machine_Registry, common: Entity_Common) {
-	occupant := Occupant{handle = entity_occupant_handle(common.handle), flags = machine_occupant_flags(machines.machines[common.machine])}
+	machine := machines.machines[common.machine]
+	occupant := Occupant{handle = entity_occupant_handle(common.handle), flags = machine_occupant_flags(machine)}
 	for cell in common_cells(common, machines) {
 		occupy_frame_cell(&entities.frames, common.frame, cell, occupant)
+	}
+	open := Occupant{handle = occupant.handle, flags = occupant.flags - {.Solid} + {.Open}}
+	for cell in machine_open_cells(common.origin, machine, common.rotation) {
+		occupy_frame_cell(&entities.frames, common.frame, cell, open)
 	}
 }
 
@@ -438,6 +444,24 @@ footprint_cells :: proc(origin: World_Coordinate, footprint: [3]i32, rotation: u
 			for x in 0 ..< footprint.x {
 				offset := rotate_footprint_cell({x, z}, footprint.x, footprint.z, rotation)
 				append(&cells, origin + {offset.x, y, offset.y})
+			}
+		}
+	}
+	return cells[:]
+}
+
+// The cells of a machine's open_cells boxes placed with its rotated
+// minimum corner at origin, in the temp allocator.
+machine_open_cells :: proc(origin: World_Coordinate, machine: Machine, rotation: u8) -> []World_Coordinate {
+	cells := make([dynamic]World_Coordinate, context.temp_allocator)
+	footprint, boxes := machine.footprint, machine.open_cells
+	for box in boxes[:machine.open_cell_box_count] {
+		for y in box.from.y ..= box.to.y {
+			for z in box.from.z ..= box.to.z {
+				for x in box.from.x ..= box.to.x {
+					offset := rotate_footprint_cell({x, z}, footprint.x, footprint.z, rotation)
+					append(&cells, origin + {offset.x, y, offset.y})
+				}
 			}
 		}
 	}

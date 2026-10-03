@@ -13,6 +13,7 @@ import "platform"
 
 MACHINES_FILE_NAME :: "machines.sjson"
 MAXIMUM_FOOTPRINT_SIZE :: 9
+MAXIMUM_OPEN_CELL_BOXES :: 4
 
 // Dense index into Machine_Registry.machines.
 Machine_Id :: distinct u16
@@ -146,6 +147,21 @@ Machine_Footprint_Definition :: struct {
 	height: int,
 }
 
+// A cell of the unrotated footprint (x along the width, y up, z along
+// the depth).
+Machine_Cell_Definition :: struct {
+	x: int,
+	y: int,
+	z: int,
+}
+
+// A box of footprint cells, from and to inclusive; both corners are
+// required.
+Machine_Cell_Box_Definition :: struct {
+	from: Maybe(Machine_Cell_Definition),
+	to:   Maybe(Machine_Cell_Definition),
+}
+
 // As written in the file, before references are resolved.
 Machine_Definition :: struct {
 	id:                           string,
@@ -195,6 +211,7 @@ Machine_Definition :: struct {
 	launch_seconds:               int,
 	model:                        string,
 	motion:                       Motion_Definition,
+	open_cells:                   []Machine_Cell_Box_Definition,
 }
 
 Machines_File :: struct {
@@ -294,6 +311,16 @@ Machine :: struct {
 	model:                       string,
 	// How the model's part moves or its glow pulses (model_motion.odin).
 	motion:                      Machine_Motion,
+	// The footprint cells the player walks through (0186): occupied, so
+	// nothing is placed on them, but not Solid (machine_open_cells).
+	open_cells:                  [MAXIMUM_OPEN_CELL_BOXES]Cell_Box,
+	open_cell_box_count:         int,
+}
+
+// Cells of the unrotated footprint, from and to inclusive.
+Cell_Box :: struct {
+	from: [3]i32,
+	to:   [3]i32,
 }
 
 Machine_Registry :: struct {
@@ -516,6 +543,9 @@ validate_machine_definition :: proc(definitions: []Machine_Definition, index: in
 	if problem := validate_motion_definition(definition); problem != "" {
 		return problem
 	}
+	if problem := validate_open_cells(definition); problem != "" {
+		return problem
+	}
 	if problem := validate_pump_head(definition, kind); problem != "" {
 		return problem
 	}
@@ -644,7 +674,46 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 		launch_seconds = u32(max(definition.launch_seconds, 0)),
 		model = definition.model,
 		motion = resolve_machine_motion(definition.motion),
+		open_cells = resolve_open_cells(definition.open_cells),
+		open_cell_box_count = len(definition.open_cells),
 	}
+}
+
+// At most MAXIMUM_OPEN_CELL_BOXES boxes, each inside the footprint with
+// from no greater than to on every axis.
+validate_open_cells :: proc(definition: Machine_Definition) -> string {
+	if len(definition.open_cells) > MAXIMUM_OPEN_CELL_BOXES {
+		return fmt.tprintf("machine %q has more than %d open_cells boxes", definition.id, MAXIMUM_OPEN_CELL_BOXES)
+	}
+	footprint := definition.footprint
+	size := [3]int{footprint.width, footprint.height, footprint.depth}
+	for box, index in definition.open_cells {
+		from_cell, has_from := box.from.?
+		to_cell, has_to := box.to.?
+		if !has_from || !has_to {
+			return fmt.tprintf("machine %q open_cells box %d needs both from and to", definition.id, index)
+		}
+		from := [3]int{from_cell.x, from_cell.y, from_cell.z}
+		to := [3]int{to_cell.x, to_cell.y, to_cell.z}
+		for axis in 0 ..< 3 {
+			if from[axis] < 0 || from[axis] > to[axis] || to[axis] >= size[axis] {
+				return fmt.tprintf("machine %q open_cells box %d is not a box inside the footprint", definition.id, index)
+			}
+		}
+	}
+	return ""
+}
+
+// Validated before (validate_open_cells).
+resolve_open_cells :: proc(boxes: []Machine_Cell_Box_Definition) -> (resolved: [MAXIMUM_OPEN_CELL_BOXES]Cell_Box) {
+	for box, index in boxes {
+		from, to := box.from.? or_else {}, box.to.? or_else {}
+		resolved[index] = Cell_Box {
+			from = {i32(from.x), i32(from.y), i32(from.z)},
+			to   = {i32(to.x), i32(to.y), i32(to.z)},
+		}
+	}
+	return
 }
 
 // Validates the file against the item registry and resolves every

@@ -69,6 +69,9 @@ Occupant_Flag :: enum u8 {
 	Blocks_Light,
 	// Water does not flow into the cell.
 	Blocks_Water,
+	// An open cell of its machine (0186): the player walks through it and
+	// the aiming ray passes it.
+	Open,
 }
 
 Occupant_Flags :: bit_set[Occupant_Flag;u8]

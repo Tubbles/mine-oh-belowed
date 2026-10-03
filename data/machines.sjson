@@ -39,6 +39,13 @@
 // field: the session places it on a pad of foundations at the home. It
 // has no item, cannot be picked up, and has no panel and no slots; its
 // footprint is in cells of the pad's pitch.
+// open_cells (optional, work item 0186, at most 4) lists boxes of
+// footprint cells the player walks through: {from = {x, y, z}, to = {x,
+// y, z}}, both inclusive, in cells of the unrotated footprint (x along the
+// width, y up, z along the depth). The cells are still the machine's, so
+// nothing is placed on them, but they are not solid. The pod opens its
+// door (the model's front, +x) and its interior but the bed; the player
+// stands on the pad's foundations under it.
 // The capsule (work item 0013) stands on the landing pad from the start:
 // it has no item, cannot be picked up, and holds 8 slots for quest
 // rewards and deliveries.
@@ -958,5 +965,11 @@ machines = [
 		kind = "pod"
 		footprint = {width = 6, depth = 6, height = 8}
 		model = "pod"
+		// Beside the bed, over the bed, the door.
+		open_cells = [
+			{from = {x = 3, y = 0, z = 1}, to = {x = 4, y = 6, z = 4}}
+			{from = {x = 1, y = 1, z = 1}, to = {x = 2, y = 6, z = 4}}
+			{from = {x = 5, y = 0, z = 2}, to = {x = 5, y = 3, z = 3}}
+		]
 	}
 ]
