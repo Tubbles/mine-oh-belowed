@@ -30,6 +30,8 @@ PLANET_VEIN_MAXIMUM_DISTANCE_METRES :: 80
 // The starter size class's footprint (veins.sjson, scattering).
 PLANET_VEIN_MINIMUM_RADIUS_METRES :: 3
 PLANET_VEIN_MAXIMUM_RADIUS_METRES :: 5
+// The home's crater (0199, crater_relief) never reshapes an outcrop.
+#assert(MAXIMUM_CRATER_REACH_METRES < PLANET_VEIN_MINIMUM_DISTANCE_METRES - PLANET_VEIN_MAXIMUM_RADIUS_METRES)
 // The starter veins' ores, one vein each, in placement order. The
 // material names the vein type: the spawn vein type whose outcrop block
 // has the material's name (planet_vein_type).

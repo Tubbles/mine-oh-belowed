@@ -140,8 +140,8 @@ salvage_percent = 80
 // unload and reload a slab each step. Radius 1 to 3, margin 0 to 2. Place
 // with the torch item puts the torch emitter of data/lighting.sjson at
 // the air in front of the targeted ground. pad_foundation (work item
-// 0196) is the foundation of the benchmark's pad and of the pod's pad; it
-// must name a machine of kind foundation.
+// 0196) is the foundation of the benchmark's pad; it must name a machine
+// of kind foundation.
 field_simulation = {
 	chunk_radius = 2
 	chunk_margin = 1

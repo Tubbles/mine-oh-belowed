@@ -51,9 +51,10 @@ BENCHMARK_LARGEST_SIZE :: 16
 // The sizes the field world runs (0179); the larger ones wait for the
 // factories on frames (M14).
 BENCHMARK_FIELD_LARGEST_SIZE :: 1
-// The foundation pad at the home: this far ahead of the player, this many
+// The foundation pad at the home: this far ahead of the player, beyond
+// the crater's reach (18 m, 0199) on the generated surface, this many
 // cells either side of its first foundation.
-BENCHMARK_PAD_DISTANCE_MILLIMETRES :: 6000
+BENCHMARK_PAD_DISTANCE_MILLIMETRES :: 24000
 BENCHMARK_PAD_HALF_WIDTH :: 2
 // The window over which a machine must show progress at the end of the
 // warm up.
@@ -539,9 +540,9 @@ make_benchmark_simulation :: proc(config: Game_Config, content: Simulation_Conte
 	return simulation
 }
 
-// The field world at the home: the pod and the player in front of its
-// door (enable_new_field_world), its set generated, and a pad of
-// foundations ahead of the player.
+// The field world at the home: the pod and the player in its cabin
+// (enable_new_field_world), its set generated, and a pad of foundations
+// ahead of the player beyond the crater.
 start_benchmark_field :: proc(simulation: ^Simulation_State, content: Simulation_Content, config: Game_Config, planet: Planet) {
 	spacing := DEFAULT_SAMPLE_SPACING_MILLIMETRES
 	enable_new_field_world(simulation, config, content.machines, content.field, planet, spacing)

@@ -581,6 +581,9 @@ validate_machine_definition :: proc(definitions: []Machine_Definition, index: in
 	if problem := validate_open_cells(definition); problem != "" {
 		return problem
 	}
+	if problem := validate_pod_cabin(definition, kind); problem != "" {
+		return problem
+	}
 	if problem := validate_pump_head(definition, kind); problem != "" {
 		return problem
 	}
@@ -744,6 +747,22 @@ validate_open_cells :: proc(definition: Machine_Definition) -> string {
 		}
 	}
 	return ""
+}
+
+// A pod's first open_cells box is its cabin, where new players spawn
+// (work item 0199, field_pod_spawn): on the floor row and at least 2 by 2
+// cells, the room the player's capsule needs at the 500 mm pitch.
+validate_pod_cabin :: proc(definition: Machine_Definition, kind: Machine_Kind) -> string {
+	if kind != .Pod {
+		return ""
+	}
+	if len(definition.open_cells) > 0 {
+		from, to := definition.open_cells[0].from.? or_else {}, definition.open_cells[0].to.? or_else {}
+		if from.y == 0 && to.x - from.x >= 1 && to.z - from.z >= 1 {
+			return ""
+		}
+	}
+	return fmt.tprintf("machine %q is a pod whose first open_cells box is no cabin on its floor (y 0, 2 by 2 cells at least)", definition.id)
 }
 
 // Validated before (validate_open_cells).

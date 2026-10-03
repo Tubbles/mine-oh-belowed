@@ -31,6 +31,11 @@ Planet_Generation_Record :: struct {
 	// before it, which takes the data's home (resolve_world_planet).
 	home:                                           Planet_Home,
 	home_recorded:                                  bool,
+	// The crater at the home (0199); crater_recorded is false in a file
+	// written before it, which takes the data's crater
+	// (resolve_world_planet).
+	crater:                                         Planet_Crater,
+	crater_recorded:                                bool,
 }
 
 // Borrows the planet's springs.
@@ -47,6 +52,8 @@ planet_generation_record :: proc(planet: Planet) -> Planet_Generation_Record {
 		springs = planet.springs,
 		home = planet.home,
 		home_recorded = true,
+		crater = planet.crater,
+		crater_recorded = true,
 	}
 }
 
@@ -72,6 +79,9 @@ make_recorded_planet :: proc(planet: Planet, record: Planet_Generation_Record, a
 	result.springs = slice.clone(record.springs, allocator)
 	if record.home_recorded {
 		result.home = record.home
+	}
+	if record.crater_recorded {
+		result.crater = record.crater
 	}
 	result.palette = make([][3]int, record.palette_length, allocator)
 	for &color, index in result.palette {
@@ -160,6 +170,10 @@ resolve_world_planet :: proc(settings: World_File_Settings, recorded: Planet_Gen
 	if planet_generation_is_recorded(recorded) && !recorded.home_recorded {
 		platform.log_printf("world: the world file records no home, it takes the home of %q from %s", planet.id, PLANETS_FILE_NAME)
 		record.home, record.home_recorded = planet.home, true
+	}
+	if planet_generation_is_recorded(recorded) && !recorded.crater_recorded {
+		platform.log_printf("world: the world file records no crater, it takes the crater of %q from %s", planet.id, PLANETS_FILE_NAME)
+		record.crater, record.crater_recorded = planet.crater, true
 	}
 	if !planet_generation_is_recorded(recorded) {
 		if loading {

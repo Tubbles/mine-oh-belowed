@@ -316,7 +316,7 @@ add_player_entry :: proc(state: ^Simulation_State, content: Simulation_Content, 
 		return
 	}
 	if state.field.enabled {
-		append(&state.players, make_field_session_player(state^, content, start))
+		append(&state.players, make_field_session_player(state, content, start))
 	} else {
 		append(&state.players, make_player(start))
 	}

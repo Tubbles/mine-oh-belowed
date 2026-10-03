@@ -497,7 +497,7 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context, hud: Hud_Cont
 }
 
 // The field player aims at a frame cell whose entity Mine picks up
-// (0195): any but the pod and its pad (field_entity_is_placed_by_world).
+// (0195): any but the pod (field_entity_is_placed_by_world).
 // One held up shows it too; the refusal tells why on the press.
 field_pick_up_hint_shown :: proc(screen_context: Screen_Context, hud: Hud_Context) -> bool {
 	target := hud_field_player(screen_context, hud).frame_target

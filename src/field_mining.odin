@@ -169,8 +169,8 @@ Field_Content :: struct {
 	water:      Field_Water_Tuning,
 	light:      Field_Light_Tuning,
 	// The content's pad foundation (0196, read through
-	// field_pad_foundation): the benchmark's pad and the pod's; Place puts
-	// down the held foundation. And the pitch of a new frame
+	// field_pad_foundation): the benchmark's pad; Place puts down the
+	// held foundation. And the pitch of a new frame
 	// (data/game.sjson).
 	pad_foundation: Machine_Id,
 	foundation_pitch_millimetres: int,

@@ -1,6 +1,6 @@
 # 0199: The pod sits in an impact crater, no pad
 
-Status: implementing (2026-10-03, worktree item/0199; user, 2026-10-03: "the pod shouldn't come with foundation, it should just be buried directly in the ground inside an impact crater"; after 0198)
+Status: verified (2026-10-03, land as is, three stale comments fixed at landing; implemented 2026-10-03 (user, 2026-10-03: "the pod shouldn't come with foundation, it should just be buried directly in the ground inside an impact crater"; after 0198))
 
 ## Goal
 

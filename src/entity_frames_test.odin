@@ -641,22 +641,24 @@ test_a_foundation_under_a_furnace_refuses_until_the_furnace_is_gone :: proc(t: ^
 	testing.expect(t, pool_get(&entities.belt_poles, first) == nil, "the pole is picked up")
 }
 
-// The pod's pad and the pod stay under a held Mine, with no progress and
-// no refusal told; a foundation the player added beside the pad goes.
+// The pod stays under a held Mine, with no progress and no refusal told;
+// a foundation the player added beside it on its frame goes.
 @(test)
-test_the_pod_and_its_pad_refuse_a_pick_up :: proc(t: ^testing.T) {
+test_the_pod_refuses_a_pick_up :: proc(t: ^testing.T) {
 	simulation, content, items := make_pick_up_test()
 	defer destroy_simulation(&simulation)
 	entities := &simulation.world.entities
-	frame_id, ok := place_pod(entities, content.machines, find_foundation_machine(content.machines), test_site_point(0, 0, 0), {UNIT_VECTOR_ONE, 0, 0}, 500)
+	frame_id, ok := place_pod(entities, content.machines, test_site_point(0, 0, 0), {UNIT_VECTOR_ONE, 0, 0}, 500)
 	testing.expect(t, ok)
 	frame, _ := find_frame(&entities.frames, frame_id)
-	beside := World_Coordinate{POD_PAD_FIRST_CELL + POD_PAD_SIZE, 0, 0}
-	place_on_frame(entities, content.machines, content.field.pad_foundation, frame_id, beside, 0)
-	cells := frame_cell_count(&entities.frames, frame_id)
 	pod := content.machines.machines[find_machine_of_kind(content.machines, .Pod)]
+	size := rotated_footprint_size(pod.footprint, POD_ROTATION)
+	beside := World_Coordinate{pod_origin(pod).x + size.x + 1, 0, 0}
+	_, refusal := place_on_frame(entities, content.machines, content.field.pad_foundation, frame_id, beside, 0)
+	testing.expect_value(t, refusal, Frame_Placement_Refusal.None)
+	cells := frame_cell_count(&entities.frames, frame_id)
 	top := pod_origin(pod) + {0, pod.footprint.y - 1, 0}
-	for cell in ([?]World_Coordinate{{POD_PAD_FIRST_CELL, 0, POD_PAD_FIRST_CELL}, top}) {
+	for cell in ([?]World_Coordinate{top}) {
 		clear(&simulation.players)
 		stand_test_player_on_cell(&simulation, content, items, frame, cell)
 		testing.expectf(t, simulation.players[0].field.frame_target.cell == cell, "the reticle meets %v", cell)

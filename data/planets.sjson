@@ -34,12 +34,22 @@ planets = [
 		springs = [
 			{latitude_degrees = 83, longitude_degrees = 144}
 		]
-		// Where a field session's players spawn, facing the first spring
-		// (work item 0179): the surface under the point, in whole degrees.
-		// With the default seed it stands 6 to 9 m above the sea at every
+		// Where the pod lies, its door to the first spring (work item 0179):
+		// the surface under the point, in whole degrees; the players spawn
+		// in its cabin (0199).
+		// With the default seed it stands about 6 to 9 m above the sea at every
 		// preset on ground flat within 0.6 m over 4 m, a basin 86 to 144 m
 		// from it (0189).
 		home = {latitude_degrees = 83, longitude_degrees = 132}
+		// The impact crater the pod lies in (work item 0199), round the
+		// home: a flat floor of floor_radius_metres at depth_metres below
+		// the home's ground, a smooth bowl rising to the crest at
+		// radius_metres, where a rim of rim_metres stands over the
+		// surrounding ground and falls back to it over six times its
+		// height. Here the bowl climbs 4 m over 8 m (37 degrees at its
+		// steepest), the rim falls 1 m over 6 m, and the crater reaches
+		// 18 m from the home.
+		crater = {radius_metres = 12, depth_metres = 3, floor_radius_metres = 4, rim_metres = 1}
 		// Fill per surface sample per minute (254 a sample), applied by
 		// the weather (M15).
 		rain_fill_per_minute = 2

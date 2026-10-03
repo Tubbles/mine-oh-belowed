@@ -45,6 +45,16 @@ MAXIMUM_SPRING_COUNT :: 64
 // A sample's fill a minute (work item 0172), a whole sample at most.
 MAXIMUM_RAIN_FILL_PER_MINUTE :: FIELD_WATER_FULL
 MAXIMUM_COLOR_COMPONENT :: 255
+// The crater's bounds (work item 0199, Planet_Crater). The reach stays
+// inside the starter veins' nearest edge (generation_planet_veins.odin).
+MINIMUM_CRATER_RADIUS_METRES :: 4
+MAXIMUM_CRATER_RADIUS_METRES :: 24
+MAXIMUM_CRATER_DEPTH_METRES :: 8
+MAXIMUM_CRATER_RIM_METRES :: 4
+MAXIMUM_CRATER_REACH_METRES :: 24
+// The rim falls back to the surrounding relief over this many times its
+// height outwards from the crest.
+CRATER_RIM_FALL_PER_HEIGHT :: 6
 
 // One octave of the relief's value noise: its lattice spacing and the
 // most it raises or lowers the surface.
@@ -88,6 +98,19 @@ Planet_Home :: struct {
 	longitude_degrees: int,
 }
 
+// The impact crater the pod lies in (work item 0199, generation_planet.odin,
+// crater_relief), heights along the distance from the home: a flat floor
+// out to floor_radius_metres at depth_metres below the home's uncratered
+// relief, a smooth bowl rising to the crest at radius_metres, a rim
+// rim_metres high there falling back to the surrounding relief over
+// CRATER_RIM_FALL_PER_HEIGHT times its height. All zero is no crater.
+Planet_Crater :: struct {
+	radius_metres:       int,
+	depth_metres:        int,
+	floor_radius_metres: int,
+	rim_metres:          int,
+}
+
 Planet :: struct {
 	id:                                             string,
 	radius_metres:                                  int,
@@ -100,6 +123,8 @@ Planet :: struct {
 	sea_level_metres:                               int,
 	springs:                                        []Planet_Spring,
 	home:                                           Planet_Home,
+	// The crater at the home (0199).
+	crater:                                         Planet_Crater,
 	// Fill per surface sample per minute; read and bounded, applied by
 	// nothing until the weather (M15).
 	rain_fill_per_minute:                           int,
@@ -150,6 +175,11 @@ missing_planet_key_problem :: proc(tree: json.Object, source: string) -> string 
 		if home, is_object := record.(json.Object)["home"].(json.Object); is_object {
 			if key, missing := missing_struct_key(Planet_Home, home); missing {
 				return fmt.tprintf("%s: planets[%d].home is missing %s", source, index, key)
+			}
+		}
+		if crater, is_object := record.(json.Object)["crater"].(json.Object); is_object {
+			if key, missing := missing_struct_key(Planet_Crater, crater); missing {
+				return fmt.tprintf("%s: planets[%d].crater is missing %s", source, index, key)
 			}
 		}
 		for octave, octave_index in record.(json.Object)["relief_octaves"].(json.Array) {
@@ -262,6 +292,9 @@ planet_problem :: proc(planet: Planet) -> string {
 	if problem := home_problem(planet.home); problem != "" {
 		return problem
 	}
+	if problem := crater_problem(planet.crater); problem != "" {
+		return problem
+	}
 	if problem := relief_problem(planet.relief_octaves, planet.relief_shape); problem != "" {
 		return problem
 	}
@@ -292,6 +325,31 @@ home_problem :: proc(home: Planet_Home) -> string {
 	}
 	if home.longitude_degrees < -180 || home.longitude_degrees > 180 {
 		return fmt.tprintf("home.longitude_degrees %d is outside -180 to 180", home.longitude_degrees)
+	}
+	return ""
+}
+
+// The zero crater is none; any other keeps every key in its bounds, the
+// reach inside MAXIMUM_CRATER_REACH_METRES and the bowl's steepest slope,
+// 1.5 times its mean for the smoothstep, at most 45 degrees.
+crater_problem :: proc(crater: Planet_Crater) -> string {
+	if crater == {} {
+		return ""
+	}
+	reach := crater.radius_metres + CRATER_RIM_FALL_PER_HEIGHT * crater.rim_metres
+	switch {
+	case crater.radius_metres < MINIMUM_CRATER_RADIUS_METRES || crater.radius_metres > MAXIMUM_CRATER_RADIUS_METRES:
+		return fmt.tprintf("crater.radius_metres %d is outside %d to %d", crater.radius_metres, MINIMUM_CRATER_RADIUS_METRES, MAXIMUM_CRATER_RADIUS_METRES)
+	case crater.depth_metres < 1 || crater.depth_metres > MAXIMUM_CRATER_DEPTH_METRES:
+		return fmt.tprintf("crater.depth_metres %d is outside 1 to %d", crater.depth_metres, MAXIMUM_CRATER_DEPTH_METRES)
+	case crater.floor_radius_metres < 2 || crater.floor_radius_metres > crater.radius_metres - 2:
+		return fmt.tprintf("crater.floor_radius_metres %d is outside 2 to %d", crater.floor_radius_metres, crater.radius_metres - 2)
+	case crater.rim_metres < 0 || crater.rim_metres > MAXIMUM_CRATER_RIM_METRES:
+		return fmt.tprintf("crater.rim_metres %d is outside 0 to %d", crater.rim_metres, MAXIMUM_CRATER_RIM_METRES)
+	case reach > MAXIMUM_CRATER_REACH_METRES:
+		return fmt.tprintf("crater reaches %d m, more than %d", reach, MAXIMUM_CRATER_REACH_METRES)
+	case 3 * (crater.depth_metres + crater.rim_metres) > 2 * (crater.radius_metres - crater.floor_radius_metres):
+		return fmt.tprintf("crater bowl of %d m over %d m is steeper than 45 degrees", crater.depth_metres + crater.rim_metres, crater.radius_metres - crater.floor_radius_metres)
 	}
 	return ""
 }

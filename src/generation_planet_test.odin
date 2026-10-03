@@ -300,7 +300,7 @@ test_the_basins_hold_the_sea_near_a_dry_home :: proc(t: ^testing.T) {
 		}
 		testing.expectf(t, found, "%d m: no basin below the sea within 200 m of the home", radius)
 		site, _ := field_home_site(generation, planet)
-		feet := field_home_player(DEFAULT_WORLD_SEED, planet, 1000, 500).position
+		feet := field_home_player(DEFAULT_WORLD_SEED, planet, 1000).position
 		testing.expectf(t, vector_length(cast([3]i64)site) > generation.sea_radius, "%d m: the pod's site lies under the sea", radius)
 		testing.expectf(t, vector_length(cast([3]i64)feet) > generation.sea_radius, "%d m: the spawn lies under the sea", radius)
 		for spring in planet.springs {
@@ -381,4 +381,187 @@ test_the_relief_terms_shape_the_noise :: proc(t: ^testing.T) {
 	testing.expect_value(t, basin_relief(0, shape), 0)
 	testing.expect_value(t, basin_relief(-NOISE_ONE, shape), -metres_to_position_units(10))
 	testing.expect_value(t, basin_relief(-NOISE_ONE * 3 / 4, shape), -metres_to_position_units(10) / 4)
+}
+
+// The crater (work item 0199).
+
+// The shipped crater's term with its floor at the radius.
+shipped_test_crater_term :: proc() -> Crater_Term {
+	return Crater_Term {
+		floor_radius = metres_to_position_units(4),
+		radius = metres_to_position_units(12),
+		reach = metres_to_position_units(18),
+		depth = metres_to_position_units(3),
+		rim = metres_to_position_units(1),
+	}
+}
+
+// The floor's height at any relief out to the floor's radius; from the
+// floor's edge a monotonic rise to the rim's crest at the radius for a
+// level relief, never steeper than 45 degrees; the relief itself from the
+// reach on; the zero term changes nothing.
+@(test)
+test_the_crater_relief_profile :: proc(t: ^testing.T) {
+	term := shipped_test_crater_term()
+	for relief in ([3]i64{metres_to_position_units(-20), 0, metres_to_position_units(5)}) {
+		testing.expect_value(t, crater_relief(term, 0, relief), 0)
+		testing.expect_value(t, crater_relief(term, term.floor_radius, relief), 0)
+		testing.expect_value(t, crater_relief(term, term.reach, relief), relief)
+		testing.expect_value(t, crater_relief(term, term.reach + 1000, relief), relief)
+		testing.expect_value(t, crater_relief({}, term.floor_radius, relief), relief)
+	}
+	testing.expect_value(t, crater_relief(term, term.radius, 0), term.rim)
+	centimetre := millimetres_to_position_units(10)
+	previous := crater_relief(term, 0, 0)
+	for distance := centimetre; distance <= term.reach; distance += centimetre {
+		height := crater_relief(term, distance, 0)
+		if distance <= term.radius {
+			testing.expectf(t, height >= previous, "the bowl drops at %d", distance)
+		}
+		testing.expectf(t, abs(height - previous) <= centimetre, "the profile rises %d over a centimetre at %d", height - previous, distance)
+		previous = height
+	}
+}
+
+// The chunks round the shipped home at a radius preset and a spacing,
+// reach chunks either side across and one up and down, in a world the
+// caller destroys.
+make_test_home_field :: proc(planet: Planet, spacing_millimetres: int, reach: i32) -> Field_World {
+	world: Field_World
+	generation := make_planet_generation(DEFAULT_WORLD_SEED, planet, spacing_millimetres)
+	site, _ := field_home_site(generation, planet)
+	centre := sample_to_field_chunk_coordinate(world_position_to_sample(site, spacing_millimetres))
+	for z in -reach ..= reach {
+		for y in i32(-1) ..= 1 {
+			for x in -reach ..= reach {
+				chunk := new(Field_Chunk)
+				generate_field_chunk(DEFAULT_WORLD_SEED, planet, spacing_millimetres, centre + {x, y, z}, chunk)
+				field_world_insert_chunk(&world, chunk)
+			}
+		}
+	}
+	return world
+}
+
+// The field's surface down the radial at a point on the sphere, from 4 m
+// over the expected height, as a distance from the centre.
+test_field_surface_distance :: proc(world: ^Field_World, spacing_millimetres: int, point: [3]i64, expected: i64) -> (distance: i64, found: bool) {
+	up, _ := normalize_fixed(point)
+	rise := metres_to_position_units(4)
+	hit := raycast_field(world, spacing_millimetres, World_Position(fixed_scale(up, expected + rise)), -up, 2 * rise)
+	return vector_length(cast([3]i64)hit.position), hit.hit
+}
+
+// At every preset and at 1000 and 333 mm the generated floor is flat
+// enough for a machine on bare ground over 8 by 12 cells centred on the
+// home (the room 0198's pod needs), and lies at the floor's height.
+@(test)
+test_the_crater_floor_is_flat_in_the_generated_field :: proc(t: ^testing.T) {
+	flatness := test_field_game_config().bare_ground_flatness_millimetres
+	for radius in default_planet(shipped_test_planets()).radius_presets_metres {
+		planet := shipped_test_home_at(radius)
+		for spacing in ([2]int{1000, 333}) {
+			world := make_test_home_field(planet, spacing, 1)
+			defer destroy_field_world(&world)
+			generation := make_planet_generation(DEFAULT_WORLD_SEED, planet, spacing)
+			site, heading := field_home_site(generation, planet)
+			origin, axes := free_frame_at(site, heading, 500)
+			pitch := millimetres_to_position_units(500)
+			corner := origin - World_Position(fixed_scale(axes[FRAME_RIGHT], 3 * pitch) + fixed_scale(axes[FRAME_FORWARD], 5 * pitch))
+			frame := Frame{origin = corner, axes = axes, pitch_millimetres = 500}
+			testing.expectf(t, bare_ground_is_flat(&world, spacing, frame, {8, 8, 12}, flatness), "%d m at %d mm: the floor is not flat", radius, spacing)
+			expected := generation.radius + generation.crater.floor_height
+			surface, found := test_field_surface_distance(&world, spacing, generation.crater.home, expected)
+			testing.expectf(t, found && abs(surface - expected) <= generation.spacing / 8, "%d m at %d mm: the floor lies %d units off its height", radius, spacing, surface - expected)
+		}
+	}
+}
+
+// A point on the sphere at a distance from the home along a bearing in
+// degrees from the tangent towards +x.
+test_crater_point :: proc(generation: Planet_Generation, bearing_degrees: int, distance: i64) -> [3]i64 {
+	home := generation.crater.home
+	up, _ := normalize_fixed(home)
+	forward := tangent_of(up, {UNIT_VECTOR_ONE, 0, 0})
+	right := fixed_cross(forward, up)
+	angle := degrees_to_angle_units(bearing_degrees)
+	offset := fixed_scale(forward, distance * fixed_cosine(angle) / UNIT_VECTOR_ONE) + fixed_scale(right, distance * fixed_sine(angle) / UNIT_VECTOR_ONE)
+	return project_onto_sphere(World_Position(home + offset), vector_length(home + offset), generation.radius)
+}
+
+// On eight bearings the field's surface at the crest stands the rim over
+// the uncratered relief, and two spacings past the reach the samples
+// round the point are the uncratered planet's (the field's surface there
+// can lie further than an eighth of a spacing from the relief on a
+// ledge's face, crater or not).
+@(test)
+test_the_rim_stands_above_the_surrounding_surface :: proc(t: ^testing.T) {
+	for radius in default_planet(shipped_test_planets()).radius_presets_metres {
+		planet := shipped_test_home_at(radius)
+		for spacing in ([2]int{1000, 333}) {
+			world := make_test_home_field(planet, spacing, spacing == 1000 ? 1 : 2)
+			defer destroy_field_world(&world)
+			generation := make_planet_generation(DEFAULT_WORLD_SEED, planet, spacing)
+			without := planet
+			without.crater = {}
+			uncratered := make_planet_generation(DEFAULT_WORLD_SEED, without, spacing)
+			term := generation.crater
+			for bearing := 0; bearing < 360; bearing += 45 {
+				crest := test_crater_point(generation, bearing, term.radius)
+				expected := generation.radius + uncratered_relief(generation, crest) + term.rim
+				surface, found := test_field_surface_distance(&world, spacing, crest, expected)
+				testing.expectf(t, found && abs(surface - expected) <= generation.spacing, "%d m at %d mm, %d degrees: the crest lies %d units off", radius, spacing, bearing, surface - expected)
+				outside := test_crater_point(generation, bearing, term.reach + 2 * generation.spacing)
+				up, _ := normalize_fixed(outside)
+				surface_sample := world_position_to_sample(World_Position(fixed_scale(up, generation.radius + uncratered_relief(generation, outside))), spacing)
+				for offset in ([7]Sample_Coordinate{{}, {1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}}) {
+					position := sample_to_world_position(surface_sample + offset, spacing)
+					testing.expectf(t, planet_sample(generation, position) == planet_sample(uncratered, position), "%d m at %d mm, %d degrees: the crater reaches past its reach", radius, spacing, bearing)
+				}
+			}
+		}
+	}
+}
+
+// Every level of detail generates through planet_sample with the crater:
+// at the level's spacing (field_grid_generation) a step over the floor is
+// air, a step under it ground, and at a quarter of the radius 2 m under
+// the uncratered surface is air (the bowl, not the plain relief).
+@(test)
+test_the_crater_shows_at_every_level :: proc(t: ^testing.T) {
+	planet := shipped_test_home_at(8000)
+	generation := make_planet_generation(DEFAULT_WORLD_SEED, planet, 1000)
+	term := generation.crater
+	up, _ := normalize_fixed(term.home)
+	floor := generation.radius + term.floor_height
+	quarter := test_crater_point(generation, 90, term.radius / 4)
+	quarter_up, _ := normalize_fixed(quarter)
+	dug := generation.radius + uncratered_relief(generation, quarter) - metres_to_position_units(2)
+	for level in i32(0) ..< FIELD_LEVEL_COUNT {
+		step := field_node_step(Field_Node{level = level})
+		coarse := field_grid_generation(generation, step)
+		height := i64(step) * generation.spacing
+		testing.expectf(t, planet_sample(coarse, World_Position(fixed_scale(up, floor + height))).density <= 0, "level %d: ground a step over the floor", level)
+		testing.expectf(t, planet_sample(coarse, World_Position(fixed_scale(up, floor - height))).density > 0, "level %d: air a step under the floor", level)
+		testing.expectf(t, planet_sample(coarse, World_Position(fixed_scale(quarter_up, dug))).density <= 0, "level %d: the bowl is not dug at a quarter of the radius", level)
+	}
+}
+
+// With the default seed the shipped floor lies at least 1 m over the sea
+// at every preset, and neither of the crater's clamps engages.
+@(test)
+test_the_shipped_crater_floor_lies_above_the_sea :: proc(t: ^testing.T) {
+	bound := metres_to_position_units(MAXIMUM_RELIEF_METRES)
+	for radius in default_planet(shipped_test_planets()).radius_presets_metres {
+		planet := shipped_test_home_at(radius)
+		generation := make_planet_generation(DEFAULT_WORLD_SEED, planet, 1000)
+		term := generation.crater
+		sea := metres_to_position_units(i64(planet.sea_level_metres))
+		testing.expectf(t, term.floor_height - sea >= metres_to_position_units(1), "%d m: the floor lies %d units over the sea", radius, term.floor_height - sea)
+		testing.expectf(t, uncratered_relief(generation, term.home) - term.depth > -bound, "%d m: the floor's clamp engages", radius)
+		for bearing := 0; bearing < 360; bearing += 45 {
+			crest := test_crater_point(generation, bearing, term.radius)
+			testing.expectf(t, uncratered_relief(generation, crest) + term.rim < bound, "%d m: the rim's clamp engages", radius)
+		}
+	}
 }

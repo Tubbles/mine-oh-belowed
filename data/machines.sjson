@@ -1055,7 +1055,11 @@ machines = [
 		stands_on_ground = true
 		footprint = {width = 6, depth = 6, height = 8}
 		model = "pod"
-		// Beside the bed, over the bed, the door.
+		// Beside the bed, over the bed, the door. The first box is the
+		// cabin (work item 0199): it must start on the floor row and span
+		// 2 by 2 cells at least, and new players spawn at its floor's
+		// centre. The pod stands on the floor of the home's crater, its
+		// floor row on the ground.
 		open_cells = [
 			{from = {x = 3, y = 0, z = 1}, to = {x = 4, y = 6, z = 4}}
 			{from = {x = 1, y = 1, z = 1}, to = {x = 2, y = 6, z = 4}}

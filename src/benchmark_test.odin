@@ -99,8 +99,8 @@ test_benchmark_field :: proc(items: Item_Registry) -> Benchmark_Field {
 }
 
 // Builds and runs size 1 on the field world and logs its table. Every
-// machine must work at the end of the warm up, and the player stands on
-// the field at the home beside the pad, with the pod behind it; the
+// machine must work at the end of the warm up, and the player stands in
+// the pod's cabin at the home, with the pad 24 m ahead of it; the
 // budget holds only in the optimised build (./build.sh bench), the plain
 // build logs. Size 2 is refused with the M14 message.
 @(test)
@@ -119,10 +119,10 @@ test_factory_benchmark :: proc(t: ^testing.T) {
 	testing.expect_value(t, report.problem, "")
 	testing.expect_value(t, len(report.idle), 0)
 	testing.expect_value(t, report.profile.ticks, report.measured_ticks)
-	// The benchmark's pad, the pod's pad and the pod, which rides in the
-	// foundations' pool.
+	// The benchmark's pad and the pod, which rides in the foundations'
+	// pool; the player starts in the pod.
 	pad := (2 * BENCHMARK_PAD_HALF_WIDTH + 1) * (2 * BENCHMARK_PAD_HALF_WIDTH + 1)
-	testing.expect_value(t, report.entity_counts[.Foundation], pad + POD_PAD_SIZE * POD_PAD_SIZE + 1)
+	testing.expect_value(t, report.entity_counts[.Foundation], pad + 1)
 	when ODIN_OPTIMIZATION_MODE == .Speed {
 		testing.expectf(t, report.average_milliseconds < BENCHMARK_SIZE_1_BUDGET_MILLISECONDS, "size 1 averages %.3f ms per tick, over the %.1f ms budget", report.average_milliseconds, BENCHMARK_SIZE_1_BUDGET_MILLISECONDS)
 	}
@@ -131,8 +131,8 @@ test_factory_benchmark :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(larger.problem, "M14"), larger.problem)
 }
 
-// Work item 0196: the benchmark's pad and the pod's pad are laid in the
-// content's pad foundation, the wooden one.
+// Work item 0196: the benchmark's pad is laid in the content's pad
+// foundation, the wooden one; the pod has no pad (0199).
 @(test)
 test_the_benchmark_pad_is_the_contents_pad_foundation :: proc(t: ^testing.T) {
 	content := make_test_content()
@@ -155,5 +155,5 @@ test_the_benchmark_pad_is_the_contents_pad_foundation :: proc(t: ^testing.T) {
 		}
 	}
 	pad := (2 * BENCHMARK_PAD_HALF_WIDTH + 1) * (2 * BENCHMARK_PAD_HALF_WIDTH + 1)
-	testing.expect_value(t, laid, pad + POD_PAD_SIZE * POD_PAD_SIZE)
+	testing.expect_value(t, laid, pad)
 }

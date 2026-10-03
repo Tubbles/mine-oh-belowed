@@ -14,7 +14,10 @@ import "platform"
 // The veins' outcrops replace the strata near the surface within their
 // discs (0179, generation_planet_veins.odin).
 // The relief's octaves are the planet record's (data/planets.sjson), at
-// most MAXIMUM_RELIEF_METRES in all (data_planet.odin).
+// most MAXIMUM_RELIEF_METRES in all (data_planet.odin). The crater at the
+// home (0199, crater_relief) is the relief's last term: its floor is
+// clamped to at least -MAXIMUM_RELIEF_METRES and its result to at most
+// +MAXIMUM_RELIEF_METRES, so the bound holds with it.
 
 TOPSOIL_DEPTH_METRES :: 2
 DEEP_STONE_DEPTH_METRES :: 40
@@ -27,6 +30,22 @@ TINT_REGION_METRES :: 256
 FAR_LIMIT_METRES :: 2 * MAXIMUM_PLANET_RADIUS_METRES
 // Fixed point one of the noise: values and fractions in 1/NOISE_ONE.
 NOISE_ONE :: 65536
+// Fixed point one of the crater's profile (crater_relief).
+CRATER_ONE :: 65536
+
+// The crater of a generation (work item 0199), lengths in position units:
+// the home on the sphere, the floor's height above the radius, the
+// floor's radius, the crest's radius, the reach of the rim's fall, the
+// depth and the rim's height. Zero reach is no crater.
+Crater_Term :: struct {
+	home:         [3]i64,
+	floor_height: i64,
+	floor_radius: i64,
+	radius:       i64,
+	reach:        i64,
+	depth:        i64,
+	rim:          i64,
+}
 
 // What every sample of one generation reads, in position units.
 Planet_Generation :: struct {
@@ -43,6 +62,8 @@ Planet_Generation :: struct {
 	relief_shape:        Relief_Shape,
 	// The veins' discs round the home (0179, generation_planet_veins.odin).
 	veins:               Planet_Veins,
+	// The crater at the home (0199, make_crater_term).
+	crater:              Crater_Term,
 }
 
 // The starter veins lie round the planet's home (the pod's, 0179,
@@ -50,7 +71,7 @@ Planet_Generation :: struct {
 make_planet_generation :: proc(seed: u64, planet: Planet, spacing_millimetres: int) -> Planet_Generation {
 	seeds := generation_seed.derive_purpose_seeds(seed)
 	radius := metres_to_position_units(i64(planet.radius_metres))
-	return Planet_Generation {
+	generation := Planet_Generation {
 		surface_seed = seeds[.Planet_Surface],
 		tint_seed = seeds[.Planet_Tint],
 		radius = radius,
@@ -62,6 +83,27 @@ make_planet_generation :: proc(seed: u64, planet: Planet, spacing_millimetres: i
 		relief_octaves = planet.relief_octaves,
 		relief_shape = planet.relief_shape,
 		veins = plan_planet_veins(seed, planet_home_direction(planet.home), radius),
+	}
+	generation.crater = make_crater_term(generation, planet.crater, planet_home_direction(planet.home))
+	return generation
+}
+
+// The crater's term at the home direction, its floor read off the
+// uncratered relief there (one relief evaluation per generation).
+make_crater_term :: proc(generation: Planet_Generation, crater: Planet_Crater, home_direction: [3]i64) -> Crater_Term {
+	if crater == {} {
+		return {}
+	}
+	home := fixed_scale(home_direction, generation.radius)
+	depth := metres_to_position_units(i64(crater.depth_metres))
+	return Crater_Term {
+		home = home,
+		floor_height = max(uncratered_relief(generation, home) - depth, -metres_to_position_units(MAXIMUM_RELIEF_METRES)),
+		floor_radius = metres_to_position_units(i64(crater.floor_radius_metres)),
+		radius = metres_to_position_units(i64(crater.radius_metres)),
+		reach = metres_to_position_units(i64(crater.radius_metres + CRATER_RIM_FALL_PER_HEIGHT * crater.rim_metres)),
+		depth = depth,
+		rim = metres_to_position_units(i64(crater.rim_metres)),
 	}
 }
 
@@ -124,9 +166,15 @@ value_noise :: proc(seed: u64, point: [3]i64, wavelength: i64) -> i64 {
 }
 
 // The local surface's height above the radius at a point on the sphere:
-// the octaves, the first shaped by the basins and the terraces, and the
-// ledges (0189, Relief_Shape). With the zero shape it is the octaves' sum.
+// the shaped relief with the crater at the home (0199).
 surface_relief :: proc(generation: Planet_Generation, point: [3]i64) -> i64 {
+	return crater_relief(generation.crater, crater_distance(generation.crater, point), uncratered_relief(generation, point))
+}
+
+// The relief without the crater: the octaves, the first shaped by the
+// basins and the terraces, and the ledges (0189, Relief_Shape). With the
+// zero shape it is the octaves' sum.
+uncratered_relief :: proc(generation: Planet_Generation, point: [3]i64) -> i64 {
 	relief: i64 = 0
 	for octave, index in generation.relief_octaves {
 		noise := relief_octave_noise(generation, index, octave.wavelength_metres, point)
@@ -200,6 +248,44 @@ fixed_power :: proc(fraction: i64, exponent: int) -> i64 {
 		base = base * base / NOISE_ONE
 	}
 	return result
+}
+
+// The chord from the crater's home to the point on the sphere, in
+// position units; past the reach it is reach + 1 without a root, which
+// every sample but the few round the home takes.
+crater_distance :: proc(term: Crater_Term, point: [3]i64) -> i64 {
+	offset := point - term.home
+	squared := offset.x * offset.x + offset.y * offset.y + offset.z * offset.z
+	if squared > term.reach * term.reach {
+		return term.reach + 1
+	}
+	return i64(integer_square_root(u64(squared)))
+}
+
+// Smoothstep of a fraction clamped to 0 to CRATER_ONE: zero slope at both
+// ends.
+crater_smoothstep :: proc(fraction: i64) -> i64 {
+	clamped := clamp(fraction, 0, CRATER_ONE)
+	return clamped * clamped * (3 * CRATER_ONE - 2 * clamped) / (CRATER_ONE * CRATER_ONE)
+}
+
+// The relief with the crater at the distance from its home: the floor's
+// height out to the floor radius, a smooth blend of it into the relief
+// plus the rim out to the crest, the rim falling back to the relief out
+// to the reach, the relief past it. At most +MAXIMUM_RELIEF_METRES.
+crater_relief :: proc(term: Crater_Term, distance, relief: i64) -> i64 {
+	if term.reach == 0 || distance >= term.reach {
+		return relief
+	}
+	result: i64
+	if distance <= term.radius {
+		share := crater_smoothstep((distance - term.floor_radius) * CRATER_ONE / (term.radius - term.floor_radius))
+		result = relief + (CRATER_ONE - share) * (term.floor_height - relief) / CRATER_ONE + term.rim * share / CRATER_ONE
+	} else {
+		share := crater_smoothstep((distance - term.radius) * CRATER_ONE / (term.reach - term.radius))
+		result = relief + term.rim * (CRATER_ONE - share) / CRATER_ONE
+	}
+	return min(result, metres_to_position_units(MAXIMUM_RELIEF_METRES))
 }
 
 // Within the ledge's amplitude either side; no noise is read while it is

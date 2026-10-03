@@ -3,13 +3,13 @@ package game
 import "core:slice"
 import "core:testing"
 
-// The pod's frame holds the ten by ten pad of foundations and the pod on
-// it, every footprint cell the pod's, centred on the pad; the door (the
-// middle of the model's front) lies from the back towards the heading.
+// The pod's frame holds the pod alone, every footprint cell the pod's,
+// its bottom row on cell row 0 standing on the given point, no
+// foundation; the door (the middle of the model's front) lies from the
+// back towards the heading.
 @(test)
-test_place_pod_lays_the_pad_and_the_pod_with_its_door_to_the_heading :: proc(t: ^testing.T) {
+test_place_pod_stands_the_pod_on_its_frame_with_no_pad :: proc(t: ^testing.T) {
 	machines := make_test_machines()
-	foundation := test_foundation(machines)
 	pod_machine := find_machine_of_kind(machines, .Pod)
 	testing.expect(t, pod_machine != NO_MACHINE)
 	pod := machines.machines[pod_machine]
@@ -17,30 +17,24 @@ test_place_pod_lays_the_pad_and_the_pod_with_its_door_to_the_heading :: proc(t: 
 	defer destroy_entities(&entities)
 	up, _ := normalize_fixed(cast([3]i64)(TEST_FRAME_HIT))
 	heading := test_tangent_at(up, {UNIT_VECTOR_ONE, 0, 0})
-	frame, ok := place_pod(&entities, machines, foundation, TEST_FRAME_HIT, heading, 500)
+	frame, ok := place_pod(&entities, machines, TEST_FRAME_HIT, heading, 500)
 	testing.expect(t, ok)
 	record, found := find_frame(&entities.frames, frame)
 	testing.expect(t, found && frame != BLOCK_FRAME)
-	pad_count := 0
-	for z in i32(POD_PAD_FIRST_CELL) ..< POD_PAD_FIRST_CELL + POD_PAD_SIZE {
-		for x in i32(POD_PAD_FIRST_CELL) ..< POD_PAD_FIRST_CELL + POD_PAD_SIZE {
-			handle := entity_at(&entities, {x, 0, z}, frame)
-			common := entity_common(&entities, handle)
-			testing.expectf(t, common != nil && common.machine == foundation, "pad cell %d, %d", x, z)
-			pad_count += 1
-		}
-	}
-	testing.expect_value(t, pad_count, POD_PAD_SIZE * POD_PAD_SIZE)
 	origin := pod_origin(pod)
+	testing.expect_value(t, origin.y, 0)
 	pod_handle := entity_at(&entities, origin, frame)
 	testing.expect_value(t, entity_common(&entities, pod_handle).machine, pod_machine)
 	for cell in footprint_cells(origin, pod.footprint, POD_ROTATION) {
 		testing.expect_value(t, entity_at(&entities, cell, frame), pod_handle)
 	}
 	size := rotated_footprint_size(pod.footprint, POD_ROTATION)
-	testing.expect_value(t, origin.x - POD_PAD_FIRST_CELL, POD_PAD_FIRST_CELL + POD_PAD_SIZE - (origin.x + size.x))
-	testing.expect_value(t, origin.z - POD_PAD_FIRST_CELL, POD_PAD_FIRST_CELL + POD_PAD_SIZE - (origin.z + size.z))
-	testing.expect_value(t, frame_cell_count(&entities.frames, frame), POD_PAD_SIZE * POD_PAD_SIZE + int(size.x * size.y * size.z))
+	testing.expect_value(t, frame_cell_count(&entities.frames, frame), int(size.x * size.y * size.z))
+	for foundation in entities.foundations.entries {
+		testing.expect(t, !foundation.alive || machines.machines[foundation.machine].kind != .Foundation, "a foundation was laid")
+	}
+	base := frame_cell_centre(record, {}) - World_Position(fixed_scale(record.axes[FRAME_UP], frame_pitch_units(record) / 2))
+	testing.expectf(t, vector_length(cast([3]i64)(base - TEST_FRAME_HIT)) <= 4, "cell row 0's base lies %v off the point", base - TEST_FRAME_HIT)
 	testing.expect(t, !entity_has_panel(&entities, machines, pod_handle))
 	front := rotate_footprint_cell({pod.footprint.x - 1, pod.footprint.z / 2}, pod.footprint.x, pod.footprint.z, POD_ROTATION)
 	back := rotate_footprint_cell({0, pod.footprint.z / 2}, pod.footprint.x, pod.footprint.z, POD_ROTATION)
@@ -53,7 +47,7 @@ test_place_pod_lays_the_pad_and_the_pod_with_its_door_to_the_heading :: proc(t: 
 
 // The pod on the flat test site, its door towards +x, and its record.
 place_test_pod :: proc(entities: ^Entities, machines: Machine_Registry) -> (frame: Frame, pod: Machine) {
-	frame_id, ok := place_pod(entities, machines, find_foundation_machine(machines), test_site_point(0, 0, 0), {UNIT_VECTOR_ONE, 0, 0}, 500)
+	frame_id, ok := place_pod(entities, machines, test_site_point(0, 0, 0), {UNIT_VECTOR_ONE, 0, 0}, 500)
 	assert(ok)
 	frame, _ = find_frame(&entities.frames, frame_id)
 	return frame, machines.machines[find_machine_of_kind(machines, .Pod)]
@@ -121,9 +115,9 @@ test_a_machine_on_an_open_pod_cell_is_refused :: proc(t: ^testing.T) {
 	testing.expect_value(t, refusal, Frame_Placement_Refusal.Occupied)
 }
 
-// Walked from the pad at the door, the player passes the door and stands
-// inside on the pad under the pod, a pitch over the ground; walking on
-// into the side wall, the wall stops the feet short of its inner face.
+// Walked from the ground at the door, the player passes the door and
+// stands inside on the ground under the pod; walking on into the side
+// wall, the wall stops the feet short of its inner face.
 @(test)
 test_a_field_player_walks_through_the_pods_door_and_the_walls_stop_it :: proc(t: ^testing.T) {
 	machines := make_test_machines()
@@ -138,7 +132,7 @@ test_a_field_player_walks_through_the_pods_door_and_the_walls_stop_it :: proc(t:
 		front := origin.z + size.z - 1
 		tuning := test_field_tuning(spacing)
 		inward := -frame.axes[FRAME_FORWARD]
-		player := make_field_player(frame_floor_point(frame, 1, 1, front + 2), inward)
+		player := make_field_player(frame_floor_point(frame, 1, 0, front + 2), inward)
 		run_field_player_with_frames(&world, &entities.frames, tuning, &player, {}, 30)
 		for _ in 0 ..< 240 {
 			if frame_cell_of_feet(frame, player).z < front {
@@ -151,7 +145,7 @@ test_a_field_player_walks_through_the_pods_door_and_the_walls_stop_it :: proc(t:
 		testing.expectf(t, inside.z < front && inside.y == origin.y, "%d mm: the feet are in cell %v", spacing, inside)
 		testing.expectf(t, entity_at(&entities, inside, frame.id) == entity_at(&entities, origin, frame.id), "%d mm: cell %v is not the pod's", spacing, inside)
 		testing.expectf(t, player.on_ground, "%d mm: not on the floor", spacing)
-		testing.expectf(t, abs(site_height(player.position) - frame_pitch_units(frame)) <= tenth_sample(spacing), "%d mm: feet at %d", spacing, site_height(player.position))
+		testing.expectf(t, abs(site_height(player.position)) <= tenth_sample(spacing), "%d mm: feet at %d", spacing, site_height(player.position))
 		testing.expectf(t, !field_capsule_overlaps(&world, &entities.frames, tuning, player.position, player.up), "%d mm: the capsule overlaps the pod", spacing)
 
 		player.forward = tangent_of(player.up, frame.axes[FRAME_RIGHT])
@@ -189,8 +183,8 @@ test_a_saved_pod_loads_with_its_open_cells :: proc(t: ^testing.T) {
 }
 
 // The aiming ray passes the pod's open cells: from inside, through the
-// door, it reaches a chest on the pad outside; at the side wall it stops
-// at the wall.
+// door, it reaches a chest on a foundation outside; at the side wall it
+// stops at the wall.
 @(test)
 test_the_aiming_ray_passes_the_pods_open_cells_and_stops_at_its_walls :: proc(t: ^testing.T) {
 	machines := make_test_machines()
@@ -200,10 +194,12 @@ test_the_aiming_ray_passes_the_pods_open_cells_and_stops_at_its_walls :: proc(t:
 	origin := pod_origin(pod)
 	size := rotated_footprint_size(pod.footprint, POD_ROTATION)
 	front := origin.z + size.z - 1
-	outside := World_Coordinate{1, origin.y, front + 2}
-	_, refusal := place_on_frame(&entities, machines, test_machine(machines, "wooden_chest"), frame.id, outside, 0)
+	outside := World_Coordinate{1, origin.y + 1, front + 2}
+	_, refusal := place_on_frame(&entities, machines, test_foundation(machines), frame.id, outside - UP, 0)
 	testing.expect_value(t, refusal, Frame_Placement_Refusal.None)
-	inside := World_Coordinate{1, origin.y, front - 2}
+	_, refusal = place_on_frame(&entities, machines, test_machine(machines, "wooden_chest"), frame.id, outside, 0)
+	testing.expect_value(t, refusal, Frame_Placement_Refusal.None)
+	inside := World_Coordinate{1, origin.y + 1, front - 2}
 	testing.expect(t, !frame_cell_is_solid(&entities.frames, frame.id, inside))
 	eye := frame_cell_centre(frame, inside)
 	reach := 10 * frame_pitch_units(frame)

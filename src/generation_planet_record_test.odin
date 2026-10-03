@@ -23,6 +23,7 @@ expect_records_equal :: proc(t: ^testing.T, first, second: Planet_Generation_Rec
 	testing.expect_value(t, scalars(first), scalars(second), loc = location)
 	testing.expect_value(t, first.relief_octaves, second.relief_octaves, loc = location)
 	testing.expect_value(t, first.relief_shape, second.relief_shape, loc = location)
+	testing.expect_value(t, first.crater, second.crater, loc = location)
 	testing.expect(t, slice.equal(first.springs, second.springs), "the springs differ", loc = location)
 }
 
@@ -267,4 +268,27 @@ test_a_world_file_before_the_relief_shape_keeps_the_plain_relief :: proc(t: ^tes
 	testing.expect_value(t, parsed.planet_generation.relief_octaves, record.relief_octaves)
 	loaded := make_recorded_planet(planet, parsed.planet_generation, context.temp_allocator)
 	testing.expect_value(t, make_planet_generation(TEST_PLANET_SEED, loaded, 1000).relief_shape, Relief_Shape{})
+}
+
+// Work item 0199: a world file recorded without the crater resolves to
+// the data's crater; a recorded crater survives make_recorded_planet when
+// the data's differs, so a data edit never moves a saved pod's crater.
+@(test)
+test_a_world_file_without_a_crater_takes_the_datas :: proc(t: ^testing.T) {
+	planets := shipped_test_planets()
+	planet := default_planet(planets)
+	testing.expect(t, planet.crater != {}, "the shipped home has a crater")
+	record := planet_generation_record(planet)
+	record.crater, record.crater_recorded = {}, false
+	settings := World_File_Settings{planet_id = planet.id}
+	_, _, resolved := resolve_world_planet(settings, record, planets, true)
+	testing.expect(t, resolved.crater_recorded)
+	testing.expect_value(t, resolved.crater, planet.crater)
+	recorded := planet_generation_record(planet)
+	recorded.crater = {radius_metres = 10, depth_metres = 2, floor_radius_metres = 3, rim_metres = 0}
+	testing.expect_value(t, planet_generation_record_problem(recorded), "")
+	_, _, kept := resolve_world_planet(settings, recorded, planets, true)
+	testing.expect_value(t, make_recorded_planet(planet, kept, context.temp_allocator).crater, recorded.crater)
+	recorded.crater.depth_metres = MAXIMUM_CRATER_DEPTH_METRES + 1
+	testing.expect(t, strings.contains(planet_generation_record_problem(recorded), "crater.depth_metres"), "a recorded crater out of bounds is refused")
 }

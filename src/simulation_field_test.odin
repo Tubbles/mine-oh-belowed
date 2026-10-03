@@ -52,8 +52,10 @@ tick_field_test_simulation :: proc(state: ^Simulation_State, content: Simulation
 }
 
 // The scripted input of tick index, through the hotbar: a look down, a
-// walk, a torch on the ground ahead, a foundation, a turn away from it, a
-// short dig with the pickaxe and the dug material placed back.
+// walk out of the pod and up the crater's bowl (0199), a torch on the
+// ground ahead, a foundation, a turn away from it, a short dig with the
+// pickaxe and the dug material placed back, aimed far enough up the slope
+// that the placement does not reach the player.
 field_test_script_frame :: proc(tick: int) -> Input_Frame {
 	frame: Input_Frame
 	press :: proc(frame: ^Input_Frame, action: Action) {
@@ -83,7 +85,7 @@ field_test_script_frame :: proc(tick: int) -> Input_Frame {
 		frame.pressed = {.Mine}
 		frame.just_pressed = tick == 400 ? {.Mine} : {}
 	case tick == 490:
-		frame.look_delta = {-1800, -100}
+		frame.look_delta = {-1800, -200}
 	case tick == 500:
 		press(&frame, .Hotbar_Slot_4)
 	}
@@ -198,7 +200,7 @@ test_two_field_simulations_hash_alike_after_a_walk_over_dug_ground :: proc(t: ^t
 }
 
 // A field world's save round trips an edited chunk, a torch, a frame
-// with a foundation, the pod with its pad, the light's queues and the
+// with a foundation, the pod on its own frame, the light's queues and the
 // players' field state; a planet vein keeps its drawn reservoir and gets
 // its disc back, which the save leaves out.
 @(test)
@@ -408,13 +410,23 @@ find_test_pod :: proc(entities: ^Entities, machines: Machine_Registry) -> (pod: 
 	return {}, {}, false
 }
 
-// A new field world lays the pod at the home with its door to the spring,
-// and a player joining it spawns as the first did, in front of the door
-// (past the pad's front edge, off every pad cell), facing the spring,
-// with the starter kit, through the entry every join takes
-// (add_player_entry).
+// The feet's cell, a quarter pitch over them, is a cell of the pod's
+// first open box (the cabin) on its floor row.
+feet_in_test_cabin :: proc(frame: Frame, pod: Foundation, machine: Machine, player: Field_Player) -> bool {
+	lift := World_Position(fixed_scale(player.up, frame_pitch_units(frame) / 4))
+	cell := world_to_frame_cell(frame, player.position + lift)
+	cabin := machine
+	cabin.open_cell_box_count = 1
+	return cell.y == pod.origin.y && slice.contains(machine_open_cells(pod.origin, cabin, pod.rotation), cell)
+}
+
+// A new field world stands the pod on the floor of its crater at the
+// home, with no pad and its door to the spring, and a player joining it
+// spawns as the first did, in the cabin facing the door, with the
+// starter kit, through the entry every join takes (add_player_entry);
+// after a second with no input both stand on the cabin's floor.
 @(test)
-test_a_new_world_places_the_pod_and_players_spawn_at_its_door :: proc(t: ^testing.T) {
+test_a_new_world_sinks_the_pod_in_its_crater_and_players_spawn_in_the_cabin :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
 	session := start_field_test_session(config, content)
@@ -425,28 +437,143 @@ test_a_new_world_places_the_pod_and_players_spawn_at_its_door :: proc(t: ^testin
 	if !found {
 		return
 	}
-	testing.expect_value(t, pod.origin, pod_origin(content.machines.machines[pod.machine]))
-	testing.expect_value(t, frame_cell_count(&state.world.entities.frames, frame.id), POD_PAD_SIZE * POD_PAD_SIZE + int(pod.size.x * pod.size.y * pod.size.z))
+	machine := content.machines.machines[pod.machine]
+	testing.expect_value(t, pod.origin, pod_origin(machine))
+	testing.expect_value(t, frame_cell_count(&state.world.entities.frames, frame.id), int(pod.size.x * pod.size.y * pod.size.z))
+	for foundation in state.world.entities.foundations.entries {
+		testing.expect(t, !foundation.alive || content.machines.machines[foundation.machine].kind != .Foundation, "a foundation was laid")
+	}
 	generation := make_planet_generation(state.world.settings.seed, state.world.planet, state.field.spacing_millimetres)
 	site, heading := field_home_site(generation, state.world.planet)
-	// Cell (0, 0, 0) stands on the site (free_frame_at), within rounding.
-	standing := World_Position(fixed_scale(frame.axes[FRAME_UP], frame_pitch_units(frame) / 2))
-	testing.expectf(t, vector_length(cast([3]i64)(frame_cell_centre(frame, {}) - site - standing)) <= 4, "the pod's frame stands %v off the site", frame_cell_centre(frame, {}) - site)
+	// Cell (0, 0, 0)'s base stands on the site (free_frame_at).
+	base := frame_cell_centre(frame, {}) - World_Position(fixed_scale(frame.axes[FRAME_UP], frame_pitch_units(frame) / 2))
+	testing.expectf(t, vector_length(cast([3]i64)(base - site)) <= 4, "the pod's frame stands %v off the site", base - site)
+	home := fixed_scale(planet_home_direction(state.world.planet.home), generation.radius)
+	sunk := uncratered_relief(generation, home) - (vector_length(cast([3]i64)site) - generation.radius)
+	depth := metres_to_position_units(i64(state.world.planet.crater.depth_metres))
+	testing.expectf(t, abs(sunk - depth) <= generation.spacing / 8, "the floor lies %d units below the uncratered ground, not %d", sunk, depth)
 	testing.expectf(t, fixed_dot(frame.axes[FRAME_FORWARD], heading) > UNIT_VECTOR_ONE * 990 / 1000, "the door faces %v against the spring's heading %v", frame.axes[FRAME_FORWARD], heading)
-	add_player_entry(state, field_test_content(session, content), 1, Player_Start{})
+	simulation_content := field_test_content(session, content)
+	add_player_entry(state, simulation_content, 1, Player_Start{})
 	testing.expect_value(t, len(state.players), 2)
-	home := field_home_player(state.world.settings.seed, state.world.planet, state.field.spacing_millimetres, config.foundation_pitch_millimetres)
+	spawn, spawn_found := field_pod_spawn(&state.world.entities, content.machines)
+	testing.expect(t, spawn_found)
 	for player in state.players {
-		testing.expect_value(t, player.field.position, home.position)
-		testing.expect_value(t, player.field.forward, home.forward)
-		cell := world_to_frame_cell(frame, player.field.position)
-		testing.expectf(t, cell.z >= POD_PAD_FIRST_CELL + POD_PAD_SIZE, "the player stands in pad row %d", cell.z)
-		testing.expectf(t, cell.x >= POD_PAD_FIRST_CELL && cell.x < POD_PAD_FIRST_CELL + POD_PAD_SIZE, "the player stands beside the pad, column %d", cell.x)
-		testing.expectf(t, fixed_dot(player.field.forward, frame.axes[FRAME_FORWARD]) > UNIT_VECTOR_ONE * 990 / 1000, "the player faces %v, not the spring", player.field.forward)
+		testing.expect_value(t, player.field.position, spawn.position)
+		testing.expect_value(t, player.field.forward, spawn.forward)
+		testing.expectf(t, fixed_dot(player.field.forward, frame.axes[FRAME_FORWARD]) > UNIT_VECTOR_ONE * 999 / 1000, "the player faces %v, not the door", player.field.forward)
+		testing.expectf(t, feet_in_test_cabin(frame, pod, machine, player.field), "the player stands in cell %v", world_to_frame_cell(frame, player.field.position))
 		for starting in config.starting_items {
 			testing.expectf(t, inventory_count(player.inventory, test_item(content.items, starting.item)) == starting.count, "%s", starting.item)
 		}
 	}
+	stage_generated_field_set(state)
+	for _ in 0 ..< 60 {
+		tick_field_test_simulation(state, simulation_content, {})
+	}
+	floor := pod_cabin_floor_centre(frame, pod.origin, machine, pod.rotation)
+	for player in state.players {
+		testing.expect(t, player.field.on_ground, "the player stands on the cabin's floor")
+		testing.expectf(t, feet_in_test_cabin(frame, pod, machine, player.field), "the player left the cabin for %v", world_to_frame_cell(frame, player.field.position))
+		above := fixed_dot(cast([3]i64)(player.field.position - floor), frame.axes[FRAME_UP])
+		testing.expectf(t, above >= -tenth_sample(state.field.spacing_millimetres) && above <= frame_pitch_units(frame) / 4, "the feet stand %d units over the floor", above)
+	}
+}
+
+// Two new worlds from one seed hash alike at the start and after a second
+// with no input: the crater and the pod come from the seed and the record.
+@(test)
+test_two_new_worlds_from_one_seed_agree :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	first := start_field_test_session(config, content)
+	defer end_session(first)
+	second := start_field_test_session(config, content)
+	defer end_session(second)
+	testing.expect_value(t, simulation_state_hash(&first.simulation), simulation_state_hash(&second.simulation))
+	for session in ([2]^Session{first, second}) {
+		simulation_content := field_test_content(session, content)
+		for _ in 0 ..< 60 {
+			tick_field_test_simulation(&session.simulation, simulation_content, {})
+		}
+	}
+	testing.expect_value(t, simulation_state_hash(&first.simulation), simulation_state_hash(&second.simulation))
+}
+
+// A world saved before 0199, its pod on a pad of a hundred foundations
+// and its record without the crater, loads: the record takes the data's
+// crater, the pod and the pad stay, the spawn stands in the cabin on the
+// pad, a pad foundation beside the pod picks up and returns a foundation
+// and one under it is refused.
+@(test)
+test_an_old_save_with_a_pad_still_loads :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	session := start_field_test_session(config, content)
+	simulation_content := field_test_content(session, content)
+	state := &session.simulation
+	entities := &state.world.entities
+	machines := simulation_content.machines
+	new_pod, _, _ := find_test_pod(entities, machines)
+	pod_machine := new_pod.machine
+	testing.expect(t, remove_entity(entities, machines, entity_at(entities, new_pod.origin, new_pod.frame)))
+	release_empty_frame(entities, new_pod.frame)
+	generation := make_planet_generation(state.world.settings.seed, state.world.planet, state.field.spacing_millimetres)
+	site, heading := field_home_site(generation, state.world.planet)
+	foundation := field_pad_foundation(simulation_content)
+	pitch := simulation_content.field.foundation_pitch_millimetres
+	_, frame_id := place_free_foundation(entities, machines, foundation, site, heading, pitch)
+	for z in i32(-4) ..= 5 {
+		for x in i32(-4) ..= 5 {
+			if x != 0 || z != 0 {
+				place_on_frame(entities, machines, foundation, frame_id, {x, 0, z}, 0)
+			}
+		}
+	}
+	add_entity(entities, machines, pod_machine, {-4 + (10 - 6) / 2, 1, -4 + (10 - 6) / 2}, POD_ROTATION, frame_id)
+	files := encode_save_files(state, simulation_content, "old pad", 0)
+	end_session(session)
+	file, problem := parse_world_file(files.world, context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	file.planet_generation.crater, file.planet_generation.crater_recorded = {}, false
+	plan := Session_Plan{loading = true, seed = file.seed, settings = file.settings, file = file, files = &files}
+	loaded: ^Session
+	loaded, problem = start_session(plan, config, content, make_test_generator(DEFAULT_WORLD_SEED))
+	testing.expect_value(t, problem, "")
+	if loaded == nil {
+		return
+	}
+	defer end_session(loaded)
+	restored := &loaded.simulation
+	testing.expect_value(t, restored.world.planet.crater, default_planet(content.planets).crater)
+	pod, frame, found := find_test_pod(&restored.world.entities, machines)
+	testing.expect(t, found, "the old pod loads")
+	if !found {
+		return
+	}
+	laid := 0
+	for entry in restored.world.entities.foundations.entries {
+		if entry.alive && machines.machines[entry.machine].kind == .Foundation {
+			laid += 1
+		}
+	}
+	testing.expect_value(t, laid, 100)
+	machine := machines.machines[pod.machine]
+	spawn, spawn_found := field_pod_spawn(&restored.world.entities, machines)
+	testing.expect(t, spawn_found)
+	testing.expectf(t, feet_in_test_cabin(frame, pod, machine, spawn), "the spawn stands in cell %v", world_to_frame_cell(frame, spawn.position))
+	above := fixed_dot(cast([3]i64)(spawn.position - frame_cell_centre(frame, {0, 1, 0})), frame.axes[FRAME_UP]) + frame_pitch_units(frame) / 2
+	testing.expectf(t, abs(above - millimetres_to_position_units(FIELD_SPAWN_CLEARANCE_MILLIMETRES)) <= 4, "the spawn stands %d units over the pad's top", above)
+	restored_content := field_test_content(loaded, content)
+	player := &restored.players[0]
+	before := inventory_count(player.inventory, machines.machines[foundation].item)
+	drain_field_pick_up(restored, restored_content, player, frame.id, {-4, 0, -4})
+	testing.expect_value(t, inventory_count(player.inventory, machines.machines[foundation].item), before + 1)
+	testing.expect_value(t, entity_at(&restored.world.entities, {-4, 0, -4}, frame.id), NO_ENTITY)
+	player.field_refusal = .None
+	drain_field_pick_up(restored, restored_content, player, frame.id, {0, 0, 0})
+	testing.expect_value(t, player.field_refusal, Field_Edit_Refusal.Something_Stands_On_It)
+	testing.expect(t, entity_at(&restored.world.entities, {0, 0, 0}, frame.id) != NO_ENTITY)
 }
 
 // A pad of foundations on a free frame at the surface position, eleven

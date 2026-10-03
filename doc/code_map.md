@@ -140,7 +140,7 @@ The world owns blocks and what is derived from blocks; generation is a pure func
   - `generation_biome.odin`, `generation_trees.odin`, `generation_features.odin`: biomes and species, trees, boulders and ground cover.
   - `generation_veins.odin`, `generation_vein_tables.odin`, `generation_starter_veins.odin`: vein placement and outcrops, the vein file, starter veins.
   - `generation_spawn.odin`, `landing_pad.odin`: the spawn search; the landing pad stamp.
-  - `generation_planet.odin`: the terrain field's planet generation, `generate_field_chunk`, `integer_square_root`.
+  - `generation_planet.odin`: the terrain field's planet generation, `generate_field_chunk`, `integer_square_root`, the relief and its crater term at the home (`uncratered_relief`, `crater_relief`, 0199).
   - `generation_planet_veins.odin`: the veins on the sphere (0179): `Planet_Veins` in `Planet_Generation`, `plan_planet_veins` round the home, the outcrop material of `planet_sample`, `register_planet_veins` into the vein registry.
   - `generation_planet_record.odin`: `Planet_Generation_Record`, the generation values a world file records, and `resolve_world_planet`, the world's planet against the data (0179).
   - `save_binary.odin`: the type driven codec (schemas, enums by name, lists).
@@ -163,7 +163,7 @@ The factory: what changes per tick; blocks belong to the world, prototypes to co
   - `simulation_world.odin`: `Simulation_Content`, `Entity_Tick_Context` with its block procedures, `simulation_tick`, `apply_research_result`, `simulation_quest_context`.
   - `entity.odin`: `Entity_Kind`, `Entity_Handle`, `Entity_Common`, `Entity_Pool`, `Entities`, add and remove, `tick_entities`.
   - `entity_placement.odin`: placement rules, `commit_placement`, rotation, pick up; a drill on a frame with its vein (`place_drill_on_frame`, `frame_drill_placement_refusal`, 0179).
-  - `entity_pod.odin`: the pod and its pad of foundations, `place_pod` (0179).
+  - `entity_pod.odin`: the pod on its frame in the crater, `place_pod` (0179, 0199).
   - `machine_wear.odin`: machines on bare ground (0201): the flatness check and the placement on a frame of its own (`bare_ground_is_flat`, `place_on_bare_ground`), the founded flag, the wear tick and the breakdown (`record_operation`, `log_machine_breakdowns`), the salvage (`machine_return_stacks`) and the wear table of the save.
   - `entity_frames.odin`: placement on foundation frames (0174), `place_on_frame`, `place_free_foundation`, `frame_placement_refusal`; the field's place commands (`Field_Placement`, `drain_field_placements`, `apply_field_placement`, `aim_field_player_at_frames`); the frame tables of the save (`write_frame_tables`, `read_frame_tables`).
   - `machine.odin`: `Machine_Kind`, `Machine`, `Machine_Registry` and per kind validation.
@@ -180,7 +180,7 @@ The factory: what changes per tick; blocks belong to the world, prototypes to co
   - `player.odin`, `player_interaction.odin`, `player_collision.odin`: `Player` and movement; mining and placing; swept collision.
   - `player_field.odin`: `Field_Player` on the terrain field (0170), `tick_field_player`, the capsule against the signed distance, slopes, step, jump, mantle and fly mode in the planet's frame; each player's body in a field session (`Player.field`, 0179).
   - `field_mining.odin`: the hand tool on the field (0171), `Field_Simulation` with its edit queue drained in `finish_field_tick`, the material table of `data/materials.sjson`, the yield and the credit, the tool tier, the place refusals, the torches.
-  - `simulation_field.odin`: a field session's tick (0179): `field_tick_input`, the hotbar's tool (`field_tool_for_item`), `tick_field_session_players`, `finish_field_tick`, the pod's site and the spawn at its door (`field_home_site`, `field_home_player`, `make_field_session_player`), `enable_new_field_world`, `make_field_content`.
+  - `simulation_field.odin`: a field session's tick (0179): `field_tick_input`, the hotbar's tool (`field_tool_for_item`), `tick_field_session_players`, `finish_field_tick`, the pod's site and the spawn in its cabin (`field_home_site`, `field_pod_spawn`, `field_spawn_player`, `field_home_player`, `make_field_session_player`), `enable_new_field_world`, `make_field_content`.
   - `simulation_field_chunk_set.odin`: the field's simulated chunk set (0179), `update_simulated_field_chunks`, `field_chunk_requests` and `needed_field_chunks`, the arrivals (`Field_Chunk_Ready_Command`), `stage_generated_field_set`.
   - `simulation_field_save.odin`: the field tables at the end of `entities.bin` and `field.bin` (0179), `restore_arrived_field_set` (0185), the state hash's field part (`field_state_hash`).
   - `inventory.odin`, `inventory_interaction.odin`, `crafting.odin`: `Item_Stack`, `Inventory`; slot clicks; `Craft_Queue` and hand crafting.

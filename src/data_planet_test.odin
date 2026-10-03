@@ -13,6 +13,7 @@ TEST_PLANET_RECORD :: `planets = [{
 	sea_level_metres = 0
 	springs = [{latitude_degrees = 88, longitude_degrees = -120}]
 	home = {latitude_degrees = 86, longitude_degrees = -115}
+	crater = {radius_metres = 12, depth_metres = 3, floor_radius_metres = 4, rim_metres = 1}
 	rain_fill_per_minute = 2
 	rotation_period_seconds = 1200
 	relief_octaves = [{wavelength_metres = 512, amplitude_metres = 24}, {wavelength_metres = 128, amplitude_metres = 8}, {wavelength_metres = 32, amplitude_metres = 2}]
@@ -91,7 +92,7 @@ test_a_planet_record_parses :: proc(t: ^testing.T) {
 @(test)
 test_a_planet_record_with_a_missing_field_is_refused_naming_it :: proc(t: ^testing.T) {
 	record := string(TEST_PLANET_RECORD)
-	for key in ([?]string{"id", "radius_metres", "radius_presets_metres", "surface_gravity_centimetres_per_second_squared", "bedrock_depth_metres", "sea_level_metres", "springs", "home", "rain_fill_per_minute", "rotation_period_seconds", "relief_octaves", "palette"}) {
+	for key in ([?]string{"id", "radius_metres", "radius_presets_metres", "surface_gravity_centimetres_per_second_squared", "bedrock_depth_metres", "sea_level_metres", "springs", "home", "crater", "rain_fill_per_minute", "rotation_period_seconds", "relief_octaves", "palette"}) {
 		line_start := strings.index(record, strings.concatenate({"\t", key, " ="}, context.temp_allocator))
 		line_end := line_start + strings.index_byte(record[line_start:], '\n')
 		without := strings.concatenate({record[:line_start], record[line_end + 1:]}, context.temp_allocator)
@@ -144,4 +145,40 @@ test_planet_records_refuse_unknown_keys_wrong_types_and_ranges :: proc(t: ^testi
 	expect_planets_problem(t, replace(record, "wavelength_metres = 32, ", ""), "planets[0].relief_octaves[2] is missing wavelength_metres")
 	twice := strings.concatenate({record[:len(record) - 1], ", ", record[len("planets = ["):]}, context.temp_allocator)
 	expect_planets_problem(t, twice, `id "home" is used twice`)
+}
+
+// Work item 0199: each crater key just past each bound, the reach and the
+// slope rules are refused with their message; the zero crater and the
+// shipped one pass, and a crater missing a key is refused naming it.
+@(test)
+test_a_crater_record_out_of_bounds_is_refused :: proc(t: ^testing.T) {
+	shipped := default_planet(shipped_test_planets()).crater
+	testing.expect_value(t, shipped, Planet_Crater{radius_metres = 12, depth_metres = 3, floor_radius_metres = 4, rim_metres = 1})
+	testing.expect_value(t, crater_problem(shipped), "")
+	testing.expect_value(t, crater_problem({}), "")
+	cases := [?]struct {
+		crater:   Planet_Crater,
+		expected: string,
+	} {
+		{{3, 1, 2, 0}, "crater.radius_metres 3 is outside 4 to 24"},
+		{{25, 1, 4, 0}, "crater.radius_metres 25 is outside 4 to 24"},
+		{{12, 0, 4, 1}, "crater.depth_metres 0 is outside 1 to 8"},
+		{{24, 9, 4, 0}, "crater.depth_metres 9 is outside 1 to 8"},
+		{{12, 3, 1, 1}, "crater.floor_radius_metres 1 is outside 2 to 10"},
+		{{12, 3, 11, 1}, "crater.floor_radius_metres 11 is outside 2 to 10"},
+		{{12, 3, 4, -1}, "crater.rim_metres -1 is outside 0 to 4"},
+		{{12, 3, 4, 5}, "crater.rim_metres 5 is outside 0 to 4"},
+		{{18, 1, 4, 1}, ""},
+		{{19, 1, 4, 2}, "crater reaches 31 m, more than 24"},
+		{{12, 4, 4, 2}, "crater bowl of 6 m over 8 m is steeper than 45 degrees"},
+		{{12, 4, 4, 1}, ""},
+	}
+	for entry in cases {
+		testing.expect_value(t, crater_problem(entry.crater), entry.expected)
+	}
+	record := string(TEST_PLANET_RECORD)
+	missing, _ := strings.replace(record, "depth_metres = 3, ", "", 1, context.temp_allocator)
+	expect_planets_problem(t, missing, "planets[0].crater is missing depth_metres")
+	steep, _ := strings.replace(record, "depth_metres = 3", "depth_metres = 6", 1, context.temp_allocator)
+	expect_planets_problem(t, steep, "crater bowl of 7 m over 8 m is steeper than 45 degrees")
 }

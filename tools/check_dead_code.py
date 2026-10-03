@@ -57,7 +57,7 @@ ALLOWED_TEST_ONLY = {
     # round, after the switch to the field world.
     "register_planet_veins": "the veins on the sphere into the registry, wired in by 0179",
     "place_drill_on_frame": "the drill on a frame, wired in by 0179",
-    "place_pod": "the pod and its pad at the home, wired in by 0179",
+    "place_pod": "the pod in its crater at the home, wired in by 0179",
 }
 
 ENTRY_ATTRIBUTES = ("test", "export", "init", "fini")

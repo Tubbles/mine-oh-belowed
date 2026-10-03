@@ -18,19 +18,18 @@ import "core:math"
 // Dig aimed at a torch within the reach takes it back with its item. Both
 // are placements, so they apply at the end of the tick in order.
 //
-// The home spawn: a new world lays the pod on the generated surface at
-// the planet's home (data/planets.sjson) with its door towards the first
-// spring; every new player, the first and a joining one, stands on the
-// generated surface in front of the door, facing the spring, with the
-// starter kit (make_field_session_player).
+// The home spawn: a new world stands the pod on the floor of the crater
+// at the planet's home (data/planets.sjson, work item 0199) with its door
+// towards the first spring; every new player, the first and a joining
+// one, stands in the pod's cabin facing the door, with the starter kit
+// (field_pod_spawn, make_field_session_player).
 
 // A torch is aimed at while the reticle's ray passes this close to its
 // sample.
 FIELD_TORCH_AIM_RADIUS_MILLIMETRES :: 600
-// A new player starts this far above the generated surface and drops.
+// A new player starts this far above the cabin's floor or the generated
+// surface and drops.
 FIELD_SPAWN_CLEARANCE_MILLIMETRES :: 250
-// A new player stands this far past the front edge of the pod's pad.
-FIELD_SPAWN_BEYOND_PAD_MILLIMETRES :: 3000
 
 // The field's tables for a session (Simulation_Content.field): the
 // tuning of the planet, the spacing and the tick rate; the brushes in
@@ -400,34 +399,69 @@ field_home_heading :: proc(planet: Planet, home: [3]i64, radius: i64) -> [3]i64 
 	return tangent_of(home, look)
 }
 
-// The pod's place: the generated surface at the planet's home, and the
-// heading its frame takes the yaw step of.
+// The pod's place: the generated surface at the planet's home, which is
+// the crater's floor (0199), and the heading its frame takes the yaw step
+// of.
 field_home_site :: proc(generation: Planet_Generation, planet: Planet) -> (surface: World_Position, heading: [3]i64) {
 	home := planet_home_direction(planet.home)
 	return field_surface_under(generation, World_Position(fixed_scale(home, generation.radius)), 0), field_home_heading(planet, home, generation.radius)
 }
 
-// In front of the pod's door: FIELD_SPAWN_BEYOND_PAD_MILLIMETRES past the
-// pad's front edge along the pod frame's forward (the heading's yaw step,
-// free_frame_at), the feet the clearance above the generated surface
-// there, facing the spring. pitch_millimetres is the pad's.
-field_home_player :: proc(seed: u64, planet: Planet, spacing_millimetres, pitch_millimetres: int) -> Field_Player {
+// Without a pod (content that has none): the clearance above the
+// generated surface at the home, facing the spring.
+field_home_player :: proc(seed: u64, planet: Planet, spacing_millimetres: int) -> Field_Player {
 	generation := make_planet_generation(seed, planet, spacing_millimetres)
 	site, heading := field_home_site(generation, planet)
-	_, axes := free_frame_at(site, heading, pitch_millimetres)
-	distance := pod_pad_front_reach(pitch_millimetres) + millimetres_to_position_units(FIELD_SPAWN_BEYOND_PAD_MILLIMETRES)
-	ahead := site + World_Position(fixed_scale(axes[FRAME_FORWARD], distance))
-	feet := field_surface_under(generation, ahead, millimetres_to_position_units(FIELD_SPAWN_CLEARANCE_MILLIMETRES))
-	up, _ := normalize_fixed(cast([3]i64)feet)
-	return make_field_player(feet, field_home_heading(planet, up, generation.radius))
+	feet := field_surface_under(generation, site, millimetres_to_position_units(FIELD_SPAWN_CLEARANCE_MILLIMETRES))
+	return make_field_player(feet, heading)
+}
+
+// The centre of the cabin's floor: the record's first open_cells box
+// (validate_pod_cabin), the mean of its bottom layer's two corner cells
+// lowered half a pitch along the frame's up.
+pod_cabin_floor_centre :: proc(frame: Frame, origin: World_Coordinate, pod: Machine, rotation: u8) -> World_Position {
+	box := pod.open_cells[0]
+	first := rotate_footprint_cell({box.from.x, box.from.z}, pod.footprint.x, pod.footprint.z, rotation)
+	last := rotate_footprint_cell({box.to.x, box.to.z}, pod.footprint.x, pod.footprint.z, rotation)
+	first_centre := frame_cell_centre(frame, origin + {first.x, box.from.y, first.y})
+	last_centre := frame_cell_centre(frame, origin + {last.x, box.from.y, last.y})
+	half := World_Position(fixed_scale(frame.axes[FRAME_UP], frame_pitch_units(frame) / 2))
+	return first_centre + (last_centre - first_centre) / 2 - half
+}
+
+// In the cabin of the world's pod, the first alive in pool order: the
+// clearance above its floor, facing the door. It reads the saved frame,
+// so it holds for a loaded world, a joiner and an old save's pod on its
+// pad. found is false without a pod.
+field_pod_spawn :: proc(entities: ^Entities, machines: Machine_Registry) -> (player: Field_Player, found: bool) {
+	for foundation in entities.foundations.entries {
+		if !foundation.alive || machines.machines[foundation.machine].kind != .Pod {
+			continue
+		}
+		frame, frame_found := find_frame(&entities.frames, foundation.frame)
+		pod := machines.machines[foundation.machine]
+		if !frame_found || pod.open_cell_box_count == 0 {
+			return {}, false
+		}
+		floor := pod_cabin_floor_centre(frame, foundation.origin, pod, foundation.rotation)
+		feet := floor + World_Position(fixed_scale(frame.axes[FRAME_UP], millimetres_to_position_units(FIELD_SPAWN_CLEARANCE_MILLIMETRES)))
+		return make_field_player(feet, frame.axes[FRAME_FORWARD]), true
+	}
+	return {}, false
+}
+
+// A new player's body: in the pod's cabin, or at the home without a pod.
+field_spawn_player :: proc(entities: ^Entities, machines: Machine_Registry, seed: u64, planet: Planet, spacing_millimetres: int) -> Field_Player {
+	if player, found := field_pod_spawn(entities, machines); found {
+		return player
+	}
+	return field_home_player(seed, planet, spacing_millimetres)
 }
 
 // A new world's field (a session's, the benchmark's): the spacing, the
-// simulated set of data/game.sjson, the planet, the pod at the home
-// (place_pod, when the machines have one), every player in front of its
-// door and the water's planet. The world's seed is set before. The pad's
-// pitch is the field content's, as a joining player's spawn reads it
-// (make_field_session_player).
+// simulated set of data/game.sjson, the planet, the pod on the crater's
+// floor at the home (place_pod, when the machines have one), every player
+// in its cabin and the water's planet. The world's seed is set before.
 enable_new_field_world :: proc(state: ^Simulation_State, config: Game_Config, machines: Machine_Registry, field_content: Field_Content, planet: Planet, spacing_millimetres: int) {
 	field := &state.field
 	field.enabled = true
@@ -436,20 +470,19 @@ enable_new_field_world :: proc(state: ^Simulation_State, config: Game_Config, ma
 	state.world.planet = planet
 	seed := state.world.settings.seed
 	site, heading := field_home_site(make_planet_generation(seed, planet, spacing_millimetres), planet)
-	pitch := field_content.foundation_pitch_millimetres
-	place_pod(&state.world.entities, machines, field_content.pad_foundation, site, heading, pitch)
+	place_pod(&state.world.entities, machines, site, heading, field_content.foundation_pitch_millimetres)
 	for &player in state.players {
-		player.field = field_home_player(seed, planet, spacing_millimetres, pitch)
+		player.field = field_spawn_player(&state.world.entities, machines, seed, planet, spacing_millimetres)
 	}
 	field.world.water_planet = make_field_water_planet(seed, planet, spacing_millimetres)
 }
 
-// The spawn of a field session's new player: the home, the starter kit
-// (data/game.sjson, starting_items). The first player of a new world and
-// every joining one come through here.
-make_field_session_player :: proc(state: Simulation_State, content: Simulation_Content, start: Player_Start) -> Player {
+// The spawn of a field session's new player: the pod's cabin, the starter
+// kit (data/game.sjson, starting_items). The first player of a new world
+// and every joining one come through here.
+make_field_session_player :: proc(state: ^Simulation_State, content: Simulation_Content, start: Player_Start) -> Player {
 	player := make_player(start)
-	player.field = field_home_player(state.world.settings.seed, state.world.planet, state.field.spacing_millimetres, content.field.foundation_pitch_millimetres)
+	player.field = field_spawn_player(&state.world.entities, content.machines, state.world.settings.seed, state.world.planet, state.field.spacing_millimetres)
 	give_starting_items(&player, content.items, content.field.starting_items)
 	return player
 }

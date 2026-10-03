@@ -70,8 +70,8 @@ place_free_foundation :: proc(entities: ^Entities, machines: Machine_Registry, m
 	return add_entity(entities, machines, machine, {}, 0, frame), frame
 }
 
-// The field content's pad foundation (the benchmark's pad and the pod's,
-// work item 0196), NO_MACHINE when its machines have none (a content
+// The field content's pad foundation (the benchmark's pad, work item
+// 0196), NO_MACHINE when its machines have none (a content
 // without machines, as the field tests make).
 field_pad_foundation :: proc(content: Simulation_Content) -> Machine_Id {
 	if int(content.field.pad_foundation) >= len(content.machines.machines) || content.machines.machines[content.field.pad_foundation].kind != .Foundation {
@@ -123,8 +123,8 @@ field_foundation_block :: proc(player: Field_Player, field: Field_Content) -> (s
 }
 
 // The first offset across a face for a side of side cells: centred on
-// the anchor (the even side's extra cell on the high side, as the pod's
-// pad, pod_pad_cells), or from the anchor upwards along the frame's up.
+// the anchor (the even side's extra cell on the high side), or from the
+// anchor upwards along the frame's up.
 foundation_block_first_offset :: proc(side: i32, along_up: bool) -> i32 {
 	return along_up ? 0 : -((side - 1) / 2)
 }
@@ -497,29 +497,12 @@ drain_field_placements :: proc(state: ^Simulation_State, content: Simulation_Con
 // order with the others, so the drain checks it again against the world
 // the commands before it left.
 
-// The pod and the foundations of its pad: no hint, no progress and no
-// refusal told, as the block world's capsule.
+// The pod (a machine without an item): no hint, no progress and no
+// refusal told, as the block world's capsule. An old save's pad
+// foundations (before 0199) are ordinary foundations.
 field_entity_is_placed_by_world :: proc(entities: ^Entities, machines: Machine_Registry, handle: Entity_Handle) -> bool {
 	common := entity_common(entities, handle)
-	if common == nil || machines.machines[common.machine].item == NO_ITEM {
-		return true
-	}
-	return machines.machines[common.machine].kind == .Foundation && cell_is_on_pod_pad(common.origin) && frame_holds_pod(entities, machines, common.frame)
-}
-
-frame_holds_pod :: proc(entities: ^Entities, machines: Machine_Registry, frame: Frame_Id) -> bool {
-	for foundation in entities.foundations.entries {
-		if foundation.alive && foundation.frame == frame && machines.machines[foundation.machine].kind == .Pod {
-			return true
-		}
-	}
-	return false
-}
-
-// The pad's cells of place_pod: pod_pad_cells and cell (0, 0, 0).
-cell_is_on_pod_pad :: proc(cell: World_Coordinate) -> bool {
-	first, last := i32(POD_PAD_FIRST_CELL), i32(POD_PAD_FIRST_CELL + POD_PAD_SIZE - 1)
-	return cell.y == 0 && cell.x >= first && cell.x <= last && cell.z >= first && cell.z <= last
+	return common == nil || machines.machines[common.machine].item == NO_ITEM
 }
 
 // A machine other than a foundation (which needs no support) stands in

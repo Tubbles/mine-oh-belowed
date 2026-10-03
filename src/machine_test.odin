@@ -265,6 +265,31 @@ test_machine_open_cells_are_boxes_inside_the_footprint :: proc(t: ^testing.T) {
 	testing.expect_value(t, pod.open_cells[2], Cell_Box{from = {5, 0, 2}, to = {5, 3, 3}})
 }
 
+// Work item 0199: a pod's first open_cells box is its cabin, on the
+// floor row and 2 by 2 cells at least; the shipped record passes.
+@(test)
+test_a_pod_needs_a_cabin_on_its_floor :: proc(t: ^testing.T) {
+	expected := `machine "room" is a pod whose first open_cells box is no cabin on its floor (y 0, 2 by 2 cells at least)`
+	room := Machine_Definition {
+		id = "room",
+		name_key = "machine_pod",
+		kind = "pod",
+		footprint = {width = 3, depth = 4, height = 2},
+	}
+	testing.expect_value(t, resolve_test_machines({room}), expected)
+	raised := room
+	raised.open_cells = {{from = Machine_Cell_Definition{1, 1, 1}, to = Machine_Cell_Definition{2, 1, 3}}}
+	testing.expect_value(t, resolve_test_machines({raised}), expected)
+	narrow := room
+	narrow.open_cells = {{from = Machine_Cell_Definition{1, 0, 1}, to = Machine_Cell_Definition{1, 1, 3}}}
+	testing.expect_value(t, resolve_test_machines({narrow}), expected)
+	shallow := room
+	shallow.open_cells = {{from = Machine_Cell_Definition{1, 0, 1}, to = Machine_Cell_Definition{2, 1, 1}}}
+	testing.expect_value(t, resolve_test_machines({shallow}), expected)
+	machines := make_test_machines()
+	testing.expect(t, find_machine_of_kind(machines, .Pod) != NO_MACHINE, "the shipped pod passes")
+}
+
 // Work item 0196: a foundation needs a colour of three channels from 0 to
 // 255, not all zero, and the shipped tiers draw in theirs.
 @(test)
