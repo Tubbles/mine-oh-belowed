@@ -1,6 +1,6 @@
 # 0205: The model kit and the look of the first machines
 
-Status: todo (user, 2026-10-03: "we can maybe approach techtonica's look. I think techtonica might be the game we are closest resembling, but 'on the surface and in space with multiple planets', and a slightly more low-fi look"; after 0207, before 0196)
+Status: implementing (2026-10-03, worktree item/0205; user, 2026-10-03: "we can maybe approach techtonica's look. I think techtonica might be the game we are closest resembling, but 'on the surface and in space with multiple planets', and a slightly more low-fi look"; after 0207, before 0196)
 
 ## Goal
 

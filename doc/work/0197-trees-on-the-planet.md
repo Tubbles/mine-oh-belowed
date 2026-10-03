@@ -1,6 +1,6 @@
 # 0197: Trees on the planet
 
-Status: todo (implied by 0196, 2026-10-03: wood must come from somewhere before tree farms; after 0196)
+Status: designed (2026-10-03, the specification approved; after 0199; implied by 0196, 2026-10-03: wood must come from somewhere before tree farms; after 0196)
 
 ## Goal
 

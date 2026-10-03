@@ -1,6 +1,6 @@
 # 0208: Re-record the code map's grown edges from the field series
 
-Status: todo (main agent, 2026-10-03: `python3 tools/code_graph.py --check doc/code_map.md` exits 1 on `main` since the field series; found by the 0204 implementer)
+Status: implementing (2026-10-03, worktree item/0208; main agent, 2026-10-03: `python3 tools/code_graph.py --check doc/code_map.md` exits 1 on `main` since the field series; found by the 0204 implementer)
 
 ## Goal
 
