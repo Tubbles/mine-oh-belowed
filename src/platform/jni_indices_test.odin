@@ -2,8 +2,8 @@ package platform
 
 import "core:testing"
 
-// The numbers written down from jni.h in doc/work/0122-android-haptics.md
-// (Implemented) and doc/work/0131-export-data-files.md (Implementation
+// The numbers written down from jni.h in doc/work/done/0122-android-haptics.md
+// (Implemented) and doc/work/done/0131-export-data-files.md (Implementation
 // notes), so a changed constant fails here.
 @(test)
 test_jni_indices_match_the_header :: proc(t: ^testing.T) {

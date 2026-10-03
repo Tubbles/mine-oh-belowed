@@ -15,7 +15,7 @@ Read this together with the global `~/.claude/CLAUDE.md`. This file holds the pr
 
 ## Layout
 
-The project structure of the global preferences: `doc/` (detail docs, index in `doc/README.md`), `doc/log/` (dated decision logs, write once), `doc/work/` (work items with status `todo`, `implemented`, `verified`), `work/` and `tmp/` (untracked), `PLAN.md`, `DESIGN.md`, `TODO.md` (the user's inbox, the user writes there), `SUGGESTIONS.md` (agent follow ups and decisions needed, including the deferred work of a big series, never `TODO.md`). Source under `src/`, content under `data/`, build output under `bin/`. The entry to the source is [doc/code_map.md](doc/code_map.md): the clusters, their entry files and the allowed dependencies between them.
+The project structure of the global preferences: `doc/` (detail docs, index in `doc/README.md`), `doc/log/` (dated decision logs, write once), `doc/work/` (work items with status `todo`, `implemented`, `verified`; the finished ones under `doc/work/done/`, the closed and folded ones under `doc/work/cancelled/`), `work/` and `tmp/` (untracked), `PLAN.md`, `DESIGN.md`, `TODO.md` (the user's inbox, the user writes there), `SUGGESTIONS.md` (agent follow ups and decisions needed, including the deferred work of a big series, never `TODO.md`). Source under `src/`, content under `data/`, build output under `bin/`. The entry to the source is [doc/code_map.md](doc/code_map.md): the clusters, their entry files and the allowed dependencies between them.
 
 ## Code rules
 
@@ -34,7 +34,7 @@ The project structure of the global preferences: `doc/` (detail docs, index in `
 
 ## Work flow
 
-Work items live in `doc/work/NNNN-slug.md` with a `Status` line and a `Verify` section. Subagents get one item at a time with the files they may touch and the verify commands. A second subagent reviews the diff afterwards (the global instructions, Subagents); the main agent weighs the review, has the implementer fix what holds, and commits.
+Work items live in `doc/work/NNNN-slug.md` with a `Status` line and a `Verify` section. An item whose work has landed and whose play build is installed moves to `doc/work/done/` (`git mv`, the file unchanged, path references updated); an item closed or folded into another moves to `doc/work/cancelled/`; open items stay at the top of `doc/work/` (user, 2026-10-03). Subagents get one item at a time with the files they may touch and the verify commands. A second subagent reviews the diff afterwards (the global instructions, Subagents); the main agent weighs the review, has the implementer fix what holds, and commits.
 
 Before handing back, an implementer walks the hand-back check below and says in its report what it changed because of it. The main agent reads the review's findings and the parts of the diff they touch, not the whole diff the reviewer covered, and runs the test suite once itself before the commit (user, 2026-09-30, `doc/log/2026-09-30.md`).
 

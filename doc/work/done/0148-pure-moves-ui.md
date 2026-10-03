@@ -4,7 +4,7 @@ Status: implemented
 
 ## Goal
 
-Queue entry 1 of the architecture audits, the ui half (`doc/audit/ui.md`, refactors 1 and 2; the small misplacements of `doc/work/0144-code-map.md`'s notes). No behaviour change.
+Queue entry 1 of the architecture audits, the ui half (`doc/audit/ui.md`, refactors 1 and 2; the small misplacements of `doc/work/done/0144-code-map.md`'s notes). No behaviour change.
 
 ## Change
 

@@ -20,4 +20,4 @@
 - [inspiration.md](inspiration.md): lessons taken from Factorio, Satisfactory, Dyson Sphere Program, the voxel factory games and the mod ecosystem, with sources.
 - [audit/](audit/): the architecture audits of 0143, one report per cluster (loop, ui, world, simulation, presentation, content): state, coupling, gaps, ranked refactors, the engine or game split and the entity component lens.
 - [log/](log/): dated decision logs, write once.
-- [work/](work/): work items with status and verify statements.
+- [work/](work/): work items with status and verify statements; the finished ones under [work/done/](work/done/), the closed ones under [work/cancelled/](work/cancelled/).

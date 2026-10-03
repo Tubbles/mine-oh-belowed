@@ -4,7 +4,7 @@ Status: implemented
 
 ## Goal
 
-Queue entry 1 of the architecture audits (`doc/work/0143-architecture-audit.md`, Implementation notes), the loop and world half: definitions that live in the wrong cluster move to the right one. No behaviour change, no signature change beyond the move. The loop audit measured that 172 of the 252 references into the loop cluster are the simulation naming its own types that sit in `loop.odin`; the world audit lists the helpers the world reaches into the simulation for.
+Queue entry 1 of the architecture audits (`doc/work/done/0143-architecture-audit.md`, Implementation notes), the loop and world half: definitions that live in the wrong cluster move to the right one. No behaviour change, no signature change beyond the move. The loop audit measured that 172 of the 252 references into the loop cluster are the simulation naming its own types that sit in `loop.odin`; the world audit lists the helpers the world reaches into the simulation for.
 
 ## Change
 
