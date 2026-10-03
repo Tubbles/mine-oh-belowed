@@ -1,6 +1,6 @@
 # 0211: The art direction booklet: images of how the machines could look
 
-Status: implemented (2026-10-03, five rounds and the furnace reference sheet done with the user, the booklet at doc/art/booklet.md, DESIGN.md updated, doc/inspiration.md in progress; user, 2026-10-03: "i want to draft a set of images first, akin to art direction booklet where we can get a feel for different ways these machines could look"; before 0212)
+Status: landed (2026-10-03, 8b22584 the booklet and the DESIGN.md rules, ec19f5d the genre notes in doc/inspiration.md; five rounds and the furnace reference sheet done with the user, the originals untracked under work/art/; user, 2026-10-03: "i want to draft a set of images first, akin to art direction booklet where we can get a feel for different ways these machines could look"; before 0212)
 
 ## Goal
 
