@@ -1,6 +1,6 @@
 # 0211: The art direction booklet: images of how the machines could look
 
-Status: todo (user, 2026-10-03: "i want to draft a set of images first, akin to art direction booklet where we can get a feel for different ways these machines could look"; before 0212)
+Status: implementing (2026-10-03, the session runs with the user, three rounds generated under work/art/, the direction named astro-industrial punk, doc/log/2026-10-03.md; user, 2026-10-03: "i want to draft a set of images first, akin to art direction booklet where we can get a feel for different ways these machines could look"; before 0212)
 
 ## Goal
 
@@ -21,5 +21,12 @@ The user drives this with the main agent in a back and forth session (user, 2026
 
 ## Verify
 
-- `tools/art/generate.py` generates two images from one prompt into a dated folder with the prompt beside them and exits non zero with a readable message when the key is missing or the model refuses.
+- `tools/art/generate.py` generates an image per call (the Google models accept no more) from one prompt into a dated folder with the prompt beside them and exits non zero with a readable message when the key is missing or the model refuses.
 - The booklet has at least three directions with the user's verdict on each, and `DESIGN.md` names the chosen one.
+
+## Session notes (main agent, 2026-10-03)
+
+- Round one (`work/art/2026-10-03-round-1/`): four directions on the stone furnace and the mining drill, same camera and scale figure (an astronaut beside the machine), Nano Banana 2 at 4:3, 2K: A frontier foundry (cast iron and riveted steel over fieldstone, soot, Victorian industrial), B expedition kit (pale alloy panels with hazard yellow trim on an exposed frame, Techtonica and Astroneer), C monolith (brutalist poured stone and bronze, cathedral scale), D low-fi stylized (flat colour planes, Dyson Sphere Program and Firewatch). Verdict: "I love B, lets make the sparse colors pop a bit more, and bring in some of the darkness and sootyness from A."
+- Round two (`work/art/2026-10-03-round-2/`): B with saturated yellow and cyan accents and A's soot in four amounts (light soot, heavy soot, dark panels, iron core), the furnace prompt asking for three astronaut heights. Verdict: the soot was taken too literally; the dirt wanted is A's Victorian industrial grime, short of steampunk, and the user named the direction astro-industrial punk, a juxtaposition of clean space technology and rough dirty industry whose ratio slides from 80/20 to 20/80 over the game (the log).
+- Round three (`work/art/2026-10-03-round-3/`): the spectrum on three machines of three stages, the stone furnace (80 rough to 20 clean), the electric mining drill (half and half) and the fusion reactor (20 to 80), two takes each.
+- The generator defaults to one image per call since the Google models reject any other count (a82290e).
