@@ -289,16 +289,18 @@ screen_stack_contains :: proc(stack: Screen_Stack, screen: Screen) -> bool {
 	return false
 }
 
-// A stack still on the cursor goes back once the inventory or machine panel
-// is closed or covered, and a closed machine panel forgets its entity
-// through a command for the next tick (Player.open_machine is simulation
-// state). A panel under the recipe browser (choosing an assembler's
-// recipe) or the technology screen stays open.
+// A stack still on the cursor goes back once the inventory or machine
+// panel is closed or covered (Return_Held_Command, queued once and only
+// when the inventory has room for some of it), and a closed machine panel
+// forgets its entity through a command for the next tick
+// (Player.open_machine is simulation state). A panel under the recipe
+// browser (choosing an assembler's recipe) or the technology screen stays
+// open.
 close_slot_screens :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	player := screen_context.player
 	top := top_screen(state.screens)
-	if top != .Inventory && top != .Machine {
-		player.held = return_held_stack(player.inventory, player.held, screen_context.items)
+	if top != .Inventory && top != .Machine && return_changes_hand(player.inventory, player.held, screen_context.items) && screen_context.player_commands != nil && !slot_command_pending(screen_context.player_commands[:], screen_context.unconfirmed_commands, screen_context.player_index, returns_hand) {
+		queue_slot_command(state, screen_context, Return_Held_Command{})
 	}
 	if screen_stack_contains(state.screens, .Machine) {
 		return

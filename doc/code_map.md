@@ -1,6 +1,6 @@
 # Code map
 
-The entry page for the source: 240 files under `src/` plus 169 test files beside them. 218 are the `game` package, grouped into seven clusters; 22 are seven leaf packages under `src/` (section Packages), each a cluster named after its directory. Read the cluster table, pick a cluster, open its entry file; the section of each cluster lists its files in reading order. How the parts work is in [architecture.md](architecture.md), the why of the clusters in the audits under [audit/](audit/).
+The entry page for the source: 242 files under `src/` plus 170 test files beside them. 220 are the `game` package, grouped into seven clusters; 22 are seven leaf packages under `src/` (section Packages), each a cluster named after its directory. Read the cluster table, pick a cluster, open its entry file; the section of each cluster lists its files in reading order. How the parts work is in [architecture.md](architecture.md), the why of the clusters in the audits under [audit/](audit/).
 
 - Rule: a new file goes into a cluster and takes one of its file name prefixes (or a line in the file table of `tools/code_graph.py`); a reference against the allowed dependency table below is a finding until it is refactored away.
 - The map is kept true by two checks: `python3 tools/check_docs.py` checks every backticked file and name in it, and `python3 tools/code_graph.py --check doc/code_map.md` compares every cluster edge the allowed table does not allow with the map's record of it ([build.md](build.md), Source checks).
@@ -11,10 +11,10 @@ The entry page for the source: 240 files under `src/` plus 169 test files beside
 
 | Cluster | Purpose | Entry | Files | Lines | Audit |
 |---|---|---|---|---|---|
-| loop | the process: start-up, the frame, when the tick runs (the lockstep driver), sessions, the network and the server, the requests served between frames | `loop.odin` | 11 | 6569 | [loop](audit/loop.md) |
-| ui | the input layer, the immediate mode toolkit, every screen, the HUD and the touch overlay | `ui_core.odin` | 49 | 17413 | [ui](audit/ui.md) |
+| loop | the process: start-up, the frame, when the tick runs (the lockstep driver), sessions, the network and the server, the requests served between frames | `loop.odin` | 11 | 6619 | [loop](audit/loop.md) |
+| ui | the input layer, the immediate mode toolkit, every screen, the HUD and the touch overlay | `ui_core.odin` | 49 | 17159 | [ui](audit/ui.md) |
 | world | blocks and what follows a block: chunks, light, water, meshing, streaming, generation, the save codec; the terrain field and the foundation frames beside them (M13) | `world_chunk.odin` | 49 | 14085 | [world](audit/world.md) |
-| simulation | the factory per tick: entity pools, networks, players, inventories, crafting, statistics, the game's records | `entity.odin` | 45 | 17984 | [simulation](audit/simulation.md) |
+| simulation | the factory per tick: entity pools, networks, players, inventories, crafting, statistics, the game's records | `entity.odin` | 47 | 18838 | [simulation](audit/simulation.md) |
 | presentation | pixels and sound from the world and the tick: shaders, atlases, models, sky, weather, particles, audio, the window | `render_chunks.odin` | 39 | 9535 | [presentation](audit/presentation.md) |
 | content | data files into typed tables, the string table, configuration and settings | `data_reload.odin` | 17 | 5680 | [content](audit/content.md) |
 | tools | the command socket, the diagnostics pages, the Data files browser and export, the factory benchmark | `command.odin` | 8 | 3901 | [loop](audit/loop.md), [content](audit/content.md) |
@@ -88,7 +88,7 @@ The toolkit turns an input frame into a draw list; the screens decide what the w
   - `text_input.odin`, `ui_keyboard.odin`: `Text_Field` and `Keyboard_State`; the text field widget and the game's keyboard.
   - `ui_screens.odin`: `Frame_Request` (what a screen asks of the loop), `Screen_Context` and `Developer_Context`, `handle_screen_keys`, `run_screens`, the pause menu, settings.
   - `ui_title.odin`, `ui_world_setup.odin`: `Title_State`, load and delete; the new world values.
-  - `ui_inventory.odin`, `quick_transfer.odin`: the inventory screen and `finish_slot_drag`; quick move and transfer buttons (half ui state, half simulation verbs).
+  - `ui_inventory.odin`, `quick_transfer.odin`: the inventory screen, `finish_slot_drag` and `queue_slot_command`; the quick move state machine and the transfer buttons, which queue slot commands.
   - `ui_machine.odin`: the machine panel frame, furnace, inserter, drill and splitter sections.
   - `ui_crafting_machines.odin`, `ui_fluid.odin`, `ui_power.odin`, `ui_launch_pad.odin`, `ui_prospecting.odin`, `ui_contracts.odin`: the panel sections for assemblers and labs, fluids, power, launch pads, prospecting, the venture.
   - `ui_recipes.odin`, `ui_recipe_browser.odin`: the recipe screen; its pure filtering and detail.
@@ -147,6 +147,7 @@ The factory: what changes per tick; blocks belong to the world, prototypes to co
 - Entry: `entity.odin`, `tick_entities` (called through `tick_entities_on_world` by `simulation_tick` in `simulation_world.odin`).
 - Files in reading order:
   - `player_command.odin`: `Player_Command`, the queue every write from outside the tick goes through, applied at the start of `simulation_tick`.
+  - `player_command_slots.odin`: the slot commands of the inventory screen and the machine panel (0179), `slot_command_stale`, the check both sides make.
   - `simulation_chunk_set.odin`: `Simulated_Chunk_Set`, the chunks the tick may read, derived from the players.
   - `simulation_state.odin`: `Simulation_State`, `Game_Records` (the game's records beside the world), `Simulation_Event`, `make_simulation` with `place_capsule`, `destroy_simulation` and `destroy_game_records`, `simulation_day_ticks`.
   - `simulation_world.odin`: `Simulation_Content`, `Entity_Tick_Context` with its block procedures, `simulation_tick`, `apply_research_result`, `simulation_quest_context`.
@@ -167,6 +168,7 @@ The factory: what changes per tick; blocks belong to the world, prototypes to co
   - `player_field.odin`: `Field_Player` on the terrain field (0170), `tick_field_player`, the capsule against the signed distance, slopes, step, jump, mantle and fly mode in the planet's frame; beside `Player` until the slice (0179).
   - `field_mining.odin`: the hand tool on the field (0171), `Field_Simulation` with its edit queue drained at the end of `tick_field_simulation`, the material table of `data/materials.sjson`, the yield and the credit, the tool tier, the place refusals.
   - `inventory.odin`, `inventory_interaction.odin`, `crafting.odin`: `Item_Stack`, `Inventory`; slot clicks; `Craft_Queue` and hand crafting.
+  - `inventory_transfer.odin`: the verbs the slot commands run: quick moves, the transfer buttons, the grid transfers, the inserter's hand, the slot filters of a machine.
   - `statistics.odin`, `production_statistics.odin`: `Statistics` and rate rings; statistics rows and the marker colours.
   - `recipe_unlocks.odin`, `quest_runtime.odin`: `Recipe_Unlocks` per tick; `Quest_State`, objectives, rewards, messages.
   - `venture.odin`, `tree_felling.odin`: `Contract_State`, shipments served, the orbital survey; felling and leaf decay.

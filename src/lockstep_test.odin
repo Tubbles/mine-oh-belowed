@@ -433,3 +433,155 @@ test_two_local_members_keep_the_hash_of_one_member_machines :: proc(t: ^testing.
 	start := make_player(player_start_on(LOCKSTEP_TEST_SECOND_PLAYER)).position
 	testing.expect(t, couch.simulation.players[1].position != start)
 }
+
+// The test's own burner inserter far above the site, without fuel or
+// neighbours, so it keeps the stone in its hand until a player takes it.
+add_idle_test_inserter :: proc(simulation: ^Simulation_State, content: Simulation_Content, cell: World_Coordinate, stone: Item_Id) -> Entity_Handle {
+	handle := add_entity(&simulation.world.entities, content.machines, test_machine(content.machines, "burner_inserter"), cell, 0)
+	pool_get(&simulation.world.entities.inserters, handle).held = {stone, 1}
+	return handle
+}
+
+// The hand and a slot as the sender's machine shows them, as a screen
+// reads them.
+shown_slot :: proc(simulation: ^Simulation_State, player: int, machine: Entity_Handle, slot: int) -> Held_Expectation {
+	state := simulation.players[player]
+	return shown_expectation(state.held, target_slots(state, &simulation.world.entities, machine)[slot])
+}
+
+// The slot commands a player queues on its own machine in a frame (0179),
+// with the expectations a screen would read off the sender's state. Each
+// player has its own idle inserter open. Player 0 lifts the inserter's
+// hand onto the cursor and returns it; player 1 takes it into the
+// inventory. Both then pick up and drag drop a stack with its return,
+// drop and split on the inserter's fuel slot, spread a split over it,
+// quick move into it and between the hotbar and the backpack, press
+// Fill, sort, transfer a grid and drop a stack on the ground. The sort
+// takes its order from the sender's own state.
+slot_test_commands :: proc(simulation: ^Simulation_State, player, frame: int, inserter: Entity_Handle, stone: Item_Id, ranks: []u16) {
+	list := &simulation.player_commands
+	state := simulation.players[player]
+	switch frame {
+	case 4:
+		queue_player_command(list, player, Inserter_Hand_Command{inserter = inserter, into_inventory = player == 1})
+	case 10:
+		queue_player_command(list, player, Return_Held_Command{})
+	case 16:
+		queue_player_command(list, player, Slot_Primary_Command{target = {NO_ENTITY, HOTBAR_SLOT_COUNT}, expects = shown_slot(simulation, player, NO_ENTITY, HOTBAR_SLOT_COUNT)})
+	case 22:
+		queue_player_command(list, player, Slot_Primary_Command{target = {NO_ENTITY, HOTBAR_SLOT_COUNT + 5}, expects = {hand = shown_item(state.held.stack), slot = ANY_ITEM}, keeps_origin = true})
+		queue_player_command(list, player, Return_Held_Command{})
+	case 28:
+		queue_player_command(list, player, Slot_Primary_Command{target = {NO_ENTITY, HOTBAR_SLOT_COUNT + 5}, expects = shown_slot(simulation, player, NO_ENTITY, HOTBAR_SLOT_COUNT + 5)})
+	case 34:
+		queue_player_command(list, player, Slot_Primary_Command{target = {inserter, 0}, expects = shown_slot(simulation, player, inserter, 0)})
+	case 40:
+		queue_player_command(list, player, Slot_Split_Command{target = {inserter, 0}, expects = shown_slot(simulation, player, inserter, 0)})
+	case 46:
+		distribute := Distribute_Command{machine = inserter, hand = shown_item(state.held.stack), count = 1}
+		queue_player_command(list, player, distribute)
+	case 52:
+		queue_player_command(list, player, Slot_Split_Command{target = {inserter, 0}, expects = shown_slot(simulation, player, inserter, 0)})
+	case 58:
+		queue_player_command(list, player, Return_Held_Command{})
+	case 64:
+		queue_player_command(list, player, Quick_Move_Command{machine = inserter, step = {kind = .All, target = {.Inventory, -1}, item = state.inventory.slots[HOTBAR_SLOT_COUNT + 5].item}})
+		queue_player_command(list, player, Quick_Move_Command{machine = NO_ENTITY, step = {kind = .Stack, target = {.Hotbar, 2}}})
+	case 70:
+		queue_player_command(list, player, Transfer_Button_Command{machine = inserter, button = .Fill})
+		queue_player_command(list, player, slot_sort_command(NO_ENTITY, inventory_grid(state.inventory), ranks))
+	case 76:
+		queue_player_command(list, player, Grid_Transfer_Command{machine = NO_ENTITY, transfer = {source = .Main, target = .Hotbar}})
+	case 82:
+		for slot, index in state.inventory.slots {
+			if slot.item == stone && !stack_is_empty(slot) {
+				queue_player_command(list, player, Slot_Primary_Command{target = {NO_ENTITY, index}, expects = shown_slot(simulation, player, NO_ENTITY, index)})
+				break
+			}
+		}
+	case 88:
+		if drop, drops := drop_stack_command(state, -1); drops {
+			queue_player_command(list, player, drop)
+		}
+	}
+}
+
+// Two machines whose players move stacks through every slot command keep
+// the same state hash: the slot transfers are tick input like every
+// other screen action.
+@(test)
+test_slot_commands_keep_two_machines_in_step :: proc(t: ^testing.T) {
+	content := make_save_test_content()
+	generator := make_test_generator(DEFAULT_WORLD_SEED)
+	first := make_lockstep_test_machine(content, &generator, 0, 3)
+	defer destroy_lockstep_test_machine(first)
+	second := make_lockstep_test_machine(content, &generator, 1, 2)
+	defer destroy_lockstep_test_machine(second)
+	machines := [?]^Lockstep_Test_Machine{first, second}
+	coal := test_item(content.items, "coal")
+	stone := test_item(content.items, "stone")
+	ranks := make([]u16, len(content.items.items), context.temp_allocator)
+	for &rank, item in ranks {
+		rank = u16(len(ranks) - item)
+	}
+	inserters: [2]Entity_Handle
+	for machine in machines {
+		for &player, index in machine.simulation.players {
+			inserters[index] = add_idle_test_inserter(&machine.simulation, content, {-40 + 4 * i32(index), 90, -40}, stone)
+			for &slot in player.inventory.slots {
+				slot = EMPTY_STACK
+			}
+			player.inventory.slots[HOTBAR_SLOT_COUNT] = {coal, 9}
+			player.inventory.slots[HOTBAR_SLOT_COUNT + 3] = {stone, 4}
+			player.inventory.slots[2] = {stone, 2}
+			player.held = EMPTY_HELD_STACK
+			player.open_machine = inserters[index]
+		}
+	}
+	loose_before := len(first.simulation.world.entities.loose_items.items)
+	testing.expect_value(t, lockstep_state_hash(&first.simulation), lockstep_state_hash(&second.simulation))
+	for frame := 0; first.simulation.tick < 160 || second.simulation.tick < 160; frame += 1 {
+		for machine in machines {
+			player := lockstep_local_player(machine.lockstep)
+			slot_test_commands(&machine.simulation, player, frame, inserters[player], stone, ranks)
+			hold_local_commands(&machine.lockstep, &machine.simulation)
+			stamp_local_record(&machine.lockstep, machine.simulation.tick, {})
+		}
+		relay_in_process(machines[:])
+		for machine in machines {
+			run_lockstep_test_ticks(machine, content)
+		}
+		if first.simulation.tick == second.simulation.tick {
+			testing.expectf(t, lockstep_state_hash(&first.simulation) == lockstep_state_hash(&second.simulation), "the hashes differ at tick %d", first.simulation.tick)
+		}
+		if frame > 1000 {
+			testing.fail_now(t, "the machines stopped ticking")
+		}
+	}
+	testing.expect_value(t, lockstep_state_hash(&first.simulation), lockstep_state_hash(&second.simulation))
+	for machine in machines {
+		simulation := &machine.simulation
+		entities := &simulation.world.entities
+		// Every command applied (none was stale), both inserters' hands
+		// were taken, both dropped a stack, and no item was made or lost.
+		testing.expect(t, !simulation_has_refusal(simulation, 0) && !simulation_has_refusal(simulation, 1))
+		loose := entities.loose_items.items[loose_before:]
+		testing.expect_value(t, len(loose), 2)
+		for player in 0 ..< 2 {
+			inserter := pool_get(&entities.inserters, inserters[player])
+			testing.expect_value(t, inserter.held, EMPTY_STACK)
+			testing.expect_value(t, simulation.players[player].held, EMPTY_HELD_STACK)
+			coal_count := inventory_count({slots = inserter.slots[:]}, coal) + inventory_count(simulation.players[player].inventory, coal)
+			testing.expect_value(t, coal_count, 9)
+			testing.expect(t, inventory_count({slots = inserter.slots[:]}, coal) > 0)
+		}
+		stone_count := 0
+		for item in loose {
+			stone_count += item.item == stone ? int(item.count) : 0
+		}
+		for player in 0 ..< 2 {
+			stone_count += inventory_count(simulation.players[player].inventory, stone)
+		}
+		testing.expect_value(t, stone_count, 14)
+	}
+}

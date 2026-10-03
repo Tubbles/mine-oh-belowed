@@ -292,9 +292,8 @@ Slot_Drag :: struct {
 	// it takes the drop.
 	released:       bool,
 	// Written by finish_slot_drag on every frame of a slot screen: a stack
-	// is held, and where the dragged stack came from.
+	// is held or a pick up is on its way to the tick.
 	holding:        bool,
-	origin_slot:    int,
 }
 
 // A pointer press (0132). ui_begin starts and steps it
@@ -873,7 +872,6 @@ start_slot_drag :: proc(state: Ui_State, holding: bool) -> Slot_Drag {
 		phase = holding ? .Dragging : .Pressed,
 		press_position = state.pointer,
 		outside = pointer_outside_screen(state),
-		origin_slot = state.slot_drag.origin_slot,
 	}
 }
 

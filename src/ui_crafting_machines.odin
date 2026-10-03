@@ -135,18 +135,3 @@ lab_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, lab: Lab, screen_c
 	detail_line(state, &content, power_line, UI_DIM_TEXT_COLOR)
 	return result
 }
-
-// The slot rules of the open machine for the player's drops.
-open_machine_slot_filters :: proc(screen_context: Screen_Context, handle: Entity_Handle, kind: Machine_Kind, slot_count: int) -> []Slot_Filter {
-	#partial switch handle.kind {
-	case .Assembler:
-		assembler := pool_get(&screen_context.world.entities.assemblers, handle)
-		return assembler_slot_filters(assembler^, screen_context.machines.machines[assembler.machine], screen_context.recipes)
-	case .Lab:
-		return lab_slot_filters(screen_context.machines.lab_packs, slot_count)
-	case .Launch_Pad:
-		pad := pool_get(&screen_context.world.entities.launch_pads, handle)
-		return launch_pad_slot_filters(pad^, screen_context.machines.machines[pad.machine])
-	}
-	return machine_slot_filters(kind, slot_count)
-}

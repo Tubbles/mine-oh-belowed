@@ -2,6 +2,8 @@
 
 Status: folded into 0177 on 2026-10-02 (the queued writes are the first thing lockstep needs, so they land with the driver; the one frame of latency is accepted by the model; `doc/log/2026-10-02.md`)
 
+Note (2026-10-03): the transfers the Change section kept immediate (the slot transfers, quick moves, distribute, sort, the held stack, the inserter hand, the transfer buttons, the drop) were queued as slot commands by the first part of 0179 (`player_command_slots.odin`, `doc/log/2026-10-03.md`).
+
 ## Goal
 
 Refactor 8 of the UI audit (`doc/audit/ui.md`, sections 3 and 5). During the UI pass the screens write the simulation directly: research (`queue_research`), crafting (`queue_crafts`, `cancel_last_craft`), the assembler's recipe (`change_assembler_recipe`), the power switch (`toggle_power_switch`), assembly and launch (`start_assembly`, `request_launch`, `record_launch_refusal`), catalogue orders (`order_from_catalogue`), the splitter's and inserter's settings (`ui_machine.odin`), and the hotbar radial's `player.selected_hotbar_slot` (`hud.odin`). The one queued exception today is the Developer screen, whose `Developer_Request` entries `serve_developer_requests` applies inside the tick. For the cut, the simulation ticks from queued inputs only: a plugin boundary and a replay see the screens' actions as tick input, never as writes from the frame.

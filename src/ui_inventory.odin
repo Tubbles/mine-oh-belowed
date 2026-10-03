@@ -14,27 +14,75 @@ INVENTORY_ROWS :: PLAYER_GRID_SLOT_COUNT / INVENTORY_COLUMNS
 HELD_STACK_FOCUS_OFFSET :: [2]f32{UI_SLOT_SIZE * 0.4, -UI_SLOT_SIZE * 0.4}
 
 // What one frame of the screen did to the player's slots, as inventory
-// indices (-1 for none).
+// indices (-1 for none). drag_drop: the activation is a pointer drag's
+// drop (Slot_Drag.released), of a stack of drag_hand (dragged_hand_item).
 Inventory_Slot_Input :: struct {
 	activated:      int,
 	focused:        int,
 	secondary:      bool,
 	context_action: bool,
+	drag_drop:      bool,
+	drag_hand:      Item_Id,
 }
 
-// A on a slot first, then L2 (split) on the focused slot, then X (sort).
-apply_inventory_slot_input :: proc(inventory: Inventory, held: Held_Stack, input: Inventory_Slot_Input, items: Item_Registry, ranks: []u16) -> Held_Stack {
-	result := held
+// A on a slot, else L2 (split) on the focused slot and X (sort), as the
+// slot commands the screen queues (player_command_slots.odin), read off
+// the hand and the slots the frame shows. A press that queues A queues
+// nothing else, since the split and the sort need the hand the A leaves.
+inventory_slot_commands :: proc(inventory: Inventory, held: Held_Stack, input: Inventory_Slot_Input, ranks: []u16) -> []Player_Command {
+	commands := make([dynamic]Player_Command, context.temp_allocator)
 	if input.activated >= 0 {
-		result = apply_slot_primary(inventory, result, input.activated, items)
+		expects := shown_expectation(held, inventory.slots[input.activated])
+		if input.drag_drop {
+			expects = {hand = input.drag_hand, slot = ANY_ITEM}
+		}
+		append(&commands, Slot_Primary_Command{target = {NO_ENTITY, input.activated}, expects = expects, keeps_origin = input.drag_drop})
+		return commands[:]
 	}
-	if input.secondary {
-		result = apply_slot_split(inventory, result, input.focused)
+	if !stack_is_empty(held.stack) {
+		return commands[:]
+	}
+	if input.secondary && input.focused >= 0 && !stack_is_empty(inventory.slots[input.focused]) {
+		append(&commands, Slot_Split_Command{target = {NO_ENTITY, input.focused}, expects = shown_expectation(held, inventory.slots[input.focused])})
 	}
 	if input.context_action {
-		result = apply_slot_context(inventory, result, items, ranks)
+		append(&commands, slot_sort_command(NO_ENTITY, inventory_grid(inventory), ranks))
 	}
-	return result
+	return commands[:]
+}
+
+// X on the slots: the order of sorted_slot_order in the command.
+slot_sort_command :: proc(machine: Entity_Handle, slots: []Item_Stack, ranks: []u16) -> Slot_Sort_Command {
+	command := Slot_Sort_Command{machine = machine}
+	order := sorted_slot_order(slots, ranks)
+	for index, position in order {
+		command.order[position] = u8(index)
+	}
+	command.count = u8(len(order))
+	return command
+}
+
+// A slot command after the check the tick repeats (slot_command_stale):
+// a stale one toasts and never queues. While another slot command of the
+// player is on its way the frame's hand and slots are behind, so the
+// check is left to the tick.
+queue_slot_command :: proc(state: ^Ui_State, screen_context: Screen_Context, command: Player_Command) {
+	if screen_context.player_commands == nil {
+		return
+	}
+	entities := screen_context.world != nil ? &screen_context.world.entities : nil
+	pending := slot_command_pending(screen_context.player_commands[:], screen_context.unconfirmed_commands, screen_context.player_index, is_slot_command)
+	if !pending && slot_command_stale(screen_context.player^, entities, screen_context.content, command) {
+		ui_toast(state, text("toast_action_refused"))
+		return
+	}
+	queue_player_command(screen_context.player_commands, screen_context.player_index, command)
+}
+
+queue_slot_commands :: proc(state: ^Ui_State, screen_context: Screen_Context, commands: []Player_Command) {
+	for command in commands {
+		queue_slot_command(state, screen_context, command)
+	}
 }
 
 // The hotbar grid shows slots 0 to 7, the main grid the rest.
@@ -113,16 +161,22 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		focused        = slots.focused,
 		secondary      = state.input.secondary,
 		context_action = state.input.context_action && sort_target_grid(active.grid) == .Main,
+		drag_drop      = state.slot_drag.released,
+		drag_hand      = dragged_hand_item(screen_context),
 	}
-	player.held = apply_inventory_slot_input(player.inventory, player.held, slot_input, items, screen_context.item_sort_ranks)
-	player.held = apply_player_slot_button(player.inventory, player.held, active, button, items, screen_context.item_sort_ranks)
+	queue_slot_commands(state, screen_context, inventory_slot_commands(player.inventory, player.held, slot_input, screen_context.item_sort_ranks))
+	queue_slot_commands(state, screen_context, player_slot_button_commands(player.inventory, player.held, active, button, screen_context.item_sort_ranks))
 	transfer := slot_button_transfer(.Inventory, active, active_slot_stack(player.inventory, nil, active), button)
-	apply_grid_transfer(nil, {items = items}, NO_ENTITY, player.inventory, transfer)
+	if transfer.target != .None {
+		queue_slot_command(state, screen_context, Grid_Transfer_Command{machine = NO_ENTITY, transfer = transfer})
+	}
 	if screen_context.world != nil && (state.input.drop || button == .Drop) {
 		dropped_slot := button == .Drop ? player_slot_index(active) : slots.focused
-		drop_player_stack(screen_context.world, &screen_context.records.statistics, screen_context.blocks, player, screen_context.player_index, dropped_slot)
+		if drop_command, drops := drop_stack_command(player^, dropped_slot); drops {
+			queue_slot_command(state, screen_context, drop_command)
+		}
 	}
-	player.held = finish_slot_drag(state, player.inventory, player.held, items)
+	finish_slot_drag(state, screen_context)
 	draw_held_stack(state, player.held.stack, items)
 	if !touch {
 		inventory_glyph_bar(state, player.held.stack, slots.focused >= 0 ? player.inventory.slots[slots.focused] : EMPTY_STACK, quick_move = true, drop = true)
@@ -133,6 +187,18 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 // grid, and Drop, which drops the active slot's stack as the right stick
 // click drops the focused one.
 INVENTORY_TOUCH_BUTTONS :: Touch_Buttons{.Sort, .Split, .Transfer_All, .Transfer_All_Of_Type, .Drop, .Back}
+
+// The Drop of the hand's stack, or with an empty hand of the slot's
+// (-1 for none); nothing to drop queues nothing.
+drop_stack_command :: proc(player: Player, slot: int) -> (command: Drop_Stack_Command, drops: bool) {
+	if !stack_is_empty(player.held.stack) {
+		return {slot = slot, expects = {hand = player.held.stack.item, slot = ANY_ITEM}}, true
+	}
+	if slot < 0 || slot >= len(player.inventory.slots) || stack_is_empty(player.inventory.slots[slot]) {
+		return {}, false
+	}
+	return {slot = slot, expects = {hand = NO_ITEM, slot = player.inventory.slots[slot].item}}, true
+}
 
 // The active slot's inventory index when it is one of the player's, -1
 // otherwise.
@@ -187,7 +253,7 @@ slot_button_transfer :: proc(screen: Slot_Screen_Kind, active: Active_Slot, acti
 // Sort and Split on the player's active slot, as X and L2 on it: Sort
 // sorts the main grid from the main grid and from the hotbar, which keeps
 // its order (sort_target_grid).
-apply_player_slot_button :: proc(inventory: Inventory, held: Held_Stack, active: Active_Slot, button: Touch_Button, items: Item_Registry, ranks: []u16) -> Held_Stack {
+player_slot_button_commands :: proc(inventory: Inventory, held: Held_Stack, active: Active_Slot, button: Touch_Button, ranks: []u16) -> []Player_Command {
 	on_player := active.grid == .Hotbar || active.grid == .Main
 	input := Inventory_Slot_Input {
 		activated      = -1,
@@ -195,7 +261,7 @@ apply_player_slot_button :: proc(inventory: Inventory, held: Held_Stack, active:
 		secondary      = on_player && button == .Split,
 		context_action = sort_target_grid(active.grid) == .Main && button == .Sort,
 	}
-	return apply_inventory_slot_input(inventory, held, input, items, ranks)
+	return inventory_slot_commands(inventory, held, input, ranks)
 }
 
 // The quick move between the hotbar and the backpack: R2 or Q on the
@@ -218,7 +284,9 @@ apply_inventory_quick_move_input :: proc(state: ^Ui_State, screen_context: Scree
 	}
 	step: Quick_Move_Step
 	state.quick_move, step = advance_quick_move(state.quick_move, quick_input)
-	apply_inventory_quick_move(inventory, screen_context.items, step)
+	if step.kind != .None {
+		queue_slot_command(state, screen_context, Quick_Move_Command{machine = NO_ENTITY, step = step})
+	}
 	return quick_input.pressed ? -1 : slots.activated
 }
 
@@ -259,28 +327,40 @@ inventory_tabs :: proc(state: ^Ui_State, rectangle: Ui_Rectangle) {
 	}
 }
 
+// The item a drag's drop carries: the hand's, or while the drag's pick up
+// is on its way the item it picks up (ANY_ITEM when unknown).
+dragged_hand_item :: proc(screen_context: Screen_Context) -> Item_Id {
+	if !stack_is_empty(screen_context.player.held.stack) || screen_context.player_commands == nil {
+		return shown_item(screen_context.player.held.stack)
+	}
+	return pending_hand_item(screen_context.player_commands[:], screen_context.unconfirmed_commands, screen_context.player_index)
+}
+
 // The end of a pointer drag on a slot screen (0124), after the slot
 // input: on the release frame what is still held (a stack released off
-// the slots, the rest of a merge, a swapped stack) goes back, to where
-// the dragged stack came from, so a drag onto another item swaps the two
-// slots. A drag that holds nothing (its pick up lifted nothing: a filter
-// slot, a slot a machine emptied) ends. Records for the next frame
-// whether a stack is held and, while dragging, its origin.
-finish_slot_drag :: proc(state: ^Ui_State, inventory: Inventory, held: Held_Stack, items: Item_Registry) -> Held_Stack {
-	result := held
-	if state.slot_drag.released && !stack_is_empty(result.stack) {
-		result.origin_slot = state.slot_drag.origin_slot
-		result = return_held_stack(inventory, result, items)
+// the slots, the rest of a merge, a swapped stack) goes back
+// (Return_Held_Command), to where the dragged stack came from, since the
+// drop kept that origin (Slot_Primary_Command.keeps_origin), so a drag
+// onto another item swaps the two slots. A drag that holds nothing (its
+// pick up lifted nothing: a filter slot, a slot a machine emptied) ends.
+// A pick up still on its way to the tick counts as held, so the drag
+// keeps going until the tick shows the stack. Records for the next frame
+// whether a stack is held.
+finish_slot_drag :: proc(state: ^Ui_State, screen_context: Screen_Context) {
+	holding := !stack_is_empty(screen_context.player.held.stack)
+	if screen_context.player_commands != nil {
+		holding ||= slot_command_pending(screen_context.player_commands[:], screen_context.unconfirmed_commands, screen_context.player_index, fills_hand)
 	}
-	holding := !stack_is_empty(result.stack)
-	if state.slot_drag.phase == .Dragging {
-		state.slot_drag.origin_slot = result.origin_slot
-		if !holding {
-			state.slot_drag.phase = .None
-		}
+	// A hand the frame shows is returned only when the inventory has room
+	// for some of it; one still on its way always is.
+	shown := screen_context.player.held
+	if state.slot_drag.released && holding && (stack_is_empty(shown.stack) || return_changes_hand(screen_context.player.inventory, shown, screen_context.items)) {
+		queue_slot_command(state, screen_context, Return_Held_Command{})
+	}
+	if state.slot_drag.phase == .Dragging && !holding {
+		state.slot_drag.phase = .None
 	}
 	state.slot_drag.holding = holding
-	return result
 }
 
 // Follows the pointer while it is shown, a finger's a slot height above

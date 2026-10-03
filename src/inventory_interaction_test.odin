@@ -49,14 +49,15 @@ test_split_and_sort_are_separate :: proc(t: ^testing.T) {
 	testing.expect_value(t, held, Held_Stack{Item_Stack{TEST_GEAR, 5}, HOTBAR_SLOT_COUNT + 5})
 	testing.expect_value(t, inventory.slots[HOTBAR_SLOT_COUNT + 5], Item_Stack{TEST_GEAR, 4})
 	// Holding a stack, sorting and splitting do nothing.
-	testing.expect_value(t, apply_slot_context(inventory, held, items, ranks), held)
+	testing.expect_value(t, len(inventory_slot_commands(inventory, held, {activated = -1, focused = HOTBAR_SLOT_COUNT + 2, secondary = true, context_action = true}, ranks)), 0)
 	testing.expect_value(t, apply_slot_split(inventory, held, HOTBAR_SLOT_COUNT + 2), held)
 	testing.expect_value(t, inventory.slots[HOTBAR_SLOT_COUNT + 5], Item_Stack{TEST_GEAR, 4})
 	held = return_held_stack(inventory, held, items)
 	testing.expect_value(t, held.stack, EMPTY_STACK)
 	testing.expect_value(t, inventory.slots[HOTBAR_SLOT_COUNT + 5], Item_Stack{TEST_GEAR, 9})
 	// X sorts the grid even on a stack of several; the hotbar keeps its order.
-	apply_slot_context(inventory, EMPTY_HELD_STACK, items, ranks)
+	sort := inventory_slot_commands(inventory, EMPTY_HELD_STACK, {activated = -1, focused = -1, context_action = true}, ranks)[0].(Slot_Sort_Command)
+	arrange_slots(inventory_grid(inventory), items, sort_command_order(sort))
 	testing.expect_value(t, inventory.slots[HOTBAR_SLOT_COUNT], Item_Stack{TEST_ORE, 1})
 	testing.expect_value(t, inventory.slots[HOTBAR_SLOT_COUNT + 1], Item_Stack{TEST_GEAR, 9})
 	testing.expect_value(t, inventory.slots[3], Item_Stack{TEST_MACHINE, 1})
@@ -79,27 +80,34 @@ test_held_stack_returns_to_its_origin :: proc(t: ^testing.T) {
 	testing.expect_value(t, held.stack, Item_Stack{TEST_MACHINE, 3})
 }
 
+// A on a slot queues the primary command with the hand the frame shows,
+// a drag's drop expects a hand that holds; L2 and X with an empty hand
+// queue the split and the sort.
 @(test)
-test_inventory_slot_input_applies_confirm_split_and_sort :: proc(t: ^testing.T) {
+test_inventory_slot_input_queues_confirm_split_and_sort :: proc(t: ^testing.T) {
 	items := make_small_items()
 	ranks := item_sort_ranks(items, []string{"Ore", "Machine", "Gear"}, context.temp_allocator)
 	inventory := make_test_inventory(PLAYER_INVENTORY_SLOT_COUNT)
 	inventory.slots[HOTBAR_SLOT_COUNT] = Item_Stack{TEST_ORE, 6}
-	held := apply_inventory_slot_input(inventory, EMPTY_HELD_STACK, {activated = HOTBAR_SLOT_COUNT, focused = HOTBAR_SLOT_COUNT}, items, ranks)
-	testing.expect_value(t, held.stack, Item_Stack{TEST_ORE, 6})
-	held = apply_inventory_slot_input(inventory, held, {activated = 0, focused = 0}, items, ranks)
-	testing.expect_value(t, inventory.slots[0], Item_Stack{TEST_ORE, 6})
-	held = apply_inventory_slot_input(inventory, held, {activated = -1, focused = 0, secondary = true}, items, ranks)
-	testing.expect_value(t, held.stack, Item_Stack{TEST_ORE, 3})
-	held = apply_inventory_slot_input(inventory, held, {activated = 0, focused = 0}, items, ranks)
-	held = apply_inventory_slot_input(inventory, held, {activated = -1, focused = 0, context_action = true}, items, ranks)
-	testing.expect_value(t, held.stack, EMPTY_STACK)
-	testing.expect_value(t, inventory.slots[0], Item_Stack{TEST_ORE, 6})
+	commands := inventory_slot_commands(inventory, EMPTY_HELD_STACK, {activated = HOTBAR_SLOT_COUNT, focused = HOTBAR_SLOT_COUNT, secondary = true}, ranks)
+	testing.expect_value(t, len(commands), 1)
+	testing.expect_value(t, commands[0].(Slot_Primary_Command), Slot_Primary_Command{target = {NO_ENTITY, HOTBAR_SLOT_COUNT}, expects = {hand = NO_ITEM, slot = TEST_ORE}})
+	held := Held_Stack{Item_Stack{TEST_ORE, 6}, HOTBAR_SLOT_COUNT}
+	commands = inventory_slot_commands(inventory, held, {activated = 0, focused = 0}, ranks)
+	testing.expect_value(t, commands[0].(Slot_Primary_Command).expects, Held_Expectation{hand = TEST_ORE, slot = NO_ITEM})
+	commands = inventory_slot_commands(inventory, EMPTY_HELD_STACK, {activated = 0, focused = 0, drag_drop = true, drag_hand = TEST_GEAR}, ranks)
+	testing.expect_value(t, commands[0].(Slot_Primary_Command), Slot_Primary_Command{target = {NO_ENTITY, 0}, expects = {hand = TEST_GEAR, slot = ANY_ITEM}, keeps_origin = true})
+	commands = inventory_slot_commands(inventory, EMPTY_HELD_STACK, {activated = -1, focused = HOTBAR_SLOT_COUNT, secondary = true, context_action = true}, ranks)
+	testing.expect_value(t, len(commands), 2)
+	testing.expect_value(t, commands[0].(Slot_Split_Command), Slot_Split_Command{target = {NO_ENTITY, HOTBAR_SLOT_COUNT}, expects = {hand = NO_ITEM, slot = TEST_ORE}})
+	sort := commands[1].(Slot_Sort_Command)
+	testing.expect_value(t, sort.count, 1)
+	testing.expect_value(t, sort.order[0], 0)
+	// L2 on an empty slot splits nothing.
+	testing.expect_value(t, len(inventory_slot_commands(inventory, EMPTY_HELD_STACK, {activated = -1, focused = 0, secondary = true}, ranks)), 0)
 	testing.expect_value(t, grid_result_to_inventory({activated = 2, focused = -1}, HOTBAR_SLOT_COUNT), Slot_Grid_Result{HOTBAR_SLOT_COUNT + 2, -1})
 }
 
-// Radial slots map one to one onto hotbar slots: slot 0 at the top of the
-// pad, clockwise.
 @(test)
 test_radial_selects_hotbar_slot :: proc(t: ^testing.T) {
 	state: Ui_State
@@ -182,31 +190,40 @@ test_distribute_gesture_over_machine_slots :: proc(t: ^testing.T) {
 	slots := make([]Item_Stack, 4, context.temp_allocator)
 	slice.fill(slots, EMPTY_STACK)
 	filters := make([]Slot_Filter, 4, context.temp_allocator)
+	machine := Entity_Handle{kind = .Chest, index = 3, generation = 1}
 	gesture: Distribute_Gesture
 	held := Held_Stack{Item_Stack{TEST_ORE, 9}, 2}
-	// A pressed on slot 0, held while the focus crosses 1 (twice) and 3, released.
-	held = apply_machine_slot_input(&gesture, slots, filters, held, {activated = 0, focused = 0, confirm_down = true}, items, {})
+	// A pressed on slot 0, held while the focus crosses 1 (twice) and 3,
+	// released: one command with the visited slots.
+	testing.expect(t, machine_slot_command(&gesture, machine, slots, filters, held, {activated = 0, focused = 0, confirm_down = true}, items, {}) == nil)
 	testing.expect(t, gesture.active)
-	testing.expect_value(t, slots[0], EMPTY_STACK)
 	for focused in ([?]int{0, 1, 1, 3}) {
-		held = apply_machine_slot_input(&gesture, slots, filters, held, {activated = -1, focused = focused, confirm_down = true}, items, {})
+		testing.expect(t, machine_slot_command(&gesture, machine, slots, filters, held, {activated = -1, focused = focused, confirm_down = true}, items, {}) == nil)
 	}
 	testing.expect_value(t, gesture.count, 3)
-	held = apply_machine_slot_input(&gesture, slots, filters, held, {activated = -1, focused = 3}, items, {})
+	command := machine_slot_command(&gesture, machine, slots, filters, held, {activated = -1, focused = 3}, items, {})
 	testing.expect(t, !gesture.active)
+	distribute := command.(Distribute_Command)
+	testing.expect_value(t, distribute.machine, machine)
+	testing.expect_value(t, distribute.hand, TEST_ORE)
+	testing.expect_value(t, distribute.count, 3)
+	testing.expect_value(t, distribute.slots[0], 0)
+	testing.expect_value(t, distribute.slots[1], 1)
+	testing.expect_value(t, distribute.slots[2], 3)
+	// The tick spreads the stack as finish_distribute does.
+	held = finish_distribute(gesture_visit(gesture_visit(gesture_visit({}, 0), 1), 3), slots, filters, held, items, {})
 	testing.expect_value(t, slots[0], Item_Stack{TEST_ORE, 3})
 	testing.expect_value(t, slots[1], Item_Stack{TEST_ORE, 3})
 	testing.expect_value(t, slots[2], EMPTY_STACK)
 	testing.expect_value(t, slots[3], Item_Stack{TEST_ORE, 3})
 	testing.expect_value(t, held.stack, EMPTY_STACK)
-	// A press and release on one slot is the ordinary pick up and drop.
-	held = apply_machine_slot_input(&gesture, slots, filters, EMPTY_HELD_STACK, {activated = 1, focused = 1, confirm_down = true}, items, {})
-	testing.expect_value(t, held, Held_Stack{Item_Stack{TEST_ORE, 3}, MACHINE_SLOT_ORIGIN})
+	// A press with nothing held is the ordinary pick up.
+	command = machine_slot_command(&gesture, machine, slots, filters, EMPTY_HELD_STACK, {activated = 1, focused = 1, confirm_down = true}, items, {})
+	testing.expect_value(t, command.(Slot_Primary_Command), Slot_Primary_Command{target = {machine, 1}, expects = {hand = NO_ITEM, slot = TEST_ORE}})
 	testing.expect(t, !gesture.active)
-	held = apply_machine_slot_input(&gesture, slots, filters, held, {activated = 2, focused = 2, confirm_down = true}, items, {})
-	held = apply_machine_slot_input(&gesture, slots, filters, held, {activated = -1, focused = 2}, items, {})
-	testing.expect_value(t, slots[2], Item_Stack{TEST_ORE, 3})
-	testing.expect_value(t, held.stack, EMPTY_STACK)
+	// A pointer drag's drop expects a hand that holds.
+	command = machine_slot_command(&gesture, machine, slots, filters, EMPTY_HELD_STACK, {activated = 2, focused = 2, drag_drop = true, drag_hand = ANY_ITEM}, items, {})
+	testing.expect_value(t, command.(Slot_Primary_Command), Slot_Primary_Command{target = {machine, 2}, expects = {hand = ANY_ITEM, slot = ANY_ITEM}, keeps_origin = true})
 }
 
 @(test)

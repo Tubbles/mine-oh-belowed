@@ -190,29 +190,63 @@ split_stack :: proc(stack: Item_Stack) -> (kept: Item_Stack, taken: Item_Stack) 
 	return kept, Item_Stack{item = stack.item, count = taken_count}
 }
 
-Stack_Sort_Context :: struct {
+Slot_Order_Context :: struct {
+	slots: []Item_Stack,
 	ranks: []u16,
 }
 
-stack_sorts_before :: proc(first, second: Item_Stack, data: rawptr) -> bool {
-	ranks := (^Stack_Sort_Context)(data).ranks
-	return ranks[first.item] < ranks[second.item]
+slot_sorts_before :: proc(first, second: int, data: rawptr) -> bool {
+	order_context := (^Slot_Order_Context)(data)
+	return order_context.ranks[order_context.slots[first].item] < order_context.ranks[order_context.slots[second].item]
 }
 
-// Merges stacks of the same item and orders them by rank (category, then
-// name), empty slots last. Ranks come from item_sort_ranks.
-sort_slots :: proc(slots: []Item_Stack, registry: Item_Registry, ranks: []u16) {
-	stacks := make([dynamic]Item_Stack, 0, len(slots), context.temp_allocator)
-	for slot in slots {
+// The Sort order: the indices of the non-empty slots by rank (category,
+// then name; item_sort_ranks). The ranks follow the display names, which
+// differ between languages, so the screen takes the order and the sort
+// command carries it to every machine (Slot_Sort_Command). In the temp
+// allocator.
+sorted_slot_order :: proc(slots: []Item_Stack, ranks: []u16) -> []int {
+	order := make([dynamic]int, 0, len(slots), context.temp_allocator)
+	for slot, index in slots {
 		if !stack_is_empty(slot) {
-			append(&stacks, slot)
+			append(&order, index)
 		}
 	}
-	sort_context := Stack_Sort_Context{ranks}
-	slice.sort_by_with_data(stacks[:], stack_sorts_before, &sort_context)
+	order_context := Slot_Order_Context{slots, ranks}
+	slice.sort_by_with_data(order[:], slot_sorts_before, &order_context)
+	return order[:]
+}
+
+// Puts the stacks of the slots the order names into that order, merging
+// stacks of the same item, empty slots last. The order names every
+// non-empty slot once (sort_order_matches).
+arrange_slots :: proc(slots: []Item_Stack, registry: Item_Registry, order: []int) {
+	stacks := make([dynamic]Item_Stack, 0, len(order), context.temp_allocator)
+	for index in order {
+		append(&stacks, slots[index])
+	}
 	slice.fill(slots, EMPTY_STACK)
 	// Merging never needs more slots than the stacks had, so nothing is left over.
 	for stack in stacks {
 		add_to_slots(slots, stack.item, int(stack.count), item_stack_size(registry, stack.item))
 	}
+}
+
+// The order names exactly the non-empty slots, each once: anything else
+// (the slots changed since the screen took the order) would lose or
+// double a stack.
+sort_order_matches :: proc(slots: []Item_Stack, order: []int) -> bool {
+	named := make([]bool, len(slots), context.temp_allocator)
+	for index in order {
+		if index < 0 || index >= len(slots) || named[index] || stack_is_empty(slots[index]) {
+			return false
+		}
+		named[index] = true
+	}
+	for slot, index in slots {
+		if !stack_is_empty(slot) && !named[index] {
+			return false
+		}
+	}
+	return true
 }

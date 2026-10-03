@@ -6,7 +6,7 @@ The ui cluster (work item 0143) is the immediate mode toolkit, every screen, the
 - 593 of the 1052 ui -> content references are the string table (`text` alone 574); the content logic in screens is small and mostly already pure (`ui_recipe_browser.odin`, `ui_technology_browser.odin`).
 - The screens and the HUD write the simulation during the UI pass through 22 procedures and 9 direct field writes (section 3), beside the one queued path the game already has (`Developer_Request`).
 - 148 of the 546 references into the cluster are graph noise: the layout procedure `column` (`ui_core.odin:1130`) shares its name with locals in the world, generation and render files.
-- The machine panel is one kind switch written six times (`machine_area_width`, `machine_area_height`, `machine_slot_region`, `entity_status_text`, `open_machine_slot_filters`, `machine_slot_filters`), each a place where a new machine kind is added.
+- The machine panel is one kind switch written six times (`machine_area_width`, `machine_area_height`, `machine_slot_region`, `entity_status_text`, `entity_slot_filters` (in the simulation since 0179), `machine_slot_filters`), each a place where a new machine kind is added.
 
 ## 1. What the cluster is
 
@@ -123,7 +123,7 @@ ui -> content (1052) by what is referenced:
 
 ui -> simulation (631): about 560 are types, constants and read accessors (`Item_Stack` 37, `Inventory` 34, `pool_get` 32, `Machine` 29, the per kind fractions and state texts). The writes during the UI pass:
 
-- Slot screens: `apply_slot_primary`, `apply_slot_split`, `apply_slot_context`, `apply_machine_slot_primary`, `finish_distribute`, `sort_slots`, `return_held_stack`, `apply_inventory_quick_move`, `apply_quick_move`, `take_inserter_hand`, `apply_transfer_button`, `apply_grid_transfer`, `drop_player_stack`; direct writes to `player.held` (9 lines), `player.open_machine` (`close_slot_screens`), `inserter.filter` and `inserter.held` (`ui_machine.odin:529`), `splitter.filter` and its priorities and side (`ui_machine.odin:334` to `ui_machine.odin:345`, `ui_machine.odin:534`).
+- Slot screens: `apply_slot_primary`, `apply_slot_split`, the sort (now `arrange_slots`), `apply_machine_slot_primary`, `finish_distribute`, `return_held_stack`, `apply_inventory_quick_move`, `apply_quick_move`, `take_inserter_hand`, `apply_transfer_button`, `apply_grid_transfer`, `drop_player_stack`; direct writes to `player.held`, `player.open_machine` (`close_slot_screens`), `inserter.filter` and `inserter.held` (the hand slot), `splitter.filter` and its priorities and side. None is left: 0177 queued the open machine, the filters and the splitter settings as player commands, and 0179 the rest as slot commands (`player_command_slots.odin`), so no screen writes the simulation.
 - Other screens: `toggle_power_switch` (`power_panel_region`), `start_assembly`, `request_launch`, `record_launch_refusal` (`launch_pad_slot_region`), `order_from_catalogue` (`launch_pad_catalogue_tab`), `queue_crafts` and `cancel_last_craft` (`apply_recipe_craft_input`), `change_assembler_recipe` (`choose_assembler_recipe`), `queue_research` (`queue_focused_research`).
 - HUD: `hotbar_radial` sets `player.selected_hotbar_slot` (`hud.odin:273`), while the tick's writer reads actions (`cycle_hotbar_slot`, `player.odin:537`) and the touch overlay's hotbar goes through the input frame (`apply_touch_overlay_hotbar`).
 - The queued exception: the Developer screen appends `Developer_Request` entries that `serve_developer_request` applies inside the tick.

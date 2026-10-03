@@ -84,11 +84,18 @@ test_sort_merges_and_orders_by_rank :: proc(t: ^testing.T) {
 	items := make_small_items()
 	ranks := item_sort_ranks(items, []string{"Ore", "Machine", "Gear"}, context.temp_allocator)
 	slots := []Item_Stack{EMPTY_STACK, {TEST_MACHINE, 2}, {TEST_ORE, 30}, {TEST_GEAR, 5}, {TEST_ORE, 30}, {TEST_MACHINE, 3}}
-	sort_slots(slots, items, ranks)
+	order := sorted_slot_order(slots, ranks)
+	testing.expect(t, sort_order_matches(slots, order))
+	arrange_slots(slots, items, order)
 	expected := []Item_Stack{{TEST_ORE, 50}, {TEST_ORE, 10}, {TEST_GEAR, 5}, {TEST_MACHINE, 5}, EMPTY_STACK, EMPTY_STACK}
 	for slot, index in slots {
 		testing.expect_value(t, slot, expected[index])
 	}
+	// An order that misses a stack, names an empty slot or names one twice
+	// does not match.
+	testing.expect(t, !sort_order_matches(slots, []int{0, 1, 2}))
+	testing.expect(t, !sort_order_matches(slots, []int{0, 1, 2, 3, 4}))
+	testing.expect(t, !sort_order_matches(slots, []int{0, 1, 2, 2}))
 }
 
 @(test)

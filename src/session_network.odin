@@ -100,6 +100,16 @@ Player_Command_Tag :: enum u8 {
 	Debug_Remove_Block,
 	Debug_Drop_Item,
 	Developer,
+	Slot_Primary,
+	Slot_Split,
+	Slot_Sort,
+	Distribute,
+	Return_Held,
+	Drop_Stack,
+	Quick_Move,
+	Transfer_Button,
+	Grid_Transfer,
+	Inserter_Hand,
 }
 
 // A player a client's machine drives, on the host: the newest tick
@@ -283,6 +293,26 @@ encode_player_command :: proc(bytes: ^[dynamic]byte, command: Player_Command) {
 		write_tagged_command(bytes, .Debug_Drop_Item, variant)
 	case Developer_Request:
 		write_tagged_command(bytes, .Developer, variant)
+	case Slot_Primary_Command:
+		write_tagged_command(bytes, .Slot_Primary, variant)
+	case Slot_Split_Command:
+		write_tagged_command(bytes, .Slot_Split, variant)
+	case Slot_Sort_Command:
+		write_tagged_command(bytes, .Slot_Sort, variant)
+	case Distribute_Command:
+		write_tagged_command(bytes, .Distribute, variant)
+	case Return_Held_Command:
+		write_tagged_command(bytes, .Return_Held, variant)
+	case Drop_Stack_Command:
+		write_tagged_command(bytes, .Drop_Stack, variant)
+	case Quick_Move_Command:
+		write_tagged_command(bytes, .Quick_Move, variant)
+	case Transfer_Button_Command:
+		write_tagged_command(bytes, .Transfer_Button, variant)
+	case Grid_Transfer_Command:
+		write_tagged_command(bytes, .Grid_Transfer, variant)
+	case Inserter_Hand_Command:
+		write_tagged_command(bytes, .Inserter_Hand, variant)
 	case Add_Player_Command, Chunk_Ready_Command:
 		panic("a join's entry and a chunk arrival are never relayed")
 	}
@@ -328,6 +358,26 @@ decode_player_command :: proc(reader: ^Byte_Reader) -> (command: Player_Command,
 		return read_command_value(reader, Debug_Drop_Item_Command)
 	case .Developer:
 		return read_command_value(reader, Developer_Request)
+	case .Slot_Primary:
+		return read_command_value(reader, Slot_Primary_Command)
+	case .Slot_Split:
+		return read_command_value(reader, Slot_Split_Command)
+	case .Slot_Sort:
+		return read_command_value(reader, Slot_Sort_Command)
+	case .Distribute:
+		return read_command_value(reader, Distribute_Command)
+	case .Return_Held:
+		return read_command_value(reader, Return_Held_Command)
+	case .Drop_Stack:
+		return read_command_value(reader, Drop_Stack_Command)
+	case .Quick_Move:
+		return read_command_value(reader, Quick_Move_Command)
+	case .Transfer_Button:
+		return read_command_value(reader, Transfer_Button_Command)
+	case .Grid_Transfer:
+		return read_command_value(reader, Grid_Transfer_Command)
+	case .Inserter_Hand:
+		return read_command_value(reader, Inserter_Hand_Command)
 	}
 	return nil, false
 }

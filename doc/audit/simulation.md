@@ -128,7 +128,7 @@ Switches over `Entity_Kind` (17 in 10 files; 11 in the cluster):
 - `entity_placement.odin`: `entity_rotates`, `rotate_targeted_entity`.
 - `item_transfer.odin`: `entity_accepts`, `giving_slots`, `entity_takes_item_kind` (16).
 - `fluid_network.odin`: `entity_port_buffers` (4). `power_network.odin`: `participant_power` (8). `quick_transfer.odin`: `fill_slots`.
-- Outside: `entity_pool_length` and `entity_common_at` (`save_state.odin`, 16 each), `pipe_connects_through` (`render_fluids.odin`), `open_machine_slot_filters`, `machine_slot_region` and `entity_status_text` (ui audit).
+- Outside: `entity_pool_length` and `entity_common_at` (`save_state.odin`, 16 each), `pipe_connects_through` (`render_fluids.odin`), `entity_slot_filters` (moved into the simulation by 0179), `machine_slot_region` and `entity_status_text` (ui audit).
 - Plus `add_entity`'s switch over `Machine_Kind` (25 kinds to 16 pools), and lists naming every pool without a switch: `destroy_entities`, `write_entity_pools`, `read_entity_pools`, `entity_counts` (`diagnostics.odin`), `draw_entities` (10 kinds).
 - A new kind is therefore: `Entity_Kind`, `Entities`, `destroy_entities`, `entity_common`, `remove_entity`, `add_entity`, `entity_takes_item_kind`, the two save lists, `entity_pool_length`, `entity_common_at`, `entity_counts`, and any of the component switches below it takes part in.
 

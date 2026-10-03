@@ -53,16 +53,6 @@ apply_slot_split :: proc(inventory: Inventory, held: Held_Stack, index: int) -> 
 	return Held_Stack{stack = taken, origin_slot = index}
 }
 
-// X is the context action: it sorts the main grid (the hotbar keeps its
-// order); the screens apply it only while the main grid or the hotbar
-// is active (sort_target_grid, 0125). Holding a stack, it does nothing.
-apply_slot_context :: proc(inventory: Inventory, held: Held_Stack, registry: Item_Registry, ranks: []u16) -> Held_Stack {
-	if stack_is_empty(held.stack) {
-		sort_slots(inventory_grid(inventory), registry, ranks)
-	}
-	return held
-}
-
 // The grids of a slot screen (0125): the player's hotbar row, the
 // player's main grid and the open machine's slots.
 Slot_Grid_Kind :: enum u8 {
@@ -118,6 +108,19 @@ return_held_stack :: proc(inventory: Inventory, held: Held_Stack, registry: Item
 	result := held
 	result.stack.count = u16(remaining)
 	return result
+}
+
+// Whether return_held_stack would move anything: a hand that stays as it
+// is (empty, or no room anywhere) needs no Return_Held_Command, which
+// would otherwise go into every tick's record while the inventory stays
+// full.
+return_changes_hand :: proc(inventory: Inventory, held: Held_Stack, registry: Item_Registry) -> bool {
+	if stack_is_empty(held.stack) {
+		return false
+	}
+	copied := Inventory{slots = make([]Item_Stack, len(inventory.slots), context.temp_allocator)}
+	copy(copied.slots, inventory.slots)
+	return return_held_stack(copied, held, registry) != held
 }
 
 // Spreads the held stack evenly over the targets, in order: each gets
@@ -234,6 +237,14 @@ apply_machine_slot_primary :: proc(slots: []Item_Stack, index: int, filter: Slot
 		result.origin_slot = MACHINE_SLOT_ORIGIN
 	}
 	return result
+}
+
+// A slot joins the gesture when it takes the held item and has it or nothing.
+slot_takes_distribution :: proc(slot: Item_Stack, filter: Slot_Filter, held: Held_Stack, items: Item_Registry, recipes: Recipe_Registry) -> bool {
+	if stack_is_empty(held.stack) || !slot_accepts(filter, held.stack.item, items, recipes) {
+		return false
+	}
+	return stack_is_empty(slot) || slot.item == held.stack.item
 }
 
 // Ends the gesture: one slot gets the ordinary drop, several share the

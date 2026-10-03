@@ -99,7 +99,7 @@ drag_test_inventory :: proc(audit: ^Ui_Audit, state: ^Ui_State, count: u16 = 5) 
 	player.selected_hotbar_slot = 0
 	player.inventory.slots[3] = {test_item(audit.content.items, "coal"), count}
 	push_screen(&state.screens, .Inventory)
-	screen_test_frame(audit, state, {})
+	slot_test_frame(audit, state, {})
 	return player
 }
 
@@ -113,12 +113,12 @@ test_a_drag_moves_a_stack :: proc(t: ^testing.T) {
 	coal := player.inventory.slots[3]
 	from := widget_centre(state, inventory_slot_id("hotbar", 3))
 	to := widget_centre(state, inventory_slot_id("grid", 0))
-	screen_test_frame(audit, &state, pointer_input(from, true, pressed = true))
+	slot_test_frame(audit, &state, pointer_input(from, true, pressed = true))
 	testing.expect_value(t, player.held.stack, EMPTY_STACK)
-	screen_test_frame(audit, &state, pointer_input(to, true))
+	slot_test_frame(audit, &state, pointer_input(to, true))
 	testing.expect_value(t, player.held.stack, coal)
 	testing.expect_value(t, player.inventory.slots[3], EMPTY_STACK)
-	screen_test_frame(audit, &state, pointer_input(to, false, moved = false))
+	slot_test_frame(audit, &state, pointer_input(to, false, moved = false))
 	testing.expect_value(t, player.held.stack, EMPTY_STACK)
 	testing.expect_value(t, player.inventory.slots[HOTBAR_SLOT_COUNT], coal)
 	testing.expect_value(t, top_screen(state.screens), Screen.Inventory)
@@ -137,9 +137,9 @@ test_a_drag_onto_another_item_swaps_the_slots :: proc(t: ^testing.T) {
 	player.inventory.slots[HOTBAR_SLOT_COUNT] = stone
 	from := widget_centre(state, inventory_slot_id("hotbar", 3))
 	to := widget_centre(state, inventory_slot_id("grid", 0))
-	screen_test_frame(audit, &state, pointer_input(from, true, pressed = true))
-	screen_test_frame(audit, &state, pointer_input(to, true))
-	screen_test_frame(audit, &state, pointer_input(to, false, moved = false))
+	slot_test_frame(audit, &state, pointer_input(from, true, pressed = true))
+	slot_test_frame(audit, &state, pointer_input(to, true))
+	slot_test_frame(audit, &state, pointer_input(to, false, moved = false))
 	testing.expect_value(t, player.held.stack, EMPTY_STACK)
 	testing.expect_value(t, player.inventory.slots[HOTBAR_SLOT_COUNT], coal)
 	testing.expect_value(t, player.inventory.slots[3], stone)
@@ -157,8 +157,8 @@ test_a_tap_on_a_slot_only_focuses_it :: proc(t: ^testing.T) {
 	slot := inventory_slot_id("hotbar", 3)
 	testing.expect(t, state.focus != slot)
 	at := widget_centre(state, slot)
-	screen_test_frame(audit, &state, pointer_input(at, true, pressed = true, moved = false))
-	screen_test_frame(audit, &state, pointer_input(at, false, moved = false))
+	slot_test_frame(audit, &state, pointer_input(at, true, pressed = true, moved = false))
+	slot_test_frame(audit, &state, pointer_input(at, false, moved = false))
 	testing.expect_value(t, state.focus, slot)
 	testing.expect_value(t, player.held.stack, EMPTY_STACK)
 	testing.expect_value(t, player.inventory.slots[3], coal)
@@ -176,14 +176,14 @@ test_a_hold_splits_and_drags_the_half :: proc(t: ^testing.T) {
 	coal := player.inventory.slots[3].item
 	from := widget_centre(state, inventory_slot_id("hotbar", 3))
 	to := widget_centre(state, inventory_slot_id("grid", 0))
-	screen_test_frame(audit, &state, pointer_input(from, true, pressed = true))
+	slot_test_frame(audit, &state, pointer_input(from, true, pressed = true))
 	for _ in 0 ..< int(TOUCH_HOLD_SECONDS * 60) + 1 {
-		screen_test_frame(audit, &state, pointer_input(from, true, moved = false))
+		slot_test_frame(audit, &state, pointer_input(from, true, moved = false))
 	}
 	testing.expect_value(t, player.held.stack, Item_Stack{coal, 3})
 	testing.expect_value(t, player.inventory.slots[3], Item_Stack{coal, 3})
-	screen_test_frame(audit, &state, pointer_input(to, true))
-	screen_test_frame(audit, &state, pointer_input(to, false, moved = false))
+	slot_test_frame(audit, &state, pointer_input(to, true))
+	slot_test_frame(audit, &state, pointer_input(to, false, moved = false))
 	testing.expect_value(t, player.held.stack, EMPTY_STACK)
 	testing.expect_value(t, player.inventory.slots[HOTBAR_SLOT_COUNT], Item_Stack{coal, 3})
 	testing.expect_value(t, player.inventory.slots[3], Item_Stack{coal, 3})
@@ -200,10 +200,10 @@ test_a_drag_released_off_the_slots_returns_the_stack :: proc(t: ^testing.T) {
 	coal := player.inventory.slots[3]
 	from := widget_centre(state, inventory_slot_id("hotbar", 3))
 	outside := [2]f32{100, 400}
-	screen_test_frame(audit, &state, pointer_input(from, true, pressed = true))
-	screen_test_frame(audit, &state, pointer_input(outside, true))
+	slot_test_frame(audit, &state, pointer_input(from, true, pressed = true))
+	slot_test_frame(audit, &state, pointer_input(outside, true))
 	testing.expect_value(t, player.held.stack, coal)
-	screen_test_frame(audit, &state, pointer_input(outside, false, moved = false))
+	slot_test_frame(audit, &state, pointer_input(outside, false, moved = false))
 	testing.expect_value(t, player.held.stack, EMPTY_STACK)
 	testing.expect_value(t, player.inventory.slots[3], coal)
 	testing.expect_value(t, top_screen(state.screens), Screen.Inventory)
@@ -220,13 +220,13 @@ test_a_tap_outside_the_panel_closes_the_screen :: proc(t: ^testing.T) {
 	drag_test_inventory(audit, &state)
 	outside := [2]f32{100, 400}
 	inside := widget_centre(state, inventory_slot_id("grid", 0))
-	screen_test_frame(audit, &state, pointer_input(inside, true, pressed = true))
-	screen_test_frame(audit, &state, pointer_input(outside, true))
-	screen_test_frame(audit, &state, pointer_input(outside, false, moved = false))
+	slot_test_frame(audit, &state, pointer_input(inside, true, pressed = true))
+	slot_test_frame(audit, &state, pointer_input(outside, true))
+	slot_test_frame(audit, &state, pointer_input(outside, false, moved = false))
 	testing.expect_value(t, top_screen(state.screens), Screen.Inventory)
 	state.sound_events = {}
-	screen_test_frame(audit, &state, pointer_input(outside, true, pressed = true))
-	screen_test_frame(audit, &state, pointer_input(outside, false, moved = false))
+	slot_test_frame(audit, &state, pointer_input(outside, true, pressed = true))
+	slot_test_frame(audit, &state, pointer_input(outside, false, moved = false))
 	testing.expect_value(t, state.screens.count, 0)
 	// With B's sound.
 	testing.expect(t, .Back in state.sound_events)
@@ -256,13 +256,13 @@ test_a_drag_moves_a_stack_into_a_chest :: proc(t: ^testing.T) {
 	}
 	player.open_machine = chest
 	push_screen(&state.screens, .Machine)
-	screen_test_frame(audit, &state, {})
+	slot_test_frame(audit, &state, {})
 	machine_panel := ui_hash(0, "machine", -1)
 	from := widget_centre(state, ui_hash(ui_hash(machine_panel, "hotbar", -1), "slot", 3))
 	to := widget_centre(state, ui_hash(ui_hash(ui_hash(machine_panel, "machine_slots", -1), "chest", -1), "slot", 0))
-	screen_test_frame(audit, &state, pointer_input(from, true, pressed = true))
-	screen_test_frame(audit, &state, pointer_input(to, true))
-	screen_test_frame(audit, &state, pointer_input(to, false, moved = false))
+	slot_test_frame(audit, &state, pointer_input(from, true, pressed = true))
+	slot_test_frame(audit, &state, pointer_input(to, true))
+	slot_test_frame(audit, &state, pointer_input(to, false, moved = false))
 	testing.expect_value(t, player.held.stack, EMPTY_STACK)
 	testing.expect_value(t, slots[0], coal)
 	testing.expect_value(t, player.inventory.slots[3], EMPTY_STACK)
@@ -328,13 +328,13 @@ test_a_drag_from_a_filter_slot_moves_nothing :: proc(t: ^testing.T) {
 	player.inventory.slots[3] = stone
 	player.open_machine = handle
 	push_screen(&state.screens, .Machine)
-	screen_test_frame(audit, &state, {})
+	slot_test_frame(audit, &state, {})
 	machine_panel := ui_hash(0, "machine", -1)
 	from := widget_centre(state, ui_hash(ui_hash(machine_panel, "machine_slots", -1), "filter", 0))
 	to := widget_centre(state, ui_hash(ui_hash(machine_panel, "hotbar", -1), "slot", 3))
-	screen_test_frame(audit, &state, pointer_input(from, true, pressed = true))
-	screen_test_frame(audit, &state, pointer_input(to, true))
-	screen_test_frame(audit, &state, pointer_input(to, false, moved = false))
+	slot_test_frame(audit, &state, pointer_input(from, true, pressed = true))
+	slot_test_frame(audit, &state, pointer_input(to, true))
+	slot_test_frame(audit, &state, pointer_input(to, false, moved = false))
 	testing.expect_value(t, player.held.stack, EMPTY_STACK)
 	testing.expect_value(t, player.inventory.slots[3], stone)
 	testing.expect_value(t, splitter.filter, coal)
@@ -353,10 +353,10 @@ test_a_slot_emptied_before_the_drag_moves_nothing :: proc(t: ^testing.T) {
 	player.inventory.slots[HOTBAR_SLOT_COUNT] = stone
 	from := widget_centre(state, inventory_slot_id("hotbar", 3))
 	to := widget_centre(state, inventory_slot_id("grid", 0))
-	screen_test_frame(audit, &state, pointer_input(from, true, pressed = true))
+	slot_test_frame(audit, &state, pointer_input(from, true, pressed = true))
 	player.inventory.slots[3] = EMPTY_STACK
-	screen_test_frame(audit, &state, pointer_input(to, true))
-	screen_test_frame(audit, &state, pointer_input(to, false, moved = false))
+	slot_test_frame(audit, &state, pointer_input(to, true))
+	slot_test_frame(audit, &state, pointer_input(to, false, moved = false))
 	testing.expect_value(t, player.held.stack, EMPTY_STACK)
 	testing.expect_value(t, player.inventory.slots[HOTBAR_SLOT_COUNT], stone)
 	testing.expect_value(t, player.inventory.slots[3], EMPTY_STACK)
@@ -378,11 +378,11 @@ test_a_left_control_click_quick_moves_the_pressed_slot :: proc(t: ^testing.T) {
 	to := widget_centre(state, inventory_slot_id("grid", 4))
 	click := pointer_input(at, true, pressed = true, moved = false)
 	click.quick_move_modifier = true
-	screen_test_frame(audit, &state, click)
+	slot_test_frame(audit, &state, click)
 	testing.expect_value(t, player.inventory.slots[3], EMPTY_STACK)
 	testing.expect_value(t, player.inventory.slots[HOTBAR_SLOT_COUNT], coal)
-	screen_test_frame(audit, &state, pointer_input(to, true))
-	screen_test_frame(audit, &state, pointer_input(to, false, moved = false))
+	slot_test_frame(audit, &state, pointer_input(to, true))
+	slot_test_frame(audit, &state, pointer_input(to, false, moved = false))
 	testing.expect_value(t, player.held.stack, EMPTY_STACK)
 	testing.expect_value(t, player.inventory.slots[HOTBAR_SLOT_COUNT], coal)
 }
@@ -398,17 +398,17 @@ test_a_drag_sounds_on_the_pick_up_and_the_drop :: proc(t: ^testing.T) {
 	from := widget_centre(state, inventory_slot_id("hotbar", 3))
 	to := widget_centre(state, inventory_slot_id("grid", 0))
 	state.sound_events = {}
-	screen_test_frame(audit, &state, pointer_input(from, true, pressed = true, moved = false))
-	screen_test_frame(audit, &state, pointer_input(from, false, moved = false))
+	slot_test_frame(audit, &state, pointer_input(from, true, pressed = true, moved = false))
+	slot_test_frame(audit, &state, pointer_input(from, false, moved = false))
 	testing.expect(t, .Confirm not_in state.sound_events)
-	screen_test_frame(audit, &state, pointer_input(from, true, pressed = true))
+	slot_test_frame(audit, &state, pointer_input(from, true, pressed = true))
 	testing.expect(t, .Confirm not_in state.sound_events)
-	screen_test_frame(audit, &state, pointer_input(to, true))
+	slot_test_frame(audit, &state, pointer_input(to, true))
 	testing.expect(t, .Confirm in state.sound_events)
 	state.sound_events = {}
-	screen_test_frame(audit, &state, pointer_input(to, true))
+	slot_test_frame(audit, &state, pointer_input(to, true))
 	testing.expect(t, .Confirm not_in state.sound_events)
-	screen_test_frame(audit, &state, pointer_input(to, false, moved = false))
+	slot_test_frame(audit, &state, pointer_input(to, false, moved = false))
 	testing.expect(t, .Confirm in state.sound_events)
 }
 
@@ -431,6 +431,13 @@ tap_widget :: proc(audit: ^Ui_Audit, state: ^Ui_State, id: Ui_Id) {
 	at := widget_centre(state^, id)
 	screen_test_frame(audit, state, touch_input(at, true, pressed = true))
 	screen_test_frame(audit, state, touch_input(at, false, moved = false))
+}
+
+// A tap on a slot screen and the start of the next tick, which applies
+// the slot commands it queued (0179).
+tap_slot_widget :: proc(audit: ^Ui_Audit, state: ^Ui_State, id: Ui_Id) {
+	tap_widget(audit, state, id)
+	apply_player_commands(&audit.simulation, audit.content)
 }
 
 slot_button_id :: proc(key: string) -> Ui_Id {
@@ -463,7 +470,7 @@ chest_test_panel :: proc(audit: ^Ui_Audit, state: ^Ui_State) -> (player: ^Player
 	}
 	player.open_machine = chest
 	push_screen(&state.screens, .Machine)
-	screen_test_frame(audit, state, {})
+	slot_test_frame(audit, state, {})
 	return player, chest_slots
 }
 
@@ -486,10 +493,10 @@ test_the_touch_row_replaces_the_glyph_bar :: proc(t: ^testing.T) {
 		} else {
 			chest_test_panel(audit, &state)
 		}
-		screen_test_frame(audit, &state, {pointer_is_touch = true})
+		slot_test_frame(audit, &state, {pointer_is_touch = true})
 		testing.expect(t, widget_index(state.widgets[:], slot_button_id("slot_button_transfer_all_of_type")) >= 0)
 		testing.expect(t, !glyph_bar_draws_glyphs(state.draw_list[:]))
-		screen_test_frame(audit, &state, {device = .Gamepad, device_seen = true})
+		slot_test_frame(audit, &state, {device = .Gamepad, device_seen = true})
 		testing.expect(t, widget_index(state.widgets[:], slot_button_id("slot_button_transfer_all_of_type")) < 0)
 		testing.expect(t, glyph_bar_draws_glyphs(state.draw_list[:]))
 		destroy_ui_state(&state)
@@ -512,8 +519,8 @@ test_the_touch_row_in_the_inventory :: proc(t: ^testing.T) {
 	slots := player.inventory.slots
 	slots[HOTBAR_SLOT_COUNT + 4] = {stone, 2}
 	slots[HOTBAR_SLOT_COUNT + 6] = {coal, 1}
-	tap_widget(audit, &state, inventory_slot_id("hotbar", 3))
-	tap_widget(audit, &state, slot_button_id("slot_button_split"))
+	tap_slot_widget(audit, &state, inventory_slot_id("hotbar", 3))
+	tap_slot_widget(audit, &state, slot_button_id("slot_button_split"))
 	testing.expect_value(t, player.held.stack, Item_Stack{coal, 3})
 	testing.expect_value(t, slots[3], Item_Stack{coal, 2})
 	player.held = EMPTY_HELD_STACK
@@ -521,7 +528,7 @@ test_the_touch_row_in_the_inventory :: proc(t: ^testing.T) {
 	// The hotbar is active: Sort sorts the main grid, the hotbar keeps
 	// its order.
 	slots[5] = {stone, 1}
-	tap_widget(audit, &state, slot_button_id("slot_button_sort"))
+	tap_slot_widget(audit, &state, slot_button_id("slot_button_sort"))
 	testing.expect(t, !stack_is_empty(slots[HOTBAR_SLOT_COUNT]))
 	testing.expect(t, !stack_is_empty(slots[HOTBAR_SLOT_COUNT + 1]))
 	testing.expect_value(t, slots[HOTBAR_SLOT_COUNT + 4], EMPTY_STACK)
@@ -529,20 +536,20 @@ test_the_touch_row_in_the_inventory :: proc(t: ^testing.T) {
 	testing.expect_value(t, slots[3], Item_Stack{coal, 5})
 	testing.expect_value(t, slots[5], Item_Stack{stone, 1})
 	// Of type: the hotbar's coal onto the main grid's coal, the stone stays.
-	tap_widget(audit, &state, slot_button_id("slot_button_transfer_all_of_type"))
+	tap_slot_widget(audit, &state, slot_button_id("slot_button_transfer_all_of_type"))
 	testing.expect_value(t, slots[3], EMPTY_STACK)
 	testing.expect_value(t, slots[5], Item_Stack{stone, 1})
 	testing.expect_value(t, inventory_count({slots = slots[HOTBAR_SLOT_COUNT:]}, coal), 6)
 	// The main grid is active: Sort sorts it.
 	slots[HOTBAR_SLOT_COUNT + 9] = slots[HOTBAR_SLOT_COUNT]
 	slots[HOTBAR_SLOT_COUNT] = EMPTY_STACK
-	tap_widget(audit, &state, inventory_slot_id("grid", 4))
-	tap_widget(audit, &state, slot_button_id("slot_button_sort"))
+	tap_slot_widget(audit, &state, inventory_slot_id("grid", 4))
+	tap_slot_widget(audit, &state, slot_button_id("slot_button_sort"))
 	testing.expect(t, !stack_is_empty(slots[HOTBAR_SLOT_COUNT]))
 	testing.expect_value(t, slots[HOTBAR_SLOT_COUNT + 9], EMPTY_STACK)
 	testing.expect_value(t, slots[5], Item_Stack{stone, 1})
 	// Transfer all: the main grid into the hotbar.
-	tap_widget(audit, &state, slot_button_id("slot_button_transfer_all"))
+	tap_slot_widget(audit, &state, slot_button_id("slot_button_transfer_all"))
 	testing.expect(t, slots_empty(inventory_grid(player.inventory)))
 	testing.expect_value(t, inventory_count(player.inventory, coal), 6)
 	testing.expect_value(t, inventory_count(player.inventory, stone), 3)
@@ -561,19 +568,19 @@ test_sort_touches_only_the_active_grid :: proc(t: ^testing.T) {
 	slots := player.inventory.slots
 	slots[HOTBAR_SLOT_COUNT + 5] = {coal, 1}
 	chest_slots[4] = {coal, 2}
-	tap_widget(audit, &state, machine_panel_slot_id("grid", 0))
-	screen_test_frame(audit, &state, {context_action = true})
+	tap_slot_widget(audit, &state, machine_panel_slot_id("grid", 0))
+	slot_test_frame(audit, &state, {context_action = true})
 	testing.expect_value(t, slots[HOTBAR_SLOT_COUNT], Item_Stack{coal, 1})
 	testing.expect_value(t, chest_slots[4], Item_Stack{coal, 2})
 	slots[HOTBAR_SLOT_COUNT + 5] = {coal, 3}
-	tap_widget(audit, &state, machine_panel_slot_id("chest", 0))
-	screen_test_frame(audit, &state, {context_action = true})
+	tap_slot_widget(audit, &state, machine_panel_slot_id("chest", 0))
+	slot_test_frame(audit, &state, {context_action = true})
 	testing.expect_value(t, chest_slots[0], Item_Stack{coal, 2})
 	testing.expect_value(t, slots[HOTBAR_SLOT_COUNT + 5], Item_Stack{coal, 3})
 	// From the hotbar X sorts the main grid, not the chest.
 	chest_slots[0], chest_slots[4] = EMPTY_STACK, {coal, 2}
-	tap_widget(audit, &state, machine_panel_slot_id("hotbar", 0))
-	screen_test_frame(audit, &state, {context_action = true})
+	tap_slot_widget(audit, &state, machine_panel_slot_id("hotbar", 0))
+	slot_test_frame(audit, &state, {context_action = true})
 	// The coal of the first sort and this one merge.
 	testing.expect_value(t, slots[HOTBAR_SLOT_COUNT], Item_Stack{coal, 4})
 	testing.expect_value(t, slots[HOTBAR_SLOT_COUNT + 5], EMPTY_STACK)
@@ -595,25 +602,25 @@ test_the_touch_row_in_a_chest_panel :: proc(t: ^testing.T) {
 	slots[2] = {coal, 4}
 	slots[HOTBAR_SLOT_COUNT + 1] = {stone, 3}
 	slots[HOTBAR_SLOT_COUNT + 2] = {coal, 1}
-	tap_widget(audit, &state, machine_panel_slot_id("hotbar", 2))
-	tap_widget(audit, &state, slot_button_id("slot_button_transfer_all"))
+	tap_slot_widget(audit, &state, machine_panel_slot_id("hotbar", 2))
+	tap_slot_widget(audit, &state, slot_button_id("slot_button_transfer_all"))
 	testing.expect(t, slots_empty(inventory_hotbar(player.inventory)))
 	testing.expect_value(t, chest_slots[0], Item_Stack{coal, 4})
-	tap_widget(audit, &state, machine_panel_slot_id("grid", 2))
-	tap_widget(audit, &state, slot_button_id("slot_button_transfer_all_of_type"))
+	tap_slot_widget(audit, &state, machine_panel_slot_id("grid", 2))
+	tap_slot_widget(audit, &state, slot_button_id("slot_button_transfer_all_of_type"))
 	testing.expect_value(t, chest_slots[0], Item_Stack{coal, 5})
 	testing.expect_value(t, slots[HOTBAR_SLOT_COUNT + 1], Item_Stack{stone, 3})
-	tap_widget(audit, &state, machine_panel_slot_id("chest", 0))
-	tap_widget(audit, &state, slot_button_id("slot_button_split"))
+	tap_slot_widget(audit, &state, machine_panel_slot_id("chest", 0))
+	tap_slot_widget(audit, &state, slot_button_id("slot_button_split"))
 	testing.expect_value(t, player.held.stack, Item_Stack{coal, 3})
 	testing.expect_value(t, chest_slots[0], Item_Stack{coal, 2})
 	player.held = EMPTY_HELD_STACK
 	chest_slots[0] = EMPTY_STACK
 	chest_slots[3] = {coal, 5}
-	tap_widget(audit, &state, slot_button_id("slot_button_sort"))
+	tap_slot_widget(audit, &state, slot_button_id("slot_button_sort"))
 	testing.expect_value(t, chest_slots[0], Item_Stack{coal, 5})
 	// The chest into the main grid, never the hotbar.
-	tap_widget(audit, &state, slot_button_id("slot_button_transfer_all"))
+	tap_slot_widget(audit, &state, slot_button_id("slot_button_transfer_all"))
 	testing.expect(t, slots_empty(chest_slots))
 	testing.expect(t, slots_empty(inventory_hotbar(player.inventory)))
 	testing.expect_value(t, inventory_count(player.inventory, coal), 5)
@@ -649,9 +656,9 @@ test_x_on_the_hotbar_sorts_the_main_grid :: proc(t: ^testing.T) {
 	slots := player.inventory.slots
 	slots[6] = {stone, 1}
 	slots[HOTBAR_SLOT_COUNT + 7] = {stone, 2}
-	screen_test_frame(audit, &state, {})
+	slot_test_frame(audit, &state, {})
 	testing.expect_value(t, state.active_slot.grid, Slot_Grid_Kind.Hotbar)
-	screen_test_frame(audit, &state, {context_action = true})
+	slot_test_frame(audit, &state, {context_action = true})
 	testing.expect_value(t, slots[HOTBAR_SLOT_COUNT], Item_Stack{stone, 2})
 	testing.expect_value(t, slots[HOTBAR_SLOT_COUNT + 7], EMPTY_STACK)
 	testing.expect_value(t, slots[3], Item_Stack{coal, 5})
@@ -686,8 +693,8 @@ test_the_touch_row_drops_the_active_stack :: proc(t: ^testing.T) {
 	defer destroy_ui_state(&state)
 	player := drag_test_inventory(audit, &state)
 	loose_before := len(audit.simulation.world.entities.loose_items.items)
-	tap_widget(audit, &state, inventory_slot_id("hotbar", 3))
-	tap_widget(audit, &state, slot_button_id("touch_button_drop"))
+	tap_slot_widget(audit, &state, inventory_slot_id("hotbar", 3))
+	tap_slot_widget(audit, &state, slot_button_id("touch_button_drop"))
 	testing.expect_value(t, player.inventory.slots[3], EMPTY_STACK)
 	testing.expect_value(t, len(audit.simulation.world.entities.loose_items.items), loose_before + 1)
 	testing.expect_value(t, top_screen(state.screens), Screen.Inventory)
@@ -717,8 +724,8 @@ test_the_touch_row_clears_a_filter :: proc(t: ^testing.T) {
 		state := Ui_State{theme = audit.theme}
 		simulation.players[0].open_machine = handle
 		push_screen(&state.screens, .Machine)
-		screen_test_frame(audit, &state, {pointer_is_touch = true})
-		tap_widget(audit, &state, slot_button_id("touch_button_clear_filter"))
+		slot_test_frame(audit, &state, {pointer_is_touch = true})
+		tap_slot_widget(audit, &state, slot_button_id("touch_button_clear_filter"))
 		run_audit_tick(audit)
 		testing.expectf(t, filter^ == NO_ITEM, "%s keeps its filter", machine.id)
 		testing.expect_value(t, top_screen(state.screens), Screen.Machine)

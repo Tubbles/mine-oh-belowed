@@ -53,68 +53,64 @@ Machine_Slot_Input :: struct {
 	confirm_down:   bool,
 	secondary:      bool,
 	context_action: bool,
+	// The activation is a pointer drag's drop (Slot_Drag.released), of a
+	// stack of drag_hand (dragged_hand_item).
+	drag_drop:      bool,
+	drag_hand:      Item_Id,
 }
 
-machine_slot_filters :: proc(kind: Machine_Kind, slot_count: int) -> []Slot_Filter {
-	filters := make([]Slot_Filter, slot_count, context.temp_allocator)
-	#partial switch kind {
-	case .Furnace:
-		filters[FURNACE_FUEL_SLOT] = {kind = .Fuel}
-		filters[FURNACE_INPUT_SLOT] = {kind = .Smeltable}
-		filters[FURNACE_OUTPUT_SLOT] = {kind = .Output}
-		filters[FURNACE_BYPRODUCT_SLOT] = {kind = .Output}
-	case .Inserter, .Drill, .Boiler, .Combustion_Generator:
-		for &filter in filters {
-			filter = {kind = .Fuel}
-		}
-	}
-	return filters
-}
-
-// A slot joins the gesture when it takes the held item and has it or nothing.
-slot_takes_distribution :: proc(slot: Item_Stack, filter: Slot_Filter, held: Held_Stack, items: Item_Registry, recipes: Recipe_Registry) -> bool {
-	if stack_is_empty(held.stack) || !slot_accepts(filter, held.stack.item, items, recipes) {
-		return false
-	}
-	return stack_is_empty(slot) || slot.item == held.stack.item
-}
-
-// A with a stack held starts the gesture instead of dropping at once; the
-// drop or the spread happens on release (finish_distribute).
-apply_machine_slot_input :: proc(gesture: ^Distribute_Gesture, slots: []Item_Stack, filters: []Slot_Filter, held: Held_Stack, input: Machine_Slot_Input, items: Item_Registry, recipes: Recipe_Registry) -> Held_Stack {
-	result := held
+// A with a stack held starts the gesture instead of dropping at once;
+// the release queues the drop or the spread (Distribute_Command,
+// finish_distribute in the tick). Otherwise A queues the ordinary slot
+// command. nil for no command.
+machine_slot_command :: proc(gesture: ^Distribute_Gesture, machine: Entity_Handle, slots: []Item_Stack, filters: []Slot_Filter, held: Held_Stack, input: Machine_Slot_Input, items: Item_Registry, recipes: Recipe_Registry) -> Player_Command {
 	if gesture.active {
 		if !input.confirm_down {
-			result = finish_distribute(gesture^, slots, filters, result, items, recipes)
+			command := distribute_command(machine, gesture^, held)
 			gesture^ = {}
-		} else if input.focused >= 0 && slot_takes_distribution(slots[input.focused], filters[input.focused], result, items, recipes) {
+			return command
+		}
+		if input.focused >= 0 && slot_takes_distribution(slots[input.focused], filters[input.focused], held, items, recipes) {
 			gesture^ = gesture_visit(gesture^, input.focused)
 		}
-		return result
+		return nil
 	}
 	if input.activated < 0 {
-		return result
+		return nil
 	}
-	if input.confirm_down && slot_takes_distribution(slots[input.activated], filters[input.activated], result, items, recipes) {
+	if input.confirm_down && slot_takes_distribution(slots[input.activated], filters[input.activated], held, items, recipes) {
 		gesture^ = gesture_visit({}, input.activated)
-		return result
+		return nil
 	}
-	return apply_machine_slot_primary(slots, input.activated, filters[input.activated], result, items, recipes)
+	expects := shown_expectation(held, slots[input.activated])
+	if input.drag_drop {
+		expects = {hand = input.drag_hand, slot = ANY_ITEM}
+	}
+	return Slot_Primary_Command{target = {machine, input.activated}, expects = expects, keeps_origin = input.drag_drop}
 }
 
-// L2 splits a machine slot's stack onto the cursor, X sorts a chest.
-apply_machine_slot_secondary :: proc(slots: []Item_Stack, kind: Machine_Kind, held: Held_Stack, input: Machine_Slot_Input, items: Item_Registry, ranks: []u16) -> Held_Stack {
-	result := held
-	if input.secondary && input.focused >= 0 && stack_is_empty(result.stack) {
-		result = apply_slot_split(Inventory{slots = slots}, result, input.focused)
-		if !stack_is_empty(result.stack) {
-			result.origin_slot = MACHINE_SLOT_ORIGIN
-		}
+distribute_command :: proc(machine: Entity_Handle, gesture: Distribute_Gesture, held: Held_Stack) -> Distribute_Command {
+	command := Distribute_Command{machine = machine, hand = shown_item(held.stack), count = u8(gesture.count)}
+	visited := gesture.visited
+	for slot, position in visited[:gesture.count] {
+		command.slots[position] = u8(slot)
 	}
-	if input.context_action && kind == .Chest && stack_is_empty(result.stack) {
-		sort_slots(slots, items, ranks)
+	return command
+}
+
+// L2 splits a machine slot's stack onto the empty cursor, X sorts a chest.
+machine_slot_secondary_commands :: proc(machine: Entity_Handle, slots: []Item_Stack, kind: Machine_Kind, held: Held_Stack, input: Machine_Slot_Input, ranks: []u16) -> []Player_Command {
+	commands := make([dynamic]Player_Command, context.temp_allocator)
+	if !stack_is_empty(held.stack) {
+		return commands[:]
 	}
-	return result
+	if input.secondary && input.focused >= 0 && !stack_is_empty(slots[input.focused]) {
+		append(&commands, Slot_Split_Command{target = {machine, input.focused}, expects = shown_expectation(held, slots[input.focused])})
+	}
+	if input.context_action && kind == .Chest {
+		append(&commands, slot_sort_command(machine, slots, ranks))
+	}
+	return commands[:]
 }
 
 // The machine side's natural width: its widest row of slots or text.
@@ -387,15 +383,6 @@ inserter_filter_after_input :: proc(filter: Item_Id, held: Item_Stack, activated
 	return filter
 }
 
-// A or a drag with nothing on the cursor lifts the inserter's hand onto
-// it. The hand takes nothing in: a stack on the cursor stays there.
-inserter_hand_after_input :: proc(hand: Item_Stack, held: Held_Stack, activated: bool) -> (Item_Stack, Held_Stack) {
-	if !activated || !stack_is_empty(held.stack) || stack_is_empty(hand) {
-		return hand, held
-	}
-	return EMPTY_STACK, Held_Stack{stack = hand, origin_slot = MACHINE_SLOT_ORIGIN}
-}
-
 // The machine's name and slots. Results are indices into the machine's slots.
 // The machine's description wrapped to the machine side (work item
 // 0070), dim under its name. The side scrolls, so it always has room.
@@ -494,19 +481,23 @@ machine_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	apply_machine_screen_input(state, screen_context, handle, machine.kind, slots, player_slots, machine_slots)
 	// Not during the Even Distribution gesture, as the slot input.
 	if !state.distribute.active {
-		apply_machine_slot_button(screen_context, handle, machine.kind, slots, state.active_slot, button)
+		apply_machine_slot_button(state, screen_context, handle, machine.kind, slots, state.active_slot, button)
 	}
-	apply_transfer_button(&screen_context.world.entities, statistics_simulation_content(screen_context), handle, player.inventory, machine_slots.transfer)
+	if machine_slots.transfer != .None {
+		queue_slot_command(state, screen_context, Transfer_Button_Command{machine = handle, button = machine_slots.transfer})
+	}
 	if inserter := pool_get(&screen_context.world.entities.inserters, handle); inserter != nil {
 		clear_filter := (machine_slots.filter_focused && state.input.context_action) || button == .Clear_Filter
 		queue_filter_change(screen_context, handle, inserter.filter, inserter_filter_after_input(inserter.filter, player.held.stack, machine_slots.filter_activated, clear_filter))
-		inserter.held, player.held = inserter_hand_after_input(inserter.held, player.held, machine_slots.hand_activated)
+		if machine_slots.hand_activated && stack_is_empty(player.held.stack) && !stack_is_empty(inserter.held) {
+			queue_slot_command(state, screen_context, Inserter_Hand_Command{inserter = handle})
+		}
 	}
 	if splitter := pool_get(&screen_context.world.entities.splitters, handle); splitter != nil {
 		clear_filter := (machine_slots.filter_focused && state.input.context_action) || button == .Clear_Filter
 		queue_filter_change(screen_context, handle, splitter.filter, inserter_filter_after_input(splitter.filter, player.held.stack, machine_slots.filter_activated, clear_filter))
 	}
-	player.held = finish_slot_drag(state, player.inventory, player.held, items)
+	finish_slot_drag(state, screen_context)
 	draw_held_stack(state, player.held.stack, items)
 	if touch {
 		return
@@ -556,9 +547,11 @@ apply_quick_move_input :: proc(state: ^Ui_State, screen_context: Screen_Context,
 	}
 	step: Quick_Move_Step
 	state.quick_move, step = advance_quick_move(state.quick_move, quick_input)
-	apply_quick_move(&screen_context.world.entities, statistics_simulation_content(screen_context), handle, screen_context.player.inventory, step)
+	if step.kind != .None {
+		queue_slot_command(state, screen_context, Quick_Move_Command{machine = handle, step = step})
+	}
 	if quick_input.pressed && on_hand {
-		take_inserter_hand(&screen_context.world.entities, screen_context.items, handle, screen_context.player.inventory)
+		queue_slot_command(state, screen_context, Inserter_Hand_Command{inserter = handle, into_inventory = true})
 	}
 	if quick_input.pressed {
 		return -1, -1, false
@@ -582,7 +575,7 @@ filter_glyph_bar :: proc(state: ^Ui_State) {
 
 apply_machine_screen_input :: proc(state: ^Ui_State, screen_context: Screen_Context, handle: Entity_Handle, kind: Machine_Kind, slots: []Item_Stack, player_slots: Slot_Grid_Result, machine_slots: Machine_Slot_Result) {
 	player, items := screen_context.player, screen_context.items
-	recipes := screen_context.recipes
+	recipes, ranks := screen_context.recipes, screen_context.item_sort_ranks
 	input := state.input
 	// X sorts the active grid alone, the main grid from the hotbar
 	// (sort_target_grid, 0125); on a filter slot it clears the filter.
@@ -593,8 +586,10 @@ apply_machine_screen_input :: proc(state: ^Ui_State, screen_context: Screen_Cont
 			focused        = player_slots.focused,
 			secondary      = input.secondary,
 			context_action = sorts && sort_target_grid(state.active_slot.grid) == .Main,
+			drag_drop      = state.slot_drag.released,
+			drag_hand      = dragged_hand_item(screen_context),
 		}
-		player.held = apply_inventory_slot_input(player.inventory, player.held, player_input, items, screen_context.item_sort_ranks)
+		queue_slot_commands(state, screen_context, inventory_slot_commands(player.inventory, player.held, player_input, ranks))
 	}
 	machine_input := Machine_Slot_Input {
 		activated      = machine_slots.activated,
@@ -602,18 +597,22 @@ apply_machine_screen_input :: proc(state: ^Ui_State, screen_context: Screen_Cont
 		confirm_down   = input.confirm_down || state.pointer_held,
 		secondary      = input.secondary,
 		context_action = sorts && sort_target_grid(state.active_slot.grid) == .Machine,
+		drag_drop      = state.slot_drag.released,
+		drag_hand      = dragged_hand_item(screen_context),
 	}
-	filters := open_machine_slot_filters(screen_context, handle, kind, len(slots))
-	player.held = apply_machine_slot_input(&state.distribute, slots, filters, player.held, machine_input, items, recipes)
-	player.held = apply_machine_slot_secondary(slots, kind, player.held, machine_input, items, screen_context.item_sort_ranks)
+	filters := entity_slot_filters(&screen_context.world.entities, screen_context.content, handle)
+	if command := machine_slot_command(&state.distribute, handle, slots, filters, player.held, machine_input, items, recipes); command != nil {
+		queue_slot_command(state, screen_context, command)
+	}
+	queue_slot_commands(state, screen_context, machine_slot_secondary_commands(handle, slots, kind, player.held, machine_input, ranks))
 }
 
 // The touch row's slot button (0125) on the active grid: Sort and Split as X
 // and L2 on the active slot, the transfers into the grid the panel pairs
 // it with (transfer_target_grid).
-apply_machine_slot_button :: proc(screen_context: Screen_Context, handle: Entity_Handle, kind: Machine_Kind, slots: []Item_Stack, active: Active_Slot, button: Touch_Button) {
-	player, items, ranks := screen_context.player, screen_context.items, screen_context.item_sort_ranks
-	player.held = apply_player_slot_button(player.inventory, player.held, active, button, items, ranks)
+apply_machine_slot_button :: proc(state: ^Ui_State, screen_context: Screen_Context, handle: Entity_Handle, kind: Machine_Kind, slots: []Item_Stack, active: Active_Slot, button: Touch_Button) {
+	player, ranks := screen_context.player, screen_context.item_sort_ranks
+	queue_slot_commands(state, screen_context, player_slot_button_commands(player.inventory, player.held, active, button, ranks))
 	if active.grid == .Machine && active.index < len(slots) {
 		machine_input := Machine_Slot_Input {
 			activated      = -1,
@@ -621,10 +620,12 @@ apply_machine_slot_button :: proc(screen_context: Screen_Context, handle: Entity
 			secondary      = button == .Split,
 			context_action = button == .Sort,
 		}
-		player.held = apply_machine_slot_secondary(slots, kind, player.held, machine_input, items, ranks)
+		queue_slot_commands(state, screen_context, machine_slot_secondary_commands(handle, slots, kind, player.held, machine_input, ranks))
 	}
 	transfer := slot_button_transfer(.Machine, active, active_slot_stack(player.inventory, slots, active), button)
-	apply_grid_transfer(&screen_context.world.entities, statistics_simulation_content(screen_context), handle, player.inventory, transfer)
+	if transfer.target != .None {
+		queue_slot_command(state, screen_context, Grid_Transfer_Command{machine = handle, transfer = transfer})
+	}
 }
 
 focused_stack :: proc(player_slots: []Item_Stack, player_focused: int, machine_slots: []Item_Stack, machine_focused: int) -> Item_Stack {

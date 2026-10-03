@@ -1050,6 +1050,13 @@ screen_test_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, input: Ui_Input) {
 	ui_resolve(state)
 }
 
+// A screen frame and the start of the next tick, which applies what the
+// frame queued (the slot commands, 0179).
+slot_test_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, input: Ui_Input) {
+	screen_test_frame(audit, state, input)
+	apply_player_commands(&audit.simulation, audit.content)
+}
+
 // Work item 0090: in the inventory screen R2 moves the focused hotbar
 // stack into the backpack and the right stick click drops it, without a
 // Drop button.
@@ -1071,6 +1078,9 @@ test_inventory_screen_quick_move_and_drop :: proc(t: ^testing.T) {
 	push_screen(&state.screens, .Inventory)
 	screen_test_frame(audit, &state, {})
 	screen_test_frame(audit, &state, {quick_move = true})
+	// The move waits for the tick (0179).
+	testing.expect_value(t, player.inventory.slots[3], Item_Stack{coal, 5})
+	apply_player_commands(&audit.simulation, audit.content)
 	testing.expect_value(t, player.held, EMPTY_HELD_STACK)
 	testing.expect_value(t, player.inventory.slots[3], EMPTY_STACK)
 	testing.expect_value(t, player.inventory.slots[HOTBAR_SLOT_COUNT], Item_Stack{coal, 5})
@@ -1078,7 +1088,7 @@ test_inventory_screen_quick_move_and_drop :: proc(t: ^testing.T) {
 	player.inventory.slots[3] = {stone, 2}
 	screen_test_frame(audit, &state, {})
 	testing.expect(t, draw_list_has_text(state.draw_list[:], text("hint_drop")))
-	screen_test_frame(audit, &state, {drop = true})
+	slot_test_frame(audit, &state, {drop = true})
 	testing.expect_value(t, player.inventory.slots[3], EMPTY_STACK)
 }
 

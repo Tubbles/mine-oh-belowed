@@ -12,7 +12,9 @@ import "platform"
 // every machine in its input record. A chunk the streaming workers
 // generated arrives as a Chunk_Ready_Command and waits in
 // Simulation_State.arrived_chunks until the simulated chunk set takes it
-// (simulation_chunk_set.odin). The list is not saved.
+// (simulation_chunk_set.odin). The slot transfers of the inventory screen
+// and the machine panel are commands too (player_command_slots.odin). The
+// list is not saved.
 
 Research_Command :: struct {
 	technology: int,
@@ -121,6 +123,17 @@ Player_Command :: union {
 	Developer_Request,
 	Add_Player_Command,
 	Chunk_Ready_Command,
+	// The slot commands (player_command_slots.odin).
+	Slot_Primary_Command,
+	Slot_Split_Command,
+	Slot_Sort_Command,
+	Distribute_Command,
+	Return_Held_Command,
+	Drop_Stack_Command,
+	Quick_Move_Command,
+	Transfer_Button_Command,
+	Grid_Transfer_Command,
+	Inserter_Hand_Command,
 }
 
 // player indexes the simulation's players; a chunk arrival has no player
@@ -246,6 +259,8 @@ apply_player_command :: proc(state: ^Simulation_State, content: Simulation_Conte
 		debug_remove_block(&state.world, content.blocks, eye, command.counter)
 	case Debug_Drop_Item_Command:
 		debug_drop_item_on_belt(&state.world, content, state.players[queued.player])
+	case Slot_Primary_Command, Slot_Split_Command, Slot_Sort_Command, Distribute_Command, Return_Held_Command, Drop_Stack_Command, Quick_Move_Command, Transfer_Button_Command, Grid_Transfer_Command, Inserter_Hand_Command:
+		refused = apply_slot_command(state, content, queued.player, queued.command)
 	}
 	if refused {
 		append(&state.events, Simulation_Event{player = queued.player, kind = .Action_Refused})
@@ -369,6 +384,8 @@ player_command_valid :: proc(command: Player_Command, content: Simulation_Conten
 		return enum_in_range(value.side)
 	case Developer_Request:
 		return developer_request_valid(value, content)
+	case Slot_Primary_Command, Slot_Split_Command, Slot_Sort_Command, Distribute_Command, Return_Held_Command, Drop_Stack_Command, Quick_Move_Command, Transfer_Button_Command, Grid_Transfer_Command, Inserter_Hand_Command:
+		return slot_command_valid(value, content)
 	case Cancel_Craft_Command, Power_Switch_Command, Assembly_Command, Launch_Command, Hotbar_Slot_Command, Close_Machine_Command, Debug_Remove_Block_Command, Debug_Drop_Item_Command, Add_Player_Command, Chunk_Ready_Command:
 		return true
 	}
