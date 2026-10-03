@@ -140,15 +140,12 @@ draw_held_item :: proc(position: [3]f32, items: Item_Registry, item: Item_Id) {
 	rl.DrawCube(position - {0, size / 2, 0}, size, size, size, item_cube_color(items, item))
 }
 
-// The model's arm follows the swing: its stroke runs from pickup to drop
-// over half a motion period (inserter_motion_phase).
+// The arm (render_arm.odin) posed from the cycle, lit like a model.
 draw_inserter_model :: proc(inserter: Inserter, machine: Machine, models: Model_Renderer, items: Item_Registry, frame: Model_Frame) -> bool {
-	model := machine_model(models, inserter.machine) or_return
-	phase := inserter_motion_phase(inserter_arm_fraction(inserter, machine, frame.tick_rate))
-	draw_posed_model(models, model, inserter.common, machine, frame, {phase = phase, working = inserter.state == .Moving})
-	if !stack_is_empty(inserter.held) {
-		draw_held_item(posed_hand_position(inserter.common, machine, phase), items, inserter.held.item)
-	}
+	arm := machine_arm_model(models, inserter.machine) or_return
+	light_tint := model_light_tint(world_get_light(frame.world, model_light_cell(inserter.common)), frame.day_factor, frame.sky_tint)
+	placement := inserter_arm_placement(&frame.world.entities, inserter, machine, frame.tick_rate)
+	draw_placed_arm(models, arm, placement, light_tint, inserter.held, items)
 	return true
 }
 
@@ -156,6 +153,11 @@ draw_inserter :: proc(inserter: Inserter, machine: Machine, models: Model_Render
 	if draw_inserter_model(inserter, machine, models, items, frame) {
 		return
 	}
+	// The box fallback is in the cells of the inserter's frame.
+	flat := transmute([16]f32)entity_frame_matrix(&frame.world.entities, inserter.frame)
+	rlgl.PushMatrix()
+	defer rlgl.PopMatrix()
+	rlgl.MultMatrixf(raw_data(flat[:]))
 	tick_rate := frame.tick_rate
 	centre := block_centre(inserter.origin)
 	bottom := f32(inserter.origin.y)

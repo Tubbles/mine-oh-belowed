@@ -142,6 +142,11 @@ Planet_Preview :: struct {
 	pit_dug:         bool,
 	// The walk screenshot's foundations are laid (once).
 	pad_laid:        bool,
+	// The arms on the pad (0175, loop_planet_preview_arms.odin): their
+	// models, the items they could hold, and the one posed at full reach.
+	models:          Model_Renderer,
+	items:           Item_Registry,
+	reaching_arm:    Entity_Handle,
 }
 
 planet_preview_speed_scale :: proc(height_metres: f32) -> f32 {
@@ -517,8 +522,10 @@ draw_planet_preview :: proc(preview: ^Planet_Preview, selection: []Field_Node, c
 	rl.BeginDrawing()
 	rl.ClearBackground(FIELD_FOG_COLOR)
 	rl.BeginMode3D(camera)
+	set_planet_preview_point_lights(preview, camera)
 	draw_field(&preview.renderer, camera, selection)
-	draw_frames(&preview.field.entities)
+	draw_frames(&preview.field.entities, preview.models)
+	draw_planet_preview_arms(preview)
 	draw_planet_preview_ghost(preview)
 	rl.EndMode3D()
 	height := planet_preview_height_metres(preview)
@@ -588,6 +595,7 @@ lay_planet_preview_foundations :: proc(preview: ^Planet_Preview) {
 		place_on_frame(entities, content.machines, content.foundation, frame, {PLANET_PREVIEW_PAD_HALF_WIDTH, i32(y), PLANET_PREVIEW_PAD_HALF_WIDTH}, 0)
 	}
 	platform.log_printf("planet preview: laid %d foundations on frame %d", frame_cell_count(&entities.frames, frame), frame)
+	lay_planet_preview_arms(preview, frame)
 }
 
 // Returns the exit code: 0, or 1 when the screenshot could not be saved.
@@ -722,6 +730,8 @@ run_planet_preview :: proc(config: Game_Config, planets: []Planet, items: Item_R
 		seed            = seed,
 		tick_rate       = config.tick_rate,
 		torch_level     = u8(torch_level),
+		models          = init_model_renderer(machines, data_directory),
+		items           = items,
 	}
 	preview.field.world.water_planet = make_field_water_planet(seed, planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES)
 	if screenshot_path != "" {
@@ -734,6 +744,7 @@ run_planet_preview :: proc(config: Game_Config, planets: []Planet, items: Item_R
 	exit_code := run_planet_preview_frames(&preview)
 	stop_field_streaming(&preview.streaming)
 	destroy_field_renderer(&preview.renderer)
+	destroy_model_renderer(&preview.models)
 	destroy_field_simulation(&preview.field)
 	delete(preview.field_content.brushes)
 	return exit_code

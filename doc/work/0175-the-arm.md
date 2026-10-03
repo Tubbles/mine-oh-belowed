@@ -1,6 +1,6 @@
 # 0175: The arm: the inserter as an industrial arm
 
-Status: todo (after 0174)
+Status: implemented (2026-10-03; the point lights reach the planet preview's terrain only until the slice, 0179, draws the field in the game)
 
 ## Goal
 

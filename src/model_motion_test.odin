@@ -124,21 +124,6 @@ test_each_origin_has_its_own_phase_offset :: proc(t: ^testing.T) {
 }
 
 @(test)
-test_the_inserter_arm_carries_the_item_from_pickup_to_drop :: proc(t: ^testing.T) {
-	testing.expect_value(t, inserter_motion_phase(0), 0)
-	testing.expect_value(t, inserter_motion_phase(1), 0.5)
-	testing.expect_value(t, inserter_motion_phase(2), 0.5)
-	machine := Machine {
-		footprint = {1, 1, 1},
-		motion = {kind = .Swing, axis = 1, amplitude = 0.5, period_seconds = 1, pivot = {0.5, 0, 0.5}, hand = {0.125, 0.4375, 0.5}},
-	}
-	// Facing +z (rotation 1): the pickup side is -z, the drop side +z.
-	common := Entity_Common{origin = {10, 4, 20}, size = {1, 1, 1}, rotation = 1}
-	expect_near_point(t, posed_hand_position(common, machine, inserter_motion_phase(0)), {10.5, 4.4375, 20.125}, "at the pickup")
-	expect_near_point(t, posed_hand_position(common, machine, inserter_motion_phase(1)), {10.5, 4.4375, 20.875}, "at the drop")
-}
-
-@(test)
 test_the_light_tint_combines_sky_and_block_light :: proc(t: ^testing.T) {
 	white := [3]f32{1, 1, 1}
 	testing.expect_value(t, model_light_tint(pack_light(15, 0), 1, white), 1)
@@ -197,12 +182,15 @@ test_motion_definitions_are_validated :: proc(t: ^testing.T) {
 		{{kind = "pump", axis = "y"}, "period_seconds"},
 		{{kind = "pump", axis = "w", period_seconds = 1}, "axis"},
 		{{kind = "spin", axis = "y", period_seconds = 1, pivot = {3, 0, 0}}, "outside its footprint"},
-		{{kind = "swing", axis = "y", period_seconds = 1, hand = {0, -1, 0}}, "outside its footprint"},
+		{{kind = "arm"}, "no inserter"},
 	}
 	for entry in problems {
 		problem := validate_motion_definition(motion_test_definition(entry.motion))
 		testing.expectf(t, strings.contains(problem, entry.contains), "%v: %q", entry.motion, problem)
 	}
+	arm := motion_test_definition({kind = "arm"})
+	arm.kind = "inserter"
+	testing.expect_value(t, validate_motion_definition(arm), "")
 	without_model := motion_test_definition({kind = "glow", period_seconds = 1})
 	without_model.model = ""
 	testing.expect(t, strings.contains(validate_motion_definition(without_model), "no model"))

@@ -32,7 +32,9 @@ How items move without hands: belts as transport lines, inserters, splitters, mi
 
 ## Inserters
 
-`inserter.odin`. A 1 by 1 by 1 entity that picks one item from the cell behind it and drops it into the cell in front, `inserter_reach` cells each way (two for the long inserter).
+`inserter.odin`. A 1 by 1 by 1 entity that picks one item from the cell behind it and drops it into the cell in front, its reach in cells each way, fixed when it is placed (`inserter_reach_on_frame`).
+
+- The reach (0175): on a foundation frame the arm's `reach_millimetres` (the inserter record, [content.md](content.md), Foundations) over the frame's pitch, rounded down to whole cells and at least one: 2000 mm at the 500 mm pitch is four cells, so the arm picks four cells behind it and not five. On the block frame (frame 0) the reach stays `inserter_reach` cells (one, two for the long inserter), so the block world's inserters, the dev kits and the benchmark factories run as before; that rule goes with the block world (M14). The pickup and drop cells follow the facing on either frame and the lane rules below are the same.
 
 - The cycle is `items_per_minute`: half a swing to the drop, half back, picking and dropping instantly, so with a ready source and sink an inserter moves exactly its rate.
 - It picks only an item its target can ever take (`entity_offered_items`, `entity_takes_item_kind`), so it never holds something undroppable. A full target does not stop the pick: the arm waits at the drop with the item.
@@ -42,6 +44,7 @@ How items move without hands: belts as transport lines, inserters, splitters, mi
 - An electric inserter draws power only while its arm moves. In a brownout its arm moves on the ticks its power credit pays for.
 - Inserter stalls have their own counters, so furnace hints never fire on them.
 - The panel's "In hand" slot shows the held item (0079): the player can lift it onto the cursor or quick move it, and an emptied hand drops nothing and swings back. That is the way out of the gravel stall: the panel and the HUD read "Waiting for room: Gravel". Sorting the gravel off the line is the lasting answer.
+- The arm's look and swing follow its cycle ([presentation.md](presentation.md), The arm), so two arms swing in step only when their work does: two arms on one belt that feeds them at different rates fall out of step (`test_two_arms_on_one_belt_fall_out_of_step`).
 - Placement turns the player's facing by the rotation, like belts. Rotate turns a placed inserter. Its ghost is in [hud.md](hud.md), Targeting.
 
 ## Splitters

@@ -174,6 +174,7 @@ Machine_Definition :: struct {
 	boring_seconds:               int,
 	revival_port:                 bool,
 	inserter_reach:               int,
+	reach_millimetres:            int,
 	hydro_kilowatts_per_water_level: f32,
 	hydro_minimum_water_level:    int,
 	sampling_seconds:             int,
@@ -258,8 +259,10 @@ Machine :: struct {
 	// Drills: the only fluid port is a revival port.
 	revival_port:                bool,
 	// Inserters: how many cells behind the post it picks from and ahead
-	// it drops into, at least 1.
+	// it drops into on the block frame, at least 1, and the arm's reach
+	// on any other frame (inserter_reach_on_frame).
 	inserter_reach:              i32,
+	reach_millimetres:           i32,
 	// Hydro turbines: the power per level of flowing water in the
 	// footprint, and the level one footprint cell needs at placement.
 	hydro_watts_per_water_level: u32,
@@ -398,6 +401,9 @@ validate_inserter_definition :: proc(definition: Machine_Definition) -> string {
 	}
 	if definition.inserter_reach < 0 || definition.inserter_reach > MAXIMUM_INSERTER_REACH {
 		return fmt.tprintf("inserter %q has inserter_reach %d outside 1 to %d", definition.id, definition.inserter_reach, MAXIMUM_INSERTER_REACH)
+	}
+	if definition.reach_millimetres < MINIMUM_ARM_REACH_MILLIMETRES || definition.reach_millimetres > MAXIMUM_ARM_REACH_MILLIMETRES {
+		return fmt.tprintf("inserter %q has reach_millimetres %d outside %d to %d", definition.id, definition.reach_millimetres, MINIMUM_ARM_REACH_MILLIMETRES, MAXIMUM_ARM_REACH_MILLIMETRES)
 	}
 	if definition.filter_slots < 0 || definition.filter_slots > 1 || definition.input_slots != 0 || definition.output_slots != 0 {
 		return fmt.tprintf("inserter %q may only have one fuel slot and one filter slot", definition.id)
@@ -609,6 +615,7 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 		boring_seconds = u32(max(definition.boring_seconds, 0)),
 		revival_port = definition.revival_port,
 		inserter_reach = i32(max(definition.inserter_reach, 1)),
+		reach_millimetres = i32(clamp(definition.reach_millimetres, 0, MAXIMUM_ARM_REACH_MILLIMETRES)),
 		hydro_watts_per_water_level = u32(math.round(definition.hydro_kilowatts_per_water_level * 1000)),
 		hydro_minimum_water_level = definition.hydro_minimum_water_level,
 		sampling_seconds = u32(max(definition.sampling_seconds, 0)),

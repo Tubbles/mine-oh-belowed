@@ -173,7 +173,8 @@ shipped_machines :: proc(allocator := context.allocator) -> []Machine {
 }
 
 // Every machine but belts and pipes has a model, every model file loads
-// and meshes, and a motion that moves a part has its part file.
+// and meshes, a motion that moves a part has its part file, and an arm
+// has all its parts.
 @(test)
 test_the_shipped_machine_models_mesh :: proc(t: ^testing.T) {
 	machines := shipped_machines()
@@ -189,6 +190,12 @@ test_the_shipped_machine_models_mesh :: proc(t: ^testing.T) {
 		// Foundations are drawn per cell by the frame renderer (render_frames.odin).
 		without_model := machine.kind == .Belt || machine.kind == .Pipe || machine.kind == .Foundation
 		testing.expectf(t, (machine.model == "") == without_model, "%s: model %q", machine.id, machine.model)
+		if machine.motion.kind == .Arm {
+			for layers, part in mesh.arm {
+				testing.expectf(t, len(layers[.Lit].positions) + len(layers[.Emissive].positions) > 0, "%s: arm part %v has no vertices", machine.id, part)
+			}
+			continue
+		}
 		body_vertices := len(mesh.body[.Lit].positions) + len(mesh.body[.Emissive].positions)
 		testing.expectf(t, (body_vertices > 0) == !without_model, "%s has %d vertices", machine.id, body_vertices)
 		part_vertices := len(mesh.part[.Lit].positions) + len(mesh.part[.Emissive].positions)

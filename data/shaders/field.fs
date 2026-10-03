@@ -17,7 +17,7 @@
 // and its alpha as its opacity; the terrain pass sets it to 0.
 //
 // Every integer literal carries the u suffix (work item 0105,
-// shader_source_test.odin); this shader has none.
+// shader_source_test.odin), as the point lights' array sizes and loop do.
 
 in vec3 fragment_world_position;
 in vec3 fragment_normal;
@@ -68,6 +68,35 @@ vec3 material_color(sampler2D tile, vec3 blend)
     return mix(near, far, 0.5);
 }
 
+// Point lights of working parts (work item 0175, render_point_lights.odin):
+// up to eight, the nearest to the camera, added on top of the field's
+// light, never in its place. xyz is the position in metres and w the
+// radius, 0 for an unused slot; the colour's rgb is the light's colour.
+// The lights come nearest first with the unused slots last, so the loop
+// stops at the first unused one and costs nothing without lights.
+// The term is soft: half of it ignores the facing, and it falls off
+// smoothly to nothing at the radius.
+uniform vec4 point_light_positions[8u];
+uniform vec4 point_light_colors[8u];
+
+const float point_light_wrap = 0.5;
+
+vec3 point_light_sum(vec3 position, vec3 normal)
+{
+    vec3 sum = vec3(0.0);
+    for (uint index = 0u; index < 8u; index++) {
+        vec4 light = point_light_positions[index];
+        if (light.w <= 0.0) {
+            break;
+        }
+        vec3 offset = light.xyz - position;
+        float share = clamp(1.0 - dot(offset, offset) / max(light.w * light.w, smallest_weight_sum), 0.0, 1.0);
+        float facing = mix(point_light_wrap, 1.0, max(dot(normal, normalize(offset + vec3(smallest_weight_sum))), 0.0));
+        sum += point_light_colors[index].rgb * share * share * facing;
+    }
+    return sum;
+}
+
 void main()
 {
     vec3 normal = normalize(fragment_normal);
@@ -87,6 +116,7 @@ void main()
     float sun = max(dot(normal, normalize(sun_direction)), 0.0);
     float light = max(fragment_block_light, fragment_color.a * daylight);
     vec3 lit = albedo * light * mix(ambient_share, 1.0, sun);
+    lit += albedo * point_light_sum(fragment_world_position, normal);
     float fog = clamp((fragment_distance - fog_start) / (fog_end - fog_start), 0.0, 1.0);
     finalColor = vec4(mix(min(lit, vec3(1.0)), fog_color, fog), mix(1.0, water_color.a, water));
 }

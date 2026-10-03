@@ -203,8 +203,15 @@ test_machine_data_rejects_bad_definitions :: proc(t: ^testing.T) {
 		items_per_minute = 36,
 		fuel_slots = 1,
 		fuel_power_kilowatts = 94,
+		reach_millimetres = 2000,
 	}
 	testing.expect_value(t, resolve_test_machines({inserter}), "")
+	no_reach := inserter
+	no_reach.reach_millimetres = 0
+	testing.expect(t, resolve_test_machines({no_reach}) != "")
+	far := inserter
+	far.reach_millimetres = MAXIMUM_ARM_REACH_MILLIMETRES + 1
+	testing.expect(t, resolve_test_machines({far}) != "")
 	no_rate := inserter
 	no_rate.items_per_minute = 0
 	testing.expect(t, resolve_test_machines({no_rate}) != "")

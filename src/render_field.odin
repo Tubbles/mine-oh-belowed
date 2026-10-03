@@ -56,6 +56,8 @@ Field_Renderer :: struct {
 	daylight_location:        i32,
 	// The sky light's share, 0 at night to 1 at noon.
 	daylight:                 f32,
+	// The point lights' uniforms (0175, set_field_point_lights).
+	point_light_locations:    [2]i32,
 	globe:                    rl.Mesh,
 	globe_material:           rl.Material,
 	spacing_millimetres:      int,
@@ -96,6 +98,7 @@ use_field_shader :: proc(renderer: ^Field_Renderer, shader: rl.Shader, fog_end: 
 	renderer.camera_position_location = rl.GetShaderLocation(shader, "camera_position")
 	renderer.water_color_location = rl.GetShaderLocation(shader, "water_color")
 	renderer.daylight_location = rl.GetShaderLocation(shader, "daylight")
+	renderer.point_light_locations = {rl.GetShaderLocation(shader, "point_light_positions"), rl.GetShaderLocation(shader, "point_light_colors")}
 	renderer.material.shader = shader
 }
 
@@ -263,4 +266,18 @@ destroy_field_renderer :: proc(renderer: ^Field_Renderer) {
 	rl.UnloadMaterial(renderer.globe_material)
 	rl.UnloadMaterial(renderer.material)
 	renderer^ = {}
+}
+
+// Point lights (work item 0175, render_point_lights.odin): the lights of
+// working parts nearest the camera, uploaded before draw_field each frame.
+// Unused slots go up with radius 0, which the shader skips.
+set_field_point_lights :: proc(renderer: ^Field_Renderer, lights: [MAXIMUM_POINT_LIGHTS]Point_Light) {
+	positions, colors: [MAXIMUM_POINT_LIGHTS][4]f32
+	for light, index in lights {
+		positions[index] = {light.position.x, light.position.y, light.position.z, light.radius}
+		colors[index] = {light.color.r, light.color.g, light.color.b, 1}
+	}
+	shader := renderer.material.shader
+	rl.SetShaderValueV(shader, renderer.point_light_locations[0], &positions, .VEC4, MAXIMUM_POINT_LIGHTS)
+	rl.SetShaderValueV(shader, renderer.point_light_locations[1], &colors, .VEC4, MAXIMUM_POINT_LIGHTS)
 }

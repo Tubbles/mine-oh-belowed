@@ -143,6 +143,7 @@ Foundation frames (0174; [architecture.md](architecture.md), Frames).
 
 - The foundation is a machine of kind `foundation` in `data/machines.sjson` (`id` `foundation`, placed by the `foundation` item of `data/items.sjson`, made by hand or in an assembler from two stone bricks): its footprint must be one cell high (`validate_machine_kind_fields`) and it has no other fields and no model; the frame renderer draws its cells as grey slabs. Placed free it starts a new frame, snapped to a frame's cell it joins that frame, and machines on a frame stand on foundation cells.
 - `foundation_pitch_millimetres` in `data/game.sjson` is the cell of a new frame, required and bounded from `MINIMUM_FOUNDATION_PITCH_MILLIMETRES` (250) to `MAXIMUM_FOUNDATION_PITCH_MILLIMETRES` (2000); the shipped 500 mm. A saved frame keeps the pitch it was made with.
+- An inserter's arm reaches `reach_millimetres` unfolded (0175), required on every inserter record and bounded from `MINIMUM_ARM_REACH_MILLIMETRES` (250) to `MAXIMUM_ARM_REACH_MILLIMETRES` (8000): 2000 on the shipped inserters (the design's 2 m), 4000 on the long inserter, which keeps twice the reach it has on the block frame. On a frame the reach in cells is that over the pitch ([logistics.md](logistics.md), Inserters).
 - Machine footprints are counted in cells, so on a 500 mm frame every machine stands at half its block size until the slice's content (0179) sets the real sizes in frame cells; the footprints of `data/machines.sjson` are unchanged until then.
 
 ## Blocks
@@ -172,6 +173,7 @@ Block tiles and item icons are 16 by 16 RGBA PNG files under `data/textures/`, o
 How models are loaded, lit and moved: [presentation.md](presentation.md), Machine models and The player.
 
 - A machine model is authored at 8 or 16 voxels per block, z up, with its +x side as the front. The keys are in the header of `data/machines.sjson`.
+- The arm (0175) is authored at real scale instead, six files at 25 mm per voxel, one per part; the files and the authored pose are in [presentation.md](presentation.md), The arm. Every inserter record names it with `model = "arm"` and `motion = {kind = "arm"}`.
 - The player is six files (`player_torso.vox` and the limbs), each the whole `PLAYER_MODEL_FRAME` at 16 voxels per block with only its limb filled, +x the front and +z the right side. A replacement keeps the frame and puts the shoulders at the tops of the arms, the hips at the tops of the legs and the neck under the head.
 
 ## Sounds

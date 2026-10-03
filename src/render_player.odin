@@ -195,7 +195,7 @@ draw_drill_drop_cell :: proc(placement: Placement, machines: Machine_Registry) {
 // The cells the inserter a placement would build takes from and drops
 // into, at its machine's reach.
 inserter_ghost_cells :: proc(placement: Placement, machine: Machine) -> (pickup, drop: World_Coordinate) {
-	inserter := make_inserter(Entity_Common{machine = placement.machine, origin = placement.origin, rotation = placement.rotation, size = placement.size}, machine)
+	inserter := make_inserter(Entity_Common{machine = placement.machine, origin = placement.origin, rotation = placement.rotation, size = placement.size}, machine, block_frame())
 	return inserter_pickup_cell(inserter), inserter_drop_cell(inserter)
 }
 

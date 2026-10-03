@@ -3,7 +3,9 @@ package game
 // Inserters (doc/logistics.md): a 1 by 1 by 1 entity that picks one item
 // from the cell behind it and drops it into the cell in front (two cells
 // each way for a long inserter, work item 0037), only through the item
-// transfer interface. The direction is
+// transfer interface. On a frame other than the block frame the arm
+// reaches its reach_millimetres over the frame's pitch (four cells for
+// 2 m at 500 mm, work item 0175). The direction is
 // Entity_Common.rotation (0 is +x, like belts).
 //
 // The cycle is a small state machine counted in ticks. Picking and
@@ -21,6 +23,10 @@ package game
 
 INSERTER_SLOT_COUNT :: 1
 MAXIMUM_INSERTER_REACH :: 2
+// The arm's reach in data (reach_millimetres), at least one cell of the
+// finest pitch a frame may have.
+MINIMUM_ARM_REACH_MILLIMETRES :: MINIMUM_FOUNDATION_PITCH_MILLIMETRES
+MAXIMUM_ARM_REACH_MILLIMETRES :: 8000
 INSERTER_FUEL_SLOT :: 0
 
 Inserter_Phase :: enum u8 {
@@ -55,8 +61,8 @@ Inserter :: struct {
 	power:            Power_State,
 	// Uninterrupted ticks in the Idle state, for the idle minute counter.
 	idle_streak:      u32,
-	// Cells from the post to the pickup and to the drop cell, from the
-	// machine's inserter_reach.
+	// Cells from the post to the pickup and to the drop cell
+	// (inserter_reach_on_frame), fixed when the inserter is placed.
 	reach:            i32,
 }
 
@@ -79,8 +85,18 @@ inserter_state_text :: proc(inserter: Inserter, items: Item_Registry) -> string 
 	return text(inserter_state_keys[inserter.state])
 }
 
-make_inserter :: proc(common: Entity_Common, machine: Machine) -> Inserter {
-	return Inserter{common = common, slot_count = machine.slot_count, slots = {EMPTY_STACK}, filter = NO_ITEM, held = EMPTY_STACK, reach = machine.inserter_reach}
+// The block frame keeps the cells of inserter_reach (retired with the
+// block world, M14); any other frame takes the arm's reach over its
+// pitch, rounded down, at least one cell.
+inserter_reach_on_frame :: proc(machine: Machine, frame: Frame) -> i32 {
+	if frame.id == BLOCK_FRAME {
+		return machine.inserter_reach
+	}
+	return max(machine.reach_millimetres / i32(max(frame.pitch_millimetres, 1)), 1)
+}
+
+make_inserter :: proc(common: Entity_Common, machine: Machine, frame: Frame) -> Inserter {
+	return Inserter{common = common, slot_count = machine.slot_count, slots = {EMPTY_STACK}, filter = NO_ITEM, held = EMPTY_STACK, reach = inserter_reach_on_frame(machine, frame)}
 }
 
 inserter_pickup_cell :: proc(inserter: Inserter) -> World_Coordinate {

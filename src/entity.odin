@@ -466,7 +466,8 @@ add_entity :: proc(entities: ^Entities, machines: Machine_Registry, machine: Mac
 		}
 		handle = pool_add(&entities.capsules, .Capsule, capsule)
 	case .Inserter:
-		handle = pool_add(&entities.inserters, .Inserter, make_inserter(common, machines.machines[machine]))
+		frame_record, _ := find_frame(&entities.frames, frame)
+		handle = pool_add(&entities.inserters, .Inserter, make_inserter(common, machines.machines[machine], frame_record))
 	case .Drill:
 		handle = pool_add(&entities.drills, .Drill, make_drill(common, {}, machines.machines[machine].slot_count))
 	case .Splitter:

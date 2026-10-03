@@ -17,15 +17,18 @@
 // they ignore the world light and light up while the machine works.
 // motion (optional, work item 0056, needs a model) moves one part of the
 // model while the machine works and rests it otherwise: {kind, axis,
-// amplitude, period_seconds, pivot, hand}. kind pump moves the part along
+// amplitude, period_seconds, pivot}. kind pump moves the part along
 // axis (x, y or z of the unrotated footprint) by amplitude blocks and back,
 // bob up to amplitude blocks either way, spin turns it about the axis
 // through pivot by amplitude turns per period, swing turns it by amplitude
 // turns and back, and glow moves nothing but pulses the emissive voxels.
 // Every kind but glow needs data/models/<model>_part.vox, the part alone at
-// the body's size and frame. pivot and hand are [x, y, z] in blocks from
-// the footprint's minimum corner; hand is where an inserter's held item
-// hangs from its part. An inserter's swing follows its arm, not the clock.
+// the body's size and frame. pivot is [x, y, z] in blocks from the
+// footprint's minimum corner. kind arm (inserters only, work item 0175)
+// names the arm's part files instead, <model>.vox for the base and
+// <model>_turret.vox and the rest (doc/presentation.md, Machine models),
+// posed from the inserter's cycle, not the clock, so it takes no other
+// field.
 // kind selects the panel and the simulation: chest, furnace, capsule,
 // belt, inserter, drill, splitter, pipe, offshore_pump, boiler,
 // steam_engine, storage_tank, pump, tar_pit_pump, flare_stack,
@@ -58,8 +61,12 @@
 // inserters have electric_power_kilowatts, drawn only while the arm
 // moves (work item 0020). filter_slots = 1 makes a filter inserter.
 // inserter_reach (optional, work item 0037, default 1) is how many cells
-// behind the inserter it picks from and how many ahead it drops into: 2
-// for the long inserter.
+// behind the inserter it picks from and how many ahead it drops into on
+// the block world's frame: 2 for the long inserter. reach_millimetres
+// (work item 0175, 250 to 8000) is the arm's reach unfolded: on a
+// foundation frame it reaches that over the frame's pitch in whole cells
+// (2000 at 500 mm is four). The block frame keeps inserter_reach until
+// the block world is retired (M14).
 // Drills (work item 0016): placed with at least one footprint cell on a
 // vein outcrop, they draw one unit per cycle from the vein's reservoir,
 // picked by the vein type's output mix, and drop it into the cell in
@@ -356,8 +363,9 @@ machines = [
 		id = "burner_inserter"
 		name_key = "machine_burner_inserter"
 		description_key = "describe_machine_burner_inserter"
-		model = "burner_inserter"
-		motion = {kind = "swing", axis = "y", amplitude = 0.5, period_seconds = 1, pivot = [0.5, 0, 0.5], hand = [0.125, 0.4375, 0.5]}
+		model = "arm"
+		motion = {kind = "arm"}
+		reach_millimetres = 2000
 		item = "burner_inserter"
 		kind = "inserter"
 		footprint = {width = 1, depth = 1, height = 1}
@@ -369,8 +377,9 @@ machines = [
 		id = "inserter"
 		name_key = "machine_inserter"
 		description_key = "describe_machine_inserter"
-		model = "inserter"
-		motion = {kind = "swing", axis = "y", amplitude = 0.5, period_seconds = 1, pivot = [0.5, 0, 0.5], hand = [0.125, 0.4375, 0.5]}
+		model = "arm"
+		motion = {kind = "arm"}
+		reach_millimetres = 2000
 		item = "inserter"
 		kind = "inserter"
 		footprint = {width = 1, depth = 1, height = 1}
@@ -381,8 +390,9 @@ machines = [
 		id = "filter_inserter"
 		name_key = "machine_filter_inserter"
 		description_key = "describe_machine_filter_inserter"
-		model = "filter_inserter"
-		motion = {kind = "swing", axis = "y", amplitude = 0.5, period_seconds = 1, pivot = [0.5, 0, 0.5], hand = [0.125, 0.4375, 0.5]}
+		model = "arm"
+		motion = {kind = "arm"}
+		reach_millimetres = 2000
 		item = "filter_inserter"
 		kind = "inserter"
 		footprint = {width = 1, depth = 1, height = 1}
@@ -394,8 +404,9 @@ machines = [
 		id = "fast_inserter"
 		name_key = "machine_fast_inserter"
 		description_key = "describe_machine_fast_inserter"
-		model = "fast_inserter"
-		motion = {kind = "swing", axis = "y", amplitude = 0.5, period_seconds = 1, pivot = [0.5, 0, 0.5], hand = [0.125, 0.4375, 0.5]}
+		model = "arm"
+		motion = {kind = "arm"}
+		reach_millimetres = 2000
 		item = "fast_inserter"
 		kind = "inserter"
 		footprint = {width = 1, depth = 1, height = 1}
@@ -406,8 +417,9 @@ machines = [
 		id = "long_inserter"
 		name_key = "machine_long_inserter"
 		description_key = "describe_machine_long_inserter"
-		model = "long_inserter"
-		motion = {kind = "swing", axis = "y", amplitude = 0.5, period_seconds = 1, pivot = [0.5, 0, 0.5], hand = [0.125, 0.4375, 0.5]}
+		model = "arm"
+		motion = {kind = "arm"}
+		reach_millimetres = 4000
 		item = "long_inserter"
 		kind = "inserter"
 		footprint = {width = 1, depth = 1, height = 1}

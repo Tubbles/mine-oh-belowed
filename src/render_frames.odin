@@ -51,23 +51,34 @@ draw_frame_cell :: proc(cell: World_Coordinate, color: rl.Color) {
 
 // Inside BeginMode3D. One pass over the occupied cells, each under its
 // frame's matrix (made once per frame), so the cost follows the cells and
-// not the cells times the frames.
-draw_frames :: proc(entities: ^Entities) {
+// not the cells times the frames. An inserter whose arm model loaded is
+// drawn as its arm (render_arm.odin), not as a box.
+draw_frames :: proc(entities: ^Entities, models: Model_Renderer) {
 	matrices := make(map[Frame_Id][16]f32, len(entities.frames.frames), context.temp_allocator)
 	for frame in entities.frames.frames {
 		matrices[frame.id] = transmute([16]f32)frame_render_matrix(frame)
 	}
 	for key, occupant in entities.frames.occupants {
 		flat, found := matrices[key.frame]
-		if !found {
+		handle := entity_from_occupant(occupant.handle)
+		if !found || frame_cell_draws_an_arm(entities, models, handle) {
 			continue
 		}
+		kind := handle.kind
 		rlgl.PushMatrix()
 		rlgl.MultMatrixf(raw_data(flat[:]))
-		foundation := entity_from_occupant(occupant.handle).kind == .Foundation
-		draw_frame_cell(key.cell, foundation ? FRAME_FOUNDATION_COLOR : FRAME_MACHINE_COLOR)
+		draw_frame_cell(key.cell, kind == .Foundation ? FRAME_FOUNDATION_COLOR : FRAME_MACHINE_COLOR)
 		rlgl.PopMatrix()
 	}
+}
+
+frame_cell_draws_an_arm :: proc(entities: ^Entities, models: Model_Renderer, handle: Entity_Handle) -> bool {
+	inserter := pool_get(&entities.inserters, handle)
+	if inserter == nil {
+		return false
+	}
+	_, found := machine_arm_model(models, inserter.machine)
+	return found
 }
 
 // Where Place would put a foundation, see-through.

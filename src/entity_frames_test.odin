@@ -176,9 +176,10 @@ test_a_belt_feeds_an_inserter_into_a_chest_on_frame_1 :: proc(t: ^testing.T) {
 	belt_machine := find_belt_machine(content.machines, .Flat)
 	first := add_belt(&world.entities, content.machines, belt_machine, {0, 1, 0}, 0, .Flat, frame)
 	second := add_belt(&world.entities, content.machines, belt_machine, {1, 1, 0}, 0, .Flat, frame)
-	inserter := add_entity(&world.entities, content.machines, test_machine(content.machines, "burner_inserter"), {1, 1, 1}, 1, frame)
+	// The arm reaches four cells at 500 mm (work item 0175).
+	inserter := add_entity(&world.entities, content.machines, test_machine(content.machines, "burner_inserter"), {1, 1, 4}, 1, frame)
 	pool_get(&world.entities.inserters, inserter).slots[INSERTER_FUEL_SLOT] = Item_Stack{test_item(content.items, "coal"), 5}
-	chest := add_entity(&world.entities, content.machines, test_machine(content.machines, "wooden_chest"), {1, 1, 2}, 0, frame)
+	chest := add_entity(&world.entities, content.machines, test_machine(content.machines, "wooden_chest"), {1, 1, 8}, 0, frame)
 	block_source := place_test_entity(&world, content, "wooden_chest", {1, 1, 0})
 	block_target := place_test_entity(&world, content, "wooden_chest", {1, 1, 2})
 	block_belt := lay_belt(&world, content, {2, 1, 0}, 0)

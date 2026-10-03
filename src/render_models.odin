@@ -18,6 +18,7 @@ Uploaded_Layers :: [Model_Layer]rl.Mesh
 Uploaded_Machine_Model :: struct {
 	body: Uploaded_Layers,
 	part: Uploaded_Layers,
+	arm:  [Arm_Part]Uploaded_Layers,
 	top:  f32,
 }
 
@@ -58,10 +59,14 @@ machine_model :: proc(renderer: Model_Renderer, machine: Machine_Id) -> (model: 
 }
 
 // The height of the model's top above the entity's bottom, or the
-// footprint's height for a machine drawn as a box.
+// footprint's height for a machine drawn as a box. An arm's top is its
+// folded rest on the block frame (load_machine_model_mesh).
 machine_model_top :: proc(renderer: Model_Renderer, common: Entity_Common) -> f32 {
 	if model, found := machine_model(renderer, common.machine); found {
 		return model.top
+	}
+	if _, found := machine_arm_model(renderer, common.machine); found {
+		return renderer.models[common.machine].top
 	}
 	return f32(common.size.y)
 }
@@ -100,6 +105,9 @@ unload_model_meshes :: proc(renderer: ^Model_Renderer) {
 	for model in renderer.models {
 		unload_model_layers(model.body)
 		unload_model_layers(model.part)
+		for layers in model.arm {
+			unload_model_layers(layers)
+		}
 	}
 	delete(renderer.models)
 	renderer.models = nil
@@ -120,6 +128,9 @@ replace_machine_models :: proc(renderer: ^Model_Renderer, machines: Machine_Regi
 			body = upload_model_layers(mesh.body),
 			part = upload_model_layers(mesh.part),
 			top  = mesh.top,
+		}
+		for layers, part in mesh.arm {
+			renderer.models[index].arm[part] = upload_model_layers(layers)
 		}
 	}
 	return ""
@@ -186,9 +197,15 @@ draw_model_layers_colored :: proc(renderer: Model_Renderer, layers: Uploaded_Lay
 // ghost colour. False when the machine has no model, so the caller draws
 // the box.
 draw_ghost_model :: proc(renderer: Model_Renderer, machines: Machine_Registry, placement: Placement, tint: rl.Color) -> bool {
-	model := machine_model(renderer, placement.machine) or_return
 	machine := machines.machines[placement.machine]
 	colors := ghost_layer_colors(tint)
+	if arm, found := machine_arm_model(renderer, placement.machine); found {
+		common := Entity_Common{origin = placement.origin, size = placement.size, rotation = placement.rotation}
+		dimensions := arm_dimensions_on_frame(machine.inserter_reach, BLOCK_FRAME_PITCH_MILLIMETRES)
+		draw_arm_colored(renderer, arm, arm_entity_transform(common, BLOCK_FRAME_PITCH_MILLIMETRES), dimensions, arm_rest_pose(dimensions), colors)
+		return true
+	}
+	model := machine_model(renderer, placement.machine) or_return
 	body := model_transform(placement.origin, placement.size, placement.rotation)
 	draw_model_layers_colored(renderer, model.body, body, colors)
 	part := body * motion_transform(machine.motion, machine.footprint, 0)

@@ -106,7 +106,6 @@ INSULATOR = (230, 230, 220)
 PAD_GREY = (120, 122, 128)
 PAD_STRIPE = (220, 180, 40)
 SWITCH_BODY = (80, 80, 86)
-INSERTER_POST = (70, 70, 76)
 SUIT = (60, 110, 200)
 SUIT_DARK = (38, 62, 110)
 VISOR = (24, 30, 44)
@@ -157,7 +156,8 @@ class Model:
         """A round bar along axis (0 x, 1 y, 2 z) from start to end
         inclusive. centre is on the other two axes in their order (y and z,
         x and z, or x and y), in voxel units where a voxel's middle is at
-        its index plus a half."""
+        its index plus a half. colour is a colour or a function of
+        (x, y, z)."""
         first, second = [other for other in range(3) if other != axis]
         for along in range(start, end + 1):
             for a in range(self.size[first]):
@@ -165,7 +165,7 @@ class Model:
                     if (a + 0.5 - centre[0]) ** 2 + (b + 0.5 - centre[1]) ** 2 <= radius * radius:
                         position = [0, 0, 0]
                         position[axis], position[first], position[second] = along, a, b
-                        self.set(tuple(position), colour)
+                        self.set(tuple(position), colour(*position) if callable(colour) else colour)
 
     def ring(self, axis: int, centre: tuple[float, float], outer: float, inner: float, start: int, end: int, colour) -> None:
         """Like cylinder, without the voxels inside the inner radius."""
@@ -399,22 +399,106 @@ def core_sample_drill():
     return {"": model, "_part": part}
 
 
-# Inserters, 1 by 1 by 1: a base and a post; the arm (the part) points at
-# the pickup side (-x) at rest and swings over the right side to the drop
-# side. The gripper's bottom middle is the motion's hand, (2/16, 7/16,
-# 8/16) of a block.
+# The inserter's arm (work item 0175, src/model_arm.odin): six files of
+# one frame, ARM_FRAME voxels at 25 mm, each holding one part in the
+# authored pose: the arm straight up, the gripper's fingers pointing up.
+# The joints lie on the frame's vertical centre line (x and z 12, a voxel
+# corner): the shoulder at 22 voxels (0.55 m), the elbow 50 above it
+# (1.25 m), the wrist 42 above that (1.05 m) and the hand between the
+# fingertips 12 above the wrist (0.3 m); the shoulder, elbow and wrist
+# turn about z. model_arm.odin holds the same numbers in metres. The finger
+# is drawn twice, offset either side of z 12, so it is authored centred.
+# Grimy steel and yellow warning paint with black hazard stripes; the work
+# lamp on the wrist block glows while the arm moves.
 
-def inserter_model(arm_colour):
-    def make():
-        model = Model((1, 1, 1))
-        model.box((3, 0, 3), (12, 1, 12), BASE)
-        model.box((6, 2, 6), (9, 8, 9), INSERTER_POST)
-        part = Model((1, 1, 1))
-        part.box((7, 9, 7), (8, 12, 8), arm_colour)
-        part.box((2, 11, 7), (8, 12, 8), arm_colour)
-        part.box((1, 7, 6), (3, 10, 9), darker(arm_colour, 0.7))
-        return {"": model, "_part": part}
-    return make
+ARM_FRAME = (24, 128, 24)
+ARM_YELLOW = (206, 162, 40)
+ARM_BLACK = (36, 34, 32)
+ARM_STEEL = (118, 120, 124)
+ARM_STEEL_DARK = (72, 74, 78)
+ARM_LAMP = glow((255, 196, 120))
+
+
+def grimy(colour):
+    """The colour with a hashed grime: a few voxels darker, so the metal
+    reads worn without a pattern."""
+    def shade(x, y, z):
+        hash_value = (x * 73856093 ^ y * 19349663 ^ z * 83492791) & 0xFFFF
+        step = hash_value % 7
+        return darker(colour, 0.72) if step == 0 else darker(colour, 0.86) if step < 3 else colour
+    return shade
+
+
+def hazard(x, y, z):
+    """Diagonal yellow and black warning stripes, three voxels wide."""
+    return grimy(ARM_YELLOW)(x, y, z) if (x + y + z) // 3 % 2 == 0 else ARM_BLACK
+
+
+def arm_base():
+    model = Model((1, 1, 1), ARM_FRAME)
+    model.box((2, 0, 2), (21, 1, 21), hazard)
+    model.box((4, 0, 4), (19, 1, 19), grimy(ARM_STEEL_DARK))
+    for x, z in ((3, 3), (20, 3), (3, 20), (20, 20)):
+        model.set((x, 2, z), ARM_BLACK)
+    model.cylinder(1, (12, 12), 6, 2, 13, grimy(ARM_STEEL))
+    model.cylinder(1, (12, 12), 7.5, 14, 15, grimy(ARM_STEEL_DARK))
+    return model
+
+
+def arm_turret():
+    model = Model((1, 1, 1), ARM_FRAME)
+    model.cylinder(1, (12, 12), 7, 16, 18, hazard)
+    for z in (4, 18):
+        model.box((8, 16, z), (15, 26, z + 1), grimy(ARM_YELLOW))
+    for z in (3, 20):
+        model.cylinder(2, (12, 22), 3.5, z, z, ARM_STEEL_DARK)
+    model.box((3, 17, 9), (7, 23, 14), grimy(ARM_STEEL_DARK))
+    return model
+
+
+def arm_upper_arm():
+    model = Model((1, 1, 1), ARM_FRAME)
+    for z in (6, 16):
+        model.box((9, 18, z), (14, 76, z + 1), grimy(ARM_YELLOW))
+        model.box((9, 30, z), (14, 35, z + 1), hazard)
+        model.cylinder(2, (12, 22), 4, z, z + 1, ARM_STEEL_DARK)
+        model.cylinder(2, (12, 72), 4, z, z + 1, ARM_STEEL_DARK)
+    return model
+
+
+def arm_forearm():
+    model = Model((1, 1, 1), ARM_FRAME)
+    model.box((10, 68, 9), (13, 116, 14), grimy(ARM_STEEL))
+    model.box((10, 104, 9), (13, 109, 14), hazard)
+    model.cylinder(2, (12, 72), 4, 9, 14, grimy(ARM_STEEL_DARK))
+    model.cylinder(2, (12, 114), 3, 9, 14, grimy(ARM_STEEL_DARK))
+    return model
+
+
+def arm_gripper():
+    model = Model((1, 1, 1), ARM_FRAME)
+    model.box((8, 112, 8), (15, 118, 15), grimy(ARM_STEEL_DARK))
+    model.box((10, 114, 16), (13, 117, 16), ARM_LAMP)
+    model.box((9, 119, 7), (14, 120, 16), grimy(ARM_STEEL))
+    return model
+
+
+def arm_finger():
+    model = Model((1, 1, 1), ARM_FRAME)
+    model.box((10, 119, 11), (13, 127, 12), grimy(ARM_STEEL))
+    model.box((9, 126, 11), (14, 127, 12), ARM_BLACK)
+    return model
+
+
+def arm():
+    return {
+        "": arm_base(),
+        "_turret": arm_turret(),
+        "_upper_arm": arm_upper_arm(),
+        "_forearm": arm_forearm(),
+        "_gripper": arm_gripper(),
+        "_finger": arm_finger(),
+    }
 
 
 # Crafting machines.
@@ -840,11 +924,7 @@ MODELS = {
     "steel_furnace": steel_furnace,
     "drop_capsule": drop_capsule,
     "schematic_crate": schematic_crate,
-    "burner_inserter": inserter_model((150, 110, 70)),
-    "inserter": inserter_model((220, 190, 60)),
-    "filter_inserter": inserter_model((150, 90, 190)),
-    "fast_inserter": inserter_model((70, 130, 220)),
-    "long_inserter": inserter_model((200, 80, 60)),
+    "arm": arm,
     "burner_mining_drill": burner_mining_drill,
     "electric_mining_drill": electric_mining_drill,
     "bore_drill": bore_drill,

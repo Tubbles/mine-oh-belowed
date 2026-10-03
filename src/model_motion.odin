@@ -29,6 +29,9 @@ Motion_Kind :: enum u8 {
 	Bob,
 	// Moves nothing; the glow voxels pulse while the machine works.
 	Glow,
+	// The inserter's arm (model_arm.odin): its parts follow the cycle,
+	// not the clock, so it needs no axis and no period.
+	Arm,
 }
 
 @(rodata)
@@ -39,6 +42,7 @@ motion_kind_names := [Motion_Kind]string {
 	.Swing = "swing",
 	.Bob   = "bob",
 	.Glow  = "glow",
+	.Arm   = "arm",
 }
 
 @(rodata)
@@ -50,10 +54,12 @@ EMISSIVE_PALETTE_START :: 240
 // Idle emissive voxels are lit like the rest; working ones at full
 // brightness, or pulsing down to this with a glow motion.
 GLOW_MINIMUM_BRIGHTNESS :: 0.55
+// The arm's lamp at rest: a dark glass, a share of the light round it.
+ARM_LAMP_DARK_SHARE :: 0.25
 // Matches chunk.fs, so models are never darker than the ground.
 MINIMUM_MODEL_BRIGHTNESS :: 0.06
 
-// As written in the file. pivot and hand are in blocks in the unrotated
+// As written in the file. pivot is in blocks in the unrotated
 // footprint's frame, from its minimum corner.
 Motion_Definition :: struct {
 	kind:           string,
@@ -61,17 +67,14 @@ Motion_Definition :: struct {
 	amplitude:      f32,
 	period_seconds: f32,
 	pivot:          [3]f32,
-	hand:           [3]f32,
 }
 
-// hand is where an inserter's held item hangs from its part at rest.
 Machine_Motion :: struct {
 	kind:           Motion_Kind,
 	axis:           int,
 	amplitude:      f32,
 	period_seconds: f32,
 	pivot:          [3]f32,
-	hand:           [3]f32,
 }
 
 motion_axis_index :: proc(name: string) -> (axis: int, found: bool) {
@@ -83,9 +86,10 @@ motion_axis_index :: proc(name: string) -> (axis: int, found: bool) {
 	return 1, false
 }
 
-// Every motion but the glow moves a part, which then needs its file.
+// Every motion but the glow and the arm moves one part, which then needs
+// its file; the arm has its own part files (arm_part_suffixes).
 motion_has_part :: proc(kind: Motion_Kind) -> bool {
-	return kind != .None && kind != .Glow
+	return kind != .None && kind != .Glow && kind != .Arm
 }
 
 point_in_footprint :: proc(point: [3]f32, footprint: Machine_Footprint_Definition) -> bool {
@@ -99,7 +103,8 @@ point_in_footprint :: proc(point: [3]f32, footprint: Machine_Footprint_Definitio
 }
 
 // A motion needs a model, a known kind, a positive period, an axis for a
-// part that moves, and a pivot and hand inside the footprint.
+// part that moves, and a pivot inside the footprint; the arm only an
+// inserter.
 validate_motion_definition :: proc(definition: Machine_Definition) -> string {
 	motion := definition.motion
 	kind, found := parse_named_enum(motion_kind_names, motion.kind)
@@ -110,14 +115,16 @@ validate_motion_definition :: proc(definition: Machine_Definition) -> string {
 		return ""
 	case definition.model == "":
 		return fmt.tprintf("machine %q has a motion but no model", definition.id)
+	case kind == .Arm:
+		return definition.kind == "inserter" ? "" : fmt.tprintf("machine %q has an arm motion but is no inserter", definition.id)
 	case motion.period_seconds <= 0:
 		return fmt.tprintf("machine %q needs a positive motion period_seconds", definition.id)
 	}
 	if _, axis_found := motion_axis_index(motion.axis); !axis_found && kind != .Glow {
 		return fmt.tprintf("machine %q has motion axis %q, not x, y or z", definition.id, motion.axis)
 	}
-	if !point_in_footprint(motion.pivot, definition.footprint) || !point_in_footprint(motion.hand, definition.footprint) {
-		return fmt.tprintf("machine %q has a motion pivot or hand outside its footprint", definition.id)
+	if !point_in_footprint(motion.pivot, definition.footprint) {
+		return fmt.tprintf("machine %q has a motion pivot outside its footprint", definition.id)
 	}
 	return ""
 }
@@ -131,7 +138,6 @@ resolve_machine_motion :: proc(definition: Motion_Definition) -> Machine_Motion 
 		amplitude = definition.amplitude,
 		period_seconds = definition.period_seconds,
 		pivot = definition.pivot,
-		hand = definition.hand,
 	}
 }
 
@@ -157,12 +163,6 @@ motion_phase_offset :: proc(origin: World_Coordinate) -> f32 {
 	hash *= 0x846CA68B
 	hash ~= hash >> 16
 	return f32(hash >> 8) / (1 << 24)
-}
-
-// An inserter's arm follows the simulation's swing instead of the clock:
-// half a period takes the pump or swing stroke from pickup (0) to drop.
-inserter_motion_phase :: proc(arm_fraction: f32) -> f32 {
-	return clamp(arm_fraction, 0, 1) / 2
 }
 
 // 0 at phase 0 and 1, 1 at phase 0.5, easing at both ends.
@@ -230,7 +230,7 @@ motion_transform :: proc(motion: Machine_Motion, footprint: [3]i32, phase: f32) 
 		return rotation_about_pivot(motion.axis, 2 * math.PI * motion.amplitude * phase, pivot)
 	case .Swing:
 		return rotation_about_pivot(motion.axis, 2 * math.PI * motion.amplitude * motion_stroke(phase), pivot)
-	case .None, .Glow:
+	case .None, .Glow, .Arm:
 	}
 	return translation_matrix({})
 }
@@ -238,10 +238,12 @@ motion_transform :: proc(motion: Machine_Motion, footprint: [3]i32, phase: f32) 
 // The brightness of the emissive voxels per colour channel: lit like the
 // rest while the machine does not work, full white while it works,
 // pulsing with a glow motion (full at phase 0 and 1,
-// GLOW_MINIMUM_BRIGHTNESS at 0.5).
+// GLOW_MINIMUM_BRIGHTNESS at 0.5). The arm's lamp is dark at rest
+// (ARM_LAMP_DARK_SHARE of the light), so it lights only while the arm
+// moves (DESIGN.md, Art direction); the other machines keep the lit look.
 emissive_brightness :: proc(kind: Motion_Kind, phase: f32, working: bool, light_tint: [3]f32) -> [3]f32 {
 	if !working {
-		return light_tint
+		return kind == .Arm ? light_tint * ARM_LAMP_DARK_SHARE : light_tint
 	}
 	if kind != .Glow {
 		return 1
@@ -274,12 +276,4 @@ model_light_cell :: proc(common: Entity_Common) -> World_Coordinate {
 		return common.origin + belt_direction_offset(common.rotation)
 	}
 	return {common.origin.x + common.size.x / 2, common.origin.y + common.size.y, common.origin.z + common.size.z / 2}
-}
-
-// Where the part's hand (Machine_Motion.hand) is in the world at the
-// phase, for the item an inserter holds.
-posed_hand_position :: proc(common: Entity_Common, machine: Machine, phase: f32) -> [3]f32 {
-	hand := footprint_point_to_model(machine.motion.hand, machine.footprint)
-	transform := model_transform(common.origin, common.size, common.rotation) * motion_transform(machine.motion, machine.footprint, phase)
-	return (transform * [4]f32{hand.x, hand.y, hand.z, 1}).xyz
 }

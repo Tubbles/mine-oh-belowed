@@ -464,3 +464,95 @@ test_inserter_state_text_names_the_held_item :: proc(t: ^testing.T) {
 	inserter.state = .Moving
 	testing.expect_value(t, inserter_state_text(inserter, content.items), "Moving")
 }
+
+// Work item 0175: the arm's reach on a foundation frame of the data's
+// pitch.
+
+data_foundation_pitch :: proc() -> int {
+	config, error := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	assert(error == nil)
+	return config.foundation_pitch_millimetres
+}
+
+// A frame of the data pitch with a burner arm at cell 0 facing +x, a
+// chest of plates source_distance cells behind it and an empty chest four
+// cells ahead.
+make_frame_chest_pair :: proc(world: ^World, content: Simulation_Content, source_distance: i32) -> Chest_Pair {
+	frame := add_frame(&world.entities.frames, {}, block_frame().axes, data_foundation_pitch())
+	place :: proc(world: ^World, content: Simulation_Content, machine: string, cell: World_Coordinate, frame: Frame_Id) -> Entity_Handle {
+		return add_entity(&world.entities, content.machines, test_machine(content.machines, machine), cell, 0, frame)
+	}
+	pair := Chest_Pair {
+		source   = place(world, content, "wooden_chest", {-source_distance, 0, 0}, frame),
+		inserter = place(world, content, "burner_inserter", {0, 0, 0}, frame),
+		target   = place(world, content, "wooden_chest", {4, 0, 0}, frame),
+	}
+	test_inserter(world, pair.inserter).slots[INSERTER_FUEL_SLOT] = Item_Stack{test_item(content.items, "coal"), 5}
+	entity_insert(&world.entities, content, pair.source, Item_Stack{test_item(content.items, "iron_plate"), 10})
+	return pair
+}
+
+@(test)
+test_a_two_metre_arm_on_the_data_frame_reaches_four_cells_not_five :: proc(t: ^testing.T) {
+	content := make_test_content()
+	plate := test_item(content.items, "iron_plate")
+	testing.expect_value(t, data_foundation_pitch(), 500)
+	for distance in i32(4) ..= 5 {
+		world := make_floor_world(content.blocks, 32)
+		records: Game_Records
+		pair := make_frame_chest_pair(&world, content, distance)
+		testing.expect_value(t, test_inserter(&world, pair.inserter).reach, 4)
+		tick_test_entities(&world, &records, content, 600)
+		moved := chest_count_of(&world, pair.target, plate)
+		if distance == 4 {
+			testing.expectf(t, moved > 0, "four cells away: %d plates moved", moved)
+		} else {
+			testing.expect_value(t, moved, 0)
+			testing.expect_value(t, chest_count_of(&world, pair.source, plate), 10)
+		}
+	}
+}
+
+@(test)
+test_the_block_frame_keeps_its_reach_in_cells :: proc(t: ^testing.T) {
+	content := make_test_content()
+	frame := block_frame()
+	testing.expect_value(t, inserter_reach_on_frame(content.machines.machines[test_machine(content.machines, "inserter")], frame), 1)
+	testing.expect_value(t, inserter_reach_on_frame(content.machines.machines[test_machine(content.machines, "long_inserter")], frame), 2)
+	frame.id, frame.pitch_millimetres = 1, 333
+	testing.expect_value(t, inserter_reach_on_frame(content.machines.machines[test_machine(content.machines, "inserter")], frame), 6)
+}
+
+// Two arms take from one belt that two others feed, the second only
+// ten plates: the upstream arm gets most of the items and the downstream
+// one what passes it, so they work at different rates and their cycles
+// drift apart; the arm's swing follows its own work, never a shared
+// clock.
+@(test)
+test_two_arms_on_one_belt_fall_out_of_step :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	records: Game_Records
+	plate := test_item(content.items, "iron_plate")
+	source := place_test_entity(&world, content, "wooden_chest", {-2, 1, 0})
+	entity_insert(&world.entities, content, source, Item_Stack{plate, 100})
+	place_fuelled_inserter(&world, content, {-1, 1, 0}, 0)
+	second_source := place_test_entity(&world, content, "wooden_chest", {0, 1, -2})
+	entity_insert(&world.entities, content, second_source, Item_Stack{plate, 10})
+	place_fuelled_inserter(&world, content, {0, 1, -1}, 1)
+	lay_belt_row(&world, content, {0, 1, 0}, 6, 0)
+	arms := [2]Entity_Handle{place_fuelled_inserter(&world, content, {1, 1, 1}, 1), place_fuelled_inserter(&world, content, {4, 1, 1}, 1)}
+	chests := [2]Entity_Handle{place_test_entity(&world, content, "wooden_chest", {1, 1, 2}), place_test_entity(&world, content, "wooden_chest", {4, 1, 2})}
+	tick_test_entities(&world, &records, content, 60 * TEST_TICK_RATE)
+	burner := content.machines.machines[test_machine(content.machines, "burner_inserter")]
+	counts := [2]int{chest_count_of(&world, chests[0], plate), chest_count_of(&world, chests[1], plate)}
+	testing.expectf(t, counts[0] > 0 && counts[1] > 0 && counts[0] != counts[1], "the arms moved %v plates", counts)
+	// Sampled over most of a cycle (100 ticks), the two never share a
+	// fraction.
+	for sample in 0 ..< 8 {
+		first, second := test_inserter(&world, arms[0])^, test_inserter(&world, arms[1])^
+		fractions := [2]f32{inserter_cycle_fraction(first, burner, TEST_TICK_RATE), inserter_cycle_fraction(second, burner, TEST_TICK_RATE)}
+		testing.expectf(t, fractions[0] != fractions[1], "sample %d: both arms at %v", sample, fractions[0])
+		tick_test_entities(&world, &records, content, 11)
+	}
+}

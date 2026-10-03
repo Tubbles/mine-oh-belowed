@@ -46,10 +46,13 @@ Model_Layer :: enum u8 {
 Model_Layers :: [Model_Layer]Model_Mesh
 
 // The body and the moving part (empty without one), and the height of the
-// highest voxel of either above the footprint's bottom, in blocks.
+// highest voxel of either above the footprint's bottom, in blocks. An
+// arm motion leaves body and part empty and fills arm (model_arm.odin),
+// its top the folded arm's on the block frame.
 Machine_Model_Mesh :: struct {
 	body: Model_Layers,
 	part: Model_Layers,
+	arm:  [Arm_Part]Model_Layers,
 	top:  f32,
 }
 
@@ -217,6 +220,7 @@ destroy_model_layers :: proc(meshes: Model_Layers) {
 destroy_machine_model_mesh :: proc(mesh: Machine_Model_Mesh) {
 	destroy_model_layers(mesh.body)
 	destroy_model_layers(mesh.part)
+	destroy_arm_part_meshes(mesh.arm)
 }
 
 // One above the highest filled voxel, 0 for an empty model.
@@ -241,6 +245,11 @@ model_part_id :: proc(model: string) -> string {
 // The machine's model and, for a motion that moves a part, its part file;
 // the problem names the machine, the file and the chunk.
 load_machine_model_mesh :: proc(data_directory: string, machine: Machine, allocator := context.allocator) -> (mesh: Machine_Model_Mesh, problem: string) {
+	if machine.motion.kind == .Arm {
+		mesh.arm, problem = load_arm_part_meshes(data_directory, machine, allocator)
+		mesh.top = arm_rest_top_metres(arm_dimensions_on_frame(machine.inserter_reach, BLOCK_FRAME_PITCH_MILLIMETRES))
+		return mesh, problem
+	}
 	body, part: model_vox.Voxel_Model
 	if body, problem = model_vox.load_voxel_model_file(model_vox.model_file_path(data_directory, machine.model), context.temp_allocator); problem != "" {
 		return {}, fmt.tprintf("machine %q: %s", machine.id, problem)
