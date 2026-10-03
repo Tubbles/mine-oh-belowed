@@ -23,6 +23,9 @@ Planet_Generation_Record :: struct {
 	// A tint is a hash modulo it; the colours stay the data's.
 	palette_length:                                 int,
 	relief_octaves:                                 [RELIEF_OCTAVE_COUNT]Relief_Octave,
+	// Zero (every term off, the relief of before) in a file written
+	// before it (0189).
+	relief_shape:                                   Relief_Shape,
 	springs:                                        []Planet_Spring,
 	// The home spawn (0179); home_recorded is false in a file written
 	// before it, which takes the data's home (resolve_world_planet).
@@ -40,6 +43,7 @@ planet_generation_record :: proc(planet: Planet) -> Planet_Generation_Record {
 		rotation_period_seconds = planet.rotation_period_seconds,
 		palette_length = len(planet.palette),
 		relief_octaves = planet.relief_octaves,
+		relief_shape = planet.relief_shape,
 		springs = planet.springs,
 		home = planet.home,
 		home_recorded = true,
@@ -64,6 +68,7 @@ make_recorded_planet :: proc(planet: Planet, record: Planet_Generation_Record, a
 	result.sea_level_metres = record.sea_level_metres
 	result.rotation_period_seconds = record.rotation_period_seconds
 	result.relief_octaves = record.relief_octaves
+	result.relief_shape = record.relief_shape
 	result.springs = slice.clone(record.springs, allocator)
 	if record.home_recorded {
 		result.home = record.home

@@ -58,11 +58,12 @@ import "platform"
 PLANET_PREVIEW_PLANET :: "home"
 PLANET_PREVIEW_START_HEIGHT_METRES :: 40
 PLANET_PREVIEW_START_PITCH :: -25
-// The cameras look towards longitude -105 (a yaw of 255 degrees looks
-// along longitude 255), where the default seed's hollows below the sea
-// level (data/planets.sjson) lie 70 to 500 m from the pole, so the start
-// shows the sea (0172).
-PLANET_PREVIEW_START_YAW :: 255
+// The cameras look towards longitude 132 (a yaw of 132 degrees looks
+// along longitude 132), towards the home of data/planets.sjson, whose
+// basins below the sea level lie about 1 km from the pole with the
+// default seed at 8 km (0189): the pole's own ground holds no sea within
+// 1 km.
+PLANET_PREVIEW_START_YAW :: 132
 // Above this height the fly speed grows in proportion, so the globe is a
 // short flight away.
 PLANET_PREVIEW_SPEED_HEIGHT_METRES :: 32

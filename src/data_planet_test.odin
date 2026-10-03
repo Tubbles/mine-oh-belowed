@@ -40,7 +40,41 @@ test_the_shipped_planets_file_loads :: proc(t: ^testing.T) {
 	testing.expect_value(t, home.radius_metres, 8000)
 	testing.expect_value(t, home.bedrock_depth_metres, 256)
 	testing.expect(t, slice.equal(home.radius_presets_metres, []int{4000, 8000, 16000}))
-	testing.expect_value(t, home.relief_octaves[0], Relief_Octave{512, 24})
+	testing.expect_value(t, home.relief_octaves[0], Relief_Octave{512, 10})
+	testing.expect(t, home.relief_shape.ledge_amplitude_millimetres > 0 && home.relief_shape.terrace_rise_millimetres > 0 && home.relief_shape.basin_depth_metres > 0, "the shipped home shapes its relief")
+}
+
+// The relief's shape (0189) is optional, off at zero without it; given,
+// every key of it is required and bounded while its term is on, and it
+// counts towards the relief's bound.
+@(test)
+test_a_planet_record_takes_an_optional_relief_shape :: proc(t: ^testing.T) {
+	record := string(TEST_PLANET_RECORD)
+	planets, problem := parse_planets_file(transmute([]byte)record, PLANETS_FILE_NAME, context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, planets[0].relief_shape, Relief_Shape{})
+	shape_line := "\trelief_shape = {ledge_wavelength_metres = 32, ledge_amplitude_millimetres = 700, ledge_sharpness = 64, terrace_rise_millimetres = 1200, terrace_riser_permille = 10, basin_depth_metres = 2, basin_threshold_percent = -30}\n"
+	shaped, _ := strings.replace(record, "\tpalette", strings.concatenate({shape_line, "\tpalette"}, context.temp_allocator), 1, context.temp_allocator)
+	shaped, _ = strings.replace(shaped, "amplitude_metres = 24", "amplitude_metres = 21", 1, context.temp_allocator)
+	planets, problem = parse_planets_file(transmute([]byte)shaped, PLANETS_FILE_NAME, context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, planets[0].relief_shape, Relief_Shape{32, 700, 64, 1200, 10, 2, -30})
+	replace :: proc(record, old, new: string) -> string {
+		replaced, _ := strings.replace(record, old, new, 1, context.temp_allocator)
+		return replaced
+	}
+	expect_planets_problem(t, replace(shaped, "ledge_sharpness = 64, ", ""), "planets[0].relief_shape is missing ledge_sharpness")
+	expect_planets_problem(t, replace(shaped, "ledge_sharpness = 64", "ledge_sharpness = 0"), "relief_shape.ledge_sharpness 0 is outside 1 to 256")
+	expect_planets_problem(t, replace(shaped, "ledge_wavelength_metres = 32", "ledge_wavelength_metres = 0"), "relief_shape.ledge_wavelength_metres 0 is outside 1 to 100000")
+	expect_planets_problem(t, replace(shaped, "terrace_riser_permille = 10", "terrace_riser_permille = 1001"), "relief_shape.terrace_riser_permille 1001 is outside 1 to 1000")
+	expect_planets_problem(t, replace(shaped, "terrace_rise_millimetres = 1200", "terrace_rise_millimetres = -1"), "relief_shape.terrace_rise_millimetres -1 is outside 0 to 34000")
+	expect_planets_problem(t, replace(shaped, "basin_threshold_percent = -30", "basin_threshold_percent = -100"), "relief_shape.basin_threshold_percent -100 is outside -99 to 100")
+	expect_planets_problem(t, replace(shaped, "basin_depth_metres = 2", "basin_depth_metres = 3"), "relief_octaves with the ledges and the basins add up to 34700 mm, more than 34000")
+	expect_planets_problem(t, replace(shaped, "basin_depth_metres = 2", "basin_depth_metres = 2, height = 1"), "unknown key planets[0].relief_shape.height")
+	// A term that is off leaves its other keys unchecked.
+	off := replace(replace(shaped, "ledge_amplitude_millimetres = 700", "ledge_amplitude_millimetres = 0"), "ledge_sharpness = 64", "ledge_sharpness = 0")
+	_, problem = parse_planets_file(transmute([]byte)off, PLANETS_FILE_NAME, context.temp_allocator)
+	testing.expect_value(t, problem, "")
 }
 
 @(test)
@@ -104,7 +138,7 @@ test_planet_records_refuse_unknown_keys_wrong_types_and_ranges :: proc(t: ^testi
 	expect_planets_problem(t, replace(record, "[4000, 8000]", "[8000, 200000]"), "radius_presets_metres[1]: radius_metres 200000 is outside 1 to 100000")
 	expect_planets_problem(t, replace(record, "[4000, 8000]", "[200, 8000]"), "radius_presets_metres[0]: bedrock_depth_metres 256 is outside 74 to 199")
 	// The relief's octaves.
-	expect_planets_problem(t, replace(record, "amplitude_metres = 24", "amplitude_metres = 25"), "relief_octaves add up to 35 m, more than 34")
+	expect_planets_problem(t, replace(record, "amplitude_metres = 24", "amplitude_metres = 25"), "relief_octaves with the ledges and the basins add up to 35000 mm, more than 34000")
 	expect_planets_problem(t, replace(record, "wavelength_metres = 32", "wavelength_metres = 0"), "relief_octaves[2].wavelength_metres 0 is outside 1 to 100000")
 	expect_planets_problem(t, replace(record, "amplitude_metres = 2}", "amplitude_metres = -1}"), "relief_octaves[2].amplitude_metres -1 is outside 0 to 34")
 	expect_planets_problem(t, replace(record, "wavelength_metres = 32, ", ""), "planets[0].relief_octaves[2] is missing wavelength_metres")

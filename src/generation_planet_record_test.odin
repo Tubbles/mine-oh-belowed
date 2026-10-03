@@ -22,6 +22,7 @@ expect_records_equal :: proc(t: ^testing.T, first, second: Planet_Generation_Rec
 	}
 	testing.expect_value(t, scalars(first), scalars(second), loc = location)
 	testing.expect_value(t, first.relief_octaves, second.relief_octaves, loc = location)
+	testing.expect_value(t, first.relief_shape, second.relief_shape, loc = location)
 	testing.expect(t, slice.equal(first.springs, second.springs), "the springs differ", loc = location)
 }
 
@@ -238,4 +239,32 @@ test_the_world_file_mode_is_a_known_name :: proc(t: ^testing.T) {
 	parsed, problem = parse_world_file(transmute([]byte)misspelt, context.temp_allocator)
 	testing.expect_value(t, problem, "")
 	testing.expect_value(t, parsed.settings.mode, World_Mode.Peaceful)
+}
+
+// A world file written before the relief's shape (0189) loads with every
+// term off, so the unedited ground round its saved chunks generates as it
+// did; a file written now keeps the shape it was made with.
+@(test)
+test_a_world_file_before_the_relief_shape_keeps_the_plain_relief :: proc(t: ^testing.T) {
+	planet := default_planet(shipped_test_planets())
+	record := planet_generation_record(planet)
+	testing.expect(t, record.relief_shape != {}, "the shipped home shapes its relief")
+	file := World_File {
+		format_version = SAVE_FORMAT_VERSION,
+		settings = {day_length_seconds = 1200},
+		planet_generation = record,
+	}
+	text := string(encode_world_file(file, context.temp_allocator))
+	parsed, problem := parse_world_file(transmute([]byte)text, context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, parsed.planet_generation.relief_shape, record.relief_shape)
+	start := strings.index(text, "relief_shape")
+	end := start + strings.index_byte(text[start:], '}') + 1
+	older := strings.concatenate({text[:start], text[end:]}, context.temp_allocator)
+	parsed, problem = parse_world_file(transmute([]byte)older, context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, parsed.planet_generation.relief_shape, Relief_Shape{})
+	testing.expect_value(t, parsed.planet_generation.relief_octaves, record.relief_octaves)
+	loaded := make_recorded_planet(planet, parsed.planet_generation, context.temp_allocator)
+	testing.expect_value(t, make_planet_generation(TEST_PLANET_SEED, loaded, 1000).relief_shape, Relief_Shape{})
 }

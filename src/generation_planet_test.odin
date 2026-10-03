@@ -206,3 +206,179 @@ test_generation_fills_the_sea_and_marks_the_springs :: proc(t: ^testing.T) {
 	// and +z.
 	testing.expect(t, sample.x > 90 && sample.x < 110 && sample.z > 90 && sample.z < 110, "the spring lies where its latitude and longitude say")
 }
+
+// The shipped home planet at a radius.
+shipped_test_home_at :: proc(radius_metres: int) -> Planet {
+	planet := default_planet(shipped_test_planets())
+	planet.radius_metres = radius_metres
+	return planet
+}
+
+// A point on the sphere of the generation's radius, offset in metres
+// along two tangents at a direction.
+test_sphere_point :: proc(generation: Planet_Generation, direction, forward, right: [3]i64, ahead, aside: i64) -> [3]i64 {
+	point := fixed_scale(direction, generation.radius) + fixed_scale(forward, metres_to_position_units(ahead)) + fixed_scale(right, metres_to_position_units(aside))
+	return project_onto_sphere(World_Position(point), vector_length(point), generation.radius)
+}
+
+// The zero shape (a planet or a world file without it) leaves the relief
+// the octaves' sum, as before 0189.
+@(test)
+test_the_relief_terms_are_off_at_zero :: proc(t: ^testing.T) {
+	generation := make_planet_generation(TEST_PLANET_SEED, make_test_planet(), 1000)
+	for index in i64(0) ..< 200 {
+		point := project_onto_sphere({index * 7919, generation.radius, -index * 4111}, generation.radius, generation.radius)
+		sum: i64 = 0
+		for octave, octave_index in generation.relief_octaves {
+			sum += metres_to_position_units(i64(octave.amplitude_metres)) * relief_octave_noise(generation, octave_index, octave.wavelength_metres, point) / NOISE_ONE
+		}
+		testing.expect_value(t, surface_relief(generation, point), sum)
+	}
+}
+
+// The ledges alone, on a chunk's width at the shipped home: a slope
+// steeper than the walkable angle of data/game.sjson, where the same
+// ground without the ledges stays walkable.
+@(test)
+test_the_ledges_make_a_slope_above_the_walkable_angle_within_a_chunk :: proc(t: ^testing.T) {
+	walkable_cosine := fixed_cosine(degrees_to_angle_units(test_field_game_config().field_player.walkable_angle_degrees))
+	planet := shipped_test_home_at(8000)
+	testing.expect(t, planet.relief_shape.ledge_amplitude_millimetres > 0, "the shipped home has ledges")
+	ledges_only := planet
+	for &octave in ledges_only.relief_octaves {
+		octave.amplitude_metres = 0
+	}
+	ledges_only.relief_shape = {ledge_wavelength_metres = planet.relief_shape.ledge_wavelength_metres, ledge_amplitude_millimetres = planet.relief_shape.ledge_amplitude_millimetres, ledge_sharpness = planet.relief_shape.ledge_sharpness}
+	flat := ledges_only
+	flat.relief_shape.ledge_sharpness = 1
+	steepest :: proc(planet: Planet) -> i64 {
+		generation := make_planet_generation(TEST_PLANET_SEED, planet, 1000)
+		home := planet_home_direction(planet.home)
+		forward := tangent_of(home, {UNIT_VECTOR_ONE, 0, 0})
+		right := fixed_cross(forward, home)
+		// Steps of a quarter metre across a chunk of 32 m at 1 m spacing.
+		run := i64(POSITION_UNITS_PER_METRE / 4)
+		lowest_cosine := i64(UNIT_VECTOR_ONE)
+		for ahead in i64(0) ..< FIELD_CHUNK_SIZE {
+			for quarter in i64(0) ..< 4 * FIELD_CHUNK_SIZE {
+				first := test_sphere_point(generation, home, forward, right, ahead, 0) + fixed_scale(right, quarter * run)
+				second := first + fixed_scale(right, run)
+				rise := surface_relief(generation, second) - surface_relief(generation, first)
+				slope, _ := normalize_fixed({run, rise, 0})
+				lowest_cosine = min(lowest_cosine, slope.x)
+			}
+		}
+		return lowest_cosine
+	}
+	testing.expectf(t, steepest(ledges_only) < walkable_cosine, "the ledges' steepest slope has the cosine %d, the walkable angle %d", steepest(ledges_only), walkable_cosine)
+	testing.expect(t, steepest(flat) > walkable_cosine, "the unsharpened ledges stay walkable")
+}
+
+// At every preset radius with the default seed: a hollow below the sea
+// level within 200 m of the home that the basin term made, the pod's site,
+// the spawn and the spring above the sea, so the spring's water runs down
+// into a pool rather than rising in the sea.
+@(test)
+test_the_basins_hold_the_sea_near_a_dry_home :: proc(t: ^testing.T) {
+	for radius in default_planet(shipped_test_planets()).radius_presets_metres {
+		planet := shipped_test_home_at(radius)
+		generation := make_planet_generation(DEFAULT_WORLD_SEED, planet, 1000)
+		home := planet_home_direction(planet.home)
+		forward := tangent_of(home, {UNIT_VECTOR_ONE, 0, 0})
+		right := fixed_cross(forward, home)
+		sea := metres_to_position_units(i64(planet.sea_level_metres))
+		found := false
+		for ahead := i64(-200); ahead <= 200 && !found; ahead += 4 {
+			for aside := i64(-200); aside <= 200 && !found; aside += 4 {
+				if ahead * ahead + aside * aside > 200 * 200 {
+					continue
+				}
+				point := test_sphere_point(generation, home, forward, right, ahead, aside)
+				long_noise := relief_octave_noise(generation, 0, planet.relief_octaves[0].wavelength_metres, point)
+				found = surface_relief(generation, point) < sea && basin_relief(long_noise, planet.relief_shape) < 0
+			}
+		}
+		testing.expectf(t, found, "%d m: no basin below the sea within 200 m of the home", radius)
+		site, _ := field_home_site(generation, planet)
+		feet := field_home_player(DEFAULT_WORLD_SEED, planet, 1000, 500).position
+		testing.expectf(t, vector_length(cast([3]i64)site) > generation.sea_radius, "%d m: the pod's site lies under the sea", radius)
+		testing.expectf(t, vector_length(cast([3]i64)feet) > generation.sea_radius, "%d m: the spawn lies under the sea", radius)
+		for spring in planet.springs {
+			surface := surface_relief(generation, fixed_scale(planet_spring_direction(spring), generation.radius))
+			testing.expectf(t, surface > sea, "%d m: the spring's ground lies %d units under the sea", radius, sea - surface)
+		}
+	}
+}
+
+// The relief stays within MAXIMUM_RELIEF_METRES with every term at its
+// strongest and the amplitudes using the whole bound.
+@(test)
+test_the_shaped_relief_stays_within_the_bound :: proc(t: ^testing.T) {
+	planet := make_test_planet()
+	planet.relief_octaves = {{512, 10}, {128, 5}, {32, 2}}
+	planet.relief_shape = {ledge_wavelength_metres = 16, ledge_amplitude_millimetres = 1000, ledge_sharpness = MAXIMUM_LEDGE_SHARPNESS, terrace_rise_millimetres = 1300, terrace_riser_permille = 1, basin_depth_metres = 16, basin_threshold_percent = 100}
+	testing.expect_value(t, planet_problem(planet), "")
+	bound := metres_to_position_units(MAXIMUM_RELIEF_METRES)
+	for shipped in ([2]bool{false, true}) {
+		if shipped {
+			planet = shipped_test_home_at(8000)
+		}
+		generation := make_planet_generation(TEST_PLANET_SEED, planet, 1000)
+		lowest, highest := bound, -bound
+		for index in i64(0) ..< 20_000 {
+			point := project_onto_sphere({index * 977 - 9_000_000, generation.radius, index * 1531 - 15_000_000}, generation.radius, generation.radius)
+			relief := surface_relief(generation, point)
+			lowest, highest = min(lowest, relief), max(highest, relief)
+		}
+		testing.expectf(t, lowest >= -bound && highest <= bound, "the relief spans %d to %d, the bound %d", lowest, highest, bound)
+	}
+}
+
+// The shaped home generates the same bytes twice at every spacing and
+// every preset radius, and other bytes than the unshaped one.
+@(test)
+test_the_shaped_home_generates_identical_bytes_twice :: proc(t: ^testing.T) {
+	for radius in default_planet(shipped_test_planets()).radius_presets_metres {
+		planet := shipped_test_home_at(radius)
+		unshaped := planet
+		unshaped.relief_shape = {}
+		for spacing in SAMPLE_SPACING_CHOICES_MILLIMETRES {
+			generation := make_planet_generation(DEFAULT_WORLD_SEED, planet, spacing)
+			site, _ := field_home_site(generation, planet)
+			coordinate := sample_to_field_chunk_coordinate(world_position_to_sample(site, spacing))
+			first := new(Field_Chunk, context.temp_allocator)
+			second := new(Field_Chunk, context.temp_allocator)
+			other := new(Field_Chunk, context.temp_allocator)
+			generate_field_chunk(DEFAULT_WORLD_SEED, planet, spacing, coordinate, first)
+			generate_field_chunk(DEFAULT_WORLD_SEED, planet, spacing, coordinate, second)
+			generate_field_chunk(DEFAULT_WORLD_SEED, unshaped, spacing, coordinate, other)
+			testing.expectf(t, field_chunk_equals(first, second), "%d m at %d mm: two generations differ", radius, spacing)
+			testing.expectf(t, !field_chunk_equals(first, other), "%d m at %d mm: the shape changed nothing", radius, spacing)
+		}
+	}
+}
+
+// The terms' pure parts: the ledge's profile is odd, bounded and
+// steepest at the zero; a terrace keeps whole rises and flattens a tread;
+// a basin is zero at its threshold and the depth at the lowest noise.
+@(test)
+test_the_relief_terms_shape_the_noise :: proc(t: ^testing.T) {
+	testing.expect_value(t, ledge_profile(0, 64), 0)
+	testing.expect_value(t, ledge_profile(NOISE_ONE, 64), NOISE_ONE)
+	testing.expect_value(t, ledge_profile(-NOISE_ONE, 64), -NOISE_ONE)
+	testing.expect_value(t, ledge_profile(-NOISE_ONE / 10, 64), -ledge_profile(NOISE_ONE / 10, 64))
+	testing.expect(t, ledge_profile(NOISE_ONE / 100, 64) > ledge_profile(NOISE_ONE / 100, 4), "sharper is steeper at the zero")
+	testing.expect_value(t, ledge_profile(NOISE_ONE / 2, 1), NOISE_ONE / 2)
+	testing.expect_value(t, fixed_power(NOISE_ONE / 2, 3), NOISE_ONE / 8)
+	shape := Relief_Shape{terrace_rise_millimetres = 1000, terrace_riser_permille = 100, basin_depth_metres = 10, basin_threshold_percent = -50}
+	rise := millimetres_to_position_units(1000)
+	testing.expect_value(t, terrace_height(2 * rise, shape), 2 * rise)
+	testing.expect_value(t, terrace_height(2 * rise + rise / 2, shape), 2 * rise)
+	testing.expect_value(t, terrace_height(-rise / 2, shape), -rise)
+	testing.expect_value(t, terrace_height(2 * rise + rise * 95 / 100, shape), 2 * rise + rise / 2)
+	testing.expect_value(t, terrace_height(12345, Relief_Shape{}), 12345)
+	testing.expect_value(t, basin_relief(-NOISE_ONE / 2, shape), 0)
+	testing.expect_value(t, basin_relief(0, shape), 0)
+	testing.expect_value(t, basin_relief(-NOISE_ONE, shape), -metres_to_position_units(10))
+	testing.expect_value(t, basin_relief(-NOISE_ONE * 3 / 4, shape), -metres_to_position_units(10) / 4)
+}

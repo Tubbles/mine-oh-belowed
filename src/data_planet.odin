@@ -22,11 +22,18 @@ MAXIMUM_RADIUS_PRESET_COUNT :: 8
 MAXIMUM_PLANET_ID_LENGTH :: 32
 // The relief is three octaves of value noise (generation_planet.odin).
 RELIEF_OCTAVE_COUNT :: 3
-// The most the octaves' amplitudes may add up to: the local surface lies
-// within this of the radius, which the generation's shortcuts, the
-// field's level of detail and its light bound the relief by.
+// The most the octaves' amplitudes, the ledges' amplitude and the
+// basins' depth may add up to (0189): the local surface lies within this of the
+// radius, which the generation's shortcuts, the field's level of detail
+// and its light bound the relief by.
 MAXIMUM_RELIEF_METRES :: 34
 MAXIMUM_RELIEF_WAVELENGTH_METRES :: 100_000
+// The ledges' profile raises 1 - |noise| to the sharpness (0189).
+MAXIMUM_LEDGE_SHARPNESS :: 256
+MAXIMUM_RELIEF_MILLIMETRES :: MAXIMUM_RELIEF_METRES * MILLIMETRES_PER_METRE
+// A planet record may leave out the relief's shape (0189): its terms are
+// off at zero, so a planet without it generates as before.
+OPTIONAL_PLANET_KEY :: "relief_shape"
 MAXIMUM_SURFACE_GRAVITY_CENTIMETRES_PER_SECOND_SQUARED :: 5000
 MINIMUM_ROTATION_PERIOD_SECONDS :: 60
 MAXIMUM_ROTATION_PERIOD_SECONDS :: 86_400
@@ -44,6 +51,26 @@ MAXIMUM_COLOR_COMPONENT :: 255
 Relief_Octave :: struct {
 	wavelength_metres: int,
 	amplitude_metres:  int,
+}
+
+// The relief's shape (work item 0189, generation_planet.odin), every
+// term off at zero. The ledges are one more octave of value noise read
+// through 1 - (1 - |noise|) raised to the sharpness with the noise's sign,
+// so the ground steps by up to twice the amplitude along the noise's zero
+// lines and stays flat between them. The basin deepens the first octave where
+// its noise lies below the threshold (a percentage of the noise's range,
+// -100 to 100) by up to the depth, growing with the square of the
+// distance below the threshold. The terrace breaks the first octave and
+// the basins into steps of the rise, each step's riser the given share (in
+// thousandths) of its span and the rest a flat tread.
+Relief_Shape :: struct {
+	ledge_wavelength_metres:     int,
+	ledge_amplitude_millimetres: int,
+	ledge_sharpness:             int,
+	terrace_rise_millimetres:    int,
+	terrace_riser_permille:      int,
+	basin_depth_metres:          int,
+	basin_threshold_percent:     int,
 }
 
 // A spring of the water field (work item 0172): the generator makes the
@@ -79,6 +106,8 @@ Planet :: struct {
 	rotation_period_seconds:                        int,
 	// The surface is the radius plus their sum, read on the sphere.
 	relief_octaves:                                 [RELIEF_OCTAVE_COUNT]Relief_Octave,
+	// Optional in the file (OPTIONAL_PLANET_KEY), off at zero (0189).
+	relief_shape:                                   Relief_Shape,
 	// Red, green, blue from 0 to 255; a sample's tint is an index into it.
 	palette:                                        [][3]int,
 }
@@ -87,12 +116,12 @@ Planets_File :: struct {
 	planets: []Planet,
 }
 
-// The first of type's keys that object lacks.
-missing_struct_key :: proc(type: typeid, object: json.Object) -> (key: string, missing: bool) {
+// The first of type's keys that object lacks, but the optional one.
+missing_struct_key :: proc(type: typeid, object: json.Object, optional := "") -> (key: string, missing: bool) {
 	for index in 0 ..< reflect.struct_field_count(type) {
 		field := reflect.struct_field_at(type, index)
 		key = configuration_key(field.name, field.tag)
-		if key not_in object {
+		if key not_in object && key != optional {
 			return key, true
 		}
 	}
@@ -105,8 +134,13 @@ missing_planet_key_problem :: proc(tree: json.Object, source: string) -> string 
 		return fmt.tprintf("%s: missing key %s", source, key)
 	}
 	for record, index in tree["planets"].(json.Array) {
-		if key, missing := missing_struct_key(Planet, record.(json.Object)); missing {
+		if key, missing := missing_struct_key(Planet, record.(json.Object), OPTIONAL_PLANET_KEY); missing {
 			return fmt.tprintf("%s: planets[%d] is missing %s", source, index, key)
+		}
+		if shape, is_object := record.(json.Object)[OPTIONAL_PLANET_KEY].(json.Object); is_object {
+			if key, missing := missing_struct_key(Relief_Shape, shape); missing {
+				return fmt.tprintf("%s: planets[%d].relief_shape is missing %s", source, index, key)
+			}
 		}
 		for spring, spring_index in record.(json.Object)["springs"].(json.Array) {
 			if key, missing := missing_struct_key(Planet_Spring, spring.(json.Object)); missing {
@@ -141,8 +175,11 @@ palette_problem :: proc(palette: [][3]int) -> string {
 	return ""
 }
 
-relief_problem :: proc(octaves: [RELIEF_OCTAVE_COUNT]Relief_Octave) -> string {
-	total := 0
+relief_problem :: proc(octaves: [RELIEF_OCTAVE_COUNT]Relief_Octave, shape: Relief_Shape) -> string {
+	if problem := relief_shape_problem(shape); problem != "" {
+		return problem
+	}
+	total := shape.ledge_amplitude_millimetres + shape.basin_depth_metres * MILLIMETRES_PER_METRE
 	for octave, index in octaves {
 		if octave.wavelength_metres < 1 || octave.wavelength_metres > MAXIMUM_RELIEF_WAVELENGTH_METRES {
 			return fmt.tprintf("relief_octaves[%d].wavelength_metres %d is outside 1 to %d", index, octave.wavelength_metres, MAXIMUM_RELIEF_WAVELENGTH_METRES)
@@ -150,10 +187,32 @@ relief_problem :: proc(octaves: [RELIEF_OCTAVE_COUNT]Relief_Octave) -> string {
 		if octave.amplitude_metres < 0 || octave.amplitude_metres > MAXIMUM_RELIEF_METRES {
 			return fmt.tprintf("relief_octaves[%d].amplitude_metres %d is outside 0 to %d", index, octave.amplitude_metres, MAXIMUM_RELIEF_METRES)
 		}
-		total += octave.amplitude_metres
+		total += octave.amplitude_metres * MILLIMETRES_PER_METRE
 	}
-	if total > MAXIMUM_RELIEF_METRES {
-		return fmt.tprintf("relief_octaves add up to %d m, more than %d", total, MAXIMUM_RELIEF_METRES)
+	if total > MAXIMUM_RELIEF_MILLIMETRES {
+		return fmt.tprintf("relief_octaves with the ledges and the basins add up to %d mm, more than %d", total, MAXIMUM_RELIEF_MILLIMETRES)
+	}
+	return ""
+}
+
+// A term's other keys are checked only while the term is on, so the zero
+// shape (a planet or a world file without it) passes.
+relief_shape_problem :: proc(shape: Relief_Shape) -> string {
+	switch {
+	case shape.ledge_amplitude_millimetres < 0 || shape.ledge_amplitude_millimetres > MAXIMUM_RELIEF_MILLIMETRES:
+		return fmt.tprintf("relief_shape.ledge_amplitude_millimetres %d is outside 0 to %d", shape.ledge_amplitude_millimetres, MAXIMUM_RELIEF_MILLIMETRES)
+	case shape.ledge_amplitude_millimetres > 0 && (shape.ledge_wavelength_metres < 1 || shape.ledge_wavelength_metres > MAXIMUM_RELIEF_WAVELENGTH_METRES):
+		return fmt.tprintf("relief_shape.ledge_wavelength_metres %d is outside 1 to %d", shape.ledge_wavelength_metres, MAXIMUM_RELIEF_WAVELENGTH_METRES)
+	case shape.ledge_amplitude_millimetres > 0 && (shape.ledge_sharpness < 1 || shape.ledge_sharpness > MAXIMUM_LEDGE_SHARPNESS):
+		return fmt.tprintf("relief_shape.ledge_sharpness %d is outside 1 to %d", shape.ledge_sharpness, MAXIMUM_LEDGE_SHARPNESS)
+	case shape.terrace_rise_millimetres < 0 || shape.terrace_rise_millimetres > MAXIMUM_RELIEF_MILLIMETRES:
+		return fmt.tprintf("relief_shape.terrace_rise_millimetres %d is outside 0 to %d", shape.terrace_rise_millimetres, MAXIMUM_RELIEF_MILLIMETRES)
+	case shape.terrace_rise_millimetres > 0 && (shape.terrace_riser_permille < 1 || shape.terrace_riser_permille > 1000):
+		return fmt.tprintf("relief_shape.terrace_riser_permille %d is outside 1 to 1000", shape.terrace_riser_permille)
+	case shape.basin_depth_metres < 0 || shape.basin_depth_metres > MAXIMUM_RELIEF_METRES:
+		return fmt.tprintf("relief_shape.basin_depth_metres %d is outside 0 to %d", shape.basin_depth_metres, MAXIMUM_RELIEF_METRES)
+	case shape.basin_depth_metres > 0 && (shape.basin_threshold_percent < -99 || shape.basin_threshold_percent > 100):
+		return fmt.tprintf("relief_shape.basin_threshold_percent %d is outside -99 to 100", shape.basin_threshold_percent)
 	}
 	return ""
 }
@@ -203,7 +262,7 @@ planet_problem :: proc(planet: Planet) -> string {
 	if problem := home_problem(planet.home); problem != "" {
 		return problem
 	}
-	if problem := relief_problem(planet.relief_octaves); problem != "" {
+	if problem := relief_problem(planet.relief_octaves, planet.relief_shape); problem != "" {
 		return problem
 	}
 	if planet.rain_fill_per_minute < 0 || planet.rain_fill_per_minute > MAXIMUM_RAIN_FILL_PER_MINUTE {

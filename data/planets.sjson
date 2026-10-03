@@ -1,5 +1,6 @@
 // The planets (work item 0168, doc/content.md, Planets). Every key is
-// required; the terrain field generates a planet from its record, the
+// required but relief_shape (0189), whose terms are off without it; the
+// terrain field generates a planet from its record, the
 // world seed and the sample spacing (generation_planet.odin). A world
 // records the values it was made with in its world.sjson; once the
 // session generates the field from them (0179), an edit here reshapes new
@@ -17,33 +18,62 @@ planets = [
 		// Below the radius, where bedrock starts.
 		bedrock_depth_metres = 256
 		// Above the radius. Every sample below it that is not ground is
-		// sea, full and static outside the simulated chunks. The pole
-		// (where the preview starts) lies about 9 m below the radius with
-		// the default seed, so the start is dry and hollows below 14 m
-		// show as sea from about 100 m away.
-		sea_level_metres = -14
+		// sea, full and static outside the simulated chunks. At 11 m below
+		// the radius the basins (relief_shape) fill: outside them the
+		// first octave lies at most 3.6 m below the radius (3 m at the
+		// basins' threshold, a terrace's rise less), and the other octaves
+		// and the ledges take it 7.7 m lower at most, so dry ground
+		// reaches the sea only where all of them are near their lowest.
+		sea_level_metres = -11
 		// Sources of the water field: the first air sample above the
-		// surface under each point. The pole is latitude 90 on +y. This
-		// one lies about 280 m from the pole on the slope above the
-		// hollows towards longitude -120.
+		// surface under each point. The pole is latitude 90 on +y. With
+		// the default seed this one lies 204 m from the home at 8 km
+		// (102 m at 4 km, 408 m at 16 km), above the sea at every preset,
+		// and its water runs down into a hollow below the sea about 30 m
+		// from it at 8 km.
 		springs = [
-			{latitude_degrees = 88, longitude_degrees = -120}
+			{latitude_degrees = 83, longitude_degrees = 144}
 		]
 		// Where a field session's players spawn, facing the first spring
 		// (work item 0179): the surface under the point, in whole degrees.
-		home = {latitude_degrees = 86, longitude_degrees = -115}
+		// With the default seed it stands 6 to 9 m above the sea at every
+		// preset on ground flat within 0.6 m over 4 m, a basin 86 to 144 m
+		// from it (0189).
+		home = {latitude_degrees = 83, longitude_degrees = 132}
 		// Fill per surface sample per minute (254 a sample), applied by
 		// the weather (M15).
 		rain_fill_per_minute = 2
 		rotation_period_seconds = 1200
 		// The surface is the radius plus three octaves of value noise read
 		// on the sphere, each its lattice spacing and the most it raises or
-		// lowers the ground; the amplitudes add up to 34 m at most.
+		// lowers the ground; the amplitudes, the ledges' amplitude and the
+		// basins' depth add up to 34 m at most (33.7 here).
 		relief_octaves = [
-			{wavelength_metres = 512, amplitude_metres = 24}
-			{wavelength_metres = 128, amplitude_metres = 8}
+			{wavelength_metres = 512, amplitude_metres = 10}
+			{wavelength_metres = 128, amplitude_metres = 5}
 			{wavelength_metres = 32, amplitude_metres = 2}
 		]
+		// The relief's shape (0189), each term off at zero. The ledges:
+		// one more octave of value noise read through 1 - (1 - |noise|)
+		// raised to the sharpness, with the noise's sign, so the ground
+		// steps by up to twice the amplitude (1.4 m, under the mantle's
+		// 1.5 m) along the noise's zero lines, the face steeper than the
+		// walkable angle where the noise changes fast. The terraces: the
+		// first octave and the basins in steps of the rise (under the
+		// mantle), each step's riser the given thousandths of its span
+		// and the rest a flat tread. The basins: where the first octave's
+		// noise lies below the threshold (percent of its range), the
+		// ground drops by up to the depth with the square of the share
+		// below it, so water gathers in a few hollows.
+		relief_shape = {
+			ledge_wavelength_metres = 32
+			ledge_amplitude_millimetres = 700
+			ledge_sharpness = 128
+			terrace_rise_millimetres = 1200
+			terrace_riser_permille = 10
+			basin_depth_metres = 16
+			basin_threshold_percent = -30
+		}
 		// The tints of the ground, red, green and blue from 0 to 255.
 		palette = [
 			[142, 118, 86]

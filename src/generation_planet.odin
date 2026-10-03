@@ -40,6 +40,7 @@ Planet_Generation :: struct {
 	// The sea's surface, the radius plus the sea level (0172).
 	sea_radius:          i64,
 	relief_octaves:      [RELIEF_OCTAVE_COUNT]Relief_Octave,
+	relief_shape:        Relief_Shape,
 	// The veins' discs round the home (0179, generation_planet_veins.odin).
 	veins:               Planet_Veins,
 }
@@ -59,6 +60,7 @@ make_planet_generation :: proc(seed: u64, planet: Planet, spacing_millimetres: i
 		palette_length = len(planet.palette),
 		sea_radius = metres_to_position_units(i64(planet.radius_metres + planet.sea_level_metres)),
 		relief_octaves = planet.relief_octaves,
+		relief_shape = planet.relief_shape,
 		veins = plan_planet_veins(seed, planet_home_direction(planet.home), radius),
 	}
 }
@@ -121,14 +123,94 @@ value_noise :: proc(seed: u64, point: [3]i64, wavelength: i64) -> i64 {
 	return corners[0]
 }
 
-// The local surface's height above the radius at a point on the sphere.
+// The local surface's height above the radius at a point on the sphere:
+// the octaves, the first shaped by the basins and the terraces, and the
+// ledges (0189, Relief_Shape). With the zero shape it is the octaves' sum.
 surface_relief :: proc(generation: Planet_Generation, point: [3]i64) -> i64 {
 	relief: i64 = 0
 	for octave, index in generation.relief_octaves {
-		noise := value_noise(generation_seed.hash_combine(generation.surface_seed, u64(index)), point, metres_to_position_units(i64(octave.wavelength_metres)))
-		relief += metres_to_position_units(i64(octave.amplitude_metres)) * noise / NOISE_ONE
+		noise := relief_octave_noise(generation, index, octave.wavelength_metres, point)
+		if index == 0 {
+			relief += long_octave_relief(noise, octave.amplitude_metres, generation.relief_shape)
+		} else {
+			relief += metres_to_position_units(i64(octave.amplitude_metres)) * noise / NOISE_ONE
+		}
 	}
-	return relief
+	return relief + ledge_relief(generation, point)
+}
+
+// The ledges' noise takes the seed after the octaves'.
+relief_octave_noise :: proc(generation: Planet_Generation, index, wavelength_metres: int, point: [3]i64) -> i64 {
+	return value_noise(generation_seed.hash_combine(generation.surface_seed, u64(index)), point, metres_to_position_units(i64(wavelength_metres)))
+}
+
+// The first octave with the basins added and then terraced, within its
+// amplitude above and its amplitude and the basins' depth below.
+long_octave_relief :: proc(noise: i64, amplitude_metres: int, shape: Relief_Shape) -> i64 {
+	amplitude := metres_to_position_units(i64(amplitude_metres))
+	height := amplitude * noise / NOISE_ONE + basin_relief(noise, shape)
+	lowest := -amplitude - metres_to_position_units(i64(shape.basin_depth_metres))
+	return clamp(terrace_height(height, shape), lowest, amplitude)
+}
+
+// Zero at and above the threshold, down to the depth where the noise is
+// lowest, growing with the square of the share below the threshold, so a
+// basin's rim leaves the ground without a crease.
+basin_relief :: proc(noise: i64, shape: Relief_Shape) -> i64 {
+	threshold := i64(shape.basin_threshold_percent) * NOISE_ONE / 100
+	if shape.basin_depth_metres == 0 || noise >= threshold {
+		return 0
+	}
+	share := min((threshold - noise) * NOISE_ONE / (threshold + NOISE_ONE), NOISE_ONE)
+	return -metres_to_position_units(i64(shape.basin_depth_metres)) * share / NOISE_ONE * share / NOISE_ONE
+}
+
+// Steps of the rise: within each, a flat tread for all but the riser's
+// share of the span, then the riser climbing the whole rise.
+terrace_height :: proc(height: i64, shape: Relief_Shape) -> i64 {
+	if shape.terrace_rise_millimetres == 0 {
+		return height
+	}
+	rise := millimetres_to_position_units(shape.terrace_rise_millimetres)
+	step := floor_divide_i64(height, rise)
+	within := height - step * rise
+	tread := rise * i64(1000 - shape.terrace_riser_permille) / 1000
+	climbed := within > tread ? (within - tread) * rise / (rise - tread) : 0
+	return step * rise + climbed
+}
+
+// The ledge's profile across the noise's zero, from -NOISE_ONE to
+// NOISE_ONE: 1 - (1 - |noise|) raised to the sharpness, with the noise's
+// sign. Steepest at the zero (the sharpness times the noise's slope) and
+// flat towards either side, so the ground steps once along each zero
+// line, the sharper the narrower the step.
+ledge_profile :: proc(noise: i64, sharpness: int) -> i64 {
+	shaped := fixed_power(NOISE_ONE - abs(noise), sharpness)
+	return noise < 0 ? shaped - NOISE_ONE : NOISE_ONE - shaped
+}
+
+// A fraction in 0 to NOISE_ONE raised to the exponent, by squaring.
+fixed_power :: proc(fraction: i64, exponent: int) -> i64 {
+	result: i64 = NOISE_ONE
+	base := fraction
+	for remaining := exponent; remaining > 0; remaining >>= 1 {
+		if remaining & 1 != 0 {
+			result = result * base / NOISE_ONE
+		}
+		base = base * base / NOISE_ONE
+	}
+	return result
+}
+
+// Within the ledge's amplitude either side; no noise is read while it is
+// off.
+ledge_relief :: proc(generation: Planet_Generation, point: [3]i64) -> i64 {
+	shape := generation.relief_shape
+	if shape.ledge_amplitude_millimetres == 0 {
+		return 0
+	}
+	noise := relief_octave_noise(generation, RELIEF_OCTAVE_COUNT, shape.ledge_wavelength_metres, point)
+	return millimetres_to_position_units(shape.ledge_amplitude_millimetres) * ledge_profile(noise, shape.ledge_sharpness) / NOISE_ONE
 }
 
 // The position scaled onto the sphere of the radius.
