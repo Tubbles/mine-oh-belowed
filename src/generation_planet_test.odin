@@ -166,3 +166,42 @@ test_bedrock_at_the_minimum_depth_comes_from_the_full_computation :: proc(t: ^te
 	testing.expect_value(t, planet_sample(generation, position).material, Field_Material.Bedrock)
 	testing.expect_value(t, planet_sample(generation, position + {1, 0, 0}).material, Field_Material.Deep_Stone)
 }
+
+// Every sample below sea level that is not ground holds the sea's fill,
+// nothing else holds water, and a spring's sample is a full, awake source
+// in air.
+@(test)
+test_generation_fills_the_sea_and_marks_the_springs :: proc(t: ^testing.T) {
+	planet := make_test_planet()
+	sea_level := field_sea_level(planet, 1000)
+	seen_sea := false
+	for y in i32(248) ..= 251 {
+		chunk := generate_test_field_chunk({0, y, 0})
+		origin := field_chunk_origin(chunk.coordinate)
+		for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
+			sea := field_sea_fill(sea_level, field_water_span(origin + Sample_Coordinate(field_index_to_local(index))))
+			if chunk.density[index] > 0 {
+				sea = 0
+			}
+			testing.expect_value(t, i32(chunk.water[index]), sea)
+			seen_sea ||= sea > 0
+		}
+		testing.expect(t, !field_sample_bits_any(&chunk.water_awake), "the sea sleeps")
+	}
+	testing.expect(t, seen_sea, "the chunks reach the sea")
+
+	springs := []Planet_Spring{{latitude_degrees = 89, longitude_degrees = 45}}
+	planet.springs = springs
+	generation := make_planet_generation(TEST_PLANET_SEED, planet, 1000)
+	sample, found := planet_spring_sample(generation, springs[0])
+	testing.expect(t, found, "the spring finds air above its surface")
+	chunk := new(Field_Chunk, context.temp_allocator)
+	generate_field_chunk(TEST_PLANET_SEED, planet, 1000, sample_to_field_chunk_coordinate(sample), chunk)
+	index := sample_to_field_index(sample)
+	testing.expect(t, chunk.density[index] <= 0, "the spring is in air")
+	testing.expect_value(t, chunk.water[index], FIELD_WATER_FULL)
+	testing.expect(t, field_sample_bit(&chunk.water_source, index) && field_sample_bit(&chunk.water_awake, index))
+	// Latitude 89 lies about 140 m from the pole, longitude 45 between +x
+	// and +z.
+	testing.expect(t, sample.x > 90 && sample.x < 110 && sample.z > 90 && sample.z < 110, "the spring lies where its latitude and longitude say")
+}

@@ -59,26 +59,44 @@ FIELD_AIR_SAMPLE :: Field_Sample {
 	material = .Air,
 }
 
-// Three parallel arrays instead of an array of Field_Sample: the mesher
-// reads the densities alone, and the save codec run length encodes each
-// array on its own, where materials and tints run far longer than the
-// three bytes interleaved would.
+// Parallel arrays instead of an array of Field_Sample: the mesher reads
+// the densities alone, and the save codec run length encodes each array on
+// its own, where materials and tints run far longer than the bytes
+// interleaved would. The water field (0172, world_field_water.odin) is
+// addressed like the terrain: a fill per sample (0 empty to
+// FIELD_WATER_FULL), the ticks it has been still, the fill that moved out
+// of it in the last tick (flow, for hydro; not saved), and one bit per
+// sample for awake and for source.
 Field_Chunk :: struct {
-	coordinate: Field_Chunk_Coordinate,
-	density:    [FIELD_CHUNK_SAMPLE_COUNT]i8,
-	material:   [FIELD_CHUNK_SAMPLE_COUNT]Field_Material,
-	tint:       [FIELD_CHUNK_SAMPLE_COUNT]u8,
-	dirty:      bool,
+	coordinate:   Field_Chunk_Coordinate,
+	density:      [FIELD_CHUNK_SAMPLE_COUNT]i8,
+	material:     [FIELD_CHUNK_SAMPLE_COUNT]Field_Material,
+	tint:         [FIELD_CHUNK_SAMPLE_COUNT]u8,
+	water:        [FIELD_CHUNK_SAMPLE_COUNT]u8,
+	water_still:  [FIELD_CHUNK_SAMPLE_COUNT]u8,
+	water_flow:   [FIELD_CHUNK_SAMPLE_COUNT]u8,
+	water_awake:  Field_Sample_Bits,
+	water_source: Field_Sample_Bits,
+	dirty:        bool,
 }
 
 // Chunks are heap allocated, as the block world's are, so growing the map
-// never moves a 96 KiB chunk.
+// never moves a 200 KiB chunk.
 Field_World :: struct {
-	chunks:        map[Field_Chunk_Coordinate]^Field_Chunk,
+	chunks:             map[Field_Chunk_Coordinate]^Field_Chunk,
 	// Chunks a set changed since the streaming last took them, so the
 	// coarser levels of detail over them mesh again
 	// (mark_edited_coarse_nodes).
-	edited_chunks: map[Field_Chunk_Coordinate]struct{},
+	edited_chunks:      map[Field_Chunk_Coordinate]struct{},
+	// Chunks with an awake water sample, which the water step visits in
+	// coordinate order (step_field_water).
+	water_awake_chunks: map[Field_Chunk_Coordinate]struct{},
+	// Water a terrain place displaced and no neighbour had room for
+	// (displace_field_water).
+	water_dropped:      i64,
+	// The planet as the water reads it, set by the world's owner
+	// (make_field_water_planet); zero is a world with no sea.
+	water_planet:       Field_Water_Planet,
 }
 
 sample_spacing_is_valid :: proc(millimetres: int) -> bool {
@@ -182,9 +200,11 @@ field_world_set_sample :: proc(world: ^Field_World, sample: Sample_Coordinate, v
 	if chunk == nil {
 		return false
 	}
-	field_chunk_set_sample(chunk, sample_to_field_index(sample), value)
+	index := sample_to_field_index(sample)
+	field_chunk_set_sample(chunk, index, value)
 	mark_field_chunks_around_sample_dirty(world, chunk.coordinate, sample)
 	world.edited_chunks[chunk.coordinate] = {}
+	follow_field_terrain_with_water(world, chunk, index, sample)
 	return true
 }
 
@@ -212,13 +232,18 @@ mark_field_chunks_around_sample_dirty :: proc(world: ^Field_World, coordinate: F
 }
 
 // Takes ownership of a chunk made with new; it starts dirty so the mesher
-// meshes it once.
+// meshes it once. The water beside it wakes (wake_field_water_facing), so
+// water held by the missing chunk flows on.
 field_world_insert_chunk :: proc(world: ^Field_World, chunk: ^Field_Chunk) {
 	chunk.dirty = true
 	if old := world.chunks[chunk.coordinate] or_else nil; old != nil {
 		free(old)
 	}
 	world.chunks[chunk.coordinate] = chunk
+	if field_sample_bits_any(&chunk.water_awake) {
+		world.water_awake_chunks[chunk.coordinate] = {}
+	}
+	wake_field_water_facing(world, chunk.coordinate)
 }
 
 destroy_field_world :: proc(world: ^Field_World) {
@@ -227,5 +252,6 @@ destroy_field_world :: proc(world: ^Field_World) {
 	}
 	delete(world.chunks)
 	delete(world.edited_chunks)
+	delete(world.water_awake_chunks)
 	world^ = {}
 }

@@ -218,19 +218,38 @@ field_grid_generation :: proc(generation: Planet_Generation, step: i32) -> Plane
 // the step, floored as depth_to_density floors (ground stays at least 1),
 // so a dig or a place shows; the material and tint are the chunk's.
 coarse_field_sample :: proc(loaded, generated: Field_Sample, step: i32) -> Field_Sample {
-	if abs(loaded.density) == MAXIMUM_DENSITY && (loaded.density > 0) == (generated.density > 0) {
-		return {generated.density, loaded.material, loaded.tint}
+	return {coarse_field_density(loaded.density, generated.density, step), loaded.material, loaded.tint}
+}
+
+// A coarse grid's water from a loaded sample (0172), as
+// coarse_field_density: full water (or empty air and ground) on the
+// generated sea's side keeps the generated density, which is a distance
+// in the grid's spacing; anything else is its density over the step.
+coarse_field_water_density :: proc(loaded, generated: i8, step: i32) -> i8 {
+	if (loaded >= FIELD_WATER_DENSITY_HALF && generated > 0) || (loaded <= -FIELD_WATER_DENSITY_HALF && generated <= 0) {
+		return generated
 	}
-	density := floor_divide_i64(i64(loaded.density), i64(step))
-	if loaded.density > 0 {
+	return coarse_field_density(loaded, generated, step)
+}
+
+// The density part of coarse_field_sample.
+coarse_field_density :: proc(loaded, generated: i8, step: i32) -> i8 {
+	if abs(loaded) == MAXIMUM_DENSITY && (loaded > 0) == (generated > 0) {
+		return generated
+	}
+	density := floor_divide_i64(i64(loaded), i64(step))
+	if loaded > 0 {
 		density = max(density, 1)
 	}
-	return {i8(density), loaded.material, loaded.tint}
+	return i8(density)
 }
 
 // The node's grid from the generation, every step-th sample; a sample the
 // grid took from a loaded chunk (loaded set) goes through
-// coarse_field_sample. Safe on any thread.
+// coarse_field_sample. The water of a sample not loaded is the sea level
+// rule (planet_sea_density), of a loaded one its fill through
+// coarse_field_water_density, so the sea shows at every level. Safe on any
+// thread.
 generate_field_grid :: proc(generation: Planet_Generation, node: Field_Node, grid: ^Field_Grid) {
 	grid.origin = field_node_origin(node)
 	grid.step = field_node_step(node)
@@ -239,12 +258,16 @@ generate_field_grid :: proc(generation: Planet_Generation, node: Field_Node, gri
 		for y in i32(-1) ..= FIELD_GRID_CELLS {
 			for x in i32(-1) ..= FIELD_GRID_CELLS {
 				sample := grid.origin + Sample_Coordinate([3]i32{x, y, z} * grid.step)
-				value := planet_sample(density_generation, sample_to_world_position(sample, generation.spacing_millimetres))
+				position := sample_to_world_position(sample, generation.spacing_millimetres)
+				value := planet_sample(density_generation, position)
+				water := planet_sea_density(density_generation, position, value.density)
 				index := field_grid_index({x, y, z})
 				if grid.loaded[index] {
 					value = coarse_field_sample({grid.density[index], grid.material[index], grid.tint[index]}, value, grid.step)
+					water = coarse_field_water_density(grid.water[index], water, grid.step)
 				}
 				grid.density[index], grid.material[index], grid.tint[index] = value.density, value.material, value.tint
+				grid.water[index] = water
 			}
 		}
 	}
@@ -298,6 +321,7 @@ gather_coarse_field_grid :: proc(world: ^Field_World, node: Field_Node, allocato
 				index := field_grid_index({x, y, z})
 				source := sample_to_field_index(sample)
 				grid.density[index], grid.material[index], grid.tint[index] = chunk.density[source], chunk.material[source], chunk.tint[source]
+				grid.water[index] = field_water_density(chunk.density[source], chunk.water[source], sample)
 				grid.loaded[index] = true
 			}
 		}

@@ -37,13 +37,16 @@ FIELD_FULL_DAYLIGHT :: 255
 // step is step samples. Filled from the loaded chunks for the finest level
 // (gather_field_grid) and from the generation for the coarser ones
 // (generate_field_grid), which keeps the samples a coarser grid took from
-// loaded chunks (gather_coarse_field_grid, loaded set).
+// loaded chunks (gather_coarse_field_grid, loaded set). water is the water
+// field as a density (field_water_density), meshed as a second surface
+// (0172, mesh_field_water_grid).
 Field_Grid :: struct {
 	origin:   Sample_Coordinate,
 	step:     i32,
 	density:  [FIELD_GRID_SAMPLE_COUNT]i8,
 	material: [FIELD_GRID_SAMPLE_COUNT]Field_Material,
 	tint:     [FIELD_GRID_SAMPLE_COUNT]u8,
+	water:    [FIELD_GRID_SAMPLE_COUNT]i8,
 	loaded:   [FIELD_GRID_SAMPLE_COUNT]bool,
 }
 
@@ -125,10 +128,12 @@ copy_field_grid_part :: proc(grid: ^Field_Grid, chunk: ^Field_Chunk, offset: [3]
 				index := field_grid_index({x, y, z})
 				if chunk == nil {
 					grid.density[index], grid.material[index], grid.tint[index] = FIELD_AIR_SAMPLE.density, FIELD_AIR_SAMPLE.material, FIELD_AIR_SAMPLE.tint
+					grid.water[index] = -MAXIMUM_DENSITY
 					continue
 				}
 				source := field_local_to_index({x %% FIELD_CHUNK_SIZE, y %% FIELD_CHUNK_SIZE, z %% FIELD_CHUNK_SIZE})
 				grid.density[index], grid.material[index], grid.tint[index] = chunk.density[source], chunk.material[source], chunk.tint[source]
+				grid.water[index] = field_water_density(chunk.density[source], chunk.water[source], grid.origin + Sample_Coordinate([3]i32{x, y, z}))
 			}
 		}
 	}
@@ -352,11 +357,25 @@ make_field_mesh_data :: proc(allocator := context.allocator) -> Field_Mesh_Data 
 	}
 }
 
-// The worker's whole job for one node: the surface, its skirts, the
+// The worker's job for one node's terrain: the surface, its skirts, the
 // vertex arrays. The surface is temporary.
 mesh_field_grid :: proc(grid: ^Field_Grid, palette: [][3]int, spacing_millimetres: int, allocator := context.allocator) -> Field_Mesh_Data {
 	surface := mesh_field_surface(grid, palette, context.temp_allocator)
 	append_field_skirts(&surface)
+	return field_mesh_from_surface(surface, grid.step, spacing_millimetres, allocator)
+}
+
+// The water's surface of the same grid (0172): the mesher over the water
+// densities, without material or tint, since the field shader colours the
+// water pass by a uniform. No skirts: the water's open border also runs
+// along its faces against the ground, whose gradient points out of the
+// ground, so a skirt there would stand up out of the water as a fin; the
+// strip between two levels of detail stays open instead.
+mesh_field_water_grid :: proc(grid: ^Field_Grid, palette: [][3]int, spacing_millimetres: int, allocator := context.allocator) -> Field_Mesh_Data {
+	water := new(Field_Grid, context.temp_allocator)
+	water.origin, water.step = grid.origin, grid.step
+	water.density = grid.water
+	surface := mesh_field_surface(water, palette, context.temp_allocator)
 	return field_mesh_from_surface(surface, grid.step, spacing_millimetres, allocator)
 }
 

@@ -9,8 +9,22 @@ planets = [
 		surface_gravity_centimetres_per_second_squared = 981
 		// Below the radius, where bedrock starts.
 		bedrock_depth_metres = 256
-		// Above the radius.
-		sea_level_metres = 0
+		// Above the radius. Every sample below it that is not ground is
+		// sea, full and static outside the simulated chunks. The pole
+		// (where the preview starts) lies about 9 m below the radius with
+		// the default seed, so the start is dry and hollows below 14 m
+		// show as sea from about 100 m away.
+		sea_level_metres = -14
+		// Sources of the water field: the first air sample above the
+		// surface under each point. The pole is latitude 90 on +y. This
+		// one lies about 280 m from the pole on the slope above the
+		// hollows towards longitude -120.
+		springs = [
+			{latitude_degrees = 88, longitude_degrees = -120}
+		]
+		// Fill per surface sample per minute (254 a sample), applied by
+		// the weather (M15).
+		rain_fill_per_minute = 2
 		rotation_period_seconds = 1200
 		// The tints of the ground, red, green and blue from 0 to 255.
 		palette = [

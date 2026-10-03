@@ -1,6 +1,6 @@
 # Code map
 
-The entry page for the source: 228 files under `src/` plus 161 test files beside them. 206 are the `game` package, grouped into seven clusters; 22 are seven leaf packages under `src/` (section Packages), each a cluster named after its directory. Read the cluster table, pick a cluster, open its entry file; the section of each cluster lists its files in reading order. How the parts work is in [architecture.md](architecture.md), the why of the clusters in the audits under [audit/](audit/).
+The entry page for the source: 229 files under `src/` plus 162 test files beside them. 207 are the `game` package, grouped into seven clusters; 22 are seven leaf packages under `src/` (section Packages), each a cluster named after its directory. Read the cluster table, pick a cluster, open its entry file; the section of each cluster lists its files in reading order. How the parts work is in [architecture.md](architecture.md), the why of the clusters in the audits under [audit/](audit/).
 
 - Rule: a new file goes into a cluster and takes one of its file name prefixes (or a line in the file table of `tools/code_graph.py`); a reference against the allowed dependency table below is a finding until it is refactored away.
 - The map is kept true by two checks: `python3 tools/check_docs.py` checks every backticked file and name in it, and `python3 tools/code_graph.py --check doc/code_map.md` compares every cluster edge the allowed table does not allow with the map's record of it ([build.md](build.md), Source checks).
@@ -13,7 +13,7 @@ The entry page for the source: 228 files under `src/` plus 161 test files beside
 |---|---|---|---|---|---|
 | loop | the process: start-up, the frame, when the tick runs (the lockstep driver), sessions, the network and the server, the requests served between frames | `loop.odin` | 10 | 6251 | [loop](audit/loop.md) |
 | ui | the input layer, the immediate mode toolkit, every screen, the HUD and the touch overlay | `ui_core.odin` | 49 | 17211 | [ui](audit/ui.md) |
-| world | blocks and what follows a block: chunks, light, water, meshing, streaming, generation, the save codec; the terrain field beside them (M13) | `world_chunk.odin` | 44 | 11956 | [world](audit/world.md) |
+| world | blocks and what follows a block: chunks, light, water, meshing, streaming, generation, the save codec; the terrain field beside them (M13) | `world_chunk.odin` | 45 | 12604 | [world](audit/world.md) |
 | simulation | the factory per tick: entity pools, networks, players, inventories, crafting, statistics, the game's records | `entity.odin` | 44 | 17493 | [simulation](audit/simulation.md) |
 | presentation | pixels and sound from the world and the tick: shaders, atlases, models, sky, weather, particles, audio, the window | `render_chunks.odin` | 35 | 8820 | [presentation](audit/presentation.md) |
 | content | data files into typed tables, the string table, configuration and settings | `data_reload.odin` | 16 | 5339 | [content](audit/content.md) |
@@ -119,6 +119,7 @@ The world owns blocks and what is derived from blocks; generation is a pure func
   - `world_streaming.odin`: `Chunk_Streaming`, workers, insert, unload, mesh revisions.
   - `world_field.odin`, `world_field_codec.odin`: the terrain field (0168): `Field_Chunk`, `Field_World`, `World_Position` and the sample conversions, get and set, dirty marking; the field chunk's delta bytes.
   - `world_field_mesh.odin`, `world_field_lod.odin`, `world_field_streaming.odin`: the field mesher (0169), `Field_Grid`, `gather_field_grid`, `mesh_field_surface`, `field_mesh_from_surface`; the level of detail, `Field_Node`, `select_field_nodes`, `generate_field_grid`, `append_field_skirts`; `Field_Streaming`, its workers and mesh revisions.
+  - `world_field_water.odin`: the water field (0172), `Field_Water_Tuning`, `step_field_water` in chunk and sample order, the potential, sleeping and waking, the sources and films, `displace_field_water`, `field_water_density` for the mesher.
   - `world_field_edit.odin`: the brush edits (0171), `Field_Edit`, `apply_field_edit` in one sample order, the level plane, `field_place_meets_capsule` (the bury dry run), `field_ground_sample_at`.
   - `world_field_vector.odin`, `world_field_distance.odin`, `world_field_raycast.odin`: fixed point unit vectors and angles, `fixed_sine` (0170); the field as a signed distance, `field_density_at` and `field_surface_probe`; `raycast_field`, the field's counterpart of the voxel walk.
   - `world_vein.odin`, `world_explored.odin`: the vein registry and outcrops; explored columns for the map.

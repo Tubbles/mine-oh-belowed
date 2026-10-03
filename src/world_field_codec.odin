@@ -6,18 +6,51 @@ import "run_length"
 
 // Field chunk delta bytes (work item 0168), all integers little endian:
 //   u16 version, i32 chunk x, y, z,
-//   then for the densities, the materials and the tints in that order:
+//   then for each plane in this order: the densities, the materials, the
+//   tints, the water fills, the water's still ticks (0172), the awake bits
+//   and the source bits (each as FIELD_SAMPLE_BIT_BYTES bytes, the words
+//   little endian):
 //   u32 run count, run count times (u8 value, u32 count).
 // A chunk equal to its generation writes nothing and regenerates from the
-// seed; a changed chunk is written whole. The version follows the block
-// chunk's CHUNK_FORMAT_VERSION (1), so block chunk bytes are refused by
-// name.
+// seed; a changed chunk is written whole. The water's flow is measured
+// again each tick and not written. The version follows the block chunk's
+// CHUNK_FORMAT_VERSION (1), so block chunk bytes are refused by name;
+// version 2 had no water and is refused too, since the field is not saved
+// yet.
 
-FIELD_CHUNK_FORMAT_VERSION :: 2
+FIELD_CHUNK_FORMAT_VERSION :: 3
 FIELD_RUN_BYTE_SIZE :: 5
+FIELD_SAMPLE_BIT_BYTES :: FIELD_CHUNK_SAMPLE_COUNT / 8
+FIELD_CHUNK_PLANE_COUNT :: 7
 
 field_chunk_equals :: proc(first, second: ^Field_Chunk) -> bool {
-	return slice.equal(first.density[:], second.density[:]) && slice.equal(first.material[:], second.material[:]) && slice.equal(first.tint[:], second.tint[:])
+	return(
+		slice.equal(first.density[:], second.density[:]) &&
+		slice.equal(first.material[:], second.material[:]) &&
+		slice.equal(first.tint[:], second.tint[:]) &&
+		slice.equal(first.water[:], second.water[:]) &&
+		slice.equal(first.water_still[:], second.water_still[:]) &&
+		first.water_awake == second.water_awake &&
+		first.water_source == second.water_source \
+	)
+}
+
+field_sample_bits_to_bytes :: proc(bits: Field_Sample_Bits) -> []u8 {
+	bytes := make([]u8, FIELD_SAMPLE_BIT_BYTES, context.temp_allocator)
+	for word, word_index in bits {
+		for byte_index in 0 ..< 8 {
+			bytes[word_index * 8 + byte_index] = u8(word >> uint(8 * byte_index))
+		}
+	}
+	return bytes
+}
+
+field_sample_bits_from_bytes :: proc(bytes: []u8) -> Field_Sample_Bits {
+	bits: Field_Sample_Bits
+	for value, index in bytes {
+		bits[index / 8] |= u64(value) << uint(8 * (index % 8))
+	}
+	return bits
 }
 
 append_i32 :: proc(bytes: ^[dynamic]byte, value: i32) {
@@ -47,9 +80,18 @@ encode_field_chunk_delta :: proc(chunk, generated: ^Field_Chunk, allocator := co
 	for axis in 0 ..< 3 {
 		append_i32(&bytes, chunk.coordinate[axis])
 	}
-	append_field_plane(&bytes, transmute([]u8)chunk.density[:])
-	append_field_plane(&bytes, transmute([]u8)chunk.material[:])
-	append_field_plane(&bytes, chunk.tint[:])
+	planes := [FIELD_CHUNK_PLANE_COUNT][]u8 {
+		transmute([]u8)chunk.density[:],
+		transmute([]u8)chunk.material[:],
+		chunk.tint[:],
+		chunk.water[:],
+		chunk.water_still[:],
+		field_sample_bits_to_bytes(chunk.water_awake),
+		field_sample_bits_to_bytes(chunk.water_source),
+	}
+	for plane in planes {
+		append_field_plane(&bytes, plane)
+	}
 	return bytes[:]
 }
 
@@ -95,15 +137,24 @@ decode_field_chunk_delta :: proc(data: []byte, chunk: ^Field_Chunk) -> (problem:
 		}
 		decoded.coordinate[axis] = i32(value)
 	}
-	planes := [3][]u8{transmute([]u8)decoded.density[:], transmute([]u8)decoded.material[:], decoded.tint[:]}
+	awake := make([]u8, FIELD_SAMPLE_BIT_BYTES, context.temp_allocator)
+	source := make([]u8, FIELD_SAMPLE_BIT_BYTES, context.temp_allocator)
+	planes := [FIELD_CHUNK_PLANE_COUNT][]u8{transmute([]u8)decoded.density[:], transmute([]u8)decoded.material[:], decoded.tint[:], decoded.water[:], decoded.water_still[:], awake, source}
 	for plane in planes {
 		if !read_field_plane(&reader, plane) {
 			return "field chunk: malformed sample runs"
 		}
 	}
 	if reader.offset != len(data) {
-		return "field chunk: bytes after the tints"
+		return "field chunk: bytes after the source bits"
 	}
+	for fill in decoded.water {
+		if fill > FIELD_WATER_FULL {
+			return fmt.tprintf("field chunk: water fill %d is above %d", fill, FIELD_WATER_FULL)
+		}
+	}
+	decoded.water_awake = field_sample_bits_from_bytes(awake)
+	decoded.water_source = field_sample_bits_from_bytes(source)
 	for material in decoded.material {
 		if material > max(Field_Material) {
 			return fmt.tprintf("field chunk: unknown material %d", u8(material))

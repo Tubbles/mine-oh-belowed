@@ -93,6 +93,7 @@ Field_Simulation_Content :: struct {
 	materials: Field_Material_Table,
 	brushes:   []Field_Brush,
 	tuning:    Field_Player_Tuning,
+	water:     Field_Water_Tuning,
 }
 
 destroy_field_simulation :: proc(simulation: ^Field_Simulation) {
@@ -401,8 +402,11 @@ queue_field_player_edits :: proc(simulation: ^Field_Simulation, content: Field_S
 	}
 }
 
+// The players, the edits, then the water (0172), so a hole dug this tick
+// floods on the next.
 tick_field_simulation :: proc(simulation: ^Field_Simulation, content: Field_Simulation_Content, inputs: []Field_Player_Input) {
 	simulation.tick += 1
 	queue_field_player_edits(simulation, content, inputs)
 	drain_field_edits(simulation, content)
+	step_field_water(&simulation.world, content.water, simulation.tick)
 }

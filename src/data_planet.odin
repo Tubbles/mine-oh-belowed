@@ -21,7 +21,18 @@ MAXIMUM_ROTATION_PERIOD_SECONDS :: 86_400
 // lowest relief never shows bedrock in place of topsoil.
 MINIMUM_BEDROCK_DEPTH_METRES :: int(MAXIMUM_RELIEF_METRES + DEEP_STONE_DEPTH_METRES)
 MAXIMUM_PALETTE_LENGTH :: 256
+MAXIMUM_SPRING_COUNT :: 64
+// A sample's fill a minute (work item 0172), a whole sample at most.
+MAXIMUM_RAIN_FILL_PER_MINUTE :: FIELD_WATER_FULL
 MAXIMUM_COLOR_COMPONENT :: 255
+
+// A spring of the water field (work item 0172): the generator makes the
+// first air sample above the surface under the point a source. Latitude
+// 90 is the pole on +y; longitude 0 lies towards +x, 90 towards +z.
+Planet_Spring :: struct {
+	latitude_degrees:  int,
+	longitude_degrees: int,
+}
 
 Planet :: struct {
 	id:                                             string,
@@ -31,6 +42,10 @@ Planet :: struct {
 	bedrock_depth_metres:                           int,
 	// Above the radius; negative lies below it.
 	sea_level_metres:                               int,
+	springs:                                        []Planet_Spring,
+	// Fill per surface sample per minute; read and bounded, applied by
+	// nothing until the weather (M15).
+	rain_fill_per_minute:                           int,
 	rotation_period_seconds:                        int,
 	// Red, green, blue from 0 to 255; a sample's tint is an index into it.
 	palette:                                        [][3]int,
@@ -60,6 +75,11 @@ missing_planet_key_problem :: proc(tree: json.Object, source: string) -> string 
 	for record, index in tree["planets"].(json.Array) {
 		if key, missing := missing_struct_key(Planet, record.(json.Object)); missing {
 			return fmt.tprintf("%s: planets[%d] is missing %s", source, index, key)
+		}
+		for spring, spring_index in record.(json.Object)["springs"].(json.Array) {
+			if key, missing := missing_struct_key(Planet_Spring, spring.(json.Object)); missing {
+				return fmt.tprintf("%s: planets[%d].springs[%d] is missing %s", source, index, spring_index, key)
+			}
 		}
 	}
 	return ""
@@ -94,7 +114,28 @@ planet_problem :: proc(planet: Planet) -> string {
 	case planet.rotation_period_seconds < MINIMUM_ROTATION_PERIOD_SECONDS || planet.rotation_period_seconds > MAXIMUM_ROTATION_PERIOD_SECONDS:
 		return fmt.tprintf("rotation_period_seconds %d is outside %d to %d", planet.rotation_period_seconds, MINIMUM_ROTATION_PERIOD_SECONDS, MAXIMUM_ROTATION_PERIOD_SECONDS)
 	}
+	if problem := springs_problem(planet.springs); problem != "" {
+		return problem
+	}
+	if planet.rain_fill_per_minute < 0 || planet.rain_fill_per_minute > MAXIMUM_RAIN_FILL_PER_MINUTE {
+		return fmt.tprintf("rain_fill_per_minute %d is outside 0 to %d", planet.rain_fill_per_minute, MAXIMUM_RAIN_FILL_PER_MINUTE)
+	}
 	return palette_problem(planet.palette)
+}
+
+springs_problem :: proc(springs: []Planet_Spring) -> string {
+	if len(springs) > MAXIMUM_SPRING_COUNT {
+		return fmt.tprintf("springs has %d springs, more than %d", len(springs), MAXIMUM_SPRING_COUNT)
+	}
+	for spring, index in springs {
+		if spring.latitude_degrees < -90 || spring.latitude_degrees > 90 {
+			return fmt.tprintf("springs[%d].latitude_degrees %d is outside -90 to 90", index, spring.latitude_degrees)
+		}
+		if spring.longitude_degrees < -180 || spring.longitude_degrees > 180 {
+			return fmt.tprintf("springs[%d].longitude_degrees %d is outside -180 to 180", index, spring.longitude_degrees)
+		}
+	}
+	return ""
 }
 
 planets_problem :: proc(planets: []Planet) -> string {

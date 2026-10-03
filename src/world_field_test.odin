@@ -96,6 +96,10 @@ test_an_edited_field_chunk_round_trips_through_the_codec :: proc(t: ^testing.T) 
 	index := field_local_to_index({7, 8, 9})
 	field_chunk_set_sample(chunk, index, {density = -3, material = .Air, tint = 0})
 	field_chunk_set_sample(chunk, FIELD_CHUNK_SAMPLE_COUNT - 1, {density = 90, material = .Bedrock, tint = 2})
+	chunk.water[index] = 200
+	chunk.water_still[index] = 3
+	set_field_sample_bit(&chunk.water_awake, index)
+	set_field_sample_bit(&chunk.water_source, FIELD_CHUNK_SAMPLE_COUNT - 1)
 
 	bytes := encode_field_chunk_delta(chunk, generated, context.temp_allocator)
 	// Smaller than the three planes as they are.
@@ -105,6 +109,8 @@ test_an_edited_field_chunk_round_trips_through_the_codec :: proc(t: ^testing.T) 
 	testing.expect_value(t, restored.coordinate, coordinate)
 	testing.expect(t, field_chunk_equals(restored, chunk))
 	testing.expect_value(t, field_chunk_get_sample(restored, index), Field_Sample{density = -3, material = .Air, tint = 0})
+	testing.expect_value(t, restored.water[index], 200)
+	testing.expect(t, field_sample_bit(&restored.water_awake, index) && field_sample_bit(&restored.water_source, FIELD_CHUNK_SAMPLE_COUNT - 1))
 	testing.expect(t, restored.dirty)
 }
 
@@ -130,6 +136,12 @@ test_field_chunk_decode_refuses_malformed_bytes :: proc(t: ^testing.T) {
 	for malformed in malformed_field_chunk_runs() {
 		testing.expect(t, decode_field_chunk_delta(malformed, restored) != "")
 	}
+	// A fill above full.
+	overfull := new(Field_Chunk, context.temp_allocator)
+	overfull.water[0] = FIELD_WATER_FULL + 1
+	overfull_bytes := encode_field_chunk_delta(overfull, new(Field_Chunk, context.temp_allocator), context.temp_allocator)
+	problem = decode_field_chunk_delta(overfull_bytes, restored)
+	testing.expect(t, strings.contains(problem, "water fill 255"), problem)
 	// None of the refusals touched the chunk.
 	testing.expect(t, field_chunk_equals(restored, new(Field_Chunk, context.temp_allocator)))
 }
@@ -158,6 +170,13 @@ malformed_field_chunk_runs :: proc() -> [3][]byte {
 		append(bytes, value)
 		append_u32(bytes, count)
 	}
+	// The water's planes after the first three, all zero.
+	water_planes :: proc(bytes: ^[dynamic]byte) {
+		plane_bytes(bytes, 0, FIELD_CHUNK_SAMPLE_COUNT)
+		plane_bytes(bytes, 0, FIELD_CHUNK_SAMPLE_COUNT)
+		plane_bytes(bytes, 0, FIELD_SAMPLE_BIT_BYTES)
+		plane_bytes(bytes, 0, FIELD_SAMPLE_BIT_BYTES)
+	}
 	header :: proc() -> [dynamic]byte {
 		bytes := make([dynamic]byte, context.temp_allocator)
 		append_u16(&bytes, FIELD_CHUNK_FORMAT_VERSION)
@@ -170,13 +189,16 @@ malformed_field_chunk_runs :: proc() -> [3][]byte {
 	plane_bytes(&unknown_material, 0, FIELD_CHUNK_SAMPLE_COUNT)
 	plane_bytes(&unknown_material, u8(max(Field_Material)) + 1, FIELD_CHUNK_SAMPLE_COUNT)
 	plane_bytes(&unknown_material, 0, FIELD_CHUNK_SAMPLE_COUNT)
+	water_planes(&unknown_material)
 	past_the_end := header()
 	plane_bytes(&past_the_end, 0, FIELD_CHUNK_SAMPLE_COUNT + 1)
 	plane_bytes(&past_the_end, 0, FIELD_CHUNK_SAMPLE_COUNT)
 	plane_bytes(&past_the_end, 0, FIELD_CHUNK_SAMPLE_COUNT)
+	water_planes(&past_the_end)
 	short := header()
 	plane_bytes(&short, 0, FIELD_CHUNK_SAMPLE_COUNT - 1)
 	plane_bytes(&short, 0, FIELD_CHUNK_SAMPLE_COUNT)
 	plane_bytes(&short, 0, FIELD_CHUNK_SAMPLE_COUNT)
+	water_planes(&short)
 	return {unknown_material[:], past_the_end[:], short[:]}
 }

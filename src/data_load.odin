@@ -60,6 +60,7 @@ Game_Config :: struct {
 	field_view:           Field_View_Config,
 	field_player:         Field_Player_Config,
 	field_brushes:        []Field_Brush_Config,
+	field_water:          Field_Water_Config,
 }
 
 // The terrain field's level of detail (work item 0169,
@@ -97,6 +98,27 @@ Field_Player_Config :: struct {
 	fly_speed_millimetres_per_second:        int,
 	fly_sprint_speed_millimetres_per_second: int,
 }
+
+// The water field (work item 0172, world_field_water.odin): fill in
+// 1/FIELD_WATER_FULL of a sample. Each tick an awake sample moves at most
+// the rate to each neighbour; a sample still for the still ticks sleeps;
+// fill at or below the minimum stops moving and drops by one every dry
+// ticks.
+Field_Water_Config :: struct {
+	fill_rate_per_tick:   int,
+	still_ticks_to_sleep: int,
+	minimum_fill:         int,
+	dry_ticks_per_step:   int,
+}
+
+// A full water sample's fill: FIELD_WATER_FULL - MAXIMUM_DENSITY maps the
+// fill onto the mesher's density exactly (127 full, -127 empty). Here so
+// the content checks need not reach into the world.
+FIELD_WATER_FULL :: 254
+// A sample sleeps after at most this many still ticks (a byte per sample).
+MAXIMUM_FIELD_WATER_STILL_TICKS :: 255
+// An hour at 60 ticks a second.
+MAXIMUM_FIELD_WATER_DRY_TICKS :: 216_000
 
 // The shapes of a field brush (work item 0171, world_field_edit.odin): a
 // sphere round the hit, or the level mode, which flattens the sphere
@@ -411,6 +433,9 @@ validate_game_config :: proc(config: Game_Config) -> string {
 	if problem := field_brushes_problem(config.field_brushes); problem != "" {
 		return problem
 	}
+	if problem := field_water_problem(config.field_water); problem != "" {
+		return problem
+	}
 	return field_player_speed_problem(config.field_player, config.tick_rate)
 }
 
@@ -513,6 +538,23 @@ field_player_problem :: proc(player: Field_Player_Config) -> string {
 	widest_step := player.step_height_samples * WIDEST_SAMPLE_SPACING_MILLIMETRES
 	if widest_step >= player.mantle_height_millimetres {
 		return fmt.tprintf("field_player.step_height_samples %d reaches %d mm at the widest spacing, not below mantle_height_millimetres %d", player.step_height_samples, widest_step, player.mantle_height_millimetres)
+	}
+	return ""
+}
+
+// Every value inside its bound; a missing field_water block reads as zeros
+// and fails the first bound.
+field_water_problem :: proc(water: Field_Water_Config) -> string {
+	bounds := [?]Config_Bound {
+		{"fill_rate_per_tick", water.fill_rate_per_tick, 1, FIELD_WATER_FULL},
+		{"still_ticks_to_sleep", water.still_ticks_to_sleep, 1, MAXIMUM_FIELD_WATER_STILL_TICKS},
+		{"minimum_fill", water.minimum_fill, 1, FIELD_WATER_FULL - 1},
+		{"dry_ticks_per_step", water.dry_ticks_per_step, 1, MAXIMUM_FIELD_WATER_DRY_TICKS},
+	}
+	for bound in bounds {
+		if bound.value < bound.minimum || bound.value > bound.maximum {
+			return fmt.tprintf("field_water.%s %d is outside %d to %d", bound.name, bound.value, bound.minimum, bound.maximum)
+		}
 	}
 	return ""
 }

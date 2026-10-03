@@ -42,13 +42,16 @@ Field_Job :: struct {
 	grid:     ^Field_Grid,
 }
 
-// Generate results carry chunk, Mesh results carry mesh.
+// Generate results carry chunk, Mesh results the terrain's mesh and the
+// water's (0172), both from one grid in one job, so the water never lags
+// the terrain it lies on and one revision covers both.
 Field_Job_Result :: struct {
-	kind:     Field_Job_Kind,
-	node:     Field_Node,
-	revision: u64,
-	chunk:    ^Field_Chunk,
-	mesh:     Field_Mesh_Data,
+	kind:       Field_Job_Kind,
+	node:       Field_Node,
+	revision:   u64,
+	chunk:      ^Field_Chunk,
+	mesh:       Field_Mesh_Data,
+	water_mesh: Field_Mesh_Data,
 }
 
 // Everything the workers read; only the queues are written after start.
@@ -128,6 +131,7 @@ take_field_results :: proc(shared: ^Field_Worker_Shared, kind: Field_Job_Kind, m
 free_field_job_result :: proc(result: Field_Job_Result) {
 	free(result.chunk)
 	destroy_field_mesh_data(result.mesh)
+	destroy_field_mesh_data(result.water_mesh)
 }
 
 run_field_job :: proc(shared: ^Field_Worker_Shared, job: Field_Job) -> Field_Job_Result {
@@ -149,6 +153,7 @@ run_field_job :: proc(shared: ^Field_Worker_Shared, job: Field_Job) -> Field_Job
 			generate_field_grid(shared.generation, job.node, grid)
 		}
 		result.mesh = mesh_field_grid(grid, shared.planet.palette, shared.generation.spacing_millimetres)
+		result.water_mesh = mesh_field_water_grid(grid, shared.planet.palette, shared.generation.spacing_millimetres)
 		free(job.grid)
 	}
 	return result
@@ -263,7 +268,9 @@ receive_field_chunks :: proc(streaming: ^Field_Streaming, world: ^Field_World, w
 }
 
 // Chunks no selected node meshes from leave the world. The field has no
-// save yet (0168), so an edited chunk's changes leave with it.
+// save yet (0168), so an edited chunk's changes leave with it. The water
+// beside a leaving chunk below sea level wakes, so it can become a sea
+// edge (wake_field_water_beside_missing).
 unload_unwanted_field_chunks :: proc(world: ^Field_World, wanted: map[Field_Chunk_Coordinate]struct{}) {
 	leaving := make([dynamic]Field_Chunk_Coordinate, context.temp_allocator)
 	for coordinate in world.chunks {
@@ -274,6 +281,9 @@ unload_unwanted_field_chunks :: proc(world: ^Field_World, wanted: map[Field_Chun
 	for coordinate in leaving {
 		free(world.chunks[coordinate])
 		delete_key(&world.chunks, coordinate)
+	}
+	for coordinate in leaving {
+		wake_field_water_beside_missing(world, coordinate)
 	}
 }
 

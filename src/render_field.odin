@@ -11,6 +11,10 @@ import "render_frustum"
 // sphere in the palette's first colour drawn every frame below the lowest
 // ground the relief can make, so the meshed nodes cover it where they
 // exist and it fills the planet's silhouette beyond the last distance.
+// Each node also carries the water's mesh (0172), drawn after every
+// node's terrain through the same shader with water_color set:
+// translucent, alpha blended and without depth writes, so the terrain
+// shows through and the water never hides the water behind it.
 
 FIELD_VERTEX_SHADER_PATH :: "shaders/field.vs"
 FIELD_FRAGMENT_SHADER_PATH :: "shaders/field.fs"
@@ -22,15 +26,22 @@ FIELD_GLOBE_SLICES :: 128
 // Below the lowest relief: a coarsest cell, which also holds the sphere's
 // facets (about 2.4 m deep at 8 km) under the ground.
 FIELD_GLOBE_MARGIN_METRES :: 8
+// The water pass's colour and opacity (the shader's water_color); the
+// terrain pass sets an opacity of 0.
+FIELD_WATER_COLOR :: [4]f32{0.16, 0.36, 0.52, 0.62}
 
 // The material slots' sampler names, bound to the material's first four
 // maps (DrawMesh binds map i to the shader location MAP_ALBEDO + i).
 @(rodata)
 field_material_sampler_names := [FIELD_TEXTURED_MATERIAL_COUNT]cstring{"material_texture_topsoil", "material_texture_stone", "material_texture_deep_stone", "material_texture_bedrock"}
 
-// origin is the node's first sample in metres.
+// origin is the node's first sample in metres. A node with no water has
+// has_water false and no water mesh.
 Field_Node_Render :: struct {
 	mesh:         rl.Mesh,
+	water:        rl.Mesh,
+	has_mesh:     bool,
+	has_water:    bool,
 	origin:       [3]f32,
 	vertex_count: int,
 }
@@ -38,6 +49,7 @@ Field_Node_Render :: struct {
 Field_Renderer :: struct {
 	material:                 rl.Material,
 	camera_position_location: i32,
+	water_color_location:     i32,
 	globe:                    rl.Mesh,
 	globe_material:           rl.Material,
 	spacing_millimetres:      int,
@@ -76,6 +88,7 @@ use_field_shader :: proc(renderer: ^Field_Renderer, shader: rl.Shader, fog_end: 
 	set_shader_float(shader, "fog_start", fog_end * FOG_START_SHARE)
 	set_shader_float(shader, "fog_end", fog_end)
 	renderer.camera_position_location = rl.GetShaderLocation(shader, "camera_position")
+	renderer.water_color_location = rl.GetShaderLocation(shader, "water_color")
 	renderer.material.shader = shader
 }
 
@@ -118,10 +131,19 @@ upload_field_mesh :: proc(data: Field_Mesh_Data) -> rl.Mesh {
 	return mesh
 }
 
+unload_field_node_render :: proc(render: Field_Node_Render) {
+	if render.has_mesh {
+		rl.UnloadMesh(render.mesh)
+	}
+	if render.has_water {
+		rl.UnloadMesh(render.water)
+	}
+}
+
 unload_field_node :: proc(renderer: ^Field_Renderer, node: Field_Node) {
 	if previous, found := renderer.meshes[node]; found {
 		renderer.vertex_count -= previous.vertex_count
-		rl.UnloadMesh(previous.mesh)
+		unload_field_node_render(previous)
 		delete_key(&renderer.meshes, node)
 	}
 }
@@ -132,16 +154,21 @@ field_node_origin_metres :: proc(node: Field_Node, spacing_millimetres: int) -> 
 	return {f32(f64(origin.x) * metres_per_sample), f32(f64(origin.y) * metres_per_sample), f32(f64(origin.z) * metres_per_sample)}
 }
 
-// Replaces the node's mesh; an empty mesh only removes the old one.
-apply_field_mesh :: proc(renderer: ^Field_Renderer, node: Field_Node, data: Field_Mesh_Data) {
+// Replaces the node's meshes; two empty meshes only remove the old ones.
+apply_field_mesh :: proc(renderer: ^Field_Renderer, node: Field_Node, data, water: Field_Mesh_Data) {
 	unload_field_node(renderer, node)
-	if len(data.indices) == 0 {
+	if len(data.indices) == 0 && len(water.indices) == 0 {
 		return
 	}
 	render := Field_Node_Render {
-		mesh         = upload_field_mesh(data),
 		origin       = field_node_origin_metres(node, renderer.spacing_millimetres),
-		vertex_count = len(data.positions),
+		vertex_count = len(data.positions) + len(water.positions),
+	}
+	if len(data.indices) > 0 {
+		render.mesh, render.has_mesh = upload_field_mesh(data), true
+	}
+	if len(water.indices) > 0 {
+		render.water, render.has_water = upload_field_mesh(water), true
 	}
 	renderer.meshes[node] = render
 	renderer.vertex_count += render.vertex_count
@@ -154,8 +181,9 @@ upload_streamed_field_meshes :: proc(renderer: ^Field_Renderer, streaming: ^Fiel
 		unload_field_node(renderer, node)
 	}
 	for result in take_current_field_meshes(streaming, context.temp_allocator) {
-		apply_field_mesh(renderer, result.node, result.mesh)
+		apply_field_mesh(renderer, result.node, result.mesh, result.water_mesh)
 		destroy_field_mesh_data(result.mesh)
+		destroy_field_mesh_data(result.water_mesh)
 	}
 }
 
@@ -167,8 +195,29 @@ field_node_in_frustum :: proc(frustum: render_frustum.Frustum, render: Field_Nod
 	return render_frustum.frustum_contains_box(frustum, render.origin - margin, render.origin + size + margin)
 }
 
+set_field_water_color :: proc(renderer: ^Field_Renderer, color: [4]f32) {
+	color := color
+	rl.SetShaderValue(renderer.material.shader, renderer.water_color_location, &color, .VEC4)
+}
+
+// The water pass: after all terrain, alpha blended (raylib's default
+// blend), without depth writes; the back faces stay culled, so the
+// water's faces against the ground, which face into it, are not drawn.
+draw_field_water :: proc(renderer: ^Field_Renderer, visible: []Field_Node_Render) {
+	set_field_water_color(renderer, FIELD_WATER_COLOR)
+	rlgl.DrawRenderBatchActive()
+	rlgl.DisableDepthMask()
+	for render in visible {
+		if render.has_water {
+			rl.DrawMesh(render.water, renderer.material, rl.MatrixTranslate(render.origin.x, render.origin.y, render.origin.z))
+		}
+	}
+	rlgl.DrawRenderBatchActive()
+	rlgl.EnableDepthMask()
+}
+
 // Must run between BeginMode3D and EndMode3D. The globe, then the
-// selected nodes with a mesh.
+// selected nodes' terrain, then their water.
 draw_field :: proc(renderer: ^Field_Renderer, camera: rl.Camera3D, selection: []Field_Node) {
 	renderer.drawn_node_count = 0
 	rl.DrawMesh(renderer.globe, renderer.globe_material, rl.Matrix(1))
@@ -176,20 +225,26 @@ draw_field :: proc(renderer: ^Field_Renderer, camera: rl.Camera3D, selection: []
 	frustum := render_frustum.frustum_from_matrix(cast(matrix[4, 4]f32)view_projection)
 	position := camera.position
 	rl.SetShaderValue(renderer.material.shader, renderer.camera_position_location, &position, .VEC3)
+	set_field_water_color(renderer, {})
+	visible := make([dynamic]Field_Node_Render, 0, len(selection), context.temp_allocator)
 	for node in selection {
 		render, found := renderer.meshes[node]
 		if !found || !field_node_in_frustum(frustum, render, node, renderer.spacing_millimetres) {
 			continue
 		}
-		rl.DrawMesh(render.mesh, renderer.material, rl.MatrixTranslate(render.origin.x, render.origin.y, render.origin.z))
+		append(&visible, render)
+		if render.has_mesh {
+			rl.DrawMesh(render.mesh, renderer.material, rl.MatrixTranslate(render.origin.x, render.origin.y, render.origin.z))
+		}
 		renderer.drawn_node_count += 1
 	}
+	draw_field_water(renderer, visible[:])
 }
 
 // UnloadMaterial also unloads the shader and the material tiles.
 destroy_field_renderer :: proc(renderer: ^Field_Renderer) {
 	for _, render in renderer.meshes {
-		rl.UnloadMesh(render.mesh)
+		unload_field_node_render(render)
 	}
 	delete(renderer.meshes)
 	rl.UnloadMesh(renderer.globe)

@@ -41,6 +41,11 @@ import "platform"
 PLANET_PREVIEW_PLANET :: "home"
 PLANET_PREVIEW_START_HEIGHT_METRES :: 40
 PLANET_PREVIEW_START_PITCH :: -25
+// The cameras look towards longitude -105 (a yaw of 255 degrees looks
+// along longitude 255), where the default seed's hollows below the sea
+// level (data/planets.sjson) lie 70 to 500 m from the pole, so the start
+// shows the sea (0172).
+PLANET_PREVIEW_START_YAW :: 255
 // Above this height the fly speed grows in proportion, so the globe is a
 // short flight away.
 PLANET_PREVIEW_SPEED_HEIGHT_METRES :: 32
@@ -113,7 +118,7 @@ metres_to_world_position :: proc(position: [3]f32) -> World_Position {
 
 // Above the planet's pole on +y, where the fly camera's up is the planet's.
 planet_preview_start_camera :: proc(planet: Planet) -> Fly_Camera {
-	return Fly_Camera{position = {0, f32(planet.radius_metres + PLANET_PREVIEW_START_HEIGHT_METRES), 0}, pitch = PLANET_PREVIEW_START_PITCH}
+	return Fly_Camera{position = {0, f32(planet.radius_metres + PLANET_PREVIEW_START_HEIGHT_METRES), 0}, yaw = PLANET_PREVIEW_START_YAW, pitch = PLANET_PREVIEW_START_PITCH}
 }
 
 // Above the pole's local ground (the generation's surface there) by the
@@ -123,7 +128,7 @@ planet_preview_screenshot_camera :: proc(planet: Planet, seed: u64, finest_dista
 	generation := make_planet_generation(seed, planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES)
 	pole := [3]i64{0, generation.radius, 0}
 	ground := f32(generation.radius + surface_relief(generation.surface_seed, pole)) / POSITION_UNITS_PER_METRE
-	return Fly_Camera{position = {0, ground + f32(finest_distance_metres - PLANET_PREVIEW_SCREENSHOT_CLEARANCE_METRES), 0}, pitch = PLANET_PREVIEW_SCREENSHOT_PITCH}
+	return Fly_Camera{position = {0, ground + f32(finest_distance_metres - PLANET_PREVIEW_SCREENSHOT_CLEARANCE_METRES), 0}, yaw = PLANET_PREVIEW_START_YAW, pitch = PLANET_PREVIEW_SCREENSHOT_PITCH}
 }
 
 // Every selected node has been meshed and nothing is pending.
@@ -492,6 +497,7 @@ run_planet_preview :: proc(config: Game_Config, planets: []Planet, items: Item_R
 			materials = materials,
 			brushes = make_field_brushes(config.field_brushes),
 			tuning = make_field_player_tuning(config.field_player, planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES, config.tick_rate),
+			water = make_field_water_tuning(config.field_water),
 		},
 		streaming       = start_field_streaming(seed, planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES, default_worker_count()),
 		renderer        = renderer,
@@ -500,6 +506,7 @@ run_planet_preview :: proc(config: Game_Config, planets: []Planet, items: Item_R
 		seed            = seed,
 		tick_rate       = config.tick_rate,
 	}
+	preview.field.world.water_planet = make_field_water_planet(seed, planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES)
 	if screenshot_path != "" {
 		preview.camera = planet_preview_screenshot_camera(planet, seed, level_distances[0])
 	}

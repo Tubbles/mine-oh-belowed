@@ -65,6 +65,18 @@ field_brushes = [
 	{id = "large", shape = "sphere", radius_millimetres = 2000, rate_density_steps_per_tick = 3}
 	{id = "level", shape = "level", radius_millimetres = 2000, rate_density_steps_per_tick = 6}
 ]
+// The water field (work item 0172, doc/content.md, Field water): fill in
+// 1/254 of a sample. Each tick an awake sample moves at most
+// fill_rate_per_tick to each neighbour, down first, then levelling with
+// its equals; a sample whose fill did not change for still_ticks_to_sleep
+// ticks sleeps until a neighbour changes; fill at or below minimum_fill on
+// dry ground stops moving and drops by one every dry_ticks_per_step ticks.
+field_water = {
+	fill_rate_per_tick = 64
+	still_ticks_to_sleep = 20
+	minimum_fill = 8
+	dry_ticks_per_step = 60
+}
 // The chunks every machine of a session simulates: this many chunks
 // around each player's chunk across and up and down (work item 0177).
 // Loading, the tick and the state hash all follow it.

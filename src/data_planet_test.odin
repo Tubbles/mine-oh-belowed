@@ -9,6 +9,8 @@ TEST_PLANET_RECORD :: `planets = [{
 	surface_gravity_centimetres_per_second_squared = 981
 	bedrock_depth_metres = 256
 	sea_level_metres = 0
+	springs = [{latitude_degrees = 88, longitude_degrees = -120}]
+	rain_fill_per_minute = 2
 	rotation_period_seconds = 1200
 	palette = [[1, 2, 3], [4, 5, 6]]
 }]`
@@ -41,7 +43,7 @@ test_a_planet_record_parses :: proc(t: ^testing.T) {
 @(test)
 test_a_planet_record_with_a_missing_field_is_refused_naming_it :: proc(t: ^testing.T) {
 	record := string(TEST_PLANET_RECORD)
-	for key in ([?]string{"id", "radius_metres", "surface_gravity_centimetres_per_second_squared", "bedrock_depth_metres", "sea_level_metres", "rotation_period_seconds", "palette"}) {
+	for key in ([?]string{"id", "radius_metres", "surface_gravity_centimetres_per_second_squared", "bedrock_depth_metres", "sea_level_metres", "springs", "rain_fill_per_minute", "rotation_period_seconds", "palette"}) {
 		line_start := strings.index(record, strings.concatenate({"\t", key, " ="}, context.temp_allocator))
 		line_end := line_start + strings.index_byte(record[line_start:], '\n')
 		without := strings.concatenate({record[:line_start], record[line_end + 1:]}, context.temp_allocator)
@@ -73,6 +75,11 @@ test_planet_records_refuse_unknown_keys_wrong_types_and_ranges :: proc(t: ^testi
 	expect_planets_problem(t, replace(record, "[[1, 2, 3], [4, 5, 6]]", "[]"), "palette has 0 colours")
 	expect_planets_problem(t, replace(record, "[4, 5, 6]", "[4, 5]"), "planets[0].palette[1] must be an array of 3")
 	expect_planets_problem(t, "planets = []", "planets is empty")
+	expect_planets_problem(t, replace(record, "latitude_degrees = 88", "latitude_degrees = 91"), "springs[0].latitude_degrees 91 is outside -90 to 90")
+	expect_planets_problem(t, replace(record, "longitude_degrees = -120", "longitude_degrees = -181"), "springs[0].longitude_degrees -181 is outside -180 to 180")
+	expect_planets_problem(t, replace(record, "latitude_degrees = 88, ", ""), "planets[0].springs[0] is missing latitude_degrees")
+	expect_planets_problem(t, replace(record, "rain_fill_per_minute = 2", "rain_fill_per_minute = 255"), "rain_fill_per_minute 255 is outside 0 to 254")
+	expect_planets_problem(t, replace(record, "rain_fill_per_minute = 2", "rain_fill_per_minute = -1"), "rain_fill_per_minute -1 is outside")
 	twice := strings.concatenate({record[:len(record) - 1], ", ", record[len("planets = ["):]}, context.temp_allocator)
 	expect_planets_problem(t, twice, `id "home" is used twice`)
 }

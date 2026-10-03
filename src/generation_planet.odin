@@ -1,6 +1,7 @@
 package game
 
 import "generation_seed"
+import "platform"
 
 // Planet generation of the terrain field (work item 0168,
 // doc/architecture.md, World generation): a pure function of the seed, the
@@ -42,6 +43,8 @@ Planet_Generation :: struct {
 	spacing_millimetres: int,
 	spacing:             i64,
 	palette_length:      int,
+	// The sea's surface, the radius plus the sea level (0172).
+	sea_radius:          i64,
 }
 
 make_planet_generation :: proc(seed: u64, planet: Planet, spacing_millimetres: int) -> Planet_Generation {
@@ -54,6 +57,7 @@ make_planet_generation :: proc(seed: u64, planet: Planet, spacing_millimetres: i
 		spacing_millimetres = spacing_millimetres,
 		spacing = sample_axis_to_position(1, spacing_millimetres),
 		palette_length = len(planet.palette),
+		sea_radius = metres_to_position_units(i64(planet.radius_metres + planet.sea_level_metres)),
 	}
 }
 
@@ -186,8 +190,84 @@ planet_sample :: proc(generation: Planet_Generation, position: World_Position) -
 	return {density, planet_stratum(depth, distance, generation.bedrock_radius), planet_tint(generation, position)}
 }
 
+// Whether any sample of the chunk can hold sea: the nearest sample to
+// the centre lies within a cell's half height of the sea level.
+field_chunk_reaches_below :: proc(origin: Sample_Coordinate, sea_level: i64) -> bool {
+	squared: i64 = 0
+	for axis in 0 ..< 3 {
+		nearest := i64(clamp(0, origin[axis], origin[axis] + FIELD_CHUNK_SIZE - 1))
+		squared += nearest * nearest
+	}
+	reach := sea_level / FIELD_WATER_FULL + 2
+	return squared < reach * reach
+}
+
+// Every sample below the sea level that is not ground holds the sea's
+// fill (field_sea_fill), asleep: full below, the cells the sea level
+// crosses partly, so the generated sea is level and settled.
+fill_field_chunk_sea :: proc(planet: Planet, spacing_millimetres: int, chunk: ^Field_Chunk) {
+	sea_level := field_sea_level(planet, spacing_millimetres)
+	origin := field_chunk_origin(chunk.coordinate)
+	if !field_chunk_reaches_below(origin, sea_level) {
+		return
+	}
+	for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
+		if chunk.density[index] <= 0 {
+			chunk.water[index] = u8(field_sea_fill(sea_level, field_water_span(origin + Sample_Coordinate(field_index_to_local(index)))))
+		}
+	}
+}
+
+// The spring's direction from the centre, a unit vector: latitude 90 is
+// +y, longitude 0 lies towards +x and 90 towards +z.
+planet_spring_direction :: proc(spring: Planet_Spring) -> [3]i64 {
+	latitude := degrees_to_angle_units(spring.latitude_degrees)
+	longitude := degrees_to_angle_units(spring.longitude_degrees)
+	across := fixed_cosine(latitude)
+	return {across * fixed_cosine(longitude) / UNIT_VECTOR_ONE, fixed_sine(latitude), across * fixed_sine(longitude) / UNIT_VECTOR_ONE}
+}
+
+// The first air sample above the surface under the spring, climbing from
+// the local surface in quarter spacings up to the highest relief, the
+// sample nearest each point; found is false when none is air, so a spring
+// never becomes a source inside ground.
+planet_spring_sample :: proc(generation: Planet_Generation, spring: Planet_Spring) -> (sample: Sample_Coordinate, found: bool) {
+	direction := planet_spring_direction(spring)
+	surface := generation.radius + surface_relief(generation.surface_seed, fixed_scale(direction, generation.radius))
+	highest := generation.radius + metres_to_position_units(MAXIMUM_RELIEF_METRES) + generation.spacing
+	half := generation.spacing / 2
+	for height := surface; height <= highest; height += generation.spacing / 4 {
+		point := World_Position(fixed_scale(direction, height))
+		sample = world_position_to_sample(point + {half, half, half}, generation.spacing_millimetres)
+		if planet_sample(generation, sample_to_world_position(sample, generation.spacing_millimetres)).density <= 0 {
+			return sample, true
+		}
+	}
+	return {}, false
+}
+
+// The springs whose sample lies in the chunk become full, awake sources;
+// a spring with no air above its surface is skipped with a log line.
+mark_field_chunk_springs :: proc(generation: Planet_Generation, planet: Planet, chunk: ^Field_Chunk) {
+	for spring in planet.springs {
+		sample, found := planet_spring_sample(generation, spring)
+		if !found {
+			platform.log_printf("field: the spring at latitude %d, longitude %d has no air above its surface, skipped", spring.latitude_degrees, spring.longitude_degrees)
+			continue
+		}
+		if sample_to_field_chunk_coordinate(sample) != chunk.coordinate {
+			continue
+		}
+		index := sample_to_field_index(sample)
+		chunk.water[index] = FIELD_WATER_FULL
+		set_field_sample_bit(&chunk.water_source, index)
+		set_field_sample_bit(&chunk.water_awake, index)
+	}
+}
+
 // Fills chunk; safe on any thread. The chunk is not marked dirty, the
-// world does that when it takes the chunk (field_world_insert_chunk).
+// world does that when it takes the chunk (field_world_insert_chunk). The
+// water: the sea below the planet's sea level and the springs (0172).
 generate_field_chunk :: proc(seed: u64, planet: Planet, spacing_millimetres: int, coordinate: Field_Chunk_Coordinate, chunk: ^Field_Chunk) {
 	generation := make_planet_generation(seed, planet, spacing_millimetres)
 	origin := field_chunk_origin(coordinate)
@@ -199,4 +279,19 @@ generate_field_chunk :: proc(seed: u64, planet: Planet, spacing_millimetres: int
 		chunk.material[index] = value.material
 		chunk.tint[index] = value.tint
 	}
+	fill_field_chunk_sea(planet, spacing_millimetres, chunk)
+	mark_field_chunk_springs(generation, planet, chunk)
+}
+
+// The sea's density in the generation's spacing at a position, as the
+// terrain's: positive below the sea's surface (sea_radius, where the fine
+// water mesh crosses too, field_sea_fill), -MAXIMUM_DENSITY in ground, so
+// a coarse grid shows the sea between its samples at the fine sea's
+// height.
+planet_sea_density :: proc(generation: Planet_Generation, position: World_Position, terrain: i8) -> i8 {
+	if terrain > 0 {
+		return -MAXIMUM_DENSITY
+	}
+	squared := position.x * position.x + position.y * position.y + position.z * position.z
+	return depth_to_density(generation.sea_radius - i64(integer_square_root(u64(squared))), generation.spacing_millimetres)
 }
