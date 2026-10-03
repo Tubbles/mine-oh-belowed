@@ -57,6 +57,17 @@ Hud_Context :: struct {
 	// generator's biomes it indexes, for the banner's name.
 	biome:                    int,
 	biomes:                   []Biome,
+	// The viewport's field player as its camera and ghost show it, the
+	// prediction while the lockstep window runs ahead
+	// (lockstep_view_player), for the tool line. Unset (field_view_set
+	// false), the line reads the screen context's player.
+	field_view:               Field_Player,
+	field_view_set:           bool,
+}
+
+// The field player the tool line describes.
+hud_field_player :: proc(screen_context: Screen_Context, hud: Hud_Context) -> Field_Player {
+	return hud.field_view_set ? hud.field_view : screen_context.player.field
 }
 
 draw_crosshair :: proc(state: ^Ui_State) {
@@ -426,7 +437,7 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context, hud: Hud_Cont
 	draw_discovery_card(state, items, hud.discovery_card_clearance)
 	obtained := screen_context.unlocks.obtained
 	name_status, tool_status, vein_status := target_status_lines(screen_context.world, screen_context.records, screen_context.machines, screen_context.fluids, screen_context.veins, screen_context.blocks, items, obtained, effective_tool_tier(player^, items, screen_context.cheat_speed), player.target)
-	if line, shown := field_tool_line(player.field, screen_context.content); shown {
+	if line, shown := field_tool_line(hud_field_player(screen_context, hud), screen_context.content); shown {
 		tool_status = line
 	}
 	if ghost_line, shown := bore_drill_ghost_line(screen_context.world, screen_context.records.assayed_veins[:], screen_context.machines, screen_context.veins, screen_context.blocks, items, obtained, player^); shown {

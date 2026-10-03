@@ -23,7 +23,8 @@ import "core:time"
 // for a tick are there by the time it runs. Inside the window the local
 // players' movement and cameras are predicted: after the frame's ticks
 // each local player's prediction is the confirmed player, copied, moved by
-// every input of it stamped and not yet run (predict_player_motion). A confirmed tick
+// every input of it stamped and not yet run (predict_player_motion, or in
+// a field session predict_field_player_motion). A confirmed tick
 // whose inputs the prediction already used gives the same position; one
 // where the world differed (another player, a belt, a block placed)
 // replaces the prediction with the confirmed player on the next rebuild,
@@ -436,10 +437,36 @@ rebuild_prediction :: proc(lockstep: ^Lockstep, simulation: ^Simulation_State, c
 		local.prediction = simulation.players[local.player]
 		for stamped in local.predicted_inputs {
 			if stamped.tick > simulation.tick {
-				predict_player_motion(&simulation.world, content, &local.prediction, stamped.input, simulation.tick_rate, simulation.cheat_speed)
+				predict_local_player(simulation, content, &local.prediction, stamped.input)
 			}
 		}
 	}
+}
+
+// One unconfirmed input on a predicted player: the block world's movement,
+// or in a field session the field player's (predict_field_player_motion).
+predict_local_player :: proc(simulation: ^Simulation_State, content: Simulation_Content, player: ^Player, frame: Input_Frame) {
+	if simulation.field.enabled {
+		predict_field_player_motion(simulation, content, player, frame)
+		return
+	}
+	predict_player_motion(&simulation.world, content, player, frame, simulation.tick_rate, simulation.cheat_speed)
+}
+
+// The field tick's movement alone on a copy of a player
+// (tick_field_session_player and queue_field_player_edit without the
+// hotbar, the tool, the edits, the placements, the crafting and the walk
+// counter): Interact's jump suppression on a frame's panel, the move
+// against the loaded set and the frame table, and the aim. Reads the
+// simulation, writes only the copy.
+predict_field_player_motion :: proc(simulation: ^Simulation_State, content: Simulation_Content, player: ^Player, frame: Input_Frame) {
+	frames := &simulation.world.entities.frames
+	// On a scratch copy: the panel it would open is the tick's to open.
+	scratch := player^
+	resolved, _ := interact_on_field(&scratch, &simulation.world.entities, frame)
+	input := field_tick_input(resolved, simulation.tick_rate)
+	tick_field_player(&simulation.field.world, frames, content.field.tuning, &player.field, input)
+	aim_field_player_at_frames(&player.field, frames, content.field.tuning)
 }
 
 // The local player's commands no tick has applied yet: the ones waiting

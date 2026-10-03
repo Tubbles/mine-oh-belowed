@@ -1184,6 +1184,8 @@ make_hud_context :: proc(state: ^Frame_State, index: int) -> Hud_Context {
 		biome_banner       = &viewport.interaction.biome_banner,
 		biome              = column.biome,
 		biomes             = session.generator.biomes,
+		field_view         = lockstep_view_player(&session.lockstep, &session.simulation, viewport.player).field,
+		field_view_set     = true,
 	}
 	if index == 0 && frame_touch_overlay_on(state) {
 		touch := touch_overlay_context(state)

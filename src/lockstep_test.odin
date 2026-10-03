@@ -585,3 +585,135 @@ test_slot_commands_keep_two_machines_in_step :: proc(t: ^testing.T) {
 		testing.expect_value(t, stone_count, 14)
 	}
 }
+
+// The field session's ticks whose records are there, the local records
+// delivered as offline and the field set staged on the test's thread
+// first (tick_field_test_simulation).
+run_field_lockstep_test_ticks :: proc(session: ^Session, content: Simulation_Content, most := max(int)) {
+	control: Command_Control
+	answers := make([dynamic]Line_Answer, context.temp_allocator)
+	deliver_outgoing_locally(&session.lockstep, session.simulation.tick)
+	for count := 0; count < most && lockstep_records_ready(session.lockstep, session.simulation.tick); count += 1 {
+		if !simulated_chunks_ready(&session.simulation) {
+			stage_generated_field_set(&session.simulation)
+		}
+		run_session_tick(session, content, &control, &answers)
+	}
+}
+
+// A field session whose player stood a second, its lockstep window ticks
+// ahead.
+start_field_lockstep_test_session :: proc(content: Game_Content, window: int) -> (session: ^Session, simulation_content: Simulation_Content) {
+	session = start_field_test_session(test_field_game_config(), content)
+	simulation_content = field_test_content(session, content)
+	for _ in 0 ..< 60 {
+		tick_field_test_simulation(&session.simulation, simulation_content, {})
+	}
+	session.lockstep.window = window
+	return session, simulation_content
+}
+
+FIELD_PREDICTION_TEST_WALK :: Input_Frame {
+	move       = {0, 1},
+	look_delta = {40, 0},
+	pressed    = {.Move},
+}
+
+// Field prediction (0182): with a window of three ticks the predicted
+// feet and look after a walk press are where the three confirmed ticks
+// put the player; the prediction leaves the simulation's hash, the walk
+// counter and the field's queues alone, and a session that never
+// predicts hashes alike after the same ticks.
+@(test)
+test_the_field_prediction_matches_the_confirmed_walk :: proc(t: ^testing.T) {
+	content := make_field_test_game_content()
+	session, simulation_content := start_field_lockstep_test_session(content, 3)
+	defer end_session(session)
+	unpredicted, unpredicted_content := start_field_lockstep_test_session(content, 0)
+	defer end_session(unpredicted)
+	state := &session.simulation
+	start := state.players[0].field
+	for _ in 0 ..< 3 {
+		testing.expect(t, stamp_local_record(&session.lockstep, state.tick, FIELD_PREDICTION_TEST_WALK))
+	}
+	hash_before := lockstep_state_hash(state)
+	walked_before := state.records.statistics.distance_walked_millimetres
+	rebuild_prediction(&session.lockstep, state, simulation_content)
+	testing.expect(t, session.lockstep.locals[0].predicting)
+	predicted := lockstep_view_player(&session.lockstep, state, 0).field
+	testing.expect(t, predicted.position != start.position, "the prediction walks")
+	testing.expect(t, predicted.yaw != start.yaw, "the prediction turns")
+	testing.expect_value(t, state.players[0].field.position, start.position)
+	testing.expect_value(t, lockstep_state_hash(state), hash_before)
+	testing.expect_value(t, state.records.statistics.distance_walked_millimetres, walked_before)
+	testing.expect_value(t, len(state.field.edits), 0)
+	testing.expect_value(t, len(state.field.placements), 0)
+
+	tick_before := state.tick
+	run_field_lockstep_test_ticks(session, simulation_content)
+	testing.expect_value(t, state.tick, tick_before + 3)
+	testing.expect_value(t, state.players[0].field.position, predicted.position)
+	testing.expect_value(t, state.players[0].field.yaw, predicted.yaw)
+	testing.expect_value(t, state.players[0].field.pitch, predicted.pitch)
+	rebuild_prediction(&session.lockstep, state, simulation_content)
+	testing.expect_value(t, lockstep_view_player(&session.lockstep, state, 0).field.position, predicted.position)
+
+	for _ in 0 ..< 3 {
+		tick_field_test_simulation(&unpredicted.simulation, unpredicted_content, FIELD_PREDICTION_TEST_WALK)
+	}
+	testing.expect_value(t, unpredicted.simulation.tick, state.tick)
+	testing.expect_value(t, lockstep_state_hash(&unpredicted.simulation), lockstep_state_hash(state))
+}
+
+// A wall of stone raised in front of the player after the prediction
+// walked (another player's place, which the prediction does not know):
+// the confirmed walk stops short of the predicted feet. Mid window, with
+// one input confirmed, the stale prediction still stands past the wall
+// and the rebuild snaps it to where the confirmed walk ends, two inputs
+// ahead of the confirmed player; after the last ticks the view is the
+// confirmed feet.
+@(test)
+test_a_field_prediction_into_a_wall_snaps_to_the_confirmed_feet :: proc(t: ^testing.T) {
+	content := make_field_test_game_content()
+	session, simulation_content := start_field_lockstep_test_session(content, 3)
+	defer end_session(session)
+	state := &session.simulation
+	walk := Input_Frame{move = {0, 1}, pressed = {.Move}}
+	for _ in 0 ..< 3 {
+		testing.expect(t, stamp_local_record(&session.lockstep, state.tick, walk))
+	}
+	rebuild_prediction(&session.lockstep, state, simulation_content)
+	predicted := lockstep_view_player(&session.lockstep, state, 0).field.position
+
+	player := state.players[0].field
+	tuning := simulation_content.field.tuning
+	wall_radius := metres_to_position_units(1)
+	ahead := tuning.capsule_radius + wall_radius
+	wall := Field_Edit {
+		mode     = .Place,
+		brush    = Field_Brush{shape = .Sphere, radius = wall_radius, rate = 127},
+		centre   = player.position + World_Position(fixed_scale(field_player_heading(player), ahead) + fixed_scale(player.up, tuning.capsule_height / 2)),
+		up       = player.up,
+		material = .Stone,
+		budget   = max(i64),
+	}
+	apply_field_edit(&state.field.world, state.field.spacing_millimetres, wall)
+
+	run_field_lockstep_test_ticks(session, simulation_content, 1)
+	testing.expect_value(t, lockstep_view_player(&session.lockstep, state, 0).field.position, predicted)
+	rebuild_prediction(&session.lockstep, state, simulation_content)
+	testing.expect(t, session.lockstep.locals[0].predicting)
+	mid_window := lockstep_view_player(&session.lockstep, state, 0).field.position
+	testing.expect(t, mid_window != state.players[0].field.position, "two inputs are still predicted")
+	testing.expect(t, mid_window != predicted, "the rebuild knows the wall")
+
+	run_field_lockstep_test_ticks(session, simulation_content)
+	confirmed := state.players[0].field.position
+	testing.expect_value(t, mid_window, confirmed)
+	heading := field_player_heading(player)
+	predicted_progress := fixed_dot(cast([3]i64)(predicted - player.position), heading)
+	confirmed_progress := fixed_dot(cast([3]i64)(confirmed - player.position), heading)
+	testing.expectf(t, confirmed_progress < predicted_progress, "the wall stops the walk: confirmed %d, predicted %d", confirmed_progress, predicted_progress)
+	rebuild_prediction(&session.lockstep, state, simulation_content)
+	testing.expect_value(t, lockstep_view_player(&session.lockstep, state, 0).field.position, confirmed)
+}

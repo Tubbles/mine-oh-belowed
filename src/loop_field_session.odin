@@ -29,7 +29,8 @@ FIELD_PLAYER_CAPSULE_COLOR :: rl.Color{70, 110, 180, 255}
 
 // What draw_field_scene draws with. viewer is the player whose camera
 // it is (its ghost is drawn, its body only in third person); NO_PLAYER for
-// a free camera.
+// a free camera. lockstep, when set, gives the local players as predicted
+// (lockstep_view_player); nil draws the simulation's players.
 Field_Scene :: struct {
 	state:        ^Simulation_State,
 	content:      Simulation_Content,
@@ -39,6 +40,16 @@ Field_Scene :: struct {
 	player_model: Player_Model,
 	frame:        Model_Frame,
 	viewer:       int,
+	lockstep:     ^Lockstep,
+}
+
+// A player as the scene draws it: the prediction of a local one while the
+// lockstep window runs ahead.
+field_scene_player :: proc(scene: Field_Scene, index: int) -> Player {
+	if scene.lockstep == nil {
+		return scene.state.players[index]
+	}
+	return lockstep_view_player(scene.lockstep, scene.state, index)
 }
 
 // The eye a viewport's field streams and draws round.
@@ -205,7 +216,8 @@ draw_field_player_body :: proc(scene: Field_Scene, player: Field_Player) {
 }
 
 draw_field_players :: proc(scene: Field_Scene) {
-	for player, index in scene.state.players {
+	for index in 0 ..< len(scene.state.players) {
+		player := field_scene_player(scene, index)
 		if index != scene.viewer || player.field.camera_mode == .Third_Person {
 			draw_field_player_body(scene, player.field)
 		}
@@ -220,7 +232,7 @@ draw_field_ghosts :: proc(scene: Field_Scene) {
 	if scene.viewer < 0 || scene.viewer >= len(scene.state.players) {
 		return
 	}
-	player := scene.state.players[scene.viewer]
+	player := field_scene_player(scene, scene.viewer)
 	entities := &scene.state.world.entities
 	if curve, geometry, refusal, found := field_run_ghost(player.field, entities, scene.content); found {
 		draw_belt_run_ghost(curve, geometry, refusal == .None)
@@ -294,6 +306,7 @@ draw_field_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, cont
 		player_model = state.presentation.player_model,
 		frame        = Model_Frame{world = &session.simulation.world, tick = session.simulation.tick, alpha = alpha, tick_rate = session.simulation.tick_rate, day_factor = day_factor(sky.blend), sky_tint = color_to_vector3(sky.colors.sun_tint), open_sky = true, reaching_arm = NO_ENTITY},
 		viewer       = viewport.player,
+		lockstep     = &session.lockstep,
 	}
 	rl.BeginMode3D(camera)
 	draw_field_scene(scene, camera, frame_field_selection(state))

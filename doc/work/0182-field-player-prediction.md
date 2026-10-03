@@ -1,6 +1,6 @@
 # 0182: Prediction of the field player under the lockstep window
 
-Status: todo (M13 follow up, from the switch of 0179; before the multiplayer couch test)
+Status: implemented (M13 follow up, from the switch of 0179; before the multiplayer couch test)
 
 ## Goal
 
