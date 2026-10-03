@@ -465,14 +465,25 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context, hud: Hud_Cont
 	}
 	if field_pick_up_hint_shown(screen_context, hud) {
 		pick_up := field_target_is_broken(screen_context, hud) ? MACHINE_BROKEN_DOWN_KEY : "hint_pick_up"
-		hints := [?]Glyph_Hint{{.Mine, text(pick_up)}, {.Inventory, text("hint_inventory")}, {.Pause, text("hint_pause")}}
+		inventory := Glyph_Hint{.Inventory, text(inventory_hint_key(screen_context, hud))}
+		// Interact turns a power switch on the field too (0194).
+		if field_target_is_power_switch(screen_context, hud) {
+			hints := [?]Glyph_Hint{{.Interact, text("hint_toggle")}, {.Mine, text(pick_up)}, inventory, {.Pause, text("hint_pause")}}
+			ui_glyph_bar(state, hints[:])
+			return
+		}
+		hints := [?]Glyph_Hint{{.Mine, text(pick_up)}, inventory, {.Pause, text("hint_pause")}}
 		ui_glyph_bar(state, hints[:])
 		return
 	}
 	if entity_has_panel(&screen_context.world.entities, player.target.entity) {
-		// Interact turns a power switch; Sneak with Interact opens it.
-		switch_targeted := entity_is_power_switch(&screen_context.world.entities, screen_context.machines, player.target.entity)
-		hints := [?]Glyph_Hint{{.Interact, text(switch_targeted ? "hint_toggle" : "hint_open")}, {.Inventory, text("hint_inventory")}, {.Pause, text("hint_pause")}}
+		// Inventory opens the panel (0194); Interact turns a power switch.
+		if entity_is_power_switch(&screen_context.world.entities, screen_context.machines, player.target.entity) {
+			hints := [?]Glyph_Hint{{.Interact, text("hint_toggle")}, {.Inventory, text("hint_open")}, {.Pause, text("hint_pause")}}
+			ui_glyph_bar(state, hints[:])
+			return
+		}
+		hints := [?]Glyph_Hint{{.Inventory, text("hint_open")}, {.Pause, text("hint_pause")}}
 		ui_glyph_bar(state, hints[:])
 		return
 	}
@@ -494,6 +505,19 @@ field_pick_up_hint_shown :: proc(screen_context: Screen_Context, hud: Hud_Contex
 		return false
 	}
 	return !field_entity_is_placed_by_world(&screen_context.world.entities, screen_context.machines, entity_from_occupant(target.occupant.handle))
+}
+
+// What the Inventory glyph says: Open while it opens the aimed machine's
+// panel (0194, aims_at_panel), else Inventory.
+inventory_hint_key :: proc(screen_context: Screen_Context, hud: Hud_Context) -> string {
+	aimed := aims_at_panel(&screen_context.world.entities, screen_context.player.target.entity, hud_field_player(screen_context, hud).frame_target)
+	return aimed ? "hint_open" : "hint_inventory"
+}
+
+// The aimed frame cell holds a power switch, which Interact turns (0194).
+field_target_is_power_switch :: proc(screen_context: Screen_Context, hud: Hud_Context) -> bool {
+	target := hud_field_player(screen_context, hud).frame_target
+	return target.hit && entity_is_power_switch(&screen_context.world.entities, screen_context.machines, entity_from_occupant(target.occupant.handle))
 }
 
 // The aimed frame cell holds a broken machine (0201): its pick up hint

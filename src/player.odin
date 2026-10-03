@@ -85,7 +85,7 @@ Player :: struct {
 	placement_rotation:   u8,
 	// The belt run being dragged while Place is held.
 	belt_drag:            Belt_Drag,
-	// The entity whose panel Interact opened; the UI clears it on close.
+	// The entity whose panel Open_Aimed opened; the UI clears it on close.
 	open_machine:         Entity_Handle,
 	// Hand crafting. The UI queues and cancels between ticks.
 	crafting:             Craft_Queue,
@@ -106,7 +106,7 @@ Player :: struct {
 // What a player tick reports to the UI, which turns it into toasts.
 Player_Event :: enum u8 {
 	Inventory_Full,
-	// Interact on an entity: the UI opens player.open_machine's panel.
+	// Open_Aimed on an entity: the UI opens player.open_machine's panel.
 	Open_Machine,
 	// Interact turned a power switch.
 	Toggled_Switch,
@@ -463,41 +463,66 @@ update_jump_double_tap :: proc(player: ^Player, input: Input_Frame) {
 	player.jump_tap_ticks = JUMP_DOUBLE_TAP_TICKS
 }
 
-// Whether Interact acts on the entity, so a gamepad's A does not jump: an
-// entity with a panel (resolve_interact) or a schematic crate
-// (resolve_use_item). The touch overlay's tap presses Interact on such a
-// target and Place on any other (tap_control).
-entity_takes_interact :: proc(entities: ^Entities, handle: Entity_Handle) -> bool {
-	return entity_has_panel(entities, handle) || schematic_crate_takes_interact(entities, handle)
+// What Interact acts on (0194): a power switch it turns and a launch pad
+// it launches from. Panels open through Open_Aimed instead.
+entity_answers_interact :: proc(entities: ^Entities, machines: Machine_Registry, handle: Entity_Handle) -> bool {
+	return entity_is_power_switch(entities, machines, handle) || pool_get(&entities.launch_pads, handle) != nil
 }
 
-// A gamepad's A is both Jump and Interact. Looking at an entity it opens
-// the entity instead of jumping; keyboard Space never interacts. On a
-// power switch Interact turns the switch like a lever, and on a launch pad
-// with a rocket ready and cargo loaded it launches; Sneak with Interact
-// opens their panels.
+// Whether Interact acts on the entity, so a gamepad's A does not jump:
+// a switch or a launch pad (entity_answers_interact) or a schematic crate
+// (resolve_use_item). The touch overlay's tap presses Interact on such a
+// target and Place on any other (tap_control).
+entity_takes_interact :: proc(entities: ^Entities, machines: Machine_Registry, handle: Entity_Handle) -> bool {
+	return entity_answers_interact(entities, machines, handle) || schematic_crate_takes_interact(entities, handle)
+}
+
+// The entity the player aims at as the HUD shows it: on the field the
+// aimed frame cell's (frame_target, the predicted player's in the
+// presentation, 0182), in the block world the raycast's. A block world
+// player's frame_target never hits.
+aimed_entity :: proc(block_target: Entity_Handle, field_target: Frame_Raycast_Hit) -> Entity_Handle {
+	if field_target.hit {
+		return entity_from_occupant(field_target.occupant.handle)
+	}
+	return block_target
+}
+
+// Whether an Open_Inventory press opens the aimed machine's panel rather
+// than the inventory (0194, route_open_inventory_press). Both targets
+// only reach as far as the player does.
+aims_at_panel :: proc(entities: ^Entities, block_target: Entity_Handle, field_target: Frame_Raycast_Hit) -> bool {
+	return entity_has_panel(entities, aimed_entity(block_target, field_target))
+}
+
+// Open_Aimed (an Open_Inventory press the presentation routed, 0194)
+// opens the targeted entity's panel. A gamepad's A is both Jump and
+// Interact: on a power switch Interact turns it like a lever and on a
+// launch pad with a rocket ready and cargo loaded it launches, and there
+// it does not jump (without_interact_jump); keyboard Space never
+// interacts.
 resolve_interact :: proc(player: ^Player, entities: ^Entities, machines: Machine_Registry, input: Input_Frame) -> (Input_Frame, Player_Events) {
-	result := without_interact_jump(player^, entities, input)
-	if .Interact not_in input.pressed || !entity_has_panel(entities, player.target.entity) {
-		return result, {}
+	result := without_interact_jump(player^, entities, machines, input)
+	if .Open_Aimed in input.just_pressed && entity_has_panel(entities, player.target.entity) {
+		player.open_machine = player.target.entity
+		return result, {.Open_Machine}
 	}
 	if .Interact not_in input.just_pressed {
 		return result, {}
 	}
-	if .Sneak not_in input.pressed && toggle_power_switch(entities, machines, player.target.entity) {
+	if toggle_power_switch(entities, machines, player.target.entity) {
 		return result, {.Toggled_Switch}
 	}
-	if .Sneak not_in input.pressed && request_launch(entities, player.target.entity) {
+	if request_launch(entities, player.target.entity) {
 		return result, {.Launch_Requested}
 	}
-	player.open_machine = player.target.entity
-	return result, {.Open_Machine}
+	return result, {}
 }
 
-// Interact on an entity with a panel takes the A press from Jump.
-without_interact_jump :: proc(player: Player, entities: ^Entities, input: Input_Frame) -> Input_Frame {
+// Interact on a switch or a launch pad takes the A press from Jump.
+without_interact_jump :: proc(player: Player, entities: ^Entities, machines: Machine_Registry, input: Input_Frame) -> Input_Frame {
 	result := input
-	if .Interact in input.pressed && entity_has_panel(entities, player.target.entity) {
+	if .Interact in input.pressed && entity_answers_interact(entities, machines, player.target.entity) {
 		result.pressed -= {.Jump}
 		result.just_pressed -= {.Jump}
 	}
@@ -550,7 +575,7 @@ move_player_body :: proc(world: ^World, registry: Block_Registry, player: ^Playe
 predict_player_motion :: proc(world: ^World, content: Simulation_Content, player: ^Player, frame: Input_Frame, tick_rate: int, cheat_speed: bool) {
 	seconds := 1 / f32(tick_rate)
 	player.sneaking = update_sneaking(player.sneaking, frame)
-	input := without_interact_jump(player^, &world.entities, with_sneaking(frame, player.sneaking))
+	input := without_interact_jump(player^, &world.entities, content.machines, with_sneaking(frame, player.sneaking))
 	sprinting := turn_player_for_tick(player, input, seconds)
 	move_player_body(world, content.blocks, player, input, sprinting, cheat_speed, seconds)
 }

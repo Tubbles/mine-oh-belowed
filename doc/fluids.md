@@ -57,7 +57,7 @@ The recipes are in `data/recipes.sjson`, the port layouts in the header of `data
 
 - Poles and power switches are the nodes. Two nodes are wired when their footprint centres (across, at the bottom) are at most the shorter of their two `wire_reach` apart. A switch that is off takes part in no network.
 - A pole's `supply_volume` is centred across its footprint and starts at its bottom. An electric machine or generator belongs to the network of the first pole whose volume covers one of its cells, and to none otherwise. Its panel then says so.
-- Networks and memberships are rebuilt when a pole, a switch or an electric machine is placed or removed, or a switch turns. Interact turns a switch. Sneak with Interact opens its panel.
+- Networks and memberships are rebuilt when a pole, a switch or an electric machine is placed or removed, or a switch turns. Interact turns a switch. The inventory binding opens its panel ([input.md](input.md)).
 
 ### Balance
 

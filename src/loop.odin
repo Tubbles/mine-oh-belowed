@@ -392,10 +392,12 @@ update_frame :: proc(state: ^Frame_State) {
 	}
 }
 
-// The frame's input into the session, once for every viewport: the guards,
+// The frame's input into the session, once for every viewport: an
+// Open_Inventory press aimed at a panel turned into Open_Aimed (0194), the guards,
 // the debug actions, the ticks and each player's rumble.
 update_frame_world :: proc(state: ^Frame_State) {
 	for &viewport in active_viewports(state) {
+		viewport.interaction.input = route_open_inventory_press(viewport.interaction.input, viewport_world_blocked(viewport), viewport_aims_at_panel(state, viewport))
 		viewport.interaction.world_action_guard = update_world_action_guard(viewport.interaction.world_action_guard, viewport_world_blocked(viewport), viewport.interaction.input.pressed)
 		viewport.interaction.haptic = {}
 	}
@@ -422,6 +424,18 @@ apply_overlay_toggle :: proc(state: ^Frame_State, viewport: Viewport) {
 	if .Toggle_Bottleneck_Overlay in viewport.interaction.input.just_pressed && !viewport_world_blocked(viewport) {
 		state.settings.bottleneck_overlay = !state.settings.bottleneck_overlay
 	}
+}
+
+// The viewport's player aims at a machine with a panel, read from the
+// target its HUD shows (aims_at_panel): the confirmed player's raycast in
+// the block world, the predicted field player's frame cell on the field.
+viewport_aims_at_panel :: proc(state: ^Frame_State, viewport: Viewport) -> bool {
+	session := state.session
+	if !viewport_player_ready(session, viewport) {
+		return false
+	}
+	view := lockstep_view_player(&session.lockstep, &session.simulation, viewport.player)
+	return aims_at_panel(&session.simulation.world.entities, session.simulation.players[viewport.player].target.entity, view.field.frame_target)
 }
 
 // The viewport's frame input as the world takes it.

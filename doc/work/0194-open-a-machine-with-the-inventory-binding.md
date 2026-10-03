@@ -1,6 +1,6 @@
 # 0194: Open a machine with the inventory binding
 
-Status: todo (user, 2026-10-03: "we dont need a separate keybinding for opening a machine, we could just reuse the 'open inventory' keybinding, so it opens the normal inventory view when not pointing at any machine, and opening a machine's panel when pointing at a machine and standing close enough to it")
+Status: implemented (user, 2026-10-03: "we dont need a separate keybinding for opening a machine, we could just reuse the 'open inventory' keybinding, so it opens the normal inventory view when not pointing at any machine, and opening a machine's panel when pointing at a machine and standing close enough to it")
 
 ## Goal
 
@@ -17,7 +17,7 @@ One binding opens things: Open_Inventory (E, gamepad West, the touch overlay's i
 - Mode: the world. Open_Inventory (keyboard E, gamepad West, the HUD's backpack touch button) means "open": a machine with a panel aimed within reach opens its panel, anything else opens the inventory. One control whose meaning follows the aim the HUD shows; no modifier, no layer. The hint beside such a machine shows the Inventory glyph with "Open".
 - Interact (keyboard F, gamepad South shared with Jump) keeps the switch toggle and the launch only; its jump suppression on the field applies only when one of those is aimed, so South jumps everywhere else as before. Nothing else is bound or rebound.
 - Screens: Open_Inventory with a screen open still closes it (the existing rule); the panel's own Back closes a machine.
-- Touch: the backpack HUD button presses Open_Inventory and so opens the aimed machine with no overlay change.
+- Touch: the backpack HUD button presses Open_Inventory and so opens the machine at the view's centre. A tap on a machine with a panel presses the same gamepad control (West, Open_Inventory) with the tap's aim, so the press is routed like any other and opens that machine (added 2026-10-03 after the implementation showed a tap on a furnace falling through to Place); a tap on a switch, a launch pad or a crate still presses Interact, any other tap Place. No touch code path of its own: the tap presses a gamepad control, as the overlay's rule says.
 
 ## Verify
 

@@ -761,7 +761,7 @@ test_the_touch_aim_picks_the_players_target :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
 	records: Game_Records
-	handle := add_entity(&world.entities, content.machines, test_machine(content.machines, "wooden_chest"), {4, 1, 4}, 0)
+	handle := add_entity(&world.entities, content.machines, test_machine(content.machines, "power_switch"), {4, 1, 4}, 0)
 	players := []Player{make_test_player(content.blocks, {4.5, 1, 1.5})}
 	// Looking up at the sky: no target.
 	players[0].pitch, players[0].yaw = 60, 90
@@ -772,17 +772,17 @@ test_the_touch_aim_picks_the_players_target :: proc(t: ^testing.T) {
 	aimed := Input_Frame{aim_direction = linalg.normalize(block_centre({4, 1, 4}) - eye), aim_overrides = true}
 	tick_player(&world, &records, content, players, 0, aimed, TEST_TICK_RATE, 0)
 	testing.expect_value(t, players[0].target.entity, handle)
-	testing.expect(t, entity_takes_interact(&world.entities, players[0].target.entity))
-	// The press that follows opens it.
+	testing.expect(t, entity_takes_interact(&world.entities, content.machines, players[0].target.entity))
+	// The press that follows turns it.
 	players[0].on_ground = true
 	aimed.pressed, aimed.just_pressed = {.Jump, .Interact}, {.Jump, .Interact}
 	events := tick_player(&world, &records, content, players, 0, aimed, TEST_TICK_RATE, 0)
-	testing.expect_value(t, events, Player_Events{.Open_Machine})
+	testing.expect_value(t, events, Player_Events{.Toggled_Switch})
 	// Aimed at the floor: a block, no interaction.
 	floor := Input_Frame{aim_direction = linalg.normalize(block_centre({4, 0, 2}) - eye), aim_overrides = true}
 	tick_player(&world, &records, content, players, 0, floor, TEST_TICK_RATE, 0)
 	testing.expect_value(t, players[0].target.block, World_Coordinate{4, 0, 2})
-	testing.expect(t, !entity_takes_interact(&world.entities, players[0].target.entity))
+	testing.expect(t, !entity_takes_interact(&world.entities, content.machines, players[0].target.entity))
 }
 
 // A tap aims then presses: land, lift, the frames of the aim.
@@ -1528,19 +1528,19 @@ test_a_tap_in_the_jump_zone_jumps_without_an_aim :: proc(t: ^testing.T) {
 }
 
 // A jump zone tap with an entity that takes Interact under the view's
-// centre jumps and opens nothing, where the gamepad's A would open it.
+// centre jumps and turns nothing, where the gamepad's A would turn it.
 @(test)
 test_a_jump_tap_jumps_with_a_machine_under_the_views_centre :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
 	records: Game_Records
-	add_entity(&world.entities, content.machines, test_machine(content.machines, "wooden_chest"), {4, 1, 4}, 0)
+	add_entity(&world.entities, content.machines, test_machine(content.machines, "power_switch"), {4, 1, 4}, 0)
 	players := []Player{make_test_player(content.blocks, {4.5, 1, 1.5})}
 	eye := player_eye(players[0].position)
-	// The view's aim at the chest, standing in for looking at it.
+	// The view's aim at the switch, standing in for looking at it.
 	view := Input_Frame{aim_direction = linalg.normalize(block_centre({4, 1, 4}) - eye), aim_overrides = true}
 	tick_player(&world, &records, content, players, 0, view, TEST_TICK_RATE, 0)
-	testing.expect(t, entity_takes_interact(&world.entities, players[0].target.entity))
+	testing.expect(t, entity_takes_interact(&world.entities, content.machines, players[0].target.entity))
 	layout := shipped_touch_overlay(t)
 	state: Touch_Overlay_State
 	output := tap_at(&state, layout, 0, {PHONE_SCREEN.x * 0.9, 500}, TAP_TOUCH)
@@ -1796,4 +1796,120 @@ test_the_rotate_predicate_covers_a_targeted_belt_and_inserter :: proc(t: ^testin
 	testing.expect(t, entity_rotates(&world.entities, inserter))
 	testing.expect(t, !entity_rotates(&world.entities, chest))
 	testing.expect(t, !entity_rotates(&world.entities, NO_ENTITY))
+}
+
+// Work item 0194: a tap's press, from the overlay through the shipped
+// bindings, the frame's routing of the inventory binding and the player
+// tick, with the player aimed at target the way the tap's aim tick left
+// it. Returns the actions the frame pressed after the routing and the
+// tick's events.
+touch_tap_into_tick :: proc(t: ^testing.T, world: ^World, content: Simulation_Content, players: []Player, interaction: Touch_Interaction) -> (pressed: Action_Set, events: Player_Events) {
+	layout := shipped_touch_overlay(t)
+	state: Touch_Overlay_State
+	inputs := interaction == .Tap ? TAP_TOUCH : CROSSHAIR_TOUCH
+	target := players[0].target.entity
+	inputs.target_takes_interaction = entity_takes_interact(&world.entities, content.machines, target)
+	inputs.target_has_panel = aims_at_panel(&world.entities, target, {})
+	tap_at(&state, layout, 0, TAP_POINT, inputs)
+	output := touch_frame(&state, layout, {}, inputs = inputs)
+	tables, _ := build_input_bindings(shipped_default_bindings(t), .Sdl3, context.temp_allocator)
+	gamepad := touch_overlay_raw_gamepad(output, .Sdl3)
+	actions := gamepad_button_actions(gamepad, tables) + gamepad_trigger_actions(gamepad, tables)
+	frame := route_open_inventory_press(Input_Frame{pressed = actions, just_pressed = actions}, false, aims_at_panel(&world.entities, target, {}))
+	records: Game_Records
+	players[0].on_ground = true
+	events = tick_player(world, &records, content, players, 0, frame, TEST_TICK_RATE, 0)
+	return frame.just_pressed, events
+}
+
+// A tap on a furnace opens its panel (no Place, no inventory), on a
+// switch turns it, on the ground places; in both schemes, the crosshair
+// one aimed by the view.
+@(test)
+test_a_tap_opens_a_machine_turns_a_switch_and_places_on_the_ground :: proc(t: ^testing.T) {
+	content := make_test_content()
+	for interaction in ([2]Touch_Interaction{.Tap, .Crosshair}) {
+		world := make_floor_world(content.blocks, 32)
+		furnace := add_entity(&world.entities, content.machines, test_machine(content.machines, "stone_furnace"), {4, 1, 4}, 0)
+		power_switch := add_entity(&world.entities, content.machines, test_machine(content.machines, "power_switch"), {6, 1, 4}, 0)
+		players := []Player{make_test_player(content.blocks, {4.5, 1, 1.5})}
+		records: Game_Records
+		eye := player_eye(players[0].position)
+		cases := [?]struct {
+			cell:   World_Coordinate,
+			entity: Entity_Handle,
+		}{{{4, 1, 4}, furnace}, {{6, 1, 4}, power_switch}, {{4, 0, 2}, NO_ENTITY}}
+		for target in cases {
+			direction := linalg.normalize(block_centre(target.cell) - eye)
+			// The tap's aim tick, or the view turned there for the crosshair.
+			aim := Input_Frame{aim_direction = direction, aim_overrides = true}
+			tick_player(&world, &records, content, players, 0, aim, TEST_TICK_RATE, 0)
+			testing.expect_value(t, players[0].target.entity, target.entity)
+			pressed, events := touch_tap_into_tick(t, &world, content, players, interaction)
+			testing.expectf(t, .Open_Inventory not_in pressed, "%v %v: the inventory opens", interaction, target.entity.kind)
+			switch target.entity {
+			case furnace:
+				testing.expect_value(t, events, Player_Events{.Open_Machine})
+				testing.expect_value(t, players[0].open_machine, furnace)
+				testing.expect(t, .Place not_in pressed && .Interact not_in pressed)
+				players[0].open_machine = NO_ENTITY
+			case power_switch:
+				testing.expect_value(t, events, Player_Events{.Toggled_Switch})
+				testing.expect(t, .Place not_in pressed)
+			case:
+				testing.expect_value(t, events, Player_Events{})
+				testing.expect(t, .Place in pressed)
+			}
+		}
+	}
+}
+
+// Work item 0194 on the field: the tap reads the aimed frame cell, so a
+// tap on a switch turns it and a tap on a furnace opens its panel,
+// through the overlay, the bindings, the routing and the field tick.
+@(test)
+test_a_tap_on_the_field_turns_a_switch_and_opens_a_furnace :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	session := start_field_test_session(config, content)
+	defer end_session(session)
+	simulation_content := field_test_content(session, content)
+	simulation := &session.simulation
+	tick_field_test_simulation(simulation, simulation_content, {})
+	feet := simulation.players[0].field.position
+	frame := add_frame(&simulation.world.entities.frames, feet + {0, 0, 5 * POSITION_UNITS_PER_METRE}, frame_axes({0, UNIT_VECTOR_ONE, 0}, 0), 500)
+	entities := &simulation.world.entities
+	furnace := add_entity(entities, simulation_content.machines, test_machine(simulation_content.machines, "stone_furnace"), {}, 0, frame)
+	power_switch := add_entity(entities, simulation_content.machines, test_machine(simulation_content.machines, "power_switch"), {3, 0, 0}, 0, frame)
+	layout := shipped_touch_overlay(t)
+	tables, _ := build_input_bindings(shipped_default_bindings(t), .Sdl3, context.temp_allocator)
+	for target in ([2]Entity_Handle{power_switch, furnace}) {
+		simulation.players[0].field.frame_target = Frame_Raycast_Hit{hit = true, frame = frame, occupant = {handle = entity_occupant_handle(target)}}
+		block_target := simulation.players[0].target.entity
+		field_target := simulation.players[0].field.frame_target
+		inputs := TAP_TOUCH
+		inputs.target_takes_interaction, inputs.target_has_panel = touch_tap_target(entities, simulation_content.machines, block_target, field_target)
+		state: Touch_Overlay_State
+		tap_at(&state, layout, 0, TAP_POINT, inputs)
+		output := touch_frame(&state, layout, {}, inputs = inputs)
+		gamepad := touch_overlay_raw_gamepad(output, .Sdl3)
+		actions := gamepad_button_actions(gamepad, tables) + gamepad_trigger_actions(gamepad, tables)
+		pressed := route_open_inventory_press(Input_Frame{pressed = actions, just_pressed = actions}, false, aims_at_panel(entities, block_target, field_target))
+		was_on := pool_get(&entities.poles, power_switch).on
+		clear(&simulation.events)
+		tick_field_test_simulation(simulation, simulation_content, pressed)
+		events: Player_Events
+		for event in simulation.events {
+			events += {event.kind}
+		}
+		testing.expect(t, .Open_Inventory not_in pressed.just_pressed)
+		if target == power_switch {
+			testing.expect(t, .Toggled_Switch in events)
+			testing.expect(t, .Open_Machine not_in events)
+			testing.expect_value(t, pool_get(&entities.poles, power_switch).on, !was_on)
+		} else {
+			testing.expect(t, .Open_Machine in events)
+			testing.expect_value(t, simulation.players[0].open_machine, furnace)
+		}
+	}
 }

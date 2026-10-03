@@ -281,35 +281,49 @@ drain_field_torch_removal :: proc(state: ^Simulation_State, content: Simulation_
 
 // The player.
 
-// Interact on a frame cell whose machine has a panel opens it, as the
-// block world's Interact does (resolve_interact); the gamepad's A then
-// does not jump.
-interact_on_field :: proc(player: ^Player, entities: ^Entities, frame: Input_Frame) -> (input: Input_Frame, events: Player_Events) {
-	input = frame
-	target := player.field.frame_target
-	if !target.hit {
-		return input, {}
-	}
-	handle := entity_from_occupant(target.occupant.handle)
-	if !entity_has_panel(entities, handle) {
-		return input, {}
-	}
-	if .Interact in frame.pressed {
-		input.pressed -= {.Jump}
-		input.just_pressed -= {.Jump}
+// Open_Aimed on a frame cell whose machine has a panel opens it, as the
+// block world's does (resolve_interact, 0194); Interact turns a power
+// switch or launches from a launch pad there, and the gamepad's A then
+// does not jump (without_field_interact_jump).
+interact_on_field :: proc(player: ^Player, entities: ^Entities, machines: Machine_Registry, frame: Input_Frame) -> (input: Input_Frame, events: Player_Events) {
+	input = without_field_interact_jump(player^, entities, machines, frame)
+	handle := aimed_entity(NO_ENTITY, player.field.frame_target)
+	if .Open_Aimed in frame.just_pressed && entity_has_panel(entities, handle) {
+		player.open_machine = handle
+		return input, {.Open_Machine}
 	}
 	if .Interact not_in frame.just_pressed {
 		return input, {}
 	}
-	player.open_machine = handle
-	return input, {.Open_Machine}
+	if toggle_power_switch(entities, machines, handle) {
+		return input, {.Toggled_Switch}
+	}
+	if request_launch(entities, handle) {
+		return input, {.Launch_Requested}
+	}
+	return input, {}
+}
+
+// Interact on a frame cell holding a switch or a launch pad takes the A
+// press from Jump; anywhere else A jumps.
+without_field_interact_jump :: proc(player: Player, entities: ^Entities, machines: Machine_Registry, frame: Input_Frame) -> Input_Frame {
+	result := frame
+	if .Interact in frame.pressed && entity_answers_interact(entities, machines, aimed_entity(NO_ENTITY, player.field.frame_target)) {
+		result.pressed -= {.Jump}
+		result.just_pressed -= {.Jump}
+	}
+	return result
 }
 
 // One field player's part of the tick, before the drain: the hotbar, the
 // tool, the move and the queued edits and placements, the hand crafting.
 tick_field_session_player :: proc(state: ^Simulation_State, content: Simulation_Content, index: int, frame: Input_Frame) -> Player_Events {
 	player := &state.players[index]
-	resolved, events := interact_on_field(player, &state.world.entities, frame)
+	resolved, events := interact_on_field(player, &state.world.entities, content.machines, frame)
+	// Counted as tick_player counts the block world's.
+	if events & {.Open_Machine, .Toggled_Switch, .Launch_Requested} != {} {
+		record_world_action(&state.records.statistics)
+	}
 	player.selected_hotbar_slot = cycle_hotbar_slot(player.selected_hotbar_slot, resolved.just_pressed)
 	input := field_tick_input(resolved, state.tick_rate)
 	update_field_held_tool(player, content, input)

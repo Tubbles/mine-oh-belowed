@@ -1433,3 +1433,92 @@ test_the_touch_row_configures_a_foundation :: proc(t: ^testing.T) {
 	testing.expect_value(t, top_screen(state.screens), Screen.Inventory)
 }
 
+
+// The glyph the glyph bar draws beside a hint's label: the icon pushed
+// right after the label's text, and the key cap's text after it.
+glyph_beside_label :: proc(commands: []Draw_Command, label: string) -> (shown: Glyph, found: bool) {
+	for command, index in commands {
+		if command.kind != .Text || command.text != label || command.panel != UI_GLYPH_BAR_PANEL || index + 1 >= len(commands) {
+			continue
+		}
+		icon := commands[index + 1]
+		if icon.kind != .Ui_Icon {
+			continue
+		}
+		shown.icon = Ui_Icon(icon.tile)
+		if shown.icon == .Key && index + 2 < len(commands) {
+			shown.label = commands[index + 2].text
+		}
+		return shown, true
+	}
+	return {}, false
+}
+
+// Work item 0194: the hint beside a machine with a panel (the audit's
+// HUD case aims at a drill) shows the inventory binding's glyph with
+// Open; beside a power switch Interact turns it and the inventory
+// binding opens it. With the keyboard and with the gamepad.
+@(test)
+test_the_hint_beside_a_machine_shows_the_inventory_glyph :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	player := &audit.simulation.players[0]
+	switch_handle := NO_ENTITY
+	for pole in audit.simulation.world.entities.poles.entries {
+		if pole.alive && entity_is_power_switch(&audit.simulation.world.entities, audit.content.machines, pole.handle) {
+			switch_handle = pole.handle
+		}
+	}
+	testing.expect(t, switch_handle != NO_ENTITY, "the audit's site has a power switch")
+	drill := player.target
+	for device in ([2]Input_Device{.Keyboard_Mouse, .Gamepad}) {
+		for target in ([2]Entity_Handle{drill.entity, switch_handle}) {
+			player.target = Raycast_Hit{hit = true, entity = target}
+			state := Ui_State{theme = audit.theme, active_device = device, bindings = shipped_default_bindings(t)}
+			ui_begin(&state, {}, {1920, 1080}, 1.0 / 60, 1, 1, ui_accessibility(audit.settings))
+			state.active_device = device
+			draw_hud(&state, audit_screen_context(audit), audit_hud_context(audit))
+			ui_resolve(&state)
+			open, found := glyph_beside_label(state.draw_list[:], text("hint_open"))
+			testing.expectf(t, found && open == glyph(&state, .Inventory), "%v %v: Open beside %v, wanted %v", device, target.kind, open, glyph(&state, .Inventory))
+			turn, turn_found := glyph_beside_label(state.draw_list[:], text("hint_toggle"))
+			is_switch := target == switch_handle
+			testing.expectf(t, turn_found == is_switch, "%v %v: Turn shown %v", device, target.kind, turn_found)
+			if is_switch {
+				testing.expect_value(t, turn, glyph(&state, .Interact))
+			}
+			destroy_ui_state(&state)
+		}
+	}
+	// The switch's three hints fit the glyph bar at every audited size and
+	// text scale, the smallest included.
+	player.target = Raycast_Hit{hit = true, entity = switch_handle}
+	text_scale_before := audit.settings.text_scale
+	audit_sizes := UI_AUDIT_SIZES
+	sizes := make([dynamic]Ui_Audit_Size, context.temp_allocator)
+	append(&sizes, ..audit_sizes[:])
+	append(&sizes, UI_AUDIT_DECK_SIZE)
+	for size in sizes {
+		for text_scale in UI_AUDIT_TEXT_SCALES {
+			audit.settings.text_scale = text_scale
+			state := Ui_State{theme = audit.theme, active_device = .Gamepad, bindings = shipped_default_bindings(t)}
+			ui_begin(&state, {}, size.pixels, 1.0 / 60, size.scale, 1, ui_accessibility(audit.settings))
+			state.active_device = .Gamepad
+			draw_hud(&state, audit_screen_context(audit), audit_hud_context(audit))
+			ui_resolve(&state)
+			for label in ([3]string{text("hint_toggle"), text("hint_open"), text("hint_pause")}) {
+				_, found := glyph_beside_label(state.draw_list[:], label)
+				testing.expectf(t, found, "%v scale %.1f text %.1f: %q missing", size.pixels, size.scale, text_scale, label)
+			}
+			safe := ui_safe_area(&state)
+			for command in state.draw_list {
+				if command.panel == UI_GLYPH_BAR_PANEL {
+					testing.expectf(t, rectangle_inside(command.rectangle, safe, UI_AUDIT_TOLERANCE), "%v scale %.1f text %.1f: %v %q outside %v", size.pixels, size.scale, text_scale, command.kind, command.text, safe)
+				}
+			}
+			destroy_ui_state(&state)
+		}
+	}
+	audit.settings.text_scale = text_scale_before
+	player.target = drill
+}

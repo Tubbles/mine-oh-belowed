@@ -53,9 +53,15 @@ Action :: enum u8 {
 	// d-pad down (which the touch overlay's long press on the selected slot
 	// presses) and keyboard X.
 	Drop_Stack,
-	// Opens the targeted entity's panel. A on a gamepad, which is Jump
-	// unless an entity is targeted (resolve_interact).
+	// Turns the targeted power switch or launches from the targeted
+	// launch pad. A on a gamepad, which is Jump unless one of those is
+	// targeted (resolve_interact, interact_on_field).
 	Interact,
+	// Opens the targeted entity's panel (0194). Bound to no control: an
+	// Open_Inventory press aimed at a machine with a panel becomes this
+	// on the presentation side (route_open_inventory_press), and the
+	// inventory does not open.
+	Open_Aimed,
 	// Menu actions, bound next to the world actions on the same buttons.
 	Navigate_Up,
 	Navigate_Down,
@@ -318,6 +324,7 @@ WORLD_ACTIONS :: Action_Set {
 	.Hotbar_Slot_8,
 	.Drop_Stack,
 	.Interact,
+	.Open_Aimed,
 	.Toggle_Camera_Mode,
 	.Toggle_Fly_Mode,
 	.Toggle_No_Clip,
@@ -333,6 +340,21 @@ without_actions :: proc(frame: Input_Frame, removed: Action_Set) -> Input_Frame 
 	if .Look in removed {
 		result.look, result.look_delta = {}, {}
 	}
+	return result
+}
+
+// Open_Inventory means "open" (0194): a press while no screen is open and
+// a machine with a panel is aimed (aims_at_panel, decided from the target
+// the HUD shows) becomes the simulation's Open_Aimed instead, so the UI
+// opens no inventory; any other press stays Open_Inventory and the
+// simulation opens nothing.
+route_open_inventory_press :: proc(frame: Input_Frame, world_blocked, aims_at_panel: bool) -> Input_Frame {
+	result := frame
+	if world_blocked || !aims_at_panel || .Open_Inventory not_in frame.just_pressed {
+		return result
+	}
+	result.just_pressed -= {.Open_Inventory}
+	result.just_pressed += {.Open_Aimed}
 	return result
 }
 

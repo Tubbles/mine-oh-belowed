@@ -128,6 +128,8 @@ Touch_Overlay_Element_Entry :: struct {
 	hold_control:         string,
 	tap_interact_control: string,
 	tap_place_control:    string,
+	// 0194: left out in a layout written before it, which reads as WEST.
+	tap_open_control:     string,
 	jump_zone_share:      f32,
 	// 0120: a stick with anchor and position, a button that latches on a
 	// double tap.
@@ -157,13 +159,15 @@ Touch_Overlay_Element :: struct {
 	sprint_rim:  f32,
 	sensitivity: f32,
 	// A look's controls (0118): the hold presses hold_control, a tap
-	// tap_interact_control on a target that takes Interact, else
-	// tap_place_control. A tap in the rightmost jump_zone_share of the
+	// tap_interact_control on a target that takes Interact,
+	// tap_open_control (Open_Inventory's, 0194) on a machine with a panel,
+	// else tap_place_control. A tap in the rightmost jump_zone_share of the
 	// screen's width presses the Jump action instead (0134,
 	// apply_touch_overlay_jump; 0 for no zone).
 	hold_control:         Touch_Overlay_Control,
 	tap_interact_control: Touch_Overlay_Control,
 	tap_place_control:    Touch_Overlay_Control,
+	tap_open_control:     Touch_Overlay_Control,
 	jump_zone_share:      f32,
 	// A static stick's base is centred at anchor and position (0120).
 	static:               bool,
@@ -287,7 +291,9 @@ Touch_Overlay_State :: struct {
 // What the frame hands the overlay besides the fingers. ticked: the
 // previous frame ran a simulation tick, so the world saw the aim and the
 // press that frame sent. target_takes_interaction: the first player's
-// target after that tick takes Interact (entity_takes_interact).
+// target after that tick takes Interact (entity_takes_interact);
+// target_has_panel: it has a panel the inventory binding opens
+// (aims_at_panel, 0194).
 // hotbar_slots: the HUD's hotbar slots in render pixels
 // (hud_hotbar_pixel_rectangles), and the slot the first player selected.
 Touch_Interaction_Frame :: struct {
@@ -295,6 +301,7 @@ Touch_Interaction_Frame :: struct {
 	frame_seconds:            f32,
 	ticked:                   bool,
 	target_takes_interaction: bool,
+	target_has_panel:         bool,
 	hotbar_slots:             [HOTBAR_SLOT_COUNT]Ui_Rectangle,
 	selected_hotbar_slot:     int,
 	// A double_tap_toggles button may latch (0120): the sneak setting is
@@ -533,6 +540,10 @@ resolve_touch_overlay_stick :: proc(entry: Touch_Overlay_Element_Entry, element:
 	return ""
 }
 
+// The gamepad control Open_Inventory is bound to, for a layout written
+// before tap_open_control (0194).
+DEFAULT_TAP_OPEN_CONTROL :: "WEST"
+
 resolve_touch_overlay_look :: proc(entry: Touch_Overlay_Element_Entry, element: ^Touch_Overlay_Element) -> string {
 	if problem := resolve_touch_overlay_side(entry, element); problem != "" {
 		return problem
@@ -548,6 +559,7 @@ resolve_touch_overlay_look :: proc(entry: Touch_Overlay_Element_Entry, element: 
 		{"hold_control", entry.hold_control, &element.hold_control},
 		{"tap_interact_control", entry.tap_interact_control, &element.tap_interact_control},
 		{"tap_place_control", entry.tap_place_control, &element.tap_place_control},
+		{"tap_open_control", entry.tap_open_control == "" ? DEFAULT_TAP_OPEN_CONTROL : entry.tap_open_control, &element.tap_open_control},
 	}
 	for control in controls {
 		ok: bool
@@ -928,6 +940,7 @@ touch_overlay_element_text :: proc(element: Touch_Overlay_Element) -> string {
 		fmt.sbprintf(&builder, " hold_control = %q", touch_overlay_control_name(element.hold_control))
 		fmt.sbprintf(&builder, " tap_interact_control = %q", touch_overlay_control_name(element.tap_interact_control))
 		fmt.sbprintf(&builder, " tap_place_control = %q", touch_overlay_control_name(element.tap_place_control))
+		fmt.sbprintf(&builder, " tap_open_control = %q", touch_overlay_control_name(element.tap_open_control))
 		if element.jump_zone_share > 0 {
 			fmt.sbprintf(&builder, " jump_zone_share = %v", element.jump_zone_share)
 		}
@@ -1322,7 +1335,7 @@ advance_touch_tap :: proc(tap: Touch_Tap, layout: Touch_Overlay_Layout, world_sh
 	if tap.phase == .Pressing {
 		return {}
 	}
-	control := tap_control(layout.elements[tap.element], inputs.target_takes_interaction)
+	control := tap_control(layout.elements[tap.element], inputs.target_takes_interaction, inputs.target_has_panel)
 	return Touch_Tap{phase = .Pressing, point = tap.point, element = tap.element, control = control, aims = tap.aims}
 }
 
@@ -1344,10 +1357,18 @@ look_element_valid :: proc(layout: Touch_Overlay_Layout, element: int) -> bool {
 	return element >= 0 && element < len(layout.elements) && layout.elements[element].kind == .Look
 }
 
-// Interact's control on a target that takes it, else Place's, through the
-// bindings like the buttons.
-tap_control :: proc(look: Touch_Overlay_Element, target_takes_interaction: bool) -> Touch_Overlay_Control {
-	return target_takes_interaction ? look.tap_interact_control : look.tap_place_control
+// Interact's control on a target that takes it (a switch turns rather
+// than opening), Open_Inventory's on another machine with a panel, which
+// the frame routes into opening it (route_open_inventory_press, 0194),
+// else Place's, through the bindings like the buttons.
+tap_control :: proc(look: Touch_Overlay_Element, target_takes_interaction, target_has_panel: bool) -> Touch_Overlay_Control {
+	switch {
+	case target_takes_interaction:
+		return look.tap_interact_control
+	case target_has_panel:
+		return look.tap_open_control
+	}
+	return look.tap_place_control
 }
 
 // An undecided finger becomes a drag once it moves past the slop, taking
@@ -1718,9 +1739,9 @@ apply_touch_overlay_hotbar :: proc(frame: Input_Frame, overlay: Touch_Overlay_Fr
 
 // A jump zone tap into the input frame as the Jump action (0134), the
 // other place the overlay presses an action: SOUTH is Interact too, and
-// Interact wins over Jump on an entity with a panel (resolve_interact), so
-// a jump tap through the gamepad would open a machine under the view's
-// centre. Held until a tick has run with it, like the tap's press, and
+// Interact wins over Jump on a power switch or a launch pad
+// (resolve_interact), so a jump tap through the gamepad would turn a
+// switch under the view's centre. Held until a tick has run with it, like the tap's press, and
 // just_pressed on its first frame, which the tick accumulator carries.
 apply_touch_overlay_jump :: proc(frame: Input_Frame, overlay: Touch_Overlay_Frame) -> Input_Frame {
 	result := frame
@@ -1786,17 +1807,29 @@ touch_overlay_on :: proc(touch_context: Touch_Overlay_Context) -> bool {
 	return touch_overlay_enabled(touch_context.settings.touch_overlay, touch_context.interaction.touch_overlay_forced, ODIN_PLATFORM_SUBTARGET == .Android)
 }
 
+// What the tap's target calls for: Interact, or the inventory binding
+// that opens its panel. The target is the block world's raycast target
+// or the field's aimed frame cell, as the routing of the inventory
+// binding reads it (aimed_entity, 0194).
+touch_tap_target :: proc(entities: ^Entities, machines: Machine_Registry, block_target: Entity_Handle, field_target: Frame_Raycast_Hit) -> (takes_interaction, has_panel: bool) {
+	return entity_takes_interact(entities, machines, aimed_entity(block_target, field_target)), aims_at_panel(entities, block_target, field_target)
+}
+
 // The tap scheme's inputs: frame_tick_count is still the previous frame's
 // here (update_session sets it after the input is read), and the target is
 // the one that frame's last tick found.
 touch_interaction_frame :: proc(touch_context: Touch_Overlay_Context) -> Touch_Interaction_Frame {
 	simulation := &touch_context.session.simulation
 	selected := simulation.players[touch_context.local_player].selected_hotbar_slot
+	block_target := simulation.players[touch_context.local_player].target.entity
+	field_target := lockstep_view_player(&touch_context.session.lockstep, simulation, touch_context.local_player).field.frame_target
+	takes_interaction, has_panel := touch_tap_target(&simulation.world.entities, touch_context.content.machines, block_target, field_target)
 	return Touch_Interaction_Frame {
 		interaction = touch_context.settings.touch_interaction,
 		frame_seconds = touch_context.frame_seconds,
 		ticked = touch_context.frame_tick_count > 0,
-		target_takes_interaction = entity_takes_interact(&simulation.world.entities, simulation.players[touch_context.local_player].target.entity),
+		target_takes_interaction = takes_interaction,
+		target_has_panel = has_panel,
 		hotbar_slots = hud_hotbar_pixel_rectangles(touch_context.ui, selected),
 		selected_hotbar_slot = selected,
 		double_tap_latches = touch_context.settings.sneak_hold == .Hold,

@@ -854,3 +854,59 @@ test_a_field_refusal_is_news_when_new_or_pressed :: proc(t: ^testing.T) {
 	testing.expect(t, field_refusal_is_news(.Tool_Tier, .Tool_Tier, true))
 	testing.expect(t, field_refusal_is_news(.No_Vein, .Tool_Tier, false))
 }
+
+// Work item 0194 on the field: Open_Aimed (the inventory binding routed
+// on the press) at a furnace's frame cell opens it; A's Interact there
+// opens nothing and keeps its Jump; at a power switch Interact turns it
+// and takes the Jump.
+@(test)
+test_the_field_opens_a_panel_on_open_aimed_and_turns_a_switch_on_interact :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	session := start_field_test_session(config, content)
+	defer end_session(session)
+	simulation_content := field_test_content(session, content)
+	state := &session.simulation
+	tick_field_test_simulation(state, simulation_content, {})
+	feet := state.players[0].field.position
+	frame := add_frame(&state.world.entities.frames, feet + {0, 0, 5 * POSITION_UNITS_PER_METRE}, frame_axes({0, UNIT_VECTOR_ONE, 0}, 0), 500)
+	entities := &state.world.entities
+	furnace := add_entity(entities, simulation_content.machines, test_machine(simulation_content.machines, "stone_furnace"), {}, 0, frame)
+	power_switch := add_entity(entities, simulation_content.machines, test_machine(simulation_content.machines, "power_switch"), {3, 0, 0}, 0, frame)
+	aim := proc(state: ^Simulation_State, frame: Frame_Id, handle: Entity_Handle) {
+		state.players[0].field.frame_target = Frame_Raycast_Hit{hit = true, frame = frame, occupant = {handle = entity_occupant_handle(handle)}}
+	}
+	events_of := proc(state: ^Simulation_State) -> (events: Player_Events) {
+		for event in state.events {
+			events += {event.kind}
+		}
+		return events
+	}
+	interact := Input_Frame{pressed = {.Jump, .Interact}, just_pressed = {.Jump, .Interact}}
+
+	aim(state, frame, furnace)
+	clear(&state.events)
+	actions_before := state.records.statistics.world_actions
+	tick_field_test_simulation(state, simulation_content, Input_Frame{just_pressed = {.Open_Aimed}})
+	testing.expect(t, .Open_Machine in events_of(state))
+	testing.expect_value(t, state.records.statistics.world_actions, actions_before + 1)
+	testing.expect_value(t, state.players[0].open_machine, furnace)
+
+	state.players[0].open_machine = NO_ENTITY
+	aim(state, frame, furnace)
+	testing.expect(t, .Jump in without_field_interact_jump(state.players[0], entities, simulation_content.machines, interact).just_pressed)
+	clear(&state.events)
+	tick_field_test_simulation(state, simulation_content, interact)
+	testing.expect_value(t, events_of(state) & {.Open_Machine, .Toggled_Switch}, Player_Events{})
+	testing.expect_value(t, state.players[0].open_machine, NO_ENTITY)
+
+	aim(state, frame, power_switch)
+	testing.expect(t, .Jump not_in without_field_interact_jump(state.players[0], entities, simulation_content.machines, interact).just_pressed)
+	was_on := pool_get(&entities.poles, power_switch).on
+	clear(&state.events)
+	tick_field_test_simulation(state, simulation_content, interact)
+	testing.expect(t, .Toggled_Switch in events_of(state))
+	testing.expect_value(t, pool_get(&entities.poles, power_switch).on, !was_on)
+	testing.expect_value(t, state.records.statistics.world_actions, actions_before + 2)
+	testing.expect_value(t, state.players[0].open_machine, NO_ENTITY)
+}

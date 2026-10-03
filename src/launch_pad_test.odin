@@ -238,7 +238,8 @@ test_launch_consumes_rocket_and_cargo :: proc(t: ^testing.T) {
 }
 
 // Interact on a ready pad with cargo requests the launch, served after
-// the entity tick with the tick; Sneak with Interact opens the panel.
+// the entity tick with the tick; on a pad that cannot launch it does
+// nothing, and Open_Aimed opens the panel (0194).
 @(test)
 test_interact_launches_a_ready_rocket :: proc(t: ^testing.T) {
 	context.allocator = context.temp_allocator
@@ -247,11 +248,12 @@ test_interact_launches_a_ready_rocket :: proc(t: ^testing.T) {
 	player := make_test_player(test.content.blocks, {1, 1, -10})
 	player.target = Raycast_Hit{hit = true, entity = test.pad}
 	_, events := resolve_interact(&player, &test.world.entities, test.content.machines, press({.Interact}))
-	testing.expect_value(t, events, Player_Events{.Open_Machine})
+	testing.expect_value(t, events, Player_Events{})
 	pad.state = .Rocket_Ready
 	entity_insert(&test.world.entities, test.content, test.pad, {test_item(test.content.items, "iron_plate"), 5})
-	_, events = resolve_interact(&player, &test.world.entities, test.content.machines, press({.Interact, .Sneak}))
+	_, events = resolve_interact(&player, &test.world.entities, test.content.machines, press({.Open_Aimed}))
 	testing.expect_value(t, events, Player_Events{.Open_Machine})
+	testing.expect(t, !pad.launch_requested)
 	_, events = resolve_interact(&player, &test.world.entities, test.content.machines, press({.Interact}))
 	testing.expect_value(t, events, Player_Events{.Launch_Requested})
 	testing.expect(t, pad.launch_requested)

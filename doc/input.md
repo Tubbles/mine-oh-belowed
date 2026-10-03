@@ -105,8 +105,9 @@ Rule: every action a control triggers is a line in `data/bindings.sjson` (0025);
 - The context (`world`, `menu`, `both`) documents the layout and switches nothing in the input frame: which actions reach the world while a screen is open is `WORLD_ACTIONS`. The touch overlay's control lookup (`touch_control_for_action`) skips `menu` bindings.
 - A configuration file may list `bindings` in the same shape; every action it lists loses all of its defaults (`effective_bindings`). The settings' Bindings tab shows the effective list read only (`binding_rows`).
 - The glyphs show the effective bindings (0151, `glyph`): the first control bound to the hint's action on the active device that the backend reads (raylib skips the paddles, MISC buttons, GUIDE and TOUCHPAD, `raylib_reads_gamepad_control`), since the glyph bar has room for one. On the keyboard Back shows Pause's Esc, which steps back a screen too, and Sprint shows `Sprint_Hold`; each falls back to its own action's key when the other has none.
-- One control carries a world and a menu meaning. A is Jump, Interact and Confirm; while the target has a panel Interact wins and the Jump is dropped for that tick (`resolve_interact`).
-- On a power switch Interact turns it and on a launch pad with a rocket ready and cargo loaded it launches; Sneak with Interact opens their panels.
+- One control carries a world and a menu meaning. A is Jump, Interact and Confirm; while the target is a power switch or a launch pad Interact wins and the Jump is dropped for that tick (`resolve_interact`, `without_field_interact_jump` on the field); on anything else A jumps.
+- On a power switch Interact turns it and on a launch pad with a rocket ready and cargo loaded it launches, in the block world and on the field. It opens no panel.
+- Open_Inventory means "open" (0194): pressed in the world while a machine with a panel is aimed in reach (`aims_at_panel`, read from the target the HUD shows: the block world's raycast, the predicted field player's frame cell), the press becomes `Open_Aimed` before the frame's input reaches the session or the UI (`route_open_inventory_press` in `update_frame_world`), so the simulation opens the panel and the inventory stays shut; anywhere else it opens the inventory and the simulation sees nothing. `Open_Aimed` has no binding of its own and rides in the input record like any action. Online the open lands a window later on whatever the player aims at then. With a screen open the press closes it as before ([ui.md](ui.md)).
 - Place and Use_Item share L2 and the right mouse button; Use_Item acts while a usable item is selected (a schematic, the geologist's hammer, the magnetometer, a thumper charge; `resolve_use_item`), and Interact on a schematic crate takes and reads it in one press.
 - Rotate_Building with no rotating item selected turns the targeted belt, splitter, inserter or drill (`entity_rotates`).
 - The grips copy face buttons on purpose, so the thumbs stay on the sticks. R2 mines and L2 places as in Minecraft Bedrock's controller defaults.
@@ -124,7 +125,7 @@ Rule: every action a control triggers is a line in `data/bindings.sjson` (0025);
 | L2 | Place, Use_Item | `Menu_Secondary` (split) |
 | A | Jump, Interact | Confirm |
 | B | Sneak | Back |
-| X | Open_Inventory | Context action (sort, craft five) |
+| X | Open_Inventory (opens the aimed machine's panel, else the inventory) | Context action (sort, craft five) |
 | Y | Rotate_Building | Info panel |
 | D-pad | Left, right: hotbar previous and next. Up: Pipette. Down: Drop_Stack | Focus navigation |
 | L1, R1 | Hotbar previous and next | Tab previous and next |

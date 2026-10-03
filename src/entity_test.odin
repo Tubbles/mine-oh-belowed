@@ -175,21 +175,39 @@ test_player_places_rotates_and_picks_up_a_machine :: proc(t: ^testing.T) {
 	testing.expect_value(t, player.inventory.slots[HOTBAR_SLOT_COUNT], Item_Stack{test_item(content.items, "iron_plate"), 7})
 }
 
+// Open_Aimed (the inventory binding routed on the press, 0194) opens the
+// aimed furnace; A's Interact on it opens nothing and jumps, and on a
+// power switch turns it without a jump.
 @(test)
-test_interact_opens_an_entity_instead_of_jumping :: proc(t: ^testing.T) {
+test_open_aimed_opens_an_entity_and_interact_turns_a_switch :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
 	records: Game_Records
-	handle := add_entity(&world.entities, content.machines, test_machine(content.machines, "wooden_chest"), {4, 1, 4}, 0)
+	handle := add_entity(&world.entities, content.machines, test_machine(content.machines, "stone_furnace"), {4, 1, 4}, 0)
 	players := []Player{make_test_player(content.blocks, {4.5, 1, 1.5})}
 	players[0].pitch, players[0].yaw = -30, 90
 	tick_player(&world, &records, content, players, 0, {}, TEST_TICK_RATE, 0)
 	testing.expect_value(t, players[0].target.entity, handle)
-	players[0].on_ground = true
-	press := Input_Frame{pressed = {.Jump, .Interact}, just_pressed = {.Jump, .Interact}}
-	events := tick_player(&world, &records, content, players, 0, press, TEST_TICK_RATE, 0)
+	events := tick_player(&world, &records, content, players, 0, Input_Frame{just_pressed = {.Open_Aimed}}, TEST_TICK_RATE, 0)
 	testing.expect_value(t, events, Player_Events{.Open_Machine})
 	testing.expect_value(t, players[0].open_machine, handle)
+	players[0].open_machine = NO_ENTITY
+	players[0].on_ground = true
+	press := Input_Frame{pressed = {.Jump, .Interact}, just_pressed = {.Jump, .Interact}}
+	events = tick_player(&world, &records, content, players, 0, press, TEST_TICK_RATE, 0)
+	testing.expect_value(t, events, Player_Events{})
+	testing.expect_value(t, players[0].open_machine, NO_ENTITY)
+	testing.expect(t, players[0].velocity.y > 0)
+	// A switch in the furnace's place: the same press turns it.
+	testing.expect(t, remove_entity(&world.entities, content.machines, handle))
+	switch_handle := add_entity(&world.entities, content.machines, test_machine(content.machines, "power_switch"), {4, 1, 4}, 0)
+	players[0] = make_test_player(content.blocks, {4.5, 1, 1.5})
+	players[0].pitch, players[0].yaw = -30, 90
+	tick_player(&world, &records, content, players, 0, {}, TEST_TICK_RATE, 0)
+	testing.expect_value(t, players[0].target.entity, switch_handle)
+	players[0].on_ground = true
+	events = tick_player(&world, &records, content, players, 0, press, TEST_TICK_RATE, 0)
+	testing.expect_value(t, events, Player_Events{.Toggled_Switch})
 	testing.expect(t, players[0].velocity.y <= 0)
 	// Looking away, the same press jumps.
 	players[0].pitch = 60
@@ -198,4 +216,23 @@ test_interact_opens_an_entity_instead_of_jumping :: proc(t: ^testing.T) {
 	events = tick_player(&world, &records, content, players, 0, press, TEST_TICK_RATE, 0)
 	testing.expect_value(t, events, Player_Events{})
 	testing.expect(t, players[0].velocity.y > 0)
+}
+
+// Work item 0194: the aimed entity is the field's frame cell when one is
+// hit, else the block world's target; only an entity with a panel turns
+// the inventory binding into an open.
+@(test)
+test_aims_at_panel_reads_the_target_the_hud_shows :: proc(t: ^testing.T) {
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	furnace := add_entity(&world.entities, content.machines, test_machine(content.machines, "stone_furnace"), {4, 1, 4}, 0)
+	belt := add_entity(&world.entities, content.machines, test_machine(content.machines, "belt"), {6, 1, 4}, 0)
+	testing.expect(t, aims_at_panel(&world.entities, furnace, {}))
+	testing.expect(t, !aims_at_panel(&world.entities, belt, {}))
+	testing.expect(t, !aims_at_panel(&world.entities, NO_ENTITY, {}))
+	on_frame := Frame_Raycast_Hit{hit = true, occupant = {handle = entity_occupant_handle(furnace)}}
+	testing.expect_value(t, aimed_entity(NO_ENTITY, on_frame), furnace)
+	testing.expect(t, aims_at_panel(&world.entities, NO_ENTITY, on_frame))
+	on_belt := Frame_Raycast_Hit{hit = true, occupant = {handle = entity_occupant_handle(belt)}}
+	testing.expect(t, !aims_at_panel(&world.entities, furnace, on_belt))
 }

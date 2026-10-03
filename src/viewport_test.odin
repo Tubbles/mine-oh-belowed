@@ -336,3 +336,69 @@ test_the_mining_ring_sits_on_a_frame_cell :: proc(t: ^testing.T) {
 	block := Mining_State{active = true, block = {3, 4, 5}}
 	testing.expect_value(t, mining_ring_point(&entities, block), block_centre({3, 4, 5}))
 }
+
+// Work item 0194: one frame with the inventory binding pressed while the
+// first player aims at target, its ticks and its UI pass.
+press_open_inventory_frame :: proc(state: ^Frame_State, target: Entity_Handle) {
+	session := state.session
+	session.simulation.players[0].target = Raycast_Hit{hit = target != NO_ENTITY, entity = target}
+	viewport := &state.viewports[0]
+	viewport.interaction.previous_input = {}
+	viewport.interaction.input = Input_Frame{pressed = {.Open_Inventory}, just_pressed = {.Open_Inventory}}
+	state.frame_seconds = 1.5 / f32(TEST_TICK_RATE)
+	tick := session.simulation.tick
+	update_frame_world(state)
+	// The tick the press rode in ran this frame.
+	assert(session.simulation.tick > tick)
+	build_viewport_ui(state, 0)
+}
+
+frame_has_event :: proc(state: ^Frame_State, kind: Player_Event) -> bool {
+	for event in state.session.simulation.events {
+		if event.player == 0 && event.kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+// The inventory binding aimed at a furnace in reach opens its panel
+// through the simulation and no inventory screen.
+@(test)
+test_the_inventory_binding_aimed_at_a_furnace_opens_its_panel :: proc(t: ^testing.T) {
+	state := make_viewport_test_frame()
+	defer destroy_viewport_test_frame(state)
+	if !testing.expect(t, run_viewport_test_frames_until_ready(state, 0)) {
+		return
+	}
+	simulation := &state.session.simulation
+	content := frame_simulation_content(state)
+	cell := camera_world_coordinate(simulation.players[0].position) + {2, 0, 0}
+	furnace := add_entity(&simulation.world.entities, content.machines, test_machine(content.machines, "stone_furnace"), cell, 0)
+	clear(&simulation.events)
+	press_open_inventory_frame(state, furnace)
+	testing.expect(t, frame_has_event(state, .Open_Machine))
+	testing.expect_value(t, simulation.players[0].open_machine, furnace)
+	screens := state.viewports[0].interaction.ui.screens
+	testing.expect_value(t, screens.count, 1)
+	testing.expect_value(t, top_screen(screens), Screen.Machine)
+}
+
+// Aimed at the ground the same press opens the inventory, and the
+// simulation sees no open.
+@(test)
+test_the_inventory_binding_aimed_at_the_ground_opens_the_inventory :: proc(t: ^testing.T) {
+	state := make_viewport_test_frame()
+	defer destroy_viewport_test_frame(state)
+	if !testing.expect(t, run_viewport_test_frames_until_ready(state, 0)) {
+		return
+	}
+	simulation := &state.session.simulation
+	clear(&simulation.events)
+	press_open_inventory_frame(state, NO_ENTITY)
+	testing.expect(t, !frame_has_event(state, .Open_Machine))
+	testing.expect_value(t, simulation.players[0].open_machine, NO_ENTITY)
+	screens := state.viewports[0].interaction.ui.screens
+	testing.expect_value(t, screens.count, 1)
+	testing.expect_value(t, top_screen(screens), Screen.Inventory)
+}

@@ -215,3 +215,20 @@ test_a_blocked_frame_reaches_the_next_tick :: proc(t: ^testing.T) {
 	tick_input, accumulator = take_tick_input(accumulator, {})
 	testing.expect(t, tick_input.world_blocked)
 }
+
+// Work item 0194: an Open_Inventory press aimed at a panel while the
+// world plays becomes Open_Aimed; any other press stays as it was.
+@(test)
+test_an_open_inventory_press_aimed_at_a_panel_becomes_open_aimed :: proc(t: ^testing.T) {
+	press := Input_Frame{pressed = {.Open_Inventory}, just_pressed = {.Open_Inventory, .Jump}}
+	routed := route_open_inventory_press(press, false, true)
+	testing.expect_value(t, routed.just_pressed, Action_Set{.Open_Aimed, .Jump})
+	testing.expect_value(t, routed.pressed, Action_Set{.Open_Inventory})
+	testing.expect_value(t, route_open_inventory_press(press, false, false), press)
+	// A screen is open: the press closes it.
+	testing.expect_value(t, route_open_inventory_press(press, true, true), press)
+	// Held, not pressed this frame.
+	held := Input_Frame{pressed = {.Open_Inventory}}
+	testing.expect_value(t, route_open_inventory_press(held, false, true), held)
+	testing.expect(t, .Open_Aimed in WORLD_ACTIONS)
+}

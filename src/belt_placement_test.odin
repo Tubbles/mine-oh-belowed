@@ -162,7 +162,7 @@ test_rotate_and_debug_drop_on_a_targeted_belt :: proc(t: ^testing.T) {
 	testing.expect_value(t, pool_get(&world.entities.belts, belts[1]).rotation, 1)
 	testing.expect_value(t, len(line_of(&world, belts[1]).lanes[.Right]), 1)
 	testing.expect_value(t, len(line_of(&world, belts[1]).lanes[.Left]), 0)
-	// Interact on a belt does not open a panel.
+	// The inventory binding on a belt opens the inventory, no panel.
 	testing.expect(t, !entity_has_panel(&world.entities, belts[1]))
 }
 

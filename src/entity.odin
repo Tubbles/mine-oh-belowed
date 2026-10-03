@@ -304,9 +304,9 @@ entity_common :: proc(entities: ^Entities, handle: Entity_Handle) -> ^Entity_Com
 	return nil
 }
 
-// Belts, foundations and belt poles have no panel: Interact does nothing
-// on them. Interact on a schematic crate takes its schematic instead
-// (schematic.odin).
+// Belts, foundations and belt poles have no panel: Open_Aimed does
+// nothing on them (the inventory opens instead, 0194). Interact on a
+// schematic crate takes its schematic (schematic.odin).
 entity_has_panel :: proc(entities: ^Entities, handle: Entity_Handle) -> bool {
 	return handle.kind != .Belt && handle.kind != .Foundation && handle.kind != .Belt_Pole && handle.kind != .Schematic_Crate && entity_is_alive(entities, handle)
 }

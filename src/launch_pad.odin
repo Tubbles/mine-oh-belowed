@@ -24,8 +24,8 @@ import "core:slice"
 // tick by apply_launch_requests, which knows the tick for the shipment.
 // The panel's Assemble and Launch buttons count a refusal for parts
 // missing or cargo empty in the statistics (launch_refusal), which
-// chapter 8's hints watch. Interact on a pad that cannot launch opens its
-// panel instead and counts nothing.
+// chapter 8's hints watch. Interact on a pad that cannot launch does
+// nothing and counts nothing (the inventory binding opens the panel, 0194).
 // Inserters put parts into their slots and anything else into the cargo
 // section, never parts into the cargo; nothing is ever taken out by them.
 
