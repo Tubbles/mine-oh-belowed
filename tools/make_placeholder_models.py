@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Write the placeholder machine models (work items 0055 and 0056) and
-the player's limbs (work item 0066) to data/models/.
+the player's limbs (work item 0066) to data/models/. The stone furnace
+and the burner mining drill are OBJ models made by tools/make_models.py
+(work item 0204).
 
 Usage: tools/make_placeholder_models.py
 
@@ -66,9 +68,6 @@ ELECTRIC_DRILL_BODY = (80, 120, 150)
 ELECTRIC_DRILL_RIM = (50, 75, 95)
 BORE_DRILL_BODY = (110, 90, 130)
 BORE_DRILL_RIM = (70, 55, 85)
-ARROW = (240, 220, 80)
-STONE = (120, 120, 124)
-STONE_DARK = (98, 98, 102)
 FURNACE_MOUTH = (40, 36, 34)
 CHIMNEY = (70, 70, 74)
 BASE = (60, 60, 66)
@@ -222,10 +221,6 @@ def encode_vox(model: Model) -> bytes:
     return b"VOX " + struct.pack("<i", VOX_VERSION) + chunk(b"MAIN", b"", children)
 
 
-def stone_texture(x: int, y: int, z: int):
-    return STONE_DARK if (x * 7 + y * 3 + z * 5) % 5 == 0 else STONE
-
-
 def plank_texture(x: int, y: int, z: int):
     return WOOD_LIGHT if y % 2 == 0 else WOOD
 
@@ -295,18 +290,6 @@ def drop_capsule():
 
 # Furnaces, 2 by 2 by 2 and 3 by 2 by 2.
 
-def stone_furnace():
-    """A stone box with a dark mouth on the front (+x), a glow patch at the
-    bottom of the mouth, and a chimney."""
-    model = Model((2, 2, 2))
-    model.box((1, 0, 1), (14, 12, 14), stone_texture)
-    model.clear((13, 2, 5), (14, 7, 10))
-    model.box((12, 2, 5), (12, 7, 10), FURNACE_MOUTH)
-    model.box((12, 2, 6), (13, 3, 9), FIRE)
-    model.box((3, 13, 3), (5, 15, 5), CHIMNEY)
-    return {"": model}
-
-
 def steel_furnace():
     """A steel box with a band, a mouth with its glow and a tall chimney."""
     model = Model((2, 2, 2))
@@ -335,27 +318,6 @@ def alloy_furnace():
 
 
 # Drills.
-
-def burner_mining_drill():
-    """2 by 2 by 2: a squat body with an arrow on the top towards the output
-    side (+x) and a frame at the back whose drill head pumps (the part)."""
-    model = Model((2, 2, 2))
-    model.box((1, 0, 1), (14, 6, 14), DRILL_BODY)
-    model.box((1, 7, 1), (14, 7, 14), DRILL_RIM)
-    for z in (3, 12):
-        model.box((2, 8, z), (3, 15, z), DRILL_RIM)
-        model.box((6, 8, z), (7, 15, z), DRILL_RIM)
-    model.box((2, 15, 3), (7, 15, 12), DRILL_RIM)
-    model.box((9, 8, 7), (10, 8, 8), ARROW)
-    model.box((11, 8, 5), (11, 8, 10), ARROW)
-    model.box((12, 8, 6), (12, 8, 9), ARROW)
-    model.box((13, 8, 7), (13, 8, 8), ARROW)
-    part = Model((2, 2, 2))
-    part.box((3, 11, 5), (6, 13, 10), MOVING)
-    part.box((4, 8, 7), (5, 10, 8), DRILL_BIT)
-    part.box((4, 14, 7), (5, 14, 8), DRILL_BIT_TIP)
-    return {"": model, "_part": part}
-
 
 def electric_mining_drill():
     """3 by 3 by 3: a blue body with a derrick whose drill head pumps."""
@@ -977,12 +939,10 @@ def player():
 MODELS = {
     "wooden_chest": wooden_chest,
     "iron_chest": iron_chest,
-    "stone_furnace": stone_furnace,
     "steel_furnace": steel_furnace,
     "drop_capsule": drop_capsule,
     "schematic_crate": schematic_crate,
     "arm": arm,
-    "burner_mining_drill": burner_mining_drill,
     "electric_mining_drill": electric_mining_drill,
     "bore_drill": bore_drill,
     "splitter": splitter,

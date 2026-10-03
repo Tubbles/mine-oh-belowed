@@ -316,8 +316,8 @@ Machine :: struct {
 	launch_fuel_litres:          i32,
 	assembly_seconds:            u32,
 	launch_seconds:              u32,
-	// The id of data/models/<model>.vox (model_vox.odin), or "" for the
-	// placeholder box.
+	// The id of data/models/<model>.obj (model_obj), else <model>.vox
+	// (model_vox), or "" for the placeholder box.
 	model:                       string,
 	// How the model's part moves or its glow pulses (model_motion.odin).
 	motion:                      Machine_Motion,

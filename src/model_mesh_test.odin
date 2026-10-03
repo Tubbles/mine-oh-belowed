@@ -1,7 +1,9 @@
 package game
 
+import "core:os"
 import "core:strings"
 import "core:testing"
+import "model_obj"
 import "model_vox"
 
 // Model meshing tests (work item 0055): models are built in memory.
@@ -201,7 +203,8 @@ test_the_shipped_machine_models_mesh :: proc(t: ^testing.T) {
 		testing.expectf(t, (body_vertices > 0) == !without_model, "%s has %d vertices", machine.id, body_vertices)
 		part_vertices := len(mesh.part[.Lit].positions) + len(mesh.part[.Emissive].positions)
 		testing.expectf(t, (part_vertices > 0) == motion_has_part(machine.motion.kind), "%s: a %v motion and %d part vertices", machine.id, machine.motion.kind, part_vertices)
-		testing.expectf(t, without_model || mesh.top > 0 && mesh.top <= f32(machine.footprint.y), "%s: top %v", machine.id, mesh.top)
+		is_obj := os.is_file(model_obj.model_file_path(test_data_directory(), machine.model))
+		testing.expectf(t, without_model || mesh.top > 0 && (is_obj || mesh.top <= f32(machine.footprint.y)), "%s: top %v", machine.id, mesh.top)
 	}
 }
 

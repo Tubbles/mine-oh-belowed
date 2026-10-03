@@ -208,7 +208,7 @@ The start on the field (0179, `entity_pod.odin`).
 
 - Slabs and stairs are solid and collide with their boxes. There is no step up: the player jumps onto them.
 - A tile that varies per block is slid by whole texels and wrapped, so it must be periodic: `test_varying_block_tiles_are_periodic` fails when the mean texel difference across the wrap edge exceeds `TILE_WRAP_ROUGHNESS_FACTOR` times the mean across interior edges. `keep_orientation` and `framed` blocks are exempt ([presentation.md](presentation.md), Per block variation).
-- Coloured light: the largest channel of `light_color` equals `light_level`, which stays the one level everything else reads. The furnace's and the boiler's glow is emissive voxels in their models, not light.
+- Coloured light: the largest channel of `light_color` equals `light_level`, which stays the one level everything else reads. The furnace's and the boiler's glow is emissive materials or voxels in their models, not light.
 
 ## Textures
 
@@ -228,7 +228,7 @@ Block tiles and item icons are 16 by 16 RGBA PNG files under `data/textures/`, o
 
 How models are loaded, lit and moved: [presentation.md](presentation.md), Machine models and The player.
 
-- A machine model is authored at 8 or 16 voxels per block, z up, with its +x side as the front. The keys are in the header of `data/machines.sjson`.
+- An OBJ machine model is authored by a script under `tools/models/machines/` in cells, with its +x side as the front, in the look of `DESIGN.md` (Art direction) ([build.md](build.md), Models); a voxel machine model at 8 or 16 voxels per block, z up, with its +x side as the front, until 0206. The keys are in the header of `data/machines.sjson`.
 - The pod (0179) is authored at 8 voxels per cell, 62.5 mm at the 500 mm pitch: a hull on a base plate, a door opening on the front and a bed inside (`tools/make_placeholder_models.py`, `pod()`).
 - The arm (0175) is authored at real scale instead, six files at 25 mm per voxel, one per part; the files and the authored pose are in [presentation.md](presentation.md), The arm. Every inserter record names it with `model = "arm"` and `motion = {kind = "arm"}`.
 - The player is six files (`player_torso.vox` and the limbs), each the whole `PLAYER_MODEL_FRAME` at 16 voxels per block with only its limb filled, +x the front and +z the right side. A replacement keeps the frame and puts the shoulders at the tops of the arms, the hips at the tops of the legs and the neck under the head.

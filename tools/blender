@@ -1,0 +1,18 @@
+#!/bin/sh
+# Runs a Python script inside Blender, headless (work item 0204,
+# doc/build.md, Models): the host's blender when it is on the PATH, else
+# the Flatpak org.blender.Blender. Arguments after the script reach it
+# after "--" (sys.argv).
+#
+# Usage: tools/blender tools/make_models.py [model ...]
+set -eu
+if [ "$#" -lt 1 ]; then
+	echo "usage: $0 <script.py> [argument ...]" >&2
+	exit 2
+fi
+script=$(realpath "$1")
+shift
+if command -v blender >/dev/null 2>&1; then
+	exec blender --background --factory-startup --python-exit-code 1 --python "$script" -- "$@"
+fi
+exec flatpak run org.blender.Blender --background --factory-startup --python-exit-code 1 --python "$script" -- "$@"

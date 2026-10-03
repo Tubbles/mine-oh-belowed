@@ -1,6 +1,6 @@
 # 0204: Machine models of arbitrary geometry
 
-Status: todo (user, 2026-10-03: "this chunky blocky machine aesthetic needs to go, it does not fit the current look of the game anymore, we need to allow models with arbitrary geometry, it doesnt need to be high fidelity or massive amount of triangles, but we can maybe approach techtonica's look"; after 0189, before 0205)
+Status: implemented (user, 2026-10-03: "this chunky blocky machine aesthetic needs to go, it does not fit the current look of the game anymore, we need to allow models with arbitrary geometry, it doesnt need to be high fidelity or massive amount of triangles, but we can maybe approach techtonica's look"; after 0189, before 0205)
 
 ## Goal
 

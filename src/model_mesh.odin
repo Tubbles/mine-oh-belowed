@@ -1,7 +1,12 @@
 package game
 
 import "core:fmt"
+import "core:os"
+import "model_obj"
 import "model_vox"
+
+// The two readers share the directory until 0206 removes model_vox.
+#assert(model_obj.MODELS_DIRECTORY == model_vox.MODELS_DIRECTORY)
 
 // Voxel models to meshes (work item 0055), no raylib here: render_models.odin
 // uploads the result. Same coloured faces merge greedily per slice like the
@@ -19,6 +24,12 @@ import "model_vox"
 // without the shade, drawn at the glow brightness instead of the light.
 // A machine whose motion moves a part has a second model file,
 // <model>_part.vox, of the same size, meshed the same way.
+//
+// A machine whose data/models/<model>.obj exists takes that instead
+// (work item 0204, model_triangle_mesh.odin): triangles in cells of the
+// footprint, not scaled, flat shaded by MODEL_SHADE_BASE and
+// MODEL_SHADE_GRADIENT, its group named part the moving part.
+// model_face_shades serves the voxel mesher until 0206.
 
 @(rodata)
 model_face_shades := [Direction]f32 {
@@ -242,14 +253,24 @@ model_part_id :: proc(model: string) -> string {
 	return fmt.tprintf("%s_part", model)
 }
 
-// The machine's model and, for a motion that moves a part, its part file;
-// the problem names the machine, the file and the chunk.
+// The machine's model: its .obj when that exists, else its .vox and part
+// file (an arm its part files); the problem names the machine, the file
+// and the line or the chunk.
 load_machine_model_mesh :: proc(data_directory: string, machine: Machine, allocator := context.allocator) -> (mesh: Machine_Model_Mesh, problem: string) {
 	if machine.motion.kind == .Arm {
 		mesh.arm, problem = load_arm_part_meshes(data_directory, machine, allocator)
 		mesh.top = arm_rest_top_metres(arm_dimensions_on_frame(machine.inserter_reach, BLOCK_FRAME_PITCH_MILLIMETRES))
 		return mesh, problem
 	}
+	if obj := model_obj.model_file_path(data_directory, machine.model); os.is_file(obj) {
+		return load_obj_machine_model_mesh(obj, machine, allocator)
+	}
+	return load_voxel_machine_model_mesh(data_directory, machine, allocator)
+}
+
+// The machine's <model>.vox and, for a motion that moves a part, its part
+// file.
+load_voxel_machine_model_mesh :: proc(data_directory: string, machine: Machine, allocator := context.allocator) -> (mesh: Machine_Model_Mesh, problem: string) {
 	body, part: model_vox.Voxel_Model
 	if body, problem = model_vox.load_voxel_model_file(model_vox.model_file_path(data_directory, machine.model), context.temp_allocator); problem != "" {
 		return {}, fmt.tprintf("machine %q: %s", machine.id, problem)

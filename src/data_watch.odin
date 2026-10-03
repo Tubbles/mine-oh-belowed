@@ -5,6 +5,7 @@ import "core:path/filepath"
 import "core:strings"
 import "core:time"
 import fsw "shared:fsw"
+import "model_obj"
 import "model_vox"
 import "platform"
 
@@ -48,7 +49,7 @@ Data_File_Category :: enum u8 {
 	Shaders,
 	// fonts/fonts.sjson and the font files under fonts/ (ui_font.odin).
 	Fonts,
-	// The .vox files under models/ (model_vox.odin).
+	// The .vox, .obj and .mtl files under models/.
 	Models,
 	// The .png files under textures/blocks/ and textures/items/
 	// (render_atlas.odin, render_icons.odin) and
@@ -121,7 +122,7 @@ data_file_category :: proc(relative_path: string) -> Data_File_Category {
 	case FONTS_DIRECTORY:
 		return name == FONTS_FILE_NAME ? .Fonts : .Ignored
 	case model_vox.MODELS_DIRECTORY:
-		return strings.has_suffix(name, model_vox.MODEL_FILE_EXTENSION) && !strings.has_prefix(name, ".") ? .Models : .Ignored
+		return is_model_file_name(name) ? .Models : .Ignored
 	case TEXTURES_DIRECTORY:
 		return name == PROCEDURAL_TEXTURES_FILE_NAME ? .Textures : .Ignored
 	case BLOCK_TEXTURES_DIRECTORY, ITEM_TEXTURES_DIRECTORY:
@@ -147,6 +148,15 @@ is_shader_file_name :: proc(name: string) -> bool {
 		return true
 	}
 	return false
+}
+
+// The voxel models (model_vox) and the OBJ models with their materials
+// (model_obj).
+is_model_file_name :: proc(name: string) -> bool {
+	if strings.has_prefix(name, ".") {
+		return false
+	}
+	return strings.has_suffix(name, model_vox.MODEL_FILE_EXTENSION) || strings.has_suffix(name, model_obj.MODEL_FILE_EXTENSION) || strings.has_suffix(name, model_obj.MATERIAL_FILE_EXTENSION)
 }
 
 is_font_file_name :: proc(name: string) -> bool {

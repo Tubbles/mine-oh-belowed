@@ -74,7 +74,7 @@ Rule: every machine runs the whole simulation from the same inputs (Factorio sty
 
 - Files by concern: `world_*.odin`, `generation_*.odin`, `render_*.odin`, `input_*.odin`, `ui_*.odin`, `data_*.odin`, `save_*.odin`, one file per entity kind (`furnace.odin`, `inserter.odin`), tests beside their file as `*_test.odin`.
 - The files of the game package form seven clusters by prefix with an allowed dependency table between them; [code_map.md](code_map.md) lists every file by cluster.
-- Leaf utilities with no back references are packages under `src/` (Odin forbids import cycles), each a cluster of its own: `src/platform/`, `src/generation_seed/`, `src/model_vox/`, `src/render_frustum/`, `src/run_length/`, `src/sjson_text/` (the 0145 pilot split) and `src/android_libc/` ([code_map.md](code_map.md), Packages).
+- Leaf utilities with no back references are packages under `src/` (Odin forbids import cycles), each a cluster of its own: `src/platform/`, `src/generation_seed/`, `src/model_vox/`, `src/model_obj/`, `src/render_frustum/`, `src/run_length/`, `src/sjson_text/` (the 0145 pilot split) and `src/android_libc/` ([code_map.md](code_map.md), Packages).
 
 ## Threads and chunk streaming
 

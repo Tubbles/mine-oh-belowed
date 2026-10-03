@@ -16,6 +16,7 @@ The couch machine runs Bazzite.
 | clang 23 | Homebrew | Odin drives the linker through it |
 | SDL3 3.4.16 | `/usr/lib64/libSDL3.so.0` (Fedora 44) | `vendor:sdl3` links `system:SDL3` |
 | raylib 6.0 | `shared/raylib/` | Built from source, committed (below) |
+| Blender 5.2 LTS | Flatpak `org.blender.Blender` with host file access | Only to regenerate models ([Models](#models)) |
 
 ### The shared collection
 
@@ -72,6 +73,16 @@ Python 3 scripts without dependencies, run by hand from anywhere; none is part o
 - `python3 tools/check_docs.py` checks the Markdown docs against the repository: relative links, backticked paths, file names and identifiers. Exit 1 lists each finding.
 - `python3 tools/check_dead_code.py` lists the definitions of `src/**/*.odin` (the game package and the packages under it) that nothing references, and those outside the test files that only `*_test.odin` files reference. It scans the declarations at file level, including those inside file level `when` and `foreign` blocks, and counts whole word uses in the code of every `.odin` file under `src/` (comments and strings stripped, the definition's own body and every definition line of the same name left out) plus `build.sh`, `tools/` and `data/shaders/`. `@(test)`, `@(export)`, `@(init)` and `@(fini)` definitions are exempt; its allow lists hold what no attribute covers (`main`) and the test seams, each with its reason. Exit 1 when it finds anything.
 - `python3 tools/code_graph.py` prints the file dependency graph of `src/` grouped into clusters by file name prefix, each package under `src/` a cluster of its own, whose names resolve only in the package itself and in the packages it imports: the cluster edges with reference counts, the clusters that reference each other, the strongly connected components with the files outside the largest, and the files of the largest with the fewest edges into it. `--files` adds each file's edges, `--json` dumps the graph, `--tests` includes the test files; these exit 0. `--check doc/code_map.md` compares the cluster edges that the map's allowed dependency table does not allow with the map's record of them (the "Reaches into" line of each cluster): it exits 1 when an edge is new or above its recorded count, 2 when the map cannot be read, 0 otherwise, and marks the edges that fell below their record. A refactor that lowers a count lowers the record by hand ([code_map.md](code_map.md)).
+
+## Models
+
+The OBJ machine models (0204, [presentation.md](presentation.md), Machine models) are built by Python scripts that run inside Blender.
+
+- `tools/blender <script> [argument ...]` runs a script headless (`--background --factory-startup --python-exit-code 1`, the arguments after `--`): the host's `blender` when it is on the PATH, else `flatpak run org.blender.Blender`. The Flatpak sees the home directory but not `/tmp`, so a script it runs lives under the repository.
+- `tools/blender tools/make_models.py [model ...]` writes `data/models/<model>.obj` and `.mtl` for the named machines, all of them without names; an unknown name exits 1 listing the known ones.
+- The committed OBJ and MTL files are the product: the build, the tests and CI never run Blender, only a regeneration does. The same script in the same Blender version writes the same bytes (the scene is cleared per machine, the booleans use the exact solver).
+- The export: `bpy.ops.wm.obj_export` with forward `NEGATIVE_Z` and up `Y` (Blender's front +X and Z up become the game's +x and y up), scale 1, modifiers applied, triangulated, normals on, no UVs, colours or groups beyond the object names, materials on, paths stripped.
+- Layout: `tools/models/palette.py` (the materials of `DESIGN.md`'s palette, byte colours and the glow flag), `tools/models/kit.py` (the frame, `box`, `cylinder`, `cone`, `cut`, `join`, `material`, `export`), `tools/models/machines/` (one script per machine, `MACHINES` in its `__init__.py`). Each machine ends as one object `body` and, with a moving part, one `part`.
 
 ## Command line
 

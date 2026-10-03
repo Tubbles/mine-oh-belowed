@@ -1,6 +1,6 @@
 # Code map
 
-The entry page for the source: 258 files under `src/` plus 177 test files beside them. 233 are the `game` package, grouped into seven clusters; 25 are seven leaf packages under `src/` (section Packages), each a cluster named after its directory. Read the cluster table, pick a cluster, open its entry file; the section of each cluster lists its files in reading order. How the parts work is in [architecture.md](architecture.md), the why of the clusters in the audits under [audit/](audit/).
+The entry page for the source: 261 files under `src/` plus 180 test files beside them. 235 are the `game` package, grouped into seven clusters; 26 are eight leaf packages under `src/` (section Packages), each a cluster named after its directory. Read the cluster table, pick a cluster, open its entry file; the section of each cluster lists its files in reading order. How the parts work is in [architecture.md](architecture.md), the why of the clusters in the audits under [audit/](audit/).
 
 - Rule: a new file goes into a cluster and takes one of its file name prefixes (or a line in the file table of `tools/code_graph.py`); a reference against the allowed dependency table below is a finding until it is refactored away.
 - The map is kept true by two checks: `python3 tools/check_docs.py` checks every backticked file and name in it, and `python3 tools/code_graph.py --check doc/code_map.md` compares every cluster edge the allowed table does not allow with the map's record of it ([build.md](build.md), Source checks).
@@ -15,12 +15,13 @@ The entry page for the source: 258 files under `src/` plus 177 test files beside
 | ui | the input layer, the immediate mode toolkit, every screen, the HUD and the touch overlay | `ui_core.odin` | 50 | 17617 | [ui](audit/ui.md) |
 | world | blocks and what follows a block: chunks, light, water, meshing, streaming, generation, the save codec; the terrain field and the foundation frames beside them (M13) | `world_chunk.odin` | 51 | 14758 | [world](audit/world.md) |
 | simulation | the factory per tick: entity pools, networks, players, inventories, crafting, statistics, the game's records | `entity.odin` | 53 | 21399 | [simulation](audit/simulation.md) |
-| presentation | pixels and sound from the world and the tick: shaders, atlases, models, sky, weather, particles, audio, the window | `render_chunks.odin` | 40 | 9789 | [presentation](audit/presentation.md) |
-| content | data files into typed tables, the string table, configuration and settings | `data_reload.odin` | 17 | 5906 | [content](audit/content.md) |
+| presentation | pixels and sound from the world and the tick: shaders, atlases, models, sky, weather, particles, audio, the window | `render_chunks.odin` | 41 | 9980 | [presentation](audit/presentation.md) |
+| content | data files into typed tables, the string table, configuration and settings | `data_reload.odin` | 17 | 6000 | [content](audit/content.md) |
 | tools | the command socket, the diagnostics pages, the Data files browser and export, the factory benchmark | `command.odin` | 8 | 3977 | [loop](audit/loop.md), [content](audit/content.md) |
 | platform | the package `src/platform/`: logging, paths, the time zone, JNI, the export's file access, the replacing file write, the TCP transport and the LAN discovery's UDP, the stop signal | `logging.odin` | 19 | 1843 | [content](audit/content.md) |
 | generation_seed | the package `src/generation_seed/`: purpose seeds and the integer hashes | `generation_seed.odin` | 1 | 79 | [world](audit/world.md) |
 | model_vox | the package `src/model_vox/`: the MagicaVoxel parser | `model_vox.odin` | 1 | 283 | [presentation](audit/presentation.md) |
+| model_obj | the package `src/model_obj/`: the Wavefront OBJ and MTL reader | `model_obj.odin` | 1 | 399 | [presentation](audit/presentation.md) |
 | render_frustum | the package `src/render_frustum/`: frustum planes and the box test | `render_frustum.odin` | 1 | 35 | [presentation](audit/presentation.md) |
 | run_length | the package `src/run_length/`: the chunk run length codec | `run_length.odin` | 1 | 39 | [world](audit/world.md) |
 | sjson_text | the package `src/sjson_text/`: the SJSON writer and `sorted_object_keys` | `sjson_text.odin` | 1 | 212 | [content](audit/content.md) |
@@ -32,22 +33,23 @@ Rule: a cluster references only the clusters of its row. The pilot split (0145) 
 
 | Cluster | May reference |
 |---|---|
-| loop | ui, world, simulation, presentation, content, tools, platform, generation_seed, model_vox, render_frustum, run_length and sjson_text |
-| ui | presentation, simulation, world, content, platform, generation_seed, model_vox, render_frustum, run_length and sjson_text |
-| world | content, platform, generation_seed, model_vox, render_frustum, run_length and sjson_text |
-| simulation | world, content, platform, generation_seed, model_vox, render_frustum, run_length and sjson_text |
-| presentation | simulation, world, content, platform, generation_seed, model_vox, render_frustum, run_length and sjson_text |
-| content | platform, generation_seed, model_vox, render_frustum, run_length and sjson_text |
-| tools | ui, world, simulation, presentation, content, platform, generation_seed, model_vox, render_frustum, run_length and sjson_text |
+| loop | ui, world, simulation, presentation, content, tools, platform, generation_seed, model_vox, model_obj, render_frustum, run_length and sjson_text |
+| ui | presentation, simulation, world, content, platform, generation_seed, model_vox, model_obj, render_frustum, run_length and sjson_text |
+| world | content, platform, generation_seed, model_vox, model_obj, render_frustum, run_length and sjson_text |
+| simulation | world, content, platform, generation_seed, model_vox, model_obj, render_frustum, run_length and sjson_text |
+| presentation | simulation, world, content, platform, generation_seed, model_vox, model_obj, render_frustum, run_length and sjson_text |
+| content | platform, generation_seed, model_vox, model_obj, render_frustum, run_length and sjson_text |
+| tools | ui, world, simulation, presentation, content, platform, generation_seed, model_vox, model_obj, render_frustum, run_length and sjson_text |
 | platform | android_libc |
 | generation_seed | nothing |
 | model_vox | platform |
+| model_obj | platform |
 | render_frustum | nothing |
 | run_length | nothing |
 | sjson_text | nothing |
 | android_libc | nothing |
 
-- The packages sit where the platform cluster sat: every game cluster may reference them, and they reference only the packages of their row (`platform` imports `android_libc` for the link alone, `model_vox` names `platform.join_path`).
+- The packages sit where the platform cluster sat: every game cluster may reference them, and they reference only the packages of their row (`platform` imports `android_libc` for the link alone, `model_vox` and `model_obj` name `platform.join_path`).
 - The order is engine below game only in part: world storage and the platform are engine, the simulation is game, presentation and ui mix both ([audit/](audit/), section 6 of each report).
 - In the records, "accepted" means essential today and named in an audit; "queued" names the entry of the 0143 refactor queue that removes the references (1 pure moves, 3 the hubs, 5 the seams). Graph noise (a field or parameter named like a top level procedure, such as `block_name`) counts as a reference; the rename that ends it is queued where one is.
 
@@ -204,7 +206,8 @@ Presentation turns the world, the tick and the render time into pixels and sound
   - `weather.odin`, `render_weather.odin`: `weather_at`, the hourly schedule; `Weather_Look`, rain, snow, clouds.
   - `render_entities.odin`, `render_models.odin`: `draw_entities` over the pools, bottleneck markers; `Model_Renderer`, posed and ghost models.
   - `render_frames.odin`: the frames' placeholder boxes per occupied cell and the placement ghost (0174), `frame_render_matrix`.
-  - `model_mesh.odin`, `model_motion.odin`: the voxel mesher over the `model_vox` package's parser (Packages); `Machine_Motion` and part transforms.
+  - `model_mesh.odin`, `model_motion.odin`: the voxel mesher over the `model_vox` package's parser (Packages) and the choice of an .obj over a .vox; `Machine_Motion` and part transforms.
+  - `model_triangle_mesh.odin`: the OBJ mesher over the `model_obj` package's reader (Packages): flat shade, footprint check.
   - `model_arm.odin`, `render_arm.odin`: the inserter's arm (0175): its part files, `arm_pose_at` from the cycle, the joint transforms; its draw and its lamp's light.
   - `render_point_lights.odin`: `Point_Light`, the nearest working lights for the field shader (0175).
   - `render_belts.odin`, `render_fluids.odin`, `render_power.odin`, `render_loose_items.odin`: belts and lane items; pipes and ports; poles and wires; loose stacks.
@@ -273,6 +276,7 @@ Leaf packages under `src/` (work item 0145, the pilot split): each is a director
 - `platform`: `logging.odin`, `logging_posix.odin`, `logging_windows.odin` (`Log_State`, the log file and `log_printf`, `Log_Capture`; the stderr redirect and crash traces per system); `platform_paths.odin` (`Platform_Directories`, `join_path`, `make_directory_path`); `file_write.odin` (`write_file_replacing`, every file the game writes, and `rename_file_aside`); `network.odin` (`Network_Listener`, `listen_on_free_port`, `Network_Connection`, length prefixed messages over TCP, `Network_Dial`, the connect on a thread); `network_discovery.odin`, `network_discovery_linux.odin`, `network_discovery_windows.odin` (the LAN discovery's UDP sockets and datagrams, `parse_discovery_datagram`; the interfaces' broadcast addresses and the machine's name per system); `stop_signal_posix.odin`, `stop_signal_windows.odin` (SIGINT and SIGTERM ask the server to stop; a stub on Windows); `platform_android.odin` (the Android entry points and logcat, imports `android_libc` for the link); `local_zone.odin`, `local_zone_posix.odin`, `local_zone_windows.odin` (the local time zone); `jni_indices.odin`, `jni_android.odin` (JNI table indices; `Jni_Calls` and the call helpers); `export_access_android.odin`, `export_access_desktop.odin` (All files access for the export). Tests: `jni_indices_test.odin`, `platform_paths_test.odin`, `network_test.odin` (a loopback connection), `network_discovery_test.odin` (the datagrams, a query and answer over the loopback, a taken port skipped).
 - `generation_seed`: `generation_seed.odin` (`Generation_Purpose`, `Purpose_Seeds`, `hash_u64`, `hash_combine` and the hash helpers).
 - `model_vox`: `model_vox.odin` (`Voxel_Model`, the .vox parser, `model_file_path`), imports `platform`. Tests: `model_vox_test.odin`.
+- `model_obj`: `model_obj.odin` (`Obj_Model`, `load_obj_model_file`, `model_file_path`), imports `platform`. Tests: `model_obj_test.odin`.
 - `render_frustum`: `render_frustum.odin` (`Frustum`, `frustum_from_matrix`, `frustum_contains_box`). Tests: `render_frustum_test.odin`.
 - `run_length`: `run_length.odin` (`Run`, `run_length_encode`, `run_length_decode`). Tests: `run_length_test.odin`.
 - `sjson_text`: `sjson_text.odin` (the SJSON writer of the data edits and `sorted_object_keys`). Tests: `sjson_text_test.odin` (the writer's round trip, with its own copy of the game's `json_values_equal` test helper); the round trip of every shipped file needs the game's data file listing and stays in `data_browser_test.odin` (`test_shipped_sjson_files_round_trip`).

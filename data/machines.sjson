@@ -8,13 +8,21 @@
 // convention. A set key must exist.
 // footprint is width (x), depth (z) and height (y) in blocks before
 // rotation, each from 1 to 9; a quarter turn swaps width and depth.
-// model (optional, work item 0055) names data/models/<model>.vox, a
-// MagicaVoxel model drawn in place of the coloured box, scaled to the
-// footprint (8 or 16 voxels per block) and turned with the machine. Its
-// +x side is the front, the side the rotation points at. A named file
-// must exist and load. tools/make_placeholder_models.py writes the
-// placeholders. Palette indices 240 to 255 are emissive (work item 0056):
-// they ignore the world light and light up while the machine works.
+// model (optional, work item 0055) names data/models/<model>.obj with its
+// .mtl when that file exists (work item 0204), else data/models/
+// <model>.vox, drawn in place of the coloured box and turned with the
+// machine. Its +x side is the front, the side the rotation points at. A
+// named file must exist and load. An OBJ is in cells of the unrotated
+// footprint (x and z centred, y from the bottom, +x the front, y up), is
+// not scaled, must stay within the footprint's x and z (0.02 cells of
+// slack) and above its bottom, and may rise above its height. Its group
+// part is the moving part (the motion paragraph's <model>_part.vox for a
+// voxel model). A material with a non-zero Ke is emissive. A .vox is a
+// MagicaVoxel model scaled to the footprint (8 or 16 voxels per block),
+// and its palette indices 240 to 255 are emissive (work item 0056).
+// Emissive faces ignore the world light and light up while the machine
+// works. tools/make_models.py writes the OBJ models (in Blender) and
+// tools/make_placeholder_models.py the voxel ones.
 // motion (optional, work item 0056, needs a model) moves one part of the
 // model while the machine works and rests it otherwise: {kind, axis,
 // amplitude, period_seconds, pivot}. kind pump moves the part along
