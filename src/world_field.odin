@@ -66,7 +66,9 @@ FIELD_AIR_SAMPLE :: Field_Sample {
 // addressed like the terrain: a fill per sample (0 empty to
 // FIELD_WATER_FULL), the ticks it has been still, the fill that moved out
 // of it in the last tick (flow, for hydro; not saved), and one bit per
-// sample for awake and for source.
+// sample for awake and for source. The field light (0173,
+// world_field_light.odin) is two more bytes per sample, block light and
+// sky light.
 Field_Chunk :: struct {
 	coordinate:   Field_Chunk_Coordinate,
 	density:      [FIELD_CHUNK_SAMPLE_COUNT]i8,
@@ -77,6 +79,8 @@ Field_Chunk :: struct {
 	water_flow:   [FIELD_CHUNK_SAMPLE_COUNT]u8,
 	water_awake:  Field_Sample_Bits,
 	water_source: Field_Sample_Bits,
+	block_light:  [FIELD_CHUNK_SAMPLE_COUNT]u8,
+	sky_light:    [FIELD_CHUNK_SAMPLE_COUNT]u8,
 	dirty:        bool,
 }
 
@@ -94,9 +98,12 @@ Field_World :: struct {
 	// Water a terrain place displaced and no neighbour had room for
 	// (displace_field_water).
 	water_dropped:      i64,
-	// The planet as the water reads it, set by the world's owner
-	// (make_field_water_planet); zero is a world with no sea.
+	// The planet as the water and the light's sky march read it, set by
+	// the world's owner (make_field_water_planet); zero is a world with no
+	// sea and no sky march.
 	water_planet:       Field_Water_Planet,
+	// The light's queues and emitters (0173).
+	light:              Field_Lighting,
 }
 
 sample_spacing_is_valid :: proc(millimetres: int) -> bool {
@@ -201,10 +208,12 @@ field_world_set_sample :: proc(world: ^Field_World, sample: Sample_Coordinate, v
 		return false
 	}
 	index := sample_to_field_index(sample)
+	was_ground := chunk.density[index] > 0
 	field_chunk_set_sample(chunk, index, value)
 	mark_field_chunks_around_sample_dirty(world, chunk.coordinate, sample)
 	world.edited_chunks[chunk.coordinate] = {}
 	follow_field_terrain_with_water(world, chunk, index, sample)
+	follow_field_terrain_with_light(world, chunk, index, sample, was_ground)
 	return true
 }
 
@@ -233,7 +242,8 @@ mark_field_chunks_around_sample_dirty :: proc(world: ^Field_World, coordinate: F
 
 // Takes ownership of a chunk made with new; it starts dirty so the mesher
 // meshes it once. The water beside it wakes (wake_field_water_facing), so
-// water held by the missing chunk flows on.
+// water held by the missing chunk flows on, and the light's tick compares
+// its borders with its neighbours' (seed_field_chunk_light).
 field_world_insert_chunk :: proc(world: ^Field_World, chunk: ^Field_Chunk) {
 	chunk.dirty = true
 	if old := world.chunks[chunk.coordinate] or_else nil; old != nil {
@@ -244,6 +254,7 @@ field_world_insert_chunk :: proc(world: ^Field_World, chunk: ^Field_Chunk) {
 		world.water_awake_chunks[chunk.coordinate] = {}
 	}
 	wake_field_water_facing(world, chunk.coordinate)
+	world.light.arrived_chunks[chunk.coordinate] = {}
 }
 
 destroy_field_world :: proc(world: ^Field_World) {
@@ -253,5 +264,6 @@ destroy_field_world :: proc(world: ^Field_World) {
 	delete(world.chunks)
 	delete(world.edited_chunks)
 	delete(world.water_awake_chunks)
+	destroy_field_lighting(&world.light)
 	world^ = {}
 }

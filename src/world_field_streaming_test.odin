@@ -125,3 +125,34 @@ test_a_chunk_edited_every_frame_still_meshes :: proc(t: ^testing.T) {
 	testing.expect(t, taken >= 2, "the edits land as results while the chunk stays dirty")
 	testing.expect(t, world.chunks[field_node_chunk(node)].dirty, "the latest edit waits for the job in flight")
 }
+
+// A coarse node whose neighbour of its level merges into a coarser node
+// meshes again with a skirt on that face, so no seam opens; an unchanged
+// selection submits nothing.
+@(test)
+test_a_node_whose_neighbour_changes_level_meshes_again :: proc(t: ^testing.T) {
+	planet := make_test_planet()
+	streaming := start_field_streaming(TEST_PLANET_SEED, planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES, 0)
+	defer stop_field_streaming(&streaming)
+	world: Field_World
+	defer destroy_field_world(&world)
+	node := Field_Node{1, {1, 124, 0}}
+	settle :: proc(streaming: ^Field_Streaming, world: ^Field_World, selection: []Field_Node) {
+		update_field_streaming(streaming, world, selection)
+		run_queued_field_jobs(streaming)
+		for result in take_current_field_meshes(streaming, context.temp_allocator) {
+			destroy_field_mesh_data(result.mesh)
+			destroy_field_mesh_data(result.water_mesh)
+		}
+	}
+	same_level := []Field_Node{node, {1, {2, 124, 0}}}
+	settle(&streaming, &world, same_level)
+	first := streaming.mesh_revisions[node]
+	testing.expect(t, .Positive_X not_in streaming.skirt_faces[node])
+	settle(&streaming, &world, same_level)
+	testing.expect_value(t, streaming.mesh_revisions[node], first)
+	merged := []Field_Node{node, {2, {1, 62, 0}}}
+	settle(&streaming, &world, merged)
+	testing.expect(t, streaming.mesh_revisions[node] > first, "the node meshes again")
+	testing.expect(t, .Positive_X in streaming.skirt_faces[node])
+}

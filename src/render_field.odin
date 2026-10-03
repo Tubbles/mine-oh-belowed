@@ -14,7 +14,10 @@ import "render_frustum"
 // Each node also carries the water's mesh (0172), drawn after every
 // node's terrain through the same shader with water_color set:
 // translucent, alpha blended and without depth writes, so the terrain
-// shows through and the water never hides the water behind it.
+// shows through and the water never hides the water behind it. The
+// field light (0173) reaches the shader per vertex, the sky light scaled
+// by the daylight uniform (Field_Renderer.daylight, 1 until the day cycle
+// of 0179 sets it).
 
 FIELD_VERTEX_SHADER_PATH :: "shaders/field.vs"
 FIELD_FRAGMENT_SHADER_PATH :: "shaders/field.fs"
@@ -50,6 +53,9 @@ Field_Renderer :: struct {
 	material:                 rl.Material,
 	camera_position_location: i32,
 	water_color_location:     i32,
+	daylight_location:        i32,
+	// The sky light's share, 0 at night to 1 at noon.
+	daylight:                 f32,
 	globe:                    rl.Mesh,
 	globe_material:           rl.Material,
 	spacing_millimetres:      int,
@@ -89,6 +95,7 @@ use_field_shader :: proc(renderer: ^Field_Renderer, shader: rl.Shader, fog_end: 
 	set_shader_float(shader, "fog_end", fog_end)
 	renderer.camera_position_location = rl.GetShaderLocation(shader, "camera_position")
 	renderer.water_color_location = rl.GetShaderLocation(shader, "water_color")
+	renderer.daylight_location = rl.GetShaderLocation(shader, "daylight")
 	renderer.material.shader = shader
 }
 
@@ -112,11 +119,13 @@ init_field_renderer :: proc(data_directory: string, tiles: Field_Material_Tiles,
 	renderer.globe_material = rl.LoadMaterialDefault()
 	renderer.globe_material.maps[rl.MaterialMapIndex.ALBEDO].color = field_globe_color(planet.palette)
 	renderer.spacing_millimetres = spacing_millimetres
+	renderer.daylight = 1
 	return renderer, true
 }
 
 // Raylib frees the arrays in UnloadMesh, so they are its copies
-// (clone_for_raylib); the weights travel as the tangent attribute.
+// (clone_for_raylib); the block light travels as the texture coordinate
+// attribute and the weights as the tangent attribute.
 upload_field_mesh :: proc(data: Field_Mesh_Data) -> rl.Mesh {
 	mesh := rl.Mesh {
 		vertexCount   = i32(len(data.positions)),
@@ -124,6 +133,7 @@ upload_field_mesh :: proc(data: Field_Mesh_Data) -> rl.Mesh {
 		vertices      = cast([^]f32)clone_for_raylib(data.positions[:]),
 		normals       = cast([^]f32)clone_for_raylib(data.normals[:]),
 		colors        = cast([^]u8)clone_for_raylib(data.colors[:]),
+		texcoords     = cast([^]f32)clone_for_raylib(data.lights[:]),
 		tangents      = cast([^]f32)clone_for_raylib(data.weights[:]),
 		indices       = clone_for_raylib(data.indices[:]),
 	}
@@ -225,6 +235,8 @@ draw_field :: proc(renderer: ^Field_Renderer, camera: rl.Camera3D, selection: []
 	frustum := render_frustum.frustum_from_matrix(cast(matrix[4, 4]f32)view_projection)
 	position := camera.position
 	rl.SetShaderValue(renderer.material.shader, renderer.camera_position_location, &position, .VEC3)
+	daylight := renderer.daylight
+	rl.SetShaderValue(renderer.material.shader, renderer.daylight_location, &daylight, .FLOAT)
 	set_field_water_color(renderer, {})
 	visible := make([dynamic]Field_Node_Render, 0, len(selection), context.temp_allocator)
 	for node in selection {

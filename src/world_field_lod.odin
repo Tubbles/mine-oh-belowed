@@ -14,10 +14,13 @@ import "platform"
 // their grid from the planet (generate_field_grid), the finest is meshed
 // from the loaded chunks.
 //
-// Neighbouring nodes of different levels do not meet, so every node's mesh
-// hangs a skirt from its open border, an L shaped flap out of the node and
-// into the ground (append_field_skirts) that covers the seam seen from
-// above. Everything
+// Neighbouring nodes of different levels do not meet, so a node's mesh
+// hangs a skirt from its open border on the faces that border a coarser
+// node or none (field_node_skirt_faces), an L shaped flap out of the node
+// and into the ground (append_field_skirts) that covers the seam seen
+// from above. Nodes of one level meet without a gap and hang none there:
+// a skirt's straight leg leaves a curved surface (a dug pit's rim) and
+// would stand in the air. Everything
 // here is integer: positions in World_Position units, distances squared.
 
 // FIELD_LEVEL_COUNT is with the data that sets the levels' distances
@@ -248,8 +251,10 @@ coarse_field_density :: proc(loaded, generated: i8, step: i32) -> i8 {
 // grid took from a loaded chunk (loaded set) goes through
 // coarse_field_sample. The water of a sample not loaded is the sea level
 // rule (planet_sea_density), of a loaded one its fill through
-// coarse_field_water_density, so the sea shows at every level. Safe on any
-// thread.
+// coarse_field_water_density, so the sea shows at every level. The light
+// of a loaded sample is its own; a sample not loaded is generated air
+// under the sky or ground, so it has full sky light in air and none in
+// ground (0173). Safe on any thread.
 generate_field_grid :: proc(generation: Planet_Generation, node: Field_Node, grid: ^Field_Grid) {
 	grid.origin = field_node_origin(node)
 	grid.step = field_node_step(node)
@@ -265,6 +270,8 @@ generate_field_grid :: proc(generation: Planet_Generation, node: Field_Node, gri
 				if grid.loaded[index] {
 					value = coarse_field_sample({grid.density[index], grid.material[index], grid.tint[index]}, value, grid.step)
 					water = coarse_field_water_density(grid.water[index], water, grid.step)
+				} else {
+					grid.block_light[index], grid.sky_light[index] = 0, field_sample_is_ground(value.density) ? 0 : FIELD_LIGHT_FULL
 				}
 				grid.density[index], grid.material[index], grid.tint[index] = value.density, value.material, value.tint
 				grid.water[index] = water
@@ -322,11 +329,73 @@ gather_coarse_field_grid :: proc(world: ^Field_World, node: Field_Node, allocato
 				source := sample_to_field_index(sample)
 				grid.density[index], grid.material[index], grid.tint[index] = chunk.density[source], chunk.material[source], chunk.tint[source]
 				grid.water[index] = field_water_density(chunk.density[source], chunk.water[source], sample)
+				grid.block_light[index], grid.sky_light[index] = chunk.block_light[source], chunk.sky_light[source]
 				grid.loaded[index] = true
 			}
 		}
 	}
 	return grid
+}
+
+// The six faces of a node, the axis's negative side first.
+Field_Face :: enum u8 {
+	Negative_X,
+	Positive_X,
+	Negative_Y,
+	Positive_Y,
+	Negative_Z,
+	Positive_Z,
+}
+
+Field_Faces :: bit_set[Field_Face;u8]
+
+field_face :: proc(axis: int, positive: bool) -> Field_Face {
+	return Field_Face(2 * axis + (positive ? 1 : 0))
+}
+
+// The node of the next coarser level that holds the node.
+field_node_parent :: proc(node: Field_Node) -> Field_Node {
+	return {node.level + 1, {floor_divide(node.coordinate.x, 2), floor_divide(node.coordinate.y, 2), floor_divide(node.coordinate.z, 2)}}
+}
+
+// The selected nodes, and every coarser node up to the coarsest level that
+// holds a selected node.
+Field_Selection_Index :: struct {
+	selected:     map[Field_Node]struct{},
+	holds_finer: map[Field_Node]struct{},
+}
+
+make_field_selection_index :: proc(selection: []Field_Node, allocator := context.allocator) -> Field_Selection_Index {
+	index := Field_Selection_Index {
+		selected    = make(map[Field_Node]struct{}, allocator),
+		holds_finer = make(map[Field_Node]struct{}, allocator),
+	}
+	for node in selection {
+		index.selected[node] = {}
+		for parent := field_node_parent(node); parent.level <= FIELD_COARSEST_LEVEL; parent = field_node_parent(parent) {
+			index.holds_finer[parent] = {}
+		}
+	}
+	return index
+}
+
+// The faces whose neighbour of the same level is neither selected nor
+// split into selected finer nodes: a coarser node or nothing lies there,
+// so the node's skirt covers the seam. The finer side of a seam hangs
+// the skirt, which covers it whichever side the coarser node is on
+// (test_a_level_seam_on_flat_ground_is_closed_from_above).
+field_node_skirt_faces :: proc(index: Field_Selection_Index, node: Field_Node) -> Field_Faces {
+	faces: Field_Faces
+	for axis in 0 ..< 3 {
+		for positive in ([2]bool{false, true}) {
+			neighbour := node
+			neighbour.coordinate[axis] += positive ? 1 : -1
+			if neighbour not_in index.selected && neighbour not_in index.holds_finer {
+				faces += {field_face(axis, positive)}
+			}
+		}
+	}
+	return faces
 }
 
 // Undirected, the lower index in the high half.
@@ -346,14 +415,42 @@ count_field_edges :: proc(indices: []u16, allocator := context.allocator) -> map
 }
 
 // Out of the node from a vertex in a border cell: -1 or 1 on each axis
-// whose border it sits in, 0 elsewhere.
-field_skirt_outward :: proc(position: [3]i32) -> [3]i32 {
+// whose border it sits in on one of faces, 0 elsewhere.
+field_skirt_outward :: proc(position: [3]i32, faces: Field_Faces) -> [3]i32 {
 	outward: [3]i32
 	for axis in 0 ..< 3 {
 		cell := floor_divide(position[axis], FIELD_MESH_POSITION_UNITS)
-		outward[axis] = cell < 0 ? -1 : (cell >= FIELD_GRID_CELLS - 1 ? 1 : 0)
+		switch {
+		case cell < 0 && field_face(axis, false) in faces:
+			outward[axis] = -1
+		case cell >= FIELD_GRID_CELLS - 1 && field_face(axis, true) in faces:
+			outward[axis] = 1
+		}
 	}
 	return outward
+}
+
+// Whether a border edge lies on one of faces: the face whose outermost
+// cells the edge is nearest, both its vertices in them or one in them and
+// the other a cell in (an edge across a quad's diagonal); an edge as near
+// to two faces (along the node's edge) lies on both.
+field_edge_on_faces :: proc(from, to: Field_Surface_Vertex, faces: Field_Faces) -> bool {
+	nearest := max(i32)
+	on: Field_Faces
+	for axis in 0 ..< 3 {
+		cells := floor_divide(from.position[axis], FIELD_MESH_POSITION_UNITS) + floor_divide(to.position[axis], FIELD_MESH_POSITION_UNITS)
+		from_faces := [2]i32{cells + 2, 2 * (FIELD_GRID_CELLS - 1) - cells}
+		for from_face, side in from_faces {
+			face := field_face(axis, side == 1)
+			switch {
+			case from_face < nearest:
+				nearest, on = from_face, {face}
+			case from_face == nearest:
+				on += {face}
+			}
+		}
+	}
+	return nearest <= 1 && on & faces != {}
 }
 
 // The vector scaled to length; zero for a zero vector. In i64, since the
@@ -377,21 +474,21 @@ field_skirt_tangent :: proc(outward, gradient: [3]i32) -> [3]i64 {
 // The flap's two vertices below a border vertex: one coarse cell out of
 // the node along the surface and half a coarse cell into the ground, then
 // a coarse cell further into the ground.
-field_skirt_vertices :: proc(vertex: Field_Surface_Vertex) -> (outer, lower: Field_Surface_Vertex) {
+field_skirt_vertices :: proc(vertex: Field_Surface_Vertex, faces: Field_Faces) -> (outer, lower: Field_Surface_Vertex) {
 	gradient := [3]i64{i64(vertex.gradient.x), i64(vertex.gradient.y), i64(vertex.gradient.z)}
 	outer, lower = vertex, vertex
-	outer.position += field_scaled_vector(field_skirt_tangent(field_skirt_outward(vertex.position), vertex.gradient), FIELD_SKIRT_REACH) + field_scaled_vector(gradient, FIELD_SKIRT_REACH / 2)
+	outer.position += field_scaled_vector(field_skirt_tangent(field_skirt_outward(vertex.position, faces), vertex.gradient), FIELD_SKIRT_REACH) + field_scaled_vector(gradient, FIELD_SKIRT_REACH / 2)
 	lower.position = outer.position + field_scaled_vector(gradient, FIELD_SKIRT_REACH)
 	return outer, lower
 }
 
 // The flap's first vertex of a border vertex, made the first time an edge
 // asks; the second follows it.
-field_skirt_vertex_index :: proc(surface: ^Field_Surface, skirt_vertices: []i32, vertex: u16) -> u16 {
+field_skirt_vertex_index :: proc(surface: ^Field_Surface, skirt_vertices: []i32, vertex: u16, faces: Field_Faces) -> u16 {
 	slot := &skirt_vertices[vertex]
 	if slot^ < 0 {
 		slot^ = i32(len(surface.vertices))
-		outer, lower := field_skirt_vertices(surface.vertices[vertex])
+		outer, lower := field_skirt_vertices(surface.vertices[vertex], faces)
 		append(&surface.vertices, outer, lower)
 	}
 	return u16(slot^)
@@ -425,7 +522,7 @@ field_border_vertex_count :: proc(edges: [][2]u16, vertex_count: int) -> int {
 	return count
 }
 
-// An L shaped flap from every open border edge: out of the node by one
+// An L shaped flap from every open border edge on faces: out of the node by one
 // coarse cell along the surface's slope and half a cell below it, so it
 // neither stands above the neighbour's ground nor fights it in depth, then
 // down by a coarse cell.
@@ -437,8 +534,13 @@ field_border_vertex_count :: proc(edges: [][2]u16, vertex_count: int) -> int {
 // whose skirts would outgrow the u16 indices keeps its surface without
 // them and logs a line; FIELD_MESH_VERTEX_BOUND says this cannot happen
 // with today's grid.
-append_field_skirts :: proc(surface: ^Field_Surface) {
-	edges := field_border_edges(surface, context.temp_allocator)
+append_field_skirts :: proc(surface: ^Field_Surface, faces: Field_Faces) {
+	edges := make([dynamic][2]u16, context.temp_allocator)
+	for edge in field_border_edges(surface, context.temp_allocator) {
+		if field_edge_on_faces(surface.vertices[edge[0]], surface.vertices[edge[1]], faces) {
+			append(&edges, edge)
+		}
+	}
 	skirt_vertex_count := 2 * field_border_vertex_count(edges[:], len(surface.vertices))
 	if len(surface.vertices) + skirt_vertex_count > MESH_PART_VERTEX_LIMIT {
 		platform.log_printf("field: a node's skirts would need %d vertices beyond its %d, drawn without them", skirt_vertex_count, len(surface.vertices))
@@ -450,8 +552,8 @@ append_field_skirts :: proc(surface: ^Field_Surface) {
 	}
 	for edge in edges {
 		from, to := edge[0], edge[1]
-		from_outer := field_skirt_vertex_index(surface, skirt_vertices, from)
-		to_outer := field_skirt_vertex_index(surface, skirt_vertices, to)
+		from_outer := field_skirt_vertex_index(surface, skirt_vertices, from, faces)
+		to_outer := field_skirt_vertex_index(surface, skirt_vertices, to, faces)
 		append(&surface.indices, to, from, from_outer, to, from_outer, to_outer)
 		append(&surface.indices, to_outer, from_outer, from_outer + 1, to_outer, from_outer + 1, to_outer + 1)
 	}

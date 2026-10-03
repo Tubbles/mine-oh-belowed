@@ -267,7 +267,8 @@ mark_field_chunk_springs :: proc(generation: Planet_Generation, planet: Planet, 
 
 // Fills chunk; safe on any thread. The chunk is not marked dirty, the
 // world does that when it takes the chunk (field_world_insert_chunk). The
-// water: the sea below the planet's sea level and the springs (0172).
+// water: the sea below the planet's sea level and the springs (0172); the
+// light: full sky in every air sample (0173, light_generated_field_chunk).
 generate_field_chunk :: proc(seed: u64, planet: Planet, spacing_millimetres: int, coordinate: Field_Chunk_Coordinate, chunk: ^Field_Chunk) {
 	generation := make_planet_generation(seed, planet, spacing_millimetres)
 	origin := field_chunk_origin(coordinate)
@@ -281,6 +282,7 @@ generate_field_chunk :: proc(seed: u64, planet: Planet, spacing_millimetres: int
 	}
 	fill_field_chunk_sea(planet, spacing_millimetres, chunk)
 	mark_field_chunk_springs(generation, planet, chunk)
+	light_generated_field_chunk(chunk)
 }
 
 // The sea's density in the generation's spacing at a position, as the

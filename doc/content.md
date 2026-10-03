@@ -128,6 +128,15 @@ The hand tool on the terrain field (0171; [architecture.md](architecture.md), Th
 - The material unit: a cubic metre an item. A sample's ground is the positive part of its density, 127 steps the whole sample, so at a spacing of s metres one step is s^3 / 127 cubic metres; the volume short of a whole item is kept per player and material, so digging at a third of a metre yields as much per cubic metre as at one.
 - `field_brushes` in `data/game.sjson` lists the brushes the brush key cycles, one to `MAXIMUM_FIELD_BRUSH_COUNT`, every key required and bounded (`field_brushes_problem`): `id` (unique), `shape` (`sphere` round the hit, or `level`, which flattens to the plane through the hit across the player's up), `radius_millimetres` (`MINIMUM_FIELD_BRUSH_RADIUS_MILLIMETRES` to `MAXIMUM_FIELD_BRUSH_RADIUS_MILLIMETRES`) and `rate_density_steps_per_tick` (1 to `MAXIMUM_FIELD_BRUSH_RATE`, in steps of 128 a spacing). The shipped brushes: a small sphere of 1 m at 6 steps a tick (a full sample in about a third of a second), a large one of 2 m at 3 and a level brush of 2 m at 6.
 
+## Lighting
+
+The field light's numbers (0173; [architecture.md](architecture.md), The field light), in `data/lighting.sjson`, every key required and held to the configuration's strict keys (`parse_lighting_file`, `lighting_problem`).
+
+- `falloff`: the light lost per metre by level band, the darkest band first. The bands split the levels 0 to 255 evenly, so their count is a power of two from 1 to 16; each loss is 1 to 255 and none rises above the one before it, so a brighter level never spreads dimmer than a darker one and the fill's result does not depend on its visiting order. A step between samples loses the falloff of the level it leaves times the spacing, rounded to the nearest and at least 1 (`make_field_light_tuning`), so a room is the same size in metres at every spacing; multiples of 6 divide evenly at 333, 500 and 1000 mm. The shipped curve is 24, 18, 12 and 6 per metre: gentle near the source, steep at the edge.
+- `dark_level`: a level at or below it reads as dark (24; the tests' threshold).
+- `steps_per_tick` (8192) and `chunk_seeds_per_tick` (4): the queue nodes the light runs per tick over both channels, and the arrived chunks whose borders are compared per tick.
+- `emitters`: the light sources by `id` with their `level` at the source sample, 1 to 255, ids unique, `torch` and `lamp` required. The lamp's level lives here rather than on its machine record until the slice (0179) moves it there. The torch (192) reaches about 11 m along a corridor and lights every sample of an 8 m room, the lamp (255) about 21 m and a 16 m hall (`test_the_light_radius_in_metres_is_the_same_at_every_spacing`). The torch moves to the material table's torch entry in the slice (0179). The file is read when the planet preview starts, not on a reload, until the slice loads it with the tables.
+
 ## Blocks
 
 `data/blocks.sjson` holds the shapes, orientation flags, light and sound materials.

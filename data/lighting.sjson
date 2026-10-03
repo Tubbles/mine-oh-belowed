@@ -1,0 +1,28 @@
+// The field light (work item 0173, doc/content.md, Lighting;
+// world_field_light.odin). Every key required. A sample's light is a byte
+// per channel (block light, sky light), 0 to 255, spread by a flood fill to
+// the face neighbours in air.
+//
+// falloff: the light lost per metre, by level band, the darkest band
+// first. The bands split 0 to 255 evenly by the level's top bits, so the
+// count is a power of two (1 to 16); the losses fall from band to band
+// (gentle near the source, steep at the edge) and are 1 to 255. A step
+// between two samples loses the falloff of the level it leaves, times
+// the spacing, rounded to the nearest and at least 1, so a room is the
+// same size in metres at every spacing. Multiples of 6 divide evenly at
+// 333, 500 and 1000 mm.
+falloff = [24, 18, 12, 6]
+// A level at or below this reads as dark (the tests' threshold).
+dark_level = 24
+// Queue nodes the light runs per tick, over both channels, and chunks
+// whose borders are compared with their neighbours' per tick when they
+// arrive.
+steps_per_tick = 8192
+chunk_seeds_per_tick = 4
+// The light sources by id with their level at the source sample. Sky
+// light is 255 under open sky. The torch lights a room of about 10 m
+// across the floor, the lamp a hall of about 20 m.
+emitters = [
+	{id = "torch", level = 192}
+	{id = "lamp", level = 255}
+]

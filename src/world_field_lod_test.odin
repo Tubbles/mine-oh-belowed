@@ -1,6 +1,10 @@
 package game
 
+import "core:math"
 import "core:testing"
+
+// Skirts on every face, as a node alone in the selection hangs them.
+EVERY_FIELD_FACE :: Field_Faces{.Negative_X, .Positive_X, .Negative_Y, .Positive_Y, .Negative_Z, .Positive_Z}
 
 TEST_LEVEL_DISTANCES_METRES :: [FIELD_LEVEL_COUNT]int{64, 160, 384, 1024}
 
@@ -66,7 +70,7 @@ test_the_skirt_lies_inside_the_surface :: proc(t: ^testing.T) {
 	surface := mesh_field_surface(grid, TEST_FIELD_PALETTE[:], context.temp_allocator)
 	surface_vertex_count := len(surface.vertices)
 	border_edges := len(field_border_edges(&surface, context.temp_allocator))
-	append_field_skirts(&surface)
+	append_field_skirts(&surface, EVERY_FIELD_FACE)
 	testing.expect(t, border_edges > 0)
 	testing.expect_value(t, len(surface.indices) - surface.skirt_index_start, 12 * border_edges)
 	testing.expect(t, len(surface.vertices) > surface_vertex_count)
@@ -168,11 +172,9 @@ point_in_triangle :: proc(point: [2]f64, triangle: [3][2]f64) -> bool {
 }
 
 // The xz projections of a node's surface and skirts near the strip.
-append_strip_triangles :: proc(triangles: ^[dynamic][3][2]f64, grid: ^Field_Grid, skirts := true) {
+append_strip_triangles :: proc(triangles: ^[dynamic][3][2]f64, grid: ^Field_Grid, faces: Field_Faces) {
 	surface := mesh_field_surface(grid, TEST_FIELD_PALETTE[:], context.temp_allocator)
-	if skirts {
-		append_field_skirts(&surface)
-	}
+	append_field_skirts(&surface, faces)
 	for triangle := 0; triangle < len(surface.indices); triangle += 3 {
 		projected: [3][2]f64
 		near := false
@@ -188,20 +190,23 @@ append_strip_triangles :: proc(triangles: ^[dynamic][3][2]f64, grid: ^Field_Grid
 }
 
 // A finest node beside a half resolution one on flat ground, the coarse
-// one on either side: no strip of the seam is open from above. Without
-// the skirts the coarse node on the negative side leaves one open.
+// one on either side: no strip of the seam is open from above, with the
+// skirt on the fine node's face towards the coarse one only, as
+// field_node_skirt_faces gives them. Without the skirts the coarse node
+// on the negative side leaves one open.
 @(test)
 test_a_level_seam_on_flat_ground_is_closed_from_above :: proc(t: ^testing.T) {
 	sides := [2][2]Sample_Coordinate{{{0, 0, 0}, {-64, 0, 0}}, {{-32, 0, 0}, {0, 0, 0}}}
-	for side in sides {
+	towards_coarse := [2]Field_Face{.Negative_X, .Positive_X}
+	for side, index in sides {
 		triangles := make([dynamic][3][2]f64, context.temp_allocator)
-		append_strip_triangles(&triangles, fill_test_plane_grid(side[0], 1, {0, 0}))
-		append_strip_triangles(&triangles, fill_test_plane_grid(side[1], 2, {0, 0}))
+		append_strip_triangles(&triangles, fill_test_plane_grid(side[0], 1, {0, 0}), {towards_coarse[index]})
+		append_strip_triangles(&triangles, fill_test_plane_grid(side[1], 2, {0, 0}), {})
 		testing.expectf(t, open_strip_points(triangles[:]) == 0, "the seam with the fine node at %v is open from above", side[0])
 	}
 	bare := make([dynamic][3][2]f64, context.temp_allocator)
-	append_strip_triangles(&bare, fill_test_plane_grid(sides[0][0], 1, {0, 0}), false)
-	append_strip_triangles(&bare, fill_test_plane_grid(sides[0][1], 2, {0, 0}), false)
+	append_strip_triangles(&bare, fill_test_plane_grid(sides[0][0], 1, {0, 0}), {})
+	append_strip_triangles(&bare, fill_test_plane_grid(sides[0][1], 2, {0, 0}), {})
 	testing.expect(t, open_strip_points(bare[:]) > 0, "the check finds the seam's gap without skirts")
 }
 
@@ -218,10 +223,123 @@ test_a_generated_grid_matches_the_generated_chunk :: proc(t: ^testing.T) {
 	mismatches := 0
 	for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
 		grid_index := field_grid_index(field_index_to_local(index))
-		if grid.density[grid_index] != chunk.density[index] || grid.material[grid_index] != chunk.material[index] || grid.tint[grid_index] != chunk.tint[index] {
+		if grid.density[grid_index] != chunk.density[index] || grid.material[grid_index] != chunk.material[index] || grid.tint[grid_index] != chunk.tint[index] || grid.sky_light[grid_index] != chunk.sky_light[index] || grid.block_light[grid_index] != 0 {
 			mismatches += 1
 		}
 	}
 	testing.expect_value(t, mismatches, 0)
 	testing.expect(t, !field_grid_is_uniform(grid), "the test chunk holds the surface")
+}
+
+// A coarse grid takes a loaded sample's light and gives a generated one
+// full sky in air (0173).
+@(test)
+test_a_coarse_grid_reads_the_light_of_the_loaded_chunks :: proc(t: ^testing.T) {
+	planet := make_test_planet()
+	generation := make_planet_generation(TEST_PLANET_SEED, planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES)
+	world: Field_World
+	defer destroy_field_world(&world)
+	coordinate := Field_Chunk_Coordinate{0, 249, 0}
+	chunk := new(Field_Chunk)
+	generate_field_chunk(TEST_PLANET_SEED, planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES, coordinate, chunk)
+	for &level, index in chunk.block_light {
+		level = chunk.density[index] > 0 ? 0 : 150
+	}
+	field_world_insert_chunk(&world, chunk)
+	node := Field_Node{1, {0, 124, 0}}
+	grid := gather_coarse_field_grid(&world, node, context.temp_allocator)
+	generate_field_grid(generation, node, grid)
+	loaded_air, generated_air := 0, 0
+	for index in 0 ..< FIELD_GRID_SAMPLE_COUNT {
+		switch {
+		case field_sample_is_ground(grid.density[index]):
+			testing.expect_value(t, grid.block_light[index], 0)
+		case grid.loaded[index]:
+			testing.expect_value(t, grid.block_light[index], 150)
+			loaded_air += 1
+		case:
+			testing.expect_value(t, grid.sky_light[index], FIELD_LIGHT_FULL)
+			generated_air += 1
+		}
+	}
+	testing.expect(t, loaded_air > 0 && generated_air > 0)
+}
+
+// Flat ground below y = 20.5 with a pit dug across the border x = 32 of
+// two finest nodes, as the brush of the preview's screenshot digs it (a
+// sphere of 2.5 samples 1.5 below the ground): every sample within it is
+// air, every other keeps the ground's density, so the rim is a sharp
+// convex edge.
+TEST_PIT_CENTRE :: [3]f64{31.5, 19, 16.3}
+TEST_PIT_RADIUS :: 2.5
+
+test_pit_density :: proc(sample: [3]i64) -> i8 {
+	offset := [3]f64{f64(sample.x), f64(sample.y), f64(sample.z)} - TEST_PIT_CENTRE
+	if offset.x * offset.x + offset.y * offset.y + offset.z * offset.z <= TEST_PIT_RADIUS * TEST_PIT_RADIUS {
+		return -MAXIMUM_DENSITY
+	}
+	return i8(clamp((41 - 2 * sample.y) * DENSITY_STEPS_PER_SAMPLE / 2, -MAXIMUM_DENSITY, MAXIMUM_DENSITY))
+}
+
+// The field's trilinear density at a point in samples.
+test_pit_trilinear :: proc(point: [3]f64) -> f64 {
+	low := [3]i64{i64(math.floor(point.x)), i64(math.floor(point.y)), i64(math.floor(point.z))}
+	fraction := point - {f64(low.x), f64(low.y), f64(low.z)}
+	total := 0.0
+	for corner in 0 ..< 8 {
+		offset := field_corner_offset(corner)
+		weight := 1.0
+		for axis in 0 ..< 3 {
+			weight *= offset[axis] == 1 ? fraction[axis] : 1 - fraction[axis]
+		}
+		total += weight * f64(test_pit_density(low + {i64(offset.x), i64(offset.y), i64(offset.z)}))
+	}
+	return total
+}
+
+// The skirt vertices of a node's grid with the faces, and the least
+// trilinear density among them (negative in the air).
+test_pit_skirt_depth :: proc(origin: Sample_Coordinate, faces: Field_Faces) -> (count: int, shallowest: f64) {
+	grid := fill_test_field_grid(origin, 1, test_pit_density)
+	surface := mesh_field_surface(grid, TEST_FIELD_PALETTE[:], context.temp_allocator)
+	first_skirt := len(surface.vertices)
+	append_field_skirts(&surface, faces)
+	shallowest = max(f64)
+	for vertex in surface.vertices[first_skirt:] {
+		shallowest = min(shallowest, test_pit_trilinear(test_grid_vertex_samples(grid, vertex)))
+	}
+	return len(surface.vertices) - first_skirt, shallowest
+}
+
+// Two finest nodes share the border a dug pit crosses: neither hangs a
+// skirt there, so no skirt stands in the pit's air; with skirts on every
+// face the straight leg leaves the rim's curve and does.
+@(test)
+test_nodes_of_one_level_hang_no_skirt_between_them :: proc(t: ^testing.T) {
+	nodes := [2]struct {
+		origin: Sample_Coordinate,
+		shared: Field_Face,
+	}{{{0, 0, 0}, .Positive_X}, {{32, 0, 0}, .Negative_X}}
+	in_air := false
+	for node in nodes {
+		count, shallowest := test_pit_skirt_depth(node.origin, EVERY_FIELD_FACE - {node.shared})
+		testing.expectf(t, count > 0 && shallowest >= 0, "the node at %v has %d skirt vertices, the shallowest at density %v", node.origin, count, shallowest)
+		_, every_face := test_pit_skirt_depth(node.origin, EVERY_FIELD_FACE)
+		in_air ||= every_face < 0
+	}
+	testing.expect(t, in_air, "skirts on the shared face stand in the pit's air")
+}
+
+// The faces towards a coarser node or none hang skirts, those towards a
+// node of the same level or finer ones do not.
+@(test)
+test_the_skirt_faces_follow_the_neighbours_levels :: proc(t: ^testing.T) {
+	fine := Field_Node{0, {0, 0, 0}}
+	same := Field_Node{0, {0, 0, 1}}
+	coarse := Field_Node{1, {-1, 0, 0}}
+	selection := []Field_Node{fine, same, coarse, {0, {1, 0, 0}}, {0, {1, 1, 0}}, {0, {1, 0, 1}}, {0, {1, 1, 1}}}
+	index := make_field_selection_index(selection, context.temp_allocator)
+	testing.expect_value(t, field_node_skirt_faces(index, fine), Field_Faces{.Negative_X, .Negative_Y, .Positive_Y, .Negative_Z})
+	// The coarse node's +x face borders the finer nodes.
+	testing.expect(t, .Positive_X not_in field_node_skirt_faces(index, coarse))
 }

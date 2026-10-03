@@ -96,10 +96,14 @@ test_an_edited_field_chunk_round_trips_through_the_codec :: proc(t: ^testing.T) 
 	index := field_local_to_index({7, 8, 9})
 	field_chunk_set_sample(chunk, index, {density = -3, material = .Air, tint = 0})
 	field_chunk_set_sample(chunk, FIELD_CHUNK_SAMPLE_COUNT - 1, {density = 90, material = .Bedrock, tint = 2})
+	// The world's set clears the light of a sample turned to ground.
+	chunk.block_light[FIELD_CHUNK_SAMPLE_COUNT - 1], chunk.sky_light[FIELD_CHUNK_SAMPLE_COUNT - 1] = 0, 0
 	chunk.water[index] = 200
 	chunk.water_still[index] = 3
 	set_field_sample_bit(&chunk.water_awake, index)
 	set_field_sample_bit(&chunk.water_source, FIELD_CHUNK_SAMPLE_COUNT - 1)
+	chunk.block_light[index] = 180
+	chunk.sky_light[index] = 77
 
 	bytes := encode_field_chunk_delta(chunk, generated, context.temp_allocator)
 	// Smaller than the three planes as they are.
@@ -110,6 +114,8 @@ test_an_edited_field_chunk_round_trips_through_the_codec :: proc(t: ^testing.T) 
 	testing.expect(t, field_chunk_equals(restored, chunk))
 	testing.expect_value(t, field_chunk_get_sample(restored, index), Field_Sample{density = -3, material = .Air, tint = 0})
 	testing.expect_value(t, restored.water[index], 200)
+	testing.expect_value(t, restored.block_light[index], 180)
+	testing.expect_value(t, restored.sky_light[index], 77)
 	testing.expect(t, field_sample_bit(&restored.water_awake, index) && field_sample_bit(&restored.water_source, FIELD_CHUNK_SAMPLE_COUNT - 1))
 	testing.expect(t, restored.dirty)
 }
@@ -170,12 +176,14 @@ malformed_field_chunk_runs :: proc() -> [3][]byte {
 		append(bytes, value)
 		append_u32(bytes, count)
 	}
-	// The water's planes after the first three, all zero.
+	// The water's and the light's planes after the first three, all zero.
 	water_planes :: proc(bytes: ^[dynamic]byte) {
 		plane_bytes(bytes, 0, FIELD_CHUNK_SAMPLE_COUNT)
 		plane_bytes(bytes, 0, FIELD_CHUNK_SAMPLE_COUNT)
 		plane_bytes(bytes, 0, FIELD_SAMPLE_BIT_BYTES)
 		plane_bytes(bytes, 0, FIELD_SAMPLE_BIT_BYTES)
+		plane_bytes(bytes, 0, FIELD_CHUNK_SAMPLE_COUNT)
+		plane_bytes(bytes, 0, FIELD_CHUNK_SAMPLE_COUNT)
 	}
 	header :: proc() -> [dynamic]byte {
 		bytes := make([dynamic]byte, context.temp_allocator)
@@ -201,4 +209,21 @@ malformed_field_chunk_runs :: proc() -> [3][]byte {
 	plane_bytes(&short, 0, FIELD_CHUNK_SAMPLE_COUNT)
 	water_planes(&short)
 	return {unknown_material[:], past_the_end[:], short[:]}
+}
+
+// Light in a ground sample is malformed: the decoder drops it, so it
+// cannot spread from inside the ground.
+@(test)
+test_field_chunk_decode_drops_light_in_ground :: proc(t: ^testing.T) {
+	chunk := new(Field_Chunk, context.temp_allocator)
+	field_chunk_set_sample(chunk, 3, {density = 5, material = .Stone, tint = 1})
+	chunk.block_light[3], chunk.sky_light[3] = 200, 255
+	chunk.block_light[4], chunk.sky_light[4] = 100, 50
+	bytes := encode_field_chunk_delta(chunk, new(Field_Chunk, context.temp_allocator), context.temp_allocator)
+	restored := new(Field_Chunk, context.temp_allocator)
+	testing.expect_value(t, decode_field_chunk_delta(bytes, restored), "")
+	testing.expect_value(t, restored.block_light[3], 0)
+	testing.expect_value(t, restored.sky_light[3], 0)
+	testing.expect_value(t, restored.block_light[4], 100)
+	testing.expect_value(t, restored.sky_light[4], 50)
 }

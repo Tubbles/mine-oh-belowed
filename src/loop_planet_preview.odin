@@ -35,8 +35,18 @@ import "platform"
 // the frames run until PLANET_PREVIEW_SCREENSHOT_FRAMES have passed and the
 // streaming has settled (at most PLANET_PREVIEW_SCREENSHOT_FRAME_LIMIT),
 // and the last frame is saved to the path. With --planet-preview-walk the
-// frame is the field player's instead, standing on the pole's ground and
-// looking along the horizon, one tick a frame, taken once it stands.
+// frame is the field player's instead, standing on the pole's ground, one
+// tick a frame: once it stands and the field has streamed, a pit is dug
+// ahead of it with a torch at its bottom (0173, dig_planet_preview_pit)
+// and the camera tilts down into it, and the frame is taken once the
+// light has spread.
+//
+// The field light (0173): the torch key (PLANET_PREVIEW_TORCH_KEY, L)
+// places a torch of data/lighting.sjson at the air sample in front of the
+// targeted ground, or takes away the torch there; the session connects the
+// torch entity to the light in the slice (0179). --planet-preview-daylight
+// sets the sky light's share in percent (the field shader's daylight), so
+// a torch's room shows at night (0).
 
 PLANET_PREVIEW_PLANET :: "home"
 PLANET_PREVIEW_START_HEIGHT_METRES :: 40
@@ -71,6 +81,15 @@ PLANET_PREVIEW_MAXIMUM_TICKS_PER_FRAME :: 5
 // The preview's player carries this pickaxe, so every material with an
 // item digs (0171).
 PLANET_PREVIEW_TOOL_ITEM :: "iron_pickaxe"
+PLANET_PREVIEW_TORCH_KEY :: rl.KeyboardKey.L
+// The emitter of data/lighting.sjson the torch key places.
+PLANET_PREVIEW_TORCH_EMITTER :: "torch"
+// The screenshot's pit: a sphere dug this far ahead of the feet and this
+// deep below them, open at the top, and the camera's tilt down into it.
+PLANET_PREVIEW_PIT_RADIUS_MILLIMETRES :: 2500
+PLANET_PREVIEW_PIT_AHEAD_MILLIMETRES :: 3300
+PLANET_PREVIEW_PIT_DEPTH_MILLIMETRES :: 1500
+PLANET_PREVIEW_PIT_PITCH_DEGREES :: -50
 
 Planet_Preview :: struct {
 	planet:          Planet,
@@ -99,6 +118,10 @@ Planet_Preview :: struct {
 	held_now:        Field_Player_Buttons,
 	turn_remainder:  [2]f32,
 	tick:            u64,
+	// The torch's level (data/lighting.sjson) and whether the screenshot's
+	// pit is dug (0173).
+	torch_level:     u8,
+	pit_dug:         bool,
 }
 
 planet_preview_speed_scale :: proc(height_metres: f32) -> f32 {
@@ -282,6 +305,75 @@ walk_planet_preview :: proc(preview: ^Planet_Preview, frame: Input_Frame, frame_
 	return preview.tick_seconds / tick_length
 }
 
+// The air sample in front of the hit: the first along its normal, in half
+// samples up to two samples out.
+planet_preview_torch_sample :: proc(world: ^Field_World, spacing_millimetres: int, hit: Field_Raycast_Hit) -> (sample: Sample_Coordinate, found: bool) {
+	half := sample_axis_to_position(1, spacing_millimetres) / 2
+	for step in i64(1) ..= 4 {
+		sample = nearest_field_sample(hit.position + World_Position(fixed_scale(hit.normal, step * half)), spacing_millimetres)
+		if field_world_get_sample(world, sample).density <= 0 {
+			return sample, true
+		}
+	}
+	return {}, false
+}
+
+// The torch key: a torch at the air sample in front of the target, or
+// none where one is.
+toggle_planet_preview_torch :: proc(preview: ^Planet_Preview) {
+	target := preview.field.players[0].body.target
+	if !target.hit {
+		return
+	}
+	world := &preview.field.world
+	sample, found := planet_preview_torch_sample(world, preview.field.spacing_millimetres, target)
+	if !found {
+		return
+	}
+	if sample in world.light.sources {
+		remove_field_light_source(world, sample)
+		platform.log_printf("planet preview: torch at %v taken away", sample)
+		return
+	}
+	add_field_light_source(world, sample, preview.torch_level)
+	platform.log_printf("planet preview: torch at %v", sample)
+}
+
+// The screenshot's pit, once the player stands and the field round it has
+// streamed: a sphere dug ahead of the
+// feet and below them, the shadow's sky marched as the edit drain does,
+// a torch at the pit's lowest air sample, and the camera tilted down into
+// it. The light spreads in the following ticks.
+dig_planet_preview_pit :: proc(preview: ^Planet_Preview) {
+	player := &preview.field.players[0].body
+	spacing := preview.field.spacing_millimetres
+	world := &preview.field.world
+	heading := field_heading(player.forward, player.up, player.yaw)
+	ahead := World_Position(fixed_scale(heading, millimetres_to_position_units(PLANET_PREVIEW_PIT_AHEAD_MILLIMETRES)))
+	down := World_Position(fixed_scale(player.up, millimetres_to_position_units(PLANET_PREVIEW_PIT_DEPTH_MILLIMETRES)))
+	centre := player.position + ahead - down
+	radius := millimetres_to_position_units(PLANET_PREVIEW_PIT_RADIUS_MILLIMETRES)
+	edit := Field_Edit {
+		mode = .Dig,
+		brush = Field_Brush{shape = .Sphere, radius = radius, rate = 2 * MAXIMUM_DENSITY},
+		centre = centre,
+		up = player.up,
+		diggable = ~bit_set[Field_Material]{},
+	}
+	apply_field_edit(world, spacing, edit)
+	update_field_sky_after_edits(world)
+	floor := centre - World_Position(fixed_scale(player.up, radius - sample_axis_to_position(1, spacing)))
+	torch := nearest_field_sample(floor, spacing)
+	for field_world_get_sample(world, torch).density > 0 {
+		floor += World_Position(fixed_scale(player.up, sample_axis_to_position(1, spacing) / 2))
+		torch = nearest_field_sample(floor, spacing)
+	}
+	add_field_light_source(world, torch, preview.torch_level)
+	player.pitch = degrees_to_angle_units(PLANET_PREVIEW_PIT_PITCH_DEGREES)
+	preview.pit_dug = true
+	platform.log_printf("planet preview: pit dug, torch at %v", torch)
+}
+
 // The input of one interactive frame: the walk key switches modes, then
 // the free camera flies or the player walks. Returns the interpolation
 // fraction of the walk.
@@ -296,6 +388,9 @@ update_planet_preview_input :: proc(preview: ^Planet_Preview, frame_seconds: f32
 	if !preview.walking {
 		fly_planet_preview(preview, frame_seconds)
 		return 1
+	}
+	if rl.IsKeyPressed(PLANET_PREVIEW_TORCH_KEY) {
+		toggle_planet_preview_torch(preview)
 	}
 	frame := read_raylib_input_frame(preview.pressed, preview.input_bindings, {})
 	preview.pressed = frame.pressed
@@ -403,6 +498,22 @@ draw_planet_preview :: proc(preview: ^Planet_Preview, selection: []Field_Node, c
 	return saved
 }
 
+// The walk screenshot waits for the pit, its light and the meshes of
+// the chunks they changed: no finest node's chunk dirty and no coarser
+// node waiting to mesh again.
+planet_preview_pit_lit :: proc(preview: ^Planet_Preview, selection: []Field_Node) -> bool {
+	world := &preview.field.world
+	if !preview.field.players[0].body.on_ground || !preview.pit_dug || pending_field_light_nodes(world) > 0 || len(preview.streaming.remesh) > 0 {
+		return false
+	}
+	for node in selection {
+		if chunk := world.chunks[field_node_chunk(node)] or_else nil; node.level == 0 && chunk != nil && chunk.dirty {
+			return false
+		}
+	}
+	return true
+}
+
 // Returns the exit code: 0, or 1 when the screenshot could not be saved.
 run_planet_preview_frames :: proc(preview: ^Planet_Preview) -> int {
 	screenshot := preview.screenshot_path != ""
@@ -418,7 +529,13 @@ run_planet_preview_frames :: proc(preview: ^Planet_Preview) -> int {
 		selection := select_field_nodes(view, context.temp_allocator)
 		update_field_streaming(&preview.streaming, &preview.field.world, selection)
 		upload_streamed_field_meshes(&preview.renderer, &preview.streaming)
-		settled := field_streaming_settled(&preview.streaming, selection) && (!preview.walking || preview.field.players[0].body.on_ground)
+		streamed := field_streaming_settled(&preview.streaming, selection)
+		// The pit waits for the chunks round it: a dig skips chunks not
+		// loaded yet, which would arrive undug.
+		if screenshot && preview.walking && !preview.pit_dug && streamed && preview.field.players[0].body.on_ground {
+			dig_planet_preview_pit(preview)
+		}
+		settled := streamed && (!preview.walking || planet_preview_pit_lit(preview, selection))
 		capture := screenshot && planet_preview_screenshot_due(frame, settled)
 		saved := draw_planet_preview(preview, selection, capture, alpha)
 		free_all(context.temp_allocator)
@@ -453,8 +570,8 @@ make_planet_preview_field :: proc(items: Item_Registry, materials: Field_Materia
 
 // Returns the process's exit code.
 // screenshot_path empty runs the interactive preview; walk starts it in
-// the walk mode.
-run_planet_preview :: proc(config: Game_Config, planets: []Planet, items: Item_Registry, bindings: []Binding, data_directory: string, seed: u64, screenshot_path: string, walk: bool) -> int {
+// the walk mode; daylight_percent is the sky light's share.
+run_planet_preview :: proc(config: Game_Config, planets: []Planet, items: Item_Registry, bindings: []Binding, data_directory: string, seed: u64, screenshot_path: string, walk: bool, daylight_percent: int) -> int {
 	planet, found := find_planet(planets, PLANET_PREVIEW_PLANET)
 	if !found {
 		platform.log_printf("error: %s has no planet %q to preview", PLANETS_FILE_NAME, PLANET_PREVIEW_PLANET)
@@ -467,6 +584,19 @@ run_planet_preview :: proc(config: Game_Config, planets: []Planet, items: Item_R
 	}
 	materials, materials_ok := load_field_material_table(data_directory, items)
 	if !materials_ok {
+		return 1
+	}
+	if daylight_percent < 0 || daylight_percent > 100 {
+		platform.log_printf("error: --planet-preview-daylight=%d is outside 0 to 100", daylight_percent)
+		return 1
+	}
+	lighting, lighting_ok := load_lighting_file(data_directory)
+	if !lighting_ok {
+		return 1
+	}
+	torch_level, torch_found := find_lighting_emitter(lighting, PLANET_PREVIEW_TORCH_EMITTER)
+	if !torch_found {
+		platform.log_printf("error: %s has no emitter %q", LIGHTING_FILE_NAME, PLANET_PREVIEW_TORCH_EMITTER)
 		return 1
 	}
 	install_raylib_trace_log()
@@ -487,6 +617,7 @@ run_planet_preview :: proc(config: Game_Config, planets: []Planet, items: Item_R
 	if !renderer_ok {
 		return 1
 	}
+	renderer.daylight = f32(daylight_percent) / 100
 	preview := Planet_Preview {
 		planet          = planet,
 		level_distances = level_distances,
@@ -498,6 +629,7 @@ run_planet_preview :: proc(config: Game_Config, planets: []Planet, items: Item_R
 			brushes = make_field_brushes(config.field_brushes),
 			tuning = make_field_player_tuning(config.field_player, planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES, config.tick_rate),
 			water = make_field_water_tuning(config.field_water),
+			light = make_field_light_tuning(lighting, DEFAULT_SAMPLE_SPACING_MILLIMETRES),
 		},
 		streaming       = start_field_streaming(seed, planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES, default_worker_count()),
 		renderer        = renderer,
@@ -505,6 +637,7 @@ run_planet_preview :: proc(config: Game_Config, planets: []Planet, items: Item_R
 		screenshot_path = screenshot_path,
 		seed            = seed,
 		tick_rate       = config.tick_rate,
+		torch_level     = u8(torch_level),
 	}
 	preview.field.world.water_planet = make_field_water_planet(seed, planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES)
 	if screenshot_path != "" {

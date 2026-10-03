@@ -30,8 +30,6 @@ FIELD_VERTEX_CELL_COUNT :: FIELD_VERTEX_CELL_SIZE * FIELD_VERTEX_CELL_SIZE * FIE
 FIELD_MESH_POSITION_UNITS :: 256
 // Every material but air has a texture and a weight per vertex.
 FIELD_TEXTURED_MATERIAL_COUNT :: len(Field_Material) - 1
-// The vertex light until the field light (0173) provides it.
-FIELD_FULL_DAYLIGHT :: 255
 
 // The samples a node meshes from: index 0 is the sample at origin, a grid
 // step is step samples. Filled from the loaded chunks for the finest level
@@ -46,8 +44,10 @@ Field_Grid :: struct {
 	density:  [FIELD_GRID_SAMPLE_COUNT]i8,
 	material: [FIELD_GRID_SAMPLE_COUNT]Field_Material,
 	tint:     [FIELD_GRID_SAMPLE_COUNT]u8,
-	water:    [FIELD_GRID_SAMPLE_COUNT]i8,
-	loaded:   [FIELD_GRID_SAMPLE_COUNT]bool,
+	water:       [FIELD_GRID_SAMPLE_COUNT]i8,
+	block_light: [FIELD_GRID_SAMPLE_COUNT]u8,
+	sky_light:   [FIELD_GRID_SAMPLE_COUNT]u8,
+	loaded:      [FIELD_GRID_SAMPLE_COUNT]bool,
 }
 
 // position is in 1/FIELD_MESH_POSITION_UNITS of a grid cell from the
@@ -55,12 +55,14 @@ Field_Grid :: struct {
 // central difference at the cell's centre; the surface faces against it.
 // weights is the share of the cell's ground corners per material, Topsoil
 // first (field_material_slot), summing to about 255; color is the mean
-// palette colour of the ground corners.
+// palette colour of the ground corners; light is the mean block light and
+// sky light of the air corners (field_vertex_light).
 Field_Surface_Vertex :: struct {
 	position: [3]i32,
 	gradient: [3]i32,
 	weights:  [FIELD_TEXTURED_MATERIAL_COUNT]u8,
 	color:    [3]u8,
+	light:    [Field_Light_Channel]u8,
 }
 
 // Triangles as index triples. The skirts (world_field_lod.odin) come after
@@ -72,13 +74,17 @@ Field_Surface :: struct {
 }
 
 // What render_field.odin uploads: positions in metres from the node's
-// origin; colors carry the tint in red, green and blue and the vertex
-// light in alpha; weights are the material weights from 0 to 1, uploaded
-// as the tangent attribute, since raylib has no other four float one.
+// origin; colors carry the tint in red, green and blue and the sky light
+// in alpha; lights carry the block light (0 to 1) in their first
+// component, uploaded as the texture coordinate attribute, the one raylib
+// attribute the field leaves free; weights are the material weights from
+// 0 to 1, uploaded as the tangent attribute, since raylib has no other
+// four float one.
 Field_Mesh_Data :: struct {
 	positions: [dynamic][3]f32,
 	normals:   [dynamic][3]f32,
 	colors:    [dynamic][4]u8,
+	lights:    [dynamic][2]f32,
 	weights:   [dynamic][4]f32,
 	indices:   [dynamic]u16,
 }
@@ -115,8 +121,8 @@ field_shell_range :: proc(offset: i32) -> (first, last: i32) {
 	return 0, FIELD_GRID_CELLS - 1
 }
 
-// One chunk's part of the grid; a missing chunk reads as air, as
-// field_world_get_sample does.
+// One chunk's part of the grid; a missing chunk reads as air under the
+// sky, as field_world_get_sample and the generation make it.
 copy_field_grid_part :: proc(grid: ^Field_Grid, chunk: ^Field_Chunk, offset: [3]i32) {
 	first, last: [3]i32
 	for axis in 0 ..< 3 {
@@ -129,11 +135,13 @@ copy_field_grid_part :: proc(grid: ^Field_Grid, chunk: ^Field_Chunk, offset: [3]
 				if chunk == nil {
 					grid.density[index], grid.material[index], grid.tint[index] = FIELD_AIR_SAMPLE.density, FIELD_AIR_SAMPLE.material, FIELD_AIR_SAMPLE.tint
 					grid.water[index] = -MAXIMUM_DENSITY
+					grid.block_light[index], grid.sky_light[index] = 0, FIELD_LIGHT_FULL
 					continue
 				}
 				source := field_local_to_index({x %% FIELD_CHUNK_SIZE, y %% FIELD_CHUNK_SIZE, z %% FIELD_CHUNK_SIZE})
 				grid.density[index], grid.material[index], grid.tint[index] = chunk.density[source], chunk.material[source], chunk.tint[source]
 				grid.water[index] = field_water_density(chunk.density[source], chunk.water[source], grid.origin + Sample_Coordinate([3]i32{x, y, z}))
+				grid.block_light[index], grid.sky_light[index] = chunk.block_light[source], chunk.sky_light[source]
 			}
 		}
 	}
@@ -247,7 +255,28 @@ field_cell_look :: proc(grid: ^Field_Grid, corners: [8]int, palette: [][3]int) -
 	return weights, color
 }
 
-field_cell_vertex :: proc(grid: ^Field_Grid, cell: [3]i32, palette: [][3]int) -> Field_Surface_Vertex {
+// The mean of each light channel over the corners that are air in the
+// light grid's terrain: ground holds no light, so counting it would halve
+// every surface's light. The water's grid reads the terrain's
+// (mesh_field_water_grid).
+field_vertex_light :: proc(light_grid: ^Field_Grid, corners: [8]int) -> (light: [Field_Light_Channel]u8) {
+	sums: [Field_Light_Channel]int
+	air := 0
+	for index in corners {
+		if field_sample_is_ground(light_grid.density[index]) {
+			continue
+		}
+		air += 1
+		sums[.Block] += int(light_grid.block_light[index])
+		sums[.Sky] += int(light_grid.sky_light[index])
+	}
+	for sum, channel in sums {
+		light[channel] = u8((sum + air / 2) / max(air, 1))
+	}
+	return light
+}
+
+field_cell_vertex :: proc(grid: ^Field_Grid, cell: [3]i32, palette: [][3]int, light_grid: ^Field_Grid) -> Field_Surface_Vertex {
 	densities: [8]i8
 	corners: [8]int
 	for corner in 0 ..< 8 {
@@ -259,15 +288,16 @@ field_cell_vertex :: proc(grid: ^Field_Grid, cell: [3]i32, palette: [][3]int) ->
 		gradient = field_cell_gradient(densities),
 	}
 	vertex.weights, vertex.color = field_cell_look(grid, corners, palette)
+	vertex.light = field_vertex_light(light_grid, corners)
 	return vertex
 }
 
 // The cell's vertex index, made the first time a quad asks for it.
-field_vertex_for_cell :: proc(surface: ^Field_Surface, cell_vertices: []i32, grid: ^Field_Grid, cell: [3]i32, palette: [][3]int) -> u16 {
+field_vertex_for_cell :: proc(surface: ^Field_Surface, cell_vertices: []i32, grid: ^Field_Grid, cell: [3]i32, palette: [][3]int, light_grid: ^Field_Grid) -> u16 {
 	slot := &cell_vertices[field_vertex_cell_index(cell)]
 	if slot^ < 0 {
 		slot^ = i32(len(surface.vertices))
-		append(&surface.vertices, field_cell_vertex(grid, cell, palette))
+		append(&surface.vertices, field_cell_vertex(grid, cell, palette, light_grid))
 	}
 	return u16(slot^)
 }
@@ -276,7 +306,7 @@ field_vertex_for_cell :: proc(surface: ^Field_Surface, cell_vertices: []i32, gri
 // it. The four cells around the edge, in counter clockwise order seen from
 // the positive axis (axis + 1 and axis + 2 form a right handed frame), face
 // that way when the ground lies at the edge's start.
-append_field_edge_quad :: proc(surface: ^Field_Surface, cell_vertices: []i32, grid: ^Field_Grid, sample: [3]i32, axis: int, palette: [][3]int) {
+append_field_edge_quad :: proc(surface: ^Field_Surface, cell_vertices: []i32, grid: ^Field_Grid, sample: [3]i32, axis: int, palette: [][3]int, light_grid: ^Field_Grid) {
 	step: [3]i32
 	step[axis] = 1
 	start_ground := field_sample_is_ground(grid.density[field_grid_index(sample)])
@@ -289,7 +319,7 @@ append_field_edge_quad :: proc(surface: ^Field_Surface, cell_vertices: []i32, gr
 	cells := [4][3]i32{sample - u_step - v_step, sample - v_step, sample, sample - u_step}
 	quad: [4]u16
 	for cell, index in cells {
-		quad[index] = field_vertex_for_cell(surface, cell_vertices, grid, cell, palette)
+		quad[index] = field_vertex_for_cell(surface, cell_vertices, grid, cell, palette, light_grid)
 	}
 	order := start_ground ? [6]int{0, 1, 2, 0, 2, 3} : [6]int{0, 2, 1, 0, 3, 2}
 	for corner in order {
@@ -298,8 +328,10 @@ append_field_edge_quad :: proc(surface: ^Field_Surface, cell_vertices: []i32, gr
 }
 
 // The surface without skirts. A node owns the grid edges that start at
-// samples 0 to FIELD_GRID_CELLS - 1.
-mesh_field_surface :: proc(grid: ^Field_Grid, palette: [][3]int, allocator := context.allocator) -> Field_Surface {
+// samples 0 to FIELD_GRID_CELLS - 1. The vertex light reads light_grid,
+// the grid itself when nil.
+mesh_field_surface :: proc(grid: ^Field_Grid, palette: [][3]int, allocator := context.allocator, light_grid: ^Field_Grid = nil) -> Field_Surface {
+	light_source := light_grid == nil ? grid : light_grid
 	surface := Field_Surface {
 		vertices = make([dynamic]Field_Surface_Vertex, allocator),
 		indices  = make([dynamic]u16, allocator),
@@ -315,7 +347,7 @@ mesh_field_surface :: proc(grid: ^Field_Grid, palette: [][3]int, allocator := co
 		for y in i32(0) ..< FIELD_GRID_CELLS {
 			for x in i32(0) ..< FIELD_GRID_CELLS {
 				for axis in 0 ..< 3 {
-					append_field_edge_quad(&surface, cell_vertices, grid, {x, y, z}, axis, palette)
+					append_field_edge_quad(&surface, cell_vertices, grid, {x, y, z}, axis, palette, light_source)
 				}
 			}
 		}
@@ -340,7 +372,8 @@ field_mesh_from_surface :: proc(surface: Field_Surface, step: i32, spacing_milli
 	for vertex in surface.vertices {
 		append(&data.positions, [3]f32{f32(vertex.position.x), f32(vertex.position.y), f32(vertex.position.z)} * metres_per_unit)
 		append(&data.normals, field_vertex_normal(vertex.gradient))
-		append(&data.colors, [4]u8{vertex.color.r, vertex.color.g, vertex.color.b, FIELD_FULL_DAYLIGHT})
+		append(&data.colors, [4]u8{vertex.color.r, vertex.color.g, vertex.color.b, vertex.light[.Sky]})
+		append(&data.lights, [2]f32{f32(vertex.light[.Block]) / FIELD_LIGHT_FULL, 0})
 		append(&data.weights, [4]f32{f32(vertex.weights[0]), f32(vertex.weights[1]), f32(vertex.weights[2]), f32(vertex.weights[3])} / 255)
 	}
 	append(&data.indices, ..surface.indices[:])
@@ -352,16 +385,18 @@ make_field_mesh_data :: proc(allocator := context.allocator) -> Field_Mesh_Data 
 		positions = make([dynamic][3]f32, allocator),
 		normals = make([dynamic][3]f32, allocator),
 		colors = make([dynamic][4]u8, allocator),
+		lights = make([dynamic][2]f32, allocator),
 		weights = make([dynamic][4]f32, allocator),
 		indices = make([dynamic]u16, allocator),
 	}
 }
 
-// The worker's job for one node's terrain: the surface, its skirts, the
-// vertex arrays. The surface is temporary.
-mesh_field_grid :: proc(grid: ^Field_Grid, palette: [][3]int, spacing_millimetres: int, allocator := context.allocator) -> Field_Mesh_Data {
+// The worker's job for one node's terrain: the surface, its skirts on
+// skirt_faces (field_node_skirt_faces), the vertex arrays. The surface is
+// temporary.
+mesh_field_grid :: proc(grid: ^Field_Grid, palette: [][3]int, spacing_millimetres: int, skirt_faces: Field_Faces, allocator := context.allocator) -> Field_Mesh_Data {
 	surface := mesh_field_surface(grid, palette, context.temp_allocator)
-	append_field_skirts(&surface)
+	append_field_skirts(&surface, skirt_faces)
 	return field_mesh_from_surface(surface, grid.step, spacing_millimetres, allocator)
 }
 
@@ -370,12 +405,13 @@ mesh_field_grid :: proc(grid: ^Field_Grid, palette: [][3]int, spacing_millimetre
 // water pass by a uniform. No skirts: the water's open border also runs
 // along its faces against the ground, whose gradient points out of the
 // ground, so a skirt there would stand up out of the water as a fin; the
-// strip between two levels of detail stays open instead.
+// strip between two levels of detail stays open instead. The vertex light
+// is the terrain's air corners' (field_vertex_light).
 mesh_field_water_grid :: proc(grid: ^Field_Grid, palette: [][3]int, spacing_millimetres: int, allocator := context.allocator) -> Field_Mesh_Data {
 	water := new(Field_Grid, context.temp_allocator)
 	water.origin, water.step = grid.origin, grid.step
 	water.density = grid.water
-	surface := mesh_field_surface(water, palette, context.temp_allocator)
+	surface := mesh_field_surface(water, palette, context.temp_allocator, grid)
 	return field_mesh_from_surface(surface, grid.step, spacing_millimetres, allocator)
 }
 
@@ -383,6 +419,7 @@ destroy_field_mesh_data :: proc(data: Field_Mesh_Data) {
 	delete(data.positions)
 	delete(data.normals)
 	delete(data.colors)
+	delete(data.lights)
 	delete(data.weights)
 	delete(data.indices)
 }

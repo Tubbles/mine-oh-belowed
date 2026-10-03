@@ -112,7 +112,7 @@ test_a_field_without_a_crossing_meshes_to_nothing :: proc(t: ^testing.T) {
 	air := proc(sample: [3]i64) -> i8 {return -MAXIMUM_DENSITY}
 	ground := proc(sample: [3]i64) -> i8 {return MAXIMUM_DENSITY}
 	for density in ([2]Test_Field_Density{air, ground}) {
-		data := mesh_field_grid(fill_test_field_grid({0, 0, 0}, 1, density), TEST_FIELD_PALETTE[:], DEFAULT_SAMPLE_SPACING_MILLIMETRES, context.temp_allocator)
+		data := mesh_field_grid(fill_test_field_grid({0, 0, 0}, 1, density), TEST_FIELD_PALETTE[:], DEFAULT_SAMPLE_SPACING_MILLIMETRES, EVERY_FIELD_FACE, context.temp_allocator)
 		testing.expect_value(t, len(data.positions), 0)
 		testing.expect_value(t, len(data.indices), 0)
 	}
@@ -189,6 +189,45 @@ test_the_vertex_arrays_are_in_metres :: proc(t: ^testing.T) {
 	// Two samples a cell, half a metre a sample: a cell is a metre.
 	expected := [3]f32{f32(surface.vertices[0].position.x), f32(surface.vertices[0].position.y), f32(surface.vertices[0].position.z)} / FIELD_MESH_POSITION_UNITS
 	testing.expect_value(t, data.positions[0], expected)
-	testing.expect_value(t, data.colors[0].a, FIELD_FULL_DAYLIGHT)
+	testing.expect_value(t, data.colors[0].a, surface.vertices[0].light[.Sky])
+	testing.expect_value(t, len(data.lights), len(data.positions))
 	testing.expect_value(t, data.weights[0], [4]f32{0, 1, 0, 0})
+}
+
+// The vertex light is the mean over the cell's air corners, so a surface
+// in full light shows it whole, not halved by the ground corners; the
+// water's mesh reads the terrain's light.
+@(test)
+test_the_vertex_light_is_the_mean_of_the_air_corners :: proc(t: ^testing.T) {
+	grid := fill_test_field_grid({0, 0, 0}, 1, test_plane_density)
+	for density, index in grid.density {
+		if density <= 0 {
+			grid.block_light[index], grid.sky_light[index] = 200, 90
+		}
+	}
+	surface := mesh_field_surface(grid, TEST_FIELD_PALETTE[:], context.temp_allocator)
+	testing.expect(t, len(surface.vertices) > 0)
+	for vertex in surface.vertices {
+		testing.expect_value(t, vertex.light, [Field_Light_Channel]u8{.Block = 200, .Sky = 90})
+	}
+	data := field_mesh_from_surface(surface, 1, 1000, context.temp_allocator)
+	testing.expect_value(t, data.colors[0].a, 90)
+	testing.expect_value(t, data.lights[0].x, f32(200) / FIELD_LIGHT_FULL)
+	// Water a sample above the ground: the terrain's density shifted up,
+	// none in ground. Its mesh reads the terrain's light, not the water
+	// grid's (all zero).
+	for z in i32(-1) ..= FIELD_GRID_CELLS {
+		for y in i32(0) ..= FIELD_GRID_CELLS {
+			for x in i32(-1) ..= FIELD_GRID_CELLS {
+				index := field_grid_index({x, y, z})
+				grid.water[index] = grid.density[index] > 0 ? -MAXIMUM_DENSITY : grid.density[field_grid_index({x, y - 1, z})]
+			}
+		}
+	}
+	water := mesh_field_water_grid(grid, TEST_FIELD_PALETTE[:], 1000, context.temp_allocator)
+	testing.expect(t, len(water.colors) > 0)
+	for color, index in water.colors {
+		testing.expect_value(t, color.a, 90)
+		testing.expect_value(t, water.lights[index].x, f32(200) / FIELD_LIGHT_FULL)
+	}
 }

@@ -9,19 +9,28 @@ import "run_length"
 //   then for each plane in this order: the densities, the materials, the
 //   tints, the water fills, the water's still ticks (0172), the awake bits
 //   and the source bits (each as FIELD_SAMPLE_BIT_BYTES bytes, the words
-//   little endian):
+//   little endian), the block light and the sky light (0173):
 //   u32 run count, run count times (u8 value, u32 count).
 // A chunk equal to its generation writes nothing and regenerates from the
 // seed; a changed chunk is written whole. The water's flow is measured
 // again each tick and not written. The version follows the block chunk's
 // CHUNK_FORMAT_VERSION (1), so block chunk bytes are refused by name;
-// version 2 had no water and is refused too, since the field is not saved
-// yet.
+// version 2 had no water and 3 no light, and both are refused too, since
+// the field is not saved yet.
+//
+// The light is saved, not rebuilt on load as the block light is: the sky
+// of an edited chunk depends on edits in the chunks above it along the
+// radial, which need not be loaded when it loads (the march reads the
+// generation beyond the loaded chunks), so it cannot be derived from the
+// chunk and its neighbours; and a lockstep joiner then holds the host's
+// bytes without relighting over ticks the host has already run. An
+// emitter in a neighbour chunk still lights the chunk again when that
+// neighbour arrives (seed_field_chunk_light).
 
-FIELD_CHUNK_FORMAT_VERSION :: 3
+FIELD_CHUNK_FORMAT_VERSION :: 4
 FIELD_RUN_BYTE_SIZE :: 5
 FIELD_SAMPLE_BIT_BYTES :: FIELD_CHUNK_SAMPLE_COUNT / 8
-FIELD_CHUNK_PLANE_COUNT :: 7
+FIELD_CHUNK_PLANE_COUNT :: 9
 
 field_chunk_equals :: proc(first, second: ^Field_Chunk) -> bool {
 	return(
@@ -31,7 +40,9 @@ field_chunk_equals :: proc(first, second: ^Field_Chunk) -> bool {
 		slice.equal(first.water[:], second.water[:]) &&
 		slice.equal(first.water_still[:], second.water_still[:]) &&
 		first.water_awake == second.water_awake &&
-		first.water_source == second.water_source \
+		first.water_source == second.water_source &&
+		slice.equal(first.block_light[:], second.block_light[:]) &&
+		slice.equal(first.sky_light[:], second.sky_light[:]) \
 	)
 }
 
@@ -88,6 +99,8 @@ encode_field_chunk_delta :: proc(chunk, generated: ^Field_Chunk, allocator := co
 		chunk.water_still[:],
 		field_sample_bits_to_bytes(chunk.water_awake),
 		field_sample_bits_to_bytes(chunk.water_source),
+		chunk.block_light[:],
+		chunk.sky_light[:],
 	}
 	for plane in planes {
 		append_field_plane(&bytes, plane)
@@ -139,18 +152,25 @@ decode_field_chunk_delta :: proc(data: []byte, chunk: ^Field_Chunk) -> (problem:
 	}
 	awake := make([]u8, FIELD_SAMPLE_BIT_BYTES, context.temp_allocator)
 	source := make([]u8, FIELD_SAMPLE_BIT_BYTES, context.temp_allocator)
-	planes := [FIELD_CHUNK_PLANE_COUNT][]u8{transmute([]u8)decoded.density[:], transmute([]u8)decoded.material[:], decoded.tint[:], decoded.water[:], decoded.water_still[:], awake, source}
+	planes := [FIELD_CHUNK_PLANE_COUNT][]u8{transmute([]u8)decoded.density[:], transmute([]u8)decoded.material[:], decoded.tint[:], decoded.water[:], decoded.water_still[:], awake, source, decoded.block_light[:], decoded.sky_light[:]}
 	for plane in planes {
 		if !read_field_plane(&reader, plane) {
 			return "field chunk: malformed sample runs"
 		}
 	}
 	if reader.offset != len(data) {
-		return "field chunk: bytes after the source bits"
+		return "field chunk: bytes after the sky light"
 	}
 	for fill in decoded.water {
 		if fill > FIELD_WATER_FULL {
 			return fmt.tprintf("field chunk: water fill %d is above %d", fill, FIELD_WATER_FULL)
+		}
+	}
+	// Ground holds no light; a malformed chunk's light there is dropped,
+	// so it cannot spread from inside the ground.
+	for density, index in decoded.density {
+		if density > 0 {
+			decoded.block_light[index], decoded.sky_light[index] = 0, 0
 		}
 	}
 	decoded.water_awake = field_sample_bits_from_bytes(awake)

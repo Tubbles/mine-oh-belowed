@@ -57,6 +57,7 @@ Command_Line :: struct {
 	planet_preview:  bool `usage:"fly over the home planet's terrain field (seed from --seed), drawn with the level of detail; no game"`,
 	planet_preview_screenshot: string `usage:"<path>: the planet preview from a fixed camera without input, the frame saved to the path once the field has streamed (120 frames at least), then exit"`,
 	planet_preview_walk: bool `usage:"start the planet preview (or its screenshot) in the walk mode, the field player standing on the ground (G switches in the preview)"`,
+	planet_preview_daylight: int `usage:"<percent>: the planet preview's daylight, the sky light's share from 0 (night: only torches light) to 100 (the default)"`,
 	// Work item 0177: lockstep multiplayer.
 	server:          bool `usage:"run the world (--load, or a new one) without a window or a local player and host it for --join (doc/commands.md)"`,
 	port:            int `usage:"the port --server listens on (default 47317)"`,
@@ -65,6 +66,7 @@ Command_Line :: struct {
 
 // Unix style keeps the documented spellings: --seed=42, --set=<key>=<value>.
 parse_command_line :: proc(arguments: []string) -> (command_line: Command_Line, error: flags.Error) {
+	command_line.planet_preview_daylight = 100
 	error = flags.parse(&command_line, arguments, .Unix)
 	return
 }
@@ -256,7 +258,7 @@ main :: proc() {
 	}
 	if command_line.planet_preview || command_line.planet_preview_screenshot != "" || command_line.planet_preview_walk {
 		seed, _ := command_line_seed(command_line)
-		os.exit(run_planet_preview(config, content.planets, content.items, bindings, data_directory, seed, command_line.planet_preview_screenshot, command_line.planet_preview_walk))
+		os.exit(run_planet_preview(config, content.planets, content.items, bindings, data_directory, seed, command_line.planet_preview_screenshot, command_line.planet_preview_walk, command_line.planet_preview_daylight))
 	}
 	saves_directory, saves_found := resolve_saves_directory(loaded_configuration.configuration.paths.saves)
 	if command_line.server {

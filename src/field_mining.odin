@@ -94,6 +94,7 @@ Field_Simulation_Content :: struct {
 	brushes:   []Field_Brush,
 	tuning:    Field_Player_Tuning,
 	water:     Field_Water_Tuning,
+	light:     Field_Light_Tuning,
 }
 
 destroy_field_simulation :: proc(simulation: ^Field_Simulation) {
@@ -372,8 +373,9 @@ drain_field_place :: proc(simulation: ^Field_Simulation, content: Field_Simulati
 }
 
 // The end of the tick: every queued edit in order, then the queue is
-// empty. The edited chunks are marked dirty by the world's set and
-// remesh on the next revision.
+// empty, then the sky of the edits' shadows marches on the final field
+// (update_field_sky_after_edits). The edited chunks are marked dirty by
+// the world's set and remesh on the next revision.
 drain_field_edits :: proc(simulation: ^Field_Simulation, content: Field_Simulation_Content) {
 	for queued in simulation.edits {
 		player := &simulation.players[queued.player]
@@ -386,6 +388,7 @@ drain_field_edits :: proc(simulation: ^Field_Simulation, content: Field_Simulati
 		}
 	}
 	clear(&simulation.edits)
+	update_field_sky_after_edits(&simulation.world)
 }
 
 // Each player moves and queues its brush edit; nothing edits the field
@@ -403,10 +406,11 @@ queue_field_player_edits :: proc(simulation: ^Field_Simulation, content: Field_S
 }
 
 // The players, the edits, then the water (0172), so a hole dug this tick
-// floods on the next.
+// floods on the next, then the light (0173) within its budget.
 tick_field_simulation :: proc(simulation: ^Field_Simulation, content: Field_Simulation_Content, inputs: []Field_Player_Input) {
 	simulation.tick += 1
 	queue_field_player_edits(simulation, content, inputs)
 	drain_field_edits(simulation, content)
 	step_field_water(&simulation.world, content.water, simulation.tick)
+	tick_field_light(&simulation.world, content.light)
 }

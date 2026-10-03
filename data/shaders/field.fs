@@ -8,7 +8,9 @@
 // scales whose ratio is not a fraction of small numbers, so the tile's
 // period never shows as a grid (DESIGN.md, No perceivable repetition).
 // The materials blend by the vertex weights, the palette's tint and the
-// vertex light are multiplied in, a gentle sun term shades the slopes,
+// vertex light are multiplied in (the brighter of the block light and the
+// sky light times daylight, work item 0173), a gentle sun term shades the
+// slopes,
 // and the fog fades to the sky colour towards the last level of detail
 // distance. With water_color's alpha above 0 (the water pass, work item
 // 0172) the surface takes water_color's colour instead of the materials
@@ -21,6 +23,7 @@ in vec3 fragment_world_position;
 in vec3 fragment_normal;
 in vec4 fragment_color;
 in vec4 fragment_weights;
+in float fragment_block_light;
 in float fragment_distance;
 
 uniform sampler2D material_texture_topsoil;
@@ -32,6 +35,8 @@ uniform vec3 fog_color;
 uniform float fog_start;
 uniform float fog_end;
 uniform vec4 water_color;
+// The sky light's share: 1 by day, 0 at night.
+uniform float daylight;
 
 out vec4 finalColor;
 
@@ -80,7 +85,8 @@ void main()
     float water = step(smallest_weight_sum, water_color.a);
     albedo = mix(albedo, water_color.rgb, water);
     float sun = max(dot(normal, normalize(sun_direction)), 0.0);
-    vec3 lit = albedo * fragment_color.a * mix(ambient_share, 1.0, sun);
+    float light = max(fragment_block_light, fragment_color.a * daylight);
+    vec3 lit = albedo * light * mix(ambient_share, 1.0, sun);
     float fog = clamp((fragment_distance - fog_start) / (fog_end - fog_start), 0.0, 1.0);
     finalColor = vec4(mix(min(lit, vec3(1.0)), fog_color, fog), mix(1.0, water_color.a, water));
 }

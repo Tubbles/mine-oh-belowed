@@ -34,12 +34,15 @@ Field_Job_Kind :: enum u8 {
 
 // Generate jobs name a chunk (a finest level node). A Mesh job of the
 // finest level carries its grid; a coarser one carries the samples of the
-// loaded chunks it reads, or none, and generates the rest.
+// loaded chunks it reads, or none, and generates the rest. skirt_faces
+// are the node's faces that border a coarser node or none
+// (field_node_skirt_faces).
 Field_Job :: struct {
-	kind:     Field_Job_Kind,
-	node:     Field_Node,
-	revision: u64,
-	grid:     ^Field_Grid,
+	kind:        Field_Job_Kind,
+	node:        Field_Node,
+	revision:    u64,
+	grid:        ^Field_Grid,
+	skirt_faces: Field_Faces,
 }
 
 // Generate results carry chunk, Mesh results the terrain's mesh and the
@@ -77,6 +80,9 @@ Field_Streaming :: struct {
 	// The latest mesh revision submitted per node; a node leaves when it is
 	// no longer selected, which drops its pending result.
 	mesh_revisions: map[Field_Node]u64,
+	// The skirt faces of each node's latest job; a node whose faces change
+	// (a neighbour split or merged) meshes again, so no seam opens.
+	skirt_faces:    map[Field_Node]Field_Faces,
 	// The revision of each node's job still on the workers. A node is not
 	// submitted again while one is, so an edit made every tick (a held
 	// brush) cannot keep dropping each result as stale: the dirty chunk or
@@ -152,7 +158,7 @@ run_field_job :: proc(shared: ^Field_Worker_Shared, job: Field_Job) -> Field_Job
 		if job.node.level > 0 {
 			generate_field_grid(shared.generation, job.node, grid)
 		}
-		result.mesh = mesh_field_grid(grid, shared.planet.palette, shared.generation.spacing_millimetres)
+		result.mesh = mesh_field_grid(grid, shared.planet.palette, shared.generation.spacing_millimetres, job.skirt_faces)
 		result.water_mesh = mesh_field_water_grid(grid, shared.planet.palette, shared.generation.spacing_millimetres)
 		free(job.grid)
 	}
@@ -215,6 +221,7 @@ stop_field_streaming :: proc(streaming: ^Field_Streaming) {
 	delete(streaming.threads)
 	delete(streaming.generating)
 	delete(streaming.mesh_revisions)
+	delete(streaming.skirt_faces)
 	delete(streaming.in_flight)
 	delete(streaming.remesh)
 	delete(streaming.dropped)
@@ -302,6 +309,7 @@ drop_unselected_field_nodes :: proc(streaming: ^Field_Streaming, selection: []Fi
 	}
 	for node in streaming.dropped {
 		delete_key(&streaming.mesh_revisions, node)
+		delete_key(&streaming.skirt_faces, node)
 		delete_key(&streaming.remesh, node)
 	}
 }
@@ -319,11 +327,12 @@ field_chunk_neighbours_loaded :: proc(world: ^Field_World, coordinate: Field_Chu
 	return true
 }
 
-submit_field_mesh_job :: proc(streaming: ^Field_Streaming, node: Field_Node, grid: ^Field_Grid) {
+submit_field_mesh_job :: proc(streaming: ^Field_Streaming, node: Field_Node, grid: ^Field_Grid, skirt_faces: Field_Faces) {
 	streaming.next_revision += 1
 	streaming.mesh_revisions[node] = streaming.next_revision
 	streaming.in_flight[node] = streaming.next_revision
-	submit_field_job(streaming.shared, Field_Job{kind = .Mesh, node = node, revision = streaming.next_revision, grid = grid})
+	streaming.skirt_faces[node] = skirt_faces
+	submit_field_job(streaming.shared, Field_Job{kind = .Mesh, node = node, revision = streaming.next_revision, grid = grid, skirt_faces = skirt_faces})
 	streaming.pending_jobs += 1
 }
 
@@ -345,23 +354,33 @@ schedule_field_node_chunks :: proc(streaming: ^Field_Streaming, world: ^Field_Wo
 	}
 }
 
+// Whether a meshed node's latest job had other skirt faces.
+field_skirt_faces_changed :: proc(streaming: ^Field_Streaming, node: Field_Node, faces: Field_Faces) -> bool {
+	previous, found := streaming.skirt_faces[node]
+	return found && previous != faces
+}
+
 // A finest node meshes once its chunk and every neighbour are loaded, and
-// again whenever the chunk is dirty. Returns whether a job went out.
-schedule_finest_field_mesh :: proc(streaming: ^Field_Streaming, world: ^Field_World, node: Field_Node) -> bool {
+// again whenever the chunk is dirty or its skirt faces changed. Returns
+// whether a job went out.
+schedule_finest_field_mesh :: proc(streaming: ^Field_Streaming, world: ^Field_World, node: Field_Node, faces: Field_Faces) -> bool {
 	coordinate := field_node_chunk(node)
 	chunk := world.chunks[coordinate] or_else nil
-	if chunk == nil || node in streaming.in_flight || (!chunk.dirty && node in streaming.mesh_revisions) || !field_chunk_neighbours_loaded(world, coordinate) {
+	current := !chunk.dirty && node in streaming.mesh_revisions && !field_skirt_faces_changed(streaming, node, faces) if chunk != nil else false
+	if chunk == nil || node in streaming.in_flight || current || !field_chunk_neighbours_loaded(world, coordinate) {
 		return false
 	}
-	submit_field_mesh_job(streaming, node, gather_field_grid(world, coordinate))
+	submit_field_mesh_job(streaming, node, gather_field_grid(world, coordinate), faces)
 	chunk.dirty = false
 	return true
 }
 
 // Nearest first within each pass: the finest nodes' chunks and meshes take
 // the budget before any coarser node, since the ground under the camera
-// waits on 27 chunks a node and a coarse node on one job.
+// waits on 27 chunks a node and a coarse node on one job. A node whose
+// skirt faces changed meshes again.
 schedule_field_jobs :: proc(streaming: ^Field_Streaming, world: ^Field_World, selection: []Field_Node) {
+	index := make_field_selection_index(selection, context.temp_allocator)
 	submissions := 0
 	for node in selection {
 		if node.level != 0 {
@@ -369,16 +388,20 @@ schedule_field_jobs :: proc(streaming: ^Field_Streaming, world: ^Field_World, se
 		}
 		schedule_field_node_chunks(streaming, world, node)
 		if streaming.pending_jobs < MAXIMUM_FIELD_PENDING_JOBS && submissions < MAXIMUM_FIELD_MESH_SUBMISSIONS_PER_FRAME {
-			submissions += schedule_finest_field_mesh(streaming, world, node) ? 1 : 0
+			submissions += schedule_finest_field_mesh(streaming, world, node, field_node_skirt_faces(index, node)) ? 1 : 0
 		}
 	}
 	for node in selection {
 		if streaming.pending_jobs >= MAXIMUM_FIELD_PENDING_JOBS || submissions >= MAXIMUM_FIELD_MESH_SUBMISSIONS_PER_FRAME {
 			return
 		}
-		if node.level != 0 && node not_in streaming.in_flight && (node not_in streaming.mesh_revisions || node in streaming.remesh) {
+		if node.level == 0 || node in streaming.in_flight {
+			continue
+		}
+		faces := field_node_skirt_faces(index, node)
+		if node not_in streaming.mesh_revisions || node in streaming.remesh || field_skirt_faces_changed(streaming, node, faces) {
 			delete_key(&streaming.remesh, node)
-			submit_field_mesh_job(streaming, node, gather_coarse_field_grid(world, node))
+			submit_field_mesh_job(streaming, node, gather_coarse_field_grid(world, node), faces)
 			submissions += 1
 		}
 	}
