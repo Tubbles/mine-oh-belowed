@@ -1,6 +1,6 @@
 # 0205: The model kit and the look of the first machines
 
-Status: verified (2026-10-03, land as is, the far steam port connected in a fix round; implemented 2026-10-03; user, 2026-10-03: "we can maybe approach techtonica's look. I think techtonica might be the game we are closest resembling, but 'on the surface and in space with multiple planets', and a slightly more low-fi look"; after 0207, before 0196)
+Status: landed (2026-10-03, 6105153, as placeholders: the user wants every machine redone one at a time, 0211 and 0212; verified 2026-10-03, land as is, the far steam port connected in a fix round; implemented 2026-10-03; user, 2026-10-03: "we can maybe approach techtonica's look. I think techtonica might be the game we are closest resembling, but 'on the surface and in space with multiple planets', and a slightly more low-fi look"; after 0207, before 0196)
 
 ## Goal
 
