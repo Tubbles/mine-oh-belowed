@@ -12,6 +12,13 @@ One binding opens things: Open_Inventory (E, gamepad West, the touch overlay's i
 - Interact keeps what is not a panel: the switch toggle and the launch (`Toggled_Switch`, `Launch_Requested`), and still suppresses the jump on the field when aimed at one of those. It no longer opens panels on either world.
 - The HUD's hint beside a machine shows the inventory glyph with "Open" (`hud.odin`, the `hint_open` line), the switch keeps the Interact glyph. The touch overlay needs no new button. `doc/input.md` (the actions), `doc/hud.md`, `doc/touch_overlay.md` if it lists the hints, `doc/architecture.md` (the field player's interaction) updated; the bindings audit test, if one lists the world actions, updated.
 
+## Controls (the design pass, main agent, 2026-10-03)
+
+- Mode: the world. Open_Inventory (keyboard E, gamepad West, the HUD's backpack touch button) means "open": a machine with a panel aimed within reach opens its panel, anything else opens the inventory. One control whose meaning follows the aim the HUD shows; no modifier, no layer. The hint beside such a machine shows the Inventory glyph with "Open".
+- Interact (keyboard F, gamepad South shared with Jump) keeps the switch toggle and the launch only; its jump suppression on the field applies only when one of those is aimed, so South jumps everywhere else as before. Nothing else is bound or rebound.
+- Screens: Open_Inventory with a screen open still closes it (the existing rule); the panel's own Back closes a machine.
+- Touch: the backpack HUD button presses Open_Inventory and so opens the aimed machine with no overlay change.
+
 ## Verify
 
 - The build and check commands of 0168.

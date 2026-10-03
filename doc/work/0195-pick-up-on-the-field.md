@@ -14,6 +14,12 @@ A placed machine or foundation can be taken back. Today the field's Dig acts on 
 - Online every machine runs the pick up from the records, so the hash agrees; the prediction (0182) does not pick up.
 - `doc/architecture.md` (Frames, the field player's edits), `doc/hud.md` (the hint beside a frame cell: "Pick up" with the Mine glyph) updated.
 
+## Controls (the design pass, main agent, 2026-10-03)
+
+- Mode: the world. Mine (mouse Left, gamepad Right trigger, the overlay's mining gesture) held on a frame cell in reach picks the entity up after `PICK_UP_SECONDS`, the same control and the same progress drawing as mining a block. No new control, no modifier.
+- The aim decides: the nearer of the ground and a frame cell is the target as today, so Mine digs the ground when the ground is in front and picks up when a frame cell is. The hint beside a frame cell reads "Pick up" with the Mine glyph; the pod shows no hint and refuses.
+- Place, Rotate, Sneak and Jump are untouched; a held tool does not change what Mine does to a frame cell (a pickaxe, a foundation, bare hands all pick up).
+
 ## Verify
 
 - The build and check commands of 0168.
