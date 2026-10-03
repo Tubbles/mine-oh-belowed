@@ -1,6 +1,6 @@
 # 0207: The model workbench: the game checks and shows a model
 
-Status: todo (user, 2026-10-03, on the pipeline, relaying a comment they got: "Design a framework that can do all the physics modeling, mechanics, clearances, animations and simulations so that Claude just writes the model scripts and doesn't have to direct a ton of work every time you want to see how something works or is put together"; after 0204, before 0205)
+Status: landed (2026-10-03, ea0462b; todo user, 2026-10-03, on the pipeline, relaying a comment they got: "Design a framework that can do all the physics modeling, mechanics, clearances, animations and simulations so that Claude just writes the model scripts and doesn't have to direct a ton of work every time you want to see how something works or is put together"; after 0204, before 0205)
 
 ## Goal
 

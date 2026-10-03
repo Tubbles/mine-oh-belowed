@@ -1,6 +1,6 @@
 # 0201: Machines on bare ground wear out
 
-Status: implemented (user, 2026-10-03: "all machines should be buildable without foundation, given roughly flat terrain, but they break down after X minutes/hours of operation and you need to go there and tear it down (yielding say 80 % of the raw materials that went in, stone, iron plates, etc) and then build it up again, so its a temporary thing (except belt poles, pipes etc)"; after 0195, before 0194)
+Status: landed (2026-10-03, 67ad45a; implemented user, 2026-10-03: "all machines should be buildable without foundation, given roughly flat terrain, but they break down after X minutes/hours of operation and you need to go there and tear it down (yielding say 80 % of the raw materials that went in, stone, iron plates, etc) and then build it up again, so its a temporary thing (except belt poles, pipes etc)"; after 0195, before 0194)
 
 ## Goal
 

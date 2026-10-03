@@ -1,6 +1,6 @@
 # 0209: Fix the memory leaks the test runner reports
 
-Status: implemented (2026-10-03)
+Status: landed (2026-10-03, 21437c8; implemented 2026-10-03)
 
 ## Goal
 

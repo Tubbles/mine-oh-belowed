@@ -1,6 +1,6 @@
 # 0202: The configure widget: a modal for the highlighted item
 
-Status: implemented (user, 2026-10-03, on 0193's rows: "That doesnt look like a widget, that is a permanent ui panel. A widget would be something that pops up as a modal interaction, lets say a 'configure' mode. Highlighting the foundation activates a new keybind -> configure widget pops up, the player can configure how all foundations work (not just the highlighted stack), close the widget and then use it in game"; after 0195, before 0201)
+Status: landed (2026-10-03, a213848; implemented user, 2026-10-03, on 0193's rows: "That doesnt look like a widget, that is a permanent ui panel. A widget would be something that pops up as a modal interaction, lets say a 'configure' mode. Highlighting the foundation activates a new keybind -> configure widget pops up, the player can configure how all foundations work (not just the highlighted stack), close the widget and then use it in game"; after 0195, before 0201)
 
 ## Goal
 

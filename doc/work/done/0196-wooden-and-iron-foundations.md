@@ -1,6 +1,6 @@
 # 0196: Wooden, stone brick and iron foundations
 
-Status: implemented (user, 2026-10-03: "wooden foundation as the first step, and then iron foundation is the evolution, before automated tree farms arrive even later"; then "i like stone brick foundation as well, unlocked when we get stone cutting table (hand) and some stone cutting machine (automated), as a semi-early alternative to wood foundation"; after 0189)
+Status: landed (2026-10-03, 6e187aa; implemented user, 2026-10-03: "wooden foundation as the first step, and then iron foundation is the evolution, before automated tree farms arrive even later"; then "i like stone brick foundation as well, unlocked when we get stone cutting table (hand) and some stone cutting machine (automated), as a semi-early alternative to wood foundation"; after 0189)
 
 ## Goal
 

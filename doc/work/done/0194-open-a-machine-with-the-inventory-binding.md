@@ -1,6 +1,6 @@
 # 0194: Open a machine with the inventory binding
 
-Status: implemented (user, 2026-10-03: "we dont need a separate keybinding for opening a machine, we could just reuse the 'open inventory' keybinding, so it opens the normal inventory view when not pointing at any machine, and opening a machine's panel when pointing at a machine and standing close enough to it")
+Status: landed (2026-10-03, 4ce7683; implemented user, 2026-10-03: "we dont need a separate keybinding for opening a machine, we could just reuse the 'open inventory' keybinding, so it opens the normal inventory view when not pointing at any machine, and opening a machine's panel when pointing at a machine and standing close enough to it")
 
 ## Goal
 

@@ -1,6 +1,6 @@
 # 0203: Walkability: a short steep rise is a step, not a wall
 
-Status: implemented (user, 2026-10-03, digging holes: "it feels like determining walkability on slope angle alone doesnt cut it, a tiny but steep slope of 1 decimeter becomes unwalkable. we need some more sophisticated solution"; before 0189)
+Status: landed (2026-10-03, 5cdee14; implemented user, 2026-10-03, digging holes: "it feels like determining walkability on slope angle alone doesnt cut it, a tiny but steep slope of 1 decimeter becomes unwalkable. we need some more sophisticated solution"; before 0189)
 
 ## Goal
 
