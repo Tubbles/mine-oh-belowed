@@ -76,9 +76,11 @@ Hotbar_Slot_Command :: struct {
 	slot: int,
 }
 
-// The foundation block the inventory view's widget picks (0193): indices
-// into the field content's foundation_sizes and foundation_heights, set
-// on the field player as they are; an index past a list is refused.
+// The foundation block the configure pop-up picks (0193, 0202; opened
+// with Context_Action on a highlighted foundation in the inventory view):
+// indices into the field content's foundation_sizes and
+// foundation_heights, set on the field player as they are; an index past
+// a list is refused.
 Foundation_Block_Command :: struct {
 	size_index:   int,
 	height_index: int,
@@ -381,7 +383,7 @@ is_developer_toggle :: proc(command: Player_Command, action: Developer_Action) -
 	return is_request && request.action == action
 }
 
-// The foundation block the inventory view shows: the newest
+// The foundation block the configure pop-up shows: the newest
 // Foundation_Block_Command of the player on its way, else the field
 // player's own indices.
 shown_foundation_block :: proc(field: Field_Player, queued: []Queued_Player_Command, unconfirmed: []Player_Command, player: int) -> Foundation_Block_Command {

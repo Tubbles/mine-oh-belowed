@@ -18,8 +18,8 @@ package game
 // down (simulation_field.odin): a foundation snaps to a frame or starts
 // one on the ground, any other machine snaps to a frame cell, turned by
 // the player's placement rotation. A foundation places a block of cells
-// at once (0193, foundation_block_cells), its size and height chosen on
-// the inventory view from the lists of data/game.sjson.
+// at once (0193, foundation_block_cells), its size and height chosen in
+// the configure pop-up (0202) from the lists of data/game.sjson.
 
 Frame_Placement_Refusal :: enum u8 {
 	None,

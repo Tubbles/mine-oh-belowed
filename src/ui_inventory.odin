@@ -99,35 +99,115 @@ merge_grid_results :: proc(first, second: Slot_Grid_Result) -> Slot_Grid_Result 
 	return Slot_Grid_Result{activated = max(first.activated, second.activated), focused = max(first.focused, second.focused)}
 }
 
-// The foundation block rows (0193) add their rows' height.
-inventory_panel_height :: proc(foundation_rows := 0) -> f32 {
+inventory_panel_height :: proc() -> f32 {
 	return(
 		UI_ROW_HEIGHT +
 		slot_grid_height(INVENTORY_ROWS) +
 		UI_GAP +
 		UI_ROW_HEIGHT +
 		slot_grid_height(1) +
-		f32(foundation_rows) * (UI_GAP + UI_ROW_HEIGHT) +
 		2 * UI_PADDING \
 	)
 }
 
-// The foundation block widget (0193): with a foundation selected in the
-// hotbar of a field session (whose content has the lists), under the
-// hotbar a row for the block's size and one for its height, each a label
-// and a strip of the content's choices with the current one underlined.
-// Where the two rows do not fit the view (a large interface scale), one
-// row in place of the hotbar's label holds both strips without their
-// labels, the choices saying what they are ("5x5", "2 high"), so the
-// panel keeps its height. Left and right step a focused strip, the
-// pointer and touch pick a choice; a change queues a
-// Foundation_Block_Command, so the choice is lockstep state, and the
-// strips show the command on its way until it applies.
-shows_foundation_block_rows :: proc(player: Player, content: Simulation_Content) -> bool {
-	stack := selected_hotbar_stack(player)
-	foundation := field_foundation(content)
-	return foundation != NO_MACHINE && !stack_is_empty(stack) && item_places_machine(content.machines, stack.item) == foundation && len(content.field.foundation_sizes) > 0 && len(content.field.foundation_heights) > 0
+// The configure pop-up (0202): the item it configures, set when the
+// inventory view opens it, and the slot's widget that held the focus
+// then, which the view focuses again when the pop-up closes.
+Configure_Popup :: struct {
+	item:         Item_Id,
+	return_focus: Ui_Id,
 }
+
+CONFIGURE_PANEL_WIDTH :: 720
+
+@(rodata)
+configure_title_keys := [Item_Configuration]string {
+	.None             = "",
+	.Foundation_Block = "configure_title_foundation_block",
+}
+
+// What the item's configure pop-up sets on this content: its
+// configurable key where the session has what it sets (a foundation
+// block needs a field session's size and height lists), else None.
+item_configuration :: proc(content: Simulation_Content, item: Item_Id) -> Item_Configuration {
+	if int(item) >= len(content.items.items) {
+		return .None
+	}
+	configuration := content.items.items[item].configurable
+	switch configuration {
+	case .None:
+	case .Foundation_Block:
+		if len(content.field.foundation_sizes) == 0 || len(content.field.foundation_heights) == 0 {
+			return .None
+		}
+	}
+	return configuration
+}
+
+// The item the highlighted slot (an inventory index, -1 for none) offers
+// to configure with an empty hand, NO_ITEM otherwise: Context_Action
+// then reads Configure instead of Sort.
+configurable_slot_item :: proc(player: Player, content: Simulation_Content, slot: int) -> Item_Id {
+	if !stack_is_empty(player.held.stack) || slot < 0 || slot >= len(player.inventory.slots) {
+		return NO_ITEM
+	}
+	stack := player.inventory.slots[slot]
+	if stack_is_empty(stack) || item_configuration(content, stack.item) == .None {
+		return NO_ITEM
+	}
+	return stack.item
+}
+
+open_configure_popup :: proc(state: ^Ui_State, item: Item_Id) {
+	state.configure = {item = item, return_focus = state.focus}
+	push_screen(&state.screens, .Configure)
+}
+
+// The pop-up over the inventory view: a small panel titled after the
+// configuration, its rows chosen by the item's configurable key, and
+// Close. Back and a tap off the panel close it too (handle_screen_keys,
+// screen_closes_on_outside_tap); the view under it does not run.
+configure_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
+	configuration := item_configuration(screen_context.content, state.configure.item)
+	if configuration == .None || screen_context.player == nil {
+		pop_screen(&state.screens)
+		return
+	}
+	ui_backdrop(state)
+	rows := configuration_row_count(configuration)
+	panel := fitted_panel(ui_panel_area(state), CONFIGURE_PANEL_WIDTH, panel_height(rows + 2, -UI_GAP))
+	ui_panel_begin(state, "configure", panel)
+	content := inset(panel, UI_PADDING)
+	ui_label(state, cut_row(&content), text(configure_title_keys[configuration]), UI_HEADING_TEXT_SIZE, .Centre)
+	close_row := cut_bottom(&content, UI_ROW_HEIGHT)
+	switch configuration {
+	case .None:
+	case .Foundation_Block:
+		foundation_block_settings(state, content, screen_context)
+	}
+	close_focused := state.focus == ui_id(state, text("configure_close"))
+	if ui_button(state, close_row, text("configure_close")) {
+		pop_screen(&state.screens)
+	}
+	ui_panel_end(state)
+	// Confirm picks on a strip and closes on the Close button.
+	hints := [?]Glyph_Hint{{.Confirm, text(close_focused ? "hint_close" : "hint_pick")}, {.Back, text("hint_close")}}
+	ui_glyph_bar_or_back_row(state, hints[:])
+}
+
+// The rows between the pop-up's title and its Close button.
+configuration_row_count :: proc(configuration: Item_Configuration) -> int {
+	switch configuration {
+	case .None:
+		return 0
+	case .Foundation_Block:
+		return 2 * FOUNDATION_BLOCK_STRIP_ROWS
+	}
+	return 0
+}
+
+// A label row over each strip.
+FOUNDATION_BLOCK_STRIP_ROWS :: 2
 
 foundation_block_choice_labels :: proc(values: []int, key, mark: string) -> []string {
 	labels := make([]string, len(values), context.temp_allocator)
@@ -139,20 +219,32 @@ foundation_block_choice_labels :: proc(values: []int, key, mark: string) -> []st
 
 // A strip whose selection starts at selected each frame (the lockstep
 // state, not the strip's own); returns the selection after the frame's
-// pick or step.
+// pick: a step left or right, a tap on a choice, or Confirm on the
+// focused strip, which steps forward and wraps as a choice row does.
 foundation_block_strip :: proc(state: ^Ui_State, strip: Ui_Rectangle, id_label: string, labels: []string, selected: int) -> int {
-	state.selections[ui_id(state, id_label)] = selected
-	return ui_tabs(state, strip, id_label, labels, mode = .Focus)
+	id := ui_id(state, id_label)
+	confirmed := state.confirm && state.focus == id
+	state.selections[id] = selected
+	picked := ui_tabs(state, strip, id_label, labels, mode = .Focus)
+	if confirmed {
+		picked = (picked + 1) % len(labels)
+		state.selections[id] = picked
+	}
+	return picked
 }
 
-// The labelled row: the label on the left third, the strip after it.
-foundation_block_row :: proc(state: ^Ui_State, row: Ui_Rectangle, id_label, label: string, labels: []string, selected: int) -> int {
-	content := row
-	ui_label(state, cut_left(&content, content.width / 3), label, UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
-	return foundation_block_strip(state, content, id_label, labels, selected)
+// The label row and the strip under it.
+foundation_block_row :: proc(state: ^Ui_State, content: ^Ui_Rectangle, id_label, label: string, labels: []string, selected: int) -> int {
+	ui_label(state, cut_row(content), label, UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
+	return foundation_block_strip(state, cut_row(content), id_label, labels, selected)
 }
 
-foundation_block_rows :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context, rows: int) {
+// The foundation block's settings (0193): a strip of the content's sizes
+// and one of its heights, the current choice underlined. A pick queues a
+// Foundation_Block_Command, so the choice is lockstep state and applies
+// to every foundation the player places, and the strips show the
+// command on its way until it applies.
+foundation_block_settings :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context: Screen_Context) {
 	content := area
 	field := screen_context.content.field
 	queued := screen_context.player_commands != nil ? screen_context.player_commands[:] : nil
@@ -162,53 +254,20 @@ foundation_block_rows :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_conte
 	sizes := foundation_block_choice_labels(field.foundation_sizes, "inventory_foundation_size_choice", "{size}")
 	heights := foundation_block_choice_labels(field.foundation_heights, "inventory_foundation_height_choice", "{height}")
 	picked := shown
-	if rows >= FOUNDATION_BLOCK_ROW_COUNT {
-		cut_top(&content, UI_GAP)
-		picked.size_index = foundation_block_row(state, cut_top(&content, UI_ROW_HEIGHT), "foundation_size", text("inventory_foundation_size"), sizes, shown.size_index)
-		cut_top(&content, UI_GAP)
-		picked.height_index = foundation_block_row(state, cut_top(&content, UI_ROW_HEIGHT), "foundation_height", text("inventory_foundation_height"), heights, shown.height_index)
-	} else {
-		row := cut_top(&content, UI_ROW_HEIGHT)
-		size_strip := cut_left(&row, (row.width - UI_GAP) * f32(len(sizes)) / f32(len(sizes) + len(heights)))
-		cut_left(&row, UI_GAP)
-		picked.size_index = foundation_block_strip(state, size_strip, "foundation_size", sizes, shown.size_index)
-		picked.height_index = foundation_block_strip(state, row, "foundation_height", heights, shown.height_index)
-	}
+	picked.size_index = foundation_block_row(state, &content, "foundation_size", text("inventory_foundation_size"), sizes, shown.size_index)
+	picked.height_index = foundation_block_row(state, &content, "foundation_height", text("inventory_foundation_height"), heights, shown.height_index)
 	if picked != shown && screen_context.player_commands != nil {
 		queue_player_command(screen_context.player_commands, screen_context.player_index, picked)
 	}
 }
 
-FOUNDATION_BLOCK_ROW_COUNT :: 2
-
-// The rows the view gives the widget: two where the panel holds them
-// without its heading, else one in place of the hotbar's label, none
-// without a foundation selected.
-foundation_block_row_count :: proc(shown: bool, area_height, tabs_height: f32) -> int {
-	if !shown {
-		return 0
-	}
-	if inventory_panel_height(FOUNDATION_BLOCK_ROW_COUNT) + tabs_height - UI_ROW_HEIGHT <= area_height {
-		return FOUNDATION_BLOCK_ROW_COUNT
-	}
-	return 1
-}
-
-// The panel's extra rows: the compact row takes the hotbar label's.
-foundation_block_extra_rows :: proc(rows: int) -> int {
-	return rows >= FOUNDATION_BLOCK_ROW_COUNT ? rows : 0
-}
-
-// The player's grid and hotbar with the hotbar label between them (left
-// out without hotbar_label, whose row the caller then fills after the
-// hotbar), from the top of the area. Results are inventory slot indices.
-player_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, player: ^Player, items: Item_Registry, hotbar_label := true) -> Slot_Grid_Result {
+// The player's grid and hotbar with the hotbar label between them, from
+// the top of the area. Results are inventory slot indices.
+player_slot_region :: proc(state: ^Ui_State, area: Ui_Rectangle, player: ^Player, items: Item_Registry) -> Slot_Grid_Result {
 	content := area
 	grid_area := cut_top(&content, slot_grid_height(INVENTORY_ROWS) + UI_GAP)
 	grid := ui_slot_grid(state, {grid_area.x, grid_area.y}, "grid", INVENTORY_COLUMNS, inventory_grid(player.inventory), items)
-	if hotbar_label {
-		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("inventory_hotbar"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
-	}
+	ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("inventory_hotbar"), UI_BODY_TEXT_SIZE, .Left, UI_DIM_TEXT_COLOR)
 	hotbar := ui_slot_grid(state, {content.x, content.y}, "hotbar", HOTBAR_SLOT_COUNT, inventory_hotbar(player.inventory), items)
 	draw_outline(state, slot_grid_rectangle({content.x, content.y}, HOTBAR_SLOT_COUNT, player.selected_hotbar_slot), UI_ACCENT_COLOR)
 	return merge_grid_results(grid_result_to_inventory(grid, HOTBAR_SLOT_COUNT), grid_result_to_inventory(hotbar, 0))
@@ -232,35 +291,40 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	// would not fit the area.
 	area := ui_panel_area(state)
 	tabs_height := f32(UI_ROW_HEIGHT + UI_GAP)
-	foundation_rows := foundation_block_row_count(shows_foundation_block_rows(player^, screen_context.content), area.height, tabs_height)
-	panel_height := inventory_panel_height(foundation_block_extra_rows(foundation_rows))
-	hotbar_label := foundation_rows != 1
+	panel_height := inventory_panel_height()
 	shows_heading := panel_height + tabs_height <= area.height
 	panel := fitted_panel(area, slot_grid_width(INVENTORY_COLUMNS) + 2 * UI_PADDING, panel_height + (shows_heading ? tabs_height : tabs_height - UI_ROW_HEIGHT))
 	ui_panel_begin(state, "inventory", panel)
-	ui_prefer_focus(state, selected_hotbar_slot_id(state, player))
+	// Back from the configure pop-up focuses the slot that opened it, once:
+	// the frame after the focus landed there the view prefers the
+	// selected hotbar slot again (a tab step there and back).
+	if state.focus == state.configure.return_focus {
+		state.configure.return_focus = 0
+	}
+	ui_prefer_focus(state, state.configure.return_focus != 0 ? state.configure.return_focus : selected_hotbar_slot_id(state, player))
 	content := inset(panel, UI_PADDING)
 	inventory_tabs(state, cut_top(&content, UI_ROW_HEIGHT))
 	cut_top(&content, UI_GAP)
 	if shows_heading {
 		ui_label(state, cut_top(&content, UI_ROW_HEIGHT), text("inventory_title"), UI_HEADING_TEXT_SIZE, .Centre)
 	}
-	slot_region_height := slot_grid_height(INVENTORY_ROWS) + UI_GAP + (hotbar_label ? UI_ROW_HEIGHT : 0) + slot_grid_height(1)
-	slots := player_slot_region(state, cut_top(&content, slot_region_height), player, items, hotbar_label)
-	if foundation_rows > 0 {
-		foundation_block_rows(state, content, screen_context, foundation_rows)
-	}
+	slots := player_slot_region(state, content, player, items)
 	ui_panel_end(state)
-	touch := touch_row_shows(state)
-	button := touch ? ui_touch_row(state, INVENTORY_TOUCH_BUTTONS) : .None
 	slots.activated = apply_inventory_quick_move_input(state, screen_context, slots)
 	state.active_slot = active_slot_after_focus(state.active_slot, slots.focused, -1)
 	active := state.active_slot
+	touch := touch_row_shows(state)
+	// The highlighted slot (0202): the focused or hovered one, with touch
+	// the tapped one, which the active slot keeps while a finger is on
+	// the row.
+	configurable := configurable_slot_item(player^, screen_context.content, touch ? player_slot_index(active) : slots.focused)
+	button := touch ? ui_touch_row(state, inventory_touch_buttons(configurable != NO_ITEM), INVENTORY_TOUCH_LAYOUT) : .None
+	configures := configurable != NO_ITEM && (state.input.context_action || button == .Configure)
 	slot_input := Inventory_Slot_Input {
 		activated      = slots.activated,
 		focused        = slots.focused,
 		secondary      = state.input.secondary,
-		context_action = state.input.context_action && sort_target_grid(active.grid) == .Main,
+		context_action = state.input.context_action && !configures && sort_target_grid(active.grid) == .Main,
 		drag_drop      = state.slot_drag.released,
 		drag_hand      = dragged_hand_item(screen_context),
 	}
@@ -279,14 +343,24 @@ inventory_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	finish_slot_drag(state, screen_context)
 	draw_held_stack(state, player.held.stack, items)
 	if !touch {
-		inventory_glyph_bar(state, player.held.stack, slots.focused >= 0 ? player.inventory.slots[slots.focused] : EMPTY_STACK, quick_move = true, drop = true)
+		inventory_glyph_bar(state, player.held.stack, slots.focused >= 0 ? player.inventory.slots[slots.focused] : EMPTY_STACK, quick_move = true, drop = true, configure = configurable != NO_ITEM)
+	}
+	if configures {
+		open_configure_popup(state, configurable)
 	}
 }
 
 // The inventory's touch row (0125, 0137): the slot buttons on the active
 // grid, and Drop, which drops the active slot's stack as the right stick
-// click drops the focused one.
+// click drops the focused one. Configure takes Sort's place while the
+// active slot holds a configurable item (0202); the row is laid out for
+// Configure, the wider label, so the others keep their places.
 INVENTORY_TOUCH_BUTTONS :: Touch_Buttons{.Sort, .Split, .Transfer_All, .Transfer_All_Of_Type, .Drop, .Back}
+INVENTORY_TOUCH_LAYOUT :: INVENTORY_TOUCH_BUTTONS - {.Sort} + {.Configure}
+
+inventory_touch_buttons :: proc(configurable: bool) -> Touch_Buttons {
+	return configurable ? INVENTORY_TOUCH_LAYOUT : INVENTORY_TOUCH_BUTTONS
+}
 
 // The Drop of the hand's stack, or with an empty hand of the slot's
 // (-1 for none); nothing to drop queues nothing.
@@ -495,8 +569,9 @@ draw_held_stack :: proc(state: ^Ui_State, stack: Item_Stack, items: Item_Registr
 }
 
 // quick_move: the R2 or Q hint on a focused stack. drop: the Drop hint
-// on a focused or held stack (the inventory screen).
-inventory_glyph_bar :: proc(state: ^Ui_State, held, focused: Item_Stack, quick_move := false, drop := false) {
+// on a focused or held stack (the inventory screen). configure: the
+// context action opens the configure pop-up instead of sorting (0202).
+inventory_glyph_bar :: proc(state: ^Ui_State, held, focused: Item_Stack, quick_move := false, drop := false, configure := false) {
 	if !stack_is_empty(held) {
 		hints := make([dynamic]Glyph_Hint, context.temp_allocator)
 		append(&hints, Glyph_Hint{.Confirm, text("hint_place_stack")})
@@ -518,6 +593,6 @@ inventory_glyph_bar :: proc(state: ^Ui_State, held, focused: Item_Stack, quick_m
 	if focused.count >= 2 {
 		append(&hints, Glyph_Hint{.Secondary, text("hint_split")})
 	}
-	append(&hints, Glyph_Hint{.Context_Action, text("hint_sort")}, Glyph_Hint{.Back, text("hint_close")})
+	append(&hints, Glyph_Hint{.Context_Action, text(configure ? "hint_configure" : "hint_sort")}, Glyph_Hint{.Back, text("hint_close")})
 	ui_glyph_bar(state, hints[:])
 }

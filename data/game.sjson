@@ -93,7 +93,8 @@ simulated_chunk_radius_vertical = 3
 foundation_pitch_millimetres = 500
 // The blocks a held foundation places at once (work item 0193,
 // doc/content.md, Foundations): a square of size by size cells and height
-// cells high, chosen on the inventory view with a foundation selected;
+// cells high, chosen in the configure pop-up (work item 0202), which
+// Context_Action opens on a foundation highlighted in the inventory view;
 // the first of each list is a new player's. Each from 1 to 16 (at most
 // 4096 cells a block), at most 16 entries.
 foundation_sizes = [1, 2, 5, 10]

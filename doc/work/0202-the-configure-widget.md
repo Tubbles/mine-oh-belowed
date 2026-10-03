@@ -1,6 +1,6 @@
 # 0202: The configure widget: a modal for the highlighted item
 
-Status: todo (user, 2026-10-03, on 0193's rows: "That doesnt look like a widget, that is a permanent ui panel. A widget would be something that pops up as a modal interaction, lets say a 'configure' mode. Highlighting the foundation activates a new keybind -> configure widget pops up, the player can configure how all foundations work (not just the highlighted stack), close the widget and then use it in game"; after 0195, before 0201)
+Status: implemented (user, 2026-10-03, on 0193's rows: "That doesnt look like a widget, that is a permanent ui panel. A widget would be something that pops up as a modal interaction, lets say a 'configure' mode. Highlighting the foundation activates a new keybind -> configure widget pops up, the player can configure how all foundations work (not just the highlighted stack), close the widget and then use it in game"; after 0195, before 0201)
 
 ## Goal
 
@@ -18,7 +18,7 @@ Configuring an item is a modal moment, not a panel that lives on the inventory v
 
 - Layer: the menu context, inventory view. Context_Action (keyboard F, gamepad West) is the menu's smart action already: with a configurable item highlighted it is Configure and opens the pop-up, with anything else highlighted it stays Sort, and the hint row names which. No new binding.
 - In the pop-up: Navigate moves the focus between the strips and the Close button, Navigate_Left and Navigate_Right step a strip, Confirm picks, Back closes; the pointer clicks; touch taps and the touch row's Back closes. The world's controls are untouched.
-- The hint row of the pop-up: Confirm "Pick", Back "Close".
+- The hint row of the pop-up: Confirm "Pick" with the focus on a strip and "Close" on the Close button, Back "Close".
 
 ## Verify
 

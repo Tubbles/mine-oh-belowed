@@ -27,6 +27,8 @@ test_shipped_items_resolve :: proc(t: ^testing.T) {
 	testing.expect_value(t, items.items[test_item(items, "iron_gear")].stack_size, 100)
 	testing.expect_value(t, items.items[test_item(items, "stone_furnace")].stack_size, 50)
 	testing.expect_value(t, items.items[test_item(items, "stick")].fuel_kilojoules, 500)
+	testing.expect_value(t, items.items[test_item(items, "foundation")].configurable, Item_Configuration.Foundation_Block)
+	testing.expect_value(t, items.items[test_item(items, "stone_furnace")].configurable, Item_Configuration.None)
 	testing.expect_value(t, items.items[test_item(items, "coal")].fuel_kilojoules, 4000)
 	testing.expect_value(t, item_places_block(items, test_item(items, "torch")), test_block(blocks, "torch"))
 	// Every block that can be mined yields an item.
@@ -77,6 +79,8 @@ test_item_loading_rejects_bad_tables :: proc(t: ^testing.T) {
 		// Only a tool mines, and never below hands (work item 0051).
 		{id = "x", name_key = "k", category = "raw", stack_size = 1, price = 1, tool_tier = 1},
 		{id = "x", name_key = "k", category = "tool", stack_size = 1, price = 1, tool_tier = -1},
+		// The configure pop-up knows its values only (0202).
+		{id = "x", name_key = "k", category = "raw", stack_size = 1, price = 1, configurable = "belt_speed"},
 	}
 	for bad in cases {
 		definitions := make([dynamic]Item_Definition, context.temp_allocator)

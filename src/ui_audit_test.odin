@@ -114,6 +114,8 @@ Ui_Audit_Case :: struct {
 	waiting_for_player: bool,
 	// The notice of a viewport whose pad was lost (0178).
 	notice:       string,
+	// The item the configure pop-up configures (0202).
+	configure_item: Item_Id,
 }
 
 // Owns everything a Screen_Context points into.
@@ -374,6 +376,7 @@ audit_case_at_size :: proc(audit: ^Ui_Audit, audit_case: Ui_Audit_Case, size: Ui
 	for screen in audit_case.screens {
 		push_screen(&state.screens, screen)
 	}
+	state.configure.item = audit_case.configure_item
 	if audit_case.keyboard {
 		state.keyboard.field = 1
 		state.keyboard.system = audit_case.system_keyboard
@@ -942,12 +945,15 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 	inventory_hotbar(player.inventory)[player.selected_hotbar_slot] = Item_Stack{test_item(audit.content.items, "magnetometer"), 1}
 	player.magnetometer.found = true
 	audit_case(audit, {name = "hud magnetometer", hud = true, toasts = toasts[:]})
-	// A selected foundation in a field session's content adds the block
-	// rows to the inventory view (0193), checked at every size down to the
-	// smallest.
+	// The configure pop-up of a foundation over the inventory (0202),
+	// checked at every size down to the smallest, and the inventory's
+	// touch row with Configure in Sort's place.
 	with_audit_foundation_blocks(audit)
-	inventory_hotbar(player.inventory)[player.selected_hotbar_slot] = Item_Stack{audit.content.machines.machines[audit.content.field.foundation].item, 1}
-	audit_case(audit, {name = "inventory foundation block", screens = {.Inventory}, walk_focus = true})
+	foundation := audit.content.machines.machines[audit.content.field.foundation].item
+	inventory_hotbar(player.inventory)[player.selected_hotbar_slot] = Item_Stack{foundation, 1}
+	audit_case(audit, {name = "configure foundation block", screens = {.Inventory, .Configure}, configure_item = foundation, walk_focus = true})
+	audit_case(audit, {name = "configure foundation block touch row", screens = {.Inventory, .Configure}, configure_item = foundation, hud = true, touch = true})
+	audit_case(audit, {name = "inventory foundation touch row", screens = {.Inventory}, hud = true, touch = true})
 }
 
 @(test)
@@ -1252,50 +1258,160 @@ draw_list_text_pixels :: proc(state: ^Ui_State, wanted: string) -> (pixels: [2]f
 	return {}, false
 }
 
-// The inventory view shows the foundation block rows with a foundation
-// selected and not with a furnace; a click on 5x5 queues the command,
-// which the tick applies to the field player, and the strip keeps 5x5.
-@(test)
-test_the_inventory_view_picks_the_foundation_block :: proc(t: ^testing.T) {
-	audit := make_ui_audit()
-	defer destroy_ui_audit(audit)
+// An inventory view over the audit's site for the configure pop-up
+// (0202): a field session's foundation lists, an empty hand, a
+// foundation in the selected hotbar slot and a furnace beside it. The
+// view's first frames settle the focus on the selected slot.
+Configure_Test :: struct {
+	foundation: Item_Id,
+	furnace:    Item_Id,
+}
+
+make_configure_test :: proc(audit: ^Ui_Audit, state: ^Ui_State) -> Configure_Test {
 	with_audit_foundation_blocks(audit)
 	player := &audit.simulation.players[0]
+	player.held = EMPTY_HELD_STACK
+	test := Configure_Test {
+		foundation = audit.content.machines.machines[audit.content.field.foundation].item,
+		furnace    = audit.content.machines.machines[test_machine(audit.content.machines, "stone_furnace")].item,
+	}
 	hotbar := inventory_hotbar(player.inventory)
-	furnace := audit.content.machines.machines[test_machine(audit.content.machines, "stone_furnace")].item
-	hotbar[player.selected_hotbar_slot] = Item_Stack{furnace, 1}
-	state := Ui_State{theme = audit.theme}
-	defer destroy_ui_state(&state)
+	player.selected_hotbar_slot = 0
+	hotbar[0] = Item_Stack{test.foundation, 10}
+	hotbar[1] = Item_Stack{test.furnace, 1}
+	state.theme = audit.theme
 	push_screen(&state.screens, .Inventory)
-	screen_test_frame(audit, &state, {})
+	screen_test_frame(audit, state, {})
+	screen_test_frame(audit, state, {})
+	return test
+}
+
+last_queued_command :: proc(audit: ^Ui_Audit) -> Player_Command {
+	commands := audit.simulation.player_commands
+	return len(commands) > 0 ? commands[len(commands) - 1].command : nil
+}
+
+// With a foundation highlighted the hint reads Configure and the
+// context action opens the pop-up instead of sorting; with a furnace
+// highlighted it reads Sort and sorts. The 0193 rows are gone from the
+// view.
+@(test)
+test_the_context_action_configures_a_foundation :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	state: Ui_State
+	defer destroy_ui_state(&state)
+	test := make_configure_test(audit, &state)
+	testing.expect(t, draw_list_has_text(state.draw_list[:], text("hint_configure")))
+	testing.expect(t, !draw_list_has_text(state.draw_list[:], text("hint_sort")))
 	testing.expect(t, !draw_list_has_text(state.draw_list[:], text("inventory_foundation_size")))
-	foundation := audit.content.machines.machines[audit.content.field.foundation].item
-	hotbar[player.selected_hotbar_slot] = Item_Stack{foundation, 1}
+	testing.expect(t, !draw_list_has_text(state.draw_list[:], "10x10"))
+	clear(&audit.simulation.player_commands)
+	screen_test_frame(audit, &state, {context_action = true})
+	testing.expect_value(t, top_screen(state.screens), Screen.Configure)
+	testing.expect_value(t, state.configure.item, test.foundation)
+	testing.expect_value(t, len(audit.simulation.player_commands), 0)
+	// The furnace: Sort, and the press sorts.
+	pop_screen(&state.screens)
+	state.configure, state.focus = {}, 0
+	audit.simulation.players[0].selected_hotbar_slot = 1
 	screen_test_frame(audit, &state, {})
+	screen_test_frame(audit, &state, {})
+	testing.expect(t, draw_list_has_text(state.draw_list[:], text("hint_sort")))
+	testing.expect(t, !draw_list_has_text(state.draw_list[:], text("hint_configure")))
+	screen_test_frame(audit, &state, {context_action = true})
+	testing.expect_value(t, top_screen(state.screens), Screen.Inventory)
+	_, sorts := last_queued_command(audit).(Slot_Sort_Command)
+	testing.expect(t, sorts)
+}
+
+// The pop-up: titled after the item with both strips; a click on 5x5,
+// a step and Confirm on the focused strips each queue the command with
+// the picked indices; Back closes it onto the view with the focus where
+// it was.
+@(test)
+test_the_configure_popup_picks_the_foundation_block :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	state: Ui_State
+	defer destroy_ui_state(&state)
+	make_configure_test(audit, &state)
+	focus_before := state.focus
+	screen_test_frame(audit, &state, {context_action = true})
+	screen_test_frame(audit, &state, {})
+	testing.expect(t, draw_list_has_text(state.draw_list[:], text("configure_title_foundation_block")))
 	testing.expect(t, draw_list_has_text(state.draw_list[:], text("inventory_foundation_size")))
-	testing.expect(t, draw_list_has_text(state.draw_list[:], text("inventory_foundation_height")))
-	testing.expect(t, draw_list_has_text(state.draw_list[:], "10x10"))
+	testing.expect(t, draw_list_has_text(state.draw_list[:], text("hint_pick")))
+	testing.expect(t, !draw_list_has_text(state.draw_list[:], text("inventory_hotbar")))
 	pixels, found := draw_list_text_pixels(&state, "5x5")
 	testing.expect(t, found)
 	screen_test_frame(audit, &state, {mouse_position = pixels, mouse_moved = true, mouse_pressed = true, mouse_down = true})
-	queued := len(audit.simulation.player_commands)
-	testing.expect(t, queued > 0)
-	testing.expect_value(t, audit.simulation.player_commands[queued - 1].command.(Foundation_Block_Command), Foundation_Block_Command{size_index = 2, height_index = 0})
+	testing.expect_value(t, last_queued_command(audit).(Foundation_Block_Command), Foundation_Block_Command{size_index = 2, height_index = 0})
 	apply_player_commands(&audit.simulation, audit.content)
-	testing.expect_value(t, player.field.foundation_size_index, 2)
+	testing.expect_value(t, audit.simulation.players[0].field.foundation_size_index, 2)
 	screen_test_frame(audit, &state, {mouse_position = pixels})
 	testing.expect_value(t, len(audit.simulation.player_commands), 0)
-	// At 1280 by 800 and interface scale 1.5 with the largest text the
-	// compact row replaces the hotbar's label, every choice whole.
-	text_scale := audit.settings.text_scale
-	defer audit.settings.text_scale = text_scale
-	audit.settings.text_scale = TEXT_SCALE_RANGE.maximum
-	ui_begin(&state, {}, {1280, 800}, 1.0 / 60, 1.5, 1, ui_accessibility(audit.settings))
-	run_screens(&state, audit_screen_context(audit))
-	ui_resolve(&state)
-	testing.expect(t, !draw_list_has_text(state.draw_list[:], text("inventory_hotbar")))
-	testing.expect(t, !draw_list_has_text(state.draw_list[:], text("inventory_foundation_size")))
-	for choice in ([?]string{"1x1", "2x2", "5x5", "10x10", "1 high", "2 high", "5 high"}) {
-		testing.expectf(t, draw_list_has_text(state.draw_list[:], choice), "%s is drawn whole", choice)
-	}
+	// The gamepad: the size strip holds the focus first; right steps it,
+	// down reaches the height strip, Confirm steps that.
+	state.focus = 0
+	screen_test_frame(audit, &state, {})
+	screen_test_frame(audit, &state, {navigation = .Right})
+	testing.expect_value(t, last_queued_command(audit).(Foundation_Block_Command), Foundation_Block_Command{size_index = 3, height_index = 0})
+	screen_test_frame(audit, &state, {})
+	screen_test_frame(audit, &state, {navigation = .Down})
+	screen_test_frame(audit, &state, {})
+	screen_test_frame(audit, &state, {confirm = true})
+	testing.expect_value(t, last_queued_command(audit).(Foundation_Block_Command), Foundation_Block_Command{size_index = 3, height_index = 1})
+	testing.expect_value(t, top_screen(state.screens), Screen.Configure)
+	testing.expect(t, draw_list_has_text(state.draw_list[:], text("hint_pick")))
+	// Down to Close: Confirm reads Close there.
+	screen_test_frame(audit, &state, {navigation = .Down})
+	screen_test_frame(audit, &state, {})
+	testing.expect(t, !draw_list_has_text(state.draw_list[:], text("hint_pick")))
+	// Back closes it; the view focuses the slot that opened it.
+	screen_test_frame(audit, &state, {back = true})
+	testing.expect_value(t, top_screen(state.screens), Screen.Inventory)
+	screen_test_frame(audit, &state, {})
+	screen_test_frame(audit, &state, {})
+	testing.expect_value(t, state.focus, focus_before)
+	testing.expect(t, draw_list_has_text(state.draw_list[:], text("hint_configure")))
+	// Only once: after a tab step to Recipes and back the view focuses the
+	// selected hotbar slot, not the slot that opened the pop-up.
+	audit.simulation.players[0].selected_hotbar_slot = 1
+	screen_test_frame(audit, &state, {tab_next = true})
+	testing.expect_value(t, top_screen(state.screens), Screen.Recipes)
+	screen_test_frame(audit, &state, {})
+	screen_test_frame(audit, &state, {tab_previous = true})
+	testing.expect_value(t, top_screen(state.screens), Screen.Inventory)
+	screen_test_frame(audit, &state, {})
+	screen_test_frame(audit, &state, {})
+	testing.expect_value(t, state.focus, inventory_hotbar_slot_test_id(1))
 }
+
+// The id the inventory view gives a hotbar slot (selected_hotbar_slot_id
+// inside the "inventory" panel).
+inventory_hotbar_slot_test_id :: proc(slot: int) -> Ui_Id {
+	return ui_hash(ui_hash(ui_hash(0, "inventory", -1), "hotbar", -1), "slot", slot)
+}
+
+// Touch: with the tapped slot on a foundation the row's Configure takes
+// Sort's place and opens the pop-up; a tap off the panel closes it.
+@(test)
+test_the_touch_row_configures_a_foundation :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	state: Ui_State
+	defer destroy_ui_state(&state)
+	make_configure_test(audit, &state)
+	screen_test_frame(audit, &state, {pointer_is_touch = true})
+	testing.expect(t, draw_list_has_text(state.draw_list[:], text("touch_button_configure")))
+	testing.expect(t, !draw_list_has_text(state.draw_list[:], text("slot_button_sort")))
+	pixels, found := draw_list_text_pixels(&state, text("touch_button_configure"))
+	testing.expect(t, found)
+	screen_test_frame(audit, &state, {pointer_is_touch = true, mouse_position = pixels, mouse_moved = true, mouse_pressed = true, mouse_down = true})
+	screen_test_frame(audit, &state, {pointer_is_touch = true, mouse_position = pixels})
+	testing.expect_value(t, top_screen(state.screens), Screen.Configure)
+	tap_screen_at(audit, &state, {40, 400})
+	testing.expect_value(t, top_screen(state.screens), Screen.Inventory)
+}
+

@@ -1175,6 +1175,8 @@ Touch_Button :: enum u8 {
 	None,
 	Clear_Filter,
 	Sort,
+	// Sort's place on the inventory with a configurable item (0202).
+	Configure,
 	Split,
 	Transfer_All,
 	Transfer_All_Of_Type,
@@ -1199,6 +1201,7 @@ touch_button_keys := [Touch_Button]string {
 	.None                 = "",
 	.Clear_Filter         = "touch_button_clear_filter",
 	.Sort                 = "slot_button_sort",
+	.Configure            = "touch_button_configure",
 	.Split                = "slot_button_split",
 	.Transfer_All         = "slot_button_transfer_all",
 	.Transfer_All_Of_Type = "slot_button_transfer_all_of_type",

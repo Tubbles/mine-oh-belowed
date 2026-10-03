@@ -68,6 +68,11 @@
 // guesses from the recipe depth: raw material and ore 1, plates 2, steel
 // 12, a crafted item about the sum of its inputs, the rare phase 7
 // materials (aluminium, silicon, gold) well above their inputs.
+// configurable (optional, work item 0202) names what the inventory view's
+// configure pop-up sets for every item of the kind: the one value is
+// foundation_block (the foundation's block size and height, whose choices
+// are in game.sjson). The hint row offers Configure for such an item.
+// Any other value is an error.
 items = [
 	// Raw materials
 	{id = "log", name_key = "item_log", description_key = "describe_item_log", category = "raw", stack_size = 50, places_block = "log", mined_from = ["birch_log", "pine_log", "palm_log", "dead_log"], fuel_megajoules = 2, cannot_recycle = true, price = 1}
@@ -158,7 +163,7 @@ items = [
 	{id = "splitter", name_key = "item_splitter", description_key = "describe_item_splitter", category = "machine", stack_size = 50, price = 55}
 	{id = "wooden_chest", name_key = "item_wooden_chest", description_key = "describe_item_wooden_chest", category = "machine", stack_size = 50, price = 4}
 	{id = "iron_chest", name_key = "item_iron_chest", description_key = "describe_item_iron_chest", category = "machine", stack_size = 50, price = 16}
-	{id = "foundation", name_key = "item_foundation", description_key = "describe_item_foundation", category = "machine", stack_size = 100, price = 3}
+	{id = "foundation", name_key = "item_foundation", description_key = "describe_item_foundation", category = "machine", stack_size = 100, price = 3, configurable = "foundation_block"}
 	{id = "belt_pole", name_key = "item_belt_pole", description_key = "describe_item_belt_pole", category = "machine", stack_size = 100, price = 6}
 	{id = "offshore_pump", name_key = "item_offshore_pump", description_key = "describe_item_offshore_pump", category = "machine", stack_size = 50, price = 20}
 	{id = "pump", name_key = "item_pump", description_key = "describe_item_pump", category = "machine", stack_size = 50, price = 20}

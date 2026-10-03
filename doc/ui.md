@@ -38,7 +38,7 @@ Screens stack over the world and the HUD (`UI_SCREEN_STACK_CAPACITY` 8). Any ope
 
 | Pause the simulation | Keep it running |
 | --- | --- |
-| Pause, Settings, Developer, Textures, Data files, Touch layout, Title, New world, Load, Delete confirmation, Multiplayer | Inventory, Machine, Recipes, Journal, Power, Statistics, Technologies, Map |
+| Pause, Settings, Developer, Textures, Data files, Touch layout, Title, New world, Load, Delete confirmation, Multiplayer | Inventory, Configure pop-up, Machine, Recipes, Journal, Power, Statistics, Technologies, Map |
 
 - Back (B, Backspace) closes the top screen, first an open tooltip; Pause acts as Back over a screen. A screen's own key closes it (M, J). Open_Inventory closes the inventory, a machine panel, the recipes and technologies, except when the same press is the context action (the gamepad's X sorts).
 - A screen opened from the world focuses the widget it prefers (`ui_prefer_focus`), else its first (0094); the inventory and machine panels prefer the selected hotbar slot. The focus is forgotten on the first frame without a screen (`run_screens`); a screen pushed over another keeps it.
@@ -77,7 +77,7 @@ One slot code serves the inventory, the machine panels and chests (`ui_item_slot
 
 ### Gamepad
 
-- A picks up the focused stack and drops, merges or swaps on another slot. L2 splits it (the larger half, so one item lifts whole). X sorts the active grid.
+- A picks up the focused stack and drops, merges or swaps on another slot. L2 splits it (the larger half, so one item lifts whole). X sorts the active grid; in the inventory on a configurable item it opens the configure pop-up instead (Screens, Configure pop-up).
 - R2 (Q, or Left Control with a click) quick moves (0078): across a machine panel by the inserters' rules (fuel to the fuel slot, ore to the input); in the inventory between the backpack and the hotbar, partial stacks first, then empty slots (0090). A second press within half a second, or a hold, moves every stack of the item. What does not fit stays.
 - Holding A with a stack in hand while the focus crosses machine slots spreads it evenly over them on release (Even Distribution).
 - A held stack follows the focus and the pointer, and returns to its slot when the screen closes. Machine inputs take only what the machine uses; a rejected drop stays in hand.
@@ -114,7 +114,7 @@ Rule: on Android and while the touch overlay is on (`Ui_Input.pointer_is_touch`)
 
 | Screen | Row |
 | --- | --- |
-| Inventory | Sort, Split, Transfer all, Transfer same, Drop (the active slot's stack), Back |
+| Inventory | Sort (Configure in its place while the active slot holds a configurable item, the row laid out for Configure), Split, Transfer all, Transfer same, Drop (the active slot's stack), Back |
 | Machine panels | Clear (an inserter's or splitter's filter), Sort, Split, Transfer all, Transfer same, Back; laid out for Clear, so the others keep their places |
 | Recipe browser | Craft, Craft 5, Cancel last (Choose when picking), Back |
 | Technology screen | Research, Back |
@@ -192,9 +192,13 @@ On a start with `SteamDeck=1` and `settings.deck_preset_applied` false, `deck_pr
 
 The inventory, the recipe browser and the technology screen are one strip of tabs (Inventory, Recipes, Research, `inventory_tabs`, 0094). L1 and R1 step between them, wrapping; a click picks one. On the keyboard Q steps back from Recipes and Research only (in the inventory it quick moves) and E closes the strip. A step replaces the top screen (`replace_top_screen`), so Back returns to what was under the strip (the world, or the lab panel that opened the technology screen). The recipe browser opened as a picker has no strip; the pause menu reaches neither tab.
 
-### Foundation block rows
+### Configure pop-up
 
-With a foundation selected in the hotbar of a field session, the inventory view adds the foundation block widget under the hotbar (`foundation_block_rows`, 0193): a row labelled "Block size" with a strip of the content's sizes (1x1, 2x2, 5x5, 10x10) and a row labelled "Block height" with its heights (1 high, 2 high, 5 high), the current choice underlined in the accent colour. Each strip is a tab strip in its focus mode (`ui_tabs`, `.Focus`): focus navigation reaches it as one row, left and right step it, the pointer and a tap pick a choice. A change queues a `Foundation_Block_Command` (lockstep state, as a recipe choice is), and the strips show the command on its way until the tick applies it. Where the two rows do not fit (interface scale 1.5 at 1080 and 800 high), one row drops the hotbar's label and holds both strips without their labels right under the hotbar, so the panel keeps its height. Another item selected shows neither.
+Configuring an item is a modal moment (0202, `configure_screen` in `ui_inventory.odin`). On the inventory view, with an empty hand and the highlighted slot holding an item whose record is `configurable` ([content.md](content.md), Items), the context action reads "Configure" in the glyph bar instead of "Sort" and opens the pop-up instead of sorting; on touch the row's Configure takes Sort's place. The highlighted slot is the focused one with a gamepad or the keyboard, the hovered one with the pointer, and on touch the tapped one (the active slot). An item whose configuration the session lacks (a foundation outside a field session, which has no block lists) offers Sort.
+
+- A screen pushed over the inventory (`Screen.Configure`, keeps the simulation running): a centred panel titled after the configuration ("Foundation blocks"), its rows, and Close. Back, Close and a tap or click off the panel close it; the inventory under it does not run while it is open and focuses the slot that opened it again on return (`Configure_Popup.return_focus`).
+- The rows are chosen by the item's `Item_Configuration`; a later value adds a case to `configure_screen`, not a mechanism. The settings apply to every item of the kind, not to the highlighted stack.
+- Foundation block (0193): a "Block size" label over a strip of the content's sizes (1x1, 2x2, 5x5, 10x10) and a "Block height" label over its heights (1 high, 2 high, 5 high), the current choice underlined in the accent colour. Each strip is a tab strip in its focus mode (`ui_tabs`, `.Focus`): up and down move between the strips and Close, left and right step a strip, Confirm on a strip steps it forward and wraps as a settings choice does, the pointer and a tap pick a choice. A pick queues a `Foundation_Block_Command` (lockstep state, as a recipe choice is), and the strips show the command on its way until the tick applies it. The glyph bar reads Confirm "Pick" on a strip and Confirm "Close" on the Close button, and Back "Close".
 
 ### Recipe browser
 

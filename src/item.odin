@@ -55,6 +55,21 @@ item_use_names := [Item_Use]string {
 	.Seismic_Shot = "seismic_shot",
 }
 
+// What the inventory view's configure pop-up (0202) sets for every item
+// of a kind: nothing, or the foundation block's size and height (0193).
+// The pop-up's content is chosen by this value, so a later configurable
+// item adds a value and a case, not a mechanism.
+Item_Configuration :: enum u8 {
+	None,
+	Foundation_Block,
+}
+
+@(rodata)
+item_configuration_names := [Item_Configuration]string {
+	.None             = "",
+	.Foundation_Block = "foundation_block",
+}
+
 // As written in the file, before references are resolved.
 Item_Definition :: struct {
 	id:              string,
@@ -73,6 +88,7 @@ Item_Definition :: struct {
 	use_range:       int,
 	price:           int,
 	tool_tier:       int,
+	configurable:    string,
 }
 
 Items_File :: struct {
@@ -90,7 +106,7 @@ Items_File :: struct {
 // tool_tier is the highest block tool_tier the tool mines by hand, 0 for
 // every item but the pickaxes (work item 0051). description_key is the
 // string shown under the facts in the recipe browser, "" for none (work
-// item 0070).
+// item 0070). configurable is what the configure pop-up sets (0202).
 Item :: struct {
 	id:              string,
 	name_key:        string,
@@ -106,6 +122,7 @@ Item :: struct {
 	use_range:       i32,
 	price:           u64,
 	tool_tier:       int,
+	configurable:    Item_Configuration,
 }
 
 Item_Registry :: struct {
@@ -165,6 +182,9 @@ validate_item_definition :: proc(definitions: []Item_Definition, index: int) -> 
 	if definition.usable && definition.places_block != "" {
 		return fmt.tprintf("usable item %q cannot place a block", definition.id)
 	}
+	if _, found := parse_named_enum(item_configuration_names, definition.configurable); !found {
+		return fmt.tprintf("item %q has unknown configurable %q", definition.id, definition.configurable)
+	}
 	return validate_item_use(definition)
 }
 
@@ -217,6 +237,7 @@ assign_drop :: proc(drops: []Item_Id, blocks: Block_Registry, block_name: string
 resolve_item :: proc(definition: Item_Definition, blocks: Block_Registry) -> (item: Item, problem: string) {
 	category, _ := parse_item_category(definition.category)
 	use, _ := parse_named_enum(item_use_names, definition.use)
+	configurable, _ := parse_named_enum(item_configuration_names, definition.configurable)
 	placed_block: Block_Id
 	if placed_block, problem = resolve_placed_block(definition, blocks); problem != "" {
 		return {}, problem
@@ -236,6 +257,7 @@ resolve_item :: proc(definition: Item_Definition, blocks: Block_Registry) -> (it
 		use_range       = i32(definition.use_range),
 		price           = u64(definition.price),
 		tool_tier       = definition.tool_tier,
+		configurable    = configurable,
 	}
 	return item, ""
 }

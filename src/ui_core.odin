@@ -245,6 +245,8 @@ Screen :: enum u8 {
 	Technologies,
 	// The top down map (ui_map.odin).
 	Map,
+	// The configure pop-up over the inventory (ui_inventory.odin, 0202).
+	Configure,
 	// The touch layout editor (ui_touch_layout_editor.odin, 0121), above
 	// the settings.
 	Touch_Layout,
@@ -438,6 +440,8 @@ Ui_State :: struct {
 	quick_move:       Quick_Move_State,
 	// The slot screens' active grid (0125), forgotten with the focus.
 	active_slot:      Active_Slot,
+	// The configure pop-up's item (0202), forgotten with the focus.
+	configure:        Configure_Popup,
 	toasts:           [dynamic]Toast,
 	// Mission Control's panel and the discovery card (ui_mission_control.odin).
 	mission_control:  Mission_Control_State,
@@ -1192,7 +1196,7 @@ top_screen :: proc(stack: Screen_Stack) -> Screen {
 
 screen_pauses_simulation :: proc(screen: Screen) -> bool {
 	switch screen {
-	case .None, .Inventory, .Machine, .Recipes, .Journal, .Power, .Statistics, .Technologies, .Map:
+	case .None, .Inventory, .Machine, .Recipes, .Journal, .Power, .Statistics, .Technologies, .Map, .Configure:
 		return false
 	case .Pause, .Settings, .Developer, .Textures, .Data_Files, .Touch_Layout, .Title, .New_World, .Load_World, .Confirm_Delete, .Multiplayer:
 		return true
