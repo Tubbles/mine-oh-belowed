@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate art direction images for the booklet (work item 0211).
 
-    tools/art/generate.py --model banana --prompt "..." --out work/art/2026-10-03-furnace [--count 2] [--ratio 16:9] [--seed 7] [--reference image.png ...]
+    tools/art/generate.py --model banana --prompt "..." --out work/art/2026-10-03-furnace [--count 1] [--ratio 16:9] [--seed 7] [--reference image.png ...]
 
 Providers and keys, never printed:
   openrouter (default): ~/.config/openrouter/key or $OPENROUTER_API_KEY; POST https://openrouter.ai/api/v1/images,
@@ -119,7 +119,7 @@ def main():
     parser.add_argument("--model", choices=OPENROUTER_MODELS, default="banana")
     parser.add_argument("--prompt", required=True)
     parser.add_argument("--out", required=True)
-    parser.add_argument("--count", type=int, default=2)
+    parser.add_argument("--count", type=int, default=1, help="images per call; the Google models accept only 1")
     parser.add_argument("--ratio", choices=FLUX_SIZES, default="16:9")
     parser.add_argument("--seed", type=int)
     parser.add_argument("--reference", action="append", default=[], help="a reference image (openrouter), repeatable")
