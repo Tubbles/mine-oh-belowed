@@ -15,7 +15,7 @@ Read this together with the global `~/.claude/CLAUDE.md`. This file holds the pr
 
 ## Layout
 
-The project structure of the global preferences: `doc/` (detail docs, index in `doc/README.md`), `doc/log/` (dated decision logs, write once), `doc/work/` (work items with status `todo`, `implemented`, `verified`; the finished ones under `doc/work/done/`, the closed and folded ones under `doc/work/cancelled/`), `work/` and `tmp/` (untracked), `PLAN.md`, `DESIGN.md`, `TODO.md` (the user's inbox, the user writes there), `SUGGESTIONS.md` (agent follow ups and decisions needed, including the deferred work of a big series, never `TODO.md`). Source under `src/`, content under `data/`, build output under `bin/`. The entry to the source is [doc/code_map.md](doc/code_map.md): the clusters, their entry files and the allowed dependencies between them.
+The project structure of the global preferences: `doc/` (detail docs, index in `doc/README.md`), `doc/log/` (dated decision logs, write once), `doc/work/` (work items with status `todo`, `implemented`, `verified`; the finished ones under `doc/work/done/`, the closed and folded ones under `doc/work/cancelled/`), `work/` and `tmp/` (untracked), `PLAN.md`, `DESIGN.md`, `TODO.md` (the user's inbox, the user writes there), `SUGGESTIONS.md` (only actual suggestions: decisions the user must make, tradeoffs, things to measure first; never `TODO.md`). Work an agent sees should be done is not a suggestion: it becomes a work item in `doc/work/` directly, named in the reply (user, 2026-10-03). Source under `src/`, content under `data/`, build output under `bin/`. The entry to the source is [doc/code_map.md](doc/code_map.md): the clusters, their entry files and the allowed dependencies between them.
 
 ## Code rules
 
