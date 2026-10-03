@@ -83,6 +83,9 @@ Field_Edit_Refusal :: enum u8 {
 	// A foundation block needs more foundations than are held (0193); the
 	// event carries both counts (record_refused_foundation_counts).
 	Too_Few_Foundations,
+	// A pick up of an entity that holds something up (0195,
+	// field_entity_is_held_up).
+	Something_Stands_On_It,
 }
 
 // The string keys of the refusals the HUD toasts (Field_Refused, 0179).
@@ -101,6 +104,7 @@ field_refusal_keys := [Field_Edit_Refusal]string {
 	.No_Vein           = "field_refused_no_vein",
 	.Needs_Foundation  = "field_refused_needs_foundation",
 	.Too_Few_Foundations = "field_refused_too_few_foundations",
+	.Something_Stands_On_It = "field_refused_something_stands_on_it",
 }
 
 Queued_Field_Edit :: struct {
@@ -482,8 +486,8 @@ drain_field_edits :: proc(state: ^Simulation_State, content: Simulation_Content)
 	update_field_sky_after_edits(&state.field.world)
 }
 
-// One player moves and queues its brush edit and its placements; nothing
-// edits the field yet. The tool follows the hotbar (simulation_field.odin)
+// One player moves and queues its brush edit, its placements and a
+// finished pick up (advance_field_pick_up); nothing edits the field yet. The tool follows the hotbar (simulation_field.odin)
 // before this runs. The move counts for the walk counter unless the
 // player flies, as the block world's (0187).
 queue_field_player_edit :: proc(state: ^Simulation_State, content: Simulation_Content, index: int, input: Field_Player_Input) {
@@ -497,6 +501,9 @@ queue_field_player_edit :: proc(state: ^Simulation_State, content: Simulation_Co
 		record_field_walked(&state.records.statistics, walk_start, player.field.position, player.field.up)
 	}
 	aim_field_player_at_frames(&player.field, &entities.frames, content.field.tuning)
+	if pick_up, finished := advance_field_pick_up(state, content, player, input); finished {
+		append(&field.placements, Queued_Field_Placement{player = index, placement = pick_up})
+	}
 	if edit, wanted := field_player_edit(&field.world, field.spacing_millimetres, player.field, input, content.field.brushes); wanted {
 		append(&field.edits, Queued_Field_Edit{player = index, edit = edit})
 	}

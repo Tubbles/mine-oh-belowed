@@ -321,3 +321,18 @@ test_a_removed_viewport_leaves_and_its_entry_is_taken_again :: proc(t: ^testing.
 	testing.expect(t, run_viewport_test_frames_until_ready(state, 1))
 	testing.expect_value(t, len(session.simulation.players), 2)
 }
+
+// The touch ring's point (0195): a block's centre in the block world; for
+// a pick up on a frame, the mined cell's centre on its frame in metres.
+@(test)
+test_the_mining_ring_sits_on_a_frame_cell :: proc(t: ^testing.T) {
+	machines := make_test_machines()
+	entities: Entities
+	defer destroy_entities(&entities)
+	handle, frame_id := place_free_foundation(&entities, machines, test_foundation(machines), TEST_FRAME_HIT, {UNIT_VECTOR_ONE, 0, 0}, 500)
+	frame, _ := find_frame(&entities.frames, frame_id)
+	on_frame := Mining_State{active = true, entity = handle}
+	testing.expect_value(t, mining_ring_point(&entities, on_frame), world_position_to_metres(frame_cell_centre(frame, {})))
+	block := Mining_State{active = true, block = {3, 4, 5}}
+	testing.expect_value(t, mining_ring_point(&entities, block), block_centre({3, 4, 5}))
+}

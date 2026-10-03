@@ -514,3 +514,217 @@ test_an_aimed_foundation_block_rises_from_the_top_face :: proc(t: ^testing.T) {
 	}
 	testing.expect_value(t, inventory_count(player.inventory, test_item(items, "foundation")), 5)
 }
+
+// Picking up on the field (0195).
+
+PICK_UP_TEST_TICKS :: 36
+
+// The flat test site with the test machines, the foundation and its
+// pitch; no player yet.
+make_pick_up_test :: proc() -> (simulation: Simulation_State, content: Simulation_Content, items: Item_Registry) {
+	items = make_test_items()
+	content = test_field_simulation_content(items, test_brush(.Sphere, 1000, 10))
+	content.machines = make_test_machines()
+	content.field.foundation = find_foundation_machine(content.machines)
+	content.field.foundation_pitch_millimetres = 500
+	simulation = make_test_field_state(make_test_field(Test_Terrain{kind = .Flat}, 1000), 1000)
+	return
+}
+
+// A player standing on the top face of the cell, looking straight down at
+// it, carrying the stacks; one tick aims it.
+stand_test_player_on_cell :: proc(simulation: ^Simulation_State, content: Simulation_Content, items: Item_Registry, frame: Frame, cell: World_Coordinate, stacks: ..Starting_Item) {
+	feet := frame_cell_centre(frame, cell) + World_Position(fixed_scale(frame.axes[FRAME_UP], frame_pitch_units(frame) / 2))
+	add_test_miner(simulation, items, feet, ..stacks)
+	tick_field_simulation(simulation, content, {})
+}
+
+// Mine held for the ticks.
+hold_test_mine :: proc(simulation: ^Simulation_State, content: Simulation_Content, ticks: int) {
+	hold := [1]Field_Player_Input{{held = {.Dig}}}
+	for _ in 0 ..< ticks {
+		tick_field_simulation(simulation, content, hold[:])
+	}
+}
+
+// The pitch, looking ahead, at which the player's reticle meets the cell,
+// found by raising the reticle a degree a tick from straight down.
+aim_test_player_at_cell :: proc(simulation: ^Simulation_State, content: Simulation_Content, frame: Frame_Id, cell: World_Coordinate) -> bool {
+	player := &simulation.players[0]
+	for degrees := -89; degrees <= 0; degrees += 1 {
+		player.field.pitch = degrees_to_angle_units(degrees)
+		tick_field_simulation(simulation, content, {})
+		if target := player.field.frame_target; target.hit && target.frame == frame && target.cell == cell {
+			return true
+		}
+	}
+	return false
+}
+
+// Mine held on a lone foundation picks it up after PICK_UP_SECONDS, not a
+// tick before: the item comes back and the empty frame is gone.
+@(test)
+test_mine_held_on_a_lone_foundation_picks_it_up_and_removes_its_frame :: proc(t: ^testing.T) {
+	simulation, content, items := make_pick_up_test()
+	defer destroy_simulation(&simulation)
+	testing.expect_value(t, mining_required_ticks(PICK_UP_SECONDS, simulation.tick_rate), u32(PICK_UP_TEST_TICKS))
+	_, frame_id := place_free_foundation(&simulation.world.entities, content.machines, content.field.foundation, test_site_point(0, 0, 0), {UNIT_VECTOR_ONE, 0, 0}, 500)
+	frame, _ := find_frame(&simulation.world.entities.frames, frame_id)
+	stand_test_player_on_cell(&simulation, content, items, frame, {})
+	player := &simulation.players[0]
+	testing.expect(t, player.field.frame_target.hit && player.field.frame_target.cell == World_Coordinate{}, "the reticle meets the foundation")
+	hold_test_mine(&simulation, content, PICK_UP_TEST_TICKS - 1)
+	testing.expect_value(t, len(simulation.world.entities.frames.frames), 1)
+	testing.expect(t, mining_fraction(player.mining) > 0.9, "the progress the HUD draws")
+	hold_test_mine(&simulation, content, 1)
+	testing.expect_value(t, len(simulation.world.entities.frames.frames), 0)
+	testing.expect_value(t, entity_at(&simulation.world.entities, {}, frame_id), NO_ENTITY)
+	testing.expect_value(t, inventory_count(player.inventory, test_item(items, "foundation")), 1)
+	testing.expect_value(t, player.field_refusal, Field_Edit_Refusal.None)
+	testing.expect(t, !player.mining.active)
+}
+
+// A foundation under a furnace refuses with Something_Stands_On_It and
+// gets no progress; the furnace is picked up first, then the foundation.
+// A pole with a run refuses until the run is gone.
+@(test)
+test_a_foundation_under_a_furnace_refuses_until_the_furnace_is_gone :: proc(t: ^testing.T) {
+	simulation, content, items := make_pick_up_test()
+	defer destroy_simulation(&simulation)
+	entities := &simulation.world.entities
+	frame := lay_test_pad(entities, content.machines, 0, 0, {0, 0, 0}, {1, 0, 0})
+	for cell in ([?]World_Coordinate{{0, 0, 2}, {1, 0, 2}, {0, 0, 3}, {1, 0, 3}}) {
+		place_on_frame(entities, content.machines, content.field.foundation, frame.id, cell, 0)
+	}
+	furnace := test_machine(content.machines, "stone_furnace")
+	_, refusal := place_on_frame(entities, content.machines, furnace, frame.id, {0, 1, 2}, 0)
+	testing.expect_value(t, refusal, Frame_Placement_Refusal.None)
+	stand_test_player_on_cell(&simulation, content, items, frame, {})
+	player := &simulation.players[0]
+	held := World_Coordinate{0, 0, 2}
+	testing.expect(t, aim_test_player_at_cell(&simulation, content, frame.id, held), "the reticle meets the foundation under the furnace")
+	hold_test_mine(&simulation, content, PICK_UP_TEST_TICKS + 4)
+	testing.expect_value(t, player.field_refusal, Field_Edit_Refusal.Something_Stands_On_It)
+	testing.expect(t, !player.mining.active)
+	testing.expect_value(t, entity_at(entities, held, frame.id).kind, Entity_Kind.Foundation)
+	testing.expect(t, aim_test_player_at_cell(&simulation, content, frame.id, {0, 1, 2}) || aim_test_player_at_cell(&simulation, content, frame.id, {0, 2, 2}), "the reticle meets the furnace")
+	hold_test_mine(&simulation, content, PICK_UP_TEST_TICKS)
+	testing.expect_value(t, entity_at(entities, {0, 1, 2}, frame.id), NO_ENTITY)
+	testing.expect_value(t, inventory_count(player.inventory, test_item(items, "stone_furnace")), 1)
+	testing.expect(t, aim_test_player_at_cell(&simulation, content, frame.id, held), "the reticle meets the foundation again")
+	hold_test_mine(&simulation, content, PICK_UP_TEST_TICKS)
+	testing.expect_value(t, player.field_refusal, Field_Edit_Refusal.None)
+	testing.expect_value(t, entity_at(entities, held, frame.id), NO_ENTITY)
+	testing.expect_value(t, inventory_count(player.inventory, test_item(items, "foundation")), 1)
+
+	// A pole with a run on it refuses the same way and keeps the run; with
+	// the run gone it comes off.
+	first := add_test_pole(entities, content.machines, test_site_point(20 * TEST_RUN_METRE, 0, 0), 0)
+	second := add_test_pole(entities, content.machines, test_site_point(30 * TEST_RUN_METRE, 0, 0), 0)
+	run, run_refusal := add_test_run(entities, content.machines, first, second)
+	testing.expect_value(t, run_refusal, Belt_Run_Refusal.None)
+	pole := pool_get(&entities.belt_poles, first)^
+	pick_up := Field_Placement{kind = .Pick_Up, frame = pole.frame, cell = pole.origin}
+	player.field_refusal = .None
+	append(&simulation.field.placements, Queued_Field_Placement{player = 0, placement = pick_up})
+	drain_field_placements(&simulation, content)
+	testing.expect_value(t, player.field_refusal, Field_Edit_Refusal.Something_Stands_On_It)
+	testing.expect(t, pool_get(&entities.belt_poles, first) != nil && pool_get(&entities.belt_runs, run) != nil, "the pole and its run stay")
+	remove_belt_run(entities, content.machines, run)
+	player.field_refusal = .None
+	append(&simulation.field.placements, Queued_Field_Placement{player = 0, placement = pick_up})
+	drain_field_placements(&simulation, content)
+	testing.expect_value(t, player.field_refusal, Field_Edit_Refusal.None)
+	testing.expect(t, pool_get(&entities.belt_poles, first) == nil, "the pole is picked up")
+}
+
+// The pod's pad and the pod stay under a held Mine, with no progress and
+// no refusal told; a foundation the player added beside the pad goes.
+@(test)
+test_the_pod_and_its_pad_refuse_a_pick_up :: proc(t: ^testing.T) {
+	simulation, content, items := make_pick_up_test()
+	defer destroy_simulation(&simulation)
+	entities := &simulation.world.entities
+	frame_id, ok := place_pod(entities, content.machines, test_site_point(0, 0, 0), {UNIT_VECTOR_ONE, 0, 0}, 500)
+	testing.expect(t, ok)
+	frame, _ := find_frame(&entities.frames, frame_id)
+	beside := World_Coordinate{POD_PAD_FIRST_CELL + POD_PAD_SIZE, 0, 0}
+	place_on_frame(entities, content.machines, content.field.foundation, frame_id, beside, 0)
+	cells := frame_cell_count(&entities.frames, frame_id)
+	pod := content.machines.machines[find_machine_of_kind(content.machines, .Pod)]
+	top := pod_origin(pod) + {0, pod.footprint.y - 1, 0}
+	for cell in ([?]World_Coordinate{{POD_PAD_FIRST_CELL, 0, POD_PAD_FIRST_CELL}, top}) {
+		clear(&simulation.players)
+		stand_test_player_on_cell(&simulation, content, items, frame, cell)
+		testing.expectf(t, simulation.players[0].field.frame_target.cell == cell, "the reticle meets %v", cell)
+		hold_test_mine(&simulation, content, PICK_UP_TEST_TICKS + 4)
+		testing.expect(t, !simulation.players[0].mining.active)
+		testing.expect_value(t, simulation.players[0].field_refusal, Field_Edit_Refusal.None)
+		testing.expect_value(t, frame_cell_count(&entities.frames, frame_id), cells)
+		destroy_player(simulation.players[0])
+	}
+	clear(&simulation.players)
+	stand_test_player_on_cell(&simulation, content, items, frame, beside)
+	hold_test_mine(&simulation, content, PICK_UP_TEST_TICKS)
+	testing.expect_value(t, frame_cell_count(&entities.frames, frame_id), cells - 1)
+}
+
+// With no room for the foundation the pick up is refused with
+// Inventory_Full and the foundation stays: the field has no loose items
+// to spill it as. A Mine held for 100 ticks makes no progress and tells
+// the refusal once.
+@(test)
+test_a_pick_up_into_a_full_inventory_is_refused_and_the_foundation_stays :: proc(t: ^testing.T) {
+	simulation, content, items := make_pick_up_test()
+	defer destroy_simulation(&simulation)
+	_, frame_id := place_free_foundation(&simulation.world.entities, content.machines, content.field.foundation, test_site_point(0, 0, 0), {UNIT_VECTOR_ONE, 0, 0}, 500)
+	frame, _ := find_frame(&simulation.world.entities.frames, frame_id)
+	stand_test_player_on_cell(&simulation, content, items, frame, {})
+	player := &simulation.players[0]
+	stone := test_item(items, "stone")
+	for &slot in player.inventory.slots {
+		slot = Item_Stack{item = stone, count = item_stack_size(items, stone)}
+	}
+	hold := [1]Field_Player_Input{{held = {.Dig}}}
+	news := 0
+	for tick in 0 ..< 100 {
+		previous := player.field_refusal
+		tick_field_simulation(&simulation, content, hold[:])
+		if field_refusal_is_news(player.field_refusal, previous, false) {
+			news += 1
+		}
+		testing.expectf(t, !player.mining.active && mining_fraction(player.mining) == 0, "tick %d: no progress", tick)
+	}
+	testing.expect_value(t, news, 1)
+	testing.expect_value(t, player.field_refusal, Field_Edit_Refusal.Inventory_Full)
+	testing.expect_value(t, frame_cell_count(&simulation.world.entities.frames, frame_id), 1)
+	testing.expect_value(t, inventory_count(player.inventory, test_item(items, "foundation")), 0)
+}
+
+// Two simulations picking up the same foundation hash the same, and the
+// prediction's copy (predict_field_player_motion) holding Mine past
+// PICK_UP_SECONDS picks nothing up and leaves the progress alone.
+@(test)
+test_two_sessions_picking_up_hash_the_same_and_the_prediction_picks_nothing :: proc(t: ^testing.T) {
+	hashes: [2]u64
+	for index in 0 ..< 2 {
+		simulation, content, items := make_pick_up_test()
+		defer destroy_simulation(&simulation)
+		_, frame_id := place_free_foundation(&simulation.world.entities, content.machines, content.field.foundation, test_site_point(0, 0, 0), {UNIT_VECTOR_ONE, 0, 0}, 500)
+		frame, _ := find_frame(&simulation.world.entities.frames, frame_id)
+		stand_test_player_on_cell(&simulation, content, items, frame, {})
+		if index == 1 {
+			predicted := simulation.players[0]
+			for _ in 0 ..< PICK_UP_TEST_TICKS + 4 {
+				predict_field_player_motion(&simulation, content, &predicted, Input_Frame{pressed = {.Mine}})
+			}
+			testing.expect_value(t, frame_cell_count(&simulation.world.entities.frames, frame_id), 1)
+			testing.expect(t, !predicted.mining.active)
+			testing.expect_value(t, len(simulation.field.placements), 0)
+		}
+		hold_test_mine(&simulation, content, PICK_UP_TEST_TICKS)
+		testing.expect_value(t, len(simulation.world.entities.frames.frames), 0)
+		hashes[index] = simulation_state_hash(&simulation)
+	}
+	testing.expect_value(t, hashes[0], hashes[1])
+}

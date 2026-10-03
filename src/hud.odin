@@ -460,6 +460,11 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context, hud: Hud_Cont
 		ui_glyph_bar(state, hints)
 		return
 	}
+	if field_pick_up_hint_shown(screen_context, hud) {
+		hints := [?]Glyph_Hint{{.Mine, text("hint_pick_up")}, {.Inventory, text("hint_inventory")}, {.Pause, text("hint_pause")}}
+		ui_glyph_bar(state, hints[:])
+		return
+	}
 	if entity_has_panel(&screen_context.world.entities, player.target.entity) {
 		// Interact turns a power switch; Sneak with Interact opens it.
 		switch_targeted := entity_is_power_switch(&screen_context.world.entities, screen_context.machines, player.target.entity)
@@ -474,6 +479,17 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context, hud: Hud_Cont
 	}
 	hints := [?]Glyph_Hint{{.Inventory, text("hint_inventory")}, {.Pause, text("hint_pause")}}
 	ui_glyph_bar(state, hints[:])
+}
+
+// The field player aims at a frame cell whose entity Mine picks up
+// (0195): any but the pod and its pad (field_entity_is_placed_by_world).
+// One held up shows it too; the refusal tells why on the press.
+field_pick_up_hint_shown :: proc(screen_context: Screen_Context, hud: Hud_Context) -> bool {
+	target := hud_field_player(screen_context, hud).frame_target
+	if !target.hit || screen_context.world == nil {
+		return false
+	}
+	return !field_entity_is_placed_by_world(&screen_context.world.entities, screen_context.machines, entity_from_occupant(target.occupant.handle))
 }
 
 // The vein's name and what is left of it in total, for the HUD.

@@ -89,6 +89,8 @@ Glyph_Button :: enum u8 {
 	Quick_Move,
 	// Menu_Drop in the inventory (0090): the right stick click.
 	Drop,
+	// The world's Mine control: a frame cell's pick up (0195).
+	Mine,
 }
 
 Glyph_Hint :: struct {
@@ -900,6 +902,7 @@ glyph_button_actions := [Glyph_Button]Action {
 	.Sprint         = .Sprint,
 	.Quick_Move     = .Menu_Quick_Move,
 	.Drop           = .Menu_Drop,
+	.Mine           = .Mine,
 }
 
 // The action whose control a glyph shows first. On the keyboard Back shows

@@ -454,28 +454,46 @@ entity_pickup_stacks :: proc(world: ^World, content: Simulation_Content, handle:
 	return returned[:]
 }
 
+// The entity removed, its contents and then its item into the inventory
+// as far as they fit; returns the stacks left over, in the temp
+// allocator. The block world spills them (pick_up_entity); the field
+// takes an entity only when nothing is left over (drain_field_pick_up,
+// 0195), since it has no loose items yet.
+take_entity_into_inventory :: proc(world: ^World, statistics: ^Statistics, content: Simulation_Content, inventory: Inventory, handle: Entity_Handle) -> (leftovers: []Item_Stack, taken: bool) {
+	if !entity_can_be_picked_up(world, content.machines, handle) {
+		return nil, false
+	}
+	returned := entity_pickup_stacks(world, content, handle)
+	if !remove_entity(&world.entities, content.machines, handle) {
+		return nil, false
+	}
+	record_world_action(statistics)
+	left := make([dynamic]Item_Stack, context.temp_allocator)
+	for stack in returned {
+		if stack_is_empty(stack) {
+			continue
+		}
+		if leftover := inventory_add_picked_up(inventory, content.items, stack.item, int(stack.count)); leftover > 0 {
+			append(&left, Item_Stack{item = stack.item, count = u16(leftover)})
+		}
+	}
+	return left[:], true
+}
+
 // The entity's contents and then its item go into the inventory as far
 // as they fit; the rest spills at the entity's origin once it is gone
 // (loose_item.odin), so a full inventory never keeps an entity in place.
 // Water is checked again in the cells the entity leaves.
 pick_up_entity :: proc(world: ^World, statistics: ^Statistics, content: Simulation_Content, player: ^Player, handle: Entity_Handle, tick: u64) -> bool {
-	if !entity_can_be_picked_up(world, content.machines, handle) {
+	common := entity_common(&world.entities, handle)
+	if common == nil {
 		return false
 	}
-	common := entity_common(&world.entities, handle)^
-	returned := entity_pickup_stacks(world, content, handle)
-	if !remove_entity(&world.entities, content.machines, handle) {
-		return false
-	}
-	schedule_water_around_freed_cells(world, content.blocks, common_cells(common, content.machines), tick)
-	record_world_action(statistics)
-	for stack in returned {
-		if stack_is_empty(stack) {
-			continue
-		}
-		if leftover := inventory_add_picked_up(player.inventory, content.items, stack.item, int(stack.count)); leftover > 0 {
-			spill_stack(world, content.blocks, common.origin, Item_Stack{item = stack.item, count = u16(leftover)})
-		}
+	removed := common^
+	leftovers := take_entity_into_inventory(world, statistics, content, player.inventory, handle) or_return
+	schedule_water_around_freed_cells(world, content.blocks, common_cells(removed, content.machines), tick)
+	for stack in leftovers {
+		spill_stack(world, content.blocks, removed.origin, stack)
 	}
 	return true
 }

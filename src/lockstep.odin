@@ -461,8 +461,8 @@ predict_local_player :: proc(simulation: ^Simulation_State, content: Simulation_
 
 // The field tick's movement alone on a copy of a player
 // (tick_field_session_player and queue_field_player_edit without the
-// hotbar, the tool, the edits, the placements, the crafting and the walk
-// counter): Interact's jump suppression on a frame's panel, the move
+// hotbar, the tool, the edits, the placements, the pick up and its
+// progress (0195), the crafting and the walk counter): Interact's jump suppression on a frame's panel, the move
 // against the loaded set and the frame table, and the aim. Reads the
 // simulation, writes only the copy.
 predict_field_player_motion :: proc(simulation: ^Simulation_State, content: Simulation_Content, player: ^Player, frame: Input_Frame) {

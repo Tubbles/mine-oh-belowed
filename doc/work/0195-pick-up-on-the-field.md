@@ -1,6 +1,8 @@
 # 0195: Pick up machines and foundations on the field
 
-Status: todo (user, 2026-10-03: "how do i remove foundations?"; after 0193, before 0194)
+Status: implemented (user, 2026-10-03: "how do i remove foundations?"; after 0193, before 0194)
+
+Note (implementation): a full inventory does not spill on the field; the pick up is refused with `Inventory_Full` and the entity stays, since the field has no loose items yet (`doc/log/2026-10-03.md`, Picking up on the field (0195)). This replaces "spilled as loose items" in Change and "a full inventory spills" in Verify.
 
 ## Goal
 

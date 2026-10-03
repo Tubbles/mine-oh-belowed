@@ -187,12 +187,14 @@ field_placement_cells :: proc(content: Simulation_Content, placement: Field_Plac
 // A place command: a snapped placement names the frame and the cell, a
 // free one the hit and the heading its new frame takes; a run (0176,
 // belt_run_placement.odin) its two candidates instead; a torch and its
-// removal (0179, simulation_field.odin) its sample.
+// removal (0179, simulation_field.odin) its sample; a pick up (0195,
+// advance_field_pick_up) the frame and the cell held.
 Field_Placement_Kind :: enum u8 {
 	Machine,
 	Run,
 	Torch,
 	Torch_Removal,
+	Pick_Up,
 }
 
 Field_Placement :: struct {
@@ -444,6 +446,9 @@ drain_field_placements :: proc(state: ^Simulation_State, content: Simulation_Con
 		case .Torch_Removal:
 			drain_field_torch_removal(state, content, player, placement.sample)
 			continue
+		case .Pick_Up:
+			drain_field_pick_up(state, content, player, placement.frame, placement.cell)
+			continue
 		case .Machine:
 		}
 		if refusal := field_placement_refusal(state, content, player^, placement); refusal != .None {
@@ -457,6 +462,167 @@ drain_field_placements :: proc(state: ^Simulation_State, content: Simulation_Con
 		inventory_remove(player.inventory, content.machines.machines[placement.machine].item, placed)
 	}
 	clear(&state.field.placements)
+}
+
+// Picking up (0195, doc/architecture.md, Frames). Mine held on a frame
+// cell for PICK_UP_SECONDS takes the entity in it, as the block world's
+// mine_entity does; one entity per hold, so a foundation block goes cell
+// by cell. The hold advances in the player's tick (advance_field_pick_up)
+// and a finished one is a placement command, applied at the drain in
+// order with the others, so the drain checks it again against the world
+// the commands before it left.
+
+// The pod and the foundations of its pad: no hint, no progress and no
+// refusal told, as the block world's capsule.
+field_entity_is_placed_by_world :: proc(entities: ^Entities, machines: Machine_Registry, handle: Entity_Handle) -> bool {
+	common := entity_common(entities, handle)
+	if common == nil || machines.machines[common.machine].item == NO_ITEM {
+		return true
+	}
+	return machines.machines[common.machine].kind == .Foundation && cell_is_on_pod_pad(common.origin) && frame_holds_pod(entities, machines, common.frame)
+}
+
+frame_holds_pod :: proc(entities: ^Entities, machines: Machine_Registry, frame: Frame_Id) -> bool {
+	for foundation in entities.foundations.entries {
+		if foundation.alive && foundation.frame == frame && machines.machines[foundation.machine].kind == .Pod {
+			return true
+		}
+	}
+	return false
+}
+
+// The pad's cells of place_pod: pod_pad_cells and cell (0, 0, 0).
+cell_is_on_pod_pad :: proc(cell: World_Coordinate) -> bool {
+	first, last := i32(POD_PAD_FIRST_CELL), i32(POD_PAD_FIRST_CELL + POD_PAD_SIZE - 1)
+	return cell.y == 0 && cell.x >= first && cell.x <= last && cell.z >= first && cell.z <= last
+}
+
+// A machine other than a foundation (which needs no support) stands in
+// the cell.
+frame_cell_holds_machine :: proc(entities: ^Entities, machines: Machine_Registry, frame: Frame_Id, cell: World_Coordinate) -> bool {
+	common := entity_common(entities, entity_at(entities, cell, frame))
+	return common != nil && machines.machines[common.machine].kind != .Foundation
+}
+
+// A belt or pipe run ends in the cell (a pole's or a belt end's cell).
+frame_cell_holds_run_end :: proc(entities: ^Entities, frame: Frame_Id, cell: World_Coordinate) -> bool {
+	for run in entities.belt_runs.entries {
+		if !run.alive {
+			continue
+		}
+		for endpoint in run.endpoints {
+			if endpoint.frame == frame && endpoint.cell == cell {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// A torch's sample lies in the cell.
+frame_cell_holds_torch :: proc(torches: []Field_Torch, frame: Frame, cell: World_Coordinate, spacing_millimetres: int) -> bool {
+	for torch in torches {
+		if world_to_frame_cell(frame, sample_to_world_position(torch.sample, spacing_millimetres)) == cell {
+			return true
+		}
+	}
+	return false
+}
+
+// A run starts or ends at the pole; removing the pole would remove the
+// run and the items on it (remove_belt_runs_on_pole).
+pole_holds_run :: proc(entities: ^Entities, pole: Entity_Handle) -> bool {
+	for run in entities.belt_runs.entries {
+		if run.alive && (run.endpoints[BELT_RUN_START].pole == pole || run.endpoints[BELT_RUN_END].pole == pole) {
+			return true
+		}
+	}
+	return false
+}
+
+// Something stands on the entity or hangs from it: in a cell right above
+// one of its cells, a machine other than a foundation, a run's end or a
+// torch, or for a pole a run on it. Taking the entity would leave it in
+// the air or lose the run silently; the player takes those first.
+field_entity_is_held_up :: proc(state: ^Simulation_State, content: Simulation_Content, handle: Entity_Handle) -> bool {
+	entities := &state.world.entities
+	common := entity_common(entities, handle)
+	if common == nil {
+		return false
+	}
+	if handle.kind == .Belt_Pole && pole_holds_run(entities, handle) {
+		return true
+	}
+	frame, found := find_frame(&entities.frames, common.frame)
+	if !found {
+		return false
+	}
+	for cell in common_cells(common^, content.machines) {
+		above := cell + UP
+		if entity_at(entities, above, frame.id) == handle {
+			continue
+		}
+		if frame_cell_holds_machine(entities, content.machines, frame.id, above) || frame_cell_holds_run_end(entities, frame.id, above) || frame_cell_holds_torch(state.field.torches[:], frame, above, state.field.spacing_millimetres) {
+			return true
+		}
+	}
+	return false
+}
+
+// Mine held on a frame cell advances the player's mining towards
+// PICK_UP_SECONDS (advance_mining, keyed on the entity's origin as the
+// block world's mine_entity); a finished hold is the pick up command. An
+// entity placed by the world gets no progress; one held up gets none and
+// tells Something_Stands_On_It, one the inventory has no room for gets
+// none and tells Inventory_Full, every tick, so a held Mine toasts once
+// (field_refusal_is_news). The drain checks both again. Mine released or aimed off a frame
+// clears the progress. The prediction (0182) never runs this, so the
+// progress the HUD draws is the confirmed tick's.
+advance_field_pick_up :: proc(state: ^Simulation_State, content: Simulation_Content, player: ^Player, input: Field_Player_Input) -> (placement: Field_Placement, finished: bool) {
+	target := player.field.frame_target
+	entities := &state.world.entities
+	handle := entity_from_occupant(target.occupant.handle)
+	switch {
+	case .Dig not_in input.held || !target.hit || field_entity_is_placed_by_world(entities, content.machines, handle):
+		player.mining = {}
+		return {}, false
+	case field_entity_is_held_up(state, content, handle):
+		player.mining = {}
+		player.field_refusal = .Something_Stands_On_It
+		return {}, false
+	case !inventory_fits_all_picked_up(player.inventory, content.items, entity_pickup_stacks(&state.world, content, handle)):
+		player.mining = {}
+		player.field_refusal = .Inventory_Full
+		return {}, false
+	}
+	hit := Raycast_Hit{hit = true, block = entity_common(entities, handle).origin, entity = handle}
+	player.mining, finished = advance_mining(player.mining, true, hit, AIR_BLOCK, mining_required_ticks(PICK_UP_SECONDS, state.tick_rate))
+	if !finished {
+		return {}, false
+	}
+	player.mining = {}
+	return Field_Placement{kind = .Pick_Up, frame = target.frame, cell = target.cell}, true
+}
+
+// At the drain: the entity in the cell taken whole into the inventory
+// with its contents (take_entity_into_inventory); its frame goes with its
+// last cell (release_empty_frame). Refused when it holds something up, or
+// when the inventory cannot take everything, since the field has no
+// loose items to spill: the entity stays and Inventory_Full is told.
+drain_field_pick_up :: proc(state: ^Simulation_State, content: Simulation_Content, player: ^Player, frame: Frame_Id, cell: World_Coordinate) {
+	entities := &state.world.entities
+	handle := entity_at(entities, cell, frame)
+	switch {
+	case field_entity_is_placed_by_world(entities, content.machines, handle):
+		return
+	case field_entity_is_held_up(state, content, handle):
+		player.field_refusal = .Something_Stands_On_It
+		return
+	case !inventory_fits_all_picked_up(player.inventory, content.items, entity_pickup_stacks(&state.world, content, handle)):
+		player.field_refusal = .Inventory_Full
+		return
+	}
+	take_entity_into_inventory(&state.world, &state.records.statistics, content, player.inventory, handle)
 }
 
 // The save (save_state.odin, write_later_tables).
