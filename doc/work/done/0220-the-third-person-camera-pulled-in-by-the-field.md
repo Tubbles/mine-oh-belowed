@@ -1,6 +1,6 @@
 # 0220: The third person camera pulled in by the field
 
-Status: verified (2026-10-05, implementer agent a46f7444c33c45a1b, verified the same day with no fix round (one low finding kept as is: a tall trunk rooted beyond the tree query's reach is not cast, the tick's query has the same limit), in `.claude/worktrees/0220` on `item/0220` from `main` at 957a01d, the specification approved the same day with the decisions below; 2026-10-04, found by the 0218 design: the field's third person camera sits behind the eye at the settings' distance and is never pulled in by the terrain, so in a tunnel it looks from inside the rock; the block world's camera is pulled in by the blocks (`third_person_position`); after 0218)
+Status: landed (2026-10-05, "Pull the field's third person camera in by the terrain and frames (0220)", 3ee0d08, installed the same day; implementer agent a46f7444c33c45a1b, verified the same day with no fix round (one low finding kept as is: a tall trunk rooted beyond the tree query's reach is not cast, the tick's query has the same limit), in `.claude/worktrees/0220` on `item/0220` from `main` at 957a01d, the specification approved the same day with the decisions below; 2026-10-04, found by the 0218 design: the field's third person camera sits behind the eye at the settings' distance and is never pulled in by the terrain, so in a tunnel it looks from inside the rock; the block world's camera is pulled in by the blocks (`third_person_position`); after 0218)
 
 ## Goal
 
