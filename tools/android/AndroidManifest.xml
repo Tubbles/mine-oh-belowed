@@ -25,7 +25,7 @@
 			android:name="android.app.NativeActivity"
 			android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
 			android:exported="true"
-			android:screenOrientation="landscape"
+			android:screenOrientation="sensorLandscape"
 			android:configChanges="orientation|keyboardHidden|screenSize|screenLayout">
 			<meta-data android:name="android.app.lib_name" android:value="main" />
 			<intent-filter>
