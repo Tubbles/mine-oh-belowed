@@ -83,6 +83,9 @@ Player_Configuration :: struct {
 	// A font setting was not available at start (load_start_fonts): the
 	// title screen toasts it once.
 	fonts_fell_back: bool,
+	// The edits directory is set but All files access is missing (work
+	// item 0228): the title shows one toast.
+	edits_need_access: bool,
 }
 
 // The environment variables the layering reads, passed in so that tests

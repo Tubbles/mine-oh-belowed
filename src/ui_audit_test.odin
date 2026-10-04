@@ -70,6 +70,8 @@ UI_AUDIT_REPORT_LIMIT :: 200
 UI_AUDIT_LONG_WORLD_NAME :: "Wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww"
 // A Syncthing folder on the phone's shared storage (work item 0131).
 UI_AUDIT_LONG_EXPORT_DIRECTORY :: "/storage/emulated/0/Syncthing/mine-oh-belowed-exports/couch-and-phone"
+// A long edits directory on the phone's shared storage (work item 0228).
+UI_AUDIT_LONG_EDITS_DIRECTORY :: "/storage/emulated/0/Download/mine-oh-belowed-edits/from-the-couch-and-the-phone"
 
 Ui_Audit_Problem :: enum u8 {
 	Off_Screen,
@@ -825,6 +827,14 @@ audit_data_browser :: proc(audit: ^Ui_Audit) {
 	audit_case(audit, {name = "data files, the export directory under the keyboard", screens = screens, keyboard = true, walk_focus = true})
 	audit_case(audit, {name = "data files, the export directory under the system keyboard", screens = screens, keyboard = true, system_keyboard = true})
 	browser.editing_export_directory = false
+	// Work item 0228: a long edits directory in its row, and under the
+	// keyboard.
+	audit.settings.edits_directory = UI_AUDIT_LONG_EDITS_DIRECTORY
+	audit_case(audit, {name = "data files, an edits directory", screens = screens, walk_focus = true})
+	audit_case(audit, {name = "data files, an edits directory, touch row", screens = screens, hud = true, touch = true})
+	browser.editing_edits_directory, browser.edits_field = true, make_text_field(UI_AUDIT_LONG_EDITS_DIRECTORY, TEXT_FIELD_CAPACITY)
+	audit_case(audit, {name = "data files, the edits directory under the keyboard", screens = screens, keyboard = true, walk_focus = true})
+	browser.editing_edits_directory = false
 	audit.settings = settings
 	open_data_browser_file(browser, test_data_directory())
 	expand_first_data_values(browser)

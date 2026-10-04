@@ -311,3 +311,32 @@ sync_data_edit_export :: proc(data: Data_Browser_Context, edits_directory, relat
 set_export_directory :: proc(settings: ^Settings, typed, home: string) {
 	settings.export_directory = strings.clone(expand_home_path(strings.trim_space(typed), home))
 }
+
+// The edits directory typed on the Data files screen (work item 0228),
+// trimmed and with a leading ~/ expanded, into the settings; a relative
+// path is refused and the setting kept. The text is never freed, as
+// set_export_directory says why.
+set_edits_directory :: proc(settings: ^Settings, typed, home: string) -> (problem: string, changed: bool) {
+	directory := expand_home_path(strings.trim_space(typed), home)
+	if directory != "" && !os.is_absolute_path(directory) {
+		return text("data_files_edits_directory_not_absolute"), false
+	}
+	if directory == settings.edits_directory {
+		return "", false
+	}
+	settings.edits_directory = strings.clone(directory)
+	return "", true
+}
+
+// The toast after Done on the edits directory, "" for none.
+edits_directory_done_toast :: proc(problem: string, changed, directory_set, access_granted: bool) -> string {
+	switch {
+	case problem != "":
+		return problem
+	case !changed:
+		return ""
+	case directory_set && !access_granted:
+		return text("data_files_edits_access")
+	}
+	return text("data_files_edits_directory_next_start")
+}

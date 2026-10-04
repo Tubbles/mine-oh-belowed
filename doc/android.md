@@ -105,6 +105,8 @@ Gotcha: a shared library links with undefined symbols without complaint, and the
 | `share/mine-oh-belowed/saves/` | Saves |
 | `config/mine-oh-belowed/` | `config.sjson`, `config.d/`, the saved touch layouts (`touch_overlay.sjson`) |
 
+- The edits directory (0228, [developer_tools.md](developer_tools.md), Edits directory) lies on shared storage outside the files folder, for example `/storage/emulated/0/Download`, read as `/storage/emulated/0/Download/data_edits/`; it is set on the Data files screen or as `edits_directory` in `config.d/90-settings.sjson` over USB.
+
 - Every log line also goes to logcat with the tag `mine-oh-belowed` at priority info.
 - Data: `core:os` reads the real file system only and the asset manager cannot list a directory, so at start `resolve_data_directory` copies every file in `assets/data_files.txt` from the APK (read through `rl.LoadFileData`, which raylib's fopen wrapper serves from the assets) to the internal folder `/data/user/0/io.github.tubbles.mineohbelowed/files/data/`, then writes the build info to `data/.build_stamp`. A start whose stamp matches skips the copy; any other start removes the old copy first, so a file a newer build dropped does not linger. A failure logs `error: cannot copy <file> from the app: ...` and the start ends as with a missing data directory.
 - Directories: every directory goes through `make_directory_path` (`platform_paths.odin`, 0117), a `mkdir -p` that tries the directory, makes a missing parent the same way and tries again, never touching a directory above the first missing one. `os.make_directory_all` opens `/` to walk an absolute path, which the SELinux policy refuses an app (`Permission_Denied` for the saves, the settings, the log and the command socket). `test_game_sources_do_not_call_make_directory_all` fails on any `os.make_directory_all` in a non test source.
@@ -144,6 +146,7 @@ The Data files screen's Export and its refusals are in [developer_tools.md](deve
 - Before Android 11 (API 30) the method does not exist: the failed lookup is logged and the export goes ahead, so a refused write toasts with its path. Those versions would need `WRITE_EXTERNAL_STORAGE`, which the manifest does not ask for.
 - The JNI slots added for it are `NewObjectA` (30) and `CallStaticBooleanMethodA` (119).
 - With Export on save, the couch sees an edit a few seconds after the Save; the export's stall is in [developer_tools.md](developer_tools.md).
+- The edits directory (0228) needs the same All files access to be read: a start with the setting set and no access logs one line and toasts "Allow All files access, then restart to read the edits"; Done on its field opens the setting's page with that toast.
 
 ## CI and installing
 

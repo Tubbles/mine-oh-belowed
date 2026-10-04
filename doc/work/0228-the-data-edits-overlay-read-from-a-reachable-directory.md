@@ -1,6 +1,6 @@
 # 0228: The data edits overlay read from a reachable directory
 
-Status: implementing (2026-10-04, in `.claude/worktrees/0228` on `item/0228` from `main` at 3573cb0, the specification approved the same day with the decisions below; from the user on the phone, "Didn't we add an overlay dir path config?": 0131 added the export direction only, nothing reads an overlay from a directory the phone's file managers reach)
+Status: verified (2026-10-04, implementer agent a8aee6fd2105efe3a, verified the same day, two nits fixed in the landing amend, in `.claude/worktrees/0228` on `item/0228` from `main` at 3573cb0, the specification approved the same day with the decisions below; from the user on the phone, "Didn't we add an overlay dir path config?": 0131 added the export direction only, nothing reads an overlay from a directory the phone's file managers reach)
 
 ## Goal
 
@@ -72,7 +72,7 @@ No binding changes. The setting is a path field on the Data files screen beside 
 - Changed: `destroy_data_watch` also destroys `edits_watcher` when `edits_open`, and keeps `edits_unavailable` as it keeps `unavailable`.
 - Changed: `update_data_watch` (`hot_reload.odin`), after the data watcher is open and before `poll_data_watch`: `if !watch.edits_open && !watch.edits_unavailable { if directory := reachable_data_edits_directory(); directory != "" { open_data_edits_watch(watch, directory) } }`. Once open or unavailable no stat runs per frame; with the reading off `reachable_data_edits_directory` returns "" before any stat.
 - The header comment of `data_watch.odin` gains one sentence on the second watcher; the comment over `apply_data_edit_change` names the state overlay as the unwatched one.
-- A vanished directory does not reload anything: what was loaded from it stays until the next reload, which reads the state copy or the data file.
+- A vanished directory reloads what it held (the verifier's finding at the landing): deleting it removes every file inside it first, and those events are categorised before the root's own, so the presentation files reload at once and the content after the settle, each read now from the state copy or the data file. The game thus falls back to its data instead of keeping stale copies, which is kept.
 
 ### The Data files screen (`src/data_browser.odin`, `src/ui_data_browser.odin`, `src/data_export.odin`)
 

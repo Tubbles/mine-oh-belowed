@@ -237,6 +237,7 @@ main :: proc() {
 		os.exit(1)
 	}
 	apply_deck_preset_at_start(environment, &loaded_configuration)
+	edits_need_access := start_reachable_data_edits(loaded_configuration.configuration.settings)
 	data_directory := require_data_directory()
 	binding_overrides, overrides_problem := resolve_bindings(loaded_configuration.configuration.bindings, loaded_configuration.provenance)
 	if overrides_problem != "" {
@@ -305,6 +306,7 @@ main :: proc() {
 		touch_overlay_forced = command_line.touch_overlay,
 		settings_set_aside = settings_problem != "",
 		fonts_fell_back = start.fonts_fell_back,
+		edits_need_access = edits_need_access,
 		join_address = command_line.join_address,
 	}
 	run_game(config, input_backend, game_data, data_directory, fonts, session, make_title_state(config, saves_directory, saves_found, make_save_header()), player_configuration)

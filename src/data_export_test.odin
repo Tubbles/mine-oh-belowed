@@ -197,6 +197,50 @@ test_the_typed_export_directory_sets_the_setting :: proc(t: ^testing.T) {
 	delete(settings.export_directory)
 }
 
+// Work item 0228: trimmed, ~/ expanded, a relative path refused with the
+// setting kept, the same value not a change, "" clears it.
+@(test)
+test_the_typed_edits_directory_sets_the_setting :: proc(t: ^testing.T) {
+	settings := DEFAULT_SETTINGS
+	problem, changed := set_edits_directory(&settings, " /storage/emulated/0/Download ", "/home/player")
+	testing.expect_value(t, problem, "")
+	testing.expect(t, changed)
+	testing.expect_value(t, settings.edits_directory, "/storage/emulated/0/Download")
+	problem, changed = set_edits_directory(&settings, "/storage/emulated/0/Download", "/home/player")
+	testing.expect_value(t, problem, "")
+	testing.expect(t, !changed)
+	previous := settings.edits_directory
+	problem, changed = set_edits_directory(&settings, "~/Download", "/home/player")
+	delete(previous)
+	testing.expect_value(t, problem, "")
+	testing.expect(t, changed)
+	testing.expect_value(t, settings.edits_directory, "/home/player/Download")
+	problem, changed = set_edits_directory(&settings, "Download", "/home/player")
+	testing.expect_value(t, problem, text("data_files_edits_directory_not_absolute"))
+	testing.expect(t, !changed)
+	testing.expect_value(t, settings.edits_directory, "/home/player/Download")
+	problem, changed = set_edits_directory(&settings, "~/Download", "")
+	testing.expect_value(t, problem, text("data_files_edits_directory_not_absolute"))
+	testing.expect(t, !changed)
+	testing.expect_value(t, settings.edits_directory, "/home/player/Download")
+	previous = settings.edits_directory
+	problem, changed = set_edits_directory(&settings, "", "/home/player")
+	delete(previous)
+	testing.expect_value(t, problem, "")
+	testing.expect(t, changed)
+	testing.expect_value(t, settings.edits_directory, "")
+	delete(settings.edits_directory)
+}
+
+@(test)
+test_edits_directory_done_toast_cases :: proc(t: ^testing.T) {
+	testing.expect_value(t, edits_directory_done_toast("a problem", true, true, false), "a problem")
+	testing.expect_value(t, edits_directory_done_toast("", false, true, false), "")
+	testing.expect_value(t, edits_directory_done_toast("", true, true, false), text("data_files_edits_access"))
+	testing.expect_value(t, edits_directory_done_toast("", true, true, true), text("data_files_edits_directory_next_start"))
+	testing.expect_value(t, edits_directory_done_toast("", true, false, true), text("data_files_edits_directory_next_start"))
+}
+
 @(test)
 test_export_paths_resolve_and_nest :: proc(t: ^testing.T) {
 	testing.expect_value(t, absolute_clean_path("data", "/home/player/game"), "/home/player/game/data")

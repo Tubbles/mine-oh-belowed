@@ -97,6 +97,11 @@ Settings :: struct {
 	// also writes or deletes its copy there.
 	export_directory:          string,
 	export_on_save:            bool,
+	// The Data files screen's edits directory (work item 0228,
+	// data_load.odin): <edits_directory>/data_edits/<relative path> is
+	// read after the state directory's overlay copy and before the data
+	// file; "" for none. Read at start only.
+	edits_directory:           string,
 	// Set by the Steam Deck preset (deck_preset.odin, work item 0076)
 	// when it applied, so it applies once and later starts leave the
 	// player's choices alone.
@@ -164,6 +169,7 @@ DEFAULT_SETTINGS :: Settings {
 	on_screen_keyboard        = .System,
 	export_directory          = "",
 	export_on_save            = false,
+	edits_directory           = "",
 	deck_preset_applied       = false,
 }
 

@@ -72,7 +72,7 @@ Rule: edits change the tree in the file's memory; Save writes the overlay copy, 
 - The written file loses the data file's comments and orders every object's keys by name. Save runs between frames (`Save_Data_Edit`), since the reload it starts frees memory the draw list may use.
 - Discard edit is dimmed unless the selected file has an overlay copy. It deletes the copy, logs and toasts, applies the change as the watcher would (`apply_data_edit_change`: presentation files such as the strings, the theme and the shaders reload in place, a content file asks for the content reload at once whatever `watch_data` says, `game.sjson` says a restart is needed) and reads the tree and an open file again; unsaved changes go with it.
 - Back with unsaved changes drops them and toasts "Unsaved changes dropped".
-- When a start up load failed with the overlay on, the overlay is off for the run: a toast at start, and the screen shows in the accent "Data edits are off after a failed load:" with the problem and "Discard the file and restart". The edited tags and Discard edit still work; an open file shows the data file.
+- When a start up load failed with the overlay on, the overlay is off for the run: a toast at start, and the screen shows in the accent "Data edits are off after a failed load:" with the problem and "Discard the file and restart". The edited tags and Discard edit still work; an open file shows the data file. A broken copy in the edits directory ([Edits directory](#edits-directory)) also turns both overlays off; the problem names its path, so delete it there.
 
 ### Export
 
@@ -83,3 +83,13 @@ Rule: edits change the tree in the file's memory; Save writes the overlay copy, 
 - Otherwise it copies the data directory to `<directory>/data/` and the overlay to `<directory>/data_edits/` at their relative paths, each file through `<name>.tmp` with default permissions and a rename, so a failed copy leaves no cut off file and a read only source exports again. Nothing is deleted. It writes `<directory>/export.txt` (build stamp, UTC time, counts), logs, and toasts "Exported to <directory>: N data files, M data edits", or "Export failed:" with the first problem and its path, where it stops.
 - With Export on save and a directory set, every Save and Discard edit also writes or deletes that file's copy under `<directory>/data_edits/`. A failure is logged every time and toasted once ("Could not export the edit:") until a sync or an export succeeds; without All files access the settings page opens with that first toast only.
 - The export copies every file (about 475) in one frame on the main thread, so the game stands still meanwhile, a second or more on the phone's shared storage. Nothing is read back from the directory.
+
+### Edits directory
+
+`data_load.odin`, `data_export.odin` (0228). The Read edits from field (the `edits_directory` setting, "not set" while empty) sits right above Export to, so a copy dropped into a folder the phone's file managers reach wins over the app's data.
+
+- Confirm on the field opens the keyboard with "Read edits from" dimmed over the path. Done trims spaces, expands a leading `~/`, refuses a relative path with "The edits directory must be an absolute path" (the setting kept) and toasts "The edits directory is read from the next start": it is resolved once at start.
+- On Android without All files access, Done opens that setting's page and toasts "Allow All files access, then restart to read the edits"; a start with the setting set and no access logs one line and shows the same toast ([android.md](android.md), Export and storage access).
+- `<directory>/data_edits/<relative path>` is read after the state overlay's copy and before the data file ([architecture.md](architecture.md), Data edits overlay). Setting it to the export directory reads what Export and Export on save write there; a Discard edit with Export on save deletes that copy too.
+- The tree's edited tags and Discard edit stay the state overlay's. An open file reads through the overlays, so a file with only an edits directory copy shows that copy with the heading's "edited" tag; Save writes the state copy, which then wins.
+- While `watch_data` is on, a second watcher over `<directory>/data_edits` reloads a changed copy as the data directory's watcher does; with Export on save into the same directory a Save reloads its file twice. A directory that goes away turns its reading off for the run with one log line.

@@ -62,6 +62,10 @@ data_browser_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 		data_export_directory_entry(state, browser, settings)
 		return
 	}
+	if state.keyboard.field != 0 && browser.editing_edits_directory && settings != nil {
+		data_edits_directory_entry(state, browser, settings)
+		return
+	}
 	if state.keyboard.return_focus != 0 {
 		state.requested_focus, state.keyboard.return_focus = state.keyboard.return_focus, 0
 	}
@@ -76,9 +80,11 @@ data_browser_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 	buttons := cut_bottom(&content, UI_ROW_HEIGHT)
 	cut_bottom(&content, UI_GAP)
-	export_row: Ui_Rectangle
+	export_row, edits_row: Ui_Rectangle
 	if !browser.open && settings != nil {
 		export_row = cut_bottom(&content, UI_ROW_HEIGHT)
+		cut_bottom(&content, UI_GAP)
+		edits_row = cut_bottom(&content, UI_ROW_HEIGHT)
 		cut_bottom(&content, UI_GAP)
 	}
 	if browser.open {
@@ -88,6 +94,7 @@ data_browser_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 	if export_row != {} {
 		data_export_row(state, export_row, browser, settings)
+		data_edits_directory_row(state, edits_row, browser, settings)
 	}
 	data_browser_buttons(state, buttons, browser, requests)
 	ui_panel_end(state)
@@ -350,6 +357,30 @@ data_export_directory_entry :: proc(state: ^Ui_State, browser: ^Data_Browser, se
 	}
 }
 
+// The edits directory under the keyboard (0228); Done sets the setting
+// (set_edits_directory), opens the All files access page when a new
+// directory lacks it, and toasts what applies.
+data_edits_directory_entry :: proc(state: ^Ui_State, browser: ^Data_Browser, settings: ^Settings) {
+	if data_browser_entry(state, "data_edits_directory_entry", text("data_files_edits_directory"), &browser.edits_field) {
+		problem, changed := set_edits_directory(settings, text_field_text(&browser.edits_field), platform.platform_directories(context.temp_allocator).home)
+		directory_set := changed && settings.edits_directory != ""
+		access_granted := true
+		if directory_set {
+			access_granted = platform.all_files_access_granted()
+			if !access_granted {
+				platform.open_all_files_access_settings()
+			}
+		}
+		if toast := edits_directory_done_toast(problem, changed, directory_set, access_granted); toast != "" {
+			ui_toast(state, toast)
+		}
+		browser.editing_edits_directory = false
+		state.keyboard = Keyboard_State {
+			return_focus = state.keyboard.field,
+		}
+	}
+}
+
 // The panel of an entry: the field, the label dimmed over the typed text,
 // and the keys under it. True when the entry is done.
 data_browser_entry :: proc(state: ^Ui_State, panel_label, label: string, field: ^Text_Field) -> (done: bool) {
@@ -463,6 +494,17 @@ data_export_row :: proc(state: ^Ui_State, row: Ui_Rectangle, browser: ^Data_Brow
 		open_keyboard(state, ui_id(state, label))
 	}
 	ui_toggle(state, toggle, text("data_files_export_on_save"), &settings.export_on_save)
+}
+
+// The edits directory field (0228), the whole row. Its tap or Confirm
+// opens the keyboard with the directory.
+data_edits_directory_row :: proc(state: ^Ui_State, row: Ui_Rectangle, browser: ^Data_Browser, settings: ^Settings) {
+	label := text("data_files_edits_directory")
+	if data_export_directory_field(state, row, label, settings.edits_directory) {
+		browser.edits_field = make_text_field(settings.edits_directory, TEXT_FIELD_CAPACITY)
+		browser.editing_edits_directory = true
+		open_keyboard(state, ui_id(state, label))
+	}
 }
 
 // As ui_text_field, but the directory is fitted right of the label (a

@@ -1764,6 +1764,9 @@ run_game :: proc(config: Game_Config, input_backend: Input_Backend, game_data: G
 	if player_configuration.fonts_fell_back {
 		ui_toast(primary_ui(state), text("settings_font_default_toast"))
 	}
+	if player_configuration.edits_need_access {
+		ui_toast(primary_ui(state), text("data_files_edits_access"))
+	}
 	state.presentation.ui_icon_atlas = upload_ui_icon_atlas(data_directory)
 	defer destroy_item_atlas(&state.presentation.ui_icon_atlas)
 	defer destroy_title_state(&state.interaction.title)

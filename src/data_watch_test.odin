@@ -194,3 +194,56 @@ test_a_collision_file_counts_as_content_for_the_watch :: proc(t: ^testing.T) {
 	testing.expect_value(t, data_file_category("models/pod.obj"), Data_File_Category.Models)
 	testing.expect_value(t, data_file_category("models/.pod.collision.sjson"), Data_File_Category.Ignored)
 }
+
+// Work item 0228: the edits directory's watcher sees its own root go.
+@(test)
+test_the_edits_watch_sees_its_directory_go :: proc(t: ^testing.T) {
+	root := platform.join_path("/storage", "emulated", "0", "Download", "data_edits")
+	testing.expect(t, data_edits_watch_root_gone(root, {{.Removed, root, true}}))
+	testing.expect(t, data_edits_watch_root_gone(root, {{.Renamed, root, true}}))
+	testing.expect(t, data_edits_watch_root_gone(root, {{.Invalidated, root, true}}))
+	testing.expect(t, !data_edits_watch_root_gone(root, {{.Removed, platform.join_path(root, BLOCKS_FILE_NAME), false}}))
+	testing.expect(t, !data_edits_watch_root_gone(root, {{.Modified, root, true}}))
+	testing.expect(t, !data_edits_watch_root_gone(root, {}))
+}
+
+// The edits directory's files fall into the data directory's categories;
+// its removal closes the watcher and turns its reading off.
+@(test)
+test_watcher_notices_changed_reachable_edits :: proc(t: ^testing.T) {
+	data_directory, data_error := os.make_directory_temp("", "mine-oh-belowed-watch-data-test-*", context.temp_allocator)
+	assert(data_error == nil)
+	defer os.remove_all(data_directory)
+	edits_directory, edits_error := os.make_directory_temp("", "mine-oh-belowed-watch-edits-test-*", context.temp_allocator)
+	assert(edits_error == nil)
+	defer os.remove_all(edits_directory)
+	strings_path := platform.join_path(edits_directory, STRINGS_DIRECTORY, STRINGS_FILE_NAME)
+	items_path := platform.join_path(edits_directory, ITEMS_FILE_NAME)
+	write_test_file(strings_path, `hello = "Hi"`)
+	write_test_file(items_path, "items = []")
+	use_reachable_data_edits(edits_directory)
+	defer reset_data_edits_reading()
+	watch: Data_Watch
+	defer destroy_data_watch(&watch)
+	testing.expect(t, open_data_watch(&watch, data_directory))
+	testing.expect(t, open_data_edits_watch(&watch, edits_directory))
+	now := time.unix(1_700_000_000, 0)
+	testing.expect_value(t, poll_data_watch(&watch, now), Data_File_Categories{})
+
+	write_test_file(strings_path, `hello = "Hello"`)
+	testing.expect_value(t, wait_for_data_events(&watch, {.Strings}, now), Data_File_Categories{.Strings})
+
+	write_test_file(items_path, "items = [ ]")
+	testing.expect_value(t, wait_for_data_events(&watch, {.Content}, now), Data_File_Categories{.Content})
+	testing.expect(t, watch.content_changed)
+
+	testing.expect_value(t, os.remove_all(edits_directory), nil)
+	start := time.tick_now()
+	for watch.edits_open && time.tick_since(start) < 2 * time.Second {
+		poll_data_watch(&watch, now)
+		time.sleep(10 * time.Millisecond)
+	}
+	testing.expect(t, !watch.edits_open)
+	testing.expect(t, watch.edits_unavailable)
+	testing.expect(t, data_edits_reading.reachable_off)
+}

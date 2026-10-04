@@ -470,3 +470,123 @@ test_a_broken_data_edit_turns_the_overlay_off_at_start :: proc(t: ^testing.T) {
 	testing.expect(t, start.game_data.arena != nil)
 	testing.expect(t, !turn_data_edits_off("again"), "off already: the caller gives up")
 }
+
+// Work item 0228: the state copy wins over the edits directory's copy,
+// both over the data file; "" sources read the data file.
+@(test)
+test_read_data_file_takes_the_state_copy_then_the_reachable_copy :: proc(t: ^testing.T) {
+	base, error := os.make_directory_temp("", "mine-oh-belowed-reachable-edits-test-*", context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	defer os.remove_all(base)
+	data_directory := platform.join_path(base, "data")
+	state_directory := platform.join_path(base, "state_edits")
+	reachable_directory := platform.join_path(base, "reachable", DATA_EDITS_DIRECTORY_NAME)
+	for directory in ([]string{data_directory, state_directory, reachable_directory}) {
+		testing.expect_value(t, platform.make_directory_path(directory), nil)
+	}
+	testing.expect_value(t, os.write_entire_file(platform.join_path(data_directory, "a.sjson"), "data a"), nil)
+	testing.expect_value(t, os.write_entire_file(platform.join_path(data_directory, "b.sjson"), "data b"), nil)
+	testing.expect_value(t, os.write_entire_file(platform.join_path(reachable_directory, "b.sjson"), "reachable b"), nil)
+	testing.expect_value(t, os.write_entire_file(platform.join_path(data_directory, "c.sjson"), "data c"), nil)
+	testing.expect_value(t, os.write_entire_file(platform.join_path(reachable_directory, "c.sjson"), "reachable c"), nil)
+	testing.expect_value(t, os.write_entire_file(platform.join_path(state_directory, "c.sjson"), "state c"), nil)
+	sources := []string{state_directory, reachable_directory}
+
+	data, path, read_error := read_data_file_from_sources(data_directory, sources, "a.sjson", context.temp_allocator)
+	testing.expect_value(t, read_error, nil)
+	testing.expect_value(t, string(data), "data a")
+	testing.expect_value(t, path, platform.join_path(data_directory, "a.sjson"))
+
+	data, path, read_error = read_data_file_from_sources(data_directory, sources, "b.sjson", context.temp_allocator)
+	testing.expect_value(t, read_error, nil)
+	testing.expect_value(t, string(data), "reachable b")
+	testing.expect_value(t, path, platform.join_path(reachable_directory, "b.sjson"))
+
+	data, path, read_error = read_data_file_from_sources(data_directory, sources, "c.sjson", context.temp_allocator)
+	testing.expect_value(t, read_error, nil)
+	testing.expect_value(t, string(data), "state c")
+	testing.expect_value(t, path, platform.join_path(state_directory, "c.sjson"))
+
+	data, path, read_error = read_data_file_from_sources(data_directory, []string{"", ""}, "c.sjson", context.temp_allocator)
+	testing.expect_value(t, read_error, nil)
+	testing.expect_value(t, string(data), "data c")
+	testing.expect_value(t, path, platform.join_path(data_directory, "c.sjson"))
+}
+
+// The edits directory given at start (use_reachable_data_edits) is read
+// by read_data_file; the state overlay is "" under odin test.
+@(test)
+test_read_data_file_reads_the_reachable_directory_set_at_start :: proc(t: ^testing.T) {
+	base, error := os.make_directory_temp("", "mine-oh-belowed-reachable-start-test-*", context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	defer os.remove_all(base)
+	reachable_directory := platform.join_path(base, DATA_EDITS_DIRECTORY_NAME)
+	testing.expect_value(t, platform.make_directory_path(platform.join_path(reachable_directory, "strings")), nil)
+	shipped, shipped_error := os.read_entire_file(platform.join_path(test_data_directory(), "strings", "en.sjson"), context.temp_allocator)
+	testing.expect_value(t, shipped_error, nil)
+	changed, _ := strings.replace(string(shipped), "data_files_title = \"Data files\"", "data_files_title = \"Reachable\"", 1, context.temp_allocator)
+	copy_path := platform.join_path(reachable_directory, "strings", "en.sjson")
+	testing.expect_value(t, os.write_entire_file(copy_path, changed), nil)
+	use_reachable_data_edits(reachable_directory)
+	defer reset_data_edits_reading()
+
+	data, path, read_error := read_data_file(test_data_directory(), "strings/en.sjson", context.temp_allocator)
+	testing.expect_value(t, read_error, nil)
+	testing.expect_value(t, string(data), changed)
+	testing.expect_value(t, path, platform.join_path(reachable_directory, "strings/en.sjson"))
+}
+
+// A removed edits directory turns only its own reading off, logged once;
+// the data file is read.
+@(test)
+test_a_vanished_reachable_directory_turns_its_reading_off :: proc(t: ^testing.T) {
+	base, error := os.make_directory_temp("", "mine-oh-belowed-reachable-gone-test-*", context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	defer os.remove_all(base)
+	reachable_directory := platform.join_path(base, DATA_EDITS_DIRECTORY_NAME)
+	testing.expect_value(t, platform.make_directory_path(reachable_directory), nil)
+	use_reachable_data_edits(reachable_directory)
+	defer reset_data_edits_reading()
+	testing.expect_value(t, os.remove_all(base), nil)
+
+	_, path, read_error := read_data_file(test_data_directory(), "blocks.sjson", context.temp_allocator)
+	testing.expect_value(t, read_error, nil)
+	testing.expect_value(t, path, platform.join_path(test_data_directory(), "blocks.sjson"))
+	testing.expect(t, data_edits_reading.reachable_off)
+	testing.expect(t, !data_edits_reading.off)
+
+	_, path, read_error = read_data_file(test_data_directory(), "blocks.sjson", context.temp_allocator)
+	testing.expect_value(t, read_error, nil)
+	testing.expect_value(t, path, platform.join_path(test_data_directory(), "blocks.sjson"))
+	testing.expect(t, data_edits_reading.reachable_off)
+	testing.expect(t, !data_edits_reading.off)
+}
+
+// A broken copy in the edits directory fails the start load naming it;
+// both overlays go off and the second load takes the data files.
+@(test)
+test_a_broken_reachable_copy_turns_the_overlay_off_at_start :: proc(t: ^testing.T) {
+	base, error := os.make_directory_temp("", "mine-oh-belowed-broken-reachable-test-*", context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	defer os.remove_all(base)
+	reachable_directory := platform.join_path(base, DATA_EDITS_DIRECTORY_NAME)
+	testing.expect_value(t, platform.make_directory_path(reachable_directory), nil)
+	broken := platform.join_path(reachable_directory, "blocks.sjson")
+	testing.expect_value(t, os.write_entire_file(broken, "blocks = ["), nil)
+	use_reachable_data_edits(reachable_directory)
+	defer reset_data_edits_reading()
+	loaded := Loaded_Configuration{configuration = DEFAULT_CONFIGURATION}
+
+	start, problem := load_start_data(test_data_directory(), loaded, nil)
+	testing.expect(t, problem != "")
+	testing.expectf(t, strings.contains(problem, broken), "the problem names the edits directory's copy: %s", problem)
+	testing.expect(t, start.arena == nil, "nothing stays loaded")
+	testing.expect_value(t, data_edits_reading.directory, "")
+	testing.expect(t, turn_data_edits_off(problem))
+	testing.expect(t, data_edits_reading.off)
+
+	start, problem = load_start_data(test_data_directory(), loaded, nil)
+	defer destroy_start_data(&start)
+	testing.expect_value(t, problem, "")
+	testing.expect(t, start.game_data.arena != nil)
+}

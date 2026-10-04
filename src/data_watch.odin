@@ -24,6 +24,9 @@ import "platform"
 // without another content event, so a half saved file is not loaded.
 // A watcher that cannot be opened logs one line and leaves the watch off
 // for the run.
+// A second watcher over the edits directory's overlay (work item 0228,
+// <edits_directory>/data_edits) maps its files to the same categories by
+// relative path; a removed root turns that overlay off for the run.
 // The simulation never sees the watcher: reloads run between frames.
 
 DATA_WATCH_CONTENT_SETTLE :: 1 * time.Second
@@ -80,6 +83,13 @@ Data_Watch :: struct {
 	// Content files changed and the settle has not passed yet.
 	content_settling:   bool,
 	last_content_event: time.Time,
+	// Recursive over the edits directory's overlay while edits_open is
+	// set (work item 0228, open_data_edits_watch).
+	edits_watcher:      fsw.Watcher_Recursive,
+	edits_open:         bool,
+	// It could not be opened, or its directory went away; no more tries
+	// this run.
+	edits_unavailable:  bool,
 }
 
 // "" for the setting's value; the command line names only the three modes.
@@ -203,6 +213,30 @@ open_data_watch :: proc(watch: ^Data_Watch, data_directory: string) -> bool {
 	return true
 }
 
+// open_data_watch for the edits directory's overlay, on the second
+// watcher.
+open_data_edits_watch :: proc(watch: ^Data_Watch, edits_directory: string) -> bool {
+	watcher, error := fsw.watch_dir_recursive(edits_directory)
+	if error != .None {
+		watch.edits_unavailable = true
+		platform.log_printf("%s", data_watch_open_failed_line(edits_directory, error))
+		return false
+	}
+	watch.edits_watcher = watcher
+	watch.edits_open = true
+	return true
+}
+
+// Whether the events say the watched directory itself went away.
+data_edits_watch_root_gone :: proc(watched_directory: string, events: []fsw.Event) -> bool {
+	for event in events {
+		if event.path == watched_directory && (event.kind == .Removed || event.kind == .Renamed || event.kind == .Invalidated) {
+			return true
+		}
+	}
+	return false
+}
+
 data_watch_open_failed_line :: proc(directory: string, error: fsw.Error) -> string {
 	return fmt.tprintf("data: cannot watch %s: %v", directory, error)
 }
@@ -212,13 +246,27 @@ destroy_data_watch :: proc(watch: ^Data_Watch) {
 	if watch.open {
 		fsw.destroy(watch.watcher)
 	}
-	watch^ = {unavailable = watch.unavailable}
+	if watch.edits_open {
+		fsw.destroy(watch.edits_watcher)
+	}
+	watch^ = {unavailable = watch.unavailable, edits_unavailable = watch.edits_unavailable}
 }
 
-// The categories of the files touched since the call before.
+// The categories of the files touched since the call before, in the data
+// directory and the edits directory's overlay.
 poll_data_watch :: proc(watch: ^Data_Watch, now: time.Time) -> Data_File_Categories {
 	events := fsw.get_events(&watch.watcher, context.temp_allocator)
 	changed := data_event_categories(watch.watcher.path, events)
+	if watch.edits_open {
+		edits_events := fsw.get_events(&watch.edits_watcher, context.temp_allocator)
+		changed += data_event_categories(watch.edits_watcher.path, edits_events)
+		if data_edits_watch_root_gone(watch.edits_watcher.path, edits_events) {
+			turn_reachable_data_edits_off("the directory is gone")
+			fsw.destroy(watch.edits_watcher)
+			watch.edits_open = false
+			watch.edits_unavailable = true
+		}
+	}
 	if .Content in changed {
 		watch.content_changed = true
 		watch.content_settling = true

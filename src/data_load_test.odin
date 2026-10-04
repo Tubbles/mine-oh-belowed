@@ -115,3 +115,23 @@ test_the_pod_airlock_config_is_bounded :: proc(t: ^testing.T) {
 		testing.expectf(t, strings.has_prefix(problem, entry.key), "%v: %q", entry.airlock, problem)
 	}
 }
+
+// Work item 0228: the state copy first, the edits directory's second,
+// none while the overlay is off.
+@(test)
+test_data_edits_directories_put_the_state_copy_first :: proc(t: ^testing.T) {
+	testing.expect_value(t, data_edits_directories("/s", "/r", false, false), [2]string{"/s", "/r"})
+	testing.expect_value(t, data_edits_directories("/s", "/r", false, true), [2]string{"/s", ""})
+	testing.expect_value(t, data_edits_directories("/s", "/r", true, false), [2]string{"", ""})
+	testing.expect_value(t, data_edits_directories("", "/r", false, false), [2]string{"", "/r"})
+}
+
+@(test)
+test_reachable_data_edits_refusal_cases :: proc(t: ^testing.T) {
+	testing.expect_value(t, reachable_data_edits_refusal("", true, true), Reachable_Data_Edits_Refusal.Not_Set)
+	testing.expect_value(t, reachable_data_edits_refusal("Download", true, true), Reachable_Data_Edits_Refusal.Not_Absolute)
+	testing.expect_value(t, reachable_data_edits_refusal("~/Download", true, true), Reachable_Data_Edits_Refusal.Not_Absolute)
+	testing.expect_value(t, reachable_data_edits_refusal("/storage/emulated/0/Download", false, true), Reachable_Data_Edits_Refusal.No_Access)
+	testing.expect_value(t, reachable_data_edits_refusal("/storage/emulated/0/Download", true, false), Reachable_Data_Edits_Refusal.Not_A_Directory)
+	testing.expect_value(t, reachable_data_edits_refusal("/storage/emulated/0/Download", true, true), Reachable_Data_Edits_Refusal.None)
+}

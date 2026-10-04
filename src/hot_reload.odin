@@ -241,12 +241,13 @@ apply_presentation_changes :: proc(state: ^Frame_State, changed: Data_File_Categ
 	}
 }
 
-// The data edits overlay (work item 0129, read_data_file) is not
-// watched: a change to it comes through here, from the Data files
-// screen's Discard (and 0130's Save), whose categories serve_data_browser
-// returns, and does what the watcher does for the same files in the data
-// directory. A presentation file reloads in place, a content file asks
-// for the content reload, game.sjson says a restart is needed.
+// The state directory's data edits overlay (work item 0129,
+// read_data_file) is not watched (the edits directory's is, 0228): a
+// change to it comes through here, from the Data files screen's Discard
+// (and 0130's Save), whose categories serve_data_browser returns, and
+// does what the watcher does for the same files in the data directory.
+// A presentation file reloads in place, a content file asks for the
+// content reload, game.sjson says a restart is needed.
 apply_data_edit_change :: proc(state: ^Frame_State, changed: Data_File_Categories) {
 	apply_presentation_changes(state, changed)
 	if .Content in changed {
@@ -273,6 +274,11 @@ update_data_watch :: proc(state: ^Frame_State) {
 	}
 	if !watch.open && (watch.unavailable || !open_data_watch(watch, state.data_directory)) {
 		return
+	}
+	if !watch.edits_open && !watch.edits_unavailable {
+		if directory := reachable_data_edits_directory(); directory != "" {
+			open_data_edits_watch(watch, directory)
+		}
 	}
 	now := time.now()
 	content_was_changed := watch.content_changed

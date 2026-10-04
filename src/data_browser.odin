@@ -107,6 +107,10 @@ Data_Browser :: struct {
 	// setting (set_export_directory).
 	editing_export_directory: bool,
 	export_field:             Text_Field,
+	// The edits directory under the keyboard (0228); Done sets the
+	// setting (set_edits_directory).
+	editing_edits_directory:  bool,
+	edits_field:              Text_Field,
 	// An export on save failed and toasted; no toast again until one
 	// succeeds (sync_data_edit_export).
 	export_sync_failed:       bool,

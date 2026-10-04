@@ -274,3 +274,44 @@ test_data_files_export_directory_toggle_and_button :: proc(t: ^testing.T) {
 	testing.expect(t, .Export_Data_Files in audit.requests)
 	audit.requests -= {.Export_Data_Files}
 }
+
+// Work item 0228: the edits directory field opens the keyboard, Done sets
+// the setting with the next start toast and the focus back on the field;
+// a relative path is refused with its toast and the setting kept. The
+// desktop's access check answers yes, so the access toast is covered by
+// test_edits_directory_done_toast_cases.
+@(test)
+test_data_files_edits_directory_field_sets_the_setting :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	browser := &audit.data_browser
+	defer delete(audit.settings.edits_directory)
+	state := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&state)
+	push_screen(&state.screens, .Data_Files)
+	screen_test_frame(audit, &state, {})
+	testing.expect(t, draw_list_has_text(state.draw_list[:], text("data_files_edits_directory")))
+	testing.expect(t, draw_list_has_text(state.draw_list[:], text("data_files_export_directory_none")))
+	field := data_files_button_id("data_files_edits_directory")
+	state.focus = field
+	screen_test_frame(audit, &state, {confirm = true})
+	testing.expect_value(t, state.keyboard.field, field)
+	testing.expect(t, browser.editing_edits_directory)
+	text_field_set(&browser.edits_field, "/edits")
+	screen_test_frame(audit, &state, {back = true})
+	testing.expect_value(t, state.keyboard.field, Ui_Id(0))
+	testing.expect(t, !browser.editing_edits_directory)
+	testing.expect_value(t, audit.settings.edits_directory, "/edits")
+	testing.expect(t, state_has_toast(state, "data_files_edits_directory_next_start"))
+	screen_test_frame(audit, &state, {})
+	testing.expect_value(t, state.focus, field)
+	testing.expect(t, draw_list_has_text(state.draw_list[:], "/edits"))
+
+	screen_test_frame(audit, &state, {confirm = true})
+	testing.expect(t, browser.editing_edits_directory)
+	text_field_set(&browser.edits_field, "edits")
+	screen_test_frame(audit, &state, {back = true})
+	testing.expect(t, !browser.editing_edits_directory)
+	testing.expect(t, state_has_toast(state, "data_files_edits_directory_not_absolute"))
+	testing.expect_value(t, audit.settings.edits_directory, "/edits")
+}

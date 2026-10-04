@@ -275,6 +275,7 @@ test_settings_file_round_trip :: proc(t: ^testing.T) {
 	settings.on_screen_keyboard = .Game
 	settings.export_directory = "/storage/emulated/0/Sync/mine oh belowed"
 	settings.export_on_save = true
+	settings.edits_directory = "/storage/emulated/0/Download"
 	settings.deck_preset_applied = true
 	testing.expect_value(t, write_settings_file(environment, settings), "")
 
@@ -306,6 +307,7 @@ test_settings_file_round_trip :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(string(written_data), "\ton_screen_keyboard = \"game\"\n"), string(written_data))
 	testing.expect(t, strings.contains(string(written_data), "\texport_directory = \"/storage/emulated/0/Sync/mine oh belowed\"\n"), string(written_data))
 	testing.expect(t, strings.contains(string(written_data), "\texport_on_save = true\n"), string(written_data))
+	testing.expect(t, strings.contains(string(written_data), "\tedits_directory = \"/storage/emulated/0/Download\"\n"), string(written_data))
 	testing.expect(t, strings.contains(string(written_data), "\tdeck_preset_applied = true\n"), string(written_data))
 }
 

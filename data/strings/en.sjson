@@ -112,6 +112,10 @@ data_files_exported_data = "data files"
 data_files_exported_edits = "data edits"
 data_files_export_failed = "Export failed:"
 data_files_export_sync_failed = "Could not export the edit:"
+data_files_edits_directory = "Read edits from"
+data_files_edits_directory_not_absolute = "The edits directory must be an absolute path"
+data_files_edits_directory_next_start = "The edits directory is read from the next start"
+data_files_edits_access = "Allow All files access, then restart to read the edits"
 
 // Hot reload of the data files (work item 0054)
 reload_failed = "Could not reload"

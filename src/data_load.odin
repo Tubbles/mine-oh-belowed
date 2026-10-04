@@ -414,9 +414,11 @@ copy_android_asset :: proc(internal, path: string) -> string {
 // The data edits overlay (work item 0129): a copy of a data file under
 // <state>/mine-oh-belowed/data_edits/<relative path> wins over the data
 // file. The Data files screen (ui_data_browser.odin) shows which files
-// have one, work item 0130 writes them. The overlay is not watched: the
-// frame loop applies what the screen changed through
-// apply_data_edit_change (hot_reload.odin).
+// have one, work item 0130 writes them. The state overlay is not watched:
+// the screen's Save and Discard go through apply_data_edit_change
+// (hot_reload.odin). The edits directory's overlay (work item 0228,
+// <edits_directory>/data_edits) is read after it and watched with the
+// data directory (open_data_edits_watch).
 DATA_EDITS_DIRECTORY_NAME :: "data_edits"
 
 // $XDG_STATE_HOME/mine-oh-belowed/data_edits. In the given allocator.
@@ -431,7 +433,8 @@ data_edits_directory_from_environment :: proc(state_home, home: string, allocato
 // read, for the caller's problem lines. The data is in allocator, the path
 // in the temp allocator.
 read_data_file :: proc(data_directory, relative_path: string, allocator := context.allocator) -> (data: []byte, path: string, error: os.Error) {
-	return read_data_file_with_edits(data_directory, reading_data_edits_directory(), relative_path, allocator)
+	directories := reading_data_edits_directories()
+	return read_data_file_from_sources(data_directory, directories[:], relative_path, allocator)
 }
 
 // How read_data_file uses the data edits overlay, per thread: the game
@@ -439,14 +442,22 @@ read_data_file :: proc(data_directory, relative_path: string, allocator := conte
 // in parallel, give their own thread a directory. After a start-up load
 // failed with the overlay on (work item 0130's review), the overlay is off
 // for the run; the Data files screen still lists the copies and Discard
-// still deletes them, since both use data_edits_directory.
+// still deletes them, since both use data_edits_directory. The edits
+// directory's overlay (work item 0228) is resolved once at start on the
+// main thread (start_reachable_data_edits); tests set their own through
+// use_reachable_data_edits.
 Data_Edits_Reading :: struct {
 	// Under odin test, what data_edits_directory returns: a test's own
 	// temporary directory, else "".
-	directory:   string,
-	off:         bool,
+	directory:           string,
+	off:                 bool,
 	// The failed load's problem, on the heap for the run.
-	off_problem: string,
+	off_problem:         string,
+	// <edits_directory>/data_edits, on the heap for the run, "" for none
+	// (use_reachable_data_edits).
+	reachable_directory: string,
+	// The edits directory went away or failed during the run.
+	reachable_off:       bool,
 }
 
 @(thread_local)
@@ -460,12 +471,128 @@ reading_data_edits_directory :: proc() -> string {
 	return data_edits_directory()
 }
 
-// After a start-up load failed: when the overlay was read, it goes off for
-// the run (logged) and the caller loads again. False when it was off
+// Why the edits directory setting is not read, None when it is.
+Reachable_Data_Edits_Refusal :: enum u8 {
+	None,
+	Not_Set,
+	Not_Absolute,
+	No_Access,
+	Not_A_Directory,
+}
+
+// The setting (its ~/ expanded) checked in order: set, absolute, All
+// files access granted, a data_edits directory under it.
+reachable_data_edits_refusal :: proc(setting: string, access_granted, directory_exists: bool) -> Reachable_Data_Edits_Refusal {
+	switch {
+	case setting == "":
+		return .Not_Set
+	case !os.is_absolute_path(setting):
+		return .Not_Absolute
+	case !access_granted:
+		return .No_Access
+	case !directory_exists:
+		return .Not_A_Directory
+	}
+	return .None
+}
+
+// The log line's reason for a refusal, "" for None and Not_Set.
+reachable_data_edits_refusal_text :: proc(refusal: Reachable_Data_Edits_Refusal) -> string {
+	switch refusal {
+	case .None, .Not_Set:
+		return ""
+	case .Not_Absolute:
+		return "it is not an absolute path"
+	case .No_Access:
+		return "All files access is not granted"
+	case .Not_A_Directory:
+		return "it has no data_edits directory"
+	}
+	return ""
+}
+
+// The edits directory's overlay read_data_file takes after the state's,
+// "" for none; called at start and by the tests.
+use_reachable_data_edits :: proc(directory: string) {
+	delete(data_edits_reading.reachable_directory)
+	data_edits_reading.reachable_directory = strings.clone(directory)
+	data_edits_reading.reachable_off = false
+}
+
+// The edits_directory setting resolved once at start (work item 0228):
+// read when it is an absolute path with a data_edits directory and All
+// files access, otherwise one log line. needs_access when only the access
+// is missing, so the title toasts it.
+start_reachable_data_edits :: proc(settings: Settings) -> (needs_access: bool) {
+	home := platform.platform_directories(context.temp_allocator).home
+	setting := expand_home_path(settings.edits_directory, home)
+	access_granted, directory_exists: bool
+	if setting != "" && os.is_absolute_path(setting) {
+		access_granted = platform.all_files_access_granted()
+	}
+	directory := platform.join_path(setting, DATA_EDITS_DIRECTORY_NAME)
+	if access_granted {
+		directory_exists = os.is_dir(directory)
+	}
+	refusal := reachable_data_edits_refusal(setting, access_granted, directory_exists)
+	switch refusal {
+	case .None:
+		use_reachable_data_edits(directory)
+		platform.log_printf("data: reading data edits from %s", directory)
+	case .Not_Set:
+	case .Not_Absolute, .No_Access, .Not_A_Directory:
+		platform.log_printf("data: the edits directory %s is not read: %s", setting, reachable_data_edits_refusal_text(refusal))
+	}
+	return refusal == .No_Access
+}
+
+// The edits directory's overlay off for the rest of the run, logged once.
+turn_reachable_data_edits_off :: proc(problem: string) {
+	if data_edits_reading.reachable_directory == "" || data_edits_reading.reachable_off {
+		return
+	}
+	data_edits_reading.reachable_off = true
+	platform.log_printf("data: the edits directory %s is off for this run: %s", data_edits_reading.reachable_directory, problem)
+}
+
+// The edits directory's overlay to read, "" for none; a directory that
+// went away turns it off (one stat per data file read).
+reachable_data_edits_directory :: proc() -> string {
+	if data_edits_reading.off || data_edits_reading.reachable_off || data_edits_reading.reachable_directory == "" {
+		return ""
+	}
+	if !os.is_dir(data_edits_reading.reachable_directory) {
+		turn_reachable_data_edits_off("the directory is gone")
+		return ""
+	}
+	return data_edits_reading.reachable_directory
+}
+
+// The overlays in the order they win: the state copy, then the edits
+// directory's copy, both over the data file; "" for one not read.
+data_edits_directories :: proc(state_directory, reachable_directory: string, off, reachable_off: bool) -> [2]string {
+	if off {
+		return {}
+	}
+	return {state_directory, reachable_off ? "" : reachable_directory}
+}
+
+// The overlays read_data_file takes.
+reading_data_edits_directories :: proc() -> [2]string {
+	return data_edits_directories(data_edits_directory(), reachable_data_edits_directory(), data_edits_reading.off, data_edits_reading.reachable_off)
+}
+
+// After a start-up load failed: when an overlay was read, both go off for
+// the run (logged) and the caller loads again. False when they were off
 // already or there is no overlay directory, so the caller gives up.
 turn_data_edits_off :: proc(problem: string) -> bool {
-	directory := reading_data_edits_directory()
-	if directory == "" || !os.is_dir(directory) {
+	any_read := false
+	for directory in reading_data_edits_directories() {
+		if directory != "" && os.is_dir(directory) {
+			any_read = true
+		}
+	}
+	if !any_read {
 		return false
 	}
 	data_edits_reading.off = true
@@ -477,12 +604,23 @@ turn_data_edits_off :: proc(problem: string) -> bool {
 // The thread's overlay reading back to the default, for the tests.
 reset_data_edits_reading :: proc() {
 	delete(data_edits_reading.off_problem)
+	delete(data_edits_reading.reachable_directory)
 	data_edits_reading = {}
 }
 
 // read_data_file with the overlay directory given; "" reads no overlay.
 read_data_file_with_edits :: proc(data_directory, edits_directory, relative_path: string, allocator := context.allocator) -> (data: []byte, path: string, error: os.Error) {
-	if edits_directory != "" {
+	sources := [1]string{edits_directory}
+	return read_data_file_from_sources(data_directory, sources[:], relative_path, allocator)
+}
+
+// read_data_file with the overlay directories given in the order they
+// win; "" entries are skipped.
+read_data_file_from_sources :: proc(data_directory: string, edits_directories: []string, relative_path: string, allocator := context.allocator) -> (data: []byte, path: string, error: os.Error) {
+	for edits_directory in edits_directories {
+		if edits_directory == "" {
+			continue
+		}
 		overlay := platform.join_path(edits_directory, relative_path)
 		if os.is_file(overlay) {
 			platform.log_printf("data: %s from the data edits overlay %s", relative_path, overlay)
