@@ -61,12 +61,11 @@ test_planet_preview_basis_follows_the_home :: proc(t: ^testing.T) {
 	}
 }
 
-// The pod lies inside a cone within the 35 degree vertical half field of
-// view, whatever its bearing. The spring is not asserted: the pod's door
-// faces the spring only at 16 km, since field_home_heading turns to +x
-// when the spring lies under 256 m from the home (4 and 8 km).
+// The pod and the first spring lie inside a cone within the 35 degree
+// vertical half field of view, whatever their bearing (0260: the door
+// faces the spring at every preset).
 @(test)
-test_planet_preview_start_camera_frames_the_pod :: proc(t: ^testing.T) {
+test_planet_preview_start_camera_frames_the_pod_and_the_spring :: proc(t: ^testing.T) {
 	for radius in default_planet(shipped_test_planets()).radius_presets_metres {
 		home := planet_preview_test_home(radius)
 		basis := planet_preview_basis(home.axes)
@@ -75,6 +74,11 @@ test_planet_preview_start_camera_frames_the_pod :: proc(t: ^testing.T) {
 		site := world_position_to_metres(home.site)
 		pod_angle := planet_preview_test_angle_degrees(look, site - camera.position)
 		testing.expectf(t, pod_angle < 30, "at %d m the pod lies %v degrees off the look", radius, pod_angle)
+		spring_direction := planet_spring_direction(home.planet.springs[0])
+		spring_ground := home.generation.radius + surface_relief(home.generation, fixed_scale(spring_direction, home.generation.radius))
+		spring := world_position_to_metres(World_Position(fixed_scale(spring_direction, spring_ground)))
+		spring_angle := planet_preview_test_angle_degrees(look, spring - camera.position)
+		testing.expectf(t, spring_angle < 30, "at %d m the spring lies %v degrees off the look", radius, spring_angle)
 		height := linalg.dot(camera.position - site, basis.up)
 		testing.expectf(t, height > 35 && height < 45, "at %d m the camera stands %v m above the site", radius, height)
 	}

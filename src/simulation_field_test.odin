@@ -105,7 +105,7 @@ field_test_script_frame :: proc(tick: int) -> Input_Frame {
 		frame.pressed = {.Mine}
 		frame.just_pressed = tick == 400 ? {.Mine} : {}
 	case tick == 490:
-		frame.look_delta = {-1800, -200}
+		frame.look_delta = {-1800, -150}
 	case tick == 500:
 		press(&frame, .Hotbar_Slot_4)
 	}
@@ -508,6 +508,26 @@ test_a_new_world_sinks_the_pod_in_its_crater_and_players_spawn_in_the_cabin :: p
 		testing.expectf(t, feet_in_test_cabin(frame, pod, machine, player.field), "the player left the cabin for %v", world_to_frame_cell(frame, player.field.position))
 		above := fixed_dot(cast([3]i64)(player.field.position - floor), frame.axes[FRAME_UP])
 		testing.expectf(t, above >= -tenth_sample(state.field.spacing_millimetres) && above <= frame_pitch_units(frame) / 4, "the feet stand %d units over the floor", above)
+	}
+}
+
+// The pod's heading points at the first spring at every radius preset,
+// and its frame's forward lies within half a yaw step of it (0260: a
+// chord under 256 m once fell below tangent_of's threshold).
+@(test)
+test_the_home_heading_faces_the_spring_at_every_preset :: proc(t: ^testing.T) {
+	for radius in default_planet(shipped_test_planets()).radius_presets_metres {
+		planet := shipped_test_home_at(radius)
+		generation := make_planet_generation(DEFAULT_WORLD_SEED, planet, 1000)
+		site, heading := field_home_site(generation, planet)
+		up, _ := normalize_fixed(cast([3]i64)(site))
+		spring := fixed_scale(planet_spring_direction(planet.springs[0]), generation.radius)
+		towards, _ := normalize_fixed(project_onto_plane(spring - cast([3]i64)(site), up))
+		along := fixed_dot(heading, towards)
+		testing.expectf(t, along > UNIT_VECTOR_ONE * 9998 / 10000, "at %d m the heading %v lies %d along the spring", radius, heading, along)
+		_, axes := free_frame_at(site, heading, 500)
+		door := fixed_dot(axes[FRAME_FORWARD], towards)
+		testing.expectf(t, door > UNIT_VECTOR_ONE * 9914 / 10000, "at %d m the door lies %d along the spring", radius, door)
 	}
 }
 
@@ -1260,6 +1280,7 @@ test_a_field_walk_counts_and_a_flight_does_not :: proc(t: ^testing.T) {
 	state := &session.simulation
 	move_test_players_out_of_the_pod(state, simulation_content.machines)
 	tick_field_test_simulation(state, simulation_content, {})
+	walked_before_flight := state.records.statistics.distance_walked_millimetres
 	walk := Input_Frame{move = {0, 1}, pressed = {.Move}}
 	state.players[0].field.flying = true
 	start := state.players[0].field.position
@@ -1267,7 +1288,7 @@ test_a_field_walk_counts_and_a_flight_does_not :: proc(t: ^testing.T) {
 		tick_field_test_simulation(state, simulation_content, walk)
 	}
 	testing.expect(t, state.players[0].field.position != start, "the flight moves")
-	testing.expect_value(t, state.records.statistics.distance_walked_millimetres, 0)
+	testing.expect_value(t, state.records.statistics.distance_walked_millimetres, walked_before_flight)
 	state.players[0].field.flying = false
 	for _ in 0 ..< 120 {
 		tick_field_test_simulation(state, simulation_content, walk)

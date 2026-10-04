@@ -398,13 +398,17 @@ tick_field_session_players :: proc(state: ^Simulation_State, content: Simulation
 // The home spawn.
 
 // The heading at the home towards the first spring (towards +x on a
-// planet without one), a unit tangent. The spring and the home are
-// compared as points on the sphere, since their unit directions differ
-// by too little for tangent_of.
-field_home_heading :: proc(planet: Planet, home: [3]i64, radius: i64) -> [3]i64 {
+// planet without one, or with the spring on the home), a unit tangent:
+// the chord from the home to the spring normalised before tangent_of,
+// whose threshold of a sixteenth of a unit a chord of under 256 m in
+// position units fell below (0260), so the heading is the same at every
+// radius.
+field_home_heading :: proc(planet: Planet, home: [3]i64) -> [3]i64 {
 	look := [3]i64{UNIT_VECTOR_ONE, 0, 0}
 	if len(planet.springs) > 0 {
-		look = fixed_scale(planet_spring_direction(planet.springs[0]), radius) - fixed_scale(home, radius)
+		if chord, ok := normalize_fixed(planet_spring_direction(planet.springs[0]) - home); ok {
+			look = chord
+		}
 	}
 	return tangent_of(home, look)
 }
@@ -414,7 +418,7 @@ field_home_heading :: proc(planet: Planet, home: [3]i64, radius: i64) -> [3]i64 
 // of.
 field_home_site :: proc(generation: Planet_Generation, planet: Planet) -> (surface: World_Position, heading: [3]i64) {
 	home := planet_home_direction(planet.home)
-	return field_surface_under(generation, World_Position(fixed_scale(home, generation.radius)), 0), field_home_heading(planet, home, generation.radius)
+	return field_surface_under(generation, World_Position(fixed_scale(home, generation.radius)), 0), field_home_heading(planet, home)
 }
 
 // Without a pod (content that has none): the clearance above the

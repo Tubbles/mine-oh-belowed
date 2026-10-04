@@ -1,6 +1,6 @@
 # 0260: The pod's door faces the spring at every radius
 
-Status: implementing (2026-10-04, in `.claude/worktrees/0260` on `item/0260` from `main` at 8aca2a0, the specification approved the same day with the decisions below; found by the 0184 implementer: `field_home_heading` (`src/simulation_field.odin`) passes the unnormalised difference from the home to the spring into `tangent_of`, which treats a look shorter than `UNIT_VECTOR_ONE / 16` as missing and falls back to +x; the shipped spring lies 204 m from the home at 8 km and 102 m at 4 km, so the door faces the spring only at 16 km; after 0184)
+Status: verified (2026-10-04, implementer agent afa0b27f82a1adfe9, verified the same day with no fix round (one build.md parenthetical corrected at the landing: the turned start shot now holds an ore patch), in `.claude/worktrees/0260` on `item/0260` from `main` at 5c923bb, the specification approved the same day with the decisions below; found by the 0184 implementer: `field_home_heading` (`src/simulation_field.odin`) passes the unnormalised difference from the home to the spring into `tangent_of`, which treats a look shorter than `UNIT_VECTOR_ONE / 16` as missing and falls back to +x; the shipped spring lies 204 m from the home at 8 km and 102 m at 4 km, so the door faces the spring only at 16 km; after 0184)
 
 ## Goal
 
