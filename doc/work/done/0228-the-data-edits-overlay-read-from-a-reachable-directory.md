@@ -1,6 +1,6 @@
 # 0228: The data edits overlay read from a reachable directory
 
-Status: verified (2026-10-04, implementer agent a8aee6fd2105efe3a, verified the same day, two nits fixed in the landing amend, in `.claude/worktrees/0228` on `item/0228` from `main` at 3573cb0, the specification approved the same day with the decisions below; from the user on the phone, "Didn't we add an overlay dir path config?": 0131 added the export direction only, nothing reads an overlay from a directory the phone's file managers reach)
+Status: landed (2026-10-04, "Read data edits from a directory the phone can reach (0228)", 34d6ccf, installed the same day; implementer agent a8aee6fd2105efe3a, verified the same day, two nits fixed in the landing amend, in `.claude/worktrees/0228` on `item/0228` from `main` at 3573cb0, the specification approved the same day with the decisions below; from the user on the phone, "Didn't we add an overlay dir path config?": 0131 added the export direction only, nothing reads an overlay from a directory the phone's file managers reach)
 
 ## Goal
 
