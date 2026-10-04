@@ -1,6 +1,6 @@
 # 0217: The editor's glyph bar overlaps the hotbar
 
-Status: todo (2026-10-04, found in the headless screenshots of 0215 at 1280 by 720: the placement editor's four glyphs (Move, Turn, Place, Cancel) are drawn over the hotbar's three rightmost slots)
+Status: cancelled (2026-10-04, folded into 0219, The fit; found in the headless screenshots of 0215 at 1280 by 720: the placement editor's four glyphs (Move, Turn, Place, Cancel) are drawn over the hotbar's three rightmost slots)
 
 ## Goal
 
