@@ -1,6 +1,6 @@
 # 0215: The placement editor and the tools radial
 
-Status: verified (2026-10-04, fix round done on item/0215; worktree `.claude/worktrees/0215` on `item/0215` from `main`, the specification approved the same day with the decisions below; the user's design after the 10 by 10 by 12 furnace landed (0212): "we need to have placement of such large machines more advanced ... start with only a ghost outline of the footprint ... center on the aimed cell, and as it is placed, the full ghost is shown, and we enter a special control state"; folds 0213)
+Status: landed (2026-10-04, e387583; worktree `.claude/worktrees/0215` on `item/0215` from `main`, the specification approved the same day with the decisions below; the user's design after the 10 by 10 by 12 furnace landed (0212): "we need to have placement of such large machines more advanced ... start with only a ghost outline of the footprint ... center on the aimed cell, and as it is placed, the full ghost is shown, and we enter a special control state"; folds 0213)
 
 ## Goal
 
