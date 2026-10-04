@@ -92,9 +92,9 @@ bindings = [
 	{action = "Open_Technologies" device = "keyboard" control = "T" context = "both"}
 	{action = "Open_Map" device = "keyboard" control = "M" context = "both"}
 	{action = "Pause" device = "keyboard" control = "ESCAPE" context = "both"}
-	{action = "Sneak" device = "keyboard" control = "LEFT_SHIFT" context = "world"}
+	{action = "Sneak" device = "keyboard" control = "LEFT_CONTROL" context = "world"}
 	{action = "Interact" device = "keyboard" control = "F" context = "world"}
-	{action = "Sprint_Hold" device = "keyboard" control = "LEFT_CONTROL" context = "world"}
+	{action = "Sprint_Hold" device = "keyboard" control = "LEFT_SHIFT" context = "world"}
 	{action = "Hotbar_Previous" device = "keyboard" control = "LEFT_BRACKET" context = "world"}
 	{action = "Hotbar_Next" device = "keyboard" control = "RIGHT_BRACKET" context = "world"}
 	{action = "Hotbar_Slot_1" device = "keyboard" control = "ONE" context = "world"}

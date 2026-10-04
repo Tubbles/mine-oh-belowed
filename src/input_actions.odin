@@ -36,7 +36,7 @@ Action :: enum u8 {
 	// Toggles sprinting (the stick click, 0044); a tick without movement
 	// ends it (update_sprinting).
 	Sprint,
-	// Sprints while held: Left Control on the keyboard.
+	// Sprints while held: Left Shift on the keyboard.
 	Sprint_Hold,
 	Hotbar_Previous,
 	Hotbar_Next,

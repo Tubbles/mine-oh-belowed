@@ -447,7 +447,7 @@ test_player_swims_in_water :: proc(t: ^testing.T) {
 }
 
 // 0044: Sprint toggles while moving, a tick without movement ends it, and
-// Sprint_Hold (Left Control) sprints while held regardless of the toggle.
+// Sprint_Hold (Left Shift) sprints while held regardless of the toggle.
 @(test)
 test_sprint_toggles_and_stops_with_movement :: proc(t: ^testing.T) {
 	moving_press := Input_Frame{move = {0, 1}, just_pressed = {.Sprint}}

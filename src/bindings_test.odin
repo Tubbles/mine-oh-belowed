@@ -81,10 +81,10 @@ reference_keys := [?]Reference_Key {
 	{.ESCAPE, .Pause},
 	{.ENTER, .Confirm},
 	{.BACKSPACE, .Back},
-	{.LEFT_SHIFT, .Sneak},
+	{.LEFT_CONTROL, .Sneak},
 	{.LEFT_SHIFT, .Menu_Secondary},
 	{.F, .Interact},
-	{.LEFT_CONTROL, .Sprint_Hold},
+	{.LEFT_SHIFT, .Sprint_Hold},
 	{.LEFT_BRACKET, .Hotbar_Previous},
 	{.RIGHT_BRACKET, .Hotbar_Next},
 	{.ONE, .Hotbar_Slot_1},
@@ -300,7 +300,7 @@ test_binding_rows :: proc(t: ^testing.T) {
 		}
 		if strings.has_prefix(row, "Sprint Hold:") {
 			found_sprint_hold = true
-			testing.expect_value(t, row, "Sprint Hold: keyboard LEFT_CONTROL")
+			testing.expect_value(t, row, "Sprint Hold: keyboard LEFT_SHIFT")
 		}
 	}
 	testing.expect(t, found_sprint)

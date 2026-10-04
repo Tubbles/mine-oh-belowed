@@ -149,7 +149,7 @@ The Accessibility tab's Sneak and Sprint rows (`settings.sneak_hold`, `settings.
 | Sneak | Hold | Sneaks while held | A press starts, the next stops; it lasts through open screens |
 | Sprint | Toggle | Sprints while held and moving | A press while moving sprints until movement stops or the next press |
 
-`Sprint_Hold` (Left Control) sprints while held whatever the Sprint setting. `update_sneaking` and `update_sprinting` read the choice from the frame. The player's `Player.sneaking` is the truth, and the rest of the tick sees Sneak pressed exactly while it is set (`with_sneaking`), so a toggled sneak while flying keeps descending until toggled off.
+`Sprint_Hold` (Left Shift) sprints while held whatever the Sprint setting. `update_sneaking` and `update_sprinting` read the choice from the frame. The player's `Player.sneaking` is the truth, and the rest of the tick sees Sneak pressed exactly while it is set (`with_sneaking`), so a toggled sneak while flying keeps descending until toggled off.
 
 ## Fly mode and no clip
 

@@ -222,7 +222,7 @@ with_sneaking :: proc(input: Input_Frame, sneaking: bool) -> Input_Frame {
 	return result
 }
 
-// The toggled sprint, or Sprint_Hold held (Left Control).
+// The toggled sprint, or Sprint_Hold held (Left Shift).
 player_sprints :: proc(player: Player, pressed: Action_Set) -> bool {
 	return player.sprinting || .Sprint_Hold in pressed
 }
