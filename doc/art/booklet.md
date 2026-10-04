@@ -569,7 +569,31 @@ What the rounds fixed for the model and the game, in the user's words, for the p
 - The bed is strapped flat against the wall; windows are dotted round the walls; the rest of the wall is computers, screens, buttons, panels and a couple of cabinet doors; no crates, no loose bags.
 - The suit is black with small orange details, the helmet on and the visor down; no text and no flags anywhere.
 
-The exterior and the arrival (the pod falling floor first with its ablative shield flaming in the atmosphere) are the next rounds.
+The exterior came with the model (below) from the notes alone; the arrival (the pod falling floor first with its ablative shield flaming in the atmosphere) is the next round.
+
+### The model
+
+Three rounds in the sealed lab (`tools/model_lab/make_pod_lab.sh`, the brief in `tools/model_lab/pod/BRIEF.md`) on 2026-10-04, from the kept interior and the user's notes alone, under a budget the user raised twice: 12800 triangles for the first two rounds ("since this is such an important model we can increase the budget all the way to 12800") and 25600 for the third.
+
+![The pod, round one of the model seen from the player's eye in the game](booklet/pod_model_round1.jpg)
+
+Round one in the game, the player's eye after the fall: the layout of the sheet (the chair in the middle, the drum airlock low beside the floor, the gauge tower over its inner door, the oxygen manifold to the left), but one flat grey. The user: "The interior is very flat with same drab grey color. We need more orange and blacks, maybe some point lights to give a moody feeling. The sizes are fine. Exterior looks generally good." Round two recoloured it (black lining, dark panels, orange accents, amber lamp heads and tubes) and the game gained what the picture needed: point lights on machine models (0224), a dark base light inside the pod so the lamps carve pools (0225), and meshes past 65536 vertices (0226). The user on round two in the game: "Hmm i like the colors but it still looks flat, does it cast shadows? And i dont see any lamp models. Lets decrease to one overhead lamp strip in the ceiling and one desk light. Also i think maybe we should try increasing the budget even more, lets say doubling it again to 25600, and remodel the whole thing to be higher fidelity, its a little too placeholder-y as it is."
+
+![The pod, round three from the chair: the desk with its keypads and levers, the cabinets, the oxygen manifold and the airlock housing](booklet/pod_model_round3_chair.jpg)
+
+![The pod, round three looking up: the overhead lamp strip on its brackets under the ceiling ring, the portholes and the desk lamp on its arm](booklet/pod_model_round3_lamps.jpg)
+
+![The pod, round three from outside: the riveted cone on its flange, the outer shutter flush in its fairing, the antenna](booklet/pod_model_round3_exterior.jpg)
+
+Round three, the lab's previews (unlit): the whole pod remade at 25488 triangles and eight materials (black, dark, metal, padding, orange, and glowing amber, green and white): chamfered panels, recessed screens in bezels, keypads in sunk wells, gauges with turned bezels and needles, cabinet doors with hinges and latch handles, T-section ribs with flanges and rivets, the chair as tufted rolls with a five point harness on a pedestal with shock struts, the bed as a six section mattress with straps and brackets, the oxygen manifold with handwheels and gauges, the bore with three bulkhead rings and two hand rails. Two lamp fixtures only, dark on top and bright underneath: the overhead strip hung on two brackets over the chair and a hooded desk lamp on an articulated arm; the screens, indicators and the doors' hazard lamps stay emissive patches.
+
+![The pod, round three in the game from the chair's side: the desk lamp's arm on the right, the screens glowing in the dark cabin](booklet/pod_model_game_back.jpg)
+
+![The pod, round three in the game: the airlock bore crouched, the bulkhead rings and rails, the outer shutter's hazard lamps](booklet/pod_model_game_bore.jpg)
+
+![The pod, round three in the game from outside by day: the dark cone on the crater floor](booklet/pod_model_game_outside.jpg)
+
+The game's shots of round three with the cabin at a quarter of the daylight and the two lamps as point lights, clipped to the hull (0229) after the user saw them light the ground outside. Accepted for integration (0221) with the user's "otherwise the latest apk works" on the preview build of 2026-10-04; the doors that open on their own (0222) and collision volumes authored with the model (0230) follow.
 
 ## How the images are made
 
