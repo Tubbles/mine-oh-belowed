@@ -216,7 +216,7 @@ Presentation turns the world, the tick and the render time into pixels and sound
   - `model_triangle_mesh.odin`: the OBJ mesher over the `model_obj` package's reader (Packages): flat shade, footprint check.
   - `model_check.odin`: the workbench's checks (0207): budget, sweep, arm clearance, open cells.
   - `model_arm.odin`, `render_arm.odin`: the inserter's arm (0175): its part files, `arm_pose_at` from the cycle, the joint transforms; its draw and its lamp's light.
-  - `render_point_lights.odin`: `Point_Light`, the nearest working lights for the field shader and the model shader (0175), machine lights in the world and the uniform packing (0224).
+  - `render_point_lights.odin`: `Point_Light`, the nearest working lights for the field shader and the model shader (0175), machine lights in the world and the uniform packing (0224), the clip boxes (0229).
   - `render_belts.odin`, `render_fluids.odin`, `render_power.odin`, `render_loose_items.odin`: belts and lane items; pipes and ports; poles and wires; loose stacks.
   - `render_belt_runs.odin`: belt and pipe runs swept along their polylines, their items and the belt poles (0176), `draw_belt_runs`, `draw_belt_run_ghost`.
   - `render_icons.odin`: `Item_Atlas` for items and UI icons, item billboards.

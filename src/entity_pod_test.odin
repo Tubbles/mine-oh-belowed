@@ -586,8 +586,8 @@ test_machine_lights_shine_while_their_model_works :: proc(t: ^testing.T) {
 	machines := make_test_machines()
 	pod_machine := find_machine_of_kind(machines, .Pod)
 	generator_machine := find_machine_of_kind(machines, .Oxygen_Generator)
-	machines.machines[pod_machine].lights[0] = {position = {0, 5.8, 0}, color = {1, 0.6, 0.15}, radius_cells = 6}
-	machines.machines[pod_machine].lights[1] = {position = {3, 2, 0}, color = {0.77, 0.89, 1}, radius_cells = 2}
+	machines.machines[pod_machine].lights[0] = {position = {0, 5.8, 0}, color = {1, 0.6, 0.15}, radius_cells = 6, clip = true}
+	machines.machines[pod_machine].lights[1] = {position = {3, 2, 0}, color = {0.77, 0.89, 1}, radius_cells = 2, clip = true}
 	machines.machines[pod_machine].light_count = 2
 	machines.machines[generator_machine].lights[0] = {position = {0, 1, 0}, color = {0.77, 0.89, 1}, radius_cells = 3}
 	machines.machines[generator_machine].light_count = 1
@@ -595,7 +595,7 @@ test_machine_lights_shine_while_their_model_works :: proc(t: ^testing.T) {
 	defer destroy_entities(&entities)
 	frame, pod := place_test_pod(&entities, machines)
 	lights := make([dynamic]Point_Light, context.temp_allocator)
-	gather_machine_lights(&lights, &entities, machines)
+	gather_machine_lights(&lights, &entities, machines, Model_Renderer{})
 	testing.expect_value(t, len(lights), 3)
 	radii := [3]f32{6 * 0.5, 2 * 0.5, 3 * 0.5}
 	for radius in radii {
@@ -606,13 +606,14 @@ test_machine_lights_shine_while_their_model_works :: proc(t: ^testing.T) {
 		testing.expectf(t, found, "no light of radius %v in %v", radius, lights[:])
 	}
 	pod_common := entity_common(&entities, entity_at(&entities, pod_origin(pod), frame.id))^
-	expected := machine_point_light(pod.lights[0], entity_body_matrix(&entities, pod_common), 500)
+	body := entity_body_matrix(&entities, pod_common)
+	expected := machine_point_light(pod.lights[0], body, 500, machine_light_clip_box(body, pod.footprint, f32(pod.footprint.y)))
 	testing.expect(t, slice.contains(lights[:], expected), "the pod's first lamp is gathered where its model is drawn")
 
 	toggle_hatch(&entities, machines, test_pod_fixture(&entities, frame, pod, TEST_OUTER_HATCH), 1, nil)
 	toggle_hatch(&entities, machines, test_pod_fixture(&entities, frame, pod, TEST_INNER_HATCH), 2, nil)
 	clear(&lights)
-	gather_machine_lights(&lights, &entities, machines)
+	gather_machine_lights(&lights, &entities, machines, Model_Renderer{})
 	testing.expect_value(t, len(lights), 2)
 	testing.expect_value(t, entity_frame_pitch_millimetres(&entities, frame.id), 500)
 	testing.expect_value(t, entity_frame_pitch_millimetres(&entities, BLOCK_FRAME), 1000)
@@ -701,4 +702,32 @@ test_a_player_in_the_cabin_takes_the_interior_light_share :: proc(t: ^testing.T)
 	beside.previous_position = beside.position
 	testing.expect_value(t, field_player_interior_light_share(interiors, beside), 1)
 	testing.expect_value(t, field_player_interior_light_share(nil, spawn), 1)
+}
+
+// Work item 0229: a pod's lamp lights inside its box: its own position and
+// the footprint's middle are inside, a cell centre beyond the footprint's
+// +x face is outside.
+@(test)
+test_a_pods_lamp_lights_only_inside_its_box :: proc(t: ^testing.T) {
+	machines := make_test_machines()
+	pod_machine := find_machine_of_kind(machines, .Pod)
+	machines.machines[pod_machine].lights[0] = {position = {0, 5.8, 0}, color = {1, 0.6, 0.15}, radius_cells = 6, clip = true}
+	machines.machines[pod_machine].light_count = 1
+	entities: Entities
+	defer destroy_entities(&entities)
+	frame, pod := place_test_pod(&entities, machines)
+	lights := make([dynamic]Point_Light, context.temp_allocator)
+	gather_machine_lights(&lights, &entities, machines, Model_Renderer{})
+	testing.expect_value(t, len(lights), 1)
+	if len(lights) != 1 {
+		return
+	}
+	box, clipped := lights[0].clip_box.?
+	testing.expect(t, clipped, "the pod's lamp has a box")
+	testing.expect(t, clip_box_reach(box, lights[0].position) <= 1, "the lamp lies inside its box")
+	size := rotated_footprint_size(pod.footprint, POD_ROTATION)
+	beyond := world_position_to_metres(frame_cell_centre(frame, pod_origin(pod) + {size.x + 2, 1, size.z / 2}))
+	testing.expect(t, clip_box_reach(box, beyond) > 1, "a cell beyond the +x face lies outside")
+	middle := world_position_to_metres(frame_cell_centre(frame, pod_origin(pod) + {size.x / 2, 1, size.z / 2}))
+	testing.expect(t, clip_box_reach(box, middle) <= 1, "the footprint's middle lies inside")
 }

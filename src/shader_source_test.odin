@@ -1,5 +1,6 @@
 package game
 
+import "core:fmt"
 import "core:os"
 import "core:strings"
 import "core:testing"
@@ -144,4 +145,45 @@ test_shipped_shaders_begin_with_a_version_line :: proc(t: ^testing.T) {
 		checked += 1
 	}
 	testing.expect(t, checked >= 10, "found fewer than the ten shipped shaders (chunk, water, field, arrival and model)")
+}
+
+// The point light sum of a shader: from `vec3 point_light_sum(` to its
+// closing brace; "" without it.
+shader_point_light_sum :: proc(source: string) -> string {
+	start := strings.index(source, "vec3 point_light_sum(")
+	if start < 0 {
+		return ""
+	}
+	length := strings.index(source[start:], "\n}\n")
+	if length < 0 {
+		return ""
+	}
+	return source[start:][:length + 3]
+}
+
+// Work item 0229: the field and model shaders take the same lights and
+// share point_light_sum but for the clip line (the terrain skips a
+// clipped light, the models test its box); only the model shader takes
+// the boxes.
+@(test)
+test_the_point_light_shaders_share_the_clip_and_the_sum :: proc(t: ^testing.T) {
+	directory := platform.join_path(test_data_directory(), CHUNK_SHADER_DIRECTORY)
+	field_data, field_error := os.read_entire_file(platform.join_path(directory, "field.fs"), context.temp_allocator)
+	testing.expect_value(t, field_error, nil)
+	model_data, model_error := os.read_entire_file(platform.join_path(directory, "model.fs"), context.temp_allocator)
+	testing.expect_value(t, model_error, nil)
+	field, model := string(field_data), string(model_data)
+	positions := fmt.tprintf("uniform vec4 point_light_positions[%du];", MAXIMUM_POINT_LIGHTS)
+	boxes := fmt.tprintf("uniform vec4 point_light_boxes[%du];", MAXIMUM_POINT_LIGHTS * POINT_LIGHT_BOX_ROWS)
+	testing.expect(t, strings.contains(field, positions), "field.fs declares the positions")
+	testing.expect(t, strings.contains(model, positions), "model.fs declares the positions")
+	testing.expect(t, strings.contains(model, boxes), "model.fs declares the boxes")
+	testing.expect(t, strings.contains(model, "bool point_light_inside_box("), "model.fs tests the box")
+	field_clip := "        if (color.a < 0.5) {\n"
+	model_clip := "        if (!point_light_inside_box(index, position)) {\n"
+	field_sum, model_sum := shader_point_light_sum(field), shader_point_light_sum(model)
+	testing.expect(t, strings.contains(field_sum, field_clip), "field.fs skips a clipped light")
+	testing.expect(t, strings.contains(model_sum, model_clip), "model.fs tests a light's box")
+	field_as_model, _ := strings.replace_all(field_sum, field_clip, model_clip, context.temp_allocator)
+	testing.expect(t, field_sum != "" && field_as_model == model_sum, "point_light_sum differs between field.fs and model.fs beyond the clip line")
 }

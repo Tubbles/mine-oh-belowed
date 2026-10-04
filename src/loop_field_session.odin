@@ -195,7 +195,7 @@ set_field_scene_point_lights :: proc(scene: Field_Scene, camera: rl.Camera3D) {
 		}
 	}
 	if !scene.hide_frames {
-		gather_machine_lights(&lights, &scene.state.world.entities, scene.content.machines)
+		gather_machine_lights(&lights, &scene.state.world.entities, scene.content.machines, scene.models)
 	}
 	nearest, _ := nearest_point_lights(lights[:], camera.position)
 	set_field_point_lights(scene.renderer, nearest)

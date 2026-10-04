@@ -290,9 +290,11 @@ destroy_field_renderer :: proc(renderer: ^Field_Renderer) {
 
 // Point lights (work item 0175, render_point_lights.odin): the lights of
 // working parts nearest the camera, uploaded before draw_field each frame.
-// Unused slots go up with radius 0, which the shader skips.
+// Unused slots go up with radius 0, which the shader skips. The terrain
+// takes nothing from a clipped light (colour alpha 0, 0229), so field.fs
+// needs no boxes and they do not go up.
 set_field_point_lights :: proc(renderer: ^Field_Renderer, lights: [MAXIMUM_POINT_LIGHTS]Point_Light) {
-	positions, colors := point_light_uniform_values(lights)
+	positions, colors, _ := point_light_uniform_values(lights)
 	shader := renderer.material.shader
 	rl.SetShaderValueV(shader, renderer.point_light_locations[0], &positions, .VEC4, MAXIMUM_POINT_LIGHTS)
 	rl.SetShaderValueV(shader, renderer.point_light_locations[1], &colors, .VEC4, MAXIMUM_POINT_LIGHTS)

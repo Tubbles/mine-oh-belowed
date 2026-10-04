@@ -35,8 +35,9 @@ Model_Renderer :: struct {
 	material:              rl.Material,
 	// The emissive layer's: raylib's default.
 	emissive_material:     rl.Material,
-	// The model shader's point light uniforms (set_model_point_lights).
-	point_light_locations: [2]i32,
+	// The model shader's point light uniforms (set_model_point_lights):
+	// the positions, the colours and the clip boxes (0229).
+	point_light_locations: [3]i32,
 	point_lights_ready:    bool,
 	// By Machine_Id; no vertices in the body for a machine drawn as a box.
 	models:                []Uploaded_Machine_Model,
@@ -246,7 +247,7 @@ use_model_shader :: proc(renderer: ^Model_Renderer, data_directory: string) {
 		return
 	}
 	renderer.material.shader = shader
-	renderer.point_light_locations = {rl.GetShaderLocation(shader, "point_light_positions"), rl.GetShaderLocation(shader, "point_light_colors")}
+	renderer.point_light_locations = {rl.GetShaderLocation(shader, "point_light_positions"), rl.GetShaderLocation(shader, "point_light_colors"), rl.GetShaderLocation(shader, "point_light_boxes")}
 	renderer.point_lights_ready = true
 }
 
@@ -277,14 +278,16 @@ model_layer_material :: proc(renderer: Model_Renderer, layer: Model_Layer) -> rl
 }
 
 // Point lights (0224): the same nearest lights the field shader takes,
-// uploaded before the models draw. Nothing without the model shader.
+// uploaded before the models draw, with the clip boxes (0229). Nothing
+// without the model shader.
 set_model_point_lights :: proc(renderer: Model_Renderer, lights: [MAXIMUM_POINT_LIGHTS]Point_Light) {
 	if !renderer.point_lights_ready {
 		return
 	}
-	positions, colors := point_light_uniform_values(lights)
+	positions, colors, boxes := point_light_uniform_values(lights)
 	rl.SetShaderValueV(renderer.material.shader, renderer.point_light_locations[0], &positions, .VEC4, MAXIMUM_POINT_LIGHTS)
 	rl.SetShaderValueV(renderer.material.shader, renderer.point_light_locations[1], &colors, .VEC4, MAXIMUM_POINT_LIGHTS)
+	rl.SetShaderValueV(renderer.material.shader, renderer.point_light_locations[2], &boxes, .VEC4, MAXIMUM_POINT_LIGHTS * POINT_LIGHT_BOX_ROWS)
 }
 
 brightness_color :: proc(brightness: [3]f32) -> rl.Color {

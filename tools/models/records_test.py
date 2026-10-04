@@ -92,7 +92,7 @@ class RecordsTest(unittest.TestCase):
 
     def test_a_record_with_lights_reads(self):
         record = {"id": "room", "kind": "pod", "model": "room", "footprint": {"width": 3, "depth": 4, "height": 2}}
-        lit = dict(record, lights=[{"position": [1.0, 2.0, 0.0], "color": [255, 180, 90], "radius_cells": 3}])
+        lit = dict(record, lights=[{"position": [1.0, 2.0, 0.0], "color": [255, 180, 90], "radius_cells": 3, "clip": False}])
         self.assertEqual(records.read_machine(lit), records.read_machine(record))
 
 

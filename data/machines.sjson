@@ -84,6 +84,11 @@
 // the model's frame (x and z centred on the unrotated footprint, y from
 // its bottom, +x the front: the OBJ's numbers), inside the footprint with
 // 0.02 cells of slack, color 0 to 255 per channel, radius_cells 1 to 64.
+// A lamp may add clip = false (work item 0229): by default a lamp lights
+// only inside its machine's box (the footprint, up to the model's top
+// when it rises higher) and gives nothing to a face turned away from it,
+// so a lamp inside a hull leaves the hull's outside dark; with clip =
+// false it shines out of the machine (a street lamp).
 // Each shines a point light in a field session while the machine's model
 // works (the same flag that lights its emissive materials; a pod always
 // works); the block world takes no point lights. Presentation only. A

@@ -251,61 +251,63 @@ foundation_model_working :: proc(entities: ^Entities, foundation: Foundation, ma
 	return false
 }
 
-// A working machine's lamps (0224) in the world, where its model is drawn.
-append_machine_lights :: proc(lights: ^[dynamic]Point_Light, entities: ^Entities, common: Entity_Common, machine: Machine, working: bool) {
+// A working machine's lamps (0224) in the world, where its model is drawn,
+// clipped to the machine's box up to its model's top (0229).
+append_machine_lights :: proc(lights: ^[dynamic]Point_Light, entities: ^Entities, common: Entity_Common, machine: Machine, working: bool, top_cells: f32) {
 	if !working || machine.light_count == 0 {
 		return
 	}
 	body := entity_body_matrix(entities, common)
 	pitch := entity_frame_pitch_millimetres(entities, common.frame)
+	clip_box := machine_light_clip_box(body, machine.footprint, top_cells)
 	for index in 0 ..< machine.light_count {
-		append(lights, machine_point_light(machine.lights[index], body, pitch))
+		append(lights, machine_point_light(machine.lights[index], body, pitch, clip_box))
 	}
 }
 
 // The lamps of the machines draw_entities draws whose model works. Chests
 // and capsules never work; an inserter's light is its arm's lamp
-// (arm_point_light).
-gather_machine_lights :: proc(lights: ^[dynamic]Point_Light, entities: ^Entities, machines: Machine_Registry) {
+// (arm_point_light). The models give each box its top (machine_model_top).
+gather_machine_lights :: proc(lights: ^[dynamic]Point_Light, entities: ^Entities, machines: Machine_Registry, models: Model_Renderer) {
 	for furnace in entities.furnaces.entries {
 		if furnace.alive {
-			append_machine_lights(lights, entities, furnace.common, machines.machines[furnace.machine], furnace_model_working(furnace))
+			append_machine_lights(lights, entities, furnace.common, machines.machines[furnace.machine], furnace_model_working(furnace), machine_model_top(models, furnace.common))
 		}
 	}
 	for crate in entities.schematic_crates.entries {
 		if crate.alive {
-			append_machine_lights(lights, entities, crate.common, machines.machines[crate.machine], schematic_crate_model_working(crate))
+			append_machine_lights(lights, entities, crate.common, machines.machines[crate.machine], schematic_crate_model_working(crate), machine_model_top(models, crate.common))
 		}
 	}
 	for drill in entities.drills.entries {
 		if drill.alive {
-			append_machine_lights(lights, entities, drill.common, machines.machines[drill.machine], drill_model_working(drill))
+			append_machine_lights(lights, entities, drill.common, machines.machines[drill.machine], drill_model_working(drill), machine_model_top(models, drill.common))
 		}
 	}
 	for assembler in entities.assemblers.entries {
 		if assembler.alive {
-			append_machine_lights(lights, entities, assembler.common, machines.machines[assembler.machine], assembler_model_working(assembler))
+			append_machine_lights(lights, entities, assembler.common, machines.machines[assembler.machine], assembler_model_working(assembler), machine_model_top(models, assembler.common))
 		}
 	}
 	for lab in entities.labs.entries {
 		if lab.alive {
-			append_machine_lights(lights, entities, lab.common, machines.machines[lab.machine], lab_model_working(lab))
+			append_machine_lights(lights, entities, lab.common, machines.machines[lab.machine], lab_model_working(lab), machine_model_top(models, lab.common))
 		}
 	}
 	for drill in entities.core_sample_drills.entries {
 		if drill.alive {
-			append_machine_lights(lights, entities, drill.common, machines.machines[drill.machine], core_sample_drill_is_working(drill))
+			append_machine_lights(lights, entities, drill.common, machines.machines[drill.machine], core_sample_drill_is_working(drill), machine_model_top(models, drill.common))
 		}
 	}
 	for pad in entities.launch_pads.entries {
 		if pad.alive {
-			append_machine_lights(lights, entities, pad.common, machines.machines[pad.machine], launch_pad_is_working(pad))
+			append_machine_lights(lights, entities, pad.common, machines.machines[pad.machine], launch_pad_is_working(pad), machine_model_top(models, pad.common))
 		}
 	}
 	for foundation in entities.foundations.entries {
 		if foundation.alive {
 			machine := machines.machines[foundation.machine]
-			append_machine_lights(lights, entities, foundation.common, machine, foundation_model_working(entities, foundation, machine))
+			append_machine_lights(lights, entities, foundation.common, machine, foundation_model_working(entities, foundation, machine), machine_model_top(models, foundation.common))
 		}
 	}
 }

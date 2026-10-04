@@ -623,3 +623,13 @@ test_a_tree_machine_has_no_item_and_no_entity :: proc(t: ^testing.T) {
 	testing.expect_value(t, entity_counts(&entities), [Entity_Kind]int{})
 	testing.expect_value(t, len(entities.frames.occupants), 0)
 }
+
+// Work item 0229: a record's lamp clips unless it says clip = false.
+@(test)
+test_a_machine_lights_clip_is_true_unless_it_says_false :: proc(t: ^testing.T) {
+	definitions := []Machine_Light_Definition{{position = {0, 1, 0}, color = {255, 255, 255}, radius_cells = 2}, {position = {0, 1, 0}, color = {255, 255, 255}, radius_cells = 2, clip = false}}
+	lights, count := resolve_machine_lights(definitions)
+	testing.expect_value(t, count, 2)
+	testing.expect(t, lights[0].clip, "a lamp without clip clips")
+	testing.expect(t, !lights[1].clip, "a lamp with clip = false does not")
+}

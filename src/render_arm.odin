@@ -83,7 +83,8 @@ draw_placed_arm :: proc(renderer: Model_Renderer, arm: [Arm_Part]Uploaded_Layers
 	}
 }
 
-// The lamp's light while the arm moves; found false at rest.
+// The lamp's light while the arm moves; found false at rest. With no clip
+// box: it lights the ground it works over (0229).
 arm_point_light :: proc(placement: Arm_Placement) -> (light: Point_Light, found: bool) {
 	if !placement.working {
 		return {}, false

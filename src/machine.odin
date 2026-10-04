@@ -213,21 +213,27 @@ Pod_Fixture_Definition :: struct {
 }
 
 // A lamp as written in the file (work item 0224): position in cells of
-// the model's frame, color 0 to 255 per channel.
+// the model's frame, color 0 to 255 per channel. clip false lets the lamp
+// shine outside the machine's box (work item 0229); absent is true.
 Machine_Light_Definition :: struct {
 	position:     [3]f32,
 	color:        [3]int,
 	radius_cells: f32,
+	clip:         Maybe(bool),
 }
 
 // A machine's lamp (work item 0224): the position in cells of the model's
 // frame (x and z centred on the unrotated footprint, y from its bottom, +x
 // the front: the OBJ's numbers), the colour 0 to 1 and the radius in
-// cells. machine_point_light puts it in the world.
+// cells. machine_point_light puts it in the world. clip: clipped to the
+// machine's box (work item 0229, machine_light_clip_box); a hand built
+// Machine_Light{} holds false, a record's lamp is true unless it says
+// clip = false.
 Machine_Light :: struct {
 	position:     [3]f32,
 	color:        [3]f32,
 	radius_cells: f32,
+	clip:         bool,
 }
 
 // As written in the file, before references are resolved.
@@ -952,7 +958,7 @@ validate_machine_lights :: proc(definition: Machine_Definition) -> string {
 resolve_machine_lights :: proc(definitions: []Machine_Light_Definition) -> (lights: [MAXIMUM_MACHINE_LIGHTS]Machine_Light, count: int) {
 	for definition in definitions[:min(len(definitions), MAXIMUM_MACHINE_LIGHTS)] {
 		color := [3]f32{f32(definition.color[0]), f32(definition.color[1]), f32(definition.color[2])} / 255
-		lights[count] = {position = definition.position, color = color, radius_cells = definition.radius_cells}
+		lights[count] = {position = definition.position, color = color, radius_cells = definition.radius_cells, clip = definition.clip.? or_else true}
 		count += 1
 	}
 	return lights, count

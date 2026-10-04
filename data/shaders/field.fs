@@ -1,7 +1,8 @@
 #version 330
 
 // Field fragment shader (work item 0169, render_field.odin): triplanar
-// texturing of the smooth terrain. Each material's generated tile
+// texturing of the smooth terrain, with the point lights of 0175, 0224
+// and 0229. Each material's generated tile
 // (texture_field_materials.odin) is projected along the three axes and
 // the three are blended by the absolute normal, sharpened so a slope
 // shows one projection, not a smear of three. The tile is read at two
@@ -78,12 +79,23 @@ vec3 material_color(sampler2D tile, vec3 blend)
 // The lights come nearest first with the unused slots last, so the loop
 // stops at the first unused one and costs nothing without lights.
 // The term is soft: half of it ignores the facing, and it falls off
-// smoothly to nothing at the radius.
+// smoothly to nothing at the radius. A machine's lamp is clipped to its
+// machine's box (work item 0229): its colour's alpha is 0, and the
+// terrain takes nothing from it (the machine's floor covers the ground
+// inside its box, and the ground round the machine stays unlit), so this
+// shader needs no boxes; model.fs tests the box. point_light_sum is the
+// one of model.fs but for that line.
 uniform vec4 point_light_positions[8u];
 uniform vec4 point_light_colors[8u];
 
 const float point_light_wrap = 0.5;
+// A clipped light fades out over this much of the cosine past grazing, so
+// a curved fixture shows no hard edge.
+const float back_face_fade = 0.25;
 
+// The back face factor below is always 1 here, since a clipped light
+// (alpha 0) is skipped first; it stays so the sum is line for line
+// model.fs's, which shader_source_test.odin compares.
 vec3 point_light_sum(vec3 position, vec3 normal)
 {
     vec3 sum = vec3(0.0);
@@ -92,10 +104,17 @@ vec3 point_light_sum(vec3 position, vec3 normal)
         if (light.w <= 0.0) {
             break;
         }
+        vec4 color = point_light_colors[index];
+        if (color.a < 0.5) {
+            continue;
+        }
         vec3 offset = light.xyz - position;
         float share = clamp(1.0 - dot(offset, offset) / max(light.w * light.w, smallest_weight_sum), 0.0, 1.0);
-        float facing = mix(point_light_wrap, 1.0, max(dot(normal, normalize(offset + vec3(smallest_weight_sum))), 0.0));
-        sum += point_light_colors[index].rgb * share * share * facing;
+        float turned = dot(normal, normalize(offset + vec3(smallest_weight_sum)));
+        float facing = mix(point_light_wrap, 1.0, max(turned, 0.0));
+        float back_face = clamp(1.0 + turned / back_face_fade, 0.0, 1.0);
+        facing *= mix(back_face, 1.0, color.a);
+        sum += color.rgb * share * share * facing;
     }
     return sum;
 }
