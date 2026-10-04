@@ -9,8 +9,9 @@ import "shared:raylib/rlgl"
 // holds the player's.
 THIRD_PERSON_DISTANCE :: 4.0
 THIRD_PERSON_HEIGHT :: 0.75
-// Kept between the pulled in camera and the block that blocked it, so the
-// near plane does not clip into the block.
+// Kept between the pulled in camera and the block that blocked it, or on
+// the field the surface (measured along the surface's normal, 0220), so
+// the near plane does not clip into it.
 THIRD_PERSON_WALL_MARGIN :: 0.2
 // The sprint field of view kick eases in or out over this long (work item
 // 0073).

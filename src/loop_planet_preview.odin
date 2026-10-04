@@ -430,7 +430,7 @@ planet_preview_raylib_camera :: proc(preview: ^Planet_Preview, alpha: f32) -> rl
 	if preview.walking {
 		body := planet_preview_player(preview).field
 		view := field_player_view(body, preview.session.field_content.tuning, alpha, body.crouching ? 1 : 0)
-		return field_camera(view, body.camera_mode, THIRD_PERSON_DISTANCE, 0, PLANET_PREVIEW_FIELD_OF_VIEW)
+		return pulled_in_field_camera(&preview.session.simulation, preview.session.field_content, view, body.camera_mode, THIRD_PERSON_DISTANCE, 0, PLANET_PREVIEW_FIELD_OF_VIEW)
 	}
 	return planet_preview_free_camera(preview.camera, preview.basis, PLANET_PREVIEW_FIELD_OF_VIEW)
 }

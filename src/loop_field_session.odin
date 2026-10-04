@@ -350,7 +350,7 @@ draw_field_sky :: proc(renderer: ^Sky_Renderer, camera: rl.Camera3D, sky: Day_Sk
 // The viewport's field camera, kept for the HUD's projections.
 field_viewport_camera :: proc(state: ^Frame_State, viewport: ^Viewport, player: Player, alpha: f32) -> rl.Camera3D {
 	view := field_player_view(player.field, state.session.field_content.tuning, alpha, field_crouch_progress_of(state.presentation.field_renderer.crouch_progress[:], viewport.player))
-	camera := field_camera(view, player.field.camera_mode, state.settings.third_person_distance, state.settings.third_person_shoulder, state.settings.field_of_view)
+	camera := pulled_in_field_camera(&state.session.simulation, state.session.field_content, view, player.field.camera_mode, state.settings.third_person_distance, state.settings.third_person_shoulder, state.settings.field_of_view)
 	viewport.presentation.camera = camera
 	return camera
 }

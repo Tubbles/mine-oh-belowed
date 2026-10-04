@@ -227,7 +227,7 @@ Presentation turns the world, the tick and the render time into pixels and sound
   - `cues.odin`: `Cue_Memory`, `detect_cues`, the frame's cues from the simulation's counters that the player, the particles and the sounds read.
   - `render_player.odin`, `render_player_model.odin`, `player_animation.odin`, `render_fly_camera.odin`: pose, camera, ghosts, hands; limb models; walk cadence and limb angles; `Fly_Camera`.
   - `render_field_trees.odin`: the trees' draw (0197), `Field_Tree_Cache` of the regions round the eyes (`update_field_tree_cache`), `field_visible_trees` capped nearest first, `draw_field_trees`.
-  - `render_field_camera.odin`: `field_camera`, the field player's first and third person cameras with the player's up (0170); the crouch's easing and eye (0218).
+  - `render_field_camera.odin`: `field_camera`, the field player's first and third person cameras with the player's up (0170); the third person camera pulled in by the field, the frames and the trunks (0220, `pulled_in_field_camera`, `field_third_person_position`); the crouch's easing and eye (0218).
   - `render_arrival.odin`: the arrival's presentation (0200): `arrival_view`, the descent's camera on the tilted path, the window overlay and its flames, the shake, the dust, the arrival's sounds and the hatch cue (`play_hatch_sounds`).
   - `particles.odin`, `render_particles.odin`: `Particle_System`; emitters, `Particle_Memory`, capsule descent.
   - `ambient_life.odin`, `render_life.odin`, `render_flames.odin`: flocks, insects, fish; their draws; torch flames.

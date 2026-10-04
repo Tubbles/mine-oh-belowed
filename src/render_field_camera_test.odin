@@ -1,5 +1,6 @@
 package game
 
+import "core:math"
 import "core:testing"
 
 expect_f32_vector_near :: proc(t: ^testing.T, got, wanted: [3]f32, tolerance: f32, label: string) {
@@ -75,4 +76,107 @@ test_a_crouched_field_body_is_drawn_lower :: proc(t: ^testing.T) {
 	crouched := transform_point(field_player_body_transform(feet, player, field_body_up_scale(tuning, 1)) * player_model_scale(), {0, 29, 0})
 	ratio := f32(850) / 1800
 	testing.expectf(t, standing.y > 1 && abs(crouched.y - standing.y * ratio) <= 1e-3, "the head at %v crouched, %v standing", crouched.y, standing.y)
+}
+
+// The pulled in third person camera (0220).
+
+PULL_IN_TEST_TOLERANCE_METRES :: 0.02
+
+f32_distance :: proc(first, second: [3]f32) -> f32 {
+	difference := first - second
+	return math.sqrt(difference.x * difference.x + difference.y * difference.y + difference.z * difference.z)
+}
+
+// A 4 m face 2 m ahead of the eye along the offset: the camera stops the
+// margin short of it; an eye 0.1 m short of the face puts the camera at
+// the eye.
+@(test)
+test_the_field_third_person_camera_stops_short_of_a_wall :: proc(t: ^testing.T) {
+	for spacing in TEST_FIELD_SPACINGS {
+		world := make_test_field(Test_Terrain{kind = .Ledge, ledge_height = metres_to_position_units(4)}, spacing)
+		defer destroy_field_world(&world)
+		eye := test_site_point(0, millimetres_to_position_units(1600), 0)
+		camera := field_third_person_position(&world, nil, nil, spacing, eye, {4, 0, 0})
+		distance := f32_distance(camera, world_position_to_metres(eye))
+		testing.expectf(t, abs(distance - (2 - THIRD_PERSON_WALL_MARGIN)) <= PULL_IN_TEST_TOLERANCE_METRES, "%d mm: the camera %v m from the eye", spacing, distance)
+		near_eye := test_site_point(millimetres_to_position_units(1900), millimetres_to_position_units(1600), 0)
+		testing.expect_value(t, field_third_person_position(&world, nil, nil, spacing, near_eye, {4, 0, 0}), world_position_to_metres(near_eye))
+	}
+}
+
+// A crouched player deep in the 1 m tunnel: the ray meets the roof at a
+// grazing angle, and the camera stays in the tunnel's air, the margin
+// under the roof along its normal.
+@(test)
+test_the_field_third_person_camera_stays_inside_a_one_metre_tunnel :: proc(t: ^testing.T) {
+	for spacing in TEST_FIELD_SPACINGS {
+		world := make_test_field(TEST_ONE_METRE_TUNNEL, spacing)
+		defer destroy_field_world(&world)
+		tuning := test_field_tuning(spacing)
+		player := start_crouch_test_player(&world, tuning)
+		run_field_player(&world, tuning, &player, FIELD_SNEAK_FORWARD, 360)
+		testing.expectf(t, player.crouching && player.position.x > metres_to_position_units(5), "%d mm: crouching %v at x %d", spacing, player.crouching, player.position.x)
+		view := field_player_view(player, tuning, 1, 1)
+		offset := field_third_person_offset(view, THIRD_PERSON_DISTANCE, 0.6)
+		camera := field_third_person_position(&world, nil, nil, spacing, view.eye, offset)
+		eye := world_position_to_metres(view.eye)
+		distance := f32_distance(camera, eye)
+		testing.expectf(t, distance < f32_distance(offset, {}) - THIRD_PERSON_WALL_MARGIN, "%d mm: the camera %v m from the eye is not pulled in", spacing, distance)
+		units := [3]i64{i64(offset.x * POSITION_UNITS_PER_METRE), i64(offset.y * POSITION_UNITS_PER_METRE), i64(offset.z * POSITION_UNITS_PER_METRE)}
+		direction, _ := normalize_fixed(units)
+		testing.expectf(t, !raycast_field(&world, spacing, view.eye, direction, i64(distance * POSITION_UNITS_PER_METRE)).hit, "%d mm: rock between the eye and the camera", spacing)
+		testing.expectf(t, !field_position_is_ground(&world, spacing, metres_to_world_position(camera)), "%d mm: the camera %v is in the ground", spacing, camera)
+		roof := f32(TEST_ONE_METRE_TUNNEL.ledge_height + sample_axis_to_position(1, spacing) / 2) / POSITION_UNITS_PER_METRE
+		under := roof - (camera.y - TEST_SITE_RADIUS_METRES)
+		testing.expectf(t, camera.x > TEST_LEDGE_FACE_METRES && under >= THIRD_PERSON_WALL_MARGIN - PULL_IN_TEST_TOLERANCE_METRES, "%d mm: the camera at x %v, %v m under the roof", spacing, camera.x, under)
+	}
+}
+
+// Nothing in the way: the camera is field_camera's, bit for bit, at the
+// settings' shortest, default and longest distances.
+@(test)
+test_the_field_third_person_camera_keeps_its_distance_on_open_ground :: proc(t: ^testing.T) {
+	for spacing in TEST_FIELD_SPACINGS {
+		world := make_test_field(Test_Terrain{kind = .Flat}, spacing)
+		defer destroy_field_world(&world)
+		tuning := test_field_tuning(spacing)
+		player := start_crouch_test_player(&world, tuning)
+		view := field_player_view(player, tuning, 1, 0)
+		for distance in ([3]f32{THIRD_PERSON_DISTANCE_RANGE.minimum, THIRD_PERSON_DISTANCE, THIRD_PERSON_DISTANCE_RANGE.maximum}) {
+			camera := field_third_person_position(&world, nil, nil, spacing, view.eye, field_third_person_offset(view, distance, 0.6))
+			testing.expect_value(t, camera, field_camera(view, .Third_Person, distance, 0.6, 70).position)
+		}
+	}
+}
+
+// Along a frame's right axis: the camera passes a belt's cell (not solid)
+// and stops the margin short of cell 0's near face, 1.75 m from the eye.
+@(test)
+test_the_field_third_person_camera_stops_short_of_a_foundation :: proc(t: ^testing.T) {
+	table, frame := make_test_frame_table(0)
+	defer destroy_frame_table(&table)
+	occupy_frame_cell(&table, frame.id, {-2, 0, 0}, Occupant{handle = 3, flags = {.Blocks_Water}})
+	world: Field_World
+	eye := frame_cell_centre(frame, {-4, 0, 0})
+	camera := field_third_person_position(&world, &table, nil, 1000, eye, unit_vector_to_f32(frame.axes[FRAME_RIGHT]) * 4)
+	distance := f32_distance(camera, world_position_to_metres(eye))
+	testing.expectf(t, abs(distance - (1.75 - THIRD_PERSON_WALL_MARGIN)) <= PULL_IN_TEST_TOLERANCE_METRES, "the camera %v m from the eye", distance)
+}
+
+// A trunk of 0.3 m radius whose axis stands 2 m ahead: the camera stops
+// the margin short of its bark, within the trunk ray's step.
+@(test)
+test_the_field_third_person_camera_stops_short_of_a_trunk :: proc(t: ^testing.T) {
+	world: Field_World
+	trunk := Field_Capsule {
+		bottom = test_site_point(metres_to_position_units(2), 0, 0),
+		up     = {0, UNIT_VECTOR_ONE, 0},
+		length = metres_to_position_units(6),
+		radius = millimetres_to_position_units(300),
+	}
+	eye := test_site_point(0, millimetres_to_position_units(1600), 0)
+	camera := field_third_person_position(&world, nil, {trunk}, 1000, eye, {4, 0, 0})
+	distance := f32_distance(camera, world_position_to_metres(eye))
+	tolerance := f32(FIELD_TREE_AIM_STEP_MILLIMETRES + 2) / MILLIMETRES_PER_METRE
+	testing.expectf(t, abs(distance - (2 - 0.3 - THIRD_PERSON_WALL_MARGIN)) <= tolerance, "the camera %v m from the eye", distance)
 }
