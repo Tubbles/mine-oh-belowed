@@ -1,6 +1,6 @@
 # 0180: The home spawn on dry, current ground
 
-Status: verified (2026-10-05, implementer agent ac2836aa099bd5790, verified the same day with no fix round (three nits, none taken: the two machines test hashes once after the ticks and the join, the zero home site check is 0.8 degrees, the spawn scan per place edit), in `.claude/worktrees/0180` on `item/0180` from `main` at be6f528, the specification approved the same day with the decisions below; M13 follow up, from the switch of 0179; before or with the M14 items)
+Status: landed (2026-10-05, "Land a new world's pod on dry ground and keep its spawn clear (0180)", 90d0aab, installed the same day; implementer agent ac2836aa099bd5790, verified the same day with no fix round (three nits, none taken: the two machines test hashes once after the ticks and the join, the zero home site check is 0.8 degrees, the spawn scan per place edit), in `.claude/worktrees/0180` on `item/0180` from `main` at be6f528, the specification approved the same day with the decisions below; M13 follow up, from the switch of 0179; before or with the M14 items)
 
 ## Goal
 
