@@ -1,10 +1,10 @@
 # 0222: The airlock's doors open and close on their own
 
-Status: todo (2026-10-04, from the user's pod notes of the art rounds, "doors that automatically open and close, but tightly enough so the player will have both doors closed around themselves while being in the middle", split off 0221 by its design stage; after 0221)
+Status: todo (2026-10-04, from the user's pod notes of the art rounds, repeated on the phone the same day with the round three preview ("the doors stay open? I want them to only open individually when the player is really close and then close behind the player"): today the arrival opens both and nothing closes them; "doors that automatically open and close, but tightly enough so the player will have both doors closed around themselves while being in the middle", split off 0221 by its design stage; after 0221)
 
 ## Goal
 
-The pod's two shutter doors work as an airlock without a press: a door opens for a player who comes to it and closes behind them, and the two never stand open at once, so a player crawling through has both doors closed round them in the middle, as the user asked.
+The pod's two shutter doors work as an airlock without a press: a door opens for a player who comes to it and closes behind them, and the two never stand open at once, so a player crawling through has both doors closed round them in the middle, as the user asked. The user's words of the preview: a door opens only when the player is really close to it, the two open individually, and a door closes behind the player.
 
 ## Controls
 
