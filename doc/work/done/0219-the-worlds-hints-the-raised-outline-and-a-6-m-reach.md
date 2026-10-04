@@ -1,6 +1,6 @@
 # 0219: The world's hints, the raised footprint outline and a 6 m reach
 
-Status: verified (2026-10-04, fix round done on item/0219; worktree `.claude/worktrees/0219` on `item/0219` from `main`, the specification approved the same day with the decisions below; the user's playtest notes after 0215: "I don't see some bindings when playing with mouse and keyboard, eg. Q is missing. Also make the 'footprint ghost' extend a little upwards into the air, since now it clips into the terrain and is tricky to see. could we also extend the build distance by 50%"; folds 0217)
+Status: landed (2026-10-04, c181aae; worktree `.claude/worktrees/0219` on `item/0219` from `main`, the specification approved the same day with the decisions below; the user's playtest notes after 0215: "I don't see some bindings when playing with mouse and keyboard, eg. Q is missing. Also make the 'footprint ghost' extend a little upwards into the air, since now it clips into the terrain and is tricky to see. could we also extend the build distance by 50%"; folds 0217)
 
 ## Goal
 
