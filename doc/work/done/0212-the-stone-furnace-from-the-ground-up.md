@@ -1,6 +1,6 @@
 # 0212: The stone furnace, redone from the ground up under supervision
 
-Status: verified (2026-10-04, the lab model integrated and reviewed, ready to land; worktree `.claude/worktrees/0212` on `item/0212` from `main`, the specification approved the same day with the decisions below; user, 2026-10-03: the 0205 models "are fine for very rough placeholder ideas ... but they are very flat, both geometry and color wise ... they need to be completely scrapped ... i want us to completely scrap a single machine and redo it from the ground up, with my supervision ... Lets do the stone furnace first. I want it to be larger, feeling awe-inspiring, formidable, and intimidating through sheer presence, more akin to satisfactory style machine sizes"; after 0211)
+Status: landed (2026-10-04, 07d09e8; the lab model integrated and reviewed; worktree `.claude/worktrees/0212` on `item/0212` from `main`, the specification approved the same day with the decisions below; user, 2026-10-03: the 0205 models "are fine for very rough placeholder ideas ... but they are very flat, both geometry and color wise ... they need to be completely scrapped ... i want us to completely scrap a single machine and redo it from the ground up, with my supervision ... Lets do the stone furnace first. I want it to be larger, feeling awe-inspiring, formidable, and intimidating through sheer presence, more akin to satisfactory style machine sizes"; after 0211)
 
 ## Goal
 
