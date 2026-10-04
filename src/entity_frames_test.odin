@@ -148,6 +148,41 @@ test_the_field_places_foundations_through_the_queue :: proc(t: ^testing.T) {
 	testing.expect_value(t, entity_at(&simulation.world.entities, snapped, frame).kind, Entity_Kind.Foundation)
 }
 
+// Work item 0219: with the shipped field player's reach a Place reaches
+// the ground 5.47 m along the ray and nothing at 6.61 m.
+@(test)
+test_a_placement_reaches_six_metres_and_not_seven :: proc(t: ^testing.T) {
+	config, error := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	testing.expect_value(t, config.field_player.tool_reach_millimetres, 6000)
+	items := make_test_items()
+	content := test_field_simulation_content(items, test_brush(.Sphere, 1000, 10))
+	content.field.tuning = test_field_tuning(1000, config.field_player)
+	content.machines = make_test_machines()
+	content.field.pad_foundation = find_foundation_machine(content.machines)
+	content.field.foundation_pitch_millimetres = 500
+	place := [1]Field_Player_Input{{held = {.Place}, just_pressed = {.Place}}}
+	for test in ([2]struct {
+			degrees: int,
+			reached: bool,
+		}{{-17, true}, {-14, false}}) {
+		simulation := make_test_field_state(make_test_field(Test_Terrain{kind = .Flat}, 1000), 1000)
+		defer destroy_simulation(&simulation)
+		add_test_miner(&simulation, items, test_site_point(0, 0, 0), {"wooden_foundation", 3})
+		simulation.players[0].field.pitch = degrees_to_angle_units(test.degrees)
+		tick_field_simulation(&simulation, content, {})
+		target := simulation.players[0].field.target
+		testing.expectf(t, target.hit == test.reached, "%v degrees: hit %v", test.degrees, target.hit)
+		if test.reached {
+			testing.expectf(t, target.distance > metres_to_position_units(5) && target.distance < metres_to_position_units(6), "%v degrees: %d", test.degrees, target.distance)
+		}
+		simulation.players[0].field.tool = .Foundation
+		simulation.players[0].field.held_machine = content.field.pad_foundation
+		tick_field_simulation(&simulation, content, place[:])
+		testing.expect_value(t, len(simulation.world.entities.frames.frames), test.reached ? 1 : 0)
+	}
+}
+
 // A belt into an inserter into a chest on a foundation pad of frame 1,
 // over a block world whose frame 0 holds a chest at the belt's cell, a
 // chest at the inserter's drop cell and a belt at the belt's output cell:

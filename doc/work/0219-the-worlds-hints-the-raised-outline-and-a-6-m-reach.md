@@ -1,6 +1,6 @@
 # 0219: The world's hints, the raised footprint outline and a 6 m reach
 
-Status: implementing (2026-10-04, worktree `.claude/worktrees/0219` on `item/0219` from `main`, the specification approved the same day with the decisions below; the user's playtest notes after 0215: "I don't see some bindings when playing with mouse and keyboard, eg. Q is missing. Also make the 'footprint ghost' extend a little upwards into the air, since now it clips into the terrain and is tricky to see. could we also extend the build distance by 50%"; folds 0217)
+Status: verified (2026-10-04, fix round done on item/0219; worktree `.claude/worktrees/0219` on `item/0219` from `main`, the specification approved the same day with the decisions below; the user's playtest notes after 0215: "I don't see some bindings when playing with mouse and keyboard, eg. Q is missing. Also make the 'footprint ghost' extend a little upwards into the air, since now it clips into the terrain and is tricky to see. could we also extend the build distance by 50%"; folds 0217)
 
 ## Goal
 
@@ -119,3 +119,5 @@ Nothing here changes a binding, a save layout, the record or the lockstep input.
 3. The menus' one row bar over the hotbar under a screen stays as it is: the hotbar is inert under a screen. No item.
 4. A Brush hint is added to the held group: `{.Rotate, "hint_brush"}` ("Brush") when the held tool is Material or Hand, since R and Y cycle the brush then; it stands where Turn stands for a machine, so the held group is Place, Tools, then Turn or Brush. `field_held_tool_cycles_brush :: proc(tool: Field_Held_Tool) -> bool` returns true for Material and Hand, and `test_the_held_hints_follow_the_tool` covers it.
 5. The stream: this item's worktree is made from `main` beside 0218's; the two share `data/game.sjson` (different keys) and the `field_player` bullet of `doc/content.md`, which the main agent resolves at the second landing.
+6. The exception to 1: when the bar stands above the hotbar and the placement editor's four hints do not fit in the rows under the target lines' band, the editor's bar takes two rows anyway and may reach into the band. A missing Cancel is worse than the tool line crossing the bar, which happens at the UI scales above 1 (1.2 and 1.5, where the screen is under 911 units tall). The world's bar keeps 1 as it is.
+7. At UI scale 1.2 and 1.5 the above bar shares the band with the target lines (the band ends at H/2 + 194, the bar's first row tops at 0.95H - 216, and H is under 911 units there), so a long target line can cross it. Accepted as a limit of the large UI scales, no code change; the choice between lifting the target lines and a HUD layout for the large scales is left to the user (SUGGESTIONS.md).

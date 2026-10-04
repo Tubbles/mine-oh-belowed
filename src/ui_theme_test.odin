@@ -131,6 +131,7 @@ default_gamepad_glyph_icons := [Glyph_Button]Ui_Icon {
 	.Mine           = .Trigger_Right,
 	.Rotate         = .Button_North,
 	.Nudge          = .Dpad,
+	.Tools          = .Dpad,
 }
 
 @(rodata)
@@ -152,6 +153,7 @@ default_keyboard_glyph_labels := [Glyph_Button]string {
 	.Mine           = "Left mouse",
 	.Rotate         = "R",
 	.Nudge          = "Up",
+	.Tools          = "Q",
 }
 
 @(test)
@@ -464,4 +466,41 @@ test_map_dots_take_their_category_colour :: proc(t: ^testing.T) {
 	testing.expect_value(t, colors[0], map_marker_color(theme, .Machine))
 	testing.expect_value(t, colors[1], map_marker_color(theme, .Block))
 	testing.expect_value(t, colors[2], map_marker_color(theme, .Machine))
+}
+
+// Work item 0219: the HUD's glyph bar rows fill greedily from the start,
+// the rest wrapping into the row above; beyond two rows the last hint
+// goes, and a hint wider than the row stands alone and does not fit.
+@(test)
+test_glyph_rows_wrap_upwards_and_drop_from_the_end :: proc(t: ^testing.T) {
+	defer clear_missing_reports(&global_string_table)
+	state := Ui_State{active_device = .Gamepad, bindings = shipped_default_bindings(t)}
+	defer destroy_ui_state(&state)
+	test_ui_frame(&state, {})
+	hints := [3]Glyph_Hint{{.Confirm, "First"}, {.Back, "Second"}, {.Pause, "Third"}}
+	all := glyph_bar_width(&state, hints[:])
+	two := glyph_bar_width(&state, hints[:2])
+	one := glyph_hint_width(&state, hints[0])
+	rows, kept, fits := glyph_bar_rows(&state, hints[:], all, 2)
+	testing.expect_value(t, len(rows), 1)
+	testing.expect_value(t, kept, 3)
+	testing.expect(t, fits)
+	rows, kept, fits = glyph_bar_rows(&state, hints[:], two, 2)
+	testing.expect_value(t, len(rows), 2)
+	testing.expect_value(t, len(rows[0]), 2)
+	testing.expect_value(t, rows[1][0].label, "Third")
+	testing.expect_value(t, kept, 3)
+	testing.expect(t, fits)
+	rows, kept, fits = glyph_bar_rows(&state, hints[:], max(one, glyph_hint_width(&state, hints[1])), 2)
+	testing.expect_value(t, kept, 2)
+	testing.expect_value(t, len(rows), 2)
+	testing.expect_value(t, rows[0][0].label, "First")
+	testing.expect_value(t, rows[1][0].label, "Second")
+	testing.expect(t, fits)
+	rows, kept, fits = glyph_bar_rows(&state, hints[:], one - 1, 2)
+	testing.expect(t, !fits)
+	testing.expect_value(t, kept, 2)
+	for row in rows {
+		testing.expect_value(t, len(row), 1)
+	}
 }

@@ -859,6 +859,11 @@ hint_pick = "Pick"
 hint_close = "Close"
 hint_inventory = "Inventory"
 hint_sprint = "Sprint"
+// The world's held item hints on the field (0219).
+hint_place = "Place"
+hint_tools = "Tools"
+hint_turn = "Turn"
+hint_brush = "Brush"
 
 // Machines (data/machines.sjson) and their panels
 machine_wooden_chest = "Wooden chest"

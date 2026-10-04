@@ -82,6 +82,8 @@ Ui_Audit_Problem :: enum u8 {
 	// A label of the touch row cut short (0137): the row takes the whole
 	// safe width where the strip beside the HUD's hotbar would cut one.
 	Button_Label_Cut,
+	// A glyph or label of the HUD's glyph bar over a hotbar slot (0219).
+	Glyph_Bar_Over_Hotbar,
 }
 
 // One screen stack to audit at every size.
@@ -129,6 +131,9 @@ Ui_Audit_Case :: struct {
 	// anchored editor, so the pause menu shows Cancel placement (0215).
 	placement:         Placement_Editor_Mode,
 	placement_refusal: Field_Edit_Refusal,
+	// A field session: the HUD's field player holds the tool of the
+	// selected hotbar stack, so the glyph bar shows the held hints (0219).
+	field_session:     bool,
 }
 
 // Owns everything a Screen_Context points into.
@@ -364,6 +369,9 @@ audit_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, size: Ui_Audit_Size, aud
 		audit.placement_editor = Placement_Editor{on = true, anchored = audit_case.placement == .Anchored, machine = furnace}
 		screen_context.placement_editor = &audit.placement_editor
 	}
+	if audit_case.field_session {
+		audit_field_session_hud(audit, &hud)
+	}
 	if audit_case.hud {
 		draw_hud(state, screen_context, hud)
 	}
@@ -379,8 +387,57 @@ audit_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, size: Ui_Audit_Size, aud
 	ui_append_overlays(state)
 	case_text := fmt.tprintf("%s, %.0fx%.0f at scale %.2f, text %.1f, %v glyphs", audit_case.name, size.pixels.x, size.pixels.y, size.scale, audit.settings.text_scale, device)
 	audit_draw_list(audit, state, case_text, frame_name)
+	if audit_case.hud && len(audit_case.screens) == 0 && !audit_case.touch {
+		audit_glyph_bar_clear_of_hotbar(audit, state, audit.simulation.players[0].selected_hotbar_slot, case_text, frame_name)
+	}
 	if audit_case.touch {
 		audit_touch_labels_whole(audit, state, case_text, frame_name)
+	}
+}
+
+// The HUD of a field session as make_hud_context builds it: the field
+// player holds the tool of the selected hotbar stack (0219).
+audit_field_session_hud :: proc(audit: ^Ui_Audit, hud: ^Hud_Context) {
+	player := &audit.simulation.players[0]
+	stack := selected_hotbar_stack(player^)
+	hud.field_session, hud.field_view_set = true, true
+	hud.field_view = player.field
+	hud.field_view.tool, _, hud.field_view.held_machine = field_tool_for_item(audit.content, stack_is_empty(stack) ? NO_ITEM : stack.item)
+}
+
+// The hotbar's slot boxes as drawn: the fills in the slot colour at the
+// rectangles the hotbar lays out. In the temp allocator.
+hotbar_slot_boxes_in_draw_list :: proc(commands: []Draw_Command, expected: [HOTBAR_SLOT_COUNT]Ui_Rectangle) -> [dynamic]Ui_Rectangle {
+	boxes := make([dynamic]Ui_Rectangle, context.temp_allocator)
+	for command in commands {
+		if command.kind != .Fill || command.color != HUD_SLOT_COLOR {
+			continue
+		}
+		for rectangle in expected {
+			if rectangle_inside(command.rectangle, rectangle, UI_AUDIT_TOLERANCE) && rectangle_inside(rectangle, command.rectangle, UI_AUDIT_TOLERANCE) {
+				append(&boxes, command.rectangle)
+				break
+			}
+		}
+	}
+	return boxes
+}
+
+// No command of the HUD's glyph bar lies over a hotbar slot (0219).
+audit_glyph_bar_clear_of_hotbar :: proc(audit: ^Ui_Audit, state: ^Ui_State, selected: int, case_text, frame_name: string) {
+	slots := hotbar_slot_boxes_in_draw_list(state.draw_list[:], hud_hotbar_rectangles(ui_safe_area(state), selected))
+	if len(slots) < HOTBAR_SLOT_COUNT {
+		audit_report(audit, case_text, frame_name, .Glyph_Bar_Over_Hotbar, .Fill, {}, fmt.tprintf("%d of %d hotbar slots found", len(slots), HOTBAR_SLOT_COUNT))
+	}
+	for command in state.draw_list {
+		if command.panel != UI_GLYPH_BAR_PANEL {
+			continue
+		}
+		for slot in slots {
+			if _, overlaps := rectangle_intersection(inset(command.rectangle, UI_AUDIT_TOLERANCE), slot); overlaps {
+				audit_report(audit, case_text, frame_name, .Glyph_Bar_Over_Hotbar, command.kind, command.rectangle, command.text)
+			}
+		}
 	}
 }
 
@@ -1018,6 +1075,12 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 	inventory_hotbar(player.inventory)[player.selected_hotbar_slot] = Item_Stack{test_item(audit.content.items, "magnetometer"), 1}
 	player.magnetometer.found = true
 	audit_case(audit, {name = "hud magnetometer", hud = true, toasts = toasts[:]})
+	// The world's glyph bar with a machine held on the field and with
+	// nothing held, beside or above the hotbar (0219).
+	inventory_hotbar(player.inventory)[player.selected_hotbar_slot] = Item_Stack{test_item(audit.content.items, "stone_furnace"), 1}
+	audit_case(audit, {name = "hud field furnace held", hud = true, field_session = true})
+	inventory_hotbar(player.inventory)[player.selected_hotbar_slot] = EMPTY_STACK
+	audit_case(audit, {name = "hud field nothing held", hud = true, field_session = true})
 	// The configure pop-up of a foundation over the inventory (0202),
 	// checked at every size down to the smallest, and the inventory's
 	// touch row with Configure in Sort's place.
@@ -1545,8 +1608,11 @@ test_the_hint_beside_a_machine_shows_the_inventory_glyph :: proc(t: ^testing.T) 
 			destroy_ui_state(&state)
 		}
 	}
-	// The switch's three hints fit the glyph bar at every audited size and
-	// text scale, the smallest included.
+	// The switch's Turn and Open fit the glyph bar at every audited size and
+	// text scale, the smallest included. Pause is not asserted: the world's
+	// bar sheds it first (0219), and at 1280 by 800 scale 1.5 with the
+	// largest text the gamepad's Turn and Open take a row each beside the
+	// hotbar.
 	player.target = Raycast_Hit{hit = true, entity = switch_handle}
 	text_scale_before := audit.settings.text_scale
 	audit_sizes := UI_AUDIT_SIZES
@@ -1561,7 +1627,7 @@ test_the_hint_beside_a_machine_shows_the_inventory_glyph :: proc(t: ^testing.T) 
 			state.active_device = .Gamepad
 			draw_hud(&state, audit_screen_context(audit), audit_hud_context(audit))
 			ui_resolve(&state)
-			for label in ([3]string{text("hint_toggle"), text("hint_open"), text("hint_pause")}) {
+			for label in ([2]string{text("hint_toggle"), text("hint_open")}) {
 				_, found := glyph_beside_label(state.draw_list[:], label)
 				testing.expectf(t, found, "%v scale %.1f text %.1f: %q missing", size.pixels, size.scale, text_scale, label)
 			}
@@ -1576,4 +1642,197 @@ test_the_hint_beside_a_machine_shows_the_inventory_glyph :: proc(t: ^testing.T) 
 	}
 	audit.settings.text_scale = text_scale_before
 	player.target = drill
+}
+
+// The bars the glyph bar tests draw (0219): the placement editor's four,
+// the world's with the stone furnace held on the field, and the world's
+// with nothing held and no target.
+Glyph_Bar_Test_Bar :: enum u8 {
+	Editor,
+	Furnace_Held,
+	Nothing_Held,
+}
+
+// The audit's player set up for the bar: no target and standing still,
+// the selected slot holding the furnace or nothing.
+set_glyph_bar_test_player :: proc(audit: ^Ui_Audit, bar: Glyph_Bar_Test_Bar) {
+	player := &audit.simulation.players[0]
+	player.target = Raycast_Hit{entity = NO_ENTITY}
+	player.velocity = {}
+	stack := bar == .Furnace_Held ? Item_Stack{test_item(audit.content.items, "stone_furnace"), 1} : EMPTY_STACK
+	inventory_hotbar(player.inventory)[player.selected_hotbar_slot] = stack
+}
+
+// One HUD frame of the bar at the size with the shipped bindings, as
+// audit_frame draws it. The caller destroys the state.
+glyph_bar_test_frame :: proc(t: ^testing.T, audit: ^Ui_Audit, bar: Glyph_Bar_Test_Bar, size: Ui_Audit_Size, device: Input_Device) -> Ui_State {
+	state := Ui_State{theme = audit.theme, active_device = device, bindings = shipped_default_bindings(t)}
+	ui_begin(&state, {}, size.pixels, 1.0 / 60, size.scale, 1, ui_accessibility(audit.settings))
+	state.active_device = device
+	screen_context := audit_screen_context(audit)
+	hud := audit_hud_context(audit)
+	if bar == .Editor {
+		furnace, _ := find_machine_id(audit.content.machines, "stone_furnace")
+		hud.placement = Placement_Editor_Hud{mode = .Anchored, machine = furnace}
+		audit.placement_editor = Placement_Editor{on = true, anchored = true, machine = furnace}
+		screen_context.placement_editor = &audit.placement_editor
+	} else {
+		audit_field_session_hud(audit, &hud)
+	}
+	draw_hud(&state, screen_context, hud)
+	ui_resolve(&state)
+	return state
+}
+
+// Work item 0219: on the field with the stone furnace held the world's
+// glyph bar names Place, Tools and Turn with the keyboard's Right mouse,
+// Q and R and the pad's L2, D-pad Up and Y; with nothing held only
+// Inventory and Pause; a foundation held has no Turn.
+@(test)
+test_the_worlds_hints_name_the_held_machines_controls :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	set_glyph_bar_test_player(audit, .Furnace_Held)
+	hud := audit_hud_context(audit)
+	audit_field_session_hud(audit, &hud)
+	hints, kept := world_glyph_hints(audit_screen_context(audit), hud)
+	testing.expect(t, slice.equal(hint_buttons(hints), []Glyph_Button{.Use_Item, .Tools, .Rotate, .Inventory, .Pause}), "Place, Tools, Turn, Inventory, Pause")
+	testing.expect_value(t, kept, 3)
+	expected := [Input_Device][3]Glyph {
+		.Keyboard_Mouse = {{.Key, "Right mouse"}, {.Key, "Q"}, {.Key, "R"}},
+		.Gamepad        = {{.Trigger_Left, ""}, {.Dpad, ""}, {.Button_North, ""}},
+	}
+	for device in Input_Device {
+		state := glyph_bar_test_frame(t, audit, .Furnace_Held, UI_AUDIT_SIZES[0], device)
+		for label, index in ([3]string{text("hint_place"), text("hint_tools"), text("hint_turn")}) {
+			shown, found := glyph_beside_label(state.draw_list[:], label)
+			testing.expectf(t, found && shown == expected[device][index], "%v %q: %v", device, label, shown)
+		}
+		destroy_ui_state(&state)
+	}
+	set_glyph_bar_test_player(audit, .Nothing_Held)
+	audit_field_session_hud(audit, &hud)
+	hints, kept = world_glyph_hints(audit_screen_context(audit), hud)
+	testing.expect(t, slice.equal(hint_buttons(hints), []Glyph_Button{.Inventory, .Pause}), "Inventory, Pause")
+	testing.expect_value(t, kept, 0)
+	player := &audit.simulation.players[0]
+	foundation := audit.content.machines.machines[find_foundation_machine(audit.content.machines)].item
+	inventory_hotbar(player.inventory)[player.selected_hotbar_slot] = Item_Stack{foundation, 1}
+	audit_field_session_hud(audit, &hud)
+	hints, kept = world_glyph_hints(audit_screen_context(audit), hud)
+	testing.expect(t, slice.equal(hint_buttons(hints), []Glyph_Button{.Use_Item, .Tools, .Inventory, .Pause}), "Place, Tools, Inventory, Pause")
+	testing.expect_value(t, kept, 2)
+}
+
+// Where one frame's glyph bar stands: its distinct row tops and its
+// extent, from the commands of UI_GLYPH_BAR_PANEL.
+Glyph_Bar_Extent :: struct {
+	rows:   int,
+	top:    f32,
+	bottom: f32,
+	left:   f32,
+}
+
+glyph_bar_extent :: proc(commands: []Draw_Command) -> Glyph_Bar_Extent {
+	extent := Glyph_Bar_Extent{top = math.F32_MAX, left = math.F32_MAX}
+	tops := make([dynamic]f32, context.temp_allocator)
+	for command in commands {
+		if command.panel != UI_GLYPH_BAR_PANEL {
+			continue
+		}
+		if !slice.contains(tops[:], command.rectangle.y) {
+			append(&tops, command.rectangle.y)
+		}
+		extent.top, extent.bottom = min(extent.top, command.rectangle.y), max(extent.bottom, command.rectangle.y + command.rectangle.height)
+		extent.left = min(extent.left, command.rectangle.x)
+	}
+	extent.rows = len(tops)
+	return extent
+}
+
+// The bar's commands lie in the safe area and clear of every hotbar slot,
+// all eight of which are found in the draw list.
+expect_glyph_bar_clear_of_hotbar :: proc(t: ^testing.T, state: ^Ui_State, selected: int, case_text: string) {
+	safe := ui_safe_area(state)
+	slots := hotbar_slot_boxes_in_draw_list(state.draw_list[:], hud_hotbar_rectangles(safe, selected))
+	testing.expectf(t, len(slots) == HOTBAR_SLOT_COUNT, "%s: %d slots found", case_text, len(slots))
+	for command in state.draw_list {
+		if command.panel != UI_GLYPH_BAR_PANEL {
+			continue
+		}
+		testing.expectf(t, rectangle_inside(command.rectangle, safe, UI_AUDIT_TOLERANCE), "%s: %v %q outside the safe area", case_text, command.kind, command.text)
+		for box in slots {
+			_, overlaps := rectangle_intersection(inset(command.rectangle, UI_AUDIT_TOLERANCE), box)
+			testing.expectf(t, !overlaps, "%s: %v %q over a hotbar slot", case_text, command.kind, command.text)
+		}
+	}
+}
+
+expect_glyph_labels :: proc(t: ^testing.T, commands: []Draw_Command, labels: []string, case_text: string) {
+	for label in labels {
+		_, found := glyph_beside_label(commands, label)
+		testing.expectf(t, found, "%s: %q missing", case_text, label)
+	}
+}
+
+// Work item 0219: the HUD's glyph bar never covers a hotbar slot and
+// stays in the safe area at every audited size, text scale and device.
+// The held furnace's Place, Tools and Turn and the editor's four show at
+// every size. Above the hotbar the world's bars never rise into the
+// target lines' band (hud_glyph_bar_above_rows); the editor's bar may
+// (decision 6), and at 1280 by 800 scale 1.5 with the largest text it
+// wraps into two rows above the hotbar. At 1920 by 1080 the nothing held
+// bar stands beside the hotbar, right of its last slot.
+@(test)
+test_the_glyph_bar_never_covers_the_hotbar :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	player := &audit.simulation.players[0]
+	audit_sizes := UI_AUDIT_SIZES
+	sizes := make([dynamic]Ui_Audit_Size, context.temp_allocator)
+	append(&sizes, ..audit_sizes[:])
+	append(&sizes, UI_AUDIT_DECK_SIZE)
+	editor_labels := [4]string{text("hint_placement_nudge"), text("hint_placement_rotate"), text("hint_placement_commit"), text("hint_placement_cancel")}
+	held_labels := [3]string{text("hint_place"), text("hint_tools"), text("hint_turn")}
+	text_scale_before := audit.settings.text_scale
+	defer audit.settings.text_scale = text_scale_before
+	for bar in Glyph_Bar_Test_Bar {
+		set_glyph_bar_test_player(audit, bar)
+		for size in sizes {
+			for text_scale in UI_AUDIT_TEXT_SCALES {
+				audit.settings.text_scale = text_scale
+				for device in Input_Device {
+					state := glyph_bar_test_frame(t, audit, bar, size, device)
+					defer destroy_ui_state(&state)
+					case_text := fmt.tprintf("%v %v scale %.1f text %.1f %v", bar, size.pixels, size.scale, text_scale, device)
+					expect_glyph_bar_clear_of_hotbar(t, &state, player.selected_hotbar_slot, case_text)
+					safe := ui_safe_area(&state)
+					hotbar := hud_hotbar_rectangles(safe, player.selected_hotbar_slot)
+					extent := glyph_bar_extent(state.draw_list[:])
+					above := extent.bottom <= hotbar[player.selected_hotbar_slot].y + UI_AUDIT_TOLERANCE
+					above_rows := hud_glyph_bar_above_rows(state.screen_units, hud_glyph_bar_above_bottom(safe))
+					band_bottom := hud_target_line_top(state.screen_units, HUD_TARGET_LINE_COUNT)
+					if above && bar != .Editor {
+						testing.expectf(t, extent.rows <= above_rows, "%s: %d rows above, %d allowed", case_text, extent.rows, above_rows)
+						testing.expectf(t, extent.rows == 1 || extent.top >= band_bottom - UI_AUDIT_TOLERANCE, "%s: the bar reaches %v over the target lines' %v", case_text, extent.top, band_bottom)
+					}
+					switch bar {
+					case .Editor:
+						expect_glyph_labels(t, state.draw_list[:], editor_labels[:], case_text)
+					case .Furnace_Held:
+						expect_glyph_labels(t, state.draw_list[:], held_labels[:], case_text)
+					case .Nothing_Held:
+					}
+					smallest := size == Ui_Audit_Size{{1280, 800}, 1.5} && text_scale == TEXT_SCALE_RANGE.maximum
+					if bar == .Editor && smallest && device == .Keyboard_Mouse {
+						testing.expectf(t, above && extent.rows == 2, "%s: above %v in %d rows", case_text, above, extent.rows)
+					}
+					if bar == .Nothing_Held && size == UI_AUDIT_SIZES[0] && text_scale == 1 && device == .Gamepad {
+						last := hotbar[HOTBAR_SLOT_COUNT - 1]
+						testing.expectf(t, extent.left >= last.x + last.width + 3 * UI_GAP - UI_AUDIT_TOLERANCE, "%s: the bar starts at %v", case_text, extent.left)
+					}
+				}
+			}
+		}
+	}
 }

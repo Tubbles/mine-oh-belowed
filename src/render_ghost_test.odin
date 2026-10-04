@@ -96,3 +96,37 @@ test_the_machine_front_turns_with_the_rotation :: proc(t: ^testing.T) {
 		testing.expectf(t, linalg.length(image - machine_front_direction(rotation)) < 1e-5, "rotation %d: %v", rotation, image)
 	}
 }
+
+// Work item 0219: the placement outline's walls rise a cell from the low
+// row's lifted floor under an opaque rim, inside the footprint, with the
+// chevron at the rims' top; at the shipped pitch they stand at least the
+// bare ground flatness over the steepest accepted ground.
+@(test)
+test_the_footprint_outline_walls_rise_a_cell :: proc(t: ^testing.T) {
+	footprints := [2][2]World_Coordinate{{{-5, 0, -5}, {5, 3, 5}}, {{0, 2, 0}, {2, 3, 1}}}
+	for footprint in footprints {
+		low, high := footprint[0], footprint[1]
+		floor := f32(low.y) + PLACEMENT_OUTLINE_LIFT_CELLS
+		boxes := footprint_outline_boxes(low, high)
+		for box, index in boxes {
+			bottom, top := box.centre.y - box.size.y / 2, box.centre.y + box.size.y / 2
+			testing.expect_value(t, box.rim, index >= 4)
+			if box.rim {
+				testing.expect(t, abs(top - (floor + PLACEMENT_OUTLINE_HEIGHT_CELLS)) < 1e-5)
+				testing.expect(t, abs(box.size.y - PLACEMENT_OUTLINE_RIM_CELLS) < 1e-5)
+			} else {
+				testing.expect(t, abs(bottom - floor) < 1e-5)
+				testing.expect(t, abs(top - (floor + PLACEMENT_OUTLINE_HEIGHT_CELLS - PLACEMENT_OUTLINE_RIM_CELLS)) < 1e-5)
+			}
+			testing.expect(t, box.centre.x - box.size.x / 2 >= f32(low.x) - 1e-5 && box.centre.x + box.size.x / 2 <= f32(high.x) + 1e-5)
+			testing.expect(t, box.centre.z - box.size.z / 2 >= f32(low.z) - 1e-5 && box.centre.z + box.size.z / 2 <= f32(high.z) + 1e-5)
+		}
+		arrow := footprint_outline_arrow_centre(low, high)
+		testing.expect(t, abs(arrow.y - (floor + PLACEMENT_OUTLINE_HEIGHT_CELLS)) < 1e-5)
+		testing.expect_value(t, arrow.x, (f32(low.x) + f32(high.x)) / 2)
+		testing.expect_value(t, arrow.z, (f32(low.z) + f32(high.z)) / 2)
+	}
+	config, error := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	testing.expect(t, PLACEMENT_OUTLINE_HEIGHT_CELLS * f32(config.foundation_pitch_millimetres) >= 2 * f32(config.bare_ground_flatness_millimetres))
+}

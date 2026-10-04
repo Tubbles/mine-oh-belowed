@@ -13,7 +13,10 @@ import "core:math"
 // (ui_contracts.odin), the brownout warning (top centre, ui_power.odin),
 // the biome banner below it (biome_banner.odin) and the glyph bar, and the magnetometer's dial while one is selected
 // (ui_prospecting.odin). The tools radial on Pipette's controls and the
-// placement editor's tool line and glyph bar (0215). With the touch
+// placement editor's tool line and glyph bar (0215). The glyph bar
+// (0219) stands beside the hotbar, right of it, in up to two rows, or
+// above the hotbar when what it must keep does not fit there
+// (hud_glyph_bar_layout); it never covers a hotbar slot. With the touch
 // overlay driving the world, the touch buttons right of the hotbar
 // (0134): inventory, map, pause, tools, rotate, and the placement
 // editor's grid while it is anchored. With no screen open, Mission Control's panel at
@@ -47,6 +50,11 @@ HUD_REFUSED_TEXT_COLOR :: Ui_Color{230, 60, 50, 255}
 // The touch tap scheme's ring around the mined block (0118).
 HUD_MINING_RING_DIAMETER :: 3 * CROSSHAIR_SIZE
 HUD_MINING_RING_THICKNESS :: 6.0
+// The lines under the crosshair: the target's name, the tool line and the
+// vein (draw_target_status).
+HUD_TARGET_LINE_COUNT :: 3
+// The HUD's glyph bar wraps upwards into at most this many rows (0219).
+HUD_GLYPH_BAR_MAXIMUM_ROWS :: 2
 
 // What only the HUD reads, derived by the frame loop (make_hud_context):
 // the touch derivations and the biome under the player. Its world and
@@ -83,6 +91,9 @@ Hud_Context :: struct {
 	// The viewport's placement editor as its ghost shows it (0215,
 	// placement_editor_hud); zero shows nothing.
 	placement:                Placement_Editor_Hud,
+	// The session plays the field (0219): the glyph bar shows the held
+	// item's hints.
+	field_session:            bool,
 }
 
 // The field player the tool line describes.
@@ -528,8 +539,8 @@ tools_radial_world_frame :: proc(frame: Input_Frame, tools: Tools_Radial_State) 
 
 // A full schematic crate in view takes Interact; a selected usable item
 // (a schematic, a prospecting tool) is used with the Place control
-// (Use_Item). In the temp allocator.
-schematic_glyph_hints :: proc(world: ^World, player: Player, items: Item_Registry) -> (hints: []Glyph_Hint, shown: bool) {
+// (Use_Item). Possibly empty. In the temp allocator.
+schematic_glyph_hints :: proc(world: ^World, player: Player, items: Item_Registry) -> []Glyph_Hint {
 	list := make([dynamic]Glyph_Hint, context.temp_allocator)
 	crate := pool_get(&world.entities.schematic_crates, player.target.entity)
 	if crate != nil && !stack_is_empty(crate.slots[0]) {
@@ -539,11 +550,14 @@ schematic_glyph_hints :: proc(world: ^World, player: Player, items: Item_Registr
 	if !stack_is_empty(selected) && item_is_usable(items, selected.item) {
 		append(&list, Glyph_Hint{.Use_Item, text(item_use_hint_keys[items.items[selected.item].use])})
 	}
-	if len(list) == 0 {
-		return nil, false
-	}
-	append(&list, Glyph_Hint{.Inventory, text("hint_inventory")}, Glyph_Hint{.Pause, text("hint_pause")})
-	return list[:], true
+	return list[:]
+}
+
+// The top of a line under the crosshair; at HUD_TARGET_LINE_COUNT it is
+// the bottom of the band the lines take, which the glyph bar above the
+// hotbar stays under (hud_glyph_bar_above_rows).
+hud_target_line_top :: proc(screen_units: [2]f32, line: int) -> f32 {
+	return screen_units.y / 2 + CROSSHAIR_SIZE + UI_GAP + f32(line) * UI_ROW_HEIGHT
 }
 
 // Below the crosshair on the line after the last one drawn; an empty
@@ -552,9 +566,7 @@ draw_target_status :: proc(state: ^Ui_State, status: string, line: int, color :=
 	if status == "" {
 		return line
 	}
-	centre := state.screen_units / 2
-	top := centre.y + CROSSHAIR_SIZE + UI_GAP + f32(line) * UI_ROW_HEIGHT
-	area := Ui_Rectangle{0, top, state.screen_units.x, UI_ROW_HEIGHT}
+	area := Ui_Rectangle{0, hud_target_line_top(state.screen_units, line), state.screen_units.x, UI_ROW_HEIGHT}
 	draw_text(state, area, status, UI_BODY_TEXT_SIZE, .Centre, color)
 	return line + 1
 }
@@ -657,65 +669,168 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context, hud: Hud_Cont
 	}
 	if hud.placement.mode == .Anchored {
 		hints := placement_editor_glyph_hints()
-		ui_glyph_bar(state, hints[:])
+		ui_hud_glyph_bar(state, hints[:], len(hints), true)
 		return
 	}
-	if hints, shown := schematic_glyph_hints(screen_context.world, player^, items); shown {
-		ui_glyph_bar(state, hints)
-		return
+	hints, kept := world_glyph_hints(screen_context, hud)
+	ui_hud_glyph_bar(state, hints, kept, false)
+}
+
+// The world's glyph bar (0219), in the temp allocator: the aimed thing's
+// hints, the held item's on the field, Sprint, then Inventory and Pause.
+// kept counts the aimed and held hints, which the bar keeps beside the
+// hotbar or moves above it for (hud_glyph_bar_layout).
+world_glyph_hints :: proc(screen_context: Screen_Context, hud: Hud_Context) -> (hints: []Glyph_Hint, kept: int) {
+	list := make([dynamic]Glyph_Hint, context.temp_allocator)
+	append(&list, ..aimed_glyph_hints(screen_context, hud))
+	opens := inventory_hint_key(screen_context, hud) == "hint_open"
+	if opens {
+		append(&list, Glyph_Hint{.Inventory, text("hint_open")})
 	}
-	if field_fell_hint_shown(screen_context, hud) {
-		hints := field_fell_hints(screen_context, hud)
-		ui_glyph_bar(state, hints[:])
-		return
+	player := screen_context.player
+	if hud.field_session && !stack_is_empty(selected_hotbar_stack(player^)) {
+		append(&list, ..held_glyph_hints(hud_field_player(screen_context, hud).tool))
 	}
-	if field_pick_up_hint_shown(screen_context, hud) {
-		pick_up := field_target_is_broken(screen_context, hud) ? MACHINE_BROKEN_DOWN_KEY : "hint_pick_up"
-		inventory := Glyph_Hint{.Inventory, text(inventory_hint_key(screen_context, hud))}
+	kept = len(list)
+	if sprint_hint_shown(player^) {
+		append(&list, Glyph_Hint{.Sprint, text("hint_sprint")})
+	}
+	if !opens {
+		append(&list, Glyph_Hint{.Inventory, text("hint_inventory")})
+	}
+	append(&list, Glyph_Hint{.Pause, text("hint_pause")})
+	return list[:], kept
+}
+
+// What the aimed thing takes, the first group that applies: the schematic
+// crate or a usable item, a trunk's Fell, a field cell's pick up (with a
+// switch's Turn), the pod's hatch, a power switch's Turn. In the temp
+// allocator.
+aimed_glyph_hints :: proc(screen_context: Screen_Context, hud: Hud_Context) -> []Glyph_Hint {
+	player := screen_context.player
+	if hints := schematic_glyph_hints(screen_context.world, player^, screen_context.items); len(hints) > 0 {
+		return hints
+	}
+	list := make([dynamic]Glyph_Hint, context.temp_allocator)
+	switch {
+	case field_fell_hint_shown(screen_context, hud):
+		append(&list, Glyph_Hint{.Mine, text("hint_fell")})
+	case field_pick_up_hint_shown(screen_context, hud):
 		// Interact turns a power switch on the field too (0194).
 		if field_target_is_power_switch(screen_context, hud) {
-			hints := [?]Glyph_Hint{{.Interact, text("hint_toggle")}, {.Mine, text(pick_up)}, inventory, {.Pause, text("hint_pause")}}
-			ui_glyph_bar(state, hints[:])
-			return
+			append(&list, Glyph_Hint{.Interact, text("hint_toggle")})
 		}
-		hints := [?]Glyph_Hint{{.Mine, text(pick_up)}, inventory, {.Pause, text("hint_pause")}}
-		ui_glyph_bar(state, hints[:])
-		return
-	}
-	// Interact opens or closes the pod's hatch (0198).
-	if open, is_hatch := field_target_hatch(screen_context, hud); is_hatch {
-		hints := [?]Glyph_Hint{{.Interact, text(open ? "hint_close" : "hint_open")}, {.Inventory, text("hint_inventory")}, {.Pause, text("hint_pause")}}
-		ui_glyph_bar(state, hints[:])
-		return
-	}
-	if entity_has_panel(&screen_context.world.entities, screen_context.machines, player.target.entity) {
+		pick_up := field_target_is_broken(screen_context, hud) ? MACHINE_BROKEN_DOWN_KEY : "hint_pick_up"
+		append(&list, Glyph_Hint{.Mine, text(pick_up)})
+	case field_target_is_hatch(screen_context, hud):
+		// Interact opens or closes the pod's hatch (0198).
+		open, _ := field_target_hatch(screen_context, hud)
+		append(&list, Glyph_Hint{.Interact, text(open ? "hint_close" : "hint_open")})
+	case entity_has_panel(&screen_context.world.entities, screen_context.machines, player.target.entity) && entity_is_power_switch(&screen_context.world.entities, screen_context.machines, player.target.entity):
 		// Inventory opens the panel (0194); Interact turns a power switch.
-		if entity_is_power_switch(&screen_context.world.entities, screen_context.machines, player.target.entity) {
-			hints := [?]Glyph_Hint{{.Interact, text("hint_toggle")}, {.Inventory, text("hint_open")}, {.Pause, text("hint_pause")}}
-			ui_glyph_bar(state, hints[:])
-			return
-		}
-		hints := [?]Glyph_Hint{{.Inventory, text("hint_open")}, {.Pause, text("hint_pause")}}
-		ui_glyph_bar(state, hints[:])
-		return
+		append(&list, Glyph_Hint{.Interact, text("hint_toggle")})
 	}
-	if sprint_hint_shown(player^) {
-		hints := [?]Glyph_Hint{{.Sprint, text("hint_sprint")}, {.Inventory, text("hint_inventory")}, {.Pause, text("hint_pause")}}
-		ui_glyph_bar(state, hints[:])
-		return
+	return list[:]
+}
+
+// The held item's hints on the field (0219): Place with a placeable
+// tool, Tools with any item, then Turn with a machine (Next_Brush turns
+// it) or Brush where Next_Brush cycles the brush. In the temp allocator.
+held_glyph_hints :: proc(tool: Field_Held_Tool) -> []Glyph_Hint {
+	list := make([dynamic]Glyph_Hint, context.temp_allocator)
+	if field_held_tool_places(tool) {
+		append(&list, Glyph_Hint{.Use_Item, text("hint_place")})
 	}
-	hints := [?]Glyph_Hint{{.Inventory, text("hint_inventory")}, {.Pause, text("hint_pause")}}
-	ui_glyph_bar(state, hints[:])
+	append(&list, Glyph_Hint{.Tools, text("hint_tools")})
+	if field_held_tool_turns(tool) {
+		append(&list, Glyph_Hint{.Rotate, text("hint_turn")})
+	}
+	if field_held_tool_cycles_brush(tool) {
+		append(&list, Glyph_Hint{.Rotate, text("hint_brush")})
+	}
+	return list[:]
+}
+
+// Place puts every tool's thing down but the hand's.
+field_held_tool_places :: proc(tool: Field_Held_Tool) -> bool {
+	return tool != .Hand
+}
+
+// Next_Brush turns a held machine a quarter (update_field_held_tool).
+field_held_tool_turns :: proc(tool: Field_Held_Tool) -> bool {
+	return tool == .Machine
+}
+
+// Next_Brush cycles the brush with a material or the hand.
+field_held_tool_cycles_brush :: proc(tool: Field_Held_Tool) -> bool {
+	return tool == .Material || tool == .Hand
+}
+
+// Where the HUD's glyph bar stands (0219): rows bottom first, right
+// aligned at right with the first row's bottom at bottom.
+Hud_Glyph_Bar_Layout :: struct {
+	rows:   [][]Glyph_Hint,
+	right:  f32,
+	bottom: f32,
+	beside: bool,
+}
+
+// Beside the hotbar, right of it, when the first kept hints (at least
+// one) fit there in HUD_GLYPH_BAR_MAXIMUM_ROWS rows without a drop; else
+// above the hotbar over the held item's name, as wide as from the
+// hotbar's left edge to the safe right edge and never up into the target
+// lines (hud_glyph_bar_above_rows). Either way the rows shed from the end.
+// The placement editor's bar (whole) is the exception: above the hotbar
+// it takes HUD_GLYPH_BAR_MAXIMUM_ROWS rows even into the target lines'
+// band, since a missing Cancel is worse than the tool line crossing it
+// (main agent, 2026-10-04). The band ends at H/2 + 194 units and the
+// first row tops at 0.95H - 216, so at UI scale 1.2 and 1.5 (H under 911)
+// even the world's single row above the hotbar lies in the band.
+hud_glyph_bar_layout :: proc(state: ^Ui_State, hints: []Glyph_Hint, kept: int, whole: bool) -> Hud_Glyph_Bar_Layout {
+	safe := ui_safe_area(state)
+	hotbar := hud_hotbar_rectangles(safe, 0)
+	last := hotbar[HOTBAR_SLOT_COUNT - 1]
+	right, bottom := safe.x + safe.width, safe.y + safe.height
+	beside_width := right - (last.x + last.width + 3 * UI_GAP)
+	must := clamp(kept, 1, len(hints))
+	_, must_kept, must_fits := glyph_bar_rows(state, hints[:must], beside_width, HUD_GLYPH_BAR_MAXIMUM_ROWS)
+	if must_kept == must && must_fits {
+		rows, _, _ := glyph_bar_rows(state, hints, beside_width, HUD_GLYPH_BAR_MAXIMUM_ROWS)
+		return {rows, right, bottom, true}
+	}
+	above := hud_glyph_bar_above_bottom(safe)
+	maximum_rows := whole ? HUD_GLYPH_BAR_MAXIMUM_ROWS : hud_glyph_bar_above_rows(state.screen_units, above)
+	rows, _, _ := glyph_bar_rows(state, hints, right - hotbar[0].x, maximum_rows)
+	return {rows, right, above, false}
+}
+
+// The bottom of the bar above the hotbar: a gap over the held item's
+// name, which stands a gap over the enlarged selected slot.
+hud_glyph_bar_above_bottom :: proc(safe: Ui_Rectangle) -> f32 {
+	return safe.y + safe.height - UI_SLOT_SIZE * HUD_SELECTED_SLOT_SCALE - UI_GAP - UI_ROW_HEIGHT - UI_GAP
+}
+
+// The rows the bar above the hotbar takes with its first row's bottom at
+// bottom: those whose top stays under the target lines' band, at least
+// one and at most HUD_GLYPH_BAR_MAXIMUM_ROWS.
+hud_glyph_bar_above_rows :: proc(screen_units: [2]f32, bottom: f32) -> int {
+	band_bottom := hud_target_line_top(screen_units, HUD_TARGET_LINE_COUNT)
+	rows := 1
+	for rows < HUD_GLYPH_BAR_MAXIMUM_ROWS && bottom - f32(rows + 1) * UI_GLYPH_BAR_HEIGHT - f32(rows) * UI_GAP >= band_bottom {
+		rows += 1
+	}
+	return rows
+}
+
+// The HUD's glyph bar, laid out by hud_glyph_bar_layout.
+ui_hud_glyph_bar :: proc(state: ^Ui_State, hints: []Glyph_Hint, kept: int, whole: bool) {
+	layout := hud_glyph_bar_layout(state, hints, kept, whole)
+	ui_glyph_rows(state, layout.rows, layout.right, layout.bottom)
 }
 
 // The field player aims at a tree's trunk, which Mine held fells (0197).
 field_fell_hint_shown :: proc(screen_context: Screen_Context, hud: Hud_Context) -> bool {
 	return hud_field_player(screen_context, hud).tree_target.hit
-}
-
-// Mine fells, the inventory glyph, Pause.
-field_fell_hints :: proc(screen_context: Screen_Context, hud: Hud_Context) -> [3]Glyph_Hint {
-	return {{.Mine, text("hint_fell")}, {.Inventory, text(inventory_hint_key(screen_context, hud))}, {.Pause, text("hint_pause")}}
 }
 
 // The field player aims at a frame cell whose entity Mine picks up
@@ -749,6 +864,12 @@ field_target_hatch :: proc(screen_context: Screen_Context, hud: Hud_Context) -> 
 		return false, false
 	}
 	return hatch_state(&screen_context.world.entities, screen_context.machines, entity_from_occupant(target.occupant.handle))
+}
+
+// The aimed frame cell holds a hatch of the pod.
+field_target_is_hatch :: proc(screen_context: Screen_Context, hud: Hud_Context) -> bool {
+	_, is_hatch := field_target_hatch(screen_context, hud)
+	return is_hatch
 }
 
 // The aimed frame cell holds a broken machine (0201): its pick up hint

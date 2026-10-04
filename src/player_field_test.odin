@@ -589,10 +589,11 @@ test_a_player_walks_out_of_a_hole_lower_than_the_step :: proc(t: ^testing.T) {
 }
 
 // The shipped data's field player (data/game.sjson): the test tuning with
-// the 60 degree walkable angle the user plays at.
+// the 60 degree walkable angle the user plays at and the 6 m reach (0219).
 shipped_field_player_config :: proc() -> Field_Player_Config {
 	config := test_field_player_config()
 	config.walkable_angle_degrees = 60
+	config.tool_reach_millimetres = 6000
 	return config
 }
 

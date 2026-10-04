@@ -1,26 +1,75 @@
 package game
 
+import "core:slice"
 import "core:testing"
 
+// Glyph buttons of a hint list.
+hint_buttons :: proc(hints: []Glyph_Hint) -> []Glyph_Button {
+	buttons := make([]Glyph_Button, len(hints), context.temp_allocator)
+	for hint, index in hints {
+		buttons[index] = hint.button
+	}
+	return buttons
+}
+
 // Work item 0197: aimed at a trunk the glyph bar's Mine says Fell, with
-// the inventory glyph and Pause; without a trunk no Fell hint.
+// the inventory glyph and Pause; without a trunk no Fell hint. The Fell
+// hint is the one the bar keeps (0219).
 @(test)
 test_the_fell_hint_shows_on_an_aimed_tree :: proc(t: ^testing.T) {
 	use_shipped_strings()
 	defer thread_string_table = nil
 	world: World
 	defer destroy_world(&world)
-	player := Player{target = {entity = NO_ENTITY}}
+	player := Player{target = {entity = NO_ENTITY}, inventory = make_inventory(HOTBAR_SLOT_COUNT, context.temp_allocator)}
 	screen_context := Screen_Context{world = &world, player = &player}
 	hud := Hud_Context{field_view_set = true}
 	testing.expect(t, !field_fell_hint_shown(screen_context, hud))
+	hints, kept := world_glyph_hints(screen_context, hud)
+	testing.expect(t, !slice.contains(hint_buttons(hints), Glyph_Button.Mine))
+	testing.expect_value(t, kept, 0)
 	hud.field_view.tree_target = {hit = true, key = {1, 2, 3}, distance = POSITION_UNITS_PER_METRE}
 	testing.expect(t, field_fell_hint_shown(screen_context, hud))
-	hints := field_fell_hints(screen_context, hud)
-	testing.expect_value(t, hints[0].button, Glyph_Button.Mine)
+	hints, kept = world_glyph_hints(screen_context, hud)
+	testing.expect(t, slice.equal(hint_buttons(hints), []Glyph_Button{.Mine, .Inventory, .Pause}), "Fell, Inventory, Pause")
 	testing.expect_value(t, hints[0].label, "Fell")
-	testing.expect_value(t, hints[1].button, Glyph_Button.Inventory)
-	testing.expect_value(t, hints[2].button, Glyph_Button.Pause)
+	testing.expect_value(t, kept, 1)
+}
+
+// Work item 0219: Place for every tool but the hand, Turn for a machine
+// alone, Brush for a material or the hand; outside a field session a held
+// furnace adds no held hints.
+@(test)
+test_the_held_hints_follow_the_tool :: proc(t: ^testing.T) {
+	for tool in Field_Held_Tool {
+		testing.expectf(t, field_held_tool_places(tool) == (tool != .Hand), "%v places", tool)
+		testing.expectf(t, field_held_tool_turns(tool) == (tool == .Machine), "%v turns", tool)
+		testing.expectf(t, field_held_tool_cycles_brush(tool) == (tool == .Material || tool == .Hand), "%v cycles the brush", tool)
+	}
+	use_shipped_strings()
+	defer thread_string_table = nil
+	world: World
+	defer destroy_world(&world)
+	items := make_test_items()
+	player := Player{target = {entity = NO_ENTITY}, inventory = make_inventory(HOTBAR_SLOT_COUNT, context.temp_allocator)}
+	inventory_hotbar(player.inventory)[0] = Item_Stack{test_item(items, "stone_furnace"), 1}
+	screen_context := Screen_Context{world = &world, player = &player, items = items}
+	hud := Hud_Context{field_view_set = true}
+	hud.field_view.tool = .Machine
+	hints, kept := world_glyph_hints(screen_context, hud)
+	buttons := hint_buttons(hints)
+	for button in ([3]Glyph_Button{.Use_Item, .Tools, .Rotate}) {
+		testing.expectf(t, !slice.contains(buttons, button), "%v outside a field session", button)
+	}
+	testing.expect_value(t, kept, 0)
+	hud.field_session = true
+	hints, kept = world_glyph_hints(screen_context, hud)
+	testing.expect(t, slice.equal(hint_buttons(hints), []Glyph_Button{.Use_Item, .Tools, .Rotate, .Inventory, .Pause}), "Place, Tools, Turn, Inventory, Pause")
+	testing.expect_value(t, kept, 3)
+	hud.field_view.tool = .Material
+	hints, kept = world_glyph_hints(screen_context, hud)
+	testing.expect_value(t, hints[2].label, "Brush")
+	testing.expect_value(t, kept, 3)
 }
 
 // The tools radial (0215): a tap is Pipette and draws nothing; a steered

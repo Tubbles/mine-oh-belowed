@@ -95,6 +95,8 @@ Glyph_Button :: enum u8 {
 	// first gamepad control is D-pad Up and key Up.
 	Rotate,
 	Nudge,
+	// The tools radial (0215, 0219): Pipette held, D-pad Up and Q.
+	Tools,
 }
 
 Glyph_Hint :: struct {
@@ -909,6 +911,7 @@ glyph_button_actions := [Glyph_Button]Action {
 	.Mine           = .Mine,
 	.Rotate         = .Rotate_Building,
 	.Nudge          = .Placement_Nudge_Away,
+	.Tools          = .Pipette,
 }
 
 // The action whose control a glyph shows first. On the keyboard Back shows
@@ -1087,10 +1090,15 @@ glyph_box_width :: proc(state: ^Ui_State, button: Glyph_Button) -> f32 {
 	return max(ui_text_width(state, shown.label, UI_GLYPH_TEXT_SIZE) + 2 * UI_GAP, UI_GLYPH_BAR_HEIGHT)
 }
 
+// A hint's glyph box, the gap and its label.
+glyph_hint_width :: proc(state: ^Ui_State, hint: Glyph_Hint) -> f32 {
+	return glyph_box_width(state, hint.button) + UI_GAP + ui_text_width(state, hint.label, UI_GLYPH_TEXT_SIZE)
+}
+
 glyph_bar_width :: proc(state: ^Ui_State, hints: []Glyph_Hint) -> f32 {
 	width := f32(0)
 	for hint, index in hints {
-		width += glyph_box_width(state, hint.button) + UI_GAP + ui_text_width(state, hint.label, UI_GLYPH_TEXT_SIZE)
+		width += glyph_hint_width(state, hint)
 		width += index > 0 ? 3 * UI_GAP : 0
 	}
 	return width
@@ -1113,33 +1121,81 @@ glyph_hints_that_fit :: proc(state: ^Ui_State, hints: []Glyph_Hint, width: f32) 
 	return kept[:]
 }
 
+// The hints laid in rows of the width (0219), bottom row first: each row
+// takes hints in order while they fit and at least one, the rest go to
+// the row above. Beyond maximum_rows the last hint is dropped and the rows
+// are laid again; kept stays at least 1 while hints is not empty. fits is
+// false when a single hint is wider than the width. In the temp
+// allocator.
+glyph_bar_rows :: proc(state: ^Ui_State, hints: []Glyph_Hint, width: f32, maximum_rows: int) -> (rows: [][]Glyph_Hint, kept: int, fits: bool) {
+	kept = len(hints)
+	for {
+		rows, fits = glyph_bar_fill_rows(state, hints[:kept], width)
+		if len(rows) <= maximum_rows || kept <= 1 {
+			return
+		}
+		kept -= 1
+	}
+}
+
+// Every hint in greedy rows of the width, bottom row first.
+glyph_bar_fill_rows :: proc(state: ^Ui_State, hints: []Glyph_Hint, width: f32) -> (rows: [][]Glyph_Hint, fits: bool) {
+	list := make([dynamic][]Glyph_Hint, context.temp_allocator)
+	fits = true
+	start := 0
+	for index in 0 ..< len(hints) {
+		if index > start && glyph_bar_width(state, hints[start:index + 1]) > width {
+			append(&list, hints[start:index])
+			start = index
+		}
+		if index == start && glyph_hint_width(state, hints[index]) > width {
+			fits = false
+		}
+	}
+	if start < len(hints) {
+		append(&list, hints[start:])
+	}
+	return list[:], fits
+}
+
 // Glyph and label pairs, right aligned along the bottom of the safe area:
 // the bound pad button's icon on the gamepad, the bound key's name on a
 // key cap icon on the keyboard (glyph),
-// as many as fit its width (glyph_hints_that_fit). The bar registers the
-// safe area as its panel, so the bounds audit holds its commands to it.
+// as many as fit its width (glyph_hints_that_fit), in one row with Back
+// kept. The HUD lays its bar out on its own (ui_hud_glyph_bar).
 ui_glyph_bar :: proc(state: ^Ui_State, hints: []Glyph_Hint) {
 	area := ui_safe_area(state)
+	rows := [1][]Glyph_Hint{glyph_hints_that_fit(state, hints, area.width)}
+	ui_glyph_rows(state, rows[:], area.x + area.width, area.y + area.height)
+}
+
+// Every glyph bar's drawing: the rows right aligned at right, the first
+// with its bottom at bottom and each next one a bar's height and a gap
+// higher. The bar registers the safe area as its panel, so the bounds
+// audit holds its commands to it.
+ui_glyph_rows :: proc(state: ^Ui_State, rows: [][]Glyph_Hint, right, bottom: f32) {
 	outer_panel := state.current_panel
-	append(&state.panels, Ui_Panel{id = UI_GLYPH_BAR_PANEL, rectangle = area})
+	append(&state.panels, Ui_Panel{id = UI_GLYPH_BAR_PANEL, rectangle = ui_safe_area(state)})
 	state.current_panel = UI_GLYPH_BAR_PANEL
 	defer state.current_panel = outer_panel
 	height := f32(UI_GLYPH_BAR_HEIGHT)
-	x := area.x + area.width
-	y := area.y + area.height - height
-	#reverse for hint in glyph_hints_that_fit(state, hints, area.width) {
-		label_width := ui_text_width(state, hint.label, UI_GLYPH_TEXT_SIZE)
-		x -= label_width
-		draw_text(state, {x, y, label_width, height}, hint.label, UI_GLYPH_TEXT_SIZE, .Left)
-		box_width := glyph_box_width(state, hint.button)
-		x -= box_width + UI_GAP
-		box := Ui_Rectangle{x, y, box_width, height}
-		shown := glyph(state, hint.button)
-		draw_ui_icon(state, box, shown.icon)
-		if shown.icon == .Key {
-			draw_text(state, box, shown.label, UI_GLYPH_TEXT_SIZE, .Centre, UI_GLYPH_COLOR)
+	for row, row_index in rows {
+		x := right
+		y := bottom - height - f32(row_index) * (height + UI_GAP)
+		#reverse for hint in row {
+			label_width := ui_text_width(state, hint.label, UI_GLYPH_TEXT_SIZE)
+			x -= label_width
+			draw_text(state, {x, y, label_width, height}, hint.label, UI_GLYPH_TEXT_SIZE, .Left)
+			box_width := glyph_box_width(state, hint.button)
+			x -= box_width + UI_GAP
+			box := Ui_Rectangle{x, y, box_width, height}
+			shown := glyph(state, hint.button)
+			draw_ui_icon(state, box, shown.icon)
+			if shown.icon == .Key {
+				draw_text(state, box, shown.label, UI_GLYPH_TEXT_SIZE, .Centre, UI_GLYPH_COLOR)
+			}
+			x -= 3 * UI_GAP
 		}
-		x -= 3 * UI_GAP
 	}
 }
 
