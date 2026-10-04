@@ -1,6 +1,6 @@
 # 0229: Machine lamps stay inside their machine's box
 
-Status: verified (2026-10-04, the implementer reported the same day; the specification approved the same day with the decisions below; the implementer works in `.claude/worktrees/0229` on `item/0229` from `main`, from the user on the phone with the round three preview: "it looks like the point lights lighten up the outside exterior of the pod as well, the light doesnt seem to be blocked by solids?"; 0224's decision 1 accepted that spill and the user does not)
+Status: landed (2026-10-04, commit 03655b1 "Clip machine lamps to their machine's box (0229)", the play build installed; the implementer reported the same day; the specification approved the same day with the decisions below; the implementer works in `.claude/worktrees/0229` on `item/0229` from `main`, from the user on the phone with the round three preview: "it looks like the point lights lighten up the outside exterior of the pod as well, the light doesnt seem to be blocked by solids?"; 0224's decision 1 accepted that spill and the user does not)
 
 ## Goal
 
