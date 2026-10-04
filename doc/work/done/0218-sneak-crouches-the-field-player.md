@@ -1,6 +1,6 @@
 # 0218: Sneak crouches the field player
 
-Status: verified (2026-10-04, fix round done on item/0218; worktree `.claude/worktrees/0218` on `item/0218` from `main`, the specification approved the same day with the decisions below; user: "lets also make it so 'sneak' is a visible crouching, so we can sneak into 1 meter holes"; folds the field's missing sneak toggle)
+Status: landed (2026-10-04, 5111fff; worktree `.claude/worktrees/0218` on `item/0218` from `main`, the specification approved the same day with the decisions below; user: "lets also make it so 'sneak' is a visible crouching, so we can sneak into 1 meter holes"; folds the field's missing sneak toggle)
 
 ## Goal
 
