@@ -1,6 +1,6 @@
 # 0221: The pod remade from the booklet
 
-Status: designed (2026-10-04, the specification approved the same day with the decisions below, the implementer starts when the user accepts the lab's model; from the pod's interior rounds in the art booklet, accepted by the user the same day; the user the same day: skip the exterior rounds, model the pod now in a sealed lab as the furnace was, with the body budget raised to 25600 triangles for this model; the lab is `tools/model_lab/make_pod_lab.sh`, built by hand like the furnace's since 0214 is not done; the design stage and the modeller run at once)
+Status: implementing (2026-10-04, the implementer works in `.claude/worktrees/0221` on `item/0221` from `main`, the round three model of the lab accepted for integration (the user on the phone: "otherwise the latest apk works"); the specification approved the same day with the decisions below, the implementer starts when the user accepts the lab's model; from the pod's interior rounds in the art booklet, accepted by the user the same day; the user the same day: skip the exterior rounds, model the pod now in a sealed lab as the furnace was, with the body budget raised to 25600 triangles for this model; the lab is `tools/model_lab/make_pod_lab.sh`, built by hand like the furnace's since 0214 is not done; the design stage and the modeller run at once)
 
 ## Goal
 
