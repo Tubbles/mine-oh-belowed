@@ -12,8 +12,9 @@ import "platform"
 // for a field session. A viewport draws, in order: the sky dome turned
 // about its player's up (a second camera that maps the up to +y, drawn
 // first without depth), the field's terrain and water, the foundations,
-// the machines on their frames (draw_entities, lit by the open sky), the
-// trees (0197, draw_field_trees), the belt and pipe runs, the torches, the
+// the machines on their frames (draw_entities, lit by the open sky, a
+// pod's box at its interior light share), the trees (0197,
+// draw_field_trees), the belt and pipe runs, the torches, the
 // players' bodies and the viewing player's placement ghost. The planet preview draws the same scene
 // (draw_field_scene).
 
@@ -246,7 +247,7 @@ draw_field_player_body :: proc(scene: Field_Scene, player: Field_Player, crouch_
 		draw_field_player_capsule(feet, unit_vector_to_f32(player.up), f32(f64(tuning.capsule_height) / POSITION_UNITS_PER_METRE) * scale)
 		return
 	}
-	light := player_body_light(scene.frame, feet)
+	light := player_body_light(scene.frame, feet, field_player_interior_light_share(scene.frame.interiors, player))
 	body := field_player_body_transform(feet, player, scale)
 	for limb in Player_Limb {
 		draw_player_limb(scene.models, scene.player_model, limb, body * player_model_scale(), light)
@@ -321,6 +322,8 @@ draw_placement_editor_ghost :: proc(scene: Field_Scene, ghost: Placement_Editor_
 
 // Inside BeginMode3D with the field camera.
 draw_field_scene :: proc(scene: Field_Scene, camera: rl.Camera3D, selection: []Field_Node) {
+	scene := scene
+	scene.frame.interiors = gather_interior_lights(&scene.state.world.entities, scene.content.machines)
 	set_field_scene_point_lights(scene, camera)
 	draw_field(scene.renderer, camera, selection)
 	world := &scene.state.world

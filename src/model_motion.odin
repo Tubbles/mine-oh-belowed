@@ -293,6 +293,14 @@ model_light_tint :: proc(light: u16, day_factor: f32, sky_tint: [3]f32) -> [3]f3
 	return linalg.clamp(sky + block, MINIMUM_MODEL_BRIGHTNESS, 1)
 }
 
+// A pod's interior light (work item 0225): the light tint at the pod's
+// interior_light_share, never below MINIMUM_MODEL_BRIGHTNESS. With share
+// 1 the tint comes back unchanged, since model_light_tint clamps to the
+// same range.
+interior_light_tint :: proc(light_tint: [3]f32, share: f32) -> [3]f32 {
+	return linalg.clamp(light_tint * share, MINIMUM_MODEL_BRIGHTNESS, 1)
+}
+
 // The cell a model takes its light from: above the footprint's centre, or
 // for a machine one block across the cell in front of it at its base.
 model_light_cell :: proc(common: Entity_Common) -> World_Coordinate {

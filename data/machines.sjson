@@ -89,6 +89,13 @@
 // works); the block world takes no point lights. Presentation only. A
 // machine whose model draw_entities does not draw (fluid and power
 // machines, inserters, trees) may list lamps, which then do nothing.
+// interior_light_share (optional, pods only, work item 0225) is 0 to 1:
+// the pod's model, its fixtures' models and the bodies of players
+// standing in its footprint are lit at this share of the light round
+// them, never below the models' floor, before the point lights add, so
+// the cabin is dark but where its lamps reach; the emissive materials of
+// a working model keep their brightness. 1 when absent. Presentation
+// only.
 // The capsule (work item 0013) stands on the landing pad from the start:
 // it has no item, cannot be picked up, and holds 8 slots for quest
 // rewards and deliveries.

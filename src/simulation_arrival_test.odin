@@ -376,3 +376,37 @@ test_the_machine_lights_leave_the_hash :: proc(t: ^testing.T) {
 		}
 	}
 }
+
+// Work item 0225: the pod's interior light share is presentation only, a
+// world drawn with it hashes as one whose pod has none.
+@(test)
+test_the_interior_light_share_leaves_the_hash :: proc(t: ^testing.T) {
+	config := arrival_test_config()
+	watched_game := make_field_test_game_content()
+	watched_game.machines.machines[find_machine_of_kind(watched_game.machines, .Pod)].interior_light_share = 0.25
+	plain_game := make_field_test_game_content()
+	watched, watched_content := run_arrival_test_world(config, watched_game, 0)
+	defer end_session(watched)
+	plain, plain_content := run_arrival_test_world(config, plain_game, 0)
+	defer end_session(plain)
+	model_frame := Model_Frame{open_sky = true, day_factor = 1, sky_tint = {1, 1, 1}}
+	for tick in 1 ..= 700 {
+		tick_field_test_simulation(&watched.simulation, watched_content, {})
+		tick_field_test_simulation(&plain.simulation, plain_content, {})
+		state := &watched.simulation
+		entities := &state.world.entities
+		model_frame.interiors = gather_interior_lights(entities, watched_content.machines)
+		pod_frame, _ := find_pod_frame(entities, watched_content.machines)
+		pod := pool_get(&entities.foundations, pod_on_frame(entities, watched_content.machines, pod_frame.id))
+		tint: [3]f32
+		if pod != nil {
+			tint, _ = posed_model_light(model_frame, pod.common, watched_content.machines.machines[pod.machine], {working = true})
+		}
+		field_player_interior_light_share(model_frame.interiors, state.players[0].field)
+		if tick == 300 || tick == 540 || tick == 700 {
+			testing.expectf(t, len(model_frame.interiors) == 1, "tick %d: %d interiors gathered", tick, len(model_frame.interiors))
+			testing.expectf(t, abs(tint.x - 0.25) < 1e-5, "tick %d: the pod's tint is %v", tick, tint)
+			testing.expectf(t, lockstep_state_hash(state) == lockstep_state_hash(&plain.simulation), "the hashes part at tick %d", tick)
+		}
+	}
+}

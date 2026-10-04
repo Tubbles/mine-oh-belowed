@@ -1,6 +1,6 @@
 # 0225: The pod's cabin is dark until its lamps light it
 
-Status: implementing (2026-10-04, the specification approved the same day with the decisions below; the implementer works in `.claude/worktrees/0225` on `item/0225` from `main`, from the user's note on the first lit cabin shots of 0224, "i like the colors but it still looks flat"; the main agent's reading of the cause is below)
+Status: verified (2026-10-04, the specification approved the same day with the decisions below; the implementer works in `.claude/worktrees/0225` on `item/0225` from `main`, from the user's note on the first lit cabin shots of 0224, "i like the colors but it still looks flat"; the main agent's reading of the cause is below)
 
 ## Goal
 

@@ -7,8 +7,9 @@ A script takes its footprint, motion and pivot, ports by name, open
 cells, a pod's fixture boxes (work item 0198) and light from here, so
 the record and the model cannot disagree. The dataclasses mirror the
 record as written (the Odin Machine_Definition's names, defaults its
-zero values). The key lights (work item 0224, a machine's lamps) is read
-by the game only and ignored here. Points come in
+zero values). The keys lights (work item 0224, a machine's lamps) and
+interior_light_share (work item 0225, a pod's cabin light) are read by
+the game only and ignored here. Points come in
 the footprint's frame (from its minimum corner: x the width, y up, z the
 depth) and go out in the kit's Blender frame (kit.py: x the front, y the
 game's -z, z up, centred on the footprint).

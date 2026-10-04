@@ -228,3 +228,17 @@ test_a_motion_parses_from_the_machines_file :: proc(t: ^testing.T) {
 	testing.expect_value(t, motion, Machine_Motion{kind = .Spin, axis = 0, amplitude = 1, period_seconds = 1.5, pivot = {2.5, 1, 0.5}})
 	testing.expect(t, motion_has_part(.Spin) && motion_has_part(.Swing) && !motion_has_part(.Glow) && !motion_has_part(.None))
 }
+
+// Work item 0225: the interior share scales the tint, never below the
+// models' floor, and share 1 leaves it as it is.
+@(test)
+test_the_interior_light_tint_never_goes_below_the_floor :: proc(t: ^testing.T) {
+	expect_tint :: proc(t: ^testing.T, got, want: [3]f32) {
+		for channel in 0 ..< 3 {
+			testing.expectf(t, abs(got[channel] - want[channel]) < 1e-6, "%v, not %v", got, want)
+		}
+	}
+	expect_tint(t, interior_light_tint({1, 0.5, 0.2}, 0.25), {0.25, 0.125, MINIMUM_MODEL_BRIGHTNESS})
+	expect_tint(t, interior_light_tint({1, 0.5, 0.2}, 1), {1, 0.5, 0.2})
+	expect_tint(t, interior_light_tint({1, 0.5, 0.2}, 0), MINIMUM_MODEL_BRIGHTNESS)
+}

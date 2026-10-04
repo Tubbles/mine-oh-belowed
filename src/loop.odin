@@ -1186,7 +1186,7 @@ draw_session_world :: proc(state: ^Frame_State, viewport: ^Viewport, content: Si
 	if weather_motion_enabled(state.settings) {
 		counts.weather_particles = draw_session_weather(session, camera, weather, sky, seconds)
 	}
-	body := Player_Body_Draw{renderer = state.presentation.model_renderer, model = state.presentation.player_model, animation = animation, light = player_body_light(frame, player_eye(pose.position))}
+	body := Player_Body_Draw{renderer = state.presentation.model_renderer, model = state.presentation.player_model, animation = animation, light = player_body_light(frame, player_eye(pose.position), 1)}
 	draw_player_world_overlay(world, content, state.presentation.model_renderer, &state.presentation.belt_renderer, session.simulation.players[:], viewport.player, alpha, body)
 	rl.EndMode3D()
 	if player.camera_mode == .First_Person {

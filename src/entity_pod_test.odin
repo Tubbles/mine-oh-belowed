@@ -617,3 +617,88 @@ test_machine_lights_shine_while_their_model_works :: proc(t: ^testing.T) {
 	testing.expect_value(t, entity_frame_pitch_millimetres(&entities, frame.id), 500)
 	testing.expect_value(t, entity_frame_pitch_millimetres(&entities, BLOCK_FRAME), 1000)
 }
+
+// Work item 0225: the pod and its fixtures are lit at the pod's interior
+// light share, a working emissive layer keeps its brightness and an idle
+// one follows the darkened tint; outside the box or on another frame the
+// light is full.
+@(test)
+test_the_pod_and_its_fixtures_take_the_interior_light_share :: proc(t: ^testing.T) {
+	machines := make_test_machines()
+	machines.machines[find_machine_of_kind(machines, .Pod)].interior_light_share = 0.25
+	entities: Entities
+	defer destroy_entities(&entities)
+	frame, pod := place_test_pod(&entities, machines)
+	model_frame := Model_Frame {
+		open_sky   = true,
+		day_factor = 1,
+		sky_tint   = {1, 1, 1},
+		interiors  = gather_interior_lights(&entities, machines),
+	}
+	testing.expect_value(t, len(model_frame.interiors), 1)
+	expect_channels :: proc(t: ^testing.T, got: [3]f32, want: f32, what: string) {
+		for channel in 0 ..< 3 {
+			testing.expectf(t, abs(got[channel] - want) < 1e-5, "%s: %v, not %v", what, got, want)
+		}
+	}
+	foundation_light :: proc(entities: ^Entities, machines: Machine_Registry, frame: Model_Frame, handle: Entity_Handle) -> (light_tint, glow: [3]f32) {
+		foundation := pool_get(&entities.foundations, handle)^
+		machine := machines.machines[foundation.machine]
+		pose := machine.kind == .Hatch ? hatch_pose(frame, foundation, machine) : Model_Pose{working = foundation_model_working(entities, foundation, machine)}
+		return posed_model_light(frame, foundation.common, machine, pose)
+	}
+	pod_handle := entity_at(&entities, pod_origin(pod), frame.id)
+	outer := test_pod_fixture(&entities, frame, pod, TEST_OUTER_HATCH)
+	tint, glow := foundation_light(&entities, machines, model_frame, pod_handle)
+	expect_channels(t, tint, 0.25, "the pod")
+	expect_channels(t, glow, 1, "the pod's emissive")
+	for hatch in ([2]int{TEST_OUTER_HATCH, TEST_INNER_HATCH}) {
+		tint, glow = foundation_light(&entities, machines, model_frame, test_pod_fixture(&entities, frame, pod, hatch))
+		expect_channels(t, tint, 0.25, "a closed hatch")
+		expect_channels(t, glow, 0.25, "a closed hatch's emissive")
+	}
+	tint, _ = foundation_light(&entities, machines, model_frame, test_pod_fixture(&entities, frame, pod, TEST_BENCH))
+	expect_channels(t, tint, 0.25, "the bench")
+	tint, glow = foundation_light(&entities, machines, model_frame, test_pod_fixture(&entities, frame, pod, TEST_GENERATOR))
+	expect_channels(t, tint, 0.25, "the generator")
+	expect_channels(t, glow, 1, "the supplying generator's emissive")
+	locker := entity_common(&entities, test_pod_fixture(&entities, frame, pod, TEST_LOCKER))^
+	tint, _ = posed_model_light(model_frame, locker, machines.machines[locker.machine], {})
+	expect_channels(t, tint, 0.25, "the locker")
+	testing.expect(t, toggle_hatch(&entities, machines, outer, 1, nil))
+	model_frame.tick = 2
+	_, glow = foundation_light(&entities, machines, model_frame, outer)
+	expect_channels(t, glow, 1, "an open hatch's emissive")
+
+	furnace := machines.machines[find_machine_of_kind(machines, .Furnace)]
+	beside := Entity_Common{frame = frame.id, origin = pod_origin(pod) + {-2, 0, 0}, size = {1, 1, 1}}
+	tint, _ = posed_model_light(model_frame, beside, furnace, {})
+	expect_channels(t, tint, 1, "a machine beside the pod")
+	elsewhere := Entity_Common{frame = BLOCK_FRAME, origin = pod_origin(pod), size = {1, 1, 1}}
+	tint, _ = posed_model_light(model_frame, elsewhere, furnace, {})
+	expect_channels(t, tint, 1, "a machine on another frame")
+	pod_common := pool_get(&entities.foundations, pod_handle).common
+	model_frame.interiors = nil
+	tint, _ = posed_model_light(model_frame, pod_common, pod, {working = true})
+	expect_channels(t, tint, 1, "the pod without interiors")
+}
+
+// Work item 0225: a player standing in the cabin is lit at the pod's
+// share, one beside the pod at full light.
+@(test)
+test_a_player_in_the_cabin_takes_the_interior_light_share :: proc(t: ^testing.T) {
+	machines := make_test_machines()
+	machines.machines[find_machine_of_kind(machines, .Pod)].interior_light_share = 0.25
+	entities: Entities
+	defer destroy_entities(&entities)
+	frame, pod := place_test_pod(&entities, machines)
+	interiors := gather_interior_lights(&entities, machines)
+	spawn, found := field_pod_spawn(&entities, machines)
+	testing.expect(t, found)
+	testing.expect_value(t, field_player_interior_light_share(interiors, spawn), 0.25)
+	beside := spawn
+	beside.position = frame_cell_centre(frame, pod_origin(pod) + {-2, 0, 0})
+	beside.previous_position = beside.position
+	testing.expect_value(t, field_player_interior_light_share(interiors, beside), 1)
+	testing.expect_value(t, field_player_interior_light_share(nil, spawn), 1)
+}

@@ -282,6 +282,7 @@ Machine_Definition :: struct {
 	open_cells:                   []Machine_Cell_Box_Definition,
 	fixtures:                     []Pod_Fixture_Definition,
 	lights:                       []Machine_Light_Definition,
+	interior_light_share:         Maybe(f32),
 	stands_on_ground:             bool,
 	bare_ground_life_minutes:     int,
 	color:                        [3]int,
@@ -401,6 +402,11 @@ Machine :: struct {
 	// reads them).
 	lights:                      [MAXIMUM_MACHINE_LIGHTS]Machine_Light,
 	light_count:                 int,
+	// A pod's model, its fixtures' and the players' in its box are lit at
+	// this share of the light round them before the point lights add (work
+	// item 0225, presentation only: the simulation never reads it); 1 for
+	// every other machine. A hand built Machine{} holds 0.
+	interior_light_share:        f32,
 	// Machines on bare ground (0201, machine_wear.odin): never refused for
 	// slope and never worn (poles, pipes, belts, the pod); the minutes of
 	// operation on bare ground before a breakdown, 0 for game.sjson's.
@@ -722,6 +728,9 @@ validate_machine_definition :: proc(definitions: []Machine_Definition, index: in
 	if problem := validate_machine_lights(definition); problem != "" {
 		return problem
 	}
+	if problem := validate_interior_light_share(definition, kind); problem != "" {
+		return problem
+	}
 	if problem := validate_pod_cabin(definition, kind); problem != "" {
 		return problem
 	}
@@ -871,6 +880,7 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 		open_cell_box_count = len(definition.open_cells),
 		lights = lights,
 		light_count = light_count,
+		interior_light_share = definition.interior_light_share.? or_else 1,
 		stands_on_ground = definition.stands_on_ground,
 		bare_ground_life_minutes = definition.bare_ground_life_minutes,
 		color = {u8(clamp(definition.color[0], 0, 255)), u8(clamp(definition.color[1], 0, 255)), u8(clamp(definition.color[2], 0, 255))},
@@ -946,6 +956,22 @@ resolve_machine_lights :: proc(definitions: []Machine_Light_Definition) -> (ligh
 		count += 1
 	}
 	return lights, count
+}
+
+// A pod's interior_light_share (work item 0225) is 0 to 1, and only a pod
+// has one: its fixtures read their pod's.
+validate_interior_light_share :: proc(definition: Machine_Definition, kind: Machine_Kind) -> string {
+	share, present := definition.interior_light_share.?
+	if !present {
+		return ""
+	}
+	if kind != .Pod {
+		return fmt.tprintf("machine %q is not a pod and cannot have interior_light_share", definition.id)
+	}
+	if !(share >= 0 && share <= 1) {
+		return fmt.tprintf("machine %q has interior_light_share %.3f, not 0 to 1", definition.id, share)
+	}
+	return ""
 }
 
 // A pod's first open_cells box is its cabin, where new players spawn

@@ -323,6 +323,57 @@ test_machine_lights_stay_on_the_footprint_with_a_bounded_radius :: proc(t: ^test
 	testing.expect_value(t, machines.machines[find_machine_of_kind(machines, .Pod)].light_count, 0)
 }
 
+// Work item 0225: interior_light_share is a pod's only, 0 to 1, and 1
+// when absent.
+@(test)
+test_the_interior_light_share_is_a_pods_and_bounded :: proc(t: ^testing.T) {
+	room := Machine_Definition {
+		id = "room",
+		name_key = "machine_pod",
+		kind = "pod",
+		footprint = {width = 3, depth = 4, height = 2},
+		open_cells = {{from = Machine_Cell_Definition{1, 0, 1}, to = Machine_Cell_Definition{2, 1, 3}}},
+	}
+	resolved_share :: proc(t: ^testing.T, definition: Machine_Definition) -> f32 {
+		registry, problem := resolve_machine_registry(Machines_File{machines = []Machine_Definition{definition}}, make_test_items(), make_test_fluids(), context.temp_allocator)
+		testing.expect_value(t, problem, "")
+		if problem != "" {
+			return -1
+		}
+		defer destroy_machine_registry(registry, context.temp_allocator)
+		return registry.machines[0].interior_light_share
+	}
+	testing.expect_value(t, resolved_share(t, room), 1)
+	quarter := room
+	quarter.interior_light_share = 0.25
+	testing.expect_value(t, resolved_share(t, quarter), 0.25)
+	for accepted in ([?]f32{0, 1}) {
+		edge := room
+		edge.interior_light_share = accepted
+		testing.expect_value(t, resolved_share(t, edge), accepted)
+	}
+	for refused in ([?]f32{-0.01, 1.01}) {
+		outside := room
+		outside.interior_light_share = refused
+		message := resolve_test_machines({outside})
+		testing.expectf(t, strings.has_prefix(message, "machine \"room\" has interior_light_share"), "%v: %q", refused, message)
+	}
+	niche := Machine_Definition {
+		id = "niche",
+		name_key = "machine_pod",
+		kind = "oxygen_generator",
+		footprint = {width = 1, depth = 2, height = 3},
+	}
+	testing.expect_value(t, resolved_share(t, niche), 1)
+	shared := niche
+	shared.interior_light_share = 0.25
+	testing.expect_value(t, resolve_test_machines({shared}), "machine \"niche\" is not a pod and cannot have interior_light_share")
+
+	machines := make_test_machines()
+	testing.expect_value(t, machines.machines[find_machine_of_kind(machines, .Pod)].interior_light_share, 1)
+	testing.expect_value(t, machines.machines[find_machine_of_kind(machines, .Furnace)].interior_light_share, 1)
+}
+
 // Work item 0198: a footprint side may be 12 cells (the pod's length),
 // not 13.
 @(test)

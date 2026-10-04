@@ -48,7 +48,9 @@ Model_Renderer :: struct {
 // session's machines stand on frames the block light does not reach
 // (work item 0179). reaching_arm is an arm drawn held at full reach and
 // working whatever its cycle (the planet preview's screenshot), NO_ENTITY
-// otherwise.
+// otherwise. interiors are the pods' boxes whose models and players take
+// the pod's interior light share (0225, gather_interior_lights); nil
+// outside a field scene, which leaves every share 1.
 Model_Frame :: struct {
 	world:        ^World,
 	tick:         u64,
@@ -58,6 +60,53 @@ Model_Frame :: struct {
 	sky_tint:     [3]f32,
 	open_sky:     bool,
 	reaching_arm: Entity_Handle,
+	interiors:    []Interior_Light,
+}
+
+// A pod's box of cells on its frame (inclusive, the rotated size from its
+// origin) and its interior_light_share (work item 0225).
+Interior_Light :: struct {
+	frame: Frame,
+	box:   Cell_Box,
+	share: f32,
+}
+
+// Every alive pod's box on its frame with its share, once per scene.
+gather_interior_lights :: proc(entities: ^Entities, machines: Machine_Registry, allocator := context.temp_allocator) -> []Interior_Light {
+	interiors := make([dynamic]Interior_Light, allocator)
+	for entry in entities.foundations.entries {
+		if !entry.alive || int(entry.machine) >= len(machines.machines) {
+			continue
+		}
+		machine := machines.machines[entry.machine]
+		frame, found := find_frame(&entities.frames, entry.frame)
+		if machine.kind != .Pod || !found {
+			continue
+		}
+		box := Cell_Box{from = cast([3]i32)entry.origin, to = cast([3]i32)entry.origin + entry.size - 1}
+		append(&interiors, Interior_Light{frame = frame, box = box, share = machine.interior_light_share})
+	}
+	return interiors[:]
+}
+
+// The share of the first pod whose box on the frame holds the cell, else 1.
+model_interior_light_share :: proc(interiors: []Interior_Light, frame: Frame_Id, cell: World_Coordinate) -> f32 {
+	for interior in interiors {
+		if interior.frame.id == frame && cell_box_contains(interior.box, cast([3]i32)cell) {
+			return interior.share
+		}
+	}
+	return 1
+}
+
+// The share of the first pod whose box holds the player's feet cell, else 1.
+field_player_interior_light_share :: proc(interiors: []Interior_Light, player: Field_Player) -> f32 {
+	for interior in interiors {
+		if cell_box_contains(interior.box, cast([3]i32)frame_cell_of_feet(interior.frame, player)) {
+			return interior.share
+		}
+	}
+	return 1
 }
 
 // The light a model at the cell takes.
@@ -309,14 +358,26 @@ entity_body_matrix :: proc(entities: ^Entities, common: Entity_Common) -> matrix
 // A broken machine's model (0201) is drawn this much of its light.
 BROKEN_MODEL_TINT :: 0.35
 
-// The entity's model at the pose, lit by the cell model_light_cell names,
-// darkened while broken.
-draw_posed_model :: proc(renderer: Model_Renderer, model: Uploaded_Machine_Model, common: Entity_Common, machine: Machine, frame: Model_Frame, pose: Model_Pose) {
-	light_tint := model_light_tint(model_frame_light(frame, model_light_cell(common)), frame.day_factor, frame.sky_tint)
+// The light tint of the entity's lit layers and the brightness of its
+// emissive ones: the light of the cell model_light_cell names, at its
+// pod's interior light share inside a pod's box (0225), darkened while
+// broken. A working model's emissive layers keep their brightness, an
+// idle one's follow the tint.
+posed_model_light :: proc(frame: Model_Frame, common: Entity_Common, machine: Machine, pose: Model_Pose) -> (light_tint, glow: [3]f32) {
+	sky_light := model_light_tint(model_frame_light(frame, model_light_cell(common)), frame.day_factor, frame.sky_tint)
+	light_tint = interior_light_tint(sky_light, model_interior_light_share(frame.interiors, common.frame, common.origin))
 	if common.broken {
 		light_tint *= BROKEN_MODEL_TINT
 	}
-	glow := emissive_brightness(machine.motion.kind, pose.phase, pose.working, light_tint)
+	glow = emissive_brightness(machine.motion.kind, pose.phase, pose.working, light_tint)
+	return light_tint, glow
+}
+
+// The entity's model at the pose, lit by the cell model_light_cell names,
+// at its pod's interior light share inside a pod's box (0225), darkened
+// while broken.
+draw_posed_model :: proc(renderer: Model_Renderer, model: Uploaded_Machine_Model, common: Entity_Common, machine: Machine, frame: Model_Frame, pose: Model_Pose) {
+	light_tint, glow := posed_model_light(frame, common, machine, pose)
 	body := entity_body_matrix(&frame.world.entities, common)
 	draw_model_layers(renderer, model.body, body, light_tint, glow)
 	part := body * motion_transform(machine.motion, machine.footprint, pose.phase)

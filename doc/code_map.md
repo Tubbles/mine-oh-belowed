@@ -210,7 +210,7 @@ Presentation turns the world, the tick and the render time into pixels and sound
   - `render_water.odin`: `Water_Renderer`, underwater fog; the frustum test is the `render_frustum` package (Packages).
   - `render_day.odin`, `render_sky.odin`: `Day_Sky`, sun and moon; the sky dome, stars, the survey satellite.
   - `weather.odin`, `render_weather.odin`: `weather_at`, the hourly schedule; `Weather_Look`, rain, snow, clouds.
-  - `render_entities.odin`, `render_models.odin`: `draw_entities` over the pools, bottleneck markers, the models' working procedures (`foundation_model_working` and the others) and `gather_machine_lights` (0224); `Model_Renderer`, posed and ghost models, the model shader for the lit layer (0224).
+  - `render_entities.odin`, `render_models.odin`: `draw_entities` over the pools, bottleneck markers, the models' working procedures (`foundation_model_working` and the others) and `gather_machine_lights` (0224); `Model_Renderer`, posed and ghost models, the model shader for the lit layer (0224), the pods' interior light (`gather_interior_lights`, `posed_model_light`, 0225).
   - `render_frames.odin`: the frames' placeholder boxes per occupied cell and the placement ghost (0174), `frame_render_matrix`.
   - `model_mesh.odin`, `model_motion.odin`: the voxel mesher over the `model_vox` package's parser (Packages) and the choice of an .obj over a .vox; `Machine_Motion` and part transforms.
   - `model_triangle_mesh.odin`: the OBJ mesher over the `model_obj` package's reader (Packages): flat shade, footprint check.

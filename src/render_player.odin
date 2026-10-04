@@ -235,10 +235,11 @@ Player_Body_Draw :: struct {
 	light:     rl.Color,
 }
 
-// The world light at the eye, like a machine model's.
-player_body_light :: proc(frame: Model_Frame, eye: [3]f32) -> rl.Color {
+// The world light at the eye, like a machine model's, at the interior
+// share of the pod the body stands in (0225, 1 elsewhere).
+player_body_light :: proc(frame: Model_Frame, eye: [3]f32, interior_share: f32) -> rl.Color {
 	light := model_frame_light(frame, camera_world_coordinate(eye))
-	return brightness_color(model_light_tint(light, frame.day_factor, frame.sky_tint))
+	return brightness_color(interior_light_tint(model_light_tint(light, frame.day_factor, frame.sky_tint), interior_share))
 }
 
 // The six limbs posed by the animation, or the capsule.
