@@ -1,6 +1,6 @@
 # 0184: The planet preview starts at the home
 
-Status: verified (2026-10-04, implementer agent aacbdab4144f99914, verified the same day with no fix round (the shots accepted: the pad small on the far crest, no outcrop with the shipped seed, build.md reworded), in `.claude/worktrees/0184` on `item/0184` from `main` at 716805e, the specification approved the same day with the decisions below, first item of M14's look stream (0237); M13 follow up, from the wiring of 0179; whenever the assistant needs it)
+Status: landed (2026-10-04, "Start the planet preview at the home (0184)", 4dc96e0, installed the same day; implementer agent aacbdab4144f99914, verified the same day with no fix round (the shots accepted: the pad small on the far crest, no outcrop with the shipped seed, build.md reworded), in `.claude/worktrees/0184` on `item/0184` from `main` at 716805e, the specification approved the same day with the decisions below, first item of M14's look stream (0237); M13 follow up, from the wiring of 0179; whenever the assistant needs it)
 
 ## Goal
 
