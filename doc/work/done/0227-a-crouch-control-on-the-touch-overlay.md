@@ -1,6 +1,6 @@
 # 0227: A crouch control on the touch overlay
 
-Status: verified (2026-10-04, the review of the same day weighed, its one nit (a stale HUD comment) fixed in the landing amend, in `.claude/worktrees/0227` on `item/0227` from `main` after 0222 landed, the specification approved the same day with the decisions below; from the user on the phone with the round three pod preview: "How do i toggle crouch on phone"; there is none, Default carries no Sneak control since 0134 took the buttons out, and the airlock of 0221 needs crouching)
+Status: landed (2026-10-04, "Add a B button for Sneak to the default touch layout (0227)", ce0509a, play build installed the same day; the review weighed, its one nit (a stale HUD comment) fixed in the landing amend; in `.claude/worktrees/0227` on `item/0227` from `main` after 0222 landed, the specification approved the same day with the decisions below; from the user on the phone with the round three pod preview: "How do i toggle crouch on phone"; there is none, Default carries no Sneak control since 0134 took the buttons out, and the airlock of 0221 needs crouching)
 
 ## Goal
 
