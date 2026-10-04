@@ -325,7 +325,7 @@ test_the_shipped_obj_machines_load :: proc(t: ^testing.T) {
 		{"lab", true},
 		{"stone_cutting_table", false},
 		{"stone_cutter", true},
-		{"pod", false},
+		{"pod", true},
 		{"pod_hatch", true},
 		{"pod_locker", false},
 		{"crafting_bench", false},
@@ -342,7 +342,7 @@ test_the_shipped_obj_machines_load :: proc(t: ^testing.T) {
 		defer destroy_machine_model_mesh(mesh)
 		testing.expectf(t, problem == "", "%s: %q", id, problem)
 		body_triangles := model_layers_triangle_count(mesh.body)
-		testing.expectf(t, body_triangles >= 1 && body_triangles <= MODEL_BODY_TRIANGLES_MAXIMUM, "%s: %d body triangles", id, body_triangles)
+		testing.expectf(t, body_triangles >= 1 && body_triangles <= model_body_triangles_maximum(machine.kind), "%s: %d body triangles", id, body_triangles)
 		part_triangles := model_layers_triangle_count(mesh.part)
 		if motion_has_part(machine.motion.kind) {
 			testing.expectf(t, part_triangles >= 1 && part_triangles <= MODEL_PART_TRIANGLES_MAXIMUM, "%s: %d part triangles", id, part_triangles)

@@ -436,10 +436,15 @@ field_home_player :: proc(seed: u64, planet: Planet, spacing_millimetres: int) -
 }
 
 // The centre of the cabin's floor: the record's first open_cells box
-// (validate_pod_cabin), the mean of its bottom layer's two corner cells
-// lowered half a pitch along the frame's up.
+// (validate_pod_cabin, the floor before the chair since 0221).
 pod_cabin_floor_centre :: proc(frame: Frame, origin: World_Coordinate, pod: Machine, rotation: u8) -> World_Position {
-	box := pod.open_cells[0]
+	return pod_box_floor_centre(frame, origin, pod, rotation, pod.open_cells[0])
+}
+
+// The centre of the floor of a box of the pod's unrotated footprint: the
+// mean of its bottom layer's two corner cells lowered half a pitch along
+// the frame's up.
+pod_box_floor_centre :: proc(frame: Frame, origin: World_Coordinate, pod: Machine, rotation: u8, box: Cell_Box) -> World_Position {
 	first := rotate_footprint_cell({box.from.x, box.from.z}, pod.footprint.x, pod.footprint.z, rotation)
 	last := rotate_footprint_cell({box.to.x, box.to.z}, pod.footprint.x, pod.footprint.z, rotation)
 	first_centre := frame_cell_centre(frame, origin + {first.x, box.from.y, first.y})

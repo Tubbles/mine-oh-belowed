@@ -131,7 +131,9 @@ hatch_state :: proc(entities: ^Entities, machines: Machine_Registry, handle: Ent
 // An open hatch's cells: none solid, every row but the top an open cell
 // the player walks and the aiming ray passes through, the top row
 // neither, so the player walks under it and the ray stops at it, which
-// keeps the hatch aimable to close it.
+// keeps the hatch aimable to close it (a 2 row hatch: the player passes
+// both rows, since it collides with solid cells only; the ray passes row
+// 0).
 occupy_open_hatch_cells :: proc(entities: ^Entities, common: Entity_Common, occupant: Occupant) {
 	passed := Occupant{handle = occupant.handle, flags = occupant.flags - {.Solid} + {.Open}}
 	top := Occupant{handle = occupant.handle, flags = occupant.flags - {.Solid}}
@@ -378,11 +380,14 @@ oxygen_generator_supplies_a_room :: proc(entities: ^Entities, handle: Entity_Han
 
 // A pod of an older build replaced at load: its frame, its saved
 // footprint before rotation (x the width, y the height, z the depth, as
-// Machine.footprint) and the new pod.
+// Machine.footprint), the new pod, how many of the old locker's stacks
+// its locker took and how many did not fit (0221).
 Upgraded_Pod :: struct {
-	old_frame:     Frame_Id,
-	old_footprint: [3]i32,
-	pod:           Entity_Handle,
+	old_frame:      Frame_Id,
+	old_footprint:  [3]i32,
+	pod:            Entity_Handle,
+	moved_stacks:   int,
+	dropped_stacks: int,
 }
 
 // The centre of a box's floor on a frame, from its minimum corner and
@@ -397,7 +402,10 @@ pod_floor_centre :: proc(frame: Frame, origin: World_Coordinate, size: [3]i32) -
 
 // Every alive pod whose saved size is not its record's (an older build's)
 // is replaced by the record's pod with its fixtures, on a new frame
-// standing on the old floor's centre, facing the old frame's forward.
+// standing on the old floor's centre, facing the old frame's forward. The
+// old fixtures go with it once the new pod stands (0221), the old
+// locker's stacks into the new locker as far as its slots go; a pod that
+// cannot be placed leaves its old fixtures where they are.
 // Runs on the loaded pools before the occupancy is built
 // (rebuild_loaded_world), so the old entry is only taken out of its pool.
 // In the temp allocator.
@@ -423,9 +431,57 @@ upgrade_resized_pods :: proc(entities: ^Entities, machines: Machine_Registry) ->
 		if !placed {
 			continue
 		}
-		append(&upgraded, Upgraded_Pod{old_frame = entry.frame, old_footprint = rotated_footprint_size(entry.size, entry.rotation), pod = pod_on_frame(entities, machines, new_frame)})
+		stacks, _ := take_old_pod_fixtures(entities, machines, entry.frame)
+		moved_stacks := fill_pod_locker(entities, machines, new_frame, stacks)
+		append(&upgraded, Upgraded_Pod{old_frame = entry.frame, old_footprint = rotated_footprint_size(entry.size, entry.rotation), pod = pod_on_frame(entities, machines, new_frame), moved_stacks = moved_stacks, dropped_stacks = len(stacks) - moved_stacks})
 	}
 	return upgraded[:]
+}
+
+// Takes the old pod's fixtures off its frame (0221): every alive hatch,
+// crafting bench and oxygen generator and every alive locker on the
+// frame. None of these kinds has an item, so all of them on the frame are
+// the pod's. Returns the lockers' non empty stacks in slot order, in the
+// temp allocator, and how many entries went.
+take_old_pod_fixtures :: proc(entities: ^Entities, machines: Machine_Registry, frame: Frame_Id) -> (locker_stacks: []Item_Stack, removed: int) {
+	stacks := make([dynamic]Item_Stack, context.temp_allocator)
+	for entry in entities.foundations.entries {
+		if !entry.alive || entry.frame != frame {
+			continue
+		}
+		kind := machines.machines[entry.machine].kind
+		if kind == .Hatch || kind == .Crafting_Bench || kind == .Oxygen_Generator {
+			pool_remove(&entities.foundations, entry.handle)
+			removed += 1
+		}
+	}
+	for &entry in entities.chests.entries {
+		if !entry.alive || entry.frame != frame || machines.machines[entry.machine].kind != .Locker {
+			continue
+		}
+		for stack in entry.slots[:entry.slot_count] {
+			if !stack_is_empty(stack) {
+				append(&stacks, stack)
+			}
+		}
+		pool_remove(&entities.chests, entry.handle)
+		removed += 1
+	}
+	return stacks[:], removed
+}
+
+// The first alive locker on the frame takes the stacks into its slots in
+// order, at most its slot count; returns how many it took.
+fill_pod_locker :: proc(entities: ^Entities, machines: Machine_Registry, frame: Frame_Id, stacks: []Item_Stack) -> int {
+	for &entry in entities.chests.entries {
+		if !entry.alive || entry.frame != frame || machines.machines[entry.machine].kind != .Locker {
+			continue
+		}
+		taken := min(len(stacks), entry.slot_count)
+		copy(entry.slots[:taken], stacks[:taken])
+		return taken
+	}
+	return 0
 }
 
 // The alive pod on a frame, NO_ENTITY for none.
@@ -452,7 +508,7 @@ finish_pod_upgrades :: proc(state: ^Simulation_State, machines: Machine_Registry
 		moved := move_players_into_the_pod(state, machines, pod.common)
 		// Width, depth, height, the record's order.
 		old, new := upgrade.old_footprint, machines.machines[pod.machine].footprint
-		platform.log_printf("save: the pod of an older build (%d by %d by %d cells) is replaced by the pod of %d by %d by %d cells with its hatches and fixtures, on a frame of its own at the old floor; %d players moved into its cabin", old.x, old.z, old.y, new.x, new.z, new.y, moved)
+		platform.log_printf("save: the pod of an older build (%d by %d by %d cells) is replaced by the pod of %d by %d by %d cells with its hatches and fixtures, on a frame of its own at the old floor; %d players moved into its cabin, %d stacks moved into its locker, %d dropped", old.x, old.z, old.y, new.x, new.z, new.y, moved, upgrade.moved_stacks, upgrade.dropped_stacks)
 	}
 }
 

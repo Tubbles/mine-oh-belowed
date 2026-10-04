@@ -16,8 +16,11 @@ import "model_obj"
 // Cost: a body of at most 3200 and a part of at most 200 triangles give
 // at most 16 x 200 x 3200 (about 10 million) box tests per machine, exact
 // tests only where the boxes overlap, and the moving part's bounds filter
-// the body first; over the budget the sweep does not run. The open cells
-// are at most 4 boxes x 3400 triangles x 18 tests. The arm's voxel parts
+// the body first; over the budget the sweep does not run. The sweep is
+// bounded by the part, and a pod has none. The open cells are at most 4
+// boxes x 3400 triangles x 18 tests; a pod's open cells and fixture boxes
+// cost boxes x 25600 triangles. A pod's fixture parts (0221) are 17
+// phases x 200 x the body filtered to the part's swept bounds first. The arm's voxel parts
 // are a few hundred triangles each: 16 fractions x 5 moving sets against
 // the base, well under a second unoptimised.
 
@@ -28,6 +31,9 @@ MODEL_CHECK_PHASE_COUNT :: 16
 // user's 3200 (2026-10-04, 0212): a machine at its real size spends it on
 // its surface, a pole or a lamp stays far under it.
 MODEL_BODY_TRIANGLES_MAXIMUM :: 3200
+// The pod's body (0221, the user's of 2026-10-04): the model every player
+// sees first, from inside, at arm's length.
+MODEL_POD_BODY_TRIANGLES_MAXIMUM :: 25600
 MODEL_PART_TRIANGLES_MAXIMUM :: 200
 MODEL_MATERIAL_LIMIT :: 8
 // The share of an edge and of a triangle's barycentric range a crossing
@@ -287,11 +293,18 @@ model_check_arm_reach :: proc(machine: Machine, pitch_millimetres: int) -> i32 {
 	return inserter_reach_on_frame(machine, Frame{id = MODEL_CHECK_FRAME, pitch_millimetres = pitch_millimetres})
 }
 
-// DESIGN.md's maxima; the part's line only for a part with triangles.
-model_budget_problems :: proc(body, part: Model_Layers, material_count: int, allocator := context.temp_allocator) -> []Model_Check_Problem {
+// The body's budget of a kind: a kind's exception, not a record key, so
+// no record raises its own.
+model_body_triangles_maximum :: proc(kind: Machine_Kind) -> int {
+	return kind == .Pod ? MODEL_POD_BODY_TRIANGLES_MAXIMUM : MODEL_BODY_TRIANGLES_MAXIMUM
+}
+
+// DESIGN.md's maxima, the body's from model_body_triangles_maximum; the
+// part's line only for a part with triangles.
+model_budget_problems :: proc(body, part: Model_Layers, material_count: int, body_maximum: int, allocator := context.temp_allocator) -> []Model_Check_Problem {
 	problems := make([dynamic]Model_Check_Problem, allocator)
-	if count := model_layers_triangle_count(body); count > MODEL_BODY_TRIANGLES_MAXIMUM {
-		append(&problems, Model_Check_Problem{.Budget, fmt.tprintf("body has %d triangles, the budget is at most %d", count, MODEL_BODY_TRIANGLES_MAXIMUM)})
+	if count := model_layers_triangle_count(body); count > body_maximum {
+		append(&problems, Model_Check_Problem{.Budget, fmt.tprintf("body has %d triangles, the budget is at most %d", count, body_maximum)})
 	}
 	if count := model_layers_triangle_count(part); count > MODEL_PART_TRIANGLES_MAXIMUM {
 		append(&problems, Model_Check_Problem{.Budget, fmt.tprintf("part has %d triangles, the budget is at most %d", count, MODEL_PART_TRIANGLES_MAXIMUM)})
@@ -437,10 +450,68 @@ model_check_load_problem :: proc(problem: string, allocator := context.temp_allo
 	return problems
 }
 
+// The fixture's model frame into the pod's model frame: placed at its
+// fixture box as the world places it, then the pod's footprint centred.
+pod_fixture_model_transform :: proc(pod: Machine, index: int, fixture: Machine) -> matrix[4, 4]f32 {
+	rotation := pod.fixtures[index].rotation
+	placed := model_transform(World_Coordinate(pod.fixture_boxes[index].from), rotated_footprint_size(fixture.footprint, rotation), rotation)
+	return translation_matrix({-f32(pod.footprint.x) / 2, 0, -f32(pod.footprint.z) / 2}) * placed
+}
+
+// A fixture's part over its motion, open fraction 0 to 1 inclusive, at its
+// fixture box against the pod's body (0221): one line per phase where the
+// part cuts the body. The body is filtered to the part's swept bounds.
+fixture_part_crossing_problems :: proc(pod: Machine, index: int, fixture: Machine, pod_body, fixture_part: Model_Layers, allocator := context.temp_allocator) -> []Model_Check_Problem {
+	problems := make([dynamic]Model_Check_Problem, allocator)
+	placement := pod_fixture_model_transform(pod, index, fixture)
+	poses: [MODEL_CHECK_PHASE_COUNT + 1][dynamic]Check_Triangle
+	swept_minimum, swept_maximum := [3]f32{max(f32), max(f32), max(f32)}, [3]f32{min(f32), min(f32), min(f32)}
+	for &pose, phase_index in poses {
+		pose = model_layers_check_triangles(fixture_part, placement * motion_transform(fixture.motion, fixture.footprint, model_check_phase(phase_index)))
+		minimum, maximum := check_triangles_bounds(pose[:])
+		swept_minimum, swept_maximum = linalg.min(swept_minimum, minimum), linalg.max(swept_maximum, maximum)
+	}
+	still := make([dynamic]Check_Triangle, context.temp_allocator)
+	for triangle in model_layers_check_triangles(pod_body, 1) {
+		if check_boxes_overlap(triangle.minimum, triangle.maximum, swept_minimum, swept_maximum) {
+			append(&still, triangle)
+		}
+	}
+	for pose, phase_index in poses {
+		crossings := count_triangle_crossings(pose[:], still[:])
+		if crossings.count == 0 {
+			continue
+		}
+		detail := fmt.tprintf("fixture %d (%s) at open fraction %.4f: %d part triangles cut the pod's body, the first (part %d, body %d) near (%.3f, %.3f, %.3f)", index, fixture.id, model_check_phase(phase_index), crossings.count, crossings.first_moving, crossings.first_still, crossings.near.x, crossings.near.y, crossings.near.z)
+		append(&problems, Model_Check_Problem{.Sweep, detail})
+	}
+	return problems[:]
+}
+
+// Every fixture of the pod whose machine has a moving part and an OBJ:
+// its part against the pod's body (fixture_part_crossing_problems).
+pod_fixture_part_problems :: proc(data_directory: string, machines: []Machine, pod: Machine, pod_body: Model_Layers, allocator := context.temp_allocator) -> []Model_Check_Problem {
+	problems := make([dynamic]Model_Check_Problem, allocator)
+	for index in 0 ..< pod.fixture_count {
+		fixture := machines[pod.fixtures[index].machine]
+		if !motion_has_part(fixture.motion.kind) || model_check_subject(data_directory, fixture) != .Obj {
+			continue
+		}
+		mesh, problem := load_machine_model_mesh(data_directory, fixture, context.temp_allocator)
+		if problem != "" {
+			append(&problems, Model_Check_Problem{.Load, fmt.tprintf("fixture %d (%s): %s", index, fixture.id, problem)})
+			continue
+		}
+		append(&problems, ..fixture_part_crossing_problems(pod, index, fixture, pod_body, mesh.part))
+		destroy_machine_model_mesh(mesh)
+	}
+	return problems[:]
+}
+
 // An OBJ model: the loader's refusal is the one load line; then the
 // budget, and only within it (so the sweep's cost stays bounded) the
-// sweep and the open cells.
-check_obj_machine_model :: proc(data_directory: string, machine: Machine, allocator := context.temp_allocator) -> []Model_Check_Problem {
+// sweep, the open cells and, for a pod, its fixtures' parts.
+check_obj_machine_model :: proc(data_directory: string, machines: []Machine, machine: Machine, allocator := context.temp_allocator) -> []Model_Check_Problem {
 	mesh, problem := load_machine_model_mesh(data_directory, machine, context.temp_allocator)
 	if problem != "" {
 		return model_check_load_problem(problem, allocator)
@@ -452,7 +523,7 @@ check_obj_machine_model :: proc(data_directory: string, machine: Machine, alloca
 	}
 	defer model_obj.destroy_obj_model(model)
 	problems := make([dynamic]Model_Check_Problem, allocator)
-	append(&problems, ..model_budget_problems(mesh.body, mesh.part, obj_model_material_count(model)))
+	append(&problems, ..model_budget_problems(mesh.body, mesh.part, obj_model_material_count(model), model_body_triangles_maximum(machine.kind)))
 	if len(problems) > 0 {
 		return problems[:]
 	}
@@ -462,15 +533,18 @@ check_obj_machine_model :: proc(data_directory: string, machine: Machine, alloca
 	// No pod geometry where a fixture's model stands (0198).
 	fixture_boxes := machine.fixture_boxes
 	append(&problems, ..model_open_cell_problems(fixture_boxes[:machine.fixture_count], machine.footprint, mesh.body, mesh.part, "fixture box"))
+	if machine.kind == .Pod && machine.fixture_count > 0 {
+		append(&problems, ..pod_fixture_part_problems(data_directory, machines, machine, mesh.body))
+	}
 	return problems[:]
 }
 
 // Reads the machine's files. Nothing for a machine without a model.
-check_machine_model :: proc(data_directory: string, machine: Machine, pitch_millimetres: int, allocator := context.temp_allocator) -> []Model_Check_Problem {
+check_machine_model :: proc(data_directory: string, machines: []Machine, machine: Machine, pitch_millimetres: int, allocator := context.temp_allocator) -> []Model_Check_Problem {
 	switch model_check_subject(data_directory, machine) {
 	case .None:
 	case .Obj:
-		return check_obj_machine_model(data_directory, machine, allocator)
+		return check_obj_machine_model(data_directory, machines, machine, allocator)
 	case .Arm:
 		mesh, problem := load_machine_model_mesh(data_directory, machine, context.temp_allocator)
 		if problem != "" {

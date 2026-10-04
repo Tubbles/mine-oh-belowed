@@ -38,7 +38,7 @@ test_place_pod_stands_the_pod_on_its_frame_with_no_pad :: proc(t: ^testing.T) {
 	}
 	size := rotated_footprint_size(pod.footprint, POD_ROTATION)
 	testing.expect_value(t, frame_cell_count(&entities.frames, frame), int(size.x * size.y * size.z))
-	testing.expect_value(t, frame_cell_count(&entities.frames, frame), 768)
+	testing.expect_value(t, frame_cell_count(&entities.frames, frame), 1152)
 	for foundation in entities.foundations.entries {
 		testing.expect(t, !foundation.alive || machines.machines[foundation.machine].kind != .Foundation, "a foundation was laid")
 	}
@@ -86,6 +86,68 @@ TEST_LOCKER :: 2
 TEST_BENCH :: 3
 TEST_GENERATOR :: 4
 
+// The shipped record's open cells boxes (0221): the floor before the
+// chair, the lane to the inner hatch and the airlock's bore.
+TEST_CABIN_BOX :: 0
+TEST_LANE_BOX :: 1
+TEST_AIRLOCK_BOX :: 2
+
+// A cell of the pod's unrotated record (x along the width, y up, z along
+// the depth) on the frame of place_test_pod: record x is the frame's z
+// offset from the pod's origin.
+test_pod_record_cell :: proc(pod: Machine, cell: [3]i32) -> World_Coordinate {
+	turned := rotate_footprint_cell({cell.x, cell.z}, pod.footprint.x, pod.footprint.z, POD_ROTATION)
+	return pod_origin(pod) + {turned.x, cell.y, turned.y}
+}
+
+// The record cell in front of a fixture's box at its minimum corner's
+// row, on the side its rotation faces.
+test_fixture_front_cell :: proc(pod: Machine, index: int) -> [3]i32 {
+	box := pod.fixture_boxes[index]
+	switch pod.fixtures[index].rotation {
+	case 1:
+		return {box.from.x, box.from.y, box.to.z + 1}
+	case 2:
+		return {box.from.x - 1, box.from.y, box.from.z}
+	case 3:
+		return {box.from.x, box.from.y, box.from.z - 1}
+	}
+	return {box.to.x + 1, box.from.y, box.from.z}
+}
+
+// The placed open cells of the boxes touching neither the footprint's
+// sides nor its top row: the cells the sealed room holds with both
+// hatches closed.
+test_pod_inside_cells :: proc(pod: Machine) -> []World_Coordinate {
+	cells := make([dynamic]World_Coordinate, context.temp_allocator)
+	for index in 0 ..< pod.open_cell_box_count {
+		box := pod.open_cells[index]
+		on_side := box.from.x == 0 || box.to.x == pod.footprint.x - 1 || box.from.z == 0 || box.to.z == pod.footprint.z - 1
+		if on_side || box.to.y == pod.footprint.y - 1 {
+			continue
+		}
+		append(&cells, ..test_pod_box_cells(pod, index))
+	}
+	return cells[:]
+}
+
+// A crouched player at the centre of the airlock's bore floor, facing out.
+test_airlock_player :: proc(frame: Frame, pod: Machine) -> Field_Player {
+	player := make_field_player(pod_box_floor_centre(frame, pod_origin(pod), pod, POD_ROTATION, pod.open_cells[TEST_AIRLOCK_BOX]), frame.axes[FRAME_FORWARD])
+	player.crouching = true
+	return player
+}
+
+// Whether a record cell lies in an open cells box of the pod.
+test_record_cell_is_open :: proc(pod: Machine, cell: [3]i32) -> bool {
+	for index in 0 ..< pod.open_cell_box_count {
+		if cell_box_contains(pod.open_cells[index], cell) {
+			return true
+		}
+	}
+	return false
+}
+
 // The cells of the entity, from its pool entry.
 test_entity_cells :: proc(entities: ^Entities, machines: Machine_Registry, handle: Entity_Handle) -> []World_Coordinate {
 	return common_cells(entity_common(entities, handle)^, machines)
@@ -129,7 +191,7 @@ test_place_pod_places_its_hatches_and_fixtures :: proc(t: ^testing.T) {
 	entities: Entities
 	defer destroy_entities(&entities)
 	frame, pod := place_test_pod(&entities, machines)
-	testing.expect_value(t, pod_origin(pod), World_Coordinate{-3, 0, -5})
+	testing.expect_value(t, pod_origin(pod), World_Coordinate{-5, 0, -5})
 	for index in ([2]int{TEST_OUTER_HATCH, TEST_INNER_HATCH}) {
 		handle := test_pod_fixture(&entities, frame, pod, index)
 		hatch := pool_get(&entities.foundations, handle)
@@ -141,9 +203,10 @@ test_place_pod_places_its_hatches_and_fixtures :: proc(t: ^testing.T) {
 		testing.expect(t, !entity_has_panel(&entities, machines, handle))
 	}
 	outer := test_pod_fixture(&entities, frame, pod, TEST_OUTER_HATCH)
-	for y in i32(0) ..< 4 {
-		for x in i32(0) ..= 1 {
-			testing.expect_value(t, entity_at(&entities, {x, y, 6}, frame.id), outer)
+	outer_box := pod.fixture_boxes[TEST_OUTER_HATCH]
+	for y in outer_box.from.y ..= outer_box.to.y {
+		for z in outer_box.from.z ..= outer_box.to.z {
+			testing.expect_value(t, entity_at(&entities, test_pod_record_cell(pod, {outer_box.from.x, y, z}), frame.id), outer)
 		}
 	}
 	locker := test_pod_fixture(&entities, frame, pod, TEST_LOCKER)
@@ -171,10 +234,9 @@ test_place_pod_places_its_hatches_and_fixtures :: proc(t: ^testing.T) {
 }
 
 // Every held cell of the pod is solid exactly when it is no open cell;
-// the hatches, the wall over the outer hatch, the bed, the roof, a side
-// wall and the fixtures are solid.
+// the fixtures, the drum over the bore and the top row are solid.
 @(test)
-test_the_pods_interior_is_open_and_its_hull_bed_and_closed_hatches_solid :: proc(t: ^testing.T) {
+test_the_pods_open_cells_are_open_and_the_rest_solid :: proc(t: ^testing.T) {
 	machines := make_test_machines()
 	entities: Entities
 	defer destroy_entities(&entities)
@@ -194,12 +256,9 @@ test_the_pods_interior_is_open_and_its_hull_bed_and_closed_hatches_solid :: proc
 			testing.expect_value(t, entity_at(&entities, cell, frame.id), handle)
 		}
 	}
-	testing.expect(t, frame_cell_is_solid(&entities.frames, frame.id, {0, 4, 6}), "the wall over the outer hatch")
-	testing.expect(t, frame_cell_is_solid(&entities.frames, frame.id, {2, 0, 6}), "the front wall beside the outer hatch")
-	// The bed: unrotated x 1 to 4, z 5 to 6 on the floor row.
-	testing.expect(t, frame_cell_is_solid(&entities.frames, frame.id, {-1, 0, -3}), "the bed")
-	testing.expect(t, frame_cell_is_solid(&entities.frames, frame.id, {0, 7, 0}), "the roof")
-	testing.expect(t, frame_cell_is_solid(&entities.frames, frame.id, {4, 1, 0}), "a side wall")
+	bore := pod.open_cells[TEST_AIRLOCK_BOX]
+	testing.expect(t, frame_cell_is_solid(&entities.frames, frame.id, test_pod_record_cell(pod, {bore.from.x, 2, bore.from.z})), "the drum over the bore")
+	testing.expect(t, frame_cell_is_solid(&entities.frames, frame.id, test_pod_record_cell(pod, {pod.footprint.x / 2, 7, pod.footprint.z / 2})), "the top row")
 }
 
 // A machine on an open cell of the pod is refused: the cell is the pod's.
@@ -227,12 +286,13 @@ test_a_hatch_toggles_its_cells :: proc(t: ^testing.T) {
 	defer destroy_entities(&entities)
 	frame, pod := place_test_pod(&entities, machines)
 	outer := test_pod_fixture(&entities, frame, pod, TEST_OUTER_HATCH)
+	hatch_machine := machines.machines[pod.fixtures[TEST_OUTER_HATCH].machine]
 	count := frame_cell_count(&entities.frames, frame.id)
 	testing.expect(t, toggle_hatch(&entities, machines, outer, 10, nil))
 	for cell in test_entity_cells(&entities, machines, outer) {
 		occupant, found := frame_occupant(&entities.frames, frame.id, cell)
 		testing.expect(t, found && .Solid not_in occupant.flags)
-		testing.expectf(t, (.Open in occupant.flags) == (cell.y < 3), "cell %v flags %v", cell, occupant.flags)
+		testing.expectf(t, (.Open in occupant.flags) == (cell.y < hatch_machine.footprint.y - 1), "cell %v flags %v", cell, occupant.flags)
 		testing.expect_value(t, entity_from_occupant(occupant.handle), outer)
 	}
 	testing.expect_value(t, frame_cell_count(&entities.frames, frame.id), count)
@@ -247,8 +307,8 @@ test_a_hatch_toggles_its_cells :: proc(t: ^testing.T) {
 	testing.expect(t, !toggle_hatch(&entities, machines, NO_ENTITY, 30, nil))
 }
 
-// An open hatch does not close on a player standing in its cells; a
-// player in the middle of the airlock lets it close.
+// An open hatch does not close on a crouched player in its cells; a
+// crouched player in the middle of the airlock lets it close.
 @(test)
 test_closing_a_hatch_on_a_player_is_refused :: proc(t: ^testing.T) {
 	machines := make_test_machines()
@@ -258,20 +318,25 @@ test_closing_a_hatch_on_a_player_is_refused :: proc(t: ^testing.T) {
 	tuning := test_field_tuning(1000)
 	outer := test_pod_fixture(&entities, frame, pod, TEST_OUTER_HATCH)
 	testing.expect(t, toggle_hatch(&entities, machines, outer, 1, nil))
-	in_door := [1]Field_Capsule{field_player_capsule(tuning, make_field_player(pod_floor_centre(frame, {0, 0, 6}, {2, 4, 1}), frame.axes[FRAME_FORWARD]))}
+	door_player := make_field_player(pod_box_floor_centre(frame, pod_origin(pod), pod, POD_ROTATION, pod.fixture_boxes[TEST_OUTER_HATCH]), frame.axes[FRAME_FORWARD])
+	door_player.crouching = true
+	in_door := [1]Field_Capsule{field_player_capsule(tuning, door_player)}
 	testing.expect(t, !toggle_hatch(&entities, machines, outer, 2, in_door[:]))
 	testing.expect(t, hatch_is_open(&entities, outer))
-	in_airlock := [1]Field_Capsule{field_player_capsule(tuning, make_field_player(frame_floor_point(frame, 1, 0, 5), frame.axes[FRAME_FORWARD]))}
+	in_airlock := [1]Field_Capsule{field_player_capsule(tuning, test_airlock_player(frame, pod))}
 	testing.expect(t, toggle_hatch(&entities, machines, outer, 3, in_airlock[:]))
 	testing.expect(t, !hatch_is_open(&entities, outer))
 }
 
-// With the outer hatch closed the walk from outside stops at it; with
-// both hatches open the player walks through the airlock into the cabin
-// and stands on its floor; walking on into the side wall, the wall stops
-// the feet short of its inner face.
+// From two cells outside the pod's front, standing: with both hatches
+// closed, and with both open, the walk stops at the pod's front (the drum
+// is 1 m high, the hull over it). Crouched, the closed outer hatch stops
+// the crawl at its face. Crouched the player crawls through the open
+// airlock, stands up in the cabin once the standing capsule fits, and
+// walks on in the cabin's open cells; from the cabin, crouched, the
+// closed inner hatch stops the crawl at its face (0221).
 @(test)
-test_a_field_player_walks_through_the_pods_door_and_the_walls_stop_it :: proc(t: ^testing.T) {
+test_a_field_player_crawls_through_the_airlock_and_stands_in_the_cabin :: proc(t: ^testing.T) {
 	machines := make_test_machines()
 	for spacing in TEST_FIELD_SPACINGS {
 		world := make_test_field(Test_Terrain{kind = .Flat}, spacing)
@@ -280,42 +345,80 @@ test_a_field_player_walks_through_the_pods_door_and_the_walls_stop_it :: proc(t:
 		defer destroy_entities(&entities)
 		frame, pod := place_test_pod(&entities, machines)
 		origin := pod_origin(pod)
-		size := rotated_footprint_size(pod.footprint, POD_ROTATION)
-		front := origin.z + size.z - 1
 		pitch := frame_pitch_units(frame)
 		tuning := test_field_tuning(spacing)
-		inward := -frame.axes[FRAME_FORWARD]
-		player := make_field_player(frame_floor_point(frame, 1, 0, front + 2), inward)
+		player := make_field_player(test_pod_outside_floor_point(frame, pod), -frame.axes[FRAME_FORWARD])
 		run_field_player_with_frames(&world, &entities.frames, tuning, &player, {}, 30)
+		front_face := i64(origin.z + pod.footprint.x) * pitch
 		run_field_player_with_frames(&world, &entities.frames, tuning, &player, FIELD_WALK_FORWARD, 120)
 		stopped := frame_local_position(frame, player.position).z
-		testing.expectf(t, stopped >= i64(front + 1) * pitch + tuning.capsule_radius - FIELD_GROUND_TOLERANCE, "%d mm: the feet passed the closed hatch to %d", spacing, stopped)
+		testing.expectf(t, stopped >= front_face + tuning.capsule_radius - FIELD_GROUND_TOLERANCE, "%d mm: the feet passed the closed hatch to %d", spacing, stopped)
+
+		outer := pod.fixture_boxes[TEST_OUTER_HATCH]
+		outer_face := i64(origin.z + outer.to.x + 1) * pitch
+		run_field_player_with_frames(&world, &entities.frames, tuning, &player, FIELD_SNEAK_FORWARD, 240)
+		stopped = frame_local_position(frame, player.position).z
+		testing.expectf(t, player.crouching, "%d mm: not crouching at the closed outer hatch", spacing)
+		testing.expectf(t, stopped >= outer_face + tuning.capsule_radius - FIELD_GROUND_TOLERANCE, "%d mm: crouched, the feet passed the closed outer hatch's face %d to %d", spacing, outer_face, stopped)
+		testing.expectf(t, stopped < front_face, "%d mm: crouched, the crawl stopped at %d, outside the pod's front", spacing, stopped)
+		player = make_field_player(test_pod_outside_floor_point(frame, pod), -frame.axes[FRAME_FORWARD])
+		run_field_player_with_frames(&world, &entities.frames, tuning, &player, {}, 30)
 
 		testing.expect(t, toggle_hatch(&entities, machines, test_pod_fixture(&entities, frame, pod, TEST_OUTER_HATCH), 1, nil))
 		testing.expect(t, toggle_hatch(&entities, machines, test_pod_fixture(&entities, frame, pod, TEST_INNER_HATCH), 1, nil))
-		for _ in 0 ..< 480 {
-			if frame_cell_of_feet(frame, player).z <= 2 {
+		run_field_player_with_frames(&world, &entities.frames, tuning, &player, FIELD_WALK_FORWARD, 120)
+		stopped = frame_local_position(frame, player.position).z
+		testing.expectf(t, stopped >= front_face + tuning.capsule_radius - FIELD_GROUND_TOLERANCE, "%d mm: standing, the feet passed the hull over the door to %d", spacing, stopped)
+
+		// Two cells past the inner hatch's face: the standing capsule's
+		// radius then clears the hatch and the drum over it.
+		inner := pod.fixture_boxes[TEST_INNER_HATCH]
+		for _ in 0 ..< 600 {
+			if frame_cell_of_feet(frame, player).z - origin.z <= inner.from.x - 2 {
 				break
 			}
-			run_field_player_with_frames(&world, &entities.frames, tuning, &player, FIELD_WALK_FORWARD, 1)
+			run_field_player_with_frames(&world, &entities.frames, tuning, &player, FIELD_SNEAK_FORWARD, 1)
 		}
 		run_field_player_with_frames(&world, &entities.frames, tuning, &player, {}, 30)
 		inside := frame_cell_of_feet(frame, player)
-		testing.expectf(t, inside.z <= 2 && inside.y == origin.y, "%d mm: the feet are in cell %v", spacing, inside)
-		testing.expectf(t, entity_at(&entities, inside, frame.id) == entity_at(&entities, origin, frame.id), "%d mm: cell %v is not the pod's", spacing, inside)
+		testing.expectf(t, inside.z - origin.z <= inner.from.x - 2, "%d mm: the crawl ended in cell %v", spacing, inside)
+		testing.expectf(t, !player.crouching, "%d mm: still crouching in the cabin", spacing)
 		testing.expectf(t, player.on_ground, "%d mm: not on the floor", spacing)
-		testing.expectf(t, abs(site_height(player.position)) <= tenth_sample(spacing), "%d mm: feet at %d", spacing, site_height(player.position))
+		cabin := make([dynamic]World_Coordinate, context.temp_allocator)
+		append(&cabin, ..test_pod_box_cells(pod, TEST_CABIN_BOX))
+		append(&cabin, ..test_pod_box_cells(pod, TEST_LANE_BOX))
+		testing.expectf(t, slice.contains(cabin[:], inside), "%d mm: the feet are in cell %v, not the cabin's", spacing, inside)
 		testing.expectf(t, !field_capsule_overlaps(&world, &entities.frames, tuning, player.position, player.up), "%d mm: the capsule overlaps the pod", spacing)
 
-		// The cabin's side away from the fixtures: the wall at x -3.
-		player.forward = tangent_of(player.up, -frame.axes[FRAME_RIGHT])
-		run_field_player_with_frames(&world, &entities.frames, tuning, &player, FIELD_WALK_FORWARD, 120)
-		wall_face := i64(origin.x + 1) * pitch
-		reached := frame_local_position(frame, player.position).x
-		testing.expectf(t, reached >= wall_face + tuning.capsule_radius - FIELD_GROUND_TOLERANCE, "%d mm: the feet reached %d, the wall's face is at %d", spacing, reached, wall_face)
-		testing.expectf(t, reached < wall_face + 2 * pitch, "%d mm: the walk stopped at %d before the wall", spacing, reached)
-		testing.expectf(t, frame_cell_of_feet(frame, player).y == origin.y, "%d mm: the feet left the floor for %v", spacing, frame_cell_of_feet(frame, player))
+		for _ in 0 ..< 120 {
+			run_field_player_with_frames(&world, &entities.frames, tuning, &player, FIELD_WALK_FORWARD, 1)
+			feet := frame_cell_of_feet(frame, player)
+			testing.expectf(t, slice.contains(cabin[:], feet), "%d mm: walking on, the feet left the cabin for %v", spacing, feet)
+			testing.expectf(t, !field_capsule_overlaps(&world, &entities.frames, tuning, player.position, player.up), "%d mm: walking on, the capsule overlaps the pod", spacing)
+			if !slice.contains(cabin[:], feet) {
+				break
+			}
+		}
+
+		testing.expect(t, toggle_hatch(&entities, machines, test_pod_fixture(&entities, frame, pod, TEST_OUTER_HATCH), 2, nil))
+		testing.expect(t, toggle_hatch(&entities, machines, test_pod_fixture(&entities, frame, pod, TEST_INNER_HATCH), 2, nil))
+		player = make_field_player(pod_cabin_floor_centre(frame, origin, pod, POD_ROTATION), frame.axes[FRAME_FORWARD])
+		run_field_player_with_frames(&world, &entities.frames, tuning, &player, {}, 30)
+		run_field_player_with_frames(&world, &entities.frames, tuning, &player, FIELD_SNEAK_FORWARD, 240)
+		inner_face := i64(origin.z + inner.from.x) * pitch
+		reached := frame_local_position(frame, player.position).z
+		testing.expectf(t, player.crouching, "%d mm: not crouching at the closed inner hatch", spacing)
+		testing.expectf(t, reached <= inner_face - tuning.capsule_radius + FIELD_GROUND_TOLERANCE, "%d mm: crouched, the feet passed the closed inner hatch's face %d to %d", spacing, inner_face, reached)
+		testing.expectf(t, reached > inner_face - 2 * pitch, "%d mm: crouched, the crawl stopped at %d, short of the inner hatch", spacing, reached)
 	}
+}
+
+// The floor point two cells outside the pod's front (record x W + 1),
+// centred on the outer hatch's z span: clear of the pod's cells.
+test_pod_outside_floor_point :: proc(frame: Frame, pod: Machine) -> World_Position {
+	outer := pod.fixture_boxes[TEST_OUTER_HATCH]
+	outside := Cell_Box{from = {pod.footprint.x + 1, 0, outer.from.z}, to = {pod.footprint.x + 1, 0, outer.to.z}}
+	return pod_box_floor_centre(frame, pod_origin(pod), pod, POD_ROTATION, outside)
 }
 
 // The occupant index is rebuilt from the pools on load: the pod's open
@@ -349,42 +452,41 @@ test_a_saved_pod_loads_with_its_open_cells :: proc(t: ^testing.T) {
 	testing.expect_value(t, len(loaded.world.entities.sealed_rooms), 1)
 }
 
-// The aiming ray from the airlock towards a chest outside stops at the
-// closed outer hatch; open, a ray at row 1 reaches the chest and one at
-// row 3 stops at the hatch's top row. At the side wall it stops at the
-// wall.
+// From the crouched eye in the airlock's bore the aiming ray meets the
+// closed outer hatch's row 1 and, open, its top row, so it is closed from
+// inside; on row 0 the open hatch lets the ray out to the chests
+// outside; straight up it meets the drum over the bore (0221).
 @(test)
-test_the_aiming_ray_passes_the_pods_open_cells_and_stops_at_its_walls :: proc(t: ^testing.T) {
+test_the_aiming_ray_meets_the_airlocks_hatches_from_the_bore :: proc(t: ^testing.T) {
 	machines := make_test_machines()
 	entities: Entities
 	defer destroy_entities(&entities)
 	frame, pod := place_test_pod(&entities, machines)
-	origin := pod_origin(pod)
-	size := rotated_footprint_size(pod.footprint, POD_ROTATION)
-	front := origin.z + size.z - 1
-	outside := World_Coordinate{1, origin.y + 1, front + 2}
-	_, refusal := place_on_frame(&entities, machines, test_foundation(machines), frame.id, outside - UP, 0)
-	testing.expect_value(t, refusal, Frame_Placement_Refusal.None)
-	_, refusal = place_on_frame(&entities, machines, test_machine(machines, "wooden_chest"), frame.id, outside, 0)
-	testing.expect_value(t, refusal, Frame_Placement_Refusal.None)
-	inside := World_Coordinate{1, origin.y + 1, front - 2}
-	testing.expect(t, !frame_cell_is_solid(&entities.frames, frame.id, inside))
-	eye := frame_cell_centre(frame, inside)
+	tuning := test_field_tuning(1000)
+	outer_box := pod.fixture_boxes[TEST_OUTER_HATCH]
+	for z in outer_box.from.z ..= outer_box.to.z {
+		outside := test_pod_record_cell(pod, {pod.footprint.x + 1, 0, z})
+		_, refusal := place_on_frame(&entities, machines, test_foundation(machines), frame.id, outside - UP, 0)
+		testing.expect_value(t, refusal, Frame_Placement_Refusal.None)
+		_, refusal = place_on_frame(&entities, machines, test_machine(machines, "wooden_chest"), frame.id, outside, 0)
+		testing.expect_value(t, refusal, Frame_Placement_Refusal.None)
+	}
+	player := test_airlock_player(frame, pod)
+	eye := field_player_eye(player, tuning)
 	reach := 10 * frame_pitch_units(frame)
 	outer := test_pod_fixture(&entities, frame, pod, TEST_OUTER_HATCH)
 	at_hatch := raycast_frames(&entities.frames, eye, frame.axes[FRAME_FORWARD], reach, excluded = {.Open})
-	testing.expectf(t, at_hatch.hit && at_hatch.cell == World_Coordinate{1, 1, front}, "the ray at the closed hatch hit %v", at_hatch.cell)
+	testing.expectf(t, at_hatch.hit && at_hatch.cell.y == 1 && entity_from_occupant(at_hatch.occupant.handle) == outer, "the ray at the closed hatch hit %v", at_hatch.cell)
 	testing.expect(t, toggle_hatch(&entities, machines, outer, 1, nil))
-	out_of_door := raycast_frames(&entities.frames, eye, frame.axes[FRAME_FORWARD], reach, excluded = {.Open})
-	testing.expectf(t, out_of_door.hit && out_of_door.cell == outside, "the ray through the door hit %v", out_of_door.cell)
-	testing.expect_value(t, entity_at(&entities, out_of_door.cell, frame.id).kind, Entity_Kind.Chest)
-	high := frame_cell_centre(frame, inside + {0, 2, 0})
-	at_top := raycast_frames(&entities.frames, high, frame.axes[FRAME_FORWARD], reach, excluded = {.Open})
-	testing.expectf(t, at_top.hit && at_top.cell == World_Coordinate{1, 3, front}, "the ray at row 3 hit %v", at_top.cell)
-	testing.expect_value(t, entity_from_occupant(at_top.occupant.handle), outer)
-	at_wall := raycast_frames(&entities.frames, eye, frame.axes[FRAME_RIGHT], reach, excluded = {.Open})
-	testing.expect_value(t, at_wall.cell, World_Coordinate{origin.x + size.x - 1, inside.y, inside.z})
-	testing.expect(t, frame_cell_is_solid(&entities.frames, frame.id, at_wall.cell))
+	at_top := raycast_frames(&entities.frames, eye, frame.axes[FRAME_FORWARD], reach, excluded = {.Open})
+	testing.expectf(t, at_top.hit && at_top.cell.y == 1 && entity_from_occupant(at_top.occupant.handle) == outer, "the ray at the open hatch's top row hit %v", at_top.cell)
+	low := player.position + World_Position(fixed_scale(frame.axes[FRAME_UP], frame_pitch_units(frame) / 4))
+	out_of_door := raycast_frames(&entities.frames, low, frame.axes[FRAME_FORWARD], reach, excluded = {.Open})
+	testing.expectf(t, out_of_door.hit && entity_at(&entities, out_of_door.cell, frame.id).kind == .Chest, "the ray through the door hit %v", out_of_door.cell)
+	up := raycast_frames(&entities.frames, eye, frame.axes[FRAME_UP], reach, excluded = {.Open})
+	pod_handle := entity_at(&entities, pod_origin(pod), frame.id)
+	testing.expectf(t, up.hit && up.cell.y == 2 && entity_at(&entities, up.cell, frame.id) == pod_handle, "the ray up hit %v", up.cell)
+	testing.expect(t, frame_cell_is_solid(&entities.frames, frame.id, up.cell))
 }
 
 // The cells of a box of the pod's record, placed with the pod.
@@ -395,16 +497,17 @@ test_pod_box_cells :: proc(pod: Machine, box: int) -> []World_Coordinate {
 	return machine_open_cells(pod_origin(pod), only, POD_ROTATION)
 }
 
-// Both hatches closed: one room of exactly the pod's open cells, supplied
-// by the generator. Outer open: the cabin alone. Inner open: the open
-// cells and the inner hatch's. Both open: no room.
+// Both hatches closed: one room of exactly the pod's inside open cells
+// (the cabin, the lane and the bore), supplied by the generator. Outer
+// open: the cabin alone. Inner open: the inside cells and the inner
+// hatch's. Both open: no room.
 @(test)
 test_the_sealed_room_follows_the_hatches :: proc(t: ^testing.T) {
 	machines := make_test_machines()
 	entities: Entities
 	defer destroy_entities(&entities)
 	frame, pod := place_test_pod(&entities, machines)
-	open := machine_open_cells(pod_origin(pod), pod, POD_ROTATION)
+	open := test_pod_inside_cells(pod)
 	generator := test_pod_fixture(&entities, frame, pod, TEST_GENERATOR)
 	outer := test_pod_fixture(&entities, frame, pod, TEST_OUTER_HATCH)
 	inner := test_pod_fixture(&entities, frame, pod, TEST_INNER_HATCH)
@@ -413,13 +516,13 @@ test_the_sealed_room_follows_the_hatches :: proc(t: ^testing.T) {
 		return
 	}
 	room := entities.sealed_rooms[0]
-	testing.expect(t, slice.equal(sorted_cells(room.cells[:]), sorted_cells(open)), "the room is the open cells")
+	testing.expect(t, slice.equal(sorted_cells(room.cells[:]), sorted_cells(open)), "the room is the inside open cells")
 	testing.expect_value(t, room.supplier, generator)
 	testing.expect_value(t, room.oxygen, Oxygen_Supply.Unlimited)
 	testing.expect(t, oxygen_generator_supplies_a_room(&entities, generator))
 
 	toggle_hatch(&entities, machines, outer, 1, nil)
-	airlock := test_pod_box_cells(pod, 3)
+	airlock := test_pod_box_cells(pod, TEST_AIRLOCK_BOX)
 	cabin := make([dynamic]World_Coordinate, context.temp_allocator)
 	for cell in open {
 		if !slice.contains(airlock, cell) {
@@ -439,7 +542,7 @@ test_the_sealed_room_follows_the_hatches :: proc(t: ^testing.T) {
 	append(&with_hatch, ..test_entity_cells(&entities, machines, inner))
 	testing.expect_value(t, len(entities.sealed_rooms), 1)
 	if len(entities.sealed_rooms) == 1 {
-		testing.expect(t, slice.equal(sorted_cells(entities.sealed_rooms[0].cells[:]), sorted_cells(with_hatch[:])), "inner open: the open cells and the inner hatch")
+		testing.expect(t, slice.equal(sorted_cells(entities.sealed_rooms[0].cells[:]), sorted_cells(with_hatch[:])), "inner open: the inside cells and the inner hatch")
 	}
 
 	toggle_hatch(&entities, machines, outer, 4, nil)
@@ -479,9 +582,7 @@ test_the_fixtures_refuse_pick_up_and_placement_over_them :: proc(t: ^testing.T) 
 	frame, _ := find_frame(&entities.frames, frame_id)
 	pod := content.machines.machines[find_machine_of_kind(content.machines, .Pod)]
 	bench_origin, _ := pod_fixture_placement(pod, pod_origin(pod), POD_ROTATION, TEST_BENCH)
-	locker_origin, _ := pod_fixture_placement(pod, pod_origin(pod), POD_ROTATION, TEST_LOCKER)
-	// The fixtures stand along the frame's x 3 wall, the cabin at x 2.
-	for cell in ([2]World_Coordinate{bench_origin + {0, 2, 0}, locker_origin + {-1, 0, 0}}) {
+	for cell in ([2]World_Coordinate{bench_origin + {0, 2, 0}, test_pod_record_cell(pod, test_fixture_front_cell(pod, TEST_LOCKER))}) {
 		for machine in ([2]Machine_Id{test_machine(content.machines, "wooden_chest"), test_foundation(content.machines)}) {
 			_, refusal := place_on_frame(entities, content.machines, machine, frame_id, cell, 0)
 			testing.expectf(t, refusal == .Occupied, "cell %v: %v", cell, refusal)
@@ -549,6 +650,192 @@ test_an_old_pod_is_replaced_at_load :: proc(t: ^testing.T) {
 	cell := frame_cell_of_feet(frame, loaded.players[0].field)
 	testing.expectf(t, cell.y == 0 && slice.contains(test_pod_box_cells(machine, 0), cell), "the player stands in cell %v", cell)
 	testing.expect_value(t, len(restored.sealed_rooms), 1)
+}
+
+// Work item 0221: the shipped record follows the lab's model: the cabin
+// box on the floor, 4 rows high, the lane and the cabin before the inner
+// hatch's face, the bore exactly between the hatches, nothing but open
+// cells or the outside before the outer hatch, every fixture facing an
+// open cell and the generator touching the sealed room.
+@(test)
+test_the_pods_record_follows_the_model :: proc(t: ^testing.T) {
+	machines := make_test_machines()
+	pod := machines.machines[find_machine_of_kind(machines, .Pod)]
+	cabin := pod.open_cells[TEST_CABIN_BOX]
+	testing.expect_value(t, cabin.from.y, 0)
+	testing.expect_value(t, cabin.to.y - cabin.from.y + 1, 4)
+	testing.expect(t, cabin.to.x - cabin.from.x >= 1 && cabin.to.z - cabin.from.z >= 1, "the cabin box is 2 by 2 cells at least")
+	lane := pod.open_cells[TEST_LANE_BOX]
+	testing.expect_value(t, lane.to.y - lane.from.y + 1, 4)
+	inner, outer := pod.fixture_boxes[TEST_INNER_HATCH], pod.fixture_boxes[TEST_OUTER_HATCH]
+	for y in i32(0) ..= 1 {
+		for z in inner.from.z ..= inner.to.z {
+			before := [3]i32{inner.from.x - 1, y, z}
+			testing.expectf(t, cell_box_contains(cabin, before) || cell_box_contains(lane, before), "record cell %v before the inner hatch is neither the cabin's nor the lane's", before)
+		}
+	}
+	bore := pod.open_cells[TEST_AIRLOCK_BOX]
+	testing.expect_value(t, bore, Cell_Box{from = {inner.from.x + 1, 0, inner.from.z}, to = {outer.from.x - 1, 1, inner.to.z}})
+	testing.expect_value(t, [2]i32{outer.from.z, outer.to.z}, [2]i32{inner.from.z, inner.to.z})
+	if outer.to.x != pod.footprint.x - 1 {
+		for y in outer.from.y ..= outer.to.y {
+			for z in outer.from.z ..= outer.to.z {
+				testing.expectf(t, test_record_cell_is_open(pod, {outer.to.x + 1, y, z}), "record cell %v before the outer hatch is solid", [3]i32{outer.to.x + 1, y, z})
+			}
+		}
+		for x in outer.to.x + 1 ..< pod.footprint.x {
+			testing.expect(t, test_record_cell_is_open(pod, {x, 0, outer.from.z}), "the way out runs to the footprint's front")
+		}
+	}
+	for index in ([3]int{TEST_LOCKER, TEST_BENCH, TEST_GENERATOR}) {
+		front := test_fixture_front_cell(pod, index)
+		testing.expectf(t, test_record_cell_is_open(pod, front), "fixture %d faces record cell %v, no open cell", index, front)
+	}
+	inside := test_pod_inside_cells(pod)
+	generator := pod.fixture_boxes[TEST_GENERATOR]
+	touches := false
+	for x in generator.from.x ..= generator.to.x {
+		for z in generator.from.z ..= generator.to.z {
+			for step in ([4][3]i32{{1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, -1}}) {
+				touches ||= slice.contains(inside, test_pod_record_cell(pod, [3]i32{x, generator.from.y, z} + step))
+			}
+		}
+	}
+	testing.expect(t, touches, "the oxygen generator touches the sealed room")
+}
+
+// Work item 0221: both hatches close round a crouched player in the
+// middle of the bore, and the crouched body fits the closed airlock.
+@(test)
+test_both_hatches_close_round_a_crouched_player_in_the_airlock :: proc(t: ^testing.T) {
+	machines := make_test_machines()
+	world := make_test_field(Test_Terrain{kind = .Flat}, 1000)
+	defer destroy_field_world(&world)
+	entities: Entities
+	defer destroy_entities(&entities)
+	frame, pod := place_test_pod(&entities, machines)
+	tuning := test_field_tuning(1000)
+	outer := test_pod_fixture(&entities, frame, pod, TEST_OUTER_HATCH)
+	inner := test_pod_fixture(&entities, frame, pod, TEST_INNER_HATCH)
+	testing.expect(t, toggle_hatch(&entities, machines, outer, 1, nil))
+	testing.expect(t, toggle_hatch(&entities, machines, inner, 1, nil))
+	player := test_airlock_player(frame, pod)
+	capsules := [1]Field_Capsule{field_player_capsule(tuning, player)}
+	testing.expect(t, toggle_hatch(&entities, machines, outer, 2, capsules[:]))
+	testing.expect(t, toggle_hatch(&entities, machines, inner, 3, capsules[:]))
+	testing.expect(t, !hatch_is_open(&entities, outer) && !hatch_is_open(&entities, inner), "both hatches closed")
+	testing.expect(t, !field_capsule_overlaps(&world, &entities.frames, field_posture_tuning(tuning, true), player.position, player.up), "the crouched body fits the closed airlock")
+}
+
+// Work item 0221: a 0198 pod in a save is replaced at load with its
+// fixtures: the old hatches, locker, bench and generator go with the old
+// frame, the old locker's stacks fill the new locker's first slots, and
+// nothing keeps its saved size.
+@(test)
+test_an_old_pod_and_its_fixtures_are_replaced_at_load :: proc(t: ^testing.T) {
+	content := make_save_test_content()
+	generator := make_test_generator(DEFAULT_WORLD_SEED)
+	original := make_save_test_simulation(&generator, content)
+	defer destroy_simulation(&original)
+	entities := &original.world.entities
+	machines := content.machines
+	frame_origin, axes := free_frame_at(test_site_point(0, 0, 0), {UNIT_VECTOR_ONE, 0, 0}, 500)
+	old_frame_id := add_frame(&entities.frames, frame_origin, axes, 500)
+	old_pod := add_entity(entities, machines, find_machine_of_kind(machines, .Pod), {-3, 0, -5}, POD_ROTATION, old_frame_id)
+	pool_get(&entities.foundations, old_pod).size = {8, 8, 12}
+	for x in ([2]i32{10, 12}) {
+		hatch := add_entity(entities, machines, test_machine(machines, "pod_hatch"), {x, 0, 0}, 0, old_frame_id)
+		pool_get(&entities.foundations, hatch).size = {1, 4, 2}
+	}
+	locker := add_entity(entities, machines, test_machine(machines, "pod_locker"), {14, 0, 0}, 0, old_frame_id)
+	stone, coal := test_item(content.items, "stone"), test_item(content.items, "coal")
+	old_chest := pool_get(&entities.chests, locker)
+	old_chest.slots[0] = Item_Stack{stone, 5}
+	old_chest.slots[4] = Item_Stack{coal, 3}
+	add_entity(entities, machines, test_machine(machines, "crafting_bench"), {16, 0, 0}, 0, old_frame_id)
+	add_entity(entities, machines, test_machine(machines, "oxygen_generator"), {18, 0, 0}, 0, old_frame_id)
+	directory := make_save_test_directory()
+	defer remove_save_test_directory(directory)
+	location := save_test_location(directory)
+	testing.expect_value(t, save_world(&original, content, location, 1_700_000_000), "")
+	loaded := load_save_test_simulation(t, location, content)
+	defer destroy_simulation(&loaded)
+	restored := &loaded.world.entities
+	pods := 0
+	pod: Foundation
+	for entry in restored.foundations.entries {
+		if !entry.alive {
+			continue
+		}
+		kind := machines.machines[entry.machine].kind
+		testing.expectf(t, entry.frame != old_frame_id, "a %v stays on the old frame", kind)
+		if kind == .Pod {
+			pods += 1
+			pod = entry
+		}
+	}
+	for entry in restored.chests.entries {
+		testing.expect(t, !entry.alive || entry.frame != old_frame_id, "a locker stays on the old frame")
+	}
+	testing.expect_value(t, pods, 1)
+	machine := machines.machines[pod.machine]
+	testing.expect_value(t, pod.size, rotated_footprint_size(machine.footprint, POD_ROTATION))
+	_, old_found := find_frame(&restored.frames, old_frame_id)
+	testing.expect(t, !old_found, "the old frame is gone")
+	for index in 0 ..< machine.fixture_count {
+		fixture_origin, _ := pod_fixture_placement(machine, pod.origin, pod.rotation, index)
+		handle := entity_at(restored, fixture_origin, pod.frame)
+		testing.expectf(t, entity_is_alive(restored, handle) && entity_common(restored, handle).machine == machine.fixtures[index].machine, "fixture %d", index)
+	}
+	locker_origin, _ := pod_fixture_placement(machine, pod.origin, pod.rotation, TEST_LOCKER)
+	new_chest := pool_get(&restored.chests, entity_at(restored, locker_origin, pod.frame))
+	testing.expect(t, new_chest != nil)
+	if new_chest != nil {
+		testing.expect_value(t, new_chest.slots[0], Item_Stack{stone, 5})
+		testing.expect_value(t, new_chest.slots[1], Item_Stack{coal, 3})
+		testing.expect(t, stack_is_empty(new_chest.slots[2]))
+	}
+	testing.expect_value(t, count_entities_keeping_saved_size(restored, machines), 0)
+	testing.expect_value(t, len(restored.sealed_rooms), 1)
+}
+
+// Work item 0221: an old locker's stacks beyond the new locker's slots
+// are counted as dropped, and the ones that fit fill its slots in order.
+@(test)
+test_an_old_lockers_stacks_past_the_new_lockers_slots_are_dropped :: proc(t: ^testing.T) {
+	machines := make_test_machines()
+	locker_machine := test_machine(machines, "pod_locker")
+	machines.machines[locker_machine].slot_count = CAPSULE_SLOT_COUNT
+	items := make_test_items()
+	stone := test_item(items, "stone")
+	entities: Entities
+	defer destroy_entities(&entities)
+	frame_origin, axes := free_frame_at(test_site_point(0, 0, 0), {UNIT_VECTOR_ONE, 0, 0}, 500)
+	old_frame := add_frame(&entities.frames, frame_origin, axes, 500)
+	old_pod := add_entity(&entities, machines, find_machine_of_kind(machines, .Pod), {-3, 0, -5}, POD_ROTATION, old_frame)
+	pool_get(&entities.foundations, old_pod).size = {8, 8, 12}
+	old_locker := pool_get(&entities.chests, add_entity(&entities, machines, locker_machine, {14, 0, 0}, 0, old_frame))
+	old_locker.slot_count = 16
+	for slot in 0 ..< CAPSULE_SLOT_COUNT + 2 {
+		old_locker.slots[slot] = Item_Stack{stone, u16(slot + 1)}
+	}
+	upgraded := upgrade_resized_pods(&entities, machines)
+	testing.expect_value(t, len(upgraded), 1)
+	if len(upgraded) != 1 {
+		return
+	}
+	testing.expect_value(t, upgraded[0].moved_stacks, CAPSULE_SLOT_COUNT)
+	testing.expect_value(t, upgraded[0].dropped_stacks, 2)
+	pod := pool_get(&entities.foundations, upgraded[0].pod)
+	locker_origin, _ := pod_fixture_placement(machines.machines[pod.machine], pod.origin, pod.rotation, TEST_LOCKER)
+	new_locker := pool_get(&entities.chests, entity_at(&entities, locker_origin, pod.frame))
+	testing.expect(t, new_locker != nil)
+	if new_locker != nil {
+		testing.expect_value(t, new_locker.slot_count, CAPSULE_SLOT_COUNT)
+		for slot in 0 ..< CAPSULE_SLOT_COUNT {
+			testing.expect_value(t, new_locker.slots[slot], Item_Stack{stone, u16(slot + 1)})
+		}
+	}
 }
 
 // Work item 0224: the pod always counts as working for its model (its

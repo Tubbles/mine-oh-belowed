@@ -126,21 +126,56 @@ test_a_clean_spinning_part_passes :: proc(t: ^testing.T) {
 @(test)
 test_a_model_over_the_budget_is_reported :: proc(t: ^testing.T) {
 	empty := empty_test_layers()
-	over := model_budget_problems(triangles_layers(MODEL_BODY_TRIANGLES_MAXIMUM + 1), empty, 1)
+	body_maximum := MODEL_BODY_TRIANGLES_MAXIMUM
+	over := model_budget_problems(triangles_layers(MODEL_BODY_TRIANGLES_MAXIMUM + 1), empty, 1, body_maximum)
 	testing.expect_value(t, len(over), 1)
 	if len(over) == 1 {
 		testing.expect(t, strings.contains(over[0].detail, "3201"), over[0].detail)
 	}
-	testing.expect_value(t, len(model_budget_problems(triangles_layers(MODEL_BODY_TRIANGLES_MAXIMUM), empty, 1)), 0)
-	testing.expect_value(t, len(model_budget_problems(triangles_layers(199), empty, 1)), 0)
-	part := model_budget_problems(triangles_layers(300), triangles_layers(201), 1)
+	testing.expect_value(t, len(model_budget_problems(triangles_layers(MODEL_BODY_TRIANGLES_MAXIMUM), empty, 1, body_maximum)), 0)
+	testing.expect_value(t, len(model_budget_problems(triangles_layers(199), empty, 1, body_maximum)), 0)
+	part := model_budget_problems(triangles_layers(300), triangles_layers(201), 1, body_maximum)
 	testing.expect_value(t, len(part), 1)
 	if len(part) == 1 {
 		testing.expect(t, strings.contains(part[0].detail, "part has 201"), part[0].detail)
 	}
-	testing.expect_value(t, len(model_budget_problems(triangles_layers(300), empty, 9)), 1)
-	testing.expect_value(t, len(model_budget_problems(triangles_layers(200), triangles_layers(200), 8)), 0)
-	testing.expect_value(t, len(model_budget_problems(triangles_layers(800), empty, 8)), 0)
+	testing.expect_value(t, len(model_budget_problems(triangles_layers(300), empty, 9, body_maximum)), 1)
+	testing.expect_value(t, len(model_budget_problems(triangles_layers(200), triangles_layers(200), 8, body_maximum)), 0)
+	testing.expect_value(t, len(model_budget_problems(triangles_layers(800), empty, 8, body_maximum)), 0)
+}
+
+// Work item 0221: the pod's body alone has the budget of 25600.
+@(test)
+test_the_pods_body_budget_is_25600 :: proc(t: ^testing.T) {
+	testing.expect_value(t, model_body_triangles_maximum(.Pod), 25600)
+	testing.expect_value(t, model_body_triangles_maximum(.Furnace), 3200)
+	empty := empty_test_layers()
+	testing.expect_value(t, len(model_budget_problems(triangles_layers(25600), empty, 1, 25600)), 0)
+	over := model_budget_problems(triangles_layers(25601), empty, 1, 25600)
+	testing.expect_value(t, len(over), 1)
+	if len(over) == 1 {
+		testing.expect(t, strings.contains(over[0].detail, "25601"), over[0].detail)
+		testing.expect(t, strings.contains(over[0].detail, "25600"), over[0].detail)
+	}
+}
+
+// Work item 0221: a hatch's part sliding up through the pod's body is
+// reported against its fixture; clear of its path it is not. Model frame:
+// the pod's x from -2 to 2, the door's x from 1 to 2.
+@(test)
+test_a_hatch_part_cutting_the_pod_is_reported :: proc(t: ^testing.T) {
+	pod := Machine{kind = .Pod, footprint = {4, 4, 4}, fixture_count = 1}
+	pod.fixtures[0] = Pod_Fixture{cell = {3, 0, 1}, rotation = 0}
+	pod.fixture_boxes[0] = Cell_Box{from = {3, 0, 1}, to = {3, 1, 2}}
+	hatch := Machine{id = "test_hatch", kind = .Hatch, footprint = {1, 2, 2}, motion = {kind = .Slide, axis = 1, amplitude = 2, period_seconds = 0.8}}
+	part := box_layers({-0.05, 0, -0.9}, {0.05, 1.9, 0.9})
+	blocked := fixture_part_crossing_problems(pod, 0, hatch, box_layers({1.0, 2.5, -2}, {2, 3, 2}), part)
+	testing.expect(t, len(blocked) > 0, "a block over the door's path cuts the part")
+	if len(blocked) > 0 {
+		testing.expect_value(t, blocked[0].check, Model_Check.Sweep)
+		testing.expect(t, strings.has_prefix(blocked[0].detail, "fixture 0"), blocked[0].detail)
+	}
+	testing.expect_value(t, len(fixture_part_crossing_problems(pod, 0, hatch, box_layers({-2, 2.5, -2}, {-1, 3, 2}), part)), 0)
 }
 
 @(test)
@@ -182,16 +217,16 @@ test_a_body_in_a_fixture_box_is_found :: proc(t: ^testing.T) {
 		testing.expect(t, strings.has_prefix(problems[0].detail, "fixture box 0"), problems[0].detail)
 	}
 	// The whole OBJ check reads a machine's fixture boxes: the shipped
-	// pod with a fixture box laid over its bed.
+	// pod with a fixture box laid over its chair (0221).
 	machines := make_test_machines()
 	walled := machines.machines[find_machine_of_kind(machines, .Pod)]
-	walled.fixture_boxes[0] = Cell_Box{from = {1, 0, 5}, to = {4, 0, 6}}
+	walled.fixture_boxes[0] = Cell_Box{from = {3, 0, 6}, to = {4, 0, 7}}
 	walled.fixture_count = 1
 	found := false
-	for problem in check_obj_machine_model(test_data_directory(), walled) {
+	for problem in check_obj_machine_model(test_data_directory(), machines.machines, walled) {
 		found ||= problem.check == .Open_Cells && strings.has_prefix(problem.detail, "fixture box 0")
 	}
-	testing.expect(t, found, "the pod's bed in a fixture box is found")
+	testing.expect(t, found, "the pod's chair in a fixture box is found")
 }
 
 // The gripper's main box of arm_gripper (tools/make_placeholder_models.py)
@@ -234,7 +269,7 @@ test_the_shipped_models_pass_the_checks :: proc(t: ^testing.T) {
 		if subject != .Obj && subject != .Arm {
 			continue
 		}
-		for problem in check_machine_model(test_data_directory(), machine, 500) {
+		for problem in check_machine_model(test_data_directory(), machines, machine, 500) {
 			testing.expect(t, false, model_check_report_line(machine.id, problem))
 		}
 	}

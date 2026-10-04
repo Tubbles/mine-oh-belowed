@@ -565,7 +565,8 @@ definition_lists_slots_power_or_ports :: proc(definition: Machine_Definition) ->
 
 // A hatch of the pod (work item 0198): placed by the world, at least
 // MINIMUM_HATCH_HEIGHT cells high, opening its own cells (no open_cells),
-// with a slide motion or none.
+// with a slide motion, a spin of at most one turn (0221: a spin's phase is
+// the open fraction, so at fully open it stands at its amplitude) or none.
 validate_hatch_definition :: proc(definition: Machine_Definition) -> string {
 	if definition.item != "" {
 		return fmt.tprintf("hatch %q cannot be placed by an item", definition.id)
@@ -580,8 +581,11 @@ validate_hatch_definition :: proc(definition: Machine_Definition) -> string {
 		return fmt.tprintf("hatch %q may not list slots, power or fluid ports", definition.id)
 	}
 	kind, _ := parse_named_enum(motion_kind_names, definition.motion.kind)
-	if kind != .None && kind != .Slide {
-		return fmt.tprintf("hatch %q may only have a slide motion", definition.id)
+	if kind != .None && kind != .Slide && kind != .Spin {
+		return fmt.tprintf("hatch %q may only have a slide or a spin motion", definition.id)
+	}
+	if kind == .Spin && !(abs(definition.motion.amplitude) > 0 && abs(definition.motion.amplitude) <= 1) {
+		return fmt.tprintf("hatch %q has a spin amplitude outside 0 to 1 turn", definition.id)
 	}
 	return ""
 }
@@ -1046,8 +1050,10 @@ pod_spawn_cells :: proc(cabin: Machine_Cell_Box_Definition) -> Cell_Box {
 // A pod's fixtures (work item 0198): only a pod lists them, at most
 // MAXIMUM_POD_FIXTURES, each a known machine of a fixture kind with a
 // rotation 0 to 3, its box inside the footprint, overlapping no earlier
-// fixture and not on the cabin's spawn cells. Runs after
-// validate_pod_cabin, so a pod's cabin box exists.
+// fixture, not on the cabin's spawn cells and in no open_cells box (0221:
+// the record is written by hand, and an overlap would let the occupancy
+// write one cell twice). Runs after validate_pod_cabin, so a pod's cabin
+// box exists.
 validate_pod_fixtures :: proc(definitions: []Machine_Definition, index: int) -> string {
 	definition := definitions[index]
 	if len(definition.fixtures) == 0 {
@@ -1085,6 +1091,12 @@ validate_pod_fixtures :: proc(definitions: []Machine_Definition, index: int) -> 
 		}
 		if cell_boxes_overlap(box, spawn) {
 			return fmt.tprintf("pod %q fixture %d stands on the cabin's spawn", definition.id, fixture_index)
+		}
+		open_cells := resolve_open_cells(definition.open_cells)
+		for open_box, open_index in open_cells[:len(definition.open_cells)] {
+			if cell_boxes_overlap(box, open_box) {
+				return fmt.tprintf("pod %q fixture %d stands in open_cells box %d", definition.id, fixture_index, open_index)
+			}
 		}
 		boxes[fixture_index] = box
 	}

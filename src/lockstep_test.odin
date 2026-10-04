@@ -679,8 +679,8 @@ test_a_field_prediction_into_a_wall_snaps_to_the_confirmed_feet :: proc(t: ^test
 	session, simulation_content := start_field_lockstep_test_session(content, 3)
 	defer end_session(session)
 	state := &session.simulation
-	// Backwards, into the cabin: the closed inner hatch stands 0.75 m
-	// ahead of the spawn (0198), between the player and a wall ahead.
+	// Backwards, into the cabin: the floor before the chair (0221) is
+	// open behind the spawn, so the wall raised there stops the walk.
 	walk := Input_Frame{move = {0, -1}, pressed = {.Move}}
 	for _ in 0 ..< 3 {
 		testing.expect(t, stamp_local_record(&session.lockstep, state.tick, walk))

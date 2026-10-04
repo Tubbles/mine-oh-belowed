@@ -165,7 +165,7 @@ The factory: what changes per tick; blocks belong to the world, prototypes to co
   - `simulation_world.odin`: `Simulation_Content`, `Entity_Tick_Context` with its block procedures, `simulation_tick`, `apply_research_result`, `simulation_quest_context`.
   - `entity.odin`: `Entity_Kind`, `Entity_Handle`, `Entity_Common`, `Entity_Pool`, `Entities`, add and remove, `tick_entities`.
   - `entity_placement.odin`: placement rules, `commit_placement`, rotation, pick up; a drill on a frame with its vein (`place_drill_on_frame`, `frame_drill_placement_refusal`, 0179).
-  - `entity_pod.odin`: the pod in its crater with its hatches and fixtures (`place_pod`, `toggle_hatch`), the sealed room (`Sealed_Room`, `rebuild_sealed_rooms`, `sealed_room_at_feet`), the old pod's upgrade at load (`upgrade_resized_pods`) and the first pod's locker (`pod_locker`) (0179, 0199, 0198, 0210).
+  - `entity_pod.odin`: the pod in its crater with its hatches and fixtures (`place_pod`, `toggle_hatch`), the sealed room (`Sealed_Room`, `rebuild_sealed_rooms`, `sealed_room_at_feet`), the old pod's upgrade at load with its fixtures and locker (`upgrade_resized_pods`, `take_old_pod_fixtures`) and the first pod's locker (`pod_locker`) (0179, 0199, 0198, 0210, 0221).
   - `machine_wear.odin`: machines on bare ground (0201): the flatness check and the placement on a frame of its own (`bare_ground_is_flat`, `place_on_bare_ground`), the founded flag, the wear tick and the breakdown (`record_operation`, `log_machine_breakdowns`), the salvage (`machine_return_stacks`) and the wear table of the save.
   - `entity_frames.odin`: placement on foundation frames (0174), `place_on_frame`, `place_free_foundation`, `frame_placement_refusal`; the field's place commands (`Field_Placement`, `drain_field_placements`, `apply_field_placement`, `aim_field_player_at_frames`); the frame tables of the save (`write_frame_tables`, `read_frame_tables`).
   - `machine.odin`: `Machine_Kind`, `Machine`, `Machine_Registry` and per kind validation.
@@ -214,7 +214,7 @@ Presentation turns the world, the tick and the render time into pixels and sound
   - `render_frames.odin`: the frames' placeholder boxes per occupied cell and the placement ghost (0174), `frame_render_matrix`.
   - `model_mesh.odin`, `model_motion.odin`: the voxel mesher over the `model_vox` package's parser (Packages), the choice of an .obj over a .vox and `model_mesh_triangle`, the reader of a layer's triangles in either shape (0226); `Machine_Motion` and part transforms.
   - `model_triangle_mesh.odin`: the OBJ mesher over the `model_obj` package's reader (Packages): flat shade, footprint check.
-  - `model_check.odin`: the workbench's checks (0207): budget, sweep, arm clearance, open cells.
+  - `model_check.odin`: the workbench's checks (0207): budget, sweep, a pod's fixture parts, arm clearance, open cells.
   - `model_arm.odin`, `render_arm.odin`: the inserter's arm (0175): its part files, `arm_pose_at` from the cycle, the joint transforms; its draw and its lamp's light.
   - `render_point_lights.odin`: `Point_Light`, the nearest working lights for the field shader and the model shader (0175), machine lights in the world and the uniform packing (0224), the clip boxes (0229).
   - `render_belts.odin`, `render_fluids.odin`, `render_power.odin`, `render_loose_items.odin`: belts and lane items; pipes and ports; poles and wires; loose stacks.

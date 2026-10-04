@@ -45,4 +45,20 @@ MATERIALS = {
     "furnace_rust": ((126, 86, 66), False),
     "console_white": ((196, 190, 180), False),
     "signal_glow": ((110, 240, 120), True),
+    # 0221, the pod and its airlock door (made in the pod lab): a dark
+    # cabin. Near black for the lining and recesses (and the heat
+    # shield and scorch outside), charcoal for panels and cabinets, a mid
+    # grey worn metal for the hull outside and the edges that catch the
+    # light inside, dark brown padding, orange for the accents (hazard
+    # stripes, handles, harness, rims), and three glows: warm amber for
+    # the lamps and screens (the dominant light), green screens and a
+    # cold white for a few screens and strips.
+    "pod_black": ((26, 25, 24), False),
+    "pod_dark": ((46, 46, 48), False),
+    "pod_metal": ((124, 122, 114), False),
+    "pod_padding": ((92, 70, 50), False),
+    "pod_orange": ((204, 98, 28), False),
+    "pod_glow_amber": ((255, 150, 40), True),
+    "pod_glow_green": ((110, 236, 140), True),
+    "pod_glow_white": ((196, 228, 255), True),
 }

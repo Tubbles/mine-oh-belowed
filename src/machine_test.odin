@@ -264,7 +264,7 @@ test_machine_open_cells_are_boxes_inside_the_footprint :: proc(t: ^testing.T) {
 	machines := make_test_machines()
 	pod := machines.machines[find_machine_of_kind(machines, .Pod)]
 	testing.expect_value(t, pod.open_cell_box_count, 4)
-	testing.expect_value(t, pod.open_cells[3], Cell_Box{from = {9, 0, 1}, to = {10, 5, 6}})
+	testing.expect_value(t, pod.open_cells[2], Cell_Box{from = {8, 0, 5}, to = {9, 1, 6}})
 }
 
 // Work item 0224: a machine's lamps stay on its footprint (with the
@@ -320,7 +320,7 @@ test_machine_lights_stay_on_the_footprint_with_a_bounded_radius :: proc(t: ^test
 	testing.expect_value(t, resolve_test_machines({crowded}), "machine \"room\" has more than 8 lights")
 
 	machines := make_test_machines()
-	testing.expect_value(t, machines.machines[find_machine_of_kind(machines, .Pod)].light_count, 0)
+	testing.expect_value(t, machines.machines[find_machine_of_kind(machines, .Pod)].light_count, 2)
 }
 
 // Work item 0225: interior_light_share is a pod's only, 0 to 1, and 1
@@ -370,7 +370,7 @@ test_the_interior_light_share_is_a_pods_and_bounded :: proc(t: ^testing.T) {
 	testing.expect_value(t, resolve_test_machines({shared}), "machine \"niche\" is not a pod and cannot have interior_light_share")
 
 	machines := make_test_machines()
-	testing.expect_value(t, machines.machines[find_machine_of_kind(machines, .Pod)].interior_light_share, 1)
+	testing.expect_value(t, machines.machines[find_machine_of_kind(machines, .Pod)].interior_light_share, 0.25)
 	testing.expect_value(t, machines.machines[find_machine_of_kind(machines, .Furnace)].interior_light_share, 1)
 }
 
@@ -439,6 +439,7 @@ test_the_pod_fixtures_are_checked :: proc(t: ^testing.T) {
 		{{{machine = "locker", cell = {5, 0, 3}}}, "is not inside the footprint"},
 		{{{machine = "locker", cell = {0, 0, 0}}, {machine = "locker", cell = {0, 0, 1}}}, "fixtures 0 and 1 overlap"},
 		{{{machine = "locker", cell = {2, 0, 1}, rotation = 1}}, "stands on the cabin's spawn"},
+		{{{machine = "locker", cell = {4, 0, 2}}}, "stands in open_cells box 0"},
 	}
 	for refusal in refusals {
 		problem := resolve_test_machines(test_fixture_definitions(refusal.fixtures))
@@ -464,13 +465,14 @@ test_the_pod_fixtures_are_checked :: proc(t: ^testing.T) {
 	machines := make_test_machines()
 	pod := machines.machines[find_machine_of_kind(machines, .Pod)]
 	testing.expect_value(t, pod.fixture_count, 5)
-	testing.expect_value(t, pod.fixture_boxes[0], Cell_Box{from = {11, 0, 3}, to = {11, 3, 4}})
-	testing.expect_value(t, pod.fixture_boxes[2], Cell_Box{from = {1, 0, 1}, to = {2, 3, 1}})
+	testing.expect_value(t, pod.fixture_boxes[0], Cell_Box{from = {10, 0, 5}, to = {10, 1, 6}})
+	testing.expect_value(t, pod.fixture_boxes[2], Cell_Box{from = {5, 0, 8}, to = {6, 3, 8}})
 	testing.expect_value(t, machines.machines[pod.fixtures[0].machine].kind, Machine_Kind.Hatch)
 }
 
 // Work item 0198: the kinds placed in the pod refuse an item and the
-// fields they do not use; a slide motion belongs to a hatch alone.
+// fields they do not use; a slide motion belongs to a hatch alone, which
+// may also spin up to one turn (0221).
 @(test)
 test_the_world_placed_fixture_kinds_are_validated :: proc(t: ^testing.T) {
 	hatch := Machine_Definition {
@@ -478,10 +480,13 @@ test_the_world_placed_fixture_kinds_are_validated :: proc(t: ^testing.T) {
 		name_key = "machine_pod_hatch",
 		kind = "hatch",
 		model = "pod_hatch",
-		footprint = {width = 1, depth = 2, height = 4},
+		footprint = {width = 1, depth = 2, height = 2},
 		motion = {kind = "slide", axis = "y", amplitude = 3.95, period_seconds = 0.8},
 	}
 	testing.expect_value(t, validate_machine_definition({hatch}, 0), "")
+	spinning := hatch
+	spinning.motion = {kind = "spin", axis = "y", amplitude = 1, period_seconds = 1}
+	testing.expect_value(t, validate_machine_definition({spinning}, 0), "")
 	refused := make([dynamic]Machine_Definition, context.temp_allocator)
 	with_item := hatch
 	with_item.item = "wooden_chest"
@@ -489,13 +494,17 @@ test_the_world_placed_fixture_kinds_are_validated :: proc(t: ^testing.T) {
 	low.footprint.height = 1
 	with_open_cells := hatch
 	with_open_cells.open_cells = {{from = Machine_Cell_Definition{0, 0, 0}, to = Machine_Cell_Definition{0, 0, 0}}}
-	spinning := hatch
-	spinning.motion = {kind = "spin", axis = "y", amplitude = 1, period_seconds = 1}
+	swinging := hatch
+	swinging.motion = {kind = "swing", axis = "y", amplitude = 0.25, period_seconds = 1}
+	overturned := hatch
+	overturned.motion = {kind = "spin", axis = "y", amplitude = 1.5, period_seconds = 1}
+	pumping := hatch
+	pumping.motion = {kind = "pump", axis = "y", amplitude = 0.5, period_seconds = 1}
 	still := hatch
 	still.motion.amplitude = 0
 	far := hatch
 	far.motion.amplitude = 13
-	append(&refused, with_item, low, with_open_cells, spinning, still, far)
+	append(&refused, with_item, low, with_open_cells, swinging, overturned, pumping, still, far)
 	sliding_chest := Machine_Definition {
 		id = "chest",
 		name_key = "machine_wooden_chest",

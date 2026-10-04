@@ -63,9 +63,10 @@
 // corner at cell of the pod's unrotated footprint and turned by rotation
 // quarter turns against the pod. Its box (the rotated footprint from
 // cell) lies inside the pod's footprint, overlaps no other fixture's box
-// and not the cabin's spawn cells; the pod leaves those cells to it.
-// Hatches (kind hatch, work item 0198): no item, at least 2 cells high,
-// no open_cells, a slide motion or none. Closed its cells are solid; open
+// and neither the cabin's spawn cells nor an open_cells box; the pod
+// leaves those cells to it. Hatches (kind hatch, work item 0198): no
+// item, at least 2 cells high, no open_cells, a slide or a spin motion
+// (a spin of at most 1 turn, 0221) or none. Closed its cells are solid; open
 // none is, and every row but the top is an open cell. Lockers (kind
 // locker): a chest placed by the world, slots 8 to 48. Crafting benches
 // (kind crafting_bench): recipe_maker hand, no slots, power, speed or
@@ -76,9 +77,9 @@
 // footprint cells the player walks through: {from = {x, y, z}, to = {x,
 // y, z}}, both inclusive, in cells of the unrotated footprint (x along the
 // width, y up, z along the depth). The cells are still the machine's, so
-// nothing is placed on them, but they are not solid. The pod opens its
-// cabin and its airlock but the bed; the player stands on the crater's
-// floor under them.
+// nothing is placed on them, but they are not solid. The pod opens the
+// floor before its chair, the lane to the airlock and the airlock's bore;
+// the player stands on the crater's floor under them.
 // lights (optional, work item 0224, at most 8) lists {position = [x, y,
 // z], color = [r, g, b], radius_cells}: a lamp at position in cells of
 // the model's frame (x and z centred on the unrotated footprint, y from
@@ -1097,35 +1098,41 @@ machines = [
 		description_key = "describe_machine_pod"
 		kind = "pod"
 		stands_on_ground = true
-		// 12 cells from the outer hatch (the front, +x) to the back wall,
-		// 8 across, 8 high: 6 by 4 by 4 m at the 500 mm pitch.
-		footprint = {width = 12, depth = 8, height = 8}
+		// 12 by 12 by 8 cells, the hull's bound (work item 0221): 6 by 6 by
+		// 4 m at the 500 mm pitch; the width is the front axis, the outer
+		// hatch on +x. The cells round the hull are solid until 0230.
+		footprint = {width = 12, depth = 12, height = 8}
 		model = "pod"
-		// The cabin past the bed's foot (the first box: players spawn at
-		// the centre of its floor, validate_pod_cabin, on the hatches'
-		// centre line), the cabin beside the bed, over the bed, the
-		// airlock between the hatches.
+		// The free floor before the chair, 4 rows high (the first box:
+		// players spawn at the centre of its floor, validate_pod_cabin),
+		// the lane before the locker to the inner hatch, the airlock's
+		// bore between the hatches (2 rows, crawled through crouched) and
+		// the 2 rows outside the outer hatch.
 		open_cells = [
-			{from = {x = 5, y = 0, z = 1}, to = {x = 7, y = 5, z = 6}}
-			{from = {x = 1, y = 0, z = 1}, to = {x = 4, y = 5, z = 4}}
-			{from = {x = 1, y = 1, z = 5}, to = {x = 4, y = 5, z = 6}}
-			{from = {x = 9, y = 0, z = 1}, to = {x = 10, y = 5, z = 6}}
+			{from = {x = 3, y = 0, z = 4}, to = {x = 6, y = 3, z = 5}}
+			{from = {x = 5, y = 0, z = 6}, to = {x = 6, y = 3, z = 7}}
+			{from = {x = 8, y = 0, z = 5}, to = {x = 9, y = 1, z = 6}}
+			{from = {x = 11, y = 0, z = 5}, to = {x = 11, y = 1, z = 6}}
 		]
-		// The outer hatch in the front wall, the inner hatch between the
-		// airlock and the cabin, then the locker, the bench and the
-		// oxygen generator along the cabin's z 0 wall, facing in.
+		// The outer hatch at the drum's outer end, the inner hatch at its
+		// cabin end, then the locker facing the lane, the bench facing
+		// the floor before the chair and the oxygen generator facing it
+		// from the other side, each in its pocket of the wall.
 		fixtures = [
-			{machine = "pod_hatch", cell = {x = 11, y = 0, z = 3}, rotation = 0}
-			{machine = "pod_hatch", cell = {x = 8, y = 0, z = 3}, rotation = 0}
-			{machine = "pod_locker", cell = {x = 1, y = 0, z = 1}, rotation = 1}
-			{machine = "crafting_bench", cell = {x = 3, y = 0, z = 1}, rotation = 1}
-			{machine = "oxygen_generator", cell = {x = 5, y = 0, z = 1}, rotation = 1}
+			{machine = "pod_hatch", cell = {x = 10, y = 0, z = 5}, rotation = 0}
+			{machine = "pod_hatch", cell = {x = 7, y = 0, z = 5}, rotation = 0}
+			{machine = "pod_locker", cell = {x = 5, y = 0, z = 8}, rotation = 3}
+			{machine = "crafting_bench", cell = {x = 2, y = 0, z = 4}, rotation = 0}
+			{machine = "oxygen_generator", cell = {x = 6, y = 0, z = 3}, rotation = 1}
 		]
-		// The cabin's lamps (0224), filled from the lab model's emissive
-		// patches once it is integrated (0221): {position = [x, y, z],
-		// color = [r, g, b], radius_cells = r} each, at most six so the
-		// arms outside find slots.
-		lights = []
+		// The cabin and the hull at a quarter of the light round them (0225).
+		interior_light_share = 0.25
+		// The cabin's two lamps (0224, round three of the lab): the overhead
+		// strip over the chair and the desk light, just under their lenses.
+		lights = [
+			{position = [-1.85, 5.315, 0.0], color = [255, 150, 40], radius_cells = 8.0}
+			{position = [-2.35, 2.507, -2.674], color = [196, 228, 255], radius_cells = 3.5}
+		]
 	}
 	{
 		id = "pine_tree"
@@ -1144,11 +1151,12 @@ machines = [
 		name_key = "machine_pod_hatch"
 		description_key = "describe_machine_pod_hatch"
 		model = "pod_hatch"
-		// The door panel rises 3.95 cells into the wall's pocket.
-		motion = {kind = "slide", axis = "y", amplitude = 3.95, period_seconds = 0.8}
+		// The shutter slides 2 cells straight up out of the door's slot
+		// into the pocket above it in the drum's wall (0221).
+		motion = {kind = "slide", axis = "y", amplitude = 2.0, period_seconds = 0.8}
 		kind = "hatch"
 		stands_on_ground = true
-		footprint = {width = 1, depth = 2, height = 4}
+		footprint = {width = 1, depth = 2, height = 2}
 	}
 	{
 		id = "pod_locker"

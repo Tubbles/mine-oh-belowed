@@ -36,10 +36,23 @@ start_field_test_session :: proc(config: Game_Config, content: Game_Content, rad
 }
 
 // Opens the pod's closed hatches, as the end of the fall does
-// (land_field_arrival), so a script walks out of the cabin (0198: a new
-// world of the tests starts with them closed and no fall).
-open_test_pod_hatches :: proc(state: ^Simulation_State, machines: Machine_Registry) {
+// (land_field_arrival), and stands every player on the floor two cells
+// outside the pod's front, centred on the outer hatch, facing away from
+// the pod (0221: the airlock is crawled through crouched, so a standing
+// walk no longer leaves the cabin).
+move_test_players_out_of_the_pod :: proc(state: ^Simulation_State, machines: Machine_Registry) {
 	open_closed_hatches(state, machines)
+	pod, frame, found := find_test_pod(&state.world.entities, machines)
+	if !found {
+		return
+	}
+	machine := machines.machines[pod.machine]
+	outer := machine.fixture_boxes[0]
+	outside := Cell_Box{from = {machine.footprint.x + 1, 0, outer.from.z}, to = {machine.footprint.x + 1, 0, outer.to.z}}
+	feet := pod_box_floor_centre(frame, pod.origin, machine, pod.rotation, outside)
+	for &player in state.players {
+		move_field_player_body(&player.field, make_field_player(feet, frame.axes[FRAME_FORWARD]))
+	}
 }
 
 field_test_content :: proc(session: ^Session, content: Game_Content) -> Simulation_Content {
@@ -132,8 +145,8 @@ test_two_field_simulations_hash_alike_and_part_on_one_input :: proc(t: ^testing.
 	second := start_field_test_session(config, content)
 	defer end_session(second)
 	first_content, second_content := field_test_content(first, content), field_test_content(second, content)
-	open_test_pod_hatches(&first.simulation, first_content.machines)
-	open_test_pod_hatches(&second.simulation, second_content.machines)
+	move_test_players_out_of_the_pod(&first.simulation, first_content.machines)
+	move_test_players_out_of_the_pod(&second.simulation, second_content.machines)
 	// The dug topsoil held, its items and the credit (a place turns an
 	// item into credit first, so the credit alone may rise).
 	held_topsoil :: proc(session: ^Session, content: Simulation_Content) -> i64 {
@@ -178,8 +191,8 @@ test_two_field_simulations_hash_alike_after_a_walk_over_dug_ground :: proc(t: ^t
 	second := start_field_test_session(config, content)
 	defer end_session(second)
 	first_content, second_content := field_test_content(first, content), field_test_content(second, content)
-	open_test_pod_hatches(&first.simulation, first_content.machines)
-	open_test_pod_hatches(&second.simulation, second_content.machines)
+	move_test_players_out_of_the_pod(&first.simulation, first_content.machines)
+	move_test_players_out_of_the_pod(&second.simulation, second_content.machines)
 	walk := Input_Frame{move = {0, 1}, pressed = {.Move}}
 	dig: Field_Raycast_Hit
 	dig_radius: i64
@@ -612,10 +625,11 @@ test_an_old_save_with_a_pad_still_loads :: proc(t: ^testing.T) {
 	testing.expect_value(t, entity_at(&restored.world.entities, {-4, 0, -4}, frame_id), NO_ENTITY)
 }
 
-// Interact on the inner hatch from the cabin opens it on two sessions of
-// one seed alike: the toggle tick, the event and the hash after a second
-// agree, a session without the press hashes otherwise, and the opened
-// world round trips its save.
+// Interact on the inner hatch from the cabin, crouched so the eye's ray
+// meets the low door (0221), opens it on two sessions of one seed alike:
+// the toggle tick, the event and the hash after a second agree, a session
+// without the press hashes otherwise, and the opened world round trips
+// its save.
 @(test)
 test_toggling_a_hatch_is_lockstep_state :: proc(t: ^testing.T) {
 	config := test_field_game_config()
@@ -626,7 +640,8 @@ test_toggling_a_hatch_is_lockstep_state :: proc(t: ^testing.T) {
 			end_session(session)
 		}
 	}
-	interact := Input_Frame{pressed = {.Interact}, just_pressed = {.Interact}}
+	interact := Input_Frame{pressed = {.Interact, .Sneak}, just_pressed = {.Interact}}
+	sneak := Input_Frame{pressed = {.Sneak}}
 	toggle_ticks: [2]u64
 	for session, index in sessions {
 		simulation_content := field_test_content(session, content)
@@ -637,11 +652,13 @@ test_toggling_a_hatch_is_lockstep_state :: proc(t: ^testing.T) {
 		if !found {
 			return
 		}
-		state.players[0].field = make_field_player(frame_floor_point(frame, 1, 0, 0), frame.axes[FRAME_FORWARD])
-		tick_field_test_simulation(state, simulation_content, {})
-		clear(&state.events)
-		tick_field_test_simulation(state, simulation_content, index < 2 ? interact : {})
 		machine := content.machines.machines[pod.machine]
+		inner_box := machine.fixture_boxes[1]
+		lane := Cell_Box{from = {inner_box.from.x - 2, 0, inner_box.from.z}, to = {inner_box.from.x - 2, 0, inner_box.to.z}}
+		state.players[0].field = make_field_player(pod_box_floor_centre(frame, pod.origin, machine, pod.rotation, lane), frame.axes[FRAME_FORWARD])
+		tick_field_test_simulation(state, simulation_content, sneak)
+		clear(&state.events)
+		tick_field_test_simulation(state, simulation_content, index < 2 ? interact : sneak)
 		inner_origin, _ := pod_fixture_placement(machine, pod.origin, pod.rotation, 1)
 		inner := pool_get(&state.world.entities.foundations, entity_at(&state.world.entities, inner_origin, frame.id))
 		testing.expect(t, inner != nil)
@@ -691,7 +708,7 @@ test_toggling_a_hatch_is_lockstep_state :: proc(t: ^testing.T) {
 		testing.expect(t, !frame_cell_is_solid(&restored.world.entities.frames, frame.id, cell))
 	}
 	room := make([dynamic]World_Coordinate, context.temp_allocator)
-	append(&room, ..machine_open_cells(pod.origin, machine, pod.rotation))
+	append(&room, ..test_pod_inside_cells(machine))
 	append(&room, ..cells)
 	testing.expect_value(t, len(restored.world.entities.sealed_rooms), 1)
 	if len(restored.world.entities.sealed_rooms) == 1 {
@@ -1053,7 +1070,7 @@ test_a_held_refused_dig_raises_one_event :: proc(t: ^testing.T) {
 		record.tool_tier = 99
 	}
 	state := &session.simulation
-	open_test_pod_hatches(state, simulation_content.machines)
+	move_test_players_out_of_the_pod(state, simulation_content.machines)
 	tick_field_test_simulation(state, simulation_content, Input_Frame{look_delta = {0, 300}})
 	clear(&state.events)
 	for tick in 0 ..< 10 {
@@ -1077,7 +1094,7 @@ test_a_field_walk_counts_and_a_flight_does_not :: proc(t: ^testing.T) {
 	defer end_session(session)
 	simulation_content := field_test_content(session, content)
 	state := &session.simulation
-	open_test_pod_hatches(state, simulation_content.machines)
+	move_test_players_out_of_the_pod(state, simulation_content.machines)
 	tick_field_test_simulation(state, simulation_content, {})
 	walk := Input_Frame{move = {0, 1}, pressed = {.Move}}
 	state.players[0].field.flying = true
@@ -1108,9 +1125,8 @@ test_a_machine_on_bare_ground_stands_centred_on_its_frame :: proc(t: ^testing.T)
 	simulation_content := field_test_content(session, content)
 	state := &session.simulation
 	player := &state.players[0]
-	// Out of the pod first (0198: the spawn lies 2.75 m behind the outer
-	// hatch).
-	open_test_pod_hatches(state, simulation_content.machines)
+	// Out of the pod first (0221: the airlock is crawled through).
+	move_test_players_out_of_the_pod(state, simulation_content.machines)
 	for _ in 0 ..< 90 {
 		tick_field_test_simulation(state, simulation_content, Input_Frame{move = {0, 1}, pressed = {.Move}})
 	}

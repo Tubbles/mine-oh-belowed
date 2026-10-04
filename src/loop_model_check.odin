@@ -75,7 +75,7 @@ run_model_check :: proc(selection: string, machines: Machine_Registry, pitch_mil
 		if subject == .Voxel && selection == "all" {
 			continue
 		}
-		for found in check_machine_model(data_directory, machine, pitch_millimetres) {
+		for found in check_machine_model(data_directory, machines.machines, machine, pitch_millimetres) {
 			fmt.println(model_check_report_line(machine.id, found))
 			problem_count += 1
 		}
