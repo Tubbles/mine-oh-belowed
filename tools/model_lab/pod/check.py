@@ -15,7 +15,7 @@ LAB = pathlib.Path(__file__).resolve().parent
 # body triangles, part triangles (0: no part allowed), footprint
 # (width x, depth z, height y) in cells.
 MODELS = {
-    "pod": (12800, 0, (12, 12, 8)),
+    "pod": (25600, 0, (12, 12, 8)),
     "pod_hatch": (3200, 200, (1, 2, 2)),
 }
 MATERIAL_LIMIT = 8
