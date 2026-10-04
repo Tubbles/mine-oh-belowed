@@ -2,7 +2,7 @@
 
 The look of the machines, found in pictures on 2026-10-03 (work item 0211) before the machines were modelled again. The main agent wrote the briefs and prompts, `tools/art/generate.py` generated the images through OpenRouter (Nano Banana 2 for the rounds, Nano Banana Pro for the reference sheet, about 10 and 14 cents an image), the user reacted, the next round followed. Every generated image is here, from the first probe through five rounds to the stone furnace's reference sheet, each reduced to a JPEG of a few hundred kilobytes at most and given one sentence on what it shows. The originals (2400 by 1792 PNGs) stay under `work/art/`, untracked, until the user sets up Dropbox.
 
-Every machine gets its own page as it is taken on: its rounds, its reference sheet, the game's render of the accepted model and the user's sign off. The stone furnace is the first. The rules the booklet adds to the game's design are in [DESIGN.md](../../DESIGN.md), Art direction. What we take from other games is in [inspiration.md](../inspiration.md).
+Every machine gets its own page as it is taken on: its rounds, its reference sheet, the game's render of the accepted model and the user's sign off. The stone furnace is the first. The pod is the second, its interior first, since the player wakes in it. The rules the booklet adds to the game's design are in [DESIGN.md](../../DESIGN.md), Art direction. What we take from other games is in [inspiration.md](../inspiration.md).
 
 ## The direction: astro-industrial punk
 
@@ -411,9 +411,169 @@ The game's own workbench preview from the hero angle: the square stone body in a
 
 Signed off by the user on 2026-10-04: "I love it, i think this could very well be a final model in the released game! Of course there are a couple of things that could be touched up, and of course the general art direction might shift a bit with time, but this is definitely good enough for now."
 
+## The pod
+
+The player wakes in it, so the pod's look starts inside. The main agent wrote nine prompts, the user wrote the tenth and got the picture, and an edit of the user's picture is the kept interior. Twelve rounds on 2026-10-04, the first four on Nano Banana 2 with three takes each, the rest single images on Nano Banana Pro.
+
+### The interior rounds
+
+The brief for round one: a cone shaped interior, large enough for a human who does research on the way to the planet, a foldable bed folded up against the side, technical tools, machines (an oxygen generator among them) and work benches, windows dotted around the side, a chair; the pod falls floor first like a real re-entry capsule with ablative shields on the bottom.
+
+![The pod, round one, take A](booklet/pod1_a.jpg)
+
+A wide pale cone with portholes in its sloping panels, a folded bunk and a made bed on the left, the astronaut at a drafting bench, a swivel chair at the centre and a wall of pipes, gauges and screens on the right.
+
+![The pod, round one, take B](booklet/pod1_b.jpg)
+
+A broad pale dome: a console with levers under a porthole, the astronaut at a tool bench, a fold down cot against the back wall, a boiler with gauges beside a swivel chair and lockers.
+
+![The pod, round one, take C](booklet/pod1_c.jpg)
+
+Seen from the hatch with a planet through the opening on the left: a round riveted floor with a swivel chair, a cot on struts, open lockers, the astronaut at a desk under a tool board, pipes and gauges on the right.
+
+The user's verdict: "The chair in the middle should be impact cushioning for the astronaut, so it needs straps and be bolted to the floor. Generally everything should be on arms or be bolted, since it needs to survive both zero gravity during travels, and then the planet impact. Do three more and make the interior more cramped, volume is at a premium. And the circular air lock should be visible camera shutter style with a small tunnel that the astronaut can climb out through. I am thinking the air lock is a small cylinder of 1x1 meter with doors that automatically open and close, but tightly enough so the player will have both doors closed around themselves while being in the middle."
+
+![The pod, round two, take A](booklet/pod2_a.jpg)
+
+A darker cone with a harnessed crash couch bolted at the centre, the astronaut beside a shutter airlock in the left wall under a tool bench, a strapped bed on the far left, nets and lockers, crates on the floor.
+
+![The pod, round two, take B](booklet/pod2_b.jpg)
+
+A pale cone seen head on: the harnessed couch on its bracket at the centre, a bed folded up against the wall, a tool board over a bench on the left, the oxygen generator's tank and gauges on the right, a shutter airlock beside an open round tunnel with the astronaut standing next to it.
+
+![The pod, round two, take C](booklet/pod2_c.jpg)
+
+A tall pale cone with space outside its ribs: the couch on a bolted pedestal in the middle, a folding bench and a green cot folded up, a shutter airlock in the back wall and the astronaut standing by the lockers.
+
+The user's verdict: "It is not more cramped than previous. Think of it like the astronaut should almost not be able to stand up, hardly walk around, and the cylindrical airlock needs to stick into the pod since it cannot stick out on the outside. So a laying-down 1 meter cylinder sticking into the interior, draped around the curved inside wall to save on space. It should feel very cramped; the cylinder doubles as work table. Generally lets say the pod floor should be 3 meter radius, most of it eaten up by the crash chair in the middle."
+
+![The pod, round three, take A](booklet/pod3_a.jpg)
+
+A low riveted tube of a cabin: the astronaut stooping at a console on the left, the harnessed couch in the middle, a cot behind it and a lying drum with a shutter end and a tool shelf on top on the right, nets of supplies above.
+
+![The pod, round three, take B](booklet/pod3_b.jpg)
+
+A cone with a round floor: the couch at the centre, a cot and nets on the left, the astronaut bent into an open hatch behind a lying drum with a shutter face and a bench top, panels and a net of gear on the right.
+
+![The pod, round three, take C](booklet/pod3_c.jpg)
+
+A cone with a round floor: a cream couch bolted at the centre, a cot on the left, the astronaut stooping over a bench top set on a shutter faced drum, the oxygen generator's tank and gauges by the wall, lockers and a net on the right.
+
+The user's verdict: "Yes the crampiness of A is much more in line with what i envision, but the pod does not look circular, it tapers off into the image, it feels more like a space ship. And its air lock cylinder is laid fully parallel to the wall, the two doors of the airlock should be situated on each flat end of the cylinder, so it needs to be slightly bent and curved outward so the outer door end up flush with the exterior wall. And it is slightly too small, the astronaut should be able to climb into it. Lets focus on this image A as reference for the next round."
+
+Round four repainted take A with the image as the reference.
+
+![The pod, round four, take A](booklet/pod4_a.jpg)
+
+Round three's take A again with a bag on the floor and the drum a little longer; the ship-like taper stayed.
+
+![The pod, round four, take B](booklet/pod4_b.jpg)
+
+The same cabin with the drum stretched into a long tube along the wall, the shutter at its near end and the bench on top, the portholes gone.
+
+![The pod, round four, take C](booklet/pod4_c.jpg)
+
+The same cabin with the drum shortened to a stub and a second shutter end showing behind the couch.
+
+The user's verdict: "Ok this new round was awful, they just took the exact same image and changed minor details. The only one with a somewhat reasonable airlock lost the windows (the airlock became way too long though), and none of them changed the form of the pod. Lets not use a reference image for the next round but instead generate a single image from nano banana pro."
+
+![The pod, round five](booklet/pod5.jpg)
+
+A dark riveted cone seen from inside: the couch bolted at the centre, a cot on the left, the astronaut leaning on a bench built into the top of a lying drum whose open shutter end faces the viewer, screens and pipes all around.
+
+The user's verdict: the cone reads, iterate on it; "The far side of the cylinder shall merge into the wall, right now the astronaut is looking at the far side, which doesnt make sense"; the interior shall have no floor space to stand on at all, that is the level of cramp wanted.
+
+![The pod, round six](booklet/pod6.jpg)
+
+A broad cone with a bolted round floor plate: the couch on it, the astronaut standing with a hand on the helmet, a shutter two metres across in the back wall, consoles on the left, a tool bench on the right, crates and a net of boxes.
+
+![The pod, round seven](booklet/pod7.jpg)
+
+A cone with a reclined couch in the middle, the astronaut leaning on its back, a riveted drum lying beside it with a shutter face and a bench on top, the oxygen generator on the left, lockers and nets on the right.
+
+The user's verdict: "Round six finally has a somewhat reasonable airlock, its just too large now instead. It shall be one meter in diameter, this one looks closer to two meters. But the floor needs to go, and there is a random hole in the floor. Round seven has worse airlock where the far end now doesnt meld into the wall." Continue from six's prompt: "make the interior so cramped that there is no floor space to stand on at all. I want machines, panels, instruments, buttons, screens, work surfaces and windows tapering the interior walls, the space shall be utterly maximally optimized for cramminess: every single gram counts for space travels, so minimizing the pod size is utmost priority, that just barely fits the bed, chair, O2 gen, windows, airlock, and storage."
+
+![The pod, round eight](booklet/pod8.jpg)
+
+A tall pale cone open to space on both sides: the couch on a pedestal, the astronaut bending behind it, a shutter in the back wall and a standing drum with a bench top in the foreground, crates and boxes on the floor.
+
+The user's verdict: "Its much closer for what i am looking for, but now the airlock feels like a single door, it needs to stick into the interior. Also i think the large roof height is what generally makes the whole pod too large, lets say it needs to be 2 meters roof height. Hopefully that pulls in the side walls. Lets have the astronaut sit in the crash couch. And there is no bed, make sure the bed is tapered across the wall, and no crates."
+
+![The pod, round nine](booklet/pod9.jpg)
+
+A dome of a cabin with screens round its apex: the astronaut sitting in the couch with the visor open, a cot on the floor, a standing drum with a shutter face and a bench top beside it, nets and lockers on the right.
+
+The user's verdict, on reading the prompt: "this prompt is massive and confusing. When making changes to image gen prompt you cannot just keep adding to it, it needs to be re-envisioned every time." The prompt had grown to 600 words over nine rounds by appending every correction; the rule is now global (How the images are made).
+
+![The pod, round ten](booklet/pod10.jpg)
+
+The first prompt rewritten from scratch: a squat cone with three portholes, the astronaut strapped into the couch, a lying drum with a shutter face and a bench on top, a rolled bedroll strapped high on the wall, the oxygen generator with gauges, nets and lockers; the drum's far end still stops at the wall and the floor is open.
+
+Round eleven is the user's own prompt, written and run on their side: "Cone shaped Landing pod stylized concept art for space industry and dirty exploitation game, cynical venture, interior shot, cramped and absolutely tiny, barely larger than a human, literally nowhere to stand, bolted down impact chair, bed with straps for zero-g vertically on the interior wall. Make the interior cone shaped, and add a small circular, high tech airlock sticking into the interior space, and make it wall mounted just next to the flooring, but instead of an airlock door that opens inwards, it shall be camera shutter style opening. The outer airlock door shall sit flush with the exterior wall. Fill the inside 360 degrees all around with computers, screens, buttons, and a couple of cabinet doors for storage. Add an astronaut with black space suit with small orange details, helmet on, visor down, face not visible. Do not add any text or flags, do not add american flag, no flag on the astronaut's arm, no red striped flag, do not add any flag what so ever, this is a video game."
+
+![The pod, round eleven, the user's image](booklet/pod11_user.jpg)
+
+The user's image from that prompt, "good enough": a black suited astronaut with orange details in a bolted impact chair, a wall of green screens, cabinets, a bed strapped upright, and a shutter airlock low in the right wall.
+
+![The pod, round eleven, seed 18](booklet/pod11_seed18.jpg)
+
+The same prompt through the repository's generator: the chair before a bank of monitors, a strapped bed and lockers behind, a shutter in the left wall with a floor grating under it.
+
+![The pod, round eleven, seed 19](booklet/pod11_seed19.jpg)
+
+A cutaway of the whole cone with the astronaut in the chair, lockers loose on the floor and a close view of the shutter in a second panel.
+
+![The pod, round eleven, seed 20](booklet/pod11_seed20.jpg)
+
+A wide cone with open floor, the shutter lying flat in the floor and a warning sign with text on the wall.
+
+![The pod, round eleven, seed 21](booklet/pod11_seed21.jpg)
+
+The closest to the user's image: walls leaning in hard, the bed strapped beside a small shutter, the chair against the screens, nowhere to stand.
+
+![The pod, round eleven, seed 22](booklet/pod11_seed22.jpg)
+
+A ringed ceiling instead of a cone, the shutter beside the bed, a flag on the arm and lettering on the lockers despite the prompt.
+
+Round twelve started from the user's best image, their prompt with windows added, and edited it with the image as the reference and a short edit prompt: keep the composition, the cone, the astronaut, the chair, the shutter, the portholes, the bed and the screens; replace the soft bags with bolted equipment; replace the floor grating with a solid riveted plate.
+
+![The pod, round twelve, the user's image](booklet/pod12_user.jpg)
+
+The user's image with windows: portholes with a moonscape outside, the chair facing a wall of screens, a strapped bed over a shutter airlock low in the right wall, soft bags and a floor grating.
+
+![The pod, round twelve, the edit at 16:9, seed 18](booklet/pod12_edit_seed18.jpg)
+
+The edit at 16:9: the grating gone, a gauge panel beside the airlock, cabinets on the right, bags left at the top.
+
+![The pod, round twelve, the edit at 16:9, seed 19](booklet/pod12_edit_seed19.jpg)
+
+The edit at 16:9, second seed: an instrument console across the foreground and lockers with a monitor on the right, bags left at the top.
+
+![The pod, round twelve, the edit at 3:2, seed 19](booklet/pod12_edit_3_2_seed19.jpg)
+
+The edit at 3:2, second seed: the floor grating kept and a bag at the lower left.
+
+### The kept interior
+
+![The pod, the kept interior: round twelve, the edit at 3:2, seed 18](booklet/pod_interior_kept.jpg)
+
+A cone of riveted panels leaning in over a black suited astronaut with orange details, visor down, strapped into a bolted impact chair before a bank of amber and green screens; three portholes with a grey moonscape outside; a strapped bed on the right wall over a camera shutter airlock low beside the floor, a gauge panel and a keypad console beside it; lockers and instrument boxes on every other surface; a solid riveted floor.
+
+Signed off by the user on 2026-10-04: "Yes this round seed 18 is very good, lets go with that one!"
+
+What the rounds fixed for the model and the game, in the user's words, for the pod's remake (`doc/work/0221-the-pod-remade-from-the-booklet.md`):
+
+- The chair is impact cushioning with straps, bolted to the floor; everything else is on arms or bolted, since it survives zero gravity on the way and the impact at the end.
+- The interior is cramped: barely larger than a human, nowhere to stand, the roof 2 m, the floor mostly the chair.
+- The airlock is a cylinder of 1 by 1 m with camera shutter doors on its flat ends that open and close automatically, tight enough that the player has both doors closed round themselves while standing in the middle; it sticks into the pod, mounted low beside the floor, the outer door flush with the hull.
+- The bed is strapped flat against the wall; windows are dotted round the walls; the rest of the wall is computers, screens, buttons, panels and a couple of cabinet doors; no crates, no loose bags.
+- The suit is black with small orange details, the helmet on and the visor down; no text and no flags anywhere.
+
+The exterior and the arrival (the pod falling floor first with its ablative shield flaming in the atmosphere) are the next rounds.
+
 ## How the images are made
 
-`tools/art/generate.py --model banana2 --ratio 4:3 --out work/art/<date>-<topic>/<name> --prompt "..."` writes `<model>_<index>.png` and appends the model, seed, ratio, cost and prompt to `prompt.txt` beside it; `--reference <image>` carries a kept image into a repaint (sent as a 1024 px JPEG, which is what the model needs). The prompts of every round are in the session scripts' history and in `prompt.txt`; the skeleton that worked: "Concept art for a factory building game on an alien planet: <the machine, its stage and ratio, what it is made of>. Style: <the direction paragraph>. Three quarter view from slightly above, an astronaut in a spacesuit standing beside it for scale, neutral overcast sky, clean uncluttered ground, no text". A reference sheet asks for "a model sheet turnaround ... four orthographic elevation views side by side on one canvas" and "a top down plan drawing ... as an architect's roof plan".
+`tools/art/generate.py --model banana2 --ratio 4:3 --out work/art/<date>-<topic>/<name> --prompt "..."` writes `<model>_<index>.png` and appends the model, seed, ratio, cost and prompt to `prompt.txt` beside it; `--reference <image>` carries a kept image into a repaint (sent as a 1024 px JPEG, which is what the model needs). The prompts of every round are in the session scripts' history and in `prompt.txt`. A changed prompt is rewritten from scratch round after round, never appended to: the pod's prompt grew to 600 words over nine rounds of appended corrections and the model kept the composition it liked and dropped the measurements, while the user's own 170 word prompt got the picture in one round (The pod). The user's prompt also named the game's tone (space industry, dirty exploitation, cynical venture), gave the suit's colours, said "literally nowhere to stand" instead of metres and spent its last sentence forbidding text and flags, which the model otherwise adds. A repaint with `--reference` keeps the composition, so it swaps details (bags for equipment, a grating for a plate, with an "Edit this image. Keep ... Replace ..." prompt) and never changes the geometry (the pod's round four). The skeleton that worked for the machines: "Concept art for a factory building game on an alien planet: <the machine, its stage and ratio, what it is made of>. Style: <the direction paragraph>. Three quarter view from slightly above, an astronaut in a spacesuit standing beside it for scale, neutral overcast sky, clean uncluttered ground, no text". A reference sheet asks for "a model sheet turnaround ... four orthographic elevation views side by side on one canvas" and "a top down plan drawing ... as an architect's roof plan".
 
 ## How a machine gets its page
 
