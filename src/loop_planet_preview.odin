@@ -31,39 +31,56 @@ import "platform"
 // brushes; a second line names the brush, the tool, the target, the
 // volume held per material and why the latest edit was refused.
 //
-// With a screenshot path (--planet-preview-screenshot) it takes no input:
-// the camera stays above the pole's ground just inside the finest level's
-// distance, so the finest nodes lie under it and the horizon as far out as
-// it can be, tilted by PLANET_PREVIEW_SCREENSHOT_PITCH,
-// the frames run until PLANET_PREVIEW_SCREENSHOT_FRAMES have passed and the
-// streaming has settled (at most PLANET_PREVIEW_SCREENSHOT_FRAME_LIMIT),
-// and the last frame is saved to the path. With --planet-preview-walk the
-// frame is the player's instead, standing on the pole's ground, one tick
-// a frame: once it stands and the field has streamed, a pit is dug ahead
-// of it with a torch at its bottom (0173, dig_planet_preview_pit) and the
-// camera tilts down into it, and the frame is taken once the light has
-// spread. --planet-preview-daylight sets the sky light's share in percent
-// (the field shader's daylight), so a torch's room shows at night (0).
+// The preview starts at the planet's home (0184, planet_preview_home): the
+// free camera stands 40 m above the crater's floor and 40 m behind the
+// pod, looking along the pod's door (field_home_heading), and flies in
+// the home's frame (Planet_Preview_Basis), its up the home's radial
+// wherever it goes. --planet-preview-yaw turns the camera and the walker
+// from the door's direction.
 //
-// Once the player stands, a pad of foundations is laid 9 m ahead as well
-// (0174, lay_planet_preview_foundations), past the pit, with two arms on it
-// (0175, loop_planet_preview_arms.odin), and a second pad beyond it joined
-// to the first by a belt run between two free poles (0176,
+// With a screenshot path (--planet-preview-screenshot) it takes no input:
+// the camera stays at the start camera, so the pod, the outcrops round it
+// and the land ahead to the horizon share the frame; the frames run
+// until PLANET_PREVIEW_SCREENSHOT_FRAMES have passed and the streaming has
+// settled (at most PLANET_PREVIEW_SCREENSHOT_FRAME_LIMIT), and the last
+// frame is saved to the path. With --planet-preview-walk the frame is the
+// player's instead, standing on the crater's crest behind the pod and to
+// its left (planet_preview_home_walker), from where the pod and the land
+// outside the crater both show, one tick a frame: once it stands and the
+// field has streamed, a pit is dug ahead of it with a torch at its bottom
+// (0173, dig_planet_preview_pit) and the camera tilts down into it, and
+// the frame is taken once the light has spread. --planet-preview-daylight
+// sets the sky light's share in percent (the field shader's daylight), so
+// a torch's room shows at night (0).
+//
+// Once the player stands, a pad of foundations is laid outside the crater
+// on the walker's left, placed from the home's frame (0174,
+// lay_planet_preview_foundations), with two arms on it (0175,
+// loop_planet_preview_arms.odin), and a second pad further out joined to
+// the first by a belt run between two free poles (0176,
 // loop_planet_preview_runs.odin). --planet-preview-pitch sets the walk
 // screenshot's tilt once the pit is dug (default
 // PLANET_PREVIEW_PIT_PITCH_DEGREES, down into the pit), so a level shot
-// shows the pads, the arms and the run. The pit and the pads are written
-// into the session's state directly, between ticks.
+// shows the pod, the pads, the arms and the run. The pit and the pads are
+// written into the session's state directly, between ticks.
 
 PLANET_PREVIEW_PLANET :: "home"
+// The start camera (and the screenshot's): this high above the home's
+// crater floor and this far behind the pod along its door, tilted down,
+// so the pod lies 45 degrees below the horizontal, 57 m away, inside the
+// finest level distance, and the land ahead and the horizon over it.
 PLANET_PREVIEW_START_HEIGHT_METRES :: 40
+PLANET_PREVIEW_START_BACK_METRES :: 40
 PLANET_PREVIEW_START_PITCH :: -25
-// The cameras look towards longitude 132 (a yaw of 132 degrees looks
-// along longitude 132), towards the home of data/planets.sjson, whose
-// basins below the sea level lie about 1 km from the pole with the
-// default seed at 8 km (0189): the pole's own ground holds no sea within
-// 1 km.
-PLANET_PREVIEW_START_YAW :: 132
+// The walk spawn, from the crater's floor centre in the home's frame:
+// this far behind the pod and this far along the frame's right (the
+// walker's left), 12.03 m out, on the crest (12 m) of the shipped crater.
+// The numbers assume the shipped crater, which
+// test_planet_preview_walker_stands_on_the_crest pins.
+PLANET_PREVIEW_WALK_BACK_MILLIMETRES :: 10900
+PLANET_PREVIEW_WALK_FRAME_RIGHT_MILLIMETRES :: 5100
+// --planet-preview-yaw's range in degrees either way.
+PLANET_PREVIEW_YAW_LIMIT_DEGREES :: 180
 // Above this height the fly speed grows in proportion, so the globe is a
 // short flight away.
 PLANET_PREVIEW_SPEED_HEIGHT_METRES :: 32
@@ -71,10 +88,6 @@ PLANET_PREVIEW_WINDOW_WIDTH :: 1280
 PLANET_PREVIEW_WINDOW_HEIGHT :: 720
 PLANET_PREVIEW_FIELD_OF_VIEW :: 70
 PLANET_PREVIEW_TEXT_SIZE :: 20
-// The screenshot camera's height below the finest level's distance, and
-// its tilt below the horizon, so the level seams lie ahead.
-PLANET_PREVIEW_SCREENSHOT_CLEARANCE_METRES :: 2
-PLANET_PREVIEW_SCREENSHOT_PITCH :: -8
 PLANET_PREVIEW_SCREENSHOT_FRAMES :: 120
 PLANET_PREVIEW_SCREENSHOT_FRAME_LIMIT :: 1200
 PLANET_PREVIEW_WALK_KEY :: rl.KeyboardKey.G
@@ -94,11 +107,26 @@ PLANET_PREVIEW_PIT_AHEAD_MILLIMETRES :: 3300
 PLANET_PREVIEW_PIT_DEPTH_MILLIMETRES :: 1500
 PLANET_PREVIEW_PIT_PITCH_DEGREES :: -50
 PLANET_PREVIEW_PITCH_LIMIT_DEGREES :: 89
-// The walk screenshot's pad: this far ahead of the feet (past the pit), this many cells
-// either side of the first foundation, and a column this high on it.
-PLANET_PREVIEW_PAD_DISTANCE_MILLIMETRES :: 9000
+// The walk screenshot's pad: its first foundation this far ahead of the
+// crater's floor centre along the pod's door and this far along the
+// home's frame right (the walker's left), 20.2 m out and its nearest
+// corner 18.4 m, outside the shipped crater's 18 m reach (the walker on
+// the crest sees it 31 degrees to its left, 24 m away, its arms, column
+// and run over the far crest;
+// test_planet_preview_pads_stand_outside_the_crater_in_view pins it);
+// this many cells either side of the first foundation, and a column this
+// high on it.
+PLANET_PREVIEW_PAD_FORWARD_MILLIMETRES :: 10000
+PLANET_PREVIEW_PAD_FRAME_RIGHT_MILLIMETRES :: 17500
 PLANET_PREVIEW_PAD_HALF_WIDTH :: 2
 PLANET_PREVIEW_PAD_COLUMN_HEIGHT :: 3
+
+// The free camera's frame (0184): a Fly_Camera local vector (x along the
+// yaw 0 forward, y up, z the yaw +90 right) maps to
+// x * forward + y * up + z * right.
+Planet_Preview_Basis :: struct {
+	forward, up, right: [3]f32,
+}
 
 Planet_Preview :: struct {
 	session:         ^Session,
@@ -130,6 +158,11 @@ Planet_Preview :: struct {
 	// texture for the runs (0176).
 	pitch_degrees:   int,
 	belts:           Belt_Renderer,
+	// The pod's site and frame axes (planet_preview_home) and the free
+	// camera's frame made from them (0184).
+	home_site:       World_Position,
+	home_axes:       [3][3]i64,
+	basis:           Planet_Preview_Basis,
 }
 
 planet_preview_speed_scale :: proc(height_metres: f32) -> f32 {
@@ -147,19 +180,60 @@ metres_to_world_position :: proc(position: [3]f32) -> World_Position {
 	return world
 }
 
-// Above the planet's pole on +y, where the fly camera's up is the planet's.
-planet_preview_start_camera :: proc(planet: Planet) -> Fly_Camera {
-	return Fly_Camera{position = {0, f32(planet.radius_metres + PLANET_PREVIEW_START_HEIGHT_METRES), 0}, yaw = PLANET_PREVIEW_START_YAW, pitch = PLANET_PREVIEW_START_PITCH}
+// The pod's site (the crater's floor centre) and its frame's axes, as
+// place_pod builds them: forward the door's direction, the yaw step
+// nearest field_home_heading.
+planet_preview_home :: proc(generation: Planet_Generation, planet: Planet, pitch_millimetres: int) -> (site: World_Position, axes: [3][3]i64) {
+	heading: [3]i64
+	site, heading = field_home_site(generation, planet)
+	_, axes = free_frame_at(site, heading, pitch_millimetres)
+	return site, axes
 }
 
-// Above the pole's local ground (the generation's surface there) by the
-// finest distance less the clearance: the node holding that ground is then
-// nearer than the finest distance.
-planet_preview_screenshot_camera :: proc(planet: Planet, seed: u64, spacing_millimetres, finest_distance_metres: int) -> Fly_Camera {
-	generation := make_planet_generation(seed, planet, spacing_millimetres)
-	pole := [3]i64{0, generation.radius, 0}
-	ground := f32(generation.radius + surface_relief(generation, pole)) / POSITION_UNITS_PER_METRE
-	return Fly_Camera{position = {0, ground + f32(finest_distance_metres - PLANET_PREVIEW_SCREENSHOT_CLEARANCE_METRES), 0}, yaw = PLANET_PREVIEW_START_YAW, pitch = PLANET_PREVIEW_SCREENSHOT_PITCH}
+// A point offset from the site along the home's forward and its frame
+// right (the walker's left), not on the ground.
+planet_preview_home_point :: proc(site: World_Position, axes: [3][3]i64, forward_millimetres, frame_right_millimetres: int) -> World_Position {
+	forward := fixed_scale(axes[FRAME_FORWARD], millimetres_to_position_units(forward_millimetres))
+	right := fixed_scale(axes[FRAME_RIGHT], millimetres_to_position_units(frame_right_millimetres))
+	return site + World_Position(forward + right)
+}
+
+// The free camera's frame at the home: the frame's right is up times
+// forward, so the camera's right (forward times up) is its negative.
+planet_preview_basis :: proc(axes: [3][3]i64) -> Planet_Preview_Basis {
+	return Planet_Preview_Basis{forward = unit_vector_to_f32(axes[FRAME_FORWARD]), up = unit_vector_to_f32(axes[FRAME_UP]), right = -unit_vector_to_f32(axes[FRAME_RIGHT])}
+}
+
+planet_preview_basis_to_world :: proc(basis: Planet_Preview_Basis, local: [3]f32) -> [3]f32 {
+	return local.x * basis.forward + local.y * basis.up + local.z * basis.right
+}
+
+// Above the home's site and behind the pod, looking along its door turned
+// by the yaw: the interactive start and the screenshot's fixed camera.
+planet_preview_start_camera :: proc(site: World_Position, basis: Planet_Preview_Basis, yaw_degrees: int) -> Fly_Camera {
+	position := world_position_to_metres(site) + basis.up * PLANET_PREVIEW_START_HEIGHT_METRES - basis.forward * PLANET_PREVIEW_START_BACK_METRES
+	return Fly_Camera{position = position, yaw = f32(yaw_degrees), pitch = PLANET_PREVIEW_START_PITCH}
+}
+
+// The walk spawn on the crater's crest behind the pod and to its left,
+// heading along the door turned by the yaw.
+planet_preview_home_walker :: proc(generation: Planet_Generation, site: World_Position, axes: [3][3]i64, yaw_degrees: int) -> Field_Player {
+	spot := planet_preview_home_point(site, axes, -PLANET_PREVIEW_WALK_BACK_MILLIMETRES, PLANET_PREVIEW_WALK_FRAME_RIGHT_MILLIMETRES)
+	feet := field_surface_under(generation, spot, millimetres_to_position_units(FIELD_SPAWN_CLEARANCE_MILLIMETRES))
+	body := make_field_player(feet, axes[FRAME_FORWARD])
+	body.yaw = degrees_to_angle_units(yaw_degrees)
+	return body
+}
+
+// The free camera in raylib's terms, its look and up in the home's frame.
+planet_preview_free_camera :: proc(camera: Fly_Camera, basis: Planet_Preview_Basis, field_of_view: f32) -> rl.Camera3D {
+	return rl.Camera3D {
+		position = camera.position,
+		target = camera.position + planet_preview_basis_to_world(basis, linalg.normalize(fly_camera_forward(camera))),
+		up = basis.up,
+		fovy = field_of_view,
+		projection = .PERSPECTIVE,
+	}
 }
 
 // Every selected node has been meshed and nothing is pending.
@@ -205,21 +279,26 @@ planet_preview_content :: proc(preview: ^Planet_Preview) -> Simulation_Content {
 fly_planet_preview :: proc(preview: ^Planet_Preview, frame: Input_Frame, frame_seconds: f32) {
 	preview.camera = turn_fly_camera(preview.camera, frame, frame_seconds)
 	height := linalg.length(preview.camera.position) - f32(preview.session.planet.radius_metres)
-	velocity := fly_camera_velocity(preview.camera, frame, .Sprint in frame.pressed)
+	velocity := planet_preview_basis_to_world(preview.basis, fly_camera_velocity(preview.camera, frame, .Sprint in frame.pressed))
 	preview.camera.position += velocity * planet_preview_speed_scale(height) * frame_seconds
 }
 
 // The player standing on the generated surface under the free camera,
 // heading where the camera looks.
-start_planet_preview_walk :: proc(preview: ^Planet_Preview) {
+planet_preview_body_under_camera :: proc(preview: ^Planet_Preview) -> Field_Player {
 	simulation := planet_preview_simulation(preview)
 	spacing := simulation.field.spacing_millimetres
 	generation := make_planet_generation(simulation.world.settings.seed, preview.session.planet, spacing)
 	clearance := millimetres_to_position_units(FIELD_SPAWN_CLEARANCE_MILLIMETRES)
 	feet := field_surface_under(generation, metres_to_world_position(preview.camera.position), clearance)
-	forward := fly_camera_forward(preview.camera)
+	forward := planet_preview_basis_to_world(preview.basis, fly_camera_forward(preview.camera))
 	look := [3]i64{i64(forward.x * UNIT_VECTOR_ONE), i64(forward.y * UNIT_VECTOR_ONE), i64(forward.z * UNIT_VECTOR_ONE)}
-	planet_preview_player(preview).field = make_field_player(feet, look)
+	return make_field_player(feet, look)
+}
+
+// The walk mode with the player standing as body.
+start_planet_preview_walk :: proc(preview: ^Planet_Preview, body: Field_Player) {
+	planet_preview_player(preview).field = body
 	preview.walking = true
 	preview.tick_seconds = 0
 	preview.tick_input = {}
@@ -324,7 +403,7 @@ update_planet_preview_input :: proc(preview: ^Planet_Preview, frame_seconds: f32
 		if preview.walking {
 			stop_planet_preview_walk(preview)
 		} else {
-			start_planet_preview_walk(preview)
+			start_planet_preview_walk(preview, planet_preview_body_under_camera(preview))
 		}
 	}
 	frame := read_raylib_input_frame(preview.pressed, preview.input_bindings, {})
@@ -353,7 +432,7 @@ planet_preview_raylib_camera :: proc(preview: ^Planet_Preview, alpha: f32) -> rl
 		view := field_player_view(body, preview.session.field_content.tuning, alpha, body.crouching ? 1 : 0)
 		return field_camera(view, body.camera_mode, THIRD_PERSON_DISTANCE, 0, PLANET_PREVIEW_FIELD_OF_VIEW)
 	}
-	return fly_camera_to_raylib(preview.camera, PLANET_PREVIEW_FIELD_OF_VIEW)
+	return planet_preview_free_camera(preview.camera, preview.basis, PLANET_PREVIEW_FIELD_OF_VIEW)
 }
 
 planet_preview_height_metres :: proc(preview: ^Planet_Preview) -> f32 {
@@ -525,8 +604,9 @@ planet_preview_pit_lit :: proc(preview: ^Planet_Preview, selection: []Field_Node
 }
 
 // The walk screenshot's pad, once the player stands: a free foundation on
-// the ground ahead, the square round it snapped to its frame, and a column
-// of foundations on one corner.
+// the ground outside the crater, placed from the home's frame and taking
+// the pod's yaw step, the square round it snapped to its frame, and a
+// column of foundations on one corner.
 lay_planet_preview_foundations :: proc(preview: ^Planet_Preview) {
 	simulation := planet_preview_simulation(preview)
 	content := planet_preview_content(preview)
@@ -536,12 +616,11 @@ lay_planet_preview_foundations :: proc(preview: ^Planet_Preview) {
 		return
 	}
 	preview.pad_laid = true
-	heading := field_player_heading(player)
-	ahead := player.position + World_Position(fixed_scale(heading, millimetres_to_position_units(PLANET_PREVIEW_PAD_DISTANCE_MILLIMETRES)))
+	point := planet_preview_home_point(preview.home_site, preview.home_axes, PLANET_PREVIEW_PAD_FORWARD_MILLIMETRES, PLANET_PREVIEW_PAD_FRAME_RIGHT_MILLIMETRES)
 	generation := make_planet_generation(simulation.world.settings.seed, preview.session.planet, simulation.field.spacing_millimetres)
 	entities := &simulation.world.entities
 	pitch := content.field.foundation_pitch_millimetres
-	_, frame := place_free_foundation(entities, content.machines, foundation, field_surface_under(generation, ahead, 0), heading, pitch)
+	_, frame := place_free_foundation(entities, content.machines, foundation, field_surface_under(generation, point, 0), preview.home_axes[FRAME_FORWARD], pitch)
 	for x in -PLANET_PREVIEW_PAD_HALF_WIDTH ..= PLANET_PREVIEW_PAD_HALF_WIDTH {
 		for z in -PLANET_PREVIEW_PAD_HALF_WIDTH ..= PLANET_PREVIEW_PAD_HALF_WIDTH {
 			place_on_frame(entities, content.machines, foundation, frame, {i32(x), 0, i32(z)}, 0)
@@ -640,8 +719,9 @@ start_planet_preview_session :: proc(config: Game_Config, content: Game_Content,
 // Returns the process's exit code.
 // screenshot_path empty runs the interactive preview; walk starts it in
 // the walk mode; daylight_percent is the sky light's share; pitch_degrees
-// the walk screenshot's tilt once the pit is dug.
-run_planet_preview :: proc(config: Game_Config, content: Game_Content, base_generator: Generator, bindings: []Binding, data_directory: string, seed: u64, screenshot_path: string, walk: bool, daylight_percent: int, pitch_degrees: int) -> int {
+// the walk screenshot's tilt once the pit is dug; yaw_degrees turns the
+// start camera and the walker from the pod's door direction.
+run_planet_preview :: proc(config: Game_Config, content: Game_Content, base_generator: Generator, bindings: []Binding, data_directory: string, seed: u64, screenshot_path: string, walk: bool, daylight_percent: int, pitch_degrees: int, yaw_degrees: int) -> int {
 	if _, found := find_planet(content.planets, PLANET_PREVIEW_PLANET); !found {
 		platform.log_printf("error: %s has no planet %q to preview", PLANETS_FILE_NAME, PLANET_PREVIEW_PLANET)
 		return 1
@@ -659,6 +739,10 @@ run_planet_preview :: proc(config: Game_Config, content: Game_Content, base_gene
 		platform.log_printf("error: --planet-preview-pitch=%d is outside %d to %d", pitch_degrees, -PLANET_PREVIEW_PITCH_LIMIT_DEGREES, PLANET_PREVIEW_PITCH_LIMIT_DEGREES)
 		return 1
 	}
+	if yaw_degrees < -PLANET_PREVIEW_YAW_LIMIT_DEGREES || yaw_degrees > PLANET_PREVIEW_YAW_LIMIT_DEGREES {
+		platform.log_printf("error: --planet-preview-yaw=%d is outside %d to %d", yaw_degrees, -PLANET_PREVIEW_YAW_LIMIT_DEGREES, PLANET_PREVIEW_YAW_LIMIT_DEGREES)
+		return 1
+	}
 	session, problem := start_planet_preview_session(config, content, base_generator, seed)
 	if problem != "" {
 		platform.log_printf("error: cannot start the preview's world: %s", problem)
@@ -668,6 +752,9 @@ run_planet_preview :: proc(config: Game_Config, content: Game_Content, base_gene
 	give_planet_preview_items(&session.simulation.players[0], content.items, content.machines)
 	planet := session.planet
 	spacing := session.simulation.field.spacing_millimetres
+	generation := make_planet_generation(seed, planet, spacing)
+	home_site, home_axes := planet_preview_home(generation, planet, session.field_content.foundation_pitch_millimetres)
+	basis := planet_preview_basis(home_axes)
 	install_raylib_trace_log()
 	rl.SetTraceLogLevel(.WARNING)
 	rl.SetConfigFlags({.WINDOW_RESIZABLE, .VSYNC_HINT, .MSAA_4X_HINT})
@@ -691,7 +778,7 @@ run_planet_preview :: proc(config: Game_Config, content: Game_Content, base_gene
 		session         = session,
 		content         = content,
 		level_distances = level_distances,
-		camera          = planet_preview_start_camera(planet),
+		camera          = planet_preview_start_camera(home_site, basis, yaw_degrees),
 		renderer        = renderer,
 		input_bindings  = make_backend_bindings(bindings, .Raylib),
 		screenshot_path = screenshot_path,
@@ -699,14 +786,14 @@ run_planet_preview :: proc(config: Game_Config, content: Game_Content, base_gene
 		player_model    = init_player_model(data_directory),
 		pitch_degrees   = pitch_degrees,
 		belts           = init_belt_renderer(content.machines),
-	}
-	if screenshot_path != "" {
-		preview.camera = planet_preview_screenshot_camera(planet, seed, spacing, level_distances[0])
+		home_site       = home_site,
+		home_axes       = home_axes,
+		basis           = basis,
 	}
 	if walk {
-		start_planet_preview_walk(&preview)
+		start_planet_preview_walk(&preview, planet_preview_home_walker(generation, home_site, home_axes, yaw_degrees))
 	}
-	platform.log_printf("planet preview: %s, seed %d, radius %d m", planet.id, seed, planet.radius_metres)
+	platform.log_printf("planet preview: %s, seed %d, radius %d m, home at latitude %d longitude %d", planet.id, seed, planet.radius_metres, planet.home.latitude_degrees, planet.home.longitude_degrees)
 	exit_code := run_planet_preview_frames(&preview)
 	destroy_field_renderer(&preview.renderer)
 	destroy_model_renderer(&preview.models)

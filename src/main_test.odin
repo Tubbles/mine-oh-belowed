@@ -40,6 +40,10 @@ test_command_line_seed_and_debug_terrain :: proc(t: ^testing.T) {
 	level, level_error := parse_command_line({"--planet-preview-pitch=-10"})
 	testing.expect_value(t, level_error, nil)
 	testing.expect_value(t, level.planet_preview_pitch, -10)
+	testing.expect_value(t, empty.planet_preview_yaw, 0)
+	turned, turned_error := parse_command_line({"--planet-preview-yaw=-40"})
+	testing.expect_value(t, turned_error, nil)
+	testing.expect_value(t, turned.planet_preview_yaw, -40)
 	bogus, bogus_error := parse_command_line({"--seed=bogus"})
 	testing.expect_value(t, bogus_error, nil)
 	testing.expect(t, strings.has_prefix(command_line_value_problem(bogus), "invalid seed \"bogus\""))
@@ -144,7 +148,7 @@ test_command_line_model_workbench_flags :: proc(t: ^testing.T) {
 	testing.expect_value(t, command_line_conflict(directory), "--model-preview-directory needs --model-preview")
 	both, _ := parse_command_line({"--model-check=all", "--model-preview=a", "--model-preview-directory=d"})
 	testing.expect_value(t, command_line_conflict(both), "--model-check and --model-preview cannot be combined")
-	for other in ([?]string{"--benchmark=1", "--seed=7", "--server", "--planet-preview"}) {
+	for other in ([?]string{"--benchmark=1", "--seed=7", "--server", "--planet-preview", "--planet-preview-yaw=30"}) {
 		combined, _ := parse_command_line({"--model-check=all", other})
 		testing.expectf(t, strings.has_prefix(command_line_conflict(combined), "--model-check runs no world"), "--model-check with %s accepted", other)
 	}

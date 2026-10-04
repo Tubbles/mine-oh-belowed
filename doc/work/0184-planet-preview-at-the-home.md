@@ -1,6 +1,6 @@
 # 0184: The planet preview starts at the home
 
-Status: implementing (2026-10-04, in `.claude/worktrees/0184` on `item/0184` from `main` at 716805e, the specification approved the same day with the decisions below, first item of M14's look stream (0237); M13 follow up, from the wiring of 0179; whenever the assistant needs it)
+Status: verified (2026-10-04, implementer agent aacbdab4144f99914, verified the same day with no fix round (the shots accepted: the pad small on the far crest, no outcrop with the shipped seed, build.md reworded), in `.claude/worktrees/0184` on `item/0184` from `main` at 716805e, the specification approved the same day with the decisions below, first item of M14's look stream (0237); M13 follow up, from the wiring of 0179; whenever the assistant needs it)
 
 ## Goal
 
@@ -103,6 +103,12 @@ Built with `./build.sh`, each under `xvfb-run -a -s "-screen 0 1280x720x24" buil
 1. Question 1: the walker on the crater's crest behind and left of the pod, as specified. The item's "in front of the pod's door" predates the crater and the cabin spawn; the shots want the pod and the land in one view.
 2. Question 2: `--planet-preview-yaw` stays, range checked as specified. The look items of 0237 aim their shots with it.
 3. Question 3: the old screenshot camera's framing (62 m over the pole, 8 degrees down) goes. The level of detail seams of 0169 were verified then; a far view is still had from the walk mode with `--planet-preview-pitch=0` and the yaw flag, and a later level of detail item sets its own shot.
+
+### Deviations (implementer, 2026-10-04)
+
+- The pod's door does not face the spring at 4 and 8 km: `field_home_heading` hands `tangent_of` the home to spring difference unnormalized, and `tangent_of` takes a look under a sixteenth of a unit (256 m in position units) for none and turns to +x; the shipped spring lies 204 m (8 km) and 102 m (4 km) from the home. The specified `test_planet_preview_start_camera_frames_the_pod_and_the_spring` failed there (the spring 94 and 109 degrees off the look). Normalizing the look in `field_home_heading` fixes the heading but changes the spawn heading, and `test_a_field_walk_counts_and_a_flight_does_not` and `test_two_field_simulations_hash_alike_and_part_on_one_input` then fail, so the fix was reverted and left for an item of its own. The test is `test_planet_preview_start_camera_frames_the_pod` and asserts the pod and the height only; the usage text, the comments and the docs say "the pod's door direction" without "towards the first spring".
+- The pad constants were tuned on the level shot (allowed by the brief): `PLANET_PREVIEW_PAD_FORWARD_MILLIMETRES` 10000 and `PLANET_PREVIEW_PAD_FRAME_RIGHT_MILLIMETRES` 17500 (20.2 m out, nearest corner 18.4 m, 31 degrees left of the walker, 24 m away) instead of 5000 and 20000, where the crest hid all but the column; the slabs still sit mostly under the far crest's relief.
+- `doc/content.md`'s shipped home paragraph named the pole as the preview's start; that clause went.
 
 ### Questions for the main agent
 

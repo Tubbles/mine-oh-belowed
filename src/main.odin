@@ -60,6 +60,8 @@ Command_Line :: struct {
 	planet_preview_daylight: int `usage:"<percent>: the planet preview's daylight, the sky light's share from 0 (night: only torches light) to 100 (the default)"`,
 	// Work item 0176: a level shot shows the pads, the arms and the run.
 	planet_preview_pitch: int `usage:"<degrees>: the walk screenshot's camera tilt once the pit is dug, from -89 to 89 (default -50, down into the pit)"`,
+	// Work item 0184
+	planet_preview_yaw: int `usage:"<degrees>: turns the planet preview's start camera and walker from the pod's door direction, from -180 to 180, positive to the right (default 0)"`,
 	// Work item 0207: the model workbench.
 	model_check:     string `usage:"<machine|all>: check the machine's model (all: every OBJ model and the arm) in the game's mesher and motion, one line per problem, exit 1 on any; no window"`,
 	model_preview:   string `usage:"<machine>[,<machine>]: render each machine's model from five cameras at rest and at three phases into --model-preview-directory, then exit"`,
@@ -273,9 +275,9 @@ main :: proc() {
 	if command_line.benchmark > 0 {
 		os.exit(run_command_line_benchmark(command_line.benchmark, data_directory, config, game_data))
 	}
-	if command_line.planet_preview || command_line.planet_preview_screenshot != "" || command_line.planet_preview_walk {
+	if command_line.planet_preview || command_line.planet_preview_screenshot != "" || command_line.planet_preview_walk || command_line.planet_preview_yaw != 0 {
 		seed, _ := command_line_seed(command_line)
-		os.exit(run_planet_preview(config, content, game_data.base_generator, bindings, data_directory, seed, command_line.planet_preview_screenshot, command_line.planet_preview_walk, command_line.planet_preview_daylight, command_line.planet_preview_pitch))
+		os.exit(run_planet_preview(config, content, game_data.base_generator, bindings, data_directory, seed, command_line.planet_preview_screenshot, command_line.planet_preview_walk, command_line.planet_preview_daylight, command_line.planet_preview_pitch, command_line.planet_preview_yaw))
 	}
 	saves_directory, saves_found := resolve_saves_directory(loaded_configuration.configuration.paths.saves)
 	if command_line.server {
@@ -618,7 +620,7 @@ workbench_conflict :: proc(command_line: Command_Line) -> string {
 		return ""
 	}
 	planet_preview := command_line.planet_preview || command_line.planet_preview_screenshot != "" || command_line.planet_preview_walk
-	planet_preview ||= command_line.planet_preview_daylight != 100 || command_line.planet_preview_pitch != PLANET_PREVIEW_PIT_PITCH_DEGREES
+	planet_preview ||= command_line.planet_preview_daylight != 100 || command_line.planet_preview_pitch != PLANET_PREVIEW_PIT_PITCH_DEGREES || command_line.planet_preview_yaw != 0
 	world := command_line.benchmark > 0 || command_line.server || command_line.join_address != "" || command_line_starts_world(command_line)
 	if planet_preview || world {
 		return fmt.tprintf("%s runs no world, so it cannot be combined with --benchmark, --planet-preview, --server, --join or a world's flags", checking ? "--model-check" : "--model-preview")
