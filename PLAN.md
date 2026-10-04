@@ -23,7 +23,8 @@ Alpha 2 is phases 8 to 11, the space game, defined when alpha 1 is in sight.
 - The block world (M0 to M11) reached its alpha content in code and went through the presentation campaign; of its verify statements only M0's and couch test 1's ran on the couch (`doc/log/2026-09-27.md`, `doc/log/2026-09-30.md`). M12's cleanup, audits, code map, pilot split, pure moves and hubs are done (`doc/log/2026-10-01.md`); its queue paused after 0162 and is re-read against the new world before anything of it resumes (`SUGGESTIONS.md`, The paused audit queue).
 - 2026-10-02: the vision was worked out and decided with the user (forty decisions, `doc/log/2026-10-02.md`), merged into DESIGN.md and this plan, and the technical brief for the smooth world engine with multiplayer is [doc/work/0167-smooth-world-engine-brief.md](doc/work/0167-smooth-world-engine-brief.md).
 - The design session over the brief ran the same day and took every recommendation; M13's items 0168 to 0179 are written (`doc/log/2026-10-02.md`, The design session over 0167).
-- Next: 0168, the first item of the slice, when the user says so. Smaller items the user meets while playing the block build still take priority as they come.
+- 2026-10-04: the user judged the field build viable by feel after the pod, its doors and the collision volumes were played on the couch and the phone ("lets say the trial is finished", `doc/log/2026-10-04.md`, The field trial is finished). M14 is picked; its brief is [doc/work/0237-the-ground-game-on-the-smooth-world-brief.md](doc/work/0237-the-ground-game-on-the-smooth-world-brief.md) and the items are written from it.
+- Next: the M14 brief read with the user, then its items in streams. Smaller items the user meets while playing still take priority as they come.
 
 ## Couch tests
 
@@ -37,8 +38,8 @@ Each milestone has a single verify statement. Work items in `doc/work/` referenc
 | --- | --- | --- |
 | M0 to M11 The block world | 0001 to 0140 | Done in code, couch tests 2 to 5 never run; retired by the rebuild, the content carries over |
 | M12 Architecture toward the engine cut | 0142 to 0166 | Cleanup, audits, code map, pilot split, pure moves and hubs done (0142 to 0162); the seams re-read against the new world, the ones lockstep needs move into M13 |
-| M13 The first slice | 0167, then 0168 to 0179 | Implemented 2026-10-03 (the session plays the field world); the wiring of the veins and the pod into the session and the couch test remain |
-| M14 The ground game on the smooth world | | Todo |
+| M13 The first slice | 0167, then 0168 to 0179 | Implemented 2026-10-03 and judged viable by the user 2026-10-04 (the trial is finished); its lockstep couch test rides into couch test 6 |
+| M14 The ground game on the smooth world | 0237 (the brief), then the items written from it | Picked 2026-10-04, the brief first |
 | M15 Survival, the suit and the modes | | Todo |
 | M16 Low orbit and the station | | Todo |
 | M17 The first hop | | Todo |
@@ -60,7 +61,7 @@ Verify: the simulation ticks from queued inputs only (no write into it from the 
 
 The smallest build that lets the user judge the direction by feel, on `main`, with multiplayer from the first commit: a sphere of a few hundred metres with the terrain field and its mesh, radial gravity and the slope walk, a dig and place tool with two brush sizes, water in one basin under the conserving rule, one torch in a dug cave with the new falloff, one foundation carrying a drill, an arm and a belt into a chest, a day and a night, and the lockstep of DESIGN.md's Multiplayer section with the state hash as the desync check. No space, no survival, one recipe chain. The brief is 0167; the items are 0168 (the field), 0169 (the mesher), 0170 (the player), 0171 (the brushes), 0172 (water), 0173 (light), 0174 (frames), 0175 (the arm), 0176 (curves on poles), 0177 (lockstep), 0178 (viewports), 0179 (the slice's content), in that order with 0177 able to start after 0170.
 
-Status: implemented 2026-10-03. New World and Load start a field session on the planet of the world's record; the block world stays for the tests and the dev kits until M14. The wiring round connects the veins and the pod of 0179's content part to the session; then the couch test below.
+Status: implemented 2026-10-03, the wiring round included; judged viable by the user 2026-10-04 (`doc/log/2026-10-04.md`, The field trial is finished). New World and Load start a field session on the planet of the world's record; the block world stays for the tests and the dev kits until M14. The verify below was not run as written: its lockstep part moves into couch test 6.
 
 Verify: two machines on the home network and a split screen pair on the couch share the sphere for twenty minutes while all four dig, place and run the belt line, with no desync, and the user judges the walk, the digging and the arm.
 
