@@ -1,6 +1,6 @@
 # 0226: Models over 65536 vertices draw unindexed
 
-Status: implementing (2026-10-04, the specification approved the same day with the decisions below; the implementer works in `.claude/worktrees/0226` on `item/0226` from `main`, found when the round three pod of the lab, 25488 triangles under the budget of 25600 the user set, was refused by the game: `machine "pod": model pod: more than 65536 vertices`; blocks the in game shots of that model and 0221)
+Status: verified (2026-10-04, the specification approved the same day with the decisions below; the implementer works in `.claude/worktrees/0226` on `item/0226` from `main`, found when the round three pod of the lab, 25488 triangles under the budget of 25600 the user set, was refused by the game: `machine "pod": model pod: more than 65536 vertices`; blocks the in game shots of that model and 0221)
 
 ## Goal
 

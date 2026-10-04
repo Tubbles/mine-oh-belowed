@@ -93,16 +93,16 @@ check_triangle :: proc(corners: [3][3]f32) -> Check_Triangle {
 	}
 }
 
-// Every indexed triangle of the lit layer, then the emissive one, its
-// corners through transform.
+// Every triangle of the lit layer, then the emissive one (either shape,
+// model_mesh_triangle), its corners through transform.
 model_layers_check_triangles :: proc(layers: Model_Layers, transform: matrix[4, 4]f32, allocator := context.temp_allocator) -> [dynamic]Check_Triangle {
 	triangles := make([dynamic]Check_Triangle, allocator)
 	for layer in Model_Layer {
 		mesh := layers[layer]
-		for first := 0; first + 2 < len(mesh.indices); first += 3 {
-			corners: [3][3]f32
-			for corner in 0 ..< 3 {
-				corners[corner] = transform_point(transform, mesh.positions[mesh.indices[first + corner]])
+		for triangle in 0 ..< model_mesh_triangle_count(mesh) {
+			corners := model_mesh_triangle(mesh, triangle)
+			for &corner in corners {
+				corner = transform_point(transform, corner)
 			}
 			append(&triangles, check_triangle(corners))
 		}
@@ -111,7 +111,7 @@ model_layers_check_triangles :: proc(layers: Model_Layers, transform: matrix[4, 
 }
 
 model_layers_triangle_count :: proc(layers: Model_Layers) -> int {
-	return (len(layers[.Lit].indices) + len(layers[.Emissive].indices)) / 3
+	return model_mesh_triangle_count(layers[.Lit]) + model_mesh_triangle_count(layers[.Emissive])
 }
 
 // Zero for none.

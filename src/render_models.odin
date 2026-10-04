@@ -148,17 +148,30 @@ machine_model_top :: proc(renderer: Model_Renderer, common: Entity_Common) -> f3
 	return f32(common.size.y)
 }
 
+// The counts an upload gives raylib, pure so a test reads them without a
+// window.
+model_mesh_upload_counts :: proc(mesh: Model_Mesh) -> (vertex_count, triangle_count: i32, indexed: bool) {
+	return i32(len(mesh.positions)), i32(model_mesh_triangle_count(mesh)), len(mesh.indices) > 0
+}
+
+// A voxel layer goes up indexed, a triangle layer (no indices, 0226)
+// unindexed: raylib's DrawMesh draws vertexCount vertices in order when
+// indices is nil.
 upload_model_mesh :: proc(mesh: Model_Mesh) -> rl.Mesh {
 	if len(mesh.positions) == 0 {
 		return {}
 	}
+	vertex_count, triangle_count, indexed := model_mesh_upload_counts(mesh)
 	uploaded := rl.Mesh {
-		vertexCount   = i32(len(mesh.positions)),
-		triangleCount = i32(len(mesh.indices) / 3),
+		vertexCount   = vertex_count,
+		triangleCount = triangle_count,
 		vertices      = cast([^]f32)clone_for_raylib(mesh.positions[:]),
 		normals       = cast([^]f32)clone_for_raylib(mesh.normals[:]),
 		colors        = cast([^]u8)clone_for_raylib(mesh.colors[:]),
-		indices       = clone_for_raylib(mesh.indices[:]),
+		indices       = nil,
+	}
+	if indexed {
+		uploaded.indices = clone_for_raylib(mesh.indices[:])
 	}
 	rl.UploadMesh(&uploaded, false)
 	return uploaded

@@ -32,6 +32,11 @@ test_a_single_voxel_has_six_faces :: proc(t: ^testing.T) {
 	testing.expect_value(t, problem, "")
 	testing.expect_value(t, len(mesh.positions), 24)
 	testing.expect_value(t, len(mesh.indices), 36)
+	testing.expect_value(t, model_mesh_triangle_count(mesh), 12)
+	vertex_count, triangle_count, indexed := model_mesh_upload_counts(mesh)
+	testing.expect_value(t, vertex_count, 24)
+	testing.expect_value(t, triangle_count, 12)
+	testing.expect_value(t, indexed, true)
 	testing.expect_value(t, len(meshes[.Emissive].positions), 0)
 	// The top face is the palette colour, the bottom shaded darker.
 	testing.expect(t, in_slice([4]u8{255, 255, 255, 255}, mesh.colors[:]))
@@ -58,15 +63,40 @@ test_the_voxel_mesher_gives_each_face_its_direction :: proc(t: ^testing.T) {
 		}
 		testing.expectf(t, count == 4, "%v: %d vertices", direction, count)
 	}
-	for first := 0; first + 2 < len(mesh.indices); first += 3 {
-		corners := [3][3]f32{mesh.positions[mesh.indices[first]], mesh.positions[mesh.indices[first + 1]], mesh.positions[mesh.indices[first + 2]]}
-		winding := triangle_winding_normal(corners)
+	for triangle in 0 ..< model_mesh_triangle_count(mesh) {
+		vertices := model_mesh_triangle_vertices(mesh, triangle)
+		winding := triangle_winding_normal(model_mesh_triangle(mesh, triangle))
 		for corner in 0 ..< 3 {
-			normal := mesh.normals[mesh.indices[first + corner]]
+			normal := mesh.normals[vertices[corner]]
 			difference := winding - normal
-			testing.expectf(t, abs(difference.x) + abs(difference.y) + abs(difference.z) < 1e-5, "triangle %d: winding %v, vertex normal %v", first / 3, winding, normal)
+			testing.expectf(t, abs(difference.x) + abs(difference.y) + abs(difference.z) < 1e-5, "triangle %d: winding %v, vertex normal %v", triangle, winding, normal)
 		}
 	}
+}
+
+// Work item 0226: an indexed (voxel) and an unindexed (triangle) mesh of
+// the same triangles read alike.
+@(test)
+test_the_triangle_reader_serves_both_shapes :: proc(t: ^testing.T) {
+	filled := [?][3]i32{{0, 0, 0}}
+	model := make_test_voxel_model({1, 1, 1}, filled[:])
+	defer delete(model.cells)
+	meshes, problem := mesh_voxel_model(model, {1, 1, 1})
+	defer destroy_model_layers(meshes)
+	testing.expect_value(t, problem, "")
+	indexed := meshes[.Lit]
+	unindexed := make_model_mesh(context.temp_allocator)
+	for triangle in 0 ..< model_mesh_triangle_count(indexed) {
+		corners := model_mesh_triangle(indexed, triangle)
+		append_model_triangle(&unindexed, corners, {255, 255, 255, 255}, triangle_winding_normal(corners))
+	}
+	testing.expect_value(t, model_mesh_triangle_count(indexed), 12)
+	testing.expect_value(t, model_mesh_triangle_count(unindexed), 12)
+	for triangle in 0 ..< model_mesh_triangle_count(indexed) {
+		testing.expectf(t, model_mesh_triangle(unindexed, triangle) == model_mesh_triangle(indexed, triangle), "triangle %d differs", triangle)
+	}
+	testing.expect_value(t, model_mesh_triangle_vertices(unindexed, 5), [3]int{15, 16, 17})
+	testing.expect_value(t, model_mesh_triangle_vertices(indexed, 5), [3]int{int(indexed.indices[15]), int(indexed.indices[16]), int(indexed.indices[17])})
 }
 
 in_slice :: proc(value: [4]u8, values: [][4]u8) -> bool {

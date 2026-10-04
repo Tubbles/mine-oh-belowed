@@ -212,7 +212,7 @@ Presentation turns the world, the tick and the render time into pixels and sound
   - `weather.odin`, `render_weather.odin`: `weather_at`, the hourly schedule; `Weather_Look`, rain, snow, clouds.
   - `render_entities.odin`, `render_models.odin`: `draw_entities` over the pools, bottleneck markers, the models' working procedures (`foundation_model_working` and the others) and `gather_machine_lights` (0224); `Model_Renderer`, posed and ghost models, the model shader for the lit layer (0224), the pods' interior light (`gather_interior_lights`, `posed_model_light`, 0225).
   - `render_frames.odin`: the frames' placeholder boxes per occupied cell and the placement ghost (0174), `frame_render_matrix`.
-  - `model_mesh.odin`, `model_motion.odin`: the voxel mesher over the `model_vox` package's parser (Packages) and the choice of an .obj over a .vox; `Machine_Motion` and part transforms.
+  - `model_mesh.odin`, `model_motion.odin`: the voxel mesher over the `model_vox` package's parser (Packages), the choice of an .obj over a .vox and `model_mesh_triangle`, the reader of a layer's triangles in either shape (0226); `Machine_Motion` and part transforms.
   - `model_triangle_mesh.odin`: the OBJ mesher over the `model_obj` package's reader (Packages): flat shade, footprint check.
   - `model_check.odin`: the workbench's checks (0207): budget, sweep, arm clearance, open cells.
   - `model_arm.odin`, `render_arm.odin`: the inserter's arm (0175): its part files, `arm_pose_at` from the cycle, the joint transforms; its draw and its lamp's light.

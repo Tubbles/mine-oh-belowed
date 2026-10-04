@@ -41,7 +41,12 @@ model_face_shades := [Direction]f32 {
 	.Positive_Z = 0.92,
 }
 
-// u16 indices, so at most MESH_PART_VERTEX_LIMIT vertices.
+// Two shapes (0226): the voxel mesher shares a quad's four corners and
+// writes indices, u16, so at most MESH_PART_VERTEX_LIMIT vertices a layer;
+// the triangle mesher writes three vertices per triangle in order and no
+// indices, drawn unindexed, bounded by the triangle budget
+// (model_check.odin) only. Read a mesh's triangles through
+// model_mesh_triangle, which serves both.
 // normals holds one unit normal per position, its face's (0224: the model
 // shader's point lights).
 Model_Mesh :: struct {
@@ -161,6 +166,29 @@ append_model_quad :: proc(mesh: ^Model_Mesh, corners: [4][3]f32, colour: [4]u8, 
 	for index in order {
 		append(&mesh.indices, base + index)
 	}
+}
+
+// Indexed or not (0226).
+model_mesh_triangle_count :: proc(mesh: Model_Mesh) -> int {
+	if len(mesh.indices) > 0 {
+		return len(mesh.indices) / 3
+	}
+	return len(mesh.positions) / 3
+}
+
+// The vertices of the triangle's corners: through the indices when there
+// are any, else three in order.
+model_mesh_triangle_vertices :: proc(mesh: Model_Mesh, triangle: int) -> [3]int {
+	if len(mesh.indices) > 0 {
+		first := 3 * triangle
+		return {int(mesh.indices[first]), int(mesh.indices[first + 1]), int(mesh.indices[first + 2])}
+	}
+	return {3 * triangle, 3 * triangle + 1, 3 * triangle + 2}
+}
+
+model_mesh_triangle :: proc(mesh: Model_Mesh, triangle: int) -> [3][3]f32 {
+	vertices := model_mesh_triangle_vertices(mesh, triangle)
+	return {mesh.positions[vertices[0]], mesh.positions[vertices[1]], mesh.positions[vertices[2]]}
 }
 
 // Voxel corners to blocks, centred across the footprint.

@@ -8,9 +8,10 @@ import "model_obj"
 // render_models.odin uploads the result, the same Model_Layers as the
 // voxel mesher's (model_mesh.odin). The model is in cells of the
 // unrotated footprint already (model_obj.odin), so nothing is scaled.
-// Every triangle gets three vertices of its own (flat shading), coloured
-// Kd times a shade of its normal; emissive ones go to their own layer
-// unshaded. The group named part is the moving part.
+// Every triangle gets three vertices of its own (flat shading) and no
+// indices: the layers go up unindexed (render_models.odin, 0226). Each is
+// coloured Kd times a shade of its normal; emissive ones go to their own
+// layer unshaded. The group named part is the moving part.
 
 // The shade of a normal is MODEL_SHADE_BASE plus its dot with
 // MODEL_SHADE_GRADIENT, clamped to 0..1. Chosen so an axis aligned box's
@@ -53,18 +54,17 @@ obj_triangle_colour :: proc(triangle: model_obj.Obj_Triangle) -> [4]u8 {
 }
 
 append_model_triangle :: proc(mesh: ^Model_Mesh, corners: [3][3]f32, colour: [4]u8, normal: [3]f32) {
-	base := u16(len(mesh.positions))
-	for corner, index in corners {
+	for corner in corners {
 		append(&mesh.positions, corner)
 		append(&mesh.normals, normal)
 		append(&mesh.colors, colour)
-		append(&mesh.indices, base + u16(index))
 	}
 }
 
 // The triangles whose part flag matches. A triangle without a normal
 // (zero area and no vn) draws nothing and is skipped. The meshes are in
-// allocator, also on a problem.
+// allocator, also on a problem. The meshes have no indices (0226): any
+// number of triangles, the budget is the model check's.
 mesh_obj_triangles :: proc(model: model_obj.Obj_Model, part: bool, allocator := context.allocator) -> (meshes: Model_Layers, problem: string) {
 	for layer in Model_Layer {
 		meshes[layer] = make_model_mesh(allocator)
@@ -74,9 +74,6 @@ mesh_obj_triangles :: proc(model: model_obj.Obj_Model, part: bool, allocator := 
 			continue
 		}
 		mesh := &meshes[triangle.emissive ? .Emissive : .Lit]
-		if len(mesh.positions) + 3 > MESH_PART_VERTEX_LIMIT {
-			return meshes, fmt.tprintf("more than %d vertices", MESH_PART_VERTEX_LIMIT)
-		}
 		append_model_triangle(mesh, triangle.corners, obj_triangle_colour(triangle), obj_triangle_normal(triangle))
 	}
 	return meshes, ""

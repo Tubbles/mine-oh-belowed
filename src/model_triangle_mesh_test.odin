@@ -111,15 +111,12 @@ test_a_face_without_normals_is_shaded_from_its_winding :: proc(t: ^testing.T) {
 
 // Every triangle's winding normal points away from the centre.
 expect_outward_winding :: proc(t: ^testing.T, mesh: Model_Mesh, centre: [3]f32, name: string) {
-	testing.expectf(t, len(mesh.indices) > 0, "%s has no triangles", name)
-	for triangle := 0; triangle + 2 < len(mesh.indices); triangle += 3 {
-		corners: [3][3]f32
-		for &corner, index in corners {
-			corner = mesh.positions[mesh.indices[triangle + index]]
-		}
+	testing.expectf(t, model_mesh_triangle_count(mesh) > 0, "%s has no triangles", name)
+	for triangle in 0 ..< model_mesh_triangle_count(mesh) {
+		corners := model_mesh_triangle(mesh, triangle)
 		middle := (corners[0] + corners[1] + corners[2]) / 3
 		normal := triangle_winding_normal(corners)
-		testing.expectf(t, linalg.dot(normal, middle - centre) > 0, "%s: triangle %d winds inward", name, triangle / 3)
+		testing.expectf(t, linalg.dot(normal, middle - centre) > 0, "%s: triangle %d winds inward", name, triangle)
 	}
 }
 
@@ -212,21 +209,27 @@ test_a_part_group_follows_the_motion :: proc(t: ^testing.T) {
 }
 
 @(test)
-test_an_obj_layer_past_the_vertex_limit_is_refused :: proc(t: ^testing.T) {
+test_a_triangle_layer_past_65536_vertices_meshes_unindexed :: proc(t: ^testing.T) {
 	model := test_obj_triangles()
 	triangle := test_obj_triangle({{0, 0, 0}, {0, 1, 0}, {0, 0, 1}})
-	for _ in 0 ..< 21845 {
+	for _ in 0 ..< 22000 {
 		append(&model.triangles, triangle)
 	}
 	meshes, problem := mesh_obj_triangles(model, false)
+	defer destroy_model_layers(meshes)
+	lit := meshes[.Lit]
 	testing.expect_value(t, problem, "")
-	testing.expect_value(t, len(meshes[.Lit].positions), 65535)
-	destroy_model_layers(meshes)
-
-	append(&model.triangles, triangle)
-	meshes, problem = mesh_obj_triangles(model, false)
-	testing.expect_value(t, problem, "more than 65536 vertices")
-	destroy_model_layers(meshes)
+	testing.expect_value(t, len(lit.indices), 0)
+	testing.expect_value(t, len(lit.positions), 66000)
+	testing.expect_value(t, len(lit.normals), len(lit.positions))
+	testing.expect_value(t, len(lit.colors), len(lit.positions))
+	testing.expect_value(t, len(lit.positions) % 3, 0)
+	testing.expect_value(t, model_mesh_triangle_count(lit), 22000)
+	testing.expect_value(t, model_layers_triangle_count(meshes), 22000)
+	vertex_count, triangle_count, indexed := model_mesh_upload_counts(lit)
+	testing.expect_value(t, vertex_count, 66000)
+	testing.expect_value(t, triangle_count, 22000)
+	testing.expect_value(t, indexed, false)
 }
 
 @(test)
@@ -254,7 +257,8 @@ test_an_obj_model_wins_over_a_voxel_model :: proc(t: ^testing.T) {
 	testing.expect_value(t, problem, "")
 	lit := mesh.body[.Lit]
 	testing.expect_value(t, len(lit.positions), 36)
-	testing.expect_value(t, len(lit.indices), 36)
+	testing.expect_value(t, len(lit.indices), 0)
+	testing.expect_value(t, model_mesh_triangle_count(lit), 12)
 	testing.expect(t, in_slice({128, 64, 255, 255}, lit.colors[:]), "the top face is the Kd colour")
 	destroy_machine_model_mesh(mesh)
 
