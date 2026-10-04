@@ -17,6 +17,16 @@ MAXIMUM_OPEN_CELL_BOXES :: 4
 // A pod's hatches and fixtures (work item 0198, Pod_Fixture).
 MAXIMUM_POD_FIXTURES :: 8
 MINIMUM_HATCH_HEIGHT :: 2
+// A machine's lamps (work item 0224, Machine_Light): never more than the
+// shaders' eight point light slots; a pod's cabin uses at most six, so the
+// arms' lamps outside still find slots.
+MAXIMUM_MACHINE_LIGHTS :: 8
+MINIMUM_MACHINE_LIGHT_RADIUS_CELLS :: 1
+MAXIMUM_MACHINE_LIGHT_RADIUS_CELLS :: 64
+// How far a model may leave its footprint's x and z and go below its
+// bottom, in cells: the exporter writes six decimals, and a bevel's
+// computed corner can land just outside. A lamp may sit as far outside.
+MODEL_FOOTPRINT_TOLERANCE_CELLS :: 0.02
 
 // Dense index into Machine_Registry.machines.
 Machine_Id :: distinct u16
@@ -202,6 +212,24 @@ Pod_Fixture_Definition :: struct {
 	rotation: int,
 }
 
+// A lamp as written in the file (work item 0224): position in cells of
+// the model's frame, color 0 to 255 per channel.
+Machine_Light_Definition :: struct {
+	position:     [3]f32,
+	color:        [3]int,
+	radius_cells: f32,
+}
+
+// A machine's lamp (work item 0224): the position in cells of the model's
+// frame (x and z centred on the unrotated footprint, y from its bottom, +x
+// the front: the OBJ's numbers), the colour 0 to 1 and the radius in
+// cells. machine_point_light puts it in the world.
+Machine_Light :: struct {
+	position:     [3]f32,
+	color:        [3]f32,
+	radius_cells: f32,
+}
+
 // As written in the file, before references are resolved.
 Machine_Definition :: struct {
 	id:                           string,
@@ -253,6 +281,7 @@ Machine_Definition :: struct {
 	motion:                       Motion_Definition,
 	open_cells:                   []Machine_Cell_Box_Definition,
 	fixtures:                     []Pod_Fixture_Definition,
+	lights:                       []Machine_Light_Definition,
 	stands_on_ground:             bool,
 	bare_ground_life_minutes:     int,
 	color:                        [3]int,
@@ -367,6 +396,11 @@ Machine :: struct {
 	fixtures:                    [MAXIMUM_POD_FIXTURES]Pod_Fixture,
 	fixture_boxes:               [MAXIMUM_POD_FIXTURES]Cell_Box,
 	fixture_count:               int,
+	// The lamps that light the models round the machine while its model
+	// works (work item 0224, presentation only: the simulation never
+	// reads them).
+	lights:                      [MAXIMUM_MACHINE_LIGHTS]Machine_Light,
+	light_count:                 int,
 	// Machines on bare ground (0201, machine_wear.odin): never refused for
 	// slope and never worn (poles, pipes, belts, the pod); the minutes of
 	// operation on bare ground before a breakdown, 0 for game.sjson's.
@@ -685,6 +719,9 @@ validate_machine_definition :: proc(definitions: []Machine_Definition, index: in
 	if problem := validate_open_cells(definition); problem != "" {
 		return problem
 	}
+	if problem := validate_machine_lights(definition); problem != "" {
+		return problem
+	}
 	if problem := validate_pod_cabin(definition, kind); problem != "" {
 		return problem
 	}
@@ -784,6 +821,7 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 	slot_count := fuel_slotted ? definition.fuel_slots : definition.slots
 	recipe_maker, _ := parse_named_enum(recipe_maker_names, definition.recipe_maker)
 	recipe_choice, _ := parse_named_enum(recipe_choice_names, definition.recipe_choice)
+	lights, light_count := resolve_machine_lights(definition.lights)
 	return Machine {
 		id = definition.id,
 		name_key = definition.name_key,
@@ -831,6 +869,8 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 		motion = resolve_machine_motion(definition.motion),
 		open_cells = resolve_open_cells(definition.open_cells),
 		open_cell_box_count = len(definition.open_cells),
+		lights = lights,
+		light_count = light_count,
 		stands_on_ground = definition.stands_on_ground,
 		bare_ground_life_minutes = definition.bare_ground_life_minutes,
 		color = {u8(clamp(definition.color[0], 0, 255)), u8(clamp(definition.color[1], 0, 255)), u8(clamp(definition.color[2], 0, 255))},
@@ -861,6 +901,51 @@ validate_open_cells :: proc(definition: Machine_Definition) -> string {
 		}
 	}
 	return ""
+}
+
+// A lamp inside the unrotated footprint in the model's frame (x and z
+// centred, y from the bottom), with MODEL_FOOTPRINT_TOLERANCE_CELLS of
+// slack on every side.
+machine_light_inside_footprint :: proc(position: [3]f32, footprint: Machine_Footprint_Definition) -> bool {
+	tolerance := f32(MODEL_FOOTPRINT_TOLERANCE_CELLS)
+	inside_x := abs(position.x) <= f32(footprint.width) / 2 + tolerance
+	inside_z := abs(position.z) <= f32(footprint.depth) / 2 + tolerance
+	inside_y := position.y >= -tolerance && position.y <= f32(footprint.height) + tolerance
+	return inside_x && inside_y && inside_z
+}
+
+// At most MAXIMUM_MACHINE_LIGHTS lamps, each inside the footprint, with a
+// radius of MINIMUM_MACHINE_LIGHT_RADIUS_CELLS to
+// MAXIMUM_MACHINE_LIGHT_RADIUS_CELLS and colour channels of 0 to 255.
+validate_machine_lights :: proc(definition: Machine_Definition) -> string {
+	if len(definition.lights) > MAXIMUM_MACHINE_LIGHTS {
+		return fmt.tprintf("machine %q has more than %d lights", definition.id, MAXIMUM_MACHINE_LIGHTS)
+	}
+	for light, index in definition.lights {
+		position := light.position
+		if !machine_light_inside_footprint(position, definition.footprint) {
+			return fmt.tprintf("machine %q light %d at [%.3f, %.3f, %.3f] is not inside the footprint", definition.id, index, position.x, position.y, position.z)
+		}
+		if !(light.radius_cells >= MINIMUM_MACHINE_LIGHT_RADIUS_CELLS && light.radius_cells <= MAXIMUM_MACHINE_LIGHT_RADIUS_CELLS) {
+			return fmt.tprintf("machine %q light %d has radius_cells %.3f, not %d to %d", definition.id, index, light.radius_cells, MINIMUM_MACHINE_LIGHT_RADIUS_CELLS, MAXIMUM_MACHINE_LIGHT_RADIUS_CELLS)
+		}
+		for channel in light.color {
+			if channel < 0 || channel > 255 {
+				return fmt.tprintf("machine %q light %d has a color channel outside 0 to 255", definition.id, index)
+			}
+		}
+	}
+	return ""
+}
+
+// Validated before (validate_machine_lights).
+resolve_machine_lights :: proc(definitions: []Machine_Light_Definition) -> (lights: [MAXIMUM_MACHINE_LIGHTS]Machine_Light, count: int) {
+	for definition in definitions[:min(len(definitions), MAXIMUM_MACHINE_LIGHTS)] {
+		color := [3]f32{f32(definition.color[0]), f32(definition.color[1]), f32(definition.color[2])} / 255
+		lights[count] = {position = definition.position, color = color, radius_cells = definition.radius_cells}
+		count += 1
+	}
+	return lights, count
 }
 
 // A pod's first open_cells box is its cabin, where new players spawn

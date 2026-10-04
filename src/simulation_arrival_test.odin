@@ -347,3 +347,32 @@ test_the_arrivals_presentation_leaves_the_hash :: proc(t: ^testing.T) {
 		}
 	}
 }
+
+// Work item 0224: gathering the pod's lamps each tick (presentation only)
+// leaves the hash equal to an untouched session's.
+@(test)
+test_the_machine_lights_leave_the_hash :: proc(t: ^testing.T) {
+	config := arrival_test_config()
+	content := make_field_test_game_content()
+	pod_machine := find_machine_of_kind(content.machines, .Pod)
+	content.machines.machines[pod_machine].lights[0] = {position = {0, 5.8, 0}, color = {1, 0.6, 0.15}, radius_cells = 6}
+	content.machines.machines[pod_machine].lights[1] = {position = {3, 2, 0}, color = {0.77, 0.89, 1}, radius_cells = 2}
+	content.machines.machines[pod_machine].light_count = 2
+	watched, watched_content := run_arrival_test_world(config, content, 0)
+	defer end_session(watched)
+	plain, plain_content := run_arrival_test_world(config, content, 0)
+	defer end_session(plain)
+	for tick in 1 ..= 700 {
+		tick_field_test_simulation(&watched.simulation, watched_content, {})
+		tick_field_test_simulation(&plain.simulation, plain_content, {})
+		state := &watched.simulation
+		lights := make([dynamic]Point_Light, context.temp_allocator)
+		gather_machine_lights(&lights, &state.world.entities, watched_content.machines)
+		eye := world_position_to_metres(field_player_eye(state.players[0].field, watched_content.field.tuning))
+		nearest_point_lights(lights[:], eye)
+		if tick == 300 || tick == 540 || tick == 700 {
+			testing.expectf(t, len(lights) == 2, "tick %d: %d lights gathered", tick, len(lights))
+			testing.expectf(t, lockstep_state_hash(state) == lockstep_state_hash(&plain.simulation), "the hashes part at tick %d", tick)
+		}
+	}
+}

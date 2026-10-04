@@ -1,6 +1,6 @@
 # 0224: Point lights on machine models and the pod's lamps
 
-Status: implementing (2026-10-04, the specification approved the same day with the decisions below; the implementer works in `.claude/worktrees/0224` on `item/0224` from `main`, from the user's round one notes on the pod's lab model, "We need more orange and blacks, maybe some point lights to give a moody feeling", and the answer to "Can't we add point lights?": "Yes add point light, and then add it to the pod interior so we can see the result"; lands before 0221 so the lit cabin can be shown on the lab's model through the private data copy, 0221 is rebased onto it)
+Status: verified (2026-10-04, the specification approved the same day with the decisions below; the implementer works in `.claude/worktrees/0224` on `item/0224` from `main`, from the user's round one notes on the pod's lab model, "We need more orange and blacks, maybe some point lights to give a moody feeling", and the answer to "Can't we add point lights?": "Yes add point light, and then add it to the pod interior so we can see the result"; lands before 0221 so the lit cabin can be shown on the lab's model through the private data copy, 0221 is rebased onto it)
 
 ## Goal
 

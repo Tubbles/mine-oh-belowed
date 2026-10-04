@@ -550,3 +550,70 @@ test_an_old_pod_is_replaced_at_load :: proc(t: ^testing.T) {
 	testing.expectf(t, cell.y == 0 && slice.contains(test_pod_box_cells(machine, 0), cell), "the player stands in cell %v", cell)
 	testing.expect_value(t, len(restored.sealed_rooms), 1)
 }
+
+// Work item 0224: the pod always counts as working for its model (its
+// emissive materials and its lamps), a hatch while open, the oxygen
+// generator while it supplies a room.
+@(test)
+test_the_pod_counts_as_working_for_its_model :: proc(t: ^testing.T) {
+	machines := make_test_machines()
+	entities: Entities
+	defer destroy_entities(&entities)
+	frame, pod := place_test_pod(&entities, machines)
+	working := proc(entities: ^Entities, machines: Machine_Registry, handle: Entity_Handle) -> bool {
+		foundation := pool_get(&entities.foundations, handle)^
+		return foundation_model_working(entities, foundation, machines.machines[foundation.machine])
+	}
+	pod_handle := entity_at(&entities, pod_origin(pod), frame.id)
+	generator := test_pod_fixture(&entities, frame, pod, TEST_GENERATOR)
+	outer := test_pod_fixture(&entities, frame, pod, TEST_OUTER_HATCH)
+	inner := test_pod_fixture(&entities, frame, pod, TEST_INNER_HATCH)
+	testing.expect(t, working(&entities, machines, pod_handle))
+	testing.expect(t, working(&entities, machines, generator))
+	testing.expect(t, !working(&entities, machines, outer))
+	testing.expect(t, !working(&entities, machines, inner))
+	testing.expect(t, toggle_hatch(&entities, machines, outer, 1, nil))
+	testing.expect(t, working(&entities, machines, outer))
+	testing.expect(t, toggle_hatch(&entities, machines, inner, 2, nil))
+	testing.expect(t, !working(&entities, machines, generator))
+	testing.expect(t, working(&entities, machines, pod_handle))
+}
+
+// Work item 0224: the lamps of the machines whose model works, in the
+// world's metres on the pod's 500 mm frame.
+@(test)
+test_machine_lights_shine_while_their_model_works :: proc(t: ^testing.T) {
+	machines := make_test_machines()
+	pod_machine := find_machine_of_kind(machines, .Pod)
+	generator_machine := find_machine_of_kind(machines, .Oxygen_Generator)
+	machines.machines[pod_machine].lights[0] = {position = {0, 5.8, 0}, color = {1, 0.6, 0.15}, radius_cells = 6}
+	machines.machines[pod_machine].lights[1] = {position = {3, 2, 0}, color = {0.77, 0.89, 1}, radius_cells = 2}
+	machines.machines[pod_machine].light_count = 2
+	machines.machines[generator_machine].lights[0] = {position = {0, 1, 0}, color = {0.77, 0.89, 1}, radius_cells = 3}
+	machines.machines[generator_machine].light_count = 1
+	entities: Entities
+	defer destroy_entities(&entities)
+	frame, pod := place_test_pod(&entities, machines)
+	lights := make([dynamic]Point_Light, context.temp_allocator)
+	gather_machine_lights(&lights, &entities, machines)
+	testing.expect_value(t, len(lights), 3)
+	radii := [3]f32{6 * 0.5, 2 * 0.5, 3 * 0.5}
+	for radius in radii {
+		found := false
+		for light in lights {
+			found ||= abs(light.radius - radius) < 1e-5
+		}
+		testing.expectf(t, found, "no light of radius %v in %v", radius, lights[:])
+	}
+	pod_common := entity_common(&entities, entity_at(&entities, pod_origin(pod), frame.id))^
+	expected := machine_point_light(pod.lights[0], entity_body_matrix(&entities, pod_common), 500)
+	testing.expect(t, slice.contains(lights[:], expected), "the pod's first lamp is gathered where its model is drawn")
+
+	toggle_hatch(&entities, machines, test_pod_fixture(&entities, frame, pod, TEST_OUTER_HATCH), 1, nil)
+	toggle_hatch(&entities, machines, test_pod_fixture(&entities, frame, pod, TEST_INNER_HATCH), 2, nil)
+	clear(&lights)
+	gather_machine_lights(&lights, &entities, machines)
+	testing.expect_value(t, len(lights), 2)
+	testing.expect_value(t, entity_frame_pitch_millimetres(&entities, frame.id), 500)
+	testing.expect_value(t, entity_frame_pitch_millimetres(&entities, BLOCK_FRAME), 1000)
+}

@@ -2,13 +2,15 @@ package game
 
 // Point lights of working parts (work item 0175, DESIGN.md: point lights
 // come on top for working parts and never replace the field's light).
-// Each frame the renderer gathers the lights of the parts that work, keeps
-// the MAXIMUM_POINT_LIGHTS nearest the camera and hands them to the field
-// shader (set_field_point_lights), which adds a soft term falling off to
-// zero at each light's radius. Positions and radii are in the world's
-// metres. Pure; the shader upload is in render_field.odin.
+// Each frame the renderer gathers the lights of the parts that work (the
+// arms' lamps and, since work item 0224, the lamps a machine's record
+// names), keeps the MAXIMUM_POINT_LIGHTS nearest the camera and hands them
+// to the field shader and the model shader (set_field_point_lights,
+// set_model_point_lights), which add a soft term falling off to zero at
+// each light's radius. Positions and radii are in the world's metres.
+// Pure; the shader uploads are in render_field.odin and render_models.odin.
 
-// Matches the array size in data/shaders/field.fs.
+// Matches the array size in data/shaders/field.fs and model.fs.
 MAXIMUM_POINT_LIGHTS :: 8
 // The arm's work lamp: a warm light that reaches a few cells round the
 // gripper.
@@ -43,4 +45,25 @@ nearest_point_lights :: proc(lights: []Point_Light, camera: [3]f32) -> (nearest:
 		count = min(count + 1, MAXIMUM_POINT_LIGHTS)
 	}
 	return nearest, count
+}
+
+// The lights packed for the shaders' uniforms: the position with the
+// radius in w, the colour with alpha 1.
+point_light_uniform_values :: proc(lights: [MAXIMUM_POINT_LIGHTS]Point_Light) -> (positions, colors: [MAXIMUM_POINT_LIGHTS][4]f32) {
+	for light, index in lights {
+		positions[index] = {light.position.x, light.position.y, light.position.z, light.radius}
+		colors[index] = {light.color.r, light.color.g, light.color.b, 1}
+	}
+	return positions, colors
+}
+
+// A machine's lamp (0224) in the world: the body matrix (entity_body_matrix)
+// scales cells to metres and turns the model with its machine, so the
+// position turns with it; the radius is a length and takes the pitch alone.
+machine_point_light :: proc(light: Machine_Light, body: matrix[4, 4]f32, pitch_millimetres: int) -> Point_Light {
+	return {
+		position = transform_point(body, light.position),
+		color    = light.color,
+		radius   = light.radius_cells * f32(f64(pitch_millimetres) / MILLIMETRES_PER_METRE),
+	}
 }

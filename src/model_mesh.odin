@@ -42,8 +42,11 @@ model_face_shades := [Direction]f32 {
 }
 
 // u16 indices, so at most MESH_PART_VERTEX_LIMIT vertices.
+// normals holds one unit normal per position, its face's (0224: the model
+// shader's point lights).
 Model_Mesh :: struct {
 	positions: [dynamic][3]f32,
+	normals:   [dynamic][3]f32,
 	colors:    [dynamic][4]u8,
 	indices:   [dynamic]u16,
 }
@@ -142,10 +145,16 @@ shade_colour :: proc(colour: [4]u8, shade: f32) -> [4]u8 {
 	return {u8(f32(colour.r) * shade + 0.5), u8(f32(colour.g) * shade + 0.5), u8(f32(colour.b) * shade + 0.5), 255}
 }
 
-append_model_quad :: proc(mesh: ^Model_Mesh, corners: [4][3]f32, colour: [4]u8, positive: bool) {
+direction_unit_vector :: proc(direction: Direction) -> [3]f32 {
+	offset := direction_offsets[direction]
+	return {f32(offset.x), f32(offset.y), f32(offset.z)}
+}
+
+append_model_quad :: proc(mesh: ^Model_Mesh, corners: [4][3]f32, colour: [4]u8, positive: bool, normal: [3]f32) {
 	base := u16(len(mesh.positions))
 	for corner in corners {
 		append(&mesh.positions, corner)
+		append(&mesh.normals, normal)
 		append(&mesh.colors, colour)
 	}
 	order := positive ? positive_quad_indices : negative_quad_indices
@@ -183,8 +192,10 @@ mesh_model_slice :: proc(meshes: ^Model_Layers, model: model_vox.Voxel_Model, fo
 		if len(mesh.positions) + QUAD_VERTEX_COUNT > MESH_PART_VERTEX_LIMIT {
 			return fmt.tprintf("more than %d vertices", MESH_PART_VERTEX_LIMIT)
 		}
+		// The scale is positive and per axis, so the face direction stays
+		// the normal after place_model_corners.
 		corners := place_model_corners(quad_corners(direction, slice, rectangle.rectangle), scale, footprint)
-		append_model_quad(mesh, corners, model_face_colour(model, rectangle.index, direction), direction_is_positive(direction))
+		append_model_quad(mesh, corners, model_face_colour(model, rectangle.index, direction), direction_is_positive(direction), direction_unit_vector(direction))
 	}
 	return ""
 }
@@ -192,6 +203,7 @@ mesh_model_slice :: proc(meshes: ^Model_Layers, model: model_vox.Voxel_Model, fo
 make_model_mesh :: proc(allocator := context.allocator) -> Model_Mesh {
 	return Model_Mesh {
 		positions = make([dynamic][3]f32, allocator),
+		normals = make([dynamic][3]f32, allocator),
 		colors = make([dynamic][4]u8, allocator),
 		indices = make([dynamic]u16, allocator),
 	}
@@ -218,6 +230,7 @@ mesh_voxel_model :: proc(model: model_vox.Voxel_Model, footprint: [3]i32, alloca
 
 destroy_model_mesh :: proc(mesh: Model_Mesh) {
 	delete(mesh.positions)
+	delete(mesh.normals)
 	delete(mesh.colors)
 	delete(mesh.indices)
 }

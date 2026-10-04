@@ -90,6 +90,11 @@ class RecordsTest(unittest.TestCase):
         self.assertEqual(records.machine_for_model(MACHINES, "arm").id, "burner_inserter")
         self.assertEqual(records.footprint_box(furnace), ((-5.0, -5.0, 0.0), (5.0, 5.0, 12.0)))
 
+    def test_a_record_with_lights_reads(self):
+        record = {"id": "room", "kind": "pod", "model": "room", "footprint": {"width": 3, "depth": 4, "height": 2}}
+        lit = dict(record, lights=[{"position": [1.0, 2.0, 0.0], "color": [255, 180, 90], "radius_cells": 3}])
+        self.assertEqual(records.read_machine(lit), records.read_machine(record))
+
 
 if __name__ == "__main__":
     unittest.main()

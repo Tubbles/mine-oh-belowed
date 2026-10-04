@@ -178,7 +178,9 @@ field_sky_camera :: proc(camera: rl.Camera3D, up: [3]f32) -> rl.Camera3D {
 	return rl.Camera3D{position = {}, target = look, up = sky_up, fovy = camera.fovy, projection = camera.projection}
 }
 
-// The working arms' lights nearest the camera, before draw_field.
+// The working arms' and machines' lights nearest the camera, before
+// draw_field, to the field shader and the model shader. During the fall
+// the machines are not drawn, so their lights do not shine.
 set_field_scene_point_lights :: proc(scene: Field_Scene, camera: rl.Camera3D) {
 	lights := make([dynamic]Point_Light, context.temp_allocator)
 	entities := &scene.state.world.entities
@@ -191,8 +193,12 @@ set_field_scene_point_lights :: proc(scene: Field_Scene, camera: rl.Camera3D) {
 			append(&lights, light)
 		}
 	}
+	if !scene.hide_frames {
+		gather_machine_lights(&lights, &scene.state.world.entities, scene.content.machines)
+	}
 	nearest, _ := nearest_point_lights(lights[:], camera.position)
 	set_field_point_lights(scene.renderer, nearest)
+	set_model_point_lights(scene.models, nearest)
 }
 
 draw_field_torches :: proc(torches: []Field_Torch, spacing_millimetres: int) {

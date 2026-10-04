@@ -9,10 +9,16 @@ import "platform"
 // emissive mesh (model_mesh.odin builds them), uploaded when the renderer
 // starts, after a content reload and when a model file changes, and drawn
 // per entity with the entity's transform in place of the coloured box.
-// raylib's default material multiplies the vertex colours by its diffuse
-// colour, which carries the light tint for the lit meshes and the glow
-// brightness for the emissive ones (model_motion.odin), so no shader of
-// our own is needed.
+// The material's diffuse colour multiplies the vertex colours; it carries
+// the light tint for the lit meshes and the glow brightness for the
+// emissive ones (model_motion.odin). The lit layer draws with the model
+// shader (data/shaders/model.vs, model.fs, work item 0224), which adds the
+// point lights (set_model_point_lights); the emissive layer draws with
+// raylib's default material, so it never takes them. A model shader that
+// fails to load leaves the lit layer on the default material too.
+
+MODEL_VERTEX_SHADER_PATH :: "shaders/model.vs"
+MODEL_FRAGMENT_SHADER_PATH :: "shaders/model.fs"
 
 Uploaded_Layers :: [Model_Layer]rl.Mesh
 
@@ -24,9 +30,16 @@ Uploaded_Machine_Model :: struct {
 }
 
 Model_Renderer :: struct {
-	material: rl.Material,
+	// The lit layer's: the model shader, or raylib's default when it did
+	// not load.
+	material:              rl.Material,
+	// The emissive layer's: raylib's default.
+	emissive_material:     rl.Material,
+	// The model shader's point light uniforms (set_model_point_lights).
+	point_light_locations: [2]i32,
+	point_lights_ready:    bool,
 	// By Machine_Id; no vertices in the body for a machine drawn as a box.
-	models:   []Uploaded_Machine_Model,
+	models:                []Uploaded_Machine_Model,
 }
 
 // What every model drawn this frame shares: the world for the light, the
@@ -94,6 +107,7 @@ upload_model_mesh :: proc(mesh: Model_Mesh) -> rl.Mesh {
 		vertexCount   = i32(len(mesh.positions)),
 		triangleCount = i32(len(mesh.indices) / 3),
 		vertices      = cast([^]f32)clone_for_raylib(mesh.positions[:]),
+		normals       = cast([^]f32)clone_for_raylib(mesh.normals[:]),
 		colors        = cast([^]u8)clone_for_raylib(mesh.colors[:]),
 		indices       = clone_for_raylib(mesh.indices[:]),
 	}
@@ -161,17 +175,54 @@ use_machine_models :: proc(renderer: ^Model_Renderer, machines: Machine_Registry
 	}
 }
 
+// The lit layer takes the model shader; when it does not load, the
+// default material stays and the models draw without point lights.
+use_model_shader :: proc(renderer: ^Model_Renderer, data_directory: string) {
+	shader, ok := load_shader_pair(data_directory, MODEL_VERTEX_SHADER_PATH, MODEL_FRAGMENT_SHADER_PATH, "model")
+	if !ok {
+		platform.log_printf("models: the model shader did not load; models draw without point lights")
+		return
+	}
+	renderer.material.shader = shader
+	renderer.point_light_locations = {rl.GetShaderLocation(shader, "point_light_positions"), rl.GetShaderLocation(shader, "point_light_colors")}
+	renderer.point_lights_ready = true
+}
+
 // Needs the window.
 init_model_renderer :: proc(machines: Machine_Registry, data_directory: string) -> (renderer: Model_Renderer) {
 	renderer.material = rl.LoadMaterialDefault()
+	renderer.emissive_material = rl.LoadMaterialDefault()
+	use_model_shader(&renderer, data_directory)
 	use_machine_models(&renderer, machines, data_directory)
 	return renderer
 }
 
-// UnloadMaterial keeps raylib's default shader and texture.
+// UnloadMaterial unloads the model shader with the lit material and keeps
+// raylib's default shader and texture.
 destroy_model_renderer :: proc(renderer: ^Model_Renderer) {
 	unload_model_meshes(renderer)
 	rl.UnloadMaterial(renderer.material)
+	rl.UnloadMaterial(renderer.emissive_material)
+}
+
+// The material a layer draws with: the emissive layer never takes the
+// point lights.
+model_layer_material :: proc(renderer: Model_Renderer, layer: Model_Layer) -> rl.Material {
+	if layer == .Emissive {
+		return renderer.emissive_material
+	}
+	return renderer.material
+}
+
+// Point lights (0224): the same nearest lights the field shader takes,
+// uploaded before the models draw. Nothing without the model shader.
+set_model_point_lights :: proc(renderer: Model_Renderer, lights: [MAXIMUM_POINT_LIGHTS]Point_Light) {
+	if !renderer.point_lights_ready {
+		return
+	}
+	positions, colors := point_light_uniform_values(lights)
+	rl.SetShaderValueV(renderer.material.shader, renderer.point_light_locations[0], &positions, .VEC4, MAXIMUM_POINT_LIGHTS)
+	rl.SetShaderValueV(renderer.material.shader, renderer.point_light_locations[1], &colors, .VEC4, MAXIMUM_POINT_LIGHTS)
 }
 
 brightness_color :: proc(brightness: [3]f32) -> rl.Color {
@@ -202,8 +253,9 @@ ghost_layer_colors :: proc(tint: rl.Color) -> [Model_Layer]rl.Color {
 draw_model_layers_colored :: proc(renderer: Model_Renderer, layers: Uploaded_Layers, transform: matrix[4, 4]f32, colors: [Model_Layer]rl.Color) {
 	for mesh, layer in layers {
 		if mesh.vertexCount > 0 {
-			renderer.material.maps[rl.MaterialMapIndex.ALBEDO].color = colors[layer]
-			rl.DrawMesh(mesh, renderer.material, cast(rl.Matrix)transform)
+			material := model_layer_material(renderer, layer)
+			material.maps[rl.MaterialMapIndex.ALBEDO].color = colors[layer]
+			rl.DrawMesh(mesh, material, cast(rl.Matrix)transform)
 		}
 	}
 }
@@ -248,6 +300,12 @@ draw_frame_ghost_model :: proc(renderer: Model_Renderer, machines: Machine_Regis
 	return true
 }
 
+// The model's body on its frame, in the world's metres: where the model is
+// drawn and where its lamps sit (append_machine_lights).
+entity_body_matrix :: proc(entities: ^Entities, common: Entity_Common) -> matrix[4, 4]f32 {
+	return entity_frame_matrix(entities, common.frame) * model_transform(common.origin, common.size, common.rotation)
+}
+
 // A broken machine's model (0201) is drawn this much of its light.
 BROKEN_MODEL_TINT :: 0.35
 
@@ -259,7 +317,7 @@ draw_posed_model :: proc(renderer: Model_Renderer, model: Uploaded_Machine_Model
 		light_tint *= BROKEN_MODEL_TINT
 	}
 	glow := emissive_brightness(machine.motion.kind, pose.phase, pose.working, light_tint)
-	body := entity_frame_matrix(&frame.world.entities, common.frame) * model_transform(common.origin, common.size, common.rotation)
+	body := entity_body_matrix(&frame.world.entities, common)
 	draw_model_layers(renderer, model.body, body, light_tint, glow)
 	part := body * motion_transform(machine.motion, machine.footprint, pose.phase)
 	draw_model_layers(renderer, model.part, part, light_tint, glow)

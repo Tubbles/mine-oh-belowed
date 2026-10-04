@@ -53,9 +53,29 @@ test_obj_triangle :: proc(corners: [3][3]f32, part := false) -> model_obj.Obj_Tr
 	return {corners = corners, colour = {100, 100, 100}, part = part}
 }
 
-direction_unit_vector :: proc(direction: Direction) -> [3]f32 {
-	offset := direction_offsets[direction]
-	return {f32(offset.x), f32(offset.y), f32(offset.z)}
+// Work item 0224: each vertex carries its triangle's normal, the file's
+// when it gave one, else the winding's.
+@(test)
+test_the_triangle_mesher_gives_each_vertex_its_triangles_normal :: proc(t: ^testing.T) {
+	model: model_obj.Obj_Model
+	model.triangles = make([dynamic]model_obj.Obj_Triangle, context.temp_allocator)
+	with_normal := test_obj_triangle({{0, 0, 0}, {0, 0, 1}, {1, 0, 0}})
+	with_normal.normal = {0, 1, 0}
+	without := test_obj_triangle({{0, 0, 0}, {0, 1, 0}, {0, 0, 1}})
+	append(&model.triangles, with_normal, without)
+	meshes, problem := mesh_obj_triangles(model, false, context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	mesh := meshes[.Lit]
+	testing.expect_value(t, len(mesh.positions), 6)
+	testing.expect_value(t, len(mesh.normals), len(mesh.positions))
+	if len(mesh.normals) == 6 {
+		for index in 0 ..< 3 {
+			testing.expect_value(t, mesh.normals[index], [3]f32{0, 1, 0})
+		}
+		for index in 3 ..< 6 {
+			testing.expect_value(t, mesh.normals[index], triangle_winding_normal(without.corners))
+		}
+	}
 }
 
 @(test)

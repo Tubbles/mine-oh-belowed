@@ -21,10 +21,6 @@ import "model_obj"
 // forward and right would pass 1: the clamp.
 MODEL_SHADE_BASE :: 0.775
 MODEL_SHADE_GRADIENT :: [3]f32{0.03, 0.225, 0.085}
-// How far a model may leave its footprint's x and z and go below its
-// bottom, in cells: the exporter writes six decimals, and a bevel's
-// computed corner can land just outside.
-MODEL_FOOTPRINT_TOLERANCE_CELLS :: 0.02
 
 // For a unit normal.
 model_normal_shade :: proc(normal: [3]f32) -> f32 {
@@ -56,10 +52,11 @@ obj_triangle_colour :: proc(triangle: model_obj.Obj_Triangle) -> [4]u8 {
 	return shade_colour(colour, model_normal_shade(obj_triangle_normal(triangle)))
 }
 
-append_model_triangle :: proc(mesh: ^Model_Mesh, corners: [3][3]f32, colour: [4]u8) {
+append_model_triangle :: proc(mesh: ^Model_Mesh, corners: [3][3]f32, colour: [4]u8, normal: [3]f32) {
 	base := u16(len(mesh.positions))
 	for corner, index in corners {
 		append(&mesh.positions, corner)
+		append(&mesh.normals, normal)
 		append(&mesh.colors, colour)
 		append(&mesh.indices, base + u16(index))
 	}
@@ -80,7 +77,7 @@ mesh_obj_triangles :: proc(model: model_obj.Obj_Model, part: bool, allocator := 
 		if len(mesh.positions) + 3 > MESH_PART_VERTEX_LIMIT {
 			return meshes, fmt.tprintf("more than %d vertices", MESH_PART_VERTEX_LIMIT)
 		}
-		append_model_triangle(mesh, triangle.corners, obj_triangle_colour(triangle))
+		append_model_triangle(mesh, triangle.corners, obj_triangle_colour(triangle), obj_triangle_normal(triangle))
 	}
 	return meshes, ""
 }

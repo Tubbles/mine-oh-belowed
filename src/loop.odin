@@ -1158,6 +1158,9 @@ draw_session_world :: proc(state: ^Frame_State, viewport: ^Viewport, content: Si
 	draw_sky(&state.presentation.renderer.sky, camera, sky, memory.particle_memory.satellite)
 	draw_chunks(&state.presentation.renderer, camera)
 	frame := Model_Frame{world = world, tick = session.simulation.tick, alpha = alpha, tick_rate = tick_rate, day_factor = day_factor(sky.blend), sky_tint = color_to_vector3(sky.colors.sun_tint)}
+	// The block world takes no point lights; the model renderer lives for
+	// the process, so a field session's lights are cleared (0224).
+	set_model_point_lights(state.presentation.model_renderer, {})
 	draw_entities(world, content.machines, state.presentation.model_renderer, content.items, frame)
 	if state.settings.bottleneck_overlay {
 		draw_machine_markers(world, content.machines, state.presentation.model_renderer, camera.position, bottleneck_marker_colors(ui_theme(&viewport.interaction.ui), state.settings.palette))

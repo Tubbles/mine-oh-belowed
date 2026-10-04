@@ -292,11 +292,7 @@ destroy_field_renderer :: proc(renderer: ^Field_Renderer) {
 // working parts nearest the camera, uploaded before draw_field each frame.
 // Unused slots go up with radius 0, which the shader skips.
 set_field_point_lights :: proc(renderer: ^Field_Renderer, lights: [MAXIMUM_POINT_LIGHTS]Point_Light) {
-	positions, colors: [MAXIMUM_POINT_LIGHTS][4]f32
-	for light, index in lights {
-		positions[index] = {light.position.x, light.position.y, light.position.z, light.radius}
-		colors[index] = {light.color.r, light.color.g, light.color.b, 1}
-	}
+	positions, colors := point_light_uniform_values(lights)
 	shader := renderer.material.shader
 	rl.SetShaderValueV(shader, renderer.point_light_locations[0], &positions, .VEC4, MAXIMUM_POINT_LIGHTS)
 	rl.SetShaderValueV(shader, renderer.point_light_locations[1], &colors, .VEC4, MAXIMUM_POINT_LIGHTS)

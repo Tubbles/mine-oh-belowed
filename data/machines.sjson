@@ -79,6 +79,16 @@
 // nothing is placed on them, but they are not solid. The pod opens its
 // cabin and its airlock but the bed; the player stands on the crater's
 // floor under them.
+// lights (optional, work item 0224, at most 8) lists {position = [x, y,
+// z], color = [r, g, b], radius_cells}: a lamp at position in cells of
+// the model's frame (x and z centred on the unrotated footprint, y from
+// its bottom, +x the front: the OBJ's numbers), inside the footprint with
+// 0.02 cells of slack, color 0 to 255 per channel, radius_cells 1 to 64.
+// Each shines a point light in a field session while the machine's model
+// works (the same flag that lights its emissive materials; a pod always
+// works); the block world takes no point lights. Presentation only. A
+// machine whose model draw_entities does not draw (fluid and power
+// machines, inserters, trees) may list lamps, which then do nothing.
 // The capsule (work item 0013) stands on the landing pad from the start:
 // it has no item, cannot be picked up, and holds 8 slots for quest
 // rewards and deliveries.
@@ -1099,6 +1109,11 @@ machines = [
 			{machine = "crafting_bench", cell = {x = 3, y = 0, z = 1}, rotation = 1}
 			{machine = "oxygen_generator", cell = {x = 5, y = 0, z = 1}, rotation = 1}
 		]
+		// The cabin's lamps (0224), filled from the lab model's emissive
+		// patches once it is integrated (0221): {position = [x, y, z],
+		// color = [r, g, b], radius_cells = r} each, at most six so the
+		// arms outside find slots.
+		lights = []
 	}
 	{
 		id = "pine_tree"

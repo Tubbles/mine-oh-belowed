@@ -210,13 +210,13 @@ Presentation turns the world, the tick and the render time into pixels and sound
   - `render_water.odin`: `Water_Renderer`, underwater fog; the frustum test is the `render_frustum` package (Packages).
   - `render_day.odin`, `render_sky.odin`: `Day_Sky`, sun and moon; the sky dome, stars, the survey satellite.
   - `weather.odin`, `render_weather.odin`: `weather_at`, the hourly schedule; `Weather_Look`, rain, snow, clouds.
-  - `render_entities.odin`, `render_models.odin`: `draw_entities` over the pools, bottleneck markers; `Model_Renderer`, posed and ghost models.
+  - `render_entities.odin`, `render_models.odin`: `draw_entities` over the pools, bottleneck markers, the models' working procedures (`foundation_model_working` and the others) and `gather_machine_lights` (0224); `Model_Renderer`, posed and ghost models, the model shader for the lit layer (0224).
   - `render_frames.odin`: the frames' placeholder boxes per occupied cell and the placement ghost (0174), `frame_render_matrix`.
   - `model_mesh.odin`, `model_motion.odin`: the voxel mesher over the `model_vox` package's parser (Packages) and the choice of an .obj over a .vox; `Machine_Motion` and part transforms.
   - `model_triangle_mesh.odin`: the OBJ mesher over the `model_obj` package's reader (Packages): flat shade, footprint check.
   - `model_check.odin`: the workbench's checks (0207): budget, sweep, arm clearance, open cells.
   - `model_arm.odin`, `render_arm.odin`: the inserter's arm (0175): its part files, `arm_pose_at` from the cycle, the joint transforms; its draw and its lamp's light.
-  - `render_point_lights.odin`: `Point_Light`, the nearest working lights for the field shader (0175).
+  - `render_point_lights.odin`: `Point_Light`, the nearest working lights for the field shader and the model shader (0175), machine lights in the world and the uniform packing (0224).
   - `render_belts.odin`, `render_fluids.odin`, `render_power.odin`, `render_loose_items.odin`: belts and lane items; pipes and ports; poles and wires; loose stacks.
   - `render_belt_runs.odin`: belt and pipe runs swept along their polylines, their items and the belt poles (0176), `draw_belt_runs`, `draw_belt_run_ghost`.
   - `render_icons.odin`: `Item_Atlas` for items and UI icons, item billboards.

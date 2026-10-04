@@ -47,6 +47,15 @@ entity_frame_matrix :: proc(entities: ^Entities, frame: Frame_Id) -> matrix[4, 4
 	return 1
 }
 
+// The pitch of an entity's frame, the block frame's when the frame is
+// gone, as entity_frame_matrix's identity.
+entity_frame_pitch_millimetres :: proc(entities: ^Entities, frame: Frame_Id) -> int {
+	if record, found := find_frame(&entities.frames, frame); found {
+		return record.pitch_millimetres
+	}
+	return BLOCK_FRAME_PITCH_MILLIMETRES
+}
+
 draw_frame_cell :: proc(cell: World_Coordinate, color: rl.Color) {
 	centre := [3]f32{f32(cell.x) + 0.5, f32(cell.y) + 0.5, f32(cell.z) + 0.5}
 	rl.DrawCubeV(centre, FRAME_CELL_FILL, color)

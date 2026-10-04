@@ -37,6 +37,38 @@ test_a_single_voxel_has_six_faces :: proc(t: ^testing.T) {
 	testing.expect(t, in_slice([4]u8{255, 255, 255, 255}, mesh.colors[:]))
 }
 
+// Work item 0224: every vertex carries its face's direction, the normal
+// the model shader's point lights take.
+@(test)
+test_the_voxel_mesher_gives_each_face_its_direction :: proc(t: ^testing.T) {
+	filled := [?][3]i32{{0, 0, 0}}
+	model := make_test_voxel_model({1, 1, 1}, filled[:])
+	defer delete(model.cells)
+	meshes, problem := mesh_voxel_model(model, {1, 1, 1})
+	defer destroy_model_layers(meshes)
+	mesh := meshes[.Lit]
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, len(mesh.normals), 24)
+	for direction in Direction {
+		count := 0
+		for normal in mesh.normals {
+			if normal == direction_unit_vector(direction) {
+				count += 1
+			}
+		}
+		testing.expectf(t, count == 4, "%v: %d vertices", direction, count)
+	}
+	for first := 0; first + 2 < len(mesh.indices); first += 3 {
+		corners := [3][3]f32{mesh.positions[mesh.indices[first]], mesh.positions[mesh.indices[first + 1]], mesh.positions[mesh.indices[first + 2]]}
+		winding := triangle_winding_normal(corners)
+		for corner in 0 ..< 3 {
+			normal := mesh.normals[mesh.indices[first + corner]]
+			difference := winding - normal
+			testing.expectf(t, abs(difference.x) + abs(difference.y) + abs(difference.z) < 1e-5, "triangle %d: winding %v, vertex normal %v", first / 3, winding, normal)
+		}
+	}
+}
+
 in_slice :: proc(value: [4]u8, values: [][4]u8) -> bool {
 	for candidate in values {
 		if candidate == value {

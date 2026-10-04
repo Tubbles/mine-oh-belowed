@@ -7,8 +7,10 @@ import "core:testing"
 // and over the shipped models. The meshes are in the temp allocator.
 
 append_test_quad :: proc(mesh: ^Model_Mesh, corners: [4][3]f32) {
-	append_model_triangle(mesh, {corners[0], corners[1], corners[2]}, {255, 255, 255, 255})
-	append_model_triangle(mesh, {corners[0], corners[2], corners[3]}, {255, 255, 255, 255})
+	first := [3][3]f32{corners[0], corners[1], corners[2]}
+	second := [3][3]f32{corners[0], corners[2], corners[3]}
+	append_model_triangle(mesh, first, {255, 255, 255, 255}, triangle_winding_normal(first))
+	append_model_triangle(mesh, second, {255, 255, 255, 255}, triangle_winding_normal(second))
 }
 
 empty_test_layers :: proc() -> (layers: Model_Layers) {
@@ -36,7 +38,8 @@ box_layers :: proc(minimum, maximum: [3]f32) -> Model_Layers {
 triangles_layers :: proc(count: int) -> Model_Layers {
 	layers := empty_test_layers()
 	for _ in 0 ..< count {
-		append_model_triangle(&layers[.Lit], {{0, 0, 0}, {0.1, 0, 0}, {0, 0.1, 0}}, {255, 255, 255, 255})
+		corners := [3][3]f32{{0, 0, 0}, {0.1, 0, 0}, {0, 0.1, 0}}
+		append_model_triangle(&layers[.Lit], corners, {255, 255, 255, 255}, triangle_winding_normal(corners))
 	}
 	return layers
 }
@@ -147,7 +150,8 @@ test_a_triangle_inside_an_open_cell_is_reported :: proc(t: ^testing.T) {
 	empty := empty_test_layers()
 	testing.expect_value(t, len(model_open_cell_problems(boxes, footprint, box_layers({-1, 0, -1}, {0, 2, 1}), empty, "open cells box")), 0)
 	small := empty_test_layers()
-	append_model_triangle(&small[.Lit], {{0.4, 1, 0}, {0.6, 1, 0}, {0.5, 1.1, 0}}, {255, 255, 255, 255})
+	small_corners := [3][3]f32{{0.4, 1, 0}, {0.6, 1, 0}, {0.5, 1.1, 0}}
+	append_model_triangle(&small[.Lit], small_corners, {255, 255, 255, 255}, triangle_winding_normal(small_corners))
 	inside := model_open_cell_problems(boxes, footprint, small, empty, "open cells box")
 	testing.expect_value(t, len(inside), 1)
 	if len(inside) == 1 {
@@ -169,7 +173,8 @@ test_a_body_in_a_fixture_box_is_found :: proc(t: ^testing.T) {
 	boxes := []Cell_Box{{from = {1, 0, 0}, to = {1, 1, 1}}}
 	footprint := [3]i32{2, 2, 2}
 	small := empty_test_layers()
-	append_model_triangle(&small[.Lit], {{0.4, 1, 0}, {0.6, 1, 0}, {0.5, 1.1, 0}}, {255, 255, 255, 255})
+	small_corners := [3][3]f32{{0.4, 1, 0}, {0.6, 1, 0}, {0.5, 1.1, 0}}
+	append_model_triangle(&small[.Lit], small_corners, {255, 255, 255, 255}, triangle_winding_normal(small_corners))
 	problems := model_open_cell_problems(boxes, footprint, small, empty_test_layers(), "fixture box")
 	testing.expect_value(t, len(problems), 1)
 	if len(problems) == 1 {

@@ -175,7 +175,7 @@ draw_inserter :: proc(inserter: Inserter, machine: Machine, models: Model_Render
 // (a model moves its own part instead), and the output arrow on the top
 // face.
 draw_drill :: proc(drill: Drill, machine: Machine, machines: Machine_Registry, models: Model_Renderer, frame: Model_Frame) {
-	working := marker_means_working(entity_marker_colour(drill.common, machine_marker_colour(drill.state, true)))
+	working := drill_model_working(drill)
 	color, top_color := DRILL_COLOR, DRILL_TOP_COLOR
 	if drill_is_bore(machine) {
 		color, top_color = BORE_DRILL_COLOR, BORE_DRILL_TOP_COLOR
@@ -212,6 +212,104 @@ launch_pad_is_working :: proc(pad: Launch_Pad) -> bool {
 	return pad.state == .Assembling || pad.state == .Launching
 }
 
+// Whether a model works this frame: its part moves, its emissive
+// materials glow and its lamps shine (0224). The draw and the lamps'
+// gather (gather_machine_lights) read the same procedure, so they agree.
+furnace_model_working :: proc(furnace: Furnace) -> bool {
+	return marker_means_working(entity_marker_colour(furnace.common, machine_marker_colour(furnace.state, furnace_has_fuel(furnace))))
+}
+
+schematic_crate_model_working :: proc(crate: Schematic_Crate) -> bool {
+	return !stack_is_empty(crate.slots[0])
+}
+
+drill_model_working :: proc(drill: Drill) -> bool {
+	return marker_means_working(entity_marker_colour(drill.common, machine_marker_colour(drill.state, true)))
+}
+
+assembler_model_working :: proc(assembler: Assembler) -> bool {
+	return marker_means_working(entity_marker_colour(assembler.common, machine_marker_colour(assembler.state, true)))
+}
+
+lab_model_working :: proc(lab: Lab) -> bool {
+	return marker_means_working(entity_marker_colour(lab.common, machine_marker_colour(lab.state, true)))
+}
+
+// The pod always works for its model, its emissive materials and its
+// lamps (0224), so its cabin is lit from the arrival on; a hatch while it
+// is open (as hatch_pose); the oxygen generator while it supplies a
+// sealed room.
+foundation_model_working :: proc(entities: ^Entities, foundation: Foundation, machine: Machine) -> bool {
+	#partial switch machine.kind {
+	case .Pod:
+		return true
+	case .Hatch:
+		return foundation.hatch_open
+	case .Oxygen_Generator:
+		return oxygen_generator_supplies_a_room(entities, foundation.handle)
+	}
+	return false
+}
+
+// A working machine's lamps (0224) in the world, where its model is drawn.
+append_machine_lights :: proc(lights: ^[dynamic]Point_Light, entities: ^Entities, common: Entity_Common, machine: Machine, working: bool) {
+	if !working || machine.light_count == 0 {
+		return
+	}
+	body := entity_body_matrix(entities, common)
+	pitch := entity_frame_pitch_millimetres(entities, common.frame)
+	for index in 0 ..< machine.light_count {
+		append(lights, machine_point_light(machine.lights[index], body, pitch))
+	}
+}
+
+// The lamps of the machines draw_entities draws whose model works. Chests
+// and capsules never work; an inserter's light is its arm's lamp
+// (arm_point_light).
+gather_machine_lights :: proc(lights: ^[dynamic]Point_Light, entities: ^Entities, machines: Machine_Registry) {
+	for furnace in entities.furnaces.entries {
+		if furnace.alive {
+			append_machine_lights(lights, entities, furnace.common, machines.machines[furnace.machine], furnace_model_working(furnace))
+		}
+	}
+	for crate in entities.schematic_crates.entries {
+		if crate.alive {
+			append_machine_lights(lights, entities, crate.common, machines.machines[crate.machine], schematic_crate_model_working(crate))
+		}
+	}
+	for drill in entities.drills.entries {
+		if drill.alive {
+			append_machine_lights(lights, entities, drill.common, machines.machines[drill.machine], drill_model_working(drill))
+		}
+	}
+	for assembler in entities.assemblers.entries {
+		if assembler.alive {
+			append_machine_lights(lights, entities, assembler.common, machines.machines[assembler.machine], assembler_model_working(assembler))
+		}
+	}
+	for lab in entities.labs.entries {
+		if lab.alive {
+			append_machine_lights(lights, entities, lab.common, machines.machines[lab.machine], lab_model_working(lab))
+		}
+	}
+	for drill in entities.core_sample_drills.entries {
+		if drill.alive {
+			append_machine_lights(lights, entities, drill.common, machines.machines[drill.machine], core_sample_drill_is_working(drill))
+		}
+	}
+	for pad in entities.launch_pads.entries {
+		if pad.alive {
+			append_machine_lights(lights, entities, pad.common, machines.machines[pad.machine], launch_pad_is_working(pad))
+		}
+	}
+	for foundation in entities.foundations.entries {
+		if foundation.alive {
+			machine := machines.machines[foundation.machine]
+			append_machine_lights(lights, entities, foundation.common, machine, foundation_model_working(entities, foundation, machine))
+		}
+	}
+}
+
 // Between BeginMode3D and EndMode3D, after the chunks.
 draw_entities :: proc(world: ^World, machines: Machine_Registry, models: Model_Renderer, items: Item_Registry, frame: Model_Frame) {
 	for chest in world.entities.chests.entries {
@@ -222,8 +320,7 @@ draw_entities :: proc(world: ^World, machines: Machine_Registry, models: Model_R
 	for furnace in world.entities.furnaces.entries {
 		if furnace.alive {
 			top := furnace.state == .Burning ? FURNACE_BURNING_TOP_COLOR : FURNACE_COLOR
-			working := marker_means_working(entity_marker_colour(furnace.common, machine_marker_colour(furnace.state, furnace_has_fuel(furnace))))
-			draw_entity_cells(furnace.common, machines, models, frame, working, FURNACE_COLOR, top)
+			draw_entity_cells(furnace.common, machines, models, frame, furnace_model_working(furnace), FURNACE_COLOR, top)
 		}
 	}
 	for capsule in world.entities.capsules.entries {
@@ -235,7 +332,7 @@ draw_entities :: proc(world: ^World, machines: Machine_Registry, models: Model_R
 		if crate.alive {
 			full := !stack_is_empty(crate.slots[0])
 			top := full ? SCHEMATIC_CRATE_FULL_TOP_COLOR : SCHEMATIC_CRATE_COLOR
-			draw_entity_cells(crate.common, machines, models, frame, full, SCHEMATIC_CRATE_COLOR, top)
+			draw_entity_cells(crate.common, machines, models, frame, schematic_crate_model_working(crate), SCHEMATIC_CRATE_COLOR, top)
 		}
 	}
 	for inserter in world.entities.inserters.entries {
@@ -252,14 +349,12 @@ draw_entities :: proc(world: ^World, machines: Machine_Registry, models: Model_R
 		if assembler.alive {
 			color := crafting_machine_colors[machines.machines[assembler.machine].recipe_maker]
 			top := assembler.state == .Working ? ASSEMBLER_WORKING_TOP_COLOR : color
-			working := marker_means_working(entity_marker_colour(assembler.common, machine_marker_colour(assembler.state, true)))
-			draw_entity_cells(assembler.common, machines, models, frame, working, color, top)
+			draw_entity_cells(assembler.common, machines, models, frame, assembler_model_working(assembler), color, top)
 		}
 	}
 	for lab in world.entities.labs.entries {
 		if lab.alive {
-			working := marker_means_working(entity_marker_colour(lab.common, machine_marker_colour(lab.state, true)))
-			draw_entity_cells(lab.common, machines, models, frame, working, LAB_COLOR, lab.state == .Researching ? LAB_RESEARCHING_TOP_COLOR : LAB_COLOR)
+			draw_entity_cells(lab.common, machines, models, frame, lab_model_working(lab), LAB_COLOR, lab.state == .Researching ? LAB_RESEARCHING_TOP_COLOR : LAB_COLOR)
 		}
 	}
 	for drill in world.entities.core_sample_drills.entries {
@@ -276,8 +371,8 @@ draw_entities :: proc(world: ^World, machines: Machine_Registry, models: Model_R
 	// The pod, its hatches, its crafting bench and its oxygen generator
 	// and the crafting stations ride in the foundations' pool
 	// (entity_pod.odin); the foundations themselves are draw_frames'
-	// boxes. A hatch's door follows its state (draw_hatch), the
-	// generator glows while it supplies a sealed room.
+	// boxes. A hatch's door follows its state (draw_hatch); the others
+	// work as foundation_model_working says.
 	for foundation in world.entities.foundations.entries {
 		if !foundation.alive {
 			continue
@@ -287,11 +382,9 @@ draw_entities :: proc(world: ^World, machines: Machine_Registry, models: Model_R
 		case .Foundation:
 		case .Hatch:
 			draw_hatch(foundation, machine, machines, models, frame)
-		case .Oxygen_Generator:
-			working := oxygen_generator_supplies_a_room(&frame.world.entities, foundation.handle)
-			draw_entity_cells(foundation.common, machines, models, frame, working, FRAME_FOUNDATION_COLOR, FRAME_FOUNDATION_COLOR)
 		case:
-			draw_entity_cells(foundation.common, machines, models, frame, false, FRAME_FOUNDATION_COLOR, FRAME_FOUNDATION_COLOR)
+			working := foundation_model_working(&frame.world.entities, foundation, machine)
+			draw_entity_cells(foundation.common, machines, models, frame, working, FRAME_FOUNDATION_COLOR, FRAME_FOUNDATION_COLOR)
 		}
 	}
 }

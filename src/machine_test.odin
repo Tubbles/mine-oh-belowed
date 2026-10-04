@@ -267,6 +267,62 @@ test_machine_open_cells_are_boxes_inside_the_footprint :: proc(t: ^testing.T) {
 	testing.expect_value(t, pod.open_cells[3], Cell_Box{from = {9, 0, 1}, to = {10, 5, 6}})
 }
 
+// Work item 0224: a machine's lamps stay on its footprint (with the
+// model's slack) with a bounded radius and colour, at most eight.
+@(test)
+test_machine_lights_stay_on_the_footprint_with_a_bounded_radius :: proc(t: ^testing.T) {
+	room := Machine_Definition {
+		id = "room",
+		name_key = "machine_pod",
+		kind = "pod",
+		footprint = {width = 3, depth = 4, height = 2},
+		open_cells = {{from = Machine_Cell_Definition{1, 0, 1}, to = Machine_Cell_Definition{2, 1, 3}}},
+		lights = {{position = {1.51, 2.01, -2.01}, color = {255, 180, 90}, radius_cells = 1}},
+	}
+	definitions := []Machine_Definition{room}
+	registry, problem := resolve_machine_registry(Machines_File{machines = definitions}, make_test_items(), make_test_fluids(), context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	if problem == "" {
+		resolved := registry.machines[0]
+		testing.expect_value(t, resolved.light_count, 1)
+		testing.expect_value(t, resolved.lights[0].position, [3]f32{1.51, 2.01, -2.01})
+		testing.expect_value(t, resolved.lights[0].color, [3]f32{1, 180.0 / 255, 90.0 / 255})
+		testing.expect_value(t, resolved.lights[0].radius_cells, 1)
+		destroy_machine_registry(registry, context.temp_allocator)
+	}
+	refused := [?]struct {
+		light:  Machine_Light_Definition,
+		prefix: string,
+	} {
+		{{position = {1.53, 0, 0}, color = {255, 255, 255}, radius_cells = 1}, "machine \"room\" light 0 at "},
+		{{position = {0, 0, 2.03}, color = {255, 255, 255}, radius_cells = 1}, "machine \"room\" light 0 at "},
+		{{position = {0, -0.03, 0}, color = {255, 255, 255}, radius_cells = 1}, "machine \"room\" light 0 at "},
+		{{position = {0, 2.03, 0}, color = {255, 255, 255}, radius_cells = 1}, "machine \"room\" light 0 at "},
+		{{position = {0, 1, 0}, color = {255, 255, 255}, radius_cells = 0.5}, "machine \"room\" light 0 has radius_cells"},
+		{{position = {0, 1, 0}, color = {255, 255, 255}, radius_cells = 65}, "machine \"room\" light 0 has radius_cells"},
+		{{position = {0, 1, 0}, color = {256, 255, 255}, radius_cells = 1}, "machine \"room\" light 0 has a color channel"},
+		{{position = {0, 1, 0}, color = {255, -1, 255}, radius_cells = 1}, "machine \"room\" light 0 has a color channel"},
+	}
+	for refusal in refused {
+		lamp := room
+		lamp.lights = {refusal.light}
+		message := resolve_test_machines({lamp})
+		testing.expectf(t, strings.has_prefix(message, refusal.prefix), "%v: %q", refusal.light, message)
+	}
+	widest := room
+	widest.lights = {{position = {0, 1, 0}, color = {255, 255, 255}, radius_cells = 64}}
+	testing.expect_value(t, resolve_test_machines({widest}), "")
+	crowded := room
+	crowded.lights = make([]Machine_Light_Definition, MAXIMUM_MACHINE_LIGHTS + 1, context.temp_allocator)
+	for &light in crowded.lights {
+		light = {position = {0, 1, 0}, color = {255, 255, 255}, radius_cells = 1}
+	}
+	testing.expect_value(t, resolve_test_machines({crowded}), "machine \"room\" has more than 8 lights")
+
+	machines := make_test_machines()
+	testing.expect_value(t, machines.machines[find_machine_of_kind(machines, .Pod)].light_count, 0)
+}
+
 // Work item 0198: a footprint side may be 12 cells (the pod's length),
 // not 13.
 @(test)
