@@ -561,7 +561,7 @@ A cone of riveted panels leaning in over a black suited astronaut with orange de
 
 Signed off by the user on 2026-10-04: "Yes this round seed 18 is very good, lets go with that one!"
 
-What the rounds fixed for the model and the game, in the user's words, for the pod's remake (`doc/work/0221-the-pod-remade-from-the-booklet.md`):
+What the rounds fixed for the model and the game, in the user's words, for the pod's remake (`doc/work/done/0221-the-pod-remade-from-the-booklet.md`):
 
 - The chair is impact cushioning with straps, bolted to the floor; everything else is on arms or bolted, since it survives zero gravity on the way and the impact at the end.
 - The interior is cramped: barely larger than a human, nowhere to stand, the roof 2 m, the floor mostly the chair.
