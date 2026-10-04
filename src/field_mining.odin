@@ -395,12 +395,14 @@ debit_field_volume :: proc(inventory: Inventory, item: Item_Id, credit: ^i64, vo
 
 // The tick.
 
+// The crouched body while crouching (0218).
 field_player_capsule :: proc(tuning: Field_Player_Tuning, player: Field_Player) -> Field_Capsule {
+	posture := field_posture_tuning(tuning, player.crouching)
 	return Field_Capsule {
-		bottom = player.position + World_Position(fixed_scale(player.up, tuning.capsule_radius)),
+		bottom = player.position + World_Position(fixed_scale(player.up, posture.capsule_radius)),
 		up = player.up,
-		length = tuning.capsule_height - 2 * tuning.capsule_radius,
-		radius = tuning.capsule_radius,
+		length = posture.capsule_height - 2 * posture.capsule_radius,
+		radius = posture.capsule_radius,
 	}
 }
 

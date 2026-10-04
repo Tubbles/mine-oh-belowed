@@ -192,7 +192,7 @@ draw_model_preview_scene :: proc(renderer: Model_Renderer, machine: Machine, mac
 		draw_model_layers(renderer, model.part, body * motion_transform(machine.motion, machine.footprint, pose.phase), light, glow)
 	}
 	draw_model_preview_pad(machine.footprint, ring, pitch)
-	draw_field_player_capsule(model_preview_capsule_feet(pitch), {0, 1, 0})
+	draw_field_player_capsule(model_preview_capsule_feet(pitch), {0, 1, 0}, MODEL_PREVIEW_CAPSULE_HEIGHT_METRES)
 }
 
 // Read from the back buffer before the swap and written through

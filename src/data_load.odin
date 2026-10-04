@@ -175,6 +175,10 @@ Field_Player_Config :: struct {
 	capsule_radius_millimetres:              int,
 	capsule_height_millimetres:              int,
 	eye_height_millimetres:                  int,
+	// The capsule while crouched (Sneak on foot, 0218).
+	crouch_height_millimetres:               int,
+	// The eye while crouched.
+	crouch_eye_height_millimetres:           int,
 	// Ground steeper than this slows the walk and slides the player down;
 	// converted to its cosine in fixed point at load (fixed_cosine).
 	walkable_angle_degrees:                  int,
@@ -732,7 +736,8 @@ field_view_problem :: proc(field_view: Field_View_Config) -> string {
 }
 
 // Every value inside its bound, the capsule taller than its two end caps
-// and the eye inside it; a missing field_player block reads as zeros and
+// and the eye inside it, the crouch below the standing capsule and above
+// its caps, its eye inside it; a missing field_player block reads as zeros and
 // fails the first bound.
 field_player_problem :: proc(player: Field_Player_Config) -> string {
 	length := MAXIMUM_FIELD_PLAYER_LENGTH_MILLIMETRES
@@ -741,6 +746,8 @@ field_player_problem :: proc(player: Field_Player_Config) -> string {
 		{"capsule_radius_millimetres", player.capsule_radius_millimetres, 100, 1000},
 		{"capsule_height_millimetres", player.capsule_height_millimetres, 2 * player.capsule_radius_millimetres + 1, 4000},
 		{"eye_height_millimetres", player.eye_height_millimetres, 1, player.capsule_height_millimetres},
+		{"crouch_height_millimetres", player.crouch_height_millimetres, 2 * player.capsule_radius_millimetres + 1, player.capsule_height_millimetres - 1},
+		{"crouch_eye_height_millimetres", player.crouch_eye_height_millimetres, 1, player.crouch_height_millimetres},
 		{"walkable_angle_degrees", player.walkable_angle_degrees, 1, 89},
 		{"slide_speed_millimetres_per_second", player.slide_speed_millimetres_per_second, 1, speed},
 		{"step_height_samples", player.step_height_samples, 0, MAXIMUM_STEP_HEIGHT_SAMPLES},

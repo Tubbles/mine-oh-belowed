@@ -43,11 +43,13 @@ field_view = {
 // and slides the player down at up to the slide speed; a ledge of the step
 // height (in samples of the world's spacing) is walked over, a jump rises
 // the jump height, and Jump while walking into a ledge up to the mantle
-// height lifts onto it.
+// height lifts onto it. Sneak on foot crouches to the crouch height (0218).
 field_player = {
 	capsule_radius_millimetres = 300
 	capsule_height_millimetres = 1800
 	eye_height_millimetres = 1600
+	crouch_height_millimetres = 850
+	crouch_eye_height_millimetres = 700
 	walkable_angle_degrees = 60
 	slide_speed_millimetres_per_second = 6000
 	step_height_samples = 1

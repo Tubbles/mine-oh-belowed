@@ -21,6 +21,9 @@ Test_Terrain_Kind :: enum {
 	Sphere,
 	Hole,
 	Ridge,
+	// A roof ledge_height over the floor from the ledge's face on, written
+	// per sample (test_tunnel_density), 0218.
+	Tunnel,
 }
 
 Test_Terrain :: struct {
@@ -33,6 +36,9 @@ Test_Terrain :: struct {
 	// wall along z centred TEST_LEDGE_FACE_METRES along x, this far to
 	// each side.
 	half_width:    i64,
+	// Tunnel: 0 for a roof over every z; n for a tube open only in the n
+	// sample columns from z = 0 up.
+	tube_samples:  i32,
 }
 
 test_field_player_config :: proc() -> Field_Player_Config {
@@ -40,6 +46,8 @@ test_field_player_config :: proc() -> Field_Player_Config {
 		capsule_radius_millimetres = 300,
 		capsule_height_millimetres = 1800,
 		eye_height_millimetres = 1600,
+		crouch_height_millimetres = 850,
+		crouch_eye_height_millimetres = 700,
 		walkable_angle_degrees = 40,
 		slide_speed_millimetres_per_second = 6000,
 		step_height_samples = 1,
@@ -99,9 +107,25 @@ test_terrain_depth :: proc(terrain: Test_Terrain, position: World_Position) -> i
 	case .Ridge:
 		across := abs(x - metres_to_position_units(TEST_LEDGE_FACE_METRES))
 		return max(-y, min(terrain.ledge_height - y, terrain.half_width - across))
-	case .Flat, .Sphere:
+	case .Flat, .Sphere, .Tunnel:
 	}
 	return -y
+}
+
+// Full ground or air per sample, so the tunnel's gap is whole samples at
+// every spacing: ground at and under the site, and from the ledge's face
+// on above the roof's height or, in a tube, outside its columns.
+test_tunnel_density :: proc(terrain: Test_Terrain, position: World_Position, spacing_millimetres: int) -> i8 {
+	if site_height(position) <= 0 {
+		return MAXIMUM_DENSITY
+	}
+	if position.x >= metres_to_position_units(TEST_LEDGE_FACE_METRES) {
+		outside_tube := terrain.tube_samples > 0 && (position.z < 0 || position.z >= i64(terrain.tube_samples) * sample_axis_to_position(1, spacing_millimetres))
+		if site_height(position) > terrain.ledge_height || outside_tube {
+			return MAXIMUM_DENSITY
+		}
+	}
+	return -MAXIMUM_DENSITY
 }
 
 fill_test_chunk :: proc(world: ^Field_World, terrain: Test_Terrain, spacing_millimetres: int, coordinate: Field_Chunk_Coordinate) {
@@ -110,7 +134,7 @@ fill_test_chunk :: proc(world: ^Field_World, terrain: Test_Terrain, spacing_mill
 	origin := field_chunk_origin(coordinate)
 	for index in 0 ..< FIELD_CHUNK_SAMPLE_COUNT {
 		position := sample_to_world_position(origin + Sample_Coordinate(field_index_to_local(index)), spacing_millimetres)
-		density := depth_to_density(test_terrain_depth(terrain, position), spacing_millimetres)
+		density := terrain.kind == .Tunnel ? test_tunnel_density(terrain, position, spacing_millimetres) : depth_to_density(test_terrain_depth(terrain, position), spacing_millimetres)
 		field_chunk_set_sample(chunk, index, {density, density > 0 ? .Stone : .Air, 0})
 	}
 	field_world_insert_chunk(world, chunk)
@@ -435,6 +459,18 @@ test_the_field_player_config_is_bounded :: proc(t: ^testing.T) {
 	low_mantle := test_field_player_config()
 	low_mantle.mantle_height_millimetres = 1000
 	testing.expect(t, field_player_problem(low_mantle) != "", "a mantle not above the step at 1 m is refused")
+	flat_crouch := test_field_player_config()
+	flat_crouch.crouch_height_millimetres = 600
+	testing.expect(t, field_player_problem(flat_crouch) != "", "a crouch of two radii is refused")
+	tall_crouch := test_field_player_config()
+	tall_crouch.crouch_height_millimetres = 1800
+	testing.expect(t, field_player_problem(tall_crouch) != "", "a crouch of the standing height is refused")
+	no_crouch_eye := test_field_player_config()
+	no_crouch_eye.crouch_eye_height_millimetres = 0
+	testing.expect(t, field_player_problem(no_crouch_eye) != "", "a crouch eye of nothing is refused")
+	high_crouch_eye := test_field_player_config()
+	high_crouch_eye.crouch_eye_height_millimetres = 851
+	testing.expect(t, field_player_problem(high_crouch_eye) != "", "a crouch eye above the crouch is refused")
 	testing.expect_value(t, field_player_speed_problem(test_field_player_config(), 60), "")
 	testing.expect(t, field_player_speed_problem(test_field_player_config(), 1) != "", "36 m/s flying is 36 m a tick at 1 Hz")
 }
@@ -665,4 +701,133 @@ test_a_walk_off_a_cliff_falls_at_the_shipped_angle :: proc(t: ^testing.T) {
 		run_field_player(&world, tuning, &player, {}, 120)
 		testing.expectf(t, player.on_ground && abs(site_height(player.position) - height) <= tenth_sample(spacing), "%d mm: standing at the edge the feet end at %d", spacing, site_height(player.position))
 	}
+}
+
+// The crouch (0218).
+
+TEST_ONE_METRE_TUNNEL :: Test_Terrain{kind = .Tunnel, ledge_height = POSITION_UNITS_PER_METRE}
+
+FIELD_SNEAK_FORWARD :: Field_Player_Input {
+	move = {0, FIELD_MOVE_ONE},
+	held = {.Sneak},
+}
+
+// A metre over the site, clear of the floor at every spacing, on the
+// 1000 mm tube's column, settled.
+start_crouch_test_player :: proc(world: ^Field_World, tuning: Field_Player_Tuning) -> Field_Player {
+	player := make_field_player(test_site_point(0, POSITION_UNITS_PER_METRE, 0), {UNIT_VECTOR_ONE, 0, 0})
+	run_field_player(world, tuning, &player, {}, 30)
+	return player
+}
+
+// The sneak walk of 240 ticks ends a metre past the face; checks the
+// last 60 ticks on the ground, crouched and clear.
+expect_crouched_walk_through :: proc(t: ^testing.T, world: ^Field_World, tuning: Field_Player_Tuning, label: string, spacing: int) {
+	player := start_crouch_test_player(world, tuning)
+	for tick in 0 ..< 240 {
+		tick_field_player(world, nil, tuning, &player, FIELD_SNEAK_FORWARD)
+		if tick >= 180 {
+			testing.expectf(t, player.on_ground && player.crouching, "%s %d mm tick %d: on the ground %v, crouching %v", label, spacing, tick, player.on_ground, player.crouching)
+			testing.expectf(t, !field_capsule_overlaps(world, nil, field_posture_tuning(tuning, true), player.position, player.up), "%s %d mm tick %d: the crouched capsule overlaps", label, spacing, tick)
+		}
+	}
+	face := metres_to_position_units(TEST_LEDGE_FACE_METRES)
+	testing.expectf(t, player.position.x > face + POSITION_UNITS_PER_METRE, "%s %d mm: the crouched walk ends at x %d", label, spacing, player.position.x)
+}
+
+@(test)
+test_a_crouched_field_player_walks_under_a_one_metre_ceiling :: proc(t: ^testing.T) {
+	for spacing in TEST_FIELD_SPACINGS {
+		world := make_test_field(TEST_ONE_METRE_TUNNEL, spacing)
+		defer destroy_field_world(&world)
+		tuning := test_field_tuning(spacing)
+		standing := start_crouch_test_player(&world, tuning)
+		run_field_player(&world, tuning, &standing, FIELD_WALK_FORWARD, 120)
+		testing.expectf(t, standing.position.x < metres_to_position_units(TEST_LEDGE_FACE_METRES), "%d mm: a standing player passed the face to x %d", spacing, standing.position.x)
+		expect_crouched_walk_through(t, &world, tuning, "slab", spacing)
+	}
+}
+
+// The smallest 1 m hole at the default spacing, one air sample: it takes
+// a capsule of about 1 m (measured, 0218), so the 850 mm crouch has
+// 150 mm of margin.
+@(test)
+test_a_crouched_field_player_fits_a_one_sample_tube_at_the_default_spacing :: proc(t: ^testing.T) {
+	terrain := TEST_ONE_METRE_TUNNEL
+	terrain.tube_samples = 1
+	world := make_test_field(terrain, 1000)
+	defer destroy_field_world(&world)
+	expect_crouched_walk_through(t, &world, test_field_tuning(1000), "tube", 1000)
+}
+
+@(test)
+test_standing_up_waits_for_headroom :: proc(t: ^testing.T) {
+	world := make_test_field(TEST_ONE_METRE_TUNNEL, 500)
+	defer destroy_field_world(&world)
+	tuning := test_field_tuning(500)
+	player := start_crouch_test_player(&world, tuning)
+	run_field_player(&world, tuning, &player, FIELD_SNEAK_FORWARD, 120)
+	run_field_player(&world, tuning, &player, {}, 30)
+	testing.expect(t, player.crouching, "released under the roof, the player stays crouched")
+	testing.expect_value(t, field_player_eye(player, tuning), player.position + World_Position(fixed_scale(player.up, tuning.crouch_eye_height)))
+	run_field_player(&world, tuning, &player, {move = {0, -FIELD_MOVE_ONE}}, 150)
+	testing.expectf(t, player.position.x < metres_to_position_units(TEST_LEDGE_FACE_METRES - 1), "the walk back ends at x %d", player.position.x)
+	testing.expect(t, !player.crouching, "out from under the roof, the player stands")
+	testing.expect_value(t, field_player_eye(player, tuning), player.position + World_Position(fixed_scale(player.up, tuning.eye_height)))
+}
+
+@(test)
+test_the_sneak_speed_follows_the_crouch :: proc(t: ^testing.T) {
+	world := make_test_field(TEST_ONE_METRE_TUNNEL, 500)
+	defer destroy_field_world(&world)
+	tuning := test_field_tuning(500)
+	player := start_crouch_test_player(&world, tuning)
+	run_field_player(&world, tuning, &player, FIELD_SNEAK_FORWARD, 120)
+	before := player.position.x
+	run_field_player(&world, tuning, &player, {move = {0, FIELD_MOVE_ONE}, held = {.Sprint}}, 60)
+	moved := player.position.x - before
+	sneak := tuning.sneak_speed * 60 / VELOCITY_FRACTION_ONE
+	sprint := tuning.sprint_speed * 60 / VELOCITY_FRACTION_ONE
+	testing.expectf(t, abs(moved - sneak) <= sneak / 10, "moved %d in a second, the sneak speed gives %d", moved, sneak)
+	testing.expectf(t, moved < sprint / 2, "moved %d in a second, the sprint gives %d", moved, sprint)
+}
+
+@(test)
+test_fly_mode_keeps_the_standing_capsule :: proc(t: ^testing.T) {
+	world := make_test_field(Test_Terrain{kind = .Flat}, 500)
+	defer destroy_field_world(&world)
+	tuning := test_field_tuning(500)
+	player := make_field_player(test_site_point(0, metres_to_position_units(3), 0), {UNIT_VECTOR_ONE, 0, 0})
+	player.flying = true
+	before := site_height(player.position)
+	for tick in 0 ..< 30 {
+		tick_field_player(&world, nil, tuning, &player, {held = {.Sneak}})
+		testing.expectf(t, !player.crouching, "tick %d: a flying player crouched", tick)
+	}
+	testing.expectf(t, site_height(player.position) < before, "the feet stayed at %d", site_height(player.position))
+}
+
+// A player written before 0218 lacks the crouch.
+Field_Player_Before_Crouch :: struct {
+	yaw: i32,
+}
+
+@(test)
+test_the_field_player_saves_its_crouch :: proc(t: ^testing.T) {
+	player := make_field_player(FAR_FEET, {UNIT_VECTOR_ONE, 0, 0})
+	player.crouching = true
+	bytes := make([dynamic]byte, context.temp_allocator)
+	write_value_of(&bytes, &player)
+	read: Field_Player
+	reader := Byte_Reader{data = bytes[:]}
+	testing.expect(t, read_value_of(&reader, &read))
+	testing.expect(t, read.crouching, "the crouch round trips")
+	old := Field_Player_Before_Crouch{yaw = 7}
+	clear(&bytes)
+	write_value_of(&bytes, &old)
+	read = {}
+	reader = Byte_Reader{data = bytes[:]}
+	testing.expect(t, read_value_of(&reader, &read))
+	testing.expect_value(t, read.yaw, 7)
+	testing.expect(t, !read.crouching, "an old save loads standing")
 }

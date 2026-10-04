@@ -470,13 +470,14 @@ predict_local_player :: proc(simulation: ^Simulation_State, content: Simulation_
 // hotbar, the tool, the edits, the placements, the pick up and its
 // progress (0195), the crafting and the walk counter): Interact's jump suppression on a frame's switch or launch pad, the move
 // against the loaded set, the frame table and the trees' trunks (0197),
-// and the aim. Reads the
+// the sneak state, as the tick's (0218), and the aim. Reads the
 // simulation, writes only the copy.
 predict_field_player_motion :: proc(simulation: ^Simulation_State, content: Simulation_Content, player: ^Player, frame: Input_Frame) {
 	frames := &simulation.world.entities.frames
 	// Without interact_on_field: the switch it would turn and the panel it
 	// would open are the tick's.
-	resolved := without_field_interact_jump(player^, &simulation.world.entities, content.machines, frame)
+	player.sneaking = update_sneaking(player.sneaking, frame)
+	resolved := without_field_interact_jump(player^, &simulation.world.entities, content.machines, with_sneaking(frame, player.sneaking))
 	input := field_tick_input(resolved, simulation.tick_rate)
 	move_and_aim_field_player(&simulation.field, frames, content.field, &player.field, input)
 }

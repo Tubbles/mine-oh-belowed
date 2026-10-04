@@ -20,7 +20,8 @@ package game
 // the feet and a radius round them, 0203), an impeded walk also tries the
 // same move a step height higher and keeps the farther one that ends on
 // walkable ground, and steep ground with walkable ground a step up and a
-// stride ahead is stepped onto instead of slid down.
+// stride ahead is stepped onto instead of slid down. Sneak on foot shrinks
+// the capsule to the crouch height (0218); standing waits for room.
 
 VELOCITY_FRACTION_ONE :: 65536
 // Full stick in Field_Player_Input.move.
@@ -111,6 +112,8 @@ Field_Player_Tuning :: struct {
 	capsule_radius:      i64,
 	capsule_height:      i64,
 	eye_height:          i64,
+	crouch_capsule_height: i64,
+	crouch_eye_height:   i64,
 	step_height:         i64,
 	mantle_height:       i64,
 	reach:               i64,
@@ -145,6 +148,9 @@ Field_Player :: struct {
 	yaw:               i32,
 	pitch:             i32,
 	on_ground:         bool,
+	// Sneak on foot, held until the standing capsule has room
+	// (update_field_crouch, 0218); a save from before 0218 loads it false.
+	crouching:         bool,
 	ground_normal:     [3]i64,
 	flying:            bool,
 	no_clip:           bool,
@@ -220,6 +226,8 @@ make_field_player_tuning :: proc(config: Field_Player_Config, planet: Planet, sp
 		capsule_radius = millimetres_to_position_units(config.capsule_radius_millimetres),
 		capsule_height = millimetres_to_position_units(config.capsule_height_millimetres),
 		eye_height = millimetres_to_position_units(config.eye_height_millimetres),
+		crouch_capsule_height = millimetres_to_position_units(config.crouch_height_millimetres),
+		crouch_eye_height = millimetres_to_position_units(config.crouch_eye_height_millimetres),
 		step_height = i64(config.step_height_samples) * sample_axis_to_position(1, spacing_millimetres),
 		mantle_height = millimetres_to_position_units(config.mantle_height_millimetres),
 		reach = millimetres_to_position_units(config.tool_reach_millimetres),
@@ -302,8 +310,35 @@ field_look_direction :: proc(forward, up: [3]i64, yaw, pitch: i32) -> [3]i64 {
 	return fixed_scale(field_heading(forward, up, yaw), fixed_cosine(pitch)) + fixed_scale(up, fixed_sine(pitch))
 }
 
+// The tuning with the crouch's capsule and eye heights in place of the
+// standing ones while crouching (0218). The crouch fields stay, so the
+// crouched posture of a crouched posture is the same tuning.
+field_posture_tuning :: proc(tuning: Field_Player_Tuning, crouching: bool) -> Field_Player_Tuning {
+	posture := tuning
+	if crouching {
+		posture.capsule_height = tuning.crouch_capsule_height
+		posture.eye_height = tuning.crouch_eye_height
+	}
+	return posture
+}
+
 field_player_eye :: proc(player: Field_Player, tuning: Field_Player_Tuning) -> World_Position {
-	return player.position + World_Position(fixed_scale(player.up, tuning.eye_height))
+	return player.position + World_Position(fixed_scale(player.up, field_posture_tuning(tuning, player.crouching).eye_height))
+}
+
+// Sneak on foot crouches; otherwise a crouching player stands once the
+// standing capsule has room at the feet, or at once flying with no clip.
+// tuning is the base tuning.
+update_field_crouch :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Field_Player_Tuning, player: ^Field_Player, sneak: bool) {
+	switch {
+	case sneak && !player.flying:
+		player.crouching = true
+	case !player.crouching:
+	case player.flying && player.no_clip:
+		player.crouching = false
+	case !field_capsule_overlaps(world, frames, field_posture_tuning(tuning, false), player.position, player.up):
+		player.crouching = false
+	}
 }
 
 turn_field_player :: proc(player: ^Field_Player, turn: [2]i32) {
@@ -347,9 +382,11 @@ update_field_jump_double_tap :: proc(player: ^Field_Player, input: Field_Player_
 	player.jump_tap_ticks = JUMP_DOUBLE_TAP_TICKS
 }
 
-field_walk_speed :: proc(tuning: Field_Player_Tuning, held: Field_Player_Buttons) -> i64 {
+// The sneak speed follows the crouch, not the button, so a player held
+// crouched under a ceiling walks slowly until there is room to stand.
+field_walk_speed :: proc(tuning: Field_Player_Tuning, held: Field_Player_Buttons, crouching: bool) -> i64 {
 	switch {
-	case .Sneak in held:
+	case crouching:
 		return tuning.sneak_speed
 	case .Sprint in held:
 		return tuning.sprint_speed
@@ -805,7 +842,7 @@ walk_field_player :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Fie
 	resolve_field_penetration(world, frames, tuning, &player.position, player.up, &player.velocity)
 	ground := probe_field_ground(world, frames, tuning, player.position, player.up, player.velocity, player.on_ground)
 	ground = judge_ground_over_footprint(world, frames, tuning, player.position, player.up, player.forward, ground)
-	walk := field_walk_velocity(player^, input.move, field_walk_speed(tuning, input.held))
+	walk := field_walk_velocity(player^, input.move, field_walk_speed(tuning, input.held, player.crouching))
 	raw_walk_motion := walk / VELOCITY_FRACTION_ONE
 	walk_direction, walking := normalize_fixed(walk)
 	held_on_ground := ground.on && ground.walkable
@@ -933,17 +970,21 @@ tick_field_player :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Fie
 	update_field_jump_double_tap(player, input)
 	orient_field_player(player)
 	turn_field_player(player, input.turn)
+	// The crouch is decided from the input and the world before the move,
+	// here and in the prediction alike (0218).
+	update_field_crouch(world, frames, tuning, player, .Sneak in input.held)
+	posture := field_posture_tuning(tuning, player.crouching)
 	switch {
 	case player.flying && player.no_clip:
-		fly_field_player(world, frames, tuning, player, input)
-	case !field_ground_loaded(world, tuning, player^):
+		fly_field_player(world, frames, posture, player, input)
+	case !field_ground_loaded(world, posture, player^):
 		player.velocity = {}
 	case player.flying:
-		fly_field_player(world, frames, tuning, player, input)
+		fly_field_player(world, frames, posture, player, input)
 	case:
-		walk_field_player(world, frames, tuning, player, input)
+		walk_field_player(world, frames, posture, player, input)
 	}
 	orient_field_player(player)
 	look := field_look_direction(player.forward, player.up, player.yaw, player.pitch)
-	player.target = raycast_field(world, tuning.spacing_millimetres, field_player_eye(player^, tuning), look, tuning.reach)
+	player.target = raycast_field(world, posture.spacing_millimetres, field_player_eye(player^, posture), look, posture.reach)
 }

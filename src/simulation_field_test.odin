@@ -1269,3 +1269,66 @@ test_a_field_world_save_round_trips_the_reward_target :: proc(t: ^testing.T) {
 	testing.expect_value(t, restored.quests.capsule, capsule)
 	testing.expect_value(t, simulation_state_hash(restored), hash)
 }
+
+// The sneak toggle's frames (0218): a press, 20 frames without, a press,
+// 10 frames without.
+sneak_toggle_test_frame :: proc(tick: int) -> Input_Frame {
+	frame := Input_Frame{sneak_toggles = true}
+	if tick == 0 || tick == 21 {
+		frame.pressed, frame.just_pressed = {.Sneak}, {.Sneak}
+	}
+	return frame
+}
+
+SNEAK_TOGGLE_TEST_TICKS :: 32
+
+@(test)
+test_the_sneak_toggle_crouches_the_field_player :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	session := start_field_test_session(config, content)
+	defer end_session(session)
+	simulation_content := field_test_content(session, content)
+	for tick in 0 ..< SNEAK_TOGGLE_TEST_TICKS {
+		tick_field_test_simulation(&session.simulation, simulation_content, sneak_toggle_test_frame(tick))
+		player := session.simulation.players[0]
+		toggled_on := tick <= 20
+		testing.expectf(t, player.sneaking == toggled_on, "tick %d: sneaking %v", tick, player.sneaking)
+		testing.expectf(t, player.field.crouching == toggled_on, "tick %d: crouching %v", tick, player.field.crouching)
+	}
+}
+
+@(test)
+test_the_field_prediction_crouches_as_the_tick :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	session := start_field_test_session(config, content)
+	defer end_session(session)
+	simulation_content := field_test_content(session, content)
+	// Settled first: the first ticks of a new world drop the player onto
+	// the cabin's floor, which the motion alone does not predict.
+	for _ in 0 ..< 30 {
+		tick_field_test_simulation(&session.simulation, simulation_content, {})
+	}
+	for tick in 0 ..< SNEAK_TOGGLE_TEST_TICKS {
+		frame := sneak_toggle_test_frame(tick)
+		predicted := session.simulation.players[0]
+		predict_field_player_motion(&session.simulation, simulation_content, &predicted, frame)
+		tick_field_test_simulation(&session.simulation, simulation_content, frame)
+		ticked := session.simulation.players[0]
+		testing.expectf(t, predicted.sneaking == ticked.sneaking, "tick %d: sneaking %v predicted, %v ticked", tick, predicted.sneaking, ticked.sneaking)
+		testing.expectf(t, predicted.field.crouching == ticked.field.crouching, "tick %d: crouching %v predicted, %v ticked", tick, predicted.field.crouching, ticked.field.crouching)
+		testing.expectf(t, predicted.field.position == ticked.field.position, "tick %d: feet %v predicted, %v ticked", tick, predicted.field.position, ticked.field.position)
+	}
+}
+
+@(test)
+test_the_crouch_changes_the_state_hash :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	session := start_field_test_session(config, content)
+	defer end_session(session)
+	before := simulation_state_hash(&session.simulation)
+	session.simulation.players[0].field.crouching = true
+	testing.expect(t, simulation_state_hash(&session.simulation) != before, "the crouch is hashed")
+}

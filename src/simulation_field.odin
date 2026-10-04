@@ -344,7 +344,10 @@ without_field_interact_jump :: proc(player: Player, entities: ^Entities, machine
 // tool, the move and the queued edits and placements, the hand crafting.
 tick_field_session_player :: proc(state: ^Simulation_State, content: Simulation_Content, index: int, frame: Input_Frame) -> Player_Events {
 	player := &state.players[index]
-	resolved, events := interact_on_field(state, content, index, frame)
+	// The hold or toggle setting applies on the field as in the block
+	// world (0218).
+	player.sneaking = update_sneaking(player.sneaking, frame)
+	resolved, events := interact_on_field(state, content, index, with_sneaking(frame, player.sneaking))
 	// Counted as tick_player counts the block world's.
 	if events & {.Open_Machine, .Toggled_Switch, .Launch_Requested} != {} {
 		record_world_action(&state.records.statistics)

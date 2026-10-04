@@ -7,7 +7,12 @@ import rl "shared:raylib"
 // planet as the player walks round it. The look comes from the integer
 // frame (field_look_direction); the camera is f32 metres from the planet's
 // centre, as the field renderer draws. The third person camera is not yet
-// pulled in by the field (the block camera's third_person_position).
+// pulled in by the field (the block camera's third_person_position). The
+// eye dips over the crouch's progress (0218).
+
+// A full swing of the crouch's progress, frame time, presentation only
+// (0218).
+CROUCH_EASE_SECONDS :: 0.15
 
 Field_Camera_View :: struct {
 	eye:     World_Position,
@@ -25,9 +30,40 @@ world_position_to_metres :: proc(position: World_Position) -> [3]f32 {
 	return {f32(f64(position.x) / POSITION_UNITS_PER_METRE), f32(f64(position.y) / POSITION_UNITS_PER_METRE), f32(f64(position.z) / POSITION_UNITS_PER_METRE)}
 }
 
-// The eye between two ticks: alpha from 0 (the previous tick) to 1.
-field_player_view :: proc(player: Field_Player, tuning: Field_Player_Tuning, alpha: f32) -> Field_Camera_View {
-	eye := field_player_eye(player, tuning)
+// The crouch's progress from 0 (standing) to 1 (crouched): towards 1
+// while crouching, towards 0 otherwise, a full swing in
+// CROUCH_EASE_SECONDS of frame time.
+advance_field_crouch :: proc(progress: f32, crouching: bool, frame_seconds: f32) -> f32 {
+	step := frame_seconds / CROUCH_EASE_SECONDS
+	return crouching ? min(progress + step, 1) : max(progress - step, 0)
+}
+
+// The player's entry, 0 (standing) out of range.
+field_crouch_progress_of :: proc(progress: []f32, index: int) -> f32 {
+	return index >= 0 && index < len(progress) ? progress[index] : 0
+}
+
+// Smoothstep of the progress.
+field_crouch_eased :: proc(progress: f32) -> f32 {
+	return progress * progress * (3 - 2 * progress)
+}
+
+// The eye's height over the feet at the crouch's progress, position units.
+field_eye_height_units :: proc(tuning: Field_Player_Tuning, progress: f32) -> i64 {
+	return tuning.eye_height + i64(f32(tuning.crouch_eye_height - tuning.eye_height) * field_crouch_eased(progress))
+}
+
+// The body's scale along the up: 1 standing, the crouch height over the
+// standing one crouched.
+field_body_up_scale :: proc(tuning: Field_Player_Tuning, progress: f32) -> f32 {
+	ratio := f32(tuning.crouch_capsule_height) / f32(tuning.capsule_height)
+	return 1 + (ratio - 1) * field_crouch_eased(progress)
+}
+
+// The eye between two ticks: alpha from 0 (the previous tick) to 1. tuning
+// is the base tuning; the eye's height follows crouch_progress.
+field_player_view :: proc(player: Field_Player, tuning: Field_Player_Tuning, alpha: f32, crouch_progress: f32) -> Field_Camera_View {
+	eye := player.position + World_Position(fixed_scale(player.up, field_eye_height_units(tuning, crouch_progress)))
 	step := cast([3]i64)(player.position - player.previous_position)
 	back := [3]i64{i64(f32(step.x) * (1 - alpha)), i64(f32(step.y) * (1 - alpha)), i64(f32(step.z) * (1 - alpha))}
 	return {eye = eye - World_Position(back), up = player.up, forward = player.forward, yaw = player.yaw, pitch = player.pitch}

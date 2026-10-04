@@ -179,7 +179,7 @@ The Accessibility tab's Sneak and Sprint rows (`settings.sneak_hold`, `settings.
 
 The tools radial (0215) is hold only; the two settings do not touch it.
 
-`Sprint_Hold` (Left Shift) sprints while held whatever the Sprint setting. `update_sneaking` and `update_sprinting` read the choice from the frame. The player's `Player.sneaking` is the truth, and the rest of the tick sees Sneak pressed exactly while it is set (`with_sneaking`), so a toggled sneak while flying keeps descending until toggled off.
+`Sprint_Hold` (Left Shift) sprints while held whatever the Sprint setting. `update_sneaking` and `update_sprinting` read the choice from the frame. The player's `Player.sneaking` is the truth, and the rest of the tick sees Sneak pressed exactly while it is set (`with_sneaking`), so a toggled sneak while flying keeps descending until toggled off. `update_sneaking` and `with_sneaking` run in the field tick and its prediction too (0218), where Sneak on foot crouches ([architecture.md](architecture.md), The player on the field); the block world's sneak (the slow walk with the edge check) is unchanged.
 
 ## Fly mode and no clip
 

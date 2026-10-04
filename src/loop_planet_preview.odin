@@ -350,7 +350,7 @@ planet_preview_viewpoint :: proc(preview: ^Planet_Preview) -> World_Position {
 planet_preview_raylib_camera :: proc(preview: ^Planet_Preview, alpha: f32) -> rl.Camera3D {
 	if preview.walking {
 		body := planet_preview_player(preview).field
-		view := field_player_view(body, preview.session.field_content.tuning, alpha)
+		view := field_player_view(body, preview.session.field_content.tuning, alpha, body.crouching ? 1 : 0)
 		return field_camera(view, body.camera_mode, THIRD_PERSON_DISTANCE, 0, PLANET_PREVIEW_FIELD_OF_VIEW)
 	}
 	return fly_camera_to_raylib(preview.camera, PLANET_PREVIEW_FIELD_OF_VIEW)

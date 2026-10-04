@@ -203,10 +203,11 @@ draw_field_torches :: proc(torches: []Field_Torch, spacing_millimetres: int) {
 }
 
 // Standing at the feet, the model's front (+x) along the heading and its
-// up along the player's up.
-field_player_body_transform :: proc(feet: [3]f32, player: Field_Player) -> matrix[4, 4]f32 {
+// up along the player's up, squashed along the up by up_scale while
+// crouched (0218: the legs have no knee to fold).
+field_player_body_transform :: proc(feet: [3]f32, player: Field_Player, up_scale: f32) -> matrix[4, 4]f32 {
 	heading := unit_vector_to_f32(field_player_heading(player))
-	up := unit_vector_to_f32(player.up)
+	up := unit_vector_to_f32(player.up) * up_scale
 	side := linalg.cross(heading, up)
 	return matrix[4, 4]f32{
 		heading.x, up.x, side.x, feet.x,
@@ -216,22 +217,31 @@ field_player_body_transform :: proc(feet: [3]f32, player: Field_Player) -> matri
 	}
 }
 
-// The player without the model; the model preview (0207) draws it for
-// scale.
-draw_field_player_capsule :: proc(feet, up: [3]f32) {
-	rl.DrawCapsule(feet + up * 0.3, feet + up * 1.5, 0.3, 8, 4, FIELD_PLAYER_CAPSULE_COLOR)
+// The centres of the capsule's end spheres for a body height metres tall.
+field_player_capsule_ends :: proc(feet, up: [3]f32, height: f32) -> (bottom, top: [3]f32) {
+	return feet + up * 0.3, feet + up * (height - 0.3)
 }
 
-// The body standing still, or a capsule without the model.
-draw_field_player_body :: proc(scene: Field_Scene, player: Field_Player) {
+// The player without the model; the model preview (0207) draws it for
+// scale.
+draw_field_player_capsule :: proc(feet, up: [3]f32, height: f32) {
+	bottom, top := field_player_capsule_ends(feet, up, height)
+	rl.DrawCapsule(bottom, top, 0.3, 8, 4, FIELD_PLAYER_CAPSULE_COLOR)
+}
+
+// The body standing still, or a capsule without the model; both lowered
+// over the crouch's progress.
+draw_field_player_body :: proc(scene: Field_Scene, player: Field_Player, crouch_progress: f32) {
 	previous := world_position_to_metres(player.previous_position)
 	feet := previous + (world_position_to_metres(player.position) - previous) * scene.frame.alpha
+	tuning := scene.content.field.tuning
+	scale := field_body_up_scale(tuning, crouch_progress)
 	if !scene.player_model.loaded {
-		draw_field_player_capsule(feet, unit_vector_to_f32(player.up))
+		draw_field_player_capsule(feet, unit_vector_to_f32(player.up), f32(f64(tuning.capsule_height) / POSITION_UNITS_PER_METRE) * scale)
 		return
 	}
 	light := player_body_light(scene.frame, feet)
-	body := field_player_body_transform(feet, player)
+	body := field_player_body_transform(feet, player, scale)
 	for limb in Player_Limb {
 		draw_player_limb(scene.models, scene.player_model, limb, body * player_model_scale(), light)
 	}
@@ -241,7 +251,7 @@ draw_field_players :: proc(scene: Field_Scene) {
 	for index in 0 ..< len(scene.state.players) {
 		player := field_scene_player(scene, index)
 		if index != scene.viewer || player.field.camera_mode == .Third_Person {
-			draw_field_player_body(scene, player.field)
+			draw_field_player_body(scene, player.field, field_crouch_progress_of(scene.renderer.crouch_progress[:], index))
 		}
 	}
 }
@@ -330,7 +340,7 @@ draw_field_sky :: proc(renderer: ^Sky_Renderer, camera: rl.Camera3D, sky: Day_Sk
 
 // The viewport's field camera, kept for the HUD's projections.
 field_viewport_camera :: proc(state: ^Frame_State, viewport: ^Viewport, player: Player, alpha: f32) -> rl.Camera3D {
-	view := field_player_view(player.field, state.session.field_content.tuning, alpha)
+	view := field_player_view(player.field, state.session.field_content.tuning, alpha, field_crouch_progress_of(state.presentation.field_renderer.crouch_progress[:], viewport.player))
 	camera := field_camera(view, player.field.camera_mode, state.settings.third_person_distance, state.settings.third_person_shoulder, state.settings.field_of_view)
 	viewport.presentation.camera = camera
 	return camera
@@ -351,7 +361,7 @@ arrival_viewport_camera :: proc(state: ^Frame_State, viewport: ^Viewport, player
 		if pod_found {
 			up, forward = unit_vector_to_f32(pod.axes[FRAME_UP]), unit_vector_to_f32(pod.axes[FRAME_FORWARD])
 		}
-		eye := world_position_to_metres(field_player_view(player.field, state.session.field_content.tuning, alpha).eye)
+		eye := world_position_to_metres(field_player_view(player.field, state.session.field_content.tuning, alpha, field_crouch_progress_of(state.presentation.field_renderer.crouch_progress[:], viewport.player)).eye)
 		camera = arrival_descent_camera(eye, view, up, forward, state.config, state.settings.field_of_view)
 	case .Settled:
 		if state.settings.reduced_motion {
@@ -405,7 +415,8 @@ draw_field_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, cont
 }
 
 // Before the viewports draw: the finished meshes up, the trees round the
-// eyes (update_field_tree_cache) and the daylight of the shared clock.
+// eyes (update_field_tree_cache), the daylight of the shared clock and
+// each player's crouch progress (0218), read by value by the draws.
 prepare_field_frame :: proc(state: ^Frame_State) {
 	session := state.session
 	if !state.presentation.field_renderer_ready {
@@ -414,4 +425,10 @@ prepare_field_frame :: proc(state: ^Frame_State) {
 	upload_streamed_field_meshes(&state.presentation.field_renderer, &session.field_streaming)
 	update_field_tree_cache(&state.presentation.field_renderer.trees, field_tree_generation(&session.simulation.field), field_viewport_eyes(state))
 	state.presentation.field_renderer.daylight = daylight_blend(simulation_day_ticks(session.simulation), session.simulation.day_length_ticks)
+	crouch_progress := &state.presentation.field_renderer.crouch_progress
+	resize(crouch_progress, len(session.simulation.players))
+	for index in 0 ..< len(crouch_progress) {
+		crouching := lockstep_view_player(&session.lockstep, &session.simulation, index).field.crouching
+		crouch_progress[index] = advance_field_crouch(crouch_progress[index], crouching, state.frame_seconds)
+	}
 }

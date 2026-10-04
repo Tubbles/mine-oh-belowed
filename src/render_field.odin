@@ -78,6 +78,9 @@ Field_Renderer :: struct {
 	drawn_node_count:         int,
 	// The trees round the eyes (0197, render_field_trees.odin).
 	trees:                    Field_Tree_Cache,
+	// Each player's eased crouch by player index, advanced in
+	// prepare_field_frame (0218).
+	crouch_progress:          [dynamic]f32,
 }
 
 // Bilinear with mipmaps and repeating, so the tile wraps and stays calm at
@@ -278,6 +281,7 @@ destroy_field_renderer :: proc(renderer: ^Field_Renderer) {
 	}
 	delete(renderer.meshes)
 	destroy_field_tree_cache(&renderer.trees)
+	delete(renderer.crouch_progress)
 	rl.UnloadMesh(renderer.globe)
 	rl.UnloadMaterial(renderer.globe_material)
 	rl.UnloadMaterial(renderer.material)

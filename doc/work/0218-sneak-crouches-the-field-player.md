@@ -1,6 +1,6 @@
 # 0218: Sneak crouches the field player
 
-Status: implementing (2026-10-04, worktree `.claude/worktrees/0218` on `item/0218` from `main`, the specification approved the same day with the decisions below; user: "lets also make it so 'sneak' is a visible crouching, so we can sneak into 1 meter holes"; folds the field's missing sneak toggle)
+Status: verified (2026-10-04, fix round done on item/0218; worktree `.claude/worktrees/0218` on `item/0218` from `main`, the specification approved the same day with the decisions below; user: "lets also make it so 'sneak' is a visible crouching, so we can sneak into 1 meter holes"; folds the field's missing sneak toggle)
 
 ## Goal
 
@@ -141,6 +141,8 @@ The state hash and the save need no code: `Player` is written whole by `write_va
 ### Decisions at the approval (main agent, 2026-10-04)
 
 1. The heights 850 and 700 mm are approved over the item's 900 and 750: the default spacing is 1000 mm and its one sample tube takes a capsule of at most 904 mm.
+
+Measured at the verification (2026-10-04): the 1000 mm one sample tube takes a capsule of about 1 m, like the slab (the tube test passes with a crouch of up to 1000 mm and fails from 1050), so 850 leaves 150 mm of margin.
 2. The body squashed along the up is approved for the placeholder limb models; the crouch pose is redone with the player model when that model goes through the lab.
 3. The couch step is reworded above (the brushes dig 2 m holes).
 4. The third person camera sitting in the rock behind a crouched player in a tunnel is the camera's existing limit (it is not pulled in by the field) and is work item `0220-the-third-person-camera-pulled-in-by-the-field.md`, after this one.
