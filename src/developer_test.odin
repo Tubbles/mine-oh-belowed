@@ -350,3 +350,74 @@ test_developer_toggles_cheat_speed :: proc(t: ^testing.T) {
 	apply_player_commands(&simulation, content)
 	testing.expect(t, !simulation.cheat_speed)
 }
+
+@(test)
+test_developer_toggles_free_crafting :: proc(t: ^testing.T) {
+	simulation, content := make_developer_test_simulation()
+	defer destroy_simulation(&simulation)
+	testing.expect(t, !simulation.free_crafting)
+	requests := [?]Queued_Player_Command{{player = 0, command = Developer_Request{action = .Toggle_Free_Crafting}}}
+	testing.expect(t, pending_toggle(false, requests[:], nil, 0, .Toggle_Free_Crafting))
+	testing.expect(t, !pending_toggle(false, requests[:], nil, 0, .Toggle_Cheat_Speed))
+	hash_off := lockstep_state_hash(&simulation)
+	queue_player_command(&simulation.player_commands, 0, Developer_Request{action = .Toggle_Free_Crafting})
+	apply_player_commands(&simulation, content)
+	testing.expect(t, simulation.free_crafting)
+	testing.expect(t, lockstep_state_hash(&simulation) != hash_off)
+	reloaded := make_reloaded_simulation(simulation, content, test_game_config())
+	testing.expect(t, reloaded.free_crafting)
+	destroy_simulation(&reloaded)
+	queue_player_command(&simulation.player_commands, 0, Developer_Request{action = .Toggle_Free_Crafting})
+	apply_player_commands(&simulation, content)
+	testing.expect(t, !simulation.free_crafting)
+}
+
+queue_test_craft_command :: proc(simulation: ^Simulation_State, content: Simulation_Content, recipe: string, count: int) {
+	queue_player_command(&simulation.player_commands, 0, Craft_Command{test_recipe(content.recipes, recipe), count})
+}
+
+run_test_craft :: proc(simulation: ^Simulation_State, content: Simulation_Content, recipe: string) {
+	queue_test_craft_command(simulation, content, recipe, 1)
+	ticks := int(recipe_ticks(content.recipes.recipes[test_recipe(content.recipes, recipe)], HAND_CRAFT_SPEED_PERCENT, simulation.tick_rate)) + 1
+	for _ in 0 ..< ticks {
+		simulation_tick(simulation, content, {})
+	}
+}
+
+// The couch check of 0234: a drill from nothing, then the toggle off and
+// the next craft asks for materials again.
+@(test)
+test_free_crafting_crafts_from_nothing :: proc(t: ^testing.T) {
+	simulation, content := make_developer_test_simulation()
+	defer destroy_simulation(&simulation)
+	clear_inventory(simulation.players[0].inventory)
+	queue_player_command(&simulation.player_commands, 0, Developer_Request{action = .Toggle_Free_Crafting})
+	simulation_tick(&simulation, content, {})
+	testing.expect(t, simulation.free_crafting)
+	run_test_craft(&simulation, content, "burner_mining_drill")
+	inventory := simulation.players[0].inventory
+	drill := test_item(content.items, "burner_mining_drill")
+	testing.expect_value(t, inventory_count(inventory, drill), 1)
+	statistics := simulation.records.statistics
+	testing.expect_value(t, statistics.consumed[test_item(content.items, "iron_plate")], 0)
+	testing.expect_value(t, statistics.consumed[test_item(content.items, "iron_gear")], 0)
+	testing.expect_value(t, statistics.consumed[test_item(content.items, "stone_furnace")], 0)
+	testing.expect_value(t, statistics.produced[drill], 1)
+	// The unlock and the station still refuse.
+	queue_test_craft_command(&simulation, content, "steel_furnace", 1)
+	simulation_tick(&simulation, content, {})
+	testing.expect_value(t, simulation.players[0].crafting.count, 0)
+	queue_test_craft_command(&simulation, content, "stone_brick", 1)
+	simulation_tick(&simulation, content, {})
+	testing.expect_value(t, simulation.players[0].crafting.count, 0)
+	stone := test_item(content.items, "stone")
+	inventory_add(inventory, content.items, stone, 5)
+	run_test_craft(&simulation, content, "stone_furnace")
+	testing.expect_value(t, inventory_count(inventory, stone), 5)
+	queue_player_command(&simulation.player_commands, 0, Developer_Request{action = .Toggle_Free_Crafting})
+	simulation_tick(&simulation, content, {})
+	testing.expect(t, !simulation.free_crafting)
+	queue_test_craft_command(&simulation, content, "burner_mining_drill", 1)
+	simulation_tick(&simulation, content, {})
+	testing.expect_value(t, simulation.players[0].crafting.count, 0)
+}

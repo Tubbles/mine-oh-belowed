@@ -43,6 +43,10 @@ Simulation_State :: struct {
 	// Developer cheat speed (0044): faster movement and hand mining. Not
 	// saved.
 	cheat_speed:        bool,
+	// Developer free crafting (0234): every craft a player orders plans
+	// and starts without ingredients. Not saved; hashed and carried in the
+	// join snapshot like cheat_speed.
+	free_crafting:      bool,
 	// The pad the world was created with, written to world.sjson so a loaded
 	// world keeps it whatever the spawn rules do later (0049).
 	landing_pad:        Landing_Pad_Site,

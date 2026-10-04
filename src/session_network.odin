@@ -844,6 +844,7 @@ drop_peer_player :: proc(session: ^Session, peer_index, index: int) {
 
 Join_Snapshot :: struct {
 	cheat_speed: bool,
+	free_crafting: bool,
 	files:       Save_Files,
 	// The host's simulated chunk radii: every machine derives the set
 	// alike, whatever its own game.sjson says.
@@ -863,6 +864,7 @@ encode_join_snapshot :: proc(simulation: ^Simulation_State, lockstep: ^Lockstep,
 	files := encode_save_files(simulation, content, name, 0)
 	bytes := message_of(.Join_Snapshot)
 	append_u8(&bytes, simulation.cheat_speed ? 1 : 0)
+	append_u8(&bytes, simulation.free_crafting ? 1 : 0)
 	append_bytes(&bytes, files.world)
 	append_bytes(&bytes, files.entities)
 	append_u32(&bytes, u32(len(files.regions)))
@@ -910,6 +912,7 @@ decode_join_snapshot :: proc(payload: []byte) -> (snapshot: Join_Snapshot, chunk
 		return {}, false, false
 	}
 	snapshot.cheat_speed = (read_u8(&reader) or_return) == 1
+	snapshot.free_crafting = (read_u8(&reader) or_return) == 1
 	snapshot.files.world = read_bytes(&reader) or_return
 	snapshot.files.entities = read_bytes(&reader) or_return
 	region_count := int(read_u32(&reader) or_return)
@@ -1373,6 +1376,7 @@ take_held_messages :: proc(network: ^Session_Network, lockstep: ^Lockstep, simul
 // the driver. The machine drives no player yet.
 adopt_join_snapshot :: proc(simulation: ^Simulation_State, lockstep: ^Lockstep, snapshot: Join_Snapshot, chunk_set_enabled: bool, window: int) {
 	simulation.cheat_speed = snapshot.cheat_speed
+	simulation.free_crafting = snapshot.free_crafting
 	simulation.chunk_set.enabled = chunk_set_enabled
 	simulation.chunk_set.horizontal_radius, simulation.chunk_set.vertical_radius = snapshot.chunk_radius.x, snapshot.chunk_radius.y
 	clear(&simulation.chunk_set.chunks)

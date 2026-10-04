@@ -55,6 +55,7 @@ Tools gate hand mining and nothing else (0051).
 - A plan never counts on covering a deficit of runs already queued: an item's planned count stops at zero.
 - A craft takes its ingredients when it starts at the front of the queue. A front craft whose ingredient was spent or dropped waits. The next queue action first plans the makers of what the whole front run lacks against the inventory alone and queues them ahead (`plan_front_repair`), or leaves it waiting when the inventory cannot make the item.
 - A finished craft whose outputs do not fit waits with its progress kept. Cancelling takes one craft off the newest run and gives back the ingredients of a craft in progress, refused when they no longer fit.
+- Free crafting (0234, `Simulation_State.free_crafting`, the Developer screen): the plan charges no ingredient and queues no intermediate (`Craft_Plan.free_crafting`), so only the unlock, the maker and the queue's capacity refuse; a front craft starts without taking anything (`Craft_Queue.started_free`), finishes recording its products and no consumption, and cancelled gives nothing back. A craft finishes under the rule it started with: a front waiting for an ingredient starts on the first tick with the flag on, a craft that took its ingredients finishes as before, and crafts queued free that have not started when the flag turns off wait for their ingredients like any front. `started_free` is read by name, so a save from before 0234 loads it false; no remap, no log line.
 
 ## Phase budgets
 

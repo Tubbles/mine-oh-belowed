@@ -51,6 +51,33 @@ test_confirm_on_developer_toggles_nothing :: proc(t: ^testing.T) {
 	testing.expect_value(t, len(audit.simulation.player_commands), 0)
 }
 
+// The free crafting toggle (0234) is reached by focus and queues its
+// request with the toast the other developer toggles show.
+@(test)
+test_the_free_crafting_toggle_queues_its_request :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	state := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&state)
+	open_pause_menu(audit, &state)
+	push_screen(&state.screens, .Developer)
+	screen_test_frame(audit, &state, {})
+	toggle := ui_hash(ui_hash(0, "developer", -1), text("developer_free_crafting"), -1)
+	state.requested_focus = toggle
+	screen_test_frame(audit, &state, {device = .Gamepad, device_seen = true})
+	testing.expect_value(t, state.focus, toggle)
+	screen_test_frame(audit, &state, {confirm = true, confirm_down = true, device = .Gamepad, device_seen = true})
+	if !testing.expect_value(t, len(audit.simulation.player_commands), 1) {
+		return
+	}
+	request, is_request := audit.simulation.player_commands[0].command.(Developer_Request)
+	testing.expect(t, is_request)
+	testing.expect_value(t, request.action, Developer_Action.Toggle_Free_Crafting)
+	if testing.expect(t, len(state.toasts) > 0) {
+		testing.expect_value(t, state.toasts[len(state.toasts) - 1].text, text("developer_applies_on_resume"))
+	}
+}
+
 @(test)
 test_tap_on_developer_toggles_nothing :: proc(t: ^testing.T) {
 	audit := make_ui_audit()

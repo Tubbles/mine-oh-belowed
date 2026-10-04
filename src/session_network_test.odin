@@ -617,3 +617,26 @@ test_the_server_clears_its_events_and_a_failed_save_waits :: proc(t: ^testing.T)
 	testing.expect(t, save_server_world(&server) != "")
 	testing.expect_value(t, session.ticks_since_save, 0)
 }
+
+// Free crafting (0234) is not saved, so the join snapshot carries it as
+// it carries cheat speed.
+@(test)
+test_the_join_snapshot_carries_free_crafting :: proc(t: ^testing.T) {
+	content := make_save_test_content()
+	generator := make_test_generator(DEFAULT_WORLD_SEED)
+	host := make_lockstep_test_machine(content, &generator, 0, 0)
+	defer destroy_lockstep_test_machine(host)
+	host.simulation.free_crafting = true
+	payload := encode_join_snapshot(&host.simulation, &host.lockstep, content, "joined")
+	snapshot, chunk_set_enabled, ok := decode_join_snapshot(payload)
+	if !testing.expect(t, ok) {
+		return
+	}
+	testing.expect(t, snapshot.free_crafting)
+	simulation := make_save_test_simulation(&generator, content)
+	defer destroy_simulation(&simulation)
+	lockstep := make_single_player_lockstep(simulation.tick, player_start_on({}))
+	defer destroy_lockstep(&lockstep)
+	adopt_join_snapshot(&simulation, &lockstep, snapshot, chunk_set_enabled, 1)
+	testing.expect(t, simulation.free_crafting)
+}

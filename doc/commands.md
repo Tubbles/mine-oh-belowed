@@ -48,6 +48,7 @@ A running game in developer mode listens on a Unix domain socket for command lin
 | `fly <on\|off>` | Fly mode, swept against blocks unless no clip is on. |
 | `noclip <on\|off>` | Flying passes through blocks (0112). Walking ignores it. |
 | `cheat_speed <on\|off>` | Faster movement and hand mining ([developer_tools.md](developer_tools.md)). |
+| `free_crafting <on\|off>` | Crafts take no ingredients (0234, [developer_tools.md](developer_tools.md)). |
 | `vein <type> <x> <z> [size_class]` | A new surface vein centred on the column at the generated surface height; size class by id from the `size_classes` of `data/veins.sjson`, default the first (`scattering`). Refused for a deep vein type and where its disc (with the vein spacing) reaches another vein. Outcrops appear in loaded chunks at once, in others when they load; saved with the world. |
 | `place <machine> <x> <y> <z> <rotation>` | The machine with its minimum corner at the cell, by the player's rules (free air in loaded chunks, solid ground under it, clear of the player, a drill over a vein, a pump at water), no item taken. A belt lift takes rotation 4 to 7 for going down. |
 | `remove <x> <y> <z>` | The entity covering the cell (contents discarded), or else the block. An entity that cannot be picked up, such as the capsule, is refused. |

@@ -89,10 +89,10 @@ station_recipe_category :: proc(recipes: Recipe_Registry, maker: Recipe_Maker, f
 
 // Per recipe, whether the queue accepts one craft now, intermediates
 // included (0156), with the makers the player crafts with.
-craftable_recipes :: proc(recipes: Recipe_Registry, unlocks: Recipe_Unlocks, inventory: Inventory, queue: Craft_Queue, allocator := context.allocator, makers := HAND_MAKERS) -> []bool {
+craftable_recipes :: proc(recipes: Recipe_Registry, unlocks: Recipe_Unlocks, inventory: Inventory, queue: Craft_Queue, allocator := context.allocator, makers := HAND_MAKERS, free_crafting := false) -> []bool {
 	craftable := make([]bool, len(recipes.recipes), allocator)
 	for _, index in recipes.recipes {
-		craftable[index] = queue_accepts_crafts(queue, inventory, recipes, unlocks, index, 1, makers)
+		craftable[index] = queue_accepts_crafts(queue, inventory, recipes, unlocks, index, 1, makers, free_crafting)
 	}
 	return craftable
 }
@@ -117,12 +117,12 @@ destroy_recipe_plans :: proc(plans: ^Recipe_Plans) {
 }
 
 // Changes when what the planner reads changes: the inventory, the queued
-// runs, the front's state, the available recipes and the makers (the
-// inventory's or a station's); not the front's progress, which moves
-// every tick.
-recipe_plan_key :: proc(queue: Craft_Queue, inventory: Inventory, available: []bool, makers := HAND_MAKERS) -> u64 {
+// runs, the front's state, the available recipes, the makers (the
+// inventory's or a station's) and free crafting; not the front's
+// progress, which moves every tick.
+recipe_plan_key :: proc(queue: Craft_Queue, inventory: Inventory, available: []bool, makers := HAND_MAKERS, free_crafting := false) -> u64 {
 	queue := queue
-	front := [3]u64{u64(queue.started), u64(queue.waiting_for), u64(transmute(u16)makers)}
+	front := [4]u64{u64(queue.started), u64(queue.waiting_for), u64(transmute(u16)makers), u64(free_crafting)}
 	key := hash.fnv64a(slice.to_bytes(inventory.slots))
 	key = hash.fnv64a(slice.to_bytes(queue.runs[:queue.count]), key)
 	key = hash.fnv64a(slice.to_bytes(available), key)
@@ -130,24 +130,24 @@ recipe_plan_key :: proc(queue: Craft_Queue, inventory: Inventory, available: []b
 }
 
 // Plans the craftable marks again when the key or the registry changed.
-refresh_craftable_recipes :: proc(plans: ^Recipe_Plans, recipes: Recipe_Registry, unlocks: Recipe_Unlocks, inventory: Inventory, queue: Craft_Queue, makers := HAND_MAKERS) {
-	key := recipe_plan_key(queue, inventory, unlocks.available, makers)
+refresh_craftable_recipes :: proc(plans: ^Recipe_Plans, recipes: Recipe_Registry, unlocks: Recipe_Unlocks, inventory: Inventory, queue: Craft_Queue, makers := HAND_MAKERS, free_crafting := false) {
+	key := recipe_plan_key(queue, inventory, unlocks.available, makers, free_crafting)
 	if key == plans.craftable_key && len(plans.craftable) == len(recipes.recipes) {
 		return
 	}
 	clear(&plans.craftable)
-	append(&plans.craftable, ..craftable_recipes(recipes, unlocks, inventory, queue, context.temp_allocator, makers))
+	append(&plans.craftable, ..craftable_recipes(recipes, unlocks, inventory, queue, context.temp_allocator, makers, free_crafting))
 	plans.craftable_key = key
 }
 
 // Plans the focused recipe's count and ingredients again when the key or
 // the recipe changed.
-refresh_recipe_detail_plan :: proc(plans: ^Recipe_Plans, recipes: Recipe_Registry, unlocks: Recipe_Unlocks, inventory: Inventory, queue: Craft_Queue, recipe: int, makers := HAND_MAKERS) {
-	key := recipe_plan_key(queue, inventory, unlocks.available, makers)
+refresh_recipe_detail_plan :: proc(plans: ^Recipe_Plans, recipes: Recipe_Registry, unlocks: Recipe_Unlocks, inventory: Inventory, queue: Craft_Queue, recipe: int, makers := HAND_MAKERS, free_crafting := false) {
+	key := recipe_plan_key(queue, inventory, unlocks.available, makers, free_crafting)
 	if key == plans.detail_key && recipe == plans.detail_recipe {
 		return
 	}
-	planned := planned_crafts(queue, inventory, recipes, unlocks, recipe, makers, context.temp_allocator)
+	planned := planned_crafts(queue, inventory, recipes, unlocks, recipe, makers, context.temp_allocator, free_crafting)
 	clear(&plans.detail_inputs)
 	append(&plans.detail_inputs, ..planned.inputs)
 	plans.detail_key, plans.detail_recipe, plans.detail_count = key, recipe, planned.count

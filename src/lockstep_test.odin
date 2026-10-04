@@ -754,3 +754,53 @@ test_two_sessions_committing_a_placement_hash_the_same :: proc(t: ^testing.T) {
 	}
 	testing.expect_value(t, hashes[0], hashes[1])
 }
+
+// Free crafting (0234) is lockstep state: the toggle pressed on one
+// machine reaches both, and a craft from nothing keeps the hashes alike.
+@(test)
+test_free_crafting_toggled_on_one_machine_keeps_the_hash :: proc(t: ^testing.T) {
+	content := make_save_test_content()
+	generator := make_test_generator(DEFAULT_WORLD_SEED)
+	first := make_lockstep_test_machine(content, &generator, 0, 3)
+	defer destroy_lockstep_test_machine(first)
+	second := make_lockstep_test_machine(content, &generator, 1, 2)
+	defer destroy_lockstep_test_machine(second)
+	machines := [?]^Lockstep_Test_Machine{first, second}
+	drill := test_recipe(content.recipes, "burner_mining_drill")
+	drill_item := test_item(content.items, "burner_mining_drill")
+	for machine in machines {
+		clear_inventory(machine.simulation.players[1].inventory)
+	}
+	testing.expect_value(t, lockstep_state_hash(&first.simulation), lockstep_state_hash(&second.simulation))
+	compared := 0
+	for frame := 0; first.simulation.tick < 600 || second.simulation.tick < 600; frame += 1 {
+		switch frame {
+		case 10:
+			queue_player_command(&first.simulation.player_commands, 0, Developer_Request{action = .Toggle_Free_Crafting})
+		case 30:
+			queue_player_command(&second.simulation.player_commands, 1, Craft_Command{recipe = drill, count = 1})
+		}
+		for machine in machines {
+			input := lockstep_test_input(machine, frame)
+			hold_local_commands(&machine.lockstep, &machine.simulation)
+			stamp_local_record(&machine.lockstep, machine.simulation.tick, input)
+		}
+		relay_in_process(machines[:])
+		for machine in machines {
+			run_lockstep_test_ticks(machine, content)
+		}
+		if first.simulation.tick == second.simulation.tick && state_hash_due(first.simulation.tick) && first.simulation.tick > 0 {
+			testing.expectf(t, lockstep_state_hash(&first.simulation) == lockstep_state_hash(&second.simulation), "the hashes differ at tick %d", first.simulation.tick)
+			compared += 1
+		}
+		if frame > 5000 {
+			testing.fail_now(t, "the machines stopped ticking")
+		}
+	}
+	testing.expect(t, compared >= 1)
+	testing.expect_value(t, lockstep_state_hash(&first.simulation), lockstep_state_hash(&second.simulation))
+	for machine in machines {
+		testing.expect(t, machine.simulation.free_crafting)
+		testing.expect_value(t, inventory_count(machine.simulation.players[1].inventory, drill_item), 1)
+	}
+}

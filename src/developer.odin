@@ -75,6 +75,8 @@ Developer_Action :: enum u8 {
 	// the filter inserter or splitter at cell (work item 0050).
 	Set_Recipe,
 	Set_Filter,
+	// Flips Simulation_State.free_crafting (0234).
+	Toggle_Free_Crafting,
 }
 
 // The sun rises at dawn, peaks at noon, sets at dusk and is lowest at
@@ -383,6 +385,8 @@ serve_developer_request :: proc(state: ^Simulation_State, content: Simulation_Co
 		teleport_player(player, request.position)
 	case .Toggle_Cheat_Speed:
 		state.cheat_speed = !state.cheat_speed
+	case .Toggle_Free_Crafting:
+		state.free_crafting = !state.free_crafting
 	case .Take_Item:
 		inventory_remove(player.inventory, request.grant.item, request.grant.count)
 	case .Research_Technology:

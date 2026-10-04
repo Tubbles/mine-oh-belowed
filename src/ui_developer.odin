@@ -6,20 +6,21 @@ import "core:fmt"
 // the game runs with --dev. Every entry is a button, a toggle or a
 // choice, so the focus cursor and the trackpad pointer reach all of them.
 // The diagnostics page choice (work item 0086) and the statistics
-// overlay and bottleneck overlay toggles are frame state and change at once; everything else (fly mode and cheat
-// speed among them) queues a Developer_Request as a player command that
+// overlay and bottleneck overlay toggles are frame state and change at once; everything else (fly mode, cheat
+// speed and free crafting among them) queues a Developer_Request as a player command that
 // the next simulation tick serves (player_command.odin, developer.odin). The pause menu below keeps the
 // simulation paused, so those apply once the game resumes. Screenshot and
 // Reload data are frame requests the frame loop serves after the frame.
 
 DEVELOPER_PANEL_WIDTH :: 1000
-// Title, two toggle rows, kit label and buttons, quest label (with the
+// Title, three toggle rows, kit label and buttons, quest label (with the
 // finish active quest button) and buttons, time label and buttons, unlock, teleport and screenshot, the
 // data reload row, the editors row, back.
-DEVELOPER_ROW_COUNT :: 13
+DEVELOPER_ROW_COUNT :: 14
 
-// Pending toggle requests (fly mode, cheat speed) flip the shown state, so
-// the check box shows the state once the requests are served.
+// Pending toggle requests (fly mode, cheat speed, free crafting) flip the
+// shown state, so the check box shows the state once the requests are
+// served.
 pending_toggle :: proc(value: bool, commands: []Queued_Player_Command, unconfirmed: []Player_Command, player: int, action: Developer_Action) -> bool {
 	return pending_developer_toggles(commands, unconfirmed, player, action) % 2 == 1 ? !value : value
 }
@@ -32,9 +33,9 @@ queue_developer_request :: proc(state: ^Ui_State, screen_context: Screen_Context
 	ui_toast(state, text("developer_applies_on_resume"))
 }
 
-// The queued toggles on the first row, the frame state overlays on the
-// second: the diagnostics page steps like F3.
-developer_toggles :: proc(state: ^Ui_State, first_row, second_row: Ui_Rectangle, screen_context: Screen_Context) {
+// The queued toggles on the first two rows, the frame state overlays on
+// the third: the diagnostics page steps like F3.
+developer_toggles :: proc(state: ^Ui_State, first_row, crafting_row, overlay_row: Ui_Rectangle, screen_context: Screen_Context) {
 	commands, unconfirmed, player := screen_context.player_commands[:], screen_context.unconfirmed_commands, screen_context.player_index
 	flying := pending_toggle(screen_context.player.flying, commands, unconfirmed, player, .Toggle_Fly_Mode)
 	if ui_toggle(state, column_rectangle(first_row, 3, 0, UI_GAP), text("developer_fly_mode"), &flying) {
@@ -48,12 +49,16 @@ developer_toggles :: proc(state: ^Ui_State, first_row, second_row: Ui_Rectangle,
 	if ui_toggle(state, column_rectangle(first_row, 3, 2, UI_GAP), text("developer_cheat_speed"), &cheat_speed) {
 		queue_developer_request(state, screen_context, Developer_Request{action = .Toggle_Cheat_Speed})
 	}
+	free_crafting := pending_toggle(screen_context.free_crafting, commands, unconfirmed, player, .Toggle_Free_Crafting)
+	if ui_toggle(state, column_rectangle(crafting_row, 3, 0, UI_GAP), text("developer_free_crafting"), &free_crafting) {
+		queue_developer_request(state, screen_context, Developer_Request{action = .Toggle_Free_Crafting})
+	}
 	page := screen_context.developer.diagnostics_page
-	if ui_choice(state, column_rectangle(second_row, 3, 0, UI_GAP), text("developer_diagnostics"), text(diagnostics_page_keys[page^])) {
+	if ui_choice(state, column_rectangle(overlay_row, 3, 0, UI_GAP), text("developer_diagnostics"), text(diagnostics_page_keys[page^])) {
 		page^ = next_diagnostics_page(page^)
 	}
-	ui_toggle(state, column_rectangle(second_row, 3, 1, UI_GAP), text("developer_world_overlay"), screen_context.developer.show_world_overlay)
-	ui_toggle(state, column_rectangle(second_row, 3, 2, UI_GAP), text("developer_bottleneck_overlay"), &screen_context.settings.bottleneck_overlay)
+	ui_toggle(state, column_rectangle(overlay_row, 3, 1, UI_GAP), text("developer_world_overlay"), screen_context.developer.show_world_overlay)
+	ui_toggle(state, column_rectangle(overlay_row, 3, 2, UI_GAP), text("developer_bottleneck_overlay"), &screen_context.settings.bottleneck_overlay)
 }
 
 // One numbered button per chapter; returns the chapter pressed, or 0.
@@ -110,7 +115,7 @@ developer_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 }
 
 developer_actions :: proc(state: ^Ui_State, content: ^Ui_Rectangle, screen_context: Screen_Context) {
-	developer_toggles(state, cut_row(content), cut_row(content), screen_context)
+	developer_toggles(state, cut_row(content), cut_row(content), cut_row(content), screen_context)
 	ui_label(state, cut_row(content), text("developer_give_kit"))
 	if chapter := chapter_buttons(state, cut_row(content), "kit", screen_context.developer.chapter_count); chapter > 0 {
 		queue_developer_request(state, screen_context, Developer_Request{action = .Give_Kit, chapter = chapter})

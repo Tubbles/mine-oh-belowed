@@ -183,7 +183,7 @@ simulation_tick :: proc(state: ^Simulation_State, content_tables: Simulation_Con
 			}
 		}
 		before := movement_toggles(state.players[index])
-		events := tick_player(&state.world, &state.records, content, state.players[:], index, input, state.tick_rate, state.tick, state.cheat_speed)
+		events := tick_player(&state.world, &state.records, content, state.players[:], index, input, state.tick_rate, state.tick, state.cheat_speed, state.free_crafting)
 		log_movement_toggles(before, state.players[index], player_tick_toggle_cause(input.just_pressed), state.tick)
 		update_magnetometer(&state.world, content, &state.players[index])
 		for kind in events {

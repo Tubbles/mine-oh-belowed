@@ -391,7 +391,7 @@ recipe_detail_panel :: proc(state: ^Ui_State, area: Ui_Rectangle, screen_context
 	cut_top(&content, UI_GAP)
 	inventory := screen_context.player.inventory
 	plans := &screen_context.views.recipe_browser.plans
-	refresh_recipe_detail_plan(plans, screen_context.recipes, screen_context.unlocks^, inventory, screen_context.player.crafting, recipe, screen_craft_makers(screen_context))
+	refresh_recipe_detail_plan(plans, screen_context.recipes, screen_context.unlocks^, inventory, screen_context.player.crafting, recipe, screen_craft_makers(screen_context), screen_context.free_crafting)
 	draw_ingredient_rows(state, &content, "recipes_inputs", detail.inputs, plans.detail_inputs[:], screen_context.items)
 	detail_line(state, &content, can_craft_text(plans.detail_count), plans.detail_count >= 1 ? UI_ACCENT_COLOR : UI_DIM_TEXT_COLOR)
 	draw_product_rows(state, &content, "recipes_outputs", detail.outputs, screen_context.items, inventory)
@@ -456,7 +456,7 @@ apply_recipe_craft_input :: proc(state: ^Ui_State, screen_context: Screen_Contex
 // (Craft_Command).
 queue_checked_crafts :: proc(state: ^Ui_State, screen_context: Screen_Context, recipe, count: int) {
 	player := screen_context.player
-	_, _, refusal, shortage := plan_queue_crafts(player.crafting, player.inventory, screen_context.recipes, screen_context.unlocks^, recipe, count, screen_craft_makers(screen_context))
+	_, _, refusal, shortage := plan_queue_crafts(player.crafting, player.inventory, screen_context.recipes, screen_context.unlocks^, recipe, count, screen_craft_makers(screen_context), screen_context.free_crafting)
 	if refusal != .None {
 		toast_craft_refusal(state, refusal, shortage, screen_context.items)
 		return
@@ -628,7 +628,7 @@ recipe_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	}
 	at_station = at_station && !selecting
 	makers := screen_craft_makers(screen_context)
-	refresh_craftable_recipes(&browser.plans, screen_context.recipes, screen_context.unlocks^, screen_context.player.inventory, screen_context.player.crafting, makers)
+	refresh_craftable_recipes(&browser.plans, screen_context.recipes, screen_context.unlocks^, screen_context.player.inventory, screen_context.player.crafting, makers, screen_context.free_crafting)
 	craftable := browser.plans.craftable[:]
 	ui_backdrop(state)
 	panel := ui_panel_area(state)

@@ -106,6 +106,8 @@ Screen_Context :: struct {
 	tick:            u64,
 	// The simulation's developer cheat speed, before pending requests.
 	cheat_speed:        bool,
+	// The simulation's developer free crafting, before pending requests.
+	free_crafting:      bool,
 	// The simulation's command list (player_command.odin): the screens
 	// queue every change of the simulation here for the next tick instead
 	// of writing it. Nil without a world.

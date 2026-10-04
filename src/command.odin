@@ -104,6 +104,7 @@ command_usages := [?]Command_Usage {
 	{"fly <on|off>", "fly mode, swept against blocks"},
 	{"noclip <on|off>", "flying passes through blocks"},
 	{"cheat_speed <on|off>", "fast movement and hand mining"},
+	{"free_crafting <on|off>", "crafts take no ingredients"},
 	{"vein <type> <x> <z> [size_class]", "a new surface vein centred on the column"},
 	{"place <machine> <x> <y> <z> <rotation>", "a machine by its minimum corner, by the player's rules, no item taken"},
 	{"remove <x> <y> <z>", "the entity or block there, contents discarded"},
@@ -249,7 +250,7 @@ execute_command_line :: proc(command_context: Command_Context, line: string) -> 
 // (the loop's lockstep driver).
 command_writes_simulation :: proc(name: string) -> bool {
 	switch name {
-	case "give", "take", "kit", "chapter", "quest", "research", "unlock_all", "teleport", "time", "fly", "noclip", "cheat_speed", "vein", "place", "remove", "block", "insert", "recipe", "filter", "blueprint":
+	case "give", "take", "kit", "chapter", "quest", "research", "unlock_all", "teleport", "time", "fly", "noclip", "cheat_speed", "free_crafting", "vein", "place", "remove", "block", "insert", "recipe", "filter", "blueprint":
 		return true
 	}
 	return false
@@ -312,7 +313,7 @@ execute_world_command :: proc(command_context: Command_Context, name: string, ar
 		return command_time(command_context, arguments)
 	case "weather":
 		return command_weather(command_context, arguments)
-	case "fly", "noclip", "cheat_speed":
+	case "fly", "noclip", "cheat_speed", "free_crafting":
 		return command_toggle(command_context, name, arguments)
 	case "vein":
 		return command_vein(command_context, arguments)
@@ -518,6 +519,8 @@ toggle_command_state :: proc(simulation: ^Simulation_State, player: int, name: s
 		return simulation.players[player].flying, .Toggle_Fly_Mode
 	case "noclip":
 		return simulation.players[player].no_clip, .Toggle_No_Clip
+	case "free_crafting":
+		return simulation.free_crafting, .Toggle_Free_Crafting
 	}
 	return simulation.cheat_speed, .Toggle_Cheat_Speed
 }

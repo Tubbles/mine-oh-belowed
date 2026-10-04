@@ -343,9 +343,11 @@ tick_field_session_player :: proc(state: ^Simulation_State, content: Simulation_
 		input.just_pressed -= {.Dig}
 	}
 	queue_field_player_edit(state, content, index, input)
-	if finished := advance_crafting(&player.crafting, player.inventory, content.recipes, content.items, state.tick_rate); finished != NO_RECIPE {
+	if finished, finished_free := advance_crafting(&player.crafting, player.inventory, content.recipes, content.items, state.tick_rate, state.free_crafting); finished != NO_RECIPE {
 		record_produced_stacks(&state.records.statistics, content.recipes.recipes[finished].outputs)
-		record_consumed_stacks(&state.records.statistics, content.recipes.recipes[finished].inputs)
+		if !finished_free {
+			record_consumed_stacks(&state.records.statistics, content.recipes.recipes[finished].inputs)
+		}
 	}
 	return events
 }

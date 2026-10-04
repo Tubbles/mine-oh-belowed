@@ -237,3 +237,23 @@ test_recipe_detail_lines :: proc(t: ^testing.T) {
 	testing.expect_value(t, can_craft_text(2), "Can craft 2")
 	testing.expect_value(t, can_craft_text(0), "Can craft 0")
 }
+
+// Free crafting (0234): every unlocked hand recipe is craftable from an
+// empty inventory, every ingredient shows as held.
+@(test)
+test_free_crafting_marks_every_unlocked_recipe_craftable :: proc(t: ^testing.T) {
+	test := make_browser_test()
+	craftable := craftable_recipes(test.recipes, test.unlocks, test.inventory, test.queue, context.temp_allocator, HAND_MAKERS, true)
+	for recipe, index in test.recipes.recipes {
+		testing.expectf(t, craftable[index] == (test.unlocks.available[index] && .Hand in recipe.made_in), "%s", recipe.id)
+	}
+	drill := test_recipe(test.recipes, "burner_mining_drill")
+	paid := craftable_recipes(test.recipes, test.unlocks, test.inventory, test.queue, context.temp_allocator)
+	testing.expect(t, !paid[drill])
+	testing.expect(t, recipe_plan_key(test.queue, test.inventory, test.unlocks.available, HAND_MAKERS, false) != recipe_plan_key(test.queue, test.inventory, test.unlocks.available, HAND_MAKERS, true))
+	planned := planned_crafts(test.queue, test.inventory, test.recipes, test.unlocks, drill, HAND_MAKERS, context.temp_allocator, true)
+	testing.expect_value(t, planned.count, PLANNED_CRAFT_COUNT_LIMIT)
+	for input in planned.inputs {
+		testing.expect_value(t, input.state, Planned_Input_State.Held)
+	}
+}

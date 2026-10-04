@@ -533,16 +533,18 @@ latency_window_ticks :: proc(round_trip_seconds: f64, tick_rate: int) -> int {
 // The state the machines compare: the loaded columns' explored surfaces
 // are refreshed first, as a save does, so a save taken on one machine
 // between two ticks (refresh_loaded_surfaces) changes no hash.
-// Beside the save's state it covers cheat speed and the saved chunks of
-// the chunks not loaded (the edited chunks outside the simulated set) in
-// coordinate order. A loaded chunk's saved entry is left out: the loaded
-// blocks are hashed and replace it when the chunk unloads, and only a
-// machine that loaded the world from a save holds such entries.
+// Beside the save's state it covers cheat speed, free crafting and the
+// saved chunks of the chunks not loaded (the edited chunks outside the
+// simulated set) in coordinate order. A loaded chunk's saved entry is
+// left out: the loaded blocks are hashed and replace it when the chunk
+// unloads, and only a machine that loaded the world from a save holds
+// such entries.
 // day_offset_ticks stays out: no tick reads it, only the sky, the weather
 // and the save do.
 lockstep_state_hash :: proc(simulation: ^Simulation_State) -> u64 {
 	refresh_loaded_surfaces(&simulation.world, &simulation.records.explored)
 	result := fingerprint_u64(simulation_state_hash(simulation), simulation.cheat_speed ? 1 : 0)
+	result = fingerprint_u64(result, simulation.free_crafting ? 1 : 0)
 	coordinates := make([dynamic]Chunk_Coordinate, 0, len(simulation.world.saved_chunks), context.temp_allocator)
 	for coordinate in simulation.world.saved_chunks {
 		if coordinate not_in simulation.world.chunks {

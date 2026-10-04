@@ -493,6 +493,7 @@ test_craft_queue_saves_runs_and_reads_the_old_layout :: proc(t: ^testing.T) {
 	queue.runs[0] = {test_recipe(test.recipes, "plank"), 20}
 	queue.runs[1] = {test_recipe(test.recipes, "stick"), 3}
 	queue.count, queue.progress_ticks, queue.waiting_for = 2, 0, test_item(test.items, "log")
+	queue.started, queue.started_free = true, true
 	bytes := make([dynamic]byte, context.temp_allocator)
 	write_value_of(&bytes, &queue)
 	read := make_craft_queue()
@@ -679,4 +680,120 @@ test_a_crafting_station_lets_the_hand_queue_cut_stone :: proc(t: ^testing.T) {
 	open_station_recipes(&state, &browser, table, maker_category)
 	close_station_recipes(&browser)
 	testing.expect_value(t, browser.filter, before)
+}
+
+@(test)
+test_free_crafting_plans_no_ingredients :: proc(t: ^testing.T) {
+	test := make_crafting_test()
+	drill := test_recipe(test.recipes, "burner_mining_drill")
+	refusal, _ := queue_crafts(&test.queue, test.inventory, test.recipes, test.unlocks, drill, 1, HAND_MAKERS, true)
+	testing.expect_value(t, refusal, Craft_Refusal.None)
+	testing.expect_value(t, test.queue.count, 1)
+	testing.expect_value(t, test.queue.runs[0], Craft_Run{drill, 1})
+	paid := make_craft_queue()
+	refusal, _ = queue_crafts(&paid, test.inventory, test.recipes, test.unlocks, drill, 1, HAND_MAKERS, false)
+	testing.expect_value(t, refusal, Craft_Refusal.Missing_Ingredients)
+	// The unlock and the maker still refuse.
+	free := make_craft_queue()
+	refusal, _ = queue_crafts(&free, test.inventory, test.recipes, test.unlocks, test_recipe(test.recipes, "steel_furnace"), 1, HAND_MAKERS, true)
+	testing.expect_value(t, refusal, Craft_Refusal.Locked)
+	refusal, _ = queue_crafts(&free, test.inventory, test.recipes, test.unlocks, test_recipe(test.recipes, "iron_plate"), 1, HAND_MAKERS, true)
+	testing.expect_value(t, refusal, Craft_Refusal.Not_Hand_Craftable)
+	refusal, _ = queue_crafts(&free, test.inventory, test.recipes, test.unlocks, test_recipe(test.recipes, "stone_brick"), 1, HAND_MAKERS, true)
+	testing.expect_value(t, refusal, Craft_Refusal.Not_Hand_Craftable)
+	testing.expect_value(t, free.count, 0)
+}
+
+advance_free_crafting_ticks :: proc(test: ^Crafting_Test, ticks: int, free_crafting: bool) -> (finished: int, finished_free: bool) {
+	for _ in 0 ..< ticks {
+		finished, finished_free = advance_crafting(&test.queue, test.inventory, test.recipes, test.items, TEST_TICK_RATE, free_crafting)
+	}
+	return
+}
+
+@(test)
+test_free_crafting_takes_nothing :: proc(t: ^testing.T) {
+	test := make_crafting_test()
+	drill := test_recipe(test.recipes, "burner_mining_drill")
+	drill_item := test_item(test.items, "burner_mining_drill")
+	queue_crafts(&test.queue, test.inventory, test.recipes, test.unlocks, drill, 1, HAND_MAKERS, true)
+	finished, finished_free := advance_free_crafting_ticks(&test, int(recipe_ticks(test.recipes.recipes[drill], HAND_CRAFT_SPEED_PERCENT, TEST_TICK_RATE)), true)
+	testing.expect_value(t, finished, drill)
+	testing.expect(t, finished_free)
+	testing.expect_value(t, inventory_count(test.inventory, drill_item), 1)
+	for slot in test.inventory.slots {
+		testing.expect(t, slot.count == 0 || slot.item == drill_item)
+	}
+	// Ingredients present are left untouched.
+	stone := test_item(test.items, "stone")
+	furnace := test_recipe(test.recipes, "stone_furnace")
+	inventory_add(test.inventory, test.items, stone, 5)
+	queue_crafts(&test.queue, test.inventory, test.recipes, test.unlocks, furnace, 1, HAND_MAKERS, true)
+	advance_free_crafting_ticks(&test, int(recipe_ticks(test.recipes.recipes[furnace], HAND_CRAFT_SPEED_PERCENT, TEST_TICK_RATE)), true)
+	testing.expect_value(t, inventory_count(test.inventory, test_item(test.items, "stone_furnace")), 1)
+	testing.expect_value(t, inventory_count(test.inventory, stone), 5)
+}
+
+@(test)
+test_a_waiting_front_starts_when_free_crafting_turns_on :: proc(t: ^testing.T) {
+	test := make_crafting_test()
+	log := test_item(test.items, "log")
+	plank := test_item(test.items, "plank")
+	inventory_add(test.inventory, test.items, log, 2)
+	refusal, _ := queue_crafts(&test.queue, test.inventory, test.recipes, test.unlocks, test_recipe(test.recipes, "plank"), 2)
+	testing.expect_value(t, refusal, Craft_Refusal.None)
+	inventory_remove(test.inventory, log, 2)
+	advance_free_crafting_ticks(&test, 5, false)
+	testing.expect(t, craft_queue_waits_for_input(test.queue))
+	advance_free_crafting_ticks(&test, 1, true)
+	testing.expect(t, test.queue.started)
+	testing.expect(t, test.queue.started_free)
+	testing.expect_value(t, test.queue.waiting_for, NO_ITEM)
+	advance_free_crafting_ticks(&test, 59, true)
+	testing.expect_value(t, inventory_count(test.inventory, plank), 8)
+	testing.expect_value(t, inventory_count(test.inventory, log), 0)
+	testing.expect_value(t, test.queue.count, 0)
+}
+
+@(test)
+test_a_craft_finishes_under_the_rule_it_started_with :: proc(t: ^testing.T) {
+	{
+		// Started free, finished with the flag off: still free.
+		test := make_crafting_test()
+		plank := test_item(test.items, "plank")
+		queue_crafts(&test.queue, test.inventory, test.recipes, test.unlocks, test_recipe(test.recipes, "plank"), 1, HAND_MAKERS, true)
+		advance_free_crafting_ticks(&test, 1, true)
+		finished, finished_free := advance_free_crafting_ticks(&test, 29, false)
+		testing.expect_value(t, finished, test_recipe(test.recipes, "plank"))
+		testing.expect(t, finished_free)
+		testing.expect_value(t, inventory_count(test.inventory, plank), 4)
+	}
+	{
+		// Started paid, finished with the flag on: paid.
+		test := make_crafting_test()
+		log := test_item(test.items, "log")
+		inventory_add(test.inventory, test.items, log, 1)
+		queue_crafts(&test.queue, test.inventory, test.recipes, test.unlocks, test_recipe(test.recipes, "plank"), 1)
+		advance_free_crafting_ticks(&test, 1, false)
+		testing.expect_value(t, inventory_count(test.inventory, log), 0)
+		finished, finished_free := advance_free_crafting_ticks(&test, 29, true)
+		testing.expect_value(t, finished, test_recipe(test.recipes, "plank"))
+		testing.expect(t, !finished_free)
+		testing.expect_value(t, inventory_count(test.inventory, test_item(test.items, "plank")), 4)
+	}
+	{
+		// A free craft in progress cancels into a full inventory and gives
+		// nothing back.
+		test := make_crafting_test()
+		test.inventory = make_inventory(1, context.temp_allocator)
+		stone := test_item(test.items, "stone")
+		inventory_add(test.inventory, test.items, stone, 1)
+		queue_crafts(&test.queue, test.inventory, test.recipes, test.unlocks, test_recipe(test.recipes, "plank"), 1, HAND_MAKERS, true)
+		advance_free_crafting_ticks(&test, 1, true)
+		testing.expect(t, last_craft_cancels(test.queue, test.inventory, test.recipes, test.items))
+		testing.expect(t, cancel_last_craft(&test.queue, test.inventory, test.recipes, test.items))
+		testing.expect_value(t, inventory_count(test.inventory, stone), 1)
+		testing.expect_value(t, inventory_count(test.inventory, test_item(test.items, "log")), 0)
+		testing.expect_value(t, test.queue.count, 0)
+	}
 }

@@ -246,6 +246,11 @@ test_command_teleport_time_and_toggles :: proc(t: ^testing.T) {
 	testing.expect(t, simulation.cheat_speed)
 	expect_command_ok(t, test, "cheat_speed off")
 	testing.expect(t, !simulation.cheat_speed)
+	expect_command_ok(t, test, "free_crafting on")
+	expect_command_ok(t, test, "free_crafting on")
+	testing.expect(t, simulation.free_crafting)
+	expect_command_ok(t, test, "free_crafting off")
+	testing.expect(t, !simulation.free_crafting)
 	expect_command_error(t, test, "fly maybe")
 
 	expect_command_ok(t, test, "noclip on")

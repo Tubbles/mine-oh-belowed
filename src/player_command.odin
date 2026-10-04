@@ -271,7 +271,7 @@ apply_player_command :: proc(state: ^Simulation_State, content: Simulation_Conte
 	case Craft_Command:
 		player := &state.players[queued.player]
 		makers := player_craft_makers(&state.world.entities, content.machines, player^)
-		refusal, _ := queue_crafts(&player.crafting, player.inventory, content.recipes, state.unlocks, command.recipe, command.count, makers)
+		refusal, _ := queue_crafts(&player.crafting, player.inventory, content.recipes, state.unlocks, command.recipe, command.count, makers, state.free_crafting)
 		refused = refusal != .None
 	case Cancel_Craft_Command:
 		player := &state.players[queued.player]
@@ -553,7 +553,7 @@ developer_request_valid :: proc(request: Developer_Request, content: Simulation_
 		return request.recipe == NO_RECIPE || index_in_range(request.recipe, len(content.recipes.recipes))
 	case .Set_Filter:
 		return item_valid(request.filter, content.items, true)
-	case .Toggle_Fly_Mode, .Toggle_No_Clip, .Unlock_All, .Teleport, .Toggle_Cheat_Speed, .Add_Vein, .Remove_At, .Finish_Active_Quest:
+	case .Toggle_Fly_Mode, .Toggle_No_Clip, .Unlock_All, .Teleport, .Toggle_Cheat_Speed, .Toggle_Free_Crafting, .Add_Vein, .Remove_At, .Finish_Active_Quest:
 		return true
 	}
 	return false

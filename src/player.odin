@@ -560,9 +560,10 @@ predict_player_motion :: proc(world: ^World, content: Simulation_Content, player
 	move_player_body(world, content.blocks, player, input, sprinting, cheat_speed, seconds)
 }
 
-// cheat_speed is the developer flag on the simulation (0044). Walking
-// over loose items picks them up (pick_up_loose_items).
-tick_player :: proc(world: ^World, records: ^Game_Records, content: Simulation_Content, players: []Player, index: int, frame: Input_Frame, tick_rate: int, tick: u64, cheat_speed := false) -> Player_Events {
+// cheat_speed is the developer flag on the simulation (0044), and so is
+// free_crafting (0234). Walking over loose items picks them up
+// (pick_up_loose_items).
+tick_player :: proc(world: ^World, records: ^Game_Records, content: Simulation_Content, players: []Player, index: int, frame: Input_Frame, tick_rate: int, tick: u64, cheat_speed := false, free_crafting := false) -> Player_Events {
 	player := &players[index]
 	seconds := 1 / f32(tick_rate)
 	player.sneaking = update_sneaking(player.sneaking, frame)
@@ -590,9 +591,11 @@ tick_player :: proc(world: ^World, records: ^Game_Records, content: Simulation_C
 		drop_player_stack(world, &records.statistics, content.blocks, player, index, player.selected_hotbar_slot)
 	}
 	player.selected_hotbar_slot = cycle_hotbar_slot(player.selected_hotbar_slot, input.just_pressed)
-	if finished := advance_crafting(&player.crafting, player.inventory, content.recipes, content.items, tick_rate); finished != NO_RECIPE {
+	if finished, finished_free := advance_crafting(&player.crafting, player.inventory, content.recipes, content.items, tick_rate, free_crafting); finished != NO_RECIPE {
 		record_produced_stacks(&records.statistics, content.recipes.recipes[finished].outputs)
-		record_consumed_stacks(&records.statistics, content.recipes.recipes[finished].inputs)
+		if !finished_free {
+			record_consumed_stacks(&records.statistics, content.recipes.recipes[finished].inputs)
+		}
 	}
 	return events
 }
