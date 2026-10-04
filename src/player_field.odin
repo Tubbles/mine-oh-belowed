@@ -819,7 +819,7 @@ step_field_walk :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Field
 	}
 	under := probe_field_ground(world, frames, tuning, dropped, up, {}, true)
 	ground := judge_ground_over_footprint(world, frames, tuning, dropped, up, forward, under)
-	if !ground.on || !ground.walkable || field_landing_held_by_steep_contact(frames, tuning, dropped, up, under) {
+	if !ground.on || !ground.walkable || field_landing_held_by_steep_contact(frames, tuning, dropped, up, motion, under) {
 		return plain_end, false
 	}
 	return dropped, true
@@ -831,14 +831,30 @@ step_field_walk :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Field
 // (spacing/16) below: the foot of a steep volume, which the next tick's
 // settle would drop the player off again. Only the volumes count: a steep
 // bump of the field narrower than the footprint (0203) rests the sphere
-// the same way and is walked over by design. A lip of
-// the step height stays walkable at crouch speed at every spacing
-// (test_a_lip_of_the_step_height_is_stepped_onto_at_crouch_speed).
-field_landing_held_by_steep_contact :: proc(frames: ^Frame_Table, tuning: Field_Player_Tuning, feet: World_Position, up: [3]i64, under: Field_Ground) -> bool {
+// the same way and is walked over by design. A landing on a lip's edge
+// whose centre is still short of the top, steep at crouch speed, is taken
+// when the point a radius ahead reads the top (field_walkable_volume_ahead,
+// 0232, test_a_low_lip_is_stepped_onto_at_crouch_and_walking_speed), while
+// a steep slope reads steep there too.
+field_landing_held_by_steep_contact :: proc(frames: ^Frame_Table, tuning: Field_Player_Tuning, feet: World_Position, up, motion: [3]i64, under: Field_Ground) -> bool {
 	contact := frame_body_probe(frames, field_capsule_centre(tuning, feet, up, 0), field_frame_probe_reach(tuning))
 	touching := contact.found && contact.distance <= tuning.capsule_radius + FIELD_GROUND_TOLERANCE
 	land_tolerance := sample_axis_to_position(1, tuning.spacing_millimetres) / FIELD_GROUND_LAND_SPACING_DIVISOR
-	return touching && fixed_dot(contact.normal, up) < tuning.walkable_cosine && under.walkable && under.below > land_tolerance
+	return touching && fixed_dot(contact.normal, up) < tuning.walkable_cosine && under.walkable && under.below > land_tolerance && !field_walkable_volume_ahead(frames, tuning, feet, up, motion)
+}
+
+// The point a capsule radius ahead of the bottom sphere's centre along the
+// walk is near a volume's walkable surface, as over a lip's top once the
+// sphere rests on its edge (0232). A point inside a volume does not count:
+// its normal is only that of the nearest face.
+field_walkable_volume_ahead :: proc(frames: ^Frame_Table, tuning: Field_Player_Tuning, feet: World_Position, up, motion: [3]i64) -> bool {
+	direction, ok := collision_unit(project_onto_plane(motion, up))
+	if !ok {
+		return false
+	}
+	point := field_capsule_centre(tuning, feet, up, 0) + World_Position(fixed_scale(direction, tuning.capsule_radius))
+	contact := frame_body_probe(frames, point, field_frame_probe_reach(tuning))
+	return contact.found && contact.distance >= 0 && contact.distance <= tuning.capsule_radius + FIELD_GROUND_TOLERANCE && fixed_dot(contact.normal, up) >= tuning.walkable_cosine
 }
 
 // A step or a mantle's landing: the player stands there, still.
@@ -943,14 +959,30 @@ walk_field_player :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Fie
 // rounded foot never climbs on without the step, and a player left there
 // settles to the floor, while walkable ground lifts them (a lip lower
 // than the step whose blurred face is walkable is walked up, 0203). A
-// tick whose walk took the move a step higher stands where that landed.
+// capsule whose bottom sphere rests on a walkable surface of a frame's
+// cell or a body's volume (a lip's edge, a rim) is left where the walk's
+// drop rested it, since lowering it into the sharp corner and pushing it
+// back out would roll it down over the edge (0232). A tick whose walk
+// took the move a step higher stands where that landed.
 settle_field_player :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Field_Player_Tuning, player: ^Field_Player, over: i64) {
+	if capsule_rests_on_walkable_frame_contact(frames, tuning, player.position, player.up) {
+		return
+	}
 	lowered := player.position - World_Position(fixed_scale(player.up, over))
 	unused_velocity: [3]i64
 	resolve_field_penetration(world, frames, tuning, &lowered, player.up, &unused_velocity, tuning.walkable_cosine)
 	if fixed_dot(cast([3]i64)(player.position - lowered), player.up) > 0 {
 		player.position = lowered
 	}
+}
+
+// Whether the bottom sphere, the one that rests on ground, touches a solid
+// frame cell or a body's volume (0230) on a surface no steeper than
+// walkable. The upper spheres are not read, so a volume's top edge at
+// chest height does not hold the capsule (0232).
+capsule_rests_on_walkable_frame_contact :: proc(frames: ^Frame_Table, tuning: Field_Player_Tuning, feet: World_Position, up: [3]i64) -> bool {
+	contact := frame_probe(frames, field_capsule_centre(tuning, feet, up, 0), field_frame_probe_reach(tuning))
+	return contact.found && contact.distance <= tuning.capsule_radius + FIELD_GROUND_TOLERANCE && fixed_dot(contact.normal, up) >= tuning.walkable_cosine
 }
 
 // The developer fly mode in the planet's frame: the heading and its right

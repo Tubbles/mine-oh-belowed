@@ -282,10 +282,10 @@ run_field_player_on_frames :: proc(world: ^Field_World, frames: ^Frame_Table, tu
 	}
 }
 
-// The steep contact rule of the step (0230) keeps a lip of the step
-// height walkable at crouch speed, where the edge meets the bottom sphere
-// steepest, at every spacing: a sharp box volume 8 cells deep whose face
-// the player crouch walks into.
+// A lip of the step height at crouch speed hangs the step's landing
+// beyond the leave tolerance at every spacing, so the ledge climbs it
+// (the steep contact rule of 0230 never decides there): a sharp box
+// volume 8 cells deep whose face the player crouch walks into.
 @(test)
 test_a_lip_of_the_step_height_is_stepped_onto_at_crouch_speed :: proc(t: ^testing.T) {
 	for spacing in TEST_FIELD_SPACINGS {
@@ -310,4 +310,140 @@ test_a_lip_of_the_step_height_is_stepped_onto_at_crouch_speed :: proc(t: ^testin
 		model := test_body_model_point(body, player.position)
 		testing.expectf(t, player.on_ground && abs(site_height(player.position) - top) <= FIELD_GROUND_TOLERANCE, "%d mm: the feet at %d (x %d), the lip's top at %d", spacing, site_height(player.position), model.x, top)
 	}
+}
+
+// One tick's move across the up, and whether a sphere of the posture's
+// capsule reaches into a body: the per tick checks of the walks onto a
+// lip and the pod's rim (0232).
+test_lip_tick_problem :: proc(frames: ^Frame_Table, tuning: Field_Player_Tuning, before: World_Position, player: Field_Player) -> (moved, nearest: i64) {
+	moved = vector_length(project_onto_plane(cast([3]i64)(player.position - before), player.up))
+	nearest = test_nearest_body(frames, field_posture_tuning(tuning, player.crouching), player)
+	return
+}
+
+Test_Lip_Case :: struct {
+	spacing:      int,
+	height_cells: f64,
+}
+
+// A lip of a quarter of the step height at every spacing, and the pod
+// rim's height at 1000 mm, walked onto crouched and walking: the edge
+// contact is steeper than walkable at crouch speed on the 250 mm lip at
+// 1000 mm, which the steep contact rule of 0230 refused until the point
+// a radius ahead read the top (0232). The top is 1 m deep along the
+// walk, shorter than the ledge's stride at 1000 mm, so a ledge lurch
+// cannot pass for a step.
+@(test)
+test_a_low_lip_is_stepped_onto_at_crouch_and_walking_speed :: proc(t: ^testing.T) {
+	cases: [dynamic]Test_Lip_Case
+	cases.allocator = context.temp_allocator
+	for spacing in TEST_FIELD_SPACINGS {
+		tuning := test_field_tuning(spacing, shipped_field_player_config())
+		append(&cases, Test_Lip_Case{spacing, f64(tuning.step_height / 4) / TEST_BODY_CELL})
+	}
+	append(&cases, Test_Lip_Case{1000, 0.35})
+	inputs := [2]Field_Player_Input{{move = {0, FIELD_MOVE_ONE}, held = {.Sneak}}, FIELD_WALK_FORWARD}
+	for lip in cases {
+		tuning := test_field_tuning(lip.spacing, shipped_field_player_config())
+		for input in inputs {
+			gait := .Sneak in input.held ? "crouched" : "walking"
+			world := make_test_field(Test_Terrain{kind = .Flat}, lip.spacing)
+			defer destroy_field_world(&world)
+			frames: Frame_Table
+			defer destroy_frame_table(&frames)
+			_, body := place_test_body(&frames, test_box_definitions({-1, 0, -6}, {1, lip.height_cells, 6}), TEST_BODY_FOOTPRINT)
+			top := body.volumes[0].to.y
+			player := make_test_body_player(body, {TEST_BODY_CELL + metres_to_position_units(2), TEST_BODY_DROP, 0}, {-UNIT_VECTOR_ONE, 0, 0})
+			run_field_player_on_frames(&world, &frames, tuning, &player, {}, 20)
+			for tick in 0 ..< 180 {
+				if test_body_model_point(body, player.position).x <= 0 {
+					break
+				}
+				before := player.position
+				tick_field_player(&world, &frames, tuning, &player, input)
+				moved, nearest := test_lip_tick_problem(&frames, tuning, before, player)
+				testing.expectf(t, moved <= tuning.capsule_radius, "%d mm lip %d %s tick %d: the feet moved %d", lip.spacing, top, gait, tick, moved)
+				testing.expectf(t, nearest >= tuning.capsule_radius - FIELD_PENETRATION_TOLERANCE, "%d mm lip %d %s tick %d: a sphere is %d from the lip", lip.spacing, top, gait, tick, nearest)
+			}
+			model := test_body_model_point(body, player.position)
+			testing.expectf(t, model.x <= 0, "%d mm lip %d %s: the walk ended at x %d, height %d", lip.spacing, top, gait, model.x, site_height(player.position))
+			run_field_player_on_frames(&world, &frames, tuning, &player, {held = input.held}, 30)
+			testing.expectf(t, player.on_ground && abs(site_height(player.position) - top) <= FIELD_GROUND_TOLERANCE, "%d mm lip %d %s: the feet at %d (x %d), on the ground %v", lip.spacing, top, gait, site_height(player.position), test_body_model_point(body, player.position).x, player.on_ground)
+		}
+	}
+}
+
+// The steep contact rule's reading ahead at 1000 mm (0232): a landing on
+// a lip's edge, its contact steeper than walkable and the feet hanging
+// beyond the land tolerance, is taken when the walk heads over the top
+// and held without a walk or heading away; a landing at the foot of the
+// steep cone of test 8 of 0230 is held whichever way the walk heads.
+@(test)
+test_the_steep_contact_rule_reads_a_walkable_top_ahead_and_holds_a_cone :: proc(t: ^testing.T) {
+	world := make_test_field(Test_Terrain{kind = .Flat}, 1000)
+	defer destroy_field_world(&world)
+	tuning := test_field_tuning(1000, shipped_field_player_config())
+	lip_frames: Frame_Table
+	defer destroy_frame_table(&lip_frames)
+	frame, lip := place_test_body(&lip_frames, test_box_definitions({-6, 0, -6}, {1, 0.5, 6}), TEST_BODY_FOOTPRINT)
+	up := frame.axes[FRAME_UP]
+	towards := frame_world_direction(frame, {-293, 0, 0})
+	feet := test_body_world_point(lip, {2048 + 1106, 329, 0})
+	under := probe_field_ground(&world, &lip_frames, tuning, feet, up, {}, true)
+	testing.expectf(t, under.on && under.walkable && under.below > 256, "the lip's landing: on %v walkable %v below %d", under.on, under.walkable, under.below)
+	testing.expect(t, !field_landing_held_by_steep_contact(&lip_frames, tuning, feet, up, towards, under), "the lip's landing held with the walk towards it")
+	testing.expect(t, field_landing_held_by_steep_contact(&lip_frames, tuning, feet, up, {}, under), "the lip's landing taken without a walk")
+	testing.expect(t, field_landing_held_by_steep_contact(&lip_frames, tuning, feet, up, frame_world_direction(frame, {293, 0, 0}), under), "the lip's landing taken with the walk away")
+	testing.expect(t, field_walkable_volume_ahead(&lip_frames, tuning, feet, up, towards), "no walkable top read ahead of the lip's landing")
+	cone_frames: Frame_Table
+	defer destroy_frame_table(&cone_frames)
+	_, cone := place_test_body(&cone_frames, test_cone_definitions(2, 6), TEST_BODY_FOOTPRINT)
+	foot := test_body_world_point(cone, {10589, 820, 0})
+	cone_under := probe_field_ground(&world, &cone_frames, tuning, foot, up, {}, true)
+	motions := [3][3]i64{towards, frame_world_direction(frame, {0, 0, 293}), {}}
+	for motion in motions {
+		testing.expectf(t, field_landing_held_by_steep_contact(&cone_frames, tuning, foot, up, motion, cone_under), "the cone's landing taken with the walk %v (under on %v walkable %v below %d)", motion, cone_under.on, cone_under.walkable, cone_under.below)
+	}
+	testing.expect(t, !field_walkable_volume_ahead(&cone_frames, tuning, foot, up, towards), "a walkable surface read ahead on the cone")
+}
+
+// The pod's heat shield rim and hull wall (data/models/pod.collision.sjson)
+// at 1000 mm: the ring is narrower than the capsule's radius, so a
+// crouched walk towards the axis ends resting on the rim's edge against
+// the wall, on the ground and still (0232).
+@(test)
+test_the_pod_rim_is_stepped_onto_at_crouch_speed_against_the_hull_wall :: proc(t: ^testing.T) {
+	definitions := []Collision_Volume_Definition {
+		{kind = "round", axis = "y", from = {0, 0, 0}, to = {0, 0.35, 0}, radius_from = 5.45, radius_to = 5.45, shell = 0.45},
+		{kind = "round", axis = "y", from = {0, 0, 0}, to = {0, 2.2, 0}, radius_from = 5, radius_to = 5, shell = 0.4},
+	}
+	world := make_test_field(Test_Terrain{kind = .Flat}, 1000)
+	defer destroy_field_world(&world)
+	frames: Frame_Table
+	defer destroy_frame_table(&frames)
+	_, body := place_test_body(&frames, definitions, TEST_BODY_FOOTPRINT)
+	tuning := test_field_tuning(1000, shipped_field_player_config())
+	top := body.volumes[0].to.y
+	wall := i64(5 * TEST_BODY_CELL)
+	player := make_test_body_player(body, {wall + metres_to_position_units(2), TEST_BODY_DROP, 0}, {-UNIT_VECTOR_ONE, 0, 0})
+	run_field_player_on_frames(&world, &frames, tuning, &player, {}, 20)
+	crouch := Field_Player_Input{move = {0, FIELD_MOVE_ONE}, held = {.Sneak}}
+	lowest, highest := max(i64), min(i64)
+	for tick in 0 ..< 150 {
+		before := player.position
+		tick_field_player(&world, &frames, tuning, &player, crouch)
+		moved, nearest := test_lip_tick_problem(&frames, tuning, before, player)
+		testing.expectf(t, moved <= tuning.capsule_radius, "tick %d: the feet moved %d", tick, moved)
+		testing.expectf(t, nearest >= tuning.capsule_radius - FIELD_PENETRATION_TOLERANCE, "tick %d: a sphere is %d from the pod", tick, nearest)
+		if tick >= 120 {
+			lowest = min(lowest, site_height(player.position))
+			highest = max(highest, site_height(player.position))
+		}
+	}
+	radius := test_body_radius(body, player.position)
+	height := site_height(player.position)
+	testing.expectf(t, radius >= wall + tuning.capsule_radius - FIELD_PENETRATION_TOLERANCE && radius <= wall + tuning.capsule_radius + test_walk_per_tick(tuning), "the walk ended at radius %d, the wall at %d", radius, wall)
+	testing.expectf(t, height >= top - tuning.capsule_radius / 4 && height <= top + FIELD_GROUND_TOLERANCE, "the feet at %d, the rim's top at %d", height, top)
+	testing.expectf(t, player.on_ground, "not on the ground at height %d", height)
+	testing.expectf(t, highest - lowest <= FIELD_GROUND_TOLERANCE, "the feet moved between %d and %d over the last 30 ticks", lowest, highest)
 }
