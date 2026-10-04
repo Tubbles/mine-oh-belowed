@@ -1,6 +1,6 @@
 # 0234: A free crafting toggle on the Developer screen
 
-Status: verified (2026-10-04, implementer agent acf08caa1140d4944, verified the same day with no fix round, in `.claude/worktrees/0234` on `item/0234` from 0233's snapshot, the specification approved the same day with the decisions below; from the user: "in the developer menu, can you add a new switch toggle that enables crafting without consuming materials, it just crafts the thing no matter if we have the required materials in the inventory, and doesn't consume any materials that happened to exist. Sort of an in game 'give' cheat mode. It doesnt unlock anything new, we already have that as a separate button")
+Status: landed (2026-10-04, "Add a free crafting toggle to the Developer screen (0234)", 7a970ec, installed the same day; implementer agent acf08caa1140d4944, verified the same day with no fix round, in `.claude/worktrees/0234` on `item/0234` from 0233's snapshot, the specification approved the same day with the decisions below; from the user: "in the developer menu, can you add a new switch toggle that enables crafting without consuming materials, it just crafts the thing no matter if we have the required materials in the inventory, and doesn't consume any materials that happened to exist. Sort of an in game 'give' cheat mode. It doesnt unlock anything new, we already have that as a separate button")
 
 ## Goal
 
