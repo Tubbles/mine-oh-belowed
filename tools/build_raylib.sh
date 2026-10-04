@@ -123,6 +123,89 @@ patch_android_key_queue_bound() {
 	mv "$source_file.new" "$source_file"
 }
 
+# The gamepad key branch of AndroidInputCallback (rcore_android.c) in 6.0
+# refuses a key event whose source carries the KEYBOARD bit beside the
+# JOYSTICK or GAMEPAD bit, and Android stamps the KEYBOARD bit on every key
+# event of a gamepad (the user's GameSir X2 reports source 0x01000511 on
+# every button), so only the sticks' motion events reached the game (work
+# item 0236). The block is rewritten into the form of upstream PR #5824
+# (raysan5/raylib a005a044d, merged 2026-05-10, after the 6.0 tag): the
+# source bits only select the branch, AndroidTranslateGamepadButton
+# decides, and an unknown keycode (a phone's volume keys arrive with the
+# GAMEPAD bit, the bug the 6.0 guard was added for) falls through to the
+# keyboard handler. The block is matched whole and exactly once, so a
+# raylib that has absorbed the fix fails here and the patch is dropped.
+patch_android_gamepad_source_bits() {
+	local source_file="$source_directory/src/platforms/rcore_android.c"
+	local old_block new_block
+	old_block=$(cat <<'EOF'
+        // Handle gamepad button presses and releases
+        // NOTE: Skip gamepad handling if this is a keyboard event, as some devices
+        // report both AINPUT_SOURCE_KEYBOARD and AINPUT_SOURCE_GAMEPAD flags
+        if ((FLAG_IS_SET(source, AINPUT_SOURCE_JOYSTICK) ||
+             FLAG_IS_SET(source, AINPUT_SOURCE_GAMEPAD)) &&
+            !FLAG_IS_SET(source, AINPUT_SOURCE_KEYBOARD))
+        {
+            // Assuming a single gamepad, "detected" on its input event
+            CORE.Input.Gamepad.ready[0] = true;
+
+            GamepadButton button = AndroidTranslateGamepadButton(keycode);
+
+            if (button == GAMEPAD_BUTTON_UNKNOWN) return 1;
+
+            if (AKeyEvent_getAction(event) == AKEY_EVENT_ACTION_DOWN)
+            {
+                CORE.Input.Gamepad.currentButtonState[0][button] = 1;
+            }
+            else CORE.Input.Gamepad.currentButtonState[0][button] = 0;  // Key up
+
+            return 1; // Handled gamepad button
+        }
+EOF
+)
+	new_block=$(cat <<'EOF'
+        // Handle gamepad button presses and releases. AOSP stamps the
+        // KEYBOARD source bit on every key event from a gamepad, so
+        // discriminate on the keycode rather than gating on source bits.
+        if (FLAG_IS_SET(source, AINPUT_SOURCE_JOYSTICK) ||
+            FLAG_IS_SET(source, AINPUT_SOURCE_GAMEPAD))
+        {
+            GamepadButton button = AndroidTranslateGamepadButton(keycode);
+
+            if (button != GAMEPAD_BUTTON_UNKNOWN)
+            {
+                // Assuming a single gamepad, "detected" on its input event
+                CORE.Input.Gamepad.ready[0] = true;
+
+                if (AKeyEvent_getAction(event) == AKEY_EVENT_ACTION_DOWN)
+                {
+                    CORE.Input.Gamepad.currentButtonState[0][button] = 1;
+                }
+                else CORE.Input.Gamepad.currentButtonState[0][button] = 0;  // Key up
+
+                return 1; // Handled gamepad button
+            }
+            // Unknown keycode: fall through to the keyboard handler below.
+        }
+EOF
+)
+	OLD_BLOCK="$old_block" NEW_BLOCK="$new_block" awk '
+		BEGIN { RS = "^$"; old = ENVIRON["OLD_BLOCK"]; new = ENVIRON["NEW_BLOCK"] }
+		{
+			start = index($0, old)
+			if (start == 0) exit 1
+			rest = substr($0, start + length(old))
+			if (index(rest, old) != 0) exit 1
+			printf "%s%s%s", substr($0, 1, start - 1), new, rest
+		}
+	' "$source_file" > "$source_file.new" || {
+		echo "rcore_android.c: expected the 6.0 gamepad key block of AndroidInputCallback once" >&2
+		rm -f "$source_file.new"
+		exit 1
+	}
+	mv "$source_file.new" "$source_file"
+}
+
 # raylib's cmake forces OpenGL ES 2.0 for PLATFORM=Android; OPENGL_VERSION
 # "ES 3.0" overrides it with a warning ("You are overriding the suggested
 # GRAPHICS"), which is expected. The archive holds rcore_android.c with
@@ -181,6 +264,7 @@ $android_record_marker
 - android raylib tag: $raylib_tag ($raylib_url), commit $commit
 - android source patch: src/rlgl.h, the two OpenGL ES3 default shader lines "precision mediump float;" become "precision highp float;" (work item 0126)
 - android source patch: src/platforms/rcore_android.c, the key branch's keyPressedQueue append is bounded by MAX_KEY_PRESSED_QUEUE as on the desktop (work item 0133)
+- android source patch: src/platforms/rcore_android.c, the gamepad key block of AndroidInputCallback routes by keycode instead of refusing events with the KEYBOARD source bit, as upstream PR #5824 (work item 0236)
 - android cmake flags: -G "Unix Makefiles" -DCMAKE_TOOLCHAIN_FILE=<ndk>/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-$ANDROID_API_LEVEL -DPLATFORM=Android -DOPENGL_VERSION="ES 3.0" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DBUILD_EXAMPLES=OFF
 - android compiler: NDK $ANDROID_NDK_VERSION, $compiler
 - android built: $(date -u +%Y-%m-%dT%H:%MZ)
@@ -203,6 +287,7 @@ android_build_on_host() {
 	fetch_source
 	patch_default_shader_precision
 	patch_android_key_queue_bound
+	patch_android_gamepad_source_bits
 	android_configure_and_build
 	mkdir -p "$collection_directory/android"
 	# The NDK compiles with -g even in Release; without the debug sections
