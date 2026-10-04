@@ -1,0 +1,8 @@
+// The pod's interior cameras for render.py (tools/model_lab/render.py):
+// metres in the Blender frame (x the front, y left, z up, the footprint
+// centred). Move them as the model takes shape.
+pod = [
+	{name = "inside_chair", position = [0, 0, 1.2], target = [2.5, 0, 0.9], field_of_view_degrees = 80}
+	{name = "inside_door", position = [1.6, 0, 0.8], target = [-1, 0, 1], field_of_view_degrees = 80}
+	{name = "inside_wide", position = [-1.5, 0, 1.4], target = [1, 0, 0.9], field_of_view_degrees = 80}
+]

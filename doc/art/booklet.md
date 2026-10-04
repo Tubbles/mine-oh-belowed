@@ -573,7 +573,7 @@ The exterior came with the model (below) from the notes alone; the arrival (the 
 
 ### The model
 
-Three rounds in the sealed lab (`tools/model_lab/make_pod_lab.sh`, the brief in `tools/model_lab/pod/BRIEF.md`) on 2026-10-04, from the kept interior and the user's notes alone, under a budget the user raised twice: 12800 triangles for the first two rounds ("since this is such an important model we can increase the budget all the way to 12800") and 25600 for the third.
+Three rounds in the sealed lab (the brief in `tools/model_lab/pod/BRIEF.md`) on 2026-10-04, from the kept interior and the user's notes alone, under a budget the user raised twice: 12800 triangles for the first two rounds ("since this is such an important model we can increase the budget all the way to 12800") and 25600 for the third.
 
 ![The pod, round one of the model seen from the player's eye in the game](booklet/pod_model_round1.jpg)
 
