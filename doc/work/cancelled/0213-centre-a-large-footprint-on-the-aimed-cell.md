@@ -1,6 +1,6 @@
 # 0213: Centre a large footprint on the aimed cell
 
-Status: todo (2026-10-03, from the 0212 design's questions; after 0212)
+Status: cancelled (2026-10-04, folded into 0215, the placement editor, whose off state places a large machine centred on the aimed cell; written 2026-10-03 from the 0212 design's questions)
 
 ## Goal
 

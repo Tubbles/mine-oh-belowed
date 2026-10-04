@@ -203,7 +203,7 @@ Run `./build.sh test`; the stone furnace grows from 2 by 2 by 2 to 10 by 10 by 1
 
 1. The triangle budget stays at 800 for the first hand back, with the cut order above. If a round's ask does not fit, the main agent raises `MODEL_BODY_TRIANGLES_MAXIMUM` to 1600 for every body (one constant, the "at most 800 triangles per body" sentence of `DESIGN.md`, Art direction, and `doc/presentation.md`, Machine models) and tells the user; the implementer never raises it on its own.
 2. Field play at 5 by 5 m is left as the specification assumes; the decision (the flatness, a tolerance per record, the starting foundations) is in `SUGGESTIONS.md`, Decisions needed, and the couch tells first.
-3. Placement anchoring is its own item, `0213-centre-a-large-footprint-on-the-aimed-cell.md`.
+3. Placement anchoring is its own item, `0213-centre-a-large-footprint-on-the-aimed-cell.md` (folded into 0215, the placement editor, on 2026-10-04).
 4. The hero view gets its camera in this item (the section below), so every round shows the mouth and the console together.
 5. The generic tests move to the steel furnace as written; they get a test only machine record when the steel furnace is redone, not before.
 
