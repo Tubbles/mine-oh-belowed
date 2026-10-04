@@ -1,6 +1,6 @@
 # 0235: Android follows the sensor between the two landscapes
 
-Status: verified (2026-10-04, done by the main agent as trivia (one manifest attribute, the doc and the log), the APK build its check, the phone the user's; from the user on the phone: "On android it needs to allow for reversed landscape, my gamesir x2 connects in the opposite orientation, so the game is now upside down"; the manifest locked the activity to `landscape`, one of the two)
+Status: landed (2026-10-04, "Let Android turn the game between the two landscapes (0235)", 453b1fe, APK 489 sent the same day; done by the main agent as trivia (one manifest attribute, the doc and the log); from the user on the phone: "On android it needs to allow for reversed landscape, my gamesir x2 connects in the opposite orientation, so the game is now upside down"; the manifest locked the activity to `landscape`, one of the two)
 
 ## Goal
 
