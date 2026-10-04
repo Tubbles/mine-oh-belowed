@@ -673,18 +673,21 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context, hud: Hud_Cont
 		ui_hud_glyph_bar(state, hints[:], len(hints), true)
 		return
 	}
-	hints, kept := world_glyph_hints(screen_context, hud)
+	hints, kept := world_glyph_hints(screen_context, hud, glyph(state, .Interact) == glyph(state, .Inventory))
 	ui_hud_glyph_bar(state, hints, kept, false)
 }
 
 // The world's glyph bar (0219), in the temp allocator: the aimed thing's
 // hints, the held item's on the field, Sprint, then Inventory and Pause.
 // kept counts the aimed and held hints, which the bar keeps beside the
-// hotbar or moves above it for (hud_glyph_bar_layout).
-world_glyph_hints :: proc(screen_context: Screen_Context, hud: Hud_Context) -> (hints: []Glyph_Hint, kept: int) {
+// hotbar or moves above it for (hud_glyph_bar_layout). Where the aimed
+// thing takes Interact on the Inventory's control (the gamepad's X, 0233)
+// neither Open nor Inventory shows: the press is Interact's there.
+world_glyph_hints :: proc(screen_context: Screen_Context, hud: Hud_Context, interact_shares_inventory_control := false) -> (hints: []Glyph_Hint, kept: int) {
 	list := make([dynamic]Glyph_Hint, context.temp_allocator)
 	append(&list, ..aimed_glyph_hints(screen_context, hud))
-	opens := inventory_hint_key(screen_context, hud) == "hint_open"
+	merged := interact_shares_inventory_control && hud_target_takes_interact(screen_context, hud)
+	opens := !merged && inventory_hint_key(screen_context, hud) == "hint_open"
 	if opens {
 		append(&list, Glyph_Hint{.Inventory, text("hint_open")})
 	}
@@ -696,7 +699,7 @@ world_glyph_hints :: proc(screen_context: Screen_Context, hud: Hud_Context) -> (
 	if sprint_hint_shown(player^) {
 		append(&list, Glyph_Hint{.Sprint, text("hint_sprint")})
 	}
-	if !opens {
+	if !opens && !merged {
 		append(&list, Glyph_Hint{.Inventory, text("hint_inventory")})
 	}
 	append(&list, Glyph_Hint{.Pause, text("hint_pause")})
@@ -845,6 +848,12 @@ field_pick_up_hint_shown :: proc(screen_context: Screen_Context, hud: Hud_Contex
 inventory_hint_key :: proc(screen_context: Screen_Context, hud: Hud_Context) -> string {
 	aimed := aims_at_panel(&screen_context.world.entities, screen_context.machines, screen_context.player.target.entity, hud_field_player(screen_context, hud).frame_target)
 	return aimed ? "hint_open" : "hint_inventory"
+}
+
+// The aimed thing takes Interact (a switch, a crate), as the frame's
+// routing reads it.
+hud_target_takes_interact :: proc(screen_context: Screen_Context, hud: Hud_Context) -> bool {
+	return entity_takes_interact(&screen_context.world.entities, screen_context.machines, aimed_entity(screen_context.player.target.entity, hud_field_player(screen_context, hud).frame_target))
 }
 
 // The aimed frame cell holds a power switch, which Interact turns (0194).

@@ -18,18 +18,18 @@
 // backend has no paddles, MISC buttons or trackpads and reports those
 // bindings once at start. The sticks (move, look) and WASD are not bindings.
 // One control may carry several actions, a world and a menu meaning: A is
-// Jump, Interact and Confirm, and Interact wins over Jump while a power
-// switch or a launch pad is targeted (resolve_interact in src/player.odin).
-// Open_Inventory opens the targeted machine's panel instead of the
-// inventory (route_open_inventory_press in src/input_actions.odin).
+// Jump and Confirm, X is Open_Inventory and Interact in the world and
+// Context_Action in menus (work item 0233). Open_Inventory opens the
+// targeted machine's panel instead of the inventory, and on a target
+// Interact acts on (a power switch, a schematic crate) a press of both is
+// Interact's alone (route_open_inventory_press in src/input_actions.odin).
 // A configuration file may list bindings in the same shape under
 // `bindings`; every action it lists loses all of its defaults.
 bindings = [
 	// Gamepad, in the world.
 	{action = "Jump" device = "gamepad" control = "SOUTH" context = "world"}
 	{action = "Jump" device = "gamepad" control = "LEFT_PADDLE1" context = "world"}
-	{action = "Interact" device = "gamepad" control = "SOUTH" context = "world"}
-	{action = "Interact" device = "gamepad" control = "LEFT_PADDLE1" context = "world"}
+	{action = "Interact" device = "gamepad" control = "WEST" context = "world"}
 	{action = "Interact" device = "gamepad" control = "MISC2" context = "world"}
 	{action = "Sneak" device = "gamepad" control = "EAST" context = "world"}
 	{action = "Sneak" device = "gamepad" control = "RIGHT_PADDLE1" context = "world"}

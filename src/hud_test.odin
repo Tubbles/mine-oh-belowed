@@ -166,3 +166,48 @@ test_the_glyph_bar_offers_nothing_on_a_hatch :: proc(t: ^testing.T) {
 	aim(state, frame.id, inner)
 	testing.expectf(t, len(aimed_hints(state, simulation_content)) == 0, "the open inner door offers %v", aimed_hints(state, simulation_content))
 }
+
+// Work item 0233: on the gamepad Interact and Inventory share X, so on a
+// power switch the bar shows Turn alone and on a full schematic crate
+// Take alone; with separate controls (the keyboard's F and E) Open or
+// Inventory shows beside them. A furnace shows Open on X either way.
+@(test)
+test_x_shows_one_hint_on_a_switch_and_a_crate :: proc(t: ^testing.T) {
+	use_shipped_strings()
+	defer thread_string_table = nil
+	content := make_test_content()
+	world := make_floor_world(content.blocks, 32)
+	switch_handle := add_entity(&world.entities, content.machines, test_machine(content.machines, "power_switch"), {4, 1, 4}, 0)
+	furnace := add_entity(&world.entities, content.machines, test_machine(content.machines, "steel_furnace"), {8, 1, 4}, 0)
+	player := make_test_player(content.blocks, {4.5, 1, 1.5})
+	player.target = Raycast_Hit{hit = true, block = {4, 1, 4}, entity = switch_handle}
+	screen_context := Screen_Context{content = content, world = &world, player = &player}
+	hints, _ := world_glyph_hints(screen_context, {}, true)
+	testing.expect(t, slice.equal(hint_buttons(hints), []Glyph_Button{.Interact, .Pause}), "Turn, Pause")
+	testing.expect_value(t, hints[0].label, "Turn")
+	hints, _ = world_glyph_hints(screen_context, {}, false)
+	testing.expect(t, slice.equal(hint_buttons(hints), []Glyph_Button{.Interact, .Inventory, .Pause}), "Turn, Open, Pause")
+	testing.expect_value(t, hints[1].label, "Open")
+	player.target = Raycast_Hit{hit = true, block = {8, 1, 4}, entity = furnace}
+	hints, _ = world_glyph_hints(screen_context, {}, true)
+	testing.expect(t, slice.equal(hint_buttons(hints), []Glyph_Button{.Inventory, .Pause}), "Open, Pause")
+	testing.expect_value(t, hints[0].label, "Open")
+
+	crate_world := make_drill_world(content)
+	records := make_test_records(content)
+	sites := [1]Crate_Site{{region = {0, 0}, position = {4, 1, 4}, choice = 3}}
+	register_crate_sites(&records.crate_sites, sites[:])
+	place_pending_crates(world_tick_context(&crate_world, &records, content, TEST_TICK_RATE))
+	crate := entity_at(&crate_world.entities, {4, 1, 4})
+	player.target = Raycast_Hit{hit = true, block = {4, 1, 4}, entity = crate}
+	crate_context := Screen_Context{content = content, world = &crate_world, player = &player}
+	hints, _ = world_glyph_hints(crate_context, {}, true)
+	testing.expect(t, slice.equal(hint_buttons(hints), []Glyph_Button{.Interact, .Pause}), "Take, Pause")
+	hints, _ = world_glyph_hints(crate_context, {}, false)
+	testing.expect(t, slice.equal(hint_buttons(hints), []Glyph_Button{.Interact, .Inventory, .Pause}), "Take, Inventory, Pause")
+	testing.expect_value(t, hints[1].label, "Inventory")
+	// An empty crate takes no Interact: X opens the inventory there.
+	pool_get(&crate_world.entities.schematic_crates, crate).slots[0] = EMPTY_STACK
+	hints, _ = world_glyph_hints(crate_context, {}, true)
+	testing.expect(t, slice.equal(hint_buttons(hints), []Glyph_Button{.Inventory, .Pause}), "Inventory, Pause")
+}

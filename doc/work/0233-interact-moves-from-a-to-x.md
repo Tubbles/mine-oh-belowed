@@ -1,6 +1,6 @@
 # 0233: Interact moves from A to X, A jumps alone
 
-Status: implementing (2026-10-04, in `.claude/worktrees/0233` on `item/0233` from 0231's pass A snapshot a7aae5f, the specification approved the same day with the decisions below; from the user: "Do we still have 'A to interact' still left bound for anything? In that case i want it moved to X. A shall be solely for jumping"; today A and the L4 paddle carry Jump and Interact, Interact winning on a power switch, a launch pad and a schematic crate (`without_interact_jump`, `without_field_interact_jump`); after 0231, which takes the hatch off Interact)
+Status: verified (2026-10-04, the review of the same day weighed, its nits (long comment lines, a full crate in the input doc) fixed in the landing amend, in `.claude/worktrees/0233` on `item/0233` from 0231's pass A snapshot a7aae5f, the specification approved the same day with the decisions below; from the user: "Do we still have 'A to interact' still left bound for anything? In that case i want it moved to X. A shall be solely for jumping"; today A and the L4 paddle carry Jump and Interact, Interact winning on a power switch, a launch pad and a schematic crate (`without_interact_jump`, `without_field_interact_jump`); after 0231, which takes the hatch off Interact)
 
 ## Goal
 

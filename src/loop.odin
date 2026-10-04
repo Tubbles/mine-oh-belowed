@@ -397,11 +397,13 @@ update_frame :: proc(state: ^Frame_State) {
 }
 
 // The frame's input into the session, once for every viewport: an
-// Open_Inventory press aimed at a panel turned into Open_Aimed (0194), the guards,
-// the debug actions, the ticks and each player's rumble.
+// Open_Inventory press aimed at a panel turned into Open_Aimed (0194), or
+// dropped where the same press is Interact's (0233), the guards, the
+// debug actions, the ticks and each player's rumble.
 update_frame_world :: proc(state: ^Frame_State) {
 	for &viewport in active_viewports(state) {
-		viewport.interaction.input = route_open_inventory_press(viewport.interaction.input, viewport_world_blocked(viewport), viewport_aims_at_panel(state, viewport))
+		takes_interact, has_panel := viewport_aimed_target(state, viewport)
+		viewport.interaction.input = route_open_inventory_press(viewport.interaction.input, viewport_world_blocked(viewport), has_panel, takes_interact)
 		viewport.interaction.world_action_guard = update_world_action_guard(viewport.interaction.world_action_guard, viewport_world_blocked(viewport), viewport.interaction.input.pressed)
 		viewport.interaction.haptic = {}
 	}
@@ -434,16 +436,19 @@ apply_overlay_toggle :: proc(state: ^Frame_State, viewport: Viewport) {
 	}
 }
 
-// The viewport's player aims at a machine with a panel, read from the
-// target its HUD shows (aims_at_panel): the confirmed player's raycast in
+// What the viewport's player aims at calls for (aimed_target_calls_for),
+// read from the target its HUD shows: the confirmed player's raycast in
 // the block world, the predicted field player's frame cell on the field.
-viewport_aims_at_panel :: proc(state: ^Frame_State, viewport: Viewport) -> bool {
+// While the placement editor is anchored it takes Interact (0215), so
+// no target takes Interact there and X stays Open_Inventory.
+viewport_aimed_target :: proc(state: ^Frame_State, viewport: Viewport) -> (takes_interact, has_panel: bool) {
 	session := state.session
 	if !viewport_player_ready(session, viewport) {
-		return false
+		return false, false
 	}
 	view := lockstep_view_player(&session.lockstep, &session.simulation, viewport.player)
-	return aims_at_panel(&session.simulation.world.entities, state.content.machines, session.simulation.players[viewport.player].target.entity, view.field.frame_target)
+	takes_interact, has_panel = aimed_target_calls_for(&session.simulation.world.entities, state.content.machines, session.simulation.players[viewport.player].target.entity, view.field.frame_target)
+	return takes_interact && !viewport.interaction.placement_editor.anchored, has_panel
 }
 
 // The viewport's frame input as the world takes it: Pipette through the
@@ -1469,8 +1474,6 @@ show_simulation_events :: proc(state: ^Ui_State, events: []Simulation_Event, loc
 			}
 		case .Toggled_Switch:
 		// The switch's colour or the hatch's model shows the change.
-		case .Launch_Requested:
-			ui_toast(state, text("toast_rocket_launch"))
 		case .Vein_Assayed:
 			ui_toast(state, text("toast_vein_assayed"))
 		case .Magnetometer_Recorded:

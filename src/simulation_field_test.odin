@@ -877,11 +877,6 @@ test_interact_on_a_hatch_toggles_nothing_and_the_a_press_jumps :: proc(t: ^testi
 	for event in state.events {
 		testing.expect(t, event.kind != .Toggled_Switch, "Interact on a hatch raised a toggle")
 	}
-	state.players[0].field.frame_target = Frame_Raycast_Hit{hit = true, frame = frame.id, occupant = {handle = entity_occupant_handle(outer)}}
-	press := Input_Frame{pressed = {.Interact, .Jump}, just_pressed = {.Interact, .Jump}}
-	kept := without_field_interact_jump(state.players[0], &state.world.entities, content.machines, press)
-	testing.expect(t, .Jump in kept.pressed && .Jump in kept.just_pressed, "the A press does not jump on a hatch")
-	testing.expect(t, !entity_answers_interact(&state.world.entities, content.machines, outer), "a hatch answers Interact")
 	testing.expect(t, !entity_takes_interact(&state.world.entities, content.machines, outer), "a hatch takes Interact")
 }
 
@@ -1346,12 +1341,13 @@ test_a_field_refusal_is_news_when_new_or_pressed :: proc(t: ^testing.T) {
 	testing.expect(t, field_refusal_is_news(.No_Vein, .Tool_Tier, false))
 }
 
-// Work item 0194 on the field: Open_Aimed (the inventory binding routed
-// on the press) at a furnace's frame cell opens it; A's Interact there
-// opens nothing and keeps its Jump; at a power switch Interact turns it
-// and takes the Jump.
+// Work items 0194 and 0233 on the field: Open_Aimed (the inventory
+// binding routed on the press) at a furnace's frame cell opens it;
+// Interact alone there does nothing; X routed at a power switch is
+// Interact alone and turns it without opening its panel; A at the switch
+// turns nothing.
 @(test)
-test_the_field_opens_a_panel_on_open_aimed_and_turns_a_switch_on_interact :: proc(t: ^testing.T) {
+test_the_field_turns_a_switch_on_x_and_jumps_on_a :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
 	session := start_field_test_session(config, content)
@@ -1373,7 +1369,7 @@ test_the_field_opens_a_panel_on_open_aimed_and_turns_a_switch_on_interact :: pro
 		}
 		return events
 	}
-	interact := Input_Frame{pressed = {.Jump, .Interact}, just_pressed = {.Jump, .Interact}}
+	interact := Input_Frame{pressed = {.Interact}, just_pressed = {.Interact}}
 
 	aim(state, frame, furnace)
 	clear(&state.events)
@@ -1385,21 +1381,29 @@ test_the_field_opens_a_panel_on_open_aimed_and_turns_a_switch_on_interact :: pro
 
 	state.players[0].open_machine = NO_ENTITY
 	aim(state, frame, furnace)
-	testing.expect(t, .Jump in without_field_interact_jump(state.players[0], entities, simulation_content.machines, interact).just_pressed)
 	clear(&state.events)
 	tick_field_test_simulation(state, simulation_content, interact)
 	testing.expect_value(t, events_of(state) & {.Open_Machine, .Toggled_Switch}, Player_Events{})
 	testing.expect_value(t, state.players[0].open_machine, NO_ENTITY)
 
 	aim(state, frame, power_switch)
-	testing.expect(t, .Jump not_in without_field_interact_jump(state.players[0], entities, simulation_content.machines, interact).just_pressed)
+	takes_interact, has_panel := aimed_target_calls_for(entities, simulation_content.machines, NO_ENTITY, state.players[0].field.frame_target)
+	x := route_open_inventory_press(shipped_gamepad_press(t, .WEST), false, has_panel, takes_interact)
+	testing.expect_value(t, x.just_pressed & {.Open_Inventory, .Open_Aimed}, Action_Set{})
 	was_on := pool_get(&entities.poles, power_switch).on
 	clear(&state.events)
-	tick_field_test_simulation(state, simulation_content, interact)
+	tick_field_test_simulation(state, simulation_content, x)
 	testing.expect(t, .Toggled_Switch in events_of(state))
+	testing.expect(t, .Open_Machine not_in events_of(state))
 	testing.expect_value(t, pool_get(&entities.poles, power_switch).on, !was_on)
 	testing.expect_value(t, state.records.statistics.world_actions, actions_before + 2)
 	testing.expect_value(t, state.players[0].open_machine, NO_ENTITY)
+
+	aim(state, frame, power_switch)
+	clear(&state.events)
+	tick_field_test_simulation(state, simulation_content, Input_Frame{pressed = {.Jump}, just_pressed = {.Jump}})
+	testing.expect(t, .Toggled_Switch not_in events_of(state))
+	testing.expect_value(t, pool_get(&entities.poles, power_switch).on, !was_on)
 }
 
 // Work item 0196: field_simulation.pad_foundation names a machine of kind

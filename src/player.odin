@@ -110,8 +110,6 @@ Player_Event :: enum u8 {
 	Open_Machine,
 	// Interact turned a power switch.
 	Toggled_Switch,
-	// Interact on a launch pad with a rocket and cargo (launch_pad.odin).
-	Launch_Requested,
 	// Use_Item with a prospecting tool (prospecting.odin).
 	Vein_Assayed,
 	Magnetometer_Recorded,
@@ -463,19 +461,11 @@ update_jump_double_tap :: proc(player: ^Player, input: Input_Frame) {
 	player.jump_tap_ticks = JUMP_DOUBLE_TAP_TICKS
 }
 
-// What Interact acts on: a power switch it turns and a launch pad it
-// launches from (0194; the pod's hatch until 0231). Panels open through
-// Open_Aimed instead.
-entity_answers_interact :: proc(entities: ^Entities, machines: Machine_Registry, handle: Entity_Handle) -> bool {
-	return entity_is_power_switch(entities, machines, handle) || pool_get(&entities.launch_pads, handle) != nil
-}
-
-// Whether Interact acts on the entity, so a gamepad's A does not jump:
-// a switch or a launch pad (entity_answers_interact) or a schematic crate
-// (resolve_use_item). The touch overlay's tap presses Interact on such a
-// target and Place on any other (tap_control).
+// Whether Interact acts on the entity: a power switch it turns or a
+// schematic crate it takes (resolve_use_item). On such a target the X
+// press is Interact's alone (route_open_inventory_press, 0233).
 entity_takes_interact :: proc(entities: ^Entities, machines: Machine_Registry, handle: Entity_Handle) -> bool {
-	return entity_answers_interact(entities, machines, handle) || schematic_crate_takes_interact(entities, handle)
+	return entity_is_power_switch(entities, machines, handle) || schematic_crate_takes_interact(entities, handle)
 }
 
 // The entity the player aims at as the HUD shows it: on the field the
@@ -496,38 +486,27 @@ aims_at_panel :: proc(entities: ^Entities, machines: Machine_Registry, block_tar
 	return entity_has_panel(entities, machines, aimed_entity(block_target, field_target))
 }
 
-// Open_Aimed (an Open_Inventory press the presentation routed, 0194)
-// opens the targeted entity's panel. A gamepad's A is both Jump and
-// Interact: on a power switch Interact turns it like a lever and on a
-// launch pad with a rocket ready and cargo loaded it launches, and there
-// it does not jump (without_interact_jump); keyboard Space never
-// interacts.
-resolve_interact :: proc(player: ^Player, entities: ^Entities, machines: Machine_Registry, input: Input_Frame) -> (Input_Frame, Player_Events) {
-	result := without_interact_jump(player^, entities, machines, input)
-	if .Open_Aimed in input.just_pressed && entity_has_panel(entities, machines, player.target.entity) {
-		player.open_machine = player.target.entity
-		return result, {.Open_Machine}
-	}
-	if .Interact not_in input.just_pressed {
-		return result, {}
-	}
-	if toggle_power_switch(entities, machines, player.target.entity) {
-		return result, {.Toggled_Switch}
-	}
-	if request_launch(entities, player.target.entity) {
-		return result, {.Launch_Requested}
-	}
-	return result, {}
+// What the aimed thing calls for, read as the HUD shows the target
+// (aimed_entity): Interact (entity_takes_interact) and a panel the
+// inventory binding opens (aims_at_panel, 0194). The frame's routing of
+// the inventory binding (route_open_inventory_press) and the touch tap
+// (tap_control) read it.
+aimed_target_calls_for :: proc(entities: ^Entities, machines: Machine_Registry, block_target: Entity_Handle, field_target: Frame_Raycast_Hit) -> (takes_interact, has_panel: bool) {
+	return entity_takes_interact(entities, machines, aimed_entity(block_target, field_target)), aims_at_panel(entities, machines, block_target, field_target)
 }
 
-// Interact on a switch or a launch pad takes the A press from Jump.
-without_interact_jump :: proc(player: Player, entities: ^Entities, machines: Machine_Registry, input: Input_Frame) -> Input_Frame {
-	result := input
-	if .Interact in input.pressed && entity_answers_interact(entities, machines, player.target.entity) {
-		result.pressed -= {.Jump}
-		result.just_pressed -= {.Jump}
+// Open_Aimed (an Open_Inventory press the presentation routed, 0194)
+// opens the targeted entity's panel; Interact turns a power switch like a
+// lever. A launch pad launches from its panel's Launch alone (0233).
+resolve_interact :: proc(player: ^Player, entities: ^Entities, machines: Machine_Registry, input: Input_Frame) -> Player_Events {
+	if .Open_Aimed in input.just_pressed && entity_has_panel(entities, machines, player.target.entity) {
+		player.open_machine = player.target.entity
+		return {.Open_Machine}
 	}
-	return result
+	if .Interact in input.just_pressed && toggle_power_switch(entities, machines, player.target.entity) {
+		return {.Toggled_Switch}
+	}
+	return {}
 }
 
 // Standing on a flat belt or a ramp moves the body with the belt before
@@ -576,7 +555,7 @@ move_player_body :: proc(world: ^World, registry: Block_Registry, player: ^Playe
 predict_player_motion :: proc(world: ^World, content: Simulation_Content, player: ^Player, frame: Input_Frame, tick_rate: int, cheat_speed: bool) {
 	seconds := 1 / f32(tick_rate)
 	player.sneaking = update_sneaking(player.sneaking, frame)
-	input := without_interact_jump(player^, &world.entities, content.machines, with_sneaking(frame, player.sneaking))
+	input := with_sneaking(frame, player.sneaking)
 	sprinting := turn_player_for_tick(player, input, seconds)
 	move_player_body(world, content.blocks, player, input, sprinting, cheat_speed, seconds)
 }
@@ -587,7 +566,8 @@ tick_player :: proc(world: ^World, records: ^Game_Records, content: Simulation_C
 	player := &players[index]
 	seconds := 1 / f32(tick_rate)
 	player.sneaking = update_sneaking(player.sneaking, frame)
-	input, events := resolve_interact(player, &world.entities, content.machines, with_sneaking(frame, player.sneaking))
+	input := with_sneaking(frame, player.sneaking)
+	events := resolve_interact(player, &world.entities, content.machines, input)
 	sprinting := turn_player_for_tick(player, input, seconds)
 	carry_player_on_belt(world, content, player, tick_rate)
 	walk_start := player.position
@@ -596,7 +576,7 @@ tick_player :: proc(world: ^World, records: ^Game_Records, content: Simulation_C
 		record_walked(&records.statistics, walk_start, player.position)
 	}
 	pick_up_loose_items(world, content.items, player, index)
-	if .Open_Machine in events || .Toggled_Switch in events || .Launch_Requested in events {
+	if .Open_Machine in events || .Toggled_Switch in events {
 		record_world_action(&records.statistics)
 	}
 	player.target_direction = player_target_direction(player^, input)

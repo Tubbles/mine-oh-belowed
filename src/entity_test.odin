@@ -2,6 +2,7 @@ package game
 
 import "core:slice"
 import "core:testing"
+import sdl "vendor:sdl3"
 
 @(test)
 test_pool_handles_generation_free_and_reuse :: proc(t: ^testing.T) {
@@ -213,47 +214,56 @@ test_player_places_rotates_and_picks_up_a_machine :: proc(t: ^testing.T) {
 	testing.expect_value(t, player.inventory.slots[HOTBAR_SLOT_COUNT], Item_Stack{test_item(content.items, "iron_plate"), 7})
 }
 
-// Open_Aimed (the inventory binding routed on the press, 0194) opens the
-// aimed furnace; A's Interact on it opens nothing and jumps, and on a
-// power switch turns it without a jump.
+// Work item 0233: X (Open_Inventory and Interact, routed as the frame
+// routes it) opens the aimed furnace and turns a power switch in its
+// place without opening its panel or jumping; A at the switch jumps and
+// turns nothing; X looking away keeps Open_Inventory for the inventory.
 @(test)
-test_open_aimed_opens_an_entity_and_interact_turns_a_switch :: proc(t: ^testing.T) {
+test_x_turns_a_switch_and_opens_a_furnace_and_a_jumps_at_a_switch :: proc(t: ^testing.T) {
 	content := make_test_content()
 	world := make_floor_world(content.blocks, 32)
 	records: Game_Records
 	handle := add_entity(&world.entities, content.machines, test_machine(content.machines, "steel_furnace"), {4, 1, 4}, 0)
 	players := []Player{make_test_player(content.blocks, {4.5, 1, 1.5})}
 	players[0].pitch, players[0].yaw = -30, 90
+	routed := proc(t: ^testing.T, world: ^World, content: Simulation_Content, player: Player, button: sdl.GamepadButton) -> Input_Frame {
+		takes_interact, has_panel := aimed_target_calls_for(&world.entities, content.machines, player.target.entity, {})
+		return route_open_inventory_press(shipped_gamepad_press(t, button), false, has_panel, takes_interact)
+	}
 	tick_player(&world, &records, content, players, 0, {}, TEST_TICK_RATE, 0)
 	testing.expect_value(t, players[0].target.entity, handle)
-	events := tick_player(&world, &records, content, players, 0, Input_Frame{just_pressed = {.Open_Aimed}}, TEST_TICK_RATE, 0)
+	events := tick_player(&world, &records, content, players, 0, routed(t, &world, content, players[0], .WEST), TEST_TICK_RATE, 0)
 	testing.expect_value(t, events, Player_Events{.Open_Machine})
 	testing.expect_value(t, players[0].open_machine, handle)
-	players[0].open_machine = NO_ENTITY
-	players[0].on_ground = true
-	press := Input_Frame{pressed = {.Jump, .Interact}, just_pressed = {.Jump, .Interact}}
-	events = tick_player(&world, &records, content, players, 0, press, TEST_TICK_RATE, 0)
-	testing.expect_value(t, events, Player_Events{})
-	testing.expect_value(t, players[0].open_machine, NO_ENTITY)
-	testing.expect(t, players[0].velocity.y > 0)
-	// A switch in the furnace's place: the same press turns it.
+	// A switch in the furnace's place: X turns it.
 	testing.expect(t, remove_entity(&world.entities, content.machines, handle))
 	switch_handle := add_entity(&world.entities, content.machines, test_machine(content.machines, "power_switch"), {4, 1, 4}, 0)
 	players[0] = make_test_player(content.blocks, {4.5, 1, 1.5})
 	players[0].pitch, players[0].yaw = -30, 90
 	tick_player(&world, &records, content, players, 0, {}, TEST_TICK_RATE, 0)
 	testing.expect_value(t, players[0].target.entity, switch_handle)
+	was_on := pool_get(&world.entities.poles, switch_handle).on
 	players[0].on_ground = true
-	events = tick_player(&world, &records, content, players, 0, press, TEST_TICK_RATE, 0)
+	events = tick_player(&world, &records, content, players, 0, routed(t, &world, content, players[0], .WEST), TEST_TICK_RATE, 0)
 	testing.expect_value(t, events, Player_Events{.Toggled_Switch})
+	testing.expect_value(t, pool_get(&world.entities.poles, switch_handle).on, !was_on)
+	testing.expect_value(t, players[0].open_machine, NO_ENTITY)
 	testing.expect(t, players[0].velocity.y <= 0)
-	// Looking away, the same press jumps.
-	players[0].pitch = 60
+	// A at the switch jumps and turns nothing.
 	tick_player(&world, &records, content, players, 0, {}, TEST_TICK_RATE, 0)
 	players[0].on_ground = true
-	events = tick_player(&world, &records, content, players, 0, press, TEST_TICK_RATE, 0)
+	events = tick_player(&world, &records, content, players, 0, routed(t, &world, content, players[0], .SOUTH), TEST_TICK_RATE, 0)
 	testing.expect_value(t, events, Player_Events{})
+	testing.expect_value(t, pool_get(&world.entities.poles, switch_handle).on, !was_on)
 	testing.expect(t, players[0].velocity.y > 0)
+	// Looking away, X keeps Open_Inventory and the tick does nothing.
+	players[0] = make_test_player(content.blocks, {4.5, 1, 1.5})
+	players[0].pitch = 60
+	tick_player(&world, &records, content, players, 0, {}, TEST_TICK_RATE, 0)
+	x := routed(t, &world, content, players[0], .WEST)
+	testing.expect(t, .Open_Inventory in x.just_pressed)
+	events = tick_player(&world, &records, content, players, 0, x, TEST_TICK_RATE, 0)
+	testing.expect_value(t, events, Player_Events{})
 }
 
 // Work item 0194: the aimed entity is the field's frame cell when one is

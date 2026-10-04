@@ -15,17 +15,17 @@ import "core:slice"
 //   share is missing (the player took parts out) and goes on once it is
 //   back;
 // - rocket ready;
-// - launching, started by the panel's Launch button or Interact while the
-//   cargo holds something: the cargo is taken, a shipment {tick, items and
-//   counts} is recorded in the game records with the statistics, and the ascent
-//   runs for launch_seconds before the pad waits for parts again.
+// - launching, started by the panel's Launch button (0233: Interact no
+//   longer launches) while the cargo holds something: the cargo is taken,
+//   a shipment {tick, items and counts} is recorded in the game records
+//   with the statistics, and the ascent runs for launch_seconds before
+//   the pad waits for parts again.
 //
 // A launch is requested (launch_requested) and served after the entity
 // tick by apply_launch_requests, which knows the tick for the shipment.
 // The panel's Assemble and Launch buttons count a refusal for parts
 // missing or cargo empty in the statistics (launch_refusal), which
-// chapter 8's hints watch. Interact on a pad that cannot launch does
-// nothing and counts nothing (the inventory binding opens the panel, 0194).
+// chapter 8's hints watch. The inventory binding opens the panel (0194).
 // Inserters put parts into their slots and anything else into the cargo
 // section, never parts into the cargo; nothing is ever taken out by them.
 
@@ -430,7 +430,7 @@ launch_pad_centre :: proc(pad: Launch_Pad) -> World_Coordinate {
 	return pad.origin + {pad.size.x / 2, 0, pad.size.z / 2}
 }
 
-// The Launch button and Interact: served by apply_launch_requests.
+// The Launch button: served by apply_launch_requests.
 request_launch :: proc(entities: ^Entities, handle: Entity_Handle) -> bool {
 	pad := pool_get(&entities.launch_pads, handle)
 	if pad == nil || !launch_pad_can_launch(pad) {

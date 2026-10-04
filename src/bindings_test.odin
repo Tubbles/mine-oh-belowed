@@ -31,7 +31,6 @@ Reference_Mouse_Button :: struct {
 @(rodata)
 reference_raylib_buttons := [?]Reference_Raylib_Button {
 	{.RIGHT_FACE_DOWN, .Jump},
-	{.RIGHT_FACE_DOWN, .Interact},
 	{.RIGHT_FACE_DOWN, .Confirm},
 	{.RIGHT_FACE_RIGHT, .Back},
 	// Sneak on B and Sprint on the stick click reach the raylib backend:
@@ -39,6 +38,7 @@ reference_raylib_buttons := [?]Reference_Raylib_Button {
 	{.RIGHT_FACE_RIGHT, .Sneak},
 	{.LEFT_THUMB, .Sprint},
 	{.RIGHT_FACE_LEFT, .Open_Inventory},
+	{.RIGHT_FACE_LEFT, .Interact},
 	{.RIGHT_FACE_UP, .Rotate_Building},
 	{.LEFT_FACE_UP, .Pipette},
 	{.LEFT_FACE_DOWN, .Drop_Stack},
@@ -132,11 +132,11 @@ reference_mouse_buttons := [?]Reference_Mouse_Button{{.LEFT, .Mine}, {.RIGHT, .P
 @(rodata)
 reference_sdl3_buttons := [?]Reference_Sdl3_Button {
 	{.SOUTH, .Jump},
-	{.SOUTH, .Interact},
 	{.SOUTH, .Confirm},
 	{.EAST, .Sneak},
 	{.EAST, .Back},
 	{.WEST, .Open_Inventory},
+	{.WEST, .Interact},
 	{.NORTH, .Rotate_Building},
 	{.DPAD_UP, .Pipette},
 	{.DPAD_DOWN, .Drop_Stack},
@@ -152,7 +152,6 @@ reference_sdl3_buttons := [?]Reference_Sdl3_Button {
 	{.BACK, .Open_Map},
 	{.START, .Pause},
 	{.LEFT_PADDLE1, .Jump},
-	{.LEFT_PADDLE1, .Interact},
 	{.LEFT_PADDLE1, .Confirm},
 	{.RIGHT_PADDLE1, .Sneak},
 	{.RIGHT_PADDLE1, .Back},
@@ -233,11 +232,42 @@ test_default_bindings_equal_the_former_tables :: proc(t: ^testing.T) {
 	testing.expect_value(t, len(sdl3_unsupported), 0)
 	raylib_tables, raylib_unsupported := build_input_bindings(bindings, .Raylib, context.temp_allocator)
 	expect_same_tables(t, raylib_tables, reference_raylib_bindings())
-	// Paddles (9), the right pad click (2) and the left pad.
-	testing.expect_value(t, len(raylib_unsupported), 12)
+	// Paddles (8), the right pad click (2) and the left pad.
+	testing.expect_value(t, len(raylib_unsupported), 11)
 	for binding in raylib_unsupported {
 		testing.expect(t, binding.device == .Trackpad || strings.contains(binding.control, "PADDLE") || binding.control == "MISC2")
 	}
+}
+
+// Work item 0233: A jumps and confirms, X carries Open_Inventory and
+// Interact in the world and the context action in menus, the right pad's
+// click Interact and Confirm; Interact's glyph is X.
+@(test)
+test_the_shipped_bindings_put_interact_on_x_and_leave_a_to_jump :: proc(t: ^testing.T) {
+	bindings := shipped_default_bindings(t)
+	sdl3_tables, _ := build_input_bindings(bindings, .Sdl3, context.temp_allocator)
+	testing.expect_value(t, sdl3_tables.gamepad_buttons[int(sdl.GamepadButton.SOUTH)], Action_Set{.Jump, .Confirm})
+	testing.expect_value(t, sdl3_tables.gamepad_buttons[int(sdl.GamepadButton.LEFT_PADDLE1)], Action_Set{.Jump, .Confirm})
+	testing.expect_value(t, sdl3_tables.gamepad_buttons[int(sdl.GamepadButton.WEST)], Action_Set{.Open_Inventory, .Interact, .Context_Action})
+	testing.expect_value(t, sdl3_tables.gamepad_buttons[int(sdl.GamepadButton.MISC2)], Action_Set{.Interact, .Confirm})
+	raylib_tables, _ := build_input_bindings(bindings, .Raylib, context.temp_allocator)
+	testing.expect_value(t, raylib_tables.gamepad_buttons[int(rl.GamepadButton.RIGHT_FACE_DOWN)], Action_Set{.Jump, .Confirm})
+	testing.expect_value(t, raylib_tables.gamepad_buttons[int(rl.GamepadButton.RIGHT_FACE_LEFT)], Action_Set{.Open_Inventory, .Interact, .Context_Action})
+	for backend in ([]Input_Backend{.Sdl3, .Raylib}) {
+		binding, found := first_binding_on_device(bindings, .Interact, .Gamepad, backend)
+		testing.expect(t, found)
+		testing.expect_value(t, binding.control, "WEST")
+	}
+}
+
+// A gamepad press of one button through the shipped bindings' SDL3
+// tables, pressed and just pressed (0233).
+shipped_gamepad_press :: proc(t: ^testing.T, button: sdl.GamepadButton) -> Input_Frame {
+	tables, _ := build_input_bindings(shipped_default_bindings(t), .Sdl3, context.temp_allocator)
+	gamepad := Raw_Gamepad{connected = true, button_count = RAW_GAMEPAD_BUTTON_CAPACITY}
+	gamepad.button_down[int(button)] = true
+	actions := gamepad_button_actions(gamepad, tables)
+	return Input_Frame{pressed = actions, just_pressed = actions}
 }
 
 @(test)
@@ -268,7 +298,7 @@ test_binding_override_replaces_an_action :: proc(t: ^testing.T) {
 	testing.expect(t, .Jump not_in tables.keys[int(rl.KeyboardKey.SPACE)])
 	testing.expect(t, .Jump in tables.gamepad_buttons[int(sdl.GamepadButton.EAST)])
 	testing.expect(t, .Jump not_in tables.gamepad_buttons[int(sdl.GamepadButton.SOUTH)])
-	testing.expect(t, .Interact in tables.gamepad_buttons[int(sdl.GamepadButton.SOUTH)])
+	testing.expect(t, .Confirm in tables.gamepad_buttons[int(sdl.GamepadButton.SOUTH)])
 	raylib_tables, _ := build_input_bindings(effective, .Raylib)
 	testing.expect(t, .Jump not_in raylib_tables.gamepad_buttons[int(rl.GamepadButton.RIGHT_FACE_RIGHT)])
 }

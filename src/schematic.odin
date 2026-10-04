@@ -69,7 +69,7 @@ place_pending_crates :: proc(tick_context: Entity_Tick_Context) {
 
 // The selected hotbar item is used with Use_Item, which shares Place's
 // control: a usable item never places, and anything else never uses.
-// Interact on a schematic crate takes its schematic, and never jumps.
+// Interact on a schematic crate takes its schematic.
 // Returns the input the rest of the tick sees and the item used, or
 // NO_ITEM; the item is taken from the slot when its use consumes it
 // (use_consumes_item). Like resolve_interact, it acts on the previous
@@ -94,19 +94,21 @@ resolve_use_item :: proc(player: ^Player, entities: ^Entities, items: Item_Regis
 		return
 	}
 	crate := pool_get(&entities.schematic_crates, player.target.entity)
-	result.pressed -= {.Jump, .Interact}
-	result.just_pressed -= {.Jump, .Interact}
-	if .Interact in input.just_pressed && used == NO_ITEM && !stack_is_empty(crate.slots[0]) {
+	result.pressed -= {.Interact}
+	result.just_pressed -= {.Interact}
+	if .Interact in input.just_pressed && used == NO_ITEM {
 		used = crate.slots[0].item
 		take_from_slot(&crate.slots[0], 1)
 	}
 	return
 }
 
-// Interact on a schematic crate takes its schematic, also on an empty
-// one, where it does nothing but keeps A from jumping.
+// Interact on a schematic crate takes its schematic while it holds one;
+// an empty crate takes no Interact, so X there opens the inventory
+// (0233).
 schematic_crate_takes_interact :: proc(entities: ^Entities, handle: Entity_Handle) -> bool {
-	return pool_get(&entities.schematic_crates, handle) != nil
+	crate := pool_get(&entities.schematic_crates, handle)
+	return crate != nil && !stack_is_empty(crate.slots[0])
 }
 
 // Reads a schematic: its recipe is found (counted once in the statistics)

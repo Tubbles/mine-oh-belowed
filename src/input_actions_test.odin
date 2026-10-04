@@ -221,14 +221,37 @@ test_a_blocked_frame_reaches_the_next_tick :: proc(t: ^testing.T) {
 @(test)
 test_an_open_inventory_press_aimed_at_a_panel_becomes_open_aimed :: proc(t: ^testing.T) {
 	press := Input_Frame{pressed = {.Open_Inventory}, just_pressed = {.Open_Inventory, .Jump}}
-	routed := route_open_inventory_press(press, false, true)
+	routed := route_open_inventory_press(press, false, true, false)
 	testing.expect_value(t, routed.just_pressed, Action_Set{.Open_Aimed, .Jump})
 	testing.expect_value(t, routed.pressed, Action_Set{.Open_Inventory})
-	testing.expect_value(t, route_open_inventory_press(press, false, false), press)
+	testing.expect_value(t, route_open_inventory_press(press, false, false, false), press)
 	// A screen is open: the press closes it.
-	testing.expect_value(t, route_open_inventory_press(press, true, true), press)
+	testing.expect_value(t, route_open_inventory_press(press, true, true, false), press)
 	// Held, not pressed this frame.
 	held := Input_Frame{pressed = {.Open_Inventory}}
-	testing.expect_value(t, route_open_inventory_press(held, false, true), held)
+	testing.expect_value(t, route_open_inventory_press(held, false, true, false), held)
 	testing.expect(t, .Open_Aimed in WORLD_ACTIONS)
+}
+
+// Work item 0233: the gamepad's X carries Open_Inventory and Interact. On
+// a target that takes Interact the press is Interact's alone; elsewhere
+// the routing of 0194 holds. The keyboard's E alone still opens a
+// switch's panel, and F alone is left as it is.
+@(test)
+test_an_x_press_on_a_target_that_takes_interact_is_interacts_alone :: proc(t: ^testing.T) {
+	both := Action_Set{.Open_Inventory, .Interact}
+	x := Input_Frame{pressed = both, just_pressed = both}
+	// A power switch: a panel, takes Interact.
+	testing.expect_value(t, route_open_inventory_press(x, false, true, true).just_pressed, Action_Set{.Interact})
+	// A full schematic crate: no panel, takes Interact.
+	testing.expect_value(t, route_open_inventory_press(x, false, false, true).just_pressed, Action_Set{.Interact})
+	// A launch pad or a furnace: a panel, no Interact.
+	testing.expect_value(t, route_open_inventory_press(x, false, true, false).just_pressed, Action_Set{.Open_Aimed, .Interact})
+	testing.expect_value(t, route_open_inventory_press(x, false, false, false), x)
+	// A screen is open.
+	testing.expect_value(t, route_open_inventory_press(x, true, true, true), x)
+	open := Input_Frame{pressed = {.Open_Inventory}, just_pressed = {.Open_Inventory}}
+	testing.expect_value(t, route_open_inventory_press(open, false, true, true).just_pressed, Action_Set{.Open_Aimed})
+	interact := Input_Frame{pressed = {.Interact}, just_pressed = {.Interact}}
+	testing.expect_value(t, route_open_inventory_press(interact, false, true, true), interact)
 }

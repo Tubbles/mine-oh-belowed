@@ -259,14 +259,33 @@ test_use_item_resolution :: proc(t: ^testing.T) {
 	testing.expect(t, !entity_has_panel(&world.entities, content.machines, crate))
 	testing.expect(t, !entity_can_be_picked_up(&world, content.machines, crate))
 	player.target = Raycast_Hit{hit = true, block = {4, 1, 4}, entity = crate}
-	input, used = resolve_use_item(&player, &world.entities, content.items, press({.Jump, .Interact}))
+	// Interact on a crate takes its schematic in one press; A jumps there.
+	// X routed at the full crate is Interact's alone, so the inventory
+	// stays shut (0233).
+	takes_interact, has_panel := aimed_target_calls_for(&world.entities, content.machines, crate, {})
+	testing.expect(t, takes_interact && !has_panel)
+	x := route_open_inventory_press(shipped_gamepad_press(t, .WEST), false, has_panel, takes_interact)
+	testing.expect_value(t, x.just_pressed & {.Interact, .Open_Inventory, .Open_Aimed}, Action_Set{.Interact})
+	input, used = resolve_use_item(&player, &world.entities, content.items, x)
+	testing.expect_value(t, used, schematic_for_choice(content.recipes, 3))
+	testing.expect(t, .Interact not_in input.pressed && .Interact not_in input.just_pressed)
+	testing.expect(t, stack_is_empty(entity_slots(&world.entities, crate)[0]))
+	crate_slot := &pool_get(&world.entities.schematic_crates, crate).slots[0]
+	crate_slot^ = Item_Stack{item = schematic_for_choice(content.recipes, 3), count = 1}
+	input, used = resolve_use_item(&player, &world.entities, content.items, press({.Interact}))
 	testing.expect_value(t, used, schematic_for_choice(content.recipes, 3))
 	testing.expect_value(t, input.pressed, Action_Set{})
-	testing.expect(t, stack_is_empty(entity_slots(&world.entities, crate)[0]))
-	// An empty crate gives nothing, and A still does not jump at it.
+	input, used = resolve_use_item(&player, &world.entities, content.items, press({.Jump}))
+	testing.expect_value(t, input.pressed, Action_Set{.Jump})
+	// An empty crate takes no Interact (0233): it gives nothing, the press
+	// passes on, and X there keeps Open_Inventory, so the inventory opens.
 	input, used = resolve_use_item(&player, &world.entities, content.items, press({.Jump, .Interact}))
 	testing.expect_value(t, used, NO_ITEM)
-	testing.expect_value(t, input.pressed, Action_Set{})
+	testing.expect_value(t, input.pressed, Action_Set{.Jump, .Interact})
+	takes_interact, has_panel = aimed_target_calls_for(&world.entities, content.machines, crate, {})
+	testing.expect(t, !takes_interact && !has_panel)
+	x = route_open_inventory_press(shipped_gamepad_press(t, .WEST), false, has_panel, takes_interact)
+	testing.expect(t, .Open_Inventory in x.just_pressed)
 	// Inserters neither feed nor empty a crate.
 	_, accepted := entity_accepts(&world.entities, content, crate, test_item(content.items, "coal"))
 	testing.expect(t, !accepted)

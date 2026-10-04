@@ -1,5 +1,6 @@
 package game
 
+import "core:fmt"
 import "core:math/linalg"
 import "core:os"
 import "core:strings"
@@ -736,7 +737,7 @@ test_a_touch_that_moves_before_the_hold_is_the_look_drag :: proc(t: ^testing.T) 
 // The frames of a tap from its lift: the aim alone until a tick has run
 // with it, then the control until a tick has run with the press.
 @(test)
-test_a_tap_presses_interact_on_a_machine_and_place_elsewhere :: proc(t: ^testing.T) {
+test_a_tap_presses_x_on_a_machine_and_place_elsewhere :: proc(t: ^testing.T) {
 	layout := shipped_touch_overlay(t)
 	for takes_interaction in ([?]bool{true, false}) {
 		state: Touch_Overlay_State
@@ -755,7 +756,7 @@ test_a_tap_presses_interact_on_a_machine_and_place_elsewhere :: proc(t: ^testing
 		output = touch_frame(&state, layout, {}, inputs = inputs)
 		testing.expect(t, output.aims)
 		expect_near(t, output.aim_point, TAP_POINT)
-		testing.expect_value(t, output.buttons[int(sdl.GamepadButton.SOUTH)], takes_interaction)
+		testing.expect_value(t, output.buttons[int(sdl.GamepadButton.WEST)], takes_interaction)
 		testing.expect_value(t, output.triggers[.Left], !takes_interaction)
 		testing.expect(t, !output.triggers[.Right])
 		// Held until a tick has run with the press, then gone.
@@ -764,11 +765,13 @@ test_a_tap_presses_interact_on_a_machine_and_place_elsewhere :: proc(t: ^testing
 		testing.expect_value(t, output, pressed)
 		output = touch_frame(&state, layout, {}, inputs = inputs)
 		testing.expect_value(t, output, Touch_Overlay_Output{})
-		// Through the bindings: Interact, or Place.
+		// Through the bindings: X (Interact and Open_Inventory, which the
+		// frame routes), or Place.
 		tables, _ := build_input_bindings(shipped_default_bindings(t), .Sdl3, context.temp_allocator)
 		gamepad := touch_overlay_raw_gamepad(pressed, .Sdl3)
 		actions := gamepad_button_actions(gamepad, tables) + gamepad_trigger_actions(gamepad, tables)
 		testing.expect_value(t, .Interact in actions, takes_interaction)
+		testing.expect_value(t, .Open_Inventory in actions, takes_interaction)
 		testing.expect_value(t, .Place in actions, !takes_interaction)
 	}
 	// A screen opening drops a pending tap.
@@ -952,7 +955,7 @@ test_the_tap_and_hold_controls_come_from_the_layout :: proc(t: ^testing.T) {
 	shipped := shipped_touch_overlay(t)
 	look := zone_element(shipped, .Look, .Right)
 	testing.expect_value(t, shipped.elements[look].hold_control, Touch_Overlay_Control{is_trigger = true, trigger = .Right})
-	testing.expect_value(t, shipped.elements[look].tap_interact_control, Touch_Overlay_Control{button = .SOUTH})
+	testing.expect_value(t, shipped.elements[look].tap_open_control, Touch_Overlay_Control{button = .WEST})
 	testing.expect_value(t, shipped.elements[look].tap_place_control, Touch_Overlay_Control{is_trigger = true, trigger = .Left})
 	elements := make([]Touch_Overlay_Element, len(shipped.elements), context.temp_allocator)
 	copy(elements, shipped.elements)
@@ -1677,7 +1680,7 @@ test_a_tap_in_the_jump_zone_jumps_without_an_aim :: proc(t: ^testing.T) {
 }
 
 // A jump zone tap with an entity that takes Interact under the view's
-// centre jumps and turns nothing, where the gamepad's A would turn it.
+// centre jumps and turns nothing, as A does since 0233.
 @(test)
 test_a_jump_tap_jumps_with_a_machine_under_the_views_centre :: proc(t: ^testing.T) {
 	content := make_test_content()
@@ -1698,6 +1701,30 @@ test_a_jump_tap_jumps_with_a_machine_under_the_views_centre :: proc(t: ^testing.
 	events := tick_player(&world, &records, content, players, 0, jump, TEST_TICK_RATE, 0)
 	testing.expect_value(t, events, Player_Events{})
 	testing.expect(t, players[0].velocity.y > 0)
+}
+
+// Work item 0233: a user layout saved before it names
+// tap_interact_control (the editor wrote it into every layout); the key
+// is read and ignored, so the layout loads, its tap presses X where
+// Interact acts or a panel opens, and the next save drops the key.
+@(test)
+test_a_layout_saved_with_tap_interact_control_loads_and_taps_x :: proc(t: ^testing.T) {
+	context.allocator = context.temp_allocator
+	for value in ([]string{"SOUTH", "NONSENSE"}) {
+		text := fmt.tprintf(`selected = "Mine" layouts = [{{name = "Mine" reference_height = 1080 hotbar_drop_control = "DPAD_DOWN" elements = [{{kind = "look" side = "right" sensitivity = 1 hold_control = "RIGHT_TRIGGER" tap_interact_control = %q tap_place_control = "LEFT_TRIGGER"}]}]`, value)
+		layouts, _, problem := parse_touch_layouts_file(transmute([]byte)text, "touch_overlay.sjson")
+		testing.expectf(t, problem == "", "%q: %s", value, problem)
+		if len(layouts) != 1 || len(layouts[0].layout.elements) != 1 {
+			testing.fail(t)
+			continue
+		}
+		look := layouts[0].layout.elements[0]
+		testing.expect_value(t, tap_control(look, true, false), Touch_Overlay_Control{button = .WEST})
+		testing.expect_value(t, tap_control(look, false, true), Touch_Overlay_Control{button = .WEST})
+		testing.expect_value(t, tap_control(look, false, false), look.tap_place_control)
+		testing.expect_value(t, look.tap_place_control, Touch_Overlay_Control{is_trigger = true, trigger = .Left})
+		testing.expect(t, !strings.contains(touch_overlay_element_text(look), "tap_interact_control"))
+	}
 }
 
 @(test)
@@ -1957,14 +1984,13 @@ touch_tap_into_tick :: proc(t: ^testing.T, world: ^World, content: Simulation_Co
 	state: Touch_Overlay_State
 	inputs := interaction == .Tap ? TAP_TOUCH : CROSSHAIR_TOUCH
 	target := players[0].target.entity
-	inputs.target_takes_interaction = entity_takes_interact(&world.entities, content.machines, target)
-	inputs.target_has_panel = aims_at_panel(&world.entities, content.machines, target, {})
+	inputs.target_takes_interaction, inputs.target_has_panel = aimed_target_calls_for(&world.entities, content.machines, target, {})
 	tap_at(&state, layout, 0, TAP_POINT, inputs)
 	output := touch_frame(&state, layout, {}, inputs = inputs)
 	tables, _ := build_input_bindings(shipped_default_bindings(t), .Sdl3, context.temp_allocator)
 	gamepad := touch_overlay_raw_gamepad(output, .Sdl3)
 	actions := gamepad_button_actions(gamepad, tables) + gamepad_trigger_actions(gamepad, tables)
-	frame := route_open_inventory_press(Input_Frame{pressed = actions, just_pressed = actions}, false, aims_at_panel(&world.entities, content.machines, target, {}))
+	frame := route_open_inventory_press(Input_Frame{pressed = actions, just_pressed = actions}, false, inputs.target_has_panel, inputs.target_takes_interaction)
 	records: Game_Records
 	players[0].on_ground = true
 	events = tick_player(world, &records, content, players, 0, frame, TEST_TICK_RATE, 0)
@@ -2000,7 +2026,8 @@ test_a_tap_opens_a_machine_turns_a_switch_and_places_on_the_ground :: proc(t: ^t
 			case furnace:
 				testing.expect_value(t, events, Player_Events{.Open_Machine})
 				testing.expect_value(t, players[0].open_machine, furnace)
-				testing.expect(t, .Place not_in pressed && .Interact not_in pressed)
+				// X is Interact too since 0233, which a furnace ignores.
+				testing.expect(t, .Place not_in pressed && .Open_Aimed in pressed)
 				players[0].open_machine = NO_ENTITY
 			case power_switch:
 				testing.expect_value(t, events, Player_Events{.Toggled_Switch})
@@ -2037,13 +2064,13 @@ test_a_tap_on_the_field_turns_a_switch_and_opens_a_furnace :: proc(t: ^testing.T
 		block_target := simulation.players[0].target.entity
 		field_target := simulation.players[0].field.frame_target
 		inputs := TAP_TOUCH
-		inputs.target_takes_interaction, inputs.target_has_panel = touch_tap_target(entities, simulation_content.machines, block_target, field_target)
+		inputs.target_takes_interaction, inputs.target_has_panel = aimed_target_calls_for(entities, simulation_content.machines, block_target, field_target)
 		state: Touch_Overlay_State
 		tap_at(&state, layout, 0, TAP_POINT, inputs)
 		output := touch_frame(&state, layout, {}, inputs = inputs)
 		gamepad := touch_overlay_raw_gamepad(output, .Sdl3)
 		actions := gamepad_button_actions(gamepad, tables) + gamepad_trigger_actions(gamepad, tables)
-		pressed := route_open_inventory_press(Input_Frame{pressed = actions, just_pressed = actions}, false, aims_at_panel(entities, simulation_content.machines, block_target, field_target))
+		pressed := route_open_inventory_press(Input_Frame{pressed = actions, just_pressed = actions}, false, inputs.target_has_panel, inputs.target_takes_interaction)
 		was_on := pool_get(&entities.poles, power_switch).on
 		clear(&simulation.events)
 		tick_field_test_simulation(simulation, simulation_content, pressed)

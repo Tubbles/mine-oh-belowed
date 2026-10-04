@@ -1574,8 +1574,10 @@ glyph_beside_label :: proc(commands: []Draw_Command, label: string) -> (shown: G
 
 // Work item 0194: the hint beside a machine with a panel (the audit's
 // HUD case aims at a drill) shows the inventory binding's glyph with
-// Open; beside a power switch Interact turns it and the inventory
-// binding opens it. With the keyboard and with the gamepad.
+// Open; beside a power switch Interact turns it. With the keyboard the
+// inventory binding (E) also opens the switch, so Open shows beside Turn;
+// on the gamepad Interact and Inventory share X and the press is
+// Interact's there, so Turn shows alone (0233).
 @(test)
 test_the_hint_beside_a_machine_shows_the_inventory_glyph :: proc(t: ^testing.T) {
 	audit := make_ui_audit()
@@ -1597,10 +1599,16 @@ test_the_hint_beside_a_machine_shows_the_inventory_glyph :: proc(t: ^testing.T) 
 			state.active_device = device
 			draw_hud(&state, audit_screen_context(audit), audit_hud_context(audit))
 			ui_resolve(&state)
-			open, found := glyph_beside_label(state.draw_list[:], text("hint_open"))
-			testing.expectf(t, found && open == glyph(&state, .Inventory), "%v %v: Open beside %v, wanted %v", device, target.kind, open, glyph(&state, .Inventory))
-			turn, turn_found := glyph_beside_label(state.draw_list[:], text("hint_toggle"))
 			is_switch := target == switch_handle
+			shared := glyph(&state, .Interact) == glyph(&state, .Inventory)
+			testing.expectf(t, shared == (device == .Gamepad), "%v: Interact and Inventory share a glyph %v", device, shared)
+			open, found := glyph_beside_label(state.draw_list[:], text("hint_open"))
+			open_shown := !(is_switch && shared)
+			testing.expectf(t, found == open_shown, "%v %v: Open shown %v", device, target.kind, found)
+			if open_shown {
+				testing.expectf(t, open == glyph(&state, .Inventory), "%v %v: Open beside %v, wanted %v", device, target.kind, open, glyph(&state, .Inventory))
+			}
+			turn, turn_found := glyph_beside_label(state.draw_list[:], text("hint_toggle"))
 			testing.expectf(t, turn_found == is_switch, "%v %v: Turn shown %v", device, target.kind, turn_found)
 			if is_switch {
 				testing.expect_value(t, turn, glyph(&state, .Interact))
@@ -1609,10 +1617,10 @@ test_the_hint_beside_a_machine_shows_the_inventory_glyph :: proc(t: ^testing.T) 
 		}
 	}
 	// The switch's Turn and Open fit the glyph bar at every audited size and
-	// text scale, the smallest included. Pause is not asserted: the world's
-	// bar sheds it first (0219), and at 1280 by 800 scale 1.5 with the
-	// largest text the gamepad's Turn and Open take a row each beside the
-	// hotbar.
+	// text scale, the smallest included, with the keyboard, where both show.
+	// Pause is not asserted: the world's bar sheds it first (0219). Then
+	// one gamepad pass at 1280 by 800 scale 1.5 with the largest text, the
+	// tightest bar, shows Turn alone.
 	player.target = Raycast_Hit{hit = true, entity = switch_handle}
 	text_scale_before := audit.settings.text_scale
 	audit_sizes := UI_AUDIT_SIZES
@@ -1622,9 +1630,9 @@ test_the_hint_beside_a_machine_shows_the_inventory_glyph :: proc(t: ^testing.T) 
 	for size in sizes {
 		for text_scale in UI_AUDIT_TEXT_SCALES {
 			audit.settings.text_scale = text_scale
-			state := Ui_State{theme = audit.theme, active_device = .Gamepad, bindings = shipped_default_bindings(t)}
+			state := Ui_State{theme = audit.theme, active_device = .Keyboard_Mouse, bindings = shipped_default_bindings(t)}
 			ui_begin(&state, {}, size.pixels, 1.0 / 60, size.scale, 1, ui_accessibility(audit.settings))
-			state.active_device = .Gamepad
+			state.active_device = .Keyboard_Mouse
 			draw_hud(&state, audit_screen_context(audit), audit_hud_context(audit))
 			ui_resolve(&state)
 			for label in ([2]string{text("hint_toggle"), text("hint_open")}) {
@@ -1640,6 +1648,23 @@ test_the_hint_beside_a_machine_shows_the_inventory_glyph :: proc(t: ^testing.T) 
 			destroy_ui_state(&state)
 		}
 	}
+	audit.settings.text_scale = TEXT_SCALE_RANGE.maximum
+	state := Ui_State{theme = audit.theme, active_device = .Gamepad, bindings = shipped_default_bindings(t)}
+	ui_begin(&state, {}, {1280, 800}, 1.0 / 60, 1.5, 1, ui_accessibility(audit.settings))
+	state.active_device = .Gamepad
+	draw_hud(&state, audit_screen_context(audit), audit_hud_context(audit))
+	ui_resolve(&state)
+	_, turn_found := glyph_beside_label(state.draw_list[:], text("hint_toggle"))
+	_, open_found := glyph_beside_label(state.draw_list[:], text("hint_open"))
+	testing.expect(t, turn_found, "the gamepad's Turn at the tightest size")
+	testing.expect(t, !open_found, "the gamepad's Open beside Turn")
+	safe := ui_safe_area(&state)
+	for command in state.draw_list {
+		if command.panel == UI_GLYPH_BAR_PANEL {
+			testing.expectf(t, rectangle_inside(command.rectangle, safe, UI_AUDIT_TOLERANCE), "gamepad: %v %q outside %v", command.kind, command.text, safe)
+		}
+	}
+	destroy_ui_state(&state)
 	audit.settings.text_scale = text_scale_before
 	player.target = drill
 }
