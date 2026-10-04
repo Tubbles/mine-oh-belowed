@@ -18,7 +18,7 @@
 - [build.md](build.md): host toolchain, the shared collection and raylib archive, `build.sh`, the command line, the play build, the Steam shortcut and Deck, Nix, CI, the Windows build.
 - [android.md](android.md): the native Android app: toolchain, raylib patches, entry point, link, APK, the phone's files, haptics, the keyboard, storage access for the export.
 - [inspiration.md](inspiration.md): lessons taken from Factorio, Satisfactory, Dyson Sphere Program, the voxel factory games and the mod ecosystem, with sources.
-- [art/booklet.md](art/booklet.md): the art direction booklet of 2026-10-03: astro-industrial punk found in generated images, one page per round with the verdict, the kept image per machine, the stone furnace reference sheet that 0212 models from, and how the images are made.
+- [art/booklet.md](art/booklet.md): the art direction booklet: astro-industrial punk found in generated images, every generated image reduced with a sentence under it, round by round with the user's verdict, the kept image per machine, and one page per machine taken on (its reference sheet, the game's render of the accepted model, the user's sign off), the stone furnace first; how the images are made and how a machine gets its page.
 - [audit/](audit/): the architecture audits of 0143, one report per cluster (loop, ui, world, simulation, presentation, content): state, coupling, gaps, ranked refactors, the engine or game split and the entity component lens.
 - [log/](log/): dated decision logs, write once.
 - [work/](work/): work items with status and verify statements; the finished ones under [work/done/](work/done/), the closed ones under [work/cancelled/](work/cancelled/).
