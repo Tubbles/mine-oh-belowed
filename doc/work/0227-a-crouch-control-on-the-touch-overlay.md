@@ -1,6 +1,6 @@
 # 0227: A crouch control on the touch overlay
 
-Status: designed (2026-10-04, the specification approved the same day with the decisions below, waiting for a slot after 0222 lands; from the user on the phone with the round three pod preview: "How do i toggle crouch on phone"; there is none, Default carries no Sneak control since 0134 took the buttons out, and the airlock of 0221 needs crouching)
+Status: implementing (2026-10-04, in `.claude/worktrees/0227` on `item/0227` from `main` after 0222 landed, the specification approved the same day with the decisions below; from the user on the phone with the round three pod preview: "How do i toggle crouch on phone"; there is none, Default carries no Sneak control since 0134 took the buttons out, and the airlock of 0221 needs crouching)
 
 ## Goal
 
