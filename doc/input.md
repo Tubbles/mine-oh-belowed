@@ -164,7 +164,7 @@ A machine wider, deeper or higher than `direct_placement_limit` ([content.md](co
 | Menu (Pause) | The pause menu, with a `Cancel placement` row while the editor runs |
 | View (Open_Map) | The map, as in the world |
 | Keyboard and mouse | Arrows nudge, R rotates, right click commits, left click cancels, Escape opens the pause menu with its row |
-| Touch | The HUD's editor buttons: the four nudges, commit and cancel, with Rotate in the row ([touch_overlay.md](touch_overlay.md)) |
+| Touch | The HUD's editor buttons: the four nudges, commit and cancel, with Rotate in the row ([touch_overlay.md](touch_overlay.md)); Default's B is Sneak |
 
 The nudge actions (`Placement_Nudge_Away`, `_Towards`, `_Left`, `_Right`, on the D-pad and the arrows) never reach the simulation: the world frame always drops them (`placement_editor_world_frame`), so outside the mode the D-pad keeps its world meanings. In the mode the world frame also drops Place, Use_Item, Mine, Rotate_Building, Pipette, Drop_Stack and Interact (A is Jump alone), and Hotbar_Previous or Hotbar_Next only while the D-pad's Left or Right nudge is held in that frame, so L1, R1, the wheel, `[`, `]` and the number keys still change the slot and cancel. Away is the frame's horizontal axis nearest the player's heading, Left and Right the other one signed by the player's right; the frame's up is never a nudge axis. On bare ground a nudge re-stands the machine's new frame on the ground under the moved centre (no ground in reach leaves it and toasts Too steep). Every change re-runs the placement's refusal and re-tints the ghost. Commit on a white ghost queues one `Machine_Placement_Command` ([architecture.md](architecture.md), Placement on frames); on a red one it is refused with a toast. After a commit Place, and after a cancel Mine, stay hidden from the world until released (`Placement_Editor.guard`), so a held R2 after Cancel does not start a pick up. Changing the held slot or losing the held machine cancels too.
 
@@ -176,6 +176,8 @@ The Accessibility tab's Sneak and Sprint rows (`settings.sneak_hold`, `settings.
 | --- | --- | --- | --- |
 | Sneak | Hold | Sneaks while held | A press starts, the next stops; it lasts through open screens |
 | Sprint | Toggle | Sprints while held and moving | A press while moving sprints until movement stops or the next press |
+
+On touch, Default's B (0227) presses Sneak's `EAST`: in Hold it sneaks while touched and a double tap keeps it down until the next tap, in Toggle a tap toggles ([touch_overlay.md](touch_overlay.md), Hotbar and HUD buttons).
 
 The tools radial (0215) is hold only; the two settings do not touch it.
 

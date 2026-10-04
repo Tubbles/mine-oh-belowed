@@ -80,13 +80,22 @@ touch_frame :: proc(state: ^Touch_Overlay_State, layout: Touch_Overlay_Layout, p
 	return touch_overlay_output(state^, layout, screen, world_shown)
 }
 
-// Default has the stick and the look and no button (0134).
+// Default has the stick, the look and one button, B (0134, 0227).
 @(test)
 test_shipped_touch_overlay_loads :: proc(t: ^testing.T) {
 	layout := shipped_touch_overlay(t)
 	testing.expect_value(t, layout.reference_height, 1080)
-	testing.expect_value(t, len(layout.elements), 2)
-	testing.expect_value(t, len(overlay_layout(layout, PHONE_SCREEN, context.temp_allocator)), 0)
+	testing.expect_value(t, len(layout.elements), 3)
+	testing.expect_value(t, len(overlay_layout(layout, PHONE_SCREEN, context.temp_allocator)), 1)
+	b := layout.elements[2]
+	testing.expect_value(t, b.label, "B")
+	testing.expect_value(t, b.kind, Touch_Overlay_Kind.Button)
+	testing.expect_value(t, b.control, Touch_Overlay_Control{button = .EAST})
+	testing.expect_value(t, b.shape, Touch_Overlay_Shape.Circle)
+	testing.expect_value(t, b.anchor, Touch_Overlay_Anchor.Bottom_Right)
+	testing.expect_value(t, b.position, [2]f32{60, 320})
+	testing.expect_value(t, b.size, [2]f32{100, 100})
+	testing.expect(t, b.double_tap_toggles)
 	stick := layout.elements[zone_element(layout, .Stick, .Left)]
 	testing.expect_value(t, stick.radius, 130)
 	testing.expect_value(t, stick.sprint_rim, 1.25)
@@ -591,6 +600,40 @@ test_no_touch_overlay_element_covers_a_hotbar_slot :: proc(t: ^testing.T) {
 					testing.expectf(t, !rectangles_overlap(rectangle, rectangles[other]), "the %v touch button at %v covers the %v one", button, size, other)
 				}
 			}
+		}
+	}
+}
+
+// Default's buttons (0227) clear the hotbar, the HUD's row and the
+// placement editor's grid at every audited size and on the phone at the
+// UI scale range's ends, since a layout button takes a finger before a
+// HUD button.
+@(test)
+test_no_touch_overlay_element_covers_a_hud_touch_button :: proc(t: ^testing.T) {
+	layout := shipped_touch_overlay(t)
+	sizes := make([dynamic]Ui_Audit_Size, context.temp_allocator)
+	audit_sizes := UI_AUDIT_SIZES
+	append(&sizes, ..audit_sizes[:])
+	append(&sizes, Ui_Audit_Size{PHONE_SCREEN, UI_SCALE_RANGE.minimum}, Ui_Audit_Size{PHONE_SCREEN, 1}, Ui_Audit_Size{PHONE_SCREEN, UI_SCALE_RANGE.maximum}, Ui_Audit_Size{{1280, 720}, 1})
+	for size in sizes {
+		ui: Ui_State
+		ui.pixels_per_unit = ui_pixels_per_unit(size.pixels.y, size.scale)
+		ui.screen_units = ui_screen_units(size.pixels, ui.pixels_per_unit)
+		safe := ui_safe_area(&ui)
+		placed := overlay_layout(layout, size.pixels, context.temp_allocator)
+		testing.expectf(t, len(placed) > 0, "no button placed at %v", size)
+		for element_placed in placed {
+			label := layout.elements[element_placed.element].label
+			element := pixels_to_units_rectangle(element_placed.centre, element_placed.size, ui.pixels_per_unit)
+			for rectangle, button in hud_touch_button_rectangles(safe) {
+				testing.expectf(t, !rectangles_overlap(element, rectangle), "%v at %v covers the %v touch button at %v", label, size, button, rectangle)
+			}
+			for selected in 0 ..< HOTBAR_SLOT_COUNT {
+				for slot in hud_hotbar_rectangles(safe, selected) {
+					testing.expectf(t, !rectangles_overlap(element, slot), "%v at %v covers a hotbar slot at %v", label, size, slot)
+				}
+			}
+			testing.expectf(t, rectangle_inside(element, {0, 0, ui.screen_units.x, ui.screen_units.y}, 0), "%v at %v leaves the screen: %v", label, size, element)
 		}
 	}
 }
@@ -1166,10 +1209,12 @@ test_a_static_stick_reads_a_touch_inside_its_base_and_ignores_one_outside :: pro
 }
 
 B_BUTTON_POINT :: [2]f32{2424 - 172, 431}
+// Default's B (0227), its centre on PHONE_SCREEN.
+DEFAULT_B_POINT :: [2]f32{2424 - 60, 1080 - 320}
 
 // A tap on B: one frame down, one frame up.
-tap_b :: proc(state: ^Touch_Overlay_State, layout: Touch_Overlay_Layout, id: i32, inputs := CROSSHAIR_TOUCH) -> (while_down, after_lift: bool) {
-	while_down = touch_frame(state, layout, {{id = id, position = B_BUTTON_POINT}}, inputs = inputs).buttons[int(sdl.GamepadButton.EAST)]
+tap_b :: proc(state: ^Touch_Overlay_State, layout: Touch_Overlay_Layout, id: i32, inputs := CROSSHAIR_TOUCH, point := B_BUTTON_POINT) -> (while_down, after_lift: bool) {
+	while_down = touch_frame(state, layout, {{id = id, position = point}}, inputs = inputs).buttons[int(sdl.GamepadButton.EAST)]
 	after_lift = touch_frame(state, layout, {}, inputs = inputs).buttons[int(sdl.GamepadButton.EAST)]
 	return
 }
@@ -1230,6 +1275,84 @@ test_double_taps_latch_only_while_the_sneak_setting_is_hold :: proc(t: ^testing.
 	testing.expect(t, lifted)
 	testing.expect_value(t, touch_frame(&state, layout, {}, inputs = toggle_sneak), Touch_Overlay_Output{})
 	testing.expect_value(t, state.latched, bit_set[0 ..< TOUCH_OVERLAY_ELEMENT_CAPACITY]{})
+}
+
+// Default's B (0227) presses Sneak through EAST in the world and is
+// neither read nor drawn over a screen.
+@(test)
+test_defaults_b_presses_sneak_in_the_world_and_nothing_over_a_screen :: proc(t: ^testing.T) {
+	layout := shipped_touch_overlay(t)
+	tables, _ := build_input_bindings(shipped_default_bindings(t), .Raylib, context.temp_allocator)
+	east := int(sdl.GamepadButton.EAST)
+	state: Touch_Overlay_State
+	output := touch_frame(&state, layout, {{id = 0, position = DEFAULT_B_POINT}}, inputs = TAP_TOUCH)
+	testing.expect_value(t, slot_by_id(state, 0).role, Touch_Role.Button)
+	testing.expect(t, output.buttons[east])
+	testing.expect(t, .Sneak in gamepad_button_actions(touch_overlay_raw_gamepad(output, .Raylib), tables))
+	testing.expect(t, !output.aims)
+	testing.expect(t, !output.jump_tap)
+	frame := touch_overlay_frame(&state, layout, {{id = 0, position = DEFAULT_B_POINT}}, PHONE_SCREEN, true, TAP_TOUCH)
+	testing.expect(t, frame.pointer_claimed)
+	// The lift in the jump zone neither jumps nor places.
+	output = touch_frame(&state, layout, {}, inputs = TAP_TOUCH)
+	testing.expect(t, !output.buttons[east])
+	testing.expect(t, !output.jump_tap)
+	testing.expect_value(t, output.triggers, [Gamepad_Trigger]bool{})
+	// A drag starting on B does not look.
+	dragged: Touch_Overlay_State
+	touch_frame(&dragged, layout, {{id = 1, position = DEFAULT_B_POINT}}, inputs = TAP_TOUCH)
+	output = touch_frame(&dragged, layout, {{id = 1, position = DEFAULT_B_POINT + {-60, 0}}}, inputs = TAP_TOUCH)
+	testing.expect_value(t, output.look_delta, [2]f32{})
+	// Over a screen the same finger presses nothing.
+	screen_state: Touch_Overlay_State
+	output = touch_frame(&screen_state, layout, {{id = 2, position = DEFAULT_B_POINT}}, false, inputs = TAP_TOUCH)
+	testing.expect_value(t, output, Touch_Overlay_Output{})
+	touch_frame(&screen_state, layout, {}, false, inputs = TAP_TOUCH)
+	ui: Ui_State
+	defer delete(ui.draw_list)
+	ui.pixels_per_unit = ui_pixels_per_unit(PHONE_SCREEN.y, 1)
+	draw_touch_overlay(&ui, screen_state, layout, PHONE_SCREEN, false)
+	testing.expect_value(t, len(touch_overlay_drawn_labels(&ui)), 0)
+	clear(&ui.draw_list)
+	draw_touch_overlay(&ui, screen_state, layout, PHONE_SCREEN, true)
+	labels := touch_overlay_drawn_labels(&ui)
+	testing.expect_value(t, len(labels), 1)
+	if len(labels) == 1 {
+		testing.expect_value(t, labels[0], "B")
+	}
+}
+
+// Default's B (0227) latches on a double tap in Hold and not in Toggle,
+// as GameNative's B does in the tests above.
+@(test)
+test_defaults_b_latches_while_the_sneak_setting_is_hold :: proc(t: ^testing.T) {
+	layout := shipped_touch_overlay(t)
+	state: Touch_Overlay_State
+	down, lifted := tap_b(&state, layout, 0, TAP_TOUCH, DEFAULT_B_POINT)
+	testing.expect(t, down && !lifted)
+	down, lifted = tap_b(&state, layout, 1, TAP_TOUCH, DEFAULT_B_POINT)
+	testing.expect(t, down && lifted)
+	for _ in 0 ..< 60 {
+		testing.expect(t, touch_frame(&state, layout, {}, inputs = TAP_TOUCH).buttons[int(sdl.GamepadButton.EAST)])
+	}
+	// The next tap releases it on its lift.
+	down, lifted = tap_b(&state, layout, 2, TAP_TOUCH, DEFAULT_B_POINT)
+	testing.expect(t, down && !lifted)
+	// In Toggle two quick taps each press and release.
+	toggle_sneak := TAP_TOUCH
+	toggle_sneak.double_tap_latches = false
+	toggled: Touch_Overlay_State
+	down, lifted = tap_b(&toggled, layout, 3, toggle_sneak, DEFAULT_B_POINT)
+	testing.expect(t, down && !lifted)
+	down, lifted = tap_b(&toggled, layout, 4, toggle_sneak, DEFAULT_B_POINT)
+	testing.expect(t, down && !lifted)
+	// A latch made in Hold is released by the first Toggle frame.
+	latched: Touch_Overlay_State
+	tap_b(&latched, layout, 5, TAP_TOUCH, DEFAULT_B_POINT)
+	_, lifted = tap_b(&latched, layout, 6, TAP_TOUCH, DEFAULT_B_POINT)
+	testing.expect(t, lifted)
+	testing.expect_value(t, touch_frame(&latched, layout, {}, inputs = toggle_sneak), Touch_Overlay_Output{})
+	testing.expect_value(t, latched.latched, bit_set[0 ..< TOUCH_OVERLAY_ELEMENT_CAPACITY]{})
 }
 
 @(test)

@@ -72,14 +72,19 @@
 // selected hotbar slot holds until the finger lifts, a control as a
 // button's (DPAD_DOWN: Drop_Stack through the bindings).
 //
-// The layout has no buttons (work item 0134): taps and holds anywhere
-// place and mine, a tap at the right edge jumps, the stick's rim sprints,
-// the hotbar's taps and long press select and drop, and the HUD's touch
-// buttons beside the hotbar open the inventory, the map and the pause
-// menu and rotate. Sneak has no touch control; a user layout may add a B button.
+// Default has one button (work item 0227): B, Sneak, along the right edge
+// above the jump zone's thumb rest; a double tap keeps it down while the
+// sneak setting is Hold. The rest has no buttons (work item 0134): taps
+// and holds anywhere place and mine, a tap at the right edge jumps, the
+// stick's rim sprints, the hotbar's taps and long press select and drop,
+// and the HUD's touch buttons beside the hotbar open the inventory, the
+// map and the pause menu and rotate. B stays clear of the hotbar, the
+// HUD's touch buttons and the placement editor's grid at every audited
+// size (test_no_touch_overlay_element_covers_a_hud_touch_button).
 reference_height = 1080
 hotbar_drop_control = "DPAD_DOWN"
 elements = [
 	{kind = "stick" side = "left" radius = 130 sprint_rim = 1.25}
 	{kind = "look" side = "right" sensitivity = 1.0 hold_control = "RIGHT_TRIGGER" tap_interact_control = "SOUTH" tap_place_control = "LEFT_TRIGGER" tap_open_control = "WEST" jump_zone_share = 0.2}
+	{kind = "button" control = "EAST" shape = "circle" anchor = "bottom_right" position = [60, 320] size = [100, 100] label = "B" double_tap_toggles = true}
 ]

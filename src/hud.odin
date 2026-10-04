@@ -168,8 +168,9 @@ hud_hotbar_pixel_rectangles :: proc(state: ^Ui_State, selected: int) -> [HOTBAR_
 // The HUD's touch buttons (0134), right of the hotbar: the touch
 // overlay's way to the inventory, the map, the pause menu, the tools
 // radial (0215) and a rotation, since its default layout has no gamepad
-// buttons. Each presses the gamepad control bound to its action
-// (frame_hud_touch_buttons), so the actions stay bindings. Rotate shows
+// buttons for them (its one button, B, is Sneak, 0227). Each presses the
+// gamepad control bound to its action (frame_hud_touch_buttons), so the
+// actions stay bindings. Rotate shows
 // only while Rotate_Building acts: the selected hotbar slot holds what it
 // turns before placing (selected_placement_rotates) or the target is an
 // entity it turns (entity_rotates). The placement editor's nudges,
