@@ -1,6 +1,6 @@
 # 0214: The sealed modelling lab as a tool
 
-Status: verified (2026-10-04, implementer agent a178416cfcb05e49e, verified the same day, one fix round for the --replace guard and the first round's record comments, in `.claude/worktrees/0214` on `item/0214` from `main` at 4c22bbb, the specification approved the same day with the decisions below, first item of M14's models stream (0237); from the 0212 test of a sealed modeller; after 0212)
+Status: landed (2026-10-04, "Make the sealed modelling lab a tool (0214)", fb5001b, installed the same day; implementer agent a178416cfcb05e49e, verified the same day, one fix round for the --replace guard and the first round's record comments, in `.claude/worktrees/0214` on `item/0214` from `main` at 4c22bbb, the specification approved the same day with the decisions below, first item of M14's models stream (0237); from the 0212 test of a sealed modeller; after 0212)
 
 ## Goal
 
