@@ -21,7 +21,8 @@ package game
 // same move a step height higher and keeps the farther one that ends on
 // walkable ground, and steep ground with walkable ground a step up and a
 // stride ahead is stepped onto instead of slid down. Sneak on foot shrinks
-// the capsule to the crouch height (0218); standing waits for room.
+// the capsule to the crouch height (0218); standing waits for room. A
+// machine's collision volumes are surfaces like the field's (0230).
 
 VELOCITY_FRACTION_ONE :: 65536
 // Full stick in Field_Player_Input.move.
@@ -426,7 +427,8 @@ field_frame_probe_reach :: proc(tuning: Field_Player_Tuning) -> i64 {
 
 // The step against a frame: a solid cell in front of the bottom sphere is
 // stepped onto when one pitch high, whatever the field's step height, so
-// a foundation pad is a step at every spacing.
+// a foundation pad is a step at every spacing; a body's volume is
+// stepped at the data's step height (0230).
 field_step_height :: proc(frames: ^Frame_Table, tuning: Field_Player_Tuning, feet: World_Position, up, direction: [3]i64) -> i64 {
 	bottom := feet + World_Position(fixed_scale(up, tuning.capsule_radius) + fixed_scale(direction, tuning.capsule_radius / 2))
 	cells, pitch := frame_solid_probe(frames, bottom, tuning.capsule_radius + FIELD_GROUND_TOLERANCE)
@@ -472,9 +474,10 @@ resolve_field_penetration :: proc(world: ^Field_World, frames: ^Frame_Table, tun
 		pushed := false
 		for index in 0 ..< field_capsule_sphere_count(tuning) {
 			centre := field_capsule_centre(tuning, feet^, up, index)
-			cells, _ := frame_solid_probe(frames, centre, field_frame_probe_reach(tuning))
+			cells := frame_probe(frames, centre, field_frame_probe_reach(tuning))
 			// The field and the frames each push, so a floor nearer than a
-			// wall never hides the wall.
+			// wall never hides the wall; the frames' probe is the nearer of
+			// a solid cell and a body's volume (0230).
 			for probe in ([2]Field_Surface_Probe{field_surface_probe(world, tuning.spacing_millimetres, centre), cells}) {
 				depth := tuning.capsule_radius - probe.distance
 				if depth <= FIELD_PENETRATION_TOLERANCE {
@@ -814,12 +817,28 @@ step_field_walk :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Field
 	if !landed || field_walk_progress(start, dropped, motion) <= field_walk_progress(start, plain_end, motion) {
 		return plain_end, false
 	}
-	ground := probe_field_ground(world, frames, tuning, dropped, up, {}, true)
-	ground = judge_ground_over_footprint(world, frames, tuning, dropped, up, forward, ground)
-	if !ground.on || !ground.walkable {
+	under := probe_field_ground(world, frames, tuning, dropped, up, {}, true)
+	ground := judge_ground_over_footprint(world, frames, tuning, dropped, up, forward, under)
+	if !ground.on || !ground.walkable || field_landing_held_by_steep_contact(frames, tuning, dropped, up, under) {
 		return plain_end, false
 	}
 	return dropped, true
+}
+
+// A step's landing held up by a machine's collision volume (0230) whose
+// contact with the bottom sphere is steeper than walkable while the ray
+// under its centre finds walkable ground more than the land tolerance
+// (spacing/16) below: the foot of a steep volume, which the next tick's
+// settle would drop the player off again. Only the volumes count: a steep
+// bump of the field narrower than the footprint (0203) rests the sphere
+// the same way and is walked over by design. A lip of
+// the step height stays walkable at crouch speed at every spacing
+// (test_a_lip_of_the_step_height_is_stepped_onto_at_crouch_speed).
+field_landing_held_by_steep_contact :: proc(frames: ^Frame_Table, tuning: Field_Player_Tuning, feet: World_Position, up: [3]i64, under: Field_Ground) -> bool {
+	contact := frame_body_probe(frames, field_capsule_centre(tuning, feet, up, 0), field_frame_probe_reach(tuning))
+	touching := contact.found && contact.distance <= tuning.capsule_radius + FIELD_GROUND_TOLERANCE
+	land_tolerance := sample_axis_to_position(1, tuning.spacing_millimetres) / FIELD_GROUND_LAND_SPACING_DIVISOR
+	return touching && fixed_dot(contact.normal, up) < tuning.walkable_cosine && under.walkable && under.below > land_tolerance
 }
 
 // A step or a mantle's landing: the player stands there, still.

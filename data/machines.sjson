@@ -95,6 +95,11 @@
 // works); the block world takes no point lights. Presentation only. A
 // machine whose model draw_entities does not draw (fluid and power
 // machines, inserters, trees) may list lamps, which then do nothing.
+// A machine whose model has data/models/<model>.collision.sjson (work item
+// 0230, doc/content.md, Models) collides by its volumes on a frame: its
+// cells stay its own for placement, its open cells for the spawn, the
+// fixtures and the sealed room, but the player and the aiming ray meet the
+// volumes.
 // interior_light_share (optional, pods only, work item 0225) is 0 to 1:
 // the pod's model, its fixtures' models and the bodies of players
 // standing in its footprint are lit at this share of the light round
@@ -1100,7 +1105,9 @@ machines = [
 		stands_on_ground = true
 		// 12 by 12 by 8 cells, the hull's bound (work item 0221): 6 by 6 by
 		// 4 m at the 500 mm pitch; the width is the front axis, the outer
-		// hatch on +x. The cells round the hull are solid until 0230.
+		// hatch on +x. The cells round the hull are its own for placement;
+		// the player and the aiming ray meet the volumes of
+		// models/pod.collision.sjson (0230).
 		footprint = {width = 12, depth = 12, height = 8}
 		model = "pod"
 		// The free floor before the chair, 4 rows high (the first box:

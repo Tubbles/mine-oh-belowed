@@ -1285,6 +1285,66 @@ def build(machine):
         print(f"LAMP {name}: face ({face.x:.3f}, {face.z:.3f}, {-face.y:.3f}) light ({light.x:.3f}, {light.z:.3f}, {-light.y:.3f})")
 
 
+def collision(b):
+    """The volumes the game collides the player and the aiming ray with
+    (work item 0230, tools/models/collision.py): 0230's table, measured
+    from this script. The hatches, the locker, the bench and the oxygen
+    generator collide by their own cells, so nothing enters the open
+    cells or the fixtures' pockets; the cabin's free floor stays open.
+    Left out: what stands above head height against the lean wall (the
+    upper screens, keypads and cabinets), the pads, lamps, pipes, rivets
+    and the exterior details on the cone, which cannot be climbed."""
+    # The hull: the lower wall with the door gap (asin(1 / 4.6), the outer
+    # door's 2 cells at the lining), the leaning cone (its inner surface
+    # the lining's lean), the plug above the ceiling, the top can, the heat
+    # shield's rim with its gap before the door and the floor plate.
+    b.cylinder((0, 0), 0, 2.2, 5.0, shell=0.4, sector=(12.6, 347.4))
+    b.cone((0, 0), 2.2, 6.8, 5.0, 2.4125, shell=0.2875)
+    b.cone((0, 0), 6.2, 6.8, 2.75, 2.4125)
+    b.cylinder((0, 0), 6.75, 7.4, 1.75)
+    b.cylinder((0, 0), 0, 0.35, 5.45, shell=0.45, sector=(12.2, 347.8))
+    b.cylinder((0, 0), 0, 0.006, 4.6)
+    # The drum housing's jambs either side of the 2 by 2 cell path and the
+    # part over the bore; the inner shutter's tower.
+    b.box((1.12, 1.0, 0), (4.6, 1.75, 2.75))
+    b.box((1.12, -1.75, 0), (4.6, -1.0, 2.75))
+    b.box((1.12, -1.0, 2.0), (4.6, 1.0, 2.75))
+    b.box((1.13, -1.25, 2.73), (1.8, 1.25, 4.3))
+    # The fairing round the outer door: its jambs (which also close the
+    # hull's gap beyond the door's half width) and the part over it.
+    b.box((3.9, 1.0, 0), (5.0, 1.8, 4.0))
+    b.box((3.9, -1.8, 0), (5.0, -1.0, 4.0))
+    b.box((3.9, -1.0, 2.0), (5.0, 1.0, 4.0))
+    # The desk and the lower walls round the cabin, as wall sectors.
+    b.cylinder((0, 0), 0, 1.85, 4.6, shell=1.15, sector=(82.5, 142.5))
+    b.cylinder((0, 0), 0, 2.35, 4.6, shell=0.9, sector=(187.5, 247.5))
+    b.cylinder((0, 0), 0, 2.35, 4.6, shell=0.55, sector=(247.5, 262.5))
+    b.cylinder((0, 0), 0, 2.35, 4.6, shell=0.55, sector=(277.5, 292.5))
+    b.cylinder((0, 0), 0, 2.35, 4.6, shell=0.85, sector=(292.5, 337.5))
+    b.box((2.04, 1.77, 0), (3.35, 2.95, 2.6))
+    # The chair: seat, pedestal and plate; the armrests; the reclined
+    # back; the headrest.
+    b.box((-2.97, -1.82, 0), (-1.03, -0.06, 1.1))
+    b.box((-2.99, -1.2, 1.1), (-2.73, -0.06, 1.6))
+    b.box((-1.27, -1.2, 1.1), (-1.01, -0.06, 1.6))
+    b.box((-2.8, -1.8, 0.84), (-1.2, -1.15, 2.5))
+    b.box((-2.44, -1.75, 2.5), (-1.56, -1.35, 3.1))
+    # The niches' posts and lintels: the bench, the locker, the oxygen
+    # generator with its manifold and gauges.
+    b.box((-4.12, -0.19, 0), (-3.03, -0.02, 2.02))
+    b.box((-4.12, 2.02, 0), (-3.03, 2.19, 2.02))
+    b.box((-4.3, -0.2, 2.02), (-3.03, 2.2, 2.3))
+    b.box((-1.19, -3.12, 0), (-1.02, -2.03, 4.02))
+    b.box((1.02, -3.12, 0), (1.19, -2.03, 4.02))
+    b.box((-1.2, -3.3, 4.02), (1.2, -2.03, 4.3))
+    b.box((-0.17, 2.03, 0), (-0.02, 3.12, 3.02))
+    b.box((2.02, 2.03, 0), (2.17, 3.12, 3.02))
+    b.box((-0.2, 2.03, 3.02), (2.2, 3.3, 3.3))
+    b.box((-0.3, 2.3, 3.3), (2.3, 2.8, 4.15))
+    # The bed on the lean wall: the mattress and straps off the lining.
+    b.cone((0, 0), 2.6, 5.82, 4.4875, 2.6763, shell=0.36, sector=(303, 327))
+
+
 def triangles_overlap(first, second, margin=0.005):
     """Two triangles in a plane overlap by more than margin (2D separating
     axes on their edges)."""

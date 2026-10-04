@@ -13,9 +13,22 @@
 # replaces the old one only when every step succeeded. Work item 0214
 # generalises it to any machine.
 #
-# Usage: tools/model_lab/make_pod_lab.sh [lab directory]
+# With --collision (work item 0230) it builds the collision volumes round
+# on the accepted pod instead: the repository's pod.py, pod_geometry.py and
+# pod_hatch.py and the four model files of the pod and its hatch in place
+# of the stubs, and the records with the pod's open_cells and fixtures
+# kept (only lights and interior_light_share stripped), so the check can
+# test the volumes against them. tools/models/collision.py is copied in
+# both modes.
+#
+# Usage: tools/model_lab/make_pod_lab.sh [--collision] [lab directory]
 set -eu
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+mode=model
+if [ "${1:-}" = "--collision" ]; then
+	mode=collision
+	shift
+fi
 lab=${1:-$root/tmp/pod_lab}
 mkdir -p "$(dirname "$lab")"
 staging=$(mktemp -d "$lab.staging.XXXXXX")
@@ -24,11 +37,13 @@ final=$lab
 lab=$staging
 mkdir -p "$lab/tools/models/machines" "$lab/data/models" "$lab/reference" "$lab/previews"
 cp "$root/tools/blender" "$root/tools/sjson.py" "$root/tools/make_models.py" "$lab/tools/"
-cp "$root/tools/models/__init__.py" "$root/tools/models/kit.py" "$root/tools/models/palette.py" "$root/tools/models/records.py" "$lab/tools/models/"
-python3 - "$root/data/machines.sjson" "$lab/data/machines.sjson" <<'PY'
+cp "$root/tools/models/__init__.py" "$root/tools/models/kit.py" "$root/tools/models/palette.py" "$root/tools/models/records.py" "$root/tools/models/collision.py" "$lab/tools/models/"
+python3 - "$root/data/machines.sjson" "$lab/data/machines.sjson" "$mode" <<'PY'
 import sys
 
 STRIPPED = ("open_cells = ", "fixtures = ", "lights = ", "interior_light_share = ")
+if sys.argv[3] == "collision":
+    STRIPPED = ("lights = ", "interior_light_share = ")
 
 
 def strip_entries(lines):
@@ -77,7 +92,20 @@ MACHINES = {
     "pod": pod.build,
     "pod_hatch": pod_hatch.build,
 }
+
+# The scripts' collision(b) sections (work item 0230), written by
+# tools/make_models.py to data/models/<model>.collision.sjson.
+COLLISIONS = {name: module.collision for name, module in (("pod", pod), ("pod_hatch", pod_hatch)) if hasattr(module, "collision")}
 PY
+if [ "$mode" = collision ]; then
+	cp "$root/tools/models/machines/pod.py" "$root/tools/models/machines/pod_geometry.py" "$root/tools/models/machines/pod_hatch.py" "$lab/tools/models/machines/"
+	cp "$root/data/models/pod.obj" "$root/data/models/pod.mtl" "$root/data/models/pod_hatch.obj" "$root/data/models/pod_hatch.mtl" "$lab/data/models/"
+	rm -rf "$final"
+	mv "$lab" "$final"
+	trap - EXIT
+	find "$final" -type f | sort
+	exit 0
+fi
 cat > "$lab/tools/models/machines/pod.py" <<'PY'
 """The landing pod. Replace this stub: build(machine) builds the model
 in Blender's frame (tools/models/kit.py, the module docstring) and

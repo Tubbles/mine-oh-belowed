@@ -80,6 +80,14 @@ model_file_path :: proc(data_directory, id: string) -> string {
 	return platform.join_path(data_directory, MODELS_DIRECTORY, fmt.tprintf("%s%s", id, MODEL_FILE_EXTENSION))
 }
 
+// A model's collision volumes (work item 0230), read by the game package
+// (machine_collision.odin), not here. In the temp allocator.
+COLLISION_FILE_SUFFIX :: ".collision.sjson"
+
+collision_file_path :: proc(data_directory, id: string) -> string {
+	return platform.join_path(data_directory, MODELS_DIRECTORY, fmt.tprintf("%s%s", id, COLLISION_FILE_SUFFIX))
+}
+
 // A non-empty stem of a to z, 0 to 9 and _, then .mtl: no directory.
 is_material_library_name :: proc(name: string) -> bool {
 	if !strings.has_suffix(name, MATERIAL_FILE_EXTENSION) || len(name) == len(MATERIAL_FILE_EXTENSION) {

@@ -16,8 +16,9 @@ import "platform"
 // takes the events since the frame before, and a file added, changed,
 // renamed or removed marks its category. Presentation files (strings,
 // bindings, developer kits, shaders, fonts, models, textures, sounds, the
-// UI theme and icons) reload in place at once (hot_reload.odin). Content
-// files only mark the data as changed, shown on the Developer screen and
+// UI theme and icons) reload in place at once (hot_reload.odin); the
+// collision files under models/ are content (0230). Content files only
+// mark the data as changed, shown on the Developer screen and
 // in the log, until a reload is asked for (the reload command, the
 // Developer screen, F8), or, with watch_data all, once a second passes
 // without another content event, so a half saved file is not loaded.
@@ -49,7 +50,8 @@ Data_File_Category :: enum u8 {
 	Shaders,
 	// fonts/fonts.sjson and the font files under fonts/ (ui_font.odin).
 	Fonts,
-	// The .vox, .obj and .mtl files under models/.
+	// The .vox, .obj and .mtl files under models/; the collision files
+	// under models/ are content (0230).
 	Models,
 	// The .png files under textures/blocks/ and textures/items/
 	// (render_atlas.odin, render_icons.odin) and
@@ -122,6 +124,9 @@ data_file_category :: proc(relative_path: string) -> Data_File_Category {
 	case FONTS_DIRECTORY:
 		return name == FONTS_FILE_NAME ? .Fonts : .Ignored
 	case model_vox.MODELS_DIRECTORY:
+		if is_collision_file_name(name) {
+			return .Content
+		}
 		return is_model_file_name(name) ? .Models : .Ignored
 	case TEXTURES_DIRECTORY:
 		return name == PROCEDURAL_TEXTURES_FILE_NAME ? .Textures : .Ignored
@@ -157,6 +162,12 @@ is_model_file_name :: proc(name: string) -> bool {
 		return false
 	}
 	return strings.has_suffix(name, model_vox.MODEL_FILE_EXTENSION) || strings.has_suffix(name, model_obj.MODEL_FILE_EXTENSION) || strings.has_suffix(name, model_obj.MATERIAL_FILE_EXTENSION)
+}
+
+// A model's collision volumes (work item 0230, machine_collision.odin):
+// lockstep content, so it reloads with the content, never in place.
+is_collision_file_name :: proc(name: string) -> bool {
+	return !strings.has_prefix(name, ".") && strings.has_suffix(name, model_obj.COLLISION_FILE_SUFFIX)
 }
 
 is_font_file_name :: proc(name: string) -> bool {

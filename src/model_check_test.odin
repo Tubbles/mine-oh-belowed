@@ -263,7 +263,11 @@ test_the_shipped_models_pass_the_checks :: proc(t: ^testing.T) {
 	machines := shipped_machines()
 	defer delete(machines)
 	counts: [Model_Check_Subject]int
-	for machine in machines {
+	for &machine in machines {
+		// A shipped collision file is loaded and checked (0230).
+		volumes, problem := load_machine_collision(test_data_directory(), machine, context.temp_allocator)
+		testing.expectf(t, problem == "", "%s: %s", machine.id, problem)
+		machine.collision = volumes
 		subject := model_check_subject(test_data_directory(), machine)
 		counts[subject] += 1
 		if subject != .Obj && subject != .Arm {
@@ -274,4 +278,26 @@ test_the_shipped_models_pass_the_checks :: proc(t: ^testing.T) {
 		}
 	}
 	testing.expectf(t, counts[.Obj] >= 26 && counts[.Arm] >= 5, "%d obj and %d arm subjects", counts[.Obj], counts[.Arm])
+}
+
+// A collision volume inside an open cells box is reported (work item
+// 0230); one flush with the box's side lies inside the slack.
+@(test)
+test_the_collision_check_finds_a_volume_in_an_open_cells_box :: proc(t: ^testing.T) {
+	machine := Machine{id = "test", footprint = {4, 4, 4}}
+	machine.open_cells[0] = {from = {0, 0, 0}, to = {1, 3, 1}}
+	machine.open_cell_box_count = 1
+	// The box spans x and z -2 to 0 cells; the volume enters it by a
+	// quarter cell along x.
+	entering := test_collision_volume({kind = "box", from = {-0.25, 0, -2}, to = {1, 2, 0}})
+	machine.collision = []Collision_Volume{entering}
+	problems := model_collision_problems(machine)
+	testing.expect_value(t, len(problems), 1)
+	if len(problems) == 1 {
+		testing.expect_value(t, problems[0].check, Model_Check.Collision)
+		testing.expectf(t, strings.contains(problems[0].detail, "volume 0 enters open cells box 0"), "%q", problems[0].detail)
+	}
+	flush := test_collision_volume({kind = "box", from = {0, 0, -2}, to = {1, 2, 0}})
+	machine.collision = []Collision_Volume{flush}
+	testing.expect_value(t, len(model_collision_problems(machine)), 0)
 }

@@ -1018,3 +1018,52 @@ test_a_pods_lamp_lights_only_inside_its_box :: proc(t: ^testing.T) {
 	middle := world_position_to_metres(frame_cell_centre(frame, pod_origin(pod) + {size.x / 2, 1, size.z / 2}))
 	testing.expect(t, clip_box_reach(box, middle) <= 1, "the footprint's middle lies inside")
 }
+
+// A pod with collision volumes (work item 0230) registers one body with
+// its occupant and marks its held cells Shaped (its open cells among them
+// are occupied Open over them); its open cells, hatches
+// and fixtures stay without Shaped; a hatch toggle and a rebuild keep one
+// body and removing the pod leaves none.
+@(test)
+test_a_machine_with_volumes_registers_its_body_and_marks_its_cells_shaped :: proc(t: ^testing.T) {
+	machines := make_test_machines()
+	pod_id := find_machine_of_kind(machines, .Pod)
+	machines.machines[pod_id].collision = resolve_collision_volumes(test_pod_volume_definitions(), context.temp_allocator)
+	entities: Entities
+	defer destroy_entities(&entities)
+	frame, pod := place_test_pod(&entities, machines)
+	pod_handle := entity_at(&entities, pod_origin(pod), frame.id)
+	testing.expect_value(t, len(entities.frames.bodies), 1)
+	if len(entities.frames.bodies) == 1 {
+		body := entities.frames.bodies[0]
+		testing.expect_value(t, body.occupant.handle, entity_occupant_handle(pod_handle))
+		testing.expect_value(t, body.volume_count, len(pod.collision))
+	}
+	for cell in machine_held_cells(pod_origin(pod), pod, POD_ROTATION) {
+		occupant, _ := frame_occupant(&entities.frames, frame.id, cell)
+		if .Open in occupant.flags {
+			continue
+		}
+		testing.expectf(t, .Solid in occupant.flags && .Shaped in occupant.flags, "held cell %v flags %v", cell, occupant.flags)
+	}
+	for cell in machine_open_cells(pod_origin(pod), pod, POD_ROTATION) {
+		occupant, _ := frame_occupant(&entities.frames, frame.id, cell)
+		testing.expectf(t, .Shaped not_in occupant.flags, "open cell %v flags %v", cell, occupant.flags)
+		if entity_from_occupant(occupant.handle) == pod_handle {
+			testing.expectf(t, .Open in occupant.flags, "open cell %v flags %v", cell, occupant.flags)
+		}
+	}
+	for index in 0 ..< pod.fixture_count {
+		fixture := test_pod_fixture(&entities, frame, pod, index)
+		for cell in test_entity_cells(&entities, machines, fixture) {
+			occupant, _ := frame_occupant(&entities.frames, frame.id, cell)
+			testing.expectf(t, .Shaped not_in occupant.flags, "fixture %d cell %v flags %v", index, cell, occupant.flags)
+		}
+	}
+	testing.expect(t, toggle_hatch(&entities, machines, test_pod_fixture(&entities, frame, pod, TEST_OUTER_HATCH), 10, nil))
+	testing.expect_value(t, len(entities.frames.bodies), 1)
+	rebuild_entity_cells(&entities, machines)
+	testing.expect_value(t, len(entities.frames.bodies), 1)
+	testing.expect(t, remove_entity(&entities, machines, pod_handle))
+	testing.expect_value(t, len(entities.frames.bodies), 0)
+}

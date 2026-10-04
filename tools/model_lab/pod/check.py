@@ -2,7 +2,10 @@
 """Checks data/models/<model>.obj against the lab's limits (the game's
 loader rules and the budgets of this lab): the body's and the part's
 triangle counts, the material count, the footprint bounds and the
-object names. Exit 1 on any problem.
+object names. With data/models/<model>.collision.sjson (work item 0230)
+it also lists the collision volumes and checks their count, their bounds
+against the footprint and that none enters an open cells box or a
+fixture box of the lab's record. Exit 1 on any problem.
 
     python3 check.py pod
     python3 check.py pod_hatch
@@ -12,6 +15,13 @@ import pathlib
 import sys
 
 LAB = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0, str(LAB / "tools"))
+
+import sjson  # noqa: E402
+from models import collision, records  # noqa: E402
+
+# The lattice of the intrusion check: samples per cell along each axis.
+LATTICE_PER_CELL = 8
 # body triangles, part triangles (0: no part allowed), footprint
 # (width x, depth z, height y) in cells.
 MODELS = {
@@ -53,6 +63,60 @@ def read_mtl(path):
         elif parts[0] in ("Kd", "Ke") and name:
             materials[name][parts[0]] = tuple(float(value) for value in parts[1:4])
     return materials
+
+
+def record_boxes(model):
+    """The lab record's open cells boxes and fixture boxes in the file's
+    frame, shrunk by the tolerance: (label, index, minimum, maximum)."""
+    machine = records.machine_for_model(records.load_machines(LAB / "data" / "machines.sjson"), model)
+    boxes = []
+    for label, count, reader in (("open cells box", len(machine.open_cells), records.open_cell_box), ("fixture box", len(machine.fixtures), records.fixture_box)):
+        for index in range(count):
+            low, high = (collision.file_point(corner) for corner in reader(machine, index))
+            minimum = tuple(min(a, b) + TOLERANCE for a, b in zip(low, high))
+            maximum = tuple(max(a, b) - TOLERANCE for a, b in zip(low, high))
+            boxes.append((label, index, minimum, maximum))
+    return boxes
+
+
+def lattice(minimum, maximum):
+    """The samples of a box, the maximum the last on each axis."""
+    axes = []
+    for low, high in zip(minimum, maximum):
+        values, step, value = [], 1 / LATTICE_PER_CELL, low
+        while value < high:
+            values.append(value)
+            value += step
+        axes.append(values + [high])
+    return [(x, y, z) for x in axes[0] for y in axes[1] for z in axes[2]]
+
+
+def collision_problems(model, footprint):
+    """The volumes' lines and their problems; nothing without the file."""
+    path = LAB / "data" / "models" / f"{model}{collision.FILE_SUFFIX}"
+    if not path.exists():
+        print("collision: none")
+        return []
+    volumes = sjson.load(path)["volumes"]
+    count = sum(4 if entry["kind"] == "box" and entry.get("shell", 0) > 0 else 1 for entry in volumes)
+    print(f"collision: {count} volumes (limit {collision.VOLUME_LIMIT})")
+    problems = []
+    if count > collision.VOLUME_LIMIT:
+        problems.append(f"{count} collision volumes, the limit is {collision.VOLUME_LIMIT}")
+    half_x, half_z, height = footprint[0] / 2 + TOLERANCE, footprint[1] / 2 + TOLERANCE, footprint[2] + TOLERANCE
+    boxes = record_boxes(model)
+    for index, entry in enumerate(volumes):
+        low, high = collision.bounds(entry)
+        print(f"volume {index}: {entry['kind']} {entry.get('axis', '-')} x {low[0]:.3f}..{high[0]:.3f}  y {low[1]:.3f}..{high[1]:.3f}  z {low[2]:.3f}..{high[2]:.3f}")
+        if low[0] < -half_x or high[0] > half_x or low[2] < -half_z or high[2] > half_z or low[1] < -TOLERANCE or high[1] > height:
+            problems.append(f"volume {index} leaves the footprint plus {TOLERANCE}")
+        for label, box_index, minimum, maximum in boxes:
+            if any(high[axis] < minimum[axis] or maximum[axis] < low[axis] for axis in range(3)):
+                continue
+            inside = next((point for point in lattice(minimum, maximum) if collision.contains(entry, point)), None)
+            if inside is not None:
+                problems.append(f"volume {index} enters {label} {box_index} near ({inside[0]:.3f}, {inside[1]:.3f}, {inside[2]:.3f})")
+    return problems
 
 
 def main():
@@ -110,6 +174,7 @@ def main():
     print(f"emissive: {', '.join(emissive) or 'none'}")
     if vertices:
         print(f"bounds: x {low[0]:.2f}..{high[0]:.2f}  y {low[1]:.2f}..{high[1]:.2f} (top, may exceed {height})  z {low[2]:.2f}..{high[2]:.2f}  (cells of 0.5 m, the file's frame: y up, z the game's depth)")
+    problems += collision_problems(model, footprint)
     for problem in problems:
         print(f"PROBLEM: {problem}")
     print("OK" if not problems else f"{len(problems)} problem(s)")

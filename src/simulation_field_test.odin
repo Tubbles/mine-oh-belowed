@@ -1480,3 +1480,99 @@ test_the_crouch_changes_the_state_hash :: proc(t: ^testing.T) {
 	session.simulation.players[0].field.crouching = true
 	testing.expect(t, simulation_state_hash(&session.simulation) != before, "the crouch is hashed")
 }
+
+// Lines 1, 2, 3, 6, 7, 8, 9, 11, 12, 13 and 20 of 0230's table of the
+// pod's volumes in the file's frame: the hull's lower wall with the door
+// gap, the cone, the plug, the floor plate, the drum housing, the fairing
+// round the outer door and the chair.
+test_pod_volume_definitions :: proc() -> []Collision_Volume_Definition {
+	definitions := make([]Collision_Volume_Definition, 11, context.temp_allocator)
+	definitions[0] = {kind = "round", axis = "y", from = {0, 0, 0}, to = {0, 2.2, 0}, radius_from = 5, radius_to = 5, shell = 0.4, sector = []f64{102.6, 77.4}}
+	definitions[1] = {kind = "round", axis = "y", from = {0, 2.2, 0}, to = {0, 6.8, 0}, radius_from = 5, radius_to = 2.4125, shell = 0.2875}
+	definitions[2] = {kind = "round", axis = "y", from = {0, 6.2, 0}, to = {0, 6.8, 0}, radius_from = 2.75, radius_to = 2.4125}
+	definitions[3] = {kind = "round", axis = "y", from = {0, 0, 0}, to = {0, 0.006, 0}, radius_from = 4.6, radius_to = 4.6}
+	definitions[4] = {kind = "box", from = {1.12, 0, -1.75}, to = {4.6, 2.75, -1}}
+	definitions[5] = {kind = "box", from = {1.12, 0, 1}, to = {4.6, 2.75, 1.75}}
+	definitions[6] = {kind = "box", from = {1.12, 2, -1}, to = {4.6, 2.75, 1}}
+	definitions[7] = {kind = "box", from = {3.9, 0, -1.8}, to = {5, 4, -1}}
+	definitions[8] = {kind = "box", from = {3.9, 0, 1}, to = {5, 4, 1.8}}
+	definitions[9] = {kind = "box", from = {3.9, 2, -1}, to = {5, 4, 1}}
+	definitions[10] = {kind = "box", from = {-2.97, 0, 0.06}, to = {-1.03, 1.1, 1.82}}
+	return definitions
+}
+
+// Two sessions whose pod collides by its volumes (work item 0230) walk
+// round the hull and crawl into the airlock on the same input and hash
+// alike; a third, standing still, hashes otherwise.
+@(test)
+test_two_sessions_hash_alike_walking_round_and_into_a_pod_with_volumes :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	pod_id := find_machine_of_kind(content.machines, .Pod)
+	content.machines.machines[pod_id].collision = resolve_collision_volumes(test_pod_volume_definitions(), context.temp_allocator)
+	sessions: [3]^Session
+	contents: [3]Simulation_Content
+	for &session, index in sessions {
+		session = start_field_test_session(config, content)
+		contents[index] = field_test_content(session, content)
+		stage_generated_field_set(&session.simulation)
+		move_test_players_out_of_the_pod(&session.simulation, contents[index].machines)
+	}
+	defer for session in sessions {
+		end_session(session)
+	}
+	state := &sessions[0].simulation
+	pod, frame, found := find_test_pod(&state.world.entities, contents[0].machines)
+	testing.expect(t, found && len(state.world.entities.frames.bodies) == 1)
+	if !found || len(state.world.entities.frames.bodies) != 1 {
+		return
+	}
+	body := state.world.entities.frames.bodies[0]
+	doorstep := state.players[0].field.position
+	tick_all :: proc(sessions: [3]^Session, contents: [3]Simulation_Content, frame: Input_Frame, still_third: bool) {
+		for session, index in sessions {
+			tick_field_test_simulation(&session.simulation, contents[index], still_third && index == 2 ? Input_Frame{} : frame)
+		}
+	}
+	expect_alike :: proc(t: ^testing.T, sessions: [3]^Session, label: string, tick: int) {
+		testing.expectf(t, simulation_state_hash(&sessions[0].simulation) == simulation_state_hash(&sessions[1].simulation), "%s tick %d: the hashes part", label, tick)
+	}
+	for _ in 0 ..< 30 {
+		tick_all(sessions, contents, {}, true)
+	}
+	hull := body.volumes[0].radius_from
+	met_hull := false
+	walk := Input_Frame{move = {0, 1}, look_delta = {60, 0}, pressed = {.Move}}
+	for tick in 0 ..< 360 {
+		tick_all(sessions, contents, walk, true)
+		radius := test_body_radius(body, state.players[0].field.position)
+		met_hull = met_hull || abs(radius - hull) <= metres_to_position_units(1)
+		if tick % 60 == 59 {
+			expect_alike(t, sessions, "walk", tick)
+		}
+	}
+	testing.expect(t, met_hull, "the walk round never came within 1 m of the hull")
+	for session in sessions[:2] {
+		for &player in session.simulation.players {
+			move_field_player_body(&player.field, make_field_player(doorstep, -frame.axes[FRAME_FORWARD]))
+		}
+	}
+	machine := contents[0].machines.machines[pod.machine]
+	entered := false
+	crawl := Input_Frame{move = {0, 1}, pressed = {.Move, .Sneak}}
+	for tick in 0 ..< 900 {
+		tick_all(sessions, contents, crawl, true)
+		cell := frame_cell_of_feet(frame, state.players[0].field)
+		for box in 0 ..< machine.open_cell_box_count {
+			for candidate in test_pod_box_cells(machine, box) {
+				entered = entered || candidate == cell
+			}
+		}
+		if tick % 60 == 59 {
+			expect_alike(t, sessions, "crawl", tick)
+		}
+	}
+	testing.expect(t, entered, "the crawl never entered the airlock, the lane or the cabin")
+	expect_alike(t, sessions, "end", 1290)
+	testing.expect(t, simulation_state_hash(&sessions[0].simulation) != simulation_state_hash(&sessions[2].simulation), "the still session hashes alike")
+}

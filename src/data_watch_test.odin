@@ -185,3 +185,12 @@ test_content_settles_a_second_after_its_last_event :: proc(t: ^testing.T) {
 	watch.content_settling = false
 	testing.expect(t, !data_watch_content_settled(watch, time.time_add(now, 2 * DATA_WATCH_CONTENT_SETTLE)))
 }
+
+// A model's collision volumes are lockstep content (work item 0230): they
+// reload with the content, never in place like the model.
+@(test)
+test_a_collision_file_counts_as_content_for_the_watch :: proc(t: ^testing.T) {
+	testing.expect_value(t, data_file_category("models/pod.collision.sjson"), Data_File_Category.Content)
+	testing.expect_value(t, data_file_category("models/pod.obj"), Data_File_Category.Models)
+	testing.expect_value(t, data_file_category("models/.pod.collision.sjson"), Data_File_Category.Ignored)
+}

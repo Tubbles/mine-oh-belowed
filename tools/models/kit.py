@@ -8,6 +8,10 @@ Blender (x, y, z) into the file's (x, z, -y), the game frame. Each volume
 is one mesh object with one material; join() merges them into the
 objects the game reads, body and, for a machine with a moving part,
 part.
+
+A machine's collision volumes are authored in its script's collision(b)
+beside build, b a collision.Collision, in the same frame (work item 0230,
+tools/models/collision.py).
 """
 
 import math

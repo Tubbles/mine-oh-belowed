@@ -13,7 +13,9 @@ import "platform"
 // foundation cells under the field's full sky light, the player's capsule
 // beside it for scale, from five cameras at rest and at three phases of
 // its motion (an arm at its grab, lift and drop fractions): 20 PNG files
-// per machine named <machine>_<camera>_<phase>.png. The scene is metres,
+// per machine named <machine>_<camera>_<phase>.png, 25 with collision
+// volumes, whose five cameras at rest draw them as wires
+// (<machine>_<camera>_collision.png, work item 0230). The scene is metres,
 // the frame's cells scaled by the pitch about the origin, up +y; no
 // world, no session, no field.
 
@@ -72,10 +74,12 @@ model_preview_phase_names := [Model_Preview_Phase]string {
 	.Three_Quarters = "0.75",
 }
 
-// phase is a cycle fraction for the arm.
+// phase is a cycle fraction for the arm; collision draws the machine's
+// collision volumes as wires (0230).
 Model_Preview_Pose :: struct {
-	phase:   f32,
-	working: bool,
+	phase:     f32,
+	working:   bool,
+	collision: bool,
 }
 
 Model_Preview_Camera :: struct {
@@ -89,19 +93,24 @@ Model_Preview_Bounds :: struct {
 
 model_preview_pose :: proc(machine: Machine, phase: Model_Preview_Phase) -> Model_Preview_Pose {
 	if phase == .Rest {
-		return {0, false}
+		return {phase = 0, working = false}
 	}
 	if machine.motion.kind == .Arm {
 		fractions := [Model_Preview_Phase]f32{.Rest = 0, .Quarter = ARM_GRAB_END, .Half = ARM_SWING_MIDDLE, .Three_Quarters = ARM_DROP_FRACTION}
-		return {fractions[phase], true}
+		return {phase = fractions[phase], working = true}
 	}
 	phases := [Model_Preview_Phase]f32{.Rest = 0, .Quarter = 0.25, .Half = 0.5, .Three_Quarters = 0.75}
-	return {phases[phase], true}
+	return {phase = phases[phase], working = true}
 }
 
 // In the temp allocator.
 model_preview_file_name :: proc(machine_id: string, view: Model_Preview_View, phase: Model_Preview_Phase) -> string {
 	return fmt.tprintf("%s_%s_%s.png", machine_id, model_preview_view_names[view], model_preview_phase_names[phase])
+}
+
+// In the temp allocator.
+model_preview_collision_file_name :: proc(machine_id: string, view: Model_Preview_View) -> string {
+	return fmt.tprintf("%s_%s_collision.png", machine_id, model_preview_view_names[view])
 }
 
 // Beside the -z side (the right seen from the front) at its back corner,
@@ -190,6 +199,13 @@ draw_model_preview_scene :: proc(renderer: Model_Renderer, machine: Machine, mac
 		body := uniform_scale_matrix(pitch) * model_transform({}, machine.footprint, 0)
 		draw_model_layers(renderer, model.body, body, light, glow)
 		draw_model_layers(renderer, model.part, body * motion_transform(machine.motion, machine.footprint, pose.phase), light, glow)
+		if pose.collision && len(machine.collision) > 0 {
+			wires := transmute([16]f32)body
+			rlgl.PushMatrix()
+			rlgl.MultMatrixf(raw_data(wires[:]))
+			draw_collision_volume_wires(machine.collision)
+			rlgl.PopMatrix()
+		}
 	}
 	draw_model_preview_pad(machine.footprint, ring, pitch)
 	draw_field_player_capsule(model_preview_capsule_feet(pitch), {0, 1, 0}, MODEL_PREVIEW_CAPSULE_HEIGHT_METRES)
@@ -234,18 +250,34 @@ model_preview_top :: proc(renderer: Model_Renderer, machine: Machine_Id) -> (top
 	return model.top, true
 }
 
-// Every shot of the machine: 4 phases by 4 views.
+// One shot to path; false with the line logged when it failed.
+write_model_preview_shot :: proc(renderer: Model_Renderer, machine: Machine, machine_id: Machine_Id, view: Model_Preview_View, pose: Model_Preview_Pose, top: f32, pitch_millimetres: int, path: string) -> bool {
+	if problem := draw_model_preview_frame(renderer, machine, machine_id, view, pose, top, pitch_millimetres, path); problem != "" {
+		platform.log_printf("error: could not write %s: %s", path, problem)
+		return false
+	}
+	platform.log_printf("model preview: wrote %s", path)
+	return true
+}
+
+// Every shot of the machine: 4 phases by 5 views, then for a machine with
+// collision volumes the 5 views at rest with the volumes drawn.
 write_model_preview_shots :: proc(renderer: Model_Renderer, machines: Machine_Registry, machine_id: Machine_Id, top: f32, pitch_millimetres: int, directory: string) -> bool {
 	machine := machines.machines[machine_id]
 	for phase in Model_Preview_Phase {
 		for view in Model_Preview_View {
 			path := platform.join_path(directory, model_preview_file_name(machine.id, view, phase))
-			if problem := draw_model_preview_frame(renderer, machine, machine_id, view, model_preview_pose(machine, phase), top, pitch_millimetres, path); problem != "" {
-				platform.log_printf("error: could not write %s: %s", path, problem)
-				return false
-			}
-			platform.log_printf("model preview: wrote %s", path)
+			write_model_preview_shot(renderer, machine, machine_id, view, model_preview_pose(machine, phase), top, pitch_millimetres, path) or_return
 		}
+	}
+	if len(machine.collision) == 0 {
+		return true
+	}
+	pose := model_preview_pose(machine, .Rest)
+	pose.collision = true
+	for view in Model_Preview_View {
+		path := platform.join_path(directory, model_preview_collision_file_name(machine.id, view))
+		write_model_preview_shot(renderer, machine, machine_id, view, pose, top, pitch_millimetres, path) or_return
 	}
 	return true
 }

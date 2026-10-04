@@ -408,6 +408,12 @@ Machine :: struct {
 	// reads them).
 	lights:                      [MAXIMUM_MACHINE_LIGHTS]Machine_Light,
 	light_count:                 int,
+	// The model's collision volumes (work item 0230, machine_collision.odin)
+	// in 1/COLLISION_UNITS_PER_CELL cell of the model's frame, nil without a
+	// collision file; the machine then collides by them on a frame
+	// (entity_is_shaped). Loaded by load_machine_registry, in the
+	// registry's allocator.
+	collision:                   []Collision_Volume,
 	// A pod's model, its fixtures' and the players' in its box are lit at
 	// this share of the light round them before the point lights add (work
 	// item 0225, presentation only: the simulation never reads it); 1 for
@@ -1161,6 +1167,9 @@ resolve_machine_registry :: proc(file: Machines_File, items: Item_Registry, flui
 }
 
 destroy_machine_registry :: proc(registry: Machine_Registry, allocator := context.allocator) {
+	for machine in registry.machines {
+		delete(machine.collision, allocator)
+	}
 	delete(registry.machines, allocator)
 	delete(registry.machine_for_item, allocator)
 }
@@ -1232,6 +1241,12 @@ load_machine_registry :: proc(data_directory: string, items: Item_Registry, flui
 	}
 	if problem != "" {
 		platform.log_printf("error: invalid %s: %s", path, problem)
+		return {}, false
+	}
+	// The problem names the collision file and the machine.
+	if problem = load_machine_collisions(&registry, data_directory, allocator); problem != "" {
+		destroy_machine_registry(registry, allocator)
+		platform.log_printf("error: %s", problem)
 		return {}, false
 	}
 	return registry, true

@@ -15,7 +15,9 @@ package game
 // handle the world never interprets (the simulation packs its entity
 // handle into it) and the flags the world reads (the raycast, the water).
 // It is derived from the entities and rebuilt on load, never saved; the
-// frame records are saved (save_state.odin).
+// frame records are saved (save_state.odin). The bodies (work item
+// 0230, world_frame_body.odin) are the machines that collide by their
+// collision volumes, derived and rebuilt alike.
 //
 // Integer only: the axes are unit vectors in UNIT_VECTOR_ONE, positions
 // in 1/POSITION_UNITS_PER_METRE metre, so every machine of a lockstep
@@ -72,6 +74,12 @@ Occupant_Flag :: enum u8 {
 	// An open cell of its machine (0186): the player walks through it and
 	// the aiming ray passes it.
 	Open,
+	// A held cell of a machine that collides by its collision volumes
+	// (work item 0230, world_frame_body.odin): the field player's cell
+	// probe and the frames' rays pass it and the frame's body stands in
+	// for it. It stays Solid for everything else (placement, the sealed
+	// room).
+	Shaped,
 }
 
 Occupant_Flags :: bit_set[Occupant_Flag;u8]
@@ -97,12 +105,17 @@ Frame_Table :: struct {
 	last_id:   u32,
 	occupants: map[Frame_Cell]Occupant,
 	extents:   map[Frame_Id]Frame_Extent,
+	// The machines that collide by their volumes (0230), sorted by
+	// occupant handle; derived from the entities like the occupant index,
+	// rebuilt on load, never saved.
+	bodies:    [dynamic]Frame_Body,
 }
 
 destroy_frame_table :: proc(table: ^Frame_Table) {
 	delete(table.frames)
 	delete(table.occupants)
 	delete(table.extents)
+	delete(table.bodies)
 	table^ = {}
 }
 
@@ -198,6 +211,7 @@ frame_cell_count :: proc(table: ^Frame_Table, frame: Frame_Id) -> int {
 clear_frame_occupants :: proc(table: ^Frame_Table) {
 	clear(&table.occupants)
 	clear(&table.extents)
+	clear(&table.bodies)
 }
 
 // The transforms.

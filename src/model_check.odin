@@ -20,7 +20,10 @@ import "model_obj"
 // bounded by the part, and a pod has none. The open cells are at most 4
 // boxes x 3400 triangles x 18 tests; a pod's open cells and fixture boxes
 // cost boxes x 25600 triangles. A pod's fixture parts (0221) are 17
-// phases x 200 x the body filtered to the part's swept bounds first. The arm's voxel parts
+// phases x 200 x the body filtered to the part's swept bounds first. The
+// collision volumes (0230) are at most 64 volumes x 9 boxes x the lattice
+// of a box (the pod's cabin box 4 by 4 by 2 cells, 33 x 33 x 17 samples),
+// only for volumes whose bounds meet the box. The arm's voxel parts
 // are a few hundred triangles each: 16 fractions x 5 moving sets against
 // the base, well under a second unoptimised.
 
@@ -44,6 +47,10 @@ MODEL_CROSSING_EPSILON :: 1e-4
 MODEL_PARALLEL_EPSILON :: 1e-6
 // Any frame but the block frame, for inserter_reach_on_frame.
 MODEL_CHECK_FRAME :: Frame_Id(1)
+// The collision check's samples per cell along each axis (0230).
+MODEL_COLLISION_LATTICE_PER_CELL :: 8
+// MODEL_FOOTPRINT_TOLERANCE_CELLS in collision units, rounded.
+MODEL_COLLISION_TOLERANCE_UNITS :: 82
 
 Model_Check :: enum u8 {
 	Load,
@@ -52,6 +59,7 @@ Model_Check :: enum u8 {
 	Footprint,
 	Arm,
 	Open_Cells,
+	Collision,
 }
 
 @(rodata)
@@ -62,6 +70,7 @@ model_check_names := [Model_Check]string {
 	.Footprint  = "footprint",
 	.Arm        = "arm",
 	.Open_Cells = "open_cells",
+	.Collision  = "collision",
 }
 
 Model_Check_Problem :: struct {
@@ -535,6 +544,78 @@ check_obj_machine_model :: proc(data_directory: string, machines: []Machine, mac
 	append(&problems, ..model_open_cell_problems(fixture_boxes[:machine.fixture_count], machine.footprint, mesh.body, mesh.part, "fixture box"))
 	if machine.kind == .Pod && machine.fixture_count > 0 {
 		append(&problems, ..pod_fixture_part_problems(data_directory, machines, machine, mesh.body))
+	}
+	append(&problems, ..model_collision_problems(machine))
+	return problems[:]
+}
+
+// A cell box of the unrotated footprint in model units of the collision
+// volumes (x and z centred, y from the bottom), shrunk by the tolerance
+// on every side, so a volume flush with its side is not inside it.
+collision_box_in_model :: proc(box: Cell_Box, footprint: [3]i32) -> (minimum, maximum: [3]i64) {
+	size := [3]i64{i64(footprint.x), 0, i64(footprint.z)}
+	from := [3]i64{i64(box.from.x), i64(box.from.y), i64(box.from.z)}
+	to := [3]i64{i64(box.to.x + 1), i64(box.to.y + 1), i64(box.to.z + 1)}
+	minimum = (2 * from - size) * COLLISION_UNITS_PER_CELL / 2 + MODEL_COLLISION_TOLERANCE_UNITS
+	maximum = (2 * to - size) * COLLISION_UNITS_PER_CELL / 2 - MODEL_COLLISION_TOLERANCE_UNITS
+	return minimum, maximum
+}
+
+// The samples of one axis from minimum to maximum, the maximum the last.
+collision_lattice_axis :: proc(minimum, maximum: i64, allocator := context.temp_allocator) -> []i64 {
+	step := i64(COLLISION_UNITS_PER_CELL / MODEL_COLLISION_LATTICE_PER_CELL)
+	samples := make([dynamic]i64, allocator)
+	for value := minimum; value < maximum; value += step {
+		append(&samples, value)
+	}
+	append(&samples, maximum)
+	return samples[:]
+}
+
+// The first lattice sample of the box inside the volume; none when the
+// bound boxes do not overlap.
+collision_volume_enters_box :: proc(volume: Collision_Volume, minimum, maximum: [3]i64) -> (point: [3]i64, entered: bool) {
+	for axis in 0 ..< 3 {
+		if volume.bound_maximum[axis] < minimum[axis] || maximum[axis] < volume.bound_minimum[axis] {
+			return {}, false
+		}
+	}
+	xs := collision_lattice_axis(minimum.x, maximum.x)
+	ys := collision_lattice_axis(minimum.y, maximum.y)
+	zs := collision_lattice_axis(minimum.z, maximum.z)
+	for x in xs {
+		for y in ys {
+			for z in zs {
+				if distance, _ := volume_signed_distance(volume, {x, y, z}); distance < 0 {
+					return {x, y, z}, true
+				}
+			}
+		}
+	}
+	return {}, false
+}
+
+// No collision volume inside an open cells box or a fixture box: those
+// collide by their own cells (0230). At most one line per volume and box.
+model_collision_problems :: proc(machine: Machine, allocator := context.temp_allocator) -> []Model_Check_Problem {
+	problems := make([dynamic]Model_Check_Problem, allocator)
+	open_cells := machine.open_cells
+	fixture_boxes := machine.fixture_boxes
+	box_sets := [2][]Cell_Box{open_cells[:machine.open_cell_box_count], fixture_boxes[:machine.fixture_count]}
+	labels := [2]string{"open cells box", "fixture box"}
+	for volume, volume_index in machine.collision {
+		for boxes, set_index in box_sets {
+			for box, box_index in boxes {
+				minimum, maximum := collision_box_in_model(box, machine.footprint)
+				point, entered := collision_volume_enters_box(volume, minimum, maximum)
+				if !entered {
+					continue
+				}
+				near := [3]f64{f64(point.x), f64(point.y), f64(point.z)} / COLLISION_UNITS_PER_CELL
+				detail := fmt.tprintf("volume %d enters %s %d near (%.3f, %.3f, %.3f)", volume_index, labels[set_index], box_index, near.x, near.y, near.z)
+				append(&problems, Model_Check_Problem{.Collision, detail})
+			}
+		}
 	}
 	return problems[:]
 }

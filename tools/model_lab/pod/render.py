@@ -17,6 +17,11 @@ door (an eye at the airlock's inner mouth looking back across the
 cabin) and wide (a wide lens from the back wall). One cell is 0.5 m;
 the model is imported at one unit per cell and the scene is scaled to
 metres.
+
+With data/models/<model>.collision.sjson (work item 0230), every camera
+is rendered again with the collision volumes drawn as magenta wires:
+previews/<model>_<view>_collision.png and, for the pod,
+previews/<model>_inside_<view>_collision.png.
 """
 
 import math
@@ -27,6 +32,11 @@ import bpy
 from mathutils import Vector
 
 LAB = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0, str(LAB / "tools"))
+
+import sjson  # noqa: E402
+from models import collision  # noqa: E402
+
 CELL_METRES = 0.5
 FOOTPRINTS_CELLS = {"pod": (12, 12, 8), "pod_hatch": (1, 2, 2)}
 FIELD_OF_VIEW_DEGREES = 40
@@ -90,6 +100,50 @@ def aim(camera, position, target, up=Vector((0, 0, 1))):
     camera.rotation_euler = quaternion.to_euler()
 
 
+def add_collision_wires(name):
+    """The volumes' wire lines as one curve of poly splines, file (x, y,
+    z) to Blender (x, -z, y), scaled like the import; None without the
+    file."""
+    path = LAB / "data" / "models" / f"{name}{collision.FILE_SUFFIX}"
+    if not path.exists():
+        return None
+    curve = bpy.data.curves.new("collision", "CURVE")
+    curve.dimensions = "3D"
+    curve.bevel_depth = 0.012 / CELL_METRES
+    for entry in sjson.load(path)["volumes"]:
+        for start, end in collision.wire_lines(entry):
+            spline = curve.splines.new("POLY")
+            spline.points.add(1)
+            for point, (x, y, z) in zip(spline.points, (start, end)):
+                point.co = (x, -z, y, 1.0)
+    wires = bpy.data.objects.new("collision", curve)
+    wires.scale = (CELL_METRES,) * 3
+    wires.data.materials.append(flat_material("collision", (1.0, 0.25, 0.78)))
+    bpy.context.scene.collection.objects.link(wires)
+    return wires
+
+
+def render_views(camera, camera_data, name, views, suffix):
+    """Each exterior view, then for the pod each interior one."""
+    scene = bpy.context.scene
+    out = LAB / "previews"
+    out.mkdir(exist_ok=True)
+    camera_data.angle = math.radians(FIELD_OF_VIEW_DEGREES)
+    for view, (position, target) in views.items():
+        aim(camera, position, target)
+        scene.render.filepath = str(out / f"{name}_{view}{suffix}.png")
+        bpy.ops.render.render(write_still=True)
+        print(f"wrote previews/{name}_{view}{suffix}.png")
+    if name != "pod":
+        return
+    camera_data.angle = math.radians(INTERIOR_FIELD_OF_VIEW_DEGREES)
+    for view, (position, target) in INTERIOR_VIEWS.items():
+        aim(camera, Vector(position), Vector(target))
+        scene.render.filepath = str(out / f"{name}_inside_{view}{suffix}.png")
+        bpy.ops.render.render(write_still=True)
+        print(f"wrote previews/{name}_inside_{view}{suffix}.png")
+
+
 def main():
     name = model_name()
     clear()
@@ -145,21 +199,9 @@ def main():
         "top": (centre + Vector((0, 0, distance)), centre),
         "close": (Vector((width / 2 + 2.0, 0, 1.6)), Vector((width / 2, 0, 1.6))),
     }
-    out = LAB / "previews"
-    out.mkdir(exist_ok=True)
-    for view, (position, target) in views.items():
-        aim(camera, position, target)
-        scene.render.filepath = str(out / f"{name}_{view}.png")
-        bpy.ops.render.render(write_still=True)
-        print(f"wrote previews/{name}_{view}.png")
-    if name != "pod":
-        return
-    camera_data.angle = math.radians(INTERIOR_FIELD_OF_VIEW_DEGREES)
-    for view, (position, target) in INTERIOR_VIEWS.items():
-        aim(camera, Vector(position), Vector(target))
-        scene.render.filepath = str(out / f"{name}_inside_{view}.png")
-        bpy.ops.render.render(write_still=True)
-        print(f"wrote previews/{name}_inside_{view}.png")
+    render_views(camera, camera_data, name, views, "")
+    if add_collision_wires(name) is not None:
+        render_views(camera, camera_data, name, views, "_collision")
 
 
 main()

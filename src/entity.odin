@@ -432,7 +432,9 @@ machine_occupant_flags :: proc(machine: Machine) -> Occupant_Flags {
 // fixtures' cells to them (machine_held_cells), and an open hatch
 // occupies its cells as occupy_open_hatch_cells says (work item 0198).
 // A machine saved at an older size holds its saved box, all solid
-// (entity_held_cells).
+// (entity_held_cells). A machine with collision volumes on a frame
+// (entity_is_shaped, work item 0230) marks its held cells Shaped and
+// registers its body, which the player and the aiming ray meet instead.
 occupy_entity_cells :: proc(entities: ^Entities, machines: Machine_Registry, common: Entity_Common) {
 	machine := machines.machines[common.machine]
 	occupant := Occupant{handle = entity_occupant_handle(common.handle), flags = machine_occupant_flags(machine)}
@@ -440,13 +442,20 @@ occupy_entity_cells :: proc(entities: ^Entities, machines: Machine_Registry, com
 		occupy_open_hatch_cells(entities, common, occupant)
 		return
 	}
+	shaped := entity_is_shaped(common, machine)
+	if shaped {
+		occupant.flags += {.Shaped}
+	}
 	for cell in entity_held_cells(common, machine) {
 		occupy_frame_cell(&entities.frames, common.frame, cell, occupant)
+	}
+	if shaped {
+		register_entity_body(entities, common, machine, occupant)
 	}
 	if entity_keeps_saved_size(common, machine) {
 		return
 	}
-	open := Occupant{handle = occupant.handle, flags = occupant.flags - {.Solid} + {.Open}}
+	open := Occupant{handle = occupant.handle, flags = occupant.flags - {.Solid, .Shaped} + {.Open}}
 	for cell in machine_open_cells(common.origin, machine, common.rotation) {
 		occupy_frame_cell(&entities.frames, common.frame, cell, open)
 	}
@@ -457,7 +466,21 @@ vacate_entity_cells :: proc(entities: ^Entities, machines: Machine_Registry, com
 	for cell in entity_held_cells(common, machines.machines[common.machine]) {
 		vacate_frame_cell(&entities.frames, common.frame, cell)
 	}
+	unregister_frame_body(&entities.frames, entity_occupant_handle(common.handle))
 	release_empty_frame(entities, common.frame)
+}
+
+// Whether a machine collides by its collision volumes (work item 0230):
+// it has them and stands on a frame. A machine saved at an older size
+// collides by its saved box, as it occupies it.
+entity_is_shaped :: proc(common: Entity_Common, machine: Machine) -> bool {
+	return len(machine.collision) > 0 && common.frame != BLOCK_FRAME && !entity_keeps_saved_size(common, machine)
+}
+
+// The machine's body in its frame's table (world_frame_body.odin).
+register_entity_body :: proc(entities: ^Entities, common: Entity_Common, machine: Machine, occupant: Occupant) {
+	frame, _ := find_frame(&entities.frames, common.frame)
+	register_frame_body(&entities.frames, make_frame_body(frame, occupant, common.origin, common.size, common.rotation, machine.collision))
 }
 
 // Whether an entity was saved at a footprint its record no longer has

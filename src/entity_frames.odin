@@ -275,10 +275,11 @@ Queued_Field_Placement :: struct {
 // The frame target and the field target are both cast; the nearer stays
 // and the other is cleared, so a brush never digs through a foundation.
 // The frame ray passes a machine's open cells (0186), so the player
-// aims out of the pod's door.
+// aims out of the pod's door, and meets a machine's volumes where it has
+// them (0230).
 aim_field_player_at_frames :: proc(player: ^Field_Player, frames: ^Frame_Table, tuning: Field_Player_Tuning) {
 	look := field_look_direction(player.forward, player.up, player.yaw, player.pitch)
-	player.frame_target = raycast_frames(frames, field_player_eye(player^, tuning), look, tuning.reach, excluded = {.Open})
+	player.frame_target, _ = raycast_frames_and_bodies(frames, field_player_eye(player^, tuning), look, tuning.reach, excluded = {.Open})
 	switch {
 	case !player.frame_target.hit:
 	case !player.target.hit || player.frame_target.distance <= player.target.distance:

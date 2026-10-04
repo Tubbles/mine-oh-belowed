@@ -1,0 +1,40 @@
+// The collision volumes of the model pod (work item 0230, doc/content.md,
+// Models), written by tools/make_models.py from tools/models/machines/pod.py's
+// collision(b): cells of the model's frame, x and z centred, y up, +x the front.
+volumes = [
+	{kind = "round", axis = "y", from = [0, 0, 0], to = [0, 2.2, 0], radius_from = 5, radius_to = 5, shell = 0.4, sector = [102.6, 77.4]}
+	{kind = "round", axis = "y", from = [0, 2.2, 0], to = [0, 6.8, 0], radius_from = 5, radius_to = 2.4125, shell = 0.2875}
+	{kind = "round", axis = "y", from = [0, 6.2, 0], to = [0, 6.8, 0], radius_from = 2.75, radius_to = 2.4125}
+	{kind = "round", axis = "y", from = [0, 6.75, 0], to = [0, 7.4, 0], radius_from = 1.75, radius_to = 1.75}
+	{kind = "round", axis = "y", from = [0, 0, 0], to = [0, 0.35, 0], radius_from = 5.45, radius_to = 5.45, shell = 0.45, sector = [102.2, 77.8]}
+	{kind = "round", axis = "y", from = [0, 0, 0], to = [0, 0.006, 0], radius_from = 4.6, radius_to = 4.6}
+	{kind = "box", from = [1.12, 0, -1.75], to = [4.6, 2.75, -1]}
+	{kind = "box", from = [1.12, 0, 1], to = [4.6, 2.75, 1.75]}
+	{kind = "box", from = [1.12, 2, -1], to = [4.6, 2.75, 1]}
+	{kind = "box", from = [1.13, 2.73, -1.25], to = [1.8, 4.3, 1.25]}
+	{kind = "box", from = [3.9, 0, -1.8], to = [5, 4, -1]}
+	{kind = "box", from = [3.9, 0, 1], to = [5, 4, 1.8]}
+	{kind = "box", from = [3.9, 2, -1], to = [5, 4, 1]}
+	{kind = "round", axis = "y", from = [0, 0, 0], to = [0, 1.85, 0], radius_from = 4.6, radius_to = 4.6, shell = 1.15, sector = [172.5, 232.5]}
+	{kind = "round", axis = "y", from = [0, 0, 0], to = [0, 2.35, 0], radius_from = 4.6, radius_to = 4.6, shell = 0.9, sector = [277.5, 337.5]}
+	{kind = "round", axis = "y", from = [0, 0, 0], to = [0, 2.35, 0], radius_from = 4.6, radius_to = 4.6, shell = 0.55, sector = [337.5, 352.5]}
+	{kind = "round", axis = "y", from = [0, 0, 0], to = [0, 2.35, 0], radius_from = 4.6, radius_to = 4.6, shell = 0.55, sector = [7.5, 22.5]}
+	{kind = "round", axis = "y", from = [0, 0, 0], to = [0, 2.35, 0], radius_from = 4.6, radius_to = 4.6, shell = 0.85, sector = [22.5, 67.5]}
+	{kind = "box", from = [2.04, 0, -2.95], to = [3.35, 2.6, -1.77]}
+	{kind = "box", from = [-2.97, 0, 0.06], to = [-1.03, 1.1, 1.82]}
+	{kind = "box", from = [-2.99, 1.1, 0.06], to = [-2.73, 1.6, 1.2]}
+	{kind = "box", from = [-1.27, 1.1, 0.06], to = [-1.01, 1.6, 1.2]}
+	{kind = "box", from = [-2.8, 0.84, 1.15], to = [-1.2, 2.5, 1.8]}
+	{kind = "box", from = [-2.44, 2.5, 1.35], to = [-1.56, 3.1, 1.75]}
+	{kind = "box", from = [-4.12, 0, 0.02], to = [-3.03, 2.02, 0.19]}
+	{kind = "box", from = [-4.12, 0, -2.19], to = [-3.03, 2.02, -2.02]}
+	{kind = "box", from = [-4.3, 2.02, -2.2], to = [-3.03, 2.3, 0.2]}
+	{kind = "box", from = [-1.19, 0, 2.03], to = [-1.02, 4.02, 3.12]}
+	{kind = "box", from = [1.02, 0, 2.03], to = [1.19, 4.02, 3.12]}
+	{kind = "box", from = [-1.2, 4.02, 2.03], to = [1.2, 4.3, 3.3]}
+	{kind = "box", from = [-0.17, 0, -3.12], to = [-0.02, 3.02, -2.03]}
+	{kind = "box", from = [2.02, 0, -3.12], to = [2.17, 3.02, -2.03]}
+	{kind = "box", from = [-0.2, 3.02, -3.3], to = [2.2, 3.3, -2.03]}
+	{kind = "box", from = [-0.3, 3.3, -2.8], to = [2.3, 4.15, -2.3]}
+	{kind = "round", axis = "y", from = [0, 2.6, 0], to = [0, 5.82, 0], radius_from = 4.4875, radius_to = 2.6763, shell = 0.36, sector = [33, 57]}
+]

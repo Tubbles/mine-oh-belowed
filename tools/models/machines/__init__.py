@@ -59,3 +59,11 @@ MACHINES = {
     "crafting_bench": crafting_bench.build,
     "oxygen_generator": oxygen_generator.build,
 }
+
+# Model name to its script's collision(b) (work item 0230), for the models
+# whose machines collide by volumes; tools/make_models.py writes
+# data/models/<model>.collision.sjson for these and removes the file of
+# every other model it builds.
+COLLISIONS = {
+    "pod": pod.collision,
+}

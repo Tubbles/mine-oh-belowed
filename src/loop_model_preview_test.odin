@@ -24,12 +24,12 @@ test_the_preview_writes_twenty_names :: proc(t: ^testing.T) {
 @(test)
 test_the_preview_poses :: proc(t: ^testing.T) {
 	pump := Machine{motion = {kind = .Pump}}
-	expected := [Model_Preview_Phase]Model_Preview_Pose{.Rest = {0, false}, .Quarter = {0.25, true}, .Half = {0.5, true}, .Three_Quarters = {0.75, true}}
+	expected := [Model_Preview_Phase]Model_Preview_Pose{.Rest = {phase = 0, working = false}, .Quarter = {phase = 0.25, working = true}, .Half = {phase = 0.5, working = true}, .Three_Quarters = {phase = 0.75, working = true}}
 	for phase in Model_Preview_Phase {
 		testing.expect_value(t, model_preview_pose(pump, phase), expected[phase])
 	}
 	arm := Machine{motion = {kind = .Arm}}
-	expected = {.Rest = {0, false}, .Quarter = {ARM_GRAB_END, true}, .Half = {ARM_SWING_MIDDLE, true}, .Three_Quarters = {ARM_DROP_FRACTION, true}}
+	expected = {.Rest = {phase = 0, working = false}, .Quarter = {phase = ARM_GRAB_END, working = true}, .Half = {phase = ARM_SWING_MIDDLE, working = true}, .Three_Quarters = {phase = ARM_DROP_FRACTION, working = true}}
 	for phase in Model_Preview_Phase {
 		testing.expect_value(t, model_preview_pose(arm, phase), expected[phase])
 	}
