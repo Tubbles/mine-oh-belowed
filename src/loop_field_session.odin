@@ -45,6 +45,9 @@ Field_Scene :: struct {
 	// hull would hide the window's view, so the frames, the machines, the
 	// players and the ghosts are not drawn.
 	hide_frames:  bool,
+	// The viewer's placement editor (0215): its outline or anchored ghost
+	// replaces Place's ghost; zero draws today's ghosts.
+	placement_editor: Placement_Editor,
 }
 
 // A player as the scene draws it: the prediction of a local one while the
@@ -257,10 +260,14 @@ draw_field_ghosts :: proc(scene: Field_Scene) {
 	if curve, geometry, refusal, found := field_run_ghost(player.field, entities, scene.content); found {
 		draw_belt_run_ghost(curve, geometry, refusal == .None)
 	}
+	if ghost, shown := placement_editor_ghost(scene.placement_editor, scene.state, scene.content, player); shown {
+		draw_placement_editor_ghost(scene, ghost)
+		return
+	}
 	machine := field_placed_machine(player.field, scene.content)
-	placement, wanted := field_player_placement(player.field, machine, scene.content.field)
+	placement, wanted := field_player_placement(player.field, machine, scene.content)
 	if !wanted {
-		placement, wanted = field_bare_ground_placement(player.field, machine)
+		placement, wanted = field_bare_ground_placement(player.field, machine, scene.content.machines)
 	}
 	if !wanted {
 		return
@@ -272,6 +279,27 @@ draw_field_ghosts :: proc(scene: Field_Scene) {
 	color := frame_ghost_color(field_placement_refusal(scene.state, scene.content, player, placement))
 	for ghost_cell in field_placement_cells(scene.content, placement, cell) {
 		draw_frame_ghost(frame, ghost_cell, color)
+	}
+}
+
+// The placement editor's ghost (0215): the flat outline with the front
+// arrow (none for a foundation block), or the anchored machine's model
+// see through, a box per cell for a foundation or a machine without a
+// model.
+draw_placement_editor_ghost :: proc(scene: Field_Scene, ghost: Placement_Editor_Ghost) {
+	foundation := scene.content.machines.machines[ghost.machine].kind == .Foundation
+	switch ghost.kind {
+	case .Outline:
+		low, high := placement_outline_box(ghost.cells)
+		draw_footprint_outline(ghost.frame, low, high, ghost.rotation, !foundation, placement_outline_color(ghost.refusal))
+	case .Model:
+		color := frame_ghost_color(ghost.refusal)
+		if !foundation && draw_frame_ghost_model(scene.models, scene.content.machines, ghost.frame, ghost.machine, ghost.origin, ghost.rotation, color) {
+			return
+		}
+		for cell in ghost.cells {
+			draw_frame_ghost(ghost.frame, cell, color)
+		}
 	}
 }
 
@@ -365,6 +393,7 @@ draw_field_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, cont
 		viewer       = viewport.player,
 		lockstep     = &session.lockstep,
 		hide_frames  = view.phase == .Descent,
+		placement_editor = viewport.interaction.placement_editor,
 	}
 	rl.BeginMode3D(camera)
 	draw_field_scene(scene, camera, frame_field_selection(state))

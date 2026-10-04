@@ -1,6 +1,7 @@
 package game
 
 import "core:fmt"
+import "core:math"
 
 // The world HUD, drawn through the UI draw list under any open screen:
 // crosshair, under it the targeted entity's name and state or the
@@ -11,8 +12,11 @@ import "core:fmt"
 // ui_journal.odin) or, once every quest is done, the oldest open contract
 // (ui_contracts.odin), the brownout warning (top centre, ui_power.odin),
 // the biome banner below it (biome_banner.odin) and the glyph bar, and the magnetometer's dial while one is selected
-// (ui_prospecting.odin). With the touch overlay driving the world, the
-// touch buttons right of the hotbar (0134): inventory, map, pause, rotate. With no screen open, Mission Control's panel at
+// (ui_prospecting.odin). The tools radial on Pipette's controls and the
+// placement editor's tool line and glyph bar (0215). With the touch
+// overlay driving the world, the touch buttons right of the hotbar
+// (0134): inventory, map, pause, tools, rotate, and the placement
+// editor's grid while it is anchored. With no screen open, Mission Control's panel at
 // the top left, the toasts moved below it, and the discovery card at the
 // top centre (ui_mission_control.odin).
 
@@ -30,6 +34,16 @@ HUD_RADIAL_RADIUS :: UI_SLOT_SIZE * 2.5
 // The mining progress bar above the crosshair.
 HUD_MINING_BAR_WIDTH :: 4 * CROSSHAIR_SIZE
 HUD_MINING_BAR_HEIGHT :: 6.0
+// The tools radial (0215): the look pixels that reach an entry, the stick
+// past which the right stick steers directly, the hold before the
+// radial draws (a tap does not flash it) and an entry's width.
+TOOLS_RADIAL_STEER_PIXELS :: 150
+TOOLS_RADIAL_STICK_THRESHOLD :: 0.3
+TOOLS_RADIAL_SHOW_SECONDS :: 0.2
+TOOLS_RADIAL_ENTRY_WIDTH :: 5 * UI_ROW_HEIGHT
+// The tool line's colour while the placement would be refused (the red
+// of GHOST_INVALID_COLOR).
+HUD_REFUSED_TEXT_COLOR :: Ui_Color{230, 60, 50, 255}
 // The touch tap scheme's ring around the mined block (0118).
 HUD_MINING_RING_DIAMETER :: 3 * CROSSHAIR_SIZE
 HUD_MINING_RING_THICKNESS :: 6.0
@@ -66,6 +80,9 @@ Hud_Context :: struct {
 	// What the tool line says of field_view's machine over bare ground
 	// (0201, bare_ground_line), read against the field once per frame.
 	bare_ground:              Bare_Ground_Line,
+	// The viewport's placement editor as its ghost shows it (0215,
+	// placement_editor_hud); zero shows nothing.
+	placement:                Placement_Editor_Hud,
 }
 
 // The field player the tool line describes.
@@ -138,41 +155,88 @@ hud_hotbar_pixel_rectangles :: proc(state: ^Ui_State, selected: int) -> [HOTBAR_
 }
 
 // The HUD's touch buttons (0134), right of the hotbar: the touch
-// overlay's way to the inventory, the map, the pause menu and a rotation,
-// since its default layout has no gamepad buttons. Each presses the
-// gamepad control bound to its action (frame_hud_touch_buttons), so the
-// actions stay bindings. Rotate shows only while Rotate_Building acts:
-// the selected hotbar slot holds what it turns before placing
-// (selected_placement_rotates) or the target is an entity it turns
-// (entity_rotates).
+// overlay's way to the inventory, the map, the pause menu, the tools
+// radial (0215) and a rotation, since its default layout has no gamepad
+// buttons. Each presses the gamepad control bound to its action
+// (frame_hud_touch_buttons), so the actions stay bindings. Rotate shows
+// only while Rotate_Building acts: the selected hotbar slot holds what it
+// turns before placing (selected_placement_rotates) or the target is an
+// entity it turns (entity_rotates). The placement editor's nudges,
+// commit and cancel (0215) show while it is anchored, above the row.
 Hud_Touch_Button :: enum u8 {
 	Inventory,
 	Map,
 	Pause,
+	Tools,
 	Rotate,
+	Nudge_Away,
+	Nudge_Towards,
+	Nudge_Left,
+	Nudge_Right,
+	Commit,
+	Cancel,
 }
+
+// The row's buttons, laid out by index; the rest are the editor's grid.
+HUD_TOUCH_ROW_BUTTONS :: bit_set[Hud_Touch_Button]{.Inventory, .Map, .Pause, .Tools, .Rotate}
 
 @(rodata)
 hud_touch_button_actions := [Hud_Touch_Button]Action {
-	.Inventory = .Open_Inventory,
-	.Map       = .Open_Map,
-	.Pause     = .Pause,
-	.Rotate    = .Rotate_Building,
+	.Inventory     = .Open_Inventory,
+	.Map           = .Open_Map,
+	.Pause         = .Pause,
+	.Tools         = .Pipette,
+	.Rotate        = .Rotate_Building,
+	.Nudge_Away    = .Placement_Nudge_Away,
+	.Nudge_Towards = .Placement_Nudge_Towards,
+	.Nudge_Left    = .Placement_Nudge_Left,
+	.Nudge_Right   = .Placement_Nudge_Right,
+	.Commit        = .Place,
+	.Cancel        = .Mine,
 }
 
 @(rodata)
 hud_touch_button_icons := [Hud_Touch_Button]Ui_Icon {
-	.Inventory = .Backpack,
-	.Map       = .Map,
-	.Pause     = .Pause,
-	.Rotate    = .Rotate,
+	.Inventory     = .Backpack,
+	.Map           = .Map,
+	.Pause         = .Pause,
+	.Tools         = .Category_Tool,
+	.Rotate        = .Rotate,
+	.Nudge_Away    = .Arrow_Up,
+	.Nudge_Towards = .Arrow_Down,
+	.Nudge_Left    = .Arrow_Left,
+	.Nudge_Right   = .Arrow_Right,
+	.Commit        = .Check,
+	.Cancel        = .Cross,
+}
+
+// The editor's grid cells (column, row from the top) of a 3 by 3 grid:
+// Commit, Away and Cancel on top (L2 left, R2 right as on the pad), Left
+// and Right in the middle, Towards at the bottom.
+@(rodata)
+hud_touch_editor_grid := [Hud_Touch_Button][2]int {
+	.Inventory     = {},
+	.Map           = {},
+	.Pause         = {},
+	.Tools         = {},
+	.Rotate        = {},
+	.Nudge_Away    = {1, 0},
+	.Nudge_Towards = {1, 2},
+	.Nudge_Left    = {0, 1},
+	.Nudge_Right   = {2, 1},
+	.Commit        = {0, 0},
+	.Cancel        = {2, 0},
 }
 
 // Right of the hotbar on its baseline, a slot's size each, in the enum's
 // order, so Rotate coming and going moves no other button; in rows going
 // up when the room beside the hotbar is narrower than the row, like the
 // craft queue on the left. The hotbar's width does not depend on the
-// selected slot.
+// selected slot. The editor's buttons are a 3 by 3 grid of slots whose
+// middle column's centre stands two steps left of the area's right edge
+// and whose bottom row ends three gaps above the row's top; where the
+// row's stack leaves no room for it above (the narrow screens, whose row
+// wraps), the grid stands left of the row's column above the hotbar.
 hud_touch_button_rectangles :: proc(area: Ui_Rectangle) -> [Hud_Touch_Button]Ui_Rectangle {
 	last := hud_hotbar_rectangles(area, 0)[HOTBAR_SLOT_COUNT - 1]
 	left := last.x + last.width + 3 * UI_GAP
@@ -180,16 +244,37 @@ hud_touch_button_rectangles :: proc(area: Ui_Rectangle) -> [Hud_Touch_Button]Ui_
 	step := f32(UI_SLOT_SIZE + UI_GAP)
 	columns := max(int((area.x + area.width - left + UI_GAP) / step), 1)
 	rectangles: [Hud_Touch_Button]Ui_Rectangle
-	for &rectangle, button in rectangles {
+	row_top := bottom
+	for button in HUD_TOUCH_ROW_BUTTONS {
 		index := int(button)
-		rectangle = {left + f32(index % columns) * step, bottom - UI_SLOT_SIZE - f32(index / columns) * step, UI_SLOT_SIZE, UI_SLOT_SIZE}
+		rectangles[button] = {left + f32(index % columns) * step, bottom - UI_SLOT_SIZE - f32(index / columns) * step, UI_SLOT_SIZE, UI_SLOT_SIZE}
+		row_top = min(row_top, rectangles[button].y)
+	}
+	grid_size := 2 * step + UI_SLOT_SIZE
+	grid_left := area.x + area.width - 2 * step - UI_SLOT_SIZE / 2 - step
+	grid_top := row_top - 3 * UI_GAP - grid_size
+	if grid_top < area.y {
+		grid_left = left - 3 * UI_GAP - grid_size
+		grid_top = bottom - UI_SLOT_SIZE * HUD_SELECTED_SLOT_SCALE - 3 * UI_GAP - grid_size
+	}
+	for button in Hud_Touch_Button {
+		if button in HUD_TOUCH_ROW_BUTTONS {
+			continue
+		}
+		cell := hud_touch_editor_grid[button]
+		rectangles[button] = {grid_left + f32(cell.x) * step, grid_top + f32(cell.y) * step, UI_SLOT_SIZE, UI_SLOT_SIZE}
 	}
 	return rectangles
 }
 
-// Inventory, map and pause always, rotate while Rotate_Building acts.
-hud_touch_buttons_shown :: proc(rotates: bool) -> bit_set[Hud_Touch_Button] {
-	return rotates ? {.Inventory, .Map, .Pause, .Rotate} : {.Inventory, .Map, .Pause}
+// Inventory, map and pause always; tools outside the placement editor's
+// mode, where Pipette is unavailable; rotate while Rotate_Building acts;
+// the editor's grid while it is anchored.
+hud_touch_buttons_shown :: proc(rotates, editing: bool) -> bit_set[Hud_Touch_Button] {
+	if editing {
+		return {.Inventory, .Map, .Pause, .Rotate, .Nudge_Away, .Nudge_Towards, .Nudge_Left, .Nudge_Right, .Commit, .Cancel}
+	}
+	return rotates ? {.Inventory, .Map, .Pause, .Tools, .Rotate} : {.Inventory, .Map, .Pause, .Tools}
 }
 
 draw_hud_touch_buttons :: proc(state: ^Ui_State, shown: bit_set[Hud_Touch_Button]) {
@@ -337,6 +422,110 @@ draw_hotbar_radial :: proc(state: ^Ui_State, hotbar: []Item_Stack, items: Item_R
 	}
 }
 
+Tools_Radial_Entry :: enum u8 {
+	Pipette,
+	Placement_Editor,
+}
+
+Tools_Radial_State :: struct {
+	radial:           Radial_State,
+	// Look pixels gathered since it opened, within TOOLS_RADIAL_STEER_PIXELS.
+	steer:            [2]f32,
+	held_seconds:     f32,
+	// Released on Pipette: the frame loop gives the next world frame one
+	// Pipette press (tools_radial_world_frame) and clears it.
+	pipette_selected: bool,
+}
+
+// The steer with the frame's look pixels added, clamped to the steer
+// radius.
+tools_radial_steer :: proc(steer, look_delta: [2]f32) -> [2]f32 {
+	sum := steer + look_delta
+	length := math.sqrt(sum.x * sum.x + sum.y * sum.y)
+	if length <= TOOLS_RADIAL_STEER_PIXELS {
+		return sum
+	}
+	return sum * (TOOLS_RADIAL_STEER_PIXELS / length)
+}
+
+// The radial's pad position (y down): the right stick past its threshold,
+// else the gathered steer.
+tools_radial_position :: proc(right_stick, steer: [2]f32) -> [2]f32 {
+	if right_stick.x * right_stick.x + right_stick.y * right_stick.y > TOOLS_RADIAL_STICK_THRESHOLD * TOOLS_RADIAL_STICK_THRESHOLD {
+		return stick_to_pad_position(right_stick)
+	}
+	return 0.5 + steer / (2 * TOOLS_RADIAL_STEER_PIXELS)
+}
+
+// Pipette's controls held show the tools radial (0215): the look input
+// steers, release selects, a tap is Pipette and the shown radial's dead
+// centre selects nothing. Not while the placement editor is anchored or
+// the hotbar radial is open.
+tools_radial :: proc(state: ^Ui_State, editor: ^Placement_Editor) {
+	tools := &state.tools_radial
+	touching := state.input.tools_radial_down && !(editor != nil && editor.anchored) && !state.radial.open
+	if touching && !tools.radial.open {
+		tools.steer, tools.held_seconds = {}, 0
+	} else if touching {
+		tools.held_seconds += state.frame_seconds
+	}
+	if touching {
+		tools.steer = tools_radial_steer(tools.steer, state.input.look_delta)
+	}
+	held_seconds := tools.held_seconds
+	result: Radial_Result
+	tools.radial, result = advance_radial(tools.radial, touching, tools_radial_position(state.input.right_stick, tools.steer), .Held_Steered, len(Tools_Radial_Entry))
+	if result.closed {
+		switch {
+		case result.selected == int(Tools_Radial_Entry.Placement_Editor) && editor != nil:
+			on := toggle_placement_editor(editor)
+			ui_toast(state, text(on ? "toast_placement_editor_on" : "toast_placement_editor_off"))
+		case result.selected == int(Tools_Radial_Entry.Pipette):
+			tools.pipette_selected = true
+		case result.selected < 0 && held_seconds < TOOLS_RADIAL_SHOW_SECONDS:
+			tools.pipette_selected = true
+		}
+	}
+	if tools.radial.open && (tools.held_seconds >= TOOLS_RADIAL_SHOW_SECONDS || tools.radial.highlight >= 0) {
+		draw_tools_radial(state, editor != nil && editor.on)
+	}
+}
+
+@(rodata)
+tools_radial_entry_keys := [Tools_Radial_Entry][2]string {
+	.Pipette          = {"tools_radial_pipette", "tools_radial_pipette"},
+	.Placement_Editor = {"tools_radial_placement_editor_off", "tools_radial_placement_editor_on"},
+}
+
+// Each entry a labelled box round the screen centre, Pipette at the top,
+// the editor with its state at the bottom.
+draw_tools_radial :: proc(state: ^Ui_State, editor_on: bool) {
+	centre := state.screen_units / 2
+	for entry in Tools_Radial_Entry {
+		index := int(entry)
+		point := radial_slot_offset(index, len(Tools_Radial_Entry)) * HUD_RADIAL_RADIUS + centre
+		highlighted := index == state.tools_radial.radial.highlight
+		box := Ui_Rectangle{point.x - TOOLS_RADIAL_ENTRY_WIDTH / 2, point.y - UI_ROW_HEIGHT / 2, TOOLS_RADIAL_ENTRY_WIDTH, UI_ROW_HEIGHT}
+		draw_fill(state, box, UI_PANEL_COLOR)
+		draw_outline(state, box, highlighted ? UI_ACCENT_COLOR : UI_PANEL_BORDER_COLOR, highlighted ? UI_FOCUS_BORDER : UI_BORDER)
+		draw_text_fitted(state, inset(box, UI_GAP), text(tools_radial_entry_keys[entry][editor_on ? 1 : 0]), UI_BODY_TEXT_SIZE, .Centre)
+	}
+}
+
+// The world's frame with Pipette taken by the radial: never on its own
+// press, once on the release that selects it; no Look while it is open.
+tools_radial_world_frame :: proc(frame: Input_Frame, tools: Tools_Radial_State) -> Input_Frame {
+	removed := Action_Set{.Pipette}
+	if tools.radial.open {
+		removed += {.Look}
+	}
+	result := without_actions(frame, removed)
+	if tools.pipette_selected {
+		result.just_pressed += {.Pipette}
+	}
+	return result
+}
+
 // A full schematic crate in view takes Interact; a selected usable item
 // (a schematic, a prospecting tool) is used with the Place control
 // (Use_Item). In the temp allocator.
@@ -422,6 +611,7 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context, hud: Hud_Cont
 	draw_craft_queue(state, player^, screen_context)
 	if state.screens.count > 0 {
 		state.radial = {}
+		state.tools_radial = {}
 		return
 	}
 	switch hud_objective_source(screen_context.quest_state, screen_context.records.contracts.open_count) {
@@ -443,20 +633,31 @@ draw_hud :: proc(state: ^Ui_State, screen_context: Screen_Context, hud: Hud_Cont
 	if line, shown := field_tool_line(hud_field_player(screen_context, hud), screen_context.content, hud.bare_ground); shown {
 		tool_status = line
 	}
+	tool_color := UI_TEXT_COLOR
+	if line, refused, shown := placement_editor_tool_line(hud.placement, screen_context.machines); shown {
+		tool_status = line
+		tool_color = refused ? HUD_REFUSED_TEXT_COLOR : UI_TEXT_COLOR
+	}
 	if ghost_line, shown := bore_drill_ghost_line(screen_context.world, screen_context.records.assayed_veins[:], screen_context.machines, screen_context.veins, screen_context.blocks, items, obtained, player^); shown {
 		vein_status = ghost_line
 	}
 	// An entity's line is its state, a block's only says what it is.
 	name_color := player.target.entity == NO_ENTITY ? UI_DIM_TEXT_COLOR : UI_TEXT_COLOR
 	line := draw_target_status(state, name_status, 0, name_color)
-	line = draw_target_status(state, tool_status, line)
+	line = draw_target_status(state, tool_status, line, tool_color)
 	draw_target_status(state, vein_status, line)
 	if selected := selected_hotbar_stack(player^); !stack_is_empty(selected) && item_has_use(items, selected.item, .Magnetometer) {
 		draw_magnetometer(state, player^)
 	}
 	hotbar_radial(state, player, screen_context.player_index, screen_context.player_commands, items)
+	tools_radial(state, screen_context.placement_editor)
 	// On touch the gestures and the overlay's buttons are the hints (0137).
 	if touch_row_shows(state) {
+		return
+	}
+	if hud.placement.mode == .Anchored {
+		hints := placement_editor_glyph_hints()
+		ui_glyph_bar(state, hints[:])
 		return
 	}
 	if hints, shown := schematic_glyph_hints(screen_context.world, player^, items); shown {

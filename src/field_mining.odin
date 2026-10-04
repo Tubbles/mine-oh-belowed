@@ -191,6 +191,10 @@ Field_Content :: struct {
 	// field_foundation_block); empty lists place one cell.
 	foundation_sizes:   []int,
 	foundation_heights: []int,
+	// The largest footprint Place puts down in one press while the
+	// placement editor is on (0215, data/game.sjson), x the width, y the
+	// height, z the depth as a footprint; only the presentation reads it.
+	direct_placement_limit: [3]i32,
 	// The run tools (0176, belt_run_placement.odin): the pole a new
 	// endpoint places, the belt a belt run moves at, the pipe a pipe run
 	// looks like (each read through field_content_machine) and the
@@ -542,10 +546,10 @@ queue_field_player_edit :: proc(state: ^Simulation_State, content: Simulation_Co
 		append(&field.edits, Queued_Field_Edit{player = index, edit = edit})
 	}
 	machine := field_placed_machine(player.field, content)
-	if placement, wanted := field_player_placement(player.field, machine, content.field); wanted && .Place in input.just_pressed {
+	if placement, wanted := field_player_placement(player.field, machine, content); wanted && .Place in input.just_pressed {
 		append(&field.placements, Queued_Field_Placement{player = index, placement = placement})
 	}
-	if placement, bare := field_bare_ground_placement(player.field, machine); bare && .Place in input.just_pressed {
+	if placement, bare := field_bare_ground_placement(player.field, machine, content.machines); bare && .Place in input.just_pressed {
 		append(&field.placements, Queued_Field_Placement{player = index, placement = placement})
 	}
 	if placement, wanted := update_field_run_tool(&player.field, entities, content, input); wanted {

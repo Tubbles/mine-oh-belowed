@@ -76,3 +76,21 @@ test_arrival_values_are_bounded :: proc(t: ^testing.T) {
 	none.arrival_ticks = 0
 	testing.expect_value(t, arrival_problem(none), "")
 }
+
+// The direct placement limit (0215): the shipped one loads, each side
+// outside 1 to 16 is named.
+@(test)
+test_direct_placement_limit_is_range_checked :: proc(t: ^testing.T) {
+	config, error := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	testing.expect_value(t, config.direct_placement_limit, Placement_Limit_Config{width = 2, depth = 2, height = 3})
+	testing.expect_value(t, direct_placement_limit_problem(config.direct_placement_limit), "")
+	narrow := config.direct_placement_limit
+	narrow.width = 0
+	testing.expect(t, strings.has_prefix(direct_placement_limit_problem(narrow), "direct_placement_limit.width "))
+	tall := config.direct_placement_limit
+	tall.height = MAXIMUM_DIRECT_PLACEMENT_LIMIT_CELLS + 1
+	testing.expect(t, strings.has_prefix(direct_placement_limit_problem(tall), "direct_placement_limit.height "))
+	config.direct_placement_limit = tall
+	testing.expect(t, strings.has_prefix(validate_game_config(config), "direct_placement_limit.height "))
+}

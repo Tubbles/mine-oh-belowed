@@ -129,6 +129,8 @@ default_gamepad_glyph_icons := [Glyph_Button]Ui_Icon {
 	.Quick_Move     = .Trigger_Right,
 	.Drop           = .Stick_Right,
 	.Mine           = .Trigger_Right,
+	.Rotate         = .Button_North,
+	.Nudge          = .Dpad,
 }
 
 @(rodata)
@@ -148,6 +150,8 @@ default_keyboard_glyph_labels := [Glyph_Button]string {
 	.Quick_Move     = "Q",
 	.Drop           = "X",
 	.Mine           = "Left mouse",
+	.Rotate         = "R",
+	.Nudge          = "Up",
 }
 
 @(test)

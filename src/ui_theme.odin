@@ -235,6 +235,13 @@ Ui_Icon :: enum u8 {
 	Backpack,
 	Pause,
 	Rotate,
+	// The placement editor's touch buttons (0215, hud.odin).
+	Arrow_Up,
+	Arrow_Down,
+	Arrow_Left,
+	Arrow_Right,
+	Check,
+	Cross,
 }
 
 @(rodata)
@@ -272,6 +279,12 @@ ui_icon_names := [Ui_Icon]string {
 	.Backpack              = "backpack",
 	.Pause                 = "pause",
 	.Rotate                = "rotate",
+	.Arrow_Up              = "arrow_up",
+	.Arrow_Down            = "arrow_down",
+	.Arrow_Left            = "arrow_left",
+	.Arrow_Right           = "arrow_right",
+	.Check                 = "check",
+	.Cross                 = "cross",
 }
 
 // The loaded theme, or the defaults before one is loaded (tests).

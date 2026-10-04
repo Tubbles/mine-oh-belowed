@@ -861,6 +861,12 @@ UI_ICON_NAMES = [
     "backpack",
     "pause",
     "rotate",
+    "arrow_up",
+    "arrow_down",
+    "arrow_left",
+    "arrow_right",
+    "check",
+    "cross",
 ]
 
 UI_FACE = (58, 62, 78)
@@ -1089,6 +1095,49 @@ def draw_rotate_arrow(key: str) -> list:
     return image
 
 
+# The arrow pointing up, as (x, y) texels; the other directions turn it
+# about the icon's centre.
+ARROW_UP_TEXELS = (
+    {(x, y) for x, y in rectangle_mask(7, 6, 8, 12)}
+    | {(x, y) for y in range(3, 8) for x in range(7 - (y - 3), 9 + (y - 3))}
+)
+
+
+def turned_texel(x: int, y: int, direction: str) -> tuple:
+    """A texel of the up arrow turned to point in direction."""
+    last = SIZE - 1
+    turns = {"up": (x, y), "down": (x, last - y), "left": (y, x), "right": (last - y, x)}
+    return turns[direction]
+
+
+def draw_arrow_button(direction: str, key: str) -> list:
+    """A light arrow head and shaft on a round button (0215)."""
+    image = blank()
+    paint(image, disc_mask(7.5, 7.5, 7.2), UI_FACE, key, 2)
+    for x, y in ARROW_UP_TEXELS:
+        turned_x, turned_y = turned_texel(x, y, direction)
+        image[turned_y][turned_x] = opaque(UI_LIGHT)
+    return image
+
+
+def draw_check_button(key: str) -> list:
+    """An accent check mark on a round button (0215)."""
+    image = blank()
+    paint(image, disc_mask(7.5, 7.5, 7.2), UI_FACE, key, 2)
+    for x, y in line_mask((3, 8), (6, 11), 1.0) | line_mask((6, 11), (12, 4), 1.0):
+        image[y][x] = opaque(UI_ACCENT)
+    return image
+
+
+def draw_cross_button(key: str) -> list:
+    """A light cross on a round button (0215)."""
+    image = blank()
+    paint(image, disc_mask(7.5, 7.5, 7.2), UI_FACE, key, 2)
+    for x, y in line_mask((4, 4), (11, 11), 1.0) | line_mask((11, 4), (4, 11), 1.0):
+        image[y][x] = opaque(UI_LIGHT)
+    return image
+
+
 def ui_icon_image(name: str) -> list:
     if name.startswith("button_"):
         return draw_face_button(name.removeprefix("button_"), name)
@@ -1123,6 +1172,12 @@ def ui_icon_image(name: str) -> list:
         "backpack": lambda: draw_backpack(name),
         "pause": lambda: draw_pause_button(name),
         "rotate": lambda: draw_rotate_arrow(name),
+        "arrow_up": lambda: draw_arrow_button("up", name),
+        "arrow_down": lambda: draw_arrow_button("down", name),
+        "arrow_left": lambda: draw_arrow_button("left", name),
+        "arrow_right": lambda: draw_arrow_button("right", name),
+        "check": lambda: draw_check_button(name),
+        "cross": lambda: draw_cross_button(name),
     }
     return pictures[name]()
 

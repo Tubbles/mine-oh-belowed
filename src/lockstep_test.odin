@@ -720,3 +720,37 @@ test_a_field_prediction_into_a_wall_snaps_to_the_confirmed_feet :: proc(t: ^test
 	rebuild_prediction(&session.lockstep, state, simulation_content)
 	testing.expect_value(t, lockstep_view_player(&session.lockstep, state, 0).field.position, confirmed)
 }
+
+// One session queues the placement editor's commit (0215), the other
+// applies it from the encoded record: both place the assembler at the
+// same tick and hash the same.
+@(test)
+test_two_sessions_committing_a_placement_hash_the_same :: proc(t: ^testing.T) {
+	hashes: [2]u64
+	for index in 0 ..< 2 {
+		simulation, content, _, frame := make_placement_editor_test(t, "assembler_1", {"assembler_1", 1})
+		defer destroy_simulation(&simulation)
+		command: Player_Command = Machine_Placement_Command{machine = test_machine(content.machines, "assembler_1"), frame = frame.id, cell = {2, 1, 2}}
+		if index == 1 {
+			// Through the input record as the host relays it (relay_in_process).
+			sent := Input_Record{tick = 1, player = 0, commands = make([dynamic]Player_Command, context.temp_allocator)}
+			append(&sent.commands, command)
+			message := record_message(sent)
+			reader := Byte_Reader{data = message[1:]}
+			received, ok := decode_input_record(&reader)
+			defer destroy_input_record(received)
+			testing.expect(t, ok && len(received.commands) == 1)
+			if len(received.commands) == 1 {
+				testing.expect_value(t, received.commands[0].(Machine_Placement_Command), command.(Machine_Placement_Command))
+				command = received.commands[0]
+			}
+		}
+		queue_player_command(&simulation.player_commands, 0, command)
+		apply_player_commands(&simulation, content)
+		tick_field_simulation(&simulation, content, {})
+		common := entity_common(&simulation.world.entities, entity_at(&simulation.world.entities, EDITOR_TEST_CENTRE, frame.id))
+		testing.expect(t, common != nil && common.origin == World_Coordinate{2, 1, 2})
+		hashes[index] = simulation_state_hash(&simulation)
+	}
+	testing.expect_value(t, hashes[0], hashes[1])
+}

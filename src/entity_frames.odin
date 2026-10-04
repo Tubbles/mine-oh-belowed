@@ -18,7 +18,9 @@ package game
 // down (simulation_field.odin): a foundation snaps to a frame or starts
 // one on the ground, any other machine snaps to a frame cell or stands on
 // flat bare ground on a frame of its own (0201, machine_wear.odin),
-// turned by the player's placement rotation. A foundation places a block of cells
+// turned by the player's placement rotation. A machine's footprint is
+// centred on the aimed cell (0215, field_footprint_origin), and one on bare
+// ground on cell (0, 0, 0) of its new frame. A foundation places a block of cells
 // at once (0193, foundation_block_cells), its size and height chosen in
 // the configure pop-up (0202) from the lists of data/game.sjson.
 
@@ -221,6 +223,50 @@ Field_Placement :: struct {
 	tree:      Tree_Key,
 }
 
+// The placement editor's commit (0215, player_command.odin) of a
+// placement: everything but the aim.
+machine_placement_command :: proc(placement: Field_Placement) -> Machine_Placement_Command {
+	return Machine_Placement_Command {
+		machine = placement.machine,
+		rotation = placement.rotation,
+		new_frame = placement.new_frame,
+		frame = placement.frame,
+		cell = placement.cell,
+		normal = placement.normal,
+		hit = placement.hit,
+		heading = placement.heading,
+	}
+}
+
+// The placement a Machine_Placement_Command asks for: a foundation takes
+// the player's own block (never the record's), a free foundation starts
+// at cell (0, 0, 0), and a machine on bare ground has the origin the
+// centre rule gives it (the simulation's own, never the command's cell).
+field_placement_of_command :: proc(command: Machine_Placement_Command, player: Field_Player, content: Simulation_Content) -> Field_Placement {
+	placement := Field_Placement {
+		kind = .Machine,
+		machine = command.machine,
+		rotation = command.rotation % 4,
+		new_frame = command.new_frame,
+		frame = command.frame,
+		cell = command.cell,
+		normal = command.normal,
+		hit = command.hit,
+		heading = command.heading,
+	}
+	definition := content.machines.machines[command.machine]
+	switch {
+	case definition.kind == .Foundation:
+		placement.size, placement.height = field_foundation_block(player, content.field)
+		if placement.new_frame {
+			placement.cell = {}
+		}
+	case placement.new_frame:
+		placement.cell = field_footprint_origin({}, definition.footprint, placement.rotation)
+	}
+	return placement
+}
+
 Queued_Field_Placement :: struct {
 	player:    int,
 	placement: Field_Placement,
@@ -242,13 +288,30 @@ aim_field_player_at_frames :: proc(player: ^Field_Player, frames: ^Frame_Table, 
 	}
 }
 
+// The centre rule (0215, folding 0213): the offset of a footprint's
+// centre cell from its origin along each horizontal axis, for a rotated
+// size. An odd side's middle cell, an even side's cell on the high side
+// of the centre corner (as foundation_block_first_offset); the height is
+// never offset.
+field_footprint_centre_offset :: proc(size: [3]i32) -> World_Coordinate {
+	return {(size.x - 1) / 2, 0, (size.z - 1) / 2}
+}
+
+// The origin of a footprint turned by rotation whose centre cell is
+// centre (the centre rule of 0215, 0213): a 1 by 1 and a 2 by 2 footprint
+// keep their origin on the centre.
+field_footprint_origin :: proc(centre: World_Coordinate, footprint: [3]i32, rotation: u8) -> World_Coordinate {
+	return centre - field_footprint_centre_offset(rotated_footprint_size(footprint, rotation))
+}
+
 // Where Place with a machine held puts it (field_placed_machine): against
-// the targeted frame's face, or, for a foundation, free on the targeted
+// the targeted frame's face, centred on the adjacent cell (0215,
+// field_footprint_origin), or, for a foundation, free on the targeted
 // ground. A machine other than a foundation on bare ground is
 // field_bare_ground_placement's. A foundation takes the player's block
 // (field_foundation_block).
-field_player_placement :: proc(player: Field_Player, machine: Machine_Id, field: Field_Content) -> (placement: Field_Placement, wanted: bool) {
-	size, height := field_foundation_block(player, field)
+field_player_placement :: proc(player: Field_Player, machine: Machine_Id, content: Simulation_Content) -> (placement: Field_Placement, wanted: bool) {
+	size, height := field_foundation_block(player, content.field)
 	switch {
 	case machine == NO_MACHINE:
 		return {}, false
@@ -256,7 +319,9 @@ field_player_placement :: proc(player: Field_Player, machine: Machine_Id, field:
 		target := player.frame_target
 		return Field_Placement{machine = machine, frame = target.frame, cell = target.adjacent, normal = target.adjacent - target.cell, size = size, height = height}, true
 	case player.frame_target.hit:
-		return Field_Placement{machine = machine, rotation = player.placement_rotation % 4, frame = player.frame_target.frame, cell = player.frame_target.adjacent}, true
+		rotation := player.placement_rotation % 4
+		cell := field_footprint_origin(player.frame_target.adjacent, content.machines.machines[machine].footprint, rotation)
+		return Field_Placement{machine = machine, rotation = rotation, frame = player.frame_target.frame, cell = cell}, true
 	case player.target.hit && player.tool == .Foundation:
 		return Field_Placement{machine = machine, new_frame = true, hit = player.target.position, heading = field_player_heading(player), size = size, height = height}, true
 	}
@@ -268,12 +333,15 @@ field_player_placement :: proc(player: Field_Player, machine: Machine_Id, field:
 // machine_wear.odin), which the drain refuses with Too_Steep where the
 // ground under the footprint is not flat enough
 // (bare_ground_placement_refusal); the ghost is the machine's footprint
-// at cell (0, 0, 0) of that frame, red when refused.
-field_bare_ground_placement :: proc(player: Field_Player, machine: Machine_Id) -> (placement: Field_Placement, found: bool) {
+// centred on cell (0, 0, 0) of that frame (0215, field_footprint_origin),
+// red when refused.
+field_bare_ground_placement :: proc(player: Field_Player, machine: Machine_Id, machines: Machine_Registry) -> (placement: Field_Placement, found: bool) {
 	if machine == NO_MACHINE || player.tool == .Foundation || player.frame_target.hit || !player.target.hit {
 		return {}, false
 	}
-	return Field_Placement{machine = machine, rotation = player.placement_rotation % 4, new_frame = true, hit = player.target.position, heading = field_player_heading(player)}, true
+	rotation := player.placement_rotation % 4
+	cell := field_footprint_origin({}, machines.machines[machine].footprint, rotation)
+	return Field_Placement{machine = machine, rotation = rotation, new_frame = true, cell = cell, hit = player.target.position, heading = field_player_heading(player)}, true
 }
 
 // The frame a placement lands in and its cell; for a free one the frame
@@ -281,7 +349,7 @@ field_bare_ground_placement :: proc(player: Field_Player, machine: Machine_Id) -
 field_placement_frame :: proc(frames: ^Frame_Table, placement: Field_Placement, pitch_millimetres: int) -> (frame: Frame, cell: World_Coordinate, found: bool) {
 	if placement.new_frame {
 		origin, axes := free_frame_at(placement.hit, placement.heading, pitch_millimetres)
-		return Frame{origin = origin, axes = axes, pitch_millimetres = pitch_millimetres}, {}, true
+		return Frame{origin = origin, axes = axes, pitch_millimetres = pitch_millimetres}, placement.cell, true
 	}
 	frame, found = find_frame(frames, placement.frame)
 	return frame, placement.cell, found

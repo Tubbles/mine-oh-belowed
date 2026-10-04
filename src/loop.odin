@@ -255,6 +255,7 @@ touch_overlay_context :: proc(state: ^Frame_State) -> Touch_Overlay_Context {
 		frame_seconds = state.frame_seconds,
 		frame_tick_count = state.frame_tick_count,
 		local_player = state.session != nil ? session_local_player_index(state.session) : 0,
+		placement_editing = viewport.interaction.placement_editor.anchored,
 	}
 }
 
@@ -411,8 +412,12 @@ update_frame_world :: proc(state: ^Frame_State) {
 	for &viewport in active_viewports(state) {
 		apply_debug_actions(state, &viewport)
 		apply_overlay_toggle(state, viewport)
+		update_viewport_placement_editor(state, &viewport)
 	}
 	update_session(state, frame_simulation_content(state))
+	for &viewport in active_viewports(state) {
+		viewport.interaction.ui.tools_radial.pipette_selected = false
+	}
 	for &viewport in active_viewports(state) {
 		if viewport_player_ready(state.session, viewport) {
 			viewport.interaction.haptic = haptic_request_for(state.session.simulation.players[viewport.player], !viewport_world_blocked(viewport))
@@ -441,14 +446,50 @@ viewport_aims_at_panel :: proc(state: ^Frame_State, viewport: Viewport) -> bool 
 	return aims_at_panel(&session.simulation.world.entities, state.content.machines, session.simulation.players[viewport.player].target.entity, view.field.frame_target)
 }
 
-// The viewport's frame input as the world takes it.
+// The viewport's frame input as the world takes it: Pipette through the
+// tools radial and the placement editor's controls taken (0215).
 viewport_world_input :: proc(state: ^Frame_State, viewport: Viewport) -> Input_Frame {
 	frame := world_input(viewport.interaction.input, viewport_world_blocked(viewport), viewport.interaction.world_action_guard, state.settings, developer_mode_on(state))
 	// The right stick drives an open hotbar radial instead of the camera.
 	if viewport.interaction.ui.radial.open {
 		frame = without_actions(frame, {.Look})
 	}
-	return frame
+	frame = tools_radial_world_frame(frame, viewport.interaction.ui.tools_radial)
+	editor := viewport.interaction.placement_editor
+	applies := false
+	if session := state.session; viewport_player_ready(session, viewport) && session.simulation.field.enabled {
+		view := lockstep_view_player(&session.lockstep, &session.simulation, viewport.player)
+		applies = placement_editor_applies(editor, view.field, frame_simulation_content(state))
+	}
+	return placement_editor_world_frame(frame, editor, applies)
+}
+
+// The viewport's placement editor for the frame (0215), against the
+// player its ghost shows (the prediction): a commit queues its
+// Machine_Placement_Command for the next tick, a refusal is toasted.
+// Outside a field session or before the player's entry nothing stays
+// anchored.
+update_viewport_placement_editor :: proc(state: ^Frame_State, viewport: ^Viewport) {
+	session := state.session
+	editor := &viewport.interaction.placement_editor
+	if !viewport_player_ready(session, viewport^) || !session.simulation.field.enabled {
+		editor.anchored = false
+		return
+	}
+	view := lockstep_view_player(&session.lockstep, &session.simulation, viewport.player)
+	guard := viewport.interaction.world_action_guard
+	input := Placement_Editor_Input {
+		just_pressed = viewport.interaction.input.just_pressed - guard,
+		pressed      = viewport.interaction.input.pressed - guard,
+		blocked      = viewport_world_blocked(viewport^),
+	}
+	outcome := update_placement_editor(editor, &session.simulation, frame_simulation_content(state), view, input)
+	if outcome.commit {
+		queue_player_command(&session.simulation.player_commands, viewport.player, outcome.command)
+	}
+	if outcome.refusal != .None {
+		ui_toast(&viewport.interaction.ui, placement_refusal_toast(outcome))
+	}
 }
 
 // One record per viewport whose player is a local member, each from its
@@ -1233,6 +1274,9 @@ make_screen_context :: proc(state: ^Frame_State, index: int) -> Screen_Context {
 	screen_context.particle_memory = &viewport.presentation.particle_memory
 	screen_context.arrival_falling = field_arrival_falling(session.simulation.field.arrival)
 	screen_context.arrival_skippable = field_arrival_skippable(session.simulation.field.arrival, session.simulation.tick, state.config.arrival_settle_ticks)
+	if session.simulation.field.enabled {
+		screen_context.placement_editor = &viewport.interaction.placement_editor
+	}
 	return screen_context
 }
 
@@ -1267,10 +1311,14 @@ make_hud_context :: proc(state: ^Frame_State, index: int) -> Hud_Context {
 		biome_banner       = &viewport.interaction.biome_banner,
 		biome              = column.biome,
 		biomes             = session.generator.biomes,
-		field_view         = lockstep_view_player(&session.lockstep, &session.simulation, viewport.player).field,
 		field_view_set     = true,
 	}
+	view_player := lockstep_view_player(&session.lockstep, &session.simulation, viewport.player)
+	hud.field_view = view_player.field
 	hud.bare_ground = bare_ground_line(&session.simulation, frame_simulation_content(state), hud.field_view)
+	if session.simulation.field.enabled {
+		hud.placement = placement_editor_hud(viewport.interaction.placement_editor, &session.simulation, frame_simulation_content(state), view_player)
+	}
 	if index == 0 && frame_touch_overlay_on(state) {
 		touch := touch_overlay_context(state)
 		hud.touch_aims, hud.touch_hud_buttons, hud.discovery_card_clearance = touch_overlay_aims(touch), frame_hud_touch_buttons_shown(touch), discovery_card_clearance(touch)
@@ -1557,6 +1605,7 @@ enter_session :: proc(state: ^Frame_State, session: ^Session) {
 	viewport.player = session_local_player_index(session)
 	viewport.tick_input = {}
 	viewport.field_turn_remainder = {}
+	viewport.interaction.placement_editor = {}
 	viewport.interaction.session_views = make_session_views()
 	viewport.presentation = Viewport_Presentation {
 		target = viewport.presentation.target,

@@ -567,6 +567,32 @@ test_no_touch_overlay_element_covers_a_hotbar_slot :: proc(t: ^testing.T) {
 			}
 		}
 	}
+	// The placement editor's grid (0215) at every audited size: clear of
+	// the hotbar, the row and each other, wholly in the safe area.
+	for size in UI_AUDIT_SIZES {
+		ui: Ui_State
+		ui.pixels_per_unit = ui_pixels_per_unit(size.pixels.y, size.scale)
+		ui.screen_units = ui_screen_units(size.pixels, ui.pixels_per_unit)
+		safe := ui_safe_area(&ui)
+		rectangles := hud_touch_button_rectangles(safe)
+		for button in Hud_Touch_Button {
+			if button in HUD_TOUCH_ROW_BUTTONS {
+				continue
+			}
+			rectangle := rectangles[button]
+			testing.expectf(t, rectangle_inside(rectangle, safe, 0), "the %v touch button at %v leaves the safe area: %v", button, size, rectangle)
+			for selected in 0 ..< HOTBAR_SLOT_COUNT {
+				for slot in hud_hotbar_rectangles(safe, selected) {
+					testing.expectf(t, !rectangles_overlap(rectangle, slot), "the %v touch button at %v covers a hotbar slot", button, size)
+				}
+			}
+			for other in Hud_Touch_Button {
+				if other != button {
+					testing.expectf(t, !rectangles_overlap(rectangle, rectangles[other]), "the %v touch button at %v covers the %v one", button, size, other)
+				}
+			}
+		}
+	}
 }
 
 @(test)
@@ -1628,8 +1654,8 @@ test_the_hud_touch_buttons_press_their_controls_and_claim_the_pointer :: proc(t:
 
 @(test)
 test_the_rotate_button_shows_only_while_the_selection_rotates :: proc(t: ^testing.T) {
-	testing.expect_value(t, hud_touch_buttons_shown(false), bit_set[Hud_Touch_Button]{.Inventory, .Map, .Pause})
-	testing.expect_value(t, hud_touch_buttons_shown(true), bit_set[Hud_Touch_Button]{.Inventory, .Map, .Pause, .Rotate})
+	testing.expect_value(t, hud_touch_buttons_shown(false, false), bit_set[Hud_Touch_Button]{.Inventory, .Map, .Pause, .Tools})
+	testing.expect_value(t, hud_touch_buttons_shown(true, false), bit_set[Hud_Touch_Button]{.Inventory, .Map, .Pause, .Tools, .Rotate})
 	content := make_test_content()
 	player := make_test_player(content.blocks, {0.5, 1, 0.5})
 	Case :: struct {
@@ -1911,5 +1937,89 @@ test_a_tap_on_the_field_turns_a_switch_and_opens_a_furnace :: proc(t: ^testing.T
 			testing.expect(t, .Open_Machine in events)
 			testing.expect_value(t, simulation.players[0].open_machine, furnace)
 		}
+	}
+}
+
+// The placement editor's touch buttons (0215): the Tools button outside
+// the mode, the grid in it, each pressing the gamepad control the shipped
+// bindings give its action.
+@(test)
+test_the_placement_touch_buttons_press_the_editor_actions :: proc(t: ^testing.T) {
+	testing.expect_value(t, hud_touch_buttons_shown(false, false), bit_set[Hud_Touch_Button]{.Inventory, .Map, .Pause, .Tools})
+	testing.expect_value(t, hud_touch_buttons_shown(true, false), bit_set[Hud_Touch_Button]{.Inventory, .Map, .Pause, .Tools, .Rotate})
+	testing.expect_value(t, hud_touch_buttons_shown(true, true), bit_set[Hud_Touch_Button]{.Inventory, .Map, .Pause, .Rotate, .Nudge_Away, .Nudge_Towards, .Nudge_Left, .Nudge_Right, .Commit, .Cancel})
+	bindings := shipped_default_bindings(t)
+	buttons := [?]Hud_Touch_Button{.Nudge_Away, .Nudge_Towards, .Nudge_Left, .Nudge_Right, .Tools}
+	expected := [?]sdl.GamepadButton{.DPAD_UP, .DPAD_DOWN, .DPAD_LEFT, .DPAD_RIGHT, .DPAD_UP}
+	for button, index in buttons {
+		control, found := touch_control_for_action(bindings, hud_touch_button_actions[button], .Raylib)
+		testing.expectf(t, found && !control.is_trigger && control.button == expected[index], "%v: %v", button, control)
+	}
+	commit, commit_found := touch_control_for_action(bindings, hud_touch_button_actions[.Commit], .Raylib)
+	testing.expect(t, commit_found && commit.is_trigger && commit.trigger == .Left)
+	cancel, cancel_found := touch_control_for_action(bindings, hud_touch_button_actions[.Cancel], .Raylib)
+	testing.expect(t, cancel_found && cancel.is_trigger && cancel.trigger == .Right)
+}
+
+@(test)
+test_the_tools_button_drag_steers_the_radial :: proc(t: ^testing.T) {
+	layout := shipped_touch_overlay(t)
+	inputs := phone_hud_inputs(t, {.Inventory, .Map, .Pause, .Tools})
+	inputs.hud_buttons[.Tools].steers = true
+	tools := rectangle_centre(inputs.hud_buttons[.Tools].rectangle)
+	state: Touch_Overlay_State
+	hotbar_frame(&state, layout, {{id = 0, position = tools}}, inputs)
+	frame := hotbar_frame(&state, layout, {{id = 0, position = tools + {60, 0}}}, inputs)
+	testing.expect(t, frame.output.buttons[int(sdl.GamepadButton.DPAD_UP)])
+	expect_near(t, frame.output.look_delta, {60, 0})
+	hotbar_frame(&state, layout, {}, inputs)
+	map_point := rectangle_centre(inputs.hud_buttons[.Map].rectangle)
+	other: Touch_Overlay_State
+	hotbar_frame(&other, layout, {{id = 1, position = map_point}}, inputs)
+	frame = hotbar_frame(&other, layout, {{id = 1, position = map_point + {60, 0}}}, inputs)
+	testing.expect(t, frame.output.buttons[int(sdl.GamepadButton.BACK)])
+	testing.expect_value(t, frame.output.look_delta, [2]f32{})
+}
+
+// A frame of fingers through the whole overlay frame, which reads the
+// interaction frame's placement_editing.
+editing_touch_frame :: proc(state: ^Touch_Overlay_State, layout: Touch_Overlay_Layout, points: []Touch_Point, inputs: Touch_Interaction_Frame) -> Touch_Overlay_Output {
+	return touch_overlay_frame(state, layout, points, PHONE_SCREEN, true, inputs).output
+}
+
+@(test)
+test_taps_and_holds_press_nothing_while_the_placement_editor_runs :: proc(t: ^testing.T) {
+	layout := shipped_touch_overlay(t)
+	for editing in ([?]bool{true, false}) {
+		inputs := TAP_TOUCH
+		inputs.placement_editing = editing
+		// A tap on the free screen: its aim and its press.
+		state: Touch_Overlay_State
+		editing_touch_frame(&state, layout, {{id = 0, position = TAP_POINT}}, inputs)
+		pressed, aimed := false, false
+		for _ in 0 ..< 3 {
+			output := editing_touch_frame(&state, layout, {}, inputs)
+			pressed = pressed || output.triggers[.Left] || output.buttons[int(sdl.GamepadButton.SOUTH)]
+			aimed = aimed || output.aims
+		}
+		testing.expectf(t, pressed == !editing && aimed == !editing, "editing %v: the tap pressed %v, aimed %v", editing, pressed, aimed)
+		// A hold.
+		resting := inputs
+		resting.frame_seconds = 0.1
+		hold: Touch_Overlay_State
+		output: Touch_Overlay_Output
+		for _ in 0 ..< 4 {
+			output = editing_touch_frame(&hold, layout, {{id = 0, position = TAP_POINT}}, resting)
+		}
+		testing.expect_value(t, slot_by_id(hold, 0).role, Touch_Role.Hold)
+		testing.expectf(t, output.triggers[.Right] == !editing, "editing %v: the hold mines %v", editing, output.triggers[.Right])
+		// A tap in the jump zone still jumps.
+		jump: Touch_Overlay_State
+		editing_touch_frame(&jump, layout, {{id = 0, position = {PHONE_SCREEN.x * 0.8, 500}}}, inputs)
+		jumped := false
+		for _ in 0 ..< 3 {
+			jumped = jumped || editing_touch_frame(&jump, layout, {}, inputs).jump_tap
+		}
+		testing.expectf(t, jumped, "editing %v: the jump tap jumps", editing)
 	}
 }

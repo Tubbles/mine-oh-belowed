@@ -91,6 +91,10 @@ Glyph_Button :: enum u8 {
 	Drop,
 	// The world's Mine control: a frame cell's pick up (0195).
 	Mine,
+	// The placement editor (0215): Rotate_Building, and the nudge, whose
+	// first gamepad control is D-pad Up and key Up.
+	Rotate,
+	Nudge,
 }
 
 Glyph_Hint :: struct {
@@ -903,6 +907,8 @@ glyph_button_actions := [Glyph_Button]Action {
 	.Quick_Move     = .Menu_Quick_Move,
 	.Drop           = .Menu_Drop,
 	.Mine           = .Mine,
+	.Rotate         = .Rotate_Building,
+	.Nudge          = .Placement_Nudge_Away,
 }
 
 // The action whose control a glyph shows first. On the keyboard Back shows
@@ -1441,7 +1447,7 @@ advance_radial :: proc(radial: Radial_State, touching: bool, position: [2]f32, s
 		result = Radial_State{open = true, highlight = -1}
 	}
 	slot, in_centre := radial_slot_from_touchpad(position.x, position.y, slot_count)
-	if source == .Touchpad || !in_centre {
+	if source == .Touchpad || source == .Held_Steered || !in_centre {
 		result.highlight = slot
 	}
 	return result, Radial_Result{selected = -1}
@@ -1457,6 +1463,8 @@ radial_input :: proc(input: Ui_Input, source: Radial_Source) -> (touching: bool,
 		return offset.x * offset.x + offset.y * offset.y > RADIAL_CENTER_RADIUS * RADIAL_CENTER_RADIUS, position
 	case .Held_Button:
 		return input.hotbar_radial_down, stick_to_pad_position(input.right_stick)
+	case .Held_Steered:
+		return input.tools_radial_down, stick_to_pad_position(input.right_stick)
 	}
 	return false, {}
 }

@@ -35,6 +35,9 @@ Viewport_Interaction :: struct {
 	haptic:             Haptic_Request,
 	// World actions still held since a screen closed, see update_world_action_guard.
 	world_action_guard: Action_Set,
+	// The player's placement editor (0215, ui_placement_editor.odin):
+	// per local player, never saved.
+	placement_editor:   Placement_Editor,
 	ui:                 Ui_State,
 	// The player's browsers, statistics and map (ui_session_views.odin),
 	// made with the session or the viewport and destroyed with either.

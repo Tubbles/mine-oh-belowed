@@ -859,3 +859,40 @@ test_the_screens_are_held_during_the_fall :: proc(t: ^testing.T) {
 	arrival_screen_frame(audit, &state, {open_inventory = true}, false)
 	testing.expect_value(t, top_screen(state.screens), Screen.Inventory)
 }
+
+// A pause menu frame of the audit's site with the viewport's placement
+// editor (0215).
+placement_pause_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, input: Ui_Input, editor: ^Placement_Editor) {
+	ui_begin(state, input, {1920, 1080}, 1.0 / 60, 1, 1, ui_accessibility(audit.settings))
+	screen_context := audit_screen_context(audit)
+	screen_context.placement_editor = editor
+	run_screens(state, screen_context)
+	ui_resolve(state)
+}
+
+// While the placement editor is anchored the pause menu offers Cancel
+// placement, which cancels it and closes the menu; not otherwise.
+@(test)
+test_the_pause_menu_offers_cancel_placement_while_the_editor_runs :: proc(t: ^testing.T) {
+	audit := make_ui_audit()
+	defer destroy_ui_audit(audit)
+	state := Ui_State{theme = audit.theme}
+	defer destroy_ui_state(&state)
+	cancel := pause_button_id("pause_cancel_placement")
+	push_screen(&state.screens, .Pause)
+	placement_pause_frame(audit, &state, {}, nil)
+	testing.expect(t, widget_index(state.widgets[:], cancel) < 0, "no Cancel placement without an editor")
+	editor := Placement_Editor{on = true}
+	placement_pause_frame(audit, &state, {}, &editor)
+	testing.expect(t, widget_index(state.widgets[:], cancel) < 0, "no Cancel placement unanchored")
+	editor.anchored = true
+	placement_pause_frame(audit, &state, {}, &editor)
+	testing.expect(t, widget_index(state.widgets[:], cancel) >= 0, "Cancel placement while anchored")
+	state.requested_focus = cancel
+	placement_pause_frame(audit, &state, {device = .Gamepad, device_seen = true}, &editor)
+	testing.expect_value(t, state.focus, cancel)
+	placement_pause_frame(audit, &state, {confirm = true, confirm_down = true, device = .Gamepad, device_seen = true}, &editor)
+	testing.expect_value(t, state.screens.count, 0)
+	testing.expect(t, !editor.anchored)
+	testing.expect(t, editor.on)
+}

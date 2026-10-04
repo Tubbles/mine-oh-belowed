@@ -1097,10 +1097,10 @@ test_a_field_walk_counts_and_a_flight_does_not :: proc(t: ^testing.T) {
 // Place with a stone furnace held over the bare ground in front of the
 // pod (0201): the tool line says what bare_ground_line reads there, and
 // Place either stands the furnace on a new frame of its own with no
-// foundation or raises one Too_Steep event and places nothing, as the
-// ghost's refusal says.
+// foundation, its footprint centred on cell (0, 0, 0) (0215), or raises
+// one Too_Steep event and places nothing, as the ghost's refusal says.
 @(test)
-test_a_machine_placed_on_bare_ground_stands_or_is_too_steep :: proc(t: ^testing.T) {
+test_a_machine_on_bare_ground_stands_centred_on_its_frame :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
 	session := start_field_test_session(config, content)
@@ -1119,12 +1119,17 @@ test_a_machine_placed_on_bare_ground_stands_or_is_too_steep :: proc(t: ^testing.
 	tick_field_test_simulation(state, simulation_content, Input_Frame{look_delta = {0, 300}})
 	testing.expect_value(t, player.field.tool, Field_Held_Tool.Machine)
 	testing.expect(t, player.field.target.hit && !player.field.frame_target.hit, "the ground is aimed at")
-	placement, bare := field_bare_ground_placement(player.field, furnace)
+	placement, bare := field_bare_ground_placement(player.field, furnace, simulation_content.machines)
 	testing.expect(t, bare)
+	testing.expect_value(t, placement.cell, World_Coordinate{-4, 0, -4})
 	reading := bare_ground_line(state, simulation_content, player.field)
 	testing.expect(t, reading != .None, "a furnace does not stand on the ground for good")
 	refusal := field_placement_refusal(state, simulation_content, player^, placement)
 	testing.expect_value(t, refusal == .Too_Steep, reading == .Too_Steep)
+	frame, cell, _ := field_placement_frame(&state.world.entities.frames, placement, simulation_content.field.foundation_pitch_millimetres)
+	size := rotated_footprint_size(simulation_content.machines.machines[furnace].footprint, placement.rotation)
+	flat := bare_ground_is_flat(&state.field.world, state.field.spacing_millimetres, frame, size, simulation_content.field.bare_ground.flatness_millimetres, cell)
+	testing.expect_value(t, flat, refusal != .Too_Steep)
 	line, shown := field_tool_line(player.field, simulation_content, reading)
 	testing.expect(t, shown)
 	expected := reading == .Too_Steep ? text("field_refused_too_steep") : bare_ground_wear_line(config.bare_ground_life_minutes)
@@ -1143,6 +1148,7 @@ test_a_machine_placed_on_bare_ground_stands_or_is_too_steep :: proc(t: ^testing.
 	placed := state.world.entities.frames.frames[frames_before]
 	common := entity_common(&state.world.entities, entity_at(&state.world.entities, {}, placed.id))
 	testing.expect(t, common != nil && common.machine == furnace && !common.founded, "the furnace stands unfounded on its own frame")
+	testing.expect_value(t, common.origin, World_Coordinate{-4, 0, -4})
 }
 
 // The pure rule: told when new against the last tick or on a press.

@@ -145,3 +145,7 @@ The work the switch left that an agent would do anyway became work items on 2026
 
 - Builds and test runs load every core of the couch machine while the user plays (asked 2026-10-03). This session pinned itself to cores 4 to 7 at nice 10 by hand, which does not survive the session. `build.sh` could pin and renice itself whenever a game process runs on the machine (a `pgrep` of the play build and of `build/mine-oh-belowed`), with a flag to turn it off. Decide whether the user wants that, or a build cores variable they set in the shell instead.
 - A headless game under Xvfb opens the system's gamepads through SDL and takes the user's Steam Controller while they play (seen 2026-10-03, headless 0187 shots). A `--no-gamepad` flag (or the SDL joystick device hint set empty in `tools/moc`'s recipe) would keep the assistant's games off the controller. Decide the form; the dev flag is the smallest.
+
+## Suggestions from the placement editor (0215, 2026-10-04)
+
+- The tools radial's steer adds up the whole look delta since it opened, the gyro's included, and never decays (`tools_radial` in `hud.odin`); the dead centre is 45 px of gathered look. With gyro look on, tilting the controller while D-pad Up is held can carry the highlight off the centre, so a release meant to cancel selects an entry. Try it on the couch before deciding whether the gyro's delta should be left out of the steer or the steer should decay while the stick rests.

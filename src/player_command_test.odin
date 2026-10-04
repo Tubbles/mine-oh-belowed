@@ -221,3 +221,38 @@ test_a_command_with_an_unknown_index_is_refused :: proc(t: ^testing.T) {
 	testing.expect_value(t, simulation.players[0].selected_hotbar_slot, 4)
 	testing.expect(t, len(simulation.events) > events)
 }
+
+// The placement editor's commit (0215) survives the wire, is refused for
+// an index, a rotation, a normal or a run the build cannot take, and is
+// refused in a block world.
+@(test)
+test_a_machine_placement_command_round_trips_and_is_validated :: proc(t: ^testing.T) {
+	content := Simulation_Content{machines = make_test_machines()}
+	furnace := test_machine(content.machines, "stone_furnace")
+	command := Machine_Placement_Command{machine = furnace, rotation = 3, new_frame = true, frame = Frame_Id(7), cell = {-4, 0, -4}, normal = {0, 1, 0}, hit = {1, 2, 3}, heading = {UNIT_VECTOR_ONE, 0, 0}}
+	bytes := make([dynamic]byte, context.temp_allocator)
+	encode_player_command(&bytes, command)
+	reader := Byte_Reader{data = bytes[:]}
+	decoded, ok := decode_player_command(&reader)
+	testing.expect(t, ok)
+	testing.expect_value(t, decoded.(Machine_Placement_Command), command)
+	testing.expect(t, player_command_valid(command, content))
+	past := command
+	past.machine = Machine_Id(len(content.machines.machines))
+	testing.expect(t, !player_command_valid(past, content))
+	turned := command
+	turned.rotation = 4
+	testing.expect(t, !player_command_valid(turned, content))
+	slanted := command
+	slanted.normal = {1, 1, 0}
+	testing.expect(t, !player_command_valid(slanted, content))
+	belt := command
+	belt.machine = find_machine_of_kind(content.machines, .Belt)
+	testing.expect(t, !player_command_valid(belt, content))
+	state: Simulation_State
+	defer destroy_simulation(&state)
+	append(&state.players, make_player(Player_Start{}))
+	apply_player_command(&state, content, {player = 0, command = command})
+	testing.expect_value(t, len(state.events), 1)
+	testing.expect_value(t, state.events[0].kind, Player_Event.Action_Refused)
+}

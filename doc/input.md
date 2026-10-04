@@ -127,10 +127,10 @@ Rule: every action a control triggers is a line in `data/bindings.sjson` (0025);
 | B | Sneak | Back |
 | X | Open_Inventory (opens the aimed machine's panel, else the inventory) | Context action (sort, craft five) |
 | Y | Rotate_Building | Info panel |
-| D-pad | Left, right: hotbar previous and next. Up: Pipette. Down: Drop_Stack | Focus navigation |
+| D-pad | Left, right: hotbar previous and next. Up: the tools radial held, Pipette tapped. Down: Drop_Stack. In the placement editor the four nudges | Focus navigation |
 | L1, R1 | Hotbar previous and next | Tab previous and next |
 | L4, R4 | Jump and Interact, Sneak | Confirm, Back |
-| L5, R5 | Rotate_Building, Pipette | Info panel, navigate up |
+| L5, R5 | Rotate_Building, the tools radial (Pipette) | Info panel, navigate up |
 | View (`BACK`) | Open_Map | Open_Map |
 | Menu (`START`) | Pause | Pause, which acts as Back over a screen |
 
@@ -138,7 +138,35 @@ The bindings name SDL's buttons, not the physical ones, and the game swaps nothi
 
 ### Keyboard and mouse
 
-`data/bindings.sjson` lists every key; WASD and the mouse's look are not bindings. Keys 1 to 8 select hotbar slots (9 and 0 are free); F3 to F9 are developer keys (F8 only in developer mode). F7 drops an iron plate on the targeted belt. In menus Backspace is Back, Enter Confirm, Q and E the tabs; Q also quick moves, and the inventory and machine panels take the quick move over the tab step, while E closes the inventory tab strip. Left Control held with a click quick moves (`Menu_Quick_Move_Modifier`). The statistics (N), the bottleneck overlay (O), the recipe browser (C) and the journal (J) have no direct gamepad button; the pause menu and the inventory tab strip reach them.
+`data/bindings.sjson` lists every key; WASD and the mouse's look are not bindings. Keys 1 to 8 select hotbar slots (9 and 0 are free); F3 to F9 are developer keys (F8 only in developer mode). F7 drops an iron plate on the targeted belt. In menus Backspace is Back, Enter Confirm, Q and E the tabs; Q also quick moves, and the inventory and machine panels take the quick move over the tab step, while E closes the inventory tab strip. Left Control held with a click quick moves (`Menu_Quick_Move_Modifier`). The statistics (N), the bottleneck overlay (O), the recipe browser (C) and the journal (J) have no direct gamepad button; the pause menu and the inventory tab strip reach them. Q and the middle mouse button hold the tools radial (Pipette tapped); the arrows nudge in the placement editor and navigate in menus.
+
+### The placement editor
+
+A machine wider, deeper or higher than `direct_placement_limit` ([content.md](content.md), Foundations; 2 by 2 by 3 shipped) is placed through the editor while it is on (0215, `ui_placement_editor.odin`). The editor is per local player, off at a session's start, never saved, hashed or sent. Its modes:
+
+- **World, the tools radial held.** Hold Pipette's control (D-pad Up or R5, Q, the middle mouse button, the touch Tools button): the radial shows (Pipette at the top, Placement editor with its state at the bottom, `tools_radial` in `hud.odin`); the look input steers. A tap, released before `TOOLS_RADIAL_SHOW_SECONDS` (0.2 s) with nothing highlighted, is Pipette, which reaches the world as one press on the release (`tools_radial_world_frame`), never on the press; once the radial has shown, release on an entry selects it and release in the dead centre selects nothing. The right stick past 0.3 steers directly; otherwise the frame's look pixels (the mouse, the right trackpad, the gyro, the Tools button's own drag) gather into a steer clamped to 150 window pixels, so a short flick reaches an entry and the steer stays while the button is held. While it is open the world gets no Look. Not while the hotbar radial is open or the editor is anchored.
+- **World, the editor on, a large machine held.** Every control keeps its meaning; the ghost is a flat outline of the footprint centred on the aimed cell with an arrow for the front, white, red where the placement would be refused, and Place (with Use_Item, which shares L2) anchors instead of placing. Place on a red outline is refused with the reason toasted.
+- **The editor mode** (after the anchor): the ghost stays anchored as the machine's model while the player walks round it.
+
+| Control | In the editor |
+| --- | --- |
+| Left stick, right stick, gyro, trackpads | Move, Look, as in the world (walk round the ghost) |
+| A | Jump |
+| B | Sneak |
+| Left stick click | Sprint |
+| D-pad Up, Down | Nudge the ghost one cell away from and towards the player, along the frame axis nearest the player's facing |
+| D-pad Left, Right | Nudge the ghost one cell across |
+| Y (Rotate_Building), L5 | Rotate the ghost 90 degrees about its centre |
+| L2 (Place) | Commit |
+| R2 (Mine) | Cancel: the world's build and remove pair becomes the editor's yes and no |
+| L1, R1 | Hotbar previous and next, which cancels the editor (the held machine changes) |
+| X (Open_Inventory) | Opens the inventory as in the world; the ghost stays anchored and the editor resumes when the screen closes |
+| Menu (Pause) | The pause menu, with a `Cancel placement` row while the editor runs |
+| View (Open_Map) | The map, as in the world |
+| Keyboard and mouse | Arrows nudge, R rotates, right click commits, left click cancels, Escape opens the pause menu with its row |
+| Touch | The HUD's editor buttons: the four nudges, commit and cancel, with Rotate in the row ([touch_overlay.md](touch_overlay.md)) |
+
+The nudge actions (`Placement_Nudge_Away`, `_Towards`, `_Left`, `_Right`, on the D-pad and the arrows) never reach the simulation: the world frame always drops them (`placement_editor_world_frame`), so outside the mode the D-pad keeps its world meanings. In the mode the world frame also drops Place, Use_Item, Mine, Rotate_Building, Pipette, Drop_Stack and Interact (A is Jump alone), and Hotbar_Previous or Hotbar_Next only while the D-pad's Left or Right nudge is held in that frame, so L1, R1, the wheel, `[`, `]` and the number keys still change the slot and cancel. Away is the frame's horizontal axis nearest the player's heading, Left and Right the other one signed by the player's right; the frame's up is never a nudge axis. On bare ground a nudge re-stands the machine's new frame on the ground under the moved centre (no ground in reach leaves it and toasts Too steep). Every change re-runs the placement's refusal and re-tints the ghost. Commit on a white ghost queues one `Machine_Placement_Command` ([architecture.md](architecture.md), Placement on frames); on a red one it is refused with a toast. After a commit Place, and after a cancel Mine, stay hidden from the world until released (`Placement_Editor.guard`), so a held R2 after Cancel does not start a pick up. Changing the held slot or losing the held machine cancels too.
 
 ## Hold or toggle
 
@@ -148,6 +176,8 @@ The Accessibility tab's Sneak and Sprint rows (`settings.sneak_hold`, `settings.
 | --- | --- | --- | --- |
 | Sneak | Hold | Sneaks while held | A press starts, the next stops; it lasts through open screens |
 | Sprint | Toggle | Sprints while held and moving | A press while moving sprints until movement stops or the next press |
+
+The tools radial (0215) is hold only; the two settings do not touch it.
 
 `Sprint_Hold` (Left Shift) sprints while held whatever the Sprint setting. `update_sneaking` and `update_sprinting` read the choice from the frame. The player's `Player.sneaking` is the truth, and the rest of the tick sees Sneak pressed exactly while it is set (`with_sneaking`), so a toggled sneak while flying keeps descending until toggled off.
 

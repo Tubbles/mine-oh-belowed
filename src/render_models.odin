@@ -1,6 +1,7 @@
 package game
 
 import rl "shared:raylib"
+import "shared:raylib/rlgl"
 import "platform"
 
 // Machine models on the GPU (work items 0055 and 0056): per machine that
@@ -224,6 +225,26 @@ draw_ghost_model :: proc(renderer: Model_Renderer, machines: Machine_Registry, p
 	draw_model_layers_colored(renderer, model.body, body, colors)
 	part := body * motion_transform(machine.motion, machine.footprint, 0)
 	draw_model_layers_colored(renderer, model.part, part, colors)
+	return true
+}
+
+// The placement editor's anchored ghost (0215): the machine's model on
+// its frame, the part at rest, tinted with the ghost colour and drawn
+// without writing depth, so its far side shows through its near side.
+// False for an arm machine or one without a model, so the caller draws
+// the boxes.
+draw_frame_ghost_model :: proc(renderer: Model_Renderer, machines: Machine_Registry, frame: Frame, machine: Machine_Id, origin: World_Coordinate, rotation: u8, tint: rl.Color) -> bool {
+	if _, arm := machine_arm_model(renderer, machine); arm {
+		return false
+	}
+	model := machine_model(renderer, machine) or_return
+	definition := machines.machines[machine]
+	colors := ghost_layer_colors(tint)
+	body := frame_render_matrix(frame) * model_transform(origin, rotated_footprint_size(definition.footprint, rotation), rotation)
+	rlgl.DisableDepthMask()
+	defer rlgl.EnableDepthMask()
+	draw_model_layers_colored(renderer, model.body, body, colors)
+	draw_model_layers_colored(renderer, model.part, body * motion_transform(definition.motion, definition.footprint, 0), colors)
 	return true
 }
 

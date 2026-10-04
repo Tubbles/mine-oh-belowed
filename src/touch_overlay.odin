@@ -241,8 +241,10 @@ Touch_Slot :: struct {
 	// button, so its lift starts no double tap.
 	toggle_spent:   bool,
 	// A Hud_Button touch's control, the one bound to its button's action
-	// when it landed.
+	// when it landed, and whether its drag steers (the Tools button's
+	// radial, 0215).
 	hud_control:    Touch_Overlay_Control,
+	hud_steers:     bool,
 }
 
 // The last lift of a double_tap_toggles button and the frame time since.
@@ -309,14 +311,19 @@ Touch_Interaction_Frame :: struct {
 	double_tap_latches:       bool,
 	// The HUD's touch buttons beside the hotbar (0134), in render pixels.
 	hud_buttons:              [Hud_Touch_Button]Touch_Hud_Button,
+	// The placement editor is anchored (0215): the free screen's taps and
+	// holds press nothing.
+	placement_editing:        bool,
 }
 
 // A HUD touch button as the overlay hit tests it: shown while the HUD
-// draws it and a gamepad control is bound to its action.
+// draws it and a gamepad control is bound to its action. steers: its
+// finger's drag is look (the Tools button steering the radial, 0215).
 Touch_Hud_Button :: struct {
 	shown:     bool,
 	rectangle: Ui_Rectangle,
 	control:   Touch_Overlay_Control,
+	steers:    bool,
 }
 
 // What the fingers hold this frame. buttons by SDL button index; stick in
@@ -1136,42 +1143,43 @@ placed_for_screen :: proc(layout: Touch_Overlay_Layout, placed: []Placed_Element
 // stick's base is the stick. Every other finger is undecided (Pending,
 // reading the look element's controls) on either half (0134); a layout
 // without a look keeps the floating stick on its half. hotbar_slot is -1
-// but for Hotbar, hud_control set only for Hud_Button.
-classify_touch :: proc(state: Touch_Overlay_State, layout: Touch_Overlay_Layout, placed: []Placed_Element, point, screen_size: [2]f32, world_shown: bool, inputs: Touch_Interaction_Frame) -> (role: Touch_Role, element: int, hotbar_slot: int, hud_control: Touch_Overlay_Control) {
+// but for Hotbar, hud_control and hud_steers set only for Hud_Button.
+classify_touch :: proc(state: Touch_Overlay_State, layout: Touch_Overlay_Layout, placed: []Placed_Element, point, screen_size: [2]f32, world_shown: bool, inputs: Touch_Interaction_Frame) -> (role: Touch_Role, element: int, hotbar_slot: int, hud_control: Touch_Overlay_Control, hud_steers: bool) {
 	if button := button_at(placed_for_screen(layout, placed, world_shown, context.temp_allocator), point); button >= 0 {
-		return .Button, button, -1, {}
+		return .Button, button, -1, {}, false
 	}
 	if !world_shown {
-		return .Ignored, -1, -1, {}
+		return .Ignored, -1, -1, {}, false
 	}
-	if control, found := hud_touch_button_at(inputs.hud_buttons, point); found {
-		return .Hud_Button, -1, -1, control
+	if control, steers, found := hud_touch_button_at(inputs.hud_buttons, point); found {
+		return .Hud_Button, -1, -1, control, steers
 	}
 	if slot := hotbar_slot_at(inputs.hotbar_slots, point); slot >= 0 {
-		return .Hotbar, -1, slot, {}
+		return .Hotbar, -1, slot, {}, false
 	}
 	stick := zone_element(layout, .Stick, screen_side(point, screen_size))
 	stick_free := stick >= 0 && !stick_held(state)
 	if stick_free && layout.elements[stick].static && stick_reaches(layout, layout.elements[stick], point, screen_size) {
-		return .Stick, stick, -1, {}
+		return .Stick, stick, -1, {}, false
 	}
 	if look := layout_element(layout, .Look); look >= 0 {
-		return .Pending, look, -1, {}
+		return .Pending, look, -1, {}, false
 	}
 	if stick_free && !layout.elements[stick].static {
-		return .Stick, stick, -1, {}
+		return .Stick, stick, -1, {}, false
 	}
-	return .Ignored, -1, -1, {}
+	return .Ignored, -1, -1, {}, false
 }
 
-// The control of the shown HUD touch button under the point.
-hud_touch_button_at :: proc(buttons: [Hud_Touch_Button]Touch_Hud_Button, point: [2]f32) -> (control: Touch_Overlay_Control, found: bool) {
+// The control of the shown HUD touch button under the point, and whether
+// its drag steers.
+hud_touch_button_at :: proc(buttons: [Hud_Touch_Button]Touch_Hud_Button, point: [2]f32) -> (control: Touch_Overlay_Control, steers: bool, found: bool) {
 	for button in buttons {
 		if button.shown && rectangle_contains(button.rectangle, point) {
-			return button.control, true
+			return button.control, button.steers, true
 		}
 	}
-	return {}, false
+	return {}, false, false
 }
 
 // What a Pending finger's drag becomes: the floating stick of the half it
@@ -1475,7 +1483,7 @@ update_touch_overlay :: proc(state: ^Touch_Overlay_State, points: []Touch_Point,
 		if free_index < 0 {
 			return hotbar_tap
 		}
-		role, element, hotbar_slot, hud_control := classify_touch(state^, layout, placed, point.position, screen_size, world_shown, inputs)
+		role, element, hotbar_slot, hud_control, hud_steers := classify_touch(state^, layout, placed, point.position, screen_size, world_shown, inputs)
 		origin := touch_origin(layout, role, element, point.position, screen_size)
 		toggle_spent: bool
 		if role == .Button && inputs.double_tap_latches {
@@ -1484,7 +1492,7 @@ update_touch_overlay :: proc(state: ^Touch_Overlay_State, points: []Touch_Point,
 		if toggle_spent {
 			state.double_tap = {}
 		}
-		state.slots[free_index] = Touch_Slot{active = true, id = point.id, role = role, element = element, hotbar_slot = hotbar_slot, origin = origin, position = point.position, previous = point.position, toggle_spent = toggle_spent, hud_control = hud_control}
+		state.slots[free_index] = Touch_Slot{active = true, id = point.id, role = role, element = element, hotbar_slot = hotbar_slot, origin = origin, position = point.position, previous = point.position, toggle_spent = toggle_spent, hud_control = hud_control, hud_steers = hud_steers}
 	}
 	return hotbar_tap
 }
@@ -1528,7 +1536,9 @@ touch_overlay_control_down :: proc(output: Touch_Overlay_Output, control: Touch_
 	return control.is_trigger ? output.triggers[control.trigger] : output.buttons[int(control.button)]
 }
 
-add_touch_slot_output :: proc(output: ^Touch_Overlay_Output, slot: Touch_Slot, element: Touch_Overlay_Element, scale: f32, world_shown: bool) {
+// While the placement editor is anchored (0215) a hold presses and aims
+// nothing: a resting thumb would cancel the placement.
+add_touch_slot_output :: proc(output: ^Touch_Overlay_Output, slot: Touch_Slot, element: Touch_Overlay_Element, scale: f32, world_shown: bool, placement_editing := false) {
 	if !world_shown && !(slot.role == .Button && control_serves_screens(element.control)) {
 		return
 	}
@@ -1545,12 +1555,20 @@ add_touch_slot_output :: proc(output: ^Touch_Overlay_Output, slot: Touch_Slot, e
 		output.look_delta += (slot.position - slot.previous) * element.sensitivity
 	case .Pending:
 	case .Hold:
+		if placement_editing {
+			return
+		}
 		press_touch_control(output, element.hold_control)
 		output.aims, output.aim_point = true, slot.position
 	}
 }
 
-add_touch_tap_output :: proc(output: ^Touch_Overlay_Output, tap: Touch_Tap) {
+// While the placement editor is anchored (0215) a tap that does not jump
+// presses and aims nothing: a stray tap would commit the placement.
+add_touch_tap_output :: proc(output: ^Touch_Overlay_Output, tap: Touch_Tap, placement_editing := false) {
+	if placement_editing && !tap.jumps {
+		return
+	}
 	switch tap.phase {
 	case .None:
 		return
@@ -1591,19 +1609,24 @@ touch_slot_reads :: proc(slot: Touch_Slot, layout: Touch_Overlay_Layout) -> bool
 // Start and Back alone while a screen is open, also when held from the
 // world (the press that opened the pause menu). look_delta is in the
 // render pixels the touches come in; the frame converts it
-// (read_touch_overlay_frame).
-touch_overlay_output :: proc(state: Touch_Overlay_State, layout: Touch_Overlay_Layout, screen_size: [2]f32, world_shown: bool) -> Touch_Overlay_Output {
+// (read_touch_overlay_frame). A steering HUD button's drag (the Tools
+// button, 0215) adds to it, which the tools radial steers by while it
+// holds the world's Look off.
+touch_overlay_output :: proc(state: Touch_Overlay_State, layout: Touch_Overlay_Layout, screen_size: [2]f32, world_shown: bool, placement_editing := false) -> Touch_Overlay_Output {
 	output: Touch_Overlay_Output
 	scale := touch_overlay_scale(layout, screen_size)
 	for slot in state.slots {
 		if touch_slot_reads(slot, layout) {
-			add_touch_slot_output(&output, slot, layout.elements[slot.element], scale, world_shown)
+			add_touch_slot_output(&output, slot, layout.elements[slot.element], scale, world_shown, placement_editing)
 		}
 		if world_shown && slot.active && slot.role == .Hotbar && slot.hotbar_drops {
 			press_touch_control(&output, layout.hotbar_drop_control)
 		}
 		if world_shown && slot.active && slot.role == .Hud_Button {
 			press_touch_control(&output, slot.hud_control)
+			if slot.hud_steers {
+				output.look_delta += slot.position - slot.previous
+			}
 		}
 	}
 	for element in state.latched {
@@ -1612,7 +1635,7 @@ touch_overlay_output :: proc(state: Touch_Overlay_State, layout: Touch_Overlay_L
 		}
 	}
 	if world_shown {
-		add_touch_tap_output(&output, state.tap)
+		add_touch_tap_output(&output, state.tap, placement_editing)
 	}
 	return output
 }
@@ -1773,6 +1796,9 @@ Touch_Overlay_Context :: struct {
 	frame_tick_count: int,
 	// The session's local player (lockstep.odin).
 	local_player:     int,
+	// The first viewport's placement editor is anchored (0215): the HUD
+	// shows its grid and the free screen's taps and holds press nothing.
+	placement_editing: bool,
 }
 
 // The tap scheme hides the crosshair and rings the mined block instead
@@ -1834,6 +1860,7 @@ touch_interaction_frame :: proc(touch_context: Touch_Overlay_Context) -> Touch_I
 		selected_hotbar_slot = selected,
 		double_tap_latches = touch_context.settings.sneak_hold == .Hold,
 		hud_buttons = frame_hud_touch_buttons(touch_context),
+		placement_editing = touch_context.placement_editing,
 	}
 }
 
@@ -1864,7 +1891,7 @@ frame_hud_touch_buttons_shown :: proc(touch_context: Touch_Overlay_Context) -> b
 	player := simulation.players[touch_context.local_player]
 	rotates := selected_placement_rotates(player, content.machines, content.blocks, content.items) || entity_rotates(&simulation.world.entities, player.target.entity)
 	shown: bit_set[Hud_Touch_Button]
-	for button in hud_touch_buttons_shown(rotates) {
+	for button in hud_touch_buttons_shown(rotates, touch_context.placement_editing) {
 		if _, bound := touch_control_for_action(touch_context.interaction.bindings, hud_touch_button_actions[button], touch_context.interaction.input_backend); bound {
 			shown += {button}
 		}
@@ -1878,7 +1905,7 @@ frame_hud_touch_buttons :: proc(touch_context: Touch_Overlay_Context) -> (button
 	rectangles := hud_touch_button_rectangles(ui_safe_area(touch_context.ui))
 	for button in frame_hud_touch_buttons_shown(touch_context) {
 		control, _ := touch_control_for_action(touch_context.interaction.bindings, hud_touch_button_actions[button], touch_context.interaction.input_backend)
-		buttons[button] = Touch_Hud_Button{shown = true, rectangle = units_to_pixels_rectangle(rectangles[button], touch_context.ui.pixels_per_unit), control = control}
+		buttons[button] = Touch_Hud_Button{shown = true, rectangle = units_to_pixels_rectangle(rectangles[button], touch_context.ui.pixels_per_unit), control = control, steers = button == .Tools}
 	}
 	return buttons
 }
@@ -1955,7 +1982,7 @@ touch_overlay_frame :: proc(state: ^Touch_Overlay_State, layout: Touch_Overlay_L
 	return Touch_Overlay_Frame {
 		active = true,
 		world_shown = world_shown,
-		output = touch_scheme_output(touch_overlay_output(state^, layout, screen_size, world_shown), inputs.interaction),
+		output = touch_scheme_output(touch_overlay_output(state^, layout, screen_size, world_shown, inputs.placement_editing), inputs.interaction),
 		pointer_claimed = len(points) > 0 && touch_claims_pointer(state^, layout, points[0].id),
 		hotbar_tap = hotbar_tap,
 	}

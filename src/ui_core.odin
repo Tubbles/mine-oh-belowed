@@ -132,6 +132,12 @@ Ui_Input :: struct {
 	confirm_down:   bool,
 	// Held, not an edge: the keyboard radial shows while Tab is down.
 	hotbar_radial_down: bool,
+	// Held, not an edge: Pipette's controls hold the tools radial (0215).
+	tools_radial_down: bool,
+	// The frame's pointer style look in window pixels (mouse, right
+	// trackpad, gyro, the touch Tools button's drag), y down: steers the
+	// tools radial.
+	look_delta:     [2]f32,
 	mouse_position: [2]f32,
 	mouse_moved:    bool,
 	mouse_pressed:  bool,
@@ -341,6 +347,9 @@ Radial_Source :: enum u8 {
 	// Shown while a button is held, the right stick moves the highlight,
 	// releasing the button selects.
 	Held_Button,
+	// Shown while a button is held, the look input steers, the dead
+	// centre clears the highlight (the tools radial, 0215).
+	Held_Steered,
 }
 
 // Width in UI units of a text at a size in UI units, measured with the
@@ -430,6 +439,8 @@ Ui_State :: struct {
 	tooltip_open:     bool,
 	screens:          Screen_Stack,
 	radial:           Radial_State,
+	// The tools radial on Pipette's controls (0215, hud.odin).
+	tools_radial:     Tools_Radial_State,
 	// The on-screen keyboard. While it is open, B, X and Y belong to it.
 	keyboard:         Keyboard_State,
 	// A text field opens the system keyboard (open_keyboard, work item

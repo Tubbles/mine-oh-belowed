@@ -98,6 +98,12 @@ Action :: enum u8 {
 	Toggle_No_Clip,
 	// F8, in developer mode: reload the content tables (work item 0054).
 	Reload_Data,
+	// The placement editor's nudges (0215): the D-pad and the arrows;
+	// they never reach the simulation (placement_editor_world_frame).
+	Placement_Nudge_Away,
+	Placement_Nudge_Towards,
+	Placement_Nudge_Left,
+	Placement_Nudge_Right,
 }
 
 Action_Set :: bit_set[Action]
@@ -293,6 +299,10 @@ sdl3_look_delta :: proc(previous, current: Raw_Gamepad, frame_seconds: f32, sett
 // world gets none of these; the menu meanings of the same buttons belong to
 // the UI.
 WORLD_ACTIONS :: Action_Set {
+	.Placement_Nudge_Away,
+	.Placement_Nudge_Towards,
+	.Placement_Nudge_Left,
+	.Placement_Nudge_Right,
 	.Move,
 	.Look,
 	.Jump,

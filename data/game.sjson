@@ -102,6 +102,12 @@ foundation_pitch_millimetres = 500
 // 4096 cells a block), at most 16 entries.
 foundation_sizes = [1, 2, 5, 10]
 foundation_heights = [1, 2, 5]
+// The largest footprint Place puts down in one press while the placement
+// editor is on (work item 0215, doc/content.md, Foundations): a held
+// machine (or a foundation's block: size, size and height) whose footprint
+// is wider, deeper or higher goes through the editor's outline and anchor.
+// Each 1 to 16.
+direct_placement_limit = {width = 2, depth = 2, height = 3}
 // Free belt and pipe runs between poles (work item 0176, doc/content.md,
 // Belt poles and runs): a run either inclines (its ends more than the
 // level tolerance apart in height, its facings aligned) or turns (level,

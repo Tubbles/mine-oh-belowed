@@ -1,6 +1,6 @@
 # 0215: The placement editor and the tools radial
 
-Status: implementing (2026-10-04, worktree `.claude/worktrees/0215` on `item/0215` from `main`, the specification approved the same day with the decisions below; the user's design after the 10 by 10 by 12 furnace landed (0212): "we need to have placement of such large machines more advanced ... start with only a ghost outline of the footprint ... center on the aimed cell, and as it is placed, the full ghost is shown, and we enter a special control state"; folds 0213)
+Status: verified (2026-10-04, fix round done on item/0215; worktree `.claude/worktrees/0215` on `item/0215` from `main`, the specification approved the same day with the decisions below; the user's design after the 10 by 10 by 12 furnace landed (0212): "we need to have placement of such large machines more advanced ... start with only a ghost outline of the footprint ... center on the aimed cell, and as it is placed, the full ghost is shown, and we enter a special control state"; folds 0213)
 
 ## Goal
 
@@ -303,6 +303,7 @@ New file `src/ui_placement_editor_test.odin` unless named otherwise; the field f
 24. `test_direct_placement_limit_is_range_checked` (`data_load_test.odin`): the shipped config loads with {2, 2, 3}; a width 0 and a height 17 are refused naming `direct_placement_limit.width` and `.height`.
 25. `test_the_machine_front_turns_with_the_rotation` (`render_ghost_test.odin`): `machine_front_direction` for 0 to 3, and it agrees with `model_transform`'s image of +x.
 26. `bindings_test.odin`: the reference tables as in Input.
+27. `test_a_nudge_over_no_ground_keeps_the_ghost_and_toasts_too_steep` (added in the fix round, decision 10): a steel furnace anchored on bare ground a quarter metre from the rim of a 10 m deep pit (`Test_Terrain` Hole), heading into it: Away finds no ground in the probe's reach, so the editor stays anchored with its placement unchanged, the outcome's refusal is Too_Steep and its toast is `field_refused_too_steep`'s text.
 
 ### Docs (same commit, one place per fact)
 

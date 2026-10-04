@@ -410,3 +410,25 @@ test_the_inventory_binding_aimed_at_the_ground_opens_the_inventory :: proc(t: ^t
 	testing.expect_value(t, screens.count, 1)
 	testing.expect_value(t, top_screen(screens), Screen.Inventory)
 }
+
+// The placement editor (0215) is per session: entering one starts it
+// off; in a block world nothing anchors and Place reaches the world.
+@(test)
+test_entering_a_session_turns_the_placement_editor_off :: proc(t: ^testing.T) {
+	state := make_viewport_test_frame()
+	defer destroy_viewport_test_frame(state)
+	viewport := &state.viewports[0]
+	viewport.interaction.placement_editor = Placement_Editor{on = true, anchored = true}
+	leave_session(state)
+	plan := Session_Plan{debug_terrain = true, seed = DEFAULT_WORLD_SEED, settings = default_world_file_settings(state.config)}
+	session, problem := start_session(plan, state.config, state.content, state.base_generator)
+	testing.expect_value(t, problem, "")
+	enter_session(state, session)
+	testing.expect_value(t, viewport.interaction.placement_editor, Placement_Editor{})
+	testing.expect(t, run_viewport_test_frames_until_ready(state, 0))
+	viewport.interaction.placement_editor.anchored = true
+	viewport.interaction.input = Input_Frame{pressed = {.Place}, just_pressed = {.Place}}
+	update_viewport_placement_editor(state, viewport)
+	testing.expect(t, !viewport.interaction.placement_editor.anchored)
+	testing.expect(t, .Place in viewport_world_input(state, viewport^).just_pressed)
+}

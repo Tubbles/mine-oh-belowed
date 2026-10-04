@@ -47,6 +47,7 @@ make_field_content :: proc(config: Game_Config, items: Item_Registry, machines: 
 		foundation_pitch_millimetres = config.foundation_pitch_millimetres,
 		foundation_sizes = config.foundation_sizes,
 		foundation_heights = config.foundation_heights,
+		direct_placement_limit = {i32(config.direct_placement_limit.width), i32(config.direct_placement_limit.height), i32(config.direct_placement_limit.depth)},
 		belt_pole = find_machine_of_kind(machines, .Belt_Pole),
 		run_belt = find_belt_machine(machines, .Flat),
 		run_pipe = find_machine_of_kind(machines, .Pipe),

@@ -121,6 +121,14 @@ Ui_Audit_Case :: struct {
 	notice:       string,
 	// The item the configure pop-up configures (0202).
 	configure_item: Item_Id,
+	// The tools radial held and steered to the placement editor's entry
+	// (0215).
+	tools_radial: bool,
+	// The placement editor's HUD with the stone furnace, refused for the
+	// reason when not None; Anchored points the screen context at an
+	// anchored editor, so the pause menu shows Cancel placement (0215).
+	placement:         Placement_Editor_Mode,
+	placement_refusal: Field_Edit_Refusal,
 }
 
 // Owns everything a Screen_Context points into.
@@ -158,6 +166,8 @@ Ui_Audit :: struct {
 	default_touch_layout: Touch_Overlay_Layout,
 	touch_layouts:        Touch_Layouts,
 	touch_layout_editor:  Touch_Layout_Editor,
+	// The editor the placement cases point the screen context at (0215).
+	placement_editor:   Placement_Editor,
 	frame_arena:        virtual.Arena,
 	reported:           map[string]bool,
 	failures:           int,
@@ -343,9 +353,16 @@ audit_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, size: Ui_Audit_Size, aud
 	state.focus_pulse = device == .Gamepad ? 1 : 0
 	screen_context := audit_screen_context(audit)
 	hud := audit_hud_context(audit)
-	// On touch the HUD's touch buttons (0134), rotate included.
+	// On touch the HUD's touch buttons (0134), rotate included, and the
+	// placement editor's grid while it is anchored (0215).
 	if audit_case.touch {
-		hud.touch_hud_buttons = hud_touch_buttons_shown(true)
+		hud.touch_hud_buttons = hud_touch_buttons_shown(true, audit_case.placement == .Anchored)
+	}
+	if audit_case.placement != .None {
+		furnace, _ := find_machine_id(audit.content.machines, "stone_furnace")
+		hud.placement = Placement_Editor_Hud{mode = audit_case.placement, machine = furnace, refusal = audit_case.placement_refusal}
+		audit.placement_editor = Placement_Editor{on = true, anchored = audit_case.placement == .Anchored, machine = furnace}
+		screen_context.placement_editor = &audit.placement_editor
 	}
 	if audit_case.hud {
 		draw_hud(state, screen_context, hud)
@@ -404,7 +421,8 @@ audit_case_at_size :: proc(audit: ^Ui_Audit, audit_case: Ui_Audit_Case, size: Ui
 		audit_frame(audit, &state, size, audit_case, {tab_next = true}, fmt.tprintf("tab step %d", step + 1))
 	}
 	for _ in 0 ..< UI_AUDIT_SETTLE_FRAMES {
-		audit_frame(audit, &state, size, audit_case, {hotbar_radial_down = audit_case.radial}, "settled")
+		steer := audit_case.tools_radial ? [2]f32{0, TOOLS_RADIAL_STEER_PIXELS} : {}
+		audit_frame(audit, &state, size, audit_case, {hotbar_radial_down = audit_case.radial, tools_radial_down = audit_case.tools_radial, look_delta = steer}, "settled")
 	}
 	if !audit_case.walk_focus {
 		return
@@ -919,6 +937,13 @@ audit_every_case :: proc(audit: ^Ui_Audit) {
 	audit_case(audit, {name = "hud", hud = true, toasts = toasts[:]})
 	audit_crafting_waits_on_a_full_inventory(audit)
 	audit_case(audit, {name = "hud radial", hud = true, radial = true})
+	// The placement editor and the tools radial (0215).
+	audit_case(audit, {name = "hud tools radial", hud = true, tools_radial = true})
+	audit_case(audit, {name = "hud placement outline", hud = true, placement = .Outline})
+	audit_case(audit, {name = "hud placement outline refused", hud = true, placement = .Outline, placement_refusal = .Too_Steep})
+	audit_case(audit, {name = "hud placement editor", hud = true, placement = .Anchored})
+	audit_case(audit, {name = "hud placement editor touch", hud = true, touch = true, placement = .Anchored})
+	audit_case(audit, {name = "pause, placement editor", screens = {.Pause}, placement = .Anchored, walk_focus = true})
 	audit_case(audit, {name = "hud mission control", hud = true, toasts = toasts[:], mission_control = true})
 	// The field's refusals as the HUD toasts them (Field_Refused, 0179).
 	field_refusals := make([dynamic]string, context.temp_allocator)

@@ -45,6 +45,12 @@ bindings = [
 	{action = "Hotbar_Previous" device = "gamepad" control = "LEFT_SHOULDER" context = "world"}
 	{action = "Hotbar_Next" device = "gamepad" control = "DPAD_RIGHT" context = "world"}
 	{action = "Hotbar_Next" device = "gamepad" control = "RIGHT_SHOULDER" context = "world"}
+	// The placement editor's nudges (work item 0215); the D-pad keeps its
+	// world meanings outside the editor.
+	{action = "Placement_Nudge_Away" device = "gamepad" control = "DPAD_UP" context = "world"}
+	{action = "Placement_Nudge_Towards" device = "gamepad" control = "DPAD_DOWN" context = "world"}
+	{action = "Placement_Nudge_Left" device = "gamepad" control = "DPAD_LEFT" context = "world"}
+	{action = "Placement_Nudge_Right" device = "gamepad" control = "DPAD_RIGHT" context = "world"}
 	{action = "Sprint" device = "gamepad" control = "LEFT_STICK" context = "world"}
 	{action = "Open_Map" device = "gamepad" control = "BACK" context = "both"}
 	{action = "Pause" device = "gamepad" control = "START" context = "both"}
@@ -97,6 +103,12 @@ bindings = [
 	{action = "Sprint_Hold" device = "keyboard" control = "LEFT_SHIFT" context = "world"}
 	{action = "Hotbar_Previous" device = "keyboard" control = "LEFT_BRACKET" context = "world"}
 	{action = "Hotbar_Next" device = "keyboard" control = "RIGHT_BRACKET" context = "world"}
+	// The placement editor's nudges (work item 0215); the arrows keep
+	// their menu meanings.
+	{action = "Placement_Nudge_Away" device = "keyboard" control = "UP" context = "world"}
+	{action = "Placement_Nudge_Towards" device = "keyboard" control = "DOWN" context = "world"}
+	{action = "Placement_Nudge_Left" device = "keyboard" control = "LEFT" context = "world"}
+	{action = "Placement_Nudge_Right" device = "keyboard" control = "RIGHT" context = "world"}
 	{action = "Hotbar_Slot_1" device = "keyboard" control = "ONE" context = "world"}
 	{action = "Hotbar_Slot_2" device = "keyboard" control = "TWO" context = "world"}
 	{action = "Hotbar_Slot_3" device = "keyboard" control = "THREE" context = "world"}

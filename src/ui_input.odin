@@ -131,6 +131,8 @@ make_ui_input :: proc(previous, current: Input_Frame) -> Ui_Input {
 		backspace_key = key_newly_pressed(previous.raw.keyboard, current.raw.keyboard, KEY_CODE_BACKSPACE),
 		enter_key = key_newly_pressed(previous.raw.keyboard, current.raw.keyboard, KEY_CODE_ENTER) || key_newly_pressed(previous.raw.keyboard, current.raw.keyboard, KEY_CODE_KEYPAD_ENTER),
 		hotbar_radial_down = .Hotbar_Radial in current.pressed,
+		tools_radial_down = .Pipette in current.pressed,
+		look_delta = current.look_delta,
 		mouse_position = current.raw.mouse.position,
 		mouse_moved = current.raw.mouse.delta != {},
 		mouse_pressed = mouse_down && !previous.raw.mouse.button_down[0],

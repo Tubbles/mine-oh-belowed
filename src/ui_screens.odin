@@ -129,6 +129,10 @@ Screen_Context :: struct {
 	touch_layouts:        ^Touch_Layouts,
 	touch_layout_editor:  ^Touch_Layout_Editor,
 	default_touch_layout: Touch_Overlay_Layout,
+	// The viewport's placement editor (0215, ui_placement_editor.odin):
+	// the tools radial toggles it, the pause menu cancels it. Nil outside
+	// a field and in tests that run none.
+	placement_editor:     ^Placement_Editor,
 }
 
 // What the Developer screen and the two editors read besides the
@@ -344,7 +348,7 @@ pause_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	guest := screen_context.split_screen_guest
 	// During the fall the journal, the power overview and the statistics
 	// rows go (0200), and Skip arrival shows while the fall is skippable.
-	button_count := (developer ? 9 : 8) - (guest ? 1 : 0) - (waiting ? 4 : 0) - (!waiting && screen_context.arrival_falling ? 3 : 0) + (!waiting && screen_context.arrival_skippable ? 1 : 0)
+	button_count := (developer ? 9 : 8) - (guest ? 1 : 0) - (waiting ? 4 : 0) - (!waiting && screen_context.arrival_falling ? 3 : 0) + (!waiting && screen_context.arrival_skippable ? 1 : 0) + (!waiting && placement_editor_running(screen_context) ? 1 : 0)
 	// The title row and the build stamp row besides the buttons; below the
 	// title the rows scroll when the panel is clamped to the safe area.
 	panel := fitted_panel(area, PAUSE_PANEL_WIDTH, panel_height(button_count, 2 * (UI_ROW_HEIGHT + UI_GAP)))
@@ -396,11 +400,26 @@ pause_screen :: proc(state: ^Ui_State, screen_context: Screen_Context) {
 	ui_glyph_bar_or_back_row(state, hints[:])
 }
 
+// The viewport's placement editor is anchored (0215): the pause menu
+// offers Cancel placement, the touch fallback.
+placement_editor_running :: proc(screen_context: Screen_Context) -> bool {
+	return screen_context.placement_editor != nil && screen_context.placement_editor.anchored
+}
+
 // The pause menu's rows that read the player's world: Skip arrival
 // while a new world's fall is skippable, the journal, the power overview
 // and the statistics (none of them during the fall, when only the pause
 // menu opens) and the save.
 pause_world_buttons :: proc(state: ^Ui_State, content: ^Ui_Rectangle, screen_context: Screen_Context) {
+	// The placement editor's way out (0215); the menu closes, as Skip
+	// arrival's does.
+	if placement_editor_running(screen_context) {
+		if ui_button(state, cut_top(content, UI_ROW_HEIGHT), text("pause_cancel_placement")) {
+			cancel_placement_editor(screen_context.placement_editor)
+			state.screens.count = 0
+		}
+		cut_top(content, UI_GAP)
+	}
 	// Any player may end the fall; it ends for all (0200). The menu closes,
 	// so an offline world's ticks run again and apply it.
 	if screen_context.arrival_skippable {

@@ -52,17 +52,18 @@ make_bare_ground_tuning :: proc(config: Game_Config) -> Bare_Ground_Tuning {
 // Placement.
 
 // The surface heights under the corners and the centre of a footprint of
-// size cells at cell (0, 0, 0) of frame lie within the flatness of each
-// other, measured along the frame's up as a straight down ray from above
-// each point (raycast_field), so a sample read is the field's surface as
-// the free foundation's hit is.
-bare_ground_is_flat :: proc(world: ^Field_World, spacing_millimetres: int, frame: Frame, size: [3]i32, flatness_millimetres: int) -> bool {
+// size cells at cell origin of frame (the centred origin of 0215) lie
+// within the flatness of each other, measured along the frame's up as a
+// straight down ray from above each point (raycast_field), so a sample
+// read is the field's surface as the free foundation's hit is.
+bare_ground_is_flat :: proc(world: ^Field_World, spacing_millimetres: int, frame: Frame, size: [3]i32, flatness_millimetres: int, origin: World_Coordinate = {}) -> bool {
 	pitch := frame_pitch_units(frame)
 	width, depth := i64(size.x) * pitch, i64(size.z) * pitch
 	points := [5][2]i64{{0, 0}, {width, 0}, {0, depth}, {width, depth}, {width / 2, depth / 2}}
+	shift := [2]i64{i64(origin.x) * pitch, i64(origin.z) * pitch}
 	lowest, highest := max(i64), min(i64)
 	for point in points {
-		height, found := bare_ground_height(world, spacing_millimetres, frame, point)
+		height, found := bare_ground_height(world, spacing_millimetres, frame, point + shift)
 		if !found {
 			return false
 		}
@@ -93,43 +94,59 @@ bare_ground_placement_refusal :: proc(state: ^Simulation_State, content: Simulat
 	machine := content.machines.machines[placement.machine]
 	size := rotated_footprint_size(machine.footprint, placement.rotation)
 	switch {
-	case !machine.stands_on_ground && !bare_ground_is_flat(&state.field.world, state.field.spacing_millimetres, frame, size, content.field.bare_ground.flatness_millimetres):
+	case !machine.stands_on_ground && !bare_ground_is_flat(&state.field.world, state.field.spacing_millimetres, frame, size, content.field.bare_ground.flatness_millimetres, placement.cell):
 		return .Too_Steep
 	case inventory_count(player.inventory, machine.item) == 0:
 		return .Nothing_Held
 	}
 	if machine.kind == .Drill {
-		if _, found := frame_drill_vein_under(frame, state.world.veins[:], machine, {}, placement.rotation); !found {
+		if _, found := frame_drill_vein_under(frame, state.world.veins[:], machine, placement.cell, placement.rotation); !found {
 			return .No_Vein
 		}
 	}
-	if new_frame_cells_meet_a_frame(&state.world.entities.frames, frame, footprint_cells({}, machine.footprint, placement.rotation)) {
+	if new_frame_cells_meet_a_frame(&state.world.entities.frames, frame, footprint_cells(placement.cell, machine.footprint, placement.rotation)) {
 		return .Frame_Cell_Taken
 	}
-	if placement_cells_meet_a_trunk(state, content, frame, footprint_cells({}, machine.footprint, placement.rotation)) {
+	if placement_cells_meet_a_trunk(state, content, frame, footprint_cells(placement.cell, machine.footprint, placement.rotation)) {
 		return .Tree_In_The_Way
 	}
-	if field_footprint_buries_a_player(state, content, frame, placement, {}) {
+	if field_footprint_buries_a_player(state, content, frame, placement, placement.cell) {
 		return .Would_Bury_Player
 	}
 	return .None
 }
 
 // A placement bare_ground_placement_refusal let through: a new frame
-// standing on the hit (free_frame_at) with the machine at cell (0, 0,
-// 0), a drill tapping the vein under it. The frame goes with its last
+// standing on the hit (free_frame_at) with the machine's footprint
+// centred on cell (0, 0, 0) (its origin placement.cell, 0215), a drill
+// tapping the vein under it. The frame goes with its last
 // entity (release_empty_frame).
 place_on_bare_ground :: proc(state: ^Simulation_State, content: Simulation_Content, placement: Field_Placement) -> Entity_Handle {
 	entities := &state.world.entities
 	pitch := content.field.foundation_pitch_millimetres
 	origin, axes := free_frame_at(placement.hit, placement.heading, pitch)
 	frame := add_frame(&entities.frames, origin, axes, pitch)
-	handle := add_entity(entities, content.machines, placement.machine, {}, placement.rotation, frame)
+	handle := add_entity(entities, content.machines, placement.machine, placement.cell, placement.rotation, frame)
 	if drill := pool_get(&entities.drills, handle); drill != nil {
 		record, _ := find_frame(&entities.frames, frame)
-		drill.vein, _ = frame_drill_vein_under(record, state.world.veins[:], content.machines.machines[placement.machine], {}, placement.rotation)
+		drill.vein, _ = frame_drill_vein_under(record, state.world.veins[:], content.machines.machines[placement.machine], placement.cell, placement.rotation)
 	}
 	return handle
+}
+
+// The ground under the centre of cell (step.x, 0, step.z) of the frame's
+// base plane (the bare ground probe of bare_ground_height), as a world
+// point: where the placement editor's nudge re-stands a machine's new
+// frame (0215). Not found where no ground lies within the probe.
+bare_ground_restand_hit :: proc(world: ^Field_World, spacing_millimetres: int, frame: Frame, step: World_Coordinate) -> (hit: World_Position, found: bool) {
+	pitch := frame_pitch_units(frame)
+	point := [2]i64{i64(step.x) * pitch + pitch / 2, i64(step.z) * pitch + pitch / 2}
+	height: i64
+	if height, found = bare_ground_height(world, spacing_millimetres, frame, point); !found {
+		return {}, false
+	}
+	offset := fixed_scale(frame.axes[FRAME_RIGHT], point[0]) + fixed_scale(frame.axes[FRAME_FORWARD], point[1]) + fixed_scale(frame.axes[FRAME_UP], height)
+	return frame.origin + World_Position(offset), true
 }
 
 // What the tool line says with a machine held over bare ground.
@@ -147,13 +164,13 @@ bare_ground_line :: proc(state: ^Simulation_State, content: Simulation_Content, 
 	if !state.field.enabled {
 		return .None
 	}
-	placement, bare := field_bare_ground_placement(player, field_placed_machine(player, content))
+	placement, bare := field_bare_ground_placement(player, field_placed_machine(player, content), content.machines)
 	if !bare || content.machines.machines[placement.machine].stands_on_ground {
 		return .None
 	}
-	frame, _, _ := field_placement_frame(&state.world.entities.frames, placement, content.field.foundation_pitch_millimetres)
+	frame, cell, _ := field_placement_frame(&state.world.entities.frames, placement, content.field.foundation_pitch_millimetres)
 	size := rotated_footprint_size(content.machines.machines[placement.machine].footprint, placement.rotation)
-	if !bare_ground_is_flat(&state.field.world, state.field.spacing_millimetres, frame, size, content.field.bare_ground.flatness_millimetres) {
+	if !bare_ground_is_flat(&state.field.world, state.field.spacing_millimetres, frame, size, content.field.bare_ground.flatness_millimetres, cell) {
 		return .Too_Steep
 	}
 	return .Wears_Out

@@ -505,7 +505,7 @@ test_an_aimed_foundation_block_rises_from_the_top_face :: proc(t: ^testing.T) {
 	target := player.field.frame_target
 	testing.expect(t, target.hit && target.frame == frame && target.cell == World_Coordinate{}, "the reticle meets the first foundation")
 	testing.expect_value(t, target.adjacent - target.cell, UP)
-	placement, wanted := field_player_placement(player.field, content.field.pad_foundation, content.field)
+	placement, wanted := field_player_placement(player.field, content.field.pad_foundation, content)
 	testing.expect(t, wanted)
 	testing.expect_value(t, placement.normal, UP)
 	tick_field_simulation(&simulation, content, place[:])
@@ -795,4 +795,48 @@ test_a_mixed_frame_holds_all_three_foundations :: proc(t: ^testing.T) {
 	furnace, refusal := place_on_frame(&entities, machines, test_machine(machines, "steel_furnace"), frame, {0, 1, 0}, 0)
 	testing.expect_value(t, refusal, Frame_Placement_Refusal.None)
 	testing.expect(t, machine_is_founded(&entities, machines, entity_common(&entities, furnace)^))
+}
+
+// The centre rule (0215, 0213): the aimed cell is the footprint's centre
+// cell, an even side's on the high side, the height never offset.
+@(test)
+test_a_footprint_centres_on_the_aimed_cell :: proc(t: ^testing.T) {
+	centre := World_Coordinate{5, 0, 5}
+	Case :: struct {
+		footprint: [3]i32,
+		rotation:  u8,
+		origin:    World_Coordinate,
+	}
+	cases := [?]Case {
+		{{1, 1, 1}, 0, {5, 0, 5}},
+		{{2, 2, 2}, 0, {5, 0, 5}},
+		{{3, 2, 3}, 0, {4, 0, 4}},
+		{{5, 1, 5}, 0, {3, 0, 3}},
+		{{10, 12, 10}, 0, {1, 0, 1}},
+		{{3, 2, 2}, 0, {4, 0, 5}},
+		{{3, 2, 2}, 1, {5, 0, 4}},
+	}
+	for test_case in cases {
+		testing.expectf(t, field_footprint_origin(centre, test_case.footprint, test_case.rotation) == test_case.origin, "%v at %d", test_case.footprint, test_case.rotation)
+	}
+}
+
+// Place through the tick, no editor: a 3 by 3 assembler stands centred on
+// the aimed cell, a 2 by 2 furnace and a chest keep their origin there.
+@(test)
+test_a_large_machine_placed_directly_centres_on_the_aimed_cell :: proc(t: ^testing.T) {
+	Case :: struct {
+		machine: string,
+		origin:  World_Coordinate,
+	}
+	cases := [?]Case{{"assembler_1", {2, 1, 2}}, {"steel_furnace", {3, 1, 3}}, {"wooden_chest", {3, 1, 3}}}
+	for test_case in cases {
+		simulation, content, _, frame := make_placement_editor_test(t, test_case.machine, {test_case.machine, 1})
+		defer destroy_simulation(&simulation)
+		place := [1]Field_Player_Input{{held = {.Place}, just_pressed = {.Place}}}
+		tick_field_simulation(&simulation, content, place[:])
+		testing.expectf(t, simulation.players[0].field_refusal == .None, "%s: %v", test_case.machine, simulation.players[0].field_refusal)
+		common := entity_common(&simulation.world.entities, entity_at(&simulation.world.entities, EDITOR_TEST_CENTRE, frame.id))
+		testing.expectf(t, common != nil && common.origin == test_case.origin, "%s stands at %v", test_case.machine, common == nil ? World_Coordinate{} : common.origin)
+	}
 }

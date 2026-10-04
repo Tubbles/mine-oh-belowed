@@ -46,6 +46,8 @@ MAXIMUM_FOUNDATION_PITCH_MILLIMETRES :: 2000
 // (work item 0193): the index a player keeps is a u8.
 MAXIMUM_FOUNDATION_BLOCK_CELLS :: 16
 MAXIMUM_FOUNDATION_BLOCK_CHOICES :: 16
+// Each side of the direct placement limit in cells (work item 0215).
+MAXIMUM_DIRECT_PLACEMENT_LIMIT_CELLS :: 16
 
 Starting_Item :: struct {
 	item:  string,
@@ -78,6 +80,9 @@ Game_Config :: struct {
 	// 0193, entity_frames.odin).
 	foundation_sizes:     []int,
 	foundation_heights:   []int,
+	// The largest footprint Place puts down in one press while the
+	// placement editor is on (work item 0215, ui_placement_editor.odin).
+	direct_placement_limit: Placement_Limit_Config,
 	// The constraints of a belt or pipe run between poles (work item
 	// 0176, belt_run.odin).
 	belt_runs:            Belt_Runs_Config,
@@ -101,6 +106,13 @@ Game_Config :: struct {
 	arrival_start_metres:             int,
 	arrival_angle_degrees:            int,
 	arrival_window_pitch_degrees:     int,
+}
+
+// A footprint in cells: width along the model's x, depth along its z,
+// height (work item 0215). Here rather than Machine_Footprint_Definition,
+// since content may not reference the simulation cluster.
+Placement_Limit_Config :: struct {
+	width, depth, height: int,
 }
 
 // The field's simulated chunk set: every chunk within chunk_radius chunks
@@ -528,6 +540,9 @@ validate_game_config :: proc(config: Game_Config) -> string {
 	if problem := foundation_block_list_problem("foundation_heights", config.foundation_heights); problem != "" {
 		return problem
 	}
+	if problem := direct_placement_limit_problem(config.direct_placement_limit); problem != "" {
+		return problem
+	}
 	if problem := belt_runs_problem(config.belt_runs); problem != "" {
 		return problem
 	}
@@ -541,6 +556,22 @@ validate_game_config :: proc(config: Game_Config) -> string {
 		return problem
 	}
 	return field_player_speed_problem(config.field_player, config.tick_rate)
+}
+
+// Each side of the direct placement limit (0215) from 1 to 16; a missing
+// key reads as zero and fails.
+direct_placement_limit_problem :: proc(limit: Placement_Limit_Config) -> string {
+	bounds := [?]Config_Bound {
+		{"direct_placement_limit.width", limit.width, 1, MAXIMUM_DIRECT_PLACEMENT_LIMIT_CELLS},
+		{"direct_placement_limit.depth", limit.depth, 1, MAXIMUM_DIRECT_PLACEMENT_LIMIT_CELLS},
+		{"direct_placement_limit.height", limit.height, 1, MAXIMUM_DIRECT_PLACEMENT_LIMIT_CELLS},
+	}
+	for bound in bounds {
+		if bound.value < bound.minimum || bound.value > bound.maximum {
+			return fmt.tprintf("%s %d is outside %d to %d", bound.name, bound.value, bound.minimum, bound.maximum)
+		}
+	}
+	return ""
 }
 
 // The bounds of data/game.sjson's bare ground values (bare_ground_problem).

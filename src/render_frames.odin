@@ -90,6 +90,67 @@ frame_ghost_color :: proc(refusal: Field_Edit_Refusal) -> rl.Color {
 	return refusal == .None ? FRAME_GHOST_COLOR : GHOST_INVALID_COLOR
 }
 
+// The placement editor's outline (0215): white, red where the placement
+// would be refused, lifted off the cells' floor so it does not flicker
+// into the ground, its strips this wide and the chevron's length this
+// share of the shorter side. Static: nothing pulses (DESIGN.md, No
+// perceivable repetition).
+PLACEMENT_OUTLINE_COLOR :: rl.Color{240, 240, 240, 220}
+PLACEMENT_OUTLINE_REFUSED_COLOR :: rl.Color{230, 60, 50, 220}
+PLACEMENT_OUTLINE_LIFT_CELLS :: 0.02
+PLACEMENT_OUTLINE_WIDTH_CELLS :: 0.1
+PLACEMENT_OUTLINE_HEIGHT_CELLS :: 0.04
+PLACEMENT_OUTLINE_ARROW_SHARE :: 0.6
+
+placement_outline_color :: proc(refusal: Field_Edit_Refusal) -> rl.Color {
+	return refusal == .None ? PLACEMENT_OUTLINE_COLOR : PLACEMENT_OUTLINE_REFUSED_COLOR
+}
+
+// The model's +x front turned as model_transform turns it.
+machine_front_direction :: proc(rotation: u8) -> [3]f32 {
+	fronts := [4][3]f32{{1, 0, 0}, {0, 0, 1}, {-1, 0, 0}, {0, 0, -1}}
+	return fronts[rotation % 4]
+}
+
+// A chevron scaled about centre.
+scaled_ghost_chevron :: proc(chevron: Ghost_Chevron, centre: [3]f32, scale: f32) -> Ghost_Chevron {
+	result := chevron
+	for &triangle in result {
+		for &corner in triangle {
+			corner = centre + (corner - centre) * scale
+		}
+	}
+	return result
+}
+
+// The flat outline of the rectangle low to high (exclusive) of the
+// frame's cells: four strips just inside its edges on the floor of the
+// low row, and with arrow a chevron along the front, as long as
+// PLACEMENT_OUTLINE_ARROW_SHARE of the shorter side.
+draw_footprint_outline :: proc(frame: Frame, low, high: World_Coordinate, rotation: u8, arrow: bool, color: rl.Color) {
+	flat := transmute([16]f32)frame_render_matrix(frame)
+	rlgl.PushMatrix()
+	rlgl.MultMatrixf(raw_data(flat[:]))
+	defer rlgl.PopMatrix()
+	floor := f32(low.y) + PLACEMENT_OUTLINE_LIFT_CELLS
+	low_x, low_z, high_x, high_z := f32(low.x), f32(low.z), f32(high.x), f32(high.z)
+	width, depth := high_x - low_x, high_z - low_z
+	half := f32(PLACEMENT_OUTLINE_WIDTH_CELLS) / 2
+	y := floor + PLACEMENT_OUTLINE_HEIGHT_CELLS / 2
+	rl.DrawCubeV({low_x + width / 2, y, low_z + half}, {width, PLACEMENT_OUTLINE_HEIGHT_CELLS, PLACEMENT_OUTLINE_WIDTH_CELLS}, color)
+	rl.DrawCubeV({low_x + width / 2, y, high_z - half}, {width, PLACEMENT_OUTLINE_HEIGHT_CELLS, PLACEMENT_OUTLINE_WIDTH_CELLS}, color)
+	rl.DrawCubeV({low_x + half, y, low_z + depth / 2}, {PLACEMENT_OUTLINE_WIDTH_CELLS, PLACEMENT_OUTLINE_HEIGHT_CELLS, depth}, color)
+	rl.DrawCubeV({high_x - half, y, low_z + depth / 2}, {PLACEMENT_OUTLINE_WIDTH_CELLS, PLACEMENT_OUTLINE_HEIGHT_CELLS, depth}, color)
+	if !arrow {
+		return
+	}
+	front := machine_front_direction(rotation)
+	centre := [3]f32{low_x + width / 2, floor + PLACEMENT_OUTLINE_HEIGHT_CELLS, low_z + depth / 2}
+	length := PLACEMENT_OUTLINE_ARROW_SHARE * min(width, depth)
+	chevron := ghost_chevron_triangles(centre - front * length / 2, centre + front * length / 2, {front.z, 0, -front.x})
+	draw_ghost_chevron(scaled_ghost_chevron(chevron, centre, length / GHOST_CHEVRON_LENGTH), color)
+}
+
 // Where Place would put a foundation or a machine, see-through.
 draw_frame_ghost :: proc(frame: Frame, cell: World_Coordinate, color: rl.Color) {
 	transform := frame_render_matrix(frame)

@@ -83,3 +83,16 @@ test_ghost_chevrons_point_along_the_flow :: proc(t: ^testing.T) {
 	ramp_chevron := belt_ghost_chevron(ramp)
 	testing.expect(t, ramp_chevron[2][2].y > ramp_chevron[0][0].y)
 }
+
+// The outline's arrow (0215) points where model_transform turns the
+// model's +x front.
+@(test)
+test_the_machine_front_turns_with_the_rotation :: proc(t: ^testing.T) {
+	fronts := [4][3]f32{{1, 0, 0}, {0, 0, 1}, {-1, 0, 0}, {0, 0, -1}}
+	for rotation in u8(0) ..< 4 {
+		testing.expect_value(t, machine_front_direction(rotation), fronts[rotation])
+		transform := model_transform({}, {2, 1, 2}, rotation)
+		image := (transform * [4]f32{1, 0, 0, 0}).xyz
+		testing.expectf(t, linalg.length(image - machine_front_direction(rotation)) < 1e-5, "rotation %d: %v", rotation, image)
+	}
+}
