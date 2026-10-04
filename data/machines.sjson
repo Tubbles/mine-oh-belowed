@@ -40,6 +40,14 @@
 // axis by amplitude blocks (0 to 12) times the hatch's open fraction,
 // eased over period_seconds from its last toggle, and needs the part
 // group of its OBJ.
+// kind iris (hatches only, work item 0231) draws the part blades times (3
+// to 16) about axis through pivot (the aperture's centre), the k-th turned
+// by k / blades of a turn, and opens each about its own pin, hinge ([x, y,
+// z] in blocks from the footprint's minimum corner, inside the footprint,
+// the first blade's; the k-th pin turns with its blade), by amplitude turns
+// (more than 0, at most 0.5) times the hatch's open fraction, eased over
+// period_seconds from its last toggle; both turns are right handed about
+// the axis. It needs the part group of its OBJ: one blade, modelled shut.
 // kind selects the panel and the simulation: chest, furnace, capsule,
 // belt, inserter, drill, splitter, pipe, offshore_pump, boiler,
 // steam_engine, storage_tank, pump, tar_pit_pump, flare_stack,
@@ -65,8 +73,9 @@
 // cell) lies inside the pod's footprint, overlaps no other fixture's box
 // and neither the cabin's spawn cells nor an open_cells box; the pod
 // leaves those cells to it. Hatches (kind hatch, work item 0198): no
-// item, at least 2 cells high, no open_cells, a slide or a spin motion
-// (a spin of at most 1 turn, 0221) or none. Closed its cells are solid; open
+// item, at least 2 cells high, no open_cells, a slide, a spin (of at
+// most 1 turn, 0221) or an iris (0231) motion or none. Closed its cells
+// are solid; open
 // none is, and every row but the top is an open cell. Lockers (kind
 // locker): a chest placed by the world, slots 8 to 48. Crafting benches
 // (kind crafting_bench): recipe_maker hand, no slots, power, speed or

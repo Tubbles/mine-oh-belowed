@@ -160,19 +160,13 @@ arrival_flame_ticks = 240
 arrival_start_metres = 400
 arrival_angle_degrees = 45
 arrival_window_pitch_degrees = 20
-// The pod's airlock (work item 0222, doc/content.md, Hatches): a hatch of
-// the pod opens on its own for a player whose capsule comes within
-// reach_millimetres (50 to 300) of it facing it, while the other hatch is
-// closed and has finished its slide; an open hatch no capsule comes within
-// the reach of closes after a hold drawn per hatch and tick from
-// close_hold_minimum_ticks to close_hold_maximum_ticks (each 1 to 600, the
-// minimum at most the maximum), so the doors never close on a beat. The
-// reach stays under the airlock's 1 m less the crouched capsule's 0.6 m,
-// so a player against the far hatch is out of the near one's reach.
+// The pod's airlock (work items 0222, 0231, doc/content.md, Hatches): a
+// hatch of the pod is open exactly while some player's capsule, standing
+// or crouched, comes within reach_millimetres (50 to 300) of its cells.
+// The reach stays under half the airlock's 1 m less the crouched
+// capsule's 0.6 m, so both hatches are shut round a player in the middle.
 pod_airlock = {
 	reach_millimetres = 150
-	close_hold_minimum_ticks = 36
-	close_hold_maximum_ticks = 72
 }
 // The field session (work item 0179, doc/content.md, World): every
 // machine simulates the terrain field's chunks within chunk_radius chunks

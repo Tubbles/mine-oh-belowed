@@ -340,8 +340,11 @@ draw_ghost_model :: proc(renderer: Model_Renderer, machines: Machine_Registry, p
 	model := machine_model(renderer, placement.machine) or_return
 	body := model_transform(placement.origin, placement.size, placement.rotation)
 	draw_model_layers_colored(renderer, model.body, body, colors)
-	part := body * motion_transform(machine.motion, machine.footprint, 0)
-	draw_model_layers_colored(renderer, model.part, part, colors)
+	// An iris's ghost is the shut iris, every blade (0231).
+	poses := motion_part_transforms(machine.motion, machine.footprint, 0)
+	for transform in poses.transforms[:poses.count] {
+		draw_model_layers_colored(renderer, model.part, body * transform, colors)
+	}
 	return true
 }
 
@@ -361,7 +364,10 @@ draw_frame_ghost_model :: proc(renderer: Model_Renderer, machines: Machine_Regis
 	rlgl.DisableDepthMask()
 	defer rlgl.EnableDepthMask()
 	draw_model_layers_colored(renderer, model.body, body, colors)
-	draw_model_layers_colored(renderer, model.part, body * motion_transform(definition.motion, definition.footprint, 0), colors)
+	poses := motion_part_transforms(definition.motion, definition.footprint, 0)
+	for transform in poses.transforms[:poses.count] {
+		draw_model_layers_colored(renderer, model.part, body * transform, colors)
+	}
 	return true
 }
 
@@ -391,13 +397,16 @@ posed_model_light :: proc(frame: Model_Frame, common: Entity_Common, machine: Ma
 
 // The entity's model at the pose, lit by the cell model_light_cell names,
 // at its pod's interior light share inside a pod's box (0225), darkened
-// while broken.
+// while broken. The part once per pose of motion_part_transforms: an
+// iris's every blade (0231).
 draw_posed_model :: proc(renderer: Model_Renderer, model: Uploaded_Machine_Model, common: Entity_Common, machine: Machine, frame: Model_Frame, pose: Model_Pose) {
 	light_tint, glow := posed_model_light(frame, common, machine, pose)
 	body := entity_body_matrix(&frame.world.entities, common)
 	draw_model_layers(renderer, model.body, body, light_tint, glow)
-	part := body * motion_transform(machine.motion, machine.footprint, pose.phase)
-	draw_model_layers(renderer, model.part, part, light_tint, glow)
+	poses := motion_part_transforms(machine.motion, machine.footprint, pose.phase)
+	for transform in poses.transforms[:poses.count] {
+		draw_model_layers(renderer, model.part, body * transform, light_tint, glow)
+	}
 }
 
 // The pose of a machine whose part runs on the clock while it works, at
@@ -407,8 +416,8 @@ clock_pose :: proc(frame: Model_Frame, common: Entity_Common, machine: Machine, 
 	return {phase = motion_phase(frame.tick, frame.alpha, frame.tick_rate, machine.motion.period_seconds, working, offset), working = working}
 }
 
-// A hatch's pose (0198): the door's slide follows the hatch's state, not
-// the clock, and its strips glow while it is open.
+// A hatch's pose (0198): the door's slide, spin or iris (0231) follows the
+// hatch's state, not the clock, and its strips glow while it is open.
 hatch_pose :: proc(frame: Model_Frame, hatch: Foundation, machine: Machine) -> Model_Pose {
 	return {phase = hatch_open_fraction(hatch.hatch_open, hatch.hatch_toggle_tick, frame.tick, frame.alpha, frame.tick_rate, machine.motion.period_seconds), working = hatch.hatch_open}
 }

@@ -3,13 +3,14 @@ item 0207, doc/build.md, The workbench). Plain Python: imported inside
 Blender's Python by tools/make_models.py and by records_test.py on the
 host, with tools/ on sys.path for sjson.
 
-A script takes its footprint, motion and pivot, ports by name, open
-cells, a pod's fixture boxes (work item 0198) and light from here, so
-the record and the model cannot disagree. The dataclasses mirror the
-record as written (the Odin Machine_Definition's names, defaults its
-zero values). The keys lights (work item 0224, a machine's lamps, with
-a lamp's clip of work item 0229) and interior_light_share (work item 0225, a pod's cabin light) are read by
-the game only and ignored here. Points come in
+A script takes its footprint, motion and pivot (and an iris's hinge,
+work item 0231, the first blade's pin), ports by name, open cells, a
+pod's fixture boxes (work item 0198) and light from here, so the record
+and the model cannot disagree. The dataclasses mirror the record as
+written (the Odin Machine_Definition's names, defaults its zero values).
+The keys lights (work item 0224, a machine's lamps, with a lamp's clip of
+work item 0229) and interior_light_share (work item 0225, a pod's cabin
+light) are read by the game only and ignored here. Points come in
 the footprint's frame (from its minimum corner: x the width, y up, z the
 depth) and go out in the kit's Blender frame (kit.py: x the front, y the
 game's -z, z up, centred on the footprint).
@@ -38,7 +39,7 @@ FACE_STEPS = {
     "negative_z": (0.0, 0.0, -0.5),
 }
 # The motions whose part moves (motion_has_part in model_motion.odin).
-PART_MOTIONS = ("pump", "bob", "spin", "swing", "slide")
+PART_MOTIONS = ("pump", "bob", "spin", "swing", "slide", "iris")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -55,6 +56,8 @@ class Motion:
     amplitude: float = 0.0
     period_seconds: float = 0.0
     pivot: tuple = (0.0, 0.0, 0.0)
+    blades: int = 0
+    hinge: tuple = (0.0, 0.0, 0.0)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -127,7 +130,8 @@ def read_ports(records):
 
 def read_motion(record):
     pivot = tuple(float(value) for value in record.get("pivot", (0, 0, 0)))
-    return Motion(record.get("kind", ""), record.get("axis", ""), float(record.get("amplitude", 0)), float(record.get("period_seconds", 0)), pivot)
+    hinge = tuple(float(value) for value in record.get("hinge", (0, 0, 0)))
+    return Motion(record.get("kind", ""), record.get("axis", ""), float(record.get("amplitude", 0)), float(record.get("period_seconds", 0)), pivot, int(record.get("blades", 0)), hinge)
 
 
 def read_machine(record):
@@ -193,6 +197,11 @@ def footprint_box(machine):
 
 def pivot(machine):
     return to_blender(machine, machine.motion.pivot)
+
+
+def hinge(machine):
+    """An iris's first pin (work item 0231) in the Blender frame."""
+    return to_blender(machine, machine.motion.hinge)
 
 
 def port(machine, name):

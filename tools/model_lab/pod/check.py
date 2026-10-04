@@ -5,12 +5,17 @@ triangle counts, the material count, the footprint bounds and the
 object names. With data/models/<model>.collision.sjson (work item 0230)
 it also lists the collision volumes and checks their count, their bounds
 against the footprint and that none enters an open cells box or a
-fixture box of the lab's record. Exit 1 on any problem.
+fixture box of the lab's record. For a model whose lab record has an
+iris motion (work item 0231) it prints the iris's numbers and checks
+them with the game's bounds, and poses the part as the game does (every
+blade at the open fractions 0, 1/16, ..., 1) against the footprint. Exit
+1 on any problem.
 
     python3 check.py pod
     python3 check.py pod_hatch
 """
 
+import math
 import pathlib
 import sys
 
@@ -30,6 +35,10 @@ MODELS = {
 }
 MATERIAL_LIMIT = 8
 TOLERANCE = 0.02
+# The game's iris bounds (model_motion.odin) and the check's fractions.
+IRIS_BLADES = (3, 16)
+IRIS_AMPLITUDE_MAXIMUM = 0.5
+IRIS_FRACTIONS = 16
 
 
 def read_obj(path):
@@ -119,6 +128,70 @@ def collision_problems(model, footprint):
     return problems
 
 
+def rotate_about(point, centre, axis, angle):
+    """point turned by angle about the axis (0 x, 1 y, 2 z) through
+    centre, right handed as the game's axis_rotation_matrix."""
+    relative = [value - origin for value, origin in zip(point, centre)]
+    cosine, sine = math.cos(angle), math.sin(angle)
+    first, second = ((1, 2), (2, 0), (0, 1))[axis]
+    a, b = relative[first], relative[second]
+    relative[first], relative[second] = cosine * a - sine * b, sine * a + cosine * b
+    return tuple(value + origin for value, origin in zip(relative, centre))
+
+
+def in_footprint(point, footprint):
+    """A record point (blocks from the footprint's minimum corner: x the
+    width, y up, z the depth) inside the footprint, as the game's
+    point_in_footprint."""
+    extent = (footprint[0], footprint[2], footprint[1])
+    return all(0 <= value <= limit for value, limit in zip(point, extent))
+
+
+def iris_problems(model, footprint, vertices, part):
+    """The iris's lines and problems; nothing for another motion. The
+    blade's vertices are posed in the file's frame (x and z centred, y
+    up), blade k of n at fraction f as R(centre, k / n turn) R(hinge,
+    amplitude * f turn)."""
+    machine = records.machine_for_model(records.load_machines(LAB / "data" / "machines.sjson"), model)
+    motion = machine.motion
+    if motion.kind != "iris":
+        return []
+    print(f"iris: {motion.blades} blades, amplitude {motion.amplitude:g} turn, pivot {list(motion.pivot)}, hinge {list(motion.hinge)} (record cells)")
+    problems = []
+    if not IRIS_BLADES[0] <= motion.blades <= IRIS_BLADES[1]:
+        problems.append(f"machine {machine.id!r} has iris blades {motion.blades} outside {IRIS_BLADES[0]} to {IRIS_BLADES[1]}")
+    if not 0 < motion.amplitude <= IRIS_AMPLITUDE_MAXIMUM:
+        problems.append(f"machine {machine.id!r} has an iris amplitude outside 0 to 0.5 turn")
+    if not in_footprint(motion.pivot, footprint):
+        problems.append(f"machine {machine.id!r} has a motion pivot outside its footprint")
+    if not in_footprint(motion.hinge, footprint):
+        problems.append(f"machine {machine.id!r} has an iris hinge outside its footprint")
+    if problems or motion.axis not in ("x", "y", "z"):
+        return problems
+    axis = "xyz".index(motion.axis)
+    shift = (footprint[0] / 2, 0.0, footprint[1] / 2)
+    centre = tuple(value - offset for value, offset in zip(motion.pivot, shift))
+    hinge = tuple(value - offset for value, offset in zip(motion.hinge, shift))
+    indices = sorted({index for _, corners in part for index in corners})
+    blade_points = [vertices[index] for index in indices]
+    limits = ((-footprint[0] / 2, footprint[0] / 2), (0.0, float(footprint[2])), (-footprint[1] / 2, footprint[1] / 2))
+    for blade in range(motion.blades):
+        slot = 2 * math.pi * blade / motion.blades
+        for step in range(IRIS_FRACTIONS + 1):
+            fraction = step / IRIS_FRACTIONS
+            opening = 2 * math.pi * motion.amplitude * fraction
+            posed = [rotate_about(rotate_about(point, hinge, axis, opening), centre, axis, slot) for point in blade_points]
+            for index, name in enumerate("xyz"):
+                low, high = min(point[index] for point in posed), max(point[index] for point in posed)
+                if low < limits[index][0] - TOLERANCE or high > limits[index][1] + TOLERANCE:
+                    problems.append(f"blade {blade} at open fraction {fraction:g} leaves the footprint ({name} spans {low:.3f} to {high:.3f})")
+                    break
+            else:
+                continue
+            break
+    return problems
+
+
 def main():
     model = sys.argv[1] if len(sys.argv) > 1 else "pod"
     if model not in MODELS:
@@ -174,6 +247,7 @@ def main():
     print(f"emissive: {', '.join(emissive) or 'none'}")
     if vertices:
         print(f"bounds: x {low[0]:.2f}..{high[0]:.2f}  y {low[1]:.2f}..{high[1]:.2f} (top, may exceed {height})  z {low[2]:.2f}..{high[2]:.2f}  (cells of 0.5 m, the file's frame: y up, z the game's depth)")
+    problems += iris_problems(model, footprint, vertices, part)
     problems += collision_problems(model, footprint)
     for problem in problems:
         print(f"PROBLEM: {problem}")

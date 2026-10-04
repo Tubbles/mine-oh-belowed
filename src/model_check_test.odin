@@ -178,6 +178,59 @@ test_a_hatch_part_cutting_the_pod_is_reported :: proc(t: ^testing.T) {
 	testing.expect_value(t, len(fixture_part_crossing_problems(pod, 0, hatch, box_layers({-2, 2.5, -2}, {-1, 3, 2}), part)), 0)
 }
 
+// The iris of the check tests (work item 0231): four blades about the
+// door's centre, blade 0 at the top pinned at y 1.9.
+TEST_CHECK_IRIS :: Machine_Motion{kind = .Iris, axis = 0, blades = 4, pivot = {0.5, 1, 1}, hinge = {0.5, 1.9, 1}, amplitude = 0.25, period_seconds = 0.15}
+
+// The first problem of the check, found false without one.
+first_check_problem :: proc(problems: []Model_Check_Problem, check: Model_Check) -> (problem: Model_Check_Problem, found: bool) {
+	for candidate in problems {
+		if candidate.check == check {
+			return candidate, true
+		}
+	}
+	return {}, false
+}
+
+// Work item 0231: the sweep poses every blade of an iris, so a slab only
+// blade 2 (turned half a turn, y 0.05 to 0.5) crosses is found and named;
+// a slab beside the blades' x is clear at every fraction.
+@(test)
+test_the_sweep_poses_every_iris_blade :: proc(t: ^testing.T) {
+	footprint := [3]i32{1, 2, 2}
+	part := box_layers({-0.05, 1.5, -0.1}, {0.05, 1.95, 0.1})
+	crossed, found := first_check_problem(model_sweep_problems(TEST_CHECK_IRIS, footprint, box_layers({-0.1, 0.2, -0.5}, {0.1, 0.3, 0.5}), part), .Sweep)
+	testing.expect(t, found, "the slab under the door cuts no blade")
+	testing.expect(t, strings.has_prefix(crossed.detail, "phase 0.0000 blade 2"), crossed.detail)
+	_, beside := first_check_problem(model_sweep_problems(TEST_CHECK_IRIS, footprint, box_layers({0.3, 0.2, -0.5}, {0.4, 0.3, 0.5}), part), .Sweep)
+	testing.expect(t, !beside, "a slab beside the blades cuts one")
+}
+
+// Work item 0231: every blade of a hatch's iris is swept against the
+// pod's body and its open cells boxes. Model frame: the pod's x from -2
+// to 2, the door's x from 1 to 2, its centre at x 1.5.
+@(test)
+test_every_iris_blade_is_swept_against_the_pod :: proc(t: ^testing.T) {
+	pod := Machine{kind = .Pod, footprint = {4, 4, 4}, fixture_count = 1}
+	pod.fixtures[0] = Pod_Fixture{cell = {3, 0, 1}, rotation = 0}
+	pod.fixture_boxes[0] = Cell_Box{from = {3, 0, 1}, to = {3, 1, 2}}
+	hatch := Machine{id = "test_hatch", kind = .Hatch, footprint = {1, 2, 2}, motion = TEST_CHECK_IRIS}
+	part := box_layers({-0.05, 1.5, -0.1}, {0.05, 1.95, 0.1})
+	crossed, found := first_check_problem(fixture_part_crossing_problems(pod, 0, hatch, box_layers({1.4, 0.2, -0.5}, {1.6, 0.3, 0.5}), part), .Sweep)
+	testing.expect(t, found, "the slab under the door cuts no blade")
+	testing.expect(t, strings.has_prefix(crossed.detail, "fixture 0 (test_hatch) blade 2"), crossed.detail)
+	clear_body := box_layers({1.4, 2.5, -0.5}, {1.6, 3, 0.5})
+	testing.expect_value(t, len(fixture_part_crossing_problems(pod, 0, hatch, clear_body, part)), 0)
+	pod.open_cell_box_count = 1
+	pod.open_cells[0] = Cell_Box{from = {3, 0, 1}, to = {3, 0, 2}}
+	problems := fixture_part_crossing_problems(pod, 0, hatch, clear_body, part)
+	inside, inside_found := first_check_problem(problems, .Open_Cells)
+	testing.expect(t, inside_found, "no blade found in the door's bottom row")
+	testing.expect(t, strings.has_prefix(inside.detail, "fixture 0 (test_hatch) blade "), inside.detail)
+	_, swept := first_check_problem(problems, .Sweep)
+	testing.expect(t, !swept, "the clear slab cuts a blade")
+}
+
 @(test)
 test_a_triangle_inside_an_open_cell_is_reported :: proc(t: ^testing.T) {
 	boxes := []Cell_Box{{from = {1, 0, 0}, to = {1, 1, 1}}}

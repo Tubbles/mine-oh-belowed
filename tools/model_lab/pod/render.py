@@ -22,6 +22,14 @@ With data/models/<model>.collision.sjson (work item 0230), every camera
 is rendered again with the collision volumes drawn as magenta wires:
 previews/<model>_<view>_collision.png and, for the pod,
 previews/<model>_inside_<view>_collision.png.
+
+For a model whose lab record has an iris motion (work item 0231) the one
+blade the file holds is instanced as the game draws it (blade k of n at
+open fraction f: R(pivot, k / n turn) R(hinge, amplitude * f turn)), and
+every camera and an aperture camera (face on at the bore's height) are
+rendered at open fractions 0, 0.5 and 1:
+previews/<model>_<view>_open_0.png, _open_0.5.png and _open_1.png. The
+collision pass then runs at fraction 0.
 """
 
 import math
@@ -29,13 +37,13 @@ import pathlib
 import sys
 
 import bpy
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 LAB = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(LAB / "tools"))
 
 import sjson  # noqa: E402
-from models import collision  # noqa: E402
+from models import collision, records  # noqa: E402
 
 CELL_METRES = 0.5
 FOOTPRINTS_CELLS = {"pod": (12, 12, 8), "pod_hatch": (1, 2, 2)}
@@ -43,6 +51,11 @@ FIELD_OF_VIEW_DEGREES = 40
 INTERIOR_FIELD_OF_VIEW_DEGREES = 80
 RISE = 0.6
 # Interior cameras in metres, Blender frame (x the front, z up): position, target.
+# The iris's open fractions in the previews (work item 0231).
+IRIS_FRACTIONS = (0.0, 0.5, 1.0)
+# The record's axis in the Blender frame (x the game's x, y the game's
+# -z, z the game's y): the axis name and the sign of a turn.
+IRIS_AXES = {"x": ("X", 1.0), "y": ("Z", 1.0), "z": ("Y", -1.0)}
 INTERIOR_VIEWS = {
     "chair": ((0.0, 0.0, 1.2), (2.5, 0.0, 0.9)),
     "door": ((1.6, 0.0, 0.8), (-1.0, 0.0, 1.0)),
@@ -123,6 +136,43 @@ def add_collision_wires(name):
     return wires
 
 
+def lab_machine(name):
+    """The lab record of the model."""
+    return records.machine_for_model(records.load_machines(LAB / "data" / "machines.sjson"), name)
+
+
+def iris_blades(imported, machine):
+    """The part object and blades - 1 objects sharing its mesh, all
+    linked to the scene, with the part's world matrix as imported."""
+    part = next(item for item in imported if item.name.split(".")[0] == "part")
+    bpy.context.view_layer.update()
+    base = part.matrix_world.copy()
+    blades = [part]
+    for index in range(1, machine.motion.blades):
+        blade = bpy.data.objects.new(f"part_{index}", part.data)
+        bpy.context.scene.collection.objects.link(blade)
+        blades.append(blade)
+    return blades, base
+
+
+def blade_matrix(machine, blade, fraction):
+    """Blade k at open fraction f in cells of the Blender frame: turned
+    k / blades about the pivot after it opened about the hinge."""
+    name, sign = IRIS_AXES[machine.motion.axis]
+    pivot, hinge = Vector(records.pivot(machine)), Vector(records.hinge(machine))
+
+    def about(point, angle):
+        return Matrix.Translation(point) @ Matrix.Rotation(sign * angle, 4, name) @ Matrix.Translation(-point)
+
+    return about(pivot, 2 * math.pi * blade / machine.motion.blades) @ about(hinge, 2 * math.pi * machine.motion.amplitude * fraction)
+
+
+def pose_iris(blades, base, machine, fraction):
+    scale = Matrix.Scale(CELL_METRES, 4)
+    for index, blade in enumerate(blades):
+        blade.matrix_world = scale @ blade_matrix(machine, index, fraction) @ scale.inverted() @ base
+
+
 def render_views(camera, camera_data, name, views, suffix):
     """Each exterior view, then for the pod each interior one."""
     scene = bpy.context.scene
@@ -199,7 +249,18 @@ def main():
         "top": (centre + Vector((0, 0, distance)), centre),
         "close": (Vector((width / 2 + 2.0, 0, 1.6)), Vector((width / 2, 0, 1.6))),
     }
-    render_views(camera, camera_data, name, views, "")
+    machine = lab_machine(name)
+    if machine.motion.kind == "iris":
+        # The plain suffix would show one blade, so an iris renders only
+        # posed, with the shutter face on as well.
+        views["aperture"] = (Vector((width / 2 + 1.2, 0, 0.5)), Vector((width / 2, 0, 0.5)))
+        blades, base = iris_blades(imported, machine)
+        for fraction in IRIS_FRACTIONS:
+            pose_iris(blades, base, machine, fraction)
+            render_views(camera, camera_data, name, views, f"_open_{fraction:g}")
+        pose_iris(blades, base, machine, 0.0)
+    else:
+        render_views(camera, camera_data, name, views, "")
     if add_collision_wires(name) is not None:
         render_views(camera, camera_data, name, views, "_collision")
 

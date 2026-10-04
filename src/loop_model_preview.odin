@@ -15,7 +15,8 @@ import "platform"
 // its motion (an arm at its grab, lift and drop fractions): 20 PNG files
 // per machine named <machine>_<camera>_<phase>.png, 25 with collision
 // volumes, whose five cameras at rest draw them as wires
-// (<machine>_<camera>_collision.png, work item 0230). The scene is metres,
+// (<machine>_<camera>_collision.png, work item 0230). An iris draws every
+// blade (motion_part_transforms, work item 0231). The scene is metres,
 // the frame's cells scaled by the pitch about the origin, up +y; no
 // world, no session, no field.
 
@@ -198,7 +199,10 @@ draw_model_preview_scene :: proc(renderer: Model_Renderer, machine: Machine, mac
 	} else if model, model_found := machine_model(renderer, machine_id); model_found {
 		body := uniform_scale_matrix(pitch) * model_transform({}, machine.footprint, 0)
 		draw_model_layers(renderer, model.body, body, light, glow)
-		draw_model_layers(renderer, model.part, body * motion_transform(machine.motion, machine.footprint, pose.phase), light, glow)
+		poses := motion_part_transforms(machine.motion, machine.footprint, pose.phase)
+		for transform in poses.transforms[:poses.count] {
+			draw_model_layers(renderer, model.part, body * transform, light, glow)
+		}
 		if pose.collision && len(machine.collision) > 0 {
 			wires := transmute([16]f32)body
 			rlgl.PushMatrix()

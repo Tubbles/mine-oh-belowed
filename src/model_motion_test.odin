@@ -1,5 +1,6 @@
 package game
 
+import "core:fmt"
 import "core:math"
 import "core:strings"
 import "core:testing"
@@ -188,6 +189,35 @@ test_the_light_comes_from_above_or_in_front :: proc(t: ^testing.T) {
 	testing.expect_value(t, model_light_cell({origin = {10, 5, 20}, size = {1, 1, 1}, rotation = 3}), World_Coordinate{10, 5, 19})
 }
 
+// Work item 0231: an iris draws its part once per blade, the k-th turned
+// k / blades of a turn about the pivot, and opens every blade about its
+// own pin by the amplitude times the fraction.
+@(test)
+test_an_iris_turns_each_blade_into_its_slot_and_opens_it_about_its_pin :: proc(t: ^testing.T) {
+	motion := Machine_Motion{kind = .Iris, axis = 0, blades = 6, pivot = {0.5, 1, 1}, hinge = {0.5, 1.8, 1}, amplitude = 0.25, period_seconds = 0.15}
+	footprint := [3]i32{1, 2, 2}
+	blade_point :: proc(poses: Motion_Part_Transforms, blade: int, point: [3]f32) -> [3]f32 {
+		return (poses.transforms[blade] * [4]f32{point.x, point.y, point.z, 1}).xyz
+	}
+	for fraction in ([3]f32{0, 0.5, 1}) {
+		poses := motion_part_transforms(motion, footprint, fraction)
+		testing.expect_value(t, poses.count, 6)
+		expect_near_point(t, blade_point(poses, 3, {0, 1.8, 0}), {0, 0.2, 0}, fmt.tprintf("blade 3's pin at fraction %v", fraction))
+	}
+	shut := motion_part_transforms(motion, footprint, 0)
+	expect_near_point(t, blade_point(shut, 0, {0.3, 1.5, -0.2}), {0.3, 1.5, -0.2}, "blade 0 shut is the part as modelled")
+	expect_near_point(t, blade_point(shut, 1, {0, 1.8, 0}), {0, 1.4, 0.69282}, "blade 1's pin shut")
+	open := motion_part_transforms(motion, footprint, 1)
+	expect_near_point(t, blade_point(open, 0, {0, 1, 0}), {0, 1.8, -0.8}, "the centre through blade 0 open")
+	if open.transforms[0] != motion_transform(motion, footprint, 1) {
+		testing.expect(t, false, "blade 0 is motion_transform's pose")
+	}
+	slide := Machine_Motion{kind = .Slide, axis = 1, amplitude = 2, period_seconds = 1}
+	single := motion_part_transforms(slide, footprint, 0.5)
+	testing.expect_value(t, single.count, 1)
+	testing.expect(t, single.transforms[0] == motion_transform(slide, footprint, 0.5), "a slide is posed once, as motion_transform")
+}
+
 motion_test_definition :: proc(motion: Motion_Definition) -> Machine_Definition {
 	return {id = "test_machine", model = "test_machine", footprint = {width = 2, depth = 2, height = 2}, motion = motion}
 }
@@ -217,6 +247,35 @@ test_motion_definitions_are_validated :: proc(t: ^testing.T) {
 	without_model := motion_test_definition({kind = "glow", period_seconds = 1})
 	without_model.model = ""
 	testing.expect(t, strings.contains(validate_motion_definition(without_model), "no model"))
+
+	// Work item 0231: an iris on a hatch, within its bounds.
+	iris := Motion_Definition{kind = "iris", axis = "x", blades = 8, pivot = {0.5, 1, 1}, hinge = {0.5, 1.85, 1}, amplitude = 0.15, period_seconds = 0.15}
+	iris_hatch :: proc(motion: Motion_Definition) -> Machine_Definition {
+		return {id = "test_hatch", kind = "hatch", model = "test_hatch", footprint = {width = 1, depth = 2, height = 2}, motion = motion}
+	}
+	testing.expect_value(t, validate_motion_definition(iris_hatch(iris)), "")
+	testing.expect_value(t, validate_hatch_definition(iris_hatch(iris)), "")
+	testing.expect(t, strings.contains(validate_motion_definition(motion_test_definition(iris)), "is no hatch"))
+	iris_problems := [?]struct {
+		change:   proc(motion: ^Motion_Definition),
+		contains: string,
+	} {
+		{proc(motion: ^Motion_Definition) {motion.blades = 2}, "iris blades"},
+		{proc(motion: ^Motion_Definition) {motion.blades = 17}, "iris blades"},
+		{proc(motion: ^Motion_Definition) {motion.amplitude = 0}, "iris amplitude"},
+		{proc(motion: ^Motion_Definition) {motion.amplitude = 0.51}, "iris amplitude"},
+		{proc(motion: ^Motion_Definition) {motion.hinge = {0.5, 2.5, 1}}, "iris hinge outside"},
+		{proc(motion: ^Motion_Definition) {motion.pivot = {0.5, 1, 3}}, "pivot outside"},
+	}
+	for entry in iris_problems {
+		changed := iris
+		entry.change(&changed)
+		problem := validate_motion_definition(iris_hatch(changed))
+		testing.expectf(t, strings.contains(problem, entry.contains), "%v: %q", changed, problem)
+	}
+	swing := iris
+	swing.kind = "swing"
+	testing.expect(t, strings.contains(validate_hatch_definition(iris_hatch(swing)), "a slide, a spin or an iris"))
 }
 
 @(test)
@@ -226,7 +285,12 @@ test_a_motion_parses_from_the_machines_file :: proc(t: ^testing.T) {
 	testing.expect_value(t, error, nil)
 	motion := resolve_machine_motion(file.machines[0].motion)
 	testing.expect_value(t, motion, Machine_Motion{kind = .Spin, axis = 0, amplitude = 1, period_seconds = 1.5, pivot = {2.5, 1, 0.5}})
-	testing.expect(t, motion_has_part(.Spin) && motion_has_part(.Swing) && !motion_has_part(.Glow) && !motion_has_part(.None))
+	testing.expect(t, motion_has_part(.Spin) && motion_has_part(.Swing) && motion_has_part(.Iris) && !motion_has_part(.Glow) && !motion_has_part(.None))
+	iris_text := `machines = [{id = "door", kind = "hatch", motion = {kind = "iris", axis = "x", blades = 6, pivot = [0.5, 1, 1], hinge = [0.5, 1.8, 1.3], amplitude = 0.2, period_seconds = 0.15}}]`
+	iris_file, iris_error := parse_machines_file(transmute([]byte)iris_text, context.temp_allocator)
+	testing.expect_value(t, iris_error, nil)
+	iris := resolve_machine_motion(iris_file.machines[0].motion)
+	testing.expect_value(t, iris, Machine_Motion{kind = .Iris, axis = 0, amplitude = 0.2, period_seconds = 0.15, pivot = {0.5, 1, 1}, blades = 6, hinge = {0.5, 1.8, 1.3}})
 }
 
 // Work item 0225: the interior share scales the tint, never below the

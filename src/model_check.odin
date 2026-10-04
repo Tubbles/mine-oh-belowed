@@ -20,7 +20,11 @@ import "model_obj"
 // bounded by the part, and a pod has none. The open cells are at most 4
 // boxes x 3400 triangles x 18 tests; a pod's open cells and fixture boxes
 // cost boxes x 25600 triangles. A pod's fixture parts (0221) are 17
-// phases x 200 x the body filtered to the part's swept bounds first. The
+// phases x 200 x the body filtered to the part's swept bounds first. An
+// iris (0231) multiplies the part's poses by its blades (at most 16): the
+// hatch's own sweep is at most 17 x 16 x 200 part triangles against its
+// body filtered to each blade's bounds, the fixture sweep 17 x 16 x 200
+// against the pod's body filtered to the swept bounds. The
 // collision volumes (0230) are at most 64 volumes x 9 boxes x the lattice
 // of a box (the pod's cabin box 4 by 4 by 2 cells, 33 x 33 x 17 samples),
 // only for volumes whose bounds meet the box. The arm's voxel parts
@@ -324,25 +328,54 @@ model_budget_problems :: proc(body, part: Model_Layers, material_count: int, bod
 	return problems[:]
 }
 
-// The part over its motion at MODEL_CHECK_PHASE_COUNT phases: never
-// through the body, and inside the footprint as 0204's loader bounds the
-// model at rest. At most one line per check and phase.
+// A slide's and an iris's phase is an open fraction that rests at 1, so
+// their sweep samples fraction 1 too (0231): a fully open iris is where
+// the blades tuck into the rim.
+motion_phase_is_open_fraction :: proc(kind: Motion_Kind) -> bool {
+	return kind == .Slide || kind == .Iris
+}
+
+// The phases a part's sweep samples: MODEL_CHECK_PHASE_COUNT, and one
+// more (fraction 1) for an open fraction.
+model_sweep_phase_count :: proc(kind: Motion_Kind) -> int {
+	return motion_phase_is_open_fraction(kind) ? MODEL_CHECK_PHASE_COUNT + 1 : MODEL_CHECK_PHASE_COUNT
+}
+
+// " blade k" for an iris's blade, "" for a part posed once, so the
+// slide's lines keep their form.
+model_check_blade_label :: proc(kind: Motion_Kind, blade: int) -> string {
+	return kind == .Iris ? fmt.tprintf(" blade %d", blade) : ""
+}
+
+// The part over its motion at MODEL_CHECK_PHASE_COUNT phases (and
+// fraction 1 for a slide or an iris), every pose of
+// motion_part_transforms (an iris's every blade, 0231): never through
+// the body, and inside the footprint as 0204's loader bounds the model at
+// rest. At most one line per check and phase, naming the first blade
+// with the problem.
 model_sweep_problems :: proc(motion: Machine_Motion, footprint: [3]i32, body, part: Model_Layers, allocator := context.temp_allocator) -> []Model_Check_Problem {
 	problems := make([dynamic]Model_Check_Problem, allocator)
 	if !motion_has_part(motion.kind) || model_layers_triangle_count(part) == 0 {
 		return problems[:]
 	}
 	still := model_layers_check_triangles(body, 1)
-	for index in 0 ..< MODEL_CHECK_PHASE_COUNT {
+	for index in 0 ..< model_sweep_phase_count(motion.kind) {
 		phase := model_check_phase(index)
-		moving := model_layers_check_triangles(part, motion_transform(motion, footprint, phase))
-		if crossings := count_triangle_crossings(moving[:], still[:]); crossings.count > 0 {
-			detail := fmt.tprintf("phase %.4f: %d part triangles cut the body, the first (part %d, body %d) near (%.3f, %.3f, %.3f)", phase, crossings.count, crossings.first_moving, crossings.first_still, crossings.near.x, crossings.near.y, crossings.near.z)
-			append(&problems, Model_Check_Problem{.Sweep, detail})
-		}
-		minimum, maximum := check_triangles_bounds(moving[:])
-		if problem := model_footprint_problem(minimum, maximum, footprint); problem != "" {
-			append(&problems, Model_Check_Problem{.Footprint, fmt.tprintf("phase %.4f: the part %s", phase, problem)})
+		poses := motion_part_transforms(motion, footprint, phase)
+		crossed, outside := false, false
+		for transform, blade in poses.transforms[:poses.count] {
+			moving := model_layers_check_triangles(part, transform)
+			blade_label := model_check_blade_label(motion.kind, blade)
+			if crossings := count_triangle_crossings(moving[:], still[:]); !crossed && crossings.count > 0 {
+				crossed = true
+				detail := fmt.tprintf("phase %.4f%s: %d part triangles cut the body, the first (part %d, body %d) near (%.3f, %.3f, %.3f)", phase, blade_label, crossings.count, crossings.first_moving, crossings.first_still, crossings.near.x, crossings.near.y, crossings.near.z)
+				append(&problems, Model_Check_Problem{.Sweep, detail})
+			}
+			minimum, maximum := check_triangles_bounds(moving[:])
+			if problem := model_footprint_problem(minimum, maximum, footprint); !outside && problem != "" {
+				outside = true
+				append(&problems, Model_Check_Problem{.Footprint, fmt.tprintf("phase %.4f%s: the part %s", phase, blade_label, problem)})
+			}
 		}
 	}
 	return problems[:]
@@ -467,18 +500,33 @@ pod_fixture_model_transform :: proc(pod: Machine, index: int, fixture: Machine) 
 	return translation_matrix({-f32(pod.footprint.x) / 2, 0, -f32(pod.footprint.z) / 2}) * placed
 }
 
-// A fixture's part over its motion, open fraction 0 to 1 inclusive, at its
-// fixture box against the pod's body (0221): one line per phase where the
-// part cuts the body. The body is filtered to the part's swept bounds.
+// One pose of a fixture's part in the pod's model frame: the open
+// fraction's index and the blade (0 for a part posed once).
+Fixture_Part_Pose :: struct {
+	phase_index: int,
+	blade:       int,
+	triangles:   [dynamic]Check_Triangle,
+}
+
+// A fixture's part over its motion, open fraction 0 to 1 inclusive, every
+// blade of an iris (0231), at its fixture box against the pod's body
+// (0221) and the pod's open cells boxes (0231: the bore and the outside
+// rows are where the player crawls). At most one line per check and
+// fraction, naming the first blade with the problem. The body is filtered
+// to the part's swept bounds.
 fixture_part_crossing_problems :: proc(pod: Machine, index: int, fixture: Machine, pod_body, fixture_part: Model_Layers, allocator := context.temp_allocator) -> []Model_Check_Problem {
 	problems := make([dynamic]Model_Check_Problem, allocator)
 	placement := pod_fixture_model_transform(pod, index, fixture)
-	poses: [MODEL_CHECK_PHASE_COUNT + 1][dynamic]Check_Triangle
+	poses := make([dynamic]Fixture_Part_Pose, context.temp_allocator)
 	swept_minimum, swept_maximum := [3]f32{max(f32), max(f32), max(f32)}, [3]f32{min(f32), min(f32), min(f32)}
-	for &pose, phase_index in poses {
-		pose = model_layers_check_triangles(fixture_part, placement * motion_transform(fixture.motion, fixture.footprint, model_check_phase(phase_index)))
-		minimum, maximum := check_triangles_bounds(pose[:])
-		swept_minimum, swept_maximum = linalg.min(swept_minimum, minimum), linalg.max(swept_maximum, maximum)
+	for phase_index in 0 ..= MODEL_CHECK_PHASE_COUNT {
+		transforms := motion_part_transforms(fixture.motion, fixture.footprint, model_check_phase(phase_index))
+		for transform, blade in transforms.transforms[:transforms.count] {
+			pose := Fixture_Part_Pose{phase_index, blade, model_layers_check_triangles(fixture_part, placement * transform)}
+			minimum, maximum := check_triangles_bounds(pose.triangles[:])
+			swept_minimum, swept_maximum = linalg.min(swept_minimum, minimum), linalg.max(swept_maximum, maximum)
+			append(&poses, pose)
+		}
 	}
 	still := make([dynamic]Check_Triangle, context.temp_allocator)
 	for triangle in model_layers_check_triangles(pod_body, 1) {
@@ -486,13 +534,32 @@ fixture_part_crossing_problems :: proc(pod: Machine, index: int, fixture: Machin
 			append(&still, triangle)
 		}
 	}
-	for pose, phase_index in poses {
-		crossings := count_triangle_crossings(pose[:], still[:])
-		if crossings.count == 0 {
-			continue
+	open_cells := pod.open_cells
+	// The fraction index each check last reported, one line per fraction.
+	sweep_reported, open_cells_reported := -1, -1
+	for pose in poses {
+		fraction := model_check_phase(pose.phase_index)
+		blade_label := model_check_blade_label(fixture.motion.kind, pose.blade)
+		if crossings := count_triangle_crossings(pose.triangles[:], still[:]); sweep_reported != pose.phase_index && crossings.count > 0 {
+			sweep_reported = pose.phase_index
+			detail := fmt.tprintf("fixture %d (%s)%s at open fraction %.4f: %d part triangles cut the pod's body, the first (part %d, body %d) near (%.3f, %.3f, %.3f)", index, fixture.id, blade_label, fraction, crossings.count, crossings.first_moving, crossings.first_still, crossings.near.x, crossings.near.y, crossings.near.z)
+			append(&problems, Model_Check_Problem{.Sweep, detail})
 		}
-		detail := fmt.tprintf("fixture %d (%s) at open fraction %.4f: %d part triangles cut the pod's body, the first (part %d, body %d) near (%.3f, %.3f, %.3f)", index, fixture.id, model_check_phase(phase_index), crossings.count, crossings.first_moving, crossings.first_still, crossings.near.x, crossings.near.y, crossings.near.z)
-		append(&problems, Model_Check_Problem{.Sweep, detail})
+		for box, box_index in open_cells[:pod.open_cell_box_count] {
+			if open_cells_reported == pose.phase_index {
+				break
+			}
+			minimum, maximum := open_cell_box_in_model(box, pod.footprint)
+			count, first := triangles_in_box(pose.triangles[:], minimum, maximum)
+			if count == 0 {
+				continue
+			}
+			open_cells_reported = pose.phase_index
+			corners := pose.triangles[first].corners
+			near := (corners[0] + corners[1] + corners[2]) / 3
+			detail := fmt.tprintf("fixture %d (%s)%s at open fraction %.4f: %d part triangles inside open cells box %d near (%.3f, %.3f, %.3f)", index, fixture.id, blade_label, fraction, count, box_index, near.x, near.y, near.z)
+			append(&problems, Model_Check_Problem{.Open_Cells, detail})
+		}
 	}
 	return problems[:]
 }

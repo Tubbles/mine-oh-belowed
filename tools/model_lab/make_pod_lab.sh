@@ -21,6 +21,11 @@
 # test the volumes against them. tools/models/collision.py is copied in
 # both modes.
 #
+# The iris door (work item 0231): in both modes the record copy's
+# pod_hatch motion, when its kind is not iris, becomes the iris starter
+# for the modeller to set (blades, hinge, amplitude), and the
+# pod_hatch.py stub hands over one blade with its pivot and hinge.
+#
 # Usage: tools/model_lab/make_pod_lab.sh [--collision] [lab directory]
 set -eu
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -67,6 +72,25 @@ def strip_entries(lines):
     return kept
 
 
+IRIS_STARTER = '\t\tmotion = {kind = "iris", axis = "x", blades = 8, pivot = [0.5, 1, 1], hinge = [0.5, 1.85, 1], amplitude = 0.15, period_seconds = 0.15}'
+IRIS_COMMENT = "\t\t// The iris (BRIEF.md, The airlock): set blades, hinge and amplitude for your blade."
+
+
+def with_iris_starter(lines):
+    """The hatch record's lines with its motion the iris starter and the
+    comment lines directly above it the starter's comment, unless its
+    motion is an iris already (work item 0231)."""
+    kept = []
+    for line in lines:
+        if line.startswith("\t\tmotion = ") and 'kind = "iris"' not in line:
+            while kept and kept[-1].strip().startswith("//"):
+                kept.pop()
+            kept.extend([IRIS_COMMENT, IRIS_STARTER])
+            continue
+        kept.append(line)
+    return kept
+
+
 source, target = sys.argv[1], sys.argv[2]
 text = open(source).read()
 start = text.index('\t\tid = "pod"\n')
@@ -75,7 +99,12 @@ pod = "\n".join(strip_entries(text[start:end].split("\n")))
 for key in STRIPPED:
     assert key not in pod, (key, pod)
 assert "footprint = {width = 12, depth = 12, height = 8}" in pod, pod
-open(target, "w").write(text[:start] + pod + text[end:])
+text = text[:start] + pod + text[end:]
+start = text.index('\t\tid = "pod_hatch"\n')
+end = text.index("\n\t}\n", start) + len("\n\t}\n")
+hatch = "\n".join(with_iris_starter(text[start:end].split("\n")))
+assert 'kind = "iris"' in hatch, hatch
+open(target, "w").write(text[:start] + hatch + text[end:])
 PY
 art=$(cd "$(git -C "$root" rev-parse --git-common-dir)/.." && pwd)/work/art
 cp "$art/2026-10-04-pod-round-12/edit_3_2_seed_18/banana_0.png" "$lab/reference/interior_kept.png"
@@ -123,11 +152,12 @@ cat > "$lab/tools/models/machines/pod_hatch.py" <<'PY'
 """The airlock door of the pod. Replace this stub: build(machine) builds
 the door in Blender's frame (tools/models/kit.py, the module docstring)
 and leaves the scene holding two objects: body (the frame that stays,
-kit.join(volumes, "body")) and part (the shutter that moves by the
-record's motion, kit.join_part(volumes, machine, pivot) where pivot is
-the record's for a spin or a swing and None for a slide)."""
+kit.join(volumes, "body")) and part (one iris blade modelled shut, which
+the game draws blades times round the aperture and opens about its pin,
+BRIEF.md, The airlock: kit.join_part(volumes, machine,
+records.pivot(machine), records.hinge(machine)))."""
 
-from .. import kit
+from .. import kit, records  # noqa: F401
 
 
 def build(machine):

@@ -95,6 +95,22 @@ class RecordsTest(unittest.TestCase):
         lit = dict(record, lights=[{"position": [1.0, 2.0, 0.0], "color": [255, 180, 90], "radius_cells": 3, "clip": False}])
         self.assertEqual(records.read_machine(lit), records.read_machine(record))
 
+    def test_an_iris_record_reads(self):
+        record = {
+            "id": "door",
+            "kind": "hatch",
+            "model": "door",
+            "footprint": {"width": 1, "depth": 2, "height": 2},
+            "motion": {"kind": "iris", "axis": "x", "blades": 6, "pivot": [0.5, 1, 1], "hinge": [0.5, 1.8, 1.3], "amplitude": 0.2, "period_seconds": 0.15},
+        }
+        door = records.read_machine(record)
+        self.assertEqual(door.motion.blades, 6)
+        self.assertEqual(records.pivot(door), (0.0, 0.0, 1.0))
+        hinge = records.hinge(door)
+        for given, wanted in zip(hinge, (0.0, -0.3, 1.8)):
+            self.assertAlmostEqual(given, wanted)
+        self.assertIn("iris", records.PART_MOTIONS)
+
 
 if __name__ == "__main__":
     unittest.main()

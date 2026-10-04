@@ -36,6 +36,12 @@ Motion_Kind :: enum u8 {
 	// fraction a hatch's state gives (hatch_open_fraction, work item
 	// 0198), not the clock.
 	Slide,
+	// Draws the part blades times about the axis through the pivot, the
+	// k-th turned by k / blades of a turn, and turns each about its own
+	// pin (hinge, the first blade's; the k-th turned with its blade) by
+	// amplitude turns times the open fraction a hatch's state gives (work
+	// item 0231).
+	Iris,
 }
 
 @(rodata)
@@ -48,6 +54,7 @@ motion_kind_names := [Motion_Kind]string {
 	.Glow  = "glow",
 	.Arm   = "arm",
 	.Slide = "slide",
+	.Iris  = "iris",
 }
 
 @(rodata)
@@ -63,15 +70,21 @@ GLOW_MINIMUM_BRIGHTNESS :: 0.55
 ARM_LAMP_DARK_SHARE :: 0.25
 // Matches chunk.fs, so models are never darker than the ground.
 MINIMUM_MODEL_BRIGHTNESS :: 0.06
+// An iris's blade count and its opening turn (work item 0231).
+MINIMUM_IRIS_BLADES :: 3
+MAXIMUM_IRIS_BLADES :: 16
+MAXIMUM_IRIS_AMPLITUDE :: 0.5
 
-// As written in the file. pivot is in blocks in the unrotated
-// footprint's frame, from its minimum corner.
+// As written in the file. pivot and an iris's hinge are in blocks in the
+// unrotated footprint's frame, from its minimum corner.
 Motion_Definition :: struct {
 	kind:           string,
 	axis:           string,
 	amplitude:      f32,
 	period_seconds: f32,
 	pivot:          [3]f32,
+	blades:         int,
+	hinge:          [3]f32,
 }
 
 Machine_Motion :: struct {
@@ -80,6 +93,8 @@ Machine_Motion :: struct {
 	amplitude:      f32,
 	period_seconds: f32,
 	pivot:          [3]f32,
+	blades:         int,
+	hinge:          [3]f32,
 }
 
 motion_axis_index :: proc(name: string) -> (axis: int, found: bool) {
@@ -109,7 +124,8 @@ point_in_footprint :: proc(point: [3]f32, footprint: Machine_Footprint_Definitio
 
 // A motion needs a model, a known kind, a positive period, an axis for a
 // part that moves, and a pivot inside the footprint; the arm only an
-// inserter.
+// inserter; a slide or an iris a hatch, an iris its blades, amplitude and
+// hinge within bounds (0231).
 validate_motion_definition :: proc(definition: Machine_Definition) -> string {
 	motion := definition.motion
 	kind, found := parse_named_enum(motion_kind_names, motion.kind)
@@ -126,6 +142,12 @@ validate_motion_definition :: proc(definition: Machine_Definition) -> string {
 		return fmt.tprintf("machine %q has a slide motion but is no hatch", definition.id)
 	case kind == .Slide && (motion.amplitude <= 0 || motion.amplitude > MAXIMUM_FOOTPRINT_SIZE):
 		return fmt.tprintf("machine %q has a slide amplitude outside 0 to %d cells", definition.id, MAXIMUM_FOOTPRINT_SIZE)
+	case kind == .Iris && definition.kind != "hatch":
+		return fmt.tprintf("machine %q has an iris motion but is no hatch", definition.id)
+	case kind == .Iris && (motion.blades < MINIMUM_IRIS_BLADES || motion.blades > MAXIMUM_IRIS_BLADES):
+		return fmt.tprintf("machine %q has iris blades %d outside %d to %d", definition.id, motion.blades, MINIMUM_IRIS_BLADES, MAXIMUM_IRIS_BLADES)
+	case kind == .Iris && !(motion.amplitude > 0 && motion.amplitude <= MAXIMUM_IRIS_AMPLITUDE):
+		return fmt.tprintf("machine %q has an iris amplitude outside 0 to 0.5 turn", definition.id)
 	case motion.period_seconds <= 0:
 		return fmt.tprintf("machine %q needs a positive motion period_seconds", definition.id)
 	}
@@ -134,6 +156,9 @@ validate_motion_definition :: proc(definition: Machine_Definition) -> string {
 	}
 	if !point_in_footprint(motion.pivot, definition.footprint) {
 		return fmt.tprintf("machine %q has a motion pivot outside its footprint", definition.id)
+	}
+	if kind == .Iris && !point_in_footprint(motion.hinge, definition.footprint) {
+		return fmt.tprintf("machine %q has an iris hinge outside its footprint", definition.id)
 	}
 	return ""
 }
@@ -147,6 +172,8 @@ resolve_machine_motion :: proc(definition: Motion_Definition) -> Machine_Motion 
 		amplitude = definition.amplitude,
 		period_seconds = definition.period_seconds,
 		pivot = definition.pivot,
+		blades = definition.blades,
+		hinge = definition.hinge,
 	}
 }
 
@@ -254,9 +281,44 @@ motion_transform :: proc(motion: Machine_Motion, footprint: [3]i32, phase: f32) 
 		return rotation_about_pivot(motion.axis, 2 * math.PI * motion.amplitude * motion_stroke(phase), pivot)
 	case .Slide:
 		return translation_matrix(direction * motion.amplitude * phase)
+	case .Iris:
+		// Blade 0's pose: opened about its pin by the open fraction.
+		return rotation_about_pivot(motion.axis, 2 * math.PI * motion.amplitude * phase, footprint_point_to_model(motion.hinge, footprint))
 	case .None, .Glow, .Arm:
 	}
 	return translation_matrix({})
+}
+
+// An iris's blade (work item 0231) at an open fraction: blade 0's pose
+// (motion_transform), then turned by blade / blades of a turn about the
+// axis through the pivot, which keeps the blade's pin on it.
+iris_blade_transform :: proc(motion: Machine_Motion, footprint: [3]i32, blade: int, fraction: f32) -> matrix[4, 4]f32 {
+	slot := rotation_about_pivot(motion.axis, 2 * math.PI * f32(blade) / f32(max(motion.blades, 1)), footprint_point_to_model(motion.pivot, footprint))
+	return slot * motion_transform(motion, footprint, fraction)
+}
+
+// Every pose a machine's part is drawn in: one per iris blade, one for
+// any other kind.
+Motion_Part_Transforms :: struct {
+	transforms: [MAXIMUM_IRIS_BLADES]matrix[4, 4]f32,
+	count:      int,
+}
+
+// The part's poses at phase; every part draw goes through it (the world,
+// the ghosts, the workbench preview, the model check). The blade count is
+// clamped to the array.
+motion_part_transforms :: proc(motion: Machine_Motion, footprint: [3]i32, phase: f32) -> Motion_Part_Transforms {
+	poses: Motion_Part_Transforms
+	if motion.kind != .Iris {
+		poses.count = 1
+		poses.transforms[0] = motion_transform(motion, footprint, phase)
+		return poses
+	}
+	poses.count = clamp(motion.blades, 1, MAXIMUM_IRIS_BLADES)
+	for blade in 0 ..< poses.count {
+		poses.transforms[blade] = iris_blade_transform(motion, footprint, blade, phase)
+	}
+	return poses
 }
 
 // The brightness of the emissive voxels per colour channel: lit like the

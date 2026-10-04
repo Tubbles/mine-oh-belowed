@@ -572,7 +572,8 @@ definition_lists_slots_power_or_ports :: proc(definition: Machine_Definition) ->
 // A hatch of the pod (work item 0198): placed by the world, at least
 // MINIMUM_HATCH_HEIGHT cells high, opening its own cells (no open_cells),
 // with a slide motion, a spin of at most one turn (0221: a spin's phase is
-// the open fraction, so at fully open it stands at its amplitude) or none.
+// the open fraction, so at fully open it stands at its amplitude), or an
+// iris (0231; its bounds in validate_motion_definition) or none.
 validate_hatch_definition :: proc(definition: Machine_Definition) -> string {
 	if definition.item != "" {
 		return fmt.tprintf("hatch %q cannot be placed by an item", definition.id)
@@ -587,8 +588,8 @@ validate_hatch_definition :: proc(definition: Machine_Definition) -> string {
 		return fmt.tprintf("hatch %q may not list slots, power or fluid ports", definition.id)
 	}
 	kind, _ := parse_named_enum(motion_kind_names, definition.motion.kind)
-	if kind != .None && kind != .Slide && kind != .Spin {
-		return fmt.tprintf("hatch %q may only have a slide or a spin motion", definition.id)
+	if kind != .None && kind != .Slide && kind != .Spin && kind != .Iris {
+		return fmt.tprintf("hatch %q may only have a slide, a spin or an iris motion", definition.id)
 	}
 	if kind == .Spin && !(abs(definition.motion.amplitude) > 0 && abs(definition.motion.amplitude) <= 1) {
 		return fmt.tprintf("hatch %q has a spin amplitude outside 0 to 1 turn", definition.id)

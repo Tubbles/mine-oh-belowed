@@ -15,8 +15,8 @@ import "platform"
 // hatches, the locker, the crafting bench and the oxygen generator, each
 // its own entity on the pod's frame in cells the pod leaves to it
 // (machine_held_cells). A hatch is closed (solid) or open (passable, its
-// top row aimable), toggled by Interact (toggle_hatch) and on its own as
-// an airlock (entity_pod_airlock.odin, 0222). The cells the
+// top row aimable), toggled on its own as an airlock (toggle_hatch from
+// entity_pod_airlock.odin, 0222, 0231). The cells the
 // hatches seal off from the outside are the pod's sealed room, derived
 // from the occupancy (rebuild_sealed_rooms) and never saved. A pod of
 // another size in a save (an older build's) is replaced at load
@@ -132,9 +132,9 @@ hatch_state :: proc(entities: ^Entities, machines: Machine_Registry, handle: Ent
 // An open hatch's cells: none solid, every row but the top an open cell
 // the player walks and the aiming ray passes through, the top row
 // neither, so the player walks under it and the ray stops at it, which
-// keeps the hatch aimable to close it (a 2 row hatch: the player passes
-// both rows, since it collides with solid cells only; the ray passes row
-// 0).
+// keeps an open hatch what the HUD's target names (nothing acts on a
+// hatch since 0231; a 2 row hatch: the player passes both rows, since it
+// collides with solid cells only; the ray passes row 0).
 occupy_open_hatch_cells :: proc(entities: ^Entities, common: Entity_Common, occupant: Occupant) {
 	passed := Occupant{handle = occupant.handle, flags = occupant.flags - {.Solid} + {.Open}}
 	top := Occupant{handle = occupant.handle, flags = occupant.flags - {.Solid}}
@@ -196,7 +196,6 @@ toggle_hatch :: proc(entities: ^Entities, machines: Machine_Registry, handle: En
 	}
 	hatch.hatch_open = !hatch.hatch_open
 	hatch.hatch_toggle_tick = tick + 1
-	hatch.hatch_close_tick = 0
 	occupy_entity_cells(entities, machines, hatch.common)
 	rebuild_sealed_rooms(entities, machines)
 	return true

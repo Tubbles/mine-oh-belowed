@@ -106,9 +106,8 @@ Game_Config :: struct {
 	arrival_start_metres:             int,
 	arrival_angle_degrees:            int,
 	arrival_window_pitch_degrees:     int,
-	// The pod's airlock (work item 0222, entity_pod_airlock.odin): how
-	// near a player opens a hatch and the bounds of the hold before an
-	// open one closes.
+	// The pod's airlock (work items 0222, 0231, entity_pod_airlock.odin):
+	// how near a player's capsule keeps a hatch open (0231).
 	pod_airlock:                      Pod_Airlock_Config,
 }
 
@@ -132,12 +131,10 @@ Field_Simulation_Config :: struct {
 	pad_foundation: string,
 }
 
-// The pod's airlock (work item 0222, pod_airlock_problem): the reach in
-// millimetres and the bounds of the close hold in ticks.
+// The pod's airlock (work items 0222, 0231, pod_airlock_problem): the
+// reach in millimetres.
 Pod_Airlock_Config :: struct {
-	reach_millimetres:        int,
-	close_hold_minimum_ticks: int,
-	close_hold_maximum_ticks: int,
+	reach_millimetres: int,
 }
 
 // A field chunk is about 270 KiB with its water and light: radius 3 is
@@ -659,15 +656,12 @@ arrival_problem :: proc(config: Game_Config) -> string {
 // work item 0222).
 MINIMUM_POD_AIRLOCK_REACH_MILLIMETRES :: 50
 MAXIMUM_POD_AIRLOCK_REACH_MILLIMETRES :: 300
-MAXIMUM_POD_AIRLOCK_HOLD_TICKS :: 600
 
-// Every pod_airlock value inside its bound, the hold's minimum at most its
-// maximum; a missing key reads as zero and fails.
+// Every pod_airlock value inside its bound; a missing key reads as zero
+// and fails.
 pod_airlock_problem :: proc(airlock: Pod_Airlock_Config) -> string {
 	bounds := [?]Config_Bound {
 		{"pod_airlock.reach_millimetres", airlock.reach_millimetres, MINIMUM_POD_AIRLOCK_REACH_MILLIMETRES, MAXIMUM_POD_AIRLOCK_REACH_MILLIMETRES},
-		{"pod_airlock.close_hold_minimum_ticks", airlock.close_hold_minimum_ticks, 1, MAXIMUM_POD_AIRLOCK_HOLD_TICKS},
-		{"pod_airlock.close_hold_maximum_ticks", airlock.close_hold_maximum_ticks, airlock.close_hold_minimum_ticks, MAXIMUM_POD_AIRLOCK_HOLD_TICKS},
 	}
 	for bound in bounds {
 		if bound.value < bound.minimum || bound.value > bound.maximum {

@@ -15,7 +15,7 @@ import "platform"
 // to the cabin with a shake, the dust outside and the crash. Nothing here
 // reaches the simulation, so the hash is the same with and without it.
 // The hatch sound (play_hatch_sounds) is the general hatch cue: it plays
-// for every toggle, a press's and the airlock's alike (0222).
+// for every toggle, the airlock's (0222, 0231).
 
 ARRIVAL_VERTEX_SHADER_PATH :: "shaders/arrival.vs"
 ARRIVAL_FRAGMENT_SHADER_PATH :: "shaders/arrival.fs"

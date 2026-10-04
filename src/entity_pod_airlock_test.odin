@@ -4,14 +4,16 @@ import "core:fmt"
 import "core:slice"
 import "core:testing"
 
-// The pod's airlock (work item 0222): the doors open for a player close
-// and facing them, close behind, and never stand open at once.
+// The pod's airlock (work items 0222, 0231): a door is open exactly while
+// a player's capsule is within reach of it, standing or crouched, so a
+// crawl has the near door open, both shut in the middle, the far one
+// open.
 
-// The shipped pod_airlock at the test tick rate.
-test_pod_airlock_tuning :: proc(machines: Machine_Registry) -> Pod_Airlock_Tuning {
+// The shipped pod_airlock.
+test_pod_airlock_tuning :: proc() -> Pod_Airlock_Tuning {
 	shipped, error := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
 	assert(error == nil)
-	return make_pod_airlock_tuning(shipped.pod_airlock, machines, TEST_TICK_RATE)
+	return make_pod_airlock_tuning(shipped.pod_airlock)
 }
 
 // The frame local coordinate along the airlock's axis (the frame's z,
@@ -31,17 +33,90 @@ test_airlock_floor_point :: proc(frame: Frame, pod: Machine, along: i64) -> Worl
 	return centre + World_Position(fixed_scale(frame.axes[FRAME_FORWARD], shift))
 }
 
-// The two hatches' open states.
-test_airlock_doors_open :: proc(entities: ^Entities, frame: Frame, pod: Machine) -> (outer, inner: bool) {
-	return hatch_is_open(entities, test_pod_fixture(entities, frame, pod, TEST_OUTER_HATCH)), hatch_is_open(entities, test_pod_fixture(entities, frame, pod, TEST_INNER_HATCH))
+// Each player's capsule, in the temp allocator.
+test_airlock_capsules :: proc(tuning: Field_Player_Tuning, players: []Field_Player) -> []Field_Capsule {
+	capsules := make([]Field_Capsule, len(players), context.temp_allocator)
+	for player, index in players {
+		capsules[index] = field_player_capsule(tuning, player)
+	}
+	return capsules
+}
+
+// Whether the rule wants the door open: a capsule within reach of its
+// cells.
+test_door_wanted :: proc(entities: ^Entities, machines: Machine_Registry, frame: Frame, door: Entity_Handle, capsules: []Field_Capsule, reach: i64) -> bool {
+	return capsules_near_cells(frame, common_cells(pool_get(&entities.foundations, door).common, machines), capsules, reach)
+}
+
+// The exact rule after a step: each door open exactly while the rule
+// wants it. False, with a failure, when one is not.
+expect_test_doors_follow_the_rule :: proc(t: ^testing.T, entities: ^Entities, machines: Machine_Registry, frame: Frame, doors: []Entity_Handle, capsules: []Field_Capsule, reach: i64, label: string, tick: u64) -> bool {
+	for door, index in doors {
+		wanted := test_door_wanted(entities, machines, frame, door, capsules, reach)
+		if hatch_is_open(entities, door) != wanted {
+			testing.expectf(t, false, "%s: tick %d: door %d open %v, wanted %v", label, tick, index, hatch_is_open(entities, door), wanted)
+			return false
+		}
+	}
+	return true
+}
+
+// A standing player walks up to the inner door from the lane: it opens
+// on the tick the capsule comes within the reach and shuts on the tick it
+// is past it on the way back, no hold. The inner door, since a standing
+// capsule cannot reach the outer one on cells: the pod's solid row over
+// the 2 row outside box keeps it 0.5 m off the outer face.
+@(test)
+test_a_standing_player_opens_the_inner_door_within_the_reach_and_shuts_it_past_it :: proc(t: ^testing.T) {
+	for spacing in TEST_FIELD_SPACINGS {
+		machines := make_test_machines()
+		world := make_test_field(Test_Terrain{kind = .Flat}, spacing)
+		defer destroy_field_world(&world)
+		entities: Entities
+		defer destroy_entities(&entities)
+		frame, pod := place_test_pod(&entities, machines)
+		tuning := test_field_tuning(spacing)
+		airlock := test_pod_airlock_tuning()
+		inner := pod.fixture_boxes[TEST_INNER_HATCH]
+		start := Cell_Box{from = {inner.from.x - 2, 0, inner.from.z}, to = {inner.from.x - 1, 0, inner.to.z}}
+		player := make_field_player(pod_box_floor_centre(frame, pod_origin(pod), pod, POD_ROTATION, start), frame.axes[FRAME_FORWARD])
+		doors := [2]Entity_Handle{test_pod_fixture(&entities, frame, pod, TEST_OUTER_HATCH), test_pod_fixture(&entities, frame, pod, TEST_INNER_HATCH)}
+		face := test_door_face(frame, pod, TEST_INNER_HATCH, false)
+		step := (tuning.walk_speed + VELOCITY_FRACTION_ONE - 1) / VELOCITY_FRACTION_ONE
+		latest := tuning.capsule_radius + airlock.reach + step + FIELD_GROUND_TOLERANCE
+		label := fmt.tprintf("%d mm", spacing)
+		opened, shut, outer_opened := false, false, false
+		for tick in u64(1) ..= 240 {
+			input := tick <= 120 ? FIELD_WALK_FORWARD : Field_Player_Input{move = {0, -FIELD_MOVE_ONE}}
+			run_field_player_with_frames(&world, &entities.frames, tuning, &player, input, 1)
+			capsules := test_airlock_capsules(tuning, {player})
+			was_open := hatch_is_open(&entities, doors[1])
+			tick_pod_airlocks(&entities, machines, capsules, airlock, tick)
+			if !expect_test_doors_follow_the_rule(t, &entities, machines, frame, doors[:], capsules, airlock.reach, label, tick) {
+				break
+			}
+			outer_opened = outer_opened || hatch_is_open(&entities, doors[0])
+			if !was_open && hatch_is_open(&entities, doors[1]) && tick <= 120 && !opened {
+				opened = true
+				before := face - frame_local_position(frame, player.position).z
+				testing.expectf(t, before <= latest, "%s: the inner opened at tick %d with the feet %d before it (at most %d)", label, tick, before, latest)
+			}
+			if was_open && !hatch_is_open(&entities, doors[1]) && tick > 120 {
+				shut = true
+			}
+		}
+		testing.expectf(t, opened, "%s: the inner never opened on the walk", label)
+		testing.expectf(t, shut && !hatch_is_open(&entities, doors[1]), "%s: the inner did not shut on the walk back", label)
+		testing.expectf(t, !outer_opened, "%s: the outer opened", label)
+	}
 }
 
 // A crouched crossing of the airlock on the flat test field, one tick at a
 // time as the session runs it (the move, then the step). outward goes
-// from the lane out, else from outside in. The door the player meets
-// first must open late, close round the player in the bore with the far
-// one closed, the far one open no earlier than a slide after, and both
-// stand closed at the end with the player through.
+// from the lane out, else from outside in. Every tick the doors follow
+// the rule and never stand open at once; in order, the near door opens
+// with the far one shut, both shut with the feet in the bore, the far one
+// opens with the near one shut, and the far one shuts behind the player.
 cross_test_airlock :: proc(t: ^testing.T, spacing: int, outward: bool) {
 	machines := make_test_machines()
 	world := make_test_field(Test_Terrain{kind = .Flat}, spacing)
@@ -52,72 +127,62 @@ cross_test_airlock :: proc(t: ^testing.T, spacing: int, outward: bool) {
 	origin := pod_origin(pod)
 	pitch := frame_pitch_units(frame)
 	tuning := test_field_tuning(spacing)
-	airlock := test_pod_airlock_tuning(machines)
+	airlock := test_pod_airlock_tuning()
 	inner := pod.fixture_boxes[TEST_INNER_HATCH]
 	near_index, far_index := TEST_INNER_HATCH, TEST_OUTER_HATCH
 	player: Field_Player
-	near_face, goal: i64
+	goal: i64
 	if outward {
 		start := Cell_Box{from = {inner.from.x - 2, 0, inner.from.z}, to = {inner.from.x - 1, 0, inner.to.z}}
 		player = make_field_player(pod_box_floor_centre(frame, origin, pod, POD_ROTATION, start), frame.axes[FRAME_FORWARD])
-		near_face = test_door_face(frame, pod, TEST_INNER_HATCH, false)
 		goal = test_door_face(frame, pod, TEST_OUTER_HATCH, true) + 2 * pitch
 	} else {
 		near_index, far_index = TEST_OUTER_HATCH, TEST_INNER_HATCH
 		player = make_field_player(test_pod_outside_floor_point(frame, pod), -frame.axes[FRAME_FORWARD])
-		near_face = test_door_face(frame, pod, TEST_OUTER_HATCH, true)
 		// One cell past the inner face: the chair stops the capsule two
 		// cells past it on the hatches' z span.
 		goal = test_door_face(frame, pod, TEST_INNER_HATCH, false) - pitch
 	}
-	near_door := test_pod_fixture(&entities, frame, pod, near_index)
-	far_door := test_pod_fixture(&entities, frame, pod, far_index)
+	doors := [2]Entity_Handle{test_pod_fixture(&entities, frame, pod, near_index), test_pod_fixture(&entities, frame, pod, far_index)}
 	bore := test_pod_box_cells(pod, TEST_AIRLOCK_BOX)
-	step := (tuning.sneak_speed + VELOCITY_FRACTION_ONE - 1) / VELOCITY_FRACTION_ONE
-	latest := tuning.capsule_radius + airlock.reach + step + FIELD_GROUND_TOLERANCE
 	label := fmt.tprintf("%d mm %s", spacing, outward ? "outward" : "inward")
 
 	tick := u64(0)
 	stage := 0
-	both_closed_tick := u64(0)
-	run_tick :: proc(world: ^Field_World, entities: ^Entities, machines: Machine_Registry, tuning: Field_Player_Tuning, airlock: Pod_Airlock_Tuning, player: ^Field_Player, input: Field_Player_Input, tick: ^u64) {
+	failed := false
+	run_tick :: proc(t: ^testing.T, world: ^Field_World, entities: ^Entities, machines: Machine_Registry, frame: Frame, tuning: Field_Player_Tuning, airlock: Pod_Airlock_Tuning, doors: []Entity_Handle, bore: []World_Coordinate, player: ^Field_Player, input: Field_Player_Input, tick: ^u64, stage: ^int, failed: ^bool, label: string) {
 		tick^ += 1
 		run_field_player_with_frames(world, &entities.frames, tuning, player, input, 1)
-		players := [1]Field_Player{player^}
-		tick_pod_airlocks(entities, machines, players[:], tuning, airlock, tick^)
-	}
-	observe :: proc(t: ^testing.T, entities: ^Entities, frame: Frame, near_door, far_door: Entity_Handle, player: Field_Player, bore: []World_Coordinate, near_face, latest: i64, outward: bool, tick: u64, stage: ^int, both_closed_tick: ^u64, travel: u64, label: string) {
-		near_open, far_open := hatch_is_open(entities, near_door), hatch_is_open(entities, far_door)
-		testing.expectf(t, !(near_open && far_open), "%s: both doors open at tick %d (stage %d)", label, tick, stage^)
-		feet := frame_local_position(frame, player.position).z
-		before := outward ? near_face - feet : feet - near_face
-		in_bore := slice.contains(bore, frame_cell_of_feet(frame, player))
+		capsules := test_airlock_capsules(tuning, {player^})
+		tick_pod_airlocks(entities, machines, capsules, airlock, tick^)
+		if failed^ {
+			return
+		}
+		if !expect_test_doors_follow_the_rule(t, entities, machines, frame, doors, capsules, airlock.reach, label, tick^) {
+			failed^ = true
+			return
+		}
+		near_open, far_open := hatch_is_open(entities, doors[0]), hatch_is_open(entities, doors[1])
+		if near_open && far_open {
+			testing.expectf(t, false, "%s: both doors open at tick %d (stage %d)", label, tick^, stage^)
+			failed^ = true
+			return
+		}
+		in_bore := slice.contains(bore, frame_cell_of_feet(frame, player^))
 		switch stage^ {
 		case 0:
-			if near_open {
-				testing.expectf(t, !far_open && before <= latest, "%s: the near door opened at tick %d with the feet %d before it (at most %d)", label, tick, before, latest)
-				stage^ = 1
-			}
+			stage^ = near_open ? 1 : 0
 		case 1:
-			if !near_open {
-				testing.expectf(t, in_bore && !far_open, "%s: the near door closed at tick %d with the feet in the bore %v", label, tick, in_bore)
-				stage^ = 2
-				both_closed_tick^ = tick
-			}
+			stage^ = !near_open && !far_open && in_bore ? 2 : 1
 		case 2:
-			testing.expectf(t, !near_open, "%s: the near door opened again at tick %d", label, tick)
-			if far_open {
-				testing.expectf(t, tick >= both_closed_tick^ + travel && in_bore, "%s: the far door opened at tick %d, both closed since %d, the feet in the bore %v", label, tick, both_closed_tick^, in_bore)
-				stage^ = 3
-			}
+			stage^ = far_open ? 3 : 2
 		case 3:
-			testing.expectf(t, !near_open, "%s: the near door opened again at tick %d", label, tick)
+			stage^ = !far_open ? 4 : 3
 		}
 	}
 
 	for _ in 0 ..< 30 {
-		run_tick(&world, &entities, machines, tuning, airlock, &player, {held = {.Sneak}}, &tick)
-		observe(t, &entities, frame, near_door, far_door, player, bore, near_face, latest, outward, tick, &stage, &both_closed_tick, airlock.door_travel_ticks, label)
+		run_tick(t, &world, &entities, machines, frame, tuning, airlock, doors[:], bore, &player, {held = {.Sneak}}, &tick, &stage, &failed, label)
 	}
 	testing.expectf(t, player.crouching && stage == 0, "%s: crouching %v, stage %d after the start", label, player.crouching, stage)
 	for _ in 0 ..< 900 {
@@ -125,16 +190,16 @@ cross_test_airlock :: proc(t: ^testing.T, spacing: int, outward: bool) {
 		if (outward && feet >= goal) || (!outward && feet <= goal) {
 			break
 		}
-		run_tick(&world, &entities, machines, tuning, airlock, &player, FIELD_SNEAK_FORWARD, &tick)
-		observe(t, &entities, frame, near_door, far_door, player, bore, near_face, latest, outward, tick, &stage, &both_closed_tick, airlock.door_travel_ticks, label)
+		run_tick(t, &world, &entities, machines, frame, tuning, airlock, doors[:], bore, &player, FIELD_SNEAK_FORWARD, &tick, &stage, &failed, label)
 	}
-	wait := airlock.door_travel_ticks + u64(airlock.close_hold_maximum_ticks) + airlock.door_travel_ticks + 2
-	for _ in 0 ..< wait {
-		run_tick(&world, &entities, machines, tuning, airlock, &player, {held = {.Sneak}}, &tick)
-		observe(t, &entities, frame, near_door, far_door, player, bore, near_face, latest, outward, tick, &stage, &both_closed_tick, airlock.door_travel_ticks, label)
+	for _ in 0 ..< 30 {
+		run_tick(t, &world, &entities, machines, frame, tuning, airlock, doors[:], bore, &player, {held = {.Sneak}}, &tick, &stage, &failed, label)
 	}
-	testing.expectf(t, stage == 3, "%s: the crossing reached stage %d of 3", label, stage)
-	testing.expectf(t, !hatch_is_open(&entities, far_door), "%s: the far door is open at the end", label)
+	stage_names := [4]string{"the near door opens with the far one shut", "both shut with the feet in the bore", "the far door opens with the near one shut", "the far door shuts"}
+	if stage < 4 {
+		testing.expectf(t, false, "%s: the crossing never reached the stage where %s", label, stage_names[stage])
+	}
+	testing.expectf(t, !hatch_is_open(&entities, doors[0]) && !hatch_is_open(&entities, doors[1]), "%s: a door is open at the end", label)
 	feet := frame_cell_of_feet(frame, player)
 	if outward {
 		testing.expectf(t, feet.z - origin.z >= pod.footprint.x, "%s: the feet end in cell %v, inside the footprint", label, feet)
@@ -146,181 +211,132 @@ cross_test_airlock :: proc(t: ^testing.T, spacing: int, outward: bool) {
 	}
 }
 
-// From the lane out: the inner door opens late, both close round the
-// player in the bore, the outer opens a slide later, and the outer closes
-// behind the player outside.
+// From the lane out: the inner opens, both shut round the player in the
+// bore, the outer opens, and it shuts behind the player outside.
 @(test)
-test_a_crouched_player_crosses_the_airlock_with_one_door_open_at_a_time :: proc(t: ^testing.T) {
+test_a_crouched_crawl_out_has_both_doors_shut_in_the_middle :: proc(t: ^testing.T) {
 	for spacing in TEST_FIELD_SPACINGS {
 		cross_test_airlock(t, spacing, true)
 	}
 }
 
-// From outside in, the roles swapped.
+// From outside in: the outer open and the inner shut, both shut in the
+// middle, the inner open and the outer shut.
 @(test)
-test_a_crouched_player_comes_back_in_through_the_airlock :: proc(t: ^testing.T) {
+test_a_crouched_crawl_in_has_both_doors_shut_in_the_middle :: proc(t: ^testing.T) {
 	for spacing in TEST_FIELD_SPACINGS {
 		cross_test_airlock(t, spacing, false)
 	}
 }
 
-// The hold stays in its bounds, varies by tick and by hatch, and is the
-// bound when both bounds agree.
+// Two players at the two doors open both at once; one walking off shuts
+// its door on the next tick.
 @(test)
-test_the_airlock_hold_varies_within_its_bounds :: proc(t: ^testing.T) {
-	airlock := Pod_Airlock_Tuning{close_hold_minimum_ticks = 36, close_hold_maximum_ticks = 72}
-	first, second := Entity_Handle{.Foundation, 3, 1}, Entity_Handle{.Foundation, 4, 1}
-	seen: [2]map[u64]bool
-	seen[0] = make(map[u64]bool, context.temp_allocator)
-	seen[1] = make(map[u64]bool, context.temp_allocator)
-	differ := 0
-	for tick in u64(1) ..= 1000 {
-		holds := [2]u64{pod_airlock_close_hold(first, tick, airlock), pod_airlock_close_hold(second, tick, airlock)}
-		for hold, index in holds {
-			testing.expectf(t, hold >= 36 && hold <= 72, "tick %d: hold %d", tick, hold)
-			seen[index][hold] = true
-		}
-		if holds[0] != holds[1] {
-			differ += 1
-		}
-	}
-	testing.expectf(t, len(seen[0]) >= 20 && len(seen[1]) >= 20, "%d and %d distinct holds", len(seen[0]), len(seen[1]))
-	testing.expectf(t, differ >= 900, "the two hatches differ on %d ticks", differ)
-	fixed := Pod_Airlock_Tuning{close_hold_minimum_ticks = 40, close_hold_maximum_ticks = 40}
-	for tick in u64(1) ..= 100 {
-		testing.expect_value(t, pod_airlock_close_hold(first, tick, fixed), 40)
-	}
-}
-
-// A capsule in the open door keeps it open; out of reach the door closes
-// exactly on its drawn tick; a close tick reached with a capsule in the
-// door is refused and kept.
-@(test)
-test_an_airlock_door_stays_open_while_a_capsule_stands_in_it :: proc(t: ^testing.T) {
+test_two_players_at_the_two_doors_open_both :: proc(t: ^testing.T) {
 	machines := make_test_machines()
 	entities: Entities
 	defer destroy_entities(&entities)
 	frame, pod := place_test_pod(&entities, machines)
 	tuning := test_field_tuning(1000)
-	airlock := test_pod_airlock_tuning(machines)
-	outer := test_pod_fixture(&entities, frame, pod, TEST_OUTER_HATCH)
-	testing.expect(t, toggle_hatch(&entities, machines, outer, 1, nil))
-	player := make_field_player(pod_box_floor_centre(frame, pod_origin(pod), pod, POD_ROTATION, pod.fixture_boxes[TEST_OUTER_HATCH]), frame.axes[FRAME_FORWARD])
-	player.crouching = true
-	players := [1]Field_Player{player}
-	for tick in u64(2) ..= 600 {
-		tick_pod_airlocks(&entities, machines, players[:], tuning, airlock, tick)
-		hatch := pool_get(&entities.foundations, outer)
-		if !hatch.hatch_open || hatch.hatch_close_tick != 0 {
-			testing.expectf(t, false, "tick %d: open %v, close tick %d", tick, hatch.hatch_open, hatch.hatch_close_tick)
-			break
-		}
-	}
-	players[0].position = test_airlock_floor_point(frame, pod, test_door_face(frame, pod, TEST_OUTER_HATCH, true) + 2 * frame_pitch_units(frame))
-	tick_pod_airlocks(&entities, machines, players[:], tuning, airlock, 601)
-	close_tick := pool_get(&entities.foundations, outer).hatch_close_tick
-	testing.expectf(t, close_tick >= 601 + 36 && close_tick <= 601 + 72, "the close tick %d", close_tick)
-	for tick in u64(602) ..= close_tick {
-		tick_pod_airlocks(&entities, machines, players[:], tuning, airlock, tick)
-		testing.expectf(t, hatch_is_open(&entities, outer) == (tick < close_tick), "tick %d of close tick %d: open %v", tick, close_tick, hatch_is_open(&entities, outer))
-	}
-
-	reopened := close_tick + 1
-	testing.expect(t, toggle_hatch(&entities, machines, outer, reopened, nil))
-	now := reopened + airlock.door_travel_ticks
-	pool_get(&entities.foundations, outer).hatch_close_tick = now
-	capsules := [1]Field_Capsule{field_player_capsule(tuning, player)}
-	close_airlock_door(&entities, machines, outer, {}, capsules[:], airlock, now)
-	testing.expect(t, hatch_is_open(&entities, outer), "the door closed on the capsule")
-	testing.expect_value(t, pool_get(&entities.foundations, outer).hatch_close_tick, now)
-}
-
-// Two players at opposite doors take turns: the outer first, the inner
-// once the outer has closed and finished its slide.
-@(test)
-test_two_players_at_opposite_doors_take_turns :: proc(t: ^testing.T) {
-	machines := make_test_machines()
-	entities: Entities
-	defer destroy_entities(&entities)
-	frame, pod := place_test_pod(&entities, machines)
-	tuning := test_field_tuning(1000)
-	airlock := test_pod_airlock_tuning(machines)
+	airlock := test_pod_airlock_tuning()
 	outer := test_pod_fixture(&entities, frame, pod, TEST_OUTER_HATCH)
 	inner := test_pod_fixture(&entities, frame, pod, TEST_INNER_HATCH)
 	inside := make_field_player(test_airlock_floor_point(frame, pod, test_door_face(frame, pod, TEST_INNER_HATCH, false) - tuning.capsule_radius), frame.axes[FRAME_FORWARD])
 	inside.crouching = true
 	outside := make_field_player(test_airlock_floor_point(frame, pod, test_door_face(frame, pod, TEST_OUTER_HATCH, true) + tuning.capsule_radius), -frame.axes[FRAME_FORWARD])
+	outside.crouching = true
 	players := [2]Field_Player{inside, outside}
-	tick_pod_airlocks(&entities, machines, players[:], tuning, airlock, 1)
-	testing.expect(t, hatch_is_open(&entities, outer) && !hatch_is_open(&entities, inner), "the outer opens first")
+	tick_pod_airlocks(&entities, machines, test_airlock_capsules(tuning, players[:]), airlock, 1)
+	testing.expect(t, hatch_is_open(&entities, outer) && hatch_is_open(&entities, inner), "both open at once")
 	for tick in u64(2) ..= 301 {
-		tick_pod_airlocks(&entities, machines, players[:], tuning, airlock, tick)
-		if !hatch_is_open(&entities, outer) || hatch_is_open(&entities, inner) {
-			testing.expectf(t, false, "tick %d: the outer closed or the inner opened while the outside player stands at the outer", tick)
+		tick_pod_airlocks(&entities, machines, test_airlock_capsules(tuning, players[:]), airlock, tick)
+		if !hatch_is_open(&entities, outer) || !hatch_is_open(&entities, inner) {
+			testing.expectf(t, false, "tick %d: a door shut with a player at each", tick)
 			break
 		}
 	}
 	players[1].position = test_airlock_floor_point(frame, pod, test_door_face(frame, pod, TEST_OUTER_HATCH, true) + 3 * POSITION_UNITS_PER_METRE)
-	closed_tick, opened_tick := u64(0), u64(0)
-	for tick in u64(302) ..= 700 {
-		tick_pod_airlocks(&entities, machines, players[:], tuning, airlock, tick)
-		outer_open, inner_open := hatch_is_open(&entities, outer), hatch_is_open(&entities, inner)
-		testing.expectf(t, !(outer_open && inner_open), "tick %d: both open", tick)
-		if !outer_open && closed_tick == 0 {
-			closed_tick = tick
-		}
-		if inner_open && opened_tick == 0 {
-			opened_tick = tick
-		}
-	}
-	testing.expectf(t, closed_tick >= 302 + 36 && closed_tick <= 302 + 72, "the outer closed at tick %d", closed_tick)
-	testing.expectf(t, opened_tick != 0 && opened_tick >= closed_tick + airlock.door_travel_ticks, "the inner opened at tick %d, the outer closed at %d", opened_tick, closed_tick)
+	tick_pod_airlocks(&entities, machines, test_airlock_capsules(tuning, players[:]), airlock, 302)
+	testing.expect(t, !hatch_is_open(&entities, outer), "the outer shuts the tick its player is gone")
+	testing.expect(t, hatch_is_open(&entities, inner), "the inner stays open for its player")
 }
 
-// Both doors left open (a save from 0198 to 0221), no players: each
-// closes after its slide and its hold, and neither opens again.
+// Both doors open with nobody near (a save from 0198 to 0230 may hold
+// that) shut on the first tick; a player in the outer doorway keeps it
+// open and the inner shut.
 @(test)
-test_doors_left_open_close_on_their_own :: proc(t: ^testing.T) {
+test_a_door_open_with_nobody_near_shuts_on_the_first_tick :: proc(t: ^testing.T) {
 	machines := make_test_machines()
 	entities: Entities
 	defer destroy_entities(&entities)
 	frame, pod := place_test_pod(&entities, machines)
 	tuning := test_field_tuning(1000)
-	airlock := test_pod_airlock_tuning(machines)
+	airlock := test_pod_airlock_tuning()
 	doors := [2]Entity_Handle{test_pod_fixture(&entities, frame, pod, TEST_OUTER_HATCH), test_pod_fixture(&entities, frame, pod, TEST_INNER_HATCH)}
 	for door in doors {
 		testing.expect(t, toggle_hatch(&entities, machines, door, 1, nil))
 	}
-	closed: [2]u64
-	for tick in u64(2) ..= 600 {
-		tick_pod_airlocks(&entities, machines, nil, tuning, airlock, tick)
-		for door, index in doors {
-			open := hatch_is_open(&entities, door)
-			if !open && closed[index] == 0 {
-				closed[index] = tick
-			}
-			testing.expectf(t, !open || closed[index] == 0, "tick %d: door %d opened again", tick, index)
-		}
+	tick_pod_airlocks(&entities, machines, nil, airlock, 2)
+	for door, index in doors {
+		testing.expectf(t, !hatch_is_open(&entities, door), "door %d is open after the first tick", index)
+		testing.expect_value(t, pool_get(&entities.foundations, door).hatch_toggle_tick, 3)
 	}
-	first, last := 1 + airlock.door_travel_ticks + 36, 1 + airlock.door_travel_ticks + 72
-	for tick, index in closed {
-		testing.expectf(t, tick >= first && tick <= last, "door %d closed at tick %d, not within %d to %d", index, tick, first, last)
+	for door in doors {
+		testing.expect(t, toggle_hatch(&entities, machines, door, 3, nil))
+	}
+	player := make_field_player(pod_box_floor_centre(frame, pod_origin(pod), pod, POD_ROTATION, pod.fixture_boxes[TEST_OUTER_HATCH]), frame.axes[FRAME_FORWARD])
+	player.crouching = true
+	capsules := test_airlock_capsules(tuning, {player})
+	for tick in u64(4) ..= 600 {
+		tick_pod_airlocks(&entities, machines, capsules, airlock, tick)
+		if !hatch_is_open(&entities, doors[0]) || hatch_is_open(&entities, doors[1]) {
+			testing.expectf(t, false, "tick %d: outer open %v, inner open %v with a player in the outer doorway", tick, hatch_is_open(&entities, doors[0]), hatch_is_open(&entities, doors[1]))
+			break
+		}
 	}
 }
 
 // The shipped reach leaves a crouched player resting in the middle of the
-// bore near neither door, and one against the far door out of the near
-// door's reach.
+// bore near neither door.
 @(test)
-test_the_airlock_reach_leaves_room_in_the_bore :: proc(t: ^testing.T) {
+test_the_airlock_reach_leaves_both_doors_shut_in_the_middle :: proc(t: ^testing.T) {
 	machines := make_test_machines()
 	pod := machines.machines[find_machine_of_kind(machines, .Pod)]
 	shipped, _ := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
 	tuning := test_field_tuning(1000)
 	radius := field_posture_tuning(tuning, true).capsule_radius
-	reach := test_pod_airlock_tuning(machines).reach
+	reach := test_pod_airlock_tuning().reach
 	box := pod.open_cells[TEST_AIRLOCK_BOX]
 	length := millimetres_to_position_units(int(box.to.x - box.from.x + 1) * shipped.foundation_pitch_millimetres)
-	testing.expectf(t, length - 2 * radius > reach, "against the far door the near one is %d away, within the reach %d", length - 2 * radius, reach)
 	testing.expectf(t, length / 2 - radius > reach, "in the middle the doors are %d away, within the reach %d", length / 2 - radius, reach)
+}
+
+// A hatch as 0222 saved it, with the close tick 0231 removed.
+Foundation_Before_0231 :: struct {
+	using common:      Entity_Common,
+	hatch_open:        bool,
+	hatch_toggle_tick: u64,
+	hatch_close_tick:  u64,
+}
+
+// A 0222 save's hatch loads: the close tick is skipped by name and the
+// rest reads as written.
+@(test)
+test_a_hatch_saved_before_0231_loads_without_its_close_tick :: proc(t: ^testing.T) {
+	old := Foundation_Before_0231 {
+		common = Entity_Common{machine = 3, origin = {1, 2, 3}},
+		hatch_open = true,
+		hatch_toggle_tick = 41,
+		hatch_close_tick = 99,
+	}
+	bytes := make([dynamic]byte, context.temp_allocator)
+	write_value_of(&bytes, &old)
+	read: Foundation
+	reader := Byte_Reader{data = bytes[:]}
+	testing.expect(t, read_value_of(&reader, &read))
+	testing.expect_value(t, reader.problem, "")
+	testing.expect(t, read.hatch_open, "the hatch loads open")
+	testing.expect_value(t, read.hatch_toggle_tick, 41)
+	testing.expect_value(t, read.common.machine, 3)
+	testing.expect_value(t, read.common.origin, World_Coordinate{1, 2, 3})
 }

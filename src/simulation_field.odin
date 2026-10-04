@@ -10,9 +10,10 @@ import "core:math"
 // players move and queue their brush edits and placements in player order,
 // and the queues drain at the end of the field's part
 // (finish_field_tick). After the players move and the queues drain, the
-// pod's airlocks step (tick_pod_airlocks, 0222). The entities (the
-// frames' machines, the arms, the runs) tick on World.entities after it
-// as in the block world.
+// pod's hatches follow the players (tick_pod_airlocks, 0222, 0231: a
+// hatch is open exactly while a player is within reach of it). The
+// entities (the frames' machines, the arms, the runs) tick on
+// World.entities after it as in the block world.
 //
 // The torch: Place with the torch item held puts a torch at the air
 // sample in front of the targeted ground (an emitter of data/
@@ -58,7 +59,7 @@ make_field_content :: proc(config: Game_Config, items: Item_Registry, machines: 
 		torch_level = u8(torch_level),
 		starting_items = config.starting_items,
 		bare_ground = make_bare_ground_tuning(config),
-		pod_airlock = make_pod_airlock_tuning(config.pod_airlock, machines, config.tick_rate),
+		pod_airlock = make_pod_airlock_tuning(config.pod_airlock),
 		tree_species = make_field_tree_species(planet.trees, items, machines, config.tick_rate, allocator),
 	}
 }
@@ -305,10 +306,9 @@ drain_field_torch_removal :: proc(state: ^Simulation_State, content: Simulation_
 
 // Open_Aimed on a frame cell whose machine has a panel opens it, as the
 // block world's does (resolve_interact, 0194); Interact turns a power
-// switch, opens or closes a hatch of the pod (toggle_hatch, 0198) within
-// the airlock's interlock (pod_airlock_refuses_opening, 0222) or
-// launches from a launch pad there, and the gamepad's A then does not
-// jump (without_field_interact_jump).
+// switch or launches from a launch pad there (a hatch takes no Interact
+// since 0231: its doors follow the players), and the gamepad's A then
+// does not jump (without_field_interact_jump).
 interact_on_field :: proc(state: ^Simulation_State, content: Simulation_Content, index: int, frame: Input_Frame) -> (input: Input_Frame, events: Player_Events) {
 	player := &state.players[index]
 	entities, machines := &state.world.entities, content.machines
@@ -324,20 +324,14 @@ interact_on_field :: proc(state: ^Simulation_State, content: Simulation_Content,
 	if toggle_power_switch(entities, machines, handle) {
 		return input, {.Toggled_Switch}
 	}
-	if pod_airlock_refuses_opening(entities, machines, handle, state.tick, content.field.pod_airlock.door_travel_ticks) {
-		return input, {}
-	}
-	if toggle_hatch(entities, machines, handle, state.tick, field_player_capsules(state.players[:], content.field.tuning)) {
-		return input, {.Toggled_Switch}
-	}
 	if request_launch(entities, handle) {
 		return input, {.Launch_Requested}
 	}
 	return input, {}
 }
 
-// Interact on a frame cell holding a switch, a hatch or a launch pad
-// takes the A press from Jump; anywhere else A jumps.
+// Interact on a frame cell holding a switch or a launch pad takes the A
+// press from Jump; anywhere else A jumps, a hatch included (0231).
 without_field_interact_jump :: proc(player: Player, entities: ^Entities, machines: Machine_Registry, frame: Input_Frame) -> Input_Frame {
 	result := frame
 	if .Interact in frame.pressed && entity_answers_interact(entities, machines, aimed_entity(NO_ENTITY, player.field.frame_target)) {
@@ -399,11 +393,11 @@ tick_field_session_players :: proc(state: ^Simulation_State, content: Simulation
 		}
 	}
 	finish_field_tick(state, content)
-	// The pod's doors after every player moved (0222); never while the
+	// The pod's doors after every player moved (0222, 0231); never while the
 	// world falls, the landing tick included (the arrival lands below,
 	// after this step, so the fall still counts here).
 	if !field_arrival_falling(state.field.arrival) {
-		tick_pod_airlocks(&state.world.entities, content.machines, field_players_of(state.players[:]), content.field.tuning, content.field.pod_airlock, state.tick)
+		tick_pod_airlocks(&state.world.entities, content.machines, field_player_capsules(state.players[:], content.field.tuning), content.field.pod_airlock, state.tick)
 	}
 	for index in 0 ..< len(previous) {
 		if refusal := state.players[index].field_refusal; field_refusal_is_news(refusal, previous[index], pressed[index]) {

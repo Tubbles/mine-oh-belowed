@@ -287,9 +287,9 @@ test_a_save_taken_during_the_fall_resumes_it :: proc(t: ^testing.T) {
 	testing.expect(t, arrival_test_hatches_are(&reloaded.simulation, reloaded_content.machines, false))
 }
 
-// Work item 0222: the landing leaves both doors closed and nothing opens
-// them while the player stands still in the cabin; crawling to the inner
-// door opens it, the outer staying closed.
+// Work items 0222, 0231: the landing leaves both doors closed and nothing
+// opens them while the player stands still in the cabin; crawling to the
+// inner door opens it, the outer shut on that tick.
 @(test)
 test_the_doors_stay_closed_at_the_landing_until_the_player_comes :: proc(t: ^testing.T) {
 	config := arrival_test_config()
@@ -299,8 +299,7 @@ test_the_doors_stay_closed_at_the_landing_until_the_player_comes :: proc(t: ^tes
 	state := &session.simulation
 	testing.expect_value(t, state.field.arrival.landed_tick, u64(ARRIVAL_TEST_TICKS))
 	testing.expect(t, arrival_test_hatches_are(state, simulation_content.machines, false), "closed at the landing")
-	airlock := simulation_content.field.pod_airlock
-	for _ in 0 ..< airlock.door_travel_ticks + u64(airlock.close_hold_maximum_ticks) + 1 {
+	for _ in 0 ..< 120 {
 		tick_field_test_simulation(state, simulation_content, {})
 	}
 	testing.expect(t, arrival_test_hatches_are(state, simulation_content.machines, false), "closed with the player still in the cabin")
@@ -308,13 +307,18 @@ test_the_doors_stay_closed_at_the_landing_until_the_player_comes :: proc(t: ^tes
 		testing.expect_value(t, pool_get(&state.world.entities.foundations, hatch).hatch_toggle_tick, 0)
 	}
 	crawl := Input_Frame{move = {0, 1}, pressed = {.Move, .Sneak}}
+	opened := false
 	for _ in 0 ..< 120 {
 		tick_field_test_simulation(state, simulation_content, crawl)
+		inner := test_session_hatch(state, simulation_content.machines, 1)
+		if inner != nil && inner.hatch_open {
+			opened = true
+			break
+		}
 	}
 	outer := test_session_hatch(state, simulation_content.machines, 0)
-	inner := test_session_hatch(state, simulation_content.machines, 1)
-	testing.expect(t, inner != nil && inner.hatch_open, "the inner door opens as the player comes")
-	testing.expect(t, outer != nil && !outer.hatch_open, "the outer door stays closed")
+	testing.expect(t, opened, "the inner door opens as the player comes")
+	testing.expect(t, outer != nil && !outer.hatch_open, "the outer door is shut when the inner opens")
 }
 
 // A save from before 0200 ends before the arrival's table: it reads with

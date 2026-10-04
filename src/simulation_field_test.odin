@@ -1,6 +1,7 @@
 package game
 
 import "core:container/queue"
+import "core:log"
 import "core:os"
 import "core:slice"
 import "core:strings"
@@ -624,13 +625,12 @@ test_an_old_save_with_a_pad_still_loads :: proc(t: ^testing.T) {
 	testing.expect_value(t, entity_at(&restored.world.entities, {-4, 0, -4}, frame_id), NO_ENTITY)
 }
 
-// Interact on the inner hatch from the cabin, crouched so the eye's ray
-// meets the low door (0221), opens it on two sessions of one seed alike:
-// the toggle tick, the event and the hash after a second agree, a session
-// without the press hashes otherwise, and the opened world round trips
-// its save.
+// Work item 0231 (0198's toggle turned to the rule): a crouched crawl from
+// the lane to the inner hatch opens it on two sessions of one seed alike:
+// the toggle tick and the hash after a second agree, a session without
+// the crawl hashes otherwise, and the opened world round trips its save.
 @(test)
-test_toggling_a_hatch_is_lockstep_state :: proc(t: ^testing.T) {
+test_a_hatch_opened_for_a_player_is_lockstep_state_and_saves :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
 	sessions := [3]^Session{start_field_test_session(config, content), start_field_test_session(config, content), start_field_test_session(config, content)}
@@ -639,9 +639,10 @@ test_toggling_a_hatch_is_lockstep_state :: proc(t: ^testing.T) {
 			end_session(session)
 		}
 	}
-	interact := Input_Frame{pressed = {.Interact, .Sneak}, just_pressed = {.Interact}}
+	crawl := Input_Frame{move = {0, 1}, pressed = {.Move, .Sneak}}
 	sneak := Input_Frame{pressed = {.Sneak}}
 	toggle_ticks: [2]u64
+	crawl_ticks := 0
 	for session, index in sessions {
 		simulation_content := field_test_content(session, content)
 		state := &session.simulation
@@ -655,30 +656,32 @@ test_toggling_a_hatch_is_lockstep_state :: proc(t: ^testing.T) {
 		inner_box := machine.fixture_boxes[1]
 		lane := Cell_Box{from = {inner_box.from.x - 2, 0, inner_box.from.z}, to = {inner_box.from.x - 2, 0, inner_box.to.z}}
 		state.players[0].field = make_field_player(pod_box_floor_centre(frame, pod.origin, machine, pod.rotation, lane), frame.axes[FRAME_FORWARD])
-		tick_field_test_simulation(state, simulation_content, sneak)
-		clear(&state.events)
-		tick_field_test_simulation(state, simulation_content, index < 2 ? interact : sneak)
 		inner_origin, _ := pod_fixture_placement(machine, pod.origin, pod.rotation, 1)
-		inner := pool_get(&state.world.entities.foundations, entity_at(&state.world.entities, inner_origin, frame.id))
-		testing.expect(t, inner != nil)
-		if index < 2 && inner != nil {
-			testing.expectf(t, inner.hatch_open, "session %d: the inner hatch opens", index)
-			toggle_ticks[index] = inner.hatch_toggle_tick
-			raised := false
-			for event in state.events {
-				raised ||= event.kind == .Toggled_Switch
+		inner_handle := entity_at(&state.world.entities, inner_origin, frame.id)
+		if index < 2 {
+			ticks := 0
+			for ticks < 120 && !hatch_is_open(&state.world.entities, inner_handle) {
+				tick_field_test_simulation(state, simulation_content, crawl)
+				ticks += 1
 			}
-			testing.expect(t, raised, "the toggle raises its event")
+			testing.expectf(t, hatch_is_open(&state.world.entities, inner_handle), "session %d: the inner hatch never opened for the crawl", index)
+			crawl_ticks = index == 0 ? ticks : crawl_ticks
+			testing.expect_value(t, ticks, crawl_ticks)
+			toggle_ticks[index] = pool_get(&state.world.entities.foundations, inner_handle).hatch_toggle_tick
+		} else {
+			for _ in 0 ..< crawl_ticks {
+				tick_field_test_simulation(state, simulation_content, sneak)
+			}
 		}
 		for _ in 0 ..< 60 {
-			tick_field_test_simulation(state, simulation_content, {})
+			tick_field_test_simulation(state, simulation_content, sneak)
 		}
 	}
 	testing.expect(t, toggle_ticks[0] != 0)
 	testing.expect_value(t, toggle_ticks[0], toggle_ticks[1])
 	hash := simulation_state_hash(&sessions[0].simulation)
 	testing.expect_value(t, simulation_state_hash(&sessions[1].simulation), hash)
-	testing.expect(t, simulation_state_hash(&sessions[2].simulation) != hash, "no press, another hash")
+	testing.expect(t, simulation_state_hash(&sessions[2].simulation) != hash, "no crawl, another hash")
 	end_session(sessions[2])
 
 	files := encode_save_files(&sessions[0].simulation, field_test_content(sessions[0], content), "hatch", 0)
@@ -726,11 +729,11 @@ test_session_hatch :: proc(state: ^Simulation_State, machines: Machine_Registry,
 	return pool_get(&state.world.entities.foundations, entity_at(&state.world.entities, origin, frame.id))
 }
 
-// Work item 0222: a crouched crawl from the lane out through the airlock
-// on two sessions of one seed: the doors open and close alike, a save
-// taken in the inner door's hold and loaded into a third session closes
-// it on the same tick, the hashes agree at tick 600, and a session with
-// no input hashes otherwise.
+// Work items 0222, 0231: a crouched crawl from the lane out through the
+// airlock on two sessions of one seed: the doors open and close alike, a
+// save taken on the tick the inner door opens and loaded into another
+// session follows the crawl alike, the hashes agree at tick 600, and a
+// session with no input hashes otherwise.
 @(test)
 test_the_airlock_is_lockstep_state_and_survives_a_save :: proc(t: ^testing.T) {
 	config := test_field_game_config()
@@ -768,18 +771,16 @@ test_the_airlock_is_lockstep_state_and_survives_a_save :: proc(t: ^testing.T) {
 			tick_field_test_simulation(&loaded.simulation, loaded_content, crawl)
 			continue
 		}
-		if inner := test_session_hatch(&sessions[0].simulation, content.machines, 1); inner != nil && inner.hatch_close_tick != 0 {
+		if inner := test_session_hatch(&sessions[0].simulation, content.machines, 1); inner != nil && inner.hatch_open {
 			files := encode_save_files(&sessions[0].simulation, contents[0], "airlock", 0)
 			loaded = load_test_field_save(config, content, &files)
 			stage_generated_field_set(&loaded.simulation)
 			testing.expect(t, restore_arrived_field_set(&loaded.simulation.field), "the staged set restores")
 			loaded_content = field_test_content(loaded, content)
 			testing.expect_value(t, simulation_state_hash(&loaded.simulation), simulation_state_hash(&sessions[0].simulation))
-			restored := test_session_hatch(&loaded.simulation, content.machines, 1)
-			testing.expect(t, restored != nil && restored.hatch_close_tick == inner.hatch_close_tick, "the close tick loads")
 		}
 	}
-	testing.expect(t, loaded != nil, "the inner door's hold was saved")
+	testing.expect(t, loaded != nil, "the inner door opened and was saved")
 	if loaded == nil {
 		return
 	}
@@ -796,11 +797,63 @@ test_the_airlock_is_lockstep_state_and_survives_a_save :: proc(t: ^testing.T) {
 	testing.expect(t, simulation_state_hash(&sessions[2].simulation) != hash, "no input, another hash")
 }
 
-// Work item 0222: from the middle of the bore, Interact on the closed
-// outer door is refused while the inner one is open (no event), and opens
-// it once the inner one is closed and has finished its slide.
+// Work item 0231 (approval decision 2): with the pod's shipped collision
+// volumes (0230, data/models/pod.collision.sjson, as the content load
+// gives them), a standing player outside walks up to the outer door and
+// it opens; the walk stops no farther from its face than the capsule's
+// radius and the reach.
 @(test)
-test_interact_on_the_far_door_is_refused_while_the_near_one_is_open :: proc(t: ^testing.T) {
+test_a_standing_player_outside_opens_the_outer_door_against_the_pods_volumes :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	pod_id := find_machine_of_kind(content.machines, .Pod)
+	volumes, problem := load_machine_collision(test_data_directory(), content.machines.machines[pod_id], context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	testing.expect(t, len(volumes) > 0, "the pod ships no volumes")
+	content.machines.machines[pod_id].collision = volumes
+	session := start_field_test_session(config, content)
+	defer end_session(session)
+	simulation_content := field_test_content(session, content)
+	state := &session.simulation
+	stage_generated_field_set(state)
+	pod, frame, found := find_test_pod(&state.world.entities, content.machines)
+	testing.expect(t, found)
+	if !found {
+		return
+	}
+	testing.expect(t, len(state.world.entities.frames.bodies) > 0, "the pod registered no body")
+	machine := content.machines.machines[pod.machine]
+	outer_box := machine.fixture_boxes[0]
+	outside := Cell_Box{from = {machine.footprint.x + 1, 0, outer_box.from.z}, to = {machine.footprint.x + 1, 0, outer_box.to.z}}
+	state.players[0].field = make_field_player(pod_box_floor_centre(frame, pod.origin, machine, pod.rotation, outside), -frame.axes[FRAME_FORWARD])
+	outer_origin, _ := pod_fixture_placement(machine, pod.origin, pod.rotation, 0)
+	outer := entity_at(&state.world.entities, outer_origin, frame.id)
+	face := i64(outer_origin.z + 1) * frame_pitch_units(frame)
+	tuning := simulation_content.field.tuning
+	walk := Input_Frame{move = {0, 1}, pressed = {.Move}}
+	opened_tick, opened_distance := 0, i64(0)
+	nearest := max(i64)
+	for tick in 1 ..= 240 {
+		tick_field_test_simulation(state, simulation_content, walk)
+		distance := frame_local_position(frame, state.players[0].field.position).z - face
+		nearest = min(nearest, distance)
+		if hatch_is_open(&state.world.entities, outer) {
+			opened_tick, opened_distance = tick, distance
+			break
+		}
+	}
+	testing.expectf(t, opened_tick != 0, "the outer door never opened: the walk stopped with the feet %d units (%d mm) off its face", nearest, nearest * MILLIMETRES_PER_METRE / POSITION_UNITS_PER_METRE)
+	if opened_tick != 0 {
+		testing.expectf(t, opened_distance <= tuning.capsule_radius + simulation_content.field.pod_airlock.reach + tuning.walk_speed / VELOCITY_FRACTION_ONE + FIELD_GROUND_TOLERANCE, "the outer opened at tick %d with the feet %d off its face", opened_tick, opened_distance)
+		log.infof("the outer door opened at tick %d with the feet %d units (%d mm) off its face", opened_tick, opened_distance, opened_distance * MILLIMETRES_PER_METRE / POSITION_UNITS_PER_METRE)
+	}
+}
+
+// Work item 0231: from the middle of the bore, Interact on the shut outer
+// door toggles nothing and raises no event, and the gamepad's A jumps
+// there: a hatch is like any other cell for the A press.
+@(test)
+test_interact_on_a_hatch_toggles_nothing_and_the_a_press_jumps :: proc(t: ^testing.T) {
 	config := test_field_game_config()
 	content := make_field_test_game_content()
 	session := start_field_test_session(config, content)
@@ -815,37 +868,21 @@ test_interact_on_the_far_door_is_refused_while_the_near_one_is_open :: proc(t: ^
 	}
 	machine := content.machines.machines[pod.machine]
 	state.players[0].field = test_airlock_player(frame, machine)
-	inner_origin, _ := pod_fixture_placement(machine, pod.origin, pod.rotation, 1)
-	inner := entity_at(&state.world.entities, inner_origin, frame.id)
 	outer_origin, _ := pod_fixture_placement(machine, pod.origin, pod.rotation, 0)
 	outer := entity_at(&state.world.entities, outer_origin, frame.id)
-	testing.expect(t, toggle_hatch(&state.world.entities, content.machines, inner, state.tick, nil))
-	sneak := Input_Frame{pressed = {.Sneak}}
-	interact := Input_Frame{pressed = {.Interact, .Sneak}, just_pressed = {.Interact}}
-	toggled :: proc(state: ^Simulation_State) -> bool {
-		for event in state.events {
-			if event.kind == .Toggled_Switch {
-				return true
-			}
-		}
-		return false
-	}
-	tick_field_test_simulation(state, simulation_content, sneak)
+	state.players[0].field.frame_target = Frame_Raycast_Hit{hit = true, frame = frame.id, occupant = {handle = entity_occupant_handle(outer)}}
 	clear(&state.events)
-	tick_field_test_simulation(state, simulation_content, interact)
-	testing.expect(t, !hatch_is_open(&state.world.entities, outer), "the outer door opened with the inner one open")
-	testing.expect(t, hatch_is_open(&state.world.entities, inner), "the inner door closed")
-	testing.expect(t, !toggled(state), "a refused press raised a toggle")
-
-	testing.expect(t, toggle_hatch(&state.world.entities, content.machines, inner, state.tick, nil))
-	for _ in 0 ..< simulation_content.field.pod_airlock.door_travel_ticks {
-		tick_field_test_simulation(state, simulation_content, sneak)
-		testing.expect(t, !hatch_is_open(&state.world.entities, inner), "the inner door opened for the player in the middle")
+	tick_field_test_simulation(state, simulation_content, Input_Frame{pressed = {.Interact, .Sneak}, just_pressed = {.Interact}})
+	testing.expect(t, !hatch_is_open(&state.world.entities, outer), "Interact opened the outer door")
+	for event in state.events {
+		testing.expect(t, event.kind != .Toggled_Switch, "Interact on a hatch raised a toggle")
 	}
-	clear(&state.events)
-	tick_field_test_simulation(state, simulation_content, interact)
-	testing.expect(t, hatch_is_open(&state.world.entities, outer), "the outer door stays closed after the inner one's slide")
-	testing.expect(t, toggled(state), "the press raises its toggle")
+	state.players[0].field.frame_target = Frame_Raycast_Hit{hit = true, frame = frame.id, occupant = {handle = entity_occupant_handle(outer)}}
+	press := Input_Frame{pressed = {.Interact, .Jump}, just_pressed = {.Interact, .Jump}}
+	kept := without_field_interact_jump(state.players[0], &state.world.entities, content.machines, press)
+	testing.expect(t, .Jump in kept.pressed && .Jump in kept.just_pressed, "the A press does not jump on a hatch")
+	testing.expect(t, !entity_answers_interact(&state.world.entities, content.machines, outer), "a hatch answers Interact")
+	testing.expect(t, !entity_takes_interact(&state.world.entities, content.machines, outer), "a hatch takes Interact")
 }
 
 // A pad of foundations on a free frame at the surface position, eleven
