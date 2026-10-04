@@ -723,9 +723,12 @@ aimed_glyph_hints :: proc(screen_context: Screen_Context, hud: Hud_Context) -> [
 		pick_up := field_target_is_broken(screen_context, hud) ? MACHINE_BROKEN_DOWN_KEY : "hint_pick_up"
 		append(&list, Glyph_Hint{.Mine, text(pick_up)})
 	case field_target_is_hatch(screen_context, hud):
-		// Interact opens or closes the pod's hatch (0198).
+		// Interact opens or closes the pod's hatch (0198); no Open while
+		// the airlock's interlock refuses it (0222).
 		open, _ := field_target_hatch(screen_context, hud)
-		append(&list, Glyph_Hint{.Interact, text(open ? "hint_close" : "hint_open")})
+		if open || !field_target_hatch_refused(screen_context, hud) {
+			append(&list, Glyph_Hint{.Interact, text(open ? "hint_close" : "hint_open")})
+		}
 	case entity_has_panel(&screen_context.world.entities, screen_context.machines, player.target.entity) && entity_is_power_switch(&screen_context.world.entities, screen_context.machines, player.target.entity):
 		// Inventory opens the panel (0194); Interact turns a power switch.
 		append(&list, Glyph_Hint{.Interact, text("hint_toggle")})
@@ -864,6 +867,17 @@ field_target_hatch :: proc(screen_context: Screen_Context, hud: Hud_Context) -> 
 		return false, false
 	}
 	return hatch_state(&screen_context.world.entities, screen_context.machines, entity_from_occupant(target.occupant.handle))
+}
+
+// The aimed hatch is closed and the airlock's interlock refuses opening
+// it (0222, pod_airlock_refuses_opening, the predicate Interact reads) on
+// the next tick, the first a press can apply on.
+field_target_hatch_refused :: proc(screen_context: Screen_Context, hud: Hud_Context) -> bool {
+	target := hud_field_player(screen_context, hud).frame_target
+	if !target.hit || screen_context.world == nil {
+		return false
+	}
+	return pod_airlock_refuses_opening(&screen_context.world.entities, screen_context.machines, entity_from_occupant(target.occupant.handle), screen_context.tick + 1, screen_context.field.pod_airlock.door_travel_ticks)
 }
 
 // The aimed frame cell holds a hatch of the pod.

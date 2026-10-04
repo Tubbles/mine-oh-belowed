@@ -95,10 +95,14 @@ Chest :: struct {
 Foundation :: struct {
 	using common: Entity_Common,
 	// A hatch's state (work item 0198, entity_pod.odin): open or closed,
-	// and the tick of its last toggle plus one, 0 when never toggled.
-	// Zero for every other entry and in a save from before 0198.
+	// and the tick of its last toggle plus one, 0 when never toggled,
+	// and the tick an open hatch closes on its own (0222,
+	// entity_pod_airlock.odin), 0 when none is due; a save from before
+	// 0222 loads it 0. Zero for every other entry and in a save from
+	// before 0198.
 	hatch_open:        bool,
 	hatch_toggle_tick: u64,
+	hatch_close_tick:  u64,
 }
 
 // The drop capsule on the landing pad (landing_pad.odin).

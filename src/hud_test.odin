@@ -127,3 +127,66 @@ test_the_tools_radial_selects_pipette_on_a_tap_and_the_editor_on_a_steered_relea
 	frame(&state, &editor, {tools_radial_down = true})
 	testing.expect(t, !state.tools_radial.radial.open)
 }
+
+// Work item 0222: aimed at the closed outer door from the middle of the
+// bore while the inner one is open, the glyph bar offers no Open (the
+// interlock would refuse the press); the open inner door still says
+// Close; once the inner door is closed and has finished its slide the
+// outer one says Open again.
+@(test)
+test_the_open_hint_hides_while_the_airlock_refuses :: proc(t: ^testing.T) {
+	use_shipped_strings()
+	defer thread_string_table = nil
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	session := start_field_test_session(config, content)
+	defer end_session(session)
+	simulation_content := field_test_content(session, content)
+	state := &session.simulation
+	stage_generated_field_set(state)
+	pod, frame, found := find_test_pod(&state.world.entities, content.machines)
+	testing.expect(t, found)
+	if !found {
+		return
+	}
+	machine := content.machines.machines[pod.machine]
+	state.players[0].field = test_airlock_player(frame, machine)
+	inner_origin, _ := pod_fixture_placement(machine, pod.origin, pod.rotation, 1)
+	inner := entity_at(&state.world.entities, inner_origin, frame.id)
+	outer_origin, _ := pod_fixture_placement(machine, pod.origin, pod.rotation, 0)
+	outer := entity_at(&state.world.entities, outer_origin, frame.id)
+	aim := proc(state: ^Simulation_State, frame: Frame_Id, handle: Entity_Handle) {
+		state.players[0].field.frame_target = Frame_Raycast_Hit{hit = true, frame = frame, occupant = {handle = entity_occupant_handle(handle)}}
+	}
+	interact_hint := proc(state: ^Simulation_State, content: Simulation_Content) -> (label: string, shown: bool) {
+		screen_context := Screen_Context{content = content, world = &state.world, player = &state.players[0], tick = state.tick}
+		for hint in aimed_glyph_hints(screen_context, Hud_Context{}) {
+			if hint.button == .Interact {
+				return hint.label, true
+			}
+		}
+		return "", false
+	}
+	sneak := Input_Frame{pressed = {.Sneak}}
+	testing.expect(t, toggle_hatch(&state.world.entities, content.machines, inner, state.tick, nil))
+	tick_field_test_simulation(state, simulation_content, sneak)
+	aim(state, frame.id, outer)
+	_, shown := interact_hint(state, simulation_content)
+	testing.expect(t, !shown, "Open offered on the outer door while the inner one is open")
+	aim(state, frame.id, inner)
+	label, _ := interact_hint(state, simulation_content)
+	testing.expect_value(t, label, "Close")
+
+	testing.expect(t, toggle_hatch(&state.world.entities, content.machines, inner, state.tick, nil))
+	aim(state, frame.id, outer)
+	_, shown = interact_hint(state, simulation_content)
+	testing.expect(t, !shown, "Open offered while the inner door still slides closed")
+	for _ in 0 ..< simulation_content.field.pod_airlock.door_travel_ticks {
+		tick_field_test_simulation(state, simulation_content, sneak)
+	}
+	testing.expect(t, !hatch_is_open(&state.world.entities, outer), "the outer door opened on its own")
+	aim(state, frame.id, outer)
+	label, shown = interact_hint(state, simulation_content)
+	testing.expect(t, shown, "no Open once the inner door has settled closed")
+	testing.expect_value(t, label, "Open")
+}

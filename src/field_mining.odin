@@ -211,6 +211,8 @@ Field_Content :: struct {
 	starting_items: []Starting_Item,
 	// Machines on bare ground (0201, machine_wear.odin).
 	bare_ground: Bare_Ground_Tuning,
+	// The pod's airlock (0222, entity_pod_airlock.odin).
+	pod_airlock: Pod_Airlock_Tuning,
 	// The planet's tree species (0197, field_trees.odin), in allocator.
 	tree_species: []Field_Tree_Species,
 }

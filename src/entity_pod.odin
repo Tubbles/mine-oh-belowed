@@ -15,7 +15,8 @@ import "platform"
 // hatches, the locker, the crafting bench and the oxygen generator, each
 // its own entity on the pod's frame in cells the pod leaves to it
 // (machine_held_cells). A hatch is closed (solid) or open (passable, its
-// top row aimable), toggled by Interact (toggle_hatch). The cells the
+// top row aimable), toggled by Interact (toggle_hatch) and on its own as
+// an airlock (entity_pod_airlock.odin, 0222). The cells the
 // hatches seal off from the outside are the pod's sealed room, derived
 // from the occupancy (rebuild_sealed_rooms) and never saved. A pod of
 // another size in a save (an older build's) is replaced at load
@@ -160,12 +161,18 @@ field_player_capsules :: proc(players: []Player, tuning: Field_Player_Tuning) ->
 // the box. Exact enough for a door, where frame_cell_meets_capsule's
 // bound would refuse a player standing beside it.
 capsule_meets_frame_cell :: proc(frame: Frame, cell: World_Coordinate, capsule: Field_Capsule) -> bool {
+	return capsule_within_frame_cell(frame, cell, capsule, 0)
+}
+
+// Whether a capsule comes within margin of a cell's box, sampled as
+// capsule_meets_frame_cell samples it (the airlock's reach, 0222).
+capsule_within_frame_cell :: proc(frame: Frame, cell: World_Coordinate, capsule: Field_Capsule, margin: i64) -> bool {
 	step := max(capsule.radius / 2, 1)
 	pitch := frame_pitch_units(frame)
 	along := i64(0)
 	for {
 		sample := capsule.bottom + World_Position(fixed_scale(capsule.up, min(along, capsule.length)))
-		if distance, _ := cell_box_distance(frame_local_position(frame, sample), cell, pitch); distance < capsule.radius {
+		if distance, _ := cell_box_distance(frame_local_position(frame, sample), cell, pitch); distance < capsule.radius + margin {
 			return true
 		}
 		if along >= capsule.length {
@@ -189,6 +196,7 @@ toggle_hatch :: proc(entities: ^Entities, machines: Machine_Registry, handle: En
 	}
 	hatch.hatch_open = !hatch.hatch_open
 	hatch.hatch_toggle_tick = tick + 1
+	hatch.hatch_close_tick = 0
 	occupy_entity_cells(entities, machines, hatch.common)
 	rebuild_sealed_rooms(entities, machines)
 	return true

@@ -29,6 +29,7 @@ test_field_game_config :: proc() -> Game_Config {
 	config.bare_ground_flatness_millimetres = shipped.bare_ground_flatness_millimetres
 	config.bare_ground_life_minutes = shipped.bare_ground_life_minutes
 	config.salvage_percent = shipped.salvage_percent
+	config.pod_airlock = shipped.pod_airlock
 	return config
 }
 

@@ -1,6 +1,6 @@
 # 0222: The airlock's doors open and close on their own
 
-Status: designed (2026-10-04, the specification approved the same day with the decisions below, the implementer starts on 0221's tree, from the user's pod notes of the art rounds, repeated on the phone the same day with the round three preview ("the doors stay open? I want them to only open individually when the player is really close and then close behind the player"): today the arrival opens both and nothing closes them; "doors that automatically open and close, but tightly enough so the player will have both doors closed around themselves while being in the middle", split off 0221 by its design stage; after 0221)
+Status: verified (2026-10-04, in `.claude/worktrees/0222` on `item/0222`, the review of the same day weighed and its fix round done (a HUD test for the hidden Open hint, wording), the specification approved the same day with the decisions below, the implementer started on 0221's tree, from the user's pod notes of the art rounds, repeated on the phone the same day with the round three preview ("the doors stay open? I want them to only open individually when the player is really close and then close behind the player"): today the arrival opens both and nothing closes them; "doors that automatically open and close, but tightly enough so the player will have both doors closed around themselves while being in the middle", split off 0221 by its design stage; after 0221)
 
 ## Goal
 

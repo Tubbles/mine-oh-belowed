@@ -60,7 +60,8 @@ tick_arrival_test_session :: proc(session: ^Session, content: Simulation_Content
 }
 
 // A new world's players cannot move for the fall; the hatches stay
-// closed until its last tick and open at its end.
+// closed through it and at its end (0222: the airlock opens them as a
+// player comes).
 @(test)
 test_a_new_world_holds_its_players_through_the_fall :: proc(t: ^testing.T) {
 	config := arrival_test_config()
@@ -85,10 +86,10 @@ test_a_new_world_holds_its_players_through_the_fall :: proc(t: ^testing.T) {
 		}
 	}
 	state := &restless.simulation
-	testing.expect(t, arrival_test_hatches_are(state, restless_content.machines, true), "open after the last tick")
+	testing.expect(t, arrival_test_hatches_are(state, restless_content.machines, false), "closed after the last tick")
 	testing.expect_value(t, state.field.arrival.landed_tick, u64(ARRIVAL_TEST_TICKS))
 	for hatch in arrival_test_hatches(state, restless_content.machines) {
-		testing.expect_value(t, pool_get(&state.world.entities.foundations, hatch).hatch_toggle_tick, u64(ARRIVAL_TEST_TICKS + 1))
+		testing.expect_value(t, pool_get(&state.world.entities.foundations, hatch).hatch_toggle_tick, 0)
 	}
 	walk := Input_Frame{move = {0, 1}, pressed = {.Move}}
 	for _ in 0 ..< 10 {
@@ -173,7 +174,7 @@ test_skip_ends_the_fall_on_two_sessions_at_the_same_tick :: proc(t: ^testing.T) 
 	testing.expect(t, landing > 200, "the Skip was stamped")
 	for session in ([2]^Session{first, second}) {
 		testing.expect_value(t, session.simulation.field.arrival.landed_tick, landing)
-		testing.expect(t, arrival_test_hatches_are(&session.simulation, first_content.machines, true))
+		testing.expect(t, arrival_test_hatches_are(&session.simulation, first_content.machines, false))
 	}
 	queue_player_command(&first.simulation.player_commands, 0, Skip_Arrival_Command{})
 	for _ in 0 ..< 5 {
@@ -202,7 +203,7 @@ reload_arrival_test_world :: proc(config: Game_Config, content: Game_Content, se
 	return loaded, field_test_content(loaded, content)
 }
 
-// A save loaded at tick 1000 has no fall: landed, the hatches open, the
+// A save loaded at tick 1000 has no fall: landed, the hatches closed, the
 // walk moving the player at once, nothing to present.
 @(test)
 test_a_save_loaded_after_the_fall_has_no_fall :: proc(t: ^testing.T) {
@@ -215,7 +216,7 @@ test_a_save_loaded_after_the_fall_has_no_fall :: proc(t: ^testing.T) {
 	state := &loaded.simulation
 	testing.expect_value(t, state.field.arrival.landed_tick, u64(ARRIVAL_TEST_TICKS))
 	testing.expect(t, !field_arrival_falling(state.field.arrival))
-	testing.expect(t, arrival_test_hatches_are(state, loaded_content.machines, true))
+	testing.expect(t, arrival_test_hatches_are(state, loaded_content.machines, false))
 	start := state.players[0].field.position
 	tick_field_test_simulation(state, loaded_content, FIELD_PREDICTION_TEST_WALK)
 	testing.expect(t, state.players[0].field.position != start, "the walk moves the player")
@@ -270,7 +271,7 @@ test_a_save_taken_during_the_fall_resumes_it :: proc(t: ^testing.T) {
 	testing.expect(t, field_arrival_falling(state.field.arrival), "still falling at tick 599")
 	tick_field_test_simulation(state, loaded_content, {})
 	testing.expect_value(t, state.field.arrival.landed_tick, u64(ARRIVAL_TEST_TICKS))
-	testing.expect(t, arrival_test_hatches_are(state, loaded_content.machines, true))
+	testing.expect(t, arrival_test_hatches_are(state, loaded_content.machines, false))
 	end_session(loaded)
 
 	skipped, skipped_content := run_arrival_test_world(config, content, 100)
@@ -283,7 +284,37 @@ test_a_save_taken_during_the_fall_resumes_it :: proc(t: ^testing.T) {
 	defer end_session(reloaded)
 	testing.expect_value(t, reloaded.simulation.field.arrival.landed_tick, u64(101))
 	testing.expect(t, !field_arrival_falling(reloaded.simulation.field.arrival))
-	testing.expect(t, arrival_test_hatches_are(&reloaded.simulation, reloaded_content.machines, true))
+	testing.expect(t, arrival_test_hatches_are(&reloaded.simulation, reloaded_content.machines, false))
+}
+
+// Work item 0222: the landing leaves both doors closed and nothing opens
+// them while the player stands still in the cabin; crawling to the inner
+// door opens it, the outer staying closed.
+@(test)
+test_the_doors_stay_closed_at_the_landing_until_the_player_comes :: proc(t: ^testing.T) {
+	config := arrival_test_config()
+	content := make_field_test_game_content()
+	session, simulation_content := run_arrival_test_world(config, content, ARRIVAL_TEST_TICKS)
+	defer end_session(session)
+	state := &session.simulation
+	testing.expect_value(t, state.field.arrival.landed_tick, u64(ARRIVAL_TEST_TICKS))
+	testing.expect(t, arrival_test_hatches_are(state, simulation_content.machines, false), "closed at the landing")
+	airlock := simulation_content.field.pod_airlock
+	for _ in 0 ..< airlock.door_travel_ticks + u64(airlock.close_hold_maximum_ticks) + 1 {
+		tick_field_test_simulation(state, simulation_content, {})
+	}
+	testing.expect(t, arrival_test_hatches_are(state, simulation_content.machines, false), "closed with the player still in the cabin")
+	for hatch in arrival_test_hatches(state, simulation_content.machines) {
+		testing.expect_value(t, pool_get(&state.world.entities.foundations, hatch).hatch_toggle_tick, 0)
+	}
+	crawl := Input_Frame{move = {0, 1}, pressed = {.Move, .Sneak}}
+	for _ in 0 ..< 120 {
+		tick_field_test_simulation(state, simulation_content, crawl)
+	}
+	outer := test_session_hatch(state, simulation_content.machines, 0)
+	inner := test_session_hatch(state, simulation_content.machines, 1)
+	testing.expect(t, inner != nil && inner.hatch_open, "the inner door opens as the player comes")
+	testing.expect(t, outer != nil && !outer.hatch_open, "the outer door stays closed")
 }
 
 // A save from before 0200 ends before the arrival's table: it reads with

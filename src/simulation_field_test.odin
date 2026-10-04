@@ -35,13 +35,12 @@ start_field_test_session :: proc(config: Game_Config, content: Game_Content, rad
 	return session
 }
 
-// Opens the pod's closed hatches, as the end of the fall does
-// (land_field_arrival), and stands every player on the floor two cells
-// outside the pod's front, centred on the outer hatch, facing away from
-// the pod (0221: the airlock is crawled through crouched, so a standing
-// walk no longer leaves the cabin).
+// Stands every player on the floor two cells outside the pod's front,
+// centred on the outer hatch, facing away from the pod (0221: the airlock
+// is crawled through crouched, so a standing walk no longer leaves the
+// cabin). The hatches stay as they are: the airlock opens them for a
+// player who comes to them (0222).
 move_test_players_out_of_the_pod :: proc(state: ^Simulation_State, machines: Machine_Registry) {
-	open_closed_hatches(state, machines)
 	pod, frame, found := find_test_pod(&state.world.entities, machines)
 	if !found {
 		return
@@ -714,6 +713,139 @@ test_toggling_a_hatch_is_lockstep_state :: proc(t: ^testing.T) {
 	if len(restored.world.entities.sealed_rooms) == 1 {
 		testing.expect(t, slice.equal(sorted_cells(restored.world.entities.sealed_rooms[0].cells[:]), sorted_cells(room[:])), "the room is the cabin, the airlock and the inner hatch")
 	}
+}
+
+// The session pod's hatch of the fixture index (0 the outer, 1 the
+// inner), nil without a pod.
+test_session_hatch :: proc(state: ^Simulation_State, machines: Machine_Registry, index: int) -> ^Foundation {
+	pod, frame, found := find_test_pod(&state.world.entities, machines)
+	if !found {
+		return nil
+	}
+	origin, _ := pod_fixture_placement(machines.machines[pod.machine], pod.origin, pod.rotation, index)
+	return pool_get(&state.world.entities.foundations, entity_at(&state.world.entities, origin, frame.id))
+}
+
+// Work item 0222: a crouched crawl from the lane out through the airlock
+// on two sessions of one seed: the doors open and close alike, a save
+// taken in the inner door's hold and loaded into a third session closes
+// it on the same tick, the hashes agree at tick 600, and a session with
+// no input hashes otherwise.
+@(test)
+test_the_airlock_is_lockstep_state_and_survives_a_save :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	sessions := [3]^Session{start_field_test_session(config, content), start_field_test_session(config, content), start_field_test_session(config, content)}
+	defer for session in sessions {
+		end_session(session)
+	}
+	contents: [3]Simulation_Content
+	for session, index in sessions {
+		contents[index] = field_test_content(session, content)
+		state := &session.simulation
+		stage_generated_field_set(state)
+		pod, frame, found := find_test_pod(&state.world.entities, content.machines)
+		testing.expect(t, found)
+		if !found {
+			return
+		}
+		machine := content.machines.machines[pod.machine]
+		inner := machine.fixture_boxes[1]
+		start := Cell_Box{from = {inner.from.x - 2, 0, inner.from.z}, to = {inner.from.x - 1, 0, inner.to.z}}
+		move_field_player_body(&state.players[0].field, make_field_player(pod_box_floor_centre(frame, pod.origin, machine, pod.rotation, start), frame.axes[FRAME_FORWARD]))
+	}
+	crawl := Input_Frame{move = {0, 1}, pressed = {.Move, .Sneak}}
+	loaded: ^Session
+	loaded_content: Simulation_Content
+	defer if loaded != nil {
+		end_session(loaded)
+	}
+	for _ in 1 ..= 600 {
+		tick_field_test_simulation(&sessions[0].simulation, contents[0], crawl)
+		tick_field_test_simulation(&sessions[1].simulation, contents[1], crawl)
+		tick_field_test_simulation(&sessions[2].simulation, contents[2], {})
+		if loaded != nil {
+			tick_field_test_simulation(&loaded.simulation, loaded_content, crawl)
+			continue
+		}
+		if inner := test_session_hatch(&sessions[0].simulation, content.machines, 1); inner != nil && inner.hatch_close_tick != 0 {
+			files := encode_save_files(&sessions[0].simulation, contents[0], "airlock", 0)
+			loaded = load_test_field_save(config, content, &files)
+			stage_generated_field_set(&loaded.simulation)
+			testing.expect(t, restore_arrived_field_set(&loaded.simulation.field), "the staged set restores")
+			loaded_content = field_test_content(loaded, content)
+			testing.expect_value(t, simulation_state_hash(&loaded.simulation), simulation_state_hash(&sessions[0].simulation))
+			restored := test_session_hatch(&loaded.simulation, content.machines, 1)
+			testing.expect(t, restored != nil && restored.hatch_close_tick == inner.hatch_close_tick, "the close tick loads")
+		}
+	}
+	testing.expect(t, loaded != nil, "the inner door's hold was saved")
+	if loaded == nil {
+		return
+	}
+	outer := test_session_hatch(&sessions[0].simulation, content.machines, 0)
+	testing.expect(t, outer != nil && outer.hatch_toggle_tick != 0, "the outer door opened")
+	for state in ([2]^Simulation_State{&sessions[1].simulation, &loaded.simulation}) {
+		other := test_session_hatch(state, content.machines, 0)
+		testing.expect(t, other != nil && outer != nil && other.hatch_toggle_tick == outer.hatch_toggle_tick, "the outer door toggles on the same tick")
+	}
+	testing.expect_value(t, loaded.simulation.tick, sessions[0].simulation.tick)
+	hash := simulation_state_hash(&sessions[0].simulation)
+	testing.expect_value(t, simulation_state_hash(&sessions[1].simulation), hash)
+	testing.expect_value(t, simulation_state_hash(&loaded.simulation), hash)
+	testing.expect(t, simulation_state_hash(&sessions[2].simulation) != hash, "no input, another hash")
+}
+
+// Work item 0222: from the middle of the bore, Interact on the closed
+// outer door is refused while the inner one is open (no event), and opens
+// it once the inner one is closed and has finished its slide.
+@(test)
+test_interact_on_the_far_door_is_refused_while_the_near_one_is_open :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	session := start_field_test_session(config, content)
+	defer end_session(session)
+	simulation_content := field_test_content(session, content)
+	state := &session.simulation
+	stage_generated_field_set(state)
+	pod, frame, found := find_test_pod(&state.world.entities, content.machines)
+	testing.expect(t, found)
+	if !found {
+		return
+	}
+	machine := content.machines.machines[pod.machine]
+	state.players[0].field = test_airlock_player(frame, machine)
+	inner_origin, _ := pod_fixture_placement(machine, pod.origin, pod.rotation, 1)
+	inner := entity_at(&state.world.entities, inner_origin, frame.id)
+	outer_origin, _ := pod_fixture_placement(machine, pod.origin, pod.rotation, 0)
+	outer := entity_at(&state.world.entities, outer_origin, frame.id)
+	testing.expect(t, toggle_hatch(&state.world.entities, content.machines, inner, state.tick, nil))
+	sneak := Input_Frame{pressed = {.Sneak}}
+	interact := Input_Frame{pressed = {.Interact, .Sneak}, just_pressed = {.Interact}}
+	toggled :: proc(state: ^Simulation_State) -> bool {
+		for event in state.events {
+			if event.kind == .Toggled_Switch {
+				return true
+			}
+		}
+		return false
+	}
+	tick_field_test_simulation(state, simulation_content, sneak)
+	clear(&state.events)
+	tick_field_test_simulation(state, simulation_content, interact)
+	testing.expect(t, !hatch_is_open(&state.world.entities, outer), "the outer door opened with the inner one open")
+	testing.expect(t, hatch_is_open(&state.world.entities, inner), "the inner door closed")
+	testing.expect(t, !toggled(state), "a refused press raised a toggle")
+
+	testing.expect(t, toggle_hatch(&state.world.entities, content.machines, inner, state.tick, nil))
+	for _ in 0 ..< simulation_content.field.pod_airlock.door_travel_ticks {
+		tick_field_test_simulation(state, simulation_content, sneak)
+		testing.expect(t, !hatch_is_open(&state.world.entities, inner), "the inner door opened for the player in the middle")
+	}
+	clear(&state.events)
+	tick_field_test_simulation(state, simulation_content, interact)
+	testing.expect(t, hatch_is_open(&state.world.entities, outer), "the outer door stays closed after the inner one's slide")
+	testing.expect(t, toggled(state), "the press raises its toggle")
 }
 
 // A pad of foundations on a free frame at the surface position, eleven

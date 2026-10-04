@@ -94,3 +94,27 @@ test_direct_placement_limit_is_range_checked :: proc(t: ^testing.T) {
 	config.direct_placement_limit = tall
 	testing.expect(t, strings.has_prefix(validate_game_config(config), "direct_placement_limit.height "))
 }
+
+// The pod's airlock (0222): the shipped values load, each key outside its
+// bound is named.
+@(test)
+test_the_pod_airlock_config_is_bounded :: proc(t: ^testing.T) {
+	config, error := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	testing.expect_value(t, error, nil)
+	testing.expect_value(t, config.pod_airlock, Pod_Airlock_Config{reach_millimetres = 150, close_hold_minimum_ticks = 36, close_hold_maximum_ticks = 72})
+	testing.expect_value(t, pod_airlock_problem(config.pod_airlock), "")
+	cases := [?]struct {
+		airlock: Pod_Airlock_Config,
+		key:     string,
+	} {
+		{{40, 36, 72}, "pod_airlock.reach_millimetres "},
+		{{301, 36, 72}, "pod_airlock.reach_millimetres "},
+		{{150, 0, 72}, "pod_airlock.close_hold_minimum_ticks "},
+		{{150, 36, 35}, "pod_airlock.close_hold_maximum_ticks "},
+		{{150, 36, 601}, "pod_airlock.close_hold_maximum_ticks "},
+	}
+	for entry in cases {
+		problem := pod_airlock_problem(entry.airlock)
+		testing.expectf(t, strings.has_prefix(problem, entry.key), "%v: %q", entry.airlock, problem)
+	}
+}

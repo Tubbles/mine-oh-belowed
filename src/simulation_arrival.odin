@@ -7,7 +7,8 @@ import "platform"
 // falls every player's input frame is empty (arrival_input), in the tick
 // and in the prediction; at the end of its last tick, or when the pause
 // menu's Skip applies (Skip_Arrival_Command), it lands
-// (land_field_arrival) and the pod's hatches open through toggle_hatch.
+// (land_field_arrival) with the pod's hatches closed: the airlock opens
+// the inner one as a player comes to it (entity_pod_airlock.odin, 0222).
 // Its table follows the felled trees in entities.bin, so it is hashed,
 // travels in the join snapshot, and a world loaded or joined past the
 // fall never falls again. The presentation (render_arrival.odin) reads it
@@ -51,20 +52,9 @@ arrival_input :: proc(arrival: Field_Arrival, frame: Input_Frame) -> Input_Frame
 	return frame
 }
 
-// Lands the fall at the state's tick and opens every closed hatch in the
-// foundations' pool order (opening never checks capsules).
+// Lands the fall at the state's tick. The hatches stay closed (0222).
 land_field_arrival :: proc(state: ^Simulation_State, content: Simulation_Content) {
 	state.field.arrival.landed_tick = state.tick
-	open_closed_hatches(state, content.machines)
-}
-
-// Every alive closed hatch opened at the state's tick, in pool order.
-open_closed_hatches :: proc(state: ^Simulation_State, machines: Machine_Registry) {
-	for entry in state.world.entities.foundations.entries {
-		if entry.alive && int(entry.machine) < len(machines.machines) && machines.machines[entry.machine].kind == .Hatch && !entry.hatch_open {
-			toggle_hatch(&state.world.entities, machines, entry.handle, state.tick, nil)
-		}
-	}
 }
 
 // The save table.
