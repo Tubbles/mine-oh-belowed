@@ -25,7 +25,10 @@ import "core:math"
 // at the planet's home (data/planets.sjson, work item 0199) with its door
 // towards the first spring; every new player, the first and a joining
 // one, stands in the pod's cabin facing the door, with the starter kit
-// (field_pod_spawn, make_field_session_player).
+// (field_pod_spawn, make_field_session_player). A new world's home is the
+// nearest dry point to the record's (new_world_home, 0180), and a place
+// that would raise ground into the spawn's capsule is refused with a
+// refusal of its own (Would_Bury_Spawn, field_place_buries_a_player).
 
 // A torch is aimed at while the reticle's ray passes this close to its
 // sample.

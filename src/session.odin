@@ -165,7 +165,8 @@ make_session_simulation :: proc(plan: Session_Plan, config: Game_Config, content
 
 // The plan's settings, in the file too when loading, with the planet
 // resolved against the data (resolve_world_planet); the planet goes to the
-// session.
+// session. A new world's home is the nearest dry whole degree point
+// (new_world_home, 0180); a loaded world keeps its recorded home.
 resolve_session_planet :: proc(plan: Session_Plan, planets: []Planet, session: ^Session) -> Session_Plan {
 	resolved := plan
 	settings, planet, record := resolve_world_planet(plan.settings, plan.file.planet_generation, planets, plan.loading)
@@ -174,6 +175,9 @@ resolve_session_planet :: proc(plan: Session_Plan, planets: []Planet, session: ^
 		named := planet
 		named.id = settings.planet_id
 		session.planet = make_recorded_planet(named, record)
+		if !plan.loading {
+			session.planet.home = new_world_home(plan.seed, session.planet)
+		}
 		settings.planet_id = session.planet.id
 	}
 	resolved.settings = settings

@@ -190,14 +190,87 @@ planet_generation_record_problem :: proc(record: Planet_Generation_Record) -> st
 
 // The home's direction from the centre, a unit vector, as a spring's
 // (planet_spring_direction): latitude 90 is +y, longitude 0 lies towards
-// +x and 90 towards +z. A planet without a home (the zero record, as a
-// test planet's) takes the north pole, so the latitude 0 longitude 0
-// point is no home a planet can name.
+// +x and 90 towards +z. Latitude 0, longitude 0 is a home like any other
+// (+x, 0180).
 planet_home_direction :: proc(home: Planet_Home) -> [3]i64 {
-	if home == {} {
-		return FRAME_NORTH
-	}
 	return planet_spring_direction(Planet_Spring{latitude_degrees = home.latitude_degrees, longitude_degrees = home.longitude_degrees})
+}
+
+// How far a new world's home may move from the record's point to find dry
+// ground, in degrees of arc (0180): about 350, 700 and 1400 m at 4, 8 and
+// 16 km. Every wet seed of 1 to 400 found dry ground within it with the
+// shipped record, the farthest move 177, 144 and 280 m.
+HOME_SEARCH_DEGREES :: 5
+// The crater floor under a dry home stands at least this above the sea
+// level (0180): one sample at the coarsest spacing, so no air sample of
+// the pod's cabin holds the sea's fill.
+HOME_DRY_MARGIN_MILLIMETRES :: 1000
+
+// The height above the radius the pod would stand on at the home: the
+// crater's floor there, or the uncratered relief without a crater.
+planet_home_floor_height :: proc(generation: Planet_Generation, crater: Planet_Crater, home: Planet_Home) -> i64 {
+	direction := planet_home_direction(home)
+	if crater == {} {
+		return uncratered_relief(generation, fixed_scale(direction, generation.radius))
+	}
+	return make_crater_term(generation, crater, direction).floor_height
+}
+
+// The pod's floor at the home stands at least HOME_DRY_MARGIN_MILLIMETRES
+// above the sea level.
+planet_home_is_dry :: proc(generation: Planet_Generation, planet: Planet, home: Planet_Home) -> bool {
+	sea := metres_to_position_units(i64(planet.sea_level_metres)) + millimetres_to_position_units(HOME_DRY_MARGIN_MILLIMETRES)
+	return planet_home_floor_height(generation, planet.crater, home) >= sea
+}
+
+// The squared length of the difference of two vectors; for unit vectors
+// of UNIT_VECTOR_ONE (2^24) at most 3 * 2^50, inside an i64.
+squared_chord :: proc(first, second: [3]i64) -> i64 {
+	difference := first - second
+	return difference.x * difference.x + difference.y * difference.y + difference.z * difference.z
+}
+
+// The dry home nearest the record's point (0180): the record's home when
+// it is dry (planet_home_is_dry), else the whole degree point within
+// HOME_SEARCH_DEGREES of arc with the shortest chord to it. The search
+// runs latitude then longitude ascending and keeps only a strictly nearer
+// point, so a tie goes to the lower latitude, then the lower longitude, on
+// every machine; the poles are visited once, at longitude 0. found is
+// false when no point in reach is dry.
+find_dry_planet_home :: proc(seed: u64, planet: Planet) -> (home: Planet_Home, found: bool) {
+	generation := make_planet_generation(seed, planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES)
+	if planet_home_is_dry(generation, planet, planet.home) {
+		return planet.home, true
+	}
+	origin := planet_home_direction(planet.home)
+	reach := squared_chord(planet_home_direction({}), planet_home_direction({0, HOME_SEARCH_DEGREES}))
+	best := reach + 1
+	for latitude in max(-90, planet.home.latitude_degrees - HOME_SEARCH_DEGREES) ..= min(90, planet.home.latitude_degrees + HOME_SEARCH_DEGREES) {
+		at_pole := latitude == 90 || latitude == -90
+		for longitude in (at_pole ? 0 : -179) ..= (at_pole ? 0 : 180) {
+			candidate := Planet_Home{latitude, longitude}
+			chord := squared_chord(planet_home_direction(candidate), origin)
+			if chord < best && planet_home_is_dry(generation, planet, candidate) {
+				home, best, found = candidate, chord, true
+			}
+		}
+	}
+	return
+}
+
+// A new world's home: the nearest dry point (find_dry_planet_home), with a
+// log line when it moves from the record's or when none is in reach (the
+// pod then lands at the record's point).
+new_world_home :: proc(seed: u64, planet: Planet) -> Planet_Home {
+	home, found := find_dry_planet_home(seed, planet)
+	if !found {
+		platform.log_printf("world: no dry ground within %d degrees of the home at latitude %d, longitude %d with seed %d, the pod lands there", HOME_SEARCH_DEGREES, planet.home.latitude_degrees, planet.home.longitude_degrees, seed)
+		return planet.home
+	}
+	if home != planet.home {
+		platform.log_printf("world: the home at latitude %d, longitude %d lies under the sea with seed %d, the pod lands at latitude %d, longitude %d", planet.home.latitude_degrees, planet.home.longitude_degrees, seed, home.latitude_degrees, home.longitude_degrees)
+	}
+	return home
 }
 
 // A preset of the planet, or the planet's default radius for zero (a new

@@ -140,5 +140,22 @@ test_a_scaled_home_plans_the_unit_homes_veins :: proc(t: ^testing.T) {
 		testing.expect_value(t, unit.veins[index].radius, scaled.veins[index].radius)
 	}
 	testing.expect(t, plan_planet_veins(TEST_PLANET_SEED, {}, radius) == plan_planet_veins(TEST_PLANET_SEED, FRAME_NORTH, radius))
-	testing.expect_value(t, planet_home_direction({}), FRAME_NORTH)
+	testing.expect_value(t, planet_home_direction({}), [3]i64{UNIT_VECTOR_ONE, 0, 0})
+}
+
+@(test)
+test_a_home_of_latitude_0_longitude_0_is_a_home :: proc(t: ^testing.T) {
+	planet := make_test_planet()
+	planet.home = {}
+	planet.crater = default_planet(shipped_test_planets()).crater
+	generation := make_planet_generation(TEST_PLANET_SEED, planet, 1000)
+	home := fixed_scale([3]i64{UNIT_VECTOR_ONE, 0, 0}, generation.radius)
+	testing.expect_value(t, generation.crater.home, home)
+	testing.expect(t, generation.veins.count > 0, "the home has starter veins")
+	for vein in generation.veins.veins[:generation.veins.count] {
+		testing.expectf(t, vector_length(vein.centre - home) <= metres_to_position_units(PLANET_VEIN_MAXIMUM_DISTANCE_METRES), "the vein at %v rings +x", vein.centre)
+	}
+	surface, _ := field_home_site(generation, planet)
+	direction, _ := normalize_fixed(cast([3]i64)(surface))
+	testing.expectf(t, direction.x > UNIT_VECTOR_ONE * 9999 / 10000, "the site %v lies along +x", surface)
 }

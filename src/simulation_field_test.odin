@@ -25,13 +25,13 @@ make_field_test_game_content :: proc() -> Game_Content {
 	return content
 }
 
-// A new field world of the default seed at the radius (0 for the
-// planet's default), without a save.
-start_field_test_session :: proc(config: Game_Config, content: Game_Content, radius_metres := 0) -> ^Session {
+// A new field world of the seed (the default seed unless given) at the
+// radius (0 for the planet's default), without a save.
+start_field_test_session :: proc(config: Game_Config, content: Game_Content, radius_metres := 0, seed := DEFAULT_WORLD_SEED) -> ^Session {
 	settings := default_world_file_settings(config)
 	settings.planet_radius_metres = radius_metres
-	plan := Session_Plan{seed = DEFAULT_WORLD_SEED, settings = settings}
-	session, problem := start_session(plan, config, content, make_test_generator(DEFAULT_WORLD_SEED))
+	plan := Session_Plan{seed = seed, settings = settings}
+	session, problem := start_session(plan, config, content, make_test_generator(seed))
 	assert(problem == "", problem)
 	return session
 }
@@ -1637,4 +1637,193 @@ test_two_sessions_hash_alike_walking_round_and_into_a_pod_with_volumes :: proc(t
 	testing.expect(t, entered, "the crawl never entered the airlock, the lane or the cabin")
 	expect_alike(t, sessions, "end", 1290)
 	testing.expect(t, simulation_state_hash(&sessions[0].simulation) != simulation_state_hash(&sessions[2].simulation), "the still session hashes alike")
+}
+
+// The shipped planet at its default preset and its first seed whose home
+// lies under the sea (first_wet_home_seed, 0180).
+wet_home_test_seed :: proc(t: ^testing.T, content: Game_Content) -> (planet: Planet, seed: u64) {
+	planet = default_planet(content.planets)
+	found: bool
+	seed, found = first_wet_home_seed(planet)
+	testing.expect(t, found, "a seed puts the shipped home under the sea")
+	return
+}
+
+// The base of the pod frame's cell (0, 0, 0), where it stands on the site.
+test_pod_frame_base :: proc(frame: Frame) -> World_Position {
+	return frame_cell_centre(frame, {}) - World_Position(fixed_scale(frame.axes[FRAME_UP], frame_pitch_units(frame) / 2))
+}
+
+// A new world on a seed whose home lies under the sea lands the pod on dry
+// ground at the nearest dry point, the world file records that home, and
+// a load keeps the recorded home and the spawn, even a wet one (a loaded
+// world never searches, 0180).
+@(test)
+test_a_new_world_on_a_wet_seed_lands_dry_and_records_its_home :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	planet, seed := wet_home_test_seed(t, content)
+	session := start_field_test_session(config, content, 0, seed)
+	state := &session.simulation
+	chosen, _ := find_dry_planet_home(seed, planet)
+	testing.expect(t, session.planet.home != planet.home, "the home moved off the sea")
+	testing.expect_value(t, session.planet.home, chosen)
+	testing.expect_value(t, state.world.planet.home, chosen)
+	_, frame, found := find_test_pod(&state.world.entities, content.machines)
+	testing.expect(t, found, "the new world has the pod")
+	generation := make_planet_generation(seed, state.world.planet, state.field.spacing_millimetres)
+	above := vector_length(cast([3]i64)test_pod_frame_base(frame)) - generation.sea_radius
+	testing.expectf(t, above >= millimetres_to_position_units(HOME_DRY_MARGIN_MILLIMETRES) - generation.spacing / 8, "the pod stands %d units above the sea", above)
+	spawn, _ := field_pod_spawn(&state.world.entities, content.machines)
+	simulation_content := field_test_content(session, content)
+	files := encode_save_files(state, simulation_content, "wet seed", 0)
+	end_session(session)
+	file, problem := parse_world_file(files.world, context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, file.planet_generation.home, chosen)
+	plan := Session_Plan{loading = true, seed = file.seed, settings = file.settings, file = file, files = &files}
+	loaded: ^Session
+	loaded, problem = start_session(plan, config, content, make_test_generator(seed))
+	testing.expect_value(t, problem, "")
+	if loaded == nil {
+		return
+	}
+	testing.expect_value(t, loaded.planet.home, chosen)
+	loaded_spawn, spawn_found := field_pod_spawn(&loaded.simulation.world.entities, content.machines)
+	testing.expect(t, spawn_found)
+	testing.expect_value(t, loaded_spawn.position, spawn.position)
+	testing.expect_value(t, loaded_spawn.forward, spawn.forward)
+	end_session(loaded)
+	plan.file.planet_generation.home = planet.home
+	loaded, problem = start_session(plan, config, content, make_test_generator(seed))
+	testing.expect_value(t, problem, "")
+	if loaded == nil {
+		return
+	}
+	testing.expect_value(t, loaded.planet.home, planet.home)
+	end_session(loaded)
+}
+
+// Two machines starting the wet seed's world agree: the moved home is a
+// function of the seed and the record, so the states hash alike at the
+// start and after a second, and a joiner stands at one place on both.
+@(test)
+test_two_machines_spawn_alike_on_a_wet_seed :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	_, seed := wet_home_test_seed(t, content)
+	first := start_field_test_session(config, content, 0, seed)
+	defer end_session(first)
+	second := start_field_test_session(config, content, 0, seed)
+	defer end_session(second)
+	testing.expect_value(t, simulation_state_hash(&first.simulation), simulation_state_hash(&second.simulation))
+	for session in ([2]^Session{first, second}) {
+		simulation_content := field_test_content(session, content)
+		for _ in 0 ..< 60 {
+			tick_field_test_simulation(&session.simulation, simulation_content, {})
+		}
+		add_player_entry(&session.simulation, simulation_content, 1, Player_Start{})
+	}
+	testing.expect_value(t, simulation_state_hash(&first.simulation), simulation_state_hash(&second.simulation))
+	testing.expect_value(t, first.simulation.players[1].field.position, second.simulation.players[1].field.position)
+}
+
+// The default world's pod, its frame, its machine and the centre of its
+// cabin's floor.
+test_pod_cabin_floor :: proc(state: ^Simulation_State, machines: Machine_Registry) -> (frame: Frame, floor: World_Position) {
+	pod, pod_frame, _ := find_test_pod(&state.world.entities, machines)
+	return pod_frame, pod_cabin_floor_centre(pod_frame, pod.origin, machines.machines[pod.machine], pod.rotation)
+}
+
+// A pit dug under the empty cabin's floor drops a joiner, who spawns in
+// the cabin as always, to its bottom (0180).
+@(test)
+test_a_joiner_drops_into_a_pit_dug_under_the_cabin :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	session := start_field_test_session(config, content)
+	defer end_session(session)
+	state := &session.simulation
+	simulation_content := field_test_content(session, content)
+	for _ in 0 ..< 30 {
+		tick_field_test_simulation(state, simulation_content, {})
+	}
+	move_test_players_out_of_the_pod(state, content.machines)
+	frame, floor := test_pod_cabin_floor(state, content.machines)
+	up := frame.axes[FRAME_UP]
+	pit := Field_Edit {
+		mode = .Dig,
+		brush = test_brush(.Sphere, 1500, 127),
+		centre = floor - World_Position(fixed_scale(up, millimetres_to_position_units(1500))),
+		up = up,
+		diggable = ~bit_set[Field_Material]{},
+	}
+	for _ in 0 ..< 4 {
+		apply_field_edit(&state.field.world, state.field.spacing_millimetres, pit)
+	}
+	add_player_entry(state, simulation_content, 1, Player_Start{})
+	for _ in 0 ..< 120 {
+		tick_field_test_simulation(state, simulation_content, {})
+	}
+	joiner := state.players[1].field
+	below := -fixed_dot(cast([3]i64)(joiner.position - floor), up)
+	testing.expect(t, joiner.on_ground, "the joiner stands on the pit's bottom")
+	testing.expectf(t, below >= metres_to_position_units(2) && below <= millimetres_to_position_units(3100), "the joiner's feet stand %d units below the floor", below)
+}
+
+// A place that would raise ground into the empty cabin, where the next
+// joiner spawns, is refused with Would_Bury_Spawn; the same place outside
+// the pod, away from the players, is not (0180).
+@(test)
+test_ground_raised_in_the_cabin_is_refused :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	session := start_field_test_session(config, content)
+	defer end_session(session)
+	state := &session.simulation
+	simulation_content := field_test_content(session, content)
+	for _ in 0 ..< 30 {
+		tick_field_test_simulation(state, simulation_content, {})
+	}
+	move_test_players_out_of_the_pod(state, content.machines)
+	frame, floor := test_pod_cabin_floor(state, content.machines)
+	up := frame.axes[FRAME_UP]
+	half_metre := millimetres_to_position_units(500)
+	raised := floor + World_Position(fixed_scale(up, half_metre))
+	edit := Field_Edit {
+		mode = .Place,
+		brush = test_brush(.Sphere, 750, 127),
+		centre = raised,
+		up = up,
+		material = .Stone,
+		budget = max(i64),
+	}
+	testing.expect_value(t, field_place_buries_a_player(state, simulation_content, edit), Field_Edit_Refusal.Would_Bury_Spawn)
+	generation := make_planet_generation(state.world.settings.seed, state.world.planet, state.field.spacing_millimetres)
+	ahead := state.players[0].field.position + World_Position(fixed_scale(frame.axes[FRAME_FORWARD], metres_to_position_units(4)))
+	outside := edit
+	outside.centre = field_surface_under(generation, ahead, half_metre)
+	testing.expect_value(t, field_place_buries_a_player(state, simulation_content, outside), Field_Edit_Refusal.None)
+	stone := simulation_content.field.materials[.Stone].item
+	inventory_add(state.players[0].inventory, simulation_content.items, stone, 10)
+	append(&state.field.edits, Queued_Field_Edit{player = 0, edit = edit})
+	drain_field_edits(state, simulation_content)
+	testing.expect_value(t, state.players[0].field_refusal, Field_Edit_Refusal.Would_Bury_Spawn)
+	testing.expect(t, !field_position_is_ground(&state.field.world, state.field.spacing_millimetres, raised), "no ground was raised in the cabin")
+}
+
+// A foundation cannot be laid in the cabin: the cell its frame would take
+// is the pod's (Frame_Cell_Taken), so the spawn keeps its cabin (0180).
+@(test)
+test_a_foundation_cannot_be_laid_in_the_cabin :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	session := start_field_test_session(config, content)
+	defer end_session(session)
+	state := &session.simulation
+	frame, floor := test_pod_cabin_floor(state, content.machines)
+	pitch := frame.pitch_millimetres
+	origin, axes := free_frame_at(floor, frame.axes[FRAME_FORWARD], pitch)
+	cells := [1]World_Coordinate{{}}
+	testing.expect(t, new_frame_cells_meet_a_frame(&state.world.entities.frames, Frame{origin = origin, axes = axes, pitch_millimetres = pitch}, cells[:]), "a frame in the cabin meets the pod's")
 }

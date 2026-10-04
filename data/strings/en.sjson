@@ -1698,6 +1698,7 @@ field_refused_too_steep = "Too steep, needs a foundation"
 field_refused_too_few_foundations = "Needs {needed} foundations, {held} held"
 field_refused_something_stands_on_it = "Something stands on it"
 field_refused_tree_in_the_way = "A tree stands there"
+field_refused_would_bury_spawn = "That would bury where players arrive"
 // The tool line with a foundation held (work item 0193): the block
 // Place puts down, chosen on the inventory view.
 field_tool_foundation_block = "Foundation {size}x{size}, {height} high"

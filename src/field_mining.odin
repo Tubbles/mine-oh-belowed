@@ -90,6 +90,9 @@ Field_Edit_Refusal :: enum u8 {
 	// A placement's cell meets a tree's trunk (0197,
 	// placement_cells_meet_a_trunk).
 	Tree_In_The_Way,
+	// The raised volume would overlap the capsule of the pod's spawn,
+	// where the next joiner stands (0180, field_place_buries_a_player).
+	Would_Bury_Spawn,
 }
 
 // The string keys of the refusals the HUD toasts (Field_Refused, 0179).
@@ -110,6 +113,7 @@ field_refusal_keys := [Field_Edit_Refusal]string {
 	.Too_Few_Foundations = "field_refused_too_few_foundations",
 	.Something_Stands_On_It = "field_refused_something_stands_on_it",
 	.Tree_In_The_Way   = "field_refused_tree_in_the_way",
+	.Would_Bury_Spawn  = "field_refused_would_bury_spawn",
 }
 
 Queued_Field_Edit :: struct {
@@ -409,14 +413,21 @@ field_player_capsule :: proc(tuning: Field_Player_Tuning, player: Field_Player) 
 }
 
 // A place that would raise a sample within its trilinear support of any
-// field player's capsule (field_place_meets_capsule).
-field_place_buries_a_player :: proc(state: ^Simulation_State, tuning: Field_Player_Tuning, edit: Field_Edit) -> bool {
+// field player's capsule (field_place_meets_capsule), Would_Bury_Player,
+// or of the pod spawn's capsule, where the next joiner stands,
+// Would_Bury_Spawn (0180); None when it buries neither. Without a pod
+// there is no spawn capsule.
+field_place_buries_a_player :: proc(state: ^Simulation_State, content: Simulation_Content, edit: Field_Edit) -> Field_Edit_Refusal {
 	for player in state.players {
-		if field_place_meets_capsule(&state.field.world, state.field.spacing_millimetres, edit, field_player_capsule(tuning, player.field)) {
-			return true
+		if field_place_meets_capsule(&state.field.world, state.field.spacing_millimetres, edit, field_player_capsule(content.field.tuning, player.field)) {
+			return .Would_Bury_Player
 		}
 	}
-	return false
+	spawn, found := field_pod_spawn(&state.world.entities, content.machines)
+	if found && field_place_meets_capsule(&state.field.world, state.field.spacing_millimetres, edit, field_player_capsule(content.field.tuning, spawn)) {
+		return .Would_Bury_Spawn
+	}
+	return .None
 }
 
 // The brush edit the player's tool asks for this tick: Dig or Place held
@@ -492,12 +503,12 @@ drain_field_place :: proc(state: ^Simulation_State, content: Simulation_Content,
 	if item != NO_ITEM {
 		place.budget = field_place_volume_available(player.inventory, item, player.field_credit[material]) / field_steps_to_volume(1, field.spacing_millimetres)
 	}
-	switch {
-	case place.budget <= 0:
+	if place.budget <= 0 {
 		player.field_refusal, player.field_refused_material = .Nothing_Held, material
 		return
-	case field_place_buries_a_player(state, content.field.tuning, place):
-		player.field_refusal, player.field_refused_material = .Would_Bury_Player, material
+	}
+	if buried := field_place_buries_a_player(state, content, place); buried != .None {
+		player.field_refusal, player.field_refused_material = buried, material
 		return
 	}
 	result := apply_field_edit(&field.world, field.spacing_millimetres, place)

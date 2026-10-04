@@ -472,6 +472,8 @@ field_edit_refusal_text :: proc(refusal: Field_Edit_Refusal, material: Field_Mat
 		return fmt.tprintf("  no %s to place", name)
 	case .Would_Bury_Player:
 		return "  the place would bury a player"
+	case .Would_Bury_Spawn:
+		return "  the place would bury where players arrive"
 	case .Frame_Cell_Taken:
 		return "  the foundation's cell is taken"
 	case .Unknown_Frame:

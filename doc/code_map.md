@@ -145,7 +145,7 @@ The world owns blocks and what is derived from blocks; generation is a pure func
   - `generation_planet.odin`: the terrain field's planet generation, `generate_field_chunk`, `integer_square_root`, the relief and its crater term at the home (`uncratered_relief`, `crater_relief`, 0199).
   - `generation_planet_trees.odin`: the trees as a generation function (0197): the grove and tree lattices on the sphere, `planet_trees_in_box`, `planet_tree_at_key`, `Tree_Key`.
   - `generation_planet_veins.odin`: the veins on the sphere (0179): `Planet_Veins` in `Planet_Generation`, `plan_planet_veins` round the home, the outcrop material of `planet_sample`, `register_planet_veins` into the vein registry.
-  - `generation_planet_record.odin`: `Planet_Generation_Record`, the generation values a world file records, and `resolve_world_planet`, the world's planet against the data (0179).
+  - `generation_planet_record.odin`: `Planet_Generation_Record`, the generation values a world file records, and `resolve_world_planet`, the world's planet against the data (0179), and the new world's dry home (`find_dry_planet_home`, `new_world_home`, 0180).
   - `save_binary.odin`: the type driven codec (schemas, enums by name, lists).
   - `save_state.odin`, `save_remap.odin`: the entities.bin body and `simulation_state_hash`; content tables and the id remap.
   - `save_world.odin`, `save_list.odin`: world.sjson, region files, staging and swap; the save list.

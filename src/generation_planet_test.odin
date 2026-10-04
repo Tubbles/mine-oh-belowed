@@ -16,6 +16,8 @@ make_test_planet :: proc() -> Planet {
 		rotation_period_seconds = 1200,
 		relief_octaves = {{512, 24}, {128, 8}, {32, 2}},
 		palette = palette,
+		// The pole, which the zero home read as before 0180.
+		home = {latitude_degrees = 90},
 	}
 }
 
@@ -564,4 +566,69 @@ test_the_shipped_crater_floor_lies_above_the_sea :: proc(t: ^testing.T) {
 			testing.expectf(t, uncratered_relief(generation, crest) + term.rim < bound, "%d m: the rim's clamp engages", radius)
 		}
 	}
+}
+
+// The first seed from 1 to 256 whose home's crater floor lies less than
+// the margin above the sea (planet_home_is_dry), from the planet's own
+// record and relief, so the tests follow a later relief change (0180).
+first_wet_home_seed :: proc(planet: Planet) -> (seed: u64, found: bool) {
+	for candidate in u64(1) ..= 256 {
+		if !planet_home_is_dry(make_planet_generation(candidate, planet, 1000), planet, planet.home) {
+			return candidate, true
+		}
+	}
+	return 0, false
+}
+
+@(test)
+test_a_wet_home_moves_to_the_nearest_dry_whole_degree :: proc(t: ^testing.T) {
+	for radius in ([?]int{4000, 8000, 16000}) {
+		planet := shipped_test_home_at(radius)
+		seed, wet := first_wet_home_seed(planet)
+		testing.expectf(t, wet, "a wet seed at %d m", radius)
+		moved, found := find_dry_planet_home(seed, planet)
+		testing.expectf(t, found, "dry ground near the home at %d m with seed %d", radius, seed)
+		testing.expectf(t, moved != planet.home, "the home moves at %d m with seed %d", radius, seed)
+		generation := make_planet_generation(seed, planet, DEFAULT_SAMPLE_SPACING_MILLIMETRES)
+		testing.expectf(t, planet_home_is_dry(generation, planet, moved), "the moved home %v is dry at %d m", moved, radius)
+		origin := planet_home_direction(planet.home)
+		chord := squared_chord(planet_home_direction(moved), origin)
+		reach := squared_chord(planet_home_direction({}), planet_home_direction({0, HOME_SEARCH_DEGREES}))
+		testing.expectf(t, chord <= reach, "the move stays within %d degrees at %d m", HOME_SEARCH_DEGREES, radius)
+		for latitude in max(-90, planet.home.latitude_degrees - HOME_SEARCH_DEGREES) ..= min(90, planet.home.latitude_degrees + HOME_SEARCH_DEGREES) {
+			for longitude in -179 ..= 180 {
+				candidate := Planet_Home{latitude, longitude}
+				if squared_chord(planet_home_direction(candidate), origin) < chord {
+					testing.expectf(t, !planet_home_is_dry(generation, planet, candidate), "%v is nearer and dry at %d m", candidate, radius)
+				}
+			}
+		}
+		moved_planet := planet
+		moved_planet.home = moved
+		for spacing in ([?]int{333, 500, 1000}) {
+			site_generation := make_planet_generation(seed, moved_planet, spacing)
+			surface, _ := field_home_site(site_generation, moved_planet)
+			above := vector_length(cast([3]i64)(surface)) - site_generation.sea_radius
+			testing.expectf(t, above >= millimetres_to_position_units(HOME_DRY_MARGIN_MILLIMETRES) - site_generation.spacing / 8, "the site stands %d units above the sea at %d m, %d mm", above, radius, spacing)
+		}
+	}
+}
+
+@(test)
+test_the_shipped_home_stays_dry_with_the_default_seed :: proc(t: ^testing.T) {
+	for radius in ([?]int{4000, 8000, 16000}) {
+		planet := shipped_test_home_at(radius)
+		home, found := find_dry_planet_home(DEFAULT_WORLD_SEED, planet)
+		testing.expectf(t, found, "dry at %d m", radius)
+		testing.expect_value(t, home, planet.home)
+	}
+}
+
+@(test)
+test_no_dry_ground_keeps_the_records_home :: proc(t: ^testing.T) {
+	planet := default_planet(shipped_test_planets())
+	planet.sea_level_metres = MAXIMUM_RELIEF_METRES + 1
+	_, found := find_dry_planet_home(DEFAULT_WORLD_SEED, planet)
+	testing.expect(t, !found, "nothing is dry under a sea above every relief")
+	testing.expect_value(t, new_world_home(DEFAULT_WORLD_SEED, planet), planet.home)
 }

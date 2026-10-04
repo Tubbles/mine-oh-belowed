@@ -40,7 +40,9 @@ planets = [
 		// in its cabin (0199).
 		// With the default seed it stands about 6 to 9 m above the sea at every
 		// preset on ground flat within 0.6 m over 4 m, a basin 86 to 144 m
-		// from it (0189).
+		// from it (0189). A seed that puts the crater's floor less than 1 m
+		// above the sea moves a new world's home to the nearest dry whole
+		// degree point within 5 degrees (0180).
 		home = {latitude_degrees = 83, longitude_degrees = 132}
 		// The impact crater the pod lies in (work item 0199), round the
 		// home: a flat floor of floor_radius_metres at depth_metres below

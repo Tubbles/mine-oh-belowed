@@ -90,9 +90,8 @@ plan_planet_vein :: proc(material: Field_Material, home: [3]i64, bearing: i32, r
 }
 
 // The starter veins round the home, any non-zero vector along it (a unit
-// vector or a position); the zero vector takes the north pole, as a
-// planet without a home does (planet_home_direction). radius is the
-// planet's in position units.
+// vector or a position); the zero vector takes the north pole. radius is
+// the planet's in position units.
 plan_planet_veins :: proc(seed: u64, home_vector: [3]i64, radius: i64) -> (planned: Planet_Veins) {
 	home, ok := normalize_fixed(home_vector)
 	if !ok {
