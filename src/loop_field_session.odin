@@ -50,6 +50,9 @@ Field_Scene :: struct {
 	// along the path (arrival_pod_transform), so the cabin travels and
 	// turns with the seated eye; nil, unmoved, but in the descent.
 	pod_transform: Maybe(matrix[4, 4]f32),
+	// The portholes' lights during the descent (0273,
+	// arrival_window_lights), in the frame's unmoved space like the lamps.
+	window_lights: []Point_Light,
 	// The viewer's placement editor (0215): its outline or anchored ghost
 	// replaces Place's ghost; zero draws today's ghosts.
 	placement_editor: Placement_Editor,
@@ -183,10 +186,10 @@ field_sky_camera :: proc(camera: rl.Camera3D, up: [3]f32) -> rl.Camera3D {
 	return rl.Camera3D{position = {}, target = look, up = sky_up, fovy = camera.fovy, projection = camera.projection}
 }
 
-// The working arms' and machines' lights nearest the camera, before
-// draw_field, to the field shader and the model shader. They are moved by
-// the pod's transform with the models they light (moved_point_light), so
-// the cabin is lit through the fall.
+// The working arms', machines' and portholes' lights nearest the camera,
+// before draw_field, to the field shader and the model shader. They are
+// moved by the pod's transform with the models they light
+// (moved_point_light), so the cabin is lit through the fall.
 set_field_scene_point_lights :: proc(scene: Field_Scene, camera: rl.Camera3D) {
 	lights := make([dynamic]Point_Light, context.temp_allocator)
 	entities := &scene.state.world.entities
@@ -200,6 +203,7 @@ set_field_scene_point_lights :: proc(scene: Field_Scene, camera: rl.Camera3D) {
 		}
 	}
 	gather_machine_lights(&lights, &scene.state.world.entities, scene.content.machines, scene.models)
+	append(&lights, ..scene.window_lights)
 	if transform, moved := scene.pod_transform.?; moved {
 		for &light in lights {
 			light = moved_point_light(light, transform)
@@ -487,6 +491,16 @@ draw_field_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, cont
 	machine := pod_found ? content.machines.machines[pod_common.machine] : Machine{}
 	arrival_pod := Arrival_Pod{common = pod_common, frame = pod, machine = machine, found = pod_found}
 	camera, pod_transform, pod_rotation, travel := arrival_viewport_camera(state, viewport, player, pulled, view, arrival_pod, content.field.pod_rest.tilt_degrees)
+	seed := session.simulation.world.settings.seed
+	flickers := arrival_window_flickers(view.seconds, machine.window_count, seed, state.settings.reduced_motion)
+	window_lights: [MAXIMUM_POD_WINDOWS]Point_Light
+	window_light_count := 0
+	if pod_found {
+		entities := &session.simulation.world.entities
+		body := entity_body_matrix(entities, pod_common)
+		clip_box := machine_light_clip_box(body, machine.footprint, machine_model_top(state.presentation.model_renderer, pod_common))
+		window_lights, window_light_count = arrival_window_lights(view, body, entity_frame_pitch_millimetres(entities, pod_common.frame), machine, clip_box, state.config.arrival_plasma, flickers)
+	}
 	near, far := rlgl.GetCullDistanceNear(), rlgl.GetCullDistanceFar()
 	defer rlgl.SetClipPlanes(near, far)
 	altitude := linalg.length(camera.position) - f32(session.planet.radius_metres)
@@ -509,20 +523,21 @@ draw_field_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, cont
 		viewer_body_shown = body_shown,
 		lockstep     = &session.lockstep,
 		pod_transform = pod_transform,
+		window_lights = window_lights[:window_light_count],
 		placement_editor = viewport.interaction.placement_editor,
 	}
 	rl.BeginMode3D(camera)
 	draw_field_scene(scene, camera, frame_field_selection(state))
-	if view.phase == .Descent && pod_found {
+	if pod_found {
 		// The windows draw in the frame's unmoved space, under the pod's
-		// transform, so the travel goes back through its rotation.
+		// transform (nil outside the descent), so the travel goes back
+		// through its rotation. The soot stays on them after the landing.
 		push_pod_transform(pod_transform)
-		draw_arrival_windows(&state.presentation.arrival, view, &session.simulation.world.entities, pod_common, machine, linalg.transpose(pod_rotation) * travel, session.simulation.world.settings.seed)
+		draw_arrival_windows(&state.presentation.arrival, view, &session.simulation.world.entities, pod_common, machine, linalg.transpose(pod_rotation) * travel, state.config.arrival_plasma, flickers, seed)
 		pop_pod_transform(pod_transform)
 	}
 	if view.phase == .Settled {
 		if site, site_found := field_arrival_debris_site(&session.simulation, content, state.config); site_found {
-			seed := session.simulation.world.settings.seed
 			colors := arrival_debris_colors(&state.presentation.field_renderer, session.planet.palette, site)
 			draw_arrival_debris(site, view, seed, colors, day_factor(sky.blend))
 			draw_arrival_dust(site, view, seed, rl.ColorBrightness(colors[0], 0.3))

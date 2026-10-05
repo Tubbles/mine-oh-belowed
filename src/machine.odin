@@ -461,8 +461,8 @@ Machine :: struct {
 	interior_light_share:        f32,
 	// A pod's chair, where a new world's players sit strapped in through
 	// the fall and any player may sit later (work item 0223), and its
-	// portholes' glass, where the arrival's flames burn (presentation
-	// only).
+	// portholes' glass, where the entry's plasma streams and its soot
+	// stays (0273, presentation only).
 	seat:                        Pod_Seat,
 	windows:                     [MAXIMUM_POD_WINDOWS]Pod_Window,
 	window_count:                int,

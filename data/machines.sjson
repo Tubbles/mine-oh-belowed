@@ -127,7 +127,7 @@
 // = [x, y, z], normal = [x, y, z], radius}: a porthole's glass in cells
 // of the model's frame, the centre inside the footprint with the lamps'
 // slack, the normal into the cabin of length 0.5 to 2 (normalised at
-// load), the radius 0.05 to 2 cells. The arrival's flames burn on them.
+// load), the radius 0.05 to 2 cells. The entry's plasma streams on them.
 // Presentation only.
 // The capsule (work item 0013) stands on the landing pad from the start:
 // it has no item, cannot be picked up, and holds 8 slots for quest
@@ -1149,7 +1149,7 @@ machines = [
 		// The portholes' glass (0223) at each sleeve's cabin mouth, where
 		// the hole meets the lining (pod.py's wall() origin), the hole's
 		// radius less a hundredth, the normal into the cabin: the
-		// arrival's flames.
+		// entry's plasma.
 		windows = [
 			{centre = [3.322, 3.700, -1.918], normal = [-0.755, -0.490, 0.436], radius = 0.41}
 			{centre = [0.986, 3.750, -3.678], normal = [-0.226, -0.490, 0.842], radius = 0.41}

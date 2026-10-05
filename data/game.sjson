@@ -189,6 +189,17 @@ atmosphere = {
 	top_metres = 650
 	scale_height_metres = 145
 }
+// The entry's plasma on the portholes (0273): haze_color is the air's
+// glow (pink violet, nitrogen), ablator_color the heat shield's
+// (orange), 0 to 255 per channel, never black, the heat drives their
+// brightness, never their hue. soot_percent (0 to 60) is the soot's
+// opacity at the glass's rim once the heating is over, kept after the
+// landing.
+arrival_plasma = {
+	haze_color = [240, 118, 200]
+	ablator_color = [255, 142, 56]
+	soot_percent = 35
+}
 // The pod's airlock (work items 0222, 0231, doc/content.md, Hatches): a
 // hatch of the pod is open exactly while some player's capsule, standing
 // or crouched, comes within reach_millimetres (50 to 300) of its cells.

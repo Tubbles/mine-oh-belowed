@@ -136,6 +136,11 @@ set_shader_vector2 :: proc(shader: rl.Shader, name: cstring, value: [2]f32) {
 	rl.SetShaderValue(shader, rl.GetShaderLocation(shader, name), &value, .VEC2)
 }
 
+set_shader_vector3 :: proc(shader: rl.Shader, name: cstring, value: [3]f32) {
+	value := value
+	rl.SetShaderValue(shader, rl.GetShaderLocation(shader, name), &value, .VEC3)
+}
+
 // Water and the faded ambient life: no depth writes, so a translucent
 // surface never hides what is drawn after it, and both sides of every
 // triangle.

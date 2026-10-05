@@ -43,10 +43,13 @@ Arrival_Curve_Sample :: struct {
 // the last one the hit, exactly at altitude 0 and range_metres along.
 // real_seconds is arrival_real_seconds: the natural seconds before the
 // hit that play 1:1 at the end of the descent (arrival_curve_progress).
+// heat_out_progress is the progress of the first sample after the peak
+// whose heat is 0, 1 when none (0273, the soot's end).
 Arrival_Curve :: struct {
-	samples:                                                         [ARRIVAL_CURVE_INTERVALS + 1]Arrival_Curve_Sample,
+	samples:                                                                       [ARRIVAL_CURVE_INTERVALS + 1]Arrival_Curve_Sample,
 	range_metres, natural_seconds, real_seconds, peak_progress, hit_heat_share: f32,
-	reached_floor:                                                   bool,
+	heat_out_progress:                                                             f32,
+	reached_floor:                                                                 bool,
 }
 
 // 0 at or above the top, else exp(-altitude / scale height).
@@ -144,6 +147,18 @@ fill_arrival_curve_heat :: proc(curve: ^Arrival_Curve, config: Game_Config) {
 	for &sample, index in curve.samples {
 		sample.heat = f32(clamp((raw[index] / peak - threshold) / (1 - threshold), 0, 1))
 	}
+	curve.heat_out_progress = arrival_heat_out_progress(curve.samples[:], peak_index)
+}
+
+// The progress of the first sample after peak_index whose heat is 0, 1
+// when none.
+arrival_heat_out_progress :: proc(samples: []Arrival_Curve_Sample, peak_index: int) -> f32 {
+	for index in peak_index + 1 ..< len(samples) {
+		if samples[index].heat <= 0 {
+			return f32(index) / ARRIVAL_CURVE_INTERVALS
+		}
+	}
+	return 1
 }
 
 // The curve's progress (of its natural time) at progress of a descent of

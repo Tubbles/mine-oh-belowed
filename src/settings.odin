@@ -70,10 +70,11 @@ Settings :: struct {
 	// the colour set of the bottleneck markers and the map from the theme
 	// (ui_theme.odin). reduced_motion stills the head bob, the sprint
 	// kick, the weather, the torch flames and the light's flicker, the
-	// focus outline's pulse and Mission Control's typing. sneak_hold and
-	// sprint_hold choose whether Sneak and Sprint act while held or
-	// toggle on a press; the input layer hands the choice to the
-	// simulation in the input frame (apply_hold_settings).
+	// portholes' flicker during the arrival (0273), the focus outline's
+	// pulse and Mission Control's typing. sneak_hold and sprint_hold
+	// choose whether Sneak and Sprint act while held or toggle on a
+	// press; the input layer hands the choice to the simulation in the
+	// input frame (apply_hold_settings).
 	text_scale:                f32,
 	palette:                   Marker_Palette,
 	reduced_motion:            bool,

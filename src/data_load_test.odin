@@ -114,6 +114,18 @@ test_arrival_values_are_bounded :: proc(t: ^testing.T) {
 		entry.change(&changed)
 		testing.expectf(t, strings.contains(arrival_problem(changed), entry.key), "%s past its bound is named", entry.key)
 	}
+	// Work item 0273: the plasma's colours and soot.
+	bright := config
+	bright.arrival_plasma.haze_color[1] = 256
+	testing.expect(t, strings.contains(arrival_problem(bright), "arrival_plasma.haze_color"), "a channel of 256 is named")
+	black := config
+	black.arrival_plasma.ablator_color = {0, 0, 0}
+	testing.expect(t, strings.contains(arrival_problem(black), "is black"), "a black colour is named")
+	sooty := config
+	sooty.arrival_plasma.soot_percent = MAXIMUM_ARRIVAL_SOOT_PERCENT + 1
+	testing.expect(t, strings.contains(arrival_problem(sooty), "arrival_plasma.soot_percent"), "soot of 61 percent is named")
+	sooty.arrival_plasma.soot_percent = 0
+	testing.expect_value(t, arrival_problem(sooty), "")
 }
 
 // The direct placement limit (0215): the shipped one loads, each side

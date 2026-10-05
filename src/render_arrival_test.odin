@@ -36,8 +36,6 @@ test_the_arrival_view_follows_the_timeline :: proc(t: ^testing.T) {
 		}
 	}
 	testing.expectf(t, peak_heat > 0.95, "the heat peaks at %v", peak_heat)
-	testing.expect_value(t, arrival_view(falling, peak_tick - 1, 0, config, &curve).cooling, 0)
-	testing.expect_value(t, arrival_view(falling, peak_tick + 1, 0, config, &curve).cooling, 1)
 	late := arrival_view(falling, descent - 1, 0, config, &curve)
 	testing.expect_value(t, late.phase, Arrival_Phase.Descent)
 	testing.expect_value(t, late.heat, 0)
@@ -243,4 +241,161 @@ test_a_moved_light_keeps_its_clip_box :: proc(t: ^testing.T) {
 	inside := [3]f32{3.8, 42.5, -2.6}
 	testing.expect(t, clip_box_reach(box, inside) <= 1, "the point lies in the old box")
 	testing.expectf(t, abs(clip_box_reach(moved_box, transform_point(transform, inside)) - clip_box_reach(box, inside)) < 1e-3, "the moved point reaches %v in the new box", clip_box_reach(moved_box, transform_point(transform, inside)))
+}
+
+// Work item 0273: each porthole's light follows the heat (none at heat 0
+// or once settled), in the haze mixed with the ablator's share times the
+// gain, inset into the cabin along the normal and clipped to the pod.
+@(test)
+test_the_window_light_follows_the_heat :: proc(t: ^testing.T) {
+	machine: Machine
+	machine.windows[0] = {centre = {1, 2, 0.5}, normal = {1, 0, 0}, radius = 0.3}
+	machine.windows[1] = {centre = {-1, 2, 0.5}, normal = {0, 0, -1}, radius = 0.3}
+	machine.window_count = 2
+	plasma := shipped_arrival_config().arrival_plasma
+	body: matrix[4, 4]f32 = 1
+	clip_box := linalg.matrix4_scale_f32({0.5, 0.5, 0.5})
+	flickers: [MAXIMUM_POD_WINDOWS]f32
+	for &flicker in flickers {
+		flicker = 1
+	}
+	_, dark := arrival_window_lights({phase = .Descent, heat = 0}, body, 1000, machine, clip_box, plasma, flickers)
+	testing.expect_value(t, dark, 0)
+	_, settled := arrival_window_lights({phase = .Settled, heat = 1}, body, 1000, machine, clip_box, plasma, flickers)
+	testing.expect_value(t, settled, 0)
+	haze, ablator := arrival_plasma_color(plasma.haze_color), arrival_plasma_color(plasma.ablator_color)
+	mixed := haze * (1 - ARRIVAL_WINDOW_LIGHT_ABLATOR_SHARE) + ablator * ARRIVAL_WINDOW_LIGHT_ABLATOR_SHARE
+	half, half_count := arrival_window_lights({phase = .Descent, heat = 0.5}, body, 1000, machine, clip_box, plasma, flickers)
+	full, full_count := arrival_window_lights({phase = .Descent, heat = 1}, body, 1000, machine, clip_box, plasma, flickers)
+	testing.expect_value(t, half_count, 2)
+	testing.expect_value(t, full_count, 2)
+	for index in 0 ..< 2 {
+		window := machine.windows[index]
+		testing.expectf(t, linalg.length(half[index].color - mixed * 0.5 * ARRIVAL_WINDOW_LIGHT_GAIN) < 1e-5, "window %d at heat 0.5 is %v", index, half[index].color)
+		testing.expectf(t, linalg.length(full[index].color - mixed * ARRIVAL_WINDOW_LIGHT_GAIN) < 1e-5, "window %d at heat 1 is %v", index, full[index].color)
+		testing.expectf(t, linalg.length(full[index].color - 2 * half[index].color) < 1e-5, "window %d is not twice as bright at heat 1", index)
+		inset := window.centre + window.normal * ARRIVAL_WINDOW_LIGHT_INSET_CELLS
+		testing.expectf(t, linalg.length(full[index].position - inset) < 1e-5, "window %d's light lies at %v", index, full[index].position)
+		_, clipped := full[index].clip_box.?
+		testing.expectf(t, clipped, "window %d's light is not clipped", index)
+	}
+}
+
+// Work item 0273: each porthole's flicker stays in 0.7 to 1, moves, never
+// repeats at any lag up to ten seconds, differs between windows and holds
+// its mean under reduced motion.
+@(test)
+test_the_window_flicker_has_no_period :: proc(t: ^testing.T) {
+	SAMPLES :: 3600
+	salt := u64(DEFAULT_WORLD_SEED)
+	series := make([][SAMPLES]f32, 5, context.temp_allocator)
+	for window in 0 ..< 5 {
+		lowest, highest: f32 = 1, 0
+		for sample in 0 ..< SAMPLES {
+			value := arrival_window_flicker(f32(sample) / 60, window, salt, false)
+			series[window][sample] = value
+			lowest, highest = min(lowest, value), max(highest, value)
+			testing.expect_value(t, arrival_window_flicker(f32(sample) / 60, window, salt, true), ARRIVAL_FLICKER_MEAN)
+		}
+		testing.expectf(t, lowest >= 0.7 && highest <= 1, "window %d flickers in %v to %v", window, lowest, highest)
+		testing.expectf(t, highest - lowest > 0.1, "window %d spreads only %v", window, highest - lowest)
+		for lag in 1 ..= 600 {
+			largest: f32 = 0
+			for sample in 0 ..< SAMPLES - lag {
+				largest = max(largest, abs(series[window][sample] - series[window][sample + lag]))
+			}
+			testing.expectf(t, largest > 0.02, "window %d repeats at a lag of %d samples", window, lag)
+		}
+	}
+	apart: f32 = 0
+	for sample in 0 ..< SAMPLES {
+		apart = max(apart, abs(series[0][sample] - series[1][sample]))
+	}
+	testing.expectf(t, apart > 0.02, "windows 0 and 1 flicker alike")
+	flickers := arrival_window_flickers(2, 5, salt, false)
+	for window in 0 ..< 5 {
+		testing.expect_value(t, flickers[window], arrival_window_flicker(2, window, salt, false))
+	}
+}
+
+// Work item 0273: the soot is 0 up to the heat's peak, never falls, is 1
+// from the heat's end, through the settle and for good after it; a skip
+// keeps what its fall had reached; no fall has none.
+@(test)
+test_the_soot_grows_after_the_peak_and_stays :: proc(t: ^testing.T) {
+	config := shipped_arrival_config()
+	curve := build_arrival_curve(config)
+	testing.expect(t, curve.heat_out_progress > curve.peak_progress)
+	descent := u64(config.arrival_ticks - config.arrival_settle_ticks)
+	falling := Field_Arrival{start_tick = 0, fall_ticks = u64(config.arrival_ticks)}
+	before: f32 = 0
+	out_tick: u64 = 0
+	for tick in 0 ..< descent {
+		view := arrival_view(falling, tick, 0, config, &curve)
+		if view.curve_progress <= curve.peak_progress {
+			testing.expectf(t, view.soot == 0, "tick %d before the peak has soot %v", tick, view.soot)
+		}
+		if view.curve_progress >= curve.heat_out_progress {
+			testing.expectf(t, view.soot == 1, "tick %d after the heat's end has soot %v", tick, view.soot)
+			if out_tick == 0 {
+				out_tick = tick
+			}
+		}
+		testing.expectf(t, view.soot >= before, "tick %d: the soot falls to %v", tick, view.soot)
+		before = view.soot
+	}
+	testing.expect(t, out_tick > 0, "the heat is out before the hit")
+	landed := falling
+	landed.landed_tick = u64(config.arrival_ticks)
+	for tick in ([3]u64{descent, descent + 240, 100000}) {
+		testing.expectf(t, arrival_view(landed, tick, 0, config, &curve).soot == 1, "tick %d has soot %v", tick, arrival_view(landed, tick, 0, config, &curve).soot)
+	}
+	testing.expect_value(t, arrival_view(landed, descent + 240, 0, config, &curve).phase, Arrival_Phase.Settled)
+	early := falling
+	early.landed_tick = 101
+	testing.expect_value(t, arrival_view(early, 101, 0, config, &curve).soot, 0)
+	testing.expect_value(t, arrival_view(early, 100000, 0, config, &curve).soot, 0)
+	late := falling
+	late.landed_tick = out_tick + 1
+	late_view := arrival_view(late, 100000, 0, config, &curve)
+	testing.expect_value(t, late_view.phase, Arrival_Phase.None)
+	testing.expect_value(t, late_view.soot, 1)
+	testing.expect_value(t, arrival_view({}, 100000, 0, config, &curve).soot, 0)
+}
+
+// Work item 0273: the travel laid on the glass is unit, {0, 1} along the
+// fallback's own direction and for a travel along the normal.
+@(test)
+test_the_travel_lies_on_the_glass :: proc(t: ^testing.T) {
+	normal := linalg.normalize([3]f32{-0.755, -0.490, 0.436})
+	fallback := [3]f32{0, 1, 0}
+	slanted := arrival_travel_on_glass(normal, linalg.normalize([3]f32{0.1, -1, 0.3}), fallback)
+	testing.expectf(t, abs(linalg.length(slanted) - 1) < 1e-5, "the laid travel %v is not unit", slanted)
+	own := arrival_travel_on_glass(normal, fallback, fallback)
+	testing.expectf(t, linalg.length(own - [2]f32{0, 1}) < 1e-5, "the fallback's own direction lies at %v", own)
+	head_on := arrival_travel_on_glass(normal, normal, fallback)
+	testing.expect_value(t, head_on, [2]f32{0, 1})
+	across := linalg.cross(normal, linalg.normalize(fallback - normal * linalg.dot(fallback, normal)))
+	sideways := arrival_travel_on_glass(normal, across, fallback)
+	testing.expectf(t, linalg.length(sideways - [2]f32{1, 0}) < 1e-5, "the quad's across lies at %v", sideways)
+}
+
+// Work item 0273: a porthole facing along the pod's up lays its quad and
+// flow along the pod's forward, finite and in the glass's plane, where
+// the up alone would normalise a zero vector.
+@(test)
+test_a_porthole_facing_up_lays_along_the_forward :: proc(t: ^testing.T) {
+	up, forward := [3]f32{0, 1, 0}, [3]f32{0, 0, 1}
+	axis := arrival_glass_axis(up, up, forward)
+	testing.expectf(t, linalg.length(axis - forward) < 1e-5, "the axis is %v", axis)
+	slanted := linalg.normalize([3]f32{0.3, 1, 0.2})
+	testing.expectf(t, abs(linalg.dot(arrival_glass_axis(slanted, up, forward), slanted)) < 1e-5, "the axis leaves the glass")
+	corners := arrival_window_corners({1, 2, 3}, up, axis, axis, 0.4)
+	for corner, index in corners {
+		finite := !math.is_nan(corner.x) && !math.is_nan(corner.y) && !math.is_nan(corner.z)
+		testing.expectf(t, finite, "corner %d is %v", index, corner)
+		testing.expectf(t, abs(corner.y - 2) < 1e-5, "corner %d leaves the glass", index)
+	}
+	flow := arrival_travel_on_glass(up, linalg.normalize([3]f32{1, -1, 0}), axis)
+	testing.expectf(t, !math.is_nan(flow.x) && !math.is_nan(flow.y) && abs(linalg.length(flow) - 1) < 1e-5, "the flow is %v", flow)
 }

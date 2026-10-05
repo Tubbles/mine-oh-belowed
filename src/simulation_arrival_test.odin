@@ -31,6 +31,7 @@ arrival_test_config :: proc() -> Game_Config {
 	config.arrival_debris_angle_degrees = shipped.arrival_debris_angle_degrees
 	config.arrival_rest_tilt_degrees = shipped.arrival_rest_tilt_degrees
 	config.atmosphere = shipped.atmosphere
+	config.arrival_plasma = shipped.arrival_plasma
 	return config
 }
 
@@ -617,7 +618,9 @@ test_a_save_from_before_the_arrival_loads_landed :: proc(t: ^testing.T) {
 
 // Every presentation procedure called on one session each tick leaves its
 // hash equal to an untouched session's (the debris' site, pieces, poses
-// and patter and the dust's puffs on the site since 0272).
+// and patter and the dust's puffs on the site since 0272; the portholes'
+// flicker, lights, travel on the glass and soot past the landing since
+// 0273).
 @(test)
 test_the_arrivals_presentation_leaves_the_hash :: proc(t: ^testing.T) {
 	config := arrival_test_config()
@@ -628,7 +631,7 @@ test_the_arrivals_presentation_leaves_the_hash :: proc(t: ^testing.T) {
 	defer end_session(plain)
 	salt := watched.simulation.world.settings.seed
 	curve := build_arrival_curve(config)
-	for tick in 1 ..= 700 {
+	for tick in 1 ..= 900 {
 		tick_field_test_simulation(&watched.simulation, watched_content, {})
 		tick_field_test_simulation(&plain.simulation, plain_content, {})
 		state := &watched.simulation
@@ -643,8 +646,13 @@ test_the_arrivals_presentation_leaves_the_hash :: proc(t: ^testing.T) {
 		testing.expect(t, machine.window_count > 0)
 		for index in 0 ..< machine.window_count {
 			window := machine.windows[index]
-			arrival_window_corners(window.centre, window.normal, travel, up, window.radius)
+			arrival_window_corners(window.centre, window.normal, up, up, window.radius)
+			arrival_travel_on_glass(window.normal, travel, up)
 		}
+		flickers := arrival_window_flickers(view.seconds, machine.window_count, salt, false)
+		body := entity_body_matrix(&state.world.entities, pod)
+		arrival_window_lights(view, body, entity_frame_pitch_millimetres(&state.world.entities, pod.frame), machine, body, config.arrival_plasma, flickers)
+		testing.expect(t, view.soot >= 0 && view.soot <= 1)
 		arrival_shake_offset(view.seconds_since_hit, salt)
 		arrival_buffet_offset(view.seconds, view.heat, salt)
 		atmosphere_sky_share(linalg.dot(arrival_descent_offset(view, up, forward, &curve), up), config.atmosphere)
@@ -661,7 +669,7 @@ test_the_arrivals_presentation_leaves_the_hash :: proc(t: ^testing.T) {
 		} else if tick == 1 {
 			testing.expect(t, false, "the test world has a debris site")
 		}
-		if tick == 300 || tick == 540 || tick == 600 || tick == 700 {
+		if tick == 300 || tick == 540 || tick == 600 || tick == 700 || tick == 900 {
 			testing.expectf(t, lockstep_state_hash(state) == lockstep_state_hash(&plain.simulation), "the hashes part at tick %d", tick)
 		}
 	}

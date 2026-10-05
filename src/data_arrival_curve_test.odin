@@ -1,6 +1,7 @@
 package game
 
 import "core:log"
+import "core:math"
 import "core:math/linalg"
 import "core:testing"
 
@@ -31,6 +32,11 @@ test_the_heat_peaks_once_between_the_start_and_the_hit :: proc(t: ^testing.T) {
 	testing.expect_value(t, curve.samples[ARRIVAL_CURVE_INTERVALS].heat, 0)
 	peak := int(curve.peak_progress * ARRIVAL_CURVE_INTERVALS)
 	testing.expect_value(t, curve.samples[peak].heat, 1)
+	// Work item 0273: the heat is out after the peak, and only there.
+	testing.expect(t, curve.heat_out_progress > curve.peak_progress, "the heat goes out after the peak")
+	out := int(math.round(curve.heat_out_progress * ARRIVAL_CURVE_INTERVALS))
+	testing.expect_value(t, curve.samples[out].heat, 0)
+	testing.expectf(t, curve.samples[out - 1].heat > 0, "the heat is out a sample before %d", out)
 	for sample, index in curve.samples {
 		testing.expectf(t, sample.heat <= 1, "sample %d is above the peak", index)
 		if sample.altitude_metres >= f32(config.atmosphere.top_metres) {

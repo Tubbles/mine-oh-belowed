@@ -103,7 +103,8 @@ Game_Config :: struct {
 	// heating below which nothing glows, the curve's last seconds played
 	// 1:1, the pod's lean at rest (0270), the hit's debris (0272,
 	// render_arrival_debris.odin: the clods, their rest and their launch
-	// angle, presentation only) and the atmosphere.
+	// angle, presentation only), the atmosphere and the plasma on the
+	// portholes (0273, render_arrival.odin).
 	arrival_ticks:                    int,
 	arrival_settle_ticks:             int,
 	arrival_start_metres:             int,
@@ -117,6 +118,7 @@ Game_Config :: struct {
 	arrival_debris_angle_degrees:     int,
 	arrival_rest_tilt_degrees:        int,
 	atmosphere:                       Atmosphere_Config,
+	arrival_plasma:                   Arrival_Plasma_Config,
 	// The pod's airlock (work items 0222, 0231, entity_pod_airlock.odin):
 	// how near a player's capsule keeps a hatch open (0231).
 	pod_airlock:                      Pod_Airlock_Config,
@@ -153,6 +155,15 @@ Pod_Airlock_Config :: struct {
 // height, in metres above the planet's radius.
 Atmosphere_Config :: struct {
 	top_metres, scale_height_metres: int,
+}
+
+// The entry's plasma on the portholes (work item 0273,
+// render_arrival.odin, data/shaders/arrival.fs): the air's glow and the
+// heat shield's, 0 to 255 per channel, and the soot's opacity at the
+// glass's rim once the heating is over, in percent.
+Arrival_Plasma_Config :: struct {
+	haze_color, ablator_color: [3]int,
+	soot_percent:              int,
 }
 
 // A field chunk is about 270 KiB with its water and light: radius 3 is
@@ -785,9 +796,13 @@ MINIMUM_ARRIVAL_DEBRIS_ANGLE_DEGREES :: 30
 MAXIMUM_ARRIVAL_DEBRIS_ANGLE_DEGREES :: 60
 MINIMUM_ATMOSPHERE_TOP_METRES :: 64
 MAXIMUM_ATMOSPHERE_METRES :: 4096
+// The soot stays under this share at the rim, so a porthole stays a
+// window (0273).
+MAXIMUM_ARRIVAL_SOOT_PERCENT :: 60
 
 // Every arrival value inside its bound; arrival_ticks 0 is no fall, else
-// it holds the hit and one tick of descent. Then the atmosphere leaves
+// it holds the hit and one tick of descent; neither plasma colour is
+// black (a missing key reads as black). Then the atmosphere leaves
 // the ground's sky clear and the start lies above its top wherever the
 // crater lies; then the curve (build_arrival_curve): it reaches the
 // floor, its start stays inside ARRIVAL_START_DISTANCE_SHARE of the
@@ -812,10 +827,26 @@ arrival_problem :: proc(config: Game_Config) -> string {
 		{"arrival_rest_tilt_degrees", config.arrival_rest_tilt_degrees, 0, MAXIMUM_ARRIVAL_REST_TILT_DEGREES},
 		{"atmosphere.top_metres", config.atmosphere.top_metres, MINIMUM_ATMOSPHERE_TOP_METRES, MAXIMUM_ATMOSPHERE_METRES},
 		{"atmosphere.scale_height_metres", config.atmosphere.scale_height_metres, 1, MAXIMUM_ATMOSPHERE_METRES},
+		{"arrival_plasma.haze_color", config.arrival_plasma.haze_color[0], 0, MAXIMUM_COLOR_COMPONENT},
+		{"arrival_plasma.haze_color", config.arrival_plasma.haze_color[1], 0, MAXIMUM_COLOR_COMPONENT},
+		{"arrival_plasma.haze_color", config.arrival_plasma.haze_color[2], 0, MAXIMUM_COLOR_COMPONENT},
+		{"arrival_plasma.ablator_color", config.arrival_plasma.ablator_color[0], 0, MAXIMUM_COLOR_COMPONENT},
+		{"arrival_plasma.ablator_color", config.arrival_plasma.ablator_color[1], 0, MAXIMUM_COLOR_COMPONENT},
+		{"arrival_plasma.ablator_color", config.arrival_plasma.ablator_color[2], 0, MAXIMUM_COLOR_COMPONENT},
+		{"arrival_plasma.soot_percent", config.arrival_plasma.soot_percent, 0, MAXIMUM_ARRIVAL_SOOT_PERCENT},
 	}
 	for bound in bounds {
 		if bound.value < bound.minimum || bound.value > bound.maximum {
 			return fmt.tprintf("%s %d is outside %d to %d", bound.name, bound.value, bound.minimum, bound.maximum)
+		}
+	}
+	plasma_colors := [?]struct {
+		name:  string,
+		color: [3]int,
+	}{{"haze_color", config.arrival_plasma.haze_color}, {"ablator_color", config.arrival_plasma.ablator_color}}
+	for entry in plasma_colors {
+		if entry.color == {0, 0, 0} {
+			return fmt.tprintf("arrival_plasma.%s is black", entry.name)
 		}
 	}
 	atmosphere := config.atmosphere
