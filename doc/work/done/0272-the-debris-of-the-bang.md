@@ -1,6 +1,6 @@
 # 0272: The debris of the bang
 
-Status: verified (2026-10-05)
+Status: landed (2026-10-05, 1064b41)
 
 ## Goal
 
