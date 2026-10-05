@@ -1089,3 +1089,68 @@ test_a_save_at_the_tick_before_the_hit_digs_at_the_hit :: proc(t: ^testing.T) {
 		testing.expectf(t, field_state_hash(&state.field, 0) == host_hash, "the %s world parts from the unsaved run", index == 0 ? "saved" : "joined")
 	}
 }
+
+// The frame of the camera toggle tests (0285): the camera, fly and no
+// clip toggles at once.
+ARRIVAL_TEST_TOGGLES :: Input_Frame {
+	pressed      = {.Toggle_Camera_Mode, .Toggle_Fly_Mode, .Toggle_No_Clip},
+	just_pressed = {.Toggle_Camera_Mode, .Toggle_Fly_Mode, .Toggle_No_Clip},
+}
+
+// Seated the camera toggles as on foot, strapped it stays first person;
+// fly and no clip never toggle in the chair (0285).
+@(test)
+test_the_camera_toggles_seated_and_not_strapped :: proc(t: ^testing.T) {
+	config := arrival_test_config()
+	config.arrival_ticks = 0
+	content := make_field_test_game_content()
+	session := start_field_test_session(config, content)
+	defer end_session(session)
+	simulation_content := field_test_content(session, content)
+	state := &session.simulation
+	tuning := simulation_content.field.tuning
+	body := &state.players[0].field
+	testing.expect(t, seat_field_player(&state.world.entities, simulation_content.machines, tuning, body, .Strapped))
+	body.camera_mode = .First_Person
+	tick_field_test_simulation(state, simulation_content, ARRIVAL_TEST_TOGGLES)
+	testing.expect_value(t, body.camera_mode, Camera_Mode.First_Person)
+	testing.expect(t, !body.flying && !body.no_clip, "strapped: no fly, no no clip")
+	testing.expect(t, seat_field_player(&state.world.entities, simulation_content.machines, tuning, body, .Seated))
+	seated := body.position
+	tick_field_test_simulation(state, simulation_content, ARRIVAL_TEST_TOGGLES)
+	testing.expect_value(t, body.camera_mode, Camera_Mode.Third_Person)
+	testing.expect(t, !body.flying && !body.no_clip, "seated: no fly, no no clip")
+	testing.expect_value(t, body.seat, Field_Seat.Seated)
+	testing.expect_value(t, body.position, seated)
+	tick_field_test_simulation(state, simulation_content, ARRIVAL_TEST_TOGGLES)
+	testing.expect_value(t, body.camera_mode, Camera_Mode.First_Person)
+	strapped := body^
+	strapped.seat = .Strapped
+	tick_seated_field_player(&state.field.world, tuning, &strapped, Field_Player_Input{just_pressed = {.Toggle_Camera_Mode}})
+	testing.expect_value(t, strapped.camera_mode, Camera_Mode.First_Person)
+}
+
+// The host and the joiner apply the same seated toggle and their hashes
+// agree; a session without the toggle differs, so the mode is hashed
+// (0285).
+@(test)
+test_a_seated_camera_toggle_keeps_two_sessions_alike :: proc(t: ^testing.T) {
+	config := arrival_test_config()
+	config.arrival_ticks = 0
+	content := make_field_test_game_content()
+	hashes: [3]u64
+	for index in 0 ..< 3 {
+		session := start_field_test_session(config, content)
+		defer end_session(session)
+		simulation_content := field_test_content(session, content)
+		state := &session.simulation
+		testing.expect(t, seat_field_player(&state.world.entities, simulation_content.machines, simulation_content.field.tuning, &state.players[0].field, .Seated))
+		tick_field_test_simulation(state, simulation_content, index < 2 ? ARRIVAL_TEST_TOGGLES : Input_Frame{})
+		for _ in 0 ..< 10 {
+			tick_field_test_simulation(state, simulation_content, {})
+		}
+		hashes[index] = simulation_state_hash(state)
+	}
+	testing.expect_value(t, hashes[1], hashes[0])
+	testing.expect(t, hashes[2] != hashes[0], "the camera mode is in the hash")
+}

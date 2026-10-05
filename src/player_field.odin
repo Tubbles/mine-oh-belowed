@@ -1070,8 +1070,13 @@ field_ground_loaded :: proc(world: ^Field_World, tuning: Field_Player_Tuning, pl
 }
 
 // A body in the chair (0223): the look turns and the aim follows it, the
-// body stays where the seat put it, with no toggle, jump, crouch or move.
+// body stays where the seat put it, with no jump, crouch or move. The
+// camera toggles while Seated, never Strapped, and fly and no clip never
+// (0285).
 tick_seated_field_player :: proc(world: ^Field_World, tuning: Field_Player_Tuning, player: ^Field_Player, input: Field_Player_Input) {
+	if player.seat == .Seated {
+		apply_field_player_toggles(player, input.just_pressed & {.Toggle_Camera_Mode})
+	}
 	turn_field_player(player, input.turn)
 	player.velocity = {}
 	player.motion_fraction = {}

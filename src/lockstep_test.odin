@@ -691,6 +691,32 @@ test_the_prediction_holds_a_seated_player :: proc(t: ^testing.T) {
 	testing.expect(t, player.field.yaw != before.yaw, "the look turns")
 }
 
+// The prediction runs the seated cut and tick: Seated the camera toggle
+// shows at once, Strapped it does nothing (0285).
+@(test)
+test_the_prediction_toggles_the_camera_seated_and_not_strapped :: proc(t: ^testing.T) {
+	content := make_field_test_game_content()
+	session, simulation_content := start_field_lockstep_test_session(content, 0)
+	defer end_session(session)
+	state := &session.simulation
+	frame := Input_Frame {
+		pressed      = {.Toggle_Camera_Mode},
+		just_pressed = {.Toggle_Camera_Mode},
+	}
+	seated := state.players[0]
+	testing.expect(t, seat_field_player(&state.world.entities, simulation_content.machines, simulation_content.field.tuning, &seated.field, .Seated))
+	seated.field.camera_mode = .First_Person
+	before := seated.field.position
+	predict_field_player_motion(state, simulation_content, &seated, frame)
+	testing.expect_value(t, seated.field.camera_mode, Camera_Mode.Third_Person)
+	testing.expect_value(t, seated.field.position, before)
+	strapped := state.players[0]
+	testing.expect(t, seat_field_player(&state.world.entities, simulation_content.machines, simulation_content.field.tuning, &strapped.field, .Strapped))
+	strapped.field.camera_mode = .First_Person
+	predict_field_player_motion(state, simulation_content, &strapped, frame)
+	testing.expect_value(t, strapped.field.camera_mode, Camera_Mode.First_Person)
+}
+
 // A wall of stone raised in front of the player after the prediction
 // walked (another player's place, which the prediction does not know):
 // the confirmed walk stops short of the predicted feet. Mid window, with

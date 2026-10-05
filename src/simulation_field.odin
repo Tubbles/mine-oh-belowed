@@ -345,18 +345,24 @@ interact_on_field :: proc(state: ^Simulation_State, content: Simulation_Content,
 
 // The chair (0223).
 
-// What a seated player's frame keeps of the actions: the inventory
+// What a Seated player's frame keeps of the actions: the inventory
 // binding at the bench opens its panel from the chair, as the HUD's Open
-// promises.
-SEATED_FIELD_ACTIONS :: Action_Set{.Open_Aimed}
+// promises, and the camera toggles as on foot (0285).
+SEATED_FIELD_ACTIONS :: Action_Set{.Open_Aimed, .Toggle_Camera_Mode}
 
-// A seated player's frame: no walk and no action but
-// SEATED_FIELD_ACTIONS; the look, the pointer delta and the flags stay.
-seated_field_frame :: proc(frame: Input_Frame) -> Input_Frame {
+// What a Strapped player's frame keeps: Open_Aimed alone, the descent
+// stays first person (0223).
+STRAPPED_FIELD_ACTIONS :: Action_Set{.Open_Aimed}
+
+// A seated or strapped player's frame: no walk and no action but the
+// seat's set (SEATED_FIELD_ACTIONS or STRAPPED_FIELD_ACTIONS); the look,
+// the pointer delta and the flags stay.
+seated_field_frame :: proc(frame: Input_Frame, seat: Field_Seat) -> Input_Frame {
+	kept := seat == .Seated ? SEATED_FIELD_ACTIONS : STRAPPED_FIELD_ACTIONS
 	seated := frame
 	seated.move = {}
-	seated.pressed &= SEATED_FIELD_ACTIONS
-	seated.just_pressed &= SEATED_FIELD_ACTIONS
+	seated.pressed &= kept
+	seated.just_pressed &= kept
 	return seated
 }
 
@@ -384,8 +390,9 @@ interact_on_field_chair :: proc(state: ^Simulation_State, content: Simulation_Co
 
 // One field player's part of the tick, before the drain: the chair, the
 // hotbar, the tool, the move and the queued edits and placements, the
-// hand crafting. A seated player keeps the look and Open_Aimed alone
-// (seated_field_frame); the hand crafting runs on.
+// hand crafting. A strapped player keeps the look and Open_Aimed alone,
+// a Seated one the camera toggle too (seated_field_frame); the hand
+// crafting runs on.
 tick_field_session_player :: proc(state: ^Simulation_State, content: Simulation_Content, index: int, frame: Input_Frame) -> Player_Events {
 	player := &state.players[index]
 	frame := frame
@@ -394,7 +401,7 @@ tick_field_session_player :: proc(state: ^Simulation_State, content: Simulation_
 		frame.pressed -= {.Interact}
 	}
 	if player.field.seat != .Standing {
-		frame = seated_field_frame(frame)
+		frame = seated_field_frame(frame, player.field.seat)
 	}
 	// The hold or toggle setting applies on the field as in the block
 	// world (0218).
