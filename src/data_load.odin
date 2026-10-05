@@ -118,6 +118,9 @@ Game_Config :: struct {
 	arrival_debris_pieces:            int,
 	arrival_debris_rest_seconds:      int,
 	arrival_debris_angle_degrees:     int,
+	// The flakes the heat shield sheds a second at the heat's peak (0290,
+	// render_arrival_flakes.odin, presentation only).
+	arrival_flakes_per_second:        int,
 	arrival_rest_tilt_degrees:        int,
 	atmosphere:                       Atmosphere_Config,
 	arrival_plasma:                   Arrival_Plasma_Config,
@@ -886,6 +889,7 @@ MAXIMUM_ARRIVAL_DEBRIS_PIECES :: 400
 MAXIMUM_ARRIVAL_DEBRIS_REST_SECONDS :: 900
 MINIMUM_ARRIVAL_DEBRIS_ANGLE_DEGREES :: 30
 MAXIMUM_ARRIVAL_DEBRIS_ANGLE_DEGREES :: 60
+MAXIMUM_ARRIVAL_FLAKES_PER_SECOND :: 100
 MINIMUM_ATMOSPHERE_TOP_METRES :: 64
 MAXIMUM_ATMOSPHERE_METRES :: 4096
 // The soot stays under this share at the rim, so a porthole stays a
@@ -916,6 +920,7 @@ arrival_problem :: proc(config: Game_Config) -> string {
 		{"arrival_debris_pieces", config.arrival_debris_pieces, 0, MAXIMUM_ARRIVAL_DEBRIS_PIECES},
 		{"arrival_debris_rest_seconds", config.arrival_debris_rest_seconds, 0, MAXIMUM_ARRIVAL_DEBRIS_REST_SECONDS},
 		{"arrival_debris_angle_degrees", config.arrival_debris_angle_degrees, MINIMUM_ARRIVAL_DEBRIS_ANGLE_DEGREES, MAXIMUM_ARRIVAL_DEBRIS_ANGLE_DEGREES},
+		{"arrival_flakes_per_second", config.arrival_flakes_per_second, 0, MAXIMUM_ARRIVAL_FLAKES_PER_SECOND},
 		{"arrival_rest_tilt_degrees", config.arrival_rest_tilt_degrees, 0, MAXIMUM_ARRIVAL_REST_TILT_DEGREES},
 		{"atmosphere.top_metres", config.atmosphere.top_metres, MINIMUM_ATMOSPHERE_TOP_METRES, MAXIMUM_ATMOSPHERE_METRES},
 		{"atmosphere.scale_height_metres", config.atmosphere.scale_height_metres, 1, MAXIMUM_ATMOSPHERE_METRES},

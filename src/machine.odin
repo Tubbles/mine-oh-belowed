@@ -308,6 +308,13 @@ Pod_Window :: struct {
 	sheath_depth, sheath_radius: f32,
 }
 
+// A pod's heat shield (work item 0290): its rim's outer face in cells of
+// the model's frame, at radius from the y axis and from y 0 to
+// rim_height, where the entry's flakes break off.
+Pod_Heat_Shield_Definition :: struct {
+	radius, rim_height: f32,
+}
+
 // A resolved chair (work item 0223): the cells of the unrotated
 // footprint, the seated eye in 1/COLLISION_UNITS_PER_CELL cell of the
 // model's frame and the facing, a model axis times UNIT_VECTOR_ONE.
@@ -375,6 +382,7 @@ Machine_Definition :: struct {
 	interior_light_share:         Maybe(f32),
 	seat:                         Maybe(Pod_Seat_Definition),
 	windows:                      []Pod_Window_Definition,
+	heat_shield:                  Maybe(Pod_Heat_Shield_Definition),
 	stands_on_ground:             bool,
 	bare_ground_life_minutes:     int,
 	color:                        [3]int,
@@ -515,6 +523,9 @@ Machine :: struct {
 	seat:                        Pod_Seat,
 	windows:                     [MAXIMUM_POD_WINDOWS]Pod_Window,
 	window_count:                int,
+	// The heat shield's rim in cells of the model's frame, where the
+	// entry's flakes break off (0290, presentation only), zero for none.
+	heat_shield:                 Pod_Heat_Shield_Definition,
 	// Machines on bare ground (0201, machine_wear.odin): never refused for
 	// slope and never worn (poles, pipes, belts, the pod); the minutes of
 	// operation on bare ground before a breakdown, 0 for game.sjson's.
@@ -859,6 +870,9 @@ validate_machine_definition :: proc(definitions: []Machine_Definition, index: in
 	if problem := validate_pod_windows(definition, kind); problem != "" {
 		return problem
 	}
+	if problem := validate_pod_heat_shield(definition, kind); problem != "" {
+		return problem
+	}
 	if problem := validate_pump_head(definition, kind); problem != "" {
 		return problem
 	}
@@ -1006,6 +1020,7 @@ resolve_machine :: proc(definition: Machine_Definition, item: Item_Id) -> Machin
 		flames = flames,
 		flame_count = flame_count,
 		interior_light_share = definition.interior_light_share.? or_else 1,
+		heat_shield = definition.heat_shield.? or_else {},
 		stands_on_ground = definition.stands_on_ground,
 		bare_ground_life_minutes = definition.bare_ground_life_minutes,
 		color = {u8(clamp(definition.color[0], 0, 255)), u8(clamp(definition.color[1], 0, 255)), u8(clamp(definition.color[2], 0, 255))},
@@ -1149,6 +1164,27 @@ validate_interior_light_share :: proc(definition: Machine_Definition, kind: Mach
 	}
 	if !(share >= 0 && share <= 1) {
 		return fmt.tprintf("machine %q has interior_light_share %.3f, not 0 to 1", definition.id, share)
+	}
+	return ""
+}
+
+// A pod's heat_shield (work item 0290): only a pod has one, its radius
+// above 0 to half its footprint's narrower side, its rim_height 0 to its
+// height.
+validate_pod_heat_shield :: proc(definition: Machine_Definition, kind: Machine_Kind) -> string {
+	shield, present := definition.heat_shield.?
+	if !present {
+		return ""
+	}
+	if kind != .Pod {
+		return fmt.tprintf("machine %q is not a pod and cannot have heat_shield", definition.id)
+	}
+	footprint := definition.footprint
+	if !(shield.radius > 0 && shield.radius <= f32(min(footprint.width, footprint.depth)) / 2) {
+		return fmt.tprintf("pod %q has heat_shield radius %.3f, not above 0 to half its footprint", definition.id, shield.radius)
+	}
+	if !(shield.rim_height >= 0 && shield.rim_height <= f32(footprint.height)) {
+		return fmt.tprintf("pod %q has heat_shield rim_height %.3f, not 0 to its height", definition.id, shield.rim_height)
 	}
 	return ""
 }

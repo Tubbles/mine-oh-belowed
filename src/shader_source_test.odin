@@ -245,6 +245,20 @@ test_the_flame_shaders_read_the_fire_flicker_bounds :: proc(t: ^testing.T) {
 	testing.expectf(t, strings.contains(fragment, mean), "flame.fs does not hold %s", mean)
 }
 
+// Work item 0290: the flake shader's white is arrival.fs's, and its
+// vertex shader decodes the brightness over ARRIVAL_FLAKE_BRIGHTEST.
+@(test)
+test_the_flake_shaders_share_the_white_core_and_the_brightest :: proc(t: ^testing.T) {
+	vertex := #load("../data/shaders/arrival_flake.vs", string)
+	fragment := #load("../data/shaders/arrival_flake.fs", string)
+	plasma := #load("../data/shaders/arrival.fs", string)
+	white := "const vec3 WHITE_CORE = vec3(1.0, 0.97, 0.92);"
+	brightest := fmt.tprintf("const float flake_brightest = %.1f;", ARRIVAL_FLAKE_BRIGHTEST)
+	testing.expectf(t, strings.contains(plasma, white), "arrival.fs does not hold %s", white)
+	testing.expectf(t, strings.contains(fragment, white), "arrival_flake.fs does not hold %s", white)
+	testing.expectf(t, strings.contains(vertex, brightest), "arrival_flake.vs does not hold %s", brightest)
+}
+
 // A shader's float constant: the text after `const float <name> = ` up
 // to the `;`; found false without it or when it does not parse.
 shader_float_constant :: proc(source, name: string) -> (value: f32, found: bool) {

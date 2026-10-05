@@ -112,6 +112,7 @@ test_arrival_values_are_bounded :: proc(t: ^testing.T) {
 		{proc(config: ^Game_Config) {config.arrival_debris_rest_seconds = MAXIMUM_ARRIVAL_DEBRIS_REST_SECONDS + 1}, "arrival_debris_rest_seconds"},
 		{proc(config: ^Game_Config) {config.arrival_debris_angle_degrees = MINIMUM_ARRIVAL_DEBRIS_ANGLE_DEGREES - 1}, "arrival_debris_angle_degrees"},
 		{proc(config: ^Game_Config) {config.arrival_debris_angle_degrees = MAXIMUM_ARRIVAL_DEBRIS_ANGLE_DEGREES + 1}, "arrival_debris_angle_degrees"},
+		{proc(config: ^Game_Config) {config.arrival_flakes_per_second = MAXIMUM_ARRIVAL_FLAKES_PER_SECOND + 1}, "arrival_flakes_per_second"},
 	}
 	for entry in debris {
 		changed := config

@@ -1,6 +1,7 @@
 package game
 
 import "core:math"
+import "core:slice"
 import "core:strings"
 import "core:testing"
 import rl "shared:raylib"
@@ -645,6 +646,49 @@ test_the_pod_seat_and_windows_are_validated :: proc(t: ^testing.T) {
 	testing.expect_value(t, pod.window_count, 5)
 	length := math.sqrt(pod.windows[0].normal.x * pod.windows[0].normal.x + pod.windows[0].normal.y * pod.windows[0].normal.y + pod.windows[0].normal.z * pod.windows[0].normal.z)
 	testing.expect(t, abs(length - 1) < 1e-5, "the normals are normalised")
+}
+
+// Work item 0290: heat_shield is a pod's only, its radius above 0 to
+// half the footprint, its rim_height 0 to the height. The shipped pod's
+// is pod.py's rim.
+@(test)
+test_the_heat_shield_is_a_pods_and_bounded :: proc(t: ^testing.T) {
+	file, error := parse_machines_file(#load("../data/machines.sjson"), context.temp_allocator)
+	testing.expect(t, error == nil)
+	pod_index := find_definition_index(file.machines, "pod")
+	locker_index := find_definition_index(file.machines, "pod_locker")
+	testing.expect(t, pod_index >= 0 && locker_index >= 0)
+	broken :: proc(definitions: []Machine_Definition, index: int, changed: Machine_Definition) -> string {
+		changed_definitions := slice.clone(definitions, context.temp_allocator)
+		changed_definitions[index] = changed
+		return validate_machine_definition(changed_definitions, index)
+	}
+	with_shield :: proc(definition: Machine_Definition, radius, rim_height: f32) -> Machine_Definition {
+		changed := definition
+		changed.heat_shield = Pod_Heat_Shield_Definition{radius = radius, rim_height = rim_height}
+		return changed
+	}
+	pod := file.machines[pod_index]
+	testing.expect_value(t, validate_machine_definition(file.machines, pod_index), "")
+	testing.expect_value(t, broken(file.machines, locker_index, with_shield(file.machines[locker_index], 0.4, 0)), "machine \"pod_locker\" is not a pod and cannot have heat_shield")
+	refusals := []struct {
+		radius, rim_height: f32,
+		words:              string,
+	} {
+		{0, 0.2, "has heat_shield radius 0.000"},
+		{6.5, 0.2, "has heat_shield radius 6.500"},
+		{5.45, -0.1, "has heat_shield rim_height -0.100"},
+		{5.45, 9, "has heat_shield rim_height 9.000"},
+	}
+	for refusal in refusals {
+		problem := broken(file.machines, pod_index, with_shield(pod, refusal.radius, refusal.rim_height))
+		testing.expectf(t, strings.contains(problem, refusal.words), "%q lacks %q", problem, refusal.words)
+	}
+	testing.expect_value(t, broken(file.machines, pod_index, with_shield(pod, 6, 8)), "")
+
+	machines := make_test_machines()
+	testing.expect_value(t, machines.machines[find_machine_of_kind(machines, .Pod)].heat_shield, Pod_Heat_Shield_Definition{radius = 5.45, rim_height = 0.2})
+	testing.expect_value(t, machines.machines[find_machine_of_kind(machines, .Furnace)].heat_shield, Pod_Heat_Shield_Definition{})
 }
 
 // Work item 0198: the kinds placed in the pod refuse an item and the

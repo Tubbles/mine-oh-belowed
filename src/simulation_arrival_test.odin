@@ -29,6 +29,7 @@ arrival_test_config :: proc() -> Game_Config {
 	config.arrival_debris_pieces = shipped.arrival_debris_pieces
 	config.arrival_debris_rest_seconds = shipped.arrival_debris_rest_seconds
 	config.arrival_debris_angle_degrees = shipped.arrival_debris_angle_degrees
+	config.arrival_flakes_per_second = shipped.arrival_flakes_per_second
 	config.arrival_rest_tilt_degrees = shipped.arrival_rest_tilt_degrees
 	config.atmosphere = shipped.atmosphere
 	config.arrival_plasma = shipped.arrival_plasma
@@ -624,7 +625,7 @@ test_a_save_from_before_the_arrival_loads_landed :: proc(t: ^testing.T) {
 // hash equal to an untouched session's (the debris' site, pieces, poses
 // and patter and the dust's puffs on the site since 0272; the portholes'
 // flicker, lights, travel on the glass and soot past the landing since
-// 0273).
+// 0273; the heat shield's flakes since 0290).
 @(test)
 test_the_arrivals_presentation_leaves_the_hash :: proc(t: ^testing.T) {
 	config := arrival_test_config()
@@ -657,6 +658,7 @@ test_the_arrivals_presentation_leaves_the_hash :: proc(t: ^testing.T) {
 		flickers := arrival_window_flickers(view.seconds, machine.window_count, salt, false)
 		body := entity_body_matrix(&state.world.entities, pod)
 		arrival_window_lights(view, body, entity_frame_pitch_millimetres(&state.world.entities, pod.frame), machine, body, config.arrival_plasma, flickers)
+		arrival_flakes(view, arrival_flake_source(&curve, view, config, machine, salt), false)
 		testing.expect(t, view.soot >= 0 && view.soot <= 1)
 		arrival_shake_offset(view.seconds_since_hit, salt)
 		arrival_buffet_offset(view.seconds, view.heat, salt)

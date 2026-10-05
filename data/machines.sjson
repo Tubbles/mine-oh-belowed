@@ -134,6 +134,11 @@
 // sheath_depth cells (0 to 2) out along the normal from the centre,
 // outside the hull, with a half side of sheath_radius cells (the radius
 // to 4). Presentation only.
+// heat_shield (optional, pods only, work item 0290) is {radius,
+// rim_height}: the heat shield's rim in cells of the model's frame, its
+// outer face from y 0 to rim_height (0 to the height) at radius (above 0
+// to half the footprint), where the entry's flakes break off.
+// Presentation only.
 // flames (optional, furnaces only, work item 0274, at most 8) lists
 // {position = [x, y, z], width, height, yaw_degrees}: a quad of the flame
 // shader standing on its base centre at position, in cells of the model's
@@ -1204,6 +1209,9 @@ machines = [
 			{centre = [-4.025, 3.886, 1.078], normal = [0.842, -0.490, -0.226], radius = 0.40, sheath_depth = 0.37, sheath_radius = 1.2}
 			{centre = [-2.069, 3.936, 3.584], normal = [0.436, -0.490, -0.755], radius = 0.40, sheath_depth = 0.37, sheath_radius = 1.2}
 		]
+		// The heat shield's rim (0290): pod.py's rim, 5.45 out, 0 to 0.2
+		// up.
+		heat_shield = {radius = 5.45, rim_height = 0.2}
 		// The outer hatch at the drum's outer end, the inner hatch at its
 		// cabin end, then the locker facing the lane, the bench facing
 		// the floor before the chair and the oxygen generator facing it

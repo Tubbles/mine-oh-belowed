@@ -220,6 +220,9 @@ salvage_percent = 80
 // arrival_debris_angle_degrees (30 to 60) above the horizontal, the inner
 // ones fastest and farthest, none beyond five crater radii; they rest
 // for up to arrival_debris_rest_seconds (0 to 900) and sink away
+// (presentation only). During the heating arrival_flakes_per_second (0
+// to 100) flakes break off the heat shield's rim at the peak, fewer by
+// the heat's square below it, and drift aft past the portholes
 // (presentation only).
 // The atmosphere's density falls as exp(-altitude / scale_height_metres)
 // (1 to 4096) and is 0 above top_metres (64 to 4096); top_metres less two
@@ -236,6 +239,7 @@ arrival_real_seconds = 6
 arrival_debris_pieces = 160
 arrival_debris_rest_seconds = 150
 arrival_debris_angle_degrees = 45
+arrival_flakes_per_second = 50
 arrival_rest_tilt_degrees = 15
 atmosphere = {
 	top_metres = 650

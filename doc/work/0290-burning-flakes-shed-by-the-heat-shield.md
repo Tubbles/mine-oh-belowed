@@ -1,6 +1,6 @@
 # 0290: Burning flakes shed by the heat shield
 
-Status: designed (2026-10-05)
+Status: verified (2026-11-06)
 
 ## Goal
 
@@ -179,3 +179,9 @@ A round soft head, a streak narrowing and cooling from the ablator's orange to t
 2. The larger flakes get a dark core inside the glowing rim, as the footage's plates show, the smaller ones stay a bright head: the user's burning pieces and the footage's dark plates are the same thing at two sizes. One hashed size threshold decides, the shader draws the core.
 3. The streak points aft of the head, the way the flake drifts seen from the pod, as designed; the couch says if it reads backwards, and then one sign flips it.
 4. No flakes under reduced motion, since a slowed flake never reaches a porthole. The rate key ships at 50 a second for the couch to tune. The rim's door gap is ignored.
+
+### Deviations (implement, 2026-10-05)
+
+1. Decision 2's dark core: `Arrival_Flake.dark_core` (0 under `ARRIVAL_FLAKE_DARK_CORE_CELLS` 0.045, the fade at or above it) goes in the vertex colour's alpha, and the batch blends premultiplied (one, one minus source alpha) instead of additive, so the core can hide the sheath behind it. Every other fragment writes alpha 0 and adds as designed. `test_only_the_larger_flakes_show_a_dark_core` covers it.
+2. `test_the_flakes_end_before_the_pod_turns_to_rest` is not kept: in 0288's snapshot the heat is still 0.85 when the easing starts (tick 1440) and 0 only at tick 1687, so flakes live until tick 1711 at `rest_share` 0.85 and turn with the pod there, as 0288's decision 4 accepts for the sheath.
+3. Fix round: `ARRIVAL_FLAKE_AIR_CELLS_PER_SECOND` is 7, not 9, so the median crossing of the chair's porthole, pooled over eight salts, is 8 ticks.

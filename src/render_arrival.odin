@@ -16,12 +16,13 @@ import "platform"
 // the pose it rests in (arrival_pod_transform, 0270), the plasma
 // sheath streaming outside the hull past the portholes at the heat
 // (0288) and lighting the cabin (0273), flickering through fire_flicker
-// (0286), the soot on the portholes' outer panes, the buffeting
-// and the roar; at the hit the pod meets the floor, the cabin shakes,
-// the dust rises along the crater's rim, the debris flies (0272,
-// render_arrival_debris.odin) and the crash and the bang play. Nothing
-// here reaches the simulation, so the hash is the same with and without
-// it.
+// (0286), the flakes the heat shield sheds past them (0290,
+// render_arrival_flakes.odin), the soot on the portholes' outer panes,
+// the buffeting and the roar; at the hit the pod meets the floor, the
+// cabin shakes, the dust rises along the crater's rim, the debris flies
+// (0272, render_arrival_debris.odin) and the crash and the bang play.
+// Nothing here reaches the simulation, so the hash is the same with and
+// without it.
 // The hatch sound (play_hatch_sounds) is the general hatch cue: it plays
 // for every toggle, the airlock's (0222, 0231).
 
@@ -69,7 +70,9 @@ Arrival_Phase :: enum u8 {
 // set in every phase, 1 for good once the heat is out; seconds since the fall
 // began (the shader's time) and since the hit; rest_share 0 to 1 over
 // the descent's last arrival_real_seconds, smoothed, the drawn
-// attitude's share of the resting pose (0270), 0 outside the descent.
+// attitude's share of the resting pose (0270), 0 outside the descent;
+// descent_seconds the descent's length in seconds, set in the Descent
+// phase and 0 otherwise (the flakes' heat at their birth, 0290).
 Arrival_View :: struct {
 	phase:             Arrival_Phase,
 	progress:          f32,
@@ -79,6 +82,7 @@ Arrival_View :: struct {
 	seconds:           f32,
 	seconds_since_hit: f32,
 	rest_share:        f32,
+	descent_seconds:   f32,
 }
 
 // What the sounds keep between frames: the phase of the last frame (the
@@ -94,11 +98,14 @@ Arrival_Sound_Memory :: struct {
 
 // The window shader, loaded with the field renderer; shader_ready false
 // when it did not load, and the fall then draws without its plasma. The
-// curve is built before the shader loads, so it exists without it.
+// curve is built before the shader loads, so it exists without it. The
+// flake shader (0290) the same way, flake_ready false without it.
 Arrival_Presentation :: struct {
 	curve:        Arrival_Curve,
 	shader:       rl.Shader,
 	shader_ready: bool,
+	flake_shader: rl.Shader,
+	flake_ready:  bool,
 	sound_memory: Arrival_Sound_Memory,
 }
 
@@ -126,6 +133,7 @@ arrival_view :: proc(arrival: Field_Arrival, tick: u64, alpha: f32, config: Game
 		view.progress = elapsed / descent
 		view.curve_progress = arrival_curve_progress(curve, view.progress, descent / tick_rate)
 		view.heat = arrival_curve_at(curve, view.curve_progress).heat
+		view.descent_seconds = descent / tick_rate
 		real_ticks := max(f32(config.arrival_real_seconds) * tick_rate, 1)
 		view.rest_share = math.smoothstep(f32(0), 1, (elapsed - (descent - real_ticks)) / real_ticks)
 	case elapsed < descent + arrival_settled_seconds(config) * tick_rate:
@@ -133,6 +141,15 @@ arrival_view :: proc(arrival: Field_Arrival, tick: u64, alpha: f32, config: Game
 		view.seconds_since_hit = max(elapsed - descent, 0) / tick_rate
 	}
 	return view
+}
+
+// The heat at seconds into a descent of descent_seconds (0290), the
+// view's heat at those seconds: 0 outside the descent or without one.
+arrival_heat_at_seconds :: proc(curve: ^Arrival_Curve, seconds, descent_seconds: f32) -> f32 {
+	if descent_seconds <= 0 || seconds < 0 || seconds >= descent_seconds {
+		return 0
+	}
+	return arrival_curve_at(curve, arrival_curve_progress(curve, seconds / descent_seconds, descent_seconds)).heat
 }
 
 // The soot's growth (0273): 0 at or before the heat's peak, rising
@@ -411,17 +428,22 @@ draw_arrival_dust :: proc(site: Arrival_Debris_Site, view: Arrival_View, salt: u
 	rlgl.EnableDepthMask()
 }
 
-// The entry's curve, then the window shader; on its failure a log line,
-// and the fall still plays.
+// The entry's curve, then the window shader and the flake shader (0290);
+// on a failure a log line, and the fall still plays.
 init_arrival_presentation :: proc(data_directory: string, config: Game_Config) -> Arrival_Presentation {
 	presentation := Arrival_Presentation{curve = build_arrival_curve(config)}
-	shader, ok := load_shader_pair(data_directory, ARRIVAL_VERTEX_SHADER_PATH, ARRIVAL_FRAGMENT_SHADER_PATH, "arrival")
-	if !ok {
+	if shader, ok := load_shader_pair(data_directory, ARRIVAL_VERTEX_SHADER_PATH, ARRIVAL_FRAGMENT_SHADER_PATH, "arrival"); ok {
+		presentation.shader = shader
+		presentation.shader_ready = true
+	} else {
 		platform.log_printf("arrival: the window shader did not load; the fall draws without its window")
-		return presentation
 	}
-	presentation.shader = shader
-	presentation.shader_ready = true
+	if shader, ok := load_shader_pair(data_directory, ARRIVAL_FLAKE_VERTEX_SHADER_PATH, ARRIVAL_FLAKE_FRAGMENT_SHADER_PATH, "arrival_flake"); ok {
+		presentation.flake_shader = shader
+		presentation.flake_ready = true
+	} else {
+		platform.log_printf("arrival: the flake shader did not load; the fall draws without its flakes")
+	}
 	return presentation
 }
 
@@ -429,8 +451,13 @@ destroy_arrival_presentation :: proc(presentation: ^Arrival_Presentation) {
 	if presentation.shader_ready {
 		rl.UnloadShader(presentation.shader)
 	}
+	if presentation.flake_ready {
+		rl.UnloadShader(presentation.flake_shader)
+	}
 	presentation.shader = {}
 	presentation.shader_ready = false
+	presentation.flake_shader = {}
+	presentation.flake_ready = false
 }
 
 // A window's sheath quad's centre in the model's frame (0288):
@@ -463,15 +490,21 @@ draw_arrival_quad :: proc(corners: [4][3]f32, texture: u32) {
 // outside the hull (arrival_sheath_centre, sheath_radius in half side),
 // seen only through the porthole's bore, which crops it. Then, while
 // there is soot, the soot (layer 0) on the outer pane at the window's
-// centre, in front of the sheath. Each quad is laid from the glass's
-// axis alone (arrival_glass_axis: the pod's up, its forward for a
-// porthole facing along the up), so it never turns and the soot holds
-// still; the flow turns inside it by travel_on_glass.
+// centre, in front of the sheath. Between the two passes the flakes
+// (0290, draw_arrival_flakes), whether or not the sheath drew, since
+// they outlive the heat by up to 2 s: beyond the sheath's plane but
+// drawn over it, as light through the glowing gas, and darkened by the
+// soot after them. eye is in the frame's unmoved space. Each quad is
+// laid from the glass's axis alone (arrival_glass_axis: the pod's up,
+// its forward for a porthole facing along the up), so it never turns
+// and the soot holds still; the flow turns inside it by
+// travel_on_glass.
 // Each quad is its own batch, since its uniforms are its own; depth
-// tested, without writing depth or culling. Nothing while both the heat
-// and the soot are 0. Under reduced motion calm is 1 (arrival.fs).
-draw_arrival_windows :: proc(presentation: ^Arrival_Presentation, view: Arrival_View, entities: ^Entities, pod: Entity_Common, machine: Machine, travel: [3]f32, plasma: Arrival_Plasma_Config, flickers: [MAXIMUM_POD_WINDOWS]f32, salt: u64, reduced_motion: bool) {
-	if (view.heat <= 0 && view.soot <= 0) || !presentation.shader_ready || machine.window_count == 0 {
+// tested, without writing depth or culling. Nothing while the heat, the
+// soot and the flakes are all none. Under reduced motion calm is 1
+// (arrival.fs).
+draw_arrival_windows :: proc(presentation: ^Arrival_Presentation, view: Arrival_View, entities: ^Entities, pod: Entity_Common, machine: Machine, travel: [3]f32, plasma: Arrival_Plasma_Config, flickers: [MAXIMUM_POD_WINDOWS]f32, salt: u64, reduced_motion: bool, flakes: []Arrival_Flake, eye: [3]f32) {
+	if (view.heat <= 0 && view.soot <= 0 && len(flakes) == 0) || !presentation.shader_ready || machine.window_count == 0 {
 		return
 	}
 	shader := presentation.shader
@@ -488,6 +521,12 @@ draw_arrival_windows :: proc(presentation: ^Arrival_Presentation, view: Arrival_
 	haze, ablator := arrival_plasma_color(plasma.haze_color), arrival_plasma_color(plasma.ablator_color)
 	for pass in 0 ..< 2 {
 		sheath := pass == 0
+		if !sheath {
+			// The flakes between the sheath and the soot (0290).
+			rl.EndShaderMode()
+			draw_arrival_flakes(presentation, flakes, body, pitch_metres, eye, haze, ablator)
+			rl.BeginShaderMode(shader)
+		}
 		if (sheath && view.heat <= 0) || (!sheath && view.soot <= 0) {
 			continue
 		}
