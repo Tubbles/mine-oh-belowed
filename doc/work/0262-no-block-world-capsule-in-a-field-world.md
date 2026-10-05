@@ -1,6 +1,6 @@
 # 0262: No block world capsule in a field world
 
-Status: implementing (2026-10-05, in `.claude/worktrees/0262` on `item/0262` from `main` at e6464df, the specification approved the same day with the decisions below; found by the 0183 design: `make_simulation` places the block world's drop capsule in every world, so a field world carries a `drop_capsule` entity on frame 0 at the block pad (`query entities` lists it at 354 35 66 on the default seed) that nothing on the field draws, uses or saves on purpose; after 0183)
+Status: verified (2026-10-05, implementer agent a0164458336c76459, verified the same day with no fix round (two low notes folded into the docs at the landing: the other frame side readers of the block body, and the reverse direction of a new field save on an older build), in `.claude/worktrees/0262` on `item/0262` from `main` at e9bb799, the specification approved the same day with the decisions below; found by the 0183 design: `make_simulation` places the block world's drop capsule in every world, so a field world carries a `drop_capsule` entity on frame 0 at the block pad (`query entities` lists it at 354 35 66 on the default seed) that nothing on the field draws, uses or saves on purpose; after 0183)
 
 ## Goal
 

@@ -186,10 +186,14 @@ world_page_lines :: proc(facts: World_Facts) -> []Diagnostics_Line {
 	lines := make([dynamic]Diagnostics_Line, context.temp_allocator)
 	append(&lines, ..facts.overlay_lines)
 	append_line(&lines, false, "")
-	chunk := facts.player_chunk
-	append_line(&lines, false, "tick %d  chunk %d %d %d  biome %s", facts.tick, chunk.x, chunk.y, chunk.z, facts.biome_name)
 	if facts.field_session {
+		// The chunk and the biome are the block world's (0262); the
+		// field's feet line says where the player is.
+		append_line(&lines, false, "tick %d", facts.tick)
 		append_line(&lines, false, "%s", sealed_room_line(facts.sealed_room_inside, facts.sealed_room_oxygen))
+	} else {
+		chunk := facts.player_chunk
+		append_line(&lines, false, "tick %d  chunk %d %d %d  biome %s", facts.tick, chunk.x, chunk.y, chunk.z, facts.biome_name)
 	}
 	append_entity_count_lines(&lines, facts.entity_counts)
 	append_line(&lines, false, "loose items %d  belt lines %d  items on belts %d", facts.loose_item_count, facts.belt_line_count, facts.belt_item_count)

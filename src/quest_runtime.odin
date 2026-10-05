@@ -134,7 +134,7 @@ quest_reward_target :: proc(entities: ^Entities, machines: Machine_Registry, cap
 settle_quest_reward_target :: proc(quests: ^Quest_State, statistics: ^Statistics, entities: ^Entities, machines: Machine_Registry, field_enabled: bool) {
 	target := quest_reward_target(entities, machines, quests.capsule, field_enabled)
 	if field_enabled && target.kind != .Chest {
-		platform.log_printf("quests: the pod has no locker; quest rewards go to the drop capsule")
+		platform.log_printf("quests: the pod has no locker; %s", target.kind == .Capsule ? "quest rewards go to the drop capsule" : "quest rewards wait, the world has no drop capsule")
 	}
 	if target != quests.reward_target {
 		quests.reward_target = target

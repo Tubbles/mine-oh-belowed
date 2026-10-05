@@ -166,6 +166,11 @@ test_the_world_page_tells_the_sealed_room :: proc(t: ^testing.T) {
 	for line in world_page_lines(World_Facts{}) {
 		testing.expect(t, !strings.has_prefix(line.text, "sealed room"), line.text)
 	}
+	// 0262: the chunk and the biome are the block world's, so a field
+	// session's page names neither.
+	for line in world_page_lines(World_Facts{field_session = true, biome_name = "Lake"}) {
+		testing.expect(t, !strings.contains(line.text, "biome"), line.text)
+	}
 }
 
 @(test)

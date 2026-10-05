@@ -6,6 +6,8 @@ package game
 // BIOME_BANNER_SECONDS in all and fades out. The first biome of a world is
 // announced the same way. A pure state machine over the frame time: it is
 // rendering state, not simulation, and pauses while a screen is open.
+// Not on a field world: the biome is the block generator's column under
+// the block body, which the field never moves (0262).
 
 BIOME_BANNER_DEBOUNCE_SECONDS :: 2.0
 BIOME_BANNER_SECONDS :: 3.0
@@ -67,7 +69,7 @@ biome_banner_alpha :: proc(banner: Biome_Banner) -> f32 {
 // loop samples once per frame (make_hud_context), and draws it.
 draw_biome_banner :: proc(state: ^Ui_State, hud: Hud_Context) {
 	banner := hud.biome_banner
-	if banner == nil {
+	if banner == nil || hud.field_session {
 		return
 	}
 	banner^ = advance_biome_banner(banner^, hud.biome, state.frame_seconds)

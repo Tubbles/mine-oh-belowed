@@ -1480,6 +1480,132 @@ test_a_field_world_save_round_trips_the_reward_target :: proc(t: ^testing.T) {
 	testing.expect_value(t, simulation_state_hash(restored), hash)
 }
 
+// Saves the session's world, ends the session and loads the world again
+// with its field set restored (0262's tests).
+reload_field_test_session :: proc(t: ^testing.T, session: ^Session, config: Game_Config, content: Game_Content, simulation_content: Simulation_Content) -> (loaded: ^Session, file: World_File) {
+	files := encode_save_files(&session.simulation, simulation_content, "round trip", 0)
+	end_session(session)
+	problem: string
+	file, problem = parse_world_file(files.world, context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	plan := Session_Plan{loading = true, seed = file.seed, settings = file.settings, file = file, files = &files}
+	loaded, problem = start_session(plan, config, content, make_test_generator(DEFAULT_WORLD_SEED))
+	testing.expect_value(t, problem, "")
+	if loaded == nil {
+		return nil, file
+	}
+	stage_generated_field_set(&loaded.simulation)
+	testing.expect(t, restore_arrived_field_set(&loaded.simulation.field), "the staged set restores")
+	return loaded, file
+}
+
+// Work item 0262: a new field world runs no block spawn search, so it has
+// no landing pad and no drop capsule, and a save round trip keeps it so.
+@(test)
+test_a_new_field_world_has_no_drop_capsule :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	session := start_field_test_session(config, content)
+	simulation_content := field_test_content(session, content)
+	state := &session.simulation
+	testing.expect_value(t, pool_alive_count(state.world.entities.capsules), 0)
+	testing.expect_value(t, state.quests.capsule, NO_ENTITY)
+	testing.expect(t, !state.landing_pad.present, "the state has a pad")
+	testing.expect(t, !session.start.landing_pad.present, "the start has a pad")
+	testing.expect(t, !session.generator.landing_pad.present, "the generator has a pad")
+	testing.expect_value(t, session.start.player, field_world_start().player)
+	locker, locker_found := pod_locker(&state.world.entities, simulation_content.machines)
+	testing.expect(t, locker_found, "the pod has a locker")
+	testing.expect_value(t, state.quests.reward_target, locker)
+	tick_field_test_simulation(state, simulation_content, {})
+	hash := simulation_state_hash(state)
+	loaded, file := reload_field_test_session(t, session, config, content, simulation_content)
+	testing.expect(t, !file.landing_pad_present, "the world file has a pad")
+	if loaded == nil {
+		return
+	}
+	defer end_session(loaded)
+	testing.expect_value(t, pool_alive_count(loaded.simulation.world.entities.capsules), 0)
+	testing.expect(t, !loaded.start.landing_pad.present, "the loaded start has a pad")
+	testing.expect_value(t, simulation_state_hash(&loaded.simulation), hash)
+}
+
+// Work item 0262: the debug terrain is a block world, so it keeps its
+// capsule on its pad even with planet data present.
+@(test)
+test_a_debug_terrain_world_keeps_its_drop_capsule :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	plan := Session_Plan{debug_terrain = true, seed = DEFAULT_WORLD_SEED, settings = default_world_file_settings(config)}
+	session, problem := start_session(plan, config, content, make_test_generator(DEFAULT_WORLD_SEED))
+	testing.expect_value(t, problem, "")
+	if session == nil {
+		return
+	}
+	defer end_session(session)
+	state := &session.simulation
+	testing.expect(t, !state.field.enabled, "the debug terrain plays the field")
+	testing.expect_value(t, pool_alive_count(state.world.entities.capsules), 1)
+	testing.expect(t, state.quests.capsule != NO_ENTITY, "the quests have no capsule")
+	testing.expect_value(t, entity_at(&state.world.entities, debug_terrain_landing_pad().centre + CAPSULE_OFFSET), state.quests.capsule)
+}
+
+// Work item 0262: a block world (no planet data) still searches its spawn
+// and stands the capsule on the pad there.
+@(test)
+test_a_new_block_world_keeps_its_drop_capsule_on_the_pad :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := Game_Content{simulation_content = make_save_test_content()}
+	plan := Session_Plan{seed = DEFAULT_WORLD_SEED, settings = default_world_file_settings(config)}
+	session, problem := start_session(plan, config, content, make_test_generator(DEFAULT_WORLD_SEED))
+	testing.expect_value(t, problem, "")
+	if session == nil {
+		return
+	}
+	defer end_session(session)
+	state := &session.simulation
+	testing.expect(t, !state.field.enabled, "a world without planets plays the field")
+	testing.expect(t, state.landing_pad.present, "the block world has no pad")
+	testing.expect_value(t, state.landing_pad.centre, World_Coordinate{352, 34, 64})
+	testing.expect_value(t, pool_alive_count(state.world.entities.capsules), 1)
+	testing.expect(t, state.quests.capsule != NO_ENTITY, "the quests have no capsule")
+	testing.expect_value(t, entity_at(&state.world.entities, state.landing_pad.centre + CAPSULE_OFFSET), state.quests.capsule)
+}
+
+// Work item 0262: a field world saved before 0262 carries a pad and a
+// capsule on frame 0. It loads as it is, the capsule's contents kept.
+@(test)
+test_an_old_field_save_keeps_its_drop_capsule :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	session := start_field_test_session(config, content)
+	simulation_content := field_test_content(session, content)
+	state := &session.simulation
+	site := Landing_Pad_Site{present = true, centre = {352, 34, 64}}
+	state.landing_pad = site
+	state.quests.capsule = place_capsule(&state.world.entities, simulation_content.machines, site)
+	capsule := state.quests.capsule
+	testing.expect(t, capsule != NO_ENTITY, "no capsule placed")
+	coal := test_item(simulation_content.items, "coal")
+	add_to_slots(entity_slots(&state.world.entities, capsule), coal, 3, item_stack_size(simulation_content.items, coal))
+	locker, _ := pod_locker(&state.world.entities, simulation_content.machines)
+	tick_field_test_simulation(state, simulation_content, {})
+	hash := simulation_state_hash(state)
+	loaded, _ := reload_field_test_session(t, session, config, content, simulation_content)
+	if loaded == nil {
+		return
+	}
+	defer end_session(loaded)
+	restored := &loaded.simulation
+	testing.expect_value(t, pool_alive_count(restored.world.entities.capsules), 1)
+	testing.expect_value(t, restored.quests.capsule, capsule)
+	testing.expect_value(t, slots_count_of(entity_slots(&restored.world.entities, capsule), coal), 3)
+	testing.expect_value(t, restored.landing_pad, site)
+	testing.expect_value(t, loaded.start.player, player_start_on({352, 34, 64}))
+	testing.expect_value(t, restored.quests.reward_target, locker)
+	testing.expect_value(t, simulation_state_hash(restored), hash)
+}
+
 // The sneak toggle's frames (0218): a press, 20 frames without, a press,
 // 10 frames without.
 sneak_toggle_test_frame :: proc(tick: int) -> Input_Frame {

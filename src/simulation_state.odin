@@ -99,8 +99,9 @@ Simulation_Event :: struct {
 
 // The config's starting items must have passed validate_starting_items.
 // unlock_all makes every recipe available (--unlock-all or the setting).
-// The capsule stands on the landing pad from the start, and the first
-// quest is active at tick 0.
+// A block world's capsule stands on the landing pad from the start; a
+// field world passes no pad and has none (0262). The first quest is
+// active at tick 0.
 make_simulation :: proc(config: Game_Config, start: Player_Start, content: Simulation_Content, technologies: Technology_Registry, unlock_all: bool, landing_pad: Landing_Pad_Site) -> Simulation_State {
 	state := Simulation_State {
 		tick_rate        = config.tick_rate,

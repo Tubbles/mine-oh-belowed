@@ -779,6 +779,25 @@ test_field_query_world_veins_entities_and_frames :: proc(t: ^testing.T) {
 	testing.expectf(t, strings.contains(frames, fmt.tprintf("\nframe %d origin ", frame.id)) && strings.contains(frames, " pitch 500 "), "%s", frames)
 }
 
+// Work item 0262: a new field world holds no drop capsule, so the listing
+// holds the pod's frame only.
+@(test)
+test_field_query_entities_lists_only_the_pod_frame :: proc(t: ^testing.T) {
+	test := make_field_command_test()
+	defer destroy_field_command_test(test)
+	_, frame, found := find_test_pod(&test.session.simulation.world.entities, test.content.machines)
+	testing.expect(t, found)
+	everything := expect_field_command_ok(t, test, "query entities").text
+	lines := strings.split_lines(everything, context.temp_allocator)
+	for line in lines[1:] {
+		testing.expectf(t, strings.contains(line, fmt.tprintf(" frame %d ", frame.id)), "%s", line)
+		testing.expectf(t, !strings.contains(line, "drop_capsule"), "%s", line)
+	}
+	capsules := expect_field_command_ok(t, test, "query entities capsule").text
+	testing.expect_value(t, capsules, "entities 0")
+	testing.expect_value(t, pool_alive_count(test.session.simulation.world.entities.capsules), 0)
+}
+
 @(test)
 test_field_teleport_to_a_surface_point_lands_on_the_ground :: proc(t: ^testing.T) {
 	test := make_field_command_test()

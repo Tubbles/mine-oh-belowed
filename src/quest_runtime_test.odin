@@ -482,6 +482,28 @@ test_a_field_world_without_a_locker_falls_back_to_the_capsule :: proc(t: ^testin
 	testing.expect_value(t, len(test.state.pending_rewards), 0)
 }
 
+// Work item 0262: a field world made since 0262 has no capsule, so a pod
+// without a locker leaves the rewards waiting, never dropped.
+@(test)
+test_a_field_world_without_a_locker_or_capsule_keeps_its_rewards_waiting :: proc(t: ^testing.T) {
+	test, locker := make_locker_quest_test()
+	defer destroy_quest_test(&test)
+	coal := test_item(test.items, "coal")
+	testing.expect(t, remove_entity(&test.entities, test.machines, locker))
+	testing.expect(t, remove_entity(&test.entities, test.machines, test.state.capsule))
+	test.state.capsule = NO_ENTITY
+	settle_quest_test_target(&test, true)
+	testing.expect_value(t, test.state.reward_target, NO_ENTITY)
+	notices_before := len(test.state.notices)
+	append(&test.state.pending_rewards, Item_Stack{coal, 7})
+	run_quest_tick(&test)
+	testing.expect_value(t, len(test.state.pending_rewards), 1)
+	if len(test.state.pending_rewards) == 1 {
+		testing.expect_value(t, test.state.pending_rewards[0], Item_Stack{coal, 7})
+	}
+	testing.expect_value(t, len(test.state.notices), notices_before)
+}
+
 // Work item 0210: {target} in a quest text takes the target's phrase.
 @(test)
 test_quest_texts_name_the_reward_target :: proc(t: ^testing.T) {

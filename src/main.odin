@@ -665,6 +665,13 @@ debug_terrain_landing_pad :: proc() -> Landing_Pad_Site {
 	return Landing_Pad_Site{present = true, centre = {0, debug_terrain_height(capsule_column.x, capsule_column.y), 0}}
 }
 
+// A field world has no block spawn and no landing pad (0262): its start
+// is the pod (enable_new_field_world). The block body, which holds the
+// shared inventory (Player), stands on the origin.
+field_world_start :: proc() -> World_Start {
+	return World_Start{player = player_start_on({})}
+}
+
 // A loaded world keeps the pad it was created with (world.sjson, 0049), so
 // a change to the spawn rules never moves it. A file without a pad (an
 // older save) falls back to the search.
