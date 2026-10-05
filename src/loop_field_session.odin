@@ -298,7 +298,7 @@ draw_field_flames :: proc(scene: Field_Scene, camera: rl.Camera3D) {
 
 // Standing at the feet, the model's front (+x) along the heading and its
 // up along the player's up, squashed along the up by up_scale while
-// crouched (0218: the legs have no knee to fold).
+// crouched (0218: the standing legs do not fold).
 field_player_body_transform :: proc(feet: [3]f32, player: Field_Player, up_scale: f32) -> matrix[4, 4]f32 {
 	heading := unit_vector_to_f32(field_player_heading(player))
 	up := unit_vector_to_f32(player.up) * up_scale
@@ -346,12 +346,91 @@ field_player_body_drawn :: proc(scene: Field_Scene, index: int) -> bool {
 	return index != scene.viewer || scene.viewer_body_shown
 }
 
-// A body in the pod's chair is not drawn: there is no seated pose (0223).
+// How a player's body is drawn (0268): not at all, standing, or seated
+// in the pod's chair.
+Field_Body_Pose :: enum u8 {
+	Hidden,
+	Standing,
+	Seated,
+}
+
+// The player the chair shows: the viewer when it is not standing, else
+// the lowest index not standing, -1 for none. The one chair holds every
+// seated player (0223), so it shows one body.
+first_seated_player :: proc(scene: Field_Scene) -> int {
+	if scene.viewer >= 0 && scene.viewer < len(scene.state.players) && field_scene_player(scene, scene.viewer).field.seat != .Standing {
+		return scene.viewer
+	}
+	for index in 0 ..< len(scene.state.players) {
+		if field_scene_player(scene, index).field.seat != .Standing {
+			return index
+		}
+	}
+	return -1
+}
+
+// Hidden where the body is not drawn (the viewer in first person) and for
+// a seated player the chair does not show, so a viewer in the chair sees
+// no other seated body round its eye.
+field_player_body_pose :: proc(scene: Field_Scene, index: int) -> Field_Body_Pose {
+	if !field_player_body_drawn(scene, index) {
+		return .Hidden
+	}
+	if field_scene_player(scene, index).field.seat == .Standing {
+		return .Standing
+	}
+	return index == first_seated_player(scene) ? .Seated : .Hidden
+}
+
+// The pod's chair in metres from the frame as it is (the rested one after
+// the hit, so the body leans with the pod).
+field_seated_chair :: proc(frame: Frame, pod: Entity_Common, machine: Machine) -> Seated_Chair {
+	return Seated_Chair {
+		eye = world_position_to_metres(pod_seat_eye(frame, pod, machine)),
+		forward = unit_vector_to_f32(pod_seat_facing(frame, pod, machine)),
+		up = unit_vector_to_f32(frame.axes[FRAME_UP]),
+	}
+}
+
+field_seated_look :: proc(player: Field_Player) -> [3]f32 {
+	return linalg.normalize(unit_vector_to_f32(field_look_direction(player.forward, player.up, player.yaw, player.pitch)))
+}
+
+// The body in the pod's chair, lit at the pod's interior share (the feet
+// hang below the cabin's floor, where the interior lookup sees outdoors).
+// Nothing without the model: the capsule would cut the floor seated.
+draw_field_player_seated :: proc(scene: Field_Scene, player: Field_Player) {
+	if !scene.player_model.loaded {
+		return
+	}
+	pod, frame, found := find_pod(&scene.state.world.entities, scene.content.machines)
+	if !found {
+		return
+	}
+	machine := scene.content.machines.machines[pod.machine]
+	chair := field_seated_chair(frame, pod, machine)
+	eye_height := f32(f64(scene.content.field.tuning.eye_height) / POSITION_UNITS_PER_METRE)
+	model := scene.player_model
+	body := seated_player_transforms(chair, eye_height, model.pivots, model.leg_part_pivots, field_seated_look(player))
+	light := player_body_light(scene.frame, chair.eye, machine.interior_light_share)
+	for limb in ([4]Player_Limb{.Torso, .Head, .Arm_Left, .Arm_Right}) {
+		draw_player_limb(scene.models, model, limb, body.limbs[limb] * player_model_scale(), light)
+	}
+	for part in Player_Leg_Part {
+		draw_player_leg_part(scene.models, model, part, body.leg_parts[part] * player_model_scale(), light)
+	}
+}
+
+// Every player's body in its pose (field_player_body_pose).
 draw_field_players :: proc(scene: Field_Scene) {
 	for index in 0 ..< len(scene.state.players) {
 		player := field_scene_player(scene, index)
-		if field_player_body_drawn(scene, index) && player.field.seat == .Standing {
+		switch field_player_body_pose(scene, index) {
+		case .Hidden:
+		case .Standing:
 			draw_field_player_body(scene, player.field, field_crouch_progress_of(scene.renderer.crouch_progress[:], index))
+		case .Seated:
+			draw_field_player_seated(scene, player.field)
 		}
 	}
 }
@@ -453,10 +532,11 @@ draw_field_sky :: proc(renderer: ^Sky_Renderer, camera: rl.Camera3D, sky: Day_Sk
 	rl.EndMode3D()
 }
 
-// The camera mode a body is seen in: first person in the pod's chair
-// (0223), the stored mode otherwise, which standing up returns to.
+// The camera mode a body is seen in: first person while strapped in for
+// the descent (0223), the stored mode otherwise, also seated in the chair
+// by choice (0268).
 field_view_camera_mode :: proc(body: Field_Player) -> Camera_Mode {
-	if body.seat != .Standing {
+	if body.seat == .Strapped {
 		return .First_Person
 	}
 	return body.camera_mode

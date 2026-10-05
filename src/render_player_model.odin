@@ -44,6 +44,35 @@ Player_Limb :: enum u8 {
 	Leg_Right,
 }
 
+// The legs cut at the knee for the seated pose (work item 0268): each
+// leg's voxels below the knee make its shin, the rest its thigh, so the
+// model files stay whole. The standing body draws the whole legs.
+Player_Leg_Part :: enum u8 {
+	Thigh_Left,
+	Shin_Left,
+	Thigh_Right,
+	Shin_Right,
+}
+
+@(rodata)
+player_leg_part_limbs := [Player_Leg_Part]Player_Limb {
+	.Thigh_Left  = .Leg_Left,
+	.Shin_Left   = .Leg_Left,
+	.Thigh_Right = .Leg_Right,
+	.Shin_Right  = .Leg_Right,
+}
+
+@(rodata)
+player_leg_part_is_shin := [Player_Leg_Part]bool {
+	.Thigh_Left  = false,
+	.Shin_Left   = true,
+	.Thigh_Right = false,
+	.Shin_Right  = true,
+}
+
+// The knee's height up the leg's voxels: voxel 7 of the shipped 13.
+PLAYER_KNEE_SHARE :: 0.54
+
 @(rodata)
 player_limb_model_ids := [Player_Limb]string {
 	.Torso     = "player_torso",
@@ -62,20 +91,25 @@ Voxel_Bounds :: struct {
 
 // pivots and hand are in the model's frame in blocks, x and z centred and
 // y from the feet, like the meshes once scaled. hand is the bottom middle
-// of the right arm, where the held item goes.
+// of the right arm, where the held item goes. A thigh's pivot is its
+// leg's (the hip), a shin's the knee.
 Player_Model_Mesh :: struct {
-	limbs:  [Player_Limb]Model_Layers,
-	bounds: [Player_Limb]Voxel_Bounds,
-	pivots: [Player_Limb][3]f32,
-	hand:   [3]f32,
+	limbs:           [Player_Limb]Model_Layers,
+	bounds:          [Player_Limb]Voxel_Bounds,
+	pivots:          [Player_Limb][3]f32,
+	hand:            [3]f32,
+	leg_parts:       [Player_Leg_Part]Model_Layers,
+	leg_part_pivots: [Player_Leg_Part][3]f32,
 }
 
 // Nothing uploaded (loaded false) draws the capsule.
 Player_Model :: struct {
-	loaded: bool,
-	limbs:  [Player_Limb]Uploaded_Layers,
-	pivots: [Player_Limb][3]f32,
-	hand:   [3]f32,
+	loaded:          bool,
+	limbs:           [Player_Limb]Uploaded_Layers,
+	pivots:          [Player_Limb][3]f32,
+	hand:            [3]f32,
+	leg_parts:       [Player_Leg_Part]Uploaded_Layers,
+	leg_part_pivots: [Player_Leg_Part][3]f32,
 }
 
 // found false for an empty model.
@@ -127,6 +161,54 @@ destroy_player_model_mesh :: proc(mesh: Player_Model_Mesh) {
 	for layers in mesh.limbs {
 		destroy_model_layers(layers)
 	}
+	for layers in mesh.leg_parts {
+		destroy_model_layers(layers)
+	}
+}
+
+// The knee's voxel row: the shin's cells lie below it.
+player_knee_voxel :: proc(bounds: Voxel_Bounds) -> i32 {
+	return bounds.minimum.y + i32(f32(bounds.maximum.y - bounds.minimum.y) * PLAYER_KNEE_SHARE)
+}
+
+// A copy of the leg with the cells at or above the knee (shin) or below
+// it (thigh) cleared, of the same size and palette.
+player_leg_part_model :: proc(model: model_vox.Voxel_Model, knee: i32, shin: bool, allocator := context.temp_allocator) -> model_vox.Voxel_Model {
+	part := model
+	part.cells = make([]u8, len(model.cells), allocator)
+	for z in 0 ..< model.size.z {
+		for y in 0 ..< model.size.y {
+			if (y < knee) != shin {
+				continue
+			}
+			for x in 0 ..< model.size.x {
+				index := model_vox.voxel_cell_index(model.size, {x, y, z})
+				part.cells[index] = model.cells[index]
+			}
+		}
+	}
+	return part
+}
+
+// Both parts of the leg: their meshes in allocator and their pivots.
+load_player_leg_parts :: proc(mesh: ^Player_Model_Mesh, limb: Player_Limb, model: model_vox.Voxel_Model, bounds: Voxel_Bounds, allocator := context.allocator) -> string {
+	knee := player_knee_voxel(bounds)
+	for part in Player_Leg_Part {
+		if player_leg_part_limbs[part] != limb {
+			continue
+		}
+		shin := player_leg_part_is_shin[part]
+		problem: string
+		if mesh.leg_parts[part], problem = mesh_voxel_model(player_leg_part_model(model, knee, shin), model.size, allocator); problem != "" {
+			return fmt.tprintf("model %s %v: %s", player_limb_model_ids[limb], part, problem)
+		}
+		mesh.leg_part_pivots[part] = mesh.pivots[limb]
+		if shin {
+			middle := [3]f32{f32(bounds.minimum.x + bounds.maximum.x) / 2, f32(knee), f32(bounds.minimum.z + bounds.maximum.z) / 2}
+			mesh.leg_part_pivots[part] = player_model_point(middle, model.size)
+		}
+	}
+	return ""
 }
 
 // One limb file: the frame's size, some voxels, a mesh in voxel units.
@@ -150,6 +232,9 @@ load_player_limb :: proc(mesh: ^Player_Model_Mesh, data_directory: string, limb:
 	// blocks when drawn.
 	if mesh.limbs[limb], problem = mesh_voxel_model(model, model.size, allocator); problem != "" {
 		return fmt.tprintf("model %s: %s", id, problem)
+	}
+	if limb == .Leg_Left || limb == .Leg_Right {
+		return load_player_leg_parts(mesh, limb, model, bounds, allocator)
 	}
 	return ""
 }
@@ -253,12 +338,19 @@ upload_player_model :: proc(mesh: Player_Model_Mesh) -> (model: Player_Model) {
 	for layers, limb in mesh.limbs {
 		model.limbs[limb] = upload_model_layers(layers)
 	}
+	for layers, part in mesh.leg_parts {
+		model.leg_parts[part] = upload_model_layers(layers)
+	}
+	model.leg_part_pivots = mesh.leg_part_pivots
 	model.pivots, model.hand, model.loaded = mesh.pivots, mesh.hand, true
 	return model
 }
 
 unload_player_model :: proc(model: ^Player_Model) {
 	for layers in model.limbs {
+		unload_model_layers(layers)
+	}
+	for layers in model.leg_parts {
 		unload_model_layers(layers)
 	}
 	model^ = {}
@@ -285,6 +377,10 @@ init_player_model :: proc(data_directory: string) -> (model: Player_Model) {
 
 draw_player_limb :: proc(renderer: Model_Renderer, model: Player_Model, limb: Player_Limb, transform: matrix[4, 4]f32, light: rl.Color) {
 	draw_model_layers_colored(renderer, model.limbs[limb], transform, {.Lit = light, .Emissive = light})
+}
+
+draw_player_leg_part :: proc(renderer: Model_Renderer, model: Player_Model, part: Player_Leg_Part, transform: matrix[4, 4]f32, light: rl.Color) {
+	draw_model_layers_colored(renderer, model.leg_parts[part], transform, {.Lit = light, .Emissive = light})
 }
 
 // The six limbs at the pose, posed by the angles.

@@ -41,6 +41,29 @@ test_player_model_set_loads_with_limb_bounds_and_pivots :: proc(t: ^testing.T) {
 	testing.expect(t, abs(2 * half.x - PLAYER_WIDTH) < 1.0 / 16, "width")
 }
 
+// Work item 0268: each leg cut at its knee, voxel 7: the thigh keeps the
+// hip's pivot and the rows from 7 up, the shin the knee's and the rows
+// below.
+@(test)
+test_the_legs_split_at_the_knee :: proc(t: ^testing.T) {
+	mesh, problem := load_player_model_mesh(test_data_directory(), context.temp_allocator)
+	testing.expect_value(t, problem, "")
+	testing.expect_value(t, player_knee_voxel(mesh.bounds[.Leg_Left]), 7)
+	testing.expect_value(t, player_knee_voxel(mesh.bounds[.Leg_Right]), 7)
+	expect_near_point(t, mesh.leg_part_pivots[.Thigh_Left], mesh.pivots[.Leg_Left], "left thigh at the hip")
+	expect_near_point(t, mesh.leg_part_pivots[.Thigh_Right], mesh.pivots[.Leg_Right], "right thigh at the hip")
+	expect_near_point(t, mesh.leg_part_pivots[.Shin_Left], {0, 7.0 / 16, -1.5 / 16}, "left knee")
+	expect_near_point(t, mesh.leg_part_pivots[.Shin_Right], {0, 7.0 / 16, 1.5 / 16}, "right knee")
+	for part in Player_Leg_Part {
+		positions := mesh.leg_parts[part][.Lit].positions
+		testing.expectf(t, len(positions) > 0, "%v has lit faces", part)
+		for position in positions {
+			inside := player_leg_part_is_shin[part] ? position.y <= 7 : position.y >= 7
+			testing.expectf(t, inside, "%v has a face at y %v", part, position.y)
+		}
+	}
+}
+
 @(test)
 test_player_model_missing_files_report_the_file :: proc(t: ^testing.T) {
 	_, problem := load_player_model_mesh("/nonexistent-player-model-directory", context.temp_allocator)

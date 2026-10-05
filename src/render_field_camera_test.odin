@@ -240,12 +240,13 @@ test_the_field_third_person_camera_stops_short_of_a_trunk :: proc(t: ^testing.T)
 	testing.expectf(t, abs(distance - (2 - 0.3 - THIRD_PERSON_WALL_MARGIN)) <= tolerance, "the camera %v m from the eye", distance)
 }
 
-// Work item 0223: in the chair the camera is first person whatever the
-// stored mode, which standing up returns to.
+// Work items 0223 and 0268: strapped in for the descent the camera is
+// first person whatever the stored mode; seated by choice and standing it
+// is the stored mode.
 @(test)
 test_a_seated_player_sees_in_first_person :: proc(t: ^testing.T) {
 	body := Field_Player{camera_mode = .Third_Person, seat = .Seated}
-	testing.expect_value(t, field_view_camera_mode(body), Camera_Mode.First_Person)
+	testing.expect_value(t, field_view_camera_mode(body), Camera_Mode.Third_Person)
 	body.seat = .Strapped
 	testing.expect_value(t, field_view_camera_mode(body), Camera_Mode.First_Person)
 	body.seat = .Standing
@@ -267,4 +268,33 @@ test_a_seated_viewer_draws_no_ghost :: proc(t: ^testing.T) {
 	testing.expect(t, !field_viewer_ghosts_drawn(scene), "strapped")
 	scene.viewer = NO_PLAYER
 	testing.expect(t, !field_viewer_ghosts_drawn(scene), "a free camera")
+}
+
+// Work item 0268: the chair shows one body, the viewer's own when it sits
+// (hidden in first person), else the lowest index seated player's.
+@(test)
+test_a_seated_player_is_drawn_seated_and_hidden_from_its_own_eye :: proc(t: ^testing.T) {
+	state: Simulation_State
+	defer delete(state.players)
+	append(&state.players, Player{}, Player{}, Player{})
+	state.players[0].field.seat = .Seated
+	state.players[1].field.seat = .Seated
+	eye := [3]f32{0, 1.6, 0}
+	first_person := viewer_body_shown(field_view_camera_mode(state.players[0].field), eye, eye, {0, 1, 0}, 1.6)
+	scene := Field_Scene{state = &state, viewer = 0, viewer_body_shown = first_person}
+	testing.expect_value(t, field_player_body_pose(scene, 0), Field_Body_Pose.Hidden)
+	testing.expect_value(t, field_player_body_pose(scene, 1), Field_Body_Pose.Hidden)
+	testing.expect_value(t, field_player_body_pose(scene, 2), Field_Body_Pose.Standing)
+	state.players[0].field.seat = .Standing
+	testing.expect_value(t, field_player_body_pose(scene, 1), Field_Body_Pose.Seated)
+	state.players[0].field.seat = .Seated
+	scene.viewer_body_shown = true
+	testing.expect_value(t, field_player_body_pose(scene, 0), Field_Body_Pose.Seated)
+	testing.expect_value(t, field_player_body_pose(scene, 1), Field_Body_Pose.Hidden)
+	state.players[0].field.seat = .Standing
+	state.players[1].field.seat = .Strapped
+	state.players[2].field.seat = .Strapped
+	scene.viewer_body_shown = false
+	testing.expect_value(t, field_player_body_pose(scene, 1), Field_Body_Pose.Seated)
+	testing.expect_value(t, field_player_body_pose(scene, 2), Field_Body_Pose.Hidden)
 }

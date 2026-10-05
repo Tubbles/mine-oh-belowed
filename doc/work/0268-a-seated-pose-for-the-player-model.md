@@ -1,6 +1,6 @@
 # 0268: A seated pose for the player model
 
-Status: implementing (2026-10-05)
+Status: verified (2026-10-05)
 
 ## Goal
 
