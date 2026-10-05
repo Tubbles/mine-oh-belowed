@@ -1,6 +1,6 @@
 # 0269: The fall as an atmospheric entry
 
-Status: verified (2026-10-05)
+Status: landed (2026-10-05, 245c144)
 
 ## Goal
 

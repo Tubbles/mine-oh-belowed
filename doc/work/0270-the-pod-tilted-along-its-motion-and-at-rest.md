@@ -1,6 +1,6 @@
 # 0270: The pod tilted along its motion and at rest
 
-Status: todo (2026-10-05, from the user)
+Status: designing (2026-10-05)
 
 ## Goal
 
