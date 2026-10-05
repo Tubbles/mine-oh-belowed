@@ -12,12 +12,12 @@ The screens a developer uses in a running game: the Developer screen, the diagno
 
 | Row | Entries |
 | --- | --- |
-| Toggles | Fly mode; no clip (0112: flight passes through blocks); cheat speed (0044, 0087); below them, on a row of its own, free crafting (0234) |
+| Toggles | Fly mode; no clip (0112: flight passes through blocks; on a field world the field player's, 0183); cheat speed (0044, 0087); below them, on a row of its own, free crafting (0234) |
 | Overlays | Diagnostics page (steps like F3); statistics overlay (F4); bottleneck overlay |
 | Kits | One numbered button per chapter: that chapter's kit |
 | Quests | One button per chapter completing the quests before it; Finish active quest (0098: completes it with its rewards and activates the next) |
 | Time | Dawn, noon, dusk, midnight |
-| Actions | Unlock every recipe and technology; teleport to the landing pad; Screenshot (0053: a PNG under `$XDG_STATE_HOME/mine-oh-belowed/screenshots/`, toasted) |
+| Actions | Unlock every recipe and technology; teleport to the landing pad (on a field world into the pod's cabin, as `teleport pod`, 0183); Screenshot (0053: a PNG under `$XDG_STATE_HOME/mine-oh-belowed/screenshots/`, toasted) |
 | Data | The watcher's status and Reload data (0054, like F8 and the reload command; every reload or failure toasts) |
 | Editors | Texture editor; Data files |
 

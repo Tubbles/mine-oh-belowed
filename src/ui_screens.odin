@@ -117,6 +117,9 @@ Screen_Context :: struct {
 	// a screen shows.
 	unconfirmed_commands: []Player_Command,
 	landing_pad:        Landing_Pad_Site,
+	// The world is a field world (0183): the Developer screen's fly and no
+	// clip toggles show the field body's, and Teleport goes to the cabin.
+	field_session:      bool,
 	// The recipe browser, the technology browser, the statistics and the
 	// map (ui_session_views.odin). Nil without a world.
 	views:              ^Session_Views,

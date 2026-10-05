@@ -1280,6 +1280,7 @@ make_screen_context :: proc(state: ^Frame_State, index: int) -> Screen_Context {
 	screen_context.cheat_speed = session.simulation.cheat_speed
 	screen_context.free_crafting = session.simulation.free_crafting
 	screen_context.landing_pad = session.start.landing_pad
+	screen_context.field_session = session.simulation.field.enabled
 	screen_context.particle_memory = &viewport.presentation.particle_memory
 	screen_context.arrival_falling = field_arrival_falling(session.simulation.field.arrival)
 	screen_context.arrival_skippable = field_arrival_skippable(session.simulation.field.arrival, session.simulation.tick, state.config.arrival_settle_ticks)

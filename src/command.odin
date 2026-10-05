@@ -73,6 +73,10 @@ Command_Context :: struct {
 	// The texture editor's entries (work item 0100) with their current
 	// parameters, for query textures.
 	textures:             []Texture_Editor_Entry,
+	// The block world's forms on a field world (0183): the benchmark
+	// builds its modules on the block floor beside the field
+	// (benchmark_factory.odin). The socket's lines never set it.
+	block_forms:          bool,
 }
 
 // text may hold several lines. deferred: the tick command answers once
@@ -98,7 +102,10 @@ command_usages := [?]Command_Usage {
 	{"quest finish", "complete the active quest with its rewards"},
 	{"research <technology>", "mark researched, or one more level of an infinite technology"},
 	{"unlock_all", "every recipe and technology"},
-	{"teleport <x> <y> <z> | teleport pad", "feet into the block, or onto the landing pad"},
+	{"teleport <x> <y> <z> | teleport <latitude> <longitude> | teleport pod | teleport pad", "feet to the position (metres on the field, a block on the block world), the surface point, the pod's cabin or the landing pad"},
+	{"look <yaw> <pitch> | look at <x> <y> <z>", "the field player's look: bearing from north and pitch in degrees, or towards a point"},
+	{"camera <first|third>", "first or third person camera"},
+	{"crouch <on|off>", "hold the field player's crouch"},
 	{"time <dawn|noon|dusk|midnight>", "set the time of day"},
 	{"weather <clear|overcast|rain|fog|auto>", "force a weather kind for screenshots, auto returns to the schedule"},
 	{"fly <on|off>", "fly mode, swept against blocks"},
@@ -106,7 +113,7 @@ command_usages := [?]Command_Usage {
 	{"cheat_speed <on|off>", "fast movement and hand mining"},
 	{"free_crafting <on|off>", "crafts take no ingredients"},
 	{"vein <type> <x> <z> [size_class]", "a new surface vein centred on the column"},
-	{"place <machine> <x> <y> <z> <rotation>", "a machine by its minimum corner, by the player's rules, no item taken"},
+	{"place <machine> <x> <y> <z> <rotation> | place <machine> <frame> <x> <y> <z> <rotation>", "a machine by its minimum corner (on the field on a frame's cell), by the player's rules, no item taken"},
 	{"remove <x> <y> <z>", "the entity or block there, contents discarded"},
 	{"block <block> <x> <y> <z>", "set a block"},
 	{"insert <item> <count> <x> <y> <z>", "items into the entity there, as an inserter would"},
@@ -120,7 +127,7 @@ command_usages := [?]Command_Usage {
 	{"screenshot [name]", "a PNG of the next frame, the answer names the path"},
 	{"query player|world|quests|contracts", "state as key value lines"},
 	{"query textures", "each procedural texture's current parameters in data/textures/procedural.sjson's form"},
-	{"query veins [radius] | query entities [kind] [radius] | query stats <item>", "state around the player, or of an item"},
+	{"query veins [radius] | query entities [kind] [radius] | query frames [radius] | query stats <item>", "state around the player, or of an item"},
 }
 
 command_ok :: proc(format: string, arguments: ..any) -> Command_Response {
@@ -250,7 +257,7 @@ execute_command_line :: proc(command_context: Command_Context, line: string) -> 
 // (the loop's lockstep driver).
 command_writes_simulation :: proc(name: string) -> bool {
 	switch name {
-	case "give", "take", "kit", "chapter", "quest", "research", "unlock_all", "teleport", "time", "fly", "noclip", "cheat_speed", "free_crafting", "vein", "place", "remove", "block", "insert", "recipe", "filter", "blueprint":
+	case "give", "take", "kit", "chapter", "quest", "research", "unlock_all", "teleport", "time", "fly", "noclip", "cheat_speed", "free_crafting", "vein", "place", "remove", "block", "insert", "recipe", "filter", "blueprint", "look", "camera", "crouch":
 		return true
 	}
 	return false
@@ -258,11 +265,11 @@ command_writes_simulation :: proc(name: string) -> bool {
 
 serve_command_request :: proc(command_context: Command_Context, request: Developer_Request) -> (problem: string) {
 	simulation := command_context.simulation
-	before := movement_toggles(simulation.players[command_context.player])
+	before := session_movement_toggles(simulation, command_context.player)
 	// With the found schematics, as simulation_tick serves developer
 	// requests.
 	problem = serve_developer_request(simulation, content_with_found_schematics(command_context.content, simulation.unlocks), request, command_context.player)
-	log_movement_toggles(before, simulation.players[command_context.player], "a command", simulation.tick)
+	log_movement_toggle_change(before, session_movement_toggles(simulation, command_context.player), "a command", simulation.tick)
 	return
 }
 
@@ -292,8 +299,19 @@ execute_command :: proc(command_context: Command_Context, words: []string) -> Co
 	return execute_world_command(command_context, name, arguments)
 }
 
+// On a field world the field forms come first (command_field.odin); the
+// commands they leave serve both worlds.
 execute_world_command :: proc(command_context: Command_Context, name: string, arguments: []string) -> Command_Response {
+	if command_context.simulation.field.enabled && !command_context.block_forms {
+		if response, handled := field_world_command(command_context, name, arguments); handled {
+			return response
+		}
+	}
 	switch name {
+	case "look", "crouch":
+		return command_error(NO_FIELD_WORLD_PROBLEM)
+	case "camera":
+		return command_camera(command_context, arguments)
 	case "give", "take":
 		return command_give_or_take(command_context, name, arguments)
 	case "kit":
@@ -448,9 +466,13 @@ command_research :: proc(command_context: Command_Context, arguments: []string) 
 	return command_ok("researched %s", arguments[0])
 }
 
-// The feet go into the block, at its centre.
+// The feet go into the block, at its centre. The field's forms (pod, a
+// latitude and longitude) answer that there is no field world.
 command_teleport :: proc(command_context: Command_Context, arguments: []string) -> Command_Response {
 	position: [3]f32
+	if (len(arguments) == 1 && arguments[0] == "pod") || len(arguments) == 2 {
+		return command_error(NO_FIELD_WORLD_PROBLEM)
+	}
 	if len(arguments) == 1 && arguments[0] == "pad" {
 		position = landing_pad_standing_position(command_context.simulation.landing_pad)
 	} else if cell, ok := parse_coordinate_words(arguments); ok {
@@ -512,13 +534,33 @@ command_toggle :: proc(command_context: Command_Context, name: string, arguments
 	return command_ok("%s %s", name, arguments[0])
 }
 
-// The current state and the toggling action of a command_toggle name.
+@(rodata)
+camera_mode_words := [Camera_Mode]string {
+	.First_Person = "first",
+	.Third_Person = "third",
+}
+
+// The camera mode of the field body on a field world, of the block body
+// otherwise (0183), as the Toggle camera binding sets it.
+command_camera :: proc(command_context: Command_Context, arguments: []string) -> Command_Response {
+	if len(arguments) == 1 {
+		if mode, found := parse_named_enum(camera_mode_words, arguments[0]); found {
+			serve_command_request(command_context, Developer_Request{action = .Set_Camera_Mode, camera_mode = mode})
+			return command_ok("camera %s", arguments[0])
+		}
+	}
+	return usage_error("camera <first|third>")
+}
+
+// The current state and the toggling action of a command_toggle name: on
+// a field world fly and noclip are the field body's (0183).
 toggle_command_state :: proc(simulation: ^Simulation_State, player: int, name: string) -> (bool, Developer_Action) {
+	toggles := session_movement_toggles(simulation, player)
 	switch name {
 	case "fly":
-		return simulation.players[player].flying, .Toggle_Fly_Mode
+		return toggles.flying, .Toggle_Fly_Mode
 	case "noclip":
-		return simulation.players[player].no_clip, .Toggle_No_Clip
+		return toggles.no_clip, .Toggle_No_Clip
 	case "free_crafting":
 		return simulation.free_crafting, .Toggle_Free_Crafting
 	}
@@ -975,8 +1017,10 @@ command_query :: proc(command_context: Command_Context, arguments: []string) -> 
 		return query_contracts(command_context)
 	case "stats":
 		return query_stats(command_context, rest)
+	case "frames":
+		return command_error(NO_FIELD_WORLD_PROBLEM)
 	}
-	return usage_error("query player|world|veins|entities|quests|contracts|stats|textures")
+	return usage_error("query player|world|veins|entities|frames|quests|contracts|stats|textures")
 }
 
 // One line per procedural texture in the data file's form, the texture

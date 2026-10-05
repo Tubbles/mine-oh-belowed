@@ -1,6 +1,7 @@
 package game
 
 import "core:fmt"
+import "core:math"
 import "core:os"
 import "core:strings"
 import "core:testing"
@@ -616,4 +617,383 @@ test_command_queries :: proc(t: ^testing.T) {
 	expect_command_error(t, test, "query moon")
 	expect_command_error(t, test, "query stats no_such_item")
 	expect_command_error(t, test, "query veins 0")
+}
+
+// The field world's forms (work item 0183).
+
+// A new field world of the default seed with its content and the socket's
+// control. Heap allocated, since the context points into it.
+Field_Command_Test :: struct {
+	session: ^Session,
+	game:    Game_Content,
+	content: Simulation_Content,
+	control: Command_Control,
+}
+
+make_field_command_test :: proc() -> ^Field_Command_Test {
+	test := new(Field_Command_Test)
+	test.game = make_field_test_game_content()
+	test.session = start_field_test_session(test_field_game_config(), test.game)
+	test.content = field_test_content(test.session, test.game)
+	tick_field_command_test(test, 1)
+	return test
+}
+
+destroy_field_command_test :: proc(test: ^Field_Command_Test) {
+	end_session(test.session)
+	delete(test.control.screenshot_path)
+	free(test)
+}
+
+tick_field_command_test :: proc(test: ^Field_Command_Test, ticks: int) {
+	for _ in 0 ..< ticks {
+		tick_field_test_simulation(&test.session.simulation, test.content, {})
+	}
+}
+
+run_field_command :: proc(test: ^Field_Command_Test, line: string) -> Command_Response {
+	response, _ := execute_command_line(Command_Context{simulation = &test.session.simulation, content = test.content, control = &test.control}, line)
+	return response
+}
+
+expect_field_command_ok :: proc(t: ^testing.T, test: ^Field_Command_Test, line: string, location := #caller_location) -> Command_Response {
+	response := run_field_command(test, line)
+	testing.expectf(t, response.ok, "%q: %s", line, response.text, loc = location)
+	return response
+}
+
+// The line fails and its text holds wanted.
+expect_field_command_error :: proc(t: ^testing.T, test: ^Field_Command_Test, line, wanted: string, location := #caller_location) {
+	response := run_field_command(test, line)
+	testing.expectf(t, !response.ok && strings.contains(response.text, wanted), "%q answered %v %q, wanted an error with %q", line, response.ok, response.text, wanted, loc = location)
+}
+
+field_command_body :: proc(test: ^Field_Command_Test) -> ^Field_Player {
+	return &test.session.simulation.players[0].field
+}
+
+// The value after "<key> " on its line of a query answer.
+answer_value :: proc(text, key: string) -> string {
+	for line in strings.split_lines(text, context.temp_allocator) {
+		if strings.has_prefix(line, key) && len(line) > len(key) && line[len(key)] == ' ' {
+			return line[len(key) + 1:]
+		}
+	}
+	return ""
+}
+
+f32_dot :: proc(first, second: [3]f32) -> f32 {
+	return first.x * second.x + first.y * second.y + first.z * second.z
+}
+
+@(test)
+test_decimal_words_parse_and_range_check :: proc(t: ^testing.T) {
+	cases := [?]struct {
+		word:  string,
+		value: i64,
+	}{{"1.5", 1500}, {"-0.001", -1}, {"83", 83000}, {"0.25", 250}, {"-12.34", -12340}}
+	for entry in cases {
+		value, ok := parse_decimal_word(entry.word)
+		testing.expectf(t, ok && value == entry.value, "%q gave %d %v", entry.word, value, ok)
+	}
+	for bad in ([?]string{"1.2345", "abc", "", "-", ".5", "5.", "1e3", "+1", "1234567890123", "1.-5", "--1"}) {
+		_, ok := parse_decimal_word(bad)
+		testing.expectf(t, !ok, "%q parsed", bad)
+	}
+	_, problem := parse_ranged_decimal_word("90.001", -90000, 90000, "the latitude")
+	testing.expect_value(t, problem, "the latitude must be a number from -90 to 90 with up to three decimals")
+	value, within := parse_ranged_decimal_word("-90", -90000, 90000, "the latitude")
+	testing.expect(t, within == "" && value == -90000)
+	testing.expect_value(t, millidegrees_to_angle_units(90_000), i32(ANGLE_UNITS_PER_QUARTER))
+	testing.expect_value(t, millidegrees_to_angle_units(-30_000), i32(-5461))
+}
+
+@(test)
+test_angle_of_sine_inverts_the_fixed_sine :: proc(t: ^testing.T) {
+	for angle := i32(-ANGLE_UNITS_PER_QUARTER); angle <= ANGLE_UNITS_PER_QUARTER; angle += 97 {
+		found := angle_of_sine(fixed_sine(angle))
+		testing.expectf(t, abs(found - angle) <= 1, "angle %d gave %d", angle, found)
+	}
+	testing.expect_value(t, angle_of_sine(UNIT_VECTOR_ONE), i32(ANGLE_UNITS_PER_QUARTER))
+	testing.expect_value(t, angle_of_sine(-UNIT_VECTOR_ONE), i32(-ANGLE_UNITS_PER_QUARTER))
+	testing.expect_value(t, angle_of_sine(2 * UNIT_VECTOR_ONE), i32(ANGLE_UNITS_PER_QUARTER))
+	testing.expect_value(t, angle_of_sine(0), i32(0))
+}
+
+@(test)
+test_field_query_player_answers_the_field_body :: proc(t: ^testing.T) {
+	test := make_field_command_test()
+	defer destroy_field_command_test(test)
+	text := expect_field_command_ok(t, test, "query player").text
+	body := field_command_body(test)
+	testing.expectf(t, strings.contains(text, fmt.tprintf("\nposition %s\n", metres_text(body.position))), "%s", text)
+	// The cabin lies within a few metres of the default seed's home, 83
+	// 132, which 0180 does not move.
+	latitude, latitude_ok := parse_decimal_word(answer_value(text, "latitude")[:len(answer_value(text, "latitude")) - 1])
+	longitude, longitude_ok := parse_decimal_word(answer_value(text, "longitude")[:len(answer_value(text, "longitude")) - 1])
+	testing.expectf(t, latitude_ok && abs(latitude - 83_000) < 100 && longitude_ok && abs(longitude - 132_000) < 100, "%s", text)
+	height, height_ok := parse_decimal_word(answer_value(text, "height"))
+	testing.expectf(t, height_ok && height > 0 && height < 20_000, "height %q", answer_value(text, "height"))
+	for line in ([?]string{"\ncamera first", "\ncrouch_held false", "\nflying false", "\nhotbar_slot 1", "\ntool "}) {
+		testing.expectf(t, strings.contains(text, line), "%q missing from %s", line, text)
+	}
+	testing.expectf(t, !strings.contains(text, "\nblock "), "%s", text)
+}
+
+@(test)
+test_field_query_world_veins_entities_and_frames :: proc(t: ^testing.T) {
+	test := make_field_command_test()
+	defer destroy_field_command_test(test)
+	pod, frame, found := find_test_pod(&test.session.simulation.world.entities, test.content.machines)
+	testing.expect(t, found)
+	world := expect_field_command_ok(t, test, "query world").text
+	for line in ([?]string{"\nhome 83 132", fmt.tprintf("\npod frame %d ", frame.id), "\nfield_chunks "}) {
+		testing.expectf(t, strings.contains(world, line), "%q missing from %s", line, world)
+	}
+	testing.expectf(t, !strings.contains(world, "\npad "), "%s", world)
+	veins := expect_field_command_ok(t, test, "query veins").text
+	lines := strings.split_lines(veins, context.temp_allocator)
+	testing.expectf(t, len(lines) == 4 && lines[0] == "veins", "%s", veins)
+	for type_id in ([?]string{"iron", "copper", "coal"}) {
+		listed := false
+		for line in lines[1:] {
+			if strings.has_prefix(line, fmt.tprintf("vein %s ", type_id)) && strings.contains(line, " layer surface ") {
+				listed = true
+				words := strings.fields(line, context.temp_allocator)
+				for word, index in words {
+					if word == "distance" {
+						distance, ok := parse_decimal_word(words[index + 1])
+						testing.expectf(t, ok && distance < 100_000, "%s", line)
+					}
+				}
+			}
+		}
+		testing.expectf(t, listed, "no %s vein in %s", type_id, veins)
+	}
+	entities := expect_field_command_ok(t, test, "query entities pod").text
+	testing.expectf(t, strings.has_prefix(entities, "entities 1\n"), "%s", entities)
+	testing.expectf(t, strings.contains(entities, fmt.tprintf("entity pod frame %d cell %d %d %d ", frame.id, pod.origin.x, pod.origin.y, pod.origin.z)), "%s", entities)
+	everything := expect_field_command_ok(t, test, "query entities").text
+	testing.expectf(t, !strings.contains(everything, "drop_capsule"), "%s", everything)
+	frames := expect_field_command_ok(t, test, "query frames").text
+	testing.expectf(t, strings.contains(frames, fmt.tprintf("\nframe %d origin ", frame.id)) && strings.contains(frames, " pitch 500 "), "%s", frames)
+}
+
+@(test)
+test_field_teleport_to_a_surface_point_lands_on_the_ground :: proc(t: ^testing.T) {
+	test := make_field_command_test()
+	defer destroy_field_command_test(test)
+	home := test.session.simulation.world.planet.home
+	response := expect_field_command_ok(t, test, fmt.tprintf("teleport %d %d.5", home.latitude_degrees, home.longitude_degrees + 1))
+	latitude, _, _ := field_feet_coordinates(field_command_body(test).position)
+	testing.expectf(t, abs(latitude - f64(home.latitude_degrees)) < 0.006, "latitude %f: %s", latitude, response.text)
+	generation := test.session.simulation.field.world.water_planet.generation
+	direction := planet_direction_at(millidegrees_to_angle_units(i64(home.latitude_degrees) * 1000), millidegrees_to_angle_units(i64(home.longitude_degrees) * 1000 + 1500))
+	surface := field_surface_under(generation, World_Position(fixed_scale(direction, generation.radius)), 0)
+	clearance := metres_between(surface, field_command_body(test).position)
+	testing.expectf(t, abs(clearance - 0.25) < 0.001, "the feet are %f m over the surface", clearance)
+	landed := false
+	for _ in 0 ..< 60 {
+		tick_field_command_test(test, 1)
+		if field_command_body(test).on_ground {
+			landed = true
+			break
+		}
+	}
+	body := field_command_body(test)
+	along_up := f64(fixed_dot(cast([3]i64)(body.position - surface), body.up)) / POSITION_UNITS_PER_METRE
+	testing.expectf(t, landed && abs(along_up) < 0.3, "landed %v, %f m over the surface", landed, along_up)
+}
+
+@(test)
+test_field_teleport_to_metres_and_to_the_pod :: proc(t: ^testing.T) {
+	test := make_field_command_test()
+	defer destroy_field_command_test(test)
+	body := field_command_body(test)
+	words := strings.fields(metres_text(body.position + {2 * POSITION_UNITS_PER_METRE, 0, 0}), context.temp_allocator)
+	expected, problem := parse_metres_words(words, "a position")
+	testing.expect_value(t, problem, "")
+	expect_field_command_ok(t, test, fmt.tprintf("teleport %s %s %s", words[0], words[1], words[2]))
+	testing.expect_value(t, body.position, expected)
+	testing.expect_value(t, body.previous_position, expected)
+	expect_field_command_ok(t, test, "teleport pod")
+	pod, frame, _ := find_test_pod(&test.session.simulation.world.entities, test.content.machines)
+	testing.expect(t, feet_in_test_cabin(frame, pod, test.content.machines.machines[pod.machine], body^), "teleport pod stands the feet in the cabin")
+	expect_field_command_error(t, test, "teleport pad", NO_BLOCK_WORLD_PROBLEM)
+	expect_field_command_error(t, test, "teleport 91 0", "the latitude must be a number from -90 to 90")
+	expect_field_command_error(t, test, "teleport 0 0 99999999", "a position must be a number")
+}
+
+@(test)
+test_field_look_sets_the_bearing_and_the_camera_follows :: proc(t: ^testing.T) {
+	test := make_field_command_test()
+	defer destroy_field_command_test(test)
+	response := expect_field_command_ok(t, test, "look 90 -30")
+	testing.expect_value(t, response.text, "yaw 90.0 pitch -30.0")
+	body := field_command_body(test)
+	for pass in 0 ..< 2 {
+		testing.expectf(t, abs(field_player_bearing_degrees(body^) - 90) < 0.1, "pass %d: bearing %f", pass, field_player_bearing_degrees(body^))
+		testing.expect_value(t, body.pitch, millidegrees_to_angle_units(-30_000))
+		tick_field_command_test(test, 1)
+	}
+	view := field_player_view(body^, test.session.field_content.tuning, 1, 0)
+	camera := field_camera(view, .First_Person, THIRD_PERSON_DISTANCE, 0.6, 70)
+	look := camera.target - camera.position
+	north := unit_vector_to_f32(frame_north_tangent(body.up))
+	east := unit_vector_to_f32(fixed_cross(frame_north_tangent(body.up), body.up))
+	up := unit_vector_to_f32(body.up)
+	testing.expectf(t, abs(f32_dot(look, north)) < 0.01, "north %f", f32_dot(look, north))
+	testing.expectf(t, abs(f32_dot(look, east) - math.cos(f32(math.PI) / 6)) < 0.01, "east %f", f32_dot(look, east))
+	testing.expectf(t, abs(f32_dot(look, up) + 0.5) < 0.01, "up %f", f32_dot(look, up))
+	// A heading a hair west of north reads 0.0, never 360.0.
+	set_field_look(body, -1, 0)
+	testing.expect_value(t, fmt.tprintf("%.1f", field_player_bearing_degrees(body^)), "0.0")
+	query := expect_field_command_ok(t, test, "query player").text
+	testing.expectf(t, strings.contains(query, "\nyaw 0.0\n"), "%s", query)
+	expect_field_command_error(t, test, "look 0 95", "the pitch must be a number from -89 to 89")
+	expect_field_command_error(t, test, "look 0 x", "the pitch must be a number")
+}
+
+@(test)
+test_field_look_at_a_point_faces_it :: proc(t: ^testing.T) {
+	test := make_field_command_test()
+	defer destroy_field_command_test(test)
+	move_test_players_out_of_the_pod(&test.session.simulation, test.content.machines)
+	tick_field_command_test(test, 1)
+	entities := expect_field_command_ok(t, test, "query entities pod").text
+	centre := strings.fields(entities[max(strings.index(entities, " centre "), 0):], context.temp_allocator)
+	testing.expectf(t, len(centre) == 4 && centre[0] == "centre", "%s", entities)
+	expect_field_command_ok(t, test, fmt.tprintf("look at %s %s %s", centre[1], centre[2], centre[3]))
+	target, _ := parse_metres_words(centre[1:], "a position")
+	body := field_command_body(test)
+	tuning := test.session.field_content.tuning
+	towards, _ := normalize_fixed(cast([3]i64)(target - field_player_eye(body^, tuning)))
+	look := field_look_direction(body.forward, body.up, body.yaw, body.pitch)
+	cosine := f64(fixed_dot(towards, look)) / UNIT_VECTOR_ONE
+	testing.expectf(t, cosine > math.cos(math.to_radians(f64(1))), "the look is %f degrees off the pod's centre", math.to_degrees(math.acos(min(cosine, 1))))
+	eye := strings.fields(metres_text(field_player_eye(body^, tuning)), context.temp_allocator)
+	expect_field_command_error(t, test, fmt.tprintf("look at %s %s %s", eye[0], eye[1], eye[2]), "the point is at the eye")
+}
+
+@(test)
+test_field_camera_third_is_pulled_in_in_the_cabin :: proc(t: ^testing.T) {
+	test := make_field_command_test()
+	defer destroy_field_command_test(test)
+	tick_field_command_test(test, 3)
+	body := field_command_body(test)
+	testing.expect_value(t, expect_field_command_ok(t, test, "camera third").text, "camera third")
+	testing.expect_value(t, body.camera_mode, Camera_Mode.Third_Person)
+	view := field_player_view(body^, test.session.field_content.tuning, 1, 0)
+	eye := world_position_to_metres(view.eye)
+	pulled := pulled_in_field_camera(&test.session.simulation, test.session.field_content, view, .Third_Person, THIRD_PERSON_DISTANCE, 0.6, 70)
+	free := field_camera(view, .Third_Person, THIRD_PERSON_DISTANCE, 0.6, 70)
+	pulled_distance, free_distance := math.sqrt(f32_dot(pulled.position - eye, pulled.position - eye)), math.sqrt(f32_dot(free.position - eye, free.position - eye))
+	testing.expectf(t, pulled_distance <= free_distance - 0.5, "pulled %f m from the eye, free %f m", pulled_distance, free_distance)
+	expect_field_command_ok(t, test, "camera first")
+	testing.expect_value(t, body.camera_mode, Camera_Mode.First_Person)
+	testing.expect(t, pulled_in_field_camera(&test.session.simulation, test.session.field_content, view, .First_Person, THIRD_PERSON_DISTANCE, 0.6, 70) == field_camera(view, .First_Person, THIRD_PERSON_DISTANCE, 0.6, 70))
+	expect_field_command_error(t, test, "camera side", "usage: camera <first|third>")
+}
+
+@(test)
+test_field_crouch_holds_and_releases :: proc(t: ^testing.T) {
+	test := make_field_command_test()
+	defer destroy_field_command_test(test)
+	move_test_players_out_of_the_pod(&test.session.simulation, test.content.machines)
+	tick_field_command_test(test, 1)
+	body := field_command_body(test)
+	tuning := test.session.field_content.tuning
+	testing.expect_value(t, expect_field_command_ok(t, test, "crouch on").text, "crouch on")
+	tick_field_command_test(test, 1)
+	testing.expect(t, body.crouching, "crouch on crouches")
+	testing.expect_value(t, field_player_eye(body^, tuning), body.position + World_Position(fixed_scale(body.up, tuning.crouch_eye_height)))
+	tick_field_command_test(test, 10)
+	testing.expect(t, body.crouching, "the crouch holds with no input")
+	expect_field_command_ok(t, test, "crouch off")
+	tick_field_command_test(test, 1)
+	testing.expect(t, !body.crouching, "crouch off stands")
+	expect_field_command_ok(t, test, "fly on")
+	expect_field_command_ok(t, test, "crouch on")
+	tick_field_command_test(test, 1)
+	testing.expect(t, !body.crouching, "no crouch while flying")
+	expect_field_command_error(t, test, "crouch maybe", "usage: crouch <on|off>")
+}
+
+@(test)
+test_field_fly_and_noclip_act_on_the_field_body :: proc(t: ^testing.T) {
+	test := make_field_command_test()
+	defer destroy_field_command_test(test)
+	player := &test.session.simulation.players[0]
+	expect_field_command_ok(t, test, "fly on")
+	testing.expect(t, player.field.flying)
+	testing.expect(t, !player.flying, "the block body stays as it is")
+	expect_field_command_ok(t, test, "fly on")
+	testing.expect(t, player.field.flying, "fly on again changes nothing")
+	expect_field_command_ok(t, test, "noclip on")
+	testing.expect(t, player.field.no_clip)
+	text := expect_field_command_ok(t, test, "query player").text
+	testing.expectf(t, strings.contains(text, "\nflying true\n") && strings.contains(text, "\nno_clip true\n"), "%s", text)
+	expect_field_command_ok(t, test, "fly off")
+	testing.expect(t, !player.field.flying)
+}
+
+@(test)
+test_field_place_on_a_frame_cell :: proc(t: ^testing.T) {
+	test := make_field_command_test()
+	defer destroy_field_command_test(test)
+	state := &test.session.simulation
+	move_test_players_out_of_the_pod(state, test.content.machines)
+	tick_field_command_test(test, 1)
+	_, frame, _ := find_test_pod(&state.world.entities, test.content.machines)
+	// Two cells outside the pod's +x side, or its -x side when the moved
+	// player stands there.
+	x, beyond := i32(8), i32(9)
+	if field_placement_buries_a_player(state, test.session.field_content.tuning, frame, {8, 0, 0}) {
+		x, beyond = -7, -8
+	}
+	items := test.content.items
+	chest_item, foundation_item := test_item(items, "wooden_chest"), test_item(items, "wooden_foundation")
+	chests, foundations := inventory_count(state.players[0].inventory, chest_item), inventory_count(state.players[0].inventory, foundation_item)
+	expect_field_command_ok(t, test, fmt.tprintf("place wooden_foundation %d %d -1 0 0", frame.id, x))
+	response := expect_field_command_ok(t, test, fmt.tprintf("place wooden_chest %d %d 0 0 0", frame.id, x))
+	testing.expect_value(t, response.text, fmt.tprintf("placed wooden_chest on frame %d at %d 0 0", frame.id, x))
+	handle, _ := frame_occupant(&state.world.entities.frames, frame.id, {x, 0, 0})
+	testing.expect_value(t, entity_from_occupant(handle.handle).kind, Entity_Kind.Chest)
+	testing.expect_value(t, inventory_count(state.players[0].inventory, chest_item), chests)
+	testing.expect_value(t, inventory_count(state.players[0].inventory, foundation_item), foundations)
+	expect_field_command_error(t, test, fmt.tprintf("place wooden_chest %d %d 0 0 0", frame.id, x), "a cell of the footprint is taken")
+	expect_field_command_error(t, test, fmt.tprintf("place wooden_chest %d %d 0 0 0", frame.id, beyond), "a bottom cell has no solid cell under it")
+	expect_field_command_error(t, test, fmt.tprintf("place wooden_chest %d 0 0 0 0", frame.id), "a cell of the footprint is taken")
+	expect_field_command_error(t, test, "place wooden_chest 0 8 0 0 0", NO_BLOCK_WORLD_PROBLEM)
+	expect_field_command_error(t, test, "place wooden_chest 999 8 0 0 0", "no frame 999")
+	expect_field_command_error(t, test, fmt.tprintf("place belt %d %d 1 0 0", frame.id, x), "belt is not placed on a frame")
+	expect_field_command_error(t, test, fmt.tprintf("place wooden_chest %d %d 1 0 4", frame.id, x), "the rotation must be a number from 0 to 3")
+	expect_field_command_error(t, test, fmt.tprintf("place wooden_chest %d %d 0 0", frame.id, x), "usage: place <machine> <frame>")
+	listed := expect_field_command_ok(t, test, "query entities chest").text
+	testing.expectf(t, strings.contains(listed, fmt.tprintf("entity wooden_chest frame %d cell %d 0 0 ", frame.id, x)), "%s", listed)
+}
+
+@(test)
+test_field_refuses_the_block_world_commands :: proc(t: ^testing.T) {
+	test := make_field_command_test()
+	defer destroy_field_command_test(test)
+	for line in ([?]string{"teleport pad", "vein iron 0 0", "remove 0 0 0", "block stone 0 0 0", "insert coal 1 0 0 0", "recipe nothing 0 0 0", "filter coal 0 0 0", "blueprint /nonexistent"}) {
+		response := run_field_command(test, line)
+		testing.expectf(t, !response.ok && response.text == NO_BLOCK_WORLD_PROBLEM, "%q answered %v %q", line, response.ok, response.text)
+	}
+}
+
+@(test)
+test_block_world_refuses_the_field_commands :: proc(t: ^testing.T) {
+	test := make_command_test()
+	defer destroy_command_test(test)
+	for line in ([?]string{"look 0 0", "look at 0 0 0", "crouch on", "teleport pod", "teleport 10 20", "query frames"}) {
+		response := expect_command_error(t, test, line)
+		testing.expectf(t, response.text == NO_FIELD_WORLD_PROBLEM, "%q answered %q", line, response.text)
+	}
+	expect_command_ok(t, test, "camera third")
+	testing.expect_value(t, test.simulation.players[0].camera_mode, Camera_Mode.Third_Person)
+	testing.expect_value(t, expect_command_ok(t, test, "teleport 3 20 -4").text, "at 3.50 20.00 -3.50")
+	text := expect_command_ok(t, test, "query player").text
+	testing.expectf(t, strings.contains(text, "\nblock "), "%s", text)
 }

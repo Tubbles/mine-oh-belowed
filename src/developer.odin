@@ -77,6 +77,16 @@ Developer_Action :: enum u8 {
 	Set_Filter,
 	// Flips Simulation_State.free_crafting (0234).
 	Toggle_Free_Crafting,
+	// The field world's (0183, command_field.odin), appended so the values
+	// above keep their numbers on the wire: the field body's feet, its
+	// look as a bearing and pitch or towards a point, the camera mode of
+	// either body, the crouch hold, a machine on a frame's cell.
+	Teleport_Field,
+	Set_Field_Look,
+	Look_At_Field,
+	Set_Camera_Mode,
+	Hold_Field_Crouch,
+	Place_On_Frame,
 }
 
 // The sun rises at dawn, peaks at noon, sets at dusk and is lowest at
@@ -96,6 +106,11 @@ Time_Of_Day :: enum u8 {
 // Remove_At, Set_Block and Insert_Items. vein_type and size_class index
 // the generator's vein tables (Add_Vein). recipe indexes the recipes
 // (Set_Recipe, NO_RECIPE clears it), filter is the item of Set_Filter.
+// The field's (0183): field_position is the feet of Teleport_Field and the
+// target of Look_At_Field, look_angles the bearing and pitch of
+// Set_Field_Look in ANGLE_UNITS_PER_TURN, camera_mode Set_Camera_Mode's,
+// crouch_held Hold_Field_Crouch's, and frame with machine, cell (the
+// minimum corner) and rotation Place_On_Frame's.
 Developer_Request :: struct {
 	action:      Developer_Action,
 	chapter:     int,
@@ -111,6 +126,11 @@ Developer_Request :: struct {
 	size_class:  int,
 	recipe:      int,
 	filter:      Item_Id,
+	field_position: World_Position,
+	look_angles: [2]i32,
+	camera_mode: Camera_Mode,
+	crouch_held: bool,
+	frame:       Frame_Id,
 }
 
 // Kits file.
@@ -354,6 +374,27 @@ teleport_player :: proc(player: ^Player, position: [3]f32) {
 	player.on_ground = false
 }
 
+// The field body's feet to feet (0183), still and aiming at nothing, the
+// up from the new feet. The forward keeps its bearing from the planet's
+// north (its parts along the north tangent and the east of the old up,
+// laid on the new up's), so the look keeps its bearing and pitch.
+teleport_field_player :: proc(body: ^Field_Player, feet: World_Position) {
+	north := frame_north_tangent(body.up)
+	along_north, along_east := fixed_dot(body.forward, north), fixed_dot(body.forward, fixed_cross(north, body.up))
+	body.position = feet
+	body.previous_position = feet
+	body.velocity = {}
+	body.motion_fraction = {}
+	body.on_ground = false
+	body.target, body.frame_target, body.tree_target = {}, {}, {}
+	if up, ok := normalize_fixed(cast([3]i64)(feet)); ok {
+		body.up = up
+	}
+	north = frame_north_tangent(body.up)
+	body.forward = fixed_scale(north, along_north) + fixed_scale(fixed_cross(north, body.up), along_east)
+	orient_field_player(body)
+}
+
 // Where Teleport puts the player: standing on the pad's centre block.
 landing_pad_standing_position :: proc(site: Landing_Pad_Site) -> [3]f32 {
 	return player_start_on(site.centre).position
@@ -364,11 +405,27 @@ landing_pad_standing_position :: proc(site: Landing_Pad_Site) -> [3]f32 {
 // command socket's may be refused (a placement a player could not make).
 serve_developer_request :: proc(state: ^Simulation_State, content: Simulation_Content, request: Developer_Request, player_index := 0) -> (problem: string) {
 	player := &state.players[player_index]
+	#partial switch request.action {
+	case .Teleport_Field, .Set_Field_Look, .Look_At_Field, .Hold_Field_Crouch, .Place_On_Frame:
+		if !state.field.enabled {
+			// NO_FIELD_WORLD_PROBLEM's text: a record from a malformed
+			// source changes nothing on a block world.
+			return "no field world"
+		}
+	}
 	switch request.action {
 	case .Toggle_Fly_Mode:
-		apply_player_toggles(player, {.Toggle_Fly_Mode})
+		if state.field.enabled {
+			toggle_field_flying(&player.field)
+		} else {
+			apply_player_toggles(player, {.Toggle_Fly_Mode})
+		}
 	case .Toggle_No_Clip:
-		apply_player_toggles(player, {.Toggle_No_Clip})
+		if state.field.enabled {
+			player.field.no_clip = !player.field.no_clip
+		} else {
+			apply_player_toggles(player, {.Toggle_No_Clip})
+		}
 	case .Give_Kit:
 		give_kit(player, &state.quests.pending_rewards, content.items, content.developer_kits, request.chapter)
 	case .Give_Item:
@@ -405,6 +462,67 @@ serve_developer_request :: proc(state: ^Simulation_State, content: Simulation_Co
 		return set_recipe_for_developer(&state.world, content, player.inventory, request.cell, request.recipe)
 	case .Set_Filter:
 		return set_filter_for_developer(&state.world, content.machines, request.cell, request.filter)
+	case .Teleport_Field:
+		teleport_field_player(&player.field, request.field_position)
+	case .Set_Field_Look:
+		set_field_look(&player.field, request.look_angles.x, request.look_angles.y)
+	case .Look_At_Field:
+		if !look_field_player_at(&player.field, content.field.tuning, request.field_position) {
+			return "the point is at the eye"
+		}
+	case .Set_Camera_Mode:
+		if state.field.enabled {
+			player.field.camera_mode = request.camera_mode
+		} else {
+			player.camera_mode = request.camera_mode
+		}
+	case .Hold_Field_Crouch:
+		player.field.crouch_held = request.crouch_held
+	case .Place_On_Frame:
+		return place_on_frame_for_developer(state, content, request.machine, request.frame, request.cell, request.rotation)
+	}
+	return ""
+}
+
+// A machine with its minimum corner at a frame's cell (0183), by the
+// frame's rules and the field's (no trunk in a cell, no player buried),
+// without taking an item or counting a placement, as place_for_developer.
+// A foundation takes one cell and no rotation. Runs, and a machine no item
+// places, are refused, as is frame 0, the block world's.
+place_on_frame_for_developer :: proc(state: ^Simulation_State, content: Simulation_Content, machine: Machine_Id, frame: Frame_Id, origin: World_Coordinate, rotation: u8) -> string {
+	if frame == BLOCK_FRAME {
+		return "no block world"
+	}
+	record, found := find_frame(&state.world.entities.frames, frame)
+	if !found {
+		return fmt.tprintf("no frame %d", frame)
+	}
+	definition := content.machines.machines[machine]
+	if !machine_takes_placement_command(definition) {
+		return fmt.tprintf("%s is not placed on a frame (a run's belt, pole or pipe, or a machine no item places)", definition.id)
+	}
+	placement := Field_Placement{kind = .Machine, machine = machine, rotation = definition.kind == .Foundation ? 0 : rotation % 4, frame = frame, cell = origin}
+	switch snapped_placement_refusal(state, content, placement) {
+	case .None:
+	case .Unknown_Frame:
+		return fmt.tprintf("no frame %d", frame)
+	case .Occupied:
+		return "a cell of the footprint is taken"
+	case .Unsupported:
+		return "a bottom cell has no solid cell under it"
+	case .No_Vein:
+		return "a drill must stand over a vein's disc"
+	}
+	if placement_cells_meet_a_trunk(state, content, record, footprint_cells(origin, definition.footprint, placement.rotation)) {
+		return "a tree is in the way"
+	}
+	if field_footprint_buries_a_player(state, content, record, placement, origin) {
+		return "it would bury a player"
+	}
+	if definition.kind == .Drill {
+		place_drill_on_frame(&state.world.entities, content.machines, state.world.veins[:], machine, frame, origin, placement.rotation)
+	} else {
+		place_on_frame(&state.world.entities, content.machines, machine, frame, origin, placement.rotation)
 	}
 	return ""
 }

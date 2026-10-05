@@ -152,6 +152,11 @@ Field_Player :: struct {
 	// Sneak on foot, held until the standing capsule has room
 	// (update_field_crouch, 0218); a save from before 0218 loads it false.
 	crouching:         bool,
+	// The developer's hold (`crouch on` of the command socket, 0183),
+	// read like Sneak held by update_field_crouch until `crouch off`; a
+	// save from before 0183 loads it false (the save reads fields by
+	// name, as crouching of 0218).
+	crouch_held:       bool,
 	ground_normal:     [3]i64,
 	flying:            bool,
 	no_clip:           bool,
@@ -345,6 +350,37 @@ update_field_crouch :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: F
 turn_field_player :: proc(player: ^Field_Player, turn: [2]i32) {
 	player.yaw = i32((int(player.yaw) + int(turn.x)) %% ANGLE_UNITS_PER_TURN)
 	player.pitch = clamp(player.pitch + turn.y, -FIELD_PITCH_LIMIT, FIELD_PITCH_LIMIT)
+}
+
+// The look as a bearing from the planet's north and a pitch, both in
+// ANGLE_UNITS_PER_TURN (the command socket's look, 0183): the forward
+// becomes the north tangent and the yaw the bearing, so the heading turns
+// from north the way the yaw turns.
+set_field_look :: proc(player: ^Field_Player, bearing, pitch: i32) {
+	player.forward = frame_north_tangent(player.up)
+	player.yaw = i32(int(bearing) %% ANGLE_UNITS_PER_TURN)
+	player.pitch = clamp(pitch, -FIELD_PITCH_LIMIT, FIELD_PITCH_LIMIT)
+}
+
+// A look target nearer the eye than this is the eye (look_field_player_at):
+// a socket position has millimetres, so the eye's own metres read back
+// within a few units of it, and so short an offset has no direction.
+FIELD_LOOK_AT_MINIMUM_DISTANCE :: POSITION_UNITS_PER_METRE / 100
+
+// The look from the eye towards target (0183): the forward along the
+// direction's tangent with yaw 0, the pitch its angle over the tangent
+// plane within FIELD_PITCH_LIMIT. False, and nothing changed, when the
+// target is within FIELD_LOOK_AT_MINIMUM_DISTANCE of the eye.
+look_field_player_at :: proc(player: ^Field_Player, tuning: Field_Player_Tuning, target: World_Position) -> bool {
+	offset := cast([3]i64)(target - field_player_eye(player^, tuning))
+	if vector_length(offset) < FIELD_LOOK_AT_MINIMUM_DISTANCE {
+		return false
+	}
+	direction, _ := normalize_fixed(offset)
+	player.forward = tangent_of(player.up, direction)
+	player.yaw = 0
+	player.pitch = clamp(angle_of_sine(fixed_dot(direction, player.up)), -FIELD_PITCH_LIMIT, FIELD_PITCH_LIMIT)
+	return true
 }
 
 toggle_field_flying :: proc(player: ^Field_Player) {
@@ -1023,7 +1059,7 @@ tick_field_player :: proc(world: ^Field_World, frames: ^Frame_Table, tuning: Fie
 	turn_field_player(player, input.turn)
 	// The crouch is decided from the input and the world before the move,
 	// here and in the prediction alike (0218).
-	update_field_crouch(world, frames, tuning, player, .Sneak in input.held)
+	update_field_crouch(world, frames, tuning, player, .Sneak in input.held || player.crouch_held)
 	posture := field_posture_tuning(tuning, player.crouching)
 	switch {
 	case player.flying && player.no_clip:

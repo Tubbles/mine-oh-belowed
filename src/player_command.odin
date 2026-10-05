@@ -340,11 +340,11 @@ queue_machine_placement :: proc(state: ^Simulation_State, content: Simulation_Co
 
 // Logged like the requests the Developer screen queued before 0166.
 apply_developer_command :: proc(state: ^Simulation_State, content: Simulation_Content, player: int, request: Developer_Request) {
-	before := movement_toggles(state.players[player])
+	before := session_movement_toggles(state, player)
 	if problem := serve_developer_request(state, content, request, player); problem != "" {
 		platform.log_printf("developer: %v refused: %s", request.action, problem)
 	}
-	log_movement_toggles(before, state.players[player], "a developer request", state.tick)
+	log_movement_toggle_change(before, session_movement_toggles(state, player), "a developer request", state.tick)
 }
 
 // Only at the end of the array, so every machine numbers the players
@@ -514,6 +514,17 @@ machine_takes_placement_command :: proc(machine: Machine) -> bool {
 	return machine.item != NO_ITEM && machine.kind != .Belt && machine.kind != .Belt_Pole && machine.kind != .Pipe
 }
 
+// Every component within FAR_LIMIT_METRES of the centre (0183).
+field_position_valid :: proc(position: World_Position) -> bool {
+	limit := i64(FAR_LIMIT_METRES) * POSITION_UNITS_PER_METRE
+	for component in position {
+		if component < -limit || component > limit {
+			return false
+		}
+	}
+	return true
+}
+
 index_in_range :: proc(index, count: int) -> bool {
 	return index >= 0 && index < count
 }
@@ -553,7 +564,17 @@ developer_request_valid :: proc(request: Developer_Request, content: Simulation_
 		return request.recipe == NO_RECIPE || index_in_range(request.recipe, len(content.recipes.recipes))
 	case .Set_Filter:
 		return item_valid(request.filter, content.items, true)
-	case .Toggle_Fly_Mode, .Toggle_No_Clip, .Unlock_All, .Teleport, .Toggle_Cheat_Speed, .Toggle_Free_Crafting, .Add_Vein, .Remove_At, .Finish_Active_Quest:
+	case .Teleport_Field, .Look_At_Field:
+		return field_position_valid(request.field_position)
+	case .Set_Field_Look:
+		// Both bounds compared, never abs: abs(min(i32)) wraps negative.
+		bearing, pitch := request.look_angles.x, request.look_angles.y
+		return bearing >= -ANGLE_UNITS_PER_TURN && bearing <= ANGLE_UNITS_PER_TURN && pitch >= -FIELD_PITCH_LIMIT && pitch <= FIELD_PITCH_LIMIT
+	case .Set_Camera_Mode:
+		return enum_in_range(request.camera_mode)
+	case .Place_On_Frame:
+		return index_in_range(int(request.machine), len(content.machines.machines)) && machine_takes_placement_command(content.machines.machines[request.machine]) && request.rotation < 4
+	case .Hold_Field_Crouch, .Toggle_Fly_Mode, .Toggle_No_Clip, .Unlock_All, .Teleport, .Toggle_Cheat_Speed, .Toggle_Free_Crafting, .Add_Vein, .Remove_At, .Finish_Active_Quest:
 		return true
 	}
 	return false

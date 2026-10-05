@@ -399,7 +399,9 @@ build_module_copy :: proc(command_context: Command_Context, plan: Benchmark_Plan
 // temp memory and a whole factory's worth would pile up. The first
 // failure names the module, the copy and the command; owned.
 build_benchmark_factory :: proc(simulation: ^Simulation_State, content: Simulation_Content, plan: Benchmark_Plan, placements: []Module_Placement, scratch: ^virtual.Arena) -> string {
-	command_context := Command_Context{simulation = simulation, content = content}
+	// The modules stand on the block floor, so the commands take their
+	// block world forms on this field world.
+	command_context := Command_Context{simulation = simulation, content = content, block_forms = true}
 	for placement in placements {
 		problem: string
 		{

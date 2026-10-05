@@ -396,8 +396,13 @@ fill_field_chunk_sea :: proc(planet: Planet, spacing_millimetres: int, chunk: ^F
 // The spring's direction from the centre, a unit vector: latitude 90 is
 // +y, longitude 0 lies towards +x and 90 towards +z.
 planet_spring_direction :: proc(spring: Planet_Spring) -> [3]i64 {
-	latitude := degrees_to_angle_units(spring.latitude_degrees)
-	longitude := degrees_to_angle_units(spring.longitude_degrees)
+	return planet_direction_at(degrees_to_angle_units(spring.latitude_degrees), degrees_to_angle_units(spring.longitude_degrees))
+}
+
+// The unit direction from the centre at a latitude and longitude in
+// ANGLE_UNITS_PER_TURN, laid out as planet_spring_direction's (the
+// command socket's surface teleport, 0183).
+planet_direction_at :: proc(latitude, longitude: i32) -> [3]i64 {
 	across := fixed_cosine(latitude)
 	return {across * fixed_cosine(longitude) / UNIT_VECTOR_ONE, fixed_sine(latitude), across * fixed_sine(longitude) / UNIT_VECTOR_ONE}
 }

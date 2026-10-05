@@ -407,12 +407,28 @@ movement_toggles :: proc(player: Player) -> Movement_Toggles {
 // One log line per change of fly mode or no clip, naming the cause and the
 // tick (0132), so a toggle nobody asked for shows in the log or logcat.
 log_movement_toggles :: proc(before: Movement_Toggles, player: Player, cause: string, tick: u64) {
-	if before.flying != player.flying {
-		platform.log_printf("player: fly mode %s at tick %d by %s", player.flying ? "on" : "off", tick, cause)
+	log_movement_toggle_change(before, movement_toggles(player), cause, tick)
+}
+
+log_movement_toggle_change :: proc(before, after: Movement_Toggles, cause: string, tick: u64) {
+	if before.flying != after.flying {
+		platform.log_printf("player: fly mode %s at tick %d by %s", after.flying ? "on" : "off", tick, cause)
 	}
-	if before.no_clip != player.no_clip {
-		platform.log_printf("player: no clip %s at tick %d by %s", player.no_clip ? "on" : "off", tick, cause)
+	if before.no_clip != after.no_clip {
+		platform.log_printf("player: no clip %s at tick %d by %s", after.no_clip ? "on" : "off", tick, cause)
 	}
+}
+
+// The field body's fly mode and no clip (0183).
+field_movement_toggles :: proc(player: Player) -> Movement_Toggles {
+	return {player.field.flying, player.field.no_clip}
+}
+
+// The pair the developer requests toggle: the field body's on a field
+// session, the block body's otherwise (0183).
+session_movement_toggles :: proc(state: ^Simulation_State, index: int) -> Movement_Toggles {
+	player := state.players[index]
+	return state.field.enabled ? field_movement_toggles(player) : movement_toggles(player)
 }
 
 // What changed fly mode or no clip in a player's tick: the toggle keys

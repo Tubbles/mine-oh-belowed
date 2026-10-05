@@ -421,3 +421,29 @@ test_free_crafting_crafts_from_nothing :: proc(t: ^testing.T) {
 	simulation_tick(&simulation, content, {})
 	testing.expect_value(t, simulation.players[0].crafting.count, 0)
 }
+
+// On a field world the Developer screen's Teleport sends the field body
+// to the cabin spawn, as `teleport pod` does (0183), and its fly toggle
+// shows and flips the field body's flag.
+@(test)
+test_developer_teleport_on_the_field_goes_to_the_cabin :: proc(t: ^testing.T) {
+	game := make_field_test_game_content()
+	session := start_field_test_session(test_field_game_config(), game)
+	defer end_session(session)
+	state := &session.simulation
+	content := field_test_content(session, game)
+	move_test_players_out_of_the_pod(state, content.machines)
+	screen_context := Screen_Context{content = content, field_session = true, player = &state.players[0], world = &state.world}
+	request := developer_teleport_request(screen_context)
+	spawn, found := field_pod_spawn(&state.world.entities, content.machines)
+	testing.expect(t, found)
+	testing.expect_value(t, request.action, Developer_Action.Teleport_Field)
+	testing.expect_value(t, request.field_position, spawn.position)
+	queue_player_command(&state.player_commands, 0, request)
+	queue_player_command(&state.player_commands, 0, Developer_Request{action = .Toggle_Fly_Mode})
+	apply_player_commands(state, content)
+	testing.expect_value(t, state.players[0].field.position, spawn.position)
+	testing.expect(t, state.players[0].field.flying, "the fly toggle flips the field body")
+	testing.expect(t, !state.players[0].flying, "the block body stays as it is")
+	testing.expect(t, field_movement_toggles(state.players[0]).flying)
+}

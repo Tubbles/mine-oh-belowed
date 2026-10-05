@@ -638,19 +638,27 @@ append_player_lines :: proc(lines: ^[dynamic]Diagnostics_Line, diagnostics: Diag
 // longitude 0 towards +x and 90 towards +z), the height above the
 // planet's radius in metres, and the sample one spacing under the feet.
 append_field_feet_lines :: proc(lines: ^[dynamic]Diagnostics_Line, field: ^Field_Simulation, player: Field_Player) {
-	feet := [3]f64{f64(player.position.x), f64(player.position.y), f64(player.position.z)} / POSITION_UNITS_PER_METRE
-	distance := math.sqrt(feet.x * feet.x + feet.y * feet.y + feet.z * feet.z)
-	latitude, longitude: f64
-	if distance > 0 {
-		latitude = math.to_degrees(math.asin(feet.y / distance))
-		longitude = math.to_degrees(math.atan2(feet.z, feet.x))
-	}
+	latitude, longitude, distance := field_feet_coordinates(player.position)
 	radius := f64(field.world.water_planet.generation.radius) / POSITION_UNITS_PER_METRE
 	append_line(lines, false, "feet latitude % .4f  longitude % .4f  height % .2f m", latitude, longitude, distance - radius)
 	below := player.position - World_Position(fixed_scale(player.up, sample_axis_to_position(1, field.spacing_millimetres)))
 	sample := nearest_field_sample(below, field.spacing_millimetres)
 	under := field_world_get_sample(&field.world, sample)
 	append_line(lines, false, "under the feet sample %d %d %d  %s  density %d", sample.x, sample.y, sample.z, field_material_name(under.material), under.density)
+}
+
+// A world position's latitude and longitude in degrees, laid out as
+// planet_spring_direction's, and its distance from the planet's centre in
+// metres; zeros at the centre. Floats, for the F3 page and the command
+// socket's answers (0183) only.
+field_feet_coordinates :: proc(position: World_Position) -> (latitude, longitude, distance_metres: f64) {
+	feet := [3]f64{f64(position.x), f64(position.y), f64(position.z)} / POSITION_UNITS_PER_METRE
+	distance_metres = math.sqrt(feet.x * feet.x + feet.y * feet.y + feet.z * feet.z)
+	if distance_metres > 0 {
+		latitude = math.to_degrees(math.asin(feet.y / distance_metres))
+		longitude = math.to_degrees(math.atan2(feet.z, feet.x))
+	}
+	return
 }
 
 research_diagnostics_text :: proc(diagnostics: Diagnostics_Context) -> string {

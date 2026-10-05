@@ -1,6 +1,6 @@
 # Code map
 
-The entry page for the source: 269 files under `src/` plus 189 test files beside them. 243 are the `game` package, grouped into seven clusters; 26 are eight leaf packages under `src/` (section Packages), each a cluster named after its directory. Read the cluster table, pick a cluster, open its entry file; the section of each cluster lists its files in reading order. How the parts work is in [architecture.md](architecture.md), the why of the clusters in the audits under [audit/](audit/).
+The entry page for the source: 275 files under `src/` plus 196 test files beside them. 249 are the `game` package, grouped into seven clusters; 26 are eight leaf packages under `src/` (section Packages), each a cluster named after its directory. Read the cluster table, pick a cluster, open its entry file; the section of each cluster lists its files in reading order. How the parts work is in [architecture.md](architecture.md), the why of the clusters in the audits under [audit/](audit/).
 
 - Rule: a new file goes into a cluster and takes one of its file name prefixes (or a line in the file table of `tools/code_graph.py`); a reference against the allowed dependency table below is a finding until it is refactored away.
 - The map is kept true by two checks: `python3 tools/check_docs.py` checks every backticked file and name in it, and `python3 tools/code_graph.py --check doc/code_map.md` compares every cluster edge the allowed table does not allow with the map's record of it ([build.md](build.md), Source checks).
@@ -17,7 +17,7 @@ The entry page for the source: 269 files under `src/` plus 189 test files beside
 | simulation | the factory per tick: entity pools, networks, players, inventories, crafting, statistics, the game's records | `entity.odin` | 54 | 21490 | [simulation](audit/simulation.md) |
 | presentation | pixels and sound from the world and the tick: shaders, atlases, models, sky, weather, particles, audio, the window | `render_chunks.odin` | 43 | 10737 | [presentation](audit/presentation.md) |
 | content | data files into typed tables, the string table, configuration and settings | `data_reload.odin` | 17 | 6000 | [content](audit/content.md) |
-| tools | the command socket, the diagnostics pages, the Data files browser and export, the factory benchmark | `command.odin` | 8 | 3977 | [loop](audit/loop.md), [content](audit/content.md) |
+| tools | the command socket, the diagnostics pages, the Data files browser and export, the factory benchmark | `command.odin` | 9 | 4591 | [loop](audit/loop.md), [content](audit/content.md) |
 | platform | the package `src/platform/`: logging, paths, the time zone, JNI, the export's file access, the replacing file write, the TCP transport and the LAN discovery's UDP, the stop signal | `logging.odin` | 19 | 1843 | [content](audit/content.md) |
 | generation_seed | the package `src/generation_seed/`: purpose seeds and the integer hashes | `generation_seed.odin` | 1 | 79 | [world](audit/world.md) |
 | model_vox | the package `src/model_vox/`: the MagicaVoxel parser | `model_vox.odin` | 1 | 283 | [presentation](audit/presentation.md) |
@@ -264,6 +264,7 @@ The developer's and the assistant's instruments: they drive, inspect or measure 
 - Entry: `command.odin`, `execute_command_line`.
 - Files in reading order:
   - `command.odin`: the command protocol, usage rows, blueprints, queries ([commands.md](commands.md)).
+  - `command_field.odin`: the field world's forms of the commands and queries (0183).
   - `command_socket.odin`, `command_socket_posix.odin`, `command_socket_windows.odin`: paths and `Queued_Command_Line`; the Unix socket and `Command_Server`; the Windows stub.
   - `diagnostics.odin`: `Render_Facts`, `World_Facts`, `Diagnostics_Context`, `Frame_Time_Ring`, the diagnostics pages and world overlay.
   - `data_browser.odin`, `data_export.odin`: `Data_Browser`, the Data files screen's trees and edits; the export.

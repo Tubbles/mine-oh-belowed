@@ -106,3 +106,23 @@ fixed_cosine :: proc(angle: i32) -> i64 {
 }
 
 #assert(UNIT_VECTOR_ONE == 1 << 24, "fixed_sine shifts the series down to 2^24")
+
+// The angle from minus to plus a quarter turn whose fixed_sine is sine
+// (clamped to plus or minus UNIT_VECTOR_ONE), integer only: for a sine
+// not below zero the largest angle of the quarter whose fixed_sine is not
+// above it, found by a binary search over the quarter's 16385 angles; a
+// negative sine is the mirror of its magnitude's, so the inverse is odd
+// as the sine is (0183, look_field_player_at).
+angle_of_sine :: proc(sine: i64) -> i32 {
+	magnitude := min(abs(sine), UNIT_VECTOR_ONE)
+	low, high := i32(0), i32(ANGLE_UNITS_PER_QUARTER)
+	for low < high {
+		middle := (low + high + 1) / 2
+		if fixed_sine(middle) <= magnitude {
+			low = middle
+		} else {
+			high = middle - 1
+		}
+	}
+	return sine < 0 ? -low : low
+}

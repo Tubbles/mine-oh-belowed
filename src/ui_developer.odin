@@ -37,11 +37,12 @@ queue_developer_request :: proc(state: ^Ui_State, screen_context: Screen_Context
 // the third: the diagnostics page steps like F3.
 developer_toggles :: proc(state: ^Ui_State, first_row, crafting_row, overlay_row: Ui_Rectangle, screen_context: Screen_Context) {
 	commands, unconfirmed, player := screen_context.player_commands[:], screen_context.unconfirmed_commands, screen_context.player_index
-	flying := pending_toggle(screen_context.player.flying, commands, unconfirmed, player, .Toggle_Fly_Mode)
+	toggles := screen_context.field_session ? field_movement_toggles(screen_context.player^) : movement_toggles(screen_context.player^)
+	flying := pending_toggle(toggles.flying, commands, unconfirmed, player, .Toggle_Fly_Mode)
 	if ui_toggle(state, column_rectangle(first_row, 3, 0, UI_GAP), text("developer_fly_mode"), &flying) {
 		queue_developer_request(state, screen_context, Developer_Request{action = .Toggle_Fly_Mode})
 	}
-	no_clip := pending_toggle(screen_context.player.no_clip, commands, unconfirmed, player, .Toggle_No_Clip)
+	no_clip := pending_toggle(toggles.no_clip, commands, unconfirmed, player, .Toggle_No_Clip)
 	if ui_toggle(state, column_rectangle(first_row, 3, 1, UI_GAP), text("developer_no_clip"), &no_clip) {
 		queue_developer_request(state, screen_context, Developer_Request{action = .Toggle_No_Clip})
 	}
@@ -131,8 +132,7 @@ developer_actions :: proc(state: ^Ui_State, content: ^Ui_Rectangle, screen_conte
 		queue_developer_request(state, screen_context, Developer_Request{action = .Unlock_All})
 	}
 	if ui_button(state, column_rectangle(last_row, 3, 1, UI_GAP), text("developer_teleport")) {
-		position := landing_pad_standing_position(screen_context.landing_pad)
-		queue_developer_request(state, screen_context, Developer_Request{action = .Teleport, position = position})
+		queue_developer_request(state, screen_context, developer_teleport_request(screen_context))
 	}
 	// Like the screenshot command: the frame loop writes the PNG to the
 	// state directory's screenshots and toasts the path (work item 0053).
@@ -141,6 +141,20 @@ developer_actions :: proc(state: ^Ui_State, content: ^Ui_Rectangle, screen_conte
 	}
 	developer_reload_row(state, cut_row(content), screen_context)
 	developer_editors_row(state, cut_row(content), screen_context)
+}
+
+// The Teleport button's request: onto the landing pad on the block world,
+// into the pod's cabin on a field world (0183, as `teleport pod`; the
+// feet stay where they are without a pod).
+developer_teleport_request :: proc(screen_context: Screen_Context) -> Developer_Request {
+	if !screen_context.field_session {
+		return Developer_Request{action = .Teleport, position = landing_pad_standing_position(screen_context.landing_pad)}
+	}
+	feet := screen_context.player.field.position
+	if spawn, found := field_pod_spawn(&screen_context.world.entities, screen_context.machines); found {
+		feet = spawn.position
+	}
+	return Developer_Request{action = .Teleport_Field, field_position = feet}
 }
 
 // The game's editors (DESIGN.md, Editors): the texture editor (work item

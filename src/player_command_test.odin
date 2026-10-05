@@ -212,6 +212,8 @@ test_a_command_with_an_unknown_index_is_refused :: proc(t: ^testing.T) {
 	testing.expect(t, !player_command_valid(Splitter_Side_Command{side = Splitter_Side(200)}, content))
 	testing.expect(t, !player_command_valid(Developer_Request{action = .Give_Item, grant = {item = Item_Id(60_000), count = 1}}, content))
 	testing.expect(t, !player_command_valid(Developer_Request{action = Developer_Action(250)}, content))
+	testing.expect(t, !player_command_valid(Developer_Request{action = .Set_Field_Look, look_angles = {min(i32), min(i32)}}, content), "a forged look of min(i32) is refused")
+	testing.expect(t, player_command_valid(Developer_Request{action = .Set_Field_Look, look_angles = {-ANGLE_UNITS_PER_TURN, -FIELD_PITCH_LIMIT}}, content))
 	testing.expect(t, player_command_valid(Research_Command{technology = 0}, content))
 	testing.expect(t, player_command_valid(Developer_Request{action = .Toggle_Fly_Mode}, content))
 	events := len(simulation.events)

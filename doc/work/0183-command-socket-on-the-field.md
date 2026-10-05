@@ -1,6 +1,6 @@
 # 0183: The command socket on the field world
 
-Status: implementing (2026-10-05, in `.claude/worktrees/0183` on `item/0183` from `main` at 330c710, the specification approved the same day with the decisions below; M13 follow up, from the switch of 0179; whenever the assistant needs it)
+Status: verified (2026-10-05, implementer agent a002497085825d1e8, verified the same day, one fix round (the bearing's rounding before the wrap, the look record's bounds without abs, the recipe's chest viewpoint; a frame cell's i32 bound left as the game's own rule), in `.claude/worktrees/0183` on `item/0183` from `main` at 9b486db, the specification approved the same day with the decisions below; M13 follow up, from the switch of 0179; whenever the assistant needs it)
 
 ## Goal
 
@@ -240,10 +240,11 @@ tools/moc camera third
 tools/moc screenshot pod_third           # the pod across the crater, the player's back in front
 tools/moc look at VX VY VZ               # one vein's surface point from query veins
 tools/moc camera first
-tools/moc screenshot outcrop_first       # an outcrop
+tools/moc screenshot outcrop_first       # an outcrop; the shipped outcrops render faintly (the copper vein's surface point showed plain dirt, the iron one a faint red patch), which the look items of 0237 own, not this item
 tools/moc place wooden_foundation F 8 -1 0 0
 tools/moc place wooden_chest F 8 0 0 0
 tools/moc query entities chest           # its centre CX CY CZ
+tools/moc teleport SX SY SZ               # a point about 3 m above and beside the chest, read from its centre (the default seed: -657.825 7937.517 730.712); from the recipe's spot outside the crater the rim hides it
 tools/moc look at CX CY CZ
 tools/moc screenshot frame_place         # the chest on its foundation beside the pod
 tools/moc teleport pod
@@ -254,7 +255,7 @@ tools/moc screenshot cabin_crouch_third  # the pulled in camera of 0220 over a c
 kill -9 <pid>                            # then pgrep to see it is gone
 ```
 
-The ticks stay held from the first line to the last, so nothing but `tick` moves the world and a gamepad the machine sees cannot turn the view. Pass: `pod_third` shows the pod and the crater's rim, `outcrop_first` an ore outcrop, `frame_place` a chest on a foundation beside the hull, `cabin_crouch_third` the cabin with the camera inside the hull; every `query player` between them names the position, bearing and camera mode the lines set.
+The ticks stay held from the first line to the last, so nothing but `tick` moves the world and a gamepad the machine sees cannot turn the view. Pass: `pod_third` shows the pod and the crater's rim, `outcrop_first` an ore outcrop, `frame_place` a chest beside the hull (the foundation one cell below the floor row is not visible from there), `cabin_crouch_third` the cabin with the camera inside the hull; every `query player` between them names the position, bearing and camera mode the lines set.
 
 ### Questions the design answered
 
