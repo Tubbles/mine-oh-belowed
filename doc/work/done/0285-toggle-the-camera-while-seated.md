@@ -1,6 +1,6 @@
 # 0285: Toggle the camera while seated
 
-Status: verified (2026-10-05)
+Status: landed (2026-10-05, aa645fb)
 
 ## Goal
 
