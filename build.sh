@@ -180,7 +180,7 @@ case "$mode" in
 	release) build "${release_flags[@]}" ;;
 	check) "$odin" check src "$collection" -vet -strict-style ;;
 	check-windows) "$odin" check src "$collection" -target:windows_amd64 -vet -strict-style ;;
-	test) run_tests ;;
+	test) shift; run_tests "$@" ;;
 	bench) run_tests -o:speed -define:ODIN_TEST_NAMES=game.test_factory_benchmark ;;
 	check-android) check_android ;;
 	android) build_android ;;

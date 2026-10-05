@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+import "core:math"
 import "core:math/linalg"
 import "core:slice"
 import "core:testing"
@@ -137,5 +139,170 @@ test_flame_vertex_color_carries_the_quad_values :: proc(t: ^testing.T) {
 		first := flame_vertex_color(Flame_Draw{seed = flame_seed(salt)}).g
 		second := flame_vertex_color(Flame_Draw{seed = flame_seed(salt + 1)}).g
 		testing.expectf(t, first != second, "salts %d and %d share the seed byte %d", salt, salt + 1, first)
+	}
+}
+
+// The fire flicker's statistics over a series at 60 Hz (0286): its
+// range, mean and deviation, the mean change between ticks and the
+// shares of the changes above 0.05 and 0.1, the flares a second (onsets
+// of a rise above 0.15 over two ticks) and the worst lag ratio (the least
+// mean difference at a lag of half a second to half the series, over the
+// mean difference of all pairs: near 0 for a series that repeats).
+Flicker_Statistics :: struct {
+	lowest:              f32,
+	highest:             f32,
+	mean:                f32,
+	deviation:           f32,
+	mean_step:           f32,
+	step_share_above_5:  f32,
+	step_share_above_10: f32,
+	flares_per_second:   f32,
+	worst_lag_ratio:     f32,
+}
+
+// The mean absolute difference of all pairs of the series, from a sorted
+// copy.
+mean_pair_difference :: proc(series: []f32) -> f32 {
+	sorted := slice.clone(series, context.temp_allocator)
+	slice.sort(sorted)
+	count := len(sorted)
+	total: f64
+	for value, index in sorted {
+		total += f64(value) * f64(2 * index - count + 1)
+	}
+	return f32(2 * total / (f64(count) * f64(count - 1)))
+}
+
+// The mean absolute difference between the series and itself lag ticks
+// later.
+mean_lag_difference :: proc(series: []f32, lag: int) -> f32 {
+	total: f64
+	for index in 0 ..< len(series) - lag {
+		total += f64(abs(series[index] - series[index + lag]))
+	}
+	return f32(total / f64(len(series) - lag))
+}
+
+flicker_statistics :: proc(series: []f32) -> (statistics: Flicker_Statistics) {
+	count := len(series)
+	statistics.lowest, statistics.highest = slice.min(series), slice.max(series)
+	total, squares: f64
+	for value in series {
+		total += f64(value)
+	}
+	mean := total / f64(count)
+	for value in series {
+		squares += (f64(value) - mean) * (f64(value) - mean)
+	}
+	statistics.mean, statistics.deviation = f32(mean), f32(math.sqrt(squares / f64(count)))
+	steps, above_5, above_10: f64
+	for index in 0 ..< count - 1 {
+		step := abs(series[index + 1] - series[index])
+		steps += f64(step)
+		above_5 += step > 0.05 ? 1 : 0
+		above_10 += step > 0.1 ? 1 : 0
+	}
+	statistics.mean_step = f32(steps / f64(count - 1))
+	statistics.step_share_above_5, statistics.step_share_above_10 = f32(above_5 / f64(count - 1)), f32(above_10 / f64(count - 1))
+	onsets := 0
+	rising := false
+	for index in 0 ..< count - 2 {
+		qualifies := series[index + 2] - series[index] > 0.15
+		onsets += qualifies && !rising ? 1 : 0
+		rising = qualifies
+	}
+	statistics.flares_per_second = f32(onsets) / (f32(count) / 60)
+	pairs := mean_pair_difference(series)
+	statistics.worst_lag_ratio = math.F32_MAX
+	for lag in 30 ..= count / 2 {
+		statistics.worst_lag_ratio = min(statistics.worst_lag_ratio, mean_lag_difference(series, lag) / pairs)
+	}
+	return
+}
+
+// The fire flicker at 60 Hz over count ticks from 0 s.
+fire_flicker_series :: proc(salt: u64, count: int) -> []f32 {
+	series := make([]f32, count, context.temp_allocator)
+	for &value, tick in series {
+		value = fire_flicker(f64(tick) / 60, salt, false)
+	}
+	return series
+}
+
+// Work item 0286: the fire flicker stays in its bounds, dances (it
+// reaches far, changes fast between ticks, flares a few times a second),
+// repeats at no lag over the entry's length, differs between salts,
+// holds its mean under reduced motion and its bounds late in a long
+// session.
+@(test)
+test_the_fire_flicker_dances_without_period :: proc(t: ^testing.T) {
+	TICKS :: 1860
+	series: [8][]f32
+	for index in 0 ..< 8 {
+		salt := DEFAULT_WORLD_SEED + 7919 * u64(index)
+		series[index] = fire_flicker_series(salt, TICKS)
+		for value, tick in series[index] {
+			testing.expectf(t, value >= FIRE_FLICKER_LOWEST && value <= FIRE_FLICKER_HIGHEST, "salt %d at tick %d: flicker %v", index, tick, value)
+			testing.expectf(t, fire_flicker(f64(tick) / 60, salt, true) == FIRE_FLICKER_MEAN, "salt %d at tick %d: not the mean under reduced motion", index, tick)
+		}
+		statistics := flicker_statistics(series[index])
+		testing.expectf(t, statistics.lowest <= 0.62, "salt %d: lowest %v", index, statistics.lowest)
+		testing.expectf(t, statistics.highest >= 1.25, "salt %d: highest %v", index, statistics.highest)
+		testing.expectf(t, statistics.deviation >= 0.10, "salt %d: deviation %v", index, statistics.deviation)
+		testing.expectf(t, statistics.mean_step >= 0.028, "salt %d: mean step %v", index, statistics.mean_step)
+		testing.expectf(t, statistics.step_share_above_5 >= 0.16, "salt %d: share of steps above 0.05 %v", index, statistics.step_share_above_5)
+		testing.expectf(t, statistics.step_share_above_10 >= 0.03, "salt %d: share of steps above 0.1 %v", index, statistics.step_share_above_10)
+		testing.expectf(t, statistics.flares_per_second >= 0.8 && statistics.flares_per_second <= 3.5, "salt %d: flares a second %v", index, statistics.flares_per_second)
+		testing.expectf(t, statistics.worst_lag_ratio >= 0.7, "salt %d: worst lag ratio %v", index, statistics.worst_lag_ratio)
+		late := fire_flicker(36000.5, salt, false)
+		testing.expectf(t, !math.is_nan(late) && !math.is_inf(late) && late >= FIRE_FLICKER_LOWEST && late <= FIRE_FLICKER_HIGHEST, "salt %d at 36000.5 s: flicker %v", index, late)
+	}
+	apart: f64
+	for tick in 0 ..< TICKS {
+		apart += f64(abs(series[0][tick] - series[1][tick]))
+	}
+	apart /= TICKS
+	pairs := mean_pair_difference(series[0])
+	testing.expectf(t, f32(apart) >= 0.6 * pairs, "salts 0 and 1 differ by %v, the first's pairs by %v", apart, pairs)
+}
+
+// Work item 0286: the statistics catch the 0273 wave, a 1 Hz sine of
+// amplitude 0.1 about 0.85: its lag ratio is low and its steps small.
+@(test)
+test_the_flicker_statistics_catch_a_wave :: proc(t: ^testing.T) {
+	series := make([]f32, 1860, context.temp_allocator)
+	for &value, tick in series {
+		value = 0.85 + 0.1 * math.sin(math.TAU * f32(tick) / 60)
+	}
+	statistics := flicker_statistics(series)
+	testing.expectf(t, statistics.worst_lag_ratio < 0.4, "the wave's worst lag ratio is %v", statistics.worst_lag_ratio)
+	testing.expectf(t, statistics.mean_step < 0.012, "the wave's mean step is %v", statistics.mean_step)
+}
+
+FIRE_FLICKER_DUMP :: #config(FIRE_FLICKER_DUMP, false)
+
+// Work item 0286, a judging tool: with -define:FIRE_FLICKER_DUMP=true it
+// prints the shipped fall's window flickers as CSV lines and one line of
+// statistics per window. It writes no file and is a no-op without the
+// define.
+@(test)
+test_print_the_window_flicker_series :: proc(t: ^testing.T) {
+	if !FIRE_FLICKER_DUMP {
+		return
+	}
+	ticks := shipped_arrival_config().arrival_ticks
+	windows: [5][]f32
+	for &series in windows {
+		series = make([]f32, ticks, context.temp_allocator)
+	}
+	fmt.println("tick,window_0,window_1,window_2,window_3,window_4")
+	for tick in 0 ..< ticks {
+		for &series, window in windows {
+			series[tick] = arrival_window_flicker(f32(tick) / 60, window, DEFAULT_WORLD_SEED, false)
+		}
+		fmt.printfln("%d,%.4f,%.4f,%.4f,%.4f,%.4f", tick, windows[0][tick], windows[1][tick], windows[2][tick], windows[3][tick], windows[4][tick])
+	}
+	for series, window in windows {
+		fmt.printfln("window %d: %v", window, flicker_statistics(series))
 	}
 }

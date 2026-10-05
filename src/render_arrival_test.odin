@@ -243,9 +243,11 @@ test_a_moved_light_keeps_its_clip_box :: proc(t: ^testing.T) {
 	testing.expectf(t, abs(clip_box_reach(moved_box, transform_point(transform, inside)) - clip_box_reach(box, inside)) < 1e-3, "the moved point reaches %v in the new box", clip_box_reach(moved_box, transform_point(transform, inside)))
 }
 
-// Work item 0273: each porthole's light follows the heat (none at heat 0
-// or once settled), in the haze mixed with the ablator's share times the
-// gain, inset into the cabin along the normal and clipped to the pod.
+// Work items 0273 and 0286: each porthole's light follows the heat (none
+// at heat 0 or once settled), in the haze mixed with the ablator's share
+// times the flicker and the gain, inset into the cabin along the normal
+// and clipped to the pod. At the flicker's mean its hue is that mix, at
+// the highest half way to white.
 @(test)
 test_the_window_light_follows_the_heat :: proc(t: ^testing.T) {
 	machine: Machine
@@ -257,7 +259,7 @@ test_the_window_light_follows_the_heat :: proc(t: ^testing.T) {
 	clip_box := linalg.matrix4_scale_f32({0.5, 0.5, 0.5})
 	flickers: [MAXIMUM_POD_WINDOWS]f32
 	for &flicker in flickers {
-		flicker = 1
+		flicker = FIRE_FLICKER_MEAN
 	}
 	_, dark := arrival_window_lights({phase = .Descent, heat = 0}, body, 1000, machine, clip_box, plasma, flickers)
 	testing.expect_value(t, dark, 0)
@@ -271,47 +273,52 @@ test_the_window_light_follows_the_heat :: proc(t: ^testing.T) {
 	testing.expect_value(t, full_count, 2)
 	for index in 0 ..< 2 {
 		window := machine.windows[index]
-		testing.expectf(t, linalg.length(half[index].color - mixed * 0.5 * ARRIVAL_WINDOW_LIGHT_GAIN) < 1e-5, "window %d at heat 0.5 is %v", index, half[index].color)
-		testing.expectf(t, linalg.length(full[index].color - mixed * ARRIVAL_WINDOW_LIGHT_GAIN) < 1e-5, "window %d at heat 1 is %v", index, full[index].color)
+		testing.expectf(t, linalg.length(half[index].color - mixed * 0.5 * FIRE_FLICKER_MEAN * ARRIVAL_WINDOW_LIGHT_GAIN) < 1e-5, "window %d at heat 0.5 is %v", index, half[index].color)
+		testing.expectf(t, linalg.length(full[index].color - mixed * FIRE_FLICKER_MEAN * ARRIVAL_WINDOW_LIGHT_GAIN) < 1e-5, "window %d at heat 1 is %v", index, full[index].color)
 		testing.expectf(t, linalg.length(full[index].color - 2 * half[index].color) < 1e-5, "window %d is not twice as bright at heat 1", index)
 		inset := window.centre + window.normal * ARRIVAL_WINDOW_LIGHT_INSET_CELLS
 		testing.expectf(t, linalg.length(full[index].position - inset) < 1e-5, "window %d's light lies at %v", index, full[index].position)
 		_, clipped := full[index].clip_box.?
 		testing.expectf(t, clipped, "window %d's light is not clipped", index)
 	}
+	for &flicker in flickers {
+		flicker = FIRE_FLICKER_HIGHEST
+	}
+	flare, _ := arrival_window_lights({phase = .Descent, heat = 1}, body, 1000, machine, clip_box, plasma, flickers)
+	whitened := (mixed + ARRIVAL_WINDOW_WHITE_LIGHT) * 0.5
+	testing.expectf(t, linalg.length(flare[0].color - whitened * FIRE_FLICKER_HIGHEST * ARRIVAL_WINDOW_LIGHT_GAIN) < 1e-5, "the flare's light is %v", flare[0].color)
 }
 
-// Work item 0273: each porthole's flicker stays in 0.7 to 1, moves, never
-// repeats at any lag up to ten seconds, differs between windows and holds
-// its mean under reduced motion.
+// Work items 0273 and 0286: each porthole's flicker is the shared fire
+// flicker at its own salt (its statistics are render_flames_test's),
+// holds its mean under reduced motion, and the windows flicker apart.
 @(test)
 test_the_window_flicker_has_no_period :: proc(t: ^testing.T) {
-	SAMPLES :: 3600
+	ticks := shipped_arrival_config().arrival_ticks
 	salt := u64(DEFAULT_WORLD_SEED)
-	series := make([][SAMPLES]f32, 5, context.temp_allocator)
+	series: [5][]f32
 	for window in 0 ..< 5 {
-		lowest, highest: f32 = 1, 0
-		for sample in 0 ..< SAMPLES {
-			value := arrival_window_flicker(f32(sample) / 60, window, salt, false)
-			series[window][sample] = value
-			lowest, highest = min(lowest, value), max(highest, value)
-			testing.expect_value(t, arrival_window_flicker(f32(sample) / 60, window, salt, true), ARRIVAL_FLICKER_MEAN)
-		}
-		testing.expectf(t, lowest >= 0.7 && highest <= 1, "window %d flickers in %v to %v", window, lowest, highest)
-		testing.expectf(t, highest - lowest > 0.1, "window %d spreads only %v", window, highest - lowest)
-		for lag in 1 ..= 600 {
-			largest: f32 = 0
-			for sample in 0 ..< SAMPLES - lag {
-				largest = max(largest, abs(series[window][sample] - series[window][sample + lag]))
+		series[window] = make([]f32, ticks, context.temp_allocator)
+		for tick in 0 ..< ticks {
+			seconds := f32(tick) / 60
+			series[window][tick] = arrival_window_flicker(seconds, window, salt, false)
+			if tick % 60 == 0 {
+				testing.expectf(t, series[window][tick] == fire_flicker(f64(seconds), salt + 20 + 2 * u64(window), false), "window %d at tick %d is not the fire flicker", window, tick)
+				testing.expectf(t, arrival_window_flicker(seconds, window, salt, true) == FIRE_FLICKER_MEAN, "window %d at tick %d is not the mean under reduced motion", window, tick)
 			}
-			testing.expectf(t, largest > 0.02, "window %d repeats at a lag of %d samples", window, lag)
 		}
 	}
-	apart: f32 = 0
-	for sample in 0 ..< SAMPLES {
-		apart = max(apart, abs(series[0][sample] - series[1][sample]))
+	for first in 0 ..< 5 {
+		pairs := mean_pair_difference(series[first])
+		for second in first + 1 ..< 5 {
+			apart: f64
+			for tick in 0 ..< ticks {
+				apart += f64(abs(series[first][tick] - series[second][tick]))
+			}
+			apart /= f64(ticks)
+			testing.expectf(t, f32(apart) >= 0.6 * pairs, "windows %d and %d differ by %v, the first's pairs by %v", first, second, apart, pairs)
+		}
 	}
-	testing.expectf(t, apart > 0.02, "windows 0 and 1 flicker alike")
 	flickers := arrival_window_flickers(2, 5, salt, false)
 	for window in 0 ..< 5 {
 		testing.expect_value(t, flickers[window], arrival_window_flicker(2, window, salt, false))

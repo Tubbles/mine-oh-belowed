@@ -664,7 +664,7 @@ draw_field_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, cont
 		// transform (nil outside the descent), so the travel goes back
 		// through its rotation. The soot stays on them after the landing.
 		push_pod_transform(pod_transform)
-		draw_arrival_windows(&state.presentation.arrival, view, &session.simulation.world.entities, pod_common, machine, linalg.transpose(pod_rotation) * travel, state.config.arrival_plasma, flickers, seed)
+		draw_arrival_windows(&state.presentation.arrival, view, &session.simulation.world.entities, pod_common, machine, linalg.transpose(pod_rotation) * travel, state.config.arrival_plasma, flickers, seed, state.settings.reduced_motion)
 		pop_pod_transform(pod_transform)
 	}
 	if view.phase == .Settled {

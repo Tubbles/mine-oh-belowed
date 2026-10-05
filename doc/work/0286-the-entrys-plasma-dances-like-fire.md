@@ -1,6 +1,6 @@
 # 0286: The entry's plasma dances like fire
 
-Status: implementing (2026-10-05)
+Status: verified (2026-10-05)
 
 ## Goal
 

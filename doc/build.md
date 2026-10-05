@@ -55,14 +55,14 @@ Gotcha: Bazzite ships runtime libraries without the development symlinks (`libX1
 ./build.sh check          # odin check src -vet -strict-style
 ./build.sh check-windows  # the same check for -target:windows_amd64, on any host
 ./build.sh check-android  # the same check for Android arm64 (android.md)
-./build.sh test           # odin test src -all-packages
+./build.sh test [args]    # odin test src -all-packages, further arguments passed on
 ./build.sh bench          # test_factory_benchmark only, optimised
 ./build.sh android        # the signed APK (android.md)
 ./build.sh model-check [machine]  # the debug build, then --model-check (all by default)
 ```
 
 - Every command passes the collection; both builds pass `-vet -strict-style` and the `BUILD_INFO` define (below).
-- `test` passes `-all-packages`: plain `odin test src` runs only the game package's tests, not those of the packages under `src/` it imports (`src/platform/` and the others, [code_map.md](code_map.md), Packages). The checks need nothing extra: `odin check src` checks every package the game imports, tests included, for the target it checks.
+- `test` passes `-all-packages` and any further arguments to `odin test` (a define, `-define:ODIN_TEST_NAMES=game.<test>`): plain `odin test src` runs only the game package's tests, not those of the packages under `src/` it imports (`src/platform/` and the others, [code_map.md](code_map.md), Packages). The checks need nothing extra: `odin check src` checks every package the game imports, tests included, for the target it checks.
 - `check-windows` catches code that does not compile for Windows without a Windows machine; the Nix build runs the same check, so CI guards it on every push.
 - `bench` runs `test_factory_benchmark` with `-o:speed`: size 1 on the field world (0179), its table logged, a failure when it averages 8 ms per tick or more, half the 60 Hz budget. Plain `test` (and CI) runs it unoptimised and only logs. `bench` is a heavy benchmark and follows the benchmark rules in [CLAUDE.md](../CLAUDE.md).
 - On a Windows host (Git Bash) `build.sh` makes no shims, writes `build/mine-oh-belowed.exe` and adds `-subsystem:windows` to `release`.

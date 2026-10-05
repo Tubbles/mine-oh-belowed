@@ -13,6 +13,7 @@ A running game in developer mode listens on a Unix domain socket for command lin
 3. `tools/moc help` lists the commands; `tools/moc query player` and `tools/moc query world` show where things stand.
 4. `tools/moc screenshot base` answers the PNG's path under `$XDG_STATE_HOME/mine-oh-belowed/screenshots/`; the file exists once the game drew its next frame.
 5. Every line and response line goes to the game log (`$XDG_STATE_HOME/mine-oh-belowed/log.txt`) prefixed `command:`.
+6. `tools/capture_clip.sh <name> [frames=60] [crop=140x150+580+160]` (0286) captures a clip from a session paused where wanted: per frame `tick 1` and `screenshot <name>_NN`, waiting for the file, then `<name>_strip.png` (every third frame cropped, ten a row) and `<name>.gif` (every frame at 640x360) in the screenshot directory. `MOC` names the client (default `tools/moc`), `SCREENSHOTS` the directory.
 
 ## Transport
 

@@ -187,3 +187,13 @@ test_the_point_light_shaders_share_the_clip_and_the_sum :: proc(t: ^testing.T) {
 	field_as_model, _ := strings.replace_all(field_sum, field_clip, model_clip, context.temp_allocator)
 	testing.expect(t, field_sum != "" && field_as_model == model_sum, "point_light_sum differs between field.fs and model.fs beyond the clip line")
 }
+
+// Work item 0286: the plasma shader's flicker mean is FIRE_FLICKER_MEAN
+// (a flare is the flicker above it) and it takes the reduced motion
+// uniform.
+@(test)
+test_the_plasma_shader_knows_the_flicker_mean :: proc(t: ^testing.T) {
+	source := #load("../data/shaders/arrival.fs", string)
+	testing.expect(t, strings.contains(source, fmt.tprintf("const float FLICKER_MEAN = %.2f;", FIRE_FLICKER_MEAN)), "arrival.fs's FLICKER_MEAN differs from FIRE_FLICKER_MEAN")
+	testing.expect(t, strings.contains(source, "\nuniform float calm;\n"), "arrival.fs does not declare calm")
+}

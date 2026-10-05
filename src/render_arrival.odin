@@ -15,9 +15,9 @@ import "platform"
 // the pod drawn base first along the curve's tangent and easing into
 // the pose it rests in (arrival_pod_transform, 0270), the plasma
 // streaming across the portholes' glass at the heat and lighting the
-// cabin (0273), the buffeting and the roar; at the hit the pod meets the
-// floor, the cabin shakes, the dust rises along the crater's rim, the
-// debris flies (0272,
+// cabin (0273), flickering through fire_flicker (0286), the buffeting
+// and the roar; at the hit the pod meets the floor, the cabin shakes,
+// the dust rises along the crater's rim, the debris flies (0272,
 // render_arrival_debris.odin) and the crash and the bang play. Nothing
 // here reaches the simulation, so the hash is the same with and without
 // it.
@@ -39,8 +39,6 @@ ARRIVAL_SHAKE_HERTZ :: 17.3
 // and the rate of its noise.
 ARRIVAL_BUFFET_METRES :: 0.05
 ARRIVAL_BUFFET_HERTZ :: 7.3
-// The portholes' flicker (0273): its mean, which reduced motion holds.
-ARRIVAL_FLICKER_MEAN :: 0.85
 // Each porthole's light (0273): the ablator's share of its colour, its
 // brightness at heat 1 and flicker 1, its reach and how far into the
 // cabin it sits from the glass, in cells.
@@ -48,6 +46,9 @@ ARRIVAL_WINDOW_LIGHT_ABLATOR_SHARE :: 0.3
 ARRIVAL_WINDOW_LIGHT_GAIN :: 0.7
 ARRIVAL_WINDOW_LIGHT_RADIUS_CELLS :: 5.0
 ARRIVAL_WINDOW_LIGHT_INSET_CELLS :: 0.35
+// The white a flare whitens the window light towards: arrival.fs's
+// WHITE_CORE.
+ARRIVAL_WINDOW_WHITE_LIGHT :: [3]f32{1.0, 0.97, 0.92}
 ARRIVAL_ROAR_SOUND :: "arrival_roar"
 ARRIVAL_CRASH_SOUND :: "arrival_crash"
 HATCH_SLIDE_SOUND :: "hatch_slide"
@@ -264,16 +265,11 @@ arrival_noise :: proc(seconds: f32, hertz: f64, salt: u64) -> f32 {
 	return first + (arrival_noise_value(i64(step) + 1, salt) - first) * blend
 }
 
-// A porthole's flicker at seconds (0273): hashed value noise at two
-// rates in no small ratio, so it has no period, 0.7 to 1 about
-// ARRIVAL_FLICKER_MEAN; the mean under reduced motion, as the torch
-// flames still. One flicker per window drives its glass and its light.
+// A porthole's flicker at seconds (0273, 0286): the shared fire flicker
+// per window (fire_flicker), 0.4 to 1.5, the mean under reduced motion.
+// One flicker per window drives its glass and its light.
 arrival_window_flicker :: proc(seconds: f32, index: int, salt: u64, reduced_motion: bool) -> f32 {
-	if reduced_motion {
-		return ARRIVAL_FLICKER_MEAN
-	}
-	window := 2 * u64(index)
-	return ARRIVAL_FLICKER_MEAN + 0.1 * arrival_noise(seconds, 6.1, salt + 20 + window) + 0.05 * arrival_noise(seconds, 17.9, salt + 21 + window)
+	return fire_flicker(f64(seconds), salt + 20 + 2 * u64(index), reduced_motion)
 }
 
 // The flicker of each of a pod's count windows.
@@ -284,6 +280,16 @@ arrival_window_flickers :: proc(seconds: f32, count: int, salt: u64, reduced_mot
 	return
 }
 
+// A window light's colour whitened by its flicker (0286): towards
+// ARRIVAL_WINDOW_WHITE_LIGHT by half the flicker's share of the way from
+// FIRE_FLICKER_MEAN to FIRE_FLICKER_HIGHEST, so a flare that whitens the
+// glass whitens the cabin's light. At or below the mean the colour stays
+// as it is.
+arrival_window_light_color :: proc(color: [3]f32, flicker: f32) -> [3]f32 {
+	share := clamp((flicker - FIRE_FLICKER_MEAN) / (FIRE_FLICKER_HIGHEST - FIRE_FLICKER_MEAN), 0, 1) * 0.5
+	return color + (ARRIVAL_WINDOW_WHITE_LIGHT - color) * share
+}
+
 // A data colour, 0 to 255 per channel, as 0 to 1.
 arrival_plasma_color :: proc(color: [3]int) -> [3]f32 {
 	return {f32(color.r), f32(color.g), f32(color.b)} / 255
@@ -291,11 +297,13 @@ arrival_plasma_color :: proc(color: [3]int) -> [3]f32 {
 
 // Each porthole a point light in the plasma's colour while the pod
 // descends (0273): ARRIVAL_WINDOW_LIGHT_INSET_CELLS into the cabin from
-// the glass's centre, its colour the haze mixed with the ablator's share
-// times the heat, the window's flicker and the gain, clipped to the pod's
-// box (clip_box), so the cabin is lit and the hull's outside and the
-// terrain are not. None outside the descent or at heat 0. body and
-// pitch_millimetres are the pod's (entity_body_matrix); the caller moves
+// the glass's centre, its colour the haze mixed with the ablator's
+// share and whitened by a flare (arrival_window_light_color, 0286)
+// times the heat, the window's flicker and the gain, clipped to the
+// pod's box (clip_box), so the cabin is lit and the hull's outside and
+// the terrain are not. None outside the descent or at heat 0. body and
+// pitch_millimetres are the pod's (entity_body_matrix); the caller
+// moves
 // the lights with the lamps (moved_point_light).
 arrival_window_lights :: proc(view: Arrival_View, body: matrix[4, 4]f32, pitch_millimetres: int, machine: Machine, clip_box: matrix[4, 4]f32, plasma: Arrival_Plasma_Config, flickers: [MAXIMUM_POD_WINDOWS]f32) -> (lights: [MAXIMUM_POD_WINDOWS]Point_Light, count: int) {
 	if view.phase != .Descent || view.heat <= 0 {
@@ -308,7 +316,7 @@ arrival_window_lights :: proc(view: Arrival_View, body: matrix[4, 4]f32, pitch_m
 		window := machine.windows[index]
 		lights[count] = Point_Light {
 			position = transform_point(body, window.centre + window.normal * ARRIVAL_WINDOW_LIGHT_INSET_CELLS),
-			color    = color * view.heat * flickers[index] * ARRIVAL_WINDOW_LIGHT_GAIN,
+			color    = arrival_window_light_color(color, flickers[index]) * view.heat * flickers[index] * ARRIVAL_WINDOW_LIGHT_GAIN,
 			radius   = radius,
 			clip_box = clip_box,
 		}
@@ -432,8 +440,8 @@ destroy_arrival_presentation :: proc(presentation: ^Arrival_Presentation) {
 // turns inside it by travel_on_glass.
 // Each window is its own batch, since its uniforms are its own; depth
 // tested, without writing depth or culling. Nothing while both the heat
-// and the soot are 0.
-draw_arrival_windows :: proc(presentation: ^Arrival_Presentation, view: Arrival_View, entities: ^Entities, pod: Entity_Common, machine: Machine, travel: [3]f32, plasma: Arrival_Plasma_Config, flickers: [MAXIMUM_POD_WINDOWS]f32, salt: u64) {
+// and the soot are 0. Under reduced motion calm is 1 (arrival.fs).
+draw_arrival_windows :: proc(presentation: ^Arrival_Presentation, view: Arrival_View, entities: ^Entities, pod: Entity_Common, machine: Machine, travel: [3]f32, plasma: Arrival_Plasma_Config, flickers: [MAXIMUM_POD_WINDOWS]f32, salt: u64, reduced_motion: bool) {
 	if (view.heat <= 0 && view.soot <= 0) || !presentation.shader_ready || machine.window_count == 0 {
 		return
 	}
@@ -461,6 +469,7 @@ draw_arrival_windows :: proc(presentation: ^Arrival_Presentation, view: Arrival_
 		set_shader_float(shader, "seconds", view.seconds)
 		set_shader_float(shader, "flame_seed", f32(salt % 1000) / 1000 + f32(index) * 0.618)
 		set_shader_float(shader, "flicker", flickers[index])
+		set_shader_float(shader, "calm", reduced_motion ? 1 : 0)
 		set_shader_vector2(shader, "travel_on_glass", arrival_travel_on_glass(normal, travel, fallback))
 		set_shader_vector3(shader, "haze_color", haze)
 		set_shader_vector3(shader, "ablator_color", ablator)

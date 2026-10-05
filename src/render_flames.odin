@@ -21,7 +21,9 @@ import "render_frustum"
 // the simulation. A frame's flames are one list, nearest the camera
 // first and capped (nearest_flame_draws), drawn in one batch after
 // everything opaque, depth tested without depth writes, premultiplied
-// (draw_flames).
+// (draw_flames). The shared fire flicker (fire_flicker, 0286), four
+// bands of hashed noise and hashed flares and dips, drives the entry's
+// portholes, and these flames keep flame_flicker until their own item.
 
 FLAME_VERTEX_SHADER_PATH :: "shaders/flame.vs"
 FLAME_FRAGMENT_SHADER_PATH :: "shaders/flame.fs"
@@ -39,6 +41,29 @@ FLAME_TIP_COLOR :: [3]f32{0.55, 0.09, 0.02}
 FLAME_FLICKER_MEAN :: 0.85
 FLAME_FLICKER_SLOW_HERTZ :: 6.1
 FLAME_FLICKER_FAST_HERTZ :: 17.9
+// The shared fire flicker (fire_flicker, 0286): its mean, held under
+// reduced motion, and its bounds.
+FIRE_FLICKER_MEAN :: 0.85
+FIRE_FLICKER_LOWEST :: 0.4
+FIRE_FLICKER_HIGHEST :: 1.5
+// One band of the fire flicker: its rate, its amplitude and whether it
+// is smoothed between its steps (a linear band keeps sharp corners).
+Fire_Flicker_Band :: struct {
+	hertz:     f64,
+	amplitude: f32,
+	smooth:    bool,
+}
+// Four bands in no small integer ratio, the largest near the 10 to 20 Hz
+// of a buoyant flame, the fastest linear for the crackle.
+FIRE_FLICKER_BANDS :: [4]Fire_Flicker_Band{{2.3, 0.06, true}, {5.9, 0.09, true}, {11.3, 0.13, true}, {23.7, 0.09, false}}
+// The flares and dips: one hashed event at most per slot, at a hashed
+// start in it, the slots looked back over for a decaying event, the
+// attack, and the shares of the slots that flare and that dip.
+FIRE_FLARE_SLOT_SECONDS :: 0.2
+FIRE_FLARE_SLOTS_BACK :: 3
+FIRE_FLARE_ATTACK_SECONDS :: 0.025
+FIRE_FLARE_SHARE :: 0.35
+FIRE_DIP_SHARE :: 0.15
 // The embers' slow pulse on a working furnace's emissive layer.
 FLAME_EMBER_HERTZ :: 0.37
 // A frame draws at most this many flames, the nearest the camera.
@@ -107,6 +132,75 @@ flame_flicker :: proc(seconds: f64, salt: u64, reduced_motion: bool) -> f32 {
 		return FLAME_FLICKER_MEAN
 	}
 	return FLAME_FLICKER_MEAN + 0.1 * flame_noise(seconds, FLAME_FLICKER_SLOW_HERTZ, salt) + 0.05 * flame_noise(seconds, FLAME_FLICKER_FAST_HERTZ, salt + 1)
+}
+
+// One band of the fire flicker at seconds, -1 to 1: flame_noise when
+// smoothed, else the same hashed steps joined by straight lines.
+fire_flicker_band :: proc(seconds: f64, band: Fire_Flicker_Band, salt: u64) -> f32 {
+	if band.smooth {
+		return flame_noise(seconds, band.hertz, salt)
+	}
+	at := seconds * band.hertz
+	step := math.floor(at)
+	fraction := f32(at - step)
+	first := arrival_noise_value(i64(step), salt)
+	return first + (arrival_noise_value(i64(step) + 1, salt) - first) * fraction
+}
+
+// A fraction from 0 to 1 hashed from a flare slot's hash and a key.
+fire_flare_fraction :: proc(hash: u64, key: u64) -> f32 {
+	return f32(generation_seed.hash_to_unit(generation_seed.hash_combine(hash, key)))
+}
+
+// One slot's event at seconds: a flare (FIRE_FLARE_SHARE of the slots)
+// or a dip (FIRE_DIP_SHARE) at a hashed start in the slot, rising over
+// FIRE_FLARE_ATTACK_SECONDS and decaying after. 0 before its start and
+// for a slot without one.
+fire_flare_event :: proc(seconds: f64, slot: i64, salt: u64) -> f32 {
+	hash := generation_seed.hash_combine(salt, u64(slot))
+	start := (f64(slot) + f64(fire_flare_fraction(hash, 1))) * FIRE_FLARE_SLOT_SECONDS
+	elapsed := f32(seconds - start)
+	kind := fire_flare_fraction(hash, 2)
+	if elapsed < 0 || kind >= FIRE_FLARE_SHARE + FIRE_DIP_SHARE {
+		return 0
+	}
+	amplitude := 0.18 + 0.22 * fire_flare_fraction(hash, 3)
+	decay := 0.06 + 0.10 * fire_flare_fraction(hash, 4)
+	if kind >= FIRE_FLARE_SHARE {
+		amplitude = -(0.15 + 0.15 * fire_flare_fraction(hash, 3))
+		decay = 0.05 + 0.08 * fire_flare_fraction(hash, 4)
+	}
+	return amplitude * min(elapsed / FIRE_FLARE_ATTACK_SECONDS, 1) * math.exp(-max(elapsed - FIRE_FLARE_ATTACK_SECONDS, 0) / decay)
+}
+
+// The flares and dips at seconds: the events of this slot and the
+// FIRE_FLARE_SLOTS_BACK before it, hashed per slot, so they form no
+// period.
+fire_flare :: proc(seconds: f64, salt: u64) -> f32 {
+	slot := i64(math.floor(seconds / FIRE_FLARE_SLOT_SECONDS))
+	total: f32
+	for slot_index in slot - FIRE_FLARE_SLOTS_BACK ..= slot {
+		total += fire_flare_event(seconds, slot_index, salt)
+	}
+	return total
+}
+
+// The shared fire flicker (0286), FIRE_FLICKER_LOWEST to
+// FIRE_FLICKER_HIGHEST: the four bands of FIRE_FLICKER_BANDS and the
+// hashed flares and dips about FIRE_FLICKER_MEAN, so it dances
+// erratically with no period, and the mean under reduced motion. Pure,
+// in f64, so a long session loses nothing. The portholes read it, and
+// flame_flicker keeps 0274's model until the flames' own item.
+fire_flicker :: proc(seconds: f64, salt: u64, reduced_motion: bool) -> f32 {
+	if reduced_motion {
+		return FIRE_FLICKER_MEAN
+	}
+	value: f32 = FIRE_FLICKER_MEAN
+	for band, index in FIRE_FLICKER_BANDS {
+		value += band.amplitude * fire_flicker_band(seconds, band, salt + 30 + u64(index))
+	}
+	value += fire_flare(seconds, salt + 40)
+	return clamp(value, FIRE_FLICKER_LOWEST, FIRE_FLICKER_HIGHEST)
 }
 
 // 0.7 to 1: a working furnace's emissive layer, a slow pulse; the mean
