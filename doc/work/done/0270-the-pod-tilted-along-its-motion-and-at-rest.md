@@ -1,6 +1,6 @@
 # 0270: The pod tilted along its motion and at rest
 
-Status: verified (2026-10-05)
+Status: landed (2026-10-05, b6014f7)
 
 ## Goal
 
