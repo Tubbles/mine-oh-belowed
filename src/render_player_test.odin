@@ -90,3 +90,19 @@ test_held_block_cube_faces_wind_outwards :: proc(t: ^testing.T) {
 	front := (moved[.Positive_X][0] + moved[.Positive_X][2]) / 2
 	expect_near_point(t, front, [3]f32{5, 6, 7} + fly_camera_forward(Fly_Camera{yaw = 90}) * size / 2, "front face middle")
 }
+
+// The viewer's body is hidden within VIEWER_BODY_HIDDEN_WITHIN_METRES of
+// the eye, shown past it and at the settings' shortest distance, never in
+// first person; the value is the body's radius plus the field's near
+// plane (0261).
+@(test)
+test_the_viewers_body_is_shown_only_past_the_hidden_distance :: proc(t: ^testing.T) {
+	eye := [3]f32{1, 2, 3}
+	testing.expect(t, !viewer_body_shown(.Third_Person, eye, eye), "shown at the eye")
+	testing.expect(t, !viewer_body_shown(.Third_Person, eye + {0, 0, VIEWER_BODY_HIDDEN_WITHIN_METRES - 0.01}, eye), "shown just inside the distance")
+	testing.expect(t, viewer_body_shown(.Third_Person, eye + {VIEWER_BODY_HIDDEN_WITHIN_METRES + 0.01, 0, 0}, eye), "hidden just past the distance")
+	shortest := eye + third_person_offset({1, 0, 0}, 0, THIRD_PERSON_DISTANCE_RANGE.minimum, 0)
+	testing.expect(t, viewer_body_shown(.Third_Person, shortest, eye), "hidden at the settings' shortest distance")
+	testing.expect(t, !viewer_body_shown(.First_Person, shortest, eye), "shown in first person")
+	testing.expectf(t, abs(VIEWER_BODY_HIDDEN_WITHIN_METRES - (PLAYER_WIDTH / 2 + FIELD_NEAR_METRES)) < 1e-6, "%v is not the body's radius plus the near plane", VIEWER_BODY_HIDDEN_WITHIN_METRES)
+}

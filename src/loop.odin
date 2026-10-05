@@ -1192,7 +1192,7 @@ draw_session_world :: proc(state: ^Frame_State, viewport: ^Viewport, content: Si
 		counts.weather_particles = draw_session_weather(session, camera, weather, sky, seconds)
 	}
 	body := Player_Body_Draw{renderer = state.presentation.model_renderer, model = state.presentation.player_model, animation = animation, light = player_body_light(frame, player_eye(pose.position), 1)}
-	draw_player_world_overlay(world, content, state.presentation.model_renderer, &state.presentation.belt_renderer, session.simulation.players[:], viewport.player, alpha, body)
+	draw_player_world_overlay(world, content, state.presentation.model_renderer, &state.presentation.belt_renderer, session.simulation.players[:], viewport.player, alpha, body, viewer_body_shown(player.camera_mode, view.position, player_eye(pose.position)))
 	rl.EndMode3D()
 	if player.camera_mode == .First_Person {
 		draw_first_person_hands(view, body, Item_Billboards{camera = camera, atlas = state.presentation.item_atlas}, Held_Block_Tiles{texture = chunk_atlas_texture(state.presentation.renderer), layout = state.presentation.renderer.atlas_layout, blocks = content.blocks}, content.items, selected_hotbar_stack(player))

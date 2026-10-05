@@ -426,13 +426,15 @@ planet_preview_viewpoint :: proc(preview: ^Planet_Preview) -> World_Position {
 	return metres_to_world_position(preview.camera.position)
 }
 
-planet_preview_raylib_camera :: proc(preview: ^Planet_Preview, alpha: f32) -> rl.Camera3D {
+// The camera and whether it shows the walking body (viewer_body_shown).
+planet_preview_raylib_camera :: proc(preview: ^Planet_Preview, alpha: f32) -> (rl.Camera3D, bool) {
 	if preview.walking {
 		body := planet_preview_player(preview).field
 		view := field_player_view(body, preview.session.field_content.tuning, alpha, body.crouching ? 1 : 0)
-		return pulled_in_field_camera(&preview.session.simulation, preview.session.field_content, view, body.camera_mode, THIRD_PERSON_DISTANCE, 0, PLANET_PREVIEW_FIELD_OF_VIEW)
+		camera := pulled_in_field_camera(&preview.session.simulation, preview.session.field_content, view, body.camera_mode, THIRD_PERSON_DISTANCE, 0, PLANET_PREVIEW_FIELD_OF_VIEW)
+		return camera, viewer_body_shown(body.camera_mode, camera.position, world_position_to_metres(view.eye))
 	}
-	return planet_preview_free_camera(preview.camera, preview.basis, PLANET_PREVIEW_FIELD_OF_VIEW)
+	return planet_preview_free_camera(preview.camera, preview.basis, PLANET_PREVIEW_FIELD_OF_VIEW), false
 }
 
 planet_preview_height_metres :: proc(preview: ^Planet_Preview) -> f32 {
@@ -553,7 +555,7 @@ planet_preview_tool_text :: proc(preview: ^Planet_Preview) -> string {
 	return fmt.tprintf("brush %s %.1f m, holding %s  target %s %s%s", shapes[brush.shape], f64(brush.radius) / POSITION_UNITS_PER_METRE, field_held_name(player.field), target, held, refusal)
 }
 
-planet_preview_scene :: proc(preview: ^Planet_Preview, alpha: f32) -> Field_Scene {
+planet_preview_scene :: proc(preview: ^Planet_Preview, alpha: f32, body_shown: bool) -> Field_Scene {
 	simulation := planet_preview_simulation(preview)
 	return Field_Scene {
 		state = simulation,
@@ -564,17 +566,18 @@ planet_preview_scene :: proc(preview: ^Planet_Preview, alpha: f32) -> Field_Scen
 		player_model = preview.player_model,
 		frame = Model_Frame{world = &simulation.world, tick = simulation.tick, alpha = alpha, tick_rate = simulation.tick_rate, day_factor = preview.renderer.daylight, sky_tint = {1, 1, 1}, open_sky = true, reaching_arm = preview.reaching_arm},
 		viewer = preview.walking ? 0 : NO_PLAYER,
+		viewer_body_shown = body_shown,
 	}
 }
 
 // With capture set, the frame is saved before it is shown; saved says
 // whether that worked.
 draw_planet_preview :: proc(preview: ^Planet_Preview, selection: []Field_Node, capture: bool, alpha: f32) -> (saved: bool) {
-	camera := planet_preview_raylib_camera(preview, alpha)
+	camera, body_shown := planet_preview_raylib_camera(preview, alpha)
 	rl.BeginDrawing()
 	rl.ClearBackground(FIELD_FOG_COLOR)
 	rl.BeginMode3D(camera)
-	draw_field_scene(planet_preview_scene(preview, alpha), camera, selection)
+	draw_field_scene(planet_preview_scene(preview, alpha, body_shown), camera, selection)
 	rl.EndMode3D()
 	height := planet_preview_height_metres(preview)
 	line := fmt.ctprintf("%d fps  %s  height %.0f m  nodes %d of %d  vertices %d  chunks %d", rl.GetFPS(), planet_preview_mode_text(preview), height, preview.renderer.drawn_node_count, len(selection), preview.renderer.vertex_count, len(preview.session.simulation.field.world.chunks))

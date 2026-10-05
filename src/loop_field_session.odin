@@ -29,9 +29,11 @@ FIELD_TORCH_COLOR :: rl.Color{255, 196, 96, 255}
 FIELD_PLAYER_CAPSULE_COLOR :: rl.Color{70, 110, 180, 255}
 
 // What draw_field_scene draws with. viewer is the player whose camera
-// it is (its ghost is drawn, its body only in third person); NO_PLAYER for
-// a free camera. lockstep, when set, gives the local players as predicted
-// (lockstep_view_player); nil draws the simulation's players.
+// it is (its ghost is drawn, its body only where viewer_body_shown: third
+// person, the camera at least VIEWER_BODY_HIDDEN_WITHIN_METRES from the
+// eye, 0261); NO_PLAYER for a free camera. lockstep, when set, gives the
+// local players as predicted (lockstep_view_player); nil draws the
+// simulation's players.
 Field_Scene :: struct {
 	state:        ^Simulation_State,
 	content:      Simulation_Content,
@@ -41,6 +43,7 @@ Field_Scene :: struct {
 	player_model: Player_Model,
 	frame:        Model_Frame,
 	viewer:       int,
+	viewer_body_shown: bool,
 	lockstep:     ^Lockstep,
 	// The arrival's descent (0200): every viewer is inside the pod, whose
 	// hull would hide the window's view, so the frames, the machines, the
@@ -254,10 +257,15 @@ draw_field_player_body :: proc(scene: Field_Scene, player: Field_Player, crouch_
 	}
 }
 
+// Every player but the viewer, and the viewer where its body is shown.
+field_player_body_drawn :: proc(scene: Field_Scene, index: int) -> bool {
+	return index != scene.viewer || scene.viewer_body_shown
+}
+
 draw_field_players :: proc(scene: Field_Scene) {
 	for index in 0 ..< len(scene.state.players) {
 		player := field_scene_player(scene, index)
-		if index != scene.viewer || player.field.camera_mode == .Third_Person {
+		if field_player_body_drawn(scene, index) {
 			draw_field_player_body(scene, player.field, field_crouch_progress_of(scene.renderer.crouch_progress[:], index))
 		}
 	}
@@ -347,12 +355,13 @@ draw_field_sky :: proc(renderer: ^Sky_Renderer, camera: rl.Camera3D, sky: Day_Sk
 	rl.EndMode3D()
 }
 
-// The viewport's field camera, kept for the HUD's projections.
-field_viewport_camera :: proc(state: ^Frame_State, viewport: ^Viewport, player: Player, alpha: f32) -> rl.Camera3D {
+// The viewport's field camera, kept for the HUD's projections, and
+// whether it shows the viewer's body (viewer_body_shown).
+field_viewport_camera :: proc(state: ^Frame_State, viewport: ^Viewport, player: Player, alpha: f32) -> (camera: rl.Camera3D, body_shown: bool) {
 	view := field_player_view(player.field, state.session.field_content.tuning, alpha, field_crouch_progress_of(state.presentation.field_renderer.crouch_progress[:], viewport.player))
-	camera := pulled_in_field_camera(&state.session.simulation, state.session.field_content, view, player.field.camera_mode, state.settings.third_person_distance, state.settings.third_person_shoulder, state.settings.field_of_view)
+	camera = pulled_in_field_camera(&state.session.simulation, state.session.field_content, view, player.field.camera_mode, state.settings.third_person_distance, state.settings.third_person_shoulder, state.settings.field_of_view)
 	viewport.presentation.camera = camera
-	return camera
+	return camera, viewer_body_shown(player.field.camera_mode, camera.position, world_position_to_metres(view.eye))
 }
 
 // The viewport's camera during the arrival (0200, render_arrival.odin):
@@ -396,7 +405,8 @@ draw_field_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, cont
 	player := lockstep_view_player(&session.lockstep, &session.simulation, viewport.player)
 	view := arrival_view(session.simulation.field.arrival, session.simulation.tick, alpha, state.config)
 	pod, pod_found := find_pod_frame(&session.simulation.world.entities, content.machines)
-	camera := arrival_viewport_camera(state, viewport, player, field_viewport_camera(state, viewport, player, alpha), view, pod, pod_found, alpha)
+	pulled, body_shown := field_viewport_camera(state, viewport, player, alpha)
+	camera := arrival_viewport_camera(state, viewport, player, pulled, view, pod, pod_found, alpha)
 	near, far := rlgl.GetCullDistanceNear(), rlgl.GetCullDistanceFar()
 	defer rlgl.SetClipPlanes(near, far)
 	draw_field_sky(&state.presentation.renderer.sky, camera, sky, viewport.presentation.particle_memory.satellite)
@@ -410,6 +420,7 @@ draw_field_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, cont
 		player_model = state.presentation.player_model,
 		frame        = Model_Frame{world = &session.simulation.world, tick = session.simulation.tick, alpha = alpha, tick_rate = session.simulation.tick_rate, day_factor = day_factor(sky.blend), sky_tint = color_to_vector3(sky.colors.sun_tint), open_sky = true, reaching_arm = NO_ENTITY},
 		viewer       = viewport.player,
+		viewer_body_shown = body_shown,
 		lockstep     = &session.lockstep,
 		hide_frames  = view.phase == .Descent,
 		placement_editor = viewport.interaction.placement_editor,

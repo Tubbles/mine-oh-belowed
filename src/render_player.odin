@@ -13,6 +13,14 @@ THIRD_PERSON_HEIGHT :: 0.75
 // the field the surface (measured along the surface's normal, 0220), so
 // the near plane does not clip into it.
 THIRD_PERSON_WALL_MARGIN :: 0.2
+// A camera this close to the eye puts the near plane into the viewer's
+// body, so the body is not drawn (0261): the drawn body's radius (0.3 m,
+// PLAYER_WIDTH / 2 and the field's fallback capsule; the model's arms
+// reach 0.3125 m from its axis) plus the field's near plane
+// (FIELD_NEAR_METRES, 0.1 m). The block world's near plane (raylib's
+// 0.05 m) is nearer, so the one value covers both worlds. A literal, since
+// FIELD_NEAR_METRES lives in the loop cluster; a test pins the sum.
+VIEWER_BODY_HIDDEN_WITHIN_METRES :: 0.4
 // The sprint field of view kick eases in or out over this long (work item
 // 0073).
 SPRINT_KICK_SECONDS :: 0.3
@@ -381,11 +389,17 @@ update_player_presence :: proc(memory: ^Player_Animation_Memory, particles: ^Par
 	}
 }
 
-// Between BeginMode3D and EndMode3D, after the chunks. The body shows in
-// third person only.
-draw_player_world_overlay :: proc(world: ^World, content: Simulation_Content, models: Model_Renderer, belts: ^Belt_Renderer, players: []Player, index: int, alpha: f32, body: Player_Body_Draw) {
+// Whether a viewport draws its own player's body: in third person, with
+// the camera at least VIEWER_BODY_HIDDEN_WITHIN_METRES from the eye.
+viewer_body_shown :: proc(mode: Camera_Mode, camera_position, eye: [3]f32) -> bool {
+	return mode == .Third_Person && linalg.length(camera_position - eye) >= VIEWER_BODY_HIDDEN_WITHIN_METRES
+}
+
+// Between BeginMode3D and EndMode3D, after the chunks. The body shows
+// where body_shown (viewer_body_shown, 0261).
+draw_player_world_overlay :: proc(world: ^World, content: Simulation_Content, models: Model_Renderer, belts: ^Belt_Renderer, players: []Player, index: int, alpha: f32, body: Player_Body_Draw, body_shown: bool) {
 	player := players[index]
-	if player.camera_mode == .Third_Person {
+	if body_shown {
 		draw_player_third_person(body, interpolate_player_pose(player, alpha))
 	}
 	if !player.target.hit {

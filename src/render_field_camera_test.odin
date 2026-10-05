@@ -104,6 +104,38 @@ test_the_field_third_person_camera_stops_short_of_a_wall :: proc(t: ^testing.T) 
 	}
 }
 
+// Backed against the ledge's face the camera is pulled in to the eye, and
+// the viewer's body is not drawn; another player's is (0261).
+@(test)
+test_the_field_viewers_body_is_hidden_with_the_camera_at_the_eye :: proc(t: ^testing.T) {
+	for spacing in TEST_FIELD_SPACINGS {
+		world := make_test_field(Test_Terrain{kind = .Ledge, ledge_height = metres_to_position_units(4)}, spacing)
+		defer destroy_field_world(&world)
+		near_eye := test_site_point(millimetres_to_position_units(1900), millimetres_to_position_units(1600), 0)
+		position := field_third_person_position(&world, nil, nil, spacing, near_eye, {4, 0, 0})
+		scene := Field_Scene{viewer = 0, viewer_body_shown = viewer_body_shown(.Third_Person, position, world_position_to_metres(near_eye))}
+		testing.expectf(t, !field_player_body_drawn(scene, 0), "%d mm: the viewer's body is drawn with the camera at the eye", spacing)
+		testing.expectf(t, field_player_body_drawn(scene, 1), "%d mm: the other player's body is not drawn", spacing)
+	}
+}
+
+// On open ground at the settings' distance the viewer's body is drawn,
+// and another player's (0261).
+@(test)
+test_the_field_viewers_body_is_drawn_at_the_settings_distance :: proc(t: ^testing.T) {
+	for spacing in TEST_FIELD_SPACINGS {
+		world := make_test_field(Test_Terrain{kind = .Flat}, spacing)
+		defer destroy_field_world(&world)
+		tuning := test_field_tuning(spacing)
+		player := start_crouch_test_player(&world, tuning)
+		view := field_player_view(player, tuning, 1, 0)
+		position := field_third_person_position(&world, nil, nil, spacing, view.eye, field_third_person_offset(view, THIRD_PERSON_DISTANCE, 0.6))
+		scene := Field_Scene{viewer = 0, viewer_body_shown = viewer_body_shown(.Third_Person, position, world_position_to_metres(view.eye))}
+		testing.expectf(t, field_player_body_drawn(scene, 0), "%d mm: the viewer's body is not drawn", spacing)
+		testing.expectf(t, field_player_body_drawn(scene, 1), "%d mm: the other player's body is not drawn", spacing)
+	}
+}
+
 // A crouched player deep in the 1 m tunnel: the ray meets the roof at a
 // grazing angle, and the camera stays in the tunnel's air, the margin
 // under the roof along its normal.

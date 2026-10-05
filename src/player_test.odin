@@ -312,6 +312,27 @@ test_third_person_camera_pulls_in_before_a_wall :: proc(t: ^testing.T) {
 	testing.expectf(t, blocked.x > -1 && blocked.x < 0.5, "x %v", blocked.x)
 }
 
+// Stone half a metre behind the eye pulls the camera in to about 0.31 m,
+// within VIEWER_BODY_HIDDEN_WITHIN_METRES, and the body is hidden; stone
+// 1.5 m behind leaves it about 1.33 m out, and the body is shown (0261).
+@(test)
+test_the_block_viewers_body_is_hidden_when_the_camera_reaches_the_eye :: proc(t: ^testing.T) {
+	registry := make_test_registry()
+	eye := [3]f32{0.5, 2.6, 0.5}
+	near_world := make_floor_world(registry, 32)
+	for y in i32(1) ..= 6 {
+		set_blocks(&near_world, test_block(registry, "stone"), {-1, y, 0})
+	}
+	near := third_person_position(&near_world, registry, eye, third_person_offset({1, 0, 0}, 0, THIRD_PERSON_DISTANCE, 0))
+	testing.expectf(t, !viewer_body_shown(.Third_Person, near, eye), "the body is shown with the camera at %v", near)
+	far_world := make_floor_world(registry, 32)
+	for y in i32(1) ..= 6 {
+		set_blocks(&far_world, test_block(registry, "stone"), {-2, y, 0})
+	}
+	far := third_person_position(&far_world, registry, eye, third_person_offset({1, 0, 0}, 0, THIRD_PERSON_DISTANCE, 0))
+	testing.expectf(t, viewer_body_shown(.Third_Person, far, eye), "the body is hidden with the camera at %v", far)
+}
+
 // Fixed input: look down and dig for five seconds, climb back out by
 // jumping and placing under the feet, look up, then a pseudo random mix of
 // walking, turning, jumping, mining, placing and cycling the selection.
