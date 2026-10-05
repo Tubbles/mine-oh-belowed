@@ -1,6 +1,6 @@
 # 0271: The impact digs the crater
 
-Status: verified (2026-10-05)
+Status: landed (2026-10-05, fc00f50)
 
 ## Goal
 
