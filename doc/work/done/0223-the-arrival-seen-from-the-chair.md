@@ -1,6 +1,6 @@
 # 0223: The arrival seen from the chair
 
-Status: verified (2026-10-05)
+Status: landed (2026-10-05, 63ef7fa)
 
 ## Goal
 
