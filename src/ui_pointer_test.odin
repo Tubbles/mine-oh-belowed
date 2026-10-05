@@ -827,14 +827,15 @@ arrival_screen_frame :: proc(audit: ^Ui_Audit, state: ^Ui_State, input: Ui_Input
 
 // Before the hit the pause menu has Skip arrival and no Journal: Confirm
 // on Skip queues one Skip_Arrival_Command for the viewport's player and
-// closes the menu. In the settle second (tick 560) there is no Skip row;
+// closes the menu. In the settle second there is no Skip row;
 // without the fall there is none and the Journal is back.
 @(test)
 test_the_pause_menu_offers_skip_during_the_fall :: proc(t: ^testing.T) {
 	config, _ := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
 	arrival := Field_Arrival{fall_ticks = u64(config.arrival_ticks)}
 	testing.expect(t, field_arrival_skippable(arrival, 300, config.arrival_settle_ticks), "skippable at tick 300")
-	testing.expect(t, !field_arrival_skippable(arrival, 560, config.arrival_settle_ticks), "not skippable at tick 560")
+	settling := u64(config.arrival_ticks - config.arrival_settle_ticks / 3)
+	testing.expectf(t, !field_arrival_skippable(arrival, settling, config.arrival_settle_ticks), "not skippable at tick %d", settling)
 	audit := make_ui_audit()
 	defer destroy_ui_audit(audit)
 	state := Ui_State{theme = audit.theme}

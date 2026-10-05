@@ -59,19 +59,36 @@ test_android_assets_current_compares_the_build_stamp :: proc(t: ^testing.T) {
 	testing.expect(t, !android_assets_current("", "abc1234 2026-09-29T12:00Z"))
 }
 
-// The arrival's values (0200): the shipped ones pass, a path past the
-// coarsest level's fog fails naming the path, a fall too short for its
-// hit and flames fails, and no fall passes.
+// The arrival's values (0200, 0269): the shipped ones pass; a start too
+// far from the crater, a start at the atmosphere's top, a hit that
+// glows, an atmosphere hazing the ground's sky, real seconds longer than
+// the curve and a fall too short for its hit fail naming their key; no
+// fall passes.
 @(test)
 test_arrival_values_are_bounded :: proc(t: ^testing.T) {
 	config, _ := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
 	testing.expect_value(t, arrival_problem(config), "")
-	high := config
-	high.arrival_start_metres = 700
-	testing.expect(t, strings.contains(arrival_problem(high), "makes a path of"), "700 m at 30 degrees names the path")
+	far := config
+	far.arrival_start_metres = 2000
+	testing.expect(t, strings.contains(arrival_problem(far), "starts"), "a start 2000 m up names the start's distance")
+	low := config
+	low.arrival_start_metres = config.atmosphere.top_metres
+	testing.expect(t, strings.contains(arrival_problem(low), "atmosphere.top_metres"), "a start at the top names the top")
+	glowing := config
+	glowing.arrival_heat_threshold_percent = 0
+	testing.expect(t, strings.contains(arrival_problem(glowing), "heat at the hit"), "threshold 0 glows at the hit")
+	thick := config
+	thick.atmosphere.scale_height_metres = 400
+	testing.expect(t, strings.contains(arrival_problem(thick), "two scale heights"), "a scale height of 400 m hazes the ground's sky")
+	long := config
+	long.arrival_real_seconds = 59
+	testing.expect(t, strings.contains(arrival_problem(long), "natural seconds"), "real seconds longer than the curve")
+	brief := config
+	brief.arrival_ticks = 360
+	testing.expect(t, strings.contains(arrival_problem(brief), "descent"), "real seconds longer than a 300 tick descent")
 	short := config
-	short.arrival_ticks = 200
-	testing.expect(t, strings.contains(arrival_problem(short), "arrival_ticks"), "200 ticks cannot hold the hit and the flames")
+	short.arrival_ticks = 60
+	testing.expect(t, strings.contains(arrival_problem(short), "arrival_ticks"), "60 ticks cannot hold the hit")
 	none := config
 	none.arrival_ticks = 0
 	testing.expect_value(t, arrival_problem(none), "")

@@ -10,9 +10,10 @@ import "platform"
 // The arrival's presentation (work item 0200, doc/presentation.md, The
 // field session, The arrival): render only, read from Field_Arrival
 // (simulation_arrival.odin), the tick and the interpolation alpha. The
-// descent moves the seated eye and the pod round it along the tilted path
-// down to the resting place (arrival_descent_offset, 0223), the flames
-// burning on the portholes' glass, and the roar; at the hit the pod meets
+// descent moves the seated eye and the pod round it along the entry's
+// curve down to the resting place (arrival_descent_offset, 0223, 0269),
+// the flames burning on the portholes' glass at the heat, the buffeting
+// and the roar; at the hit the pod meets
 // the floor, the cabin shakes, the dust rises outside and the crash
 // plays. Nothing here
 // reaches the simulation, so the hash is the same with and without it.
@@ -30,6 +31,10 @@ ARRIVAL_DUST_PUFFS :: 36
 ARRIVAL_SHAKE_SECONDS :: 1.0
 ARRIVAL_SHAKE_METRES :: 0.15
 ARRIVAL_SHAKE_HERTZ :: 17.3
+// The buffeting at the drag's peak (0269): its largest offset at heat 1
+// and the rate of its noise.
+ARRIVAL_BUFFET_METRES :: 0.05
+ARRIVAL_BUFFET_HERTZ :: 7.3
 ARRIVAL_ROAR_SOUND :: "arrival_roar"
 ARRIVAL_CRASH_SOUND :: "arrival_crash"
 HATCH_SLIDE_SOUND :: "hatch_slide"
@@ -42,12 +47,16 @@ Arrival_Phase :: enum u8 {
 	Settled,
 }
 
-// progress runs 0 to 1 over the descent (not eased), flame_strength 0 to
-// 1; seconds since the fall began (the shader's time) and since the hit.
+// progress runs 0 to 1 over the descent (not eased), curve_progress the
+// curve's at it (arrival_curve_progress); heat 0 to 1 from the curve,
+// cooling 0 up to the heat's peak and 1 after it; seconds since the fall
+// began (the shader's time) and since the hit.
 Arrival_View :: struct {
 	phase:             Arrival_Phase,
 	progress:          f32,
-	flame_strength:    f32,
+	curve_progress:    f32,
+	heat:              f32,
+	cooling:           f32,
 	seconds:           f32,
 	seconds_since_hit: f32,
 }
@@ -62,8 +71,10 @@ Arrival_Sound_Memory :: struct {
 }
 
 // The window shader, loaded with the field renderer; shader_ready false
-// when it did not load, and the fall then draws without its flames.
+// when it did not load, and the fall then draws without its flames. The
+// curve is built before the shader loads, so it exists without it.
 Arrival_Presentation :: struct {
+	curve:        Arrival_Curve,
 	shader:       rl.Shader,
 	shader_ready: bool,
 	sound_memory: Arrival_Sound_Memory,
@@ -72,7 +83,7 @@ Arrival_Presentation :: struct {
 // The phase at tick plus alpha. None without a fall or after a Skip (a
 // landing before the planned end); Descent until arrival_settle_ticks
 // before the planned end; Settled from the hit for ARRIVAL_DUST_SECONDS.
-arrival_view :: proc(arrival: Field_Arrival, tick: u64, alpha: f32, config: Game_Config) -> Arrival_View {
+arrival_view :: proc(arrival: Field_Arrival, tick: u64, alpha: f32, config: Game_Config, curve: ^Arrival_Curve) -> Arrival_View {
 	planned_end := arrival.start_tick + arrival.fall_ticks
 	if arrival.fall_ticks == 0 || (arrival.landed_tick != 0 && arrival.landed_tick < planned_end) {
 		return {}
@@ -83,11 +94,11 @@ arrival_view :: proc(arrival: Field_Arrival, tick: u64, alpha: f32, config: Game
 	view := Arrival_View{seconds = elapsed / tick_rate}
 	switch {
 	case arrival.landed_tick == 0 && elapsed < descent:
-		flames := f32(config.arrival_flame_ticks)
-		rise := clamp((elapsed - (descent - flames)) / max(flames, 1), 0, 1)
 		view.phase = .Descent
 		view.progress = elapsed / descent
-		view.flame_strength = rise * rise
+		view.curve_progress = arrival_curve_progress(curve, view.progress, descent / tick_rate)
+		view.heat = arrival_curve_at(curve, view.curve_progress).heat
+		view.cooling = view.curve_progress > curve.peak_progress ? 1 : 0
 	case elapsed < descent + ARRIVAL_DUST_SECONDS * tick_rate:
 		view.phase = .Settled
 		view.seconds_since_hit = max(elapsed - descent, 0) / tick_rate
@@ -95,37 +106,22 @@ arrival_view :: proc(arrival: Field_Arrival, tick: u64, alpha: f32, config: Game
 	return view
 }
 
-// The share of the path covered at progress: its speed grows to the end,
-// so the last second is the fastest.
-arrival_eased_share :: proc(progress: f32) -> f32 {
-	return progress * progress
-}
-
-// From the resting place towards the start, unit: the up tilted
-// backwards from the pod's door, so the camera looking along the path
-// faces the way the player faces when the fall ends.
-arrival_path_direction :: proc(up, forward: [3]f32, angle_degrees: int) -> [3]f32 {
-	angle := f32(angle_degrees) * math.RAD_PER_DEG
-	return linalg.normalize(up * math.cos(angle) - forward * math.sin(angle))
-}
-
-// The start relative to the resting place: start_metres above the floor
-// along the up.
-arrival_start_offset :: proc(direction: [3]f32, start_metres, angle_degrees: int) -> [3]f32 {
-	angle := f32(angle_degrees) * math.RAD_PER_DEG
-	return direction * f32(start_metres) / math.cos(angle)
-}
-
 // The pod's and the eye's offset from their resting place during the
-// descent (0223): on the tilted path, the share covered eased, zero at
-// the hit, so the pod meets the floor exactly there; zero outside the
-// descent.
-arrival_descent_offset :: proc(view: Arrival_View, up, forward: [3]f32, config: Game_Config) -> [3]f32 {
+// descent (0223, 0269): the curve's altitude along the up and the range
+// left along the back, exactly zero at the hit, so the pod meets the
+// floor there; zero outside the descent.
+arrival_descent_offset :: proc(view: Arrival_View, up, forward: [3]f32, curve: ^Arrival_Curve) -> [3]f32 {
 	if view.phase != .Descent {
 		return {}
 	}
-	direction := arrival_path_direction(up, forward, config.arrival_angle_degrees)
-	return arrival_start_offset(direction, config.arrival_start_metres, config.arrival_angle_degrees) * (1 - arrival_eased_share(view.progress))
+	sample := arrival_curve_at(curve, view.curve_progress)
+	return up * sample.altitude_metres - forward * (curve.range_metres - sample.along_metres)
+}
+
+// The pod's travel at a sample of the curve, unit: its tangent laid on
+// the pod's up and forward (0269; 0270 turns the pod's base into it).
+arrival_travel_direction :: proc(sample: Arrival_Curve_Sample, up, forward: [3]f32) -> [3]f32 {
+	return linalg.normalize(forward * sample.velocity.x + up * sample.velocity.y)
 }
 
 // A window's quad, its corners for the texture coordinates (0, 0), (1, 0),
@@ -147,10 +143,10 @@ arrival_noise_value :: proc(step: i64, salt: u64) -> f32 {
 	return f32(generation_seed.hash_to_unit(generation_seed.hash_combine(salt, u64(step)))) * 2 - 1
 }
 
-// Value noise from -1 to 1 at ARRIVAL_SHAKE_HERTZ, smoothed between its
-// hashed steps, so it has no period.
-arrival_noise :: proc(seconds: f32, salt: u64) -> f32 {
-	at := f64(seconds) * ARRIVAL_SHAKE_HERTZ
+// Value noise from -1 to 1 at hertz, smoothed between its hashed steps,
+// so it has no period.
+arrival_noise :: proc(seconds: f32, hertz: f64, salt: u64) -> f32 {
+	at := f64(seconds) * hertz
 	step := math.floor(at)
 	fraction := f32(at - step)
 	blend := fraction * fraction * (3 - 2 * fraction)
@@ -166,8 +162,21 @@ arrival_shake_offset :: proc(seconds_since_hit: f32, salt: u64) -> (position, lo
 	}
 	fade := 1 - seconds_since_hit / ARRIVAL_SHAKE_SECONDS
 	amplitude := ARRIVAL_SHAKE_METRES * fade * fade
-	position = [3]f32{arrival_noise(seconds_since_hit, salt), arrival_noise(seconds_since_hit, salt + 1), arrival_noise(seconds_since_hit, salt + 2)} * amplitude
-	look = [3]f32{arrival_noise(seconds_since_hit, salt + 3), arrival_noise(seconds_since_hit, salt + 4), arrival_noise(seconds_since_hit, salt + 5)} * amplitude * 0.5
+	position = [3]f32{arrival_noise(seconds_since_hit, ARRIVAL_SHAKE_HERTZ, salt), arrival_noise(seconds_since_hit, ARRIVAL_SHAKE_HERTZ, salt + 1), arrival_noise(seconds_since_hit, ARRIVAL_SHAKE_HERTZ, salt + 2)} * amplitude
+	look = [3]f32{arrival_noise(seconds_since_hit, ARRIVAL_SHAKE_HERTZ, salt + 3), arrival_noise(seconds_since_hit, ARRIVAL_SHAKE_HERTZ, salt + 4), arrival_noise(seconds_since_hit, ARRIVAL_SHAKE_HERTZ, salt + 5)} * amplitude * 0.5
+	return
+}
+
+// The buffeting at seconds into the fall (0269): the eye's offset and the
+// look's, half as large, ARRIVAL_BUFFET_METRES times the heat cubed, so
+// it shakes only round the drag's peak.
+arrival_buffet_offset :: proc(seconds, heat: f32, salt: u64) -> (position, look: [3]f32) {
+	amplitude := ARRIVAL_BUFFET_METRES * heat * heat * heat
+	if amplitude <= 0 {
+		return
+	}
+	position = [3]f32{arrival_noise(seconds, ARRIVAL_BUFFET_HERTZ, salt + 8), arrival_noise(seconds, ARRIVAL_BUFFET_HERTZ, salt + 9), arrival_noise(seconds, ARRIVAL_BUFFET_HERTZ, salt + 10)} * amplitude
+	look = [3]f32{arrival_noise(seconds, ARRIVAL_BUFFET_HERTZ, salt + 11), arrival_noise(seconds, ARRIVAL_BUFFET_HERTZ, salt + 12), arrival_noise(seconds, ARRIVAL_BUFFET_HERTZ, salt + 13)} * amplitude * 0.5
 	return
 }
 
@@ -209,14 +218,18 @@ draw_arrival_dust :: proc(frame: Frame, view: Arrival_View, salt: u64, color: rl
 	rlgl.EnableDepthMask()
 }
 
-// The window shader; on failure a log line, and the fall still plays.
-init_arrival_presentation :: proc(data_directory: string) -> Arrival_Presentation {
+// The entry's curve, then the window shader; on its failure a log line,
+// and the fall still plays.
+init_arrival_presentation :: proc(data_directory: string, config: Game_Config) -> Arrival_Presentation {
+	presentation := Arrival_Presentation{curve = build_arrival_curve(config)}
 	shader, ok := load_shader_pair(data_directory, ARRIVAL_VERTEX_SHADER_PATH, ARRIVAL_FRAGMENT_SHADER_PATH, "arrival")
 	if !ok {
 		platform.log_printf("arrival: the window shader did not load; the fall draws without its window")
-		return {}
+		return presentation
 	}
-	return {shader = shader, shader_ready = true}
+	presentation.shader = shader
+	presentation.shader_ready = true
+	return presentation
 }
 
 destroy_arrival_presentation :: proc(presentation: ^Arrival_Presentation) {
@@ -230,9 +243,9 @@ destroy_arrival_presentation :: proc(presentation: ^Arrival_Presentation) {
 // Inside BeginMode3D during the descent, moved with the pod: the
 // flames on each of the pod's windows (0223), the travel the pod's way
 // along the path. Each window is its own batch, since its seed is its
-// own; depth tested, without writing depth or culling.
+// own; depth tested, without writing depth or culling. Nothing at heat 0.
 draw_arrival_windows :: proc(presentation: ^Arrival_Presentation, view: Arrival_View, entities: ^Entities, pod: Entity_Common, machine: Machine, travel: [3]f32, salt: u64) {
-	if view.phase != .Descent || !presentation.shader_ready || machine.window_count == 0 {
+	if view.phase != .Descent || view.heat <= 0 || !presentation.shader_ready || machine.window_count == 0 {
 		return
 	}
 	shader := presentation.shader
@@ -250,7 +263,8 @@ draw_arrival_windows :: proc(presentation: ^Arrival_Presentation, view: Arrival_
 		centre := transform_point(body, window.centre)
 		normal := linalg.normalize(linear * window.normal)
 		corners := arrival_window_corners(centre, normal, travel, fallback, window.radius * pitch_metres)
-		set_shader_float(shader, "flame_strength", view.flame_strength)
+		set_shader_float(shader, "heat", view.heat)
+		set_shader_float(shader, "cooling", view.cooling)
 		set_shader_float(shader, "seconds", view.seconds)
 		set_shader_float(shader, "flame_seed", f32(salt % 1000) / 1000 + f32(index) * 0.618)
 		coordinates := [4][2]f32{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
@@ -275,12 +289,12 @@ arrival_sound_pitch :: proc(arrival: Field_Arrival, salt: u64, sound: u64) -> f3
 	return 1 + ARRIVAL_PITCH_SHARE * (2 * hash_fraction(sound_hash(arrival.start_tick, sound, salt)) - 1)
 }
 
-// Once a frame: the roar at the flames' level while the pod descends
+// Once a frame: the roar at the heat while the pod descends
 // (fading out under the pause menu, which stops an offline world's tick),
 // the crash on the cut from the descent to the settled cabin.
 play_arrival_sounds :: proc(mixer: ^Audio_Mixer, memory: ^Arrival_Sound_Memory, view: Arrival_View, arrival: Field_Arrival, paused: bool, salt: u64) {
 	if view.phase == .Descent && !paused {
-		set_loop_target(mixer, ARRIVAL_ROAR_SOUND, view.flame_strength)
+		set_loop_target(mixer, ARRIVAL_ROAR_SOUND, view.heat)
 	}
 	if memory.last_phase == .Descent && view.phase == .Settled {
 		play_effect(mixer, ARRIVAL_CRASH_SOUND, 1, arrival_sound_pitch(arrival, salt, 1))

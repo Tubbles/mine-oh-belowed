@@ -95,15 +95,22 @@ Game_Config :: struct {
 	bare_ground_flatness_millimetres: int,
 	bare_ground_life_minutes:         int,
 	salvage_percent:                  int,
-	// The arrival (work item 0200, simulation_arrival.odin,
-	// render_arrival.odin): a new world's fall in ticks (0 for none), the
-	// ticks between the hit and the landing, the flames' ticks before the
-	// hit, and the fall's start above the crater's floor and its tilt.
+	// The arrival (work items 0200, 0269, simulation_arrival.odin,
+	// data_arrival_curve.odin, render_arrival.odin): a new world's fall in
+	// ticks (0 for none), the ticks between the hit and the landing, the
+	// fall's start above the crater's floor, the entry's angle and speed,
+	// the terminal speed at the planet's radius, the share of the peak
+	// heating below which nothing glows, the curve's last seconds played
+	// 1:1, and the atmosphere.
 	arrival_ticks:                    int,
 	arrival_settle_ticks:             int,
-	arrival_flame_ticks:              int,
 	arrival_start_metres:             int,
-	arrival_angle_degrees:            int,
+	arrival_entry_angle_degrees:      int,
+	arrival_entry_speed_metres_per_second: int,
+	arrival_terminal_speed_metres_per_second: int,
+	arrival_heat_threshold_percent:   int,
+	arrival_real_seconds:             int,
+	atmosphere:                       Atmosphere_Config,
 	// The pod's airlock (work items 0222, 0231, entity_pod_airlock.odin):
 	// how near a player's capsule keeps a hatch open (0231).
 	pod_airlock:                      Pod_Airlock_Config,
@@ -133,6 +140,13 @@ Field_Simulation_Config :: struct {
 // reach in millimetres.
 Pod_Airlock_Config :: struct {
 	reach_millimetres: int,
+}
+
+// The atmosphere the pod falls through (work item 0269,
+// data_arrival_curve.odin, render_sky.odin): its top and its scale
+// height, in metres above the planet's radius.
+Atmosphere_Config :: struct {
+	top_metres, scale_height_metres: int,
 }
 
 // A field chunk is about 270 KiB with its water and light: radius 3 is
@@ -747,41 +761,75 @@ bare_ground_problem :: proc(config: Game_Config) -> string {
 }
 
 // The bounds of data/game.sjson's arrival values (arrival_problem, work
-// item 0200). MAXIMUM_ARRIVAL_TICKS bounds the saved fall too
+// items 0200, 0269). MAXIMUM_ARRIVAL_TICKS bounds the saved fall too
 // (read_field_arrival_table).
 MAXIMUM_ARRIVAL_TICKS :: 3600
 MAXIMUM_ARRIVAL_SETTLE_TICKS :: 300
-MAXIMUM_ARRIVAL_FLAME_TICKS :: 1200
 MINIMUM_ARRIVAL_START_METRES :: 20
 MAXIMUM_ARRIVAL_START_METRES :: 4096
-MAXIMUM_ARRIVAL_ANGLE_DEGREES :: 60
+MINIMUM_ARRIVAL_ENTRY_ANGLE_DEGREES :: 5
+MAXIMUM_ARRIVAL_ENTRY_ANGLE_DEGREES :: 85
+MAXIMUM_ARRIVAL_SPEED_METRES_PER_SECOND :: 1000
+MAXIMUM_ARRIVAL_HEAT_THRESHOLD_PERCENT :: 90
+MAXIMUM_ARRIVAL_REAL_SECONDS :: 60
+MINIMUM_ATMOSPHERE_TOP_METRES :: 64
+MAXIMUM_ATMOSPHERE_METRES :: 4096
 
 // Every arrival value inside its bound; arrival_ticks 0 is no fall, else
-// it holds the hit and the flames and one tick of descent. Last the
-// path: the camera looks along it at the crater, so its length stays
-// inside the share of the coarsest level's distance where the field's fog
-// starts (FOG_START_SHARE), or the crater would start in fog. In f64, at
-// load.
+// it holds the hit and one tick of descent. Then the atmosphere leaves
+// the ground's sky clear and the start lies above its top wherever the
+// crater lies; then the curve (build_arrival_curve): it reaches the
+// floor, its start stays inside ARRIVAL_START_DISTANCE_SHARE of the
+// coarsest level's distance from the crater, its hit is dark, and its
+// real seconds are shorter than it and than the descent. In f64, at load.
 arrival_problem :: proc(config: Game_Config) -> string {
-	least_ticks := config.arrival_settle_ticks + config.arrival_flame_ticks + 1
+	least_ticks := config.arrival_settle_ticks + 1
 	if config.arrival_ticks != 0 && (config.arrival_ticks < least_ticks || config.arrival_ticks > MAXIMUM_ARRIVAL_TICKS) {
 		return fmt.tprintf("arrival_ticks %d is neither 0 nor inside %d to %d", config.arrival_ticks, least_ticks, MAXIMUM_ARRIVAL_TICKS)
 	}
 	bounds := [?]Config_Bound {
 		{"arrival_settle_ticks", config.arrival_settle_ticks, 0, MAXIMUM_ARRIVAL_SETTLE_TICKS},
-		{"arrival_flame_ticks", config.arrival_flame_ticks, 0, MAXIMUM_ARRIVAL_FLAME_TICKS},
 		{"arrival_start_metres", config.arrival_start_metres, MINIMUM_ARRIVAL_START_METRES, MAXIMUM_ARRIVAL_START_METRES},
-		{"arrival_angle_degrees", config.arrival_angle_degrees, 0, MAXIMUM_ARRIVAL_ANGLE_DEGREES},
+		{"arrival_entry_angle_degrees", config.arrival_entry_angle_degrees, MINIMUM_ARRIVAL_ENTRY_ANGLE_DEGREES, MAXIMUM_ARRIVAL_ENTRY_ANGLE_DEGREES},
+		{"arrival_entry_speed_metres_per_second", config.arrival_entry_speed_metres_per_second, 1, MAXIMUM_ARRIVAL_SPEED_METRES_PER_SECOND},
+		{"arrival_terminal_speed_metres_per_second", config.arrival_terminal_speed_metres_per_second, 1, MAXIMUM_ARRIVAL_SPEED_METRES_PER_SECOND},
+		{"arrival_heat_threshold_percent", config.arrival_heat_threshold_percent, 0, MAXIMUM_ARRIVAL_HEAT_THRESHOLD_PERCENT},
+		{"arrival_real_seconds", config.arrival_real_seconds, 1, MAXIMUM_ARRIVAL_REAL_SECONDS},
+		{"atmosphere.top_metres", config.atmosphere.top_metres, MINIMUM_ATMOSPHERE_TOP_METRES, MAXIMUM_ATMOSPHERE_METRES},
+		{"atmosphere.scale_height_metres", config.atmosphere.scale_height_metres, 1, MAXIMUM_ATMOSPHERE_METRES},
 	}
 	for bound in bounds {
 		if bound.value < bound.minimum || bound.value > bound.maximum {
 			return fmt.tprintf("%s %d is outside %d to %d", bound.name, bound.value, bound.minimum, bound.maximum)
 		}
 	}
-	path := f64(config.arrival_start_metres) / math.cos(f64(config.arrival_angle_degrees) * math.RAD_PER_DEG)
-	fog := FOG_START_SHARE * f64(config.field_view.level_distances_metres[FIELD_COARSEST_LEVEL])
-	if path > fog {
-		return fmt.tprintf("arrival_start_metres %d at arrival_angle_degrees %d makes a path of %d m, above %d m where the coarsest level's fog starts", config.arrival_start_metres, config.arrival_angle_degrees, int(path), int(fog))
+	atmosphere := config.atmosphere
+	clear := atmosphere.top_metres - 2 * atmosphere.scale_height_metres
+	if clear < ATMOSPHERE_CLEAR_GROUND_METRES {
+		return fmt.tprintf("atmosphere.top_metres %d less two scale heights of %d m leaves %d m, below %d", atmosphere.top_metres, atmosphere.scale_height_metres, clear, ATMOSPHERE_CLEAR_GROUND_METRES)
+	}
+	if config.arrival_start_metres < atmosphere.top_metres + MAXIMUM_RELIEF_METRES {
+		return fmt.tprintf("arrival_start_metres %d is not %d m above atmosphere.top_metres %d", config.arrival_start_metres, MAXIMUM_RELIEF_METRES, atmosphere.top_metres)
+	}
+	curve := build_arrival_curve(config)
+	if !curve.reached_floor {
+		return fmt.tprintf("the arrival's curve does not reach the floor within %d s", ARRIVAL_CURVE_MAXIMUM_SECONDS)
+	}
+	range_metres, start := f64(curve.range_metres), f64(config.arrival_start_metres)
+	distance := math.sqrt(range_metres * range_metres + start * start)
+	farthest := ARRIVAL_START_DISTANCE_SHARE * f64(config.field_view.level_distances_metres[FIELD_COARSEST_LEVEL])
+	if distance > farthest {
+		return fmt.tprintf("arrival_start_metres %d with a range of %d m starts %d m from the crater, beyond %d m", config.arrival_start_metres, int(range_metres), int(distance), int(farthest))
+	}
+	if f64(curve.hit_heat_share) * 100 >= f64(config.arrival_heat_threshold_percent) {
+		return fmt.tprintf("the heat at the hit is %d percent of the peak, not below arrival_heat_threshold_percent %d", int(curve.hit_heat_share * 100), config.arrival_heat_threshold_percent)
+	}
+	if f32(config.arrival_real_seconds) >= curve.natural_seconds {
+		return fmt.tprintf("arrival_real_seconds %d is not below the curve's %.1f natural seconds", config.arrival_real_seconds, curve.natural_seconds)
+	}
+	descent_ticks := config.arrival_ticks - config.arrival_settle_ticks
+	if config.arrival_ticks != 0 && config.arrival_real_seconds * config.tick_rate >= descent_ticks {
+		return fmt.tprintf("arrival_real_seconds %d is not below the descent's %d ticks", config.arrival_real_seconds, descent_ticks)
 	}
 	return ""
 }

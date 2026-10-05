@@ -157,7 +157,7 @@ start_field_presentation :: proc(state: ^Frame_State) -> bool {
 	}
 	state.presentation.field_renderer = renderer
 	state.presentation.field_renderer_ready = true
-	state.presentation.arrival = init_arrival_presentation(state.data_directory)
+	state.presentation.arrival = init_arrival_presentation(state.data_directory, state.config)
 	return true
 }
 
@@ -406,9 +406,11 @@ field_viewport_camera :: proc(state: ^Frame_State, viewport: ^Viewport, player: 
 // during the descent the seated camera moved by the path's offset
 // (arrival_descent_offset) along the pod's axes (the player's without a
 // pod), the look the player's, and the offset the scene draws the pod
-// moved by; the stored camera stays the resting one, so the HUD's
-// projections stay on the cabin. Shaken after the hit unless motion is
-// reduced, stored for the HUD as field_viewport_camera stores it.
+// moved by; the camera alone buffeted at the heat unless motion is
+// reduced (arrival_buffet_offset, 0269); the stored camera stays the
+// resting one, so the HUD's projections stay on the cabin. Shaken after
+// the hit unless motion is reduced, stored for the HUD as
+// field_viewport_camera stores it.
 arrival_viewport_camera :: proc(state: ^Frame_State, viewport: ^Viewport, player: Player, camera: rl.Camera3D, view: Arrival_View, pod: Frame, pod_found: bool) -> (moved: rl.Camera3D, pod_offset: [3]f32) {
 	moved = camera
 	switch view.phase {
@@ -418,9 +420,14 @@ arrival_viewport_camera :: proc(state: ^Frame_State, viewport: ^Viewport, player
 		if pod_found {
 			up, forward = unit_vector_to_f32(pod.axes[FRAME_UP]), unit_vector_to_f32(pod.axes[FRAME_FORWARD])
 		}
-		pod_offset = arrival_descent_offset(view, up, forward, state.config)
+		pod_offset = arrival_descent_offset(view, up, forward, &state.presentation.arrival.curve)
 		moved.position += pod_offset
 		moved.target += pod_offset
+		if !state.settings.reduced_motion {
+			position, look := arrival_buffet_offset(view.seconds, view.heat, state.session.simulation.world.settings.seed)
+			moved.position += position
+			moved.target += position + look
+		}
 	case .Settled:
 		if state.settings.reduced_motion {
 			return
@@ -442,13 +449,19 @@ draw_field_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, cont
 	}
 	alpha := f32(interpolation_alpha(session.accumulator))
 	player := lockstep_view_player(&session.lockstep, &session.simulation, viewport.player)
-	view := arrival_view(session.simulation.field.arrival, session.simulation.tick, alpha, state.config)
+	view := arrival_view(session.simulation.field.arrival, session.simulation.tick, alpha, state.config, &state.presentation.arrival.curve)
 	pod_common, pod, pod_found := find_pod(&session.simulation.world.entities, content.machines)
 	pulled, body_shown := field_viewport_camera(state, viewport, player, alpha)
 	camera, pod_offset := arrival_viewport_camera(state, viewport, player, pulled, view, pod, pod_found)
 	near, far := rlgl.GetCullDistanceNear(), rlgl.GetCullDistanceFar()
 	defer rlgl.SetClipPlanes(near, far)
-	draw_field_sky(&state.presentation.renderer.sky, camera, sky, viewport.presentation.particle_memory.satellite)
+	altitude := linalg.length(camera.position) - f32(session.planet.radius_metres)
+	sky_share := atmosphere_sky_share(altitude, state.config.atmosphere)
+	field_sky := altitude_day_sky(sky, sky_share)
+	if sky_share < 1 {
+		rl.ClearBackground(field_sky.colors.horizon)
+	}
+	draw_field_sky(&state.presentation.renderer.sky, camera, field_sky, viewport.presentation.particle_memory.satellite)
 	rlgl.SetClipPlanes(FIELD_NEAR_METRES, f64(session.planet.radius_metres * FIELD_FAR_RADII))
 	scene := Field_Scene {
 		state        = &session.simulation,
@@ -468,7 +481,7 @@ draw_field_viewport_world :: proc(state: ^Frame_State, viewport: ^Viewport, cont
 	draw_field_scene(scene, camera, frame_field_selection(state))
 	if view.phase == .Descent && pod_found {
 		pod_up, pod_forward := unit_vector_to_f32(pod.axes[FRAME_UP]), unit_vector_to_f32(pod.axes[FRAME_FORWARD])
-		travel := -arrival_path_direction(pod_up, pod_forward, state.config.arrival_angle_degrees)
+		travel := arrival_travel_direction(arrival_curve_at(&state.presentation.arrival.curve, view.curve_progress), pod_up, pod_forward)
 		rlgl.PushMatrix()
 		rlgl.Translatef(pod_offset.x, pod_offset.y, pod_offset.z)
 		draw_arrival_windows(&state.presentation.arrival, view, &session.simulation.world.entities, pod_common, content.machines.machines[pod_common.machine], travel, session.simulation.world.settings.seed)

@@ -348,6 +348,34 @@ draw_satellite :: proc(camera: rl.Camera3D, pass: Satellite_Pass) {
 	draw_sky_quad(white, camera.position + direction * SKY_DOME_RADIUS, direction, SATELLITE_SKY_SIZE, SATELLITE_SKY_COLOR)
 }
 
+// The sky above the atmosphere (0269, atmosphere_sky_share): black with
+// the stars, and the share of the day's sky reached two scale heights
+// under the top.
+SPACE_SKY_COLOR :: rl.Color{2, 3, 8, 255}
+ATMOSPHERE_FULL_SKY_SCALE_HEIGHTS :: 2.0
+
+// How much of the day's sky shows at an altitude above the planet's
+// radius: 0 at and above the atmosphere's top, rising with the air's
+// column above to 1 from two scale heights under the top down.
+atmosphere_sky_share :: proc(altitude_metres: f32, atmosphere: Atmosphere_Config) -> f32 {
+	depth := (f32(atmosphere.top_metres) - altitude_metres) / f32(atmosphere.scale_height_metres)
+	if depth <= 0 {
+		return 0
+	}
+	return min((1 - math.exp(-depth)) / (1 - math.exp(f32(-ATMOSPHERE_FULL_SKY_SCALE_HEIGHTS))), 1)
+}
+
+// The day's sky at a share of it: zenith and horizon mixed from
+// SPACE_SKY_COLOR, the blend scaled so the stars show in space by day;
+// the fog and the sun's tint kept. Unchanged at share 1.
+altitude_day_sky :: proc(sky: Day_Sky, share: f32) -> Day_Sky {
+	altitude_sky := sky
+	altitude_sky.colors.zenith = mix_color(SPACE_SKY_COLOR, sky.colors.zenith, share)
+	altitude_sky.colors.horizon = mix_color(SPACE_SKY_COLOR, sky.colors.horizon, share)
+	altitude_sky.blend = sky.blend * share
+	return altitude_sky
+}
+
 // Between BeginMode3D and EndMode3D, before anything else.
 draw_sky :: proc(renderer: ^Sky_Renderer, camera: rl.Camera3D, sky: Day_Sky, satellite: Satellite_Pass) {
 	begin_sky_pass()

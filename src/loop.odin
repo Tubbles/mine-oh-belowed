@@ -956,7 +956,7 @@ render_frame :: proc(state: ^Frame_State) {
 // every hatch's slide.
 play_field_session_sounds :: proc(state: ^Frame_State, session: ^Session) {
 	arrival := session.simulation.field.arrival
-	view := arrival_view(arrival, session.simulation.tick, f32(interpolation_alpha(session.accumulator)), state.config)
+	view := arrival_view(arrival, session.simulation.tick, f32(interpolation_alpha(session.accumulator)), state.config, &state.presentation.arrival.curve)
 	paused := session_ticks_held(state)
 	seed := session.simulation.world.settings.seed
 	memory := &state.presentation.arrival.sound_memory

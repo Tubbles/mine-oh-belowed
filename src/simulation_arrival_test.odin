@@ -1,5 +1,6 @@
 package game
 
+import "core:math/linalg"
 import "core:testing"
 
 // The arrival (work item 0200): the hold, the landing, Skip in lockstep,
@@ -14,9 +15,13 @@ arrival_test_config :: proc() -> Game_Config {
 	config := test_field_game_config()
 	config.arrival_ticks = ARRIVAL_TEST_TICKS
 	config.arrival_settle_ticks = shipped.arrival_settle_ticks
-	config.arrival_flame_ticks = shipped.arrival_flame_ticks
 	config.arrival_start_metres = shipped.arrival_start_metres
-	config.arrival_angle_degrees = shipped.arrival_angle_degrees
+	config.arrival_entry_angle_degrees = shipped.arrival_entry_angle_degrees
+	config.arrival_entry_speed_metres_per_second = shipped.arrival_entry_speed_metres_per_second
+	config.arrival_terminal_speed_metres_per_second = shipped.arrival_terminal_speed_metres_per_second
+	config.arrival_heat_threshold_percent = shipped.arrival_heat_threshold_percent
+	config.arrival_real_seconds = shipped.arrival_real_seconds
+	config.atmosphere = shipped.atmosphere
 	return config
 }
 
@@ -404,7 +409,8 @@ test_a_save_loaded_after_the_fall_has_no_fall :: proc(t: ^testing.T) {
 	start := state.players[0].field.position
 	tick_field_test_simulation(state, loaded_content, FIELD_PREDICTION_TEST_WALK)
 	testing.expect(t, state.players[0].field.position != start, "the walk moves the player")
-	testing.expect_value(t, arrival_view(state.field.arrival, 1000, 0, config).phase, Arrival_Phase.None)
+	curve := build_arrival_curve(config)
+	testing.expect_value(t, arrival_view(state.field.arrival, 1000, 0, config, &curve).phase, Arrival_Phase.None)
 }
 
 // A joiner at tick 1000 starts from the snapshot's files: a second player
@@ -435,7 +441,8 @@ test_a_joiner_after_the_fall_has_no_fall :: proc(t: ^testing.T) {
 	step := cast([3]i64)(state.players[1].field.position - before)
 	testing.expect(t, step.x * heading.x + step.y * heading.y + step.z * heading.z > 0, "the joiner walks ahead on the next tick")
 	testing.expect(t, !field_arrival_falling(state.field.arrival))
-	testing.expect_value(t, arrival_view(state.field.arrival, state.tick, 0, config).phase, Arrival_Phase.None)
+	curve := build_arrival_curve(config)
+	testing.expect_value(t, arrival_view(state.field.arrival, state.tick, 0, config, &curve).phase, Arrival_Phase.None)
 }
 
 // A save taken at tick 300 resumes the fall and lands at tick 600, not
@@ -554,22 +561,26 @@ test_the_arrivals_presentation_leaves_the_hash :: proc(t: ^testing.T) {
 	plain, plain_content := run_arrival_test_world(config, content, 0)
 	defer end_session(plain)
 	salt := watched.simulation.world.settings.seed
+	curve := build_arrival_curve(config)
 	for tick in 1 ..= 700 {
 		tick_field_test_simulation(&watched.simulation, watched_content, {})
 		tick_field_test_simulation(&plain.simulation, plain_content, {})
 		state := &watched.simulation
-		view := arrival_view(state.field.arrival, state.tick, 0.5, config)
+		view := arrival_view(state.field.arrival, state.tick, 0.5, config, &curve)
 		pod, frame, found := find_pod(&state.world.entities, watched_content.machines)
 		testing.expect(t, found)
 		up, forward := unit_vector_to_f32(frame.axes[FRAME_UP]), unit_vector_to_f32(frame.axes[FRAME_FORWARD])
-		arrival_descent_offset(view, up, forward, config)
+		arrival_descent_offset(view, up, forward, &curve)
+		travel := arrival_travel_direction(arrival_curve_at(&curve, view.curve_progress), up, forward)
 		machine := watched_content.machines.machines[pod.machine]
 		testing.expect(t, machine.window_count > 0)
 		for index in 0 ..< machine.window_count {
 			window := machine.windows[index]
-			arrival_window_corners(window.centre, window.normal, -arrival_path_direction(up, forward, config.arrival_angle_degrees), up, window.radius)
+			arrival_window_corners(window.centre, window.normal, travel, up, window.radius)
 		}
 		arrival_shake_offset(view.seconds_since_hit, salt)
+		arrival_buffet_offset(view.seconds, view.heat, salt)
+		atmosphere_sky_share(linalg.dot(arrival_descent_offset(view, up, forward, &curve), up), config.atmosphere)
 		for index in 0 ..< ARRIVAL_DUST_PUFFS {
 			arrival_dust_puff(index, view.seconds_since_hit, salt)
 		}

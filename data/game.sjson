@@ -139,24 +139,44 @@ belt_runs = {
 bare_ground_flatness_millimetres = 250
 bare_ground_life_minutes = 60
 salvage_percent = 80
-// The arrival (work item 0200, doc/content.md, The arrival): a new world's
-// first arrival_ticks (0 for no fall, else up to 3600 and more than the
-// settle and flame ticks together) are the pod's fall, the players
-// strapped into the pod's chair, the look free; at the last one it
-// lands, the hatches closed (the airlock opens them as a player comes,
-// pod_airlock). The hit comes
-// arrival_settle_ticks (0 to 300) before that, the flames rise over the
-// arrival_flame_ticks (0 to 1200) before the hit. The fall starts
-// arrival_start_metres (20 to 4096) above the crater's floor on a path
-// tilted arrival_angle_degrees (0 to 60) from the crater's up; the path,
-// arrival_start_metres over the angle's cosine, stays inside 0.6 of
-// field_view.level_distances_metres' last entry, where the far terrain's
-// fog starts.
-arrival_ticks = 600
+// The arrival (work items 0200, 0269, doc/content.md, The arrival): a
+// new world's first arrival_ticks (0 for no fall, else up to 3600 and
+// more than the settle ticks) are the pod's fall, the players strapped
+// into the pod's chair, the look free; at the last one it lands, the
+// hatches closed (the airlock opens them as a player comes,
+// pod_airlock). The hit comes arrival_settle_ticks (0 to 300) before
+// that. The fall is an atmospheric entry: the pod leaves
+// arrival_start_metres (20 to 4096, at least 34 m above atmosphere's
+// top_metres) above the crater's floor at
+// arrival_entry_speed_metres_per_second (1 to 1000),
+// arrival_entry_angle_degrees (5 to 85) below the horizontal towards its
+// door; gravity and a drag of the air's density times the speed squared,
+// arrival_terminal_speed_metres_per_second (1 to 1000) the terminal
+// speed at density 1, bend the path towards vertical. The curve is
+// integrated once in its own seconds and stretched over the descent:
+// its last arrival_real_seconds (1 to 60, below the curve's seconds and
+// the descent's) play 1:1 at the end, the natural time before them is
+// stretched over the rest, so the seconds tune the tempo and the keys
+// the shape. The heating is the density times the speed cubed over its
+// peak; below arrival_heat_threshold_percent (0 to 90) of the peak
+// nothing glows, and the hit must lie below it. The start lies inside
+// 0.9 of field_view.level_distances_metres' last entry from the crater.
+// The atmosphere's density falls as exp(-altitude / scale_height_metres)
+// (1 to 4096) and is 0 above top_metres (64 to 4096); top_metres less two
+// scale heights stays at least 64 m: the sky is black with stars above
+// the top, the day's from two scale heights under it.
+arrival_ticks = 1860
 arrival_settle_ticks = 60
-arrival_flame_ticks = 240
-arrival_start_metres = 400
-arrival_angle_degrees = 45
+arrival_start_metres = 810
+arrival_entry_angle_degrees = 45
+arrival_entry_speed_metres_per_second = 75
+arrival_terminal_speed_metres_per_second = 20
+arrival_heat_threshold_percent = 20
+arrival_real_seconds = 6
+atmosphere = {
+	top_metres = 650
+	scale_height_metres = 145
+}
 // The pod's airlock (work items 0222, 0231, doc/content.md, Hatches): a
 // hatch of the pod is open exactly while some player's capsule, standing
 // or crouched, comes within reach_millimetres (50 to 300) of its cells.
