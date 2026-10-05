@@ -11,8 +11,9 @@
 // the higher it reaches. A teardrop mask shapes it, the density is eaten
 // from the top, and a continuous ramp runs from the dark red tips
 // through the orange body to the yellow white core. A soft halo glows
-// round it. The flicker (0.7 to 1, hashed noise in render_flames.odin)
-// moves the reach and the brightness, never the hue. The flicker, the
+// round it. The flicker (0.4 to 1.5, fire_flicker in render_flames.odin)
+// moves the reach, the brightness and the place on the ramp, hotter
+// whiter, and only the flow reads the clock here. The flicker, the
 // seed and the height over the width come per quad from flame.vs. Under
 // reduced motion (calm 1) only the flow's slowest octave rises and the
 // bend stands still.
@@ -41,6 +42,9 @@ uniform vec3 body_color;
 uniform vec3 tip_color;
 
 out vec4 final_color;
+
+// The flicker's mean, FIRE_FLICKER_MEAN in render_flames.odin.
+const float fire_flicker_mean = 0.85;
 
 // The rise of each octave in hundredths of a noise cell a second: the
 // flow's 1.13, 1.71, 2.47 and 3.61, and the bend's, those plus its own
@@ -114,8 +118,8 @@ void main()
     float aspect = fragment_aspect;
     float flame_seed = fragment_seed;
     bool still = calm > 0.5;
-    // The reach follows the flicker.
-    float h = uv.y / (0.8 + 0.2 * flicker);
+    // The reach follows the flicker: the highest flare fills the quad.
+    float h = uv.y / (0.82 + 0.12 * flicker);
     if (h >= 1.0)
     {
         discard;
@@ -133,8 +137,8 @@ void main()
     float n = fbm(q * 2.3 + s, 4u, still ? 1u : 4u, RISE_HUNDREDTHS);
     // The density, eaten from the top.
     float d = clamp(m * (1.35 * n + 0.62 - 1.15 * h), 0.0, 1.0);
-    // The ramp: tips, body, core.
-    float heat = clamp(d * (1.2 - 0.6 * h), 0.0, 1.0);
+    // The ramp: tips, body, core, the flicker moving the place on it.
+    float heat = clamp(d * (1.2 - 0.6 * h) * flicker / fire_flicker_mean, 0.0, 1.0);
     vec3 c = mix(tip_color, body_color, smoothstep(0.08, 0.5, heat));
     c = mix(c, core_color, smoothstep(0.55, 0.95, heat));
     float halo = 0.22 * (1.0 - smoothstep(0.0, width * 1.7 + 0.12, abs(x))) * (1.0 - h) * smoothstep(0.0, 0.12, h);

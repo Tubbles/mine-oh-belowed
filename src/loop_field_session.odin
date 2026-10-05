@@ -28,6 +28,10 @@ FIELD_TORCH_COLOR :: rl.Color{255, 196, 96, 255}
 // A field torch's flame is the block torch's scaled as its box is to the
 // block torch's post (0274).
 FIELD_TORCH_FLAME_SCALE :: FIELD_TORCH_SIZE_METRES / (2 * POST_HALF_WIDTH)
+// A field torch's point light (0284): the firebox lamp's colour, reaching
+// a room of about 10 m (data/lighting.sjson).
+FIELD_TORCH_LIGHT_COLOR :: [3]f32{1.0, 0.55, 0.2}
+FIELD_TORCH_LIGHT_RADIUS_METRES :: 5.0
 // A player whose body model did not load is drawn as a capsule.
 FIELD_PLAYER_CAPSULE_COLOR :: rl.Color{70, 110, 180, 255}
 
@@ -189,11 +193,11 @@ field_sky_camera :: proc(camera: rl.Camera3D, up: [3]f32) -> rl.Camera3D {
 	return rl.Camera3D{position = {}, target = look, up = sky_up, fovy = camera.fovy, projection = camera.projection}
 }
 
-// The working arms', machines' and portholes' lights nearest the camera,
-// before draw_field, to the field shader and the model shader. They are
-// moved by the pod's transform with the models they light
-// (moved_point_light), so the cabin is lit through the fall.
-set_field_scene_point_lights :: proc(scene: Field_Scene, camera: rl.Camera3D) {
+// The working arms', machines', portholes' and torches' lights nearest
+// the eye. The arms', machines' and portholes' are moved by the pod's
+// transform with the models they light (moved_point_light), so the cabin
+// is lit through the fall; the torches stand on the field, unmoved.
+gather_field_scene_point_lights :: proc(scene: Field_Scene, eye: [3]f32) -> (nearest: [MAXIMUM_POINT_LIGHTS]Point_Light, count: int) {
 	lights := make([dynamic]Point_Light, context.temp_allocator)
 	entities := &scene.state.world.entities
 	for inserter in entities.inserters.entries {
@@ -212,7 +216,14 @@ set_field_scene_point_lights :: proc(scene: Field_Scene, camera: rl.Camera3D) {
 			light = moved_point_light(light, transform)
 		}
 	}
-	nearest, _ := nearest_point_lights(lights[:], camera.position)
+	append_field_torch_lights(&lights, scene.state.field.torches[:], scene.state.field.spacing_millimetres, eye, model_frame_seconds(scene.frame), scene.frame.reduced_motion)
+	return nearest_point_lights(lights[:], eye)
+}
+
+// The scene's lights (gather_field_scene_point_lights), before
+// draw_field, to the field shader and the model shader.
+set_field_scene_point_lights :: proc(scene: Field_Scene, camera: rl.Camera3D) {
+	nearest, _ := gather_field_scene_point_lights(scene, camera.position)
 	set_field_point_lights(scene.renderer, nearest)
 	set_model_point_lights(scene.models, nearest)
 }
@@ -264,7 +275,34 @@ field_torch_flame_draw :: proc(torch: Field_Torch, spacing_millimetres: int, eye
 	salt := flame_salt(World_Coordinate(torch.sample), BLOCK_FRAME)
 	width, height := f32(FLAME_SIZE * FIELD_TORCH_FLAME_SCALE), f32(FLAME_TORCH_HEIGHT * FIELD_TORCH_FLAME_SCALE)
 	corners := flame_quad_corners(base, flame_facing_across(base, eye, up), up, width, height)
-	return {corners = corners, seed = flame_seed(salt), flicker = flame_flicker(seconds, salt, reduced_motion), aspect = height / width}
+	return {corners = corners, seed = flame_seed(salt), flicker = field_torch_flicker(torch, seconds, reduced_motion), aspect = height / width}
+}
+
+// A field torch's fire flicker, the same for its flame and its light.
+field_torch_flicker :: proc(torch: Field_Torch, seconds: f64, reduced_motion: bool) -> f32 {
+	return fire_flicker(seconds, flame_salt(World_Coordinate(torch.sample), BLOCK_FRAME), reduced_motion)
+}
+
+// A field torch's light (0284): at its flame's middle above the box,
+// the colour flickering with the flame (fire_point_light_flicker),
+// unclipped, so it lights the ground, the walls and the player.
+field_torch_point_light :: proc(torch: Field_Torch, spacing_millimetres: int, seconds: f64, reduced_motion: bool) -> Point_Light {
+	centre := world_position_to_metres(sample_to_world_position(torch.sample, spacing_millimetres))
+	up := linalg.normalize(centre)
+	position := centre + up * (FIELD_TORCH_SIZE_METRES / 2 + FLAME_TORCH_HEIGHT * FIELD_TORCH_FLAME_SCALE / 2)
+	color := FIELD_TORCH_LIGHT_COLOR * fire_point_light_flicker(field_torch_flicker(torch, seconds, reduced_motion))
+	return {position = position, color = color, radius = FIELD_TORCH_LIGHT_RADIUS_METRES}
+}
+
+// The lights of the field's torches within FLAME_DRAW_DISTANCE_METRES of
+// the eye, so a torch lights where its flame draws, appended.
+append_field_torch_lights :: proc(lights: ^[dynamic]Point_Light, torches: []Field_Torch, spacing_millimetres: int, eye: [3]f32, seconds: f64, reduced_motion: bool) {
+	for torch in torches {
+		centre := world_position_to_metres(sample_to_world_position(torch.sample, spacing_millimetres))
+		if linalg.length2(centre - eye) <= FLAME_DRAW_DISTANCE_METRES * FLAME_DRAW_DISTANCE_METRES {
+			append(lights, field_torch_point_light(torch, spacing_millimetres, seconds, reduced_motion))
+		}
+	}
 }
 
 // The flames of the field's torches within FLAME_DRAW_DISTANCE_METRES of

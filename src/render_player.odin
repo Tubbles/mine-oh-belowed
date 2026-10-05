@@ -118,7 +118,7 @@ sprint_kick_degrees :: proc(settings: Settings) -> f32 {
 	return settings.reduced_motion ? 0 : settings.sprint_field_of_view_kick
 }
 
-// The block light's flicker reads this time; under reduced motion it
+// The weather's wind and clouds read this time; under reduced motion it
 // stands still at 0 (work item 0074).
 flicker_seconds :: proc(render_seconds: f64, reduced_motion: bool) -> f64 {
 	return reduced_motion ? 0 : render_seconds

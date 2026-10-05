@@ -1,6 +1,5 @@
 package game
 
-import "core:math"
 import "core:strings"
 import rl "shared:raylib"
 import "shared:raylib/rlgl"
@@ -14,11 +13,6 @@ SHADER_LOAD_ATTEMPTS :: 3
 
 // The fog starts at this share of its end distance (fog_distances).
 FOG_START_SHARE :: 0.6
-// Block light flickers like torchlight (work item 0072): two sines of the
-// render time with these periods, between LIGHT_FLICKER_MINIMUM and 1.
-LIGHT_FLICKER_FIRST_SECONDS :: 0.17
-LIGHT_FLICKER_SECOND_SECONDS :: 0.41
-LIGHT_FLICKER_MINIMUM :: 0.96
 
 // One raylib mesh per part: a chunk only needs more than one when it
 // exceeds the u16 index range (MESH_PART_VERTEX_LIMIT). water_meshes are
@@ -50,7 +44,7 @@ Chunk_Renderer :: struct {
 	wind_strength_location:         i32,
 	cloud_offset_location:          i32,
 	cloud_shadow_strength_location: i32,
-	flicker_location:               i32,
+	torch_flickers_location:        i32,
 	// The sky pass (render_sky.odin) lives with the chunks it sits behind.
 	sky:                            Sky_Renderer,
 	// The water pass (render_water.odin, work item 0065).
@@ -211,7 +205,7 @@ use_chunk_shader :: proc(renderer: ^Chunk_Renderer, shader: rl.Shader) {
 	renderer.wind_strength_location = rl.GetShaderLocation(shader, "wind_strength")
 	renderer.cloud_offset_location = rl.GetShaderLocation(shader, "cloud_offset")
 	renderer.cloud_shadow_strength_location = rl.GetShaderLocation(shader, "cloud_shadow_strength")
-	renderer.flicker_location = rl.GetShaderLocation(shader, "flicker")
+	renderer.torch_flickers_location = rl.GetShaderLocation(shader, "torch_flickers")
 	// DrawMesh binds the material's second map to this location.
 	shader.locs[rl.ShaderLocationIndex.MAP_METALNESS] = rl.GetShaderLocation(shader, "cloud_texture")
 	renderer.material.shader = shader
@@ -369,16 +363,8 @@ apply_daylight :: proc(renderer: ^Chunk_Renderer, sky: Day_Sky) {
 	rl.SetShaderValue(water.material.shader, water.sky_tint_location, &tint, .VEC3)
 }
 
-// Every block light's brightness factor at the render time, 0.96 to 1.
-light_flicker :: proc(seconds: f64) -> f32 {
-	first := math.sin(seconds * math.TAU / LIGHT_FLICKER_FIRST_SECONDS)
-	second := math.sin(seconds * math.TAU / LIGHT_FLICKER_SECOND_SECONDS)
-	return f32(1 - (1 - LIGHT_FLICKER_MINIMUM) * (2 - first - second) / 4)
-}
-
-// The weather's fog distances (on the water material too), plant sway,
-// cloud shadows and the block light's flicker, once per frame; seconds is
-// the render time.
+// The weather's fog distances (on the water material too), plant sway
+// and cloud shadows, once per frame; seconds is the render time.
 apply_weather :: proc(renderer: ^Chunk_Renderer, look: Weather_Look, seconds: f64) {
 	shader := renderer.material.shader
 	fog_start, fog_end := weather_fog_distances(LOAD_RADIUS_HORIZONTAL, look.fog_scale)
@@ -386,18 +372,24 @@ apply_weather :: proc(renderer: ^Chunk_Renderer, look: Weather_Look, seconds: f6
 	wind_strength := look.wind_strength
 	offset := cloud_offset(seconds)
 	shadow := look.cloud_shadow_strength
-	flicker := light_flicker(seconds)
 	rl.SetShaderValue(shader, renderer.fog_start_location, &fog_start, .FLOAT)
 	rl.SetShaderValue(shader, renderer.fog_end_location, &fog_end, .FLOAT)
 	rl.SetShaderValue(shader, renderer.wind_time_location, &wind, .FLOAT)
 	rl.SetShaderValue(shader, renderer.wind_strength_location, &wind_strength, .FLOAT)
 	rl.SetShaderValue(shader, renderer.cloud_offset_location, &offset, .VEC2)
 	rl.SetShaderValue(shader, renderer.cloud_shadow_strength_location, &shadow, .FLOAT)
-	rl.SetShaderValue(shader, renderer.flicker_location, &flicker, .FLOAT)
 	water := &renderer.water
-	rl.SetShaderValue(water.material.shader, water.flicker_location, &flicker, .FLOAT)
 	rl.SetShaderValue(water.material.shader, water.fog_start_location, &fog_start, .FLOAT)
 	rl.SetShaderValue(water.material.shader, water.fog_end_location, &fog_end, .FLOAT)
+}
+
+// The block torches' flickers (block_torch_flicker_uniform) on the chunk
+// shader and the water shader, once per frame before draw_chunks.
+apply_torch_flickers :: proc(renderer: ^Chunk_Renderer, torches: [MAXIMUM_BLOCK_TORCH_FLICKERS][4]f32) {
+	values := torches
+	rl.SetShaderValueV(renderer.material.shader, renderer.torch_flickers_location, &values, .VEC4, MAXIMUM_BLOCK_TORCH_FLICKERS)
+	water := &renderer.water
+	rl.SetShaderValueV(water.material.shader, water.torch_flickers_location, &values, .VEC4, MAXIMUM_BLOCK_TORCH_FLICKERS)
 }
 
 // Must run between BeginMode3D and EndMode3D, which sets the projection

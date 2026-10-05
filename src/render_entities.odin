@@ -274,12 +274,13 @@ append_machine_lights :: proc(lights: ^[dynamic]Point_Light, entities: ^Entities
 // and capsules never work; an inserter's light is its arm's lamp
 // (arm_point_light). The models give each box its top (machine_model_top).
 // A furnace's lamps flicker with its flames (the salt and the clock of
-// gather_machine_flames, 0274).
+// gather_machine_flames, 0274), at FIRE_POINT_LIGHT_SHARE of their swing
+// (fire_point_light_flicker, 0284).
 gather_machine_lights :: proc(lights: ^[dynamic]Point_Light, entities: ^Entities, machines: Machine_Registry, models: Model_Renderer, frame: Model_Frame) {
 	seconds := model_frame_seconds(frame)
 	for furnace in entities.furnaces.entries {
 		if furnace.alive {
-			flicker := flame_flicker(seconds, flame_salt(furnace.origin, furnace.frame), frame.reduced_motion)
+			flicker := fire_point_light_flicker(fire_flicker(seconds, flame_salt(furnace.origin, furnace.frame), frame.reduced_motion))
 			append_machine_lights(lights, entities, furnace.common, machines.machines[furnace.machine], furnace_model_working(furnace), machine_model_top(models, furnace.common), flicker)
 		}
 	}

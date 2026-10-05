@@ -197,3 +197,49 @@ test_the_plasma_shader_knows_the_flicker_mean :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(source, fmt.tprintf("const float FLICKER_MEAN = %.2f;", FIRE_FLICKER_MEAN)), "arrival.fs's FLICKER_MEAN differs from FIRE_FLICKER_MEAN")
 	testing.expect(t, strings.contains(source, "\nuniform float calm;\n"), "arrival.fs does not declare calm")
 }
+
+// The block light flicker of a shader: from `float torch_light_flicker(`
+// to its closing brace; "" without it.
+shader_torch_light_flicker :: proc(source: string) -> string {
+	start := strings.index(source, "float torch_light_flicker(")
+	if start < 0 {
+		return ""
+	}
+	length := strings.index(source[start:], "\n}\n")
+	if length < 0 {
+		return ""
+	}
+	return source[start:][:length + 3]
+}
+
+// Work item 0284: the chunk and water shaders take the same torch
+// flickers, MAXIMUM_BLOCK_TORCH_FLICKERS of them reaching
+// BLOCK_TORCH_LIGHT_REACH_BLOCKS, and blend them line for line alike;
+// neither keeps the old single flicker.
+@(test)
+test_the_block_shaders_share_the_torch_flicker :: proc(t: ^testing.T) {
+	chunk := #load("../data/shaders/chunk.fs", string)
+	water := #load("../data/shaders/water.fs", string)
+	declaration := fmt.tprintf("uniform vec4 torch_flickers[%du];", MAXIMUM_BLOCK_TORCH_FLICKERS)
+	reach := fmt.tprintf("const float torch_reach_blocks = %.1f;", BLOCK_TORCH_LIGHT_REACH_BLOCKS)
+	for source, index in ([2]string{chunk, water}) {
+		name := index == 0 ? "chunk.fs" : "water.fs"
+		testing.expectf(t, strings.contains(source, declaration), "%s does not declare %s", name, declaration)
+		testing.expectf(t, strings.contains(source, reach), "%s does not hold %s", name, reach)
+		testing.expectf(t, !strings.contains(source, "uniform float flicker;"), "%s still declares the single flicker", name)
+	}
+	chunk_flicker := shader_torch_light_flicker(chunk)
+	testing.expect(t, chunk_flicker != "" && chunk_flicker == shader_torch_light_flicker(water), "torch_light_flicker differs between chunk.fs and water.fs")
+}
+
+// Work item 0284: the flame shaders decode the flicker over
+// FIRE_FLICKER_HIGHEST and move the ramp about FIRE_FLICKER_MEAN.
+@(test)
+test_the_flame_shaders_read_the_fire_flicker_bounds :: proc(t: ^testing.T) {
+	vertex := #load("../data/shaders/flame.vs", string)
+	fragment := #load("../data/shaders/flame.fs", string)
+	highest := fmt.tprintf("const float fire_flicker_highest = %v;", FIRE_FLICKER_HIGHEST)
+	mean := fmt.tprintf("const float fire_flicker_mean = %v;", FIRE_FLICKER_MEAN)
+	testing.expectf(t, strings.contains(vertex, highest), "flame.vs does not hold %s", highest)
+	testing.expectf(t, strings.contains(fragment, mean), "flame.fs does not hold %s", mean)
+}

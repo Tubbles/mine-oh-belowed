@@ -206,7 +206,7 @@ draw_model_preview_scene :: proc(renderer: Model_Renderer, machine: Machine, mac
 			draw_model_layers(renderer, model.part, body * transform, light, glow)
 		}
 		if pose.working {
-			machine_flame_draws(machine, body, 0, FLAME_FLICKER_MEAN, &flames)
+			machine_flame_draws(machine, body, 0, FIRE_FLICKER_MEAN, &flames)
 		}
 		if pose.collision && len(machine.collision) > 0 {
 			wires := transmute([16]f32)body

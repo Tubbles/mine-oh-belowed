@@ -5,8 +5,9 @@ import "core:math/linalg"
 // Point lights of working parts (work item 0175, DESIGN.md: point lights
 // come on top for working parts and never replace the field's light).
 // Each frame the renderer gathers the lights of the parts that work (the
-// arms' lamps and, since work item 0224, the lamps a machine's record
-// names), keeps the MAXIMUM_POINT_LIGHTS nearest the camera and hands them
+// arms' lamps, since work item 0224 the lamps a machine's record names
+// and, since 0284, the field torches near the camera), keeps the
+// MAXIMUM_POINT_LIGHTS nearest the camera and hands them
 // to the field shader and the model shader (set_field_point_lights,
 // set_model_point_lights), which add a soft term falling off to zero at
 // each light's radius. Positions and radii are in the world's metres.

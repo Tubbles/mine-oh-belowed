@@ -6,28 +6,27 @@ import "core:math/linalg"
 import "core:slice"
 import "core:testing"
 
-// Work item 0274: the flicker and the embers stay in their range, never
-// repeat within ten seconds at any lag, differ between salts, and stand
-// at the mean under reduced motion; late in a long session they still
-// hold their range.
+// Work item 0274, since 0284 the embers only (fire_flicker has its own
+// test): the ember glow stays in its range, never repeats at a lag of
+// one to ten seconds (a slow pulse barely moves within a second),
+// differs between salts, and stands at the mean under reduced motion;
+// late in a long session it still holds its range.
 @(test)
-test_the_flame_flicker_has_no_period :: proc(t: ^testing.T) {
+test_the_ember_glow_has_no_period :: proc(t: ^testing.T) {
 	SAMPLES :: 60 * 60
+	SHORTEST_LAG :: 60
 	LONGEST_LAG :: 600
 	series: [2][SAMPLES]f32
 	for salt in 0 ..< 2 {
 		for index in 0 ..< SAMPLES {
 			seconds := f64(index) / 60
-			flicker := flame_flicker(seconds, u64(salt + 1), false)
 			ember := flame_ember_glow(seconds, u64(salt + 1), false)
-			testing.expectf(t, flicker >= 0.7 && flicker <= 1, "salt %d at %v s: flicker %v", salt + 1, seconds, flicker)
 			testing.expectf(t, ember >= 0.7 && ember <= 1, "salt %d at %v s: ember %v", salt + 1, seconds, ember)
-			testing.expect_value(t, flame_flicker(seconds, u64(salt + 1), true), FLAME_FLICKER_MEAN)
-			testing.expect_value(t, flame_ember_glow(seconds, u64(salt + 1), true), FLAME_FLICKER_MEAN)
-			series[salt][index] = flicker
+			testing.expect_value(t, flame_ember_glow(seconds, u64(salt + 1), true), FIRE_FLICKER_MEAN)
+			series[salt][index] = ember
 		}
-		testing.expectf(t, slice.max(series[salt][:]) - slice.min(series[salt][:]) > 0.1, "salt %d: the flicker barely moves", salt + 1)
-		for lag in 1 ..= LONGEST_LAG {
+		testing.expectf(t, slice.max(series[salt][:]) - slice.min(series[salt][:]) > 0.1, "salt %d: the ember glow barely moves", salt + 1)
+		for lag in SHORTEST_LAG ..= LONGEST_LAG {
 			largest: f32
 			for index in 0 ..< SAMPLES - lag {
 				largest = max(largest, abs(series[salt][index] - series[salt][index + lag]))
@@ -39,8 +38,8 @@ test_the_flame_flicker_has_no_period :: proc(t: ^testing.T) {
 	for index in 0 ..< SAMPLES {
 		apart = max(apart, abs(series[0][index] - series[1][index]))
 	}
-	testing.expectf(t, apart > 0.02, "salts 1 and 2 flicker together")
-	late := flame_flicker(36000.5, 1, false)
+	testing.expectf(t, apart > 0.02, "salts 1 and 2 glow together")
+	late := flame_ember_glow(36000.5, 1, false)
 	testing.expectf(t, late >= 0.7 && late <= 1, "ten hours in: %v", late)
 }
 
@@ -51,8 +50,9 @@ test_flame_quad_corners_stand_on_their_base :: proc(t: ^testing.T) {
 }
 
 // Work item 0274: an idle furnace has neither flames nor its lamp; a
-// burning one its four flames on its coal bed, inside its box, and the
-// lamp at the record's colour times the flicker.
+// burning one its four flames on its coal bed, inside its box, each at
+// the fire flicker's bounds, and the lamp at the record's colour times
+// the flames' flicker as a point light takes it (0284).
 @(test)
 test_the_furnace_burns_only_while_it_works :: proc(t: ^testing.T) {
 	content := make_test_content()
@@ -86,13 +86,16 @@ test_the_furnace_burns_only_while_it_works :: proc(t: ^testing.T) {
 		base := (draw.corners[0] + draw.corners[1]) / 2
 		inside := base.x >= low.x && base.x <= high.x && base.y >= low.y && base.y <= high.y && base.z >= low.z && base.z <= high.z
 		testing.expectf(t, inside, "flame %d's base %v is outside the furnace's box %v to %v", index, base, low, high)
+		testing.expectf(t, draw.flicker >= FIRE_FLICKER_LOWEST && draw.flicker <= FIRE_FLICKER_HIGHEST, "flame %d's flicker %v", index, draw.flicker)
 	}
 	gather_machine_lights(&lights, &world.entities, content.machines, Model_Renderer{}, frame)
 	testing.expect_value(t, len(lights), 1)
 	flicker := lights[0].color.r / machine.lights[0].color.r
-	testing.expectf(t, flicker >= 0.7 && flicker <= 1, "the lamp's flicker %v", flicker)
+	lowest, highest := fire_point_light_flicker(FIRE_FLICKER_LOWEST), fire_point_light_flicker(FIRE_FLICKER_HIGHEST)
+	testing.expectf(t, flicker >= lowest - 1e-5 && flicker <= highest + 1e-5, "the lamp's flicker %v", flicker)
 	testing.expect(t, linalg.length(lights[0].color - machine.lights[0].color * flicker) < 1e-5, "the lamp keeps the record's hue")
-	testing.expectf(t, abs(flicker - draws[0].flicker) < 1e-5, "the lamp flickers %v, its flames %v", flicker, draws[0].flicker)
+	expected := fire_point_light_flicker(draws[0].flicker)
+	testing.expectf(t, abs(flicker - expected) < 1e-5, "the lamp flickers %v, its flames' %v as a light %v", flicker, draws[0].flicker, expected)
 }
 
 // Work item 0274, the review's fix round: a frame's flames are cut to
@@ -126,11 +129,18 @@ test_the_flame_gather_caps_sorts_and_leaves_far_torches_out :: proc(t: ^testing.
 	}
 }
 
-// The quad's values survive the vertex colour as flame.vs decodes them.
+// The quad's values survive the vertex colour as flame.vs decodes them:
+// the flicker over FIRE_FLICKER_HIGHEST (0284), clamped to the byte.
 @(test)
 test_flame_vertex_color_carries_the_quad_values :: proc(t: ^testing.T) {
 	color := flame_vertex_color(Flame_Draw{seed = 1.25, flicker = 0.85, aspect = 1.6})
-	testing.expect_value(t, color, [4]u8{217, 64, 0, 160})
+	testing.expect_value(t, [3]u8{color.g, color.b, color.a}, [3]u8{64, 0, 160})
+	decoded := f32(color.r) / 255 * FIRE_FLICKER_HIGHEST
+	testing.expectf(t, abs(decoded - 0.85) <= FIRE_FLICKER_HIGHEST / 255, "0.85 decodes as %v", decoded)
+	testing.expect_value(t, flame_vertex_color(Flame_Draw{flicker = 1.5}).r, 255)
+	testing.expect_value(t, flame_vertex_color(Flame_Draw{flicker = 3}).r, 255)
+	testing.expect_value(t, flame_vertex_color(Flame_Draw{flicker = 0}).r, 0)
+	testing.expect_value(t, flame_vertex_color(Flame_Draw{flicker = 0.4}).r, 68)
 	wide := flame_vertex_color(Flame_Draw{seed = 9.5, flicker = 1, aspect = 120})
 	testing.expect_value(t, int(wide.b) * 256 + int(wide.a), 12000)
 	testing.expect_value(t, wide.g, 128)
@@ -139,6 +149,157 @@ test_flame_vertex_color_carries_the_quad_values :: proc(t: ^testing.T) {
 		first := flame_vertex_color(Flame_Draw{seed = flame_seed(salt)}).g
 		second := flame_vertex_color(Flame_Draw{seed = flame_seed(salt + 1)}).g
 		testing.expectf(t, first != second, "salts %d and %d share the seed byte %d", salt, salt + 1, first)
+	}
+}
+
+// Work item 0284: a field torch within reach gives one light, above its
+// box, of the torch colour times its flame's flicker as a point light
+// takes it, at the same seconds; a torch past FLAME_DRAW_DISTANCE_METRES
+// gives none; under reduced motion the colour holds at the mean.
+@(test)
+test_a_field_torch_lights_with_its_flames_flicker :: proc(t: ^testing.T) {
+	SPACING :: 500
+	torch := Field_Torch{sample = {1, 4000, 2}}
+	far := Field_Torch{sample = {400, 4000, 0}}
+	eye := [3]f32{0.2, 2001, 0.1}
+	centre := world_position_to_metres(sample_to_world_position(torch.sample, SPACING))
+	up := linalg.normalize(centre)
+	for seconds in ([2]f64{10.25, 3600.5}) {
+		lights := make([dynamic]Point_Light, context.temp_allocator)
+		append_field_torch_lights(&lights, {torch, far}, SPACING, eye, seconds, false)
+		testing.expect_value(t, len(lights), 1)
+		flame := field_torch_flame_draw(torch, SPACING, eye, seconds, false)
+		testing.expect_value(t, lights[0].color, FIELD_TORCH_LIGHT_COLOR * fire_point_light_flicker(flame.flicker))
+		testing.expect_value(t, lights[0].radius, FIELD_TORCH_LIGHT_RADIUS_METRES)
+		_, clipped := lights[0].clip_box.?
+		testing.expect(t, !clipped, "a field torch's light is not clipped")
+		height := linalg.dot(lights[0].position - centre, up)
+		testing.expectf(t, height > FIELD_TORCH_SIZE_METRES / 2, "the light stands %v m above the box's centre", height)
+	}
+	calm := field_torch_point_light(torch, SPACING, 10.25, true)
+	testing.expect_value(t, calm.color, FIELD_TORCH_LIGHT_COLOR * FIRE_FLICKER_MEAN)
+}
+
+// Work item 0284: the field torches share the eight point light slots
+// with the window lights, nearest the eye first; the window lights come
+// back moved by the pod's transform and the torches' lights unmoved.
+@(test)
+test_field_torch_lights_share_the_eight_slots_unmoved :: proc(t: ^testing.T) {
+	SPACING :: 500
+	eye := [3]f32{0.2, 2001, 0.1}
+	state: Simulation_State
+	state.field.spacing_millimetres = SPACING
+	state.field.torches = make([dynamic]Field_Torch, context.temp_allocator)
+	for x in i32(-2) ..< 2 {
+		for z in i32(-1) ..< 2 {
+			append(&state.field.torches, Field_Torch{sample = {x, 4000, z}})
+		}
+	}
+	testing.expect_value(t, len(state.field.torches), 12)
+	shift := [3]f32{0, 0, 0.5}
+	transform := matrix[4, 4]f32{
+		1, 0, 0, shift.x,
+		0, 1, 0, shift.y,
+		0, 0, 1, shift.z,
+		0, 0, 0, 1,
+	}
+	window_lights := []Point_Light{{position = eye + {0, -0.1, 0} - shift, color = {1, 0.5, 0.2}, radius = 2}, {position = eye + {0.1, 0, 0} - shift, color = {1, 0.5, 0.2}, radius = 2}}
+	frame := Model_Frame{tick = 600, tick_rate = 60}
+	scene := Field_Scene{state = &state, frame = frame, pod_transform = transform, window_lights = window_lights}
+	nearest, count := gather_field_scene_point_lights(scene, eye)
+	testing.expect_value(t, count, MAXIMUM_POINT_LIGHTS)
+	for index in 1 ..< count {
+		testing.expectf(t, linalg.length2(nearest[index - 1].position - eye) <= linalg.length2(nearest[index].position - eye), "light %d is nearer than the one before it", index)
+	}
+	for window in window_lights {
+		moved := window.position + shift
+		found := false
+		for light in nearest[:count] {
+			found ||= linalg.length(light.position - moved) < 1e-4
+		}
+		testing.expectf(t, found, "the window light at %v is not back moved to %v", window.position, moved)
+	}
+	torch_lights := 0
+	for light in nearest[:count] {
+		for torch in state.field.torches {
+			expected := field_torch_point_light(torch, SPACING, model_frame_seconds(frame), false)
+			if light.position == expected.position {
+				torch_lights += 1
+				testing.expect_value(t, light.color, expected.color)
+			}
+		}
+	}
+	testing.expect_value(t, torch_lights, count - len(window_lights))
+}
+
+// Work item 0284: a block torch's light flickers with its flame, within
+// the factor's bounds, with no period, and apart from its neighbour's.
+@(test)
+test_the_block_torch_light_flickers_with_its_flame_and_has_no_period :: proc(t: ^testing.T) {
+	TICKS :: 1860
+	cells := [2]World_Coordinate{{3, 64, 5}, {4, 64, 5}}
+	eye := [3]f32{0, 66, 0}
+	lowest, highest := block_torch_light_factor(FIRE_FLICKER_LOWEST), block_torch_light_factor(FIRE_FLICKER_HIGHEST)
+	series: [2][]f32
+	for cell, index in cells {
+		series[index] = make([]f32, TICKS, context.temp_allocator)
+		for tick in 0 ..< TICKS {
+			seconds := f64(tick) / 60
+			flicker := block_torch_flicker(cell, seconds, false)
+			testing.expectf(t, flicker == torch_flame_draw(cell, eye, seconds, false).flicker, "cell %v at tick %d flickers apart from its flame", cell, tick)
+			factor := block_torch_light_factor(flicker)
+			testing.expectf(t, factor >= lowest && factor <= highest, "cell %v at tick %d: factor %v", cell, tick, factor)
+			series[index][tick] = factor
+		}
+	}
+	statistics := flicker_statistics(series[0])
+	testing.expectf(t, statistics.worst_lag_ratio >= 0.7, "worst lag ratio %v", statistics.worst_lag_ratio)
+	apart: f64
+	for tick in 0 ..< TICKS {
+		apart += f64(abs(series[0][tick] - series[1][tick]))
+	}
+	apart /= TICKS
+	pairs := mean_pair_difference(series[0])
+	testing.expectf(t, f32(apart) >= 0.6 * pairs, "the neighbours differ by %v, the first's pairs by %v", apart, pairs)
+}
+
+// Work item 0284: the block shaders take the MAXIMUM_BLOCK_TORCH_FLICKERS
+// torches nearest the eye, nearest first, each its centre and its light
+// factor; unused slots stay zero.
+@(test)
+test_the_block_torch_flickers_are_capped_nearest_first :: proc(t: ^testing.T) {
+	SECONDS :: 12.25
+	eye := [3]f32{3.7, 11.2, 2.1}
+	cells := make([dynamic]World_Coordinate, context.temp_allocator)
+	for x in i32(0) ..< 8 {
+		for z in i32(0) ..< 5 {
+			append(&cells, World_Coordinate{x, 10, z})
+		}
+	}
+	testing.expect_value(t, len(cells), 40)
+	torches, count := block_torch_flicker_uniform(cells[:], eye, SECONDS, false)
+	testing.expect_value(t, count, MAXIMUM_BLOCK_TORCH_FLICKERS)
+	farthest_listed := linalg.length2(torches[count - 1].xyz - eye)
+	for index in 1 ..< count {
+		testing.expectf(t, linalg.length2(torches[index - 1].xyz - eye) <= linalg.length2(torches[index].xyz - eye), "slot %d is nearer than the one before it", index)
+	}
+	for cell in cells {
+		centre := block_centre(cell)
+		listed := false
+		for torch in torches[:count] {
+			if torch.xyz == centre {
+				listed = true
+				testing.expect_value(t, torch.w, block_torch_light_factor(block_torch_flicker(cell, SECONDS, false)))
+			}
+		}
+		if !listed {
+			testing.expectf(t, linalg.length2(centre - eye) >= farthest_listed, "cell %v is nearer than a listed one but left out", cell)
+		}
+	}
+	few, few_count := block_torch_flicker_uniform(cells[:3], eye, SECONDS, false)
+	testing.expect_value(t, few_count, 3)
+	for index in 3 ..< MAXIMUM_BLOCK_TORCH_FLICKERS {
+		testing.expect_value(t, few[index], [4]f32{})
 	}
 }
 

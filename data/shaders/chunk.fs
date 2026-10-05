@@ -20,8 +20,11 @@
 // 0072). Sky light is scaled by day_factor and coloured by sky_tint
 // (white by day, warm at dawn and dusk, blue grey at night, work item
 // 0064), block light is neither, so torches glow the same at night; it
-// is multiplied by flicker (0.96 to 1, light_flicker in
-// render_chunks.odin), the same for every block light. Brightness is sky
+// is multiplied by torch_light_flicker (0284): each of the nearest
+// torches' fire flicker (block_torch_flicker_uniform in
+// render_flames.odin, 0.93 to 1.10) blended by its nearness, so it
+// flickers with the flames on the tick clock and holds at 1 under
+// reduced motion. Brightness is sky
 // plus block light per colour channel, at most 1, times the occlusion
 // shade, never below minimum_brightness.
 //
@@ -65,11 +68,14 @@ uniform vec3 sky_tint;
 uniform sampler2D cloud_texture;
 uniform vec2 cloud_offset;
 uniform float cloud_shadow_strength;
-uniform float flicker;
+uniform vec4 torch_flickers[16u];
 
 out vec4 finalColor;
 
 const float minimum_brightness = 0.06;
+// How far a torch's flicker reaches, as far as its light
+// (BLOCK_TORCH_LIGHT_REACH_BLOCKS).
+const float torch_reach_blocks = 15.0;
 const float darkest_occlusion_shade = 0.5;
 const float cloud_tile_blocks = 96.0;
 const float brightness_jitter = 0.04;
@@ -94,6 +100,31 @@ float light_curve(float level)
 vec3 light_curve(vec3 level)
 {
     return level / (4.0 - 3.0 * level);
+}
+
+// The block light's flicker at a position (0284): each listed torch
+// (torch_flickers, the MAXIMUM_BLOCK_TORCH_FLICKERS nearest the camera,
+// a w of 0 ends the list) shares its swing about 1 by its nearness,
+// falling to nothing at torch_reach_blocks, so a face near one torch
+// takes its swing, one between torches a blend and one past every
+// torch's reach 1.
+float torch_light_flicker(vec3 position)
+{
+    float offset = 0.0;
+    float weight = 0.0;
+    for (uint index = 0u; index < 16u; index++)
+    {
+        vec4 torch = torch_flickers[index];
+        if (torch.w == 0.0)
+        {
+            break;
+        }
+        float share = clamp(1.0 - distance(torch.xyz, position) / torch_reach_blocks, 0.0, 1.0);
+        share *= share;
+        offset += share * (torch.w - 1.0);
+        weight += share;
+    }
+    return 1.0 + offset / max(weight, 1.0);
 }
 
 // The block a fragment belongs to: a step behind the face, away from the
@@ -187,7 +218,7 @@ void main()
     float cloud = texture(cloud_texture, (fragment_world_position.xz + cloud_offset) / cloud_tile_blocks).r;
     float cloud_shade = 1.0 - cloud_shadow_strength * cloud;
     float sky = light_curve(fragment_color.r) * day_factor * cloud_shade;
-    vec3 light = sky * sky_tint + light_curve(fragment_block_light) * flicker;
+    vec3 light = sky * sky_tint + light_curve(fragment_block_light) * torch_light_flicker(fragment_world_position);
     float shade = mix(darkest_occlusion_shade, 1.0, fragment_color.b);
     vec3 brightness = max(min(light, 1.0) * shade, minimum_brightness);
     float fog = clamp((fragment_distance - fog_start) / (fog_end - fog_start), 0.0, 1.0);

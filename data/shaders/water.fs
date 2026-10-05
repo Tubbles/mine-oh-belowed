@@ -2,8 +2,9 @@
 
 // Water fragment shader (work item 0065), drawn with alpha blending over
 // everything solid (render_water.odin). Lit and fogged as the chunk
-// shader does (chunk.fs, without the cloud shadows, with the flickering
-// coloured block light), then:
+// shader does (chunk.fs, without the cloud shadows, with the coloured
+// block light flickering with the torches by torch_light_flicker, line
+// for line chunk.fs's), then:
 //   the texel at water_alpha;
 //   a ripple, two sine waves scrolling over the world x and z, lightens
 //   the surface by up to ripple_strength (no geometry moves);
@@ -51,11 +52,14 @@ uniform float ripple_strength;
 uniform float flow_speed;
 uniform float foam_speed;
 uniform float foam_strength;
-uniform float flicker;
+uniform vec4 torch_flickers[16u];
 
 out vec4 finalColor;
 
 const float minimum_brightness = 0.06;
+// How far a torch's flicker reaches, as far as its light
+// (BLOCK_TORCH_LIGHT_REACH_BLOCKS).
+const float torch_reach_blocks = 15.0;
 const float darkest_occlusion_shade = 0.5;
 const float tau = 6.28318531;
 const float first_ripple_seconds = 2.5;
@@ -71,6 +75,31 @@ float light_curve(float level)
 vec3 light_curve(vec3 level)
 {
     return level / (4.0 - 3.0 * level);
+}
+
+// The block light's flicker at a position (0284): each listed torch
+// (torch_flickers, the MAXIMUM_BLOCK_TORCH_FLICKERS nearest the camera,
+// a w of 0 ends the list) shares its swing about 1 by its nearness,
+// falling to nothing at torch_reach_blocks, so a face near one torch
+// takes its swing, one between torches a blend and one past every
+// torch's reach 1.
+float torch_light_flicker(vec3 position)
+{
+    float offset = 0.0;
+    float weight = 0.0;
+    for (uint index = 0u; index < 16u; index++)
+    {
+        vec4 torch = torch_flickers[index];
+        if (torch.w == 0.0)
+        {
+            break;
+        }
+        float share = clamp(1.0 - distance(torch.xyz, position) / torch_reach_blocks, 0.0, 1.0);
+        share *= share;
+        offset += share * (torch.w - 1.0);
+        weight += share;
+    }
+    return 1.0 + offset / max(weight, 1.0);
 }
 
 // The flow's offset in the face's texcoords.
@@ -142,7 +171,7 @@ void main()
     vec3 color = min(texel.rgb * variation * (1.0 + ripple_strength * ripple(position)), 1.0);
     color = mix(color, vec3(1.0), foam_strength * foam(position));
     float sky = light_curve(fragment_color.r) * day_factor;
-    vec3 light = sky * sky_tint + light_curve(fragment_block_light) * flicker;
+    vec3 light = sky * sky_tint + light_curve(fragment_block_light) * torch_light_flicker(fragment_world_position);
     float shade = mix(darkest_occlusion_shade, 1.0, fragment_color.b);
     vec3 brightness = max(min(light, 1.0) * shade, minimum_brightness);
     float fog = clamp((fragment_distance - fog_start) / (fog_end - fog_start), 0.0, 1.0);

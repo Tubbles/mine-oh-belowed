@@ -1,6 +1,6 @@
 # 0284: Every fire lights what is round it
 
-Status: implementing (2026-10-05)
+Status: verified (2026-10-05)
 
 ## Goal
 

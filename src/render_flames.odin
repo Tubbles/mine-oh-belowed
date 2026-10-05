@@ -14,16 +14,18 @@ import "render_frustum"
 // burning fuel. A working furnace's flames stand where its record's
 // flames say (Machine_Flame), fixed to the model; a torch's flame is one
 // quad on its post, turned square to the camera about the up. The flow
-// rises with the time; the flicker (the reach, the brightness, the
-// firebox lamp and the embers) is hashed noise with no period. Under
-// reduced motion the flicker and the embers hold at their mean and the
-// flow runs at its slow layer only. Render only, nothing here reaches
-// the simulation. A frame's flames are one list, nearest the camera
-// first and capped (nearest_flame_draws), drawn in one batch after
-// everything opaque, depth tested without depth writes, premultiplied
-// (draw_flames). The shared fire flicker (fire_flicker, 0286), four
-// bands of hashed noise and hashed flares and dips, drives the entry's
-// portholes, and these flames keep flame_flicker until their own item.
+// rises with the time. Every fire's flicker is the shared fire flicker
+// (fire_flicker, 0286 and 0284), four bands of hashed noise and hashed
+// flares and dips with no period: the flames' reach, brightness and
+// place on the ramp, the firebox lamp's and a field torch's light
+// (fire_point_light_flicker), the block torches' light
+// (block_torch_flicker_uniform) and the entry's portholes. The embers
+// pulse by their own slow noise. Under reduced motion the flicker and
+// the embers hold at their mean and the flow runs at its slow layer
+// only. Render only, nothing here reaches the simulation. A frame's
+// flames are one list, nearest the camera first and capped
+// (nearest_flame_draws), drawn in one batch after everything opaque,
+// depth tested without depth writes, premultiplied (draw_flames).
 
 FLAME_VERTEX_SHADER_PATH :: "shaders/flame.vs"
 FLAME_FRAGMENT_SHADER_PATH :: "shaders/flame.fs"
@@ -37,10 +39,6 @@ FLAME_TORCH_SINK :: 0.02
 FLAME_CORE_COLOR :: [3]f32{1.0, 0.93, 0.72}
 FLAME_BODY_COLOR :: [3]f32{1.0, 0.52, 0.12}
 FLAME_TIP_COLOR :: [3]f32{0.55, 0.09, 0.02}
-// The flicker's mean, held under reduced motion, and its two rates.
-FLAME_FLICKER_MEAN :: 0.85
-FLAME_FLICKER_SLOW_HERTZ :: 6.1
-FLAME_FLICKER_FAST_HERTZ :: 17.9
 // The shared fire flicker (fire_flicker, 0286): its mean, held under
 // reduced motion, and its bounds.
 FIRE_FLICKER_MEAN :: 0.85
@@ -66,6 +64,16 @@ FIRE_FLARE_SHARE :: 0.35
 FIRE_DIP_SHARE :: 0.15
 // The embers' slow pulse on a working furnace's emissive layer.
 FLAME_EMBER_HERTZ :: 0.37
+// The share of the fire's swing about its mean that a point light takes
+// (the firebox lamp, a field torch's light): 0.625 to 1.175.
+FIRE_POINT_LIGHT_SHARE :: 0.5
+// The block torches' flicker: at most this many torches, nearest the
+// eye (torch_flickers[16u] in chunk.fs and water.fs), each reaching as
+// far as its light, and the share of the fire's swing a cave's light
+// takes about 1 (0.93 to 1.10).
+MAXIMUM_BLOCK_TORCH_FLICKERS :: 16
+BLOCK_TORCH_LIGHT_REACH_BLOCKS :: f32(MAXIMUM_LIGHT)
+BLOCK_LIGHT_FLICKER_SHARE :: 0.15
 // A frame draws at most this many flames, the nearest the camera.
 MAXIMUM_FLAME_DRAWS :: 256
 // A field torch's flame is drawn within this distance of the camera (the
@@ -90,8 +98,8 @@ Flame_Shader :: struct {
 
 // One quad of the flame shader: its corners for the texture coordinates
 // (0, 0), (1, 0), (1, 1) and (0, 1), its seed shifting the noise, its
-// flicker (0.7 to 1), its height over its width, and its squared
-// distance to the camera (set by nearest_flame_draws).
+// flicker (0.4 to 1.5, fire_flicker), its height over its width, and
+// its squared distance to the camera (set by nearest_flame_draws).
 Flame_Draw :: struct {
 	corners:          [4][3]f32,
 	seed:             f32,
@@ -123,15 +131,6 @@ flame_noise :: proc(seconds: f64, hertz: f64, salt: u64) -> f32 {
 	blend := fraction * fraction * (3 - 2 * fraction)
 	first := arrival_noise_value(i64(step), salt)
 	return first + (arrival_noise_value(i64(step) + 1, salt) - first) * blend
-}
-
-// 0.7 to 1: the flame's reach and brightness and its lamp's colour; the
-// mean under reduced motion.
-flame_flicker :: proc(seconds: f64, salt: u64, reduced_motion: bool) -> f32 {
-	if reduced_motion {
-		return FLAME_FLICKER_MEAN
-	}
-	return FLAME_FLICKER_MEAN + 0.1 * flame_noise(seconds, FLAME_FLICKER_SLOW_HERTZ, salt) + 0.05 * flame_noise(seconds, FLAME_FLICKER_FAST_HERTZ, salt + 1)
 }
 
 // One band of the fire flicker at seconds, -1 to 1: flame_noise when
@@ -189,8 +188,8 @@ fire_flare :: proc(seconds: f64, salt: u64) -> f32 {
 // FIRE_FLICKER_HIGHEST: the four bands of FIRE_FLICKER_BANDS and the
 // hashed flares and dips about FIRE_FLICKER_MEAN, so it dances
 // erratically with no period, and the mean under reduced motion. Pure,
-// in f64, so a long session loses nothing. The portholes read it, and
-// flame_flicker keeps 0274's model until the flames' own item.
+// in f64, so a long session loses nothing. Every fire reads it: the
+// flames, the lamps, the block torches' light and the portholes.
 fire_flicker :: proc(seconds: f64, salt: u64, reduced_motion: bool) -> f32 {
 	if reduced_motion {
 		return FIRE_FLICKER_MEAN
@@ -203,13 +202,32 @@ fire_flicker :: proc(seconds: f64, salt: u64, reduced_motion: bool) -> f32 {
 	return clamp(value, FIRE_FLICKER_LOWEST, FIRE_FLICKER_HIGHEST)
 }
 
+// A point light's factor from its fire's flicker: FIRE_POINT_LIGHT_SHARE
+// of the swing about the mean, so a lamp keeps the mean's brightness and
+// never dims as deep as its flame.
+fire_point_light_flicker :: proc(flicker: f32) -> f32 {
+	return FIRE_FLICKER_MEAN + (flicker - FIRE_FLICKER_MEAN) * FIRE_POINT_LIGHT_SHARE
+}
+
+// A block torch's fire flicker, the same for its flame and its light.
+block_torch_flicker :: proc(cell: World_Coordinate, seconds: f64, reduced_motion: bool) -> f32 {
+	return fire_flicker(seconds, flame_salt(cell, BLOCK_FRAME), reduced_motion)
+}
+
+// The block light's factor from a torch's flicker:
+// BLOCK_LIGHT_FLICKER_SHARE of the swing about 1, so 1 at the mean and
+// under reduced motion.
+block_torch_light_factor :: proc(flicker: f32) -> f32 {
+	return 1 + (flicker - FIRE_FLICKER_MEAN) * BLOCK_LIGHT_FLICKER_SHARE
+}
+
 // 0.7 to 1: a working furnace's emissive layer, a slow pulse; the mean
 // under reduced motion.
 flame_ember_glow :: proc(seconds: f64, salt: u64, reduced_motion: bool) -> f32 {
 	if reduced_motion {
-		return FLAME_FLICKER_MEAN
+		return FIRE_FLICKER_MEAN
 	}
-	return FLAME_FLICKER_MEAN + 0.15 * flame_noise(seconds, FLAME_EMBER_HERTZ, salt + 2)
+	return FIRE_FLICKER_MEAN + 0.15 * flame_noise(seconds, FLAME_EMBER_HERTZ, salt + 2)
 }
 
 // The shader's clock: the whole seconds (exact in an f32 for 194 days)
@@ -274,7 +292,7 @@ gather_machine_flames :: proc(entities: ^Entities, machines: Machine_Registry, f
 			continue
 		}
 		salt := flame_salt(furnace.origin, furnace.frame)
-		machine_flame_draws(machine, entity_body_matrix(entities, furnace.common), salt, flame_flicker(seconds, salt, frame.reduced_motion), &draws)
+		machine_flame_draws(machine, entity_body_matrix(entities, furnace.common), salt, fire_flicker(seconds, salt, frame.reduced_motion), &draws)
 	}
 	return draws[:]
 }
@@ -285,16 +303,16 @@ torch_flame_draw :: proc(cell: World_Coordinate, eye: [3]f32, seconds: f64, redu
 	up := [3]f32{0, 1, 0}
 	salt := flame_salt(cell, BLOCK_FRAME)
 	corners := flame_quad_corners(base, flame_facing_across(base, eye, up), up, FLAME_SIZE, FLAME_TORCH_HEIGHT)
-	return {corners = corners, seed = flame_seed(salt), flicker = flame_flicker(seconds, salt, reduced_motion), aspect = FLAME_TORCH_HEIGHT / FLAME_SIZE}
+	return {corners = corners, seed = flame_seed(salt), flicker = block_torch_flicker(cell, seconds, reduced_motion), aspect = FLAME_TORCH_HEIGHT / FLAME_SIZE}
 }
 
 // The quad's values as its vertex colour (flame.vs decodes them): the
-// flicker in red, the seed's fraction in green in steps of
-// 1 / FLAME_SEED_STEPS (a machine flame's whole part wraps away, its
-// index times 0.618 still apart), the aspect in hundredths in blue (high
-// byte) and alpha (low byte).
+// flicker over FIRE_FLICKER_HIGHEST in red, the seed's fraction in
+// green in steps of 1 / FLAME_SEED_STEPS (a machine flame's whole part
+// wraps away, its index times 0.618 still apart), the aspect in
+// hundredths in blue (high byte) and alpha (low byte).
 flame_vertex_color :: proc(draw: Flame_Draw) -> [4]u8 {
-	flicker := u8(clamp(draw.flicker, 0, 1) * 255 + 0.5)
+	flicker := u8(clamp(draw.flicker / FIRE_FLICKER_HIGHEST, 0, 1) * 255 + 0.5)
 	seed := u8(int(max(draw.seed, 0) * FLAME_SEED_STEPS + 0.5) % FLAME_SEED_STEPS)
 	aspect := clamp(int(draw.aspect * 100 + 0.5), 0, 65535)
 	return {flicker, seed, u8(aspect >> 8), u8(aspect & 255)}
@@ -367,6 +385,48 @@ append_torch_flames :: proc(draws: ^[dynamic]Flame_Draw, renderer: ^Chunk_Render
 			append(draws, torch_flame_draw(cell, camera.position, seconds, reduced_motion))
 		}
 	}
+}
+
+// Every torch cell of the chunk meshes, not culled by the frustum: a
+// torch behind the camera lights faces in view.
+chunk_torch_cells :: proc(renderer: ^Chunk_Renderer, allocator := context.temp_allocator) -> []World_Coordinate {
+	cells := make([dynamic]World_Coordinate, allocator)
+	for _, chunk_render in renderer.chunk_meshes {
+		append(&cells, ..chunk_render.flames[:])
+	}
+	return cells[:]
+}
+
+// The block shaders' torch_flickers: the MAXIMUM_BLOCK_TORCH_FLICKERS
+// cells nearest the eye by their centres, nearest first (ties in list
+// order), each the centre in xyz and its light factor
+// (block_torch_light_factor) in w. Unused slots are zero, and a w of 0
+// ends the shaders' loop.
+block_torch_flicker_uniform :: proc(cells: []World_Coordinate, eye: [3]f32, seconds: f64, reduced_motion: bool) -> (torches: [MAXIMUM_BLOCK_TORCH_FLICKERS][4]f32, count: int) {
+	nearest: [MAXIMUM_BLOCK_TORCH_FLICKERS]World_Coordinate
+	distances: [MAXIMUM_BLOCK_TORCH_FLICKERS]f32
+	for cell in cells {
+		distance := linalg.length2(block_centre(cell) - eye)
+		slot := count
+		for slot > 0 && distances[slot - 1] > distance {
+			slot -= 1
+		}
+		if slot >= MAXIMUM_BLOCK_TORCH_FLICKERS {
+			continue
+		}
+		last := min(count, MAXIMUM_BLOCK_TORCH_FLICKERS - 1)
+		for index := last; index > slot; index -= 1 {
+			nearest[index], distances[index] = nearest[index - 1], distances[index - 1]
+		}
+		nearest[slot], distances[slot] = cell, distance
+		count = min(count + 1, MAXIMUM_BLOCK_TORCH_FLICKERS)
+	}
+	for index in 0 ..< count {
+		centre := block_centre(nearest[index])
+		factor := block_torch_light_factor(block_torch_flicker(nearest[index], seconds, reduced_motion))
+		torches[index] = {centre.x, centre.y, centre.z, factor}
+	}
+	return torches, count
 }
 
 // The block world's flames: the working furnaces' and the torches', one

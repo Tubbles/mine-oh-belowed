@@ -50,7 +50,7 @@ Water_Renderer :: struct {
 	fog_start_location:       i32,
 	fog_end_location:         i32,
 	time_location:            i32,
-	flicker_location:         i32,
+	torch_flickers_location:  i32,
 }
 
 Fog :: struct {
@@ -88,7 +88,7 @@ use_water_shader :: proc(renderer: ^Water_Renderer, shader: rl.Shader, layout: A
 	renderer.fog_start_location = rl.GetShaderLocation(shader, "fog_start")
 	renderer.fog_end_location = rl.GetShaderLocation(shader, "fog_end")
 	renderer.time_location = rl.GetShaderLocation(shader, "time")
-	renderer.flicker_location = rl.GetShaderLocation(shader, "flicker")
+	renderer.torch_flickers_location = rl.GetShaderLocation(shader, "torch_flickers")
 	renderer.material.shader = shader
 }
 
