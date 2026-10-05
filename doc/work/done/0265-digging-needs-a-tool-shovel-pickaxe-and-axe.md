@@ -1,6 +1,6 @@
 # 0265: Digging needs a tool: the shovel, the pickaxe and the axe
 
-Status: verified (2026-10-05)
+Status: landed (2026-10-05, cf4d6d8)
 
 ## Goal
 
