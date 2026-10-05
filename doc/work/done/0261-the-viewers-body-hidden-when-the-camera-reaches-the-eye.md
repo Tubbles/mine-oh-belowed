@@ -1,6 +1,6 @@
 # 0261: The viewer's body hidden when the third person camera reaches the eye
 
-Status: verified (2026-10-05)
+Status: landed (2026-10-05, 93a366d)
 
 ## Goal
 
