@@ -3,6 +3,7 @@ package game
 import "core:fmt"
 import "core:math/linalg"
 import "core:os"
+import "core:strings"
 import "model_obj"
 
 // The model workbench's checks (work item 0207, doc/build.md, The
@@ -13,18 +14,19 @@ import "model_obj"
 // code run two ways. Models are presentation: nothing here touches the
 // simulation.
 //
-// Cost: a body of at most 3200 and a part of at most 200 triangles give
-// at most 16 x 200 x 3200 (about 10 million) box tests per machine, exact
-// tests only where the boxes overlap, and the moving part's bounds filter
-// the body first; over the budget the sweep does not run. The sweep is
-// bounded by the part, and a pod has none. The open cells are at most 4
-// boxes x 3400 triangles x 18 tests; a pod's open cells and fixture boxes
-// cost boxes x 25600 triangles. A pod's fixture parts (0221) are 17
-// phases x 200 x the body filtered to the part's swept bounds first. An
-// iris (0231) multiplies the part's poses by its blades (at most 16): the
-// hatch's own sweep is at most 17 x 16 x 200 part triangles against its
-// body filtered to each blade's bounds, the fixture sweep 17 x 16 x 200
-// against the pod's body filtered to the swept bounds. The
+// Cost: a body of at most 9600 and a part of at most 600 triangles (the
+// caps, 0275) give at most 16 x 600 x 9600 (about 92 million) box tests
+// per machine, only for a model at its caps, exact tests only where the
+// boxes overlap, and the moving part's bounds filter the body first; over
+// a cap the sweep does not run. The sweep is bounded by the part, and a
+// pod has none. The open cells are at most 4 boxes x 10200 triangles x 18
+// tests; a pod's open cells and fixture boxes cost boxes x 76800
+// triangles. A pod's fixture parts (0221) are 17 phases x 600 x the body
+// filtered to the part's swept bounds first. An iris (0231) multiplies
+// the part's poses by its blades (at most 16): the hatch's own sweep is
+// at most 17 x 16 x 600 part triangles against its body filtered to each
+// blade's bounds, the fixture sweep 17 x 16 x 600 against the pod's body
+// filtered to the swept bounds. The
 // collision volumes (0230) are at most 64 volumes x 9 boxes x the lattice
 // of a box (the pod's cabin box 4 by 4 by 2 cells, 33 x 33 x 17 samples),
 // only for volumes whose bounds meet the box. The arm's voxel parts
@@ -34,15 +36,21 @@ import "model_obj"
 // The motion and the arm's cycle are checked at index / 16 for index 0
 // to 15; 0 is the rest.
 MODEL_CHECK_PHASE_COUNT :: 16
-// DESIGN.md, Art direction: the maxima are enforced. The body's is the
-// user's 3200 (2026-10-04, 0212): a machine at its real size spends it on
-// its surface, a pole or a lamp stays far under it.
-MODEL_BODY_TRIANGLES_MAXIMUM :: 3200
-// The pod's body (0221, the user's of 2026-10-04): the model every player
-// sees first, from inside, at arm's length.
-MODEL_POD_BODY_TRIANGLES_MAXIMUM :: 25600
-MODEL_PART_TRIANGLES_MAXIMUM :: 200
+// Sanity caps that catch a runaway mesh (DESIGN.md, Art direction,
+// 0275): three times the budget each reference model was made under (a
+// machine's body 3200, the pod's 25600, a moving part 200), so a mesh
+// subdivided once over a reference's density fails. The look and the
+// density are set by the reference models, not by these numbers. The pod
+// keeps its own cap: a single cap above it would pass a furnace at
+// sixteen times its density.
+MODEL_BODY_TRIANGLES_CAP :: 9600
+MODEL_POD_BODY_TRIANGLES_CAP :: 76800
+MODEL_PART_TRIANGLES_CAP :: 600
 MODEL_MATERIAL_LIMIT :: 8
+// The reference models (DESIGN.md, Art direction): their machine ids
+// equal their model names. Pinned to tools/model_lab/model_lab.py's
+// REFERENCE_MODELS by model_lab_test.py.
+MODEL_REFERENCE_MACHINES :: [?]string{"stone_furnace", "pod"}
 // The share of an edge and of a triangle's barycentric range a crossing
 // must clear, so contact (touching faces, a shared edge) is no crossing.
 MODEL_CROSSING_EPSILON :: 1e-4
@@ -58,7 +66,7 @@ MODEL_COLLISION_TOLERANCE_UNITS :: 82
 
 Model_Check :: enum u8 {
 	Load,
-	Budget,
+	Cap,
 	Sweep,
 	Footprint,
 	Arm,
@@ -69,7 +77,7 @@ Model_Check :: enum u8 {
 @(rodata)
 model_check_names := [Model_Check]string {
 	.Load       = "load",
-	.Budget     = "budget",
+	.Cap        = "cap",
 	.Sweep      = "sweep",
 	.Footprint  = "footprint",
 	.Arm        = "arm",
@@ -306,26 +314,95 @@ model_check_arm_reach :: proc(machine: Machine, pitch_millimetres: int) -> i32 {
 	return inserter_reach_on_frame(machine, Frame{id = MODEL_CHECK_FRAME, pitch_millimetres = pitch_millimetres})
 }
 
-// The body's budget of a kind: a kind's exception, not a record key, so
-// no record raises its own.
-model_body_triangles_maximum :: proc(kind: Machine_Kind) -> int {
-	return kind == .Pod ? MODEL_POD_BODY_TRIANGLES_MAXIMUM : MODEL_BODY_TRIANGLES_MAXIMUM
+// The body's sanity cap of a kind: a kind's exception, not a record key,
+// so no record raises its own.
+model_body_triangles_cap :: proc(kind: Machine_Kind) -> int {
+	return kind == .Pod ? MODEL_POD_BODY_TRIANGLES_CAP : MODEL_BODY_TRIANGLES_CAP
 }
 
-// DESIGN.md's maxima, the body's from model_body_triangles_maximum; the
-// part's line only for a part with triangles.
-model_budget_problems :: proc(body, part: Model_Layers, material_count: int, body_maximum: int, allocator := context.temp_allocator) -> []Model_Check_Problem {
+// The sanity caps, the body's from model_body_triangles_cap, and the
+// material limit; the part's line only for a part with triangles.
+model_cap_problems :: proc(body, part: Model_Layers, material_count: int, body_cap: int, allocator := context.temp_allocator) -> []Model_Check_Problem {
 	problems := make([dynamic]Model_Check_Problem, allocator)
-	if count := model_layers_triangle_count(body); count > body_maximum {
-		append(&problems, Model_Check_Problem{.Budget, fmt.tprintf("body has %d triangles, the budget is at most %d", count, body_maximum)})
+	if count := model_layers_triangle_count(body); count > body_cap {
+		append(&problems, Model_Check_Problem{.Cap, fmt.tprintf("body has %d triangles, over the sanity cap %d", count, body_cap)})
 	}
-	if count := model_layers_triangle_count(part); count > MODEL_PART_TRIANGLES_MAXIMUM {
-		append(&problems, Model_Check_Problem{.Budget, fmt.tprintf("part has %d triangles, the budget is at most %d", count, MODEL_PART_TRIANGLES_MAXIMUM)})
+	if count := model_layers_triangle_count(part); count > MODEL_PART_TRIANGLES_CAP {
+		append(&problems, Model_Check_Problem{.Cap, fmt.tprintf("part has %d triangles, over the sanity cap %d", count, MODEL_PART_TRIANGLES_CAP)})
 	}
 	if material_count > MODEL_MATERIAL_LIMIT {
-		append(&problems, Model_Check_Problem{.Budget, fmt.tprintf("%d materials, the budget is %d", material_count, MODEL_MATERIAL_LIMIT)})
+		append(&problems, Model_Check_Problem{.Cap, fmt.tprintf("%d materials, the limit is %d", material_count, MODEL_MATERIAL_LIMIT)})
 	}
 	return problems[:]
+}
+
+Model_Counts :: struct {
+	body_triangles, part_triangles, materials: int,
+}
+
+// An OBJ model's counts as the caps see them, or the loader's problem.
+obj_model_counts :: proc(data_directory: string, machine: Machine) -> (counts: Model_Counts, problem: string) {
+	mesh: Machine_Model_Mesh
+	if mesh, problem = load_machine_model_mesh(data_directory, machine, context.temp_allocator); problem != "" {
+		return {}, problem
+	}
+	defer destroy_machine_model_mesh(mesh)
+	model: model_obj.Obj_Model
+	if model, problem = model_obj.load_obj_model_file(model_obj.model_file_path(data_directory, machine.model), context.temp_allocator); problem != "" {
+		return {}, problem
+	}
+	defer model_obj.destroy_obj_model(model)
+	return {model_layers_triangle_count(mesh.body), model_layers_triangle_count(mesh.part), obj_model_material_count(model)}, ""
+}
+
+Model_Reference :: struct {
+	id:     string,
+	counts: Model_Counts,
+	found:  bool,
+}
+
+// One entry per MODEL_REFERENCE_MACHINES id; not found when the registry
+// lacks it, its model is no OBJ or the OBJ does not load.
+model_reference_counts :: proc(data_directory: string, machines: Machine_Registry, allocator := context.temp_allocator) -> []Model_Reference {
+	ids := MODEL_REFERENCE_MACHINES
+	references := make([]Model_Reference, len(ids), allocator)
+	for id, index in ids {
+		references[index].id = id
+		machine_id, found := find_machine_id(machines, id)
+		if !found {
+			continue
+		}
+		machine := machines.machines[machine_id]
+		if model_check_subject(data_directory, machine) != .Obj {
+			continue
+		}
+		counts, problem := obj_model_counts(data_directory, machine)
+		references[index].counts = counts
+		references[index].found = problem == ""
+	}
+	return references
+}
+
+// The reference models' counts, one line, in the temp allocator.
+model_references_line :: proc(references: []Model_Reference) -> string {
+	builder := strings.builder_make(context.temp_allocator)
+	strings.write_string(&builder, "model check: reference models ")
+	for reference, index in references {
+		if index > 0 {
+			strings.write_string(&builder, ", ")
+		}
+		if reference.found {
+			fmt.sbprintf(&builder, "%s (body %d, part %d, %d materials)", reference.id, reference.counts.body_triangles, reference.counts.part_triangles, reference.counts.materials)
+		} else {
+			fmt.sbprintf(&builder, "%s (no model)", reference.id)
+		}
+	}
+	return strings.to_string(builder)
+}
+
+// A model's counts with its caps, in the temp allocator.
+model_counts_line :: proc(id: string, counts: Model_Counts, body_cap: int) -> string {
+	return fmt.tprintf("%s: counts: body %d triangles (cap %d), part %d (cap %d), %d materials (limit %d)", id, counts.body_triangles, body_cap, counts.part_triangles, MODEL_PART_TRIANGLES_CAP, counts.materials, MODEL_MATERIAL_LIMIT)
 }
 
 // A slide's and an iris's phase is an open fraction that rests at 1, so
@@ -585,7 +662,7 @@ pod_fixture_part_problems :: proc(data_directory: string, machines: []Machine, p
 }
 
 // An OBJ model: the loader's refusal is the one load line; then the
-// budget, and only within it (so the sweep's cost stays bounded) the
+// caps, and only within them (so the sweep's cost stays bounded) the
 // sweep, the open cells and, for a pod, its fixtures' parts.
 check_obj_machine_model :: proc(data_directory: string, machines: []Machine, machine: Machine, allocator := context.temp_allocator) -> []Model_Check_Problem {
 	mesh, problem := load_machine_model_mesh(data_directory, machine, context.temp_allocator)
@@ -599,7 +676,7 @@ check_obj_machine_model :: proc(data_directory: string, machines: []Machine, mac
 	}
 	defer model_obj.destroy_obj_model(model)
 	problems := make([dynamic]Model_Check_Problem, allocator)
-	append(&problems, ..model_budget_problems(mesh.body, mesh.part, obj_model_material_count(model), model_body_triangles_maximum(machine.kind)))
+	append(&problems, ..model_cap_problems(mesh.body, mesh.part, obj_model_material_count(model), model_body_triangles_cap(machine.kind)))
 	if len(problems) > 0 {
 		return problems[:]
 	}

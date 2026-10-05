@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Checks data/models/<model>.obj of the lab against the game's limits
 (work item 0214, doc/build.md, The workbench): the body's and the part's
-triangle counts (the body's budget as the game's
-model_body_triangles_maximum, larger for a pod), the material count and
+triangle counts against the sanity caps that catch a runaway mesh
+(work item 0275: the body's as the game's model_body_triangles_cap,
+larger for a pod), the material count and
 the materials missing from the .mtl, the object names (body, and part
 exactly when the record's motion moves a part), the footprint bounds of
 every vertex at rest (sideways and below the ground; a model may rise
@@ -30,9 +31,9 @@ sys.path.insert(0, str(LAB / "tools"))
 import sjson  # noqa: E402
 from models import collision, records  # noqa: E402
 
-BODY_TRIANGLES_MAXIMUM = 3200
-POD_BODY_TRIANGLES_MAXIMUM = 25600
-PART_TRIANGLES_MAXIMUM = 200
+BODY_TRIANGLES_CAP = 9600
+POD_BODY_TRIANGLES_CAP = 76800
+PART_TRIANGLES_CAP = 600
 MATERIAL_LIMIT = 8
 TOLERANCE = 0.02
 # The lattice of the intrusion check: samples per cell along each axis.
@@ -43,14 +44,14 @@ IRIS_AMPLITUDE_MAXIMUM = 0.5
 IRIS_FRACTIONS = 16
 
 
-def body_triangles_maximum(machine):
-    """The body's budget, as the game's model_body_triangles_maximum."""
-    return POD_BODY_TRIANGLES_MAXIMUM if machine.kind == "pod" else BODY_TRIANGLES_MAXIMUM
+def body_triangles_cap(machine):
+    """The body's sanity cap, as the game's model_body_triangles_cap."""
+    return POD_BODY_TRIANGLES_CAP if machine.kind == "pod" else BODY_TRIANGLES_CAP
 
 
-def part_triangles_maximum(machine):
-    """The part's budget; 0 when the motion moves no part."""
-    return PART_TRIANGLES_MAXIMUM if machine.motion.kind in records.PART_MOTIONS else 0
+def part_triangles_cap(machine):
+    """The part's sanity cap; 0 when the motion moves no part."""
+    return PART_TRIANGLES_CAP if machine.motion.kind in records.PART_MOTIONS else 0
 
 
 def lab_models(lab):
@@ -267,23 +268,23 @@ def check_model(lab, model):
         return [], [f"no {obj_path}"]
     vertices, objects = read_obj(obj_path)
     materials = read_mtl(mtl_path) if mtl_path.exists() else {}
-    body_maximum, part_maximum = body_triangles_maximum(machine), part_triangles_maximum(machine)
-    problems = object_problems(model, objects, part_maximum)
+    body_cap, part_cap = body_triangles_cap(machine), part_triangles_cap(machine)
+    problems = object_problems(model, objects, part_cap)
     body = objects.get("body", [])
     part = objects.get("part", [])
     body_triangles = sum(len(corners) - 2 for _, corners in body)
     part_triangles = sum(len(corners) - 2 for _, corners in part)
     used = sorted({material for material, _ in body + part if material})
-    if body_triangles > body_maximum:
-        problems.append(f"body has {body_triangles} triangles, the budget is {body_maximum}")
-    if part_triangles > part_maximum and part_maximum > 0:
-        problems.append(f"part has {part_triangles} triangles, the budget is {part_maximum}")
+    if body_triangles > body_cap:
+        problems.append(f"body has {body_triangles} triangles, over the sanity cap {body_cap}")
+    if part_triangles > part_cap and part_cap > 0:
+        problems.append(f"part has {part_triangles} triangles, over the sanity cap {part_cap}")
     if len(used) > MATERIAL_LIMIT:
         problems.append(f"{len(used)} materials over body and part, the limit is {MATERIAL_LIMIT}")
     problems += [f"material {name} is not in the .mtl" for name in used if name not in materials]
     emissive = [name for name in used if any(value > 0 for value in materials.get(name, {}).get("Ke", (0, 0, 0)))]
     lines = [
-        f"{model}: body {body_triangles} triangles (budget {body_maximum}), part {part_triangles} (budget {part_maximum}), {len(used)} materials (limit {MATERIAL_LIMIT}): {', '.join(used)}",
+        f"{model}: body {body_triangles} triangles (cap {body_cap}), part {part_triangles} (cap {part_cap}), {len(used)} materials (limit {MATERIAL_LIMIT}): {', '.join(used)}",
         f"emissive: {', '.join(emissive) or 'none'}",
     ]
     if vertices:

@@ -10,9 +10,17 @@ The client's words on how everything built in this game looks: "Astro-industrial
 
 ## The reference images (`reference/`)
 
-Look at every one of them with the Read tool before you start, at full size, and keep going back to them. The client approved these pictures; the model should read as the thing in them.
+Look at every one of them, and at every render in `reference_models/` below, with the Read tool before you start, at full size, and keep going back to them. The client approved the pictures in `reference/`; the model should read as the thing in them.
 
 [[references: one bullet per file in reference/, its name and what it shows, the canonical view first]]
+
+## The reference models (`reference_models/`)
+
+The game's accepted models, made in labs like this one, set the tone, the look and the density of everything the game draws. Match them: how much detail they carry for their size, their bevels, their surfaces of raised stones and riveted plates, their way of interleaving the rough and the clean world. They are a yardstick, not the thing to model, and they are not this machine's look (that is the reference images).
+
+{{reference_models}}
+
+There is no triangle budget to fill. A model of about their density for its size is right. The caps below only catch a runaway mesh (a modifier left on, a subdivision): a model near one is a mistake to look at.
 
 ## Size, frame and limits
 
@@ -36,4 +44,4 @@ Look at every one of them with the Read tool before you start, at full size, and
 
 ## The report
 
-When the previews read as the references and the check says OK, report in at most 40 lines: the triangle counts and the materials with their colours; the empty cells, if any, as boxes; what you built and the choices you made where the images were ambiguous; what you would add with a larger budget; and the paths of the previews to look at first. Do not paste code. [[report: what else the report names; or nothing]]
+When the previews read as the references and the check says OK, report in at most 40 lines: the triangle counts and the materials with their colours; the empty cells, if any, as boxes; what you built and the choices you made where the images were ambiguous; where your model is denser or sparser than the reference models and why; and the paths of the previews to look at first. Do not paste code. [[report: what else the report names; or nothing]]

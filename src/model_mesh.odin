@@ -44,7 +44,7 @@ model_face_shades := [Direction]f32 {
 // Two shapes (0226): the voxel mesher shares a quad's four corners and
 // writes indices, u16, so at most MESH_PART_VERTEX_LIMIT vertices a layer;
 // the triangle mesher writes three vertices per triangle in order and no
-// indices, drawn unindexed, bounded by the triangle budget
+// indices, drawn unindexed, bounded by the triangle caps
 // (model_check.odin) only. Read a mesh's triangles through
 // model_mesh_triangle, which serves both.
 // normals holds one unit normal per position, its face's (0224: the model

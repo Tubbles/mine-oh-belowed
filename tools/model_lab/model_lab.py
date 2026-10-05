@@ -10,8 +10,11 @@ build writes tmp/model_lab/<first model>/ of the main checkout (or the
 --lab directory, which must be in a tmp directory under the main
 checkout: the Flatpak Blender does not see /tmp): the filled brief, the
 lab's records, copies of the kit and the lab's check and renderer, the
-reference images and a stub script per model (with --rework, the
-repository's scripts and model files instead). It builds in a staging
+reference images, the reference models' renders (work item 0275: the
+game's accepted models from doc/art/booklet/, the yardstick of the look
+and the density, never the model the lab remakes) and a stub script per
+model (with --rework, the repository's scripts and model files
+instead). It builds in a staging
 directory beside the lab and renames it into place, and replaces an
 existing lab only with --replace.
 
@@ -59,6 +62,26 @@ STUB_BODY_MATERIAL = "steel"
 STUB_PART_MATERIAL = "galvanised"
 EXTERIOR_VIEWS = ("front_right", "front_left", "back_left", "top", "close")
 MACHINES_PATH = REPOSITORY_ROOT / "data" / "machines.sjson"
+BOOKLET = REPOSITORY_ROOT / "doc" / "art" / "booklet"
+REFERENCE_MODELS_DIRECTORY = "reference_models"
+# The reference models (DESIGN.md, Art direction, work item 0275) in the
+# order of the game's MODEL_REFERENCE_MACHINES, each with its renders in
+# BOOKLET: (file, caption). The pod's are its lab previews, made by the
+# same renderer as the modeller's own; the furnace has the game's render.
+REFERENCE_MODELS = (
+    ("stone_furnace", (("furnace_model_front_left.jpg", "the game's render from the hero angle, lit by the game"),)),
+    (
+        "pod",
+        (
+            ("pod_model_round3_exterior.jpg", "the lab's preview from outside: the riveted cone, the shutter, the antenna"),
+            ("pod_model_round3_chair.jpg", "the lab's preview of the cabin from the chair: the desk, keypads, levers, cabinets, the oxygen manifold"),
+            ("pod_model_round3_lamps.jpg", "the lab's preview looking up: the lamp strip on its brackets, the portholes, the desk lamp"),
+        ),
+    ),
+)
+# The renders that show a reference's inside, with its fixtures: a lab
+# remaking one of its fixtures gets the other renders only.
+REFERENCE_INSIDE_IMAGES = ("pod_model_round3_chair.jpg", "pod_model_round3_lamps.jpg")
 
 
 def parse_models(argument):
@@ -280,11 +303,11 @@ def size_and_frame_line(model, machine):
 
 def parts_line(model, machine):
     motion = machine.motion
-    body = check.body_triangles_maximum(machine)
-    part = check.part_triangles_maximum(machine)
+    body = check.body_triangles_cap(machine)
+    part = check.part_triangles_cap(machine)
     if motion.kind not in records.PART_MOTIONS:
-        return f'- `{model}`: one mesh object named `body` with at most {body} triangles (`kit.join(volumes, "body")`). It has no moving part, so there is no `part` object.'
-    both = f"- `{model}`: one mesh object named `body` with at most {body} triangles and one named `part` with at most {part} triangles"
+        return f'- `{model}`: one mesh object named `body` under the sanity cap of {body} triangles (`kit.join(volumes, "body")`). It has no moving part, so there is no `part` object.'
+    both = f"- `{model}`: one mesh object named `body` under the sanity cap of {body} triangles and one named `part` under the sanity cap of {part} triangles"
     if motion.kind == "iris":
         return (
             f"{both}: one blade, modelled shut, handed over with `kit.join_part(volumes, machine, records.pivot(machine), records.hinge(machine))` "
@@ -306,7 +329,7 @@ def parts_line(model, machine):
 def check_command(machines, models, collision_models):
     first = models[0]
     text = (
-        f"2. `python3 check.py` checks every model of this lab (`python3 check.py {first}` one): the triangle counts against the budgets, the materials, the emissive ones, the bounds, the object names, and `OK` or the problems. "
+        f"2. `python3 check.py` checks every model of this lab (`python3 check.py {first}` one): the triangle counts against the sanity caps, the materials, the emissive ones, the bounds, the object names, and `OK` or the problems. "
         "Nothing is finished while it reports a problem."
     )
     for model in models:
@@ -340,8 +363,49 @@ def render_command(machines, models, views):
     )
 
 
-def brief_slots(machines, models, views, collision_models=()):
-    """{{name}} to its text for the lab's models."""
+def lab_reference_models(models, machines):
+    """The REFERENCE_MODELS entries the lab sees, (model, images): never
+    one of the lab's models, and for a lab remaking one of a reference's
+    fixtures only the reference's outside renders, captioned as showing
+    the old fixture (work item 0275, Decision 1)."""
+    entries = []
+    for reference, images in REFERENCE_MODELS:
+        if reference in models:
+            continue
+        record = records.machine_for_model(machines, reference)
+        replaced = [machines[fixture.machine].model for fixture in record.fixtures if machines[fixture.machine].model in models]
+        if replaced:
+            note = f" (it shows the old {spoken_list(sorted({f'`{model}`' for model in replaced}))}, which this lab replaces)"
+            images = tuple((file, caption + note) for file, caption in images if file not in REFERENCE_INSIDE_IMAGES)
+        entries.append((reference, images))
+    return entries
+
+
+def reference_counts(model):
+    """(body, part, materials) of the repository's data/models/<model>.obj,
+    counted as check_model counts them."""
+    _, objects = check.read_obj(REPOSITORY_ROOT / "data" / "models" / f"{model}.obj")
+    body = objects.get("body", [])
+    part = objects.get("part", [])
+    materials = {material for material, _ in body + part if material}
+    return sum(len(corners) - 2 for _, corners in body), sum(len(corners) - 2 for _, corners in part), len(materials)
+
+
+def reference_models_text(references):
+    """The {{reference_models}} slot: per reference its footprint, its
+    counts and its renders under reference_models/."""
+    if not references:
+        return "None: this lab remakes a reference model."
+    lines = []
+    for model, images, footprint, (body, part, materials) in references:
+        lines.append(f"- `{model}`: the footprint {footprint.width} by {footprint.depth} by {footprint.height} cells, {body} body triangles, {part} part triangles, {materials} materials")
+        lines += [f"  - `{REFERENCE_MODELS_DIRECTORY}/{file}`: {caption}" for file, caption in images]
+    return "\n".join(lines)
+
+
+def brief_slots(machines, models, views, collision_models=(), references=()):
+    """{{name}} to its text for the lab's models; references as
+    (model, images, footprint, counts)."""
     names = [f"`{model}`" for model in models]
     parts = [parts_line(model, machines[model]) for model in models]
     parts.append(f"- At most {check.MATERIAL_LIMIT} materials over the body and the part of a model. The exporter triangulates and applies modifiers.")
@@ -356,6 +420,7 @@ def brief_slots(machines, models, views, collision_models=()):
         "parts": "\n".join(parts),
         "scripts": spoken_list([f"`tools/models/machines/{model}.py`" for model in models]),
         "commands": "\n".join(commands),
+        "reference_models": reference_models_text(references),
     }
 
 
@@ -475,15 +540,23 @@ def write_lab(staging, models, rework, brief_template, reference, images):
         copy_into(LAB_TOOLS / lab_name / "views.sjson", staging / "views.sjson")
     for name in images:
         copy_into(reference / name, staging / "reference" / name)
+    checkout_machines = records.load_machines(MACHINES_PATH)
+    references = []
+    for reference_model, reference_images in lab_reference_models(models, checkout_machines):
+        for file, _ in reference_images:
+            if not (BOOKLET / file).is_file():
+                raise SystemExit(f"no reference model image {BOOKLET / file}")
+            copy_into(BOOKLET / file, staging / REFERENCE_MODELS_DIRECTORY / file)
+        footprint = records.machine_for_model(checkout_machines, reference_model).footprint
+        references.append((reference_model, reference_images, footprint, reference_counts(reference_model)))
     machines_text = MACHINES_PATH.read_text()
     keys = REWORK_ROUND_STRIPPED_KEYS if rework else MODEL_ROUND_STRIPPED_KEYS
     (staging / "data" / "machines.sjson").write_text(lab_records_text(machines_text, models, keys, rework))
     (staging / "tools" / "models" / "machines" / "__init__.py").write_text(registry_text(models))
-    checkout_machines = records.load_machines(MACHINES_PATH)
     machines = {model: records.machine_for_model(checkout_machines, model) for model in models}
     write_scripts(staging, models, machines, rework)
     collision_models = [model for model in models if (staging / "data" / "models" / f"{model}.collision.sjson").exists()]
-    brief = fill_brief(brief_template, brief_slots(machines, models, views, collision_models))
+    brief = fill_brief(brief_template, brief_slots(machines, models, views, collision_models, references))
     (staging / "BRIEF.md").write_text(brief)
     (staging / "lab.sjson").write_text(lab_file_text(models, "rework" if rework else "model", git_output("rev-parse", "HEAD")))
     return brief

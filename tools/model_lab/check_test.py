@@ -90,7 +90,7 @@ class CheckTest(unittest.TestCase):
     def test_a_box_in_its_footprint_passes(self):
         lines, problems = self.write(CHEST, Obj().box("body", (-1, 0, -1), (1, 2, 1)))
         self.assertEqual(problems, [])
-        self.assertIn("body 12 triangles (budget 3200)", lines[0])
+        self.assertIn("body 12 triangles (cap 9600)", lines[0])
 
     def test_a_vertex_past_the_side_is_a_problem(self):
         _, problems = self.write(CHEST, Obj().box("body", (-1, 0, -1), (1.03, 2, 1)))
@@ -120,13 +120,13 @@ class CheckTest(unittest.TestCase):
         _, problems = self.write(CHEST, Obj().box("body", (-1, 0, -1), (1, 2, 1)).add("part", [(0, 2, 0), (0.1, 2, 0), (0, 2, 0.1)], [(9, 10, 11)]))
         self.assertTrue(any("no moving part" in problem for problem in problems), problems)
 
-    def test_the_budgets(self):
-        _, problems = self.write(CHEST, Obj().polygon("body", 3203))
-        self.assertTrue(any("body has 3201 triangles" in problem for problem in problems), problems)
-        _, problems = self.write(CHEST.replace('kind = "chest"', 'kind = "pod"'), Obj().polygon("body", 3203))
+    def test_the_caps(self):
+        _, problems = self.write(CHEST, Obj().polygon("body", 9603))
+        self.assertTrue(any("body has 9601 triangles, over the sanity cap 9600" in problem for problem in problems), problems)
+        _, problems = self.write(CHEST.replace('kind = "chest"', 'kind = "pod"'), Obj().polygon("body", 9603))
         self.assertEqual(problems, [])
-        _, problems = self.write(CHEST + ", " + PUMP, Obj().box("body", (-1, 0, -1), (1, 2, 1)).polygon("part", 203))
-        self.assertTrue(any("part has 201 triangles" in problem for problem in problems), problems)
+        _, problems = self.write(CHEST + ", " + PUMP, Obj().box("body", (-1, 0, -1), (1, 2, 1)).polygon("part", 603))
+        self.assertTrue(any("part has 601 triangles" in problem for problem in problems), problems)
 
     def test_the_materials(self):
         names = [f"material_{index}" for index in range(9)]
@@ -168,9 +168,9 @@ class CheckTest(unittest.TestCase):
             self.assertIsNotNone(match, name)
             return float(match.group(1))
 
-        self.assertEqual(check.BODY_TRIANGLES_MAXIMUM, game("MODEL_BODY_TRIANGLES_MAXIMUM"))
-        self.assertEqual(check.POD_BODY_TRIANGLES_MAXIMUM, game("MODEL_POD_BODY_TRIANGLES_MAXIMUM"))
-        self.assertEqual(check.PART_TRIANGLES_MAXIMUM, game("MODEL_PART_TRIANGLES_MAXIMUM"))
+        self.assertEqual(check.BODY_TRIANGLES_CAP, game("MODEL_BODY_TRIANGLES_CAP"))
+        self.assertEqual(check.POD_BODY_TRIANGLES_CAP, game("MODEL_POD_BODY_TRIANGLES_CAP"))
+        self.assertEqual(check.PART_TRIANGLES_CAP, game("MODEL_PART_TRIANGLES_CAP"))
         self.assertEqual(check.MATERIAL_LIMIT, game("MODEL_MATERIAL_LIMIT"))
         self.assertEqual(check.TOLERANCE, game("MODEL_FOOTPRINT_TOLERANCE_CELLS"))
         self.assertEqual(check.IRIS_BLADES, (game("MINIMUM_IRIS_BLADES"), game("MAXIMUM_IRIS_BLADES")))

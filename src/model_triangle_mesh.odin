@@ -64,7 +64,7 @@ append_model_triangle :: proc(mesh: ^Model_Mesh, corners: [3][3]f32, colour: [4]
 // The triangles whose part flag matches. A triangle without a normal
 // (zero area and no vn) draws nothing and is skipped. The meshes are in
 // allocator, also on a problem. The meshes have no indices (0226): any
-// number of triangles, the budget is the model check's.
+// number of triangles, the cap is the model check's.
 mesh_obj_triangles :: proc(model: model_obj.Obj_Model, part: bool, allocator := context.allocator) -> (meshes: Model_Layers, problem: string) {
 	for layer in Model_Layer {
 		meshes[layer] = make_model_mesh(allocator)

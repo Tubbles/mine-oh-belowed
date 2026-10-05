@@ -122,41 +122,70 @@ test_a_clean_spinning_part_passes :: proc(t: ^testing.T) {
 	testing.expect_value(t, len(problems), 0)
 }
 
-// The maxima only: a body of 3200 (0212) and a part of 200.
+// The sanity caps only (0275): a body of 9600 and a part of 600.
 @(test)
-test_a_model_over_the_budget_is_reported :: proc(t: ^testing.T) {
+test_a_model_over_the_cap_is_reported :: proc(t: ^testing.T) {
 	empty := empty_test_layers()
-	body_maximum := MODEL_BODY_TRIANGLES_MAXIMUM
-	over := model_budget_problems(triangles_layers(MODEL_BODY_TRIANGLES_MAXIMUM + 1), empty, 1, body_maximum)
+	body_cap := MODEL_BODY_TRIANGLES_CAP
+	over := model_cap_problems(triangles_layers(9601), empty, 1, body_cap)
 	testing.expect_value(t, len(over), 1)
 	if len(over) == 1 {
-		testing.expect(t, strings.contains(over[0].detail, "3201"), over[0].detail)
+		testing.expect(t, strings.contains(over[0].detail, "9601"), over[0].detail)
+		testing.expect(t, strings.contains(over[0].detail, "sanity cap 9600"), over[0].detail)
 	}
-	testing.expect_value(t, len(model_budget_problems(triangles_layers(MODEL_BODY_TRIANGLES_MAXIMUM), empty, 1, body_maximum)), 0)
-	testing.expect_value(t, len(model_budget_problems(triangles_layers(199), empty, 1, body_maximum)), 0)
-	part := model_budget_problems(triangles_layers(300), triangles_layers(201), 1, body_maximum)
+	testing.expect_value(t, len(model_cap_problems(triangles_layers(9600), empty, 1, body_cap)), 0)
+	testing.expect_value(t, len(model_cap_problems(triangles_layers(199), empty, 1, body_cap)), 0)
+	part := model_cap_problems(triangles_layers(300), triangles_layers(601), 1, body_cap)
 	testing.expect_value(t, len(part), 1)
 	if len(part) == 1 {
-		testing.expect(t, strings.contains(part[0].detail, "part has 201"), part[0].detail)
+		testing.expect(t, strings.contains(part[0].detail, "part has 601"), part[0].detail)
 	}
-	testing.expect_value(t, len(model_budget_problems(triangles_layers(300), empty, 9, body_maximum)), 1)
-	testing.expect_value(t, len(model_budget_problems(triangles_layers(200), triangles_layers(200), 8, body_maximum)), 0)
-	testing.expect_value(t, len(model_budget_problems(triangles_layers(800), empty, 8, body_maximum)), 0)
+	testing.expect_value(t, len(model_cap_problems(triangles_layers(300), triangles_layers(600), 1, body_cap)), 0)
+	testing.expect_value(t, len(model_cap_problems(triangles_layers(300), empty, 9, body_cap)), 1)
+	testing.expect_value(t, len(model_cap_problems(triangles_layers(300), empty, 8, body_cap)), 0)
 }
 
-// Work item 0221: the pod's body alone has the budget of 25600.
+// Work item 0221, 0275: the pod's body alone has the cap of 76800.
 @(test)
-test_the_pods_body_budget_is_25600 :: proc(t: ^testing.T) {
-	testing.expect_value(t, model_body_triangles_maximum(.Pod), 25600)
-	testing.expect_value(t, model_body_triangles_maximum(.Furnace), 3200)
+test_the_pods_body_cap_is_76800 :: proc(t: ^testing.T) {
+	testing.expect_value(t, model_body_triangles_cap(.Pod), 76800)
+	testing.expect_value(t, model_body_triangles_cap(.Furnace), 9600)
 	empty := empty_test_layers()
-	testing.expect_value(t, len(model_budget_problems(triangles_layers(25600), empty, 1, 25600)), 0)
-	over := model_budget_problems(triangles_layers(25601), empty, 1, 25600)
+	testing.expect_value(t, len(model_cap_problems(triangles_layers(76800), empty, 1, 76800)), 0)
+	over := model_cap_problems(triangles_layers(76801), empty, 1, 76800)
 	testing.expect_value(t, len(over), 1)
 	if len(over) == 1 {
-		testing.expect(t, strings.contains(over[0].detail, "25601"), over[0].detail)
-		testing.expect(t, strings.contains(over[0].detail, "25600"), over[0].detail)
+		testing.expect(t, strings.contains(over[0].detail, "76801"), over[0].detail)
+		testing.expect(t, strings.contains(over[0].detail, "76800"), over[0].detail)
 	}
+}
+
+// Work item 0275: every reference model sits at most a third of its
+// caps, so a mesh subdivided once over a reference's density fails. A
+// denser reference fails here, and the cap is raised with it.
+@(test)
+test_the_caps_stand_three_times_above_the_reference_models :: proc(t: ^testing.T) {
+	machines := shipped_machines()
+	defer delete(machines)
+	registry := Machine_Registry{machines = machines}
+	references := model_reference_counts(test_data_directory(), registry)
+	testing.expect_value(t, len(references), len(MODEL_REFERENCE_MACHINES))
+	for reference in references {
+		testing.expectf(t, reference.found, "%s: no reference model", reference.id)
+		machine_id, _ := find_machine_id(registry, reference.id)
+		kind := machines[machine_id].kind
+		testing.expectf(t, 3 * reference.counts.body_triangles <= model_body_triangles_cap(kind), "%s: body %d", reference.id, reference.counts.body_triangles)
+		testing.expectf(t, 3 * reference.counts.part_triangles <= MODEL_PART_TRIANGLES_CAP, "%s: part %d", reference.id, reference.counts.part_triangles)
+		testing.expectf(t, reference.counts.materials <= MODEL_MATERIAL_LIMIT, "%s: %d materials", reference.id, reference.counts.materials)
+	}
+}
+
+// Work item 0275: the counts lines of --model-check.
+@(test)
+test_the_counts_lines :: proc(t: ^testing.T) {
+	testing.expect_value(t, model_counts_line("boiler", {336, 0, 7}, 9600), "boiler: counts: body 336 triangles (cap 9600), part 0 (cap 600), 7 materials (limit 8)")
+	references := []Model_Reference{{"stone_furnace", {3173, 0, 8}, true}, {"pod", {}, false}}
+	testing.expect_value(t, model_references_line(references), "model check: reference models stone_furnace (body 3173, part 0, 8 materials), pod (no model)")
 }
 
 // Work item 0221: a hatch's part sliding up through the pod's body is

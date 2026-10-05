@@ -54,6 +54,12 @@ def lab_machines_of(text):
         return records.load_machines(path)
 
 
+def reference_entries(models):
+    """brief_slots' references for a lab of the models, as write_lab
+    builds them."""
+    return [(model, images, MACHINES[model].footprint, model_lab.reference_counts(model)) for model, images in model_lab.lab_reference_models(models, MACHINES)]
+
+
 class ModelLabTest(unittest.TestCase):
     def test_parse_models(self):
         self.assertEqual(model_lab.parse_models("pod,pod_hatch"), ["pod", "pod_hatch"])
@@ -146,19 +152,22 @@ class ModelLabTest(unittest.TestCase):
         slots = model_lab.brief_slots(drill, ["electric_mining_drill"], {})
         self.assertIn("3 by 3 by 3 cells", slots["size_and_frame"])
         self.assertIn("x from -1.5 to 1.5", slots["size_and_frame"])
-        self.assertIn("at most 3200 triangles", slots["parts"])
-        self.assertIn("at most 200 triangles", slots["parts"])
+        self.assertIn("under the sanity cap of 9600 triangles", slots["parts"])
+        self.assertIn("600 triangles", slots["parts"])
         self.assertIn("join_part(volumes, machine)", slots["parts"])
         self.assertIn("electric_mining_drill_front_left.png", slots["commands"])
         pod = {"pod": MACHINES["pod"]}
-        self.assertIn("25600", model_lab.brief_slots(pod, ["pod"], {})["parts"])
+        self.assertIn("76800", model_lab.brief_slots(pod, ["pod"], {})["parts"])
+        self.assertEqual(slots["reference_models"], "None: this lab remakes a reference model.")
         views = {"pod": [{"name": "inside_chair", "position": [0, 0, 1.2], "target": [2.5, 0, 0.9], "field_of_view_degrees": 80}]}
         self.assertIn("pod_inside_chair.png", model_lab.brief_slots(pod, ["pod"], views)["commands"])
 
     def test_the_template_fills(self):
         template = re.sub(r"\[\[[^\]]*\]\]", "word", (LAB_TOOLS / "brief_template.md").read_text())
         drill = {"electric_mining_drill": MACHINES["electric_mining_drill"]}
-        brief = model_lab.fill_brief(template, model_lab.brief_slots(drill, ["electric_mining_drill"], {}))
+        references = reference_entries(["electric_mining_drill"])
+        brief = model_lab.fill_brief(template, model_lab.brief_slots(drill, ["electric_mining_drill"], {}, (), references))
+        self.assertIn("reference_models/furnace_model_front_left.jpg", brief)
         self.assertNotIn("{{", brief)
         self.assertNotIn("[[", brief)
 
@@ -205,6 +214,38 @@ class ModelLabTest(unittest.TestCase):
                 model_lab.refuse_unbuilt_lab(lab)
             (lab / "lab.sjson").write_text(model_lab.lab_file_text(["pod"], "model", "0" * 40))
             model_lab.refuse_unbuilt_lab(lab)
+
+    def test_the_reference_models_are_the_games(self):
+        source = (REPOSITORY_ROOT / "src" / "model_check.odin").read_text()
+        match = re.search(r"^MODEL_REFERENCE_MACHINES :: \[\?\]string\{([^}]*)\}", source, re.MULTILINE)
+        self.assertIsNotNone(match)
+        self.assertEqual([model for model, _ in model_lab.REFERENCE_MODELS], re.findall(r'"([a-z0-9_]+)"', match.group(1)))
+        for model, images in model_lab.REFERENCE_MODELS:
+            self.assertIn(model, MACHINES)
+            self.assertEqual(MACHINES[model].model, model)
+            for file, _ in images:
+                self.assertTrue((model_lab.BOOKLET / file).is_file(), file)
+
+    def test_lab_reference_models(self):
+        def seen(models):
+            return {model: [file for file, _ in images] for model, images in model_lab.lab_reference_models(models, MACHINES)}
+
+        self.assertEqual(list(seen(["electric_mining_drill"])), ["stone_furnace", "pod"])
+        self.assertEqual(len(seen(["electric_mining_drill"])["pod"]), 3)
+        self.assertEqual(list(seen(["stone_furnace"])), ["pod"])
+        self.assertEqual(list(seen(["pod"])), ["stone_furnace"])
+        hatch = seen(["pod_hatch"])
+        self.assertEqual(list(hatch), ["stone_furnace", "pod"])
+        self.assertEqual(hatch["pod"], ["pod_model_round3_exterior.jpg"])
+        captions = dict(model_lab.lab_reference_models(["pod_hatch"], MACHINES))["pod"]
+        self.assertIn("the old `pod_hatch`, which this lab replaces", captions[0][1])
+
+    def test_reference_models_text(self):
+        text = model_lab.reference_models_text(reference_entries(["electric_mining_drill"]))
+        body, _, _ = model_lab.reference_counts("stone_furnace")
+        self.assertIn("`reference_models/furnace_model_front_left.jpg`", text)
+        self.assertIn(f"- `stone_furnace`: the footprint 10 by 10 by 12 cells, {body} body triangles", text)
+        self.assertIn("8 materials", text)
 
     def test_unmentioned_images(self):
         self.assertEqual(model_lab.unmentioned_images("look at front.png", ["front.png", "back.png"]), ["back.png"])

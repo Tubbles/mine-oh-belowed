@@ -342,10 +342,10 @@ test_the_shipped_obj_machines_load :: proc(t: ^testing.T) {
 		defer destroy_machine_model_mesh(mesh)
 		testing.expectf(t, problem == "", "%s: %q", id, problem)
 		body_triangles := model_layers_triangle_count(mesh.body)
-		testing.expectf(t, body_triangles >= 1 && body_triangles <= model_body_triangles_maximum(machine.kind), "%s: %d body triangles", id, body_triangles)
+		testing.expectf(t, body_triangles >= 1 && body_triangles <= model_body_triangles_cap(machine.kind), "%s: %d body triangles", id, body_triangles)
 		part_triangles := model_layers_triangle_count(mesh.part)
 		if motion_has_part(machine.motion.kind) {
-			testing.expectf(t, part_triangles >= 1 && part_triangles <= MODEL_PART_TRIANGLES_MAXIMUM, "%s: %d part triangles", id, part_triangles)
+			testing.expectf(t, part_triangles >= 1 && part_triangles <= MODEL_PART_TRIANGLES_CAP, "%s: %d part triangles", id, part_triangles)
 		} else {
 			testing.expectf(t, part_triangles == 0, "%s: %d part triangles without a moving part", id, part_triangles)
 		}
@@ -383,7 +383,7 @@ test_the_shipped_obj_machines_load :: proc(t: ^testing.T) {
 	}
 }
 
-// The pine (work item 0197): a body only, no glow, within its budget, and
+// The pine (work item 0197): a body only, no glow, within its cap, and
 // its trunk where the walk and the aim meet it: every vertex below one
 // cell within 1.05 times the species' trunk radius of the axis.
 @(test)
