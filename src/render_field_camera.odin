@@ -71,6 +71,14 @@ field_player_view :: proc(player: Field_Player, tuning: Field_Player_Tuning, alp
 	return {eye = eye - World_Position(back), up = player.up, forward = player.forward, yaw = player.yaw, pitch = player.pitch}
 }
 
+// viewer_body_shown for a field view, the body's axis from the eye down
+// the up by the eye's height at crouch_progress (the one the view was
+// built with).
+field_viewer_body_shown :: proc(mode: Camera_Mode, camera_position: [3]f32, view: Field_Camera_View, tuning: Field_Player_Tuning, crouch_progress: f32) -> bool {
+	eye_height := f32(f64(field_eye_height_units(tuning, crouch_progress)) / POSITION_UNITS_PER_METRE)
+	return viewer_body_shown(mode, camera_position, world_position_to_metres(view.eye), unit_vector_to_f32(view.up), eye_height)
+}
+
 // distance and shoulder place the third person camera behind the eye and
 // to its right (settings.third_person_distance and _shoulder).
 field_camera :: proc(view: Field_Camera_View, mode: Camera_Mode, distance, shoulder, field_of_view: f32) -> rl.Camera3D {

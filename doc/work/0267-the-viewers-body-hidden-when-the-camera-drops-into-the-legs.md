@@ -1,6 +1,6 @@
 # 0267: The viewer's body hidden when the pulled-in camera drops into the legs
 
-Status: implementing (2026-10-05)
+Status: verified (2026-10-05)
 
 ## Goal
 

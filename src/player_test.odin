@@ -324,13 +324,27 @@ test_the_block_viewers_body_is_hidden_when_the_camera_reaches_the_eye :: proc(t:
 		set_blocks(&near_world, test_block(registry, "stone"), {-1, y, 0})
 	}
 	near := third_person_position(&near_world, registry, eye, third_person_offset({1, 0, 0}, 0, THIRD_PERSON_DISTANCE, 0))
-	testing.expectf(t, !viewer_body_shown(.Third_Person, near, eye), "the body is shown with the camera at %v", near)
+	testing.expectf(t, !viewer_body_shown(.Third_Person, near, eye, {0, 1, 0}, PLAYER_EYE_HEIGHT), "the body is shown with the camera at %v", near)
 	far_world := make_floor_world(registry, 32)
 	for y in i32(1) ..= 6 {
 		set_blocks(&far_world, test_block(registry, "stone"), {-2, y, 0})
 	}
 	far := third_person_position(&far_world, registry, eye, third_person_offset({1, 0, 0}, 0, THIRD_PERSON_DISTANCE, 0))
-	testing.expectf(t, viewer_body_shown(.Third_Person, far, eye), "the body is hidden with the camera at %v", far)
+	testing.expectf(t, viewer_body_shown(.Third_Person, far, eye, {0, 1, 0}, PLAYER_EYE_HEIGHT), "the body is hidden with the camera at %v", far)
+}
+
+// Looking straight up over the floor the camera is pulled in to about
+// 0.2 m over it and 0.26 m off the axis, past 0261's distance from the
+// eye, and the body is hidden (0267).
+@(test)
+test_the_block_viewers_body_is_hidden_looking_straight_up :: proc(t: ^testing.T) {
+	registry := make_test_registry()
+	world := make_floor_world(registry, 32)
+	eye := [3]f32{0.5, 2.6, 0.5}
+	camera := third_person_position(&world, registry, eye, third_person_offset({0, 1, 0}, 0, THIRD_PERSON_DISTANCE, 0.6))
+	distance := f32_distance(camera, eye)
+	testing.expectf(t, distance >= VIEWER_BODY_HIDDEN_WITHIN_METRES, "the camera %v m from the eye", distance)
+	testing.expectf(t, !viewer_body_shown(.Third_Person, camera, eye, {0, 1, 0}, PLAYER_EYE_HEIGHT), "the body is shown with the camera at %v", camera)
 }
 
 // Fixed input: look down and dig for five seconds, climb back out by

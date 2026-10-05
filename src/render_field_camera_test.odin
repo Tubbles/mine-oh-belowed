@@ -113,7 +113,9 @@ test_the_field_viewers_body_is_hidden_with_the_camera_at_the_eye :: proc(t: ^tes
 		defer destroy_field_world(&world)
 		near_eye := test_site_point(millimetres_to_position_units(1900), millimetres_to_position_units(1600), 0)
 		position := field_third_person_position(&world, nil, nil, spacing, near_eye, {4, 0, 0})
-		scene := Field_Scene{viewer = 0, viewer_body_shown = viewer_body_shown(.Third_Person, position, world_position_to_metres(near_eye))}
+		view := Field_Camera_View{eye = near_eye, up = {0, UNIT_VECTOR_ONE, 0}}
+		tuning := test_field_tuning(spacing)
+		scene := Field_Scene{viewer = 0, viewer_body_shown = field_viewer_body_shown(.Third_Person, position, view, tuning, 0)}
 		testing.expectf(t, !field_player_body_drawn(scene, 0), "%d mm: the viewer's body is drawn with the camera at the eye", spacing)
 		testing.expectf(t, field_player_body_drawn(scene, 1), "%d mm: the other player's body is not drawn", spacing)
 	}
@@ -130,9 +132,34 @@ test_the_field_viewers_body_is_drawn_at_the_settings_distance :: proc(t: ^testin
 		player := start_crouch_test_player(&world, tuning)
 		view := field_player_view(player, tuning, 1, 0)
 		position := field_third_person_position(&world, nil, nil, spacing, view.eye, field_third_person_offset(view, THIRD_PERSON_DISTANCE, 0.6))
-		scene := Field_Scene{viewer = 0, viewer_body_shown = viewer_body_shown(.Third_Person, position, world_position_to_metres(view.eye))}
+		scene := Field_Scene{viewer = 0, viewer_body_shown = field_viewer_body_shown(.Third_Person, position, view, tuning, 0)}
 		testing.expectf(t, field_player_body_drawn(scene, 0), "%d mm: the viewer's body is not drawn", spacing)
 		testing.expectf(t, field_player_body_drawn(scene, 1), "%d mm: the other player's body is not drawn", spacing)
+	}
+}
+
+// Looking straight up on flat ground the camera is pulled in to the feet,
+// past 0261's distance from the eye, and the viewer's body is not drawn,
+// standing and crouched; another player's is (0267).
+@(test)
+test_the_field_viewers_body_is_hidden_looking_straight_up :: proc(t: ^testing.T) {
+	for spacing in TEST_FIELD_SPACINGS {
+		world := make_test_field(Test_Terrain{kind = .Flat}, spacing)
+		defer destroy_field_world(&world)
+		tuning := test_field_tuning(spacing)
+		player := start_crouch_test_player(&world, tuning)
+		player.pitch = FIELD_PITCH_LIMIT
+		for crouch_progress in ([]f32{0, 1}) {
+			view := field_player_view(player, tuning, 1, crouch_progress)
+			position := field_third_person_position(&world, nil, nil, spacing, view.eye, field_third_person_offset(view, THIRD_PERSON_DISTANCE, 0.6))
+			distance := f32_distance(position, world_position_to_metres(view.eye))
+			testing.expectf(t, distance >= VIEWER_BODY_HIDDEN_WITHIN_METRES, "%d mm, crouch %v: the camera %v m from the eye", spacing, crouch_progress, distance)
+			shown := field_viewer_body_shown(.Third_Person, position, view, tuning, crouch_progress)
+			testing.expectf(t, !shown, "%d mm, crouch %v: the body is shown with the camera at %v", spacing, crouch_progress, position)
+			scene := Field_Scene{viewer = 0, viewer_body_shown = shown}
+			testing.expectf(t, !field_player_body_drawn(scene, 0), "%d mm, crouch %v: the viewer's body is drawn", spacing, crouch_progress)
+			testing.expectf(t, field_player_body_drawn(scene, 1), "%d mm, crouch %v: the other player's body is not drawn", spacing, crouch_progress)
+		}
 	}
 }
 

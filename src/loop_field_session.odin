@@ -29,11 +29,11 @@ FIELD_TORCH_COLOR :: rl.Color{255, 196, 96, 255}
 FIELD_PLAYER_CAPSULE_COLOR :: rl.Color{70, 110, 180, 255}
 
 // What draw_field_scene draws with. viewer is the player whose camera
-// it is (its ghost is drawn, its body only where viewer_body_shown: third
-// person, the camera at least VIEWER_BODY_HIDDEN_WITHIN_METRES from the
-// eye, 0261); NO_PLAYER for a free camera. lockstep, when set, gives the
-// local players as predicted (lockstep_view_player); nil draws the
-// simulation's players.
+// it is (its ghost is drawn, its body only where viewer_body_shown:
+// third person, the camera at least VIEWER_BODY_HIDDEN_WITHIN_METRES
+// from the body's axis from the feet to the eye, 0261, 0267); NO_PLAYER
+// for a free camera. lockstep, when set, gives the local players as
+// predicted (lockstep_view_player); nil draws the simulation's players.
 Field_Scene :: struct {
 	state:        ^Simulation_State,
 	content:      Simulation_Content,
@@ -415,11 +415,12 @@ field_view_camera_mode :: proc(body: Field_Player) -> Camera_Mode {
 // The viewport's field camera, kept for the HUD's projections, and
 // whether it shows the viewer's body (viewer_body_shown).
 field_viewport_camera :: proc(state: ^Frame_State, viewport: ^Viewport, player: Player, alpha: f32) -> (camera: rl.Camera3D, body_shown: bool) {
-	view := field_player_view(player.field, state.session.field_content.tuning, alpha, field_crouch_progress_of(state.presentation.field_renderer.crouch_progress[:], viewport.player))
+	crouch_progress := field_crouch_progress_of(state.presentation.field_renderer.crouch_progress[:], viewport.player)
+	view := field_player_view(player.field, state.session.field_content.tuning, alpha, crouch_progress)
 	mode := field_view_camera_mode(player.field)
 	camera = pulled_in_field_camera(&state.session.simulation, state.session.field_content, view, mode, state.settings.third_person_distance, state.settings.third_person_shoulder, state.settings.field_of_view)
 	viewport.presentation.camera = camera
-	return camera, viewer_body_shown(mode, camera.position, world_position_to_metres(view.eye))
+	return camera, field_viewer_body_shown(mode, camera.position, view, state.session.field_content.tuning, crouch_progress)
 }
 
 // The pod as the arrival draws it (0270): its common, its frame and its

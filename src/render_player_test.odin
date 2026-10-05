@@ -98,11 +98,37 @@ test_held_block_cube_faces_wind_outwards :: proc(t: ^testing.T) {
 @(test)
 test_the_viewers_body_is_shown_only_past_the_hidden_distance :: proc(t: ^testing.T) {
 	eye := [3]f32{1, 2, 3}
-	testing.expect(t, !viewer_body_shown(.Third_Person, eye, eye), "shown at the eye")
-	testing.expect(t, !viewer_body_shown(.Third_Person, eye + {0, 0, VIEWER_BODY_HIDDEN_WITHIN_METRES - 0.01}, eye), "shown just inside the distance")
-	testing.expect(t, viewer_body_shown(.Third_Person, eye + {VIEWER_BODY_HIDDEN_WITHIN_METRES + 0.01, 0, 0}, eye), "hidden just past the distance")
+	testing.expect(t, !viewer_body_shown(.Third_Person, eye, eye, {0, 1, 0}, PLAYER_EYE_HEIGHT), "shown at the eye")
+	testing.expect(t, !viewer_body_shown(.Third_Person, eye + {0, 0, VIEWER_BODY_HIDDEN_WITHIN_METRES - 0.01}, eye, {0, 1, 0}, PLAYER_EYE_HEIGHT), "shown just inside the distance")
+	testing.expect(t, viewer_body_shown(.Third_Person, eye + {VIEWER_BODY_HIDDEN_WITHIN_METRES + 0.01, 0, 0}, eye, {0, 1, 0}, PLAYER_EYE_HEIGHT), "hidden just past the distance")
 	shortest := eye + third_person_offset({1, 0, 0}, 0, THIRD_PERSON_DISTANCE_RANGE.minimum, 0)
-	testing.expect(t, viewer_body_shown(.Third_Person, shortest, eye), "hidden at the settings' shortest distance")
-	testing.expect(t, !viewer_body_shown(.First_Person, shortest, eye), "shown in first person")
+	testing.expect(t, viewer_body_shown(.Third_Person, shortest, eye, {0, 1, 0}, PLAYER_EYE_HEIGHT), "hidden at the settings' shortest distance")
+	testing.expect(t, !viewer_body_shown(.First_Person, shortest, eye, {0, 1, 0}, PLAYER_EYE_HEIGHT), "shown in first person")
 	testing.expectf(t, abs(VIEWER_BODY_HIDDEN_WITHIN_METRES - (PLAYER_WIDTH / 2 + FIELD_NEAR_METRES)) < 1e-6, "%v is not the body's radius plus the near plane", VIEWER_BODY_HIDDEN_WITHIN_METRES)
+}
+
+// The viewer's body is hidden within VIEWER_BODY_HIDDEN_WITHIN_METRES of
+// the axis from the feet to the eye, standing and crouched, shown past it
+// beside the axis, below the feet and above the eye, and the axis follows
+// the up (0267).
+@(test)
+test_the_viewers_body_is_hidden_near_the_axis_from_the_feet_to_the_eye :: proc(t: ^testing.T) {
+	eye := [3]f32{1, 2, 3}
+	inside: f32 = VIEWER_BODY_HIDDEN_WITHIN_METRES - 0.01
+	outside: f32 = VIEWER_BODY_HIDDEN_WITHIN_METRES + 0.01
+	for height in ([]f32{PLAYER_EYE_HEIGHT, 0.7}) {
+		up := [3]f32{0, 1, 0}
+		feet := eye - {0, height, 0}
+		middle := feet + {0, height / 2, 0}
+		testing.expectf(t, !viewer_body_shown(.Third_Person, feet, eye, up, height), "%v m: shown at the feet", height)
+		testing.expectf(t, !viewer_body_shown(.Third_Person, middle + {inside, 0, 0}, eye, up, height), "%v m: shown just inside beside the axis", height)
+		testing.expectf(t, !viewer_body_shown(.Third_Person, feet - {0, inside, 0}, eye, up, height), "%v m: shown just inside below the feet", height)
+		testing.expectf(t, viewer_body_shown(.Third_Person, middle + {outside, 0, 0}, eye, up, height), "%v m: hidden just past beside the axis", height)
+		testing.expectf(t, viewer_body_shown(.Third_Person, feet - {0, outside, 0}, eye, up, height), "%v m: hidden just past below the feet", height)
+		testing.expectf(t, viewer_body_shown(.Third_Person, eye + {0, outside, 0}, eye, up, height), "%v m: hidden just past above the eye", height)
+	}
+	tilted := [3]f32{0, 0.6, 0.8}
+	side := [3]f32{0, 0.8, -0.6}
+	testing.expect(t, !viewer_body_shown(.Third_Person, eye - tilted * 0.8 + side * inside, eye, tilted, PLAYER_EYE_HEIGHT), "shown just inside the tilted axis")
+	testing.expect(t, viewer_body_shown(.Third_Person, eye - tilted * 0.8 + side * outside, eye, tilted, PLAYER_EYE_HEIGHT), "hidden just past the tilted axis")
 }
