@@ -750,9 +750,10 @@ held_glyph_hints :: proc(tool: Field_Held_Tool) -> []Glyph_Hint {
 	return list[:]
 }
 
-// Place puts every tool's thing down but the hand's.
+// Place puts every tool's thing down but the hand's and a shovel's,
+// pickaxe's or axe's (0265).
 field_held_tool_places :: proc(tool: Field_Held_Tool) -> bool {
-	return tool != .Hand
+	return tool != .Hand && tool != .Tool
 }
 
 // Next_Brush turns a held machine a quarter (update_field_held_tool).
@@ -760,9 +761,10 @@ field_held_tool_turns :: proc(tool: Field_Held_Tool) -> bool {
 	return tool == .Machine
 }
 
-// Next_Brush cycles the brush with a material or the hand.
+// Next_Brush cycles the brush with a material, the hand or a shovel,
+// pickaxe or axe (0265).
 field_held_tool_cycles_brush :: proc(tool: Field_Held_Tool) -> bool {
-	return tool == .Material || tool == .Hand
+	return tool == .Material || tool == .Hand || tool == .Tool
 }
 
 // Where the HUD's glyph bar stands (0219): rows bottom first, right

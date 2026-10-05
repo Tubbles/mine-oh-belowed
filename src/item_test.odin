@@ -20,7 +20,7 @@ test_item :: proc(items: Item_Registry, id: string) -> Item_Id {
 test_shipped_items_resolve :: proc(t: ^testing.T) {
 	items := make_test_items()
 	blocks := make_test_registry()
-	testing.expect_value(t, len(items.items), 149)
+	testing.expect_value(t, len(items.items), 155)
 	iron_plate := items.items[test_item(items, "iron_plate")]
 	testing.expect_value(t, iron_plate.category, Item_Category.Intermediate)
 	testing.expect_value(t, iron_plate.stack_size, 50)
@@ -96,14 +96,56 @@ test_item_loading_rejects_bad_tables :: proc(t: ^testing.T) {
 		}
 	}
 	testing.expect(t, resolve_test_items(without_torch[:]) != "")
-	// Without the iron pickaxe nothing reaches deep stone.
+	// Without the iron tools nothing reaches deep stone: the block world
+	// counts a shovel's and an axe's tier as a pickaxe's (0265).
 	without_iron_pickaxe := make([dynamic]Item_Definition, context.temp_allocator)
 	for definition in valid {
-		if definition.id != "iron_pickaxe" {
+		if definition.id != "iron_pickaxe" && definition.id != "iron_shovel" && definition.id != "iron_axe" {
 			append(&without_iron_pickaxe, definition)
 		}
 	}
 	testing.expect_value(t, resolve_test_items(without_iron_pickaxe[:]), `block "deep_stone" needs tool_tier 3, no tool goes above 2`)
+}
+
+// The nine shipped tools carry their roles and tiers (0265); a role on a
+// non-tool, a role at tier 0, an unknown role and a tier above 15 are
+// refused.
+@(test)
+test_tool_roles_parse_and_validate :: proc(t: ^testing.T) {
+	items := make_test_items()
+	shipped := [?]struct {
+		id:   string,
+		role: Item_Tool_Role,
+		tier: int,
+	}{
+		{"wooden_pickaxe", .Pickaxe, 1},
+		{"stone_pickaxe", .Pickaxe, 2},
+		{"iron_pickaxe", .Pickaxe, 3},
+		{"wooden_shovel", .Shovel, 1},
+		{"stone_shovel", .Shovel, 2},
+		{"iron_shovel", .Shovel, 3},
+		{"wooden_axe", .Axe, 1},
+		{"stone_axe", .Axe, 2},
+		{"iron_axe", .Axe, 3},
+	}
+	for entry in shipped {
+		item := items.items[test_item(items, entry.id)]
+		testing.expectf(t, item.tool_role == entry.role && item.tool_tier == entry.tier, "%s: %v %d", entry.id, item.tool_role, item.tool_tier)
+	}
+	testing.expect_value(t, items.items[test_item(items, "geologists_hammer")].tool_role, Item_Tool_Role.None)
+	refused := [?]struct {
+		definition: Item_Definition,
+		problem:    string,
+	}{
+		{{id = "x", name_key = "k", category = "raw", stack_size = 1, price = 1, tool_role = "shovel"}, `item "x" has tool_role "shovel" but is not a tool`},
+		{{id = "x", name_key = "k", category = "tool", stack_size = 1, price = 1, tool_role = "axe"}, `item "x" has tool_role "axe" at tool_tier 0, a role needs 1 or more`},
+		{{id = "x", name_key = "k", category = "tool", stack_size = 1, price = 1, tool_tier = 1, tool_role = "hoe"}, `item "x" has unknown tool_role "hoe"`},
+		{{id = "x", name_key = "k", category = "tool", stack_size = 1, price = 1, tool_tier = 16}, `item "x" has tool_tier 16 outside 0 to 15`},
+	}
+	for entry in refused {
+		definitions := []Item_Definition{entry.definition}
+		testing.expect_value(t, validate_item_definition(definitions, 0), entry.problem)
+	}
 }
 
 @(test)

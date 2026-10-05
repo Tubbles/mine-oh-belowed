@@ -163,7 +163,9 @@ PLANET_TREE_STAND_IN_SPECIES :: Planet_Tree_Species {
 	tint                     = {255, 255, 255},
 	item                     = "recorded",
 	count                    = 1,
-	felling_milliseconds     = 1000,
+	hand_felling_scale_percent = 100,
+	hand_felling_milliseconds  = 1000,
+	axe_felling_milliseconds   = {1000, 1000, 1000},
 	trunk_radius_millimetres = 100,
 	trunk_height_millimetres = 1000,
 }

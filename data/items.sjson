@@ -60,9 +60,14 @@
 // Rocket program (work item 0040): the launch pad, and the rocket parts
 // it assembles a rocket from (rocket fuel is a fluid). A part stacks to
 // 50, which also caps what one pad slot holds; a rocket takes at most 10.
-// tool_tier (optional, tool items only, work item 0051) is the highest
-// blocks.sjson tool_tier the item mines by hand while anywhere in the
-// player's inventory. Every block tier needs a tool that reaches it.
+// tool_tier (optional, tool items only, 0 to 15, work item 0051) is the
+// highest blocks.sjson tool_tier the item mines by hand while anywhere in
+// the player's inventory. Every block tier needs a tool that reaches it.
+// tool_role (optional, work item 0265) is shovel, pickaxe or axe, on a
+// tool of tool_tier 1 or more: on the terrain field the tool digs the
+// materials whose dug_with names its role up to its tool_tier
+// (materials.sjson), or fells trees (the axe), only while selected on the
+// hotbar.
 // price (required, positive, work item 0041) is the venture credit one
 // item fetches when a shipment sells it as free trade. The values are
 // guesses from the recipe depth: raw material and ore 1, plates 2, steel
@@ -142,9 +147,15 @@ items = [
 	{id = "bitumen", name_key = "item_bitumen", description_key = "describe_item_bitumen", category = "intermediate", stack_size = 50, cannot_recycle = true, price = 3}
 	{id = "science_pack_2", name_key = "item_science_pack_2", description_key = "describe_item_science_pack_2", category = "intermediate", stack_size = 100, price = 15}
 	// Tools
-	{id = "wooden_pickaxe", name_key = "item_wooden_pickaxe", description_key = "describe_item_wooden_pickaxe", category = "tool", stack_size = 50, tool_tier = 1, price = 5}
-	{id = "stone_pickaxe", name_key = "item_stone_pickaxe", description_key = "describe_item_stone_pickaxe", category = "tool", stack_size = 50, tool_tier = 2, price = 5}
-	{id = "iron_pickaxe", name_key = "item_iron_pickaxe", description_key = "describe_item_iron_pickaxe", category = "tool", stack_size = 50, tool_tier = 3, price = 8}
+	{id = "wooden_pickaxe", name_key = "item_wooden_pickaxe", description_key = "describe_item_wooden_pickaxe", category = "tool", stack_size = 50, tool_tier = 1, tool_role = "pickaxe", price = 5}
+	{id = "stone_pickaxe", name_key = "item_stone_pickaxe", description_key = "describe_item_stone_pickaxe", category = "tool", stack_size = 50, tool_tier = 2, tool_role = "pickaxe", price = 5}
+	{id = "iron_pickaxe", name_key = "item_iron_pickaxe", description_key = "describe_item_iron_pickaxe", category = "tool", stack_size = 50, tool_tier = 3, tool_role = "pickaxe", price = 8}
+	{id = "wooden_shovel", name_key = "item_wooden_shovel", description_key = "describe_item_wooden_shovel", category = "tool", stack_size = 50, tool_tier = 1, tool_role = "shovel", price = 3}
+	{id = "stone_shovel", name_key = "item_stone_shovel", description_key = "describe_item_stone_shovel", category = "tool", stack_size = 50, tool_tier = 2, tool_role = "shovel", price = 3}
+	{id = "iron_shovel", name_key = "item_iron_shovel", description_key = "describe_item_iron_shovel", category = "tool", stack_size = 50, tool_tier = 3, tool_role = "shovel", price = 4}
+	{id = "wooden_axe", name_key = "item_wooden_axe", description_key = "describe_item_wooden_axe", category = "tool", stack_size = 50, tool_tier = 1, tool_role = "axe", price = 5}
+	{id = "stone_axe", name_key = "item_stone_axe", description_key = "describe_item_stone_axe", category = "tool", stack_size = 50, tool_tier = 2, tool_role = "axe", price = 5}
+	{id = "iron_axe", name_key = "item_iron_axe", description_key = "describe_item_iron_axe", category = "tool", stack_size = 50, tool_tier = 3, tool_role = "axe", price = 8}
 	{id = "geologists_hammer", name_key = "item_geologists_hammer", description_key = "describe_item_geologists_hammer", category = "tool", stack_size = 50, usable = true, use = "assay", price = 6, tool_tier = 2}
 	{id = "magnetometer", name_key = "item_magnetometer", description_key = "describe_item_magnetometer", category = "tool", stack_size = 50, usable = true, use = "magnetometer", detects = "hematite", use_range = 30, price = 35}
 	{id = "thumper_charge", name_key = "item_thumper_charge", description_key = "describe_item_thumper_charge", category = "tool", stack_size = 50, usable = true, use = "seismic_shot", use_range = 32, cannot_recycle = true, price = 5}

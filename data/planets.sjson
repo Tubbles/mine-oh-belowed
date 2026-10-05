@@ -78,10 +78,13 @@ planets = [
 			species = [
 				// machine: a machines.sjson record of kind tree, its model.
 				// tint multiplies the model's colours. The yield is count of
-				// item after Mine held felling_milliseconds on the trunk (four
-				// logs at the block world's 1.5 s a log). The trunk is the
-				// capsule the walk, the aim and the placements meet.
-				{id = "pine", machine = "pine_tree", tint = [236, 232, 214], item = "log", count = 4, felling_milliseconds = 6000, trunk_radius_millimetres = 180, trunk_height_millimetres = 2500}
+				// item after Mine held on the trunk (0265): a tree of at most
+				// hand_felling_scale_percent (85 to 115 grow) falls to the hand
+				// in hand_felling_milliseconds, any tree to the wooden, stone and
+				// iron axe in axe_felling_milliseconds (the wooden axe four logs
+				// at the block world's 1.5 s a log). The trunk is the capsule
+				// the walk, the aim and the placements meet.
+				{id = "pine", machine = "pine_tree", tint = [236, 232, 214], item = "log", count = 4, hand_felling_scale_percent = 100, hand_felling_milliseconds = 10000, axe_felling_milliseconds = [6000, 4000, 2500], trunk_radius_millimetres = 180, trunk_height_millimetres = 2500}
 			]
 		}
 		// Fill per surface sample per minute (254 a sample), applied by

@@ -36,6 +36,10 @@ Field_Material_Definition :: struct {
 	id:        string,
 	// An items.sjson id; empty for a material that cannot be dug or placed.
 	item:      string,
+	// The tool_role that digs it (0265): shovel or pickaxe with an item,
+	// empty without one.
+	dug_with:  string,
+	// The tier of the dug_with tool the material needs.
 	tool_tier: int,
 	// The brush's rate on this material in percent (0179).
 	dig_rate_percent: int,
@@ -48,6 +52,7 @@ Field_Materials_File :: struct {
 Field_Material_Record :: struct {
 	// NO_ITEM: the material cannot be dug or placed (air, bedrock).
 	item:      Item_Id,
+	dug_with:  Item_Tool_Role,
 	tool_tier: int,
 	dig_rate_percent: int,
 }
@@ -57,7 +62,7 @@ Field_Material_Table :: [Field_Material]Field_Material_Record
 // Why the hand tool's latest edit did less than asked.
 Field_Edit_Refusal :: enum u8 {
 	None,
-	// The ground's material needs a better pickaxe than any carried.
+	// The ground's material needs a better tool than the one selected.
 	Tool_Tier,
 	// The material yields no item (bedrock).
 	Undiggable,
@@ -93,6 +98,12 @@ Field_Edit_Refusal :: enum u8 {
 	// The raised volume would overlap the capsule of the pod's spawn,
 	// where the next joiner stands (0180, field_place_buries_a_player).
 	Would_Bury_Spawn,
+	// The ground's material is dug with a shovel or a pickaxe, not the
+	// tool selected (0265).
+	Needs_Shovel,
+	Needs_Pickaxe,
+	// A tree larger than the hand fells (0265, field_felling_ticks).
+	Needs_Axe,
 }
 
 // The string keys of the refusals the HUD toasts (Field_Refused, 0179).
@@ -114,6 +125,9 @@ field_refusal_keys := [Field_Edit_Refusal]string {
 	.Something_Stands_On_It = "field_refused_something_stands_on_it",
 	.Tree_In_The_Way   = "field_refused_tree_in_the_way",
 	.Would_Bury_Spawn  = "field_refused_would_bury_spawn",
+	.Needs_Shovel      = "field_refused_needs_shovel",
+	.Needs_Pickaxe     = "field_refused_needs_pickaxe",
+	.Needs_Axe         = "field_refused_needs_axe",
 }
 
 Queued_Field_Edit :: struct {
@@ -281,8 +295,17 @@ field_material_record :: proc(definition: Field_Material_Definition, items: Item
 			return {}, fmt.tprintf("item %q is not in items.sjson", definition.item)
 		}
 	}
-	if highest := highest_tool_tier(items.items); definition.tool_tier < 0 || definition.tool_tier > highest {
-		return {}, fmt.tprintf("tool_tier %d is outside 0 to %d", definition.tool_tier, highest)
+	found: bool
+	if record.dug_with, found = parse_named_enum(item_tool_role_names, definition.dug_with); !found || record.dug_with == .Axe {
+		return {}, fmt.tprintf("dug_with %q is not shovel, pickaxe or empty", definition.dug_with)
+	}
+	if (record.item == NO_ITEM) != (record.dug_with == .None) {
+		return {}, fmt.tprintf("dug_with %q needs an item, and an item needs dug_with", definition.dug_with)
+	}
+	minimum_tier := record.dug_with == .None ? 0 : 1
+	maximum_tier := record.dug_with == .None ? 0 : highest_tool_tier(items.items)
+	if definition.tool_tier < minimum_tier || definition.tool_tier > maximum_tier {
+		return {}, fmt.tprintf("tool_tier %d is outside %d to %d", definition.tool_tier, minimum_tier, maximum_tier)
 	}
 	return record, ""
 }
@@ -343,24 +366,15 @@ load_field_material_table :: proc(data_directory: string, items: Item_Registry) 
 	return table, true
 }
 
-// The materials the tier digs.
-field_diggable_materials :: proc(table: Field_Material_Table, tool_tier: int) -> bit_set[Field_Material] {
+// The materials the tool of this role and tier digs (0265).
+field_diggable_materials :: proc(table: Field_Material_Table, role: Item_Tool_Role, tool_tier: int) -> bit_set[Field_Material] {
 	diggable: bit_set[Field_Material]
 	for record, material in table {
-		if record.item != NO_ITEM && record.tool_tier <= tool_tier {
+		if record.item != NO_ITEM && record.dug_with == role && record.tool_tier <= tool_tier {
 			diggable += {material}
 		}
 	}
 	return diggable
-}
-
-// The best tool_tier carried, 0 for bare hands, as player_tool_tier.
-field_tool_tier :: proc(inventory: Inventory, items: Item_Registry) -> int {
-	tier := 0
-	for stack in inventory.slots {
-		tier = max(tier, stack_tool_tier(stack, items))
-	}
-	return tier
 }
 
 // The yield.
@@ -430,13 +444,20 @@ field_place_buries_a_player :: proc(state: ^Simulation_State, content: Simulatio
 	return .None
 }
 
-// The brush edit the player's tool asks for this tick: Dig or Place held
-// with the ground in reach. The tool tier and the place's budget are read
-// when the queue drains.
+// The selected tool digs the ground (0265): a shovel or a pickaxe. The
+// hand and any other item dig nothing, and no refusal is told, since it
+// would fire under every resting thumb.
+field_player_digs :: proc(player: Field_Player) -> bool {
+	return player.tool == .Tool && (player.held_tool_role == .Shovel || player.held_tool_role == .Pickaxe)
+}
+
+// The brush edit the player's tool asks for this tick: Dig held with a
+// digging tool selected, or Place held, with the ground in reach. The
+// tool tier and the place's budget are read when the queue drains.
 field_player_edit :: proc(world: ^Field_World, spacing_millimetres: int, player: Field_Player, input: Field_Player_Input, brushes: []Field_Brush) -> (edit: Field_Edit, wanted: bool) {
 	mode: Field_Edit_Mode
 	switch {
-	case .Dig in input.held:
+	case .Dig in input.held && field_player_digs(player):
 		mode = .Dig
 	case .Place in input.held && player.tool == .Material:
 		mode = .Place
@@ -458,15 +479,26 @@ field_player_edit :: proc(world: ^Field_World, spacing_millimetres: int, player:
 }
 
 // The first blocked material reported: Undiggable when it has no item,
-// Tool_Tier otherwise.
-report_blocked_dig :: proc(player: ^Player, table: Field_Material_Table, blocked: bit_set[Field_Material]) {
+// Needs_Shovel or Needs_Pickaxe when another role digs it, Tool_Tier
+// otherwise.
+report_blocked_dig :: proc(player: ^Player, table: Field_Material_Table, blocked: bit_set[Field_Material], role: Item_Tool_Role) {
 	for material in Field_Material {
 		if material in blocked {
-			player.field_refusal = table[material].item == NO_ITEM ? .Undiggable : .Tool_Tier
+			player.field_refusal = blocked_dig_refusal(table[material], role)
 			player.field_refused_material = material
 			return
 		}
 	}
+}
+
+blocked_dig_refusal :: proc(record: Field_Material_Record, role: Item_Tool_Role) -> Field_Edit_Refusal {
+	switch {
+	case record.item == NO_ITEM:
+		return .Undiggable
+	case record.dug_with != role:
+		return record.dug_with == .Shovel ? .Needs_Shovel : .Needs_Pickaxe
+	}
+	return .Tool_Tier
 }
 
 // The material table's dig rates, as the edit carries them.
@@ -481,7 +513,7 @@ field_dig_rates :: proc(table: Field_Material_Table) -> [Field_Material]i32 {
 drain_field_dig :: proc(state: ^Simulation_State, content: Simulation_Content, player: ^Player, edit: Field_Edit) {
 	field := &state.field
 	dig := edit
-	dig.diggable = field_diggable_materials(content.field.materials, field_tool_tier(player.inventory, content.items))
+	dig.diggable = field_diggable_materials(content.field.materials, player.field.held_tool_role, int(player.field.held_tool_tier))
 	dig.dig_rate_percent = field_dig_rates(content.field.materials)
 	dig.tick = state.tick
 	result := apply_field_edit(&field.world, field.spacing_millimetres, dig)
@@ -491,7 +523,7 @@ drain_field_dig :: proc(state: ^Simulation_State, content: Simulation_Content, p
 			credit_field_volume(player.inventory, content.items, content.field.materials[material].item, &player.field_credit[material], volume)
 		}
 	}
-	report_blocked_dig(player, content.field.materials, result.blocked)
+	report_blocked_dig(player, content.field.materials, result.blocked, player.field.held_tool_role)
 	fell_trees_over_dug_ground(state, content, dig)
 }
 

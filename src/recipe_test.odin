@@ -25,7 +25,7 @@ test_recipe :: proc(recipes: Recipe_Registry, id: string) -> int {
 test_shipped_recipes_resolve :: proc(t: ^testing.T) {
 	items := make_test_items()
 	recipes, technologies := make_test_recipes(items)
-	testing.expect_value(t, len(recipes.recipes), 129)
+	testing.expect_value(t, len(recipes.recipes), 135)
 	testing.expect_value(t, len(technologies.technologies), 27)
 	plank := recipes.recipes[test_recipe(recipes, "plank")]
 	testing.expect_value(t, plank.outputs[0], Item_Stack{test_item(items, "plank"), 4})
@@ -42,6 +42,35 @@ test_shipped_recipes_resolve :: proc(t: ^testing.T) {
 	testing.expect_value(t, furnace_recipe_for(recipes, test_item(items, "log")), test_recipe(recipes, "charcoal"))
 	testing.expect_value(t, furnace_recipe_for(recipes, test_item(items, "copper_plate")), NO_RECIPE)
 	testing.expect(t, !item_is_smeltable(recipes, test_item(items, "coal")))
+}
+
+// The shovels, axes and pickaxes (0265) are start recipes made by hand
+// from a plank, stone or iron plate head and two sticks.
+@(test)
+test_the_tool_recipes_resolve :: proc(t: ^testing.T) {
+	items := make_test_items()
+	recipes, _ := make_test_recipes(items)
+	cases := [?]struct {
+		id:       string,
+		material: string,
+		count:    u16,
+	}{
+		{"wooden_shovel", "plank", 1},
+		{"stone_shovel", "stone", 1},
+		{"iron_shovel", "iron_plate", 1},
+		{"wooden_axe", "plank", 3},
+		{"stone_axe", "stone", 3},
+		{"iron_axe", "iron_plate", 3},
+		{"wooden_pickaxe", "plank", 3},
+		{"stone_pickaxe", "stone", 3},
+		{"iron_pickaxe", "iron_plate", 3},
+	}
+	for entry in cases {
+		recipe := recipes.recipes[test_recipe(recipes, entry.id)]
+		testing.expectf(t, len(recipe.inputs) == 2 && recipe.inputs[0] == Item_Stack{test_item(items, entry.material), entry.count} && recipe.inputs[1] == Item_Stack{test_item(items, "stick"), 2}, "%s: %v", entry.id, recipe.inputs)
+		testing.expect_value(t, recipe.outputs[0], Item_Stack{test_item(items, entry.id), 1})
+		testing.expectf(t, .Hand in recipe.made_in && recipe.channel == .Start, "%s: %v %v", entry.id, recipe.made_in, recipe.channel)
+	}
 }
 
 // A recipe the slice's player makes from the held items: by hand, in a
@@ -98,7 +127,7 @@ slice_reachable_items :: proc(recipes: Recipe_Registry, start: []bool, furnace: 
 // trees yield (0197) and the starting items of data/game.sjson, by hand,
 // in the stone furnace and at the stone cutting table (0196), to every
 // building chapter 1 and the first line need, and the three foundations;
-// the trees' logs make the planks.
+// the trees' logs make the planks and the wooden tools (0265).
 @(test)
 test_the_slice_recipe_chain_is_reachable_from_the_fields_yield :: proc(t: ^testing.T) {
 	items := make_test_items()
@@ -122,11 +151,11 @@ test_the_slice_recipe_chain_is_reachable_from_the_fields_yield :: proc(t: ^testi
 		start[test_item(items, stack.item)] = true
 	}
 	held := slice_reachable_items(recipes, start, test_item(items, "stone_furnace"), machines)
-	reachable := [?]string{"stone_furnace", "wooden_foundation", "stone_cutting_table", "stone_brick", "stone_brick_foundation", "torch", "belt_pole", "burner_mining_drill", "burner_inserter", "belt", "iron_chest", "iron_foundation", "stone_cutter"}
+	reachable := [?]string{"stone_furnace", "wooden_foundation", "stone_cutting_table", "stone_brick", "stone_brick_foundation", "torch", "belt_pole", "burner_mining_drill", "burner_inserter", "belt", "iron_chest", "iron_foundation", "stone_cutter", "wooden_shovel", "wooden_pickaxe", "wooden_axe", "stone_pickaxe", "stone_shovel"}
 	for id in reachable {
 		testing.expectf(t, held[test_item(items, id)], "%s is out of reach", id)
 	}
-	for id in ([?]string{"plank", "wooden_foundation", "stone_cutting_table"}) {
+	for id in ([?]string{"plank", "wooden_foundation", "stone_cutting_table", "wooden_shovel", "wooden_pickaxe", "wooden_axe"}) {
 		testing.expectf(t, held[test_item(items, id)], "%s is out of reach of the logs", id)
 	}
 }

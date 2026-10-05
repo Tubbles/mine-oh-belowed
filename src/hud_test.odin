@@ -36,15 +36,16 @@ test_the_fell_hint_shows_on_an_aimed_tree :: proc(t: ^testing.T) {
 	testing.expect_value(t, kept, 1)
 }
 
-// Work item 0219: Place for every tool but the hand, Turn for a machine
-// alone, Brush for a material or the hand; outside a field session a held
+// Work item 0219: Place for every tool but the hand and a shovel, pickaxe
+// or axe (0265), Turn for a machine alone, Brush for a material, the hand
+// or a shovel, pickaxe or axe; outside a field session a held
 // furnace adds no held hints.
 @(test)
 test_the_held_hints_follow_the_tool :: proc(t: ^testing.T) {
 	for tool in Field_Held_Tool {
-		testing.expectf(t, field_held_tool_places(tool) == (tool != .Hand), "%v places", tool)
+		testing.expectf(t, field_held_tool_places(tool) == (tool != .Hand && tool != .Tool), "%v places", tool)
 		testing.expectf(t, field_held_tool_turns(tool) == (tool == .Machine), "%v turns", tool)
-		testing.expectf(t, field_held_tool_cycles_brush(tool) == (tool == .Material || tool == .Hand), "%v cycles the brush", tool)
+		testing.expectf(t, field_held_tool_cycles_brush(tool) == (tool == .Material || tool == .Hand || tool == .Tool), "%v cycles the brush", tool)
 	}
 	use_shipped_strings()
 	defer thread_string_table = nil

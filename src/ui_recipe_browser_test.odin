@@ -44,7 +44,7 @@ test_browser_filters_by_tab_tag_and_craftable :: proc(t: ^testing.T) {
 	science := visible_ids(test, {category = .Science})
 	testing.expect(t, slice.equal(science, []string{"science_pack_1", "science_pack_2"}))
 	tools := visible_ids(test, {category = .Tools})
-	testing.expect(t, slice.equal(tools, []string{"geologists_hammer", "iron_pickaxe", "magnetometer", "stone_pickaxe", "thumper_charge", "wooden_pickaxe"}))
+	testing.expect(t, slice.equal(tools, []string{"geologists_hammer", "iron_axe", "iron_pickaxe", "iron_shovel", "magnetometer", "stone_axe", "stone_pickaxe", "stone_shovel", "thumper_charge", "wooden_axe", "wooden_pickaxe", "wooden_shovel"}))
 	// Tags narrow: every selected tag must be present.
 	iron := tag_index(test.recipes, "iron")
 	smelting := tag_index(test.recipes, "smelting")

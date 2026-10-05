@@ -43,7 +43,8 @@ of the id picks it) or a colour hashed from the id: plates as rounded
 rectangles, ores as lumps, gears as toothed rings, tools as simple
 silhouettes, machines as a box with a darker base, science packs as a
 flask. Tools stand upright: the handle vertical, the head at the top
-(a pickaxe's crescent across it, a hammer's head reaching to the right).
+(a pickaxe's crescent across it, a hammer's head reaching to the right,
+a shovel's rounded blade above it, an axe's blade reaching to the right).
 An item that places a block shows the block's plain texture.
 
 UI icons (the ui family): one file per name in UI_ICON_NAMES, which must
@@ -733,6 +734,25 @@ def draw_hammer(colour, key: str) -> list:
     return image
 
 
+def draw_shovel(colour, key: str) -> list:
+    """An upright handle under a blade rounded at the top."""
+    image = blank()
+    paint(image, rectangle_mask(7, 7, 8, 14), MATERIAL_COLOURS["wood"], key + "/handle", 4)
+    blade = {(x, y) for x, y in disc_mask(7.5, 4.5, 3.2) if y <= 6}
+    paint(image, blade, colour, key + "/blade", 4)
+    return image
+
+
+def draw_axe(colour, key: str) -> list:
+    """An upright handle, the blade at its top reaching to the right and
+    widening towards its edge."""
+    image = blank()
+    paint(image, rectangle_mask(5, 1, 6, 14), MATERIAL_COLOURS["wood"], key + "/handle", 4)
+    blade = {(x, y) for x, y in rectangle_mask(8, 1, 13, 7) if abs(y - 4) <= 0.6 + (x - 8) * 0.5}
+    paint(image, blade, colour, key + "/blade", 4)
+    return image
+
+
 def draw_magnet(key: str) -> list:
     """A horseshoe magnet with grey tips."""
     image = blank()
@@ -785,6 +805,10 @@ def draw_tool(item_id: str, colour, key: str) -> list:
         return draw_pickaxe(colour, key)
     if "hammer" in words:
         return draw_hammer(colour, key)
+    if "shovel" in words:
+        return draw_shovel(colour, key)
+    if "axe" in words:
+        return draw_axe(colour, key)
     if item_id == "magnetometer":
         return draw_magnet(key)
     if "charge" in words:

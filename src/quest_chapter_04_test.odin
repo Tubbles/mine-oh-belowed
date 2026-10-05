@@ -148,18 +148,22 @@ quest_tool_tier_problem :: proc(quest: Quest, references: Quest_References, tool
 // Every pickaxe recipe is a start recipe, so recipe availability alone
 // would allow the iron pickaxe from the first quest. The tier that counts
 // is the best pickaxe an earlier quest had the player craft or obtain, or
-// gave as a reward.
+// gave as a reward; a shovel or an axe does not count (0265).
 quest_granted_tool_tier :: proc(quest: Quest, items: Item_Registry, tool_tier: int) -> int {
 	tier := tool_tier
 	for objective in quest.objectives {
 		if (objective.type == .Craft || objective.type == .Obtain) && int(objective.item) < len(items.items) {
-			tier = max(tier, items.items[objective.item].tool_tier)
+			tier = max(tier, pickaxe_tool_tier(items.items[objective.item]))
 		}
 	}
 	for reward in quest.reward_items {
-		tier = max(tier, items.items[reward.item].tool_tier)
+		tier = max(tier, pickaxe_tool_tier(items.items[reward.item]))
 	}
 	return tier
+}
+
+pickaxe_tool_tier :: proc(item: Item) -> int {
+	return item.tool_role == .Pickaxe ? item.tool_tier : 0
 }
 
 // Played in order, no quest asks for an item whose every recipe is still
@@ -195,28 +199,37 @@ test_shipped_quests_never_need_a_locked_recipe :: proc(t: ^testing.T) {
 	}
 }
 
-// The tool tier the quests start from: the slice's starter kit carries a
-// stone pickaxe (work item 0179), since the field has no wood for the
-// wooden one until M14.
+// The tool tier the quests start from: the best pickaxe of the shipped
+// starter kit, which has none (work item 0265), so 0.
 starter_kit_tool_tier :: proc(items: Item_Registry) -> int {
-	return items.items[test_item(items, "stone_pickaxe")].tool_tier
+	config, error := parse_game_config(#load("../data/game.sjson"), context.temp_allocator)
+	assert(error == nil)
+	tier := 0
+	for stack in config.starting_items {
+		tier = max(tier, pickaxe_tool_tier(items.items[test_item(items, stack.item)]))
+	}
+	return tier
 }
 
-// Chapter 1's stone and ore quests come before any pickaxe quest, so they
-// pass only with the starter kit's pickaxe; without one the stone quest
-// asks too much. A deep stone hint asks more than the kit gives.
+// Chapter 1 crafts its pickaxes before it digs (0265): the stone quest
+// asks too much without a pickaxe and passes with the wooden one the
+// tools quest crafts, the rocks quest crafts the stone one. A deep stone
+// hint asks more than the stone pickaxe gives.
 @(test)
-test_chapter_one_needs_the_starter_kits_pickaxe :: proc(t: ^testing.T) {
+test_chapter_one_crafts_its_pickaxes_before_it_digs :: proc(t: ^testing.T) {
 	references := make_test_quest_references()
 	registry := make_test_quests(references)
 	stone := registry.quests[test_quest_index(registry, "stone")]
 	rocks := registry.quests[test_quest_index(registry, "rocks")]
-	starter := starter_kit_tool_tier(references.items)
+	tools := registry.quests[test_quest_index(registry, "tools")]
+	testing.expect_value(t, starter_kit_tool_tier(references.items), 0)
 	testing.expect(t, quest_tool_tier_problem(stone, references, 0) != "")
-	testing.expect_value(t, quest_tool_tier_problem(stone, references, starter), "")
-	testing.expect_value(t, quest_tool_tier_problem(rocks, references, starter), "")
+	testing.expect_value(t, quest_tool_tier_problem(stone, references, 1), "")
+	testing.expect_value(t, quest_tool_tier_problem(rocks, references, 2), "")
 	hints := []Hint{{counter = .Mining_Ticks, block = test_block(references.blocks, "deep_stone"), threshold = 1}}
-	testing.expect(t, quest_tool_tier_problem(Quest{id = "deep", hints = hints}, references, starter) != "")
+	testing.expect(t, quest_tool_tier_problem(Quest{id = "deep", hints = hints}, references, 2) != "")
+	testing.expect_value(t, quest_granted_tool_tier(tools, references.items, 0), 1)
+	testing.expect_value(t, quest_granted_tool_tier(rocks, references.items, 0), 2)
 }
 
 @(test)

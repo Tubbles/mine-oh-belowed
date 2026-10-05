@@ -496,6 +496,12 @@ field_edit_refusal_text :: proc(refusal: Field_Edit_Refusal, material: Field_Mat
 		return "  something stands on it"
 	case .Tree_In_The_Way:
 		return "  a tree stands there"
+	case .Needs_Shovel:
+		return fmt.tprintf("  %s needs a shovel", name)
+	case .Needs_Pickaxe:
+		return fmt.tprintf("  %s needs a pickaxe", name)
+	case .Needs_Axe:
+		return "  the tree needs an axe"
 	}
 	return ""
 }
@@ -517,6 +523,8 @@ field_held_name :: proc(player: Field_Player) -> string {
 		return "torch"
 	case .Hand:
 		return "hand"
+	case .Tool:
+		return fmt.tprintf("%s tier %d", item_tool_role_names[player.held_tool_role], player.held_tool_tier)
 	}
 	return ""
 }

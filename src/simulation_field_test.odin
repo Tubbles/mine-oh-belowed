@@ -71,11 +71,24 @@ tick_field_test_simulation :: proc(state: ^Simulation_State, content: Simulation
 	simulation_tick(state, content, inputs[:])
 }
 
+// The kit the scripted and digging tests start with (0265): the shipped
+// kit has no digging tool, so a wooden shovel takes slot 1 and the other
+// slots keep the numbers the scripts press.
+field_test_digging_kit :: proc() -> []Starting_Item {
+	kit := make([]Starting_Item, 4, context.temp_allocator)
+	kit[0] = {item = "wooden_shovel", count = 1}
+	kit[1] = {item = "wooden_foundation", count = 16}
+	kit[2] = {item = "torch", count = 4}
+	kit[3] = {item = "plank", count = 8}
+	return kit
+}
+
 // The scripted input of tick index, through the hotbar: a look down, a
 // walk out of the pod and up the crater's bowl (0199), a torch on the
 // ground ahead, a foundation, a turn away from it, a short dig with the
-// pickaxe and the dug material placed back, aimed far enough up the slope
-// that the placement does not reach the player.
+// shovel (field_test_digging_kit) and the dug material placed back,
+// aimed far enough up the slope that the placement does not reach the
+// player.
 field_test_script_frame :: proc(tick: int) -> Input_Frame {
 	frame: Input_Frame
 	press :: proc(frame: ^Input_Frame, action: Action) {
@@ -139,6 +152,7 @@ test_new_worlds_generate_each_preset_radius :: proc(t: ^testing.T) {
 @(test)
 test_two_field_simulations_hash_alike_and_part_on_one_input :: proc(t: ^testing.T) {
 	config := test_field_game_config()
+	config.starting_items = field_test_digging_kit()
 	content := make_field_test_game_content()
 	first := start_field_test_session(config, content)
 	defer end_session(first)
@@ -185,6 +199,7 @@ test_two_field_simulations_hash_alike_and_part_on_one_input :: proc(t: ^testing.
 @(test)
 test_two_field_simulations_hash_alike_after_a_walk_over_dug_ground :: proc(t: ^testing.T) {
 	config := test_field_game_config()
+	config.starting_items = field_test_digging_kit()
 	content := make_field_test_game_content()
 	first := start_field_test_session(config, content)
 	defer end_session(first)
@@ -1246,6 +1261,7 @@ test_a_foundation_block_short_of_foundations_places_nothing :: proc(t: ^testing.
 @(test)
 test_a_held_refused_dig_raises_one_event :: proc(t: ^testing.T) {
 	config := test_field_game_config()
+	config.starting_items = field_test_digging_kit()
 	content := make_field_test_game_content()
 	session := start_field_test_session(config, content)
 	defer end_session(session)
@@ -1256,6 +1272,8 @@ test_a_held_refused_dig_raises_one_event :: proc(t: ^testing.T) {
 	state := &session.simulation
 	move_test_players_out_of_the_pod(state, simulation_content.machines)
 	tick_field_test_simulation(state, simulation_content, Input_Frame{look_delta = {0, 300}})
+	aimed := field_ground_sample_at(&state.field.world, state.field.spacing_millimetres, state.players[0].field.target.position).material
+	testing.expect_value(t, aimed, Field_Material.Topsoil)
 	clear(&state.events)
 	for tick in 0 ..< 10 {
 		frame := Input_Frame{pressed = {.Mine}, just_pressed = tick == 0 ? {.Mine} : {}}
@@ -1266,6 +1284,75 @@ test_a_held_refused_dig_raises_one_event :: proc(t: ^testing.T) {
 	tick_field_test_simulation(state, simulation_content, {})
 	tick_field_test_simulation(state, simulation_content, Input_Frame{pressed = {.Mine}, just_pressed = {.Mine}})
 	testing.expect_value(t, count_field_refused_events(state.events[:], .Tool_Tier), 2)
+}
+
+// Mine held for the ticks at the ground below a player standing outside
+// the pod with the kit, looking down: the ground the reticle met, and
+// whether the ground, the dirt or the credit changed and a refusal was
+// told (0265).
+hold_mine_on_the_ground_outside_the_pod :: proc(t: ^testing.T, kit: []Starting_Item, ticks: int) -> (aimed: Field_Material, changed: bool, refused: int) {
+	config := test_field_game_config()
+	config.starting_items = kit
+	content := make_field_test_game_content()
+	session := start_field_test_session(config, content)
+	defer end_session(session)
+	simulation_content := field_test_content(session, content)
+	state := &session.simulation
+	move_test_players_out_of_the_pod(state, simulation_content.machines)
+	tick_field_test_simulation(state, simulation_content, Input_Frame{look_delta = {0, 300}})
+	player := &state.players[0]
+	testing.expect(t, player.field.target.hit, "the reticle meets the ground")
+	aimed = field_ground_sample_at(&state.field.world, state.field.spacing_millimetres, player.field.target.position).material
+	before := field_ground_steps(&state.field.world)
+	dirt := test_item(simulation_content.items, "dirt")
+	clear(&state.events)
+	for tick in 0 ..< ticks {
+		tick_field_test_simulation(state, simulation_content, Input_Frame{pressed = {.Mine}, just_pressed = tick == 0 ? {.Mine} : {}})
+	}
+	changed = field_ground_steps(&state.field.world) != before || inventory_count(player.inventory, dirt) != 0 || player.field_credit[.Topsoil] != 0
+	for event in state.events {
+		if event.kind == .Field_Refused {
+			refused += 1
+		}
+	}
+	return
+}
+
+// Mine with the hand digs nothing and tells nothing (0265), where a
+// shovel digs the same ground.
+@(test)
+test_mine_with_the_hand_digs_nothing_on_topsoil :: proc(t: ^testing.T) {
+	aimed, changed, refused := hold_mine_on_the_ground_outside_the_pod(t, nil, 120)
+	testing.expect_value(t, aimed, Field_Material.Topsoil)
+	testing.expect(t, !changed, "the hand dug")
+	testing.expect_value(t, refused, 0)
+	_, changed, _ = hold_mine_on_the_ground_outside_the_pod(t, field_test_digging_kit(), 120)
+	testing.expect(t, changed, "the shovel digs the same ground")
+}
+
+// A touch hold is Mine: with planks selected it digs nothing (0265).
+@(test)
+test_mine_with_planks_selected_digs_nothing :: proc(t: ^testing.T) {
+	kit := []Starting_Item{{item = "plank", count = 8}}
+	aimed, changed, refused := hold_mine_on_the_ground_outside_the_pod(t, kit, 120)
+	testing.expect_value(t, aimed, Field_Material.Topsoil)
+	testing.expect(t, !changed, "Mine with planks dug")
+	testing.expect_value(t, refused, 0)
+}
+
+// The shipped kit holds no shovel, pickaxe or axe, so a new player's
+// tool is never the Tool (0265).
+@(test)
+test_the_starter_kit_holds_no_digging_tool :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	content := make_field_test_game_content()
+	for stack in config.starting_items {
+		testing.expectf(t, content.items.items[test_item(content.items, stack.item)].tool_role == .None, "%s has a role", stack.item)
+	}
+	session := start_field_test_session(config, content)
+	defer end_session(session)
+	tick_field_test_simulation(&session.simulation, field_test_content(session, content), {})
+	testing.expect(t, session.simulation.players[0].field.tool != .Tool, "the new player holds a digging tool")
 }
 
 // The field session's walk counter (0187): a walk on the ground counts,

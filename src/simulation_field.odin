@@ -135,10 +135,14 @@ field_tick_input :: proc(frame: Input_Frame, tick_rate: int) -> Field_Player_Inp
 // The tool.
 
 // What an item held in the hotbar lets Place do (Field_Held_Tool), with
-// the material or the machine it names.
+// the material or the machine it names. An item with a tool_role is the
+// Tool (0265); a role-less tool (the hammer) is the hand.
 field_tool_for_item :: proc(content: Simulation_Content, item: Item_Id) -> (tool: Field_Held_Tool, material: Field_Material, machine: Machine_Id) {
 	if item == NO_ITEM {
 		return .Hand, .Air, NO_MACHINE
+	}
+	if content.items.items[item].tool_role != .None {
+		return .Tool, .Air, NO_MACHINE
 	}
 	for record, candidate in content.field.materials {
 		if candidate != .Air && record.item == item {
@@ -163,18 +167,21 @@ field_tool_for_item :: proc(content: Simulation_Content, item: Item_Id) -> (tool
 	return .Machine, .Air, machine
 }
 
-// The tool follows the selected hotbar stack; a change of tool forgets a
-// run's first endpoint. Next_Brush turns a held machine a quarter, and
-// cycles the brushes otherwise.
+// The tool follows the selected hotbar stack, a Tool's role and tier
+// with it (0265); a change of tool forgets a run's first endpoint.
+// Next_Brush turns a held machine a quarter, and cycles the brushes
+// otherwise.
 update_field_held_tool :: proc(player: ^Player, content: Simulation_Content, input: Field_Player_Input) {
 	stack := selected_hotbar_stack(player^)
 	item := stack_is_empty(stack) ? NO_ITEM : stack.item
 	tool, material, machine := field_tool_for_item(content, item)
+	role, tier := held_tool_role_and_tier(content.items, tool, item)
 	body := &player.field
-	if tool != body.tool || machine != body.held_machine {
+	if tool != body.tool || machine != body.held_machine || role != body.held_tool_role {
 		body.run_started = false
 	}
 	body.tool, body.held_machine = tool, machine
+	body.held_tool_role, body.held_tool_tier = role, tier
 	if tool == .Material {
 		body.held_material = material
 	}
@@ -186,6 +193,15 @@ update_field_held_tool :: proc(player: ^Player, content: Simulation_Content, inp
 	} else if len(content.field.brushes) > 0 {
 		body.brush = u8((int(body.brush) + 1) % len(content.field.brushes))
 	}
+}
+
+// The Tool's role and tier, None and 0 for any other tool. The tier is
+// at most MAXIMUM_TOOL_TIER, so it fits a byte.
+held_tool_role_and_tier :: proc(items: Item_Registry, tool: Field_Held_Tool, item: Item_Id) -> (role: Item_Tool_Role, tier: u8) {
+	if tool != .Tool {
+		return .None, 0
+	}
+	return items.items[item].tool_role, u8(items.items[item].tool_tier)
 }
 
 // The torch.

@@ -27,14 +27,18 @@ FIELD_TREE_QUERY_MARGIN_MILLIMETRES :: 1500
 FIELD_TREE_AIM_STEP_MILLIMETRES :: 50
 
 // A species in the simulation's units: the machine holding its model, the
-// tint, the yield, the felling time in ticks and the trunk in position
-// units. NO_MACHINE or NO_ITEM only in code built test content.
+// tint, the yield, the felling times in ticks (the hand's on a tree of at
+// most hand_felling_scale_percent, the wooden, stone and iron axe's on
+// any, 0265) and the trunk in position units. NO_MACHINE or NO_ITEM only
+// in code built test content.
 Field_Tree_Species :: struct {
 	machine:       Machine_Id,
 	tint:          [3]u8,
 	item:          Item_Id,
 	count:         int,
-	felling_ticks: u32,
+	hand_felling_scale_percent: u8,
+	hand_felling_ticks: u32,
+	axe_felling_ticks:  [3]u32,
 	trunk_radius:  i64,
 	trunk_height:  i64,
 }
@@ -63,12 +67,22 @@ make_field_tree_species :: proc(trees: Planet_Trees, items: Item_Registry, machi
 			tint          = {u8(source.tint.r), u8(source.tint.g), u8(source.tint.b)},
 			item          = item_found ? item : NO_ITEM,
 			count         = source.count,
-			felling_ticks = u32(max(source.felling_milliseconds * tick_rate / 1000, 1)),
+			hand_felling_scale_percent = u8(source.hand_felling_scale_percent),
+			hand_felling_ticks = felling_milliseconds_to_ticks(source.hand_felling_milliseconds, tick_rate),
+			axe_felling_ticks = {
+				felling_milliseconds_to_ticks(source.axe_felling_milliseconds[0], tick_rate),
+				felling_milliseconds_to_ticks(source.axe_felling_milliseconds[1], tick_rate),
+				felling_milliseconds_to_ticks(source.axe_felling_milliseconds[2], tick_rate),
+			},
 			trunk_radius  = millimetres_to_position_units(source.trunk_radius_millimetres),
 			trunk_height  = millimetres_to_position_units(source.trunk_height_millimetres),
 		}
 	}
 	return species
+}
+
+felling_milliseconds_to_ticks :: proc(milliseconds: int, tick_rate: int) -> u32 {
+	return u32(max(milliseconds * tick_rate / 1000, 1))
 }
 
 // Each species names a machine of kind tree and an item (load_game_tables).
@@ -239,18 +253,39 @@ field_tree_yield :: proc(species: Field_Tree_Species) -> [1]Item_Stack {
 	return {{item = species.item, count = u16(species.count)}}
 }
 
+// The felling time of the tree for the player's tool (0265): an axe's by
+// its tier, a tier above 3 taking the iron axe's; the hand or any other
+// item fells only a tree of at most the species' hand scale, in the
+// hand's time.
+field_felling_ticks :: proc(species: Field_Tree_Species, tree: Planet_Tree, player: Field_Player) -> (ticks: u32, fellable: bool) {
+	if player.tool == .Tool && player.held_tool_role == .Axe {
+		return species.axe_felling_ticks[clamp(int(player.held_tool_tier), 1, 3) - 1], true
+	}
+	if tree.scale_percent <= species.hand_felling_scale_percent {
+		return species.hand_felling_ticks, true
+	}
+	return 0, false
+}
+
 // Mine held on the aimed trunk advances the player's mining towards the
-// species' felling time (divided under cheat speed, as hand mining), as
-// advance_field_pick_up does for an entity; a finished one is the Fell
-// placement. Mine released, the trunk gone or felled clears the progress;
-// a yield the inventory cannot take clears it and tells Inventory_Full.
+// felling time of the tree for the tool (field_felling_ticks, divided
+// under cheat speed, as hand mining), as advance_field_pick_up does for
+// an entity; a finished one is the Fell placement. Mine released, the
+// trunk gone or felled clears the progress; a tree too big for the tool
+// clears it and tells Needs_Axe; a yield the inventory cannot take
+// clears it and tells Inventory_Full.
 advance_field_felling :: proc(state: ^Simulation_State, content: Simulation_Content, player: ^Player, input: Field_Player_Input) -> (placement: Field_Placement, finished: bool) {
 	target := player.field.tree_target
-	_, species, found := field_aimed_tree(state, content, target.key)
+	tree, species, found := field_aimed_tree(state, content, target.key)
 	yield := field_tree_yield(species)
+	ticks, fellable := field_felling_ticks(species, tree, player.field)
 	switch {
 	case .Dig not_in input.held || !target.hit || !found:
 		player.mining = {}
+		return {}, false
+	case !fellable:
+		player.mining = {}
+		player.field_refusal = .Needs_Axe
 		return {}, false
 	case !inventory_fits_all_picked_up(player.inventory, content.items, yield[:]):
 		player.mining = {}
@@ -258,7 +293,7 @@ advance_field_felling :: proc(state: ^Simulation_State, content: Simulation_Cont
 		return {}, false
 	}
 	hit := Raycast_Hit{hit = true, block = World_Coordinate(target.key), entity = NO_ENTITY}
-	player.mining, finished = advance_mining(player.mining, true, hit, AIR_BLOCK, cheat_mining_ticks(species.felling_ticks, state.cheat_speed))
+	player.mining, finished = advance_mining(player.mining, true, hit, AIR_BLOCK, cheat_mining_ticks(ticks, state.cheat_speed))
 	player.mining.tree = true
 	if !finished {
 		return {}, false

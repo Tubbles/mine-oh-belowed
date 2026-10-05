@@ -132,15 +132,20 @@ Planet_Crater :: struct {
 // A kind of tree the planet grows (work item 0197, doc/content.md,
 // Trees): the machine record of kind tree that holds its model, the tint
 // that multiplies the model's colours, the count of the item Mine held on
-// the trunk for felling_milliseconds yields, and the trunk's capsule, which
-// the walk, the aim and the placements meet.
+// the trunk yields, the felling times (0265): a tree of at most
+// hand_felling_scale_percent falls to the hand in
+// hand_felling_milliseconds, any tree to the wooden, stone and iron axe
+// in axe_felling_milliseconds; and the trunk's capsule, which the walk,
+// the aim and the placements meet.
 Planet_Tree_Species :: struct {
 	id:                       string,
 	machine:                  string,
 	tint:                     [3]int,
 	item:                     string,
 	count:                    int,
-	felling_milliseconds:     int,
+	hand_felling_scale_percent: int,
+	hand_felling_milliseconds:  int,
+	axe_felling_milliseconds:   [3]int,
 	trunk_radius_millimetres: int,
 	trunk_height_millimetres: int,
 }
@@ -523,8 +528,10 @@ tree_species_problem :: proc(species: Planet_Tree_Species, index: int) -> string
 		return fmt.tprintf("trees.species[%d].item is empty", index)
 	case species.count < 1 || species.count > MAXIMUM_TREE_LOGS:
 		return fmt.tprintf("trees.species[%d].count %d is outside 1 to %d", index, species.count, MAXIMUM_TREE_LOGS)
-	case species.felling_milliseconds < MINIMUM_FELLING_MILLISECONDS || species.felling_milliseconds > MAXIMUM_FELLING_MILLISECONDS:
-		return fmt.tprintf("trees.species[%d].felling_milliseconds %d is outside %d to %d", index, species.felling_milliseconds, MINIMUM_FELLING_MILLISECONDS, MAXIMUM_FELLING_MILLISECONDS)
+	case species.hand_felling_scale_percent < 0 || species.hand_felling_scale_percent > PLANET_TREE_MAXIMUM_SCALE_PERCENT:
+		return fmt.tprintf("trees.species[%d].hand_felling_scale_percent %d is outside 0 to %d", index, species.hand_felling_scale_percent, PLANET_TREE_MAXIMUM_SCALE_PERCENT)
+	case !felling_milliseconds_in_bounds(species.hand_felling_milliseconds):
+		return fmt.tprintf("trees.species[%d].hand_felling_milliseconds %d is outside %d to %d", index, species.hand_felling_milliseconds, MINIMUM_FELLING_MILLISECONDS, MAXIMUM_FELLING_MILLISECONDS)
 	case species.trunk_radius_millimetres < MINIMUM_TRUNK_RADIUS_MILLIMETRES || species.trunk_radius_millimetres > MAXIMUM_TRUNK_RADIUS_MILLIMETRES:
 		return fmt.tprintf("trees.species[%d].trunk_radius_millimetres %d is outside %d to %d", index, species.trunk_radius_millimetres, MINIMUM_TRUNK_RADIUS_MILLIMETRES, MAXIMUM_TRUNK_RADIUS_MILLIMETRES)
 	case species.trunk_height_millimetres < MINIMUM_TRUNK_HEIGHT_MILLIMETRES || species.trunk_height_millimetres > MAXIMUM_TRUNK_HEIGHT_MILLIMETRES:
@@ -535,7 +542,16 @@ tree_species_problem :: proc(species: Planet_Tree_Species, index: int) -> string
 			return fmt.tprintf("trees.species[%d].tint has %d, outside 0 to %d", index, component, MAXIMUM_COLOR_COMPONENT)
 		}
 	}
+	for milliseconds, tier in species.axe_felling_milliseconds {
+		if !felling_milliseconds_in_bounds(milliseconds) {
+			return fmt.tprintf("trees.species[%d].axe_felling_milliseconds[%d] %d is outside %d to %d", index, tier, milliseconds, MINIMUM_FELLING_MILLISECONDS, MAXIMUM_FELLING_MILLISECONDS)
+		}
+	}
 	return ""
+}
+
+felling_milliseconds_in_bounds :: proc(milliseconds: int) -> bool {
+	return milliseconds >= MINIMUM_FELLING_MILLISECONDS && milliseconds <= MAXIMUM_FELLING_MILLISECONDS
 }
 
 // The keys a world records (Planet_Generation_Record.trees).

@@ -17,12 +17,16 @@ kits = [
 		items = [
 			{item = "log", count = 20}
 			{item = "wooden_pickaxe", count = 1}
+			{item = "wooden_shovel", count = 1}
+			{item = "wooden_axe", count = 1}
 		]
 	}
 	{
 		chapter = 2
 		items = [
 			{item = "stone_pickaxe", count = 1}
+			{item = "stone_shovel", count = 1}
+			{item = "stone_axe", count = 1}
 			{item = "stone_furnace", count = 3}
 			{item = "iron_plate", count = 50}
 			{item = "coal", count = 100}
@@ -38,6 +42,8 @@ kits = [
 		chapter = 3
 		items = [
 			{item = "iron_pickaxe", count = 1}
+			{item = "iron_shovel", count = 1}
+			{item = "iron_axe", count = 1}
 			{item = "stone_furnace", count = 10}
 			{item = "burner_mining_drill", count = 10}
 			{item = "belt", count = 50}
@@ -57,6 +63,8 @@ kits = [
 		chapter = 4
 		items = [
 			{item = "iron_pickaxe", count = 1}
+			{item = "iron_shovel", count = 1}
+			{item = "iron_axe", count = 1}
 			{item = "burner_mining_drill", count = 10}
 			{item = "stone_furnace", count = 10}
 			{item = "belt", count = 60}
@@ -79,6 +87,8 @@ kits = [
 		chapter = 5
 		items = [
 			{item = "iron_pickaxe", count = 1}
+			{item = "iron_shovel", count = 1}
+			{item = "iron_axe", count = 1}
 			{item = "electric_mining_drill", count = 10}
 			{item = "stone_furnace", count = 20}
 			{item = "assembler_1", count = 10}
@@ -104,6 +114,8 @@ kits = [
 		chapter = 6
 		items = [
 			{item = "iron_pickaxe", count = 1}
+			{item = "iron_shovel", count = 1}
+			{item = "iron_axe", count = 1}
 			{item = "geologists_hammer", count = 1}
 			{item = "electric_mining_drill", count = 10}
 			{item = "steel_furnace", count = 10}

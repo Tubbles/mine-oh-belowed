@@ -46,7 +46,7 @@ Evaluated every tick against the statistics counters, placed counts, recipe unlo
 - Mining a vein's last outcrop block with units left logs `mc_outcrop_spent` once per vein, whatever quest is active ([content.md](content.md), Veins).
 - After the last quest the journal's last chapter tab starts with "Contracts continue" and the HUD's objective column shows the oldest open contract.
 - Developer mode completes quests up to a chapter through the same completion path: rewards queued, deliveries not taken, only the final activation's message kept ([commands.md](commands.md)). Kits per chapter are in `data/dev_kits.sjson`.
-- `test_shipped_quests_never_need_a_locked_recipe` plays every chapter in order: no objective needs a locked recipe, research follows its prerequisites, and no obtain or place objective or mining hint names a block above the best pickaxe the starter kit (a stone pickaxe, 0179) and the earlier quests put in hand. Chapters 2 to 8 each have a `quest_chapter_<n>_test.odin` that plays the chapter in order.
+- `test_shipped_quests_never_need_a_locked_recipe` plays every chapter in order: no objective needs a locked recipe, research follows its prerequisites, and no obtain or place objective or mining hint names a block above the pickaxe the earlier quests had crafted (the kit has none, 0265). Chapters 2 to 8 each have a `quest_chapter_<n>_test.odin` that plays the chapter in order.
 
 ## Spawn requirements
 
@@ -63,7 +63,7 @@ Evaluated every tick against the statistics counters, placed counts, recipe unlo
 The objectives, hints and rewards are in the chapter files. The intent per chapter:
 
 1. Arrival, ten minutes. It teaches look, move, mine, craft, place and the machine panel, with no text boxes about controls.
-   - The slice's chapter (0179; the field has no trees until M14 and the starter kit carries a stone pickaxe): stone dug out of the ground, hematite and coal from the starter outcrops round the pod, a stone furnace, fuel and ore in its panel, ten plates, then the stone cutting table (0196, quest `cutting`: craft and place the table, cut two stone bricks at it, since the line's belt poles need bricks and bricks are cut, not fired), then the first line: a burner mining drill, a burner inserter, a belt and an iron chest placed.
+   - The slice's chapter (0179; the starter kit carries no digging tool, 0265): a small tree felled by hand for 4 logs (quest `timber`), planks and sticks from them and a wooden shovel and pickaxe (quest `tools`), stone dug out of the ground with them, a stone pickaxe (quest `rocks`), hematite and coal from the starter outcrops round the pod, a stone furnace, fuel and ore in its panel, ten plates, then the stone cutting table (0196, quest `cutting`: craft and place the table, cut two stone bricks at it, since the line's belt poles need bricks and bricks are cut, not fired), then the first line: a burner mining drill, a burner inserter, a belt and an iron chest placed.
    - The main quest, ten plates, brings coal and plates, "an advance against your first delivery"; the line comes after it.
 2. The workshop, thirty minutes. The pain is carrying.
    - Three furnaces, copper and gears, then a burner drill on the iron outcrop before the fifty plates, so the plates are the drill's output. Fifty plates by hand would empty the starter outcrop's visible blocks.

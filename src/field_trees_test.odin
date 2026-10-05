@@ -146,6 +146,25 @@ felling_test_axis_distance :: proc(test: Felling_Test, feet: World_Position) -> 
 	return vector_length(offset - fixed_scale(test.trunk.up, fixed_dot(offset, test.trunk.up)))
 }
 
+// The shipped field config with a wooden axe in hotbar slot 1, ahead of
+// the kit (0265).
+felling_test_axe_config :: proc() -> Game_Config {
+	config := test_field_game_config()
+	kit := make([dynamic]Starting_Item, context.temp_allocator)
+	append(&kit, Starting_Item{item = "wooden_axe", count = 1})
+	append(&kit, ..config.starting_items)
+	config.starting_items = kit[:]
+	return config
+}
+
+// Every species of the session falls to the hand up to the scale (0265).
+set_felling_test_hand_scale :: proc(test: ^Felling_Test, scale_percent: u8) {
+	for &species in test.content.field.tree_species {
+		species.hand_felling_scale_percent = scale_percent
+	}
+	test.species.hand_felling_scale_percent = scale_percent
+}
+
 FELLING_TEST_WALK :: Input_Frame{move = {0, 1}, pressed = {.Move}}
 FELLING_TEST_MINE :: Input_Frame{pressed = {.Mine}}
 
@@ -167,7 +186,7 @@ aims_at_test_tree :: proc(test: Felling_Test) -> bool {
 
 @(test)
 test_mine_held_fells_a_tree_for_its_logs :: proc(t: ^testing.T) {
-	test, found := start_felling_test(test_field_game_config(), make_field_test_game_content())
+	test, found := start_felling_test(felling_test_axe_config(), make_field_test_game_content())
 	defer end_session(test.session)
 	testing.expect(t, found, "a tree near the home has a stand")
 	if !found {
@@ -178,7 +197,7 @@ test_mine_held_fells_a_tree_for_its_logs :: proc(t: ^testing.T) {
 	testing.expect(t, aims_at_test_tree(test), "the trunk takes the aim")
 	log := test_item(test.content.items, "log")
 	before := inventory_count(player.inventory, log)
-	ticks := int(test.species.felling_ticks)
+	ticks := int(test.species.axe_felling_ticks[0])
 	testing.expect_value(t, ticks, 360)
 	hold_felling_test_mine(test, ticks - 1)
 	testing.expect_value(t, inventory_count(player.inventory, log), before)
@@ -199,7 +218,7 @@ test_mine_held_fells_a_tree_for_its_logs :: proc(t: ^testing.T) {
 
 @(test)
 test_felling_is_refused_with_a_full_inventory :: proc(t: ^testing.T) {
-	test, found := start_felling_test(test_field_game_config(), make_field_test_game_content())
+	test, found := start_felling_test(felling_test_axe_config(), make_field_test_game_content())
 	defer end_session(test.session)
 	testing.expect(t, found)
 	if !found {
@@ -208,7 +227,8 @@ test_felling_is_refused_with_a_full_inventory :: proc(t: ^testing.T) {
 	state := &test.session.simulation
 	player := &state.players[0]
 	stone := test_item(test.content.items, "stone")
-	for &slot in player.inventory.slots {
+	// The axe stays in slot 1, so the tree is fellable.
+	for &slot in player.inventory.slots[1:] {
 		slot = Item_Stack{stone, item_stack_size(test.content.items, stone)}
 	}
 	clear(&state.events)
@@ -220,7 +240,7 @@ test_felling_is_refused_with_a_full_inventory :: proc(t: ^testing.T) {
 
 @(test)
 test_a_felled_tree_stays_felled_after_a_save_and_load :: proc(t: ^testing.T) {
-	config := test_field_game_config()
+	config := felling_test_axe_config()
 	content := make_field_test_game_content()
 	test, found := start_felling_test(config, content)
 	testing.expect(t, found)
@@ -229,7 +249,7 @@ test_a_felled_tree_stays_felled_after_a_save_and_load :: proc(t: ^testing.T) {
 		return
 	}
 	state := &test.session.simulation
-	hold_felling_test_mine(test, int(test.species.felling_ticks))
+	hold_felling_test_mine(test, int(test.species.axe_felling_ticks[0]))
 	testing.expect(t, test.tree.key in state.field.felled_trees)
 	felled := make(map[Tree_Key]struct{}, context.temp_allocator)
 	for key in state.field.felled_trees {
@@ -256,7 +276,7 @@ test_a_felled_tree_stays_felled_after_a_save_and_load :: proc(t: ^testing.T) {
 
 @(test)
 test_two_sessions_fell_alike :: proc(t: ^testing.T) {
-	config := test_field_game_config()
+	config := felling_test_axe_config()
 	content := make_field_test_game_content()
 	tests: [3]Felling_Test
 	for &test, index in tests {
@@ -267,7 +287,7 @@ test_two_sessions_fell_alike :: proc(t: ^testing.T) {
 	defer for test in tests {
 		end_session(test.session)
 	}
-	ticks := int(tests[0].species.felling_ticks) + 30
+	ticks := int(tests[0].species.axe_felling_ticks[0]) + 30
 	for tick in 0 ..< ticks {
 		frame := tick < ticks - 30 ? FELLING_TEST_MINE : Input_Frame{}
 		if tick == 0 {
@@ -428,7 +448,10 @@ test_a_placement_into_a_trunk_is_refused :: proc(t: ^testing.T) {
 // fells the tree without yield; a shallow dig leaves it.
 @(test)
 test_a_tree_falls_into_a_hole_dug_under_it :: proc(t: ^testing.T) {
-	test, found := start_felling_test(test_field_game_config(), make_field_test_game_content())
+	// The drained digs dig with the shovel held (0265).
+	config := test_field_game_config()
+	config.starting_items = field_test_digging_kit()
+	test, found := start_felling_test(config, make_field_test_game_content())
 	defer end_session(test.session)
 	testing.expect(t, found)
 	if !found {
@@ -454,4 +477,116 @@ test_a_tree_falls_into_a_hole_dug_under_it :: proc(t: ^testing.T) {
 	}
 	testing.expect(t, test.tree.key in state.field.felled_trees, "the tree falls into the hole")
 	testing.expect_value(t, inventory_count(state.players[0].inventory, log), before)
+}
+
+// The hand fells a tree no larger than the species' hand scale (0265),
+// in the hand's time, for the logs.
+@(test)
+test_the_hand_fells_a_small_tree :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	config.starting_items = nil
+	test, found := start_felling_test(config, make_field_test_game_content())
+	defer end_session(test.session)
+	testing.expect(t, found)
+	if !found {
+		return
+	}
+	set_felling_test_hand_scale(&test, PLANET_TREE_MAXIMUM_SCALE_PERCENT)
+	state := &test.session.simulation
+	player := &state.players[0]
+	testing.expect_value(t, player.field.tool, Field_Held_Tool.Hand)
+	log := test_item(test.content.items, "log")
+	ticks := int(test.species.hand_felling_ticks)
+	testing.expect_value(t, ticks, 600)
+	hold_felling_test_mine(test, ticks - 1)
+	testing.expect(t, test.tree.key not_in state.field.felled_trees, "the tree stands a tick short")
+	tick_field_test_simulation(state, test.content, FELLING_TEST_MINE)
+	testing.expect(t, test.tree.key in state.field.felled_trees, "the hand felled the tree")
+	testing.expect_value(t, inventory_count(player.inventory, log), 4)
+}
+
+// A tree above the hand's scale stands under the hand, which is told
+// once that it needs an axe; a wooden axe fells it in its time (0265).
+@(test)
+test_the_axe_fells_a_large_tree_the_hand_cannot :: proc(t: ^testing.T) {
+	config := test_field_game_config()
+	config.starting_items = nil
+	test, found := start_felling_test(config, make_field_test_game_content())
+	defer end_session(test.session)
+	testing.expect(t, found)
+	if !found {
+		return
+	}
+	set_felling_test_hand_scale(&test, 0)
+	state := &test.session.simulation
+	player := &state.players[0]
+	clear(&state.events)
+	hold_felling_test_mine(test, 2 * int(test.species.hand_felling_ticks))
+	testing.expect(t, test.tree.key not_in state.field.felled_trees, "the hand does not fell it")
+	testing.expect_value(t, count_field_refused_events(state.events[:], .Needs_Axe), 1)
+	testing.expect(t, !player.mining.active, "no progress")
+	player.inventory.slots[0] = Item_Stack{test_item(test.content.items, "wooden_axe"), 1}
+	ticks := int(test.species.axe_felling_ticks[0])
+	hold_felling_test_mine(test, ticks - 1)
+	testing.expect(t, test.tree.key not_in state.field.felled_trees, "the tree stands a tick short")
+	tick_field_test_simulation(state, test.content, FELLING_TEST_MINE)
+	testing.expect(t, test.tree.key in state.field.felled_trees, "the axe felled the tree")
+}
+
+// The felling time follows the tool (0265): the hand on a small tree
+// only, any other item as the hand, an axe by its tier, a tier above 3 as
+// the iron axe.
+@(test)
+test_field_felling_ticks_follow_the_tool :: proc(t: ^testing.T) {
+	species := Field_Tree_Species {
+		hand_felling_scale_percent = 100,
+		hand_felling_ticks         = 600,
+		axe_felling_ticks          = {360, 240, 150},
+	}
+	small := Planet_Tree{scale_percent = 100}
+	large := Planet_Tree{scale_percent = 101}
+	hand := Field_Player{tool = .Hand}
+	pickaxe := Field_Player{tool = .Tool, held_tool_role = .Pickaxe, held_tool_tier = 3}
+	cases := [?]struct {
+		tree:     Planet_Tree,
+		player:   Field_Player,
+		ticks:    u32,
+		fellable: bool,
+	}{
+		{small, hand, 600, true},
+		{large, hand, 0, false},
+		{small, pickaxe, 600, true},
+		{large, pickaxe, 0, false},
+		{large, Field_Player{tool = .Tool, held_tool_role = .Axe, held_tool_tier = 1}, 360, true},
+		{large, Field_Player{tool = .Tool, held_tool_role = .Axe, held_tool_tier = 2}, 240, true},
+		{small, Field_Player{tool = .Tool, held_tool_role = .Axe, held_tool_tier = 3}, 150, true},
+		{large, Field_Player{tool = .Tool, held_tool_role = .Axe, held_tool_tier = 4}, 150, true},
+	}
+	for entry, index in cases {
+		ticks, fellable := field_felling_ticks(species, entry.tree, entry.player)
+		testing.expectf(t, ticks == entry.ticks && fellable == entry.fellable, "case %d: %d %v", index, ticks, fellable)
+	}
+}
+
+// Every new world of the shipped planet has a tree the hand fells within
+// 80 m of the home (0265): the first logs need no tool.
+@(test)
+test_a_small_tree_stands_near_the_home :: proc(t: ^testing.T) {
+	planet := tree_test_planet()
+	reach := metres_to_position_units(80)
+	for seed in u64(1) ..= 16 {
+		generation := tree_test_generation(planet, seed)
+		home := generation.trees.home
+		minimum, maximum := tree_test_box(home, 80)
+		nearest_small, nearest_any := i64(max(i64)), i64(max(i64))
+		for tree in planet_trees_in_box(&generation, minimum, maximum) {
+			species := planet.trees.species[int(tree.species) % len(planet.trees.species)]
+			distance := vector_length(tree_test_on_sphere(generation, tree) - home)
+			nearest_any = min(nearest_any, distance)
+			if int(tree.scale_percent) <= species.hand_felling_scale_percent {
+				nearest_small = min(nearest_small, distance)
+			}
+		}
+		testing.expectf(t, nearest_small <= reach, "seed %d: the nearest small tree is %d m off, the nearest tree %d m", seed, nearest_small / POSITION_UNITS_PER_METRE, nearest_any / POSITION_UNITS_PER_METRE)
+	}
 }

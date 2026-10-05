@@ -54,6 +54,16 @@ add_test_miner :: proc(simulation: ^Simulation_State, items: Item_Registry, feet
 	append(&simulation.players, miner)
 }
 
+// The player holds the item as update_field_held_tool would set it from
+// the hotbar (0265): the tool, and a shovel's, pickaxe's or axe's role and
+// tier.
+hold_test_item :: proc(player: ^Player, content: Simulation_Content, item_id: string) {
+	item := test_item(content.items, item_id)
+	tool, _, _ := field_tool_for_item(content, item)
+	player.field.tool = tool
+	player.field.held_tool_role, player.field.held_tool_tier = held_tool_role_and_tier(content.items, tool, item)
+}
+
 FAR_FEET :: World_Position{0, 100 * POSITION_UNITS_PER_METRE, 0}
 
 // The volume a player holds of a material, in the credit's unit.
@@ -77,6 +87,7 @@ test_digging_stone_credits_stone_by_volume_and_carries_the_rest :: proc(t: ^test
 	simulation := make_test_field_state(make_uniform_test_field({MAXIMUM_DENSITY, .Stone, 0}), 1000)
 	defer destroy_simulation(&simulation)
 	add_test_miner(&simulation, items, FAR_FEET, {"wooden_pickaxe", 1})
+	hold_test_item(&simulation.players[0], content, "wooden_pickaxe")
 	stone := test_item(items, "stone")
 	step_volume := field_steps_to_volume(1, 1000)
 	drain_one_field_edit(&simulation, content, 0, Field_Edit{mode = .Dig, brush = content.field.brushes[0], centre = sample_to_world_position({0, 0, 0}, 1000)})
@@ -123,8 +134,9 @@ test_two_edits_of_one_tick_apply_in_order_at_its_end :: proc(t: ^testing.T) {
 	content := test_field_simulation_content(items, test_brush(.Sphere, 1500, 100))
 	simulation := make_test_field_state(make_test_field(Test_Terrain{kind = .Flat}, 1000), 1000)
 	defer destroy_simulation(&simulation)
-	for _ in 0 ..< 2 {
+	for index in 0 ..< 2 {
 		add_test_miner(&simulation, items, test_site_point(0, 0, 0), {"wooden_pickaxe", 1})
+		hold_test_item(&simulation.players[index], content, "wooden_pickaxe")
 	}
 	before := field_ground_steps(&simulation.field.world)
 	inputs := [2]Field_Player_Input{{held = {.Dig}}, {held = {.Dig}}}
@@ -165,6 +177,7 @@ test_a_brush_over_a_harder_material_digs_nothing :: proc(t: ^testing.T) {
 		simulation := make_test_field_state(make_uniform_test_field({MAXIMUM_DENSITY, entry.material, 0}), 1000)
 		defer destroy_simulation(&simulation)
 		add_test_miner(&simulation, items, FAR_FEET, {entry.tool, 1})
+		hold_test_item(&simulation.players[0], content, entry.tool)
 		before := field_ground_steps(&simulation.field.world)
 		drain_one_field_edit(&simulation, content, 0, Field_Edit{mode = .Dig, brush = content.field.brushes[0], centre = sample_to_world_position({0, 0, 0}, 1000)})
 		testing.expect_value(t, simulation.players[0].field_refusal, entry.refusal)
@@ -190,6 +203,7 @@ test_the_edit_queue_is_empty_between_ticks :: proc(t: ^testing.T) {
 	simulation := make_test_field_state(make_test_field(Test_Terrain{kind = .Flat}, 1000), 1000)
 	defer destroy_simulation(&simulation)
 	add_test_miner(&simulation, items, test_site_point(0, 0, 0), {"wooden_pickaxe", 1})
+	hold_test_item(&simulation.players[0], content, "wooden_pickaxe")
 	before := field_ground_steps(&simulation.field.world)
 	inputs := [1]Field_Player_Input{{held = {.Dig}}}
 	for _ in 0 ..< 40 {
@@ -247,21 +261,24 @@ test_the_field_material_table :: proc(t: ^testing.T) {
 	testing.expect_value(t, table[.Topsoil].item, test_item(items, "dirt"))
 	testing.expect_value(t, table[.Bedrock].item, NO_ITEM)
 	testing.expect_value(t, table[.Air].item, NO_ITEM)
-	testing.expect_value(t, field_diggable_materials(table, 1), bit_set[Field_Material]{.Topsoil, .Stone, .Coal_Ore})
+	testing.expect_value(t, field_diggable_materials(table, .Pickaxe, 1), bit_set[Field_Material]{.Stone, .Coal_Ore})
+	testing.expect_value(t, field_diggable_materials(table, .Shovel, 3), bit_set[Field_Material]{.Topsoil})
+	testing.expect_value(t, field_diggable_materials(table, .Axe, 3), bit_set[Field_Material]{})
+	testing.expect_value(t, field_diggable_materials(table, .None, 0), bit_set[Field_Material]{})
 	// The dig rates (0179): soft topsoil faster, deep stone slower.
 	testing.expect_value(t, table[.Topsoil].dig_rate_percent, 150)
 	testing.expect_value(t, table[.Stone].dig_rate_percent, 100)
 	testing.expect_value(t, table[.Deep_Stone].dig_rate_percent, 60)
 	malformed := [?]string {
-		`materials = [{id = "topsoil", item = "dirt", tool_tier = 0, dig_rate_percent = 100}, {id = "stone", item = "stone", tool_tier = 1, dig_rate_percent = 100}, {id = "deep_stone", item = "deep_stone", tool_tier = 3, dig_rate_percent = 100}]`,
-		`materials = [{id = "topsoil", item = "dirt", tool_tier = 0, dig_rate_percent = 100}, {id = "stone", item = "pebble", tool_tier = 1, dig_rate_percent = 100}, {id = "deep_stone", item = "deep_stone", tool_tier = 3, dig_rate_percent = 100}, {id = "bedrock", item = "", tool_tier = 0, dig_rate_percent = 100}]`,
-		`materials = [{id = "topsoil", item = "dirt", tool_tier = 0, dig_rate_percent = 100, hardness = 2}, {id = "stone", item = "stone", tool_tier = 1, dig_rate_percent = 100}, {id = "deep_stone", item = "deep_stone", tool_tier = 3, dig_rate_percent = 100}, {id = "bedrock", item = "", tool_tier = 0, dig_rate_percent = 100}]`,
-		`materials = [{id = "topsoil", item = "dirt", dig_rate_percent = 100}, {id = "stone", item = "stone", tool_tier = 1, dig_rate_percent = 100}, {id = "deep_stone", item = "deep_stone", tool_tier = 3, dig_rate_percent = 100}, {id = "bedrock", item = "", tool_tier = 0, dig_rate_percent = 100}]`,
-		`materials = [{id = "topsoil", item = "dirt", tool_tier = 9, dig_rate_percent = 100}, {id = "stone", item = "stone", tool_tier = 1, dig_rate_percent = 100}, {id = "deep_stone", item = "deep_stone", tool_tier = 3, dig_rate_percent = 100}, {id = "bedrock", item = "", tool_tier = 0, dig_rate_percent = 100}]`,
-		`materials = [{id = "topsoil", item = "dirt", tool_tier = 0, dig_rate_percent = 100}, {id = "stone", item = "stone", tool_tier = 1, dig_rate_percent = 100}, {id = "stone", item = "stone", tool_tier = 1, dig_rate_percent = 100}, {id = "deep_stone", item = "deep_stone", tool_tier = 3, dig_rate_percent = 100}, {id = "bedrock", item = "", tool_tier = 0, dig_rate_percent = 100}]`,
-		`materials = [{id = "topsoil", item = "dirt", tool_tier = 0}, {id = "stone", item = "stone", tool_tier = 1, dig_rate_percent = 100}, {id = "deep_stone", item = "deep_stone", tool_tier = 3, dig_rate_percent = 100}, {id = "bedrock", item = "", tool_tier = 0, dig_rate_percent = 100}]`,
-		`materials = [{id = "topsoil", item = "dirt", tool_tier = 0, dig_rate_percent = 9}, {id = "stone", item = "stone", tool_tier = 1, dig_rate_percent = 100}, {id = "deep_stone", item = "deep_stone", tool_tier = 3, dig_rate_percent = 100}, {id = "bedrock", item = "", tool_tier = 0, dig_rate_percent = 100}]`,
-		`materials = [{id = "topsoil", item = "dirt", tool_tier = 0, dig_rate_percent = 401}, {id = "stone", item = "stone", tool_tier = 1, dig_rate_percent = 100}, {id = "deep_stone", item = "deep_stone", tool_tier = 3, dig_rate_percent = 100}, {id = "bedrock", item = "", tool_tier = 0, dig_rate_percent = 100}]`,
+		`materials = [{id = "topsoil", item = "dirt", dug_with = "shovel", tool_tier = 1, dig_rate_percent = 100}, {id = "stone", item = "stone", dug_with = "pickaxe", tool_tier = 1, dig_rate_percent = 100}, {id = "deep_stone", item = "deep_stone", dug_with = "pickaxe", tool_tier = 3, dig_rate_percent = 100}]`,
+		`materials = [{id = "topsoil", item = "dirt", dug_with = "shovel", tool_tier = 1, dig_rate_percent = 100}, {id = "stone", item = "pebble", dug_with = "pickaxe", tool_tier = 1, dig_rate_percent = 100}, {id = "deep_stone", item = "deep_stone", dug_with = "pickaxe", tool_tier = 3, dig_rate_percent = 100}, {id = "bedrock", item = "", dug_with = "", tool_tier = 0, dig_rate_percent = 100}]`,
+		`materials = [{id = "topsoil", item = "dirt", dug_with = "shovel", tool_tier = 1, dig_rate_percent = 100, hardness = 2}, {id = "stone", item = "stone", dug_with = "pickaxe", tool_tier = 1, dig_rate_percent = 100}, {id = "deep_stone", item = "deep_stone", dug_with = "pickaxe", tool_tier = 3, dig_rate_percent = 100}, {id = "bedrock", item = "", dug_with = "", tool_tier = 0, dig_rate_percent = 100}]`,
+		`materials = [{id = "topsoil", item = "dirt", dug_with = "shovel", dig_rate_percent = 100}, {id = "stone", item = "stone", dug_with = "pickaxe", tool_tier = 1, dig_rate_percent = 100}, {id = "deep_stone", item = "deep_stone", dug_with = "pickaxe", tool_tier = 3, dig_rate_percent = 100}, {id = "bedrock", item = "", dug_with = "", tool_tier = 0, dig_rate_percent = 100}]`,
+		`materials = [{id = "topsoil", item = "dirt", dug_with = "shovel", tool_tier = 9, dig_rate_percent = 100}, {id = "stone", item = "stone", dug_with = "pickaxe", tool_tier = 1, dig_rate_percent = 100}, {id = "deep_stone", item = "deep_stone", dug_with = "pickaxe", tool_tier = 3, dig_rate_percent = 100}, {id = "bedrock", item = "", dug_with = "", tool_tier = 0, dig_rate_percent = 100}]`,
+		`materials = [{id = "topsoil", item = "dirt", dug_with = "shovel", tool_tier = 1, dig_rate_percent = 100}, {id = "stone", item = "stone", dug_with = "pickaxe", tool_tier = 1, dig_rate_percent = 100}, {id = "stone", item = "stone", dug_with = "pickaxe", tool_tier = 1, dig_rate_percent = 100}, {id = "deep_stone", item = "deep_stone", dug_with = "pickaxe", tool_tier = 3, dig_rate_percent = 100}, {id = "bedrock", item = "", dug_with = "", tool_tier = 0, dig_rate_percent = 100}]`,
+		`materials = [{id = "topsoil", item = "dirt", dug_with = "shovel", tool_tier = 1}, {id = "stone", item = "stone", dug_with = "pickaxe", tool_tier = 1, dig_rate_percent = 100}, {id = "deep_stone", item = "deep_stone", dug_with = "pickaxe", tool_tier = 3, dig_rate_percent = 100}, {id = "bedrock", item = "", dug_with = "", tool_tier = 0, dig_rate_percent = 100}]`,
+		`materials = [{id = "topsoil", item = "dirt", dug_with = "shovel", tool_tier = 1, dig_rate_percent = 9}, {id = "stone", item = "stone", dug_with = "pickaxe", tool_tier = 1, dig_rate_percent = 100}, {id = "deep_stone", item = "deep_stone", dug_with = "pickaxe", tool_tier = 3, dig_rate_percent = 100}, {id = "bedrock", item = "", dug_with = "", tool_tier = 0, dig_rate_percent = 100}]`,
+		`materials = [{id = "topsoil", item = "dirt", dug_with = "shovel", tool_tier = 1, dig_rate_percent = 401}, {id = "stone", item = "stone", dug_with = "pickaxe", tool_tier = 1, dig_rate_percent = 100}, {id = "deep_stone", item = "deep_stone", dug_with = "pickaxe", tool_tier = 3, dig_rate_percent = 100}, {id = "bedrock", item = "", dug_with = "", tool_tier = 0, dig_rate_percent = 100}]`,
 	}
 	for text in malformed {
 		_, problem := parse_field_material_table(transmute([]byte)text, "test", items)
@@ -273,8 +290,123 @@ test_the_field_material_table :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(problem, "missing dig_rate_percent"), problem)
 }
 
+// One dig of a uniform field of the material by a player holding the
+// tool: what the dig took and the refusal it left.
+dig_uniform_test_field :: proc(content: Simulation_Content, material: Field_Material, tool: string) -> (dug: i64, credited: int, refusal: Field_Edit_Refusal) {
+	simulation := make_test_field_state(make_uniform_test_field({MAXIMUM_DENSITY, material, 0}), 1000)
+	defer destroy_simulation(&simulation)
+	add_test_miner(&simulation, content.items, FAR_FEET, {tool, 1})
+	hold_test_item(&simulation.players[0], content, tool)
+	before := field_ground_steps(&simulation.field.world)
+	drain_one_field_edit(&simulation, content, 0, Field_Edit{mode = .Dig, brush = content.field.brushes[0], centre = sample_to_world_position({0, 0, 0}, 1000)})
+	item := content.field.materials[material].item
+	return before - field_ground_steps(&simulation.field.world), inventory_count(simulation.players[0].inventory, item), simulation.players[0].field_refusal
+}
+
+// A shovel digs topsoil into dirt and leaves stone, telling the pickaxe
+// it needs (0265).
+@(test)
+test_the_shovel_digs_topsoil_and_not_stone :: proc(t: ^testing.T) {
+	content := test_field_simulation_content(make_test_items(), test_brush(.Sphere, 1500, 254))
+	dug, credited, refusal := dig_uniform_test_field(content, .Topsoil, "wooden_shovel")
+	testing.expect(t, dug > 0 && credited > 0, "the shovel dug topsoil into dirt")
+	testing.expect_value(t, refusal, Field_Edit_Refusal.None)
+	dug, credited, refusal = dig_uniform_test_field(content, .Stone, "wooden_shovel")
+	testing.expect_value(t, dug, 0)
+	testing.expect_value(t, credited, 0)
+	testing.expect_value(t, refusal, Field_Edit_Refusal.Needs_Pickaxe)
+}
+
+// A pickaxe digs stone and leaves topsoil, telling the shovel it needs
+// (0265); deep stone still wants a better pickaxe.
+@(test)
+test_the_pickaxe_digs_stone_and_not_topsoil :: proc(t: ^testing.T) {
+	content := test_field_simulation_content(make_test_items(), test_brush(.Sphere, 1500, 254))
+	dug, credited, refusal := dig_uniform_test_field(content, .Stone, "wooden_pickaxe")
+	testing.expect(t, dug > 0 && credited > 0, "the pickaxe dug stone")
+	testing.expect_value(t, refusal, Field_Edit_Refusal.None)
+	dug, credited, refusal = dig_uniform_test_field(content, .Topsoil, "wooden_pickaxe")
+	testing.expect_value(t, dug, 0)
+	testing.expect_value(t, credited, 0)
+	testing.expect_value(t, refusal, Field_Edit_Refusal.Needs_Shovel)
+	_, _, refusal = dig_uniform_test_field(content, .Deep_Stone, "wooden_pickaxe")
+	testing.expect_value(t, refusal, Field_Edit_Refusal.Tool_Tier)
+}
+
+// An item with a tool_role is the Tool with its role and tier (0265); a
+// role-less item, the geologist's hammer included, is the hand.
+@(test)
+test_field_tool_for_item_reads_the_role :: proc(t: ^testing.T) {
+	items := make_test_items()
+	content := test_field_simulation_content(items, test_brush(.Sphere, 1000, 10))
+	content.machines = make_test_machines()
+	content.field.torch_item = test_item(items, "torch")
+	cases := [?]struct {
+		item: string,
+		tool: Field_Held_Tool,
+		role: Item_Tool_Role,
+		tier: u8,
+	}{
+		{"wooden_pickaxe", .Tool, .Pickaxe, 1},
+		{"iron_pickaxe", .Tool, .Pickaxe, 3},
+		{"wooden_shovel", .Tool, .Shovel, 1},
+		{"stone_shovel", .Tool, .Shovel, 2},
+		{"wooden_axe", .Tool, .Axe, 1},
+		{"iron_axe", .Tool, .Axe, 3},
+		{"plank", .Hand, .None, 0},
+		{"geologists_hammer", .Hand, .None, 0},
+		{"stone", .Material, .None, 0},
+		{"torch", .Torch, .None, 0},
+		{"wooden_chest", .Machine, .None, 0},
+	}
+	for entry in cases {
+		item := test_item(items, entry.item)
+		tool, _, _ := field_tool_for_item(content, item)
+		role, tier := held_tool_role_and_tier(items, tool, item)
+		testing.expectf(t, tool == entry.tool && role == entry.role && tier == entry.tier, "%s: %v %v %d", entry.item, tool, role, tier)
+	}
+}
+
+// The shipped table names the role and tier of each material (0265); a
+// material dug with an axe, an item without a role, bedrock with a role
+// and a role at tier 0 are refused.
+@(test)
+test_the_material_table_needs_a_digging_role :: proc(t: ^testing.T) {
+	items := make_test_items()
+	table := test_field_materials(items)
+	expected := [Field_Material]struct {
+		role: Item_Tool_Role,
+		tier: int,
+	} {
+		.Air              = {.None, 0},
+		.Topsoil          = {.Shovel, 1},
+		.Stone            = {.Pickaxe, 1},
+		.Deep_Stone       = {.Pickaxe, 3},
+		.Bedrock          = {.None, 0},
+		.Hematite_Ore     = {.Pickaxe, 2},
+		.Chalcopyrite_Ore = {.Pickaxe, 2},
+		.Coal_Ore         = {.Pickaxe, 1},
+	}
+	for record, material in table {
+		testing.expectf(t, record.dug_with == expected[material].role && record.tool_tier == expected[material].tier, "%v: %v %d", material, record.dug_with, record.tool_tier)
+	}
+	refused := [?]struct {
+		definition: Field_Material_Definition,
+		problem:    string,
+	}{
+		{{id = "stone", item = "stone", dug_with = "axe", tool_tier = 1, dig_rate_percent = 100}, "dug_with \"axe\" is not shovel, pickaxe or empty"},
+		{{id = "stone", item = "stone", dug_with = "", tool_tier = 1, dig_rate_percent = 100}, "dug_with \"\" needs an item"},
+		{{id = "bedrock", item = "", dug_with = "shovel", tool_tier = 0, dig_rate_percent = 100}, "dug_with \"shovel\" needs an item"},
+		{{id = "stone", item = "stone", dug_with = "pickaxe", tool_tier = 0, dig_rate_percent = 100}, "tool_tier 0 is outside 1 to 3"},
+	}
+	for entry in refused {
+		_, problem := field_material_record(entry.definition, items)
+		testing.expectf(t, strings.contains(problem, entry.problem), "%s: %s", entry.definition.id, problem)
+	}
+}
+
 // The hotbar's stack decides the tool (0179): stone places stone, a
-// foundation the foundation, the torch the torch, a pickaxe is the hand;
+// foundation the foundation, the torch the torch, a pickaxe the Tool (0265);
 // the brush key cycles the brushes, and turns a held machine instead.
 @(test)
 test_the_hotbar_decides_the_field_tool :: proc(t: ^testing.T) {
@@ -290,7 +422,7 @@ test_the_hotbar_decides_the_field_tool :: proc(t: ^testing.T) {
 	cases := [?]struct {
 		item: string,
 		tool: Field_Held_Tool,
-	}{{"stone", .Material}, {"wooden_foundation", .Foundation}, {"torch", .Torch}, {"wooden_pickaxe", .Hand}, {"wooden_chest", .Machine}}
+	}{{"stone", .Material}, {"wooden_foundation", .Foundation}, {"torch", .Torch}, {"wooden_pickaxe", .Tool}, {"wooden_chest", .Machine}}
 	for entry, slot in cases {
 		inventory_add(player.inventory, items, test_item(items, entry.item), 1)
 		player.selected_hotbar_slot = slot

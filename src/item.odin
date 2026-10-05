@@ -12,6 +12,7 @@ import "platform"
 
 ITEMS_FILE_NAME :: "items.sjson"
 MAXIMUM_STACK_SIZE :: 1000
+MAXIMUM_TOOL_TIER :: 15
 
 // Dense index into Item_Registry.items.
 Item_Id :: distinct u16
@@ -70,6 +71,24 @@ item_configuration_names := [Item_Configuration]string {
 	.Foundation_Block = "foundation_block",
 }
 
+// Which work a tool does on the terrain field (0265): a shovel digs
+// soil, a pickaxe stone and ore, an axe fells trees. None for every
+// other item, a role-less tool (the geologist's hammer) included.
+Item_Tool_Role :: enum u8 {
+	None,
+	Shovel,
+	Pickaxe,
+	Axe,
+}
+
+@(rodata)
+item_tool_role_names := [Item_Tool_Role]string {
+	.None    = "",
+	.Shovel  = "shovel",
+	.Pickaxe = "pickaxe",
+	.Axe     = "axe",
+}
+
 // As written in the file, before references are resolved.
 Item_Definition :: struct {
 	id:              string,
@@ -88,6 +107,7 @@ Item_Definition :: struct {
 	use_range:       int,
 	price:           int,
 	tool_tier:       int,
+	tool_role:       string,
 	configurable:    string,
 	former_ids:      []string,
 }
@@ -105,7 +125,9 @@ Items_File :: struct {
 // seismic shot images deep veins within use_range blocks. price is the
 // venture credit one item fetches as free trade (work item 0041).
 // tool_tier is the highest block tool_tier the tool mines by hand, 0 for
-// every item but the pickaxes (work item 0051). description_key is the
+// every item but the tools (work item 0051), at most MAXIMUM_TOOL_TIER.
+// tool_role is the field work the tool does (0265), which needs category
+// tool and a tool_tier of 1 or more. description_key is the
 // string shown under the facts in the recipe browser, "" for none (work
 // item 0070). configurable is what the configure pop-up sets (0202).
 // former_ids are the ids the item had in an older build, which a save
@@ -125,6 +147,7 @@ Item :: struct {
 	use_range:       i32,
 	price:           u64,
 	tool_tier:       int,
+	tool_role:       Item_Tool_Role,
 	configurable:    Item_Configuration,
 	former_ids:      []string,
 }
@@ -183,6 +206,12 @@ validate_item_definition :: proc(definitions: []Item_Definition, index: int) -> 
 	if definition.tool_tier < 0 || (definition.tool_tier > 0 && definition.category != item_category_names[.Tool]) {
 		return fmt.tprintf("item %q has tool_tier %d, only a tool may have a positive one", definition.id, definition.tool_tier)
 	}
+	if definition.tool_tier > MAXIMUM_TOOL_TIER {
+		return fmt.tprintf("item %q has tool_tier %d outside 0 to %d", definition.id, definition.tool_tier, MAXIMUM_TOOL_TIER)
+	}
+	if problem := validate_item_tool_role(definition); problem != "" {
+		return problem
+	}
 	if definition.usable && definition.places_block != "" {
 		return fmt.tprintf("usable item %q cannot place a block", definition.id)
 	}
@@ -190,6 +219,20 @@ validate_item_definition :: proc(definitions: []Item_Definition, index: int) -> 
 		return fmt.tprintf("item %q has unknown configurable %q", definition.id, definition.configurable)
 	}
 	return validate_item_use(definition)
+}
+
+// A tool role names a known role, on a tool of tier 1 or more.
+validate_item_tool_role :: proc(definition: Item_Definition) -> string {
+	role, found := parse_named_enum(item_tool_role_names, definition.tool_role)
+	switch {
+	case !found:
+		return fmt.tprintf("item %q has unknown tool_role %q", definition.id, definition.tool_role)
+	case role != .None && definition.category != item_category_names[.Tool]:
+		return fmt.tprintf("item %q has tool_role %q but is not a tool", definition.id, definition.tool_role)
+	case role != .None && definition.tool_tier < 1:
+		return fmt.tprintf("item %q has tool_role %q at tool_tier %d, a role needs 1 or more", definition.id, definition.tool_role, definition.tool_tier)
+	}
+	return ""
 }
 
 // A use needs a usable item; a magnetometer names what it detects and
@@ -242,6 +285,7 @@ resolve_item :: proc(definition: Item_Definition, blocks: Block_Registry) -> (it
 	category, _ := parse_item_category(definition.category)
 	use, _ := parse_named_enum(item_use_names, definition.use)
 	configurable, _ := parse_named_enum(item_configuration_names, definition.configurable)
+	tool_role, _ := parse_named_enum(item_tool_role_names, definition.tool_role)
 	placed_block: Block_Id
 	if placed_block, problem = resolve_placed_block(definition, blocks); problem != "" {
 		return {}, problem
@@ -261,6 +305,7 @@ resolve_item :: proc(definition: Item_Definition, blocks: Block_Registry) -> (it
 		use_range       = i32(definition.use_range),
 		price           = u64(definition.price),
 		tool_tier       = definition.tool_tier,
+		tool_role       = tool_role,
 		configurable    = configurable,
 		former_ids      = definition.former_ids,
 	}

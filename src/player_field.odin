@@ -74,8 +74,9 @@ Field_Player_Button :: enum u8 {
 
 // What the selected hotbar stack holds (0179, field_tool_for_item): a
 // material's item, the foundation (0174), a belt or a pipe for the run
-// tools (0176), another machine to place on a frame, the torch, or
-// nothing Place uses (the hand, which still digs).
+// tools (0176), another machine to place on a frame, the torch, nothing
+// Place uses (the hand, which digs nothing), or a shovel, pickaxe or axe
+// (0265), whose role and tier the player carries.
 Field_Held_Tool :: enum u8 {
 	Material,
 	Foundation,
@@ -84,6 +85,7 @@ Field_Held_Tool :: enum u8 {
 	Machine,
 	Torch,
 	Hand,
+	Tool,
 }
 
 Field_Player_Buttons :: bit_set[Field_Player_Button]
@@ -181,6 +183,10 @@ Field_Player :: struct {
 	brush:             u8,
 	held_material:     Field_Material,
 	tool:              Field_Held_Tool,
+	// The Tool's role and tier (0265), None and 0 for any other tool. A
+	// save from before 0265 loads them so and the first tick sets them.
+	held_tool_role:    Item_Tool_Role,
+	held_tool_tier:    u8,
 	held_machine:      Machine_Id,
 	placement_rotation: u8,
 	foundation_size_index:   u8,

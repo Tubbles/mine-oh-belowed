@@ -14,7 +14,7 @@ TEST_PLANET_RECORD :: `planets = [{
 	springs = [{latitude_degrees = 88, longitude_degrees = -120}]
 	home = {latitude_degrees = 86, longitude_degrees = -115}
 	crater = {radius_metres = 12, depth_metres = 3, floor_radius_metres = 4, rim_metres = 1}
-	trees = {grove_spacing_metres = 40, grove_share_percent = 50, grove_radius_metres = 14, tree_spacing_metres = 4, density_percent = 80, clearing_metres = 24, maximum_slope_percent = 70, species = [{id = "pine", machine = "pine_tree", tint = [236, 232, 214], item = "log", count = 4, felling_milliseconds = 6000, trunk_radius_millimetres = 180, trunk_height_millimetres = 2500}]}
+	trees = {grove_spacing_metres = 40, grove_share_percent = 50, grove_radius_metres = 14, tree_spacing_metres = 4, density_percent = 80, clearing_metres = 24, maximum_slope_percent = 70, species = [{id = "pine", machine = "pine_tree", tint = [236, 232, 214], item = "log", count = 4, hand_felling_scale_percent = 100, hand_felling_milliseconds = 10000, axe_felling_milliseconds = [6000, 4000, 2500], trunk_radius_millimetres = 180, trunk_height_millimetres = 2500}]}
 	rain_fill_per_minute = 2
 	rotation_period_seconds = 1200
 	relief_octaves = [{wavelength_metres = 512, amplitude_metres = 24}, {wavelength_metres = 128, amplitude_metres = 8}, {wavelength_metres = 32, amplitude_metres = 2}]
@@ -234,8 +234,12 @@ test_a_tree_record_out_of_bounds_is_refused :: proc(t: ^testing.T) {
 		{proc(species: ^Planet_Tree_Species) {species.item = ""}, "trees.species[0].item is empty"},
 		{proc(species: ^Planet_Tree_Species) {species.count = 0}, "trees.species[0].count 0 is outside 1 to 16"},
 		{proc(species: ^Planet_Tree_Species) {species.count = 17}, "trees.species[0].count 17 is outside 1 to 16"},
-		{proc(species: ^Planet_Tree_Species) {species.felling_milliseconds = 99}, "trees.species[0].felling_milliseconds 99 is outside 100 to 60000"},
-		{proc(species: ^Planet_Tree_Species) {species.felling_milliseconds = 60_001}, "trees.species[0].felling_milliseconds 60001 is outside 100 to 60000"},
+		{proc(species: ^Planet_Tree_Species) {species.hand_felling_milliseconds = 99}, "trees.species[0].hand_felling_milliseconds 99 is outside 100 to 60000"},
+		{proc(species: ^Planet_Tree_Species) {species.hand_felling_milliseconds = 60_001}, "trees.species[0].hand_felling_milliseconds 60001 is outside 100 to 60000"},
+		{proc(species: ^Planet_Tree_Species) {species.axe_felling_milliseconds[1] = 99}, "trees.species[0].axe_felling_milliseconds[1] 99 is outside 100 to 60000"},
+		{proc(species: ^Planet_Tree_Species) {species.axe_felling_milliseconds[1] = 60_001}, "trees.species[0].axe_felling_milliseconds[1] 60001 is outside 100 to 60000"},
+		{proc(species: ^Planet_Tree_Species) {species.hand_felling_scale_percent = -1}, "trees.species[0].hand_felling_scale_percent -1 is outside 0 to 115"},
+		{proc(species: ^Planet_Tree_Species) {species.hand_felling_scale_percent = 116}, "trees.species[0].hand_felling_scale_percent 116 is outside 0 to 115"},
 		{proc(species: ^Planet_Tree_Species) {species.trunk_radius_millimetres = 49}, "trees.species[0].trunk_radius_millimetres 49 is outside 50 to 1000"},
 		{proc(species: ^Planet_Tree_Species) {species.trunk_radius_millimetres = 1001}, "trees.species[0].trunk_radius_millimetres 1001 is outside 50 to 1000"},
 		{proc(species: ^Planet_Tree_Species) {species.trunk_height_millimetres = 499}, "trees.species[0].trunk_height_millimetres 499 is outside 500 to 20000"},
@@ -253,7 +257,7 @@ test_a_tree_record_out_of_bounds_is_refused :: proc(t: ^testing.T) {
 	twice := shipped
 	twice.species = []Planet_Tree_Species{species, species}
 	testing.expect_value(t, tree_species_ids_problem(twice), `trees.species[1].id "pine" is used twice`)
-	doubled, _ := strings.replace(string(TEST_PLANET_RECORD), "species = [{id = \"pine\"", "species = [{id = \"pine\", machine = \"pine_tree\", tint = [1, 2, 3], item = \"log\", count = 1, felling_milliseconds = 1000, trunk_radius_millimetres = 100, trunk_height_millimetres = 1000}, {id = \"pine\"", 1, context.temp_allocator)
+	doubled, _ := strings.replace(string(TEST_PLANET_RECORD), "species = [{id = \"pine\"", "species = [{id = \"pine\", machine = \"pine_tree\", tint = [1, 2, 3], item = \"log\", count = 1, hand_felling_scale_percent = 100, hand_felling_milliseconds = 1000, axe_felling_milliseconds = [1000, 1000, 1000], trunk_radius_millimetres = 100, trunk_height_millimetres = 1000}, {id = \"pine\"", 1, context.temp_allocator)
 	expect_planets_problem(t, doubled, `trees.species[1].id "pine" is used twice`)
 	record := string(TEST_PLANET_RECORD)
 	missing, _ := strings.replace(record, "density_percent = 80, ", "", 1, context.temp_allocator)

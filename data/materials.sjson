@@ -1,9 +1,11 @@
 // The terrain field's materials (work item 0171, doc/content.md, Field
 // materials): one entry per material of the field but air, every key
-// required. item is what a cubic metre of the material dug by hand yields
-// and placing it takes (items.sjson); an empty item marks a material that
-// cannot be dug or placed. tool_tier is the pickaxe the hand tool needs,
-// as blocks.sjson's tool_tier: 0 hands, 1 wooden, 2 stone, 3 iron.
+// required. item is what a cubic metre of the material dug yields and
+// placing it takes (items.sjson); an empty item marks a material that
+// cannot be dug or placed. dug_with is the items.sjson tool_role that digs
+// it while selected on the hotbar (work item 0265): shovel or pickaxe with
+// an item, empty without one. tool_tier is the tier of that tool the
+// material needs, 1 wooden, 2 stone, 3 iron; 0 without an item.
 // dig_rate_percent (10 to 400) scales the brush's rate on the material
 // (work item 0179): soft ground digs faster, deep stone slower.
 // The ores are the outcrops of the veins on the sphere (work item 0179,
@@ -12,11 +14,11 @@
 // stone.
 // The textures are in textures/field_materials.sjson.
 materials = [
-	{id = "topsoil", item = "dirt", tool_tier = 0, dig_rate_percent = 150}
-	{id = "stone", item = "stone", tool_tier = 1, dig_rate_percent = 100}
-	{id = "deep_stone", item = "deep_stone", tool_tier = 3, dig_rate_percent = 60}
-	{id = "bedrock", item = "", tool_tier = 0, dig_rate_percent = 100}
-	{id = "hematite_ore", item = "hematite", tool_tier = 2, dig_rate_percent = 80}
-	{id = "chalcopyrite_ore", item = "chalcopyrite", tool_tier = 2, dig_rate_percent = 80}
-	{id = "coal_ore", item = "coal", tool_tier = 1, dig_rate_percent = 80}
+	{id = "topsoil", item = "dirt", dug_with = "shovel", tool_tier = 1, dig_rate_percent = 150}
+	{id = "stone", item = "stone", dug_with = "pickaxe", tool_tier = 1, dig_rate_percent = 100}
+	{id = "deep_stone", item = "deep_stone", dug_with = "pickaxe", tool_tier = 3, dig_rate_percent = 60}
+	{id = "bedrock", item = "", dug_with = "", tool_tier = 0, dig_rate_percent = 100}
+	{id = "hematite_ore", item = "hematite", dug_with = "pickaxe", tool_tier = 2, dig_rate_percent = 80}
+	{id = "chalcopyrite_ore", item = "chalcopyrite", dug_with = "pickaxe", tool_tier = 2, dig_rate_percent = 80}
+	{id = "coal_ore", item = "coal", dug_with = "pickaxe", tool_tier = 1, dig_rate_percent = 80}
 ]

@@ -1,9 +1,10 @@
 // Chapter 1, Arrival (doc/quests.md, Chapters), one quest per beat.
 // Chapters load in file name order and play in sequence, one active quest
-// at a time. The slice's chapter (work item 0179): the field has no trees
-// until M14 and the starter kit carries a stone pickaxe, so the chapter
-// digs stone and the outcrops, smelts plates and ends with the first line
-// of a drill, an arm, a belt and a chest. The line's belt poles need
+// at a time. The slice's chapter (work item 0179): the starter kit
+// carries no digging tool (work item 0265), so the chapter fells a small
+// tree by hand for the wooden shovel and pickaxe, digs stone and the
+// outcrops, smelts plates and ends with the first line of a drill, an
+// arm, a belt and a chest. The line's belt poles need
 // bricks, cut at the stone cutting table (work item 0196, quest cutting).
 //
 // A quest: id, title_key, text_key (the objective text), objectives,
@@ -102,6 +103,25 @@ quests = [
 		complete_key = "mc_bearings_done"
 	}
 	{
+		id = "timber"
+		title_key = "quest_timber_title"
+		text_key = "quest_timber_text"
+		objectives = [
+			{type = "obtain", item = "log", count = 4}
+		]
+		message_key = "mc_timber"
+	}
+	{
+		id = "tools"
+		title_key = "quest_tools_title"
+		text_key = "quest_tools_text"
+		objectives = [
+			{type = "craft", item = "wooden_shovel", count = 1}
+			{type = "craft", item = "wooden_pickaxe", count = 1}
+		]
+		message_key = "mc_tools"
+	}
+	{
 		id = "stone"
 		title_key = "quest_stone_title"
 		text_key = "quest_stone_text"
@@ -115,6 +135,7 @@ quests = [
 		title_key = "quest_rocks_title"
 		text_key = "quest_rocks_text"
 		objectives = [
+			{type = "craft", item = "stone_pickaxe", count = 1}
 			{type = "obtain", item = "hematite", count = 10}
 		]
 		message_key = "mc_rocks"
