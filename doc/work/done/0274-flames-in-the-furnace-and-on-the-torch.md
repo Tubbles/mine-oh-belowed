@@ -1,6 +1,6 @@
 # 0274: Flames in the furnace and on the torch
 
-Status: verified (2026-10-05)
+Status: landed (2026-10-05, b8d41c3)
 
 ## Goal
 
