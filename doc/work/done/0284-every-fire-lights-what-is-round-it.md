@@ -1,6 +1,6 @@
 # 0284: Every fire lights what is round it
 
-Status: verified (2026-10-05)
+Status: landed (2026-10-05, cc33a8b)
 
 ## Goal
 
