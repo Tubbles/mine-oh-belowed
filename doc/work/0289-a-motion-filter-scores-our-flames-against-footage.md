@@ -1,6 +1,6 @@
 # 0289: A motion filter scores our flames against footage
 
-Status: implementing (2026-10-05)
+Status: verified (2026-10-05)
 
 ## Goal
 
@@ -152,5 +152,5 @@ The first comparison, for the log: our peak changes four times as much per thirt
 ### Decisions (main agent, 2026-10-05)
 
 1. Approved as designed: pure Python over PIL, the lines, the strip, `--steady`, the tests and the yardstick with its tolerances.
-2. One addition: `--window PIXELS`, the window's width inside the crop, prints every speed a second time in window widths a second beside the crop widths, so the game (about 75 pixels of glass) and the footage (about 380 of pane) compare. Without the option that second number is left out.
+2. One addition: `--window PIXELS`, the window's width in the frame's pixels (it may be wider than the crop), prints every speed a second time in window widths a second beside the crop widths, so the game (about 75 pixels of glass) and the footage (about 380 of pane) compare. Without the option that second number is left out.
 3. No command turns the buffet off alone; `--steady` is the way, and the docs say so. A streak length statistic is a later item if the couch wants one. The 0288 clips are scored when the main agent captures them.
